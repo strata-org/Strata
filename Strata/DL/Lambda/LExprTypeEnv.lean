@@ -3,12 +3,15 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.DL.Lambda.LExprWF
-import Strata.DL.Lambda.LTyUnify
-import Strata.DL.Lambda.Factory
-import Strata.DL.Lambda.TypeFactory
-import Strata.DL.Util.Maps
+public import Strata.DL.Lambda.LExprWF
+public import Strata.DL.Lambda.LTyUnify
+import all Strata.DL.Lambda.LTyUnify
+public import Strata.DL.Lambda.Factory
+public import Strata.DL.Lambda.TypeFactory
+public import Strata.DL.Util.Maps
+import all Strata.DL.Util.Maps
 
 /-! ## Type Environment
 
@@ -22,6 +25,8 @@ namespace Lambda
 open Std (ToFormat Format format)
 open LExpr
 open Strata
+
+public section
 
 ---------------------------------------------------------------------
 
@@ -169,7 +174,7 @@ def TState.genExprSym (state : TState) : String × TState :=
 ---------------------------------------------------------------------
 
 /-- Name and arity of a registered type. -/
-def KnownType := Identifier Nat deriving Inhabited, DecidableEq, Repr
+@[expose] def KnownType := Identifier Nat deriving Inhabited, DecidableEq, Repr
 
 def KnownType.arity (k: KnownType) := k.metadata
 
@@ -188,7 +193,7 @@ instance : ToFormat KnownType where
   format k := f!"{k.toLTy}"
 
 /-- Registered types. -/
-abbrev KnownTypes := Identifiers Nat
+@[expose] abbrev KnownTypes := Identifiers Nat
 
 def makeKnownTypes (l: List KnownType) : KnownTypes :=
   Std.HashMap.ofList (l.map (fun x => (x.name, x.arity)))
@@ -233,9 +238,13 @@ structure TEnv (IDMeta : Type) where
 deriving Inhabited
 
 /--
-Context data that does not change throughout type checking: a
-factory of user-specified functions and data structures for ensuring unique
-names of types and functions.
+Context data for type checking: a factory of user-specified functions and
+data structures for ensuring unique names of types and functions.
+
+This context is typically constant during expression type checking, but may
+be extended during statement type checking when local function declarations
+(`funcDecl`) add new functions to the factory.
+
 Invariant: all functions defined in `TypeFactory.genFactory`
 for `datatypes` should be in `functions`.
 -/
@@ -889,4 +898,5 @@ def TEnv.addTypeAlias (alias : TypeAlias) (C: LContext T) (Env : TEnv T.IDMeta) 
 
 ---------------------------------------------------------------------
 
+end -- public section
 end Lambda

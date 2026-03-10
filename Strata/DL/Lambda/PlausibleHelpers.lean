@@ -3,10 +3,11 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Plausible.Sampleable
-import Plausible.DeriveArbitrary
-import Plausible.Attr
+public meta import Plausible.Sampleable
+public meta import Plausible.DeriveArbitrary
+public meta import Plausible.Attr
 
 /-! ## Helpers for using Plausible with Chamelean generated instances.
 
@@ -17,6 +18,8 @@ This entire file may be removed, if a dependency is added on https://github.com/
 namespace TestGen
 
 open Plausible
+
+public meta section
 
 class ArbitrarySizedSuchThat (α : Type) (P : α → Prop) where
   arbitrarySizedST : Nat → Gen α
@@ -128,7 +131,7 @@ def sized (f : Nat → Gen α) : Gen α :=
 /-- Helper function for `backtrack` which picks one out of `total` generators with some initial amount of `fuel` -/
 def backtrackFuel (fuel : Nat) (total : Nat) (gs : List (Nat × Gen α)) : Gen α :=
   match fuel with
-  | .zero => throw Gen.outOfFuel
+  | .zero => throw (.genError "backtrackFuel: out of fuel")
   | .succ fuel' => do
     let n ← Gen.choose Nat 0 (total - 1) (by omega)
     let (k, g, gs') := pickDrop gs n
@@ -161,3 +164,4 @@ def elementsWithDefault [Inhabited α] (default : α) (xs : List α) : Gen α :=
     return xs[i]!
 
 end GeneratorCombinators
+end -- public section

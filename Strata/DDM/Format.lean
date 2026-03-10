@@ -19,15 +19,20 @@ namespace Strata
 /--
 Check if a character is valid for starting a regular identifier.
 Regular identifiers must start with a letter or underscore.
+
+NOTE: When updating this function, you will want to consider updating Strata/DDM/Parser.lean as well.
 -/
 private def isIdBegin (c : Char) : Bool :=
-  c.isAlpha || c == '_'
+  c.isAlpha || c == '_' || c == '$'
 
 /--
 Check if a character is valid for continuing a regular identifier.
+Includes @ and $ which are valid in SMT-LIB 2.6 simple symbols and
+used by the encoder for disambiguated names (e.g. x@1) and generated
+names (e.g. $__bv0).
 -/
 private def isIdContinue (c : Char) : Bool :=
-  c.isAlphanum || c == '_' || c == '\'' || c == '.' || c == '?' || c == '!'
+  c.isAlphanum || c == '_' || c == '\'' || c == '.' || c == '?' || c == '!' || c == '@' || c == '$'
 
 /--
 Check if a string needs pipe delimiters when formatted as an identifier.
@@ -37,7 +42,7 @@ private def needsPipeDelimiters (s : String) : Bool :=
   if h : s.isEmpty then
     true
   else
-    let firstChar := s.startValidPos.get (by simp_all)
+    let firstChar := s.startPos.get (by simp_all)
     !isIdBegin firstChar || s.any (fun c => !isIdContinue c)
 
 /--
@@ -56,15 +61,14 @@ Strips Lean's «» notation if present.
 Follows SMT-LIB 2.6 specification for quoted symbols.
 -/
 private def formatIdent (s : String) : Format :=
-  -- Strip Lean's «» notation if present
-  let s := if s.startsWith "«" && s.endsWith "»" then
-             s.drop 1 |>.dropRight 1
-           else
-             s
   if needsPipeDelimiters s then
     Format.text ("|" ++ escapePipeIdent s ++ "|")
   else
     Format.text s
+
+/-- Quote an identifier string for SMT-LIB, adding pipe delimiters if needed. -/
+def quoteIdent (s : String) : String :=
+  if needsPipeDelimiters s then "|" ++ escapePipeIdent s ++ "|" else s
 
 structure PrecFormat where
   format : Format
@@ -73,7 +77,7 @@ deriving Inhabited
 
 namespace PrecFormat
 
-private def atom (format : Format) : PrecFormat := { format, prec := maxPrec }
+private def atom (format : Format) : PrecFormat := { format, prec := maxPrec + 1 }
 
 private def ofFormat {α} [Std.ToFormat α] (x : α) (prec : Nat := maxPrec) : PrecFormat := { format := Std.format x, prec }
 
@@ -133,10 +137,10 @@ structure FormatState where
 namespace FormatState
 
 /-- A format context that uses no syntactic sugar. -/
-private def empty : FormatState where
+def empty : FormatState where
   openDialects := {}
 
-private instance : Inhabited FormatState where
+instance : Inhabited FormatState where
   default := .empty
 
 def pushBinding (s : FormatState) (ident : String) : FormatState :=
@@ -187,10 +191,10 @@ instance : ToStrataFormat StrataFormat where
   mformat := id
 
 instance : ToStrataFormat Nat where
-  mformat n _ _ := private .ofFormat n
+  mformat n _ _ := private .ofFormat n (maxPrec + 1)
 
 instance : ToStrataFormat Decimal where
-  mformat n _ _ := private .ofFormat n
+  mformat n _ _ := private .ofFormat n (maxPrec + 1)
 
 namespace StrataFormat
 
@@ -272,7 +276,7 @@ private protected def mformat : TypeExprF α → StrataFormat
 | .ident _ tp a => a.attach.foldl (init := mformat tp) fun m ⟨e, _⟩ =>
   mf!"{m} {e.mformat.ensurePrec (appPrec + 1)}".setPrec appPrec
 | .bvar _ idx => .bvar idx
-| .tvar _ name => mf!"tvar!{name}"
+| .tvar _ name => mf!"{name}"
 | .fvar _ idx a => a.attach.foldl (init := .fvar idx) fun m ⟨e, _⟩ =>
   mf!"{m} {e.mformat.ensurePrec (appPrec + 1)}".setPrec appPrec
 | .arrow _ a r => mf!"{a.mformat.ensurePrec (arrowPrec+1)} -> {r.mformat.ensurePrec arrowPrec}"
@@ -287,8 +291,7 @@ namespace PreType
 private protected def mformat : PreType → StrataFormat
 | .ident _ tp a => a.attach.foldl (init := mformat tp) (fun m ⟨e, _⟩ => mf!"{m} {e.mformat}")
 | .bvar _ idx => .bvar idx
-| .tvar _ name => mf!"tvar!{name}"
-| .fvar _ idx a => a.attach.foldl (init := .fvar idx) (fun m ⟨e, _⟩ => mf!"{m} {e.mformat}")
+| .tvar _ name => mf!"{name}"
 | .arrow _ a r => mf!"{a.mformat} -> {r.mformat}"
 | .funMacro _ idx r => mf!"fnOf({StrataFormat.bvar idx}, {r.mformat})"
 
@@ -316,19 +319,28 @@ This pretty prints the argument an op atom has.
 -/
 private def SyntaxDefAtom.formatArgs (opts : FormatOptions) (args : Array PrecFormat) (stx : SyntaxDefAtom) : Format :=
   match stx with
-  | .ident lvl prec _ =>
-    let ⟨r, innerPrec⟩ := args[lvl]!
-    if prec > 0 ∧ (innerPrec ≤ prec ∨ opts.alwaysParen) then
-      f!"({r})"
+  | .ident lvl prec =>
+    if h : lvl ≥ args.size then
+      panic! s!"ident level {lvl} out of bounds"
     else
-      r
+      let ⟨r, innerPrec⟩ := args[lvl]
+      if prec > 0 ∧ (innerPrec ≤ prec ∨ opts.alwaysParen) then
+        f!"({r})"
+      else
+        r
   | .str s => format s
   | .indent n f =>
     let r := Format.join (f.attach.map (fun ⟨a, _⟩ => a.formatArgs opts args) |>.toList)
     .nest n r
 
 private def ppOp (opts : FormatOptions) (stx : SyntaxDef) (args : Array PrecFormat) : PrecFormat :=
-  ⟨Format.join ((·.formatArgs opts args) <$> stx.atoms).toList, stx.prec⟩
+  match stx with
+  | .passthrough =>
+    if h : args.size = 1 then
+      args[0]
+    else
+      panic! "passthrough requires one argument"
+  | .std atoms prec => ⟨Format.join ((·.formatArgs opts args) <$> atoms).toList, prec⟩
 
 private abbrev FormatM := ReaderT FormatContext (StateM FormatState)
 
@@ -399,6 +411,13 @@ private partial def ArgF.mformatM {α} : ArgF α → FormatM PrecFormat
   | .spacePrefix =>
     .atom <$> entries.foldlM (init := .nil) fun p a =>
       return (p ++ " " ++ (← a.mformatM).format)
+  | .newline =>
+    if z : entries.size = 0 then
+      pure (.atom .nil)
+    else do
+      let f i q s := return s ++ "\n" ++ (← entries[i].mformatM).format
+      let a := (← entries[0].mformatM).format
+      .atom <$> entries.size.foldlM f (start := 1) a
 
 private partial def ppArgs (f : StrataFormat) (rargs : Array Arg) : FormatM PrecFormat :=
   if rargs.isEmpty then
@@ -422,6 +441,21 @@ private partial def formatArguments (c : FormatContext) (initState : FormatState
                 | some ⟨alvl, aisLt⟩  =>
                   have _ : alvl < a.size := by simp at aisLt; omega
                   a[alvl].snd
+          -- If @[scopeSelf] is present, insert the function name before the param bindings.
+          -- scopeSelf subsumes @[scope]: we get params from argsLevel directly.
+          let s :=
+                match argDecls.argScopeSelfLevel ⟨lvl, h⟩ with
+                | none => s
+                | some (⟨nameLvl, nameIsLt⟩, ⟨argsLvl, argsIsLt⟩, _) =>
+                  have _ : nameLvl < a.size := by simp at nameIsLt; omega
+                  have _ : argsLvl < a.size := by simp at argsIsLt; omega
+                  match args[nameLvl] with
+                  | .ident _ name =>
+                    let paramBindings := a[argsLvl].snd.bindings
+                    let scopeStart := initState.bindings.size
+                    let paramOnly := paramBindings.extract scopeStart paramBindings.size
+                    { s with bindings := s.bindings ++ #[name] ++ paramOnly }
+                  | _ => s
           aux (a.push (args[lvl].mformatM c s))
         else
           a
@@ -437,7 +471,11 @@ private partial def OperationF.mformatM (op : OperationF α) : FormatM PrecForma
     let argResults := formatArguments (← read) (← get) bindings args
     let fmt := ppOp (← read).opts decl.syntaxDef (Prod.fst <$> argResults)
     match decl.metadata.resultLevel bindings.size with
-    | some idx => set argResults[idx]!.snd
+    | some idx =>
+      if h : idx.val < argResults.size then
+        set argResults[idx.val].snd
+      else
+        panic! "result scope index out of bounds"
     | none => pure ()
     for b in decl.newBindings do
       match args[b.nameIndex.toLevel] with
@@ -560,7 +598,7 @@ end ArgDecls
 namespace SyntaxDefAtom
 
 private protected def mformat : SyntaxDefAtom → StrataFormat
-| .ident lvl prec _ => mf!"{StrataFormat.lvlVar lvl}:{prec}" -- FIXME.  This may be wrong.
+| .ident lvl prec => mf!"{StrataFormat.lvlVar lvl}:{prec}" -- FIXME.  This may be wrong.
 | .str lit => mformat (escapeStringLit lit)
 | .indent n f =>
   let r := f.attach.map fun ⟨a, _⟩ => a.mformat
@@ -575,7 +613,9 @@ end SyntaxDefAtom
 namespace SyntaxDef
 
 instance : ToStrataFormat SyntaxDef where
-  mformat s := private .sepBy s.atoms " "
+  mformat := private fun
+    | .std atoms _ => .sepBy atoms " "
+    | .passthrough => mf!"{StrataFormat.lvlVar 0}:{0}"
 
 end SyntaxDef
 

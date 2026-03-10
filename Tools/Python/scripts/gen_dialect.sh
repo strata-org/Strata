@@ -2,6 +2,12 @@
 # Script to run basic test of strata generator.
 set -e
 
+# Get the directory where this script is located
+script_dir="$(cd "$(dirname "$0")" && pwd)"
+# Change to the parent directory (Tools/Python) so dialects and imports match other scripts
+tools_python_dir="$(cd "$script_dir/.." && pwd)"
+cd "$tools_python_dir"
+
 strata=../../.lake/build/bin/strata
 
 if [ ! -f $strata ]; then

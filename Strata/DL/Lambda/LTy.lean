@@ -3,9 +3,10 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.DL.Util.Map
-import Lean.Elab.Term
+public import Strata.DL.Util.Map
+public meta import Lean.Elab.Term
 
 /-! ## Formalization of Mono- and Poly- Types in Lambda
 
@@ -20,8 +21,10 @@ namespace Lambda
 open Std (ToFormat Format format)
 
 
+public section
+
 /-- Type identifiers. For now, these are just strings. -/
-abbrev TyIdentifier := String
+@[expose] abbrev TyIdentifier := String
 
 instance : Coe String TyIdentifier where
   coe := id
@@ -38,41 +41,41 @@ inductive LMonoTy : Type where
   | bitvec (size : Nat)
   deriving Inhabited, Repr
 
-abbrev LMonoTys := List LMonoTy
+@[expose] abbrev LMonoTys := List LMonoTy
 
-@[match_pattern]
+@[expose, match_pattern]
 def LMonoTy.bool : LMonoTy :=
   .tcons "bool" []
 
-@[match_pattern]
+@[expose, match_pattern]
 def LMonoTy.int : LMonoTy :=
   .tcons "int" []
 
-@[match_pattern]
+@[expose, match_pattern]
 def LMonoTy.real : LMonoTy :=
   .tcons "real" []
 
-@[match_pattern]
+@[expose, match_pattern]
 def LMonoTy.bv1 : LMonoTy :=
   .bitvec 1
 
-@[match_pattern]
+@[expose, match_pattern]
 def LMonoTy.bv8 : LMonoTy :=
   .bitvec 8
 
-@[match_pattern]
+@[expose, match_pattern]
 def LMonoTy.bv16 : LMonoTy :=
   .bitvec 16
 
-@[match_pattern]
+@[expose, match_pattern]
 def LMonoTy.bv32 : LMonoTy :=
   .bitvec 32
 
-@[match_pattern]
+@[expose, match_pattern]
 def LMonoTy.bv64 : LMonoTy :=
   .bitvec 64
 
-@[match_pattern]
+@[expose, match_pattern]
 def LMonoTy.string : LMonoTy :=
   .tcons "string" []
 
@@ -127,7 +130,7 @@ inductive LTy : Type where
   | forAll (vars : List TyIdentifier) (ty : LMonoTy)
   deriving Inhabited, Repr
 
-abbrev LTys := List LTy
+@[expose] abbrev LTys := List LTy
 
 ---------------------------------------------------------------------
 
@@ -155,12 +158,14 @@ mutual
 /--
 Compute the size of `ty` as a tree.
 -/
+@[simp]
 def LMonoTy.size (ty : LMonoTy) : Nat :=
   match ty with
   | .ftvar _ => 1
   | .tcons _ args => 1 + LMonoTys.size args
   | .bitvec _ => 1
 
+@[simp]
 def LMonoTys.size (args : LMonoTys) : Nat :=
     match args with
     | [] => 0
@@ -347,6 +352,14 @@ def LTy.toMonoType (ty : LTy) (h : LTy.isMonoType ty) : LMonoTy :=
   | .forAll _ lty => lty
 
 /--
+Optionally obtain a mono-type from a type scheme `ty`.
+-/
+def LTy.toMonoType? (ty : LTy) : Option LMonoTy :=
+  match ty with
+  | .forAll [] lty => .some lty
+  | _ => .none
+
+/--
 Unsafe coerce from a type scheme to a mono-type.
 -/
 def LTy.toMonoTypeUnsafe (ty : LTy) : LMonoTy :=
@@ -372,7 +385,7 @@ private def formatLMonoTy (lmonoty : LMonoTy) : Format :=
       Std.Format.paren (name ++ " " ++ args)
 
 instance : ToFormat LMonoTy where
-  format := formatLMonoTy
+  format := private formatLMonoTy
 
 instance : ToFormat LTy where
   format ty := match ty with
@@ -414,7 +427,7 @@ scoped syntax tprim : tcons
 scoped syntax "(" lmonoty ")" : lmonoty
 
 open Lean Elab Meta in
-partial def elabLMonoTy : Lean.Syntax → MetaM Expr
+meta partial def elabLMonoTy : Lean.Syntax → MetaM Expr
   | `(lmonoty| %$f:ident) => do
      mkAppM ``LMonoTy.ftvar #[mkStrLit (toString f.getId)]
   | `(lmonoty| $ty1:lmonoty → $ty2:lmonoty) => do
@@ -454,7 +467,7 @@ scoped syntax "∀" (ident)* "." (lmonoty)* : lty
 scoped syntax "(" lty ")" : lty
 
 open Lean Elab Meta in
-partial def elabLTy : Lean.Syntax → MetaM Expr
+meta partial def elabLTy : Lean.Syntax → MetaM Expr
   | `(lty| ∀ $vars:ident* . $ty:lmonoty) => do
       let vars' := List.map (fun f => mkStrLit (toString f.getId)) vars.toList
       let varslist ← mkListLit (mkConst ``String) vars'
@@ -500,4 +513,5 @@ def LMonoTy.inputTypes (ty : LMonoTy) : List LMonoTy :=
 
 ---------------------------------------------------------------------
 
+end -- public section
 end Lambda

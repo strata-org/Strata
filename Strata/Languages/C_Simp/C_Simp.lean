@@ -28,6 +28,7 @@ abbrev Expression : Imperative.PureExpr := {
   Ident := Lambda.Identifier Unit,
   Expr := Lambda.LExpr CSimpLParams.mono,
   Ty := Lambda.LTy,
+  ExprMetadata := CSimpLParams.Metadata,
   TyEnv := Lambda.TEnv Unit,
   TyContext := Lambda.LContext ⟨Unit, Unit⟩,
   EvalEnv := Lambda.LState ⟨Unit, String⟩,
@@ -35,9 +36,9 @@ abbrev Expression : Imperative.PureExpr := {
 }
 
 
-def Command := Imperative.Cmd Expression
+abbrev Command := Imperative.Cmd Expression
 
-def Statement := Imperative.Stmt Expression Command
+abbrev Statement := Imperative.Stmt Expression Command
 
 instance : Imperative.HasVarsImp Expression Command where
   definedVars := Imperative.Cmd.definedVars
@@ -56,8 +57,16 @@ structure Function where
   inputs : ListMap Expression.Ident Lambda.LMonoTy
 deriving Inhabited
 
+/-- Remove all metadata from a declaration
+    This is a C_Simp version of Core's stripMetadata -/
+def Function.stripMetaData (f : Function) : Function :=
+  { f with body := f.body.map Imperative.Stmt.stripMetaData }
+
 structure Program where
   funcs : List Function
+
+def Program.stripMetaData (p : Program) : Program :=
+  { p with funcs := p.funcs.map Function.stripMetaData }
 
 -- Instances
 open Std (ToFormat Format format)

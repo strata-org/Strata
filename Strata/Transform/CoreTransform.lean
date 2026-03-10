@@ -5,7 +5,7 @@
 -/
 
 import Strata.Languages.Core.Statement
-import Strata.Languages.Core.Core
+import Strata.Languages.Core.CallGraph
 import Strata.Languages.Core.CoreGen
 import Strata.DL.Util.LabelGen
 
@@ -20,10 +20,11 @@ def oldVarPrefix (id : String) : String := s!"old_{id}"
 def tmpVarPrefix (id : String) : String := s!"tmp_{id}"
 
 def createHavoc (ident : Expression.Ident)
-  : Statement := Statement.havoc ident
+    (md : Imperative.MetaData Expression)
+  : Statement := Statement.havoc ident md
 
-def createHavocs (ident : List Expression.Ident)
-  : List Statement := ident.map createHavoc
+def createHavocs (ident : List Expression.Ident) (md : (Imperative.MetaData Expression))
+  : List Statement := ident.map (createHavoc · md)
 
 def createFvar (ident : Expression.Ident)
   : Expression.Expr
@@ -76,9 +77,78 @@ def genOldExprIdents (idents : List Expression.Ident)
 def isGlobalVar (p : Program) (ident : Expression.Ident) : Bool :=
   (p.find? .var ident).isSome
 
+
+/-- Cached results of program analyses that are helpful for program
+    transformation. -/
+structure CachedAnalyses where
+  callGraph: Option CallGraph := .none
+
+@[simp]
+def CachedAnalyses.emp : CachedAnalyses := {}
+
+/-- Define the state of transformation in Strata Core.
+  It is the duty of the transformation to update the analysis cache to keep the
+  correct information after code transformation, or one can simply drop the
+  cached result.
+-/
+structure CoreTransformState where
+  genState: CoreGenState
+  -- The program that is being transformed.
+  -- The definition of "current" may vary depending on the transformation.
+  -- During transformation, it is allowed for currentProgram be slightly stale
+  -- (has procedures and functions and statements that are not transformed
+  -- yet). For example, procedure inlining will always keep currentProgram that
+  -- is before inlining.
+  -- However, when transformation is finished, currentProgram must contain the
+  -- program that is fully updated (or it has to be .none). runProgram enforces
+  -- that currentProgram of this CoreTransformState is updated to be the updated
+  -- program.
+  currentProgram: Option Program
+  currentProcedureName: Option String -- TOOD: currentFunctionName, etc?
+  cachedAnalyses: CachedAnalyses
+  -- Optional factory for transformations that need to track function
+  -- declarations (e.g., PrecondElim). The factory grows as function
+  -- declarations are encountered during traversal.
+  factory: Option (@Lambda.Factory CoreLParams) := .none
+
+@[simp]
+def CoreTransformState.emp : CoreTransformState :=
+  { genState := .emp, currentProgram := .none,
+    currentProcedureName := .none, cachedAnalyses := .emp }
+
 abbrev Err := String
 
-abbrev CoreTransformM := ExceptT Err CoreGenM
+abbrev CoreTransformM := ExceptT Err (StateM CoreTransformState)
+
+/-- A lifter from CoreGenM to (StateM CoreTransformState) -/
+def liftCoreGenM {α : Type} (cgm : CoreGenM α) : StateM CoreTransformState α :=
+  fun coreTransformState =>
+    let res := cgm coreTransformState.genState
+    (res.1, {
+      genState := res.2,
+      currentProgram := coreTransformState.currentProgram,
+      currentProcedureName := coreTransformState.currentProcedureName,
+      cachedAnalyses := coreTransformState.cachedAnalyses,
+      factory := coreTransformState.factory })
+
+instance : MonadLift CoreGenM (StateM CoreTransformState) where
+  monadLift := liftCoreGenM
+
+/-- Lift an `Except DiagnosticModel` into `CoreTransformM`. -/
+def liftDiag {α : Type} (e : Except Strata.DiagnosticModel α) : CoreTransformM α :=
+  match e with
+  | .ok a => pure a
+  | .error dm => throw dm.message
+
+/-- Get the factory from state, throwing if not set. -/
+def getFactory : CoreTransformM (@Lambda.Factory CoreLParams) := do
+  match (← get).factory with
+  | some F => pure F
+  | none => throw "factory not set in CoreTransformState"
+
+/-- Update the factory in state. -/
+def setFactory (F : @Lambda.Factory CoreLParams) : CoreTransformM Unit :=
+  modify fun σ => { σ with factory := some F }
 
 def getIdentTy? (p : Program) (id : Expression.Ident) := p.getVarTy? id
 
@@ -139,44 +209,50 @@ def genOldExprIdentsTrip
 Generate an init statement with rhs as expression
 -/
 def createInit (trip : (Expression.Ident × Expression.Ty) × Expression.Expr)
+    (md:Imperative.MetaData Expression)
   : Statement :=
   match trip with
-  | ((v', ty), e) => Statement.init v' ty e
+  | ((v', ty), e) => Statement.init v' ty (some e) md
 
 def createInits (trips : List ((Expression.Ident × Expression.Ty) × Expression.Expr))
+    (md: (Imperative.MetaData Expression))
   : List Statement :=
-  trips.map createInit
+  trips.map (createInit · md)
 
 /--
 Generate an init statement with rhs as a free variable reference
 -/
 def createInitVar (trip : (Expression.Ident × Expression.Ty) × Expression.Ident)
+    (md:Imperative.MetaData Expression)
   : Statement :=
   match trip with
-  | ((v', ty), v) => Statement.init v' ty (Lambda.LExpr.fvar () v none)
+  | ((v', ty), v) => Statement.init v' ty (some (Lambda.LExpr.fvar () v none)) md
 
 def createInitVars (trips : List ((Expression.Ident × Expression.Ty) × Expression.Ident))
+    (md : (Imperative.MetaData Expression))
   : List Statement :=
-  trips.map createInitVar
+  trips.map (createInitVar · md)
 
 /-- turns a list of preconditions into assumes with substitution -/
 def createAsserts
     (conds : ListMap CoreLabel Procedure.Check)
     (subst : Map Expression.Ident Expression.Expr)
+    (md : (Imperative.MetaData Expression))
     : CoreTransformM (List Statement)
     := conds.mapM (fun (l, check) => do
           let newLabel ← genIdent l (fun s => s!"callElimAssert_{s}")
-          return Statement.assert newLabel.toPretty (Lambda.LExpr.substFvars check.expr subst))
+          return Statement.assert newLabel.toPretty (Lambda.LExpr.substFvars check.expr subst) md)
 
 /-- turns a list of preconditions into assumes with substitution -/
 def createAssumes
     (conds : ListMap CoreLabel Procedure.Check)
     (subst : Map Expression.Ident Expression.Expr)
+    (md : (Imperative.MetaData Expression))
     : CoreTransformM (List Statement)
     :=
     conds.mapM (fun (l, check) => do
       let newLabel ← genIdent l (fun s => s!"callElimAssume_{s}")
-      return Statement.assume newLabel.toPretty (Lambda.LExpr.substFvars check.expr subst))
+      return Statement.assume newLabel.toPretty (Lambda.LExpr.substFvars check.expr subst) md)
 
 /--
 Generate the substitution pairs needed for the body of the procedure
@@ -188,78 +264,112 @@ def createOldVarsSubst
     | ((v', _), v) => (v, createFvar v')
 
 
-/- Generic runner functions -/
+/- Generic runner functions. -/
 
--- Only visit top-level statements and run f
-def runStmts (f : Command → Program → CoreTransformM (List Statement))
-    (ss : List Statement) (inputProg : Program)
-    : CoreTransformM (List Statement) := do
+/--
+Recursively visit all blocks and run f
+NOTE: please use runProgram if possible since CoreTransformState might result
+in an inconsistent state. This function is for partial implementation.
+-/
+private def runStmtsRec (f : Command → CoreTransformM (Option (List Statement)))
+    (ss : List Statement)
+    : CoreTransformM (Bool × List Statement) := do
   match ss with
-  | [] => return []
-  | s :: ss =>
-    let s' := match s with
-      | .cmd c => f c inputProg
-      | s => return [s]
-    let ss' := (runStmts f ss inputProg)
-    return (← s') ++ (← ss')
-
--- Recursively visit all blocks and run f
-def runStmtsRec (f : Command → Program → CoreTransformM (List Statement))
-    (ss : List Statement) (inputProg : Program)
-    : CoreTransformM (List Statement) := do
-  match ss with
-  | [] => return []
+  | [] => return (false, [])
   | s :: ss' =>
-    let ss'' ← (runStmtsRec f ss' inputProg)
-    let sres ← (match s with
+    let (changed0, ss'') ← (runStmtsRec f ss')
+    let (changed, sres) ← (match s with
       | .cmd c => do
-        let res ← f c inputProg
-        return res
+        let res ← f c
+        match res with
+        | .none => return (false, [s])
+        | .some s' => return (true, s')
       | .block lbl b md => do
-        let b' ← runStmtsRec f b inputProg
-        return [.block lbl b' md]
+        let (changed, b') ← runStmtsRec f b
+        return (changed, [.block lbl b' md])
       | .ite c thenb elseb md => do
-        let thenb' ← runStmtsRec f thenb inputProg
-        let elseb' ← runStmtsRec f elseb inputProg
-        return [.ite c thenb' elseb' md]
+        let (changed, thenb') ← runStmtsRec f thenb
+        let (changed', elseb') ← runStmtsRec f elseb
+        return (changed || changed', [.ite c thenb' elseb' md])
       | .loop guard measure invariant body md => do
-        let body' ← runStmtsRec f body inputProg
-        return [.loop guard measure invariant body' md]
-      | .goto _lbl _md =>
-        return [s])
-    return (sres ++ ss'')
-termination_by sizeOf ss
-decreasing_by
-  all_goals (unfold Imperative.instSizeOfBlock; decreasing_tactic)
+        let (changed, body') ← runStmtsRec f body
+        return (changed, [.loop guard measure invariant body' md])
+      | .funcDecl _ _ =>
+        return (false, [s])  -- Function declarations pass through unchanged
+      | .typeDecl _ _ =>
+        return (false, [s])  -- Type declarations pass through unchanged
+      | .exit _lbl _md =>
+        return (false, [s]))
+    return ⟨changed0 || changed, (sres ++ ss'')⟩
 
-def runProcedures (f : Command → Program → CoreTransformM (List Statement))
-    (dcls : List Decl) (inputProg : Program)
-    : CoreTransformM (List Decl) := do
+/--
+Visit all procedures and run f. The returned Bool corresponds to whether the
+program has been updated.
+NOTE: please use runProgram if possible since CoreTransformState might result
+in an inconsistent state. This function is for partial implementation.
+-/
+private def runProcedures
+    (f : Command → CoreTransformM (Option (List Statement)))
+    (dcls : List Decl)
+    (targetProcList : Option (List String) := .none)
+    : CoreTransformM (Bool × List Decl) := do
   match dcls with
-  | [] => return []
+  | [] => return (false, [])
   | d :: ds =>
     match d with
-    | .proc p md =>
-      return Decl.proc {
-          p with body := ← (runStmtsRec f p.body inputProg)
-        } md :: (← (runProcedures f ds inputProg))
-    | _ => return d :: (← (runProcedures f ds inputProg))
+    | .proc proc md =>
+      if (match targetProcList with
+         | .none => true
+         | .some p => proc.header.name.1 ∈ p) then
+        modify (fun σ => { σ with
+          currentProcedureName := .some proc.header.name.1
+        })
+        let (changed, new_body) ← runStmtsRec f proc.body
+        let (changed', new_procs) ← runProcedures (targetProcList := targetProcList) f ds
+        return (changed || changed',
+          Decl.proc {
+            proc with body := new_body
+          } md :: new_procs)
+      else
+        let (changed', new_procs) ← runProcedures (targetProcList := targetProcList) f ds
+        return (changed', d :: new_procs)
+    | _ =>
+      let (changed', new_procs) ← runProcedures (targetProcList := targetProcList) f ds
+      return (changed', d :: new_procs)
 
-def runProgram (f : Command → Program → CoreTransformM (List Statement))
-    (p : Program) : CoreTransformM Program := do
-  let newDecls ← runProcedures f p.decls p
-  return { decls := newDecls }
+
+/--
+Run f on each command of the program.
+Returns (has the program updated?, the updated program).
+If targetProcList is .none, apply f to all statements in every procedure.
+If targetProcList is .some l, apply f to statements that are in procedures
+listed in l only.
+-/
+def runProgram
+    (f : Command → CoreTransformM (Option (List Statement)))
+    (p : Program)
+    (targetProcList : Option (List String) := .none)
+  : CoreTransformM (Bool × Program) := do
+  modify (fun σ => { σ with currentProgram := .some p })
+  let (changed, newDecls) ← runProcedures
+    (targetProcList := targetProcList) f p.decls
+  let newProg := { decls := newDecls }
+  modify (fun σ => { σ with
+    currentProgram := .some newProg,
+    currentProcedureName := .none
+  })
+  return (changed, newProg)
 
 
 @[simp]
 def runWith {α : Type} (p : α) (f : α → CoreTransformM β)
-    (s : CoreGenState):
-  Except Err β × CoreGenState :=
+    (s : CoreTransformState):
+  Except Err β × CoreTransformState :=
   (StateT.run (f p) s)
 
 @[simp]
 def run {α : Type} (p : α) (f : α → CoreTransformM β)
-      (s : CoreGenState := .emp):
+      (s : CoreTransformState := .emp):
   Except Err β :=
   (runWith p f s).fst
 

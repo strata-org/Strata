@@ -170,9 +170,9 @@ instance : ToFormat (Cmds PureExpr × State) where
 /- Tests -/
 
 private def testProgram1 : Cmds PureExpr :=
-  [.init "x" .Num (.Num 0),
-   .set "x" (.Plus (.Var "x" .none) (.Num 100)),
-   .assert "x_value_eq" (.Eq (.Var "x" .none) (.Num 100))]
+  [.init "x" .Num (some (.Num 0)) .empty,
+   .set "x" (.Plus (.Var "x" .none) (.Num 100)) .empty,
+   .assert "x_value_eq" (.Eq (.Var "x" .none) (.Num 100)) .empty]
 
 /--
 info: Commands:
@@ -198,9 +198,9 @@ genNum: 0
 
 
 private def testProgram2 : Cmds PureExpr :=
-  [.init "x" .Num (.Var "y" .none),
-   .havoc "x",
-   .assert "x_value_eq" (.Eq (.Var "x" .none) (.Num 100))]
+  [.init "x" .Num (some (.Var "y" .none)) .empty,
+   .havoc "x" .empty,
+   .assert "x_value_eq" (.Eq (.Var "x" .none) (.Num 100)) .empty]
 
 /--
 info: Commands:

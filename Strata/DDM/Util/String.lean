@@ -5,6 +5,7 @@
 -/
 module
 import all Init.Data.String.Defs
+import all Strata.DDM.Util.ByteArray
 
 /-
 This file contains auxillary definitions for String.
@@ -27,12 +28,9 @@ Indicates s has a substring at the given index.
 
 Requires a bound check that shows index is in bounds.
 -/
-private def hasSubstringAt (s sub : String) (i : Pos.Raw) (index_bound : i.byteIdx + sub.utf8ByteSize ≤ s.utf8ByteSize) : Bool :=
-  sub.bytes.size.all fun j jb =>
-    have p : i.byteIdx + j < s.bytes.size := by
-      change i.byteIdx + sub.bytes.size ≤ s.bytes.size at index_bound
-      grind
-    s.bytes[i.byteIdx + j]'p == sub.bytes[j]
+private def hasSubstringAt (s sub : String) (i : Pos.Raw)
+              (index_bound : i.byteIdx + sub.utf8ByteSize ≤ s.utf8ByteSize) : Bool :=
+  s.toByteArray.startsWith' (offset := i.byteIdx) sub.toByteArray index_bound
 
 /--
 Auxiliary for `indexOf`. Preconditions:

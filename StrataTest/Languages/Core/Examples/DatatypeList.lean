@@ -87,7 +87,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify "cvc5" listTesterPgm (options := .quiet)
+#eval verify listTesterPgm (options := .quiet)
 
 ---------------------------------------------------------------------
 -- Test 2: List with Havoc (requires SMT reasoning)
@@ -133,7 +133,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify "cvc5" listHavocPgm (options := .quiet)
+#eval verify listHavocPgm (options := .quiet)
 
 ---------------------------------------------------------------------
 -- Test 3: List Exhaustiveness (exactly one tester is true)
@@ -176,7 +176,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify "cvc5" listExhaustivePgm (options := .quiet)
+#eval verify listExhaustivePgm (options := .quiet)
 
 ---------------------------------------------------------------------
 -- Test 4: List Mutual Exclusion (testers are mutually exclusive)
@@ -222,7 +222,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify "cvc5" listMutualExclusionPgm (options := .quiet)
+#eval verify listMutualExclusionPgm (options := .quiet)
 
 ---------------------------------------------------------------------
 -- Test 5: List Constructor Equality
@@ -277,7 +277,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify "cvc5" listEqualityPgm (options := .quiet)
+#eval verify listEqualityPgm (options := .quiet)
 
 ---------------------------------------------------------------------
 -- Test 6: List Constructor Inequality
@@ -321,7 +321,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify "cvc5" listInequalityPgm (options := .quiet)
+#eval verify listInequalityPgm (options := .quiet)
 
 ---------------------------------------------------------------------
 -- Test 7: List Destructor Functions (head and tail)
@@ -346,23 +346,23 @@ spec {
   xs := Cons(42, Nil());
 
   // Extract the head using the destructor function
-  h := List..head(xs);
+  h := List..head!(xs);
 
   // Assert the extracted head is correct
   assert [headIs42]: h == 42;
 
   // Extract the tail using the destructor function
-  t := List..tail(xs);
+  t := List..tail!(xs);
 
   // Assert the tail is Nil
   assert [tailIsNil]: List..isNil(t);
 
   // Test with a longer list
   xs := Cons(10, Cons(20, Nil()));
-  h := List..head(xs);
+  h := List..head!(xs);
   assert [headIs10]: h == 10;
 
-  t := List..tail(xs);
+  t := List..tail!(xs);
   assert [tailIsCons]: List..isCons(t);
 };
 #end
@@ -394,7 +394,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify "cvc5" listDestructorPgm (options := .quiet)
+#eval verify listDestructorPgm (options := .quiet)
 
 ---------------------------------------------------------------------
 -- Test 8: Nested List Operations (head of tail)
@@ -431,6 +431,14 @@ spec {
 
 /--
 info:
+Obligation: set_second_calls_List..head_0
+Property: assert
+Result: ✅ pass
+
+Obligation: set_second_calls_List..tail_1
+Property: assert
+Result: ✅ pass
+
 Obligation: secondIs2
 Property: assert
 Result: ✅ pass
@@ -440,7 +448,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify "cvc5" listNestedPgm (options := .quiet)
+#eval verify listNestedPgm (options := .quiet)
 
 ---------------------------------------------------------------------
 -- Test 9: List Destructor with Havoc (requires SMT reasoning)
@@ -481,6 +489,10 @@ spec {
 
 /--
 info:
+Obligation: set_h_calls_List..head_0
+Property: assert
+Result: ✅ pass
+
 Obligation: headIs100
 Property: assert
 Result: ✅ pass
@@ -490,7 +502,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify "cvc5" listDestructorHavocPgm (options := .quiet)
+#eval verify listDestructorHavocPgm (options := .quiet)
 
 ---------------------------------------------------------------------
 -- Test 10: List with Different Values (inequality of different heads)
@@ -534,6 +546,6 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify "cvc5" listDifferentValuesPgm (options := .quiet)
+#eval verify listDifferentValuesPgm (options := .quiet)
 
 end Strata.DatatypeListTest

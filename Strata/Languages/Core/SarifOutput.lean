@@ -27,17 +27,14 @@ def outcomeToLevel : Outcome → Level
   | .implementationError _ => .error
 
 /-- Convert Core Outcome to a descriptive message -/
-def outcomeToMessage (outcome : Outcome) (smtResult : SMT.Result) : String :=
+def outcomeToMessage (outcome : Outcome) (cex : LExprModel) : String :=
   match outcome with
   | .pass => "Verification succeeded"
   | .fail =>
-    match smtResult with
-    | .sat m =>
-      if m.isEmpty then
-        "Verification failed"
-      else
-        s!"Verification failed with counterexample: {Std.format m}"
-    | _ => "Verification failed"
+    if cex.isEmpty then
+      "Verification failed"
+    else
+      s!"Verification failed with counterexample: {Std.format cex}"
   | .unknown => "Verification result unknown (solver timeout or incomplete)"
   | .implementationError msg => s!"Verification error: {msg}"
 
@@ -53,18 +50,27 @@ def extractLocation (files : Map Strata.Uri Lean.FileMap) (md : Imperative.MetaD
     pure { uri, startLine := startPos.line, startColumn := startPos.column }
   | _ => none
 
+/-- Convert PropertyType to a property classification string for SARIF output -/
+def propertyTypeToClassification : Imperative.PropertyType → String
+  | .divisionByZero => "division-by-zero"
+  | .cover => "cover"
+  | .assert => "assert"
+
 /-- Convert a VCResult to a SARIF Result -/
 def vcResultToSarifResult (files : Map Strata.Uri Lean.FileMap) (vcr : VCResult) : Strata.Sarif.Result :=
   let ruleId := vcr.obligation.label
+  let classification := propertyTypeToClassification vcr.obligation.property
   let level := outcomeToLevel vcr.result
-  let messageText := outcomeToMessage vcr.result vcr.smtResult
+  let messageText :=
+    if vcr.isUnreachable then "Path is unreachable"
+    else outcomeToMessage vcr.result vcr.lexprModel
   let message : Strata.Sarif.Message := { text := messageText }
 
   let locations := match extractLocation files vcr.obligation.metadata with
     | some loc => #[locationToSarif loc]
     | none => #[]
 
-  { ruleId, level, message, locations }
+  { ruleId, level, message, locations, properties := { propertyType := classification } }
 
 /-- Convert VCResults to a SARIF document -/
 def vcResultsToSarif (files : Map Strata.Uri Lean.FileMap) (vcResults : VCResults) : Strata.Sarif.SarifDocument :=
@@ -85,3 +91,19 @@ def vcResultsToSarif (files : Map Strata.Uri Lean.FileMap) (vcResults : VCResult
     runs := #[run] }
 
 end Core.Sarif
+
+/-- Write SARIF output for verification results to a file.
+    `files` maps source URIs to their file maps for location resolution.
+    `vcResults` are the verification results to encode.
+    `outputPath` is the path to write the SARIF JSON to. -/
+def Core.Sarif.writeSarifOutput
+    (files : Map Strata.Uri Lean.FileMap)
+    (vcResults : Core.VCResults)
+    (outputPath : String) : IO Unit := do
+  let sarifDoc := Core.Sarif.vcResultsToSarif files vcResults
+  let sarifJson := Strata.Sarif.toPrettyJsonString sarifDoc
+  try
+    IO.FS.writeFile outputPath sarifJson
+    IO.println s!"SARIF output written to {outputPath}"
+  catch e =>
+    IO.eprintln s!"Error writing SARIF output to {outputPath}: {e.toString}"

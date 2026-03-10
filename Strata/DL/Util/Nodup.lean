@@ -3,6 +3,9 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
+
+public section
 
 /-! ## No Duplication Properties
   This file contains theormes related to `List.Nodup` property. The main theorem
@@ -168,9 +171,10 @@ theorem loop_shrink_nodup : ∀ α {h: α} {t l l' : List α} [BEq α] [LawfulBE
         rw [Heq1] at H
         have Heq2 : (h' :: (l' ++ l)) = ((h' :: l') ++ l) := by rfl
         rw [Heq2]
-        split <;> try simp_all
-        . grind
-        . apply t_ih <;> assumption
+        split
+        · apply @t_ih h
+          grind
+        · apply t_ih <;> assumption
 
 theorem loop_insert_nodup : ∀ α {h : α} {t l l': List α} [BEq α] [LawfulBEq α],
   ¬ h ∈ l → ¬ h ∈ l' →
@@ -297,3 +301,5 @@ theorem filter_nodup : as.Nodup → (List.filter p as).Nodup := by
   induction as <;> simp [List.filter]
   case cons h t ih =>
   split <;> simp_all
+
+end

@@ -666,7 +666,7 @@ info: B3: .program
             (.intLit () 0)))])]
 ---
 info:
-procedure withAutoinv(x : int autoinv x + y >= 0, y : int autoinv y >= -(x))
+procedure withAutoinv(x : int autoinv x + y >= 0, y : int autoinv y >= -x)
 {
   check x >= 0
 }

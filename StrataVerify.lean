@@ -12,12 +12,14 @@ import Strata.Languages.B3.Verifier.Program
 import Strata.Util.IO
 import Std.Internal.Parsec
 
+open Core (VerifyOptions defaultSolver)
+
 open Strata
 
-def parseOptions (args : List String) : Except Std.Format (Options × String × Option (List String)) :=
-  go Options.quiet args none
+def parseOptions (args : List String) : Except Std.Format (VerifyOptions × String × Option (List String)) :=
+  go .quiet args none
     where
-      go : Options → List String → Option (List String) → Except Std.Format (Options × String × Option (List String))
+      go : VerifyOptions → List String → Option (List String) → Except Std.Format (VerifyOptions × String × Option (List String))
       | opts, "--verbose" :: rest, procs => go {opts with verbose := .normal} rest procs
       | opts, "--check" :: rest, procs => go {opts with checkOnly := true} rest procs
       | opts, "--type-check" :: rest, procs => go {opts with typeCheckOnly := true} rest procs
@@ -25,14 +27,19 @@ def parseOptions (args : List String) : Except Std.Format (Options × String × 
       | opts, "--stop-on-first-error" :: rest, procs => go {opts with stopOnFirstError := true} rest procs
       | opts, "--sarif" :: rest, procs => go {opts with outputSarif := true} rest procs
       | opts, "--output-format=sarif" :: rest, procs => go {opts with outputSarif := true} rest procs
+      | opts, "--vc-directory" :: dir :: rest, procs =>
+        go { opts with vcDirectory := .some dir } rest procs
       | opts, "--procedures" :: procList :: rest, _ =>
          let procs := procList.splitToList (· == ',')
          go opts rest (some procs)
+      | opts, "--solver" :: solverName :: rest, procs =>
+         go {opts with solver := solverName} rest procs
       | opts, "--solver-timeout" :: secondsStr :: rest, procs =>
          let n? := String.toNat? secondsStr
          match n? with
          | .none => .error f!"Invalid number of seconds: {secondsStr}"
          | .some n => go {opts with solverTimeout := n} rest procs
+      | opts, "--reach-check" :: rest, procs => go {opts with reachCheck := true} rest procs
       | opts, [file], procs => pure (opts, file, procs)
       | _, [], _ => .error "StrataVerify requires a file as input"
       | _, args, _ => .error f!"Unknown options: {args}"
@@ -49,7 +56,10 @@ def usageMessage : Std.Format :=
   --stop-on-first-error       Exit after the first verification error.{Std.Format.line}  \
   --procedures <proc1,proc2>  Verify only the specified procedures (comma-separated).{Std.Format.line}  \
   --sarif                     Output results in SARIF format to <file>.sarif{Std.Format.line}  \
-  --output-format=sarif       Output results in SARIF format to <file>.sarif"
+  --output-format=sarif       Output results in SARIF format to <file>.sarif{Std.Format.line}  \
+  --vc-directory=<dir>        Store VCs in SMT-Lib format in <dir>{Std.Format.line}  \
+  --solver <name>             SMT solver executable to use (default: {defaultSolver}){Std.Format.line}  \
+  --reach-check               Enable reachability checks for all asserts and covers."
 
 def main (args : List String) : IO UInt32 := do
   let parseResult := parseOptions args
@@ -83,13 +93,13 @@ def main (args : List String) : IO UInt32 := do
       else -- !typeCheckOnly
         let vcResults ← try
           if file.endsWith ".csimp.st" then
-            C_Simp.verify "z3" pgm opts
+            C_Simp.verify pgm opts
           else if file.endsWith ".b3.st" || file.endsWith ".b3cst.st" then
             -- B3 verification (different model, handle inline)
             let ast ← match B3.Verifier.programToB3AST pgm with
               | Except.error msg => throw (IO.userError s!"Failed to convert to B3 AST: {msg}")
               | Except.ok ast => pure ast
-            let solver ← B3.Verifier.createInteractiveSolver "z3"
+            let solver ← B3.Verifier.createInteractiveSolver opts.solver
             let reports ← B3.Verifier.programToSMT ast solver
             -- B3 uses a different result format, print directly and return empty array
             for report in reports do
@@ -106,7 +116,7 @@ def main (args : List String) : IO UInt32 := do
                 IO.println s!"  {marker} {desc}"
             pure #[]  -- Return empty array since B3 prints directly
           else
-            verify "z3" pgm inputCtx proceduresToVerify opts
+            verify pgm inputCtx proceduresToVerify opts
         catch e =>
           println! f!"{e}"
           return (1 : UInt32)
@@ -123,14 +133,7 @@ def main (args : List String) : IO UInt32 := do
             -- Create a files map with the single input file
             let uri := Strata.Uri.file file
             let files := Map.empty.insert uri inputCtx.fileMap
-            let sarifDoc := Core.Sarif.vcResultsToSarif files vcResults
-            let sarifJson := Strata.Sarif.toPrettyJsonString sarifDoc
-            let sarifFile := file ++ ".sarif"
-            try
-              IO.FS.writeFile sarifFile sarifJson
-              println! f!"SARIF output written to {sarifFile}"
-            catch e =>
-              println! f!"Error writing SARIF output to {sarifFile}: {e.toString}"
+            Core.Sarif.writeSarifOutput files vcResults (file ++ ".sarif")
 
         -- Also output standard format
         for vcResult in vcResults do

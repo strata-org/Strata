@@ -23,8 +23,8 @@ spec {
   modifies counter;
   requires [counter_ge_zero]: (counter >= 0);
   requires [a_positive]:      (a > 0);
-  ensures  [new_g_value]:     (counter == old(counter) + a);
-  ensures  [old_g_property]:  (ret - a == old(counter));
+  ensures  [new_g_value]:     (counter == old counter + a);
+  ensures  [old_g_property]:  (ret - a == old counter);
 }
 {
   counter := Add(counter, a);
@@ -35,7 +35,7 @@ procedure P() returns (b : int)
 spec {
   modifies counter;
   requires [counter_ge_zero]: (counter >= 0);
-  ensures [return_value_lemma]: (b == old(counter) + 16);
+  ensures [return_value_lemma]: (b == old counter + 16);
 }
 {
   call b := Inc(8);
@@ -52,8 +52,11 @@ procedure Q2() returns () {
 #end
 
 /--
-info: { callees := Std.HashMap.ofList [("Inc", []), ("Q2", ["Q1"]), ("P", ["Inc"]), ("Q1", [])],
-  callers := Std.HashMap.ofList [("Inc", ["P"]), ("Q1", ["Q2"])] }
+info: { callees := Std.HashMap.ofList [("Inc", Std.HashMap.ofList []),
+              ("Q2", Std.HashMap.ofList [("Q1", 1)]),
+              ("P", Std.HashMap.ofList [("Inc", 2)]),
+              ("Q1", Std.HashMap.ofList [])],
+  callers := Std.HashMap.ofList [("Inc", Std.HashMap.ofList [("P", 2)]), ("Q1", Std.HashMap.ofList [("Q2", 1)])] }
 -/
 #guard_msgs in
 #eval let (program, _) := Core.getProgram globalCounterPgm
@@ -67,71 +70,66 @@ VCs:
 Label: new_g_value
 Property: assert
 Assumptions:
-(counter_ge_zero, ((~Int.Ge $__counter0) #0))
-(a_positive, ((~Int.Gt $__a1) #0))
-
-Proof Obligation:
-#true
+counter_ge_zero: $__counter1 >= 0
+a_positive: $__a2 > 0
+Obligation:
+true
 
 Label: old_g_property
 Property: assert
 Assumptions:
-(counter_ge_zero, ((~Int.Ge $__counter0) #0))
-(a_positive, ((~Int.Gt $__a1) #0))
-
-Proof Obligation:
-(((~Int.Sub ((~Int.Add $__counter0) $__a1)) $__a1) == $__counter0)
-
-Label: (Origin_Inc_Requires)counter_ge_zero
-Property: assert
-Assumptions:
-(counter_ge_zero, ((~Int.Ge $__counter3) #0))
-
-Proof Obligation:
-((~Int.Ge $__counter3) #0)
-
-Label: (Origin_Inc_Requires)a_positive
-Property: assert
-Assumptions:
-(counter_ge_zero, ((~Int.Ge $__counter3) #0))
-
-Proof Obligation:
-#true
+counter_ge_zero: $__counter1 >= 0
+a_positive: $__a2 > 0
+Obligation:
+$__counter1 + $__a2 - $__a2 == $__counter1
 
 Label: (Origin_Inc_Requires)counter_ge_zero
 Property: assert
 Assumptions:
-(counter_ge_zero, ((~Int.Ge $__counter3) #0))
-((Origin_Inc_Ensures)new_g_value, ($__counter6 == ((~Int.Add $__counter3) #8))) ((Origin_Inc_Ensures)old_g_property, (((~Int.Sub $__b5) #8) == $__counter3))
-
-Proof Obligation:
-((~Int.Ge $__counter6) #0)
+counter_ge_zero: $__counter4 >= 0
+Obligation:
+$__counter4 >= 0
 
 Label: (Origin_Inc_Requires)a_positive
 Property: assert
 Assumptions:
-(counter_ge_zero, ((~Int.Ge $__counter3) #0))
-((Origin_Inc_Ensures)new_g_value, ($__counter6 == ((~Int.Add $__counter3) #8))) ((Origin_Inc_Ensures)old_g_property, (((~Int.Sub $__b5) #8) == $__counter3))
+counter_ge_zero: $__counter4 >= 0
+Obligation:
+true
 
-Proof Obligation:
-#true
+Label: (Origin_Inc_Requires)counter_ge_zero
+Property: assert
+Assumptions:
+counter_ge_zero: $__counter4 >= 0
+(Origin_Inc_Ensures)new_g_value: $__counter7 == $__counter4 + 8
+(Origin_Inc_Ensures)old_g_property: $__b6 - 8 == $__counter4
+Obligation:
+$__counter7 >= 0
+
+Label: (Origin_Inc_Requires)a_positive
+Property: assert
+Assumptions:
+counter_ge_zero: $__counter4 >= 0
+(Origin_Inc_Ensures)new_g_value: $__counter7 == $__counter4 + 8
+(Origin_Inc_Ensures)old_g_property: $__b6 - 8 == $__counter4
+Obligation:
+true
 
 Label: return_value_lemma
 Property: assert
 Assumptions:
-(counter_ge_zero, ((~Int.Ge $__counter3) #0))
-((Origin_Inc_Ensures)new_g_value, ($__counter6 == ((~Int.Add $__counter3) #8))) ((Origin_Inc_Ensures)old_g_property, (((~Int.Sub $__b5) #8) == $__counter3)) ((Origin_Inc_Ensures)new_g_value, ($__counter8 == ((~Int.Add $__counter6) #8))) ((Origin_Inc_Ensures)old_g_property, (((~Int.Sub $__b7) #8) == $__counter6))
-
-Proof Obligation:
-($__b7 == ((~Int.Add $__counter3) #16))
+counter_ge_zero: $__counter4 >= 0
+(Origin_Inc_Ensures)new_g_value: $__counter7 == $__counter4 + 8
+(Origin_Inc_Ensures)old_g_property: $__b6 - 8 == $__counter4
+(Origin_Inc_Ensures)new_g_value: $__counter9 == $__counter7 + 8
+(Origin_Inc_Ensures)old_g_property: $__b8 - 8 == $__counter7
+Obligation:
+$__b8 == $__counter4 + 16
 
 Label: assert_0
 Property: assert
-Assumptions:
-
-
-Proof Obligation:
-#true
+Obligation:
+true
 
 ---
 info:
@@ -168,7 +166,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify "cvc5" globalCounterPgm
+#eval verify globalCounterPgm
 
 ---------------------------------------------------------------------
 

@@ -11,6 +11,7 @@ import Strata.Languages.Core.CoreGen
 import Strata.Languages.Core.ProgramWF
 import Strata.Languages.Core.Statement
 import Strata.Transform.CoreTransform
+import Strata.Util.Tactics
 
 /-! # Procedure Inlining Transformation -/
 
@@ -19,82 +20,11 @@ namespace ProcedureInlining
 
 open Transform
 
-mutual
-def Block.substFvar (b : Block) (fr:Expression.Ident)
-      (to:Expression.Expr) : Block :=
-  List.map (fun s => Statement.substFvar s fr to) b
-  termination_by b.sizeOf
-  decreasing_by apply Imperative.sizeOf_stmt_in_block; assumption
-
-def Statement.substFvar (s : Core.Statement)
-      (fr:Expression.Ident)
-      (to:Expression.Expr) : Statement :=
-  match s with
-  | .init lhs ty rhs metadata =>
-    .init lhs ty (Lambda.LExpr.substFvar rhs fr to) metadata
-  | .set lhs rhs metadata =>
-    .set lhs (Lambda.LExpr.substFvar rhs fr to) metadata
-  | .havoc _ _ => s
-  | .assert lbl b metadata =>
-    .assert lbl (Lambda.LExpr.substFvar b fr to) metadata
-  | .assume lbl b metadata =>
-    .assume lbl (Lambda.LExpr.substFvar b fr to) metadata
-  | .cover lbl b metadata =>
-    .cover lbl (Lambda.LExpr.substFvar b fr to) metadata
-  | .call lhs pname args metadata =>
-    .call lhs pname (List.map (Lambda.LExpr.substFvar · fr to) args) metadata
-
-  | .block lbl b metadata =>
-    .block lbl (Block.substFvar b fr to) metadata
-  | .ite cond thenb elseb metadata =>
-    .ite (Lambda.LExpr.substFvar cond fr to) (Block.substFvar thenb fr to)
-          (Block.substFvar elseb fr to) metadata
-  | .loop guard measure invariant body metadata =>
-    .loop (Lambda.LExpr.substFvar guard fr to)
-          (Option.map (Lambda.LExpr.substFvar · fr to) measure)
-          (Option.map (Lambda.LExpr.substFvar · fr to) invariant)
-          (Block.substFvar body fr to)
-          metadata
-  | .goto _ _ => s
-  termination_by s.sizeOf
-end
-
-mutual
-def Block.renameLhs (b : Block) (fr: Lambda.Identifier Visibility) (to: Lambda.Identifier Visibility) : Block :=
-  List.map (fun s => Statement.renameLhs s fr to) b
-  termination_by b.sizeOf
-  decreasing_by apply Imperative.sizeOf_stmt_in_block; assumption
-
-def Statement.renameLhs (s : Core.Statement) (fr: Lambda.Identifier Visibility) (to: Lambda.Identifier Visibility)
-    : Statement :=
-  match s with
-  | .init lhs ty rhs metadata =>
-    .init (if lhs.name == fr then to else lhs) ty rhs metadata
-  | .set lhs rhs metadata =>
-    .set (if lhs.name == fr then to else lhs) rhs metadata
-  | .call lhs pname args metadata =>
-    .call (lhs.map (fun l =>
-      if l.name == fr  then to else l)) pname args metadata
-  | .block lbl b metadata =>
-    .block lbl (Block.renameLhs b fr to) metadata
-  | .ite x thenb elseb m =>
-    .ite x (Block.renameLhs thenb fr to) (Block.renameLhs elseb fr to) m
-  | .loop m g i b md =>
-    .loop m g i (Block.renameLhs b fr to) md
-  | .havoc l md => .havoc (if l.name == fr then to else l) md
-  | .assert _ _ _ | .assume _ _ _ | .cover _ _ _ | .goto _ _ => s
-  termination_by s.sizeOf
-end
-
--- Unlike Stmt.hasLabel, this gathers labels in assert and assume as well.
+-- Gathers all labels including those in assert and assume.
 mutual
 def Block.labels (b : Block): List String :=
   List.flatMap (fun s => Statement.labels s) b
-  termination_by b.sizeOf
-  decreasing_by apply Imperative.sizeOf_stmt_in_block; assumption
 
--- Assume and Assert's labels have special meanings, so they must not be
--- mangled during procedure inlining.
 def Statement.labels (s : Core.Statement) : List String :=
   match s with
   | .block lbl b _ => lbl :: (Block.labels b)
@@ -103,18 +33,17 @@ def Statement.labels (s : Core.Statement) : List String :=
   | .assume lbl _ _ => [lbl]
   | .assert lbl _ _ => [lbl]
   | .cover lbl _ _ => [lbl]
-  | .goto _ _ => []
+  | .exit _ _ => []
   -- No other labeled commands.
   | .cmd _ => []
-  termination_by s.sizeOf
+  | .funcDecl _ _ => []
+  | .typeDecl _ _ => []
 end
 
 mutual
 def Block.replaceLabels (b : Block) (map:Map String String)
     : Block :=
   b.map (fun s => Statement.replaceLabels s map)
-  termination_by b.sizeOf
-  decreasing_by apply Imperative.sizeOf_stmt_in_block; assumption
 
 def Statement.replaceLabels
     (s : Core.Statement) (map:Map String String) : Core.Statement :=
@@ -124,16 +53,17 @@ def Statement.replaceLabels
     | .some s' => s'
   match s with
   | .block lbl b m => .block (app lbl) (Block.replaceLabels b map) m
-  | .goto lbl m => .goto (app lbl) m
-  | .ite cond thenb elseb _ =>
-    .ite cond (Block.replaceLabels thenb map) (Block.replaceLabels elseb map)
+  | .exit lbl m => .exit (lbl.map app) m
+  | .ite cond thenb elseb m =>
+    .ite cond (Block.replaceLabels thenb map) (Block.replaceLabels elseb map) m
   | .loop g measure inv body m =>
     .loop g measure inv (Block.replaceLabels body map) m
   | .assume lbl e m => .assume (app lbl) e m
   | .assert lbl e m => .assert (app lbl) e m
   | .cover lbl e m => .cover (app lbl) e m
   | .cmd _ => s
-  termination_by s.sizeOf
+  | .funcDecl _ _ => s
+  | .typeDecl _ _ => s
 end
 
 
@@ -162,7 +92,7 @@ private def renameAllLocalNames (c:Procedure)
   let labels := List.flatMap (fun s => Statement.labels s) c.body
   -- Reuse genOldToFreshIdMappings by introducing dummy data to Identifier
   let label_ids:List Expression.Ident := labels.map
-      (fun s => { name:=s, metadata := Visibility.temp })
+      (fun s => { name:=s, metadata := () })
   let label_map_id <- genOldToFreshIdMappings label_ids [] proc_name
   let label_map := label_map_id.map (fun (id1,id2) => (id1.name, id2.name))
 
@@ -186,6 +116,39 @@ private def renameAllLocalNames (c:Procedure)
   return ({ c with body := new_body, header := new_header }, var_map)
 
 
+/-- Update the call graph after inlining one f(caller) -> g(callee) invocation. -/
+def updateCallGraph (cg:CallGraph) (f: String) (g: String):
+    Except Err CallGraph := do
+  -- For each edge 'g -> x', add f -> x'
+  let edges_from_g ← match cg.callees.get? g with
+    | .some r => .ok r
+    | .none => throw s!"Invalid CallGraph: can't find {g} from callees domain"
+  let edges_from_f ← match cg.callees.get? f with
+    | .some r => .ok r
+    | .none => throw s!"Invalid CallGraph: can't find {f} from callees domain"
+  let edges_from_f := edges_from_g.fold
+    (fun (edges_from_f:Std.HashMap String Nat) fn_x cnt =>
+      edges_from_f.alter fn_x (fun v =>
+        .some (match v with | .none => cnt | .some v' => cnt + v')))
+    edges_from_f
+  let callees_new := cg.callees.insert f edges_from_f
+
+  -- Now the callers. For every 'g -> x' edge, add f -> x'.
+  let callers_new ← edges_from_g.foldM
+    (fun (m:Std.HashMap String (Std.HashMap String Nat)) fn_x cnt => do
+      match m.get? fn_x with
+      | .none => throw s!"Invalid CallGraph: can't find {fn_x} from callers domain"
+      | .some edges_to_x =>
+        .ok (m.insert fn_x (edges_to_x.alter f (fun v =>
+          .some (match v with | .none => cnt | .some v' => cnt + v')))))
+    cg.callers
+
+  let cg_new : CallGraph := { callees := callees_new, callers := callers_new }
+
+  -- .. and decrement the 'f -> g' edge by 1.
+  let cg_final ← cg_new.decrementEdge f g
+  return cg_final
+
 /-
 Procedure Inlining.
 
@@ -196,15 +159,21 @@ This function does not update the specification because inlineCallStmt will not
 use the specification. This will have to change if Strata also wants to support
 the reachability query.
 -/
-def inlineCallCmd (excluded_calls:List String := [])
-                  (cmd: Command) (p : Program)
-  : CoreTransformM (List Statement) :=
+def inlineCallCmd
+    (doInline:String -> CachedAnalyses -> Bool := λ _ _ => true)
+    (cmd: Command)
+  : CoreTransformM (Option (List Statement)) :=
     open Lambda in do
     match cmd with
-      | .call lhs procName args _ =>
+      | .call lhs procName args md =>
 
-        if procName ∈ excluded_calls then return [.cmd cmd] else
+        let st ← get
+        if ¬ doInline procName st.cachedAnalyses then return .none else
 
+        let some p := (← get).currentProgram
+          | throw s!"currentProgram not set"
+        let some currProcName := (← get).currentProcedureName
+          | throw s!"currentProcedure not set"
         let some proc := Program.Procedure.find? p procName
           | throw s!"Procedure {procName} not found in program"
 
@@ -233,12 +202,13 @@ def inlineCallCmd (excluded_calls:List String := [])
         let outputTrips ← genOutExprIdentsTrip sigOutputs sigOutputs.unzip.fst
         let outputInits := createInitVars
           (outputTrips.map (fun ((tmpvar,ty),orgvar) => ((orgvar,ty),tmpvar)))
+          md
         let outputHavocs := outputTrips.map (fun
-          (_,orgvar) => Statement.havoc orgvar)
+          (_,orgvar) => Statement.havoc orgvar md)
         -- Create a var statement for each procedure input arguments.
         -- The input parameter expression is assigned to these new vars.
         --let inputTrips ← genArgExprIdentsTrip sigInputs args
-        let inputInits := createInits (sigInputs.zip args)
+        let inputInits := createInits (sigInputs.zip args) md
         -- Assign the output variables in the signature to the actual output
         -- variables used in the callee.
         let outputSetStmts :=
@@ -249,24 +219,28 @@ def inlineCallCmd (excluded_calls:List String := [])
           let outs_lhs_and_sig := List.zip lhs out_vars
           List.map
             (fun (lhs_var,out_var) =>
-              Statement.set lhs_var (.fvar () out_var (.none)))
+              Statement.set lhs_var (.fvar () out_var (.none)) md)
             outs_lhs_and_sig
 
         let stmts:List (Imperative.Stmt Core.Expression Core.Command)
           := inputInits ++ outputInits ++ outputHavocs ++ proc.body ++
              outputSetStmts
 
-        return [.block (procName ++ "$inlined") stmts]
+        -- Update CallGraph if available
+        let σ ← get
+        match σ.cachedAnalyses.callGraph with
+        | .none => modify id -- do nothing
+        | .some callGraph =>
+          let callGraph' ← updateCallGraph callGraph currProcName procName
+          set ({ σ with
+            cachedAnalyses := {
+              callGraph := .some callGraph'
+            }
+          }:CoreTransformState)
 
-      | _ => return [.cmd cmd]
+        return .some [.block (procName ++ "$inlined") stmts md]
 
-def inlineCallStmtsRec (ss: List Statement) (prog : Program)
-  : CoreTransformM (List Statement) :=
-  runStmtsRec inlineCallCmd ss prog
-
-def inlineCallL (dcls : List Decl) (prog : Program)
-  : CoreTransformM (List Decl) :=
-  runProcedures inlineCallCmd dcls prog
+      | _ => return .none
 
 end ProcedureInlining
 end Core

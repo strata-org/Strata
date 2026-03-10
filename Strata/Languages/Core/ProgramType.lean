@@ -19,9 +19,39 @@ open Std (ToFormat Format format)
 open Lambda
 open Strata (DiagnosticModel FileRange)
 
+namespace Factory
+
+def typeCheck (C : Expression.TyContext) (T : Expression.TyEnv)
+    : Except Format Expression.TyEnv :=
+  C.functions.foldlM (fun Env func => do
+    match func.body with
+    | none => .ok Env
+    | some body =>
+      if body.freeVars.idents.all (fun k => k ∈ func.inputs.keys) then
+        -- Temporarily add formals in the context.
+        let Env := Env.pushEmptyContext
+        let Env := Env.addInNewestContext func.inputPolyTypes
+        -- Type check the body and ensure that it unifies with the return type.
+        -- let (bodyty, Env) ← infer Env body
+        let (body_typed, Env) ← LExpr.resolve C Env body
+        let bodyty := body_typed.toLMonoTy
+        let (retty, Env) ← func.outputPolyType.instantiateWithCheck C Env
+        let S ← Constraints.unify [(retty, bodyty)] Env.stateSubstInfo |>.mapError format
+        let Env := Env.updateSubst S
+        let Env := Env.popContext
+        .ok Env
+      else
+        .error f!"Function body contains free variables!\n\
+                  {func}") T
+
+end Factory
 
 namespace Program
 
+/--
+Type check the program. The function assumes that all functions registered to
+C are already well-typed.
+-/
 def typeCheck (C: Core.Expression.TyContext) (Env : Core.Expression.TyEnv) (program : Program) :
   Except DiagnosticModel (Program × Core.Expression.TyEnv) := do
     -- Push a type substitution scope to store global type variables.
@@ -93,7 +123,19 @@ def typeCheck (C: Core.Expression.TyContext) (Env : Core.Expression.TyEnv) (prog
 
       | .func func _ => try
         let Env := Env.pushEmptySubstScope
-        let (func', Env) ← Function.typeCheck C Env func |>.mapError (fun e => DiagnosticModel.withRange fileRange e)
+        -- Recursive functions must not have the inline attribute.
+        if func.isRecursive && func.attr.any (· == .inline) then
+          .error (DiagnosticModel.withRange fileRange <|
+            f!"recursive function '{func.name}' cannot be marked inline")
+        -- For recursive functions, temporarily add a signature-only stub to the
+        -- context so that recursive calls in the body can reference the
+        -- function itself. Only the name and signature matter; the body is
+        -- precisely what is being type-checked.
+        let C' := if func.isRecursive then
+          C.addFactoryFunction { name := func.name, typeArgs := func.typeArgs,
+                                 inputs := func.inputs, output := func.output }
+        else C
+        let (func', Env) ← Function.typeCheck C' Env func |>.mapError (fun e => DiagnosticModel.withRange fileRange e)
         let C := C.addFactoryFunction func'
         let Env := Env.popSubstScope
         .ok (Decl.func func', C, Env)
@@ -101,8 +143,6 @@ def typeCheck (C: Core.Expression.TyContext) (Env : Core.Expression.TyEnv) (prog
             .error (e.withRangeIfUnknown fileRange)
 
     go C Env drest (decl' :: acc)
-
----------------------------------------------------------------------
 
 end Program
 end Core

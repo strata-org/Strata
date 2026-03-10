@@ -71,7 +71,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify "cvc5" enumPgm (options := .quiet)
+#eval verify enumPgm (options := .quiet)
 
 ---------------------------------------------------------------------
 -- Test 2: Enum with Havoc (requires SMT reasoning)
@@ -124,7 +124,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify "cvc5" enumHavocPgm (options := .quiet)
+#eval verify enumHavocPgm (options := .quiet)
 
 ---------------------------------------------------------------------
 -- Test 3: Enum Exhaustiveness (exactly one tester is true)
@@ -167,6 +167,6 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify "cvc5" enumExhaustivePgm (options := .quiet)
+#eval verify enumExhaustivePgm (options := .quiet)
 
 end Strata.DatatypeEnumTest

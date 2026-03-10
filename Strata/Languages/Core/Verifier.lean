@@ -5,13 +5,16 @@
 -/
 
 import Strata.Languages.Core.DDMTransform.Translate
+import Strata.Languages.Core.DDMTransform.ASTtoCST
 import Strata.Languages.Core.Options
 import Strata.Languages.Core.CallGraph
 import Strata.Languages.Core.SMTEncoder
 import Strata.DL.Imperative.MetaData
 import Strata.DL.Imperative.SMTUtils
-import Strata.DL.SMT.CexParser
 import Strata.DDM.AST
+import Strata.Transform.CallElim
+import Strata.Transform.FilterProcedures
+import Strata.Transform.PrecondElim
 
 ---------------------------------------------------------------------
 
@@ -21,8 +24,11 @@ open Strata.SMT.Encoder
 open Strata
 
 -- Derived from Strata.SMT.Encoder.encode.
-def encodeCore (ctx : Core.SMT.Context) (prelude : SolverM Unit) (ts : List Term) :
-  SolverM (List String × EncoderState) := do
+def encodeCore (ctx : Core.SMT.Context) (prelude : SolverM Unit)
+    (assumptionTerms : List Term) (obligationTerm : Term)
+    (md : Imperative.MetaData Core.Expression)
+    (reachCheck : Bool := false) :
+    SolverM (List String × EncoderState) := do
   Solver.reset
   Solver.setLogic "ALL"
   prelude
@@ -33,9 +39,20 @@ def encodeCore (ctx : Core.SMT.Context) (prelude : SolverM Unit) (ts : List Term
   let (_axms, estate) ← ctx.axms.mapM (fun ax => encodeTerm False ax) |>.run estate
   for id in _axms do
     Solver.assert id
-  let (ids, estate) ← ts.mapM (encodeTerm False) |>.run estate
-  for id in ids do
+  -- Assert assumption terms
+  let (assumptionIds, estate) ← assumptionTerms.mapM (encodeTerm False) |>.run estate
+  for id in assumptionIds do
     Solver.assert id
+  -- Optional reachability check-sat
+  if reachCheck then
+    Solver.comment "Reachability check"
+    Imperative.SMT.addLocationInfo (P := Core.Expression) (md := md)
+      (message := ("unsat-message", s!"\"Path condition unreachable\""))
+    let _ ← Solver.checkSat []
+  -- Assert obligation term
+  let (obligationId, estate) ← (encodeTerm False obligationTerm) |>.run estate
+  Solver.assert obligationId
+  Solver.comment "Proof check"
   let ids := estate.ufs.values
   return (ids, estate)
 
@@ -46,117 +63,15 @@ end Strata.SMT.Encoder
 namespace Core.SMT
 open Std (ToFormat Format format)
 open Lambda Strata.SMT
--- (TODO) Use DL.Imperative.SMTUtils.
 
-abbrev SMTModel := Map (IdentT LMonoTy Visibility) String
+private def typedVarToSMTFn (ctx : SMT.Context) (id : Core.Expression.Ident)
+  (ty : Core.Expression.Ty) := do
+    -- Type of identifier has to be monotye
+    let some mty := LTy.toMonoType? ty | .error s!"not monotype: {id}"
+    let (ty', _) ← LMonoTy.toSMTType Env.init mty ctx
+    return (id.name, ty')
 
-def SMTModel.format (model : SMTModel) : Format :=
-  match model with
-  | [] => ""
-  | [((k, _), v)] => f!"({k}, {v})"
-  | ((k, _), v) :: rest =>
-    (f!"({k}, {v}) ") ++ SMTModel.format rest
-
-instance : ToFormat SMTModel where
-  format := SMTModel.format
-
-/--
-Find the Id for the SMT encoding of `x`.
--/
-def getSMTId (x : (IdentT LMonoTy Visibility)) (ctx : SMT.Context) (E : EncoderState)
-    : Except Format String := do
-  match x with
-  | (var, none) => .error f!"Expected variable {var} to be annotated with a type!"
-  | (var, some ty) => do
-    -- NOTE: OK to use Env.init here because ctx should already contain datatypes
-    let (ty', _) ← LMonoTy.toSMTType Env.init ty ctx
-    let key : Strata.SMT.UF := { id := var.name, args := [], out := ty' }
-    .ok (E.ufs[key]!)
-
-def getModel (m : String) : Except Format (List Strata.SMT.CExParser.KeyValue) := do
-  let cex ← Strata.SMT.CExParser.parseCEx m
-  return cex.pairs
-
-def processModel
-  (vars : List (IdentT LMonoTy Visibility)) (cexs : List Strata.SMT.CExParser.KeyValue)
-  (ctx : SMT.Context) (E : EncoderState) :
-  Except Format SMTModel := do
-  match vars with
-  | [] => return []
-  | var :: vrest =>
-    let id ← getSMTId var ctx E
-    let value ← findModelValue id cexs
-    let pair := (var, value)
-    let rest ← processModel vrest cexs ctx E
-    .ok (pair :: rest)
-  where findModelValue id cexs : Except Format String :=
-    match cexs.find? (fun p => p.key == id) with
-    | none => .error f!"Cannot find model for id: {id}"
-    | some p => .ok p.value
-
-inductive Result where
-  -- Also see Strata.SMT.Decision.
-  | sat (m : SMTModel)
-  | unsat
-  | unknown
-  | err (msg : String)
-deriving DecidableEq, Repr
-
-def Result.isSat (r : Result) : Bool :=
-  match r with | .sat _ => true | _ => false
-
-def Result.formatWithVerbose (r : Result) (verbose : Bool) : Format :=
-  match r with
-  | .sat m  =>
-    if (not verbose) || m.isEmpty then
-      f!"sat"
-    else f!"sat\nModel: {m}"
-  | .unsat => f!"unsat"
-  | .unknown => f!"unknown"
-  | .err msg => f!"err {msg}"
-
-instance : ToFormat Result where
-  format r := r.formatWithVerbose true
-
-def Result.formatModelIfSat (r : Result) (verbose : Bool) : Format :=
-  match r with
-  | .sat m =>
-    if (not verbose) || m.isEmpty then
-      f!""
-    else
-      f!"\nModel:\n{m}"
-  | _ => f!""
-
-def runSolver (solver : String) (args : Array String) : IO IO.Process.Output := do
-  let output ← IO.Process.output {
-    cmd := solver
-    args := args
-  }
-  -- dbg_trace f!"runSolver: exitcode: {repr output.exitCode}\n\
-  --                         stderr: {repr output.stderr}\n\
-  --                         stdout: {repr output.stdout}"
-  return output
-
-def solverResult (vars : List (IdentT LMonoTy Visibility)) (output : IO.Process.Output)
-    (ctx : SMT.Context) (E : EncoderState) :
-  Except Format Result := do
-  let stdout := output.stdout
-  let pos := (stdout.find (fun c => c == '\n')).byteIdx
-  let verdict := (stdout.take pos).trim
-  let rest := stdout.drop pos
-  match verdict with
-  | "sat"     =>
-    let rawModel ← getModel rest
-    -- We suppress any model processing errors.
-    -- Likely, these would be because of the suboptimal implementation
-    -- of the model parser, which shouldn't hold back useful
-    -- feedback (i.e., problem was `sat`) from the user.
-    match (processModel vars rawModel ctx E) with
-    | .ok model => .ok (.sat model)
-    | .error _model_err => (.ok (.sat []))
-  | "unsat"   =>  .ok .unsat
-  | "unknown" =>  .ok .unknown
-  | _     =>  .error s!"stderr:{output.stderr}\nsolver stdout: {output.stdout}\n"
+abbrev Result := Imperative.SMT.Result (Core.Expression.Ident)
 
 def getSolverPrelude : String → SolverM Unit
 | "z3" => do
@@ -168,36 +83,48 @@ def getSolverPrelude : String → SolverM Unit
 | "cvc5" => return ()
 | _ => return ()
 
-def getSolverFlags (options : Options) (solver : String) : Array String :=
+def getSolverFlags (options : VerifyOptions) : Array String :=
   let produceModels :=
-    match solver with
+    match options.solver with
     | "cvc5" => #["--produce-models"]
     -- No need to specify -model for Z3 because we already have `get-value`
     -- in the generated SMT file.
     | _ => #[]
   let setTimeout :=
-    match solver with
+    match options.solver with
     | "cvc5" => #[s!"--tlimit={options.solverTimeout*1000}"]
     | "z3" => #[s!"-T:{options.solverTimeout}"]
     | _ => #[]
   produceModels ++ setTimeout
 
 def dischargeObligation
-  (options : Options)
-  (vars : List (IdentT LMonoTy Visibility)) (smtsolver filename : String)
-  (terms : List Term) (ctx : SMT.Context)
-  : IO (Except Format (SMT.Result × EncoderState)) := do
-  let handle ← IO.FS.Handle.mk filename IO.FS.Mode.write
-  let solver ← Solver.fileWriter handle
-  let prelude := getSolverPrelude smtsolver
-  let (ids, estate) ← Strata.SMT.Encoder.encodeCore ctx prelude terms solver
-  let _ ← solver.checkSat ids -- Will return unknown for Solver.fileWriter
-  if options.verbose > .normal then IO.println s!"Wrote problem to {filename}."
-  let flags := getSolverFlags options smtsolver
-  let output ← runSolver smtsolver (#[filename] ++ flags)
-  match SMT.solverResult vars output ctx estate with
-  | .error e => return .error e
-  | .ok result => return .ok (result, estate)
+  (options : VerifyOptions)
+  (vars : List Expression.TypedIdent)
+  (md : Imperative.MetaData Expression)
+  (filename : String)
+  (assumptionTerms : List Term)
+  (obligationTerm : Term)
+  (ctx : SMT.Context)
+  (reachCheck : Bool := false)
+  : IO (Except Format (Option SMT.Result × SMT.Result × EncoderState)) := do
+  -- CVC5 requires --incremental for multiple (check-sat) commands
+  let baseFlags := getSolverFlags options
+  let solverFlags :=
+    if reachCheck && options.solver == "cvc5" && !baseFlags.contains "--incremental" then
+      baseFlags ++ #["--incremental"]
+    else
+      baseFlags
+  Imperative.SMT.dischargeObligation
+    (P := Core.Expression)
+    (Strata.SMT.Encoder.encodeCore ctx (getSolverPrelude options.solver)
+      assumptionTerms obligationTerm md (reachCheck := reachCheck))
+    (typedVarToSMTFn ctx)
+    vars
+    md
+    options.solver
+    filename
+    solverFlags (options.verbose > .normal)
+    (reachCheck := reachCheck)
 
 end Core.SMT
 ---------------------------------------------------------------------
@@ -225,15 +152,26 @@ instance : ToFormat Outcome where
     | .implementationError e => s!"🚨 Implementation Error! {e}"
 
 /--
+A model expressed as Core `LExpr` values, suitable for display
+using Core's expression formatter and for future use as program metadata.
+-/
+abbrev LExprModel := List (Expression.Ident × LExpr CoreLParams.mono)
+
+/--
 A collection of all information relevant to a verification condition's
 analysis.
 -/
 structure VCResult where
   obligation : Imperative.ProofObligation Expression
-  smtResult : SMT.Result := .unknown
+  smtObligationResult : SMT.Result := .unknown
+  smtReachResult : Option SMT.Result := none
   result : Outcome := .unknown
   estate : EncoderState := EncoderState.init
   verbose : VerboseMode := .normal
+  /-- model with values converted from `SMT.Term` to Core `LExpr`.
+      The contents must be consistent with smtObligationResult, if
+      smtObligationResult was .sat. -/
+  lexprModel : LExprModel := []
 
 /--
 Map the result from an SMT backend engine to an `Outcome`.
@@ -247,11 +185,38 @@ def smtResultToOutcome (r : SMT.Result) (isCover : Bool) : Outcome :=
     if isCover then .pass else .fail
   | .err e => .implementationError e
 
+/--
+Format a single counterexample value using the Core DDM formatter
+(`Core.formatExprs`).  This renders constructors, applications, and
+primitives with proper Core syntax (e.g. `Cons(0, Nil)`, `Right(true)`).
+-/
+private def formatCexValue (e : LExpr CoreLParams.mono) : Format :=
+  Core.formatExprs [e]
+
+/--
+Format a counterexample whose values are Core `LExpr`s.
+-/
+def LExprModel.format (cex : LExprModel) : Format :=
+  match cex with
+  | [] => ""
+  | [(id, e)] => f!"({id}, {formatCexValue e})"
+  | (id, e) :: rest =>
+    let first := f!"({id}, {formatCexValue e}) "
+    rest.foldl (fun acc (id', e') => acc ++ f!"({id'}, {formatCexValue e'}) ") first
+
+instance : ToFormat LExprModel where
+  format := LExprModel.format
+
 instance : ToFormat VCResult where
-  format r := f!"Obligation: {r.obligation.label}\n\
-                 Property: {r.obligation.property}\n\
-                 Result: {r.result}\
-                 {r.smtResult.formatModelIfSat true}"
+  format r :=
+    let modelFmt :=
+      if r.verbose >= .models && !r.lexprModel.isEmpty then
+        f!"\nModel:\n{r.lexprModel}"
+      else f!""
+    f!"Obligation: {r.obligation.label}\n\
+       Property: {r.obligation.property}\n\
+       Result: {r.result}{if r.smtReachResult == some .unsat then " (❗path unreachable)" else ""}\
+       {modelFmt}"
 
 def VCResult.isSuccess (vr : VCResult) : Bool :=
   match vr.result with | .pass => true | _ => false
@@ -267,6 +232,15 @@ def VCResult.isImplementationError (vr : VCResult) : Bool :=
 
 def VCResult.isNotSuccess (vcResult : Core.VCResult) :=
   !Core.VCResult.isSuccess vcResult
+
+/--
+True when the reachability check determined that the path leading to this
+obligation is unreachable (the SMT reachability check returned `unsat`).
+`unreachable` is a diagnosis rather than an outcome: an unreachable assertion
+counts as `pass` (vacuously true) and an unreachable cover counts as `fail`.
+-/
+def VCResult.isUnreachable (vr : VCResult) : Bool :=
+  vr.smtReachResult == some .unsat
 
 abbrev VCResults := Array VCResult
 
@@ -284,20 +258,23 @@ instance : ToString VCResults where
 Preprocess a proof obligation before handing it off to a backend engine.
 -/
 def preprocessObligation (obligation : ProofObligation Expression) (p : Program)
-    (options : Options) : EIO DiagnosticModel (ProofObligation Expression × Option VCResult) := do
+    (options : VerifyOptions) : EIO DiagnosticModel (ProofObligation Expression × Option VCResult) := do
+  let needsReachCheck := options.reachCheck || Imperative.MetaData.hasReachCheck obligation.metadata
   match obligation.property with
   | .cover =>
-    if obligation.obligation.isFalse then
+    if obligation.obligation.isFalse && !needsReachCheck then
       -- If PE determines that the consequent is false, then we can immediately
-      -- report a failure.
+      -- report a failure. Skip the shortcut when reachCheck is active so that
+      -- the SMT solver can determine whether the path is reachable.
       let result := { obligation, result := .fail, verbose :=  options.verbose }
       return (obligation, some result)
     else
       return (obligation, none)
-  | .assert =>
-    if obligation.obligation.isTrue then
+  | .assert | .divisionByZero =>
+    if obligation.obligation.isTrue && !needsReachCheck then
       -- We don't need the SMT solver if PE (partial evaluation) is enough to
-      -- reduce the consequent to true.
+      -- reduce the consequent to true. Skip the shortcut when reachCheck is
+      -- active so that the SMT solver can determine whether the path is reachable.
       let result := { obligation, result := .pass, verbose := options.verbose }
       return (obligation, some result)
     else if obligation.obligation.isFalse && obligation.assumptions.isEmpty then
@@ -306,7 +283,7 @@ def preprocessObligation (obligation : ProofObligation Expression) (p : Program)
       -- that we go to the SMT solver if the path conditions aren't empty --
       -- after all, the path conditions could imply false, which the PE isn't
       -- capable enough to infer.
-      let prog := f!"\n\nEvaluated program:\n{p}"
+      let prog := f!"\n\n[DEBUG] Evaluated program:\n{Core.formatProgram p}"
       dbg_trace f!"\n\nObligation {obligation.label}: failed!\
                    \n\nResult obtained during partial evaluation.\
                    {if options.verbose >= .normal then prog else ""}"
@@ -329,36 +306,52 @@ def preprocessObligation (obligation : ProofObligation Expression) (p : Program)
 Invoke a backend engine and get the analysis result for a
 given proof obligation.
 -/
-def getObligationResult (terms : List Term) (ctx : SMT.Context)
+def getObligationResult (assumptionTerms : List Term) (obligationTerm : Term)
+    (ctx : SMT.Context)
     (obligation : ProofObligation Expression) (p : Program)
-    (smtsolver : String) (options : Options) (counter : IO.Ref Nat)
-    (tempDir : System.FilePath) : EIO DiagnosticModel VCResult := do
-  let prog := f!"\n\nEvaluated program:\n{p}"
+    (options : VerifyOptions) (counter : IO.Ref Nat)
+    (tempDir : System.FilePath) (reachCheck : Bool := false)
+    : EIO DiagnosticModel VCResult := do
+  let prog := f!"\n\n[DEBUG] Evaluated program:\n{Core.formatProgram p}"
   let counterVal ← counter.get
   counter.set (counterVal + 1)
   let filename := tempDir / s!"{obligation.label}_{counterVal}.smt2"
+  let varsInObligation := ProofObligation.getVars obligation
+  -- All variables in ProofObligation must have been typed.
+  let typedVarsInObligation ← varsInObligation.mapM
+    (fun (v,ty) => do
+      match ty with
+      | .some ty => return (v,LTy.forAll [] ty)
+      | .none => throw (DiagnosticModel.fromMessage s!"{v} untyped"))
   let ans ←
       IO.toEIO
         (fun e => DiagnosticModel.fromFormat f!"{e}")
         (SMT.dischargeObligation options
-          (ProofObligation.getVars obligation) smtsolver
+            typedVarsInObligation
+            obligation.metadata
             filename.toString
-          terms ctx)
+          assumptionTerms obligationTerm ctx (reachCheck := reachCheck))
   match ans with
   | .error e =>
     dbg_trace f!"\n\nObligation {obligation.label}: SMT Solver Invocation Error!\
                  \n\nError: {e}\
                  {if options.verbose >= .normal then prog else ""}"
     .error <| DiagnosticModel.fromFormat e
-  | .ok (smt_result, estate) =>
+  | .ok (reachResult?, smt_result, estate) =>
+    let outcome := smtResultToOutcome smt_result (obligation.property == .cover)
+    let cex := match smt_result with
+      | .sat m => convertCounterEx m (SMT.Context.getConstructorNames ctx)
+      | _ => []
     let result :=  { obligation,
-                     result := smtResultToOutcome smt_result (obligation.property == .cover)
-                     smtResult := smt_result,
+                     result := outcome,
+                     smtReachResult := reachResult?
+                     smtObligationResult := smt_result,
                      estate,
-                     verbose := options.verbose }
+                     verbose := options.verbose,
+                     lexprModel := cex }
     return result
 
-def verifySingleEnv (smtsolver : String) (pE : Program × Env) (options : Options)
+def verifySingleEnv (pE : Program × Env) (options : VerifyOptions)
     (counter : IO.Ref Nat) (tempDir : System.FilePath) :
     EIO DiagnosticModel VCResults := do
   let (p, E) := pE
@@ -366,7 +359,7 @@ def verifySingleEnv (smtsolver : String) (pE : Program × Env) (options : Option
   | some err =>
     .error <| DiagnosticModel.fromFormat s!"🚨 Error during evaluation!\n\
               {format err}\n\n\
-              Evaluated program: {p}\n\n"
+              [DEBUG] Evaluated program: {Core.formatProgram p}\n\n"
   | _ =>
     let mut results := (#[] : VCResults)
     for obligation in E.deferred do
@@ -379,11 +372,11 @@ def verifySingleEnv (smtsolver : String) (pE : Program × Env) (options : Option
           continue
         if (result.isFailure || result.isImplementationError) then
           if options.verbose >= .normal then
-            let prog := f!"\n\nEvaluated program:\n{p}"
+            let prog := f!"\n\n[DEBUG] Evaluated program:\n{Core.formatProgram p}"
             dbg_trace f!"\n\nResult: {result}\n{prog}"
           if options.stopOnFirstError then break else continue
       -- For `unknown` results, we appeal to the SMT backend below.
-      let maybeTerms := ProofObligation.toSMTTerms E obligation
+      let maybeTerms := ProofObligation.toSMTTerms E obligation SMT.Context.default options.useArrayTheory
       match maybeTerms with
       | .error err =>
         let err := f!"SMT Encoding Error! " ++ err
@@ -391,34 +384,54 @@ def verifySingleEnv (smtsolver : String) (pE : Program × Env) (options : Option
                         result := .implementationError (toString err),
                         verbose := options.verbose }
         if options.verbose >= .normal then
-          let prog := f!"\n\nEvaluated program:\n{p}"
+          let prog := f!"\n\n[DEBUG] Evaluated program:\n{Core.formatProgram p}"
           dbg_trace f!"\n\nResult: {result}\n{prog}"
         results := results.push result
         if options.stopOnFirstError then break
-      | .ok (terms, ctx) =>
-        let result ← getObligationResult terms ctx obligation p smtsolver options
-                      counter tempDir
+      | .ok (assumptionTerms, obligationTerm, ctx) =>
+        let needsReachCheck := options.reachCheck || Imperative.MetaData.hasReachCheck obligation.metadata
+        let result ← getObligationResult assumptionTerms obligationTerm ctx obligation p options
+                      counter tempDir (reachCheck := needsReachCheck)
         results := results.push result
         if result.isNotSuccess then
         if options.verbose >= .normal then
-          let prog := f!"\n\nEvaluated program:\n{p}"
+          let prog := f!"\n\n[DEBUG] Evaluated program:\n{Core.formatProgram p}"
           dbg_trace f!"\n\nResult: {result}\n{prog}"
           if options.stopOnFirstError then break
     return results
 
-def verify (smtsolver : String) (program : Program)
+/-- Run the Strata Core verification pipeline on a program: transform,
+type-check, partially evaluate, and discharge proof obligations via SMT.
+All program-wide transformations that occur before any analyses
+(including type inference) should be placed here. -/
+def verify (program : Program)
     (tempDir : System.FilePath)
     (proceduresToVerify : Option (List String) := none)
-    (options : Options := Options.default)
+    (options : VerifyOptions := .default)
     (moreFns : @Lambda.Factory CoreLParams := Lambda.Factory.default)
     : EIO DiagnosticModel VCResults := do
+  let factory ← EIO.ofExcept (Core.Factory.addFactory moreFns)
+  let runPrecondElim := fun prog => do
+    let (_changed, prog) ← PrecondElim.precondElim prog factory
+    return prog
   let finalProgram ← match proceduresToVerify with
-    | none => .ok program  -- Verify all procedures (default).
+    | none =>
+      match Transform.run program runPrecondElim with
+      | .ok prog => .ok prog
+      | .error e => .error (DiagnosticModel.fromFormat f!"❌ Transform Error. {e}")
     | some procs =>
        -- Verify specific procedures. By default, we apply the call elimination
        -- transform to the targeted procedures to inline the contracts of any
-       -- callees.
-      match program.filterProcedures procs (transform := CallElim.callElim') with
+       -- callees. Call elimination is applied once, since once is enough to
+       -- replace all calls with contracts.
+      let passes := fun prog => do
+        let prog ← FilterProcedures.run prog procs
+        let (_changed,prog) ← CallElim.callElim' prog
+        let prog ← FilterProcedures.run prog procs
+        let prog ← runPrecondElim prog
+        return prog
+      let res := Transform.run program passes
+      match res with
       | .ok prog => .ok prog
       | .error e => .error (DiagnosticModel.fromFormat f!"❌ Transform Error. {e}")
   match Core.typeCheckAndPartialEval options finalProgram moreFns with
@@ -429,18 +442,20 @@ def verify (smtsolver : String) (program : Program)
     let VCss ← if options.checkOnly then
                  pure []
                else
-                 (List.mapM (fun pE => verifySingleEnv smtsolver pE options counter tempDir) pEs)
+                 (List.mapM (fun pE => verifySingleEnv pE options counter tempDir) pEs)
     .ok VCss.toArray.flatten
 
 end Core
 ---------------------------------------------------------------------
+
+open Core (VerifyOptions)
 
 namespace Strata
 
 open Lean.Parser
 open Strata (DiagnosticModel FileRange)
 
-def typeCheck (ictx : InputContext) (env : Program) (options : Options := Options.default)
+def typeCheck (ictx : InputContext) (env : Program) (options : VerifyOptions := .default)
     (moreFns : @Lambda.Factory Core.CoreLParams := Lambda.Factory.default) :
   Except DiagnosticModel Core.Program := do
   let (program, errors) := TransM.run ictx (translateProgram env)
@@ -456,42 +471,49 @@ def Core.getProgram
   TransM.run ictx (translateProgram p)
 
 def verify
-    (smtsolver : String) (env : Program)
+    (env : Program)
     (ictx : InputContext := Inhabited.default)
     (proceduresToVerify : Option (List String) := none)
-    (options : Options := Options.default)
+    (options : VerifyOptions := .default)
     (moreFns : @Lambda.Factory Core.CoreLParams := Lambda.Factory.default)
-    (tempDir : Option String := .none)
     : IO Core.VCResults := do
   let (program, errors) := Core.getProgram env ictx
   if errors.isEmpty then
     let runner tempDir :=
       EIO.toIO (fun dm => IO.Error.userError (toString (dm.format (some ictx.fileMap))))
-                  (Core.verify smtsolver program tempDir proceduresToVerify options moreFns)
-    match tempDir with
+                  (Core.verify program tempDir proceduresToVerify options moreFns)
+    match options.vcDirectory with
     | .none =>
       IO.FS.withTempDir runner
     | .some p =>
-      IO.FS.createDirAll ⟨p⟩
-      runner ⟨p⟩
+      IO.FS.createDirAll ⟨p.toString⟩
+      runner ⟨p.toString⟩
   else
     panic! s!"DDM Transform Error: {repr errors}"
 
-def toDiagnosticModel (vcr : Core.VCResult) : Option DiagnosticModel := do
-  match vcr.result with
-  | .pass => none  -- Verification succeeded, no diagnostic
-  | result =>
-    let fileRangeElem ← vcr.obligation.metadata.findElem Imperative.MetaData.fileRange
-    match fileRangeElem.value with
-    | .fileRange fileRange =>
-      let message := match result with
-        | .fail => "assertion does not hold"
-        | .unknown => "assertion could not be proved"
-        | .implementationError msg => s!"verification error: {msg}"
-        | _ => panic "impossible"
-
-      some (DiagnosticModel.withRange fileRange message)
-    | _ => none
+def toDiagnosticModel (vcr : Core.VCResult) : Option DiagnosticModel :=
+  let fileRange := (Imperative.getFileRange vcr.obligation.metadata).getD default
+  let message? : Option String :=
+    if vcr.obligation.property == .cover then
+      match vcr.result with
+      | .pass => none
+      | .fail =>
+        if vcr.isUnreachable then some "cover property is unreachable"
+        else some "cover property is not satisfiable"
+      | .unknown =>
+        -- Cover unknown is only reported in verbose mode (informational, not an error).
+        if vcr.verbose ≤ .normal then none
+        else some "cover property could not be checked"
+      | .implementationError msg => some s!"analysis error: {msg}"
+    else
+      match vcr.result with
+      | .pass =>
+        if vcr.isUnreachable then some "assertion holds vacuously (path unreachable)"
+        else none
+      | .fail => some "assertion does not hold"
+      | .unknown => some "assertion could not be proved"
+      | .implementationError msg => some s!"analysis error: {msg}"
+  message?.map fun message => { fileRange, message }
 
 structure Diagnostic where
   start : Lean.Position
@@ -500,7 +522,8 @@ structure Diagnostic where
   deriving Repr, BEq
 
 def DiagnosticModel.toDiagnostic (files: Map Strata.Uri Lean.FileMap) (dm: DiagnosticModel): Diagnostic :=
-  let fileMap := (files.find? dm.fileRange.file).get!
+  let fileMap := (files.find? dm.fileRange.file).getD
+    (dbg_trace s!"Could not find {repr dm.fileRange.file} in {repr files.keys} when converting model '{dm}' to a diagnostic"; default)
   let startPos := fileMap.toPosition dm.fileRange.range.start
   let endPos := fileMap.toPosition dm.fileRange.range.stop
   {

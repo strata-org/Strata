@@ -3,8 +3,11 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.DDM.Integration.Lean
+public import Strata.DDM.Integration.Lean
+
+public section
 
 -- Minimal dialect to test dialects can be declared.
 #guard_msgs in
@@ -124,3 +127,5 @@ program Test;
 str "\r\u20ac\u2022\x9d\n\t";
 str "\\n\"";
 #end
+
+end

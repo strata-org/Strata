@@ -3,7 +3,9 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
+public section
 /-! # List Utilities
 -/
 
@@ -422,4 +424,31 @@ theorem subset_nodup_length {α} {s1 s2: List α} (hn: s1.Nodup) (hsub: s1 ⊆ s
     have hsub1: t ⊆ (l1 ++ l2) := by grind
     grind
 
+
+/-- Deduplicates l and counts the number of occurrences for each element. -/
+def occurrences {α : Type} [DecidableEq α] (l : List α) : List (α × Nat) :=
+  l.dedup.map (λ x => (x, l.count x))
+
+theorem occurrences_len_eq_dedup {α} [DecidableEq α]:
+  ∀ (l : List α), l.dedup.length = l.occurrences.length := by
+  intros l
+  unfold occurrences
+  grind
+
+theorem occurrences_find {α} [DecidableEq α] (l : List α) (x : α)
+  (hx : x ∈ l)
+  : l.occurrences.find? (fun ⟨k, _⟩ => k == x) = .some (x, l.count x) := by
+  simp only [occurrences, find?_map, Option.map_eq_some_iff, Prod.mk.injEq]
+  have : x ∈ l.dedup := by induction l <;> grind [dedup]
+  generalize l.dedup = ld at *
+  induction ld <;> simp [List.find?, Function.comp_apply] <;>
+    (first | grind | split <;> grind)
+
+/--
+`foldlIdx f init l` folds `f` over `l` with an index.
+-/
+def foldlIdx (f : β → Nat → α → β) (init : β) (l : List α) : β :=
+  ((List.range l.length).zip l).foldl (fun acc (i, a) => f acc i a) init
+
 end List
+end

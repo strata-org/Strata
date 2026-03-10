@@ -28,6 +28,7 @@ the responsibility of the user to ensure that they are consistent.
 structure Axiom where
   name : CoreLabel
   e : LExpr CoreLParams.mono
+  deriving BEq
 
 instance : ToFormat (CoreLParams.mono : LExprParamsT).base.Identifier :=
   show ToFormat CoreIdent from inferInstance

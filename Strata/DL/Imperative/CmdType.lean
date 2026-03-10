@@ -3,15 +3,16 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-
-
-import Strata.DL.Imperative.Cmd
-import Strata.DL.Imperative.TypeContext
+public import Strata.DL.Imperative.Cmd
+public import Strata.DL.Imperative.TypeContext
 
 namespace Imperative
 open Std (ToFormat Format format)
 open Strata (DiagnosticModel FileRange)
+
+public section
 
 ---------------------------------------------------------------------
 
@@ -29,15 +30,23 @@ def Cmd.typeCheck {P C T} [ToFormat P.Ident] [ToFormat P.Ty] [ToFormat (Cmd P)]
   | .init x xty e md =>
     match TC.lookup τ x with
     | none =>
-      if x ∈ TC.freeVars e then
-        .error <| md.toDiagnosticF f!"Variable {x} cannot appear in its own initialization expression!"
-      else
+      match e with
+      | some expr =>
+        if x ∈ TC.freeVars expr then
+          .error <| md.toDiagnosticF f!"Variable {x} cannot appear in its own initialization expression!"
+        else
+          let (xty, τ) ← TC.preprocess ctx τ xty
+          let (expr, ety, τ) ← TC.inferType ctx τ c expr
+          let τ ← TC.unifyTypes τ [(xty, ety)]
+          let (xty, τ) ← TC.postprocess ctx τ xty
+          let τ := TC.update τ x xty
+          let c := Cmd.init x xty (some expr) md
+          .ok (c, τ)
+      | none =>
         let (xty, τ) ← TC.preprocess ctx τ xty
-        let (e, ety, τ) ← TC.inferType ctx τ c e
-        let τ ← TC.unifyTypes τ [(xty, ety)]
         let (xty, τ) ← TC.postprocess ctx τ xty
         let τ := TC.update τ x xty
-        let c := Cmd.init x xty e md
+        let c := Cmd.init x xty none md
         .ok (c, τ)
     | some xty =>
       .error <| md.toDiagnosticF f!"Variable {x} of type {xty} already in context."
@@ -101,4 +110,5 @@ def Cmds.typeCheck {P C T} [ToFormat P.Ident] [ToFormat P.Ty] [ToFormat (Cmd P)]
     .ok (c :: crest, τ)
 
 ---------------------------------------------------------------------
+end -- public section
 end Imperative

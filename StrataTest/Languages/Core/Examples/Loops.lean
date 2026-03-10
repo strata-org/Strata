@@ -16,16 +16,16 @@ program Core;
 procedure sum(n : int) returns (s : int)
 spec {
   requires (n >= 0);
-  ensures (s == ((n * (n + 1)) div 2));
+  ensures (s == ((n * (n + 1)) / 2));
 }
 {
   var i : int;
   i := 0;
   s := 0;
   while (i < n)
-    invariant 0 <= i &&
-              i <= n &&
-              s == (i * (i + 1)) div 2;
+    invariant 0 <= i
+    invariant i <= n
+    invariant s == (i * (i + 1)) / 2
   {
     i := (i + 1);
     s := (s + i);
@@ -38,41 +38,128 @@ info: [Strata.Core] Type checking succeeded.
 
 
 VCs:
-Label: entry_invariant_0
+Label: sum_post_sum_ensures_1_calls_Int.SafeDiv_0
+Property: division by zero check
+Assumptions:
+sum_requires_0: $__n0 >= 0
+Obligation:
+true
+
+Label: loop_invariant_calls_Int.SafeDiv_0
+Property: division by zero check
+Assumptions:
+sum_requires_0: $__n2 >= 0
+Obligation:
+true
+
+Label: entry_invariant_0_0
 Property: assert
 Assumptions:
-(<label_ite_cond_true: ((~Int.Lt i) n)>, ((~Int.Lt #0) $__n0))
-(sum_requires_0, ((~Int.Ge $__n0) #0))
+<label_ite_cond_true: (~Int.Lt i n)>: 0 < $__n2
+sum_requires_0: $__n2 >= 0
+Obligation:
+true
 
-Proof Obligation:
-((~Bool.And ((~Bool.And #true) ((~Int.Le #0) $__n0))) #true)
-
-Label: arbitrary_iter_maintain_invariant_0
+Label: entry_invariant_0_1
 Property: assert
 Assumptions:
-(<label_ite_cond_true: ((~Int.Lt i) n)>, ((~Int.Lt #0) $__n0))
-(assume_guard_0, ((~Int.Lt $__i2) $__n0)) (assume_invariant_0, ((~Bool.And ((~Bool.And ((~Int.Le #0) $__i2)) ((~Int.Le $__i2) $__n0))) ($__s3 == ((~Int.Div ((~Int.Mul $__i2) ((~Int.Add $__i2) #1))) #2))))
-(sum_requires_0, ((~Int.Ge $__n0) #0))
+<label_ite_cond_true: (~Int.Lt i n)>: 0 < $__n2
+sum_requires_0: $__n2 >= 0
+Obligation:
+0 <= $__n2
 
-Proof Obligation:
-((~Bool.And ((~Bool.And ((~Int.Le #0) ((~Int.Add $__i2) #1))) ((~Int.Le ((~Int.Add $__i2) #1)) $__n0))) (((~Int.Add $__s3) ((~Int.Add $__i2) #1)) == ((~Int.Div ((~Int.Mul ((~Int.Add $__i2) #1)) ((~Int.Add ((~Int.Add $__i2) #1)) #1))) #2)))
+Label: entry_invariant_0_2
+Property: assert
+Assumptions:
+<label_ite_cond_true: (~Int.Lt i n)>: 0 < $__n2
+sum_requires_0: $__n2 >= 0
+Obligation:
+true
+
+Label: arbitrary_iter_maintain_invariant_0_0
+Property: assert
+Assumptions:
+<label_ite_cond_true: (~Int.Lt i n)>: 0 < $__n2
+assume_guard_0: $__i5 < $__n2
+assume_invariant_0_0: 0 <= $__i5
+assume_invariant_0_1: $__i5 <= $__n2
+assume_invariant_0_2: $__s6 == $__i5 * ($__i5 + 1) / 2
+sum_requires_0: $__n2 >= 0
+Obligation:
+0 <= $__i5 + 1
+
+Label: arbitrary_iter_maintain_invariant_0_1
+Property: assert
+Assumptions:
+<label_ite_cond_true: (~Int.Lt i n)>: 0 < $__n2
+assume_guard_0: $__i5 < $__n2
+assume_invariant_0_0: 0 <= $__i5
+assume_invariant_0_1: $__i5 <= $__n2
+assume_invariant_0_2: $__s6 == $__i5 * ($__i5 + 1) / 2
+sum_requires_0: $__n2 >= 0
+Obligation:
+$__i5 + 1 <= $__n2
+
+Label: arbitrary_iter_maintain_invariant_0_2
+Property: assert
+Assumptions:
+<label_ite_cond_true: (~Int.Lt i n)>: 0 < $__n2
+assume_guard_0: $__i5 < $__n2
+assume_invariant_0_0: 0 <= $__i5
+assume_invariant_0_1: $__i5 <= $__n2
+assume_invariant_0_2: $__s6 == $__i5 * ($__i5 + 1) / 2
+sum_requires_0: $__n2 >= 0
+Obligation:
+$__s6 + ($__i5 + 1) == ($__i5 + 1) * ($__i5 + 1 + 1) / 2
 
 Label: sum_ensures_1
 Property: assert
 Assumptions:
-(sum_requires_0, ((~Int.Ge $__n0) #0))
-(<label_ite_cond_true: ((~Int.Lt i) n)>, (if ((~Int.Lt #0) $__n0) then ((~Int.Lt #0) $__n0) else #true)) (assume_guard_0, (if ((~Int.Lt #0) $__n0) then ((~Int.Lt $__i2) $__n0) else #true)) (assume_invariant_0, (if ((~Int.Lt #0) $__n0) then ((~Bool.And ((~Bool.And ((~Int.Le #0) $__i2)) ((~Int.Le $__i2) $__n0))) ($__s3 == ((~Int.Div ((~Int.Mul $__i2) ((~Int.Add $__i2) #1))) #2))) else #true)) (not_guard_0, (if ((~Int.Lt #0) $__n0) then (~Bool.Not ((~Int.Lt $__i4) $__n0)) else #true)) (invariant_0, (if ((~Int.Lt #0) $__n0) then ((~Bool.And ((~Bool.And ((~Int.Le #0) $__i4)) ((~Int.Le $__i4) $__n0))) ($__s5 == ((~Int.Div ((~Int.Mul $__i4) ((~Int.Add $__i4) #1))) #2))) else #true)) (<label_ite_cond_false: !((~Int.Lt i) n)>, (if (if ((~Int.Lt #0) $__n0) then #false else #true) then (if ((~Int.Lt #0) $__n0) then #false else #true) else #true))
-
-Proof Obligation:
-((if ((~Int.Lt #0) $__n0) then $__s5 else #0) == ((~Int.Div ((~Int.Mul $__n0) ((~Int.Add $__n0) #1))) #2))
+sum_requires_0: $__n2 >= 0
+<label_ite_cond_true: (~Int.Lt i n)>: if 0 < $__n2 then 0 < $__n2 else true
+assume_guard_0: if 0 < $__n2 then $__i5 < $__n2 else true
+assume_invariant_0_0: if 0 < $__n2 then 0 <= $__i5 else true
+assume_invariant_0_1: if 0 < $__n2 then $__i5 <= $__n2 else true
+assume_invariant_0_2: if 0 < $__n2 then $__s6 == $__i5 * ($__i5 + 1) / 2 else true
+not_guard_0: if 0 < $__n2 then !($__i7 < $__n2) else true
+invariant_0_0: if 0 < $__n2 then 0 <= $__i7 else true
+invariant_0_1: if 0 < $__n2 then $__i7 <= $__n2 else true
+invariant_0_2: if 0 < $__n2 then $__s8 == $__i7 * ($__i7 + 1) / 2 else true
+<label_ite_cond_false: !(~Int.Lt i n)>: if if 0 < $__n2 then false else true then if 0 < $__n2 then false else true else true
+Obligation:
+if 0 < $__n2 then $__s8 else 0 == $__n2 * ($__n2 + 1) / 2
 
 ---
 info:
-Obligation: entry_invariant_0
+Obligation: sum_post_sum_ensures_1_calls_Int.SafeDiv_0
+Property: division by zero check
+Result: ✅ pass
+
+Obligation: loop_invariant_calls_Int.SafeDiv_0
+Property: division by zero check
+Result: ✅ pass
+
+Obligation: entry_invariant_0_0
 Property: assert
 Result: ✅ pass
 
-Obligation: arbitrary_iter_maintain_invariant_0
+Obligation: entry_invariant_0_1
+Property: assert
+Result: ✅ pass
+
+Obligation: entry_invariant_0_2
+Property: assert
+Result: ✅ pass
+
+Obligation: arbitrary_iter_maintain_invariant_0_0
+Property: assert
+Result: ✅ pass
+
+Obligation: arbitrary_iter_maintain_invariant_0_1
+Property: assert
+Result: ✅ pass
+
+Obligation: arbitrary_iter_maintain_invariant_0_2
 Property: assert
 Result: ✅ pass
 
@@ -81,7 +168,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify "cvc5" gaussPgm
+#eval verify gaussPgm
 
 def nestedPgm :=
 #strata
@@ -99,11 +186,14 @@ spec {
   var y: int;
   x := 0;
   while (x < n)
-    invariant x >= 0 && x <= n && n < top;
+    invariant x >= 0
+    invariant x <= n
+    invariant n < top
   {
     y := 0;
     while (y < x)
-      invariant y >= 0 && y <= x;
+      invariant y >= 0
+      invariant y <= x
     {
       y := y + 1;
     }
@@ -114,21 +204,45 @@ spec {
 
 /--
 info:
-Obligation: entry_invariant_0
+Obligation: entry_invariant_0_0
 Property: assert
 Result: ✅ pass
 
-Obligation: entry_invariant_1
+Obligation: entry_invariant_0_1
 Property: assert
 Result: ✅ pass
 
-Obligation: arbitrary_iter_maintain_invariant_1
+Obligation: entry_invariant_0_2
 Property: assert
 Result: ✅ pass
 
-Obligation: arbitrary_iter_maintain_invariant_0
+Obligation: entry_invariant_1_0
+Property: assert
+Result: ✅ pass
+
+Obligation: entry_invariant_1_1
+Property: assert
+Result: ✅ pass
+
+Obligation: arbitrary_iter_maintain_invariant_1_0
+Property: assert
+Result: ✅ pass
+
+Obligation: arbitrary_iter_maintain_invariant_1_1
+Property: assert
+Result: ✅ pass
+
+Obligation: arbitrary_iter_maintain_invariant_0_0
+Property: assert
+Result: ✅ pass
+
+Obligation: arbitrary_iter_maintain_invariant_0_1
+Property: assert
+Result: ✅ pass
+
+Obligation: arbitrary_iter_maintain_invariant_0_2
 Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify "cvc5" nestedPgm (options := .quiet)
+#eval verify nestedPgm (options := .quiet)

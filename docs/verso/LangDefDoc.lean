@@ -16,9 +16,11 @@ import Strata.DL.Imperative.MetaData
 import Strata.DL.Lambda.LExpr
 import Strata.DL.Lambda.Semantics
 import Strata.DL.Lambda.LExprTypeSpec
+import Strata.Languages.Core.Procedure
 
 open Lambda
 open Imperative
+open Core
 
 -- This gets access to most of the manual genre
 open Verso.Genre Manual
@@ -173,9 +175,11 @@ An expression {name LExpr}`LExpr` parameterized by {name LTy}`LTy` is
 well-typed according to the {name LExpr.HasType}`HasType` relation.
 This relation depends on two types of context.
 
-The first of these, {name LContext}`LContext`, contains information that does
-not change throughout the type checking process. This includes information about
-built-in functions, using the {name Factory}`Factory` type, and built-in types,
+The first of these, {name LContext}`LContext`, contains information that is
+typically constant during expression type checking, but may be extended during
+statement type checking (e.g., when local function declarations add new
+functions to the factory). This includes information about
+built-in functions, using the {name Lambda.Factory}`Factory` type, and built-in types,
 using the {name TypeFactory}`TypeFactory` type. Built-in functions optionally
 include concrete evaluation functions, which can be used in the operational
 semantics described below.
@@ -219,9 +223,8 @@ the current core set of commands does not include calls). Statements are
 parameterized by a command type and describe the control flow surrounding those
 commands. Currently, `Imperative` has structured, deterministic statements, each
 of which can be: a command, a sequence of statements in a block, a deterministic
-conditional, a deterministic loop with a condition, or a forward `goto`
-statement. (Note: we plan to replace `goto` with a block exit statement, and
-have a separate unstructured CFG representation.)
+conditional, a deterministic loop with a condition, or an `exit`
+statement that exits the nearest enclosing block with a matching label.
 
 We plan to add non-deterministic statements, as in [Kleene Algebra with
 Tests](https://www.cs.cornell.edu/~kozen/Papers/kat.pdf), and support a
@@ -325,3 +328,91 @@ And, finally, the metadata attached to an AST node consists of an array of
 metadata elements.
 
 {docstring Imperative.MetaData}
+
+# Strata Core Procedures
+
+A *procedure* is the main verification unit in Strata Core. It is a named
+signature with typed input and output parameters, a specification (contract),
+and an optional implementation body.
+
+The concrete syntax of a procedure declaration is:
+
+```
+procedure Name<TypeArgs>(x₁ : T₁, ..., xₙ : Tₙ) returns (y₁ : U₁, ..., yₘ : Uₘ)
+spec {
+  modifies g₁, g₂, ...;
+  [free] requires [label]: P;
+  [free] ensures  [label]: Q;
+}
+{ body };
+```
+
+The {name Procedure.Header}`Procedure.Header` structure captures the procedure's
+name, type parameters, and input/output signatures.
+
+{docstring Core.Procedure.Header}
+
+## Parameters
+
+Each procedure has two groups of parameters: input parameters, which are passed
+by value from the caller to the callee and are immutable within the body, and
+output parameters, which are mutable within the body and whose final values are
+returned to the caller. Input and output parameter names must be disjoint from
+each other and from the `modifies` clause.
+
+## Specification
+
+A procedure's specification ({name Procedure.Spec}`Procedure.Spec`) consists of
+three parts: a `modifies` clause listing global variables the procedure may
+modify (any global not listed is guaranteed unchanged by the *frame condition*),
+preconditions (`requires`) that must hold before invocation, and postconditions
+(`ensures`) that must hold on return. Postconditions may reference `old(expr)`
+for pre-state values.
+
+{docstring Core.Procedure.Spec}
+
+Each specification clause is represented by {name Procedure.Check}`Procedure.Check`,
+pairing a boolean expression with an optional `Free` attribute and metadata.
+
+{docstring Core.Procedure.Check}
+
+The {name Procedure.CheckAttr}`Procedure.CheckAttr` type controls whether a
+clause is checked or free. A free precondition is assumed by the implementation
+but not asserted at call sites; a free postcondition is assumed upon return from
+calls but not checked on exit from implementations.
+
+{docstring Core.Procedure.CheckAttr}
+
+### The `old` expression
+
+Postconditions and procedure bodies are *two-state contexts*: they can refer to
+both the pre-state (on entry) and the post-state (on exit) of a procedure
+invocation. The pre-state value of an expression is denoted by `old(expr)`.
+Only global variables are affected by `old`; it distributes to the leaves of
+expressions and is idempotent. `old` is not allowed in preconditions.
+
+## Procedure calls
+
+A procedure is invoked via the `call` statement:
+
+```
+call y₁, ..., yₘ := ProcName(e₁, ..., eₙ);
+```
+
+The semantics of a call are: (1) evaluate argument expressions, (2) assert each
+non-free precondition with actuals substituted for formals, (3) havoc the output
+and `modifies` variables, (4) assume each postcondition with actuals substituted
+for formals and `old(g)` bound to the pre-call value of `g`, and (5) update the
+caller's state. This enables *modular verification*: each procedure is verified
+against its contract independently, and callers reason only about the contract.
+
+## Body and verification
+
+If a procedure has a body, the preconditions are assumed, the body is
+symbolically executed, and the postconditions are asserted at the end. If the
+body is absent, the procedure is abstract and can only be reasoned about via its
+contract.
+
+## The Procedure type
+
+{docstring Core.Procedure}

@@ -6,6 +6,7 @@
 
 import Strata.Languages.B3.DDMTransform.ParseCST
 import Strata.Languages.B3.DDMTransform.DefinitionAST
+import Strata.Util.Tactics
 
 /-!
 # B3 ↔ DDM Bidirectional Conversion
@@ -308,6 +309,7 @@ def literalToCST [Inhabited (B3CST.Expression M)] : B3AST.Literal M → B3CST.Ex
 
 mutual
 
+
 def expressionToCST [Inhabited (B3CST.Expression M)] (ctx : ToCSTContext) (e: B3AST.Expression M) : B3CST.Expression M × List (ASTToCSTError M) :=
   match he: e with
   | .literal _m lit =>
@@ -352,7 +354,7 @@ def expressionToCST [Inhabited (B3CST.Expression M)] (ctx : ToCSTContext) (e: B3
         match v with
         | .quantVarDecl _ name _ => acc.push name.val
       ) ctx
-      let convertPattern (p : Strata.B3AST.Pattern M) (Hp: p ∈ patterns.val.toList) : B3CST.Pattern M × List (ASTToCSTError M) :=
+      let convertPattern (p : Strata.B3AST.Pattern M) (_Hp: p ∈ patterns.val.toList) : B3CST.Pattern M × List (ASTToCSTError M) :=
         match p with
         | .pattern pm exprs =>
             let (exprsConverted, errors) := exprs.val.toList.attach.foldl (fun (acc, errs) e =>
@@ -360,8 +362,8 @@ def expressionToCST [Inhabited (B3CST.Expression M)] (ctx : ToCSTContext) (e: B3
               (acc ++ [e'], errs ++ err)
             ) ([], [])
             (B3CST.Pattern.pattern pm (mkAnn pm exprsConverted.toArray), errors)
-      let (patternsConverted, patternErrors) := patterns.val.toList.attach.foldl (fun (acc, errs) p =>
-        let (p', e) := convertPattern p.1 p.2
+      let (patternsConverted, patternErrors) := patterns.val.toList.attach.foldl (fun (acc, errs) ⟨p, Hp⟩ =>
+        let (p', e) := convertPattern p Hp
         (acc ++ [p'], errs ++ e)
       ) ([], [])
       let patternsDDM : Ann (Array (B3CST.Pattern M)) M := mkAnn m patternsConverted.toArray
@@ -379,15 +381,11 @@ def expressionToCST [Inhabited (B3CST.Expression M)] (ctx : ToCSTContext) (e: B3
       (result, patternErrors ++ bodyErrs)
   termination_by e
   decreasing_by
-  all_goals(simp_wf; try omega)
-  . cases args; simp_all; rename_i arg_in;
-    have := Array.sizeOf_lt_of_mem arg_in; omega
-  . rcases e; rename_i e he
-    subst_vars; cases exprs; cases patterns; simp_all
-    simp at he
-    have := Array.sizeOf_lt_of_mem he
-    have := Array.sizeOf_lt_of_mem Hp
-    simp_all; omega
+  all_goals(try term_by_mem)
+  . cases args; simp_all; term_by_mem
+  . cases e; cases exprs; cases patterns;
+    -- For some reason, need both simps to simplify the ∈ .toList
+    simp at *; simp_all; term_by_mem
 
 def callArgToCST [Inhabited (B3CST.Expression M)] (ctx : ToCSTContext) : Strata.B3AST.CallArg M → B3CST.CallArg M × List (ASTToCSTError M)
   | .callArgExpr m e =>
@@ -501,13 +499,11 @@ def stmtToCST [Inhabited (B3CST.Expression M)] [Inhabited (B3CST.Statement M)] (
   | .probe m label => (B3CST.Statement.probe m (mapAnn (fun x => x) label), [])
   termination_by s
   decreasing_by
-  all_goals(simp_wf; try omega)
-  . cases stmts; simp_all; rename_i hs; have := Array.sizeOf_lt_of_mem hs; omega
-  . cases branches; simp_all; rename_i hs; have := Array.sizeOf_lt_of_mem hs; omega
-  . cases elseB; simp_all; subst_vars; omega
-  . cases c; cases cases; simp_all; subst_vars; rename_i hin
-    simp at hin; have hin2 := Array.sizeOf_lt_of_mem hin; simp at hin2; omega
-
+  all_goals(try term_by_mem)
+  . cases stmts; simp_all; term_by_mem
+  . cases branches; simp_all; term_by_mem
+  . cases elseB; term_by_mem
+  . cases c; cases cases; simp_all; simp_all; term_by_mem
 end
 
 def fParameterToCST : Strata.B3AST.FParameter M → B3CST.FParam M
@@ -742,7 +738,7 @@ def expressionFromCST [Inhabited M] [B3AnnFromCST M] (ctx : FromCSTContext) (e: 
         match v with
         | .var_decl _ name ty => acc.push name.val
       ) ctx
-      let convertPattern (p : B3CST.Pattern M) (Hp: p ∈ patterns.val) : Strata.B3AST.Pattern M × List (CSTToASTError M) :=
+      let convertPattern (p : B3CST.Pattern M) (_Hp: p ∈ patterns.val) : Strata.B3AST.Pattern M × List (CSTToASTError M) :=
         match hp: p with
         | .pattern pann exprs =>
             let (exprsConverted, errors) := exprs.val.toList.attach.foldl (fun (acc, errs) e =>
@@ -800,18 +796,12 @@ def expressionFromCST [Inhabited M] [B3AnnFromCST M] (ctx : FromCSTContext) (e: 
   | .paren _ expr => expressionFromCST ctx expr
   termination_by e
   decreasing_by
-  all_goals(simp_wf; try omega)
-  . cases args; simp_all; rename_i harg; have:= Array.sizeOf_lt_of_mem harg; omega
-  . cases e; cases exprs; cases patterns; rename_i val_in; subst_vars; simp_all
-    rename_i val_in1 _ _; simp at val_in1
-    have:= Array.sizeOf_lt_of_mem val_in
-    have:= Array.sizeOf_lt_of_mem val_in1
-    simp_all; omega
-  . cases e; cases exprs; cases patterns; rename_i val_in; subst_vars; simp_all
-    rename_i val_in1 _ _; simp at val_in1
-    have:= Array.sizeOf_lt_of_mem val_in
-    have:= Array.sizeOf_lt_of_mem val_in1
-    simp_all; omega
+  all_goals(try term_by_mem)
+  . cases args; simp_all; term_by_mem
+  . cases e; cases exprs; cases patterns;
+    simp_all; simp_all; term_by_mem
+  . cases e; cases exprs; cases patterns;
+    simp_all; simp_all; term_by_mem
 
 def callArgFromCST [Inhabited M] [B3AnnFromCST M] (ctx : FromCSTContext) : B3CST.CallArg M → Strata.B3AST.CallArg M × List (CSTToASTError M)
   | .call_arg_expr m expr =>
@@ -972,12 +962,11 @@ def stmtFromCST [Inhabited M] [B3AnnFromCST M] (ctx : FromCSTContext) (s: B3CST.
       (.call m (mapAnn (fun x => x) procName) (mapAnn (fun _ => argsConverted.toArray) args), errors)
   termination_by s
   decreasing_by
-  all_goals(simp_wf; try omega)
-  . cases stmts; simp_all; rename_i hs; have := Array.sizeOf_lt_of_mem hs; omega
-  . cases elseB; simp_all; subst_vars; omega
-  . have := B3CST.ChoiceBranches.mem_sizeOf hmem; omega
-  . cases case; cases cases; simp_all; subst_vars; rename_i hin; simp at hin
-    have := Array.sizeOf_lt_of_mem hin; simp_all; omega
+  all_goals(try term_by_mem)
+  . cases stmts; simp_all; term_by_mem
+  . cases elseB; term_by_mem
+  . have := B3CST.ChoiceBranches.mem_sizeOf hmem; term_by_mem
+  . cases case; cases cases; simp_all; simp_all; term_by_mem
 
 def paramModeFromCST [Inhabited M] : Ann (Option (B3CST.PParamMode M)) M → Strata.B3AST.ParamMode M
   | ⟨m, none⟩ => .paramModeIn m

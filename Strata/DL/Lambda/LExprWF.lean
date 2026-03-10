@@ -3,10 +3,10 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-
-
-import Strata.DL.Lambda.LExpr
+public import Strata.DL.Lambda.LExpr
+import all Strata.DL.Lambda.LExpr
 
 /-! ## Well-formedness of Lambda Expressions
 
@@ -18,6 +18,8 @@ See the definition `Lambda.LExpr.WF`. Also see theorem `HasType.regularity` in
 
 namespace Lambda
 open Std (ToFormat Format format)
+
+public section
 
 namespace LExpr
 
@@ -33,8 +35,8 @@ def freeVars (e : LExpr ⟨T, GenericTy⟩) : IdentTs GenericTy T.IDMeta :=
   | .op _ _ _ => []
   | .bvar _ _ => []
   | .fvar _ x ty => [(x, ty)]
-  | .abs _ _ e1 => freeVars e1
-  | .quant _ _ _ tr e1 => freeVars tr ++ freeVars e1
+  | .abs _ _ _ e1 => freeVars e1
+  | .quant _ _ _ _ tr e1 => freeVars tr ++ freeVars e1
   | .app _ e1 e2 => freeVars e1 ++ freeVars e2
   | .ite _ c t e => freeVars c ++ freeVars t ++ freeVars e
   | .eq _ e1 e2 => freeVars e1 ++ freeVars e2
@@ -51,20 +53,20 @@ def closed (e : LExpr ⟨T, GenericTy⟩) : Bool :=
 
 omit [DecidableEq T.IDMeta] in
 @[simp]
-theorem fresh_abs {x : IdentT GenericTy T.IDMeta} {m : T.Metadata} {ty : Option GenericTy} {e : LExpr ⟨T, GenericTy⟩} :
-  fresh x (.abs m ty e) = fresh x e := by
+theorem fresh_abs {x : IdentT GenericTy T.IDMeta} {m : T.Metadata} {name : String} {ty : Option GenericTy} {e : LExpr ⟨T, GenericTy⟩} :
+  fresh x (.abs m name ty e) = fresh x e := by
   simp [fresh, freeVars]
 
 omit [DecidableEq T.IDMeta] in
 @[simp]
-theorem freeVars_abs {m : T.Metadata} {ty : Option GenericTy} {e : LExpr ⟨T, GenericTy⟩} :
-  freeVars (.abs m ty e) = freeVars e := by
+theorem freeVars_abs {m : T.Metadata} {name : String} {ty : Option GenericTy} {e : LExpr ⟨T, GenericTy⟩} :
+  freeVars (.abs m name ty e) = freeVars e := by
   simp [freeVars]
 
 omit [DecidableEq T.IDMeta] in
 @[simp]
-theorem closed_abs {m : T.Metadata} {ty : Option GenericTy} {e : LExpr ⟨T, GenericTy⟩} :
-  closed (.abs m ty e) = closed e := by
+theorem closed_abs {m : T.Metadata} {name : String} {ty : Option GenericTy} {e : LExpr ⟨T, GenericTy⟩} :
+  closed (.abs m name ty e) = closed e := by
   simp [closed]
 
 ---------------------------------------------------------------------
@@ -85,8 +87,8 @@ def substK {T:LExprParamsT} (k : Nat) (s : T.base.Metadata → LExpr T)
   | .op m o ty => .op m o ty
   | .bvar m i => if i == k then s m else .bvar m i
   | .fvar m y ty => .fvar m y ty
-  | .abs m ty e' => .abs m ty (substK (k + 1) s e')
-  | .quant m qk ty tr' e' => .quant m qk ty (substK (k + 1) s tr') (substK (k + 1) s e')
+  | .abs m name ty e' => .abs m name ty (substK (k + 1) s e')
+  | .quant m qk name ty tr' e' => .quant m qk name ty (substK (k + 1) s tr') (substK (k + 1) s e')
   | .app m e1 e2 => .app m (substK k s e1) (substK k s e2)
   | .ite m c t e => .ite m (substK k s c) (substK k s t) (substK k s e)
   | .eq m e1 e2 => .eq m (substK k s e1) (substK k s e2)
@@ -126,6 +128,40 @@ Note that `x` is expected to be a fresh variable w.r.t. `e`.
 def varOpen (k : Nat) (x : IdentT GenericTy T.IDMeta) (e : LExpr ⟨T, GenericTy⟩) : LExpr ⟨T, GenericTy⟩ :=
   substK k (fun m => .fvar m x.fst x.snd) e
 
+theorem varOpen_sizeOf {T}:
+  ∀ (x:IdentT GenericTy T.IDMeta) e k,
+    (varOpen (T := T) k x e).sizeOf = e.sizeOf := by
+  intros x e
+  induction e
+  case const _ _ | op _ _ _ | fvar _ _ _ =>
+    unfold varOpen substK; solve | simp
+  case bvar _ n =>
+    intro k
+    unfold varOpen substK
+    split <;> solve | simp
+  case abs _ ty e IH =>
+    unfold varOpen substK
+    intro k
+    simp only [sizeOf]
+    unfold varOpen at IH
+    grind
+  case quant _ ty e trigger x_IH trigger_IH =>
+    unfold varOpen substK
+    intro k
+    simp only [sizeOf]
+    unfold varOpen at x_IH trigger_IH
+    grind
+  case app _ _ lhs_IH rhs_IH  | eq _ _ lhs_IH rhs_IH =>
+    unfold varOpen substK
+    unfold varOpen at lhs_IH rhs_IH
+    simp only [sizeOf]
+    grind
+  case ite _ _ c_IH then_IH else_IH =>
+    unfold varOpen substK
+    unfold varOpen at c_IH then_IH else_IH
+    simp only [sizeOf]
+    grind
+
 /--
 This function turns some free variables into bound variables to build an
 abstraction, given its body. `varClose k x e` keeps track of the number `k`
@@ -139,8 +175,8 @@ def varClose {T} {GenericTy} [BEq (Identifier T.IDMeta)] [BEq GenericTy] (k : Na
   | .bvar m i => .bvar m i
   | .fvar m y (yty: Option GenericTy) => if x.fst == y && (yty == x.snd) then
                       (.bvar m k) else (.fvar m y yty)
-  | .abs m ty e' => .abs m ty (varClose (k + 1) x e')
-  | .quant m qk ty tr' e' => .quant m qk ty (varClose (k + 1) x tr') (varClose (k + 1) x e')
+  | .abs m name ty e' => .abs m name ty (varClose (k + 1) x e')
+  | .quant m qk name ty tr' e' => .quant m qk name ty (varClose (k + 1) x tr') (varClose (k + 1) x e')
   | .app m e1 e2 => .app m (varClose k x e1) (varClose k x e2)
   | .ite m c t e => .ite m (varClose k x c) (varClose k x t) (varClose k x e)
   | .eq m e1 e2 => .eq m (varClose k x e1) (varClose k x e2)
@@ -176,8 +212,8 @@ def lcAt (k : Nat) (e : LExpr ⟨T, GenericTy⟩) : Bool :=
   | .op _ _ _ => true
   | .bvar _ i => i < k
   | .fvar _ _ _ => true
-  | .abs _ _ e1 => lcAt (k + 1) e1
-  | .quant _ _ _ tr e1 => lcAt (k + 1) tr && lcAt (k + 1) e1
+  | .abs _ _ _ e1 => lcAt (k + 1) e1
+  | .quant _ _ _ _ tr e1 => lcAt (k + 1) tr && lcAt (k + 1) e1
   | .app _ e1 e2 => lcAt k e1 && lcAt k e2
   | .ite _ c t e' => lcAt k c && lcAt k t && lcAt k e'
   | .eq _ e1 e2 => lcAt k e1 && lcAt k e2
@@ -225,13 +261,13 @@ theorem lcAt_varOpen_inv (hs: lcAt k (varOpen i x e)) (hik: k ≤ i) : lcAt (i +
 
 theorem lcAt_varOpen_abs
   (h1 : lcAt k (varOpen i x y)) (h2 : k <= i) :
-  lcAt i (abs m ty y) := by
+  lcAt i (abs m name ty y) := by
   simp[lcAt]; apply (@lcAt_varOpen_inv k i)<;> assumption
 
 theorem lcAt_varOpen_quant
   (hy : lcAt k (varOpen i x y)) (hki : k <= i)
   (htr: lcAt k (varOpen i x tr)) :
-  lcAt i (quant m qk ty tr y) := by
+  lcAt i (quant m qk name ty tr y) := by
   simp[lcAt]; constructor<;> apply (@lcAt_varOpen_inv k i) <;> assumption
 
 /--
@@ -256,22 +292,62 @@ theorem varOpen_of_varClose {T} {GenericTy} [BEq T.Metadata] [LawfulBEq T.Metada
 /-! ### Substitution on `LExpr`s -/
 
 /--
-Substitute `(.fvar x _)` in `e` with `s`. Note that unlike `substK`, `varClose`,
-and `varOpen`, this function is agnostic of types.
+Increment bound variable indices in `e` by `n`. Only bvars at or above `cutoff`
+are shifted; bvars below `cutoff` (bound within `e`) are left alone. The cutoff
+increases when going under binders.
+-/
+def liftBVars (n : Nat) (e : LExpr ⟨T, GenericTy⟩) (cutoff : Nat := 0) : LExpr ⟨T, GenericTy⟩ :=
+  match e with
+  | .const _ _ => e | .op _ _ _ => e | .fvar _ _ _ => e
+  | .bvar m i => if i >= cutoff then .bvar m (i + n) else e
+  | .abs m name ty e' => .abs m name ty (liftBVars n e' (cutoff + 1))
+  | .quant m qk name ty tr' e' => .quant m qk name ty (liftBVars n tr' (cutoff + 1)) (liftBVars n e' (cutoff + 1))
+  | .app m fn e' => .app m (liftBVars n fn cutoff) (liftBVars n e' cutoff)
+  | .ite m c t e' => .ite m (liftBVars n c cutoff) (liftBVars n t cutoff) (liftBVars n e' cutoff)
+  | .eq m e1 e2 => .eq m (liftBVars n e1 cutoff) (liftBVars n e2 cutoff)
 
-Also see function `subst`, where `subst s e` substitutes the outermost _bound_
-variable in `e` with `s`.
+/--
+Substitute `(.fvar x _)` in `e` with `to`. Does NOT lift de Bruijn indices in `to`
+when going under binders - safe when `to` contains no bvars (e.g., substituting
+fvar→fvar). Use `substFvarLifting` when `to` contains bvars.
 -/
 def substFvar [BEq T.IDMeta] (e : LExpr ⟨T, GenericTy⟩) (fr : T.Identifier) (to : LExpr ⟨T, GenericTy⟩)
   : (LExpr ⟨T, GenericTy⟩) :=
   match e with
   | .const _ _ => e | .bvar _ _ => e | .op _ _ _ => e
   | .fvar _ name _ => if name == fr then to else e
-  | .abs m ty e' => .abs m ty (substFvar e' fr to)
-  | .quant m qk ty tr' e' => .quant m qk ty (substFvar tr' fr to) (substFvar e' fr to)
+  | .abs m name ty e' => .abs m name ty (substFvar e' fr to)
+  | .quant m qk name ty tr' e' => .quant m qk name ty (substFvar tr' fr to) (substFvar e' fr to)
   | .app m fn e' => .app m (substFvar fn fr to) (substFvar e' fr to)
   | .ite m c t e' => .ite m (substFvar c fr to) (substFvar t fr to) (substFvar e' fr to)
   | .eq m e1 e2 => .eq m (substFvar e1 fr to) (substFvar e2 fr to)
+
+/--
+Like `substFvar`, but properly lifts de Bruijn indices in `to` when going under
+binders. Use this when `to` contains bound variables that should be preserved.
+
+**Important:** `to` is interpreted in the *outer* scope (before entering `e`).
+Any bvars in `to` must refer to binders *outside* `e`, not to binders within `e`.
+When the traversal descends under a binder in `e`, `liftBVars` shifts `to`'s
+indices so they continue to point to the same outer binders.
+-/
+def substFvarLifting [BEq T.IDMeta] (e : LExpr ⟨T, GenericTy⟩) (fr : T.Identifier) (to : LExpr ⟨T, GenericTy⟩)
+  : (LExpr ⟨T, GenericTy⟩) :=
+  go e 0
+where
+  go (e : LExpr ⟨T, GenericTy⟩) (depth : Nat) : LExpr ⟨T, GenericTy⟩ :=
+    match e with
+    | .const _ _ => e | .bvar _ _ => e | .op _ _ _ => e
+    | .fvar _ name _ => if name == fr then liftBVars depth to else e
+    | .abs m name ty e' => .abs m name ty (go e' (depth + 1))
+    | .quant m qk name ty tr' e' => .quant m qk name ty (go tr' (depth + 1)) (go e' (depth + 1))
+    | .app m fn e' => .app m (go fn depth) (go e' depth)
+    | .ite m c t f => .ite m (go c depth) (go t depth) (go f depth)
+    | .eq m e1 e2 => .eq m (go e1 depth) (go e2 depth)
+
+def substFvarsLifting [BEq T.IDMeta] (e : LExpr ⟨T, GenericTy⟩) (sm : Map T.Identifier (LExpr ⟨T, GenericTy⟩))
+  : LExpr ⟨T, GenericTy⟩ :=
+  List.foldl (fun e (var, s) => substFvarLifting e var s) e sm
 
 def substFvars [BEq T.IDMeta] (e : LExpr ⟨T, GenericTy⟩) (sm : Map T.Identifier (LExpr ⟨T, GenericTy⟩))
   : LExpr ⟨T, GenericTy⟩ :=
@@ -280,4 +356,5 @@ def substFvars [BEq T.IDMeta] (e : LExpr ⟨T, GenericTy⟩) (sm : Map T.Identif
 ---------------------------------------------------------------------
 
 end LExpr
+end -- public section
 end Lambda

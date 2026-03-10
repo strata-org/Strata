@@ -16,11 +16,12 @@ program Core;
 //
 
 var g : bool;
+
 procedure Test(x : bool) returns (y : bool)
 spec {
   ensures (y == x);
   ensures (x == y);
-  ensures (g == old(g));
+  ensures (g == old g);
 }
 {
   y := x || x;

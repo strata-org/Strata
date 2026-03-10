@@ -96,6 +96,7 @@ abbrev PureExpr : PureExpr :=
    { Ident := String,
      Expr := Expr,
      Ty := Ty,
+     ExprMetadata := Unit,
      TyEnv := TEnv,
      TyContext := Unit,
      EvalEnv := Env,

@@ -30,7 +30,7 @@ procedure MainProc() returns (output : int)
 spec {
   modifies x;
   requires [x_nonneg]: (x >= 0);
-  ensures [output_property]: (output == old(x) * 4);
+  ensures [output_property]: (output == old x * 4);
 }
 {
   call output := Helper(x);
@@ -61,22 +61,18 @@ info:
 Obligation: callElimAssert_n_positive_6
 Property: assert
 Result: ❌ fail
-Model:
-($__x0, 0)
 
 Obligation: callElimAssert_n_positive_2
 Property: assert
 Result: ❌ fail
-Model:
-($__output2, 0) ($__x0, 0)
 
 Obligation: output_property
 Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify "cvc5" selectiveVerificationPgm
-        (options := Options.quiet)
+#eval verify selectiveVerificationPgm
+        (options := .quiet)
         (proceduresToVerify := (some ["MainProc"]))
 
 --------- Verify all procedures (default behavior)
@@ -90,14 +86,10 @@ Result: ✅ pass
 Obligation: (Origin_Helper_Requires)n_positive
 Property: assert
 Result: ❌ fail
-Model:
-($__x2, 0)
 
 Obligation: (Origin_Helper_Requires)n_positive
 Property: assert
 Result: ❌ fail
-Model:
-($__output4, 0) ($__x2, 0)
 
 Obligation: output_property
 Property: assert
@@ -112,7 +104,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify "cvc5" selectiveVerificationPgm (options := Options.quiet)
+#eval verify selectiveVerificationPgm (options := .quiet)
 
 ---------- Verify only IndependentProc
 
@@ -123,8 +115,8 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify "cvc5" selectiveVerificationPgm
-        (options := Options.quiet)
+#eval verify selectiveVerificationPgm
+        (options := .quiet)
         (proceduresToVerify := ["IndependentProc"])
 
 ---------- Verify multiple specific procedures
@@ -140,8 +132,8 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify "cvc5" selectiveVerificationPgm
-          (options := Options.quiet)
+#eval verify selectiveVerificationPgm
+          (options := .quiet)
           (proceduresToVerify := (some ["IndependentProc", "UnusedProc"]))
 
 ---------------------------------------------------------------------

@@ -3,15 +3,18 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.DL.Imperative.PureExpr
-import Strata.DL.Imperative.MetaData
-import Strata.DL.Imperative.HasVars
+public import Strata.DL.Imperative.PureExpr
+public import Strata.DL.Imperative.MetaData
+public import Strata.DL.Imperative.HasVars
 import Strata.DL.Lambda.LExpr
 
 ---------------------------------------------------------------------
 
 namespace Imperative
+
+public section
 
 
 /-! # Imperative Dialect
@@ -34,27 +37,27 @@ Commands don't create local control flow, and are typically used as a parameter
 to `Imperative.Stmt` or other similar types.
 -/
 inductive Cmd (P : PureExpr) : Type where
-  /-- Define a variable called `name` with type `ty` and initial value `e`.
-    Note: we may make the initial value optional. -/
-  | init     (name : P.Ident) (ty : P.Ty) (e : P.Expr) (md : (MetaData P) := .empty)
+  /-- Define a variable called `name` with type `ty` and optional initial value `e`.
+      When `e` is `none`, the variable is initialized with an arbitrary value. -/
+  | init     (name : P.Ident) (ty : P.Ty) (e : Option P.Expr) (md : (MetaData P))
   /-- Assign `e` to a pre-existing variable `name`. -/
-  | set      (name : P.Ident) (e : P.Expr) (md : (MetaData P) := .empty)
+  | set      (name : P.Ident) (e : P.Expr) (md : (MetaData P))
   /-- Assigns an arbitrary value to an existing variable `name`. -/
-  | havoc    (name : P.Ident) (md : (MetaData P) := .empty)
+  | havoc    (name : P.Ident) (md : (MetaData P))
   /-- Checks if condition `b` is true on _all_ paths on which this command is
     encountered. Reports an error if `b` does not hold on _any_ of these paths.
   -/
-  | assert   (label : String) (b : P.Expr) (md : (MetaData P) := .empty)
+  | assert   (label : String) (b : P.Expr) (md : (MetaData P))
   /-- Ignore any execution state in which `b` is not true. -/
-  | assume   (label : String) (b : P.Expr) (md : (MetaData P) := .empty)
+  | assume   (label : String) (b : P.Expr) (md : (MetaData P))
   /--
   Checks if there _exists_ a path that reaches this command and condition `b` is
   true. Reports an error otherwise. This is the dual of `assert`, and can be
   used for coverage analysis.
   -/
-  | cover    (label : String) (b : P.Expr) (md : (MetaData P) := .empty)
+  | cover    (label : String) (b : P.Expr) (md : (MetaData P))
 
-abbrev Cmds (P : PureExpr) := List (Cmd P)
+@[expose] abbrev Cmds (P : PureExpr) := List (Cmd P)
 
 instance [Inhabited P.Ident]: Inhabited (Cmd P) where
   default := .havoc default default
@@ -67,22 +70,6 @@ def Cmd.getMetaData (c : Cmd P) : MetaData P :=
   | .assert _ _ md | .assume _ _ md | .cover _ _ md =>
    md
 
-instance : SizeOf String where
-  sizeOf s := s.length
-
-@[simp]
-def Cmd.sizeOf (c : Imperative.Cmd P) : Nat :=
-  match c with
-  | .init   n t e _ => 1 + SizeOf.sizeOf n + SizeOf.sizeOf t + SizeOf.sizeOf e
-  | .set    n e _ => 1 + SizeOf.sizeOf n + SizeOf.sizeOf e
-  | .havoc  n _ => 1 + SizeOf.sizeOf n
-  | .assert l b _ => 1 + SizeOf.sizeOf l + SizeOf.sizeOf b
-  | .assume l b _ => 1 + SizeOf.sizeOf l + SizeOf.sizeOf b
-  | .cover l b _ => 1 + SizeOf.sizeOf l + SizeOf.sizeOf b
-
-instance (P : PureExpr) : SizeOf (Imperative.Cmd P) where
-  sizeOf := Cmd.sizeOf
-
 ---------------------------------------------------------------------
 
 class HasPassiveCmds (P : PureExpr) (CmdT : Type) where
@@ -94,17 +81,19 @@ instance : HasPassiveCmds P (Cmd P) where
   assert l e (md := MetaData.empty):= .assert l e md
 
 class HasHavoc (P : PureExpr) (CmdT : Type) where
-  havoc : P.Ident → CmdT
+  havoc : P.Ident → MetaData P → CmdT
 
 instance : HasHavoc P (Cmd P) where
-  havoc x := .havoc x
+  havoc x md := .havoc x md
 ---------------------------------------------------------------------
 
 mutual
 /-- Get all variables accessed by `c`. -/
 def Cmd.getVars [HasVarsPure P P.Expr] (c : Cmd P) : List P.Ident :=
   match c with
-  | .init _ _ e _ => HasVarsPure.getVars e
+  | .init _ _ eOpt _ => match eOpt with
+    | some e => HasVarsPure.getVars e
+    | none => []
   | .set _ e _ => HasVarsPure.getVars e
   | .havoc _ _ => []
   | .assert _ e _ => HasVarsPure.getVars e
@@ -174,7 +163,8 @@ open Std (ToFormat Format format)
 def formatCmd (P : PureExpr) (c : Cmd P)
     [ToFormat P.Ident] [ToFormat P.Expr] [ToFormat P.Ty] : Format :=
   match c with
-  | .init name ty e _md => f!"init ({name} : {ty}) := {e}"
+  | .init name ty (some e) _md => f!"init ({name} : {ty}) := {e}"
+  | .init name ty none _md => f!"init ({name} : {ty})"
   | .set name e _md => f!"{name} := {e}"
   | .havoc name _md => f!"havoc {name}"
   | .assert label b _md => f!"assert [{label}] {b}"
@@ -197,4 +187,5 @@ instance [ToFormat P.Ident] [ToFormat P.Expr] [ToFormat P.Ty]
 
 ---------------------------------------------------------------------
 
+end -- public section
 end Imperative

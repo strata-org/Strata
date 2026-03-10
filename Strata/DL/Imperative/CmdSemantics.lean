@@ -3,15 +3,18 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.DL.Imperative.Stmt
-import Strata.DL.Imperative.HasVars
-import Strata.DL.Util.Map
-import Strata.DL.Util.ListUtils
+public import Strata.DL.Imperative.Cmd
+public import Strata.DL.Imperative.HasVars
+public import Strata.DL.Util.Map
+public import Strata.DL.Util.ListUtils
 
 ---------------------------------------------------------------------
 
 namespace Imperative
+
+public section
 
 section
 
@@ -23,16 +26,16 @@ data structure. They'll probably usually be instantiated with map
 lookups. The evaluation functions take two states: an old state and a
 current state. This allows for two-state expressions and predicates.
 -/
-abbrev SemanticStore := P.Ident → Option P.Expr
-abbrev SemanticEval := SemanticStore P → P.Expr → Option P.Expr
-abbrev SemanticEvalBool := SemanticStore P → P.Expr → Option Bool
-
+@[expose] abbrev SemanticStore := P.Ident → Option P.Expr
+@[expose] abbrev SemanticEval := SemanticStore P → P.Expr → Option P.Expr
+@[expose] abbrev SemanticEvalBool := SemanticStore P → P.Expr → Option Bool
 
 /--
 Evaluation relation of an Imperative command `Cmd`.
+Commands do not modify the evaluator - only `funcDecl` statements do.
 -/
 -- (FIXME) Change to a type class?
-abbrev EvalCmdParam (P : PureExpr) (Cmd : Type) :=
+@[expose] abbrev EvalCmdParam (P : PureExpr) (Cmd : Type) :=
   SemanticEval P → SemanticStore P → Cmd → SemanticStore P → Prop
 
 /-- ### Well-Formedness of `SemanticStore`s -/
@@ -268,6 +271,7 @@ inductive InitState : SemanticStore P → P.Ident → P.Expr → SemanticStore P
 /--
 An inductively-defined operational semantics for `Cmd` that depends on variable
 lookup (`σ`) and expression evaluation (`δ`) functions.
+Commands do not modify the evaluator - only `funcDecl` statements do.
 -/
 inductive EvalCmd [HasFvar P] [HasBool P] [HasNot P] :
   SemanticEval P → SemanticStore P → Cmd P → SemanticStore P → Prop where
@@ -277,7 +281,14 @@ inductive EvalCmd [HasFvar P] [HasBool P] [HasNot P] :
     InitState P σ x v σ' →
     WellFormedSemanticEvalVar δ →
     ---
-    EvalCmd δ σ (.init x _ e _) σ'
+    EvalCmd δ σ (.init x _ (some e) _) σ'
+
+  /-- Initialize `x` with an unconstrained value (havoc semantics). -/
+  | eval_init_unconstrained :
+    InitState P σ x v σ' →
+    WellFormedSemanticEvalVar δ →
+    ---
+    EvalCmd δ σ (.init x _ none _) σ'
 
   /-- If `e` evaluates to a value `v`, assign `x` according to `UpdateState`. -/
   | eval_set :
@@ -410,3 +421,5 @@ theorem InitStateUniqueResult
   specialize Hfa1 v' h
   specialize Hfa2 v' h
   simp_all
+
+end -- public section

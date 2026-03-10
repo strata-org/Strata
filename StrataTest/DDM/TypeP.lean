@@ -3,6 +3,7 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
 import Strata.DDM.Integration.Lean
 
@@ -23,10 +24,10 @@ op mkBinding (name : Ident, tp : TypeP) : Binding => @[prec(40)] name ":" tp;
 #strata_gen TestTypeP
 
 /--
-info: inductive TypeP : Type → Type
+info: private inductive TypeP : Type → Type
 number of parameters: 1
 constructors:
-TypeP.expr : {α : Type} → TestTypePType α → TypeP α
-TypeP.type : {α : Type} → α → TypeP α
+_private.StrataTest.DDM.TypeP.0.TypeP.expr : {α : Type} → TestTypePType α → TypeP α
+_private.StrataTest.DDM.TypeP.0.TypeP.type : {α : Type} → α → TypeP α
 -/
 #guard_msgs in #print TypeP

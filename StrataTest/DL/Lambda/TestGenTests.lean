@@ -99,7 +99,7 @@ open TestGen
   let P : _ → Prop := fun m => MapsFind₂ [[], [((3 : Nat), "old")]] m
   Gen.runUntil .none (ArbitrarySizedSuchThat.arbitrarySizedST P 10) 10
 
-/-- error: Generation failure:Gen.runUtil: Out of attempts
+/-- error: Generation failure:Gen.runUntil: Out of attempts
 -/
 #guard_msgs(error) in
 #eval
@@ -142,12 +142,13 @@ abbrev example_ty : LTy := .forAll [] <| .tcons "arrow" [.tcons "bool" [], .tcon
     let t ← Gen.runUntil (.some 10) (ArbitrarySizedSuchThat.arbitrarySizedST P 5) 5
     IO.println s!"Generated {t}"
 
-/-- info: Generating terms of type
+/--
+info: Generating terms of type
 Lambda.LTy.forAll [] (Lambda.LMonoTy.tcons "arrow" [Lambda.LMonoTy.tcons "bool" [], Lambda.LMonoTy.tcons "bool" []])
 in context
 { types := [[]], aliases := [] }
 in factory
-#[Int.Add, Int.Sub, Int.Mul, Int.Div, Int.Mod, Int.Neg, Int.Lt, Int.Le, Int.Gt, Int.Ge, Bool.And, Bool.Or, Bool.Implies, Bool.Equiv, Bool.Not]
+#[Int.Add, Int.Sub, Int.Mul, Int.Div, Int.SafeDiv, Int.Mod, Int.SafeMod, Int.DivT, Int.SafeDivT, Int.ModT, Int.SafeModT, Int.Neg, Int.Lt, Int.Le, Int.Gt, Int.Ge, Bool.And, Bool.Or, Bool.Implies, Bool.Equiv, Bool.Not]
 -/
 #guard_msgs in
 #eval Strata.Util.withStdGenSeed 0 do
@@ -160,12 +161,13 @@ in factory
       let .error e := annotate t | throw <| IO.Error.userError "Unreachable"
       IO.println s!"FAILED({i}): {e}\n{t}\n\nSHRUNK TO:\n{shrinkFun (not ∘ canAnnotate) t}\n\n"
 
-/-- info: Generating terms of type
+/--
+info: Generating terms of type
 Lambda.LTy.forAll [] (Lambda.LMonoTy.tcons "arrow" [Lambda.LMonoTy.tcons "bool" [], Lambda.LMonoTy.tcons "bool" []])
 in context
 { types := [[]], aliases := [] }
 in factory
-#[Int.Add, Int.Sub, Int.Mul, Int.Div, Int.Mod, Int.Neg, Int.Lt, Int.Le, Int.Gt, Int.Ge, Bool.And, Bool.Or, Bool.Implies, Bool.Equiv, Bool.Not]
+#[Int.Add, Int.Sub, Int.Mul, Int.Div, Int.SafeDiv, Int.Mod, Int.SafeMod, Int.DivT, Int.SafeDivT, Int.ModT, Int.SafeModT, Int.Neg, Int.Lt, Int.Le, Int.Gt, Int.Ge, Bool.And, Bool.Or, Bool.Implies, Bool.Equiv, Bool.Not]
 -/
 #guard_msgs(info, drop error) in
 #eval Strata.Util.withStdGenSeed 0 do

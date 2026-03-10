@@ -8,9 +8,10 @@
 
 import Strata.Languages.Core.Statement
 import Strata.Languages.Core.Program
-import Strata.Languages.Core.OldExpressions
 import Strata.Languages.Core.Env
 import Strata.Languages.Core.CmdEval
+import Strata.DL.Lambda.LTyUnify
+import Strata.DL.Lambda.LExprT
 
 ---------------------------------------------------------------------
 
@@ -57,11 +58,10 @@ private def callConditions (proc : Procedure)
 /--
 Create substitution mapping from formal parameters to actual arguments.
 -/
-private def mkFormalArgSubst (proc : Procedure) (args : List Expression.Expr) (E : Env)
-    (old_var_subst : SubstMap) : VarSubst :=
-  let args' := args.map (fun a => E.exprEval (OldExpressions.substsOldExpr old_var_subst a))
+private def mkFormalArgSubst (proc : Procedure) (args : List Expression.Expr) (E : Env) : VarSubst :=
+  let args' := args.map (fun a => E.exprEval a)
   let formal_tys := proc.header.inputs.keys.map
-                      (fun k => ((k, none) : (Lambda.IdentT Lambda.LMonoTy Visibility)))
+                      (fun k => ((k, none) : (Lambda.IdentT Lambda.LMonoTy Unit)))
   List.zip formal_tys args'
 
 /--
@@ -83,7 +83,7 @@ private def mkReturnSubst (proc : Procedure) (lhs : List Expression.Ident) (E : 
   let lhs_typed := lhs.zip lhs_tys
   let (lhs_fvars, E') := E.genFVars lhs_typed
   let return_tys := proc.header.outputs.keys.map
-      (fun k => ((k, none) : (Lambda.IdentT Lambda.LMonoTy Visibility)))
+      (fun k => ((k, none) : (Lambda.IdentT Lambda.LMonoTy Unit)))
   let return_lhs_subst := List.zip return_tys lhs_fvars
   let lhs_post_subst := List.zip lhs_typed lhs_fvars
   (return_lhs_subst, lhs_post_subst, E')
@@ -112,15 +112,61 @@ private def getCurrentGlobals (E : Env) : VarSubst :=
   E.exprEnv.state.oldest.map (fun (id, ty, e) => ((id.name, ty), e))
 
 /--
+Extract the type from an expression that has already been typechecked (so e.g.
+`.fvar` and `.op` nodes have their types stored in the `Option LMonoTy` field).
+-/
+private def getExprType (e : Expression.Expr) : Option LMonoTy :=
+  match e with
+  | .fvar _ _ ty => ty
+  | .op _ _ ty => ty
+  | .const _ c => some c.ty
+  | .app _ fn _ =>
+    -- For application, get the return type from the function type
+    match getExprType fn with
+    | some (.tcons "arrow" [_, ret]) => some ret
+    | _ => none
+  | .eq _ _ _ => some .bool
+  | .quant _ _ _ _ _ _ => some .bool
+  | .abs _ _ ty e =>
+    match ty, getExprType e with
+    | some ty1, some ty2 => some (.arrow ty1 ty2)
+    | _, _ => none
+  | .ite _ _ e1 e2 =>
+    let ty1 := getExprType e1
+    if ty1 == getExprType e2 then ty1 else none
+  | .bvar _ _ => none
+
+/--
+Compute type substitution by unifying actual argument types with input types
+and LHS types with output types.
+-/
+private def computeTypeSubst (input_tys output_tys: List LMonoTy)
+  (args : List Expression.Expr) (lhs : List Expression.Ident) (E : Env) :
+  Subst :=
+  let actual_tys := args.filterMap getExprType
+  let lhs_tys := lhs.filterMap (fun l =>
+    (E.exprEnv.state.findD l (none, .fvar () l none)).fst)
+  let input_constraints := actual_tys.zip input_tys
+  let output_constraints := lhs_tys.zip output_tys
+  let constraints := input_constraints ++ output_constraints
+  match Constraints.unify constraints SubstInfo.empty with
+  | .ok substInfo => substInfo.subst
+  | .error _ => Subst.empty
+
+/--
 Evaluate a procedure call `lhs := pname(args)`.
 -/
-def Command.evalCall (E : Env) (old_var_subst : SubstMap)
+def Command.evalCall (E : Env)
     (lhs : List Expression.Ident) (pname : String) (args : List Expression.Expr)
     (md : Imperative.MetaData Expression) : Command × Env :=
   match Program.Procedure.find? E.program pname with
   | some proc =>
+    -- Compute type substitution to instantiate polymorphic type variables.
+    let tySubst := computeTypeSubst proc.header.inputs.values
+      proc.header.outputs.values args lhs E
+
     -- (Pre-call) Create formal-to-actual argument mapping.
-    let formal_arg_subst := mkFormalArgSubst proc args E old_var_subst
+    let formal_arg_subst := mkFormalArgSubst proc args E
     -- (Pre-call) Get current global values for old expression handling.
     let current_globals := getCurrentGlobals E
     -- (Post-call) Create return variable mappings and fresh LHS variables.
@@ -129,10 +175,13 @@ def Command.evalCall (E : Env) (old_var_subst : SubstMap)
     -- current values for unmodified.
     let (globals_post_subst, E) := mkGlobalSubst proc current_globals E
 
+    -- Apply type substitution to preconditions to instantiate type variables.
+    let preconditions_typed := proc.spec.preconditions.map
+        (fun (l, c) => (l, { c with expr := c.expr.applySubst tySubst }))
     -- Create pre-call substitution for preconditions.
     let precond_subst := formal_arg_subst ++ current_globals
     -- Generate precondition proof obligations.
-    let preconditions := callConditions proc .Requires proc.spec.preconditions precond_subst
+    let preconditions := callConditions proc .Requires preconditions_typed precond_subst
     -- It's safe to evaluate the preconditions in the current environment
     -- (pre-call context).
     let preconditions := preconditions.map
@@ -140,12 +189,18 @@ def Command.evalCall (E : Env) (old_var_subst : SubstMap)
     let deferred_pre := ProofObligations.createAssertions E.pathConditions preconditions
     let E := { E with deferred := E.deferred ++ deferred_pre }
 
+    -- Apply type substitution to postconditions to instantiate type variables.
+    let postconditions_typed := proc.spec.postconditions.map
+        (fun (l, c) => (l, { c with expr := c.expr.applySubst tySubst }))
     -- Create post-call substitution for postconditions.
     let postcond_subst_init := formal_arg_subst ++ return_lhs_subst
-    let postcond_subst_map := postcond_subst_init ++ current_globals
-    let postconditions := OldExpressions.substsOldInProcChecks postcond_subst_map proc.spec.postconditions
-    let postcond_subst_full :=  postcond_subst_init ++ globals_post_subst
-    let postconditions := callConditions proc .Ensures postconditions postcond_subst_full
+    -- Build "old g" substitutions: map "old g" → pre-call value of g
+    let old_g_subst : VarSubst := current_globals.filterMap fun ((id, ty), e) =>
+      let oldId : CoreIdent := CoreIdent.mkOld id.name
+      some ((oldId, ty), e)
+    -- Substitute: args/returns with fresh vars, globals with post-call fresh vars, "old g" with pre-call values
+    let postcond_subst_map := postcond_subst_init ++ globals_post_subst ++ old_g_subst
+    let postconditions := callConditions proc .Ensures postconditions_typed postcond_subst_map
 
     -- Add postconditions to path conditions.
     let postconditions := postconditions.keys.zip (Procedure.Spec.getCheckExprs postconditions)
@@ -170,7 +225,7 @@ def Command.eval (E : Env) (old_var_subst : SubstMap) (c : Command) : Command ×
     let (c, E) := Imperative.Cmd.eval { E with substMap := old_var_subst } c
     (.cmd c, E)
   | .call lhs pname args md =>
-    Command.evalCall E old_var_subst lhs pname args md
+    Command.evalCall E lhs pname args md
 
 ---------------------------------------------------------------------
 
@@ -186,7 +241,7 @@ def Statement.containsCmd (predicate : Imperative.Cmd Expression → Bool) (s : 
   | .ite _ then_ss else_ss _ => Statements.containsCmds predicate then_ss ||
                                 Statements.containsCmds predicate else_ss
   | .loop _ _ _ body_ss _ => Statements.containsCmds predicate body_ss
-  | .goto _ _ => false
+  | .funcDecl _ _ | .exit _ _ | .typeDecl _ _ => false  -- Function/type declarations and exits don't contain commands
   termination_by Imperative.Stmt.sizeOf s
 
 /--
@@ -225,7 +280,7 @@ def Statement.collectCovers (s : Statement) : List (String × Imperative.MetaDat
   | .block _ inner_ss _ => Statements.collectCovers inner_ss
   | .ite _ then_ss else_ss _ => Statements.collectCovers then_ss ++ Statements.collectCovers else_ss
   | .loop _ _ _ body_ss _ => Statements.collectCovers body_ss
-  | .goto _ _ => []
+  | .funcDecl _ _ | .exit _ _ | .typeDecl _ _ => []  -- Function/type declarations and exits don't contain cover commands
   termination_by Imperative.Stmt.sizeOf s
 /--
 Collect all `cover` commands from statements `ss` with their labels and metadata.
@@ -249,7 +304,7 @@ def Statement.collectAsserts (s : Statement) : List (String × Imperative.MetaDa
   | .block _ inner_ss _ => Statements.collectAsserts inner_ss
   | .ite _ then_ss else_ss _ => Statements.collectAsserts then_ss ++ Statements.collectAsserts else_ss
   | .loop _ _ _ body_ss _ => Statements.collectAsserts body_ss
-  | .goto _ _ => []
+  | .funcDecl _ _ | .exit _ _ | .typeDecl _ _ => []  -- Function/type declarations and exits don't contain assert commands
   termination_by Imperative.Stmt.sizeOf s
 /--
 Collect all `assert` commands from statements `ss` with their labels and metadata.
@@ -262,19 +317,53 @@ def Statements.collectAsserts (ss : Statements) : List (String × Imperative.Met
   termination_by Imperative.Block.sizeOf ss
 end
 
-def createFailingCoverObligations
+/--
+Create cover obligations for covers in an unreachable (dead) branch, including
+the current path conditions so that a reachability check can detect unreachability.
+The obligation expression is `false` (a cover that trivially fails).
+-/
+private def createUnreachableCoverObligations
+    (pathConditions : Imperative.PathConditions Expression)
     (covers : List (String × Imperative.MetaData Expression)) :
     Imperative.ProofObligations Expression :=
   covers.toArray.map
     (fun (label, md) =>
-      (Imperative.ProofObligation.mk label .cover [] (LExpr.false ()) md))
+      (Imperative.ProofObligation.mk label .cover pathConditions (LExpr.false ()) md))
 
-def createPassingAssertObligations
+/--
+Create assert obligations for asserts in an unreachable (dead) branch, including
+the current path conditions so that a reachability check can detect unreachability.
+The obligation expression is `true` (an assert that trivially passes).
+-/
+private def createUnreachableAssertObligations
+    (pathConditions : Imperative.PathConditions Expression)
     (asserts : List (String × Imperative.MetaData Expression)) :
     Imperative.ProofObligations Expression :=
   asserts.toArray.map
     (fun (label, md) =>
-      (Imperative.ProofObligation.mk label .assert [] (LExpr.true ()) md))
+      let propType := match md.getPropertyType with
+        | some s => if s == Imperative.MetaData.divisionByZero then .divisionByZero else .assert
+        | _ => .assert
+      (Imperative.ProofObligation.mk label propType pathConditions (LExpr.true ()) md))
+
+/--
+Substitute free variables in an expression with their current values from the environment,
+excluding the given parameter names (which are bound by the function, not free).
+This implements value capture semantics for local function declarations (`funcDecl`).
+
+Unlike global functions (which are evaluated at the top level with no local state),
+local functions capture the values of free variables at the point of declaration.
+Parameters are excluded because they are bound by the function definition and should
+not be substituted with values from the enclosing scope.
+-/
+def captureFreevars (env : Env) (paramNames : List CoreIdent) (e : Expression.Expr) : Expression.Expr :=
+  let freeVars := Lambda.LExpr.freeVars e
+  let freeVarsToCapture := freeVars.filter (fun fv => fv.fst ∉ paramNames)
+  freeVarsToCapture.foldl (fun body fv =>
+    match env.exprEnv.state.find? fv.fst with
+    | some (_, val) => Lambda.LExpr.substFvar body fv.fst val
+    | none => body
+  ) e
 
 abbrev StmtsStack := List Statements
 
@@ -295,39 +384,39 @@ def StmtsStack.appendToTop (stk : StmtsStack) (ss : Statements) : StmtsStack :=
   (top ++ ss) :: stk
 
 /--
-A new environment with an optional next label to execute and transformed
+An environment with an optional exit label and transformed
 statements (i.e., statements that have already been evaluated).
 -/
 structure EnvWithNext where
   env  : Env
-  nextLabel : Option String := .none
+  /-- `none` = no exit active; `some none` = exit nearest block; `some (some l)` = exit block `l` -/
+  exitLabel : Option (Option String) := .none
   stk : StmtsStack := []
 
 /--
-Drop statements up to the given label, and indicate whether goto
-needs to propagate up.
+Process an exit statement. When `exitLabel` is active, skip remaining
+statements. The exit propagates up through blocks until a matching block
+is found.
 
-NOTE: We only allow forward-gotos right now.
+- `exit` (no label): exits the nearest enclosing block
+- `exit l`: exits the nearest enclosing block labeled `l`
 -/
-def processGoto : Statements → Option String → (Statements × Option String)
+def processExit : Statements → Option (Option String) → (Statements × Option (Option String))
 | rest, .none => (rest, .none)
-| rest, .some l =>
-  match rest.dropWhile (fun s => !s.hasLabel l) with
-  | [] => ([], .some l) -- Not found, so propagate goto
-  | (rest') => (rest', .none) -- Found, so we're done
+| _, .some exitLabel => ([], .some exitLabel) -- Skip all remaining statements
 
 mutual
-def evalAuxGo (steps : Nat) (old_var_subst : SubstMap) (Ewn : EnvWithNext) (ss : Statements) (optLabel : Option String) :
+def evalAuxGo (steps : Nat) (old_var_subst : SubstMap) (Ewn : EnvWithNext) (ss : Statements) (optExit : Option (Option String)) :
     List EnvWithNext :=
   match steps, Ewn.env.error with
-  | _, some _ => [{Ewn with nextLabel := .none}]
-  | 0, none => [{Ewn with env := { Ewn.env with error := some .OutOfFuel}, nextLabel := .none}]
+  | _, some _ => [{Ewn with exitLabel := .none}]
+  | 0, none => [{Ewn with env := { Ewn.env with error := some .OutOfFuel}, exitLabel := .none}]
   | steps' + 1, none =>
     have _htermination_lemma : wfParam steps' < steps' + 1 := by simp [wfParam]
     let go' := evalAuxGo steps' old_var_subst
-    match processGoto ss optLabel with
-    | ([], .none) => [{ Ewn with nextLabel := .none }]
-    | (_, .some l) => [{ Ewn with nextLabel := .some l }] -- Implies statement list is empty
+    match processExit ss optExit with
+    | ([], .none) => [{ Ewn with exitLabel := .none }]
+    | (_, .some l) => [{ Ewn with exitLabel := .some l }] -- Exit propagating, statement list skipped
     | (s :: rest, .none) =>
       let EAndNexts : List EnvWithNext :=
         match s with
@@ -336,7 +425,7 @@ def evalAuxGo (steps : Nat) (old_var_subst : SubstMap) (Ewn : EnvWithNext) (ss :
             let (c', E) := Command.eval Ewn.env old_var_subst c
             [{ Ewn with stk := Ewn.stk.appendToTop [(Imperative.Stmt.cmd c')],
                         env := E,
-                        nextLabel := .none }]
+                        exitLabel := .none }]
 
           | .block label ss md =>
             let orig_stk := Ewn.stk
@@ -346,7 +435,15 @@ def evalAuxGo (steps : Nat) (old_var_subst : SubstMap) (Ewn : EnvWithNext) (ss :
             let Ewns := go' Ewn ss .none
             let Ewns := Ewns.map
                             (fun (ewn : EnvWithNext) =>
+                                 let exitLabel := match ewn.exitLabel with
+                                   -- exit with no label: consumed by this block
+                                   | .some .none => .none
+                                   -- exit with matching label: consumed by this block
+                                   | .some (.some l) => if l == label then .none else .some (.some l)
+                                   -- no exit or non-matching: pass through
+                                   | other => other
                                  { ewn with env := ewn.env.popScope,
+                                            exitLabel := exitLabel,
                                             stk :=
                                               let ss' := ewn.stk.top
                                               let s' := Imperative.Stmt.block label ss' md
@@ -371,8 +468,10 @@ def evalAuxGo (steps : Nat) (old_var_subst : SubstMap) (Ewn : EnvWithNext) (ss :
                 if Statements.containsCovers ss_f || Statements.containsAsserts ss_f then
                   let ss_f_covers := Statements.collectCovers ss_f
                   let ss_f_asserts := Statements.collectAsserts ss_f
-                  let deferred := createFailingCoverObligations ss_f_covers
-                  let deferred := deferred ++ createPassingAssertObligations ss_f_asserts
+                  let deadLabel := toString (f!"<dead_branch: {cond.eraseTypes}>")
+                  let deadPathConds := Ewn.env.pathConditions.push [(deadLabel, LExpr.false ())]
+                  let deferred := createUnreachableCoverObligations deadPathConds ss_f_covers
+                  let deferred := deferred ++ createUnreachableAssertObligations deadPathConds ss_f_asserts
                   [{ Ewn with env.deferred := Ewn.env.deferred ++ deferred }]
                 else
                   []
@@ -400,9 +499,32 @@ def evalAuxGo (steps : Nat) (old_var_subst : SubstMap) (Ewn : EnvWithNext) (ss :
                     Please transform your program to eliminate loops before \
                     calling Core.Statement.evalAux"
 
-          | .goto l md => [{ Ewn with stk := Ewn.stk.appendToTop [.goto l md], nextLabel := (some l)}]
+          | .funcDecl decl _ =>
+            -- Add function to factory with value capture semantics
+            let paramNames := decl.inputs.map (·.1)
+            let func : Lambda.LFunc CoreLParams := {
+              name := decl.name,
+              typeArgs := decl.typeArgs,
+              isConstr := decl.isConstr,
+              inputs := decl.inputs.map (fun (id, ty) => (id, Lambda.LTy.toMonoTypeUnsafe ty)),
+              output := Lambda.LTy.toMonoTypeUnsafe decl.output,
+              body := decl.body.map (captureFreevars Ewn.env paramNames),
+              attr := decl.attr,
+              concreteEval := decl.concreteEval,
+              axioms := decl.axioms.map (captureFreevars Ewn.env paramNames)
+            }
+            match Ewn.env.addFactoryFunc func with
+            | .ok env' => [{ Ewn with env := env' }]
+            | .error e =>
+              [{ Ewn with env := { Ewn.env with error := some (.Misc f!"{e}") } }]
 
-      List.flatMap (fun (ewn : EnvWithNext) => go' ewn rest ewn.nextLabel) EAndNexts
+          | .typeDecl tc _ =>
+            -- Type declarations have no runtime effect (only used during type checking)
+            [Ewn]
+
+          | .exit l md => [{ Ewn with stk := Ewn.stk.appendToTop [.exit l md], exitLabel := .some l}]
+
+      List.flatMap (fun (ewn : EnvWithNext) => go' ewn rest ewn.exitLabel) EAndNexts
   termination_by (steps, Imperative.Block.sizeOf ss)
 
 def processIteBranches (steps : Nat) (old_var_subst : SubstMap) (Ewn : EnvWithNext)
@@ -436,9 +558,9 @@ def processIteBranches (steps : Nat) (old_var_subst : SubstMap) (Ewn : EnvWithNe
                   else_ss .none
   match Ewns_t, Ewns_f with
   -- Special case: if there's only one result from each path,
-  -- with no next label, we can merge both states into one.
-  | [{ stk := stk_t, env := E_t, nextLabel := .none}],
-    [{ stk := stk_f, env := E_f, nextLabel := .none}] =>
+  -- with no exit label, we can merge both states into one.
+  | [{ stk := stk_t, env := E_t, exitLabel := .none}],
+    [{ stk := stk_f, env := E_f, exitLabel := .none}] =>
     let s' := Imperative.Stmt.ite cond' stk_t.top stk_f.top md
     [EnvWithNext.mk (Env.merge cond' E_t E_f).popScope
                     .none
@@ -458,13 +580,14 @@ def processIteBranches (steps : Nat) (old_var_subst : SubstMap) (Ewn : EnvWithNe
   termination_by (steps, Imperative.Block.sizeOf then_ss + Imperative.Block.sizeOf else_ss)
 end
 
-def evalAux (E : Env) (old_var_subst : SubstMap) (ss : Statements) (optLabel : Option String) :
+def evalAux (E : Env) (old_var_subst : SubstMap) (ss : Statements) (optExit : Option (Option String)) :
   List EnvWithNext :=
-  evalAuxGo (Imperative.Block.sizeOf ss) old_var_subst (EnvWithNext.mk E .none []) ss optLabel
+  evalAuxGo (Imperative.Block.sizeOf ss) old_var_subst (EnvWithNext.mk E .none []) ss optExit
 
-def gotoToError : EnvWithNext → Statements × Env
-  | { stk, env, nextLabel := .none } => (stk.flatten, env)
-  | { stk, env, nextLabel := .some l } => (stk.flatten, { env with error := some (.LabelNotExists l) })
+def exitToError : EnvWithNext → Statements × Env
+  | { stk, env, exitLabel := .none } => (stk.flatten, env)
+  | { stk, env, exitLabel := .some (.some l) } => (stk.flatten, { env with error := some (.LabelNotExists l) })
+  | { stk, env, exitLabel := .some .none } => (stk.flatten, { env with error := some (.Misc "exit outside of any block") })
 
 /--
 Partial evaluator for statements yielding a list of environments and transformed
@@ -474,7 +597,7 @@ The argument `old_var_subst` below is a substitution map from global variables
 to their pre-state value in the enclosing procedure of `ss`.
 -/
 def eval (E : Env) (old_var_subst : SubstMap) (ss : Statements) : List (Statements × Env) :=
-  (evalAux E old_var_subst ss .none).map gotoToError
+  (evalAux E old_var_subst ss .none).map exitToError
 
 /--
 Partial evaluator for statements yielding one environment and transformed

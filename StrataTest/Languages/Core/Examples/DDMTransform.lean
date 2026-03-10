@@ -48,14 +48,14 @@ procedure Foo1(x1: int) returns (r1: int)
   spec {
 
     modifies g;
-    // Template: <f>.token(inputs, old(globals), globals, returns);
-    free ensures Foo1_token(x1,old(g),g,r1);
+    // Template: <f>.token(inputs, old globals, globals, returns);
+    free ensures Foo1_token(x1,old g,g,r1);
   };
 
 procedure Foo2(x2: int) returns (r2: int)
   spec {
     modifies g;
-    free ensures Foo2_token(x2,old(g),g,r2);
+    free ensures Foo2_token(x2,old g,g,r2);
   };
 
 procedure MS_check (x1: int, x2: int) returns (r1: int, r2: int)

@@ -11,8 +11,8 @@ import Strata.DL.Util.Nodup
 import Strata.DL.Util.ListUtils
 import Strata.Languages.Core.Procedure
 import Strata.Languages.Core.Statement
-import Strata.Languages.Core.OldExpressions
 import Strata.Languages.Core.StatementSemantics
+import Strata.Util.Tactics
 
 /-! ## Theorems related to StatementSemantics -/
 
@@ -39,18 +39,20 @@ theorem TouchVarsEmpty :
   @TouchVars P σ [] σ' → σ = σ' := by
   intros H; cases H <;> simp
 
-theorem EvalBlockEmpty {P : PureExpr} {Cmd : Type} {EvalCmd : EvalCmdParam P Cmd}
-  { σ σ': SemanticStore P } { δ : SemanticEval P }
+theorem EvalBlockEmpty' {P : PureExpr} {Cmd : Type} {EvalCmd : EvalCmdParam P Cmd}
+  {extendEval : ExtendEval P}
+  { σ σ': SemanticStore P } { δ δ' : SemanticEval P }
+  [DecidableEq P.Ident]
   [HasVarsImp P (List (Stmt P Cmd))] [HasVarsImp P Cmd] [HasFvar P] [HasVal P] [HasBool P] [HasNot P] :
-  EvalBlock P Cmd EvalCmd δ σ ([]: (List (Stmt P Cmd))) σ' → σ = σ' := by
+  EvalBlock P Cmd EvalCmd extendEval δ σ ([]: (List (Stmt P Cmd))) σ' δ' → σ = σ' := by
   intros H; cases H <;> simp
 
 theorem EvalStatementsEmpty :
-  EvalStatements π δ σ [] σ' → σ = σ' := by
+  EvalStatements π extendEval δ σ [] σ' δ' → σ = σ' := by
   intros H; cases H <;> simp
 
 theorem EvalStatementsContractEmpty :
-  EvalStatementsContract π δ σ [] σ' → σ = σ' := by
+  EvalStatementsContract π extendEval δ σ [] σ' δ' → σ = σ' := by
   intros H; cases H <;> simp
 
 theorem UpdateStateNotDefMonotone
@@ -1310,68 +1312,64 @@ theorem ReadValuesSubstStores :
       simp_all
     . exact ih Ht Ht'
 
-theorem EvalStatementsContractApp' :
-  EvalStatementsContract π δ σ (ss₁ ++ ss₂) σ'' →
-  ∃ σ',
-    EvalStatementsContract π δ σ ss₁ σ' ∧
-    EvalStatementsContract π δ σ' ss₂ σ'' := by
+theorem EvalStatementsContractApp' {φ : CoreEval → PureFunc Expression → CoreEval} {δ δ'' : CoreEval} :
+  EvalStatementsContract π φ δ σ (ss₁ ++ ss₂) σ'' δ'' →
+  ∃ σ' δ',
+    EvalStatementsContract π φ δ σ ss₁ σ' δ' ∧
+    EvalStatementsContract π φ δ' σ' ss₂ σ'' δ'' := by
   intros Heval
-  induction ss₁ generalizing σ <;> simp_all
+  induction ss₁ generalizing σ δ <;> simp_all
   case nil =>
-    exists σ <;> simp_all
+    exists σ, δ <;> simp_all
     exact EvalBlock.stmts_none_sem
   case cons h t ih =>
     cases Heval with
     | stmts_some_sem Hh Ht =>
-    next σ' =>
+    next σ' δ' =>
     specialize ih Ht
     cases ih with
     | intro σ'' Heval =>
-    exists σ''
+    cases Heval with
+    | intro δ'' Heval =>
+    exists σ'', δ''
     simp_all
     exact EvalBlock.stmts_some_sem Hh Heval.1
 
-theorem EvalStatementsContractApp :
-  EvalStatementsContract π δ σ ss₁ σ' →
-  EvalStatementsContract π δ σ' ss₂ σ'' →
-  EvalStatementsContract π δ σ (ss₁ ++ ss₂) σ'' := by
+theorem EvalStatementsContractApp {φ : CoreEval → PureFunc Expression → CoreEval} {δ δ' δ'' : CoreEval} :
+  EvalStatementsContract π φ δ σ ss₁ σ' δ' →
+  EvalStatementsContract π φ δ' σ' ss₂ σ'' δ'' →
+  EvalStatementsContract π φ δ σ (ss₁ ++ ss₂) σ'' δ'' := by
   intros Heval1 Heval2
-  induction ss₁ generalizing σ <;> simp_all
+  induction ss₁ generalizing σ σ' δ δ' <;> simp_all
   case nil =>
-    simp [EvalStatementsContractEmpty Heval1]
+    have ⟨Hσ, Hδ⟩ := EvalBlockEmpty Heval1
+    simp [Hσ, Hδ]
     assumption
   case cons h t ih =>
     cases Heval1 with
     | stmts_some_sem Heval Heval' =>
+    next σ₁ δ₁ =>
     constructor
     . exact Heval
-    . apply ih
-      exact Heval'
+    . exact ih Heval' Heval2
 
-theorem EvalStatementsApp :
-  EvalStatements π δ σ ss₁ σ' →
-  EvalStatements π δ σ' ss₂ σ'' →
-  EvalStatements π δ σ (ss₁ ++ ss₂) σ'' := by
-  apply Nat.strongRecOn
-    (motive := λ m ↦
-      ∀ ss₁ ss₂ σ σ' σ'',
-      sizeOf (ss₁ ++ ss₂) = m →
-      EvalStatements π δ σ ss₁ σ' →
-      EvalStatements π δ σ' ss₂ σ'' →
-      EvalStatements π δ σ (ss₁ ++ ss₂) σ'')
-    (sizeOf (ss₁ ++ ss₂))
-  intros n ih ss₁ ss₂ σ σ' σ'' Hsize Heval1 Heval2
-  . cases Heval1 with
-    | stmts_none_sem => assumption
-    | stmts_some_sem Heval1 Heval1' =>
-      next s σ₁ ss =>
-      constructor <;> try assumption
-      simp [sizeOf] at *
-      have Hsz : Block.sizeOf (ss ++ ss₂) = n - 1 - s.sizeOf := by omega
-      apply ih _ (by omega) ss ss₂ σ₁ σ' σ'' Hsz
-      assumption
-      assumption
-  . rfl
+theorem EvalStatementsApp {φ : CoreEval → PureFunc Expression → CoreEval} {δ δ' δ'' : CoreEval} :
+  EvalStatements π φ δ σ ss₁ σ' δ' →
+  EvalStatements π φ δ' σ' ss₂ σ'' δ'' →
+  EvalStatements π φ δ σ (ss₁ ++ ss₂) σ'' δ'' := by
+  intros Heval1 Heval2
+  induction ss₁ generalizing σ σ' δ δ' with
+  | nil =>
+    have ⟨Hσ, Hδ⟩ := EvalBlockEmpty Heval1
+    simp [Hσ, Hδ]
+    assumption
+  | cons h t ih =>
+    cases Heval1 with
+    | stmts_some_sem Heval Heval' =>
+    next σ₁ δ₁ =>
+    constructor
+    . exact Heval
+    . exact ih Heval' Heval2
 
 theorem HavocVarsApp :
   HavocVars σ vs₁ σ' →
@@ -1705,15 +1703,16 @@ theorem HavocVarsDefined :
     assumption
     apply ih <;> assumption
 
-theorem EvalCmdDefMonotone :
+theorem EvalCmdDefMonotone' :
   isDefined σ v →
   EvalCmd Core.Expression δ σ c σ' →
   isDefined σ' v := by
   intros Hdef Heval
   cases Heval <;> try exact Hdef
-  next _ _ Hup => exact InitStateDefMonotone Hdef Hup
-  next _ _ Hup => exact UpdateStateDefMonotone Hdef Hup
-  next _ _ Hup => exact UpdateStateDefMonotone Hdef Hup
+  next _ Hup => exact InitStateDefMonotone Hdef Hup  -- eval_init
+  next Hup => exact InitStateDefMonotone Hdef Hup    -- eval_init_unconstrained
+  next _ Hup => exact UpdateStateDefMonotone Hdef Hup
+  next Hup => exact UpdateStateDefMonotone Hdef Hup
 
 theorem EvalCmdTouch
   [HasVal P] [HasFvar P] [HasBool P] [HasBoolVal P] [HasNot P] :
@@ -1722,6 +1721,9 @@ theorem EvalCmdTouch
   intro Heval
   induction Heval <;> simp [HasVarsImp.touchedVars, Cmd.definedVars, Cmd.modifiedVars]
   case eval_init x' δ σ x v σ' σ₀ e Hsm Hup Hwf =>
+    apply TouchVars.init_some Hup
+    constructor
+  case eval_init_unconstrained x' δ σ x v σ' σ₀ Hup Hwf =>
     apply TouchVars.init_some Hup
     constructor
   case eval_set δ σ x v σ' σ₀ e Hsm Hup Hwf =>
@@ -2018,18 +2020,18 @@ NOTE:
   variables (that is, lhs ++ modifies)
 -/
 theorem EvalCallBodyRefinesContract :
-  ∀ {π δ σ lhs n args σ' p},
+  ∀ {π φ δ σ lhs n args σ' p md md'},
   π n = .some p →
   p.spec.modifies = Imperative.HasVarsTrans.modifiedVarsTrans π p.body →
-  EvalCommand π δ σ (CmdExt.call lhs n args) σ' →
-  EvalCommandContract π δ σ (CmdExt.call lhs n args) σ' := by
-  intros π δ σ lhs n args σ' p pFound modValid H
+  EvalCommand π φ δ σ (CmdExt.call lhs n args md) σ' →
+  EvalCommandContract π δ σ (CmdExt.call lhs n args md') σ' := by
+  intros π φ δ σ lhs n args σ' p md md' pFound modValid H
   cases H with
   | call_sem lkup Heval Hwfval Hwfvars Hwfb Hwf Hwf2 Hup Hhav Hpre Heval2 Hpost Hrd Hup2 =>
     sorry
 
 theorem EvalCommandRefinesContract :
-EvalCommand π δ σ c σ' →
+EvalCommand π φ δ σ c σ' →
 EvalCommandContract π δ σ c σ' := by
   intros H
   cases H with
@@ -2040,53 +2042,34 @@ EvalCommandContract π δ σ c σ' := by
     sorry
     constructor <;> assumption
 
-/-- NOTE: should follow the same approach as `DetToNondetCorrect` to prove this
-  mutually recursive theorem due to meta variable bug -/
-theorem EvalBlockRefinesContract :
-  EvalBlock Expression Command (EvalCommand π) δ σ ss σ' →
-  EvalBlock Expression Command (EvalCommandContract π) δ σ ss σ' := by
-  intros Heval
-  cases ss
-  case nil =>
-    simp [EvalBlockEmpty Heval]
-    constructor
-  case cons h t =>
-    cases Heval with
-    | stmts_some_sem Heval Hevals =>
-    constructor
-    . sorry
-      -- apply EvalStmtRefinesContract
-      -- apply Heval
-    . apply EvalBlockRefinesContract
-      apply Hevals
-  termination_by (Block.sizeOf ss)
-  decreasing_by
-    all_goals simp_all <;> omega
+mutual
+/-- Proof that `EvalStmt` with concrete semantics refines contract semantics,
+    by structural recursion on the derivation. -/
+theorem EvalStmtRefinesContract
+  (H : EvalStmt Expression Command (EvalCommand π φ) (EvalPureFunc φ) δ σ s σ' δ') :
+  EvalStmt Expression Command (EvalCommandContract π) (EvalPureFunc φ) δ σ s σ' δ' :=
+  match H with
+  | .cmd_sem Heval Hdef => .cmd_sem (EvalCommandRefinesContract Heval) Hdef
+  | .block_sem Heval => .block_sem (EvalBlockRefinesContract Heval)
+  | .ite_true_sem Hcond Hwf Heval => .ite_true_sem Hcond Hwf (EvalBlockRefinesContract Heval)
+  | .ite_false_sem Hcond Hwf Heval => .ite_false_sem Hcond Hwf (EvalBlockRefinesContract Heval)
+  | .funcDecl_sem => .funcDecl_sem
+  | .typeDecl_sem => .typeDecl_sem
 
-theorem EvalStmtRefinesContract :
-  EvalStmt Expression Command (EvalCommand π) δ σ s σ' →
-  EvalStmt Expression Command (EvalCommandContract π) δ σ s σ' := by
-  intros H
-  cases H with
-  | cmd_sem Hdef Heval =>
-    refine EvalStmt.cmd_sem ?_ Heval
-    exact EvalCommandRefinesContract Hdef
-  | block_sem Heval =>
-    constructor
-    apply EvalBlockRefinesContract <;> assumption
-  | ite_true_sem Hdef Hwf Heval =>
-    apply EvalStmt.ite_true_sem <;> try assumption
-    apply EvalBlockRefinesContract <;> assumption
-  | ite_false_sem Hdef Hwf Heval =>
-    apply EvalStmt.ite_false_sem <;> try assumption
-    apply EvalBlockRefinesContract <;> assumption
+/-- Proof that `EvalBlock` with concrete semantics refines contract semantics,
+    by structural recursion on the derivation. -/
+theorem EvalBlockRefinesContract
+  (H : EvalBlock Expression Command (EvalCommand π φ) (EvalPureFunc φ) δ σ ss σ' δ') :
+  EvalBlock Expression Command (EvalCommandContract π) (EvalPureFunc φ) δ σ ss σ' δ' :=
+  match H with
+  | .stmts_none_sem => .stmts_none_sem
+  | .stmts_some_sem Hstmt Hrest =>
+    .stmts_some_sem (EvalStmtRefinesContract Hstmt) (EvalBlockRefinesContract Hrest)
+end
 
-/-- Currently we cannot prove this theorem,
-    since the WellFormedSemanticEval definition does not assert
-    a congruence relation for definedness on store
-    that is, if f(a) is defined, then a must be defined.
-    We work around this by requiring this condition at `EvalExpressions`.
-  -/
+/-- If an expression is defined, all its free variables are defined in the store.
+    Relies on the definedness propagation properties in `WellFormedCoreEvalCong`
+    together with the variable-evaluation condition in `WellFormedSemanticEvalVar`. -/
 theorem EvalExpressionIsDefined :
   WellFormedCoreEvalCong δ →
   WellFormedSemanticEvalVar δ →
@@ -2101,8 +2084,17 @@ theorem EvalExpressionIsDefined :
     specialize Hwfvr (Lambda.LExpr.fvar m v' ty') v' σ
     simp [HasFvar.getFvar] at Hwfvr
     simp_all
-  case abs => sorry
-  case quant => sorry
-  case app => sorry
-  case ite => sorry
-  case eq => sorry
+  case abs m name ty e ih =>
+    exact ih (Hwfc.definedness.absdef σ m name ty e Hsome) v Hin
+  case quant m k name ty tr e trih eih =>
+    have ⟨htr, he⟩ := Hwfc.definedness.quantdef σ m k name ty tr e Hsome
+    grind
+  case app m e₁ e₂ ih₁ ih₂ =>
+    have ⟨h₁, h₂⟩ := Hwfc.definedness.appdef σ m e₁ e₂ Hsome
+    grind
+  case ite m c t e cih tih eih =>
+    have ⟨hc, ht, he⟩ := Hwfc.definedness.itedef σ m c t e Hsome
+    grind
+  case eq m e₁ e₂ ih₁ ih₂ =>
+    have ⟨h₁, h₂⟩ := Hwfc.definedness.eqdef σ m e₁ e₂ Hsome
+    grind

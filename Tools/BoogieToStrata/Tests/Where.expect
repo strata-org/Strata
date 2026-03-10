@@ -2,13 +2,13 @@ Successfully parsed.
 Where.core.st(16, 4) [assert_0]: ✅ pass
 Where.core.st(17, 4) [assert_1]: ✅ pass
 Where.core.st(18, 4) [assert_2]: ❌ fail
-Where.core.st(34, 4) [assert_3]: ✅ pass
-Where.core.st(37, 4) [assert_4]: ✅ pass
-Where.core.st(38, 4) [assert_5]: ❌ fail
-Where.core.st(55, 4) [assert_6]: ❌ fail
-Where.core.st(73, 4) [assert_7]: ✅ pass
-Where.core.st(74, 4) [assert_8]: ❌ fail
-Where.core.st(91, 4) [assert_9]: ✅ pass
-Where.core.st(96, 4) [assert_10]: ✅ pass
-Where.core.st(97, 4) [assert_11]: ❌ fail
+Where.core.st(33, 4) [assert_3]: ✅ pass
+Where.core.st(36, 4) [assert_4]: ✅ pass
+Where.core.st(37, 4) [assert_5]: ❌ fail
+Where.core.st(53, 4) [assert_6]: ❌ fail
+Where.core.st(70, 4) [assert_7]: ✅ pass
+Where.core.st(71, 4) [assert_8]: ❌ fail
+Where.core.st(87, 4) [assert_9]: ✅ pass
+Where.core.st(92, 4) [assert_10]: ✅ pass
+Where.core.st(93, 4) [assert_11]: ❌ fail
 Finished with 7 goals passed, 5 failed.

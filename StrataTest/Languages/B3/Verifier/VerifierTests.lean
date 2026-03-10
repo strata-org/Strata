@@ -115,7 +115,7 @@ def formatExpressionOnly (prog : Program) (expr : B3AST.Expression SourceRange) 
   let (cstExpr, _) := B3.expressionToCST B3.ToCSTContext.empty expr
   let ctx := FormatContext.ofDialects prog.dialects prog.globalContext {}
   let fmtState : FormatState := { openDialects := prog.dialects.toList.foldl (init := {}) fun a (dialect : Dialect) => a.insert dialect.name }
-  (mformat (ArgF.op cstExpr.toAst) ctx fmtState).format.pretty.trim
+  (mformat (ArgF.op cstExpr.toAst) ctx fmtState).format.pretty.trimAscii.toString
 
 /-- Flatten conjunctions into a list of conjuncts for display -/
 def flattenConjunction : B3AST.Expression SourceRange → List (B3AST.Expression SourceRange)
@@ -313,7 +313,7 @@ procedure test_fail() {
 
 /--
 info: test_all_expressions: ✗ unknown
-  (0,127): check (false || true) && (if true true else false) && f(5) && notalwaystrue(1, 2) && 5 == 5 && !(3 == 4) && 2 < 3 && 2 <= 2 && 4 > 3 && 4 >= 4 && 1 + 2 == 4 && 5 - 2 == 3 && 3 * 4 == 12 && 10 div 2 == 5 && 7 mod 3 == 1 && -(5) == 0 - 5 && notalwaystrue(3, 4) && (true ==> true) && (forall y : int pattern f(y) f(y) || !f(y)) && (forall y : int y > 0 || y <= 0)
+  (0,127): check (false || true) && (if true true else false) && f(5) && notalwaystrue(1, 2) && 5 == 5 && !(3 == 4) && 2 < 3 && 2 <= 2 && 4 > 3 && 4 >= 4 && 1 + 2 == 4 && 5 - 2 == 3 && 3 * 4 == 12 && 10 div 2 == 5 && 7 mod 3 == 1 && -5 == 0 - 5 && notalwaystrue(3, 4) && (true ==> true) && (forall y : int pattern f(y) f(y) || !f(y)) && (forall y : int y > 0 || y <= 0)
   └─ (0,213): could not prove notalwaystrue(1, 2)
      under the assumptions
        forall x : int pattern f(x) f(x) == (x + 1 == 6)
@@ -480,7 +480,7 @@ procedure test_reach_diagnosis() {
 
 /--
 info: test_all_expressions: ✗ refuted
-  (0,127): reach (false || true) && (if true true else false) && f(5) && notalwaystrue(1, 2) && 5 == 5 && !(3 == 4) && 2 < 3 && 2 <= 2 && 4 > 3 && 4 >= 4 && 1 + 2 == 4 && 5 - 2 == 3 && 3 * 4 == 12 && 10 div 2 == 5 && 7 mod 3 == 1 && -(5) == 0 - 5 && notalwaystrue(3, 4) && (true ==> true) && (forall y : int pattern f(y) f(y) || !f(y)) && (forall y : int y > 0 || y <= 0)
+  (0,127): reach (false || true) && (if true true else false) && f(5) && notalwaystrue(1, 2) && 5 == 5 && !(3 == 4) && 2 < 3 && 2 <= 2 && 4 > 3 && 4 >= 4 && 1 + 2 == 4 && 5 - 2 == 3 && 3 * 4 == 12 && 10 div 2 == 5 && 7 mod 3 == 1 && -5 == 0 - 5 && notalwaystrue(3, 4) && (true ==> true) && (forall y : int pattern f(y) f(y) || !f(y)) && (forall y : int y > 0 || y <= 0)
   └─ (0,353): it is impossible that 1 + 2 == 4
      under the assumptions
        forall x : int pattern f(x) f(x) == (x + 1 == 6)

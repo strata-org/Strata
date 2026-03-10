@@ -1,5 +1,5 @@
 name = "StrataDoc"
-defaultTargets = ["ddm", "langdef"]
+defaultTargets = ["ddm", "langdef", "laurel"]
 
 [[require]]
 name = "Strata"
@@ -8,7 +8,7 @@ path = "../.."
 [[require]]
 name = "verso"
 git = "https://github.com/leanprover/verso"
-rev = "v4.26.0"
+rev = "v4.27.0"
 
 [[lean_lib]]
 name = "DDMDoc"
@@ -23,3 +23,10 @@ root = "DDMDocMain"
 [[lean_exe]]
 name = "langdef"
 root = "LangDefDocMain"
+
+[[lean_lib]]
+name = "LaurelDoc"
+
+[[lean_exe]]
+name = "laurel"
+root = "LaurelDocMain"

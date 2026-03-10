@@ -117,11 +117,12 @@ def stringInputContext (fileName : System.FilePath) (contents : String) : InputC
   fileName := fileName.toString
   fileMap  := FileMap.ofString contents
 
+-- When updating this, you will want to consider updating Strata.isIdBegin in Strata/DDM/Format.lean as well.
 private def strataIsIdFirst (c : Char) : Bool :=
-  c.isAlpha || c == '_'
+  c.isAlpha || c == '_' || c == '$'
 
 private def strataIsIdRest (c : Char) : Bool :=
-  c.isAlphanum || c == '_' || c == '\'' || c == '.' || c == '?' || c == '!'
+  c.isAlphanum || c == '_' || c == '\'' || c == '.' || c == '?' || c == '!' || c == '$'
 
 private def isIdFirstOrBeginEscape (c : Char) : Bool :=
   strataIsIdFirst c || isIdBeginEscape c
@@ -227,17 +228,19 @@ private partial def whitespace : ParserFn := fun c s =>
       let j    := c.next' i h
       let curr := c.get j
       match curr with
-      | '/' =>
-        match c.tokens.matchPrefix c.inputString i with
-        | some _ => s
-        | none =>
-          andthenFn (takeUntilFn (fun c => c = '\n')) whitespace c (s.next c j)
-      | '*' =>
-        match c.tokens.matchPrefix c.inputString i with
-        | some _ => s
-        | none =>
-          let j := c.next j
-          andthenFn (finishCommentBlock (pushMissingOnError := false)) whitespace c (s.next c j)
+      | '/' => Id.run do
+        -- Treat // as comment unless a token covering both chars exists (e.g., //@pre)
+        if let some tk := c.tokens.matchPrefix c.inputString i then
+          if tk.utf8ByteSize >= 2 then
+            return s
+        andthenFn (takeUntilFn (fun c => c = '\n')) whitespace c (s.next c j)
+      | '*' => Id.run do
+        -- Treat /* as comment unless a token covering both chars exists
+        if let some tk := c.tokens.matchPrefix c.inputString i then
+          if tk.utf8ByteSize >= 2 then
+            return s
+        andthenFn (finishCommentBlock (pushMissingOnError := false))
+          whitespace c (s.next c (c.next j))
       | _ =>
         s
     else s
@@ -763,7 +766,7 @@ def checkLeftRec (thisCatName : QualifiedIdent) (argDecls : ArgDecls) (as : List
     checkLeftRec thisCatName argDecls (as.toList ++ bs)
   | .str _ :: _ =>
     .isLeading as
-  | .ident v argPrec _ :: rest => Id.run do
+  | .ident v argPrec :: rest => Id.run do
     let .isTrue lt := inferInstanceAs (Decidable (v < argDecls.size))
       | return panic! "Invalid index"
     let cat := argDecls[v].kind.categoryOf
@@ -897,7 +900,7 @@ partial def catParser (ctx : ParsingContext) (cat : SyntaxCat) (metadata : Metad
     assert! cat.args.size = 1
     let isNonempty := q`StrataDDL.nonempty ∈ metadata
     commaSepByParserHelper isNonempty <$> catParser ctx cat.args[0]!
-  | q`Init.SpaceSepBy | q`Init.SpacePrefixSepBy | q`Init.Seq =>
+  | q`Init.SpaceSepBy | q`Init.SpacePrefixSepBy | q`Init.NewlineSepBy | q`Init.Seq =>
     assert! cat.args.size = 1
     let isNonempty := q`StrataDDL.nonempty ∈ metadata
     (if isNonempty then many1Parser else manyParser) <$> catParser ctx cat.args[0]!
@@ -917,7 +920,7 @@ the first symbol.
 -/
 private def prependSyntaxDefAtomParser (ctx : ParsingContext) (argDecls : ArgDecls) (o : SyntaxDefAtom) (r : Parser) : Parser :=
   match o with
-  | .ident v prec _ => Id.run do
+  | .ident v prec => Id.run do
     let .isTrue lt := inferInstanceAs (Decidable (v < argDecls.size))
       | return panic! s!"Invalid ident index {v} in bindings {eformat argDecls}"
     let addParser (p : Parser) :=
@@ -929,7 +932,7 @@ private def prependSyntaxDefAtomParser (ctx : ParsingContext) (argDecls : ArgDec
     | .error c =>
       panic! s!"Category '{eformat c}' is not supported."
   | .str l =>
-    let l := l.trim
+    let l := l.trimAscii.toString
     if l.isEmpty then
       r
     else
@@ -946,39 +949,54 @@ def opSyntaxParser (ctx : ParsingContext)
                    (argDecls : ArgDecls)
                    (opStx : SyntaxDef) : Except StrataFormat DeclParser := do
   let n := identName ident
-  let prec := opStx.prec
-  match checkLeftRec category argDecls opStx.atoms.toList with
-  | .invalid mf => throw mf
-  | .isTrailing minLeftPrec args =>
-    if args.isEmpty then
-      throw mf!"invalid atomic left recursive syntax"
-    let p := liftToKind ctx args argDecls
-    -- Run parsers so far and append parser for next op.
-    -- Parser for creating top level node
+  match opStx with
+  | .passthrough =>
+    -- Passthrough has a single `.ident 0 0` atom. Inline the
+    -- `checkLeftRec` logic: if the argument's category matches the
+    -- op's own category it would be trailing (left-recursive), but a
+    -- single-argument trailing op is degenerate, so we reject it.
+    let .isTrue lt := inferInstanceAs (Decidable (0 < argDecls.size))
+      | throw mf!"Passthrough syntax requires at least one argument"
+    let cat := argDecls[0].kind.categoryOf
+    if cat.name == category then
+      throw mf!"Passthrough syntax cannot be left-recursive"
+    let p := liftToKind ctx [.ident 0 0] argDecls
     pure {
       category,
-      outerPrec := prec,
-      isLeading := false,
-      parser := trailingNode n prec minLeftPrec p
-    }
-  | .isLeading [] =>
-    let fn (c : ParserContext) (s : ParserState) : ParserState :=
-      s.pushSyntax (.atom (emptySourceInfo c s.pos) "")
-    pure {
-      category,
-      outerPrec := prec,
+      outerPrec := maxPrec,
       isLeading := true,
-      parser := node n { fn := fn } >> setLhsPrec prec
+      parser := node n p >> setLhsPrec maxPrec
     }
-  | .isLeading args =>
-    let p := liftToKind ctx args argDecls
-    -- Parser for creating top level node
-    pure {
-      category,
-      outerPrec := prec,
-      isLeading := true,
-      parser := node n p >> setLhsPrec prec
-    }
+  | .std atoms prec =>
+    match checkLeftRec category argDecls atoms.toList with
+    | .invalid mf => throw mf
+    | .isTrailing minLeftPrec args =>
+      if args.isEmpty then
+        throw mf!"invalid atomic left recursive syntax"
+      let p := liftToKind ctx args argDecls
+      pure {
+        category,
+        outerPrec := prec,
+        isLeading := false,
+        parser := trailingNode n prec minLeftPrec p
+      }
+    | .isLeading [] =>
+      let fn (c : ParserContext) (s : ParserState) : ParserState :=
+        s.pushSyntax (.atom (emptySourceInfo c s.pos) "")
+      pure {
+        category,
+        outerPrec := prec,
+        isLeading := true,
+        parser := node n { fn := fn } >> setLhsPrec prec
+      }
+    | .isLeading args =>
+      let p := liftToKind ctx args argDecls
+      pure {
+        category,
+        outerPrec := prec,
+        isLeading := true,
+        parser := node n p >> setLhsPrec prec
+      }
 
 def fnDeclParser (ctx : ParsingContext) (dialect : DialectName) (decl : FunctionDecl) : Except StrataFormat DeclParser := do
   let ident := { dialect, name := decl.name }

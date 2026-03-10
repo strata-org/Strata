@@ -13,6 +13,7 @@ import Strata.Languages.Core.ProgramType
 import Strata.Languages.Core.ProgramWF
 import Strata.Transform.CoreTransform
 import Strata.Transform.ProcedureInlining
+import Strata.Util.Tactics
 
 open Core
 open Core.Transform
@@ -65,16 +66,9 @@ private def substExpr (e1:Expression.Expr) (map:Map String String) (isReverse: B
     (fun (e:Expression.Expr) ((i1,i2):String × String) =>
       -- old_id has visibility of temp because the new local variables were
       -- created by CoreGenM.
-      -- new_expr has visibility of unres because that is the default setting
-      -- from DDM parsed program, and the substituted program is supposed to be
-      -- equivalent to the answer program translated from DDM
-      -- These must be reversed when checking e2 -> e1
-      let old_vis := if not isReverse then Visibility.temp else  Visibility.unres
-      let new_vis := if not isReverse then Visibility.unres else Visibility.temp
-      let old_id:Expression.Ident := { name := i1, metadata := old_vis }
-
-      let new_expr:Expression.Expr := .fvar ()
-          { name := i2, metadata := new_vis } .none
+      -- All variables now have Unit metadata; we substitute by name.
+      let old_id : Expression.Ident := { name := i1, metadata := () }
+      let new_expr : Expression.Expr := .fvar () { name := i2, metadata := () } .none
       e.substFvar old_id new_expr)
     e1
 
@@ -93,12 +87,15 @@ private def alphaEquivExprsOpt (e1 e2: Option Expression.Expr) (map:IdMap)
   | _, _ =>
     .error ".some and .none mismatch"
 
+private def alphaEquivExprsList (l1 l2 : List Expression.Expr) (map : IdMap)
+    : Except Format Bool :=
+  if l1.length != l2.length then
+    .error "invariant lists have different lengths"
+  else
+    return (l1.zip l2).all (fun (a, b) => alphaEquivExprs a b map)
+
 private def alphaEquivIdents (e1 e2: Expression.Ident) (map:IdMap)
     : Bool :=
-  (-- Case 1: e1 is created from inliner, e2 was from DDM
-   (e1.metadata == Visibility.temp && e2.metadata == Visibility.unres) ||
-   -- Caes 2: both e1 and e2 are from DDM
-   (e1.metadata == e2.metadata)) &&
   (match Map.find? map.vars.fst e1.name, Map.find? map.vars.snd e2.name with
     | .some n', .some m' => n' == e2.name && m' == e1.name
     | .none, .none => e1.name == e2.name
@@ -109,30 +106,26 @@ mutual
 
 def alphaEquivBlock (b1 b2: Core.Block) (map:IdMap)
     : Except Format IdMap := do
-  if b1.length ≠ b2.length then
-    .error "Block lengths do not match"
-  else
-    (b1.attach.zip b2).foldlM
-      (fun (map:IdMap) (st1,st2) => do
-        let newmap ← alphaEquivStatement st1.1 st2 map
-        return newmap)
-      map
-  termination_by b1.sizeOf
-  decreasing_by cases st1; apply Imperative.sizeOf_stmt_in_block; assumption
+  match b1, b2 with
+  | [], [] => .ok map
+  | bs1 :: bss1, bs2 :: bss2 =>
+    let newmap ← alphaEquivStatement bs1 bs2 map
+    alphaEquivBlock bss1 bss2 newmap
+  | _, _ => .error "Block lengths do not match"
 
 def alphaEquivStatement (s1 s2: Core.Statement) (map:IdMap)
     : Except Format IdMap := do
   let mk_err (s:Format): Except Format IdMap :=
     .error (f!"{s}\ns1:{s1}\ns2:{s2}\nmap:{map.vars}")
 
-  match hs: (s1,s2) with
-  | (.block lbl1 b1 _, .block lbl2 b2 _) =>
-    -- Since 'goto lbl' can appear before 'lbl' is defined, update the label
+  match s1, s2 with
+  | .block lbl1 b1 _, .block lbl2 b2 _ =>
+    -- Since 'exit lbl' can reference an enclosing block, update the label
     -- map here
     let map ← IdMap.updateLabel map lbl1 lbl2
     alphaEquivBlock b1 b2 map
 
-  | (.ite cond1 thenb1 elseb1 _, .ite cond2 thenb2 elseb2 _) => do
+  | .ite cond1 thenb1 elseb1 _, .ite cond2 thenb2 elseb2 _ => do
     if alphaEquivExprs cond1 cond2 map then
       let map' <- alphaEquivBlock thenb1 thenb2 map
       let map'' <- alphaEquivBlock elseb1 elseb2 map'
@@ -140,21 +133,24 @@ def alphaEquivStatement (s1 s2: Core.Statement) (map:IdMap)
     else
       .error "if conditions do not match"
 
-  | (.loop g1 m1 i1 b1 _, .loop g2 m2 i2 b2 _) =>
+  | .loop g1 m1 i1 b1 _, .loop g2 m2 i2 b2 _ =>
     if ¬ alphaEquivExprs g1 g2 map then
       .error "guard does not match"
     else if ¬ (← alphaEquivExprsOpt m1 m2 map) then
       .error "measure does not match"
-    else if ¬ (← alphaEquivExprsOpt i1 i2 map) then
+    else if ¬ (← alphaEquivExprsList i1 i2 map) then
       .error "invariant does not match"
     else alphaEquivBlock b1 b2 map
 
-  | (.goto lbl1 _, .goto lbl2 _) =>
-    IdMap.updateLabel map lbl1 lbl2
+  | .exit lbl1 _, .exit lbl2 _ =>
+    match lbl1, lbl2 with
+    | some l1, some l2 => IdMap.updateLabel map l1 l2
+    | none, none => .ok map
+    | _, _ => mk_err "exit label mismatch"
 
-  | (.cmd c1, .cmd c2) =>
-    match (c1, c2) with
-    | (.call lhs1 procName1 args1 _, .call lhs2 procName2 args2 _) =>
+  | .cmd c1, .cmd c2 =>
+    match c1, c2 with
+    | .call lhs1 procName1 args1 _, .call lhs2 procName2 args2 _ =>
       if procName1 ≠ procName2 then
         .error "Procedure name does not match"
       else if lhs1.length ≠ lhs2.length then
@@ -169,12 +165,12 @@ def alphaEquivStatement (s1 s2: Core.Statement) (map:IdMap)
         .error "Call args do not map"
       else
         return map
-    | (.cmd (.init n1 _ _e1 _), .cmd (.init n2 _ _e2 _)) =>
+    | .cmd (.init n1 _ _e1 _), .cmd (.init n2 _ _e2 _) =>
       -- Omit e1 and e2 check because init may use undeclared free vars
       -- The updateVars below must be the only place that updates the
       -- variable name mapping.
       IdMap.updateVars map [(n1.name,n2.name)]
-    | (.cmd (.set n1 e1 _), .cmd (.set n2 e2 _)) =>
+    | .cmd (.set n1 e1 _), .cmd (.set n2 e2 _) =>
       if ¬ alphaEquivExprs e1 e2 map then
         mk_err f!"RHS of sets do not match \
         \n(subst of e1: {repr (substExpr e1 map.vars.fst false)})\n(e2: {repr e2})
@@ -183,27 +179,25 @@ def alphaEquivStatement (s1 s2: Core.Statement) (map:IdMap)
         mk_err "LHS of sets do not match"
       else
         return map
-    | (.cmd (.havoc n1 _), .cmd (.havoc n2 _)) =>
+    | .cmd (.havoc n1 _), .cmd (.havoc n2 _) =>
       if ¬ alphaEquivIdents n1 n2 map then
         mk_err "LHS of havocs do not match"
       else
         return map
-    | (.cmd (.assert _ e1 _), .cmd (.assert _ e2 _)) =>
+    | .cmd (.assert _ e1 _), .cmd (.assert _ e2 _) =>
       if ¬ alphaEquivExprs e1 e2 map then
         mk_err "Expressions of asserts do not match"
       else
         return map
-    | (.cmd (.assume _ e1 _), .cmd (.assume _ e2 _)) =>
+    | .cmd (.assume _ e1 _), .cmd (.assume _ e2 _) =>
       if ¬ alphaEquivExprs e1 e2 map then
         mk_err "Expressions of assumes do not match"
       else
         return map
-    | (_,_) =>
+    | _, _ =>
       mk_err "Commands do not match"
 
-  | (_,_) => mk_err "Statements do not match"
-  termination_by s1.sizeOf
-  decreasing_by all_goals(cases hs; simp_all; try omega)
+  | _, _ => mk_err "Statements do not match"
 
 end
 
@@ -227,8 +221,8 @@ def translate (t : Strata.Program) : Core.Program :=
   (TransM.run Inhabited.default (translateProgram t)).fst
 
 def runInlineCall (p : Core.Program) : Core.Program :=
-  match (runProgram inlineCallCmd p .emp) with
-  | ⟨.ok res, _⟩ => res
+  match (runProgram (targetProcList := .none) inlineCallCmd p .emp) with
+  | ⟨.ok (_,res), _⟩ => res
   | ⟨.error e, _⟩ => panic! e
 
 def checkInlining (prog : Core.Program) (progAns : Core.Program)
@@ -293,18 +287,19 @@ def Test2 :=
 #strata
 program Core;
 procedure f(x : bool) returns (y : bool) {
-  if (x) {
-    goto end;
-  } else { y := false;
+  body: {
+    if (x) {
+      exit body;
+    } else { y := false;
+    }
   }
-  end: {}
 };
 
 procedure h() returns () {
   var b_in : bool;
   var b_out : bool;
   call b_out := f(b_in);
-  end: {}
+  _exit: {}
 };
 #end
 
@@ -312,11 +307,12 @@ def Test2Ans :=
 #strata
 program Core;
 procedure f(x : bool) returns (y : bool) {
-  if (x) {
-    goto end;
-  } else { y := false;
+  body: {
+    if (x) {
+      exit body;
+    } else { y := false;
+    }
   }
-  end: {}
 };
 
 procedure h() returns () {
@@ -326,15 +322,16 @@ procedure h() returns () {
     var f_x : bool := b_in;
     var f_y : bool;
     havoc f_y;
-    if (f_x) {
-      goto f_end;
-    } else {
-      f_y := false;
+    f_body: {
+      if (f_x) {
+        exit f_body;
+      } else {
+        f_y := false;
+      }
     }
-    f_end: {}
     b_out := f_y;
   }
-  end: {}
+  _exit: {}
 };
 
 #end
@@ -395,6 +392,48 @@ procedure g() returns () {
 /-- info: ok: true -/
 #guard_msgs in
 #eval checkInlining (translate Test3) (translate Test3Ans)
+
+
+def TestRecursiveCall :=
+#strata
+program Core;
+procedure a1() returns () {
+};
+procedure a2() returns () {
+};
+
+procedure f() returns () {
+  call a1();
+  call a2();
+  call f();
+};
+#end
+
+def setCallGraph (p : Core.Program) : CoreTransformM Unit :=
+  modify (fun σ => { σ with cachedAnalyses :=
+    { callGraph := Program.toProcedureCG p } })
+
+def test := do
+  let p := translate TestRecursiveCall
+  let _ ← setCallGraph p
+  let (changed, _p) ← runProgram (targetProcList := .some ["f"])
+    (inlineCallCmd (doInline := fun name _ => name = "f")) p
+  let cg := (← get).cachedAnalyses.callGraph
+  return (changed, cg)
+
+/--
+info: true, some { callees := Std.HashMap.ofList [("f", Std.HashMap.ofList [("f", 1), ("a1", 2), ("a2", 2)]),
+              ("a1", Std.HashMap.ofList []),
+              ("a2", Std.HashMap.ofList [])],
+  callers := Std.HashMap.ofList [("f", Std.HashMap.ofList [("f", 1)]),
+              ("a1", Std.HashMap.ofList [("f", 2)]),
+              ("a2", Std.HashMap.ofList [("f", 2)])] }
+-/
+#guard_msgs in
+#eval ((match test .emp with
+  | ⟨.ok (changed, cg), _⟩ => f!"{repr changed}, {repr cg}"
+  | ⟨.error m, _⟩ => panic! s!"{m}"))
+
 
 
 end ProcedureInliningExamples

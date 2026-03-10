@@ -3,6 +3,7 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
 /-
 Test the #load_dialect command and also validate example dialects parse.

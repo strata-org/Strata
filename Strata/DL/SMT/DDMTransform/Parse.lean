@@ -3,8 +3,13 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.DDM.Integration.Lean
+public import Strata.DDM.Integration.Lean
+public meta import Strata.DDM.Integration.Lean
+import Strata.DDM.BuiltinDialects.BuiltinM
+
+public section
 
 /-! # The SMTLib syntax
 
@@ -17,7 +22,8 @@ namespace Strata
 
 open Elab
 
-private def reservedKeywords := [
+-- TODO: reservedKeywords should be in the SMTDDM namespace, not Strata
+def reservedKeywords := [
     -- A list of (name in DDM (without "reserved_" prefix), the string)
     -- Category "General"
     ("bang", "!"),
@@ -88,7 +94,6 @@ def specialCharsInSimpleSymbol := [
     ("questionmark", "?"),
     -- ("bang", "!"),
     ("period", "."),
-    ("dollar", "$"),
     -- ("underbar", "_"),
     ("tilde", "~"),
     ("amp", "&"),
@@ -764,3 +769,4 @@ namespace SMTResponseDDM
 end SMTResponseDDM
 
 end Strata
+end

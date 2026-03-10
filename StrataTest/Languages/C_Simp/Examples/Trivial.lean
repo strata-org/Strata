@@ -22,8 +22,8 @@ bool procedure trivial ()
 
 /--
 info: program C_Simp;
-(bool)proceduretrivial()//@pretrue;
-//@posttrue;
+bool procedure trivial()//@pre true;
+//@post true;
   ({
   returntrue;
   }
@@ -37,12 +37,14 @@ info: function trivial {
   pre: #true
   post: #true
   body:
-return := #true
+{
+  return := #true
+}
 }
 Errors: #[]
 -/
 #guard_msgs in
-#eval Strata.C_Simp.TransM.run (Strata.C_Simp.translateProgram (TrivialPgm.commands))
+#eval Strata.C_Simp.TransM.run Inhabited.default (Strata.C_Simp.translateProgram (TrivialPgm.commands))
 
 /--
 info: [Strata.Core] Type checking succeeded.
@@ -51,11 +53,8 @@ info: [Strata.Core] Type checking succeeded.
 VCs:
 Label: post
 Property: assert
-Assumptions:
-
-
-Proof Obligation:
-#true
+Obligation:
+true
 
 ---
 info:
@@ -64,4 +63,4 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval Strata.C_Simp.verify "cvc5" TrivialPgm
+#eval Strata.C_Simp.verify TrivialPgm

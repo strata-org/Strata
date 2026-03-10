@@ -81,8 +81,8 @@ var l : bool;
 procedure f(x : bool, y : bool) returns (z : bool)
 spec {
   requires (i == !x);
-  ensures (z == old(k && j));
-  ensures (z == old(j));
+  ensures (z == (k && old j));
+  ensures (z == old j);
   modifies j;
 };
 procedure h() returns () spec {
@@ -103,8 +103,8 @@ var l : bool;
 procedure f(x : bool, y : bool) returns (z : bool)
 spec {
   requires (i == !x);
-  ensures (z == old(k && j));
-  ensures (z == old(j));
+  ensures (z == (k && old j));
+  ensures (z == old j);
   modifies j;
 };
 procedure h() returns () spec {
@@ -114,13 +114,12 @@ procedure h() returns () spec {
   var tmp_arg_0 : bool := k;
   var tmp_arg_1 : bool := l;
   var tmp_b_2 : bool := b;
-  var old_k_3 : bool := k;
-  var old_j_4 : bool := j;
-  assert [callElimAssert_f_requires_0_5]: i == !tmp_arg_0;
+  var old_j_3 : bool := j;
+  assert [callElimAssert_f_requires_0_4]: i == !tmp_arg_0;
   havoc b;
   havoc j;
-  assume [callElimAssume_f_ensures_1_6]: b == (old_k_3 && old_j_4);
-  assume [callElimAssume_f_ensures_2_7]: b == old_j_4;
+  assume [callElimAssume_f_ensures_1_5]: b == (k && old_j_3);
+  assume [callElimAssume_f_ensures_2_6]: b == old_j_3;
 };
 #end
 
@@ -134,8 +133,8 @@ var l : bool;
 procedure f(x : bool, y : bool) returns (z : bool)
 spec {
   requires (i == !x);
-  ensures (z == old(k && j));
-  ensures (z == old(j));
+  ensures (z == (k && old j));
+  ensures (z == old j);
   modifies j;
 };
 procedure h() returns () spec {
@@ -156,8 +155,8 @@ var l : bool;
 procedure f(x : bool, y : bool) returns (z : bool)
 spec {
   requires (i == !x);
-  ensures (z == old(k && j));
-  ensures (z == old(j));
+  ensures (z == (k && old j));
+  ensures (z == old j);
   modifies j;
 };
 procedure h() returns () spec {
@@ -167,13 +166,58 @@ procedure h() returns () spec {
   var tmp_arg_0 : bool := k && i || j;
   var tmp_arg_1 : bool := l;
   var tmp_b_2 : bool := b;
-  var old_k_3 : bool := k;
-  var old_j_4 : bool := j;
-  assert [callElimAssert_f_requires_0_5]: i == !tmp_arg_0;
+  var old_j_3 : bool := j;
+  assert [callElimAssert_f_requires_0_4]: i == !tmp_arg_0;
   havoc b;
   havoc j;
-  assume [callElimAssume_f_ensures_1_6]: b == (old_k_3 && old_j_4);
-  assume [callElimAssume_f_ensures_2_7]: b == old_j_4;
+  assume [callElimAssume_f_ensures_1_5]: b == (k && old_j_3);
+  assume [callElimAssume_f_ensures_2_6]: b == old_j_3;
+};
+#end
+
+-- Free preconditions should NOT be asserted at call sites
+def CallElimTestFreeRequires :=
+#strata
+program Core;
+var j : bool;
+var k : bool;
+procedure f(x : bool) returns (y : bool)
+spec {
+  free requires (x == k);
+  requires (x == j);
+  ensures (y == x);
+  modifies j;
+};
+procedure h() returns () spec {
+  modifies j;
+} {
+  var b : bool;
+  call b := f(k);
+};
+#end
+
+def CallElimTestFreeRequiresAns :=
+#strata
+program Core;
+var j : bool;
+var k : bool;
+procedure f(x : bool) returns (y : bool)
+spec {
+  free requires (x == k);
+  requires (x == j);
+  ensures (y == x);
+  modifies j;
+};
+procedure h() returns () spec {
+  modifies j;
+} {
+  var b : bool;
+  var tmp_arg_0 : bool := k;
+  var tmp_b_1 : bool := b;
+  assert [callElimAssert_f_requires_1_2]: (tmp_arg_0 == j);
+  havoc b;
+  havoc j;
+  assume [callElimAssume_f_ensures_2_3]: (b == tmp_arg_0);
 };
 #end
 
@@ -191,12 +235,13 @@ def tests : List (Core.Program × Core.Program) := [
   (CallElimTest1, CallElimTest1Ans),
   (CallElimTest2, CallElimTest2Ans),
   (CallElimTest3, CallElimTest3Ans),
+  (CallElimTestFreeRequires, CallElimTestFreeRequiresAns),
 ].map (Prod.map translate translate)
 
 def callElim (p : Core.Program)
   : Core.Program :=
   match (run p callElim') with
-  | .ok res => res
+  | .ok (_changed, res) => res
   | .error e => panic! e
 
 /--
@@ -204,8 +249,5 @@ info: true
 -/
 #guard_msgs in
 #eval tests.all (λ (test, ans) ↦ (toString (callElim test).eraseTypes) == (toString ans.eraseTypes))
-
--- #eval callElim tests[0]!.fst
--- #eval tests[0]!.snd
 
 end CallElimExamples

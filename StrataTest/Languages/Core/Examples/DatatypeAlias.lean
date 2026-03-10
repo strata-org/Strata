@@ -45,6 +45,10 @@ spec {
 
 /--
 info:
+Obligation: set_v_calls_Box..value_0
+Property: assert
+Result: ✅ pass
+
 Obligation: valueIs100
 Property: assert
 Result: ✅ pass
@@ -54,6 +58,6 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify "cvc5" datatypeAliasPgm (options := .quiet)
+#eval verify datatypeAliasPgm (options := .quiet)
 
 end Strata.DatatypeAliasTest
