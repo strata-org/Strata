@@ -305,7 +305,6 @@ def translateStmt (outputParams : List Parameter) (stmt : StmtExprMd)
       | some (⟨ .InstanceCall .., _⟩) =>
           -- Instance method call as initializer: var name := target.method(args)
           -- Havoc the result since instance methods may be on unmodeled types
-          let defaultExpr := defaultExprForType model ty
           let initStmt := Core.Statement.init ident coreType none md
           return [initStmt]
       | some initExpr =>
