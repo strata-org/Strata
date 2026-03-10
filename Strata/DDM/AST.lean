@@ -2308,7 +2308,7 @@ def addCommand (env : Program) (cmd : Operation) : Program :=
     commands := env.commands.push cmd,
     globalContext := match env.globalContext.addCommand env.dialects cmd with
       | .ok gctx => gctx
-      | .error _ => env.globalContext
+      | .error e => panic! s!"Program.addCommand: {e}"
   }
 
 /--
