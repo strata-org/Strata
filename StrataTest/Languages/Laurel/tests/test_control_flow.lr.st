@@ -32,4 +32,4 @@ procedure main() {
         b := 2;
     }
     assert b == 1;
-}
+};

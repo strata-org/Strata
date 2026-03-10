@@ -15,17 +15,17 @@ namespace Laurel
 def quantifiersProgram := r"
 procedure testForall() {
     assert forall(x: int) => x + 0 == x;
-}
+};
 
 procedure testExists() {
     assert exists(x: int) => x == 42;
-}
+};
 
 procedure testQuantifierInContract(n: int)
   requires n > 0
   ensures forall(i: int) => i >= 0 ==> i < n ==> i < n + 1
 {
-}
+};
 "
 
 #guard_msgs(drop info, error) in

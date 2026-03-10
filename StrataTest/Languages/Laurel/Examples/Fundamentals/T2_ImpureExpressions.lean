@@ -20,13 +20,13 @@ procedure nestedImpureStatements() {
   assert x == y;
 //^^^^^^^^^^^^^^ error: assertion does not hold
   assert z == y;
-}
+};
 
 procedure multipleAssignments() {
   var x: int := 1;
   var y: int := x + ((x := 2;) + x) + (x := 3;);
   assert y == 8;
-}
+};
 
 procedure conditionalAssignmentInExpression(x: int) {
   var y: int := 0;
@@ -38,14 +38,14 @@ procedure conditionalAssignmentInExpression(x: int) {
     assert z == 0;
     assert y == 0;
   }
-}
+};
 
 procedure anotherConditionAssignmentInExpression(c: bool) {
   var b: bool := c;
   var z: bool := (if (b) { b := false; } else (b := true;)) || b;
   assert z;
 //^^^^^^^^^ error: assertion does not hold
-}
+};
 
 procedure blockWithTwoAssignmentsInExpression() {
   var x: int := 0;
@@ -54,7 +54,7 @@ procedure blockWithTwoAssignmentsInExpression() {
   assert x == 1;
   assert y == 2;
   assert z == 2;
-}
+};
 
 procedure nestedImpureStatementsAndOpaque()
   ensures true
@@ -65,7 +65,7 @@ procedure nestedImpureStatementsAndOpaque()
   assert x == y;
 //^^^^^^^^^^^^^^ error: assertion does not hold
   assert z == y;
-}
+};
 
 // An imperative procedure call in expression position is lifted before the
 // surrounding expression is evaluated.
@@ -75,7 +75,7 @@ procedure imperativeProc(x: int) returns (r: int)
 {
   r := x + 1;
   r
-}
+};
 
 procedure imperativeCallInExpressionPosition() {
   var x: int := 0;
@@ -84,7 +84,7 @@ procedure imperativeCallInExpressionPosition() {
   var y: int := imperativeProc(x) + x;
   assert y == 1;
   assert x == 0;
-}
+};
 
 // An imperative call inside a conditional expression is also lifted.
 procedure imperativeCallInConditionalExpression(b: bool) {
@@ -96,7 +96,7 @@ procedure imperativeCallInConditionalExpression(b: bool) {
   } else {
     assert result == 0;
   }
-}
+};
 "
 
 #guard_msgs (error, drop all) in

@@ -4,11 +4,11 @@
 # FAIL = VERIFICATION FAILED expected (known limitations)
 # SKIP = pipeline error expected (test not yet supported)
 
-test_arithmetic.py.ion          PASS
-test_comparisons.py.ion         PASS
-test_control_flow.py.ion        PASS
+test_arithmetic.py.ion          FAIL
+test_comparisons.py.ion         FAIL
+test_control_flow.py.ion        FAIL
 test_missing_models.py.ion      SKIP
-test_strings.py.ion             PASS
+test_strings.py.ion             FAIL
 test_function_def_calls.py.ion  SKIP
 test_precondition_verification.py.ion SKIP
 missing_required_param.py.ion   SKIP
