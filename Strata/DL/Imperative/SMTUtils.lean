@@ -279,6 +279,7 @@ def dischargeObligation {P : PureExpr} [ToFormat P.Ident] [BEq P.Ident]
   (solver_options : Array String) (printFilename : Bool)
   (satisfiabilityCheck validityCheck : Bool) :
   IO (Except Format (Result P.Ident × Result P.Ident × Strata.SMT.EncoderState)) := do
+  let _ := md  -- md is passed to encodeSMT which handles location info internally
   let handle ← IO.FS.Handle.mk filename IO.FS.Mode.write
   let solver ← Strata.SMT.Solver.fileWriter handle
 
