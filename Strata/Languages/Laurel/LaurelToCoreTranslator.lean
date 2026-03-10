@@ -252,16 +252,7 @@ def translateExpr (expr : StmtExprMd)
   | .ContractOf _ _ => panic "contractOf expression not implemented"
   | .Abstract => panic "abstract expression not implemented"
   | .All => panic "all expression not implemented"
-  | .InstanceCall target callee args =>
-      if isPureContext then
-        disallowed expr.md "calls to instance methods are not supported in functions or contracts"
-      else
-        let fnOp : Core.Expression.Expr := .op () ⟨callee.text, ()⟩ none
-        let coreTarget ← translateExpr target boundVars isPureContext
-        let withTarget := .app () fnOp coreTarget
-        args.attach.foldlM (fun acc ⟨arg, _⟩ => do
-          let re ← translateExpr arg boundVars isPureContext
-          return .app () acc re) withTarget
+  | .InstanceCall target callee args => panic "This expression not implemented"
   | .PureFieldUpdate _ _ _ => panic "This expression not implemented"
   | .This => panic "This expression not implemented"
   termination_by expr
@@ -468,6 +459,68 @@ def translateProcedure (proc : Procedure) : TranslateM Core.Procedure := do
   let body : List Core.Statement := [.block "$body" bodyStmts .empty]
   let spec : Core.Procedure.Spec := { modifies, preconditions, postconditions }
   return { header, spec, body }
+
+/--
+Check if a Laurel expression is pure (contains no side effects).
+Used to determine if a procedure can be translated as a Core function.
+-/
+private def isPureExpr(expr: StmtExprMd): Bool :=
+  match _h : expr.val with
+  | .LiteralBool _ => true
+  | .LiteralInt _ => true
+  | .LiteralString _ => true
+  | .Identifier _ => true
+  | .PrimitiveOp _ args => args.attach.all (fun ⟨a, _⟩ => isPureExpr a)
+  | .IfThenElse c t none => isPureExpr c && isPureExpr t
+  | .IfThenElse c t (some e) => isPureExpr c && isPureExpr t && isPureExpr e
+  | .StaticCall _ args => args.attach.all (fun ⟨a, _⟩ => isPureExpr a)
+  | .New _ => false
+  | .ReferenceEquals e1 e2 => isPureExpr e1 && isPureExpr e2
+  | .Block [single] _ => isPureExpr single
+  | .Block _ _ => false
+  -- Statement-like
+  | .LocalVariable .. => true
+  | .While .. => false
+  | .Exit .. => false
+  | .Return .. => false
+  -- Expression-like
+  | .Assign .. => false
+  | .FieldSelect .. => true
+  | .PureFieldUpdate .. => true
+  -- Instance related
+  | .This => panic s!"isPureExpr not implemented for This"
+  | .AsType .. => panic s!"isPureExpr not supported for AsType"
+  | .IsType .. => panic s!"isPureExpr not supported for IsType"
+  | .InstanceCall .. => panic s!"isPureExpr not supported for InstanceCall"
+  -- Verification specific
+  | .Forall .. => panic s!"isPureExpr not implemented for Forall"
+  | .Exists .. => panic s!"isPureExpr not implemented for Exists"
+  | .Assigned .. => panic s!"isPureExpr not supported for AsType"
+  | .Old .. => panic s!"isPureExpr not supported for AsType"
+  | .Fresh .. => panic s!"isPureExpr not supported for AsType"
+  | .Assert .. => panic s!"isPureExpr not implemented for Assert"
+  | .Assume .. => panic s!"isPureExpr not implemented for Assume"
+  | .ProveBy .. => panic s!"isPureExpr not implemented for ProveBy"
+  | .ContractOf .. => panic s!"isPureExpr not implemented for ContractOf"
+  | .Abstract => panic s!"isPureExpr not implemented for Abstract"
+  | .All => panic s!"isPureExpr not implemented for All"
+  -- Dynamic / closures
+  | .Hole => true
+  termination_by sizeOf expr
+  decreasing_by all_goals (have := WithMetadata.sizeOf_val_lt expr; term_by_mem)
+
+/-- Check if a pure-marked procedure can actually be represented as a Core function:
+    transparent body that is a pure expression and has exactly one output. -/
+private def canBeCoreFunctionBody (proc : Procedure) : Bool :=
+  match proc.body with
+  | .Transparent bodyExpr =>
+    isPureExpr bodyExpr &&
+    proc.outputs.length == 1
+  | .Opaque _ bodyExprOption _ =>
+    (bodyExprOption.map isPureExpr).getD true &&
+    proc.outputs.length == 1
+  | .External => false
+  | _ => false
 
 /--
 Translate a Laurel Procedure to a Core Function (when applicable) using `TranslateM`.
