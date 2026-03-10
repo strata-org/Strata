@@ -19,20 +19,20 @@ procedure opaqueBody(x: int) returns (r: int)
 {
   if (x > 0) { r := x; }
   else { r := 1; }
-}
+};
 
 procedure callerOfOpaqueProcedure() {
   var x: int := opaqueBody(3);
   assert x > 0;
   assert x == 3;
 //^^^^^^^^^^^^^^ error: assertion does not hold
-}
+};
 
 procedure invalidPostcondition(x: int)
     ensures false
 //          ^^^^^ error: assertion does not hold
 {
-}
+};
 "
 
 #guard_msgs (drop info, error) in

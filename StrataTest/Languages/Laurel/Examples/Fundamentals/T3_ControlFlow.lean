@@ -10,10 +10,46 @@ import StrataTest.Languages.Laurel.TestExamples
 open StrataTest.Util
 open Strata
 
-namespace Strata
-namespace Laurel
+namespace Strata.Laurel
 
 def program := r"
+function returnAtEnd(x: int) returns (r: int) {
+  if (x > 0) {
+    if (x == 1) {
+      return 1;
+    } else {
+      return 2;
+    }
+  } else {
+    return 3;
+  }
+};
+
+function guardInFunction(x: int) returns (r: int) {
+  if (x > 0) {
+    if (x == 1) {
+      return 1;
+    } else {
+      return 2;
+    }
+  }
+
+  return 3;
+};
+
+procedure testFunctions() {
+  // assert letsInFunction() == 2;
+  // assert letsInFunction() == 3; error: assertion does not hold
+
+  assert returnAtEnd(1) == 1;
+  assert returnAtEnd(1) == 2;
+//^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
+
+  assert guardInFunction(1) == 1;
+  assert guardInFunction(1) == 2;
+//^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
+};
+
 procedure guards(a: int) returns (r: int)
 {
   var b: int := a + 2;
@@ -30,7 +66,7 @@ procedure guards(a: int) returns (r: int)
     assert e < 3;
 //  ^^^^^^^^^^^^^ error: assertion does not hold
   return e;
-}
+};
 
 procedure dag(a: int) returns (r: int)
 {
@@ -46,7 +82,7 @@ procedure dag(a: int) returns (r: int)
 //  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
 //  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
   return b;
-}
+};
 "
 
 #guard_msgs (error, drop all) in
