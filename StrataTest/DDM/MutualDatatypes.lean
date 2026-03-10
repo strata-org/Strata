@@ -122,7 +122,28 @@ datatype C { MkC(toA:A), CBase() };
 #eval IO.println mutualThreeWayPgm
 
 ---------------------------------------------------------------------
--- Test 4: Function templates expand for mutual types
+-- Test 4: Comments and blank lines between mutual types
+---------------------------------------------------------------------
+
+def mutualWithCommentsPgm :=
+#strata
+program TestMutual;
+  datatype Tree2 { Leaf(), Branch(left: Tree2, right: Forest2) }
+
+  // a comment between mutual types
+  datatype Forest2 { FNil2(), FCons2(head: Tree2, tail: Forest2) };
+#end
+
+/--
+info: program TestMutual;
+datatype Tree2 { Leaf(), Branch(left:Tree2, right:Forest2) }
+datatype Forest2 { FNil2(), FCons2(head:Tree2, tail:Forest2) };
+-/
+#guard_msgs in
+#eval IO.println mutualWithCommentsPgm
+
+---------------------------------------------------------------------
+-- Test 5: Function templates expand for mutual types
 ---------------------------------------------------------------------
 
 def mutualTemplatesPgm :=
