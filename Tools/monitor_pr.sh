@@ -85,10 +85,17 @@ print_ci_failure() {
   "${GH[@]}" run view "$run_id" --json jobs \
     --jq '.jobs[] | select(.conclusion == "failure") | "FAILED job: \(.name)\n  step: \(.steps[] | select(.conclusion == "failure") | .name)"' 2>/dev/null || true
   echo "--- error log ---"
-  "${GH[@]}" run view "$run_id" --log-failed 2>/dev/null \
-    | sed 's/^[^\t]*\t[^\t]*\t//; s/\x1b\[[0-9;]*m//g; s/^[0-9T:.Z-]* //' \
-    | grep -E '\[FAIL\]|Error Message:|Assert\.|Expected:|Actual:|^Failed!|##\[error\]' \
-    | head -60 || true
+  local log
+  log=$("${GH[@]}" run view "$run_id" --log-failed 2>/dev/null || true)
+  if echo "$log" | grep -q "still in progress"; then
+    echo "(Logs not yet available — run still in progress. Re-run this script after the run completes for full error details.)"
+  else
+    echo "$log" \
+      | sed 's/^[^\t]*\t[^\t]*\t//; s/\x1b\[[0-9;]*m//g; s/^[0-9T:.Z-]* //' \
+      | grep -E '\[FAIL\]|^error:|^- |^[+] |Error Message:|Assert\.|Expected:|Actual:|^Failed!|##\[error\]|^Some required' \
+      | grep -v '##\[group\]' \
+      | head -80 || true
+  fi
 }
 
 INITIAL_COMMENTS=$(comment_count)
@@ -116,7 +123,29 @@ while true; do
     fi
   fi
 
-  # 2. CI status (skip if last green run matches current HEAD)
+  # 2. PR merged/closed? Merge conflict? (check before CI so conflicts aren't masked by old failures)
+  if [[ -n "$PR_NUMBER" ]]; then
+    PR_STATE=$("${GH[@]}" pr view "$PR_NUMBER" --json state,mergeable --jq '.state + "|" + .mergeable' 2>/dev/null || echo "UNKNOWN|UNKNOWN")
+    STATE="${PR_STATE%%|*}"
+    MERGEABLE="${PR_STATE##*|}"
+    if [[ "$STATE" == "MERGED" ]]; then
+      echo "PR_MERGED: PR #$PR_NUMBER has been merged."
+      echo "ACTION: No further action needed on this branch."
+      stop 0
+    fi
+    if [[ "$STATE" == "CLOSED" ]]; then
+      echo "PR_CLOSED: PR #$PR_NUMBER has been closed."
+      echo "ACTION: Investigate why the PR was closed."
+      stop 0
+    fi
+    if [[ "$MERGEABLE" == "CONFLICTING" ]]; then
+      echo "CONFLICT: Branch '$BRANCH' has merge conflicts with main."
+      echo "ACTION: Run 'git fetch origin main:main && git merge main', resolve conflicts, then commit and push."
+      stop 2
+    fi
+  fi
+
+  # 3. CI status (skip if last green run matches current HEAD)
   LOCAL_SHA=$(git rev-parse HEAD 2>/dev/null)
   if [[ "$GREEN_SHA" != "$LOCAL_SHA" ]]; then
     RUN_JSON=$("${GH[@]}" run list --branch "$BRANCH" --limit 1 --json databaseId,status,conclusion,headSha 2>/dev/null || echo "[]")
@@ -132,17 +161,18 @@ while true; do
         failed=$("${GH[@]}" run view "$RUN_ID" --json jobs \
           --jq '[.jobs[] | select(.conclusion == "failure")] | length' 2>/dev/null || echo 0)
         if [[ "$failed" -gt 0 ]]; then
-          echo "CI_FAILURE: Run $RUN_ID (in progress, $failed job(s) already failed)"
+          echo "CI_FAILURE: Run $RUN_ID on commit $RUN_SHA (in progress, $failed job(s) already failed)"
           print_ci_failure "$RUN_ID"
           echo "ACTION: Fix the failing test(s) above, commit and push."
           stop 1
         fi
+        $DRY_RUN && { echo "DRY_RUN: CI in progress, no failures yet."; exit 0; }
         sleep 10; continue
       fi
 
       # Completed with failure
       if [[ "$CONCLUSION" != "success" ]]; then
-        echo "CI_FAILURE: Run $RUN_ID concluded '$CONCLUSION'"
+        echo "CI_FAILURE: Run $RUN_ID on commit $RUN_SHA concluded '$CONCLUSION'"
         print_ci_failure "$RUN_ID"
         echo "ACTION: Fix the failing test(s) above, commit and push."
         stop 1
@@ -184,5 +214,6 @@ while true; do
     fi
   fi
 
+  $DRY_RUN && { echo "DRY_RUN: One pass complete, no actionable issues found."; exit 0; }
   sleep "$INTERVAL"
 done
