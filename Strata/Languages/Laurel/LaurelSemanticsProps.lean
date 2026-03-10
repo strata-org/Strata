@@ -69,17 +69,26 @@ theorem InitStore_deterministic {σ σ₁ σ₂ : LaurelStore} {x : Identifier} 
 
 /-! ## Determinism of Heap Operations -/
 
-/-
-Note on AllocHeap: AllocHeap is NOT deterministic in the allocated address.
-The constructor existentially picks any `addr` where `h addr = none`, so two
-derivations can choose different addresses, yielding different heaps. Therefore
-`AllocHeap_deterministic` (addr₁ = addr₂ ∧ h₁ = h₂) does NOT hold as stated.
-
-The full EvalLaurelStmt determinism proof will need a weaker formulation
-(e.g., heap bisimilarity up to address renaming) or AllocHeap must be made
-deterministic (e.g., pick the smallest free address). This is flagged here
-per the feature specification.
--/
+/-- AllocHeap is deterministic because the `alloc` constructor requires `addr`
+to be the smallest free address (all smaller addresses are occupied). -/
+theorem AllocHeap_deterministic {h h₁ h₂ : LaurelHeap}
+    {typeName : Identifier} {addr₁ addr₂ : Nat} :
+    AllocHeap h typeName addr₁ h₁ →
+    AllocHeap h typeName addr₂ h₂ →
+    addr₁ = addr₂ ∧ h₁ = h₂ := by
+  intro H1 H2
+  match H1, H2 with
+  | .alloc hfree1 hmin1 hnew1 hrest1, .alloc hfree2 hmin2 hnew2 hrest2 =>
+    have haddr : addr₁ = addr₂ := by
+      if heq : addr₁ = addr₂ then exact heq
+      else
+        cases Nat.lt_or_gt_of_ne heq with
+        | inl hlt => exact absurd (hmin2 addr₁ hlt) (by simp [hfree1])
+        | inr hgt => exact absurd (hmin1 addr₂ hgt) (by simp [hfree2])
+    subst haddr
+    exact ⟨rfl, funext fun a => by
+      if heq : addr₁ = a then subst heq; rw [hnew1, hnew2]
+      else rw [hrest1 a heq, hrest2 a heq]⟩
 
 theorem HeapFieldWrite_deterministic {h h₁ h₂ : LaurelHeap}
     {addr : Nat} {field : Identifier} {v : LaurelValue} :
@@ -130,35 +139,408 @@ theorem catchExit_none_passthrough (o : Outcome) :
     catchExit none o = o := by
   simp [catchExit]
 
-/-! ## evalPrimOp Determinism -/
+/-! ## catchExit Determinism -/
+
+theorem catchExit_deterministic {label : Option Identifier} {o₁ o₂ : Outcome} :
+    o₁ = o₂ → catchExit label o₁ = catchExit label o₂ := by
+  intro h; subst h; rfl
 
 theorem evalPrimOp_deterministic (op : Operation) (args : List LaurelValue) :
     ∀ v₁ v₂, evalPrimOp op args = some v₁ → evalPrimOp op args = some v₂ → v₁ = v₂ := by
   intros v₁ v₂ H1 H2; rw [H1] at H2; exact Option.some.inj H2
 
-/-! ## Determinism of Evaluation -/
+/-! ## Determinism of Evaluation
 
-/-
-## Full Determinism (EvalLaurelStmt / EvalLaurelBlock)
+AllocHeap was made deterministic (smallest-free-address policy) so that
+full determinism `h₁ = h₂ ∧ σ₁ = σ₂ ∧ o₁ = o₂` holds for all constructors
+including `new_obj`.
 
-Full determinism (h₁ = h₂ ∧ σ₁ = σ₂ ∧ o₁ = o₂) does NOT hold for the
-current semantics because `new_obj` uses `AllocHeap`, which existentially
-picks any free address. Two derivations can choose different addresses,
-producing different heaps and different `(.vRef addr)` outcomes.
-
-Design options for recovering a determinism result:
-  1. **Deterministic allocator**: Change `AllocHeap` to pick a canonical
-     address (e.g., smallest free Nat). This makes full determinism provable
-     but constrains the heap model.
-  2. **Bisimilarity up to renaming**: Formulate determinism as heap
-     isomorphism modulo address permutation. More general but significantly
-     more complex to state and prove.
-  3. **Restricted determinism**: Prove determinism only for the heap-free
-     fragment (store and outcome agree when the heap is unchanged). This is
-     what the auxiliary lemmas above support.
-
--- TODO: Choose and implement one of the above approaches.
+The proof uses mutual structural recursion on the first derivation (term-mode
+`match` on H1, then tactic-mode `cases` on H2 inside each branch).
 -/
+
+set_option maxRecDepth 4096 in
+set_option maxHeartbeats 800000 in
+set_option maxRecDepth 4096 in
+set_option maxHeartbeats 800000 in
+mutual
+theorem EvalLaurelStmt_deterministic
+    {δ : LaurelEval} {π : ProcEnv} {h : LaurelHeap} {σ : LaurelStore}
+    {s : StmtExprMd} {h₁ h₂ : LaurelHeap} {σ₁ σ₂ : LaurelStore} {o₁ o₂ : Outcome}
+    (H1 : EvalLaurelStmt δ π h σ s h₁ σ₁ o₁)
+    (H2 : EvalLaurelStmt δ π h σ s h₂ σ₂ o₂) :
+    h₁ = h₂ ∧ σ₁ = σ₂ ∧ o₁ = o₂ :=
+  match H1 with
+  -- Literals and leaf nodes (no sub-derivations)
+  | .literal_int => by cases H2; exact ⟨rfl, rfl, rfl⟩
+  | .literal_bool => by cases H2; exact ⟨rfl, rfl, rfl⟩
+  | .literal_string => by cases H2; exact ⟨rfl, rfl, rfl⟩
+  | .identifier _ => by cases H2; simp_all
+  | .exit_sem => by cases H2; exact ⟨rfl, rfl, rfl⟩
+  | .return_none => by cases H2; exact ⟨rfl, rfl, rfl⟩
+  | .this_sem _ => by cases H2; simp_all
+  -- Specification constructs delegated to δ
+  | .forall_sem h1 => by cases H2 with | forall_sem h2 => rw [h1] at h2; simp_all
+  | .exists_sem h1 => by cases H2 with | exists_sem h2 => rw [h1] at h2; simp_all
+  | .old_sem h1 => by cases H2 with | old_sem h2 => rw [h1] at h2; simp_all
+  | .fresh_sem h1 => by cases H2 with | fresh_sem h2 => rw [h1] at h2; simp_all
+  | .assigned_sem h1 => by cases H2 with | assigned_sem h2 => rw [h1] at h2; simp_all
+  | .contract_of h1 => by cases H2 with | contract_of h2 => rw [h1] at h2; simp_all
+  -- PrimitiveOp
+  | .prim_op ha1 ho1 => by
+      cases H2 with
+      | prim_op ha2 ho2 =>
+        have := EvalArgs_deterministic ha1 ha2; subst this
+        rw [ho1] at ho2; simp_all
+  -- Single IH cases
+  | .return_some Hv => by
+      cases H2 with
+      | return_some Hv2 =>
+        have ⟨hh, hs, ho⟩ := EvalLaurelStmt_deterministic Hv Hv2
+        subst hh; subst hs; cases ho; exact ⟨rfl, rfl, rfl⟩
+  | .assert_true _ => by cases H2 with | assert_true => exact ⟨rfl, rfl, rfl⟩
+  | .assume_true _ => by cases H2 with | assume_true => exact ⟨rfl, rfl, rfl⟩
+  | .prove_by Hv => by
+      cases H2 with
+      | prove_by Hv2 => exact EvalLaurelStmt_deterministic Hv Hv2
+  | .as_type Ht => by
+      cases H2 with
+      | as_type Ht2 => exact EvalLaurelStmt_deterministic Ht Ht2
+  -- Variable operations
+  | .local_var_uninit Hn Hi => by
+      cases H2 with
+      | local_var_uninit _ Hi2 => exact ⟨rfl, InitStore_deterministic Hi Hi2, rfl⟩
+  | .local_var_init Hv Hn Hi => by
+      cases H2 with
+      | local_var_init Hv2 _ Hi2 =>
+        have ⟨hh, hs, ho⟩ := EvalLaurelStmt_deterministic Hv Hv2
+        subst hh; subst hs; cases ho
+        exact ⟨rfl, InitStore_deterministic Hi Hi2, rfl⟩
+  | .assign_single Hv Hm Hu => by
+      cases H2 with
+      | assign_single Hv2 _ Hu2 =>
+        have ⟨hh, hs, ho⟩ := EvalLaurelStmt_deterministic Hv Hv2
+        subst hh; subst hs; cases ho
+        exact ⟨rfl, UpdateStore_deterministic Hu Hu2, rfl⟩
+  -- Heap: new_obj
+  | .new_obj Ha => by
+      cases H2 with
+      | new_obj Ha2 =>
+        have ⟨ha, hh⟩ := AllocHeap_deterministic Ha Ha2
+        subst ha; subst hh; exact ⟨rfl, rfl, rfl⟩
+  -- Conditionals (cross-case contradiction via bool determinism)
+  | .ite_true Hc Ht => by
+      cases H2 with
+      | ite_true Hc2 Ht2 =>
+        have ⟨hh, hs, ho⟩ := EvalLaurelStmt_deterministic Hc Hc2
+        subst hh; subst hs; cases ho
+        exact EvalLaurelStmt_deterministic Ht Ht2
+      | ite_false Hc2 _ =>
+        have ⟨_, _, ho⟩ := EvalLaurelStmt_deterministic Hc Hc2; simp at ho
+  | .ite_false Hc He => by
+      cases H2 with
+      | ite_true Hc2 _ =>
+        have ⟨_, _, ho⟩ := EvalLaurelStmt_deterministic Hc Hc2; simp at ho
+      | ite_false Hc2 He2 =>
+        have ⟨hh, hs, ho⟩ := EvalLaurelStmt_deterministic Hc Hc2
+        subst hh; subst hs; cases ho
+        exact EvalLaurelStmt_deterministic He He2
+  | .ite_true_no_else Hc Ht => by
+      cases H2 with
+      | ite_true_no_else Hc2 Ht2 =>
+        have ⟨hh, hs, ho⟩ := EvalLaurelStmt_deterministic Hc Hc2
+        subst hh; subst hs; cases ho
+        exact EvalLaurelStmt_deterministic Ht Ht2
+      | ite_false_no_else Hc2 =>
+        have ⟨_, _, ho⟩ := EvalLaurelStmt_deterministic Hc Hc2; simp at ho
+  | .ite_false_no_else Hc => by
+      cases H2 with
+      | ite_true_no_else Hc2 _ =>
+        have ⟨_, _, ho⟩ := EvalLaurelStmt_deterministic Hc Hc2; simp at ho
+      | ite_false_no_else Hc2 =>
+        have ⟨hh, hs, _⟩ := EvalLaurelStmt_deterministic Hc Hc2
+        subst hh; subst hs; exact ⟨rfl, rfl, rfl⟩
+  -- Block
+  | .block_sem Hb Hce => by
+      cases H2 with
+      | block_sem Hb2 Hce2 =>
+        have ⟨hh, hs, ho⟩ := EvalLaurelBlock_deterministic Hb Hb2
+        subst hh; subst hs; rw [ho] at Hce; rw [Hce] at Hce2
+        exact ⟨rfl, rfl, Hce2⟩
+  -- While loop (4 constructors × 4 cross-cases)
+  | .while_true Hc Hb Hl => by
+      cases H2 with
+      | while_true Hc2 Hb2 Hl2 =>
+        have ⟨hh, hs, ho⟩ := EvalLaurelStmt_deterministic Hc Hc2
+        subst hh; subst hs; cases ho
+        have ⟨hh2, hs2, _⟩ := EvalLaurelStmt_deterministic Hb Hb2
+        subst hh2; subst hs2
+        exact EvalLaurelStmt_deterministic Hl Hl2
+      | while_false Hc2 =>
+        have ⟨_, _, ho⟩ := EvalLaurelStmt_deterministic Hc Hc2; simp at ho
+      | while_exit Hc2 Hb2 =>
+        have ⟨hh, hs, ho⟩ := EvalLaurelStmt_deterministic Hc Hc2
+        subst hh; subst hs; cases ho
+        have ⟨_, _, ho2⟩ := EvalLaurelStmt_deterministic Hb Hb2; simp at ho2
+      | while_return Hc2 Hb2 =>
+        have ⟨hh, hs, ho⟩ := EvalLaurelStmt_deterministic Hc Hc2
+        subst hh; subst hs; cases ho
+        have ⟨_, _, ho2⟩ := EvalLaurelStmt_deterministic Hb Hb2; simp at ho2
+  | .while_false Hc => by
+      cases H2 with
+      | while_true Hc2 _ _ =>
+        have ⟨_, _, ho⟩ := EvalLaurelStmt_deterministic Hc Hc2; simp at ho
+      | while_false Hc2 =>
+        have ⟨hh, hs, _⟩ := EvalLaurelStmt_deterministic Hc Hc2
+        subst hh; subst hs; exact ⟨rfl, rfl, rfl⟩
+      | while_exit Hc2 _ =>
+        have ⟨_, _, ho⟩ := EvalLaurelStmt_deterministic Hc Hc2; simp at ho
+      | while_return Hc2 _ =>
+        have ⟨_, _, ho⟩ := EvalLaurelStmt_deterministic Hc Hc2; simp at ho
+  | .while_exit Hc Hb => by
+      cases H2 with
+      | while_true Hc2 Hb2 _ =>
+        have ⟨hh, hs, ho⟩ := EvalLaurelStmt_deterministic Hc Hc2
+        subst hh; subst hs; cases ho
+        have ⟨_, _, ho2⟩ := EvalLaurelStmt_deterministic Hb Hb2; simp at ho2
+      | while_false Hc2 =>
+        have ⟨_, _, ho⟩ := EvalLaurelStmt_deterministic Hc Hc2; simp at ho
+      | while_exit Hc2 Hb2 =>
+        have ⟨hh, hs, ho⟩ := EvalLaurelStmt_deterministic Hc Hc2
+        subst hh; subst hs; cases ho
+        exact EvalLaurelStmt_deterministic Hb Hb2
+      | while_return Hc2 Hb2 =>
+        have ⟨hh, hs, ho⟩ := EvalLaurelStmt_deterministic Hc Hc2
+        subst hh; subst hs; cases ho
+        have ⟨_, _, ho2⟩ := EvalLaurelStmt_deterministic Hb Hb2; simp at ho2
+  | .while_return Hc Hb => by
+      cases H2 with
+      | while_true Hc2 Hb2 _ =>
+        have ⟨hh, hs, ho⟩ := EvalLaurelStmt_deterministic Hc Hc2
+        subst hh; subst hs; cases ho
+        have ⟨_, _, ho2⟩ := EvalLaurelStmt_deterministic Hb Hb2; simp at ho2
+      | while_false Hc2 =>
+        have ⟨_, _, ho⟩ := EvalLaurelStmt_deterministic Hc Hc2; simp at ho
+      | while_exit Hc2 Hb2 =>
+        have ⟨hh, hs, ho⟩ := EvalLaurelStmt_deterministic Hc Hc2
+        subst hh; subst hs; cases ho
+        have ⟨_, _, ho2⟩ := EvalLaurelStmt_deterministic Hb Hb2; simp at ho2
+      | while_return Hc2 Hb2 =>
+        have ⟨hh, hs, ho⟩ := EvalLaurelStmt_deterministic Hc Hc2
+        subst hh; subst hs; cases ho
+        exact EvalLaurelStmt_deterministic Hb Hb2
+  -- Static calls (3 constructors × 3 cross-cases, outcome discrimination)
+  | .static_call Hp Ha Hb Hg Hbody => by
+      cases H2 with
+      | static_call Hp2 Ha2 Hb2 Hg2 Hbody2 =>
+        rw [Hp] at Hp2; cases Hp2
+        have := EvalArgs_deterministic Ha Ha2; subst this
+        rw [Hb] at Hb2; cases Hb2; rw [Hg] at Hg2; cases Hg2
+        have ⟨hh, _, ho⟩ := EvalLaurelStmt_deterministic Hbody Hbody2
+        subst hh; cases ho; exact ⟨rfl, rfl, rfl⟩
+      | static_call_return Hp2 Ha2 Hb2 Hg2 Hbody2 =>
+        rw [Hp] at Hp2; cases Hp2
+        have := EvalArgs_deterministic Ha Ha2; subst this
+        rw [Hb] at Hb2; cases Hb2; rw [Hg] at Hg2; cases Hg2
+        have ⟨_, _, ho⟩ := EvalLaurelStmt_deterministic Hbody Hbody2; simp at ho
+      | static_call_return_void Hp2 Ha2 Hb2 Hg2 Hbody2 =>
+        rw [Hp] at Hp2; cases Hp2
+        have := EvalArgs_deterministic Ha Ha2; subst this
+        rw [Hb] at Hb2; cases Hb2; rw [Hg] at Hg2; cases Hg2
+        have ⟨_, _, ho⟩ := EvalLaurelStmt_deterministic Hbody Hbody2; simp at ho
+  | .static_call_return Hp Ha Hb Hg Hbody => by
+      cases H2 with
+      | static_call Hp2 Ha2 Hb2 Hg2 Hbody2 =>
+        rw [Hp] at Hp2; cases Hp2
+        have := EvalArgs_deterministic Ha Ha2; subst this
+        rw [Hb] at Hb2; cases Hb2; rw [Hg] at Hg2; cases Hg2
+        have ⟨_, _, ho⟩ := EvalLaurelStmt_deterministic Hbody Hbody2; simp at ho
+      | static_call_return Hp2 Ha2 Hb2 Hg2 Hbody2 =>
+        rw [Hp] at Hp2; cases Hp2
+        have := EvalArgs_deterministic Ha Ha2; subst this
+        rw [Hb] at Hb2; cases Hb2; rw [Hg] at Hg2; cases Hg2
+        have ⟨hh, _, ho⟩ := EvalLaurelStmt_deterministic Hbody Hbody2
+        subst hh; cases ho; exact ⟨rfl, rfl, rfl⟩
+      | static_call_return_void Hp2 Ha2 Hb2 Hg2 Hbody2 =>
+        rw [Hp] at Hp2; cases Hp2
+        have := EvalArgs_deterministic Ha Ha2; subst this
+        rw [Hb] at Hb2; cases Hb2; rw [Hg] at Hg2; cases Hg2
+        have ⟨_, _, ho⟩ := EvalLaurelStmt_deterministic Hbody Hbody2; simp at ho
+  | .static_call_return_void Hp Ha Hb Hg Hbody => by
+      cases H2 with
+      | static_call Hp2 Ha2 Hb2 Hg2 Hbody2 =>
+        rw [Hp] at Hp2; cases Hp2
+        have := EvalArgs_deterministic Ha Ha2; subst this
+        rw [Hb] at Hb2; cases Hb2; rw [Hg] at Hg2; cases Hg2
+        have ⟨_, _, ho⟩ := EvalLaurelStmt_deterministic Hbody Hbody2; simp at ho
+      | static_call_return Hp2 Ha2 Hb2 Hg2 Hbody2 =>
+        rw [Hp] at Hp2; cases Hp2
+        have := EvalArgs_deterministic Ha Ha2; subst this
+        rw [Hb] at Hb2; cases Hb2; rw [Hg] at Hg2; cases Hg2
+        have ⟨_, _, ho⟩ := EvalLaurelStmt_deterministic Hbody Hbody2; simp at ho
+      | static_call_return_void Hp2 Ha2 Hb2 Hg2 Hbody2 =>
+        rw [Hp] at Hp2; cases Hp2
+        have := EvalArgs_deterministic Ha Ha2; subst this
+        rw [Hb] at Hb2; cases Hb2; rw [Hg] at Hg2; cases Hg2
+        have ⟨hh, _, ho⟩ := EvalLaurelStmt_deterministic Hbody Hbody2
+        subst hh; cases ho; exact ⟨rfl, rfl, rfl⟩
+  -- OO: field_select, pure_field_update, reference_equals, assign_field
+  | .field_select Ht Hr => by
+      cases H2 with
+      | field_select Ht2 Hr2 =>
+        have ⟨hh, hs, ho⟩ := EvalLaurelStmt_deterministic Ht Ht2
+        subst hh; subst hs; cases ho
+        rw [Hr] at Hr2; cases Hr2; exact ⟨rfl, rfl, rfl⟩
+  | .pure_field_update Ht Hv Hw => by
+      cases H2 with
+      | pure_field_update Ht2 Hv2 Hw2 =>
+        have ⟨hh, hs, ho⟩ := EvalLaurelStmt_deterministic Ht Ht2
+        subst hh; subst hs; cases ho
+        have ⟨hh2, hs2, ho2⟩ := EvalLaurelStmt_deterministic Hv Hv2
+        subst hh2; subst hs2; cases ho2
+        exact ⟨HeapFieldWrite_deterministic Hw Hw2, rfl, rfl⟩
+  | .reference_equals Hl Hr => by
+      cases H2 with
+      | reference_equals Hl2 Hr2 =>
+        have ⟨hh, hs, ho⟩ := EvalLaurelStmt_deterministic Hl Hl2
+        subst hh; subst hs; cases ho
+        have ⟨hh2, hs2, ho2⟩ := EvalLaurelStmt_deterministic Hr Hr2
+        subst hh2; subst hs2; cases ho2; exact ⟨rfl, rfl, rfl⟩
+  | .assign_field Ht Hv Hw => by
+      cases H2 with
+      | assign_field Ht2 Hv2 Hw2 =>
+        have ⟨hh, hs, ho⟩ := EvalLaurelStmt_deterministic Ht Ht2
+        subst hh; subst hs; cases ho
+        have ⟨hh2, hs2, ho2⟩ := EvalLaurelStmt_deterministic Hv Hv2
+        subst hh2; subst hs2; cases ho2
+        exact ⟨HeapFieldWrite_deterministic Hw Hw2, rfl, rfl⟩
+  -- OO: is_type
+  | .is_type Ht Hlook => by
+      cases H2 with
+      | is_type Ht2 Hlook2 =>
+        have ⟨hh, hs, ho⟩ := EvalLaurelStmt_deterministic Ht Ht2
+        subst hh; subst hs; cases ho
+        rw [Hlook] at Hlook2; cases Hlook2; exact ⟨rfl, rfl, rfl⟩
+  -- Instance calls (3 constructors × 3 cross-cases)
+  | .instance_call Ht Hlook Hp Ha Hb Hg Hbody => by
+      cases H2 with
+      | instance_call Ht2 Hlook2 Hp2 Ha2 Hb2 Hg2 Hbody2 =>
+        have ⟨hh, hs, ho⟩ := EvalLaurelStmt_deterministic Ht Ht2
+        subst hh; subst hs; cases ho
+        rw [Hlook] at Hlook2; cases Hlook2; rw [Hp] at Hp2; cases Hp2
+        have := EvalArgs_deterministic Ha Ha2; subst this
+        rw [Hb] at Hb2; cases Hb2; rw [Hg] at Hg2; cases Hg2
+        have ⟨hh2, _, ho2⟩ := EvalLaurelStmt_deterministic Hbody Hbody2
+        subst hh2; cases ho2; exact ⟨rfl, rfl, rfl⟩
+      | instance_call_return Ht2 Hlook2 Hp2 Ha2 Hb2 Hg2 Hbody2 =>
+        have ⟨hh, hs, ho⟩ := EvalLaurelStmt_deterministic Ht Ht2
+        subst hh; subst hs; cases ho
+        rw [Hlook] at Hlook2; cases Hlook2; rw [Hp] at Hp2; cases Hp2
+        have := EvalArgs_deterministic Ha Ha2; subst this
+        rw [Hb] at Hb2; cases Hb2; rw [Hg] at Hg2; cases Hg2
+        have ⟨_, _, ho2⟩ := EvalLaurelStmt_deterministic Hbody Hbody2; simp at ho2
+      | instance_call_return_void Ht2 Hlook2 Hp2 Ha2 Hb2 Hg2 Hbody2 =>
+        have ⟨hh, hs, ho⟩ := EvalLaurelStmt_deterministic Ht Ht2
+        subst hh; subst hs; cases ho
+        rw [Hlook] at Hlook2; cases Hlook2; rw [Hp] at Hp2; cases Hp2
+        have := EvalArgs_deterministic Ha Ha2; subst this
+        rw [Hb] at Hb2; cases Hb2; rw [Hg] at Hg2; cases Hg2
+        have ⟨_, _, ho2⟩ := EvalLaurelStmt_deterministic Hbody Hbody2; simp at ho2
+  | .instance_call_return Ht Hlook Hp Ha Hb Hg Hbody => by
+      cases H2 with
+      | instance_call Ht2 Hlook2 Hp2 Ha2 Hb2 Hg2 Hbody2 =>
+        have ⟨hh, hs, ho⟩ := EvalLaurelStmt_deterministic Ht Ht2
+        subst hh; subst hs; cases ho
+        rw [Hlook] at Hlook2; cases Hlook2; rw [Hp] at Hp2; cases Hp2
+        have := EvalArgs_deterministic Ha Ha2; subst this
+        rw [Hb] at Hb2; cases Hb2; rw [Hg] at Hg2; cases Hg2
+        have ⟨_, _, ho2⟩ := EvalLaurelStmt_deterministic Hbody Hbody2; simp at ho2
+      | instance_call_return Ht2 Hlook2 Hp2 Ha2 Hb2 Hg2 Hbody2 =>
+        have ⟨hh, hs, ho⟩ := EvalLaurelStmt_deterministic Ht Ht2
+        subst hh; subst hs; cases ho
+        rw [Hlook] at Hlook2; cases Hlook2; rw [Hp] at Hp2; cases Hp2
+        have := EvalArgs_deterministic Ha Ha2; subst this
+        rw [Hb] at Hb2; cases Hb2; rw [Hg] at Hg2; cases Hg2
+        have ⟨hh2, _, ho2⟩ := EvalLaurelStmt_deterministic Hbody Hbody2
+        subst hh2; cases ho2; exact ⟨rfl, rfl, rfl⟩
+      | instance_call_return_void Ht2 Hlook2 Hp2 Ha2 Hb2 Hg2 Hbody2 =>
+        have ⟨hh, hs, ho⟩ := EvalLaurelStmt_deterministic Ht Ht2
+        subst hh; subst hs; cases ho
+        rw [Hlook] at Hlook2; cases Hlook2; rw [Hp] at Hp2; cases Hp2
+        have := EvalArgs_deterministic Ha Ha2; subst this
+        rw [Hb] at Hb2; cases Hb2; rw [Hg] at Hg2; cases Hg2
+        have ⟨_, _, ho2⟩ := EvalLaurelStmt_deterministic Hbody Hbody2; simp at ho2
+  | .instance_call_return_void Ht Hlook Hp Ha Hb Hg Hbody => by
+      cases H2 with
+      | instance_call Ht2 Hlook2 Hp2 Ha2 Hb2 Hg2 Hbody2 =>
+        have ⟨hh, hs, ho⟩ := EvalLaurelStmt_deterministic Ht Ht2
+        subst hh; subst hs; cases ho
+        rw [Hlook] at Hlook2; cases Hlook2; rw [Hp] at Hp2; cases Hp2
+        have := EvalArgs_deterministic Ha Ha2; subst this
+        rw [Hb] at Hb2; cases Hb2; rw [Hg] at Hg2; cases Hg2
+        have ⟨_, _, ho2⟩ := EvalLaurelStmt_deterministic Hbody Hbody2; simp at ho2
+      | instance_call_return Ht2 Hlook2 Hp2 Ha2 Hb2 Hg2 Hbody2 =>
+        have ⟨hh, hs, ho⟩ := EvalLaurelStmt_deterministic Ht Ht2
+        subst hh; subst hs; cases ho
+        rw [Hlook] at Hlook2; cases Hlook2; rw [Hp] at Hp2; cases Hp2
+        have := EvalArgs_deterministic Ha Ha2; subst this
+        rw [Hb] at Hb2; cases Hb2; rw [Hg] at Hg2; cases Hg2
+        have ⟨_, _, ho2⟩ := EvalLaurelStmt_deterministic Hbody Hbody2; simp at ho2
+      | instance_call_return_void Ht2 Hlook2 Hp2 Ha2 Hb2 Hg2 Hbody2 =>
+        have ⟨hh, hs, ho⟩ := EvalLaurelStmt_deterministic Ht Ht2
+        subst hh; subst hs; cases ho
+        rw [Hlook] at Hlook2; cases Hlook2; rw [Hp] at Hp2; cases Hp2
+        have := EvalArgs_deterministic Ha Ha2; subst this
+        rw [Hb] at Hb2; cases Hb2; rw [Hg] at Hg2; cases Hg2
+        have ⟨hh2, _, ho2⟩ := EvalLaurelStmt_deterministic Hbody Hbody2
+        subst hh2; cases ho2; exact ⟨rfl, rfl, rfl⟩
+
+theorem EvalLaurelBlock_deterministic
+    {δ : LaurelEval} {π : ProcEnv} {h : LaurelHeap} {σ : LaurelStore}
+    {ss : List StmtExprMd} {h₁ h₂ : LaurelHeap} {σ₁ σ₂ : LaurelStore} {o₁ o₂ : Outcome}
+    (H1 : EvalLaurelBlock δ π h σ ss h₁ σ₁ o₁)
+    (H2 : EvalLaurelBlock δ π h σ ss h₂ σ₂ o₂) :
+    h₁ = h₂ ∧ σ₁ = σ₂ ∧ o₁ = o₂ :=
+  match H1 with
+  | .nil => by cases H2; exact ⟨rfl, rfl, rfl⟩
+  | .last_normal Hs => by
+      cases H2 with
+      | last_normal Hs2 => exact EvalLaurelStmt_deterministic Hs Hs2
+      | cons_normal Hs2 Hne _ => exact absurd rfl Hne
+      | cons_exit Hs2 =>
+        have ⟨_, _, ho⟩ := EvalLaurelStmt_deterministic Hs Hs2; simp at ho
+      | cons_return Hs2 =>
+        have ⟨_, _, ho⟩ := EvalLaurelStmt_deterministic Hs Hs2; simp at ho
+  | .cons_normal Hs Hne Hr => by
+      cases H2 with
+      | last_normal Hs2 => exact absurd rfl Hne
+      | cons_normal Hs2 _ Hr2 =>
+        have ⟨hh, hs, _⟩ := EvalLaurelStmt_deterministic Hs Hs2
+        subst hh; subst hs
+        exact EvalLaurelBlock_deterministic Hr Hr2
+      | cons_exit Hs2 =>
+        have ⟨_, _, ho⟩ := EvalLaurelStmt_deterministic Hs Hs2; simp at ho
+      | cons_return Hs2 =>
+        have ⟨_, _, ho⟩ := EvalLaurelStmt_deterministic Hs Hs2; simp at ho
+  | .cons_exit Hs => by
+      cases H2 with
+      | last_normal Hs2 =>
+        have ⟨_, _, ho⟩ := EvalLaurelStmt_deterministic Hs Hs2; simp at ho
+      | cons_normal Hs2 _ _ =>
+        have ⟨_, _, ho⟩ := EvalLaurelStmt_deterministic Hs Hs2; simp at ho
+      | cons_exit Hs2 => exact EvalLaurelStmt_deterministic Hs Hs2
+      | cons_return Hs2 =>
+        have ⟨_, _, ho⟩ := EvalLaurelStmt_deterministic Hs Hs2; simp at ho
+  | .cons_return Hs => by
+      cases H2 with
+      | last_normal Hs2 =>
+        have ⟨_, _, ho⟩ := EvalLaurelStmt_deterministic Hs Hs2; simp at ho
+      | cons_normal Hs2 _ _ =>
+        have ⟨_, _, ho⟩ := EvalLaurelStmt_deterministic Hs Hs2; simp at ho
+      | cons_exit Hs2 =>
+        have ⟨_, _, ho⟩ := EvalLaurelStmt_deterministic Hs Hs2; simp at ho
+      | cons_return Hs2 => exact EvalLaurelStmt_deterministic Hs Hs2
+end
 
 /-! ## Block Value Semantics -/
 

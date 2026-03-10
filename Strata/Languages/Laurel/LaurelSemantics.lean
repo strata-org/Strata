@@ -88,6 +88,7 @@ inductive InitStore : LaurelStore → Identifier → LaurelValue → LaurelStore
 inductive AllocHeap : LaurelHeap → Identifier → Nat → LaurelHeap → Prop where
   | alloc :
     h addr = none →
+    (∀ a, a < addr → (h a).isSome) →
     h' addr = .some (typeName, fun _ => none) →
     (∀ a, addr ≠ a → h' a = h a) →
     AllocHeap h typeName addr h'
