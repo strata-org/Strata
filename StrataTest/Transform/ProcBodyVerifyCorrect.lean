@@ -5,13 +5,13 @@
 -/
 
 import Strata.Transform.ProcBodyVerify
-import StrataTest.Transform.SoundnessFramework
+import Strata.Transform.SoundnessFramework
 
 /-! # Procedure Body Verification Correctness Proof -/
 
 namespace ProcBodyVerifyCorrect
 
-open Core Core.ProcBodyVerify Imperative Lambda Transform Soundness
+open Core Core.ProcBodyVerify Imperative Lambda Transform Strata.Soundness
 
 /-! ## Structural Characterization -/
 
@@ -189,7 +189,12 @@ theorem procBodyVerify_sound
     -- And every assertion in `stmt` is valid (holds at all reachable states)
     (h_correct : stmt_correct π φ stmt)
     -- And the verification block's prefix (inits + assumes) can produce
-    -- any state where preconditions hold from some initial state
+    -- any state where preconditions hold from some initial state.
+    -- This is an assumption because it depends on the init semantics:
+    -- `init x ty none` creates variable `x` with an arbitrary value via
+    -- `InitState`, and `assume` filters states where preconditions hold.
+    -- Proving this requires constructing `InitState` derivations for each
+    -- parameter, which depends on the specific procedure signature.
     (h_prefix_exec : ∀ (δ : CoreEval) (σ₀ : CoreStore),
       (∀ (label : CoreLabel) (check : Procedure.Check),
         (label, check) ∈ proc.spec.preconditions.toList →

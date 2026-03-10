@@ -13,7 +13,7 @@ General definitions for statement correctness, transformation soundness,
 and procedure contract obedience. Uses small-step semantics throughout.
 -/
 
-namespace Soundness
+namespace Strata.Soundness
 
 open Core Imperative
 
@@ -110,4 +110,4 @@ structure Transformation where
   F     : AssertId → Option AssertId
   F_inv : AssertId → AssertId
 
-end Soundness
+end Strata.Soundness

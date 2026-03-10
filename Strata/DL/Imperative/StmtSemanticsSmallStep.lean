@@ -20,6 +20,17 @@ public section
 
 This module defines small-step operational semantics for the Imperative
 dialect's statement constructs.
+
+Key design decisions:
+- `Config.seq` enables truly small-step processing of statement lists.
+  Without it, `step_stmt_cons` required the first statement to reach
+  terminal in a single step, which prevented blocks (multi-step) from
+  being processed inside statement lists.
+- `Config.block` holds an inner `Config` (not a statement list + store),
+  allowing blocks to observe the execution state of their body at each step.
+- `assert` is a skip in the operational semantics (`eval_assert` has no
+  precondition). Assertion checking is handled by the verification framework,
+  not by execution.
 -/
 
 /--
