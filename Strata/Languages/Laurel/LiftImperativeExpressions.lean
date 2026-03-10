@@ -118,10 +118,10 @@ private def getVarType (varName : Identifier) : LiftM HighTypeMd := do
   | some (_, ty) => return ty
   | none => panic s!"Could not find {varName} in environment."
 
-private def addToEnv (varName : Identifier) (ty : HighTypeMd) : LiftM Unit :=
+def addToEnv (varName : Identifier) (ty : HighTypeMd) : LiftM Unit :=
   modify fun s => { s with env := (varName, ty) :: s.env }
 
-private def getSubst (varName : Identifier) : LiftM Identifier := do
+def getSubst (varName : Identifier) : LiftM Identifier := do
   match (← get).subst.find? varName with
   | some mapped => return mapped
   | none => return varName
@@ -134,7 +134,7 @@ private def computeType (expr : StmtExprMd) : LiftM HighTypeMd := do
   return computeExprType s.env s.types expr s.procedures
 
 /-- Check if an expression contains any assignments or imperative calls (recursively). -/
-private def containsAssignmentOrImperativeCall (imperativeNames : List Identifier) (expr : StmtExprMd) : Bool :=
+def containsAssignmentOrImperativeCall (imperativeNames : List Identifier) (expr : StmtExprMd) : Bool :=
   match expr with
   | WithMetadata.mk val _ =>
   match val with
