@@ -48,7 +48,7 @@ procedure assignValid() {
 // Assignment to constrained-typed variable — invalid
 procedure assignInvalid() {
   var y: nat := -1;
-//              ^^ error: assertion does not hold
+//^^^^^^^^^^^^^^^^^ error: assertion does not hold
 }
 
 // Reassignment to constrained-typed variable — invalid
