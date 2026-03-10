@@ -13,7 +13,7 @@ namespace Core
 open Lambda
 open Strata.SMT
 
-private abbrev sr := sr
+private abbrev sr := Strata.SourceRange.none
 
 /-- info: "(define-fun t0 () Bool (forall ((n Int)) (exists ((m Int)) (= n m))))\n" -/
 #guard_msgs in
