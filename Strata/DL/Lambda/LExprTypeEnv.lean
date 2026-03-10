@@ -773,7 +773,7 @@ def LMonoTys.instantiateEnv [ToFormat IDMeta] (ids : List TyIdentifier) (mtys : 
   | .error e => .error e
   | .ok (a, genEnv') => .ok (a, {T with genEnv := genEnv'})
 
-private theorem LMonoTys.substLogic_length (S : Subst) (mtys : LMonoTys) :
+theorem LMonoTys.substLogic_length (S : Subst) (mtys : LMonoTys) :
     (LMonoTys.substLogic S mtys).length = mtys.length := by
   induction mtys with
   | nil => simp [substLogic]
