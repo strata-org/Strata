@@ -386,8 +386,7 @@ theorem SubstWF.not_mem_freeVars_of_find (S : Subst) (a : TyIdentifier) (t : LMo
   simp [SubstWF] at h_wf
   have h_key := Maps.find?_mem_keys S h_find
   have h_fv_subset := Subst.freeVars_of_find_subset S h_find
-  intro h_abs
-  exact h_wf a h_key (h_fv_subset h_abs)
+  grind
 
 /-- Absorption for type lists: the single substitution is absorbed element-wise. -/
 theorem LMonoTys.subst_absorbs_single (S : Subst) (a : TyIdentifier) (t : LMonoTy)
@@ -401,9 +400,7 @@ theorem LMonoTys.subst_absorbs_single (S : Subst) (a : TyIdentifier) (t : LMonoT
   | nil => simp [LMonoTys.substLogic, hS, hSingle]
   | cons m rest ih_rest =>
     simp only [LMonoTys.substLogic, hS, hSingle, Bool.false_eq_true, ↓reduceIte]
-    have h1 := ih m List.mem_cons_self
-    have h2 := ih_rest (fun m' hm' => ih m' (List.mem_cons_of_mem m hm'))
-    rw [h1, h2]
+    grind
 
 /--
 Absorption: `subst S (subst [(a,t)] mty) = subst S mty` when `Maps.find? S a = some t`
@@ -465,12 +462,9 @@ theorem relevantKeys_decrease (S : Subst) (a : TyIdentifier) (t : LMonoTy)
     exact h_keys
   -- Key fact 4: no key of S is in freeVars t
   have h_keys_not_in_t : ∀ k, k ∈ Maps.keys S → k ∉ LMonoTy.freeVars t := by
-    intro k hk
     simp [SubstWF] at h_wf
-    intro hkt
-    have h_t_sub : LMonoTy.freeVars t ⊆ Subst.freeVars S :=
-      Subst.freeVars_of_find_subset S h_find
-    exact h_wf k hk (h_t_sub hkt)
+    have h_t_sub := Subst.freeVars_of_find_subset S h_find
+    grind
   -- Key fact 5: freeVars after subst ⊆ freeVars mty ++ freeVars t
   have h_fv_subset := LMonoTy.freeVars_of_subst_subset [[(a, t)]] mty
   -- Now prove the filter length decreases
@@ -480,14 +474,9 @@ theorem relevantKeys_decrease (S : Subst) (a : TyIdentifier) (t : LMonoTy)
     intro k hk hk_in_subst
     rw [decide_eq_true_eq] at hk_in_subst ⊢
     have hk_in_union := h_fv_subset hk_in_subst
-    rw [List.mem_append] at hk_in_union
-    cases hk_in_union with
-    | inl h => exact h
-    | inr h =>
-      have : Subst.freeVars [[(a, t)]] = LMonoTy.freeVars t := by
-        simp [Subst.freeVars, Maps.values, Map.values]
-      rw [this] at h
-      exact absurd h (h_keys_not_in_t k hk)
+    have : Subst.freeVars [[(a, t)]] = LMonoTy.freeVars t := by
+      simp [Subst.freeVars, Maps.values, Map.values]
+    grind
   · -- a ∈ Maps.keys S
     exact Maps.find?_mem_keys S h_find
   · -- a ∈ freeVars mty
@@ -699,9 +688,7 @@ private theorem Map.find?_applyLogic_some_h' {new old : SubstOne} {a : TyIdentif
   | cons hd rest ih =>
     simp only [SubstOne.applyLogic, Map.find?]
     simp only [Map.find?] at h
-    split at h
-    · rename_i h_eq; simp only [Option.some.injEq] at h; subst h; simp [h_eq]
-    · rename_i h_ne; simp [h_ne]; exact ih h
+    grind
 
 -- Helper: applyLogic preserves none bindings.
 private theorem Map.find?_applyLogic_none_h' {new old : SubstOne} {a : TyIdentifier}
@@ -712,9 +699,7 @@ private theorem Map.find?_applyLogic_none_h' {new old : SubstOne} {a : TyIdentif
   | cons hd rest ih =>
     simp [SubstOne.applyLogic, Map.find?]
     simp [Map.find?] at h
-    split at h
-    · simp at h
-    · rename_i h_ne; simp [h_ne]; exact ih h
+    grind
 
 -- Helper: Subst.apply preserves some bindings.
 private theorem Maps.find?_apply_some_h' {new : SubstOne} {old : Subst} {a : TyIdentifier} {t : LMonoTy}
@@ -788,9 +773,7 @@ private theorem unifyOne_absorbs' (c : Constraint) (S : SubstInfo)
     · simp only [Except.ok.injEq] at h; subst h; exact Subst.absorbs_refl S.subst S.isWF
   -- Case 3: ftvar id, orig_lty; occurs check
   · intro S id orig_lty h_neq _lty _ _ h_neq_lty h_occurs relS h
-    rw [Constraint.unifyOne.eq_def] at h; simp only at h; split at h
-    · exact absurd ‹_› h_neq
-    · simp at h
+    rw [Constraint.unifyOne.eq_def] at h; simp only at h; split at h <;> grind
   -- Case 4: ftvar id, orig_lty; some sty — recursive
   · intro S id orig_lty h_neq _lty _ _ h_neq_lty h_not_occurs sty h_some ih_rec relS h
     rw [Constraint.unifyOne.eq_def] at h; simp only at h; split at h
@@ -848,14 +831,10 @@ private theorem unifyOne_absorbs' (c : Constraint) (S : SubstInfo)
           (SubstWF.cons_of_subst_apply S id orig_lty _ rfl
             (SubstWF.single_subst id h_not_occurs) (SubstWF.apply_one_substituted_type S id orig_lty))
   -- Case 10: bitvec n1 == n2 contradiction
-  · intro S n1 n2 h_neq h_eq_n relS h
-    exfalso; simp [beq_iff_eq] at h_eq_n; subst h_eq_n
-    exact h_neq (beq_self_eq_true (LMonoTy.bitvec n1))
+  · grind
   -- Case 11: bitvec n1 ≠ n2 — error
   · intro S n1 n2 h_neq h_neq_n relS h
-    rw [Constraint.unifyOne.eq_def] at h; simp only at h; split at h
-    · exact absurd ‹_› h_neq
-    · simp at h
+    rw [Constraint.unifyOne.eq_def] at h; simp only at h; split at h <;> grind
   -- Case 12: tcons match — recursive unifyCore
   · intro S name1 args1 name2 args2 h_neq h_match _nc ih_core relS h
     rw [Constraint.unifyOne.eq_def] at h; simp only at h; split at h
@@ -867,19 +846,13 @@ private theorem unifyOne_absorbs' (c : Constraint) (S : SubstInfo)
         simp only [Except.ok.injEq] at h; rw [← h]; exact ih_core relS' h_call
   -- Case 13: tcons name/length mismatch — error
   · intro S name1 args1 name2 args2 h_neq h_mismatch relS h
-    rw [Constraint.unifyOne.eq_def] at h; simp only at h; split at h
-    · exact absurd ‹_› h_neq
-    · simp at h
+    rw [Constraint.unifyOne.eq_def] at h; simp only at h; split at h <;> grind
   -- Case 14: bitvec, tcons — error
   · intro S size name args h_neq relS h
-    rw [Constraint.unifyOne.eq_def] at h; simp only at h; split at h
-    · exact absurd ‹_› h_neq
-    · simp at h
+    rw [Constraint.unifyOne.eq_def] at h; simp only at h; split at h <;> grind
   -- Case 15: tcons, bitvec — error
   · intro S name args size h_neq relS h
-    rw [Constraint.unifyOne.eq_def] at h; simp only at h; split at h
-    · exact absurd ‹_› h_neq
-    · simp at h
+    rw [Constraint.unifyOne.eq_def] at h; simp only at h; split at h <;> grind
   -- Case 16: unifyCore []
   · intro S relS h
     rw [Constraints.unifyCore.eq_def] at h; simp only at h
@@ -1010,8 +983,7 @@ theorem LMonoTys.resolveAliases_context {IDMeta : Type} [ToFormat IDMeta]
     Env'.context = Env.context := by
   match mtys with
   | [] =>
-    simp [LMonoTys.resolveAliases] at h
-    obtain ⟨_, h2⟩ := h; rw [← h2]
+    simp [LMonoTys.resolveAliases] at h; grind
   | mty :: mrest =>
     simp [LMonoTys.resolveAliases, Bind.bind, Except.bind] at h
     split at h
@@ -1360,10 +1332,7 @@ private theorem unifyOne_sound (c : Constraint) (S : SubstInfo)
       ∀ p, p ∈ cs → LMonoTy.subst relS.newS.subst p.1 = LMonoTy.subst relS.newS.subst p.2)
   -- Case 1: t1 == t2
   · intro S t1 t2 h_eq _ relS h
-    rw [Constraint.unifyOne.eq_def] at h; simp only at h; split at h
-    · simp only [Except.ok.injEq] at h; subst h
-      have := eq_of_beq h_eq; subst this; rfl
-    · exact absurd h_eq ‹_›
+    rw [Constraint.unifyOne.eq_def] at h; grind
   -- Case 2: ftvar id, orig_lty; ftvar id == lty
   · intro S id orig_lty h_neq _lty _ _ h_eq_lty relS h
     rw [Constraint.unifyOne.eq_def] at h; simp only at h; split at h
@@ -1427,9 +1396,7 @@ private theorem unifyOne_sound (c : Constraint) (S : SubstInfo)
       rw [h_id_eq]; exact (LMonoTy.subst_idempotent S.subst S.isWF orig_lty).symm
   -- Case 7: orig_lty, ftvar id; occurs check — error
   · intro S orig_lty id h_neq _ _lty _ _ h_neq_lty h_occurs relS h
-    rw [Constraint.unifyOne.eq_def] at h; simp only at h; split at h
-    · exact absurd ‹_› h_neq
-    · simp at h
+    rw [Constraint.unifyOne.eq_def] at h; simp only at h; grind
   -- Case 8: orig_lty, ftvar id; some sty — recursive (symmetric to case 4)
   · intro S orig_lty id h_neq _ _lty _ _ h_neq_lty h_not_occurs sty h_some ih_rec relS h
     rw [Constraint.unifyOne.eq_def] at h; simp only at h; split at h
@@ -1466,14 +1433,10 @@ private theorem unifyOne_sound (c : Constraint) (S : SubstInfo)
           (subst_orig_new_binding S.subst id (LMonoTy.subst S.subst orig_lty)
             orig_lty h_none rfl h_not_occurs).symm)
   -- Case 10: bitvec n1 == n2 contradiction
-  · intro S n1 n2 h_neq h_eq_n relS h
-    exfalso; simp [beq_iff_eq] at h_eq_n; subst h_eq_n
-    exact h_neq (beq_self_eq_true (LMonoTy.bitvec n1))
+  · intro S n1 n2 h_neq h_eq_n relS h; grind
   -- Case 11: bitvec n1 ≠ n2 — error
   · intro S n1 n2 h_neq h_neq_n relS h
-    rw [Constraint.unifyOne.eq_def] at h; simp only at h; split at h
-    · exact absurd ‹_› h_neq
-    · simp at h
+    rw [Constraint.unifyOne.eq_def] at h; grind
   -- Case 12: tcons match — recursive unifyCore
   · intro S name1 args1 name2 args2 h_neq h_match _nc ih_core relS h
     rw [Constraint.unifyOne.eq_def] at h; simp only at h; split at h
@@ -1550,24 +1513,16 @@ private theorem unifyOne_sound (c : Constraint) (S : SubstInfo)
           simp [LMonoTy.subst, hS_ne]; exact h_list
   -- Case 13: tcons name/length mismatch — error
   · intro S name1 args1 name2 args2 h_neq h_mismatch relS h
-    rw [Constraint.unifyOne.eq_def] at h; simp only at h; split at h
-    · exact absurd ‹_› h_neq
-    · simp at h
+    rw [Constraint.unifyOne.eq_def] at h; grind
   -- Case 14: bitvec, tcons — error
   · intro S size name args h_neq relS h
-    rw [Constraint.unifyOne.eq_def] at h; simp only at h; split at h
-    · exact absurd ‹_› h_neq
-    · simp at h
+    rw [Constraint.unifyOne.eq_def] at h; grind
   -- Case 15: tcons, bitvec — error
   · intro S name args size h_neq relS h
-    rw [Constraint.unifyOne.eq_def] at h; simp only at h; split at h
-    · exact absurd ‹_› h_neq
-    · simp at h
+    rw [Constraint.unifyOne.eq_def] at h; grind
   -- Case 16: unifyCore []
   · intro S relS h p hp
-    rw [Constraints.unifyCore.eq_def] at h; simp only at h
-    simp only [Except.ok.injEq] at h; subst h
-    exact absurd hp List.not_mem_nil
+    rw [Constraints.unifyCore.eq_def] at h; grind
   -- Case 17: unifyCore c :: rest
   · intro S c c_rest ih_one ih_core relS h p hp
     rw [Constraints.unifyCore.eq_def] at h; simp only at h
@@ -1693,19 +1648,13 @@ theorem Constraint.unifyOne_keys_incl (c : Constraint) (S : SubstInfo)
         k ∈ Maps.keys S.subst ∨ k ∈ Constraints.freeVars cs ∨ k ∈ Subst.freeVars S.subst)
   -- Case 1: t1 == t2
   · intro S t1 t2 h_eq _ relS h k hk
-    rw [Constraint.unifyOne.eq_def] at h; simp only at h; split at h
-    · simp only [Except.ok.injEq] at h; subst h; left; exact hk
-    · exact absurd h_eq ‹_›
+    rw [Constraint.unifyOne.eq_def] at h; grind
   -- Case 2: ftvar id, orig_lty; ftvar id == lty
   · intro S id orig_lty h_neq _lty _ _ h_eq_lty relS h k hk
-    rw [Constraint.unifyOne.eq_def] at h; simp only at h; split at h
-    · exact absurd ‹_› h_neq
-    · simp only [Except.ok.injEq] at h; subst h; left; exact hk
+    rw [Constraint.unifyOne.eq_def] at h; grind
   -- Case 3: ftvar id, orig_lty; occurs check
   · intro S id orig_lty h_neq _lty _ _ h_neq_lty h_occurs relS h
-    rw [Constraint.unifyOne.eq_def] at h; simp only at h; split at h
-    · exact absurd ‹_› h_neq
-    · simp at h
+    rw [Constraint.unifyOne.eq_def] at h; grind
   -- Case 4: ftvar id, orig_lty; some sty — recursive
   · intro S id orig_lty h_neq _lty _ _ h_neq_lty h_not_occurs sty h_some ih_rec relS h k hk
     rw [Constraint.unifyOne.eq_def] at h; simp only at h; split at h
@@ -1791,14 +1740,10 @@ theorem Constraint.unifyOne_keys_incl (c : Constraint) (S : SubstInfo)
         · right; left; simp [Constraint.freeVars, LMonoTy.freeVars]
         · left; exact h_old
   -- Case 10: bitvec n1 == n2 contradiction
-  · intro S n1 n2 h_neq h_eq_n relS h
-    exfalso; simp [beq_iff_eq] at h_eq_n; subst h_eq_n
-    exact h_neq (beq_self_eq_true (LMonoTy.bitvec n1))
+  · intro S n1 n2 h_neq h_eq_n relS h; grind
   -- Case 11: bitvec n1 ≠ n2 — error
   · intro S n1 n2 h_neq h_neq_n relS h
-    rw [Constraint.unifyOne.eq_def] at h; simp only at h; split at h
-    · exact absurd ‹_› h_neq
-    · simp at h
+    rw [Constraint.unifyOne.eq_def] at h; grind
   -- Case 12: tcons match — recursive unifyCore
   · intro S name1 args1 name2 args2 h_neq h_match _nc ih_core relS h k hk
     rw [Constraint.unifyOne.eq_def] at h; simp only at h; split at h
@@ -1815,23 +1760,16 @@ theorem Constraint.unifyOne_keys_incl (c : Constraint) (S : SubstInfo)
         · right; right; exact h3
   -- Case 13: tcons name/length mismatch — error
   · intro S name1 args1 name2 args2 h_neq h_mismatch relS h
-    rw [Constraint.unifyOne.eq_def] at h; simp only at h; split at h
-    · exact absurd ‹_› h_neq
-    · simp at h
+    rw [Constraint.unifyOne.eq_def] at h; grind
   -- Case 14: bitvec, tcons — error
   · intro S size name args h_neq relS h
-    rw [Constraint.unifyOne.eq_def] at h; simp only at h; split at h
-    · exact absurd ‹_› h_neq
-    · simp at h
+    rw [Constraint.unifyOne.eq_def] at h; grind
   -- Case 15: tcons, bitvec — error
   · intro S name args size h_neq relS h
-    rw [Constraint.unifyOne.eq_def] at h; simp only at h; split at h
-    · exact absurd ‹_› h_neq
-    · simp at h
+    rw [Constraint.unifyOne.eq_def] at h; grind
   -- Case 16: unifyCore []
   · intro S relS h k hk
-    rw [Constraints.unifyCore.eq_def] at h; simp only at h
-    simp only [Except.ok.injEq] at h; subst h; left; exact hk
+    rw [Constraints.unifyCore.eq_def] at h; grind
   -- Case 17: unifyCore c :: rest
   · intro S c c_rest ih1 ih2 relS h k hk
     rw [Constraints.unifyCore.eq_def] at h; simp only at h
@@ -1867,8 +1805,8 @@ theorem Constraints.unifyCore_keys_incl :
         k ∈ Maps.keys S.subst ∨ k ∈ Constraints.freeVars cs ∨ k ∈ Subst.freeVars S.subst := by
   intro cs; induction cs with
   | nil =>
-    intro S relS h k hk
-    unfold Constraints.unifyCore at h; simp at h; subst h; left; exact hk
+    intro S relS h k hk;
+    unfold Constraints.unifyCore at h; grind
   | cons c rest ih =>
     intro S relS h k hk
     rw [Constraints.unifyCore.eq_2] at h
@@ -1879,10 +1817,7 @@ theorem Constraints.unifyCore_keys_incl :
     have h_one' : Constraint.unifyOne c S = .ok relS1 := by
       revert h_one; cases Constraint.unifyOne c S <;> simp
     rcases ih relS1.newS relS2 h_core k hk with hk1 | hk2 | hk3
-    · rcases Constraint.unifyOne_keys_incl c S relS1 h_one' k hk1 with h1a | h1b | h1c
-      · left; exact h1a
-      · right; left; simp [Constraints.freeVars]; left; exact h1b
-      · right; right; exact h1c
+    · rcases Constraint.unifyOne_keys_incl c S relS1 h_one' k hk1 with h1a | h1b | h1c <;> simp [Constraints.freeVars] <;> grind
     · right; left; simp [Constraints.freeVars]; right; exact hk2
     · rcases List.mem_append.mp (relS1.goodSubset hk3) with h_c | h_s
       · right; left; simp [Constraints.freeVars]; left
@@ -1949,15 +1884,8 @@ private theorem LMonoTys.freeVars_of_subst_subset (S : Subst) (mtys : LMonoTys) 
       simp only [LMonoTys.freeVars]
       rcases hx with hx | hx
       · have h_sub := LMonoTy.freeVars_of_subst_subset S mty hx
-        rw [List.mem_append] at h_sub ⊢
-        rcases h_sub with h | h
-        · exact Or.inl (List.mem_append.mpr (Or.inl h))
-        · exact Or.inr h
-      · have h_sub := ih hx
-        rw [List.mem_append] at h_sub ⊢
-        rcases h_sub with h | h
-        · exact Or.inl (List.mem_append.mpr (Or.inr h))
-        · exact Or.inr h
+        grind
+      · grind
 
 /-- Free variables of `instantiateEnv` output are either original free variables
     or fresh type variables generated by `genTyVars`. In either case, if the
@@ -2177,11 +2105,9 @@ theorem LMonoTy.resolveAliases_allKeysFresh
     Subst.allKeysFresh Env'.stateSubstInfo.subst Env.context := by
   match mty with
   | .ftvar _ =>
-    simp [LMonoTy.resolveAliases] at h
-    obtain ⟨_, h2⟩ := h; rw [← h2]; exact h_fresh
+    simp [LMonoTy.resolveAliases] at h; grind
   | .bitvec _ =>
-    simp [LMonoTy.resolveAliases] at h
-    obtain ⟨_, h2⟩ := h; rw [← h2]; exact h_fresh
+    simp [LMonoTy.resolveAliases] at h; grind
   | .tcons name args =>
     simp [LMonoTy.resolveAliases, Bind.bind, Except.bind] at h
     split at h
@@ -2209,11 +2135,9 @@ theorem LMonoTy.resolveAliases_vals_fresh
       TContext.isFresh (T := T) tv Env.context := by
   match mty with
   | .ftvar _ =>
-    simp [LMonoTy.resolveAliases] at h
-    obtain ⟨_, h2⟩ := h; rw [← h2]; exact h_vals_fresh
+    simp [LMonoTy.resolveAliases] at h; grind
   | .bitvec _ =>
-    simp [LMonoTy.resolveAliases] at h
-    obtain ⟨_, h2⟩ := h; rw [← h2]; exact h_vals_fresh
+    simp [LMonoTy.resolveAliases] at h; grind
   | .tcons name args =>
     simp [LMonoTy.resolveAliases, Bind.bind, Except.bind] at h
     split at h
@@ -2242,8 +2166,7 @@ theorem LMonoTys.resolveAliases_allKeysFresh
     Subst.allKeysFresh Env'.stateSubstInfo.subst Env.context := by
   match mtys with
   | [] =>
-    simp [LMonoTys.resolveAliases] at h
-    obtain ⟨_, h2⟩ := h; rw [← h2]; exact h_fresh
+    simp [LMonoTys.resolveAliases] at h; grind
   | mty :: mrest =>
     simp [LMonoTys.resolveAliases, Bind.bind, Except.bind] at h
     split at h
@@ -2287,8 +2210,7 @@ theorem LMonoTys.resolveAliases_vals_fresh
       TContext.isFresh (T := T) tv Env.context := by
   match mtys with
   | [] =>
-    simp [LMonoTys.resolveAliases] at h
-    obtain ⟨_, h2⟩ := h; rw [← h2]; exact h_vals_fresh
+    simp [LMonoTys.resolveAliases] at h; grind
   | mty :: mrest =>
     simp [LMonoTys.resolveAliases, Bind.bind, Except.bind] at h
     split at h
@@ -2330,11 +2252,9 @@ theorem LMonoTy.resolveAliases_fvs_fresh
       TContext.isFresh (T := T) tv Env.context := by
   match mty with
   | .ftvar _ =>
-    simp [LMonoTy.resolveAliases] at h
-    obtain ⟨h1, _⟩ := h; subst h1; exact h_fvs
+    simp [LMonoTy.resolveAliases] at h; grind
   | .bitvec _ =>
-    simp [LMonoTy.resolveAliases] at h
-    obtain ⟨h1, _⟩ := h; subst h1; intro tv htv; simp [LMonoTy.freeVars] at htv
+    simp [LMonoTy.resolveAliases] at h; grind
   | .tcons name args =>
     simp [LMonoTy.resolveAliases, Bind.bind, Except.bind] at h
     split at h; · simp at h
@@ -2384,8 +2304,7 @@ theorem LMonoTys.resolveAliases_fvs_fresh
       TContext.isFresh (T := T) tv Env.context := by
   match mtys with
   | [] =>
-    simp [LMonoTys.resolveAliases] at h
-    obtain ⟨h1, _⟩ := h; subst h1; exact h_fvs
+    simp [LMonoTys.resolveAliases] at h; grind
   | mty :: mrest =>
     simp [LMonoTys.resolveAliases, Bind.bind, Except.bind] at h
     split at h; · simp at h
@@ -2681,9 +2600,7 @@ private theorem Map.find?_remove_ne {α β : Type} [DecidableEq α]
       simp only [Map.find?, show k ≠ a from Ne.symm h_ne, ↓reduceIte]
     · -- x ≠ k: entry preserved
       simp only [h_xk, ↓reduceIte, Map.find?]
-      by_cases h_xa : x = a
-      · simp [h_xa]
-      · simp [h_xa, ih]
+      grind
 
 /-- Removing a key `k` from maps doesn't affect lookups of other keys `a ≠ k`. -/
 private theorem Maps.find?_remove_ne
@@ -3157,8 +3074,7 @@ theorem genTyVars_genFresh'
       ∀ n, n ≥ Env'.genState.tyGen → tv ≠ TState.tyPrefix ++ toString n := by
   induction num generalizing Env tvs Env' with
   | zero =>
-    simp [TGenEnv.genTyVars] at h; obtain ⟨h1, _⟩ := h; subst h1
-    intro _ h_mem; simp at h_mem
+    simp [TGenEnv.genTyVars] at h; grind
   | succ k ih =>
     simp [TGenEnv.genTyVars, Bind.bind, Except.bind] at h
     split at h; · simp at h
@@ -3219,8 +3135,7 @@ private theorem LMonoTy_resolveAliases_genState_mono
     Env'.genEnv.genState.tyGen ≥ Env.genEnv.genState.tyGen := by
   match mty with
   | .ftvar _ | .bitvec _ =>
-    simp [LMonoTy.resolveAliases] at h
-    obtain ⟨_, h2⟩ := h; rw [← h2]; exact Nat.le_refl _
+    simp [LMonoTy.resolveAliases] at h; grind
   | .tcons name args =>
     simp [LMonoTy.resolveAliases, Bind.bind, Except.bind] at h
     split at h; · simp at h
@@ -3237,8 +3152,7 @@ private theorem LMonoTys_resolveAliases_genState_mono
     Env'.genEnv.genState.tyGen ≥ Env.genEnv.genState.tyGen := by
   match mtys with
   | [] =>
-    simp [LMonoTys.resolveAliases] at h
-    obtain ⟨_, h2⟩ := h; rw [← h2]; exact Nat.le_refl _
+    simp [LMonoTys.resolveAliases] at h; grind
   | mty :: mrest =>
     simp [LMonoTys.resolveAliases, Bind.bind, Except.bind] at h
     split at h; · simp at h
@@ -3267,9 +3181,7 @@ private theorem LMonoTy_resolveAliases_preserves_SubstFreshForGen
       ∀ n, n ≥ Env'.genEnv.genState.tyGen → v ≠ TState.tyPrefix ++ toString n) := by
   match mty with
   | .ftvar _ | .bitvec _ =>
-    simp [LMonoTy.resolveAliases] at h
-    obtain ⟨h1, h2⟩ := h; subst h1; subst h2
-    exact ⟨h_fresh, h_input⟩
+    simp [LMonoTy.resolveAliases] at h; grind
   | .tcons name args =>
     simp [LMonoTy.resolveAliases, Bind.bind, Except.bind] at h
     split at h; · simp at h
@@ -3306,9 +3218,7 @@ private theorem LMonoTys_resolveAliases_preserves_SubstFreshForGen
       ∀ n, n ≥ Env'.genEnv.genState.tyGen → v ≠ TState.tyPrefix ++ toString n) := by
   match mtys with
   | [] =>
-    simp [LMonoTys.resolveAliases] at h
-    obtain ⟨h1, h2⟩ := h; subst h1; subst h2
-    exact ⟨h_fresh, fun _ h => by simp [LMonoTys.freeVars] at h⟩
+    simp [LMonoTys.resolveAliases] at h; grind
   | mty :: mrest =>
     simp [LMonoTys.resolveAliases, Bind.bind, Except.bind] at h
     split at h; · simp at h
@@ -3366,7 +3276,7 @@ private theorem LTy_resolveAliases_preserves_SubstFreshForGen
       Env.genEnv.genState.tyGen := by
     simp [LTy.instantiate, Bind.bind, Except.bind] at h_inst
     split at h_inst
-    · simp at h_inst; obtain ⟨_, h2⟩ := h_inst; rw [← h2]; exact Nat.le_refl _
+    · grind
     · split at h_inst; · simp at h_inst
       rename_i v2 h_gen; obtain ⟨freshtvs, Env1⟩ := v2; simp at h_inst
       obtain ⟨_, h2⟩ := h_inst; rw [← h2]
@@ -3419,8 +3329,7 @@ private theorem LTy_resolveAliases_preserves_SubstFreshForGen
           have h_in_fvs : v ∈ LTy.freeVars (.forAll (x :: xs) body) := by
             simp only [LTy.freeVars]
             show v ∈ List.filter (fun a => !List.elem a (x :: xs)) body.freeVars
-            rw [List.mem_filter]
-            refine ⟨h_body, ?_⟩; simp [h_bound]
+            grind
           exact h_ty_fresh v h_in_fvs n (Nat.le_trans h_mono_inst hn)
       | inr h_subst_fvs =>
         -- v ∈ Subst.freeVars [zip (x::xs) (map ftvar freshtvs)]
@@ -4066,10 +3975,7 @@ private theorem go_append_superset
     -- go unfolds to ty.freeVars ++ go (rest ++ extra) but simp won't reduce the goal
     -- due to Map vs List type difference. Use show to retype.
     show v ∈ ty.freeVars ++ TContext.types.knownTypeVars.go (rest ++ extra)
-    rw [List.mem_append]
-    rcases h with h_fv | h_rest
-    · exact Or.inl h_fv
-    · exact Or.inr (ih h_rest)
+    grind
 
 
 omit [ToString T.IDMeta] [ToFormat (LFunc T)] [ToFormat T.Metadata] in
@@ -4401,9 +4307,7 @@ theorem resolveAux_context :
     | .error _ => simp at h
     | .ok (ty, Env1) =>
       simp at h; obtain ⟨_, h2⟩ := h; rw [← h2]
-      simp [inferConst] at h_ic; split at h_ic
-      · simp at h_ic; rw [h_ic.2]
-      · simp at h_ic
+      simp [inferConst] at h_ic; grind
   | .bvar m i => simp [resolveAux] at h
   | .fvar m x fty =>
     simp only [resolveAux, Bind.bind, Except.bind] at h
@@ -4533,9 +4437,7 @@ private theorem List.removeAll_eq_nil_of_forall_mem [BEq α] [LawfulBEq α]
     xs.removeAll ys = [] := by
   simp only [List.removeAll]
   rw [List.filter_eq_nil_iff]
-  intro x hx
-  simp
-  exact h x hx
+  grind
 
 /-- `freeVars (mkArrow mty mtys)` is `freeVars mty ++ LMonoTys.freeVars mtys`. -/
 private theorem LMonoTy.freeVars_mkArrow (mty : LMonoTy) :
@@ -4693,8 +4595,7 @@ private theorem LMonoTy_resolveAliases_freeVars_subset
     ∀ v, v ∈ LMonoTy.freeVars mty' → v ∈ LMonoTy.freeVars mty := by
   match mty with
   | .ftvar _ | .bitvec _ =>
-    simp [LMonoTy.resolveAliases] at h
-    obtain ⟨h1, _⟩ := h; subst h1; exact fun v hv => hv
+    simp [LMonoTy.resolveAliases] at h; grind
   | .tcons name args =>
     simp [LMonoTy.resolveAliases, Bind.bind, Except.bind] at h
     split at h; · simp at h
@@ -4726,9 +4627,7 @@ private theorem LMonoTys_resolveAliases_freeVars_subset
     ∀ v, v ∈ LMonoTys.freeVars mtys' → v ∈ LMonoTys.freeVars mtys := by
   match mtys with
   | [] =>
-    simp [LMonoTys.resolveAliases] at h
-    obtain ⟨h1, _⟩ := h; subst h1
-    intro v hv; simp [LMonoTys.freeVars] at hv
+    simp [LMonoTys.resolveAliases] at h; grind
   | mty :: mrest =>
     simp [LMonoTys.resolveAliases, Bind.bind, Except.bind] at h
     split at h; · simp at h
@@ -4844,10 +4743,7 @@ private theorem resolveAux_preserves_combined :
       have h_mty_fresh := LTy_instantiateWithCheck_freeVars_fresh _ C Env mty Env1
         h_inst
       cases fty with
-      | none =>
-        simp at h_infer; obtain ⟨h_ty, h_env1⟩ := h_infer
-        rw [← h_ty] at hv; rw [← h_env1] at hk
-        exact h_mty_fresh v hv k hk
+      | none => grind
       | some fty_val =>
         simp only [Except.mapError] at h_infer
         split at h_infer; · simp at h_infer
@@ -5566,20 +5462,7 @@ theorem HasType_subst_upgrade
 
 private theorem removeAll_not_mem {x : TyIdentifier} {xs : List TyIdentifier}
     (h : x ∉ xs) : xs.removeAll [x] = xs := by
-  induction xs with
-  | nil => simp [List.removeAll]
-  | cons a rest ih =>
-    have h_ne : x ≠ a := fun heq => h (heq ▸ List.mem_cons_self)
-    have h_beq : (x == a) = false := beq_eq_false_iff_ne.mpr h_ne
-    rw [List.cons_removeAll]
-    -- [x].contains a = (x == a), and (x == a) = false since x ≠ a
-    have h_contains : [x].contains a = false := by
-      unfold List.contains List.elem
-      rw [BEq.comm]
-      simp [h_beq]
-    rw [h_contains]
-    simp
-    exact ih (fun h_mem => h (List.mem_cons_of_mem a h_mem))
+  induction xs <;> grind
 
 /-- Keys of a zipped map are a subset of the first list. -/
 private theorem Map.keys_zip_subset {α β : Type} [DecidableEq α]
@@ -5691,8 +5574,7 @@ private theorem TGenEnv.genTyVars_is_genName
     ∃ k, k ≥ Env.genState.tyGen ∧ tv = TState.tyPrefix ++ toString k := by
   induction n generalizing Env tvs Env' with
   | zero =>
-    simp [TGenEnv.genTyVars] at h
-    obtain ⟨h1, _⟩ := h; subst h1; simp at h_mem
+    simp [TGenEnv.genTyVars] at h; grind
   | succ m ih =>
     simp only [TGenEnv.genTyVars, Bind.bind, Except.bind] at h
     split at h; · simp at h
@@ -5840,14 +5722,10 @@ private theorem subst_openVarsList_comm
   by_cases hS : Subst.hasEmptyScopes S
   · -- When S has empty scopes, substLogic is identity
     have h_vals : LMonoTys.substLogic S vals = vals := by
-      induction vals with
-      | nil => simp [LMonoTys.substLogic, hS]
-      | cons hd tl ih => simp [LMonoTys.substLogic, hS]
+      induction vals <;> simp [LMonoTys.substLogic, hS]
     have h_bodies : LMonoTys.substLogic S (LMonoTys.openVars vars vals bodies) =
         LMonoTys.openVars vars vals bodies := by
-      induction (LMonoTys.openVars vars vals bodies) with
-      | nil => simp [LMonoTys.substLogic, hS]
-      | cons hd tl ih => simp [LMonoTys.substLogic, hS]
+      induction (LMonoTys.openVars vars vals bodies) <;> simp [LMonoTys.substLogic, hS]
     rw [h_bodies, h_vals]
   · have hS_ne : Subst.hasEmptyScopes S = false := by
       revert hS; cases Subst.hasEmptyScopes S <;> simp
@@ -6035,9 +5913,7 @@ private theorem Map.keys_erase_subset [DecidableEq α] (m : Map α β) (x : α) 
     obtain ⟨a, b⟩ := pair; simp only [Map.erase] at hk; split at hk
     · simp [Map.keys]; right; exact ih hk
     · simp [Map.keys] at hk ⊢
-      rcases hk with rfl | hk
-      · left; rfl
-      · right; exact ih hk
+      grind
 
 private theorem Maps.keys_erase_subset (S : Maps TyIdentifier LMonoTy) (x : TyIdentifier) :
     ∀ k, k ∈ Maps.keys (Maps.erase S x) → k ∈ Maps.keys S := by
@@ -6061,9 +5937,7 @@ private theorem Map.keys_erase_self_not_mem [DecidableEq α]
     by_cases h_eq : k = a
     · simp [h_eq] at h; exact ih h
     · simp [h_eq, Map.keys] at h
-      cases h with
-      | inl h_ka => exact h_eq (h_ka.symm ▸ rfl)
-      | inr h_rest => exact ih h_rest
+      grind
 
 /-- Erasing key `a` from Maps `S` removes `a` from the keys. -/
 private theorem Maps.keys_erase_self_not_mem
@@ -6679,9 +6553,7 @@ private theorem tconsAlias_expand_eq
               | nil => simp [LMonoTys.freeVars] at h
               | cons x xs ih =>
                 simp only [List.map, LMonoTys.freeVars, LMonoTy.freeVars] at h
-                cases List.mem_append.mp h with
-                | inl h => exact List.mem_cons.mpr (Or.inl (List.mem_cons.mp h |>.elim id (by simp)))
-                | inr h => exact List.mem_cons.mpr (Or.inr (ih h))
+                cases List.mem_append.mp h <;> grind
             exact this alias.typeArgs htv
           rw [h_a,
               subst_single_scope_eq_openVars alias.typeArgs fvs _ h_pat_wf h_fvs_len,
@@ -6715,12 +6587,7 @@ private theorem tconsAlias_expand_eq
           -- (each ftvar aᵢ matches vars[i] and maps to vals[i])
           symm
           exact openVarsList_map_ftvar_id alias.typeArgs _ (by
-            -- Need: alias.typeArgs.length = (substLogic S fvs).length
-            have : ∀ (S : Subst) (xs : LMonoTys), (LMonoTys.substLogic S xs).length = xs.length := by
-              intro S xs; induction xs with
-              | nil => simp [LMonoTys.substLogic]
-              | cons hd tl ih => simp only [LMonoTys.substLogic]; split <;> simp [ih]
-            rw [this]; exact h_fvs_len)
+            rw [LMonoTys.substLogic_length]; exact h_fvs_len)
 
 
 
@@ -6770,10 +6637,7 @@ private theorem AliasEquiv_subst (aliases : List TypeAlias)
       rw [subst_openVars_comm S alias.typeArgs _ alias.type
         (h_aw alias h_mem).fvs_closed h_len]
       rw [LMonoTys.subst_eq_substLogic]
-      have h_sl_len : ∀ (S' : Subst) (xs : LMonoTys), (LMonoTys.substLogic S' xs).length = xs.length := by
-        intro S' xs; induction xs with
-        | nil => simp [LMonoTys.substLogic]
-        | cons _ _ ih => unfold LMonoTys.substLogic; split <;> simp [ih]
+      have h_sl_len := LMonoTys.substLogic_length
       refine .expand ⟨alias, h_mem, h_name, ?_⟩
       rw [h_sl_len]; exact ⟨h_len, rfl⟩
     | .collapse h_exp =>
@@ -6783,10 +6647,7 @@ private theorem AliasEquiv_subst (aliases : List TypeAlias)
       rw [subst_openVars_comm S alias.typeArgs _ alias.type
         (h_aw alias h_mem).fvs_closed h_len]
       rw [LMonoTys.subst_eq_substLogic]
-      have h_sl_len : ∀ (S' : Subst) (xs : LMonoTys), (LMonoTys.substLogic S' xs).length = xs.length := by
-        intro S' xs; induction xs with
-        | nil => simp [LMonoTys.substLogic]
-        | cons _ _ ih => unfold LMonoTys.substLogic; split <;> simp [ih]
+      have h_sl_len := LMonoTys.substLogic_length
       refine .collapse ⟨alias, h_mem, h_name, ?_⟩
       rw [h_sl_len]; exact ⟨h_len, rfl⟩
     | .cong_tcons h_args =>
@@ -6900,8 +6761,7 @@ private theorem LMonoTy_resolveAliases_subst_eq
     Env'.stateSubstInfo = Env.stateSubstInfo := by
   match mty with
   | .ftvar _ | .bitvec _ =>
-    simp [LMonoTy.resolveAliases] at h
-    obtain ⟨_, h2⟩ := h; rw [← h2]
+    simp [LMonoTy.resolveAliases] at h; grind
   | .tcons _ args =>
     simp [LMonoTy.resolveAliases, Bind.bind, Except.bind] at h
     split at h; · simp at h
@@ -6916,8 +6776,7 @@ private theorem LMonoTys_resolveAliases_subst_eq
     Env'.stateSubstInfo = Env.stateSubstInfo := by
   match mtys with
   | [] =>
-    simp [LMonoTys.resolveAliases] at h
-    obtain ⟨_, h2⟩ := h; rw [← h2]
+    simp [LMonoTys.resolveAliases] at h; grind
   | mty :: mrest =>
     simp [LMonoTys.resolveAliases, Bind.bind, Except.bind] at h
     split at h; · simp at h
@@ -6943,9 +6802,7 @@ private theorem Map.find?_of_map_self {α : Type} [DecidableEq α] {β : Type}
   | nil => simp at hv
   | cons w ws ih =>
     simp only [List.map, Map.find?]
-    by_cases h_eq : w = v
-    · simp [h_eq]
-    · simp [h_eq]; exact ih (List.mem_of_ne_of_mem (Ne.symm h_eq) hv)
+    grind
 
 theorem AnnotCompat_subst {aliases : List TypeAlias} {ann xty : LMonoTy}
     (S : Subst)
@@ -7141,9 +6998,7 @@ private theorem Map.values_erase_subset [DecidableEq α] (m : Map α β) (x : α
     obtain ⟨k, val⟩ := pair; simp only [Map.erase]; split
     · intro v hv; simp [Map.values]; right; exact ih v hv
     · intro v hv; simp [Map.values] at hv ⊢
-      rcases hv with rfl | hv
-      · left; rfl
-      · right; exact ih v hv
+      grind
 
 private theorem Maps.values_erase_subset [DecidableEq α] (ms : Maps α β) (x : α) :
     ∀ v, v ∈ Maps.values (Maps.erase ms x) → v ∈ Maps.values ms := by
@@ -7237,14 +7092,7 @@ private theorem TContext_types_subst_go_find_reverse
   | cons pair rest ih =>
     obtain ⟨k, v⟩ := pair
     simp only [TContext.types.subst.go, Map.find?] at h ⊢
-    split at h
-    · rename_i h_eq; simp at h; subst h
-      split
-      · exact ⟨v, rfl, rfl⟩
-      · rename_i h_ne; exact absurd h_eq h_ne
-    · rename_i h_ne; split
-      · rename_i h_eq; exact absurd h_eq h_ne
-      · exact ih h
+    grind
 
 omit [ToString T.IDMeta] [ToFormat T.IDMeta] [HasGen T.IDMeta] [ToFormat (LFunc T)] [ToFormat T.Metadata] in
 private theorem TContext_types_subst_go_find_none_reverse
@@ -7256,12 +7104,7 @@ private theorem TContext_types_subst_go_find_none_reverse
   | cons pair rest ih =>
     obtain ⟨k, v⟩ := pair
     simp only [TContext.types.subst.go, Map.find?] at h ⊢
-    split at h
-    · simp at h
-    · rename_i h_ne
-      split
-      · rename_i h_eq; exact absurd h_eq h_ne
-      · exact ih h
+    grind
 
 omit [ToString T.IDMeta] [ToFormat T.IDMeta] [HasGen T.IDMeta] [ToFormat (LFunc T)] [ToFormat T.Metadata] in
 private theorem TContext_types_subst_find_reverse
@@ -7754,12 +7597,8 @@ private theorem varOpen_freeVars_subset
     intro y hy
     simp [LExpr.varOpen, LExpr.substK, LExpr.freeVars, List.mem_append] at hy ⊢
     rcases hy with h_tr | h_body
-    · rcases ih_tr (k + 1) y h_tr with rfl | h
-      · left; rfl
-      · right; left; exact h
-    · rcases ih_body (k + 1) y h_body with rfl | h
-      · left; rfl
-      · right; right; exact h
+    · rcases ih_tr (k + 1) y h_tr with rfl | h <;> grind
+    · rcases ih_body (k + 1) y h_body with rfl | h <;> grind
   | app _ e1 e2 ih1 ih2 =>
     intro y hy
     simp only [LExpr.varOpen, LExpr.substK, LExpr.freeVars, List.mem_append] at hy
@@ -7826,9 +7665,7 @@ private theorem knownVars_go_addInNewest_mono
     simp only [TContext.knownVars.go] at hv ⊢
     rw [Map.keys_append]
     simp only [Map.keys, List.mem_append] at hv ⊢
-    rcases hv with h_scope | h_rest
-    · left; left; exact h_scope
-    · right; exact h_rest
+    grind
 
 omit [ToString T.IDMeta] [DecidableEq T.IDMeta] [ToFormat T.IDMeta] [HasGen T.IDMeta] [ToFormat (LFunc T)] [ToFormat T.Metadata] in
 private theorem knownVars_go_addInNewest_mem
@@ -7843,7 +7680,7 @@ private theorem knownVars_go_addInNewest_mem
     simp only [TContext.knownVars.go]
     rw [Map.keys_append]
     simp only [Map.keys, List.mem_append]
-    left; right; exact List.Mem.head _
+    grind
 
 omit [ToString T.IDMeta] [ToFormat (LFunc T)] [ToFormat T.Metadata] in
 private theorem typeBoundVar_knownVars_mono
@@ -9151,9 +8988,7 @@ where
       · simp at h_find; subst h_find
         -- h_hd : (v.freeVars).beq [] = true, need v.freeVars = []
         -- List.beq returns true iff pointwise BEq holds; for [] this means the list is empty
-        cases h_fv : v.freeVars with
-        | nil => rfl
-        | cons _ _ => rw [h_fv] at h_hd; simp at h_hd
+        grind
       · exact scope_entry_closed rest h_rest h_find
 
 omit [ToString T.IDMeta] [DecidableEq T.IDMeta] [ToFormat T.IDMeta] [HasGen T.IDMeta] [ToFormat (LFunc T)] [ToFormat T.Metadata] in
