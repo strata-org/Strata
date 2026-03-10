@@ -331,48 +331,23 @@ def translateTypeDecl (bindings : TransBindings) (op : Operation) :
   TransM (Core.Decl × TransBindings) := do
   let _ ← @checkOp (Core.Decl × TransBindings) op q`Core.command_typedecl 2
   let name ← translateIdent TyIdentifier op.args[0]!
-  let numargs ←
+  let params ←
     translateOption
       (fun maybearg =>
             do match maybearg with
-            | none => pure 0
+            | none => pure []
             | some arg =>
               let bargs ← checkOpArg arg q`Core.mkBindings 1
-              let numargs ←
-                  match bargs[0]! with
-                  | .seq _ .comma args => pure args.size
-                  | _ => TransM.error
-                          s!"translateTypeDecl expects a comma separated list: {repr bargs[0]!}")
+              match bargs[0]! with
+              | .seq _ .comma args => do
+                args.toList.mapM fun argOp => do
+                  let bindArgs ← checkOpArg argOp q`Core.mkBinding 2
+                  translateIdent String bindArgs[0]!
+              | _ => TransM.error
+                      s!"translateTypeDecl expects a comma separated list: {repr bargs[0]!}")
                     op.args[1]!
   let md ← getOpMetaData op
-  -- Only the number of type arguments is important; the exact identifiers are
-  -- irrelevant.
-  let decl := Core.Decl.type (.con { name := name, numargs := numargs }) md
-  return (decl, { bindings with freeVars := bindings.freeVars.push decl })
-
-/--
-Translate a forward type declaration. This creates a placeholder entry that will
-be replaced when the actual datatype definition is encountered in a mutual block.
--/
-def translateForwardTypeDecl (bindings : TransBindings) (op : Operation) :
-  TransM (Core.Decl × TransBindings) := do
-  let _ ← @checkOp (Core.Decl × TransBindings) op q`Core.command_forward_typedecl 2
-  let name ← translateIdent TyIdentifier op.args[0]!
-  let numargs ←
-    translateOption
-      (fun maybearg =>
-            do match maybearg with
-            | none => pure 0
-            | some arg =>
-              let bargs ← checkOpArg arg q`Core.mkBindings 1
-              let numargs ←
-                  match bargs[0]! with
-                  | .seq _ .comma args => pure args.size
-                  | _ => TransM.error
-                          s!"translateForwardTypeDecl expects a comma separated list: {repr bargs[0]!}")
-                    op.args[1]!
-  let md ← getOpMetaData op
-  let decl := Core.Decl.type (.con { name := name, numargs := numargs }) md
+  let decl := Core.Decl.type (.con { name := name, params := params }) md
   return (decl, { bindings with freeVars := bindings.freeVars.push decl })
 
 ---------------------------------------------------------------------
@@ -1195,6 +1170,33 @@ partial def translateStmt (p : Program) (bindings : TransBindings) (arg : Arg) :
     -- Add the function to boundVars for subsequent statements.
     let updatedBindings := { bindings with boundVars := bindings.boundVars.push funcBinding }
     return ([.funcDecl decl md], updatedBindings)
+  | q`Core.typeDecl_statement, #[namea, argsa] =>
+    let name ← translateIdent String namea
+    let (typeParams : List String) ← match argsa with
+      | .option _ (.some binds) => do
+        let bargs ← checkOpArg binds q`Core.mkBindings 1
+        match bargs[0]! with
+        | .seq _ .comma args => do
+          args.toList.mapM fun argOp => do
+            let bindArgs ← checkOpArg argOp q`Core.mkBinding 2
+            translateIdent String bindArgs[0]!
+        | _ => TransM.error
+                s!"typeDecl_statement expects a comma separated list: {repr bargs[0]!}"
+      | .option _ .none => pure []
+      | _ => TransM.error s!"Invalid type arguments {repr argsa}"
+    let md ← getOpMetaData op
+
+    -- Create a TypeConstructor and add it to freeVars (same as program-level types)
+    let tc : TypeConstructor := { name := name, params := typeParams }
+    let typeDecl : Core.Decl := .type (.con tc) md
+
+    -- Add type parameters (not the type name itself) to boundTypeVars
+    -- This matches what the DDM parser does with declareType
+    let updatedBindings := { bindings with
+      freeVars := bindings.freeVars.push typeDecl,
+      boundTypeVars := bindings.boundTypeVars ++ typeParams.toArray }
+
+    return ([.typeDecl tc md], updatedBindings)
   | name, args => TransM.error s!"Unexpected statement {name.fullName} with {args.size} arguments."
 
 partial def translateBlock (p : Program) (bindings : TransBindings) (arg : Arg) :
@@ -1225,15 +1227,18 @@ end
 ---------------------------------------------------------------------
 
 def translateInitMkBinding (bindings : TransBindings) (op : Arg) :
-  TransM (Core.CoreIdent × LMonoTy) := do
-  -- (FIXME) Account for metadata.
-  let bargs ← checkOpArg op q`Core.mkBinding 2
+  TransM (Core.CoreIdent × LMonoTy × Bool) := do
+  let isCases := match op with
+    | .op o => o.name == q`Core.casesBinding
+    | _ => false
+  let opName := if isCases then q`Core.casesBinding else q`Core.mkBinding
+  let bargs ← checkOpArg op opName 2
   let id ← translateIdent Core.CoreIdent bargs[0]!
   let tp ← translateLMonoTy bindings bargs[1]!
-  return (id, tp)
+  return (id, tp, isCases)
 
 def translateInitMkBindings (bindings : TransBindings) (ops : Array Arg) :
-  TransM (Array (Core.CoreIdent × LMonoTy)) := do
+  TransM (Array (Core.CoreIdent × LMonoTy × Bool)) := do
   ops.mapM (fun op => translateInitMkBinding bindings op)
 
 def translateBindings (bindings : TransBindings) (op : Arg) :
@@ -1242,9 +1247,25 @@ def translateBindings (bindings : TransBindings) (op : Arg) :
   match bargs[0]! with
   | .seq _ .comma args =>
     let arr ← translateInitMkBindings bindings args
-    return arr.toList
+    return arr.toList.map fun (id, ty, _) => (id, ty)
   | _ =>
     TransM.error s!"translateBindings expects a comma separated list: {repr op}"
+
+/-- Like `translateBindings` but also returns the index of the `@[cases]` parameter, if any. -/
+def translateBindingsWithCases (bindings : TransBindings) (op : Arg) :
+  TransM (ListMap Core.CoreIdent LMonoTy × Option Nat) := do
+  let bargs ← checkOpArg op q`Core.mkBindings 1
+  match bargs[0]! with
+  | .seq _ .comma args =>
+    let arr ← translateInitMkBindings bindings args
+    let sig := arr.toList.map fun (id, ty, _) => (id, ty)
+    let casesCount := arr.toList.filter (·.2.2) |>.length
+    if casesCount > 1 then
+      TransM.error s!"Only one @[cases] parameter is allowed, but {casesCount} were found"
+    let casesIdx := arr.toList.findIdx? fun (_, _, c) => c
+    return (sig, casesIdx)
+  | _ =>
+    TransM.error s!"translateBindingsWithCases expects a comma separated list: {repr op}"
 
 def translateModifies (arg : Arg) : TransM (Array Core.CoreIdent) := do
   let args ← checkOpArg arg q`Core.modifies_spec 1
@@ -1410,6 +1431,7 @@ def translateDistinct (p : Program) (bindings : TransBindings) (op : Operation) 
 inductive FnInterp where
   | Definition
   | Declaration
+  | RecursiveDefinition
   deriving Repr
 
 def translateOptionInline (arg : Arg) : TransM (Array Strata.DL.Util.FuncAttr) := do
@@ -1425,32 +1447,57 @@ def translateFunction (status : FnInterp) (p : Program) (bindings : TransBinding
   TransM (Core.Decl × TransBindings) := do
   let _ ←
     match status with
-    | .Definition  => @checkOp (Core.Decl × TransBindings) op q`Core.command_fndef  7
-    | .Declaration => @checkOp (Core.Decl × TransBindings) op q`Core.command_fndecl 4
+    | .Definition           => @checkOp (Core.Decl × TransBindings) op q`Core.command_fndef     7
+    | .Declaration          => @checkOp (Core.Decl × TransBindings) op q`Core.command_fndecl    4
+    | .RecursiveDefinition  => @checkOp (Core.Decl × TransBindings) op q`Core.command_recfndef  6
   let fname ← translateIdent Core.CoreIdent op.args[0]!
   let typeArgs ← translateTypeArgs op.args[1]!
-  let sig ← translateBindings bindings op.args[2]!
+  let sigAndCases : ListMap Core.CoreIdent LMonoTy × Option Nat ← match status with
+    | .RecursiveDefinition => translateBindingsWithCases bindings op.args[2]!
+    | _ => do let sig ← translateBindings bindings op.args[2]!; pure (sig, none)
+  let sig := sigAndCases.1
+  let casesIdx := sigAndCases.2
   let ret ← translateLMonoTy bindings op.args[3]!
   let in_bindings := (sig.map (fun (v, ty) => (LExpr.fvar () v ty))).toArray
-  -- This bindings order -- original, then inputs, is
-  -- critical here. Is this right though?
   let orig_bbindings := bindings.boundVars
-  let bbindings := bindings.boundVars ++ in_bindings
+  -- INVARIANT: The binding order here must exactly match the DDM elaborator's
+  -- typing context in `Elab/Core.lean` (the `scopeSelf` branch), which pushes:
+  --   [inherited..., self, typeArgTVars..., params...]
+  -- The `@[scope(typeArgs)] b : Bindings` grammar argument causes the DDM to
+  -- re-push type arg tvar bindings before the value param bindings. We must
+  -- include placeholders for these type args so that de Bruijn indices in the
+  -- elaborated body expression resolve correctly during translation.
+  let bbindings ← match status with
+    | .RecursiveDefinition =>
+      let fnTy := LMonoTy.mkArrow' ret (sig.map Prod.snd)
+      let selfBinding := LExpr.op () fname fnTy
+      let tyArgPlaceholders := typeArgs.map fun (ta: TyIdentifier) =>
+        LExpr.op () (ta : Core.CoreIdent) .none
+      pure (bindings.boundVars ++ #[selfBinding] ++ tyArgPlaceholders ++ in_bindings)
+    | _ => pure (bindings.boundVars ++ in_bindings)
   let bindings := { bindings with boundVars := bbindings }
+  let casesAttr := match casesIdx with
+    | some i => #[.inlineIfConstr i]
+    | none => #[]
   let (preconds, body, inline?) ← match status with
-             | .Definition =>
-                let preconds ← translateFnPreconds p fname bindings op.args[4]!
-                let e ← translateExpr p bindings op.args[5]!
-                let inline? ← translateOptionInline op.args[6]!
-                pure (preconds, some e, inline?)
-             | .Declaration => pure ([], none, #[])
+    | .Definition =>
+      let preconds ← translateFnPreconds p fname bindings op.args[4]!
+      let e ← translateExpr p bindings op.args[5]!
+      let inline? ← translateOptionInline op.args[6]!
+      pure (preconds, some e, inline?)
+    | .RecursiveDefinition =>
+      let preconds ← translateFnPreconds p fname bindings op.args[4]!
+      let e ← translateExpr p bindings op.args[5]!
+      pure (preconds, some e, #[])
+    | .Declaration => pure ([], none, #[])
   let md ← getOpMetaData op
   let decl := .func { name := fname,
                       typeArgs := typeArgs.toList,
+                      isRecursive := status matches .RecursiveDefinition,
                       inputs := sig,
                       output := ret,
                       body := body,
-                      attr := inline?,
+                      attr := casesAttr ++ inline?,
                       preconditions := preconds } md
   return (decl,
           { bindings with
@@ -1491,7 +1538,9 @@ Extract and translate constructor information from a constructor list argument.
 -/
 def translateConstructorList (p : Program) (bindings : TransBindings) (arg : Arg) :
     TransM (Array TransConstructorInfo) := do
-  let constructorInfos := GlobalContext.extractConstructorInfo p.dialects arg
+  let constructorInfos ← match extractConstructorInfo p.dialects arg with
+    | .ok info => pure info
+    | .error e => TransM.error s!"Constructor extraction error: {e}"
   constructorInfos.mapM (translateConstructorInfo bindings)
 
 ---------------------------------------------------------------------
@@ -1634,7 +1683,9 @@ def translateDatatype (p : Program) (bindings : TransBindings) (op : Operation) 
 /--
 Translate a mutual block containing mutually recursive datatype definitions.
 This collects all datatypes, creates a single TypeDecl.data with all of them,
-and updates the forward-declared entries in bindings.freeVars.
+and adds placeholder entries for type references during translation.
+The `@[preRegisterTypes]` metadata on the mutual block operation ensures that
+type names are pre-registered in the DDM GlobalContext before processing.
 -/
 def translateMutualBlock (p : Program) (bindings : TransBindings) (op : Operation) :
     TransM (Core.Decl × TransBindings) := do
@@ -1653,8 +1704,8 @@ def translateMutualBlock (p : Program) (bindings : TransBindings) (op : Operatio
   if datatypeOps.size == 0 then
     TransM.error "Mutual block must contain at least one datatype"
   else
-    -- First pass: collect all datatype names, type args, and their indices in freeVars
-    -- Forward declarations MUST already be in bindings.freeVars
+    -- First pass: collect all datatype names and type args, and allocate placeholder
+    -- entries in freeVars for each one (replacing any pre-registered entries if present)
     let mut datatypeInfos : Array (String × List TyIdentifier × Nat) := #[]
     let mut bindingsWithPlaceholders := bindings
 
@@ -1662,20 +1713,25 @@ def translateMutualBlock (p : Program) (bindings : TransBindings) (op : Operatio
       let datatypeName ← translateIdent String dtOp.args[0]!
       let (typeArgs, _) ← translateDatatypeTypeArgs bindings dtOp.args[1]! "translateMutualBlock"
 
-      -- Find the index of this datatype in freeVars (from forward declaration)
+      -- Check if this datatype was already pre-registered in freeVars
       let existingIdx := bindings.freeVars.findIdx? fun decl =>
         match decl with
         | .type t _ => t.names.contains datatypeName
         | _ => false
 
+      let placeholderDecl := Core.Decl.type (.data [mkPlaceholderLDatatype datatypeName typeArgs])
       match existingIdx with
       | some i =>
-        let placeholderDecl := Core.Decl.type (.data [mkPlaceholderLDatatype datatypeName typeArgs])
+        -- Replace existing pre-registered entry with placeholder
         datatypeInfos := datatypeInfos.push (datatypeName, typeArgs, i)
         bindingsWithPlaceholders := { bindingsWithPlaceholders with
           freeVars := bindingsWithPlaceholders.freeVars.set! i placeholderDecl }
       | none =>
-        TransM.error s!"Mutual datatype {datatypeName} requires a forward declaration"
+        -- Allocate a new placeholder entry
+        let idx := bindingsWithPlaceholders.freeVars.size
+        datatypeInfos := datatypeInfos.push (datatypeName, typeArgs, idx)
+        bindingsWithPlaceholders := { bindingsWithPlaceholders with
+          freeVars := bindingsWithPlaceholders.freeVars.push placeholderDecl }
 
     -- Second pass: translate all constructors with all placeholders in scope
     let ldatatypes ← (datatypeOps.zip datatypeInfos).toList.mapM fun (dtOp, (datatypeName, typeArgs, _idx)) => do
@@ -1696,8 +1752,7 @@ def translateMutualBlock (p : Program) (bindings : TransBindings) (op : Operatio
     let md ← getOpMetaData op
     let mutualTypeDecl := Core.Decl.type (.data ldatatypes) md
 
-    -- Update bindings.freeVars: replace forward-declared entries with the mutual block
-    -- For each datatype, update its entry to point to the mutual TypeDecl
+    -- Update bindings.freeVars: replace placeholder entries with the mutual block
     let mut finalBindings := bindings
 
     for (_datatypeName, _typeArgs, idx) in datatypeInfos do
@@ -1739,13 +1794,7 @@ partial def translateCoreDecls (p : Program) (bindings : TransBindings) :
   | 0 => return ([], bindings)
   | _ + 1 =>
     let op := ops[count]!
-    let (newDecls, bindings) ←
-      match op.name with
-      | q`Core.command_forward_typedecl =>
-        -- Forward declarations do NOT produce AST nodes - they only update bindings
-        let (_, bindings) ← translateForwardTypeDecl bindings op
-        pure ([], bindings)
-      | _ =>
+    let (newDecls, bindings) ← do
         let (decl, bindings) ←
           match op.name with
           | q`Core.command_datatype =>
@@ -1770,6 +1819,8 @@ partial def translateCoreDecls (p : Program) (bindings : TransBindings) :
             translateFunction .Definition p bindings op
           | q`Core.command_fndecl =>
             translateFunction .Declaration p bindings op
+          | q`Core.command_recfndef =>
+            translateFunction .RecursiveDefinition p bindings op
           | q`Core.command_block =>
             translateBlockCommand p bindings op
           | _ => TransM.error s!"translateCoreDecls unimplemented for {repr op}"

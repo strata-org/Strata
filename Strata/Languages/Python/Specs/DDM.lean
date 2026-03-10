@@ -30,14 +30,17 @@ category SpecType;
 category DictFieldDecl;
 
 op typeIdentNoArgs (x : Str) : SpecType => "ident" "(" x ")";
-op typeIdent (x : Str, y : CommaSepBy SpecType) : SpecType => "ident" "(" x ", " y ")";
+op typeIdent (x : Str, y : CommaSepBy SpecType) : SpecType =>
+  "ident" "(" x ", " y ")";
 op typeClassNoArgs (x : Ident) : SpecType => "class" "(" x ")";
-op typeClass (x : Ident, y : CommaSepBy SpecType) : SpecType => "class" "(" x ", " y ")";
+op typeClass (x : Ident, y : CommaSepBy SpecType) : SpecType =>
+  "class" "(" x ", " y ")";
 op typeIntLiteral (x : Int) : SpecType => x;
 op typeStringLiteral (x : Str) : SpecType => x;
-op typeUnion (args : CommaSepBy SpecType) : SpecType => "union" "(" args ")";
-op typeTypedDict (fields : CommaSepBy DictFieldDecl): SpecType =>
-  "dict" "(" fields ")";
+op typeUnion (args : CommaSepBy SpecType) : SpecType =>
+  "union" "(" args ")";
+op typeTypedDict (fields : NewlineSepBy DictFieldDecl): SpecType =>
+  "dict" "(\n" indent(2, fields) ")";
 
 op mkDictFieldDecl(name : Ident, fieldType : SpecType, isRequired : Bool) : DictFieldDecl =>
   name " : " fieldType " [required=" isRequired "]";
@@ -59,28 +62,29 @@ op mkKwargsDecl(name : Ident, kwargsType : SpecType) : KwargsDecl =>
   "kwargs" ": " name " : " kwargsType "\n";
 
 category SpecExprDecl;
-op placeholderExpr() : SpecExprDecl =>
-  "placeholder" "\n";
-op varExpr(name : Ident) : SpecExprDecl =>
-  name "\n";
+op placeholderExpr() : SpecExprDecl => "placeholder";
+op varExpr(name : Ident) : SpecExprDecl => name;
 op getIndexExpr(subject : SpecExprDecl, field : Ident) : SpecExprDecl =>
-  subject "[" field "]" "\n";
+  subject "[" field "]";
 op isInstanceOfExpr(subject : SpecExprDecl, typeName : Str) : SpecExprDecl =>
-  "isinstance(" subject ", " typeName ")" "\n";
-op lenGeExpr(subject : SpecExprDecl, bound : Num) : SpecExprDecl =>
-  "len_ge(" subject ", " bound ")" "\n";
-op lenLeExpr(subject : SpecExprDecl, bound : Num) : SpecExprDecl =>
-  "len_le(" subject ", " bound ")" "\n";
-op valueGeExpr(subject : SpecExprDecl, bound : Int) : SpecExprDecl =>
-  "value_ge(" subject ", " bound ")" "\n";
-op valueLeExpr(subject : SpecExprDecl, bound : Int) : SpecExprDecl =>
-  "value_le(" subject ", " bound ")" "\n";
+  "isinstance(" subject ", " typeName ")";
+op lenExpr(subject : SpecExprDecl) : SpecExprDecl =>
+  "len(" subject ")";
+op intExpr(value : Int) : SpecExprDecl => value;
+op intGeExpr(subject : SpecExprDecl, bound : SpecExprDecl) : SpecExprDecl =>
+  subject " >= " bound;
+op intLeExpr(subject : SpecExprDecl, bound : SpecExprDecl) : SpecExprDecl =>
+  subject " <= " bound;
 op enumMemberExpr(subject : SpecExprDecl, values : Seq Str) : SpecExprDecl =>
-  "enum(" subject ", [" values "])" "\n";
+  "enum(" subject ", [" values "])";
 
 category Assertion;
 op mkAssertion(formula : SpecExprDecl, message : Str) : Assertion =>
-  formula " " message "\n";
+  "ensure(" formula ", " message ")\n";
+
+category PostconditionEntry;
+op mkPostconditionEntry(expr : SpecExprDecl) : PostconditionEntry =>
+  expr "\n";
 
 category FunDecl;
 op mkFunDecl (name : Str,
@@ -90,7 +94,8 @@ op mkFunDecl (name : Str,
               returnType : SpecType,
               isOverload : Bool,
               preconditions : Seq Assertion,
-              postconditions : Seq SpecExprDecl) : FunDecl =>
+              postconditions : Seq PostconditionEntry)
+    : FunDecl =>
   "function " name "{\n"
   indent(2,
     "args" ": " "[\n"
@@ -111,15 +116,23 @@ op mkFunDecl (name : Str,
   "}\n";
 
 category ClassDecl;
-op mkClassDecl(name : Str, bases : Seq Str, fields : Seq ClassFieldDecl,
-               classVars : Seq ClassVarDecl, subclasses : Seq ClassDecl,
-               methods : Seq FunDecl) : ClassDecl =>
+op mkClassDecl(name : Str, bases : Seq Str,
+    fields : Seq ClassFieldDecl,
+    classVars : Seq ClassVarDecl,
+    subclasses : Seq ClassDecl,
+    methods : Seq FunDecl) : ClassDecl =>
   "class " name " {\n"
   indent(2,
     "bases" ": " "[" bases "]\n"
-    "fields" ": " "[" fields "]\n"
-    "classVars" ": " "[" classVars "]\n"
-    "subclasses" ": " "[" subclasses "]\n"
+    "fields" ": " "[\n"
+    indent(2, fields)
+    "]\n"
+    "classVars" ": " "[\n"
+    indent(2, classVars)
+    "]\n"
+    "subclasses" ": " "[\n"
+    indent(2, subclasses)
+    "]\n"
     methods)
   "}\n";
 
@@ -199,10 +212,10 @@ private def SpecExpr.toDDM (e : SpecExpr) : DDM.SpecExprDecl SourceRange :=
   | .var name => .varExpr .none ⟨.none, name⟩
   | .getIndex subj field => .getIndexExpr .none subj.toDDM ⟨.none, field⟩
   | .isInstanceOf subj tn => .isInstanceOfExpr .none subj.toDDM ⟨.none, tn⟩
-  | .lenGe subj bound => .lenGeExpr .none subj.toDDM ⟨.none, bound⟩
-  | .lenLe subj bound => .lenLeExpr .none subj.toDDM ⟨.none, bound⟩
-  | .valueGe subj bound => .valueGeExpr .none subj.toDDM (toDDMInt .none bound)
-  | .valueLe subj bound => .valueLeExpr .none subj.toDDM (toDDMInt .none bound)
+  | .len subj => .lenExpr .none subj.toDDM
+  | .intLit v => .intExpr .none (toDDMInt .none v)
+  | .intGe subj bound => .intGeExpr .none subj.toDDM bound.toDDM
+  | .intLe subj bound => .intLeExpr .none subj.toDDM bound.toDDM
   | .enumMember subj values =>
     .enumMemberExpr .none subj.toDDM
       ⟨.none, values.map (⟨.none, ·⟩)⟩
@@ -223,7 +236,9 @@ private def FunctionDecl.toDDM (d : FunctionDecl) : DDM.FunDecl SourceRange :=
     (returnType := d.returnType.toDDM)
     (isOverload := ⟨.none, d.isOverload⟩)
     (preconditions := ⟨.none, d.preconditions.map (·.toDDM)⟩)
-    (postconditions := ⟨.none, d.postconditions.map (·.toDDM)⟩)
+    (postconditions := ⟨.none,
+      d.postconditions.map fun e =>
+        .mkPostconditionEntry .none e.toDDM⟩)
 
 private def ClassVariable.toDDM (cv : ClassVariable) : DDM.ClassVarDecl SourceRange :=
   .mkClassVarDecl .none ⟨.none, cv.name⟩ ⟨.none, cv.value⟩
@@ -304,10 +319,10 @@ private def DDM.SpecExprDecl.fromDDM (d : DDM.SpecExprDecl SourceRange) : Specs.
   | .varExpr _ ⟨_, name⟩ => .var name
   | .getIndexExpr _ subj ⟨_, field⟩ => .getIndex subj.fromDDM field
   | .isInstanceOfExpr _ subj ⟨_, tn⟩ => .isInstanceOf subj.fromDDM tn
-  | .lenGeExpr _ subj ⟨_, bound⟩ => .lenGe subj.fromDDM bound
-  | .lenLeExpr _ subj ⟨_, bound⟩ => .lenLe subj.fromDDM bound
-  | .valueGeExpr _ subj bound => .valueGe subj.fromDDM bound.ofDDM
-  | .valueLeExpr _ subj bound => .valueLe subj.fromDDM bound.ofDDM
+  | .lenExpr _ subj => .len subj.fromDDM
+  | .intExpr _ i => .intLit i.ofDDM
+  | .intGeExpr _ subj bound => .intGe subj.fromDDM bound.fromDDM
+  | .intLeExpr _ subj bound => .intLe subj.fromDDM bound.fromDDM
   | .enumMemberExpr _ subj ⟨_, values⟩ => .enumMember subj.fromDDM (values.map (·.2))
 
 private def DDM.Assertion.fromDDM (d : DDM.Assertion SourceRange) : Specs.Assertion :=
@@ -334,7 +349,8 @@ private def DDM.FunDecl.fromDDM (d : DDM.FunDecl SourceRange) : Specs.FunctionDe
     returnType := returnType.fromDDM
     isOverload := isOverload
     preconditions := preconditions.map (·.fromDDM)
-    postconditions := postconditions.map (·.fromDDM)
+    postconditions := postconditions.map fun
+      | .mkPostconditionEntry _ e => e.fromDDM
   }
 
 private def DDM.ClassDecl.fromDDM (d : DDM.ClassDecl SourceRange) : Specs.ClassDef :=

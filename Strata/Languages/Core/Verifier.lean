@@ -270,7 +270,7 @@ def preprocessObligation (obligation : ProofObligation Expression) (p : Program)
       return (obligation, some result)
     else
       return (obligation, none)
-  | .assert =>
+  | .assert | .divisionByZero =>
     if obligation.obligation.isTrue && !needsReachCheck then
       -- We don't need the SMT solver if PE (partial evaluation) is enough to
       -- reduce the consequent to true. Skip the shortcut when reachCheck is
@@ -522,7 +522,8 @@ structure Diagnostic where
   deriving Repr, BEq
 
 def DiagnosticModel.toDiagnostic (files: Map Strata.Uri Lean.FileMap) (dm: DiagnosticModel): Diagnostic :=
-  let fileMap := (files.find? dm.fileRange.file).getD (panic s!"Could not find {repr dm.fileRange.file} in {repr files.keys} when converting model '{dm}' to a diagnostic")
+  let fileMap := (files.find? dm.fileRange.file).getD
+    (dbg_trace s!"Could not find {repr dm.fileRange.file} in {repr files.keys} when converting model '{dm}' to a diagnostic"; default)
   let startPos := fileMap.toPosition dm.fileRange.range.start
   let endPos := fileMap.toPosition dm.fileRange.range.stop
   {

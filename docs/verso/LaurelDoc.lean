@@ -12,7 +12,6 @@ import Strata.Languages.Laurel.LaurelToCoreTranslator
 import Strata.Languages.Laurel.HeapParameterization
 import Strata.Languages.Laurel.LiftImperativeExpressions
 import Strata.Languages.Laurel.ModifiesClauses
-import Strata.Languages.Laurel.CorePrelude
 
 open Strata.Laurel
 
@@ -184,10 +183,3 @@ The final translation converts Laurel types, expressions, statements, and proced
 their Strata Core equivalents. Procedures with bodies that only have constructs supported by
 Core expressions are translated to a Core function, while other procedures become Core
 procedures.
-
-## Core Prelude
-
-The Laurel translator prepends a Core prelude that defines the heap model types and
-operations: `Composite`, `Field`, `Box`, `readField`, and `updateField`.
-
-{docstring Strata.Laurel.corePreludeDDM}

@@ -3,14 +3,17 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.DL.Lambda.LExprWF
-import Strata.DL.Lambda.LTy
-import Strata.DDM.AST
-import Strata.DDM.Util.Array
-import Strata.DL.Util.Func
-import Strata.DL.Util.List
-import Strata.DL.Util.ListMap
+public import Strata.DL.Lambda.LExprWF
+import all Strata.DL.Lambda.LExprWF
+import all Strata.DL.Lambda.LExpr
+public import Strata.DL.Lambda.LTy
+public import Strata.DDM.AST
+public import Strata.DDM.Util.Array
+public import Strata.DL.Util.Func
+public import Strata.DL.Util.List
+public import Strata.DL.Util.ListMap
 
 /-!
 ## Lambda's Factory
@@ -30,6 +33,8 @@ namespace Lambda
 open Strata
 open Std (ToFormat Format format)
 
+public section
+
 variable {T : LExprParams} [Inhabited T.Metadata] [ToFormat T.IDMeta]
 
 ---------------------------------------------------------------------
@@ -43,7 +48,7 @@ variable {IDMeta : Type} [DecidableEq IDMeta] [Inhabited IDMeta]
 /--
 A signature is a map from variable identifiers to types.
 -/
-abbrev Signature (IDMeta : Type) (Ty : Type) := ListMap (Identifier IDMeta) Ty
+@[expose] abbrev Signature (IDMeta : Type) (Ty : Type) := ListMap (Identifier IDMeta) Ty
 
 def Signature.format (ty : Signature IDMeta Ty) [Std.ToFormat Ty] : Std.Format :=
   match ty with
@@ -52,9 +57,9 @@ def Signature.format (ty : Signature IDMeta Ty) [Std.ToFormat Ty] : Std.Format :
   | (k, v) :: rest =>
     f!"({k} : {v}) " ++ Signature.format rest
 
-abbrev LMonoTySignature := Signature IDMeta LMonoTy
+@[expose] abbrev LMonoTySignature := Signature IDMeta LMonoTy
 
-abbrev LTySignature := Signature IDMeta LTy
+@[expose] abbrev LTySignature := Signature IDMeta LTy
 
 -- Re-export Func from Util for backward compatibility
 open Strata.DL.Util (Func FuncPrecondition TyIdentifier)
@@ -65,18 +70,19 @@ A Lambda factory function - instantiation of `Func` for Lambda expressions.
 Universally quantified type identifiers, if any, appear before this signature and can
 quantify over the type identifiers in it.
 -/
-abbrev LFunc (T : LExprParams) := Func (T.Identifier) (LExpr T.mono) LMonoTy T.Metadata
+@[expose] abbrev LFunc (T : LExprParams) := Func (T.Identifier) (LExpr T.mono) LMonoTy T.Metadata
 
 /--
 Helper constructor for LFunc to maintain backward compatibility.
 -/
 def LFunc.mk {T : LExprParams} (name : T.Identifier) (typeArgs : List TyIdentifier := [])
-    (isConstr : Bool := false) (inputs : ListMap T.Identifier LMonoTy) (output : LMonoTy)
+    (isConstr : Bool := false) (isRecursive : Bool := false)
+    (inputs : ListMap T.Identifier LMonoTy) (output : LMonoTy)
     (body : Option (LExpr T.mono) := .none) (attr : Array Strata.DL.Util.FuncAttr := #[])
     (concreteEval : Option (T.Metadata → List (LExpr T.mono) → Option (LExpr T.mono)) := .none)
     (axioms : List (LExpr T.mono) := [])
     (preconditions : List (FuncPrecondition (LExpr T.mono) T.Metadata) := []) : LFunc T :=
-  Func.mk name typeArgs isConstr inputs output body attr concreteEval axioms preconditions
+  Func.mk name typeArgs isConstr isRecursive inputs output body attr concreteEval axioms preconditions
 
 instance [Inhabited T.Metadata] [Inhabited T.IDMeta] : Inhabited (LFunc T) where
   default := { name := Inhabited.default, inputs := [], output := LMonoTy.bool }
@@ -141,7 +147,7 @@ IDMeta)` -- lambdas are our only tool. `Factory` gives us a way to add
 support for concrete/symbolic evaluation and type checking for `FunFactory`
 functions without actually modifying any core logic or the ASTs.
 -/
-def Factory (T : LExprParams) := Array (LFunc T)
+@[expose] def Factory (T : LExprParams) := Array (LFunc T)
 
 def Factory.default : @Factory T := #[]
 
@@ -179,7 +185,7 @@ def Factory.addFactory (F newF : @Factory T) : Except DiagnosticModel (@Factory 
   Array.foldlM (fun factory func => factory.addFactoryFunc func) F newF
 
 
-def getLFuncCall {GenericTy} (e : LExpr ⟨T, GenericTy⟩) : LExpr ⟨T, GenericTy⟩ × List (LExpr ⟨T, GenericTy⟩) :=
+@[expose] def getLFuncCall {GenericTy} (e : LExpr ⟨T, GenericTy⟩) : LExpr ⟨T, GenericTy⟩ × List (LExpr ⟨T, GenericTy⟩) :=
   go e []
   where go e (acc : List (LExpr ⟨T, GenericTy⟩)) :=
   match e with
@@ -251,6 +257,7 @@ theorem Factory.callOfLFunc_smaller {T} {F : @Factory T.base} {e : LExpr T} {op 
     intros op_eq args_eq F_eq
     subst op args F'; exact (getLFuncCall_smaller Hfunc)
 
+end -- public section
 end Lambda
 
 ---------------------------------------------------------------------

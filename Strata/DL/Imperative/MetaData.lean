@@ -3,13 +3,16 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.DL.Imperative.PureExpr
-import Strata.DL.Util.DecidableEq
-import Strata.Util.FileRange
+public import Strata.DL.Imperative.PureExpr
+public import Strata.DL.Util.DecidableEq
+public import Strata.Util.FileRange
 
 namespace Imperative
 open Strata (DiagnosticModel FileRange)
+
+public section
 
 ---------------------------------------------------------------------
 
@@ -128,7 +131,7 @@ structure MetaDataElem (P : PureExpr) where
   value : MetaDataElem.Value P
 
 /-- Metadata is an array of tagged elements. -/
-abbrev MetaData (P : PureExpr) := Array (MetaDataElem P)
+@[expose] abbrev MetaData (P : PureExpr) := Array (MetaDataElem P)
 
 def MetaData.empty {P : PureExpr} : MetaData P := #[]
 
@@ -211,6 +214,21 @@ def MetaData.formatFileRangeD {P : PureExpr} [BEq P.Ident] (md : MetaData P) (fi
   | some fr => fr.format fileMap includeEnd?
   | none => f!""
 
+/-- Metadata field for property type classification (e.g., "divisionByZero"). -/
+def MetaData.propertyType : MetaDataElem.Field P := .label "propertyType"
+
+/-- Metadata value for division-by-zero property type classification. -/
+def MetaData.divisionByZero : String := "divisionByZero"
+
+/-- Read the property type classification from metadata, if present. -/
+def MetaData.getPropertyType {P : PureExpr} [BEq P.Ident] (md : MetaData P) : Option String :=
+  match md.findElem MetaData.propertyType with
+  | some elem => match elem.value with
+    | .msg s => some s
+    | _ => none
+  | none => none
+
 ---------------------------------------------------------------------
 
+end -- public section
 end Imperative

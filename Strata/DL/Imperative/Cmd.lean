@@ -3,15 +3,18 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.DL.Imperative.PureExpr
-import Strata.DL.Imperative.MetaData
-import Strata.DL.Imperative.HasVars
+public import Strata.DL.Imperative.PureExpr
+public import Strata.DL.Imperative.MetaData
+public import Strata.DL.Imperative.HasVars
 import Strata.DL.Lambda.LExpr
 
 ---------------------------------------------------------------------
 
 namespace Imperative
+
+public section
 
 
 /-! # Imperative Dialect
@@ -54,7 +57,7 @@ inductive Cmd (P : PureExpr) : Type where
   -/
   | cover    (label : String) (b : P.Expr) (md : (MetaData P))
 
-abbrev Cmds (P : PureExpr) := List (Cmd P)
+@[expose] abbrev Cmds (P : PureExpr) := List (Cmd P)
 
 instance [Inhabited P.Ident]: Inhabited (Cmd P) where
   default := .havoc default default
@@ -184,4 +187,5 @@ instance [ToFormat P.Ident] [ToFormat P.Expr] [ToFormat P.Ty]
 
 ---------------------------------------------------------------------
 
+end -- public section
 end Imperative

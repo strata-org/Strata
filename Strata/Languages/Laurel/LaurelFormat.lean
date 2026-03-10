@@ -9,7 +9,7 @@ import Strata.Languages.Laurel.Laurel
 namespace Strata
 namespace Laurel
 
-open Std (Format)
+open Std (Format format)
 open Std.Format
 
 def formatOperation : Operation → Format
@@ -49,7 +49,7 @@ def formatHighTypeVal : HighType → Format
   | .TTypedField valueType => "Field[" ++ formatHighType valueType ++ "]"
   | .TSet elementType => "Set[" ++ formatHighType elementType ++ "]"
   | .TMap keyType valueType => "Map[" ++ formatHighType keyType ++ ", " ++ formatHighType valueType ++ "]"
-  | .UserDefined name => Format.text name
+  | .UserDefined ref => format ref
   | .Applied base args =>
       Format.text "(" ++ formatHighType base ++ " " ++
       Format.joinSep (args.map formatHighType) " " ++ ")"
@@ -78,8 +78,8 @@ def formatStmtExprVal (s : StmtExpr) : Format :=
       | some e => " else " ++ formatStmtExpr e
   | .Block stmts _ =>
       group $ "{" ++ nestD (line ++ joinSep (stmts.map formatStmtExpr) (";" ++ line)) ++ line ++ "}"
-  | .LocalVariable name ty init =>
-      "var " ++ Format.text name ++ ": " ++ formatHighType ty ++
+  | .LocalVariable defn ty init =>
+      "var " ++ format defn ++ ": " ++ formatHighType ty ++
       match init with
       | none => ""
       | some e => " := " ++ formatStmtExpr e
@@ -96,24 +96,24 @@ def formatStmtExprVal (s : StmtExpr) : Format :=
   | .LiteralInt n => Format.text (toString n)
   | .LiteralBool b => if b then "true" else "false"
   | .LiteralString s => "\"" ++ Format.text s ++ "\""
-  | .Identifier name => Format.text name
+  | .Identifier ref => format ref
   | .Assign [single] value =>
       formatStmtExpr single ++ " := " ++ formatStmtExpr value
   | .Assign targets value =>
       "(" ++ Format.joinSep (targets.map formatStmtExpr) ", " ++ ")" ++ " := " ++ formatStmtExpr value
   | .FieldSelect target field =>
-      formatStmtExpr target ++ "#" ++ Format.text field
+      formatStmtExpr target ++ "#" ++ format field
   | .PureFieldUpdate target field value =>
-      formatStmtExpr target ++ " with { " ++ Format.text field ++ " := " ++ formatStmtExpr value ++ " }"
+      formatStmtExpr target ++ " with { " ++ format field ++ " := " ++ formatStmtExpr value ++ " }"
   | .StaticCall name args =>
-      Format.text name ++ "(" ++ Format.joinSep (args.map formatStmtExpr) ", " ++ ")"
+      format name ++ "(" ++ Format.joinSep (args.map formatStmtExpr) ", " ++ ")"
   | .PrimitiveOp op [a] =>
       formatOperation op ++ formatStmtExpr a
   | .PrimitiveOp op [a, b] =>
       formatStmtExpr a ++ " " ++ formatOperation op ++ " " ++ formatStmtExpr b
   | .PrimitiveOp op args =>
       formatOperation op ++ "(" ++ Format.joinSep (args.map formatStmtExpr) ", " ++ ")"
-  | .New name => "new " ++ Format.text name
+  | .New name => "new " ++ format name
   | .This => "this"
   | .ReferenceEquals lhs rhs =>
       formatStmtExpr lhs ++ " === " ++ formatStmtExpr rhs
@@ -122,12 +122,12 @@ def formatStmtExprVal (s : StmtExpr) : Format :=
   | .IsType target ty =>
       formatStmtExpr target ++ " is " ++ formatHighType ty
   | .InstanceCall target name args =>
-      formatStmtExpr target ++ "." ++ Format.text name ++ "(" ++
+      formatStmtExpr target ++ "." ++ format name ++ "(" ++
       Format.joinSep (args.map formatStmtExpr) ", " ++ ")"
-  | .Forall name ty body =>
-      "forall " ++ Format.text name ++ ": " ++ formatHighType ty ++ " => " ++ formatStmtExpr body
-  | .Exists name ty body =>
-      "exists " ++ Format.text name ++ ": " ++ formatHighType ty ++ " => " ++ formatStmtExpr body
+  | .Forall param body =>
+      "forall " ++ format param.name ++ ": " ++ formatHighType param.type ++ " => " ++ formatStmtExpr body
+  | .Exists param body =>
+      "exists " ++ format param.name ++ ": " ++ formatHighType param.type ++ " => " ++ formatStmtExpr body
   | .Assigned name => "assigned(" ++ formatStmtExpr name ++ ")"
   | .Old value => "old(" ++ formatStmtExpr value ++ ")"
   | .Fresh value => "fresh(" ++ formatStmtExpr value ++ ")"
@@ -144,7 +144,7 @@ def formatStmtExprVal (s : StmtExpr) : Format :=
 end
 
 def formatParameter (p : Parameter) : Format :=
-  Format.text p.name ++ ": " ++ formatHighType p.type
+  format p.name ++ ": " ++ formatHighType p.type
 
 def formatBody : Body → Format
   | .Transparent body => formatStmtExpr body
@@ -156,6 +156,7 @@ def formatBody : Body → Format
       | none => Format.nil
       | some e => " := " ++ formatStmtExpr e
   | .Abstract posts => "abstract" ++ Format.join (posts.map (fun p => " ensures " ++ formatStmtExpr p))
+  | .External => "external"
 
 def formatDeterminism : Determinism → Format
   | .deterministic none => "deterministic"
@@ -166,7 +167,7 @@ instance : Std.ToFormat Determinism where
   format := formatDeterminism
 
 def formatProcedure (proc : Procedure) : Format :=
-  (if proc.isFunctional then "function " else "procedure ") ++ Format.text proc.name ++
+  (if proc.isFunctional then "function " else "procedure ") ++ format proc.name ++
   "(" ++ Format.joinSep (proc.inputs.map formatParameter) ", " ++ ") returns " ++ Format.line ++
   "(" ++ Format.joinSep (proc.outputs.map formatParameter) ", " ++ ")" ++ Format.line ++
   Format.join (proc.preconditions.map (fun p => "requires " ++ formatStmtExpr p ++ Format.line)) ++
@@ -175,28 +176,28 @@ def formatProcedure (proc : Procedure) : Format :=
 
 def formatField (f : Field) : Format :=
   (if f.isMutable then "var " else "val ") ++
-  Format.text f.name ++ ": " ++ formatHighType f.type
+  format f.name ++ ": " ++ formatHighType f.type
 
 def formatCompositeType (ct : CompositeType) : Format :=
-  "composite " ++ Format.text ct.name ++
+  "composite " ++ format ct.name ++
   (if ct.extending.isEmpty then Format.nil else " extends " ++
-   Format.joinSep (ct.extending.map Format.text) ", ") ++
+   Format.joinSep (ct.extending.map format) ", ") ++
   " { " ++ Format.joinSep (ct.fields.map formatField) "; " ++ " }"
 
 def formatConstrainedType (ct : ConstrainedType) : Format :=
-  "constrained " ++ Format.text ct.name ++
-  " = " ++ Format.text ct.valueName ++ ": " ++ formatHighType ct.base ++
+  "constrained " ++ format ct.name ++
+  " = " ++ format ct.valueName ++ ": " ++ formatHighType ct.base ++
   " | " ++ formatStmtExpr ct.constraint
 
 def formatDatatypeConstructor (c : DatatypeConstructor) : Format :=
-  Format.text c.name ++
+  format c.name ++
   if c.args.isEmpty then Format.nil
-  else "(" ++ Format.joinSep (c.args.map fun (n, ty) => Format.text n ++ ": " ++ formatHighType ty) ", " ++ ")"
+  else "(" ++ Format.joinSep (c.args.map fun p => formatParameter p) ", " ++ ")"
 
 def formatDatatypeDefinition (dt : DatatypeDefinition) : Format :=
-  "datatype " ++ Format.text dt.name ++
+  "datatype " ++ format dt.name ++
   (if dt.typeArgs.isEmpty then Format.nil
-   else "(" ++ Format.joinSep (dt.typeArgs.map Format.text) ", " ++ ")") ++
+   else "(" ++ Format.joinSep (dt.typeArgs.map format) ", " ++ ")") ++
   " { " ++ Format.joinSep (dt.constructors.map formatDatatypeConstructor) ", " ++ " }"
 
 def formatTypeDefinition : TypeDefinition → Format
@@ -204,8 +205,18 @@ def formatTypeDefinition : TypeDefinition → Format
   | .Constrained ty => formatConstrainedType ty
   | .Datatype ty => formatDatatypeDefinition ty
 
+def formatConstant (c : Constant) : Format :=
+  "const " ++ format c.name ++ ": " ++ formatHighType c.type ++
+  match c.initializer with
+  | none => ""
+  | some e => " := " ++ formatStmtExpr e
+
 def formatProgram (prog : Program) : Format :=
-  Format.joinSep (prog.staticProcedures.map formatProcedure) "\n\n"
+  let types := prog.types.map formatTypeDefinition
+  let constants := prog.constants.map formatConstant
+  let fields := prog.staticFields.map formatField
+  let procs := prog.staticProcedures.map formatProcedure
+  Format.joinSep (types ++ constants ++ fields ++ procs) "\n\n"
 
 instance : Std.ToFormat Operation where
   format := formatOperation
@@ -246,10 +257,28 @@ instance : Std.ToFormat DatatypeConstructor where
 instance : Std.ToFormat DatatypeDefinition where
   format := formatDatatypeDefinition
 
+instance : Std.ToFormat Constant where
+  format := formatConstant
+
 instance : Std.ToFormat TypeDefinition where
   format := formatTypeDefinition
 
 instance : Std.ToFormat Program where
   format := formatProgram
+
+instance : Repr StmtExpr where
+  reprPrec r _ := s!"{Std.format r}"
+
+instance : Repr HighType where
+  reprPrec r _ := s!"{Std.format r}"
+
+deriving instance Repr for Strata.Laurel.Parameter
+deriving instance Repr for Strata.Laurel.Procedure
+deriving instance Repr for Strata.Laurel.Field
+deriving instance Repr for Strata.Laurel.CompositeType
+deriving instance Repr for Strata.Laurel.ConstrainedType
+deriving instance Repr for Strata.Laurel.DatatypeConstructor
+deriving instance Repr for Strata.Laurel.DatatypeDefinition
+deriving instance Repr for Strata.Laurel.Constant
 
 end Laurel
