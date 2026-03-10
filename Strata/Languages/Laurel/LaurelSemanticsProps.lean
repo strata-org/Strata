@@ -108,6 +108,10 @@ theorem HeapFieldWrite_deterministic {h h₁ h₂ : LaurelHeap}
 
 /-! ## Determinism of EvalArgs -/
 
+/-- Determinism of the non-mutual `EvalArgs` (pure expression evaluation).
+This is retained for reasoning about pure sub-expressions where `EvalStmtArgs`
+is not needed. The mutual `EvalStmtArgs_deterministic` (in the determinism
+mutual block below) handles the effectful case. -/
 theorem EvalArgs_deterministic {δ : LaurelEval} {σ : LaurelStore}
     {es : List StmtExprMd} {vs₁ vs₂ : List LaurelValue} :
     EvalArgs δ σ es vs₁ →
@@ -150,9 +154,10 @@ The proof uses mutual structural recursion on the first derivation (term-mode
 -/
 
 -- TODO: maxHeartbeats 800000 is ~4× the default. Consider extracting a helper
--- lemma for the shared call-case prefix (proc lookup, args, bind, getBody,
--- then outcome discrimination) to reduce ~150 lines of repetition and lower
--- heartbeat pressure.
+-- lemma for the shared call-case prefix (proc lookup, EvalStmtArgs, bind,
+-- getBody, then outcome discrimination) to reduce ~150 lines of repetition
+-- and lower heartbeat pressure. With EvalStmtArgs, the prefix now includes
+-- heap/store threading from argument evaluation.
 set_option maxRecDepth 4096 in
 set_option maxHeartbeats 800000 in
 mutual
@@ -182,7 +187,8 @@ theorem EvalLaurelStmt_deterministic
   | .prim_op ha1 ho1 => by
       cases H2 with
       | prim_op ha2 ho2 =>
-        have := EvalArgs_deterministic ha1 ha2; subst this
+        have ⟨hha, hsa, hvs⟩ := EvalStmtArgs_deterministic ha1 ha2
+        subst hha; subst hsa; subst hvs
         rw [ho1] at ho2; simp_all
   -- Single IH cases
   | .return_some Hv => by
@@ -326,53 +332,62 @@ theorem EvalLaurelStmt_deterministic
       cases H2 with
       | static_call Hp2 Ha2 Hb2 Hg2 Hbody2 =>
         rw [Hp] at Hp2; cases Hp2
-        have := EvalArgs_deterministic Ha Ha2; subst this
+        have ⟨hha, hsa, hvs⟩ := EvalStmtArgs_deterministic Ha Ha2
+        subst hha; subst hsa; subst hvs
         rw [Hb] at Hb2; cases Hb2; rw [Hg] at Hg2; cases Hg2
         have ⟨hh, _, ho⟩ := EvalLaurelStmt_deterministic Hbody Hbody2
         subst hh; cases ho; exact ⟨rfl, rfl, rfl⟩
       | static_call_return Hp2 Ha2 Hb2 Hg2 Hbody2 =>
         rw [Hp] at Hp2; cases Hp2
-        have := EvalArgs_deterministic Ha Ha2; subst this
+        have ⟨hha, hsa, hvs⟩ := EvalStmtArgs_deterministic Ha Ha2
+        subst hha; subst hsa; subst hvs
         rw [Hb] at Hb2; cases Hb2; rw [Hg] at Hg2; cases Hg2
         have ⟨_, _, ho⟩ := EvalLaurelStmt_deterministic Hbody Hbody2; simp at ho
       | static_call_return_void Hp2 Ha2 Hb2 Hg2 Hbody2 =>
         rw [Hp] at Hp2; cases Hp2
-        have := EvalArgs_deterministic Ha Ha2; subst this
+        have ⟨hha, hsa, hvs⟩ := EvalStmtArgs_deterministic Ha Ha2
+        subst hha; subst hsa; subst hvs
         rw [Hb] at Hb2; cases Hb2; rw [Hg] at Hg2; cases Hg2
         have ⟨_, _, ho⟩ := EvalLaurelStmt_deterministic Hbody Hbody2; simp at ho
   | .static_call_return Hp Ha Hb Hg Hbody => by
       cases H2 with
       | static_call Hp2 Ha2 Hb2 Hg2 Hbody2 =>
         rw [Hp] at Hp2; cases Hp2
-        have := EvalArgs_deterministic Ha Ha2; subst this
+        have ⟨hha, hsa, hvs⟩ := EvalStmtArgs_deterministic Ha Ha2
+        subst hha; subst hsa; subst hvs
         rw [Hb] at Hb2; cases Hb2; rw [Hg] at Hg2; cases Hg2
         have ⟨_, _, ho⟩ := EvalLaurelStmt_deterministic Hbody Hbody2; simp at ho
       | static_call_return Hp2 Ha2 Hb2 Hg2 Hbody2 =>
         rw [Hp] at Hp2; cases Hp2
-        have := EvalArgs_deterministic Ha Ha2; subst this
+        have ⟨hha, hsa, hvs⟩ := EvalStmtArgs_deterministic Ha Ha2
+        subst hha; subst hsa; subst hvs
         rw [Hb] at Hb2; cases Hb2; rw [Hg] at Hg2; cases Hg2
         have ⟨hh, _, ho⟩ := EvalLaurelStmt_deterministic Hbody Hbody2
         subst hh; cases ho; exact ⟨rfl, rfl, rfl⟩
       | static_call_return_void Hp2 Ha2 Hb2 Hg2 Hbody2 =>
         rw [Hp] at Hp2; cases Hp2
-        have := EvalArgs_deterministic Ha Ha2; subst this
+        have ⟨hha, hsa, hvs⟩ := EvalStmtArgs_deterministic Ha Ha2
+        subst hha; subst hsa; subst hvs
         rw [Hb] at Hb2; cases Hb2; rw [Hg] at Hg2; cases Hg2
         have ⟨_, _, ho⟩ := EvalLaurelStmt_deterministic Hbody Hbody2; simp at ho
   | .static_call_return_void Hp Ha Hb Hg Hbody => by
       cases H2 with
       | static_call Hp2 Ha2 Hb2 Hg2 Hbody2 =>
         rw [Hp] at Hp2; cases Hp2
-        have := EvalArgs_deterministic Ha Ha2; subst this
+        have ⟨hha, hsa, hvs⟩ := EvalStmtArgs_deterministic Ha Ha2
+        subst hha; subst hsa; subst hvs
         rw [Hb] at Hb2; cases Hb2; rw [Hg] at Hg2; cases Hg2
         have ⟨_, _, ho⟩ := EvalLaurelStmt_deterministic Hbody Hbody2; simp at ho
       | static_call_return Hp2 Ha2 Hb2 Hg2 Hbody2 =>
         rw [Hp] at Hp2; cases Hp2
-        have := EvalArgs_deterministic Ha Ha2; subst this
+        have ⟨hha, hsa, hvs⟩ := EvalStmtArgs_deterministic Ha Ha2
+        subst hha; subst hsa; subst hvs
         rw [Hb] at Hb2; cases Hb2; rw [Hg] at Hg2; cases Hg2
         have ⟨_, _, ho⟩ := EvalLaurelStmt_deterministic Hbody Hbody2; simp at ho
       | static_call_return_void Hp2 Ha2 Hb2 Hg2 Hbody2 =>
         rw [Hp] at Hp2; cases Hp2
-        have := EvalArgs_deterministic Ha Ha2; subst this
+        have ⟨hha, hsa, hvs⟩ := EvalStmtArgs_deterministic Ha Ha2
+        subst hha; subst hsa; subst hvs
         rw [Hb] at Hb2; cases Hb2; rw [Hg] at Hg2; cases Hg2
         have ⟨hh, _, ho⟩ := EvalLaurelStmt_deterministic Hbody Hbody2
         subst hh; cases ho; exact ⟨rfl, rfl, rfl⟩
@@ -420,7 +435,8 @@ theorem EvalLaurelStmt_deterministic
         have ⟨hh, hs, ho⟩ := EvalLaurelStmt_deterministic Ht Ht2
         subst hh; subst hs; cases ho
         rw [Hlook] at Hlook2; cases Hlook2; rw [Hp] at Hp2; cases Hp2
-        have := EvalArgs_deterministic Ha Ha2; subst this
+        have ⟨hha, hsa, hvs⟩ := EvalStmtArgs_deterministic Ha Ha2
+        subst hha; subst hsa; subst hvs
         rw [Hb] at Hb2; cases Hb2; rw [Hg] at Hg2; cases Hg2
         have ⟨hh2, _, ho2⟩ := EvalLaurelStmt_deterministic Hbody Hbody2
         subst hh2; cases ho2; exact ⟨rfl, rfl, rfl⟩
@@ -428,14 +444,16 @@ theorem EvalLaurelStmt_deterministic
         have ⟨hh, hs, ho⟩ := EvalLaurelStmt_deterministic Ht Ht2
         subst hh; subst hs; cases ho
         rw [Hlook] at Hlook2; cases Hlook2; rw [Hp] at Hp2; cases Hp2
-        have := EvalArgs_deterministic Ha Ha2; subst this
+        have ⟨hha, hsa, hvs⟩ := EvalStmtArgs_deterministic Ha Ha2
+        subst hha; subst hsa; subst hvs
         rw [Hb] at Hb2; cases Hb2; rw [Hg] at Hg2; cases Hg2
         have ⟨_, _, ho2⟩ := EvalLaurelStmt_deterministic Hbody Hbody2; simp at ho2
       | instance_call_return_void Ht2 Hlook2 Hp2 Ha2 Hb2 Hg2 Hbody2 =>
         have ⟨hh, hs, ho⟩ := EvalLaurelStmt_deterministic Ht Ht2
         subst hh; subst hs; cases ho
         rw [Hlook] at Hlook2; cases Hlook2; rw [Hp] at Hp2; cases Hp2
-        have := EvalArgs_deterministic Ha Ha2; subst this
+        have ⟨hha, hsa, hvs⟩ := EvalStmtArgs_deterministic Ha Ha2
+        subst hha; subst hsa; subst hvs
         rw [Hb] at Hb2; cases Hb2; rw [Hg] at Hg2; cases Hg2
         have ⟨_, _, ho2⟩ := EvalLaurelStmt_deterministic Hbody Hbody2; simp at ho2
   | .instance_call_return Ht Hlook Hp Ha Hb Hg Hbody => by
@@ -444,14 +462,16 @@ theorem EvalLaurelStmt_deterministic
         have ⟨hh, hs, ho⟩ := EvalLaurelStmt_deterministic Ht Ht2
         subst hh; subst hs; cases ho
         rw [Hlook] at Hlook2; cases Hlook2; rw [Hp] at Hp2; cases Hp2
-        have := EvalArgs_deterministic Ha Ha2; subst this
+        have ⟨hha, hsa, hvs⟩ := EvalStmtArgs_deterministic Ha Ha2
+        subst hha; subst hsa; subst hvs
         rw [Hb] at Hb2; cases Hb2; rw [Hg] at Hg2; cases Hg2
         have ⟨_, _, ho2⟩ := EvalLaurelStmt_deterministic Hbody Hbody2; simp at ho2
       | instance_call_return Ht2 Hlook2 Hp2 Ha2 Hb2 Hg2 Hbody2 =>
         have ⟨hh, hs, ho⟩ := EvalLaurelStmt_deterministic Ht Ht2
         subst hh; subst hs; cases ho
         rw [Hlook] at Hlook2; cases Hlook2; rw [Hp] at Hp2; cases Hp2
-        have := EvalArgs_deterministic Ha Ha2; subst this
+        have ⟨hha, hsa, hvs⟩ := EvalStmtArgs_deterministic Ha Ha2
+        subst hha; subst hsa; subst hvs
         rw [Hb] at Hb2; cases Hb2; rw [Hg] at Hg2; cases Hg2
         have ⟨hh2, _, ho2⟩ := EvalLaurelStmt_deterministic Hbody Hbody2
         subst hh2; cases ho2; exact ⟨rfl, rfl, rfl⟩
@@ -459,7 +479,8 @@ theorem EvalLaurelStmt_deterministic
         have ⟨hh, hs, ho⟩ := EvalLaurelStmt_deterministic Ht Ht2
         subst hh; subst hs; cases ho
         rw [Hlook] at Hlook2; cases Hlook2; rw [Hp] at Hp2; cases Hp2
-        have := EvalArgs_deterministic Ha Ha2; subst this
+        have ⟨hha, hsa, hvs⟩ := EvalStmtArgs_deterministic Ha Ha2
+        subst hha; subst hsa; subst hvs
         rw [Hb] at Hb2; cases Hb2; rw [Hg] at Hg2; cases Hg2
         have ⟨_, _, ho2⟩ := EvalLaurelStmt_deterministic Hbody Hbody2; simp at ho2
   | .instance_call_return_void Ht Hlook Hp Ha Hb Hg Hbody => by
@@ -468,24 +489,45 @@ theorem EvalLaurelStmt_deterministic
         have ⟨hh, hs, ho⟩ := EvalLaurelStmt_deterministic Ht Ht2
         subst hh; subst hs; cases ho
         rw [Hlook] at Hlook2; cases Hlook2; rw [Hp] at Hp2; cases Hp2
-        have := EvalArgs_deterministic Ha Ha2; subst this
+        have ⟨hha, hsa, hvs⟩ := EvalStmtArgs_deterministic Ha Ha2
+        subst hha; subst hsa; subst hvs
         rw [Hb] at Hb2; cases Hb2; rw [Hg] at Hg2; cases Hg2
         have ⟨_, _, ho2⟩ := EvalLaurelStmt_deterministic Hbody Hbody2; simp at ho2
       | instance_call_return Ht2 Hlook2 Hp2 Ha2 Hb2 Hg2 Hbody2 =>
         have ⟨hh, hs, ho⟩ := EvalLaurelStmt_deterministic Ht Ht2
         subst hh; subst hs; cases ho
         rw [Hlook] at Hlook2; cases Hlook2; rw [Hp] at Hp2; cases Hp2
-        have := EvalArgs_deterministic Ha Ha2; subst this
+        have ⟨hha, hsa, hvs⟩ := EvalStmtArgs_deterministic Ha Ha2
+        subst hha; subst hsa; subst hvs
         rw [Hb] at Hb2; cases Hb2; rw [Hg] at Hg2; cases Hg2
         have ⟨_, _, ho2⟩ := EvalLaurelStmt_deterministic Hbody Hbody2; simp at ho2
       | instance_call_return_void Ht2 Hlook2 Hp2 Ha2 Hb2 Hg2 Hbody2 =>
         have ⟨hh, hs, ho⟩ := EvalLaurelStmt_deterministic Ht Ht2
         subst hh; subst hs; cases ho
         rw [Hlook] at Hlook2; cases Hlook2; rw [Hp] at Hp2; cases Hp2
-        have := EvalArgs_deterministic Ha Ha2; subst this
+        have ⟨hha, hsa, hvs⟩ := EvalStmtArgs_deterministic Ha Ha2
+        subst hha; subst hsa; subst hvs
         rw [Hb] at Hb2; cases Hb2; rw [Hg] at Hg2; cases Hg2
         have ⟨hh2, _, ho2⟩ := EvalLaurelStmt_deterministic Hbody Hbody2
         subst hh2; cases ho2; exact ⟨rfl, rfl, rfl⟩
+
+theorem EvalStmtArgs_deterministic
+    {δ : LaurelEval} {π : ProcEnv} {h : LaurelHeap} {σ : LaurelStore}
+    {es : List StmtExprMd} {h₁ h₂ : LaurelHeap} {σ₁ σ₂ : LaurelStore}
+    {vs₁ vs₂ : List LaurelValue}
+    (H1 : EvalStmtArgs δ π h σ es h₁ σ₁ vs₁)
+    (H2 : EvalStmtArgs δ π h σ es h₂ σ₂ vs₂) :
+    h₁ = h₂ ∧ σ₁ = σ₂ ∧ vs₁ = vs₂ :=
+  match H1 with
+  | .nil => by cases H2; exact ⟨rfl, rfl, rfl⟩
+  | .cons He Ht => by
+      cases H2 with
+      | cons He2 Ht2 =>
+        have ⟨hh, hs, ho⟩ := EvalLaurelStmt_deterministic He He2
+        subst hh; subst hs; cases ho
+        have ⟨hh2, hs2, hvs⟩ := EvalStmtArgs_deterministic Ht Ht2
+        subst hh2; subst hs2; subst hvs
+        exact ⟨rfl, rfl, rfl⟩
 
 theorem EvalLaurelBlock_deterministic
     {δ : LaurelEval} {π : ProcEnv} {h : LaurelHeap} {σ : LaurelStore}
