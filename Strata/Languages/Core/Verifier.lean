@@ -479,7 +479,7 @@ def VCResult.isSuccess (vr : VCResult) : Bool :=
 
 def VCResult.isFailure (vr : VCResult) : Bool :=
   match vr.outcome with
-  | .ok o => o.isRefuted || o.isCanBeTrueOrFalse || o.canBeFalseAndIsReachable
+  | .ok o => o.isRefuted || o.isRefutedIfReachable || o.isCanBeTrueOrFalse || o.canBeFalseAndIsReachable
   | .error _ => false
 
 def VCResult.isUnknown (vr : VCResult) : Bool :=

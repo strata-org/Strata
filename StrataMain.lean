@@ -279,11 +279,6 @@ def pyAnalyzeCommand : Command where
       let vcResults ← match options.vcDirectory with
                       | .none => IO.FS.withTempDir runVerification
                       | .some tempDir => runVerification tempDir
-      -- Helper to determine if a VCResult represents a failure
-      let isFail (vcr : Core.VCResult) : Bool :=
-        match vcr.outcome with
-        | .error _ => true
-        | .ok outcome => outcome.isRefuted || outcome.isRefutedIfReachable || outcome.isCanBeTrueOrFalse || outcome.isReachableAndCanBeFalse
       let mut s := ""
       for vcResult in vcResults do
         -- Build location string based on available metadata
@@ -300,21 +295,18 @@ def pyAnalyzeCommand : Command where
                   if path == pyPath then
                     let pos := (Lean.FileMap.ofString srcText).toPosition fr.range.start
                     -- For failures, show at beginning; for passes, show at end
-                    if isFail vcResult then
+                    if vcResult.isFailure then
                       (s!"Assertion failed at line {pos.line}, col {pos.column}: ", "")
                     else
                       ("", s!" (at line {pos.line}, col {pos.column})")
                   else
                     -- From CorePrelude or other source, show byte offsets
-                    if isFail vcResult then
+                    if vcResult.isFailure then
                       (s!"Assertion failed at byte {fr.range.start}: ", "")
                     else
                       ("", s!" (at byte {fr.range.start})")
               | none =>
-                let isFail := match vcResult.outcome with
-                  | .error _ => true
-                  | .ok outcome => outcome.isRefuted || outcome.isRefutedIfReachable || outcome.isCanBeTrueOrFalse || outcome.isReachableAndCanBeFalse
-                if isFail then
+                if vcResult.isFailure then
                   (s!"Assertion failed at byte {fr.range.start}: ", "")
                 else
                   ("", s!" (at byte {fr.range.start})")
@@ -493,26 +485,17 @@ def pyAnalyzeLaurelCommand : Command where
                     | .file path =>
                       if path == pyPath then
                         let pos := (Lean.FileMap.ofString srcText).toPosition fr.range.start
-                        let isFail := match vcResult.outcome with
-                          | .error _ => true
-                          | .ok outcome => outcome.isRefuted || outcome.isRefutedIfReachable || outcome.isCanBeTrueOrFalse || outcome.isReachableAndCanBeFalse
-                        if isFail then
+                        if vcResult.isFailure then
                           (s!"Assertion failed at line {pos.line}, col {pos.column}: ", "")
                         else
                           ("", s!" (at line {pos.line}, col {pos.column})")
                       else
-                        let isFail := match vcResult.outcome with
-                          | .error _ => true
-                          | .ok outcome => outcome.isRefuted || outcome.isRefutedIfReachable || outcome.isCanBeTrueOrFalse || outcome.isReachableAndCanBeFalse
-                        if isFail then
+                        if vcResult.isFailure then
                           (s!"Assertion failed at byte {fr.range.start}: ", "")
                         else
                           ("", s!" (at byte {fr.range.start})")
                   | none =>
-                    let isFail := match vcResult.outcome with
-                      | .error _ => true
-                      | .ok outcome => outcome.isRefuted || outcome.isRefutedIfReachable || outcome.isCanBeTrueOrFalse || outcome.isReachableAndCanBeFalse
-                    if isFail then
+                    if vcResult.isFailure then
                       (s!"Assertion failed at byte {fr.range.start}: ", "")
                     else
                       ("", s!" (at byte {fr.range.start})")
