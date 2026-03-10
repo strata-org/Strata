@@ -110,6 +110,53 @@ example : let σ₀ := singleStore "x" (.vInt 0)
         (by intro y hne; simp [singleStore, Ne.symm hne]))
   · rfl
 
+/-! ## Assignment Return Value Tests -/
+
+-- assign_single returns the assigned value (not void)
+example : let σ₀ := singleStore "x" (.vInt 0)
+    let σ₁ := singleStore "x" (.vInt 5)
+    EvalLaurelStmt trivialEval emptyProc emptyHeap σ₀
+    (mk (.Assign [⟨.Identifier "x", emd⟩] (mk (.LiteralInt 5))))
+    emptyHeap σ₁ (.normal (.vInt 5)) :=
+  .assign_single (tmd := emd) .literal_int
+    (show singleStore "x" (.vInt 0) "x" = some (.vInt 0) by simp [singleStore])
+    (.update (v' := .vInt 0) (by simp [singleStore]) (by simp [singleStore])
+      (by intro y hne; simp [singleStore, Ne.symm hne]))
+
+/-! ## Nested Effectful Argument Tests -/
+
+-- f((x := 1), (x := 2)) with x initially 0 → args are [1, 2], final x = 2.
+-- Left-to-right: first arg assigns x := 1 (value 1), second assigns x := 2 (value 2).
+example : let σ₀ := singleStore "x" (.vInt 0)
+    let σ₁ := singleStore "x" (.vInt 1)
+    let σ₂ := singleStore "x" (.vInt 2)
+    EvalStmtArgs trivialEval emptyProc emptyHeap σ₀
+    [mk (.Assign [⟨.Identifier "x", emd⟩] (mk (.LiteralInt 1))),
+     mk (.Assign [⟨.Identifier "x", emd⟩] (mk (.LiteralInt 2)))]
+    emptyHeap σ₂ [.vInt 1, .vInt 2] :=
+  .cons
+    (.assign_single (tmd := emd) .literal_int
+      (show singleStore "x" (.vInt 0) "x" = some (.vInt 0) by simp [singleStore])
+      (.update (v' := .vInt 0) (by simp [singleStore]) (by simp [singleStore])
+        (by intro y hne; simp [singleStore, Ne.symm hne])))
+    (.cons
+      (.assign_single (tmd := emd) .literal_int
+        (show singleStore "x" (.vInt 1) "x" = some (.vInt 1) by simp [singleStore])
+        (.update (v' := .vInt 1) (by simp [singleStore]) (by simp [singleStore])
+          (by intro y hne; simp [singleStore, Ne.symm hne])))
+      .nil)
+
+-- EvalStmtArgs with pure arguments matches EvalArgs behavior
+example : EvalStmtArgs trivialEval emptyProc emptyHeap emptyStore
+    [mk (.LiteralInt 1), mk (.LiteralBool true)]
+    emptyHeap emptyStore [.vInt 1, .vBool true] :=
+  .cons .literal_int (.cons .literal_bool .nil)
+
+-- EvalStmtArgs on empty list
+example : EvalStmtArgs trivialEval emptyProc emptyHeap emptyStore
+    [] emptyHeap emptyStore [] :=
+  .nil
+
 /-! ## Block Tests -/
 
 -- Empty block evaluates to void
@@ -302,5 +349,14 @@ example : ∀ vs₁ vs₂ : List LaurelValue,
     EvalArgs trivialEval emptyStore [] vs₂ →
     vs₁ = vs₂ :=
   fun _ _ ea1 ea2 => EvalArgs_deterministic ea1 ea2
+
+-- EvalStmtArgs deterministic: evaluating the same effectful argument list yields same results
+example : ∀ (h₁ h₂ : LaurelHeap) (σ₁ σ₂ : LaurelStore) (vs₁ vs₂ : List LaurelValue),
+    EvalStmtArgs trivialEval emptyProc emptyHeap emptyStore
+      [mk (.LiteralInt 1), mk (.LiteralBool true)] h₁ σ₁ vs₁ →
+    EvalStmtArgs trivialEval emptyProc emptyHeap emptyStore
+      [mk (.LiteralInt 1), mk (.LiteralBool true)] h₂ σ₂ vs₂ →
+    h₁ = h₂ ∧ σ₁ = σ₂ ∧ vs₁ = vs₂ :=
+  fun _ _ _ _ _ _ ea1 ea2 => EvalStmtArgs_deterministic ea1 ea2
 
 end Strata.Laurel.Test
