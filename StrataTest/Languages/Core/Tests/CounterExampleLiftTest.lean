@@ -129,7 +129,7 @@ Obligation: must_be_cons
 Property: assert
 Result: ❌ fail
 Model:
-($__xs1, (~Cons #0 ~Nil))
+($__xs1, Cons(0, Nil))
 -/
 #guard_msgs in
 #eval verify datatypeCexPgm2 (options := .models)
@@ -155,7 +155,7 @@ Obligation: must_be_left
 Property: assert
 Result: ❌ fail
 Model:
-($__e1, (~Right #true))
+($__e1, Right(true))
 -/
 #guard_msgs in
 #eval verify eitherCexPgm (options := .models)

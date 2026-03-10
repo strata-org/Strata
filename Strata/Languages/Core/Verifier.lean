@@ -87,12 +87,14 @@ def encodeCore (ctx : Core.SMT.Context) (prelude : SolverM Unit)
       Imperative.SMT.addLocationInfo (P := Core.Expression) (md := md)
         (message := ("sat-message", s!"\"Property can be satisfied\""))
       Solver.assert obligationId
+      let _ ← Solver.checkSat ids
     else if validityCheck then
       -- P ∧ ¬Q satisfiable?
       Solver.comment "Validity check (P ∧ ¬Q)"
       Imperative.SMT.addLocationInfo (P := Core.Expression) (md := md)
         (message := ("unsat-message", s!"\"Property is always true\""))
       Solver.assert (← encodeTerm False (Factory.not obligationTerm) |>.run estate).1
+      let _ ← Solver.checkSat ids
 
   return (ids, estate)
 
@@ -190,10 +192,10 @@ Unreachable covers display as ❌ (error) instead of ⛔ (warning).
   ❌     always false and is reachable                  unsat    sat      yes        error      error       error                Property always false, reachable from declaration entry
   🔶     can be both true and false and is reachable    sat      sat      yes        error      note        error                Reachable, solver found models for both the property and its negation
   ⛔     unreachable                                    unsat    unsat    no         warning    warning     warning              Dead code, path unreachable
-  ➕     can be true and is reachable                   sat      unknown  yes        error      note        note                 Property can be true and is reachable, validity unknown
-  ✖️     always false if reached                        unsat    unknown  unknown    error      error       error                Property always false if reached, reachability unknown
-  ➖     can be false and is reachable                  unknown  sat      yes        error      note        error                Q can be false and path is reachable, satisfiability of Q unknown
-  ✔️     always true if reached                         unknown  unsat    unknown    pass       pass        pass                 Property always true if reached, reachability unknown
+  ➕     can be true and is reachable                   sat      unknown  yes        error      note        note                 Property can be true and is reachable, unknown if always true
+  ✖️     always false if reached                        unsat    unknown  unknown    error      error       error                Property always false if reached, unknown if reachable
+  ➖     can be false and is reachable                  unknown  sat      yes        error      note        error                Property can be false and is reachable, unknown if always false
+  ✔️     always true if reached                         unknown  unsat    unknown    pass       pass        pass                 Property always true if reached, unknown if reachable
   ❓     unknown                                        unknown  unknown  unknown    error      note        note                 Both checks inconclusive
 -/
 structure VCOutcome where
@@ -294,10 +296,14 @@ def isReachableAndCanBeFalse := canBeFalseAndIsReachable
 
 def label (o : VCOutcome) (property : Imperative.PropertyType := .assert)
     (checkLevel : CheckLevel := .minimal) (checkMode : VerificationMode := .deductive) : String :=
+  -- Unreachable is detected when both checks ran (via fullCheck annotation or full level)
+  if o.unreachable then
+    if property == .assert || property == .divisionByZero then "pass (❗path unreachable)"
+    else "fail (❗path unreachable)"
   -- Simplified labels for minimal check level
-  if checkLevel == .minimal then
+  else if checkLevel == .minimal then
     match property, checkMode with
-    | .assert, .deductive =>
+    | .assert, .deductive | .divisionByZero, .deductive =>
       -- Validity check only: unsat=pass, sat=fail, unknown=unknown
       match o.validityProperty with
       | .unsat => "pass"
@@ -310,13 +316,6 @@ def label (o : VCOutcome) (property : Imperative.PropertyType := .assert)
       match o.satisfiabilityProperty with
       | .sat _ => "satisfiable"
       | .unsat => "fail"
-      | .unknown => "unknown"
-      | .err _ => "unknown"
-    | .divisionByZero, .deductive =>
-      -- Validity check only: unsat=pass, sat=fail, unknown=unknown
-      match o.validityProperty with
-      | .unsat => "pass"
-      | .sat _ => "fail"
       | .unknown => "unknown"
       | .err _ => "unknown"
     | .cover, _ =>
@@ -337,7 +336,6 @@ def label (o : VCOutcome) (property : Imperative.PropertyType := .assert)
     else if o.passAndReachable then "always true and is reachable from declaration entry"
     else if o.alwaysFalseAndReachable then "always false and is reachable from declaration entry"
     else if o.canBeTrueOrFalseAndIsReachable then "can be both true and false and is reachable from declaration entry"
-    else if o.unreachable then "unreachable"
     else if o.satisfiableValidityUnknown then "can be true and is reachable from declaration entry"
     else if o.alwaysFalseReachabilityUnknown then "always false if reached"
     else if o.canBeFalseAndIsReachable then "can be false and is reachable from declaration entry"
@@ -346,10 +344,13 @@ def label (o : VCOutcome) (property : Imperative.PropertyType := .assert)
 
 def emoji (o : VCOutcome) (property : Imperative.PropertyType := .assert)
     (checkLevel : CheckLevel := .minimal) (checkMode : VerificationMode := .deductive) : String :=
+  -- Unreachable is detected when both checks ran
+  if o.unreachable then
+    if property == .assert || property == .divisionByZero then "✅" else "❌"
   -- Simplified emojis for minimal check level
-  if checkLevel == .minimal then
+  else if checkLevel == .minimal then
     match property, checkMode with
-    | .assert, .deductive =>
+    | .assert, .deductive | .divisionByZero, .deductive =>
       -- Validity check only: unsat=✅, sat=❌, unknown=❓
       match o.validityProperty with
       | .unsat => "✅"
@@ -364,13 +365,6 @@ def emoji (o : VCOutcome) (property : Imperative.PropertyType := .assert)
       | .unsat => "❌"
       | .unknown => "❓"
       | .err _ => "❓"
-    | .divisionByZero, .deductive =>
-      -- Validity check only: unsat=✅, sat=❌, unknown=❓
-      match o.validityProperty with
-      | .unsat => "✅"
-      | .sat _ => "❌"
-      | .unknown => "❓"
-      | .err _ => "❓"
     | .cover, _ =>
       -- Satisfiability check only: sat=✅, unsat=❌, unknown=❓
       match o.satisfiabilityProperty with
@@ -380,10 +374,7 @@ def emoji (o : VCOutcome) (property : Imperative.PropertyType := .assert)
       | .err _ => "❓"
   -- MinimalVerbose and Full: detailed emojis
   else
-    -- Handle unreachable specially
-    if o.unreachable then
-      if property == .assert then "✅" else "❌"
-    else if property == .cover && o.isSatisfiable then "✅"
+    if property == .cover && o.isSatisfiable then "✅"
     else if o.passAndReachable then "✅"
     else if o.alwaysFalseAndReachable then "❌"
     else if o.canBeTrueOrFalseAndIsReachable then "🔶"
@@ -405,21 +396,22 @@ using Core's expression formatter and for future use as program metadata.
 -/
 abbrev LExprModel := List (Expression.Ident × LExpr CoreLParams.mono)
 
-/-- Format LExprModel in Core syntax (without # prefix for constants) -/
-private def formatLExprModelValue (e : LExpr CoreLParams.mono) : Format :=
-  match e with
-  | .const _ (.intConst n) => Std.format n
-  | .const _ (.boolConst b) => Std.format b
-  | .const _ (.strConst s) => f!"\"{s}\""
-  | .op _ c _ => f!"{c}"
-  | _ => Std.format e
+/-- Format a counterexample value using the Core DDM formatter.
+    Renders constructors, applications, and primitives with Core syntax
+    (e.g. `Cons(0, Nil)`, `Right(true)`). -/
+private def formatCexValue (e : LExpr CoreLParams.mono) : Format :=
+  Core.formatExprs [e]
+
+def LExprModel.format (cex : LExprModel) : Format :=
+  match cex with
+  | [] => ""
+  | [(id, e)] => f!"({id}, {formatCexValue e})"
+  | (id, e) :: rest =>
+    let first := f!"({id}, {formatCexValue e}) "
+    rest.foldl (fun acc (id', e') => acc ++ f!"({id'}, {formatCexValue e'}) ") first
 
 instance : ToFormat LExprModel where
-  format model :=
-    match model with
-    | [] => ""
-    | [(id, v)] => f!"({id}, {formatLExprModelValue v})"
-    | pairs => Format.joinSep (pairs.map fun (id, v) => f!"({id}, {formatLExprModelValue v})") "\n"
+  format := LExprModel.format
 
 /--
 A collection of all information relevant to a verification condition's
@@ -436,10 +428,12 @@ structure VCResult where
       The contents must be consistent with the outcome, if the outcome was a failure. -/
   lexprModel : LExprModel := []
 
-/-- Mask outcome properties based on requested checks.
-    This ensures that PE-optimized results only show the checks that were requested.
-    Special handling: When masking satisfiability for a refuted property, we preserve
-    the "always false" semantic by keeping validity as the primary signal. -/
+/-- Mask outcome properties that were not requested.
+    When PE (partial evaluation) resolves a check that wasn't requested by the
+    check mode/level, we set it to `.unknown` so the label function displays
+    the appropriate message for the checks that were actually requested.
+    For example, in minimal deductive mode we only request validity, so if PE
+    also determined satisfiability, we mask it to `.unknown`. -/
 def maskOutcome (outcome : VCOutcome) (satisfiabilityCheck validityCheck : Bool) : VCOutcome :=
   if satisfiabilityCheck && validityCheck then
     -- Both checks requested: return outcome as-is
@@ -463,7 +457,9 @@ def maskOutcome (outcome : VCOutcome) (satisfiabilityCheck validityCheck : Bool)
 instance : ToFormat VCResult where
   format r :=
     match r.outcome with
-    | .error e => f!"Obligation: {r.obligation.label}\nImplementation Error: {e}"
+    | .error e =>
+      let prop := r.obligation.property
+      f!"Obligation: {r.obligation.label}\nProperty: {prop}\nResult: 🚨 Implementation Error! {e}"
     | .ok outcome =>
       let modelFmt :=
         if r.verbose >= .models && !r.lexprModel.isEmpty then
@@ -778,24 +774,14 @@ def toDiagnosticModel (vcr : Core.VCResult) : Option DiagnosticModel :=
   | .ok outcome =>
     let message? : Option String :=
       if vcr.obligation.property == .cover then
-        if outcome.isUnreachable then some "cover property is unreachable"
-        else if outcome.isSatisfiable then none  -- cover satisfied (pass)
-        else if outcome.isPass then none
-        else if outcome.isRefuted then some "cover property is not satisfiable"
-        else if outcome.isCanBeTrueOrFalse then some "cover property is not satisfiable"
-        else if outcome.isRefutedIfReachable then some "cover property is not satisfiable if reached"
-        else if outcome.isReachableAndCanBeFalse then some "cover property is not satisfiable"
-        else if outcome.isAlwaysTrueIfReachable then none
-        else some "cover property could not be checked"
+        if outcome.isSatisfiable || outcome.isPass || outcome.isAlwaysTrueIfReachable then none
+        else if outcome.isUnreachable then some "cover property is unreachable"
+        else some "cover property is not satisfiable"
       else
-        if outcome.isUnreachable then some "assertion holds vacuously (path unreachable)"
-        else if outcome.isPass then none
-        else if outcome.isRefuted then some "assertion does not hold"
-        else if outcome.isCanBeTrueOrFalse then some "assertion does not hold"
-        else if outcome.isSatisfiable then none
-        else if outcome.isRefutedIfReachable then some "assertion does not hold if reached"
-        else if outcome.isReachableAndCanBeFalse then some "assertion does not hold"
-        else if outcome.isAlwaysTrueIfReachable then none
+        if outcome.isPass || outcome.isSatisfiable || outcome.isAlwaysTrueIfReachable then none
+        else if outcome.isUnreachable then some "assertion holds vacuously (path unreachable)"
+        else if outcome.isRefuted || outcome.isCanBeTrueOrFalse || outcome.isReachableAndCanBeFalse then
+          some "assertion does not hold"
         else some "assertion could not be proved"
     message?.map fun message => { fileRange, message }
 

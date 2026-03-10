@@ -181,7 +181,8 @@ str.in.re("a", bad_re_loop(1))
 
 
 Result: Obligation: assert_0
-Implementation Error: SMT Encoding Error! Natural numbers expected as indices for re.loop.
+Property: assert
+Result: 🚨 Implementation Error! SMT Encoding Error! Natural numbers expected as indices for re.loop.
 Original expression: (~Re.Loop (~Re.Range #a #z) #1 %0)
 
 
@@ -200,7 +201,8 @@ procedure main (n : int) returns ()
 
 
 Result: Obligation: assert_1
-Implementation Error: SMT Encoding Error! Natural numbers expected as indices for re.loop.
+Property: assert
+Result: 🚨 Implementation Error! SMT Encoding Error! Natural numbers expected as indices for re.loop.
 Original expression: (~Re.Loop (~Re.Range #a #z) #1 %0)
 
 
@@ -219,11 +221,13 @@ procedure main (n : int) returns ()
 ---
 info:
 Obligation: assert_0
-Implementation Error: SMT Encoding Error! Natural numbers expected as indices for re.loop.
+Property: assert
+Result: 🚨 Implementation Error! SMT Encoding Error! Natural numbers expected as indices for re.loop.
 Original expression: (~Re.Loop (~Re.Range #a #z) #1 %0)
 
 Obligation: assert_1
-Implementation Error: SMT Encoding Error! Natural numbers expected as indices for re.loop.
+Property: assert
+Result: 🚨 Implementation Error! SMT Encoding Error! Natural numbers expected as indices for re.loop.
 Original expression: (~Re.Loop (~Re.Range #a #z) #1 %0)
 -/
 #guard_msgs in

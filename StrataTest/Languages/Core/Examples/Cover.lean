@@ -214,7 +214,7 @@ procedure Test() returns ()
 info:
 Obligation: rc_assert
 Property: assert
-Result: ✅ pass
+Result: ✅ pass (❗path unreachable)
 
 Obligation: no_rc_assert
 Property: assert
@@ -222,7 +222,7 @@ Result: ✅ pass
 
 Obligation: rc_cover
 Property: cover
-Result: ❌ fail
+Result: ❌ fail (❗path unreachable)
 
 Obligation: no_rc_cover
 Property: cover

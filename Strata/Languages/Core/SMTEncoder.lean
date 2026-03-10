@@ -650,21 +650,9 @@ def toSMTTerms (E : Env) (es : List (LExpr CoreLParams.mono)) (ctx : SMT.Context
     .ok ((et :: erestt), ctx)
 
 /--
-Encode a proof obligation into SMT terms (assumptions and obligation).
-
-This function returns the SMT terms for path conditions (P) and the obligation (Q).
-The obligation term Q is returned WITHOUT negation. The actual SMT encoding
-(including negation for validity checks) is done by encodeCore in Verifier.lean.
-
-For two-sided verification, encodeCore uses check-sat-assuming:
-- Satisfiability: (check-sat-assuming (Q)) tests if P ∧ Q is satisfiable
-- Validity: (check-sat-assuming ((not Q))) tests if P ∧ ¬Q is satisfiable
-
-For single-check verification, encodeCore uses assert + check-sat:
-- For satisfiability: (assert Q) (check-sat) tests P ∧ Q
-- For validity: (assert (not Q)) (check-sat) tests P ∧ ¬Q
-
-See encodeCore in Verifier.lean for the complete encoding logic.
+Encode a proof obligation into SMT terms: path conditions (P) and obligation (Q).
+The obligation Q is returned without negation; see `encodeCore` in Verifier.lean
+for the check-sat encoding that applies negation for validity checks.
 -/
 def ProofObligation.toSMTTerms (E : Env)
   (d : Imperative.ProofObligation Expression) (ctx : SMT.Context := SMT.Context.default)
