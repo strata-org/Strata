@@ -58,7 +58,7 @@ def verify (cmds : Commands) (verbose : Bool) :
                 Imperative.MetaData.empty "cvc5" filename.toString
                 #["--produce-models"] false false true)
         match ans with
-        | Except.ok (_, result, estate) =>
+        | Except.ok (_satResult, result, estate) =>
            let vcres := { obligation, result, estate }
            results := results.push vcres
            if result ≠ .unsat then

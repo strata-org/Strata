@@ -774,12 +774,13 @@ def toDiagnosticModel (vcr : Core.VCResult) : Option DiagnosticModel :=
   | .ok outcome =>
     let message? : Option String :=
       if vcr.obligation.property == .cover then
-        if outcome.isSatisfiable || outcome.isPass || outcome.isAlwaysTrueIfReachable then none
+        if outcome.isSatisfiable || outcome.isAlwaysTrueIfReachable then none
         else if outcome.isUnreachable then some "cover property is unreachable"
+        else if outcome.isPass then none
         else some "cover property is not satisfiable"
       else
-        if outcome.isPass || outcome.isSatisfiable || outcome.isAlwaysTrueIfReachable then none
-        else if outcome.isUnreachable then some "assertion holds vacuously (path unreachable)"
+        if outcome.isUnreachable then some "assertion holds vacuously (path unreachable)"
+        else if outcome.isPass || outcome.isSatisfiable || outcome.isAlwaysTrueIfReachable then none
         else if outcome.isRefuted || outcome.isCanBeTrueOrFalse || outcome.isReachableAndCanBeFalse then
           some "assertion does not hold"
         else some "assertion could not be proved"
