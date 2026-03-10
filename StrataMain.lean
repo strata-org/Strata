@@ -485,7 +485,10 @@ def pyAnalyzeLaurelCommand : Command where
               help := "Extract overload dispatch table from a \
                 PySpec Ion file (no Laurel translation).",
               takesArg := .repeat "ion_file" },
-            { name := "sarif", help := "Write results as SARIF to <file>.sarif." }]
+            { name := "sarif", help := "Write results as SARIF to <file>.sarif." },
+            { name := "vc-directory",
+              help := "Store VCs in SMT-Lib format in <dir>.",
+              takesArg := .arg "dir" }]
   help := "Verify a Python Ion program via the Laurel pipeline. Translates Python to Laurel to Core, then runs SMT verification."
   callback := fun v pflags => do
     let verbose := pflags.getBool "verbose"
@@ -562,13 +565,6 @@ def pyAnalyzeLaurelCommand : Command where
           -- dbg_trace (toString (Std.Format.pretty (Strata.Core.formatProgram coreProgram) 100))
           -- dbg_trace "================================="
 
-          -- Verify using incremental CoreSMT engine or batch Core verifier
-          let incremental := pflags.getBool "incremental"
-          let vcResults ←
-            if incremental then
-              verifyIncremental programDecls pySourceOpt
-            else
-              verifyBatch coreProgram pySourceOpt
 
           -- Output in SARIF format if requested
           if outputSarif then
