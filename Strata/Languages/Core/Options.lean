@@ -27,7 +27,10 @@ inductive VerificationMode where
   | deductive  -- Prove correctness (unknown is error)
   | bugFinding -- Find bugs assuming incomplete preconditions (only definite bugs are errors)
   | bugFindingAssumingCompleteSpec -- Find bugs assuming complete preconditions (any counterexample is error)
-  deriving Inhabited, Repr, DecidableEq
+  deriving Repr, DecidableEq
+
+instance : Inhabited VerificationMode where
+  default := .deductive
 
 def VerboseMode.ofBool (b : Bool) : VerboseMode :=
   match b with

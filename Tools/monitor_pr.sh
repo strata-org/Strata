@@ -8,7 +8,8 @@
 # Runs silently until the agent needs to act. Only exits when:
 #   - CI failure (exit 1) — includes filtered error log
 #   - Merge conflict with main (exit 2)
-#   - New comments/reviews on the PR (exit 3) — includes the new comments
+#   - New comments/reviews on the PR (exit 3) — includes full threads with new comments
+#   - PR merged or closed (exit 0)
 # On CI success, merges main if needed and keeps monitoring.
 #
 # Usage:
@@ -33,8 +34,7 @@ while [[ $# -gt 0 ]]; do
     -b|--branch)   BRANCH="$2"; shift 2 ;;
     -r|--repo)     REPO="$2"; shift 2 ;;
     -i|--interval) INTERVAL="$2"; shift 2 ;;
-    -n|--dry-run)  DRY_RUN=true; shift ;;
-    -h|--help)     sed -n '/^# Sentinel/,/^[^#]/{ /^#/{ s/^# \?//; p } }' "$0"; exit 0 ;;
+    -n|--dry-run)  DRY_RUN=true; shift ;;    -h|--help)     sed -n '/^# Sentinel/,/^[^#]/{ /^#/{ s/^# \?//; p } }' "$0"; exit 0 ;;
     *) echo "Unknown option: $1"; exit 4 ;;
   esac
 done
@@ -51,33 +51,109 @@ fi
 
 GH=("gh" "-R" "$REPO")
 PR_NUMBER=$("${GH[@]}" pr list --head "$BRANCH" --json number --jq '.[0].number' 2>/dev/null || true)
-MY_LOGIN=$(gh api user --jq '.login' 2>/dev/null || echo "")
+
+# Determine PR author
+PR_AUTHOR=""
+if [[ -n "$PR_NUMBER" ]]; then
+  PR_AUTHOR=$("${GH[@]}" pr view "$PR_NUMBER" --json author --jq '.author.login' 2>/dev/null || echo "")
+fi
 
 echo "Monitoring: branch=$BRANCH repo=$REPO pr=#${PR_NUMBER:-none} interval=${INTERVAL}s dry-run=$DRY_RUN"
 echo "The script is going to stop whenever: (1) a CI job fails, (2) a merge conflict with main is detected, or (3) new comments appear on the PR."
 echo "On CI success, it merges main if needed and keeps monitoring silently."
 
 # --- Helpers ---
-comment_count() {
-  [[ -z "$PR_NUMBER" ]] && { echo "0"; return; }
-  local a b c
-  a=$("${GH[@]}" pr view "$PR_NUMBER" --json comments --jq '.comments | length' 2>/dev/null || echo 0)
-  b=$(gh api "repos/$REPO/pulls/$PR_NUMBER/comments" --jq 'length' 2>/dev/null || echo 0)
-  c=$("${GH[@]}" pr view "$PR_NUMBER" --json reviews --jq '.reviews | length' 2>/dev/null || echo 0)
-  echo $((a + b + c))
+
+# Get resolved thread root IDs (cached per invocation)
+RESOLVED_IDS=""
+get_resolved_ids() {
+  if [[ -z "$RESOLVED_IDS" ]]; then
+    RESOLVED_IDS=$(gh api graphql -f query="
+      query {
+        repository(owner: \"${REPO%%/*}\", name: \"${REPO##*/}\") {
+          pullRequest(number: $PR_NUMBER) {
+            reviewThreads(first: 100) {
+              nodes { isResolved comments(first: 1) { nodes { databaseId } } }
+            }
+          }
+        }
+      }" --jq '[.data.repository.pullRequest.reviewThreads.nodes[] | select(.isResolved) | .comments.nodes[0].databaseId]' 2>/dev/null || echo "[]")
+  fi
+  echo "$RESOLVED_IDS"
 }
 
+# Check if there are unread comments (no 👀, not resolved, not 🚀-reacted)
+has_new_comments() {
+  [[ -z "$PR_NUMBER" ]] && return 1
+  local pr_count
+  pr_count=$(gh api "repos/$REPO/issues/$PR_NUMBER/comments?per_page=100" \
+    --jq "[.[] | select(.reactions.rocket == 0) | select(.reactions.eyes == 0)] | length" 2>/dev/null || echo 0)
+  local resolved
+  resolved=$(get_resolved_ids)
+  local inline_count
+  inline_count=$(gh api "repos/$REPO/pulls/$PR_NUMBER/comments?per_page=100" 2>/dev/null \
+    | jq --argjson resolved "$resolved" \
+    "[.[] | select((.in_reply_to_id // .id) as \$rid | (\$resolved | index(\$rid)) | not) | select(.reactions.eyes == 0)] | length" || echo 0)
+  [[ $((pr_count + inline_count)) -gt 0 ]]
+}
+
+# Print unread comments (no 👀 from agent, not resolved, not 🚀-reacted)
+# For inline comments, groups by thread (in_reply_to_id) and prints the full thread
 print_new_comments() {
-  local since="$1"
-  echo "=== New PR comments ==="
-  "${GH[@]}" pr view "$PR_NUMBER" --json comments \
-    --jq ".comments[] | select(.createdAt > \"$since\") | select(.author.login != \"$MY_LOGIN\") | \"[\(.author.login)] \(.body[0:200])\"" 2>/dev/null || true
-  echo "=== New inline comments ==="
-  gh api "repos/$REPO/pulls/$PR_NUMBER/comments" \
-    --jq ".[] | select(.created_at > \"$since\") | select(.user.login != \"$MY_LOGIN\") | \"[\(.user.login)] \(.path):\(.line // \"general\") - \(.body[0:200])\"" 2>/dev/null || true
-  echo "=== New reviews ==="
-  "${GH[@]}" pr view "$PR_NUMBER" --json reviews \
-    --jq ".reviews[] | select(.submittedAt > \"$since\") | select(.author.login != \"$MY_LOGIN\") | \"[\(.author.login)] \(.state) \(.body[0:200])\"" 2>/dev/null || true
+  # PR-level comments: unread = no rocket + no eyes
+  local pr_comments
+  pr_comments=$(gh api "repos/$REPO/issues/$PR_NUMBER/comments?per_page=100" \
+    --jq "[.[] | select(.reactions.rocket == 0) | select(.reactions.eyes == 0)]" 2>/dev/null || echo "[]")
+  if [[ $(echo "$pr_comments" | jq 'length') -gt 0 ]]; then
+    echo "=== PR comments (react with 🚀 to mark as resolved) ==="
+    echo "$pr_comments" | jq -r '.[] | "[comment_id=\(.id)] [\(.user.login) \(.created_at)]\n\(.body)\n"'
+  fi
+
+  # Inline review comments — fetch all, find unresolved threads with unread comments
+  local all_inline
+  all_inline=$(gh api "repos/$REPO/pulls/$PR_NUMBER/comments?per_page=100" 2>/dev/null || echo "[]")
+  local resolved_ids
+  resolved_ids=$(get_resolved_ids)
+  # Thread roots that have unread comments (no eyes, not resolved)
+  local thread_roots
+  thread_roots=$(echo "$all_inline" | jq -r --argjson resolved "$resolved_ids" \
+    "[.[] | select(.reactions.eyes == 0) | (.in_reply_to_id // .id)] | unique | . - \$resolved | .[]" 2>/dev/null || true)
+  if [[ -n "$thread_roots" ]]; then
+    echo "=== Inline review comments (full unresolved threads) ==="
+    for root_id in $thread_roots; do
+      echo "--- thread at $(echo "$all_inline" | jq -r ".[] | select(.id == $root_id) | \"\(.path):\(.line // \"general\")\"" 2>/dev/null || echo "unknown") ---"
+      echo "$all_inline" | jq -r ".[] | select(.id == $root_id or .in_reply_to_id == $root_id) | \"[comment_id=\(.id)] [\(.user.login) \(.created_at)]\n\(.body)\n\"" 2>/dev/null || true
+    done
+  fi
+
+  # Count by author for instructions
+  local unread_inline
+  unread_inline=$(echo "$all_inline" | jq --argjson resolved "$resolved_ids" \
+    "[.[] | select(.reactions.eyes == 0) | select((.in_reply_to_id // .id) as \$rid | (\$resolved | index(\$rid)) | not)]" 2>/dev/null || echo "[]")
+
+  local from_pr_author
+  from_pr_author=$(echo "$unread_inline" | jq "[.[] | select(.user.login == \"$PR_AUTHOR\")] | length" 2>/dev/null || echo 0)
+  local pr_author_pr
+  pr_author_pr=$(echo "$pr_comments" | jq "[.[] | select(.user.login == \"$PR_AUTHOR\")] | length" 2>/dev/null || echo 0)
+  from_pr_author=$((from_pr_author + pr_author_pr))
+
+  local from_others
+  from_others=$(echo "$unread_inline" | jq "[.[] | select(.user.login != \"$PR_AUTHOR\")] | length" 2>/dev/null || echo 0)
+  local others_pr
+  others_pr=$(echo "$pr_comments" | jq "[.[] | select(.user.login != \"$PR_AUTHOR\")] | length" 2>/dev/null || echo 0)
+  from_others=$((from_others + others_pr))
+
+  if [[ $((from_pr_author + from_others)) -eq 0 ]]; then
+    return
+  fi
+  echo ""
+  if [[ "$from_pr_author" -gt 0 ]]; then
+    echo "NOTE: $from_pr_author comment(s) from the PR author ($PR_AUTHOR). Address these directly, reply with a detailed message, and resolve the conversation."
+  fi
+  if [[ "$from_others" -gt 0 ]]; then
+    echo "NOTE: $from_others comment(s) from other reviewers. Prepare a recommendation for each and write it to a file for the PR author ($PR_AUTHOR) to review before responding."
+  fi
+  echo "For inline comments, add a detailed reply explaining what you did to address it, react with 🚀 if you modified code, then resolve the thread. For PR comments, react with 🚀 to mark as addressed. Then commit and push."
 }
 
 print_ci_failure() {
@@ -98,13 +174,10 @@ print_ci_failure() {
   fi
 }
 
-INITIAL_COMMENTS=$(comment_count)
-START_TIME=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 MERGE_COUNT=0
 
 stop() {
   echo "(Merged with main $MERGE_COUNT time(s) during monitoring)"
-  echo "After addressing the above, re-run this script to continue monitoring."
   exit "$1"
 }
 
@@ -112,18 +185,28 @@ GREEN_SHA=""
 
 # --- Main loop (silent until actionable) ---
 while true; do
-  # 1. New comments?
-  if [[ -n "$PR_NUMBER" ]]; then
-    cur=$(comment_count)
-    if [[ "$cur" -gt "$INITIAL_COMMENTS" ]]; then
-      echo "NEW_COMMENTS ($INITIAL_COMMENTS -> $cur)"
-      print_new_comments "$START_TIME"
-      echo "ACTION: Review the comments above, address them, then commit and push."
-      stop 3
-    fi
+  # 1. New comments since baseline?
+  if [[ -n "$PR_NUMBER" ]] && has_new_comments; then
+    echo "NEW_COMMENTS"
+    print_new_comments
+    # React with 👀 to unread PR comments
+    comment_ids=$(gh api "repos/$REPO/issues/$PR_NUMBER/comments?per_page=100" \
+      --jq "[.[] | select(.reactions.rocket == 0) | select(.reactions.eyes == 0) | .id] | .[]" 2>/dev/null || true)
+    for cid in $comment_ids; do
+      gh api "repos/$REPO/issues/comments/$cid/reactions" -f content=eyes >/dev/null 2>&1 || true
+    done
+    # React with 👀 to unread inline comments
+    resolved=$(get_resolved_ids)
+    inline_ids=$(gh api "repos/$REPO/pulls/$PR_NUMBER/comments?per_page=100" 2>/dev/null \
+      | jq -r --argjson resolved "$resolved" \
+      "[.[] | select(.reactions.eyes == 0) | select((.in_reply_to_id // .id) as \$rid | (\$resolved | index(\$rid)) | not) | .id] | .[]" || true)
+    for cid in $inline_ids; do
+      gh api "repos/$REPO/pulls/comments/$cid/reactions" -f content=eyes >/dev/null 2>&1 || true
+    done
+    stop 3
   fi
 
-  # 2. PR merged/closed? Merge conflict? (check before CI so conflicts aren't masked by old failures)
+  # 2. PR merged/closed? Merge conflict?
   if [[ -n "$PR_NUMBER" ]]; then
     PR_STATE=$("${GH[@]}" pr view "$PR_NUMBER" --json state,mergeable --jq '.state + "|" + .mergeable' 2>/dev/null || echo "UNKNOWN|UNKNOWN")
     STATE="${PR_STATE%%|*}"
@@ -185,7 +268,7 @@ while true; do
     fi
   fi
 
-  # 3. CI is green (or no run yet) — check if main needs merging
+  # 4. CI is green (or no run yet) — check if main needs merging
   if ! $DRY_RUN; then
     # Safety: verify we're on the expected branch
     CURRENT=$(git rev-parse --abbrev-ref HEAD 2>/dev/null)
@@ -202,9 +285,7 @@ while true; do
       if git merge main --no-edit >/dev/null 2>&1; then
         git push origin "$BRANCH" >/dev/null 2>&1
         MERGE_COUNT=$((MERGE_COUNT + 1))
-        # New push triggers new CI; reset comment baseline
-        INITIAL_COMMENTS=$(comment_count)
-        START_TIME=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+        RESOLVED_IDS=""  # invalidate cache after merge
       else
         git merge --abort 2>/dev/null || true
         echo "CONFLICT: Merge conflict when merging main into '$BRANCH'. Merge was aborted, repo is clean."

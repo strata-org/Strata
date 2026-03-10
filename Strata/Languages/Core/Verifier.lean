@@ -23,7 +23,22 @@ namespace Strata.SMT.Encoder
 open Strata.SMT.Encoder
 open Strata
 
--- Derived from Strata.SMT.Encoder.encode.
+/-- Encode a verification condition into SMT-LIB format.
+
+This function encodes the path conditions (P) and obligation (Q) into SMT,
+then emits check-sat commands to determine satisfiability and/or validity.
+
+When both checks are requested, uses check-sat-assuming for efficiency:
+- Satisfiability: (check-sat-assuming (Q)) tests if P ∧ Q is satisfiable
+- Validity: (check-sat-assuming ((not Q))) tests if P ∧ ¬Q is satisfiable
+
+When only one check is requested, uses assert + check-sat:
+- For satisfiability: (assert Q) (check-sat) tests P ∧ Q
+- For validity: (assert (not Q)) (check-sat) tests P ∧ ¬Q
+
+Note: The obligation term Q is encoded without negation. Negation is applied
+when needed for the validity check (line 64 for check-sat-assuming, line 77 for assert).
+-/
 def encodeCore (ctx : Core.SMT.Context) (prelude : SolverM Unit)
     (assumptionTerms : List Term) (obligationTerm : Term)
     (md : Imperative.MetaData Core.Expression)
