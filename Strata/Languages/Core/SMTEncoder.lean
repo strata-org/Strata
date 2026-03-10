@@ -650,26 +650,21 @@ def toSMTTerms (E : Env) (es : List (LExpr CoreLParams.mono)) (ctx : SMT.Context
     .ok ((et :: erestt), ctx)
 
 /--
-Encode a proof obligation -- which may be of type `assert` or `cover` -- into
-SMTLIB.
+Encode a proof obligation into SMT terms (assumptions and obligation).
 
-Under conditions `P`, `assert(Q)` is encoded into SMTLib as follows:
-```
-(assert P)
-(assert (not Q))
-(check-sat)
-```
-If the result is `unsat`, then `P ∧ ¬Q` is unsatisfiable, which means `P => Q`
-is valid. If the result is `sat`, then the assertion is violated.
+This function returns the SMT terms for path conditions (P) and the obligation (Q).
+The obligation term Q is returned WITHOUT negation. The actual SMT encoding
+(including negation for validity checks) is done by encodeCore in Verifier.lean.
 
-Under conditions `P`, `cover(Q)` is encoded into SMTLib as follows:
-```
-(assert P)
-(assert Q)
-(check-sat)
-```
-If the result is `unsat`, then `P ∧ Q` is unsatisfiable, which means that the
-cover is violated. If the result is `sat`, then the cover succeeds.
+For two-sided verification, encodeCore uses check-sat-assuming:
+- Satisfiability: (check-sat-assuming (Q)) tests if P ∧ Q is satisfiable
+- Validity: (check-sat-assuming ((not Q))) tests if P ∧ ¬Q is satisfiable
+
+For single-check verification, encodeCore uses assert + check-sat:
+- For satisfiability: (assert Q) (check-sat) tests P ∧ Q
+- For validity: (assert (not Q)) (check-sat) tests P ∧ ¬Q
+
+See encodeCore in Verifier.lean for the complete encoding logic.
 -/
 def ProofObligation.toSMTTerms (E : Env)
   (d : Imperative.ProofObligation Expression) (ctx : SMT.Context := SMT.Context.default)
