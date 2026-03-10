@@ -108,8 +108,8 @@ function "kwargs_function"{
   return: ident("typing.Any")
   overload: false
   preconditions: [
-    isinstance(kw[name], "str") "Expected name to be str"
-    value_ge(kw[count], 1) "Expected count >= 1"
+    ensure(isinstance(kw[name], "str"), "Expected name to be str")
+    ensure(kw[count] >= 1, "Expected count >= 1")
   ]
   postconditions: [
   ]
@@ -149,11 +149,13 @@ def testCase : IO Unit := do
           (pythonFile := pythonFile)
           |>.toBaseIO
       match r with
-      | .ok sigs =>
+      | .ok (sigs, warnings) =>
         let pgm := toDDMProgram sigs
         let pgmCommands := pgm.commands.map (·.mapAnn (fun _ => ()))
         let expCommands := expectedPySpec.commands.map (·.mapAnn (fun _ => ()))
         assert! pgmCommands == expCommands
+        -- from re import compile resolves via prelude without warnings
+        assert! warnings.isEmpty
       | .error e =>
         throw <| IO.userError e
 
