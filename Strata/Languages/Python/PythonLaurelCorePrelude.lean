@@ -50,7 +50,6 @@ datatype Error () {
 
 type DictStrAny;
 
-mutual
 datatype Any () {
   from_none (),
   from_bool (as_bool : bool),
@@ -62,14 +61,12 @@ datatype Any () {
   from_ListAny (as_ListAny : ListAny),
   from_ClassInstance (classname : string, instance_attributes: DictStrAny),
   exception (get_error: Error)
-};
+}
 
 datatype ListAny () {
   ListAny_nil (),
   ListAny_cons (h: Any, t: ListAny)
 };
-
-end;
 
 // /////////////////////////////////////////////////////////////////////////////////////
 //Functions that we provide to Python user
