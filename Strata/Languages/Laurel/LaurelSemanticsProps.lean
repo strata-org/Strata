@@ -67,6 +67,55 @@ theorem InitStore_deterministic {σ σ₁ σ₂ : LaurelStore} {x : Identifier} 
   · subst heq; simp_all
   · rw [Hrest1 y heq, Hrest2 y heq]
 
+/-! ## Determinism of Heap Operations -/
+
+/-
+Note on AllocHeap: AllocHeap is NOT deterministic in the allocated address.
+The constructor existentially picks any `addr` where `h addr = none`, so two
+derivations can choose different addresses, yielding different heaps. Therefore
+`AllocHeap_deterministic` (addr₁ = addr₂ ∧ h₁ = h₂) does NOT hold as stated.
+
+The full EvalLaurelStmt determinism proof will need a weaker formulation
+(e.g., heap bisimilarity up to address renaming) or AllocHeap must be made
+deterministic (e.g., pick the smallest free address). This is flagged here
+per the feature specification.
+-/
+
+theorem HeapFieldWrite_deterministic {h h₁ h₂ : LaurelHeap}
+    {addr : Nat} {field : Identifier} {v : LaurelValue} :
+    HeapFieldWrite h addr field v h₁ →
+    HeapFieldWrite h addr field v h₂ →
+    h₁ = h₂ := by
+  intro H1 H2
+  cases H1 with | write Hlook1 Hnew1 Hrest1 =>
+  cases H2 with | write Hlook2 Hnew2 Hrest2 =>
+  funext a
+  by_cases heq : addr = a
+  · subst heq
+    rw [Hlook1] at Hlook2
+    have := Option.some.inj Hlook2
+    simp_all
+  · rw [Hrest1 a heq, Hrest2 a heq]
+
+/-! ## Determinism of EvalArgs -/
+
+theorem EvalArgs_deterministic {δ : LaurelEval} {σ : LaurelStore}
+    {es : List StmtExprMd} {vs₁ vs₂ : List LaurelValue} :
+    EvalArgs δ σ es vs₁ →
+    EvalArgs δ σ es vs₂ →
+    vs₁ = vs₂ := by
+  intro H1 H2
+  induction H1 generalizing vs₂ with
+  | nil => cases H2; rfl
+  | cons hev₁ _ ih =>
+    cases H2 with
+    | cons hev₂ htail₂ =>
+      rw [hev₁] at hev₂
+      have := Option.some.inj hev₂
+      subst this
+      congr 1
+      exact ih htail₂
+
 /-! ## catchExit Properties -/
 
 theorem catchExit_normal (label : Option Identifier) (v : LaurelValue) :
