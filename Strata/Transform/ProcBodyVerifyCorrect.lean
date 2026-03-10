@@ -15,13 +15,20 @@ open Core Core.ProcBodyVerify Imperative Lambda Transform Strata.Soundness
 
 /-! ## Structural Characterization -/
 
+/-- Every statement in pre_body is either an init or an assume. -/
+def is_init_or_assume (s : Statement) : Prop :=
+  (∃ id ty md, s = Statement.init id ty none md) ∨
+  (∃ id ty e md, s = Statement.init id ty (some e) md) ∨
+  (∃ label expr md, s = Statement.assume label expr md)
+
 theorem procToVerifyStmt_structure
     (proc : Procedure) (p : Program) (st : CoreTransformState)
     (stmt : Statement) (st' : CoreTransformState)
     (h : (procToVerifyStmt proc p).run st = (Except.ok stmt, st')) :
     ∃ (label : String) (pre_body : List Statement) (bodyLabel : String) (md : MetaData Expression),
       stmt = Stmt.block label
-        (pre_body ++ [Stmt.block bodyLabel proc.body #[]] ++ ensuresToAsserts proc.spec.postconditions) md := by
+        (pre_body ++ [Stmt.block bodyLabel proc.body #[]] ++ ensuresToAsserts proc.spec.postconditions) md ∧
+      (∀ s, s ∈ pre_body → is_init_or_assume s) := by
   unfold procToVerifyStmt at h
   simp only [bind, ExceptT.bind, ExceptT.mk, pure, ExceptT.pure, ExceptT.run, StateT.bind] at h
   simp only [ExceptT.bindCont] at h
@@ -31,7 +38,28 @@ theorem procToVerifyStmt_structure
     · rename_i modifiesInits
       simp only [StateT.pure, pure, Prod.mk.injEq] at h
       obtain ⟨rfl, _⟩ := h
-      exact ⟨_, _, _, _, rfl⟩
+      refine ⟨_, _, _, _, rfl, ?_⟩
+      -- pre_body = inputInits ++ outputInits ++ modifiesInits.flatten ++ assumes
+      -- All inputInits are init _ _ none _
+      -- All outputInits are init _ _ none _
+      -- All modifiesInits are init _ _ none _ or init _ _ (some _) _
+      -- All assumes are assume _ _ _
+      intro s h_s
+      simp only [List.mem_append, List.mem_map] at h_s
+      rcases h_s with h_in | h_in
+      · -- s ∈ inputInits ++ outputInits ++ modifiesInits.flatten
+        rcases h_in with h_in | h_in
+        · -- s ∈ inputInits ++ outputInits
+          rcases h_in with ⟨⟨id, ty⟩, _, rfl⟩ | ⟨⟨id, ty⟩, _, rfl⟩
+          · left; exact ⟨_, _, _, rfl⟩
+          · left; exact ⟨_, _, _, rfl⟩
+        · -- s ∈ modifiesInits.flatten — these are init statements
+          sorry
+      · -- s ∈ assumes (requiresToAssumes)
+        unfold requiresToAssumes at h_in
+        simp only [List.mem_map] at h_in
+        obtain ⟨⟨label, check⟩, _, rfl⟩ := h_in
+        right; right; exact ⟨_, _, _, rfl⟩
     · rename_i e; exact absurd h nofun
 
 /-! ## Helper Lemmas -/
@@ -179,12 +207,6 @@ theorem assert_skips_to_terminal
         (ReflTrans.step _ _ _ (StepStmt.step_cmd (EvalCommand.cmd_sem EvalCmd.eval_assert)) (ReflTrans.refl _)))
       (ih (fun s h => h_all s (List.mem_cons.mpr (Or.inr h))))
 
-/-- Every statement in pre_body is either an init or an assume. -/
-def is_init_or_assume (s : Statement) : Prop :=
-  (∃ id ty md, s = Statement.init id ty none md) ∨
-  (∃ id ty e md, s = Statement.init id ty (some e) md) ∨
-  (∃ label expr md, s = Statement.assume label expr md)
-
 /-- The prefix of the verification block can execute to produce any state
     where preconditions hold. This requires:
     - Each init-none creates a variable with an arbitrary value (InitState)
@@ -220,7 +242,7 @@ theorem procBodyVerify_sound
     -- if the body executes to completion,
     -- then all postconditions hold at exit.
     procedure_obeys_contract π φ proc := by
-  obtain ⟨blk_label, pre_body, bodyLabel, blk_md, h_stmt_eq⟩ :=
+  obtain ⟨blk_label, pre_body, bodyLabel, blk_md, h_stmt_eq, h_pre_body⟩ :=
     procToVerifyStmt_structure proc p st stmt st' h_transform
   intro δ σ₀ σ_final δ_final h_pre h_body label check h_post_in h_default
   have h_assert_in : Statement.assert label check.expr check.md ∈
@@ -230,7 +252,7 @@ theorem procBodyVerify_sound
   rw [h_stmt_eq] at h_correct
   obtain ⟨before_a, after_a, h_split⟩ := List.append_of_mem h_assert_in
   -- Get prefix execution from the separate lemma
-  obtain ⟨δ₀, σ₀', h_prefix⟩ := prefix_can_execute π φ pre_body δ σ₀ sorry
+  obtain ⟨δ₀, σ₀', h_prefix⟩ := prefix_can_execute π φ pre_body δ σ₀ h_pre_body
   -- Build the reachability proof
   apply h_correct ⟨label, check.expr, check.md⟩
     ⟨σ_final, δ_final, some ⟨label, check.expr, check.md⟩⟩
