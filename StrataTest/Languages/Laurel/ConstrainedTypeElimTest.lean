@@ -26,7 +26,7 @@ constrained nat = x: int where x >= 0 witness 0
 procedure test(n: nat) returns (r: nat) {
   var y: nat := n;
   return y;
-}
+};
 "
 
 def parseLaurelAndElim (input : String) : IO Program := do

@@ -101,10 +101,13 @@ private def injectQuantifierConstraint (ptMap : ConstrainedTypeMap) (ty : HighTy
   | [] => body
   | _ =>
     let preds := constraints.map fun (vn, pred) => substId vn varName pred
-    let conj := preds.tail.foldl (init := preds.head!) fun acc p =>
-      ⟨.PrimitiveOp .And [acc, p], body.md⟩
-    if isForall then ⟨.PrimitiveOp .Implies [conj, body], body.md⟩
-    else ⟨.PrimitiveOp .And [conj, body], body.md⟩
+    match preds with
+    | [] => body  -- unreachable
+    | first :: rest =>
+      let conj := rest.foldl (init := first) fun acc p =>
+        ⟨.PrimitiveOp .And [acc, p], body.md⟩
+      if isForall then ⟨.PrimitiveOp .Implies [conj, body], body.md⟩
+      else ⟨.PrimitiveOp .And [conj, body], body.md⟩
 
 /-- Resolve constrained types in all type positions of an expression -/
 def resolveExpr (ptMap : ConstrainedTypeMap) : StmtExprMd → StmtExprMd
