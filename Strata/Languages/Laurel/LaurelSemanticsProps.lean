@@ -139,32 +139,26 @@ theorem evalPrimOp_deterministic (op : Operation) (args : List LaurelValue) :
 /-! ## Determinism of Evaluation -/
 
 /-
-Theorem: Laurel evaluation is deterministic.
+## Full Determinism (EvalLaurelStmt / EvalLaurelBlock)
 
-For the full relation, if a statement evaluates to two results under the
-same evaluator, procedure environment, heap, and store, those results are equal.
+Full determinism (h₁ = h₂ ∧ σ₁ = σ₂ ∧ o₁ = o₂) does NOT hold for the
+current semantics because `new_obj` uses `AllocHeap`, which existentially
+picks any free address. Two derivations can choose different addresses,
+producing different heaps and different `(.vRef addr)` outcomes.
 
-Proof sketch: By mutual induction on the evaluation derivation.
-Each constructor uniquely determines the outcome given the same inputs.
+Design options for recovering a determinism result:
+  1. **Deterministic allocator**: Change `AllocHeap` to pick a canonical
+     address (e.g., smallest free Nat). This makes full determinism provable
+     but constrains the heap model.
+  2. **Bisimilarity up to renaming**: Formulate determinism as heap
+     isomorphism modulo address permutation. More general but significantly
+     more complex to state and prove.
+  3. **Restricted determinism**: Prove determinism only for the heap-free
+     fragment (store and outcome agree when the heap is unchanged). This is
+     what the auxiliary lemmas above support.
 
-Note: Full proof requires mutual induction over EvalLaurelStmt and
-EvalLaurelBlock simultaneously. The proof is admitted here; the store
-operation determinism lemmas above are the key building blocks.
+-- TODO: Choose and implement one of the above approaches.
 -/
-
-mutual
-theorem EvalLaurelStmt_deterministic :
-    EvalLaurelStmt δ π h σ s h₁ σ₁ o₁ →
-    EvalLaurelStmt δ π h σ s h₂ σ₂ o₂ →
-    h₁ = h₂ ∧ σ₁ = σ₂ ∧ o₁ = o₂ := by
-  sorry
-
-theorem EvalLaurelBlock_deterministic :
-    EvalLaurelBlock δ π h σ ss h₁ σ₁ o₁ →
-    EvalLaurelBlock δ π h σ ss h₂ σ₂ o₂ →
-    h₁ = h₂ ∧ σ₁ = σ₂ ∧ o₁ = o₂ := by
-  sorry
-end
 
 /-! ## Block Value Semantics -/
 

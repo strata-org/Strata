@@ -257,4 +257,31 @@ example : EvalLaurelBlock trivialEval emptyProc emptyHeap emptyStore
     [] emptyHeap emptyStore (.normal .vVoid) :=
   .nil
 
+/-! ## Determinism Lemma Tests -/
+
+-- HeapFieldWrite deterministic: writing the same field yields the same heap
+example : ∀ h₁ h₂ : LaurelHeap,
+    HeapFieldWrite
+      (fun a => if a == 0 then some ("T", fun _ => none) else none)
+      0 "f" (.vInt 42) h₁ →
+    HeapFieldWrite
+      (fun a => if a == 0 then some ("T", fun _ => none) else none)
+      0 "f" (.vInt 42) h₂ →
+    h₁ = h₂ :=
+  fun _ _ hw1 hw2 => HeapFieldWrite_deterministic hw1 hw2
+
+-- EvalArgs deterministic: evaluating the same argument list yields the same values
+example : ∀ vs₁ vs₂ : List LaurelValue,
+    EvalArgs trivialEval emptyStore [mk (.LiteralInt 1), mk (.LiteralBool true)] vs₁ →
+    EvalArgs trivialEval emptyStore [mk (.LiteralInt 1), mk (.LiteralBool true)] vs₂ →
+    vs₁ = vs₂ :=
+  fun _ _ ea1 ea2 => EvalArgs_deterministic ea1 ea2
+
+-- EvalArgs deterministic on empty list
+example : ∀ vs₁ vs₂ : List LaurelValue,
+    EvalArgs trivialEval emptyStore [] vs₁ →
+    EvalArgs trivialEval emptyStore [] vs₂ →
+    vs₁ = vs₂ :=
+  fun _ _ ea1 ea2 => EvalArgs_deterministic ea1 ea2
+
 end Strata.Laurel.Test
