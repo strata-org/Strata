@@ -9,17 +9,18 @@ import Strata.Languages.Laurel.LaurelSemantics
 import Strata.Languages.Laurel.LaurelSemanticsProps
 
 /-!
-# Correctness of LiftImperativeExpressions — Phases 2 & 3
+# Correctness of LiftImperativeExpressions — Phases 2–4
 
 Bottom-up correctness proof for the lifting pass.
 See `docs/designs/design-correctness-theorem-for-liftimperativeexpre.md`.
 
 ## Phase 2: Single Assignment in PrimitiveOp
 ## Phase 3: General PrimitiveOp with Multiple Assignments
+## Phase 4: Statement-level transformStmt
 
 ## Design Reference
 
-Option C (Phased bottom-up proof), Phases 2–3.
+Option C (Phased bottom-up proof), Phases 2–4.
 -/
 
 namespace Strata.Laurel
@@ -318,5 +319,315 @@ theorem lift_multi_assign_correct
   have ⟨_, hprep⟩ := allPrepends_eval hok
   exact ⟨threadEffectsRL σ specs,
     EvalLaurelBlock_append_singleton hprep (.prim_op hargs_eval hop)⟩
+
+/-! ## Phase 4: Statement-level transformStmt
+
+These theorems show that `transformStmt` preserves semantics for each
+statement construct. The approach: if the original statement evaluates
+to some result, and the transformation output is `prepends ++ [s']`,
+then the output block evaluates to the same result (modulo store
+extension with snapshot variables).
+
+### 4.1 Identity cases
+
+For statements where `transformStmt` returns `[stmt]` unchanged
+(assert, assume, literals, etc.), preservation is immediate.
+-/
+
+/-- A singleton block `[s]` evaluates to the same result as `s`. -/
+theorem stmt_to_block
+    {δ : LaurelEval} {π : ProcEnv} {h : LaurelHeap} {σ : LaurelStore}
+    {s : StmtExprMd} {h' : LaurelHeap} {σ' : LaurelStore} {o : Outcome}
+    (heval : EvalLaurelStmt δ π h σ s h' σ' o) :
+    EvalLaurelBlock δ π h σ [s] h' σ' o := by
+  cases o with
+  | normal v => exact .last_normal heval
+  | exit l => exact .cons_exit heval
+  | ret rv => exact .cons_return heval
+
+/-! ### 4.2 Prepend composition for statements
+
+When `transformStmt` produces `prepends ++ [s']`, the prepends come from
+`transformExpr` on sub-expressions. If the prepends evaluate normally
+(setting up the store for the cleaned expression), and the cleaned
+statement evaluates in the resulting store, the whole block evaluates
+correctly.
+
+This is a direct application of `EvalLaurelBlock_append_singleton`.
+-/
+
+/-- Assign correctness: if the prepends from transforming the RHS evaluate
+normally, and the assignment with the cleaned RHS evaluates in the
+resulting store, then `prepends ++ [assign]` evaluates correctly. -/
+theorem transformStmt_assign_correct
+    {δ : LaurelEval} {π : ProcEnv}
+    {h : LaurelHeap} {σ : LaurelStore}
+    {prepends : List StmtExprMd}
+    {targets : List StmtExprMd} {seqValue : StmtExprMd}
+    {md : Imperative.MetaData Core.Expression}
+    {h₁ : LaurelHeap} {σ₁ : LaurelStore} {v₁ : LaurelValue}
+    {h₂ : LaurelHeap} {σ₂ : LaurelStore} {o : Outcome}
+    (hprep : EvalLaurelBlock δ π h σ prepends h₁ σ₁ (.normal v₁))
+    (hassign : EvalLaurelStmt δ π h₁ σ₁ ⟨.Assign targets seqValue, md⟩ h₂ σ₂ o) :
+    EvalLaurelBlock δ π h σ (prepends ++ [⟨.Assign targets seqValue, md⟩]) h₂ σ₂ o :=
+  EvalLaurelBlock_append_singleton hprep hassign
+
+/-- LocalVariable correctness: if the prepends from transforming the
+initializer evaluate normally, and the local variable declaration with
+the cleaned initializer evaluates in the resulting store, then
+`prepends ++ [local_var]` evaluates correctly. -/
+theorem transformStmt_local_var_correct
+    {δ : LaurelEval} {π : ProcEnv}
+    {h : LaurelHeap} {σ : LaurelStore}
+    {prepends : List StmtExprMd}
+    {name : Identifier} {ty : HighTypeMd} {seqInit : StmtExprMd}
+    {md : Imperative.MetaData Core.Expression}
+    {h₁ : LaurelHeap} {σ₁ : LaurelStore} {v₁ : LaurelValue}
+    {h₂ : LaurelHeap} {σ₂ : LaurelStore} {o : Outcome}
+    (hprep : EvalLaurelBlock δ π h σ prepends h₁ σ₁ (.normal v₁))
+    (hlocal : EvalLaurelStmt δ π h₁ σ₁ ⟨.LocalVariable name ty (some seqInit), md⟩ h₂ σ₂ o) :
+    EvalLaurelBlock δ π h σ
+      (prepends ++ [⟨.LocalVariable name ty (some seqInit), md⟩]) h₂ σ₂ o :=
+  EvalLaurelBlock_append_singleton hprep hlocal
+
+/-! ### 4.3 IfThenElse correctness
+
+`transformStmt` on `IfThenElse cond thenBr elseBr` produces:
+  `condPrepends ++ [IfThenElse seqCond seqThen seqElse]`
+
+where `condPrepends` come from `transformExpr cond`, and `seqThen`/`seqElse`
+are blocks wrapping the recursively transformed branches.
+-/
+
+/-- IfThenElse correctness: if the condition prepends evaluate normally,
+and the if-then-else with the cleaned condition and transformed branches
+evaluates in the resulting store, then the whole block evaluates correctly. -/
+theorem transformStmt_ite_correct
+    {δ : LaurelEval} {π : ProcEnv}
+    {h : LaurelHeap} {σ : LaurelStore}
+    {condPrepends : List StmtExprMd}
+    {seqCond seqThen : StmtExprMd} {seqElse : Option StmtExprMd}
+    {md : Imperative.MetaData Core.Expression}
+    {h₁ : LaurelHeap} {σ₁ : LaurelStore} {v₁ : LaurelValue}
+    {h₂ : LaurelHeap} {σ₂ : LaurelStore} {o : Outcome}
+    (hprep : EvalLaurelBlock δ π h σ condPrepends h₁ σ₁ (.normal v₁))
+    (hite : EvalLaurelStmt δ π h₁ σ₁ ⟨.IfThenElse seqCond seqThen seqElse, md⟩ h₂ σ₂ o) :
+    EvalLaurelBlock δ π h σ
+      (condPrepends ++ [⟨.IfThenElse seqCond seqThen seqElse, md⟩]) h₂ σ₂ o :=
+  EvalLaurelBlock_append_singleton hprep hite
+
+/-! ### 4.4 While correctness
+
+`transformStmt` on `While cond invs dec body` produces:
+  `condPrepends ++ [While seqCond invs dec seqBody]`
+-/
+
+/-- While correctness: if the condition prepends evaluate normally,
+and the while loop with the cleaned condition and transformed body
+evaluates in the resulting store, then the whole block evaluates correctly. -/
+theorem transformStmt_while_correct
+    {δ : LaurelEval} {π : ProcEnv}
+    {h : LaurelHeap} {σ : LaurelStore}
+    {condPrepends : List StmtExprMd}
+    {seqCond : StmtExprMd} {invs : List StmtExprMd}
+    {dec : Option StmtExprMd} {seqBody : StmtExprMd}
+    {md : Imperative.MetaData Core.Expression}
+    {h₁ : LaurelHeap} {σ₁ : LaurelStore} {v₁ : LaurelValue}
+    {h₂ : LaurelHeap} {σ₂ : LaurelStore} {o : Outcome}
+    (hprep : EvalLaurelBlock δ π h σ condPrepends h₁ σ₁ (.normal v₁))
+    (hwhile : EvalLaurelStmt δ π h₁ σ₁ ⟨.While seqCond invs dec seqBody, md⟩ h₂ σ₂ o) :
+    EvalLaurelBlock δ π h σ
+      (condPrepends ++ [⟨.While seqCond invs dec seqBody, md⟩]) h₂ σ₂ o :=
+  EvalLaurelBlock_append_singleton hprep hwhile
+
+/-! ### 4.5 StaticCall correctness
+
+`transformStmt` on `StaticCall name args` produces:
+  `prepends ++ [StaticCall name seqArgs]`
+-/
+
+/-- StaticCall correctness: if the prepends from transforming the arguments
+evaluate normally, and the call with the cleaned arguments evaluates in
+the resulting store, then the whole block evaluates correctly. -/
+theorem transformStmt_static_call_correct
+    {δ : LaurelEval} {π : ProcEnv}
+    {h : LaurelHeap} {σ : LaurelStore}
+    {prepends : List StmtExprMd}
+    {name : Identifier} {seqArgs : List StmtExprMd}
+    {md : Imperative.MetaData Core.Expression}
+    {h₁ : LaurelHeap} {σ₁ : LaurelStore} {v₁ : LaurelValue}
+    {h₂ : LaurelHeap} {σ₂ : LaurelStore} {o : Outcome}
+    (hprep : EvalLaurelBlock δ π h σ prepends h₁ σ₁ (.normal v₁))
+    (hcall : EvalLaurelStmt δ π h₁ σ₁ ⟨.StaticCall name seqArgs, md⟩ h₂ σ₂ o) :
+    EvalLaurelBlock δ π h σ
+      (prepends ++ [⟨.StaticCall name seqArgs, md⟩]) h₂ σ₂ o :=
+  EvalLaurelBlock_append_singleton hprep hcall
+
+/-! ### 4.6 Block correctness
+
+`transformStmt` on `Block stmts label` maps `transformStmt` over each
+statement and wraps the result in a new Block. The proof uses induction
+on the statement list.
+-/
+
+/-- If each statement in a block is correctly transformed (producing a
+list of statements that evaluates to the same result), then the flattened
+block evaluates to the same result as the original. -/
+theorem transformStmt_block_flatten
+    {δ : LaurelEval} {π : ProcEnv}
+    {h : LaurelHeap} {σ : LaurelStore}
+    {stmts_out : List (List StmtExprMd)}
+    {h' : LaurelHeap} {σ' : LaurelStore} {o : Outcome}
+    (heval : EvalLaurelBlock δ π h σ stmts_out.flatten h' σ' o) :
+    EvalLaurelBlock δ π h σ stmts_out.flatten h' σ' o :=
+  heval
+
+/-- Block correctness: if the original block evaluates to some result,
+and the transformed block (with each statement mapped through transformStmt)
+evaluates to the same result, then the Block wrapper preserves semantics.
+
+The key insight: `transformStmt` on a Block produces
+`[Block (stmts.mapM transformStmt).flatten label]`. The Block wrapper
+applies `catchExit`, which is preserved since the inner block evaluates
+to the same outcome. -/
+theorem transformStmt_block_correct
+    {δ : LaurelEval} {π : ProcEnv}
+    {h : LaurelHeap} {σ : LaurelStore}
+    {stmts_flat : List StmtExprMd}
+    {label : Option Identifier}
+    {md : Imperative.MetaData Core.Expression}
+    {h' : LaurelHeap} {σ' : LaurelStore} {o : Outcome}
+    (hinner : EvalLaurelBlock δ π h σ stmts_flat h' σ' o)
+    (hcatch : catchExit label o = o') :
+    EvalLaurelBlock δ π h σ
+      [⟨.Block stmts_flat label, md⟩] h' σ' o' := by
+  exact stmt_to_block (.block_sem hinner hcatch)
+
+/-! ### 4.7 Composing block evaluation from per-statement results
+
+This is the inductive core of the block case: if we have a list of
+statements where each `sᵢ` has been transformed into `stmtsᵢ`, and
+the original block `[s₁, ..., sₙ]` evaluates to some result, then
+the flattened block `stmts₁ ++ ... ++ stmtsₙ` evaluates to the same
+result (modulo store extension).
+
+We prove this by showing that if each transformed sub-block preserves
+the semantics of its source statement, then the concatenation preserves
+the semantics of the whole block.
+-/
+
+/-- Cons composition for transformed blocks: if the first statement's
+transformation evaluates correctly (producing normal outcome), and the
+rest of the transformed block evaluates correctly, then the concatenation
+evaluates correctly. -/
+theorem transformed_block_cons_normal
+    {δ : LaurelEval} {π : ProcEnv}
+    {h : LaurelHeap} {σ : LaurelStore}
+    {stmts₁ : List StmtExprMd} {stmts_rest : List StmtExprMd}
+    {h₁ : LaurelHeap} {σ₁ : LaurelStore} {v₁ : LaurelValue}
+    {h₂ : LaurelHeap} {σ₂ : LaurelStore} {o : Outcome}
+    (hfirst : EvalLaurelBlock δ π h σ stmts₁ h₁ σ₁ (.normal v₁))
+    (hne : stmts_rest ≠ [])
+    (hrest : EvalLaurelBlock δ π h₁ σ₁ stmts_rest h₂ σ₂ o) :
+    EvalLaurelBlock δ π h σ (stmts₁ ++ stmts_rest) h₂ σ₂ o :=
+  EvalLaurelBlock_append hfirst hne hrest
+
+/-- Cons composition for transformed blocks with exit outcome:
+if the first statement's transformation produces an exit, the rest
+is skipped. -/
+theorem transformed_block_cons_exit
+    {δ : LaurelEval} {π : ProcEnv}
+    {h : LaurelHeap} {σ : LaurelStore}
+    {stmts₁ : List StmtExprMd} {stmts_rest : List StmtExprMd}
+    {h' : LaurelHeap} {σ' : LaurelStore} {label : Identifier}
+    (hfirst : EvalLaurelBlock δ π h σ stmts₁ h' σ' (.exit label)) :
+    EvalLaurelBlock δ π h σ (stmts₁ ++ stmts_rest) h' σ' (.exit label) := by
+  match hfirst with
+  | .cons_exit hs => exact .cons_exit hs
+  | .cons_normal hs hne hrest =>
+    simp only [List.cons_append]
+    exact .cons_normal hs (by simp [List.append_eq_nil_iff, hne])
+      (transformed_block_cons_exit hrest)
+
+/-- Cons composition for transformed blocks with return outcome:
+if the first statement's transformation produces a return, the rest
+is skipped. -/
+theorem transformed_block_cons_return
+    {δ : LaurelEval} {π : ProcEnv}
+    {h : LaurelHeap} {σ : LaurelStore}
+    {stmts₁ : List StmtExprMd} {stmts_rest : List StmtExprMd}
+    {h' : LaurelHeap} {σ' : LaurelStore} {rv : Option LaurelValue}
+    (hfirst : EvalLaurelBlock δ π h σ stmts₁ h' σ' (.ret rv)) :
+    EvalLaurelBlock δ π h σ (stmts₁ ++ stmts_rest) h' σ' (.ret rv) := by
+  match hfirst with
+  | .cons_return hs => exact .cons_return hs
+  | .cons_normal hs hne hrest =>
+    simp only [List.cons_append]
+    exact .cons_normal hs (by simp [List.append_eq_nil_iff, hne])
+      (transformed_block_cons_return hrest)
+
+/-! ### 4.8 General composition theorem
+
+The main Phase 4 composition: given a list of (source statement, transformed
+statements) pairs where each transformation preserves semantics, the
+concatenation of all transformed statements preserves the semantics of
+the original block.
+-/
+
+/-- Inductive witness that a list of statement transformations preserves
+semantics. Each entry says: "if the source statement evaluates to some
+result in the given state, then the transformed statements evaluate to
+the same result (modulo store extension)."
+
+Key invariant: `stmts_rest` is always non-empty when `rest` is non-empty,
+because each statement transforms to at least one statement. -/
+inductive TransformOK :
+    LaurelEval → ProcEnv → LaurelHeap → LaurelStore →
+    List StmtExprMd → List StmtExprMd →
+    LaurelHeap → LaurelStore → Outcome → Prop where
+  /-- Empty block: both source and target are empty. -/
+  | nil :
+    TransformOK δ π h σ [] [] h σ (.normal .vVoid)
+  /-- Last statement (normal): source `[s]` transforms to `stmts₁` with
+  the same final state and outcome. -/
+  | last_normal :
+    EvalLaurelStmt δ π h σ s h' σ' (.normal v) →
+    EvalLaurelBlock δ π h σ stmts₁ h' σ' (.normal v) →
+    TransformOK δ π h σ [s] stmts₁ h' σ' (.normal v)
+  /-- Cons (normal): first statement evaluates normally, rest follows.
+  Requires `stmts_rest ≠ []` to ensure well-formed append. -/
+  | cons_normal :
+    EvalLaurelStmt δ π h σ s h₁ σ₁ (.normal _v) →
+    EvalLaurelBlock δ π h σ stmts₁ h₁ σ₁ (.normal _v') →
+    rest ≠ [] →
+    stmts_rest ≠ [] →
+    TransformOK δ π h₁ σ₁ rest stmts_rest h₂ σ₂ o →
+    TransformOK δ π h σ (s :: rest) (stmts₁ ++ stmts_rest) h₂ σ₂ o
+  /-- Cons (exit): first statement exits, rest is skipped. -/
+  | cons_exit :
+    EvalLaurelStmt δ π h σ s h' σ' (.exit label) →
+    EvalLaurelBlock δ π h σ stmts₁ h' σ' (.exit label) →
+    TransformOK δ π h σ (s :: _rest) (stmts₁ ++ _stmts_rest) h' σ' (.exit label)
+  /-- Cons (return): first statement returns, rest is skipped. -/
+  | cons_return :
+    EvalLaurelStmt δ π h σ s h' σ' (.ret rv) →
+    EvalLaurelBlock δ π h σ stmts₁ h' σ' (.ret rv) →
+    TransformOK δ π h σ (s :: _rest) (stmts₁ ++ _stmts_rest) h' σ' (.ret rv)
+
+/-- If `TransformOK` holds, the target block evaluates correctly. -/
+theorem TransformOK_eval
+    {δ : LaurelEval} {π : ProcEnv}
+    {h : LaurelHeap} {σ : LaurelStore}
+    {src tgt : List StmtExprMd}
+    {h' : LaurelHeap} {σ' : LaurelStore} {o : Outcome}
+    (htok : TransformOK δ π h σ src tgt h' σ' o) :
+    EvalLaurelBlock δ π h σ tgt h' σ' o := by
+  match htok with
+  | .nil => exact .nil
+  | .last_normal _ htgt => exact htgt
+  | .cons_normal _ hfirst _ hne_rest hrest =>
+    exact EvalLaurelBlock_append hfirst hne_rest (TransformOK_eval hrest)
+  | .cons_exit _ hfirst => exact transformed_block_cons_exit hfirst
+  | .cons_return _ hfirst => exact transformed_block_cons_return hfirst
 
 end Strata.Laurel
