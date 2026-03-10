@@ -14,4 +14,4 @@ procedure main() {
     var f: bool := false;
     var c: bool := !f;
     assert c == true;
-}
+};

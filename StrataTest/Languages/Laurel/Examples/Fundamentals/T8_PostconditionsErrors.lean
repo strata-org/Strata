@@ -22,7 +22,7 @@ function opaqueFunction(x: int) returns (r: int)
 // The above limitation is because functions in Core do not support postconditions
 {
   x
-}
+};
 
 procedure callerOfOpaqueFunction() {
   var x: int := opaqueFunction(3);
@@ -30,7 +30,7 @@ procedure callerOfOpaqueFunction() {
 // The following assertion should fail but does not
 // Because Core does not support opaque functions
   assert x == 3;
-}
+};
 "
 
 #guard_msgs (drop info, error) in

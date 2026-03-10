@@ -20,12 +20,12 @@ composite Immutable {
     x = 3; // we can assign to an immutable field, while the target is in the constructing set.
     y = 2;
     construct this; // checks that all fields of 'this' have been assigned
-  }
+  };
 }
 
 procedure foo() {
   val immutable = Immutable.construct(); // constructor instance method can be called as a static.
-}
+};
 
 // Create immutable circle
 composite ImmutableChainOfTwo {
@@ -45,21 +45,21 @@ composite ImmutableChainOfTwo {
     first.other = second;
     construct first;
     construct second;
-  }
+  };
 
   // only used privately
   procedure allocate()
     constructor
     ensures constructing = {this} {    
     // empty body
-  }
+  };
 }
 
 procedure foo2() {
   val immutable = ImmutableChainOfTwo.construct();
   val same = immutable.other.other;
   assert immutable =&= same;
-}
+};
 
 // Helper constructor
 composite UsesHelperConstructor {
@@ -72,7 +72,7 @@ composite UsesHelperConstructor {
     ensures constructing == {this} && assigned(this.x)
   {
     this.x = 3;
-  }
+  };
 
   procedure construct() 
     constructor
@@ -82,5 +82,5 @@ composite UsesHelperConstructor {
     this.setXhelper();
     y = 2;
     construct this;
-  }
+  };
 }
