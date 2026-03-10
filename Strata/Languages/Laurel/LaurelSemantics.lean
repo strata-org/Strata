@@ -450,6 +450,19 @@ inductive EvalLaurelStmt :
     EvalLaurelStmt δ π h σ
       ⟨.Assign [⟨.FieldSelect target fieldName, tmd⟩] value, md⟩ h₃ σ₂ (.normal v)
 
+/-- Store-threading argument evaluation. Evaluates a list of arguments
+left-to-right using `EvalLaurelStmt`, threading heap and store through
+each argument. Each argument must evaluate to `.normal v`. -/
+inductive EvalStmtArgs :
+    LaurelEval → ProcEnv → LaurelHeap → LaurelStore →
+    List StmtExprMd → LaurelHeap → LaurelStore →
+    List LaurelValue → Prop where
+  | nil  : EvalStmtArgs δ π h σ [] h σ []
+  | cons :
+    EvalLaurelStmt δ π h σ e h₁ σ₁ (.normal v) →
+    EvalStmtArgs δ π h₁ σ₁ es h₂ σ₂ vs →
+    EvalStmtArgs δ π h σ (e :: es) h₂ σ₂ (v :: vs)
+
 inductive EvalLaurelBlock :
     LaurelEval → ProcEnv → LaurelHeap → LaurelStore →
     List StmtExprMd → LaurelHeap → LaurelStore → Outcome → Prop where
@@ -474,19 +487,6 @@ inductive EvalLaurelBlock :
   | cons_return :
     EvalLaurelStmt δ π h σ s h' σ' (.ret rv) →
     EvalLaurelBlock δ π h σ (s :: _rest) h' σ' (.ret rv)
-
-/-- Store-threading argument evaluation. Evaluates a list of arguments
-left-to-right using `EvalLaurelStmt`, threading heap and store through
-each argument. Each argument must evaluate to `.normal v`. -/
-inductive EvalStmtArgs :
-    LaurelEval → ProcEnv → LaurelHeap → LaurelStore →
-    List StmtExprMd → LaurelHeap → LaurelStore →
-    List LaurelValue → Prop where
-  | nil  : EvalStmtArgs δ π h σ [] h σ []
-  | cons :
-    EvalLaurelStmt δ π h σ e h₁ σ₁ (.normal v) →
-    EvalStmtArgs δ π h₁ σ₁ es h₂ σ₂ vs →
-    EvalStmtArgs δ π h σ (e :: es) h₂ σ₂ (v :: vs)
 
 end
 

@@ -65,31 +65,50 @@ example : EvalLaurelStmt trivialEval emptyProc emptyHeap (singleStore "x" (.vInt
 example : EvalLaurelStmt trivialEval emptyProc emptyHeap emptyStore
     (mk (.PrimitiveOp .Add [mk (.LiteralInt 2), mk (.LiteralInt 3)]))
     emptyHeap emptyStore (.normal (.vInt 5)) :=
-  .prim_op (.cons (by rfl) (.cons (by rfl) .nil)) (by rfl)
+  .prim_op (.cons .literal_int (.cons .literal_int .nil)) (by rfl)
 
 -- true && false = false
 example : EvalLaurelStmt trivialEval emptyProc emptyHeap emptyStore
     (mk (.PrimitiveOp .And [mk (.LiteralBool true), mk (.LiteralBool false)]))
     emptyHeap emptyStore (.normal (.vBool false)) :=
-  .prim_op (.cons (by rfl) (.cons (by rfl) .nil)) (by rfl)
+  .prim_op (.cons .literal_bool (.cons .literal_bool .nil)) (by rfl)
 
 -- !true = false
 example : EvalLaurelStmt trivialEval emptyProc emptyHeap emptyStore
     (mk (.PrimitiveOp .Not [mk (.LiteralBool true)]))
     emptyHeap emptyStore (.normal (.vBool false)) :=
-  .prim_op (.cons (by rfl) .nil) (by rfl)
+  .prim_op (.cons .literal_bool .nil) (by rfl)
 
 -- 5 < 10 = true
 example : EvalLaurelStmt trivialEval emptyProc emptyHeap emptyStore
     (mk (.PrimitiveOp .Lt [mk (.LiteralInt 5), mk (.LiteralInt 10)]))
     emptyHeap emptyStore (.normal (.vBool true)) :=
-  .prim_op (.cons (by rfl) (.cons (by rfl) .nil)) (by rfl)
+  .prim_op (.cons .literal_int (.cons .literal_int .nil)) (by rfl)
 
 -- "a" ++ "b" = "ab"
 example : EvalLaurelStmt trivialEval emptyProc emptyHeap emptyStore
     (mk (.PrimitiveOp .StrConcat [mk (.LiteralString "a"), mk (.LiteralString "b")]))
     emptyHeap emptyStore (.normal (.vString "ab")) :=
-  .prim_op (.cons (by rfl) (.cons (by rfl) .nil)) (by rfl)
+  .prim_op (.cons .literal_string (.cons .literal_string .nil)) (by rfl)
+
+/-! ## Effectful Argument Evaluation Test -/
+
+-- x + (x := 1) with x initially 0 evaluates to 0 + 1 = 1, final store x = 1.
+-- This exercises left-to-right store-threading via EvalStmtArgs.
+example : let σ₀ := singleStore "x" (.vInt 0)
+    let σ₁ := singleStore "x" (.vInt 1)
+    EvalLaurelStmt trivialEval emptyProc emptyHeap σ₀
+    (mk (.PrimitiveOp .Add [mk (.Identifier "x"),
+                            mk (.Assign [⟨.Identifier "x", emd⟩] (mk (.LiteralInt 1)))]))
+    emptyHeap σ₁ (.normal (.vInt 1)) := by
+  apply EvalLaurelStmt.prim_op (vals := [.vInt 0, .vInt 1])
+  · refine .cons (.identifier (by simp [singleStore]))
+      (.cons ?_ .nil)
+    exact .assign_single (tmd := emd) .literal_int
+      (show singleStore "x" (.vInt 0) "x" = some (.vInt 0) by simp [singleStore])
+      (.update (v' := .vInt 0) (by simp [singleStore]) (by simp [singleStore])
+        (by intro y hne; simp [singleStore, Ne.symm hne]))
+  · rfl
 
 /-! ## Block Tests -/
 
