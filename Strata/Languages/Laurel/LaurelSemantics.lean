@@ -85,6 +85,12 @@ inductive InitStore : LaurelStore → Identifier → LaurelValue → LaurelStore
 
 /-! ## Heap Operations -/
 
+/-- Heap allocation using a bump-allocator (smallest-free-address) model.
+The `alloc` constructor requires `addr` to be the smallest free address:
+all addresses below `addr` must be occupied (`(h a).isSome`).
+This invariant makes allocation deterministic but precludes heap deallocation.
+If Laurel ever needs a `free` operation, this must be relaxed to a free-list
+model, which would invalidate `AllocHeap_deterministic` and downstream proofs. -/
 inductive AllocHeap : LaurelHeap → Identifier → Nat → LaurelHeap → Prop where
   | alloc :
     h addr = none →

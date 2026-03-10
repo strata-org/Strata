@@ -139,16 +139,6 @@ theorem catchExit_none_passthrough (o : Outcome) :
     catchExit none o = o := by
   simp [catchExit]
 
-/-! ## catchExit Determinism -/
-
-theorem catchExit_deterministic {label : Option Identifier} {o₁ o₂ : Outcome} :
-    o₁ = o₂ → catchExit label o₁ = catchExit label o₂ := by
-  intro h; subst h; rfl
-
-theorem evalPrimOp_deterministic (op : Operation) (args : List LaurelValue) :
-    ∀ v₁ v₂, evalPrimOp op args = some v₁ → evalPrimOp op args = some v₂ → v₁ = v₂ := by
-  intros v₁ v₂ H1 H2; rw [H1] at H2; exact Option.some.inj H2
-
 /-! ## Determinism of Evaluation
 
 AllocHeap was made deterministic (smallest-free-address policy) so that
@@ -159,8 +149,10 @@ The proof uses mutual structural recursion on the first derivation (term-mode
 `match` on H1, then tactic-mode `cases` on H2 inside each branch).
 -/
 
-set_option maxRecDepth 4096 in
-set_option maxHeartbeats 800000 in
+-- TODO: maxHeartbeats 800000 is ~4× the default. Consider extracting a helper
+-- lemma for the shared call-case prefix (proc lookup, args, bind, getBody,
+-- then outcome discrimination) to reduce ~150 lines of repetition and lower
+-- heartbeat pressure.
 set_option maxRecDepth 4096 in
 set_option maxHeartbeats 800000 in
 mutual
