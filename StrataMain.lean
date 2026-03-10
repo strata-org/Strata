@@ -384,7 +384,10 @@ def pyAnalyzeLaurelCommand : Command where
               help := "Extract overload dispatch table from a \
                 PySpec Ion file (no Laurel translation).",
               takesArg := .repeat "ion_file" },
-            { name := "sarif", help := "Write results as SARIF to <file>.sarif." }]
+            { name := "sarif", help := "Write results as SARIF to <file>.sarif." },
+            { name := "vc-directory",
+              help := "Store VCs in SMT-Lib format in <dir>.",
+              takesArg := .arg "dir" }]
   help := "Verify a Python Ion program via the Laurel pipeline. Translates Python to Laurel to Core, then runs SMT verification."
   callback := fun v pflags => do
     let verbose := pflags.getBool "verbose"
@@ -462,11 +465,20 @@ def pyAnalyzeLaurelCommand : Command where
           -- dbg_trace "================================="
 
           -- Verify using Core verifier
-          let vcResults ← IO.FS.withTempDir (fun tempDir =>
-              EIO.toIO
-                (fun f => IO.Error.userError (toString f))
-                (Core.verify coreProgram tempDir .none
-                  { VerifyOptions.default with stopOnFirstError := false, verbose := .quiet, solver := "z3" }))
+          let baseOptions : VerifyOptions :=
+            { VerifyOptions.default with stopOnFirstError := false, verbose := .quiet, solver := "z3" }
+          let options : VerifyOptions := match pflags.getString "vc-directory" with
+            | .some dir => { baseOptions with vcDirectory := some (dir : System.FilePath) }
+            | .none => baseOptions
+          let runVerification tempDir :=
+            EIO.toIO
+              (fun f => IO.Error.userError (toString f))
+              (Core.verify coreProgram tempDir .none options)
+          let vcResults ← match options.vcDirectory with
+            | .none => IO.FS.withTempDir runVerification
+            | .some vcDir => do
+              IO.FS.createDirAll vcDir
+              runVerification vcDir
 
           -- Print results
           IO.println "\n==== Verification Results ===="
