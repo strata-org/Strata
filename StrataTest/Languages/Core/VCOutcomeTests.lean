@@ -117,7 +117,7 @@ Sat:unsat|Val:unknown ✖️ always false if reached, Always false if reached, r
 
 /--
 info:
-Sat:unknown|Val:sat ➖ can be false and is reachable from declaration entry, Can be false and reachable, unknown if always false, SARIF: Deductive level: error, BugFinding level: note
+Sat:unknown|Val:sat ➖ can be false and is reachable from declaration entry, Can be false and is reachable, unknown if always false, SARIF: Deductive level: error, BugFinding level: note
 -/
 #guard_msgs in
 #eval testOutcome (mkOutcome (Imperative.SMT.Result.unknown (Ident := Core.Expression.Ident)) (.sat default)) .canBeFalseAndIsReachable
