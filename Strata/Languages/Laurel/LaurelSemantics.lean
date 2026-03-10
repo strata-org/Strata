@@ -19,9 +19,32 @@ document `docs/designs/design-formal-semantics-for-laurel-ir.md`).
 - **LaurelStore**: variable store (`Identifier → Option LaurelValue`)
 - **LaurelHeap**: object heap (`Nat → Option (Identifier × (Identifier → Option LaurelValue))`)
 - **Outcome**: non-local control flow (normal, exit, return)
-- **EvalLaurelStmt / EvalLaurelBlock**: mutually inductive big-step relations
+- **EvalLaurelStmt / EvalLaurelBlock / EvalStmtArgs**: mutually inductive big-step relations
 
 The judgment form is: `δ, π, heap, σ, stmt ⊢ heap', σ', outcome`
+
+## Argument Evaluation Model
+
+Arguments to `PrimitiveOp` and calls are evaluated left-to-right via
+`EvalStmtArgs`, which threads heap and store through each argument using
+`EvalLaurelStmt`. This supports effectful arguments (assignments, calls,
+blocks) in argument position. The judgment form is:
+
+  `δ, π, h, σ, [e₁, ..., eₙ] ⊢ h', σ', [v₁, ..., vₙ]`
+
+Each argument must evaluate to `.normal v`; non-local control flow in
+arguments (e.g., `f(return 5)`) has no derivation.
+
+The old `EvalArgs` inductive (pure, non-mutual) is retained for reasoning
+about pure sub-expressions.
+
+## Assignment Return Value
+
+`assign_single` and `assign_field` return `.normal v` (the assigned value)
+rather than `.normal .vVoid`. This models assignments as expressions (like
+C's `=` operator), which is needed for effectful argument evaluation where
+`x := 1` in expression position should evaluate to 1. Statement-level code
+discards the return value via `cons_normal`.
 
 ## Intentionally Omitted Constructs
 
@@ -35,9 +58,6 @@ The following `StmtExpr` constructors have no evaluation rules and will get stuc
 - **Multi-target `Assign`**: Only single-target assignment (identifier or field) is
   handled. Multi-target assignment (for procedures with multiple outputs) is not yet
   supported. -- TODO: Add multi-target assign rules.
-- **Argument evaluation**: Call arguments are evaluated via the pure evaluator `δ`
-  rather than `EvalLaurelStmt`, so arguments with side effects will get stuck.
-  This is a workaround for Lean 4 mutual inductive limitations.
 -/
 
 namespace Strata.Laurel
@@ -195,12 +215,12 @@ inductive EvalLaurelStmt :
     σ name = some v →
     EvalLaurelStmt δ π h σ ⟨.Identifier name, md⟩ h σ (.normal v)
 
-  -- Primitive Operations (uses non-mutual EvalArgs)
+  -- Primitive Operations (uses mutual EvalStmtArgs for effectful args)
 
   | prim_op :
-    EvalArgs δ σ args vals →
+    EvalStmtArgs δ π h σ args h' σ' vals →
     evalPrimOp op vals = some result →
-    EvalLaurelStmt δ π h σ ⟨.PrimitiveOp op args, md⟩ h σ (.normal result)
+    EvalLaurelStmt δ π h σ ⟨.PrimitiveOp op args, md⟩ h' σ' (.normal result)
 
   -- Control Flow
 
@@ -266,7 +286,7 @@ inductive EvalLaurelStmt :
     EvalLaurelStmt δ π h σ value h₁ σ₁ (.normal v) →
     σ₁ name = some _ →
     UpdateStore σ₁ name v σ₂ →
-    EvalLaurelStmt δ π h σ ⟨.Assign [⟨.Identifier name, tmd⟩] value, md⟩ h₁ σ₂ (.normal .vVoid)
+    EvalLaurelStmt δ π h σ ⟨.Assign [⟨.Identifier name, tmd⟩] value, md⟩ h₁ σ₂ (.normal v)
 
   | local_var_init :
     EvalLaurelStmt δ π h σ init h₁ σ₁ (.normal v) →
@@ -293,35 +313,33 @@ inductive EvalLaurelStmt :
     EvalLaurelStmt δ π h σ c h σ (.normal (.vBool true)) →
     EvalLaurelStmt δ π h σ ⟨.Assume c, md⟩ h σ (.normal .vVoid)
 
-  -- Static Calls (arguments evaluated via δ for simplicity)
-  -- Note: Arguments are evaluated via the pure evaluator δ rather than
-  -- EvalLaurelStmt due to Lean 4 mutual inductive limitations. This means
-  -- call arguments cannot have side effects (e.g., f(g(x)) where g modifies
-  -- the store will get stuck). See commit message for details.
+  -- Static Calls (arguments evaluated via EvalStmtArgs for effectful args)
+  -- The store after argument evaluation (σ₁) becomes the caller's store
+  -- after the call, consistent with the lifting pass model.
 
   | static_call :
     π callee = some proc →
-    EvalArgs δ σ args vals →
+    EvalStmtArgs δ π h σ args h₁ σ₁ vals →
     bindParams proc.inputs vals = some σBound →
     getBody proc = some body →
-    EvalLaurelStmt δ π h σBound body h' σ' (.normal v) →
-    EvalLaurelStmt δ π h σ ⟨.StaticCall callee args, md⟩ h' σ (.normal v)
+    EvalLaurelStmt δ π h₁ σBound body h' σ' (.normal v) →
+    EvalLaurelStmt δ π h σ ⟨.StaticCall callee args, md⟩ h' σ₁ (.normal v)
 
   | static_call_return :
     π callee = some proc →
-    EvalArgs δ σ args vals →
+    EvalStmtArgs δ π h σ args h₁ σ₁ vals →
     bindParams proc.inputs vals = some σBound →
     getBody proc = some body →
-    EvalLaurelStmt δ π h σBound body h' σ' (.ret (some v)) →
-    EvalLaurelStmt δ π h σ ⟨.StaticCall callee args, md⟩ h' σ (.normal v)
+    EvalLaurelStmt δ π h₁ σBound body h' σ' (.ret (some v)) →
+    EvalLaurelStmt δ π h σ ⟨.StaticCall callee args, md⟩ h' σ₁ (.normal v)
 
   | static_call_return_void :
     π callee = some proc →
-    EvalArgs δ σ args vals →
+    EvalStmtArgs δ π h σ args h₁ σ₁ vals →
     bindParams proc.inputs vals = some σBound →
     getBody proc = some body →
-    EvalLaurelStmt δ π h σBound body h' σ' (.ret none) →
-    EvalLaurelStmt δ π h σ ⟨.StaticCall callee args, md⟩ h' σ (.normal .vVoid)
+    EvalLaurelStmt δ π h₁ σBound body h' σ' (.ret none) →
+    EvalLaurelStmt δ π h σ ⟨.StaticCall callee args, md⟩ h' σ₁ (.normal .vVoid)
 
   -- OO Features
 
@@ -349,31 +367,31 @@ inductive EvalLaurelStmt :
     EvalLaurelStmt δ π h σ target h₁ σ₁ (.normal (.vRef addr)) →
     h₁ addr = some (typeName, _) →
     π (typeName ++ "." ++ callee) = some proc →
-    EvalArgs δ σ₁ args vals →
+    EvalStmtArgs δ π h₁ σ₁ args h₂ σ₂ vals →
     bindParams proc.inputs ((.vRef addr) :: vals) = some σBound →
     getBody proc = some body →
-    EvalLaurelStmt δ π h₁ σBound body h₂ σ₂ (.normal v) →
-    EvalLaurelStmt δ π h σ ⟨.InstanceCall target callee args, md⟩ h₂ σ₁ (.normal v)
+    EvalLaurelStmt δ π h₂ σBound body h₃ σ₃ (.normal v) →
+    EvalLaurelStmt δ π h σ ⟨.InstanceCall target callee args, md⟩ h₃ σ₂ (.normal v)
 
   | instance_call_return :
     EvalLaurelStmt δ π h σ target h₁ σ₁ (.normal (.vRef addr)) →
     h₁ addr = some (typeName, _) →
     π (typeName ++ "." ++ callee) = some proc →
-    EvalArgs δ σ₁ args vals →
+    EvalStmtArgs δ π h₁ σ₁ args h₂ σ₂ vals →
     bindParams proc.inputs ((.vRef addr) :: vals) = some σBound →
     getBody proc = some body →
-    EvalLaurelStmt δ π h₁ σBound body h₂ σ₂ (.ret (some v)) →
-    EvalLaurelStmt δ π h σ ⟨.InstanceCall target callee args, md⟩ h₂ σ₁ (.normal v)
+    EvalLaurelStmt δ π h₂ σBound body h₃ σ₃ (.ret (some v)) →
+    EvalLaurelStmt δ π h σ ⟨.InstanceCall target callee args, md⟩ h₃ σ₂ (.normal v)
 
   | instance_call_return_void :
     EvalLaurelStmt δ π h σ target h₁ σ₁ (.normal (.vRef addr)) →
     h₁ addr = some (typeName, _) →
     π (typeName ++ "." ++ callee) = some proc →
-    EvalArgs δ σ₁ args vals →
+    EvalStmtArgs δ π h₁ σ₁ args h₂ σ₂ vals →
     bindParams proc.inputs ((.vRef addr) :: vals) = some σBound →
     getBody proc = some body →
-    EvalLaurelStmt δ π h₁ σBound body h₂ σ₂ (.ret none) →
-    EvalLaurelStmt δ π h σ ⟨.InstanceCall target callee args, md⟩ h₂ σ₁ (.normal .vVoid)
+    EvalLaurelStmt δ π h₂ σBound body h₃ σ₃ (.ret none) →
+    EvalLaurelStmt δ π h σ ⟨.InstanceCall target callee args, md⟩ h₃ σ₂ (.normal .vVoid)
 
   | this_sem :
     σ "this" = some v →
@@ -430,7 +448,7 @@ inductive EvalLaurelStmt :
     EvalLaurelStmt δ π h₁ σ₁ value h₂ σ₂ (.normal v) →
     HeapFieldWrite h₂ addr fieldName v h₃ →
     EvalLaurelStmt δ π h σ
-      ⟨.Assign [⟨.FieldSelect target fieldName, tmd⟩] value, md⟩ h₃ σ₂ (.normal .vVoid)
+      ⟨.Assign [⟨.FieldSelect target fieldName, tmd⟩] value, md⟩ h₃ σ₂ (.normal v)
 
 inductive EvalLaurelBlock :
     LaurelEval → ProcEnv → LaurelHeap → LaurelStore →
@@ -456,6 +474,19 @@ inductive EvalLaurelBlock :
   | cons_return :
     EvalLaurelStmt δ π h σ s h' σ' (.ret rv) →
     EvalLaurelBlock δ π h σ (s :: _rest) h' σ' (.ret rv)
+
+/-- Store-threading argument evaluation. Evaluates a list of arguments
+left-to-right using `EvalLaurelStmt`, threading heap and store through
+each argument. Each argument must evaluate to `.normal v`. -/
+inductive EvalStmtArgs :
+    LaurelEval → ProcEnv → LaurelHeap → LaurelStore →
+    List StmtExprMd → LaurelHeap → LaurelStore →
+    List LaurelValue → Prop where
+  | nil  : EvalStmtArgs δ π h σ [] h σ []
+  | cons :
+    EvalLaurelStmt δ π h σ e h₁ σ₁ (.normal v) →
+    EvalStmtArgs δ π h₁ σ₁ es h₂ σ₂ vs →
+    EvalStmtArgs δ π h σ (e :: es) h₂ σ₂ (v :: vs)
 
 end
 
