@@ -10,6 +10,7 @@ composite ImmutableContainer {
 
 procedure valueReader(c: ImmutableContainer): int
   { c.value } // no reads clause needed because value is immutable
+;
 
 /*
 Translation towards SMT:

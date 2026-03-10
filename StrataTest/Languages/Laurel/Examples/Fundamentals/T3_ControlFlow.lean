@@ -23,7 +23,7 @@ function returnAtEnd(x: int) returns (r: int) {
   } else {
     return 3;
   }
-}
+};
 
 function guardInFunction(x: int) returns (r: int) {
   if (x > 0) {
@@ -35,7 +35,7 @@ function guardInFunction(x: int) returns (r: int) {
   }
 
   return 3;
-}
+};
 
 procedure testFunctions() {
   // assert letsInFunction() == 2;
@@ -48,7 +48,7 @@ procedure testFunctions() {
   assert guardInFunction(1) == 1;
   assert guardInFunction(1) == 2;
 //^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
-}
+};
 
 procedure guards(a: int) returns (r: int)
 {
@@ -66,7 +66,7 @@ procedure guards(a: int) returns (r: int)
     assert e < 3;
 //  ^^^^^^^^^^^^^ error: assertion does not hold
   return e;
-}
+};
 
 procedure dag(a: int) returns (r: int)
 {
@@ -82,7 +82,7 @@ procedure dag(a: int) returns (r: int)
 //  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
 //  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
   return b;
-}
+};
 "
 
 #guard_msgs (error, drop all) in

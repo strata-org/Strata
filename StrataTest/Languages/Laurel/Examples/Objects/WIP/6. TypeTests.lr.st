@@ -27,4 +27,4 @@ procedure typeTests(e: Extended1) {
     // unreachable, but that's OK
     var e2pass = e as Extended2; // no error
   }
-}
+};

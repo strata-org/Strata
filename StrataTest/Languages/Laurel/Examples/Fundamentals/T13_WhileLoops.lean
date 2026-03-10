@@ -21,7 +21,7 @@ procedure countDown() {
         i := i - 1;
     }
     assert i == 0;
-}
+};
 
 procedure countUp() {
     var n: int := 5;
@@ -33,7 +33,7 @@ procedure countUp() {
         i := i + 1;
     }
     assert i == n;
-}
+};
 "
 
 #guard_msgs(drop info, error) in

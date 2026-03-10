@@ -41,9 +41,12 @@ def toString (d : Decimal) : String :=
   else if e < 0 ∧ e ≥ minPrettyExponent then
     let ms := if m < 0 then "-" else ""
     let ma := m.natAbs
-    let ne := 10^(-e).natAbs
+    let width := (-e).natAbs
+    let ne := 10^width
     let md := ma % ne
-    s!"{ms}{ma / ne}.{md}"
+    let fracStr := s!"{md}"
+    let padded := String.replicate (width - fracStr.length) '0' ++ fracStr
+    s!"{ms}{ma / ne}.{padded}"
   else
     s!"{m}e{e}"
 

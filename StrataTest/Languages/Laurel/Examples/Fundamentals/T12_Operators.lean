@@ -24,7 +24,7 @@ procedure testArithmetic() {
     assert z == 7;
     var r: int := 17 % 5;
     assert r == 2;
-}
+};
 
 procedure testLogical() {
     var t: bool := true;
@@ -37,20 +37,20 @@ procedure testLogical() {
     assert c == true;
     assert t ==> t;
     assert f ==> t;
-}
+};
 
 procedure testUnary() {
     var x: int := 5;
     var y: int := -x;
     assert y == 0 - 5;
-}
+};
 
 procedure testTruncatingDiv() {
     assert 7 /t 3 == 2;
     assert 7 %t 3 == 1;
     assert (0 - 7) /t 3 == 0 - 2;
     assert (0 - 7) %t 3 == 0 - 1;
-}
+};
 "
 
 #guard_msgs(drop info, error) in

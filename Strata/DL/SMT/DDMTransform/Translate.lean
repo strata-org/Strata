@@ -256,14 +256,14 @@ private def dummy_prg_for_toString :=
 def termToString (t:SMT.Term): Except String String := do
   let ddm_term <- translateFromTerm t
   let ddm_ast := SMTDDM.Term.toAst ddm_term
-  let ctx := dummy_prg_for_toString.formatContext {}
+  let ctx := dummy_prg_for_toString.formatContext { smtStringEscaping := true }
   let s := dummy_prg_for_toString.formatState
   return ddm_ast.render ctx s |>.fst
 
 def termTypeToString (t:SMT.TermType): Except String String := do
   let ddm_term <- translateFromTermType t
   let ddm_ast := SMTDDM.SMTSort.toAst ddm_term
-  let ctx := dummy_prg_for_toString.formatContext {}
+  let ctx := dummy_prg_for_toString.formatContext { smtStringEscaping := true }
   let s := dummy_prg_for_toString.formatState
   return ddm_ast.render ctx s |>.fst
 
