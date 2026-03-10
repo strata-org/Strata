@@ -117,5 +117,23 @@ private def escapeStringLitAux (acc : String) (c : Char) : String :=
 def escapeStringLit (s : String) : String :=
   s.foldl escapeStringLitAux "\"" ++ "\""
 
+/--
+Escape a string literal for SMT-LIB 2.7 output.
+In SMT-LIB 2.7, double quotes are escaped by doubling them (`""`),
+and non-printable characters use `\u{XXXX}` escape sequences.
+Backslashes have no special meaning (they are literal).
+-/
+private def escapeSMTStringLitAux (acc : String) (c : Char) : String :=
+  if c == '"' then
+    acc ++ "\"\""
+  else if useXHex c then
+    let hex := String.ofList (Nat.toDigits 16 c.toNat)
+    s!"{acc}\\u\{{hex}}"
+  else
+    acc.push c
+
+def escapeSMTStringLit (s : String) : String :=
+  s.foldl escapeSMTStringLitAux "\"" ++ "\""
+
 end Strata
 end

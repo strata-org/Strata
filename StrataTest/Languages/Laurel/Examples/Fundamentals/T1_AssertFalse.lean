@@ -19,12 +19,12 @@ procedure foo() {
 //  ^^^^^^^^^^^^^ error: assertion does not hold
     assert false;
 //  ^^^^^^^^^^^^^ error: assertion does not hold
-}
+};
 
 procedure bar() {
     assume false;
     assert false;
-}
+};
 "
 
 #guard_msgs(drop info, error) in
