@@ -15,4 +15,4 @@ procedure main() {
 
     var diff: int := x - y;
     assert diff == 2;
-}
+};
