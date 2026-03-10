@@ -3,7 +3,8 @@
 *       @strata-org/reviewers
 
 # Laurel language
-Strata/Languages/Laurel/     @strata-org/reviewers @keyboardDrummer @fabiomadge
-StrataTest/Languages/Laurel/ @strata-org/reviewers @keyboardDrummer @fabiomadge
-Strata/Languages/Python/     @strata-org/reviewers @keyboardDrummer @fabiomadge
-StrataTest/Languages/Python/ @strata-org/reviewers @keyboardDrummer @fabiomadge
+/Strata/Languages/Laurel        @strata-org/reviewers @keyboardDrummer @fabiomadge
+/StrataTest/Languages/Laurel    @strata-org/reviewers @keyboardDrummer @fabiomadge
+/Strata/Languages/Python        @strata-org/reviewers @keyboardDrummer @fabiomadge
+/StrataTest/Languages/Python    @strata-org/reviewers @keyboardDrummer @fabiomadge
+/docs/verso                     @strata-org/reviewers @keyboardDrummer @fabiomadge
