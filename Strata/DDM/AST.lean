@@ -2266,9 +2266,9 @@ def addCommand (dialects : DialectMap) (gctx : GlobalContext) (op : Operation) :
     let dialectName := op.name.dialect
     -- Pre-register types if op has @[preRegisterTypes] metadata
     let .op decl := dialects.decl! op.name
-      | return (panic! "Expected operator declaration")
+      | .error "Expected operator declaration"
     let .isTrue h := decideProp (op.args.size = decl.argDecls.size)
-      | return (panic! "Expected arguments to match")
+      | .error "Expected arguments to match"
     let (gctx, preRegistered) ←
       match decl.metadata.preRegisterTypesLevel decl.argDecls.size with
       | some lvl =>
@@ -2293,7 +2293,7 @@ structure Program where
     match commands.foldl (init := (Except.ok {} : Except String GlobalContext))
         fun acc cmd => acc.bind (·.addCommand dialects cmd) with
     | .ok gctx => gctx
-    | .error _ => {}
+    | .error e => panic! s!"Program.globalContext: {e}"
 
 namespace Program
 
