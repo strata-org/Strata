@@ -576,6 +576,47 @@ theorem EvalLaurelBlock_deterministic
       | cons_return Hs2 => exact EvalLaurelStmt_deterministic Hs Hs2
 end
 
+/-! ## Store Operation Lemmas -/
+
+/-- InitStore on a fresh name preserves existing variable values. -/
+theorem InitStore_get_other {σ σ' : LaurelStore} {x y : Identifier} {v : LaurelValue}
+    (hinit : InitStore σ x v σ') (hne : x ≠ y) :
+    σ' y = σ y := by
+  cases hinit with | init _ _ hrest => exact hrest y hne
+
+/-- UpdateStore preserves values of other variables. -/
+theorem UpdateStore_get_other {σ σ' : LaurelStore} {x y : Identifier} {v : LaurelValue}
+    (hup : UpdateStore σ x v σ') (hne : x ≠ y) :
+    σ' y = σ y := by
+  cases hup with | update _ _ hrest => exact hrest y hne
+
+/-- UpdateStore sets the target variable. -/
+theorem UpdateStore_get_self {σ σ' : LaurelStore} {x : Identifier} {v : LaurelValue}
+    (hup : UpdateStore σ x v σ') :
+    σ' x = some v := by
+  cases hup with | update _ hnew _ => exact hnew
+
+/-- InitStore sets the target variable. -/
+theorem InitStore_get_self {σ σ' : LaurelStore} {x : Identifier} {v : LaurelValue}
+    (hinit : InitStore σ x v σ') :
+    σ' x = some v := by
+  cases hinit with | init _ hnew _ => exact hnew
+
+/-! ## Block Append Lemma -/
+
+/-- Evaluating a block `[s] ++ rest` where `s` produces `.normal` is equivalent to
+evaluating `s`, then evaluating `rest` in the resulting state. -/
+theorem EvalLaurelBlock_cons_normal_append
+    {δ : LaurelEval} {π : ProcEnv} {h : LaurelHeap} {σ : LaurelStore}
+    {s : StmtExprMd} {rest : List StmtExprMd}
+    {h₁ : LaurelHeap} {σ₁ : LaurelStore} {v : LaurelValue}
+    {h₂ : LaurelHeap} {σ₂ : LaurelStore} {o : Outcome}
+    (hs : EvalLaurelStmt δ π h σ s h₁ σ₁ (.normal v))
+    (hne : rest ≠ [])
+    (hrest : EvalLaurelBlock δ π h₁ σ₁ rest h₂ σ₂ o) :
+    EvalLaurelBlock δ π h σ (s :: rest) h₂ σ₂ o :=
+  .cons_normal hs hne hrest
+
 /-! ## Block Value Semantics -/
 
 theorem empty_block_void :
