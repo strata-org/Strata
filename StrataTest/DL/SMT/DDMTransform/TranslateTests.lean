@@ -18,10 +18,19 @@ namespace Strata.SMTDDM
 #guard_msgs in #eval (termToString
     (.app SMT.Op.add [(.prim (.int 10)), (.prim (.int (-20)))] .int))
 
-/-- info: Except.ok "(+ 0.1 0.2)" -/
+/-- info: Except.ok "(+ 0.1 0.02)" -/
 #guard_msgs in #eval (termToString
     (.app SMT.Op.add [(.prim (.real (Decimal.mk 1 (-1)))),
                       (.prim (.real (Decimal.mk 2 (-2))))] .int))
+
+/-- info: Except.ok "0.01" -/
+#guard_msgs in #eval (termToString (.prim (.real (Decimal.mk 1 (-2)))))
+
+/-- info: Except.ok "0.005" -/
+#guard_msgs in #eval (termToString (.prim (.real (Decimal.mk 5 (-3)))))
+
+/-- info: Except.ok "0.001" -/
+#guard_msgs in #eval (termToString (.prim (.real (Decimal.mk 1 (-3)))))
 
 /-- info: Except.ok "(_ bv1 32)" -/
 #guard_msgs in #eval (termToString

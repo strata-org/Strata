@@ -22,13 +22,13 @@ procedure newsAreNotEqual() {
   var c: Container := new Container;
   var d: Container := new Container;
   assert c != d;
-}
+};
 
 procedure simpleAssign() {
   var c: Container := new Container;
   c#intValue := 2;
   assert c#intValue == 2;
-}
+};
 
 procedure updatesAndAliasing()
 {
@@ -46,13 +46,13 @@ procedure updatesAndAliasing()
   var dAlias: Container := d;
   dAlias#intValue := dAlias#intValue + 1;
   assert dAlias#intValue == d#intValue;
-}
+};
 
 procedure subsequentHeapMutations(c: Container) {
   // The additional parenthesis on the next line are needed to let the parser succeed. Joe, any idea why this is needed?
   var sum: int := ((c#intValue := 1;) + c#intValue) + (c#intValue := 2;);
   assert sum == 4;
-}
+};
 
 procedure implicitEquality(c: Container, d: Container) {
   c#intValue := 1;
@@ -63,11 +63,11 @@ procedure implicitEquality(c: Container, d: Container) {
     // Somehow we can't prove this here
     // assert c != d;
   }
-}
+};
 
 procedure useBool(c: Container) returns (r: bool) {
   r := c#boolValue;
-}
+};
 
 composite SameFieldName {
   var intValue: bool
@@ -79,7 +79,7 @@ procedure sameFieldNameDifferentType(a: Container, b: SameFieldName) {
 
   assert a#intValue == 1;
   assert b#intValue;
-}
+};
 
 // Following test-cases can't be run because Core procedures are not transparent.
 // procedure modifiesFirst(c: Container, d: Container) returns (x: int) {

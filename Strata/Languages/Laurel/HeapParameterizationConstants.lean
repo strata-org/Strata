@@ -49,7 +49,7 @@ datatype Heap {
 // Read a field from the heap: readField(heap, obj, field) = Heap..data!(heap)[obj][field]
 function readField(heap: Heap, obj: Composite, field: Field): Box {
   select(select(Heap..data!(heap), obj), field)
-}
+};
 
 // Update a field in the heap
 function updateField(heap: Heap, obj: Composite, field: Field, val: Box): Heap {
@@ -57,18 +57,13 @@ function updateField(heap: Heap, obj: Composite, field: Field, val: Box): Heap {
     update(Heap..data!(heap), obj,
       update(select(Heap..data!(heap), obj), field, val)),
     Heap..nextReference!(heap))
-}
+};
 
 // Increment the heap allocation nextReference, returning a new heap
 function increment(heap: Heap): Heap {
   MkHeap(Heap..data!(heap), Heap..nextReference!(heap) + 1)
-}
+};
 
-// The #strata macro does not identify the end macro correctly,
-// because Laurel's grammar also parses # signs
-// Having this datatype here brings the parser in a state where it won't consume the #
-// A fix would be to require ';' after the body of functions/procedures
-datatype Workaround  {}
 #end
 
 /-- The Laurel Core prelude as a Laurel Program. -/

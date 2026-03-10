@@ -19,14 +19,14 @@ procedure fooReassign(): int {
   assert x == 1;
   x := x + 1;
   x
-}
+};
 
 procedure fooSingleAssign(): int {
   var x: int := 0;
   var x2: int := x + 1;
   var x3: int := x2 + 1;
   x3
-}
+};
 
 procedure fooProof() {
   var x: int := fooReassign();
@@ -34,17 +34,17 @@ procedure fooProof() {
 // The following assertions fails while it should succeed,
 // because Core does not yet support transparent procedures
 //  assert x == y;
-}
+};
 
 function aFunction(x: int): int
 {
   x
-}
+};
 
 procedure aFunctionCaller() {
   var x: int := aFunction(3);
   assert x == 3;
-}
+};
 "
 
 #guard_msgs (drop info, error) in
