@@ -2210,10 +2210,7 @@ private def addDatatypeBindings
 
   -- Step 2: Add constructor signatures and expand function templates
   let constrArg := args[b.constructorsIndex.toLevel]
-  let constructorInfo :=
-    match extractConstructorInfo dialects constrArg with
-    | .ok info => info
-    | .error e => panic! s!"Constructor extraction error: {e}"
+  let constructorInfo ← extractConstructorInfo dialects constrArg
   -- Errors from template expansion are reported during elaboration
   -- (evalBindingSpec); here we just take the updated context.
   let (gctx, _) := expandFunctionTemplates dialectName src
