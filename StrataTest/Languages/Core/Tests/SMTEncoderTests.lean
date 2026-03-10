@@ -195,6 +195,15 @@ info: "; m\n(declare-const m (Array Int Int))\n(define-fun t0 () (Array Int Int)
   (.quant () .all "x" (.some .int) (LExpr.noTrigger ())
    (.eq () (.bvar () 0) (.fvar () "x" (.some .int))))
 
+-- Test string literal containing double quotes is properly escaped for SMT-LIB 2.7
+-- In SMT-LIB 2.7, double quotes inside strings are escaped by doubling: "a""b" represents a"b
+/--
+info: "; x\n(declare-const x String)\n(define-fun t0 () String x)\n(define-fun t1 () Bool (= t0 \"{\"\"key\"\":\"\"val\"\"}\"))\n"
+-/
+#guard_msgs in
+#eval toSMTTermString
+  (.eq () (.fvar () "x" (.some .string)) (.strConst () "{\"key\":\"val\"}"))
+
 end ArrayTheory
 
 end Core
@@ -240,5 +249,33 @@ Result: ✅ pass
 -/
 #guard_msgs in
 #eval! verify simpleMapProgram (options := {Core.VerifyOptions.quiet with useArrayTheory := true})
+
+-- Test that string literals with embedded double quotes are correctly encoded for SMT
+def quotedStringProgram :=
+#strata
+program Core;
+
+var x: string;
+
+procedure Test() returns ()
+spec { ensures true; }
+{
+  assume x == "{\"key\":\"val\"}";
+  assert x == "{\"key\":\"val\"}";
+};
+#end
+
+/--
+info:
+Obligation: assert_0
+Property: assert
+Result: ✅ pass
+
+Obligation: Test_ensures_0
+Property: assert
+Result: ✅ pass
+-/
+#guard_msgs in
+#eval! verify quotedStringProgram (options := Core.VerifyOptions.quiet)
 
 end Strata
