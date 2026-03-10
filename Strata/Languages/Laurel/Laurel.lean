@@ -91,8 +91,9 @@ inductive Operation : Type where
   | StrConcat
   deriving Repr
 
+abbrev MetaData := Imperative.MetaData Core.Expression
 -- Explicit instance needed for deriving Repr in the mutual block
-instance : Repr (Imperative.MetaData Core.Expression) := inferInstance
+instance : Repr MetaData := inferInstance
 
 /--
 A wrapper that pairs a value with source-level metadata such as source
@@ -104,7 +105,7 @@ structure WithMetadata (t : Type) : Type where
   /-- The wrapped value. -/
   val : t
   /-- Source-level metadata (locations, annotations). -/
-  md : Imperative.MetaData Core.Expression
+  md : MetaData
   deriving Repr
 
 /--
