@@ -39,14 +39,14 @@ info: [Strata.Core] Type checking succeeded.
 
 VCs:
 Label: sum_post_sum_ensures_1_calls_Int.SafeDiv_0
-Property: assert
+Property: division by zero check
 Assumptions:
 sum_requires_0: $__n0 >= 0
 Obligation:
 true
 
 Label: loop_invariant_calls_Int.SafeDiv_0
-Property: assert
+Property: division by zero check
 Assumptions:
 sum_requires_0: $__n2 >= 0
 Obligation:
@@ -132,11 +132,11 @@ if 0 < $__n2 then $__s8 else 0 == $__n2 * ($__n2 + 1) / 2
 ---
 info:
 Obligation: sum_post_sum_ensures_1_calls_Int.SafeDiv_0
-Property: assert
+Property: division by zero check
 Result: ✅ pass
 
 Obligation: loop_invariant_calls_Int.SafeDiv_0
-Property: assert
+Property: division by zero check
 Result: ✅ pass
 
 Obligation: entry_invariant_0_0
