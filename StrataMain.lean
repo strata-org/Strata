@@ -357,7 +357,7 @@ def buildPySpecPrelude (pyspecPaths : Array String) : IO PySpecPrelude := do
       let existing := allOverloads.getD funcName {}
       allOverloads := allOverloads.insert funcName
         (overloads.fold (init := existing) fun acc k v => acc.insert k v)
-    match Strata.Laurel.translate result.program Strata.Python.corePreludeFunctions with
+    match Strata.Laurel.translate result.program with
     | .error diagnostics =>
       exitFailure s!"PySpec Laurel to Core translation failed for {ionPath}: {diagnostics}"
     | .ok (coreSpec, _modifiesDiags) =>
@@ -436,7 +436,7 @@ def pyAnalyzeLaurelCommand : Command where
           IO.println f!"{laurelProgram}"
 
         -- Translate Laurel to Core
-        match Strata.Laurel.translate laurelProgram ctx.preludeFunctions with
+        match Strata.Laurel.translate laurelProgram with
         | .error diagnostics =>
           exitFailure s!"Laurel to Core translation failed: {diagnostics}"
         | .ok (coreProgramDecls, modifiesDiags) =>
@@ -1079,7 +1079,7 @@ def pyTranslateLaurelCommand : Command where
     | .error e =>
       exitFailure s!"Python to Laurel translation failed: {e}"
     | .ok (laurelProgram, _) =>
-      match Strata.Laurel.translate laurelProgram Strata.Python.corePreludeFunctions with
+      match Strata.Laurel.translate laurelProgram with
       | .error diagnostics =>
         exitFailure s!"Laurel to Core translation failed: {diagnostics}"
       | .ok coreProgram =>
@@ -1104,7 +1104,7 @@ def pyAnalyzeLaurelToGotoCommand : Command where
     match laurelPgm with
     | .error e => exitFailure s!"Python to Laurel translation failed: {e}"
     | .ok (laurelProgram,_) =>
-      match Strata.Laurel.translate laurelProgram Strata.Python.corePreludeFunctions with
+      match Strata.Laurel.translate laurelProgram with
       | .error diagnostics =>
         exitFailure s!"Laurel to Core translation failed: {diagnostics}"
       | .ok coreProgram =>
@@ -1211,7 +1211,7 @@ def laurelAnalyzeBinaryCommand : Command where
           types := combinedProgram.types ++ laurelProgram.types
         }
 
-    let diagnostics ← Strata.Laurel.verifyToDiagnosticModels combinedProgram Strata.Python.corePreludeFunctions
+    let diagnostics ← Strata.Laurel.verifyToDiagnosticModels combinedProgram
 
     IO.println s!"==== DIAGNOSTICS ===="
     for diag in diagnostics do
@@ -1279,7 +1279,7 @@ def laurelAnalyzeCommand : Command where
     match transResult with
     | .error transErrors => exitFailure s!"Translation errors: {transErrors}"
     | .ok laurelProgram =>
-      let results ← Strata.Laurel.verifyToVcResults laurelProgram Strata.Python.corePreludeFunctions { VerifyOptions.default with solver := "z3" }
+      let results ← Strata.Laurel.verifyToVcResults laurelProgram { VerifyOptions.default with solver := "z3" }
       match results with
       | .error errors =>
         IO.println s!"==== ERRORS ===="
@@ -1306,7 +1306,7 @@ def laurelAnalyzeToGotoCommand : Command where
     match transResult with
     | .error transErrors => exitFailure s!"Translation errors: {transErrors}"
     | .ok laurelProgram =>
-      match Strata.Laurel.translate laurelProgram Strata.Python.corePreludeFunctions with
+      match Strata.Laurel.translate laurelProgram with
       | .error diags => exitFailure s!"Core translation errors: {diags.map (·.message)}"
       | .ok coreProgram =>
         let Ctx := { Lambda.LContext.default with functions := Core.Factory, knownTypes := Core.KnownTypes }
@@ -1436,7 +1436,7 @@ def laurelToCoreCommand : Command where
     match transResult with
     | .error transErrors => exitFailure s!"Translation errors: {transErrors}"
     | .ok laurelProgram =>
-      match Strata.Laurel.translate laurelProgram Strata.Python.corePreludeFunctions with
+      match Strata.Laurel.translate laurelProgram with
       | .error diags => exitFailure s!"Core translation errors: {diags.map (·.message)}"
       | .ok coreProgram => IO.println (prettyPrintCore coreProgram.fst)
 

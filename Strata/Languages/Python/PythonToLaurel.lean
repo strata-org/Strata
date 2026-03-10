@@ -1212,6 +1212,28 @@ def translateClass (ctx : TranslationContext) (classStmt : Python.stmt SourceRan
     }
   | _ => throw (.internalError "Expected ClassDef")
 
+def getFunctions (decls: List Core.Decl) : List String :=
+  decls.filterMap (λ decl =>
+    match decl.kind with
+        |.func => some decl.name.name
+        | _ => none)
+
+def getDatatypeFunctions (decls: List Core.Decl) : List String :=
+  decls.flatMap (λ decl =>
+    match h: decl.kind with
+        |.type =>
+          let typedec := decl.getTypeDecl (by simp_all)
+          match typedec with
+          | .data dtypes =>
+            let constructors := dtypes.flatMap (λ t => t.constrs.map (λ c => c.name.name))
+            let destructors := dtypes.flatMap (λ t => (t.constrs.flatMap (λ c => c.args.map (fun (n, _) => t.name ++ ".." ++ n.name))))
+            let testers := dtypes.flatMap (λ t => t.constrs.map (λ c => c.testerName))
+            constructors ++ destructors ++ testers
+          | _ => []
+        | _ => [])
+
+
+def getPreludeFunctions (prelude: Core.Program) : List String := (getFunctions prelude.decls) ++ (getDatatypeFunctions prelude.decls)
 
 /-- Translate Python module to Laurel Program -/
 def pythonToLaurel (prelude: Core.Program)
@@ -1297,8 +1319,22 @@ def pythonToLaurel (prelude: Core.Program)
       isFunctional := false
       }
 
+    let preludeFunctions : List Procedure := (getPreludeFunctions prelude).map (λ funcname =>
+    {
+      name := {text:= funcname} ,
+      inputs := [],
+      outputs := [],
+      preconditions := [],
+      determinism := .deterministic none, --TODO: need to set reads
+      decreases := none,
+      body := .External
+      md := default
+      isFunctional := true
+      }
+    )
+
     let program : Laurel.Program := {
-      staticProcedures := procedures ++ [mainProc]
+      staticProcedures := preludeFunctions ++ procedures ++ [mainProc]
       staticFields := []
       types := compositeTypes.map TypeDefinition.Composite
       constants := []

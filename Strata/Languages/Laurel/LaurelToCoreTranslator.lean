@@ -76,7 +76,6 @@ structure TranslateState where
   nextId : Nat := 1
   /-- Constants known to the program (field constants, etc.) -/
   model : SemanticModel
-  preludeFunctions : List String
 
 /-- The translation monad: state over Id -/
 abbrev TranslateM := StateT TranslateState Id
@@ -187,7 +186,7 @@ def translateExpr (expr : StmtExprMd)
       return .ite () bcond bthen belse
   | .StaticCall callee args =>
       -- In a pure context, only Core functions (not procedures) are allowed
-      if isPureContext && !model.isFunction callee && callee.text ∉ s.preludeFunctions then
+      if isPureContext && !model.isFunction callee then
         disallowed expr.md "calls to procedures are not supported in functions or contracts"
       else
         let fnOp : Core.Expression.Expr := .op () ⟨callee.text, ()⟩ none
@@ -309,7 +308,7 @@ def translateStmt (outputParams : List Parameter) (stmt : StmtExprMd)
       match initializer with
       | some (⟨ .StaticCall callee args, callMd⟩) =>
           -- Check if this is a function or a procedure call
-          if model.isFunction callee || callee.text ∈ s.preludeFunctions then
+          if model.isFunction callee then
             -- Translate as expression (function application)
             let coreExpr ← translateExpr (⟨ .StaticCall callee args, callMd ⟩)
             return [Core.Statement.init ident coreType (some coreExpr) md]
@@ -338,7 +337,7 @@ def translateStmt (outputParams : List Parameter) (stmt : StmtExprMd)
           -- Check if RHS is a procedure call (not a function)
           match value.val with
           | .StaticCall callee args =>
-              if model.isFunction callee || callee.text ∈ s.preludeFunctions then
+              if model.isFunction callee then
                 -- Functions are translated as expressions
                 let coreExpr ← translateExpr value
                 return [Core.Statement.set ident coreExpr md]
@@ -381,7 +380,7 @@ def translateStmt (outputParams : List Parameter) (stmt : StmtExprMd)
       return [Imperative.Stmt.ite bcond bthen belse .empty]
   | .StaticCall callee args =>
       -- Check if this is a function or procedure
-      if model.isFunction callee || callee.text ∈ s.preludeFunctions then
+      if model.isFunction callee then
         -- Functions as statements have no effect (shouldn't happen in well-formed programs)
         return []
       else
@@ -536,7 +535,7 @@ def tryTranslatePureToFunction (proc : Procedure) (initState : TranslateState)
 /--
 Translate Laurel Program to Core Program
 -/
-def translate (program : Program) (preludeFunctionNames: List String): Except (Array DiagnosticModel) (Core.Program × Array DiagnosticModel) := do
+def translate (program : Program): Except (Array DiagnosticModel) (Core.Program × Array DiagnosticModel) := do
   let program := { program with
     staticProcedures := coreDefinitionsForLaurel.staticProcedures ++ program.staticProcedures
   }
@@ -572,7 +571,7 @@ def translate (program : Program) (preludeFunctionNames: List String): Except (A
   -- External procedures are completely ignored (not translated to Core).
   let nonExternal := program.staticProcedures.filter (fun p => !p.body.isExternal)
   let (markedPure, procProcs) := nonExternal.partition (·.isFunctional)
-  let initState : TranslateState := { model := model, preludeFunctions:= preludeFunctionNames}
+  let initState : TranslateState := {model := model}
   -- Try to translate each isFunctional procedure to a Core function, collecting errors for failures
   let (pureErrors, pureFuncDecls) := markedPure.foldl (fun (errs, decls) p =>
     match tryTranslatePureToFunction p initState with
@@ -621,10 +620,10 @@ def translate (program : Program) (preludeFunctionNames: List String): Except (A
 /--
 Verify a Laurel program using an SMT solver
 -/
-def verifyToVcResults (program : Program) (preludeFunctionNames: List String)
+def verifyToVcResults (program : Program)
     (options : VerifyOptions := .default)
     : IO (Except (Array DiagnosticModel) VCResults) := do
-  let (strataCoreProgram, translateDiags) ← match translate program preludeFunctionNames with
+  let (strataCoreProgram, translateDiags) ← match translate program  with
     | .error translateErrorDiags => return .error translateErrorDiags
     | .ok result => pure result
 
@@ -643,16 +642,16 @@ def verifyToVcResults (program : Program) (preludeFunctionNames: List String)
     return .error (translateDiags ++ ioResult.filterMap toDiagnosticModel)
 
 
-def verifyToDiagnostics (files: Map Strata.Uri Lean.FileMap) (program : Program) (preludeFunctionNames: List String)
+def verifyToDiagnostics (files: Map Strata.Uri Lean.FileMap) (program : Program)
     (options : VerifyOptions := .default): IO (Array Diagnostic) := do
-  let results <- verifyToVcResults program preludeFunctionNames options
+  let results <- verifyToVcResults program options
   match results with
   | .error errors => return errors.map (fun dm => dm.toDiagnostic files)
   | .ok results => return results.filterMap (fun dm => dm.toDiagnostic files)
 
 
-def verifyToDiagnosticModels (program : Program) (preludeFunctionNames: List String) (options : VerifyOptions := .default) : IO (Array DiagnosticModel) := do
-  let results <- verifyToVcResults program preludeFunctionNames options
+def verifyToDiagnosticModels (program : Program) (options : VerifyOptions := .default) : IO (Array DiagnosticModel) := do
+  let results <- verifyToVcResults program options
   match results with
   | .error errors => return errors
   | .ok results => return results.filterMap toDiagnosticModel
