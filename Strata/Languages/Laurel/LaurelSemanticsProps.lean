@@ -628,4 +628,67 @@ theorem singleton_block_value :
     EvalLaurelBlock δ π h σ [s] h' σ' (.normal v) :=
   EvalLaurelBlock.last_normal
 
+/-! ## Block Append -/
+
+/-- Evaluating `ss₁ ++ ss₂` where `ss₁` produces `.normal` is equivalent to
+evaluating `ss₁`, then evaluating `ss₂` in the resulting state.
+This is the key composition lemma for the lifting correctness proof. -/
+theorem EvalLaurelBlock_append
+    {δ : LaurelEval} {π : ProcEnv}
+    {h : LaurelHeap} {σ : LaurelStore}
+    {ss₁ ss₂ : List StmtExprMd}
+    {h₁ : LaurelHeap} {σ₁ : LaurelStore} {v₁ : LaurelValue}
+    {h₂ : LaurelHeap} {σ₂ : LaurelStore} {o₂ : Outcome}
+    (hss₁ : EvalLaurelBlock δ π h σ ss₁ h₁ σ₁ (.normal v₁))
+    (hne : ss₂ ≠ [])
+    (hss₂ : EvalLaurelBlock δ π h₁ σ₁ ss₂ h₂ σ₂ o₂) :
+    EvalLaurelBlock δ π h σ (ss₁ ++ ss₂) h₂ σ₂ o₂ := by
+  match hss₁ with
+  | .nil =>
+    -- ss₁ = [], so ss₁ ++ ss₂ = ss₂
+    exact hss₂
+  | .last_normal hs =>
+    -- ss₁ = [s], so ss₁ ++ ss₂ = s :: ss₂
+    exact .cons_normal hs hne hss₂
+  | .cons_normal hs hne_rest hrest =>
+    -- ss₁ = s :: rest, rest ≠ []
+    simp only [List.cons_append]
+    exact .cons_normal hs
+      (by simp [List.append_eq_nil_iff, hne_rest])
+      (EvalLaurelBlock_append hrest hne hss₂)
+
+/-- Variant of `EvalLaurelBlock_append` where `ss₂` is a singleton. -/
+theorem EvalLaurelBlock_append_singleton
+    {δ : LaurelEval} {π : ProcEnv}
+    {h : LaurelHeap} {σ : LaurelStore}
+    {ss₁ : List StmtExprMd} {s₂ : StmtExprMd}
+    {h₁ : LaurelHeap} {σ₁ : LaurelStore} {v₁ : LaurelValue}
+    {h₂ : LaurelHeap} {σ₂ : LaurelStore} {o₂ : Outcome}
+    (hss₁ : EvalLaurelBlock δ π h σ ss₁ h₁ σ₁ (.normal v₁))
+    (hs₂ : EvalLaurelStmt δ π h₁ σ₁ s₂ h₂ σ₂ o₂) :
+    EvalLaurelBlock δ π h σ (ss₁ ++ [s₂]) h₂ σ₂ o₂ := by
+  cases o₂ with
+  | normal v₂ =>
+    exact EvalLaurelBlock_append hss₁ (by simp) (.last_normal hs₂)
+  | exit label =>
+    exact EvalLaurelBlock_append hss₁ (by simp) (.cons_exit hs₂)
+  | ret rv =>
+    exact EvalLaurelBlock_append hss₁ (by simp) (.cons_return hs₂)
+
+/-- Splitting `EvalStmtArgs` at a point: if we evaluate `[a] ++ rest`,
+we can decompose into evaluating `a` then `rest`. -/
+theorem EvalStmtArgs_cons_inv
+    {δ : LaurelEval} {π : ProcEnv}
+    {h : LaurelHeap} {σ : LaurelStore}
+    {e : StmtExprMd} {es : List StmtExprMd}
+    {h' : LaurelHeap} {σ' : LaurelStore}
+    {vs : List LaurelValue}
+    (heval : EvalStmtArgs δ π h σ (e :: es) h' σ' vs) :
+    ∃ v h₁ σ₁ vs',
+      vs = v :: vs' ∧
+      EvalLaurelStmt δ π h σ e h₁ σ₁ (.normal v) ∧
+      EvalStmtArgs δ π h₁ σ₁ es h' σ' vs' := by
+  cases heval with
+  | cons he hrest => exact ⟨_, _, _, _, rfl, he, hrest⟩
+
 end Strata.Laurel
