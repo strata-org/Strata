@@ -26,7 +26,7 @@ category OptionalAssignment;
 op optionalAssignment(value: StmtExpr): OptionalAssignment => ":=" value:0;
 
 op varDecl (name: Ident, varType: Option OptionalType, assignment: Option OptionalAssignment): StmtExpr
-  => @[prec(0)] "var " name varType assignment ";";
+  => @[prec(0)] "var " name varType assignment;
 
 op call(callee: StmtExpr, args: CommaSepBy StmtExpr): StmtExpr => callee "(" args ")";
 
@@ -41,7 +41,7 @@ op identifier (name: Ident): StmtExpr => name;
 op parenthesis (inner: StmtExpr): StmtExpr => "(" inner ")";
 
 // Assignment
-op assign (target: StmtExpr, value: StmtExpr): StmtExpr => @[prec(10)] target ":=" value ";";
+op assign (target: StmtExpr, value: StmtExpr): StmtExpr => @[prec(10)] target ":=" value;
 
 // Binary operators
 op add (lhs: StmtExpr, rhs: StmtExpr): StmtExpr => @[prec(60), leftassoc] lhs " + " rhs;
@@ -82,10 +82,10 @@ op optionalElse(stmts : StmtExpr) : OptionalElse => "else" stmts;
 op ifThenElse (cond: StmtExpr, thenBranch: StmtExpr, elseBranch: Option OptionalElse): StmtExpr =>
   @[prec(20)] "if (" cond ") " thenBranch:0 elseBranch:0;
 
-op assert (cond : StmtExpr) : StmtExpr => "assert " cond ";";
-op assume (cond : StmtExpr) : StmtExpr => "assume " cond ";";
-op return (value : StmtExpr) : StmtExpr => "return " value ";";
-op block (stmts : Seq StmtExpr) : StmtExpr => @[prec(1000)] "{" stmts "}";
+op assert (cond : StmtExpr) : StmtExpr => @[prec(0)] "assert " cond:0;
+op assume (cond : StmtExpr) : StmtExpr => @[prec(0)] "assume " cond:0;
+op return (value : StmtExpr) : StmtExpr => @[prec(0)] "return " value:0;
+op block (stmts : SemicolonSepBy StmtExpr) : StmtExpr => @[prec(1000)] "{" stmts "}";
 
 // While loops
 category InvariantClause;

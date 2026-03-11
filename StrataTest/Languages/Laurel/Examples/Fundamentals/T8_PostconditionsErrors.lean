@@ -29,7 +29,7 @@ procedure callerOfOpaqueFunction() {
   assert x > 0;
 // The following assertion should fail but does not
 // Because Core does not support opaque functions
-  assert x == 3;
+  assert x == 3
 };
 "
 

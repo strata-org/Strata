@@ -50,6 +50,7 @@ private def fmtHighType : HighType → String
   | .TInt => "TInt"
   | .TFloat64 => "TFloat64"
   | .TString => "TString"
+  | .TReal => "TReal"
   | .THeap => "THeap"
   | .TTypedField _ => "TTypedField"
   | .TSet _ => "TSet"

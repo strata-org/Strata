@@ -306,7 +306,7 @@ partial def translateStmtExpr (arg : Arg) : TransM StmtExprMd := do
   | _ => TransM.error s!"translateStmtExpr expects operation"
 
 partial def translateSeqCommand (arg : Arg) : TransM (List StmtExprMd) := do
-  let .seq _ .none args := arg
+  let .seq _ _ args := arg
     | TransM.error s!"translateSeqCommand expects seq"
   let mut stmts : List StmtExprMd := []
   for arg in args do

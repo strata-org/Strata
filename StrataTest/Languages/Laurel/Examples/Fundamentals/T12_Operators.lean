@@ -23,7 +23,7 @@ procedure testArithmetic() {
     var z: int := y / 2;
     assert z == 7;
     var r: int := 17 % 5;
-    assert r == 2;
+    assert r == 2
 };
 
 procedure testLogical() {
@@ -36,20 +36,20 @@ procedure testLogical() {
     var c: bool := !f;
     assert c == true;
     assert t ==> t;
-    assert f ==> t;
+    assert f ==> t
 };
 
 procedure testUnary() {
     var x: int := 5;
     var y: int := -x;
-    assert y == 0 - 5;
+    assert y == 0 - 5
 };
 
 procedure testTruncatingDiv() {
     assert 7 /t 3 == 2;
     assert 7 %t 3 == 1;
     assert (0 - 7) /t 3 == 0 - 2;
-    assert (0 - 7) %t 3 == 0 - 1;
+    assert (0 - 7) %t 3 == 0 - 1
 };
 "
 

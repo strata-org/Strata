@@ -288,6 +288,20 @@ def defaultExprForType (model : SemanticModel) (ty : HighTypeMd) : Core.Expressi
     .fvar () (⟨"$default", ()⟩) (some coreTy)
 
 /--
+Translate an expression in statement position into a `var $unused_N := expr` init.
+Preserves the expression so it is not silently dropped from the Core output.
+-/
+private def exprAsUnusedInit (expr : StmtExprMd) (md : Imperative.MetaData Core.Expression)
+    : TranslateM (List Core.Statement) := do
+  let model := (← get).model
+  let coreExpr ← translateExpr expr
+  let id ← freshId
+  let ident : Core.CoreIdent := ⟨s!"$unused_{id}", ()⟩
+  let highTy := computeExprType model expr
+  let coreType := LTy.forAll [] (translateType model highTy)
+  return [Core.Statement.init ident coreType (some coreExpr) md]
+
+/--
 Translate Laurel StmtExpr to Core Statements using the `TranslateM` monad.
 Diagnostics are emitted into the monad state.
 -/
@@ -297,11 +311,11 @@ def translateStmt (outputParams : List Parameter) (stmt : StmtExprMd)
   let model := s.model
   let md := stmt.md
   match _h : stmt.val with
-  | @StmtExpr.Assert cond =>
+  | .Assert cond =>
       -- Assert/assume bodies must be pure expressions (no assignments, loops, or procedure calls)
       let coreExpr ← translateExpr cond [] (isPureContext := true)
       return [Core.Statement.assert ("assert" ++ getNameFromMd md) coreExpr md]
-  | @StmtExpr.Assume cond =>
+  | .Assume cond =>
       let coreExpr ← translateExpr cond [] (isPureContext := true)
       return [Core.Statement.assume ("assume" ++ getNameFromMd md) coreExpr md]
   | .Block stmts _ => stmts.flatMapM (fun s => translateStmt outputParams s)
@@ -385,8 +399,8 @@ def translateStmt (outputParams : List Parameter) (stmt : StmtExprMd)
   | .StaticCall callee args =>
       -- Check if this is a function or procedure
       if model.isFunction callee then
-        -- Functions as statements have no effect (shouldn't happen in well-formed programs)
-        return []
+        -- Function call in statement position: preserve as unused init
+        exprAsUnusedInit stmt md
       else
         let coreArgs ← args.mapM (fun a => translateExpr a)
         return [Core.Statement.call [] callee.text coreArgs md]
@@ -410,7 +424,11 @@ def translateStmt (outputParams : List Parameter) (stmt : StmtExprMd)
       let decreasingExprCore ← decreasesExpr.mapM (translateExpr)
       let bodyStmts ← translateStmt outputParams body
       return [Imperative.Stmt.loop condExpr decreasingExprCore invExprs bodyStmts md]
-  | _ => return []
+  | .Exit _ =>
+      panic! "Exit statement not yet supported"
+  | _ =>
+      -- Expression in statement position: preserve as an unused variable init
+      exprAsUnusedInit stmt md
   termination_by sizeOf stmt
   decreasing_by
     all_goals
