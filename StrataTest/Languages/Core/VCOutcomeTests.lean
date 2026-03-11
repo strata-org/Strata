@@ -143,4 +143,38 @@ Sat:unknown|Val:unknown ❓ unknown, Unknown (solver timeout or incomplete), SAR
 #guard outcomeToLevel .bugFindingAssumingCompleteSpec .assert (VCOutcome.mk (.sat []) .unsat) = Strata.Sarif.Level.none
 #guard outcomeToLevel .bugFindingAssumingCompleteSpec .assert (VCOutcome.mk .unknown (.sat [])) = Strata.Sarif.Level.error
 
+/-! ### Outcome table verification -/
+
+private def printOutcomeRow (sat val : Imperative.SMT.Result (Ident := Core.Expression.Ident)) : IO Unit := do
+  let o : VCOutcome := { satisfiabilityProperty := sat, validityProperty := val }
+  let e := o.emoji .assert .full .deductive
+  let l := o.label .assert .full .deductive
+  let ded := outcomeToLevel .deductive .assert o
+  let bf := outcomeToLevel .bugFinding .assert o
+  let bfc := outcomeToLevel .bugFindingAssumingCompleteSpec .assert o
+  IO.println s!"{e} {l} | Deductive: {ded} | BugFinding: {bf} | BugFinding+Complete: {bfc}"
+
+/--
+info: ✅ always true and is reachable from declaration entry | Deductive: none | BugFinding: none | BugFinding+Complete: none
+❌ always false and is reachable from declaration entry | Deductive: error | BugFinding: error | BugFinding+Complete: error
+🔶 can be both true and false and is reachable from declaration entry | Deductive: error | BugFinding: note | BugFinding+Complete: error
+✅ pass (❗path unreachable) | Deductive: warning | BugFinding: warning | BugFinding+Complete: warning
+➕ can be true and is reachable from declaration entry | Deductive: error | BugFinding: note | BugFinding+Complete: note
+✖️ always false if reached | Deductive: error | BugFinding: error | BugFinding+Complete: error
+➖ can be false and is reachable from declaration entry | Deductive: error | BugFinding: note | BugFinding+Complete: error
+✔️ always true if reached | Deductive: none | BugFinding: none | BugFinding+Complete: none
+❓ unknown | Deductive: error | BugFinding: note | BugFinding+Complete: note
+-/
+#guard_msgs in
+#eval do
+  printOutcomeRow (.sat []) .unsat
+  printOutcomeRow .unsat (.sat [])
+  printOutcomeRow (.sat []) (.sat [])
+  printOutcomeRow .unsat .unsat
+  printOutcomeRow (.sat []) (Imperative.SMT.Result.unknown (Ident := Core.Expression.Ident))
+  printOutcomeRow .unsat (Imperative.SMT.Result.unknown (Ident := Core.Expression.Ident))
+  printOutcomeRow (Imperative.SMT.Result.unknown (Ident := Core.Expression.Ident)) (.sat [])
+  printOutcomeRow (Imperative.SMT.Result.unknown (Ident := Core.Expression.Ident)) .unsat
+  printOutcomeRow (Imperative.SMT.Result.unknown (Ident := Core.Expression.Ident)) (Imperative.SMT.Result.unknown (Ident := Core.Expression.Ident))
+
 end Core
