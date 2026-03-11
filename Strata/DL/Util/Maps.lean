@@ -590,5 +590,67 @@ theorem Maps.find?_remove_ne [DecidableEq α] [BEq (Map α β)]
     · simp only [Maps.find?]; rw [ih]
     · simp only [Maps.find?]; rw [Map.find?_remove_ne m k a h_ne, ih]
 
+theorem Maps.keys_erase_subset [DecidableEq α] (S : Maps α β) (x : α) :
+    ∀ k, k ∈ Maps.keys (Maps.erase S x) → k ∈ Maps.keys S := by
+  intro k hk; induction S with
+  | nil => simp [Maps.erase, Maps.keys] at hk
+  | cons scope rest ih =>
+    simp only [Maps.erase, Maps.keys] at hk ⊢
+    rcases List.mem_append.mp hk with h | h
+    · exact List.mem_append_left _ (Map.keys_erase_subset scope x k h)
+    · exact List.mem_append_right _ (ih h)
+
+/-- Erasing key `a` removes `a` from a single Map's keys. -/
+theorem Map.keys_erase_self_not_mem [DecidableEq α]
+    (m : Map α β) (a : α)
+    (h : a ∈ Map.keys (Map.erase m a)) : False := by
+  induction m with
+  | nil => simp [Map.erase, Map.keys] at h
+  | cons pair rest ih =>
+    obtain ⟨k, v⟩ := pair
+    simp only [Map.erase] at h
+    by_cases h_eq : k = a
+    · simp [h_eq] at h; exact ih h
+    · simp [h_eq, Map.keys] at h
+      grind
+
+/-- Erasing key `a` from Maps `S` removes `a` from the keys. -/
+theorem Maps.keys_erase_self_not_mem [DecidableEq α]
+    (S : Maps α β) (a : α)
+    (h : a ∈ Maps.keys (Maps.erase S a)) : False := by
+  induction S with
+  | nil => simp [Maps.erase, Maps.keys] at h
+  | cons scope rest ih =>
+    simp only [Maps.erase, Maps.keys] at h
+    rcases List.mem_append.mp h with h_scope | h_rest
+    · exact Map.keys_erase_self_not_mem scope a h_scope
+    · exact ih h_rest
+
+theorem Maps.values_erase_subset [DecidableEq α] (ms : Maps α β) (x : α) :
+    ∀ v, v ∈ Maps.values (Maps.erase ms x) → v ∈ Maps.values ms := by
+  induction ms with
+  | nil => simp [Maps.erase, Maps.values]
+  | cons scope rest ih =>
+    intro v hv; simp only [Maps.erase, Maps.values] at hv ⊢
+    rcases List.mem_append.mp hv with h | h
+    · exact List.mem_append_left _ (Map.values_erase_subset scope x v h)
+    · exact List.mem_append_right _ (ih v h)
+
+theorem Maps.keys_erase_mem_of_ne [DecidableEq α] {S : Maps α β} {a x : α}
+    (h_key : a ∈ Maps.keys S) (h_ne : a ≠ x) :
+    a ∈ Maps.keys (Maps.erase S x) := by
+  induction S with
+  | nil => simp [Maps.keys] at h_key
+  | cons scope rest ih =>
+    simp only [Maps.erase, Maps.keys] at h_key ⊢
+    rcases List.mem_append.mp h_key with h | h
+    · exact List.mem_append_left _ (Map.keys_erase_mem_of_ne scope h h_ne)
+    · exact List.mem_append_right _ (ih h)
+
+-- addInNewest on cons simplifies to appending to the first scope
+theorem Maps.addInNewest_cons (scope : Map α β) (rest : Maps α β) (m : Map α β) :
+    Maps.addInNewest (scope :: rest) m = (scope ++ m) :: rest := by
+  simp [Maps.addInNewest, Maps.newest, Maps.pop, Maps.push]
+
 ---------------------------------------------------------------------
 end

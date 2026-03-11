@@ -354,5 +354,89 @@ theorem Map.find?_remove_ne [DecidableEq α]
     · simp only [h_xk, ↓reduceIte, Map.find?]
       grind
 
+/-- Keys of `List.zip l1 l2` (viewed as a `Map`) are a subset of `l1`. -/
+theorem Map.keys_zip_subset {α β : Type} [DecidableEq α]
+    (l1 : List α) (l2 : List β) {x : α} (h : x ∈ Map.keys (l1.zip l2)) : x ∈ l1 := by
+  induction l1 generalizing l2 with
+  | nil => simp [List.zip, Map.keys] at h
+  | cons a rest ih =>
+    cases l2 with
+    | nil => simp [List.zip, Map.keys] at h
+    | cons b rest2 =>
+      simp [List.zip, Map.keys] at h
+      cases h with
+      | inl h => subst h; exact List.mem_cons_self
+      | inr h => exact List.mem_cons_of_mem a (ih rest2 h)
+
+/-- `Map.find?` on a zip agrees with `List.find?` using BEq on the first component. -/
+theorem Map.find_eq_list_find' [DecidableEq α] (vars : List α) (vals : List β) (x : α) :
+    Map.find? (List.zip vars vals) x =
+    (match (List.zip vars vals).find? (fun p => p.1 == x) with
+     | some (_, v) => some v
+     | none => none) := by
+  induction vars generalizing vals with
+  | nil => simp [List.zip, Map.find?]
+  | cons v vs ih =>
+    cases vals with
+    | nil => simp [List.zip, Map.find?]
+    | cons vl vls =>
+      simp only [List.zip, List.zipWith, List.find?, Map.find?, BEq.beq]
+      by_cases h_eq : v = x
+      · simp [h_eq]
+      · simp [h_eq]; exact ih vls
+
+theorem Map.keys_erase_subset [DecidableEq α] (m : Map α β) (x : α) :
+    ∀ k, k ∈ Map.keys (Map.erase m x) → k ∈ Map.keys m := by
+  intro k hk; induction m with
+  | nil => simp [Map.erase, Map.keys] at hk
+  | cons pair rest ih =>
+    obtain ⟨a, b⟩ := pair; simp only [Map.erase] at hk; split at hk
+    · simp [Map.keys]; right; exact ih hk
+    · simp [Map.keys] at hk ⊢
+      grind
+
+/-- Helper: `Map.find?` on `l.map (fun v => (v, f v))` returns `some (f v)` for `v ∈ l`. -/
+theorem Map.find?_of_map_self {α : Type} [DecidableEq α] {β : Type}
+    (l : List α) (f : α → β) (v : α) (hv : v ∈ l) :
+    Map.find? (l.map (fun x => (x, f x))) v = some (f v) := by
+  induction l with
+  | nil => simp at hv
+  | cons w ws ih =>
+    simp only [List.map, Map.find?]
+    grind
+
+theorem Map.values_erase_subset [DecidableEq α] (m : Map α β) (x : α) :
+    ∀ v, v ∈ Map.values (Map.erase m x) → v ∈ Map.values m := by
+  induction m with
+  | nil => simp [Map.erase, Map.values]
+  | cons pair rest ih =>
+    obtain ⟨k, val⟩ := pair; simp only [Map.erase]; split
+    · intro v hv; simp [Map.values]; right; exact ih v hv
+    · intro v hv; simp [Map.values] at hv ⊢
+      grind
+
+theorem Map.keys_erase_mem_of_ne [DecidableEq α] (m : Map α β) {a x : α}
+    (h_key : a ∈ Map.keys m) (h_ne : a ≠ x) :
+    a ∈ Map.keys (Map.erase m x) := by
+  induction m with
+  | nil => simp [Map.keys] at h_key
+  | cons pair rest ih =>
+    obtain ⟨k, v⟩ := pair; simp only [Map.erase]; simp [Map.keys] at h_key
+    rcases h_key with rfl | h
+    · split
+      · exact absurd (by assumption) h_ne
+      · simp [Map.keys]
+    · split
+      · exact ih h
+      · simp [Map.keys]; right; exact ih h
+
+-- Helper: Map.keys distributes over append
+theorem Map.keys_append {α β : Type} (m1 m2 : Map α β) :
+    Map.keys (m1 ++ m2) = Map.keys m1 ++ Map.keys m2 := by
+  show Map.keys (List.append m1 m2) = Map.keys m1 ++ Map.keys m2
+  induction m1 with
+  | nil => rfl
+  | cons hd tl ih => obtain ⟨a, _⟩ := hd; exact congrArg (a :: ·) ih
+
 -------------------------------------------------------------------------------
 end

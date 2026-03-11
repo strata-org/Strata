@@ -3490,24 +3490,6 @@ theorem resolveAux_properties
   let ⟨h1, h2, h3, h4⟩ := resolveAux_properties_aux e.sizeOf e rfl et C Env Env' h h_ne h_aw h_fwf h_sf h_cf h_bvf
   { genState_mono := h1, context := h2, preserves := h3, absorbs := h4 }
 
-private theorem removeAll_not_mem {x : TyIdentifier} {xs : List TyIdentifier}
-    (h : x ∉ xs) : xs.removeAll [x] = xs := by
-  induction xs <;> grind
-
-/-- Keys of a zipped map are a subset of the first list. -/
-private theorem Map.keys_zip_subset {α β : Type} [DecidableEq α]
-    (l1 : List α) (l2 : List β) {x : α} (h : x ∈ Map.keys (l1.zip l2)) : x ∈ l1 := by
-  induction l1 generalizing l2 with
-  | nil => simp [List.zip, Map.keys] at h
-  | cons a rest ih =>
-    cases l2 with
-    | nil => simp [List.zip, Map.keys] at h
-    | cons b rest2 =>
-      simp [List.zip, Map.keys] at h
-      cases h with
-      | inl h => subst h; exact List.mem_cons_self
-      | inr h => exact List.mem_cons_of_mem a (ih rest2 h)
-
 omit [ToString T.IDMeta] [ToFormat T.IDMeta] [HasGen T.IDMeta] [ToFormat (LFunc T)] [ToFormat T.Metadata] in
 /--
 Helper: repeated `tinst` applications for each bound variable with the
@@ -3770,23 +3752,6 @@ private theorem subst_openVarsList_comm
           intro tv h; exact h_wf tv (by simp [LMonoTys.freeVars]; right; exact h)) h_len
 end
 
-/-- `Map.find?` on a zip agrees with `List.find?` using BEq on the first component. -/
-private theorem map_find_eq_list_find' (vars : List TyIdentifier) (vals : LMonoTys) (x : TyIdentifier) :
-    Map.find? (List.zip vars vals) x =
-    (match (List.zip vars vals).find? (fun p => p.1 == x) with
-     | some (_, v) => some v
-     | none => none) := by
-  induction vars generalizing vals with
-  | nil => simp [List.zip, Map.find?]
-  | cons v vs ih =>
-    cases vals with
-    | nil => simp [List.zip, Map.find?]
-    | cons vl vls =>
-      simp only [List.zip, List.zipWith, List.find?, Map.find?, BEq.beq]
-      by_cases h_eq : v = x
-      · simp [h_eq]
-      · simp [h_eq]; exact ih vls
-
 /-- `openVars` with empty vars/vals is identity. -/
 private theorem openVars_nil_id (body : LMonoTy) :
     LMonoTy.openVars [] [] body = body := by
@@ -3838,7 +3803,7 @@ private theorem subst_single_scope_eq_openVars
       | .ftvar x =>
         -- Both sides look up x in the zip. Connect via map_find_eq_list_find'.
         simp only [LMonoTy.subst, h_ne, LMonoTy.openVars, Maps.find?]
-        rw [map_find_eq_list_find' (v :: vs) (vl :: vls) x]
+        rw [Map.find_eq_list_find' (v :: vs) (vl :: vls) x]
         generalize (List.zip (v :: vs) (vl :: vls)).find? (fun p => p.1 == x) = res
         match res with
         | some (_, val) => rfl
@@ -3935,52 +3900,6 @@ private theorem subst_compose_ftvar_closed' (S : Subst)
   -- Step 4: openVars → subst (reverse direction)
   rw [← subst_single_scope_eq_openVars ids _ mty h_closed h_vals_len']
 
-private theorem Map.keys_erase_subset [DecidableEq α] (m : Map α β) (x : α) :
-    ∀ k, k ∈ Map.keys (Map.erase m x) → k ∈ Map.keys m := by
-  intro k hk; induction m with
-  | nil => simp [Map.erase, Map.keys] at hk
-  | cons pair rest ih =>
-    obtain ⟨a, b⟩ := pair; simp only [Map.erase] at hk; split at hk
-    · simp [Map.keys]; right; exact ih hk
-    · simp [Map.keys] at hk ⊢
-      grind
-
-private theorem Maps.keys_erase_subset (S : Maps TyIdentifier LMonoTy) (x : TyIdentifier) :
-    ∀ k, k ∈ Maps.keys (Maps.erase S x) → k ∈ Maps.keys S := by
-  intro k hk; induction S with
-  | nil => simp [Maps.erase, Maps.keys] at hk
-  | cons scope rest ih =>
-    simp only [Maps.erase, Maps.keys] at hk ⊢
-    rcases List.mem_append.mp hk with h | h
-    · exact List.mem_append_left _ (Map.keys_erase_subset scope x k h)
-    · exact List.mem_append_right _ (ih h)
-
-/-- Erasing key `a` removes `a` from a single Map's keys. -/
-private theorem Map.keys_erase_self_not_mem [DecidableEq α]
-    (m : Map α β) (a : α)
-    (h : a ∈ Map.keys (Map.erase m a)) : False := by
-  induction m with
-  | nil => simp [Map.erase, Map.keys] at h
-  | cons pair rest ih =>
-    obtain ⟨k, v⟩ := pair
-    simp only [Map.erase] at h
-    by_cases h_eq : k = a
-    · simp [h_eq] at h; exact ih h
-    · simp [h_eq, Map.keys] at h
-      grind
-
-/-- Erasing key `a` from Maps `S` removes `a` from the keys. -/
-private theorem Maps.keys_erase_self_not_mem
-    (S : Maps TyIdentifier LMonoTy) (a : TyIdentifier)
-    (h : a ∈ Maps.keys (Maps.erase S a)) : False := by
-  induction S with
-  | nil => simp [Maps.erase, Maps.keys] at h
-  | cons scope rest ih =>
-    simp only [Maps.erase, Maps.keys] at h
-    rcases List.mem_append.mp h with h_scope | h_rest
-    · exact Map.keys_erase_self_not_mem scope a h_scope
-    · exact ih h_rest
-
 /-- Keys of `go xs S` are a subset of keys of `S`. -/
 private theorem keys_go_subset_keys (S : Subst) (xs : List TyIdentifier)
     (a : TyIdentifier) (h : a ∈ Maps.keys (LTy.subst.go xs S)) :
@@ -4035,13 +3954,6 @@ private theorem allKeysFresh_go_body_irrel {T : LExprParams} [DecidableEq T.IDMe
   have h_k_fresh := h_fresh k hk_S
   -- k is fresh in ctx means: for all (y, ty) in ctx.types, k ∉ LTy.freeVars ty
   have h_k_not_fv := h_k_fresh x_id (.forAll xs body) h_find
-  -- LTy.freeVars (forAll xs body) = (freeVars body).removeAll xs
-  -- k ∉ (freeVars body).removeAll xs means: k ∉ freeVars body ∨ k ∈ xs
-  -- Since k ∉ xs, we get k ∉ freeVars body
-  -- h_k_not_fv : k ∉ LTy.freeVars (.forAll xs body)
-  -- LTy.freeVars (forAll xs body) = (LMonoTy.freeVars body).removeAll xs
-  -- removeAll keeps elements NOT in xs. So if k ∈ freeVars body and k ∉ xs,
-  -- then k ∈ removeAll, contradicting h_k_not_fv.
   intro hk_fv
   apply h_k_not_fv
   show k ∈ (LMonoTy.freeVars body).removeAll xs
@@ -4100,15 +4012,6 @@ private theorem polyKeysFresh_typeBoundVar {T : LExprParams} [DecidableEq T.IDMe
     (h_poly : Subst.polyKeysFresh (T := T) S Env.context) :
     Subst.polyKeysFresh (T := T) S Env1.context := by
   intro a ha x ty hf hbv
-  -- typeBoundVar adds (xv, forAll [] xty) to context.
-  -- If x = xv: type is forAll [] xty, boundVars = [], contradicts hbv.
-  -- If x ≠ xv: same entry as in Env.context, use h_poly.
-  -- Key: typeBoundVar adds via addInNewestContext, which is Maps.insert when xv is fresh.
-  -- The xv entry is monomorphic (boundVars = []).
-  -- For the general case, we use the fact that find? in Env1.context for x ≠ xv
-  -- gives the same result as in Env.context (by typeBoundVar_context decomposition).
-  -- For x = xv: boundVars = [] contradicts hbv.
-  -- This follows from the structure of typeBoundVar.
   simp only [typeBoundVar, Bind.bind, Except.bind] at h_tbv
   split at h_tbv; · simp at h_tbv
   rename_i v_gen h_gen; obtain ⟨xv_raw, Env_g⟩ := v_gen; simp at h_tbv
@@ -4296,66 +4199,11 @@ private theorem subst_compose_ftvar_open (S : Subst)
                 | head => exact List.mem_append_left _ h_fv
                 | tail _ h_rest => exact List.mem_append_right _ (ih_l h_rest)
             exact this args ha hv)
-        -- Reduce: subst distributes over tcons when non-empty
-        -- Use h_per_arg to show each arg matches, then combine for the whole tcons.
-        -- Avoid simp on the subst structure; instead use the per-arg proof directly.
-        -- Show: subst S (subst [zip1] (tcons name args)) = subst [zip2] (tcons name args)
-        -- This is exactly what the goal is after the `induction mty` + `tcons` case.
-        -- The approach: rewrite both sides via LMonoTy.subst_tcons or similar,
-        -- then reduce to per-arg.
-        -- Actually, let's just note that subst_compose_ftvar_closed' on each arg gives us
-        -- per-arg equality, and then we can combine using List.map extensionality.
-        -- But we don't have List.map because subst on tcons isn't literally List.map.
-        --
-        -- Simplest: show by induction on args that the whole tcons result follows.
-        -- Use the fact that the goal is just the original theorem applied to (.tcons name args),
-        -- and we have h_per_arg for each element.
-        -- Let's proceed by proving a helper that lifts per-element to LMonoTys:
-        -- LHS: subst S (subst [zip1] (.tcons name args))
-        -- = subst S (.tcons name (subst [zip1] args))   [since h_ne1]
-        -- = .tcons name (subst S (subst [zip1] args))   [if S non-empty; identity if S empty]
-        -- RHS: subst [zip2] (.tcons name args) = .tcons name (subst [zip2] args)  [since h_ne2]
-        -- So need: subst S (subst [zip1] args) = subst [zip2] args (list-level)
-        --          OR: subst [zip1] args = subst [zip2] args (when S empty)
-        -- Prove the list-level result by induction, using h_per_arg.
-        -- Show the goal directly by converting to LMonoTy.subst on the full tcons.
-        -- Goal: subst S (subst [zip1] (.tcons name args)) = subst [zip2] (.tcons name args)
-        -- LHS = subst S (.tcons name (LMonoTys.subst [zip1] args))
-        --      = .tcons name (LMonoTys.subst S (LMonoTys.subst [zip1] args))  [or identity if S empty]
-        -- RHS = .tcons name (LMonoTys.subst [zip2] args)
-        -- Convert from LMonoTy.subst on tcons to just tcons of LMonoTys.subst:
         show LMonoTy.subst S (LMonoTy.subst [List.zip (id :: ids') (List.map LMonoTy.ftvar (ftv :: ftvs'))] (.tcons name args)) =
              LMonoTy.subst [List.zip (id :: ids') (List.map (fun v => LMonoTy.subst S (.ftvar v)) (ftv :: ftvs'))] (.tcons name args)
-        -- Use LMonoTy.subst_tcons or manual rewriting
-        -- Goal: subst S (subst [zip1] (.tcons name args)) = subst [zip2] (.tcons name args)
-        -- Prove list-level equality first, then lift to tcons.
+
         suffices h_list : LMonoTys.subst S (LMonoTys.subst [List.zip (id :: ids') (List.map LMonoTy.ftvar (ftv :: ftvs'))] args) =
             LMonoTys.subst [List.zip (id :: ids') (List.map (fun v => LMonoTy.subst S (.ftvar v)) (ftv :: ftvs'))] args by
-          -- Use h_list to close the main goal about tcons
-          -- Use h_list on both sides, leveraging the `subst_compose_ftvar_closed'`-like approach.
-          -- The goal after the suffices is:
-          -- subst S (subst [zip1] (.tcons name args)) = subst [zip2] (.tcons name args)
-          -- Which equals: subst S (.tcons name (subst [zip1] args)) = .tcons name (subst [zip2] args)
-          -- Use LMonoTy.subst_tcons_pair-like reasoning... but we don't have that for general args.
-          -- Let's just do everything directly.
-          -- LHS step 1: subst [zip1] (.tcons name args) = .tcons name (LMonoTys.subst [zip1] args)
-          --   (since hasEmptyScopes [zip1] = false)
-          -- LHS step 2: subst S (.tcons name (LMonoTys.subst [zip1] args))
-          --   if hasEmptyScopes S: = .tcons name (LMonoTys.subst [zip1] args)
-          --   else: = .tcons name (LMonoTys.subst S (LMonoTys.subst [zip1] args))
-          -- RHS: = .tcons name (LMonoTys.subst [zip2] args)
-          -- In all cases: .tcons name (...) = .tcons name (LMonoTys.subst [zip2] args)
-          -- The ... = LMonoTys.subst [zip2] args by h_list (+ identity of S when empty)
-          --
-          -- Actually, both sides of the original goal are `LMonoTy.subst _ (.tcons name args)`.
-          -- The original goal is exactly what the theorem states for (.tcons name args).
-          -- Just rewrite both substs on tcons to expose the list part, then use h_list.
-          -- Use the fact that `subst [zip] (.tcons name args) = .tcons name (subst [zip] args)` when zip non-empty
-          -- subst_compose_ftvar_closed' already proved for elements where all freeVars ∈ ids.
-          -- But we can't use it here since not all freeVars of args may be in ids.
-          --
-          -- Direct approach: convert goal to and/from substLogic form where we have more control.
-          -- Use LMonoTy.subst_tcons to unfold subst on tcons:
           rw [LMonoTy.subst_tcons, LMonoTy.subst_tcons, LMonoTy.subst_tcons]
           -- Goal: .tcons name (subst S (subst [zip1] args)) = .tcons name (subst [zip2] args)
           exact congrArg _ h_list
@@ -4425,7 +4273,7 @@ private theorem openVarsList_cons_skip_map_ftvar
 private theorem openVarsList_map_ftvar_id
     (vars : List TyIdentifier) (vals : LMonoTys)
     (h_len : vars.length = vals.length)
-    (h_nodup : vars.Nodup := by assumption) :
+    (h_nodup : vars.Nodup) :
     LMonoTys.openVars vars vals (vars.map .ftvar) = vals := by
   -- Each ftvar vᵢ is looked up in zip vars vals and finds vals[i] at position i.
   -- The first match in zip for vᵢ is at position i (no earlier match since
@@ -4494,10 +4342,6 @@ private theorem tconsAlias_expand_eq
       simp at h_tcons
       obtain ⟨h_mty, h_env⟩ := h_tcons
       rw [← h_mty, ← h_env]
-      -- Now goal uses getD instead of dependent indexing:
-      -- subst (updatedEnv.updateSubst substInfo).subst
-      --   (subst substInfo.subst (instTypes.getD 1 inputMty)) =
-      --   expand alias (subst (updatedEnv.updateSubst substInfo).subst args)
       simp only [TEnv.updateSubst]
 
       -- Step 1: Idempotency. subst S (subst S x) = subst S x
@@ -4530,14 +4374,6 @@ private theorem tconsAlias_expand_eq
           cases rest with
           | cons _ _ => simp at h_len2
           | nil =>
-          -- Now instTypes = [a, b]
-          -- getD 0 = a, getD 1 = b
-          -- h_it : [a, b] = subst [S_inst] [pattern, alias.type]
-          -- h_u : Constraints.unify [(tcons name args, a)] ... = .ok substInfo
-          -- Goal: subst S b = expand alias (subst S args)
-          -- h_it : [a, b] = LMonoTys.subst [S_inst] [pattern, alias.type]
-          -- Compute the RHS as a concrete 2-element list
-          -- Compute: subst S [x, y] = [subst S x, subst S y] (for any S)
           have h_rhs_eq : LMonoTys.subst [List.zip alias.typeArgs fvs]
               [LMonoTy.tcons name (alias.typeArgs.map .ftvar), alias.type] =
               [LMonoTy.subst [List.zip alias.typeArgs fvs] (.tcons name (alias.typeArgs.map .ftvar)),
@@ -4617,7 +4453,7 @@ private theorem tconsAlias_expand_eq
           -- (each ftvar aᵢ matches vars[i] and maps to vals[i])
           symm
           exact openVarsList_map_ftvar_id alias.typeArgs _ (by
-            rw [LMonoTys.substLogic_length]; exact h_fvs_len)
+            rw [LMonoTys.substLogic_length]; exact h_fvs_len) (by assumption)
 
 
 
@@ -4824,16 +4660,6 @@ private theorem LMonoTy.subst_ftvar_eq (S : Subst) (v : TyIdentifier) (t : LMono
     LMonoTy.subst S (.ftvar v) = t := by
   simp only [LMonoTy.subst, h_ne, h_find, Bool.false_eq_true, ↓reduceIte]
 
-/-- Helper: `Map.find?` on `l.map (fun v => (v, f v))` returns `some (f v)` for `v ∈ l`. -/
-private theorem Map.find?_of_map_self {α : Type} [DecidableEq α] {β : Type}
-    (l : List α) (f : α → β) (v : α) (hv : v ∈ l) :
-    Map.find? (l.map (fun x => (x, f x))) v = some (f v) := by
-  induction l with
-  | nil => simp at hv
-  | cons w ws ih =>
-    simp only [List.map, Map.find?]
-    grind
-
 theorem AnnotCompat_subst {aliases : List TypeAlias} {ann xty : LMonoTy}
     (S : Subst)
     (h : AnnotCompat aliases ann xty)
@@ -5020,26 +4846,6 @@ private theorem SubstWF.key_not_in_freeVars_subst
         · exact h_all hd (List.mem_cons_self ..) h_hd
         · exact ih_tl (fun m hm => h_all m (List.mem_cons_of_mem _ hm)) h_tl
 
-private theorem Map.values_erase_subset [DecidableEq α] (m : Map α β) (x : α) :
-    ∀ v, v ∈ Map.values (Map.erase m x) → v ∈ Map.values m := by
-  induction m with
-  | nil => simp [Map.erase, Map.values]
-  | cons pair rest ih =>
-    obtain ⟨k, val⟩ := pair; simp only [Map.erase]; split
-    · intro v hv; simp [Map.values]; right; exact ih v hv
-    · intro v hv; simp [Map.values] at hv ⊢
-      grind
-
-private theorem Maps.values_erase_subset [DecidableEq α] (ms : Maps α β) (x : α) :
-    ∀ v, v ∈ Maps.values (Maps.erase ms x) → v ∈ Maps.values ms := by
-  induction ms with
-  | nil => simp [Maps.erase, Maps.values]
-  | cons scope rest ih =>
-    intro v hv; simp only [Maps.erase, Maps.values] at hv ⊢
-    rcases List.mem_append.mp hv with h | h
-    · exact List.mem_append_left _ (Map.values_erase_subset scope x v h)
-    · exact List.mem_append_right _ (ih v h)
-
 private theorem Subst.freeVars_erase_subset (S : Subst) (x : TyIdentifier) :
     ∀ a, a ∈ Subst.freeVars (Maps.erase S x) → a ∈ Subst.freeVars S := by
   intro a ha; simp [Subst.freeVars] at ha ⊢
@@ -5058,32 +4864,6 @@ private theorem SubstWF_go (S : Subst) (xs : List TyIdentifier) (h_wf : SubstWF 
   | cons x rest ih =>
     simp [LTy.subst.go]
     exact ih (Maps.erase S x) (SubstWF_erase S x h_wf)
-
-private theorem Map.keys_erase_mem_of_ne [DecidableEq α] (m : Map α β) {a x : α}
-    (h_key : a ∈ Map.keys m) (h_ne : a ≠ x) :
-    a ∈ Map.keys (Map.erase m x) := by
-  induction m with
-  | nil => simp [Map.keys] at h_key
-  | cons pair rest ih =>
-    obtain ⟨k, v⟩ := pair; simp only [Map.erase]; simp [Map.keys] at h_key
-    rcases h_key with rfl | h
-    · split
-      · exact absurd (by assumption) h_ne
-      · simp [Map.keys]
-    · split
-      · exact ih h
-      · simp [Map.keys]; right; exact ih h
-
-private theorem Maps.keys_erase_mem_of_ne {S : Maps TyIdentifier LMonoTy} {a x : TyIdentifier}
-    (h_key : a ∈ Maps.keys S) (h_ne : a ≠ x) :
-    a ∈ Maps.keys (Maps.erase S x) := by
-  induction S with
-  | nil => simp [Maps.keys] at h_key
-  | cons scope rest ih =>
-    simp only [Maps.erase, Maps.keys] at h_key ⊢
-    rcases List.mem_append.mp h_key with h | h
-    · exact List.mem_append_left _ (Map.keys_erase_mem_of_ne scope h h_ne)
-    · exact List.mem_append_right _ (ih h)
 
 private theorem keys_go_mem (S : Subst) (xs : List TyIdentifier) (a : TyIdentifier)
     (h_key : a ∈ Maps.keys S) (h_not_xs : a ∉ xs) :
@@ -5552,15 +5332,6 @@ theorem TEnvWF.of_resolveAux
       props.genState_mono }
 
 omit [ToString T.IDMeta] [ToFormat T.IDMeta] [HasGen T.IDMeta] [ToFormat (LFunc T)] [ToFormat T.Metadata] in
-/-- Free type variables in the output type of `resolveAux` don't include
-    "future" generated names — i.e., names with counter values ≥ the output
-    environment's generator counter. Since each `genTyVar` during resolution
-    increments the counter, the output type only contains type vars with
-    counter values strictly below the output counter.
-
-    This is used to show that a freshly generated type variable (produced
-    AFTER resolveAux) doesn't appear in the output type. -/
-
 -- `varCloseT` preserves `toLMonoTy`: it only affects the tree structure
 -- (turning fvars into bvars) but does not change the root metadata.
 private theorem varCloseT_toLMonoTy (k : Nat) (x : T.Identifier) (e : LExprT T.mono) :
@@ -5667,22 +5438,8 @@ private theorem WellScoped_varOpen
   · exact h_xv
   · exact h_sub y.1 (h_ws y h_orig)
 
-/-- `typeBoundVar` extends `knownVars`: all original variables remain. -/
--- Helper: Map.keys distributes over append
-private theorem Map.keys_append {α β : Type} (m1 m2 : Map α β) :
-    Map.keys (m1 ++ m2) = Map.keys m1 ++ Map.keys m2 := by
-  show Map.keys (List.append m1 m2) = Map.keys m1 ++ Map.keys m2
-  induction m1 with
-  | nil => rfl
-  | cons hd tl ih => obtain ⟨a, _⟩ := hd; exact congrArg (a :: ·) ih
-
--- addInNewest on cons simplifies to appending to the first scope
-private theorem Maps.addInNewest_cons (scope : Map α β) (rest : Maps α β) (m : Map α β) :
-    Maps.addInNewest (scope :: rest) m = (scope ++ m) :: rest := by
-  simp [Maps.addInNewest, Maps.newest, Maps.pop, Maps.push]
-
--- Helper: knownVars.go of addInNewest extends with new keys
 omit [ToString T.IDMeta] [DecidableEq T.IDMeta] [ToFormat T.IDMeta] [HasGen T.IDMeta] [ToFormat (LFunc T)] [ToFormat T.Metadata] in
+-- Helper: knownVars.go of addInNewest extends with new keys
 private theorem knownVars_go_addInNewest_mono
     (types : Maps T.Identifier LTy) (xv : T.Identifier) (ty : LTy)
     (v : T.Identifier) (hv : v ∈ TContext.knownVars.go types) :
@@ -5803,8 +5560,6 @@ theorem resolveAux_HasType :
         Subst.polyKeysFresh (T := T) S Env.context →
         HasType C (TContext.subst Env.context S) e
           (.forAll [] (LMonoTy.subst S et.toLMonoTy)) := by
-  -- We use strong induction on LExpr.sizeOf to handle the abs/quant cases,
-  -- where resolveAux recurses on (varOpen 0 x e_body) rather than e_body.
   suffices h_strong : ∀ (n : Nat) (e : LExpr T.mono), LExpr.sizeOf e = n →
       ∀ (et : LExprT T.mono) (C : LContext T) (Env Env' : TEnv T.IDMeta),
       resolveAux C Env e = .ok (et, Env') →
@@ -5822,7 +5577,6 @@ theorem resolveAux_HasType :
   induction n using Nat.strongRecOn with
   | _ n ih_n =>
   intro e h_sz
-  -- ih_n : ∀ m < n, ∀ e', LExpr.sizeOf e' = m → [full statement for e']
   -- Helper to apply IH to any e' with LExpr.sizeOf e' < n
   have ih_sub : ∀ (e' : LExpr T.mono), LExpr.sizeOf e' < n →
       ∀ (et : LExprT T.mono) (C : LContext T) (Env Env' : TEnv T.IDMeta),
@@ -6430,8 +6184,6 @@ theorem resolveAux_HasType :
                 (Env.context.subst S).types.insert xv (.forAll [] (LMonoTy.subst S xty)) } := by
             rw [h_ctx_bridge]
             exact _root_.Lambda.TContext_subst_insert_fresh Env.context S xv (.forAll [] xty) h_xv_fresh_maps
-          -- Option A: Use tabs with x_ty = .forAll [] (subst S xty)
-          -- This makes body typing match directly, at the cost of needing AnnotCompat_subst
           have h_tabs := HasType.tabs (TContext.subst Env.context S) m pn (xv, some xty)
             (.forAll [] (LMonoTy.subst S xty))
             e_body (.forAll [] (LMonoTy.subst S et_body.toLMonoTy)) bty

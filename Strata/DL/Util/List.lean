@@ -502,5 +502,13 @@ theorem removeAll_eq_nil_of_forall_mem [BEq α] [LawfulBEq α]
   rw [List.filter_eq_nil_iff]
   grind
 
+theorem removeAll_not_mem [BEq α] [LawfulBEq α] {x : α} {xs : List α}
+    (h : x ∉ xs) : xs.removeAll [x] = xs := by
+  simp only [List.removeAll]
+  rw [List.filter_eq_self]
+  intro a ha
+  simp only [List.elem_cons, List.elem_nil]
+  split <;> simp_all
+
 end List
 end
