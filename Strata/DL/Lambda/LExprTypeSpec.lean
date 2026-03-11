@@ -3553,7 +3553,7 @@ private theorem HasType_tinst_all
           unfold List.contains List.elem
           simp
         simp
-        exact removeAll_not_mem h_v_notin_rest
+        exact List.removeAll_not_mem h_v_notin_rest
       rw [h_open_eq] at h_inst
       -- h_inst : HasType C Γ e (.forAll rest (subst [[(v, t)]] body))
       -- Step 2: Apply IH
