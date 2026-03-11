@@ -147,19 +147,23 @@ Sat:unknown|Val:unknown ❓ unknown, Unknown (solver timeout or incomplete), SAR
 
 private def printOutcomeRow (sat val : Imperative.SMT.Result (Ident := Core.Expression.Ident)) : IO Unit := do
   let o : VCOutcome := { satisfiabilityProperty := sat, validityProperty := val }
-  let e := o.emoji .assert .full .deductive
-  let l := o.label .assert .full .deductive
+  let eA := o.emoji .assert .full .deductive
+  let lA := o.label .assert .full .deductive
+  let eC := o.emoji .cover .full .deductive
+  let lC := o.label .cover .full .deductive
   let ded := outcomeToLevel .deductive .assert o
   let bf := outcomeToLevel .bugFinding .assert o
   let bfc := outcomeToLevel .bugFindingAssumingCompleteSpec .assert o
-  IO.println s!"{e} {l} | Deductive: {ded} | BugFinding: {bf} | BugFinding+Complete: {bfc}"
+  let coverStr := if eA == eC && lA == lC then "" else s!" | Cover: {eC} {lC}"
+  IO.println s!"{eA} {lA} | Deductive: {ded} | BugFinding: {bf} | BugFinding+Complete: {bfc}{coverStr}"
 
 /--
-info: ✅ always true and is reachable from declaration entry | Deductive: none | BugFinding: none | BugFinding+Complete: none
+info: === Outcome Table (assert) ===
+✅ always true and is reachable from declaration entry | Deductive: none | BugFinding: none | BugFinding+Complete: none | Cover: ✅ satisfiable and reachable from declaration entry
 ❌ always false and is reachable from declaration entry | Deductive: error | BugFinding: error | BugFinding+Complete: error
-🔶 can be both true and false and is reachable from declaration entry | Deductive: error | BugFinding: note | BugFinding+Complete: error
-✅ pass (❗path unreachable) | Deductive: warning | BugFinding: warning | BugFinding+Complete: warning
-➕ can be true and is reachable from declaration entry | Deductive: error | BugFinding: note | BugFinding+Complete: note
+🔶 can be both true and false and is reachable from declaration entry | Deductive: error | BugFinding: note | BugFinding+Complete: error | Cover: ✅ satisfiable and reachable from declaration entry
+✅ pass (❗path unreachable) | Deductive: warning | BugFinding: warning | BugFinding+Complete: warning | Cover: ❌ fail (❗path unreachable)
+➕ can be true and is reachable from declaration entry | Deductive: error | BugFinding: note | BugFinding+Complete: note | Cover: ✅ satisfiable and reachable from declaration entry
 ✖️ always false if reached | Deductive: error | BugFinding: error | BugFinding+Complete: error
 ➖ can be false and is reachable from declaration entry | Deductive: error | BugFinding: note | BugFinding+Complete: error
 ✔️ always true if reached | Deductive: none | BugFinding: none | BugFinding+Complete: none
@@ -167,6 +171,7 @@ info: ✅ always true and is reachable from declaration entry | Deductive: none 
 -/
 #guard_msgs in
 #eval do
+  IO.println "=== Outcome Table (assert) ==="
   printOutcomeRow (.sat []) .unsat
   printOutcomeRow .unsat (.sat [])
   printOutcomeRow (.sat []) (.sat [])
