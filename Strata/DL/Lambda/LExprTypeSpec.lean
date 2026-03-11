@@ -331,9 +331,6 @@ The proof is structured in two layers:
 
 - **`LMonoTy.subst_absorbs`**: Absorption implies `subst S_outer (subst S_inner mty) = subst S_outer mty`.
 
-- **`HasType_subst_upgrade`**: Upgrade typing from `S_inner` to `S_outer` via
-  absorption + `HasType_subst_fresh_all`.
-
 - **`resolveAux_properties`**: Each `resolveAux` call preserves invariants (context, freshness, absorption).
 
 - **`Constraint.UnifyOneProperties`** / **`Constraints.UnifyCoreProperties`**: Bundled soundness, absorption, and key-inclusion for `unifyOne` / `unifyCore`.
@@ -2818,8 +2815,6 @@ private theorem LMonoTys.freeVars_append (xs ys : LMonoTys) :
   | nil => simp [LMonoTys.freeVars]
   | cons x xrest ih => simp [LMonoTys.freeVars, ih, List.append_assoc]
 
--- Combined proof by well-founded induction on sizeOf, proving both single-type
--- and list versions together.
 mutual
 private def mtySize (mty : LMonoTy) : Nat :=
   match mty with
@@ -3005,8 +3000,6 @@ end
 
 
 omit [ToString T.IDMeta] [ToFormat T.IDMeta] [HasGen T.IDMeta] [ToFormat (LFunc T)] [ToFormat T.Metadata] in
-/-- Combined result: context preservation, SubstFreshForGen preservation, and output type freshness.
-    These are proved together by strong induction to avoid circular dependencies. -/
 private theorem transfer_boundVarsFresh
     {Env Env' : TEnv T.IDMeta}
     (h_bf : ∀ y ty, Env.context.types.find? y = some ty →
@@ -3054,7 +3047,7 @@ omit [ToString T.IDMeta] [ToFormat (LFunc T)] [ToFormat T.Metadata] in
 /-- Combined inductive proof of all `ResolveAuxProperties` for `resolveAux`:
     generator monotonicity, context preservation, SubstFreshForGen preservation,
     output type freshness, and absorption.
-    Uses strong induction on `e.sizeOf` to handle `varOpen` in abs/quant cases. -/
+    Uses strong induction on `e.sizeOf` -/
 private theorem resolveAux_properties_aux :
     ∀ (n : Nat) (e : LExpr T.mono), e.sizeOf = n →
       ∀ (et : LExprT T.mono) (C : LContext T) (Env Env' : TEnv T.IDMeta),
@@ -3496,30 +3489,6 @@ theorem resolveAux_properties
     ResolveAuxProperties e et C Env Env' h_ne h_aw h_fwf h_sf h_cf h_bvf :=
   let ⟨h1, h2, h3, h4⟩ := resolveAux_properties_aux e.sizeOf e rfl et C Env Env' h h_ne h_aw h_fwf h_sf h_cf h_bvf
   { genState_mono := h1, context := h2, preserves := h3, absorbs := h4 }
-
-omit [ToString T.IDMeta] [ToFormat T.IDMeta] [HasGen T.IDMeta] [ToFormat (LFunc T)] [ToFormat T.Metadata] in
-/--
-Upgrade lemma: if `e` has type `subst S_inner mty` and `S_outer` absorbs
-`S_inner`, then `e` has type `subst S_outer mty` (provided `S_outer`'s keys
-are fresh in the context).
-
-This is the key mechanism for composing IHs in the new formulation: each
-recursive call gives typing under its own output substitution, and we upgrade
-to the final substitution via absorption.
--/
-theorem HasType_subst_upgrade
-    (C : LContext T) (Γ : TContext T.IDMeta) (e : LExpr T.mono) (mty : LMonoTy)
-    (S_inner S_outer : Subst)
-    (h_ty : HasType C Γ e (.forAll [] (LMonoTy.subst S_inner mty)))
-    (h_absorbs : Subst.absorbs S_outer S_inner)
-    (h_fresh : ∀ a, a ∈ Maps.keys S_outer → a ∈ LMonoTy.freeVars (LMonoTy.subst S_inner mty) →
-      TContext.isFresh (T := T) a Γ)
-    (h_wf : SubstWF S_outer) :
-    HasType C Γ e (.forAll [] (LMonoTy.subst S_outer mty)) := by
-  have h1 := HasType_subst_fresh_all C Γ e (LMonoTy.subst S_inner mty) S_outer h_ty h_fresh h_wf
-  rw [LMonoTy.subst_absorbs S_outer S_inner mty h_absorbs] at h1
-  exact h1
-
 
 private theorem removeAll_not_mem {x : TyIdentifier} {xs : List TyIdentifier}
     (h : x ∉ xs) : xs.removeAll [x] = xs := by
@@ -5546,8 +5515,6 @@ expression `et` such that for any substitution `S` that absorbs `Env'.subst`,
 the original expression `e` has type `subst S et.toLMonoTy` under the
 original context.
 
-The universal quantification over the final substitution eliminates the need
-for `HasType_subst_upgrade` in recursive cases (e.g., `eq`, `ite`, `app`).
 Each IH directly gives typing under the caller's `S`, provided we can show
 `S` absorbs each intermediate environment's substitution via the chain:
 - `resolveAux_properties.absorbs`: each `resolveAux` call absorbs its input substitution
@@ -6163,36 +6130,6 @@ theorem resolveAux_HasType :
                 h_find h_type (by simp [LTy.boundVars]; exact h_tys_len) rfl h_annot)
         · simp at h_inst
   | .app m e1 e2 =>
-    /-
-    Theorem: The .app case of resolveAux_HasType.
-
-    Given: resolveAux C Env (.app m e1 e2) = .ok (et, Env')
-
-    Proof:
-      1. Decompose the hypothesis into:
-         - resolveAux C Env e1 = .ok (e1t, Env1)
-         - resolveAux C Env1 e2 = .ok (e2t, Env2)
-         - genTyVar Env2 = .ok (fresh_name, Env3)
-         - unify [(ty1, arrow [ty2, freshty])] Env3.subst = .ok S
-         - et = .app ⟨m, mty⟩ e1t e2t, mty = subst S.subst (ftvar fresh_name)
-         - Env' = updateSubst Env3 S' where S'.subst = remove S.subst fresh_name
-
-      2. genTyVar preserves subst and context:
-         Env3.subst = Env2.subst, Env3.context = Env2.context
-
-      3. IHs give typing under ∀ S absorbing Env_i.subst.
-
-      4. Context preservation: chain Env' → Env3 → Env2 → Env1 → Env.
-
-      5. Given caller's S absorbing Env'.subst = remove(v4.subst, fresh),
-         derive S absorbs Env1.subst and Env2.subst via absorption chains.
-
-      6. Apply IHs with the caller's S directly (no HasType_subst_upgrade needed).
-
-      7. From unification + absorption: subst S ty1 = tcons "arrow" [subst S ty2, subst S freshty].
-
-      8. Apply HasType.tapp.
-    -/
     intro et C Env Env' h h_envwf h_ne h_fwf h_ws
     have h_aw := h_envwf.aliasesWF
     simp only [resolveAux, Bind.bind, Except.bind, Except.mapError] at h
@@ -6291,7 +6228,6 @@ theorem resolveAux_HasType :
                 Subst.absorbs_trans
                   Env2.stateSubstInfo.subst (Maps.remove v4.subst fresh_name) S
                   h_abs_rem_Env2 h_abs_S_rem
-              -- Apply IHs with S directly (no HasType_subst_upgrade needed!)
               have h_ty1_S := h_ty1 S h_abs_S_Env1 h_wf_S h_poly_fresh
               rw [h_ctx1] at h_ty2
               have h_ty2_S := h_ty2 S h_abs_S_Env2 h_wf_S h_poly_fresh
@@ -6826,7 +6762,6 @@ theorem resolveAux_HasType :
               have h_abs_S_Env3 : Subst.absorbs S Env3.stateSubstInfo.subst :=
                 Subst.absorbs_trans
                   Env3.stateSubstInfo.subst v4.subst S h_abs_v4_Env3 h_abs_S_v4
-              -- Apply IHs with S directly (no HasType_subst_upgrade needed!)
               have h_ty_c_S := h_ty_c S h_abs_S_Env1 h_wf_S h_poly_fresh
               rw [h_ctx1] at h_ty_t
               have h_ty_t_S := h_ty_t S h_abs_S_Env2 h_wf_S h_poly_fresh
@@ -6926,7 +6861,6 @@ theorem resolveAux_HasType :
             have h_abs_S_Env2 : Subst.absorbs S Env2.stateSubstInfo.subst :=
               Subst.absorbs_trans
                 Env2.stateSubstInfo.subst v3.subst S h_abs_v3_Env2 h_abs_S_v3
-            -- Apply IHs with S directly (no HasType_subst_upgrade needed!)
             have h_ty1_S := h_ty1 S h_abs_S_Env1 h_wf_S h_poly_fresh
             rw [h_ctx1] at h_ty2
             have h_ty2_S := h_ty2 S h_abs_S_Env2 h_wf_S h_poly_fresh
