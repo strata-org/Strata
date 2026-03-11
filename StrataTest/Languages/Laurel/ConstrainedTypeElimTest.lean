@@ -97,4 +97,35 @@ deterministic
   for proc in program.staticProcedures do
     IO.println (toString (Std.Format.pretty (Std.ToFormat.format proc)))
 
+-- Uninitialized constrained variable: currently uses witness as default.
+-- TODO: Once the translator emits havoc for uninitialized variables (#550),
+-- switch to assume instead of witness injection + assert.
+def uninitProgram : String := r"
+constrained posint = x: int where x > 0 witness 1
+procedure f() {
+  var x: posint;
+  assert x == 1;
+};
+"
+
+/--
+info: function posint$constraint(x: int) returns ⏎
+(result: bool)
+deterministic
+{ x > 0 }
+procedure f() returns ⏎
+()
+deterministic
+{ var x: int := 1; assert posint$constraint(x); assert x == 1 }
+procedure $witness_posint() returns ⏎
+()
+deterministic
+{ var $witness: int := 1; assert posint$constraint($witness) }
+-/
+#guard_msgs in
+#eval! do
+  let program ← parseLaurelAndElim uninitProgram
+  for proc in program.staticProcedures do
+    IO.println (toString (Std.Format.pretty (Std.ToFormat.format proc)))
+
 end Laurel
