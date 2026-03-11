@@ -24,6 +24,7 @@ namespace Strata.Laurel
 def testProgram : String := r"
 constrained nat = x: int where x >= 0 witness 0
 procedure test(n: nat) returns (r: nat) {
+  assert r >= 0;
   var y: nat := n;
   return y;
 };
@@ -50,7 +51,7 @@ procedure test(n: int) returns ⏎
 (r: int)
 requires nat$constraint(n)
 deterministic
- ensures nat$constraint(r) := { var y: int := n; assert nat$constraint(y); return y }
+ ensures nat$constraint(r) := { assert r >= 0; var y: int := n; assert nat$constraint(y); return y }
 procedure $witness_nat() returns ⏎
 ()
 deterministic
