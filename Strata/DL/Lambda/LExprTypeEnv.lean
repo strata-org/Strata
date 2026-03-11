@@ -1285,7 +1285,7 @@ theorem TGenEnv.genTyVar_context {IDMeta : Type} [ToFormat IDMeta]
   · simp at h
   · simp at h; obtain ⟨_, h2⟩ := h; rw [← h2]
 
-/-- `genTyVars` preserves the context (by induction, using `genTyVar_context`). -/
+/-- `genTyVars` preserves the context. -/
 theorem TGenEnv.genTyVars_context {IDMeta : Type} [ToFormat IDMeta]
     (n : Nat) (Env : TGenEnv IDMeta)
     (tvs : List TyIdentifier) (Env' : TGenEnv IDMeta)

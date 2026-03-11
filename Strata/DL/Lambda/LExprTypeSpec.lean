@@ -22,7 +22,7 @@ import all Strata.DL.Util.List
 public import Strata.DL.Lambda.LExprT
 import all Strata.DL.Lambda.LExprT
 public import Strata.DL.Lambda.FactoryWF
-import all Strata.DL.Lambda.FactoryWF
+
 /-! ## Typing Relation for Lambda Expressions
 
 Specification of Lambda's type inference. See `Strata.DL.Lambda.LExprT` for the
@@ -302,19 +302,11 @@ For quantifiers, `toLMonoTy` always returns `LMonoTy.bool`.
 theorem applySubstT_toLMonoTy {T : LExprParamsT}
     (et : LExprT T) (S : Subst) :
     (LExpr.applySubstT et S).toLMonoTy = LMonoTy.subst S et.toLMonoTy := by
-  cases et with
-  | const m c => simp [LExpr.applySubstT, LExpr.replaceMetadata, LExpr.toLMonoTy]
-  | op m o ty => simp [LExpr.applySubstT, LExpr.replaceMetadata, LExpr.toLMonoTy]
-  | bvar m i => simp [LExpr.applySubstT, LExpr.replaceMetadata, LExpr.toLMonoTy]
-  | fvar m x ty => simp [LExpr.applySubstT, LExpr.replaceMetadata, LExpr.toLMonoTy]
-  | app m e1 e2 => simp [LExpr.applySubstT, LExpr.replaceMetadata, LExpr.toLMonoTy]
-  | abs m _ ty e => simp [LExpr.applySubstT, LExpr.replaceMetadata, LExpr.toLMonoTy]
-  | ite m c t e => simp [LExpr.applySubstT, LExpr.replaceMetadata, LExpr.toLMonoTy]
-  | eq m e1 e2 => simp [LExpr.applySubstT, LExpr.replaceMetadata, LExpr.toLMonoTy]
-  | quant m k _ ty tr e =>
-    simp [LExpr.applySubstT, LExpr.replaceMetadata, LExpr.toLMonoTy, LMonoTy.bool]
+  cases et <;> try solve | simp [LExpr.applySubstT, LExpr.replaceMetadata, LExpr.toLMonoTy]
+  case quant m k _ ty tr e =>
+    simp only [LExpr.applySubstT, LExpr.replaceMetadata, LExpr.toLMonoTy]
     unfold LMonoTy.subst
-    split <;> simp [LMonoTys.subst, LMonoTys.subst.substAux]
+    split <;> simp [LMonoTys.subst, LMonoTys.subst.substAux]; rfl
 
 /-!
 ### Proof architecture for `resolve_HasType`
@@ -327,20 +319,12 @@ The proof is structured in two layers:
    - for any substitution `S` that absorbs `Env'.stateSubstInfo.subst`,
      `HasType C (TContext.subst Env.context S) e (.forAll [] (LMonoTy.subst S et.toLMonoTy))`.
 
-   The conclusion is universally quantified over `S` so that the caller
-   (including recursive cases) can instantiate it with the final substitution.
-   This eliminates the need for `HasType_subst_upgrade` in recursive cases
-   (e.g., `eq`, `ite`, `app`): each IH directly gives typing under the
-   caller's `S`, provided we can show `S` absorbs each intermediate
-   environment's substitution via the absorption chain built from
-   `resolveAux_properties.absorbs`, `unify_absorbs`, and `Subst.absorbs_trans`.
-
 2. **`resolve_HasType`**: The top-level theorem. Since `resolve` is just
    `resolveAux` followed by `applySubstT`, we decompose the hypothesis,
    apply `resolveAux_HasType` (instantiating `S` with the final substitution),
    and use `applySubstT_toLMonoTy`.
 
-#### Key supporting lemmas (quite a few of these are in LTyUnify.lean):
+#### Key definitions and supporting lemmas (quite a few of these are in LTyUnify.lean):
 
 - **`Subst.absorbs`**: `S_outer` absorbs `S_inner` when every binding in
   `S_inner` is "already known" to `S_outer`.
