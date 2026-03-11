@@ -691,7 +691,16 @@ partial def translateAssign  (ctx : TranslationContext)
   let rhs_trans ←  translateExpr ctx rhs
   if let .Hole := rhs_trans.val then
   {
-    return (ctx, [mkStmtExprMd .Hole])
+    match lhs with
+    | .Name _ n _ =>
+      if n.val ∈ ctx.variableTypes.unzip.1 then
+        let targetExpr := mkStmtExprMd (StmtExpr.Identifier n.val)
+        return (ctx, [mkStmtExprMd (StmtExpr.Assign [targetExpr] rhs_trans)])
+      else
+        let initStmt := mkStmtExprMd (StmtExpr.LocalVariable n.val AnyTy (mkStmtExprMd .Hole))
+        let newctx := {ctx with variableTypes:=(n.val, "Any")::ctx.variableTypes}
+        return (newctx, [initStmt])
+    | _ => return (ctx, [mkStmtExprMd .Hole])
   }
   let mut newctx := ctx
   match lhs with
