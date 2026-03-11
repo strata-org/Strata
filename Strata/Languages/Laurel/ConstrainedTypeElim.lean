@@ -51,24 +51,12 @@ def isConstrainedType (ptMap : ConstrainedTypeMap) (ty : HighType) : Bool :=
 
 /-- Build a call to the constraint function for a constrained type, or `none` if not constrained -/
 def constraintCallFor (ptMap : ConstrainedTypeMap) (ty : HighType)
-    (arg : StmtExprMd) (md : Imperative.MetaData Core.Expression) : Option StmtExprMd :=
+    (varName : Identifier) (md : Imperative.MetaData Core.Expression) : Option StmtExprMd :=
   match ty with
   | .UserDefined name => if ptMap.contains name.text then
-      some ⟨.StaticCall (mkId s!"{name.text}$constraint") [arg], md⟩
+      some ⟨.StaticCall (mkId s!"{name.text}$constraint") [⟨.Identifier varName, md⟩], md⟩
     else none
   | _ => none
-
-/-- Clear all uniqueIds from identifiers in an expression so resolution can re-assign them -/
-partial def clearIds : StmtExprMd → StmtExprMd
-  | ⟨.Identifier n, md⟩ => ⟨.Identifier { n with uniqueId := none }, md⟩
-  | ⟨.PrimitiveOp op args, md⟩ => ⟨.PrimitiveOp op (args.map clearIds), md⟩
-  | ⟨.StaticCall c args, md⟩ => ⟨.StaticCall { c with uniqueId := none } (args.map clearIds), md⟩
-  | ⟨.Block ss sep, md⟩ => ⟨.Block (ss.map clearIds) sep, md⟩
-  | ⟨.IfThenElse c t (some e), md⟩ => ⟨.IfThenElse (clearIds c) (clearIds t) (some (clearIds e)), md⟩
-  | ⟨.IfThenElse c t none, md⟩ => ⟨.IfThenElse (clearIds c) (clearIds t) none, md⟩
-  | ⟨.Forall p body, md⟩ => ⟨.Forall { p with name := { p.name with uniqueId := none } } (clearIds body), md⟩
-  | ⟨.Exists p body, md⟩ => ⟨.Exists { p with name := { p.name with uniqueId := none } } (clearIds body), md⟩
-  | e => e
 
 /-- Generate a constraint function for a constrained type.
     For nested types, the function calls the parent's constraint function. -/
@@ -80,11 +68,11 @@ def mkConstraintFunc (ptMap : ConstrainedTypeMap) (ct : ConstrainedType) : Proce
       if ptMap.contains parent.text then
         let parentCall : StmtExprMd :=
           ⟨.StaticCall (mkId s!"{parent.text}$constraint") [⟨.Identifier { ct.valueName with uniqueId := none }, md⟩], md⟩
-        ⟨.PrimitiveOp .And [clearIds ct.constraint, parentCall], md⟩
-      else clearIds ct.constraint
-    | _ => clearIds ct.constraint
+        ⟨.PrimitiveOp .And [ct.constraint, parentCall], md⟩
+      else ct.constraint
+    | _ => ct.constraint
   { name := mkId s!"{ct.name.text}$constraint"
-    inputs := [{ name := { ct.valueName with uniqueId := none }, type := { baseType with md := #[] } }]
+    inputs := [{ name := ct.valueName, type := { baseType with md := #[] } }]
     outputs := [{ name := mkId "result", type := ⟨.TBool, #[]⟩ }]
     body := .Transparent ⟨.Block [bodyExpr] none, #[]⟩
     isFunctional := true
@@ -107,14 +95,14 @@ def resolveExpr (ptMap : ConstrainedTypeMap) : StmtExprMd → StmtExprMd
   | ⟨.Forall param body, md⟩ =>
     let body' := resolveExpr ptMap body
     let param' := { param with type := resolveType ptMap param.type }
-    let injected := match constraintCallFor ptMap param.type.val ⟨.Identifier param.name, md⟩ md with
+    let injected := match constraintCallFor ptMap param.type.val param.name md with
       | some c => ⟨.PrimitiveOp .Implies [c, body'], md⟩
       | none => body'
     ⟨.Forall param' injected, md⟩
   | ⟨.Exists param body, md⟩ =>
     let body' := resolveExpr ptMap body
     let param' := { param with type := resolveType ptMap param.type }
-    let injected := match constraintCallFor ptMap param.type.val ⟨.Identifier param.name, md⟩ md with
+    let injected := match constraintCallFor ptMap param.type.val param.name md with
       | some c => ⟨.PrimitiveOp .And [c, body'], md⟩
       | none => body'
     ⟨.Exists param' injected, md⟩
@@ -156,7 +144,7 @@ def elimStmt (ptMap : ConstrainedTypeMap)
   let md := stmt.md
   match _h : stmt.val with
   | .LocalVariable name ty init =>
-    let callOpt := constraintCallFor ptMap ty.val ⟨.Identifier name, md⟩ md
+    let callOpt := constraintCallFor ptMap ty.val name md
     if callOpt.isSome then modify fun pv => pv.insert name.text ty.val
     let assert := callOpt.toList.map fun c => ⟨.Assert c, md⟩
     let init' := match init with
@@ -170,7 +158,7 @@ def elimStmt (ptMap : ConstrainedTypeMap)
     | .Identifier name => do
       match (← get).get? name.text with
       | some ty =>
-        let assert := (constraintCallFor ptMap ty ⟨.Identifier name, md⟩ md).toList.map
+        let assert := (constraintCallFor ptMap ty name md).toList.map
           fun c => ⟨.Assert c, md⟩
         pure ([stmt] ++ assert)
       | none => pure [stmt]
@@ -202,9 +190,9 @@ decreasing_by
 
 def elimProc (ptMap : ConstrainedTypeMap) (proc : Procedure) : Procedure :=
   let inputRequires := proc.inputs.filterMap fun p =>
-    constraintCallFor ptMap p.type.val ⟨.Identifier p.name, p.type.md⟩ p.type.md
+    constraintCallFor ptMap p.type.val p.name p.type.md
   let outputEnsures := if proc.isFunctional then [] else proc.outputs.filterMap fun p =>
-    (constraintCallFor ptMap p.type.val ⟨.Identifier p.name, p.type.md⟩ p.type.md).map
+    (constraintCallFor ptMap p.type.val p.name p.type.md).map
       fun c => ⟨c.val, p.type.md⟩
   let initVars : PredVarMap := proc.inputs.foldl (init := {}) fun s p =>
     if isConstrainedType ptMap p.type.val then s.insert p.name.text p.type.val else s
@@ -237,9 +225,9 @@ private def mkWitnessProc (ptMap : ConstrainedTypeMap) (ct : ConstrainedType) : 
   let md := ct.witness.md
   let witnessId : Identifier := mkId "$witness"
   let witnessInit : StmtExprMd :=
-    ⟨.LocalVariable witnessId (resolveType ptMap ct.base) (some (clearIds ct.witness)), md⟩
+    ⟨.LocalVariable witnessId (resolveType ptMap ct.base) (some ct.witness), md⟩
   let assert : StmtExprMd :=
-    ⟨.Assert (constraintCallFor ptMap (.UserDefined ct.name) ⟨.Identifier witnessId, md⟩ md).get!, md⟩
+    ⟨.Assert (constraintCallFor ptMap (.UserDefined ct.name) witnessId md).get!, md⟩
   { name := mkId s!"$witness_{ct.name.text}"
     inputs := []
     outputs := []

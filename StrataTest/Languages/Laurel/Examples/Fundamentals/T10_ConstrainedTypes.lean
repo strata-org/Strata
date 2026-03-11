@@ -14,7 +14,7 @@ namespace Laurel
 
 def program := r"
 constrained nat = x: int where x >= 0 witness 0
-constrained posnat = x: nat where x > 0 witness 1
+constrained posnat = x: nat where x != 0 witness 1
 
 // Input constraint becomes requires — body can rely on it
 procedure inputAssumed(n: nat) {
@@ -112,7 +112,7 @@ procedure uninitNat() {
 // Uninitialized nested constrained variable — outermost witness used
 procedure uninitPosnat() {
   var y: posnat;
-  assert y > 0;
+  assert y != 0;
   assert y >= 0;
 };
 
