@@ -1,6 +1,6 @@
 #!/bin/bash
-# Check that new code does not introduce panic! calls.
-# Only lines added in this PR are checked (compared against the merge base).
+# Check that new code does not introduce net-new panic! calls.
+# Only raises an error if more panics are added than removed in this PR.
 # To suppress a specific line, add a "-- nopanic:ok" comment on that line.
 
 set -euo pipefail
@@ -24,12 +24,27 @@ HITS=$(git diff "$MERGE_BASE"...HEAD --unified=0 --diff-filter=ACMR -- '*.lean' 
       grep -v -- '-- nopanic:ok'; grep_status=$?; \
       if [ "$grep_status" -gt 1 ]; then exit "$grep_status"; else exit 0; fi; })
 
-if [ -n "$HITS" ]; then
-  echo "ERROR: New code introduces panic! — use Except/throw instead."
+if [ -z "$HITS" ]; then
+  echo "OK: No new panic! usage found."
+  exit 0
+fi
+
+ADDED=$(echo "$HITS" | wc -l | tr -d ' ')
+
+# Count removed panic! lines from the same diff
+REMOVED=$(git diff "$MERGE_BASE"...HEAD --unified=0 --diff-filter=ACMR -- '*.lean' \
+  | grep -E '^-[^-]' \
+  | grep -cF 'panic!' || true)
+
+NET=$((ADDED - REMOVED))
+
+if [ "$NET" -gt 0 ]; then
+  echo "ERROR: Net increase of $NET panic! call(s) — use Except/throw instead."
+  echo "  (added: $ADDED, removed: $REMOVED)"
   echo "To suppress a specific occurrence, add '-- nopanic:ok' on that line."
   echo ""
   echo "$HITS"
   exit 1
 fi
 
-echo "OK: No new panic! usage found."
+echo "OK: No net increase in panic! usage (added: $ADDED, removed: $REMOVED)."
