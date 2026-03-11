@@ -30,7 +30,7 @@ done
 if [ "$mode" = "laurel" ]; then
     command="pyAnalyzeLaurel"
     expected_dir="expected_laurel"
-    skip_tests="test_datetime"
+    skip_tests=""
     if [ "$incremental" = true ]; then
         command="$command --incremental"
         expected_dir="expected_incremental"

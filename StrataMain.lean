@@ -16,6 +16,7 @@ import Strata.Languages.Python.Specs.ToLaurel
 import Strata.Languages.Laurel.LaurelFormat
 import Strata.Transform.ProcedureInlining
 import Strata.Languages.Python.CorePrelude
+import Strata.Languages.Python.PythonLaurelCorePrelude
 import Strata.Backends.CBMC.GOTO.CoreToCProverGOTO
 
 import Strata.SimpleAPI
@@ -130,6 +131,11 @@ def printCommand : Command where
   help := "Pretty-print a Strata file (text or Ion) to stdout."
   callback := fun v pflags => do
     let searchPath ← pflags.buildDialectFileMap
+    -- Special case for already loaded dialects.
+    let ld ← searchPath.getLoaded
+    if mem : v[0] ∈ ld.dialects then
+      IO.print <| ld.dialects.format v[0] mem
+      return
     let pd ← Strata.readStrataFile searchPath v[0]
     match pd with
     | .dialect d =>
@@ -336,7 +342,7 @@ def buildPySpecPrelude (pyspecPaths : Array String) : IO PySpecPrelude := do
   -- We no longer need to strip it from translate output.
   let laurelPreludeSize := 0
   let mut preludeDecls : Array Core.Decl :=
-    Strata.Python.Core.prelude.decls.toArray
+    Strata.Python.Core.PythonLaurelPrelude.decls.toArray
   let mut existingNames : Std.HashSet String :=
     preludeDecls.foldl (init := {}) fun s d =>
       (Core.Decl.names d).foldl (init := s) fun s n => s.insert n.name
@@ -528,12 +534,12 @@ def pyAnalyzeLaurelCommand : Command where
     let sourcePathForMetadata := match pySourceOpt with
       | some (pyPath, _) => pyPath
       | none => filePath
-    let laurelPgm := Strata.Python.pythonToLaurel pyPrelude cmds[0]!
+    let laurelPgm := Strata.Python.pythonToLaurel pyPrelude cmds[0]! none
       sourcePathForMetadata allOverloads
     match laurelPgm with
       | .error e =>
         exitFailure s!"Python to Laurel translation failed: {e}"
-      | .ok laurelProgram =>
+      | .ok (laurelProgram, ctx)  =>
         if verbose then
           IO.println "\n==== Laurel Program ===="
           IO.println f!"{laurelProgram}"
@@ -550,7 +556,7 @@ def pyAnalyzeLaurelCommand : Command where
           -- The Laurel prelude is now included at the Laurel level during
           -- HeapParameterization, so translate output contains prelude decls as normal decls.
           -- No stripping needed.
-          let programDecls := coreProgramDecls.decls
+          let programDecls := coreProgramDecls.decls.filter (λ d=> d.name.name != "Box")
           -- Check for name collisions between program and prelude
           let preludeNames : Std.HashSet String :=
             pyPrelude.decls.flatMap Core.Decl.names
@@ -948,7 +954,8 @@ private def emitProcWithLifted (Env : Core.Expression.TyEnv) (procName : String)
   match extraSyms with | .obj m => for (k, v) in m.toList do symtabObj := symtabObj.insert k v | _ => pure ()
   return (Lean.Json.obj symtabObj, Lean.Json.mkObj [("functions", Lean.Json.arr gotoFns)])
 
-private def datatypeToSymbolEntry (dt : Lambda.LDatatype Unit) :
+private def datatypeToSymbolEntry (dt : Lambda.LDatatype Unit)
+    (mutualNames : List String := [dt.name]) :
     Except Std.Format (String × CProverGOTO.CBMCSymbol) := do
   let mut components : Array (String × Lean.Json) :=
     #[("$tag", CProverGOTO.tyToJson .Integer)]
@@ -956,10 +963,10 @@ private def datatypeToSymbolEntry (dt : Lambda.LDatatype Unit) :
     for (fieldId, fieldTy) in constr.args do
       let gty ← Lambda.LMonoTy.toGotoType fieldTy
       let tyJson := CProverGOTO.tyToJson gty
-      -- Recursive fields (type refers back to this datatype) must be pointers
+      -- Recursive fields (type refers to any datatype in the mutual block) must be pointers
       let tyJson := match fieldTy with
         | .tcons name _ =>
-          if name == dt.name then
+          if mutualNames.contains name then
             Lean.Json.mkObj [
               ("id", "pointer"),
               ("sub", Lean.Json.arr #[tyJson]),
@@ -1037,9 +1044,10 @@ private def collectDatatypeSymbols (pgm : Core.Program) :
   for decl in pgm.decls do
     match decl with
     | .type (.data dts) _ =>
+      let mutualNames := dts.map (·.name)
       for dt in dts do
         if dt.typeArgs.isEmpty then
-          let entry ← datatypeToSymbolEntry dt
+          let entry ← datatypeToSymbolEntry dt mutualNames
           syms := syms ++ [entry]
     | .type (.con tc) _ =>
       if tc.numargs == 0 then
@@ -1147,12 +1155,12 @@ def pyTranslateLaurelCommand : Command where
     let pgm ← readPythonStrata v[0]
     let cmds := Strata.toPyCommands pgm.commands
     assert! cmds.size == 1
-    let prelude := Strata.Python.Core.prelude
+    let prelude := Strata.Python.Core.PythonLaurelPrelude
     let laurelPgm := Strata.Python.pythonToLaurel prelude cmds[0]!
     match laurelPgm with
     | .error e =>
       exitFailure s!"Python to Laurel translation failed: {e}"
-    | .ok laurelProgram =>
+    | .ok (laurelProgram, _) =>
       match Strata.Laurel.translate laurelProgram with
       | .error diagnostics =>
         exitFailure s!"Laurel to Core translation failed: {diagnostics}"
@@ -1170,19 +1178,19 @@ def pyAnalyzeLaurelToGotoCommand : Command where
     let pySourceOpt ← tryReadPythonSource filePath
     let cmds := Strata.toPyCommands pgm.commands
     assert! cmds.size == 1
-    let prelude := Strata.Python.Core.prelude
+    let prelude := Strata.Python.Core.PythonLaurelPrelude
     let sourcePathForMetadata := match pySourceOpt with
       | some (pyPath, _) => pyPath
       | none => filePath
-    let laurelPgm := Strata.Python.pythonToLaurel prelude cmds[0]! sourcePathForMetadata
+    let laurelPgm := Strata.Python.pythonToLaurel prelude cmds[0]! none sourcePathForMetadata
     match laurelPgm with
     | .error e => exitFailure s!"Python to Laurel translation failed: {e}"
-    | .ok laurelProgram =>
+    | .ok (laurelProgram,_) =>
       match Strata.Laurel.translate laurelProgram with
       | .error diagnostics =>
         exitFailure s!"Laurel to Core translation failed: {diagnostics}"
       | .ok coreProgram =>
-        let coreProgram := {decls := prelude.decls ++ coreProgram.fst.decls }
+        let coreProgram := {decls := prelude.decls ++ coreProgram.fst.decls.filter (λ d=> d.name.name != "Box") }
         -- Inline procedure calls (except main) repeatedly until fixpoint
         let mut coreProgram := coreProgram
         for _ in List.range 10 do

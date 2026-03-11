@@ -35,29 +35,6 @@ def baseLogEvent (events : Std.HashSet EventType)
   pure ()
 
 /--
-A specification predicate. Currently only supports constant boolean values;
-placeholder for future extension with more complex predicates.
--/
-inductive Pred where
-| const (b : Bool)
-
-namespace Pred
-
-def not (p : Pred) : Pred :=
-  match p with
-  | .const b => .const (¬ b)
-
-end Pred
-
-/--
-Represents an iterable type in Python specifications.
-Currently only supports lists; other iterables (sets, generators, etc.) to be
-added.
--/
-inductive Iterable where
-| list
-
-/--
 A Python module name split into its dot-separated components.
 For example, `typing.List` has components `["typing", "List"]`.
 The size constraint ensures at least one component exists.
@@ -637,6 +614,9 @@ def pySpecArg (usedNames : Std.HashSet String)
 structure SpecAssertionContext where
   filePath : System.FilePath
   kwargsParamName : Option String := none
+  kwargsType : Option SpecType := none
+  /-- Local variable type bindings (e.g., from for-loop iteration variables). -/
+  localTypes : Std.HashMap String SpecType := {}
 
 /-- State for `SpecAssertionM`. -/
 structure SpecAssertionState where
@@ -663,17 +643,6 @@ instance : PySpecMClass SpecAssertionM where
     let new_cnt := (←get).errors.size
     return (cnt = new_cnt, r)
 
-def transPred (_e : expr SourceRange) : SpecAssertionM Pred := do
-  -- FIXME
-  pure (.const true)
-
-def transIter (_e : expr SourceRange) : SpecAssertionM Iterable := do
-  -- FIXME
-  return .list
-
-def assumePred (_p : Pred) (act : SpecAssertionM Unit) : SpecAssertionM Unit := do
-  act
-
 /-- Match a subscript expression `param["field"]` against the kwargs parameter
     name from context, returning `(paramName, fieldName)` on success. -/
 def extractKwargsField (e : expr SourceRange)
@@ -689,17 +658,126 @@ def extractKwargsField (e : expr SourceRange)
   | _ => return none
 
 /-- Extract a `SpecExpr` subject from a Python expression.
-    Recognizes kwargs subscripts (`kw["field"]` → `.getIndex (.var kn) fn`)
+    Recognizes kwargs subscripts (`kw["field"]` → `.getIndex (.var kn) fn`),
+    nested subscripts (`kw["a"]["b"]` → `.getIndex (.getIndex (.var kn) "a") "b"`),
     and plain variable names (`.Name` → `.var name`).
     Returns `none` for unsupported expression forms. -/
-def extractSubject (e : expr SourceRange)
+partial def extractSubject (e : expr SourceRange)
     : SpecAssertionM (Option SpecExpr) := do
   match ← extractKwargsField e with
   | some (kn, fn) => return some (.getIndex (.var kn) fn)
   | none => pure ()
   match e with
   | .Name _ ⟨_, name⟩ (.Load _) => return some (.var name)
+  | .Subscript _ inner (.Constant _ (.ConString _ fieldName) _) (.Load _) =>
+    match ← extractSubject inner with
+    | some subj => return some (.getIndex subj fieldName.val)
+    | none => return none
   | _ => return none
+
+/-- Translate a Python `if` condition into a `SpecExpr`.
+    Currently recognizes `"key" in container` patterns. -/
+def transCondition (e : expr SourceRange) : SpecAssertionM (Option SpecExpr) := do
+  match e with
+  | .Compare _ (.Constant _ (.ConString _ key) _) ops comparators =>
+    if h₁ : ops.val.size = 1 then
+      if h₂ : comparators.val.size = 1 then
+        match ops.val[0] with
+        | .In _ =>
+          match ← extractSubject comparators.val[0] with
+          | some subj => return some (.containsKey subj key.val)
+          | none => pure ()
+        | _ => pure ()
+    pure ()
+  | _ => pure ()
+  return none
+
+/-- Run an action that may produce assertions, then wrap each new assertion's
+    formula with `implies cond ...` (or `implies (not cond) ...` for else branches).
+    If `cond` is `none`, assertions pass through unchanged. -/
+def assumeCondition (cond : Option SpecExpr) (act : SpecAssertionM Unit)
+    : SpecAssertionM Unit := do
+  let prevAssertions := (←get).assertions
+  modify fun s => { s with assertions := #[] }
+  act
+  let newAssertions := (←get).assertions
+  match cond with
+  | some c =>
+    let wrapped := newAssertions.map fun a =>
+      { a with formula := .implies c a.formula }
+    modify fun s => { s with assertions := prevAssertions ++ wrapped }
+  | none =>
+    modify fun s => { s with assertions := prevAssertions ++ newAssertions }
+
+/-- Translate a Python expression from an f-string message into a `SpecExpr`.
+    Handles kwargs subscripts, variable names, and `len(...)` calls.
+    Falls back to `.placeholder` for unsupported patterns. -/
+def transMessageExpr (e : expr SourceRange)
+    : SpecAssertionM SpecExpr := do
+  match ← extractSubject e with
+  | some subj => return subj
+  | none => pure ()
+  match e with
+  | .Call _ (.Name _ funcName (.Load _)) args _ =>
+    if funcName.val == "len" && args.val.size == 1 then
+      match ← extractSubject args.val[0]! with
+      | some subj => return .len subj
+      | none => return .placeholder
+    else return .placeholder
+  | _ => return .placeholder
+
+/-- Look up a field in a TypedDict SpecType, returning its type if found. -/
+def lookupTypedDictField (tp : SpecType) (field : String) : Option SpecType := do
+  for atom in tp.atoms do
+    match atom with
+    | .typedDict fields fieldTypes _ =>
+      for i in [:fields.size] do
+        if fields[i]! == field then return fieldTypes[i]!
+    | _ => pure ()
+  none
+
+/-- Infer the type of a Python expression from available type context.
+    Handles kwargs subscripts, nested subscripts, and local variable bindings. -/
+partial def inferExprType (e : expr SourceRange) : SpecAssertionM (Option SpecType) := do
+  match e with
+  | .Name _ ⟨_, name⟩ (.Load _) =>
+    return (←read).localTypes[name]?
+  | .Subscript _ (.Name _ paramName (.Load _))
+      (.Constant _ (.ConString _ fieldName) _) (.Load _) =>
+    match (←read).kwargsParamName with
+    | some kn =>
+      if paramName.val == kn then
+        match (←read).kwargsType with
+        | some kwTp => return lookupTypedDictField kwTp fieldName.val
+        | none => return none
+      else return none
+    | none => return none
+  | .Subscript _ inner (.Constant _ (.ConString _ fieldName) _) (.Load _) =>
+    match ← inferExprType inner with
+    | some innerTp => return lookupTypedDictField innerTp fieldName.val
+    | none => return none
+  | _ => return none
+
+/-- Extract the element type from an iterable SpecType (e.g., typing.List(T) → T). -/
+def extractElementType (tp : SpecType) : Option SpecType := do
+  for atom in tp.atoms do
+    match atom with
+    | .ident pyId args =>
+      if (pyId == .typingList || pyId == .typingSequence) && args.size == 1 then
+        return args[0]!
+    | _ => pure ()
+  none
+
+/-- Extract key and value types from a dict SpecType
+    (e.g., typing.Dict(K, V) → (K, V)). -/
+def extractDictKeyValueTypes (tp : SpecType) : Option (SpecType × SpecType) := do
+  for atom in tp.atoms do
+    match atom with
+    | .ident pyId args =>
+      if (pyId == .typingDict || pyId == .typingMapping) && args.size == 2 then
+        return (args[0]!, args[1]!)
+    | _ => pure ()
+  none
 
 /-- Collect all `== "value"` arms from a chain of `or`-ed comparisons,
     returning the subject and string values, or `none` if the expression
@@ -737,10 +815,53 @@ partial def collectEnumValues (e : expr SourceRange)
     | _ => return none
   | _ => return none
 
-/-- Translate a Python assert expression to a `SpecExpr`. Falls back to
-    `.placeholder` with a warning for unrecognized patterns.
-    Supports kwargs subscripts (`kw["field"]`) and plain variable names
-    as subjects. -/
+/-- Extract an integer literal from a Python expression.
+    Handles `Constant(ConPos n)`, `Constant(ConNeg n)`,
+    and `UnaryOp(USub, Constant(ConPos n))` (i.e., `-n`). -/
+def extractIntBound (e : expr SourceRange) : Option Int :=
+  match e with
+  | .Constant _ (.ConPos _ n) _ => some (Int.ofNat n.val)
+  | .Constant _ (.ConNeg _ n) _ => some (Int.negOfNat n.val)
+  | .UnaryOp _ (.USub _) (.Constant _ (.ConPos _ n) _) =>
+    some (Int.negOfNat n.val)
+  | _ => none
+
+/-- Extract a float literal string from a Python expression.
+    Handles `Constant(ConFloat s)` and `UnaryOp(USub, Constant(ConFloat s))`. -/
+def extractFloatBound (e : expr SourceRange) : Option String :=
+  match e with
+  | .Constant _ (.ConFloat _ ⟨_, s⟩) _ => some s
+  | .UnaryOp _ (.USub _) (.Constant _ (.ConFloat _ ⟨_, s⟩) _) => some s!"-{s}"
+  | _ => none
+
+/-- Check if a SpecType is the `builtins.int` type. -/
+def isIntType (tp : SpecType) : Bool := tp.isAtom (.ident .builtinsInt #[])
+
+/-- Check if a SpecType is the `builtins.float` type. -/
+def isFloatType (tp : SpecType) : Bool := tp.isAtom (.ident .builtinsFloat #[])
+
+/-- Build a comparison expression dispatching to float or int variants based on type. -/
+private def makeComparison
+    (floatCtor intCtor : SpecExpr → SpecExpr → SpecExpr)
+    (isFloat isInt : Bool)
+    (subj : SpecExpr) (bound : expr SourceRange)
+    : SpecAssertionM (Option SpecExpr) := do
+  if isFloat then
+    match extractFloatBound bound with
+    | some s => return some (floatCtor subj (.floatLit s))
+    | none =>
+      match extractIntBound bound with
+      | some n => return some (floatCtor subj (.floatLit (toString n)))
+      | none => return none
+  else if isInt then
+    match extractIntBound bound with
+    | some n => return some (intCtor subj (.intLit n))
+    | none => return none
+  else
+    match extractIntBound bound with
+    | some n => return some (intCtor subj (.intLit n))
+    | none => return none
+
 def transAssertExpr (e : expr SourceRange)
     : SpecAssertionM SpecExpr := do
   -- isinstance(subject, T)
@@ -771,43 +892,29 @@ def transAssertExpr (e : expr SourceRange)
           if h₃ : comparators.val.size = 1 then
             match ← extractSubject callArgs.val[0] with
             | some subj =>
-              match ops.val[0] with
-              | .GtE _ =>
-                match comparators.val[0] with
-                | .Constant _ (.ConPos _ n) _ =>
-                  return .intGe (.len subj) (.intLit n.val)
-                | _ => pure ()
-              | .LtE _ =>
-                match comparators.val[0] with
-                | .Constant _ (.ConPos _ n) _ =>
-                  return .intLe (.len subj) (.intLit n.val)
-                | _ => pure ()
-              | _ => pure ()
+              match ops.val[0], extractIntBound comparators.val[0] with
+              | .GtE _, some n => return .intGe (.len subj) (.intLit n)
+              | .LtE _, some n => return .intLe (.len subj) (.intLit n)
+              | _, _ => pure ()
             | none => pure ()
   | _ => pure ()
-  -- subject >= N / subject <= N
+  -- subject >= N / subject <= N (type-checked: int or float)
   match e with
   | .Compare _ lhs ops comparators =>
     if h₁ : ops.val.size = 1 then
       if h₂ : comparators.val.size = 1 then
         match ← extractSubject lhs with
         | some subj =>
-          match ops.val[0] with
-          | .GtE _ =>
-            match comparators.val[0] with
-            | .Constant _ (.ConPos _ n) _ =>
-              return .intGe subj (.intLit (Int.ofNat n.val))
-            | .Constant _ (.ConNeg _ n) _ =>
-              return .intGe subj (.intLit (Int.negOfNat n.val))
-            | _ => pure ()
-          | .LtE _ =>
-            match comparators.val[0] with
-            | .Constant _ (.ConPos _ n) _ =>
-              return .intLe subj (.intLit (Int.ofNat n.val))
-            | .Constant _ (.ConNeg _ n) _ =>
-              return .intLe subj (.intLit (Int.negOfNat n.val))
-            | _ => pure ()
-          | _ => pure ()
+          let subjType ← inferExprType lhs
+          let isFloat := subjType.any isFloatType
+          let isInt := subjType.any isIntType
+          let cmp ← match ops.val[0] with
+          | .GtE _ => makeComparison .floatGe .intGe isFloat isInt subj comparators.val[0]
+          | .LtE _ => makeComparison .floatLe .intLe isFloat isInt subj comparators.val[0]
+          | _ => pure none
+          match cmp with
+          | some expr => return expr
+          | none => pure ()
         | none => pure ()
   | _ => pure ()
   -- subject == "A" or subject == "B" or ...
@@ -815,6 +922,28 @@ def transAssertExpr (e : expr SourceRange)
   | some (subj, vals) =>
     return .enumMember subj vals
   | none => pure ()
+  -- compile("pattern").search(subject) is not None
+  match e with
+  | .Compare _
+      (.Call _ (.Attribute _ (.Call _ (.Name _ compileName (.Load _)) compileArgs _)
+        searchAttr (.Load _)) searchArgs _)
+      ops comparators =>
+    if compileName.val == "compile" && searchAttr.val == "search" then
+      if h₁ : compileArgs.val.size = 1 then
+        if h₂ : searchArgs.val.size = 1 then
+          if h₃ : ops.val.size = 1 then
+            if h₄ : comparators.val.size = 1 then
+              match compileArgs.val[0] with
+              | .Constant _ (.ConString _ pattern) _ =>
+                match ← extractSubject searchArgs.val[0] with
+                | some subj =>
+                  match ops.val[0], comparators.val[0] with
+                  | .IsNot _, .Constant _ (.ConNone _) _ =>
+                    return .regexMatch subj pattern.val
+                  | _, _ => pure ()
+                | none => pure ()
+              | _ => pure ()
+  | _ => pure ()
   -- Fallback: unrecognized pattern
   specWarning e.ann s!"unrecognized assert pattern: {eformat e.toAst}"
   return .placeholder
@@ -827,16 +956,27 @@ def blockStmt (s : stmt SourceRange) : SpecAssertionM Unit := do
     specWarning s.ann "skipped Assign in function body"
   | .AnnAssign .. =>
     specWarning s.ann "skipped AnnAssign in function body"
+  | .Expr _ (.Constant _ (.ConEllipsis _) _) =>
+    pure () -- `...` stub body, equivalent to pass
   | .Expr .. =>
     specWarning s.ann "skipped Expr in function body"
   | .Assert _ test msg =>
     let formula ← transAssertExpr test
     let message ← match msg.val with
-      | some (.Constant _ (.ConString _ str) _) => pure str.val
-      | none => pure ""
+      | some (.Constant _ (.ConString _ str) _) => pure #[MessagePart.str str.val]
+      | some (.JoinedStr _ values) =>
+        values.val.attach.mapM fun ⟨v, _⟩ =>
+          match v with
+          | .Constant _ (.ConString _ str) _ => pure (MessagePart.str str.val)
+          | .FormattedValue _ value _ _ =>
+            MessagePart.expr <$> transMessageExpr value
+          | other => do
+            specWarning other.ann "unsupported f-string part"
+            pure (MessagePart.str "")
+      | none => pure #[]
       | some e =>
         specWarning e.ann "assert message is not a string literal"
-        pure ""
+        pure #[]
     modify fun s => { s with
       assertions := s.assertions.push { message, formula }
     }
@@ -846,23 +986,93 @@ def blockStmt (s : stmt SourceRange) : SpecAssertionM Unit := do
     specWarning s.ann "skipped Raise in function body"
   | .ClassDef .. =>
     specError s.ann s!"Inner classes are not supported."
-  | .For _ _target _iter _body orelse type_comment =>
-    assert! type_comment.val.isNone
-    assert! orelse.val.size == 0
-    specWarning s.ann "skipped For in function body"
+  | .For _ target iter body orelse type_comment =>
+    if type_comment.val.isSome then
+      specWarning s.ann "For: type_comment not supported"
+    if orelse.val.size > 0 then
+      specWarning s.ann "For: else clause not supported"
+    match target, iter with
+    -- for varName in iterable:
+    | .Name _ ⟨_, varName⟩ (.Store _), _ =>
+      match ← extractSubject iter with
+      | some listExpr =>
+        let elemTp ← do
+          match ← inferExprType iter with
+          | some iterTp => pure (extractElementType iterTp)
+          | none => pure none
+        let prevAssertions := (←get).assertions
+        modify fun s => { s with assertions := #[] }
+        withReader (fun ctx => match elemTp with
+          | some tp => { ctx with localTypes := ctx.localTypes.insert varName tp }
+          | none => ctx) <|
+          blockStmts body.val
+        let bodyAssertions := (←get).assertions
+        let wrapped := bodyAssertions.map fun a =>
+          { a with formula := .forallList listExpr varName a.formula }
+        modify fun s => { s with assertions := prevAssertions ++ wrapped }
+      | none =>
+        specWarning s.ann s!"For: cannot extract iterable expression"
+    -- for keyVar, valVar in dictExpr.items():
+    | .Tuple _ elts (.Store _),
+      .Call _ (.Attribute _ dictExpr ⟨_, "items"⟩ (.Load _)) args _ =>
+      if elts.val.size != 2 then
+        specWarning s.ann "For: dict unpacking requires exactly 2 variables"
+      else if args.val.size != 0 then
+        specWarning s.ann "For: .items() call should have no arguments"
+      else
+        match elts.val[0]!, elts.val[1]! with
+        | .Name _ ⟨_, keyVar⟩ (.Store _), .Name _ ⟨_, valVar⟩ (.Store _) =>
+          match ← extractSubject dictExpr with
+          | some dictSubj =>
+            -- Type-check: verify the subject is actually a dict type
+            let kvTypes ← do
+              match ← inferExprType dictExpr with
+              | some dictTp =>
+                match extractDictKeyValueTypes dictTp with
+                | some kv => pure (some kv)
+                | none =>
+                  specWarning s.ann
+                    s!"For: .items() subject is not a Dict/Mapping type"
+                  pure none
+              | none =>
+                specWarning s.ann
+                  s!"For: cannot infer type of .items() subject"
+                pure none
+            let prevAssertions := (←get).assertions
+            modify fun st => { st with assertions := #[] }
+            withReader (fun ctx => match kvTypes with
+              | some (kTp, vTp) =>
+                { ctx with localTypes := ctx.localTypes
+                    |>.insert keyVar kTp
+                    |>.insert valVar vTp }
+              | none => ctx) <|
+              blockStmts body.val
+            let bodyAssertions := (←get).assertions
+            let wrapped := bodyAssertions.map fun a =>
+              { a with formula := .forallDict dictSubj keyVar valVar a.formula }
+            modify fun st => { st with assertions := prevAssertions ++ wrapped }
+          | none =>
+            specWarning s.ann s!"For: cannot extract dict expression"
+        | _, _ =>
+          specWarning s.ann "For: dict unpacking requires Name targets"
+    | _, _ =>
+      specWarning s.ann "For: unsupported target pattern"
   | .If _ pred t f =>
-    let p ← transPred pred
-    assumePred p <| blockStmts t.val
-    assumePred (.not p) <| blockStmts f.val
+    let cond ← transCondition pred
+    if cond.isNone then
+      specWarning pred.ann s!"if: unrecognized condition pattern: {eformat pred.toAst}"
+    assumeCondition cond <| blockStmts t.val
+    if f.val.size > 0 then
+      assumeCondition (cond.map .not) <| blockStmts f.val
   | .Pass _ =>
     pure ()
   | _ => specError s.ann s!"Unsupported statement: {eformat s.toAst}"
 termination_by sizeOf s
 decreasing_by
-  · cases t;
-    decreasing_tactic
-  · cases f;
-    decreasing_tactic
+  · cases body; decreasing_tactic
+  · cases body; decreasing_tactic
+  · cases t; decreasing_tactic
+  · cases f; decreasing_tactic
 
 def blockStmts (as : Array (stmt SourceRange)) : SpecAssertionM Unit := do
   as.attach.forM fun ⟨b, _⟩ => blockStmt b
@@ -880,7 +1090,9 @@ def collectAssertions (decls : ArgDecls) (_returnType : SpecType)
   modify fun s => { s with errors := #[], warnings := #[] }
   let filePath := (←read).pythonFile
   let ctx : SpecAssertionContext :=
-    { filePath, kwargsParamName := decls.kwargs.map Prod.fst }
+    { filePath
+      kwargsParamName := decls.kwargs.map Prod.fst
+      kwargsType := decls.kwargs.map Prod.snd }
   let ((), as) := action ctx { errors, warnings }
   modify fun s => { s with errors := as.errors, warnings := as.warnings }
   pure as
@@ -983,6 +1195,30 @@ def pySpecFunctionArgs (fnLoc : SourceRange)
     postconditions := as.postconditions
   }
 
+/-- Resolve an array of base class expressions into PythonIdents. -/
+private def resolveBaseClasses (bases : Array (expr SourceRange))
+    : PySpecM (Array PythonIdent) := do
+  let mut result : Array PythonIdent := #[]
+  for base in bases do
+    match base with
+    | .Name _ ⟨_, name⟩ _ =>
+      if name == "Exception" then
+        result := result.push .builtinsException
+      else
+        match ← getNameValue? name with
+        | some (.typeValue tp) =>
+          match tp.asSingleton with
+          | some (.ident pyIdent _) =>
+            result := result.push pyIdent
+          | some (.pyClass clsName _) =>
+            result := result.push { pythonModule := "", name := clsName }
+          | _ =>
+            specError base.ann s!"Unknown base class '{name}'"
+        | _ =>
+          specError base.ann s!"Unknown base class '{name}'"
+    | _ => specError base.ann s!"Unsupported base class expression"
+  return result
+
 partial def pySpecClassBody (loc : SourceRange) (className : String)
     (bases : Array PythonIdent)
     (body : Array (Strata.Python.stmt Strata.SourceRange)) : PySpecM ClassDef := do
@@ -1003,26 +1239,7 @@ partial def pySpecClassBody (loc : SourceRange) (className : String)
       | _ => specError stmt.ann s!"Unsupported field target"
     | .ClassDef innerLoc ⟨_, innerClassName⟩ innerBases _keywords innerStmts
                 _decorators _typeParams =>
-      let mut innerBaseIdents : Array PythonIdent := #[]
-      for base in innerBases.val do
-        match base with
-        | .Name _ ⟨_, name⟩ _ =>
-          if name == "Exception" then
-            innerBaseIdents := innerBaseIdents.push .builtinsException
-          else
-            match ← getNameValue? name with
-            | some (.typeValue tp) =>
-              match tp.asSingleton with
-              | some (.ident pyIdent _) =>
-                innerBaseIdents := innerBaseIdents.push pyIdent
-              | some (.pyClass clsName _) =>
-                innerBaseIdents := innerBaseIdents.push
-                  { pythonModule := "", name := clsName }
-              | _ =>
-                specError base.ann s!"Unknown base class '{name}'"
-            | _ =>
-              specError base.ann s!"Unknown base class '{name}'"
-        | _ => specError base.ann s!"Unsupported base class expression"
+      let innerBaseIdents ← resolveBaseClasses innerBases.val
       let innerDef ← pySpecClassBody innerLoc innerClassName
         innerBaseIdents innerStmts.val
       subclasses := subclasses.push innerDef
@@ -1037,13 +1254,42 @@ partial def pySpecClassBody (loc : SourceRange) (className : String)
     | .Pass .. => pure ()       -- Skip pass statements
     | .FunctionDef loc ⟨_, name⟩  args ⟨_, body⟩ ⟨_, decorators⟩ ⟨_, returns⟩
                    ⟨_, type_comment⟩ ⟨_, type_params⟩ =>
-      assert! type_comment.isNone
-      assert! type_params.size = 0
-      if name ∈ usedNames then
-        specError loc s!"{name} already defined."
-      let d ← pySpecFunctionArgs (className := some className) loc name args
-                                 body decorators returns
-      methods := methods.push d
+      if type_comment.isSome then
+        specWarning loc "FunctionDef: type_comment not supported"
+      if type_params.size > 0 then
+        specWarning loc "FunctionDef: type_params not supported"
+      if name == "__init__" then
+        -- Extract self.field = expr assignments as class fields
+        for initStmt in body do
+          match initStmt with
+          | .Assign _ ⟨_, targets⟩ value _ =>
+            if h : targets.size = 1 then
+              match targets[0] with
+              | .Attribute _ (.Name _ ⟨_, "self"⟩ (.Load _)) ⟨_, fieldName⟩ (.Store _) =>
+                -- Try to resolve type from self._ClassName() pattern
+                match value with
+                | .Call _ (.Attribute _ (.Name _ ⟨_, "self"⟩ (.Load _))
+                    ⟨_, innerClsName⟩ (.Load _)) _ _ =>
+                  let f : ClassField := {
+                    name := fieldName,
+                    type := SpecType.pyClass loc innerClsName #[],
+                    constValue := some s!"{innerClsName}()" }
+                  fields := fields.push f
+                | _ =>
+                  specWarning initStmt.ann
+                    s!"unsupported __init__ assignment value for self.{fieldName}"
+              | _ => specWarning initStmt.ann "unsupported __init__ assignment target"
+            else
+              specWarning initStmt.ann "unsupported __init__ multi-target assignment"
+          | .Expr _ (.Constant _ (.ConEllipsis _) _) => pure ()
+          | .Pass .. => pure ()
+          | _ => specWarning initStmt.ann s!"unsupported statement in __init__"
+      else
+        if name ∈ usedNames then
+          specError loc s!"{name} already defined."
+        let d ← pySpecFunctionArgs (className := some className) loc name args
+                                   body decorators returns
+        methods := methods.push d
     | _ =>
       specError stmt.ann s!"Unknown class statement {stmt}"
   return {
@@ -1280,26 +1526,7 @@ partial def translate (body : Array (stmt Strata.SourceRange)) : PySpecM Unit :=
       assert! keywords.val.size = 0
       assert! decorators.val.size = 0
       assert! typeParams.val.size = 0
-      -- Extract base class names as PythonIdents
-      let mut baseIdents : Array PythonIdent := #[]
-      for base in bases.val do
-        match base with
-        | .Name _ ⟨_, name⟩ _ =>
-          if name == "Exception" then
-            baseIdents := baseIdents.push .builtinsException
-          else
-            match ← getNameValue? name with
-            | some (.typeValue tp) =>
-              match tp.asSingleton with
-              | some (.ident pyIdent _) =>
-                baseIdents := baseIdents.push pyIdent
-              | some (.pyClass clsName _) =>
-                baseIdents := baseIdents.push { pythonModule := "", name := clsName }
-              | _ =>
-                specError base.ann s!"Unknown base class '{name}'"
-            | _ =>
-              specError base.ann s!"Unknown base class '{name}'"
-        | _ => specError base.ann s!"Unsupported base class expression"
+      let baseIdents ← resolveBaseClasses bases.val
       let (success, _) ← runChecked <| recordTypeDef loc className
       -- Add the class to nameMap so it can be used in forward references
       setNameValue className (.typeValue (.pyClass loc className #[]))
@@ -1321,6 +1548,7 @@ end
 
 /-- Maps file paths to their FileMap for error location reporting. -/
 public abbrev FileMaps := Std.HashMap System.FilePath Lean.FileMap
+
 
 /-- Translates Python AST statements to PySpec signatures with dependency resolution. -/
 def translateModule
