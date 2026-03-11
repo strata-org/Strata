@@ -57,6 +57,9 @@ match ss with
 | .funcDecl _ _ :: rest => do
   -- Not yet supported, so just continue with `rest`.
   stmtsToBlocks k rest exitConts accum
+| .typeDecl _ _ :: rest => do
+  -- Not yet supported, so just continue with `rest`.
+  stmtsToBlocks k rest exitConts accum
 | .block l bss _md :: rest => do
   -- Process rest first
   let (kNext, bsNext) ← stmtsToBlocks k rest exitConts []
