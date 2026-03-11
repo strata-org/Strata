@@ -640,6 +640,54 @@ theorem LMonoTy.subst_no_relevant_keys (S : Subst) (mty : LMonoTy)
                ih_rest (fun b hb => ih b (List.mem_cons.mpr (Or.inr hb)))
                  (fun x hx => h x (by simp [LMonoTy.freeVars, LMonoTys.freeVars]; right; exact hx))⟩
 
+/-- Extensionality for `LMonoTy.subst`: if two substitutions agree on all
+    free variables of `mty`, they produce the same result. -/
+theorem LMonoTy.subst_ext (S1 S2 : Subst) (mty : LMonoTy)
+    (h : ∀ x, x ∈ LMonoTy.freeVars mty → Maps.find? S1 x = Maps.find? S2 x) :
+    LMonoTy.subst S1 mty = LMonoTy.subst S2 mty := by
+  by_cases hS1 : Subst.hasEmptyScopes S1 <;> by_cases hS2 : Subst.hasEmptyScopes S2
+  · -- Both empty scopes: both are identity
+    rw [LMonoTy.subst_emptyS hS1, LMonoTy.subst_emptyS hS2]
+  · -- S1 empty, S2 not: S1 is identity, show S2 is also identity on mty
+    rw [LMonoTy.subst_emptyS hS1]
+    symm; apply LMonoTy.subst_no_relevant_keys
+    intro x hx
+    have h_keys_nil := Subst.isEmpty_implies_keys_empty hS1
+    have h_find_none : Maps.find? S1 x = none :=
+      Maps.not_mem_keys_find?_none' S1 x (by rw [h_keys_nil]; simp)
+    have := h x hx; rw [h_find_none] at this
+    exact Maps.find?_of_not_mem_values S2 this.symm
+  · -- S1 not empty, S2 empty: symmetric
+    rw [LMonoTy.subst_emptyS hS2]
+    apply LMonoTy.subst_no_relevant_keys
+    intro x hx
+    have h_keys_nil := Subst.isEmpty_implies_keys_empty hS2
+    have h_find_none : Maps.find? S2 x = none :=
+      Maps.not_mem_keys_find?_none' S2 x (by rw [h_keys_nil]; simp)
+    have := h x hx; rw [h_find_none] at this
+    exact Maps.find?_of_not_mem_values S1 this
+  · -- Neither empty: structural induction
+    have hS1' : Subst.hasEmptyScopes S1 = false := by
+      revert hS1; cases Subst.hasEmptyScopes S1 <;> simp
+    have hS2' : Subst.hasEmptyScopes S2 = false := by
+      revert hS2; cases Subst.hasEmptyScopes S2 <;> simp
+    induction mty with
+    | ftvar x =>
+      simp [LMonoTy.subst, hS1', hS2']
+      rw [h x (by simp [LMonoTy.freeVars])]
+    | bitvec _ => simp [LMonoTy.subst]
+    | tcons name args ih =>
+      simp only [LMonoTy.subst, hS1', hS2', Bool.false_eq_true, ↓reduceIte]; congr 1
+      rw [LMonoTys.subst_eq_substLogic, LMonoTys.subst_eq_substLogic]
+      induction args with
+      | nil => simp [LMonoTys.substLogic, hS1', hS2']
+      | cons a rest ih_rest =>
+        simp only [LMonoTys.substLogic, hS1', hS2', Bool.false_eq_true, ↓reduceIte]; congr 1
+        · exact ih a (List.mem_cons.mpr (Or.inl rfl))
+            (fun x hx => h x (by simp [LMonoTy.freeVars, LMonoTys.freeVars]; left; exact hx))
+        · exact ih_rest (fun m hm => ih m (List.mem_cons.mpr (Or.inr hm)))
+            (fun x hx => h x (by simp [LMonoTy.freeVars, LMonoTys.freeVars]; right; exact hx))
+
 /--
 If `t` is a value in a well-formed substitution `S` (i.e., `Maps.find? S a = some t`),
 then `subst S t = t`. This is because `SubstWF` guarantees no key of `S` appears

@@ -1514,68 +1514,15 @@ private theorem typeBoundVar_absorbs
         rw [h_subst, h_gen_subst]
         exact Subst.absorbs_refl _ Env.stateSubstInfo.isWF
 
-/-- If all scopes are empty, no key exists. -/
-private theorem Maps.keys_eq_nil_of_hasEmptyScopes (S : Subst)
-    (h : Subst.hasEmptyScopes S) : Maps.keys S = [] := by
-  induction S with
-  | nil => rfl
-  | cons m rest ih =>
-    simp [Subst.hasEmptyScopes, List.all] at h
-    simp [Maps.keys]
-    constructor
-    · cases m with
-      | nil => rfl
-      | cons _ _ => simp [Map.isEmpty] at h
-    · apply ih
-      -- Need: hasEmptyScopes rest
-      simp [Subst.hasEmptyScopes]
-      exact h.2
-
 /-- `subst (remove S k) mty = subst S mty` when `k ∉ freeVars mty`.
     Since `LMonoTy.subst` is single-pass, removing a key that doesn't
     appear in the type doesn't change the result. -/
 private theorem LMonoTy.subst_remove_not_fv (S : Subst) (k : TyIdentifier) (mty : LMonoTy)
     (h_nfv : k ∉ LMonoTy.freeVars mty) :
     LMonoTy.subst (Maps.remove S k) mty = LMonoTy.subst S mty := by
-  -- Helper: keys of (remove S k) are a subset of keys of S
-  have keys_remove_sub := fun x (hx : x ∈ Maps.keys (Maps.remove S k)) =>
-    Maps.mem_keys_of_mem_keys_remove S k x hx
-  by_cases hS : Subst.hasEmptyScopes S
-  · -- S has all empty scopes → remove S k also does → both subst are identity
-    rw [LMonoTy.subst_emptyS hS]
-    exact LMonoTy.subst_no_relevant_keys _ mty (fun x _ hk =>
-      absurd (keys_remove_sub x hk)
-        (by rw [Maps.keys_eq_nil_of_hasEmptyScopes S hS]; simp))
-  · by_cases hR : Subst.hasEmptyScopes (Maps.remove S k)
-    · -- Only key in S was k; since k ∉ freeVars, subst S is also identity
-      rw [LMonoTy.subst_emptyS hR]
-      exact (LMonoTy.subst_no_relevant_keys S mty (fun x hx hk => by
-        by_cases h_xk : x = k
-        · exact h_nfv (h_xk ▸ hx)
-        · exact absurd (Maps.mem_keys_remove_of_ne S k x hk h_xk)
-            (by rw [Maps.keys_eq_nil_of_hasEmptyScopes _ hR]; simp))).symm
-    · -- Neither has empty scopes: all lookups agree since k ∉ freeVars
-      have hS' : Subst.hasEmptyScopes S = false := by
-        revert hS; cases Subst.hasEmptyScopes S <;> simp
-      have hR' : Subst.hasEmptyScopes (Maps.remove S k) = false := by
-        revert hR; cases Subst.hasEmptyScopes (Maps.remove S k) <;> simp
-      induction mty with
-      | ftvar x =>
-        simp [LMonoTy.freeVars] at h_nfv
-        simp [LMonoTy.subst, hS', hR', Maps.find?_remove_ne S k x (Ne.symm h_nfv)]
-      | bitvec _ => simp [LMonoTy.subst]
-      | tcons name args ih =>
-        simp only [LMonoTy.subst, hS', hR', Bool.false_eq_true, ↓reduceIte]; congr 1
-        rw [LMonoTys.subst_eq_substLogic, LMonoTys.subst_eq_substLogic]
-        simp [LMonoTy.freeVars] at h_nfv
-        induction args with
-        | nil => simp [LMonoTys.substLogic, hS', hR']
-        | cons a rest ih_rest =>
-          simp only [LMonoTys.substLogic, hS', hR', Bool.false_eq_true, ↓reduceIte]; congr 1
-          · exact ih a (List.mem_cons.mpr (Or.inl rfl))
-              (fun h => h_nfv (List.mem_append_left _ h))
-          · exact ih_rest (fun m hm => ih m (List.mem_cons.mpr (Or.inr hm)))
-              (fun h => h_nfv (List.mem_append_right _ h))
+  apply LMonoTy.subst_ext
+  intro x hx
+  exact Maps.find?_remove_ne S k x (fun h_eq => h_nfv (h_eq ▸ hx))
 
 /-- Removing a fresh key from the outer substitution preserves absorption.
     This requires that the key is not in the inner substitution (neither as
@@ -1690,7 +1637,7 @@ private theorem typeBoundVar_tyGen_mono
     (h : typeBoundVar C Env bty = .ok (xv, xty, Env')) :
     Env'.genEnv.genState.tyGen ≥ Env.genEnv.genState.tyGen := by
   simp only [typeBoundVar, liftGenEnv, Bind.bind, Except.bind] at h
-  -- Split on the result of HasGen.genVar (now returns Except)
+  -- Split on the result of HasGen.genVar (returns Except)
   split at h
   · contradiction
   · -- HasGen.genVar succeeded
@@ -2056,18 +2003,6 @@ private theorem LTy_resolveAliases_preserves_SubstFreshForGen
       rw [List.mem_append] at h_subset
       cases h_subset with
       | inl h_body =>
-        -- v ∈ freeVars body: if v ∉ (x::xs), then v ∈ LTy.freeVars ty, gen-fresh by h_ty_fresh + mono
-        -- if v ∈ (x::xs), the substitution would have replaced it (overapprox)
-        -- In either case, v is either a known type var (gen-fresh) or was substituted away
-        -- For the overapprox case: v ∈ freeVars body and v ∈ (x::xs) means v is a bound var.
-        -- Context's knownTypeVars include bound vars, so v is gen-fresh by ContextFreshForGen.
-        -- Use h_ty_fresh which covers LTy.freeVars = freeVars(body) \ bound vars
-        -- But freeVars_of_subst_subset includes ALL body fvs, not just unbound ones.
-        -- For bound vars: they are in context's knownTypeVars, hence gen-fresh by h_cfg.
-        -- Since h_cfg : ContextFreshForGen Env.context Env.genState, and
-        -- n ≥ genEnv'.genState.tyGen ≥ Env.genState.tyGen:
-        -- v ∈ freeVars body where ty = forAll (x::xs) body
-        -- Split: v ∈ (x::xs) (bound var) or v ∉ (x::xs) (free var)
         by_cases h_bound : v ∈ (x :: xs)
         · -- Bound var: gen-fresh by h_bv_fresh + monotonicity
           exact h_bv_fresh v (by simp [LTy.boundVars]; exact List.mem_cons.mp h_bound) n
@@ -2079,32 +2014,8 @@ private theorem LTy_resolveAliases_preserves_SubstFreshForGen
             grind
           exact h_ty_fresh v h_in_fvs n (Nat.le_trans h_mono_inst hn)
       | inr h_subst_fvs =>
-        -- v ∈ Subst.freeVars [zip (x::xs) (map ftvar freshtvs)]
-        -- The values are (map ftvar freshtvs), so v ∈ freshtvs
-        -- Subst.freeVars [m] = m.values.flatMap freeVars
-        -- m = zip (x::xs) (map ftvar freshtvs), values = map snd (zip ...) ⊆ map ftvar freshtvs
-        -- freeVars (ftvar tv) = [tv], so flatMap gives freshtvs
-        -- Then by genTyVars_genFresh': v ≠ tyPrefix ++ toString n
         have h_fresh_gen := genTyVars_genFresh' (x :: xs).length Env.genEnv freshtvs Env1 h_gen
-        -- Need: v ∈ freshtvs
-        -- h_subst_fvs : v ∈ Subst.freeVars [zip (x::xs) (map ftvar freshtvs)]
-        -- Subst.freeVars = Maps.values.flatMap freeVars
-        -- For single scope [m], Maps.values [m] = Map.values m
-        -- Map.values (zip vars vals) ⊆ vals
-        -- freeVars(ftvar tv) = [tv]
-        -- So v ∈ freshtvs
         have h_v_in_freshtvs : v ∈ freshtvs := by
-          -- v ∈ Subst.freeVars [zip (x::xs) (map ftvar freshtvs)]
-          -- Unfold: Subst.freeVars = Maps.values.flatMap freeVars
-          -- Maps.values [m] = Map.values m
-          -- Map.values (zip vars vals): the second components of the zip
-          -- freeVars (ftvar tv) = [tv]
-          -- So v ∈ flatMap freeVars (Map.values (zip vars (map ftvar freshtvs)))
-          -- ⊆ flatMap freeVars (map ftvar freshtvs) = freshtvs
-          -- Prove by showing: for any vars vals,
-          --   v ∈ (Map.values (zip vars (map ftvar tvs))).flatMap freeVars → v ∈ tvs
-          -- Prove: v ∈ Subst.freeVars [zip vars (map ftvar freshtvs)] → v ∈ freshtvs
-          -- by induction on vars/freshtvs
           simp only [Subst.freeVars, Maps.values] at h_subst_fvs
           rw [List.mem_flatMap] at h_subst_fvs
           obtain ⟨mty_val, h_in_vals, h_fv⟩ := h_subst_fvs
@@ -2820,17 +2731,6 @@ private theorem typeBoundVar_erase_context
     -- typeBoundVar does: liftGenEnv genVar >> (instantiateWithCheck|genTyVar) >> addInNewestContext
     -- Each intermediate step preserves context, then addInNewestContext modifies types
     intro Env1 h_tbv
-    -- typeBoundVar C Env bty =
-    --   do let (xv, Env_g) ← liftGenEnv genVar Env
-    --      let (xty, Env_mid) ← (instantiateWithCheck | genTyVar)
-    --      return (xv, xty, Env_mid.addInNewestContext [(xv, .forAll [] xty)])
-    -- We need: Env1.context.types = Env.context.types.addInNewest [...]
-    --      and: Env1.context.aliases = Env.context.aliases
-    -- liftGenEnv preserves context, instantiateWithCheck/genTyVar preserve context,
-    -- addInNewestContext modifies types.
-    --
-    -- Strategy: extract Env_mid such that Env1 = Env_mid.addInNewestContext [...] and
-    -- Env_mid.context = Env.context, then the result follows.
     have ⟨Env_mid, h_mid_ctx, h_env1_eq⟩ : ∃ Env_mid : TEnv T.IDMeta,
         Env_mid.context = Env.context ∧
         Env1 = Env_mid.addInNewestContext [(xv, .forAll [] xty)] := by
