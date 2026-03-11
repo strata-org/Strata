@@ -11,8 +11,6 @@ import Strata.Languages.Laurel.Laurel
 namespace Strata
 namespace Python
 
-set_option maxRecDepth 10000
-
 /--
 Python prelude declarations expressed in Laurel grammar.
 Converted from PythonLaurelCorePrelude.lean (Core dialect) to Laurel dialect.

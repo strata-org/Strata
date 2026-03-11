@@ -169,10 +169,7 @@ op function (name : Ident, parameters: CommaSepBy Parameter,
 category OpaqueType;
 op opaqueType (name: Ident): OpaqueType => "type " name ";";
 
-category TopLevel;
-op topLevelComposite(composite: Composite): TopLevel => composite;
-op topLevelProcedure(procedure: Procedure): TopLevel => procedure;
-op topLevelDatatype(datatype: Datatype): TopLevel => datatype;
-op topLevelOpaqueType(opaqueType: OpaqueType): TopLevel => opaqueType;
-
-op program (items: Seq TopLevel): Command => items;
+op compositeCommand(composite: Composite): Command => composite;
+op procedureCommand(procedure: Procedure): Command => procedure;
+op datatypeCommand(datatype: Datatype): Command => datatype;
+op opaqueTypeCommand(opaqueType: OpaqueType): Command => opaqueType;
