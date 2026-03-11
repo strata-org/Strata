@@ -58,4 +58,34 @@ deterministic
   for proc in program.staticProcedures do
     IO.println (toString (Std.Format.pretty (Std.ToFormat.format proc)))
 
+-- Scope management: constrained variable in if-branch must not leak into sibling block
+def scopeProgram : String := r"
+constrained pos = v: int where v > 0 witness 1
+procedure test(b: bool) {
+  if (b) {
+    var x: pos := 1;
+  }
+  {
+    var x: int := -5;
+    x := -10;
+  }
+};
+"
+
+/--
+info: procedure test(b: bool) returns ⏎
+()
+deterministic
+{ if b then { var x: int := 1; assert x > 0 }; { var x: int := -5; x := -10 } }
+procedure $witness_pos() returns ⏎
+()
+deterministic
+{ var $witness: int := 1; assert $witness > 0 }
+-/
+#guard_msgs in
+#eval! do
+  let program ← parseLaurelAndElim scopeProgram
+  for proc in program.staticProcedures do
+    IO.println (toString (Std.Format.pretty (Std.ToFormat.format proc)))
+
 end Laurel

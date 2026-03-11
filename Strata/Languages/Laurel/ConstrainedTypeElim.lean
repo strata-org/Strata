@@ -151,6 +151,12 @@ decreasing_by all_goals (have := WithMetadata.sizeOf_val_lt ‹_›; term_by_mem
 /-- Insert asserts for constrained-typed variable init and reassignment -/
 abbrev ElimM := StateM PredVarMap
 
+private def inScope (action : ElimM α) : ElimM α := do
+  let saved ← get
+  let result ← action
+  set saved
+  return result
+
 def elimStmt (ptMap : ConstrainedTypeMap)
     (stmt : StmtExprMd) : ElimM (List StmtExprMd) := do
   let md := stmt.md
@@ -176,19 +182,19 @@ def elimStmt (ptMap : ConstrainedTypeMap)
     | _ => pure [stmt]
 
   | .Block stmts sep =>
-    let stmtss ← stmts.mapM (elimStmt ptMap)
+    let stmtss ← inScope (stmts.mapM (elimStmt ptMap))
     pure [⟨.Block stmtss.flatten sep, md⟩]
 
   | .IfThenElse cond thenBr (some elseBr) =>
-    let thenSs ← elimStmt ptMap thenBr
-    let elseSs ← elimStmt ptMap elseBr
+    let thenSs ← inScope (elimStmt ptMap thenBr)
+    let elseSs ← inScope (elimStmt ptMap elseBr)
     pure [⟨.IfThenElse cond (wrap thenSs md) (some (wrap elseSs md)), md⟩]
   | .IfThenElse cond thenBr none =>
-    let thenSs ← elimStmt ptMap thenBr
+    let thenSs ← inScope (elimStmt ptMap thenBr)
     pure [⟨.IfThenElse cond (wrap thenSs md) none, md⟩]
 
   | .While cond inv dec body =>
-    let bodySs ← elimStmt ptMap body
+    let bodySs ← inScope (elimStmt ptMap body)
     pure [⟨.While cond inv dec (wrap bodySs md), md⟩]
 
   | _ => pure [stmt]
