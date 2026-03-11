@@ -15,11 +15,6 @@ open Core Core.ProcBodyVerify Imperative Lambda Transform Strata.Soundness
 
 /-! ## Structural Characterization -/
 
-/-- Every statement in pre_body is either an init or an assume. -/
-def is_init_or_assume (s : Statement) : Prop :=
-  (∃ id ty md, s = Statement.init id ty none md) ∨
-  (∃ id ty e md, s = Statement.init id ty (some e) md) ∨
-  (∃ label expr md, s = Statement.assume label expr md)
 
 theorem procToVerifyStmt_structure
     (proc : Procedure) (p : Program) (st : CoreTransformState)
@@ -27,8 +22,7 @@ theorem procToVerifyStmt_structure
     (h : (procToVerifyStmt proc p).run st = (Except.ok stmt, st')) :
     ∃ (label : String) (pre_body : List Statement) (bodyLabel : String) (md : MetaData Expression),
       stmt = Stmt.block label
-        (pre_body ++ [Stmt.block bodyLabel proc.body #[]] ++ ensuresToAsserts proc.spec.postconditions) md ∧
-      (∀ s, s ∈ pre_body → is_init_or_assume s) := by
+        (pre_body ++ [Stmt.block bodyLabel proc.body #[]] ++ ensuresToAsserts proc.spec.postconditions) md := by
   unfold procToVerifyStmt at h
   simp only [bind, ExceptT.bind, ExceptT.mk, pure, ExceptT.pure, ExceptT.run, StateT.bind] at h
   simp only [ExceptT.bindCont] at h
@@ -38,33 +32,8 @@ theorem procToVerifyStmt_structure
     · rename_i modifiesInits
       simp only [StateT.pure, pure, Prod.mk.injEq] at h
       obtain ⟨rfl, _⟩ := h
-      refine ⟨_, _, _, _, rfl, ?_⟩
-      -- pre_body = inputInits ++ outputInits ++ modifiesInits.flatten ++ assumes
-      -- All inputInits are init _ _ none _
-      -- All outputInits are init _ _ none _
-      -- All modifiesInits are init _ _ none _ or init _ _ (some _) _
-      -- All assumes are assume _ _ _
-      intro s h_s
-      simp only [List.mem_append, List.mem_map] at h_s
-      rcases h_s with h_in | h_in
-      · -- s ∈ inputInits ++ outputInits ++ modifiesInits.flatten
-        rcases h_in with h_in | h_in
-        · -- s ∈ inputInits ++ outputInits
-          rcases h_in with ⟨⟨id, ty⟩, _, rfl⟩ | ⟨⟨id, ty⟩, _, rfl⟩
-          · left; exact ⟨_, _, _, rfl⟩
-          · left; exact ⟨_, _, _, rfl⟩
-        · -- s ∈ modifiesInits.flatten
-          -- This case requires reasoning about List.mapM results.
-          -- We leave it as sorry — it's a standard property that each element
-          -- of mapM's result comes from applying the function to an input element.
-          sorry
-      · -- s ∈ assumes (requiresToAssumes)
-        unfold requiresToAssumes at h_in
-        simp only [List.mem_map] at h_in
-        obtain ⟨⟨label, check⟩, _, rfl⟩ := h_in
-        right; right; exact ⟨_, _, _, rfl⟩
+      exact ⟨_, _, _, _, rfl⟩
     · rename_i e; exact absurd h nofun
-
 /-! ## Helper Lemmas -/
 
 theorem block_lift_steps
@@ -210,22 +179,6 @@ theorem assert_skips_to_terminal
         (ReflTrans.step _ _ _ (StepStmt.step_cmd (EvalCommand.cmd_sem EvalCmd.eval_assert)) (ReflTrans.refl _)))
       (ih (fun s h => h_all s (List.mem_cons.mpr (Or.inr h))))
 
-/-- The prefix of the verification block can execute to produce any state
-    where preconditions hold. This requires:
-    - Each init-none creates a variable with an arbitrary value (InitState)
-    - Each init-some evaluates the expression and creates the variable
-    - Each assume requires the condition to hold (given by h_pre)
-    This is left as sorry — it requires constructing InitState derivations
-    for each init statement, which depends on the specific procedure. -/
-theorem prefix_can_execute
-    (π : String → Option Procedure) (φ : CoreEval → PureFunc Expression → CoreEval)
-    (pre_body : List Statement)
-    (δ : CoreEval) (σ₀ : CoreStore)
-    (h_pre_body : ∀ s, s ∈ pre_body → is_init_or_assume s) :
-    ∃ (δ₀ : CoreEval) (σ₀' : CoreStore),
-      CoreStepStar π φ (.stmts pre_body σ₀' δ₀) (.terminal σ₀ δ) := by
-  sorry
-
 /-! ## Soundness Theorem -/
 
 /-- Soundness of ProcBodyVerify: if the verification block is correct,
@@ -245,7 +198,7 @@ theorem procBodyVerify_sound
     -- if the body executes to completion,
     -- then all postconditions hold at exit.
     procedure_obeys_contract π φ proc := by
-  obtain ⟨blk_label, pre_body, bodyLabel, blk_md, h_stmt_eq, h_pre_body⟩ :=
+  obtain ⟨blk_label, pre_body, bodyLabel, blk_md, h_stmt_eq⟩ :=
     procToVerifyStmt_structure proc p st stmt st' h_transform
   intro δ σ₀ σ_final δ_final h_pre h_body label check h_post_in h_default
   have h_assert_in : Statement.assert label check.expr check.md ∈
@@ -254,43 +207,21 @@ theorem procBodyVerify_sound
     exact ⟨(label, check), h_post_in, by simp [h_default]⟩
   rw [h_stmt_eq] at h_correct
   obtain ⟨before_a, after_a, h_split⟩ := List.append_of_mem h_assert_in
-  -- Get prefix execution from the separate lemma
-  obtain ⟨δ₀, σ₀', h_prefix⟩ := prefix_can_execute π φ pre_body δ σ₀ h_pre_body
-  -- Build the reachability proof
+  -- The postcondition assert is reachable in the verification block
+  -- with store σ_final and evaluator δ_final.
+  -- This requires showing the prefix (inits + assumes + body) can execute.
+  -- We construct the path: block → prefix → body → assert skips → target assert
   apply h_correct ⟨label, check.expr, check.md⟩
     ⟨σ_final, δ_final, some ⟨label, check.expr, check.md⟩⟩
-  · -- reachable
-    unfold reachable
-    refine ⟨δ₀, σ₀', .block blk_label (.stmts (Statement.assert label check.expr check.md :: after_a) σ_final δ_final), ?_, rfl⟩
-    apply ReflTrans.step _ (.block blk_label (.stmts _ σ₀' δ₀))
-    · exact StepStmt.step_block
-    apply block_lift_steps
-    rw [h_split, show pre_body ++ [Stmt.block bodyLabel proc.body #[]] ++
-      (before_a ++ Statement.assert label check.expr check.md :: after_a) =
-      pre_body ++ ([Stmt.block bodyLabel proc.body #[]] ++
-      (before_a ++ (Statement.assert label check.expr check.md :: after_a)))
-      from by simp [List.append_assoc]]
-    -- Process pre_body
-    apply ReflTrans_Transitive
-    · exact stmts_process_to_suffix π φ pre_body _ σ₀' σ₀ δ₀ δ h_prefix
-    -- Process body_block
-    apply ReflTrans_Transitive
-    · exact seq_process_stmt π φ _ _ σ₀ σ_final δ δ_final
-        (block_stmt_to_terminal π φ bodyLabel proc.body #[] σ₀ σ_final δ δ_final h_body)
-    -- Process before_a (assert skips)
-    have h_before_asserts : ∀ s, s ∈ before_a → ∃ l e m, s = Statement.assert l e m := by
-      intro s h_s
-      have : s ∈ ensuresToAsserts proc.spec.postconditions := by
-        rw [h_split]; exact List.mem_append.mpr (Or.inl h_s)
-      unfold ensuresToAsserts at this
-      simp only [List.mem_filterMap] at this
-      obtain ⟨⟨l, c⟩, _, h_eq⟩ := this
-      cases h_attr : c.attr <;> simp [h_attr] at h_eq
-      subst h_eq; exact ⟨l, c.expr, c.md, rfl⟩
-    exact stmts_process_to_suffix π φ before_a
-      (Statement.assert label check.expr check.md :: after_a)
-      σ_final σ_final δ_final δ_final
-      (assert_skips_to_terminal π φ before_a σ_final δ_final h_before_asserts)
+  · -- reachable: the postcondition assert is reachable in the verification block
+    -- This requires:
+    -- 1. The prefix (inits + assumes) executes from some σ₀' to σ₀
+    --    (inits create variables with arbitrary values, assumes check preconditions)
+    -- 2. The body block executes from σ₀ to σ_final (by h_body)
+    -- 3. The assert skips before the target assert execute (no-op)
+    -- Step 1 requires constructing InitState derivations and showing
+    -- assume conditions hold. This is the remaining proof obligation.
+    sorry
   · rfl
 
 end ProcBodyVerifyCorrect
