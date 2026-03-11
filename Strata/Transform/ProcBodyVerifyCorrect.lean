@@ -221,6 +221,15 @@ theorem procBodyVerify_sound
     -- 3. The assert skips before the target assert execute (no-op)
     -- Step 1 requires constructing InitState derivations and showing
     -- assume conditions hold. This is the remaining proof obligation.
+    -- Construct the reachability proof
+    unfold reachable
+    -- We need: ∃ δ₀ σ₀' cfg, path ∧ ofConfig cfg = some ⟨σ_final, δ_final, some a⟩
+    -- The target cfg is .block blk_label (.stmts (assert :: after_a) σ_final δ_final)
+    -- The path goes through the block, processing prefix, body, and assert skips.
+    -- The prefix (inits + assumes) needs to execute from (σ₀', δ₀) to (σ₀, δ).
+    -- Since inits use InitState with arbitrary values, we can pick σ₀' to make this work.
+    -- The body then executes from (σ₀, δ) to (σ_final, δ_final) by h_body.
+    -- The assert skips don't change state.
     sorry
   · rfl
 
