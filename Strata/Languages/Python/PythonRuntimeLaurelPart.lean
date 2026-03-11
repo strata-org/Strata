@@ -15,235 +15,695 @@ set_option maxRecDepth 10000
 
 /--
 Python prelude declarations expressed in Laurel grammar.
-This covers datatypes, opaque types, and function/procedure signatures
-that can be represented in Laurel syntax.
+Converted from PythonLaurelCorePrelude.lean (Core dialect) to Laurel dialect.
 
-Core-specific constructs (axioms, type synonyms, functions with Core expression
-bodies, discriminator access) remain in `CorePrelude.lean` and are combined
-at the Core level in StrataMain.
+Core-specific constructs that Laurel does not support:
+- `inline` keyword: noted in comments
+- Labels on requires/ensures/assert/assume: noted in nearby comments
+- Axioms: commented out
+- `mutual`/`end` blocks: flattened (Laurel does not support mutual blocks)
 -/
 private def pythonRuntimeLaurelPartDDM :=
 #strata
 program Laurel;
 
-// =====================================================================
-// Basic Types
-// =====================================================================
+// /////////////////////////////////////////////////////////////////////////////////////
 
-type Object;
-type Date;
-type Datetime;
-type Datetime_base;
-type DictStrAny;
-type ListDictStrAny;
-
-// =====================================================================
-// None Type
-// =====================================================================
-
-datatype None {
-  None_none()
-}
-
-// =====================================================================
-// Error / Exception Types
-// =====================================================================
+// Exceptions
+// TODO: Formalize the exception hierarchy here:
+// https://docs.python.org/3/library/exceptions.html#exception-hierarchy
+// We use the name "Error" to stand for Python's Exceptions +
+// our own special indicator, Unimplemented which is an artifact of
+// Strata that indicates that our models is partial.
 
 datatype Error {
-  Error_TypeError(getTypeError: string),
-  Error_AttributeError(getAttributeError: string),
-  Error_RePatternError(getRePatternError: string),
-  Error_Unimplemented(getUnimplemented: string)
-}
-datatype ExceptOrNone {
-  ExceptOrNone_mk_code(code_val: string),
-  ExceptOrNone_mk_none(none_val: None)
-}
-
-datatype IntOrNone {
-  IntOrNone_mk_int(int_val: int),
-  IntOrNone_mk_none(none_val: None)
+  NoError (),
+  TypeError (Type_msg : string),
+  AttributeError (Attribute_msg : string),
+  AssertionError (Assertion_msg : string),
+  UnimplementedError (Unimplement_msg : string),
+  UndefinedError (Undefined_msg : string),
+  IndexError (IndexError_msg : string)
 }
 
-datatype StrOrNone {
-  StrOrNone_mk_str(str_val: string),
-  StrOrNone_mk_none(none_val: None)
+// /////////////////////////////////////////////////////////////////////////////////////
+
+// Any type modelling for Python
+// We model Any type of Python as an inductive type in Strata,
+// where the value of each type is wrapped around by a constructor.
+// In the PythonToLaurel translator, all user-defined variables
+// and input/outputs of all user-defined functions are
+// translated into variables of this Any type.
+// We also add exception constructor for Any type to catch
+// errors in the functions that model Python operators that
+// appears later in this prelude.
+// In this prelude, we model datetime as a single int and assume
+// that the conversion from a string constant is handled by the translator.
+
+type DictStrAny;
+
+// Note: Core uses mutual/end blocks for Any and ListAny.
+// Laurel does not support mutual blocks, so they are declared separately.
+
+datatype Any {
+  from_none (),
+  from_bool (as_bool : bool),
+  from_int (as_int : int),
+  from_float (as_float : real),
+  from_string (as_string : string),
+  from_datetime (as_datetime : int),
+  from_Dict (as_Dict: DictStrAny),
+  from_ListAny (as_ListAny : ListAny),
+  from_ClassInstance (classname : string, instance_attributes: DictStrAny),
+  exception (get_error: Error)
 }
 
-datatype AnyOrNone {
-  AnyOrNone_mk_str(str_val: string),
-  AnyOrNone_mk_none(none_val: None)
+datatype ListAny {
+  ListAny_nil (),
+  ListAny_cons (h: Any, t: ListAny)
 }
 
-datatype BoolOrNone {
-  BoolOrNone_mk_str(str_val: string),
-  BoolOrNone_mk_none(none_val: None)
-}
+// /////////////////////////////////////////////////////////////////////////////////////
+//Functions that we provide to Python user
+//to write assertions/contracts about about types of variables
 
-datatype BoolOrStrOrNone {
-  BoolOrStrOrNone_mk_bool(bool_val: bool),
-  BoolOrStrOrNone_mk_str(str_val: string),
-  BoolOrStrOrNone_mk_none(none_val: None)
-}
-
-datatype DictStrStrOrNone {
-  DictStrStrOrNone_mk_str(str_val: string),
-  DictStrStrOrNone_mk_none(none_val: None)
-}
-
-datatype BytesOrStrOrNone {
-  BytesOrStrOrNone_mk_none(none_val: None),
-  BytesOrStrOrNone_mk_str(str_val: string)
-}
-
-datatype ListStr {
-  ListStr_nil(),
-  ListStr_cons(head: string, tail: ListStr)
-}
-
-datatype Client {
-  Client_S3(),
-  Client_CW()
-}
-
-datatype PyAnyType {
-  PyAnyType_Inhabitant()
-}
-// =====================================================================
-// Function Declarations (without bodies)
-// =====================================================================
-
-function Object_len(x: Object): int;
-function inheritsFrom(child: string, parent: string): bool;
-function strOrNone_toObject(v: StrOrNone): Object;
-function DictStrAny_mk(s: string): DictStrAny;
-function ListDictStrAny_nil(): ListDictStrAny;
-
-// Timedelta functions
-function Timedelta_get_days(timedelta: int): int;
-function Timedelta_get_seconds(timedelta: int): int;
-function Timedelta_get_microseconds(timedelta: int): int;
-
-// Datetime functions
-function Datetime_get_base(d: Datetime): Datetime_base;
-function Datetime_get_timedelta(d: Datetime): int;
-function Datetime_add(d: Datetime, timedelta: int): Datetime;
-function Datetime_lt(d1: Datetime, d2: Datetime): bool;
-function datetime_to_str(dt: Datetime): string;
-function datetime_to_int(): int;
-
-// String/collection functions
-function str_in_list_str(s: string, l: ListStr): bool;
-function str_in_dict_str_any(s: string, l: DictStrAny): bool;
-function list_str_get(l: ListStr, i: int): string;
-function str_len(s: string): int;
-function dict_str_any_get(d: DictStrAny, k: string): DictStrAny;
-function dict_str_any_get_list_str(d: DictStrAny, k: string): ListStr;
-function dict_str_any_get_str(d: DictStrAny, k: string): string;
-function dict_str_any_length(d: DictStrAny): int;
-function Float_gt(lhs: string, rhs: string): bool;
-
-// =====================================================================
-// Function Declarations (with bodies)
-// =====================================================================
-
-function Timedelta_mk(days: int, seconds: int, microseconds: int): int {
-  ((days * 3600 * 24) + seconds) * 1000000 + microseconds
+// inline
+function isBool (v: Any) : Any {
+  from_bool (Any..isfrom_bool(v))
 };
 
-function Datetime_sub(d: Datetime, timedelta: int): Datetime {
-  Datetime_add(d, -timedelta)
+// inline
+function isInt (v: Any) : Any {
+  from_bool (Any..isfrom_int(v))
 };
 
-// =====================================================================
-// Procedure Declarations (without bodies)
-// =====================================================================
+// inline
+function isFloat (v: Any) : Any {
+  from_bool (Any..isfrom_float(v))
+};
 
-procedure importFrom(module: string, names: ListStr, level: int);
-procedure import(names: ListStr);
-procedure print(msg: string, opt: StrOrNone);
+// inline
+function isString (v: Any) : Any {
+  from_bool (Any..isfrom_string(v))
+};
 
-procedure json_dumps(msg: DictStrAny, opt_indent: IntOrNone)
-  returns (s: string, maybe_except: ExceptOrNone);
+// inline
+function isdatetime (v: Any) : Any {
+  from_bool (Any..isfrom_datetime(v))
+};
 
-procedure json_loads(msg: string)
-  returns (d: DictStrAny, maybe_except: ExceptOrNone);
+// inline
+function isDict (v: Any) : Any {
+  from_bool (Any..isfrom_Dict(v))
+};
 
-procedure input(msg: string)
-  returns (result: string, maybe_except: ExceptOrNone);
+// inline
+function isList (v: Any) : Any {
+  from_bool (Any..isfrom_ListAny(v))
+};
 
-procedure random_choice(l: ListStr)
-  returns (result: string, maybe_except: ExceptOrNone);
+// inline
+function isClassInstance (v: Any) : Any {
+  from_bool (Any..isfrom_ClassInstance(v))
+};
 
-procedure str_to_float(s: string)
-  returns (result: string, maybe_except: ExceptOrNone);
+// inline
+function isInstance_of_Int (v: Any) : Any {
+  from_bool (Any..isfrom_int(v) || Any..isfrom_bool(v))
+};
 
-procedure datetime_date(dt: Datetime)
-  returns (d: Datetime, maybe_except: ExceptOrNone);
+// inline
+function isInstance_of_Float (v: Any) : Any {
+  from_bool (Any..isfrom_float(v) || Any..isfrom_int(v) || Any..isfrom_bool(v))
+};
 
-// =====================================================================
-// Procedure Declarations (with ensures/bodies)
-// =====================================================================
+// /////////////////////////////////////////////////////////////////////////////////////
+//Functions that we provide to Python user
+//to write assertions/contracts about about types of errors
+// /////////////////////////////////////////////////////////////////////////////////////
 
-procedure datetime_now()
-  returns (d: Datetime, maybe_except: ExceptOrNone)
-  ensures Datetime_get_timedelta(d) == Timedelta_mk(0, 0, 0)
+// inline
+function isTypeError (e: Error) : Any {
+  from_bool (Error..isTypeError(e))
+};
+
+// inline
+function isAttributeError (e: Error) : Any {
+  from_bool (Error..isAttributeError(e))
+};
+
+// inline
+function isAssertionError (e: Error) : Any {
+  from_bool (Error..isAssertionError(e))
+};
+
+// inline
+function isUnimplementedError (e: Error) : Any {
+  from_bool (Error..isUnimplementedError(e))
+};
+
+// inline
+function isUndefinedError (e: Error) : Any {
+  from_bool (Error..isUndefinedError(e))
+};
+
+// inline
+function isError (e: Error) : bool {
+  ! Error..isNoError(e)
+};
+
+// /////////////////////////////////////////////////////////////////////////////////////
+//The following function convert Any type to bool
+//based on the Python definition of truthiness for basic types
+// https://docs.python.org/3/library/stdtypes.html
+// /////////////////////////////////////////////////////////////////////////////////////
+
+// inline
+function Any_to_bool (v: Any) : bool
+  // [requires]: (Any..isfrom_bool(v) || Any..isfrom_none(v) || Any..isfrom_string(v) || Any..isfrom_int(v))
+  requires (Any..isfrom_bool(v) || Any..isfrom_none(v) || Any..isfrom_string(v) || Any..isfrom_int(v))
 {
-  assume Datetime_get_timedelta(d) == Timedelta_mk(0, 0, 0);
+  if (Any..isfrom_bool(v)) (Any..as_bool!(v)) else
+  if (Any..isfrom_none(v)) (false) else
+  if (Any..isfrom_string(v)) (!(Any..as_string!(v) == "")) else
+  if (Any..isfrom_int(v)) (!(Any..as_int!(v) == 0)) else
+  false
+  //WILL BE ADDED
 };
 
-procedure datetime_utcnow()
-  returns (d: Datetime, maybe_except: ExceptOrNone)
-  ensures Datetime_get_timedelta(d) == Timedelta_mk(0, 0, 0)
+// /////////////////////////////////////////////////////////////////////////////////////
+// ListAny functions
+// Those functions are opaque until Strata support recursive functions
+// /////////////////////////////////////////////////////////////////////////////////////
+
+function List_contains (l : ListAny, x: Any) : bool;
+function List_len (l : ListAny) : int;
+function List_extend (l1 : ListAny, l2: ListAny) : ListAny;
+function List_append (l: ListAny, x: Any) : ListAny;
+function List_get_func (l : ListAny, i : int) : Any;
+function List_set_func (l : ListAny, i : int, v: Any) : ListAny;
+function List_reverse (l: ListAny) : ListAny;
+function List_index_bang (l: ListAny, v: Any) : int;
+function List_index (l: ListAny, v: Any) : int;
+function List_repeat (l: ListAny, n: int) : ListAny;
+function List_insert (l: ListAny, i: int, v: Any) : ListAny;
+function List_remove (l: ListAny, v: Any) : ListAny;
+function List_pop (l: ListAny, i: int) : ListAny;
+
+
+// /////////////////////////////////////////////////////////////////////////////////////
+// DictStrAny functions what support constructing DictStrAny value in the translator
+// Those functions are opaque until Strata support recursive functions
+// /////////////////////////////////////////////////////////////////////////////////////
+function DictStrAny_empty () : DictStrAny;
+function DictStrAny_insert (d: DictStrAny, key: string, v: Any) : DictStrAny;
+
+// /////////////////////////////////////////////////////////////////////////////////////
+// ListAny functions
+// Those functions are opaque until Strata support recursive functions
+// /////////////////////////////////////////////////////////////////////////////////////
+
+function is_IntReal (v: Any) : bool;
+function Any_real_to_int (v: Any) : int;
+
+// /////////////////////////////////////////////////////////////////////////////////////
+// Python treats some values of different types to be equivalent
+// This function models that behavior
+// /////////////////////////////////////////////////////////////////////////////////////
+// inline
+function normalize_any (v : Any) : Any {
+  if (v == from_bool(true)) (from_int(1))
+  else if (v == from_bool(false)) (from_int(0)) else
+        if (Any..isfrom_float(v) && is_IntReal(v)) (from_int(Any_real_to_int(v))) else
+        v
+};
+
+// /////////////////////////////////////////////////////////////////////////////////////
+// MODELLING PYTHON OPERATIONS
+// Note that there is no official document that define the semantic of Python operations
+// The model of them in this prelude is based on experiments of basic types
+// /////////////////////////////////////////////////////////////////////////////////////
+
+
+// /////////////////////////////////////////////////////////////////////////////////////
+// This function convert an int to a real
+// Need to connect to an SMT function
+function int_to_real (i: int) : real;
+
+// /////////////////////////////////////////////////////////////////////////////////////
+// Converting bool to int or real
+// Used to in Python binary operators' modelling
+// inline
+function bool_to_int (bval: bool) : int {if (bval) (1) else 0};
+// inline
+function bool_to_real (b: bool) : real {if (b) (1.0) else 0.0};
+
+// /////////////////////////////////////////////////////////////////////////////////////
+// Modelling of Python unary operations
+// /////////////////////////////////////////////////////////////////////////////////////
+
+// inline
+function PNeg (v: Any) : Any
 {
-  assume Datetime_get_timedelta(d) == Timedelta_mk(0, 0, 0);
+  if (Any..isexception(v)) (v)
+  else if (Any..isfrom_bool(v)) (
+    from_int(- bool_to_int(Any..as_bool!(v))))
+  else if (Any..isfrom_int(v)) (
+    from_int(- Any..as_int!(v)))
+  else if (Any..isfrom_float(v)) (
+    from_float(- Any..as_float!(v)))
+  else
+    exception(UndefinedError ("Operand Type is not defined"))
 };
 
-procedure timedelta(days: IntOrNone, hours: IntOrNone)
-  returns (delta: int, maybe_except: ExceptOrNone)
- {
-   var days_i : int := 0;
-   if (IntOrNone..isIntOrNone_mk_int(days)) {
-         days_i := IntOrNone..int_val!(days);
-   }
-   var hours_i : int := 0;
-   if (IntOrNone..isIntOrNone_mk_int(hours)) {
-         hours_i := IntOrNone..int_val!(hours);
-   }
-   // [assume_timedelta_sign_matches]:
-   assume (delta == (((days_i * 24) + hours_i) * 3600) * 1000000);
- };
-
-
-procedure datetime_strptime(time: string, format: string) returns (d : Datetime, maybe_except: ExceptOrNone)
-// [req_format_str]:
-  requires (format == "%Y-%m-%d")
-// [ensures_str_strp_reverse]:
-  ensures forall(dt : Datetime) {d == dt} => (time == datetime_to_str(dt)) == (d == dt)
+// inline
+function PNot (v: Any) : Any
 {
-  //[assume_str_strp_reverse]:
-  assume forall(dt : Datetime) {d == dt} => (time == datetime_to_str(dt)) == (d == dt);
+  if (Any..isexception(v)) (v)
+  else if (Any..isfrom_bool(v)) (
+    from_bool(!(Any..as_bool!(v))))
+  else if (Any..isfrom_int(v)) (
+    from_bool(!(Any..as_int!(v) == 0)))
+  else if (Any..isfrom_float(v)) (
+    from_bool(!(Any..as_float!(v) == 0.0)))
+  else if (Any..isfrom_string(v)) (
+    from_bool(!(Any..as_string!(v) == "")))
+  else if (Any..isfrom_ListAny(v)) (
+    from_bool(!(List_len(Any..as_ListAny!(v)) == 0)))
+  else
+    exception(UndefinedError ("Operand Type is not defined"))
 };
 
-procedure test_helper_procedure(req_name : string, opt_name : StrOrNone) returns (maybe_except: ExceptOrNone)
-// [req_name_is_foo]:
-  requires req_name == "foo"
-  //[req_opt_name_none_or_str]:
-  requires if (!StrOrNone..isStrOrNone_mk_none(opt_name)) (StrOrNone..isStrOrNone_mk_str(opt_name)) else true
-  //[req_opt_name_none_or_bar]:
-  requires if (StrOrNone..isStrOrNone_mk_str(opt_name)) (StrOrNone..str_val!(opt_name) == "bar") else true
-  //[ensures_maybe_except_none]:
-  ensures ExceptOrNone..isExceptOrNone_mk_none(maybe_except)
+
+// /////////////////////////////////////////////////////////////////////////////////////
+// Modelling of Python binary operations
+// /////////////////////////////////////////////////////////////////////////////////////
+
+// inline
+function PAdd (v1: Any, v2: Any) : Any
 {
-  //[assert_name_is_foo]:
-  assert req_name == "foo";
-  //[assert_opt_name_none_or_str]:
-  assert if (!StrOrNone..isStrOrNone_mk_none(opt_name)) (StrOrNone..isStrOrNone_mk_str(opt_name)) else true;
-  //[assert_opt_name_none_or_bar]:
-  assert if (StrOrNone..isStrOrNone_mk_str(opt_name)) (StrOrNone..str_val!(opt_name) == "bar") else true;
-  //[assume_maybe_except_none]:
-  assume ExceptOrNone..isExceptOrNone_mk_none(maybe_except);
+  if (Any..isexception(v1)) (v1) else if (Any..isexception(v2)) (v2)
+  else if (Any..isfrom_bool(v1) && Any..isfrom_bool(v2)) (
+    from_int(bool_to_int(Any..as_bool!(v1)) + bool_to_int(Any..as_bool!(v2))))
+  else if (Any..isfrom_bool(v1) && Any..isfrom_int(v2)) (
+    from_int(bool_to_int(Any..as_bool!(v1)) + Any..as_int!(v2)))
+  else if (Any..isfrom_int(v1) && Any..isfrom_bool(v2)) (
+    from_int(Any..as_int!(v1) + bool_to_int(Any..as_bool!(v2))))
+  else if (Any..isfrom_int(v1) && Any..isfrom_float(v2)) (
+    from_float(int_to_real(Any..as_int!(v1)) + Any..as_float!(v2)))
+  else if (Any..isfrom_float(v1) && Any..isfrom_bool(v2)) (
+    from_float(Any..as_float!(v1) + bool_to_real(Any..as_bool!(v2))))
+  else if (Any..isfrom_int(v1) && Any..isfrom_int(v2)) (
+    from_int(Any..as_int!(v1) + Any..as_int!(v2)))
+  else if (Any..isfrom_float(v1) && Any..isfrom_int(v2)) (
+    from_float(Any..as_float!(v1) + int_to_real(Any..as_int!(v2)) ))
+  else if (Any..isfrom_float(v1) && Any..isfrom_float(v2)) (
+    from_float(Any..as_float!(v1) + Any..as_float!(v2)))
+  else if (Any..isfrom_string(v1) && Any..isfrom_string(v2)) (
+    from_string(Any..as_string!(v1) ++ Any..as_string!(v2)))
+  else if (Any..isfrom_ListAny(v1) && Any..isfrom_ListAny(v2)) (
+    from_ListAny(List_extend(Any..as_ListAny!(v1),Any..as_ListAny!(v2))))
+  else if (Any..isfrom_datetime(v1) && Any..isfrom_int(v2)) (
+    from_datetime((Any..as_datetime!(v1) + Any..as_int!(v2))))
+  else
+    exception(UndefinedError ("Operand Type is not defined"))
 };
+
+
+// inline
+function PSub (v1: Any, v2: Any) : Any
+{
+  if (Any..isexception(v1)) (v1) else if (Any..isexception(v2)) (v2)
+  else if (Any..isfrom_bool(v1) && Any..isfrom_bool(v2)) (
+    from_int(bool_to_int(Any..as_bool!(v1)) - bool_to_int(Any..as_bool!(v2))))
+  else if (Any..isfrom_bool(v1) && Any..isfrom_int(v2)) (
+    from_int(bool_to_int(Any..as_bool!(v1)) - Any..as_int!(v2)))
+  else if (Any..isfrom_int(v1) && Any..isfrom_bool(v2)) (
+    from_int(Any..as_int!(v1) - bool_to_int(Any..as_bool!(v2))))
+  else if (Any..isfrom_bool(v1) && Any..isfrom_float(v2)) (
+    from_float(bool_to_real(Any..as_bool!(v1)) - Any..as_float!(v2)))
+  else if (Any..isfrom_float(v1) && Any..isfrom_bool(v2)) (
+    from_float(Any..as_float!(v1) - bool_to_real(Any..as_bool!(v2))))
+  else if (Any..isfrom_int(v1) && Any..isfrom_int(v2)) (
+    from_int(Any..as_int!(v1) - Any..as_int!(v2)))
+  else if (Any..isfrom_int(v1) && Any..isfrom_float(v2)) (
+    from_float(int_to_real(Any..as_int!(v1)) - Any..as_float!(v2)))
+  else if (Any..isfrom_float(v1) && Any..isfrom_int(v2)) (
+    from_float(Any..as_float!(v1) - int_to_real(Any..as_int!(v2)) ))
+  else if (Any..isfrom_float(v1) && Any..isfrom_float(v2)) (
+    from_float(Any..as_float!(v1) - Any..as_float!(v2)))
+  else if (Any..isfrom_datetime(v1) && Any..isfrom_int(v2)) (
+    from_datetime(Any..as_datetime!(v1) - Any..as_int!(v2)))
+  else if (Any..isfrom_datetime(v1) && Any..isfrom_datetime(v2)) (
+    from_int(Any..as_datetime!(v1) - Any..as_datetime!(v2)))
+  else
+    exception(UndefinedError ("Operand Type is not defined"))
+};
+
+
+function string_repeat (s: string, i: int) : string;
+
+// inline
+function PMul (v1: Any, v2: Any) : Any
+{
+  if (Any..isexception(v1)) (v1) else if (Any..isexception(v2)) (v2)
+  else if (Any..isfrom_bool(v1) && Any..isfrom_bool(v2)) (
+    from_int(bool_to_int(Any..as_bool!(v1)) * bool_to_int(Any..as_bool!(v2))))
+  else if (Any..isfrom_bool(v1) && Any..isfrom_int(v2)) (
+    from_int(bool_to_int(Any..as_bool!(v1)) * Any..as_int!(v2)))
+  else if (Any..isfrom_int(v1) && Any..isfrom_bool(v2)) (
+    from_int(Any..as_int!(v1) * bool_to_int(Any..as_bool!(v2))))
+  else if (Any..isfrom_bool(v1) && Any..isfrom_float(v2)) (
+    from_float(bool_to_real(Any..as_bool!(v1)) * Any..as_float!(v2)))
+  else if (Any..isfrom_float(v1) && Any..isfrom_bool(v2)) (
+    from_float(Any..as_float!(v1) * bool_to_real(Any..as_bool!(v2))))
+  else if (Any..isfrom_bool(v1) && Any..isfrom_string(v2) && Any..as_bool!(v1)) (v2)
+  else if (Any..isfrom_bool(v1) && Any..isfrom_string(v2) && !Any..as_bool!(v1)) (from_string(""))
+  else if (Any..isfrom_string(v1) && Any..isfrom_bool(v2) && Any..as_bool!(v2)) (v1)
+  else if (Any..isfrom_string(v1) && Any..isfrom_bool(v2) && !Any..as_bool!(v2)) (from_string(""))
+  else if (Any..isfrom_int(v1) && Any..isfrom_int(v2)) (
+    from_int(Any..as_int!(v1) * Any..as_int!(v2)))
+  else if (Any..isfrom_int(v1) && Any..isfrom_float(v2)) (
+    from_float(int_to_real(Any..as_int!(v1)) * Any..as_float!(v2)))
+  else if (Any..isfrom_float(v1) && Any..isfrom_int(v2)) (
+    from_float(Any..as_float!(v1) * int_to_real(Any..as_int!(v2)) ))
+  else if (Any..isfrom_int(v1) && Any..isfrom_string(v2)) (
+    from_string(string_repeat(Any..as_string!(v2), Any..as_int!(v1))))
+  else if (Any..isfrom_string(v1) && Any..isfrom_int(v2)) (
+    from_string(string_repeat(Any..as_string!(v1), Any..as_int!(v2))))
+  else if (Any..isfrom_int(v1) && Any..isfrom_ListAny(v2)) (
+    from_ListAny(List_repeat(Any..as_ListAny!(v2), Any..as_int!(v1))))
+  else if (Any..isfrom_ListAny(v1) && Any..isfrom_int(v2)) (
+    from_ListAny(List_repeat(Any..as_ListAny!(v1), Any..as_int!(v2))))
+  else if (Any..isfrom_float(v1) && Any..isfrom_float(v2)) (
+    from_float(Any..as_float!(v1) * Any..as_float!(v2)))
+  else
+    exception(UndefinedError ("Operand Type is not defined"))
+};
+
+// inline
+function PFloorDiv (v1: Any, v2: Any) : Any
+  // [requires]: (Any..isfrom_bool(v2)==>Any..as_bool!(v2)) && (Any..isfrom_int(v2)==>Any..as_int!(v2)!=0)
+  requires (Any..isfrom_bool(v2) ==> Any..as_bool!(v2)) && (Any..isfrom_int(v2) ==> Any..as_int!(v2) != 0)
+{
+  if (Any..isexception(v1)) (v1) else if (Any..isexception(v2)) (v2)
+  else if (Any..isfrom_bool(v1) && Any..isfrom_bool(v2)) (
+    from_int( bool_to_int(Any..as_bool!(v1)) / bool_to_int(Any..as_bool!(v2))))
+  else if (Any..isfrom_bool(v1) && Any..isfrom_int(v2)) (
+    from_int(bool_to_int(Any..as_bool!(v1)) / Any..as_int!(v2)))
+  else if (Any..isfrom_int(v1) && Any..isfrom_bool(v2)) (
+    from_int(Any..as_int!(v1) / bool_to_int(Any..as_bool!(v2))))
+  else if (Any..isfrom_int(v1) && Any..isfrom_int(v2)) (
+    from_int(Any..as_int!(v1) / Any..as_int!(v2)))
+  else
+    exception(UndefinedError ("Operand Type is not defined"))
+};
+
+// /////////////////////////////////////////////////////////////////////////////////////
+// Modelling of Python comparision operations
+// /////////////////////////////////////////////////////////////////////////////////////
+
+function string_lt (s1: string, s2: string) : bool;
+function string_le (s1: string, s2: string) : bool;
+function string_gt (s1: string, s2: string) : bool;
+function string_ge (s1: string, s2: string) : bool;
+function List_lt (l1: ListAny, l2: ListAny) : bool;
+function List_le (l1: ListAny, l2: ListAny) : bool;
+function List_gt (l1: ListAny, l2: ListAny) : bool;
+function List_ge (l1: ListAny, l2: ListAny) : bool;
+
+// inline
+function PLt (v1: Any, v2: Any) : Any
+{
+  if (Any..isexception(v1)) (v1) else if (Any..isexception(v2)) (v2)
+  else if (Any..isfrom_bool(v1) && Any..isfrom_bool(v2)) (
+    from_bool(bool_to_int(Any..as_bool!(v1)) < bool_to_int(Any..as_bool!(v2))))
+  else if (Any..isfrom_bool(v1) && Any..isfrom_int(v2)) (
+    from_bool(bool_to_int(Any..as_bool!(v1)) < Any..as_int!(v2)))
+  else if (Any..isfrom_int(v1) && Any..isfrom_bool(v2)) (
+    from_bool(Any..as_int!(v1) < bool_to_int(Any..as_bool!(v2))))
+  else if (Any..isfrom_bool(v1) && Any..isfrom_float(v2)) (
+    from_bool(bool_to_real(Any..as_bool!(v1)) < Any..as_float!(v2)))
+  else if (Any..isfrom_float(v1) && Any..isfrom_bool(v2)) (
+    from_bool(Any..as_float!(v1) < bool_to_real(Any..as_bool!(v2))))
+  else if (Any..isfrom_int(v1) && Any..isfrom_int(v2)) (
+    from_bool(Any..as_int!(v1) < Any..as_int!(v2)))
+  else if (Any..isfrom_int(v1) && Any..isfrom_float(v2)) (
+    from_bool(int_to_real(Any..as_int!(v1)) < Any..as_float!(v2)))
+  else if (Any..isfrom_float(v1) && Any..isfrom_int(v2)) (
+    from_bool(Any..as_float!(v1) < int_to_real(Any..as_int!(v2))))
+  else if (Any..isfrom_float(v1) && Any..isfrom_float(v2)) (
+    from_bool(Any..as_float!(v1) < Any..as_float!(v2)))
+  else if (Any..isfrom_string(v1) && Any..isfrom_string(v2)) (
+    from_bool(string_lt(Any..as_string!(v1), Any..as_string!(v2))))
+  else if (Any..isfrom_ListAny(v1) && Any..isfrom_ListAny(v2)) (
+    from_bool(List_lt(Any..as_ListAny!(v1),Any..as_ListAny!(v2))))
+  else if (Any..isfrom_datetime(v1) && Any..isfrom_datetime(v2)) (
+    from_bool(Any..as_datetime!(v1) < Any..as_datetime!(v2)))
+  else
+    exception(UndefinedError ("Operand Type is not defined"))
+};
+
+// inline
+function PLe (v1: Any, v2: Any) : Any
+{
+  if (Any..isexception(v1)) (v1) else if (Any..isexception(v2)) (v2)
+  else if (Any..isfrom_bool(v1) && Any..isfrom_bool(v2)) (
+    from_bool(bool_to_int(Any..as_bool!(v1)) <= bool_to_int(Any..as_bool!(v2))))
+  else if (Any..isfrom_bool(v1) && Any..isfrom_int(v2)) (
+    from_bool(bool_to_int(Any..as_bool!(v1)) <= Any..as_int!(v2)))
+  else if (Any..isfrom_int(v1) && Any..isfrom_bool(v2)) (
+    from_bool(Any..as_int!(v1) <= bool_to_int(Any..as_bool!(v2))))
+  else if (Any..isfrom_bool(v1) && Any..isfrom_float(v2)) (
+    from_bool(bool_to_real(Any..as_bool!(v1)) <= Any..as_float!(v2)))
+  else if (Any..isfrom_float(v1) && Any..isfrom_bool(v2)) (
+    from_bool(Any..as_float!(v1) <= bool_to_real(Any..as_bool!(v2))))
+  else if (Any..isfrom_int(v1) && Any..isfrom_int(v2)) (
+    from_bool(Any..as_int!(v1) <= Any..as_int!(v2)))
+  else if (Any..isfrom_int(v1) && Any..isfrom_float(v2)) (
+    from_bool(int_to_real(Any..as_int!(v1)) <= Any..as_float!(v2)))
+  else if (Any..isfrom_float(v1) && Any..isfrom_int(v2)) (
+    from_bool(Any..as_float!(v1) <= int_to_real(Any..as_int!(v2))))
+  else if (Any..isfrom_float(v1) && Any..isfrom_float(v2)) (
+    from_bool(Any..as_float!(v1) <= Any..as_float!(v2)))
+  else if (Any..isfrom_string(v1) && Any..isfrom_string(v2)) (
+    from_bool(string_le(Any..as_string!(v1), Any..as_string!(v2))))
+  else if (Any..isfrom_ListAny(v1) && Any..isfrom_ListAny(v2)) (
+    from_bool(List_le(Any..as_ListAny!(v1),Any..as_ListAny!(v2))))
+  else if (Any..isfrom_datetime(v1) && Any..isfrom_datetime(v2)) (
+    from_bool(Any..as_datetime!(v1) <= Any..as_datetime!(v2)))
+  else
+    exception(UndefinedError ("Operand Type is not defined"))
+};
+
+// inline
+function PGt (v1: Any, v2: Any) : Any
+{
+  if (Any..isexception(v1)) (v1) else if (Any..isexception(v2)) (v2)
+  else if (Any..isfrom_bool(v1) && Any..isfrom_bool(v2)) (
+    from_bool(bool_to_int(Any..as_bool!(v1)) > bool_to_int(Any..as_bool!(v2))))
+  else if (Any..isfrom_bool(v1) && Any..isfrom_int(v2)) (
+    from_bool(bool_to_int(Any..as_bool!(v1)) > Any..as_int!(v2)))
+  else if (Any..isfrom_int(v1) && Any..isfrom_bool(v2)) (
+    from_bool(Any..as_int!(v1) > bool_to_int(Any..as_bool!(v2))))
+  else if (Any..isfrom_bool(v1) && Any..isfrom_float(v2)) (
+    from_bool(bool_to_real(Any..as_bool!(v1)) > Any..as_float!(v2)))
+  else if (Any..isfrom_float(v1) && Any..isfrom_bool(v2)) (
+    from_bool(Any..as_float!(v1) > bool_to_real(Any..as_bool!(v2))))
+  else if (Any..isfrom_int(v1) && Any..isfrom_int(v2)) (
+    from_bool(Any..as_int!(v1) > Any..as_int!(v2)))
+  else if (Any..isfrom_int(v1) && Any..isfrom_float(v2)) (
+    from_bool(int_to_real(Any..as_int!(v1)) > Any..as_float!(v2)))
+  else if (Any..isfrom_float(v1) && Any..isfrom_int(v2)) (
+    from_bool(Any..as_float!(v1) > int_to_real(Any..as_int!(v2))))
+  else if (Any..isfrom_float(v1) && Any..isfrom_float(v2)) (
+    from_bool(Any..as_float!(v1) > Any..as_float!(v2)))
+  else if (Any..isfrom_string(v1) && Any..isfrom_string(v2)) (
+    from_bool(string_gt(Any..as_string!(v1), Any..as_string!(v2))))
+  else if (Any..isfrom_ListAny(v1) && Any..isfrom_ListAny(v2)) (
+    from_bool(List_gt(Any..as_ListAny!(v1),Any..as_ListAny!(v2))))
+  else if (Any..isfrom_datetime(v1) && Any..isfrom_datetime(v2)) (
+    from_bool(Any..as_datetime!(v1) > Any..as_datetime!(v2)))
+  else
+    exception(UndefinedError ("Operand Type is not defined"))
+};
+
+// inline
+function PGe (v1: Any, v2: Any) : Any
+{
+  if (Any..isexception(v1)) (v1) else if (Any..isexception(v2)) (v2)
+  else if (Any..isfrom_bool(v1) && Any..isfrom_bool(v2)) (
+    from_bool(bool_to_int(Any..as_bool!(v1)) >= bool_to_int(Any..as_bool!(v2))))
+  else if (Any..isfrom_bool(v1) && Any..isfrom_int(v2)) (
+    from_bool(bool_to_int(Any..as_bool!(v1)) >= Any..as_int!(v2)))
+  else if (Any..isfrom_int(v1) && Any..isfrom_bool(v2)) (
+    from_bool(Any..as_int!(v1) >= bool_to_int(Any..as_bool!(v2))))
+  else if (Any..isfrom_bool(v1) && Any..isfrom_float(v2)) (
+    from_bool(bool_to_real(Any..as_bool!(v1)) >= Any..as_float!(v2)))
+  else if (Any..isfrom_float(v1) && Any..isfrom_bool(v2)) (
+    from_bool(Any..as_float!(v1) >= bool_to_real(Any..as_bool!(v2))))
+  else if (Any..isfrom_int(v1) && Any..isfrom_int(v2)) (
+    from_bool(Any..as_int!(v1) >= Any..as_int!(v2)))
+  else if (Any..isfrom_int(v1) && Any..isfrom_float(v2)) (
+    from_bool(int_to_real(Any..as_int!(v1)) >= Any..as_float!(v2)))
+  else if (Any..isfrom_float(v1) && Any..isfrom_int(v2)) (
+    from_bool(Any..as_float!(v1) >= int_to_real(Any..as_int!(v2))))
+  else if (Any..isfrom_float(v1) && Any..isfrom_float(v2)) (
+    from_bool(Any..as_float!(v1) >= Any..as_float!(v2)))
+  else if (Any..isfrom_string(v1) && Any..isfrom_string(v2)) (
+    from_bool(string_ge(Any..as_string!(v1), Any..as_string!(v2))))
+  else if (Any..isfrom_ListAny(v1) && Any..isfrom_ListAny(v2)) (
+    from_bool(List_ge(Any..as_ListAny!(v1),Any..as_ListAny!(v2))))
+  else if (Any..isfrom_datetime(v1) && Any..isfrom_datetime(v2)) (
+    from_bool(Any..as_datetime!(v1) >= Any..as_datetime!(v2)))
+  else
+    exception(UndefinedError ("Operand Type is not defined"))
+};
+
+// inline
+function PEq (v: Any, vp: Any) : Any {
+  from_bool(normalize_any(v) == normalize_any (vp))
+};
+
+// inline
+function PNEq (v: Any, vp: Any) : Any {
+  from_bool(normalize_any(v) != normalize_any (vp))
+};
+
+// /////////////////////////////////////////////////////////////////////////////////////
+// Modelling of Python Boolean operations And and Or
+// /////////////////////////////////////////////////////////////////////////////////////
+
+// inline
+function PAnd (v1: Any, v2: Any) : Any
+  // [requires]: (Any..isfrom_bool(v1) || Any..isfrom_none(v1) || Any..isfrom_string(v1) || Any..isfrom_int(v1))
+  requires (Any..isfrom_bool(v1) || Any..isfrom_none(v1) || Any..isfrom_string(v1) || Any..isfrom_int(v1))
+{
+  if (! Any_to_bool (v1)) (v1) else v2
+};
+
+// inline
+function POr (v1: Any, v2: Any) : Any
+  // [requires]: (Any..isfrom_bool(v1) || Any..isfrom_none(v1) || Any..isfrom_string(v1) || Any..isfrom_int(v1))
+  requires (Any..isfrom_bool(v1) || Any..isfrom_none(v1) || Any..isfrom_string(v1) || Any..isfrom_int(v1))
+{
+  if (Any_to_bool (v1)) (v1) else v2
+};
+
+
+// /////////////////////////////////////////////////////////////////////////////////////
+// Modelling of other Python operations, currrently unsupported
+// /////////////////////////////////////////////////////////////////////////////////////
+// inline
+function PPow (v1: Any, v2: Any) : Any
+{
+  exception(UnimplementedError ("Pow operator is not supported"))
+};
+
+// inline
+function PMod (v1: Any, v2: Any) : Any
+{
+  exception(UnimplementedError ("Mod operator is not supported"))
+};
+
+
+// /////////////////////////////////////////////////////////////////////////////////////
+// Modelling some datetime-related Python operations, for testing purpose
+// /////////////////////////////////////////////////////////////////////////////////////
+
+function to_string(a: Any) : string;
+
+// inline
+function to_string_any(a: Any) : Any {
+  from_string(to_string(a))
+};
+
+function datetime_strptime(dtstring: Any, format: Any) : Any;
+
+// axiom [datetime_tostring_cancel]: forall dt: Any ::
+//   datetime_strptime(to_string_any(dt), from_string ("%Y-%m-%d")) == dt;
+
+procedure datetime_date(d: Any) returns (ret: Any, error: Error)
+  // [d_type]:
+  requires Any..isfrom_datetime(d)
+  // [ret_type]:
+  ensures Any..isfrom_datetime(ret) && Any..as_datetime!(ret) <= Any..as_datetime!(d)
+{
+  var timedt: int;
+  if (Any..isfrom_datetime(d)) {
+    // [timedt_le]:
+    assume timedt <= Any..as_datetime!(d);
+    ret := from_datetime(timedt);
+    error := NoError();
+  }
+  else {
+    ret := from_none();
+    error := TypeError("Input must be datetime");
+  }
+};
+
+procedure datetime_now() returns (ret: Any)
+  // [ret_type]:
+  ensures Any..isfrom_datetime(ret)
+{
+  var d: int;
+  ret := from_datetime(d);
+};
+
+procedure timedelta(days: Any, hours: Any) returns (delta : Any, maybe_except: Error)
+  // [days_type]:
+  requires Any..isfrom_none(days) || Any..isfrom_int(days)
+  // [hours_type]:
+  requires Any..isfrom_none(hours) || Any..isfrom_int(hours)
+  // [days_pos]:
+  requires Any..isfrom_int(days) ==> Any..as_int!(days) >= 0
+  // [hours_pos]:
+  requires Any..isfrom_int(hours) ==> Any..as_int!(hours) >= 0
+  // [ret_pos]:
+  ensures Any..isfrom_int(delta) && Any..as_int!(delta) >= 0
+{
+  var days_i : int := 0;
+  if (Any..isfrom_int(days)) {
+        days_i := Any..as_int!(days);
+  }
+  var hours_i : int := 0;
+  if (Any..isfrom_int(hours)) {
+        hours_i := Any..as_int!(hours);
+  }
+  delta := from_int ((((days_i * 24) + hours_i) * 3600) * 1000000);
+};
+
+// /////////////////////////////////////////////////////////////////////////////////////
+// For testing purpose
+// /////////////////////////////////////////////////////////////////////////////////////
+
+procedure test_helper_procedure(req_name : Any, opt_name : Any) returns (ret: Any, maybe_except: Error)
+  // [req_name_is_foo]:
+  requires req_name == from_string("foo")
+  // [req_opt_name_none_or_str]:
+  requires (Any..isfrom_none(opt_name)) || (Any..isfrom_string(opt_name))
+  // [req_opt_name_none_or_bar]:
+  requires (opt_name == from_none()) || (opt_name == from_string("bar"))
+  // [ensures_maybe_except_none]:
+  ensures (Error..isNoError(maybe_except))
+{
+  // [assert_name_is_foo]:
+  assert req_name == from_string("foo");
+  // [assert_opt_name_none_or_str]:
+  assert (Any..isfrom_none(opt_name)) || (Any..isfrom_string(opt_name));
+  // [assert_opt_name_none_or_bar]:
+  assert (opt_name == from_none()) || (opt_name == from_string("bar"));
+  // [assume_maybe_except_none]:
+  assume (Error..isNoError(maybe_except));
+};
+
+procedure print(msg : Any);
+
+//This is only used to overwrite the Box datatype of Laurel prelude
+//WILL BE REMOVED
+datatype Box {
+  BoxInt(intVal: Any)
+}
 
 #end
 

@@ -120,6 +120,7 @@ def SemanticModel.isFunction (model: SemanticModel) (id: Identifier): Bool :=
     | .parameter _ => true
     | .datatypeConstructor _ _ => true
     | .constant _ => true
+    | .unresolved => true -- functions are more permissions at the call-site, so true avoids possibly incorrect errors
     | node => panic! s!"id: {repr id}, is not a procedure, node {repr node}"
 
 /-- The output of the resolution pass. -/
@@ -290,6 +291,7 @@ def resolveStmtExpr (exprMd : StmtExprMd) : ResolveM StmtExprMd := do
   | .LiteralInt v => pure (.LiteralInt v)
   | .LiteralBool v => pure (.LiteralBool v)
   | .LiteralString v => pure (.LiteralString v)
+  | .LiteralDecimal v => pure (.LiteralDecimal v)
   | .Identifier ref =>
     let ref' ← resolveRef ref md
     pure (.Identifier ref')
@@ -590,7 +592,7 @@ private def collectStmtExpr (map : Std.HashMap Nat AstNode) (expr : StmtExprMd)
     let map := collectStmtExpr map val
     collectStmtExpr map proof
   | .ContractOf _ fn => collectStmtExpr map fn
-  | .New _ | .This | .Exit _ | .LiteralInt _ | .LiteralBool _ | .LiteralString _
+  | .New _ | .This | .Exit _ | .LiteralInt _ | .LiteralBool _ | .LiteralString _ | .LiteralDecimal _
   | .Abstract | .All | .Hole => map
 
 private def collectBody (map : Std.HashMap Nat AstNode) (body : Body)

@@ -17,6 +17,7 @@ import Strata.Languages.Laurel.TypeHierarchy
 import Strata.Languages.Laurel.LaurelTypes
 import Strata.Languages.Laurel.ModifiesClauses
 import Strata.Languages.Laurel.CoreDefinitionsForLaurel
+import Strata.DDM.Util.DecimalRat
 import Strata.DL.Imperative.Stmt
 import Strata.DL.Imperative.MetaData
 import Strata.DL.Lambda.LExpr
@@ -126,6 +127,7 @@ def translateExpr (expr : StmtExprMd)
   | .LiteralBool b => return .const () (.boolConst b)
   | .LiteralInt i => return .const () (.intConst i)
   | .LiteralString s => return .const () (.strConst s)
+  | .LiteralDecimal d => return .const () (.realConst (Strata.Decimal.toRat d))
   | .Identifier name =>
       -- First check if this name is bound by an enclosing quantifier
       match boundVars.findIdx? (· == name) with
@@ -478,6 +480,7 @@ private def isPureExpr(expr: StmtExprMd): Bool :=
   | .LiteralBool _ => true
   | .LiteralInt _ => true
   | .LiteralString _ => true
+  | .LiteralDecimal _ => true
   | .Identifier _ => true
   | .PrimitiveOp _ args => args.attach.all (fun ⟨a, _⟩ => isPureExpr a)
   | .IfThenElse c t none => isPureExpr c && isPureExpr t

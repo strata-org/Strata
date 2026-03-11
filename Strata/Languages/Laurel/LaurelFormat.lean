@@ -96,6 +96,7 @@ def formatStmtExprVal (s : StmtExpr) : Format :=
   | .LiteralInt n => Format.text (toString n)
   | .LiteralBool b => if b then "true" else "false"
   | .LiteralString s => "\"" ++ Format.text s ++ "\""
+  | .LiteralDecimal d => Format.text (toString d)
   | .Identifier ref => format ref
   | .Assign [single] value =>
       formatStmtExpr single ++ " := " ++ formatStmtExpr value

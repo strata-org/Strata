@@ -14,6 +14,7 @@ op compositeType (name: Ident): LaurelType => name;
 category StmtExpr;
 op literalBool (b: Bool): StmtExpr => b;
 op int(n : Num) : StmtExpr => n;
+op real(d : Decimal) : StmtExpr => d;
 op string (s: Str): StmtExpr => s;
 
 // Variable declarations

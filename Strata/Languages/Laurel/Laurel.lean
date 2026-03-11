@@ -7,6 +7,7 @@
 import Strata.DL.Imperative.MetaData
 import Strata.Languages.Core.Expressions
 import Strata.Languages.Core.Procedure
+import Strata.DDM.Util.Decimal
 import Strata.Util.Tactics
 
 /-
@@ -244,6 +245,8 @@ inductive StmtExpr : Type where
   | LiteralBool (value : Bool)
   /-- A string literal. -/
   | LiteralString (value : String)
+  /-- A decimal literal. -/
+  | LiteralDecimal (value : Decimal)
   /-- A variable reference by name. -/
   | Identifier (name : Identifier)
   /-- Assignment to one or more targets. Multiple targets are only allowed when the value is a `StaticCall` to a procedure with multiple outputs. -/

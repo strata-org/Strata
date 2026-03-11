@@ -109,6 +109,11 @@ def translateString (arg : Arg) : TransM String := do
     | TransM.error s!"translateString expects string literal"
   return s
 
+def translateDecimal (arg : Arg) : TransM Decimal := do
+  let .decimal _ d := arg
+    | TransM.error s!"translateDecimal expects decimal literal"
+  return d
+
 def translateParameter (arg : Arg) : TransM Parameter := do
   let .op op := arg
     | TransM.error s!"translateParameter expects operation"
@@ -187,6 +192,9 @@ partial def translateStmtExpr (arg : Arg) : TransM StmtExprMd := do
     | q`Laurel.int, #[arg0] =>
       let n ← translateNat arg0
       return mkStmtExprMd (.LiteralInt n) md
+    | q`Laurel.real, #[arg0] =>
+      let d ← translateDecimal arg0
+      return mkStmtExprMd (.LiteralDecimal d) md
     | q`Laurel.string, #[arg0] =>
       let s ← translateString arg0
       return mkStmtExprMd (.LiteralString s) md
