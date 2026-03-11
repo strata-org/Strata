@@ -639,9 +639,9 @@ procedure print(msg : Any) returns ();
 
 //This is only used to overwrite the Box datatype of Laurel prelude
 //WILL BE REMOVED
-datatype Box () {
-  BoxInt(intVal: Any)
-};
+// datatype Box () {
+//  BoxInt(intVal: Any)
+//};
 
 #end
 

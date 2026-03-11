@@ -692,16 +692,16 @@ procedure test_helper_procedure(req_name : Any, opt_name : Any) returns (ret: An
   // [assert_opt_name_none_or_bar]:
   assert (opt_name == from_none()) || (opt_name == from_string("bar"));
   // [assume_maybe_except_none]:
-  assume (Error..isNoError(maybe_except));
+  assume (Error..isNoError(maybe_except))
 };
 
 procedure print(msg : Any);
 
 //This is only used to overwrite the Box datatype of Laurel prelude
 //WILL BE REMOVED
-datatype Box {
-  BoxInt(intVal: Any)
-}
+// datatype Box {
+//  BoxInt(intVal: Any)
+//}
 
 #end
 

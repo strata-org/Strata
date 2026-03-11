@@ -458,7 +458,7 @@ def pyAnalyzeLaurelCommand : Command where
           -- The Laurel prelude is now included at the Laurel level during
           -- HeapParameterization, so translate output contains prelude decls as normal decls.
           -- No stripping needed.
-          let programDecls := coreProgram.decls.filter (λ d=> d.name.name != "Box")
+          let programDecls := coreProgram.decls --.filter (λ d=> d.name.name != "Box")
           -- Check for name collisions between program and prelude
           let preludeNames : Std.HashSet String :=
             pyPrelude.decls.flatMap Core.Decl.names
@@ -1128,7 +1128,9 @@ def pyAnalyzeLaurelToGotoCommand : Command where
       | .error diagnostics =>
         exitFailure s!"Laurel to Core translation failed: {diagnostics}"
       | .ok coreProgram =>
-        let coreProgram := {decls := prelude.decls ++ coreProgram.fst.decls.filter (λ d=> d.name.name != "Box") }
+        let coreProgram := {
+          decls := prelude.decls ++ coreProgram.fst.decls --.filter (λ d=> d.name.name != "Box")
+        }
         -- Inline procedure calls (except main) repeatedly until fixpoint
         let mut coreProgram := coreProgram
         for _ in List.range 10 do
