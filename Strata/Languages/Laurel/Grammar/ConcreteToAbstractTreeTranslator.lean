@@ -88,6 +88,7 @@ partial def translateHighType (arg : Arg) : TransM HighTypeMd := do
     | q`Laurel.intType, _ => return mkHighTypeMd .TInt md
     | q`Laurel.boolType, _ => return mkHighTypeMd .TBool md
     | q`Laurel.float64Type, _ => return mkHighTypeMd .TFloat64 md
+    | q`Laurel.realType, _ => return mkHighTypeMd .TReal md
     | q`Laurel.stringType, _ => return mkHighTypeMd .TString md
     | q`Laurel.mapType, #[keyArg, valArg] =>
       let keyType ← translateHighType keyArg

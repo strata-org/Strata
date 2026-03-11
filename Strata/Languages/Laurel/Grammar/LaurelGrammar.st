@@ -6,6 +6,7 @@ dialect Laurel;
 category LaurelType;
 op intType : LaurelType => "int";
 op boolType : LaurelType => "bool";
+op realType : LaurelType => "real";
 op float64Type : LaurelType => "float64";
 op stringType : LaurelType => "string";
 op mapType (keyType: LaurelType, valueType: LaurelType): LaurelType => "Map " keyType " " valueType;

@@ -127,6 +127,8 @@ inductive HighType : Type where
   | TInt
   /-- 64-bit floating point type. Required for JavaScript (`number`), also used by Python (`float`) and Java (`double`). -/
   | TFloat64
+  /-- Mathematical real type. Maps to Core's `real` type. -/
+  | TReal
   /-- String type for text data. -/
   | TString
   /-- Internal type representing the heap. Introduced by the heap parameterization pass; not accessible via grammar. -/
@@ -323,6 +325,7 @@ def highEq (a : HighTypeMd) (b : HighTypeMd) : Bool := match _a: a.val, _b: b.va
   | HighType.TBool, HighType.TBool => true
   | HighType.TInt, HighType.TInt => true
   | HighType.TFloat64, HighType.TFloat64 => true
+  | HighType.TReal, HighType.TReal => true
   | HighType.TString, HighType.TString => true
   | HighType.THeap, HighType.THeap => true
   | HighType.TTypedField t1, HighType.TTypedField t2 => highEq t1 t2
