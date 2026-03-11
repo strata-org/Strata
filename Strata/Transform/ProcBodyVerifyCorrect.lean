@@ -54,16 +54,9 @@ theorem procToVerifyStmt_structure
           · left; exact ⟨_, _, _, rfl⟩
           · left; exact ⟨_, _, _, rfl⟩
         · -- s ∈ modifiesInits.flatten
-          -- modifiesInits comes from mapM which produces lists of [init_none, init_some]
-          -- Each inner list contains only init statements
-          rw [List.mem_flatten] at h_in
-          obtain ⟨inner, h_inner_in, h_s_in⟩ := h_in
-          -- From h_mapM, modifiesInits is the result of mapM.
-          -- Each element of modifiesInits is [init oldG gTy none #[], init g gTy (some ...) #[]]
-          -- We prove this by induction on proc.spec.modifies, tracking h_mapM.
-          -- For now, we observe that the mapM lambda always returns a 2-element
-          -- list of init statements, so any element of the flatten is an init.
-          -- This requires a general lemma about mapM in ExceptT/StateT.
+          -- This case requires reasoning about List.mapM results.
+          -- We leave it as sorry — it's a standard property that each element
+          -- of mapM's result comes from applying the function to an input element.
           sorry
       · -- s ∈ assumes (requiresToAssumes)
         unfold requiresToAssumes at h_in
