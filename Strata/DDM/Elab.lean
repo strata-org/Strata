@@ -202,7 +202,10 @@ partial def loadDialectFromIonFragment
     (stk : Array DialectName)
     (dialect : DialectName)
     (frag : Ion.Fragment)
+
   : BaseIO (Except String Dialect) := do
+  if dialect ∈ (←fm.loaded.get).dialects then
+    return .error s!"{dialect} already loaded"
   -- Read dialect from Ion fragment
   let d ←
     match Dialect.fromIonFragment dialect frag with
