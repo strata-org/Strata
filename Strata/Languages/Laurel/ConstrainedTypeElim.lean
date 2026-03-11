@@ -147,6 +147,9 @@ def elimStmt (ptMap : ConstrainedTypeMap)
     let callOpt := constraintCallFor ptMap ty.val name md
     if callOpt.isSome then modify fun pv => pv.insert name.text ty.val
     let assert := callOpt.toList.map fun c => ⟨.Assert c, md⟩
+    -- TODO: Once the translator emits `init` without RHS (havoc) for uninitialized variables,
+    -- switch from witness injection + assert to assume. Currently the translator initializes
+    -- uninitialized variables to 0 (defaultExprForType), making assume unsound.
     let init' := match init with
       | none => match ty.val with
         | .UserDefined n => (ptMap.get? n.text).map (·.witness)
