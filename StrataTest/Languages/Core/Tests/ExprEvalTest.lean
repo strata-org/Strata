@@ -4,11 +4,6 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
--- TODO: This file needs to be updated for the new dischargeObligation API
--- Temporarily disabled until the test is updated
-#exit
-
-
 import Strata.DL.Lambda.Lambda
 import Strata.DL.Lambda.LExpr
 import Strata.DL.Lambda.LState
@@ -80,9 +75,9 @@ def checkValid (e:LExpr CoreLParams.mono): IO Bool := do
       let ans ← Core.SMT.dischargeObligation
         { Core.VerifyOptions.default with verbose := .quiet }
         e_fvs_typed Imperative.MetaData.empty filename.toString
-        [] smt_term ctx
+        [] smt_term ctx true false
       match ans with
-      | .ok (_, .sat _, _) => return true
+      | .ok (.sat _, _, _) => return true
       | _ =>
         IO.println s!"Test failed on {e}"
         IO.println s!"The query: {repr smt_term}"

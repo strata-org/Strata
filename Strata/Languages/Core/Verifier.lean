@@ -68,14 +68,14 @@ def encodeCore (ctx : Core.SMT.Context) (prelude : SolverM Unit)
 
   if bothChecks then
     -- Satisfiability check: P ∧ Q satisfiable?
-    Solver.comment "Satisfiability check (P ∧ Q)"
+    Solver.comment "Satisfiability"
     Imperative.SMT.addLocationInfo (P := Core.Expression) (md := md)
       (message := ("sat-message", s!"\"Property can be satisfied\""))
     let obligationStr ← Solver.termToSMTString obligationId
     let _ ← Solver.checkSatAssuming [obligationStr] ids
 
     -- Validity check: P ∧ ¬Q satisfiable?
-    Solver.comment "Validity check (P ∧ ¬Q)"
+    Solver.comment "Validity"
     Imperative.SMT.addLocationInfo (P := Core.Expression) (md := md)
       (message := ("unsat-message", s!"\"Property is always true\""))
     let negObligationStr := s!"(not {obligationStr})"
@@ -83,14 +83,14 @@ def encodeCore (ctx : Core.SMT.Context) (prelude : SolverM Unit)
   else
     if satisfiabilityCheck then
       -- P ∧ Q satisfiable?
-      Solver.comment "Satisfiability check (P ∧ Q)"
+      Solver.comment "Satisfiability"
       Imperative.SMT.addLocationInfo (P := Core.Expression) (md := md)
         (message := ("sat-message", s!"\"Property can be satisfied\""))
       Solver.assert obligationId
       let _ ← Solver.checkSat ids
     else if validityCheck then
       -- P ∧ ¬Q satisfiable?
-      Solver.comment "Validity check (P ∧ ¬Q)"
+      Solver.comment "Validity"
       Imperative.SMT.addLocationInfo (P := Core.Expression) (md := md)
         (message := ("unsat-message", s!"\"Property is always true\""))
       Solver.assert (← encodeTerm False (Factory.not obligationTerm) |>.run estate).1
@@ -298,7 +298,7 @@ def label (o : VCOutcome) (property : Imperative.PropertyType := .assert)
     (checkLevel : CheckLevel := .minimal) (checkMode : VerificationMode := .deductive) : String :=
   -- Unreachable is detected when both checks ran (via fullCheck annotation or full level)
   if o.unreachable then
-    if property == .assert || property == .divisionByZero then "pass (❗path unreachable)"
+    if property.passWhenUnreachable then "pass (❗path unreachable)"
     else "fail (❗path unreachable)"
   -- Simplified labels for minimal check level
   else if checkLevel == .minimal then
@@ -327,12 +327,8 @@ def label (o : VCOutcome) (property : Imperative.PropertyType := .assert)
       | .err _ => "unknown"
   -- MinimalVerbose and Full: detailed labels with unreachable indicator
   else
-    -- Handle unreachable specially
-    if o.unreachable then
-      if property == .assert then "pass (❗path unreachable)"
-      else "fail (❗path unreachable)"
     -- For cover: satisfiability sat means the cover is satisfied (pass)
-    else if property == .cover && o.isSatisfiable then "satisfiable and reachable from declaration entry"
+    if property == .cover && o.isSatisfiable then "satisfiable and reachable from declaration entry"
     else if o.passAndReachable then "always true and is reachable from declaration entry"
     else if o.alwaysFalseAndReachable then "always false and is reachable from declaration entry"
     else if o.canBeTrueOrFalseAndIsReachable then "can be both true and false and is reachable from declaration entry"
@@ -346,7 +342,7 @@ def emoji (o : VCOutcome) (property : Imperative.PropertyType := .assert)
     (checkLevel : CheckLevel := .minimal) (checkMode : VerificationMode := .deductive) : String :=
   -- Unreachable is detected when both checks ran
   if o.unreachable then
-    if property == .assert || property == .divisionByZero then "✅" else "❌"
+    if property.passWhenUnreachable then "✅" else "❌"
   -- Simplified emojis for minimal check level
   else if checkLevel == .minimal then
     match property, checkMode with

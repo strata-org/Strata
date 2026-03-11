@@ -136,4 +136,11 @@ Sat:unknown|Val:unknown ❓ unknown, Unknown (solver timeout or incomplete), SAR
 #guard_msgs in
 #eval testOutcome (mkOutcome (Imperative.SMT.Result.unknown (Ident := Core.Expression.Ident)) (Imperative.SMT.Result.unknown (Ident := Core.Expression.Ident))) .unknown
 
+/-! ### bugFindingAssumingCompleteSpec mode: (sat, sat) is error -/
+
+#guard outcomeToLevel .bugFindingAssumingCompleteSpec .assert (VCOutcome.mk (.sat []) (.sat [])) = Strata.Sarif.Level.error
+#guard outcomeToLevel .bugFinding .assert (VCOutcome.mk (.sat []) (.sat [])) = Strata.Sarif.Level.note
+#guard outcomeToLevel .bugFindingAssumingCompleteSpec .assert (VCOutcome.mk (.sat []) .unsat) = Strata.Sarif.Level.none
+#guard outcomeToLevel .bugFindingAssumingCompleteSpec .assert (VCOutcome.mk .unknown (.sat [])) = Strata.Sarif.Level.error
+
 end Core
