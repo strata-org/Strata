@@ -159,6 +159,14 @@ partial def pyExprToString (e : Python.expr SourceRange) : String :=
     String.intercalate ", " args
   | _ => "<unknown>"
 
+/-- Walk through nested subscripts to find the root variable name.
+    e.g. `a[b][c]` → `a`, `params["key"]` → `params` -/
+partial def getSubscriptBaseName (e : Python.expr SourceRange) : String :=
+  match e with
+  | .Name _ n _ => n.val
+  | .Subscript _ val _ _ => getSubscriptBaseName val
+  | _ => pyExprToString e
+
 def PyLauType.Int := "int"
 def PyLauType.Bool := "bool"
 def PyLauType.Str := "str"
@@ -688,8 +696,13 @@ partial def translateAssign  (ctx : TranslationContext)
           let initStmt := mkStmtExprMd (StmtExpr.LocalVariable n.val AnyTy AnyNone)
           newctx := {ctx with variableTypes:=(n.val, type)::ctx.variableTypes}
           return (newctx, initStmt::assignStmts)
-    | .Subscript _ _ _ _ =>
-          throw (.unsupportedConstruct "Subscript assignment targets not yet supported" (toString (repr lhs)))
+    | .Subscript _ baseExpr _ _ =>
+          -- Subscript assignment: dict["key"] = value or list[idx] = value
+          -- Sound abstraction: havoc the base variable (we don't model container contents)
+          let baseName := getSubscriptBaseName baseExpr
+          let targetExpr := mkStmtExprMd (StmtExpr.Identifier baseName)
+          let assignStmt := mkStmtExprMdWithLoc (StmtExpr.Assign [targetExpr] (mkStmtExprMd .Hole)) md
+          return (newctx, [assignStmt])
     | .Attribute _ obj attr _ =>
       match obj with
       | .Name _ name _ =>
