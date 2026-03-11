@@ -153,7 +153,7 @@ op procedure (name : Ident, parameters: CommaSepBy Parameter,
   ensures: Seq EnsuresClause,
   modifies: Seq ModifiesClause,
   body : Option OptionalBody) : Procedure =>
-  "procedure " name "(" parameters ")" returnType returnParameters requires ensures modifies body;
+  "procedure " name "(" parameters ")" returnType returnParameters requires ensures modifies body ";";
 
 op function (name : Ident, parameters: CommaSepBy Parameter,
   returnType: Option OptionalReturnType,
@@ -162,7 +162,7 @@ op function (name : Ident, parameters: CommaSepBy Parameter,
   ensures: Seq EnsuresClause,
   modifies: Seq ModifiesClause,
   body : Option OptionalBody) : Procedure =>
-  "function " name "(" parameters ")" returnType returnParameters requires ensures modifies body;
+  "function " name "(" parameters ")" returnType returnParameters requires ensures modifies body ";";
 
 // Opaque type declarations
 category OpaqueType;

@@ -23,7 +23,7 @@ composite None extends Option
 constrained SealedOption = x: Option where x is Some || x is None witness None
 
 procedure foo() returns (r: nat) {
-}
+};
 "
 
 -- Not working yet

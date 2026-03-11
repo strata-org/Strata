@@ -7,6 +7,7 @@
 import Strata.Languages.Laurel.Laurel
 import Strata.Languages.Laurel.LaurelFormat
 import Strata.Util.Tactics
+import Strata.Languages.Python.PythonLaurelCorePrelude
 
 /-!
 # Name Resolution Pass

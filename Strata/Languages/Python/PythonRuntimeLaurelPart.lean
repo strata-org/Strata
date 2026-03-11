@@ -113,35 +113,35 @@ datatype PyAnyType {
 // Function Declarations (without bodies)
 // =====================================================================
 
-function Object_len(x: Object): int
-function inheritsFrom(child: string, parent: string): bool
-function strOrNone_toObject(v: StrOrNone): Object
-function DictStrAny_mk(s: string): DictStrAny
-function ListDictStrAny_nil(): ListDictStrAny
+function Object_len(x: Object): int;
+function inheritsFrom(child: string, parent: string): bool;
+function strOrNone_toObject(v: StrOrNone): Object;
+function DictStrAny_mk(s: string): DictStrAny;
+function ListDictStrAny_nil(): ListDictStrAny;
 
 // Timedelta functions
-function Timedelta_get_days(timedelta: int): int
-function Timedelta_get_seconds(timedelta: int): int
-function Timedelta_get_microseconds(timedelta: int): int
+function Timedelta_get_days(timedelta: int): int;
+function Timedelta_get_seconds(timedelta: int): int;
+function Timedelta_get_microseconds(timedelta: int): int;
 
 // Datetime functions
-function Datetime_get_base(d: Datetime): Datetime_base
-function Datetime_get_timedelta(d: Datetime): int
-function Datetime_add(d: Datetime, timedelta: int): Datetime
-function Datetime_lt(d1: Datetime, d2: Datetime): bool
-function datetime_to_str(dt: Datetime): string
-function datetime_to_int(): int
+function Datetime_get_base(d: Datetime): Datetime_base;
+function Datetime_get_timedelta(d: Datetime): int;
+function Datetime_add(d: Datetime, timedelta: int): Datetime;
+function Datetime_lt(d1: Datetime, d2: Datetime): bool;
+function datetime_to_str(dt: Datetime): string;
+function datetime_to_int(): int;
 
 // String/collection functions
-function str_in_list_str(s: string, l: ListStr): bool
-function str_in_dict_str_any(s: string, l: DictStrAny): bool
-function list_str_get(l: ListStr, i: int): string
-function str_len(s: string): int
-function dict_str_any_get(d: DictStrAny, k: string): DictStrAny
-function dict_str_any_get_list_str(d: DictStrAny, k: string): ListStr
-function dict_str_any_get_str(d: DictStrAny, k: string): string
-function dict_str_any_length(d: DictStrAny): int
-function Float_gt(lhs: string, rhs: string): bool
+function str_in_list_str(s: string, l: ListStr): bool;
+function str_in_dict_str_any(s: string, l: DictStrAny): bool;
+function list_str_get(l: ListStr, i: int): string;
+function str_len(s: string): int;
+function dict_str_any_get(d: DictStrAny, k: string): DictStrAny;
+function dict_str_any_get_list_str(d: DictStrAny, k: string): ListStr;
+function dict_str_any_get_str(d: DictStrAny, k: string): string;
+function dict_str_any_length(d: DictStrAny): int;
+function Float_gt(lhs: string, rhs: string): bool;
 
 // =====================================================================
 // Function Declarations (with bodies)
@@ -149,37 +149,37 @@ function Float_gt(lhs: string, rhs: string): bool
 
 function Timedelta_mk(days: int, seconds: int, microseconds: int): int {
   ((days * 3600 * 24) + seconds) * 1000000 + microseconds
-}
+};
 
 function Datetime_sub(d: Datetime, timedelta: int): Datetime {
   Datetime_add(d, -timedelta)
-}
+};
 
 // =====================================================================
 // Procedure Declarations (without bodies)
 // =====================================================================
 
-procedure importFrom(module: string, names: ListStr, level: int)
-procedure import(names: ListStr)
-procedure print(msg: string, opt: StrOrNone)
+procedure importFrom(module: string, names: ListStr, level: int);
+procedure import(names: ListStr);
+procedure print(msg: string, opt: StrOrNone);
 
 procedure json_dumps(msg: DictStrAny, opt_indent: IntOrNone)
-  returns (s: string, maybe_except: ExceptOrNone)
+  returns (s: string, maybe_except: ExceptOrNone);
 
 procedure json_loads(msg: string)
-  returns (d: DictStrAny, maybe_except: ExceptOrNone)
+  returns (d: DictStrAny, maybe_except: ExceptOrNone);
 
 procedure input(msg: string)
-  returns (result: string, maybe_except: ExceptOrNone)
+  returns (result: string, maybe_except: ExceptOrNone);
 
 procedure random_choice(l: ListStr)
-  returns (result: string, maybe_except: ExceptOrNone)
+  returns (result: string, maybe_except: ExceptOrNone);
 
 procedure str_to_float(s: string)
-  returns (result: string, maybe_except: ExceptOrNone)
+  returns (result: string, maybe_except: ExceptOrNone);
 
 procedure datetime_date(dt: Datetime)
-  returns (d: Datetime, maybe_except: ExceptOrNone)
+  returns (d: Datetime, maybe_except: ExceptOrNone);
 
 // =====================================================================
 // Procedure Declarations (with ensures/bodies)
@@ -190,14 +190,14 @@ procedure datetime_now()
   ensures Datetime_get_timedelta(d) == Timedelta_mk(0, 0, 0)
 {
   assume Datetime_get_timedelta(d) == Timedelta_mk(0, 0, 0);
-}
+};
 
 procedure datetime_utcnow()
   returns (d: Datetime, maybe_except: ExceptOrNone)
   ensures Datetime_get_timedelta(d) == Timedelta_mk(0, 0, 0)
 {
   assume Datetime_get_timedelta(d) == Timedelta_mk(0, 0, 0);
-}
+};
 
 procedure timedelta(days: IntOrNone, hours: IntOrNone)
   returns (delta: int, maybe_except: ExceptOrNone)
@@ -212,7 +212,7 @@ procedure timedelta(days: IntOrNone, hours: IntOrNone)
    }
    // [assume_timedelta_sign_matches]:
    assume (delta == (((days_i * 24) + hours_i) * 3600) * 1000000);
- }
+ };
 
 
 procedure datetime_strptime(time: string, format: string) returns (d : Datetime, maybe_except: ExceptOrNone)
@@ -223,7 +223,7 @@ procedure datetime_strptime(time: string, format: string) returns (d : Datetime,
 {
   //[assume_str_strp_reverse]:
   assume forall(dt : Datetime) {d == dt} => (time == datetime_to_str(dt)) == (d == dt);
-}
+};
 
 procedure test_helper_procedure(req_name : string, opt_name : StrOrNone) returns (maybe_except: ExceptOrNone)
 // [req_name_is_foo]:
@@ -243,11 +243,7 @@ procedure test_helper_procedure(req_name : string, opt_name : StrOrNone) returns
   assert if (StrOrNone..isStrOrNone_mk_str(opt_name)) (StrOrNone..str_val!(opt_name) == "bar") else true;
   //[assume_maybe_except_none]:
   assume ExceptOrNone..isExceptOrNone_mk_none(maybe_except);
-}
-
-// Works around the end macro being parsed as field selection by changing the parser state
-// Better fix is to require laurel procedures to end with ;
-datatype Workaround { Dummy() }
+};
 
 #end
 

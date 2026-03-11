@@ -89,6 +89,8 @@ def readStrataText (fm : Strata.DialectFileMap) (path : System.FilePath) (bytes 
     | .ok program => pure (.program program)
     | .error errors => throw (IO.userError (← mkErrorReport path errors))
   | .dialect stx dialect =>
+    if dialect ∈ (←fm.loaded.get).dialects then
+      throw <| IO.userError s!"{dialect} already loaded"
     let (d, s) ←
       Strata.Elab.elabDialectRest fm inputContext stx dialect (startPos := startPos)
     if s.errors.size > 0 then
@@ -112,6 +114,8 @@ def readStrataIon (fm : Strata.DialectFileMap)
       pure p
   match hdr with
   | .dialect dialect =>
+    if dialect ∈ (←fm.loaded.get).dialects then
+      throw <| IO.userError s!"{dialect} already loaded"
     match ← Strata.Elab.loadDialectFromIonFragment fm #[] dialect frag with
     | .error msg =>
       throw (IO.userError (fileReadErrorMsg path msg))

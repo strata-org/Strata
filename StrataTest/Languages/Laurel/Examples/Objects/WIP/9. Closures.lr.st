@@ -95,14 +95,14 @@ procedure hasClosure() returns (r: int)
   }
   x = 100;
   aClosure();
-}
+};
 
 
 // Option B: type closures
 composite ATrait {
   procedure foo() returns (r: int) ensures r > 0 {
     abstract
-  }
+  };
 }
 
 procedure hasClosure() returns (r: int)
@@ -113,8 +113,8 @@ procedure hasClosure() returns (r: int)
     procedure foo() returns (r: int) 
     {
       r = x + 4;
-    }
+    };
   }
   x = 100;
   aClosure.foo();
-}
+};

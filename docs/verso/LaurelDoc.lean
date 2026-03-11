@@ -74,7 +74,7 @@ procedure increment(counter: Counter)
   ensures counter.value == old(counter.value) + 1
 {
   counter.value := counter.value + 1;
-}
+};
 ```
 
 ## Implementation Choices
