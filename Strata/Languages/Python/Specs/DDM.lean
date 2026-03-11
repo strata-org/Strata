@@ -24,7 +24,7 @@ dialect PythonSpecs;
 
 category Int;
 op natInt (x : Num) : Int => x;
-op negSuccInt (x : Num) : Int => "-" x;
+op negInt (x : Num) : Int => "-" x;
 
 category SpecType;
 category DictFieldDecl;
@@ -46,8 +46,8 @@ op mkDictFieldDecl(name : Ident, fieldType : SpecType, isRequired : Bool) : Dict
   name " : " fieldType " [required=" isRequired "]";
 
 category ClassFieldDecl;
-op mkClassFieldDecl(name : Ident, fieldType : SpecType) : ClassFieldDecl =>
-  name " : " fieldType "\n";
+op mkClassFieldDecl(name : Ident, fieldType : SpecType, constValue : Option Str) : ClassFieldDecl =>
+  name " : " fieldType constValue "\n";
 
 category ClassVarDecl;
 op mkClassVarDecl(name : Ident, value : Ident) : ClassVarDecl =>
@@ -65,22 +65,44 @@ category SpecExprDecl;
 op placeholderExpr() : SpecExprDecl => "placeholder";
 op varExpr(name : Ident) : SpecExprDecl => name;
 op getIndexExpr(subject : SpecExprDecl, field : Ident) : SpecExprDecl =>
-  subject "[" field "]";
+  @[prec(50)] subject "[" field "]";
 op isInstanceOfExpr(subject : SpecExprDecl, typeName : Str) : SpecExprDecl =>
-  "isinstance(" subject ", " typeName ")";
+  "isinstance" "(" subject ", " typeName ")";
 op lenExpr(subject : SpecExprDecl) : SpecExprDecl =>
-  "len(" subject ")";
+  "len" "(" subject ")";
 op intExpr(value : Int) : SpecExprDecl => value;
 op intGeExpr(subject : SpecExprDecl, bound : SpecExprDecl) : SpecExprDecl =>
-  subject " >= " bound;
+  @[prec(15)] subject " >=_int " bound;
 op intLeExpr(subject : SpecExprDecl, bound : SpecExprDecl) : SpecExprDecl =>
-  subject " <= " bound;
+  @[prec(15)] subject " <=_int " bound;
+op floatExpr(value : Str) : SpecExprDecl => value;
+op floatGeExpr(subject : SpecExprDecl, bound : SpecExprDecl) : SpecExprDecl =>
+  @[prec(15)] subject " >=_float " bound;
+op floatLeExpr(subject : SpecExprDecl, bound : SpecExprDecl) : SpecExprDecl =>
+  @[prec(15)] subject " <=_float " bound;
 op enumMemberExpr(subject : SpecExprDecl, values : Seq Str) : SpecExprDecl =>
-  "enum(" subject ", [" values "])";
+  "enum" "(" subject ", [" values "]" ")";
+op regexMatchExpr(subject : SpecExprDecl, pattern : Str) : SpecExprDecl =>
+  "regex" "(" subject ", " pattern ")";
+op containsKeyExpr(container : SpecExprDecl, key : Ident) : SpecExprDecl =>
+  @[prec(15)] key " in " container;
+op impliesExpr(condition : SpecExprDecl, body : SpecExprDecl) : SpecExprDecl =>
+  @[prec(10), rightassoc] condition " => " body;
+op notExpr(e : SpecExprDecl) : SpecExprDecl =>
+  "not" "(" e ")";
+op forallListExpr(list : SpecExprDecl, varName : Ident, body : SpecExprDecl) : SpecExprDecl =>
+  "forall" "(" list ", " varName ", " body ")";
+op forallDictExpr(dict : SpecExprDecl, keyVar : Ident,
+    valVar : Ident, body : SpecExprDecl) : SpecExprDecl =>
+  "forallDict" "(" dict ", " keyVar ", " valVar ", " body ")";
+
+category MessagePart;
+op strMessagePart(s : Str) : MessagePart => s;
+op exprMessagePart(e : SpecExprDecl) : MessagePart => "{" e "}";
 
 category Assertion;
-op mkAssertion(formula : SpecExprDecl, message : Str) : Assertion =>
-  "ensure(" formula ", " message ")\n";
+op mkAssertion(formula : SpecExprDecl, message : Seq MessagePart) : Assertion =>
+  "ensure" "(" formula ", " message ")\n";
 
 category PostconditionEntry;
 op mkPostconditionEntry(expr : SpecExprDecl) : PostconditionEntry =>
@@ -155,18 +177,20 @@ private def PythonIdent.toDDM (d : PythonIdent) : Ann String SourceRange :=
   ⟨.none, toString d⟩
 
 /-- Converts a Lean `Int` to the DDM representation which separates natural and negative cases. -/
-private def toDDMInt {α} (ann : α) (i : Int) : DDM.Int α :=
+def toDDMInt {α} (ann : α) (i : Int) : DDM.Int α :=
   match i with
   | .ofNat n => .natInt ann ⟨ann, n⟩
-  | .negSucc n => .negSuccInt ann ⟨ann, n⟩
+  | .negSucc n => .negInt ann ⟨ann, (n+1)⟩
 
-private def DDM.Int.ofDDM : DDM.Int α → _root_.Int
+def DDM.Int.ofDDM : DDM.Int α → _root_.Int
 | .natInt _ ⟨_, n⟩ => .ofNat n
-| .negSuccInt _ ⟨_, n⟩ => .negSucc n
+| .negInt _ ⟨_, 0⟩ => 0
+| .negInt _ ⟨_, n+1⟩ => .negSucc n
 
 mutual
 
-private def SpecAtomType.toDDM (d : SpecAtomType) (loc : SourceRange := .none) : DDM.SpecType SourceRange :=
+private def SpecAtomType.toDDM (d : SpecAtomType)
+    (loc : SourceRange := .none) : DDM.SpecType SourceRange :=
   match d with
   | .ident nm args =>
     if args.isEmpty then
@@ -216,12 +240,31 @@ private def SpecExpr.toDDM (e : SpecExpr) : DDM.SpecExprDecl SourceRange :=
   | .intLit v => .intExpr .none (toDDMInt .none v)
   | .intGe subj bound => .intGeExpr .none subj.toDDM bound.toDDM
   | .intLe subj bound => .intLeExpr .none subj.toDDM bound.toDDM
+  | .floatLit v => .floatExpr .none ⟨.none, v⟩
+  | .floatGe subj bound => .floatGeExpr .none subj.toDDM bound.toDDM
+  | .floatLe subj bound => .floatLeExpr .none subj.toDDM bound.toDDM
   | .enumMember subj values =>
     .enumMemberExpr .none subj.toDDM
       ⟨.none, values.map (⟨.none, ·⟩)⟩
+  | .regexMatch subj pattern =>
+    .regexMatchExpr .none subj.toDDM ⟨.none, pattern⟩
+  | .containsKey container key =>
+    .containsKeyExpr .none container.toDDM ⟨.none, key⟩
+  | .implies cond body =>
+    .impliesExpr .none cond.toDDM body.toDDM
+  | .not e => .notExpr .none e.toDDM
+  | .forallList list varName body =>
+    .forallListExpr .none list.toDDM ⟨.none, varName⟩ body.toDDM
+  | .forallDict dict keyVar valVar body =>
+    .forallDictExpr .none dict.toDDM ⟨.none, keyVar⟩ ⟨.none, valVar⟩ body.toDDM
+
+private def MessagePart.toDDM (p : MessagePart) : DDM.MessagePart SourceRange :=
+  match p with
+  | .str s => .strMessagePart .none ⟨.none, s⟩
+  | .expr e => .exprMessagePart .none e.toDDM
 
 private def Assertion.toDDM (a : Assertion) : DDM.Assertion SourceRange :=
-  .mkAssertion .none a.formula.toDDM ⟨.none, a.message⟩
+  .mkAssertion .none a.formula.toDDM ⟨.none, a.message.map (·.toDDM)⟩
 
 private def FunctionDecl.toDDM (d : FunctionDecl) : DDM.FunDecl SourceRange :=
   .mkFunDecl
@@ -247,7 +290,8 @@ private partial def ClassDef.toDDMDecl (d : ClassDef) : DDM.ClassDecl SourceRang
   .mkClassDecl d.loc (.mk .none d.name)
     ⟨.none, d.bases.map (·.toDDM)⟩
     ⟨.none, d.fields.map fun f =>
-      .mkClassFieldDecl .none ⟨.none, f.name⟩ f.type.toDDM⟩
+      .mkClassFieldDecl .none ⟨.none, f.name⟩ f.type.toDDM
+        ⟨.none, f.constValue.map (⟨.none, ·⟩)⟩⟩
     ⟨.none, d.classVars.map (·.toDDM)⟩
     ⟨.none, d.subclasses.map (·.toDDMDecl)⟩
     ⟨.none, d.methods.map (·.toDDM)⟩
@@ -323,11 +367,27 @@ private def DDM.SpecExprDecl.fromDDM (d : DDM.SpecExprDecl SourceRange) : Specs.
   | .intExpr _ i => .intLit i.ofDDM
   | .intGeExpr _ subj bound => .intGe subj.fromDDM bound.fromDDM
   | .intLeExpr _ subj bound => .intLe subj.fromDDM bound.fromDDM
+  | .floatExpr _ ⟨_, v⟩ => .floatLit v
+  | .floatGeExpr _ subj bound => .floatGe subj.fromDDM bound.fromDDM
+  | .floatLeExpr _ subj bound => .floatLe subj.fromDDM bound.fromDDM
   | .enumMemberExpr _ subj ⟨_, values⟩ => .enumMember subj.fromDDM (values.map (·.2))
+  | .regexMatchExpr _ subj ⟨_, pattern⟩ => .regexMatch subj.fromDDM pattern
+  | .containsKeyExpr _ container ⟨_, key⟩ => .containsKey container.fromDDM key
+  | .impliesExpr _ cond body => .implies cond.fromDDM body.fromDDM
+  | .notExpr _ e => .not e.fromDDM
+  | .forallListExpr _ list ⟨_, varName⟩ body =>
+    .forallList list.fromDDM varName body.fromDDM
+  | .forallDictExpr _ dict ⟨_, keyVar⟩ ⟨_, valVar⟩ body =>
+    .forallDict dict.fromDDM keyVar valVar body.fromDDM
+
+private def DDM.MessagePart.fromDDM (d : DDM.MessagePart SourceRange) : Specs.MessagePart :=
+  match d with
+  | .strMessagePart _ ⟨_, s⟩ => .str s
+  | .exprMessagePart _ e => .expr e.fromDDM
 
 private def DDM.Assertion.fromDDM (d : DDM.Assertion SourceRange) : Specs.Assertion :=
   let .mkAssertion _ formula ⟨_, message⟩ := d
-  { message := message, formula := formula.fromDDM }
+  { message := message.map (·.fromDDM), formula := formula.fromDDM }
 
 private def DDM.FunDecl.fromDDM (d : DDM.FunDecl SourceRange) : Specs.FunctionDecl :=
   let .mkFunDecl loc ⟨nameLoc, name⟩ ⟨_, args⟩ ⟨_, kwonly⟩
@@ -363,8 +423,8 @@ private def DDM.ClassDecl.fromDDM (d : DDM.ClassDecl SourceRange) : Specs.ClassD
       match PythonIdent.ofString s with
       | some id => id
       | none => panic! s!"Bad base class identifier: '{s}'"
-    fields := fields.map fun (.mkClassFieldDecl _ ⟨_, n⟩ tp) =>
-      { name := n, type := tp.fromDDM : ClassField }
+    fields := fields.map fun (.mkClassFieldDecl _ ⟨_, n⟩ tp ⟨_, cv⟩) =>
+      { name := n, type := tp.fromDDM, constValue := cv.map (·.2) : ClassField }
     classVars := classVars.map fun (.mkClassVarDecl _ ⟨_, n⟩ ⟨_, v⟩) =>
       { name := n, value := v : ClassVariable }
     subclasses := subclasses.map (·.fromDDM)
