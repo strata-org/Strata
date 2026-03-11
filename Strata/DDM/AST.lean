@@ -2290,7 +2290,7 @@ structure Program where
     match commands.foldl (init := (Except.ok {} : Except String GlobalContext))
         fun acc cmd => acc.bind (·.addCommand dialects cmd) with
     | .ok gctx => gctx
-    | .error e => panic! s!"Program.globalContext: {e}"
+    | .error e => panic! s!"Program.globalContext: {e}" -- nopanic:ok
 
 namespace Program
 
@@ -2305,7 +2305,7 @@ def addCommand (env : Program) (cmd : Operation) : Program :=
     commands := env.commands.push cmd,
     globalContext := match env.globalContext.addCommand env.dialects cmd with
       | .ok gctx => gctx
-      | .error e => panic! s!"Program.addCommand: {e}"
+      | .error e => panic! s!"Program.addCommand: {e}" -- nopanic:ok
   }
 
 /--
