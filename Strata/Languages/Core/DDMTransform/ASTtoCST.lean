@@ -3,10 +3,14 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.Languages.Core.DDMTransform.Grammar
-import Strata.Languages.Core.Program
-import Strata.DDM.Util.DecimalRat
+public import Strata.Languages.Core.DDMTransform.Grammar
+public import Strata.Languages.Core.Program
+public import Strata.DDM.Util.DecimalRat
+public import Strata.DDM.Format
+
+public section
 
 /-!
 # Core.Program → CoreCST Conversion
@@ -172,7 +176,7 @@ def popScope {M} (ctx : ToCSTContext M) : ToCSTContext M :=
 end ToCSTContext
 
 /-- Monad for AST->CST conversion with context and error collection -/
-abbrev ToCSTM (M : Type) := StateM (ToCSTContext M)
+@[expose] abbrev ToCSTM (M : Type) := StateM (ToCSTContext M)
 
 /-- Log an error in `ToCSTM` without throwing -/
 def ToCSTM.logError {M} [Inhabited M] (fn : String) (desc : String) (detail : String) : ToCSTM M Unit := do
@@ -1158,4 +1162,7 @@ def Core.formatProgram (ast : Core.Program)
 end ToCST
 
 ---------------------------------------------------------------------
+
 end Strata
+
+end -- public section

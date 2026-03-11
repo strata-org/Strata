@@ -3,15 +3,19 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.Languages.Laurel.Laurel
-import Strata.Languages.Laurel.LaurelFormat
-import Strata.Languages.Laurel.LaurelTypes
-import Strata.Languages.Core.Verifier
+public import Strata.Languages.Laurel.Laurel
+public import Strata.Languages.Laurel.LaurelFormat
+public import Strata.Languages.Laurel.LaurelTypes
+public import Strata.Languages.Core.Verifier
+public import Strata.DL.Util.Map
 import Strata.Util.Tactics
 
 namespace Strata
 namespace Laurel
+
+public section
 
 /-
 Transform assignments that appear in expression contexts into preceding statements.
@@ -71,7 +75,7 @@ structure LiftState where
   /-- Counter for generating unique temp names per variable -/
   varCounters : List (Identifier × Nat) := []
   /-- Substitution map: variable name → name to use -/
-  subst : SubstMap := []
+  private subst : SubstMap := []
   /-- Type environment -/
   model : SemanticModel
   /-- Global counter for fresh conditional variables -/
@@ -79,7 +83,7 @@ structure LiftState where
   /-- All procedures in the program, used to look up return types of imperative calls -/
   procedures : List Procedure := []
 
-abbrev LiftM := StateM LiftState
+@[expose] abbrev LiftM := StateM LiftState
 
 private def emptyMd : Imperative.MetaData Core.Expression := #[]
 
@@ -430,4 +434,5 @@ def liftExpressionAssignments (model: SemanticModel) (program : Program) : Progr
   let (seqProcedures, _) := (program.staticProcedures.mapM transformProcedure).run initState
   { program with staticProcedures := seqProcedures }
 
+end -- public section
 end Laurel

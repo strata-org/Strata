@@ -3,11 +3,14 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.Languages.Laurel.Laurel
+public import Strata.Languages.Laurel.Laurel
 
 namespace Strata
 namespace Laurel
+
+public section
 
 open Std (Format format)
 open Std.Format
@@ -280,5 +283,7 @@ deriving instance Repr for Strata.Laurel.ConstrainedType
 deriving instance Repr for Strata.Laurel.DatatypeConstructor
 deriving instance Repr for Strata.Laurel.DatatypeDefinition
 deriving instance Repr for Strata.Laurel.Constant
+
+end
 
 end Laurel

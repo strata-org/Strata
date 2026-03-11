@@ -323,6 +323,7 @@ instance : ToFormat (LContext T) where
                  identifiers:{Format.line}{s.idents}"
 
 
+@[expose]
 def LContext.addKnownTypeWithError (C : LContext T) (k : KnownType) (f: DiagnosticModel) : Except DiagnosticModel (LContext T) := do
   .ok {C with knownTypes := (← C.knownTypes.addWithError k f)}
 
@@ -333,6 +334,7 @@ def LContext.addIdentWithError (C : LContext T) (i: T.Identifier) (f: Diagnostic
   let i ← C.idents.addWithError i f
   .ok {C with idents := i}
 
+@[expose]
 def LContext.addFactoryFunction (C : LContext T) (fn : LFunc T) : LContext T :=
   { C with functions := C.functions.push fn }
 
@@ -345,6 +347,7 @@ This adds all types to `C.datatypes` and `C.knownTypes`,
 adds the derived functions (e.g. eliminators, testers),
 and performs error checking for name clashes.
 -/
+@[expose]
 def LContext.addMutualBlock [Inhabited T.IDMeta] [Inhabited T.Metadata] [ToFormat T.IDMeta]
   (C: LContext T) (block: MutualDatatype T.IDMeta) : Except DiagnosticModel (LContext T) := do
   -- Check for name clashes with known types

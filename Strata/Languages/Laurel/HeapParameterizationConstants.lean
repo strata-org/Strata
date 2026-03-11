@@ -3,13 +3,17 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.DDM.Elab
-import Strata.DDM.AST
-import Strata.Languages.Laurel.Grammar.LaurelGrammar
-import Strata.Languages.Laurel.Grammar.ConcreteToAbstractTreeTranslator
+public import Strata.DDM.Elab
+public import Strata.DDM.AST
+public import Strata.Languages.Laurel.Grammar.LaurelGrammar
+public meta import Strata.Languages.Laurel.Grammar.LaurelGrammar
+public import Strata.Languages.Laurel.Grammar.ConcreteToAbstractTreeTranslator
 
 namespace Strata.Laurel
+
+public section
 
 /--
 The Laurel Core prelude defines the heap model types and operations
@@ -72,5 +76,7 @@ def heapConstants : Program :=
   match Laurel.TransM.run uri (Laurel.parseProgram laurelPreludeDDM) with
   | .ok program => program
   | .error e => panic! s!"Laurel heap prelude parse error: {e}"
+
+end -- public section
 
 end Strata.Laurel

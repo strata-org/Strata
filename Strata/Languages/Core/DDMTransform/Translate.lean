@@ -3,12 +3,13 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.DDM.AST
-import Strata.Languages.Core.DDMTransform.Grammar
-import Strata.Languages.Core.Core
-import Strata.Languages.Core.CoreGen
-import Strata.DDM.Util.DecimalRat
+public import Strata.DDM.AST
+public import Strata.Languages.Core.DDMTransform.Grammar
+public import Strata.Languages.Core.Core
+public import Strata.Languages.Core.CoreGen
+public import Strata.DDM.Util.DecimalRat
 
 
 ---------------------------------------------------------------------
@@ -20,6 +21,8 @@ open Core
 open Lambda Imperative Lean.Parser
 open Std (ToFormat Format format)
 
+public section
+
 ---------------------------------------------------------------------
 
 /- Translation Monad -/
@@ -29,9 +32,11 @@ structure TransState where
   errors : Array String
   globalContext : GlobalContext := {}
 
+@[expose]
 def TransM := StateM TransState
   deriving Monad
 
+@[expose]
 def TransM.run (ictx : InputContext) (m : TransM α) (gctx : GlobalContext := {}) : (α × Array String) :=
   let (v, s) := StateT.run m { inputCtx := ictx, errors := #[], globalContext := gctx }
   (v, s.errors)
@@ -1834,5 +1839,7 @@ def translateProgram (p : Program) : TransM Core.Program := do
   return { decls := decls }
 
 ---------------------------------------------------------------------
+
+end -- public section
 
 end Strata

@@ -3,19 +3,29 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-import Lean.Elab.Command
+module
 
-import Strata.Languages.Core.Identifiers
-import Strata.Languages.Core.Expressions
-import Strata.DL.Lambda.Factory
-import Strata.DL.Lambda.FactoryWF
-import Strata.DL.Lambda.IntBoolFactory
+public meta import Lean.Elab.Command
+
+public import Strata.Languages.Core.Identifiers
+public meta import Strata.Languages.Core.Identifiers
+public import Strata.Languages.Core.Expressions
+public import Strata.DL.Lambda.Factory
+public import Strata.DL.Lambda.FactoryWF
+public import Strata.DL.Lambda.IntBoolFactory
+import all Strata.DL.Lambda.IntBoolFactory
+import all Strata.DL.Lambda.LTy
+import all Strata.DL.Lambda.LExpr
+import all Strata.DL.Lambda.Factory
+import all Strata.DL.Lambda.FactoryWF
 ---------------------------------------------------------------------
 
 namespace Core
 open Lambda LTy.Syntax LExpr.SyntaxMono
 
-@[match_pattern]
+public section
+
+@[expose, match_pattern]
 def mapTy (keyTy : LMonoTy) (valTy : LMonoTy) : LMonoTy :=
   .tcons "Map" [keyTy, valTy]
 
@@ -37,6 +47,10 @@ def KnownTypes : KnownTypes :=
   makeKnownTypes (KnownLTys.map (fun ty => ty.toKnownType!))
 
 def TImplicit {Metadata: Type} (IDMeta: Type): LExprParamsT := ({Metadata := Metadata, IDMeta}: LExprParams).mono
+
+end -- public section
+
+public meta section
 
 /-- Kind of bitvector evaluator, used to generate both the combinator name
     and the concrete-evaluator syntax for each BV operation. -/
@@ -121,6 +135,10 @@ elab "ExpandBVOpFuncDefs" "[" sizes:num,* "]" : command => do
       let opName := Syntax.mkStrLit s!"Bv{s}.{spec.opName}"
       let rhs ← spec.evalKind.toDefRHS opName sizeNum
       elabCommand (← `(def $funcName : Lambda.WFLFunc CoreLParams := $rhs))
+
+end -- public meta section
+
+public section
 
 ExpandBVOpFuncDefs[1, 2, 8, 16, 32, 64]
 
@@ -266,6 +284,10 @@ def addTriggerFunc : WFLFunc CoreLParams :=
   polyUneval "TriggerGroup.addTrigger" ["a"]
     [("x", mty[%a]), ("t", mty[TriggerGroup])] mty[TriggerGroup]
 
+end -- public section
+
+public meta section
+
 open Lean in
 macro "ExpandBVOpFuncNames" "[" sizes:num,* "]" : term => do
   let mut allOps := #[]
@@ -275,6 +297,10 @@ macro "ExpandBVOpFuncNames" "[" sizes:num,* "]" : term => do
       let name := s!"bv{s}" ++ spec.opName ++ "Func"
       allOps := allOps.push (mkIdent (.str (.str .anonymous "Core") name))
   `([$(allOps),*])
+
+end -- public meta section
+
+public section
 
 def bvConcatFunc (size : Nat) : WFLFunc CoreLParams :=
   binaryFuncUneval s!"Bv{size}.Concat"
@@ -298,6 +324,7 @@ def bv64Extract_31_0_Func  := bvExtractFunc 64 31  0
 def bv64Extract_15_0_Func  := bvExtractFunc 64 15  0
 def bv64Extract_7_0_Func   := bvExtractFunc 64  7  0
 
+@[expose]
 def WFFactory : Lambda.WFLFactory CoreLParams :=
   -- (T := CoreLParams) annotations needed for IntBoolFactory
   -- functions to resolve typeclass instances.
@@ -376,7 +403,12 @@ def WFFactory : Lambda.WFLFactory CoreLParams :=
   bv64Extract_7_0_Func,
 ] ++ (ExpandBVOpFuncNames [1,8,16,32,64]))
 
+@[expose]
 def Factory : @Factory CoreLParams := WFLFactory.toFactory WFFactory
+
+end -- public section
+
+public meta section
 
 open Lean Elab Command in
 elab "DefBVOpFuncExprs" "[" sizes:num,* "]" : command => do
@@ -386,6 +418,10 @@ elab "DefBVOpFuncExprs" "[" sizes:num,* "]" : command => do
       let opName := mkIdent (.str .anonymous s!"bv{s}{spec.opName}Op")
       let funcName := mkIdent (.str (.str .anonymous "Core") s!"bv{s}{spec.opName}Func")
       elabCommand (← `(def $opName : Expression.Expr := ($funcName).opExpr))
+
+end -- public meta section
+
+public section
 
 instance : Inhabited CoreLParams.Metadata where
   default := ()
@@ -477,4 +513,5 @@ Get all the built-in functions supported by Strata Core.
 def builtinFunctions : Array String :=
   Factory.map (fun f => CoreIdent.toPretty f.name)
 
+end
 end Core

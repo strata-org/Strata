@@ -3,10 +3,11 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
 import Strata.DDM.Elab
 import Strata.DDM.AST
-import Strata.Languages.Core.Verifier
+public import Strata.Languages.Core.Verifier
 
 namespace Strata
 namespace Python
@@ -812,6 +813,8 @@ datatype Box () {
 
 #end
 
+public section
+
 def Core.PythonLaurelPrelude : Core.Program :=
    Core.getProgram pythonLaurelPrelude |>.fst
 
@@ -823,6 +826,8 @@ def getProcedures (decls: List Core.Decl) : List String :=
         | _ => none)
 
 def corePreludeProcedures := getProcedures Core.PythonLaurelPrelude.decls
+
+end -- public section
 
 end Python
 end Strata
