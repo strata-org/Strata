@@ -24,9 +24,9 @@ No inference is performed — all types are determined by annotations on paramet
 and variable declarations.
 -/
 def computeExprType (model : SemanticModel) (expr : StmtExprMd) : HighTypeMd :=
-  match expr with
+  match _: expr with
   | WithMetadata.mk val md =>
-  match val with
+  match _: val with
   -- Literals
   | .LiteralInt _ => ⟨ .TInt, md ⟩
   | .LiteralBool _ => ⟨ .TBool, md ⟩
@@ -49,11 +49,19 @@ def computeExprType (model : SemanticModel) (expr : StmtExprMd) : HighTypeMd :=
     | astNode => panic! s!"static call to {callee} not to a procedure but to a {repr astNode}"
   | .InstanceCall _ _ _ => panic "Not supported InstanceCall"
   -- Operators
-  | .PrimitiveOp op _ =>
-      match op with
-      | .Eq | .Neq | .And | .Or | .Not | .Implies | .Lt | .Leq | .Gt | .Geq => ⟨ .TBool, md ⟩
-      | .Neg | .Add | .Sub | .Mul | .Div | .Mod | .DivT | .ModT => ⟨ .TInt, md ⟩
-      | .StrConcat => ⟨ .TString, md ⟩
+  | .PrimitiveOp op args =>
+      match args with
+      | head :: tail =>
+        match op with
+        | .Eq | .Neq | .And | .Or | .Not | .Implies | .Lt | .Leq | .Gt | .Geq => ⟨ .TBool, md ⟩
+        | .Neg | .Add | .Sub | .Mul | .Div | .Mod | .DivT | .ModT =>
+          match (computeExprType model head).val with
+            | .TFloat64  => ⟨ .TFloat64, md ⟩
+            | .TReal => ⟨ .TReal, md ⟩
+            | .TInt => ⟨ .TInt, md ⟩
+            | _ => ⟨ .TCore "unknown", md ⟩
+        | .StrConcat => ⟨ .TString, md ⟩
+      | _ => ⟨ .TCore "unknown", md ⟩
   -- Control flow
   | .IfThenElse _ thenBranch _ => computeExprType model thenBranch
   | .Block stmts _ => match _blockGetLastResult: stmts.getLast? with

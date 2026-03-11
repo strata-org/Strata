@@ -26,6 +26,7 @@ import Strata.Util.Tactics
 
 open Core (VCResult VCResults VerifyOptions)
 open Core (intAddOp intSubOp intMulOp intSafeDivOp intSafeModOp intSafeDivTOp intSafeModTOp intNegOp intLtOp intLeOp intGtOp intGeOp boolAndOp boolOrOp boolNotOp boolImpliesOp strConcatOp)
+open Core (realAddOp realSubOp realMulOp realDivOp realNegOp realLtOp realLeOp realGtOp realGeOp)
 
 namespace Strata.Laurel
 
@@ -148,30 +149,35 @@ def translateExpr (expr : StmtExprMd)
       return .app () boolNotOp re
     | .Neg =>
       let re ← translateExpr e boundVars isPureContext
-      return .app () intNegOp re
+      let isReal := match (computeExprType model e).val with
+        | .TFloat64 | .TReal => true | _ => false
+      return .app () (if isReal then realNegOp else intNegOp) re
     | _ => panic! s!"translateExpr: Invalid unary op: {repr op}"
   | .PrimitiveOp op [e1, e2] =>
     let re1 ← translateExpr e1 boundVars isPureContext
     let re2 ← translateExpr e2 boundVars isPureContext
     let binOp (bop : Core.Expression.Expr) : Core.Expression.Expr :=
       LExpr.mkApp () bop [re1, re2]
+    let isReal := match (computeExprType model e1).val, (computeExprType model e2).val with
+      | .TFloat64, _ | .TReal, _ | _, .TFloat64 | _, .TReal => true
+      | _, _ => false
     match op with
     | .Eq => return .eq () re1 re2
     | .Neq => return .app () boolNotOp (.eq () re1 re2)
     | .And => return binOp boolAndOp
     | .Or => return binOp boolOrOp
     | .Implies => return binOp boolImpliesOp
-    | .Add => return binOp intAddOp
-    | .Sub => return binOp intSubOp
-    | .Mul => return binOp intMulOp
-    | .Div => return binOp intSafeDivOp
+    | .Add => return binOp (if isReal then realAddOp else intAddOp)
+    | .Sub => return binOp (if isReal then realSubOp else intSubOp)
+    | .Mul => return binOp (if isReal then realMulOp else intMulOp)
+    | .Div => return binOp (if isReal then realDivOp else intSafeDivOp)
     | .Mod => return binOp intSafeModOp
     | .DivT => return binOp intSafeDivTOp
     | .ModT => return binOp intSafeModTOp
-    | .Lt => return binOp intLtOp
-    | .Leq => return binOp intLeOp
-    | .Gt => return binOp intGtOp
-    | .Geq => return binOp intGeOp
+    | .Lt => return binOp (if isReal then realLtOp else intLtOp)
+    | .Leq => return binOp (if isReal then realLeOp else intLeOp)
+    | .Gt => return binOp (if isReal then realGtOp else intGtOp)
+    | .Geq => return binOp (if isReal then realGeOp else intGeOp)
     | .StrConcat => return binOp strConcatOp
     | _ => panic! s!"translateExpr: Invalid binary op: {repr op}"
   | .PrimitiveOp op args =>
