@@ -16,6 +16,7 @@ import Strata.Languages.Python.Specs.ToLaurel
 import Strata.Languages.Laurel.LaurelFormat
 import Strata.Transform.ProcedureInlining
 import Strata.Languages.Python.CorePrelude
+import Strata.Languages.Python.PythonLaurelCorePrelude
 import Strata.Backends.CBMC.GOTO.CoreToCProverGOTO
 
 import Strata.SimpleAPI
@@ -125,6 +126,11 @@ def printCommand : Command where
   help := "Pretty-print a Strata file (text or Ion) to stdout."
   callback := fun v pflags => do
     let searchPath ← pflags.buildDialectFileMap
+    -- Special case for already loaded dialects.
+    let ld ← searchPath.getLoaded
+    if mem : v[0] ∈ ld.dialects then
+      IO.print <| ld.dialects.format v[0] mem
+      return
     let pd ← Strata.readStrataFile searchPath v[0]
     match pd with
     | .dialect d =>
@@ -167,36 +173,35 @@ def readPythonStrata (strataPath : String) : IO Strata.Program := do
 def pySpecsCommand : Command where
   name := "pySpecs"
   args := [ "python_path", "strata_path" ]
+  flags := [
+    { name := "quiet", help := "Suppress default logging." },
+    { name := "log", help := "Enable logging for an event type.",
+      takesArg := .repeat "event" },
+    { name := "skip",
+      help := "Skip a top-level definition (module.name). Overloads are kept.",
+      takesArg := .repeat "name" }
+  ]
   help := "Translate a Python specification (.py) file into Strata DDM Ion format. Creates the output directory if needed. (Experimental)"
-  callback := fun v _ => do
+  callback := fun v pflags => do
+    let quiet := pflags.getBool "quiet"
+    let mut events : Std.HashSet String := {}
+    if !quiet then
+      events := events.insert "import"
+    for e in pflags.getRepeated "log" do
+      events := events.insert e
+    let skipNames := pflags.getRepeated "skip"
+    let warningOutput : Strata.WarningOutput :=
+      if quiet then .none else .detail
     -- Serialize embedded dialect for Python subprocess
     IO.FS.withTempFile fun _handle dialectFile => do
       IO.FS.writeBinFile dialectFile Strata.Python.Python.toIon
-      let pythonFile : System.FilePath := v[0]
-      let strataDir : System.FilePath := v[1]
-      if (←pythonFile.metadata).type != .file then
-        exitFailure s!"Expected Python to be a regular file."
-      match ←strataDir.metadata |>.toBaseIO with
-      | .ok md =>
-        if md.type != .dir then
-          exitFailure s!"Expected Strata to be a directory."
-      | .error _ =>
-        IO.FS.createDir strataDir
-      let r ← Strata.Python.Specs.translateFile
-          (dialectFile := dialectFile)
-          (strataDir := strataDir)
-          (pythonFile := pythonFile) |>.toBaseIO
-
-      let sigs ←
-        match r with
-        | .ok t => pure t
-        | .error msg => exitFailure msg
-      let some mod := pythonFile.fileStem
-        | exitFailure s!"No stem {pythonFile}"
-      let .ok mod := Strata.Python.Specs.ModuleName.ofString mod
-        | exitFailure s!"Invalid module {mod}"
-      let strataFile := strataDir / mod.strataFileName
-      Strata.Python.Specs.writeDDM strataFile sigs
+      let r ← Strata.pySpecs (events := events)
+                (skipNames := skipNames)
+                (warningOutput := warningOutput)
+                v[0] v[1] dialectFile |>.toBaseIO
+      match r with
+      | .ok () => pure ()
+      | .error msg => exitFailure msg
 
 def pyTranslateCommand : Command where
   name := "pyTranslate"
@@ -332,7 +337,7 @@ def buildPySpecPrelude (pyspecPaths : Array String) : IO PySpecPrelude := do
   -- We no longer need to strip it from translate output.
   let laurelPreludeSize := 0
   let mut preludeDecls : Array Core.Decl :=
-    Strata.Python.Core.prelude.decls.toArray
+    Strata.Python.Core.PythonLaurelPrelude.decls.toArray
   let mut existingNames : Std.HashSet String :=
     preludeDecls.foldl (init := {}) fun s d =>
       (Core.Decl.names d).foldl (init := s) fun s n => s.insert n.name
@@ -385,7 +390,10 @@ def pyAnalyzeLaurelCommand : Command where
               help := "Extract overload dispatch table from a \
                 PySpec Ion file (no Laurel translation).",
               takesArg := .repeat "ion_file" },
-            { name := "sarif", help := "Write results as SARIF to <file>.sarif." }]
+            { name := "sarif", help := "Write results as SARIF to <file>.sarif." },
+            { name := "vc-directory",
+              help := "Store VCs in SMT-Lib format in <dir>.",
+              takesArg := .arg "dir" }]
   help := "Verify a Python Ion program via the Laurel pipeline. Translates Python to Laurel to Core, then runs SMT verification."
   callback := fun v pflags => do
     let verbose := pflags.getBool "verbose"
@@ -425,12 +433,12 @@ def pyAnalyzeLaurelCommand : Command where
     let sourcePathForMetadata := match pySourceOpt with
       | some (pyPath, _) => pyPath
       | none => filePath
-    let laurelPgm := Strata.Python.pythonToLaurel pyPrelude cmds[0]!
+    let laurelPgm := Strata.Python.pythonToLaurel pyPrelude cmds[0]! none
       sourcePathForMetadata allOverloads
     match laurelPgm with
       | .error e =>
         exitFailure s!"Python to Laurel translation failed: {e}"
-      | .ok laurelProgram =>
+      | .ok (laurelProgram, ctx)  =>
         if verbose then
           IO.println "\n==== Laurel Program ===="
           IO.println f!"{laurelProgram}"
@@ -447,7 +455,7 @@ def pyAnalyzeLaurelCommand : Command where
           -- The Laurel prelude is now included at the Laurel level during
           -- HeapParameterization, so translate output contains prelude decls as normal decls.
           -- No stripping needed.
-          let programDecls := coreProgramDecls.decls
+          let programDecls := coreProgramDecls.decls.filter (λ d=> d.name.name != "Box")
           -- Check for name collisions between program and prelude
           let preludeNames : Std.HashSet String :=
             pyPrelude.decls.flatMap Core.Decl.names
@@ -463,11 +471,20 @@ def pyAnalyzeLaurelCommand : Command where
           -- dbg_trace "================================="
 
           -- Verify using Core verifier
-          let vcResults ← IO.FS.withTempDir (fun tempDir =>
-              EIO.toIO
-                (fun f => IO.Error.userError (toString f))
-                (Core.verify coreProgram tempDir .none
-                  { VerifyOptions.default with stopOnFirstError := false, verbose := .quiet, solver := "z3" }))
+          let baseOptions : VerifyOptions :=
+            { VerifyOptions.default with stopOnFirstError := false, verbose := .quiet, solver := "z3" }
+          let options : VerifyOptions := match pflags.getString "vc-directory" with
+            | .some dir => { baseOptions with vcDirectory := some (dir : System.FilePath) }
+            | .none => baseOptions
+          let runVerification tempDir :=
+            EIO.toIO
+              (fun f => IO.Error.userError (toString f))
+              (Core.verify coreProgram tempDir .none options)
+          let vcResults ← match options.vcDirectory with
+            | .none => IO.FS.withTempDir runVerification
+            | .some vcDir => do
+              IO.FS.createDirAll vcDir
+              runVerification vcDir
 
           -- Print results
           IO.println "\n==== Verification Results ===="
@@ -794,12 +811,12 @@ def procedureToGotoCtx (Env : Core.Expression.TyEnv) (p : Core.Procedure)
     |>.map (fun c => renameExpr rn c.expr)
   if !preExprs.isEmpty then
     let preGoto ← preExprs.mapM (Lambda.LExpr.toGotoExprCtx (TBase := ⟨Core.ExpressionMetadata, Unit⟩) [])
-    let preJson := preGoto.map CProverGOTO.exprToJson
+    let preJson ← (preGoto.mapM CProverGOTO.exprToJson).mapError (fun e => f!"{e}")
     contracts := contracts ++ [("#spec_requires",
       Lean.Json.mkObj [("id", ""), ("sub", Lean.Json.arr preJson.toArray)])]
   if !postExprs.isEmpty then
     let postGoto ← postExprs.mapM (Lambda.LExpr.toGotoExprCtx (TBase := ⟨Core.ExpressionMetadata, Unit⟩) [])
-    let postJson := postGoto.map CProverGOTO.exprToJson
+    let postJson ← (postGoto.mapM CProverGOTO.exprToJson).mapError (fun e => f!"{e}")
     contracts := contracts ++ [("#spec_ensures",
       Lean.Json.mkObj [("id", ""), ("sub", Lean.Json.arr postJson.toArray)])]
   if !p.spec.modifies.isEmpty then
@@ -809,7 +826,7 @@ def procedureToGotoCtx (Env : Core.Expression.TyEnv) (p : Core.Procedure)
         | some (.forAll [] mono) => Lambda.LMonoTy.toGotoType mono
         | _ => pure .Integer
       modGoto := modGoto ++ [CProverGOTO.Expr.symbol (Core.CoreIdent.toPretty ident) ty]
-    let modJson := modGoto.map CProverGOTO.exprToJson
+    let modJson ← (modGoto.mapM CProverGOTO.exprToJson).mapError (fun e => f!"{e}")
     contracts := contracts ++ [("#spec_assigns",
       Lean.Json.mkObj [("id", ""), ("sub", Lean.Json.arr modJson.toArray)])]
   -- Build localTypes map for output parameters (so they get proper types in symbol table)
@@ -852,7 +869,7 @@ private def emitProcWithLifted (Env : Core.Expression.TyEnv) (procName : String)
     (ctx : CoreToGOTO.CProverGOTO.Context) (liftedFuncs : List Core.Function)
     (extraSyms : Lean.Json)
     : IO (Lean.Json × Lean.Json) := do
-  let json := CoreToGOTO.CProverGOTO.Context.toJson procName ctx
+  let json ← IO.ofExcept (CoreToGOTO.CProverGOTO.Context.toJson procName ctx)
   let mut symtabObj := match json.symtab with | .obj m => m | _ => .empty
   let mut gotoFns := match json.goto with
     | .obj m => match m.toList.find? (·.1 == "functions") with
@@ -863,7 +880,7 @@ private def emitProcWithLifted (Env : Core.Expression.TyEnv) (procName : String)
     match functionToGotoCtx Env f with
     | .error e => panic! s!"{e}"
     | .ok fctx =>
-      let fjson := CoreToGOTO.CProverGOTO.Context.toJson funcName fctx
+      let fjson ← IO.ofExcept (CoreToGOTO.CProverGOTO.Context.toJson funcName fctx)
       match fjson.symtab with | .obj m => for (k, v) in m.toList do symtabObj := symtabObj.insert k v | _ => pure ()
       match fjson.goto with
       | .obj m => match m.toList.find? (·.1 == "functions") with
@@ -872,7 +889,8 @@ private def emitProcWithLifted (Env : Core.Expression.TyEnv) (procName : String)
   match extraSyms with | .obj m => for (k, v) in m.toList do symtabObj := symtabObj.insert k v | _ => pure ()
   return (Lean.Json.obj symtabObj, Lean.Json.mkObj [("functions", Lean.Json.arr gotoFns)])
 
-private def datatypeToSymbolEntry (dt : Lambda.LDatatype Unit) :
+private def datatypeToSymbolEntry (dt : Lambda.LDatatype Unit)
+    (mutualNames : List String := [dt.name]) :
     Except Std.Format (String × CProverGOTO.CBMCSymbol) := do
   let mut components : Array (String × Lean.Json) :=
     #[("$tag", CProverGOTO.tyToJson .Integer)]
@@ -880,10 +898,10 @@ private def datatypeToSymbolEntry (dt : Lambda.LDatatype Unit) :
     for (fieldId, fieldTy) in constr.args do
       let gty ← Lambda.LMonoTy.toGotoType fieldTy
       let tyJson := CProverGOTO.tyToJson gty
-      -- Recursive fields (type refers back to this datatype) must be pointers
+      -- Recursive fields (type refers to any datatype in the mutual block) must be pointers
       let tyJson := match fieldTy with
         | .tcons name _ =>
-          if name == dt.name then
+          if mutualNames.contains name then
             Lean.Json.mkObj [
               ("id", "pointer"),
               ("sub", Lean.Json.arr #[tyJson]),
@@ -961,9 +979,10 @@ private def collectDatatypeSymbols (pgm : Core.Program) :
   for decl in pgm.decls do
     match decl with
     | .type (.data dts) _ =>
+      let mutualNames := dts.map (·.name)
       for dt in dts do
         if dt.typeArgs.isEmpty then
-          let entry ← datatypeToSymbolEntry dt
+          let entry ← datatypeToSymbolEntry dt mutualNames
           syms := syms ++ [entry]
     | .type (.con tc) _ =>
       if tc.numargs == 0 then
@@ -985,7 +1004,7 @@ private def collectGlobalSymbols (pgm : Core.Program) :
         | some expr =>
           let gotoExpr ← Lambda.LExpr.toGotoExprCtx
             (TBase := ⟨Core.ExpressionMetadata, Unit⟩) [] expr
-          pure (CProverGOTO.exprToJson gotoExpr)
+          (CProverGOTO.exprToJson gotoExpr).mapError (fun e => f!"{e}")
         | none => pure (Lean.Json.mkObj [("id", "nil")])
       syms := syms ++ [(gname, {
         baseName := gname
@@ -1071,12 +1090,12 @@ def pyTranslateLaurelCommand : Command where
     let pgm ← readPythonStrata v[0]
     let cmds := Strata.toPyCommands pgm.commands
     assert! cmds.size == 1
-    let prelude := Strata.Python.Core.prelude
+    let prelude := Strata.Python.Core.PythonLaurelPrelude
     let laurelPgm := Strata.Python.pythonToLaurel prelude cmds[0]!
     match laurelPgm with
     | .error e =>
       exitFailure s!"Python to Laurel translation failed: {e}"
-    | .ok laurelProgram =>
+    | .ok (laurelProgram, _) =>
       match Strata.Laurel.translate laurelProgram with
       | .error diagnostics =>
         exitFailure s!"Laurel to Core translation failed: {diagnostics}"
@@ -1094,19 +1113,19 @@ def pyAnalyzeLaurelToGotoCommand : Command where
     let pySourceOpt ← tryReadPythonSource filePath
     let cmds := Strata.toPyCommands pgm.commands
     assert! cmds.size == 1
-    let prelude := Strata.Python.Core.prelude
+    let prelude := Strata.Python.Core.PythonLaurelPrelude
     let sourcePathForMetadata := match pySourceOpt with
       | some (pyPath, _) => pyPath
       | none => filePath
-    let laurelPgm := Strata.Python.pythonToLaurel prelude cmds[0]! sourcePathForMetadata
+    let laurelPgm := Strata.Python.pythonToLaurel prelude cmds[0]! none sourcePathForMetadata
     match laurelPgm with
     | .error e => exitFailure s!"Python to Laurel translation failed: {e}"
-    | .ok laurelProgram =>
+    | .ok (laurelProgram,_) =>
       match Strata.Laurel.translate laurelProgram with
       | .error diagnostics =>
         exitFailure s!"Laurel to Core translation failed: {diagnostics}"
       | .ok coreProgram =>
-        let coreProgram := {decls := prelude.decls ++ coreProgram.fst.decls }
+        let coreProgram := {decls := prelude.decls ++ coreProgram.fst.decls.filter (λ d=> d.name.name != "Box") }
         -- Inline procedure calls (except main) repeatedly until fixpoint
         let mut coreProgram := coreProgram
         for _ in List.range 10 do
@@ -1341,7 +1360,7 @@ def laurelAnalyzeToGotoCommand : Command where
           | .error e => panic! s!"{e}"
           | .ok (ctx, liftedFuncs) =>
             allLiftedFuncs := allLiftedFuncs ++ liftedFuncs
-            let json := CoreToGOTO.CProverGOTO.Context.toJson procName ctx
+            let json ← IO.ofExcept (CoreToGOTO.CProverGOTO.Context.toJson procName ctx)
             match json.symtab with
             | .obj m => symtabPairs := symtabPairs ++ m.toList
             | _ => pure ()
@@ -1356,7 +1375,7 @@ def laurelAnalyzeToGotoCommand : Command where
           match functionToGotoCtx Env f with
           | .error e => panic! s!"{e}"
           | .ok ctx =>
-            let json := CoreToGOTO.CProverGOTO.Context.toJson funcName ctx
+            let json ← IO.ofExcept (CoreToGOTO.CProverGOTO.Context.toJson funcName ctx)
             match json.symtab with
             | .obj m => symtabPairs := symtabPairs ++ m.toList
             | _ => pure ()
