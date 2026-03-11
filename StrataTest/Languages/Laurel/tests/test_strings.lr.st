@@ -7,4 +7,4 @@ procedure main() {
     var a: string := "abc";
     var b: string := "abc";
     assert a == b;
-}
+};

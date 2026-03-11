@@ -9,4 +9,4 @@ procedure main() {
     assert y < x;
     assert x >= 5;
     assert y <= 3;
-}
+};

@@ -3,9 +3,9 @@ procedure add(x: int, y: int) returns (r: int)
   ensures r >= x
 {
   r := x + y;
-}
+};
 
 procedure main() {
   var a: int := 42;
   assert a > 0;
-}
+};

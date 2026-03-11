@@ -17,7 +17,7 @@ nondet procedure nonDeterministic(x: int): (r: int)
   ensures r > 0
 {
   assumed
-}
+};
 
 procedure caller() {
   var x = nonDeterministic(1)
@@ -25,17 +25,17 @@ procedure caller() {
   var y = nonDeterministic(1)
     assert x == y;
 //  ^^^^^^^^^^^^^^ error: assertion does not hold
-}
+};
 
 nondet procedure nonDeterminsticTransparant(x: int): (r: int)
 {
   nonDeterministic(x + 1)
-}
+};
 
 procedure nonDeterministicCaller(x: int): int
 {
   nonDeterministic(x)
-}
+};
 "
 
 -- Not working yet
