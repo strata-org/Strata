@@ -194,7 +194,7 @@ rec function List_get (@[cases] l : ListAny, i : int) : Any
 }
 
 rec function List_take (@[cases] l : ListAny, i: int) : ListAny
-  requires i >= 0 && i < List_len(l);
+  requires i >= 0 && i <= List_len(l);
 {
   if ListAny..isListAny_nil(l) then ListAny_nil()
   else if  i == 0 then ListAny_nil()
@@ -202,10 +202,10 @@ rec function List_take (@[cases] l : ListAny, i: int) : ListAny
 }
 
 axiom [List_take_len]: forall l : ListAny, i: int :: {List_len(List_take(l,i))}
-  (i >= 0 && i < List_len(l)) ==> List_len(List_take(l,i)) == i;
+  (i >= 0 && i <= List_len(l)) ==> List_len(List_take(l,i)) == i;
 
 rec function List_drop (@[cases] l : ListAny, i: int) : ListAny
-  requires i >= 0 && i < List_len(l);
+  requires i >= 0 && i <= List_len(l);
 {
   if ListAny..isListAny_nil(l) then ListAny_nil()
   else if  i == 0 then l
@@ -213,7 +213,7 @@ rec function List_drop (@[cases] l : ListAny, i: int) : ListAny
 }
 
 axiom [List_drop_len]: forall l : ListAny, i: int :: {List_len(List_drop(l,i))}
-  (i >= 0 && i < List_len(l)) ==> List_len(List_drop(l,i)) == List_len(l) - i;
+  (i >= 0 && i <= List_len(l)) ==> List_len(List_drop(l,i)) == List_len(l) - i;
 
 inline function List_slice (l : ListAny, start : int, stop: int) : ListAny
   requires start >= 0 && start < List_len(l) && stop >= 0 && stop < List_len(l) && start <= stop;

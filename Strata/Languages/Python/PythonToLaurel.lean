@@ -220,7 +220,7 @@ def getSubscriptList (expr:  Python.expr SourceRange) : List ( Python.expr Sourc
 def pyOptExprToString (e : Python.opt_expr SourceRange) : Except TranslationError String := do
   match e with
   | .some_expr _ (.Constant _ (.ConString _ s) _) => return s.val
-  | _ => throw (.internalError "Expected some constant string: {e}")
+  | _ => throw (.internalError "Expected some constant string: {repr e}")
 
 def DictStrAny_mk_aux
     (kv: List (String × StmtExprMd)) (acc: StmtExprMd): StmtExprMd :=
