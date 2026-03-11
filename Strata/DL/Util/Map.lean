@@ -329,5 +329,30 @@ theorem Map.find?_erase_ne [DecidableEq α]
       · rfl
       · exact ih
 
+/-- Values of a `zipWith Prod.mk` are the second list, truncated to the first list's length. -/
+theorem Map.values_zipWith_eq_take (as : List α) (bs : List β) :
+    Map.values (List.zipWith Prod.mk as bs) = bs.take as.length := by
+  induction as generalizing bs with
+  | nil => simp [Map.values]
+  | cons a as' ih =>
+    match bs with
+    | [] => simp [Map.values, List.zipWith]
+    | b :: bs' => simp [List.zipWith, Map.values]; exact ih bs'
+
+/-- Removing key `k` does not affect lookups for a different key `a ≠ k`. -/
+theorem Map.find?_remove_ne [DecidableEq α]
+    (m : Map α β) (k a : α) (h_ne : a ≠ k) :
+    Map.find? (Map.remove m k) a = Map.find? m a := by
+  induction m with
+  | nil => rfl
+  | cons xv rest ih =>
+    obtain ⟨x, v⟩ := xv
+    simp only [Map.remove]
+    by_cases h_xk : x = k
+    · simp only [h_xk, ↓reduceIte]
+      simp only [Map.find?, show k ≠ a from Ne.symm h_ne, ↓reduceIte]
+    · simp only [h_xk, ↓reduceIte, Map.find?]
+      grind
+
 -------------------------------------------------------------------------------
 end

@@ -778,17 +778,6 @@ theorem Constraints.unify_keys_incl
     simp at h_unify; subst h_unify
     exact (Constraints.unifyCore_sound cs S relS h_core).keys_incl
 
-/-- `Map.values` of a `zipWith Prod.mk` is the second list truncated to the
-    length of the first. -/
-private theorem Map.values_zipWith_eq_take (as : List TyIdentifier) (bs : List LMonoTy) :
-    Map.values (List.zipWith Prod.mk as bs) = bs.take as.length := by
-  induction as generalizing bs with
-  | nil => simp [Map.values]
-  | cons a as' ih =>
-    match bs with
-    | [] => simp [Map.values, List.zipWith]
-    | b :: bs' => simp [List.zipWith, Map.values]; exact ih bs'
-
 /-- Free variables of a substitution `[zip ids (map ftvar freshtvs)]` are a
     subset of `freshtvs`. -/
 private theorem Subst.freeVars_zip_ftvar (ids freshtvs : List TyIdentifier)
@@ -1524,39 +1513,6 @@ private theorem typeBoundVar_absorbs
         have h_subst := TEnv.genTyVar_subst _ xtyid Env1 h_genTy
         rw [h_subst, h_gen_subst]
         exact Subst.absorbs_refl _ Env.stateSubstInfo.isWF
-
-/-- Removing a key `k` from a map doesn't affect lookups of other keys `a ≠ k`. -/
-private theorem Map.find?_remove_ne {α β : Type} [DecidableEq α]
-    (m : Map α β) (k a : α) (h_ne : a ≠ k) :
-    Map.find? (Map.remove m k) a = Map.find? m a := by
-  induction m with
-  | nil => rfl
-  | cons xv rest ih =>
-    obtain ⟨x, v⟩ := xv
-    simp only [Map.remove]
-    by_cases h_xk : x = k
-    · -- x = k: Map.remove skips this entry; result is `rest`
-      simp only [h_xk, ↓reduceIte]
-      simp only [Map.find?, show k ≠ a from Ne.symm h_ne, ↓reduceIte]
-    · -- x ≠ k: entry preserved
-      simp only [h_xk, ↓reduceIte, Map.find?]
-      grind
-
-/-- Removing a key `k` from maps doesn't affect lookups of other keys `a ≠ k`. -/
-private theorem Maps.find?_remove_ne
-    (ms : Subst) (k a : TyIdentifier) (h_ne : a ≠ k) :
-    Maps.find? (Maps.remove ms k) a = Maps.find? ms a := by
-  induction ms with
-  | nil => rfl
-  | cons m rest ih =>
-    simp only [Maps.remove]
-    -- Need to handle the `let m' := Map.remove m k; if m' == m then ...`
-    -- Use `show` to make the goal more explicit after the let-binding
-    show Maps.find? (if Map.remove m k == m then m :: Maps.remove rest k
-         else Map.remove m k :: Maps.remove rest k) a = _
-    split
-    · simp only [Maps.find?]; rw [ih]
-    · simp only [Maps.find?]; rw [Map.find?_remove_ne m k a h_ne, ih]
 
 /-- If all scopes are empty, no key exists. -/
 private theorem Maps.keys_eq_nil_of_hasEmptyScopes (S : Subst)

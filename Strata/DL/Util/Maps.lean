@@ -576,5 +576,19 @@ theorem Maps.find?_erase_ne [DecidableEq α]
   | cons m rest ih =>
     simp only [Maps.erase, Maps.find?, Map.find?_erase_ne m x y h_ne, ih]
 
+/-- Removing a key `k` from maps doesn't affect lookups of other keys `a ≠ k`. -/
+theorem Maps.find?_remove_ne [DecidableEq α] [BEq (Map α β)]
+    (ms : Maps α β) (k a : α) (h_ne : a ≠ k) :
+    Maps.find? (Maps.remove ms k) a = Maps.find? ms a := by
+  induction ms with
+  | nil => rfl
+  | cons m rest ih =>
+    simp only [Maps.remove]
+    show Maps.find? (if Map.remove m k == m then m :: Maps.remove rest k
+         else Map.remove m k :: Maps.remove rest k) a = _
+    split
+    · simp only [Maps.find?]; rw [ih]
+    · simp only [Maps.find?]; rw [Map.find?_remove_ne m k a h_ne, ih]
+
 ---------------------------------------------------------------------
 end
