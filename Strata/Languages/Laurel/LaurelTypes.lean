@@ -40,10 +40,12 @@ def computeExprType (model : SemanticModel) (expr : StmtExprMd) : HighTypeMd :=
   | .PureFieldUpdate target _ _ => computeExprType model target
   -- Calls — we don't track return types here, so fall back to TVoid
   | .StaticCall callee _ => match model.get callee with
+    | .datatypeConstructor t _ => ⟨ .UserDefined t, md, ⟩
+    | .parameter p => p.type
     | .staticProcedure proc => match proc.outputs with
       | [singleOutput] => singleOutput.type
       | _ => { val := .TVoid, md := default }
-    | .unresolved => -- TODO Change this!!!
+    | .unresolved => -- TODO Change this to an unknown type!!!
         -- The Python through Laurel pipeline does not resolve yet
         { val := .TVoid, md := default }
     | astNode => panic! s!"static call to {callee} not to a procedure but to a {repr astNode}"
