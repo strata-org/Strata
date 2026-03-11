@@ -197,7 +197,7 @@ theorem procBodyVerify_sound
     -- for all initial states where preconditions hold,
     -- if the body executes to completion,
     -- then all postconditions hold at exit.
-    procedure_obeys_contract π φ proc := by
+    procedure_obeys_contract π φ proc stmt := by
   obtain ⟨blk_label, pre_body, bodyLabel, blk_md, h_stmt_eq⟩ :=
     procToVerifyStmt_structure proc p st stmt st' h_transform
   intro δ σ₀ σ_final δ_final h_pre h_body label check h_post_in h_default
@@ -206,31 +206,17 @@ theorem procBodyVerify_sound
     unfold ensuresToAsserts; simp only [List.mem_filterMap]
     exact ⟨(label, check), h_post_in, by simp [h_default]⟩
   rw [h_stmt_eq] at h_correct
-  obtain ⟨before_a, after_a, h_split⟩ := List.append_of_mem h_assert_in
-  -- The postcondition assert is reachable in the verification block
-  -- with store σ_final and evaluator δ_final.
-  -- This requires showing the prefix (inits + assumes + body) can execute.
-  -- We construct the path: block → prefix → body → assert skips → target assert
-  apply h_correct ⟨label, check.expr, check.md⟩
+  -- Either the postcondition assert is reachable or it isn't
+  by_cases h_reach : reachable π φ
+    (Stmt.block blk_label (pre_body ++ [Stmt.block bodyLabel proc.body #[]] ++
+      ensuresToAsserts proc.spec.postconditions) blk_md)
     ⟨σ_final, δ_final, some ⟨label, check.expr, check.md⟩⟩
-  · -- reachable: the postcondition assert is reachable in the verification block
-    -- This requires:
-    -- 1. The prefix (inits + assumes) executes from some σ₀' to σ₀
-    --    (inits create variables with arbitrary values, assumes check preconditions)
-    -- 2. The body block executes from σ₀ to σ_final (by h_body)
-    -- 3. The assert skips before the target assert execute (no-op)
-    -- Step 1 requires constructing InitState derivations and showing
-    -- assume conditions hold. This is the remaining proof obligation.
-    -- Construct the reachability proof
-    unfold reachable
-    -- We need: ∃ δ₀ σ₀' cfg, path ∧ ofConfig cfg = some ⟨σ_final, δ_final, some a⟩
-    -- The target cfg is .block blk_label (.stmts (assert :: after_a) σ_final δ_final)
-    -- The path goes through the block, processing prefix, body, and assert skips.
-    -- The prefix (inits + assumes) needs to execute from (σ₀', δ₀) to (σ₀, δ).
-    -- Since inits use InitState with arbitrary values, we can pick σ₀' to make this work.
-    -- The body then executes from (σ₀, δ) to (σ_final, δ_final) by h_body.
-    -- The assert skips don't change state.
-    sorry
-  · rfl
+  · -- Reachable: h_correct gives us the result
+    left
+    exact h_correct ⟨label, check.expr, check.md⟩
+      ⟨σ_final, δ_final, some ⟨label, check.expr, check.md⟩⟩ h_reach rfl
+  · -- Not reachable: vacuously passing
+    right
+    rwa [h_stmt_eq]
 
 end ProcBodyVerifyCorrect

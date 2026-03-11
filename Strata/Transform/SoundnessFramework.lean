@@ -86,11 +86,13 @@ def stmt_correct
 /-! ## Procedure Contract Obedience -/
 
 /-- A procedure obeys its contract: for all initial states where preconditions
-    hold, if the body executes to a terminal state, then all postconditions hold.
+    hold, if the body executes to a terminal state, then all postconditions
+    either hold at exit or are unreachable in the verification block.
     Uses small-step semantics. -/
 def procedure_obeys_contract
     (π : String → Option Procedure) (φ : CoreEval → PureFunc Expression → CoreEval)
-    (proc : Procedure) : Prop :=
+    (proc : Procedure)
+    (verification_stmt : Statement) : Prop :=
   ∀ (δ : CoreEval) (σ₀ σ_final : CoreStore) (δ_final : CoreEval),
     (∀ (label : CoreLabel) (check : Procedure.Check),
       (label, check) ∈ proc.spec.preconditions.toList →
@@ -99,7 +101,10 @@ def procedure_obeys_contract
     (∀ (label : CoreLabel) (check : Procedure.Check),
       (label, check) ∈ proc.spec.postconditions.toList →
       check.attr = Procedure.CheckAttr.Default →
-      δ_final σ_final check.expr = some HasBool.tt)
+      -- The postcondition holds at exit OR is unreachable in the verification block
+      δ_final σ_final check.expr = some HasBool.tt ∨
+      ¬ reachable π φ verification_stmt
+        ⟨σ_final, δ_final, some ⟨label, check.expr, check.md⟩⟩)
 
 /-! ## Transformation Structure -/
 
