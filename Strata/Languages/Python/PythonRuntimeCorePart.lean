@@ -40,113 +40,13 @@ program Core;
 // and procedures below. They will be filtered out when merging with
 // the Laurel-translated declarations.
 // =====================================================================
-datatype None () {
-  None_none()
-};
 
-type Object;
-function Object_len(x : Object) : int;
-function inheritsFrom(child : string, parent : string) : (bool);
-
-datatype Error () {
-  Error_TypeError(getTypeError: string),
-  Error_AttributeError(getAttributeError: string),
-  Error_RePatternError(getRePatternError: string),
-  Error_Unimplemented(getUnimplemented: string)
-};
-
-datatype ExceptOrNone () {
-  ExceptOrNone_mk_code(code_val: string),
-  ExceptOrNone_mk_none(none_val: None)
-};
-
-datatype IntOrNone () {
-  IntOrNone_mk_int(int_val: int),
-  IntOrNone_mk_none(none_val: None)
-};
-
-datatype StrOrNone () {
-  StrOrNone_mk_str(str_val: string),
-  StrOrNone_mk_none(none_val: None)
-};
-
-function strOrNone_toObject(v : StrOrNone) : Object;
-
-type Datetime;
-type Datetime_base;
-type DictStrAny;
-type ListDictStrAny;
-
-function Timedelta_mk(days : int, seconds : int, microseconds : int): int;
-function Timedelta_get_days(timedelta : int) : int;
-function Timedelta_get_seconds(timedelta : int) : int;
-function Timedelta_get_microseconds(timedelta : int) : int;
-
-function Datetime_get_base(d : Datetime) : Datetime_base;
-function Datetime_get_timedelta(d : Datetime) : int;
-function Datetime_add(d:Datetime, timedelta:int):Datetime;
-function Datetime_lt(d1:Datetime, d2:Datetime):bool;
-function datetime_to_str(dt : Datetime) : string;
 
 type CoreOnlyDelimiter;
 
 // =====================================================================
 // Core-only declarations (not expressible in Laurel)
 // =====================================================================
-
-// Axioms
-axiom [Object_len_ge_zero]: (forall x : Object :: Object_len(x) >= 0);
-axiom [inheritsFrom_refl]: (forall s: string :: {inheritsFrom(s, s)} inheritsFrom(s, s));
-
-// Parameterized datatype + regex type
-datatype Except (err : Type, ok : Type) {
-  Except_mkOK(Except_getOK: ok),
-  Except_mkErr(Except_getErr: err)
-};
-
-type ExceptErrorRegex := Except Error regex;
-
-function PyReMatchRegex(pattern : regex, str : string, flags : int) : bool;
-axiom [PyReMatchRegex_def_noFlg]:
-  (forall pattern : regex, str : string :: {PyReMatchRegex(pattern, str, 0)}
-    PyReMatchRegex(pattern, str, 0) == str.in.re(str, pattern));
-
-function PyReMatchStr(pattern : string, str : string, flags : int) : Except Error bool;
-
-// strOrNone axioms
-axiom (forall s1:StrOrNone, s2: StrOrNone :: {strOrNone_toObject(s1), strOrNone_toObject(s2)}
-        s1 != s2 ==>
-        strOrNone_toObject(s1) != strOrNone_toObject(s2));
-axiom (forall s : StrOrNone :: {StrOrNone..isStrOrNone_mk_str(s)}
-        StrOrNone..isStrOrNone_mk_str(s) ==>
-        Object_len(strOrNone_toObject(s)) == str.len(StrOrNone..str_val!(s)));
-
-// Timedelta axioms
-axiom [Timedelta_deconstructors]:
-    (forall days0 : int, seconds0 : int, msecs0 : int,
-            days : int, seconds : int, msecs : int
-            :: {(Timedelta_mk(days0, seconds0, msecs0))}
-      Timedelta_mk(days0, seconds0, msecs0) ==
-          Timedelta_mk(days, seconds, msecs) &&
-      0 <= msecs && msecs < 1000000 &&
-      0 <= seconds && seconds < 3600 * 24 &&
-      -999999999 <= days && days <= 999999999
-      ==> Timedelta_get_days(Timedelta_mk(days0, seconds0, msecs0)) == days &&
-          Timedelta_get_seconds(Timedelta_mk(days0, seconds0, msecs0)) == seconds &&
-          Timedelta_get_microseconds(Timedelta_mk(days0, seconds0, msecs0)) == msecs);
-
-// Datetime axioms
-axiom [Datetime_add_ax]:
-    (forall d:Datetime, timedelta:int :: {}
-        Datetime_get_base(Datetime_add(d,timedelta)) == Datetime_get_base(d) &&
-        Datetime_get_timedelta(Datetime_add(d,timedelta)) ==
-          Datetime_get_timedelta(d)  + timedelta);
-
-axiom [Datetime_lt_ax]:
-    (forall d1:Datetime, d2:Datetime :: {}
-        Datetime_get_base(d1) == Datetime_get_base(d2)
-        ==> Datetime_lt(d1, d2) ==
-            (Datetime_get_timedelta(d1) < Datetime_get_timedelta(d2)));
 
 #end
 
