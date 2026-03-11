@@ -159,6 +159,14 @@ partial def pyExprToString (e : Python.expr SourceRange) : String :=
     String.intercalate ", " args
   | _ => "<unknown>"
 
+/-- Walk through nested subscripts to find the root variable name.
+    e.g. `a[b][c]` → `a`, `params["key"]` → `params` -/
+partial def getSubscriptBaseName (e : Python.expr SourceRange) : String :=
+  match e with
+  | .Name _ n _ => n.val
+  | .Subscript _ val _ _ => getSubscriptBaseName val
+  | _ => pyExprToString e
+
 def PyLauType.Int := "int"
 def PyLauType.Bool := "bool"
 def PyLauType.Str := "str"
