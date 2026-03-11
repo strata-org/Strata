@@ -64,12 +64,12 @@ private def translateFromTermPrim (t:SMT.TermPrim):
     if i >= 0 then
       return .spec_constant_term srnone (.sc_numeral srnone abs_i.toNat)
     else
-      -- Note that negative integers like '-1231' are symbols in Std! (Sec 3.1. Lexicon)
-      -- The only way to create a unary symbol is through idenitifers, but this
-      -- makes its DDM format wrapped with pipes, like '|-1231|`. Since such
-      -- representation cannot be recognized by Z3, make a workaround which is to have
-      -- separate `*_neg` categories for sc_numeral/decimal.
-      return .spec_constant_term srnone (.sc_numeral_neg srnone abs_i.toNat)
+      -- SMT-LIB represents negative integers as (- N), i.e. unary minus
+      -- applied to the absolute value.
+      let posTerm := Term.spec_constant_term srnone (.sc_numeral srnone abs_i.toNat)
+      return .qual_identifier_args srnone
+        (.qi_ident srnone (mkIdentifier "-"))
+        (Ann.mk srnone #[posTerm])
   | .real dec =>
     return .spec_constant_term srnone (.sc_decimal srnone dec)
   | .bitvec (n := n) bv =>
