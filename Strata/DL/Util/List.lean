@@ -494,5 +494,13 @@ theorem filter_length_lt_of_imp_witness {L : List α} {P Q : α → Bool}
       · have := h_imp y (.head ys) hPy; simp_all
       · simp; have := ih h_imp_ys h_in_ys; omega
 
+/-- If every element of `xs` is in `ys`, then `xs.removeAll ys = []`. -/
+theorem removeAll_eq_nil_of_forall_mem [BEq α] [LawfulBEq α]
+    {xs ys : List α} (h : ∀ x, x ∈ xs → x ∈ ys) :
+    xs.removeAll ys = [] := by
+  simp only [List.removeAll]
+  rw [List.filter_eq_nil_iff]
+  grind
+
 end List
 end

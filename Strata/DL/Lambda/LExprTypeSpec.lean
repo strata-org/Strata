@@ -2799,14 +2799,6 @@ private theorem typeBoundVar_erase_context
     rw [h_erase_aliases, h_al]
   exact TContext.mk.injEq .. ▸ ⟨h1, h2⟩
 
-/-- `removeAll` produces `[]` when every element of the source is in the filter list. -/
-private theorem List.removeAll_eq_nil_of_forall_mem [BEq α] [LawfulBEq α]
-    {xs ys : List α} (h : ∀ x, x ∈ xs → x ∈ ys) :
-    xs.removeAll ys = [] := by
-  simp only [List.removeAll]
-  rw [List.filter_eq_nil_iff]
-  grind
-
 /-- `freeVars (mkArrow mty mtys)` is `freeVars mty ++ LMonoTys.freeVars mtys`. -/
 private theorem LMonoTy.freeVars_mkArrow (mty : LMonoTy) :
     ∀ (mtys : LMonoTys),
