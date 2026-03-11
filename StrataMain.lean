@@ -18,7 +18,6 @@ import Strata.Transform.ProcedureInlining
 import Strata.Languages.Python.CorePrelude
 import Strata.Languages.Python.PythonRuntimeLaurelPart
 import Strata.Languages.Python.PythonRuntimeCorePart
-import Strata.Languages.Python.PythonLaurelCorePrelude
 import Strata.Backends.CBMC.GOTO.CoreToCProverGOTO
 
 import Strata.SimpleAPI
@@ -335,11 +334,7 @@ structure PySpecPrelude where
     are appended to the base prelude (with duplicates filtered out).
     Also accumulates overload dispatch tables. -/
 def buildPySpecPrelude (pyspecPaths : Array String) : IO PySpecPrelude := do
-  -- The Laurel prelude is now included during HeapParameterization at the Laurel level.
-  -- We no longer need to strip it from translate output.
-  let laurelPreludeSize := 0
-  let mut preludeDecls : Array Core.Decl :=
-    Strata.Python.Core.PythonLaurelPrelude.decls.toArray
+  let mut preludeDecls : Array Core.Decl := Array.empty
   let mut existingNames : Std.HashSet String :=
     preludeDecls.foldl (init := {}) fun s d =>
       (Core.Decl.names d).foldl (init := s) fun s n => s.insert n.name
@@ -368,16 +363,13 @@ def buildPySpecPrelude (pyspecPaths : Array String) : IO PySpecPrelude := do
     | .error diagnostics =>
       exitFailure s!"PySpec Laurel to Core translation failed for {ionPath}: {diagnostics}"
     | .ok (coreSpec, _modifiesDiags) =>
-      -- The Laurel prelude is now included at the Laurel level during HeapParameterization,
-      -- so translate output already contains the prelude declarations as normal decls.
-      let pyspecDecls := coreSpec.decls.drop laurelPreludeSize
       -- Register new names, failing on collisions
-      for d in pyspecDecls do
+      for d in coreSpec.decls do
         for n in Core.Decl.names d do
           if existingNames.contains n.name then
             exitFailure s!"Core name collision in PySpec {ionPath}: {n.name}"
           existingNames := existingNames.insert n.name
-      preludeDecls := preludeDecls ++ pyspecDecls.toArray
+      preludeDecls := preludeDecls ++ coreSpec.decls.toArray
   let pyPrelude : Core.Program := { decls := preludeDecls.toList }
   return { corePrelude := pyPrelude, overloads := allOverloads }
 
@@ -461,12 +453,12 @@ def pyAnalyzeLaurelCommand : Command where
           let coreProgram: Core.Program := { decls := coreProgramDecls.decls ++ Strata.Python.coreOnlyFromRuntimeCorePart }
           if verbose then
             IO.println "\n==== Core Program ===="
-            IO.print (coreProgramDecls, modifiesDiags)
+            IO.print (coreProgram, modifiesDiags)
 
           -- The Laurel prelude is now included at the Laurel level during
           -- HeapParameterization, so translate output contains prelude decls as normal decls.
           -- No stripping needed.
-          let programDecls := coreProgramDecls.decls.filter (λ d=> d.name.name != "Box")
+          let programDecls := coreProgram.decls.filter (λ d=> d.name.name != "Box")
           -- Check for name collisions between program and prelude
           let preludeNames : Std.HashSet String :=
             pyPrelude.decls.flatMap Core.Decl.names
