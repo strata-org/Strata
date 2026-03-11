@@ -334,11 +334,40 @@ inductive SpecExpr where
 | intLit (value : Int)
 | intGe (subject : SpecExpr) (bound : SpecExpr)
 | intLe (subject : SpecExpr) (bound : SpecExpr)
+/-- A floating-point literal, stored as a string to preserve precision. -/
+| floatLit (value : String)
+| floatGe (subject : SpecExpr) (bound : SpecExpr)
+| floatLe (subject : SpecExpr) (bound : SpecExpr)
 | enumMember (subject : SpecExpr) (values : Array String)
+/-- `regexMatch subject pattern` asserts that `subject` matches the regular
+    expression `pattern`. Corresponds to `compile(pattern).search(subject) is not None`
+    in the Python source. -/
+| regexMatch (subject : SpecExpr) (pattern : String)
+/-- `containsKey container key` asserts that `key` is present in `container`.
+    Corresponds to `"key" in container` in the Python source. -/
+| containsKey (container : SpecExpr) (key : String)
+/-- `implies condition body` asserts that if `condition` holds then `body` holds.
+    Used to represent conditional assertions like `if "field" in kwargs: assert ...`. -/
+| implies (condition : SpecExpr) (body : SpecExpr)
+/-- Logical negation. Used for else-branch conditions. -/
+| not (e : SpecExpr)
+/-- `forallList list varName body` asserts that `body` holds for every element
+    of `list`, with `varName` bound to each element in turn. Only `body` may
+    refer to `varName`. Corresponds to `for varName in list: assert body`. -/
+| forallList (list : SpecExpr) (varName : String) (body : SpecExpr)
+/-- `forallDict dict keyVar valVar body` asserts that `body` holds for every
+    key-value pair in `dict`. Both `keyVar` and `valVar` are bound in `body`.
+    Corresponds to `for keyVar, valVar in dict.items(): assert body`. -/
+| forallDict (dict : SpecExpr) (keyVar : String) (valVar : String) (body : SpecExpr)
+deriving Inhabited
+
+inductive MessagePart where
+| str (s : String)
+| expr (e : SpecExpr)
 deriving Inhabited
 
 structure Assertion where
-  message : String
+  message : Array MessagePart
   formula : SpecExpr
 deriving Inhabited
 
@@ -356,6 +385,8 @@ deriving Inhabited
 structure ClassField where
   name : String
   type : SpecType
+  /-- An optional constant value for the field (e.g., from `self.x = expr` in `__init__`). -/
+  constValue : Option String := none
 deriving Inhabited
 
 structure ClassVariable where

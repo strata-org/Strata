@@ -126,6 +126,11 @@ def printCommand : Command where
   help := "Pretty-print a Strata file (text or Ion) to stdout."
   callback := fun v pflags => do
     let searchPath ← pflags.buildDialectFileMap
+    -- Special case for already loaded dialects.
+    let ld ← searchPath.getLoaded
+    if mem : v[0] ∈ ld.dialects then
+      IO.print <| ld.dialects.format v[0] mem
+      return
     let pd ← Strata.readStrataFile searchPath v[0]
     match pd with
     | .dialect d =>
