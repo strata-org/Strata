@@ -278,22 +278,6 @@ partial def translateDictStrAny (ctx : TranslationContext)
   let keys ← keys.mapM pyOptExprToString
   return  mkStmtExprMd (.StaticCall "from_Dict" [DictStrAny_mk (keys.zip val_trans)])
 
-/-
-partial def translateSubscriptExpr (ctx : TranslationContext) (expr : Python.expr SourceRange)
-  : Except TranslationError StmtExprMd := do
-  let (start, slices) := match breakdown_Subscript expr with
-    | first :: slices => (first, slices)
-    | _ =>  panic! "Invalid Subscript Expr"
-  let start ←  translateExpr ctx start
-  match slices with
-  | [] => panic! "expect subscript"
-  | [slice] =>
-    let slice_trans ← translateExpr ctx slice
-      return mkStmtExprMd (.StaticCall "Any_get" [start, slice_trans])
-  | _ =>
-    let slices_trans ←  translateList ctx slices
-    return mkStmtExprMd (.StaticCall "Any_gets" [start, slices_trans])-/
-
 /-- Translate Python expression to Laurel StmtExpr -/
 partial def translateExpr (ctx : TranslationContext) (e : Python.expr SourceRange)
     : Except TranslationError StmtExprMd := do
