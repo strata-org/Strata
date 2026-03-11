@@ -14,7 +14,7 @@ namespace Strata.SMTDDM
 #guard_msgs in #eval (termToString
     (.app SMT.Op.add [(.prim (.int 10)), (.prim (.int 20))] .int))
 
-/-- info: Except.ok "(+ 10 -20)" -/
+/-- info: Except.ok "(+ 10 (- 20))" -/
 #guard_msgs in #eval (termToString
     (.app SMT.Op.add [(.prim (.int 10)), (.prim (.int (-20)))] .int))
 
