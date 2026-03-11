@@ -710,36 +710,8 @@ If no key of a substitution `S` appears free in `ty`, then applying `S` to
 theorem LMonoTy.subst_no_key_free (S : Subst) (ty : LMonoTy)
     (h : S.keys.all (fun k => k ∉ ty.freeVars)) :
     LMonoTy.subst S ty = ty := by
-  by_cases hS : S.hasEmptyScopes
-  · exact LMonoTy.subst_emptyS hS
-  · induction ty with
-    | ftvar x =>
-      have : x ∉ Maps.keys S := by
-        simp [List.all_eq_true] at h; intro h_mem
-        exact h x h_mem (by simp [LMonoTy.freeVars])
-      unfold LMonoTy.subst; simp [hS, Maps.not_mem_keys_find?_none' S x this]
-    | bitvec n =>
-      unfold LMonoTy.subst; simp [hS]
-    | tcons name args ih =>
-      unfold LMonoTy.subst; simp only [hS]
-      suffices h_args : LMonoTys.subst S args = args by rw [h_args]; simp
-      rw [LMonoTys.subst_eq_substLogic]
-      have hp : ∀ k, k ∈ Maps.keys S → k ∉ (LMonoTy.tcons name args).freeVars := by
-        simp [List.all_eq_true] at h; exact h
-      induction args with
-      | nil => simp [LMonoTys.substLogic, hS]
-      | cons a rest ih_rest =>
-        simp only [LMonoTys.substLogic, hS, Bool.false_eq_true, ↓reduceIte]
-        have h1_b : S.keys.all (fun k => k ∉ a.freeVars) := by
-          simp [List.all_eq_true]; intro k hk
-          have := hp k hk; simp [LMonoTy.freeVars, LMonoTys.freeVars] at this; exact this.1
-        have h2_b : S.keys.all (fun k => k ∉ (LMonoTy.tcons name rest).freeVars) := by
-          simp [List.all_eq_true]; intro k hk
-          have := hp k hk; simp [LMonoTy.freeVars, LMonoTys.freeVars] at this; exact this.2
-        have h2_p : ∀ k, k ∈ Maps.keys S → k ∉ (LMonoTy.tcons name rest).freeVars := by
-          simp [List.all_eq_true] at h2_b; exact h2_b
-        rw [ih a (.head _) h1_b,
-            ih_rest (fun ty h_mem h_b => ih ty (.tail _ h_mem) h_b) h2_b h2_p]
+  apply subst_no_relevant_keys
+  grind
 
 /--
 Well-formed substitutions are idempotent: applying the substitution twice
@@ -1427,15 +1399,11 @@ theorem LMonoTys.subst_absorbs_single (S : Subst) (a : TyIdentifier) (t : LMonoT
     grind
 
 /--
+#### Absorption: relating substitutions produced by successive resolveAux calls
+
 Absorption: `subst S (subst [(a,t)] mty) = subst S mty` when `Maps.find? S a = some t`
 and `SubstWF S`. The single-variable substitution `[(a,t)]` is "absorbed" by `S`
 because `S` already maps `a` to `t`.
-
-Proof: by induction on `mty`.
-- `ftvar x` with `x = a`: LHS becomes `subst S t = t` (by `subst_idempotent_value`),
-  RHS becomes `subst S (ftvar a) = t` (by `h_find`). Both equal `t`.
-- `ftvar x` with `x ≠ a`: `subst [(a,t)] (ftvar x) = ftvar x`, so both sides equal.
-- `tcons`: reduce to the list case via `LMonoTys.subst_absorbs_single`.
 -/
 theorem LMonoTy.subst_absorbs_single (S : Subst) (a : TyIdentifier) (t : LMonoTy)
     (mty : LMonoTy) (h_find : Maps.find? S a = some t) (h_wf : SubstWF S) :
@@ -1466,8 +1434,6 @@ theorem LMonoTy.subst_absorbs_single (S : Subst) (a : TyIdentifier) (t : LMonoTy
     exact LMonoTys.subst_absorbs_single S a t args hS hSingle ih
 
 /-!
-#### Absorption: relating substitutions produced by successive resolveAux calls
-
 When `resolveAux` processes subexpressions, each call extends the substitution.
 The key property is that later substitutions "absorb" earlier ones: applying the
 outer substitution after the inner one is the same as applying the outer alone.

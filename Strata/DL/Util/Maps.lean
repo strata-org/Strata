@@ -359,15 +359,6 @@ theorem Maps.mem_values_of_mem_keys_remove [DecidableEq α] [BEq (Map α β)]
       · simp [@Map.mem_values_of_mem_keys_remove _ _ _ m k v (by assumption)]
       · simp_all
 
-/-- `Map.find?` returns `none` when the key is not in `Map.keys`. -/
-theorem Map.find?_none_of_not_mem_keys' [DecidableEq α] (m : Map α β) (i : α)
-    (h : i ∉ Map.keys m) : Map.find? m i = none := by
-  induction m with
-  | nil => simp [Map.find?]
-  | cons p rest ih =>
-    simp [Map.keys] at h; simp [Map.find?]
-    split; exact absurd ‹_› (Ne.symm h.1); exact ih h.2
-
 /-- `Maps.find?` returns `none` when the key is not in `Maps.keys`. -/
 theorem Maps.not_mem_keys_find?_none' [DecidableEq α] (S : Maps α β) (i : α)
     (h : i ∉ Maps.keys S) : Maps.find? S i = none := by
@@ -390,33 +381,6 @@ theorem Maps.find?_of_mem_keys' [DecidableEq α] (S : Maps α β) (i : α)
     | none =>
       have h_not_in_m : i ∉ Map.keys m := Map.find?_of_not_mem_values m h_eq
       exact ih (by cases h with | inl h => exact absurd h h_not_in_m | inr h => exact h)
-
-/-- `Map.find?` returns `some v` after `Map.insert m x v`. -/
-theorem Map.find?_insert_self [DecidableEq α]
-    (m : Map α β) (x : α) (v : β) : Map.find? (Map.insert m x v) x = some v := by
-  induction m with
-  | nil => simp [Map.insert, Map.find?]
-  | cons hd rest ih => simp only [Map.insert]; split <;> simp_all [Map.find?]
-
-/-- `Map.find?` is unchanged for a different key after `Map.insert`. -/
-theorem Map.find?_insert_ne [DecidableEq α]
-    (m : Map α β) (x y : α) (v : β) (h : x ≠ y) :
-    Map.find? (Map.insert m y v) x = Map.find? m x := by
-  induction m with
-  | nil => simp [Map.insert, Map.find?, Ne.symm h]
-  | cons hd rest ih =>
-    simp only [Map.insert]
-    split
-    · rename_i h_eq  -- hd.fst = y
-      -- Map.insert replaced hd with (y, v); hd.fst = y, so the if in find? checks y = x
-      simp only [Map.find?]
-      -- In the new list: first element is (y, v), check y = x
-      have h_ne : ¬(y = x) := Ne.symm h
-      simp [h_ne]
-      -- In the old list: first element is hd, check hd.fst = x
-      have h_ne2 : ¬(hd.fst = x) := by rw [h_eq]; exact h_ne
-      simp [h_ne2]
-    · simp only [Map.find?]; split <;> simp_all
 
 /-- `Maps.find?` is unchanged for a different key after `Maps.insert`, when the
     inserted key is fresh. -/
@@ -599,20 +563,6 @@ theorem Maps.keys_erase_subset [DecidableEq α] (S : Maps α β) (x : α) :
     rcases List.mem_append.mp hk with h | h
     · exact List.mem_append_left _ (Map.keys_erase_subset scope x k h)
     · exact List.mem_append_right _ (ih h)
-
-/-- Erasing key `a` removes `a` from a single Map's keys. -/
-theorem Map.keys_erase_self_not_mem [DecidableEq α]
-    (m : Map α β) (a : α)
-    (h : a ∈ Map.keys (Map.erase m a)) : False := by
-  induction m with
-  | nil => simp [Map.erase, Map.keys] at h
-  | cons pair rest ih =>
-    obtain ⟨k, v⟩ := pair
-    simp only [Map.erase] at h
-    by_cases h_eq : k = a
-    · simp [h_eq] at h; exact ih h
-    · simp [h_eq, Map.keys] at h
-      grind
 
 /-- Erasing key `a` from Maps `S` removes `a` from the keys. -/
 theorem Maps.keys_erase_self_not_mem [DecidableEq α]

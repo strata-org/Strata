@@ -438,5 +438,55 @@ theorem Map.keys_append {α β : Type} (m1 m2 : Map α β) :
   | nil => rfl
   | cons hd tl ih => obtain ⟨a, _⟩ := hd; exact congrArg (a :: ·) ih
 
+/-- Erasing key `a` removes `a` from a single Map's keys. -/
+theorem Map.keys_erase_self_not_mem [DecidableEq α]
+    (m : Map α β) (a : α)
+    (h : a ∈ Map.keys (Map.erase m a)) : False := by
+  induction m with
+  | nil => simp [Map.erase, Map.keys] at h
+  | cons pair rest ih =>
+    obtain ⟨k, v⟩ := pair
+    simp only [Map.erase] at h
+    by_cases h_eq : k = a
+    · simp [h_eq] at h; exact ih h
+    · simp [h_eq, Map.keys] at h
+      grind
+
+/-- `Map.find?` returns `none` when the key is not in `Map.keys`. -/
+theorem Map.find?_none_of_not_mem_keys' [DecidableEq α] (m : Map α β) (i : α)
+    (h : i ∉ Map.keys m) : Map.find? m i = none := by
+  induction m with
+  | nil => simp [Map.find?]
+  | cons p rest ih =>
+    simp [Map.keys] at h; simp [Map.find?]
+    split; exact absurd ‹_› (Ne.symm h.1); exact ih h.2
+
+/-- `Map.find?` returns `some v` after `Map.insert m x v`. -/
+theorem Map.find?_insert_self [DecidableEq α]
+    (m : Map α β) (x : α) (v : β) : Map.find? (Map.insert m x v) x = some v := by
+  induction m with
+  | nil => simp [Map.insert, Map.find?]
+  | cons hd rest ih => simp only [Map.insert]; split <;> simp_all [Map.find?]
+
+/-- `Map.find?` is unchanged for a different key after `Map.insert`. -/
+theorem Map.find?_insert_ne [DecidableEq α]
+    (m : Map α β) (x y : α) (v : β) (h : x ≠ y) :
+    Map.find? (Map.insert m y v) x = Map.find? m x := by
+  induction m with
+  | nil => simp [Map.insert, Map.find?, Ne.symm h]
+  | cons hd rest ih =>
+    simp only [Map.insert]
+    split
+    · rename_i h_eq  -- hd.fst = y
+      -- Map.insert replaced hd with (y, v); hd.fst = y, so the if in find? checks y = x
+      simp only [Map.find?]
+      -- In the new list: first element is (y, v), check y = x
+      have h_ne : ¬(y = x) := Ne.symm h
+      simp [h_ne]
+      -- In the old list: first element is hd, check hd.fst = x
+      have h_ne2 : ¬(hd.fst = x) := by rw [h_eq]; exact h_ne
+      simp [h_ne2]
+    · simp only [Map.find?]; split <;> simp_all
+
 -------------------------------------------------------------------------------
 end
