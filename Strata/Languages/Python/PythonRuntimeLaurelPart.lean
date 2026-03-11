@@ -87,7 +87,7 @@ datatype ListAny {
 
 // inline
 function isBool (v: Any) : Any {
-  from_bool (Any..isfrom_bool(v))
+  from_bool(Any..isfrom_bool(v))
 };
 
 // inline
@@ -271,7 +271,7 @@ function PNeg (v: Any) : Any
   else if (Any..isfrom_float(v)) (
     from_float(- Any..as_float!(v)))
   else
-    exception(UndefinedError ("Operand Type is not defined"))
+    exception(UndefinedError("Operand Type is not defined"))
 };
 
 // inline
@@ -632,11 +632,11 @@ procedure datetime_date(d: Any) returns (ret: Any, error: Error)
     // [timedt_le]:
     assume timedt <= Any..as_datetime!(d);
     ret := from_datetime(timedt);
-    error := NoError();
+    error := NoError()
   }
   else {
     ret := from_none();
-    error := TypeError("Input must be datetime");
+    error := TypeError("Input must be datetime")
   }
 };
 
@@ -645,7 +645,7 @@ procedure datetime_now() returns (ret: Any)
   ensures Any..isfrom_datetime(ret)
 {
   var d: int;
-  ret := from_datetime(d);
+  ret := from_datetime(d)
 };
 
 procedure timedelta(days: Any, hours: Any) returns (delta : Any, maybe_except: Error)
@@ -662,13 +662,13 @@ procedure timedelta(days: Any, hours: Any) returns (delta : Any, maybe_except: E
 {
   var days_i : int := 0;
   if (Any..isfrom_int(days)) {
-        days_i := Any..as_int!(days);
-  }
+    days_i := Any..as_int!(days)
+  };
   var hours_i : int := 0;
   if (Any..isfrom_int(hours)) {
-        hours_i := Any..as_int!(hours);
-  }
-  delta := from_int ((((days_i * 24) + hours_i) * 3600) * 1000000);
+    hours_i := Any..as_int!(hours)
+  };
+  delta := from_int ((((days_i * 24) + hours_i) * 3600) * 1000000)
 };
 
 // /////////////////////////////////////////////////////////////////////////////////////

@@ -77,7 +77,7 @@ op existsExpr (name: Ident, ty: LaurelType, trigger: Option OptionalTrigger, bod
 
 // If-else
 category OptionalElse;
-op optionalElse(stmts : StmtExpr) : OptionalElse => "else" stmts;
+op optionalElse(stmts : StmtExpr) : OptionalElse => @[prec(0)] "else" stmts;
 
 op ifThenElse (cond: StmtExpr, thenBranch: StmtExpr, elseBranch: Option OptionalElse): StmtExpr =>
   @[prec(20)] "if (" cond ") " thenBranch:0 elseBranch:0;
