@@ -575,6 +575,8 @@ def LTy.subst (S : Subst) (ty : LTy) : LTy :=
 
 /--
 Open `ty` by instantiating the bound type variable `x` with `xty`.
+Note: there is function LTy.close in LTy.lean. LTy.open is located in
+this file because it uses LMonoTy.subst.
 -/
 def LTy.open (x : TyIdentifier) (xty : LMonoTy) (ty : LTy) : LTy :=
   match ty with

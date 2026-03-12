@@ -363,9 +363,8 @@ protected def resolve (C: LContext T) (Env : TEnv T.IDMeta) (e : LExpr T.mono) :
 
 /-- Wrapper around `resolve` that checks the closed-context-types precondition
     required by the soundness theorem `resolve_HasType`. All context types must
-    be closed (no free type variables). Use this when the soundness guarantee is
-    needed; call plain `resolve` when the context may have non-ground annotations
-    (e.g., generic procedure parameters in Strata Core). -/
+    be closed (no free type variables), as `resolve` assumes, but it has
+    an explicit check. -/
 protected def resolveChecked (C: LContext T) (Env : TEnv T.IDMeta) (e : LExpr T.mono) :
     Except Format (LExprT T.mono × TEnv T.IDMeta) := do
   if !checkContextTypesClosed Env then
