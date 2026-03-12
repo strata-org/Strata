@@ -115,20 +115,15 @@ def SemanticModel.get (model: SemanticModel) (iden: Identifier): AstNode :=
   | none => default -- panic! s!"model.get called on identifier {iden.text} without number"
 
 def SemanticModel.isFunction (model: SemanticModel) (id: Identifier): Bool :=
-  if id.uniqueId == none then
-    -- The Python pipeline generates constructor/discriminator calls that may not
-    -- be resolved at the Laurel level. Treating them as functions keeps them as
-    -- expressions; any real errors will be caught during Core type checking.
-    -- Make an exception for 'test_helper_procedure' since it's a procedure
-    -- We will remove this hack when we enable the Python through Laurel pipeline to correctly resolve
-    id.text ∉ Strata.Python.corePreludeProcedures
-  else
-    match model.get id with
-    | .staticProcedure proc => proc.isFunctional
-    | .parameter _ => true
-    | .datatypeConstructor _ _ => true
-    | .constant _ => true
-    | node => panic! s!"id: {repr id}, is not a procedure, node {repr node}"
+  match model.get id with
+      | .staticProcedure proc => proc.isFunctional
+      | .parameter _ => true
+      | .datatypeConstructor _ _ => true
+      | .constant _ => true
+      | .unresolved => true -- functions calls are more permissive, so true avoids possibly incorrect errors
+      | node =>
+          dbg_trace s!"Sound but incomplete BUG! id: {repr id}, is not a procedure, but a node {repr node}"
+          false
 
 /-- The output of the resolution pass. -/
 structure ResolutionResult where
