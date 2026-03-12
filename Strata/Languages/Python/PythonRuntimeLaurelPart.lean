@@ -58,7 +58,7 @@ datatype Error {
 // In this prelude, we model datetime as a single int and assume
 // that the conversion from a string constant is handled by the translator.
 
-type DictStrAny;
+datatype DictStrAny {}
 
 // Note: Core uses mutual/end blocks for Any and ListAny.
 // Laurel does not support mutual blocks, so they are declared separately.

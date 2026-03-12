@@ -74,6 +74,14 @@ datatype ListAny () {
 
 end;
 
+function to_string(a: Any) : string;
+
+function to_string_any(a: Any) : Any {
+  from_string(to_string(a))
+}
+
+function datetime_strptime(dtstring: Any, format: Any) : Any;
+
 type CoreOnlyDelimiter;
 
 // =====================================================================
@@ -85,63 +93,9 @@ type CoreOnlyDelimiter;
 // Modelling some datetime-related Python operations, for testing purpose
 // /////////////////////////////////////////////////////////////////////////////////////
 
-function to_string(a: Any) : string;
-
-function to_string_any(a: Any) : Any {
-  from_string(to_string(a))
-}
-
-function datetime_strptime(dtstring: Any, format: Any) : Any;
-
 axiom [datetime_tostring_cancel]: forall dt: Any ::
   datetime_strptime(to_string_any(dt), from_string ("%Y-%m-%d")) == dt;
 
-procedure datetime_date(d: Any) returns (ret: Any, error: Error)
-spec {
-  requires [d_type]: Any..isfrom_datetime(d);
-  ensures [ret_type]: Any..isfrom_datetime(ret) && Any..as_datetime!(ret) <= Any..as_datetime!(d);
-}
-{
-  var timedt: int;
-  if (Any..isfrom_datetime(d)) {
-    assume [timedt_le]: timedt <= Any..as_datetime!(d);
-    ret := from_datetime(timedt);
-    error := NoError();
-  }
-  else {
-    ret := from_none();
-    error := TypeError("Input must be datetime");
-  }
-};
-
-procedure datetime_now() returns (ret: Any)
-spec {
-  ensures [ret_type]: Any..isfrom_datetime(ret);
-}
-{
-  var d: int;
-  ret := from_datetime(d);
-};
-
-procedure timedelta(days: Any, hours: Any) returns (delta : Any, maybe_except: Error)
-spec{
-  requires [days_type]: Any..isfrom_none(days) || Any..isfrom_int(days);
-  requires [hours_type]: Any..isfrom_none(hours) || Any..isfrom_int(hours);
-  requires [days_pos]: Any..isfrom_int(days) ==> Any..as_int!(days)>=0;
-  requires [hours_pos]: Any..isfrom_int(hours) ==> Any..as_int!(hours)>=0;
-  ensures [ret_pos]: Any..isfrom_int(delta) && Any..as_int!(delta)>=0;
-}
-{
-  var days_i : int := 0;
-  if (Any..isfrom_int(days)) {
-        days_i := Any..as_int!(days);
-  }
-  var hours_i : int := 0;
-  if (Any..isfrom_int(hours)) {
-        hours_i := Any..as_int!(hours);
-  }
-  delta := from_int ((((days_i * 24) + hours_i) * 3600) * 1000000);
-};
 
 // /////////////////////////////////////////////////////////////////////////////////////
 // For testing purpose
