@@ -31,7 +31,7 @@ def transformProgram (t : Strata.Program) : Core.Program :=
   match Core.Transform.run program (PrecondElim.precondElim · Core.Factory) with
   | .error e => panic! s!"PrecondElim failed: {e}"
   | .ok (_changed, program) =>
-    match Core.typeCheck VerifyOptions.default program with
+    match Core.typeCheck Core.VerifyOptions.default program with
     | .error e => panic! s!"Type check failed: {Std.format e}"
     | .ok program => program.eraseTypes.stripMetaData
 

@@ -26,7 +26,7 @@ constrained nat = x: int where x >= 0 witness 0
 procedure test(n: nat) returns (r: nat) {
   assert r >= 0;
   var y: nat := n;
-  return y;
+  return y
 };
 "
 
@@ -68,11 +68,11 @@ def scopeProgram : String := r"
 constrained pos = v: int where v > 0 witness 1
 procedure test(b: bool) {
   if (b) {
-    var x: pos := 1;
-  }
+    var x: pos := 1
+  };
   {
     var x: int := -5;
-    x := -10;
+    x := -10
   }
 };
 "
@@ -103,7 +103,7 @@ def uninitProgram : String := r"
 constrained posint = x: int where x > 0 witness 1
 procedure f() {
   var x: posint;
-  assert x == 1;
+  assert x == 1
 };
 "
 
