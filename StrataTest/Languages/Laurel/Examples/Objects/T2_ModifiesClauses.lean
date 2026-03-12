@@ -31,20 +31,20 @@ procedure modifyContainerOpaque(c: Container)
   ensures true // makes this procedure opaque. Maybe we should use explicit syntax
   modifies c
 {
-  c#value := c#value + 1;
+  c#value := c#value + 1
 };
 
 procedure modifyContainerTransparant(c: Container)
 {
-  c#value := c#value + 1;
+  c#value := c#value + 1
 };
 
 procedure caller() {
   var c: Container := new Container;
   var d: Container := new Container;
   var x: int := d#value;
-  modifyContainerOpaque(c)
-  assert x == d#value; // pass
+  modifyContainerOpaque(c);
+  assert x == d#value // pass
 };
 
 // This test-case does not work yet.
@@ -70,7 +70,7 @@ procedure modifyContainerWithoutPermission2(c: Container, d: Container)
   ensures true
   modifies d
 {
-    c#value := 2;
+    c#value := 2
 };
 
 procedure modifyContainerWithoutPermission3(c: Container, d: Container)
@@ -92,15 +92,15 @@ procedure multipleModifiesClausesCaller() {
   var d: Container := new Container;
   var e: Container := new Container;
   var x: int := e#value;
-  multipleModifiesClauses(c, d, e)
-  assert x == e#value; // pass
+  multipleModifiesClauses(c, d, e);
+  assert x == e#value // pass
 };
 
 procedure newObjectDoNotCountForModifies()
   ensures true
 {
   var c: Container := new Container;
-  c#value := 1;
+  c#value := 1
 };
 "
 

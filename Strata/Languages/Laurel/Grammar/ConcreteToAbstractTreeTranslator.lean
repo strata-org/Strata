@@ -285,7 +285,7 @@ partial def translateStmtExpr (arg : Arg) : TransM StmtExprMd := do
   | _ => TransM.error s!"translateStmtExpr expects operation"
 
 partial def translateSeqCommand (arg : Arg) : TransM (List StmtExprMd) := do
-  let .seq _ .none args := arg
+  let .seq _ _ args := arg
     | TransM.error s!"translateSeqCommand expects seq"
   let mut stmts : List StmtExprMd := []
   for arg in args do
@@ -495,6 +495,16 @@ def parseDatatype (arg : Arg) : TransM TypeDefinition := do
   | _, _ =>
     TransM.error s!"parseDatatype expects datatype, got {repr op.name}"
 
+def parseOpaqueType (arg : Arg) : TransM TypeDefinition := do
+  let .op op := arg
+    | TransM.error s!"parseOpaqueType expects operation"
+  match op.name, op.args with
+  | q`Laurel.opaqueType, #[nameArg] =>
+    let name ← translateIdent nameArg
+    return .Datatype { name := name, typeArgs := [], constructors := [] }
+  | _, _ =>
+    TransM.error s!"parseOpaqueType expects opaqueType, got {repr op.name}"
+
 def parseConstrainedType (arg : Arg) : TransM ConstrainedType := do
   let .op op := arg
     | TransM.error s!"parseConstrainedType expects operation"
@@ -514,43 +524,31 @@ def parseTopLevel (arg : Arg) : TransM (Option Procedure × Option TypeDefinitio
     | TransM.error s!"parseTopLevel expects operation"
 
   match op.name, op.args with
-  | q`Laurel.topLevelProcedure, #[procArg] =>
+  | q`Laurel.procedureCommand, #[procArg] =>
     let proc ← parseProcedure procArg
     return (some proc, none)
-  | q`Laurel.topLevelComposite, #[compositeArg] =>
+  | q`Laurel.compositeCommand, #[compositeArg] =>
     let typeDef ← parseComposite compositeArg
     return (none, some typeDef)
-  | q`Laurel.topLevelDatatype, #[datatypeArg] =>
+  | q`Laurel.datatypeCommand, #[datatypeArg] =>
     let typeDef ← parseDatatype datatypeArg
     return (none, some typeDef)
-  | q`Laurel.topLevelConstrainedType, #[ctArg] =>
+  | q`Laurel.opaqueTypeCommand, #[opaqueTypeArg] =>
+    let typeDef ← parseOpaqueType opaqueTypeArg
+    return (none, some typeDef)
+  | q`Laurel.constrainedTypeCommand, #[ctArg] =>
     let ct ← parseConstrainedType ctArg
     return (none, some (.Constrained ct))
   | _, _ =>
-    TransM.error s!"parseTopLevel expects topLevelProcedure, topLevelComposite, topLevelDatatype, or topLevelConstrainedType, got {repr op.name}"
+    TransM.error s!"parseTopLevel expects procedureCommand, compositeCommand, datatypeCommand, or opaqueTypeCommand, got {repr op.name}"
 
 /--
 Translate concrete Laurel syntax into abstract Laurel syntax
 -/
 def parseProgram (prog : Strata.Program) : TransM Laurel.Program := do
-  -- Unwrap the program operation if present
-  -- The parsed program may have a single `program` operation wrapping the procedures
-  let commands : Array Strata.Operation :=
-    -- support the program optionally being wrapped in a top level command
-    if prog.commands.size == 1 && prog.commands[0]!.name == q`Laurel.program then
-      -- Extract procedures from the program operation's first argument (Seq Procedure)
-      match prog.commands[0]!.args[0]! with
-      | .seq _ .none procs => procs.filterMap fun arg =>
-          match arg with
-          | .op op => some op
-          | _ => none
-      | _ => prog.commands
-    else
-      prog.commands
-
   let mut procedures : List Procedure := []
   let mut types : List TypeDefinition := []
-  for op in commands do
+  for op in prog.commands do
     let (procOpt, typeOpt) ← parseTopLevel (.op op)
     match procOpt with
     | some proc => procedures := procedures ++ [proc]
