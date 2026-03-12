@@ -210,7 +210,7 @@ Assumptions:
 precond_doubleDiv_0: !($__y1 == 0)
 precond_doubleDiv_1: !($__z2 == 0)
 Obligation:
-!($__z2 == 0)
+!($__y1 == 0)
 
 Label: doubleDiv_body_calls_Int.SafeDiv_1
 Property: division by zero check
@@ -218,7 +218,7 @@ Assumptions:
 precond_doubleDiv_0: !($__y1 == 0)
 precond_doubleDiv_1: !($__z2 == 0)
 Obligation:
-!($__y1 == 0)
+!($__z2 == 0)
 
 ---
 info:
@@ -526,6 +526,16 @@ test_requires_0: !($__n0 == 0)
 Obligation:
 true
 
+Label: loop_guard_end_calls_Int.SafeDiv_0
+Property: division by zero check
+Assumptions:
+<label_ite_cond_true: (~Int.Lt (~Int.SafeDiv i n) #10)>: 0 / $__n0 < 10
+assume_guard_0: $__i1 / $__n0 < 10
+assume_invariant_0_0: $__i1 >= 0
+test_requires_0: !($__n0 == 0)
+Obligation:
+!($__n0 == 0)
+
 Label: arbitrary_iter_maintain_invariant_0_0
 Property: assert
 Assumptions:
@@ -544,6 +554,10 @@ Result: ✅ pass
 
 Obligation: entry_invariant_0_0
 Property: assert
+Result: ✅ pass
+
+Obligation: loop_guard_end_calls_Int.SafeDiv_0
+Property: division by zero check
 Result: ✅ pass
 
 Obligation: arbitrary_iter_maintain_invariant_0_0
