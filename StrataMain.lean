@@ -505,7 +505,7 @@ def pyAnalyzeLaurelCommand : Command where
           --   IO.println "\n==== Core Program ===="
           --   IO.print (coreProgram, modifiesDiags)
 
-          let programDecls := coreProgram.decls --.filter (λ d=> d.name.name != "Box")
+          let programDecls := coreProgram.decls --
           -- Check for name collisions between program and prelude
           let preludeNames : Std.HashSet String :=
             pyPrelude.decls.flatMap Core.Decl.names
@@ -516,8 +516,10 @@ def pyAnalyzeLaurelCommand : Command where
             let names := ", ".intercalate (collisions.map (·.name))
             exitFailure s!"Core name collision between program and prelude: {names}"
           let (preludeDecls, userDecls) := programDecls.span (fun d => !(toString d.name).contains "END_MARKER")
-          let coreProgram := {decls := preludeDecls ++ Strata.Python.coreOnlyFromRuntimeCorePart ++ userDecls }
-          IO.println s!"\n==== preludeDecls.length: {preludeDecls.length}, userDecls.length: {userDecls.length}"
+          let coreProgram := {decls :=
+            preludeDecls ++ -- .filter (λ d=> d.name.name != "Box") ++
+            Strata.Python.coreOnlyFromRuntimeCorePart ++
+            userDecls }
           if verbose then
             IO.println "\n==== Core Program with pyPrelude ===="
             IO.print (coreProgram, modifiesDiags)
