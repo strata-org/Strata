@@ -119,12 +119,31 @@ private def translateFromTermType (t:SMT.TermType):
     else
       return .smtsort_param srnone (mkIdentifier id) (Ann.mk srnone argtys_array)
 
+-- Helper: convert an Index to an SExpr
+private def indexToSExpr (idx : SMTDDM.Index SourceRange)
+    : SMTDDM.SExpr SourceRange :=
+  let srnone := SourceRange.none
+  match idx with
+  | .ind_numeral _ n => .se_spec_const srnone (.sc_numeral srnone n)
+  | .ind_symbol _ sym => .se_symbol srnone sym
+
+-- Helper: convert an indexed identifier to an SExpr: (_ sym idx1 idx2 ...)
+private def indexedIdentToSExpr (sym : SMTDDM.Symbol SourceRange)
+    (indices : Ann (Array (SMTDDM.Index SourceRange)) SourceRange)
+    : SMTDDM.SExpr SourceRange :=
+  let srnone := SourceRange.none
+  let underscoreSym := SMTDDM.SExpr.se_symbol srnone (mkSymbol "_")
+  let idxSExprs := indices.val.toList.map indexToSExpr
+  .se_ls srnone (Ann.mk srnone ((underscoreSym :: .se_symbol srnone sym :: idxSExprs).toArray))
+
 -- Helper: convert an SMTSort to an SExpr for use in pattern attributes
 private def sortToSExpr (s : SMTDDM.SMTSort SourceRange)
     : Except String (SMTDDM.SExpr SourceRange) := do
   let srnone := SourceRange.none
   match s with
   | .smtsort_ident _ (.iden_simple _ sym) => return .se_symbol srnone sym
+  | .smtsort_ident _ (.iden_indexed _ sym indices) =>
+    return indexedIdentToSExpr sym indices
   | .smtsort_param _ (.iden_simple _ sym) args =>
     let argsSExpr ← args.val.toList.mapM sortToSExpr
     return .se_ls srnone (Ann.mk srnone ((.se_symbol srnone sym :: argsSExpr).toArray))
@@ -139,6 +158,8 @@ private def qiToSExpr (qi : SMTDDM.QualIdentifier SourceRange)
   let srnone := SourceRange.none
   match qi with
   | .qi_ident _ (.iden_simple _ sym) => pure (.se_symbol srnone sym)
+  | .qi_ident _ (.iden_indexed _ sym indices) =>
+    pure (indexedIdentToSExpr sym indices)
   | .qi_isort _ (.iden_simple _ sym) sort =>
     let sortSExpr ← sortToSExpr sort
     let asSym := SMTDDM.SExpr.se_symbol srnone (mkSymbol "as")
