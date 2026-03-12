@@ -10,7 +10,7 @@ const N: int uses {
 
 // Declare a map from integers to integers.  In the procedure below, 'a' will be
 // treated as an array of 'N' elements, indexed from 0 to less than 'N'.
-var a: [int]int;
+var $a: [int]int;
 
 // This procedure implements Bubble Sort.  One of the postconditions says that,
 // in the final state of the procedure, the array is sorted.  The other
@@ -24,14 +24,14 @@ var a: [int]int;
 // range [0..N).  Moreover, Boogie does not prove that the program will terminate.
 
 procedure BubbleSort() returns (perm: [int]int)
-  modifies a;
+  modifies $a;
   // array is sorted
-  ensures (forall i, j: int :: 0 <= i && i <= j && j < N ==> a[i] <= a[j]);
+  ensures (forall i, j: int :: 0 <= i && i <= j && j < N ==> $a[i] <= $a[j]);
   // perm is a permutation
   ensures (forall i: int :: 0 <= i && i < N ==> 0 <= perm[i] && perm[i] < N);
   ensures (forall i, j: int :: 0 <= i && i < j && j < N ==> perm[i] != perm[j]);
   // the final array is that permutation of the input array
-  ensures (forall i: int :: 0 <= i && i < N ==> a[i] == old(a)[perm[i]]);
+  ensures (forall i: int :: 0 <= i && i < N ==> $a[i] == old($a)[perm[i]]);
 {
   var n, p, tmp: int;
 
@@ -47,12 +47,12 @@ procedure BubbleSort() returns (perm: [int]int)
   while (true)
     invariant 0 <= n && n <= N;
     // array is sorted from n onwards
-    invariant (forall i, k: int :: n <= i && i < N && 0 <= k && k < i ==> a[k] <= a[i]);
+    invariant (forall i, k: int :: n <= i && i < N && 0 <= k && k < i ==> $a[k] <= $a[i]);
     // perm is a permutation
     invariant (forall i: int :: 0 <= i && i < N ==> 0 <= perm[i] && perm[i] < N);
     invariant (forall i, j: int :: 0 <= i && i < j && j < N ==> perm[i] != perm[j]);
     // the current array is that permutation of the input array
-    invariant (forall i: int :: 0 <= i && i < N ==> a[i] == old(a)[perm[i]]);
+    invariant (forall i: int :: 0 <= i && i < N ==> $a[i] == old($a)[perm[i]]);
   {
     n := n - 1;
     if (n < 0) {
@@ -63,17 +63,17 @@ procedure BubbleSort() returns (perm: [int]int)
     while (p < n)
       invariant 0 <= p && p <= n;
       // array is sorted from n+1 onwards
-      invariant (forall i, k: int :: n+1 <= i && i < N && 0 <= k && k < i ==> a[k] <= a[i]);
+      invariant (forall i, k: int :: n+1 <= i && i < N && 0 <= k && k < i ==> $a[k] <= $a[i]);
       // perm is a permutation
       invariant (forall i: int :: 0 <= i && i < N ==> 0 <= perm[i] && perm[i] < N);
       invariant (forall i, j: int :: 0 <= i && i < j && j < N ==> perm[i] != perm[j]);
       // the current array is that permutation of the input array
-      invariant (forall i: int :: 0 <= i && i < N ==> a[i] == old(a)[perm[i]]);
-      // a[p] is at least as large as any of the first p elements
-      invariant (forall k: int :: 0 <= k && k < p ==> a[k] <= a[p]);
+      invariant (forall i: int :: 0 <= i && i < N ==> $a[i] == old($a)[perm[i]]);
+      // $a[p] is at least as large as any of the first p elements
+      invariant (forall k: int :: 0 <= k && k < p ==> $a[k] <= $a[p]);
     {
-      if (a[p+1] < a[p]) {
-        tmp := a[p];  a[p] := a[p+1];  a[p+1] := tmp;
+      if ($a[p+1] < $a[p]) {
+        tmp := $a[p];  $a[p] := $a[p+1];  $a[p+1] := tmp;
         tmp := perm[p];  perm[p] := perm[p+1];  perm[p+1] := tmp;
       }
 
