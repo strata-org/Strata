@@ -93,8 +93,9 @@ The returned groups are in dependency order (leaves first).
 -/
 def groupDatatypes (dts : List DatatypeDefinition)
     (ldts : List (Lambda.LDatatype Unit)) : List (List (Lambda.LDatatype Unit)) :=
-  -- Only datatypes with constructors participate in grouping
-  let withConstrs := dts.filter (!·.constructors.isEmpty)
+  -- All datatypes participate in grouping (zero-constructor ones get a synthetic unit
+  -- constructor in translateDatatypeDefinition, so they always have at least one constructor)
+  let withConstrs := dts
   let nameToIdx : Std.HashMap String Nat :=
     withConstrs.foldlIdx (fun m i dt => m.insert dt.name.text i) {}
   -- Build directed adjacency list: dt[i] → dt[j] if dt[i] directly references dt[j]

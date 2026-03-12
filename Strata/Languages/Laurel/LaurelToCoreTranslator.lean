@@ -600,13 +600,10 @@ def translateDatatypeDefinition (model : SemanticModel) (dt : DatatypeDefinition
     { name := ⟨c.name.text, ()⟩
       args := c.args.map fun ⟨ n, ty ⟩ => (⟨n.text, ()⟩, translateType model ty)
       testerName := s!"{dt.name}..is{c.name}" }
-  let constrs := if _:constrs.isEmpty then
-      [{
-        name := ⟨
-          dbg_trace "Completeness bug: empty datatype"
-          "fakeConsToMakeThemNonEmpty", () ⟩,
-        args := []
-      }]
+  -- Zero-constructor datatypes (e.g. TypeTag with no composite types) get a synthetic
+  -- unit constructor so the type is valid and can be referenced by other datatypes.
+  let constrs := if constrs.isEmpty then
+      [{ name := ⟨s!"Mk{dt.name.text}", ()⟩, args := [] }]
     else constrs
   { name := dt.name.text
     typeArgs := dt.typeArgs.map (fun id => id.text)
@@ -712,17 +709,16 @@ def translate (options: LaurelTranslateOptions) (program : Program): Except (Arr
     let laurelDatatypes := program.types.filterMap fun td => match td with
       | .Datatype dt => some dt
       | _ => none
-    let ldatatypes := laurelDatatypes.filterMap fun dt =>
-      if dt.constructors.isEmpty then none else some (translateDatatypeDefinition model dt)
+    let ldatatypes := laurelDatatypes.map (translateDatatypeDefinition model)
     let groups := groupDatatypes laurelDatatypes ldatatypes
     let groupedDatatypeDecls := groups.map fun group => Core.Decl.type (.data group)
     let program := {
       decls := groupedDatatypeDecls ++ constantDecls ++ pureFuncDecls.toList ++ procDecls
     }
 
-    -- dbg_trace "=== Generated Strata Core Program ==="
-    -- dbg_trace (toString (Std.Format.pretty (Strata.Core.formatProgram program) 100))
-    -- dbg_trace "================================="
+    dbg_trace "=== Generated Strata Core Program ==="
+    dbg_trace (toString (Std.Format.pretty (Strata.Core.formatProgram program) 100))
+    dbg_trace "================================="
     pure program
 
 
