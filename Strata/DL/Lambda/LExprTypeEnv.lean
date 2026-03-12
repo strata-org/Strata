@@ -1269,10 +1269,6 @@ def TEnv.addTypeAlias (alias : TypeAlias) (C: LContext T) (Env : TEnv T.IDMeta) 
 
 /--
 `genTyVar` preserves the context.
-
-Now that `genTyVar` returns `Except Format` (instead of using `panic`),
-we can prove this as a theorem: the error branch never produces an
-environment, and the success branch only updates `genState`.
 -/
 theorem TGenEnv.genTyVar_context {IDMeta : Type} [ToFormat IDMeta]
     (Env : TGenEnv IDMeta) (tv : TyIdentifier) (Env' : TGenEnv IDMeta)
