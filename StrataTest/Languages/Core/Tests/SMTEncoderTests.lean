@@ -206,6 +206,11 @@ info: "; x\n(declare-const x String)\n(define-fun t0 () String x)\n(define-fun t
 #eval toSMTTermString
   (.eq sr (.fvar sr "x" (.some .string)) (.strConst sr "{\"key\":\"val\"}"))
 
+-- Test that negative integer constants are lowered to (- N) form
+/-- info: Except.ok "(- 1)" -/
+#guard_msgs in
+#eval Strata.SMTDDM.termToString (.prim (.int (-1)))
+
 end ArrayTheory
 
 end Core
