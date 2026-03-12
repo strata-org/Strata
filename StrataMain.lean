@@ -345,7 +345,7 @@ private def combineLaurelPrograms (first: Strata.Laurel.Program) (second: Strata
     Also accumulates overload dispatch tables. -/
 def buildPySpecPrelude (pyspecPaths : Array String) : IO PySpecPrelude := do
   let mut preludeInLaurel : Strata.Laurel.Program := Strata.Python.pythonRuntimeLaurelPart
-  let mut preludeInCoreDecls : List Core.Decl := [] -- TODO should
+  let mut preludeInCoreDecls : List Core.Decl := Strata.Python.coreOnlyFromRuntimeCorePart
   let mut existingNames : Std.HashSet String :=
     preludeInLaurel.staticProcedures.foldl (init := {}) fun s d =>
       [d.name.text].foldl (init := s) fun s n => s.insert n
@@ -385,9 +385,46 @@ def buildPySpecPrelude (pyspecPaths : Array String) : IO PySpecPrelude := do
       preludeInCoreDecls := preludeInCoreDecls ++ coreSpec.decls
   let preludeInCore : Core.Program := { decls := preludeInCoreDecls }
 
-  -- TODO include, PythonLaurelCorePrelude,
-  -- compute Laurel partial Laurel functions/procedures from there to add here
+  preludeInLaurel := { preludeInLaurel with staticProcedures := preludeInLaurel.staticProcedures ++ preludeFunctions ++ preludeProcedures }
   return { preludeInLaurel := preludeInLaurel, preludeInCore := preludeInCore, overloads := allOverloads }
+  where
+  preludeInCoreFunctionNames := Strata.Python.coreOnlyFromRuntimeCorePart.filterMap (λ decl =>
+    match decl.kind with
+        |.func => some decl.name.name
+        | _ => none)
+  preludeInCoreProcedureNames := Strata.Python.coreOnlyFromRuntimeCorePart.filterMap (λ decl =>
+    match decl.kind with
+        |.proc => some decl.name.name
+        | _ => none)
+
+  preludeProcedures : List Strata.Laurel.Procedure := preludeInCoreProcedureNames.map (λ funcname =>
+  {
+    name := {text:= funcname} ,
+    inputs := [],
+    outputs := [],
+    preconditions := [],
+    determinism := .deterministic none,
+    decreases := none,
+    body := .External
+    md := default
+    isFunctional := true
+    }
+  )
+
+  preludeFunctions : List Strata.Laurel.Procedure := preludeInCoreFunctionNames.map (λ funcname =>
+  {
+    name := {text:= funcname} ,
+    inputs := [],
+    outputs := [],
+    preconditions := [],
+    determinism := .deterministic none,
+    decreases := none,
+    body := .External
+    md := default
+    isFunctional := true
+    }
+  )
+
 
 def pyAnalyzeLaurelCommand : Command where
   name := "pyAnalyzeLaurel"
@@ -1106,7 +1143,7 @@ def pyTranslateLaurelCommand : Command where
     let pgm ← readPythonStrata v[0]
     let cmds := Strata.toPyCommands pgm.commands
     assert! cmds.size == 1
-    let prelude := Strata.Python.Core.PythonLaurelPrelude
+    let prelude := Strata.Python.pythonRuntimeCorePart -- TODO incorrect
     let laurelPgm := Strata.Python.pythonToLaurel prelude cmds[0]!
     match laurelPgm with
     | .error e =>
@@ -1129,7 +1166,7 @@ def pyAnalyzeLaurelToGotoCommand : Command where
     let pySourceOpt ← tryReadPythonSource filePath
     let cmds := Strata.toPyCommands pgm.commands
     assert! cmds.size == 1
-    let prelude := sorry -- Strata.Python.Core.PythonLaurelPrelude
+    let prelude := Strata.Python.pythonRuntimeCorePart -- TODO incorrect
     let sourcePathForMetadata := match pySourceOpt with
       | some (pyPath, _) => pyPath
       | none => filePath
