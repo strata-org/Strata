@@ -129,7 +129,9 @@ def SemanticModel.isFunction (model: SemanticModel) (id: Identifier): Bool :=
       | .datatypeConstructor _ _ => true
       | .constant _ => true
       | .unresolved => true -- functions calls are more permissive, so true avoids possibly incorrect errors
-      | node => panic! s!"id: {repr id}, is not a procedure, node {repr node}"
+      | node =>
+          dbg_trace s!"Sound but incomplete BUG! id: {repr id}, is not a procedure, but a node {repr node}"
+          false
 
 /-- The output of the resolution pass. -/
 structure ResolutionResult where
