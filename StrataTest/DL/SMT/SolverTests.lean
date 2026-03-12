@@ -8,8 +8,8 @@ import Strata.DL.SMT.Solver
 
 /-! ## Tests for Solver.termToSMTString / Solver.typeToSMTString error handling
 
-These tests verify that unencodable terms and types produce a proper error
-(thrown via IO) rather than silently returning an empty string via `panic!`.
+These tests verify that unencodable terms and types produce a proper IO error
+rather than silently returning an empty string.
 -/
 
 open Strata.SMT Strata.SMT.Solver
