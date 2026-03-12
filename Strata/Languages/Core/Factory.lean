@@ -19,6 +19,10 @@ open Lambda LTy.Syntax LExpr.SyntaxMono
 def mapTy (keyTy : LMonoTy) (valTy : LMonoTy) : LMonoTy :=
   .tcons "Map" [keyTy, valTy]
 
+@[match_pattern]
+def seqTy (elemTy : LMonoTy) : LMonoTy :=
+  .tcons "Seq" [elemTy]
+
 def KnownLTys : LTys :=
   [t[bool],
    t[int],
@@ -31,7 +35,8 @@ def KnownLTys : LTys :=
    -- We can simply add the following here.
    t[∀n. bitvec n],
    t[∀a b. %a → %b],
-   t[∀a b. Map %a %b]]
+   t[∀a b. Map %a %b],
+   t[∀a. Seq %a]]
 
 def KnownTypes : KnownTypes :=
   makeKnownTypes (KnownLTys.map (fun ty => ty.toKnownType!))
@@ -256,6 +261,21 @@ def mapUpdateFunc : WFLFunc CoreLParams :=
                     ))))]
     ])
 
+/- An empty `Seq` constructor with type `∀a. Seq a`. -/
+def seqEmptyFunc : WFLFunc CoreLParams :=
+  polyUneval "Seq.empty" ["a"] [] (seqTy mty[%a])
+
+/- A `Seq` append function with type `∀a. Seq a → Seq a → Seq a`. -/
+def seqAppendFunc : WFLFunc CoreLParams :=
+  polyUneval "Seq.append" ["a"]
+    [("s1", seqTy mty[%a]), ("s2", seqTy mty[%a])]
+    (seqTy mty[%a])
+
+/- A `Seq` selection function with type `∀a. Seq a → int → a`. -/
+def seqSelectFunc : WFLFunc CoreLParams :=
+  polyUneval "Seq.select" ["a"]
+    [("s", seqTy mty[%a]), ("i", mty[int])] mty[%a]
+
 def emptyTriggersFunc : WFLFunc CoreLParams :=
   nullaryUneval "Triggers.empty" mty[Triggers]
 
@@ -362,6 +382,10 @@ def WFFactory : Lambda.WFLFactory CoreLParams :=
   mapConstFunc,
   mapSelectFunc,
   mapUpdateFunc,
+
+  seqEmptyFunc,
+  seqAppendFunc,
+  seqSelectFunc,
 
   emptyTriggersFunc,
   addTriggerGroupFunc,
@@ -470,6 +494,9 @@ def polyOldOp : Expression.Expr := polyOldFunc.opExpr
 def mapConstOp : Expression.Expr := mapConstFunc.opExpr
 def mapSelectOp : Expression.Expr := mapSelectFunc.opExpr
 def mapUpdateOp : Expression.Expr := mapUpdateFunc.opExpr
+def seqEmptyOp : Expression.Expr := seqEmptyFunc.opExpr
+def seqAppendOp : Expression.Expr := seqAppendFunc.opExpr
+def seqSelectOp : Expression.Expr := seqSelectFunc.opExpr
 
 def mkTriggerGroup (ts : List Expression.Expr) : Expression.Expr :=
   ts.foldl (fun g t => .app () (.app () addTriggerOp t) g) emptyTriggerGroupOp
