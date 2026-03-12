@@ -382,21 +382,6 @@ theorem Maps.find?_of_mem_keys' [DecidableEq α] (S : Maps α β) (i : α)
       have h_not_in_m : i ∉ Map.keys m := Map.find?_of_not_mem_values m h_eq
       exact ih (by cases h with | inl h => exact absurd h h_not_in_m | inr h => exact h)
 
-/-- `Maps.find?` is unchanged for a different key after `Maps.insert`, when the
-    inserted key is fresh. -/
-theorem Maps.find?_insert_ne_of_none [DecidableEq α]
-    (ms : Maps α β) (x y : α) (v : β) (h_ne : x ≠ y) (h_none : Maps.find? ms y = none) :
-    Maps.find? (Maps.insert ms y v) x = Maps.find? ms x := by
-  simp only [Maps.insert, h_none]
-  match ms with
-  | [] =>
-    simp only [Maps.pop, Maps.push, Maps.newest, Maps.find?]
-    rw [Map.find?_insert_ne _ _ _ _ h_ne]
-    simp [Map.find?]
-  | m :: rest =>
-    simp only [Maps.pop, Maps.push, Maps.newest, Maps.find?]
-    rw [Map.find?_insert_ne _ _ _ _ h_ne]
-
 /-- `Maps.update ms x v` maps `x` to `v`. -/
 theorem Maps.find?_update_self [DecidableEq α]
     (ms : Maps α β) (x : α) (v : β) (h : ms.find? x ≠ none) :
@@ -459,7 +444,7 @@ theorem Maps.erase_of_fresh [DecidableEq α]
     · exact Map.erase_of_find?_none m x (h m List.mem_cons_self)
     · exact ih (fun r hr => h r (List.mem_cons_of_mem m hr))
 
-/-- Erasing a key that was just added to the newest scope restores the original types,
+/-- Erasing a key that was just added to the newest scope restores the original value,
     provided the key didn't exist in the original and the maps are non-empty. -/
 theorem Maps.erase_addInNewest_fresh [DecidableEq α]
     {m : Map α β} {rest : Maps α β} (x : α) (v : β)

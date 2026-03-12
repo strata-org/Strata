@@ -1701,13 +1701,11 @@ private theorem subst_orig_new_binding
   have hS' : Subst.hasEmptyScopes (Maps.insert (Subst.apply [(id, LMonoTy.subst S orig_lty)] S)
       id (LMonoTy.subst S orig_lty)) = false :=
     Subst.hasEmptyScopes_false_of_find _ id _ h_find_S'_id
-  have h_apply_none : Maps.find? (Subst.apply [(id, LMonoTy.subst S orig_lty)] S) id = none := by
-    rw [Subst.find?_apply]; simp [h_none]
   have h_find_ne : ∀ x, x ≠ id →
       Maps.find? (Maps.insert (Subst.apply [(id, LMonoTy.subst S orig_lty)] S)
         id (LMonoTy.subst S orig_lty)) x =
       (Maps.find? S x).map (LMonoTy.subst [[(id, LMonoTy.subst S orig_lty)]]) := fun x hx =>
-    (Maps.find?_insert_ne_of_none _ _ _ _ hx h_apply_none).trans (Subst.find?_apply _ _ _)
+    (Maps.find?_insert_ne _ _ _ _ hx).trans (Subst.find?_apply _ _ _)
   have h_single_noop : ∀ t : LMonoTy, ¬(id ∈ t.freeVars) →
       LMonoTy.subst [[(id, LMonoTy.subst S orig_lty)]] t = t := fun t ht =>
     LMonoTy.subst_no_relevant_keys _ _ (fun x hx => by

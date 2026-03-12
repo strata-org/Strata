@@ -11,9 +11,7 @@ import all Strata.DL.Lambda.LTyUnify
 public import Strata.DL.Lambda.Factory
 public import Strata.DL.Lambda.TypeFactory
 public import Strata.DL.Util.Maps
-import all Strata.DL.Util.Maps
 public import Strata.DL.Util.String
-import all Strata.DL.Util.String
 
 /-! ## Type Environment
 

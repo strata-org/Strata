@@ -1472,7 +1472,7 @@ private theorem typeBoundVar_absorbs
     (h : typeBoundVar C Env bty = .ok (xv, xty, Env')) :
     Subst.absorbs Env'.stateSubstInfo.subst Env.stateSubstInfo.subst := by
   simp only [typeBoundVar, liftGenEnv, Bind.bind, Except.bind] at h
-  -- Split on the result of HasGen.genVar (now returns Except)
+  -- Split on the result of HasGen.genVar (returns Except)
   split at h
   · contradiction
   · -- HasGen.genVar succeeded
@@ -3801,7 +3801,7 @@ private theorem subst_single_scope_eq_openVars
         simp [Subst.hasEmptyScopes, List.all, List.zip, List.zipWith, Map.isEmpty]
       match body with
       | .ftvar x =>
-        -- Both sides look up x in the zip. Connect via map_find_eq_list_find'.
+        -- Both sides look up x in the zip. Connect via Map.find_eq_list_find'.
         simp only [LMonoTy.subst, h_ne, LMonoTy.openVars, Maps.find?]
         rw [Map.find_eq_list_find' (v :: vs) (vl :: vls) x]
         generalize (List.zip (v :: vs) (vl :: vls)).find? (fun p => p.1 == x) = res
