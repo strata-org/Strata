@@ -308,14 +308,14 @@ def pyAnalyzeCommand : Command where
                   else
                     -- From CorePrelude or other source, show byte offsets
                     if vcResult.isFailure then
-                      (s!"Assertion failed at byte {fr.range.start}: ", "")
+                      (s!"Assertion failed for prelude: ", "")
                     else
-                      ("", s!" (at byte {fr.range.start})")
+                      ("", s!" (in prelude)")
               | none =>
                 if vcResult.isFailure then
-                  (s!"Assertion failed at byte {fr.range.start}: ", "")
+                  (s!"Assertion failed at byte offset: ", "")
                 else
-                  ("", s!" (at byte {fr.range.start})")
+                  ("", s!" (at byte offset)")
           | none => ("", "")
         s := s ++ s!"\n{locationPrefix}{vcResult.obligation.label}: {match vcResult.outcome with | .ok o => Std.format o | .error e => e}{locationSuffix}\n"
       IO.println s
@@ -509,14 +509,14 @@ def pyAnalyzeLaurelCommand : Command where
                           ("", s!" (at line {pos.line}, col {pos.column})")
                       else
                         if vcResult.isFailure then
-                          (s!"Assertion failed at byte {fr.range.start}: ", "")
+                          (s!"Assertion failed in prelude file: ", "")
                         else
-                          ("", s!" (at byte {fr.range.start})")
+                          ("", s!" (in prelude file)")
                   | none =>
                     if vcResult.isFailure then
-                      (s!"Assertion failed at byte {fr.range.start}: ", "")
+                      (s!"Assertion failed: ", "")
                     else
-                      ("", s!" (at byte {fr.range.start})")
+                      ("", "")
               | none => ("", "")
             s := s ++ s!"{locationPrefix}{vcResult.obligation.label}: {match vcResult.outcome with | .ok o => Std.format o | .error e => e}{locationSuffix}\n"
           IO.println s
