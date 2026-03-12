@@ -151,7 +151,7 @@ def translateExpr (expr : StmtExprMd)
     | .Neg =>
       let re ← translateExpr e boundVars isPureContext
       let isReal := match (computeExprType model e).val with
-        | .TFloat64 | .TReal => true | _ => false
+        | .TReal => true | _ => false
       return .app () (if isReal then realNegOp else intNegOp) re
     | _ => panic! s!"translateExpr: Invalid unary op: {repr op}"
   | .PrimitiveOp op [e1, e2] =>
