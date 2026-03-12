@@ -139,7 +139,7 @@ def translateExpr (expr : StmtExprMd)
         | .field _ f =>
             return .op Strata.SourceRange.none ⟨f.name.text, ()⟩ none
         | astNode =>
-            return .fvar Strata.SourceRange.none ⟨name.text, ()⟩ (some (translateType model $ astNode.getType.getD (panic! "LaurelToCore.translateExpr")))
+            return .fvar Strata.SourceRange.none ⟨name.text, ()⟩ (some (translateType model $ astNode.getType.getD (panic! "LaurelToCore.translateExpr"))) -- nopanic:ok
   | .PrimitiveOp op [e] =>
     match op with
     | .Not =>
