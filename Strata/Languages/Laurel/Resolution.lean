@@ -115,19 +115,12 @@ def SemanticModel.get (model: SemanticModel) (iden: Identifier): AstNode :=
   | none => default -- panic! s!"model.get called on identifier {iden.text} without number"
 
 def SemanticModel.isFunction (model: SemanticModel) (id: Identifier): Bool :=
-  if id.uniqueId == none then
-    -- The Python pipeline generates constructor/discriminator calls that may not
-    -- be resolved at the Laurel level. Treating them as functions keeps them as
-    -- expressions; any real errors will be caught during Core type checking.
-    -- Make an exception for 'test_helper_procedure' since it's a procedure
-    -- We will remove this hack when we enable the Python through Laurel pipeline to correctly resolve
-    id.text ∉ Strata.Python.corePreludeProcedures
-  else
-    match model.get id with
+  match model.get id with
     | .staticProcedure proc => proc.isFunctional
     | .parameter _ => true
     | .datatypeConstructor _ _ => true
     | .constant _ => true
+    | .unresolved => true -- functions are more permissions at the call-site, so true avoids possibly incorrect errors
     | node => panic! s!"id: {repr id}, is not a procedure, node {repr node}"
 
 /-- The output of the resolution pass. -/
@@ -298,6 +291,7 @@ def resolveStmtExpr (exprMd : StmtExprMd) : ResolveM StmtExprMd := do
   | .LiteralInt v => pure (.LiteralInt v)
   | .LiteralBool v => pure (.LiteralBool v)
   | .LiteralString v => pure (.LiteralString v)
+  | .LiteralDecimal v => pure (.LiteralDecimal v)
   | .Identifier ref =>
     let ref' ← resolveRef ref md
     pure (.Identifier ref')
@@ -342,18 +336,20 @@ def resolveStmtExpr (exprMd : StmtExprMd) : ResolveM StmtExprMd := do
     let callee' ← resolveRef callee md
     let args' ← args.mapM resolveStmtExpr
     pure (.InstanceCall target' callee' args')
-  | .Forall param body =>
+  | .Forall param trigger body =>
     withScope do
       let paramTy' ← resolveHighType param.type
       let paramName' ← defineName param.name (.quantifierVar param.name paramTy')
+      let trigger' ← trigger.attach.mapM (fun pv => have := pv.property; resolveStmtExpr pv.val)
       let body' ← resolveStmtExpr body
-      pure (.Forall ⟨paramName', paramTy'⟩ body')
-  | .Exists param body =>
+      pure (.Forall ⟨paramName', paramTy'⟩ trigger' body')
+  | .Exists param trigger body =>
     withScope do
       let paramTy' ← resolveHighType param.type
       let paramName' ← defineName param.name (.quantifierVar param.name paramTy')
+      let trigger' ← trigger.attach.mapM (fun pv => have := pv.property; resolveStmtExpr pv.val)
       let body' ← resolveStmtExpr body
-      pure (.Exists ⟨paramName', paramTy'⟩ body')
+      pure (.Exists ⟨paramName', paramTy'⟩ trigger' body')
   | .Assigned name =>
     let name' ← resolveStmtExpr name
     pure (.Assigned name')
@@ -457,8 +453,8 @@ def resolveTypeDefinition (td : TypeDefinition) : ResolveM TypeDefinition := do
     let ctName' ← defineName ct.name (.compositeType ct)
     let extending' ← ct.extending.mapM (resolveRef · .empty)
     let fields' ← ct.fields.mapM (resolveField ctName')
-    let instProcs' ← ct.instanceProcedures.mapM (resolveInstanceProcedure ctName')
-    -- Build per-type scope: start with inherited fields from parents, then add own fields
+    -- Build per-type scope BEFORE resolving instance procedures, so that
+    -- field references (e.g. self.field) inside methods can be resolved.
     let s ← get
     let mut typeScope : Scope := {}
     for parent in extending' do
@@ -474,6 +470,7 @@ def resolveTypeDefinition (td : TypeDefinition) : ResolveM TypeDefinition := do
       | some entry => typeScope := typeScope.insert field.name.text entry
       | none => pure ()
     modify fun s => { s with typeScopes := s.typeScopes.insert ctName'.text typeScope }
+    let instProcs' ← ct.instanceProcedures.mapM (resolveInstanceProcedure ctName')
     return .Composite { name := ctName', extending := extending',
                         fields := fields', instanceProcedures := instProcs' }
   | .Constrained ct =>
@@ -487,9 +484,12 @@ def resolveTypeDefinition (td : TypeDefinition) : ResolveM TypeDefinition := do
     let dtName' ← defineName dt.name (.datatypeDefinition dt)
     let ctors' ← dt.constructors.mapM fun ctor => do
       let ctorName' ← defineName ctor.name (.datatypeConstructor dt.name ctor)
+      _ ← defineName ctor.name (.datatypeConstructor dt.name ctor) (some s!"{dt.name}..is{ctor.name}")
       let args' ← ctor.args.mapM fun (p: Parameter) => do
         let ty' ← resolveHighType p.type
         let destructorId ← defineName p.name (.parameter p) (some $ dt.name.text ++ ".." ++ p.name.text)
+        -- unsafeDestructorId
+        _ ← defineName p.name (.parameter p) (some $ dt.name.text ++ ".." ++ p.name.text ++ "!")
         return ⟨ destructorId, ty' ⟩
       return { name := ctorName', args := args' : DatatypeConstructor }
     return .Datatype { name := dtName', typeArgs := dt.typeArgs, constructors := ctors' }
@@ -573,13 +573,15 @@ private def collectStmtExpr (map : Std.HashMap Nat AstNode) (expr : StmtExprMd)
   | .InstanceCall target _ args =>
     let map := collectStmtExpr map target
     args.foldl collectStmtExpr map
-  | .Forall param body =>
+  | .Forall param trigger body =>
     let map := register map param.name (.quantifierVar param.name param.type)
     let map := collectHighType map param.type
+    let map := match trigger with | some t => collectStmtExpr map t | none => map
     collectStmtExpr map body
-  | .Exists param body =>
+  | .Exists param trigger body =>
     let map := register map param.name (.quantifierVar param.name param.type)
     let map := collectHighType map param.type
+    let map := match trigger with | some t => collectStmtExpr map t | none => map
     collectStmtExpr map body
   | .Assigned name => collectStmtExpr map name
   | .Old val => collectStmtExpr map val
@@ -590,7 +592,7 @@ private def collectStmtExpr (map : Std.HashMap Nat AstNode) (expr : StmtExprMd)
     let map := collectStmtExpr map val
     collectStmtExpr map proof
   | .ContractOf _ fn => collectStmtExpr map fn
-  | .New _ | .This | .Exit _ | .LiteralInt _ | .LiteralBool _ | .LiteralString _
+  | .New _ | .This | .Exit _ | .LiteralInt _ | .LiteralBool _ | .LiteralString _ | .LiteralDecimal _
   | .Abstract | .All | .Hole => map
 
 private def collectBody (map : Std.HashMap Nat AstNode) (body : Body)

@@ -17,6 +17,7 @@ import Strata.Languages.Laurel.TypeHierarchy
 import Strata.Languages.Laurel.LaurelTypes
 import Strata.Languages.Laurel.ModifiesClauses
 import Strata.Languages.Laurel.CoreDefinitionsForLaurel
+import Strata.DDM.Util.DecimalRat
 import Strata.DL.Imperative.Stmt
 import Strata.DL.Imperative.MetaData
 import Strata.DL.Lambda.LExpr
@@ -25,6 +26,7 @@ import Strata.Util.Tactics
 
 open Core (VCResult VCResults VerifyOptions)
 open Core (intAddOp intSubOp intMulOp intSafeDivOp intSafeModOp intSafeDivTOp intSafeModTOp intNegOp intLtOp intLeOp intGtOp intGeOp boolAndOp boolOrOp boolNotOp boolImpliesOp strConcatOp)
+open Core (realAddOp realSubOp realMulOp realDivOp realNegOp realLtOp realLeOp realGtOp realGeOp)
 
 namespace Strata.Laurel
 
@@ -53,6 +55,8 @@ def translateType (model : SemanticModel) (ty : HighTypeMd) : LMonoTy :=
     | _ => .tcons "Composite" [] -- fallback for unresolved refs
   | .TCore s => .tcons s []
   | .TFloat64 => LMonoTy.real -- Incorrect?
+  | .TReal => LMonoTy.real
+  | .Top => LMonoTy.bool
   | _ => panic s!"translateType: unsupported type {ToFormat.format ty}"
 termination_by ty.val
 decreasing_by all_goals (first | (cases elementType; term_by_mem) | (cases keyType; term_by_mem) | (cases valueType; term_by_mem))
@@ -126,6 +130,7 @@ def translateExpr (expr : StmtExprMd)
   | .LiteralBool b => return .const () (.boolConst b)
   | .LiteralInt i => return .const () (.intConst i)
   | .LiteralString s => return .const () (.strConst s)
+  | .LiteralDecimal d => return .const () (.realConst (Strata.Decimal.toRat d))
   | .Identifier name =>
       -- First check if this name is bound by an enclosing quantifier
       match boundVars.findIdx? (· == name) with
@@ -145,30 +150,35 @@ def translateExpr (expr : StmtExprMd)
       return .app () boolNotOp re
     | .Neg =>
       let re ← translateExpr e boundVars isPureContext
-      return .app () intNegOp re
+      let isReal := match (computeExprType model e).val with
+        | .TFloat64 | .TReal => true | _ => false
+      return .app () (if isReal then realNegOp else intNegOp) re
     | _ => panic! s!"translateExpr: Invalid unary op: {repr op}"
   | .PrimitiveOp op [e1, e2] =>
     let re1 ← translateExpr e1 boundVars isPureContext
     let re2 ← translateExpr e2 boundVars isPureContext
     let binOp (bop : Core.Expression.Expr) : Core.Expression.Expr :=
       LExpr.mkApp () bop [re1, re2]
+    let isReal := match (computeExprType model e1).val, (computeExprType model e2).val with
+      | .TFloat64, _ | .TReal, _ | _, .TFloat64 | _, .TReal => true
+      | _, _ => false
     match op with
     | .Eq => return .eq () re1 re2
     | .Neq => return .app () boolNotOp (.eq () re1 re2)
     | .And => return binOp boolAndOp
     | .Or => return binOp boolOrOp
     | .Implies => return binOp boolImpliesOp
-    | .Add => return binOp intAddOp
-    | .Sub => return binOp intSubOp
-    | .Mul => return binOp intMulOp
-    | .Div => return binOp intSafeDivOp
+    | .Add => return binOp (if isReal then realAddOp else intAddOp)
+    | .Sub => return binOp (if isReal then realSubOp else intSubOp)
+    | .Mul => return binOp (if isReal then realMulOp else intMulOp)
+    | .Div => return binOp (if isReal then realDivOp else intSafeDivOp)
     | .Mod => return binOp intSafeModOp
     | .DivT => return binOp intSafeDivTOp
     | .ModT => return binOp intSafeModTOp
-    | .Lt => return binOp intLtOp
-    | .Leq => return binOp intLeOp
-    | .Gt => return binOp intGtOp
-    | .Geq => return binOp intGeOp
+    | .Lt => return binOp (if isReal then realLtOp else intLtOp)
+    | .Leq => return binOp (if isReal then realLeOp else intLeOp)
+    | .Gt => return binOp (if isReal then realGtOp else intGtOp)
+    | .Geq => return binOp (if isReal then realGeOp else intGeOp)
     | .StrConcat => return binOp strConcatOp
     | _ => panic! s!"translateExpr: Invalid binary op: {repr op}"
   | .PrimitiveOp op args =>
@@ -194,14 +204,24 @@ def translateExpr (expr : StmtExprMd)
           let re ← translateExpr arg boundVars isPureContext
           return .app () acc re) fnOp
   | .Block [single] _ => translateExpr single boundVars isPureContext
-  | .Forall ⟨ name, ty ⟩ body =>
+  | .Forall ⟨ name, ty ⟩ trigger body =>
       let coreTy := translateType model ty
       let coreBody ← translateExpr body (name :: boundVars) isPureContext
-      return LExpr.all () name.text (some coreTy) coreBody
-  | .Exists ⟨ name, ty ⟩ body =>
+      match _: trigger with
+      | some trig =>
+        let coreTrig ← translateExpr trig (name :: boundVars) isPureContext
+        return LExpr.allTr () name.text (some coreTy) coreTrig coreBody
+      | none =>
+        return LExpr.all () name.text (some coreTy) coreBody
+  | .Exists ⟨ name, ty ⟩ trigger body =>
       let coreTy := translateType model ty
       let coreBody ← translateExpr body (name :: boundVars) isPureContext
-      return LExpr.exist () name.text (some coreTy) coreBody
+      match _: trigger with
+      | some trig =>
+        let coreTrig ← translateExpr trig (name :: boundVars) isPureContext
+        return LExpr.existTr () name.text (some coreTy) coreTrig coreBody
+      | none =>
+        return LExpr.exist () name.text (some coreTy) coreBody
   | .Hole => return dummy
   | .ReferenceEquals e1 e2 =>
       let re1 ← translateExpr e1 boundVars isPureContext
@@ -275,6 +295,20 @@ def defaultExprForType (model : SemanticModel) (ty : HighTypeMd) : Core.Expressi
     .fvar () (⟨"$default", ()⟩) (some coreTy)
 
 /--
+Translate an expression in statement position into a `var $unused_N := expr` init.
+Preserves the expression so it is not silently dropped from the Core output.
+-/
+private def exprAsUnusedInit (expr : StmtExprMd) (md : Imperative.MetaData Core.Expression)
+    : TranslateM (List Core.Statement) := do
+  let model := (← get).model
+  let coreExpr ← translateExpr expr
+  let id ← freshId
+  let ident : Core.CoreIdent := ⟨s!"$unused_{id}", ()⟩
+  let highTy := computeExprType model expr
+  let coreType := LTy.forAll [] (translateType model highTy)
+  return [Core.Statement.init ident coreType (some coreExpr) md]
+
+/--
 Translate Laurel StmtExpr to Core Statements using the `TranslateM` monad.
 Diagnostics are emitted into the monad state.
 -/
@@ -284,11 +318,11 @@ def translateStmt (outputParams : List Parameter) (stmt : StmtExprMd)
   let model := s.model
   let md := stmt.md
   match _h : stmt.val with
-  | @StmtExpr.Assert cond =>
+  | .Assert cond =>
       -- Assert/assume bodies must be pure expressions (no assignments, loops, or procedure calls)
       let coreExpr ← translateExpr cond [] (isPureContext := true)
       return [Core.Statement.assert ("assert" ++ getNameFromMd md) coreExpr md]
-  | @StmtExpr.Assume cond =>
+  | .Assume cond =>
       let coreExpr ← translateExpr cond [] (isPureContext := true)
       return [Core.Statement.assume ("assume" ++ getNameFromMd md) coreExpr md]
   | .Block stmts _ => stmts.flatMapM (fun s => translateStmt outputParams s)
@@ -372,8 +406,8 @@ def translateStmt (outputParams : List Parameter) (stmt : StmtExprMd)
   | .StaticCall callee args =>
       -- Check if this is a function or procedure
       if model.isFunction callee then
-        -- Functions as statements have no effect (shouldn't happen in well-formed programs)
-        return []
+        -- Function call in statement position: preserve as unused init
+        exprAsUnusedInit stmt md
       else
         let coreArgs ← args.mapM (fun a => translateExpr a)
         return [Core.Statement.call [] callee.text coreArgs md]
@@ -397,7 +431,12 @@ def translateStmt (outputParams : List Parameter) (stmt : StmtExprMd)
       let decreasingExprCore ← decreasesExpr.mapM (translateExpr)
       let bodyStmts ← translateStmt outputParams body
       return [Imperative.Stmt.loop condExpr decreasingExprCore invExprs bodyStmts md]
-  | _ => return []
+  | .Exit _ =>
+      dbg_trace "TODO: Exit statement not yet supported"
+      default
+  | _ =>
+      -- Expression in statement position: preserve as an unused variable init
+      exprAsUnusedInit stmt md
   termination_by sizeOf stmt
   decreasing_by
     all_goals
@@ -468,6 +507,7 @@ private def isPureExpr(expr: StmtExprMd): Bool :=
   | .LiteralBool _ => true
   | .LiteralInt _ => true
   | .LiteralString _ => true
+  | .LiteralDecimal _ => true
   | .Identifier _ => true
   | .PrimitiveOp _ args => args.attach.all (fun ⟨a, _⟩ => isPureExpr a)
   | .IfThenElse c t none => isPureExpr c && isPureExpr t
@@ -552,25 +592,118 @@ def translateProcedureToFunction (proc : Procedure) : TranslateM Core.Decl := do
   }
 
 /--
-Translate a Laurel DatatypeDefinition to a Core type declaration.
-Zero constructors produces an opaque (abstract) type; otherwise a Core datatype.
+Translate a Laurel DatatypeDefinition to either an opaque type declaration (zero constructors)
+or an `LDatatype Unit` (non-zero constructors) that will be grouped with other datatypes.
 -/
-def translateDatatypeDefinition (model : SemanticModel) (dt : DatatypeDefinition) : Core.Decl :=
+def translateDatatypeDefinition (model : SemanticModel) (dt : DatatypeDefinition)
+    : Sum Core.Decl (Lambda.LDatatype Unit) :=
   match h : dt.constructors with
   | [] =>
     -- Zero constructors: opaque type
-    Core.Decl.type (.con { name := dt.name.text, params := dt.typeArgs.map (fun id => id.text) })
+    .inl (Core.Decl.type (.con { name := dt.name.text, params := dt.typeArgs.map (fun id => id.text) }))
   | first :: rest =>
     let constrs : List (Lambda.LConstr Unit) := (first :: rest).map fun c =>
       { name := ⟨c.name.text, ()⟩
-        args := c.args.map fun ⟨ n, ty ⟩ => (⟨n.text, ()⟩, translateType model ty) }
-    let ldt : Lambda.LDatatype Unit := {
+        args := c.args.map fun ⟨ n, ty ⟩ => (⟨n.text, ()⟩, translateType model ty)
+        testerName := s!"{dt.name}..is{c.name}" }
+    .inr {
       name := dt.name.text
       typeArgs := dt.typeArgs.map (fun id => id.text)
       constrs := constrs
       constrs_ne := by simp [constrs]
     }
-    Core.Decl.type (.data [ldt])
+
+/-- Collect all `UserDefined` type names referenced in a `HighType`, including nested ones. -/
+private def collectTypeRefs : HighTypeMd → List String
+  | ⟨.UserDefined name, _⟩ => [name.text]
+  | ⟨.TSet elem, _⟩ => collectTypeRefs elem
+  | ⟨.TMap k v, _⟩ => collectTypeRefs k ++ collectTypeRefs v
+  | ⟨.TTypedField vt, _⟩ => collectTypeRefs vt
+  | ⟨.Applied base args, _⟩ =>
+      collectTypeRefs base ++ args.flatMap collectTypeRefs
+  | ⟨.Pure base, _⟩ => collectTypeRefs base
+  | ⟨.Intersection ts, _⟩ => ts.flatMap collectTypeRefs
+  | _ => []
+
+/-- Get all datatype names that a `DatatypeDefinition` references in its constructor args. -/
+private def datatypeRefs (dt : DatatypeDefinition) : List String :=
+  dt.constructors.flatMap fun c => c.args.flatMap fun p => collectTypeRefs p.type
+
+/-! ### Tarjan's SCC for datatype grouping -/
+
+private structure TarjanState where
+  nextIndex : Nat := 0
+  stack : List Nat := []
+  indices : Std.HashMap Nat Nat := {}
+  lowlinks : Std.HashMap Nat Nat := {}
+  onStack : Std.HashSet Nat := {}
+  components : Array (Array Nat) := #[]
+
+/-- Tarjan's SCC algorithm on an adjacency list indexed by `Nat`. -/
+private partial def tarjanVisit (adj : Std.HashMap Nat (List Nat))
+    (v : Nat) (s : TarjanState) : TarjanState :=
+  let s := { s with
+    indices := s.indices.insert v s.nextIndex
+    lowlinks := s.lowlinks.insert v s.nextIndex
+    nextIndex := s.nextIndex + 1
+    stack := v :: s.stack
+    onStack := s.onStack.insert v }
+  let neighbors := adj.getD v []
+  let s := neighbors.foldl (fun s w =>
+    if !s.indices.contains w then
+      let s := tarjanVisit adj w s
+      let vLow := s.lowlinks.getD v 0
+      let wLow := s.lowlinks.getD w 0
+      { s with lowlinks := s.lowlinks.insert v (min vLow wLow) }
+    else if s.onStack.contains w then
+      let vLow := s.lowlinks.getD v 0
+      let wIdx := s.indices.getD w 0
+      { s with lowlinks := s.lowlinks.insert v (min vLow wIdx) }
+    else s) s
+  if s.lowlinks.getD v 0 == s.indices.getD v 0 then
+    -- Pop component from stack
+    let rec popLoop (stack : List Nat) (comp : Array Nat) (onStack : Std.HashSet Nat)
+        : List Nat × Array Nat × Std.HashSet Nat :=
+      match stack with
+      | [] => ([], comp, onStack)
+      | w :: rest =>
+        let comp := comp.push w
+        let onStack := onStack.erase w
+        if w == v then (rest, comp, onStack)
+        else popLoop rest comp onStack
+    let (stack', comp, onStack') := popLoop s.stack #[] s.onStack
+    { s with stack := stack', onStack := onStack', components := s.components.push comp }
+  else s
+
+/--
+Group `LDatatype Unit` values by strongly connected components of their direct type references.
+Datatypes in the same SCC (mutually recursive) share a single `.data` declaration.
+Non-recursive datatypes get their own singleton `.data` declaration.
+-/
+private def groupDatatypes (dts : List DatatypeDefinition)
+    (ldts : List (Lambda.LDatatype Unit)) : List (List (Lambda.LDatatype Unit)) :=
+  -- Filter to datatypes with constructors and assign indices
+  let withConstrs := dts.filter (!·.constructors.isEmpty)
+  let nameToIdx : Std.HashMap String Nat :=
+    withConstrs.foldlIdx (fun m i dt => m.insert dt.name.text i) {}
+  -- Build directed adjacency list: dt[i] → dt[j] if dt[i] directly references dt[j]
+  let adj : Std.HashMap Nat (List Nat) :=
+    withConstrs.foldlIdx (fun m i dt =>
+      let refs := (datatypeRefs dt).filterMap nameToIdx.get?
+      m.insert i refs) {}
+  -- Run Tarjan's SCC
+  let initState : TarjanState := {}
+  let finalState := withConstrs.foldlIdx (fun s i _ =>
+    if s.indices.contains i then s else tarjanVisit adj i s) initState
+  -- Map indices back to LDatatype Unit values
+  let ldtMap : Std.HashMap String (Lambda.LDatatype Unit) :=
+    ldts.foldl (fun m ldt => m.insert ldt.name ldt) {}
+  -- Tarjan produces SCCs in dependency order (leaves first)
+  let sccs := finalState.components.toList
+  sccs.filterMap fun comp =>
+    let members := comp.toList.filterMap fun idx =>
+      withConstrs[idx]? |>.bind fun dt => ldtMap.get? dt.name.text
+    if members.isEmpty then none else some members
 
 /--
 Try to translate a Laurel Procedure marked `isFunctional` to a Core Function.
@@ -657,12 +790,24 @@ def translate (program : Program): Except (Array DiagnosticModel) (Core.Program 
     .error allErrors.toArray
   let procDecls := procedures.map (fun p => Core.Decl.proc p .empty)
 
-  -- Translate Laurel datatype definitions to Core datatype declarations
-  let laurelDatatypeDecls := program.types.filterMap fun td => match td with
-    | .Datatype dt => some (translateDatatypeDefinition model dt)
+  -- Translate Laurel datatype definitions to Core declarations.
+  -- Opaque types (zero constructors) become individual type declarations.
+  -- Datatypes with constructors are grouped by mutual references using union-find:
+  -- datatypes that (transitively) reference each other share a single `data` declaration.
+  let laurelDatatypes := program.types.filterMap fun td => match td with
+    | .Datatype dt => some dt
     | _ => none
+  let datatypeResults := laurelDatatypes.map (translateDatatypeDefinition model)
+  let opaqueDecls := datatypeResults.filterMap fun r => match r with
+    | .inl decl => some decl
+    | .inr _ => none
+  let ldatatypes := datatypeResults.filterMap fun r => match r with
+    | .inl _ => none
+    | .inr ldt => some ldt
+  let groups := groupDatatypes laurelDatatypes ldatatypes
+  let groupedDatatypeDecls := groups.map fun group => Core.Decl.type (.data group)
   let program := {
-    decls := laurelDatatypeDecls ++ constantDecls ++ pureFuncDecls.toList ++ procDecls
+    decls := opaqueDecls ++ groupedDatatypeDecls ++ constantDecls ++ pureFuncDecls.toList ++ procDecls
   }
 
   -- dbg_trace "=== Generated Strata Core Program ==="

@@ -50,6 +50,7 @@ private def fmtHighType : HighType → String
   | .TInt => "TInt"
   | .TFloat64 => "TFloat64"
   | .TString => "TString"
+  | .TReal => "TReal"
   | .THeap => "THeap"
   | .TTypedField _ => "TTypedField"
   | .TSet _ => "TSet"
@@ -59,6 +60,7 @@ private def fmtHighType : HighType → String
   | .Pure _ => "Pure"
   | .Intersection _ => "Intersection"
   | .TCore s => s!"TCore({s})"
+  | .Top => "Top"
 
 private def fmtParam (p : Parameter) : String :=
   s!"{p.name}:{fmtHighType p.type.val}"

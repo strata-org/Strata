@@ -260,8 +260,8 @@ def rewriteTypeHierarchyExpr (exprMd : StmtExprMd) : THM StmtExprMd :=
   | .InstanceCall t callee args => do
       let args' ← args.attach.mapM fun ⟨a, _⟩ => rewriteTypeHierarchyExpr a
       return ⟨.InstanceCall (← rewriteTypeHierarchyExpr t) callee args', md⟩
-  | .Forall p b => do return ⟨.Forall p (← rewriteTypeHierarchyExpr b), md⟩
-  | .Exists p b => do return ⟨.Exists p (← rewriteTypeHierarchyExpr b), md⟩
+  | .Forall p trigger b => do return ⟨.Forall p (← trigger.attach.mapM (fun pv => have := pv.property; rewriteTypeHierarchyExpr pv.val)) (← rewriteTypeHierarchyExpr b), md⟩
+  | .Exists p trigger b => do return ⟨.Exists p (← trigger.attach.mapM (fun pv => have := pv.property; rewriteTypeHierarchyExpr pv.val)) (← rewriteTypeHierarchyExpr b), md⟩
   | .Assigned n => do return ⟨.Assigned (← rewriteTypeHierarchyExpr n), md⟩
   | .Old v => do return ⟨.Old (← rewriteTypeHierarchyExpr v), md⟩
   | .Fresh v => do return ⟨.Fresh (← rewriteTypeHierarchyExpr v), md⟩
