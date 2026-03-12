@@ -24,13 +24,13 @@ program Laurel;
 // The types for these Map functions are incorrect.
 // We'll fix them when Laurel supports polymorphism
 function select(map: int, key: int) : int
-  external
+  external;
 
 function update(map: int, key: int, value: int) : int
-  external
+  external;
 
 function const(value: int) : int
-  external
+  external;
 
 #end
 
@@ -38,8 +38,7 @@ function const(value: int) : int
 The core map operation definitions as a `Laurel.Program`, parsed at compile time.
 -/
 def coreDefinitionsForLaurel : Program :=
-  let uri := Strata.Uri.file "Strata/Languages/Laurel/CoreDefinitionsForLaurel.lean"
-  match TransM.run uri (parseProgram coreDefinitionsForLaurelDDM) with
+  match TransM.run none (parseProgram coreDefinitionsForLaurelDDM) with
   | .ok program => program
   | .error e => panic! s!"CoreDefinitionsForLaurel parse error: {e}"
 

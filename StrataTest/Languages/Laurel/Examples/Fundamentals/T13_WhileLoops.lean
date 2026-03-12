@@ -18,10 +18,10 @@ procedure countDown() {
     while(i > 0)
       invariant i >= 0
     {
-        i := i - 1;
-    }
-    assert i == 0;
-}
+        i := i - 1
+    };
+    assert i == 0
+};
 
 procedure countUp() {
     var n: int := 5;
@@ -30,10 +30,10 @@ procedure countUp() {
       invariant i >= 0
       invariant i <= n
     {
-        i := i + 1;
-    }
-    assert i == n;
-}
+        i := i + 1
+    };
+    assert i == n
+};
 "
 
 #guard_msgs(drop info, error) in

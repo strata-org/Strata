@@ -17,10 +17,10 @@ procedure stringConcatWithAssignment()
 requires true
 {
   var x: string := "Hello";
-  var y: string := x ++ (x := " World";);
+  var y: string := x ++ (x := " World");
   assert y == "Hello World";
-  assert x == " World";
-}
+  assert x == " World"
+};
 
 procedure stringConcatOK()
 requires true
@@ -28,8 +28,8 @@ requires true
   var a: string := "Hello";
   var b: string := " World";
   var c: string := a ++ b;
-  assert c == "Hello World";
-}
+  assert c == "Hello World"
+};
 
 procedure stringConcatKO()
 requires true
@@ -37,9 +37,9 @@ requires true
   var a: string := "Hello";
   var b: string := " World";
   var c: string := a ++ b;
-  assert c == "Goodbye";
-//^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
-}
+  assert c == "Goodbye"
+//^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
+};
 "#
 
 #guard_msgs (error, drop all) in

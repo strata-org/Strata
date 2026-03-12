@@ -20,27 +20,27 @@ procedure hasRequires(x: int) returns (r: int)
 // This should occur at the call site and with a different message
 {
   assert x > 0;
-    assert x > 3;
-//  ^^^^^^^^^^^^^ error: assertion does not hold
+  assert x > 3;
+//^^^^^^^^^^^^ error: assertion does not hold
   x + 1
-}
+};
 
 procedure caller() {
   var x: int := hasRequires(1);
-  var y: int := hasRequires(3);
-}
+  var y: int := hasRequires(3)
+};
 
 function aFunctionWithPrecondition(x: int): int
   requires x == 10
 {
   x
-}
+};
 
 procedure aFunctionWithPreconditionCaller() {
-  var x: int := aFunctionWithPrecondition(0);
-//^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
+  var x: int := aFunctionWithPrecondition(0)
+//^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
 // Error ranges are too wide because Core does not use expression locations
-}
+};
 "
 
 #guard_msgs (drop info, error) in

@@ -89,6 +89,8 @@ Options to control parenthesis
 structure FormatOptions where
   /-- Always add parenthesis when feasible. -/
   alwaysParen : Bool := false
+  /-- Use SMT-LIB 2.7 string escaping (`""` for quotes) instead of C-style (`\"`). -/
+  smtStringEscaping : Bool := false
 
 /--
 A format context provides callbacks and information needed to
@@ -383,7 +385,10 @@ private partial def ArgF.mformatM {α} : ArgF α → FormatM PrecFormat
 | .ident _ x => return .atom (formatIdent x)
 | .num _ x => pformat x
 | .decimal _ v => pformat v
-| .strlit _ s => return .atom (.text <| escapeStringLit s)
+| .strlit _ s => do
+    let ctx ← read
+    let esc := if ctx.opts.smtStringEscaping then escapeSMTStringLit s else escapeStringLit s
+    return .atom (.text esc)
 | .bytes _ v => return .atom <| .text <| ByteArray.escapeBytes v
 | .option _ ma =>
   match ma with
@@ -416,6 +421,13 @@ private partial def ArgF.mformatM {α} : ArgF α → FormatM PrecFormat
       pure (.atom .nil)
     else do
       let f i q s := return s ++ "\n" ++ (← entries[i].mformatM).format
+      let a := (← entries[0].mformatM).format
+      .atom <$> entries.size.foldlM f (start := 1) a
+  | .semicolon =>
+    if z : entries.size = 0 then
+      pure (.atom .nil)
+    else do
+      let f i q s := return s ++ "; " ++ (← entries[i].mformatM).format
       let a := (← entries[0].mformatM).format
       .atom <$> entries.size.foldlM f (start := 1) a
 

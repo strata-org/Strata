@@ -126,6 +126,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - name: Check copyright headers
         run: python3 .github/scripts/check_copyright_headers.py .
         shell: bash
@@ -135,6 +137,8 @@ jobs:
         run: .github/scripts/checkLeanImport.sh
       - name: Check Lean version consistncy
         run: .github/scripts/check_lean_consistency.sh
+      - name: Check for new panic! usage
+        run: .github/scripts/checkNoPanic.sh "origin/${{ github.base_ref || 'main' }}"
 
   build_doc:
     name: Build documentation
