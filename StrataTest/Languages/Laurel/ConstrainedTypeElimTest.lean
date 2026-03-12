@@ -103,7 +103,7 @@ def uninitProgram : String := r"
 constrained posint = x: int where x > 0 witness 1
 procedure f() {
   var x: posint;
-  assert x > 0;
+  assert x == 1;
 };
 "
 
@@ -115,7 +115,7 @@ deterministic
 procedure f() returns ⏎
 ()
 deterministic
-{ var x: int; assume posint$constraint(x); assert x > 0 }
+{ var x: int; assume posint$constraint(x); assert x == 1 }
 procedure $witness_posint() returns ⏎
 ()
 deterministic

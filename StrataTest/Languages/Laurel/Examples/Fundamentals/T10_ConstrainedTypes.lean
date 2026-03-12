@@ -103,17 +103,24 @@ procedure constrainedInExpr() {
 constrained bad = x: int where x > 0 witness -1
 //                                           ^^ error: assertion does not hold
 
-// Uninitialized constrained variable — witness used as default
+// Uninitialized constrained variable — havoc + assume constraint
 procedure uninitNat() {
   var y: nat;
   assert y >= 0;
 };
 
-// Uninitialized nested constrained variable — outermost witness used
+// Uninitialized nested constrained variable — havoc + assume constraint
 procedure uninitPosnat() {
   var y: posnat;
   assert y != 0;
   assert y >= 0;
+};
+
+// Uninitialized constrained variable — witness value is not provable
+procedure uninitNotWitness() {
+  var y: posnat;
+  assert y == 1;
+//^^^^^^^^^^^^^^ error: assertion does not hold
 };
 
 // Function with valid constrained return — constraint not checked (not yet supported)
