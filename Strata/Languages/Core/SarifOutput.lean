@@ -21,38 +21,17 @@ open Strata.Sarif Strata.SMT
 
 /-- Convert VCOutcome to SARIF Level -/
 def outcomeToLevel (mode : VerificationMode) (property : Imperative.PropertyType) (outcome : VCOutcome) : Level :=
-  -- For cover: satisfiability sat means the cover is satisfied (pass)
   if property == .cover && outcome.isSatisfiable then .none
+  else if outcome.passAndReachable || outcome.passReachabilityUnknown then .none
+  else if outcome.unreachable then
+    if property.passWhenUnreachable then .warning else .error
+  else if outcome.alwaysFalseAndReachable || outcome.alwaysFalseReachabilityUnknown then .error
   else match mode with
-  | .deductive =>
-    if outcome.passAndReachable || outcome.passReachabilityUnknown then
-      .none
-    else if outcome.unreachable then
-      if property == .cover then .error
-      else .warning
-    else
-      .error
-  | .bugFinding =>
-    if outcome.passAndReachable || outcome.passReachabilityUnknown then
-      .none
-    else if outcome.alwaysFalseAndReachable || outcome.alwaysFalseReachabilityUnknown then
-      .error
-    else if outcome.unreachable then
-      if property == .cover then .error
-      else .warning
-    else
-      .note
+  | .deductive => .error
+  | .bugFinding => .note
   | .bugFindingAssumingCompleteSpec =>
-    if outcome.passAndReachable || outcome.passReachabilityUnknown then
-      .none
-    else if outcome.alwaysFalseAndReachable || outcome.alwaysFalseReachabilityUnknown
-         || outcome.canBeTrueOrFalseAndIsReachable || outcome.canBeFalseAndIsReachable then
-      .error  -- Any counterexample is an error when preconditions are complete
-    else if outcome.unreachable then
-      if property == .cover then .error
-      else .warning
-    else
-      .note
+    if outcome.canBeTrueOrFalseAndIsReachable || outcome.canBeFalseAndIsReachable then .error
+    else .note
 
 /-- Convert VCOutcome to a descriptive message -/
 def outcomeToMessage (outcome : VCOutcome) : String :=

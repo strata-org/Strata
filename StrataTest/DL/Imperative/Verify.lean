@@ -55,10 +55,10 @@ def verify (cmds : Commands) (verbose : Bool) :
                (encodeArithToSMTTerms terms) typedVarToSMT
                -- (FIXME)
                ((Arith.Eval.ProofObligation.freeVars obligation).map (fun v => (v, Arith.Ty.Num)))
-                Imperative.MetaData.empty "cvc5" filename.toString
+                "cvc5" filename.toString
                 #["--produce-models"] false false true)
         match ans with
-        | Except.ok (_satResult, result, estate) =>
+        | Except.ok (_, result, estate) =>
            let vcres := { obligation, result, estate }
            results := results.push vcres
            if result ≠ .unsat then

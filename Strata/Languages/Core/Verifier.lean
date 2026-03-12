@@ -163,7 +163,6 @@ def dischargeObligation
       assumptionTerms obligationTerm md satisfiabilityCheck validityCheck)
     (typedVarToSMTFn ctx)
     vars
-    md
     options.solver
     filename
     solverFlags (options.verbose > .normal)
@@ -435,10 +434,7 @@ def maskOutcome (outcome : VCOutcome) (satisfiabilityCheck validityCheck : Bool)
     -- Both checks requested: return outcome as-is
     outcome
   else if validityCheck && !satisfiabilityCheck then
-    -- Only validity requested: mask satisfiability
-    -- Special case: if property is refuted (.unsat, .sat), keep it as (.unknown, .sat)
-    -- which will display as "can be false and is reachable" instead of "always false and is reachable"
-    -- But for "always true if reached" we want (.unknown, .unsat)
+    -- Only validity requested: mask satisfiability to unknown
     { satisfiabilityProperty := .unknown,
       validityProperty := outcome.validityProperty }
   else if satisfiabilityCheck && !validityCheck then
@@ -471,7 +467,7 @@ def VCResult.isSuccess (vr : VCResult) : Bool :=
 
 def VCResult.isFailure (vr : VCResult) : Bool :=
   match vr.outcome with
-  | .ok o => o.isRefuted || o.isRefutedIfReachable || o.isCanBeTrueOrFalse || o.canBeFalseAndIsReachable
+  | .ok o => o.alwaysFalseAndReachable || o.alwaysFalseReachabilityUnknown || o.canBeTrueOrFalseAndIsReachable || o.canBeFalseAndIsReachable
   | .error _ => false
 
 def VCResult.isUnknown (vr : VCResult) : Bool :=
@@ -489,7 +485,7 @@ def VCResult.isNotSuccess (vcResult : Core.VCResult) :=
 
 def VCResult.isUnreachable (vr : VCResult) : Bool :=
   match vr.outcome with
-  | .ok o => o.isUnreachable
+  | .ok o => o.unreachable
   | .error _ => false
 
 abbrev VCResults := Array VCResult
@@ -770,14 +766,14 @@ def toDiagnosticModel (vcr : Core.VCResult) : Option DiagnosticModel :=
   | .ok outcome =>
     let message? : Option String :=
       if vcr.obligation.property == .cover then
-        if outcome.isSatisfiable || outcome.isAlwaysTrueIfReachable then none
-        else if outcome.isUnreachable then some "cover property is unreachable"
+        if outcome.isSatisfiable || outcome.passReachabilityUnknown then none
+        else if outcome.unreachable then some "cover property is unreachable"
         else if outcome.isPass then none
         else some "cover property is not satisfiable"
       else
-        if outcome.isUnreachable then some "assertion holds vacuously (path unreachable)"
-        else if outcome.isPass || outcome.isSatisfiable || outcome.isAlwaysTrueIfReachable then none
-        else if outcome.isRefuted || outcome.isCanBeTrueOrFalse || outcome.isReachableAndCanBeFalse then
+        if outcome.unreachable then some "assertion holds vacuously (path unreachable)"
+        else if outcome.isPass || outcome.isSatisfiable || outcome.passReachabilityUnknown then none
+        else if outcome.alwaysFalseAndReachable || outcome.canBeTrueOrFalseAndIsReachable || outcome.canBeFalseAndIsReachable then
           some "assertion does not hold"
         else some "assertion could not be proved"
     message?.map fun message => { fileRange, message }

@@ -107,7 +107,7 @@ def checkMatch (pyRegex testStr : String) (mode : MatchMode)
       | some vc => return match vc.outcome with
         | .ok o => 
           if o.isPass then .match 
-          else if o.isRefuted || o.isCanBeTrueOrFalse then .noMatch 
+          else if o.alwaysFalseAndReachable || o.canBeTrueOrFalseAndIsReachable then .noMatch 
           else .smtError "unknown"
         | .error msg => .smtError s!"impl: {msg}"
 
