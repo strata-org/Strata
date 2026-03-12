@@ -90,6 +90,7 @@ def toIonName : SepFormat → String
   | .space => "spaceSepList"
   | .spacePrefix => "spacePrefixedList"
   | .newline => "newlineSepList"
+  | .semicolon => "semicolonSepList"
 
 def fromIonName? : String → Option SepFormat
   | "seq" => some .none
@@ -97,6 +98,7 @@ def fromIonName? : String → Option SepFormat
   | "spaceSepList" => some .space
   | "spacePrefixedList" => some .spacePrefix
   | "newlineSepList" => some .newline
+  | "semicolonSepList" => some .semicolon
   | _ => none
 
 theorem fromIonName_toIonName_roundtrip (sep : SepFormat) :
@@ -573,6 +575,7 @@ private protected def ArgF.toIon {α} [ToIon α]
           | .space       => ionSymbol! "spaceSepList"
           | .spacePrefix => ionSymbol! "spacePrefixedList"
           | .newline     => ionSymbol! "newlineSepList"
+          | .semicolon   => ionSymbol! "semicolonSepList"
         let args : Array (Ion _) := #[ symb, annIon ]
         let args ← l.attach.mapM_off (init := args)
           fun ⟨v, _⟩ => ArgF.toIon refs (.inl v)

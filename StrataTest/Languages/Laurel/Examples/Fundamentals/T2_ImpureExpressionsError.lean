@@ -21,8 +21,8 @@ procedure impure(): int {
 
 function impureFunction1(x: int): int
 {
-  x := x + 1;
-//^^^^^^^^^^^ error: destructive assignments are not supported in functions or contracts
+  x := x + 1
+//^^^^^^^^^^ error: destructive assignments are not supported in functions or contracts
 };
 
 function impureFunction2(x: int): int
@@ -40,16 +40,16 @@ procedure impureContractIsNotLegal1(x: int)
   requires x == impure()
 //              ^^^^^^^^ error: calls to procedures are not supported in functions or contracts
 {
-  assert impure() == 1;
+  assert impure() == 1
 //       ^^^^^^^^ error: calls to procedures are not supported in functions or contracts
 };
 
 procedure impureContractIsNotLegal2(x: int)
-  requires (x := 2;) == 2
-//          ^^^^^^^ error: destructive assignments are not supported in functions or contracts
+  requires (x := 2) == 2
+//          ^^^^^^ error: destructive assignments are not supported in functions or contracts
 {
-  assert (x := 2;) == 2;
-//        ^^^^^^^ error: destructive assignments are not supported in functions or contracts
+  assert (x := 2) == 2
+//        ^^^^^^ error: destructive assignments are not supported in functions or contracts
 };
 "
 
