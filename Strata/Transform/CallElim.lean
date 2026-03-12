@@ -60,8 +60,21 @@ def callElimCmd (cmd: Command)
         -- Initialize fresh vars from the current (pre-call) values of the original globals
         let oldInit := createInitVars oldTripsRaw md
 
-        -- Substitute "old g" with the fresh pre-call variable in postconditions
-        let oldSubst := createOldVarsSubst oldTrips
+        -- Substitute "old g" in postconditions:
+        -- - For globals IN modifies: use the fresh snapshot variable.
+        -- - For globals NOT in modifies: old g == g at the call site (the callee
+        --   cannot modify them), so substitute old g directly with the current fvar.
+        let unmodifiedOldSubst : Map Expression.Ident Expression.Expr :=
+          p.decls.filterMap fun d => match d with
+            | .var name _ _ _ =>
+              let oldVar := CoreIdent.mkOld name.name
+              if !proc.spec.modifies.contains name &&
+                 postExprs.any (fun e => Lambda.LExpr.freeVars e |>.any
+                   (fun (id, _) => id == oldVar))
+              then some (oldVar, createFvar name)
+              else none
+            | _ => none
+        let oldSubst := createOldVarsSubst oldTrips ++ unmodifiedOldSubst
 
         let postconditions : List Expression.Expr := proc.spec.postconditions.values.map
           (fun c => Lambda.LExpr.substFvars c.expr oldSubst)

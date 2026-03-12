@@ -19,24 +19,55 @@ open Strata.Sarif Strata.SMT
 
 /-! ## Core-Specific Conversion Functions -/
 
-/-- Convert Core Outcome to SARIF Level -/
-def outcomeToLevel : Outcome → Level
-  | .pass => .none
-  | .fail => .error
-  | .unknown => .warning
-  | .implementationError _ => .error
+/-- Convert VCOutcome to SARIF Level -/
+def outcomeToLevel (mode : VerificationMode) (property : Imperative.PropertyType) (outcome : VCOutcome) : Level :=
+  match mode, property, outcome.satisfiabilityProperty, outcome.validityProperty with
+  -- Cover satisfied (sat on P∧Q): always pass
+  | _, .cover, .sat _, _ => .none
+  -- Unreachable (both unsat): warning for assert/divisionByZero, error for cover
+  | _, p, .unsat, .unsat => if p.passWhenUnreachable then .warning else .error
+  -- Pass: validity proven (unsat on P∧¬Q)
+  | _, _, _, .unsat => .none
+  -- Always false (sat unsat): error in all modes
+  | _, _, .unsat, .sat _ => .error
+  -- Always false if reached (unsat unknown): error in all modes
+  | _, _, .unsat, _ => .error
+  -- Deductive: everything non-pass is error
+  | .deductive, _, _, _ => .error
+  -- BugFinding+CompleteSpec: any counterexample (sat on P∧¬Q) is error
+  | .bugFindingAssumingCompleteSpec, _, _, .sat _ => .error
+  -- BugFinding: everything else is note
+  | _, _, _, _ => .note
 
-/-- Convert Core Outcome to a descriptive message -/
-def outcomeToMessage (outcome : Outcome) (cex : LExprModel) : String :=
-  match outcome with
-  | .pass => "Verification succeeded"
-  | .fail =>
-    if cex.isEmpty then
-      "Verification failed"
-    else
-      s!"Verification failed with counterexample: {Std.format cex}"
-  | .unknown => "Verification result unknown (solver timeout or incomplete)"
-  | .implementationError msg => s!"Verification error: {msg}"
+/-- Convert VCOutcome to a descriptive message -/
+def outcomeToMessage (outcome : VCOutcome) : String :=
+  match outcome.satisfiabilityProperty, outcome.validityProperty with
+  | .sat _, .unsat => "Always true and reachable"
+  | .unsat, .sat m =>
+    if m.isEmpty then "Always false and reachable"
+    else s!"Always false and reachable with counterexample: {Std.format m}"
+  | .sat m1, .sat m2 =>
+    let models :=
+      if !m1.isEmpty && !m2.isEmpty then s!" (true: {Std.format m1}, false: {Std.format m2})"
+      else if !m1.isEmpty then s!" (true: {Std.format m1})"
+      else if !m2.isEmpty then s!" (false: {Std.format m2})"
+      else ""
+    s!"True or false depending on inputs{models}"
+  | .unsat, .unsat => "Unreachable: path condition is contradictory"
+  | .sat _, .unknown => "Can be true, unknown if always true"
+  | .unsat, .unknown => "Always false if reached, reachability unknown"
+  | .unknown, .sat m =>
+    if m.isEmpty then "Can be false and is reachable, unknown if always false"
+    else s!"Can be false and is reachable, unknown if always false with counterexample: {Std.format m}"
+  | .unknown, .unsat => "Always true if reached, reachability unknown"
+  | .unknown, .unknown => "Unknown (solver timeout or incomplete)"
+  | .sat _, .err msg => s!"Validity check error: {msg}"
+  | .unsat, .err msg => s!"Validity check error: {msg}"
+  | .unknown, .err msg => s!"Validity check error: {msg}"
+  | .err msg, .sat _ => s!"Satisfiability check error: {msg}"
+  | .err msg, .unsat => s!"Satisfiability check error: {msg}"
+  | .err msg, .unknown => s!"Satisfiability check error: {msg}"
+  | .err msg1, .err msg2 => s!"Both checks error: sat={msg1}, val={msg2}"
 
 /-- Extract location information from metadata -/
 def extractLocation (files : Map Strata.Uri Lean.FileMap) (md : Imperative.MetaData Expression) : Option Location := do
@@ -57,23 +88,28 @@ def propertyTypeToClassification : Imperative.PropertyType → String
   | .assert => "assert"
 
 /-- Convert a VCResult to a SARIF Result -/
-def vcResultToSarifResult (files : Map Strata.Uri Lean.FileMap) (vcr : VCResult) : Strata.Sarif.Result :=
+def vcResultToSarifResult (mode : VerificationMode) (files : Map Strata.Uri Lean.FileMap) (vcr : VCResult) : Strata.Sarif.Result :=
   let ruleId := vcr.obligation.label
-  let classification := propertyTypeToClassification vcr.obligation.property
-  let level := outcomeToLevel vcr.result
-  let messageText :=
-    if vcr.isUnreachable then "Path is unreachable"
-    else outcomeToMessage vcr.result vcr.lexprModel
-  let message : Strata.Sarif.Message := { text := messageText }
-
-  let locations := match extractLocation files vcr.obligation.metadata with
-    | some loc => #[locationToSarif loc]
-    | none => #[]
-
-  { ruleId, level, message, locations, properties := { propertyType := classification } }
+  match vcr.outcome with
+  | .error msg =>
+    let level := .error
+    let messageText := s!"Verification error: {msg}"
+    let message : Strata.Sarif.Message := { text := messageText }
+    let locations := match extractLocation files vcr.obligation.metadata with
+      | some loc => #[locationToSarif loc]
+      | none => #[]
+    { ruleId, level, message, locations }
+  | .ok outcome =>
+    let level := outcomeToLevel mode vcr.obligation.property outcome
+    let messageText := outcomeToMessage outcome
+    let message : Strata.Sarif.Message := { text := messageText }
+    let locations := match extractLocation files vcr.obligation.metadata with
+      | some loc => #[locationToSarif loc]
+      | none => #[]
+    { ruleId, level, message, locations }
 
 /-- Convert VCResults to a SARIF document -/
-def vcResultsToSarif (files : Map Strata.Uri Lean.FileMap) (vcResults : VCResults) : Strata.Sarif.SarifDocument :=
+def vcResultsToSarif (mode : VerificationMode) (files : Map Strata.Uri Lean.FileMap) (vcResults : VCResults) : Strata.Sarif.SarifDocument :=
   let tool : Strata.Sarif.Tool := {
     driver := {
       name := "Strata",
@@ -82,7 +118,7 @@ def vcResultsToSarif (files : Map Strata.Uri Lean.FileMap) (vcResults : VCResult
     }
   }
 
-  let results := vcResults.map (vcResultToSarifResult files)
+  let results := vcResults.map (vcResultToSarifResult mode files)
 
   let run : Strata.Sarif.Run := { tool, results }
 
@@ -93,14 +129,16 @@ def vcResultsToSarif (files : Map Strata.Uri Lean.FileMap) (vcResults : VCResult
 end Core.Sarif
 
 /-- Write SARIF output for verification results to a file.
+    `mode` is the verification mode (deductive or bugFinding) for error level mapping.
     `files` maps source URIs to their file maps for location resolution.
     `vcResults` are the verification results to encode.
     `outputPath` is the path to write the SARIF JSON to. -/
 def Core.Sarif.writeSarifOutput
+    (mode : VerificationMode)
     (files : Map Strata.Uri Lean.FileMap)
     (vcResults : Core.VCResults)
     (outputPath : String) : IO Unit := do
-  let sarifDoc := Core.Sarif.vcResultsToSarif files vcResults
+  let sarifDoc := Core.Sarif.vcResultsToSarif mode files vcResults
   let sarifJson := Strata.Sarif.toPrettyJsonString sarifDoc
   try
     IO.FS.writeFile outputPath sarifJson

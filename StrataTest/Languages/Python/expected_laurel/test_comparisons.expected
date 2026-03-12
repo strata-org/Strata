@@ -6,10 +6,10 @@ PFloorDiv_body_calls_Int.SafeDiv_2: ✅ pass
 PFloorDiv_body_calls_Int.SafeDiv_3: ✅ pass
 PAnd_body_calls_Any_to_bool_0: ✅ pass
 POr_body_calls_Any_to_bool_0: ✅ pass
-assert(21653): ✅ pass (at byte 21653)
-assert(21730): ✅ pass (at byte 21730)
-assert(21839): ✅ pass (at byte 21839)
-postcondition: ✅ pass (at byte 21591)
+assert(21538): ✅ pass (at byte 21538)
+assert(21615): ✅ pass (at byte 21615)
+assert(21724): ✅ pass (at byte 21724)
+postcondition: ✅ pass (at byte 21476)
 List_get_body_calls_List_get_0: ✅ pass
 List_take_body_calls_List_take_0: ✅ pass
 List_drop_body_calls_List_drop_0: ✅ pass

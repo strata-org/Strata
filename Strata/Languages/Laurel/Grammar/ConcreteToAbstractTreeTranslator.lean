@@ -524,6 +524,16 @@ def parseDatatype (arg : Arg) : TransM TypeDefinition := do
   | _, _ =>
     TransM.error s!"parseDatatype expects datatype, got {repr op.name}"
 
+def parseOpaqueType (arg : Arg) : TransM TypeDefinition := do
+  let .op op := arg
+    | TransM.error s!"parseOpaqueType expects operation"
+  match op.name, op.args with
+  | q`Laurel.opaqueType, #[nameArg] =>
+    let name ← translateIdent nameArg
+    return .Datatype { name := name, typeArgs := [], constructors := [] }
+  | _, _ =>
+    TransM.error s!"parseOpaqueType expects opaqueType, got {repr op.name}"
+
 def parseConstrainedType (arg : Arg) : TransM ConstrainedType := do
   let .op op := arg
     | TransM.error s!"parseConstrainedType expects operation"
