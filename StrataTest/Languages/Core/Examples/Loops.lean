@@ -4,7 +4,9 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
+import Strata.Languages.Core.Program
 import Strata.Languages.Core.Verifier
+import Strata.Transform.StructuredToUnstructured
 
 ---------------------------------------------------------------------
 namespace Strata
@@ -32,6 +34,36 @@ spec {
   }
 };
 #end
+
+def singleCFG (p : Program) (n : Nat) : Imperative.CFG String (Imperative.DetBlock String Core.Command Core.Expression) :=
+  let corePgm : Core.Program := TransM.run Inhabited.default (translateProgram p) |>.fst
+  let proc := match corePgm.decls[n]? with | .some (.proc p _) => p | _ => Inhabited.default
+  Imperative.stmtsToCFG proc.body
+
+/--
+info: Entry: before_loop$_6
+
+before_loop$_6:
+  init (i : int)
+  i := #0
+  s := #0
+  condGoto #true loop_entry$_1 loop_entry$_1
+loop_entry$_1:
+  assert [inv$_3] ((~Int.Le : (arrow int (arrow int bool))) #0 (i : int))
+  assert [inv$_4] ((~Int.Le : (arrow int (arrow int bool))) (i : int) (n : int))
+  assert [inv$_5] ((s : int) == ((~Int.SafeDiv : (arrow int (arrow int int)))
+  ((~Int.Mul : (arrow int (arrow int int))) (i : int) ((~Int.Add : (arrow int (arrow int int))) (i : int) #1))
+  #2))
+  condGoto ((~Int.Lt : (arrow int (arrow int bool))) (i : int) (n : int)) l$_2 end$_0
+l$_2:
+  i := ((~Int.Add : (arrow int (arrow int int))) (i : int) #1)
+  s := ((~Int.Add : (arrow int (arrow int int))) (s : int) (i : int))
+  condGoto #true loop_entry$_1 loop_entry$_1
+end$_0:
+  finish
+-/
+#guard_msgs in
+#eval (Std.format (singleCFG gaussPgm 0))
 
 /--
 info: [Strata.Core] Type checking succeeded.
@@ -201,6 +233,38 @@ spec {
   }
 };
 #end
+
+/--
+info: Entry: before_loop$_11
+
+before_loop$_11:
+  init (x : int)
+  init (y : int)
+  x := #0
+  condGoto #true loop_entry$_1 loop_entry$_1
+loop_entry$_1:
+  assert [inv$_8] ((~Int.Ge : (arrow int (arrow int bool))) (x : int) #0)
+  assert [inv$_9] ((~Int.Le : (arrow int (arrow int bool))) (x : int) (n : int))
+  assert [inv$_10] ((~Int.Lt : (arrow int (arrow int bool))) (n : int) (~top : int))
+  condGoto ((~Int.Lt : (arrow int (arrow int bool))) (x : int) (n : int)) before_loop$_7 end$_0
+before_loop$_7:
+  y := #0
+  condGoto #true loop_entry$_3 loop_entry$_3
+loop_entry$_3:
+  assert [inv$_5] ((~Int.Ge : (arrow int (arrow int bool))) (y : int) #0)
+  assert [inv$_6] ((~Int.Le : (arrow int (arrow int bool))) (y : int) (x : int))
+  condGoto ((~Int.Lt : (arrow int (arrow int bool))) (y : int) (x : int)) l$_4 l$_2
+l$_4:
+  y := ((~Int.Add : (arrow int (arrow int int))) (y : int) #1)
+  condGoto #true loop_entry$_3 loop_entry$_3
+l$_2:
+  x := ((~Int.Add : (arrow int (arrow int int))) (x : int) #1)
+  condGoto #true loop_entry$_1 loop_entry$_1
+end$_0:
+  finish
+-/
+#guard_msgs in
+#eval (Std.format (singleCFG nestedPgm 2))
 
 /--
 info:
