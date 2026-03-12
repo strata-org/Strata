@@ -751,68 +751,77 @@ def translate (program : Program): Except (Array DiagnosticModel) (Core.Program 
   let result := resolve program (some model)
   let (program, model) := (result.program, result.model)
   _resolutionDiags := _resolutionDiags ++ result.errors
+  if !_resolutionDiags.isEmpty then
+    .error _resolutionDiags
+  else
+    let coreProgram ← translateLaurelToCore model program
+    pure (coreProgram, diamondErrors ++ modifiesDiags)
+  where
 
-  -- Procedures marked isFunctional are translated to Core functions; all others become Core procedures.
-  -- External procedures are completely ignored (not translated to Core).
-  let nonExternal := program.staticProcedures.filter (fun p => !p.body.isExternal)
-  let (markedPure, procProcs) := nonExternal.partition (·.isFunctional)
-  let initState : TranslateState := {model := model}
-  -- Try to translate each isFunctional procedure to a Core function, collecting errors for failures
-  let (pureErrors, pureFuncDecls) := markedPure.foldl (fun (errs, decls) p =>
-    match tryTranslatePureToFunction p initState with
-    | .error es => (errs ++ es.toList, decls)
-    | .ok d     => (errs, decls.push d)) ([], #[])
-  -- Translate procedures using the monad, collecting diagnostics from the final state
-  let (procedures, procState) := runTranslateM initState do
-    procProcs.mapM translateProcedure
-  let procDiags := procState.diagnostics
+  translateLaurelToCore (model: SemanticModel) (program : Program): Except (Array DiagnosticModel) Core.Program := do
 
-  -- Translate Laurel constants to Core function declarations (0-ary functions)
-  let (constantDecls, constantsState) := runTranslateM initState $ program.constants.mapM fun c => do
-    let coreTy := translateType model c.type
-    let body ← c.initializer.mapM (translateExpr ·)
-    return Core.Decl.func {
-      name := ⟨c.name.text, ()⟩
-      typeArgs := []
-      inputs := []
-      output := coreTy
-      body := body
+    -- Procedures marked isFunctional are translated to Core functions; all others become Core procedures.
+    -- External procedures are completely ignored (not translated to Core).
+    let nonExternal := program.staticProcedures.filter (fun p => !p.body.isExternal)
+    let (markedPure, procProcs) := nonExternal.partition (·.isFunctional)
+    let initState : TranslateState := {model := model}
+    -- Try to translate each isFunctional procedure to a Core function, collecting errors for failures
+    let (pureErrors, pureFuncDecls) := markedPure.foldl (fun (errs, decls) p =>
+      match tryTranslatePureToFunction p initState with
+      | .error es => (errs ++ es.toList, decls)
+      | .ok d     => (errs, decls.push d)) ([], #[])
+    -- Translate procedures using the monad, collecting diagnostics from the final state
+    let (procedures, procState) := runTranslateM initState do
+      procProcs.mapM translateProcedure
+    let procDiags := procState.diagnostics
+
+    -- Translate Laurel constants to Core function declarations (0-ary functions)
+    let (constantDecls, constantsState) := runTranslateM initState $ program.constants.mapM fun c => do
+      let coreTy := translateType model c.type
+      let body ← c.initializer.mapM (translateExpr ·)
+      return Core.Decl.func {
+        name := ⟨c.name.text, ()⟩
+        typeArgs := []
+        inputs := []
+        output := coreTy
+        body := body
+      }
+
+    -- Collect ALL errors from both functions, procedures, and resolution before deciding whether to fail
+    let allErrors :=
+      -- Not including resolution diagnostics yet because the Python through Laurel pipeline
+      -- does not resolve yet.
+      -- resolutionDiags.toList ++
+      pureErrors ++ procDiags ++ constantsState.diagnostics
+    if !allErrors.isEmpty then
+      .error allErrors.toArray
+    let procDecls := procedures.map (fun p => Core.Decl.proc p .empty)
+
+    -- Translate Laurel datatype definitions to Core declarations.
+    -- Opaque types (zero constructors) become individual type declarations.
+    -- Datatypes with constructors are grouped by mutual references using union-find:
+    -- datatypes that (transitively) reference each other share a single `data` declaration.
+    let laurelDatatypes := program.types.filterMap fun td => match td with
+      | .Datatype dt => some dt
+      | _ => none
+    let datatypeResults := laurelDatatypes.map (translateDatatypeDefinition model)
+    let opaqueDecls := datatypeResults.filterMap fun r => match r with
+      | .inl decl => some decl
+      | .inr _ => none
+    let ldatatypes := datatypeResults.filterMap fun r => match r with
+      | .inl _ => none
+      | .inr ldt => some ldt
+    let groups := groupDatatypes laurelDatatypes ldatatypes
+    let groupedDatatypeDecls := groups.map fun group => Core.Decl.type (.data group)
+    let program := {
+      decls := opaqueDecls ++ groupedDatatypeDecls ++ constantDecls ++ pureFuncDecls.toList ++ procDecls
     }
 
-  -- Collect ALL errors from both functions, procedures, and resolution before deciding whether to fail
-  let allErrors :=
-    -- Not including resolution diagnostics yet because the Python through Laurel pipeline
-    -- does not resolve yet.
-    -- resolutionDiags.toList ++
-    pureErrors ++ procDiags ++ constantsState.diagnostics
-  if !allErrors.isEmpty then
-    .error allErrors.toArray
-  let procDecls := procedures.map (fun p => Core.Decl.proc p .empty)
+    -- dbg_trace "=== Generated Strata Core Program ==="
+    -- dbg_trace (toString (Std.Format.pretty (Strata.Core.formatProgram program) 100))
+    -- dbg_trace "================================="
+    pure program
 
-  -- Translate Laurel datatype definitions to Core declarations.
-  -- Opaque types (zero constructors) become individual type declarations.
-  -- Datatypes with constructors are grouped by mutual references using union-find:
-  -- datatypes that (transitively) reference each other share a single `data` declaration.
-  let laurelDatatypes := program.types.filterMap fun td => match td with
-    | .Datatype dt => some dt
-    | _ => none
-  let datatypeResults := laurelDatatypes.map (translateDatatypeDefinition model)
-  let opaqueDecls := datatypeResults.filterMap fun r => match r with
-    | .inl decl => some decl
-    | .inr _ => none
-  let ldatatypes := datatypeResults.filterMap fun r => match r with
-    | .inl _ => none
-    | .inr ldt => some ldt
-  let groups := groupDatatypes laurelDatatypes ldatatypes
-  let groupedDatatypeDecls := groups.map fun group => Core.Decl.type (.data group)
-  let program := {
-    decls := opaqueDecls ++ groupedDatatypeDecls ++ constantDecls ++ pureFuncDecls.toList ++ procDecls
-  }
-
-  -- dbg_trace "=== Generated Strata Core Program ==="
-  -- dbg_trace (toString (Std.Format.pretty (Strata.Core.formatProgram program) 100))
-  -- dbg_trace "================================="
-  pure (program, diamondErrors ++ modifiesDiags)
 
 /--
 Verify a Laurel program using an SMT solver
