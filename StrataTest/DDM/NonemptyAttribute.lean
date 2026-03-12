@@ -22,12 +22,14 @@ op item (n : Num) : Item => n;
 
 // Operations with @[nonempty] - require at least one element
 op comma1 (@[nonempty] items : CommaSepBy Item) : Command => "comma1(" items ")";
+op semi1 (@[nonempty] items : SemicolonSepBy Item) : Command => "semi1(" items ")";
 op space1 (@[nonempty] items : SpaceSepBy Item) : Command => "space1(" items ")";
 op prefixed1 (@[nonempty] items : SpacePrefixSepBy Item) : Command => "prefixed1(" items ")";
 op seq1 (@[nonempty] items : Seq Item) : Command => "seq1(" items ")";
 
 // Operations without @[nonempty] - allow zero elements
 op comma0 (items : CommaSepBy Item) : Command => "comma0(" items ")";
+op semi0 (items : SemicolonSepBy Item) : Command => "semi0(" items ")";
 op space0 (items : SpaceSepBy Item) : Command => "space0(" items ")";
 op seq0 (items : Seq Item) : Command => "seq0(" items ")";
 

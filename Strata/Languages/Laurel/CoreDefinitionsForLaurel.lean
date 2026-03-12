@@ -38,8 +38,7 @@ function const(value: int) : int
 The core map operation definitions as a `Laurel.Program`, parsed at compile time.
 -/
 def coreDefinitionsForLaurel : Program :=
-  let uri := Strata.Uri.file "Strata/Languages/Laurel/CoreDefinitionsForLaurel.lean"
-  match TransM.run uri (parseProgram coreDefinitionsForLaurelDDM) with
+  match TransM.run none (parseProgram coreDefinitionsForLaurelDDM) with
   | .ok program => program
   | .error e => panic! s!"CoreDefinitionsForLaurel parse error: {e}"
 

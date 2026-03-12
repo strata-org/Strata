@@ -774,6 +774,7 @@ def checkLeftRec (thisCatName : QualifiedIdent) (argDecls : ArgDecls) (as : List
                           cat.name == q`Init.SpaceSepBy ||
                           cat.name == q`Init.SpacePrefixSepBy ||
                           cat.name == q`Init.Seq ||
+                          cat.name == q`Init.SemicolonSepBy ||
                           cat.name == q`Init.Option
     if isListCategory then
       assert! cat.args.size = 1
@@ -893,6 +894,13 @@ private def commaSepByParserHelper (nonempty : Bool) (p : Parser) : Parser :=
   else
     sepByParser p (symbolNoAntiquot ",")
 
+/-- Helper to choose between sepByParser and sepBy1Parser for semicolon-separated lists -/
+private def semicolonSepByParserHelper (nonempty : Bool) (p : Parser) : Parser :=
+  if nonempty then
+    sepBy1Parser p (symbolNoAntiquot ";")
+  else
+    sepByParser p (symbolNoAntiquot ";")
+
 /-- Parser function for given syntax category -/
 partial def catParser (ctx : ParsingContext) (cat : SyntaxCat) (metadata : Metadata := {}) : Except SyntaxCat Parser :=
   match cat.name with
@@ -900,6 +908,10 @@ partial def catParser (ctx : ParsingContext) (cat : SyntaxCat) (metadata : Metad
     assert! cat.args.size = 1
     let isNonempty := q`StrataDDL.nonempty ∈ metadata
     commaSepByParserHelper isNonempty <$> catParser ctx cat.args[0]!
+  | q`Init.SemicolonSepBy =>
+    assert! cat.args.size = 1
+    let isNonempty := q`StrataDDL.nonempty ∈ metadata
+    semicolonSepByParserHelper isNonempty <$> catParser ctx cat.args[0]!
   | q`Init.SpaceSepBy | q`Init.SpacePrefixSepBy | q`Init.NewlineSepBy | q`Init.Seq =>
     assert! cat.args.size = 1
     let isNonempty := q`StrataDDL.nonempty ∈ metadata

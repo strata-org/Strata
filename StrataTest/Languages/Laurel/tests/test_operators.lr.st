@@ -13,5 +13,5 @@ procedure main() {
     var t: bool := true;
     var f: bool := false;
     var c: bool := !f;
-    assert c == true;
+    assert c == true
 };
