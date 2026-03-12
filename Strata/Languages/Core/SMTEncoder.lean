@@ -587,7 +587,7 @@ partial def toSMTOp (E : Env) (fn : CoreIdent) (fnty : LMonoTy) (ctx : SMT.Conte
         let formalStrs := formals.map (toString ∘ format)
         let tys := LMonoTy.destructArrow fnty
         let intys := tys.take (tys.length - 1)
-        let (smt_intys, ctx) ← LMonoTys.toSMTType E intys ctx
+        let (smt_intys, ctx) ← LMonoTys.toSMTType E intys ctx useArrayTheory
         let bvs := formalStrs.zip smt_intys
         let argvars := bvs.map (fun a => TermVar.mk (toString $ format a.fst) a.snd)
         let outty := tys.getLast (by exact @LMonoTy.destructArrow_non_empty fnty)
