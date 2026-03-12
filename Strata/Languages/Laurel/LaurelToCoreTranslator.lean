@@ -319,8 +319,7 @@ def translateStmt (outputParams : List Parameter) (stmt : StmtExprMd)
           let coreExpr ← translateExpr initExpr
           return [Core.Statement.init ident coreType (some coreExpr) md]
       | none =>
-          let defaultExpr := defaultExprForType model ty
-          return [Core.Statement.init ident coreType (some defaultExpr) md]
+          return [Core.Statement.init ident coreType none md]
   | .Assign targets value =>
       match targets with
       | [⟨ .Identifier targetId, _ ⟩] =>
