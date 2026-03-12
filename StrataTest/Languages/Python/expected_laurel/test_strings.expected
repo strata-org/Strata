@@ -3,8 +3,8 @@
 List_get_body_calls_List_get_0: ✅ pass
 List_take_body_calls_List_take_0: ✅ pass
 List_drop_body_calls_List_drop_0: ✅ pass
-List_slice_body_calls_List_take_0: ✅ pass
-List_slice_body_calls_List_drop_1: ✅ pass
+List_slice_body_calls_List_drop_0: ✅ pass
+List_slice_body_calls_List_take_1: ✅ pass
 List_set_body_calls_List_set_0: ✅ pass
 DictStrAny_get_body_calls_DictStrAny_get_0: ✅ pass
 Any_get_body_calls_DictStrAny_get_0: ✅ pass
@@ -30,3 +30,4 @@ assert_assert(114)_calls_Any_to_bool_0: ✅ pass (at line 6, col 4)
 assert(114): ✅ pass (at line 6, col 4)
 assert_assert(264)_calls_Any_to_bool_0: ✅ pass (at line 11, col 4)
 assert(264): ✅ pass (at line 11, col 4)
+ite_cond_calls_Any_to_bool_0: ✅ pass
