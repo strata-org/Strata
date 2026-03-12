@@ -48,8 +48,6 @@ datatype Error () {
 // In this prelude, we model datetime as a single int and assume
 // that the conversion from a string constant is handled by the translator.
 
-type DictStrAny;
-
 mutual
 datatype Any () {
   from_none (),
@@ -66,9 +64,13 @@ datatype Any () {
 
 datatype ListAny () {
   ListAny_nil (),
-  ListAny_cons (h: Any, t: ListAny)
+  ListAny_cons (head: Any, tail: ListAny)
 };
 
+datatype DictStrAny () {
+  DictStrAny_empty (),
+  DictStrAny_cons (key: string, val: Any, tail: DictStrAny)
+};
 end;
 
 // /////////////////////////////////////////////////////////////////////////////////////
@@ -163,43 +165,204 @@ inline function Any_to_bool (v: Any) : bool
 
 // /////////////////////////////////////////////////////////////////////////////////////
 // ListAny functions
-// Those functions are opaque until Strata support recursive functions
 // /////////////////////////////////////////////////////////////////////////////////////
 
-function List_contains (l : ListAny, x: Any) : bool;
-function List_len (l : ListAny) : int;
-function List_extend (l1 : ListAny, l2: ListAny) : ListAny;
-function List_append (l: ListAny, x: Any) : ListAny;
-function List_get_func (l : ListAny, i : int) : Any;
-function List_set_func (l : ListAny, i : int, v: Any) : ListAny;
-function List_reverse (l: ListAny) : ListAny;
-function List_index! (l: ListAny, v: Any): int;
-function List_index (l: ListAny, v: Any): int;
+rec function List_len (@[cases] l : ListAny) : int
+{
+  if ListAny..isListAny_nil(l) then 0 else 1 + List_len(ListAny..tail!(l))
+}
+
+axiom [List_len_pos]: forall l : ListAny :: List_len(l) >= 0;
+
+rec function List_contains (@[cases] l : ListAny, x: Any) : bool
+{
+  if ListAny..isListAny_nil(l) then false else (ListAny..head!(l) == x) || List_contains(ListAny..tail!(l), x)
+}
+
+rec function List_extend (@[cases] l1 : ListAny, l2: ListAny) : ListAny
+{
+  if ListAny..isListAny_nil(l1) then l2
+  else ListAny_cons(ListAny..head!(l1), List_extend(ListAny..tail!(l1), l2))
+}
+
+rec function List_get (@[cases] l : ListAny, i : int) : Any
+  requires i >= 0 && i < List_len(l);
+{
+  if ListAny..isListAny_nil(l) then from_none()
+  else if  i == 0 then ListAny..head!(l)
+  else List_get(ListAny..tail!(l), i - 1)
+}
+
+rec function List_take (@[cases] l : ListAny, i: int) : ListAny
+  requires i >= 0 && i <= List_len(l);
+{
+  if ListAny..isListAny_nil(l) then ListAny_nil()
+  else if  i == 0 then ListAny_nil()
+  else ListAny_cons(ListAny..head!(l), List_take(ListAny..tail!(l), i - 1))
+}
+
+axiom [List_take_len]: forall l : ListAny, i: int :: {List_len(List_take(l,i))}
+  (i >= 0 && i <= List_len(l)) ==> List_len(List_take(l,i)) == i;
+
+rec function List_drop (@[cases] l : ListAny, i: int) : ListAny
+  requires i >= 0 && i <= List_len(l);
+{
+  if ListAny..isListAny_nil(l) then ListAny_nil()
+  else if  i == 0 then l
+  else List_drop(ListAny..tail!(l), i - 1)
+}
+
+axiom [List_drop_len]: forall l : ListAny, i: int :: {List_len(List_drop(l,i))}
+  (i >= 0 && i <= List_len(l)) ==> List_len(List_drop(l,i)) == List_len(l) - i;
+
+inline function List_slice (l : ListAny, start : int, stop: int) : ListAny
+  requires start >= 0 && start < List_len(l) && stop >= 0 && stop <= List_len(l) && start <= stop;
+{
+  List_take (List_drop (l, start), stop - start)
+}
+
+rec function List_set (@[cases] l : ListAny, i : int, v: Any) : ListAny
+  requires i >= 0 && i < List_len(l);
+{
+  if ListAny..isListAny_nil(l) then ListAny_nil()
+  else if  i == 0 then ListAny_cons(v, ListAny..tail!(l))
+  else ListAny_cons(ListAny..head!(l), List_set(ListAny..tail!(l), i - 1, v))
+}
+
+rec function List_map (@[cases] l : ListAny, f: Any -> Any) : ListAny
+{
+  if ListAny..isListAny_nil(l) then
+    ListAny_nil()
+  else
+    ListAny_cons(f(ListAny..head!(l)), List_map(ListAny..tail!(l), f))
+}
+
+rec function List_filter (@[cases] l : ListAny, f: Any -> bool) : ListAny
+{
+  if ListAny..isListAny_nil(l) then
+    ListAny_nil()
+  else if f(ListAny..head!(l)) then
+    ListAny_cons(ListAny..head!(l), List_filter(ListAny..tail!(l), f))
+  else
+    List_filter(ListAny..tail!(l), f)
+}
+
+//Require recursive function on int
 function List_repeat (l: ListAny, n: int): ListAny;
-function List_insert (l: ListAny, i: int, v: Any): ListAny;
-function List_remove (l: ListAny, v: Any): ListAny;
-function List_pop (l: ListAny, i: int): ListAny;
 
 
 // /////////////////////////////////////////////////////////////////////////////////////
-// DictStrAny functions what support constructing DictStrAny value in the translator
-// Those functions are opaque until Strata support recursive functions
-// /////////////////////////////////////////////////////////////////////////////////////
-function DictStrAny_empty () : DictStrAny;
-function DictStrAny_insert (d: DictStrAny, key: string, v: Any) : DictStrAny;
-
-// /////////////////////////////////////////////////////////////////////////////////////
-// ListAny functions
-// Those functions are opaque until Strata support recursive functions
+// DictStrAny functions
 // /////////////////////////////////////////////////////////////////////////////////////
 
-function is_IntReal (v: Any) : bool;
-function Any_real_to_int (v: Any) : int;
+rec function DictStrAny_contains (@[cases] d : DictStrAny, key: string) : bool
+{
+  if DictStrAny..isDictStrAny_empty(d) then false
+  else (DictStrAny..key!(d) == key) || DictStrAny_contains(DictStrAny..tail!(d), key)
+}
+
+rec function DictStrAny_get (@[cases] d : DictStrAny, key: string) : Any
+  requires DictStrAny_contains(d, key);
+{
+  if  DictStrAny..isDictStrAny_empty(d) then from_none()
+  else if DictStrAny..key!(d) == key then DictStrAny..val!(d)
+  else DictStrAny_get(DictStrAny..tail!(d), key)
+}
+
+rec function DictStrAny_insert (@[cases] d : DictStrAny, key: string, val: Any) : DictStrAny
+{
+  if DictStrAny..isDictStrAny_empty(d) then DictStrAny_cons(key, val, DictStrAny_empty())
+  else if DictStrAny..key!(d) == key then DictStrAny_cons(key, val, DictStrAny..tail!(d))
+  else DictStrAny_cons(DictStrAny..key!(d), DictStrAny..val!(d), DictStrAny_insert(DictStrAny..tail!(d), key, val))
+}
+
+inline function Any_get (dictOrList: Any, index: Any): Any
+  requires  (Any..isfrom_Dict(dictOrList) && Any..isfrom_string(index) && DictStrAny_contains(Any..as_Dict!(dictOrList), Any..as_string!(index))) ||
+            (Any..isfrom_ListAny(dictOrList) && Any..isfrom_int(index) && Any..as_int!(index) >= 0 && Any..as_int!(index) < List_len(Any..as_ListAny!(dictOrList)));
+{
+  if Any..isfrom_Dict(dictOrList) then
+    DictStrAny_get(Any..as_Dict!(dictOrList), Any..as_string!(index))
+  else
+    List_get(Any..as_ListAny!(dictOrList), Any..as_int!(index))
+}
+
+inline function Any_get! (dictOrList: Any, index: Any): Any
+{
+  if Any..isexception(dictOrList) then dictOrList
+  else if Any..isexception(index) then index
+  else if !(Any..isfrom_Dict(dictOrList) && Any..isfrom_string(index)) && !(Any..isfrom_ListAny(dictOrList) && Any..isfrom_int(index)) then
+    exception (TypeError("Invalid subscription type"))
+  else if Any..isfrom_Dict(dictOrList) && Any..isfrom_string(index) && DictStrAny_contains(Any..as_Dict!(dictOrList), Any..as_string!(index)) then
+    DictStrAny_get(Any..as_Dict!(dictOrList), Any..as_string!(index))
+  else if Any..isfrom_ListAny(dictOrList) && Any..isfrom_int(index) && Any..as_int!(index) >= 0 && Any..as_int!(index) < List_len(Any..as_ListAny!(dictOrList)) then
+    List_get(Any..as_ListAny!(dictOrList), Any..as_int!(index))
+  else
+    exception (IndexError("Invalid subscription"))
+}
+
+inline function Any_set (dictOrList: Any, index: Any, val: Any): Any
+  requires  (Any..isfrom_Dict(dictOrList) && Any..isfrom_string(index)) ||
+            (Any..isfrom_ListAny(dictOrList) && Any..isfrom_int(index) && Any..as_int!(index) >= 0 && Any..as_int!(index) < List_len(Any..as_ListAny!(dictOrList)));
+{
+  if Any..isfrom_Dict(dictOrList) then
+    from_Dict(DictStrAny_insert(Any..as_Dict!(dictOrList), Any..as_string!(index), val))
+  else
+    from_ListAny(List_set(Any..as_ListAny!(dictOrList), Any..as_int!(index), val))
+}
+
+inline function Any_set! (dictOrList: Any, index: Any, val: Any): Any
+{
+  if Any..isexception(dictOrList) then dictOrList
+  else if Any..isexception(index) then index
+  else if Any..isexception(val) then val
+  else if !(Any..isfrom_Dict(dictOrList) && Any..isfrom_string(index)) && !(Any..isfrom_ListAny(dictOrList) && Any..isfrom_int(index)) then
+    exception (TypeError("Invalid subscription type"))
+  else if Any..isfrom_Dict(dictOrList) && Any..isfrom_string(index) then
+    from_Dict(DictStrAny_insert(Any..as_Dict!(dictOrList), Any..as_string!(index), val))
+  else if Any..isfrom_ListAny(dictOrList) && Any..isfrom_int(index) && Any..as_int!(index) >= 0 && Any..as_int!(index) < List_len(Any..as_ListAny!(dictOrList)) then
+    from_ListAny(List_set(Any..as_ListAny!(dictOrList), Any..as_int!(index), val))
+  else
+    exception (IndexError("Index out of bound"))
+}
+
+rec function Any_sets (dictOrList: Any, @[cases] indices: ListAny, val: Any): Any
+{
+  if ListAny..isListAny_nil(indices) then dictOrList
+  else if ListAny..isListAny_nil(ListAny..tail!(indices)) then Any_set!(dictOrList, ListAny..head!(indices), val)
+  else Any_set!(dictOrList, ListAny..head!(indices),
+    Any_sets(Any_get!(dictOrList, ListAny..head!(indices)), ListAny..tail!(indices), val))
+}
+
+inline function PIn (v: Any, dictOrList: Any) : Any
+  requires (Any..isfrom_Dict(dictOrList) && Any..isfrom_string(v)) || Any..isfrom_ListAny(dictOrList);
+{
+  from_bool(
+    if Any..isfrom_Dict(dictOrList) then
+      DictStrAny_contains(Any..as_Dict!(dictOrList), Any..as_string!(v))
+    else
+      List_contains(Any..as_ListAny!(dictOrList), v)
+  )
+}
+
+inline function PNotIn ( v: Any, dictOrList: Any) : Any
+  requires (Any..isfrom_Dict(dictOrList) && Any..isfrom_string(v)) || Any..isfrom_ListAny(dictOrList);
+{
+  from_bool(
+    if Any..isfrom_Dict(dictOrList) then
+      !DictStrAny_contains(Any..as_Dict!(dictOrList), Any..as_string!(v))
+    else
+      !List_contains(Any..as_ListAny!(dictOrList), v)
+  )
+}
 
 // /////////////////////////////////////////////////////////////////////////////////////
 // Python treats some values of different types to be equivalent
 // This function models that behavior
 // /////////////////////////////////////////////////////////////////////////////////////
+
+function is_IntReal (v: Any) : bool;
+function Any_real_to_int (v: Any) : int;
+
 inline function normalize_any (v : Any) : Any {
   if v == from_bool(true) then from_int(1)
   else (if v == from_bool(false) then from_int(0) else
@@ -553,6 +716,10 @@ inline function PMod (v1: Any, v2: Any) : Any
 {
   exception(UnimplementedError ("Mod operator is not supported"))
 }
+
+// /////////////////////////////////////////////////////////////////////////////////////
+// Modelling of Python Boolean operations And and Or
+// /////////////////////////////////////////////////////////////////////////////////////
 
 
 // /////////////////////////////////////////////////////////////////////////////////////

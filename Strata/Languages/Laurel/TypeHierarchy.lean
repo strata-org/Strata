@@ -51,7 +51,7 @@ def generateTypeHierarchyDecls (model : SemanticModel) (program: Program) : List
     | .Composite ct => some ct
     | _ => none
   if composites.isEmpty then [] else
-  let typeTagTy : HighTypeMd := ⟨.TCore "TypeTag", #[]⟩
+  let typeTagTy : HighTypeMd := ⟨.UserDefined "TypeTag", #[]⟩
   let boolTy : HighTypeMd := ⟨.TBool, #[]⟩
   let innerMapTy : HighTypeMd := ⟨.TMap typeTagTy boolTy, #[]⟩
   let outerMapTy : HighTypeMd := ⟨.TMap typeTagTy innerMapTy, #[]⟩

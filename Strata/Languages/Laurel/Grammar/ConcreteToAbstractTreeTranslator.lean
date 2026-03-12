@@ -524,15 +524,19 @@ def parseDatatype (arg : Arg) : TransM TypeDefinition := do
   | _, _ =>
     TransM.error s!"parseDatatype expects datatype, got {repr op.name}"
 
-def parseOpaqueType (arg : Arg) : TransM TypeDefinition := do
+def parseConstrainedType (arg : Arg) : TransM ConstrainedType := do
   let .op op := arg
-    | TransM.error s!"parseOpaqueType expects operation"
+    | TransM.error s!"parseConstrainedType expects operation"
   match op.name, op.args with
-  | q`Laurel.opaqueType, #[nameArg] =>
+  | q`Laurel.constrainedType, #[nameArg, valueNameArg, baseArg, constraintArg, witnessArg] =>
     let name ← translateIdent nameArg
-    return .Datatype { name := name, typeArgs := [], constructors := [] }
+    let valueName ← translateIdent valueNameArg
+    let base ← translateHighType baseArg
+    let constraint ← translateStmtExpr constraintArg
+    let witness ← translateStmtExpr witnessArg
+    return { name, base, valueName, constraint, witness }
   | _, _ =>
-    TransM.error s!"parseOpaqueType expects opaqueType, got {repr op.name}"
+    TransM.error s!"parseConstrainedType expects constrainedType, got {repr op.name}"
 
 def parseTopLevel (arg : Arg) : TransM (Option Procedure × Option TypeDefinition) := do
   let .op op := arg
@@ -548,11 +552,11 @@ def parseTopLevel (arg : Arg) : TransM (Option Procedure × Option TypeDefinitio
   | q`Laurel.datatypeCommand, #[datatypeArg] =>
     let typeDef ← parseDatatype datatypeArg
     return (none, some typeDef)
-  | q`Laurel.opaqueTypeCommand, #[opaqueTypeArg] =>
-    let typeDef ← parseOpaqueType opaqueTypeArg
-    return (none, some typeDef)
+  | q`Laurel.constrainedTypeCommand, #[ctArg] =>
+    let ct ← parseConstrainedType ctArg
+    return (none, some (.Constrained ct))
   | _, _ =>
-    TransM.error s!"parseTopLevel expects procedureCommand, compositeCommand, datatypeCommand, or opaqueTypeCommand, got {repr op.name}"
+    TransM.error s!"parseTopLevel expects procedureCommand, compositeCommand, or datatypeCommand, got {repr op.name}"
 
 /--
 Translate concrete Laurel syntax into abstract Laurel syntax

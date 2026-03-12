@@ -166,11 +166,13 @@ op function (name : Ident, parameters: CommaSepBy Parameter,
   body : Option OptionalBody) : Procedure =>
   "function " name "(" parameters ")" returnType returnParameters requires ensures modifies body ";";
 
-// Opaque type declarations
-category OpaqueType;
-op opaqueType (name: Ident): OpaqueType => "type " name ";";
+category ConstrainedType;
+op constrainedType (name: Ident, valueName: Ident, base: LaurelType,
+                    constraint: StmtExpr, witness: StmtExpr): ConstrainedType
+  => "constrained " name " = " valueName ": " base " where " constraint:0 " witness " witness:0;
 
 op compositeCommand(composite: Composite): Command => composite;
 op procedureCommand(procedure: Procedure): Command => procedure;
 op datatypeCommand(datatype: Datatype): Command => datatype;
-op opaqueTypeCommand(opaqueType: OpaqueType): Command => opaqueType;
+op constrainedTypeCommand(ct: ConstrainedType): Command => ct;
+
