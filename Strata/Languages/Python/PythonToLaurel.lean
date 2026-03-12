@@ -1340,7 +1340,8 @@ def pythonToLaurel (prelude: Core.Program)
     /-
 Compute partial Laurel functions and procedures from the Core functions and procedures
 These are needed by the Laurel pipeline to determine which is which and how to call them.
-In the future, we will replace
+In the future, we will replace this Core=>Laurel translation by defining the Python prelude
+in Laurel.
     -/
     let preludeFunctions : List Procedure := (getPreludeFunctions prelude).map (λ funcname =>
     {
@@ -1348,7 +1349,7 @@ In the future, we will replace
       inputs := [],
       outputs := [],
       preconditions := [],
-      determinism := .deterministic none, --TODO: need to set reads
+      determinism := .deterministic none,
       decreases := none,
       body := .External
       md := default
@@ -1362,7 +1363,7 @@ In the future, we will replace
       inputs := [],
       outputs := [],
       preconditions := [],
-      determinism := .deterministic none, --TODO: need to set reads
+      determinism := .deterministic none,
       decreases := none,
       body := .External
       md := default
