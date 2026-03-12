@@ -133,7 +133,7 @@ def termToSMTString (t : Term) : SolverM String := do
   | .ok s =>
     modify fun st => { st with termStrings := st.termStrings.insert t s }
     return s
-  | .error msg => panic! s!"Solver.termToSMTString failed: {msg}"
+  | .error msg => throw (IO.userError s!"Solver.termToSMTString failed: {msg}")
 
 /-- Convert a `TermType` to its SMT-LIB string, using the `SolverState` cache. -/
 def typeToSMTString (ty : TermType) : SolverM String := do
@@ -142,7 +142,7 @@ def typeToSMTString (ty : TermType) : SolverM String := do
   | .ok s =>
     modify fun st => { st with typeStrings := st.typeStrings.insert ty s }
     return s
-  | .error msg => panic! s!"Solver.typeToSMTString failed: {msg}"
+  | .error msg => throw (IO.userError s!"Solver.typeToSMTString failed: {msg}")
 
 /-! ## String-based commands (less critical, kept as-is) -/
 
