@@ -1289,6 +1289,11 @@ def getDatatypeFunctions (decls: List Core.Decl) : List String :=
 
 
 def getPreludeFunctions (prelude: Core.Program) : List String := (getFunctions prelude.decls) ++ (getDatatypeFunctions prelude.decls)
+def getPreludeProcedures (prelude: Core.Program) : List String :=
+  prelude.decls.filterMap (λ decl =>
+    match decl.kind with
+        |.proc => some decl.name.name
+        | _ => none)
 
 /-- Translate Python module to Laurel Program -/
 def pythonToLaurel (prelude: Core.Program)
@@ -1374,13 +1379,19 @@ def pythonToLaurel (prelude: Core.Program)
       isFunctional := false
       }
 
+    /-
+Compute partial Laurel functions and procedures from the Core functions and procedures
+These are needed by the Laurel pipeline to determine how to translate calls.
+In the future, we will replace this Core=>Laurel translation by defining the Python prelude
+in Laurel.
+    -/
     let preludeFunctions : List Procedure := (getPreludeFunctions prelude).map (λ funcname =>
     {
-      name := {text:= funcname} ,
+      name := { text:= funcname},
       inputs := [],
       outputs := [],
       preconditions := [],
-      determinism := .deterministic none, --TODO: need to set reads
+      determinism := .deterministic none,
       decreases := none,
       body := .External
       md := default
@@ -1388,8 +1399,22 @@ def pythonToLaurel (prelude: Core.Program)
       }
     )
 
+    let preludeProcedures : List Procedure := (getPreludeProcedures prelude).map (λ funcname =>
+    {
+      name := { text:= funcname},
+      inputs := [],
+      outputs := [],
+      preconditions := [],
+      determinism := .deterministic none,
+      decreases := none,
+      body := .External
+      md := default
+      isFunctional := false
+      }
+    )
+
     let program : Laurel.Program := {
-      staticProcedures := preludeFunctions ++ procedures ++ [mainProc]
+      staticProcedures := preludeFunctions ++ preludeProcedures ++ procedures ++ [mainProc]
       staticFields := []
       types := compositeTypes.map TypeDefinition.Composite
       constants := []
