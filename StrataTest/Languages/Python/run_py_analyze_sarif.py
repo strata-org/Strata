@@ -21,7 +21,7 @@ TEST_FILES = sorted(
 
 BOTH_SKIP = {"test_foo_client_folder", "test_invalid_client_type", "test_unsupported_config"}
 SKIP_TESTS = BOTH_SKIP | {"test_class_field_use"}
-SKIP_TESTS_LAUREL = BOTH_SKIP | {"test_datetime"}
+SKIP_TESTS_LAUREL = BOTH_SKIP
 
 
 def run(test_file: str, *, laurel: bool) -> bool:

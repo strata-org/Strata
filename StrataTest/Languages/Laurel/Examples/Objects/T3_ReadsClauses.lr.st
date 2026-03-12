@@ -17,6 +17,7 @@ composite Container {
 procedure opaqueProcedure(c: Container): int
   reads c
   ensures true
+;
 
 procedure foo(c: Container, d: Container) 
 {
@@ -28,12 +29,13 @@ procedure foo(c: Container, d: Container)
   var z = opaqueProcedure(c);
   assert x == z;
 //         ^^ error: could not prove assert
-}
+};
 
 procedure permissionLessReader(c: Container): int
   reads {}
   { c.value }
 //  ^^^^^^^ error: enclosing procedure 'permissionLessReader' does not have permission to read 'c.value'
+;
 
 /*
 Translation towards SMT:

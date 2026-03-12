@@ -33,7 +33,7 @@ procedure whileWithBreakAndContinue(steps: int, continueSteps: int, exitSteps: i
     }
   } breakBlock;
   counter;
-}
+};
 "
 
 -- Not working yet
