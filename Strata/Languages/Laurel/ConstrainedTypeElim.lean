@@ -125,7 +125,7 @@ def resolveExpr (ptMap : ConstrainedTypeMap) : StmtExprMd → StmtExprMd
     ⟨.Assign (ts.attach.map fun ⟨t, _⟩ => resolveExpr ptMap t) (resolveExpr ptMap v), md⟩
   | ⟨.Return (some v), md⟩ => ⟨.Return (some (resolveExpr ptMap v)), md⟩
   | ⟨.Return none, md⟩ => ⟨.Return none, md⟩
-  | ⟨.Assert c, md⟩ => ⟨.Assert (resolveExpr ptMap c), md⟩
+  | ⟨.Assert c msg, md⟩ => ⟨.Assert (resolveExpr ptMap c), md⟩
   | ⟨.Assume c, md⟩ => ⟨.Assume (resolveExpr ptMap c), md⟩
   | e => e
 termination_by e => sizeOf e
@@ -202,23 +202,23 @@ def elimProc (ptMap : ConstrainedTypeMap) (proc : Procedure) : Procedure :=
     if outputEnsures.isEmpty then .Transparent body
     else
       let retBody := if proc.isFunctional then ⟨.Return (some body), bodyExpr.md⟩ else body
-      .Opaque outputEnsures (some retBody) []
+      .Opaque (outputEnsures.map fun e => { expr := e, errorMessage := none }) (some retBody) []
   | .Opaque postconds impl modif =>
     let impl' := impl.map fun b => wrap ((elimStmt ptMap b).run initVars).1 b.md
-    .Opaque (postconds ++ outputEnsures) impl' modif
-  | .Abstract postconds => .Abstract (postconds ++ outputEnsures)
+    .Opaque (postconds ++ outputEnsures.map fun e => { expr := e, errorMessage := none }) impl' modif
+  | .Abstract postconds => .Abstract (postconds ++ outputEnsures.map fun e => { expr := e, errorMessage := none })
   | .External => .External
   let resolve := resolveExpr ptMap
   let resolveBody : Body → Body := fun body => match body with
     | .Transparent b => .Transparent (resolve b)
-    | .Opaque ps impl modif => .Opaque (ps.map resolve) (impl.map resolve) (modif.map resolve)
-    | .Abstract ps => .Abstract (ps.map resolve)
+    | .Opaque ps impl modif => .Opaque (ps.map (resolve ·)) (impl.map resolve) (modif.map resolve)
+    | .Abstract ps => .Abstract (ps.map (resolve ·))
     | .External => .External
   { proc with
     body := resolveBody body'
     inputs := proc.inputs.map fun p => { p with type := resolveType ptMap p.type }
     outputs := proc.outputs.map fun p => { p with type := resolveType ptMap p.type }
-    preconditions := (proc.preconditions ++ inputRequires).map resolve }
+    preconditions := (proc.preconditions ++ inputRequires).map (resolve ·) }
 
 private def mkWitnessProc (ptMap : ConstrainedTypeMap) (ct : ConstrainedType) : Procedure :=
   let md := ct.witness.md

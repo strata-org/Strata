@@ -1198,7 +1198,7 @@ def translateMethod (ctx : TranslationContext) (className : String)
       name := methodName
       inputs := inputs
       outputs := outputs
-      preconditions := [mkStmtExprMd (StmtExpr.LiteralBool true)]
+      preconditions := [{ expr := mkStmtExprMd (StmtExpr.LiteralBool true), errorMessage := none }]
       determinism := .nondeterministic
       isFunctional := false
       decreases := none

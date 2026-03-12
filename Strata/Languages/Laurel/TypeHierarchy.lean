@@ -146,7 +146,7 @@ def validateDiamondFieldAccessesForStmtExpr (model : SemanticModel)
     let errs := validateDiamondFieldAccessesForStmtExpr model c ++
                 validateDiamondFieldAccessesForStmtExpr model b
     invs.attach.foldl (fun acc ⟨inv, _⟩ => acc ++ validateDiamondFieldAccessesForStmtExpr model inv) errs
-  | .Assert cond => validateDiamondFieldAccessesForStmtExpr model cond
+  | .Assert cond _ => validateDiamondFieldAccessesForStmtExpr model cond
   | .Assume cond => validateDiamondFieldAccessesForStmtExpr model cond
   | .PrimitiveOp _ args =>
     args.attach.foldl (fun acc ⟨a, _⟩ => acc ++ validateDiamondFieldAccessesForStmtExpr model a) []
@@ -265,7 +265,7 @@ def rewriteTypeHierarchyExpr (exprMd : StmtExprMd) : THM StmtExprMd :=
   | .Assigned n => do return ⟨.Assigned (← rewriteTypeHierarchyExpr n), md⟩
   | .Old v => do return ⟨.Old (← rewriteTypeHierarchyExpr v), md⟩
   | .Fresh v => do return ⟨.Fresh (← rewriteTypeHierarchyExpr v), md⟩
-  | .Assert c => do return ⟨.Assert (← rewriteTypeHierarchyExpr c), md⟩
+  | .Assert c errorMessage => do return ⟨.Assert (← rewriteTypeHierarchyExpr c), md⟩
   | .Assume c => do return ⟨.Assume (← rewriteTypeHierarchyExpr c), md⟩
   | .ProveBy v p => do return ⟨.ProveBy (← rewriteTypeHierarchyExpr v) (← rewriteTypeHierarchyExpr p), md⟩
   | .ContractOf ty f => do return ⟨.ContractOf ty (← rewriteTypeHierarchyExpr f), md⟩

@@ -214,7 +214,7 @@ def translateExpr (expr : StmtExprMd)
       disallowed expr.md "loops are not supported in functions or contracts"
   | .Exit _ => disallowed expr.md "exit is not supported in expression position"
 
-  | .Block (⟨ .Assert _, md⟩ :: rest) label => do
+  | .Block (⟨ .Assert _ _, md⟩ :: rest) label => do
     _ ← disallowed md "asserts are not YET supported in functions or contracts"
     translateExpr ⟨ StmtExpr.Block rest label, md ⟩ boundVars isPureContext
   | .Block (⟨ .Assume _, md⟩ :: rest) label =>
@@ -246,7 +246,7 @@ def translateExpr (expr : StmtExprMd)
   | .Assigned _ => panic "assigned expression not implemented"
   | .Old value => panic "old expression not implemented"
   | .Fresh _ => panic "fresh expression not implemented"
-  | .Assert _ => panic "assert expression not implemented"
+  | .Assert _ _ => panic "assert expression not implemented"
   | .Assume _ => panic "assume expression not implemented"
   | .ProveBy value _ => panic "proveBy expression not implemented"
   | .ContractOf _ _ => panic "contractOf expression not implemented"
@@ -288,7 +288,8 @@ def translateStmt (outputParams : List Parameter) (stmt : StmtExprMd)
   | @StmtExpr.Assert cond =>
       -- Assert/assume bodies must be pure expressions (no assignments, loops, or procedure calls)
       let coreExpr ← translateExpr cond [] (isPureContext := true)
-      return [Core.Statement.assert ("assert" ++ getNameFromMd md) coreExpr md]
+      let label := md.getErrorMessage.getD ("assert" ++ getNameFromMd md)
+      return [Core.Statement.assert label coreExpr md]
   | @StmtExpr.Assume cond =>
       let coreExpr ← translateExpr cond [] (isPureContext := true)
       return [Core.Statement.assume ("assume" ++ getNameFromMd md) coreExpr md]
@@ -405,15 +406,18 @@ def translateStmt (outputParams : List Parameter) (stmt : StmtExprMd)
       cases stmt; term_by_mem
 
 /--
-Translate a list of checks (preconditions or postconditions) to Core checks.
-Each check gets a label like `"requires"` or `"requires_0"`, `"requires_1"`, etc.
+Translate a list of contract expressions (preconditions or postconditions) to Core checks.
+Each check gets a label from the errorMessage metadata if present, otherwise a generated
+label like `"requires"` or `"requires_0"`, `"requires_1"`, etc.
 -/
-private def translateChecks (checks : List StmtExprMd) (labelBase : String)
+private def translateChecks (clauses : List StmtExprMd) (labelBase : String)
     : TranslateM (ListMap Core.CoreLabel Core.Procedure.Check) :=
-  checks.mapIdxM (fun i check => do
-    let label := if checks.length == 1 then labelBase else s!"{labelBase}_{i}"
-    let checkExpr ← translateExpr check [] (isPureContext := true)
-    let c : Core.Procedure.Check := { expr := checkExpr, md := check.md }
+  clauses.mapIdxM (fun i clause => do
+    let label := match clause.md.getErrorMessage with
+      | some msg => msg
+      | none => if clauses.length == 1 then labelBase else s!"{labelBase}_{i}"
+    let checkExpr ← translateExpr clause [] (isPureContext := true)
+    let c : Core.Procedure.Check := { expr := checkExpr, md := clause.md }
     return (label, c))
 
 /--
@@ -532,8 +536,8 @@ def translateProcedureToFunction (proc : Procedure) : TranslateM Core.Decl := do
     | some p => translateType model p.type
     | none => LMonoTy.int
   -- Translate precondition to FuncPrecondition (skip trivial `true`)
-  let preconditions ← proc.preconditions.mapM (fun precondition => do
-    let checkExpr ← translateExpr precondition [] true
+  let preconditions ← proc.preconditions.mapM (fun clause => do
+    let checkExpr ← translateExpr clause [] true
     return { expr := checkExpr, md := () })
 
   let body ← match proc.body with

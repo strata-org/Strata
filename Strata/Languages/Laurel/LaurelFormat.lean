@@ -151,11 +151,19 @@ def formatBody : Body → Format
   | .Opaque postconds impl modif =>
       (if modif.isEmpty then Format.nil
        else " modifies " ++ Format.joinSep (modif.map formatStmtExpr) ", ") ++
-      Format.joinSep (postconds.map (fun p => " ensures " ++ formatStmtExpr p)) "" ++
+      Format.joinSep (postconds.map (fun p =>
+        " ensures " ++ formatStmtExpr p ++
+        match p.md.getErrorMessage with
+        | none => Format.nil
+        | some msg => " errorMessage \"" ++ msg ++ "\"")) "" ++
       match impl with
       | none => Format.nil
       | some e => " := " ++ formatStmtExpr e
-  | .Abstract posts => "abstract" ++ Format.join (posts.map (fun p => " ensures " ++ formatStmtExpr p))
+  | .Abstract posts => "abstract" ++ Format.join (posts.map (fun p =>
+      " ensures " ++ formatStmtExpr p ++
+      match p.md.getErrorMessage with
+      | none => Format.nil
+      | some msg => " errorMessage \"" ++ msg ++ "\""))
   | .External => "external"
 
 def formatDeterminism : Determinism → Format
@@ -170,7 +178,11 @@ def formatProcedure (proc : Procedure) : Format :=
   (if proc.isFunctional then "function " else "procedure ") ++ format proc.name ++
   "(" ++ Format.joinSep (proc.inputs.map formatParameter) ", " ++ ") returns " ++ Format.line ++
   "(" ++ Format.joinSep (proc.outputs.map formatParameter) ", " ++ ")" ++ Format.line ++
-  Format.join (proc.preconditions.map (fun p => "requires " ++ formatStmtExpr p ++ Format.line)) ++
+  Format.join (proc.preconditions.map (fun p =>
+    "requires " ++ formatStmtExpr p ++
+    (match p.md.getErrorMessage with
+    | none => Format.nil
+    | some msg => " errorMessage \"" ++ msg ++ "\"") ++ Format.line)) ++
   formatDeterminism proc.determinism ++ Format.line ++
   formatBody proc.body
 
