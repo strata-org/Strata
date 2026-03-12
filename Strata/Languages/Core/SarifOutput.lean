@@ -21,17 +21,23 @@ open Strata.Sarif Strata.SMT
 
 /-- Convert VCOutcome to SARIF Level -/
 def outcomeToLevel (mode : VerificationMode) (property : Imperative.PropertyType) (outcome : VCOutcome) : Level :=
-  if property == .cover && outcome.isSatisfiable then .none
-  else if outcome.passAndReachable || outcome.passReachabilityUnknown then .none
-  else if outcome.unreachable then
-    if property.passWhenUnreachable then .warning else .error
-  else if outcome.alwaysFalseAndReachable || outcome.alwaysFalseReachabilityUnknown then .error
-  else match mode with
-  | .deductive => .error
-  | .bugFinding => .note
-  | .bugFindingAssumingCompleteSpec =>
-    if outcome.canBeTrueOrFalseAndIsReachable || outcome.canBeFalseAndIsReachable then .error
-    else .note
+  match mode, property, outcome.satisfiabilityProperty, outcome.validityProperty with
+  -- Cover satisfied (sat on P∧Q): always pass
+  | _, .cover, .sat _, _ => .none
+  -- Unreachable (both unsat): warning for assert/divisionByZero, error for cover
+  | _, p, .unsat, .unsat => if p.passWhenUnreachable then .warning else .error
+  -- Pass: validity proven (unsat on P∧¬Q)
+  | _, _, _, .unsat => .none
+  -- Always false (sat unsat): error in all modes
+  | _, _, .unsat, .sat _ => .error
+  -- Always false if reached (unsat unknown): error in all modes
+  | _, _, .unsat, _ => .error
+  -- Deductive: everything non-pass is error
+  | .deductive, _, _, _ => .error
+  -- BugFinding+CompleteSpec: any counterexample (sat on P∧¬Q) is error
+  | .bugFindingAssumingCompleteSpec, _, _, .sat _ => .error
+  -- BugFinding: everything else is note
+  | _, _, _, _ => .note
 
 /-- Convert VCOutcome to a descriptive message -/
 def outcomeToMessage (outcome : VCOutcome) : String :=
