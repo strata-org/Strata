@@ -25,6 +25,10 @@ function returnAtEnd(x: int) returns (r: int) {
   }
 };
 
+function elseWithCall(): int {
+  if (true) 3 else returnAtEnd(3)
+};
+
 function guardInFunction(x: int) returns (r: int) {
   if (x > 0) {
     if (x == 1) {
