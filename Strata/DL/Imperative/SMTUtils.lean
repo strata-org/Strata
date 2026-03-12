@@ -184,54 +184,62 @@ private def processModel {P : PureExpr} [ToFormat P.Ident]
 /--
 Interprets the output of SMT solver.
 
-Both the verdict line (sat/unsat/unknown) and the model (when sat) are
-parsed using the SMTResponse DDM dialect. The verdict is parsed as a full
-`Command`, while the model is parsed by targeting the
-`SMTResponse.GetValueResponse` category directly via
-`parseCategoryFromDialect`.
+When two-sided checking is enabled, the solver output contains two verdict lines:
+the first is the satisfiability check result (can the property be true?),
+and the second is the validity check result (can the property be false?).
+The satisfiability result is returned as the first element of the pair;
+the validity result is the second element.
 
-When `reachCheck` is `true`, the solver output contains two verdict lines:
-the first is the reachability check result (are the path-condition assumptions
-satisfiable?), and the second is the proof check result. The reachability
-result is returned as `some Result`; when `reachCheck` is `false`, it is
-`none`.
+When only one check is enabled, the other is returned as `unknown`.
 -/
 def solverResult {P : PureExpr} [ToFormat P.Ident]
     (typedVarToSMTFn : P.Ident → P.Ty → Except Format (String × Strata.SMT.TermType))
     (vars : List P.TypedIdent) (output : IO.Process.Output)
     (E : Strata.SMT.EncoderState) (smtsolver : String)
-    (reachCheck : Bool := false)
-    : IO (Except Format (Option (Result P.Ident) × Result P.Ident)) := do
+    (satisfiabilityCheck validityCheck : Bool)
+    : IO (Except Format (Result P.Ident × Result P.Ident)) := do
   let stdout := output.stdout
-  -- Split the next line from the remaining stdout, returning (line, rest).
-  let splitLine (s : String) : String × String :=
-    let pos := s.find (· == '\n')
-    let line := (s.extract s.startPos pos).trimAscii.toString
-    let rest := s.extract pos s.endPos
-    (line, rest)
-  -- When reachCheck is true, the first line is the reachability verdict.
-  let (reachResult, proofStdout) ← if reachCheck then do
-    let (reachLine, remaining) := splitLine stdout
-    let reachResult : Result P.Ident ← do
-      match ← parseVerdict reachLine with
-      | some (.sat _) => pure (.sat [])
-      | some .unsat   => pure .unsat
-      | _             => pure .unknown
-    pure (some reachResult, remaining.drop 1 |>.toString)
-  else
-    pure (none, stdout)
-  -- Parse the proof verdict from the (possibly trimmed) stdout.
-  let (verdictStr, rest) := splitLine proofStdout
-  match ← parseVerdict verdictStr with
-  | some (.sat _) =>
-    -- Parse model via SMTDDM targeting GetValueResponse category directly.
-    let pairs ← parseModelDDM rest
-    match processModel typedVarToSMTFn vars pairs E with
-    | .ok model => return .ok (reachResult, .sat model)
-    | .error _  => return .ok (reachResult, .sat [])
-  | some .unsat   => return .ok (reachResult, .unsat)
-  | some .unknown => return .ok (reachResult, .unknown)
-  | _ =>
+
+  -- Helper to parse a single verdict and model
+  -- Skip lines until we find a verdict (sat/unsat/unknown) or run out of input.
+  -- This is needed because get-value commands in the file may produce error
+  -- output when the preceding check-sat returned unsat.
+  let skipToNextVerdict (input : String) : String :=
+    let lines := input.splitOn "\n"
+    let rest := lines.dropWhile (fun l =>
+      let t := l.trimAscii.toString
+      t != "sat" && t != "unsat" && t != "unknown" && !t.isEmpty)
+    "\n".intercalate rest
+
+  let parseVerdict (input : String) : IO (Option (Result P.Ident × String)) := do
+    let pos := input.find (· == '\n')
+    let verdict := input.extract input.startPos pos |>.trimAscii
+    let rest := (input.extract pos input.endPos |>.drop 1).toString
+    match verdict with
+    | "sat" =>
+      let rawModel ← parseModelDDM rest
+      match (processModel typedVarToSMTFn vars rawModel E) with
+      | .ok model => return some (.sat model, skipToNextVerdict rest)
+      | .error _ => return some (.sat [], skipToNextVerdict rest)
+    | "unsat" => return some (.unsat, skipToNextVerdict rest)
+    | "unknown" => return some (.unknown, skipToNextVerdict rest)
+    | _ => return none
+
+  -- Parse results based on which checks are enabled
+  match ← (if satisfiabilityCheck then parseVerdict stdout else pure (some (.unknown, stdout))) with
+  | some (satResult, remaining) =>
+    match ← (if validityCheck then parseVerdict remaining else pure (some (.unknown, remaining))) with
+    | some (validityResult, _) => return .ok (satResult, validityResult)
+    | none =>
+      let stderr := output.stderr
+      let hasExecError := stderr.contains "could not execute external process"
+      let hasFileError := stderr.contains "No such file or directory"
+      let suggestion :=
+        if (hasExecError || hasFileError) && smtsolver == Core.defaultSolver then
+          s!" \nEnsure {Core.defaultSolver} is on your PATH or use --solver to specify another SMT solver."
+        else ""
+      return .error s!"stderr:{stderr}{suggestion}\nsolver stdout: {output.stdout}\n"
+  | none =>
     let stderr := output.stderr
     let hasExecError := stderr.contains "could not execute external process"
     let hasFileError := stderr.contains "No such file or directory"
@@ -258,34 +266,30 @@ def addLocationInfo {P : PureExpr} [BEq P.Ident]
 Writes the proof obligation to file, discharge the obligation using SMT solver,
 and parse the output of the SMT solver.
 
-When `reachCheck` is `true`, the generated SMT file will contain two
-`(check-sat)` commands (one for reachability, one for the proof obligation),
-and the return value includes the reachability decision.
+When two-sided checking is enabled, the generated SMT file will contain two
+`(check-sat-assuming)` commands, one for `P ∧ Q` and one for `P ∧ ¬Q`,
+and the return value includes both decisions.
 -/
 def dischargeObligation {P : PureExpr} [ToFormat P.Ident] [BEq P.Ident]
   (encodeSMT : Strata.SMT.SolverM (List String × Strata.SMT.EncoderState))
   (typedVarToSMTFn : P.Ident → P.Ty → Except Format (String × Strata.SMT.TermType))
   (vars : List P.TypedIdent)
-  (md : Imperative.MetaData P)
   (smtsolver filename : String)
   (solver_options : Array String) (printFilename : Bool)
-  (reachCheck : Bool := false) :
-  IO (Except Format (Option (Result P.Ident) × Result P.Ident × Strata.SMT.EncoderState)) := do
+  (satisfiabilityCheck validityCheck : Bool) :
+  IO (Except Format (Result P.Ident × Result P.Ident × Strata.SMT.EncoderState)) := do
   let handle ← IO.FS.Handle.mk filename IO.FS.Mode.write
   let solver ← Strata.SMT.Solver.fileWriter handle
 
-  let encodeAndCheck : Strata.SMT.SolverM (List String × Strata.SMT.EncoderState) := do
-    let result ← encodeSMT
-    addLocationInfo md ("sat-message", s!"\"Assertion cannot be proven\"")
-    let _ ← Strata.SMT.Solver.checkSat result.1 -- Will return unknown for Solver.fileWriter
-    return result
-  let ((_ids, estate), _solverState) ← encodeAndCheck.run solver
+  -- encodeSMT (which calls encodeCore) emits check-sat commands internally
+  let ((_ids, estate), _solverState) ← encodeSMT.run solver
+
   if printFilename then IO.println s!"Wrote problem to {filename}."
 
   let solver_output ← runSolver smtsolver (#[filename] ++ solver_options)
-  match ← solverResult typedVarToSMTFn vars solver_output estate smtsolver (reachCheck := reachCheck) with
+  match ← solverResult typedVarToSMTFn vars solver_output estate smtsolver satisfiabilityCheck validityCheck with
   | .error e => return .error e
-  | .ok (reachDecision, result) => return .ok (reachDecision, result, estate)
+  | .ok (satResult, validityResult) => return .ok (satResult, validityResult, estate)
 
 ---------------------------------------------------------------------
 end -- public section

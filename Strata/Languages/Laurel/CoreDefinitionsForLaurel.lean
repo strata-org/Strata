@@ -24,13 +24,13 @@ program Laurel;
 // The types for these Map functions are incorrect.
 // We'll fix them when Laurel supports polymorphism
 function select(map: int, key: int) : int
-  external
+  external;
 
 function update(map: int, key: int, value: int) : int
-  external
+  external;
 
 function const(value: int) : int
-  external
+  external;
 
 #end
 
