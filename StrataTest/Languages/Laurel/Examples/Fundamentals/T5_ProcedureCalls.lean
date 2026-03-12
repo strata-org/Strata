@@ -30,7 +30,7 @@ procedure fooSingleAssign(): int {
 
 procedure fooProof() {
   var x: int := fooReassign();
-  var y: int := fooSingleAssign();
+  var y: int := fooSingleAssign()
 // The following assertions fails while it should succeed,
 // because Core does not yet support transparent procedures
 //  assert x == y;
@@ -43,7 +43,7 @@ function aFunction(x: int): int
 
 procedure aFunctionCaller() {
   var x: int := aFunction(3);
-  assert x == 3;
+  assert x == 3
 };
 "
 

@@ -190,6 +190,7 @@ inductive SepFormat where
 | space          -- Space separator (SpaceSepBy)
 | spacePrefix    -- Space before each element (SpacePrefixSepBy)
 | newline        -- Newline separator (NewlineSepBy)
+| semicolon      -- Semicolon separator (SemicolonSepBy)
 deriving Inhabited, Repr, BEq
 
 namespace SepFormat
@@ -200,6 +201,7 @@ def toString : SepFormat → String
   | .space => "spaceSepBy"
   | .spacePrefix => "spacePrefixSepBy"
   | .newline => "newlineSepBy"
+  | .semicolon => "semicolonSepBy"
 
 def fromCategoryName? : QualifiedIdent → Option SepFormat
   | q`Init.Seq => some .none
@@ -207,6 +209,7 @@ def fromCategoryName? : QualifiedIdent → Option SepFormat
   | q`Init.SpaceSepBy => some .space
   | q`Init.SpacePrefixSepBy => some .spacePrefix
   | q`Init.NewlineSepBy => some .newline
+  | q`Init.SemicolonSepBy => some .semicolon
   | _ => none
 
 instance : ToString SepFormat where

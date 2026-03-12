@@ -79,7 +79,6 @@ def lastStmtToExpr (stmt : StmtExprMd) : StmtExprMd :=
       have := List.mem_of_getLast? h_last
       let lastExpr := lastStmtToExpr last
       let dropped := stmts.dropLast
-      -- have := List.dropLast_subset stmts
       have h : sizeOf stmts.dropLast < sizeOf stmts :=
         List.sizeOf_dropLast_lt (by intro h; simp [h] at h_last)
       stmtsToExpr dropped lastExpr md

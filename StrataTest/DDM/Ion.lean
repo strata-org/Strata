@@ -109,6 +109,7 @@ category Item;
 op item (n : Num) : Item => n;
 op testSeq (items : Seq Item) : Command => "seq(" items ")";
 op testComma (items : CommaSepBy Item) : Command => "comma(" items ")";
+op testSemicolon (items : SemicolonSepBy Item) : Command => "semi(" items ")";
 op testSpace (items : SpaceSepBy Item) : Command => "space(" items ")";
 op testPrefix (items : SpacePrefixSepBy Item) : Command => "prefix(" items ")";
 op testOpt (item : Option Item) : Command => "opt(" item ")";
@@ -136,6 +137,7 @@ opt(1)
 opt()
 seq(1 2 3)
 comma(1, 2, 3)
+semi(1; 2; 3)
 space(1 2 3)
 prefix(1 2 3)
 block 1 2 3 end
