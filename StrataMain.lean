@@ -18,7 +18,7 @@ import Strata.Languages.Laurel.Laurel
 import Strata.Transform.ProcedureInlining
 import Strata.Languages.Python.CorePrelude
 import Strata.Languages.Python.PythonRuntimeLaurelPart
-import Strata.Languages.Python.PythonRuntimeCorePart
+import Strata.Languages.Python.PythonLaurelCorePrelude
 import Strata.Backends.CBMC.GOTO.CoreToCProverGOTO
 
 import Strata.SimpleAPI
@@ -327,8 +327,8 @@ def pyAnalyzeCommand : Command where
 
 /-- Result of building the PySpec-augmented prelude. -/
 structure PySpecPrelude where
-  laurelPrelude : Strata.Laurel.Program
-  corePrelude : Core.Program
+  preludeInLaurel : Strata.Laurel.Program
+  preludeInCore : Core.Program
   overloads : Strata.Python.Specs.ToLaurel.OverloadTable
 
 private def combineLaurelPrograms (first: Strata.Laurel.Program) (second: Strata.Laurel.Program): Strata.Laurel.Program :=
@@ -344,10 +344,10 @@ private def combineLaurelPrograms (first: Strata.Laurel.Program) (second: Strata
     are appended to the base prelude (with duplicates filtered out).
     Also accumulates overload dispatch tables. -/
 def buildPySpecPrelude (pyspecPaths : Array String) : IO PySpecPrelude := do
-  let mut laurelPrelude : Strata.Laurel.Program := Strata.Python.pythonRuntimeLaurelPart
-  let mut codePreludeDecls : List Core.Decl := []
+  let mut preludeInLaurel : Strata.Laurel.Program := Strata.Python.pythonRuntimeLaurelPart
+  let mut preludeInCoreDecls : List Core.Decl := [] -- TODO should
   let mut existingNames : Std.HashSet String :=
-    laurelPrelude.staticProcedures.foldl (init := {}) fun s d =>
+    preludeInLaurel.staticProcedures.foldl (init := {}) fun s d =>
       [d.name.text].foldl (init := s) fun s n => s.insert n
   let mut allOverloads : Strata.Python.Specs.ToLaurel.OverloadTable := {}
   for ionPath in pyspecPaths do
@@ -371,8 +371,8 @@ def buildPySpecPrelude (pyspecPaths : Array String) : IO PySpecPrelude := do
       allOverloads := allOverloads.insert funcName
         (overloads.fold (init := existing) fun acc k v => acc.insert k v)
 
-    laurelPrelude := combineLaurelPrograms laurelPrelude result.program
-    match Strata.Laurel.translate { emitResolutionErrors := false } result.program with
+    preludeInLaurel := combineLaurelPrograms preludeInLaurel result.program
+    match Strata.Laurel.translate { emitResolutionErrors := false } preludeInLaurel with
     | .error diagnostics =>
       exitFailure s!"PySpec Laurel to Core translation failed for {ionPath}: {diagnostics}"
     | .ok (coreSpec, _modifiesDiags) =>
@@ -382,9 +382,12 @@ def buildPySpecPrelude (pyspecPaths : Array String) : IO PySpecPrelude := do
           if existingNames.contains n.name then
             exitFailure s!"Core name collision in PySpec {ionPath}: {n.name}"
           existingNames := existingNames.insert n.name
-      codePreludeDecls := codePreludeDecls ++ coreSpec.decls
-  let pyPrelude : Core.Program := { decls := codePreludeDecls }
-  return { laurelPrelude := laurelPrelude, corePrelude := pyPrelude, overloads := allOverloads }
+      preludeInCoreDecls := preludeInCoreDecls ++ coreSpec.decls
+  let preludeInCore : Core.Program := { decls := preludeInCoreDecls }
+
+  -- TODO include, PythonLaurelCorePrelude,
+  -- compute Laurel partial Laurel functions/procedures from there to add here
+  return { preludeInLaurel := preludeInLaurel, preludeInCore := preludeInCore, overloads := allOverloads }
 
 def pyAnalyzeLaurelCommand : Command where
   name := "pyAnalyzeLaurel"
@@ -415,7 +418,7 @@ def pyAnalyzeLaurelCommand : Command where
     assert! cmds.size == 1
 
     let pySpecResult ← buildPySpecPrelude (pflags.getRepeated "pyspec")
-    let pyPrelude := pySpecResult.corePrelude
+    let pyPrelude := pySpecResult.preludeInCore
 
     -- Extract overload dispatch tables from --dispatch files
     let mut allOverloads := pySpecResult.overloads
@@ -448,7 +451,7 @@ def pyAnalyzeLaurelCommand : Command where
       | .ok (laurelProgram, ctx) =>
         -- Combine the Laurel prelude declarations with the translated program
         let pythonRuntimeLaurelPart := Strata.Python.pythonRuntimeLaurelPart
-        let combinedLaurelProgram : Strata.Laurel.Program := combineLaurelPrograms pySpecResult.laurelPrelude laurelProgram
+        let combinedLaurelProgram : Strata.Laurel.Program := combineLaurelPrograms pySpecResult.preludeInLaurel laurelProgram
 
         if verbose then
           IO.println "\n==== Laurel Program ===="
@@ -1126,7 +1129,7 @@ def pyAnalyzeLaurelToGotoCommand : Command where
     let pySourceOpt ← tryReadPythonSource filePath
     let cmds := Strata.toPyCommands pgm.commands
     assert! cmds.size == 1
-    let prelude := Strata.Python.Core.PythonLaurelPrelude
+    let prelude := sorry -- Strata.Python.Core.PythonLaurelPrelude
     let sourcePathForMetadata := match pySourceOpt with
       | some (pyPath, _) => pyPath
       | none => filePath

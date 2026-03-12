@@ -58,8 +58,6 @@ datatype Error {
 // In this prelude, we model datetime as a single int and assume
 // that the conversion from a string constant is handled by the translator.
 
-datatype DictStrAny {}
-
 // Note: Core uses mutual/end blocks for Any and ListAny.
 // Laurel does not support mutual blocks, so they are declared separately.
 
@@ -78,7 +76,12 @@ datatype Any {
 
 datatype ListAny {
   ListAny_nil (),
-  ListAny_cons (h: Any, t: ListAny)
+  ListAny_cons (head: Any, tail: ListAny)
+}
+
+datatype DictStrAny {
+  DictStrAny_empty (),
+  DictStrAny_cons (key: string, val: Any, tail: DictStrAny)
 }
 
 // /////////////////////////////////////////////////////////////////////////////////////
@@ -189,45 +192,16 @@ function Any_to_bool (v: Any) : bool
   //WILL BE ADDED
 };
 
-// /////////////////////////////////////////////////////////////////////////////////////
-// ListAny functions
-// Those functions are opaque until Strata support recursive functions
-// /////////////////////////////////////////////////////////////////////////////////////
 
-function List_contains (l : ListAny, x: Any) : bool;
-function List_len (l : ListAny) : int;
-function List_extend (l1 : ListAny, l2: ListAny) : ListAny;
-function List_append (l: ListAny, x: Any) : ListAny;
-function List_get_func (l : ListAny, i : int) : Any;
-function List_set_func (l : ListAny, i : int, v: Any) : ListAny;
-function List_reverse (l: ListAny) : ListAny;
-function List_index_bang (l: ListAny, v: Any) : int;
-function List_index (l: ListAny, v: Any) : int;
-function List_repeat (l: ListAny, n: int) : ListAny;
-function List_insert (l: ListAny, i: int, v: Any) : ListAny;
-function List_remove (l: ListAny, v: Any) : ListAny;
-function List_pop (l: ListAny, i: int) : ListAny;
-
-
-// /////////////////////////////////////////////////////////////////////////////////////
-// DictStrAny functions what support constructing DictStrAny value in the translator
-// Those functions are opaque until Strata support recursive functions
-// /////////////////////////////////////////////////////////////////////////////////////
-function DictStrAny_empty () : DictStrAny;
-function DictStrAny_insert (d: DictStrAny, key: string, v: Any) : DictStrAny;
-
-// /////////////////////////////////////////////////////////////////////////////////////
-// ListAny functions
-// Those functions are opaque until Strata support recursive functions
-// /////////////////////////////////////////////////////////////////////////////////////
-
-function is_IntReal (v: Any) : bool;
-function Any_real_to_int (v: Any) : int;
 
 // /////////////////////////////////////////////////////////////////////////////////////
 // Python treats some values of different types to be equivalent
 // This function models that behavior
 // /////////////////////////////////////////////////////////////////////////////////////
+
+function is_IntReal (v: Any) : bool;
+function Any_real_to_int (v: Any) : int;
+
 // inline
 function normalize_any (v : Any) : Any {
   if (v == from_bool(true)) (from_int(1))
@@ -657,10 +631,18 @@ procedure test_helper_procedure(req_name : Any, opt_name : Any) returns (ret: An
   requires (opt_name == from_none()) || (opt_name == from_string("bar"))
   // [ensures_maybe_except_none]:
   ensures (Error..isNoError(maybe_except))
-  external;
+{
+  // [assert_name_is_foo]
+  assert req_name == from_string("foo");
+  // [assert_opt_name_none_or_str]:
+  assert (Any..isfrom_none(opt_name)) || (Any..isfrom_string(opt_name));
+  // [assert_opt_name_none_or_bar]:
+  assert (opt_name == from_none()) || (opt_name == from_string("bar"));
+  // [assume_maybe_except_none]:
+  assume (Error..isNoError(maybe_except))
+};
 
-procedure print(msg : Any)
-  external;
+procedure print(msg : Any);
 
 //This is only used to overwrite the Box datatype of Laurel prelude
 //WILL BE REMOVED
