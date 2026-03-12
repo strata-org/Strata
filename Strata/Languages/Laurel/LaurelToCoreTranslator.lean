@@ -687,7 +687,6 @@ def verifyToVcResults (program : Program)
 
   -- Enable removeIrrelevantAxioms to avoid polluting simple assertions with heap axioms
   let options := { options with removeIrrelevantAxioms := true }
-  -- Debug: Print the generated Strata Core program
   let runner tempDir :=
     EIO.toIO (fun f => IO.Error.userError (toString f))
         (Core.verify strataCoreProgram tempDir .none options)
