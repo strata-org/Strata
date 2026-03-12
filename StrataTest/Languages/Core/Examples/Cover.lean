@@ -336,3 +336,17 @@ Result: ➖ can be false and is reachable from declaration entry
 -/
 #guard_msgs in
 #eval verify minimalVerbosePgm (options := {Core.VerifyOptions.quiet with checkLevel := .minimalVerbose})
+
+-- Test: minimalVerbose in bugFinding mode (satisfiability check only)
+/--
+info:
+Obligation: test_pass
+Property: assert
+Result: ➕ can be true and is reachable from declaration entry
+
+Obligation: test_fail
+Property: assert
+Result: ✖️ always false if reached
+-/
+#guard_msgs in
+#eval verify minimalVerbosePgm (options := {Core.VerifyOptions.quiet with checkLevel := .minimalVerbose, checkMode := .bugFinding})
