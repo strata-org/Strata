@@ -17,6 +17,7 @@ import Strata.Languages.Laurel.TypeHierarchy
 import Strata.Languages.Laurel.LaurelTypes
 import Strata.Languages.Laurel.ModifiesClauses
 import Strata.Languages.Laurel.CoreDefinitionsForLaurel
+import Strata.Languages.Laurel.DatatypeGrouping
 import Strata.DDM.Util.DecimalRat
 import Strata.DL.Imperative.Stmt
 import Strata.DL.Imperative.MetaData
@@ -591,118 +592,18 @@ def translateProcedureToFunction (proc : Procedure) : TranslateM Core.Decl := do
   }
 
 /--
-Translate a Laurel DatatypeDefinition to either an opaque type declaration (zero constructors)
-or an `LDatatype Unit` (non-zero constructors) that will be grouped with other datatypes.
+Translate a Laurel DatatypeDefinition to an `LDatatype Unit`.
 -/
 def translateDatatypeDefinition (model : SemanticModel) (dt : DatatypeDefinition)
-    : Sum Core.Decl (Lambda.LDatatype Unit) :=
-  match h : dt.constructors with
-  | [] =>
-    -- Zero constructors: opaque type
-    .inl (Core.Decl.type (.con { name := dt.name.text, params := dt.typeArgs.map (fun id => id.text) }))
-  | first :: rest =>
-    let constrs : List (Lambda.LConstr Unit) := (first :: rest).map fun c =>
-      { name := ⟨c.name.text, ()⟩
-        args := c.args.map fun ⟨ n, ty ⟩ => (⟨n.text, ()⟩, translateType model ty)
-        testerName := s!"{dt.name}..is{c.name}" }
-    .inr {
-      name := dt.name.text
-      typeArgs := dt.typeArgs.map (fun id => id.text)
-      constrs := constrs
-      constrs_ne := by simp [constrs]
-    }
-
-/-- Collect all `UserDefined` type names referenced in a `HighType`, including nested ones. -/
-private def collectTypeRefs : HighTypeMd → List String
-  | ⟨.UserDefined name, _⟩ => [name.text]
-  | ⟨.TSet elem, _⟩ => collectTypeRefs elem
-  | ⟨.TMap k v, _⟩ => collectTypeRefs k ++ collectTypeRefs v
-  | ⟨.TTypedField vt, _⟩ => collectTypeRefs vt
-  | ⟨.Applied base args, _⟩ =>
-      collectTypeRefs base ++ args.flatMap collectTypeRefs
-  | ⟨.Pure base, _⟩ => collectTypeRefs base
-  | ⟨.Intersection ts, _⟩ => ts.flatMap collectTypeRefs
-  | _ => []
-
-/-- Get all datatype names that a `DatatypeDefinition` references in its constructor args. -/
-private def datatypeRefs (dt : DatatypeDefinition) : List String :=
-  dt.constructors.flatMap fun c => c.args.flatMap fun p => collectTypeRefs p.type
-
-/-! ### Tarjan's SCC for datatype grouping -/
-
-private structure TarjanState where
-  nextIndex : Nat := 0
-  stack : List Nat := []
-  indices : Std.HashMap Nat Nat := {}
-  lowlinks : Std.HashMap Nat Nat := {}
-  onStack : Std.HashSet Nat := {}
-  components : Array (Array Nat) := #[]
-
-/-- Tarjan's SCC algorithm on an adjacency list indexed by `Nat`. -/
-private partial def tarjanVisit (adj : Std.HashMap Nat (List Nat))
-    (v : Nat) (s : TarjanState) : TarjanState :=
-  let s := { s with
-    indices := s.indices.insert v s.nextIndex
-    lowlinks := s.lowlinks.insert v s.nextIndex
-    nextIndex := s.nextIndex + 1
-    stack := v :: s.stack
-    onStack := s.onStack.insert v }
-  let neighbors := adj.getD v []
-  let s := neighbors.foldl (fun s w =>
-    if !s.indices.contains w then
-      let s := tarjanVisit adj w s
-      let vLow := s.lowlinks.getD v 0
-      let wLow := s.lowlinks.getD w 0
-      { s with lowlinks := s.lowlinks.insert v (min vLow wLow) }
-    else if s.onStack.contains w then
-      let vLow := s.lowlinks.getD v 0
-      let wIdx := s.indices.getD w 0
-      { s with lowlinks := s.lowlinks.insert v (min vLow wIdx) }
-    else s) s
-  if s.lowlinks.getD v 0 == s.indices.getD v 0 then
-    -- Pop component from stack
-    let rec popLoop (stack : List Nat) (comp : Array Nat) (onStack : Std.HashSet Nat)
-        : List Nat × Array Nat × Std.HashSet Nat :=
-      match stack with
-      | [] => ([], comp, onStack)
-      | w :: rest =>
-        let comp := comp.push w
-        let onStack := onStack.erase w
-        if w == v then (rest, comp, onStack)
-        else popLoop rest comp onStack
-    let (stack', comp, onStack') := popLoop s.stack #[] s.onStack
-    { s with stack := stack', onStack := onStack', components := s.components.push comp }
-  else s
-
-/--
-Group `LDatatype Unit` values by strongly connected components of their direct type references.
-Datatypes in the same SCC (mutually recursive) share a single `.data` declaration.
-Non-recursive datatypes get their own singleton `.data` declaration.
--/
-private def groupDatatypes (dts : List DatatypeDefinition)
-    (ldts : List (Lambda.LDatatype Unit)) : List (List (Lambda.LDatatype Unit)) :=
-  -- Filter to datatypes with constructors and assign indices
-  let withConstrs := dts.filter (!·.constructors.isEmpty)
-  let nameToIdx : Std.HashMap String Nat :=
-    withConstrs.foldlIdx (fun m i dt => m.insert dt.name.text i) {}
-  -- Build directed adjacency list: dt[i] → dt[j] if dt[i] directly references dt[j]
-  let adj : Std.HashMap Nat (List Nat) :=
-    withConstrs.foldlIdx (fun m i dt =>
-      let refs := (datatypeRefs dt).filterMap nameToIdx.get?
-      m.insert i refs) {}
-  -- Run Tarjan's SCC
-  let initState : TarjanState := {}
-  let finalState := withConstrs.foldlIdx (fun s i _ =>
-    if s.indices.contains i then s else tarjanVisit adj i s) initState
-  -- Map indices back to LDatatype Unit values
-  let ldtMap : Std.HashMap String (Lambda.LDatatype Unit) :=
-    ldts.foldl (fun m ldt => m.insert ldt.name ldt) {}
-  -- Tarjan produces SCCs in dependency order (leaves first)
-  let sccs := finalState.components.toList
-  sccs.filterMap fun comp =>
-    let members := comp.toList.filterMap fun idx =>
-      withConstrs[idx]? |>.bind fun dt => ldtMap.get? dt.name.text
-    if members.isEmpty then none else some members
+    : Lambda.LDatatype Unit :=
+  let constrs : List (Lambda.LConstr Unit) := dt.constructors.map fun c =>
+    { name := ⟨c.name.text, ()⟩
+      args := c.args.map fun ⟨ n, ty ⟩ => (⟨n.text, ()⟩, translateType model ty)
+      testerName := s!"{dt.name}..is{c.name}" }
+  { name := dt.name.text
+    typeArgs := dt.typeArgs.map (fun id => id.text)
+    constrs := constrs
+    constrs_ne := by simp [constrs] }
 
 /--
 Try to translate a Laurel Procedure marked `isFunctional` to a Core Function.
@@ -797,23 +698,17 @@ def translate (options: LaurelTranslateOptions) (program : Program): Except (Arr
     let procDecls := procedures.map (fun p => Core.Decl.proc p .empty)
 
     -- Translate Laurel datatype definitions to Core declarations.
-    -- Opaque types (zero constructors) become individual type declarations.
-    -- Datatypes with constructors are grouped by mutual references using union-find:
-    -- datatypes that (transitively) reference each other share a single `data` declaration.
+    -- Datatypes are grouped by mutual references (SCC) so mutually recursive
+    -- datatypes share a single `.data` declaration.
     let laurelDatatypes := program.types.filterMap fun td => match td with
       | .Datatype dt => some dt
       | _ => none
-    let datatypeResults := laurelDatatypes.map (translateDatatypeDefinition model)
-    let opaqueDecls := datatypeResults.filterMap fun r => match r with
-      | .inl decl => some decl
-      | .inr _ => none
-    let ldatatypes := datatypeResults.filterMap fun r => match r with
-      | .inl _ => none
-      | .inr ldt => some ldt
+    let ldatatypes := laurelDatatypes.filterMap fun dt =>
+      if dt.constructors.isEmpty then none else some (translateDatatypeDefinition model dt)
     let groups := groupDatatypes laurelDatatypes ldatatypes
     let groupedDatatypeDecls := groups.map fun group => Core.Decl.type (.data group)
     let program := {
-      decls := opaqueDecls ++ groupedDatatypeDecls ++ constantDecls ++ pureFuncDecls.toList ++ procDecls
+      decls := groupedDatatypeDecls ++ constantDecls ++ pureFuncDecls.toList ++ procDecls
     }
 
     -- dbg_trace "=== Generated Strata Core Program ==="

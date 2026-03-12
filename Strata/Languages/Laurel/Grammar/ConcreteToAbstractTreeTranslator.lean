@@ -524,16 +524,6 @@ def parseDatatype (arg : Arg) : TransM TypeDefinition := do
   | _, _ =>
     TransM.error s!"parseDatatype expects datatype, got {repr op.name}"
 
-def parseOpaqueType (arg : Arg) : TransM TypeDefinition := do
-  let .op op := arg
-    | TransM.error s!"parseOpaqueType expects operation"
-  match op.name, op.args with
-  | q`Laurel.opaqueType, #[nameArg] =>
-    let name ← translateIdent nameArg
-    return .Datatype { name := name, typeArgs := [], constructors := [] }
-  | _, _ =>
-    TransM.error s!"parseOpaqueType expects opaqueType, got {repr op.name}"
-
 def parseTopLevel (arg : Arg) : TransM (Option Procedure × Option TypeDefinition) := do
   let .op op := arg
     | TransM.error s!"parseTopLevel expects operation"
@@ -548,11 +538,8 @@ def parseTopLevel (arg : Arg) : TransM (Option Procedure × Option TypeDefinitio
   | q`Laurel.datatypeCommand, #[datatypeArg] =>
     let typeDef ← parseDatatype datatypeArg
     return (none, some typeDef)
-  | q`Laurel.opaqueTypeCommand, #[opaqueTypeArg] =>
-    let typeDef ← parseOpaqueType opaqueTypeArg
-    return (none, some typeDef)
   | _, _ =>
-    TransM.error s!"parseTopLevel expects procedureCommand, compositeCommand, datatypeCommand, or opaqueTypeCommand, got {repr op.name}"
+    TransM.error s!"parseTopLevel expects procedureCommand, compositeCommand, or datatypeCommand, got {repr op.name}"
 
 /--
 Translate concrete Laurel syntax into abstract Laurel syntax

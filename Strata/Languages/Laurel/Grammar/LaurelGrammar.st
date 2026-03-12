@@ -166,11 +166,6 @@ op function (name : Ident, parameters: CommaSepBy Parameter,
   body : Option OptionalBody) : Procedure =>
   "function " name "(" parameters ")" returnType returnParameters requires ensures modifies body ";";
 
-// Opaque type declarations
-category OpaqueType;
-op opaqueType (name: Ident): OpaqueType => "type " name ";";
-
 op compositeCommand(composite: Composite): Command => composite;
 op procedureCommand(procedure: Procedure): Command => procedure;
 op datatypeCommand(datatype: Datatype): Command => datatype;
-op opaqueTypeCommand(opaqueType: OpaqueType): Command => opaqueType;
