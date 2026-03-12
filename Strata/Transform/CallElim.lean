@@ -67,10 +67,11 @@ def callElimCmd (cmd: Command)
         let unmodifiedOldSubst : Map Expression.Ident Expression.Expr :=
           p.decls.filterMap fun d => match d with
             | .var name _ _ _ =>
+              let oldVar := CoreIdent.mkOld name.name
               if !proc.spec.modifies.contains name &&
                  postExprs.any (fun e => Lambda.LExpr.freeVars e |>.any
-                   (fun (id, _) => id == CoreIdent.mkOld name.name))
-              then some (CoreIdent.mkOld name.name, createFvar name)
+                   (fun (id, _) => id == oldVar))
+              then some (oldVar, createFvar name)
               else none
             | _ => none
         let oldSubst := createOldVarsSubst oldTrips ++ unmodifiedOldSubst
