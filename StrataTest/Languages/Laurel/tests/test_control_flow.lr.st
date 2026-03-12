@@ -19,7 +19,7 @@ procedure main() {
             status := 2
         }
     } else {
-        status := 3;
+        status := 3
     };
     assert status == 1;
 
