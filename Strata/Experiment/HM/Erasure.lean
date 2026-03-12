@@ -5,6 +5,7 @@
 import Strata.Experiment.HM.Checker
 import Strata.Experiment.HM.Typing
 import Strata.Experiment.HM.Soundness
+import Strata.Experiment.HM.WellTyped
 
 /-! ## Erasure theorem: HasTypeA implies HasType on the erased expression
 
@@ -97,26 +98,6 @@ theorem AExpr.ctxCompat_varOpen (Γ : Ctx) (ae : AExpr) (k : Nat) (t : Ty) (x : 
   | eq _ _ _ iha ihb => exact ⟨iha k hc.1, ihb k hc.2⟩
   | quant _ _ _ ih => exact ih (k + 1) hc
 
-/-! ### Map helper -/
-
-theorem Map.find?_insert_self [DecidableEq α] (m : Map α β) (k : α) (v : β) :
-    (m.insert k v).find? k = some v := by
-  induction m with
-  | nil => simp [Map.insert, Map.find?]
-  | cons p m ih =>
-    simp [Map.insert]
-    split <;> simp [Map.find?, *]
-
-theorem Map.find?_insert_ne [DecidableEq α] (m : Map α β) (k k' : α) (v : β) (h : k' ≠ k) :
-    (m.insert k v).find? k' = m.find? k' := by
-  induction m with
-  | nil => simp [Map.insert, Map.find?]; grind
-  | cons p m ih =>
-    obtain ⟨a, b⟩ := p
-    simp [Map.insert]
-    split <;> simp [Map.find?, *]
-    grind
-
 theorem AExpr.ctxCompat_addVar (Γ : Ctx) (x : String) (σ : Scheme) (ae : AExpr)
     (hc : ae.ctxCompat Γ) (hfresh : Expr.fresh x ae.erase) :
     ae.ctxCompat (Γ.addVar x σ) := by
@@ -124,7 +105,7 @@ theorem AExpr.ctxCompat_addVar (Γ : Ctx) (x : String) (σ : Scheme) (ae : AExpr
   | bvar _ => trivial
   | fvar t y =>
     simp [ctxCompat, Ctx.addVar, AExpr.erase, Expr.fresh] at *
-    rw [Map.find?_insert_ne _ x y _ hfresh]
+    rw [Map.find?_insert_ne _ x y _ (by grind)]
     exact hc
   | op _ _ => exact hc
   | const _ => trivial

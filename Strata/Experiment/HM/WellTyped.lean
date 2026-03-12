@@ -59,15 +59,6 @@ theorem Map.find?_append [DecidableEq α] (m₁ m₂ : Map α β) (a : α) :
     split <;> try assumption
     simp[Option.or]
 
-theorem Subst.id_apply (τ : Ty) : Subst.id.apply τ = τ := by
-  induction τ using Ty.ind' with
-  | hvar n => simp [Subst.id, Subst.apply, Map.find?]
-  | hcon name args ih =>
-    simp only [Subst.apply, List.attach_map_val]
-    congr 1
-    rw[@List.map_congr_left _ _ _ _ (fun (x: Ty) => x)] <;> try assumption
-    apply List.map_id'
-
 theorem Scheme.instantiate_mono (τ : Ty) (n : Nat) :
     (Scheme.mono τ).instantiate n = (τ, n) := by
   simp [Scheme.mono, Scheme.instantiate]
@@ -263,25 +254,6 @@ theorem AExpr.allFvarTy_varClose_same (ae : AExpr) (k : Nat) (x : String) (t : T
   | ite _ c th el ihc ihth ihel => exact ⟨ihc k, ihth k, ihel k⟩
   | eq _ a b iha ihb => exact ⟨iha k, ihb k⟩
   | quant _ _ e ih => exact ih (k + 1)
-
-/-! ### Substitution compose applies -/
-
-theorem Subst.apply_compose (S₂ S₁ : Subst) (τ : Ty) :
-    (S₂.compose S₁).apply τ = S₂.apply (S₁.apply τ) := by
-  induction τ using Ty.ind' with
-  | hvar n =>
-    simp only [Subst.apply, Subst.compose, Map.find?_append, Map.find?_fmap]
-    cases S₁.find? n with
-    | none =>
-      simp [Option.or, Option.map, Subst.apply]
-    | some τ => simp [Option.or, Option.map]
-  | hcon name args ih =>
-    simp only [Subst.apply, List.attach_map_val]
-    congr 1
-    simp only [List.map_map]
-    apply List.map_congr_left
-    intro t ht
-    exact ih t ht
 
 /-! ### W produces terms where the fresh variable has the right annotation
 

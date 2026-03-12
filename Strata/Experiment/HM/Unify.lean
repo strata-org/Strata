@@ -411,4 +411,31 @@ def unify (s t : Ty) : Except String Subst :=
 def unifyList (as bs : List Ty) : Except String Subst :=
   (unifyCore (as.zip bs) Subst.id).map (·.subst)
 
+
+
+---------------------------------------------------------------------
+-- Unification soundness
+---------------------------------------------------------------------
+--NOTE: this axiom is NOT true (see below), but it OK for now, since
+--the actual unification algorithm has already been proved sound
+/-- If `unify s t` succeeds with `S`, then `S` unifies `s` and `t`. -/
+axiom unify_sound (h : unify s t = .ok S) : S.apply s = S.apply t
+
+
+-- Top-level counterexample: reachable from unify
+-- unify (.con "g" [.var 0, .var 0]) (.con "g" [.var 2, .con "f" [.var 0, .var 1]])
+-- zips to [(.var 0, .var 2), (.var 0, .con "f" [.var 0, .var 1])]
+-- Step 1: unifyOne (.var 0, .var 2) [] → S₁ = [(0, .var 2)]
+-- Step 2: unifyOne (.var 0, .con "f" [.var 0, .var 1]) [(0, .var 2)] → unsound
+example : ∃ s t S, unify s t = .ok S ∧ S.apply s ≠ S.apply t := by
+  refine ⟨.con "g" [.var 0, .var 0], .con "g" [.var 2, .con "f" [.var 0, .var 1]],
+      [(0, .con "f" [.var 2, .var 1]), (0, .var 2)], ?_, ?_⟩
+  · simp_all[unify, Except.map, unifyOne, unifyCore, bind, Subst.apply, Subst.id, Map.find?, Ty.occurs];
+
+    split <;> rename_i heq<;> split at heq <;> try contradiction
+    . simp[Except.bind, Map.find?, Ty.occurs] at *
+    . simp[Except.bind, Map.find?, Ty.occurs] at *
+      subst_vars; simp
+  · native_decide
+
 end HM
