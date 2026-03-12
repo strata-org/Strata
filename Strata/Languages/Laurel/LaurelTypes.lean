@@ -81,7 +81,7 @@ def computeExprType (model : SemanticModel) (expr : StmtExprMd) : HighTypeMd :=
   | .Assume _ => ⟨ .TVoid, md ⟩
   -- Instance related
   | .New name => ⟨ .UserDefined name, md ⟩
-  | .This => panic "Not supported" -- would need `this` type from context
+  | .This => panic "'This' not supported" -- would need `this` type from context
   | .ReferenceEquals _ _ => ⟨ .TBool, md ⟩
   | .AsType _ ty => ty
   | .IsType _ _ => ⟨ .TBool, md ⟩
@@ -93,10 +93,10 @@ def computeExprType (model : SemanticModel) (expr : StmtExprMd) : HighTypeMd :=
   | .Fresh _ => ⟨ .TBool, md ⟩
   -- Proof related
   | .ProveBy v _ => computeExprType model v
-  | .ContractOf _ _ => panic "Not supported"
+  | .ContractOf _ _ => panic "ContractOf Not supported"
   -- Special
-  | .Abstract => panic "Not supported"
-  | .All => panic "Not supported"
-  | .Hole => panic "Not supported"
+  | .Abstract => panic "Abstract Not supported"
+  | .All => panic "All Not supported"
+  | .Hole => ⟨ .Top, md ⟩
 
 end Strata.Laurel

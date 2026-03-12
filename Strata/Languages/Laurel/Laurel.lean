@@ -150,6 +150,8 @@ inductive HighType : Type where
   /-- Temporary construct meant to aid the migration of Python->Core to Python->Laurel.
   Type "passed through" from Core. Intended to allow translations to Laurel to refer directly to Core. -/
   | TCore (s: String)
+  /-- The top type, which contains all values. -/
+  | Top
   deriving Repr
 
 mutual
@@ -295,7 +297,7 @@ inductive StmtExpr : Type where
   | Abstract
   /-- Refers to all objects in the heap. Used in reads or modifies clauses. -/
   | All
-  /-- A hole with dynamic type, useful for partially available programs. -/
+  /-- A hole with Top type, useful for partially available programs. -/
   | Hole
 
 inductive ContractType where
@@ -337,6 +339,7 @@ def highEq (a : HighTypeMd) (b : HighTypeMd) : Bool := match _a: a.val, _b: b.va
   | HighType.Pure b1, HighType.Pure b2 => highEq b1 b2
   | HighType.Intersection ts1, HighType.Intersection ts2 =>
       ts1.length == ts2.length && (ts1.attach.zip ts2 |>.all (fun (t1, t2) => highEq t1.1 t2))
+  | HighType.Top, HighType.Top => true
   | _, _ => false
   termination_by (SizeOf.sizeOf a)
   decreasing_by

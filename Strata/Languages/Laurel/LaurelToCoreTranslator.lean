@@ -56,6 +56,7 @@ def translateType (model : SemanticModel) (ty : HighTypeMd) : LMonoTy :=
   | .TCore s => .tcons s []
   | .TFloat64 => LMonoTy.real -- Incorrect?
   | .TReal => LMonoTy.real
+  | .Top => .tcons "Top" []
   | _ => panic s!"translateType: unsupported type {ToFormat.format ty}"
 termination_by ty.val
 decreasing_by all_goals (first | (cases elementType; term_by_mem) | (cases keyType; term_by_mem) | (cases valueType; term_by_mem))
@@ -431,7 +432,8 @@ def translateStmt (outputParams : List Parameter) (stmt : StmtExprMd)
       let bodyStmts ← translateStmt outputParams body
       return [Imperative.Stmt.loop condExpr decreasingExprCore invExprs bodyStmts md]
   | .Exit _ =>
-      panic! "Exit statement not yet supported"
+      dbg_trace "TODO: Exit statement not yet supported"
+      default
   | _ =>
       -- Expression in statement position: preserve as an unused variable init
       exprAsUnusedInit stmt md
