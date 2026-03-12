@@ -1,24 +1,37 @@
 
 ==== Verification Results ====
+List_get_body_calls_List_get_0: ✅ pass
+List_take_body_calls_List_take_0: ✅ pass
+List_drop_body_calls_List_drop_0: ✅ pass
+List_slice_body_calls_List_take_0: ✅ pass
+List_slice_body_calls_List_drop_1: ✅ pass
+List_set_body_calls_List_set_0: ✅ pass
+DictStrAny_get_body_calls_DictStrAny_get_0: ✅ pass
+Any_get_body_calls_DictStrAny_get_0: ✅ pass
+Any_get_body_calls_List_get_1: ✅ pass
+Any_get!_body_calls_DictStrAny_get_0: ✅ pass
+Any_get!_body_calls_List_get_1: ✅ pass
+Any_set_body_calls_List_set_0: ✅ pass
+Any_set!_body_calls_List_set_0: ✅ pass
 PFloorDiv_body_calls_Int.SafeDiv_0: ✅ pass
 PFloorDiv_body_calls_Int.SafeDiv_1: ✅ pass
 PFloorDiv_body_calls_Int.SafeDiv_2: ✅ pass
 PFloorDiv_body_calls_Int.SafeDiv_3: ✅ pass
 PAnd_body_calls_Any_to_bool_0: ✅ pass
 POr_body_calls_Any_to_bool_0: ✅ pass
-ret_type: ✅ pass (at byte 25049)
-ret_type: ✅ pass (at byte 25464)
-ret_pos: ✅ pass (at byte 25950)
-assert_name_is_foo: ✅ pass (at byte 26954)
-assert_opt_name_none_or_str: ✅ pass (at byte 27017)
-assert_opt_name_none_or_bar: ✅ pass (at byte 27121)
-ensures_maybe_except_none: ✅ pass (at byte 26877)
-(Origin_test_helper_procedure_Requires)req_name_is_foo: 🟡 unknown (at byte 26610)
-(Origin_test_helper_procedure_Requires)req_opt_name_none_or_str: ✅ pass (at byte 26672)
-(Origin_test_helper_procedure_Requires)req_opt_name_none_or_bar: ✅ pass (at byte 26775)
-(Origin_test_helper_procedure_Requires)req_name_is_foo: 🟡 unknown (at byte 26610)
-(Origin_test_helper_procedure_Requires)req_opt_name_none_or_str: ✅ pass (at byte 26672)
-(Origin_test_helper_procedure_Requires)req_opt_name_none_or_bar: ✅ pass (at byte 26775)
-(Origin_test_helper_procedure_Requires)req_name_is_foo: 🟡 unknown (at byte 26610)
-(Origin_test_helper_procedure_Requires)req_opt_name_none_or_str: ✅ pass (at byte 26672)
-(Origin_test_helper_procedure_Requires)req_opt_name_none_or_bar: ✅ pass (at byte 26775)
+ret_type: ✅ pass (at byte 31657)
+ret_type: ✅ pass (at byte 32072)
+ret_pos: ✅ pass (at byte 32558)
+assert_name_is_foo: ✅ pass (at byte 33562)
+assert_opt_name_none_or_str: ✅ pass (at byte 33625)
+assert_opt_name_none_or_bar: ✅ pass (at byte 33729)
+ensures_maybe_except_none: ✅ pass (at byte 33485)
+(Origin_test_helper_procedure_Requires)req_name_is_foo: 🟡 unknown (at byte 33218)
+(Origin_test_helper_procedure_Requires)req_opt_name_none_or_str: ✅ pass (at byte 33280)
+(Origin_test_helper_procedure_Requires)req_opt_name_none_or_bar: ✅ pass (at byte 33383)
+(Origin_test_helper_procedure_Requires)req_name_is_foo: 🟡 unknown (at byte 33218)
+(Origin_test_helper_procedure_Requires)req_opt_name_none_or_str: ✅ pass (at byte 33280)
+(Origin_test_helper_procedure_Requires)req_opt_name_none_or_bar: ✅ pass (at byte 33383)
+(Origin_test_helper_procedure_Requires)req_name_is_foo: 🟡 unknown (at byte 33218)
+(Origin_test_helper_procedure_Requires)req_opt_name_none_or_str: ✅ pass (at byte 33280)
+(Origin_test_helper_procedure_Requires)req_opt_name_none_or_bar: ✅ pass (at byte 33383)

@@ -293,7 +293,7 @@ public class StrataGenerator : ReadOnlyVisitor {
         switch (expr) {
             case IdentifierExpr identExpr:
                 WriteText("old ");
-                WriteText(identExpr.Name);
+                WriteText(Name(identExpr.Name));
                 break;
             case NAryExpr { Fun: MapSelect } mapSelect:
                 WriteText("(");
