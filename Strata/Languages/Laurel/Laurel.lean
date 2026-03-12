@@ -388,6 +388,7 @@ structure CompositeType where
   fields : List Field
   /-- Instance procedures (methods) defined on this type. -/
   instanceProcedures : List Procedure
+  deriving Inhabited
 
 /--
 A constrained (refinement) type defined by a base type and a predicate.
@@ -445,6 +446,7 @@ inductive TypeDefinition where
   | Constrained (ty : ConstrainedType)
   /-- An algebriac datatype. -/
   | Datatype (ty : DatatypeDefinition)
+  deriving Inhabited
 
 structure Constant where
   name : Identifier

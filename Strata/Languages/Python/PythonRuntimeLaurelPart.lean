@@ -570,8 +570,7 @@ procedure END_MARKER();
 Parse the Laurel DDM prelude into a Laurel Program.
 -/
 def pythonRuntimeLaurelPart : Laurel.Program :=
-  let uri := Strata.Uri.file "Strata/Languages/Python/PythonRuntimeLaurelPart.lean"
-  match Laurel.TransM.run uri (Laurel.parseProgram pythonRuntimeLaurelPartDDM) with
+  match Laurel.TransM.run none (Laurel.parseProgram pythonRuntimeLaurelPartDDM) with
   | .ok p => p
   | .error e => panic! s!"Failed to parse Python runtime Laurel part: {e}"
 
