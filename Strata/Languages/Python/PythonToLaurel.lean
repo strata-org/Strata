@@ -1337,6 +1337,11 @@ def pythonToLaurel (prelude: Core.Program)
       isFunctional := false
       }
 
+    /-
+Compute partial Laurel functions and procedures from the Core functions and procedures
+These are needed by the Laurel pipeline to determine which is which and how to call them.
+In the future, we will replace
+    -/
     let preludeFunctions : List Procedure := (getPreludeFunctions prelude).map (λ funcname =>
     {
       name := { text:= funcname},
