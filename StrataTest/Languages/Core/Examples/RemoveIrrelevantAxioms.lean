@@ -115,7 +115,7 @@ Result: ✅ pass
 
 Obligation: assert_1
 Property: assert
-Result: 🟡 unknown
+Result: ❓ unknown
 
 Obligation: assert_2
 Property: assert
@@ -123,7 +123,7 @@ Result: ✅ pass
 
 Obligation: assert_3
 Property: assert
-Result: 🟡 unknown
+Result: ❓ unknown
 
 Obligation: assert_4
 Property: assert
@@ -189,7 +189,7 @@ Result: ✅ pass
 
 Obligation: assert_1
 Property: assert
-Result: 🟡 unknown
+Result: ❓ unknown
 
 Obligation: assert_2
 Property: assert
@@ -197,39 +197,39 @@ Result: ✅ pass
 
 Obligation: assert_3
 Property: assert
-Result: 🟡 unknown
+Result: ❓ unknown
 
 Obligation: assert_4
 Property: assert
-Result: 🟡 unknown
+Result: ❓ unknown
 
 Obligation: assert_5
 Property: assert
-Result: 🟡 unknown
+Result: ❓ unknown
 
 Obligation: assert_6
 Property: assert
-Result: 🟡 unknown
+Result: ❓ unknown
 
 Obligation: assert_7
 Property: assert
-Result: 🟡 unknown
+Result: ❓ unknown
 
 Obligation: assert_8
 Property: assert
-Result: 🟡 unknown
+Result: ❓ unknown
 
 Obligation: assert_9
 Property: assert
-Result: 🟡 unknown
+Result: ❓ unknown
 
 Obligation: assert_10
 Property: assert
-Result: 🟡 unknown
+Result: ❓ unknown
 
 Obligation: assert_11
 Property: assert
-Result: 🟡 unknown
+Result: ❓ unknown
 -/
 #guard_msgs in
 #eval verify irrelevantAxiomsTestPgm
