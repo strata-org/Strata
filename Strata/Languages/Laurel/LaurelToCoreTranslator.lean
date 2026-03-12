@@ -21,6 +21,7 @@ import Strata.DL.Imperative.Stmt
 import Strata.DL.Imperative.MetaData
 import Strata.DL.Lambda.LExpr
 import Strata.Languages.Laurel.LaurelFormat
+import Strata.Languages.Laurel.ConstrainedTypeElim
 import Strata.Util.Tactics
 
 open Core (VCResult VCResults VerifyOptions)
@@ -619,6 +620,11 @@ def translate (program : Program): Except (Array DiagnosticModel) (Core.Program 
   let (program, model) := (result.program, result.model)
   _resolutionDiags := _resolutionDiags ++ result.errors
 
+  let (program, constrainedTypeDiags) := constrainedTypeElim model program
+  let result := resolve program (some model)
+  let (program, model) := (result.program, result.model)
+  _resolutionDiags := _resolutionDiags ++ result.errors
+
   -- Procedures marked isFunctional are translated to Core functions; all others become Core procedures.
   -- External procedures are completely ignored (not translated to Core).
   let nonExternal := program.staticProcedures.filter (fun p => !p.body.isExternal)
@@ -667,7 +673,7 @@ def translate (program : Program): Except (Array DiagnosticModel) (Core.Program 
   -- dbg_trace "=== Generated Strata Core Program ==="
   -- dbg_trace (toString (Std.Format.pretty (Strata.Core.formatProgram program) 100))
   -- dbg_trace "================================="
-  pure (program, diamondErrors ++ modifiesDiags)
+  pure (program, diamondErrors ++ modifiesDiags ++ constrainedTypeDiags.toList)
 
 /--
 Verify a Laurel program using an SMT solver
