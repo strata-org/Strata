@@ -37,7 +37,7 @@ spec {
 
 def singleCFG (p : Program) (n : Nat) : Imperative.CFG String (Imperative.DetBlock String Core.Command Core.Expression) :=
   let corePgm : Core.Program := TransM.run Inhabited.default (translateProgram p) |>.fst
-  let proc := match corePgm.decls[n]? with | .some (.proc p _) => p | _ => panic!"No procedure!"
+  let proc := match corePgm.decls[n]? with | .some (.proc p _) => p | _ => Inhabited.default
   Imperative.stmtsToCFG proc.body
 
 /--
