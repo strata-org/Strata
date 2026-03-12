@@ -600,10 +600,19 @@ def translateDatatypeDefinition (model : SemanticModel) (dt : DatatypeDefinition
     { name := ⟨c.name.text, ()⟩
       args := c.args.map fun ⟨ n, ty ⟩ => (⟨n.text, ()⟩, translateType model ty)
       testerName := s!"{dt.name}..is{c.name}" }
+  let constrs := if _:constrs.isEmpty then
+      [{
+        name := ⟨
+          dbg_trace "Completeness bug: empty datatype"
+          "fakeConsToMakeThemNonEmpty", () ⟩,
+        args := []
+      }]
+    else constrs
   { name := dt.name.text
     typeArgs := dt.typeArgs.map (fun id => id.text)
     constrs := constrs
-    constrs_ne := by simp [constrs] }
+    constrs_ne := by simp [constrs]; grind
+  }
 
 /--
 Try to translate a Laurel Procedure marked `isFunctional` to a Core Function.

@@ -64,6 +64,27 @@ procedure testFailing() {
   assert IntList..isCons(xs)
 //^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
 };
+
+// Mutually recursive datatypes: even/odd-length lists
+datatype EvenList {
+  ENil(),
+  ECons(head: int, tail: OddList)
+}
+
+datatype OddList {
+  OCons(head: int, tail: EvenList)
+}
+
+procedure testMutualConstruction() {
+  var even: EvenList := ENil();
+  assert EvenList..isENil(even);
+  var odd: OddList := OCons(1, ENil());
+  assert OddList..isOCons(odd);
+  assert OddList..head(odd) == 1;
+  var even2: EvenList := ECons(2, OCons(3, ENil()));
+  assert EvenList..isECons(even2);
+  assert EvenList..head(even2) == 2
+};
 "
 
 #guard_msgs (error, drop all) in
