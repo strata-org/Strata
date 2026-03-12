@@ -706,6 +706,9 @@ partial def genCatTypeTerm (annType : Ident) (c : SyntaxCat)
   | q`Init.NewlineSepBy, 1 =>
     let inner := mkCApp ``Array #[args[0]]
     return if addAnn then mkCApp ``Ann #[inner, annType] else inner
+  | q`Init.SemicolonSepBy, 1 =>
+    let inner := mkCApp ``Array #[args[0]]
+    return if addAnn then mkCApp ``Ann #[inner, annType] else inner
   | q`Init.Option, 1 =>
     let inner := mkCApp ``Option #[args[0]]
     return if addAnn then mkCApp ``Ann #[inner, annType] else inner
@@ -909,6 +912,8 @@ partial def toAstApplyArg (vn : Name) (cat : SyntaxCat)
     ``($toAst $v)
   | q`Init.CommaSepBy => do
     toAstApplyArgSeq v cat ``SepFormat.comma
+  | q`Init.SemicolonSepBy => do
+    toAstApplyArgSeq v cat ``SepFormat.semicolon
   | q`Init.SpaceSepBy => do
     toAstApplyArgSeq v cat ``SepFormat.space
   | q`Init.SpacePrefixSepBy => do
@@ -1171,6 +1176,8 @@ partial def genOfAstArgTerm (varName : String) (cat : SyntaxCat)
     pure <| mkApp ofAst #[e]
   | q`Init.CommaSepBy => do
     genOfAstSeqArgTerm varName cat e ``SepFormat.comma
+  | q`Init.SemicolonSepBy => do
+    genOfAstSeqArgTerm varName cat e ``SepFormat.semicolon
   | q`Init.SpaceSepBy => do
     genOfAstSeqArgTerm varName cat e ``SepFormat.space
   | q`Init.SpacePrefixSepBy => do
@@ -1463,7 +1470,7 @@ Generates an `Inhabited` instance for a category if possible, and adds it to the
 
 This function attempts to find a constructor whose arguments are all inhabited types.
 A type is considered inhabited if:
-- It's a sequence type (`Init.Seq`, `Init.CommaSepBy`, `Init.SpaceSepBy`, `Init.SpacePrefixSepBy`)
+- It's a sequence type (`Init.Seq`, `Init.CommaSepBy`, `Init.SpaceSepBy`, `Init.SpacePrefixSepBy`, `Init.SemicolonSepBy`)
   which are always inhabited via empty arrays
 - It's an `Init.Option` type which is always inhabited via `none`
 - It's already in the `InhabitedSet` from previous processing
@@ -1490,6 +1497,7 @@ def tryMakeInhabited (cat : QualifiedIdent) (ops : Array DefaultCtor)
         match arg.cat.name with
         | q`Init.Seq => true
         | q`Init.CommaSepBy => true
+        | q`Init.SemicolonSepBy => true
         | q`Init.SpaceSepBy => true
         | q`Init.SpacePrefixSepBy => true
         | q`Init.NewlineSepBy => true

@@ -125,7 +125,7 @@ partial def syntaxCatToJavaType (cat : SyntaxCat) : JavaType :=
     match cat.args[0]? with
     | some inner => .optional (syntaxCatToJavaType inner)
     | none => panic! "Init.Option requires a type argument"
-  | q`Init.Seq | q`Init.CommaSepBy | q`Init.NewlineSepBy | q`Init.SpaceSepBy | q`Init.SpacePrefixSepBy =>
+  | q`Init.Seq | q`Init.CommaSepBy | q`Init.NewlineSepBy | q`Init.SpaceSepBy | q`Init.SpacePrefixSepBy | q`Init.SemicolonSepBy =>
     match cat.args[0]? with
     | some inner => .list (syntaxCatToJavaType inner)
     | none => panic! "List category requires a type argument"
@@ -146,7 +146,7 @@ partial def syntaxCatToQualifiedName (cat : SyntaxCat) : Option QualifiedIdent :
   else if abstractCategories.contains cat.name then some cat.name
   else match cat.name with
   | q`Init.Option | q`Init.Seq | q`Init.CommaSepBy
-  | q`Init.NewlineSepBy | q`Init.SpaceSepBy | q`Init.SpacePrefixSepBy =>
+  | q`Init.NewlineSepBy | q`Init.SpaceSepBy | q`Init.SpacePrefixSepBy | q`Init.SemicolonSepBy =>
     cat.args[0]?.bind syntaxCatToQualifiedName
   | ⟨"Init", _⟩ => none
   | qid => some qid
