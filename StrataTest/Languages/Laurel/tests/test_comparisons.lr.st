@@ -8,5 +8,5 @@ procedure main() {
     assert x > y;
     assert y < x;
     assert x >= 5;
-    assert y <= 3;
+    assert y <= 3
 };

@@ -14,11 +14,11 @@ namespace Laurel
 
 def quantifiersProgram := r"
 procedure testForall() {
-    assert forall(x: int) => x + 0 == x;
+    assert forall(x: int) => x + 0 == x
 };
 
 procedure testExists() {
-    assert exists(x: int) => x == 42;
+    assert exists(x: int) => x == 42
 };
 
 procedure testQuantifierInContract(n: int)
