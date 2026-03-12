@@ -717,32 +717,31 @@ def tryTranslatePureToFunction (proc : Procedure) (initState : TranslateState)
   else
     .error finalState.diagnostics.toArray
 
+structure LaurelTranslateOptions where
+  emitResolutionErrors : Bool := true
+
 /--
 Translate Laurel Program to Core Program
 -/
-def translate (program : Program): Except (Array DiagnosticModel) (Core.Program × Array DiagnosticModel) := do
+def translate (options: LaurelTranslateOptions) (program : Program): Except (Array DiagnosticModel) (Core.Program × Array DiagnosticModel) := do
   let program := { program with
     staticProcedures := coreDefinitionsForLaurel.staticProcedures ++ program.staticProcedures
   }
 
   let result := resolve program
   let (program, model) := (result.program, result.model)
-  let mut _resolutionDiags := result.errors
   let diamondErrors := validateDiamondFieldAccesses model program
 
   let program := heapParameterization model program
   let result := resolve program (some model)
   let (program, model) := (result.program, result.model)
-  _resolutionDiags := _resolutionDiags ++ result.errors
 
   let program := typeHierarchyTransform model program
   let result := resolve program (some model)
   let (program, model) := (result.program, result.model)
-  _resolutionDiags := _resolutionDiags ++ result.errors
   let (program, modifiesDiags) := modifiesClausesTransform model program
   let result := resolve program (some model)
   let (program, model) := (result.program, result.model)
-  _resolutionDiags := _resolutionDiags ++ result.errors
   -- dbg_trace "=== Program after heapParameterization + modifiesClausesTransform ==="
   -- dbg_trace (toString (Std.Format.pretty (Std.ToFormat.format program)))
   -- dbg_trace "================================="
@@ -750,9 +749,9 @@ def translate (program : Program): Except (Array DiagnosticModel) (Core.Program 
   let program := eliminateReturnsInExpressionTransform program
   let result := resolve program (some model)
   let (program, model) := (result.program, result.model)
-  _resolutionDiags := _resolutionDiags ++ result.errors
-  if !_resolutionDiags.isEmpty then
-    .error _resolutionDiags
+  let resolutionDiags := result.errors
+  if options.emitResolutionErrors && !resolutionDiags.isEmpty then
+    .error resolutionDiags
   else
     let coreProgram ← translateLaurelToCore model program
     pure (coreProgram, diamondErrors ++ modifiesDiags)
@@ -829,7 +828,7 @@ Verify a Laurel program using an SMT solver
 def verifyToVcResults (program : Program)
     (options : VerifyOptions := .default)
     : IO (Except (Array DiagnosticModel) VCResults) := do
-  let (strataCoreProgram, translateDiags) ← match translate program  with
+  let (strataCoreProgram, translateDiags) ← match translate { emitResolutionErrors := true } program with
     | .error translateErrorDiags => return .error translateErrorDiags
     | .ok result => pure result
 
