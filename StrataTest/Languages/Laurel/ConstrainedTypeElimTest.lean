@@ -97,14 +97,13 @@ deterministic
   for proc in program.staticProcedures do
     IO.println (toString (Std.Format.pretty (Std.ToFormat.format proc)))
 
--- Uninitialized constrained variable: currently uses witness as default.
--- TODO: Once the translator emits havoc for uninitialized variables (#550),
--- switch to assume instead of witness injection + assert.
+-- Uninitialized constrained variable: havoc + assume constraint.
+-- The variable has no known value, only the type constraint is assumed.
 def uninitProgram : String := r"
 constrained posint = x: int where x > 0 witness 1
 procedure f() {
   var x: posint;
-  assert x == 1;
+  assert x > 0;
 };
 "
 
@@ -116,7 +115,7 @@ deterministic
 procedure f() returns ⏎
 ()
 deterministic
-{ var x: int := 1; assert posint$constraint(x); assert x == 1 }
+{ var x: int; assume posint$constraint(x); assert x > 0 }
 procedure $witness_posint() returns ⏎
 ()
 deterministic

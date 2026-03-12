@@ -17,7 +17,7 @@ A Laurel-to-Laurel pass that eliminates constrained types by:
    - Skipped for `isFunctional` procedures since the Laurel translator does not yet support
      function postconditions. Constrained return types on functions are not checked.
 4. Inserting `assert constraintFunc(var)` for local variable init and reassignment
-5. Using the witness as default initializer for uninitialized constrained-typed variables
+5. Assuming the constraint for uninitialized constrained-typed variables (havoc + assume)
 6. Adding a synthetic witness-validation procedure per constrained type
 7. Injecting constraint function calls into quantifier bodies (`forall` → `implies`, `exists` → `and`)
 8. Resolving all constrained type references to their base types
@@ -146,16 +146,12 @@ def elimStmt (ptMap : ConstrainedTypeMap)
   | .LocalVariable name ty init =>
     let callOpt := constraintCallFor ptMap ty.val name md
     if callOpt.isSome then modify fun pv => pv.insert name.text ty.val
-    let assert := callOpt.toList.map fun c => ⟨.Assert c, md⟩
-    -- TODO: Once the translator emits `init` without RHS (havoc) for uninitialized variables,
-    -- switch from witness injection + assert to assume. Currently the translator initializes
-    -- uninitialized variables to 0 (defaultExprForType), making assume unsound.
-    let init' := match init with
-      | none => match ty.val with
-        | .UserDefined n => (ptMap.get? n.text).map (·.witness)
-        | _ => none
-      | some _ => init
-    pure ([⟨.LocalVariable name ty init', md⟩] ++ assert)
+    let (init', check) : Option StmtExprMd × List StmtExprMd := match init with
+      | none => match callOpt with
+        | some c => (none, [⟨.Assume c, md⟩])
+        | none => (none, [])
+      | some _ => (init, callOpt.toList.map fun c => ⟨.Assert c, md⟩)
+    pure ([⟨.LocalVariable name ty init', md⟩] ++ check)
 
   | .Assign [target] _ => match target.val with
     | .Identifier name => do
