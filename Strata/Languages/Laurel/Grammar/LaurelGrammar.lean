@@ -7,7 +7,7 @@
 -- Laurel dialect definition, loaded from LaurelGrammar.st
 -- NOTE: Changes to LaurelGrammar.st are not automatically tracked by the build system.
 -- Update this file (e.g. this comment) to trigger a recompile after modifying LaurelGrammar.st.
--- Last grammar change: erpe
+-- Last grammar change: 1314
 import Strata.DDM.Integration.Lean
 
 namespace Strata.Laurel
