@@ -728,22 +728,22 @@ def translate (program : Program): Except (Array DiagnosticModel) (Core.Program 
 
   let result := resolve program
   let (program, model) := (result.program, result.model)
-  let mut _resolutionDiags := result.errors
+  let mut resolutionDiags := result.errors
   let diamondErrors := validateDiamondFieldAccesses model program
 
   let program := heapParameterization model program
   let result := resolve program (some model)
   let (program, model) := (result.program, result.model)
-  _resolutionDiags := _resolutionDiags ++ result.errors
+  resolutionDiags := resolutionDiags ++ result.errors
 
   let program := typeHierarchyTransform model program
   let result := resolve program (some model)
   let (program, model) := (result.program, result.model)
-  _resolutionDiags := _resolutionDiags ++ result.errors
+  resolutionDiags := resolutionDiags ++ result.errors
   let (program, modifiesDiags) := modifiesClausesTransform model program
   let result := resolve program (some model)
   let (program, model) := (result.program, result.model)
-  _resolutionDiags := _resolutionDiags ++ result.errors
+  resolutionDiags := resolutionDiags ++ result.errors
   -- dbg_trace "=== Program after heapParameterization + modifiesClausesTransform ==="
   -- dbg_trace (toString (Std.Format.pretty (Std.ToFormat.format program)))
   -- dbg_trace "================================="
@@ -751,7 +751,7 @@ def translate (program : Program): Except (Array DiagnosticModel) (Core.Program 
   let program := eliminateReturnsInExpressionTransform program
   let result := resolve program (some model)
   let (program, model) := (result.program, result.model)
-  _resolutionDiags := _resolutionDiags ++ result.errors
+  resolutionDiags := resolutionDiags ++ result.errors
 
   -- Procedures marked isFunctional are translated to Core functions; all others become Core procedures.
   -- External procedures are completely ignored (not translated to Core).
@@ -782,8 +782,6 @@ def translate (program : Program): Except (Array DiagnosticModel) (Core.Program 
 
   -- Collect ALL errors from both functions, procedures, and resolution before deciding whether to fail
   let allErrors :=
-    -- Not including resolution diagnostics yet because the Python through Laurel pipeline
-    -- does not resolve yet.
     -- resolutionDiags.toList ++
     pureErrors ++ procDiags ++ constantsState.diagnostics
   if !allErrors.isEmpty then

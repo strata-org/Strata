@@ -16,7 +16,8 @@ import Strata.Languages.Python.Specs.ToLaurel
 import Strata.Languages.Laurel.LaurelFormat
 import Strata.Transform.ProcedureInlining
 import Strata.Languages.Python.CorePrelude
-import Strata.Languages.Python.PythonLaurelCorePrelude
+import Strata.Languages.Python.PythonRuntimeLaurelPart
+import Strata.Languages.Python.PythonRuntimeCorePart
 import Strata.Backends.CBMC.GOTO.CoreToCProverGOTO
 
 import Strata.SimpleAPI
@@ -333,11 +334,8 @@ structure PySpecPrelude where
     are appended to the base prelude (with duplicates filtered out).
     Also accumulates overload dispatch tables. -/
 def buildPySpecPrelude (pyspecPaths : Array String) : IO PySpecPrelude := do
-  -- The Laurel prelude is now included during HeapParameterization at the Laurel level.
-  -- We no longer need to strip it from translate output.
-  let laurelPreludeSize := 0
   let mut preludeDecls : Array Core.Decl :=
-    Strata.Python.Core.PythonLaurelPrelude.decls.toArray
+    Strata.Python.coreOnlyFromRuntimeCorePart.toArray
   let mut existingNames : Std.HashSet String :=
     preludeDecls.foldl (init := {}) fun s d =>
       (Core.Decl.names d).foldl (init := s) fun s n => s.insert n.name
@@ -366,16 +364,13 @@ def buildPySpecPrelude (pyspecPaths : Array String) : IO PySpecPrelude := do
     | .error diagnostics =>
       exitFailure s!"PySpec Laurel to Core translation failed for {ionPath}: {diagnostics}"
     | .ok (coreSpec, _modifiesDiags) =>
-      -- The Laurel prelude is now included at the Laurel level during HeapParameterization,
-      -- so translate output already contains the prelude declarations as normal decls.
-      let pyspecDecls := coreSpec.decls.drop laurelPreludeSize
       -- Register new names, failing on collisions
-      for d in pyspecDecls do
+      for d in coreSpec.decls do
         for n in Core.Decl.names d do
           if existingNames.contains n.name then
             exitFailure s!"Core name collision in PySpec {ionPath}: {n.name}"
           existingNames := existingNames.insert n.name
-      preludeDecls := preludeDecls ++ pyspecDecls.toArray
+      preludeDecls := preludeDecls ++ coreSpec.decls.toArray
   let pyPrelude : Core.Program := { decls := preludeDecls.toList }
   return { corePrelude := pyPrelude, overloads := allOverloads }
 
@@ -438,24 +433,34 @@ def pyAnalyzeLaurelCommand : Command where
     match laurelPgm with
       | .error e =>
         exitFailure s!"Python to Laurel translation failed: {e}"
-      | .ok (laurelProgram, ctx)  =>
+      | .ok (laurelProgram, ctx) =>
+        -- Combine the Laurel prelude declarations with the translated program
+        let pythonRuntimeLaurelPart := Strata.Python.pythonRuntimeLaurelPart
+        let combinedLaurelProgram : Strata.Laurel.Program := {
+          staticProcedures := pythonRuntimeLaurelPart.staticProcedures ++ laurelProgram.staticProcedures
+          staticFields := pythonRuntimeLaurelPart.staticFields ++ laurelProgram.staticFields
+          types := pythonRuntimeLaurelPart.types ++ laurelProgram.types
+          constants := pythonRuntimeLaurelPart.constants ++ laurelProgram.constants
+        }
         if verbose then
           IO.println "\n==== Laurel Program ===="
-          IO.println f!"{laurelProgram}"
+          IO.println f!"{combinedLaurelProgram}"
 
         -- Translate Laurel to Core
-        match Strata.Laurel.translate laurelProgram with
+        match Strata.Laurel.translate combinedLaurelProgram with
         | .error diagnostics =>
           exitFailure s!"Laurel to Core translation failed: {diagnostics}"
         | .ok (coreProgramDecls, modifiesDiags) =>
-          if verbose then
-            IO.println "\n==== Core Program ===="
-            IO.print (coreProgramDecls, modifiesDiags)
+          -- Strata.Python.coreOnlyFromRuntimeCorePart was already included through `buildPySpecPrelude`
+          let coreProgram: Core.Program := { decls := coreProgramDecls.decls }
+          -- if verbose then
+          --   IO.println "\n==== Core Program ===="
+          --   IO.print (coreProgram, modifiesDiags)
 
           -- The Laurel prelude is now included at the Laurel level during
           -- HeapParameterization, so translate output contains prelude decls as normal decls.
           -- No stripping needed.
-          let programDecls := coreProgramDecls.decls.filter (λ d=> d.name.name != "Box")
+          let programDecls := coreProgram.decls --.filter (λ d=> d.name.name != "Box")
           -- Check for name collisions between program and prelude
           let preludeNames : Std.HashSet String :=
             pyPrelude.decls.flatMap Core.Decl.names
@@ -465,7 +470,13 @@ def pyAnalyzeLaurelCommand : Command where
           if !collisions.isEmpty then
             let names := ", ".intercalate (collisions.map (·.name))
             exitFailure s!"Core name collision between program and prelude: {names}"
-          let coreProgram := {decls := pyPrelude.decls ++ programDecls }
+          let (runtimeDecls, userDecls) := programDecls.span (fun d => (Imperative.getFileRange d.metadata).isNone)
+          let coreProgram := {decls := runtimeDecls ++ pyPrelude.decls ++ userDecls }
+          if verbose then
+            IO.println s!"\n==== runtimeDecls decls count: {runtimeDecls.length}"
+            IO.println s!"\n==== userDecls decls count: {userDecls.length}"
+            IO.println "\n==== Core Program with pyPrelude ===="
+            IO.print (coreProgram, modifiesDiags)
           -- dbg_trace "=== Generated Strata Core Program ==="
           -- dbg_trace (toString (Std.Format.pretty (Strata.Core.formatProgram coreProgram) 100))
           -- dbg_trace "================================="
@@ -1125,7 +1136,9 @@ def pyAnalyzeLaurelToGotoCommand : Command where
       | .error diagnostics =>
         exitFailure s!"Laurel to Core translation failed: {diagnostics}"
       | .ok coreProgram =>
-        let coreProgram := {decls := prelude.decls ++ coreProgram.fst.decls.filter (λ d=> d.name.name != "Box") }
+        let coreProgram := {
+          decls := prelude.decls ++ coreProgram.fst.decls --.filter (λ d=> d.name.name != "Box")
+        }
         -- Inline procedure calls (except main) repeatedly until fixpoint
         let mut coreProgram := coreProgram
         for _ in List.range 10 do

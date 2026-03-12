@@ -650,10 +650,48 @@ partial def translateAssign  (ctx : TranslationContext)
                              (rhs: Python.expr SourceRange)
                              (md: Imperative.MetaData Core.Expression)
                     : Except TranslationError (TranslationContext × List StmtExprMd) := do
+                    -- This is: var x: ClassName = ClassName(args)
+        -- Translate to: var x = { var __tmp = new ClassName; __tmp.__init__(args); __tmp }
+        --
+        -- We use a block-as-initializer with a temporary variable because
+        -- `translateStmt` returns a single statement. Wrapping the declaration
+        -- and the __init__ call in an outer Block would introduce a new scope,
+        -- hiding `x` from subsequent statements. A cleaner solution would be
+        -- to let `translateStmt` return multiple statements, but that requires
+        -- a larger refactor of the translation pipeline.
+
+        -- let translatedArgs ← args.val.toList.mapM (translateExpr ctx)
+        -- let tmpName := s!"__tmp_{varName}"
+
+        -- let tmpDecl := mkStmtExprMd (StmtExpr.LocalVariable tmpName varType
+        --   (some (mkStmtExprMd (StmtExpr.New funcName))))
+        -- let initCall := mkStmtExprMd (StmtExpr.InstanceCall
+        --   (mkStmtExprMd (StmtExpr.Identifier tmpName))
+        --   "__init__"
+        --   translatedArgs)
+        -- let tmpRef := mkStmtExprMd (StmtExpr.Identifier tmpName)
+        -- let initBlock := mkStmtExprMd (StmtExpr.Block [tmpDecl, initCall, tmpRef] none)
+
+        -- let declStmt := mkStmtExprMdWithLoc (StmtExpr.LocalVariable varName varType (some initBlock)) md
+        -- return (newCtx, declStmt)
   let rhs_trans ←  translateExpr ctx rhs
   if let .Hole := rhs_trans.val then
   {
-    return (ctx, [mkStmtExprMd .Hole])
+    -- Even when the RHS is unsupported (Hole), we must still declare the variable
+    -- so that subsequent references to it resolve correctly. The variable gets a
+    -- havoc'd value (AnyNone), which is a sound over-approximation.
+    match lhs with
+    | .Name _ n _ =>
+      if n.val ∈ ctx.variableTypes.unzip.1 then
+        return (ctx, [mkStmtExprMd .Hole])
+      else
+        let varType := match annotation with
+          | some ann => pyExprToString ann
+          | none => PyLauType.Any
+        let newctx := {ctx with variableTypes := (n.val, varType) :: ctx.variableTypes}
+        let declStmt := mkStmtExprMd (StmtExpr.LocalVariable n.val AnyTy none)
+        return (newctx, [declStmt])
+    | _ => return (ctx, [mkStmtExprMd .Hole])
   }
   let mut newctx := ctx
   match lhs with
@@ -984,7 +1022,7 @@ def pyFuncDefToPythonFunctionDecl  (ctx : TranslationContext) (f : Python.stmt S
   | _ => throw (.internalError "Expected FunctionDef")
 
 /-- Translate Python function to Laurel Procedure -/
-def translateFunction (ctx : TranslationContext) (funcDecl : PythonFunctionDecl) (body: List (Python.stmt SourceRange))
+def translateFunction (ctx : TranslationContext) (sourceRange: SourceRange) (funcDecl : PythonFunctionDecl) (body: List (Python.stmt SourceRange))
     : Except TranslationError (Laurel.Procedure × TranslationContext) := do
 
     -- Translate parameters
@@ -1025,7 +1063,7 @@ def translateFunction (ctx : TranslationContext) (funcDecl : PythonFunctionDecl)
       determinism := .deterministic none -- TODO: need to set reads
       decreases := none
       body := Body.Transparent bodyBlock
-      md := default
+      md := sourceRangeToMetaData ctx.filePath sourceRange
       isFunctional := false
     }
 
@@ -1139,6 +1177,7 @@ def translateMethod (ctx : TranslationContext) (className : String)
     let bodyStmts := prependExceptHandlingHelper bodyStmts
     let bodyBlock := mkStmtExprMd (StmtExpr.Block bodyStmts none)
 
+    let md := sourceRangeToMetaData ctx.filePath methodStmt.ann
     return {
       name := methodName
       inputs := inputs
@@ -1148,7 +1187,7 @@ def translateMethod (ctx : TranslationContext) (className : String)
       isFunctional := false
       decreases := none
       body := .Transparent bodyBlock
-      md := default
+      md := md
     }
   | _ => throw (.internalError "Expected FunctionDef for method")
 
@@ -1292,7 +1331,7 @@ def pythonToLaurel (prelude: Core.Program)
       match stmt with
       | .FunctionDef _ _ _ fbody _ _ _ _ =>
         let funcDecl ←  pyFuncDefToPythonFunctionDecl ctx stmt
-        let proc ← translateFunction ctx funcDecl fbody.val.toList
+        let proc ← translateFunction ctx stmt.ann funcDecl fbody.val.toList
         ctx := {ctx with functionSignatures:= ctx.functionSignatures ++ [funcDecl]}
         procedures := procedures ++ [proc.fst]
       | .ClassDef _ _ _ _ _ _ _ =>
@@ -1307,6 +1346,7 @@ def pythonToLaurel (prelude: Core.Program)
     let bodyStmts := (mkStmtExprMd (.LocalVariable "nullcall_ret" AnyTy (some AnyNone))) :: bodyStmts
     let bodyBlock := mkStmtExprMd (StmtExpr.Block bodyStmts none)
 
+    let md := sourceRangeToMetaData ctx.filePath { start := 0, stop := 0 }
     let mainProc : Procedure := {
       name := "__main__",
       inputs := [],
@@ -1315,9 +1355,9 @@ def pythonToLaurel (prelude: Core.Program)
       determinism := .deterministic none, --TODO: need to set reads
       decreases := none,
       body := .Transparent bodyBlock
-      md := default
+      md := md
       isFunctional := false
-      }
+    }
 
     let preludeFunctions : List Procedure := (getPreludeFunctions prelude).map (λ funcname =>
     {
