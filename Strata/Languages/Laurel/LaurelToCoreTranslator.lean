@@ -23,6 +23,7 @@ import Strata.DL.Imperative.Stmt
 import Strata.DL.Imperative.MetaData
 import Strata.DL.Lambda.LExpr
 import Strata.Languages.Laurel.LaurelFormat
+import Strata.Languages.Laurel.ConstrainedTypeElim
 import Strata.Util.Tactics
 
 open Core (VCResult VCResults VerifyOptions)
@@ -152,7 +153,7 @@ def translateExpr (expr : StmtExprMd)
     | .Neg =>
       let re ← translateExpr e boundVars isPureContext
       let isReal := match (computeExprType model e).val with
-        | .TReal => true | _ => false
+        | .TReal | .TFloat64 => true | _ => false
       return .app () (if isReal then realNegOp else intNegOp) re
     | _ => panic! s!"translateExpr: Invalid unary op: {repr op}"
   | .PrimitiveOp op [e1, e2] =>
@@ -656,12 +657,17 @@ def translate (options: LaurelTranslateOptions) (program : Program): Except (Arr
   let program := eliminateReturnsInExpressionTransform program
   let result := resolve program (some model)
   let (program, model) := (result.program, result.model)
+
+  let (program, constrainedTypeDiags) := constrainedTypeElim model program
+  let result := resolve program (some model)
+  let (program, model) := (result.program, result.model)
+
   let resolutionDiags := result.errors
   if options.emitResolutionErrors && !resolutionDiags.isEmpty then
     .error resolutionDiags
   else
     let coreProgram ← translateLaurelToCore model program
-    pure (coreProgram, diamondErrors ++ modifiesDiags)
+    pure (coreProgram, diamondErrors ++ modifiesDiags ++ constrainedTypeDiags.toList)
   where
 
   translateLaurelToCore (model: SemanticModel) (program : Program): Except (Array DiagnosticModel) Core.Program := do
