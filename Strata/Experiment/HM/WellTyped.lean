@@ -4,7 +4,7 @@
 -/
 import Strata.Experiment.HM.AlgorithmW
 import Strata.Experiment.HM.Checker
-import Strata.Experiment.HM.Soundness
+import Strata.Experiment.HM.SoundnessLemmas
 
 /-! ## Algorithm W produces well-typed annotated terms
 

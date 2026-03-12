@@ -4,7 +4,7 @@
 -/
 import Strata.Experiment.HM.Checker
 import Strata.Experiment.HM.Typing
-import Strata.Experiment.HM.Soundness
+import Strata.Experiment.HM.SoundnessLemmas
 import Strata.Experiment.HM.WellTyped
 
 /-! ## Erasure theorem: HasTypeA implies HasType on the erased expression
