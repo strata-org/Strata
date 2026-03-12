@@ -1,4 +1,6 @@
 procedure main:
+  non-CoreSMT: 🚨 Statement not in CoreSMT subset: type 'Lambda.LMonoTy.tcons "Any" []' is not an SMT-native type
+procedure __main__:
   assert(16): ✅ pass (line 2, col 4)
   assert(53): ❌ fail (line 4, col 4)
     └─ it is impossible that x == 3
