@@ -248,59 +248,11 @@ function PNeg (v: Any) : Any
     exception(UndefinedError("Operand Type is not defined"))
 };
 
-// inline
-function PNot (v: Any) : Any
-{
-  if (Any..isexception(v)) (v)
-  else if (Any..isfrom_bool(v)) (
-    from_bool(!(Any..as_bool!(v))))
-  else if (Any..isfrom_int(v)) (
-    from_bool(!(Any..as_int!(v) == 0)))
-  else if (Any..isfrom_float(v)) (
-    from_bool(!(Any..as_float!(v) == 0.0)))
-  else if (Any..isfrom_string(v)) (
-    from_bool(!(Any..as_string!(v) == "")))
-  else if (Any..isfrom_ListAny(v)) (
-    from_bool(!(List_len(Any..as_ListAny!(v)) == 0)))
-  else
-    exception(UndefinedError ("Operand Type is not defined"))
-};
 
 
 // /////////////////////////////////////////////////////////////////////////////////////
 // Modelling of Python binary operations
 // /////////////////////////////////////////////////////////////////////////////////////
-
-// inline
-function PAdd (v1: Any, v2: Any) : Any
-{
-  if (Any..isexception(v1)) (v1) else if (Any..isexception(v2)) (v2)
-  else if (Any..isfrom_bool(v1) && Any..isfrom_bool(v2)) (
-    from_int(bool_to_int(Any..as_bool!(v1)) + bool_to_int(Any..as_bool!(v2))))
-  else if (Any..isfrom_bool(v1) && Any..isfrom_int(v2)) (
-    from_int(bool_to_int(Any..as_bool!(v1)) + Any..as_int!(v2)))
-  else if (Any..isfrom_int(v1) && Any..isfrom_bool(v2)) (
-    from_int(Any..as_int!(v1) + bool_to_int(Any..as_bool!(v2))))
-  else if (Any..isfrom_int(v1) && Any..isfrom_float(v2)) (
-    from_float(int_to_real(Any..as_int!(v1)) + Any..as_float!(v2)))
-  else if (Any..isfrom_float(v1) && Any..isfrom_bool(v2)) (
-    from_float(Any..as_float!(v1) + bool_to_real(Any..as_bool!(v2))))
-  else if (Any..isfrom_int(v1) && Any..isfrom_int(v2)) (
-    from_int(Any..as_int!(v1) + Any..as_int!(v2)))
-  else if (Any..isfrom_float(v1) && Any..isfrom_int(v2)) (
-    from_float(Any..as_float!(v1) + int_to_real(Any..as_int!(v2)) ))
-  else if (Any..isfrom_float(v1) && Any..isfrom_float(v2)) (
-    from_float(Any..as_float!(v1) + Any..as_float!(v2)))
-  else if (Any..isfrom_string(v1) && Any..isfrom_string(v2)) (
-    from_string(Any..as_string!(v1) ++ Any..as_string!(v2)))
-  else if (Any..isfrom_ListAny(v1) && Any..isfrom_ListAny(v2)) (
-    from_ListAny(List_extend(Any..as_ListAny!(v1),Any..as_ListAny!(v2))))
-  else if (Any..isfrom_datetime(v1) && Any..isfrom_int(v2)) (
-    from_datetime((Any..as_datetime!(v1) + Any..as_int!(v2))))
-  else
-    exception(UndefinedError ("Operand Type is not defined"))
-};
-
 
 // inline
 function PSub (v1: Any, v2: Any) : Any
@@ -334,44 +286,6 @@ function PSub (v1: Any, v2: Any) : Any
 
 
 function string_repeat (s: string, i: int) : string;
-
-// inline
-function PMul (v1: Any, v2: Any) : Any
-{
-  if (Any..isexception(v1)) (v1) else if (Any..isexception(v2)) (v2)
-  else if (Any..isfrom_bool(v1) && Any..isfrom_bool(v2)) (
-    from_int(bool_to_int(Any..as_bool!(v1)) * bool_to_int(Any..as_bool!(v2))))
-  else if (Any..isfrom_bool(v1) && Any..isfrom_int(v2)) (
-    from_int(bool_to_int(Any..as_bool!(v1)) * Any..as_int!(v2)))
-  else if (Any..isfrom_int(v1) && Any..isfrom_bool(v2)) (
-    from_int(Any..as_int!(v1) * bool_to_int(Any..as_bool!(v2))))
-  else if (Any..isfrom_bool(v1) && Any..isfrom_float(v2)) (
-    from_float(bool_to_real(Any..as_bool!(v1)) * Any..as_float!(v2)))
-  else if (Any..isfrom_float(v1) && Any..isfrom_bool(v2)) (
-    from_float(Any..as_float!(v1) * bool_to_real(Any..as_bool!(v2))))
-  else if (Any..isfrom_bool(v1) && Any..isfrom_string(v2) && Any..as_bool!(v1)) (v2)
-  else if (Any..isfrom_bool(v1) && Any..isfrom_string(v2) && !Any..as_bool!(v1)) (from_string(""))
-  else if (Any..isfrom_string(v1) && Any..isfrom_bool(v2) && Any..as_bool!(v2)) (v1)
-  else if (Any..isfrom_string(v1) && Any..isfrom_bool(v2) && !Any..as_bool!(v2)) (from_string(""))
-  else if (Any..isfrom_int(v1) && Any..isfrom_int(v2)) (
-    from_int(Any..as_int!(v1) * Any..as_int!(v2)))
-  else if (Any..isfrom_int(v1) && Any..isfrom_float(v2)) (
-    from_float(int_to_real(Any..as_int!(v1)) * Any..as_float!(v2)))
-  else if (Any..isfrom_float(v1) && Any..isfrom_int(v2)) (
-    from_float(Any..as_float!(v1) * int_to_real(Any..as_int!(v2)) ))
-  else if (Any..isfrom_int(v1) && Any..isfrom_string(v2)) (
-    from_string(string_repeat(Any..as_string!(v2), Any..as_int!(v1))))
-  else if (Any..isfrom_string(v1) && Any..isfrom_int(v2)) (
-    from_string(string_repeat(Any..as_string!(v1), Any..as_int!(v2))))
-  else if (Any..isfrom_int(v1) && Any..isfrom_ListAny(v2)) (
-    from_ListAny(List_repeat(Any..as_ListAny!(v2), Any..as_int!(v1))))
-  else if (Any..isfrom_ListAny(v1) && Any..isfrom_int(v2)) (
-    from_ListAny(List_repeat(Any..as_ListAny!(v1), Any..as_int!(v2))))
-  else if (Any..isfrom_float(v1) && Any..isfrom_float(v2)) (
-    from_float(Any..as_float!(v1) * Any..as_float!(v2)))
-  else
-    exception(UndefinedError ("Operand Type is not defined"))
-};
 
 // inline
 function PFloorDiv (v1: Any, v2: Any) : Any
@@ -583,15 +497,13 @@ function PMod (v1: Any, v2: Any) : Any
 // Modelling some datetime-related Python operations, for testing purpose
 // /////////////////////////////////////////////////////////////////////////////////////
 
-function to_string(a: Any) : string external;
+function to_string(a: Any) : string;
 
-// inline
-function to_string_any(a: Any) : Any external;
+function to_string_any(a: Any) : Any {
+  from_string(to_string(a))
+};
 
-function datetime_strptime(dtstring: Any, format: Any) : Any external;
-
-// axiom [datetime_tostring_cancel]: forall dt: Any ::
-//   datetime_strptime(to_string_any(dt), from_string ("%Y-%m-%d")) == dt;
+function datetime_strptime(dtstring: Any, format: Any) : Any;
 
 procedure datetime_date(d: Any) returns (ret: Any, error: Error)
   // [d_type]:
@@ -643,6 +555,8 @@ procedure test_helper_procedure(req_name : Any, opt_name : Any) returns (ret: An
 };
 
 procedure print(msg : Any);
+
+procedure END_MARKER();
 
 //This is only used to overwrite the Box datatype of Laurel prelude
 //WILL BE REMOVED

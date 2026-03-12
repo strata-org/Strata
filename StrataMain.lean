@@ -515,13 +515,12 @@ def pyAnalyzeLaurelCommand : Command where
           if !collisions.isEmpty then
             let names := ", ".intercalate (collisions.map (·.name))
             exitFailure s!"Core name collision between program and prelude: {names}"
-          let coreProgram := {decls := programDecls ++ Strata.Python.coreOnlyFromRuntimeCorePart }
+          let (preludeDecls, userDecls) := programDecls.span (fun d => !(toString d.name).contains "END_MARKER")
+          let coreProgram := {decls := preludeDecls ++ Strata.Python.coreOnlyFromRuntimeCorePart ++ userDecls }
+          IO.println s!"\n==== preludeDecls.length: {preludeDecls.length}, userDecls.length: {userDecls.length}"
           if verbose then
             IO.println "\n==== Core Program with pyPrelude ===="
             IO.print (coreProgram, modifiesDiags)
-          -- dbg_trace "=== Generated Strata Core Program ==="
-          -- dbg_trace (toString (Std.Format.pretty (Strata.Core.formatProgram coreProgram) 100))
-          -- dbg_trace "================================="
 
           -- Verify using Core verifier
           let baseOptions : VerifyOptions :=

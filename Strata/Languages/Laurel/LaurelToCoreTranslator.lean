@@ -722,9 +722,9 @@ def translate (options: LaurelTranslateOptions) (program : Program): Except (Arr
       decls := groupedDatatypeDecls ++ constantDecls ++ pureFuncDecls.toList ++ procDecls
     }
 
-    dbg_trace "=== Generated Strata Core Program ==="
-    dbg_trace (toString (Std.Format.pretty (Strata.Core.formatProgram program) 100))
-    dbg_trace "================================="
+    -- dbg_trace "=== Generated Strata Core Program ==="
+    -- dbg_trace (toString (Std.Format.pretty (Strata.Core.formatProgram program) 100))
+    -- dbg_trace "================================="
     pure program
 
 
