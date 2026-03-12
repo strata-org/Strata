@@ -56,7 +56,7 @@ def translateType (model : SemanticModel) (ty : HighTypeMd) : LMonoTy :=
   | .TCore s => .tcons s []
   | .TFloat64 => LMonoTy.real -- Incorrect?
   | .TReal => LMonoTy.real
-  | .Top => .tcons "Top" []
+  | .Top => LMonoTy.bool
   | _ => panic s!"translateType: unsupported type {ToFormat.format ty}"
 termination_by ty.val
 decreasing_by all_goals (first | (cases elementType; term_by_mem) | (cases keyType; term_by_mem) | (cases valueType; term_by_mem))

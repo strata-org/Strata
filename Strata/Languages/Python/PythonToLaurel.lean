@@ -677,7 +677,21 @@ partial def translateAssign  (ctx : TranslationContext)
   let rhs_trans ←  translateExpr ctx rhs
   if let .Hole := rhs_trans.val then
   {
-    return (ctx, [mkStmtExprMd .Hole])
+    -- Even when the RHS is unsupported (Hole), we must still declare the variable
+    -- so that subsequent references to it resolve correctly. The variable gets a
+    -- havoc'd value (AnyNone), which is a sound over-approximation.
+    match lhs with
+    | .Name _ n _ =>
+      if n.val ∈ ctx.variableTypes.unzip.1 then
+        return (ctx, [mkStmtExprMd .Hole])
+      else
+        let varType := match annotation with
+          | some ann => pyExprToString ann
+          | none => PyLauType.Any
+        let newctx := {ctx with variableTypes := (n.val, varType) :: ctx.variableTypes}
+        let declStmt := mkStmtExprMd (StmtExpr.LocalVariable n.val AnyTy none)
+        return (newctx, [declStmt])
+    | _ => return (ctx, [mkStmtExprMd .Hole])
   }
   let mut newctx := ctx
   match lhs with
