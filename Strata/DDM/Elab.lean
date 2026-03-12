@@ -75,12 +75,17 @@ private partial def runCommand (leanEnv : Lean.Environment) (commands : Array Op
   if newPos <= iniPos then
     logError { start := iniPos, stop := iniPos } "Syntax error: unrecognized syntax or unexpected token"
     return commands
-  let cmd := tree.info.asOp!.op
+  let opInfo := tree.info.asOp!
+  let cmd := opInfo.op
   let dialects := (← read).loader.dialects
-  modify fun s => { s with
-    globalContext := s.globalContext.addCommand dialects cmd
-  }
-  runCommand leanEnv (commands.push cmd) stopPos
+  let s ← get
+  match s.globalContext.addCommand dialects cmd with
+  | .ok newGctx =>
+    modify fun s => { s with globalContext := newGctx }
+    runCommand leanEnv (commands.push cmd) stopPos
+  | .error e =>
+    logError opInfo.loc e
+    runCommand leanEnv commands stopPos
 
 def elabProgramRest
     (loader : LoadedDialects)
