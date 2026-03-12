@@ -160,7 +160,7 @@ op procedure (name : Ident, parameters: CommaSepBy Parameter,
 op function (name : Ident, parameters: CommaSepBy Parameter,
   returnType: Option OptionalReturnType,
   returnParameters: Option ReturnParameters,
-  requires: Seq RequiresClause,
+  requires: Option OptionalRequires,
   ensures: Seq EnsuresClause,
   modifies: Seq ModifiesClause,
   body : Option OptionalBody) : Procedure =>
