@@ -1,18 +1,31 @@
 
 ==== Verification Results ====
+List_get_body_calls_List_get_0: ✅ pass
+List_take_body_calls_List_take_0: ✅ pass
+List_drop_body_calls_List_drop_0: ✅ pass
+List_slice_body_calls_List_take_0: ✅ pass
+List_slice_body_calls_List_drop_1: ✅ pass
+List_set_body_calls_List_set_0: ✅ pass
+DictStrAny_get_body_calls_DictStrAny_get_0: ✅ pass
+Any_get_body_calls_DictStrAny_get_0: ✅ pass
+Any_get_body_calls_List_get_1: ✅ pass
+Any_get!_body_calls_DictStrAny_get_0: ✅ pass
+Any_get!_body_calls_List_get_1: ✅ pass
+Any_set_body_calls_List_set_0: ✅ pass
+Any_set!_body_calls_List_set_0: ✅ pass
 PFloorDiv_body_calls_Int.SafeDiv_0: ✅ pass
 PFloorDiv_body_calls_Int.SafeDiv_1: ✅ pass
 PFloorDiv_body_calls_Int.SafeDiv_2: ✅ pass
 PFloorDiv_body_calls_Int.SafeDiv_3: ✅ pass
 PAnd_body_calls_Any_to_bool_0: ✅ pass
 POr_body_calls_Any_to_bool_0: ✅ pass
-ret_type: ✅ pass (at byte 25063)
-ret_type: ✅ pass (at byte 25478)
-ret_pos: ✅ pass (at byte 25964)
-assert_name_is_foo: ✅ pass (at byte 26968)
-assert_opt_name_none_or_str: ✅ pass (at byte 27031)
-assert_opt_name_none_or_bar: ✅ pass (at byte 27135)
-ensures_maybe_except_none: ✅ pass (at byte 26891)
+ret_type: ✅ pass (at byte 31671)
+ret_type: ✅ pass (at byte 32086)
+ret_pos: ✅ pass (at byte 32572)
+assert_name_is_foo: ✅ pass (at byte 33576)
+assert_opt_name_none_or_str: ✅ pass (at byte 33639)
+assert_opt_name_none_or_bar: ✅ pass (at byte 33743)
+ensures_maybe_except_none: ✅ pass (at byte 33499)
 assert_assert(154)_calls_Any_to_bool_0: ✅ pass (at line 11, col 4)
 assert(154): ✅ pass (at line 11, col 4)
 assert_assert(416)_calls_Any_to_bool_0: ✅ pass (at line 25, col 4)

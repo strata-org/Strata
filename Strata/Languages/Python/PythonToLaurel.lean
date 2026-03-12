@@ -212,6 +212,15 @@ def AnyNone := mkStmtExprMd (.StaticCall "from_none" [])
 def Any_to_bool (b: StmtExprMd) := mkStmtExprMd (.StaticCall "Any_to_bool" [b])
 def NoError : StmtExprMd := mkStmtExprMd (StmtExpr.StaticCall "NoError" [])
 
+def getSubscriptList (expr:  Python.expr SourceRange) : List ( Python.expr SourceRange) :=
+  match expr with
+  | .Subscript _ val slice _ => (getSubscriptList val) ++ [slice]
+  | _ => [expr]
+
+def pyOptExprToString (e : Python.opt_expr SourceRange) : Except TranslationError String := do
+  match e with
+  | .some_expr _ (.Constant _ (.ConString _ s) _) => return s.val
+  | _ => throw (.internalError s!"Expected some constant string: {repr e}")
 
 def DictStrAny_mk_aux
     (kv: List (String × StmtExprMd)) (acc: StmtExprMd): StmtExprMd :=
@@ -257,7 +266,26 @@ def hasModel (ctx : TranslationContext) (funcName : String) : Bool :=
   ctx.preludeProcedures.any (·.1 == funcName) || ctx.userFunctions.contains funcName || ctx.preludeFunctions.contains funcName ||
   ctx.compositeTypes.any (fun ct => ct.name == funcName)
 
+def ListAny_mk (es: List StmtExprMd) : StmtExprMd := match es with
+  | [] => mkStmtExprMd (.StaticCall "ListAny_nil" [])
+  | e::t => mkStmtExprMd (.StaticCall "ListAny_cons" [e, ListAny_mk t])
+
 mutual
+
+partial def translateList (ctx : TranslationContext) (elmts: List (Python.expr SourceRange))
+    : Except TranslationError StmtExprMd := do
+  let trans_elmts ←  elmts.mapM (translateExpr ctx)
+  return  mkStmtExprMd (.StaticCall "from_ListAny" [ListAny_mk trans_elmts])
+
+partial def translateDictStrAny (ctx : TranslationContext)
+    (keys: List (Python.opt_expr SourceRange)) (values: List (Python.expr SourceRange))
+      : Except TranslationError StmtExprMd := do
+  if keys.length != values.length then
+    throw (.internalError s!"Invalid Dict: number of keys not match number of values" )
+  let kv := keys.zip values
+  let val_trans ←  kv.unzip.snd.mapM (translateExpr ctx)
+  let keys ← keys.mapM pyOptExprToString
+  return  mkStmtExprMd (.StaticCall "from_Dict" [DictStrAny_mk (keys.zip val_trans)])
 
 /-- Translate Python expression to Laurel StmtExpr -/
 partial def translateExpr (ctx : TranslationContext) (e : Python.expr SourceRange)
@@ -327,8 +355,8 @@ partial def translateExpr (ctx : TranslationContext) (e : Python.expr SourceRang
       | .LtE _ => .ok "PLe"
       | .Gt _ => .ok "PGt"
       | .GtE _ => .ok "PGe"
-      | .In _ => return mkStmtExprMd .Hole  -- Abstract: arbitrary bool (sound)
-      | .NotIn _ => return mkStmtExprMd .Hole
+      | .In _ => .ok "PIn"
+      | .NotIn _ => .ok "PNotIn"
       | _ => throw (.unsupportedConstruct s!"Comparison operator not yet supported: {repr ops.val[0]!}" (toString (repr e)))
     return mkStmtExprMd (StmtExpr.StaticCall preludeOpnames [leftExpr, rightExpr])
 
@@ -373,7 +401,10 @@ partial def translateExpr (ctx : TranslationContext) (e : Python.expr SourceRang
   -- Abstract: return havoc'd value (sound for any dict/list operation)
   -- Note: Creates free variables which cause type errors in some contexts (if conditions)
   -- TODO: Handle by creating explicit variable declarations
-  | .Subscript .. => return mkStmtExprMd .Hole
+  | .Subscript _ val slice _ =>
+    let dictOrList ← translateExpr ctx val
+    let index ← translateExpr ctx slice
+    return mkStmtExprMd (.StaticCall "Any_get" [dictOrList, index])
 
   -- Attribute access: obj.attr or obj.method
   | .Attribute _ obj attr _ => do
@@ -396,11 +427,11 @@ partial def translateExpr (ctx : TranslationContext) (e : Python.expr SourceRang
 
   -- List literal: [1, 2, 3]
   -- Abstract: return havoc'd list (sound abstraction)
-  | .List .. => return mkStmtExprMd .Hole
+  | .List _ elems _ => translateList ctx elems.val.toList
 
   -- Dict literal: {'a': 1}
   -- Abstract: return havoc'd dict (sound abstraction)
-  | .Dict .. => return mkStmtExprMd .Hole
+  | .Dict _ keys vals => translateDictStrAny ctx keys.val.toList vals.val.toList
 
   -- Set literal: {1, 2, 3}
   -- Abstract: return havoc'd set (sound abstraction)
@@ -661,7 +692,16 @@ partial def translateAssign  (ctx : TranslationContext)
   let rhs_trans ←  translateExpr ctx rhs
   if let .Hole := rhs_trans.val then
   {
-    return (ctx, [mkStmtExprMd .Hole])
+    match lhs with
+    | .Name _ n _ =>
+      if n.val ∈ ctx.variableTypes.unzip.1 then
+        let targetExpr := mkStmtExprMd (StmtExpr.Identifier n.val)
+        return (ctx, [mkStmtExprMd (StmtExpr.Assign [targetExpr] rhs_trans)])
+      else
+        let initStmt := mkStmtExprMd (StmtExpr.LocalVariable n.val AnyTy (mkStmtExprMd .Hole))
+        let newctx := {ctx with variableTypes:=(n.val, "Any")::ctx.variableTypes}
+        return (newctx, [initStmt])
+    | _ => return (ctx, [mkStmtExprMd .Hole])
   }
   let mut newctx := ctx
   match lhs with
@@ -696,13 +736,15 @@ partial def translateAssign  (ctx : TranslationContext)
           let initStmt := mkStmtExprMd (StmtExpr.LocalVariable n.val AnyTy AnyNone)
           newctx := {ctx with variableTypes:=(n.val, type)::ctx.variableTypes}
           return (newctx, initStmt::assignStmts)
-    | .Subscript _ baseExpr _ _ =>
-          -- Subscript assignment: dict["key"] = value or list[idx] = value
-          -- Sound abstraction: havoc the base variable (we don't model container contents)
-          let baseName := getSubscriptBaseName baseExpr
-          let targetExpr := mkStmtExprMd (StmtExpr.Identifier baseName)
-          let assignStmt := mkStmtExprMdWithLoc (StmtExpr.Assign [targetExpr] (mkStmtExprMd .Hole)) md
-          return (newctx, [assignStmt])
+    | .Subscript _ _ _ _ =>
+        match getSubscriptList lhs with
+        | target :: slices =>
+            let target ← translateExpr ctx target
+            let slices ← slices.mapM (translateExpr ctx)
+            let anySetsExpr := mkStmtExprMd (StmtExpr.StaticCall "Any_sets" [target, ListAny_mk slices, rhs_trans])
+            let assignStmts := [mkStmtExprMd (StmtExpr.Assign [target] anySetsExpr)]
+            return (ctx,assignStmts)
+        | _ =>  throw (.internalError "Invalid Subscript Expr")
     | .Attribute _ obj attr _ =>
       match obj with
       | .Name _ name _ =>
