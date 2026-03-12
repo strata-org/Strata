@@ -199,10 +199,6 @@ def reCompFunc : WFLFunc CoreLParams :=
 def reNoneFunc : WFLFunc CoreLParams :=
   nullaryUneval "Re.None" mty[regex]
 
-/- A polymorphic `old` function with type `∀a. a → a`. -/
-def polyOldFunc : WFLFunc CoreLParams :=
-  polyUneval "old" ["a"] [("x", mty[%a])] mty[%a]
-
 /- A constant `Map` constructor with type `∀k, v. v → Map k v`.
    `const(d)` returns a map where every key maps to the value `d`. -/
 def mapConstFunc : WFLFunc CoreLParams :=
@@ -357,8 +353,6 @@ def WFFactory : Lambda.WFLFactory CoreLParams :=
   reCompFunc,
   reNoneFunc,
 
-  polyOldFunc,
-
   mapConstFunc,
   mapSelectFunc,
   mapUpdateFunc,
@@ -466,7 +460,6 @@ def reUnionOp : Expression.Expr := reUnionFunc.opExpr
 def reInterOp : Expression.Expr := reInterFunc.opExpr
 def reCompOp : Expression.Expr := reCompFunc.opExpr
 def reNoneOp : Expression.Expr := reNoneFunc.opExpr
-def polyOldOp : Expression.Expr := polyOldFunc.opExpr
 def mapConstOp : Expression.Expr := mapConstFunc.opExpr
 def mapSelectOp : Expression.Expr := mapSelectFunc.opExpr
 def mapUpdateOp : Expression.Expr := mapUpdateFunc.opExpr
