@@ -216,7 +216,7 @@ axiom [List_drop_len]: forall l : ListAny, i: int :: {List_len(List_drop(l,i))}
   (i >= 0 && i <= List_len(l)) ==> List_len(List_drop(l,i)) == List_len(l) - i;
 
 inline function List_slice (l : ListAny, start : int, stop: int) : ListAny
-  requires start >= 0 && start < List_len(l) && stop >= 0 && stop < List_len(l) && start <= stop;
+  requires start >= 0 && start < List_len(l) && stop >= 0 && stop <= List_len(l) && start <= stop;
 {
   List_take (List_drop (l, start), stop - start)
 }

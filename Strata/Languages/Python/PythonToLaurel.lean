@@ -280,7 +280,8 @@ partial def translateList (ctx : TranslationContext) (elmts: List (Python.expr S
 partial def translateDictStrAny (ctx : TranslationContext)
     (keys: List (Python.opt_expr SourceRange)) (values: List (Python.expr SourceRange))
       : Except TranslationError StmtExprMd := do
-  assert! keys.length == values.length
+  if keys.length != values.length then
+    throw (.internalError s!"Invalid Dict: number of keys not match number of values" )
   let kv := keys.zip values
   let val_trans ←  kv.unzip.snd.mapM (translateExpr ctx)
   let keys ← keys.mapM pyOptExprToString
