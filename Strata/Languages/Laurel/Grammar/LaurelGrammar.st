@@ -136,7 +136,7 @@ category OptionalReturnType;
 op optionalReturnType(returnType: LaurelType): OptionalReturnType => ":" returnType;
 
 category RequiresClause;
-op optionalRequires(cond: StmtExpr, errorMessage: Option OptionalErrorMessage): RequiresClause => "requires" cond:0 errorMessage;
+op requiresClause(cond: StmtExpr, errorMessage: Option OptionalErrorMessage): RequiresClause => "requires" cond:0 errorMessage;
 
 category EnsuresClause;
 op ensuresClause(cond: StmtExpr, errorMessage: Option OptionalErrorMessage): EnsuresClause => "ensures" cond:0 errorMessage;

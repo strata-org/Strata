@@ -357,9 +357,16 @@ def translateRequiresClauses (arg : Arg) : TransM (List StmtExprMd) := do
     for clauseArg in args do
       match clauseArg with
       | .op clauseOp => match clauseOp.name, clauseOp.args with
-        | q`Laurel.requiresClause, #[exprArg] =>
+        | q`Laurel.requiresClause, #[exprArg, errMsgArg] =>
           let expr ← translateStmtExpr exprArg
-          allRequires := allRequires ++ [expr]
+          let expr' ← match errMsgArg with
+            | .option _ (some (.op errOp)) => match errOp.name, errOp.args with
+              | q`Laurel.errorMessage, #[strArg] => do
+                let msg ← translateString strArg
+                pure { expr with md := expr.md.withPropertySummary msg }
+              | _, _ => pure expr
+            | _ => pure expr
+          allRequires := allRequires ++ [expr']
         | _, _ => TransM.error s!"Expected requiresClause operation, got {repr clauseOp.name}"
       | _ => TransM.error s!"Expected requiresClause operation in requires sequence"
     pure allRequires
