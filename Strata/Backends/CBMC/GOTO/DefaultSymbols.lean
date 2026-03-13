@@ -81,11 +81,31 @@ private def signedBvType (width : Nat) (cType : String) : Lean.Json :=
     ])
   ]
 
+private def constSignedBvType (width : Nat) (cType : String) : Lean.Json :=
+  Lean.Json.mkObj [
+    ("id", "signedbv"),
+    ("namedSub", Lean.Json.mkObj [
+      ("#c_type", Lean.Json.mkObj [("id", cType)]),
+      ("#constant", Lean.Json.mkObj [("id", "1")]),
+      ("width", Lean.Json.mkObj [("id", toString width)])
+    ])
+  ]
+
 private def unsignedBvType (width : Nat) (cType : String) : Lean.Json :=
   Lean.Json.mkObj [
     ("id", "unsignedbv"),
     ("namedSub", Lean.Json.mkObj [
       ("#c_type", Lean.Json.mkObj [("id", cType)]),
+      ("width", Lean.Json.mkObj [("id", toString width)])
+    ])
+  ]
+
+private def constUnsignedBvType (width : Nat) (cType : String) : Lean.Json :=
+  Lean.Json.mkObj [
+    ("id", "unsignedbv"),
+    ("namedSub", Lean.Json.mkObj [
+      ("#c_type", Lean.Json.mkObj [("id", cType)]),
+      ("#constant", Lean.Json.mkObj [("id", "1")]),
       ("width", Lean.Json.mkObj [("id", toString width)])
     ])
   ]
@@ -170,7 +190,7 @@ private def stringConstValue (s : String) (file : String) (line : String)
           Lean.Json.mkObj [
             ("id", "constant"),
             ("namedSub", Lean.Json.mkObj [
-              ("type", signedBvType 32 "signed_int"),
+              ("type", signedBvType ptrWidth "signed_long_int"),
               ("value", Lean.Json.mkObj [("id", "0")])
             ])
           ]
@@ -284,9 +304,9 @@ private def architectureSymbols (cfg : ArchConfig) (moduleName : String)
       baseName := name, name := name, prettyName := name,
       mode := "C", module := moduleName,
       isLvalue := true, isStaticLifetime := true,
-      prettyType := "char *",
+      prettyType := "const char *",
       prettyValue := s!"\"{val}\"",
-      type := pointerTo (signedBvType 8 "char") cfg.pointerWidth,
+      type := pointerTo (constSignedBvType 8 "char") cfg.pointerWidth,
       value := stringConstValue val file line cfg.pointerWidth
     })
   [
@@ -313,7 +333,8 @@ private def architectureSymbols (cfg : ArchConfig) (moduleName : String)
   ]
 
 /-- Generate built-in function symbols. -/
-private def builtinFunctionSymbols (cfg : ArchConfig) : List (String × CBMCSymbol) :=
+private def builtinFunctionSymbols (cfg : ArchConfig) (moduleName : String)
+    : List (String × CBMCSymbol) :=
   let pw := cfg.pointerWidth
   let voidPtr := pointerTo emptyType pw
   let constCharPtr := pointerTo (signedBvType 8 "char") pw
@@ -342,7 +363,7 @@ private def builtinFunctionSymbols (cfg : ArchConfig) : List (String × CBMCSymb
     ("__CPROVER_initialize", {
       baseName := "__CPROVER_initialize", name := "__CPROVER_initialize",
       prettyName := "__CPROVER_initialize",
-      mode := "C", module := "",
+      mode := "C", module := moduleName,
       isLvalue := true,
       prettyType := "void (void)",
       type := voidCodeType #[],
@@ -352,7 +373,7 @@ private def builtinFunctionSymbols (cfg : ArchConfig) : List (String × CBMCSymb
     ("__CPROVER_assignable", {
       baseName := "__CPROVER_assignable", name := "__CPROVER_assignable",
       prettyName := "__CPROVER_assignable",
-      mode := "C", module := "",
+      mode := "C", module := moduleName,
       isLvalue := true,
       prettyType := "void (void *, __CPROVER_size_t, __CPROVER_bool)",
       type := voidCodeType #[mkCodeParam "ptr" voidPtr, mkCodeParam "size" (sizeT pw),
@@ -363,7 +384,7 @@ private def builtinFunctionSymbols (cfg : ArchConfig) : List (String × CBMCSymb
     ("__CPROVER_object_whole", {
       baseName := "__CPROVER_object_whole", name := "__CPROVER_object_whole",
       prettyName := "__CPROVER_object_whole",
-      mode := "C", module := "",
+      mode := "C", module := moduleName,
       isLvalue := true,
       prettyType := "void (void *)",
       type := voidCodeType #[mkCodeParam "ptr" voidPtr],
@@ -373,7 +394,7 @@ private def builtinFunctionSymbols (cfg : ArchConfig) : List (String × CBMCSymb
     ("__CPROVER_object_upto", {
       baseName := "__CPROVER_object_upto", name := "__CPROVER_object_upto",
       prettyName := "__CPROVER_object_upto",
-      mode := "C", module := "",
+      mode := "C", module := moduleName,
       isLvalue := true,
       prettyType := "void (void *, __CPROVER_size_t)",
       type := voidCodeType #[mkCodeParam "ptr" voidPtr, mkCodeParam "size" (sizeT pw)],
@@ -383,7 +404,7 @@ private def builtinFunctionSymbols (cfg : ArchConfig) : List (String × CBMCSymb
     ("__CPROVER_object_from", {
       baseName := "__CPROVER_object_from", name := "__CPROVER_object_from",
       prettyName := "__CPROVER_object_from",
-      mode := "C", module := "",
+      mode := "C", module := moduleName,
       isLvalue := true,
       prettyType := "void (void *)",
       type := voidCodeType #[mkCodeParam "ptr" voidPtr],
@@ -393,7 +414,7 @@ private def builtinFunctionSymbols (cfg : ArchConfig) : List (String × CBMCSymb
     ("__CPROVER_freeable", {
       baseName := "__CPROVER_freeable", name := "__CPROVER_freeable",
       prettyName := "__CPROVER_freeable",
-      mode := "C", module := "",
+      mode := "C", module := moduleName,
       isLvalue := true,
       prettyType := "void (void *)",
       type := voidCodeType #[mkCodeParam "ptr" voidPtr],
@@ -403,7 +424,7 @@ private def builtinFunctionSymbols (cfg : ArchConfig) : List (String × CBMCSymb
     ("__CPROVER_is_freeable", {
       baseName := "__CPROVER_is_freeable", name := "__CPROVER_is_freeable",
       prettyName := "__CPROVER_is_freeable",
-      mode := "C", module := "",
+      mode := "C", module := moduleName,
       isLvalue := true,
       prettyType := "__CPROVER_bool (void *)",
       type := boolCodeType #[mkCodeParam "ptr" voidPtr],
@@ -413,7 +434,7 @@ private def builtinFunctionSymbols (cfg : ArchConfig) : List (String × CBMCSymb
     ("__CPROVER_was_freed", {
       baseName := "__CPROVER_was_freed", name := "__CPROVER_was_freed",
       prettyName := "__CPROVER_was_freed",
-      mode := "C", module := "",
+      mode := "C", module := moduleName,
       isLvalue := true,
       prettyType := "__CPROVER_bool (void *)",
       type := boolCodeType #[mkCodeParam "ptr" voidPtr],
@@ -455,7 +476,7 @@ private def builtinVariableSymbols (cfg : ArchConfig) (moduleName : String)
       mode := "C", module := moduleName,
       isLvalue := true, isStaticLifetime := true,
       prettyType := "const unsigned int",
-      type := unsignedBvType cfg.intWidth "unsigned_int",
+      type := constUnsignedBvType cfg.intWidth "unsigned_int",
       value := nilValue
     }),
     -- __CPROVER_dead_object : const void * = NULL
@@ -528,7 +549,7 @@ private def builtinVariableSymbols (cfg : ArchConfig) (moduleName : String)
 def defaultSymbols (cfg : ArchConfig := .default) (moduleName : String := "")
     : List (String × CBMCSymbol) :=
   architectureSymbols cfg moduleName ++
-  builtinFunctionSymbols cfg ++
+  builtinFunctionSymbols cfg moduleName ++
   builtinVariableSymbols cfg moduleName
 
 /-- Add default symbols to a symbol-table object and wrap in `{"symbolTable": ...}`.
