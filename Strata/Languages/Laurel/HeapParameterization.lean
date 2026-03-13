@@ -210,9 +210,9 @@ Transform an expression, adding heap parameters where needed.
 def heapTransformExpr (heapVar : Identifier) (model: SemanticModel) (expr : StmtExprMd) (valueUsed : Bool := true) : TransformM StmtExprMd :=
   recurse expr valueUsed
 where
-  recurse (expr : StmtExprMd) (valueUsed : Bool := true) : TransformM StmtExprMd := do
-    let md := expr.md
-    match _h : expr.val with
+  recurse (exprMd : StmtExprMd) (valueUsed : Bool := true) : TransformM StmtExprMd := do
+    let ⟨expr, md⟩ := exprMd
+    match _h : expr with
     | .FieldSelect selectTarget fieldName =>
         let qualifiedName : Identifier := resolveQualifiedFieldName model fieldName
         let valTy := (model.get fieldName).getType.getD (panic! "heapTransformExpr1")
@@ -268,9 +268,7 @@ where
         return ⟨ .Return v', md ⟩
     | .Assign targets v =>
         match targets with
-        | [fieldSelectMd] =>
-          match _h2 : fieldSelectMd.val with
-          | .FieldSelect target fieldName =>
+        | [⟨.FieldSelect target fieldName, _fieldSelectMd⟩] =>
             let qualifiedName : Identifier := resolveQualifiedFieldName model fieldName
             let valTy := (model.get fieldName).getType.getD (panic! "heapTransformExpr2")
             let target' ← recurse target
@@ -283,9 +281,9 @@ where
               return ⟨ .Block [heapAssign, v'] none, md ⟩
             else
               return heapAssign
-          | _ =>
-            let tgt' ← recurse fieldSelectMd
-            return ⟨ .Assign [tgt'] (← recurse v), md ⟩
+        | [fieldSelectMd] =>
+          let tgt' ← recurse fieldSelectMd
+          return ⟨ .Assign [tgt'] (← recurse v), md ⟩
         | [] =>
             return ⟨ .Assign [] (← recurse v), md ⟩
         | tgt :: rest =>
@@ -314,7 +312,7 @@ where
           return ⟨ .PrimitiveOp .Neq [ref1, ref2], md ⟩
         | _ => return ⟨ .PrimitiveOp op args', md ⟩
       | _, _ => return ⟨ .PrimitiveOp op args', md ⟩
-    | .New _ => return expr
+    | .New _ => return exprMd
     | .ReferenceEquals l r => return ⟨ .ReferenceEquals (← recurse l) (← recurse r), md ⟩
     | .AsType t ty =>
         let t' ← recurse t valueUsed
@@ -322,8 +320,12 @@ where
         let assertStmt := ⟨ .Assert isCheck, md ⟩
         return ⟨ .Block [assertStmt, t'] none, md ⟩
     | .IsType t ty => return ⟨ .IsType (← recurse t) ty, md ⟩
-    | .Forall p trigger b => return ⟨ .Forall p (← trigger.attach.mapM (fun pv => have := pv.property; recurse pv.val)) (← recurse b), md ⟩
-    | .Exists p trigger b => return ⟨ .Exists p (← trigger.attach.mapM (fun pv => have := pv.property; recurse pv.val)) (← recurse b), md ⟩
+    | .Forall p trigger b =>
+      let trigger' ← trigger.attach.mapM fun ⟨t, _⟩ => recurse t
+      return ⟨.Forall p trigger' (← recurse b), md⟩
+    | .Exists p trigger b =>
+      let trigger' ← trigger.attach.mapM fun ⟨t, _⟩ => recurse t
+      return ⟨.Exists p trigger' (← recurse b), md⟩
     | .Assigned n => return ⟨ .Assigned (← recurse n), md ⟩
     | .Old v => return ⟨ .Old (← recurse v), md ⟩
     | .Fresh v => return ⟨ .Fresh (← recurse v), md ⟩
@@ -331,17 +333,8 @@ where
     | .Assume c => return ⟨ .Assume (← recurse c), md ⟩
     | .ProveBy v p => return ⟨ .ProveBy (← recurse v) (← recurse p), md ⟩
     | .ContractOf ty f => return ⟨ .ContractOf ty (← recurse f), md ⟩
-    | _ => return expr
-    termination_by sizeOf expr
-    decreasing_by
-      all_goals (simp_wf; try term_by_mem)
-      all_goals
-        have hval := WithMetadata.sizeOf_val_lt expr
-        rw [_h] at hval; simp at hval
-        first
-          | term_by_mem
-          | -- For the FieldSelect-inside-Assign case: target < fieldSelectMd < expr
-            (have hfs := WithMetadata.sizeOf_val_lt fieldSelectMd; term_by_mem)
+    | _ => return exprMd
+    termination_by sizeOf exprMd
 
 def heapTransformProcedure (model: SemanticModel) (proc : Procedure) : TransformM Procedure := do
   let heapName : Identifier := "$heap"
