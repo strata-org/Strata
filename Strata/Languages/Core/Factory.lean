@@ -31,7 +31,7 @@ def mapTy (keyTy : LMonoTy) (valTy : LMonoTy) : LMonoTy :=
 
 @[expose, match_pattern]
 def seqTy (elemTy : LMonoTy) : LMonoTy :=
-  .tcons "Seq" [elemTy]
+  .tcons "Sequence" [elemTy]
 
 def KnownLTys : LTys :=
   [t[bool],
@@ -46,7 +46,7 @@ def KnownLTys : LTys :=
    t[∀n. bitvec n],
    t[∀a b. %a → %b],
    t[∀a b. Map %a %b],
-   t[∀a. Seq %a]]
+   t[∀a. Sequence %a]]
 
 def KnownTypes : KnownTypes :=
   makeKnownTypes (KnownLTys.map (fun ty => ty.toKnownType!))
@@ -275,224 +275,250 @@ def mapUpdateFunc : WFLFunc CoreLParams :=
                     ))))]
     ])
 
-/- A `Seq` length function with type `∀a. Seq a → int`. -/
+/- A `Sequence` length function with type `∀a. Sequence a → int`. -/
 def seqLengthFunc : WFLFunc CoreLParams :=
-  polyUneval "Seq.length" ["a"]
+  polyUneval "Sequence.length" ["a"]
     [("s", seqTy mty[%a])] mty[int]
     (axioms := [
       -- length(s) >= 0
-      esM[∀ (Seq %a): -- %0 s
+      esM[∀ (Sequence %a): -- %0 s
+        {((~Sequence.length : (Sequence %a) → int) %0)}
         (((~Int.Ge : int → int → bool)
-          ((~Seq.length : (Seq %a) → int) %0))
+          ((~Sequence.length : (Sequence %a) → int) %0))
           #0)]
     ])
 
-/- An empty `Seq` constructor with type `∀a. Seq a`. -/
+/- An empty `Sequence` constructor with type `∀a. Sequence a`. -/
 def seqEmptyFunc : WFLFunc CoreLParams :=
-  polyUneval "Seq.empty" ["a"] [] (seqTy mty[%a])
+  polyUneval "Sequence.empty" ["a"] [] (seqTy mty[%a])
     (axioms := [
       -- length(empty()) == 0
-      esM[((~Seq.length : (Seq %a) → int)
-            (~Seq.empty : (Seq %a))) == #0]
+      esM[((~Sequence.length : (Sequence %a) → int)
+            (~Sequence.empty : (Sequence %a))) == #0]
     ])
 
-/- A `Seq` append function with type `∀a. Seq a → Seq a → Seq a`. -/
+/- A `Sequence` append function with type `∀a. Sequence a → Sequence a → Sequence a`. -/
 def seqAppendFunc : WFLFunc CoreLParams :=
-  polyUneval "Seq.append" ["a"]
+  polyUneval "Sequence.append" ["a"]
     [("s1", seqTy mty[%a]), ("s2", seqTy mty[%a])]
     (seqTy mty[%a])
     (axioms := [
       -- length(append(s0, s1)) == length(s0) + length(s1)
-      esM[∀ (Seq %a): -- %1 s0
-          (∀ (Seq %a): -- %0 s1
-            ((~Seq.length : (Seq %a) → int)
-              (((~Seq.append : (Seq %a) → (Seq %a) → (Seq %a)) %1) %0))
+      esM[∀ (Sequence %a): -- %1 s0
+          (∀ (Sequence %a): -- %0 s1
+            {((~Sequence.length : (Sequence %a) → int)
+              (((~Sequence.append : (Sequence %a) → (Sequence %a) → (Sequence %a)) %1) %0))}
+            ((~Sequence.length : (Sequence %a) → int)
+              (((~Sequence.append : (Sequence %a) → (Sequence %a) → (Sequence %a)) %1) %0))
             ==
             (((~Int.Add : int → int → int)
-              ((~Seq.length : (Seq %a) → int) %1))
-              ((~Seq.length : (Seq %a) → int) %0)))],
+              ((~Sequence.length : (Sequence %a) → int) %1))
+              ((~Sequence.length : (Sequence %a) → int) %0)))],
       -- select(append(s0, s1), n):
       --   n < length(s0) ==> select(append(s0,s1), n) == select(s0, n)
-      esM[∀ (Seq %a): -- %2 s0
-          (∀ (Seq %a): -- %1 s1
+      esM[∀ (Sequence %a): -- %2 s0
+          (∀ (Sequence %a): -- %1 s1
             (∀ (int): -- %0 n
-              if (((~Int.Lt : int → int → bool) %0) ((~Seq.length : (Seq %a) → int) %2))
+              {(((~Sequence.select : (Sequence %a) → int → %a)
+                    (((~Sequence.append : (Sequence %a) → (Sequence %a) → (Sequence %a)) %2) %1)) %0)}
+              if (((~Int.Lt : int → int → bool) %0) ((~Sequence.length : (Sequence %a) → int) %2))
               then
-                (((~Seq.select : (Seq %a) → int → %a)
-                    (((~Seq.append : (Seq %a) → (Seq %a) → (Seq %a)) %2) %1)) %0)
+                (((~Sequence.select : (Sequence %a) → int → %a)
+                    (((~Sequence.append : (Sequence %a) → (Sequence %a) → (Sequence %a)) %2) %1)) %0)
                 ==
-                (((~Seq.select : (Seq %a) → int → %a) %2) %0)
+                (((~Sequence.select : (Sequence %a) → int → %a) %2) %0)
               else #true))],
       -- select(append(s0, s1), n):
       --   n >= length(s0) ==> select(append(s0,s1), n) == select(s1, n - length(s0))
-      esM[∀ (Seq %a): -- %2 s0
-          (∀ (Seq %a): -- %1 s1
+      esM[∀ (Sequence %a): -- %2 s0
+          (∀ (Sequence %a): -- %1 s1
             (∀ (int): -- %0 n
-              if (((~Int.Ge : int → int → bool) %0) ((~Seq.length : (Seq %a) → int) %2))
+              {(((~Sequence.select : (Sequence %a) → int → %a)
+                    (((~Sequence.append : (Sequence %a) → (Sequence %a) → (Sequence %a)) %2) %1)) %0)}
+              if (((~Int.Ge : int → int → bool) %0) ((~Sequence.length : (Sequence %a) → int) %2))
               then
-                (((~Seq.select : (Seq %a) → int → %a)
-                    (((~Seq.append : (Seq %a) → (Seq %a) → (Seq %a)) %2) %1)) %0)
+                (((~Sequence.select : (Sequence %a) → int → %a)
+                    (((~Sequence.append : (Sequence %a) → (Sequence %a) → (Sequence %a)) %2) %1)) %0)
                 ==
-                (((~Seq.select : (Seq %a) → int → %a) %1)
-                    (((~Int.Sub : int → int → int) %0) ((~Seq.length : (Seq %a) → int) %2)))
+                (((~Sequence.select : (Sequence %a) → int → %a) %1)
+                    (((~Int.Sub : int → int → int) %0) ((~Sequence.length : (Sequence %a) → int) %2)))
               else #true))]
     ])
 
-/- A `Seq` selection function with type `∀a. Seq a → int → a`. -/
+/- A `Sequence` selection function with type `∀a. Sequence a → int → a`. -/
 def seqSelectFunc : WFLFunc CoreLParams :=
-  polyUneval "Seq.select" ["a"]
+  polyUneval "Sequence.select" ["a"]
     [("s", seqTy mty[%a]), ("i", mty[int])] mty[%a]
 
-/- A `Seq` build (snoc) function with type `∀a. Seq a → a → Seq a`.
+/- A `Sequence` build (snoc) function with type `∀a. Sequence a → a → Sequence a`.
    `build(s, v)` appends a single element `v` to the end of `s`. -/
 def seqBuildFunc : WFLFunc CoreLParams :=
-  polyUneval "Seq.build" ["a"]
+  polyUneval "Sequence.build" ["a"]
     [("s", seqTy mty[%a]), ("v", mty[%a])]
     (seqTy mty[%a])
     (axioms := [
       -- length(build(s, v)) == 1 + length(s)
-      esM[∀ (Seq %a): -- %1 s
+      esM[∀ (Sequence %a): -- %1 s
           (∀ (%a): -- %0 v
-            ((~Seq.length : (Seq %a) → int)
-              (((~Seq.build : (Seq %a) → %a → (Seq %a)) %1) %0))
+            {((~Sequence.length : (Sequence %a) → int)
+              (((~Sequence.build : (Sequence %a) → %a → (Sequence %a)) %1) %0))}
+            ((~Sequence.length : (Sequence %a) → int)
+              (((~Sequence.build : (Sequence %a) → %a → (Sequence %a)) %1) %0))
             ==
             (((~Int.Add : int → int → int)
               #1)
-              ((~Seq.length : (Seq %a) → int) %1)))],
+              ((~Sequence.length : (Sequence %a) → int) %1)))],
       -- select(build(s, v), i):
       --   i == length(s) ==> select(build(s,v), i) == v
-      esM[∀ (Seq %a): -- %2 s
+      esM[∀ (Sequence %a): -- %2 s
           (∀ (%a): -- %1 v
             (∀ (int): -- %0 i
-              if (%0 == ((~Seq.length : (Seq %a) → int) %2))
+              {(((~Sequence.select : (Sequence %a) → int → %a)
+                    (((~Sequence.build : (Sequence %a) → %a → (Sequence %a)) %2) %1)) %0)}
+              if (%0 == ((~Sequence.length : (Sequence %a) → int) %2))
               then
-                (((~Seq.select : (Seq %a) → int → %a)
-                    (((~Seq.build : (Seq %a) → %a → (Seq %a)) %2) %1)) %0)
+                (((~Sequence.select : (Sequence %a) → int → %a)
+                    (((~Sequence.build : (Sequence %a) → %a → (Sequence %a)) %2) %1)) %0)
                 == %1
               else #true))],
       -- select(build(s, v), i):
       --   i != length(s) ==> select(build(s,v), i) == select(s, i)
-      esM[∀ (Seq %a): -- %2 s
+      esM[∀ (Sequence %a): -- %2 s
           (∀ (%a): -- %1 v
             (∀ (int): -- %0 i
-              if (%0 == ((~Seq.length : (Seq %a) → int) %2))
+              {(((~Sequence.select : (Sequence %a) → int → %a)
+                    (((~Sequence.build : (Sequence %a) → %a → (Sequence %a)) %2) %1)) %0)}
+              if (%0 == ((~Sequence.length : (Sequence %a) → int) %2))
               then #true
               else
-                (((~Seq.select : (Seq %a) → int → %a)
-                    (((~Seq.build : (Seq %a) → %a → (Seq %a)) %2) %1)) %0)
+                (((~Sequence.select : (Sequence %a) → int → %a)
+                    (((~Sequence.build : (Sequence %a) → %a → (Sequence %a)) %2) %1)) %0)
                 ==
-                (((~Seq.select : (Seq %a) → int → %a) %2) %0)))]
+                (((~Sequence.select : (Sequence %a) → int → %a) %2) %0)))]
     ])
 
-/- A `Seq` update function with type `∀a. Seq a → int → a → Seq a`.
+/- A `Sequence` update function with type `∀a. Sequence a → int → a → Sequence a`.
    `update(s, i, v)` returns a sequence identical to `s` except at index `i` where the value is `v`. -/
 def seqUpdateFunc : WFLFunc CoreLParams :=
-  polyUneval "Seq.update" ["a"]
+  polyUneval "Sequence.update" ["a"]
     [("s", seqTy mty[%a]), ("i", mty[int]), ("v", mty[%a])]
     (seqTy mty[%a])
     (axioms := [
       -- length(update(s, i, v)) == length(s)
-      esM[∀ (Seq %a): -- %2 s
+      esM[∀ (Sequence %a): -- %2 s
           (∀ (int): -- %1 i
             (∀ (%a): -- %0 v
-              ((~Seq.length : (Seq %a) → int)
-                ((((~Seq.update : (Seq %a) → int → %a → (Seq %a)) %2) %1) %0))
+              {((~Sequence.length : (Sequence %a) → int)
+                ((((~Sequence.update : (Sequence %a) → int → %a → (Sequence %a)) %2) %1) %0))}
+              ((~Sequence.length : (Sequence %a) → int)
+                ((((~Sequence.update : (Sequence %a) → int → %a → (Sequence %a)) %2) %1) %0))
               ==
-              ((~Seq.length : (Seq %a) → int) %2)))],
+              ((~Sequence.length : (Sequence %a) → int) %2)))],
       -- select(update(s, i, v), i) == v  (same index)
-      esM[∀ (Seq %a): -- %2 s
+      esM[∀ (Sequence %a): -- %2 s
           (∀ (int): -- %1 i
             (∀ (%a): -- %0 v
-              {(((~Seq.select : (Seq %a) → int → %a)
-                  ((((~Seq.update : (Seq %a) → int → %a → (Seq %a)) %2) %1) %0)) %1)}
-              (((~Seq.select : (Seq %a) → int → %a)
-                  ((((~Seq.update : (Seq %a) → int → %a → (Seq %a)) %2) %1) %0)) %1)
+              {(((~Sequence.select : (Sequence %a) → int → %a)
+                  ((((~Sequence.update : (Sequence %a) → int → %a → (Sequence %a)) %2) %1) %0)) %1)}
+              (((~Sequence.select : (Sequence %a) → int → %a)
+                  ((((~Sequence.update : (Sequence %a) → int → %a → (Sequence %a)) %2) %1) %0)) %1)
               == %0))],
       -- select(update(s, i, v), n) == select(s, n)  when n != i
-      esM[∀ (Seq %a): -- %3 s
+      esM[∀ (Sequence %a): -- %3 s
           (∀ (int): -- %2 i
             (∀ (%a): -- %1 v
               (∀ (int): -- %0 n
+                {(((~Sequence.select : (Sequence %a) → int → %a)
+                    ((((~Sequence.update : (Sequence %a) → int → %a → (Sequence %a)) %3) %2) %1)) %0)}
                 (if (%0 == %2)
                  then #true
                  else
-                   (((~Seq.select : (Seq %a) → int → %a)
-                      ((((~Seq.update : (Seq %a) → int → %a → (Seq %a)) %3) %2) %1)) %0)
+                   (((~Sequence.select : (Sequence %a) → int → %a)
+                      ((((~Sequence.update : (Sequence %a) → int → %a → (Sequence %a)) %3) %2) %1)) %0)
                    ==
-                   (((~Seq.select : (Seq %a) → int → %a) %3) %0)))))]
+                   (((~Sequence.select : (Sequence %a) → int → %a) %3) %0)))))]
     ])
 
-/- A `Seq` contains function with type `∀a. Seq a → a → bool`.
+/- A `Sequence` contains function with type `∀a. Sequence a → a → bool`.
    `contains(s, v)` is true iff there exists an index `i` such that `select(s, i) == v`. -/
 def seqContainsFunc : WFLFunc CoreLParams :=
-  polyUneval "Seq.contains" ["a"]
+  polyUneval "Sequence.contains" ["a"]
     [("s", seqTy mty[%a]), ("v", mty[%a])] mty[bool]
     (axioms := [
       -- contains(s, v) <==> exists i :: 0 <= i < length(s) && select(s, i) == v
-      esM[∀ (Seq %a): -- %1 s
+      esM[∀ (Sequence %a): -- %1 s
           (∀ (%a): -- %0 v
-            (((~Seq.contains : (Seq %a) → %a → bool) %1) %0)
+            {(((~Sequence.contains : (Sequence %a) → %a → bool) %1) %0)}
+            (((~Sequence.contains : (Sequence %a) → %a → bool) %1) %0)
             ==
             (∃ (int): -- %0 i (inside this quantifier: s=%2, v=%1, i=%0)
               (((~Bool.And : bool → bool → bool)
                 (((~Bool.And : bool → bool → bool)
                   (((~Int.Ge : int → int → bool) %0) #0))
-                  (((~Int.Lt : int → int → bool) %0) ((~Seq.length : (Seq %a) → int) %2))))
-                ((((~Seq.select : (Seq %a) → int → %a) %2) %0) == %1))))]
+                  (((~Int.Lt : int → int → bool) %0) ((~Sequence.length : (Sequence %a) → int) %2))))
+                ((((~Sequence.select : (Sequence %a) → int → %a) %2) %0) == %1))))]
     ])
 
-/- A `Seq` take function with type `∀a. Seq a → int → Seq a`.
+/- A `Sequence` take function with type `∀a. Sequence a → int → Sequence a`.
    `take(s, n)` returns the first `n` elements of `s`. -/
 def seqTakeFunc : WFLFunc CoreLParams :=
-  polyUneval "Seq.take" ["a"]
+  polyUneval "Sequence.take" ["a"]
     [("s", seqTy mty[%a]), ("n", mty[int])]
     (seqTy mty[%a])
     (axioms := [
       -- length(take(s, n)) == n  (when 0 <= n <= length(s))
-      esM[∀ (Seq %a): -- %1 s
+      esM[∀ (Sequence %a): -- %1 s
           (∀ (int): -- %0 n
-            ((~Seq.length : (Seq %a) → int)
-              (((~Seq.take : (Seq %a) → int → (Seq %a)) %1) %0))
+            {((~Sequence.length : (Sequence %a) → int)
+              (((~Sequence.take : (Sequence %a) → int → (Sequence %a)) %1) %0))}
+            ((~Sequence.length : (Sequence %a) → int)
+              (((~Sequence.take : (Sequence %a) → int → (Sequence %a)) %1) %0))
             == %0)],
       -- select(take(s, n), j) == select(s, j)  (when 0 <= j < n)
-      esM[∀ (Seq %a): -- %2 s
+      esM[∀ (Sequence %a): -- %2 s
           (∀ (int): -- %1 n
             (∀ (int): -- %0 j
+              {(((~Sequence.select : (Sequence %a) → int → %a)
+                    (((~Sequence.take : (Sequence %a) → int → (Sequence %a)) %2) %1)) %0)}
               if (((~Bool.And : bool → bool → bool)
                     (((~Int.Ge : int → int → bool) %0) #0))
                     (((~Int.Lt : int → int → bool) %0) %1))
               then
-                (((~Seq.select : (Seq %a) → int → %a)
-                    (((~Seq.take : (Seq %a) → int → (Seq %a)) %2) %1)) %0)
+                (((~Sequence.select : (Sequence %a) → int → %a)
+                    (((~Sequence.take : (Sequence %a) → int → (Sequence %a)) %2) %1)) %0)
                 ==
-                (((~Seq.select : (Seq %a) → int → %a) %2) %0)
+                (((~Sequence.select : (Sequence %a) → int → %a) %2) %0)
               else #true))]
     ])
 
-/- A `Seq` drop function with type `∀a. Seq a → int → Seq a`.
+/- A `Sequence` drop function with type `∀a. Sequence a → int → Sequence a`.
    `drop(s, n)` returns the sequence with the first `n` elements removed. -/
 def seqDropFunc : WFLFunc CoreLParams :=
-  polyUneval "Seq.drop" ["a"]
+  polyUneval "Sequence.drop" ["a"]
     [("s", seqTy mty[%a]), ("n", mty[int])]
     (seqTy mty[%a])
     (axioms := [
       -- length(drop(s, n)) == length(s) - n
-      esM[∀ (Seq %a): -- %1 s
+      esM[∀ (Sequence %a): -- %1 s
           (∀ (int): -- %0 n
-            ((~Seq.length : (Seq %a) → int)
-              (((~Seq.drop : (Seq %a) → int → (Seq %a)) %1) %0))
+            {((~Sequence.length : (Sequence %a) → int)
+              (((~Sequence.drop : (Sequence %a) → int → (Sequence %a)) %1) %0))}
+            ((~Sequence.length : (Sequence %a) → int)
+              (((~Sequence.drop : (Sequence %a) → int → (Sequence %a)) %1) %0))
             ==
             (((~Int.Sub : int → int → int)
-              ((~Seq.length : (Seq %a) → int) %1))
+              ((~Sequence.length : (Sequence %a) → int) %1))
               %0))],
       -- select(drop(s, n), j) == select(s, j + n)
-      esM[∀ (Seq %a): -- %2 s
+      esM[∀ (Sequence %a): -- %2 s
           (∀ (int): -- %1 n
             (∀ (int): -- %0 j
-              (((~Seq.select : (Seq %a) → int → %a)
-                  (((~Seq.drop : (Seq %a) → int → (Seq %a)) %2) %1)) %0)
+              {(((~Sequence.select : (Sequence %a) → int → %a)
+                  (((~Sequence.drop : (Sequence %a) → int → (Sequence %a)) %2) %1)) %0)}
+              (((~Sequence.select : (Sequence %a) → int → %a)
+                  (((~Sequence.drop : (Sequence %a) → int → (Sequence %a)) %2) %1)) %0)
               ==
-              (((~Seq.select : (Seq %a) → int → %a) %2)
+              (((~Sequence.select : (Sequence %a) → int → %a) %2)
                   (((~Int.Add : int → int → int) %0) %1))))]
     ])
 

@@ -94,21 +94,21 @@ fn map_get (K : Type, V : Type, m : Map K V, k : K) : V => m "[" k "]";
 fn map_set (K : Type, V : Type, m : Map K V, k : K, v : V) : Map K V =>
   m "[" k ":=" v "]";
 
-//fn seq_empty (A : Type) : Sequence A => "Seq.empty" "(" ")";
-fn seq_length (A : Type, s : Sequence A) : int => "Seq.length" "(" s ")";
-fn seq_get (A : Type, s : Sequence A, i : int) : A => "Seq.get" "(" s ", " i ")";
+//fn seq_empty (A : Type) : Sequence A => "Sequence.empty" "(" ")";
+fn seq_length (A : Type, s : Sequence A) : int => "Sequence.length" "(" s ")";
+fn seq_get (A : Type, s : Sequence A, i : int) : A => "Sequence.get" "(" s ", " i ")";
 fn seq_append (A : Type, s1 : Sequence A, s2 : Sequence A) : Sequence A =>
-  "Seq.append" "(" s1 ", " s2 ")";
+  "Sequence.append" "(" s1 ", " s2 ")";
 fn seq_build (A : Type, s : Sequence A, v : A) : Sequence A =>
-  "Seq.build" "(" s ", " v ")";
+  "Sequence.build" "(" s ", " v ")";
 fn seq_update (A : Type, s : Sequence A, i : int, v : A) : Sequence A =>
-  "Seq.update" "(" s ", " i ", " v ")";
+  "Sequence.update" "(" s ", " i ", " v ")";
 fn seq_contains (A : Type, s : Sequence A, v : A) : bool =>
-  "Seq.contains" "(" s ", " v ")";
+  "Sequence.contains" "(" s ", " v ")";
 fn seq_take (A : Type, s : Sequence A, n : int) : Sequence A =>
-  "Seq.take" "(" s ", " n ")";
+  "Sequence.take" "(" s ", " n ")";
 fn seq_drop (A : Type, s : Sequence A, n : int) : Sequence A =>
-  "Seq.drop" "(" s ", " n ")";
+  "Sequence.drop" "(" s ", " n ")";
 
 // FIXME: Define polymorphic length and concat functions?
 fn str_len (a : string) : int => "str.len" "(" a  ")";

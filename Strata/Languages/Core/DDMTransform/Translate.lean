@@ -845,53 +845,53 @@ partial def translateExpr (p : Program) (bindings : TransBindings) (arg : Arg) :
   /-
   | .fn _ q`Core.seq_empty, [_atp] =>
      let ety ← translateLMonoTy bindings _atp
-     let fn : LExpr Core.CoreLParams.mono := (LExpr.op () "Seq.empty" (.some (Core.seqTy ety)))
+     let fn : LExpr Core.CoreLParams.mono := (LExpr.op () "Sequence.empty" (.some (Core.seqTy ety)))
      return fn-/
   | .fn _ q`Core.seq_length, [_atp, sa] =>
      let ety ← translateLMonoTy bindings _atp
-     let fn : LExpr Core.CoreLParams.mono := (LExpr.op () "Seq.length" (.some (LMonoTy.mkArrow (Core.seqTy ety) [.int])))
+     let fn : LExpr Core.CoreLParams.mono := (LExpr.op () "Sequence.length" (.some (LMonoTy.mkArrow (Core.seqTy ety) [.int])))
      let s ← translateExpr p bindings sa
      return .mkApp () fn [s]
   | .fn _ q`Core.seq_get, [_atp, sa, ia] =>
      let ety ← translateLMonoTy bindings _atp
-     let fn : LExpr Core.CoreLParams.mono := (LExpr.op () "Seq.select" (.some (LMonoTy.mkArrow (Core.seqTy ety) [.int, ety])))
+     let fn : LExpr Core.CoreLParams.mono := (LExpr.op () "Sequence.select" (.some (LMonoTy.mkArrow (Core.seqTy ety) [.int, ety])))
      let s ← translateExpr p bindings sa
      let i ← translateExpr p bindings ia
      return .mkApp () fn [s, i]
   | .fn _ q`Core.seq_append, [_atp, s1a, s2a] =>
      let ety ← translateLMonoTy bindings _atp
-     let fn : LExpr Core.CoreLParams.mono := (LExpr.op () "Seq.append" (.some (LMonoTy.mkArrow (Core.seqTy ety) [Core.seqTy ety, Core.seqTy ety])))
+     let fn : LExpr Core.CoreLParams.mono := (LExpr.op () "Sequence.append" (.some (LMonoTy.mkArrow (Core.seqTy ety) [Core.seqTy ety, Core.seqTy ety])))
      let s1 ← translateExpr p bindings s1a
      let s2 ← translateExpr p bindings s2a
      return .mkApp () fn [s1, s2]
   | .fn _ q`Core.seq_build, [_atp, sa, va] =>
      let ety ← translateLMonoTy bindings _atp
-     let fn : LExpr Core.CoreLParams.mono := (LExpr.op () "Seq.build" (.some (LMonoTy.mkArrow (Core.seqTy ety) [ety, Core.seqTy ety])))
+     let fn : LExpr Core.CoreLParams.mono := (LExpr.op () "Sequence.build" (.some (LMonoTy.mkArrow (Core.seqTy ety) [ety, Core.seqTy ety])))
      let s ← translateExpr p bindings sa
      let v ← translateExpr p bindings va
      return .mkApp () fn [s, v]
   | .fn _ q`Core.seq_update, [_atp, sa, ia, va] =>
      let ety ← translateLMonoTy bindings _atp
-     let fn : LExpr Core.CoreLParams.mono := (LExpr.op () "Seq.update" (.some (LMonoTy.mkArrow (Core.seqTy ety) [.int, ety, Core.seqTy ety])))
+     let fn : LExpr Core.CoreLParams.mono := (LExpr.op () "Sequence.update" (.some (LMonoTy.mkArrow (Core.seqTy ety) [.int, ety, Core.seqTy ety])))
      let s ← translateExpr p bindings sa
      let i ← translateExpr p bindings ia
      let v ← translateExpr p bindings va
      return .mkApp () fn [s, i, v]
   | .fn _ q`Core.seq_contains, [_atp, sa, va] =>
      let ety ← translateLMonoTy bindings _atp
-     let fn : LExpr Core.CoreLParams.mono := (LExpr.op () "Seq.contains" (.some (LMonoTy.mkArrow (Core.seqTy ety) [ety, .bool])))
+     let fn : LExpr Core.CoreLParams.mono := (LExpr.op () "Sequence.contains" (.some (LMonoTy.mkArrow (Core.seqTy ety) [ety, .bool])))
      let s ← translateExpr p bindings sa
      let v ← translateExpr p bindings va
      return .mkApp () fn [s, v]
   | .fn _ q`Core.seq_take, [_atp, sa, na] =>
      let ety ← translateLMonoTy bindings _atp
-     let fn : LExpr Core.CoreLParams.mono := (LExpr.op () "Seq.take" (.some (LMonoTy.mkArrow (Core.seqTy ety) [.int, Core.seqTy ety])))
+     let fn : LExpr Core.CoreLParams.mono := (LExpr.op () "Sequence.take" (.some (LMonoTy.mkArrow (Core.seqTy ety) [.int, Core.seqTy ety])))
      let s ← translateExpr p bindings sa
      let n ← translateExpr p bindings na
      return .mkApp () fn [s, n]
   | .fn _ q`Core.seq_drop, [_atp, sa, na] =>
      let ety ← translateLMonoTy bindings _atp
-     let fn : LExpr Core.CoreLParams.mono := (LExpr.op () "Seq.drop" (.some (LMonoTy.mkArrow (Core.seqTy ety) [.int, Core.seqTy ety])))
+     let fn : LExpr Core.CoreLParams.mono := (LExpr.op () "Sequence.drop" (.some (LMonoTy.mkArrow (Core.seqTy ety) [.int, Core.seqTy ety])))
      let s ← translateExpr p bindings sa
      let n ← translateExpr p bindings na
      return .mkApp () fn [s, n]
