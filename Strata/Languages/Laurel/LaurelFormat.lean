@@ -47,6 +47,7 @@ def formatHighTypeVal : HighType → Format
   | .TBool => "bool"
   | .TInt => "int"
   | .TFloat64 => "float64"
+  | .TReal => "real"
   | .TString => "string"
   | .THeap => "Heap"
   | .TTypedField valueType => "Field[" ++ formatHighType valueType ++ "]"
@@ -60,6 +61,7 @@ def formatHighTypeVal : HighType → Format
   | .Intersection types =>
       Format.joinSep (types.map formatHighType) " & "
   | .TCore s => s!"Core({s})"
+  | .Top => "⊤"
   termination_by t => sizeOf t
   decreasing_by all_goals term_by_mem
 end
@@ -99,6 +101,7 @@ def formatStmtExprVal (s : StmtExpr) : Format :=
   | .LiteralInt n => Format.text (toString n)
   | .LiteralBool b => if b then "true" else "false"
   | .LiteralString s => "\"" ++ Format.text s ++ "\""
+  | .LiteralDecimal d => Format.text (toString d)
   | .Identifier ref => format ref
   | .Assign [single] value =>
       formatStmtExpr single ++ " := " ++ formatStmtExpr value
@@ -127,10 +130,16 @@ def formatStmtExprVal (s : StmtExpr) : Format :=
   | .InstanceCall target name args =>
       formatStmtExpr target ++ "." ++ format name ++ "(" ++
       Format.joinSep (args.map formatStmtExpr) ", " ++ ")"
-  | .Forall param body =>
-      "forall " ++ format param.name ++ ": " ++ formatHighType param.type ++ " => " ++ formatStmtExpr body
-  | .Exists param body =>
-      "exists " ++ format param.name ++ ": " ++ formatHighType param.type ++ " => " ++ formatStmtExpr body
+  | .Forall param trigger body =>
+      let trigFmt := match trigger with
+        | some t => " {" ++ formatStmtExpr t ++ "}"
+        | none => ""
+      "forall " ++ format param.name ++ ": " ++ formatHighType param.type ++ trigFmt ++ " => " ++ formatStmtExpr body
+  | .Exists param trigger body =>
+      let trigFmt := match trigger with
+        | some t => " {" ++ formatStmtExpr t ++ "}"
+        | none => ""
+      "exists " ++ format param.name ++ ": " ++ formatHighType param.type ++ trigFmt ++ " => " ++ formatStmtExpr body
   | .Assigned name => "assigned(" ++ formatStmtExpr name ++ ")"
   | .Old value => "old(" ++ formatStmtExpr value ++ ")"
   | .Fresh value => "fresh(" ++ formatStmtExpr value ++ ")"
@@ -149,16 +158,31 @@ end
 def formatParameter (p : Parameter) : Format :=
   format p.name ++ ": " ++ formatHighType p.type
 
+/-- Format a StmtExprMd, appending any property summary stored in its metadata. -/
+def formatStmtExprWithMsg (s : StmtExprMd) : Format :=
+  formatStmtExpr s ++
+  match s.md.getPropertySummary with
+  | none => Format.nil
+  | some msg => " propertySummary \"" ++ msg ++ "\""
+
 def formatBody : Body → Format
   | .Transparent body => formatStmtExpr body
   | .Opaque postconds impl modif =>
       (if modif.isEmpty then Format.nil
        else " modifies " ++ Format.joinSep (modif.map formatStmtExpr) ", ") ++
-      Format.joinSep (postconds.map (fun p => " ensures " ++ formatStmtExpr p)) "" ++
+      Format.joinSep (postconds.map (fun p =>
+        " ensures " ++ formatStmtExpr p ++
+        match p.md.getPropertySummary with
+        | none => Format.nil
+        | some msg => " propertySummary \"" ++ msg ++ "\"")) "" ++
       match impl with
       | none => Format.nil
       | some e => " := " ++ formatStmtExpr e
-  | .Abstract posts => "abstract" ++ Format.join (posts.map (fun p => " ensures " ++ formatStmtExpr p))
+  | .Abstract posts => "abstract" ++ Format.join (posts.map (fun p =>
+      " ensures " ++ formatStmtExpr p ++
+      match p.md.getPropertySummary with
+      | none => Format.nil
+      | some msg => " propertySummary \"" ++ msg ++ "\""))
   | .External => "external"
 
 def formatDeterminism : Determinism → Format
@@ -173,7 +197,11 @@ def formatProcedure (proc : Procedure) : Format :=
   (if proc.isFunctional then "function " else "procedure ") ++ format proc.name ++
   "(" ++ Format.joinSep (proc.inputs.map formatParameter) ", " ++ ") returns " ++ Format.line ++
   "(" ++ Format.joinSep (proc.outputs.map formatParameter) ", " ++ ")" ++ Format.line ++
-  Format.join (proc.preconditions.map (fun p => "requires " ++ formatStmtExpr p ++ Format.line)) ++
+  Format.join (proc.preconditions.map (fun p =>
+    "requires " ++ formatStmtExpr p ++
+    (match p.md.getPropertySummary with
+    | none => Format.nil
+    | some msg => " propertySummary \"" ++ msg ++ "\"") ++ Format.line)) ++
   formatDeterminism proc.determinism ++ Format.line ++
   formatBody proc.body
 

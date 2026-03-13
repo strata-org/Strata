@@ -175,8 +175,8 @@ procedure test$$wf (xs : List) returns ()
   assume [test_requires_0]: List..isCons(xs);
   assert [test_post_test_ensures_1_calls_List..head_0]: List..isCons(xs);
   assume [test_ensures_1]: List..head(xs) > 0;
-  assert [test_post_test_ensures_2_calls_List..head_0]: List..isCons(List..tail(xs));
-  assert [test_post_test_ensures_2_calls_List..tail_1]: List..isCons(xs);
+  assert [test_post_test_ensures_2_calls_List..tail_0]: List..isCons(xs);
+  assert [test_post_test_ensures_2_calls_List..head_1]: List..isCons(List..tail(xs));
   assume [test_ensures_2]: List..head(List..tail(xs)) > 0;
   };
 procedure test (xs : List) returns ()
@@ -334,5 +334,73 @@ procedure proc2 (y : int) returns ()
 -/
 #guard_msgs in
 #eval (Std.format (transformProgram funcInMultipleProcsPgm))
+
+/-! ### Test 8: Division in if-then-else condition generates precondition -/
+
+def iteCondPrecondPgm :=
+#strata
+program Core;
+
+procedure test(x : int, y : int) returns ()
+{
+  if (x / y > 0) {
+    var z : int := 1;
+  } else {
+    var z : int := 2;
+  }
+};
+#end
+
+/--
+info: [Strata.Core] Type checking succeeded.
+
+---
+info: procedure test (x : int, y : int) returns ()
+{
+  assert [ite_cond_calls_Int.SafeDiv_0]: !(y == 0);
+  if (x / y > 0) {
+    var z : int := 1;
+    } else {
+    var z : int := 2;
+    }
+  };
+-/
+#guard_msgs in
+#eval (Std.format (transformProgram iteCondPrecondPgm))
+
+/-! ### Test 9: Division in loop guard generates precondition -/
+
+def loopGuardPrecondPgm :=
+#strata
+program Core;
+var g : int;
+procedure test(y : int) returns ()
+spec { modifies g; }
+{
+  while (y / (y / g) > 0) { g := g - 1; }
+};
+#end
+
+/--
+info: [Strata.Core] Type checking succeeded.
+
+---
+info: var g : int;
+procedure test (y : int) returns ()
+spec {
+  modifies g;
+  } {
+  assert [loop_guard_calls_Int.SafeDiv_0]: !(g == 0);
+  assert [loop_guard_calls_Int.SafeDiv_1]: !(y / g == 0);
+  while (y / (y / g) > 0)
+  {
+    g := g - 1;
+    assert [loop_guard_end_calls_Int.SafeDiv_0]: !(g == 0);
+    assert [loop_guard_end_calls_Int.SafeDiv_1]: !(y / g == 0);
+    }
+  };
+-/
+#guard_msgs in
+#eval (Std.format (transformProgram loopGuardPrecondPgm))
 
 end PrecondElimTests

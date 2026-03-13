@@ -224,20 +224,26 @@ def transformStmt (s : Statement)
     setFactory savedF
     return (changed, [.block lbl b' md])
   | .ite c thenb elseb md => do
+    let condAsserts := collectPrecondAsserts F c "ite_cond" md
     let savedF ← getFactory
     let (changed, thenb') ← transformStmts thenb
     setFactory savedF
     let (changed', elseb') ← transformStmts elseb
     setFactory savedF
-    return (changed || changed', [.ite c thenb' elseb' md])
+    return (changed || changed' || !condAsserts.isEmpty,
+      condAsserts ++ [.ite c thenb' elseb' md])
   | .loop guard measure invariant body md => do
+    if measure.isSome then
+      throw s!"PrecondElim: loop measures are not yet supported"
     let invAsserts := invariant.flatMap (fun inv => collectPrecondAsserts F inv "loop_invariant" md)
     let guardAsserts := collectPrecondAsserts F guard "loop_guard" md
+    let guardAssertsEnd := collectPrecondAsserts F guard "loop_guard_end" md
     let savedF ← getFactory
     let (changed, body') ← transformStmts body
     setFactory savedF
     return (changed || !invAsserts.isEmpty || !guardAsserts.isEmpty,
-      guardAsserts ++ invAsserts ++ [.loop guard measure invariant body' md])
+      guardAsserts ++ invAsserts ++
+      [.loop guard measure invariant (body' ++ guardAssertsEnd) md])
   | .exit lbl md =>
     return (false, [.exit lbl md])
   | .funcDecl decl md => do

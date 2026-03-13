@@ -37,10 +37,13 @@ program Laurel;
 // Composite: datatype with a reference (int)
 datatype Composite { MkComposite(ref: int) }
 
+datatype Float64IsNotSupportedYet {}
+
 // Box: tagged union for field values
 datatype Box {
   BoxInt(intVal: int),
   BoxBool(boolVal: bool),
+  BoxReal(realVal: real),
   BoxFloat64(float64Val: float64),
   BoxComposite(compositeVal: Composite)
 }

@@ -288,11 +288,11 @@ Obligation: headIsT
 Property: assert
 Result: ✅ pass
 
-Obligation: assert_headVal_calls_RoseTree..val_0
+Obligation: assert_headVal_calls_Forest..head_0
 Property: assert
 Result: ✅ pass
 
-Obligation: assert_headVal_calls_Forest..head_1
+Obligation: assert_headVal_calls_RoseTree..val_1
 Property: assert
 Result: ✅ pass
 
@@ -358,11 +358,11 @@ Obligation: isBlock
 Property: assert
 Result: ✅ pass
 
-Obligation: assert_bodyHd_calls_StmtList..hd_0
+Obligation: assert_bodyHd_calls_Stmt..blockBody_0
 Property: assert
 Result: ✅ pass
 
-Obligation: assert_bodyHd_calls_Stmt..blockBody_1
+Obligation: assert_bodyHd_calls_StmtList..hd_1
 Property: assert
 Result: ✅ pass
 
@@ -370,7 +370,7 @@ Obligation: bodyHd
 Property: assert
 Result: ✅ pass
 
-Obligation: assert_cmdVal_calls_Stmt..cmd_0
+Obligation: assert_cmdVal_calls_Stmt..blockBody_0
 Property: assert
 Result: ✅ pass
 
@@ -378,7 +378,7 @@ Obligation: assert_cmdVal_calls_StmtList..hd_1
 Property: assert
 Result: ✅ pass
 
-Obligation: assert_cmdVal_calls_Stmt..blockBody_2
+Obligation: assert_cmdVal_calls_Stmt..cmd_2
 Property: assert
 Result: ✅ pass
 
@@ -386,11 +386,11 @@ Obligation: cmdVal
 Property: assert
 Result: ✅ pass
 
-Obligation: assert_secondIsGoto_calls_StmtList..hd_0
+Obligation: assert_secondIsGoto_calls_StmtList..tl_0
 Property: assert
 Result: ✅ pass
 
-Obligation: assert_secondIsGoto_calls_StmtList..tl_1
+Obligation: assert_secondIsGoto_calls_StmtList..hd_1
 Property: assert
 Result: ✅ pass
 
