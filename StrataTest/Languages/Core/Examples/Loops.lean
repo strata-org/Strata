@@ -87,7 +87,6 @@ true
 Label: entry_invariant_0_0
 Property: assert
 Assumptions:
-<label_ite_cond_true: (~Int.Lt i n)>: 0 < $__n2
 sum_requires_0: $__n2 >= 0
 Obligation:
 true
@@ -95,7 +94,6 @@ true
 Label: entry_invariant_0_1
 Property: assert
 Assumptions:
-<label_ite_cond_true: (~Int.Lt i n)>: 0 < $__n2
 sum_requires_0: $__n2 >= 0
 Obligation:
 0 <= $__n2
@@ -103,7 +101,6 @@ Obligation:
 Label: entry_invariant_0_2
 Property: assert
 Assumptions:
-<label_ite_cond_true: (~Int.Lt i n)>: 0 < $__n2
 sum_requires_0: $__n2 >= 0
 Obligation:
 true

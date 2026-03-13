@@ -521,7 +521,6 @@ Obligation:
 Label: entry_invariant_0_0
 Property: assert
 Assumptions:
-<label_ite_cond_true: (~Int.Lt (~Int.SafeDiv i n) #10)>: 0 / $__n0 < 10
 test_requires_0: !($__n0 == 0)
 Obligation:
 true
