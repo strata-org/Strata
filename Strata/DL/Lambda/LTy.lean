@@ -513,5 +513,12 @@ def LMonoTy.inputTypes (ty : LMonoTy) : List LMonoTy :=
 
 ---------------------------------------------------------------------
 
+/--
+Close `ty` by `x`, i.e., add `x` as a bound type variable.
+-/
+def LTy.close (x : TyIdentifier) (ty : LTy) : LTy :=
+  match ty with
+  | .forAll vars lty => .forAll (x :: vars) lty
+
 end -- public section
 end Lambda

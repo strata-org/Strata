@@ -3,10 +3,11 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
 import Strata.DDM.Elab
 import Strata.DDM.AST
-import Strata.Languages.Core.Verifier
+public import Strata.Languages.Core.Verifier
 
 namespace Strata
 namespace Python
@@ -48,7 +49,6 @@ datatype Error () {
 // In this prelude, we model datetime as a single int and assume
 // that the conversion from a string constant is handled by the translator.
 
-mutual
 datatype Any () {
   from_none (),
   from_bool (as_bool : bool),
@@ -60,18 +60,17 @@ datatype Any () {
   from_ListAny (as_ListAny : ListAny),
   from_ClassInstance (classname : string, instance_attributes: DictStrAny),
   exception (get_error: Error)
-};
+}
 
 datatype ListAny () {
   ListAny_nil (),
   ListAny_cons (head: Any, tail: ListAny)
-};
+}
 
 datatype DictStrAny () {
   DictStrAny_empty (),
   DictStrAny_cons (key: string, val: Any, tail: DictStrAny)
 };
-end;
 
 // /////////////////////////////////////////////////////////////////////////////////////
 //Functions that we provide to Python user
@@ -812,6 +811,8 @@ datatype Box () {
 
 #end
 
+public section
+
 def Core.PythonLaurelPrelude : Core.Program :=
    Core.getProgram pythonLaurelPrelude |>.fst
 
@@ -823,6 +824,8 @@ def getProcedures (decls: List Core.Decl) : List String :=
         | _ => none)
 
 def corePreludeProcedures := getProcedures Core.PythonLaurelPrelude.decls
+
+end -- public section
 
 end Python
 end Strata

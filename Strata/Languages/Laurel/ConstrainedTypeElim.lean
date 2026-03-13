@@ -3,9 +3,9 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.Languages.Laurel.Laurel
-import Strata.Languages.Laurel.Resolution
+public import Strata.Languages.Laurel.Resolution
 
 /-!
 # Constrained Type Elimination
@@ -237,7 +237,7 @@ private def mkWitnessProc (ptMap : ConstrainedTypeMap) (ct : ConstrainedType) : 
     decreases := none
     md := md }
 
-def constrainedTypeElim (_model : SemanticModel) (program : Program) : Program × Array DiagnosticModel :=
+public def constrainedTypeElim (_model : SemanticModel) (program : Program) : Program × Array DiagnosticModel :=
   let ptMap := buildConstrainedTypeMap program.types
   if ptMap.isEmpty then (program, #[]) else
   let constraintFuncs := program.types.filterMap fun

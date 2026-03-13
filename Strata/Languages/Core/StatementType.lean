@@ -3,15 +3,16 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-
-
-import Strata.Languages.Core.Statement
-import Strata.Languages.Core.CmdType
-import Strata.Languages.Core.Program
-import Strata.Languages.Core.FunctionType
-import Strata.DL.Imperative.CmdType
+public import Strata.Languages.Core.Statement
+public import Strata.Languages.Core.CmdType
+public import Strata.Languages.Core.Program
+public import Strata.Languages.Core.FunctionType
+public import Strata.DL.Imperative.CmdType
 import Strata.Util.Tactics
+
+public section
 
 namespace Core
 namespace Statement
@@ -271,5 +272,8 @@ def typeCheck (C: Expression.TyContext) (Env : Expression.TyEnv) (P : Program) (
   .ok (ss', Env)
 
 ---------------------------------------------------------------------
+
 end Statement
 end Core
+
+end -- public section

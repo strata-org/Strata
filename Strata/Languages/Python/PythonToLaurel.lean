@@ -3,17 +3,18 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.DDM.Elab
-import Strata.DDM.AST
-import Strata.Languages.Laurel.Laurel
-import Strata.Languages.Laurel.LaurelTypes
-import Strata.Languages.Laurel.LaurelToCoreTranslator
-import Strata.Languages.Core.Verifier
-import Strata.Languages.Python.PythonDialect
-import Strata.Languages.Python.PythonLaurelCorePrelude
-import Strata.Languages.Python.Specs.ToLaurel
-import Strata.Languages.Core.Program
+public import Strata.DDM.Elab
+public import Strata.DDM.AST
+public import Strata.Languages.Laurel.Laurel
+public import Strata.Languages.Laurel.LaurelTypes
+public import Strata.Languages.Laurel.LaurelToCoreTranslator
+public import Strata.Languages.Core.Verifier
+public import Strata.Languages.Python.PythonDialect
+public import Strata.Languages.Python.PythonLaurelCorePrelude
+public import Strata.Languages.Python.Specs.ToLaurel
+public import Strata.Languages.Core.Program
 
 /-!
 # Python to Laurel Translation
@@ -37,6 +38,8 @@ This module translates Python AST to Laurel intermediate representation.
 namespace Strata.Python
 
 open Laurel
+
+public section
 
 /-! ## Translation Context
 
@@ -1289,6 +1292,11 @@ def getDatatypeFunctions (decls: List Core.Decl) : List String :=
 
 
 def getPreludeFunctions (prelude: Core.Program) : List String := (getFunctions prelude.decls) ++ (getDatatypeFunctions prelude.decls)
+def getPreludeProcedures (prelude: Core.Program) : List String :=
+  prelude.decls.filterMap (λ decl =>
+    match decl.kind with
+        |.proc => some decl.name.name
+        | _ => none)
 
 /-- Translate Python module to Laurel Program -/
 def pythonToLaurel (prelude: Core.Program)
@@ -1374,13 +1382,19 @@ def pythonToLaurel (prelude: Core.Program)
       isFunctional := false
       }
 
+    /-
+Compute partial Laurel functions and procedures from the Core functions and procedures
+These are needed by the Laurel pipeline to determine how to translate calls.
+In the future, we will replace this Core=>Laurel translation by defining the Python prelude
+in Laurel.
+    -/
     let preludeFunctions : List Procedure := (getPreludeFunctions prelude).map (λ funcname =>
     {
-      name := {text:= funcname} ,
+      name := { text:= funcname},
       inputs := [],
       outputs := [],
       preconditions := [],
-      determinism := .deterministic none, --TODO: need to set reads
+      determinism := .deterministic none,
       decreases := none,
       body := .External
       md := default
@@ -1388,8 +1402,22 @@ def pythonToLaurel (prelude: Core.Program)
       }
     )
 
+    let preludeProcedures : List Procedure := (getPreludeProcedures prelude).map (λ funcname =>
+    {
+      name := { text:= funcname},
+      inputs := [],
+      outputs := [],
+      preconditions := [],
+      determinism := .deterministic none,
+      decreases := none,
+      body := .External
+      md := default
+      isFunctional := false
+      }
+    )
+
     let program : Laurel.Program := {
-      staticProcedures := preludeFunctions ++ procedures ++ [mainProc]
+      staticProcedures := preludeFunctions ++ preludeProcedures ++ procedures ++ [mainProc]
       staticFields := []
       types := compositeTypes.map TypeDefinition.Composite
       constants := []
@@ -1400,4 +1428,5 @@ def pythonToLaurel (prelude: Core.Program)
   | _ => throw (.internalError "Expected Module")
 
 
+end -- public section
 end Strata.Python

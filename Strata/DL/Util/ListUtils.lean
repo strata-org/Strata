@@ -5,7 +5,6 @@
 -/
 module
 
-public section
 /-! ## List Properties Utilities
   This file contains miscellaneous utilities for manipulating lists and
   properties on lists.
@@ -17,6 +16,10 @@ def PredDisjoint (P Q : α → Prop) : Prop := ∀ a, P a → Q a → False
 
 /-- Predicate `P` implies predicate `Q` -/
 def PredImplies (P Q : α → Prop) : Prop := ∀ a, P a → Q a
+
+-- These definitions are public because they appear in public structure field types
+-- in downstream modules (e.g., WF.lean).
+public section
 
 /--
   A list with global properties (`π`) and element-wise properties (`πs`). The
@@ -49,12 +52,17 @@ Taken from mathlib4
 https://github.com/leanprover-community/mathlib4/blob/d7a4adb961ed411dbec6ff6857cfc771859ec83f/Mathlib/Data/List/Defs.lean#L131-L137
 https://github.com/leanprover-community/mathlib4/blob/d7a4adb961ed411dbec6ff6857cfc771859ec83f/Mathlib/Data/List/Basic.lean#L1203-L1206
 -/
-def Forall (p : α → Prop) : List α → Prop
+@[expose]
+def Forall {α} (p : α → Prop) : List α → Prop
   | [] => True
   | x :: [] => p x
   | x :: l => p x ∧ Forall p l
 
-@[simp]
+@[simp, grind =]
+theorem List.Forall_nil {α} (p : α → Prop) : Forall p [] ↔ True := by
+  simp [Forall]
+
+@[simp, grind =]
 theorem List.Forall_cons (p : α → Prop) (x : α) : ∀ l : List α, Forall p (x :: l) ↔ p x ∧ Forall p l
   | [] => (and_iff_left_of_imp fun _ ↦ trivial).symm
   | _ :: _ => Iff.rfl
@@ -95,6 +103,8 @@ Taken from https://github.com/leanprover-community/batteries/blob/3613427d66262c
 -/
 def List.Disjoint (l₁ l₂ : List α) : Prop :=
   ∀ ⦃a⦄, a ∈ l₁ → a ∈ l₂ → False
+
+end -- public section
 
 theorem List.removeAll_Sublist [BEq α] {xs ys : List α}:
   (xs.removeAll ys).Sublist xs := by
@@ -482,4 +492,3 @@ theorem List.Forall_flatMap :
     intros Hfa
     have Hfa := List.Forall_append.mp Hfa
     exact ⟨Hfa.1, ih Hfa.2⟩
-end

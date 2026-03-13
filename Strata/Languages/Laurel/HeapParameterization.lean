@@ -3,12 +3,13 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.Languages.Laurel.Laurel
-import Strata.Languages.Laurel.LaurelFormat
-import Strata.Languages.Laurel.LaurelTypes
-import Strata.Languages.Laurel.HeapParameterizationConstants
-import Strata.Util.Tactics
+public import Strata.Languages.Laurel.Laurel
+public import Strata.Languages.Laurel.LaurelFormat
+public import Strata.Languages.Laurel.LaurelTypes
+public import Strata.Languages.Laurel.HeapParameterizationConstants
+public import Strata.Util.Tactics
 
 /-
 Heap Parameterization Pass
@@ -38,6 +39,8 @@ primitive type (BoxInt, BoxBool, BoxFloat64, BoxComposite). Composite is a type 
 The analysis is transitive: if procedure A calls procedure B, and B reads/writes the heap,
 then A is also considered to read/write the heap.
 -/
+
+public section
 
 namespace Strata.Laurel
 
@@ -153,7 +156,7 @@ structure TransformState where
   heapWriters : List Identifier
   freshCounter : Nat := 0  -- Counter for generating fresh variable names
 
-abbrev TransformM := StateM TransformState
+@[expose] abbrev TransformM := StateM TransformState
 
 /-- Get the Box destructor name for a given Laurel HighType -/
 def boxDestructorName (ty : HighType) : Identifier :=
@@ -440,3 +443,5 @@ def heapParameterization (model: SemanticModel) (program : Program) : Program :=
     types := fieldDatatype :: heapConstants.types ++ types' }
 
 end Strata.Laurel
+
+end -- public section

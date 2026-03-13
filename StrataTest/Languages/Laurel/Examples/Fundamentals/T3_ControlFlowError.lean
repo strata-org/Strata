@@ -16,9 +16,9 @@ def program := r"
 function assertAndAssumeInFunctions(a: int) returns (r: int)
 {
   assert 2 == 3;
-//^^^^^^^^^^^^^^ error: asserts are not YET supported in functions or contracts
+//^^^^^^^^^^^^^ error: asserts are not YET supported in functions or contracts
   assume true;
-//^^^^^^^^^^^^ error: assumes are not YET supported in functions or contracts
+//^^^^^^^^^^^ error: assumes are not YET supported in functions or contracts
   a
 };
 
@@ -26,24 +26,24 @@ function assertAndAssumeInFunctions(a: int) returns (r: int)
 // because Core expressions do not support let bindings
 function letsInFunction() returns (r: int) {
   var x: int := 0;
-//^^^^^^^^^^^^^^^^ error: local variables in functions are not YET supported
+//^^^^^^^^^^^^^^^ error: local variables in functions are not YET supported
   var y: int := x + 1;
-//^^^^^^^^^^^^^^^^^^^^ error: local variables in functions are not YET supported
+//^^^^^^^^^^^^^^^^^^^ error: local variables in functions are not YET supported
   var z: int := y + 1;
-//^^^^^^^^^^^^^^^^^^^^ error: local variables in functions are not YET supported
+//^^^^^^^^^^^^^^^^^^^ error: local variables in functions are not YET supported
   z
 };
 
 function localVariableWithoutInitializer(): int {
   var x: int;
-//^^^^^^^^^^^ error: local variables in functions must have initializers
+//^^^^^^^^^^ error: local variables in functions must have initializers
   3
 };
 
 function deadCodeAfterIfElse(x: int) returns (r: int) {
-  if (x > 0) { return 1; } else { return 2; }
-//^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: if-then-else only supported as the last statement in a block
-  return 3;
+  if (x > 0) { return 1 } else { return 2 };
+//^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: if-then-else only supported as the last statement in a block
+  return 3
 };
 "
 

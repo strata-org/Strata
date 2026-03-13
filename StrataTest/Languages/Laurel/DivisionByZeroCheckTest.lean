@@ -23,13 +23,13 @@ procedure safeDivision() {
   var x: int := 10;
   var y: int := 2;
   var z: int := x / y;
-  assert z == 5;
+  assert z == 5
 };
 
 // Error ranges are too wide because Core does not use expression locations
 procedure unsafeDivision(x: int) {
-  var z: int := 10 / x;
-//^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
+  var z: int := 10 / x
+//^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
 // Error ranges are too wide because Core does not use expression locations
 };
 
@@ -41,12 +41,12 @@ function pureDiv(x: int, y: int): int
 
 procedure callPureDivSafe() {
   var z: int := pureDiv(10, 2);
-  assert z == 5;
+  assert z == 5
 };
 
 procedure callPureDivUnsafe(x: int) {
-  var z: int := pureDiv(10, x);
-//^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
+  var z: int := pureDiv(10, x)
+//^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
 // Error ranges are too wide because Core does not use expression locations
 };
 "

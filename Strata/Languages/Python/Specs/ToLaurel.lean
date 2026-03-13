@@ -3,11 +3,12 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.Languages.Laurel.Laurel
-import Strata.Languages.Python.Specs.Decls
-import Strata.Languages.Python.Specs.PySpecM
-import Strata.Util.DecideProp
+public import Strata.Languages.Laurel.Laurel
+public import Strata.Languages.Python.Specs.Decls
+public import Strata.Languages.Python.Specs.PySpecM
+public import Strata.Util.DecideProp
 
 /-!
 # PySpec to Laurel Translation
@@ -27,6 +28,8 @@ converts those signatures into Laurel programs that can be verified.
 
 namespace Strata.Python.Specs.ToLaurel
 
+public section
+
 open Strata.Laurel
 open Strata.Python.Specs (SpecError)
 
@@ -38,10 +41,10 @@ argument value to the return type (`PythonIdent`).
 
 N.B. Current limitations: dispatch is always on the first positional argument,
 and only string literal values are extracted. -/
-abbrev FunctionOverloads := Std.HashMap String PythonIdent
+@[expose] abbrev FunctionOverloads := Std.HashMap String PythonIdent
 
 /-- Dispatch table: function name → its overloads. -/
-abbrev OverloadTable := Std.HashMap String FunctionOverloads
+@[expose] abbrev OverloadTable := Std.HashMap String FunctionOverloads
 
 /-! ## ToLaurelM Monad -/
 
@@ -57,7 +60,7 @@ structure ToLaurelState where
   overloads : OverloadTable := {}
 
 /-- Monad for PySpec to Laurel translation. -/
-abbrev ToLaurelM := ReaderT ToLaurelContext (StateM ToLaurelState)
+@[expose] abbrev ToLaurelM := ReaderT ToLaurelContext (StateM ToLaurelState)
 
 /-- Report an error during translation. -/
 def reportError (loc : SourceRange) (message : String) : ToLaurelM Unit := do
@@ -396,5 +399,7 @@ def extractOverloads (filepath : System.FilePath) (sigs : Array Signature)
     | _ => pure ()
   let ((), state) := action.run ctx |>.run {}
   (state.overloads, state.errors)
+
+end
 
 end Strata.Python.Specs.ToLaurel

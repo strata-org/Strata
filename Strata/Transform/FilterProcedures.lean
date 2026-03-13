@@ -3,10 +3,13 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.Transform.CoreTransform
+public import Strata.Transform.CoreTransform
 
 /-! # Erase procedures satisfying specific criteria -/
+
+public section
 
 namespace Core
 namespace FilterProcedures
@@ -51,3 +54,5 @@ def run (prog : Program) (targetProcs : List String) :
 
 end FilterProcedures
 end Core
+
+end -- public section
