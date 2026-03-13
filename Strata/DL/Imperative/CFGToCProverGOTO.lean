@@ -29,9 +29,12 @@ of any particular backend.
 The following features are not yet supported via the CFG path, and would need
 to be addressed before it can fully replace the direct path:
 
-- **Source locations on control flow**: `StructuredToUnstructured` discards
-  `MetaData` from `ite`, `loop`, `block`, and `exit` statements, so transfer
-  commands in the CFG carry no source location information.
+- **Source locations on control flow**: `DetTransferCmd` already carries a
+  `MetaData` field, but `StructuredToUnstructured.stmtsToBlocks` currently
+  passes `MetaData.empty` when constructing transfer commands (the metadata
+  from `ite`/`loop`/`block`/`exit` statements is discarded as `_md`).
+  Once `stmtsToBlocks` propagates the metadata, this module will pick it up
+  automatically via `metadataToSourceLoc`.
 - **Loop contracts**: The direct path emits `#spec_loop_invariant` and
   `#spec_decreases` as named sub-expressions on the backward-edge GOTO
   instruction (recognized by CBMC's DFCC). In the CFG, invariants are lowered
@@ -54,6 +57,7 @@ open Std (Format format)
 /-- Translate a deterministic CFG to CProverGOTO instructions.
 
     The translation processes blocks in the order they appear in `cfg.blocks`.
+    The entry block must appear first; the function returns an error otherwise.
     For each block:
     1. Record the current location number as the block's entry point
     2. Translate each command using `Cmd.toGotoInstructions`
@@ -70,6 +74,15 @@ def detCFGToGotoTransform {P} [G : ToGoto P] [BEq P.Ident]
     (loc : Nat := 0)
     (sourceText : Option String := none)
     : Except Format (GotoTransform P.TyEnv) := do
+  -- Verify the entry block is listed first so that GOTO execution starts at
+  -- the right location. The caller (e.g., CoreToGOTOPipeline) relies on the
+  -- first instruction being the entry point.
+  match cfg.blocks with
+  | (firstLabel, _) :: _ =>
+    if firstLabel != cfg.entry then
+      throw f!"[detCFGToGotoTransform] Entry label '{cfg.entry}' does not match \
+               first block label '{firstLabel}'. The entry block must be listed first."
+  | [] => pure ()
   -- First pass: emit instructions and build label→locationNum map
   let mut trans : GotoTransform P.TyEnv :=
     { instructions := #[], nextLoc := loc, T := T, sourceText := sourceText }
@@ -80,12 +93,12 @@ def detCFGToGotoTransform {P} [G : ToGoto P] [BEq P.Ident]
     -- Record this block's entry location
     labelMap := (label, trans.nextLoc) :: labelMap
     -- Emit a LOCATION marker for the block
-    -- TODO(source-locations): Once `DetTransferCmd` carries `MetaData`, extract
-    -- a real `SourceLocation` here via `metadataToSourceLoc` (see
-    -- `Stmt.toGotoInstructions` in ToCProverGOTO.lean for the pattern).
-    -- Prerequisite: `StructuredToUnstructured.stmtsToBlocks` must propagate
-    -- the `MetaData` from `ite`/`loop`/`block`/`exit` into the transfer
-    -- commands it creates (currently discarded as `_md`).
+    -- NOTE(source-locations): `DetTransferCmd` already carries a `MetaData`
+    -- field, but `StructuredToUnstructured.stmtsToBlocks` currently fills it
+    -- with `MetaData.empty`. Once `stmtsToBlocks` propagates the metadata
+    -- from `ite`/`loop`/`block`/`exit` statements, use `metadataToSourceLoc`
+    -- here (see `Stmt.toGotoInstructions` in ToCProverGOTO.lean for the
+    -- pattern).
     let srcLoc : SourceLocation := { SourceLocation.nil with function := functionName }
     trans := emitLabel label srcLoc trans
     -- Translate each command via the existing Cmd-to-GOTO mapping.
@@ -114,11 +127,15 @@ def detCFGToGotoTransform {P} [G : ToGoto P] [BEq P.Ident]
     | .finish _md =>
       -- No instruction needed; the caller appends END_FUNCTION
       pure ()
-  -- Second pass: patch all GOTO targets
-  let patches := pendingPatches.filterMap fun (idx, label) =>
+  -- Second pass: patch all GOTO targets, failing on unresolved labels
+  let mut patchedTrans := trans
+  for (idx, label) in pendingPatches do
     match labelMap.find? (fun (l, _) => l == label) with
-    | some (_, loc) => some (idx, loc)
-    | none => none
-  return patchGotoTargets trans patches
+    | some (_, loc) =>
+      patchedTrans := patchGotoTargets patchedTrans [(idx, loc)]
+    | none =>
+      throw f!"[detCFGToGotoTransform] Unresolved label '{label}' referenced \
+               by GOTO at instruction index {idx}."
+  return patchedTrans
 
 end Imperative

@@ -115,13 +115,13 @@ info: ok: #[LOCATION skip,
   let ans ← Imperative.detCFGToGotoTransform Lambda.TEnv.default "test" cfg
   return format ans.instructions
 
--- Verify GOTOs have resolved targets
+-- Verify all emitted GOTOs have resolved targets
 #eval do
   let cfg := Imperative.stmtsToCFG iteCmds
   let ans ← Imperative.detCFGToGotoTransform Lambda.TEnv.default "test" cfg
   let gotos := ans.instructions.toList.filter (fun (i : CProverGOTO.Instruction) =>
     i.type == CProverGOTO.InstructionType.GOTO)
-  assert! gotos.any (fun (i : CProverGOTO.Instruction) => i.target.isSome)
+  assert! gotos.all (fun (i : CProverGOTO.Instruction) => i.target.isSome)
 
 -------------------------------------------------------------------------------
 
@@ -232,6 +232,31 @@ info: ok: #[LOCATION skip,
   let cfg := Imperative.stmtsToCFG havocCmds
   let ans ← Imperative.detCFGToGotoTransform Lambda.TEnv.default "test" cfg
   return format ans.instructions
+
+-------------------------------------------------------------------------------
+
+/-! ### Test: entry block must be listed first -/
+
+#eval do
+  -- Construct a CFG where entry label doesn't match the first block
+  let cfg : Imperative.CFG String (Imperative.DetBlock String (Imperative.Cmd LExprTP) LExprTP) :=
+    { entry := "second",
+      blocks := [("first", { cmds := [], transfer := .finish }),
+                 ("second", { cmds := [], transfer := .finish })] }
+  match Imperative.detCFGToGotoTransform Lambda.TEnv.default "test" cfg with
+  | .error e => assert! (s!"{e}".splitOn "Entry label").length > 1
+  | .ok _ => assert! false
+
+-------------------------------------------------------------------------------
+
+/-! ### Test: all GOTOs have resolved targets (sequential) -/
+
+#eval do
+  let cfg := Imperative.stmtsToCFG seqCmds
+  let ans ← Imperative.detCFGToGotoTransform Lambda.TEnv.default "test" cfg
+  let gotos := ans.instructions.toList.filter (fun (i : CProverGOTO.Instruction) =>
+    i.type == CProverGOTO.InstructionType.GOTO)
+  assert! gotos.all (fun (i : CProverGOTO.Instruction) => i.target.isSome)
 
 -------------------------------------------------------------------------------
 
