@@ -27,6 +27,8 @@ import Strata.Languages.Laurel.LaurelToCoreTranslator
 import Strata.Languages.Laurel.LaurelSemantics
 import Strata.Languages.Laurel.LaurelDenote
 import Strata.Languages.Laurel.LaurelDenoteBridge
+import Strata.Languages.Laurel.LaurelDenoteComplete
+import Strata.Languages.Laurel.LaurelDenoteMono
 import Strata.Languages.Laurel.LaurelSemanticsProps
 import Strata.Languages.Laurel.LiftImperativeExpressionsCorrectness
 
