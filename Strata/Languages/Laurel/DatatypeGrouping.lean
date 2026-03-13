@@ -14,6 +14,7 @@ import Strata.DDM.Util.Graph.Tarjan
 
 Groups `LDatatype Unit` values by strongly connected components of their direct type
 references, so that mutually recursive datatypes share a single `.data` declaration.
+SCCs are emitted in dependency order: dependencies (leaves) before dependents (roots).
 -/
 
 namespace Strata.Laurel
@@ -40,7 +41,7 @@ def datatypeRefs (dt : DatatypeDefinition) : List String :=
 Group `LDatatype Unit` values by strongly connected components of their direct type references.
 Datatypes in the same SCC (mutually recursive) share a single `.data` declaration.
 Non-recursive datatypes each get their own singleton `.data` declaration.
-The returned groups are in dependency order (leaves first).
+The returned groups are in topological order: leaves (no dependencies) first, roots last.
 -/
 public def groupDatatypes (dts : List DatatypeDefinition)
     (ldts : List (Lambda.LDatatype Unit)) : List (List (Lambda.LDatatype Unit)) :=
@@ -48,27 +49,19 @@ public def groupDatatypes (dts : List DatatypeDefinition)
   if n = 0 then [] else
   let nameToIdx : Std.HashMap String Nat :=
     dts.foldlIdx (fun m i dt => m.insert dt.name.text i) {}
-  -- Build OutGraph: nodesOut returns in-edges, so to traverse successors we store
-  -- edges as (j → i) for each reference i → j (dt[i] references dt[j]).
+  -- dt[i] references dt[j] means i depends on j (j must be declared first).
+  -- tarjan guarantees: if there's a path A→B, B appears after A in the output.
+  -- So we add edge j→i (j has a path to i), ensuring i (the dependent) appears after j (the dependency).
   let edges : List (Nat × Nat) :=
     dts.foldlIdx (fun acc i dt =>
       (datatypeRefs dt).filterMap nameToIdx.get? |>.foldl (fun acc j => (j, i) :: acc) acc) []
   let g := OutGraph.ofEdges! n edges
-  let sccs := OutGraph.tarjan g
-  -- Map indices back to LDatatype Unit values
   let ldtMap : Std.HashMap String (Lambda.LDatatype Unit) :=
     ldts.foldl (fun m ldt => m.insert ldt.name ldt) {}
   let dtsArr := dts.toArray
-  -- Restore original input order: sort each SCC's members by their input index,
-  -- then sort the SCCs themselves by the minimum input index they contain.
-  let groups : List (Nat × List (Lambda.LDatatype Unit)) :=
-    sccs.toList.filterMap fun comp =>
-      let sorted := comp.toList.mergeSort (· < ·)
-      let members := sorted.filterMap fun idx =>
-        dtsArr[idx]? |>.bind fun dt => ldtMap.get? dt.name.text
-      match sorted, members with
-      | minIdx :: _, _ :: _ => some (minIdx.val, members)
-      | _, _ => none
-  (groups.mergeSort (fun a b => a.1 < b.1)).map (·.2)
+  OutGraph.tarjan g |>.toList.filterMap fun comp =>
+    let members := comp.toList.filterMap fun idx =>
+      dtsArr[idx]? |>.bind fun dt => ldtMap.get? dt.name.text
+    if members.isEmpty then none else some members
 
 end Strata.Laurel
