@@ -169,7 +169,7 @@ its type to the type context.
 -/
 def typeBoundVar (C: LContext T) (Env : TEnv T.IDMeta) (ty : Option LMonoTy) :
   Except Format (T.Identifier × LMonoTy × TEnv T.IDMeta) := do
-  let (xv, Env) := liftGenEnv HasGen.genVar Env
+  let (xv, Env) ← liftGenEnv HasGen.genVar Env
   let (xty, Env) ← match ty with
     | some bty =>
       let ans := LMonoTy.instantiateWithCheck bty C Env
@@ -177,7 +177,7 @@ def typeBoundVar (C: LContext T) (Env : TEnv T.IDMeta) (ty : Option LMonoTy) :
       | .error e => .error e
       | .ok (bty, Env) => .ok (bty, Env)
     | none =>
-      let (xtyid, Env) := TEnv.genTyVar Env
+      let (xtyid, Env) ← TEnv.genTyVar Env
       let xty := (LMonoTy.ftvar xtyid)
       .ok (xty, Env)
   let Env := Env.addInNewestContext [(xv, (.forAll [] xty))]
@@ -230,7 +230,7 @@ def resolveAux (C: LContext T) (Env : TEnv T.IDMeta) (e : LExpr T.mono) :
     /- Infer the type of an operation `.op o oty`, where an operation is defined in
       the factory. -/
     let (ty, Env) ← do
-      match C.functions.find? (fun fn => fn.name.name == o.name) with
+      match C.functions.find? (fun fn => fn.name == o) with
       | none =>
         .error f!"{toString $ C.functions.getFunctionNames} Cannot infer the type of this operation: \
                   `{o}`"
@@ -259,7 +259,7 @@ def resolveAux (C: LContext T) (Env : TEnv T.IDMeta) (e : LExpr T.mono) :
     let ty2 := e2t.toLMonoTy
     -- `freshty` is the type variable whose identifier is `fresh_name`. It denotes
     -- the type of `(.app e1 e2)`.
-    let (fresh_name, Env) := TEnv.genTyVar Env
+    let (fresh_name, Env) ← TEnv.genTyVar Env
     let freshty := (.ftvar fresh_name)
     -- `ty1` must be of the form `ty2 → freshty`.
     let constraints := [(ty1, (.tcons "arrow" [ty2, freshty]))]
@@ -344,11 +344,32 @@ def resolveAux (C: LContext T) (Env : TEnv T.IDMeta) (e : LExpr T.mono) :
 
   termination_by e.sizeOf
 
+/-- Check that all context types are closed (no free type variables).
+    This is a precondition for soundness: `resolve_HasType` requires it. -/
+def checkContextTypesClosed (Env : TEnv T.IDMeta) : Bool :=
+  Env.context.types.all (·.all (fun (_, ty) => ty.freeVars == []))
+
 protected def resolve (C: LContext T) (Env : TEnv T.IDMeta) (e : LExpr T.mono) :
     Except Format (LExprT T.mono × TEnv T.IDMeta) := do
+  -- Ensure the context has at least one scope for type bindings.
+  -- This is required by resolveAux for the abs/quant cases, where
+  -- addInNewestContext/eraseFromContext round-trip correctly only
+  -- when there is at least one scope.
+  let Env := if Env.context.types.isEmpty then
+      Env.updateContext { Env.context with types := [[]] }
+    else Env
   let (et, Env) ← resolveAux C Env e
   .ok (LExpr.applySubstT et Env.stateSubstInfo.subst, Env)
 
+/-- Wrapper around `resolve` that checks the closed-context-types precondition
+    required by the soundness theorem `resolve_HasType`. All context types must
+    be closed (no free type variables), as `resolve` assumes, but it has
+    an explicit check. -/
+protected def resolveChecked (C: LContext T) (Env : TEnv T.IDMeta) (e : LExpr T.mono) :
+    Except Format (LExprT T.mono × TEnv T.IDMeta) := do
+  if !checkContextTypesClosed Env then
+    throw f!"resolveChecked: context has non-closed types — all context types must have empty freeVars"
+  LExpr.resolve C Env e
 
 protected def resolves (C: LContext T) (Env : TEnv T.IDMeta) (es : List (LExpr T.mono)) :
     Except Format (List (LExprT T.mono) × TEnv T.IDMeta) := do
