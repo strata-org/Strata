@@ -3,8 +3,8 @@
 List_get_body_calls_List_get_0: ✅ pass
 List_take_body_calls_List_take_0: ✅ pass
 List_drop_body_calls_List_drop_0: ✅ pass
-List_slice_body_calls_List_take_0: ✅ pass
-List_slice_body_calls_List_drop_1: ✅ pass
+List_slice_body_calls_List_drop_0: ✅ pass
+List_slice_body_calls_List_take_1: ✅ pass
 List_set_body_calls_List_set_0: ✅ pass
 DictStrAny_get_body_calls_DictStrAny_get_0: ✅ pass
 Any_get_body_calls_DictStrAny_get_0: ✅ pass
@@ -26,16 +26,16 @@ assert_name_is_foo: ✅ pass (in prelude file)
 assert_opt_name_none_or_str: ✅ pass (in prelude file)
 assert_opt_name_none_or_bar: ✅ pass (in prelude file)
 ensures_maybe_except_none: ✅ pass (in prelude file)
-assert_assert(32)_calls_Any_to_bool_0: ✅ pass (at line 3, col 0)
-assert_assert(32)_calls_PIn_1: ✅ pass (at line 3, col 0)
+assert_assert(32)_calls_PIn_0: ✅ pass (at line 3, col 0)
+assert_assert(32)_calls_Any_to_bool_1: ✅ pass (at line 3, col 0)
 assert(32): ✅ pass (at line 3, col 0)
 set_n_calls_Any_get_0: ✅ pass
 assert_assert(71)_calls_Any_to_bool_0: ✅ pass (at line 7, col 0)
 assert(71): ✅ pass (at line 7, col 0)
-assert_assert(152)_calls_Any_to_bool_0: ✅ pass (at line 13, col 0)
-assert_assert(152)_calls_Any_get_1: ✅ pass (at line 13, col 0)
+assert_assert(152)_calls_Any_get_0: ✅ pass (at line 13, col 0)
+assert_assert(152)_calls_Any_to_bool_1: ✅ pass (at line 13, col 0)
 assert(152): ✅ pass (at line 13, col 0)
-assert_assert(200)_calls_Any_to_bool_0: ✅ pass (at line 17, col 0)
+assert_assert(200)_calls_Any_get_0: ✅ pass (at line 17, col 0)
 assert_assert(200)_calls_Any_get_1: ✅ pass (at line 17, col 0)
-assert_assert(200)_calls_Any_get_2: ✅ pass (at line 17, col 0)
+assert_assert(200)_calls_Any_to_bool_2: ✅ pass (at line 17, col 0)
 assert(200): ✅ pass (at line 17, col 0)
