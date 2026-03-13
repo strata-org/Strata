@@ -501,15 +501,14 @@ def pyAnalyzeLaurelCommand : Command where
           IO.println f!"{combinedLaurelProgram}"
 
         -- Translate Laurel to Core
-        match Strata.Laurel.translate { } combinedLaurelProgram with
+        match Strata.Laurel.translate { emitResolutionErrors := false } combinedLaurelProgram with
         | .error diagnostics =>
           exitFailure s!"Laurel to Core translation failed: {diagnostics}"
         | .ok (coreProgramDecls, modifiesDiags) =>
-          -- Strata.Python.coreOnlyFromRuntimeCorePart was already included through `buildPySpecPrelude`
           let coreProgram: Core.Program := { decls := coreProgramDecls.decls }
-          -- if verbose then
-          --   IO.println "\n==== Core Program ===="
-          --   IO.print (coreProgram, modifiesDiags)
+          if verbose then
+            IO.println "\n==== Core Program ===="
+            IO.print (coreProgram, modifiesDiags)
 
           let programDecls := coreProgram.decls --
           -- Check for name collisions between program and prelude
@@ -661,7 +660,7 @@ def pyTranslateLaurelCommand : Command where
     | .error e =>
       exitFailure s!"Python to Laurel translation failed: {e}"
     | .ok (laurelProgram, _) =>
-      match Strata.Laurel.translate { } laurelProgram with
+      match Strata.Laurel.translate { emitResolutionErrors := false } laurelProgram with
       | .error diagnostics =>
         exitFailure s!"Laurel to Core translation failed: {diagnostics}"
       | .ok coreProgram =>
