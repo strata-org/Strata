@@ -3,15 +3,18 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.DDM.AST
-import Strata.Languages.Laurel.Grammar.LaurelGrammar
-import Strata.Languages.Laurel.Laurel
-import Strata.DL.Imperative.MetaData
-import Strata.Languages.Core.Expressions
+public import Strata.DDM.AST
+public import Strata.Languages.Laurel.Grammar.LaurelGrammar
+public import Strata.Languages.Laurel.Laurel
+public import Strata.DL.Imperative.MetaData
+public import Strata.Languages.Core.Expressions
 
 namespace Strata
 namespace Laurel
+
+public section
 
 open Std (ToFormat Format format)
 open Strata (QualifiedIdent Arg SourceRange Uri FileRange)
@@ -22,7 +25,7 @@ structure TransState where
   uri : Option Uri
   errors : Array String
 
-abbrev TransM := StateT TransState (Except String)
+@[expose] abbrev TransM := StateT TransState (Except String)
 
 def TransM.run (uri : Option Uri) (m : TransM α) : Except String α :=
   match StateT.run m { uri := uri, errors := #[] } with
@@ -32,7 +35,7 @@ def TransM.run (uri : Option Uri) (m : TransM α) : Except String α :=
 def TransM.error (msg : String) : TransM α :=
   throw msg
 
-def SourceRange.toMetaData (uri : Uri) (sr : SourceRange) : Imperative.MetaData Core.Expression :=
+private def SourceRange.toMetaData (uri : Uri) (sr : SourceRange) : Imperative.MetaData Core.Expression :=
   let fileRangeElt := ⟨ Imperative.MetaDataElem.Field.label "fileRange", .fileRange ⟨ uri, sr.start, sr.stop ⟩ ⟩
   #[fileRangeElt]
 
@@ -561,5 +564,7 @@ def parseProgram (prog : Strata.Program) : TransM Laurel.Program := do
     staticFields := []
     types := types
   }
+
+end
 
 end Laurel

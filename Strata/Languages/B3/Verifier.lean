@@ -51,24 +51,21 @@ def createBufferSolver : IO (Solver × IO.Ref IO.FS.Stream.Buffer) := do
   return (solver, buffer)
 
 /-- Convert B3 program to Core and verify via CoreSMT pipeline -/
-def programToSMT (prog : B3AST.Program SourceRange) (solver : Solver) : IO (List Core.ProcedureReport) := do
+def programToSMT (prog : B3AST.Program SourceRange) (solver : Solver) : IO (List Core.CoreSMT.CoreSMTResult) := do
   let convResult := B3.ToCore.convertProgram prog
   if !convResult.errors.isEmpty then
     let msg := convResult.errors.map toString |> String.intercalate "\n"
     throw (IO.userError s!"Conversion errors:\n{msg}")
   let coreStmts := convResult.value
-  -- Initialize solver and wrap in SolverInterface
   let _ ← (Solver.setLogic "ALL").run solver
   let solverInterface ← mkSolverInterfaceFromSolver solver
   let config : Core.CoreSMT.CoreSMTConfig := { accumulateErrors := true }
   let state := Core.CoreSMT.CoreSMTState.init solverInterface config
   let (_, _, results) ← Core.CoreSMT.verify state Core.Env.init coreStmts
-  let reports := results.map Core.vcResultToVerificationReport
-  return [{ procedureName := "main", results := reports }]
+  return results
 
-def programToSMTWithoutDiagnosis (prog : B3AST.Program SourceRange) (solver : Solver) : IO (List (Except String Core.VerificationReport)) := do
-  let reports ← programToSMT prog solver
-  return reports.flatMap (fun r => r.results.map (fun vr => .ok vr))
+def programToSMTWithoutDiagnosis (prog : B3AST.Program SourceRange) (solver : Solver) : IO (List Core.CoreSMT.CoreSMTResult) := do
+  programToSMT prog solver
 
 end Strata.B3.Verifier
 

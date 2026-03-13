@@ -3,11 +3,14 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.Languages.Laurel.Laurel
-import Strata.Languages.Laurel.LaurelTypes
-import Strata.DL.Imperative.MetaData
-import Strata.Util.Tactics
+public import Strata.Languages.Laurel.Laurel
+public import Strata.Languages.Laurel.LaurelTypes
+public import Strata.DL.Imperative.MetaData
+public import Strata.Util.Tactics
+
+public section
 
 namespace Strata.Laurel
 
@@ -194,7 +197,7 @@ def lowerIsType (target : StmtExprMd) (ty : HighTypeMd) (md : Imperative.MetaDat
 structure THState where
   freshCounter : Nat := 0
 
-abbrev THM := StateM THState
+@[expose] abbrev THM := StateM THState
 
 private def freshVarName : THM Identifier := do
   let s ← get
@@ -322,4 +325,6 @@ def typeHierarchyTransform (model: SemanticModel) (program : Program) : Program 
     types := [typeTagDatatype] ++ remainingTypes,
     constants := program.constants ++ typeHierarchyConstants }
 
-end Laurel
+end Strata.Laurel
+
+end -- public section

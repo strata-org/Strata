@@ -3,17 +3,20 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-
-
-import Strata.Languages.Core.Statement
-import Strata.Languages.Core.Program
-import Strata.Languages.Core.Env
-import Strata.Languages.Core.CmdEval
-import Strata.DL.Lambda.LTyUnify
-import Strata.DL.Lambda.LExprT
+public import Strata.Languages.Core.Statement
+import all Strata.Languages.Core.Statement
+public import Strata.Languages.Core.Program
+public import Strata.Languages.Core.Env
+public import Strata.Languages.Core.CmdEval
+public import Strata.DL.Lambda.LTyUnify
+public import Strata.DL.Lambda.LExprT
+import all Strata.DL.Imperative.Stmt
 
 ---------------------------------------------------------------------
+
+public section
 
 namespace Core
 
@@ -365,6 +368,7 @@ def captureFreevars (env : Env) (paramNames : List CoreIdent) (e : Expression.Ex
     | none => body
   ) e
 
+@[expose]
 abbrev StmtsStack := List Statements
 
 def StmtsStack.push (stk : StmtsStack) (ss : Statements) : StmtsStack :=
@@ -610,5 +614,7 @@ def evalOne (E : Env) (old_var_subst : SubstMap) (ss : Statements) : Statements 
 
 end Statement
 end Core
+
+end -- public section
 
 ---------------------------------------------------------------------

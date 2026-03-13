@@ -3,11 +3,14 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.Languages.Laurel.Laurel
-import Strata.Languages.Laurel.LaurelFormat
-import Strata.Languages.Laurel.Resolution
+public import Strata.Languages.Laurel.Laurel
+public import Strata.Languages.Laurel.LaurelFormat
+public import Strata.Languages.Laurel.Resolution
 import Strata.Util.Tactics
+
+public section
 
 /-
 Type computation for Laurel StmtExpr.
@@ -89,3 +92,5 @@ def computeExprType (model : SemanticModel) (expr : StmtExprMd) : HighTypeMd :=
   | .Hole => panic "Not supported"
 
 end Strata.Laurel
+
+end

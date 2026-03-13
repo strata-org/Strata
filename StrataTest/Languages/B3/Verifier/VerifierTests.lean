@@ -131,26 +131,21 @@ def testVerification (prog : Program) : IO Unit := do
     | .ok ast => pure ast
     | .error msg => throw (IO.userError s!"Parse error: {msg}")
   let solver ← Solver.spawn "cvc5" #["--quiet", "--lang", "smt", "--incremental", "--produce-models"]
-  let reports ← B3.Verifier.programToSMT ast solver
-  for report in reports do
-    for result in report.results do
-      let marker := match result.outcome with
-        | .pass => "✓"
-        | .fail => "✗"
-        | .unknown => "✗"
-        | .implementationError _ => "✗"
-
-      let description := match result.outcome with
-        | .pass => "verified"
-        | .fail => "counterexample found"
+  let results ← B3.Verifier.programToSMT ast solver
+  for result in results do
+    let marker := if result.valResult == .unsat then "✓"
+      else "✗"
+    let description := if result.valResult == .unsat then "verified"
+      else if result.error.isSome then s!"error: {result.error.get!}"
+      else "counterexample found"
         | .unknown => "unknown"
         | .implementationError msg => s!"error: {msg}"
 
       IO.println s!"{result.label}: {marker} {description}"
-      if result.outcome != .pass then
+      if result.valResult != .unsat || result.error.isSome then
         -- Show the statement (obligation expression converted to B3)
-        match result.obligation with
-        | some obl =>
+        let obl := result.obligation
+        do
           match B3.FromCore.exprFromCore obl.obligation with
           | .ok b3Stmt =>
             -- Use statement source range from metadata if available, else expression location
@@ -165,13 +160,13 @@ def testVerification (prog : Program) : IO Unit := do
                 | _ => "check"
             IO.println s!"  {stmtLoc}: {stmtKind} {stmtFormatted}"
           | .error _ => pure ()
-        | none => pure ()
+        pure ()
         -- Show diagnosis if available
-        match result.diagnosis with
+        match result.diagnosisInfo with
         | some diag =>
           -- Show full obligation as first diagnosis line
-          let fullFormatted ← match result.obligation with
-          | some obl =>
+          let fullFormatted ← let obl := result.obligation
+          do
             match B3.FromCore.exprFromCore obl.obligation with
             | .ok b3Full =>
               let fullLoc := formatExpressionLocation prog b3Full
@@ -210,7 +205,7 @@ def testVerification (prog : Program) : IO Unit := do
                       | .error _ => IO.println s!"       <assumption>"
               | .error _ =>
                 IO.println s!"  └─ {diagnosisPrefix} <expression>"
-        | none => pure ()
+        pure ()
 
 ---------------------------------------------------------------------
 -- Example from Verifier.lean Documentation

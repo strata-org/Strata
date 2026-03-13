@@ -36,11 +36,7 @@ def testSMTGeneration (prog : Program) : IO Unit := do
   let results ← programToSMTWithoutDiagnosis ast solver
 
   -- Collect and print conversion errors first (strip location info for stable tests)
-  let errors := results.filterMap (fun r =>
-    match r with
-    | .error msg => some msg
-    | .ok _ => none
-  )
+  let errors := results.filterMap (fun r => r.error)
   for err in errors do
     -- Strip location information (anything between "at {" and "}: ") for stable tests
     let cleanErr := err.splitOn "at {" |>.head!

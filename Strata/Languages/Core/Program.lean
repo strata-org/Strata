@@ -3,15 +3,16 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-
-
-import Strata.Languages.Core.Procedure
-import Strata.Languages.Core.Function
-import Strata.Languages.Core.TypeDecl
-import Strata.Languages.Core.Axiom
+public import Strata.Languages.Core.Procedure
+public import Strata.Languages.Core.Function
+public import Strata.Languages.Core.TypeDecl
+public import Strata.Languages.Core.Axiom
 
 ---------------------------------------------------------------------
+
+public section
 
 namespace Core
 
@@ -82,7 +83,7 @@ def Decl.name (d : Decl) : Expression.Ident :=
   | .func f _       => f.name
 
 /-- Get all names from a declaration. For mutual datatypes, returns all datatype names. -/
-def Decl.names (d : Decl) : List Expression.Ident :=
+@[expose] def Decl.names (d : Decl) : List Expression.Ident :=
   match d with
   | .type t _ => t.names
   | _ => [d.name]
@@ -157,12 +158,13 @@ instance : ToFormat Decl where
 def Decl.formatWithMetaData (decl : Decl) : Format :=
   f!"{decl.metadata}{decl}"
 
-abbrev Decls := List Decl
+@[expose] abbrev Decls := List Decl
 
 /-- A Core.Program -/
 structure Program where
   { decls : Decls }
 
+@[expose]
 def Program.init : Program :=
   { decls := [] }
 
@@ -181,6 +183,7 @@ def Program.formatWithMetaData  (p : Program) : Format :=
 
 ---------------------------------------------------------------------
 
+@[expose]
 def Program.find? (P : Program) (k : DeclKind) (x : Expression.Ident) : Option Decl :=
   go x P.decls
   where go x decls :=
@@ -225,6 +228,7 @@ def Program.getInit? (P: Program) (x : Expression.Ident) : Option Expression.Exp
   let init ← var.snd.snd
   return init
 
+@[expose]
 def Program.getNames (P: Program) : List Expression.Ident :=
   go P.decls
   where go decls := decls.flatMap Decl.names
@@ -244,6 +248,7 @@ def Program.Function.find? (P : Program) (x : Expression.Ident)
 
 -- accessor methods based on find?
 
+@[expose]
 def Program.getVarTy? (P: Program) (x : Expression.Ident) : Option Expression.Ty := do
   match H: (P.find? .var x) with
   | none => none
@@ -328,6 +333,8 @@ def Program.Procedure.findP? (P : Program) (x : Expression.Ident)
     | none => none
   | none => none
 
+end Core
+
 ---------------------------------------------------------------------
 
-end Core
+end -- public section

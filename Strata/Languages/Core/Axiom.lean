@@ -3,15 +3,16 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
 
 
-
-import Strata.Languages.Core.Statement
-import Strata.DL.Lambda.LTy
-import Strata.DL.Lambda.LExpr
+public import Strata.Languages.Core.Statement
+public import Strata.DL.Lambda.LTy
+public import Strata.DL.Lambda.LExpr
 
 namespace Core
+public section
 ---------------------------------------------------------------------
 
 open Std (ToFormat Format format)
@@ -42,4 +43,5 @@ def Axiom.eraseTypes (a : Axiom) : Axiom :=
 instance : ToFormat Axiom where
   format a := f!"axiom {a.name}: {a.e};"
 
+end
 ---------------------------------------------------------------------

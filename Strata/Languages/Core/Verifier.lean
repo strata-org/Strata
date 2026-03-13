@@ -3,16 +3,16 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.Languages.Core.DDMTransform.Translate
-import Strata.Languages.Core.DDMTransform.ASTtoCST
-import Strata.Languages.Core.Options
-import Strata.Languages.Core.CallGraph
-import Strata.Languages.Core.SMTEncoder
-import Strata.Languages.Core.DiagnosisTypes
-import Strata.DL.Imperative.MetaData
-import Strata.DL.Imperative.SMTUtils
-import Strata.DDM.AST
+public import Strata.Languages.Core.DDMTransform.Translate
+public import Strata.Languages.Core.DDMTransform.ASTtoCST
+public import Strata.Languages.Core.Options
+public import Strata.Languages.Core.CallGraph
+public import Strata.Languages.Core.SMTEncoder
+public import Strata.DL.Imperative.MetaData
+public import Strata.DL.Imperative.SMTUtils
+public import Strata.DDM.AST
 import Strata.Transform.CallElim
 import Strata.Transform.FilterProcedures
 import Strata.Transform.PrecondElim
@@ -23,6 +23,8 @@ namespace Strata.SMT.Encoder
 
 open Strata.SMT.Encoder
 open Strata
+
+public section
 
 /-- Encode a verification condition into SMT-LIB format.
 
@@ -99,6 +101,7 @@ def encodeCore (ctx : Core.SMT.Context) (prelude : SolverM Unit)
 
   return (ids, estate)
 
+end -- public section
 end Strata.SMT.Encoder
 
 ---------------------------------------------------------------------
@@ -107,6 +110,8 @@ namespace Core.SMT
 open Std (ToFormat Format format)
 open Lambda Strata.SMT
 
+public section
+
 private def typedVarToSMTFn (ctx : SMT.Context) (id : Core.Expression.Ident)
   (ty : Core.Expression.Ty) := do
     -- Type of identifier has to be monotye
@@ -114,7 +119,7 @@ private def typedVarToSMTFn (ctx : SMT.Context) (id : Core.Expression.Ident)
     let (ty', _) ← LMonoTy.toSMTType Env.init mty ctx
     return (id.name, ty')
 
-abbrev Result := Imperative.SMT.Result (Core.Expression.Ident)
+@[expose] abbrev Result := Imperative.SMT.Result (Core.Expression.Ident)
 
 def getSolverPrelude : String → SolverM Unit
 | "z3" => do
@@ -169,6 +174,7 @@ def dischargeObligation
     solverFlags (options.verbose > .normal)
     satisfiabilityCheck validityCheck
 
+end -- public section
 end Core.SMT
 ---------------------------------------------------------------------
 
@@ -176,6 +182,8 @@ namespace Core
 open Imperative Lambda Strata.SMT
 open Std (ToFormat Format format)
 open Strata
+
+public section
 
 /--
 Analysis outcome of a verification condition based on two SMT queries:
@@ -385,31 +393,12 @@ end VCOutcome
 instance : ToFormat VCOutcome where
   format o := s!"{o.emoji} {o.label}"
 
-/-- Diagnosis information for verification failures -/
-structure DiagnosisInfo where
-  isRefuted : Bool := false
-  diagnosedFailures : List Core.DiagnosedFailure := []
-  statePathCondition : List Core.Expression.Expr := []
-  deriving Inhabited
-
 /--
 A counterexample model with values lifted to LExpr for display purposes.
 This is used for formatting counterexamples in a human-readable way
 using Core's expression formatter and for future use as program metadata.
 -/
-abbrev LExprModel := List (Expression.Ident × LExpr CoreLParams.mono)
-
-/-- Simplified verification report for display and API use -/
-structure VerificationReport where
-  label : String
-  outcome : Except String VCOutcome
-  diagnosis : Option DiagnosisInfo := none
-  obligation : Option (Imperative.ProofObligation Expression) := none
-
-/-- Procedure-level verification report grouping multiple checks -/
-structure ProcedureReport where
-  procedureName : String
-  results : List VerificationReport
+@[expose] abbrev LExprModel := List (Expression.Ident × LExpr CoreLParams.mono)
 
 /-- Format a counterexample value using the Core DDM formatter.
     Renders constructors, applications, and primitives with Core syntax
@@ -428,6 +417,43 @@ def LExprModel.format (cex : LExprModel) : Format :=
 instance : ToFormat LExprModel where
   format := LExprModel.format
 
+/-- Verification result for diagnosis -/
+inductive DiagnosisResultType
+  | refuted
+  | counterexample
+  | unknown
+  deriving Repr, Inhabited
+
+/-- Context for a diagnosed failure -/
+structure DiagnosisContext where
+  pathCondition : List Expression.Expr := []
+  deriving Inhabited
+
+/-- Report for a diagnosed failure -/
+structure DiagnosisReport where
+  result : Except DiagnosisResultType Unit
+  context : DiagnosisContext
+  deriving Inhabited
+
+/-- Result of diagnosing a single sub-expression -/
+structure DiagnosedFailure where
+  expression : Expression.Expr
+  isRefuted : Bool
+  report : DiagnosisReport
+  deriving Inhabited
+
+/-- Full diagnosis result -/
+structure DiagnosisResult where
+  diagnosedFailures : List DiagnosedFailure
+  statePathCondition : List Expression.Expr := []
+  deriving Inhabited
+
+/-- Diagnosis information for verification failures -/
+structure DiagnosisInfo where
+  isRefuted : Bool := false
+  diagnosedFailures : List DiagnosedFailure := []
+  statePathCondition : List Expression.Expr := []
+
 /--
 A collection of all information relevant to a verification condition's
 analysis.
@@ -443,6 +469,18 @@ structure VCResult where
   /-- model with values converted from `SMT.Term` to Core `LExpr`.
       The contents must be consistent with the outcome, if the outcome was a failure. -/
   lexprModel : LExprModel := []
+
+/-- Simplified verification report for display and API use -/
+structure VerificationReport where
+  label : String
+  outcome : Except String VCOutcome
+  diagnosis : Option DiagnosisInfo := none
+  obligation : Option (Imperative.ProofObligation Expression) := none
+
+/-- Procedure-level verification report grouping multiple checks -/
+structure ProcedureReport where
+  procedureName : String
+  results : List VerificationReport
 
 /-- Convert VCResult to VerificationReport -/
 def vcResultToVerificationReport (vcResult : VCResult) : VerificationReport :=
@@ -516,7 +554,7 @@ def VCResult.isUnreachable (vr : VCResult) : Bool :=
   | .ok o => o.unreachable
   | .error _ => false
 
-abbrev VCResults := Array VCResult
+@[expose] abbrev VCResults := Array VCResult
 
 def VCResults.format (rs : VCResults) : Format :=
   let rsf := rs.map (fun r => f!"{Format.line}{r}")
@@ -743,6 +781,7 @@ def verify (program : Program)
                  (List.mapM (fun pE => verifySingleEnv pE options counter tempDir) pEs)
     .ok VCss.toArray.flatten
 
+end -- public section
 end Core
 ---------------------------------------------------------------------
 
@@ -750,6 +789,8 @@ namespace Strata
 
 open Lean.Parser
 open Strata (DiagnosticModel FileRange)
+
+public section
 
 def typeCheck (ictx : InputContext) (env : Program) (options : Core.VerifyOptions := Core.VerifyOptions.default)
     (moreFns : @Lambda.Factory Core.CoreLParams := Lambda.Factory.default) :
@@ -827,6 +868,7 @@ def Core.VCResult.toDiagnostic (files: Map Strata.Uri Lean.FileMap) (vcr : Core.
   let modelOption := toDiagnosticModel vcr
   modelOption.map (fun dm => dm.toDiagnostic files)
 
+end -- public section
 end Strata
 
 ---------------------------------------------------------------------

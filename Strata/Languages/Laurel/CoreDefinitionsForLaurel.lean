@@ -3,13 +3,17 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.DDM.Elab
-import Strata.DDM.AST
-import Strata.Languages.Laurel.Grammar.LaurelGrammar
-import Strata.Languages.Laurel.Grammar.ConcreteToAbstractTreeTranslator
+public import Strata.DDM.Elab
+public import Strata.DDM.AST
+public import Strata.Languages.Laurel.Grammar.LaurelGrammar
+public meta import Strata.Languages.Laurel.Grammar.LaurelGrammar
+public import Strata.Languages.Laurel.Grammar.ConcreteToAbstractTreeTranslator
 
 namespace Strata.Laurel
+
+public section
 
 /--
 Core map operations (`select`, `update`, `const`) expressed in Laurel syntax.
@@ -41,5 +45,7 @@ def coreDefinitionsForLaurel : Program :=
   match TransM.run none (parseProgram coreDefinitionsForLaurelDDM) with
   | .ok program => program
   | .error e => panic! s!"CoreDefinitionsForLaurel parse error: {e}"
+
+end -- public section
 
 end Strata.Laurel

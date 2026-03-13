@@ -78,6 +78,26 @@ def usageMessage : Std.Format :=
   --check-mode <mode>         Check mode: 'deductive' (default, prove correctness), 'bugFinding' (find bugs), or 'bugFindingAssumingCompleteSpec' (find bugs assuming complete preconditions).{Std.Format.line}  \
   --check-level <level>       Check level: 'minimal' (default, simple messages), 'minimalVerbose' (detailed messages, one check), or 'full' (both checks, all outcomes)."
 
+/-- Convert a CoreSMTResult to a Core.VCResult -/
+private def coreSMTResultToVCResult (r : Strata.Core.CoreSMT.CoreSMTResult) : Core.VCResult :=
+  match r.error with
+  | some msg => { obligation := r.obligation, outcome := .error msg }
+  | none =>
+    let satResult : Strata.SMT.Result := match r.satResult with
+      | .sat => .sat ""
+      | .unsat => .unsat
+      | .unknown => .unknown
+    let valResult : Strata.SMT.Result := match r.valResult with
+      | .sat => .sat ""
+      | .unsat => .unsat
+      | .unknown => .unknown
+    let vcOutcome : Core.VCOutcome := {
+      satisfiabilityProperty := satResult
+      validityProperty := valResult
+    }
+    let diagnosis := r.diagnosisInfo.map fun d => Core.DiagnosisInfo.mk d.isRefuted d.diagnosedFailures d.statePathCondition
+    { obligation := r.obligation, outcome := .ok vcOutcome, diagnosis }
+
 def main (args : List String) : IO UInt32 := do
   let parseResult := parseOptions args
   match parseResult with
@@ -117,18 +137,16 @@ def main (args : List String) : IO UInt32 := do
               | Except.error msg => throw (IO.userError s!"Failed to convert to B3 AST: {msg}")
               | Except.ok ast => pure ast
             let solver ← Strata.B3.Verifier.createInteractiveSolver opts.solver
-            let reports ← Strata.B3.Verifier.programToSMT ast solver
-            -- B3 uses a different result format, print directly and return empty array
-            for report in reports do
-              IO.println s!"\nProcedure: {report.procedureName}"
-              for result in report.results do
-                let (marker, desc) := match result.outcome with
-                  | .ok o =>
-                    if o.isPass then ("✓", "verified")
-                    else if o.isAlwaysFalse then ("✗", "counterexample found")
-                    else ("✗", "unknown")
-                  | .error msg => ("✗", s!"error: {msg}")
-                IO.println s!"  {marker} {desc}"
+            let smtResults ← Strata.B3.Verifier.programToSMT ast solver
+            let results := smtResults.map coreSMTResultToVCResult
+            for result in results do
+              let (marker, desc) := match result.outcome with
+                | .ok o =>
+                  if o.isPass then ("✓", "verified")
+                  else if o.isAlwaysFalse then ("✗", "counterexample found")
+                  else ("✗", "unknown")
+                | .error msg => ("✗", s!"error: {msg}")
+              IO.println s!"  {marker} {desc}"
             pure #[]  -- Return empty array since B3 prints directly
           else if opts.incremental then
             -- Interactive (in-memory) CoreSMT verification
@@ -145,8 +163,8 @@ def main (args : List String) : IO UInt32 := do
                     (Core.CoreSMT.removeUnusedVarsStmts p.body) .empty)
                 else none
               | _ => none
-            let (_, _, results) ← Core.CoreSMT.verify state Core.Env.init stmts
-            pure results.toArray
+            let (_, _, smtResults) ← Core.CoreSMT.verify state Core.Env.init stmts
+            pure (smtResults.map coreSMTResultToVCResult).toArray
           else
             verify pgm inputCtx proceduresToVerify opts
         catch e =>

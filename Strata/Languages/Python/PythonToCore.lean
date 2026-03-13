@@ -3,21 +3,25 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.DDM.Elab
-import Strata.DDM.AST
+public import Strata.DDM.Elab
+public import Strata.DDM.AST
 
-import Strata.Languages.Core.DDMTransform.Grammar
+public import Strata.Languages.Core.DDMTransform.Grammar
 
-import Strata.Languages.Core.Core
-import Strata.Languages.Python.PythonDialect
-import Strata.Languages.Python.FunctionSignatures
+public import Strata.Languages.Core.Core
+public import Strata.Languages.Python.PythonDialect
+public import Strata.Languages.Python.FunctionSignatures
 import Strata.Languages.Python.Regex.ReToCore
 import Strata.Languages.Python.PyFactory
 import Strata.Languages.Python.FunctionSignatures
 
 namespace Strata
 open Lambda.LTy.Syntax
+
+public section
+
 -- Some hard-coded things we'll need to fix later:
 
 def clientType : Core.Expression.Ty := .forAll [] (.tcons "Client" [])
@@ -916,4 +920,5 @@ def pythonToCore (signatures : Python.Signatures) (pgm: Strata.Program) (prelude
 
   {decls := globals ++ class_ty_decls ++ func_defs ++ class_defs ++ [.proc (pythonFuncToCore "__main__" [] non_func_blocks none default func_infos)]}
 
+end -- public section
 end Strata

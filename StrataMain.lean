@@ -17,7 +17,8 @@ import Strata.Languages.Laurel.LaurelFormat
 import Strata.Transform.ProcedureInlining
 import Strata.Languages.Python.CorePrelude
 import Strata.Languages.Python.PythonLaurelCorePrelude
-import Strata.Backends.CBMC.GOTO.CoreToCProverGOTO
+import Strata.Backends.CBMC.CollectSymbols
+import Strata.Backends.CBMC.GOTO.CoreToGOTOPipeline
 
 import Strata.SimpleAPI
 import Strata.Languages.Core.DDMTransform.ASTtoCST
@@ -25,6 +26,8 @@ import Strata.Languages.Core.CoreSMT.Verifier
 import Strata.Languages.Core.CoreSMT.State
 import Strata.DL.SMT.SolverInterface
 import Strata.Languages.B3.Verifier
+
+open Strata
 
 open Core (VerifyOptions VerboseMode)
 
@@ -388,6 +391,27 @@ def buildPySpecPrelude (pyspecPaths : Array String) : IO PySpecPrelude := do
   let pyPrelude : Core.Program := { decls := preludeDecls.toList }
   return { corePrelude := pyPrelude, overloads := allOverloads }
 
+/-- Convert a CoreSMTResult to a Core.VCResult -/
+private def coreSMTResultToVCResult (r : Strata.Core.CoreSMT.CoreSMTResult) : Core.VCResult :=
+  match r.error with
+  | some msg => { obligation := r.obligation, outcome := .error msg }
+  | none =>
+    let satResult : Strata.SMT.Result := match r.satResult with
+      | .sat => .sat ""
+      | .unsat => .unsat
+      | .unknown => .unknown
+    let valResult : Strata.SMT.Result := match r.valResult with
+      | .sat => .sat ""
+      | .unsat => .unsat
+      | .unknown => .unknown
+    let vcOutcome : Core.VCOutcome := {
+      satisfiabilityProperty := satResult
+      validityProperty := valResult
+    }
+    -- Convert diagnosis info
+    let diagnosis := r.diagnosisInfo.map fun d => Core.DiagnosisInfo.mk d.isRefuted d.diagnosedFailures d.statePathCondition
+    { obligation := r.obligation, outcome := .ok vcOutcome, diagnosis }
+
 /-- Verify a Core program using the incremental CoreSMT engine.
     Prints per-procedure results with diagnosis details inline. -/
 private def verifyIncremental
@@ -409,9 +433,10 @@ private def verifyIncremental
   let mut smtCtx := Core.SMT.Context.default
   for (procName, block) in procs do
     IO.println s!"procedure {procName}:"
-    let (state', smtCtx', results) ← Strata.Core.CoreSMT.verify state Core.Env.init [block] smtCtx
+    let (state', smtCtx', smtResults) ← Strata.Core.CoreSMT.verify state Core.Env.init [block] smtCtx
     state := state'
     smtCtx := smtCtx'
+    let results := smtResults.map coreSMTResultToVCResult
     for r in results do
       let marker := match r.outcome with
         | .ok o => s!"{o.emoji} {o.label}"

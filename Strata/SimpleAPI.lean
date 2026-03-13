@@ -3,20 +3,25 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
 import Strata.DDM.Elab
 import Strata.DDM.Ion
 import Strata.DDM.Util.ByteArray
-import Strata.Util.IO
+public import Strata.Util.IO
+public import Std.Data.HashSet.Basic
 
 import Strata.DDM.Integration.Java.Gen
-import Strata.Transform.CoreTransform
+public import Strata.Transform.CoreTransform
 import Strata.Transform.ProcedureInlining
 
-import Strata.Languages.Core.Verifier
+public import Strata.Languages.Core.Verifier
+public import Strata.Languages.Core.Program
+public import Strata.Languages.Core.Options
 
 import Strata.Languages.Laurel.Grammar.LaurelGrammar
 import Strata.Languages.Laurel.Grammar.ConcreteToAbstractTreeTranslator
+public import Strata.Languages.Laurel.Laurel
 import Strata.Languages.Laurel.LaurelToCoreTranslator
 
 import Strata.Languages.Python.Python
@@ -57,6 +62,8 @@ It involves several key types:
 -/
 
 namespace Strata
+
+public section
 
 /-! ### File I/O -/
 
@@ -268,3 +275,5 @@ def pySpecs (pythonFile strataDir dialectFile : System.FilePath)
       for w in warnings do
         let _ ← IO.eprintln s!"warning: {w}" |>.toBaseIO
       let _ ← IO.eprintln s!"{warnings.size} warning(s)" |>.toBaseIO
+
+end -- public section

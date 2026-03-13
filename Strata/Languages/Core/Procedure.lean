@@ -3,15 +3,16 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
 
-
-import Strata.DL.Imperative.HasVars
-import Strata.Languages.Core.Statement
+public import Strata.DL.Imperative.HasVars
+public import Strata.Languages.Core.Statement
 
 ---------------------------------------------------------------------
 
 namespace Core
+public section
 
 open Std (ToFormat Format format)
 open Lambda
@@ -398,4 +399,5 @@ instance : HasVarsTrans Expression (List Statement) Procedure where
   allVarsTrans := Statements.allVarsTrans
 
 
+end
 end Core

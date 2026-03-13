@@ -6,7 +6,6 @@
 
 import Strata.Languages.Core.CoreSMT.State
 import Strata.Languages.Core.CoreSMT.ExprTranslator
-import Strata.Languages.Core.DiagnosisTypes
 
 /-!
 # CoreSMT Diagnosis Engine
@@ -21,6 +20,37 @@ namespace Strata.Core.CoreSMT
 open Core
 open Strata.SMT
 open Lambda
+
+/-- Verification result for diagnosis -/
+inductive DiagnosisResultType
+  | refuted
+  | counterexample
+  | unknown
+  deriving Repr, Inhabited
+
+/-- Context for a diagnosed failure -/
+structure DiagnosisContext where
+  pathCondition : List Core.Expression.Expr := []
+  deriving Inhabited
+
+/-- Report for a diagnosed failure -/
+structure DiagnosisReport where
+  result : Except DiagnosisResultType Unit
+  context : DiagnosisContext
+  deriving Inhabited
+
+/-- Result of diagnosing a single sub-expression -/
+structure DiagnosedFailure where
+  expression : Core.Expression.Expr
+  isRefuted : Bool
+  report : DiagnosisReport
+  deriving Inhabited
+
+/-- Full diagnosis result -/
+structure DiagnosisResult where
+  diagnosedFailures : List DiagnosedFailure
+  statePathCondition : List Core.Expression.Expr := []
+  deriving Inhabited
 
 /-- Split a conjunction expression (And operator) into left and right.
     Matches the pattern: `app _ (app _ (op _ "Bool.And" _) lhs) rhs` -/
@@ -73,5 +103,21 @@ partial def diagnoseFailure (state : CoreSMTState) (E : Core.Env)
       let rightResult ← diagnoseFailure state E rhs isReachCheck smtCtx (lhs :: pathCondition)
       state.solver.pop
       return { diagnosedFailures := leftResult.diagnosedFailures ++ rightResult.diagnosedFailures }
+
+/-- Diagnosis information for a single verification check -/
+structure DiagnosisInfo where
+  isRefuted : Bool := false
+  diagnosedFailures : List DiagnosedFailure := []
+  statePathCondition : List Core.Expression.Expr := []
+  deriving Inhabited
+
+/-- CoreSMT verification result with diagnosis.
+    Callers convert this to Core.VCResult at the module boundary. -/
+structure CoreSMTResult where
+  obligation : Imperative.ProofObligation Core.Expression
+  satResult : Strata.SMT.Decision := .unknown
+  valResult : Strata.SMT.Decision := .unknown
+  error : Option String := none
+  diagnosisInfo : Option DiagnosisInfo := none
 
 end Strata.Core.CoreSMT
