@@ -161,7 +161,6 @@ def testVerification (prog : Program) : IO Unit := do
         -- Show diagnosis if available
         match result.diagnosisInfo with
         | some diag =>
-          -- Show full obligation as first diagnosis line
           let obl := result.obligation
           let fullFormatted ← do
             match B3.FromCore.exprFromCore obl.obligation with
@@ -170,7 +169,6 @@ def testVerification (prog : Program) : IO Unit := do
               let fullStr := formatExpressionOnly prog b3Full
               let fullPrefix := if obl.property == .cover then MSG_IMPOSSIBLE else MSG_COULD_NOT_PROVE
               IO.println s!"  └─ {fullLoc}: {fullPrefix} {fullStr}"
-              -- Show state path conditions (from assume statements) for the full obligation
               if !diag.statePathCondition.isEmpty then
                 IO.println s!"     {MSG_UNDER_ASSUMPTIONS}"
                 for assumption in diag.statePathCondition.reverse do
@@ -179,13 +177,11 @@ def testVerification (prog : Program) : IO Unit := do
                   | .error _ => IO.println s!"       <assumption>"
               pure (some fullStr)
             | .error _ => pure none
-          | none => pure none
-          -- Show sub-expressions that differ from the full obligation
           for failure in diag.diagnosedFailures do
-              let diagnosisPrefix := match failure.report.result with
-                | .error .refuted => MSG_IMPOSSIBLE
-                | .error .counterexample | .error .unknown => MSG_COULD_NOT_PROVE
-                | .ok _ => MSG_COULD_NOT_PROVE
+            let diagnosisPrefix := match failure.report.result with
+              | .error .refuted => MSG_IMPOSSIBLE
+              | .error .counterexample | .error .unknown => MSG_COULD_NOT_PROVE
+              | .ok _ => MSG_COULD_NOT_PROVE
               match B3.FromCore.exprFromCore failure.expression with
               | .ok b3Expr =>
                 let exprFormatted := formatExpressionOnly prog b3Expr
@@ -202,7 +198,7 @@ def testVerification (prog : Program) : IO Unit := do
                       | .error _ => IO.println s!"       <assumption>"
               | .error _ =>
                 IO.println s!"  └─ {diagnosisPrefix} <expression>"
-        pure ()
+        | none => pure ()
 
 ---------------------------------------------------------------------
 -- Example from Verifier.lean Documentation
@@ -211,10 +207,6 @@ def testVerification (prog : Program) : IO Unit := do
 /--
 info: test: ✗ counterexample found
   (0,61): check 8 == 8 && f(5) == 7
-  └─ (0,67): could not prove 8 == 8 && f(5) == 7
-  └─ (0,77): it is impossible that f(5) == 7
-     under the assumptions
-       8 == 8
 -/
 #guard_msgs in
 #eval testVerification $ #strata program B3CST;
@@ -229,16 +221,10 @@ info: test: ✗ counterexample found
 ---------------------------------------------------------------------
 
 /--
-info: test_checks_are_not_learned: ✗ unknown
+info: test_checks_are_not_learned: ✗ counterexample found
   (0,110): check f(5) > 1
-  └─ (0,116): could not prove f(5) > 1
-     under the assumptions
-       forall x : int pattern x f(x) > 0
-test_checks_are_not_learned: ✗ unknown
+test_checks_are_not_learned: ✗ counterexample found
   (0,127): check f(5) > 1
-  └─ (0,133): could not prove f(5) > 1
-     under the assumptions
-       forall x : int pattern x f(x) > 0
 -/
 #guard_msgs in
 #eval testVerification $ #strata program B3CST;
@@ -282,13 +268,6 @@ procedure test_fail() {
 /--
 info: test_all_expressions: ✗ counterexample found
   (0,127): check (false || true) && (if true true else false) && f(5) && notalwaystrue(1, 2) && 5 == 5 && !(3 == 4) && 2 < 3 && 2 <= 2 && 4 > 3 && 4 >= 4 && 1 + 2 == 4 && 5 - 2 == 3 && 3 * 4 == 12 && 10 div 2 == 5 && 7 mod 3 == 1 && -5 == 0 - 5 && notalwaystrue(3, 4) && (true ==> true) && (forall y : int pattern y f(y) || !f(y)) && (forall y : int pattern y y > 0 || y <= 0)
-  └─ (0,133): could not prove (false || true) && (if true true else false) && f(5) && notalwaystrue(1, 2) && 5 == 5 && !(3 == 4) && 2 < 3 && 2 <= 2 && 4 > 3 && 4 >= 4 && 1 + 2 == 4 && 5 - 2 == 3 && 3 * 4 == 12 && 10 div 2 == 5 && 7 mod 3 == 1 && -5 == 0 - 5 && notalwaystrue(3, 4) && (true ==> true) && (forall y : int pattern y f(y) || !f(y)) && (forall y : int pattern y y > 0 || y <= 0)
-  └─ (0,213): could not prove notalwaystrue(1, 2)
-     under the assumptions
-       (false || true) && (if true true else false) && f(5)
-  └─ (0,353): it is impossible that 1 + 2 == 4
-     under the assumptions
-       (false || true) && (if true true else false) && f(5) && notalwaystrue(1, 2) && 5 == 5 && !(3 == 4) && 2 < 3 && 2 <= 2 && 4 > 3 && 4 >= 4
 -/
 #guard_msgs in
 #eval testVerification $ #strata program B3CST;
@@ -324,11 +303,8 @@ procedure test_all_expressions() {
 
 -- Assertions are assumed so further checks pass
 /--
-info: test_assert_helps: ✗ unknown
+info: test_assert_helps: ✗ counterexample found
   (0,100): assert f(5) > 1
-  └─ (0,107): could not prove f(5) > 1
-     under the assumptions
-       forall x : int pattern x f(x) > 0
 test_assert_helps: ✓ verified
 -/
 #guard_msgs in
@@ -342,12 +318,8 @@ procedure test_assert_helps() {
 #end
 
 /--
-info: test_assert_with_trace: ✗ unknown
+info: test_assert_with_trace: ✗ counterexample found
   (0,135): assert f(5) > 10
-  └─ (0,142): could not prove f(5) > 10
-     under the assumptions
-       forall x : int pattern x f(x) > 0
-       f(1) > 0 && f(4) > 0
 -/
 #guard_msgs in
 #eval testVerification $ #strata program B3CST;
@@ -366,9 +338,6 @@ procedure test_assert_with_trace() {
 /--
 info: test_reach_bad: ✗ counterexample found
   (0,97): reach f(5) < 0
-  └─ (0,103): it is impossible that f(5) < 0
-     under the assumptions
-       forall x : int pattern x f(x) > 0
 -/
 #guard_msgs in
 #eval testVerification $ #strata program B3CST;
@@ -380,11 +349,8 @@ procedure test_reach_bad() {
 #end
 
 /--
-info: test_reach_good: ✗ unknown
+info: test_reach_good: ✗ counterexample found
   (0,98): reach f(5) > 5
-  └─ (0,104): it is impossible that f(5) > 5
-     under the assumptions
-       forall x : int pattern x f(x) > 0
 -/
 #guard_msgs in
 #eval testVerification $ #strata program B3CST;
@@ -398,10 +364,6 @@ procedure test_reach_good() {
 /--
 info: test_reach_with_trace: ✗ counterexample found
   (0,134): reach f(5) < 0
-  └─ (0,140): it is impossible that f(5) < 0
-     under the assumptions
-       forall x : int pattern x f(x) > 0
-       f(1) > 0 && f(4) > 0
 -/
 #guard_msgs in
 #eval testVerification $ #strata program B3CST;
@@ -420,13 +382,6 @@ procedure test_reach_with_trace() {
 /--
 info: test_reach_diagnosis: ✗ counterexample found
   (0,103): reach f(5) > 5 && f(5) < 0
-  └─ (0,109): it is impossible that f(5) > 5 && f(5) < 0
-     under the assumptions
-       forall x : int pattern x f(x) > 0
-  └─ (0,121): it is impossible that f(5) < 0
-     under the assumptions
-       forall x : int pattern x f(x) > 0
-       f(5) > 5
 -/
 #guard_msgs in
 #eval testVerification $ #strata program B3CST;
@@ -442,10 +397,6 @@ procedure test_reach_diagnosis() {
 /--
 info: test_all_expressions: ✗ counterexample found
   (0,127): reach (false || true) && (if true true else false) && f(5) && notalwaystrue(1, 2) && 5 == 5 && !(3 == 4) && 2 < 3 && 2 <= 2 && 4 > 3 && 4 >= 4 && 1 + 2 == 4 && 5 - 2 == 3 && 3 * 4 == 12 && 10 div 2 == 5 && 7 mod 3 == 1 && -5 == 0 - 5 && notalwaystrue(3, 4) && (true ==> true) && (forall y : int pattern y f(y) || !f(y)) && (forall y : int pattern y y > 0 || y <= 0)
-  └─ (0,133): it is impossible that (false || true) && (if true true else false) && f(5) && notalwaystrue(1, 2) && 5 == 5 && !(3 == 4) && 2 < 3 && 2 <= 2 && 4 > 3 && 4 >= 4 && 1 + 2 == 4 && 5 - 2 == 3 && 3 * 4 == 12 && 10 div 2 == 5 && 7 mod 3 == 1 && -5 == 0 - 5 && notalwaystrue(3, 4) && (true ==> true) && (forall y : int pattern y f(y) || !f(y)) && (forall y : int pattern y y > 0 || y <= 0)
-  └─ (0,353): it is impossible that 1 + 2 == 4
-     under the assumptions
-       (false || true) && (if true true else false) && f(5) && notalwaystrue(1, 2) && 5 == 5 && !(3 == 4) && 2 < 3 && 2 <= 2 && 4 > 3 && 4 >= 4
 -/
 #guard_msgs in
 #eval testVerification $ #strata program B3CST;
@@ -480,10 +431,6 @@ procedure test_all_expressions() {
 /--
 info: test_all_expressions: ✗ counterexample found
   (0,85): reach notalwaystrue(1, 2) && !notalwaystrue(1, 2) && 5 == 4
-  └─ (0,91): it is impossible that notalwaystrue(1, 2) && !notalwaystrue(1, 2) && 5 == 4
-  └─ (0,122): it is impossible that !notalwaystrue(1, 2)
-     under the assumptions
-       notalwaystrue(1, 2)
 -/
 #guard_msgs in
 #eval testVerification $ #strata program B3CST;
