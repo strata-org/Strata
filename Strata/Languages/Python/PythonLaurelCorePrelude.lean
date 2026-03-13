@@ -422,5 +422,7 @@ def coreOnlyFromRuntimeCorePart : List Core.Decl :=
 
 end -- public section
 
+#guard coreOnlyFromRuntimeCorePart.length > 0
+
 end Python
 end Strata
