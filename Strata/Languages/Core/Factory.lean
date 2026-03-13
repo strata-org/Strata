@@ -29,7 +29,7 @@ public section
 def mapTy (keyTy : LMonoTy) (valTy : LMonoTy) : LMonoTy :=
   .tcons "Map" [keyTy, valTy]
 
-@[match_pattern]
+@[expose, match_pattern]
 def seqTy (elemTy : LMonoTy) : LMonoTy :=
   .tcons "Seq" [elemTy]
 
