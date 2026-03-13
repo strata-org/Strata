@@ -36,7 +36,7 @@ def TransM.error (msg : String) : TransM α :=
   throw msg
 
 private def SourceRange.toMetaData (uri : Uri) (sr : SourceRange) : Imperative.MetaData Core.Expression :=
-  let fileRangeElt := ⟨ Imperative.MetaDataElem.Field.label "fileRange", .fileRange ⟨ uri, sr.start, sr.stop ⟩ ⟩
+  let fileRangeElt := ⟨ Imperative.MetaDataElem.Field.label "fileRange", .fileRange ⟨ uri, sr ⟩ ⟩
   #[fileRangeElt]
 
 def getArgMetaData (arg : Arg) : TransM (Imperative.MetaData Core.Expression) := do
