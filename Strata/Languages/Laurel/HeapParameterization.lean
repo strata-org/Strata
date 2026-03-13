@@ -357,8 +357,7 @@ def heapTransformProcedure (model: SemanticModel) (proc : Procedure) : Transform
     let outputs' := heapOutParam :: proc.outputs
 
     -- Preconditions use $heap_in (the input state)
-    let preconditions' ← proc.preconditions.mapM (fun clause => do
-      heapTransformExpr heapInName model clause)
+    let preconditions' ← proc.preconditions.mapM (heapTransformExpr heapInName model)
 
     let bodyValueIsUsed := !proc.outputs.isEmpty
     let body' ← match proc.body with
@@ -394,7 +393,7 @@ def heapTransformProcedure (model: SemanticModel) (proc : Procedure) : Transform
     let heapParam : Parameter := { name := heapName, type := ⟨.THeap, #[]⟩ }
     let inputs' := heapParam :: proc.inputs
 
-    let preconditions' ← proc.preconditions.mapM (heapTransformExpr heapName model ·)
+    let preconditions' ← proc.preconditions.mapM (heapTransformExpr heapName model)
 
     let body' ← match proc.body with
       | .Transparent bodyExpr =>

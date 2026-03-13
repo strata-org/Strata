@@ -419,7 +419,6 @@ private def translateChecks (checks : List StmtExprMd) (labelBase : String)
     let c : Core.Procedure.Check := { expr := checkExpr, md := check.md }
     return (label, c))
 
-
 /--
 Translate Laurel Parameter to Core Signature entry
 -/

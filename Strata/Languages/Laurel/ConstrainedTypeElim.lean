@@ -191,7 +191,8 @@ def elimProc (ptMap : ConstrainedTypeMap) (proc : Procedure) : Procedure :=
   let inputRequires := proc.inputs.filterMap fun p =>
     constraintCallFor ptMap p.type.val p.name p.type.md
   let outputEnsures := if proc.isFunctional then [] else proc.outputs.filterMap fun p =>
-    constraintCallFor ptMap p.type.val p.name p.type.md
+    (constraintCallFor ptMap p.type.val p.name p.type.md).map
+      fun c => ⟨c.val, p.type.md⟩
   let initVars : PredVarMap := proc.inputs.foldl (init := {}) fun s p =>
     if isConstrainedType ptMap p.type.val then s.insert p.name.text p.type.val else s
   let body' := match proc.body with
@@ -210,14 +211,14 @@ def elimProc (ptMap : ConstrainedTypeMap) (proc : Procedure) : Procedure :=
   let resolve := resolveExpr ptMap
   let resolveBody : Body → Body := fun body => match body with
     | .Transparent b => .Transparent (resolve b)
-    | .Opaque ps impl modif => .Opaque (ps.map (resolve ·)) (impl.map resolve) (modif.map resolve)
-    | .Abstract ps => .Abstract (ps.map (resolve ·))
+    | .Opaque ps impl modif => .Opaque (ps.map resolve) (impl.map resolve) (modif.map resolve)
+    | .Abstract ps => .Abstract (ps.map resolve)
     | .External => .External
   { proc with
     body := resolveBody body'
     inputs := proc.inputs.map fun p => { p with type := resolveType ptMap p.type }
     outputs := proc.outputs.map fun p => { p with type := resolveType ptMap p.type }
-    preconditions := (proc.preconditions ++ inputRequires).map (resolve ·) }
+    preconditions := (proc.preconditions ++ inputRequires).map resolve }
 
 private def mkWitnessProc (ptMap : ConstrainedTypeMap) (ct : ConstrainedType) : Procedure :=
   let md := ct.witness.md
