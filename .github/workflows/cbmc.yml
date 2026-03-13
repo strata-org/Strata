@@ -45,22 +45,41 @@ jobs:
               unzip -q "${ARCHIVE_NAME}.zip"
               chmod +x "${ARCHIVE_NAME}/bin/z3"
               echo "$GITHUB_WORKSPACE/${ARCHIVE_NAME}/bin/" >> $GITHUB_PATH
+      - name: Prepare ccache
+        uses: actions/cache@v4
+        with:
+          save-always: true
+          path: .ccache
+          key: cbmc-${{ runner.os }}-${{ runner.arch }}-cbmc-${{ github.sha }}
+          restore-keys: |
+            cbmc-${{ runner.os }}-${{ runner.arch }}-cbmc
       - name: Build CBMC from source (with string support patch)
         shell: bash
         run: |
           sudo apt-get -qq update
-          sudo apt-get -qq install -y cmake ninja-build flex bison
+          sudo apt-get -qq install -y cmake ninja-build flex bison ccache
           git clone --depth 1 --branch cbmc-6.8.0 https://github.com/diffblue/cbmc.git cbmc-src
           cd cbmc-src
           git apply "$GITHUB_WORKSPACE/StrataTest/Languages/Python/cbmc-string-support.patch"
           git apply "$GITHUB_WORKSPACE/StrataTest/Languages/Laurel/cbmc-bounds-check.patch"
           git apply "$GITHUB_WORKSPACE/StrataTest/Backends/CBMC/cbmc-regex-support.patch"
           git apply "$GITHUB_WORKSPACE/StrataTest/Backends/CBMC/cbmc-quantifier-simplify.patch"
+          export CCACHE_BASEDIR=$PWD
+          export CCACHE_DIR=$GITHUB_WORKSPACE/.ccache
           cmake -S . -B build -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
             -DWITH_JBMC=OFF
+          ccache -z --max-size=500M
           ninja -C build cbmc symtab2gb goto-cc goto-instrument
+          ccache -s
           echo "$GITHUB_WORKSPACE/cbmc-src/build/bin/" >> $GITHUB_PATH
+      - name: Restore lake cache
+        uses: actions/cache/restore@v4
+        with:
+          path: .lake
+          key: lake-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}-${{ hashFiles('lake-manifest.json') }}-${{ hashFiles('**/*.st') }}-${{ github.sha }}
+          restore-keys: |
+            lake-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}-${{ hashFiles('lake-manifest.json') }}-${{ hashFiles('**/*.st') }}
       - name: Build Strata
         uses: leanprover/lean-action@v1
         with:
