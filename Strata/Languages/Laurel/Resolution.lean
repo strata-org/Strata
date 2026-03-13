@@ -363,9 +363,9 @@ def resolveStmtExpr (exprMd : StmtExprMd) : ResolveM StmtExprMd := do
   | .Fresh val =>
     let val' ← resolveStmtExpr val
     pure (.Fresh val')
-  | .Assert cond errorMessage =>
+  | .Assert cond =>
     let cond' ← resolveStmtExpr cond
-    pure (.Assert cond' errorMessage)
+    pure (.Assert cond')
   | .Assume cond =>
     let cond' ← resolveStmtExpr cond
     pure (.Assume cond')
@@ -584,7 +584,7 @@ private def collectStmtExpr (map : Std.HashMap Nat AstNode) (expr : StmtExprMd)
   | .Assigned name => collectStmtExpr map name
   | .Old val => collectStmtExpr map val
   | .Fresh val => collectStmtExpr map val
-  | .Assert cond _ => collectStmtExpr map cond
+  | .Assert cond => collectStmtExpr map cond
   | .Assume cond => collectStmtExpr map cond
   | .ProveBy val proof =>
     let map := collectStmtExpr map val

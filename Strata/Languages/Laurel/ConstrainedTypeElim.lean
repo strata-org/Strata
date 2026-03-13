@@ -125,7 +125,7 @@ def resolveExpr (ptMap : ConstrainedTypeMap) : StmtExprMd → StmtExprMd
     ⟨.Assign (ts.attach.map fun ⟨t, _⟩ => resolveExpr ptMap t) (resolveExpr ptMap v), md⟩
   | ⟨.Return (some v), md⟩ => ⟨.Return (some (resolveExpr ptMap v)), md⟩
   | ⟨.Return none, md⟩ => ⟨.Return none, md⟩
-  | ⟨.Assert c msg, md⟩ => ⟨.Assert (resolveExpr ptMap c), md⟩
+  | ⟨.Assert c, md⟩ => ⟨.Assert (resolveExpr ptMap c), md⟩
   | ⟨.Assume c, md⟩ => ⟨.Assume (resolveExpr ptMap c), md⟩
   | e => e
 termination_by e => sizeOf e
@@ -191,8 +191,7 @@ def elimProc (ptMap : ConstrainedTypeMap) (proc : Procedure) : Procedure :=
   let inputRequires := proc.inputs.filterMap fun p =>
     constraintCallFor ptMap p.type.val p.name p.type.md
   let outputEnsures := if proc.isFunctional then [] else proc.outputs.filterMap fun p =>
-    (constraintCallFor ptMap p.type.val p.name p.type.md).map
-      fun c => ⟨c.val, p.type.md⟩
+    constraintCallFor ptMap p.type.val p.name p.type.md
   let initVars : PredVarMap := proc.inputs.foldl (init := {}) fun s p =>
     if isConstrainedType ptMap p.type.val then s.insert p.name.text p.type.val else s
   let body' := match proc.body with
@@ -202,11 +201,11 @@ def elimProc (ptMap : ConstrainedTypeMap) (proc : Procedure) : Procedure :=
     if outputEnsures.isEmpty then .Transparent body
     else
       let retBody := if proc.isFunctional then ⟨.Return (some body), bodyExpr.md⟩ else body
-      .Opaque (outputEnsures.map fun e => { expr := e, errorMessage := none }) (some retBody) []
+      .Opaque outputEnsures (some retBody) []
   | .Opaque postconds impl modif =>
     let impl' := impl.map fun b => wrap ((elimStmt ptMap b).run initVars).1 b.md
-    .Opaque (postconds ++ outputEnsures.map fun e => { expr := e, errorMessage := none }) impl' modif
-  | .Abstract postconds => .Abstract (postconds ++ outputEnsures.map fun e => { expr := e, errorMessage := none })
+    .Opaque (postconds ++ outputEnsures) impl' modif
+  | .Abstract postconds => .Abstract (postconds ++ outputEnsures)
   | .External => .External
   let resolve := resolveExpr ptMap
   let resolveBody : Body → Body := fun body => match body with

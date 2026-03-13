@@ -214,7 +214,7 @@ def translateExpr (expr : StmtExprMd)
       disallowed expr.md "loops are not supported in functions or contracts"
   | .Exit _ => disallowed expr.md "exit is not supported in expression position"
 
-  | .Block (⟨ .Assert _ _, md⟩ :: rest) label => do
+  | .Block (⟨ .Assert _, md⟩ :: rest) label => do
     _ ← disallowed md "asserts are not YET supported in functions or contracts"
     translateExpr ⟨ StmtExpr.Block rest label, md ⟩ boundVars isPureContext
   | .Block (⟨ .Assume _, md⟩ :: rest) label =>
@@ -246,7 +246,7 @@ def translateExpr (expr : StmtExprMd)
   | .Assigned _ => panic "assigned expression not implemented"
   | .Old value => panic "old expression not implemented"
   | .Fresh _ => panic "fresh expression not implemented"
-  | .Assert _ _ => panic "assert expression not implemented"
+  | .Assert _ => panic "assert expression not implemented"
   | .Assume _ => panic "assume expression not implemented"
   | .ProveBy value _ => panic "proveBy expression not implemented"
   | .ContractOf _ _ => panic "contractOf expression not implemented"

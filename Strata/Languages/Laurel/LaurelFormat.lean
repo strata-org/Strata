@@ -146,6 +146,13 @@ end
 def formatParameter (p : Parameter) : Format :=
   format p.name ++ ": " ++ formatHighType p.type
 
+/-- Format a StmtExprMd, appending any error message stored in its metadata. -/
+def formatStmtExprWithMsg (s : StmtExprMd) : Format :=
+  formatStmtExpr s ++
+  match s.md.getErrorMessage with
+  | none => Format.nil
+  | some msg => " errorMessage \"" ++ msg ++ "\""
+
 def formatBody : Body → Format
   | .Transparent body => formatStmtExpr body
   | .Opaque postconds impl modif =>

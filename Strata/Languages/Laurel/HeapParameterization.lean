@@ -83,7 +83,7 @@ def collectExpr (expr : StmtExpr) : StateM AnalysisResult Unit := do
   | .Assigned n => collectExprMd n
   | .Old v => collectExprMd v
   | .Fresh v => collectExprMd v
-  | .Assert c _ => collectExprMd c
+  | .Assert c => collectExprMd c
   | .Assume c => collectExprMd c
   | .ProveBy v p => collectExprMd v; collectExprMd p
   | .ContractOf _ f => collectExprMd f
@@ -314,7 +314,7 @@ where
     | .AsType t ty =>
         let t' ← recurse t valueUsed
         let isCheck := ⟨ .IsType t' ty, md ⟩
-        let assertStmt := ⟨ .Assert isCheck none, md ⟩
+        let assertStmt := ⟨ .Assert isCheck, md ⟩
         return ⟨ .Block [assertStmt, t'] none, md ⟩
     | .IsType t ty => return ⟨ .IsType (← recurse t) ty, md ⟩
     | .Forall p b => return ⟨ .Forall p (← recurse b), md ⟩
@@ -322,7 +322,7 @@ where
     | .Assigned n => return ⟨ .Assigned (← recurse n), md ⟩
     | .Old v => return ⟨ .Old (← recurse v), md ⟩
     | .Fresh v => return ⟨ .Fresh (← recurse v), md ⟩
-    | .Assert c errorMessage => return ⟨ .Assert (← recurse c), md ⟩
+    | .Assert c => return ⟨ .Assert (← recurse c), md ⟩
     | .Assume c => return ⟨ .Assume (← recurse c), md ⟩
     | .ProveBy v p => return ⟨ .ProveBy (← recurse v) (← recurse p), md ⟩
     | .ContractOf ty f => return ⟨ .ContractOf ty (← recurse f), md ⟩
