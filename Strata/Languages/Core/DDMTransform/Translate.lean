@@ -926,6 +926,12 @@ partial def translateExpr (p : Program) (bindings : TransBindings) (arg : Arg) :
           | _ =>
             let args ← translateExprs p bindings argsa.toArray
             return .mkApp () func.opExpr args.toList
+        | .recFuncBlock (func :: _) _md =>
+          match argsa with
+          | [] => return func.opExpr
+          | _ =>
+            let args ← translateExprs p bindings argsa.toArray
+            return .mkApp () func.opExpr args.toList
         | _ => TransM.error s!"translateExpr out-of-range bound variable: {i}"
       else
         TransM.error s!"translateExpr out-of-range bound variable: {i}"
@@ -942,6 +948,8 @@ partial def translateExpr (p : Program) (bindings : TransBindings) (arg : Arg) :
     | .func func _md =>
       -- 0-ary Function
       return (.op () func.name ty?)
+    | .recFuncBlock (func :: _) _md =>
+      return (.op () func.name ty?)
     | _ =>
       TransM.error s!"translateExpr unimplemented fvar decl (no args): {format decl}"
   | .fvar _ i, argsa =>
@@ -950,6 +958,9 @@ partial def translateExpr (p : Program) (bindings : TransBindings) (arg : Arg) :
     let decl := bindings.freeVars[i]!
     match decl with
     | .func func _md =>
+      let args ← translateExprs p bindings argsa.toArray
+      return .mkApp () func.opExpr args.toList
+    | .recFuncBlock (func :: _) _md =>
       let args ← translateExprs p bindings argsa.toArray
       return .mkApp () func.opExpr args.toList
     | _ =>
@@ -1496,14 +1507,17 @@ def translateFunction (status : FnInterp) (p : Program) (bindings : TransBinding
       pure (preconds, some e, #[])
     | .Declaration => pure ([], none, #[])
   let md ← getOpMetaData op
-  let decl := .func { name := fname,
+  let func : Core.Function := {
+                      name := fname,
                       typeArgs := typeArgs.toList,
-                      isRecursive := status matches .RecursiveDefinition,
                       inputs := sig,
                       output := ret,
                       body := body,
                       attr := casesAttr ++ inline?,
-                      preconditions := preconds } md
+                      preconditions := preconds }
+  let decl := match status with
+    | .RecursiveDefinition => .recFuncBlock [{ func with isRecursive := true }] md
+    | _ => .func { func with isRecursive := false } md
   return (decl,
           { bindings with
             boundVars := orig_bbindings,

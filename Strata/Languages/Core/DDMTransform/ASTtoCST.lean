@@ -1049,6 +1049,11 @@ def declToCST {M} [Inhabited M] (decl : Core.Decl) : ToCSTM M (List (Command M))
   | .distinct name es md => do
     let cmd ← distinctToCST name es md
     pure [cmd]
+  | .recFuncBlock funcs md => do
+    -- For now, emit each function individually using funcToCST.
+    -- Part 2 will add proper mutual block CST emission.
+    let cmds ← funcs.mapM (fun f => funcToCST f md)
+    pure cmds
 
 /-- Convert `Core.Program` to a list of CST `Commands` -/
 def programToCST {M} [Inhabited M] (prog : Core.Program)

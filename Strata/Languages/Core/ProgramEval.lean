@@ -87,8 +87,16 @@ def eval (E : Env) : List (Program × Env) :=
       | .ok new_env =>
         let declsE := { declsE with env := new_env,
                                     xdecls := declsE.xdecls ++ [decl] }
-
       go rest declsE
+
+    | .recFuncBlock funcs _ =>
+      let result := funcs.foldlM (fun env func => env.addFactoryFunc func) declsE.env
+      match result with
+      | .error e => [(declsE.xdecls, { declsE.env with error := some (Imperative.EvalError.Misc f!"{e}")})]
+      | .ok new_env =>
+        let declsE := { declsE with env := new_env,
+                                    xdecls := declsE.xdecls ++ [decl] }
+        go rest declsE
 
 
 --------------------------------------------------------------------
