@@ -303,7 +303,7 @@ def isAlwaysFalseIfReachable := alwaysFalseReachabilityUnknown
 def isReachableAndCanBeFalse := canBeFalseAndIsReachable
 
 def label (o : VCOutcome) (property : Imperative.PropertyType)
-    (checkLevel : CheckLevel := .minimal) (checkMode : VerificationMode := .deductive) : String :=
+    (checkLevel : CheckLevel) (checkMode : VerificationMode) : String :=
   -- Unreachable is detected when both checks ran (via fullCheck annotation or full level)
   if o.unreachable then
     if property.passWhenUnreachable then "pass (❗path unreachable)"
@@ -347,7 +347,7 @@ def label (o : VCOutcome) (property : Imperative.PropertyType)
     else "unknown"
 
 def emoji (o : VCOutcome) (property : Imperative.PropertyType)
-    (checkLevel : CheckLevel := .minimal) (checkMode : VerificationMode := .deductive) : String :=
+    (checkLevel : CheckLevel) (checkMode : VerificationMode) : String :=
   -- Unreachable is detected when both checks ran
   if o.unreachable then
     if property.passWhenUnreachable then "✅" else "❌"
