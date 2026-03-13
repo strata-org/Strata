@@ -42,8 +42,11 @@ def initStore (σ : LaurelStore) (x : Identifier) (v : LaurelValue) : Option Lau
   | none => some (fun y => if y == x then some v else σ y)
   | some _ => none
 
+/-- Upper bound on the address range searched by `findSmallestFree` and `allocHeap`. -/
+def heapSearchBound : Nat := 10000
+
 /-- Find the smallest free address in the heap, searching up to `bound` addresses from `n`. -/
-def findSmallestFree (h : LaurelHeap) (n : Nat) (bound : Nat := 10000) : Nat :=
+def findSmallestFree (h : LaurelHeap) (n : Nat) (bound : Nat := heapSearchBound) : Nat :=
   match bound with
   | 0 => n
   | bound + 1 =>
@@ -51,10 +54,13 @@ def findSmallestFree (h : LaurelHeap) (n : Nat) (bound : Nat := 10000) : Nat :=
     | some _ => findSmallestFree h (n + 1) bound
     | none => n
 
-/-- Allocate a new object on the heap with the given type name. -/
+/-- Allocate a new object on the heap with the given type name.
+Returns `none` when the heap is full (all addresses in the search range are occupied). -/
 def allocHeap (h : LaurelHeap) (typeName : Identifier) : Option (Nat × LaurelHeap) :=
   let addr := findSmallestFree h 0
-  some (addr, fun a => if a == addr then some (typeName, fun _ => none) else h a)
+  match h addr with
+  | none => some (addr, fun a => if a == addr then some (typeName, fun _ => none) else h a)
+  | some _ => none
 
 /-- Write a value to a field of a heap object. Returns `none` if the address is not allocated. -/
 def heapFieldWrite' (h : LaurelHeap) (addr : Nat) (field : Identifier) (v : LaurelValue)

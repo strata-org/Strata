@@ -12,6 +12,12 @@ import Strata.Languages.Laurel.LaurelSemanticsProps
 
 Forward (soundness): computable helper returns `some` → inductive relation holds.
 Backward (completeness): inductive relation holds → computable helper returns `some`.
+
+## Assumptions
+
+`heapFieldWrite_complete` relies on `Identifier` (= `String`) having a `BEq` instance
+that agrees with `DecidableEq` (via `beq_iff_eq`). If `Identifier` ever receives a
+non-standard `BEq`, that proof would need updating.
 -/
 
 namespace Strata.Laurel
@@ -99,13 +105,15 @@ private theorem findSmallestFree_offset {h : LaurelHeap} {n addr : Nat} {bound :
 theorem findSmallestFree_spec {h : LaurelHeap} {addr : Nat}
     (hfree : h addr = none)
     (hbelow : ∀ a, a < addr → (h a).isSome)
-    (hbound : addr ≤ 10000 := by omega) :
+    (hbound : addr ≤ heapSearchBound := by simp [heapSearchBound]; omega) :
     findSmallestFree h 0 = addr := by
-  exact findSmallestFree_offset hfree (fun a _ ha => hbelow a ha) (by omega) (by omega)
+  have hb : addr ≤ heapSearchBound := hbound
+  simp [heapSearchBound] at hb
+  exact findSmallestFree_offset hfree (fun a _ ha => hbelow a ha) (by omega) (by simp [heapSearchBound]; omega)
 
 /-! ## findSmallestFree properties -/
 
-private theorem findSmallestFree_finds_free (h : LaurelHeap) (n : Nat) (bound : Nat)
+theorem findSmallestFree_finds_free (h : LaurelHeap) (n : Nat) (bound : Nat)
     (hexists : ∃ k, k ≤ bound ∧ h (n + k) = none) :
     h (findSmallestFree h n bound) = none := by
   induction bound generalizing n with
@@ -126,7 +134,7 @@ private theorem findSmallestFree_finds_free (h : LaurelHeap) (n : Nat) (bound : 
       rw [this]; exact hfree
     next hn => exact hn
 
-private theorem findSmallestFree_below_occupied (h : LaurelHeap) (n : Nat) (bound : Nat) :
+theorem findSmallestFree_below_occupied (h : LaurelHeap) (n : Nat) (bound : Nat) :
     ∀ a, n ≤ a → a < findSmallestFree h n bound → (h a).isSome := by
   induction bound generalizing n with
   | zero => simp [findSmallestFree]; intro a h1 h2; omega
@@ -142,37 +150,33 @@ private theorem findSmallestFree_below_occupied (h : LaurelHeap) (n : Nat) (boun
 /-! ## AllocHeap -/
 
 theorem allocHeap_sound {h : LaurelHeap} {typeName : Identifier}
-    {addr : Nat} {h' : LaurelHeap}
-    (hexists : ∃ k : Nat, k ≤ 10000 ∧ h k = none) :
+    {addr : Nat} {h' : LaurelHeap} :
     allocHeap h typeName = some (addr, h') → AllocHeap h typeName addr h' := by
   intro heq
   simp [allocHeap] at heq
-  obtain ⟨ha, hh⟩ := heq
-  subst ha; subst hh
-  have haddr : h (findSmallestFree h 0 10000) = none := by
-    apply findSmallestFree_finds_free
-    obtain ⟨k, hk, hfree⟩ := hexists
-    exact ⟨k, hk, by simpa using hfree⟩
-  have hmin := findSmallestFree_below_occupied h 0 10000
-  refine .alloc haddr (fun a ha => hmin a (by omega) ha) ?_ ?_
-  · simp
-  · intro a hne; simp [Ne.symm hne]
+  split at heq <;> simp at heq
+  next hfree =>
+    obtain ⟨ha, hh⟩ := heq
+    subst ha; subst hh
+    have hmin := findSmallestFree_below_occupied h 0 heapSearchBound
+    refine .alloc hfree (fun a ha => hmin a (by omega) ha) ?_ ?_
+    · simp
+    · intro a hne; simp [Ne.symm hne]
 
 theorem allocHeap_complete {h h' : LaurelHeap} {typeName : Identifier} {addr : Nat}
-    (hbound : addr ≤ 10000 := by omega) :
+    (hbound : addr ≤ heapSearchBound := by simp [heapSearchBound]; omega) :
     AllocHeap h typeName addr h' → allocHeap h typeName = some (addr, h') := by
   intro halloc
   cases halloc with
   | alloc hfree hmin hnew hrest =>
-    simp [allocHeap]
     have hfsf := findSmallestFree_spec hfree hmin hbound
-    constructor
-    · exact hfsf
-    · funext a
-      by_cases heq : a = addr
-      · subst heq; simp [hfsf]; exact hnew.symm
-      · have : a ≠ findSmallestFree h 0 := by rw [hfsf]; exact heq
-        simp [this]; exact (hrest a (Ne.symm heq)).symm
+    simp only [allocHeap, hfsf, hfree]
+    suffices h' = fun a => if a == addr then some (typeName, fun _ => none) else h a by
+      rw [this]
+    funext a
+    by_cases heq : a = addr
+    · subst heq; simp; exact hnew
+    · simp [beq_iff_eq, heq]; exact (hrest a (Ne.symm heq))
 
 /-! ## HeapFieldWrite -/
 
@@ -198,6 +202,9 @@ theorem heapFieldWrite_complete {h h' : LaurelHeap} {addr : Nat}
     funext a
     by_cases heqa : a = addr
     · subst heqa; simp
+      -- N.B. This `congr` + `beq_iff_eq` step relies on `Identifier` (= `String`) having
+      -- a `BEq` instance that agrees with `DecidableEq`. If `Identifier` ever gets a
+      -- non-standard `BEq`, this proof would need updating.
       rw [hnew]; congr 1; congr 1; funext f; simp [beq_iff_eq]
     · simp [heqa]; exact (hrest a (Ne.symm heqa)).symm
 
