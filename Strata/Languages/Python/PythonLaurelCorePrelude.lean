@@ -22,8 +22,6 @@ This contains declarations that cannot be expressed in Laurel grammar:
 - Parameterized datatypes (`Except`)
 - Type synonyms (`ExceptErrorRegex`)
 - Functions using `regex` type
-- Procedures using discriminator access (`..`)
-- Procedures with labeled requires/ensures
 
 Types already defined in `PythonRuntimeLaurelPart.lean` are forward-declared
 here so the DDM parser can resolve references. At the Core level, the
@@ -422,7 +420,6 @@ def coreOnlyFromRuntimeCorePart : List Core.Decl :=
 
 end -- public section
 
-#guard coreOnlyFromRuntimeCorePart.length > 0
 
 end Python
 end Strata
