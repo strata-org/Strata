@@ -1240,7 +1240,8 @@ def extractFieldsFromInit (ctx : TranslationContext) (initBody : Array (Python.s
     match stmt with
     | .AnnAssign _ (.Attribute _ (.Name _ selfName _) attr _) annotation _ _ =>
       if selfName.val == "self" then
-        let fieldType ← translateType ctx (pyExprToString annotation)
+        -- let fieldType ← translateType ctx (pyExprToString annotation)
+        let fieldType ← pure $ ⟨ .UserDefined "Any", default⟩ -- TODO, don't make all fields Any
         fields := fields ++ [{
           name := attr.val
           type := fieldType

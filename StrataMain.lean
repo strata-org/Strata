@@ -520,7 +520,7 @@ def pyAnalyzeLaurelCommand : Command where
             exitFailure s!"Core name collision between program and prelude: {names}"
           let (preludeDecls, userDecls) := programDecls.span (fun d => !(toString d.name).contains "END_MARKER")
           let coreProgram := {decls :=
-            preludeDecls ++ -- .filter (λ d=> d.name.name != "Box") ++
+            preludeDecls ++
             Strata.Python.coreOnlyFromRuntimeCorePart ++
             userDecls }
           if verbose then
@@ -1186,7 +1186,7 @@ def pyAnalyzeLaurelToGotoCommand : Command where
         exitFailure s!"Laurel to Core translation failed: {diagnostics}"
       | .ok coreProgram =>
         let coreProgram := {
-          decls := prelude.decls ++ coreProgram.fst.decls --.filter (λ d=> d.name.name != "Box")
+          decls := prelude.decls ++ coreProgram.fst.decls
         }
         -- Inline procedure calls (except main) repeatedly until fixpoint
         let mut coreProgram := coreProgram
