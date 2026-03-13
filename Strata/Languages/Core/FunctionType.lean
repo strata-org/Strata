@@ -3,13 +3,14 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-
-
-import Strata.Languages.Core.Function
-import Strata.Languages.Core.Program
+public import Strata.Languages.Core.Function
+public import Strata.Languages.Core.Program
 
 ---------------------------------------------------------------------
+
+public section
 
 namespace Core
 
@@ -100,4 +101,7 @@ def typeCheck (C: Core.Expression.TyContext) (Env : Core.Expression.TyEnv) (decl
 end PureFunc
 
 ---------------------------------------------------------------------
+
 end Core
+
+end -- public section

@@ -3,12 +3,13 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.Languages.Laurel.Laurel
-import Strata.Languages.Laurel.LaurelFormat
-import Strata.Languages.Laurel.LaurelTypes
-import Strata.Languages.Laurel.HeapParameterizationConstants
-import Strata.Util.Tactics
+public import Strata.Languages.Laurel.Laurel
+public import Strata.Languages.Laurel.LaurelFormat
+public import Strata.Languages.Laurel.LaurelTypes
+public import Strata.Languages.Laurel.HeapParameterizationConstants
+public import Strata.Util.Tactics
 
 /-
 Heap Parameterization Pass
@@ -38,6 +39,8 @@ primitive type (BoxInt, BoxBool, BoxFloat64, BoxComposite). Composite is a type 
 The analysis is transitive: if procedure A calls procedure B, and B reads/writes the heap,
 then A is also considered to read/write the heap.
 -/
+
+public section
 
 namespace Strata.Laurel
 
@@ -155,7 +158,7 @@ structure TransformState where
   /-- Box constructors used during transformation, collected for datatype generation -/
   usedBoxConstructors : List DatatypeConstructor := []
 
-abbrev TransformM := StateM TransformState
+@[expose] abbrev TransformM := StateM TransformState
 
 /-- Check whether a UserDefined type name refers to a Datatype (vs Composite) in the model -/
 private def isDatatype (model : SemanticModel) (name : Identifier) : Bool :=
@@ -171,6 +174,7 @@ def boxDestructorName (model : SemanticModel) (ty : HighType) : Identifier :=
   | .TInt => "Box..intVal!"
   | .TBool => "Box..boolVal!"
   | .TFloat64 => "Box..float64Val!"
+  | .TReal => "Box..realVal!"
   | .UserDefined name =>
       if isDatatype model name then s!"Box..{name.text}Val!"
       else "Box..compositeVal!"
@@ -184,6 +188,7 @@ def boxConstructorName (model : SemanticModel) (ty : HighType) : Identifier :=
   | .TInt => "BoxInt"
   | .TBool => "BoxBool"
   | .TFloat64 => "BoxFloat64"
+  | .TReal => "BoxReal"
   | .UserDefined name =>
       if isDatatype model name then s!"Box..{name.text}"
       else "BoxComposite"
@@ -494,3 +499,5 @@ def heapParameterization (model: SemanticModel) (program : Program) : Program :=
     types := fieldDatatype :: boxDatatype :: heapConstants.types ++ types' }
 
 end Strata.Laurel
+
+end -- public section

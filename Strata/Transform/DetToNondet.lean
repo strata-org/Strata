@@ -3,13 +3,16 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.DL.Imperative.Cmd
-import Strata.DL.Imperative.Stmt
-import Strata.DL.Imperative.NondetStmt
-import Strata.Languages.Core.StatementType
+public import Strata.DL.Imperative.Cmd
+public import Strata.DL.Imperative.Stmt
+public import Strata.DL.Imperative.NondetStmt
+public import Strata.Languages.Core.StatementType
 
 /-! # Deterministic-to-Nondeterministic Transformation -/
+
+public section
 
 open Imperative
 mutual
@@ -40,4 +43,6 @@ def BlockToNondetStmt {P : Imperative.PureExpr} [Imperative.HasBool P] [HasNot P
   match ss with
   | [] => (.assume "skip" Imperative.HasBool.tt .empty)
   | s :: ss => .seq (StmtToNondetStmt s) (BlockToNondetStmt ss)
+end
+
 end

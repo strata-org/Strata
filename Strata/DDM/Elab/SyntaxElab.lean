@@ -25,9 +25,8 @@ structure ArgElaborator where
   argLevel : Nat
   -- Index of argument to use for typing context (if specified, must be less than argIndex)
   contextLevel : Option (Fin argLevel) := .none
-  -- Datatype scope: (nameLevel, typeParamsLevel) for recursive datatype definitions
-  -- When set, the datatype name is added to the typing context as a type
-  datatypeScope : Option (Fin argLevel × Fin argLevel) := .none
+  -- Type variable scope: typeParamsLevel — converts .type bindings to .tvar bindings
+  scopeTVar : Option (Fin argLevel) := .none
   -- Self scope: (nameLevel, argsLevel, typeLevel) for recursive function definitions
   -- When set, the function name is added to the typing context as an expression
   scopeSelf : Option (Fin argLevel × Fin argLevel × Fin argLevel) := .none
@@ -66,7 +65,7 @@ private def push (as : ArgElaborators)
     syntaxLevel := sc
     argLevel := argLevel.val
     contextLevel := argDecls.argScopeLevel argLevel
-    datatypeScope := argDecls.argScopeDatatypeLevel argLevel
+    scopeTVar := argDecls.argScopeTVarLevel argLevel
     scopeSelf := argDecls.argScopeSelfLevel argLevel
   }
   have scp : sc < sc + 1 := by grind
@@ -128,7 +127,7 @@ private def mkSyntaxElab! (argDecls : ArgDecls) (stx : SyntaxDef) (opMd : Metada
       syntaxLevel := 0
       argLevel := 0
       contextLevel := argDecls.argScopeLevel ⟨0, h⟩
-      datatypeScope := argDecls.argScopeDatatypeLevel ⟨0, h⟩
+      scopeTVar := argDecls.argScopeTVarLevel ⟨0, h⟩
       scopeSelf := argDecls.argScopeSelfLevel ⟨0, h⟩
     }
     let elabs := #[⟨ae, Nat.zero_lt_one⟩]

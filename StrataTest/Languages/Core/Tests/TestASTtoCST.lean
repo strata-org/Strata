@@ -297,10 +297,8 @@ private def polyRoseTreeHavocPgm : Program :=
 #strata
 program Core;
 
-mutual
-  datatype Forest (a : Type) { FNil(), FCons(head: RoseTree a, tail: Forest a) };
+  datatype Forest (a : Type) { FNil(), FCons(head: RoseTree a, tail: Forest a) }
   datatype RoseTree (a : Type) { Node(val: a, children: Forest a) };
-end;
 
 procedure TestPolyRoseTreeHavoc() returns ()
 spec {
@@ -320,15 +318,13 @@ spec {
 #end
 
 /--
-info: mutual
-   datatype Forest (a : Type) {(
-    (FNil())),
-    (FCons(head : (RoseTree a), tail : (Forest a)))
-  };
-   datatype RoseTree (a : Type) {
-    (Node(val : a, children : (Forest a)))
-  };
-  end;
+info: datatype Forest (a : Type) {(
+  (FNil())),
+  (FCons(head : (RoseTree a), tail : (Forest a)))
+}
+datatype RoseTree (a : Type) {
+  (Node(val : a, children : (Forest a)))
+};
 procedure TestPolyRoseTreeHavoc () returns ()
 spec {
   ensures [TestPolyRoseTreeHavoc_ensures_0]: true;

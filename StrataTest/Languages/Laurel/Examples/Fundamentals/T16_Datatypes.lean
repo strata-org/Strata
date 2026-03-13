@@ -85,6 +85,9 @@ procedure testMutualConstruction() {
   assert EvenList..isECons(even2);
   assert EvenList..head(even2) == 2
 };
+
+datatype RootBeforeLeaf { RootBeforeLeaf(leaf: LeafAfterRoot) }
+datatype LeafAfterRoot { LeafAfterRoot }
 "
 
 #guard_msgs (error, drop all) in

@@ -3,14 +3,17 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.DDM.Elab
-import Strata.DDM.AST
-import Strata.Languages.Core.DDMTransform.Grammar
-import Strata.Languages.Core.Verifier
+public import Strata.DDM.Elab
+public import Strata.DDM.AST
+public import Strata.Languages.Core.DDMTransform.Grammar
+public import Strata.Languages.Core.Verifier
 
 namespace Strata
 namespace Python
+
+public section
 
 def corePrelude :=
 #strata
@@ -340,5 +343,6 @@ datatype PyAnyType () {
 def Core.prelude : Core.Program :=
    Core.getProgram corePrelude |>.fst
 
+end -- public section
 end Python
 end Strata

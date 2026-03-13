@@ -27,6 +27,34 @@ def mapM_off {α β m} [Monad m] (as : Array α) (f : α → m β)
 
 end Array
 
+/-- Stack-safe variant of `Array.mapM_off` for `Ion.InternM` (`StateM SymbolTable`).
+
+The Lean interpreter implements `foldlM` via recursion on the C stack,
+so iterating over large arrays overflows the default 10 MB stack.  This function
+manually threads the `StateM` state so that the recursive call is in
+true tail position — no pending `>>=` continuation remains on the stack.
+
+The safe specification delegates to `Array.mapM_off`; the `@[implemented_by]`
+attribute replaces it with the stack-safe version at runtime. -/
+def Array.mapM_off_intern {α β} (as : Array α) (f : α → Ion.InternM β)
+      (start : Nat := 0) (stop := as.size)
+      (init : Array β := Array.mkEmpty ((min as.size stop) - start)) : Ion.InternM (Array β) :=
+  as.mapM_off f start stop init
+
+private unsafe def Array.mapM_off_intern_impl {α β} (as : Array α) (f : α → Ion.InternM β)
+      (start : Nat := 0) (stop := as.size)
+      (init : Array β := Array.mkEmpty ((min as.size stop) - start)) : Ion.InternM (Array β) :=
+  fun s => go (min as.size stop) start init s
+where
+  go (hi i : Nat) (acc : Array β) (s : Ion.SymbolTable) : Array β × Ion.SymbolTable :=
+    if i < hi then
+      let (v, s') := f (as.uget (USize.ofNat i) lcProof) s
+      go hi (i + 1) (acc.push v) s'
+    else
+      (acc, s)
+
+attribute [implemented_by Array.mapM_off_intern_impl] Array.mapM_off_intern
+
 public section
 namespace Ion.Ion
 
@@ -1502,7 +1530,7 @@ private instance : CachedToIon Program where
   cachedToIon refs pgm :=
     ionScope! Program refs : do
       let hdr := Ion.sexp #[ ionSymbol! "program", .string pgm.dialect ]
-      let l ← pgm.commands.mapM_off (init := #[hdr])
+      let l ← pgm.commands.mapM_off_intern (init := #[hdr])
         fun cmd => cmd.toIon (ionRefEntry! ``ArgF)
       return .list l
 

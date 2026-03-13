@@ -3,20 +3,21 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.Languages.Core.Program
-import Strata.Languages.Core.Verifier
-import Strata.Languages.Core.Statement
-import Strata.Languages.Core.Procedure
-import Strata.Languages.Core.Options
-import Strata.Languages.Laurel.Laurel
-import Strata.Languages.Laurel.LiftImperativeExpressions
+public import Strata.Languages.Core.Program
+public import Strata.Languages.Core.Verifier
+public import Strata.Languages.Core.Statement
+public import Strata.Languages.Core.Procedure
+public import Strata.Languages.Core.Options
+public import Strata.Languages.Laurel.Laurel
+public import Strata.Languages.Laurel.LiftImperativeExpressions
 import Strata.Languages.Laurel.EliminateReturnsInExpression
-import Strata.Languages.Laurel.HeapParameterization
-import Strata.Languages.Laurel.TypeHierarchy
-import Strata.Languages.Laurel.LaurelTypes
-import Strata.Languages.Laurel.ModifiesClauses
-import Strata.Languages.Laurel.CoreDefinitionsForLaurel
+public import Strata.Languages.Laurel.HeapParameterization
+public import Strata.Languages.Laurel.TypeHierarchy
+public import Strata.Languages.Laurel.LaurelTypes
+public import Strata.Languages.Laurel.ModifiesClauses
+public import Strata.Languages.Laurel.CoreDefinitionsForLaurel
 import Strata.Languages.Laurel.DatatypeGrouping
 import Strata.DDM.Util.DecimalRat
 import Strata.DL.Imperative.Stmt
@@ -35,6 +36,8 @@ namespace Strata.Laurel
 open Std (Format ToFormat)
 open Strata
 open Lambda (LMonoTy LTy LExpr)
+
+public section
 
 /-
 Translate Laurel HighType to Core Type
@@ -56,7 +59,7 @@ def translateType (model : SemanticModel) (ty : HighTypeMd) : LMonoTy :=
     | some (.datatypeDefinition dt) => .tcons dt.name.text []
     | _ => .tcons "Composite" [] -- fallback for unresolved refs
   | .TCore s => .tcons s []
-  | .TFloat64 => LMonoTy.real -- Incorrect?
+  | .TFloat64 => dbg_trace "NOT SUPPORTED YET: Float64"; .tcons "Float64IsNotSupportedYet" []
   | .TReal => LMonoTy.real
   | .Top => LMonoTy.bool
   | _ => panic s!"translateType: unsupported type {ToFormat.format ty}"
@@ -72,7 +75,7 @@ def isFieldName (fieldNames : List Identifier) (name : Identifier) : Bool :=
   fieldNames.contains name
 
 /-- Set of names that are translated to Core functions (not procedures) -/
-abbrev FunctionNames := List Identifier
+@[expose] abbrev FunctionNames := List Identifier
 
 /-- State threaded through expression and statement translation -/
 structure TranslateState where
@@ -84,7 +87,7 @@ structure TranslateState where
   model : SemanticModel
 
 /-- The translation monad: state over Id -/
-abbrev TranslateM := StateT TranslateState Id
+@[expose] abbrev TranslateM := StateT TranslateState Id
 
 /-- Emit a diagnostic into the translation state -/
 def emitDiagnostic (d : DiagnosticModel) : TranslateM Unit :=
@@ -153,7 +156,7 @@ def translateExpr (expr : StmtExprMd)
     | .Neg =>
       let re ← translateExpr e boundVars isPureContext
       let isReal := match (computeExprType model e).val with
-        | .TReal | .TFloat64 => true | _ => false
+        | .TReal => true | _ => false
       return .app () (if isReal then realNegOp else intNegOp) re
     | _ => panic! s!"translateExpr: Invalid unary op: {repr op}"
   | .PrimitiveOp op [e1, e2] =>
@@ -162,7 +165,7 @@ def translateExpr (expr : StmtExprMd)
     let binOp (bop : Core.Expression.Expr) : Core.Expression.Expr :=
       LExpr.mkApp () bop [re1, re2]
     let isReal := match (computeExprType model e1).val, (computeExprType model e2).val with
-      | .TFloat64, _ | .TReal, _ | _, .TFloat64 | _, .TReal => true
+      | .TReal, _ | _, .TReal => true
       | _, _ => false
     match op with
     | .Eq => return .eq () re1 re2
@@ -766,4 +769,5 @@ def verifyToDiagnosticModels (program : Program) (options : VerifyOptions := .de
   | .error errors => return errors
   | .ok results => return results.filterMap toDiagnosticModel
 
+end -- public section
 end Laurel

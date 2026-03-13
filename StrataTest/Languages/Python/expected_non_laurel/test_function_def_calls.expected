@@ -1,32 +1,32 @@
 
-datetime_now_ensures_0: ✅ pass (at byte 7134)
+datetime_now_ensures_0: ✅ pass (in prelude)
 
-datetime_utcnow_ensures_0: ✅ pass (at byte 7372)
+datetime_utcnow_ensures_0: ✅ pass (in prelude)
 
-ensures_str_strp_reverse: ✅ pass (at byte 8766)
+ensures_str_strp_reverse: ✅ pass (in prelude)
 
-assert_name_is_foo: ✅ pass (at byte 11081)
+assert_name_is_foo: ✅ pass (in prelude)
 
-assert_opt_name_none_or_str: ✅ pass (at byte 11131)
+assert_opt_name_none_or_str: ✅ pass (in prelude)
 
-assert_opt_name_none_or_bar: ✅ pass (at byte 11278)
+assert_opt_name_none_or_bar: ✅ pass (in prelude)
 
-ensures_maybe_except_none: ✅ pass (at byte 10984)
+ensures_maybe_except_none: ✅ pass (in prelude)
 
-Assertion failed at byte 11081: test_helper_procedure_assert_name_is_foo_3: ❌ fail
+Assertion failed for prelude: test_helper_procedure_assert_name_is_foo_3: ❌ fail
 
-test_helper_procedure_assert_opt_name_none_or_str_4: ✅ pass (at byte 11131)
+test_helper_procedure_assert_opt_name_none_or_str_4: ✅ pass (in prelude)
 
-test_helper_procedure_assert_opt_name_none_or_bar_5: ✅ pass (at byte 11278)
+test_helper_procedure_assert_opt_name_none_or_bar_5: ✅ pass (in prelude)
 
-(Origin_test_helper_procedure_Requires)req_name_is_foo: ✅ pass (at byte 10646)
+(Origin_test_helper_procedure_Requires)req_name_is_foo: ✅ pass (in prelude)
 
-(Origin_test_helper_procedure_Requires)req_opt_name_none_or_str: ✅ pass (at byte 10695)
+(Origin_test_helper_procedure_Requires)req_opt_name_none_or_str: ✅ pass (in prelude)
 
-(Origin_test_helper_procedure_Requires)req_opt_name_none_or_bar: ✅ pass (at byte 10841)
+(Origin_test_helper_procedure_Requires)req_opt_name_none_or_bar: ✅ pass (in prelude)
 
-(Origin_test_helper_procedure_Requires)req_name_is_foo: ✅ pass (at byte 10646)
+(Origin_test_helper_procedure_Requires)req_name_is_foo: ✅ pass (in prelude)
 
-(Origin_test_helper_procedure_Requires)req_opt_name_none_or_str: ✅ pass (at byte 10695)
+(Origin_test_helper_procedure_Requires)req_opt_name_none_or_str: ✅ pass (in prelude)
 
-(Origin_test_helper_procedure_Requires)req_opt_name_none_or_bar: ✅ pass (at byte 10841)
+(Origin_test_helper_procedure_Requires)req_opt_name_none_or_bar: ✅ pass (in prelude)

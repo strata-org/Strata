@@ -3,12 +3,15 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.Languages.Python.Regex.ReParser
-import Strata.Languages.Core.Factory
+public import Strata.Languages.Python.Regex.ReParser
+public import Strata.Languages.Core.Factory
 
 namespace Strata
 namespace Python
+
+public section
 
 -------------------------------------------------------------------------------
 
@@ -46,7 +49,7 @@ inductive MatchMode where
 When `r` is definitely consuming, this function returns `true`.
 Returns `false` otherwise (i.e., when it _may_ not be consuming).
 -/
-def RegexAST.alwaysConsume (r : RegexAST) : Bool :=
+private def RegexAST.alwaysConsume (r : RegexAST) : Bool :=
   match r with
   | .char _ => true
   | .range _ _ => true
@@ -81,11 +84,11 @@ private def RegexAST.anyNode (p : RegexAST → Bool) (r : RegexAST) : Bool :=
   | _             => false
 
 /-- Returns true if `r` contains an `anchor_end` (`$`) node anywhere. -/
-def RegexAST.containsAnchorEnd (r : RegexAST) : Bool :=
+private def RegexAST.containsAnchorEnd (r : RegexAST) : Bool :=
   r.anyNode (· matches .anchor_end)
 
 /-- Returns true if `r` contains an `anchor_start` (`^`) node anywhere. -/
-def RegexAST.containsAnchorStart (r : RegexAST) : Bool :=
+private def RegexAST.containsAnchorStart (r : RegexAST) : Bool :=
   r.anyNode (· matches .anchor_start)
 
 /--
@@ -93,7 +96,7 @@ Returns true if `r` contains any character-matching node (char, range, anychar,
 complement). Used to inform anchor interaction: when false, the regex can only
 produce empty or none, regardless of the anchor context.
 -/
-def RegexAST.hasNonAnchorContent (r : RegexAST) : Bool :=
+private def RegexAST.hasNonAnchorContent (r : RegexAST) : Bool :=
   r.anyNode (fun
     | .char _       => true
     | .range _ _    => true
@@ -105,13 +108,13 @@ def RegexAST.hasNonAnchorContent (r : RegexAST) : Bool :=
 /--
 Empty regex pattern; matches an empty string.
 -/
-def Core.emptyRegex : Core.Expression.Expr :=
+private def Core.emptyRegex : Core.Expression.Expr :=
   mkApp () (.op () strToRegexFunc.name none) [strConst () ""]
 
 /--
 Unmatchable regex pattern.
 -/
-def Core.unmatchableRegex : Core.Expression.Expr :=
+private def Core.unmatchableRegex : Core.Expression.Expr :=
   mkApp () (.op () reNoneFunc.name none) []
 
 -- Core regex expression builders.
@@ -255,7 +258,7 @@ anchor in `Y` should not fire. However, if `X` is consuming, its contribution is
 never empty, so `Y`'s position relative to the string boundary is statically
 determined at translation time and the flag can be forwarded.
 -/
-def RegexAST.toCore (r : RegexAST) (atStart atEnd : Bool) :
+private def RegexAST.toCore (r : RegexAST) (atStart atEnd : Bool) :
     Core.Expression.Expr :=
   match r with
   | .anchor_start =>
@@ -330,4 +333,5 @@ def pythonRegexToCore (pyRegex : String) (mode : MatchMode := .fullmatch) :
                        (mkReConcat dotStar (mkReConcat coreFF dotStar))))
     (result, none)
 
+end
 -------------------------------------------------------------------------------

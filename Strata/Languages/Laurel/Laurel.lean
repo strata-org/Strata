@@ -3,18 +3,21 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.DL.Imperative.MetaData
-import Strata.Languages.Core.Expressions
-import Strata.Languages.Core.Procedure
-import Strata.DDM.Util.Decimal
+public import Strata.DL.Imperative.MetaData
+public import Strata.Languages.Core.Expressions
+public import Strata.Languages.Core.Procedure
 import Strata.Util.Tactics
+import Strata.DDM.Util.Decimal
 
 /-
 Documentation for Laurel can be found in docs/verso/LaurelDoc.lean
 -/
 namespace Strata
 namespace Laurel
+
+public section
 
 
 /-- A name-introduction site (variable declaration, procedure, field, type, etc.).
@@ -112,7 +115,7 @@ structure WithMetadata (t : Type) : Type where
 /--
 The type system for Laurel programs.
 
-`HighType` covers primitive types (`TVoid`, `TBool`, `TInt`, `TFloat64`,
+`HighType` covers primitive types (`TVoid`, `TBool`, `TInt`, `TReal`, `TFloat64`,
 `TString`), internal types used by the heap parameterization pass (`THeap`,
 `TTypedField`), collection types (`TSet`), user-defined types (`UserDefined`),
 generic applications (`Applied`), value types (`Pure`), and intersection types
@@ -304,8 +307,8 @@ inductive ContractType where
   | Reads | Modifies | Precondition | PostCondition
 end
 
-abbrev HighTypeMd := WithMetadata HighType
-abbrev StmtExprMd := WithMetadata StmtExpr
+@[expose] abbrev HighTypeMd := WithMetadata HighType
+@[expose] abbrev StmtExprMd := WithMetadata StmtExpr
 
 theorem WithMetadata.sizeOf_val_lt {t : Type} [SizeOf t] (e : WithMetadata t) : sizeOf e.val < sizeOf e := by
   cases e; grind
@@ -467,3 +470,5 @@ structure Program where
   /-- Named constants. -/
   constants : List Constant := []
   deriving Inhabited
+
+end

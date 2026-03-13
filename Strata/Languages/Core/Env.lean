@@ -3,11 +3,12 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
+public import Strata.Languages.Core.Program
+public import Strata.DL.Imperative.EvalContext
 
-
-import Strata.Languages.Core.Program
-import Strata.DL.Imperative.EvalContext
+public section
 
 namespace Core
 open Std (ToFormat Format format)
@@ -23,7 +24,7 @@ instance : ToFormat Expression.Expr := by
   infer_instance
 
 -- Custom ToFormat instance for our specific Scope type to get the desired formatting
-private def formatScope (m : Map CoreIdent (Option Lambda.LMonoTy × Expression.Expr)) : Std.Format :=
+def formatScope (m : Map CoreIdent (Option Lambda.LMonoTy × Expression.Expr)) : Std.Format :=
   match m with
   | [] => ""
   | [(k, (ty, v))] => go k ty v
@@ -126,7 +127,7 @@ def ProofObligations.createAssertions
 /--
 A substitution map from variable identifiers to expressions.
 -/
-abbrev SubstMap := Map Expression.Ident Expression.Expr
+@[expose] abbrev SubstMap := Map Expression.Ident Expression.Expr
 
 structure Env where
   error : Option (Imperative.EvalError Expression)
@@ -337,5 +338,7 @@ def Env.addDatatypes (E: Env) (blocks: List (Lambda.MutualDatatype Unit)) : Exce
   blocks.foldlM Env.addMutualDatatype E
 
 end Core
+
+end -- public section
 
 ---------------------------------------------------------------------

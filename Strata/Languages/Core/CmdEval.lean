@@ -3,13 +3,14 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
+public import Strata.Languages.Core.Expressions
+public import Strata.Languages.Core.Env
+public import Strata.DL.Imperative.EvalContext
+public import Strata.DL.Imperative.CmdEval
 
-
-import Strata.Languages.Core.Expressions
-import Strata.Languages.Core.Env
-import Strata.DL.Imperative.EvalContext
-import Strata.DL.Imperative.CmdEval
+public section
 
 namespace Core
 open Lambda Imperative
@@ -151,4 +152,7 @@ instance : ToFormat (Cmds Expression × Env) where
 
 end CmdEval
 ---------------------------------------------------------------------
+
 end Core
+
+end -- public section

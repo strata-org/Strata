@@ -3,12 +3,13 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
 -- After merging, rename file to PythonRuntimeCorePart
 import Strata.DDM.Elab
 import Strata.DDM.AST
 import Strata.Languages.Core.DDMTransform.Grammar
-import Strata.Languages.Core.Verifier
+public import Strata.Languages.Core.Verifier
 
 namespace Strata
 namespace Python
@@ -52,7 +53,20 @@ datatype Error () {
   IndexError (IndexError_msg : string)
 };
 
-mutual
+// /////////////////////////////////////////////////////////////////////////////////////
+
+// Any type modelling for Python
+// We model Any type of Python as an inductive type in Strata,
+// where the value of each type is wrapped around by a constructor.
+// In the PythonToLaurel translator, all user-defined variables
+// and input/outputs of all user-defined functions are
+// translated into variables of this Any type.
+// We also add exception constructor for Any type to catch
+// errors in the functions that model Python operators that
+// appears later in this prelude.
+// In this prelude, we model datetime as a single int and assume
+// that the conversion from a string constant is handled by the translator.
+
 datatype Any () {
   from_none (),
   from_bool (as_bool : bool),
@@ -64,19 +78,17 @@ datatype Any () {
   from_ListAny (as_ListAny : ListAny),
   from_ClassInstance (classname : string, instance_attributes: DictStrAny),
   exception (get_error: Error)
-};
+}
 
 datatype ListAny () {
   ListAny_nil (),
   ListAny_cons (head: Any, tail: ListAny)
-};
+}
 
 datatype DictStrAny () {
   DictStrAny_empty (),
   DictStrAny_cons (key: string, val: Any, tail: DictStrAny)
 };
-
-end;
 
 function to_string(a: Any) : string;
 function datetime_strptime(dtstring: Any, format: Any) : Any;
@@ -386,6 +398,7 @@ axiom [datetime_tostring_cancel]: forall dt: Any ::
 
 #end
 
+public section
 /--
 Get the Core-only prelude declarations for the Laurel pipeline.
 These are declarations that cannot be expressed in Laurel grammar.
@@ -406,6 +419,8 @@ def coreOnlyFromRuntimeCorePart : List Core.Decl :=
   match decls.dropWhile (fun d => d.name.name != "CoreOnlyDelimiter") with
   | _ :: rest => rest   -- drop the delimiter itself
   | [] => panic! "CoreOnlyDelimiter sentinel not found in pythonRuntimeCorePart"
+
+end -- public section
 
 end Python
 end Strata
