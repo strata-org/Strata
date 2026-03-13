@@ -174,7 +174,7 @@ def boxDestructorName (model : SemanticModel) (ty : HighType) : Identifier :=
   | .UserDefined name =>
       if isDatatype model name then s!"Box..{name.text}Val!"
       else "Box..compositeVal!"
-  | _ => dbg_trace "BUG, boxConstructorNotFound"; "boxDestructorNotFound"
+  | _ => dbg_trace "BUG, boxDestructorName bad type "; "boxDestructorNameError"
 
 /-- Get the Box constructor name for a given Laurel HighType.
     For UserDefined datatypes, uses "Box..<datatypeName>";
@@ -187,7 +187,7 @@ def boxConstructorName (model : SemanticModel) (ty : HighType) : Identifier :=
   | .UserDefined name =>
       if isDatatype model name then s!"Box..{name.text}"
       else "BoxComposite"
-  | _ => dbg_trace "BUG, boxConstructorNotFound"; "boxConstructorNotFound"
+  | _ => dbg_trace "BUG, boxConstructorName bad type"; "boxConstructorNameError"
 
 /-- Build the DatatypeConstructor for a Box variant from a HighType, for datatype generation -/
 private def boxConstructorDef (model : SemanticModel) (ty : HighType) : Option DatatypeConstructor :=
