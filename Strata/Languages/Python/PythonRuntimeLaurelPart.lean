@@ -572,7 +572,7 @@ Parse the Laurel DDM prelude into a Laurel Program.
 def pythonRuntimeLaurelPart : Laurel.Program :=
   match Laurel.TransM.run none (Laurel.parseProgram pythonRuntimeLaurelPartDDM) with
   | .ok p => p
-  | .error e => panic! s!"Failed to parse Python runtime Laurel part: {e}"
+  | .error e => dbg_trace s!"SOUND BUG: Failed to parse Python runtime Laurel part: {e}"; default
 
 end Python
 end Strata

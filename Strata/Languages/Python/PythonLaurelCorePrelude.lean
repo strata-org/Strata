@@ -418,7 +418,7 @@ def coreOnlyFromRuntimeCorePart : List Core.Decl :=
   -- Drop everything up to and including the CoreOnlyDelimiter sentinel
   match decls.dropWhile (fun d => d.name.name != "CoreOnlyDelimiter") with
   | _ :: rest => rest   -- drop the delimiter itself
-  | [] => panic! "CoreOnlyDelimiter sentinel not found in pythonRuntimeCorePart"
+  | [] => dbg_trace "SOUND BUG: CoreOnlyDelimiter sentinel not found in pythonRuntimeCorePart"; []
 
 end -- public section
 
