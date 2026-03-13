@@ -260,4 +260,19 @@ info: ok: #[LOCATION skip,
 
 -------------------------------------------------------------------------------
 
+/-! ### Test: unresolved label produces an error -/
+
+#eval do
+  let trueExpr : LExprTP.Expr :=
+    .const { underlying := (), type := mty[bool] } (.boolConst true)
+  let blk : Imperative.DetBlock String (Imperative.Cmd LExprTP) LExprTP :=
+    { cmds := [], transfer := .condGoto trueExpr "missing_label" "also_missing" }
+  let cfg : Imperative.CFG String (Imperative.DetBlock String (Imperative.Cmd LExprTP) LExprTP) :=
+    { entry := "entry", blocks := [("entry", blk)] }
+  match Imperative.detCFGToGotoTransform Lambda.TEnv.default "test" cfg with
+  | .error e => assert! (s!"{e}".splitOn "Unresolved label").length > 1
+  | .ok _ => assert! false
+
+-------------------------------------------------------------------------------
+
 end

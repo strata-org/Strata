@@ -87,11 +87,11 @@ def detCFGToGotoTransform {P} [G : ToGoto P] [BEq P.Ident]
   let mut trans : GotoTransform P.TyEnv :=
     { instructions := #[], nextLoc := loc, T := T, sourceText := sourceText }
   -- Pending GOTO patches: (instruction array index, target label)
-  let mut pendingPatches : List (Nat × String) := []
-  let mut labelMap : List (String × Nat) := []
+  let mut pendingPatches : Array (Nat × String) := #[]
+  let mut labelMap : Std.HashMap String Nat := {}
   for (label, block) in cfg.blocks do
     -- Record this block's entry location
-    labelMap := (label, trans.nextLoc) :: labelMap
+    labelMap := labelMap.insert label trans.nextLoc
     -- Emit a LOCATION marker for the block
     -- NOTE(source-locations): `DetTransferCmd` already carries a `MetaData`
     -- field, but `StructuredToUnstructured.stmtsToBlocks` currently fills it
@@ -119,23 +119,22 @@ def detCFGToGotoTransform {P} [G : ToGoto P] [BEq P.Ident]
       -- Emit: GOTO [!cond] lf
       let (trans', falseIdx) := emitCondGoto (Expr.not cond_expr) srcLoc trans
       trans := trans'
-      pendingPatches := (falseIdx, lf) :: pendingPatches
+      pendingPatches := pendingPatches.push (falseIdx, lf)
       -- Emit: GOTO lt (unconditional)
       let (trans', trueIdx) := emitUncondGoto srcLoc trans
       trans := trans'
-      pendingPatches := (trueIdx, lt) :: pendingPatches
+      pendingPatches := pendingPatches.push (trueIdx, lt)
     | .finish _md =>
       -- No instruction needed; the caller appends END_FUNCTION
       pure ()
-  -- Second pass: patch all GOTO targets, failing on unresolved labels
-  let mut patchedTrans := trans
+  -- Second pass: resolve all pending labels, then patch in one call
+  let mut resolvedPatches : List (Nat × Nat) := []
   for (idx, label) in pendingPatches do
-    match labelMap.find? (fun (l, _) => l == label) with
-    | some (_, loc) =>
-      patchedTrans := patchGotoTargets patchedTrans [(idx, loc)]
+    match labelMap[label]? with
+    | some targetLoc => resolvedPatches := (idx, targetLoc) :: resolvedPatches
     | none =>
       throw f!"[detCFGToGotoTransform] Unresolved label '{label}' referenced \
                by GOTO at instruction index {idx}."
-  return patchedTrans
+  return patchGotoTargets trans resolvedPatches
 
 end Imperative
