@@ -511,4 +511,35 @@ private def ExampleLoopMeasure : List (Imperative.Stmt LExprTP (Imperative.Cmd L
 
 -------------------------------------------------------------------------------
 
+-- Test: property summary in metadata flows to GOTO assert comment
+def ExamplePropertySummary : Imperative.Cmds LExprTP :=
+  let md : Imperative.MetaData LExprTP :=
+    Imperative.MetaData.empty.withPropertySummary "divisor is non-zero"
+  [.assert "assert_0" (.const { underlying := (), type := mty[bool] } (.boolConst true)) md]
+
+/-- info: ok: () -/
+#guard_msgs in
+#eval do
+  let ans ← Imperative.Cmds.toGotoTransform Lambda.TEnv.default "testSummary" ExamplePropertySummary
+  let asserts := ans.instructions.toList.filter (fun (i : CProverGOTO.Instruction) =>
+    i.type == CProverGOTO.InstructionType.ASSERT)
+  assert! asserts.length == 1
+  -- The comment should be the property summary, not the label
+  assert! asserts[0]!.sourceLoc.comment == "divisor is non-zero"
+
+-- Test: without property summary, the label is used as comment
+def ExampleNoPropertySummary : Imperative.Cmds LExprTP :=
+  [.assert "my_label" (.const { underlying := (), type := mty[bool] } (.boolConst true)) .empty]
+
+/-- info: ok: () -/
+#guard_msgs in
+#eval do
+  let ans ← Imperative.Cmds.toGotoTransform Lambda.TEnv.default "testNoSummary" ExampleNoPropertySummary
+  let asserts := ans.instructions.toList.filter (fun (i : CProverGOTO.Instruction) =>
+    i.type == CProverGOTO.InstructionType.ASSERT)
+  assert! asserts.length == 1
+  assert! asserts[0]!.sourceLoc.comment == "my_label"
+
+-------------------------------------------------------------------------------
+
 end
