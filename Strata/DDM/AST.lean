@@ -585,12 +585,13 @@ private def scopeIndex (metadata : Metadata) : Option Nat :=
   | some #[.catbvar idx] => some idx
   | some _ => panic! s!"Unexpected argument count to {MetadataAttr.scopeName.fullName}"
 
-/-- Returns the datatype scope indices (nameIndex, typeParamsIndex) if @[scopeDatatype] is present. -/
-def scopeDatatypeIndex (metadata : Metadata) : Option (Nat × Nat) :=
-  match metadata[q`StrataDDL.scopeDatatype]? with
+/-- Returns the typeParams index if @[scopeTVar] is present.
+    Converts .type bindings from typeParams into .tvar bindings for constructor elaboration. -/
+def scopeTVarIndex (metadata : Metadata) : Option Nat :=
+  match metadata[q`StrataDDL.scopeTVar]? with
   | none => none
-  | some #[.catbvar nameIdx, .catbvar typeParamsIdx] => some (nameIdx, typeParamsIdx)
-  | some _ => panic! s!"Unexpected argument count to scopeDatatype"
+  | some #[.catbvar idx] => some idx
+  | some _ => panic! s!"Unexpected argument count to scopeTVar"
 
 /-- Returns (nameIndex, argsIndex, typeIndex) if @[scopeSelf] is present.
     Used to bring a function's own name into scope within its body. -/
@@ -835,20 +836,15 @@ def argScopeLevel (argDecls : ArgDecls) (level : Fin argDecls.size) : Option (Fi
       let varCount := argDecls.size
       panic! s!"Scope index {idx} out of bounds ({level.val}, varCount = {varCount})"
 
-/-- Returns the datatype scope indices (nameLevel, typeParamsLevel) if @[scopeDatatype] is present.
-    This is used for recursive datatype definitions where the datatype name must be in scope
-    when parsing constructor field types. -/
-def argScopeDatatypeLevel (argDecls : ArgDecls) (level : Fin argDecls.size) : Option (Fin level.val × Fin level.val) :=
-  match argDecls[level].metadata.scopeDatatypeIndex with
+/-- Returns the typeParams level if @[scopeTVar] is present. -/
+def argScopeTVarLevel (argDecls : ArgDecls) (level : Fin argDecls.size) : Option (Fin level.val) :=
+  match argDecls[level].metadata.scopeTVarIndex with
   | none => none
-  | some (nameIdx, typeParamsIdx) =>
-    if h1 : nameIdx < level.val then
-      if h2 : typeParamsIdx < level.val then
-        some (⟨level.val - (nameIdx + 1), by omega⟩, ⟨level.val - (typeParamsIdx + 1), by omega⟩)
-      else
-        panic! s!"scopeDatatype typeParams index {typeParamsIdx} out of bounds ({level.val})"
+  | some idx =>
+    if h : idx < level.val then
+      some ⟨level.val - (idx + 1), by omega⟩
     else
-      panic! s!"scopeDatatype name index {nameIdx} out of bounds ({level.val})"
+      panic! s!"scopeTVar index {idx} out of bounds ({level.val})"
 
 /-- Returns (nameLevel, argsLevel, typeLevel) if @[scopeSelf] is present. -/
 def argScopeSelfLevel (argDecls : ArgDecls) (level : Fin argDecls.size)

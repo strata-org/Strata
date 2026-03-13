@@ -63,7 +63,7 @@ def inferType (C: LContext CoreLParams) (Env: TEnv Unit) (c : Cmd Expression) (e
   let T ← match c with
     | .init _ _ _ _ =>
       let efv := LExpr.freeVars e
-      .ok (Env.addInOldestContext efv)
+      (Env.addInOldestContext efv).mapError DiagnosticModel.fromFormat
     | _ =>
       let _ ← Env.freeVarCheck e f!"[{c}]" |>.mapError DiagnosticModel.fromFormat
       .ok Env
