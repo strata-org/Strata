@@ -330,7 +330,17 @@ def translateStmt (outputParams : List Parameter) (stmt : StmtExprMd)
   | .Assume cond =>
       let coreExpr ← translateExpr cond [] (isPureContext := true)
       return [Core.Statement.assume ("assume" ++ getNameFromMd md) coreExpr md]
-  | .Block stmts _ => stmts.flatMapM (fun s => translateStmt outputParams s)
+  | .Block stmts label =>
+      let innerStmts ← stmts.flatMapM (fun s => translateStmt outputParams s)
+      -- Only wrap in a Core labelled block for loop labels (break/continue).
+      -- Other labels (try/except) use Exit differently and must stay flat.
+      let isLoopLabel := label.any fun l =>
+        l.startsWith "loop_break_" || l.startsWith "loop_continue_" ||
+        l.startsWith "for_break_"  || l.startsWith "for_continue_"
+      if isLoopLabel then
+        return [Imperative.Stmt.block label.get! innerStmts md]
+      else
+        return innerStmts
   | .LocalVariable id ty initializer =>
       let coreMonoType := translateType model ty
       let coreType := LTy.forAll [] coreMonoType
@@ -435,9 +445,15 @@ def translateStmt (outputParams : List Parameter) (stmt : StmtExprMd)
       let decreasingExprCore ← decreasesExpr.mapM (translateExpr)
       let bodyStmts ← translateStmt outputParams body
       return [Imperative.Stmt.loop condExpr decreasingExprCore invExprs bodyStmts md]
-  | .Exit _ =>
-      dbg_trace "TODO: Exit statement not yet supported"
-      default
+  | .Exit target =>
+      -- Only translate loop exits (break/continue) to Core exit statements.
+      -- try/except uses Exit differently (as a goto into the handler block)
+      -- and must remain a no-op until proper goto support is added.
+      if target.startsWith "loop_break_" || target.startsWith "loop_continue_" ||
+         target.startsWith "for_break_"  || target.startsWith "for_continue_" then
+        return [Imperative.Stmt.exit (some target) md]
+      else
+        return []
   | _ =>
       -- Expression in statement position: preserve as an unused variable init
       exprAsUnusedInit stmt md
