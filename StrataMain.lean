@@ -60,7 +60,8 @@ def getBool (pf : ParsedFlags) (name : String) : Bool :=
 def getString (pf : ParsedFlags) (name : String) : Option String :=
   match pf.flags[name]? with
   | some (some v) => some v
-  | _ => Option.none
+  else
+  Option.none
 
 def getRepeated (pf : ParsedFlags) (name : String) : Array String :=
   pf.repeated[name]?.getD #[]
@@ -306,27 +307,30 @@ def pyAnalyzeCommand : Command where
                   if path == pyPath then
                     let pos := (Lean.FileMap.ofString srcText).toPosition (fr.range).start
                     -- For failures, show at beginning; for passes, show at end
-                    match vcResult.result with
-                    | .fail => (s!"Assertion failed at line {pos.line}, col {pos.column}: ", "")
-                    | _ => ("", s!" (at line {pos.line}, col {pos.column})")
+                    if vcResult.isFailure then
+                      (s!"Assertion failed at line {pos.line}, col {pos.column}: ", "")
+                    else
+                      ("", s!" (at line {pos.line}, col {pos.column})")
                   else
                     -- From CorePrelude or other source, show byte offsets
-                    match vcResult.result with
-                    | .fail => (s!"Assertion failed at byte {(fr.range).start}: ", "")
-                    | _ => ("", s!" (at byte {(fr.range).start})")
+                    if vcResult.isFailure then
+                      (s!"Assertion failed at byte {(fr.range).start}: ", "")
+                    else
+                      ("", s!" (at byte {(fr.range).start})")
               | none =>
-                match vcResult.result with
-                | .fail => (s!"Assertion failed at byte {(fr.range).start}: ", "")
-                | _ => ("", s!" (at byte {(fr.range).start})")
+                if vcResult.isFailure then
+                  (s!"Assertion failed at byte {(fr.range).start}: ", "")
+                else
+                  ("", s!" (at byte {(fr.range).start})")
           | none => ("", "")
-        s := s ++ s!"\n{locationPrefix}{vcResult.obligation.label}: {Std.format vcResult.result}{locationSuffix}\n"
+        s := s ++ s!"\n{locationPrefix}{vcResult.obligation.label}: {match vcResult.outcome with | .ok o => Std.format o | .error e => e}{locationSuffix}\n"
       IO.println s
       -- Output in SARIF format if requested
       if outputSarif then
         let files := match pySourceOpt with
           | some (pyPath, srcText) => Map.empty.insert (Strata.Uri.file pyPath) (Lean.FileMap.ofString srcText)
           | none => Map.empty
-        Core.Sarif.writeSarifOutput files vcResults (filePath ++ ".sarif")
+        Core.Sarif.writeSarifOutput .deductive files vcResults (filePath ++ ".sarif")
 
 /-- Result of building the PySpec-augmented prelude. -/
 structure PySpecPrelude where
@@ -398,7 +402,8 @@ private def verifyIncremental
         let cleaned := Strata.Core.CoreSMT.removeUnusedVarsStmts p.body
         some (p.header.name.name, Imperative.Stmt.block p.header.name.name cleaned .empty)
       else none
-    | _ => none
+    else
+  none
   let mut allResults : Array Core.VCResult := #[]
   let mut state := state
   let mut smtCtx := Core.SMT.Context.default
@@ -408,11 +413,9 @@ private def verifyIncremental
     state := state'
     smtCtx := smtCtx'
     for r in results do
-      let marker := match r.result with
-        | .pass => "✅ pass"
-        | .fail => "❌ fail"
-        | .unknown => "❓ unknown"
-        | .implementationError msg => s!"🚨 {msg}"
+      let marker := match r.outcome with
+        | .ok o => s!"{o.emoji} {o.label}"
+        | .error e => s!"🚨 {e}"
       let suffix := match Imperative.getFileRange r.obligation.metadata with
         | some fr =>
           if fr.range.isNone then ""
@@ -463,19 +466,22 @@ private def verifyBatch
             | .file path =>
               if path == pyPath then
                 let pos := (Lean.FileMap.ofString srcText).toPosition (fr.range).start
-                match vcResult.result with
-                | .fail => (s!"Assertion failed at line {pos.line}, col {pos.column}: ", "")
-                | _ => ("", s!" (at line {pos.line}, col {pos.column})")
+                if vcResult.isFailure then
+                  (s!"Assertion failed at line {pos.line}, col {pos.column}: ", "")
+                else
+                  ("", s!" (at line {pos.line}, col {pos.column})")
               else
-                match vcResult.result with
-                | .fail => (s!"Assertion failed at byte {(fr.range).start}: ", "")
-                | _ => ("", s!" (at byte {(fr.range).start})")
+                if vcResult.isFailure then
+                  (s!"Assertion failed at byte {(fr.range).start}: ", "")
+                else
+                  ("", s!" (at byte {(fr.range).start})")
           | none =>
-            match vcResult.result with
-            | .fail => (s!"Assertion failed at byte {(fr.range).start}: ", "")
-            | _ => ("", s!" (at byte {(fr.range).start})")
+            if vcResult.isFailure then
+              (s!"Assertion failed at byte {(fr.range).start}: ", "")
+            else
+              ("", s!" (at byte {(fr.range).start})")
       | none => ("", "")
-    s := s ++ s!"{locationPrefix}{vcResult.obligation.label}: {Std.format vcResult.result}{locationSuffix}\n"
+    s := s ++ s!"{locationPrefix}{vcResult.obligation.label}: {match vcResult.outcome with | .ok o => Std.format o | .error e => e}{locationSuffix}\n"
   IO.println s
   return vcResults
 
@@ -584,7 +590,7 @@ def pyAnalyzeLaurelCommand : Command where
             let files := match pySourceOpt with
               | some (pyPath, srcText) => Map.empty.insert (Strata.Uri.file pyPath) (Lean.FileMap.ofString srcText)
               | none => Map.empty
-            Core.Sarif.writeSarifOutput files vcResults (filePath ++ ".sarif")
+            Core.Sarif.writeSarifOutput .deductive files vcResults (filePath ++ ".sarif")
 
 private def deriveBaseName (file : String) : String :=
   let name := System.FilePath.fileName file |>.getD file
@@ -889,7 +895,8 @@ def procedureToGotoCtx (Env : Core.Expression.TyEnv) (p : Core.Procedure)
     for ident in p.spec.modifies do
       let ty ← match varTypes ident with
         | some (.forAll [] mono) => Lambda.LMonoTy.toGotoType mono
-        | _ => pure .Integer
+        else
+  pure .Integer
       modGoto := modGoto ++ [CProverGOTO.Expr.symbol (Core.CoreIdent.toPretty ident) ty]
     let modJson ← (modGoto.mapM CProverGOTO.exprToJson).mapError (fun e => f!"{e}")
     contracts := contracts ++ [("#spec_assigns",
@@ -935,23 +942,30 @@ private def emitProcWithLifted (Env : Core.Expression.TyEnv) (procName : String)
     (extraSyms : Lean.Json)
     : IO (Lean.Json × Lean.Json) := do
   let json ← IO.ofExcept (CoreToGOTO.CProverGOTO.Context.toJson procName ctx)
-  let mut symtabObj := match json.symtab with | .obj m => m | _ => .empty
+  let mut symtabObj := match json.symtab with | .obj m => m else
+  .empty
   let mut gotoFns := match json.goto with
     | .obj m => match m.toList.find? (·.1 == "functions") with
-      | some (_, .arr fns) => fns | _ => #[]
-    | _ => #[]
+      | some (_, .arr fns) => fns else
+  #[]
+    else
+  #[]
   for f in liftedFuncs do
     let funcName := Core.CoreIdent.toPretty f.name
     match functionToGotoCtx Env f with
     | .error e => panic! s!"{e}"
     | .ok fctx =>
       let fjson ← IO.ofExcept (CoreToGOTO.CProverGOTO.Context.toJson funcName fctx)
-      match fjson.symtab with | .obj m => for (k, v) in m.toList do symtabObj := symtabObj.insert k v | _ => pure ()
+      match fjson.symtab with | .obj m => for (k, v) in m.toList do symtabObj := symtabObj.insert k v else
+  pure ()
       match fjson.goto with
       | .obj m => match m.toList.find? (·.1 == "functions") with
-        | some (_, .arr fns) => gotoFns := gotoFns ++ fns | _ => pure ()
-      | _ => pure ()
-  match extraSyms with | .obj m => for (k, v) in m.toList do symtabObj := symtabObj.insert k v | _ => pure ()
+        | some (_, .arr fns) => gotoFns := gotoFns ++ fns else
+  pure ()
+      else
+  pure ()
+  match extraSyms with | .obj m => for (k, v) in m.toList do symtabObj := symtabObj.insert k v else
+  pure ()
   return (Lean.Json.obj symtabObj, Lean.Json.mkObj [("functions", Lean.Json.arr gotoFns)])
 
 private def datatypeToSymbolEntry (dt : Lambda.LDatatype Unit)
@@ -973,7 +987,8 @@ private def datatypeToSymbolEntry (dt : Lambda.LDatatype Unit)
               ("namedSub", Lean.Json.mkObj [("width", Lean.Json.mkObj [("id", "64")])])
             ]
           else tyJson
-        | _ => tyJson
+        else
+  tyJson
       components := components.push (fieldId.name, tyJson)
   let componentsSub := components.map fun (name, tyJson) =>
     Lean.Json.mkObj [
@@ -1052,7 +1067,8 @@ private def collectDatatypeSymbols (pgm : Core.Program) :
     | .type (.con tc) _ =>
       if tc.numargs == 0 then
         syms := syms ++ [typeConstructorToSymbolEntry tc]
-    | _ => pure ()
+    else
+  pure ()
   return syms
 
 /-- Collect global variable declarations and emit GOTO symbol table entries. -/
@@ -1082,7 +1098,8 @@ private def collectGlobalSymbols (pgm : Core.Program) :
         type := tyJson
         value := valueJson
       })]
-    | _ => pure ()
+    else
+  pure ()
   return syms
 
 /-- Collect all extra symbol table entries (datatypes, type constructors, globals). -/
@@ -1123,7 +1140,8 @@ def pyAnalyzeToGotoCommand : Command where
       let some mainDecl := tcPgm.decls.find? fun d =>
           match d with
           | .proc p _ => Core.CoreIdent.toPretty p.header.name == "main"
-          | _ => false
+          else
+  false
         | panic! "No main procedure found"
       let some p := mainDecl.getProc?
         | panic! "main is not a procedure"
@@ -1132,7 +1150,8 @@ def pyAnalyzeToGotoCommand : Command where
       let procName := Core.CoreIdent.toPretty p.header.name
       let axioms := tcPgm.decls.filterMap fun d => d.getAxiom?
       let distincts := tcPgm.decls.filterMap fun d => match d with
-        | .distinct name es _ => some (name, es) | _ => none
+        | .distinct name es _ => some (name, es) else
+  none
       match procedureToGotoCtx Env p sourceText (axioms := axioms) (distincts := distincts)
             (varTypes := tcPgm.getVarTy?) with
       | .error e => panic! s!"{e}"
@@ -1212,7 +1231,8 @@ def pyAnalyzeLaurelToGotoCommand : Command where
         let findProc (name : String) := tcPgm.decls.find? fun d =>
             match d with
             | .proc p _ => Core.CoreIdent.toPretty p.header.name == name
-            | _ => false
+            else
+  false
         let mainDecl ← match findProc "main" with
           | some d => pure d
           | none => match findProc "__main__" with
@@ -1225,7 +1245,8 @@ def pyAnalyzeLaurelToGotoCommand : Command where
         let procName := "main"
         let axioms := tcPgm.decls.filterMap fun d => d.getAxiom?
         let distincts := tcPgm.decls.filterMap fun d => match d with
-          | .distinct name es _ => some (name, es) | _ => none
+          | .distinct name es _ => some (name, es) else
+  none
         match procedureToGotoCtx Env p sourceText (axioms := axioms) (distincts := distincts)
               (varTypes := tcPgm.getVarTy?) with
         | .error e => panic! s!"{e}"
@@ -1370,7 +1391,7 @@ def laurelAnalyzeCommand : Command where
       | .ok vcResults =>
         IO.println s!"==== RESULTS ===="
         for vc in vcResults do
-          IO.println s!"{vc.obligation.label}: {repr vc.result}"
+          IO.println s!"{vc.obligation.label}: {match vc.outcome with | .ok o => repr o | .error e => e}"
 
 def laurelAnalyzeToGotoCommand : Command where
   name := "laurelAnalyzeToGoto"
@@ -1414,7 +1435,8 @@ def laurelAnalyzeToGotoCommand : Command where
         let sourceText := some content
         let axioms := tcPgm.decls.filterMap fun d => d.getAxiom?
         let distincts := tcPgm.decls.filterMap fun d => match d with
-          | .distinct name es _ => some (name, es) | _ => none
+          | .distinct name es _ => some (name, es) else
+  none
         let mut symtabPairs : List (String × Lean.Json) := []
         let mut gotoFns : Array Lean.Json := #[]
         let mut allLiftedFuncs : List Core.Function := []
@@ -1428,13 +1450,16 @@ def laurelAnalyzeToGotoCommand : Command where
             let json ← IO.ofExcept (CoreToGOTO.CProverGOTO.Context.toJson procName ctx)
             match json.symtab with
             | .obj m => symtabPairs := symtabPairs ++ m.toList
-            | _ => pure ()
+            else
+  pure ()
             match json.goto with
             | .obj m =>
               match m.toList.find? (·.1 == "functions") with
               | some (_, .arr fns) => gotoFns := gotoFns ++ fns
-              | _ => pure ()
-            | _ => pure ()
+              else
+  pure ()
+            else
+  pure ()
         for f in funcs ++ allLiftedFuncs do
           let funcName := Core.CoreIdent.toPretty f.name
           match functionToGotoCtx Env f with
@@ -1443,16 +1468,20 @@ def laurelAnalyzeToGotoCommand : Command where
             let json ← IO.ofExcept (CoreToGOTO.CProverGOTO.Context.toJson funcName ctx)
             match json.symtab with
             | .obj m => symtabPairs := symtabPairs ++ m.toList
-            | _ => pure ()
+            else
+  pure ()
             match json.goto with
             | .obj m =>
               match m.toList.find? (·.1 == "functions") with
               | some (_, .arr fns) => gotoFns := gotoFns ++ fns
-              | _ => pure ()
-            | _ => pure ()
+              else
+  pure ()
+            else
+  pure ()
         match typeSymsJson with
         | .obj m => symtabPairs := symtabPairs ++ m.toList
-        | _ => pure ()
+        else
+  pure ()
         -- Deduplicate: keep first occurrence of each symbol name (proper function
         -- symbols come before basic symbol references from callers)
         let mut seen : Std.HashSet String := {}

@@ -32,7 +32,9 @@ open Strata.SMT
 open Lambda
 open Imperative
 
-/-- Run a verification check: for assert, negate the expression; for cover, use it directly. -/
+/-- Run a verification check with dual outcomes (satisfiability + validity).
+    For assert: satisfiability = check-sat-assuming [P], validity = check-sat-assuming [¬P]
+    For cover: satisfiability = check-sat-assuming [P], validity is not applicable -/
 private def runCheck (state : CoreSMTState) (E : Core.Env)
     (label : String) (expr : Core.Expression.Expr) (property : Imperative.PropertyType)
     (smtCtx : Core.SMT.Context) (md : Imperative.MetaData Core.Expression := .empty)
@@ -42,26 +44,32 @@ private def runCheck (state : CoreSMTState) (E : Core.Env)
     let obligation : Imperative.ProofObligation Core.Expression := {
       label, property, assumptions := [], obligation := expr, metadata := md
     }
-    return ({ obligation, result := .implementationError s!"Translation error: {msg}" }, smtCtx)
+    return ({ obligation, outcome := .error s!"Translation error: {msg}" }, smtCtx)
   | .ok (term, smtCtx) =>
-    let isCover := property == .cover
-    let checkTerm := if isCover then term else Factory.not term
-    let decision ← state.solver.checkSatAssuming [checkTerm]
-    let outcome := match isCover, decision with
-      | true,  .sat     => Core.Outcome.pass
-      | true,  .unsat   => Core.Outcome.fail
-      | true,  .unknown => Core.Outcome.unknown
-      | false, .unsat   => Core.Outcome.pass
-      | false, .sat     => Core.Outcome.fail
-      | false, .unknown => Core.Outcome.unknown
+    -- Satisfiability check: is P satisfiable?
+    let satDecision ← state.solver.checkSatAssuming [term]
+    let satisfiabilityResult := match satDecision with
+      | .sat     => SMT.Result.sat ""
+      | .unsat   => SMT.Result.unsat
+      | .unknown => SMT.Result.unknown
+    -- Validity check: is ¬P satisfiable? (if unsat, P is always true)
+    let valDecision ← state.solver.checkSatAssuming [Factory.not term]
+    let validityResult := match valDecision with
+      | .sat     => SMT.Result.sat ""
+      | .unsat   => SMT.Result.unsat
+      | .unknown => SMT.Result.unknown
+    let vcOutcome : Core.VCOutcome := {
+      satisfiabilityProperty := satisfiabilityResult
+      validityProperty := validityResult
+    }
     let obligation : Imperative.ProofObligation Core.Expression := {
       label, property, assumptions := [], obligation := expr, metadata := md
     }
-    let smtObligationResult := match decision with
-      | .unsat   => SMT.Result.unsat
-      | .sat     => SMT.Result.unknown
-      | .unknown => SMT.Result.unknown
-    let diagnosis ← if outcome != .pass then
+    -- Run diagnosis if the outcome indicates a failure
+    let isFailure := vcOutcome.alwaysFalseAndReachable || vcOutcome.alwaysFalseReachabilityUnknown ||
+                     vcOutcome.canBeTrueOrFalseAndIsReachable || vcOutcome.canBeFalseAndIsReachable
+    let diagnosis ← if isFailure then
+      let isCover := property == .cover
       let diagResult ← diagnoseFailure state E expr isCover smtCtx
       let statePathCond := state.pathCondition
       let failures := diagResult.diagnosedFailures.map fun f =>
@@ -71,7 +79,7 @@ private def runCheck (state : CoreSMTState) (E : Core.Env)
                    statePathCondition := statePathCond })
     else
       pure none
-    return ({ obligation, smtObligationResult, result := outcome, diagnosis }, smtCtx)
+    return ({ obligation, outcome := .ok vcOutcome, diagnosis }, smtCtx)
 
 private def proveCheck (state : CoreSMTState) (E : Core.Env)
     (label : String) (expr : Core.Expression.Expr)
@@ -98,7 +106,7 @@ private def processFuncDecl (state : CoreSMTState) (E : Core.Env)
     let dummyExpr : Core.Expression.Expr := .const Strata.SourceRange.none (.boolConst true)
     { obligation := { label := s!"funcDecl {decl.name.name}", property := .assert,
                       assumptions := [], obligation := dummyExpr, metadata := .empty },
-      result := .implementationError msg }
+      outcome := .error msg }
   match inputTypesResult with
   | .error msg => return (state, smtCtx, [mkError s!"Type translation error: {toString msg}"])
   | .ok inputTypes =>
@@ -117,7 +125,7 @@ private def processFuncDecl (state : CoreSMTState) (E : Core.Env)
         | .error msg =>
           return (state, smtCtx, [{ obligation := { label := s!"funcDecl {decl.name.name}", property := .assert,
                                                     assumptions := [], obligation := body, metadata := .empty },
-                                    result := .implementationError s!"Body translation error: {msg}" }])
+                                    outcome := .error s!"Body translation error: {msg}" }])
         | .ok (bodyTerm, smtCtx) =>
           let args := decl.inputs.zip inputTypes |>.map fun ((name, _), smtTy) => (name.name, smtTy)
           state.solver.defineFun decl.name.name args outTy bodyTerm
@@ -138,7 +146,7 @@ partial def processStatement (state : CoreSMTState) (E : Core.Env)
       obligation := .fvar Strata.SourceRange.none (⟨"error", ()⟩) none
       metadata := .empty
     }
-    let result : Core.VCResult := { obligation, result := .implementationError s!"Statement not in CoreSMT subset: {reason}" }
+    let result : Core.VCResult := { obligation, outcome := .error s!"Statement not in CoreSMT subset: {reason}" }
     return (state, smtCtx, [result])
   | .ok () =>
   match stmt with
@@ -148,7 +156,7 @@ partial def processStatement (state : CoreSMTState) (E : Core.Env)
       let obligation : Imperative.ProofObligation Core.Expression := {
         label := "assume", property := .assert, assumptions := [], obligation := expr, metadata := .empty
       }
-      return (state, smtCtx, [{ obligation, result := .implementationError s!"Translation error: {msg}" }])
+      return (state, smtCtx, [{ obligation, outcome := .error s!"Translation error: {msg}" }])
     | .ok (term, smtCtx) =>
       let solver : SMT.SolverInterface := state.solver
       solver.assert term
@@ -162,14 +170,14 @@ partial def processStatement (state : CoreSMTState) (E : Core.Env)
       let obligation : Imperative.ProofObligation Core.Expression := {
         label := s!"init {name.name}", property := .assert, assumptions := [], obligation := expr, metadata := .empty
       }
-      return (state, smtCtx, [{ obligation, result := .implementationError s!"Translation error: {msg}" }])
+      return (state, smtCtx, [{ obligation, outcome := .error s!"Translation error: {msg}" }])
     | .ok (term, smtCtx) =>
       match translateType E ty smtCtx with
       | .error msg =>
         let obligation : Imperative.ProofObligation Core.Expression := {
           label := s!"init {name.name}", property := .assert, assumptions := [], obligation := expr, metadata := .empty
         }
-        return (state, smtCtx, [{ obligation, result := .implementationError s!"Type translation error: {msg}" }])
+        return (state, smtCtx, [{ obligation, outcome := .error s!"Type translation error: {msg}" }])
       | .ok (smtTy, smtCtx) =>
         let solver : SMT.SolverInterface := state.solver
         solver.defineFun name.name [] smtTy term
@@ -189,7 +197,7 @@ partial def processStatement (state : CoreSMTState) (E : Core.Env)
         label := s!"init {name.name}", property := .assert, assumptions := [],
         obligation := dummyExpr, metadata := .empty
       }
-      return (state, smtCtx, [{ obligation, result := .implementationError s!"Type translation error: {toString msg}" }])
+      return (state, smtCtx, [{ obligation, outcome := .error s!"Type translation error: {toString msg}" }])
     | .ok (smtTy, smtCtx) =>
       let solver : SMT.SolverInterface := state.solver
       solver.declareFun name.name [] smtTy
@@ -221,7 +229,7 @@ partial def processStatement (state : CoreSMTState) (E : Core.Env)
       obligation := .fvar Strata.SourceRange.none (⟨"error", ()⟩) none
       metadata := .empty
     }
-    return (state, smtCtx, [{ obligation, result := .implementationError "Unexpected statement" }])
+    return (state, smtCtx, [{ obligation, outcome := .error "Unexpected statement" }])
 
 /-- Process a list of CoreSMT statements sequentially -/
 partial def processStatements (initialState : CoreSMTState) (E : Core.Env)
@@ -237,7 +245,7 @@ partial def processStatements (initialState : CoreSMTState) (E : Core.Env)
     smtCtx := smtCtx'
     results := results ++ stmtResults
     -- If not accumulating errors and we got a failure, stop
-    let shouldStop := !accumulateErrors && stmtResults.any (·.result != Core.Outcome.pass)
+    let shouldStop := !accumulateErrors && stmtResults.any (·.isFailure)
     if shouldStop then
       return (state, smtCtx, results)
   return (state, smtCtx, results)

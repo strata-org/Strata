@@ -650,26 +650,9 @@ def toSMTTerms (E : Env) (es : List (LExpr CoreLParams.mono)) (ctx : SMT.Context
     .ok ((et :: erestt), ctx)
 
 /--
-Encode a proof obligation -- which may be of type `assert` or `cover` -- into
-SMTLIB.
-
-Under conditions `P`, `assert(Q)` is encoded into SMTLib as follows:
-```
-(assert P)
-(assert (not Q))
-(check-sat)
-```
-If the result is `unsat`, then `P ∧ ¬Q` is unsatisfiable, which means `P => Q`
-is valid. If the result is `sat`, then the assertion is violated.
-
-Under conditions `P`, `cover(Q)` is encoded into SMTLib as follows:
-```
-(assert P)
-(assert Q)
-(check-sat)
-```
-If the result is `unsat`, then `P ∧ Q` is unsatisfiable, which means that the
-cover is violated. If the result is `sat`, then the cover succeeds.
+Encode a proof obligation into SMT terms: path conditions (P) and obligation (Q).
+The obligation Q is returned without negation; see `encodeCore` in Verifier.lean
+for the check-sat encoding that applies negation for validity checks.
 -/
 def ProofObligation.toSMTTerms (E : Env)
   (d : Imperative.ProofObligation Expression) (ctx : SMT.Context := SMT.Context.default)
@@ -681,12 +664,7 @@ def ProofObligation.toSMTTerms (E : Env)
   let distinct_assumptions := distinct_terms.map
     (λ ts => Term.app (.core .distinct) ts .bool)
   let (assumptions_terms, ctx) ← Core.toSMTTerms E assumptions ctx useArrayTheory
-  let (obligation_pos_term, ctx) ← Core.toSMTTerm E [] d.obligation ctx useArrayTheory
-  let obligation_term :=
-    if d.property == .cover then
-      obligation_pos_term
-    else
-      Factory.not obligation_pos_term
+  let (obligation_term, ctx) ← Core.toSMTTerm E [] d.obligation ctx useArrayTheory
   .ok (distinct_assumptions ++ assumptions_terms, obligation_term, ctx)
 
 ---------------------------------------------------------------------

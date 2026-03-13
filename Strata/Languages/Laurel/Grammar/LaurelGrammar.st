@@ -24,7 +24,7 @@ category OptionalAssignment;
 op optionalAssignment(value: StmtExpr): OptionalAssignment => ":=" value:0;
 
 op varDecl (name: Ident, varType: Option OptionalType, assignment: Option OptionalAssignment): StmtExpr
-  => @[prec(0)] "var " name varType assignment ";";
+  => @[prec(0)] "var " name varType assignment;
 
 op call(callee: StmtExpr, args: CommaSepBy StmtExpr): StmtExpr => callee "(" args ")";
 
@@ -39,7 +39,7 @@ op identifier (name: Ident): StmtExpr => name;
 op parenthesis (inner: StmtExpr): StmtExpr => "(" inner ")";
 
 // Assignment
-op assign (target: StmtExpr, value: StmtExpr): StmtExpr => @[prec(10)] target ":=" value ";";
+op assign (target: StmtExpr, value: StmtExpr): StmtExpr => @[prec(10)] target ":=" value;
 
 // Binary operators
 op add (lhs: StmtExpr, rhs: StmtExpr): StmtExpr => @[prec(60), leftassoc] lhs " + " rhs;
@@ -72,15 +72,15 @@ op existsExpr (name: Ident, ty: LaurelType, body: StmtExpr): StmtExpr
 
 // If-else
 category OptionalElse;
-op optionalElse(stmts : StmtExpr) : OptionalElse => "else" stmts;
+op optionalElse(stmts : StmtExpr) : OptionalElse => @[prec(0)] "else" stmts;
 
 op ifThenElse (cond: StmtExpr, thenBranch: StmtExpr, elseBranch: Option OptionalElse): StmtExpr =>
   @[prec(20)] "if (" cond ") " thenBranch:0 elseBranch:0;
 
-op assert (cond : StmtExpr) : StmtExpr => "assert " cond ";";
-op assume (cond : StmtExpr) : StmtExpr => "assume " cond ";";
-op return (value : StmtExpr) : StmtExpr => "return " value ";";
-op block (stmts : Seq StmtExpr) : StmtExpr => @[prec(1000)] "{" stmts "}";
+op assert (cond : StmtExpr) : StmtExpr => @[prec(0)] "assert " cond:0;
+op assume (cond : StmtExpr) : StmtExpr => @[prec(0)] "assume " cond:0;
+op return (value : StmtExpr) : StmtExpr => @[prec(0)] "return " value:0;
+op block (stmts : SemicolonSepBy StmtExpr) : StmtExpr => @[prec(1000)] "{" stmts "}";
 
 // While loops
 category InvariantClause;
@@ -161,15 +161,18 @@ op function (name : Ident, parameters: CommaSepBy Parameter,
   body : Option OptionalBody) : Procedure =>
   "function " name "(" parameters ")" returnType returnParameters requires ensures modifies body ";";
 
-category TopLevel;
-op topLevelComposite(composite: Composite): TopLevel => composite;
-op topLevelProcedure(procedure: Procedure): TopLevel => procedure;
-op topLevelDatatype(datatype: Datatype): TopLevel => datatype;
+// Opaque type declarations
+category OpaqueType;
+op opaqueType (name: Ident): OpaqueType => "type " name ";";
 
 category ConstrainedType;
 op constrainedType (name: Ident, valueName: Ident, base: LaurelType,
                     constraint: StmtExpr, witness: StmtExpr): ConstrainedType
   => "constrained " name " = " valueName ": " base " where " constraint:0 " witness " witness:0;
-op topLevelConstrainedType(ct: ConstrainedType): TopLevel => ct;
 
-op program (items: Seq TopLevel): Command => items;
+op compositeCommand(composite: Composite): Command => composite;
+op procedureCommand(procedure: Procedure): Command => procedure;
+op datatypeCommand(datatype: Datatype): Command => datatype;
+op opaqueTypeCommand(opaqueType: OpaqueType): Command => opaqueType;
+op constrainedTypeCommand(ct: ConstrainedType): Command => ct;
+

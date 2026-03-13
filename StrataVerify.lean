@@ -43,8 +43,19 @@ def parseOptions (args : List String) : Except Std.Format (VerifyOptions × Stri
          match n? with
          | .none => .error f!"Invalid number of seconds: {secondsStr}"
          | .some n => go {opts with solverTimeout := n} rest procs
-      | opts, "--reach-check" :: rest, procs => go {opts with reachCheck := true} rest procs
       | opts, "--incremental" :: rest, procs => go {opts with incremental := true} rest procs
+      | opts, "--check-mode" :: modeStr :: rest, procs =>
+         match modeStr with
+         | "deductive" => go {opts with checkMode := .deductive} rest procs
+         | "bugFinding" => go {opts with checkMode := .bugFinding} rest procs
+         | "bugFindingAssumingCompleteSpec" => go {opts with checkMode := .bugFindingAssumingCompleteSpec} rest procs
+         | _ => .error f!"Invalid check mode: {modeStr}. Must be 'deductive', 'bugFinding', or 'bugFindingAssumingCompleteSpec'."
+      | opts, "--check-level" :: levelStr :: rest, procs =>
+         match levelStr with
+         | "minimal" => go {opts with checkLevel := .minimal} rest procs
+         | "minimalVerbose" => go {opts with checkLevel := .minimalVerbose} rest procs
+         | "full" => go {opts with checkLevel := .full} rest procs
+         | _ => .error f!"Invalid check level: {levelStr}. Must be 'minimal', 'minimalVerbose', or 'full'."
       | opts, [file], procs => pure (opts, file, procs)
       | _, [], _ => .error "StrataVerify requires a file as input"
       | _, args, _ => .error f!"Unknown options: {args}"
@@ -64,7 +75,8 @@ def usageMessage : Std.Format :=
   --output-format=sarif       Output results in SARIF format to <file>.sarif{Std.Format.line}  \
   --vc-directory=<dir>        Store VCs in SMT-Lib format in <dir>{Std.Format.line}  \
   --solver <name>             SMT solver executable to use (default: {defaultSolver}){Std.Format.line}  \
-  --reach-check               Enable reachability checks for all asserts and covers."
+  --check-mode <mode>         Check mode: 'deductive' (default, prove correctness), 'bugFinding' (find bugs), or 'bugFindingAssumingCompleteSpec' (find bugs assuming complete preconditions).{Std.Format.line}  \
+  --check-level <level>       Check level: 'minimal' (default, simple messages), 'minimalVerbose' (detailed messages, one check), or 'full' (both checks, all outcomes)."
 
 def main (args : List String) : IO UInt32 := do
   let parseResult := parseOptions args
@@ -110,12 +122,12 @@ def main (args : List String) : IO UInt32 := do
             for report in reports do
               IO.println s!"\nProcedure: {report.procedureName}"
               for result in report.results do
-                let marker := if result.outcome != .pass then "✗" else "✓"
-                let desc := match result.outcome with
-                  | .fail => "counterexample found"
-                  | .unknown => "unknown"
-                  | .pass => "verified"
-                  | .implementationError msg => s!"error: {msg}"
+                let (marker, desc) := match result.outcome with
+                  | .ok o =>
+                    if o.isPass then ("✓", "verified")
+                    else if o.isAlwaysFalse then ("✗", "counterexample found")
+                    else ("✗", "unknown")
+                  | .error msg => ("✗", s!"error: {msg}")
                 IO.println s!"  {marker} {desc}"
             pure #[]  -- Return empty array since B3 prints directly
           else if opts.incremental then
@@ -153,12 +165,14 @@ def main (args : List String) : IO UInt32 := do
             -- Create a files map with the single input file
             let uri := Strata.Uri.file file
             let files := Map.empty.insert uri inputCtx.fileMap
-            Core.Sarif.writeSarifOutput files vcResults (file ++ ".sarif")
+            Core.Sarif.writeSarifOutput opts.checkMode files vcResults (file ++ ".sarif")
 
         -- Also output standard format
         for vcResult in vcResults do
           let posStr := Imperative.MetaData.formatFileRangeD vcResult.obligation.metadata (some inputCtx.fileMap)
-          println! f!"{posStr} [{vcResult.obligation.label}]: {vcResult.result}"
+          match vcResult.outcome with
+          | .ok outcome => println! f!"{posStr} [{vcResult.obligation.label}]: {Core.VCOutcome.emoji outcome} {Core.VCOutcome.label outcome}"
+          | .error msg => println! f!"{posStr} [{vcResult.obligation.label}]: error: {msg}"
         let success := vcResults.all Core.VCResult.isSuccess
         if success && !opts.checkOnly then
           println! f!"All {vcResults.size} goals passed."

@@ -75,6 +75,12 @@ inductive PropertyType where
   | divisionByZero
   deriving Repr, DecidableEq
 
+/-- Whether an unreachable path counts as pass for this property type.
+    Assertions pass vacuously when unreachable; covers fail. -/
+def PropertyType.passWhenUnreachable : PropertyType → Bool
+  | .assert | .divisionByZero => true
+  | .cover => false
+
 instance : ToFormat PropertyType where
   format p := match p with
     | .cover => "cover"
