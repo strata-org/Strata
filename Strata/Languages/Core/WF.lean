@@ -3,10 +3,14 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.DL.Util.Func
-import Strata.DL.Util.ListUtils
-import Strata.Languages.Core.Program
+public import Strata.DL.Util.Func
+public import Strata.DL.Util.ListUtils
+import all Strata.DL.Util.ListUtils
+public import Strata.Languages.Core.Program
+
+public section
 
 /-! # Well-Formedness of Strata Core Programs
  This file contains well-formedness definitions of Strata Core `Program`s Note that
@@ -57,7 +61,7 @@ structure WFcallProp (p : Program) (lhs : List Expression.Ident) (procName : Str
   lhsWF : lhs.Nodup
   wfargs : Forall (WFargProp p) args
 
-def WFCmdExtProp (p : Program) (c : CmdExt Expression) : Prop := match c with
+@[expose] def WFCmdExtProp (p : Program) (c : CmdExt Expression) : Prop := match c with
   | .cmd c => WFcmdProp p c
   | .call (lhs : List Expression.Ident) (procName : String) (args : List Expression.Expr) _ => WFcallProp p lhs procName args
 
@@ -83,7 +87,7 @@ structure WFexitProp  (p : Program) (label : Option String) : Prop where
 structure WFfuncDeclProp (p : Program) (decl : Imperative.PureFunc Expression) : Prop where
   arg_nodup : decl.inputs.keys.Nodup
 
-@[simp]
+@[simp, expose]
 def WFStatementProp (p : Program) (stmt : Statement) : Prop := match stmt with
   | .cmd   cmd => WFCmdExtProp p cmd
   | .block (label : String) (b : Block) _ => WFblockProp (CmdExt Expression) p label b
@@ -95,7 +99,7 @@ def WFStatementProp (p : Program) (stmt : Statement) : Prop := match stmt with
   | .funcDecl decl _ => WFfuncDeclProp p decl
   | .typeDecl _ _ => True  -- Type declarations are always well-formed
 
-abbrev WFStatementsProp (p : Program) := Forall (WFStatementProp p)
+@[expose] abbrev WFStatementsProp (p : Program) := Forall (WFStatementProp p)
 
 instance (p : Program) : ListP (WFStatementProp p) (WFStatementsProp p) where
   split := by intros as a wfs
@@ -150,7 +154,7 @@ structure WFProcedureProp (p : Program) (d : Procedure) : Prop where
   wfspec : WFSpecProp p d.spec d
 structure WFFunctionProp (p : Program) (f : Function) : Prop where
 
-@[simp]
+@[simp, expose, grind]
 def WFDeclProp (p : Program) (decl : Decl) : Prop := match decl with
   | .var name ty e _ => WFVarProp p name ty e
   | .type t _ => WFTypeDeclarationProp p t
@@ -159,7 +163,7 @@ def WFDeclProp (p : Program) (decl : Decl) : Prop := match decl with
   | .proc d _ => WFProcedureProp p d
   | .func f _ => WFFunctionProp p f
 
-abbrev WFDeclsProp (p : Program) := Forall (WFDeclProp p)
+@[expose, simp] abbrev WFDeclsProp (p : Program) := Forall (WFDeclProp p)
 
 instance (p : Program) : ListP (WFDeclProp p) (WFDeclsProp p) where
   split := by intros as a wfs
@@ -177,4 +181,7 @@ structure WFProgram extends (Wrapper Program) where
   prop: WFProgramProp self
 
 end WF
+
 end Core
+
+end -- public section

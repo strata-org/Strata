@@ -450,5 +450,65 @@ theorem occurrences_find {α} [DecidableEq α] (l : List α) (x : α)
 def foldlIdx (f : β → Nat → α → β) (init : β) (l : List α) : β :=
   ((List.range l.length).zip l).foldl (fun acc (i, a) => f acc i a) init
 
+/-- If `P x → Q x` for all `x ∈ L`, then `(L.filter P).length ≤ (L.filter Q).length`. -/
+theorem filter_length_le_of_imp {L : List α} {P Q : α → Bool}
+    (h_imp : ∀ x ∈ L, P x = true → Q x = true) :
+    (L.filter P).length ≤ (L.filter Q).length := by
+  induction L with
+  | nil => simp
+  | cons x xs ih =>
+    have ih' := ih (fun y hy => h_imp y (.tail x hy))
+    simp only [List.filter]
+    cases hPx : P x <;> cases hQx : Q x
+    · exact ih'
+    · simp; omega
+    · have := h_imp x (.head xs) hPx; simp_all
+    · simp; omega
+
+/-- If `P x → Q x` for all `x ∈ L`, and there is a witness `a ∈ L` with `Q a` but `¬P a`,
+    then `(L.filter P).length < (L.filter Q).length`. -/
+theorem filter_length_lt_of_imp_witness {L : List α} {P Q : α → Bool}
+    {a : α}
+    (h_imp : ∀ x ∈ L, P x = true → Q x = true)
+    (h_in : a ∈ L) (hQa : Q a = true) (hPa : ¬(P a = true)) :
+    (L.filter P).length < (L.filter Q).length := by
+  induction L with
+  | nil => nomatch h_in
+  | cons y ys ih =>
+    have h_imp_ys : ∀ z ∈ ys, P z = true → Q z = true :=
+      fun z hz => h_imp z (.tail y hz)
+    simp only [List.filter]
+    cases h_in with
+    | head =>
+      have hPa_false : P a = false := by
+        cases h : P a
+        · rfl
+        · exact absurd h hPa
+      simp only [hPa_false, hQa, List.length_cons]
+      have := filter_length_le_of_imp h_imp_ys
+      omega
+    | tail _ h_in_ys =>
+      cases hPy : P y <;> cases hQy : Q y
+      · exact ih h_imp_ys h_in_ys
+      · simp; have := ih h_imp_ys h_in_ys; omega
+      · have := h_imp y (.head ys) hPy; simp_all
+      · simp; have := ih h_imp_ys h_in_ys; omega
+
+/-- If every element of `xs` is in `ys`, then `xs.removeAll ys = []`. -/
+theorem removeAll_eq_nil_of_forall_mem [BEq α] [LawfulBEq α]
+    {xs ys : List α} (h : ∀ x, x ∈ xs → x ∈ ys) :
+    xs.removeAll ys = [] := by
+  simp only [List.removeAll]
+  rw [List.filter_eq_nil_iff]
+  grind
+
+theorem removeAll_not_mem [BEq α] [LawfulBEq α] {x : α} {xs : List α}
+    (h : x ∉ xs) : xs.removeAll [x] = xs := by
+  simp only [List.removeAll]
+  rw [List.filter_eq_self]
+  intro a ha
+  simp only [List.elem_cons, List.elem_nil]
+  split <;> simp_all
+
 end List
 end

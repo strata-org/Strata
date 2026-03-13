@@ -14,5 +14,5 @@ procedure main() {
     assert sum_val == 8;
 
     var diff: int := x - y;
-    assert diff == 2;
+    assert diff == 2
 };

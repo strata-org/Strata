@@ -3,9 +3,10 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.Languages.Laurel.Laurel
-import Strata.Languages.Laurel.LaurelFormat
+public import Strata.Languages.Laurel.Laurel
+public import Strata.Languages.Laurel.LaurelFormat
 import Strata.Util.Tactics
 import Strata.Languages.Python.PythonLaurelCorePrelude
 
@@ -57,6 +58,8 @@ definition each reference resolves to.
 -/
 
 namespace Strata.Laurel
+
+public section
 
 /-! ## AstNode — the target of a resolved reference -/
 
@@ -115,20 +118,15 @@ def SemanticModel.get (model: SemanticModel) (iden: Identifier): AstNode :=
   | none => default -- panic! s!"model.get called on identifier {iden.text} without number"
 
 def SemanticModel.isFunction (model: SemanticModel) (id: Identifier): Bool :=
-  if id.uniqueId == none then
-    -- The Python pipeline generates constructor/discriminator calls that may not
-    -- be resolved at the Laurel level. Treating them as functions keeps them as
-    -- expressions; any real errors will be caught during Core type checking.
-    -- Make an exception for 'test_helper_procedure' since it's a procedure
-    -- We will remove this hack when we enable the Python through Laurel pipeline to correctly resolve
-    id.text ∉ Strata.Python.corePreludeProcedures
-  else
-    match model.get id with
-    | .staticProcedure proc => proc.isFunctional
-    | .parameter _ => true
-    | .datatypeConstructor _ _ => true
-    | .constant _ => true
-    | node => panic! s!"id: {repr id}, is not a procedure, node {repr node}"
+  match model.get id with
+      | .staticProcedure proc => proc.isFunctional
+      | .parameter _ => true
+      | .datatypeConstructor _ _ => true
+      | .constant _ => true
+      | .unresolved => true -- functions calls are more permissive, so true avoids possibly incorrect errors
+      | node =>
+          dbg_trace s!"Sound but incomplete BUG! id: {repr id}, is not a procedure, but a node {repr node}"
+          false
 
 /-- The output of the resolution pass. -/
 structure ResolutionResult where
@@ -142,13 +140,13 @@ structure ResolutionResult where
 /-! ## Phase 1: ID assignment and reference resolution -/
 
 /-- A scope entry stores the definition-site ID and the AstNode for type lookups. -/
-abbrev ScopeEntry := Nat × AstNode
+@[expose] abbrev ScopeEntry := Nat × AstNode
 
 /-- Scope maps a name to its definition-site ID and optional AstNode. -/
-abbrev Scope := Std.HashMap String ScopeEntry
+@[expose] abbrev Scope := Std.HashMap String ScopeEntry
 
 /-- Per-composite-type scope mapping field names to their scope entries. -/
-abbrev TypeScopes := Std.HashMap String Scope
+@[expose] abbrev TypeScopes := Std.HashMap String Scope
 
 /-- State threaded through the resolution pass. -/
 structure ResolveState where
@@ -161,7 +159,7 @@ structure ResolveState where
   /-- Diagnostics collected during resolution. -/
   errors : Array DiagnosticModel := #[]
 
-abbrev ResolveM := StateM ResolveState
+@[expose] abbrev ResolveM := StateM ResolveState
 
 /-- Allocate a fresh unique ID. -/
 private def freshId : ResolveM Nat := do
@@ -730,3 +728,5 @@ def resolve (program : Program) (existingModel: Option SemanticModel := none) : 
     },
     errors := finalState.errors
   }
+
+end

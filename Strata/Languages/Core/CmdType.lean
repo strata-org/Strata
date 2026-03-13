@@ -3,17 +3,18 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-
-
-import Strata.Languages.Core.Expressions
-import Strata.DL.Imperative.TypeContext
-import Strata.DL.Lambda.Factory
+public import Strata.Languages.Core.Expressions
+public import Strata.DL.Imperative.TypeContext
+public import Strata.DL.Lambda.Factory
 
 namespace Core
 open Lambda Imperative
 open Std (ToFormat Format format)
 open Strata (DiagnosticModel FileRange)
+
+public section
 
 ---------------------------------------------------------------------
 
@@ -62,7 +63,7 @@ def inferType (C: LContext CoreLParams) (Env: TEnv Unit) (c : Cmd Expression) (e
   let T ← match c with
     | .init _ _ _ _ =>
       let efv := LExpr.freeVars e
-      .ok (Env.addInOldestContext efv)
+      (Env.addInOldestContext efv).mapError DiagnosticModel.fromFormat
     | _ =>
       let _ ← Env.freeVarCheck e f!"[{c}]" |>.mapError DiagnosticModel.fromFormat
       .ok Env
@@ -116,4 +117,5 @@ instance : Imperative.TypeContext Expression (LContext CoreLParams) (TEnv Unit) 
 end CmdType
 ---------------------------------------------------------------------
 
+end
 end Core

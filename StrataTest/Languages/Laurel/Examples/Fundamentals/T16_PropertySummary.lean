@@ -18,12 +18,12 @@ procedure divide(x: int, y: int) returns (result: int)
 //         ^^^^^^ error: divisor is non-zero does not hold
 {
   assert y == 0 summary "divisor is zero";
-//^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: divisor is zero does not hold
-  return x;
+//^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: divisor is zero does not hold
+  return x
 };
 
 procedure checkPositive(n: int) returns (ok: bool) {
-  var x: int := divide(3, 0);
+  var x: int := divide(3, 0)
 };
 "#
 

@@ -3,14 +3,14 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-
-
-import Strata.Languages.Core.Core
-import Strata.DL.SMT.SMT
-import Strata.DL.Lambda.RecursiveAxioms
+public import Strata.Languages.Core.Core
+public import Strata.DL.SMT.SMT
+public import Strata.DL.Imperative.SMTUtils
+public import Strata.DL.Lambda.RecursiveAxioms
 import Init.Data.String.Extra
-import Strata.DDM.Util.DecimalRat
+public import Strata.DDM.Util.DecimalRat
 import Strata.DL.Imperative.SMTUtils
 
 ---------------------------------------------------------------------
@@ -18,6 +18,8 @@ import Strata.DL.Imperative.SMTUtils
 namespace Core
 open Std (ToFormat Format format)
 open Lambda Strata.SMT Strata.SMT.Encoder
+
+public section
 
 structure SMT.IF where
   uf : UF
@@ -124,7 +126,7 @@ def SMT.Context.emitDatatypes (ctx : SMT.Context) : Strata.SMT.SolverM Unit := d
       let dts := usedBlock.map fun d => (d.name, d.typeArgs, datatypeConstructorsToSMT d)
       Strata.SMT.Solver.declareDatatypes dts
 
-abbrev BoundVars := List (String × TermType)
+@[expose] abbrev BoundVars := List (String × TermType)
 
 ---------------------------------------------------------------------
 partial def unifyTypes (typeVars : List String) (pattern : LMonoTy) (concrete : LMonoTy) (acc : Map String LMonoTy) : Map String LMonoTy :=
@@ -216,6 +218,7 @@ def convertQuantifierKind : Lambda.QuantifierKind -> Strata.SMT.QuantifierKind
 
 mutual
 
+@[expose]
 partial def toSMTTerm (E : Env) (bvs : BoundVars) (e : LExpr CoreLParams.mono) (ctx : SMT.Context)
   (useArrayTheory : Bool := false)
   : Except Format (Term × SMT.Context) := do
@@ -587,7 +590,7 @@ partial def toSMTOp (E : Env) (fn : CoreIdent) (fnty : LMonoTy) (ctx : SMT.Conte
         let formalStrs := formals.map (toString ∘ format)
         let tys := LMonoTy.destructArrow fnty
         let intys := tys.take (tys.length - 1)
-        let (smt_intys, ctx) ← LMonoTys.toSMTType E intys ctx
+        let (smt_intys, ctx) ← LMonoTys.toSMTType E intys ctx useArrayTheory
         let bvs := formalStrs.zip smt_intys
         let argvars := bvs.map (fun a => TermVar.mk (toString $ format a.fst) a.snd)
         let outty := tys.getLast (by exact @LMonoTy.destructArrow_non_empty fnty)
@@ -650,26 +653,9 @@ def toSMTTerms (E : Env) (es : List (LExpr CoreLParams.mono)) (ctx : SMT.Context
     .ok ((et :: erestt), ctx)
 
 /--
-Encode a proof obligation -- which may be of type `assert` or `cover` -- into
-SMTLIB.
-
-Under conditions `P`, `assert(Q)` is encoded into SMTLib as follows:
-```
-(assert P)
-(assert (not Q))
-(check-sat)
-```
-If the result is `unsat`, then `P ∧ ¬Q` is unsatisfiable, which means `P => Q`
-is valid. If the result is `sat`, then the assertion is violated.
-
-Under conditions `P`, `cover(Q)` is encoded into SMTLib as follows:
-```
-(assert P)
-(assert Q)
-(check-sat)
-```
-If the result is `unsat`, then `P ∧ Q` is unsatisfiable, which means that the
-cover is violated. If the result is `sat`, then the cover succeeds.
+Encode a proof obligation into SMT terms: path conditions (P) and obligation (Q).
+The obligation Q is returned without negation; see `encodeCore` in Verifier.lean
+for the check-sat encoding that applies negation for validity checks.
 -/
 def ProofObligation.toSMTTerms (E : Env)
   (d : Imperative.ProofObligation Expression) (ctx : SMT.Context := SMT.Context.default)
@@ -681,12 +667,7 @@ def ProofObligation.toSMTTerms (E : Env)
   let distinct_assumptions := distinct_terms.map
     (λ ts => Term.app (.core .distinct) ts .bool)
   let (assumptions_terms, ctx) ← Core.toSMTTerms E assumptions ctx useArrayTheory
-  let (obligation_pos_term, ctx) ← Core.toSMTTerm E [] d.obligation ctx useArrayTheory
-  let obligation_term :=
-    if d.property == .cover then
-      obligation_pos_term
-    else
-      Factory.not obligation_pos_term
+  let (obligation_term, ctx) ← Core.toSMTTerm E [] d.obligation ctx useArrayTheory
   .ok (distinct_assumptions ++ assumptions_terms, obligation_term, ctx)
 
 ---------------------------------------------------------------------
@@ -775,5 +756,7 @@ def convertCounterEx (cex : Imperative.SMT.CounterEx Expression.Ident)
     (constructorNames : Std.HashSet String := {})
     : List (Expression.Ident × LExpr CoreLParams.mono) :=
   cex.map fun (id, t) => (id, smtTermToLExpr t constructorNames)
+
+end -- public section
 
 end Core

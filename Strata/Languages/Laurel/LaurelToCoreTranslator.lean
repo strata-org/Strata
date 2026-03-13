@@ -3,20 +3,21 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.Languages.Core.Program
-import Strata.Languages.Core.Verifier
-import Strata.Languages.Core.Statement
-import Strata.Languages.Core.Procedure
-import Strata.Languages.Core.Options
-import Strata.Languages.Laurel.Laurel
-import Strata.Languages.Laurel.LiftImperativeExpressions
+public import Strata.Languages.Core.Program
+public import Strata.Languages.Core.Verifier
+public import Strata.Languages.Core.Statement
+public import Strata.Languages.Core.Procedure
+public import Strata.Languages.Core.Options
+public import Strata.Languages.Laurel.Laurel
+public import Strata.Languages.Laurel.LiftImperativeExpressions
 import Strata.Languages.Laurel.EliminateReturnsInExpression
-import Strata.Languages.Laurel.HeapParameterization
-import Strata.Languages.Laurel.TypeHierarchy
-import Strata.Languages.Laurel.LaurelTypes
-import Strata.Languages.Laurel.ModifiesClauses
-import Strata.Languages.Laurel.CoreDefinitionsForLaurel
+public import Strata.Languages.Laurel.HeapParameterization
+public import Strata.Languages.Laurel.TypeHierarchy
+public import Strata.Languages.Laurel.LaurelTypes
+public import Strata.Languages.Laurel.ModifiesClauses
+public import Strata.Languages.Laurel.CoreDefinitionsForLaurel
 import Strata.DL.Imperative.Stmt
 import Strata.DL.Imperative.MetaData
 import Strata.DL.Lambda.LExpr
@@ -32,6 +33,8 @@ namespace Strata.Laurel
 open Std (Format ToFormat)
 open Strata
 open Lambda (LMonoTy LTy LExpr)
+
+public section
 
 /-
 Translate Laurel HighType to Core Type
@@ -67,7 +70,7 @@ def isFieldName (fieldNames : List Identifier) (name : Identifier) : Bool :=
   fieldNames.contains name
 
 /-- Set of names that are translated to Core functions (not procedures) -/
-abbrev FunctionNames := List Identifier
+@[expose] abbrev FunctionNames := List Identifier
 
 /-- State threaded through expression and statement translation -/
 structure TranslateState where
@@ -79,7 +82,7 @@ structure TranslateState where
   model : SemanticModel
 
 /-- The translation monad: state over Id -/
-abbrev TranslateM := StateT TranslateState Id
+@[expose] abbrev TranslateM := StateT TranslateState Id
 
 /-- Emit a diagnostic into the translation state -/
 def emitDiagnostic (d : DiagnosticModel) : TranslateM Unit :=
@@ -288,8 +291,7 @@ def translateStmt (outputParams : List Parameter) (stmt : StmtExprMd)
   | @StmtExpr.Assert cond =>
       -- Assert/assume bodies must be pure expressions (no assignments, loops, or procedure calls)
       let coreExpr ← translateExpr cond [] (isPureContext := true)
-      let label := md.getPropertySummary.getD ("assert" ++ getNameFromMd md)
-      return [Core.Statement.assert label coreExpr md]
+      return [Core.Statement.assert ("assert" ++ getNameFromMd md) coreExpr md]
   | @StmtExpr.Assume cond =>
       let coreExpr ← translateExpr cond [] (isPureContext := true)
       return [Core.Statement.assume ("assume" ++ getNameFromMd md) coreExpr md]
@@ -406,19 +408,17 @@ def translateStmt (outputParams : List Parameter) (stmt : StmtExprMd)
       cases stmt; term_by_mem
 
 /--
-Translate a list of contract expressions (preconditions or postconditions) to Core checks.
-Each check gets a label from the propertySummary metadata if present, otherwise a generated
-label like `"requires"` or `"requires_0"`, `"requires_1"`, etc.
+Translate a list of checks (preconditions or postconditions) to Core checks.
+Each check gets a label like `"requires"` or `"requires_0"`, `"requires_1"`, etc.
 -/
-private def translateChecks (clauses : List StmtExprMd) (labelBase : String)
+private def translateChecks (checks : List StmtExprMd) (labelBase : String)
     : TranslateM (ListMap Core.CoreLabel Core.Procedure.Check) :=
-  clauses.mapIdxM (fun i clause => do
-    let label := match clause.md.getPropertySummary with
-      | some msg => msg
-      | none => if clauses.length == 1 then labelBase else s!"{labelBase}_{i}"
-    let checkExpr ← translateExpr clause [] (isPureContext := true)
-    let c : Core.Procedure.Check := { expr := checkExpr, md := clause.md }
+  checks.mapIdxM (fun i check => do
+    let label := if checks.length == 1 then labelBase else s!"{labelBase}_{i}"
+    let checkExpr ← translateExpr check [] (isPureContext := true)
+    let c : Core.Procedure.Check := { expr := checkExpr, md := check.md }
     return (label, c))
+
 
 /--
 Translate Laurel Parameter to Core Signature entry
@@ -536,8 +536,8 @@ def translateProcedureToFunction (proc : Procedure) : TranslateM Core.Decl := do
     | some p => translateType model p.type
     | none => LMonoTy.int
   -- Translate precondition to FuncPrecondition (skip trivial `true`)
-  let preconditions ← proc.preconditions.mapM (fun clause => do
-    let checkExpr ← translateExpr clause [] true
+  let preconditions ← proc.preconditions.mapM (fun precondition => do
+    let checkExpr ← translateExpr precondition [] true
     return { expr := checkExpr, md := () })
 
   let body ← match proc.body with
@@ -691,7 +691,6 @@ def verifyToVcResults (program : Program)
 
   -- Enable removeIrrelevantAxioms to avoid polluting simple assertions with heap axioms
   let options := { options with removeIrrelevantAxioms := true }
-  -- Debug: Print the generated Strata Core program
   let runner tempDir :=
     EIO.toIO (fun f => IO.Error.userError (toString f))
         (Core.verify strataCoreProgram tempDir .none options)
@@ -718,4 +717,5 @@ def verifyToDiagnosticModels (program : Program) (options : VerifyOptions := .de
   | .error errors => return errors
   | .ok results => return results.filterMap toDiagnosticModel
 
+end -- public section
 end Laurel
