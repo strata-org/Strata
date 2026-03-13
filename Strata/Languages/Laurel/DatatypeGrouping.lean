@@ -48,19 +48,27 @@ public def groupDatatypes (dts : List DatatypeDefinition)
   if n = 0 then [] else
   let nameToIdx : Std.HashMap String Nat :=
     dts.foldlIdx (fun m i dt => m.insert dt.name.text i) {}
-  -- Build OutGraph: edge from dt[i] to dt[j] if dt[i] directly references dt[j]
+  -- Build OutGraph: nodesOut returns in-edges, so to traverse successors we store
+  -- edges as (j → i) for each reference i → j (dt[i] references dt[j]).
   let edges : List (Nat × Nat) :=
     dts.foldlIdx (fun acc i dt =>
-      (datatypeRefs dt).filterMap nameToIdx.get? |>.foldl (fun acc j => (i, j) :: acc) acc) []
+      (datatypeRefs dt).filterMap nameToIdx.get? |>.foldl (fun acc j => (j, i) :: acc) acc) []
   let g := OutGraph.ofEdges! n edges
   let sccs := OutGraph.tarjan g
   -- Map indices back to LDatatype Unit values
   let ldtMap : Std.HashMap String (Lambda.LDatatype Unit) :=
     ldts.foldl (fun m ldt => m.insert ldt.name ldt) {}
   let dtsArr := dts.toArray
-  sccs.toList.filterMap fun comp =>
-    let members := comp.toList.filterMap fun idx =>
-      dtsArr[idx]? |>.bind fun dt => ldtMap.get? dt.name.text
-    if members.isEmpty then none else some members
+  -- Restore original input order: sort each SCC's members by their input index,
+  -- then sort the SCCs themselves by the minimum input index they contain.
+  let groups : List (Nat × List (Lambda.LDatatype Unit)) :=
+    sccs.toList.filterMap fun comp =>
+      let sorted := comp.toList.mergeSort (· < ·)
+      let members := sorted.filterMap fun idx =>
+        dtsArr[idx]? |>.bind fun dt => ldtMap.get? dt.name.text
+      match sorted, members with
+      | minIdx :: _, _ :: _ => some (minIdx.val, members)
+      | _, _ => none
+  (groups.mergeSort (fun a b => a.1 < b.1)).map (·.2)
 
 end Strata.Laurel
