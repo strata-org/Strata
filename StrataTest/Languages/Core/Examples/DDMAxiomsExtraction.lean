@@ -67,8 +67,8 @@ def replaceTypesByFTV (expr: Core.Expression.Expr) (to_replace: List String): Co
     | .op m o oty => .op m o (oty.map (fun t => transformSimpleTypeToFreeVariable t to_replace))
     | .fvar m name oty => .fvar m name (oty.map (fun t => transformSimpleTypeToFreeVariable t to_replace))
     | .bvar m i => .bvar m i
-    | .abs m oty e => .abs m (oty.map (fun t => transformSimpleTypeToFreeVariable t to_replace)) (replaceTypesByFTV e to_replace)
-    | .quant m k oty tr e => .quant m k (oty.map (fun t => transformSimpleTypeToFreeVariable t to_replace)) (replaceTypesByFTV tr to_replace) (replaceTypesByFTV e to_replace)
+    | .abs m name oty e => .abs m name (oty.map (fun t => transformSimpleTypeToFreeVariable t to_replace)) (replaceTypesByFTV e to_replace)
+    | .quant m k name oty tr e => .quant m k name (oty.map (fun t => transformSimpleTypeToFreeVariable t to_replace)) (replaceTypesByFTV tr to_replace) (replaceTypesByFTV e to_replace)
     | .app m fn e => .app m (replaceTypesByFTV fn to_replace) (replaceTypesByFTV e to_replace)
     | .ite m c t e => .ite m (replaceTypesByFTV c to_replace) (replaceTypesByFTV t to_replace) (replaceTypesByFTV e to_replace)
     | .eq m e1 e2 => .eq m (replaceTypesByFTV e1 to_replace) (replaceTypesByFTV e2 to_replace)
@@ -395,12 +395,12 @@ info: #[{ ann := { start := { byteIdx := 296 }, stop := { byteIdx := 303 } },
 #eval examplePgm.commands
 
 /--
-info: [LExpr.quant () QuantifierKind.all (some Lambda.LMonoTy.tcons
+info: [LExpr.quant () QuantifierKind.all "m" (some Lambda.LMonoTy.tcons
    "Map"
    [Lambda.LMonoTy.ftvar "k",
     Lambda.LMonoTy.ftvar
-      "v"]) (LExpr.bvar () 0) (LExpr.quant () QuantifierKind.all (some Lambda.LMonoTy.ftvar
-   "k") (LExpr.bvar () 0) (LExpr.quant () QuantifierKind.all (some Lambda.LMonoTy.ftvar
+      "v"]) (LExpr.bvar () 0) (LExpr.quant () QuantifierKind.all "kk" (some Lambda.LMonoTy.ftvar
+   "k") (LExpr.bvar () 0) (LExpr.quant () QuantifierKind.all "vv" (some Lambda.LMonoTy.ftvar
    "v") (LExpr.bvar () 0) (LExpr.eq () (LExpr.app () (LExpr.app () (LExpr.op () { name := "select",
    metadata := () } (some Lambda.LMonoTy.tcons
    "arrow"
@@ -424,13 +424,13 @@ info: [LExpr.quant () QuantifierKind.all (some Lambda.LMonoTy.tcons
             [Lambda.LMonoTy.ftvar "k",
              Lambda.LMonoTy.ftvar
                "v"]]]])) (LExpr.bvar () 2)) (LExpr.bvar () 1)) (LExpr.bvar () 0))) (LExpr.bvar () 1)) (LExpr.bvar () 0)))),
- LExpr.quant () QuantifierKind.all (some Lambda.LMonoTy.tcons
+ LExpr.quant () QuantifierKind.all "m" (some Lambda.LMonoTy.tcons
    "Map"
    [Lambda.LMonoTy.ftvar "k",
     Lambda.LMonoTy.ftvar
-      "v"]) (LExpr.bvar () 0) (LExpr.quant () QuantifierKind.all (some Lambda.LMonoTy.ftvar
-   "k") (LExpr.bvar () 0) (LExpr.quant () QuantifierKind.all (some Lambda.LMonoTy.ftvar
-   "k") (LExpr.bvar () 0) (LExpr.quant () QuantifierKind.all (some Lambda.LMonoTy.ftvar
+      "v"]) (LExpr.bvar () 0) (LExpr.quant () QuantifierKind.all "okk" (some Lambda.LMonoTy.ftvar
+   "k") (LExpr.bvar () 0) (LExpr.quant () QuantifierKind.all "kk" (some Lambda.LMonoTy.ftvar
+   "k") (LExpr.bvar () 0) (LExpr.quant () QuantifierKind.all "vv" (some Lambda.LMonoTy.ftvar
    "v") (LExpr.bvar () 0) (LExpr.eq () (LExpr.app () (LExpr.app () (LExpr.op () { name := "select",
    metadata := () } (some Lambda.LMonoTy.tcons
    "arrow"

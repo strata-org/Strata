@@ -3,11 +3,12 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.DL.SMT.DDMTransform.Translate
-import Strata.DL.SMT.Term
-import Strata.DL.SMT.TermType
-import Strata.Languages.Core.Options
+public import Strata.DL.SMT.DDMTransform.Translate
+public import Strata.DL.SMT.Term
+public import Strata.DL.SMT.TermType
+public import Strata.Languages.Core.Options
 import Std.Data.HashMap
 
 /-!
@@ -24,6 +25,8 @@ works purely with `Term` values and delegates string rendering to the Solver via
 -/
 
 namespace Strata.SMT
+
+public section
 
 inductive Decision where
   | sat
@@ -56,7 +59,7 @@ structure SolverState where
 
 def SolverState.init : SolverState := {}
 
-abbrev SolverM (α) := StateT SolverState (ReaderT Solver IO) α
+@[expose] abbrev SolverM (α) := StateT SolverState (ReaderT Solver IO) α
 
 def SolverM.run (solver : Solver) (x : SolverM α) (state : SolverState := SolverState.init) : IO (α × SolverState) :=
   ReaderT.run (StateT.run x state) solver
@@ -130,7 +133,7 @@ def termToSMTString (t : Term) : SolverM String := do
   | .ok s =>
     modify fun st => { st with termStrings := st.termStrings.insert t s }
     return s
-  | .error msg => panic! s!"Solver.termToSMTString failed: {msg}"
+  | .error msg => throw (IO.userError s!"Solver.termToSMTString failed: {msg}")
 
 /-- Convert a `TermType` to its SMT-LIB string, using the `SolverState` cache. -/
 def typeToSMTString (ty : TermType) : SolverM String := do
@@ -139,7 +142,7 @@ def typeToSMTString (ty : TermType) : SolverM String := do
   | .ok s =>
     modify fun st => { st with typeStrings := st.typeStrings.insert ty s }
     return s
-  | .error msg => panic! s!"Solver.typeToSMTString failed: {msg}"
+  | .error msg => throw (IO.userError s!"Solver.typeToSMTString failed: {msg}")
 
 /-! ## String-based commands (less critical, kept as-is) -/
 
@@ -211,17 +214,17 @@ def assertId (id : String) : SolverM Unit :=
 /-- Declare a constant with a typed `TermType`. -/
 def declareConst (id : String) (ty : TermType) : SolverM Unit := do
   let tyStr ← typeToSMTString ty
-  emitln s!"(declare-const {id} {tyStr})"
+  emitln s!"(declare-const {quoteIdent id} {tyStr})"
 
 /-- Declare a function with typed argument and return types. -/
 def declareFun (id : String) (argTys : List TermType) (retTy : TermType) : SolverM Unit := do
   let retStr ← typeToSMTString retTy
   if argTys.isEmpty then
-    emitln s!"(declare-const {id} {retStr})"
+    emitln s!"(declare-const {quoteIdent id} {retStr})"
   else
     let argStrs ← argTys.mapM typeToSMTString
     let inline := String.intercalate " " argStrs
-    emitln s!"(declare-fun {id} ({inline}) {retStr})"
+    emitln s!"(declare-fun {quoteIdent id} ({inline}) {retStr})"
 
 /-- Define a function with typed return type and a raw SMT-LIB string body.
     This is an internal helper; prefer `defineFunTerm` for Term-based bodies. -/
@@ -229,10 +232,10 @@ def defineFun (id : String) (args : List (String × TermType)) (retTy : TermType
     (body : String) : SolverM Unit := do
   let typedArgs ← args.mapM fun (name, ty) => do
     let tyStr ← typeToSMTString ty
-    return s!"({name} {tyStr})"
+    return s!"({quoteIdent name} {tyStr})"
   let inline := String.intercalate " " typedArgs
   let retStr ← typeToSMTString retTy
-  emitln s!"(define-fun {id} ({inline}) {retStr} {body})"
+  emitln s!"(define-fun {quoteIdent id} ({inline}) {retStr} {body})"
 
 /-- Define a function where the body is given as a `Term` (converted via cache). -/
 def defineFunTerm (id : String) (args : List (String × TermType)) (retTy : TermType)
@@ -262,6 +265,22 @@ def checkSat (vars : List String) : SolverM Decision := do
     return Decision.unknown
   | other     => throw (IO.userError s!"Unrecognized solver output: {other}")
 
+def checkSatAssuming (assumptions : List String) (vars : List String) : SolverM Decision := do
+  let assumptionsStr := String.intercalate " " assumptions
+  emitln s!"(check-sat-assuming ({assumptionsStr}))"
+  let result := (← readlnD "unknown").trimAscii.toString
+  match result with
+  | "sat"     =>
+    if !vars.isEmpty then
+      getValue vars
+    return Decision.sat
+  | "unsat"   => return Decision.unsat
+  | "unknown" =>
+    if !vars.isEmpty then
+      getValue vars
+    return Decision.unknown
+  | other     => throw (IO.userError s!"Unrecognized solver output: {other}")
+
 def reset : SolverM Unit :=
   emitln "(reset)"
 
@@ -269,5 +288,7 @@ def exit : SolverM Unit :=
   emitln "(exit)"
 
 end Solver
+
+end
 
 end Strata.SMT

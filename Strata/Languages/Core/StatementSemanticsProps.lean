@@ -3,16 +3,28 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.DL.Imperative.CmdSemantics
-import Strata.DL.Imperative.StmtSemantics
-import Strata.DL.Imperative.HasVars
-import Strata.DL.Util.Nodup
-import Strata.DL.Util.ListUtils
-import Strata.Languages.Core.Procedure
-import Strata.Languages.Core.Statement
-import Strata.Languages.Core.StatementSemantics
+public import Strata.DL.Imperative.CmdSemantics
+import all Strata.DL.Imperative.CmdSemantics
+public import Strata.DL.Imperative.StmtSemantics
+import all Strata.DL.Imperative.StmtSemantics
+public import Strata.DL.Imperative.HasVars
+import all Strata.DL.Imperative.HasVars
+public import Strata.DL.Util.Nodup
+import all Strata.DL.Util.Nodup
+public import Strata.DL.Util.ListUtils
+import all Strata.DL.Util.ListUtils
+public import Strata.Languages.Core.Procedure
+public import Strata.Languages.Core.Statement
+import all Strata.Languages.Core.Statement
+public import Strata.Languages.Core.StatementSemantics
+import all Strata.Languages.Core.StatementSemantics
+import all Strata.DL.Imperative.Cmd
+import all Strata.DL.Imperative.Stmt
 import Strata.Util.Tactics
+
+public section
 
 /-! ## Theorems related to StatementSemantics -/
 
@@ -2054,6 +2066,7 @@ theorem EvalStmtRefinesContract
   | .ite_true_sem Hcond Hwf Heval => .ite_true_sem Hcond Hwf (EvalBlockRefinesContract Heval)
   | .ite_false_sem Hcond Hwf Heval => .ite_false_sem Hcond Hwf (EvalBlockRefinesContract Heval)
   | .funcDecl_sem => .funcDecl_sem
+  | .typeDecl_sem => .typeDecl_sem
 
 /-- Proof that `EvalBlock` with concrete semantics refines contract semantics,
     by structural recursion on the derivation. -/
@@ -2083,10 +2096,10 @@ theorem EvalExpressionIsDefined :
     specialize Hwfvr (Lambda.LExpr.fvar m v' ty') v' σ
     simp [HasFvar.getFvar] at Hwfvr
     simp_all
-  case abs m ty e ih =>
-    exact ih (Hwfc.definedness.absdef σ m ty e Hsome) v Hin
-  case quant m k ty tr e trih eih =>
-    have ⟨htr, he⟩ := Hwfc.definedness.quantdef σ m k ty tr e Hsome
+  case abs m name ty e ih =>
+    exact ih (Hwfc.definedness.absdef σ m name ty e Hsome) v Hin
+  case quant m k name ty tr e trih eih =>
+    have ⟨htr, he⟩ := Hwfc.definedness.quantdef σ m k name ty tr e Hsome
     grind
   case app m e₁ e₂ ih₁ ih₂ =>
     have ⟨h₁, h₂⟩ := Hwfc.definedness.appdef σ m e₁ e₂ Hsome
@@ -2097,3 +2110,7 @@ theorem EvalExpressionIsDefined :
   case eq m e₁ e₂ ih₁ ih₂ =>
     have ⟨h₁, h₂⟩ := Hwfc.definedness.eqdef σ m e₁ e₂ Hsome
     grind
+
+end Core
+
+end -- public section

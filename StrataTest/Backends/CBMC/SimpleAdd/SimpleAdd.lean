@@ -4,7 +4,7 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import StrataTest.Backends.CBMC.CoreToCProverGOTO
+import Strata.Backends.CBMC.GOTO.CoreToCProverGOTO
 
 open Std (ToFormat Format format)
 -------------------------------------------------------------------------------

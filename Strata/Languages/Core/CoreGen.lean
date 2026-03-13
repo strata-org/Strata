@@ -3,11 +3,14 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.Languages.Core.Statement
-import Strata.DL.Util.LabelGen
-import Strata.DL.Util.StringGen
-import Strata.DL.Util.ListUtils
+public import Strata.Languages.Core.Statement
+public import Strata.DL.Util.LabelGen
+public import Strata.DL.Util.StringGen
+import all Strata.DL.Util.StringGen
+import all Strata.DL.Util.Counter
+public import Strata.DL.Util.ListUtils
 open Core Lambda Imperative
 
 /-! ## Strata Core Identifier Generator
@@ -19,6 +22,7 @@ open Core Lambda Imperative
 -/
 
 namespace Core
+public section
 
 structure CoreGenState where
   cs : StringGenState
@@ -100,6 +104,8 @@ instance : LabelGen.WFLabelGen CoreIdent CoreGenState where
     simp [CoreGenState.WF, StringGenState.WF, Counter.WF]
   wf_gen := CoreGenState.WFMono
 
+@[expose]
 abbrev CoreGenM := StateM CoreGenState
 
+end
 end Core

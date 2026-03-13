@@ -3,11 +3,12 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
+public import Strata.Languages.Core.Program
+public import Strata.DL.Imperative.EvalContext
 
-
-import Strata.Languages.Core.Program
-import Strata.DL.Imperative.EvalContext
+public section
 
 namespace Core
 open Std (ToFormat Format format)
@@ -23,7 +24,7 @@ instance : ToFormat Expression.Expr := by
   infer_instance
 
 -- Custom ToFormat instance for our specific Scope type to get the desired formatting
-private def formatScope (m : Map CoreIdent (Option Lambda.LMonoTy × Expression.Expr)) : Std.Format :=
+def formatScope (m : Map CoreIdent (Option Lambda.LMonoTy × Expression.Expr)) : Std.Format :=
   match m with
   | [] => ""
   | [(k, (ty, v))] => go k ty v
@@ -126,7 +127,7 @@ def ProofObligations.createAssertions
 /--
 A substitution map from variable identifiers to expressions.
 -/
-abbrev SubstMap := Map Expression.Ident Expression.Expr
+@[expose] abbrev SubstMap := Map Expression.Ident Expression.Expr
 
 structure Env where
   error : Option (Imperative.EvalError Expression)
@@ -201,7 +202,16 @@ def Env.addFactory (E : Env) (f : (@Lambda.Factory CoreLParams)) : Except Diagno
   let exprEnv ← E.exprEnv.addFactory f
   .ok { E with exprEnv := exprEnv }
 
+/-- Add a function to the environment. For recursive functions, checks that
+    the `@[cases]` attribute was provided (which sets `inlineIfConstr`), and
+    rejects cases not yet supported for SMT verification (polymorphic recursive
+    functions, missing `@[cases]` attribute). -/
 def Env.addFactoryFunc (E : Env) (func : (Lambda.LFunc CoreLParams)) : Except DiagnosticModel Env := do
+  if func.isRecursive && !func.typeArgs.isEmpty then
+    .error (.fromFormat f!"Polymorphic recursive functions are not yet supported for SMT \
+      verification: '{func.name}'. SMT solvers require monomorphic axioms.")
+  if func.isRecursive && (Strata.DL.Util.FuncAttr.findInlineIfConstr func.attr).isNone then
+    .error (.fromFormat f!"Recursive function '{func.name}' requires a @[cases] parameter")
   let exprEnv ← E.exprEnv.addFactoryFunc func
   .ok { E with exprEnv := exprEnv }
 
@@ -328,5 +338,7 @@ def Env.addDatatypes (E: Env) (blocks: List (Lambda.MutualDatatype Unit)) : Exce
   blocks.foldlM Env.addMutualDatatype E
 
 end Core
+
+end -- public section
 
 ---------------------------------------------------------------------

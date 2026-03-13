@@ -41,6 +41,7 @@ instance : ToExpr SepFormat where
     | .space => mkConst ``SepFormat.space
     | .spacePrefix => mkConst ``SepFormat.spacePrefix
     | .newline => mkConst ``SepFormat.newline
+    | .semicolon => mkConst ``SepFormat.semicolon
 
 end SepFormat
 
@@ -422,7 +423,7 @@ private def toExpr {argDecls} (bi : BindingSpec argDecls) (argDeclsExpr : Lean.E
   match bi with
   | .value b => astExpr! value argDeclsExpr (b.toExpr argDeclsExpr)
   | .type b => astExpr! type argDeclsExpr (b.toExpr argDeclsExpr)
-  | .typeForward b => astExpr! typeForward argDeclsExpr (b.toExpr argDeclsExpr)
+  | .scopedType b => astExpr! scopedType argDeclsExpr (b.toExpr argDeclsExpr)
   | .datatype b => astExpr! datatype argDeclsExpr (b.toExpr argDeclsExpr)
   | .tvar b => astExpr! tvar argDeclsExpr (b.toExpr argDeclsExpr)
 

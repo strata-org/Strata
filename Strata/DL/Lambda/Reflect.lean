@@ -3,13 +3,15 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.DL.Lambda.LExpr
-import Strata.DL.Lambda.LState
-import Strata.DL.Lambda.LTy
-import Strata.DL.Lambda.LExprTypeEnv
-import Lean.Elab.Term
-import Lean.Meta
+public meta import Strata.DL.Lambda.LExpr
+public meta import Strata.DL.Lambda.LState
+public meta import Strata.DL.Lambda.LTy
+public meta import Strata.DL.Lambda.LExprTypeEnv
+public meta import Lean.Elab.Term
+public meta import Lean.Meta
+public meta import Strata.DL.Lambda.Identifiers
 
 /-!
 ## Reflect Lambda expressions into Lean's Logic
@@ -20,6 +22,8 @@ WIP.
 namespace Lambda
 open Lean Elab Tactic Expr Meta
 open Std (ToFormat Format format)
+
+public meta section
 
 -------------------------------------------------------------------------------
 
@@ -86,7 +90,7 @@ def LExpr.toExprNoFVars (e : LExpr MonoString) : MetaM Lean.Expr := do
     | none => throwError f!"[LExpr.toExprNoFVars] Cannot find free var in the local context: {e}"
     | some decl => return decl.toExpr
 
-  | .abs _ mty e' =>
+  | .abs _ _ mty e' =>
     match mty with
     | none => throwError f!"[LExpr.toExprNoFVars] Cannot reflect untyped abstraction!"
     | some ty => do
@@ -96,7 +100,7 @@ def LExpr.toExprNoFVars (e : LExpr MonoString) : MetaM Lean.Expr := do
         let bodyExpr ← LExpr.toExprNoFVars e'
         mkLambdaFVars #[x] bodyExpr
 
-  | .quant _ qk mty _ e =>
+  | .quant _ qk _ mty _ e =>
     match mty with
     | none => throwError f!"[LExpr.toExprNoFVars] Cannot reflect untyped quantifier!"
     | some ty =>
@@ -157,5 +161,7 @@ section Tests
 open LTy.Syntax LExpr.Syntax
 
 end Tests
+
+end -- public meta section
 
 -------------------------------------------------------------------------------

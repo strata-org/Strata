@@ -3,14 +3,17 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.DL.Lambda.LExpr
-import Strata.DL.Lambda.LExprWF
-import Strata.DL.Imperative.StmtSemantics
-import Strata.Languages.Core.CoreGen
-import Strata.Languages.Core.Procedure
+public import Strata.DL.Lambda.LExpr
+public import Strata.DL.Lambda.LExprWF
+public import Strata.DL.Imperative.StmtSemantics
+public import Strata.Languages.Core.CoreGen
+public import Strata.Languages.Core.Procedure
 
 ---------------------------------------------------------------------
+
+public section
 
 namespace Core
 
@@ -19,7 +22,7 @@ inductive Value : Core.Expression.Expr → Prop where
   | const :  Value (.const () _)
   | bvar  :  Value (.bvar () _)
   | op    :  Value (.op () _ _)
-  | abs   :  Value (.abs () _ _)
+  | abs   :  Value (.abs () _ _ _)
 
 open Imperative
 
@@ -34,9 +37,9 @@ instance : HasFvar Core.Expression where
 instance : HasSubstFvar Core.Expression where
   substFvar := Lambda.LExpr.substFvar
 
-@[match_pattern]
+@[expose, match_pattern]
 def Core.true : Core.Expression.Expr := .boolConst () Bool.true
-@[match_pattern]
+@[expose, match_pattern]
 def Core.false : Core.Expression.Expr := .boolConst () Bool.false
 
 instance : HasBool Core.Expression where
@@ -49,21 +52,21 @@ instance : HasNot Core.Expression where
   | Core.false => Core.true
   | e => Lambda.LExpr.app () (Lambda.boolNotFunc (T:=CoreLParams)).opExpr e
 
-abbrev CoreEval := SemanticEval Expression
-abbrev CoreStore := SemanticStore Expression
+@[expose] abbrev CoreEval := SemanticEval Expression
+@[expose] abbrev CoreStore := SemanticStore Expression
 
 /-- If a compound expression is defined, its subexpressions are defined. -/
 structure WellFormedCoreEvalDefinedness (δ : CoreEval) : Prop where
-  absdef:   (∀ σ m ty e, (δ σ (.abs m ty e)).isSome → (δ σ e).isSome)
+  absdef:   (∀ σ m name ty e, (δ σ (.abs m name ty e)).isSome → (δ σ e).isSome)
   appdef:   (∀ σ m e₁ e₂, (δ σ (.app m e₁ e₂)).isSome → (δ σ e₁).isSome ∧ (δ σ e₂).isSome)
   eqdef:    (∀ σ m e₁ e₂, (δ σ (.eq m e₁ e₂)).isSome → (δ σ e₁).isSome ∧ (δ σ e₂).isSome)
-  quantdef: (∀ σ m k ty tr e, (δ σ (.quant m k ty tr e)).isSome → (δ σ tr).isSome ∧ (δ σ e).isSome)
+  quantdef: (∀ σ m k name ty tr e, (δ σ (.quant m k name ty tr e)).isSome → (δ σ tr).isSome ∧ (δ σ e).isSome)
   itedef:   (∀ σ m c t e, (δ σ (.ite m c t e)).isSome → (δ σ c).isSome ∧ (δ σ t).isSome ∧ (δ σ e).isSome)
 
 structure WellFormedCoreEvalCong (δ : CoreEval): Prop where
     abscongr: (∀ σ σ' e₁ e₁' ,
       δ σ e₁ = δ σ' e₁' →
-      (∀ m ty, δ σ (.abs m ty e₁) = δ σ' (.abs m ty e₁')))
+      (∀ m name ty, δ σ (.abs m name ty e₁) = δ σ' (.abs m name ty e₁')))
     appcongr: (∀ σ σ' m e₁ e₁' e₂ e₂',
       δ σ e₁ = δ σ' e₁' →
       δ σ e₂ = δ σ' e₂' →
@@ -72,10 +75,10 @@ structure WellFormedCoreEvalCong (δ : CoreEval): Prop where
       δ σ e₁ = δ σ' e₁' →
       δ σ e₂ = δ σ' e₂' →
       (δ σ (.eq m e₁ e₂) = δ σ' (.eq m e₁' e₂')))
-    quantcongr: (∀ σ σ' m k ty e₁ e₁' e₂ e₂',
+    quantcongr: (∀ σ σ' m k name ty e₁ e₁' e₂ e₂',
       δ σ e₁ = δ σ' e₁' →
       δ σ e₂ = δ σ' e₂' →
-      (δ σ (.quant m k ty e₁ e₂) = δ σ' (.quant m k ty e₁' e₂')))
+      (δ σ (.quant m k name ty e₁ e₂) = δ σ' (.quant m k name ty e₁' e₂')))
     itecongr: (∀ σ σ' m e₁ e₁' e₂ e₂' e₃ e₃',
       δ σ e₁ = δ σ' e₁' →
       δ σ e₂ = δ σ' e₂' →
@@ -292,11 +295,11 @@ inductive EvalCommand (π : String → Option Procedure) (φ : CoreEval → Pure
     ----
     EvalCommand π φ δ σ (CmdExt.call lhs n args md) σ'
 
-abbrev EvalStatement (π : String → Option Procedure) (φ : CoreEval → PureFunc Expression → CoreEval) : CoreEval →
+@[expose] abbrev EvalStatement (π : String → Option Procedure) (φ : CoreEval → PureFunc Expression → CoreEval) : CoreEval →
     CoreStore → Statement → CoreStore → CoreEval → Prop :=
   Imperative.EvalStmt Expression Command (EvalCommand π φ) (EvalPureFunc φ)
 
-abbrev EvalStatements (π : String → Option Procedure) (φ : CoreEval → PureFunc Expression → CoreEval) : CoreEval →
+@[expose] abbrev EvalStatements (π : String → Option Procedure) (φ : CoreEval → PureFunc Expression → CoreEval) : CoreEval →
     CoreStore → List Statement → CoreStore → CoreEval → Prop :=
   Imperative.EvalBlock Expression Command (EvalCommand π φ) (EvalPureFunc φ)
 
@@ -341,10 +344,14 @@ inductive EvalCommandContract : (String → Option Procedure)  → CoreEval →
     ----
     EvalCommandContract π δ σ (.call lhs n args md) σ'
 
-abbrev EvalStatementContract (π : String → Option Procedure) (φ : CoreEval → PureFunc Expression → CoreEval) : CoreEval →
+@[expose] abbrev EvalStatementContract (π : String → Option Procedure) (φ : CoreEval → PureFunc Expression → CoreEval) : CoreEval →
     CoreStore → Statement → CoreStore → CoreEval → Prop :=
   Imperative.EvalStmt Expression Command (EvalCommandContract π) (EvalPureFunc φ)
 
-abbrev EvalStatementsContract (π : String → Option Procedure) (φ : CoreEval → PureFunc Expression → CoreEval) : CoreEval →
+@[expose] abbrev EvalStatementsContract (π : String → Option Procedure) (φ : CoreEval → PureFunc Expression → CoreEval) : CoreEval →
     CoreStore → List Statement → CoreStore → CoreEval → Prop :=
   Imperative.EvalBlock Expression Command (EvalCommandContract π) (EvalPureFunc φ)
+
+end Core
+
+end -- public section

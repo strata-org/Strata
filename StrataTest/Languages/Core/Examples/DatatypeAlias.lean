@@ -45,6 +45,10 @@ spec {
 
 /--
 info:
+Obligation: set_v_calls_Box..value_0
+Property: assert
+Result: ✅ pass
+
 Obligation: valueIs100
 Property: assert
 Result: ✅ pass

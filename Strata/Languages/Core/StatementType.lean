@@ -3,15 +3,16 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-
-
-import Strata.Languages.Core.Statement
-import Strata.Languages.Core.CmdType
-import Strata.Languages.Core.Program
-import Strata.Languages.Core.FunctionType
-import Strata.DL.Imperative.CmdType
+public import Strata.Languages.Core.Statement
+public import Strata.Languages.Core.CmdType
+public import Strata.Languages.Core.Program
+public import Strata.Languages.Core.FunctionType
+public import Strata.DL.Imperative.CmdType
 import Strata.Util.Tactics
+
+public section
 
 namespace Core
 namespace Statement
@@ -168,11 +169,24 @@ where
             .error (errorWithSourceLoc e md)
 
         | .funcDecl decl md => do try
+          -- Recursive functions are only allowed as top-level declarations
+          if decl.isRecursive then
+            .error (md.toDiagnosticF f!"recursive functions are not allowed as local declarations")
           -- Type check the function declaration using the shared helper
           -- which returns both the type-checked PureFunc and the Function
           let (decl', func, Env) ← PureFunc.typeCheck C Env decl |>.mapError DiagnosticModel.fromFormat
           let C := C.addFactoryFunction func
           .ok (.funcDecl decl' md, Env, C)
+          catch e =>
+            .error (errorWithSourceLoc e md)
+
+        | .typeDecl tc md => do try
+          -- Add the type to the context. Shadowing is not allowed: if a
+          -- type with the same name was already declared (at the program
+          -- level or in an enclosing scope), this will return an error.
+          let C ← C.addKnownTypeWithError { name := tc.name, metadata := tc.numargs }
+            (md.toDiagnosticF f!"Type '{tc.name}' is already declared")
+          .ok (.typeDecl tc md, Env, C)
           catch e =>
             .error (errorWithSourceLoc e md)
 
@@ -235,6 +249,7 @@ def Statement.subst (S : Subst) (s : Statement) : Statement :=
       body := decl.body.map (·.applySubst S),
       axioms := decl.axioms.map (·.applySubst S) }
     .funcDecl decl' md
+  | .typeDecl _ _ => s  -- Type declarations don't contain type variables to substitute
   where
     go S ss acc : List Statement :=
     match ss with
@@ -257,5 +272,8 @@ def typeCheck (C: Expression.TyContext) (Env : Expression.TyEnv) (P : Program) (
   .ok (ss', Env)
 
 ---------------------------------------------------------------------
+
 end Statement
 end Core
+
+end -- public section

@@ -3,13 +3,14 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
+public import Strata.DL.Lambda.LExprType
+public import Strata.Languages.Core.Program
+public import Strata.Languages.Core.FunctionType
+public import Strata.Languages.Core.ProcedureType
 
-
-import Strata.DL.Lambda.LExprType
-import Strata.Languages.Core.Program
-import Strata.Languages.Core.FunctionType
-import Strata.Languages.Core.ProcedureType
+public section
 
 ---------------------------------------------------------------------
 
@@ -52,7 +53,7 @@ namespace Program
 Type check the program. The function assumes that all functions registered to
 C are already well-typed.
 -/
-def typeCheck (C: Core.Expression.TyContext) (Env : Core.Expression.TyEnv) (program : Program) :
+@[expose] def typeCheck (C: Core.Expression.TyContext) (Env : Core.Expression.TyEnv) (program : Program) :
   Except DiagnosticModel (Program × Core.Expression.TyEnv) := do
     -- Push a type substitution scope to store global type variables.
     let Env := Env.updateSubst { subst := [[]], isWF := SubstWF_of_empty_empty }
@@ -123,7 +124,19 @@ def typeCheck (C: Core.Expression.TyContext) (Env : Core.Expression.TyEnv) (prog
 
       | .func func _ => try
         let Env := Env.pushEmptySubstScope
-        let (func', Env) ← Function.typeCheck C Env func |>.mapError (fun e => DiagnosticModel.withRange fileRange e)
+        -- Recursive functions must not have the inline attribute.
+        if func.isRecursive && func.attr.any (· == .inline) then
+          .error (DiagnosticModel.withRange fileRange <|
+            f!"recursive function '{func.name}' cannot be marked inline")
+        -- For recursive functions, temporarily add a signature-only stub to the
+        -- context so that recursive calls in the body can reference the
+        -- function itself. Only the name and signature matter; the body is
+        -- precisely what is being type-checked.
+        let C' := if func.isRecursive then
+          C.addFactoryFunction { name := func.name, typeArgs := func.typeArgs,
+                                 inputs := func.inputs, output := func.output }
+        else C
+        let (func', Env) ← Function.typeCheck C' Env func |>.mapError (fun e => DiagnosticModel.withRange fileRange e)
         let C := C.addFactoryFunction func'
         let Env := Env.popSubstScope
         .ok (Decl.func func', C, Env)
@@ -134,3 +147,5 @@ def typeCheck (C: Core.Expression.TyContext) (Env : Core.Expression.TyEnv) (prog
 
 end Program
 end Core
+
+end -- public section

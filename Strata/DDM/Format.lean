@@ -19,15 +19,20 @@ namespace Strata
 /--
 Check if a character is valid for starting a regular identifier.
 Regular identifiers must start with a letter or underscore.
+
+NOTE: When updating this function, you will want to consider updating Strata/DDM/Parser.lean as well.
 -/
 private def isIdBegin (c : Char) : Bool :=
-  c.isAlpha || c == '_'
+  c.isAlpha || c == '_' || c == '$'
 
 /--
 Check if a character is valid for continuing a regular identifier.
+Includes @ and $ which are valid in SMT-LIB 2.6 simple symbols and
+used by the encoder for disambiguated names (e.g. x@1) and generated
+names (e.g. $__bv0).
 -/
 private def isIdContinue (c : Char) : Bool :=
-  c.isAlphanum || c == '_' || c == '\'' || c == '.' || c == '?' || c == '!'
+  c.isAlphanum || c == '_' || c == '\'' || c == '.' || c == '?' || c == '!' || c == '@' || c == '$'
 
 /--
 Check if a string needs pipe delimiters when formatted as an identifier.
@@ -56,15 +61,14 @@ Strips Lean's «» notation if present.
 Follows SMT-LIB 2.6 specification for quoted symbols.
 -/
 private def formatIdent (s : String) : Format :=
-  -- Strip Lean's «» notation if present
-  let s := if s.startsWith "«" && s.endsWith "»" then
-             s.drop 1 |>.dropEnd 1 |>.toString
-           else
-             s
   if needsPipeDelimiters s then
     Format.text ("|" ++ escapePipeIdent s ++ "|")
   else
     Format.text s
+
+/-- Quote an identifier string for SMT-LIB, adding pipe delimiters if needed. -/
+def quoteIdent (s : String) : String :=
+  if needsPipeDelimiters s then "|" ++ escapePipeIdent s ++ "|" else s
 
 structure PrecFormat where
   format : Format
@@ -85,6 +89,8 @@ Options to control parenthesis
 structure FormatOptions where
   /-- Always add parenthesis when feasible. -/
   alwaysParen : Bool := false
+  /-- Use SMT-LIB 2.7 string escaping (`""` for quotes) instead of C-style (`\"`). -/
+  smtStringEscaping : Bool := false
 
 /--
 A format context provides callbacks and information needed to
@@ -379,7 +385,10 @@ private partial def ArgF.mformatM {α} : ArgF α → FormatM PrecFormat
 | .ident _ x => return .atom (formatIdent x)
 | .num _ x => pformat x
 | .decimal _ v => pformat v
-| .strlit _ s => return .atom (.text <| escapeStringLit s)
+| .strlit _ s => do
+    let ctx ← read
+    let esc := if ctx.opts.smtStringEscaping then escapeSMTStringLit s else escapeStringLit s
+    return .atom (.text esc)
 | .bytes _ v => return .atom <| .text <| ByteArray.escapeBytes v
 | .option _ ma =>
   match ma with
@@ -414,6 +423,13 @@ private partial def ArgF.mformatM {α} : ArgF α → FormatM PrecFormat
       let f i q s := return s ++ "\n" ++ (← entries[i].mformatM).format
       let a := (← entries[0].mformatM).format
       .atom <$> entries.size.foldlM f (start := 1) a
+  | .semicolon =>
+    if z : entries.size = 0 then
+      pure (.atom .nil)
+    else do
+      let f i q s := return s ++ "; " ++ (← entries[i].mformatM).format
+      let a := (← entries[0].mformatM).format
+      .atom <$> entries.size.foldlM f (start := 1) a
 
 private partial def ppArgs (f : StrataFormat) (rargs : Array Arg) : FormatM PrecFormat :=
   if rargs.isEmpty then
@@ -437,6 +453,21 @@ private partial def formatArguments (c : FormatContext) (initState : FormatState
                 | some ⟨alvl, aisLt⟩  =>
                   have _ : alvl < a.size := by simp at aisLt; omega
                   a[alvl].snd
+          -- If @[scopeSelf] is present, insert the function name before the param bindings.
+          -- scopeSelf subsumes @[scope]: we get params from argsLevel directly.
+          let s :=
+                match argDecls.argScopeSelfLevel ⟨lvl, h⟩ with
+                | none => s
+                | some (⟨nameLvl, nameIsLt⟩, ⟨argsLvl, argsIsLt⟩, _) =>
+                  have _ : nameLvl < a.size := by simp at nameIsLt; omega
+                  have _ : argsLvl < a.size := by simp at argsIsLt; omega
+                  match args[nameLvl] with
+                  | .ident _ name =>
+                    let paramBindings := a[argsLvl].snd.bindings
+                    let scopeStart := initState.bindings.size
+                    let paramOnly := paramBindings.extract scopeStart paramBindings.size
+                    { s with bindings := s.bindings ++ #[name] ++ paramOnly }
+                  | _ => s
           aux (a.push (args[lvl].mformatM c s))
         else
           a

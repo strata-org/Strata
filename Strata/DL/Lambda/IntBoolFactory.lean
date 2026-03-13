@@ -3,9 +3,15 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.DL.Lambda.LState
-import Strata.DL.Lambda.FactoryWF
+public import Strata.DL.Lambda.LState
+public import Strata.DL.Lambda.FactoryWF
+import all Strata.DL.Lambda.LTy
+import all Strata.DL.Lambda.LExpr
+import all Strata.DL.Lambda.Factory
+import all Strata.DL.Lambda.FactoryWF
+import all Strata.DL.Util.ListMap
 
 /-! ## A Minimal Factory with Support for Unbounded Integer and Boolean Operations
 
@@ -17,6 +23,8 @@ See also `Strata.DL.Lambda.Factory`.
 namespace Lambda
 open Std (ToFormat Format format)
 open LExpr LTy
+
+public section
 
 section IntBoolFactory
 
@@ -293,6 +301,14 @@ def intSafeModFunc : WFLFunc T :=
   binaryOp (InValTy := Int) "Int.SafeMod" (· % ·) (· != 0)
     (preconditions := [yNeZeroPrecond])
 
+def intSafeDivTFunc : WFLFunc T :=
+  binaryOp (InValTy := Int) "Int.SafeDivT" Int.tdiv (· != 0)
+    (preconditions := [yNeZeroPrecond])
+
+def intSafeModTFunc : WFLFunc T :=
+  binaryOp (InValTy := Int) "Int.SafeModT" Int.tmod (· != 0)
+    (preconditions := [yNeZeroPrecond])
+
 end
 
 def IntBoolFactory [Inhabited T.mono.base.Metadata] : @Factory T := (#[
@@ -304,7 +320,9 @@ def IntBoolFactory [Inhabited T.mono.base.Metadata] : @Factory T := (#[
     intModFunc,
     intSafeModFunc,
     intDivTFunc,
+    intSafeDivTFunc,
     intModTFunc,
+    intSafeModTFunc,
     intNegFunc,
     intLtFunc,
     intLeFunc,
@@ -319,5 +337,7 @@ def IntBoolFactory [Inhabited T.mono.base.Metadata] : @Factory T := (#[
   ] : Array (WFLFunc T)).map (·.func)
 
 end IntBoolFactory
+
+end -- public section
 
 ---------------------------------------------------------------------

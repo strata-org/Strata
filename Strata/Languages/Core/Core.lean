@@ -3,17 +3,19 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-
-import Strata.Languages.Core.Options
-import Strata.Languages.Core.ProgramEval
-import Strata.Languages.Core.ProgramType
-import Strata.Languages.Core.DDMTransform.ASTtoCST
+public import Strata.Languages.Core.Options
+public import Strata.Languages.Core.ProgramEval
+public import Strata.Languages.Core.ProgramType
+public import Strata.Languages.Core.DDMTransform.ASTtoCST
 
 ---------------------------------------------------------------------
 
 namespace Core
 open Strata
+
+public section
 
 /-!
 ## Differences between Boogie and Strata.Core
@@ -91,6 +93,8 @@ instance : ToString (Program) where
 
 instance : Std.ToFormat Program where
   format := Core.formatProgram
+
+end -- public section
 
 end Core
 

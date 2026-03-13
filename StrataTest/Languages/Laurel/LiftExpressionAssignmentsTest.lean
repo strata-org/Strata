@@ -29,15 +29,15 @@ composite Box {
 procedure heapUpdateInBlockExpr(b: Box)
 {
   var x: int := { b#value := b#value + 1; b#value };
-  assert x == b#value;
-}
+  assert x == b#value
+};
 
 procedure assertInBlockExpr()
 {
   var x: int := 0;
   var y: int := { assert x == 0; x := 1; x };
-  assert y == 1;
-}
+  assert y == 1
+};
 "
 
 def parseLaurelAndLift (input : String) : IO Program := do
@@ -47,7 +47,10 @@ def parseLaurelAndLift (input : String) : IO Program := do
   let uri := Strata.Uri.file "test"
   match Laurel.TransM.run uri (Laurel.parseProgram strataProgram) with
   | .error e => throw (IO.userError s!"Translation errors: {e}")
-  | .ok program => pure (liftImperativeExpressions program)
+  | .ok program =>
+    let result := resolve program
+    let (program, model) := (result.program, result.model)
+    pure (liftExpressionAssignments model program)
 
 /--
 info: procedure heapUpdateInBlockExpr(b: Box) returns ⏎

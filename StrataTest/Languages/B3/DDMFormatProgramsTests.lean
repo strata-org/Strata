@@ -38,12 +38,12 @@ section ProgramRoundtripTests
 /--
 info: <B3 omitted>
 CST→AST Errors:
-  Unresolved identifier '«myFileSystemName: string»'
-  Unresolved identifier '«BlockPublicAcls: string»'
-  Unresolved identifier '«bucket: string»'
-  Unresolved identifier '«is-blocked: string»'
-  Unresolved identifier '«bucket: string»'
-  Unresolved identifier '«is-not-blocked: string»'
+  Unresolved identifier 'myFileSystemName: string'
+  Unresolved identifier 'BlockPublicAcls: string'
+  Unresolved identifier 'bucket: string'
+  Unresolved identifier 'is-blocked: string'
+  Unresolved identifier 'bucket: string'
+  Unresolved identifier 'is-not-blocked: string'
 AST→CST Errors:
   Variable index @2 is out of bounds (context has 2 variables)
   Variable index @12 is out of bounds (context has 12 variables)

@@ -3,12 +3,15 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.DL.Lambda.LExprWF
-import Strata.DL.Lambda.LTyUnify
-import Strata.DL.Lambda.Factory
-import Strata.DL.Lambda.TypeFactory
-import Strata.DL.Util.Maps
+public import Strata.DL.Lambda.LExprWF
+public import Strata.DL.Lambda.LTyUnify
+import all Strata.DL.Lambda.LTyUnify
+public import Strata.DL.Lambda.Factory
+public import Strata.DL.Lambda.TypeFactory
+public import Strata.DL.Util.Maps
+import all Strata.DL.Util.Maps
 
 /-! ## Type Environment
 
@@ -22,6 +25,8 @@ namespace Lambda
 open Std (ToFormat Format format)
 open LExpr
 open Strata
+
+public section
 
 ---------------------------------------------------------------------
 
@@ -169,7 +174,7 @@ def TState.genExprSym (state : TState) : String × TState :=
 ---------------------------------------------------------------------
 
 /-- Name and arity of a registered type. -/
-def KnownType := Identifier Nat deriving Inhabited, DecidableEq, Repr
+@[expose] def KnownType := Identifier Nat deriving Inhabited, DecidableEq, Repr
 
 def KnownType.arity (k: KnownType) := k.metadata
 
@@ -188,7 +193,7 @@ instance : ToFormat KnownType where
   format k := f!"{k.toLTy}"
 
 /-- Registered types. -/
-abbrev KnownTypes := Identifiers Nat
+@[expose] abbrev KnownTypes := Identifiers Nat
 
 def makeKnownTypes (l: List KnownType) : KnownTypes :=
   Std.HashMap.ofList (l.map (fun x => (x.name, x.arity)))
@@ -318,6 +323,7 @@ instance : ToFormat (LContext T) where
                  identifiers:{Format.line}{s.idents}"
 
 
+@[expose]
 def LContext.addKnownTypeWithError (C : LContext T) (k : KnownType) (f: DiagnosticModel) : Except DiagnosticModel (LContext T) := do
   .ok {C with knownTypes := (← C.knownTypes.addWithError k f)}
 
@@ -328,6 +334,7 @@ def LContext.addIdentWithError (C : LContext T) (i: T.Identifier) (f: Diagnostic
   let i ← C.idents.addWithError i f
   .ok {C with idents := i}
 
+@[expose]
 def LContext.addFactoryFunction (C : LContext T) (fn : LFunc T) : LContext T :=
   { C with functions := C.functions.push fn }
 
@@ -340,6 +347,7 @@ This adds all types to `C.datatypes` and `C.knownTypes`,
 adds the derived functions (e.g. eliminators, testers),
 and performs error checking for name clashes.
 -/
+@[expose]
 def LContext.addMutualBlock [Inhabited T.IDMeta] [Inhabited T.Metadata] [ToFormat T.IDMeta]
   (C: LContext T) (block: MutualDatatype T.IDMeta) : Except DiagnosticModel (LContext T) := do
   -- Check for name clashes with known types
@@ -893,4 +901,5 @@ def TEnv.addTypeAlias (alias : TypeAlias) (C: LContext T) (Env : TEnv T.IDMeta) 
 
 ---------------------------------------------------------------------
 
+end -- public section
 end Lambda

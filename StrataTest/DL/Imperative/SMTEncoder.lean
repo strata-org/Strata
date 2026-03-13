@@ -78,6 +78,7 @@ def encodeArithToSMTTerms (ts : List Term) : SolverM (List String × EncoderStat
   for t in termEncs do
     Solver.assert t
   let ids := estate.ufs.values
+  let _ ← Solver.checkSat ids
   return (ids, estate)
 
 ---------------------------------------------------------------------

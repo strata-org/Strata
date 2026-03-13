@@ -3,20 +3,21 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.DL.Imperative.PureExpr
-import Strata.DL.Imperative.HasVars
-import Strata.DL.Imperative.MetaData
+public import Strata.DL.Imperative.PureExpr
+public import Strata.DL.Imperative.HasVars
+public import Strata.DL.Imperative.MetaData
 
-import Strata.DL.Imperative.CmdEval
-import Strata.DL.Imperative.CmdType
-import Strata.DL.Imperative.CmdSemantics
-import Strata.DL.Imperative.StmtSemantics
-import Strata.DL.Imperative.StmtSemanticsSmallStep
+public import Strata.DL.Imperative.CmdEval
+public import Strata.DL.Imperative.CmdType
+public import Strata.DL.Imperative.CmdSemantics
+public import Strata.DL.Imperative.StmtSemantics
+public import Strata.DL.Imperative.StmtSemanticsSmallStep
 
-import Strata.DL.Imperative.NondetStmt
-import Strata.DL.Imperative.NondetStmtSemantics
+public import Strata.DL.Imperative.NondetStmt
+public import Strata.DL.Imperative.NondetStmtSemantics
 
-import Strata.DL.Imperative.SemanticsProps
+public import Strata.DL.Imperative.SemanticsProps
 
-import Strata.DL.Imperative.SMTUtils
+public import Strata.DL.Imperative.SMTUtils

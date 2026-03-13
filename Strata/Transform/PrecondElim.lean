@@ -3,10 +3,12 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.Transform.CoreTransform
-import Strata.DL.Lambda.Preconditions
-import Strata.DL.Lambda.TypeFactory
+public import Strata.Transform.CoreTransform
+public import Strata.DL.Lambda.Preconditions
+public import Strata.DL.Lambda.TypeFactory
+import all Strata.DL.Imperative.Stmt
 
 /-! # Partial Function Precondition Elimination
 
@@ -29,6 +31,8 @@ in the presence of polymorphic preconditions, the resulting assertions
 have type variables that must be unified.
 -/
 
+public section
+
 namespace Core
 namespace PrecondElim
 
@@ -45,18 +49,29 @@ def wfProcName (name : String) : String := s!"{name}{wfSuffix}"
 
 /-! ## Collecting assertions from expressions -/
 
+/-- Classify a function name into a property type for SARIF reporting. -/
+private def classifyPrecondition (funcName : String) : Option String :=
+  if funcName.startsWith "Int.SafeDiv" || funcName.startsWith "Int.SafeMod" then
+    some Imperative.MetaData.divisionByZero
+  else
+    none
+
 /--
 Given a Factory and an expression, collect all partial function call
 precondition obligations and return them as `assert` statements.
-The metadata from the original statement is attached to the generated assertions.
+The metadata from the original statement is attached to the generated assertions,
+with property type classification added when applicable.
 -/
 def collectPrecondAsserts (F : @Lambda.Factory CoreLParams) (e : Expression.Expr)
 (labelPrefix : String) (md : Imperative.MetaData Expression := .empty)
 : List Statement :=
   let wfObs := Lambda.collectWFObligations F e
   wfObs.mapIdx fun idx ob =>
+    let md' := match classifyPrecondition ob.funcName with
+      | some pt => md.pushElem Imperative.MetaData.propertyType (.msg pt)
+      | none => md
     Statement.assert
-    s!"{labelPrefix}_calls_{ob.funcName}_{idx}" ob.obligation md
+    s!"{labelPrefix}_calls_{ob.funcName}_{idx}" ob.obligation md'
 
 /--
 Collect assertions for all expressions in a command.
@@ -240,6 +255,8 @@ def transformStmt (s : Statement)
       let paramInits := decl.inputs.toList.map fun (name, ty) =>
         Statement.init name ty none md
       return (hasPreconds, [.block s!"{funcName}{wfSuffix}" (paramInits ++ wfStmts) md, .funcDecl decl' md])
+  | .typeDecl _ _ =>
+    return (false, [s])  -- Type declarations pass through unchanged
   termination_by s.sizeOf
   decreasing_by all_goals term_by_mem
 end
@@ -300,3 +317,5 @@ where
 
 end PrecondElim
 end Core
+
+end -- public section

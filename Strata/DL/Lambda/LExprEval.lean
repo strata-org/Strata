@@ -3,9 +3,10 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.DL.Lambda.LExprWF
-import Strata.DL.Lambda.LState
+public import Strata.DL.Lambda.LExprWF
+public import Strata.DL.Lambda.LState
 
 /-! ## Partial evaluator for Lambda expressions
 
@@ -17,6 +18,8 @@ See function `Lambda.LExpr.eval` for the implementation.
 namespace Lambda
 open Std (ToFormat Format format)
 open Strata.DL.Util (FuncAttr)
+
+public section
 
 namespace LExpr
 
@@ -56,7 +59,7 @@ semantics only fires when `Int.Add 1` is a 'canonical value'. Therefore, without
 def isCanonicalValue (F : @Factory T.base) (e : LExpr T) : Bool :=
   match he: e with
   | .const _ _ => true
-  | .abs _ _ _ | .quant _ _ _ _ _ =>
+  | .abs _ _ _ _ | .quant _ _ _ _ _ _ =>
     -- We're using the locally nameless representation, which guarantees that
     -- `closed (.abs e) = closed e` (see theorem `closed_abs`).
     -- So we could simplify the following to `closed e`, but leave it as is for
@@ -115,7 +118,7 @@ def mkAbsOfArity (arity : Nat) (core : LExpr T) : (LExpr T) :=
   match arity with
   | 0 => core
   | n + 1 =>
-    go (bvarcount + 1) n (.abs core.metadata .none (.app core.metadata core (.bvar core.metadata bvarcount)))
+    go (bvarcount + 1) n (.abs core.metadata "" .none (.app core.metadata core (.bvar core.metadata bvarcount)))
 
 /--
 A metadata merger. It will be invoked 'subst s e' is invoked, to create a new
@@ -196,26 +199,26 @@ def evalCore  (n' : Nat) (σ : LState TBase) (e : LExpr TBase.mono) : LExpr TBas
   | .fvar _ x ty  => (σ.state.findD x (ty, e)).snd
    -- Note: closed .abs terms are canonical values; we'll be here if .abs
    -- contains free variables.
-  | .abs _ _ _   => LExpr.substFvarsFromState σ e
-  | .quant _ _ _ _ _ => LExpr.substFvarsFromState σ e
+  | .abs _ _ _ _   => LExpr.substFvarsFromState σ e
+  | .quant _ _ _ _ _ _ => LExpr.substFvarsFromState σ e
   | .app _ e1 e2 => evalApp n' σ e e1 e2
   | .eq m e1 e2 => evalEq n' σ m e1 e2
   | .ite m c t f => evalIte n' σ m c t f
 
+-- Note: this evaluation is eager -- both branches are fully evaluated even when
+-- the condition is not resolved to true/false. This was originally lazy (only
+-- substituting free variables via `substFvarsFromState`), but we switched to
+-- eager evaluation to support recursive functions, where the branches may
+-- contain recursive calls that need to be unfolded. If we ever need a lazy mode
+-- again, we should add a flag.
 def evalIte (n' : Nat) (σ : LState TBase) (m: TBase.Metadata) (c t f : LExpr TBase.mono) : LExpr TBase.mono :=
   let c' := eval n' σ c
   match c' with
   | .true _ => eval n' σ t
   | .false _ => eval n' σ f
   | _ =>
-    -- It's important to at least substitute `.fvar`s in both branches of the
-    -- `ite` here so that we can replace the variables by the values in the
-    -- state; these variables can come from an imperative dialect.
-    -- (TODO): Is it worth it to evaluate these branches instead?
-    -- let t' := eval n' σ t
-    -- let f' := eval n' σ f
-    let t' := substFvarsFromState σ t
-    let f' := substFvarsFromState σ f
+    let t' := eval n' σ t
+    let f' := eval n' σ f
     .ite m c' t' f'
 
 def evalEq (n' : Nat) (σ : LState TBase) (m: TBase.Metadata) (e1 e2 : LExpr TBase.mono) : LExpr TBase.mono :=
@@ -237,7 +240,7 @@ def evalApp (n' : Nat) (σ : LState TBase) (e e1 e2 : LExpr TBase.mono) : LExpr 
   let e1' := eval n' σ e1
   let e2' := eval n' σ e2
   match e1' with
-  | .abs mAbs _ e1' =>
+  | .abs mAbs _ _ e1' =>
     let e' := subst (fun metaReplacementVar =>
       let newMeta := mergeMetadataForSubst mAbs e2'.metadata metaReplacementVar
       replaceMetadata1 newMeta e2') e1'
@@ -258,4 +261,5 @@ instance : Traceable EvalProvenance Unit where
   combine _ := ()
 
 end LExpr
+end -- public section
 end Lambda

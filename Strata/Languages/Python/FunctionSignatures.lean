@@ -3,14 +3,17 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.Languages.Core.Core
+public import Strata.Languages.Core.Core
 
 namespace Strata
 namespace Python
 
+public section
+
 /-- A type identifier in the Strata Core prelude for Python. -/
-abbrev TypeId := String
+@[expose] abbrev TypeId := String
 
 /-- An argument declaration for a Python method -/
 structure ArgDecl where
@@ -49,7 +52,7 @@ instance : Inhabited FuncDecl where
   default := { args := #[], argIndexMap := {} }
 
 /-- The name of a Python method as encoded in the Strata Core dialect-/
-abbrev FuncName := String
+@[expose] abbrev FuncName := String
 
 /-- A collection of function signatures. -/
 class Signatures where
@@ -77,6 +80,7 @@ end Signatures
 /--
 Monad for extending a signatures collection.
 -/
+@[expose]
 def SignatureM := StateM Signatures
 deriving Monad, MonadState Signatures
 
@@ -113,7 +117,7 @@ def decl (name : FuncName) (args : List ArgDecl)
   }
   modify fun m => { m with functions := m.functions.insert name decl }
 
-private def identToStr (t : Lean.TSyntax `ident) : Lean.StrLit :=
+private meta def identToStr (t : Lean.TSyntax `ident) : Lean.StrLit :=
   match t.raw.isIdOrAtom? with
   | none => panic! "Unexpected string"
   | some s => Lean.Syntax.mkStrLit s
@@ -156,6 +160,8 @@ def TypeStrToCoreExpr (ty: String) : Core.Expression.Expr :=
     | "BytesOrStrOrNone" => .app () (.op () "BytesOrStrOrNone_mk_none" none) (.op () "None_none" none)
     | "DictStrStrOrNone" => .app () (.op () "DictStrStrOrNone_mk_none" none) (.op () "None_none" none)
     | _ => panic! s!"unsupported type: {ty}"
+
+end -- public section
 
 end Python
 end Strata

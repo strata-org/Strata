@@ -3,15 +3,24 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-
-
-import Strata.DL.Util.ListUtils
-import Strata.Languages.Core.Program
-import Strata.Languages.Core.WF
-import Strata.Languages.Core.StatementType
+public import Strata.DL.Util.ListUtils
+public import Strata.Languages.Core.Program
+public import Strata.Languages.Core.WF
+public import Strata.Languages.Core.StatementType
+import all Strata.Languages.Core.StatementType
+import all Strata.DL.Util.ListMap
+import all Strata.DL.Imperative.CmdType
+import all Strata.DL.Imperative.Stmt
+import all Strata.DL.Util.ListUtils
+import all Strata.Languages.Core.Statement
+import all Strata.Languages.Core.FunctionType
 
 ---------------------------------------------------------------------
+
+public section
+
 namespace Core
 namespace WF
 
@@ -33,7 +42,7 @@ private theorem listMap_keys_mapM_snd {α β γ : Type} (l : List (α × β))
     cases h; simp only[ListMap.keys]
     grind
 
-theorem typeCheckCmdWF: Statement.typeCheckCmd C T p c = Except.ok v
+private theorem typeCheckCmdWF: Statement.typeCheckCmd C T p c = Except.ok v
   → WFCmdExtProp p c := by
   intro H
   simp [Statement.typeCheckCmd, bind, Except.bind] at H
@@ -47,7 +56,7 @@ theorem typeCheckCmdWF: Statement.typeCheckCmd C T p c = Except.ok v
   sorry
   sorry
 
-theorem Statement.typeCheckAux_elim_acc: Statement.typeCheckAux.go P op C T ss (acc1 ++ acc2) labels = Except.ok (pp, T', C') ↔
+private theorem Statement.typeCheckAux_elim_acc: Statement.typeCheckAux.go P op C T ss (acc1 ++ acc2) labels = Except.ok (pp, T', C') ↔
   (List.IsPrefix acc2.reverse pp ∧ Statement.typeCheckAux.go P op C T ss acc1 labels = Except.ok (pp.drop acc2.length, T', C'))
   := by
   induction ss generalizing pp acc1 acc2 T C
@@ -64,14 +73,14 @@ theorem Statement.typeCheckAux_elim_acc: Statement.typeCheckAux.go P op C T ss (
   any_goals simp
   any_goals rw [← List.cons_append, ind]
 
-theorem Statement.typeCheckAux_elim_singleton: Statement.typeCheckAux.go P op C T ss [s] labels = Except.ok (pp, T', C') →
+private theorem Statement.typeCheckAux_elim_singleton: Statement.typeCheckAux.go P op C T ss [s] labels = Except.ok (pp, T', C') →
   Statement.typeCheckAux.go P op C T ss [] labels = Except.ok (pp.drop 1, T', C') := by
   intro H
   have : [s] = [] ++ [s] := by simp
   rw [this, Statement.typeCheckAux_elim_acc] at H; simp at H
   simp [H]
 
-theorem Statement.typeCheckAux_go_WF :
+private theorem Statement.typeCheckAux_go_WF :
   Statement.typeCheckAux.go P op C T ss [] labels = Except.ok (pp', T', C') →
   WF.WFStatementsProp P acc →
   WF.WFStatementsProp P (acc ++ ss) := by
@@ -139,13 +148,14 @@ theorem Statement.typeCheckAux_go_WF :
       any_goals (have tcok := Statement.typeCheckAux_elim_singleton tcok; rw[List.append_cons])
       any_goals (apply ih tcok <;> try assumption)
       any_goals (try simp [WFStatementsProp] at *; try simp [List.Forall_append, *]; try constructor)
-      any_goals (simp [Forall])
-      any_goals constructor
     | funcDecl decl md =>
       simp [Except.bind] at tcok
+      -- The isRecursive check: if true, typeCheck returns error, contradicting tcok
+      split at tcok <;> try contradiction
+      rename_i tcok'
       -- Split through the tryCatch and PureFunc.typeCheck structure
-      simp only [tryCatch] at tcok
-      repeat (split at tcok <;> try contradiction)
+      simp only [tryCatch] at tcok'
+      repeat (split at tcok' <;> try contradiction)
       -- After splits, we need to extract the Function.typeCheck success
       simp only [Except.mapError, tryCatchThe] at *
       -- Now split on the PureFunc.typeCheck result
@@ -163,9 +173,7 @@ theorem Statement.typeCheckAux_go_WF :
           simp only [PureFunc.typeCheck, hofp_eq, bind, Except.bind] at heq_func_match
           split at heq_func_match <;> try contradiction
           rename_i v h
-          split at h <;> try contradiction
-          cases h; cases heq_func_match
-          assumption
+          cases heq_func_match; assumption
       have tcok := Statement.typeCheckAux_elim_singleton tcok
       rw[List.append_cons];
       apply ih tcok <;> try assumption
@@ -186,6 +194,14 @@ theorem Statement.typeCheckAux_go_WF :
         grind
       rw [h_keys] at h_nodup
       exact h_nodup
+    | typeDecl tc md =>
+      simp [Except.bind, tryCatch, tryCatchThe] at tcok
+      split at tcok <;> try contradiction
+      have tcok := Statement.typeCheckAux_elim_singleton tcok
+      rw[List.append_cons]
+      apply ih tcok <;> try assumption
+      simp [WFStatementsProp] at *
+      simp [List.Forall_append, Forall, *]
 
 /--
 A list of Statement `ss` that passes type checking is well formed with respect
@@ -200,7 +216,7 @@ theorem Statement.typeCheckWF :
   rename_i x v heq
   have h_tc_go := Statement.typeCheckAux_go_WF (P := P) (op := proc) (C := C) (T := T) (ss := ss) (pp' := v.fst) (T' := v.snd.fst) (C' := v.snd.snd) (acc := []) heq
   simp [WFStatementsProp] at h_tc_go
-  exact h_tc_go (by constructor)
+  exact h_tc_go
   done
 
 /-
@@ -293,3 +309,5 @@ theorem Statement.typeCheckWF :
 
 end WF
 end Core
+
+end -- public section

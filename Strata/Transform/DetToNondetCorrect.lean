@@ -3,12 +3,19 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.DL.Imperative.Stmt
-import Strata.DL.Imperative.StmtSemantics
-import Strata.DL.Imperative.NondetStmt
-import Strata.DL.Imperative.NondetStmtSemantics
-import Strata.Transform.DetToNondet
+public import Strata.DL.Imperative.Stmt
+public import Strata.DL.Imperative.StmtSemantics
+public import Strata.DL.Imperative.NondetStmt
+public import Strata.DL.Imperative.NondetStmtSemantics
+public import Strata.Transform.DetToNondet
+import all Strata.DL.Imperative.Stmt
+import all Strata.DL.Imperative.NondetStmt
+import all Strata.DL.Imperative.CmdSemantics
+import all Strata.DL.Imperative.Cmd
+import all Strata.DL.Imperative.HasVars
+import all Strata.Transform.DetToNondet
 
 /-! # Deterministic-to-Nondeterministic Transformation Correctness Proof
   This file contains the main proof that the deterministic-to-nondeterministic
@@ -19,6 +26,8 @@ import Strata.Transform.DetToNondet
   (`noFuncDecl`). This is because `funcDecl` changes the evaluator `δ`, but the
   nondeterministic statements don't have function declarations.
   -/
+
+public section
 
 open Imperative Core
 
@@ -86,6 +95,10 @@ theorem EvalStmt_noFuncDecl_preserves_δ
   | funcDecl_case decl md =>
     intros Hno Heval
     simp [Stmt.noFuncDecl] at Hno
+  | typeDecl_case tc md =>
+    intros Hno Heval
+    cases Heval with
+    | typeDecl_sem => rfl
 
 /-- When a block has no function declarations, evaluating it preserves the evaluator. -/
 theorem EvalBlock_noFuncDecl_preserves_δ
@@ -206,6 +219,16 @@ theorem StmtToNondetCorrect
       cases Heval
     | .funcDecl _ _ =>
       simp [Stmt.noFuncDecl] at Hno
+    | .typeDecl _ md =>
+      cases Heval with
+      | typeDecl_sem =>
+        simp [StmtToNondetStmt]
+        apply EvalNondetStmt.cmd_sem
+        · apply EvalCmd.eval_assume
+          · have ⟨Htt, _⟩ := HasBoolVal.bool_is_val (P := P)
+            exact Hwfvl.2 HasBool.tt σ Htt
+          · exact Hwfb
+        · simp [isDefinedOver, HasVarsImp.modifiedVars, Cmd.modifiedVars, isDefined]
   . intros ss Hsz Hno Heval
     cases ss <;>
     cases Heval
@@ -262,3 +285,5 @@ theorem BlockToNondetStmtCorrect
   EvalNondetStmt P (Cmd P) (EvalCmd P) δ σ (BlockToNondetStmt ss) σ' := by
   intros Hwfb Hwfv Hno Heval
   exact (StmtToNondetCorrect extendEval Hwfb Hwfv (m:=Block.sizeOf ss)).2 ss (Nat.le_refl _) Hno Heval
+
+end

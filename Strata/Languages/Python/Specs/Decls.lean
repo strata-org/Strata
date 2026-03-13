@@ -38,6 +38,7 @@ def builtinsBytearray := mk "builtins" "bytearray"
 def builtinsBytes := mk "builtins" "bytes"
 def builtinsComplex := mk "builtins" "complex"
 def builtinsDict := mk "builtins" "dict"
+def builtinsException := mk "builtins" "Exception"
 def builtinsFloat := mk "builtins" "float"
 def builtinsInt := mk "builtins" "int"
 def builtinsStr := mk "builtins" "str"
@@ -56,6 +57,7 @@ def typingUnion := mk "typing" "Union"
 def typingRequired := mk "typing" "Required"
 def typingNotRequired := mk "typing" "NotRequired"
 def typingUnpack := mk "typing" "Unpack"
+def reCompile := mk "re" "compile"
 
 end PythonIdent
 
@@ -306,6 +308,7 @@ deriving Inhabited
 structure ArgDecls where
   args : Array Arg
   kwonly : Array Arg
+  kwargs : Option (String × SpecType) := none
 deriving Inhabited
 
 namespace ArgDecls
@@ -315,17 +318,57 @@ def count (ad : ArgDecls) := ad.args.size + ad.kwonly.size
 end ArgDecls
 
 /--
-A specification predicate with `free` free variables (arguments + return value
-for postconditions). Currently a placeholder; will be extended to support
-actual constraint expressions.
+A composable expression tree for translating Python `assert` statements into
+structured preconditions and postconditions. Leaf nodes are `var`, `intLit`,
+and `placeholder`; interior nodes represent operations like `len`, `getIndex`,
+`intGe`/`intLe`, `isInstanceOf`, and `enumMember`.
 -/
-inductive SpecPred (free : Nat) where
+inductive SpecExpr where
+/-- Stands in for an assert pattern not yet supported by the translator.
+    The original Python expression is preserved in `Assertion.message`. -/
 | placeholder
+| var (name : String)
+| getIndex (subject : SpecExpr) (field : String)
+| isInstanceOf (subject : SpecExpr) (typeName : String)
+| len (subject : SpecExpr)
+| intLit (value : Int)
+| intGe (subject : SpecExpr) (bound : SpecExpr)
+| intLe (subject : SpecExpr) (bound : SpecExpr)
+/-- A floating-point literal, stored as a string to preserve precision. -/
+| floatLit (value : String)
+| floatGe (subject : SpecExpr) (bound : SpecExpr)
+| floatLe (subject : SpecExpr) (bound : SpecExpr)
+| enumMember (subject : SpecExpr) (values : Array String)
+/-- `regexMatch subject pattern` asserts that `subject` matches the regular
+    expression `pattern`. Corresponds to `compile(pattern).search(subject) is not None`
+    in the Python source. -/
+| regexMatch (subject : SpecExpr) (pattern : String)
+/-- `containsKey container key` asserts that `key` is present in `container`.
+    Corresponds to `"key" in container` in the Python source. -/
+| containsKey (container : SpecExpr) (key : String)
+/-- `implies condition body` asserts that if `condition` holds then `body` holds.
+    Used to represent conditional assertions like `if "field" in kwargs: assert ...`. -/
+| implies (condition : SpecExpr) (body : SpecExpr)
+/-- Logical negation. Used for else-branch conditions. -/
+| not (e : SpecExpr)
+/-- `forallList list varName body` asserts that `body` holds for every element
+    of `list`, with `varName` bound to each element in turn. Only `body` may
+    refer to `varName`. Corresponds to `for varName in list: assert body`. -/
+| forallList (list : SpecExpr) (varName : String) (body : SpecExpr)
+/-- `forallDict dict keyVar valVar body` asserts that `body` holds for every
+    key-value pair in `dict`. Both `keyVar` and `valVar` are bound in `body`.
+    Corresponds to `for keyVar, valVar in dict.items(): assert body`. -/
+| forallDict (dict : SpecExpr) (keyVar : String) (valVar : String) (body : SpecExpr)
 deriving Inhabited
 
-structure Assertion (free : Nat) where
-  message : String
-  formula : SpecPred free
+inductive MessagePart where
+| str (s : String)
+| expr (e : SpecExpr)
+deriving Inhabited
+
+structure Assertion where
+  message : Array MessagePart
+  formula : SpecExpr
 deriving Inhabited
 
 structure FunctionDecl where
@@ -335,14 +378,31 @@ structure FunctionDecl where
   args : ArgDecls
   returnType : SpecType
   isOverload : Bool
-  preconditions : Array (Assertion args.count)
-  postconditions : Array (SpecPred (args.count + 1))
+  preconditions : Array Assertion
+  postconditions : Array SpecExpr
+deriving Inhabited
+
+structure ClassField where
+  name : String
+  type : SpecType
+  /-- An optional constant value for the field (e.g., from `self.x = expr` in `__init__`). -/
+  constValue : Option String := none
+deriving Inhabited
+
+structure ClassVariable where
+  name : String
+  value : String
 deriving Inhabited
 
 structure ClassDef where
   loc : SourceRange
   name : String
+  bases : Array PythonIdent := #[]
+  fields : Array ClassField := #[]
+  classVars : Array ClassVariable := #[]
+  subclasses : Array ClassDef := #[]
   methods : Array FunctionDecl
+deriving Inhabited
 
 structure TypeDef where
   loc : SourceRange

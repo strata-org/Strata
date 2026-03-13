@@ -3,10 +3,14 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.Languages.Core.DDMTransform.Grammar
-import Strata.Languages.Core.Program
-import Strata.DDM.Util.DecimalRat
+public import Strata.Languages.Core.DDMTransform.Grammar
+public import Strata.Languages.Core.Program
+public import Strata.DDM.Util.DecimalRat
+public import Strata.DDM.Format
+
+public section
 
 /-!
 # Core.Program → CoreCST Conversion
@@ -71,9 +75,6 @@ section ToCST
 
 /-- Constants for consistent naming -/
 def unknownTypeVar : String := "$__unknown_type"
-
-/-- Generate parameter names efficiently -/
-def mkParamName (i : Nat) : String := "a" ++ toString i
 
 /-- Generate quantifier variable names with a `__` prefix to indicate that they
     are generated names. In the future, we will store existing variable names in an extra field of quantifier expressions. -/
@@ -175,7 +176,7 @@ def popScope {M} (ctx : ToCSTContext M) : ToCSTContext M :=
 end ToCSTContext
 
 /-- Monad for AST->CST conversion with context and error collection -/
-abbrev ToCSTM (M : Type) := StateM (ToCSTContext M)
+@[expose] abbrev ToCSTM (M : Type) := StateM (ToCSTContext M)
 
 /-- Log an error in `ToCSTM` without throwing -/
 def ToCSTM.logError {M} [Inhabited M] (fn : String) (desc : String) (detail : String) : ToCSTM M Unit := do
@@ -225,19 +226,22 @@ def lTyToCoreType {M} [Inhabited M] (ty : Lambda.LTy) : ToCSTM M (CoreType M) :=
     pure result
 
 /-- Convert a type constructor declaration to CST -/
+private def typeConArgsToCST {M} [Inhabited M] (tcons : TypeConstructor)
+    : Ann (Option (Bindings M)) M :=
+  if tcons.params.isEmpty then
+    ⟨default, none⟩
+  else
+    let bindings := tcons.params.map fun paramName =>
+      let paramNameAnn : Ann String M := ⟨default, paramName⟩
+      let paramType := TypeP.type default
+      Binding.mkBinding default paramNameAnn paramType
+    ⟨default, some (.mkBindings default ⟨default, bindings.toArray⟩)⟩
+
 def typeConToCST {M} [Inhabited M] (tcons : TypeConstructor)
     (_md : Imperative.MetaData Expression) : ToCSTM M (Command M) := do
   let name : Ann String M := ⟨default, tcons.name⟩
   modify (·.addGlobalFreeVars #[name.val])
-  let args : Ann (Option (Bindings M)) M :=
-    if tcons.numargs = 0 then
-      ⟨default, none⟩
-    else
-      let bindings := List.range tcons.numargs |>.map fun i =>
-        let paramName : Ann String M := ⟨default, mkParamName i⟩
-        let paramType := TypeP.type default
-        Binding.mkBinding default paramName paramType
-      ⟨default, some (.mkBindings default ⟨default, bindings.toArray⟩)⟩
+  let args := typeConArgsToCST (M := M) tcons
   pure (.command_typedecl default name args)
 
 /-- Convert a datatype declaration to CST -/
@@ -261,9 +265,14 @@ def datatypeToCST {M} [Inhabited M] (datatypes : List (Lambda.LDatatype Visibili
         dt.constrs.flatMap (fun c => c.args.map
                               (fun (id, _) =>
                                 Lambda.destructorFuncName dt id))
+    let unsafeDestructorNames :=
+        dt.constrs.flatMap (fun c => c.args.map
+                              (fun (id, _) =>
+                                Lambda.unsafeDestructorFuncName dt id))
     modify (·.addGlobalFreeVars (constrNames.toArray ++
                            testerNames.toArray ++
-                           destructorNames.toArray))
+                           destructorNames.toArray ++
+                           unsafeDestructorNames.toArray))
 
   let processDatatype (dt : Lambda.LDatatype Visibility) :
       ToCSTM M (Command M) := do
@@ -309,23 +318,10 @@ def datatypeToCST {M} [Inhabited M] (datatypes : List (Lambda.LDatatype Visibili
     let cmd ← processDatatype dt
     pure [cmd]
   | _ => do
-    -- Multiple datatypes - generate forward declarations and mutual block.
-    let mut forwardDecls : List (Command M) := []
-    for dt in datatypes.reverse do
-      let name : Ann String M := ⟨default, dt.name⟩
-      let args : Ann (Option (Bindings M)) M :=
-        if dt.typeArgs.isEmpty then
-          ⟨default, none⟩
-        else
-          let bindings := dt.typeArgs.map fun param =>
-            let paramName : Ann String M := ⟨default, param⟩
-            let paramType := TypeP.type default
-            Binding.mkBinding default paramName paramType
-          ⟨default, some (.mkBindings default ⟨default, bindings.toArray⟩)⟩
-      forwardDecls := forwardDecls ++ [.command_forward_typedecl default name args]
+    -- Multiple datatypes - mutual block with pre-registration handles forward references.
     let cmds ← datatypes.mapM processDatatype
     let mutualCmd := Command.command_mutual default ⟨default, cmds.toArray⟩
-    pure (forwardDecls ++ [mutualCmd])
+    pure [mutualCmd]
 
 /-- Convert a type synonym declaration to CST -/
 def typeSynToCST {M} [Inhabited M] (syn : TypeSynonym)
@@ -398,7 +394,7 @@ def handleUnaryOps {M} [Inhabited M] (name : String) (arg : CoreDDM.Expr M)
   | "Bool.Not" => pure (.not default arg)
   -- Strings and regexes
   | "Str.Length" => pure (.str_len default arg)
-  | "Str.ToRegeEx" => pure (.str_toregex default arg)
+  | "Str.ToRegEx" => pure (.str_toregex default arg)
   | "Re.Star" => pure (.re_star default arg)
   | "Re.Plus" => pure (.re_plus default arg)
   | "Re.Comp" => pure (.re_comp default arg)
@@ -523,6 +519,10 @@ def handleBinaryOps {M} [Inhabited M] (name : String)
   | "Int.SafeDiv" => pure (.safediv_expr default ty arg1 arg2)
   | "Int.Mod" => pure (.mod_expr default ty arg1 arg2)
   | "Int.SafeMod" => pure (.safemod_expr default ty arg1 arg2)
+  | "Int.DivT" => pure (.divt_expr default ty arg1 arg2)
+  | "Int.SafeDivT" => pure (.safedivt_expr default ty arg1 arg2)
+  | "Int.ModT" => pure (.modt_expr default ty arg1 arg2)
+  | "Int.SafeModT" => pure (.safemodt_expr default ty arg1 arg2)
   | "Int.Le" | "Real.Le" => pure (.le default ty arg1 arg2)
   | "Int.Lt" | "Real.Lt" => pure (.lt default ty arg1 arg2)
   | "Int.Ge" | "Real.Ge" => pure (.ge default ty arg1 arg2)
@@ -617,10 +617,10 @@ partial def lexprToExpr {M} [Inhabited M]
   | .eq _ e1 e2 => leqToExpr e1 e2 qLevel
   | .op _ name _ => lopToExpr name.name []
   | .app _ _ _ => lappToExpr e qLevel
-  | .abs _ _ _ => do
+  | .abs _ _ _ _ => do
     ToCSTM.logError "lexprToExpr" "lambda not supported in CoreDDM" ""
     pure (.btrue default)  -- Default to true literal
-  | .quant _ qkind ty trigger body =>
+  | .quant _ qkind _ ty trigger body =>
     lquantToExpr qkind ty trigger body (qLevel + 1)
 
 /-- Extract trigger patterns from Lambda's trigger expression representation -/
@@ -856,6 +856,10 @@ partial def stmtToCST {M} [Inhabited M] (s : Core.Statement)
     | none =>
       pure (.exit_unlabeled_statement default)
   | .funcDecl decl _md => funcDeclToStatement decl
+  | .typeDecl tc _md =>
+    let nameAnn : Ann String M := ⟨default, tc.name⟩
+    let args := typeConArgsToCST (M := M) tc
+    pure (.typeDecl_statement default nameAnn args)
 
 partial def blockToCST [Inhabited M] (stmts : List Core.Statement)
     : ToCSTM M (CoreDDM.Block M) := do
@@ -1072,7 +1076,7 @@ private def recreateGlobalContext (ctx : ToCSTContext M)
     (map.insert name i, i + 1)
   let vars := allFreeVars.map fun name =>
     -- .fvar below is really a dummy value.
-    (name, GlobalKind.expr (.fvar default 0 #[]), DeclState.defined)
+    (name, GlobalKind.expr (.fvar default 0 #[]))
   { nameMap, vars }
 
 -- Extract types not in `Core.KnownTypes`.
@@ -1099,7 +1103,7 @@ private def extractNames (exprs : List Core.Expression.Expr) :
     | .app _ f arg => extractFromExpr f ++ extractFromExpr arg
     | .ite _ c t f => extractFromExpr c ++ extractFromExpr t ++ extractFromExpr f
     | .eq _ e1 e2 => extractFromExpr e1 ++ extractFromExpr e2
-    | .quant _ _ _ trigger body => extractFromExpr trigger ++ extractFromExpr body
+    | .quant _ _ _ _ trigger body => extractFromExpr trigger ++ extractFromExpr body
     | _ => #[]
   exprs.foldl (fun acc expr => acc ++ extractFromExpr expr) #[]
 
@@ -1158,4 +1162,7 @@ def Core.formatProgram (ast : Core.Program)
 end ToCST
 
 ---------------------------------------------------------------------
+
 end Strata
+
+end -- public section

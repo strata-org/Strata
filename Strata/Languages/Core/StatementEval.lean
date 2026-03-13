@@ -3,17 +3,20 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-
-
-import Strata.Languages.Core.Statement
-import Strata.Languages.Core.Program
-import Strata.Languages.Core.Env
-import Strata.Languages.Core.CmdEval
-import Strata.DL.Lambda.LTyUnify
-import Strata.DL.Lambda.LExprT
+public import Strata.Languages.Core.Statement
+import all Strata.Languages.Core.Statement
+public import Strata.Languages.Core.Program
+public import Strata.Languages.Core.Env
+public import Strata.Languages.Core.CmdEval
+public import Strata.DL.Lambda.LTyUnify
+public import Strata.DL.Lambda.LExprT
+import all Strata.DL.Imperative.Stmt
 
 ---------------------------------------------------------------------
+
+public section
 
 namespace Core
 
@@ -126,8 +129,8 @@ private def getExprType (e : Expression.Expr) : Option LMonoTy :=
     | some (.tcons "arrow" [_, ret]) => some ret
     | _ => none
   | .eq _ _ _ => some .bool
-  | .quant _ _ _ _ _ => some .bool
-  | .abs _ ty e =>
+  | .quant _ _ _ _ _ _ => some .bool
+  | .abs _ _ ty e =>
     match ty, getExprType e with
     | some ty1, some ty2 => some (.arrow ty1 ty2)
     | _, _ => none
@@ -241,7 +244,7 @@ def Statement.containsCmd (predicate : Imperative.Cmd Expression → Bool) (s : 
   | .ite _ then_ss else_ss _ => Statements.containsCmds predicate then_ss ||
                                 Statements.containsCmds predicate else_ss
   | .loop _ _ _ body_ss _ => Statements.containsCmds predicate body_ss
-  | .funcDecl _ _ | .exit _ _ => false  -- Function declarations and exits don't contain commands
+  | .funcDecl _ _ | .exit _ _ | .typeDecl _ _ => false  -- Function/type declarations and exits don't contain commands
   termination_by Imperative.Stmt.sizeOf s
 
 /--
@@ -280,7 +283,7 @@ def Statement.collectCovers (s : Statement) : List (String × Imperative.MetaDat
   | .block _ inner_ss _ => Statements.collectCovers inner_ss
   | .ite _ then_ss else_ss _ => Statements.collectCovers then_ss ++ Statements.collectCovers else_ss
   | .loop _ _ _ body_ss _ => Statements.collectCovers body_ss
-  | .funcDecl _ _ | .exit _ _ => []  -- Function declarations and exits don't contain cover commands
+  | .funcDecl _ _ | .exit _ _ | .typeDecl _ _ => []  -- Function/type declarations and exits don't contain cover commands
   termination_by Imperative.Stmt.sizeOf s
 /--
 Collect all `cover` commands from statements `ss` with their labels and metadata.
@@ -304,7 +307,7 @@ def Statement.collectAsserts (s : Statement) : List (String × Imperative.MetaDa
   | .block _ inner_ss _ => Statements.collectAsserts inner_ss
   | .ite _ then_ss else_ss _ => Statements.collectAsserts then_ss ++ Statements.collectAsserts else_ss
   | .loop _ _ _ body_ss _ => Statements.collectAsserts body_ss
-  | .funcDecl _ _ | .exit _ _ => []  -- Function declarations and exits don't contain assert commands
+  | .funcDecl _ _ | .exit _ _ | .typeDecl _ _ => []  -- Function/type declarations and exits don't contain assert commands
   termination_by Imperative.Stmt.sizeOf s
 /--
 Collect all `assert` commands from statements `ss` with their labels and metadata.
@@ -341,7 +344,10 @@ private def createUnreachableAssertObligations
     Imperative.ProofObligations Expression :=
   asserts.toArray.map
     (fun (label, md) =>
-      (Imperative.ProofObligation.mk label .assert pathConditions (LExpr.true ()) md))
+      let propType := match md.getPropertyType with
+        | some s => if s == Imperative.MetaData.divisionByZero then .divisionByZero else .assert
+        | _ => .assert
+      (Imperative.ProofObligation.mk label propType pathConditions (LExpr.true ()) md))
 
 /--
 Substitute free variables in an expression with their current values from the environment,
@@ -362,6 +368,7 @@ def captureFreevars (env : Env) (paramNames : List CoreIdent) (e : Expression.Ex
     | none => body
   ) e
 
+@[expose]
 abbrev StmtsStack := List Statements
 
 def StmtsStack.push (stk : StmtsStack) (ss : Statements) : StmtsStack :=
@@ -515,6 +522,10 @@ def evalAuxGo (steps : Nat) (old_var_subst : SubstMap) (Ewn : EnvWithNext) (ss :
             | .error e =>
               [{ Ewn with env := { Ewn.env with error := some (.Misc f!"{e}") } }]
 
+          | .typeDecl tc _ =>
+            -- Type declarations have no runtime effect (only used during type checking)
+            [Ewn]
+
           | .exit l md => [{ Ewn with stk := Ewn.stk.appendToTop [.exit l md], exitLabel := .some l}]
 
       List.flatMap (fun (ewn : EnvWithNext) => go' ewn rest ewn.exitLabel) EAndNexts
@@ -603,5 +614,7 @@ def evalOne (E : Env) (old_var_subst : SubstMap) (ss : Statements) : Statements 
 
 end Statement
 end Core
+
+end -- public section
 
 ---------------------------------------------------------------------

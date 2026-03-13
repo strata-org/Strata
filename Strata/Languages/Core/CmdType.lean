@@ -3,17 +3,18 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-
-
-import Strata.Languages.Core.Expressions
-import Strata.DL.Imperative.TypeContext
-import Strata.DL.Lambda.Factory
+public import Strata.Languages.Core.Expressions
+public import Strata.DL.Imperative.TypeContext
+public import Strata.DL.Lambda.Factory
 
 namespace Core
 open Lambda Imperative
 open Std (ToFormat Format format)
 open Strata (DiagnosticModel FileRange)
+
+public section
 
 ---------------------------------------------------------------------
 
@@ -116,4 +117,5 @@ instance : Imperative.TypeContext Expression (LContext CoreLParams) (TEnv Unit) 
 end CmdType
 ---------------------------------------------------------------------
 
+end
 end Core

@@ -3,21 +3,25 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.DDM.Elab
-import Strata.DDM.AST
+public import Strata.DDM.Elab
+public import Strata.DDM.AST
 
-import Strata.Languages.Core.DDMTransform.Grammar
+public import Strata.Languages.Core.DDMTransform.Grammar
 
-import Strata.Languages.Core.Core
-import Strata.Languages.Python.PythonDialect
-import Strata.Languages.Python.FunctionSignatures
+public import Strata.Languages.Core.Core
+public import Strata.Languages.Python.PythonDialect
+public import Strata.Languages.Python.FunctionSignatures
 import Strata.Languages.Python.Regex.ReToCore
 import Strata.Languages.Python.PyFactory
 import Strata.Languages.Python.FunctionSignatures
 
 namespace Strata
 open Lambda.LTy.Syntax
+
+public section
+
 -- Some hard-coded things we'll need to fix later:
 
 def clientType : Core.Expression.Ty := .forAll [] (.tcons "Client" [])
@@ -619,7 +623,7 @@ partial def exceptHandlersToCore (jmp_targets: List String) (translation_ctx: Tr
     let set_ex_ty_matches := match ex_ty.val with
     | .some ex_ty =>
       let inherits_from : Core.CoreIdent := "inheritsFrom"
-      let get_ex_tag : Core.CoreIdent := "ExceptOrNone..code_val"
+      let get_ex_tag : Core.CoreIdent := "ExceptOrNone..code_val!"
       let exception_ty : Core.Expression.Expr := .app () (.op () get_ex_tag none) (.fvar () "maybe_except" none)
       let rhs_curried : Core.Expression.Expr := .app () (.op () inherits_from none) exception_ty
       let res := PyExprToCore translation_ctx ex_ty
@@ -908,7 +912,7 @@ def pythonToCore (signatures : Python.Signatures) (pgm: Strata.Program) (prelude
   let class_defs := class_defs_and_infos.fst
   let class_infos := class_defs_and_infos.snd
 
-  let class_ty_decls := class_infos.class_infos.map (λ info => .type (.con {name := info.name, numargs := 0}))
+  let class_ty_decls := class_infos.class_infos.map (λ info => .type (.con {name := info.name, params := []}))
 
   let func_defs_and_infos := helper PyFuncDefToCore (fun acc info => {acc with func_infos := info :: acc.func_infos}) class_infos func_defs.toList
   let func_defs := func_defs_and_infos.fst
@@ -916,4 +920,5 @@ def pythonToCore (signatures : Python.Signatures) (pgm: Strata.Program) (prelude
 
   {decls := globals ++ class_ty_decls ++ func_defs ++ class_defs ++ [.proc (pythonFuncToCore "__main__" [] non_func_blocks none default func_infos)]}
 
+end -- public section
 end Strata

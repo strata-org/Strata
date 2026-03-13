@@ -3,14 +3,15 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
 import Strata.DL.Util.LabelGen
 import Strata.DL.Util.ListUtils
 import Strata.Languages.Core.Core
 import Strata.Languages.Core.CoreGen
 import Strata.Languages.Core.ProgramWF
-import Strata.Languages.Core.Statement
-import Strata.Transform.CoreTransform
+public import Strata.Languages.Core.Statement
+public import Strata.Transform.CoreTransform
 import Strata.Util.Tactics
 
 /-! # Procedure Inlining Transformation -/
@@ -19,6 +20,8 @@ namespace Core
 namespace ProcedureInlining
 
 open Transform
+
+public section
 
 -- Gathers all labels including those in assert and assume.
 mutual
@@ -37,6 +40,7 @@ def Statement.labels (s : Core.Statement) : List String :=
   -- No other labeled commands.
   | .cmd _ => []
   | .funcDecl _ _ => []
+  | .typeDecl _ _ => []
 end
 
 mutual
@@ -62,6 +66,7 @@ def Statement.replaceLabels
   | .cover lbl e m => .cover (app lbl) e m
   | .cmd _ => s
   | .funcDecl _ _ => s
+  | .typeDecl _ _ => s
 end
 
 
@@ -239,6 +244,8 @@ def inlineCallCmd
         return .some [.block (procName ++ "$inlined") stmts md]
 
       | _ => return .none
+
+end -- public section
 
 end ProcedureInlining
 end Core

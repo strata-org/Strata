@@ -3,11 +3,14 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.DL.Imperative.Stmt
+public import Strata.DL.Imperative.Stmt
 
 namespace Core
 open Imperative Lambda
+
+public section
 
 /-! ## Loop elimination
 
@@ -60,6 +63,7 @@ def Stmt.removeLoopsM
   | .cmd _ => pure s
   | .exit _ _ => pure s
   | .funcDecl _ _ => pure s  -- Function declarations pass through unchanged
+  | .typeDecl _ _ => pure s  -- Type declarations pass through unchanged
 
 def Block.removeLoopsM
   [HasNot P] [HasVarsImp P C] [HasHavoc P C] [HasPassiveCmds P C]
@@ -77,3 +81,5 @@ def Stmt.removeLoops
   [HasNot P] [HasVarsImp P C] [HasHavoc P C] [HasPassiveCmds P C]
   (s : Stmt P C) : Stmt P C :=
   (StateT.run (removeLoopsM s) 0).fst
+
+end

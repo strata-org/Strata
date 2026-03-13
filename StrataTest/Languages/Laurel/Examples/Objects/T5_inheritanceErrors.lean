@@ -22,9 +22,9 @@ composite Right extends Top {}
 composite Bottom extends Left, Right {}
 
 procedure diamondField(b: Bottom) {
-  b#xValue := 1;
+  b#xValue := 1
 //  ^^^^^^ error: fields that are inherited multiple times can not be accessed.
-}
+};
 "
 
 #guard_msgs (drop info) in
