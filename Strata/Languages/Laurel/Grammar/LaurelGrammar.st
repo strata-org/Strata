@@ -72,7 +72,7 @@ op existsExpr (name: Ident, ty: LaurelType, body: StmtExpr): StmtExpr
 
 // Error messages (used in assert, requires, ensures)
 category OptionalErrorMessage;
-op errorMessage(msg: Str): OptionalErrorMessage => "errorMessage" msg;
+op errorMessage(msg: Str): OptionalErrorMessage => "propertySummary" msg;
 
 // If-else
 category OptionalElse;

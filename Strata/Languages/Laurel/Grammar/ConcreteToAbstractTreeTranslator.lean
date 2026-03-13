@@ -180,7 +180,7 @@ partial def translateStmtExpr (arg : Arg) : TransM StmtExprMd := do
         | .option _ (some (.op errOp)) => match errOp.name, errOp.args with
           | q`Laurel.errorMessage, #[strArg] => do
             let msg ← translateString strArg
-            pure (md.withErrorMessage msg)
+            pure (md.withPropertySummary msg)
           | _, _ => pure md
         | _ => pure md
       return mkStmtExprMd (.Assert cond) md'
@@ -339,7 +339,7 @@ def translateEnsuresClauses (arg : Arg) : TransM (List StmtExprMd) := do
             | .option _ (some (.op errOp)) => match errOp.name, errOp.args with
               | q`Laurel.errorMessage, #[strArg] => do
                 let msg ← translateString strArg
-                pure { expr with md := expr.md.withErrorMessage msg }
+                pure { expr with md := expr.md.withPropertySummary msg }
               | _, _ => pure expr
             | _ => pure expr
           allEnsures := allEnsures ++ [expr']
@@ -386,7 +386,7 @@ def parseProcedure (arg : Arg) : TransM Procedure := do
             | .option _ (some (.op errOp)) => match errOp.name, errOp.args with
               | q`Laurel.errorMessage, #[strArg] => do
                 let msg ← translateString strArg
-                pure { precond with md := precond.md.withErrorMessage msg }
+                pure { precond with md := precond.md.withPropertySummary msg }
               | _, _ => pure precond
             | _ => pure precond
           pure [precond']

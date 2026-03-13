@@ -146,12 +146,12 @@ end
 def formatParameter (p : Parameter) : Format :=
   format p.name ++ ": " ++ formatHighType p.type
 
-/-- Format a StmtExprMd, appending any error message stored in its metadata. -/
+/-- Format a StmtExprMd, appending any property summary stored in its metadata. -/
 def formatStmtExprWithMsg (s : StmtExprMd) : Format :=
   formatStmtExpr s ++
-  match s.md.getErrorMessage with
+  match s.md.getPropertySummary with
   | none => Format.nil
-  | some msg => " errorMessage \"" ++ msg ++ "\""
+  | some msg => " propertySummary \"" ++ msg ++ "\""
 
 def formatBody : Body → Format
   | .Transparent body => formatStmtExpr body
@@ -160,17 +160,17 @@ def formatBody : Body → Format
        else " modifies " ++ Format.joinSep (modif.map formatStmtExpr) ", ") ++
       Format.joinSep (postconds.map (fun p =>
         " ensures " ++ formatStmtExpr p ++
-        match p.md.getErrorMessage with
+        match p.md.getPropertySummary with
         | none => Format.nil
-        | some msg => " errorMessage \"" ++ msg ++ "\"")) "" ++
+        | some msg => " propertySummary \"" ++ msg ++ "\"")) "" ++
       match impl with
       | none => Format.nil
       | some e => " := " ++ formatStmtExpr e
   | .Abstract posts => "abstract" ++ Format.join (posts.map (fun p =>
       " ensures " ++ formatStmtExpr p ++
-      match p.md.getErrorMessage with
+      match p.md.getPropertySummary with
       | none => Format.nil
-      | some msg => " errorMessage \"" ++ msg ++ "\""))
+      | some msg => " propertySummary \"" ++ msg ++ "\""))
   | .External => "external"
 
 def formatDeterminism : Determinism → Format
@@ -187,9 +187,9 @@ def formatProcedure (proc : Procedure) : Format :=
   "(" ++ Format.joinSep (proc.outputs.map formatParameter) ", " ++ ")" ++ Format.line ++
   Format.join (proc.preconditions.map (fun p =>
     "requires " ++ formatStmtExpr p ++
-    (match p.md.getErrorMessage with
+    (match p.md.getPropertySummary with
     | none => Format.nil
-    | some msg => " errorMessage \"" ++ msg ++ "\"") ++ Format.line)) ++
+    | some msg => " propertySummary \"" ++ msg ++ "\"") ++ Format.line)) ++
   formatDeterminism proc.determinism ++ Format.line ++
   formatBody proc.body
 

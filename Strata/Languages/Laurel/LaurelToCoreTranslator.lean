@@ -288,7 +288,7 @@ def translateStmt (outputParams : List Parameter) (stmt : StmtExprMd)
   | @StmtExpr.Assert cond =>
       -- Assert/assume bodies must be pure expressions (no assignments, loops, or procedure calls)
       let coreExpr ← translateExpr cond [] (isPureContext := true)
-      let label := md.getErrorMessage.getD ("assert" ++ getNameFromMd md)
+      let label := md.getPropertySummary.getD ("assert" ++ getNameFromMd md)
       return [Core.Statement.assert label coreExpr md]
   | @StmtExpr.Assume cond =>
       let coreExpr ← translateExpr cond [] (isPureContext := true)
@@ -407,13 +407,13 @@ def translateStmt (outputParams : List Parameter) (stmt : StmtExprMd)
 
 /--
 Translate a list of contract expressions (preconditions or postconditions) to Core checks.
-Each check gets a label from the errorMessage metadata if present, otherwise a generated
+Each check gets a label from the propertySummary metadata if present, otherwise a generated
 label like `"requires"` or `"requires_0"`, `"requires_1"`, etc.
 -/
 private def translateChecks (clauses : List StmtExprMd) (labelBase : String)
     : TranslateM (ListMap Core.CoreLabel Core.Procedure.Check) :=
   clauses.mapIdxM (fun i clause => do
-    let label := match clause.md.getErrorMessage with
+    let label := match clause.md.getPropertySummary with
       | some msg => msg
       | none => if clauses.length == 1 then labelBase else s!"{labelBase}_{i}"
     let checkExpr ← translateExpr clause [] (isPureContext := true)

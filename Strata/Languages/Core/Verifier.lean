@@ -510,8 +510,20 @@ def toDiagnosticModel (vcr : Core.VCResult) : Option DiagnosticModel :=
       | .pass =>
         if vcr.isUnreachable then some "assertion holds vacuously (path unreachable)"
         else none
-      | .fail => some "assertion does not hold"
-      | .unknown => some "assertion could not be proved"
+      | .fail =>
+        -- If the label looks like a user-supplied propertySummary (doesn't start with "assert"/"requires"/"postcondition"),
+        -- use it in the message; otherwise fall back to the generic message.
+        let label := vcr.obligation.label
+        if label.startsWith "assert" || label.startsWith "requires" || label.startsWith "postcondition" then
+          some "assertion does not hold"
+        else
+          some s!"{label} does not hold"
+      | .unknown =>
+        let label := vcr.obligation.label
+        if label.startsWith "assert" || label.startsWith "requires" || label.startsWith "postcondition" then
+          some "assertion could not be proved"
+        else
+          some s!"Could not prove {label}"
       | .implementationError msg => some s!"analysis error: {msg}"
   message?.map fun message => { fileRange, message }
 
