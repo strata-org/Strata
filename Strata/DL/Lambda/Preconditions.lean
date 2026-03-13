@@ -126,7 +126,9 @@ where
         let fObs := go F f ((md, .app md (@boolNotFunc T).opExpr c) :: implications)
         cObs ++ tObs ++ fObs
       | .eq _ e1 e2 => go F e1 implications ++ go F e2 implications
-    callObligations ++ subObligations
+    -- Output subObligations first, so that e.g. (x / (y / z)) first outputs
+    -- z ≠ 0, and then (y / z ≠ 0)
+    subObligations ++ callObligations
 
 end -- public section
 end Lambda

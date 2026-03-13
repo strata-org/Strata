@@ -455,7 +455,8 @@ spec {
 #eval TransM.run Inhabited.default (translateProgram recPrecondPgm) |>.snd |>.isEmpty
 
 /--
-info: Obligation: listLen_body_calls_IntList..tl_0
+info:
+Obligation: listLen_body_calls_IntList..tl_0
 Property: assert
 Result: ✅ pass
 
@@ -463,7 +464,7 @@ Obligation: nth_body_calls_IntList..hd_0
 Property: assert
 Result: ✅ pass
 
-Obligation: nth_body_calls_nth_1
+Obligation: nth_body_calls_IntList..tl_1
 Property: assert
 Result: ✅ pass
 
@@ -475,7 +476,7 @@ Obligation: nth_body_calls_nth_3
 Property: assert
 Result: ✅ pass
 
-Obligation: nth_body_calls_IntList..tl_4
+Obligation: nth_body_calls_nth_4
 Property: assert
 Result: ✅ pass
 

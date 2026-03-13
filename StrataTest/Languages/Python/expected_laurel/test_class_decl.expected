@@ -3,8 +3,8 @@
 List_get_body_calls_List_get_0: ✅ pass
 List_take_body_calls_List_take_0: ✅ pass
 List_drop_body_calls_List_drop_0: ✅ pass
-List_slice_body_calls_List_take_0: ✅ pass
-List_slice_body_calls_List_drop_1: ✅ pass
+List_slice_body_calls_List_drop_0: ✅ pass
+List_slice_body_calls_List_take_1: ✅ pass
 List_set_body_calls_List_set_0: ✅ pass
 DictStrAny_get_body_calls_DictStrAny_get_0: ✅ pass
 Any_get_body_calls_DictStrAny_get_0: ✅ pass
@@ -26,3 +26,4 @@ assert_name_is_foo: ✅ pass (in prelude file)
 assert_opt_name_none_or_str: ✅ pass (in prelude file)
 assert_opt_name_none_or_bar: ✅ pass (in prelude file)
 ensures_maybe_except_none: ✅ pass (in prelude file)
+ite_cond_calls_Any_to_bool_0: ✅ pass
