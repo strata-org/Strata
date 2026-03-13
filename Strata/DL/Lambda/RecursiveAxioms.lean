@@ -3,9 +3,10 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.DL.Lambda.Factory
-import Strata.DL.Lambda.TypeFactory
+public import Strata.DL.Lambda.Factory
+public import Strata.DL.Lambda.TypeFactory
 import Strata.DL.Util.List
 
 /-!
@@ -22,6 +23,8 @@ argument is a constructor application) and reduces.
 -/
 
 namespace Lambda
+
+public section
 
 open Std (Format format)
 open Strata.DL.Util (FuncAttr)
@@ -113,5 +116,7 @@ def genRecursiveAxioms [Inhabited T.Metadata] [DecidableEq T.Metadata] [Decidabl
     : Except Format (List (LExpr T.mono)) := do
   let (recIdx, dt) ← checkRecursiveFunc func tf
   mkRecursiveAxioms func recIdx dt pe m
+
+end
 
 end Lambda

@@ -3,11 +3,12 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.Languages.Laurel.Laurel
-import Strata.Languages.Laurel.LaurelTypes
-import Strata.Languages.Core.Verifier
-import Strata.Languages.Laurel.Resolution
+public import Strata.Languages.Laurel.Laurel
+public import Strata.Languages.Laurel.LaurelTypes
+public import Strata.Languages.Core.Verifier
+public import Strata.Languages.Laurel.Resolution
 
 /-
 Modifies clause transformation (Laurel → Laurel).
@@ -33,6 +34,8 @@ and `!(select(s, $obj))` for each set entry `s`.
 -/
 
 namespace Strata.Laurel
+
+public section
 
 private def mkMd (e : StmtExpr) : StmtExprMd := ⟨e, #[]⟩
 
@@ -162,4 +165,5 @@ def modifiesClausesTransform (model: SemanticModel) (program : Program) : Progra
   ) ([], [])
   ({ program with staticProcedures := procs' }, errors.toArray)
 
+end -- public section
 end Strata.Laurel

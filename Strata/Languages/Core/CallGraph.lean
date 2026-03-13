@@ -3,10 +3,14 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.Languages.Core.Program
+public import Strata.Languages.Core.Program
 
 ---------------------------------------------------------------------
+
+public section
+
 namespace Core
 
 /-- Generic call graph structure -/
@@ -153,8 +157,8 @@ partial def extractCallsFromProcedure (proc : Procedure) : List String :=
   extractCallsFromStatements proc.body
 end
 
-abbrev ProcedureCG := CallGraph
-abbrev FunctionCG := CallGraph
+@[expose] abbrev ProcedureCG := CallGraph
+@[expose] abbrev FunctionCG := CallGraph
 
 def Program.toProcedureCG (prog : Program) : ProcedureCG :=
   let procedures := prog.decls.filterMap (fun decl =>
@@ -240,3 +244,5 @@ def Program.getIrrelevantAxioms (prog : Program) (functions : List String) : Lis
 ---------------------------------------------------------------------
 
 end Core
+
+end -- public section

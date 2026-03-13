@@ -3,12 +3,19 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.DL.Imperative.Stmt
-import Strata.DL.Imperative.StmtSemantics
-import Strata.DL.Imperative.NondetStmt
-import Strata.DL.Imperative.NondetStmtSemantics
-import Strata.Transform.DetToNondet
+public import Strata.DL.Imperative.Stmt
+public import Strata.DL.Imperative.StmtSemantics
+public import Strata.DL.Imperative.NondetStmt
+public import Strata.DL.Imperative.NondetStmtSemantics
+public import Strata.Transform.DetToNondet
+import all Strata.DL.Imperative.Stmt
+import all Strata.DL.Imperative.NondetStmt
+import all Strata.DL.Imperative.CmdSemantics
+import all Strata.DL.Imperative.Cmd
+import all Strata.DL.Imperative.HasVars
+import all Strata.Transform.DetToNondet
 
 /-! # Deterministic-to-Nondeterministic Transformation Correctness Proof
   This file contains the main proof that the deterministic-to-nondeterministic
@@ -19,6 +26,8 @@ import Strata.Transform.DetToNondet
   (`noFuncDecl`). This is because `funcDecl` changes the evaluator `δ`, but the
   nondeterministic statements don't have function declarations.
   -/
+
+public section
 
 open Imperative Core
 
@@ -276,3 +285,5 @@ theorem BlockToNondetStmtCorrect
   EvalNondetStmt P (Cmd P) (EvalCmd P) δ σ (BlockToNondetStmt ss) σ' := by
   intros Hwfb Hwfv Hno Heval
   exact (StmtToNondetCorrect extendEval Hwfb Hwfv (m:=Block.sizeOf ss)).2 ss (Nat.le_refl _) Hno Heval
+
+end

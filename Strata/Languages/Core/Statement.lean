@@ -3,23 +3,24 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-
-
-import Strata.Languages.Core.Expressions
-import Strata.DL.Imperative.PureExpr
-import Strata.Languages.Core.Identifiers
-import Strata.Languages.Core.Factory
-import Strata.DL.Imperative.Stmt
-import Strata.DL.Imperative.HasVars
-import Strata.DL.Lambda.LExpr
-import Strata.DL.Lambda.TypeConstructor
+public import Strata.Languages.Core.Expressions
+public import Strata.DL.Imperative.PureExpr
+public import Strata.Languages.Core.Identifiers
+public import Strata.Languages.Core.Factory
+public import Strata.DL.Imperative.Stmt
+public import Strata.DL.Imperative.HasVars
+public import Strata.DL.Lambda.LExpr
+public import Strata.DL.Lambda.TypeConstructor
 import Strata.Util.Tactics
 
 namespace Core
 open Imperative
 open Std (ToFormat Format format)
 open Std.Format
+
+public section
 
 ---------------------------------------------------------------------
 
@@ -40,6 +41,7 @@ inductive CmdExt (P : PureExpr) where
 /--
 We parameterize Strata Core's Commands with Lambda dialect's expressions.
 -/
+@[expose]
 abbrev Command := CmdExt Expression
 
 instance : HasPassiveCmds Expression Command where
@@ -60,39 +62,42 @@ instance [ToFormat (Cmd P)] [ToFormat (MetaData P)]
 
 ---------------------------------------------------------------------
 
+@[expose]
 abbrev Statement := Imperative.Stmt Core.Expression Core.Command
+@[expose]
 abbrev Statements := List Statement
 
-@[match_pattern]
+@[expose, match_pattern]
 abbrev Statement.init (name : Expression.Ident) (ty : Expression.Ty) (expr : Option Expression.Expr)
     (md : MetaData Expression) :=
   @Stmt.cmd Expression Command (CmdExt.cmd (Cmd.init name ty expr md))
-@[match_pattern]
+@[expose, match_pattern]
 abbrev Statement.set (name : Expression.Ident) (expr : Expression.Expr)
     (md : MetaData Expression) :=
   @Stmt.cmd Expression Command (CmdExt.cmd (Cmd.set name expr md))
-@[match_pattern]
+@[expose, match_pattern]
 abbrev Statement.havoc (name : Expression.Ident) (md : MetaData Expression) :=
   @Stmt.cmd Expression Command (CmdExt.cmd (Cmd.havoc name md))
-@[match_pattern]
+@[expose, match_pattern]
 abbrev Statement.assert (label : String) (b : Expression.Expr) (md : MetaData Expression) :=
   @Stmt.cmd Expression Command (CmdExt.cmd (Cmd.assert label b md))
-@[match_pattern]
+@[expose, match_pattern]
 abbrev Statement.assume (label : String) (b : Expression.Expr) (md : MetaData Expression) :=
   @Stmt.cmd Expression Command (CmdExt.cmd (Cmd.assume label b md))
-@[match_pattern]
+@[expose, match_pattern]
 abbrev Statement.call (lhs : List Expression.Ident) (pname : String) (args : List Expression.Expr)
     (md : MetaData Expression) :=
   @Stmt.cmd Expression Command (CmdExt.call lhs pname args md)
-@[match_pattern]
+@[expose, match_pattern]
 abbrev Statement.cover (label : String) (b : Expression.Expr) (md : MetaData Expression) :=
   @Stmt.cmd Expression Command (CmdExt.cmd (Cmd.cover label b md))
-@[match_pattern]
+@[expose, match_pattern]
 abbrev Statement.typeDecl (tc : TypeConstructor) (md : MetaData Expression) :=
   @Stmt.typeDecl Expression Command tc md
 
 ---------------------------------------------------------------------
 
+@[expose]
 abbrev Block := Imperative.Block Core.Expression Core.Command
 
 ---------------------------------------------------------------------
@@ -398,4 +403,5 @@ end
 ---------------------------------------------------------------------
 
 
+end
 end Core

@@ -161,6 +161,25 @@ info: "; m\n(declare-const m (Array Int Int))\n(define-fun t0 () (Array Int Int)
       }
    }})
 
+-- Test that UF input types use Array when useArrayTheory=true (regression for Map/Array mismatch)
+/--
+info: "; m\n(declare-const m (Array Int Int))\n(define-fun t0 () (Array Int Int) m)\n; getFirst\n(declare-fun getFirst ((Array Int Int)) Int)\n(define-fun t1 () Int (getFirst t0))\n"
+-/
+#guard_msgs in
+#eval toSMTTermString
+  (.app () (.op () (⟨"getFirst", ()⟩) (.some (.arrow (mapTy .int .int) .int)))
+           (.fvar () (⟨"m", ()⟩) (.some (mapTy .int .int))))
+  (useArrayTheory := true)
+  (E := {Env.init with exprEnv := {
+    Env.init.exprEnv with
+      config := { Env.init.exprEnv.config with
+        factory :=
+          Core.Factory.push $
+          LFunc.mk (⟨"getFirst", ()⟩) [] false false
+            [(⟨"m", ()⟩, mapTy .int .int)] .int .none #[] .none [] []
+      }
+   }})
+
 -- Test empty string falls back to generated names
 /-- info: "(define-fun t0 () Bool (forall (($__bv0 Int)) (exists (($__bv1 Int)) (= $__bv0 $__bv1))))\n" -/
 #guard_msgs in

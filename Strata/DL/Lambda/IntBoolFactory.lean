@@ -73,6 +73,8 @@ def polyUneval (n : T.Identifier) (typeArgs : List String)
     (h_inputs : ∀ ty, ty ∈ ListMap.values inputs →
       ty.freeVars ⊆ typeArgs := by first | decide | grind)
     (h_output : output.freeVars ⊆ typeArgs
+      := by first | decide | grind)
+    (h_ta_no_gen : ∀ ta, ta ∈ typeArgs → ¬ ("$__ty".toList.isPrefixOf ta.toList = true)
       := by first | decide | grind) : WFLFunc T :=
   ⟨{ name := n, typeArgs := typeArgs, inputs := inputs, output := output,
      axioms := axioms }, {
@@ -84,6 +86,7 @@ def polyUneval (n : T.Identifier) (typeArgs : List String)
     inputs_typevars_in_typeArgs := h_inputs
     output_typevars_in_typeArgs := h_output
     precond_freevars := by intro p hp; simp at hp
+    typeArgs_no_gen_prefix := h_ta_no_gen
   }⟩
 
 /-- Nullary unevaluated function (0 inputs). -/
@@ -168,6 +171,7 @@ def unaryOp (n : T.Identifier)
       intro ity hity; simp [ListMap.values] at hity; subst hity; simp [hInTy]
     output_typevars_in_typeArgs := by simp [hOutTy]
     precond_freevars := by intro p hp; simp at hp
+    typeArgs_no_gen_prefix := by simp
   }⟩
 
 /-! #### Binary -/
@@ -217,6 +221,7 @@ def binaryOp (n : T.Identifier)
       rcases hity with rfl | rfl <;> simp [hInTy]
     output_typevars_in_typeArgs := by simp [hOutTy]
     precond_freevars := h_precond
+    typeArgs_no_gen_prefix := by simp
   }⟩
 
 /-! ### Integer Arithmetic Operations -/

@@ -4,7 +4,8 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import Strata.Languages.Laurel.Laurel
+module
+public import Strata.Languages.Laurel.Laurel
 import Strata.DL.Lambda.LExpr
 
 /-!
@@ -19,7 +20,7 @@ namespace Strata.Laurel
 open Lambda (LMonoTy LExpr)
 
 /-- Collect all `UserDefined` type names referenced in a `HighType`, including nested ones. -/
-private def collectTypeRefs : HighTypeMd → List String
+def collectTypeRefs : HighTypeMd → List String
   | ⟨.UserDefined name, _⟩ => [name.text]
   | ⟨.TSet elem, _⟩ => collectTypeRefs elem
   | ⟨.TMap k v, _⟩ => collectTypeRefs k ++ collectTypeRefs v
@@ -36,7 +37,7 @@ def datatypeRefs (dt : DatatypeDefinition) : List String :=
 
 /-! ### Tarjan's SCC -/
 
-private structure TarjanState where
+structure TarjanState where
   nextIndex : Nat := 0
   stack : List Nat := []
   indices : Std.HashMap Nat Nat := {}
@@ -50,7 +51,7 @@ Tarjan's SCC algorithm on an adjacency list indexed by `Nat`.
 Termination: each node is visited at most once (guarded by `s.indices.contains` at the
 call sites), so the recursion is bounded by the number of nodes even though it is `partial`.
 -/
-private partial def tarjanVisit (adj : Std.HashMap Nat (List Nat))
+partial def tarjanVisit (adj : Std.HashMap Nat (List Nat))
     (v : Nat) (s : TarjanState) : TarjanState :=
   let s := { s with
     indices := s.indices.insert v s.nextIndex
@@ -91,7 +92,7 @@ Datatypes in the same SCC (mutually recursive) share a single `.data` declaratio
 Non-recursive datatypes each get their own singleton `.data` declaration.
 The returned groups are in dependency order (leaves first).
 -/
-def groupDatatypes (dts : List DatatypeDefinition)
+public def groupDatatypes (dts : List DatatypeDefinition)
     (ldts : List (Lambda.LDatatype Unit)) : List (List (Lambda.LDatatype Unit)) :=
   -- All datatypes participate in grouping (zero-constructor ones get a synthetic unit
   -- constructor in translateDatatypeDefinition, so they always have at least one constructor)

@@ -3,14 +3,15 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
+public import Strata.Languages.Core.Procedure
+public import Strata.Languages.Core.Statement
+public import Strata.Languages.Core.StatementEval
+public import Strata.Languages.Core.StatementSemantics
+public import Strata.Transform.LoopElim
 
-
-import Strata.Languages.Core.Procedure
-import Strata.Languages.Core.Statement
-import Strata.Languages.Core.StatementEval
-import Strata.Languages.Core.StatementSemantics
-import Strata.Transform.LoopElim
+public section
 
 ---------------------------------------------------------------------
 
@@ -99,3 +100,5 @@ def evalOne (E : Env) (p : Procedure) : Procedure × Env :=
 
 end Procedure
 end Core
+
+end -- public section
