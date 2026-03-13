@@ -476,7 +476,8 @@ def evalAuxGo (steps : Nat) (old_var_subst : SubstMap) (Ewn : EnvWithNext) (ss :
                   let deadPathConds := Ewn.env.pathConditions.push [(deadLabel, LExpr.false ())]
                   let deferred := createUnreachableCoverObligations deadPathConds ss_f_covers
                   let deferred := deferred ++ createUnreachableAssertObligations deadPathConds ss_f_asserts
-                  [{ Ewn with env.deferred := Ewn.env.deferred ++ deferred }]
+                  -- No need to retain older deferred obligations in a dead branch.
+                  [{ Ewn with env.deferred := deferred }]
                 else
                   []
               let Ewns_t :=

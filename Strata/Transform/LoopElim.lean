@@ -14,12 +14,55 @@ public section
 
 /-! ## Loop elimination
 
-This transformation recursively removes loops from a statement, resulting in a
-new, acyclic statement. If a loop invariant is present, it adds checks that the
-invariant is established on entry and re-established at the end of each
-iteration. If a loop invariant is not present, this transformation isn't very
-useful.
+This transformation converts a loop into an acyclic passive statement suitable
+for symbolic verification. A loop invariant `I` is required; without one the
+transformation produces no useful verification conditions.
 
+### Role of the invariant
+
+Unlike the classical Hoare triple `{P} while G { S } {Q}` — which keeps the
+loop pre-condition `P`, inductive invariant `I`, and post-condition `Q`
+separate — this encoding folds all three into `I`. The user must choose `I`
+strong enough so that:
+
+- the pre-loop state satisfies `I` (checked at entry), and
+- `I ∧ ¬G` implies some desired post-condition `Q` (checked after the loop).
+
+### Passive encoding recipe
+
+Let `M` be the set of variables modified by the loop body.
+
+```
+assert(I);              -- VC1: I holds at loop entry (unconditional)
+assume(I);              -- make I available on the 0-iteration path
+                        --   (assert-then-assume; intentional exception to the
+                        --    usual assert/assume separation, needed so that
+                        --    assert(Q) can use I when G is false at entry)
+if (G) {
+  havoc(M);             -- non-deterministically pick a mid-loop state
+  assume(G);            -- guard holds at this state (live iteration)
+  assume(I);            -- invariant holds at this state
+  S;                    -- execute one iteration of the body
+  assert(I);            -- VC2: I is maintained by S
+
+  havoc(M);             -- non-deterministically pick an exit state
+  assume(¬G);           -- guard is false at exit (loop has terminated)
+  assume(I);            -- invariant holds at exit (by induction from VC1+VC2)
+}
+assert(Q);              -- checked with I ∧ ¬G available on both paths:
+                        --   G=false path: M is pre-loop state, I from assume above
+                        --   G=true  path: M is arbitrary exit state, I ∧ ¬G from then-branch
+```
+
+Note: the `if(G)` then-branch does double duty — VC2 check and exit-state model —
+so the mid-loop path conditions (`G(M_iter)`, `I(M_iter)`) are present alongside the
+exit-state facts when `Q` is checked. These linger as irrelevant assumptions,
+indeed.
+
+Note: `assume(I)` after VC1 is not strictly necessary. If VC1 passes, then it
+means `I` is derivable for a backend solver and we could skip adding it to the
+path conditions. However, we choose to keep this assumption for a higher-quality
+encoding.
 -/
 
 mutual
@@ -37,8 +80,10 @@ def Stmt.removeLoopsM
       .block s!"loop_havoc_{loop_num}" (assigned_vars.map (λ n => Stmt.cmd (HasHavoc.havoc n md))) {}
     let entry_invariants := invariants.mapIdx fun i inv =>
       Stmt.cmd (HasPassiveCmds.assert s!"entry_invariant_{loop_num}_{i}" inv md)
+    let entry_invariant_assumes := invariants.mapIdx fun i inv =>
+      Stmt.cmd (HasPassiveCmds.assume s!"assume_entry_invariant_{loop_num}_{i}" inv md)
     let first_iter_facts :=
-      .block s!"first_iter_asserts_{loop_num}" entry_invariants {}
+      .block s!"first_iter_asserts_{loop_num}" (entry_invariants ++ entry_invariant_assumes) {}
     let inv_assumes := invariants.mapIdx fun i inv =>
       Stmt.cmd (HasPassiveCmds.assume s!"assume_invariant_{loop_num}_{i}" inv md)
     let arbitrary_iter_assumes := .block s!"arbitrary_iter_assumes_{loop_num}"
@@ -52,7 +97,10 @@ def Stmt.removeLoopsM
     let not_guard := Stmt.cmd (HasPassiveCmds.assume s!"not_guard_{loop_num}" neg_guard md)
     let invariant_assumes := invariants.mapIdx fun i inv =>
       Stmt.cmd (HasPassiveCmds.assume s!"invariant_{loop_num}_{i}" inv md)
-    pure (.ite guard ([first_iter_facts, arbitrary_iter_facts, havocd, not_guard] ++ invariant_assumes) [] {})
+    let exit_state_assumes := [havocd, not_guard] ++ invariant_assumes
+    let loop_passive :=
+      .ite guard (arbitrary_iter_facts :: exit_state_assumes) [] {}
+    pure (.block s!"loop_{loop_num}" [first_iter_facts, loop_passive] {})
   | .ite c tss ess md => do
     let tss ← Block.removeLoopsM tss
     let ess ← Block.removeLoopsM ess
