@@ -45,6 +45,13 @@ procedure testNested() {
   assert IntList..isNil(IntList..tail(IntList..tail(xs)))
 };
 
+procedure unsafeDestructor() {
+  var nil: IntList := Nil();
+  var noError: int := IntList..head!(nil);
+  var error: int := IntList..head(nil)
+//^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
+};
+
 // Datatype in function
 function listHead(xs: IntList): int
   requires IntList..isCons(xs)

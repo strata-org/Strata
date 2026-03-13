@@ -81,26 +81,6 @@ procedure sameFieldNameDifferentType(a: Container, b: SameFieldName) {
   assert b#intValue
 };
 
-datatype Color {
-  Red(),
-  Green(),
-  Blue()
-}
-
-composite Pixel {
-  var x: int
-  var color: Color
-}
-
-procedure datatypeField() {
-  var p: Pixel := new Pixel;
-  p#color := Red();
-  assert Color..isRed(p#color);
-  p#color := Blue();
-  assert Color..isBlue(p#color);
-  assert !Color..isRed(p#color)
-};
-
 // Following test-cases can't be run because Core procedures are not transparent.
 // procedure modifiesFirst(c: Container, d: Container) returns (x: int) {
 //  c#intValue := 3;

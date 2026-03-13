@@ -99,10 +99,11 @@ def AstNode.getType (node: AstNode): Option HighTypeMd := match node with
  | .field _ f => f.type
  | .datatypeConstructor type _ => some ⟨ .UserDefined type, default ⟩
  | .constant c => c.type
+ | .quantifierVar _ type => type
  | .unresolved =>
     -- The Python through Laurel pipeline does not resolve yet
     some ⟨ .UserDefined "dummyName", default ⟩
- | _ => panic! s!"getType called on {repr node}"
+ | _ => dbg_trace s!"SOUND BUG: getType called on {repr node}"; none
 
 /-! ## Resolution result -/
 
