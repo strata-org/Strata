@@ -3,10 +3,12 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.Transform.CoreTransform
-import Strata.DL.Lambda.Preconditions
-import Strata.DL.Lambda.TypeFactory
+public import Strata.Transform.CoreTransform
+public import Strata.DL.Lambda.Preconditions
+public import Strata.DL.Lambda.TypeFactory
+import all Strata.DL.Imperative.Stmt
 
 /-! # Partial Function Precondition Elimination
 
@@ -28,6 +30,8 @@ Note that this transformation must be called BEFORE typechecking, since
 in the presence of polymorphic preconditions, the resulting assertions
 have type variables that must be unified.
 -/
+
+public section
 
 namespace Core
 namespace PrecondElim
@@ -313,3 +317,5 @@ where
 
 end PrecondElim
 end Core
+
+end -- public section

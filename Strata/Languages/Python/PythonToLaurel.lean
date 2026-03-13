@@ -3,17 +3,18 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.DDM.Elab
-import Strata.DDM.AST
-import Strata.Languages.Laurel.Laurel
-import Strata.Languages.Laurel.LaurelTypes
-import Strata.Languages.Laurel.LaurelToCoreTranslator
-import Strata.Languages.Core.Verifier
-import Strata.Languages.Python.PythonDialect
-import Strata.Languages.Python.PythonLaurelCorePrelude
-import Strata.Languages.Python.Specs.ToLaurel
-import Strata.Languages.Core.Program
+public import Strata.DDM.Elab
+public import Strata.DDM.AST
+public import Strata.Languages.Laurel.Laurel
+public import Strata.Languages.Laurel.LaurelTypes
+public import Strata.Languages.Laurel.LaurelToCoreTranslator
+public import Strata.Languages.Core.Verifier
+public import Strata.Languages.Python.PythonDialect
+public import Strata.Languages.Python.PythonLaurelCorePrelude
+public import Strata.Languages.Python.Specs.ToLaurel
+public import Strata.Languages.Core.Program
 
 /-!
 # Python to Laurel Translation
@@ -37,6 +38,8 @@ This module translates Python AST to Laurel intermediate representation.
 namespace Strata.Python
 
 open Laurel
+
+public section
 
 /-! ## Translation Context
 
@@ -1425,4 +1428,5 @@ in Laurel.
   | _ => throw (.internalError "Expected Module")
 
 
+end -- public section
 end Strata.Python

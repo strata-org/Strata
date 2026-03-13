@@ -3,14 +3,17 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.DL.Lambda.LExpr
-import Strata.DL.Lambda.LExprWF
-import Strata.DL.Imperative.StmtSemantics
-import Strata.Languages.Core.CoreGen
-import Strata.Languages.Core.Procedure
+public import Strata.DL.Lambda.LExpr
+public import Strata.DL.Lambda.LExprWF
+public import Strata.DL.Imperative.StmtSemantics
+public import Strata.Languages.Core.CoreGen
+public import Strata.Languages.Core.Procedure
 
 ---------------------------------------------------------------------
+
+public section
 
 namespace Core
 
@@ -34,9 +37,9 @@ instance : HasFvar Core.Expression where
 instance : HasSubstFvar Core.Expression where
   substFvar := Lambda.LExpr.substFvar
 
-@[match_pattern]
+@[expose, match_pattern]
 def Core.true : Core.Expression.Expr := .boolConst () Bool.true
-@[match_pattern]
+@[expose, match_pattern]
 def Core.false : Core.Expression.Expr := .boolConst () Bool.false
 
 instance : HasBool Core.Expression where
@@ -49,8 +52,8 @@ instance : HasNot Core.Expression where
   | Core.false => Core.true
   | e => Lambda.LExpr.app () (Lambda.boolNotFunc (T:=CoreLParams)).opExpr e
 
-abbrev CoreEval := SemanticEval Expression
-abbrev CoreStore := SemanticStore Expression
+@[expose] abbrev CoreEval := SemanticEval Expression
+@[expose] abbrev CoreStore := SemanticStore Expression
 
 /-- If a compound expression is defined, its subexpressions are defined. -/
 structure WellFormedCoreEvalDefinedness (δ : CoreEval) : Prop where
@@ -292,11 +295,11 @@ inductive EvalCommand (π : String → Option Procedure) (φ : CoreEval → Pure
     ----
     EvalCommand π φ δ σ (CmdExt.call lhs n args md) σ'
 
-abbrev EvalStatement (π : String → Option Procedure) (φ : CoreEval → PureFunc Expression → CoreEval) : CoreEval →
+@[expose] abbrev EvalStatement (π : String → Option Procedure) (φ : CoreEval → PureFunc Expression → CoreEval) : CoreEval →
     CoreStore → Statement → CoreStore → CoreEval → Prop :=
   Imperative.EvalStmt Expression Command (EvalCommand π φ) (EvalPureFunc φ)
 
-abbrev EvalStatements (π : String → Option Procedure) (φ : CoreEval → PureFunc Expression → CoreEval) : CoreEval →
+@[expose] abbrev EvalStatements (π : String → Option Procedure) (φ : CoreEval → PureFunc Expression → CoreEval) : CoreEval →
     CoreStore → List Statement → CoreStore → CoreEval → Prop :=
   Imperative.EvalBlock Expression Command (EvalCommand π φ) (EvalPureFunc φ)
 
@@ -341,10 +344,14 @@ inductive EvalCommandContract : (String → Option Procedure)  → CoreEval →
     ----
     EvalCommandContract π δ σ (.call lhs n args md) σ'
 
-abbrev EvalStatementContract (π : String → Option Procedure) (φ : CoreEval → PureFunc Expression → CoreEval) : CoreEval →
+@[expose] abbrev EvalStatementContract (π : String → Option Procedure) (φ : CoreEval → PureFunc Expression → CoreEval) : CoreEval →
     CoreStore → Statement → CoreStore → CoreEval → Prop :=
   Imperative.EvalStmt Expression Command (EvalCommandContract π) (EvalPureFunc φ)
 
-abbrev EvalStatementsContract (π : String → Option Procedure) (φ : CoreEval → PureFunc Expression → CoreEval) : CoreEval →
+@[expose] abbrev EvalStatementsContract (π : String → Option Procedure) (φ : CoreEval → PureFunc Expression → CoreEval) : CoreEval →
     CoreStore → List Statement → CoreStore → CoreEval → Prop :=
   Imperative.EvalBlock Expression Command (EvalCommandContract π) (EvalPureFunc φ)
+
+end Core
+
+end -- public section

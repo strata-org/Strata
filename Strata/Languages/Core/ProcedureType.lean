@@ -3,14 +3,15 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-
-
-import Strata.Languages.Core.Procedure
-import Strata.DL.Imperative.HasVars
-import Strata.Languages.Core.StatementType
+public import Strata.Languages.Core.Procedure
+public import Strata.DL.Imperative.HasVars
+public import Strata.Languages.Core.StatementType
 
 ---------------------------------------------------------------------
+
+public section
 
 namespace Core
 
@@ -163,3 +164,5 @@ def typeCheck (C : Core.Expression.TyContext) (Env : Core.Expression.TyEnv) (p :
 
 end Procedure
 end Core
+
+end -- public section

@@ -3,14 +3,14 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-
-
-import Strata.Languages.Core.Core
-import Strata.DL.SMT.SMT
-import Strata.DL.Lambda.RecursiveAxioms
+public import Strata.Languages.Core.Core
+public import Strata.DL.SMT.SMT
+public import Strata.DL.Imperative.SMTUtils
+public import Strata.DL.Lambda.RecursiveAxioms
 import Init.Data.String.Extra
-import Strata.DDM.Util.DecimalRat
+public import Strata.DDM.Util.DecimalRat
 import Strata.DL.Imperative.SMTUtils
 
 ---------------------------------------------------------------------
@@ -18,6 +18,8 @@ import Strata.DL.Imperative.SMTUtils
 namespace Core
 open Std (ToFormat Format format)
 open Lambda Strata.SMT Strata.SMT.Encoder
+
+public section
 
 structure SMT.IF where
   uf : UF
@@ -124,7 +126,7 @@ def SMT.Context.emitDatatypes (ctx : SMT.Context) : Strata.SMT.SolverM Unit := d
       let dts := usedBlock.map fun d => (d.name, d.typeArgs, datatypeConstructorsToSMT d)
       Strata.SMT.Solver.declareDatatypes dts
 
-abbrev BoundVars := List (String × TermType)
+@[expose] abbrev BoundVars := List (String × TermType)
 
 ---------------------------------------------------------------------
 partial def unifyTypes (typeVars : List String) (pattern : LMonoTy) (concrete : LMonoTy) (acc : Map String LMonoTy) : Map String LMonoTy :=
@@ -216,6 +218,7 @@ def convertQuantifierKind : Lambda.QuantifierKind -> Strata.SMT.QuantifierKind
 
 mutual
 
+@[expose]
 partial def toSMTTerm (E : Env) (bvs : BoundVars) (e : LExpr CoreLParams.mono) (ctx : SMT.Context)
   (useArrayTheory : Bool := false)
   : Except Format (Term × SMT.Context) := do
@@ -753,5 +756,7 @@ def convertCounterEx (cex : Imperative.SMT.CounterEx Expression.Ident)
     (constructorNames : Std.HashSet String := {})
     : List (Expression.Ident × LExpr CoreLParams.mono) :=
   cex.map fun (id, t) => (id, smtTermToLExpr t constructorNames)
+
+end -- public section
 
 end Core
