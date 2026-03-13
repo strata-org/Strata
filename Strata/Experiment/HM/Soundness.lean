@@ -87,7 +87,10 @@ theorem AExpr.ctxCompat_varClose_addVar (Γ : Ctx) (x : String) (σ : Scheme)
 -- Main theorem
 ---------------------------------------------------------------------
 
-theorem W_ctxCompat (h : W Γ e n = .ok (S, ae, n')):
+theorem W_ctxCompat
+    (hfreshVars : ∀ x σ, Γ.vars.find? x = some σ → ∀ α ∈ σ.vars, α < n)
+    (hfreshOps : ∀ f σ, Γ.ops.find? f = some σ → ∀ α ∈ σ.vars, α < n)
+    (h : W Γ e n = .ok (S, ae, n')):
     ae.ctxCompat (S.applyCtx Γ) := by
   fun_induction W Γ e n generalizing S ae n' with
   | case1 Γ n x => -- fvar
@@ -193,12 +196,85 @@ Proof:
   5. Rewrite 4 in 3 to conclude.
 -/
 
-theorem W_sound_alt (h : W Γ e n = .ok (S, ae, n')):
+theorem W_sound_aux
+  (hfreshVars : ∀ x σ, Γ.vars.find? x = some σ → ∀ α ∈ σ.vars, α < n)
+  (hfreshOps : ∀ f σ, Γ.ops.find? f = some σ → ∀ α ∈ σ.vars, α < n)
+  (h : W Γ e n = .ok (S, ae, n')):
     ae.erase = e ∧ HasType (S.applyCtx Γ) e (Scheme.mono ae.tyOf) := by
   have herase := W_erase h
   have htyA   := W_well_typed h
-  have hcompat := W_ctxCompat h
+  have hcompat := W_ctxCompat hfreshVars hfreshOps h
   have hty    := HasTypeA_implies_HasType ae ae.tyOf (S.applyCtx Γ) htyA hcompat
   exact ⟨herase, herase ▸ hty⟩
+
+---------------------------------------------------------------------
+-- Wrapper: compute fresh counter from context, removing preconditions
+---------------------------------------------------------------------
+
+/-- Largest bound type-variable index occurring in a scheme's quantifier list. -/
+def Scheme.maxBoundVar (σ : Scheme) : Nat :=
+  σ.vars.foldl max 0
+
+/-- Largest bound type-variable index across all schemes in a context. -/
+def Ctx.maxBoundVar (Γ : Ctx) : Nat :=
+  let mv := Γ.vars.values.foldl (fun acc σ => max acc σ.maxBoundVar) 0
+  let mo := Γ.ops.values.foldl (fun acc σ => max acc σ.maxBoundVar) 0
+  max mv mo
+
+private theorem List.foldl_max_ge_of_init (l: List α) (init : Nat) (f: α -> Nat) :
+    init ≤ l.foldl (fun acc x => max acc (f x)) init := by
+    induction l generalizing init <;> grind
+
+private theorem List.foldl_max_ge_of_mem {l : List α} {a : α} (h : a ∈ l) (init : Nat) (f: α -> Nat) :
+    f a ≤ l.foldl (fun acc x => max acc (f x)) init := by
+  induction l generalizing init with
+  | nil => grind
+  | cons x xs ih =>
+    simp only [List.foldl]
+    simp at h; cases h
+    . subst_vars
+      have := foldl_max_ge_of_init xs (max init (f x)) f
+      grind
+    . grind
+
+private theorem Scheme.maxBoundVar_ge_of_mem {σ : Scheme} {α : Nat} (h : α ∈ σ.vars) :
+    α ≤ σ.maxBoundVar := by
+  exact List.foldl_max_ge_of_mem h 0 (fun x => x)
+
+private theorem List.foldl_max_schemes_ge {l : List Scheme} {σ : Scheme} (hmem : σ ∈ l) (init : Nat) :
+    σ.maxBoundVar ≤ l.foldl (fun acc s => max acc s.maxBoundVar) init := by
+  apply foldl_max_ge_of_mem; assumption
+
+private theorem Ctx.maxBoundVar_fresh_vars (Γ : Ctx) :
+    ∀ x σ, Γ.vars.find? x = some σ → ∀ α ∈ σ.vars, α < Γ.maxBoundVar + 1 := by
+  intro x σ hfind α hmem
+  have hval := Map.find?_mem_values Γ.vars hfind
+  have h1 : σ.maxBoundVar ≤ Γ.vars.values.foldl (fun acc s => max acc s.maxBoundVar) 0 :=
+    List.foldl_max_schemes_ge hval 0
+  have h2 : α ≤ σ.maxBoundVar := Scheme.maxBoundVar_ge_of_mem hmem
+  have h3 : Γ.vars.values.foldl (fun acc s => max acc s.maxBoundVar) 0 ≤ Γ.maxBoundVar :=
+    Nat.le_max_left _ _
+  omega
+
+private theorem Ctx.maxBoundVar_fresh_ops (Γ : Ctx) :
+    ∀ f σ, Γ.ops.find? f = some σ → ∀ α ∈ σ.vars, α < Γ.maxBoundVar + 1 := by
+  intro f σ hfind α hmem
+  have hval := Map.find?_mem_values Γ.ops hfind
+  have h1 : σ.maxBoundVar ≤ Γ.ops.values.foldl (fun acc s => max acc s.maxBoundVar) 0 :=
+    List.foldl_max_schemes_ge hval 0
+  have h2 : α ≤ σ.maxBoundVar := Scheme.maxBoundVar_ge_of_mem hmem
+  have h3 : Γ.ops.values.foldl (fun acc s => max acc s.maxBoundVar) 0 ≤ Γ.maxBoundVar :=
+    Nat.le_max_right _ _
+  omega
+
+/-- Algorithm W with automatic fresh-counter computation. -/
+def W_infer (Γ : Ctx) (e : Expr) : Except String (Subst × AExpr × Nat) :=
+  W Γ e (Γ.maxBoundVar + 1)
+
+/-- Soundness of `W_infer` — no freshness preconditions needed. -/
+theorem W_sound
+  (h : W_infer Γ e = .ok (S, ae, n')):
+    ae.erase = e ∧ HasType (S.applyCtx Γ) e (Scheme.mono ae.tyOf) :=
+  W_sound_aux (Ctx.maxBoundVar_fresh_vars Γ) (Ctx.maxBoundVar_fresh_ops Γ) h
 
 end HM
