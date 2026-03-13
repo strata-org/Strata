@@ -778,16 +778,18 @@ def toDiagnosticModel (vcr : Core.VCResult) : Option DiagnosticModel :=
   | .ok outcome =>
     let message? : Option String :=
       if vcr.obligation.property == .cover then
+        let description := vcr.obligation.metadata.getPropertySummary.getD "cover property"
         if outcome.isSatisfiable || outcome.passReachabilityUnknown then none
-        else if outcome.unreachable then some "cover property is unreachable"
+        else if outcome.unreachable then some s!"{description} is unreachable"
         else if outcome.isPass then none
-        else some "cover property is not satisfiable"
+        else some s!"{description} is not satisfiable"
       else
-        if outcome.unreachable then some "assertion holds vacuously (path unreachable)"
+        let description := vcr.obligation.metadata.getPropertySummary.getD "assertion"
+        if outcome.unreachable then some s!"{description} holds vacuously (path unreachable)"
         else if outcome.isPass || outcome.isSatisfiable || outcome.passReachabilityUnknown then none
         else if outcome.alwaysFalseAndReachable || outcome.canBeTrueOrFalseAndIsReachable || outcome.canBeFalseAndIsReachable then
-          some "assertion does not hold"
-        else some "assertion could not be proved"
+          some s!"{description} does not hold"
+        else some s!"{description} could not be proved"
     message?.map fun message => { fileRange, message }
 
 structure Diagnostic where
@@ -815,4 +817,3 @@ end -- public section
 end Strata
 
 ---------------------------------------------------------------------
-

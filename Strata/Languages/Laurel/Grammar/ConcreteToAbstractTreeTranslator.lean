@@ -36,7 +36,7 @@ def TransM.error (msg : String) : TransM α :=
   throw msg
 
 private def SourceRange.toMetaData (uri : Uri) (sr : SourceRange) : Imperative.MetaData Core.Expression :=
-  let fileRangeElt := ⟨ Imperative.MetaDataElem.Field.label "fileRange", .fileRange ⟨ uri, sr.start, sr.stop ⟩ ⟩
+  let fileRangeElt := ⟨ Imperative.MetaDataElem.Field.label "fileRange", .fileRange ⟨ uri, sr ⟩ ⟩
   #[fileRangeElt]
 
 def getArgMetaData (arg : Arg) : TransM (Imperative.MetaData Core.Expression) := do
@@ -177,9 +177,16 @@ partial def translateStmtExpr (arg : Arg) : TransM StmtExprMd := do
   let md ← getArgMetaData arg
   match arg with
   | .op op => match op.name, op.args with
-    | q`Laurel.assert, #[arg0] =>
+    | q`Laurel.assert, #[arg0, errMsgArg] =>
       let cond ← translateStmtExpr arg0
-      return mkStmtExprMd (.Assert cond) md
+      let md' ← match errMsgArg with
+        | .option _ (some (.op errOp)) => match errOp.name, errOp.args with
+          | q`Laurel.errorMessage, #[strArg] => do
+            let msg ← translateString strArg
+            pure (md.withPropertySummary msg)
+          | _, _ => pure md
+        | _ => pure md
+      return mkStmtExprMd (.Assert cond) md'
     | q`Laurel.assume, #[arg0] =>
       let cond ← translateStmtExpr arg0
       return mkStmtExprMd (.Assume cond) md
@@ -329,9 +336,16 @@ def translateEnsuresClauses (arg : Arg) : TransM (List StmtExprMd) := do
     for clauseArg in args do
       match clauseArg with
       | .op clauseOp => match clauseOp.name, clauseOp.args with
-        | q`Laurel.ensuresClause, #[exprArg] =>
+        | q`Laurel.ensuresClause, #[exprArg, errMsgArg] =>
           let expr ← translateStmtExpr exprArg
-          allEnsures := allEnsures ++ [expr]
+          let expr' ← match errMsgArg with
+            | .option _ (some (.op errOp)) => match errOp.name, errOp.args with
+              | q`Laurel.errorMessage, #[strArg] => do
+                let msg ← translateString strArg
+                pure { expr with md := expr.md.withPropertySummary msg }
+              | _, _ => pure expr
+            | _ => pure expr
+          allEnsures := allEnsures ++ [expr']
         | _, _ => TransM.error s!"Expected ensuresClause operation, got {repr clauseOp.name}"
       | _ => TransM.error s!"Expected ensuresClause operation in ensures sequence"
     pure allEnsures
@@ -369,9 +383,16 @@ def parseProcedure (arg : Arg) : TransM Procedure := do
     -- Parse preconditions (requires clause)
     let preconditions ← match requiresArg with
       | .option _ (some (.op requiresOp)) => match requiresOp.name, requiresOp.args with
-        | q`Laurel.optionalRequires, #[exprArg] => do
+        | q`Laurel.optionalRequires, #[exprArg, errMsgArg] => do
           let precond ← translateStmtExpr exprArg
-          pure [precond]
+          let precond' ← match errMsgArg with
+            | .option _ (some (.op errOp)) => match errOp.name, errOp.args with
+              | q`Laurel.errorMessage, #[strArg] => do
+                let msg ← translateString strArg
+                pure { precond with md := precond.md.withPropertySummary msg }
+              | _, _ => pure precond
+            | _ => pure precond
+          pure [precond']
         | _, _ => TransM.error s!"Expected optionalRequires operation, got {repr requiresOp.name}"
       | .option _ none => pure []
       | _ => TransM.error s!"Expected optionalRequires operation, got {repr requiresArg}"

@@ -70,6 +70,10 @@ op forallExpr (name: Ident, ty: LaurelType, body: StmtExpr): StmtExpr
 op existsExpr (name: Ident, ty: LaurelType, body: StmtExpr): StmtExpr
   => "exists(" name ": " ty ") => " body:0;
 
+// Error messages (used in assert, requires, ensures)
+category OptionalErrorMessage;
+op errorMessage(msg: Str): OptionalErrorMessage => "summary" msg;
+
 // If-else
 category OptionalElse;
 op optionalElse(stmts : StmtExpr) : OptionalElse => @[prec(0)] "else" stmts;
@@ -77,7 +81,7 @@ op optionalElse(stmts : StmtExpr) : OptionalElse => @[prec(0)] "else" stmts;
 op ifThenElse (cond: StmtExpr, thenBranch: StmtExpr, elseBranch: Option OptionalElse): StmtExpr =>
   @[prec(20)] "if (" cond ") " thenBranch:0 elseBranch:0;
 
-op assert (cond : StmtExpr) : StmtExpr => @[prec(0)] "assert " cond:0;
+op assert (cond : StmtExpr, errorMessage: Option OptionalErrorMessage) : StmtExpr => @[prec(0)] "assert " cond:0 errorMessage:0;
 op assume (cond : StmtExpr) : StmtExpr => @[prec(0)] "assume " cond:0;
 op return (value : StmtExpr) : StmtExpr => @[prec(0)] "return " value:0;
 op block (stmts : SemicolonSepBy StmtExpr) : StmtExpr => @[prec(1000)] "{" stmts "}";
@@ -127,10 +131,10 @@ category OptionalReturnType;
 op optionalReturnType(returnType: LaurelType): OptionalReturnType => ":" returnType;
 
 category OptionalRequires;
-op optionalRequires(cond: StmtExpr): OptionalRequires => "requires" cond:0;
+op optionalRequires(cond: StmtExpr, errorMessage: Option OptionalErrorMessage): OptionalRequires => "requires" cond:0 errorMessage;
 
 category EnsuresClause;
-op ensuresClause(cond: StmtExpr): EnsuresClause => "ensures" cond:0;
+op ensuresClause(cond: StmtExpr, errorMessage: Option OptionalErrorMessage): EnsuresClause => "ensures" cond:0 errorMessage;
 
 category ModifiesClause;
 op modifiesClause(refs: CommaSepBy StmtExpr): ModifiesClause => "modifies" refs;

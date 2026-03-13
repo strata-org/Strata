@@ -87,7 +87,6 @@ true
 Label: entry_invariant_0_0
 Property: assert
 Assumptions:
-<label_ite_cond_true: (~Int.Lt i n)>: 0 < $__n2
 sum_requires_0: $__n2 >= 0
 Obligation:
 true
@@ -95,7 +94,6 @@ true
 Label: entry_invariant_0_1
 Property: assert
 Assumptions:
-<label_ite_cond_true: (~Int.Lt i n)>: 0 < $__n2
 sum_requires_0: $__n2 >= 0
 Obligation:
 0 <= $__n2
@@ -103,7 +101,6 @@ Obligation:
 Label: entry_invariant_0_2
 Property: assert
 Assumptions:
-<label_ite_cond_true: (~Int.Lt i n)>: 0 < $__n2
 sum_requires_0: $__n2 >= 0
 Obligation:
 true
@@ -117,6 +114,7 @@ assume_invariant_0_0: 0 <= $__i5
 assume_invariant_0_1: $__i5 <= $__n2
 assume_invariant_0_2: $__s6 == $__i5 * ($__i5 + 1) / 2
 sum_requires_0: $__n2 >= 0
+assume_entry_invariant_0_1: 0 <= $__n2
 Obligation:
 0 <= $__i5 + 1
 
@@ -129,6 +127,7 @@ assume_invariant_0_0: 0 <= $__i5
 assume_invariant_0_1: $__i5 <= $__n2
 assume_invariant_0_2: $__s6 == $__i5 * ($__i5 + 1) / 2
 sum_requires_0: $__n2 >= 0
+assume_entry_invariant_0_1: 0 <= $__n2
 Obligation:
 $__i5 + 1 <= $__n2
 
@@ -141,6 +140,7 @@ assume_invariant_0_0: 0 <= $__i5
 assume_invariant_0_1: $__i5 <= $__n2
 assume_invariant_0_2: $__s6 == $__i5 * ($__i5 + 1) / 2
 sum_requires_0: $__n2 >= 0
+assume_entry_invariant_0_1: 0 <= $__n2
 Obligation:
 $__s6 + ($__i5 + 1) == ($__i5 + 1) * ($__i5 + 1 + 1) / 2
 
@@ -148,6 +148,7 @@ Label: sum_ensures_1
 Property: assert
 Assumptions:
 sum_requires_0: $__n2 >= 0
+assume_entry_invariant_0_1: 0 <= $__n2
 <label_ite_cond_true: (~Int.Lt i n)>: if 0 < $__n2 then 0 < $__n2 else true
 assume_guard_0: if 0 < $__n2 then $__i5 < $__n2 else true
 assume_invariant_0_0: if 0 < $__n2 then 0 <= $__i5 else true

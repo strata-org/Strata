@@ -311,7 +311,7 @@ partial def eval (expr : StmtExpr) : Eval TypedValue :=
   | StmtExpr.DynamicFieldUpdate _ _ _ => panic! "not implemented: DynamicFieldUpdate"
 
 -- Verification statements
-  | StmtExpr.Assert condExpr => do
+  | StmtExpr.Assert condExpr _ => do
     let cond ← eval condExpr
     if cond.ty.isBool then
       withResult <| EvalResult.TypeError "Condition must be boolean"
