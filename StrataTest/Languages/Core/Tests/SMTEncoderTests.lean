@@ -228,6 +228,24 @@ info: "; x\n(declare-const x String)\n(define-fun t0 () String x)\n(define-fun t
 #guard_msgs in
 #eval Strata.SMTDDM.termToString (.prim (.int (-1)))
 
+-- Test that Real.Div encodes to `/` (real division) not `div` (integer division).
+/--
+info: "; x\n(declare-const x Real)\n(define-fun t0 () Real x)\n; y\n(declare-const y Real)\n(define-fun t1 () Real y)\n(define-fun t2 () Real (|/| t0 t1))\n"
+-/
+#guard_msgs in
+#eval toSMTTermString
+  (.app ()
+    (.app ()
+      (.op () "Real.Div" (.some (.arrow .real (.arrow .real .real))))
+      (.fvar () "x" (.some .real)))
+    (.fvar () "y" (.some .real)))
+  (E := {Env.init with exprEnv := {
+    Env.init.exprEnv with
+      config := { Env.init.exprEnv.config with
+        factory := Core.Factory
+      }
+   }})
+
 end ArrayTheory
 
 end Core

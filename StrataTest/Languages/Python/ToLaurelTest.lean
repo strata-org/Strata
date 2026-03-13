@@ -48,6 +48,7 @@ private def fmtHighType : HighType → String
   | .TVoid => "TVoid"
   | .TBool => "TBool"
   | .TInt => "TInt"
+  | .TReal => "TReal"
   | .TFloat64 => "TFloat64"
   | .TString => "TString"
   | .THeap => "THeap"
@@ -59,6 +60,7 @@ private def fmtHighType : HighType → String
   | .Pure _ => "Pure"
   | .Intersection _ => "Intersection"
   | .TCore s => s!"TCore({s})"
+  | .Top => "Top"
 
 private def fmtParam (p : Parameter) : String :=
   s!"{p.name}:{fmtHighType p.type.val}"
@@ -98,8 +100,8 @@ private def noneAtom := SpecAtomType.noneType
 
 /--
 info: procedure returns_int(x:TString) returns(result:TInt)
-procedure returns_bool(a:TInt, b:TFloat64) returns(result:TBool)
-procedure returns_real(flag:TBool) returns(result:TFloat64)
+procedure returns_bool(a:TInt, b:TReal) returns(result:TBool)
+procedure returns_real(flag:TBool) returns(result:TReal)
 procedure with_kwonly(x:TInt, verbose:TBool) returns(result:TString)
 -/
 #guard_msgs in
