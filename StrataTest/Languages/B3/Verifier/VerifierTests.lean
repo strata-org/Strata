@@ -138,11 +138,8 @@ def testVerification (prog : Program) : IO Unit := do
     let description := if result.valResult == .unsat then "verified"
       else if result.error.isSome then s!"error: {result.error.get!}"
       else "counterexample found"
-        | .unknown => "unknown"
-        | .implementationError msg => s!"error: {msg}"
-
-      IO.println s!"{result.label}: {marker} {description}"
-      if result.valResult != .unsat || result.error.isSome then
+    IO.println s!"{result.obligation.label}: {marker} {description}"
+    if result.valResult != .unsat || result.error.isSome then
         -- Show the statement (obligation expression converted to B3)
         let obl := result.obligation
         do
@@ -165,8 +162,8 @@ def testVerification (prog : Program) : IO Unit := do
         match result.diagnosisInfo with
         | some diag =>
           -- Show full obligation as first diagnosis line
-          let fullFormatted ← let obl := result.obligation
-          do
+          let obl := result.obligation
+          let fullFormatted ← do
             match B3.FromCore.exprFromCore obl.obligation with
             | .ok b3Full =>
               let fullLoc := formatExpressionLocation prog b3Full

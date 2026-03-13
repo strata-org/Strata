@@ -53,8 +53,8 @@ private def runCheck (state : CoreSMTState) (E : Core.Env)
     let obligation : Imperative.ProofObligation Core.Expression := {
       label, property, assumptions := [], obligation := expr, metadata := md
     }
-    -- Run diagnosis if validity check indicates a failure (sat = counterexample found)
-    let isFailure := valDecision == .sat || (satDecision == .unsat)
+    -- Run diagnosis if validity check found a counterexample (not for unreachable paths)
+    let isFailure := valDecision == .sat && satDecision != .unsat
     let diagnosis ← if isFailure then
       let isCover := property == .cover
       let diagResult ← diagnoseFailure state E expr isCover smtCtx
