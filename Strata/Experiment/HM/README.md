@@ -30,3 +30,5 @@ The dependencies should be straightforward. Essentially, each file in the list s
 - `Soundness.lean` - the (incomplete) proof of `W_ctxCompat` and the overall proof of soundness
 
 Note that there are 2 axioms: 1 about strings (working with strings is annoying in Lean) and the soundness of unification, which is not actually true of the given implementation (but has been proved of the real one). If it is easier, we can axiomatize `unify` completely.
+
+Also note that there are a bunch of helper lemmas, some of which are used and others are not. Feel free to use or ignore these lemmas as needed.
