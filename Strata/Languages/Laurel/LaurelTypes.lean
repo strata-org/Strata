@@ -34,7 +34,7 @@ def computeExprType (model : SemanticModel) (expr : StmtExprMd) : HighTypeMd :=
   | .LiteralInt _ => ⟨ .TInt, md ⟩
   | .LiteralBool _ => ⟨ .TBool, md ⟩
   | .LiteralString _ => ⟨ .TString, md ⟩
-  | .LiteralDecimal _ => ⟨ .TFloat64, md ⟩
+  | .LiteralDecimal _ => ⟨ .TReal, md ⟩
   -- Variables
   | .Identifier id => (model.get id).getType.getD (panic "computeExprType1")
   -- Field access

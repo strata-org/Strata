@@ -59,7 +59,7 @@ def translateType (model : SemanticModel) (ty : HighTypeMd) : LMonoTy :=
     | some (.datatypeDefinition dt) => .tcons dt.name.text []
     | _ => .tcons "Composite" [] -- fallback for unresolved refs
   | .TCore s => .tcons s []
-  | .TFloat64 => LMonoTy.real -- Incorrect?
+  | .TFloat64 => dbg_trace "NOT SUPPORTED YET: Float64"; .tcons "Float64IsNotSupportedYet" []
   | .TReal => LMonoTy.real
   | .Top => LMonoTy.bool
   | _ => panic s!"translateType: unsupported type {ToFormat.format ty}"
@@ -156,7 +156,7 @@ def translateExpr (expr : StmtExprMd)
     | .Neg =>
       let re ← translateExpr e boundVars isPureContext
       let isReal := match (computeExprType model e).val with
-        | .TReal | .TFloat64 => true | _ => false
+        | .TReal => true | _ => false
       return .app () (if isReal then realNegOp else intNegOp) re
     | _ => panic! s!"translateExpr: Invalid unary op: {repr op}"
   | .PrimitiveOp op [e1, e2] =>
@@ -165,7 +165,7 @@ def translateExpr (expr : StmtExprMd)
     let binOp (bop : Core.Expression.Expr) : Core.Expression.Expr :=
       LExpr.mkApp () bop [re1, re2]
     let isReal := match (computeExprType model e1).val, (computeExprType model e2).val with
-      | .TFloat64, _ | .TReal, _ | _, .TFloat64 | _, .TReal => true
+      | .TReal, _ | _, .TReal => true
       | _, _ => false
     match op with
     | .Eq => return .eq () re1 re2

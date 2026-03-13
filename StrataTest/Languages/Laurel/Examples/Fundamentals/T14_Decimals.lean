@@ -14,35 +14,35 @@ namespace Laurel
 
 def decimalsProgram := r"
 procedure testDecimalLiterals() {
-    var a: float64 := 1.5;
-    var b: float64 := 2.5;
+    var a: real := 1.5;
+    var b: real := 2.5;
     assert a == 1.5;
     assert b == 2.5;
     assert a != b
 };
 
 procedure testDecimalArithmetic() {
-    var a: float64 := 1.5;
-    var b: float64 := 2.5;
-    var sum: float64 := a + b;
+    var a: real := 1.5;
+    var b: real := 2.5;
+    var sum: real := a + b;
     assert sum == 4.0;
-    var diff: float64 := b - a;
+    var diff: real := b - a;
     assert diff == 1.0;
-    var prod: float64 := a * b;
+    var prod: real := a * b;
     assert prod == 3.75;
-    var quot: float64 := b / a;
+    var quot: real := b / a;
     assert quot == 5.0 / 3.0
 };
 
 procedure testDecimalNeg() {
-    var a: float64 := 1.5;
-    var neg: float64 := -a;
+    var a: real := 1.5;
+    var neg: real := -a;
     assert neg == 0.0 - 1.5
 };
 
 procedure testDecimalComparisons() {
-    var a: float64 := 1.5;
-    var b: float64 := 2.5;
+    var a: real := 1.5;
+    var b: real := 2.5;
     assert a < b;
     assert a <= b;
     assert b > a;
@@ -52,8 +52,8 @@ procedure testDecimalComparisons() {
 };
 
 procedure testDecimalAssertFails() {
-    var a: float64 := 1.5;
-    var b: float64 := 2.5;
+    var a: real := 1.5;
+    var b: real := 2.5;
     assert a == b
 //  ^^^^^^^^^^^^^ error: assertion does not hold
 };

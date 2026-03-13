@@ -115,7 +115,7 @@ structure WithMetadata (t : Type) : Type where
 /--
 The type system for Laurel programs.
 
-`HighType` covers primitive types (`TVoid`, `TBool`, `TInt`, `TFloat64`,
+`HighType` covers primitive types (`TVoid`, `TBool`, `TInt`, `TReal`, `TFloat64`,
 `TString`), internal types used by the heap parameterization pass (`THeap`,
 `TTypedField`), collection types (`TSet`), user-defined types (`UserDefined`),
 generic applications (`Applied`), value types (`Pure`), and intersection types

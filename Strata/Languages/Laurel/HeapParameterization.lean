@@ -164,6 +164,7 @@ def boxDestructorName (ty : HighType) : Identifier :=
   | .TInt => "Box..intVal!"
   | .TBool => "Box..boolVal!"
   | .TFloat64 => "Box..float64Val!"
+  | .TReal => "Box..realVal!"
   | .UserDefined _ => "Box..compositeVal!"
   | _ => "Box..intVal!"  -- fallback
 
@@ -173,6 +174,7 @@ def boxConstructorName (ty : HighType) : Identifier :=
   | .TInt => "BoxInt"
   | .TBool => "BoxBool"
   | .TFloat64 => "BoxFloat64"
+  | .TReal => "BoxReal"
   | .UserDefined _ => "BoxComposite"
   | _ => "BoxInt"  -- fallback
 
