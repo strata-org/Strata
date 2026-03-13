@@ -25,6 +25,7 @@ import Strata.Languages.Core.StatementSemantics
 import Strata.Languages.Core.SarifOutput
 import Strata.Languages.Laurel.LaurelToCoreTranslator
 import Strata.Languages.Laurel.LaurelSemantics
+import Strata.Languages.Laurel.LaurelDenote
 import Strata.Languages.Laurel.LaurelSemanticsProps
 import Strata.Languages.Laurel.LiftImperativeExpressionsCorrectness
 
