@@ -275,20 +275,226 @@ def mapUpdateFunc : WFLFunc CoreLParams :=
                     ))))]
     ])
 
+/- A `Seq` length function with type `∀a. Seq a → int`. -/
+def seqLengthFunc : WFLFunc CoreLParams :=
+  polyUneval "Seq.length" ["a"]
+    [("s", seqTy mty[%a])] mty[int]
+    (axioms := [
+      -- length(s) >= 0
+      esM[∀ (Seq %a): -- %0 s
+        (((~Int.Ge : int → int → bool)
+          ((~Seq.length : (Seq %a) → int) %0))
+          #0)]
+    ])
+
 /- An empty `Seq` constructor with type `∀a. Seq a`. -/
 def seqEmptyFunc : WFLFunc CoreLParams :=
   polyUneval "Seq.empty" ["a"] [] (seqTy mty[%a])
+    (axioms := [
+      -- length(empty()) == 0
+      esM[((~Seq.length : (Seq %a) → int)
+            (~Seq.empty : (Seq %a))) == #0]
+    ])
 
 /- A `Seq` append function with type `∀a. Seq a → Seq a → Seq a`. -/
 def seqAppendFunc : WFLFunc CoreLParams :=
   polyUneval "Seq.append" ["a"]
     [("s1", seqTy mty[%a]), ("s2", seqTy mty[%a])]
     (seqTy mty[%a])
+    (axioms := [
+      -- length(append(s0, s1)) == length(s0) + length(s1)
+      esM[∀ (Seq %a): -- %1 s0
+          (∀ (Seq %a): -- %0 s1
+            ((~Seq.length : (Seq %a) → int)
+              (((~Seq.append : (Seq %a) → (Seq %a) → (Seq %a)) %1) %0))
+            ==
+            (((~Int.Add : int → int → int)
+              ((~Seq.length : (Seq %a) → int) %1))
+              ((~Seq.length : (Seq %a) → int) %0)))],
+      -- select(append(s0, s1), n):
+      --   n < length(s0) ==> select(append(s0,s1), n) == select(s0, n)
+      esM[∀ (Seq %a): -- %2 s0
+          (∀ (Seq %a): -- %1 s1
+            (∀ (int): -- %0 n
+              if (((~Int.Lt : int → int → bool) %0) ((~Seq.length : (Seq %a) → int) %2))
+              then
+                (((~Seq.select : (Seq %a) → int → %a)
+                    (((~Seq.append : (Seq %a) → (Seq %a) → (Seq %a)) %2) %1)) %0)
+                ==
+                (((~Seq.select : (Seq %a) → int → %a) %2) %0)
+              else #true))],
+      -- select(append(s0, s1), n):
+      --   n >= length(s0) ==> select(append(s0,s1), n) == select(s1, n - length(s0))
+      esM[∀ (Seq %a): -- %2 s0
+          (∀ (Seq %a): -- %1 s1
+            (∀ (int): -- %0 n
+              if (((~Int.Ge : int → int → bool) %0) ((~Seq.length : (Seq %a) → int) %2))
+              then
+                (((~Seq.select : (Seq %a) → int → %a)
+                    (((~Seq.append : (Seq %a) → (Seq %a) → (Seq %a)) %2) %1)) %0)
+                ==
+                (((~Seq.select : (Seq %a) → int → %a) %1)
+                    (((~Int.Sub : int → int → int) %0) ((~Seq.length : (Seq %a) → int) %2)))
+              else #true))]
+    ])
 
 /- A `Seq` selection function with type `∀a. Seq a → int → a`. -/
 def seqSelectFunc : WFLFunc CoreLParams :=
   polyUneval "Seq.select" ["a"]
     [("s", seqTy mty[%a]), ("i", mty[int])] mty[%a]
+
+/- A `Seq` build (snoc) function with type `∀a. Seq a → a → Seq a`.
+   `build(s, v)` appends a single element `v` to the end of `s`. -/
+def seqBuildFunc : WFLFunc CoreLParams :=
+  polyUneval "Seq.build" ["a"]
+    [("s", seqTy mty[%a]), ("v", mty[%a])]
+    (seqTy mty[%a])
+    (axioms := [
+      -- length(build(s, v)) == 1 + length(s)
+      esM[∀ (Seq %a): -- %1 s
+          (∀ (%a): -- %0 v
+            ((~Seq.length : (Seq %a) → int)
+              (((~Seq.build : (Seq %a) → %a → (Seq %a)) %1) %0))
+            ==
+            (((~Int.Add : int → int → int)
+              #1)
+              ((~Seq.length : (Seq %a) → int) %1)))],
+      -- select(build(s, v), i):
+      --   i == length(s) ==> select(build(s,v), i) == v
+      esM[∀ (Seq %a): -- %2 s
+          (∀ (%a): -- %1 v
+            (∀ (int): -- %0 i
+              if (%0 == ((~Seq.length : (Seq %a) → int) %2))
+              then
+                (((~Seq.select : (Seq %a) → int → %a)
+                    (((~Seq.build : (Seq %a) → %a → (Seq %a)) %2) %1)) %0)
+                == %1
+              else #true))],
+      -- select(build(s, v), i):
+      --   i != length(s) ==> select(build(s,v), i) == select(s, i)
+      esM[∀ (Seq %a): -- %2 s
+          (∀ (%a): -- %1 v
+            (∀ (int): -- %0 i
+              if (%0 == ((~Seq.length : (Seq %a) → int) %2))
+              then #true
+              else
+                (((~Seq.select : (Seq %a) → int → %a)
+                    (((~Seq.build : (Seq %a) → %a → (Seq %a)) %2) %1)) %0)
+                ==
+                (((~Seq.select : (Seq %a) → int → %a) %2) %0)))]
+    ])
+
+/- A `Seq` update function with type `∀a. Seq a → int → a → Seq a`.
+   `update(s, i, v)` returns a sequence identical to `s` except at index `i` where the value is `v`. -/
+def seqUpdateFunc : WFLFunc CoreLParams :=
+  polyUneval "Seq.update" ["a"]
+    [("s", seqTy mty[%a]), ("i", mty[int]), ("v", mty[%a])]
+    (seqTy mty[%a])
+    (axioms := [
+      -- length(update(s, i, v)) == length(s)
+      esM[∀ (Seq %a): -- %2 s
+          (∀ (int): -- %1 i
+            (∀ (%a): -- %0 v
+              ((~Seq.length : (Seq %a) → int)
+                ((((~Seq.update : (Seq %a) → int → %a → (Seq %a)) %2) %1) %0))
+              ==
+              ((~Seq.length : (Seq %a) → int) %2)))],
+      -- select(update(s, i, v), i) == v  (same index)
+      esM[∀ (Seq %a): -- %2 s
+          (∀ (int): -- %1 i
+            (∀ (%a): -- %0 v
+              {(((~Seq.select : (Seq %a) → int → %a)
+                  ((((~Seq.update : (Seq %a) → int → %a → (Seq %a)) %2) %1) %0)) %1)}
+              (((~Seq.select : (Seq %a) → int → %a)
+                  ((((~Seq.update : (Seq %a) → int → %a → (Seq %a)) %2) %1) %0)) %1)
+              == %0))],
+      -- select(update(s, i, v), n) == select(s, n)  when n != i
+      esM[∀ (Seq %a): -- %3 s
+          (∀ (int): -- %2 i
+            (∀ (%a): -- %1 v
+              (∀ (int): -- %0 n
+                (if (%0 == %2)
+                 then #true
+                 else
+                   (((~Seq.select : (Seq %a) → int → %a)
+                      ((((~Seq.update : (Seq %a) → int → %a → (Seq %a)) %3) %2) %1)) %0)
+                   ==
+                   (((~Seq.select : (Seq %a) → int → %a) %3) %0)))))]
+    ])
+
+/- A `Seq` contains function with type `∀a. Seq a → a → bool`.
+   `contains(s, v)` is true iff there exists an index `i` such that `select(s, i) == v`. -/
+def seqContainsFunc : WFLFunc CoreLParams :=
+  polyUneval "Seq.contains" ["a"]
+    [("s", seqTy mty[%a]), ("v", mty[%a])] mty[bool]
+    (axioms := [
+      -- contains(s, v) <==> exists i :: 0 <= i < length(s) && select(s, i) == v
+      esM[∀ (Seq %a): -- %1 s
+          (∀ (%a): -- %0 v
+            (((~Seq.contains : (Seq %a) → %a → bool) %1) %0)
+            ==
+            (∃ (int): -- %0 i (inside this quantifier: s=%2, v=%1, i=%0)
+              (((~Bool.And : bool → bool → bool)
+                (((~Bool.And : bool → bool → bool)
+                  (((~Int.Ge : int → int → bool) %0) #0))
+                  (((~Int.Lt : int → int → bool) %0) ((~Seq.length : (Seq %a) → int) %2))))
+                ((((~Seq.select : (Seq %a) → int → %a) %2) %0) == %1))))]
+    ])
+
+/- A `Seq` take function with type `∀a. Seq a → int → Seq a`.
+   `take(s, n)` returns the first `n` elements of `s`. -/
+def seqTakeFunc : WFLFunc CoreLParams :=
+  polyUneval "Seq.take" ["a"]
+    [("s", seqTy mty[%a]), ("n", mty[int])]
+    (seqTy mty[%a])
+    (axioms := [
+      -- length(take(s, n)) == n  (when 0 <= n <= length(s))
+      esM[∀ (Seq %a): -- %1 s
+          (∀ (int): -- %0 n
+            ((~Seq.length : (Seq %a) → int)
+              (((~Seq.take : (Seq %a) → int → (Seq %a)) %1) %0))
+            == %0)],
+      -- select(take(s, n), j) == select(s, j)  (when 0 <= j < n)
+      esM[∀ (Seq %a): -- %2 s
+          (∀ (int): -- %1 n
+            (∀ (int): -- %0 j
+              if (((~Bool.And : bool → bool → bool)
+                    (((~Int.Ge : int → int → bool) %0) #0))
+                    (((~Int.Lt : int → int → bool) %0) %1))
+              then
+                (((~Seq.select : (Seq %a) → int → %a)
+                    (((~Seq.take : (Seq %a) → int → (Seq %a)) %2) %1)) %0)
+                ==
+                (((~Seq.select : (Seq %a) → int → %a) %2) %0)
+              else #true))]
+    ])
+
+/- A `Seq` drop function with type `∀a. Seq a → int → Seq a`.
+   `drop(s, n)` returns the sequence with the first `n` elements removed. -/
+def seqDropFunc : WFLFunc CoreLParams :=
+  polyUneval "Seq.drop" ["a"]
+    [("s", seqTy mty[%a]), ("n", mty[int])]
+    (seqTy mty[%a])
+    (axioms := [
+      -- length(drop(s, n)) == length(s) - n
+      esM[∀ (Seq %a): -- %1 s
+          (∀ (int): -- %0 n
+            ((~Seq.length : (Seq %a) → int)
+              (((~Seq.drop : (Seq %a) → int → (Seq %a)) %1) %0))
+            ==
+            (((~Int.Sub : int → int → int)
+              ((~Seq.length : (Seq %a) → int) %1))
+              %0))],
+      -- select(drop(s, n), j) == select(s, j + n)
+      esM[∀ (Seq %a): -- %2 s
+          (∀ (int): -- %1 n
+            (∀ (int): -- %0 j
+              (((~Seq.select : (Seq %a) → int → %a)
+                  (((~Seq.drop : (Seq %a) → int → (Seq %a)) %2) %1)) %0)
+              ==
+              (((~Seq.select : (Seq %a) → int → %a) %2)
+                  (((~Int.Add : int → int → int) %0) %1))))]
+    ])
 
 def emptyTriggersFunc : WFLFunc CoreLParams :=
   nullaryUneval "Triggers.empty" mty[Triggers]
@@ -407,6 +613,12 @@ def WFFactory : Lambda.WFLFactory CoreLParams :=
   seqEmptyFunc,
   seqAppendFunc,
   seqSelectFunc,
+  seqLengthFunc,
+  seqBuildFunc,
+  seqUpdateFunc,
+  seqContainsFunc,
+  seqTakeFunc,
+  seqDropFunc,
 
   emptyTriggersFunc,
   addTriggerGroupFunc,
@@ -526,6 +738,12 @@ def mapUpdateOp : Expression.Expr := mapUpdateFunc.opExpr
 def seqEmptyOp : Expression.Expr := seqEmptyFunc.opExpr
 def seqAppendOp : Expression.Expr := seqAppendFunc.opExpr
 def seqSelectOp : Expression.Expr := seqSelectFunc.opExpr
+def seqLengthOp : Expression.Expr := seqLengthFunc.opExpr
+def seqBuildOp : Expression.Expr := seqBuildFunc.opExpr
+def seqUpdateOp : Expression.Expr := seqUpdateFunc.opExpr
+def seqContainsOp : Expression.Expr := seqContainsFunc.opExpr
+def seqTakeOp : Expression.Expr := seqTakeFunc.opExpr
+def seqDropOp : Expression.Expr := seqDropFunc.opExpr
 
 def mkTriggerGroup (ts : List Expression.Expr) : Expression.Expr :=
   ts.foldl (fun g t => .app () (.app () addTriggerOp t) g) emptyTriggerGroupOp
