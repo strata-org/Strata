@@ -51,11 +51,7 @@ else
 fi
 
 # Intermediate files are created in cwd with basename
-run "process_json.py combine" python3 "$PROJECT_ROOT/Strata/Backends/CBMC/resources/process_json.py" \
-  combine "$PROJECT_ROOT/Strata/Backends/CBMC/resources/defaults.json" \
-  "$PROJECT_ROOT/$BN.symtab.json" > "$WORK_DIR/$BN.full-symtab.json"
-
-run "symtab2gb" symtab2gb "$WORK_DIR/$BN.full-symtab.json" \
+run "symtab2gb" symtab2gb "$PROJECT_ROOT/$BN.symtab.json" \
   --goto-functions "$PROJECT_ROOT/$BN.goto.json" \
   --out "$WORK_DIR/$BN.gb"
 

@@ -398,7 +398,7 @@ symtab/goto JSON.
 -/
 def emitProcWithLifted (Env : Core.Expression.TyEnv) (procName : String)
     (ctx : CoreToGOTO.CProverGOTO.Context) (liftedFuncs : List Core.Function)
-    (extraSyms : Lean.Json)
+    (extraSyms : Lean.Json) (moduleName : String := "")
     : IO (Lean.Json × Lean.Json) := do
   let json ← IO.ofExcept (CoreToGOTO.CProverGOTO.Context.toJson procName ctx)
   let mut symtabObj := match json.symtab with | .obj m => m | _ => .empty
@@ -425,6 +425,7 @@ def emitProcWithLifted (Env : Core.Expression.TyEnv) (procName : String)
   | .obj m => for (k, v) in m.toList do
       symtabObj := symtabObj.insert k v
   | _ => pure ()
-  return (Lean.Json.obj symtabObj, Lean.Json.mkObj [("functions", Lean.Json.arr gotoFns)])
+  let symtab := CProverGOTO.wrapSymtab symtabObj (moduleName := moduleName)
+  return (symtab, Lean.Json.mkObj [("functions", Lean.Json.arr gotoFns)])
 
 end Strata
