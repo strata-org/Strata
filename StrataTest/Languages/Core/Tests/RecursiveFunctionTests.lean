@@ -327,15 +327,11 @@ Obligation:
 
 Label: entry_invariant_0_0
 Property: assert
-Assumptions:
-<label_ite_cond_true: (~Bool.Not (~IntList..isNil cur))>: !(IntList..isNil($__xs1))
 Obligation:
 0 + listLen($__xs1) == listLen($__xs1)
 
 Label: entry_invariant_0_1
 Property: assert
-Assumptions:
-<label_ite_cond_true: (~Bool.Not (~IntList..isNil cur))>: !(IntList..isNil($__xs1))
 Obligation:
 true
 
@@ -346,6 +342,7 @@ Assumptions:
 assume_guard_0: !(IntList..isNil($__cur6))
 assume_invariant_0_0: $__acc5 + listLen($__cur6) == listLen($__xs1)
 assume_invariant_0_1: $__acc5 >= 0
+assume_entry_invariant_0_0: 0 + listLen($__xs1) == listLen($__xs1)
 Obligation:
 IntList..isCons($__cur6)
 
@@ -356,6 +353,7 @@ Assumptions:
 assume_guard_0: !(IntList..isNil($__cur6))
 assume_invariant_0_0: $__acc5 + listLen($__cur6) == listLen($__xs1)
 assume_invariant_0_1: $__acc5 >= 0
+assume_entry_invariant_0_0: 0 + listLen($__xs1) == listLen($__xs1)
 Obligation:
 $__acc5 + 1 + listLen(IntList..tl($__cur6)) == listLen($__xs1)
 
@@ -366,12 +364,14 @@ Assumptions:
 assume_guard_0: !(IntList..isNil($__cur6))
 assume_invariant_0_0: $__acc5 + listLen($__cur6) == listLen($__xs1)
 assume_invariant_0_1: $__acc5 >= 0
+assume_entry_invariant_0_0: 0 + listLen($__xs1) == listLen($__xs1)
 Obligation:
 $__acc5 + 1 >= 0
 
 Label: equiv
 Property: assert
 Assumptions:
+assume_entry_invariant_0_0: 0 + listLen($__xs1) == listLen($__xs1)
 <label_ite_cond_true: (~Bool.Not (~IntList..isNil cur))>: if !(IntList..isNil($__xs1)) then !(IntList..isNil($__xs1)) else true
 assume_guard_0: if !(IntList..isNil($__xs1)) then !(IntList..isNil($__cur6)) else true
 assume_invariant_0_0: if !(IntList..isNil($__xs1)) then $__acc5 + listLen($__cur6) == listLen($__xs1) else true
@@ -384,7 +384,8 @@ Obligation:
 if !(IntList..isNil($__xs1)) then $__acc7 else 0 == listLen($__xs1)
 
 ---
-info: Obligation: listLen_body_calls_IntList..tl_0
+info:
+Obligation: listLen_body_calls_IntList..tl_0
 Property: assert
 Result: ✅ pass
 
