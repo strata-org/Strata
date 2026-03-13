@@ -1622,103 +1622,33 @@ def genDatatypeFactory (ldatatypes : List (LDatatype Unit)) :
 ---------------------------------------------------------------------
 
 /--
-Translate a datatype declaration to Boogie declarations, updating bindings
-appropriately.
-
-**Important:** The returned `Core.Decls` only contains the type declaration
-itself. Factory functions (constructors, testers, destructors) are generated
-automatically by `Env.addDatatypes` during program evaluation to avoid
-duplicates.
-
-**Parameters:**
-- `p`: The DDM Program (provides dialect map)
-- `bindings`: Current translation bindings
-- `op`: The `command_datatype` operation to translate
--/
-def translateDatatype (p : Program) (bindings : TransBindings) (op : Operation) :
-    TransM (Core.Decl × TransBindings) := do
-  -- Check operation has correct name and argument count
-  let _ ← @checkOp (Core.Decls × TransBindings) op q`Core.command_datatype 3
-
-  let datatypeName ← translateIdent String op.args[0]!
-
-  -- Extract type arguments (optional bindings)
-  let (typeArgs, bindings) ← translateDatatypeTypeArgs bindings op.args[1]! "translateDatatype"
-
-  /- Note: Add a placeholder for the datatype type BEFORE translating
-  constructors, for recursive constructors. Replaced with actual declaration
-  later. -/
-  let placeholderDecl := Core.Decl.type (.data [mkPlaceholderLDatatype datatypeName typeArgs])
-  let bindingsWithPlaceholder := { bindings with freeVars := bindings.freeVars.push placeholderDecl }
-
-  -- Extract constructor information (possibly recursive)
-  let constructors ← translateConstructorList p bindingsWithPlaceholder op.args[2]!
-
-  if h : constructors.size == 0 then
-    TransM.error s!"Datatype {datatypeName} must have at least one constructor"
-  else
-    -- Build LConstr list from TransConstructorInfo
-    let lConstrs := buildLConstrs datatypeName constructors
-
-    have constrs_ne : lConstrs.length != 0 := by
-      simp [lConstrs, buildLConstrs]
-      intro heq; subst_vars; apply h; rfl
-
-    let ldatatype : LDatatype Unit :=
-      { name := datatypeName
-        typeArgs := typeArgs
-        constrs := lConstrs
-        constrs_ne := constrs_ne }
-
-    -- Generate factory from LDatatype
-    let funcDecls ← genDatatypeFactory [ldatatype]
-
-    let md ← getOpMetaData op
-    let typeDecl := Core.Decl.type (.data [ldatatype]) md
-
-    -- Filter and add declarations to bindings
-    let (constructorDecls, testerDecls, fieldAccessorDecls, unsafeFieldAccessorDecls) := filterDatatypeDecls ldatatype funcDecls
-    let bindingDecls := typeDecl :: constructorDecls ++ testerDecls ++ fieldAccessorDecls ++ unsafeFieldAccessorDecls
-    let bindings := bindingDecls.foldl (fun b d =>
-      { b with freeVars := b.freeVars.push d }
-    ) bindings
-
-    return (typeDecl, bindings)
-
-/--
-Translate a mutual block containing mutually recursive datatype definitions.
-This collects all datatypes, creates a single TypeDecl.data with all of them,
-and adds placeholder entries for type references during translation.
-The `@[preRegisterTypes]` metadata on the mutual block operation ensures that
+Translate a datatype block (one or more datatype declarations).
+The `@[preRegisterTypes]` metadata on `command_datatypes` ensures that
 type names are pre-registered in the DDM GlobalContext before processing.
 -/
-def translateMutualBlock (p : Program) (bindings : TransBindings) (op : Operation) :
+def translateDatatypes (p : Program) (bindings : TransBindings) (op : Operation) :
     TransM (Core.Decl × TransBindings) := do
-  let _ ← @checkOp (Core.Decls × TransBindings) op q`Core.command_mutual 1
+  let _ ← @checkOp (Core.Decls × TransBindings) op q`Core.command_datatypes 1
 
-  -- Extract commands from the SpacePrefixSepBy
-  let .seq _ _ commands := op.args[0]!
-    | TransM.error s!"translateMutualBlock expected sequence: {repr op.args[0]!}"
+  let .seq _ _ declarations := op.args[0]!
+    | TransM.error s!"translateDatatypes expected sequence: {repr op.args[0]!}"
 
-  -- Filter to only datatype commands
-  let datatypeOps := commands.filterMap fun arg =>
+  let datatypeOps := declarations.filterMap fun arg =>
     match arg with
-    | .op op => if op.name == q`Core.command_datatype then some op else none
+    | .op op => if op.name == q`Core.datatype_decl then some op else none
     | _ => none
 
   if datatypeOps.size == 0 then
-    TransM.error "Mutual block must contain at least one datatype"
+    TransM.error "Datatype block must contain at least one datatype"
   else
-    -- First pass: collect all datatype names and type args, and allocate placeholder
-    -- entries in freeVars for each one (replacing any pre-registered entries if present)
+    -- First pass: collect all datatype names and type args, allocate placeholders
     let mut datatypeInfos : Array (String × List TyIdentifier × Nat) := #[]
     let mut bindingsWithPlaceholders := bindings
 
     for dtOp in datatypeOps do
       let datatypeName ← translateIdent String dtOp.args[0]!
-      let (typeArgs, _) ← translateDatatypeTypeArgs bindings dtOp.args[1]! "translateMutualBlock"
+      let (typeArgs, _) ← translateDatatypeTypeArgs bindings dtOp.args[1]! "translateDatatypes"
 
-      -- Check if this datatype was already pre-registered in freeVars
       let existingIdx := bindings.freeVars.findIdx? fun decl =>
         match decl with
         | .type t _ => t.names.contains datatypeName
@@ -1727,12 +1657,10 @@ def translateMutualBlock (p : Program) (bindings : TransBindings) (op : Operatio
       let placeholderDecl := Core.Decl.type (.data [mkPlaceholderLDatatype datatypeName typeArgs])
       match existingIdx with
       | some i =>
-        -- Replace existing pre-registered entry with placeholder
         datatypeInfos := datatypeInfos.push (datatypeName, typeArgs, i)
         bindingsWithPlaceholders := { bindingsWithPlaceholders with
           freeVars := bindingsWithPlaceholders.freeVars.set! i placeholderDecl }
       | none =>
-        -- Allocate a new placeholder entry
         let idx := bindingsWithPlaceholders.freeVars.size
         datatypeInfos := datatypeInfos.push (datatypeName, typeArgs, idx)
         bindingsWithPlaceholders := { bindingsWithPlaceholders with
@@ -1740,7 +1668,11 @@ def translateMutualBlock (p : Program) (bindings : TransBindings) (op : Operatio
 
     -- Second pass: translate all constructors with all placeholders in scope
     let ldatatypes ← (datatypeOps.zip datatypeInfos).toList.mapM fun (dtOp, (datatypeName, typeArgs, _idx)) => do
-      let constructors ← translateConstructorList p bindingsWithPlaceholders dtOp.args[2]!
+      -- Re-translate type args to populate boundTypeVars for this datatype.
+      -- The first pass already translated them but only to collect names/args;
+      -- we need per-datatype bindings here so constructors resolve type vars correctly.
+      let (_, dtBindings) ← translateDatatypeTypeArgs bindingsWithPlaceholders dtOp.args[1]! "translateDatatypes"
+      let constructors ← translateConstructorList p dtBindings dtOp.args[2]!
       if h : constructors.size == 0 then
         TransM.error s!"Datatype {datatypeName} must have at least one constructor"
       else
@@ -1750,31 +1682,27 @@ def translateMutualBlock (p : Program) (bindings : TransBindings) (op : Operatio
           intro heq; subst_vars; apply h; rfl
         pure { name := datatypeName, typeArgs := typeArgs, constrs := lConstrs, constrs_ne := constrs_ne }
 
-    -- Generate factory functions for the ENTIRE mutual block at once
     let allFuncDecls ← genDatatypeFactory ldatatypes
 
-    -- Create the mutual TypeDecl with all datatypes
     let md ← getOpMetaData op
-    let mutualTypeDecl := Core.Decl.type (.data ldatatypes) md
+    let typeDecl := Core.Decl.type (.data ldatatypes) md
 
-    -- Update bindings.freeVars: replace placeholder entries with the mutual block
     let mut finalBindings := bindings
 
     for (_datatypeName, _typeArgs, idx) in datatypeInfos do
       if idx < finalBindings.freeVars.size then
         finalBindings := { finalBindings with
-          freeVars := finalBindings.freeVars.set! idx mutualTypeDecl }
+          freeVars := finalBindings.freeVars.set! idx typeDecl }
       else
         finalBindings := { finalBindings with
-          freeVars := finalBindings.freeVars.push mutualTypeDecl }
+          freeVars := finalBindings.freeVars.push typeDecl }
 
-    -- Add constructor, tester, and accessor functions for each datatype
     for ldatatype in ldatatypes do
       let (constructorDecls, testerDecls, fieldAccessorDecls, unsafeFieldAccessorDecls) := filterDatatypeDecls ldatatype allFuncDecls
       for d in constructorDecls ++ testerDecls ++ fieldAccessorDecls ++ unsafeFieldAccessorDecls do
         finalBindings := { finalBindings with freeVars := finalBindings.freeVars.push d }
 
-    return (mutualTypeDecl, finalBindings)
+    return (typeDecl, finalBindings)
 
 ---------------------------------------------------------------------
 
@@ -1802,10 +1730,8 @@ partial def translateCoreDecls (p : Program) (bindings : TransBindings) :
     let (newDecls, bindings) ← do
         let (decl, bindings) ←
           match op.name with
-          | q`Core.command_datatype =>
-            translateDatatype p bindings op
-          | q`Core.command_mutual =>
-            translateMutualBlock p bindings op
+          | q`Core.command_datatypes =>
+            translateDatatypes p bindings op
           | q`Core.command_var =>
             translateGlobalVar bindings op
           | q`Core.command_constdecl =>

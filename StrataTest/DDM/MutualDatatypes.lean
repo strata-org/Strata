@@ -8,10 +8,10 @@ module
 import Strata.DDM.Integration.Lean
 
 /-!
-# Tests for mutual datatype blocks in DDM
+# Tests for datatype blocks in DDM
 
-Tests that mutually recursive datatypes can be declared via
-pre-registration and mutual blocks.
+Tests that datatypes (single and mutually recursive) can be declared via
+a `command_datatypes` operation using `preRegisterTypes`.
 -/
 
 #dialect
@@ -45,66 +45,60 @@ op constructorListAtom (c : Constructor) : ConstructorList => c;
 op constructorListPush (cl : ConstructorList, c : Constructor) : ConstructorList =>
   @[prec(30), leftassoc] cl ", " c;
 
+category DatatypeDecl;
+
 @[declareDatatype(name, typeParams, constructors,
     perConstructor([.literal "..is", .constructor],
                    [.datatype], .builtin "bool"),
     perField([.datatype, .literal "..", .field], [.datatype], .fieldType))]
-op command_datatype (name : Ident,
-                     typeParams : Option Bindings,
-                     @[scopeDatatype(name, typeParams)] constructors : ConstructorList) : Command =>
-  "datatype " name typeParams " { " constructors " };\n";
+op datatype_decl (name : Ident,
+                  typeParams : Option Bindings,
+                  @[scopeTVar(typeParams)] constructors : ConstructorList) : DatatypeDecl =>
+  "datatype " name typeParams " { " constructors " }";
 
-@[scope(commands), preRegisterTypes(commands)]
-op command_mutual (commands : SpacePrefixSepBy Command) : Command =>
-  "mutual\n" indent(2, commands) "end;\n";
+@[scope(datatypes), preRegisterTypes(datatypes)]
+op command_datatypes (datatypes : NewlineSepBy DatatypeDecl) : Command =>
+  datatypes ";\n";
 
 #end
 
 ---------------------------------------------------------------------
--- Test 1: Types from mutual block visible after the block
+-- Test 1: Mutually recursive types
 ---------------------------------------------------------------------
 
 def mutualVisibleAfterPgm :=
 #strata
 program TestMutual;
-mutual
-  datatype Tree { Node(val: int, children: Forest) };
+  datatype Tree { Node(val: int, children: Forest) }
   datatype Forest { FNil(), FCons(head: Tree, tail: Forest) };
-end;
-datatype Wrapper { MkWrapper(t: Tree, f: Forest) };
+  datatype Wrapper { MkWrapper(t: Tree, f: Forest) };
 #end
 
 /--
 info: program TestMutual;
-mutual
-   datatype Tree { Node(val:int, children:Forest) };
-   datatype Forest { FNil(), FCons(head:Tree, tail:Forest) };
-end;
+datatype Tree { Node(val:int, children:Forest) }
+datatype Forest { FNil(), FCons(head:Tree, tail:Forest) };
 datatype Wrapper { MkWrapper(t:Tree, f:Forest) };
 -/
 #guard_msgs in
 #eval IO.println mutualVisibleAfterPgm
 
 ---------------------------------------------------------------------
--- Test 2: Single datatype in mutual block (allowed but not common)
+-- Test 2: Single recursive datatype
 ---------------------------------------------------------------------
 
-def mutualSinglePgm :=
+def singleRecursivePgm :=
 #strata
 program TestMutual;
-mutual
   datatype List { Nil(), Cons(head: int, tail: List) };
-end;
 #end
 
 /--
 info: program TestMutual;
-mutual
-   datatype List { Nil(), Cons(head:int, tail:List) };
-end;
+datatype List { Nil(), Cons(head:int, tail:List) };
 -/
 #guard_msgs in
-#eval IO.println mutualSinglePgm
+#eval IO.println singleRecursivePgm
 
 ---------------------------------------------------------------------
 -- Test 3: Three-way mutual recursion
@@ -113,68 +107,58 @@ end;
 def mutualThreeWayPgm :=
 #strata
 program TestMutual;
-mutual
-  datatype A { MkA(toB: B) };
-  datatype B { MkB(toC: C) };
+  datatype A { MkA(toB: B) }
+  datatype B { MkB(toC: C) }
   datatype C { MkC(toA: A), CBase() };
-end;
 #end
 
 /--
 info: program TestMutual;
-mutual
-   datatype A { MkA(toB:B) };
-   datatype B { MkB(toC:C) };
-   datatype C { MkC(toA:A), CBase() };
-end;
+datatype A { MkA(toB:B) }
+datatype B { MkB(toC:C) }
+datatype C { MkC(toA:A), CBase() };
 -/
 #guard_msgs in
 #eval IO.println mutualThreeWayPgm
 
 ---------------------------------------------------------------------
--- Test 4: Empty mutual block
+-- Test 4: Comments and blank lines between mutual types
 ---------------------------------------------------------------------
 
-def mutualEmptyPgm :=
+def mutualWithCommentsPgm :=
 #strata
 program TestMutual;
-mutual
-end;
+  datatype Tree2 { Leaf(), Branch(left: Tree2, right: Forest2) }
+
+  // a comment between mutual types
+  datatype Forest2 { FNil2(), FCons2(head: Tree2, tail: Forest2) };
 #end
 
 /--
 info: program TestMutual;
-mutual
-end;
+datatype Tree2 { Leaf(), Branch(left:Tree2, right:Forest2) }
+datatype Forest2 { FNil2(), FCons2(head:Tree2, tail:Forest2) };
 -/
 #guard_msgs in
-#eval IO.println mutualEmptyPgm
+#eval IO.println mutualWithCommentsPgm
 
 ---------------------------------------------------------------------
 -- Test 5: Function templates expand for mutual types
--- The perConstructor/perField templates on declareDatatype generate
--- tester and accessor functions (e.g., Tree..isNode, Tree..val).
--- This test verifies template expansion succeeds for mutual types
--- with multiple constructors and fields.
 ---------------------------------------------------------------------
 
 def mutualTemplatesPgm :=
 #strata
 program TestMutual;
-mutual
   datatype Expr { Lit(val: int), Add(lhs: Expr, rhs: Expr),
-                  Call(tag: int, args: ExprList) };
+                  Call(tag: int, args: ExprList) }
   datatype ExprList { ENil(), ECons(head: Expr, tail: ExprList) };
-end;
-datatype Program { MkProgram(body: Expr) };
+  datatype Program { MkProgram(body: Expr) };
 #end
 
 /--
 info: program TestMutual;
-mutual
-   datatype Expr { Lit(val:int), Add(lhs:Expr, rhs:Expr), Call(tag:int, args:ExprList) };
-   datatype ExprList { ENil(), ECons(head:Expr, tail:ExprList) };
-end;
+datatype Expr { Lit(val:int), Add(lhs:Expr, rhs:Expr), Call(tag:int, args:ExprList) }
+datatype ExprList { ENil(), ECons(head:Expr, tail:ExprList) };
 datatype Program { MkProgram(body:Expr) };
 -/
 #guard_msgs in
@@ -184,39 +168,33 @@ datatype Program { MkProgram(body:Expr) };
 -- Negative Tests
 ---------------------------------------------------------------------
 
--- Test: Reference to undefined type inside mutual block
+-- Test: Reference to undefined type inside datatype
 /-- error: Undeclared type or category Bogus. -/
 #guard_msgs in
-def mutualUndefinedRefPgm :=
+def undefinedRefPgm :=
 #strata
 program TestMutual;
-mutual
   datatype A { MkA(x: Bogus) };
-end;
 #end
 
 -- Test: Duplicate type name in mutual block
 /-- error: Type 'Dup' is already declared. -/
 #guard_msgs in
-def mutualDuplicatePgm :=
+def duplicatePgm :=
 #strata
 program TestMutual;
-mutual
-  datatype Dup { MkDup1() };
+  datatype Dup { MkDup1() }
   datatype Dup { MkDup2() };
-end;
 #end
 
--- Test: Mutual type clashes with previously defined type
+-- Test: Datatype clashes with previously defined type
 /-- error: Type 'Existing' is already declared. -/
 #guard_msgs in
-def mutualClashPgm :=
+def clashPgm :=
 #strata
 program TestMutual;
-datatype Existing { MkExisting() };
-mutual
+  datatype Existing { MkExisting() };
   datatype Existing { MkClash() };
-end;
 #end
 
 -- Test: Duplicate constructor name across mutual datatypes
@@ -226,8 +204,6 @@ error: Mk already defined.
 #guard_msgs in
 #eval #strata
 program TestMutual;
-mutual
-  datatype A { Mk() };
+  datatype A { Mk() }
   datatype B { Mk() };
-end;
 #end

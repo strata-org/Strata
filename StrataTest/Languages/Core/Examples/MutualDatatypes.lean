@@ -22,10 +22,8 @@ def roseTreeTesterPgm : Program :=
 #strata
 program Core;
 
-mutual
-  datatype Forest { FNil(), FCons(head: RoseTree, tail: Forest) };
+  datatype Forest { FNil(), FCons(head: RoseTree, tail: Forest) }
   datatype RoseTree { Node(val: int, children: Forest) };
-end;
 
 procedure TestRoseTreeTesters() returns ()
 spec {
@@ -90,10 +88,8 @@ def roseTreeDestructorPgm : Program :=
 #strata
 program Core;
 
-mutual
-  datatype Forest { FNil(), FCons(head: RoseTree, tail: Forest) };
+  datatype Forest { FNil(), FCons(head: RoseTree, tail: Forest) }
   datatype RoseTree { Node(val: int, children: Forest) };
-end;
 
 procedure TestRoseTreeDestructor() returns ()
 spec {
@@ -186,10 +182,8 @@ def roseTreeEqualityPgm : Program :=
 #strata
 program Core;
 
-mutual
-  datatype Forest { FNil(), FCons(head: RoseTree, tail: Forest) };
+  datatype Forest { FNil(), FCons(head: RoseTree, tail: Forest) }
   datatype RoseTree { Node(val: int, children: Forest) };
-end;
 
 procedure TestRoseTreeEquality() returns ()
 spec {
@@ -249,10 +243,8 @@ def polyRoseTreeHavocPgm : Program :=
 #strata
 program Core;
 
-mutual
-  datatype Forest (a : Type) { FNil(), FCons(head: RoseTree a, tail: Forest a) };
+  datatype Forest (a : Type) { FNil(), FCons(head: RoseTree a, tail: Forest a) }
   datatype RoseTree (a : Type) { Node(val: a, children: Forest a) };
-end;
 
 procedure TestPolyRoseTreeHavoc() returns ()
 spec {
@@ -325,8 +317,7 @@ def stmtListHavocPgm : Program :=
 #strata
 program Core;
 
-mutual
-  datatype StmtList (e : Type, c : Type) { SNil(), SCons(hd: Stmt e c, tl: StmtList e c) };
+  datatype StmtList (e : Type, c : Type) { SNil(), SCons(hd: Stmt e c, tl: StmtList e c) }
   datatype Stmt (e : Type, c : Type) {
     Cmd(cmd: c),
     Block(label: int, blockBody: StmtList e c),
@@ -334,7 +325,6 @@ mutual
     Loop(guard: e, loopBody: StmtList e c),
     Goto(target: int)
   };
-end;
 
 procedure TestStmtListHavoc() returns ()
 spec {

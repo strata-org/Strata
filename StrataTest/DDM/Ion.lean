@@ -235,15 +235,21 @@ metadata declareDatatype (name : Ident, typeParams : Ident,
   constructors : Ident, testerTemplate : FunctionTemplate,
   accessorTemplate : FunctionTemplate);
 
+category DatatypeDecl;
+
 @[declareDatatype(name, typeParams, constructors,
     perConstructor([.datatype, .literal "..is", .constructor],
                    [.datatype], .builtin "bool"),
     perField([.field], [.datatype], .fieldType))]
-op command_datatype (name : Ident,
+op datatype_decl (name : Ident,
                      typeParams : Option Bindings,
-                     @[scopeDatatype(name, typeParams)] constructors : ConstructorList)
-  : Command =>
-  "datatype " name typeParams " { " constructors " };\n";
+                     @[scopeTVar(typeParams)] constructors : ConstructorList)
+  : DatatypeDecl =>
+  "datatype " name typeParams " { " constructors " }";
+
+@[scope(datatypes), preRegisterTypes(datatypes)]
+op command_datatypes (datatypes : NewlineSepBy DatatypeDecl) : Command =>
+  datatypes ";\n";
 #end
 
 namespace TestIonDatatypes

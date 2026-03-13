@@ -275,7 +275,7 @@ def datatypeToCST {M} [Inhabited M] (datatypes : List (Lambda.LDatatype Visibili
                            unsafeDestructorNames.toArray))
 
   let processDatatype (dt : Lambda.LDatatype Visibility) :
-      ToCSTM M (Command M) := do
+      ToCSTM M (DatatypeDecl M) := do
     let name : Ann String M := ⟨default, dt.name⟩
     let args : Ann (Option (Bindings M)) M :=
       if dt.typeArgs.isEmpty then
@@ -310,18 +310,11 @@ def datatypeToCST {M} [Inhabited M] (datatypes : List (Lambda.LDatatype Visibili
         pure (constrs.tail.foldl
           (fun acc c => ConstructorList.constructorListPush default acc c)
           (ConstructorList.constructorListAtom default constrs[0]!))
-    pure (.command_datatype default name args constrList)
+    pure (DatatypeDecl.datatype_decl default name args constrList)
 
-  match datatypes with
-  | [dt] => do
-    -- Single datatype - no mutual block needed
-    let cmd ← processDatatype dt
-    pure [cmd]
-  | _ => do
-    -- Multiple datatypes - mutual block with pre-registration handles forward references.
-    let cmds ← datatypes.mapM processDatatype
-    let mutualCmd := Command.command_mutual default ⟨default, cmds.toArray⟩
-    pure [mutualCmd]
+  let decls ← datatypes.mapM processDatatype
+  let datatypesCmd := Command.command_datatypes default ⟨default, decls.toArray⟩
+  pure [datatypesCmd]
 
 /-- Convert a type synonym declaration to CST -/
 def typeSynToCST {M} [Inhabited M] (syn : TypeSynonym)

@@ -49,7 +49,6 @@ datatype Error () {
 // In this prelude, we model datetime as a single int and assume
 // that the conversion from a string constant is handled by the translator.
 
-mutual
 datatype Any () {
   from_none (),
   from_bool (as_bool : bool),
@@ -61,18 +60,17 @@ datatype Any () {
   from_ListAny (as_ListAny : ListAny),
   from_ClassInstance (classname : string, instance_attributes: DictStrAny),
   exception (get_error: Error)
-};
+}
 
 datatype ListAny () {
   ListAny_nil (),
   ListAny_cons (head: Any, tail: ListAny)
-};
+}
 
 datatype DictStrAny () {
   DictStrAny_empty (),
   DictStrAny_cons (key: string, val: Any, tail: DictStrAny)
 };
-end;
 
 // /////////////////////////////////////////////////////////////////////////////////////
 //Functions that we provide to Python user
