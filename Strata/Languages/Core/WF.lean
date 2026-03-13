@@ -3,11 +3,14 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.DL.Util.Func
-import Strata.DL.Util.ListUtils
-import Strata.Languages.Core.Program
-import Strata.Languages.Core.OldExpressions
+public import Strata.DL.Util.Func
+public import Strata.DL.Util.ListUtils
+import all Strata.DL.Util.ListUtils
+public import Strata.Languages.Core.Program
+
+public section
 
 /-! # Well-Formedness of Strata Core Programs
  This file contains well-formedness definitions of Strata Core `Program`s Note that
@@ -46,20 +49,19 @@ open Imperative
 structure WFcmdProp (p : Program) (c : Imperative.Cmd Expression) : Prop where
 
 structure WFargProp (p : Program) (arg : Expression.Expr) : Prop where
-  glarg : Forall (CoreIdent.isGlobOrLocl ·) (HasVarsPure.getVars (P:=Expression) arg)
 
 structure WFcallProp (p : Program) (lhs : List Expression.Ident) (procName : String) (args : List Expression.Expr) : Prop where
-  defined : (Program.Procedure.find? p (.unres procName)).isSome
-  arglen : (Program.Procedure.find? p (.unres procName) = some proc) →
+  defined : (Program.Procedure.find? p procName).isSome
+  arglen : (Program.Procedure.find? p procName = some proc) →
           proc.header.inputs.length = args.length
-  outlen : (Program.Procedure.find? p (.unres procName) = some proc) →
+  outlen : (Program.Procedure.find? p procName = some proc) →
           proc.header.outputs.length = lhs.length
-  lhsDisj : (Program.Procedure.find? p (.unres procName) = some proc) →
+  lhsDisj : (Program.Procedure.find? p procName = some proc) →
           lhs.Disjoint (proc.spec.modifies ++ ListMap.keys proc.header.inputs ++ ListMap.keys proc.header.outputs)
-  lhsWF : lhs.Nodup ∧ Forall (CoreIdent.isLocl ·) lhs
+  lhsWF : lhs.Nodup
   wfargs : Forall (WFargProp p) args
 
-def WFCmdExtProp (p : Program) (c : CmdExt Expression) : Prop := match c with
+@[expose] def WFCmdExtProp (p : Program) (c : CmdExt Expression) : Prop := match c with
   | .cmd c => WFcmdProp p c
   | .call (lhs : List Expression.Ident) (procName : String) (args : List Expression.Expr) _ => WFcallProp p lhs procName args
 
@@ -67,9 +69,9 @@ structure WFblockProp (Cmd : Type) (p : Program) (label : String) (b : Block) : 
 
 structure WFifProp    (Cmd : Type) (p : Program) (cond : Expression.Expr)  (thenb : Block) (elseb : Block) : Prop where
 
-structure WFloopProp    (Cmd : Type) (p : Program) (guard : Expression.Expr) (measure : Option Expression.Expr) (invariant : Option Expression.Expr) (b : Block) : Prop where
+structure WFloopProp    (Cmd : Type) (p : Program) (guard : Expression.Expr) (measure : Option Expression.Expr) (invariant : List Expression.Expr) (b : Block) : Prop where
 
-structure WFgotoProp  (p : Program) (label : String) : Prop where
+structure WFexitProp  (p : Program) (label : Option String) : Prop where
 
 /-- Well-formedness for local function declarations.
     Checks that function parameter names are unique.
@@ -85,18 +87,19 @@ structure WFgotoProp  (p : Program) (label : String) : Prop where
 structure WFfuncDeclProp (p : Program) (decl : Imperative.PureFunc Expression) : Prop where
   arg_nodup : decl.inputs.keys.Nodup
 
-@[simp]
+@[simp, expose]
 def WFStatementProp (p : Program) (stmt : Statement) : Prop := match stmt with
   | .cmd   cmd => WFCmdExtProp p cmd
   | .block (label : String) (b : Block) _ => WFblockProp (CmdExt Expression) p label b
   | .ite   (cond : Expression.Expr) (thenb : Block) (elseb : Block) _ =>
      WFifProp (CmdExt Expression) p cond thenb elseb
-  | .loop  (guard : Expression.Expr) (measure : Option Expression.Expr) (invariant : Option Expression.Expr) (body : Block) _ =>
+  | .loop  (guard : Expression.Expr) (measure : Option Expression.Expr) (invariant : List Expression.Expr) (body : Block) _ =>
      WFloopProp (CmdExt Expression) p guard measure invariant body
-  | .goto (label : String) _ => WFgotoProp p label
+  | .exit (label : Option String) _ => WFexitProp p label
   | .funcDecl decl _ => WFfuncDeclProp p decl
+  | .typeDecl _ _ => True  -- Type declarations are always well-formed
 
-abbrev WFStatementsProp (p : Program) := Forall (WFStatementProp p)
+@[expose] abbrev WFStatementsProp (p : Program) := Forall (WFStatementProp p)
 
 instance (p : Program) : ListP (WFStatementProp p) (WFStatementsProp p) where
   split := by intros as a wfs
@@ -107,21 +110,12 @@ instance (p : Program) : ListP (WFStatementProp p) (WFStatementsProp p) where
 
 structure WFPrePostProp (p : Program) (d : Procedure) (pp : CoreLabel × Procedure.Check)
   : Prop where
-  glvars : Forall (CoreIdent.isGlobOrLocl ·) (HasVarsPure.getVars (P:=Expression) pp.2.expr)
-  lvars : Forall (fun x =>
-            (CoreIdent.isLocl x) →
-            (x ∈ (ListMap.keys d.header.inputs) ++ (ListMap.keys d.header.outputs)))
-          (HasVarsPure.getVars (P:=Expression) pp.2.expr)
 
 structure WFPreProp (p : Program) (d : Procedure) (pp : CoreLabel × Procedure.Check)
-  : Prop extends WFPrePostProp p d pp
-  where
-  nold : ¬ OldExpressions.containsOldExpr pp.2.expr
+  : Prop extends WFPrePostProp p d pp where
 
 structure WFPostProp (p : Program) (d : Procedure) (pp : CoreLabel × Procedure.Check)
-  : Prop extends WFPrePostProp p d pp
-  where
-  oldexprs : OldExpressions.ValidExpression pp.2.expr
+  : Prop extends WFPrePostProp p d pp where
 
 structure WFModProp (p : Program) (d : Procedure) (mod : Expression.Ident) : Prop where
   defined : (Program.find? p .var mod).isSome
@@ -142,8 +136,7 @@ structure WFSpecProp (p : Program) (spec : Procedure.Spec) (d : Procedure): Prop
 
 /- Procedure Wellformedness -/
 
-structure WFVarProp (p : Program) (name : Expression.Ident) (ty : Expression.Ty) (e : Expression.Expr) : Prop where
-  glob : CoreIdent.isGlob name
+structure WFVarProp (p : Program) (name : Expression.Ident) (ty : Expression.Ty) (e : Option Expression.Expr) : Prop where
 
 structure WFTypeDeclarationProp (p : Program) (f : TypeDecl) : Prop where
 
@@ -158,12 +151,10 @@ structure WFProcedureProp (p : Program) (d : Procedure) : Prop where
   inputsNodup : (ListMap.keys d.header.inputs).Nodup
   outputsNodup : (ListMap.keys d.header.outputs).Nodup
   modNodup : d.spec.modifies.Nodup
-  inputsLocl : Forall (CoreIdent.isLocl ·) (ListMap.keys d.header.inputs)
-  outputsLocl : Forall (CoreIdent.isLocl ·) (ListMap.keys d.header.outputs)
   wfspec : WFSpecProp p d.spec d
 structure WFFunctionProp (p : Program) (f : Function) : Prop where
 
-@[simp]
+@[simp, expose, grind]
 def WFDeclProp (p : Program) (decl : Decl) : Prop := match decl with
   | .var name ty e _ => WFVarProp p name ty e
   | .type t _ => WFTypeDeclarationProp p t
@@ -172,7 +163,7 @@ def WFDeclProp (p : Program) (decl : Decl) : Prop := match decl with
   | .proc d _ => WFProcedureProp p d
   | .func f _ => WFFunctionProp p f
 
-abbrev WFDeclsProp (p : Program) := Forall (WFDeclProp p)
+@[expose, simp] abbrev WFDeclsProp (p : Program) := Forall (WFDeclProp p)
 
 instance (p : Program) : ListP (WFDeclProp p) (WFDeclsProp p) where
   split := by intros as a wfs
@@ -190,4 +181,7 @@ structure WFProgram extends (Wrapper Program) where
   prop: WFProgramProp self
 
 end WF
+
 end Core
+
+end -- public section

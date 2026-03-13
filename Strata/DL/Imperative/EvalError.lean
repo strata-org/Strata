@@ -3,13 +3,14 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-
-
-import Strata.DL.Imperative.PureExpr
+public import Strata.DL.Imperative.PureExpr
 
 namespace Imperative
 open Std (ToFormat Format format)
+
+public section
 
 ---------------------------------------------------------------------
 
@@ -40,7 +41,7 @@ def EvalError.toFormat [ToFormat P.Expr] [ToFormat P.Ident] [ToFormat P.Ty]
   | AssertFail label b =>
     (f!"[ASSERT ERROR] Assertion {label} failed!{Format.line}{b}")
   | LabelNotExists label =>
-    (f!"[GOTO ERROR] Label {label} does not exist later in the program.")
+    (f!"[EXIT ERROR] No enclosing block with label '{label}' exists.")
   | OutOfFuel =>
     (f!"[ERROR] Ran out of fuel.")
   | Misc f =>
@@ -63,4 +64,6 @@ instance [ToFormat P.Expr] [ToFormat P.Ident] [ToFormat P.Ty] : ToFormat (EvalWa
 
 ---------------------------------------------------------------------
 
+end -- public section
 end Imperative
+

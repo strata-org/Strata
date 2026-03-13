@@ -6,6 +6,7 @@
 
 import Strata.DDM.Integration.Lean
 import Strata.DDM.Util.Format
+import Strata.Util.Tactics
 
 ---------------------------------------------------------------------
 
@@ -263,14 +264,9 @@ def Expression.mapMetadata [Inhabited N] (f : M → N) (e: Expression M) :Expres
         (Expression.mapMetadata f body)
   termination_by SizeOf.sizeOf e
   decreasing_by
-    all_goals (simp_wf <;> try omega)
-    . cases args ; simp_all
-      rename_i h; have := Array.sizeOf_lt_of_mem h; omega
-    . cases exprs; cases patterns; simp_all; subst_vars
-      rename_i h1 h2
-      have := Array.sizeOf_lt_of_mem h1
-      have Hpsz := Array.sizeOf_lt_of_mem h2
-      simp at Hpsz; omega
+    all_goals (try term_by_mem)
+    . cases args; term_by_mem
+    . cases exprs; cases patterns; term_by_mem
 
 def CallArg.mapMetadata [Inhabited N] (f : M → N) : CallArg M → CallArg N
   | .callArgExpr m e => .callArgExpr (f m) (Expression.mapMetadata f e)
@@ -308,16 +304,11 @@ def Statement.mapMetadata [Inhabited N] (f : M → N) (s: Statement M) : Stateme
   | .returnStmt m => .returnStmt (f m)
   | .probe m label => .probe (f m) (mapAnn f label)
   decreasing_by
-    all_goals (simp_wf; try omega)
-    . cases stmts; simp_all; subst_vars
-      rename_i h; have :=Array.sizeOf_lt_of_mem h; omega
-    . cases branches; simp_all; subst_vars
-      rename_i h; have :=Array.sizeOf_lt_of_mem h; omega
-    . cases elseB; cases x
-      case mk x xin =>
-        simp_all; subst_vars; simp; omega
-    . cases cases; simp_all; subst_vars
-      rename_i h; have :=Array.sizeOf_lt_of_mem h; simp_all; omega
+    all_goals (try term_by_mem)
+    . cases stmts; term_by_mem
+    . cases branches; term_by_mem
+    . cases elseB; cases x; simp_all; term_by_mem
+    . cases cases; term_by_mem
 
 def ParamMode.mapMetadata [Inhabited N] (f : M → N) : ParamMode M → ParamMode N
   | .paramModeIn m => .paramModeIn (f m)

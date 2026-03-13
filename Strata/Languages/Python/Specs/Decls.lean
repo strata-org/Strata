@@ -17,7 +17,7 @@ For example, `typing.List` has module "typing" and name "List".
 structure PythonIdent where
   pythonModule : String
   name : String
-  deriving DecidableEq, Hashable, Ord, Repr
+  deriving DecidableEq, Hashable, Inhabited, Ord, Repr
 
 namespace PythonIdent
 
@@ -38,6 +38,7 @@ def builtinsBytearray := mk "builtins" "bytearray"
 def builtinsBytes := mk "builtins" "bytes"
 def builtinsComplex := mk "builtins" "complex"
 def builtinsDict := mk "builtins" "dict"
+def builtinsException := mk "builtins" "Exception"
 def builtinsFloat := mk "builtins" "float"
 def builtinsInt := mk "builtins" "int"
 def builtinsStr := mk "builtins" "str"
@@ -53,6 +54,10 @@ def typingOverload := mk "typing" "overload"
 def typingSequence := mk "typing" "Sequence"
 def typingTypedDict := mk "typing" "TypedDict"
 def typingUnion := mk "typing" "Union"
+def typingRequired := mk "typing" "Required"
+def typingNotRequired := mk "typing" "NotRequired"
+def typingUnpack := mk "typing" "Unpack"
+def reCompile := mk "re" "compile"
 
 end PythonIdent
 
@@ -62,14 +67,14 @@ handling during type translation (e.g., parameterized types with specific
 arity requirements).
 -/
 inductive MetadataType where
-  | typingDict
-  | typingGenerator
-  | typingList
-  | typingLiteral
-  | typingMapping
-  | typingSequence
-  | typingUnion
-  deriving Repr
+| typingDict
+| typingGenerator
+| typingList
+| typingLiteral
+| typingMapping
+| typingSequence
+| typingUnion
+deriving Repr
 
 def MetadataType.ident : MetadataType -> PythonIdent
 | .typingDict => .typingDict
@@ -95,26 +100,104 @@ inductive SpecAtomType where
 | intLiteral (value : Int)
 /-- A string literal -/
 | stringLiteral (value : String)
-| noneType
 /-
 A typed dictionary with an array of fields and their types.  The arrays
 must be of the same length.
-If the `isTotal` flag is set, then all fields are required, and if not the
-fields are optional.
+The `fieldRequired` array is parallel to `fields`/`fieldTypes`.
+`true` = Required, `false` = NotRequired.
 -/
 | typedDict (fields : Array String)
             (fieldTypes : Array SpecType)
-            (isTotal : Bool)
-deriving BEq, Hashable, Inhabited, Ord, Repr
+            (fieldRequired : Array Bool)
+deriving Inhabited, Repr
 
 /--
 A PySpec type is a union of atom types.
 -/
 structure SpecType where
   atoms : Array SpecAtomType
-deriving Inhabited, Ord
+  /-- Source location of this type. May be `.none` for builtin types. -/
+  loc : SourceRange
+deriving Inhabited
 
 end
+
+namespace SpecAtomType
+
+def noneType : SpecAtomType := .ident .noneType #[]
+
+end SpecAtomType
+
+/-- Heterogeneous lexicographic comparison of two arrays. Shorter arrays
+    compare as less than longer arrays when all shared elements are equal. -/
+@[specialize]
+def compareHLex {α β} (cmp : α → β → Ordering) (a₁ : Array α) (a₂ : Array β) : Ordering :=
+  go 0
+where go i :=
+  if h₁ : a₁.size <= i then
+    if a₂.size <= i then .eq else .lt
+  else
+    if h₂ : a₂.size <= i then
+      .gt
+    else cmp a₁[i] a₂[i] |>.then $ go (i + 1)
+termination_by a₁.size - i
+
+mutual
+
+/-- Compare two atom types by structure, ignoring `loc` in nested `SpecType`
+    values. Variants are ordered: ident < pyClass < intLiteral < stringLiteral
+    < typedDict. -/
+protected def SpecAtomType.compare (x y : SpecAtomType) : Ordering :=
+  match x, y with
+  | .ident xnm xargs, .ident ynm yargs =>
+    compare xnm ynm |>.then $
+      compareHLex (fun ⟨xe, _⟩ ye => xe.compare ye) xargs.attach yargs
+  | .ident .., _ => .lt
+  | _, .ident .. => .gt
+
+  | .pyClass xname xargs, .pyClass yname yargs =>
+    compare xname yname |>.then $
+      compareHLex (fun ⟨xe, _⟩ ye => xe.compare ye) xargs.attach yargs
+  | .pyClass .., _ => .lt
+  | _, .pyClass .. => .gt
+
+  | .intLiteral xval, .intLiteral yval => compare xval yval
+  | .intLiteral .., _ => .lt
+  | _, .intLiteral .. => .gt
+
+  | .stringLiteral xval, .stringLiteral yval => compare xval yval
+  | .stringLiteral .., _ => .lt
+  | _, .stringLiteral .. => .gt
+
+  | .typedDict xfields xfieldTypes xisTotal, .typedDict yfields yfieldTypes yisTotal =>
+    compare xfields yfields |>.then $
+    compareHLex (fun ⟨xe, _⟩ ye => xe.compare ye) xfieldTypes.attach yfieldTypes |>.then $
+    compare xisTotal yisTotal
+termination_by sizeOf x
+
+/-- Compare two types by their atoms arrays, ignoring `loc`. -/
+protected def SpecType.compare (x y : SpecType) : Ordering :=
+  compareHLex (fun ⟨xe, _⟩ y => xe.compare y )
+      x.atoms.attach y.atoms
+termination_by sizeOf x
+decreasing_by
+  cases x
+  case mk xl xa =>
+    decreasing_tactic
+
+end
+
+instance : BEq SpecAtomType where
+  beq x y := SpecAtomType.compare x y == .eq
+
+instance : BEq SpecType where
+  beq x y := SpecType.compare x y == .eq
+
+instance : Ord SpecAtomType where
+  compare := SpecAtomType.compare
+
+instance : Ord SpecType where
+  compare := SpecType.compare
 
 instance : LT SpecAtomType where
   lt x y := private compare x y = .lt
@@ -152,28 +235,53 @@ private partial def unionAux (x y : Array SpecAtomType) (i : Fin x.size) (j : Fi
   | .gt =>
     let j' := j.val + 1
     if yjp : j' < y.size then
-      unionAux x y i ⟨j', yjp⟩ (r.push xe)
+      unionAux x y i ⟨j', yjp⟩ (r.push ye)
     else
-      r.push xe ++ x.drop i.val
+      r.push ye ++ x.drop i.val
 
-instance : OrOp SpecType where
-  or x y := private
-    if xp : 0 < x.atoms.size then
-      if yp : 0 < y.atoms.size then
-        { atoms := unionAux x.atoms y.atoms ⟨0, xp⟩ ⟨0, yp⟩ #[] }
-      else
-        x
+/-- Union two SpecTypes with a specified location for the result -/
+def union (loc : SourceRange) (x y : SpecType) : SpecType :=
+  if xp : 0 < x.atoms.size then
+    if yp : 0 < y.atoms.size then
+      { loc := loc, atoms := unionAux x.atoms y.atoms ⟨0, xp⟩ ⟨0, yp⟩ #[] }
     else
-      y
+      x
+  else
+    y
 
-def ofAtom (atom : SpecAtomType) : SpecType := { atoms := #[atom] }
+def ofAtom (loc : SourceRange) (atom : SpecAtomType) : SpecType := { loc := loc, atoms := #[atom] }
 
-def ofArray (atoms : Array SpecAtomType) : SpecType := { atoms := atoms.qsort (· < ·) }
+@[specialize]
+private def removeAdjDupsAux {α} [BEq α] (a : Array α) (i : Nat) (r : Array α) (rne : r.size > 0) : Array α :=
+  if ilt : i < a.size then
+    if r.back == a[i] then
+      removeAdjDupsAux a (i+1) r rne
+    else
+      removeAdjDupsAux a (i+1) (r.push a[i]) (by simp +arith)
+  else
+    r
 
-def ident (i : PythonIdent) (args : Array SpecType := #[]) : SpecType :=
-  .ofAtom (.ident i args)
+/--
+Removes duplicate adjacent elements
+-/
+@[inline]
+private def removeAdjDups {α} [BEq α] (a : Array α) : Array α :=
+  if p : a.size = 0 then
+    #[]
+  else
+    removeAdjDupsAux a 1 #[a[0]] (by simp +arith)
 
-def pyClass (name : String) (params : Array SpecType) : SpecType := ofAtom <| .pyClass name params
+/-- Construct a `SpecType` from an array of atoms by sorting and
+    removing duplicates to produce a canonical representation. -/
+protected def ofArray (loc : SourceRange) (atoms : Array SpecAtomType) : SpecType :=
+  let elts := atoms.qsort (· < ·)
+  { loc := loc, atoms := removeAdjDups elts }
+
+def ident (loc : SourceRange) (i : PythonIdent) (args : Array SpecType := #[]) : SpecType :=
+  ofAtom loc (.ident i args)
+
+def pyClass (loc : SourceRange) (name : String) (params : Array SpecType) : SpecType :=
+  ofAtom loc (.pyClass name params)
 
 def asSingleton (tp : SpecType) : Option SpecAtomType := do
   if tp.atoms.size = 1 then
@@ -200,6 +308,7 @@ deriving Inhabited
 structure ArgDecls where
   args : Array Arg
   kwonly : Array Arg
+  kwargs : Option (String × SpecType) := none
 deriving Inhabited
 
 namespace ArgDecls
@@ -209,17 +318,57 @@ def count (ad : ArgDecls) := ad.args.size + ad.kwonly.size
 end ArgDecls
 
 /--
-A specification predicate with `free` free variables (arguments + return value
-for postconditions). Currently a placeholder; will be extended to support
-actual constraint expressions.
+A composable expression tree for translating Python `assert` statements into
+structured preconditions and postconditions. Leaf nodes are `var`, `intLit`,
+and `placeholder`; interior nodes represent operations like `len`, `getIndex`,
+`intGe`/`intLe`, `isInstanceOf`, and `enumMember`.
 -/
-inductive SpecPred (free : Nat) where
+inductive SpecExpr where
+/-- Stands in for an assert pattern not yet supported by the translator.
+    The original Python expression is preserved in `Assertion.message`. -/
 | placeholder
+| var (name : String)
+| getIndex (subject : SpecExpr) (field : String)
+| isInstanceOf (subject : SpecExpr) (typeName : String)
+| len (subject : SpecExpr)
+| intLit (value : Int)
+| intGe (subject : SpecExpr) (bound : SpecExpr)
+| intLe (subject : SpecExpr) (bound : SpecExpr)
+/-- A floating-point literal, stored as a string to preserve precision. -/
+| floatLit (value : String)
+| floatGe (subject : SpecExpr) (bound : SpecExpr)
+| floatLe (subject : SpecExpr) (bound : SpecExpr)
+| enumMember (subject : SpecExpr) (values : Array String)
+/-- `regexMatch subject pattern` asserts that `subject` matches the regular
+    expression `pattern`. Corresponds to `compile(pattern).search(subject) is not None`
+    in the Python source. -/
+| regexMatch (subject : SpecExpr) (pattern : String)
+/-- `containsKey container key` asserts that `key` is present in `container`.
+    Corresponds to `"key" in container` in the Python source. -/
+| containsKey (container : SpecExpr) (key : String)
+/-- `implies condition body` asserts that if `condition` holds then `body` holds.
+    Used to represent conditional assertions like `if "field" in kwargs: assert ...`. -/
+| implies (condition : SpecExpr) (body : SpecExpr)
+/-- Logical negation. Used for else-branch conditions. -/
+| not (e : SpecExpr)
+/-- `forallList list varName body` asserts that `body` holds for every element
+    of `list`, with `varName` bound to each element in turn. Only `body` may
+    refer to `varName`. Corresponds to `for varName in list: assert body`. -/
+| forallList (list : SpecExpr) (varName : String) (body : SpecExpr)
+/-- `forallDict dict keyVar valVar body` asserts that `body` holds for every
+    key-value pair in `dict`. Both `keyVar` and `valVar` are bound in `body`.
+    Corresponds to `for keyVar, valVar in dict.items(): assert body`. -/
+| forallDict (dict : SpecExpr) (keyVar : String) (valVar : String) (body : SpecExpr)
 deriving Inhabited
 
-structure Assertion (free : Nat) where
-  message : String
-  formula : SpecPred free
+inductive MessagePart where
+| str (s : String)
+| expr (e : SpecExpr)
+deriving Inhabited
+
+structure Assertion where
+  message : Array MessagePart
+  formula : SpecExpr
 deriving Inhabited
 
 structure FunctionDecl where
@@ -229,14 +378,31 @@ structure FunctionDecl where
   args : ArgDecls
   returnType : SpecType
   isOverload : Bool
-  preconditions : Array (Assertion args.count)
-  postconditions : Array (SpecPred (args.count + 1))
+  preconditions : Array Assertion
+  postconditions : Array SpecExpr
+deriving Inhabited
+
+structure ClassField where
+  name : String
+  type : SpecType
+  /-- An optional constant value for the field (e.g., from `self.x = expr` in `__init__`). -/
+  constValue : Option String := none
+deriving Inhabited
+
+structure ClassVariable where
+  name : String
+  value : String
 deriving Inhabited
 
 structure ClassDef where
   loc : SourceRange
   name : String
+  bases : Array PythonIdent := #[]
+  fields : Array ClassField := #[]
+  classVars : Array ClassVariable := #[]
+  subclasses : Array ClassDef := #[]
   methods : Array FunctionDecl
+deriving Inhabited
 
 structure TypeDef where
   loc : SourceRange

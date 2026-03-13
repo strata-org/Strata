@@ -68,8 +68,22 @@ jobs:
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '8.0.x'
+      - name: Restore lake cache
+        uses: actions/cache/restore@v4
+        with:
+          path: .lake
+          key: lake-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}-${{ hashFiles('lake-manifest.json') }}-${{ hashFiles('**/*.st') }}-${{ github.sha }}
+          restore-keys: |
+            lake-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}-${{ hashFiles('lake-manifest.json') }}-${{ hashFiles('**/*.st') }}
       - name: Build and test Strata
         uses: leanprover/lean-action@v1
+        with:
+          use-github-cache: false
+      - name: Save lake cache
+        uses: actions/cache/save@v4
+        with:
+          path: .lake
+          key: lake-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}-${{ hashFiles('lake-manifest.json') }}-${{ hashFiles('**/*.st') }}-${{ github.sha }}
       - name: Build and run StrataVerify
         run: lake exe StrataVerify Examples/SimpleProc.core.st
       - name: Build BoogieToStrata
@@ -91,7 +105,14 @@ jobs:
       - name: Run pyAnalyze tests
         working-directory: StrataTest/Languages/Python
         shell: bash
-        run: ./run_py_analyze.sh
+        run: |
+          ./run_py_analyze.sh
+          ./run_py_analyze.sh laurel
+          python run_py_analyze_sarif.py
+          python run_py_analyze_sarif.py --laurel
+      - name: Run regex differential tests
+        working-directory: StrataTest/Languages/Python/Regex
+        run: python diff_test.py
 
   lint_checks:
     name: Run lint checks
@@ -105,6 +126,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - name: Check copyright headers
         run: python3 .github/scripts/check_copyright_headers.py .
         shell: bash
@@ -114,6 +137,8 @@ jobs:
         run: .github/scripts/checkLeanImport.sh
       - name: Check Lean version consistncy
         run: .github/scripts/check_lean_consistency.sh
+      - name: Check for new panic! usage
+        run: .github/scripts/checkNoPanic.sh "origin/${{ github.base_ref || 'main' }}"
 
   build_doc:
     name: Build documentation
@@ -134,6 +159,11 @@ jobs:
       - name: Build documentation
         run: ./generate.sh
         working-directory: docs/verso
+      - name: Check for broken links
+        uses: lycheeverse/lychee-action@v2
+        with:
+          args: --offline --no-progress --exclude-path '.*/find/.*' docs/verso/_out/
+          fail: true
 
   build_python:
     name: Build and test Python

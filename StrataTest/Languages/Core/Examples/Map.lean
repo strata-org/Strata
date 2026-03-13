@@ -29,19 +29,16 @@ procedure P() returns ()
 #eval TransM.run Inhabited.default (translateProgram mapPgm) |>.snd |>.isEmpty
 
 /--
-info: func a :  () → (Map int bool);
-(procedure P :  () → ())
-modifies: []
-preconditions: ⏎
-postconditions: ⏎
-body: assume [a_zero_true_assumption] ((((~select : (arrow (Map int bool) (arrow int bool))) (~a : (Map int bool))) #0) == #true)
-assert [a_zero_true] (((~select : (arrow (Map int bool) (arrow int bool))) (~a : (Map int bool))) #0)
-assert [a_one_true] (((~select : (arrow (Map int bool) (arrow int bool))) (~a : (Map int bool))) #1)
-
-Errors: #[]
+info: function a () : Map int bool;
+procedure P () returns ()
+{
+  assume [a_zero_true_assumption]: a[0] == true;
+  assert [a_zero_true]: a[0];
+  assert [a_one_true]: a[1];
+  };
 -/
 #guard_msgs in
-#eval TransM.run Inhabited.default (translateProgram mapPgm)
+#eval TransM.run Inhabited.default (translateProgram mapPgm) |>.fst
 
 /--
 info: [Strata.Core] Type checking succeeded.
@@ -51,18 +48,16 @@ VCs:
 Label: a_zero_true
 Property: assert
 Assumptions:
-(a_zero_true_assumption, (((~select ~a) #0) == #true))
-
-Proof Obligation:
-((~select ~a) #0)
+a_zero_true_assumption: a[0] == true
+Obligation:
+a[0]
 
 Label: a_one_true
 Property: assert
 Assumptions:
-(a_zero_true_assumption, (((~select ~a) #0) == #true))
-
-Proof Obligation:
-((~select ~a) #1)
+a_zero_true_assumption: a[0] == true
+Obligation:
+a[1]
 
 
 
@@ -71,15 +66,14 @@ Property: assert
 Result: ❌ fail
 
 
-Evaluated program:
-func a :  () → (Map int bool);
-(procedure P :  () → ())
-modifies: []
-preconditions: ⏎
-postconditions: ⏎
-body: assume [a_zero_true_assumption] (((~select ~a) #0) == #true)
-assert [a_zero_true] ((~select ~a) #0)
-assert [a_one_true] ((~select ~a) #1)
+[DEBUG] Evaluated program:
+function a () : Map int bool;
+procedure P () returns ()
+{
+  assume [a_zero_true_assumption]: a[0] == true;
+  assert [a_zero_true]: a[0];
+  assert [a_one_true]: a[1];
+  };
 
 ---
 info:
@@ -92,6 +86,6 @@ Property: assert
 Result: ❌ fail
 -/
 #guard_msgs in
-#eval verify "cvc5" mapPgm
+#eval verify mapPgm
 
 ---------------------------------------------------------------------

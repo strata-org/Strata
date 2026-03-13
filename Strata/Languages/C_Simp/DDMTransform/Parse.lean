@@ -90,10 +90,10 @@ category Bindings;
 op mkBindings (bindings : CommaSepBy Binding) : Bindings => "(" bindings ")";
 
 category MeasureCat;
-op measure (e : int) : MeasureCat => "//@decreases" e;
+op measure (e : int) : MeasureCat => "//@decreases " e;
 
 category InvariantCat;
-op invariant (e : bool) : InvariantCat => "//@invariant" e;
+op invariant (e : bool) : InvariantCat => "//@invariant " e;
 
 op while_command (g : bool,
                   measure: Option MeasureCat,
@@ -110,8 +110,8 @@ op procedure (retType: Type,
               @[scope(b)] pre: bool,
               @[scope(b)] post: bool,
               @[scope(b)] body : Block) : Command => retType " procedure " name typeArgs b
-                                                     "//@pre" indent(2, pre) ";\n"
-                                                     "//@post" indent(2, post) ";\n"
+                                                     "//@pre " indent(2, pre) ";\n"
+                                                     "//@post " indent(2, post) ";\n"
                                                      indent(2, body);
 
 category Annotation;

@@ -3,8 +3,11 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.DDM.Integration.Lean
+public import Strata.DDM.Integration.Lean
+
+public section
 
 -- Declare dialect for testing declareFn
 #dialect
@@ -107,3 +110,5 @@ check a : F Int;
 -/
 #guard_msgs in
 #eval IO.println testDeclareTypePgm
+
+end

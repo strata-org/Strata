@@ -24,7 +24,8 @@
         "lean_state_search",
         "lean_hammer_premise",
         "lean_file_outline",
-        "lean_local_search"
+        "lean_local_search",
+        "lean_verify"
       ]
     }
   }

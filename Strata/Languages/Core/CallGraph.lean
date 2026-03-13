@@ -3,10 +3,14 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.Languages.Core.Program
+public import Strata.Languages.Core.Program
 
 ---------------------------------------------------------------------
+
+public section
+
 namespace Core
 
 /-- Generic call graph structure -/
@@ -121,8 +125,8 @@ def extractFunctionCallsFromExpr (expr : Expression.Expr) : List String :=
   | .app _ fn arg => extractFunctionCallsFromExpr fn ++ extractFunctionCallsFromExpr arg
   | .ite _ c t e => extractFunctionCallsFromExpr c ++ extractFunctionCallsFromExpr t ++ extractFunctionCallsFromExpr e
   | .eq _ e1 e2 => extractFunctionCallsFromExpr e1 ++ extractFunctionCallsFromExpr e2
-  | .abs _ _ body => extractFunctionCallsFromExpr body
-  | .quant _ _ _ trigger body => extractFunctionCallsFromExpr trigger ++ extractFunctionCallsFromExpr body
+  | .abs _ _ _ body => extractFunctionCallsFromExpr body
+  | .quant _ _ _ _ trigger body => extractFunctionCallsFromExpr trigger ++ extractFunctionCallsFromExpr body
 
 def extractCallsFromFunction (func : Function) : List String :=
   match func.body with
@@ -140,8 +144,9 @@ partial def extractCallsFromStatement (stmt : Statement) : List String :=
     extractCallsFromStatements thenBody ++
     extractCallsFromStatements elseBody
   | .loop _ _ _ body _ => extractCallsFromStatements body
-  | .goto _ _ => []
+  | .exit _ _ => []
   | .funcDecl _ _ => []
+  | .typeDecl _ _ => []
 
 /-- Extract procedure calls from a list of statements -/
 partial def extractCallsFromStatements (stmts : List Statement) : List String :=
@@ -152,8 +157,8 @@ partial def extractCallsFromProcedure (proc : Procedure) : List String :=
   extractCallsFromStatements proc.body
 end
 
-abbrev ProcedureCG := CallGraph
-abbrev FunctionCG := CallGraph
+@[expose] abbrev ProcedureCG := CallGraph
+@[expose] abbrev FunctionCG := CallGraph
 
 def Program.toProcedureCG (prog : Program) : ProcedureCG :=
   let procedures := prog.decls.filterMap (fun decl =>
@@ -239,3 +244,5 @@ def Program.getIrrelevantAxioms (prog : Program) (functions : List String) : Lis
 ---------------------------------------------------------------------
 
 end Core
+
+end -- public section

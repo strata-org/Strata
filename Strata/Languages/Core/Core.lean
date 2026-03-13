@@ -3,16 +3,19 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-
-import Strata.Languages.Core.Options
-import Strata.Languages.Core.ProgramEval
-import Strata.Languages.Core.ProgramType
+public import Strata.Languages.Core.Options
+public import Strata.Languages.Core.ProgramEval
+public import Strata.Languages.Core.ProgramType
+public import Strata.Languages.Core.DDMTransform.ASTtoCST
 
 ---------------------------------------------------------------------
 
 namespace Core
 open Strata
+
+public section
 
 /-!
 ## Differences between Boogie and Strata.Core
@@ -25,14 +28,15 @@ open Strata
 
 3. Strata.Core does not (yet) support polymorphism.
 
-4. Strata.Core does not (yet) support arbitrary gotos. All gotos must
-   currently be to labels later in the program.
+4. Strata.Core supports `exit` statements that exit the nearest enclosing
+   block with a matching label (or the nearest block if no label is given).
+   Strata does not support arbitrary `goto` statements.
 
 5. Strata.Core does not support `where` clauses and `unique` constants,
    requiring a tool like `BoogieToStrata` to desugar them.
 -/
 
-def typeCheck (options : Options) (program : Program)
+def typeCheck (options : VerifyOptions) (program : Program)
     (moreFns : @Lambda.Factory CoreLParams := Lambda.Factory.default) :
     Except DiagnosticModel Program := do
   let T := Lambda.TEnv.default
@@ -50,29 +54,47 @@ def typeCheck (options : Options) (program : Program)
     if options.verbose >= .normal then dbg_trace f!"[Strata.Core] Type checking succeeded.\n"
     return program
 
-def typeCheckAndPartialEval (options : Options) (program : Program)
+def formatProofObligation (ob : Imperative.ProofObligation Expression) :
+    Std.Format :=
+  let assumptionPairs := ob.assumptions.flatMap (·.toList)
+  let assumptionFmt := assumptionPairs.map fun (label, expr) =>
+    f!"{label}: {Core.formatExprs [expr]}"
+  let assumptionLine := if assumptionPairs.isEmpty then f!""
+                        else f!"\nAssumptions:\n{Std.Format.joinSep assumptionFmt "\n"}"
+  f!"Label: {ob.label}\n\
+     Property: {ob.property}{assumptionLine}\n\
+     Obligation:\n{Core.formatExprs [ob.obligation]}\n"
+
+def formatProofObligations (obs : Array (Imperative.ProofObligation Expression)) :
+    Std.Format :=
+  Std.Format.joinSep (obs.toList.map formatProofObligation) "\n"
+
+def typeCheckAndPartialEval (options : VerifyOptions) (program : Program)
     (moreFns : @Lambda.Factory CoreLParams := Lambda.Factory.default) :
     Except DiagnosticModel (List (Program × Env)) := do
+  let factory ← Core.Factory.addFactory moreFns
   let program ← typeCheck options program moreFns
-  -- Extract datatypes from program declarations and add to environment
   let datatypes := program.decls.filterMap fun decl =>
     match decl with
     | .type (.data d) _ => some d
     | _ => none
-  let σ ← (Lambda.LState.init).addFactory Core.Factory
-  let σ ← σ.addFactory moreFns
-  let E := { Env.init with exprEnv := σ,
-                           program := program }
+  let σ ← (Lambda.LState.init).addFactory factory
+  let E := { Env.init with exprEnv := σ, program := program }
   let E ← E.addDatatypes datatypes
   let pEs := Program.eval E
   if options.verbose >= .normal then do
     dbg_trace f!"{Std.Format.line}VCs:"
     for (_p, E) in pEs do
-      dbg_trace f!"{ProofObligations.eraseTypes E.deferred}"
+      dbg_trace f!"{formatProofObligations E.deferred}"
   return pEs
 
 instance : ToString (Program) where
-  toString p := toString (Std.format p)
+  toString p := toString (Core.formatProgram p)
+
+instance : Std.ToFormat Program where
+  format := Core.formatProgram
+
+end -- public section
 
 end Core
 

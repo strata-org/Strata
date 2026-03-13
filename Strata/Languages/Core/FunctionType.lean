@@ -3,13 +3,14 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-
-
-import Strata.Languages.Core.Function
-import Strata.Languages.Core.Program
+public import Strata.Languages.Core.Function
+public import Strata.Languages.Core.Program
 
 ---------------------------------------------------------------------
+
+public section
 
 namespace Core
 
@@ -81,17 +82,7 @@ and the `Function` (for adding to the context).
 def typeCheck (C: Core.Expression.TyContext) (Env : Core.Expression.TyEnv) (decl : PureFunc Expression) :
     Except Format (PureFunc Expression × Function × Core.Expression.TyEnv) := do
   -- Convert PureFunc to Function for type checking
-  let func : Function := {
-    name := decl.name,
-    typeArgs := decl.typeArgs,
-    isConstr := decl.isConstr,
-    inputs := decl.inputs.map (fun (id, ty) => (id, Lambda.LTy.toMonoTypeUnsafe ty)),
-    output := Lambda.LTy.toMonoTypeUnsafe decl.output,
-    body := decl.body,
-    attr := decl.attr,
-    concreteEval := none,  -- Can't convert concreteEval safely
-    axioms := decl.axioms
-  }
+  let func ← Function.ofPureFunc decl
   let (func', Env) ← Function.typeCheck C Env func
   -- Convert back by wrapping monotypes in trivial polytypes
   let decl' : PureFunc Expression := {
@@ -110,4 +101,7 @@ def typeCheck (C: Core.Expression.TyContext) (Env : Core.Expression.TyEnv) (decl
 end PureFunc
 
 ---------------------------------------------------------------------
+
 end Core
+
+end -- public section

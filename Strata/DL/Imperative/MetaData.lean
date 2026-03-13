@@ -3,13 +3,16 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.DL.Imperative.PureExpr
-import Strata.DL.Util.DecidableEq
-import Strata.Util.FileRange
+public import Strata.DL.Imperative.PureExpr
+public import Strata.DL.Util.DecidableEq
+public import Strata.Util.FileRange
 
 namespace Imperative
 open Strata (DiagnosticModel FileRange)
+
+public section
 
 ---------------------------------------------------------------------
 
@@ -74,12 +77,15 @@ inductive MetaDataElem.Value (P : PureExpr) where
   | msg (s : String)
   /-- Metadata value in the form of a fileRange. -/
   | fileRange (r: FileRange)
+  /-- Metadata value in the form of a boolean switch. -/
+  | switch (b : Bool)
 
 instance [ToFormat P.Expr] : ToFormat (MetaDataElem.Value P) where
   format f := match f with
               | .expr e => f!"{e}"
               | .msg s => f!"{s}"
               | .fileRange r => f!"{r}"
+              | .switch b => f!"{b}"
 
 instance [Repr P.Expr] : Repr (MetaDataElem.Value P) where
   reprPrec v prec :=
@@ -88,6 +94,7 @@ instance [Repr P.Expr] : Repr (MetaDataElem.Value P) where
       | .expr e => f!".expr {reprPrec e prec}"
       | .msg s => f!".msg {s}"
       | .fileRange fr => f!".fileRange {fr}"
+      | .switch b => f!".switch {repr b}"
     Repr.addAppParen res prec
 
 def MetaDataElem.Value.beq [BEq P.Expr] (v1 v2 : MetaDataElem.Value P) :=
@@ -95,6 +102,7 @@ def MetaDataElem.Value.beq [BEq P.Expr] (v1 v2 : MetaDataElem.Value P) :=
   | .expr e1, .expr e2 => e1 == e2
   | .msg m1, .msg m2 => m1 == m2
   | .fileRange r1, .fileRange r2 => r1 == r2
+  | .switch b1, .switch b2 => b1 == b2
   | _, _ => false
 
 instance [BEq P.Expr] : BEq (MetaDataElem.Value P) where
@@ -123,8 +131,9 @@ structure MetaDataElem (P : PureExpr) where
   value : MetaDataElem.Value P
 
 /-- Metadata is an array of tagged elements. -/
-abbrev MetaData (P : PureExpr) := Array (MetaDataElem P)
+@[expose] abbrev MetaData (P : PureExpr) := Array (MetaDataElem P)
 
+@[expose]
 def MetaData.empty {P : PureExpr} : MetaData P := #[]
 
 /-- Push a new metadata element. -/
@@ -170,6 +179,48 @@ instance [Repr P.Expr] [Repr P.Ident] : Repr (MetaDataElem P) where
 
 def MetaData.fileRange : MetaDataElem.Field P := .label "fileRange"
 
+def MetaData.reachCheck : MetaDataElem.Field P := .label "reachCheck"
+
+def MetaData.fullCheck : MetaDataElem.Field P := .label "fullCheck"
+
+def MetaData.validityCheck : MetaDataElem.Field P := .label "validityCheck"
+
+def MetaData.satisfiabilityCheck : MetaDataElem.Field P := .label "satisfiabilityCheck"
+
+def MetaData.hasReachCheck {P : PureExpr} [BEq P.Ident] (md : MetaData P) : Bool :=
+  match md.findElem MetaData.reachCheck with
+  | some elem =>
+    match elem.value with
+    | .switch true => true
+    | _ => false
+  | none => false
+
+def MetaData.hasFullCheck {P : PureExpr} [BEq P.Ident] (md : MetaData P) : Bool :=
+  match md.findElem MetaData.fullCheck with
+  | some elem =>
+    match elem.value with
+    | .switch true => true
+    | _ => false
+  | none =>
+    -- Backward compatibility: reachCheck maps to fullCheck
+    md.hasReachCheck
+
+def MetaData.hasValidityCheck {P : PureExpr} [BEq P.Ident] (md : MetaData P) : Bool :=
+  match md.findElem MetaData.validityCheck with
+  | some elem =>
+    match elem.value with
+    | .switch true => true
+    | _ => false
+  | none => false
+
+def MetaData.hasSatisfiabilityCheck {P : PureExpr} [BEq P.Ident] (md : MetaData P) : Bool :=
+  match md.findElem MetaData.satisfiabilityCheck with
+  | some elem =>
+    match elem.value with
+    | .switch true => true
+    | _ => false
+  | none => false
+
 def getFileRange {P : PureExpr} [BEq P.Ident] (md: MetaData P) : Option FileRange := do
   let fileRangeElement <- md.findElem Imperative.MetaData.fileRange
   match fileRangeElement.value with
@@ -196,6 +247,21 @@ def MetaData.formatFileRangeD {P : PureExpr} [BEq P.Ident] (md : MetaData P) (fi
   | some fr => fr.format fileMap includeEnd?
   | none => f!""
 
+/-- Metadata field for property type classification (e.g., "divisionByZero"). -/
+def MetaData.propertyType : MetaDataElem.Field P := .label "propertyType"
+
+/-- Metadata value for division-by-zero property type classification. -/
+def MetaData.divisionByZero : String := "divisionByZero"
+
+/-- Read the property type classification from metadata, if present. -/
+def MetaData.getPropertyType {P : PureExpr} [BEq P.Ident] (md : MetaData P) : Option String :=
+  match md.findElem MetaData.propertyType with
+  | some elem => match elem.value with
+    | .msg s => some s
+    | _ => none
+  | none => none
+
 ---------------------------------------------------------------------
 
+end -- public section
 end Imperative

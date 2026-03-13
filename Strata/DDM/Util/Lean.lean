@@ -58,21 +58,6 @@ instance : Quote Int where
   | Int.ofNat n => Syntax.mkCApp ``Int.ofNat #[quote n]
   | Int.negSucc n => Syntax.mkCApp ``Int.negSucc #[quote n]
 
-/--
-Prepend the current namespace to the Lean name and convert to an identifier.
--/
-def scopedIdent (scope subName : Lean.Name) : Ident :=
-  let name := scope ++ subName
-  let nameStr := toString subName
-  .mk (.ident .none nameStr.toRawSubstring subName [.decl name []])
-
-/--
-Prepend the current namespace to the Lean name and convert to an identifier.
--/
-def currScopedIdent {m} [Monad m] [Lean.MonadResolveName m]
-                    (subName : Lean.Name) : m Ident := do
-  (scopedIdent · subName) <$> getCurrNamespace
-
 /- Returns an identifier from a string. -/
 def localIdent (name : String) : Ident :=
   let dName := .anonymous |>.str name
@@ -88,12 +73,6 @@ Create an identifier to a fully qualified Lean name
 def mkRootIdent (name : Name) : Ident :=
   let rootName := `_root_ ++ name
   .mk (.ident .none name.toString.toRawSubstring rootName [.decl name []])
-
-/--
-Create an array literal from an array of term.
--/
-def arrayLit {m} [Monad m] [Lean.MonadQuotation m] (as : Array Term) : m Term := do
-  ``( (#[ $as:term,* ] : Array _) )
 
 end Lean
 

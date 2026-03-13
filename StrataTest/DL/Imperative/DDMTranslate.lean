@@ -50,7 +50,7 @@ instance : ToFormat TransBindings where
                  varGen: {b.varGen}"
 
 instance : Inhabited (TransBindings × Arith.Command) where
-  default := ({}, .havoc "default_var")
+  default := ({}, .havoc "default_var" .empty)
 
 /--
 info: inductive ArithPrograms.ArithProgramsType : Type → Type
@@ -78,6 +78,7 @@ number of parameters: 1
 constructors:
 ArithPrograms.Expr.fvar : {α : Type} → α → Nat → Expr α
 ArithPrograms.Expr.bvar : {α : Type} → α → Nat → Expr α
+ArithPrograms.Expr.app : {α : Type} → α → Expr α → Expr α → Expr α
 ArithPrograms.Expr.numLit : {α : Type} → α → Strata.Ann Nat α → Expr α
 ArithPrograms.Expr.btrue : {α : Type} → α → Expr α
 ArithPrograms.Expr.bfalse : {α : Type} → α → Expr α
@@ -109,6 +110,7 @@ def translateExpr (bindings : TransBindings) (e : ArithPrograms.Expr α) : Trans
     let e1 ← translateExpr bindings e1
     let e2 ← translateExpr bindings e2
     return (.Eq e1 e2)
+  | .app .. => TransM.error "Unexpected app in ArithPrograms"
 
 /--
 info: inductive ArithPrograms.Label : Type → Type
@@ -137,7 +139,7 @@ ArithPrograms.Command.havoc : {α : Type} → α → Strata.Ann String α → Co
 #print Command
 
 instance : Inhabited (Arith.Command × TransBindings) where
-  default := (.havoc "default", {})
+  default := (.havoc "default" .empty, {})
 
 instance : Inhabited (Arith.Commands × TransBindings) where
   default := ([], {})
@@ -149,25 +151,25 @@ def translateCommand (bindings : TransBindings) (c : ArithPrograms.Command α) :
     let bindings := { bindings with freeVars := bindings.freeVars ++ [name.val] }
     let tp := translateType tp
     let (init_var_name, bindings) := genInitVar bindings name.val
-    return ((.init name.val tp (.Var init_var_name tp)), bindings)
+    return ((.init name.val tp (some (.Var init_var_name tp)) .empty), bindings)
   | .init _ name tp expr =>
     let tp := translateType tp
     let expr ← translateExpr bindings expr
     let bindings := { bindings with freeVars := bindings.freeVars ++ [name.val] }
-    return ((.init name.val tp expr), bindings)
+    return ((.init name.val tp (some expr) .empty), bindings)
   | .assign _ label expr =>
     let expr ← translateExpr bindings expr
-    return ((.set label.val expr), bindings)
+    return ((.set label.val expr .empty), bindings)
   | .assume _ label expr =>
     let label ← translateLabel bindings label
     let expr ← translateExpr bindings expr
-    return ((.assume label expr), bindings)
+    return ((.assume label expr .empty), bindings)
   | .assert _ label expr =>
     let label ← translateLabel bindings label
     let expr ← translateExpr bindings expr
-    return ((.assert label expr), bindings)
+    return ((.assert label expr .empty), bindings)
   | .havoc _ name =>
-    return ((.havoc name.val), bindings)
+    return ((.havoc name.val .empty), bindings)
 
 partial def translateProgram (ops : Array Strata.Operation) : TransM Arith.Commands := do
   let (cmds, _) ← go 0 ops.size {} ops

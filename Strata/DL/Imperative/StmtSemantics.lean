@@ -3,18 +3,20 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-
-
-import Strata.DL.Imperative.CmdSemantics
-import Strata.DL.Imperative.Stmt
+public import Strata.DL.Imperative.CmdSemantics
+public import Strata.DL.Imperative.Stmt
+import Strata.Util.Tactics
 
 ---------------------------------------------------------------------
 
 namespace Imperative
 
+public section
+
 /-- Type of a function that extends the semantic evaluator with a new function definition. -/
-abbrev ExtendEval (P : PureExpr) := SemanticEval P → SemanticStore P → PureFunc P → SemanticEval P
+@[expose] abbrev ExtendEval (P : PureExpr) := SemanticEval P → SemanticStore P → PureFunc P → SemanticEval P
 
 mutual
 
@@ -47,27 +49,30 @@ inductive EvalStmt (P : PureExpr) (Cmd : Type) (EvalCmd : EvalCmdParam P Cmd)
   | block_sem :
     EvalBlock P Cmd EvalCmd extendEval δ σ b σ' δ' →
     ----
-    EvalStmt P Cmd EvalCmd extendEval δ σ (.block _ b) σ' δ'
+    EvalStmt P Cmd EvalCmd extendEval δ σ (.block _ b md) σ' δ'
 
   | ite_true_sem :
     δ σ c = .some HasBool.tt →
     WellFormedSemanticEvalBool δ →
     EvalBlock P Cmd EvalCmd extendEval δ σ t σ' δ' →
     ----
-    EvalStmt P Cmd EvalCmd extendEval δ σ (.ite c t e) σ' δ'
+    EvalStmt P Cmd EvalCmd extendEval δ σ (.ite c t e md) σ' δ'
 
   | ite_false_sem :
     δ σ c = .some HasBool.ff →
     WellFormedSemanticEvalBool δ →
     EvalBlock P Cmd EvalCmd extendEval δ σ e σ' δ' →
     ----
-    EvalStmt P Cmd EvalCmd extendEval δ σ (.ite c t e) σ' δ'
+    EvalStmt P Cmd EvalCmd extendEval δ σ (.ite c t e md) σ' δ'
 
   | funcDecl_sem [HasSubstFvar P] [HasVarsPure P P.Expr] :
     EvalStmt P Cmd EvalCmd extendEval δ σ (.funcDecl decl md) σ
       (extendEval δ σ decl)
 
-  -- (TODO): Define semantics of `goto`.
+  | typeDecl_sem :
+    EvalStmt P Cmd EvalCmd extendEval δ σ (.typeDecl tc md) σ δ
+
+  -- (TODO): Define semantics of `exit`.
 
 inductive EvalBlock (P : PureExpr) (Cmd : Type) (EvalCmd : EvalCmdParam P Cmd)
   (extendEval : ExtendEval P)
@@ -114,7 +119,8 @@ theorem EvalCmdDefMonotone [HasFvar P] [HasBool P] [HasNot P] :
   isDefined σ' v := by
   intros Hdef Heval
   cases Heval <;> try exact Hdef
-  next _ Hup => exact InitStateDefMonotone Hdef Hup
+  next _ Hup => exact InitStateDefMonotone Hdef Hup  -- eval_init
+  next Hup => exact InitStateDefMonotone Hdef Hup    -- eval_init_unconstrained
   next _ Hup => exact UpdateStateDefMonotone Hdef Hup
   next Hup => exact UpdateStateDefMonotone Hdef Hup
 
@@ -147,11 +153,10 @@ theorem EvalStmtDefMonotone
       apply EvalBlockDefMonotone <;> assumption
     | ite_false_sem Hsome Hwf Heval =>
       apply EvalBlockDefMonotone <;> assumption
-  | .goto _ _ => cases Heval
+  | .exit _ _ => cases Heval
   | .loop _ _ _ _ _ => cases Heval
   | .funcDecl _ _ => cases Heval; assumption
-  termination_by (Stmt.sizeOf s)
-  decreasing_by all_goals simp [*] at * <;> omega
+  | .typeDecl _ _ => cases Heval; assumption
 
 theorem EvalBlockDefMonotone
   [DecidableEq P.Ident]
@@ -172,6 +177,6 @@ theorem EvalBlockDefMonotone
     apply EvalBlockDefMonotone (σ:=σ1) (δ:=δ1)
     apply EvalStmtDefMonotone <;> assumption
     assumption
-  termination_by (Block.sizeOf ss)
-  decreasing_by all_goals simp [*] at * <;> decreasing_tactic
 end
+
+end -- public section

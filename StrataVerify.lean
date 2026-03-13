@@ -12,12 +12,14 @@ import Strata.Languages.B3.Verifier.Program
 import Strata.Util.IO
 import Std.Internal.Parsec
 
+open Core (VerifyOptions defaultSolver)
+
 open Strata
 
-def parseOptions (args : List String) : Except Std.Format (Options × String × Option (List String)) :=
-  go Options.quiet args none
+def parseOptions (args : List String) : Except Std.Format (VerifyOptions × String × Option (List String)) :=
+  go .quiet args none
     where
-      go : Options → List String → Option (List String) → Except Std.Format (Options × String × Option (List String))
+      go : VerifyOptions → List String → Option (List String) → Except Std.Format (VerifyOptions × String × Option (List String))
       | opts, "--verbose" :: rest, procs => go {opts with verbose := .normal} rest procs
       | opts, "--check" :: rest, procs => go {opts with checkOnly := true} rest procs
       | opts, "--type-check" :: rest, procs => go {opts with typeCheckOnly := true} rest procs
@@ -25,6 +27,8 @@ def parseOptions (args : List String) : Except Std.Format (Options × String × 
       | opts, "--stop-on-first-error" :: rest, procs => go {opts with stopOnFirstError := true} rest procs
       | opts, "--sarif" :: rest, procs => go {opts with outputSarif := true} rest procs
       | opts, "--output-format=sarif" :: rest, procs => go {opts with outputSarif := true} rest procs
+      | opts, "--vc-directory" :: dir :: rest, procs =>
+        go { opts with vcDirectory := .some dir } rest procs
       | opts, "--procedures" :: procList :: rest, _ =>
          let procs := procList.splitToList (· == ',')
          go opts rest (some procs)
@@ -35,6 +39,18 @@ def parseOptions (args : List String) : Except Std.Format (Options × String × 
          match n? with
          | .none => .error f!"Invalid number of seconds: {secondsStr}"
          | .some n => go {opts with solverTimeout := n} rest procs
+      | opts, "--check-mode" :: modeStr :: rest, procs =>
+         match modeStr with
+         | "deductive" => go {opts with checkMode := .deductive} rest procs
+         | "bugFinding" => go {opts with checkMode := .bugFinding} rest procs
+         | "bugFindingAssumingCompleteSpec" => go {opts with checkMode := .bugFindingAssumingCompleteSpec} rest procs
+         | _ => .error f!"Invalid check mode: {modeStr}. Must be 'deductive', 'bugFinding', or 'bugFindingAssumingCompleteSpec'."
+      | opts, "--check-level" :: levelStr :: rest, procs =>
+         match levelStr with
+         | "minimal" => go {opts with checkLevel := .minimal} rest procs
+         | "minimalVerbose" => go {opts with checkLevel := .minimalVerbose} rest procs
+         | "full" => go {opts with checkLevel := .full} rest procs
+         | _ => .error f!"Invalid check level: {levelStr}. Must be 'minimal', 'minimalVerbose', or 'full'."
       | opts, [file], procs => pure (opts, file, procs)
       | _, [], _ => .error "StrataVerify requires a file as input"
       | _, args, _ => .error f!"Unknown options: {args}"
@@ -52,7 +68,10 @@ def usageMessage : Std.Format :=
   --procedures <proc1,proc2>  Verify only the specified procedures (comma-separated).{Std.Format.line}  \
   --sarif                     Output results in SARIF format to <file>.sarif{Std.Format.line}  \
   --output-format=sarif       Output results in SARIF format to <file>.sarif{Std.Format.line}  \
-  --solver <name>             SMT solver executable to use (default: {defaultSolver})"
+  --vc-directory=<dir>        Store VCs in SMT-Lib format in <dir>{Std.Format.line}  \
+  --solver <name>             SMT solver executable to use (default: {defaultSolver}){Std.Format.line}  \
+  --check-mode <mode>         Check mode: 'deductive' (default, prove correctness), 'bugFinding' (find bugs), or 'bugFindingAssumingCompleteSpec' (find bugs assuming complete preconditions).{Std.Format.line}  \
+  --check-level <level>       Check level: 'minimal' (default, simple messages), 'minimalVerbose' (detailed messages, one check), or 'full' (both checks, all outcomes)."
 
 def main (args : List String) : IO UInt32 := do
   let parseResult := parseOptions args
@@ -86,7 +105,7 @@ def main (args : List String) : IO UInt32 := do
       else -- !typeCheckOnly
         let vcResults ← try
           if file.endsWith ".csimp.st" then
-            C_Simp.verify opts.solver pgm opts
+            C_Simp.verify pgm opts
           else if file.endsWith ".b3.st" || file.endsWith ".b3cst.st" then
             -- B3 verification (different model, handle inline)
             let ast ← match B3.Verifier.programToB3AST pgm with
@@ -109,7 +128,7 @@ def main (args : List String) : IO UInt32 := do
                 IO.println s!"  {marker} {desc}"
             pure #[]  -- Return empty array since B3 prints directly
           else
-            verify opts.solver pgm inputCtx proceduresToVerify opts
+            verify pgm inputCtx proceduresToVerify opts
         catch e =>
           println! f!"{e}"
           return (1 : UInt32)
@@ -126,19 +145,14 @@ def main (args : List String) : IO UInt32 := do
             -- Create a files map with the single input file
             let uri := Strata.Uri.file file
             let files := Map.empty.insert uri inputCtx.fileMap
-            let sarifDoc := Core.Sarif.vcResultsToSarif files vcResults
-            let sarifJson := Strata.Sarif.toPrettyJsonString sarifDoc
-            let sarifFile := file ++ ".sarif"
-            try
-              IO.FS.writeFile sarifFile sarifJson
-              println! f!"SARIF output written to {sarifFile}"
-            catch e =>
-              println! f!"Error writing SARIF output to {sarifFile}: {e.toString}"
+            Core.Sarif.writeSarifOutput opts.checkMode files vcResults (file ++ ".sarif")
 
         -- Also output standard format
         for vcResult in vcResults do
           let posStr := Imperative.MetaData.formatFileRangeD vcResult.obligation.metadata (some inputCtx.fileMap)
-          println! f!"{posStr} [{vcResult.obligation.label}]: {vcResult.result}"
+          match vcResult.outcome with
+          | .ok outcome => println! f!"{posStr} [{vcResult.obligation.label}]: {Core.VCOutcome.emoji outcome} {Core.VCOutcome.label outcome}"
+          | .error msg => println! f!"{posStr} [{vcResult.obligation.label}]: error: {msg}"
         let success := vcResults.all Core.VCResult.isSuccess
         if success && !opts.checkOnly then
           println! f!"All {vcResults.size} goals passed."

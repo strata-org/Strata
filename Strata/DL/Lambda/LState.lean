@@ -3,9 +3,10 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.DL.Lambda.Factory
-import Strata.DL.Lambda.Scopes
+public import Strata.DL.Lambda.Factory
+public import Strata.DL.Lambda.Scopes
 
 /-! ## State for (Partial) Evaluation of Lambda Expressions
 
@@ -15,6 +16,8 @@ See `Strata.DL.Lambda.LExprEval` for the partial evaluator.
 namespace Lambda
 open Strata
 open Std (ToFormat Format format)
+
+public section
 
 variable {T : LExprParams} [Inhabited T.Metadata] [BEq T.Metadata] [DecidableEq T.IDMeta] [BEq T.IDMeta] [ToFormat T.IDMeta] [ToFormat (LFunc T)] [ToFormat (Scopes T)] [Inhabited (LExpr T.mono)]
 ---------------------------------------------------------------------
@@ -162,4 +165,5 @@ def LExpr.substFvarsFromState (σ : (LState T)) (e : (LExpr T.mono)) : (LExpr T.
 
 ---------------------------------------------------------------------
 
+end -- public section
 end Lambda

@@ -5,8 +5,6 @@
 -/
 module
 public import Strata.DDM.AST
-public import Strata.DDM.HNF
-import all Strata.DDM.Util.Array
 
 /-!
 Runtime support for converting AST representations back to generated types.
@@ -240,48 +238,6 @@ def ofSeqM {α β} [Repr α] [SizeOf α]
     else
       throwExpected sep.toString arg
   | _ => throwExpected sep.toString arg
-
-/--
-Get the expression at index `lvl` in the arguments.
-
-Note that in conversion, we will
--/
-def atArg {Ann α β} [SizeOf α] {e : α} (as : SizeBounded (Array (ArgF Ann)) e 1) (lvl : Nat)
-        (act : (s : SizeBounded (ArgF Ann) e (-1)) → OfAstM β)
-        (lvlP : lvl < as.val.size := by get_elem_tactic) :
-        OfAstM β :=
-  have lvlP : lvl < as.val.size := by omega
-  have p : sizeOf as.val[lvl] ≤ sizeOf e + (-1 : Int) := by
-      have asP := as.property
-      have inP : as.val[lvl] ∈ as.val := by simp
-      have eltSizeOfP := Array.sizeOf_lt_of_mem_strict inP;
-      omega
-  act ⟨as.val[lvl], p⟩
-
-/--
-Get the expression at index `lvl` in the arguments.
-
-Note that in conversion, we will
--/
-def exprEtaArg {Ann α T} [Repr Ann] [HasEta α T]
-    {e : Expr} {n : Nat}
-    (as : SizeBounded (Array (ArgF Ann)) e 1)
-    (_ : as.val.size ≤ n) (lvl : Nat)
-    (act : (s : ExprF Ann) → sizeOf s < sizeOf e → OfAstM α)
-    : OfAstM α :=
-  if lvlP : lvl < as.val.size then
-    let i := as.val.size - 1 - lvl
-    have iP : i < as.val.size := by omega
-    match arg_eq : as.val[i] with
-    | .expr a1 => act a1 (by
-        have asP := as.property
-        have idxP := Array.sizeOf_getElem as.val i iP;
-        simp +arith [arg_eq] at idxP;
-        omega)
-    | _ => .throwExpectedExpr as.val[i]
-  else
-    let i := n - 1 - lvl
-    return HasEta.bvar i
 
 /--
 Distinguishes between a type parameter (category reference) and a type

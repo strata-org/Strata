@@ -1,0 +1,38 @@
+
+datetime_now_ensures_0: ✅ pass (in prelude)
+
+datetime_utcnow_ensures_0: ✅ pass (in prelude)
+
+ensures_str_strp_reverse: ✅ pass (in prelude)
+
+assert_name_is_foo: ✅ pass (in prelude)
+
+assert_opt_name_none_or_str: ✅ pass (in prelude)
+
+assert_opt_name_none_or_bar: ✅ pass (in prelude)
+
+ensures_maybe_except_none: ✅ pass (in prelude)
+
+test_helper_procedure_assert_name_is_foo_27: ✅ pass (in prelude)
+
+test_helper_procedure_assert_opt_name_none_or_str_28: ✅ pass (in prelude)
+
+test_helper_procedure_assert_opt_name_none_or_bar_29: ✅ pass (in prelude)
+
+test_helper_procedure_assert_name_is_foo_19: ✅ pass (in prelude)
+
+test_helper_procedure_assert_opt_name_none_or_str_20: ✅ pass (in prelude)
+
+test_helper_procedure_assert_opt_name_none_or_bar_21: ✅ pass (in prelude)
+
+Assertion failed for prelude: test_helper_procedure_assert_name_is_foo_11: ❌ fail
+
+test_helper_procedure_assert_opt_name_none_or_str_12: ✅ pass (in prelude)
+
+test_helper_procedure_assert_opt_name_none_or_bar_13: ✅ pass (in prelude)
+
+test_helper_procedure_assert_name_is_foo_3: ✅ pass (in prelude)
+
+test_helper_procedure_assert_opt_name_none_or_str_4: ✅ pass (in prelude)
+
+Assertion failed for prelude: test_helper_procedure_assert_opt_name_none_or_bar_5: ❌ fail

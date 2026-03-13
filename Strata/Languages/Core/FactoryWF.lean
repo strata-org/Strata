@@ -3,11 +3,16 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.Languages.Core.Factory
-import Strata.DL.Lambda.Factory
+public import Strata.Languages.Core.Factory
+public import Strata.DL.Lambda.Factory
 import Strata.DL.Util.Func
-import Strata.DL.Lambda.IntBoolFactory
+public import Strata.DL.Lambda.IntBoolFactory
+import all Strata.DL.Lambda.IntBoolFactory
+import all Strata.DL.Lambda.LTy
+import all Strata.DL.Lambda.Factory
+import all Strata.DL.Lambda.FactoryWF
 
 /-! # Factory Wellformedness Proof
 
@@ -17,48 +22,18 @@ import Strata.DL.Lambda.IntBoolFactory
 namespace Core
 open Lambda
 
-set_option maxRecDepth 32768 in
-set_option maxHeartbeats 4000000 in
-/--
-Wellformedness of Factory
--/
+public section
+
 theorem Factory_wf :
     FactoryWF Factory := by
-  unfold Factory
-  apply FactoryWF.mk
-  · decide -- FactoryWF.name_nodup
-  · unfold HAppend.hAppend Array.instHAppendList
-    simp only []
-    unfold Array.appendList
-    simp only [List.foldl, Array.push, List.concat]
-    intros lf
-    rw [← Array.mem_toList_iff]
-    simp only []
-    intros Hmem
-    repeat (
-      rcases Hmem with _ | ⟨ a', Hmem ⟩
-      · rw [LFuncWF]
-        apply Strata.DL.Util.FuncWF.mk
-        · decide -- LFuncWF.arg_nodup
-        · decide -- LFuncWF.body_freevars
-        · -- LFuncWF.concreteEval_argmatch
-          simp (config := { ground := true })
-          try (
-            try unfold unOpCeval
-            try unfold binOpCeval
-            try unfold cevalIntDiv
-            try unfold cevalIntMod
-            try unfold bvUnaryOp
-            try unfold bvBinaryOp
-            try unfold bvShiftOp
-            try unfold bvBinaryPred
-            intros lf md args res
-            repeat (rcases args with _ | ⟨ args0, args ⟩ <;> try grind))
-        · decide -- LFuncWF.body_or_concreteEval
-        · decide -- LFuncWF.typeArgs_nodup
-        · decide -- LFuncWF.inputs_typevars_in_typeArgs
-        · decide -- LFuncWF.output_typevars_in_typeArgs
-    )
-    contradiction
-
+  constructor
+  · -- name_nodup: follows from WFFactory.name_nodup
+    simp only [Factory, WFLFactory.toFactory, Array.toList_map, List.map_map]
+    exact WFFactory.name_nodup
+  · intro lf hlf
+    simp only [Factory, WFLFactory.toFactory] at hlf
+    rw [Array.mem_map] at hlf
+    obtain ⟨wflf, _, rfl⟩ := hlf
+    exact wflf.wf
+end
 end Core

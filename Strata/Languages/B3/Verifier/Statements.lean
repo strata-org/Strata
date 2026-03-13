@@ -10,6 +10,7 @@ import Strata.Languages.B3.DDMTransform.ParseCST
 import Strata.Languages.B3.DDMTransform.Conversion
 import Strata.DDM.Integration.Lean
 import Strata.DDM.Util.Format
+import Strata.Util.Tactics
 
 /-!
 # B3 Statement Streaming Translation
@@ -101,13 +102,7 @@ def statementToSMTWithoutDiagnosis (ctx : ConversionContext) (state : B3Verifica
   | _ =>
       pure { results := [], finalState := state }
   termination_by stmt => SizeOf.sizeOf stmt
-  decreasing_by
-    simp_wf
-    cases stmts
-    simp_all
-    rename_i h
-    have := Array.sizeOf_lt_of_mem h
-    omega
+  decreasing_by cases stmts; simp_all; term_by_mem
 
 ---------------------------------------------------------------------
 -- Statement Formatting

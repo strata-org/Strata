@@ -1,0 +1,18 @@
+
+datetime_now_ensures_0: ✅ pass (in prelude)
+
+datetime_utcnow_ensures_0: ✅ pass (in prelude)
+
+ensures_str_strp_reverse: ✅ pass (in prelude)
+
+assert_name_is_foo: ✅ pass (in prelude)
+
+assert_opt_name_none_or_str: ✅ pass (in prelude)
+
+assert_opt_name_none_or_bar: ✅ pass (in prelude)
+
+ensures_maybe_except_none: ✅ pass (in prelude)
+
+py_assertion: ✅ pass (at line 6, col 4)
+
+py_assertion: ✅ pass (at line 11, col 4)

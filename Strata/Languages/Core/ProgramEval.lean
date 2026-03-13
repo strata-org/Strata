@@ -3,11 +3,10 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-
-
-import Strata.Languages.Core.Program
-import Strata.Languages.Core.ProcedureEval
+public import Strata.Languages.Core.Program
+public import Strata.Languages.Core.ProcedureEval
 
 ---------------------------------------------------------------------
 
@@ -17,6 +16,8 @@ open Std (ToFormat Format format)
 
 namespace Program
 open Lambda.LTy Lambda.LExpr Statement Procedure Program
+
+public section
 
 /--
 A new environment, with declarations obtained after the partial evaluation
@@ -91,6 +92,8 @@ def eval (E : Env) : List (Program × Env) :=
 
 
 --------------------------------------------------------------------
+
+end -- public section
 
 end Program
 end Core

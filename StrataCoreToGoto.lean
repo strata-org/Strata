@@ -4,7 +4,7 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import StrataTest.Backends.CBMC.CoreToCProverGOTO
+import Strata.Backends.CBMC.GOTO.CoreToCProverGOTO
 import Strata.Languages.Core.Verifier
 import Strata.Util.IO
 
@@ -65,6 +65,7 @@ def main (args : List String) : IO UInt32 := do
       let symTabFile := dir / s!"{programName}.symtab.json"
       let gotoFile := dir / s!"{programName}.goto.json"
       CoreToGOTO.writeToGotoJson
+        (programName := programName)
         (symTabFileName := symTabFile.toString)
         (gotoFileName := gotoFile.toString)
         pgm

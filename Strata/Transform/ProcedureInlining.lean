@@ -3,14 +3,16 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
 import Strata.DL.Util.LabelGen
 import Strata.DL.Util.ListUtils
 import Strata.Languages.Core.Core
 import Strata.Languages.Core.CoreGen
 import Strata.Languages.Core.ProgramWF
-import Strata.Languages.Core.Statement
-import Strata.Transform.CoreTransform
+public import Strata.Languages.Core.Statement
+public import Strata.Transform.CoreTransform
+import Strata.Util.Tactics
 
 /-! # Procedure Inlining Transformation -/
 
@@ -19,12 +21,12 @@ namespace ProcedureInlining
 
 open Transform
 
--- Unlike Stmt.hasLabel, this gathers labels in assert and assume as well.
+public section
+
+-- Gathers all labels including those in assert and assume.
 mutual
 def Block.labels (b : Block): List String :=
   List.flatMap (fun s => Statement.labels s) b
-  termination_by b.sizeOf
-  decreasing_by apply Imperative.sizeOf_stmt_in_block; assumption
 
 def Statement.labels (s : Core.Statement) : List String :=
   match s with
@@ -34,19 +36,17 @@ def Statement.labels (s : Core.Statement) : List String :=
   | .assume lbl _ _ => [lbl]
   | .assert lbl _ _ => [lbl]
   | .cover lbl _ _ => [lbl]
-  | .goto _ _ => []
+  | .exit _ _ => []
   -- No other labeled commands.
   | .cmd _ => []
   | .funcDecl _ _ => []
-  termination_by s.sizeOf
+  | .typeDecl _ _ => []
 end
 
 mutual
 def Block.replaceLabels (b : Block) (map:Map String String)
     : Block :=
   b.map (fun s => Statement.replaceLabels s map)
-  termination_by b.sizeOf
-  decreasing_by apply Imperative.sizeOf_stmt_in_block; assumption
 
 def Statement.replaceLabels
     (s : Core.Statement) (map:Map String String) : Core.Statement :=
@@ -56,9 +56,9 @@ def Statement.replaceLabels
     | .some s' => s'
   match s with
   | .block lbl b m => .block (app lbl) (Block.replaceLabels b map) m
-  | .goto lbl m => .goto (app lbl) m
-  | .ite cond thenb elseb _ =>
-    .ite cond (Block.replaceLabels thenb map) (Block.replaceLabels elseb map)
+  | .exit lbl m => .exit (lbl.map app) m
+  | .ite cond thenb elseb m =>
+    .ite cond (Block.replaceLabels thenb map) (Block.replaceLabels elseb map) m
   | .loop g measure inv body m =>
     .loop g measure inv (Block.replaceLabels body map) m
   | .assume lbl e m => .assume (app lbl) e m
@@ -66,7 +66,7 @@ def Statement.replaceLabels
   | .cover lbl e m => .cover (app lbl) e m
   | .cmd _ => s
   | .funcDecl _ _ => s
-  termination_by s.sizeOf
+  | .typeDecl _ _ => s
 end
 
 
@@ -95,7 +95,7 @@ private def renameAllLocalNames (c:Procedure)
   let labels := List.flatMap (fun s => Statement.labels s) c.body
   -- Reuse genOldToFreshIdMappings by introducing dummy data to Identifier
   let label_ids:List Expression.Ident := labels.map
-      (fun s => { name:=s, metadata := Visibility.temp })
+      (fun s => { name:=s, metadata := () })
   let label_map_id <- genOldToFreshIdMappings label_ids [] proc_name
   let label_map := label_map_id.map (fun (id1,id2) => (id1.name, id2.name))
 
@@ -168,7 +168,7 @@ def inlineCallCmd
   : CoreTransformM (Option (List Statement)) :=
     open Lambda in do
     match cmd with
-      | .call lhs procName args _ =>
+      | .call lhs procName args md =>
 
         let st ← get
         if ¬ doInline procName st.cachedAnalyses then return .none else
@@ -205,12 +205,13 @@ def inlineCallCmd
         let outputTrips ← genOutExprIdentsTrip sigOutputs sigOutputs.unzip.fst
         let outputInits := createInitVars
           (outputTrips.map (fun ((tmpvar,ty),orgvar) => ((orgvar,ty),tmpvar)))
+          md
         let outputHavocs := outputTrips.map (fun
-          (_,orgvar) => Statement.havoc orgvar)
+          (_,orgvar) => Statement.havoc orgvar md)
         -- Create a var statement for each procedure input arguments.
         -- The input parameter expression is assigned to these new vars.
         --let inputTrips ← genArgExprIdentsTrip sigInputs args
-        let inputInits := createInits (sigInputs.zip args)
+        let inputInits := createInits (sigInputs.zip args) md
         -- Assign the output variables in the signature to the actual output
         -- variables used in the callee.
         let outputSetStmts :=
@@ -221,7 +222,7 @@ def inlineCallCmd
           let outs_lhs_and_sig := List.zip lhs out_vars
           List.map
             (fun (lhs_var,out_var) =>
-              Statement.set lhs_var (.fvar () out_var (.none)))
+              Statement.set lhs_var (.fvar () out_var (.none)) md)
             outs_lhs_and_sig
 
         let stmts:List (Imperative.Stmt Core.Expression Core.Command)
@@ -240,9 +241,11 @@ def inlineCallCmd
             }
           }:CoreTransformState)
 
-        return .some [.block (procName ++ "$inlined") stmts]
+        return .some [.block (procName ++ "$inlined") stmts md]
 
       | _ => return .none
+
+end -- public section
 
 end ProcedureInlining
 end Core

@@ -3,15 +3,16 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
+public import Strata.Languages.Core.Statement
+public import Strata.Languages.Core.CmdType
+public import Strata.Languages.Core.Program
+public import Strata.Languages.Core.FunctionType
+public import Strata.DL.Imperative.CmdType
+import Strata.Util.Tactics
 
-
-import Strata.Languages.Core.Statement
-import Strata.Languages.Core.CmdType
-import Strata.Languages.Core.Program
-import Strata.Languages.Core.OldExpressions
-import Strata.Languages.Core.FunctionType
-import Strata.DL.Imperative.CmdType
+public section
 
 namespace Core
 namespace Statement
@@ -27,8 +28,8 @@ Type checker for Strata Core commands.
 Note that this function needs the entire program to type-check `call`
 commands by looking up the corresponding procedure's information.
 -/
-def typeCheckCmd (C: LContext CoreLParams) (Env : TEnv Visibility) (P : Program) (c : Command) :
-  Except DiagnosticModel (Command × (TEnv Visibility)) := do
+def typeCheckCmd (C: LContext CoreLParams) (Env : TEnv Unit) (P : Program) (c : Command) :
+  Except DiagnosticModel (Command × (TEnv Unit)) := do
   match c with
   | .cmd c =>
     -- Any errors in `Imperative.Cmd.typeCheck` already include source
@@ -76,12 +77,13 @@ def typeCheckCmd (C: LContext CoreLParams) (Env : TEnv Visibility) (P : Program)
         -- Add source location to error messages if not already present.
         .error <| e.withRangeIfUnknown (getFileRange md |>.getD FileRange.unknown)
 
-def typeCheckAux (C: LContext CoreLParams) (Env : TEnv Visibility) (P : Program) (op : Option Procedure) (ss : List Statement) :
-  Except DiagnosticModel (List Statement × TEnv Visibility × LContext CoreLParams) :=
-  go C Env ss []
+def typeCheckAux (C: LContext CoreLParams) (Env : TEnv Unit) (P : Program) (op : Option Procedure) (ss : List Statement) :
+  Except DiagnosticModel (List Statement × TEnv Unit × LContext CoreLParams) :=
+  go C Env ss [] []
 where
-  go (C : LContext CoreLParams) (Env : TEnv Visibility) (ss : List Statement) (acc : List Statement) :
-    Except DiagnosticModel (List Statement × TEnv Visibility × LContext CoreLParams) :=
+  go (C : LContext CoreLParams) (Env : TEnv Unit) (ss : List Statement) (acc : List Statement)
+    (labels : List String) :
+    Except DiagnosticModel (List Statement × TEnv Unit × LContext CoreLParams) :=
     let errorWithSourceLoc := fun (e : DiagnosticModel) md =>
       e.withRangeIfUnknown (getFileRange md |>.getD FileRange.unknown)
     match ss with
@@ -94,10 +96,9 @@ where
           .ok (Stmt.cmd c', Env, C)
 
         | .block label bss md => do
-          let Env := Env.pushEmptyContext
-          let (ss', Env, C) ← go C Env bss []
-          let s' := Stmt.block label ss' md
-          .ok (s', Env.popContext, C)
+          let (bss', Env, C) ← goBlock C Env bss [] (label :: labels)
+          let s' := Stmt.block label bss' md
+          .ok (s', Env, C)
 
         | .ite cond tss ess md => do try
           let _ ← Env.freeVarCheck cond f!"[{s}]" |>.mapError DiagnosticModel.fromFormat
@@ -105,9 +106,9 @@ where
           let condty := conda.toLMonoTy
           match condty with
           | .tcons "bool" [] =>
-            let (tb, Env, C) ← go C Env [(Stmt.block "$_then" tss  #[])] []
-            let (eb, Env, C) ← go C Env [(Stmt.block "$_else" ess  #[])] []
-            let s' := Stmt.ite conda.unresolved tb eb md
+            let (tss, Env, C) ← goBlock C Env tss [] labels
+            let (ess, Env, C) ← goBlock C Env ess [] labels
+            let s' := Stmt.ite conda.unresolved tss ess md
             .ok (s', Env, C)
           | _ => .error <| md.toDiagnosticF f!"[{s}]: If's condition {cond} is not of type `bool`!"
           catch e =>
@@ -124,49 +125,53 @@ where
             let (ma, Env) ← LExpr.resolve C Env m |>.mapError DiagnosticModel.fromFormat
             .ok (some ma, Env)
           | _ => .ok (none, Env))
-          let (it, Env) ← (match invariant with
-          | .some i => do
-            let _ ← Env.freeVarCheck i f!"[{s}]" |>.mapError DiagnosticModel.fromFormat
-            let (ia, Env) ← LExpr.resolve C Env i |>.mapError DiagnosticModel.fromFormat
-            .ok (some ia, Env)
-          | _ => .ok (none, Env))
+          let (it, Env) ← invariant.foldlM (fun (acc, E) i => do
+            let _ ← E.freeVarCheck i f!"[{s}]" |>.mapError DiagnosticModel.fromFormat
+            let (ia, E') ← LExpr.resolve C E i |>.mapError DiagnosticModel.fromFormat
+            if ia.toLMonoTy == .tcons "bool" [] then
+              .ok (acc ++ [ia], E')
+            else
+              .error <| md.toDiagnosticF f!"[{s}]: Loop's invariant {i} is not of type `bool`!"
+          ) ([], Env)
           let mty := mt.map LExpr.toLMonoTy
-          let ity := it.map LExpr.toLMonoTy
-          match (condty, mty, ity) with
-          | (.tcons "bool" [], none, none)
-          | (.tcons "bool" [], some (.tcons "int" []), none)
-          | (.tcons "bool" [], none, some (.tcons "bool" []))
-          | (.tcons "bool" [], some (.tcons "int" []), some (.tcons "bool" [])) =>
-            let (tb, Env, C) ← go C Env [(Stmt.block "$_loop_body" bss #[])] []
+          match (condty, mty) with
+          | (.tcons "bool" [], none)
+          | (.tcons "bool" [], some (.tcons "int" [])) =>
+            let (tb, Env, C) ← goBlock C Env bss [] labels
             let s' := Stmt.loop conda.unresolved (mt.map LExpr.unresolved) (it.map LExpr.unresolved) tb md
             .ok (s', Env, C)
           | _ =>
             match condty with
             | .tcons "bool" [] =>
-              match mty with
-              | none | .some (.tcons "int" []) =>
-                match ity with
-                | none | .some (.tcons "bool" []) => panic! "Internal error. condty, mty or ity must be unexpected."
-                | _ => .error <| md.toDiagnosticF f!"[{s}]: Loop's invariant {invariant} is not of type `bool`!"
-              | _ => .error <| md.toDiagnosticF f!"[{s}]: Loop's measure {measure} is not of type `int`!"
-            | _ =>  .error <| md.toDiagnosticF f!"[{s}]: Loop's guard {guard} is not of type `bool`!"
+              .error <| md.toDiagnosticF f!"[{s}]: Loop's measure {measure} is not of type `int`!"
+            | _ => .error <| md.toDiagnosticF f!"[{s}]: Loop's guard {guard} is not of type `bool`!"
           catch e =>
             -- Add source location to error messages.
             .error (errorWithSourceLoc e md)
 
-        | .goto label md => do try
+        | .exit label md => do try
           match op with
-          | .some p =>
-            if Block.hasLabelInside label p.body then
-              .ok (s, Env, C)
-            else
-              .error <| md.toDiagnosticF f!"Label {label} does not exist in the body of {p.header.name}"
+          | .some _ =>
+            match label with
+            | .none =>
+              if labels.isEmpty then
+                .error <| md.toDiagnosticF f!"{s}: exit occurs outside any block."
+              else
+                .ok (s, Env, C)
+            | .some l =>
+              if labels.contains l then
+                .ok (s, Env, C)
+              else
+                .error <| md.toDiagnosticF f!"{s}: exit label \"{l}\" does not match any enclosing block."
           | .none => .error <| md.toDiagnosticF f!"{s} occurs outside a procedure."
           catch e =>
             -- Add source location to error messages.
             .error (errorWithSourceLoc e md)
 
         | .funcDecl decl md => do try
+          -- Recursive functions are only allowed as top-level declarations
+          if decl.isRecursive then
+            .error (md.toDiagnosticF f!"recursive functions are not allowed as local declarations")
           -- Type check the function declaration using the shared helper
           -- which returns both the type-checked PureFunc and the Function
           let (decl', func, Env) ← PureFunc.typeCheck C Env decl |>.mapError DiagnosticModel.fromFormat
@@ -175,10 +180,29 @@ where
           catch e =>
             .error (errorWithSourceLoc e md)
 
-      go C Env srest (s' :: acc)
-    termination_by Block.sizeOf ss
-    decreasing_by
-    all_goals simp_wf <;> omega
+        | .typeDecl tc md => do try
+          -- Add the type to the context. Shadowing is not allowed: if a
+          -- type with the same name was already declared (at the program
+          -- level or in an enclosing scope), this will return an error.
+          let C ← C.addKnownTypeWithError { name := tc.name, metadata := tc.numargs }
+            (md.toDiagnosticF f!"Type '{tc.name}' is already declared")
+          .ok (.typeDecl tc md, Env, C)
+          catch e =>
+            .error (errorWithSourceLoc e md)
+
+      go C Env srest (s' :: acc) labels
+  goBlock (C : LContext CoreLParams) (Env : TEnv Unit) (bss : Imperative.Block Core.Expression Core.Command) (acc : List Statement)
+    (labels : List String) :
+    Except DiagnosticModel (List Statement × TEnv Unit × LContext CoreLParams) := do
+    let Env := Env.pushEmptyContext
+    let (ss', Env, C) ← go C Env bss acc labels
+    .ok (ss', Env.popContext, C)
+
+private def substOptionExpr (S : Subst) (oe : Option Expression.Expr) : Option Expression.Expr :=
+  match oe with
+  | some e => some (LExpr.applySubst e S)
+  | none => none
+
 /--
 Apply type substitution `S` to a command.
 -/
@@ -186,7 +210,7 @@ def Command.subst (S : Subst) (c : Command) : Command :=
   match c with
   | .cmd c => match c with
     | .init x ty e md =>
-      .cmd $ .init x (LTy.subst S ty) (e.applySubst S) md
+      .cmd $ .init x (LTy.subst S ty) (substOptionExpr S e) md
     | .set x e md =>
       .cmd $ .set x (e.applySubst S) md
     | .havoc _ _ => .cmd $ c
@@ -198,11 +222,6 @@ def Command.subst (S : Subst) (c : Command) : Command :=
       .cmd $ .cover label (b.applySubst S) md
   | .call lhs pname args md =>
     .call lhs pname (args.map (fun a => a.applySubst S)) md
-
-private def substOptionExpr (S : Subst) (oe : Option Expression.Expr) : Option Expression.Expr :=
-  match oe with
-  | some e => some (LExpr.applySubst e S)
-  | none => none
 
 /--
 Apply type substitution `S` to a statement.
@@ -221,8 +240,8 @@ def Statement.subst (S : Subst) (s : Statement) : Statement :=
   | .ite cond tss ess md =>
     .ite (cond.applySubst S) (go S tss []) (go S ess []) md
   | .loop guard m i bss md =>
-    .loop (guard.applySubst S) (substOptionExpr S m) (substOptionExpr S i) (go S bss []) md
-  | .goto _ _ => s
+    .loop (guard.applySubst S) (substOptionExpr S m) (i.map (·.applySubst S)) (go S bss []) md
+  | .exit _ _ => s
   | .funcDecl decl md =>
     let decl' := { decl with
       inputs := decl.inputs.map (fun (id, ty) => (id, Lambda.LTy.subst S ty)),
@@ -230,6 +249,7 @@ def Statement.subst (S : Subst) (s : Statement) : Statement :=
       body := decl.body.map (·.applySubst S),
       axioms := decl.axioms.map (·.applySubst S) }
     .funcDecl decl' md
+  | .typeDecl _ _ => s  -- Type declarations don't contain type variables to substitute
   where
     go S ss acc : List Statement :=
     match ss with
@@ -240,7 +260,7 @@ def Statement.subst (S : Subst) (s : Statement) : Statement :=
 Type checker and annotater for Statements.
 
 Note that this function needs the entire program to type-check statements to
-check whether `goto` targets exist (or .none for statements that don't occur
+check whether `exit` statements occur inside a procedure (or .none for statements that don't occur
 inside a procedure).
 -/
 def typeCheck (C: Expression.TyContext) (Env : Expression.TyEnv) (P : Program) (op : Option Procedure) (ss : List Statement) :
@@ -252,5 +272,8 @@ def typeCheck (C: Expression.TyContext) (Env : Expression.TyEnv) (P : Program) (
   .ok (ss', Env)
 
 ---------------------------------------------------------------------
+
 end Statement
 end Core
+
+end -- public section

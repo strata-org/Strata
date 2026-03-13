@@ -35,11 +35,13 @@ public structure SymbolIdCache where
 
 namespace SymbolIdCache
 
-def id! (refs : SymbolIdCache) (i : Nat) : SymbolId :=
+def id! (ctx : String) (refs : SymbolIdCache) (i : Nat) : SymbolId :=
   if p : refs.offset + i < refs.globalCache.size then
    .mk refs.globalCache[refs.offset + i]
   else
-    panic! s!"Invalid string id {refs.offset} + {i} (max = {refs.globalCache.size})"
+    panic! s!"Invalid string id for '{ctx}': \
+      {refs.offset} + {i} \
+      (max = {refs.globalCache.size})"
 
 /--
 Returns the symbol id cache for the given type and index.
@@ -184,7 +186,8 @@ meta def declareIonSymbolImpl : Elab.Term.TermElab := fun stx _ =>
   match stx with
   | `(ionSymbol! $fld) => do
     let (r, e) ← resolveEntry stx (.string fld.getString)
-    return mkApp2 (.const ``SymbolIdCache.id! []) r e
+    let ctxStr := toExpr fld.getString
+    return mkApp3 (.const ``SymbolIdCache.id! []) ctxStr r e
   | _ =>
     throwUnsupportedSyntax
 
@@ -221,6 +224,28 @@ meta unsafe def declareIonRefCacheImpl : Elab.Term.TermElab := fun stx _ =>
     let nameType : Expr := .const `Lean.Name []
     let fldNameExpr ← Term.elabTerm fldNameStx (expectedType? := some nameType)
     let fldName ← Lean.Meta.evalExpr Name nameType fldNameExpr
+    let s := Ion.ionDialectExt.getState (← getEnv)
+
+    -- Ensure the referenced type has been declared with ionScope!
+    match s.getEntries? fldName with
+    | none =>
+      throwErrorAt stx s!"Type {fldName} has not been \
+        declared with ionScope! Cannot reference \
+        undeclared type. Make sure the toIon function \
+        for {fldName} has been defined and compiled \
+        before this usage."
+    | some _ => pure ()
+
+    -- Ensure we're not trying to reference the same type we're currently inside
+    match s.scope with
+    | some (scopeName, _) =>
+      if scopeName == fldName then
+        throwErrorAt stx s!"Cannot use ionRefEntry! to \
+          reference {fldName} from within its own \
+          ionScope! Use the 'refs' parameter directly \
+          instead."
+    | none => pure ()
+
     let (r, e) ← resolveEntry stx (.record fldName)
     return mkApp3 (.const ``SymbolIdCache.ref! []) r (toExpr fldName.toString) e
   | _ =>

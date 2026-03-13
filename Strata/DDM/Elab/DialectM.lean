@@ -27,7 +27,6 @@ Note this does not return variables referenced by .funMacro.
 private def foldBoundTypeVars {α} (tp : PreType) (init : α) (f : α → Nat → α) : α :=
   match tp with
   | .ident _ _ a => a.attach.foldl (init := init) fun r ⟨e, _⟩ => e.foldBoundTypeVars r f
-  | .fvar _ _ a => a.attach.foldl (init := init) fun r ⟨e, _⟩ => e.foldBoundTypeVars r f
   | .bvar _ i => f init i
   | .tvar _ _ => init
   | .arrow _ a r => r.foldBoundTypeVars (a.foldBoundTypeVars init f) f
@@ -535,21 +534,46 @@ def elabSyntaxDefAtom {argc} (argDecls : ArgDeclsMap argc) (defaultPrec : Nat) (
   | nm, _ =>
     return panic! s!"Syntax {nm.fullName} {children.size} {eformat info.op}"
 
+/-- Classify a single-token syntax for precedence handling.
+- `.ident`: single identifier reference (e.g., `=> v;`) — use passthrough
+- `.string`: single string literal (e.g., `=> "true";`) — use `maxPrec + 1`
+- `.standard`: anything else — use standard precedence -/
+private inductive SingleAtomKind | ident | string | standard
+
+private def classifySyntaxArgs (args : Array Tree) : SingleAtomKind :=
+  if h : args.size = 1 then
+    match args[0] with
+    | .node (.ofOperationInfo info) _ =>
+      match info.op.name with
+      | q`Init.syntaxAtomIdent => .ident
+      | q`Init.syntaxAtomString => .string
+      | _ => .standard
+    | _ => .standard
+  else .standard
+
 def translateSyntaxDef {argc} (argDecls : ArgDeclsMap argc) (mdTree tree : Tree) : ElabM SyntaxDef := do
   let (syntaxMetadata, success) ← runChecked <| translateOptMetadata! argDecls mdTree
   if !success then
     return default
 
-  let prec : Nat :=
-      match syntaxMetadata[q`StrataDDL.prec]? with
-      | some #[.num l] => l
-      | some _ => panic! "Unexpected precedence" -- FIXME
-      | none => maxPrec
   let op := tree.info.asOp!.op
 
   assert! tree.children.size = 1
   let .node (.ofSeqInfo _) args := tree[0]!
     | panic! s!"Expected many args"
+
+  -- Classify syntax before elaboration for precedence and passthrough decisions.
+  let singleAtomKind := classifySyntaxArgs args
+  let hasExplicitPrec := syntaxMetadata[q`StrataDDL.prec]?.isSome
+
+  let prec : Nat :=
+      match syntaxMetadata[q`StrataDDL.prec]? with
+      | some #[.num l] => l
+      | some _ => panic! "Unexpected precedence" -- FIXME
+      | none =>
+        match singleAtomKind with
+        | .string => maxPrec + 1
+        | _ => maxPrec
 
   let isLeftAssoc := q`StrataDDL.leftassoc ∈ syntaxMetadata
   let isRightAssoc := q`StrataDDL.rightassoc ∈ syntaxMetadata
@@ -583,22 +607,29 @@ def translateSyntaxDef {argc} (argDecls : ArgDeclsMap argc) (mdTree tree : Tree)
   if !success then
     return default
 
-  -- Check every argument is used.
+  -- Check every argument is used (including implicitly inferred type params).
   for i in Fin.range argDecls.decls.size do
     if i.val ∉ usedArgs then
       logError argDecls.decls[i].nameLoc s!"Argument is not elaborated."
       return default
 
-  return { atoms, prec }
+  -- Use passthrough for single-ident syntax without explicit precedence.
+  -- This runs after the argument-usage check so that polymorphic operators
+  -- with inferred type parameters are validated before simplification.
+  if !hasExplicitPrec && singleAtomKind matches .ident then
+    return .passthrough
+
+  return .std atoms prec
 
 structure DialectContext where
   /-- Callback to load dialects dynamically upon demand. -/
   loadDialect : LoadDialectCallback
+  /-- Mutable reference for syncing loaded dialects after callbacks. -/
+  loadedRef : IO.Ref LoadedDialects
   inputContext : Parser.InputContext
   stopPos : String.Pos.Raw
 
 structure DialectState where
-  loaded : LoadedDialects
   declState : DeclState
   dialect : Dialect
   /--
@@ -611,21 +642,24 @@ abbrev DialectM := ReaderT DialectContext (StateRefT DialectState BaseIO)
 
 def getCurrentDialect : DialectM Dialect := return (←get).dialect
 
+/-- Read the current loaded dialects from the IO.Ref. -/
+def getLoadedDialects : DialectM LoadedDialects := do
+  (← read).loadedRef.get
+
 instance :  MonadState DialectState DialectM := inferInstanceAs (MonadState DialectState (ReaderT _ _))
 
 instance : MonadLift DeclM DialectM where
   monadLift act := fun c => do
     let s ← get
-    let dialect := s.dialect
-    let missingImport := s.missingImport
+    let loaded ← c.loadedRef.get
     let ctx : DeclContext := {
         inputContext := c.inputContext,
         stopPos := c.stopPos,
-        loader := s.loaded
-        missingImport := missingImport
+        loader := loaded
+        missingImport := s.missingImport
     }
     let (r, ds) := act ctx s.declState
-    set ({ loaded := ctx.loader, declState := ds, dialect := dialect, missingImport } : DialectState)
+    set ({ declState := ds, dialect := s.dialect, missingImport := s.missingImport } : DialectState)
     pure  r
 
 def getDeclState : DialectM DeclState := fun _ => DialectState.declState <$> get
@@ -640,7 +674,7 @@ def addDeclToDialect (decl : Decl) : DialectM Unit :=
 
 instance : ElabClass DialectM where
   getInputContext := fun c => pure c.inputContext
-  getDialects := return (← get).loaded.dialects
+  getDialects := return (← getLoadedDialects).dialects
   getOpenDialects := return (← get).declState.openDialectSet
   getGlobalContext := return (←get).declState.globalContext
   getErrorCount := return (←get).declState.errors.size
@@ -672,17 +706,11 @@ def elabDialectImportCommand : DialectElab := fun tree => do
     return
   modifyDialect fun d => { d with imports := d.imports.push name }
   let d ←
-    match (← get).loaded.dialects[name]? with
+    match (← getLoadedDialects).dialects[name]? with
     | some d =>
       pure d
     | none =>
-      let loadCallback ← (·.loadDialect) <$> read
-      let r ← fun _ ref => do
-        let loaded := (← ref.get).loaded
-        assert! "StrataDDL" ∈ loaded.dialects
-        let (loaded, r) ← loadCallback loaded name
-        ref.modify fun s => { s with loaded := loaded }
-        pure r
+      let r ← (← read).loadDialect name
       match r with
       | .ok d =>
         pure d
@@ -690,7 +718,8 @@ def elabDialectImportCommand : DialectElab := fun tree => do
         logError identTree.loc msg
         modify fun s => { s with missingImport := true }
         return
-  modify fun s => { s with declState := s.declState.openLoadedDialect! s.loaded d }
+  let loaded ← getLoadedDialects
+  modify fun s => { s with declState := s.declState.openLoadedDialect! loaded d }
 
 private def elabCategoryCommand : DialectElab := fun tree => do
   let .isTrue p := checkTreeSize tree 1
@@ -890,7 +919,7 @@ def dialectElabs : Std.HashMap QualifiedIdent DialectElab :=
     ]
 
 partial def runDialectCommand (leanEnv : Lean.Environment) : DialectM Bool := do
-  assert! "StrataDDL" ∈ (← get).loaded.dialects
+  assert! "StrataDDL" ∈ (← getLoadedDialects).dialects
   let (mtree, success) ← MonadLift.monadLift <| runChecked <| elabCommand leanEnv
   match mtree with
   | none =>

@@ -3,14 +3,16 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.Languages.Core.Statement
-import Strata.Languages.Core.CallGraph
-import Strata.Languages.Core.Core
-import Strata.Languages.Core.CoreGen
-import Strata.DL.Util.LabelGen
+public import Strata.Languages.Core.Statement
+public import Strata.Languages.Core.CallGraph
+public import Strata.Languages.Core.CoreGen
+public import Strata.DL.Util.LabelGen
 
 /-! # Utility functions for program transformation in Strata Core -/
+
+public section
 
 namespace Core
 namespace Transform
@@ -21,15 +23,18 @@ def oldVarPrefix (id : String) : String := s!"old_{id}"
 def tmpVarPrefix (id : String) : String := s!"tmp_{id}"
 
 def createHavoc (ident : Expression.Ident)
-  : Statement := Statement.havoc ident
+    (md : Imperative.MetaData Expression)
+  : Statement := Statement.havoc ident md
 
-def createHavocs (ident : List Expression.Ident)
-  : List Statement := ident.map createHavoc
+@[expose]
+def createHavocs (ident : List Expression.Ident) (md : (Imperative.MetaData Expression))
+  : List Statement := ident.map (createHavoc · md)
 
 def createFvar (ident : Expression.Ident)
   : Expression.Expr
   := Lambda.LExpr.fvar ((): ExpressionMetadata) ident none
 
+@[expose]
 def createFvars (ident : List Expression.Ident)
   : List Expression.Expr
   := ident.map createFvar
@@ -74,6 +79,7 @@ def genOldExprIdents (idents : List Expression.Ident)
   := List.mapM genOldExprIdent idents
 
 /-- Checks whether a variable `ident` can be found in program `p` -/
+@[expose]
 def isGlobalVar (p : Program) (ident : Expression.Ident) : Bool :=
   (p.find? .var ident).isSome
 
@@ -106,14 +112,20 @@ structure CoreTransformState where
   currentProgram: Option Program
   currentProcedureName: Option String -- TOOD: currentFunctionName, etc?
   cachedAnalyses: CachedAnalyses
+  -- Optional factory for transformations that need to track function
+  -- declarations (e.g., PrecondElim). The factory grows as function
+  -- declarations are encountered during traversal.
+  factory: Option (@Lambda.Factory CoreLParams) := .none
 
 @[simp]
 def CoreTransformState.emp : CoreTransformState :=
   { genState := .emp, currentProgram := .none,
     currentProcedureName := .none, cachedAnalyses := .emp }
 
+@[expose]
 abbrev Err := String
 
+@[expose]
 abbrev CoreTransformM := ExceptT Err (StateM CoreTransformState)
 
 /-- A lifter from CoreGenM to (StateM CoreTransformState) -/
@@ -124,19 +136,39 @@ def liftCoreGenM {α : Type} (cgm : CoreGenM α) : StateM CoreTransformState α 
       genState := res.2,
       currentProgram := coreTransformState.currentProgram,
       currentProcedureName := coreTransformState.currentProcedureName,
-      cachedAnalyses := coreTransformState.cachedAnalyses })
+      cachedAnalyses := coreTransformState.cachedAnalyses,
+      factory := coreTransformState.factory })
 
 instance : MonadLift CoreGenM (StateM CoreTransformState) where
   monadLift := liftCoreGenM
 
+/-- Lift an `Except DiagnosticModel` into `CoreTransformM`. -/
+def liftDiag {α : Type} (e : Except Strata.DiagnosticModel α) : CoreTransformM α :=
+  match e with
+  | .ok a => pure a
+  | .error dm => throw dm.message
+
+/-- Get the factory from state, throwing if not set. -/
+def getFactory : CoreTransformM (@Lambda.Factory CoreLParams) := do
+  match (← get).factory with
+  | some F => pure F
+  | none => throw "factory not set in CoreTransformState"
+
+/-- Update the factory in state. -/
+def setFactory (F : @Lambda.Factory CoreLParams) : CoreTransformM Unit :=
+  modify fun σ => { σ with factory := some F }
+
+@[expose]
 def getIdentTy? (p : Program) (id : Expression.Ident) := p.getVarTy? id
 
+@[expose]
 def getIdentTy! (p : Program) (id : Expression.Ident)
   : CoreTransformM (Expression.Ty) := do
   match getIdentTy? p id with
   | none => throw s!"failed to find type for {Std.format id}"
   | some ty => return ty
 
+@[expose]
 def getIdentTys! (p : Program) (ids : List Expression.Ident)
   : CoreTransformM (List Expression.Ty) := do
   match ids with
@@ -188,44 +220,50 @@ def genOldExprIdentsTrip
 Generate an init statement with rhs as expression
 -/
 def createInit (trip : (Expression.Ident × Expression.Ty) × Expression.Expr)
+    (md:Imperative.MetaData Expression)
   : Statement :=
   match trip with
-  | ((v', ty), e) => Statement.init v' ty e
+  | ((v', ty), e) => Statement.init v' ty (some e) md
 
 def createInits (trips : List ((Expression.Ident × Expression.Ty) × Expression.Expr))
+    (md: (Imperative.MetaData Expression))
   : List Statement :=
-  trips.map createInit
+  trips.map (createInit · md)
 
 /--
 Generate an init statement with rhs as a free variable reference
 -/
 def createInitVar (trip : (Expression.Ident × Expression.Ty) × Expression.Ident)
+    (md:Imperative.MetaData Expression)
   : Statement :=
   match trip with
-  | ((v', ty), v) => Statement.init v' ty (Lambda.LExpr.fvar () v none)
+  | ((v', ty), v) => Statement.init v' ty (some (Lambda.LExpr.fvar () v none)) md
 
 def createInitVars (trips : List ((Expression.Ident × Expression.Ty) × Expression.Ident))
+    (md : (Imperative.MetaData Expression))
   : List Statement :=
-  trips.map createInitVar
+  trips.map (createInitVar · md)
 
 /-- turns a list of preconditions into assumes with substitution -/
 def createAsserts
     (conds : ListMap CoreLabel Procedure.Check)
     (subst : Map Expression.Ident Expression.Expr)
+    (md : (Imperative.MetaData Expression))
     : CoreTransformM (List Statement)
     := conds.mapM (fun (l, check) => do
           let newLabel ← genIdent l (fun s => s!"callElimAssert_{s}")
-          return Statement.assert newLabel.toPretty (Lambda.LExpr.substFvars check.expr subst))
+          return Statement.assert newLabel.toPretty (Lambda.LExpr.substFvars check.expr subst) md)
 
 /-- turns a list of preconditions into assumes with substitution -/
 def createAssumes
     (conds : ListMap CoreLabel Procedure.Check)
     (subst : Map Expression.Ident Expression.Expr)
+    (md : (Imperative.MetaData Expression))
     : CoreTransformM (List Statement)
     :=
     conds.mapM (fun (l, check) => do
       let newLabel ← genIdent l (fun s => s!"callElimAssume_{s}")
-      return Statement.assume newLabel.toPretty (Lambda.LExpr.substFvars check.expr subst))
+      return Statement.assume newLabel.toPretty (Lambda.LExpr.substFvars check.expr subst) md)
 
 /--
 Generate the substitution pairs needed for the body of the procedure
@@ -269,12 +307,11 @@ private def runStmtsRec (f : Command → CoreTransformM (Option (List Statement)
         return (changed, [.loop guard measure invariant body' md])
       | .funcDecl _ _ =>
         return (false, [s])  -- Function declarations pass through unchanged
-      | .goto _lbl _md =>
+      | .typeDecl _ _ =>
+        return (false, [s])  -- Type declarations pass through unchanged
+      | .exit _lbl _md =>
         return (false, [s]))
     return ⟨changed0 || changed, (sres ++ ss'')⟩
-termination_by sizeOf ss
-decreasing_by
-  all_goals (unfold Imperative.instSizeOfBlock; decreasing_tactic)
 
 /--
 Visit all procedures and run f. The returned Bool corresponds to whether the
@@ -335,7 +372,7 @@ def runProgram
   return (changed, newProg)
 
 
-@[simp]
+@[expose, simp]
 def runWith {α : Type} (p : α) (f : α → CoreTransformM β)
     (s : CoreTransformState):
   Except Err β × CoreTransformState :=
@@ -348,4 +385,7 @@ def run {α : Type} (p : α) (f : α → CoreTransformM β)
   (runWith p f s).fst
 
 end Transform
+
 end Core
+
+end -- public section

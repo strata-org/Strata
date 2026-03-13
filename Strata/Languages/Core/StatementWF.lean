@@ -3,28 +3,46 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-
-
-import Strata.DL.Util.ListUtils
-import Strata.Languages.Core.Program
-import Strata.Languages.Core.WF
-import Strata.Languages.Core.StatementType
+public import Strata.DL.Util.ListUtils
+public import Strata.Languages.Core.Program
+public import Strata.Languages.Core.WF
+public import Strata.Languages.Core.StatementType
+import all Strata.Languages.Core.StatementType
+import all Strata.DL.Util.ListMap
+import all Strata.DL.Imperative.CmdType
+import all Strata.DL.Imperative.Stmt
+import all Strata.DL.Util.ListUtils
+import all Strata.Languages.Core.Statement
+import all Strata.Languages.Core.FunctionType
 
 ---------------------------------------------------------------------
+
+public section
+
 namespace Core
 namespace WF
 
 open Std Lambda
 
 /-- Helper lemma: mapping only the values of a ListMap preserves the keys. -/
-private theorem listMap_keys_map_snd {α β γ : Type} (l : List (α × β)) (f : β → γ) :
-    ListMap.keys (l.map (fun (id, ty) => (id, f ty))) = ListMap.keys l := by
-  induction l with
-  | nil => simp [ListMap.keys]
-  | cons h t ih => simp [ListMap.keys, ih]
+private theorem listMap_keys_mapM_snd {α β γ : Type} (l : List (α × β))
+    (f : (α × β) → Except ε (α × γ)) (result : List (α × γ))
+    (hf : ∀ a b, ∀ r, f (a, b) = .ok r → r.1 = a)
+    (h : l.mapM f = .ok result) :
+    ListMap.keys result = ListMap.keys l := by
+  induction l generalizing result with
+  | nil => cases h; rfl
+  | cons hd tl ih =>
+    rw [List.mapM_cons] at h
+    simp only[bind, Except.bind] at h
+    split at h <;> try contradiction
+    split at h <;> try contradiction
+    cases h; simp only[ListMap.keys]
+    grind
 
-theorem typeCheckCmdWF: Statement.typeCheckCmd C T p c = Except.ok v
+private theorem typeCheckCmdWF: Statement.typeCheckCmd C T p c = Except.ok v
   → WFCmdExtProp p c := by
   intro H
   simp [Statement.typeCheckCmd, bind, Except.bind] at H
@@ -38,8 +56,8 @@ theorem typeCheckCmdWF: Statement.typeCheckCmd C T p c = Except.ok v
   sorry
   sorry
 
-theorem Statement.typeCheckAux_elim_acc: Statement.typeCheckAux.go P op C T ss (acc1 ++ acc2) = Except.ok (pp, T', C') ↔
-  (List.IsPrefix acc2.reverse pp ∧ Statement.typeCheckAux.go P op C T ss acc1 = Except.ok (pp.drop acc2.length, T', C'))
+private theorem Statement.typeCheckAux_elim_acc: Statement.typeCheckAux.go P op C T ss (acc1 ++ acc2) labels = Except.ok (pp, T', C') ↔
+  (List.IsPrefix acc2.reverse pp ∧ Statement.typeCheckAux.go P op C T ss acc1 labels = Except.ok (pp.drop acc2.length, T', C'))
   := by
   induction ss generalizing pp acc1 acc2 T C
   simp [Statement.typeCheckAux.go]
@@ -55,15 +73,15 @@ theorem Statement.typeCheckAux_elim_acc: Statement.typeCheckAux.go P op C T ss (
   any_goals simp
   any_goals rw [← List.cons_append, ind]
 
-theorem Statement.typeCheckAux_elim_singleton: Statement.typeCheckAux.go P op C T ss [s] = Except.ok (pp, T', C') →
-  Statement.typeCheckAux.go P op C T ss [] = Except.ok (pp.drop 1, T', C') := by
+private theorem Statement.typeCheckAux_elim_singleton: Statement.typeCheckAux.go P op C T ss [s] labels = Except.ok (pp, T', C') →
+  Statement.typeCheckAux.go P op C T ss [] labels = Except.ok (pp.drop 1, T', C') := by
   intro H
   have : [s] = [] ++ [s] := by simp
   rw [this, Statement.typeCheckAux_elim_acc] at H; simp at H
   simp [H]
 
-theorem Statement.typeCheckAux_go_WF :
-  Statement.typeCheckAux.go P op C T ss [] = Except.ok (pp', T', C') →
+private theorem Statement.typeCheckAux_go_WF :
+  Statement.typeCheckAux.go P op C T ss [] labels = Except.ok (pp', T', C') →
   WF.WFStatementsProp P acc →
   WF.WFStatementsProp P (acc ++ ss) := by
   intros tcok h_acc_ok
@@ -112,7 +130,7 @@ theorem Statement.typeCheckAux_go_WF :
       simp [WFStatementsProp] at *
       simp [List.Forall_append, Forall, *]
       constructor
-    | goto l =>
+    | exit l =>
       simp [Except.bind] at tcok
       split at tcok <;> try contradiction
       have tcok := Statement.typeCheckAux_elim_singleton tcok
@@ -130,39 +148,32 @@ theorem Statement.typeCheckAux_go_WF :
       any_goals (have tcok := Statement.typeCheckAux_elim_singleton tcok; rw[List.append_cons])
       any_goals (apply ih tcok <;> try assumption)
       any_goals (try simp [WFStatementsProp] at *; try simp [List.Forall_append, *]; try constructor)
-      any_goals (simp [Forall])
-      any_goals constructor
     | funcDecl decl md =>
       simp [Except.bind] at tcok
+      -- The isRecursive check: if true, typeCheck returns error, contradicting tcok
+      split at tcok <;> try contradiction
+      rename_i tcok'
       -- Split through the tryCatch and PureFunc.typeCheck structure
-      simp only [tryCatch] at tcok
-      repeat (split at tcok <;> try contradiction)
+      simp only [tryCatch] at tcok'
+      repeat (split at tcok' <;> try contradiction)
       -- After splits, we need to extract the Function.typeCheck success
       simp only [Except.mapError, tryCatchThe] at *
       -- Now split on the PureFunc.typeCheck result
       split at * <;> try contradiction
       rename_i v_go heq_go v_func heq_func_match heq_tryCatch
-      -- v_func has type (PureFunc Expression × Function × TEnv Visibility)
-      -- heq_func_match is: (match PureFunc.typeCheck ... with | .error => ... | .ok v => .ok v) = .ok v_func
-      -- The match on .ok case is identity, so we can extract the equality
-      have heq_func_tc : Function.typeCheck C T
-        { name := decl.name, typeArgs := decl.typeArgs, isConstr := decl.isConstr,
-          inputs := decl.inputs.map (fun (id, ty) => (id, Lambda.LTy.toMonoTypeUnsafe ty)),
-          output := Lambda.LTy.toMonoTypeUnsafe decl.output,
-          body := decl.body, attr := decl.attr, concreteEval := none, axioms := decl.axioms }
+      -- Case split on Function.ofPureFunc decl
+      match hofp_eq : Function.ofPureFunc decl with
+      | .error _ =>
+        simp only [hofp_eq, PureFunc.typeCheck, bind, Except.bind] at heq_func_match
+        contradiction
+      | .ok funcData =>
+      -- funcData is the same Function as the old ofPureFunc would have returned
+      have heq_func_tc : Function.typeCheck C T funcData
         = .ok (v_func.2.1, v_func.2.2) := by
-          simp only [PureFunc.typeCheck, bind, Except.bind] at heq_func_match
-          cases h : Function.typeCheck C T
-            { name := decl.name, typeArgs := decl.typeArgs, isConstr := decl.isConstr,
-              inputs := decl.inputs.map (fun (id, ty) => (id, Lambda.LTy.toMonoTypeUnsafe ty)),
-              output := Lambda.LTy.toMonoTypeUnsafe decl.output,
-              body := decl.body, attr := decl.attr, concreteEval := none, axioms := decl.axioms } with
-          | error e => simp [h] at heq_func_match
-          | ok v =>
-            simp [h] at heq_func_match
-            -- heq_func_match shows v_func = (decl', v.fst, v.snd)
-            -- So v_func.2.1 = v.fst and v_func.2.2 = v.snd
-            simp [← heq_func_match]
+          simp only [PureFunc.typeCheck, hofp_eq, bind, Except.bind] at heq_func_match
+          split at heq_func_match <;> try contradiction
+          rename_i v h
+          cases heq_func_match; assumption
       have tcok := Statement.typeCheckAux_elim_singleton tcok
       rw[List.append_cons];
       apply ih tcok <;> try assumption
@@ -171,14 +182,26 @@ theorem Statement.typeCheckAux_go_WF :
       constructor
       -- Prove arg_nodup using Function.typeCheck_inputs_nodup
       have h_nodup := Function.typeCheck_inputs_nodup C T
-        { name := decl.name, typeArgs := decl.typeArgs, isConstr := decl.isConstr,
-          inputs := decl.inputs.map (fun (id, ty) => (id, Lambda.LTy.toMonoTypeUnsafe ty)),
-          output := Lambda.LTy.toMonoTypeUnsafe decl.output,
-          body := decl.body, attr := decl.attr, concreteEval := none, axioms := decl.axioms }
+        funcData
         v_func.2.1 v_func.2.2 heq_func_tc
-      -- h_nodup : (decl.inputs.map ...).keys.Nodup, we need: decl.inputs.keys.Nodup
-      rw [listMap_keys_map_snd] at h_nodup
+      -- Idea: mapM preserves keys
+      have h_keys : funcData.inputs.keys = decl.inputs.keys := by
+        simp only [Function.ofPureFunc, bind, Except.bind] at hofp_eq
+        split at hofp_eq <;> try contradiction
+        split at hofp_eq <;> try contradiction
+        cases hofp_eq
+        apply listMap_keys_mapM_snd _ _ _ _ ‹_›
+        grind
+      rw [h_keys] at h_nodup
       exact h_nodup
+    | typeDecl tc md =>
+      simp [Except.bind, tryCatch, tryCatchThe] at tcok
+      split at tcok <;> try contradiction
+      have tcok := Statement.typeCheckAux_elim_singleton tcok
+      rw[List.append_cons]
+      apply ih tcok <;> try assumption
+      simp [WFStatementsProp] at *
+      simp [List.Forall_append, Forall, *]
 
 /--
 A list of Statement `ss` that passes type checking is well formed with respect
@@ -193,7 +216,7 @@ theorem Statement.typeCheckWF :
   rename_i x v heq
   have h_tc_go := Statement.typeCheckAux_go_WF (P := P) (op := proc) (C := C) (T := T) (ss := ss) (pp' := v.fst) (T' := v.snd.fst) (C' := v.snd.snd) (acc := []) heq
   simp [WFStatementsProp] at h_tc_go
-  exact h_tc_go (by constructor)
+  exact h_tc_go
   done
 
 /-
@@ -274,7 +297,7 @@ theorem Statement.typeCheckWF :
       rw [heq]
     | loop g m i b md =>
       sorry
-    | goto l =>
+    | exit l =>
       simp at Htc
       split at Htc <;> try simp_all
       split at Htc <;> try simp_all
@@ -286,3 +309,5 @@ theorem Statement.typeCheckWF :
 
 end WF
 end Core
+
+end -- public section

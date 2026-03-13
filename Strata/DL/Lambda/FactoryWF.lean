@@ -3,17 +3,18 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.DL.Lambda.Factory
-import Strata.DL.Lambda.LExprEval
-import Strata.DL.Lambda.LExprWF
-import Strata.DL.Lambda.LTy
-import Strata.DL.Lambda.LExprTypeSpec
-import Strata.DL.Lambda.Semantics
-import Strata.DDM.Util.Array
-import Strata.DL.Util.Func
-import Strata.DL.Util.List
-import Strata.DL.Util.ListMap
+public import Strata.DL.Lambda.Factory
+import all Strata.DL.Lambda.Factory
+public import Strata.DL.Lambda.LExprEval
+public import Strata.DL.Lambda.LExprWF
+public import Strata.DL.Lambda.LTy
+public import Strata.DL.Lambda.Semantics
+public import Strata.DDM.Util.Array
+public import Strata.DL.Util.Func
+public import Strata.DL.Util.List
+public import Strata.DL.Util.ListMap
 
 /-!
 ## Well-formedness of LFunc and Factory
@@ -26,15 +27,51 @@ namespace Lambda
 open Std (ToFormat Format format)
 open Strata.DL.Util (Func FuncWF TyIdentifier)
 
+public section
+
 variable {T : LExprParams} [Inhabited T.Metadata] [ToFormat T.IDMeta]
 
-/-- Well-formedness properties for LFunc - abbreviation of FuncWF with Lambda-specific extractors. -/
-abbrev LFuncWF {T : LExprParams} (f : LFunc T) :=
-  FuncWF
-    (fun id => id.name) -- getName
-    (fun e => (LExpr.freeVars e).map (·.1.name)) -- getVarNames
-    (fun e => e.freeVars) -- getTyFreeVars
-    f
+/-- Well-formedness properties for LFunc — extends generic `FuncWF` with
+    Lambda-specific extractors and the generated-prefix guard on `typeArgs`. -/
+structure LFuncWF {T : LExprParams} (f : LFunc T) extends
+    FuncWF
+      (fun id => id.name) -- getName
+      (fun e => (LExpr.freeVars e).map (·.1.name)) -- getVarNames
+      (fun e => e.freeVars) -- getTyFreeVars
+      f where
+  /-- Type arguments must not start with the reserved generated-variable
+      prefix `$__ty` used by the type-checker. -/
+  typeArgs_no_gen_prefix :
+    ∀ ta, ta ∈ f.typeArgs → ¬ ("$__ty".toList.isPrefixOf ta.toList = true) := by decide
+
+/-- An LFunc bundled with its well-formedness proof. -/
+structure WFLFunc (T : LExprParams) where
+  func : LFunc T
+  wf : LFuncWF func
+
+/-- The name of the underlying LFunc. -/
+def WFLFunc.name (f : WFLFunc T) : T.Identifier := f.func.name
+
+/-- The operator expression for the underlying LFunc. -/
+def WFLFunc.opExpr [Inhabited T.Metadata] (f : WFLFunc T) : LExpr T.mono :=
+  f.func.opExpr
+
+/-- An array of well-formed LFuncs with a proof that function
+    names are unique. -/
+structure WFLFactory (T : LExprParams) where
+  funcs : Array (WFLFunc T)
+  name_nodup : List.Nodup (funcs.toList.map (·.func.name.name))
+
+/-- Construct a `WFLFactory` from an array of `WFLFunc`s.
+    The `name_nodup` proof defaults to `by decide`. -/
+def WFLFactory.ofArray (funcs : Array (WFLFunc T))
+    (name_nodup : List.Nodup (funcs.toList.map (·.func.name.name)) := by decide)
+    : WFLFactory T :=
+  ⟨funcs, name_nodup⟩
+
+/-- Extract the underlying `Factory` from a `WFLFactory`. -/
+def WFLFactory.toFactory (wf : WFLFactory T) : @Factory T :=
+  wf.funcs.map (·.func)
 
 instance LFuncWF.arg_nodup_decidable {T : LExprParams} (f : LFunc T):
     Decidable (List.Nodup (f.inputs.map (·.1.name))) := by
@@ -158,4 +195,5 @@ by
       simp only [] at H
       apply tail_ih F_interm HF_interm_wf (lf_tail.toArray) <;> grind
 
+end -- public section
 end Lambda

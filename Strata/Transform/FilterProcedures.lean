@@ -3,10 +3,13 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.Transform.CoreTransform
+public import Strata.Transform.CoreTransform
 
 /-! # Erase procedures satisfying specific criteria -/
+
+public section
 
 namespace Core
 namespace FilterProcedures
@@ -32,7 +35,7 @@ def run (prog : Program) (targetProcs : List String) :
   -- Create a program with target procedures + dependencies.
   let prunedDecls := prog.decls.filter (fun decl =>
     match decl with
-    | .proc p _ => isNeededProc (CoreIdent.toPretty p.header.name)
+    | .proc p _ => p.header.noFilter || isNeededProc (CoreIdent.toPretty p.header.name)
     | _ => true) -- Keep all non-procedure declarations
 
   -- Update CallGraph so that filtered out procedures do not appear anymore
@@ -51,3 +54,5 @@ def run (prog : Program) (targetProcs : List String) :
 
 end FilterProcedures
 end Core
+
+end -- public section
