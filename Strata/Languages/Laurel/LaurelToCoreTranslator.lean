@@ -3,20 +3,21 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.Languages.Core.Program
-import Strata.Languages.Core.Verifier
-import Strata.Languages.Core.Statement
-import Strata.Languages.Core.Procedure
-import Strata.Languages.Core.Options
-import Strata.Languages.Laurel.Laurel
-import Strata.Languages.Laurel.LiftImperativeExpressions
+public import Strata.Languages.Core.Program
+public import Strata.Languages.Core.Verifier
+public import Strata.Languages.Core.Statement
+public import Strata.Languages.Core.Procedure
+public import Strata.Languages.Core.Options
+public import Strata.Languages.Laurel.Laurel
+public import Strata.Languages.Laurel.LiftImperativeExpressions
 import Strata.Languages.Laurel.EliminateReturnsInExpression
-import Strata.Languages.Laurel.HeapParameterization
-import Strata.Languages.Laurel.TypeHierarchy
-import Strata.Languages.Laurel.LaurelTypes
-import Strata.Languages.Laurel.ModifiesClauses
-import Strata.Languages.Laurel.CoreDefinitionsForLaurel
+public import Strata.Languages.Laurel.HeapParameterization
+public import Strata.Languages.Laurel.TypeHierarchy
+public import Strata.Languages.Laurel.LaurelTypes
+public import Strata.Languages.Laurel.ModifiesClauses
+public import Strata.Languages.Laurel.CoreDefinitionsForLaurel
 import Strata.DL.Imperative.Stmt
 import Strata.DL.Imperative.MetaData
 import Strata.DL.Lambda.LExpr
@@ -32,6 +33,8 @@ namespace Strata.Laurel
 open Std (Format ToFormat)
 open Strata
 open Lambda (LMonoTy LTy LExpr)
+
+public section
 
 /-
 Translate Laurel HighType to Core Type
@@ -67,7 +70,7 @@ def isFieldName (fieldNames : List Identifier) (name : Identifier) : Bool :=
   fieldNames.contains name
 
 /-- Set of names that are translated to Core functions (not procedures) -/
-abbrev FunctionNames := List Identifier
+@[expose] abbrev FunctionNames := List Identifier
 
 /-- State threaded through expression and statement translation -/
 structure TranslateState where
@@ -79,7 +82,7 @@ structure TranslateState where
   model : SemanticModel
 
 /-- The translation monad: state over Id -/
-abbrev TranslateM := StateT TranslateState Id
+@[expose] abbrev TranslateM := StateT TranslateState Id
 
 /-- Emit a diagnostic into the translation state -/
 def emitDiagnostic (d : DiagnosticModel) : TranslateM Unit :=
@@ -713,4 +716,5 @@ def verifyToDiagnosticModels (program : Program) (options : VerifyOptions := .de
   | .error errors => return errors
   | .ok results => return results.filterMap toDiagnosticModel
 
+end -- public section
 end Laurel

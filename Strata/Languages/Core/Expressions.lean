@@ -3,20 +3,22 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-
-
-import Strata.DL.Lambda.Lambda
-import Strata.DL.Imperative.PureExpr
-import Strata.Languages.Core.Identifiers
-import Strata.DL.Imperative.HasVars
+public import Strata.DL.Lambda.Lambda
+public import Strata.DL.Imperative.PureExpr
+public import Strata.Languages.Core.Identifiers
+public import Strata.DL.Imperative.HasVars
 
 namespace Core
 open Std (ToFormat Format format)
 ---------------------------------------------------------------------
 
-def ExpressionMetadata := Unit
+public section
 
+@[expose] abbrev ExpressionMetadata := Unit
+
+@[expose]
 abbrev Expression : Imperative.PureExpr :=
    { Ident := CoreIdent,
      EqIdent := inferInstanceAs (DecidableEq (Lambda.Identifier Unit))
@@ -34,5 +36,7 @@ instance : Inhabited Expression.Expr where
   default := .intConst () 0
 
 ---------------------------------------------------------------------
+
+end
 
 end Core

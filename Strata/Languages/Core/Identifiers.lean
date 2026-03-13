@@ -3,18 +3,25 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-
-import Strata.DL.Lambda.LExprTypeEnv
-import Strata.DL.Lambda.Factory
+public import Strata.DL.Lambda.LExprTypeEnv
+public import Strata.DL.Lambda.Factory
+public meta import Strata.DL.Lambda.LExpr
 namespace Core
+
+public section
 
 open Std
 
+@[expose]
 abbrev CoreIdent := Lambda.Identifier Unit
 
+@[expose]
 abbrev CoreExprMetadata := Unit
+@[expose]
 abbrev CoreLParams: Lambda.LExprParams := {Metadata := CoreExprMetadata, IDMeta := Unit}
+@[expose]
 abbrev CoreLabel := String
 
 def CoreIdentDec : DecidableEq CoreIdent := inferInstanceAs (DecidableEq (Lambda.Identifier Unit))
@@ -37,8 +44,6 @@ instance : ToFormat CoreLParams.Identifier :=
 instance : DecidableEq CoreLParams.Identifier :=
   show DecidableEq CoreIdent from inferInstance
 
-
-
 /-- Full representation of Strata Core Identifier with scope.
   This can be useful for both debugging and generating "unique" strings,
   for example, as labels of proof obligations in the VC generator.
@@ -58,19 +63,21 @@ instance : Lambda.HasGen Unit where
   genVar T := let (sym, state') := (Lambda.TState.genExprSym T.genState)
               (⟨sym, ()⟩, { T with genState := state' })
 
+end -- public section
+
 namespace Syntax
 
 open Lean Elab Meta Lambda.LExpr.SyntaxMono
 
 scoped syntax ident : lidentmono
 /-- Elaborator for Core identifiers -/
-def elabCoreIdent : Syntax → MetaM Expr
+meta def elabCoreIdent : Syntax → MetaM Expr
   | `(lidentmono| $s:ident) => do
     let s := toString s.getId
     return mkApp3 (mkConst ``Lambda.Identifier.mk) (mkConst ``Unit) (mkStrLit s) (mkConst ``Unit.unit)
   | _ => throwUnsupportedSyntax
 
-instance : MkLExprParams ⟨CoreExprMetadata, Unit⟩ where
+meta instance : MkLExprParams ⟨CoreExprMetadata, Unit⟩ where
   elabIdent := elabCoreIdent
   toExpr := mkApp2 (mkConst ``Lambda.LExprParams.mk) (mkConst ``CoreExprMetadata) (mkConst ``Unit)
 

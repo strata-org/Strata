@@ -3,10 +3,13 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.Transform.CoreTransform
+public import Strata.Transform.CoreTransform
 
 /-! # Call Elimination Transformation -/
+
+public section
 
 namespace Core
 namespace CallElim
@@ -124,3 +127,5 @@ def callElim' (p : Program) : CoreTransformM (Bool × Program) :=
 
 end CallElim
 end Core
+
+end -- public section
