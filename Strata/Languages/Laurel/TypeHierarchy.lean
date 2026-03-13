@@ -54,7 +54,7 @@ def generateTypeHierarchyDecls (model : SemanticModel) (program: Program) : List
     | .Composite ct => some ct
     | _ => none
   if composites.isEmpty then [] else
-  let typeTagTy : HighTypeMd := ⟨.TCore "TypeTag", #[]⟩
+  let typeTagTy : HighTypeMd := ⟨.UserDefined "TypeTag", #[]⟩
   let boolTy : HighTypeMd := ⟨.TBool, #[]⟩
   let innerMapTy : HighTypeMd := ⟨.TMap typeTagTy boolTy, #[]⟩
   let outerMapTy : HighTypeMd := ⟨.TMap typeTagTy innerMapTy, #[]⟩
@@ -263,8 +263,12 @@ def rewriteTypeHierarchyExpr (exprMd : StmtExprMd) : THM StmtExprMd :=
   | .InstanceCall t callee args => do
       let args' ← args.attach.mapM fun ⟨a, _⟩ => rewriteTypeHierarchyExpr a
       return ⟨.InstanceCall (← rewriteTypeHierarchyExpr t) callee args', md⟩
-  | .Forall p b => do return ⟨.Forall p (← rewriteTypeHierarchyExpr b), md⟩
-  | .Exists p b => do return ⟨.Exists p (← rewriteTypeHierarchyExpr b), md⟩
+  | .Forall p trigger b => do
+      let trigger' ← trigger.attach.mapM fun ⟨t, _⟩ => rewriteTypeHierarchyExpr t
+      return ⟨.Forall p trigger' (← rewriteTypeHierarchyExpr b), md⟩
+  | .Exists p trigger b => do
+      let trigger' ← trigger.attach.mapM fun ⟨t, _⟩ => rewriteTypeHierarchyExpr t
+      return ⟨.Exists p trigger' (← rewriteTypeHierarchyExpr b), md⟩
   | .Assigned n => do return ⟨.Assigned (← rewriteTypeHierarchyExpr n), md⟩
   | .Old v => do return ⟨.Old (← rewriteTypeHierarchyExpr v), md⟩
   | .Fresh v => do return ⟨.Fresh (← rewriteTypeHierarchyExpr v), md⟩
@@ -274,7 +278,6 @@ def rewriteTypeHierarchyExpr (exprMd : StmtExprMd) : THM StmtExprMd :=
   | .ContractOf ty f => do return ⟨.ContractOf ty (← rewriteTypeHierarchyExpr f), md⟩
   | _ => return exprMd
   termination_by sizeOf exprMd
-  decreasing_by all_goals (simp_all; try term_by_mem)
 
 def rewriteTypeHierarchyProcedure (proc : Procedure) : THM Procedure := do
   let preconditions' ← proc.preconditions.mapM rewriteTypeHierarchyExpr
