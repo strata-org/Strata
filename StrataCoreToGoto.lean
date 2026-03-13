@@ -50,7 +50,11 @@ def main (args : List String) : IO UInt32 := do
       return 1
     let baseName := deriveBaseName file
     let programName := opts.programName.getD baseName
-    let dir := opts.outputDir
+    if programName.any "/" || programName.any ".." then
+      IO.println "Error: --program-name must be a simple filename without path separators"
+      return 1
+    let dir := System.FilePath.mk opts.outputDir
+    IO.FS.createDirAll dir
     let text ← Strata.Util.readInputSource file
     let inputCtx := Lean.Parser.mkInputContext text (Strata.Util.displayName file)
     let dctx := Elab.LoadedDialects.builtin
@@ -58,11 +62,11 @@ def main (args : List String) : IO UInt32 := do
     let leanEnv ← Lean.mkEmptyEnvironment 0
     match Strata.Elab.elabProgram dctx leanEnv inputCtx with
     | .ok pgm =>
-      let symTabFile := s!"{dir}/{programName}.symtab.json"
-      let gotoFile := s!"{dir}/{programName}.goto.json"
+      let symTabFile := dir / s!"{programName}.symtab.json"
+      let gotoFile := dir / s!"{programName}.goto.json"
       CoreToGOTO.writeToGotoJson
-        (symTabFileName := symTabFile)
-        (gotoFileName := gotoFile)
+        (symTabFileName := symTabFile.toString)
+        (gotoFileName := gotoFile.toString)
         pgm
       IO.println s!"Written {symTabFile} and {gotoFile}"
       return 0
