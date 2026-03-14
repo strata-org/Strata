@@ -302,8 +302,8 @@ def isPassIfReachable := passReachabilityUnknown
 def isAlwaysFalseIfReachable := alwaysFalseReachabilityUnknown
 def isReachableAndCanBeFalse := canBeFalseAndIsReachable
 
-def label (o : VCOutcome) (property : Imperative.PropertyType := .assert)
-    (checkLevel : CheckLevel := .minimal) (checkMode : VerificationMode := .deductive) : String :=
+def label (o : VCOutcome) (property : Imperative.PropertyType)
+    (checkLevel : CheckLevel) (checkMode : VerificationMode) : String :=
   -- Unreachable is detected when both checks ran (via fullCheck annotation or full level)
   if o.unreachable then
     if property.passWhenUnreachable then "pass (❗path unreachable)"
@@ -346,8 +346,8 @@ def label (o : VCOutcome) (property : Imperative.PropertyType := .assert)
     else if o.passReachabilityUnknown then "always true if reached"
     else "unknown"
 
-def emoji (o : VCOutcome) (property : Imperative.PropertyType := .assert)
-    (checkLevel : CheckLevel := .minimal) (checkMode : VerificationMode := .deductive) : String :=
+def emoji (o : VCOutcome) (property : Imperative.PropertyType)
+    (checkLevel : CheckLevel) (checkMode : VerificationMode) : String :=
   -- Unreachable is detected when both checks ran
   if o.unreachable then
     if property.passWhenUnreachable then "✅" else "❌"
@@ -390,8 +390,6 @@ def emoji (o : VCOutcome) (property : Imperative.PropertyType := .assert)
 
 end VCOutcome
 
-instance : ToFormat VCOutcome where
-  format o := s!"{o.emoji} {o.label}"
 
 /--
 A counterexample model with values lifted to LExpr for display purposes.
@@ -468,6 +466,17 @@ instance : ToFormat VCResult where
         else f!""
       let prop := r.obligation.property
       f!"Obligation: {r.obligation.label}\nProperty: {prop}\nResult: {outcome.emoji prop r.checkLevel r.checkMode} {outcome.label prop r.checkLevel r.checkMode}{modelFmt}"
+
+/-- Compact single-line outcome string: emoji + label
+    (e.g. "✅ pass", "❌ fail"). Uses the property, check level,
+    and check mode stored in the result. -/
+def VCResult.formatOutcome (r : VCResult) : String :=
+  let prop := r.obligation.property
+  match r.outcome with
+  | .ok o =>
+    s!"{o.emoji prop r.checkLevel r.checkMode} \
+       {o.label prop r.checkLevel r.checkMode}"
+  | .error e => s!"🚨 {e}"
 
 def VCResult.isSuccess (vr : VCResult) : Bool :=
   match vr.outcome with
