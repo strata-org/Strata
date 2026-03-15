@@ -133,6 +133,7 @@ structure MetaDataElem (P : PureExpr) where
 /-- Metadata is an array of tagged elements. -/
 @[expose] abbrev MetaData (P : PureExpr) := Array (MetaDataElem P)
 
+@[expose]
 def MetaData.empty {P : PureExpr} : MetaData P := #[]
 
 /-- Push a new metadata element. -/
@@ -180,8 +181,40 @@ def MetaData.fileRange : MetaDataElem.Field P := .label "fileRange"
 
 def MetaData.reachCheck : MetaDataElem.Field P := .label "reachCheck"
 
+def MetaData.fullCheck : MetaDataElem.Field P := .label "fullCheck"
+
+def MetaData.validityCheck : MetaDataElem.Field P := .label "validityCheck"
+
+def MetaData.satisfiabilityCheck : MetaDataElem.Field P := .label "satisfiabilityCheck"
+
 def MetaData.hasReachCheck {P : PureExpr} [BEq P.Ident] (md : MetaData P) : Bool :=
   match md.findElem MetaData.reachCheck with
+  | some elem =>
+    match elem.value with
+    | .switch true => true
+    | _ => false
+  | none => false
+
+def MetaData.hasFullCheck {P : PureExpr} [BEq P.Ident] (md : MetaData P) : Bool :=
+  match md.findElem MetaData.fullCheck with
+  | some elem =>
+    match elem.value with
+    | .switch true => true
+    | _ => false
+  | none =>
+    -- Backward compatibility: reachCheck maps to fullCheck
+    md.hasReachCheck
+
+def MetaData.hasValidityCheck {P : PureExpr} [BEq P.Ident] (md : MetaData P) : Bool :=
+  match md.findElem MetaData.validityCheck with
+  | some elem =>
+    match elem.value with
+    | .switch true => true
+    | _ => false
+  | none => false
+
+def MetaData.hasSatisfiabilityCheck {P : PureExpr} [BEq P.Ident] (md : MetaData P) : Bool :=
+  match md.findElem MetaData.satisfiabilityCheck with
   | some elem =>
     match elem.value with
     | .switch true => true
@@ -227,6 +260,21 @@ def MetaData.getPropertyType {P : PureExpr} [BEq P.Ident] (md : MetaData P) : Op
     | .msg s => some s
     | _ => none
   | none => none
+
+/-- Metadata field for property summaries attached to assert/requires/ensures clauses. -/
+def MetaData.propertySummary : MetaDataElem.Field P := .label "propertySummary"
+
+/-- Read the property summary from metadata, if present. -/
+def MetaData.getPropertySummary {P : PureExpr} [BEq P.Ident] (md : MetaData P) : Option String :=
+  match md.findElem MetaData.propertySummary with
+  | some elem => match elem.value with
+    | .msg s => some s
+    | _ => none
+  | none => none
+
+/-- Push a property summary into metadata. -/
+def MetaData.withPropertySummary {P : PureExpr} (md : MetaData P) (msg : String) : MetaData P :=
+  md.pushElem MetaData.propertySummary (.msg msg)
 
 ---------------------------------------------------------------------
 

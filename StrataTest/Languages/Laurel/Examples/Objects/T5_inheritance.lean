@@ -32,7 +32,7 @@ procedure inheritedFields(a: Extender) {
 
   assert a#xValue == 1;
   assert a#yValue == 2;
-  assert a#zValue == 3;
+  assert a#zValue == 3
 };
 
 procedure typeCheckingAndCasting() {
@@ -46,7 +46,7 @@ procedure typeCheckingAndCasting() {
 
   var c: Base := b;
   var d: Extender := c as Extender;
-  var e: Extender := a as Extender;
+  var e: Extender := a as Extender
 //                   ^^^^^^^^^^^^^ error: assertion could not be proved
 };
 
@@ -78,7 +78,7 @@ procedure diamondInheritance() {
   assert b is Left;
   assert b is Right;
   assert b is Top;
-  assert b is Bottom;
+  assert b is Bottom
 };
 
 // Currently does not pass. Implementation needs b type invariant mechanism that we have yet to add.

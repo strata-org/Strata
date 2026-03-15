@@ -3,10 +3,14 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.Languages.Core.DDMTransform.Grammar
-import Strata.Languages.Core.Program
-import Strata.DDM.Util.DecimalRat
+public import Strata.Languages.Core.DDMTransform.Grammar
+public import Strata.Languages.Core.Program
+public import Strata.DDM.Util.DecimalRat
+public import Strata.DDM.Format
+
+public section
 
 /-!
 # Core.Program → CoreCST Conversion
@@ -172,7 +176,7 @@ def popScope {M} (ctx : ToCSTContext M) : ToCSTContext M :=
 end ToCSTContext
 
 /-- Monad for AST->CST conversion with context and error collection -/
-abbrev ToCSTM (M : Type) := StateM (ToCSTContext M)
+@[expose] abbrev ToCSTM (M : Type) := StateM (ToCSTContext M)
 
 /-- Log an error in `ToCSTM` without throwing -/
 def ToCSTM.logError {M} [Inhabited M] (fn : String) (desc : String) (detail : String) : ToCSTM M Unit := do
@@ -271,7 +275,7 @@ def datatypeToCST {M} [Inhabited M] (datatypes : List (Lambda.LDatatype Visibili
                            unsafeDestructorNames.toArray))
 
   let processDatatype (dt : Lambda.LDatatype Visibility) :
-      ToCSTM M (Command M) := do
+      ToCSTM M (DatatypeDecl M) := do
     let name : Ann String M := ⟨default, dt.name⟩
     let args : Ann (Option (Bindings M)) M :=
       if dt.typeArgs.isEmpty then
@@ -306,18 +310,11 @@ def datatypeToCST {M} [Inhabited M] (datatypes : List (Lambda.LDatatype Visibili
         pure (constrs.tail.foldl
           (fun acc c => ConstructorList.constructorListPush default acc c)
           (ConstructorList.constructorListAtom default constrs[0]!))
-    pure (.command_datatype default name args constrList)
+    pure (DatatypeDecl.datatype_decl default name args constrList)
 
-  match datatypes with
-  | [dt] => do
-    -- Single datatype - no mutual block needed
-    let cmd ← processDatatype dt
-    pure [cmd]
-  | _ => do
-    -- Multiple datatypes - mutual block with pre-registration handles forward references.
-    let cmds ← datatypes.mapM processDatatype
-    let mutualCmd := Command.command_mutual default ⟨default, cmds.toArray⟩
-    pure [mutualCmd]
+  let decls ← datatypes.mapM processDatatype
+  let datatypesCmd := Command.command_datatypes default ⟨default, decls.toArray⟩
+  pure [datatypesCmd]
 
 /-- Convert a type synonym declaration to CST -/
 def typeSynToCST {M} [Inhabited M] (syn : TypeSynonym)
@@ -1158,4 +1155,7 @@ def Core.formatProgram (ast : Core.Program)
 end ToCST
 
 ---------------------------------------------------------------------
+
 end Strata
+
+end -- public section

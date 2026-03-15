@@ -3,15 +3,16 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
 
-
-import Strata.Languages.Core.Statement
-import Strata.DL.Lambda.TypeConstructor
+public import Strata.Languages.Core.Statement
+public import Strata.DL.Lambda.TypeConstructor
 
 ---------------------------------------------------------------------
 
 namespace Core
+public section
 
 open Std (ToFormat Format format)
 open Lambda
@@ -66,7 +67,7 @@ instance : ToFormat TypeDecl where
     | .data tds => f!"mutual {Std.Format.joinSep (tds.map format) Format.line} end"
 
 /-- Get all names from a TypeDecl. -/
-def TypeDecl.names (d : TypeDecl) : List Expression.Ident :=
+@[expose] def TypeDecl.names (d : TypeDecl) : List Expression.Ident :=
   match d with
   | .con tc => [tc.name]
   | .syn ts => [ts.name]
@@ -80,4 +81,5 @@ def TypeDecl.name (d : TypeDecl) : Expression.Ident :=
   | .data [] => ""
   | .data (td :: _) => td.name
 
+end
 ---------------------------------------------------------------------

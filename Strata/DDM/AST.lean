@@ -190,6 +190,7 @@ inductive SepFormat where
 | space          -- Space separator (SpaceSepBy)
 | spacePrefix    -- Space before each element (SpacePrefixSepBy)
 | newline        -- Newline separator (NewlineSepBy)
+| semicolon      -- Semicolon separator (SemicolonSepBy)
 deriving Inhabited, Repr, BEq
 
 namespace SepFormat
@@ -200,6 +201,7 @@ def toString : SepFormat → String
   | .space => "spaceSepBy"
   | .spacePrefix => "spacePrefixSepBy"
   | .newline => "newlineSepBy"
+  | .semicolon => "semicolonSepBy"
 
 def fromCategoryName? : QualifiedIdent → Option SepFormat
   | q`Init.Seq => some .none
@@ -207,6 +209,7 @@ def fromCategoryName? : QualifiedIdent → Option SepFormat
   | q`Init.SpaceSepBy => some .space
   | q`Init.SpacePrefixSepBy => some .spacePrefix
   | q`Init.NewlineSepBy => some .newline
+  | q`Init.SemicolonSepBy => some .semicolon
   | _ => none
 
 instance : ToString SepFormat where
@@ -582,12 +585,13 @@ private def scopeIndex (metadata : Metadata) : Option Nat :=
   | some #[.catbvar idx] => some idx
   | some _ => panic! s!"Unexpected argument count to {MetadataAttr.scopeName.fullName}"
 
-/-- Returns the datatype scope indices (nameIndex, typeParamsIndex) if @[scopeDatatype] is present. -/
-def scopeDatatypeIndex (metadata : Metadata) : Option (Nat × Nat) :=
-  match metadata[q`StrataDDL.scopeDatatype]? with
+/-- Returns the typeParams index if @[scopeTVar] is present.
+    Converts .type bindings from typeParams into .tvar bindings for constructor elaboration. -/
+def scopeTVarIndex (metadata : Metadata) : Option Nat :=
+  match metadata[q`StrataDDL.scopeTVar]? with
   | none => none
-  | some #[.catbvar nameIdx, .catbvar typeParamsIdx] => some (nameIdx, typeParamsIdx)
-  | some _ => panic! s!"Unexpected argument count to scopeDatatype"
+  | some #[.catbvar idx] => some idx
+  | some _ => panic! s!"Unexpected argument count to scopeTVar"
 
 /-- Returns (nameIndex, argsIndex, typeIndex) if @[scopeSelf] is present.
     Used to bring a function's own name into scope within its body. -/
@@ -832,20 +836,15 @@ def argScopeLevel (argDecls : ArgDecls) (level : Fin argDecls.size) : Option (Fi
       let varCount := argDecls.size
       panic! s!"Scope index {idx} out of bounds ({level.val}, varCount = {varCount})"
 
-/-- Returns the datatype scope indices (nameLevel, typeParamsLevel) if @[scopeDatatype] is present.
-    This is used for recursive datatype definitions where the datatype name must be in scope
-    when parsing constructor field types. -/
-def argScopeDatatypeLevel (argDecls : ArgDecls) (level : Fin argDecls.size) : Option (Fin level.val × Fin level.val) :=
-  match argDecls[level].metadata.scopeDatatypeIndex with
+/-- Returns the typeParams level if @[scopeTVar] is present. -/
+def argScopeTVarLevel (argDecls : ArgDecls) (level : Fin argDecls.size) : Option (Fin level.val) :=
+  match argDecls[level].metadata.scopeTVarIndex with
   | none => none
-  | some (nameIdx, typeParamsIdx) =>
-    if h1 : nameIdx < level.val then
-      if h2 : typeParamsIdx < level.val then
-        some (⟨level.val - (nameIdx + 1), by omega⟩, ⟨level.val - (typeParamsIdx + 1), by omega⟩)
-      else
-        panic! s!"scopeDatatype typeParams index {typeParamsIdx} out of bounds ({level.val})"
+  | some idx =>
+    if h : idx < level.val then
+      some ⟨level.val - (idx + 1), by omega⟩
     else
-      panic! s!"scopeDatatype name index {nameIdx} out of bounds ({level.val})"
+      panic! s!"scopeTVar index {idx} out of bounds ({level.val})"
 
 /-- Returns (nameLevel, argsLevel, typeLevel) if @[scopeSelf] is present. -/
 def argScopeSelfLevel (argDecls : ArgDecls) (level : Fin argDecls.size)
@@ -1787,7 +1786,7 @@ partial def resolveBindingIndices { argDecls : ArgDecls } (m : DialectMap) (src 
   | .datatype b =>
     -- For datatypes, resolveBindingIndices only returns the datatype type
     -- itself; the constructors and template-generated functions are handled
-    -- separately in addDatatypeBindings!.
+    -- separately in addDatatypeBindings.
     let params : Array String :=
         let addBinding (a : Array String) (_ : SourceRange) {argDecls : _} (b : BindingSpec argDecls) (args : Vector Arg argDecls.size) :=
             match args[b.nameIndex.toLevel] with
@@ -2177,7 +2176,7 @@ FreeVarIndex values are consistent with this order.
 this adds entries for: `Option` (type), `None` (constructor), `Some` (constructor),
 `Option..isNone` (tester), `Option..isSome` (tester).
 -/
-private def addDatatypeBindings!
+private def addDatatypeBindings
     (dialects : DialectMap)
     (gctx : GlobalContext)
     (src : SourceRange)
@@ -2186,7 +2185,7 @@ private def addDatatypeBindings!
     {argDecls : ArgDecls}
     (b : DatatypeBindingSpec argDecls)
     (args : Vector Arg argDecls.size)
-    : GlobalContext :=
+    : Except String GlobalContext := do
 
   let datatypeName :=
     match args[b.nameIndex.toLevel] with
@@ -2204,34 +2203,29 @@ private def addDatatypeBindings!
   -- When preRegistered, the type was already added by preRegisterTypeName;
   -- otherwise it must be fresh.
   let k := GlobalKind.type typeParams.toList none
-  let gctx :=
-    match gctx.defineChecked datatypeName k preRegistered with
-    | .ok gctx => gctx
-    | .error e => panic! s!"addDatatypeBindings!: {e}"
+  let gctx ← gctx.defineChecked datatypeName k preRegistered
   let datatypeIndex := gctx.findIndex? datatypeName |>.getD (gctx.vars.size - 1)
   let datatypeType := mkDatatypeTypeRef src datatypeIndex typeParams
 
   -- Step 2: Add constructor signatures and expand function templates
   let constrArg := args[b.constructorsIndex.toLevel]
-  let constructorInfo :=
-    match extractConstructorInfo dialects constrArg with
-    | .ok info => info
-    | .error e => panic! s!"Constructor extraction error: {e}"
+  let constructorInfo ← extractConstructorInfo dialects constrArg
   -- Errors from template expansion are reported during elaboration
   -- (evalBindingSpec); here we just take the updated context.
   let (gctx, _) := expandFunctionTemplates dialectName src
     datatypeName datatypeType constructorInfo
     b.functionTemplates gctx
-  gctx
+  return gctx
 
 /--
 Pre-register a type name in the `GlobalContext` before the main `addCommand`
 pass. Used by operations annotated with `@[preRegisterTypes]` (e.g., mutual
 blocks) so that forward references between sibling datatypes resolve correctly.
-Names must be fresh — panics if the name is already defined.
+Names must be fresh — returns an error if the name is already defined.
 -/
-private def preRegisterType (dialects : DialectMap) (gctx : GlobalContext) (l : SourceRange)
-    {argDecls} (b : BindingSpec argDecls) (args : Vector Arg argDecls.size) : GlobalContext :=
+private def preRegisterType (dialects : DialectMap) (acc : Except String GlobalContext) (l : SourceRange)
+    {argDecls} (b : BindingSpec argDecls) (args : Vector Arg argDecls.size) : Except String GlobalContext := do
+  let gctx ← acc
   match b with
   | .datatype _ | .type _ =>
     let name :=
@@ -2242,48 +2236,43 @@ private def preRegisterType (dialects : DialectMap) (gctx : GlobalContext) (l : 
     -- Names must be fresh: this is the pre-registration pass.
     | some kind =>
       if h : name ∈ gctx then
-        panic! s!"'{name}' already defined"
+        .error s!"'{name}' already defined"
       else
-        gctx.define name kind h
-    | none => gctx
-  | _ => gctx
+        pure (gctx.define name kind h)
+    | none => pure gctx
+  | _ => pure gctx
 
 private def addBinding (dialects : DialectMap) (dialectName : DialectName) (preRegistered : Bool)
-                       (gctx : GlobalContext) (l : SourceRange) {argDecls} (b : BindingSpec argDecls)
-                       (args : Vector Arg argDecls.size) :=
+                       (acc : Except String GlobalContext) (l : SourceRange) {argDecls} (b : BindingSpec argDecls)
+                       (args : Vector Arg argDecls.size) : Except String GlobalContext := do
+  let gctx ← acc
   match b with
   | .datatype datatypeSpec =>
-    addDatatypeBindings! dialects gctx l dialectName preRegistered datatypeSpec args
+    addDatatypeBindings dialects gctx l dialectName preRegistered datatypeSpec args
   | _ =>
     let name : Var :=
           match args[b.nameIndex.toLevel] with
           | .ident _ e => e
           | a => panic! s!"Expected ident at {b.nameIndex.toLevel} {repr a}"
     match resolveBindingIndices dialects l b args with
-    | some kind =>
-      match gctx.defineChecked name kind preRegistered with
-      | .ok gctx => gctx
-      | .error e => panic! s!"addCommand: {e}"
-    | none => gctx
+    | some kind => gctx.defineChecked name kind preRegistered
+    | none => pure gctx
 
-def addCommand (dialects : DialectMap) (gctx : GlobalContext) (op : Operation) : GlobalContext :=
+def addCommand (dialects : DialectMap) (gctx : GlobalContext) (op : Operation) : Except String GlobalContext := do
     let dialectName := op.name.dialect
     -- Pre-register types if op has @[preRegisterTypes] metadata
-    let (gctx, preRegistered) := Id.run do
-      let .op decl := dialects.decl! op.name
-        | return (panic! "Expected operator declaration", false)
-      let .isTrue h := decideProp (op.args.size = decl.argDecls.size)
-        | return (panic! "Expected arguments to match", false)
+    let .op decl := dialects.decl! op.name
+      | .error "Expected operator declaration"
+    let .isTrue h := decideProp (op.args.size = decl.argDecls.size)
+      | .error "Expected arguments to match"
+    let (gctx, preRegistered) ←
       match decl.metadata.preRegisterTypesLevel decl.argDecls.size with
       | some lvl =>
-        let gctx := foldOverArgAtLevel dialects
-          (preRegisterType dialects) gctx
-          decl.argDecls ⟨op.args, h⟩ lvl
-        (gctx, true)
-      | none =>
-        (gctx, false)
+        (foldOverArgAtLevel dialects (preRegisterType dialects) (.ok gctx)
+          decl.argDecls ⟨op.args, h⟩ lvl).map (·, true)
+      | none => .ok (gctx, false)
     -- Normal fold
-    op.foldBindingSpecs dialects (addBinding dialects dialectName preRegistered) gctx
+    op.foldBindingSpecs dialects (addBinding dialects dialectName preRegistered) (.ok gctx)
 
 end GlobalContext
 
@@ -2297,7 +2286,10 @@ structure Program where
   commands : Array Operation := #[]
   /-- Final global context for program. -/
   globalContext : GlobalContext :=
-    commands.foldl (init := {}) (·.addCommand dialects ·)
+    match commands.foldl (init := (Except.ok {} : Except String GlobalContext))
+        fun acc cmd => acc.bind (·.addCommand dialects cmd) with
+    | .ok gctx => gctx
+    | .error e => panic! s!"Program.globalContext: {e}" -- nopanic:ok
 
 namespace Program
 
@@ -2310,7 +2302,9 @@ instance : Inhabited Program where
 def addCommand (env : Program) (cmd : Operation) : Program :=
   { env with
     commands := env.commands.push cmd,
-    globalContext := env.globalContext.addCommand env.dialects cmd
+    globalContext := match env.globalContext.addCommand env.dialects cmd with
+      | .ok gctx => gctx
+      | .error e => panic! s!"Program.addCommand: {e}" -- nopanic:ok
   }
 
 /--

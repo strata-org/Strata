@@ -22,10 +22,8 @@ def roseTreeTesterPgm : Program :=
 #strata
 program Core;
 
-mutual
-  datatype Forest { FNil(), FCons(head: RoseTree, tail: Forest) };
+  datatype Forest { FNil(), FCons(head: RoseTree, tail: Forest) }
   datatype RoseTree { Node(val: int, children: Forest) };
-end;
 
 procedure TestRoseTreeTesters() returns ()
 spec {
@@ -90,10 +88,8 @@ def roseTreeDestructorPgm : Program :=
 #strata
 program Core;
 
-mutual
-  datatype Forest { FNil(), FCons(head: RoseTree, tail: Forest) };
+  datatype Forest { FNil(), FCons(head: RoseTree, tail: Forest) }
   datatype RoseTree { Node(val: int, children: Forest) };
-end;
 
 procedure TestRoseTreeDestructor() returns ()
 spec {
@@ -186,10 +182,8 @@ def roseTreeEqualityPgm : Program :=
 #strata
 program Core;
 
-mutual
-  datatype Forest { FNil(), FCons(head: RoseTree, tail: Forest) };
+  datatype Forest { FNil(), FCons(head: RoseTree, tail: Forest) }
   datatype RoseTree { Node(val: int, children: Forest) };
-end;
 
 procedure TestRoseTreeEquality() returns ()
 spec {
@@ -249,10 +243,8 @@ def polyRoseTreeHavocPgm : Program :=
 #strata
 program Core;
 
-mutual
-  datatype Forest (a : Type) { FNil(), FCons(head: RoseTree a, tail: Forest a) };
+  datatype Forest (a : Type) { FNil(), FCons(head: RoseTree a, tail: Forest a) }
   datatype RoseTree (a : Type) { Node(val: a, children: Forest a) };
-end;
 
 procedure TestPolyRoseTreeHavoc() returns ()
 spec {
@@ -296,11 +288,11 @@ Obligation: headIsT
 Property: assert
 Result: ✅ pass
 
-Obligation: assert_headVal_calls_RoseTree..val_0
+Obligation: assert_headVal_calls_Forest..head_0
 Property: assert
 Result: ✅ pass
 
-Obligation: assert_headVal_calls_Forest..head_1
+Obligation: assert_headVal_calls_RoseTree..val_1
 Property: assert
 Result: ✅ pass
 
@@ -325,8 +317,7 @@ def stmtListHavocPgm : Program :=
 #strata
 program Core;
 
-mutual
-  datatype StmtList (e : Type, c : Type) { SNil(), SCons(hd: Stmt e c, tl: StmtList e c) };
+  datatype StmtList (e : Type, c : Type) { SNil(), SCons(hd: Stmt e c, tl: StmtList e c) }
   datatype Stmt (e : Type, c : Type) {
     Cmd(cmd: c),
     Block(label: int, blockBody: StmtList e c),
@@ -334,7 +325,6 @@ mutual
     Loop(guard: e, loopBody: StmtList e c),
     Goto(target: int)
   };
-end;
 
 procedure TestStmtListHavoc() returns ()
 spec {
@@ -368,11 +358,11 @@ Obligation: isBlock
 Property: assert
 Result: ✅ pass
 
-Obligation: assert_bodyHd_calls_StmtList..hd_0
+Obligation: assert_bodyHd_calls_Stmt..blockBody_0
 Property: assert
 Result: ✅ pass
 
-Obligation: assert_bodyHd_calls_Stmt..blockBody_1
+Obligation: assert_bodyHd_calls_StmtList..hd_1
 Property: assert
 Result: ✅ pass
 
@@ -380,7 +370,7 @@ Obligation: bodyHd
 Property: assert
 Result: ✅ pass
 
-Obligation: assert_cmdVal_calls_Stmt..cmd_0
+Obligation: assert_cmdVal_calls_Stmt..blockBody_0
 Property: assert
 Result: ✅ pass
 
@@ -388,7 +378,7 @@ Obligation: assert_cmdVal_calls_StmtList..hd_1
 Property: assert
 Result: ✅ pass
 
-Obligation: assert_cmdVal_calls_Stmt..blockBody_2
+Obligation: assert_cmdVal_calls_Stmt..cmd_2
 Property: assert
 Result: ✅ pass
 
@@ -396,11 +386,11 @@ Obligation: cmdVal
 Property: assert
 Result: ✅ pass
 
-Obligation: assert_secondIsGoto_calls_StmtList..hd_0
+Obligation: assert_secondIsGoto_calls_StmtList..tl_0
 Property: assert
 Result: ✅ pass
 
-Obligation: assert_secondIsGoto_calls_StmtList..tl_1
+Obligation: assert_secondIsGoto_calls_StmtList..hd_1
 Property: assert
 Result: ✅ pass
 

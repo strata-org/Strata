@@ -17,9 +17,9 @@ procedure earlyReturnCorrect(x: int) returns (r: int)
   ensures r >= 0
 {
   if (x < 0) {
-    return -x;
-  }
-  return x;
+    return -x
+  };
+  return x
 };
 
 procedure earlyReturnBuggy(x: int) returns (r: int)
@@ -29,9 +29,9 @@ procedure earlyReturnBuggy(x: int) returns (r: int)
 //        ^^^^^^ error: assertion does not hold
 {
   if (x < 0) {
-    return x;
-  }
-  return x;
+    return x
+  };
+  return x
 };
 "
 
