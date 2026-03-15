@@ -221,8 +221,11 @@ op nilInvariants : Invariants => ;
 op consInvariants(e : Expr, is : Invariants) : Invariants =>
   "invariant " e "\n" is:0;
 
-op while_statement (c : bool, is : Invariants, body : Block) : Statement =>
-  "while " "(" c ")\n" is body "\n";
+category Measure;
+op measure_mk (e : Expr) : Measure => "decreases " e "\n";
+
+op while_statement (c : bool, m : Option Measure, is : Invariants, body : Block) : Statement =>
+  "while " "(" c ")\n" m:0 is body "\n";
 
 op call_statement (vs : CommaSepBy Ident, f : Ident, expr : CommaSepBy Expr) : Statement =>
    "call " vs " := " f "(" expr ")" ";\n";
