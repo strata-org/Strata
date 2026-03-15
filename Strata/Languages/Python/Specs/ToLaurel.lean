@@ -227,7 +227,7 @@ def specTypeToLaurelType (ty : SpecType) : ToLaurelM HighTypeMd := do
       if nm == PythonIdent.builtinsInt then return mkTy .TInt
       if nm == PythonIdent.builtinsBool then return mkTy .TBool
       if nm == PythonIdent.builtinsStr then return mkTy .TString
-      if nm == PythonIdent.builtinsFloat then return mkTy .TFloat64
+      if nm == PythonIdent.builtinsFloat then return mkTy .TReal
       if nm == PythonIdent.noneType then return mkTy .TVoid
       -- TODO: add proper CorePrelude types for these
       if nm == PythonIdent.typingAny then return unsupportedType

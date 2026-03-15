@@ -26,6 +26,20 @@ procedure testQuantifierInContract(n: int)
   ensures forall(i: int) => i >= 0 ==> i < n ==> i < n + 1
 {
 };
+
+function P(x: int): int;
+function Q(): int;
+procedure triggers() {
+  assert forall(i: int) { P(i) } => P(i) == i + 1;
+//^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
+  assert forall(i: int) => true;
+
+  assume forall(i: int) { P(i) } => P(i) == i + 1 && Q() == 0;
+  assert Q() == 0;
+//^^^^^^^^^^^^^^^ error: assertion could not be proved
+  assert P(1) == 2
+};
+
 "
 
 #guard_msgs(drop info, error) in

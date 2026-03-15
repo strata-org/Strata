@@ -6,6 +6,7 @@ dialect Laurel;
 category LaurelType;
 op intType : LaurelType => "int";
 op boolType : LaurelType => "bool";
+op realType : LaurelType => "real";
 op float64Type : LaurelType => "float64";
 op stringType : LaurelType => "string";
 op mapType (keyType: LaurelType, valueType: LaurelType): LaurelType => "Map " keyType " " valueType;
@@ -14,6 +15,7 @@ op compositeType (name: Ident): LaurelType => name;
 category StmtExpr;
 op literalBool (b: Bool): StmtExpr => b;
 op int(n : Num) : StmtExpr => n;
+op real(d : Decimal) : StmtExpr => d;
 op string (s: Str): StmtExpr => s;
 
 // Variable declarations
@@ -65,10 +67,13 @@ op not (inner: StmtExpr): StmtExpr => @[prec(80)] "!" inner;
 op neg (inner: StmtExpr): StmtExpr => @[prec(80)] "-" inner;
 
 // Quantifiers
-op forallExpr (name: Ident, ty: LaurelType, body: StmtExpr): StmtExpr
-  => "forall(" name ": " ty ") => " body:0;
-op existsExpr (name: Ident, ty: LaurelType, body: StmtExpr): StmtExpr
-  => "exists(" name ": " ty ") => " body:0;
+category OptionalTrigger;
+op optionalTrigger(trigger: StmtExpr): OptionalTrigger => "{" trigger "}";
+
+op forallExpr (name: Ident, ty: LaurelType, trigger: Option OptionalTrigger, body: StmtExpr): StmtExpr
+  => "forall(" name ": " ty ")" trigger " => " body:0;
+op existsExpr (name: Ident, ty: LaurelType, trigger: Option OptionalTrigger, body: StmtExpr): StmtExpr
+  => "exists(" name ": " ty ")" trigger " => " body:0;
 
 // Error messages (used in assert, requires, ensures)
 category OptionalErrorMessage;
@@ -130,8 +135,8 @@ op datatype (name: Ident, constructors: DatatypeConstructorList): Datatype => "d
 category OptionalReturnType;
 op optionalReturnType(returnType: LaurelType): OptionalReturnType => ":" returnType;
 
-category OptionalRequires;
-op optionalRequires(cond: StmtExpr, errorMessage: Option OptionalErrorMessage): OptionalRequires => "requires" cond:0 errorMessage;
+category RequiresClause;
+op requiresClause(cond: StmtExpr, errorMessage: Option OptionalErrorMessage): RequiresClause => "requires" cond:0 errorMessage;
 
 category EnsuresClause;
 op ensuresClause(cond: StmtExpr, errorMessage: Option OptionalErrorMessage): EnsuresClause => "ensures" cond:0 errorMessage;
@@ -150,7 +155,7 @@ category Procedure;
 op procedure (name : Ident, parameters: CommaSepBy Parameter,
   returnType: Option OptionalReturnType,
   returnParameters: Option ReturnParameters,
-  requires: Option OptionalRequires,
+  requires: Seq RequiresClause,
   ensures: Seq EnsuresClause,
   modifies: Seq ModifiesClause,
   body : Option OptionalBody) : Procedure =>
@@ -159,15 +164,11 @@ op procedure (name : Ident, parameters: CommaSepBy Parameter,
 op function (name : Ident, parameters: CommaSepBy Parameter,
   returnType: Option OptionalReturnType,
   returnParameters: Option ReturnParameters,
-  requires: Option OptionalRequires,
+  requires: Seq RequiresClause,
   ensures: Seq EnsuresClause,
   modifies: Seq ModifiesClause,
   body : Option OptionalBody) : Procedure =>
   "function " name "(" parameters ")" returnType returnParameters requires ensures modifies body ";";
-
-// Opaque type declarations
-category OpaqueType;
-op opaqueType (name: Ident): OpaqueType => "type " name ";";
 
 category ConstrainedType;
 op constrainedType (name: Ident, valueName: Ident, base: LaurelType,
@@ -177,6 +178,5 @@ op constrainedType (name: Ident, valueName: Ident, base: LaurelType,
 op compositeCommand(composite: Composite): Command => composite;
 op procedureCommand(procedure: Procedure): Command => procedure;
 op datatypeCommand(datatype: Datatype): Command => datatype;
-op opaqueTypeCommand(opaqueType: OpaqueType): Command => opaqueType;
 op constrainedTypeCommand(ct: ConstrainedType): Command => ct;
 
