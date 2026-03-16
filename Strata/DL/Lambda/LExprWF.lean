@@ -311,7 +311,7 @@ Substitute `(.fvar x _)` in `e` with `to`. Does NOT lift de Bruijn indices in `t
 when going under binders - safe when `to` contains no bvars (e.g., substituting
 fvar→fvar). Use `substFvarLifting` when `to` contains bvars.
 -/
-def substFvar [BEq T.IDMeta] (e : LExpr ⟨T, GenericTy⟩) (fr : T.Identifier) (to : LExpr ⟨T, GenericTy⟩)
+@[expose] def substFvar [BEq T.IDMeta] (e : LExpr ⟨T, GenericTy⟩) (fr : T.Identifier) (to : LExpr ⟨T, GenericTy⟩)
   : (LExpr ⟨T, GenericTy⟩) :=
   match e with
   | .const _ _ => e | .bvar _ _ => e | .op _ _ _ => e
@@ -349,7 +349,7 @@ def substFvarsLifting [BEq T.IDMeta] (e : LExpr ⟨T, GenericTy⟩) (sm : Map T.
   : LExpr ⟨T, GenericTy⟩ :=
   List.foldl (fun e (var, s) => substFvarLifting e var s) e sm
 
-def substFvars [BEq T.IDMeta] (e : LExpr ⟨T, GenericTy⟩) (sm : Map T.Identifier (LExpr ⟨T, GenericTy⟩))
+@[expose] def substFvars [BEq T.IDMeta] (e : LExpr ⟨T, GenericTy⟩) (sm : Map T.Identifier (LExpr ⟨T, GenericTy⟩))
   : LExpr ⟨T, GenericTy⟩ :=
   List.foldl (fun e (var, s) => substFvar e var s) e sm
 
