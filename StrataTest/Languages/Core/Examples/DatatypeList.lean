@@ -431,11 +431,11 @@ spec {
 
 /--
 info:
-Obligation: set_second_calls_List..head_0
+Obligation: set_second_calls_List..tail_0
 Property: assert
 Result: ✅ pass
 
-Obligation: set_second_calls_List..tail_1
+Obligation: set_second_calls_List..head_1
 Property: assert
 Result: ✅ pass
 

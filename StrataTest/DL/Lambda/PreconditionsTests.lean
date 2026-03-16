@@ -44,7 +44,7 @@ private def noPrecondFunc : LFunc TestParams :=
 #eval collectWFObligations testFactory esM[((~safeDiv a) y)]
 
 -- safeDiv(safeDiv(x, y), b) produces b != 0, y != 0
-/-- info: [WFObligation(safeDiv, (~!= b #0), ()), WFObligation(safeDiv, (~!= y #0), ())] -/
+/-- info: [WFObligation(safeDiv, (~!= y #0), ()), WFObligation(safeDiv, (~!= b #0), ())] -/
 #guard_msgs in
 #eval collectWFObligations testFactory
   esM[((~safeDiv ((~safeDiv x) y)) b)]
