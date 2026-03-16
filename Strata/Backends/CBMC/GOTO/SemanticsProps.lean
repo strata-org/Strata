@@ -128,4 +128,62 @@ theorem exec_empty_prog
     ExecProg callResult eval fenv { instructions := #[] } 0 σ σ none :=
   .out_of_bounds (by simp)
 
+/-- If `instrType` returns `some`, the PC is in bounds. -/
+theorem instrType_some_lt {prog : Program} {pc : Nat} {ty : InstructionType} :
+    instrType prog pc = some ty → pc < prog.instructions.size := by
+  simp only [instrType]
+  intro h
+  exact Decidable.byContradiction fun hge => by
+    simp only [Nat.not_lt] at hge
+    simp [Array.getElem?_eq_none hge] at h
+
+/-- ExecProg determinism for programs without nondet, given deterministic
+    eval and call relations. -/
+def NoNondet (prog : Program) : Prop :=
+  ∀ pc, ∀ rhs, (instrCode prog pc).bind getAssignRhs = some rhs →
+               rhs.id ≠ .side_effect .Nondet
+
+theorem ExecProg_deterministic
+    {callResult : CallResultRel} {eval : ExprEval} {fenv : FuncEnv}
+    {prog : Program} {pc : Nat} {σ σ₁ σ₂ : Store}
+    {r₁ r₂ : Option Value}
+    (_heval : DeterministicEval eval)
+    (hcall : DeterministicCall callResult)
+    (hnn : NoNondet prog) :
+    ExecProg callResult eval fenv prog pc σ σ₁ r₁ →
+    ExecProg callResult eval fenv prog pc σ σ₂ r₂ →
+    σ₁ = σ₂ ∧ r₁ = r₂ := by
+  intro h1 h2
+  induction h1 generalizing σ₂ r₂ with
+  | out_of_bounds hge =>
+    cases h2 with
+    | out_of_bounds => exact ⟨rfl, rfl⟩
+    | end_function hty => have := instrType_some_lt hty; omega
+    | set_return_value hty => have := instrType_some_lt hty; omega
+    | step hstep => cases hstep <;> (simp_all [instrType]; try (split at * <;> simp_all <;> omega))
+  | end_function hty =>
+    cases h2 with
+    | out_of_bounds hge => have := instrType_some_lt hty; omega
+    | end_function => exact ⟨rfl, rfl⟩
+    | set_return_value hty2 => simp_all
+    | step hstep => cases hstep <;> simp_all
+  | set_return_value hty hcode hev hcont ih =>
+    cases h2 with
+    | out_of_bounds hge => have := instrType_some_lt hty; omega
+    | end_function hty2 => simp_all
+    | set_return_value hty2 hcode2 hev2 hcont2 =>
+      have heq := Option.some.inj (hcode.symm.trans hcode2)
+      subst heq
+      have ⟨hσ, hr⟩ := ih hcont2
+      exact ⟨hσ, by simp_all⟩
+    | step hstep => cases hstep <;> simp_all
+  | step hstep1 _hcont1 ih =>
+    cases h2 with
+    | out_of_bounds hge => cases hstep1 <;> (simp_all [instrType]; try (split at * <;> simp_all <;> omega))
+    | end_function hty2 => cases hstep1 <;> simp_all
+    | set_return_value hty2 => cases hstep1 <;> simp_all
+    | step hstep2 hcont2 =>
+      have ⟨hpc, hσ⟩ := StepInstr_deterministic_no_nondet _heval hcall (hnn _) hstep1 hstep2
+      subst hpc; subst hσ; exact ih hcont2
+
 end CProverGOTO.Semantics

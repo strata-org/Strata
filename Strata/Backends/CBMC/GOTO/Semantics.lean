@@ -86,7 +86,8 @@ The semantics is informed by CBMC's concrete interpreter
 ## TODO
 - [x] Prove determinism of the single-step relation (for deterministic `eval`)
       → See `SemanticsProps.lean`: `StepInstr_deterministic_no_nondet`
-- [ ] Prove determinism of `ExecProg` (requires induction on derivation depth)
+- [x] Prove determinism of `ExecProg`
+      → See `SemanticsProps.lean`: `ExecProg_deterministic`
 - [ ] Prove that well-formed programs (from Strata's translation) always make
       progress or terminate
 - [x] Formalize expression evaluation for the concrete GOTO expression language
