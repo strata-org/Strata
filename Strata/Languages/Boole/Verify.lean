@@ -343,7 +343,7 @@ def toCoreStmt (s : BooleDDM.Statement SourceRange) : TranslateM Core.Statement 
     return CoreBridge.mkIteStmt (← toCoreExpr c) thenb elseb (← toCoreMetaData m)
   | .havoc_statement m ⟨_, n⟩ =>
     return CoreBridge.mkHavocStmt (mkIdent n) (← toCoreMetaData m)
-  | .while_statement m g invs b =>
+  | .while_statement m g _ invs b =>
     return CoreBridge.mkLoopStmt (← toCoreExpr g) none (← toCoreInvariants invs) (← withBVars [] (toCoreBlock b)) (← toCoreMetaData m)
   | .call_statement m ⟨_, lhs⟩ ⟨_, n⟩ ⟨_, args⟩ =>
     return CoreBridge.mkCallStmt (lhs.toList.map (mkIdent ·.val)) n (← args.toList.mapM toCoreExpr) (← toCoreMetaData m)
