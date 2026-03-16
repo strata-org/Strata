@@ -47,7 +47,7 @@ info: "; f\n(declare-fun f (Int) Int)\n; x\n(declare-const x Int)\n(define-fun t
 (.quant sr .exist "i" (.some .int) (.app sr (.fvar sr "f" (.some (.arrow .int .int))) (.bvar sr 0))
    (.eq sr (.app sr (.fvar sr "f" (.some (.arrow .int .int))) (.bvar sr 0)) (.fvar sr "x" (.some .int))))
 
-/-- info: "Cannot encode expression (f %0)" -/
+/-- info: "Cannot encode expression f(bvar!0)\n-- Errors: Unsupported construct in lexprToExpr: bvar index out of bounds: 0\nContext: Global scope:\n  freeVars: [f]" -/
 #guard_msgs in
 #eval toSMTTermString
 (.quant sr .exist "i" (.some .int) (.app sr (.fvar sr "f" (.none)) (.bvar sr 0))
