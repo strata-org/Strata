@@ -401,7 +401,9 @@ partial def translateExpr (ctx : TranslationContext) (e : Python.expr SourceRang
 
   | .Call _ f args kwargs => translateCall ctx f args.val.toList kwargs.val.toList
 
-  -- Subscript access: dict['key'] or list[0] or list[1:3]
+  -- Subscript access: dict['key'], list[0], or list[1:3]
+  -- For regular indexing, delegates to Any_get.
+  -- For slices, delegates to Any_slice with AnyNone for missing bounds.
   | .Subscript _ val slice _ =>
     let dictOrList ← translateExpr ctx val
     match slice with
