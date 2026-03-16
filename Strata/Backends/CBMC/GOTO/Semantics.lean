@@ -88,8 +88,9 @@ The semantics is informed by CBMC's concrete interpreter
       → See `SemanticsProps.lean`: `StepInstr_deterministic_no_nondet`
 - [x] Prove determinism of `ExecProg`
       → See `SemanticsProps.lean`: `ExecProg_deterministic`
-- [ ] Prove that well-formed programs (from Strata's translation) always make
+- [x] Prove that well-formed programs (from Strata's translation) always make
       progress or terminate
+      → See `SemanticsProps.lean`: `progress_wellformed`
 - [x] Formalize expression evaluation for the concrete GOTO expression language
       → See `SemanticsEval.lean`: `concreteEval`
 - [x] Connect to Strata Core semantics: prove that the Core-to-GOTO translation

@@ -316,4 +316,65 @@ theorem progress_function_call
   obtain ⟨σ', rv, hcr⟩ := hcall name hname
   exact ⟨pc + 1, _, .function_call hty hname hcr rfl⟩
 
+/-- Well-formed program progress: if the PC is in bounds and the instruction
+    is not a terminator, then either execution steps or ASSUME blocks.
+
+    A program is "well-formed" if:
+    - Guards evaluate to booleans
+    - ASSIGN has valid lhs/rhs
+    - DECL/DEAD have symbol names
+    - GOTO targets resolve
+    - Function calls resolve
+
+    This composes the per-instruction progress lemmas above. -/
+theorem progress_wellformed
+    {callResult : CallResultRel} {eval : ExprEval} {fenv : FuncEnv}
+    {prog : Program} {pc : Nat} {σ : Store}
+    (hbound : pc < prog.instructions.size)
+    (hnot_term : ¬ IsTerminator prog pc)
+    -- Well-formedness: the instruction type is supported
+    (hty : ∃ ty, instrType prog pc = some ty ∧ IsSupportedInstrType ty)
+    -- Guards evaluate to booleans (in bind form)
+    (hguard_bool : ∃ b, (instrGuard prog pc).bind (eval σ ·) = some (.vBool b))
+    -- ASSIGN has valid lhs/rhs and rhs evaluates or is nondet
+    (hassign : instrType prog pc = some .ASSIGN →
+      (∃ name, (instrCode prog pc).bind getAssignLhs = some name) ∧
+      (∃ rhs, (instrCode prog pc).bind getAssignRhs = some rhs) ∧
+      (∀ rhs, (instrCode prog pc).bind getAssignRhs = some rhs →
+        (∃ v, eval σ rhs = some v) ∨ rhs.id = .side_effect .Nondet))
+    -- DECL/DEAD have symbol names
+    (hdecl : instrType prog pc = some .DECL →
+      ∃ name, (instrCode prog pc).bind getSymbolName = some name)
+    (hdead : instrType prog pc = some .DEAD →
+      ∃ name, (instrCode prog pc).bind getSymbolName = some name)
+    -- GOTO targets exist and resolve
+    (hgoto : instrType prog pc = some .GOTO →
+      ∃ tgt, instrTarget prog pc = some (some tgt))
+    (hgoto_resolve : ∀ tgt, instrTarget prog pc = some (some tgt) →
+      ∃ idx, findLocIdx prog.instructions tgt = some idx)
+    -- Function calls resolve
+    (hfcall : instrType prog pc = some .FUNCTION_CALL →
+      (∃ name, (instrCode prog pc).bind getCallCallee = some name) ∧
+      (∀ name, (instrCode prog pc).bind getCallCallee = some name →
+        ∃ σ' rv, callResult eval fenv name σ σ' rv)) :
+    (∃ pc' σ', StepInstr callResult eval fenv prog pc σ pc' σ') ∨
+    AssumeBlocks eval prog pc σ := by
+  obtain ⟨ty, hty_eq, hsupp⟩ := hty
+  -- Dispatch on the instruction type
+  rcases hsupp with h | h | h | h | h | h | h | h | h | h | h <;> subst h
+  · left; exact progress_skip hty_eq
+  · left; exact progress_location hty_eq
+  · left; obtain ⟨hl, hr, hev⟩ := hassign hty_eq
+    exact progress_assign hty_eq hl hr hev
+  · left; exact progress_decl hty_eq (hdecl hty_eq)
+  · left; exact progress_dead hty_eq (hdead hty_eq)
+  · left
+    exact progress_goto hty_eq hguard_bool (hgoto hty_eq) hgoto_resolve
+  · exact progress_assume hty_eq hguard_bool
+  · left; exact progress_assert hty_eq hguard_bool
+  · left; obtain ⟨hcallee, hcall⟩ := hfcall hty_eq
+    exact progress_function_call hty_eq hcallee hcall
+  · exact absurd (.inl hty_eq) hnot_term
+  · exact absurd (.inr hty_eq) hnot_term
+
 end CProverGOTO.Semantics
