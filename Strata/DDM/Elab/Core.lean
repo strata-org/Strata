@@ -1091,23 +1091,18 @@ mutual
 
 partial def elabOperation (tctx : TypingContext) (stx : Syntax) : ElabM Tree := do
   let some loc := mkSourceRange? stx
-    | logInternalError default s!"elabOperation missing source location {repr stx}"
-      return default
+    | panic! s!"elabOperation missing source location {repr stx}"
   if stx.getKind = `choice then
     logError loc s!"Parsing ambiguity {stx}"
     return default
   let some i := qualIdentKind stx
-    | logInternalError loc s!"Unknown command {stx.getKind}"
-      return default
+    | return panic! s!"Unknown command {stx.getKind}"
   let some d := (←read).dialects[i.dialect]?
-    | logInternalError loc s!"Unknown dialect {i.dialect} in {stx}"
-      return default
+    | return panic! s!"Unknown dialect {i.dialect} in {stx}"
   let some decl := d.ops[i.name]?
-    | logInternalError loc (f!"unknown operation {eformat i}").pretty
-      return default
+    | return panic! (f!"unknown operation {eformat i}").pretty
   let some se := (←read).syntaxElabs[i]?
-    | logInternalError loc s!"Unknown elaborator {i.fullName}"
-      return default
+    | return panic! s!"Unknown elaborator {i.fullName}"
   let initSize := tctx.bindings.size
   let argDecls := decl.argDecls.toArray.toVector
   let (stxArgs, success) ← runChecked <| getSyntaxArgs stx i se.syntaxCount
@@ -1341,18 +1336,17 @@ updated `TypingContext` with the new type registered.
 partial def extractDatatypeInfo (gctx0 : GlobalContext) (child : Syntax) : ElabM GlobalContext := do
   let dialects := (← read).dialects
   let syntaxElabs := (← read).syntaxElabs
-  let some childLoc := mkSourceRange? child
-    | logInternalError default "extractDatatypeInfo: child missing source location"
-      return gctx0
   let some childIdent := qualIdentKind child
-    | logInternalError childLoc s!"extractDatatypeInfo: unknown command {child.getKind}"
-      return gctx0
+    | return panic! s!"Unknown command {child.getKind}"
+
+  let some childLoc := mkSourceRange? child
+    | panic! "extractDatatypeInfo: child missing source location"
   let some childDecl := dialects.lookupOpDecl childIdent
     | logInternalError childLoc s!"extractDatatypeInfo: unknown op declaration {childIdent}"
-      return gctx0
+      return default
   let some childSe := syntaxElabs[childIdent]?
     | logInternalError childLoc s!"extractDatatypeInfo: no syntax elaborator for {childIdent}"
-      return gctx0
+      return default
   let childStxArgs := child.getArgs
   let childArgDecls := childDecl.argDecls.toArray
   let mut gctxLoop := gctx0
