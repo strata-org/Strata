@@ -17,6 +17,7 @@ op literalBool (b: Bool): StmtExpr => b;
 op int(n : Num) : StmtExpr => n;
 op real(d : Decimal) : StmtExpr => d;
 op string (s: Str): StmtExpr => s;
+op hole: StmtExpr => "<?>";
 
 // Variable declarations
 category OptionalType;

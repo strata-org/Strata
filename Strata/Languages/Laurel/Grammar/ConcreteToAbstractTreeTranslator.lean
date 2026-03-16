@@ -209,6 +209,7 @@ partial def translateStmtExpr (arg : Arg) : TransM StmtExprMd := do
     | q`Laurel.string, #[arg0] =>
       let s ← translateString arg0
       return mkStmtExprMd (.LiteralString s) md
+    | q`Laurel.hole, #[] => return mkStmtExprMd .Hole md
     | q`Laurel.varDecl, #[arg0, typeArg, assignArg] =>
       let name ← translateIdent arg0
       let varType ← match typeArg with
