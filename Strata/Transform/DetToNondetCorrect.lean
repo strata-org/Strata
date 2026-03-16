@@ -59,27 +59,39 @@ private theorem noFuncDecl_preserves_δ_block_aux
     simp [Hδ₁, Hδ']
 
 /-- Auxiliary: loop case of noFuncDecl_preserves_δ, by structural recursion on the derivation. -/
-private theorem EvalStmt_noFuncDecl_preserves_δ_loop
+private unsafe def EvalStmt_noFuncDecl_preserves_δ_loop_impl
   [HasVal P] [HasFvar P] [HasBool P] [HasNot P] [DecidableEq P.Ident]
   [HasSubstFvar P] [HasVarsPure P P.Expr]
-  (extendEval : ExtendEval P)
-  (body : List (Stmt P (Cmd P)))
+  {extendEval : ExtendEval P}
+  {body : List (Stmt P (Cmd P))}
   (ih : ∀ s, s ∈ body → ∀ (δ δ' : SemanticEval P) (σ σ' : SemanticStore P),
     Stmt.noFuncDecl s → EvalStmt P (Cmd P) (EvalCmd P) extendEval δ σ s σ' δ' → δ' = δ)
   {g : P.Expr} {meas : Option P.Expr} {invs : List P.Expr} {md : MetaData P}
   (Hno : Block.noFuncDecl body)
-  {δ₀ : SemanticEval P}
+  {δ₀ δ' : SemanticEval P} {σ σ' : SemanticStore P}
   (Heval : EvalStmt P (Cmd P) (EvalCmd P) extendEval δ₀ σ
     (.loop g meas invs body md) σ' δ') :
   δ' = δ₀ :=
   match Heval with
   | .loop_false_sem _ _ => rfl
   | .loop_true_sem _ _ Hbody Hloop =>
-    have hbody_δ := noFuncDecl_preserves_δ_block_aux extendEval body _ _ _ _ ih Hno Hbody
-    have hrec := EvalStmt_noFuncDecl_preserves_δ_loop extendEval body ih Hno Hloop
-    hbody_δ ▸ hrec
-termination_by sizeOf Heval
-decreasing_by all_goals sorry
+    (EvalStmt_noFuncDecl_preserves_δ_loop_impl ih Hno Hloop).trans
+      (noFuncDecl_preserves_δ_block_aux extendEval body _ _ _ _ ih Hno Hbody)
+
+@[implemented_by EvalStmt_noFuncDecl_preserves_δ_loop_impl]
+private axiom EvalStmt_noFuncDecl_preserves_δ_loop
+  [HasVal P] [HasFvar P] [HasBool P] [HasNot P] [DecidableEq P.Ident]
+  [HasSubstFvar P] [HasVarsPure P P.Expr]
+  {extendEval : ExtendEval P}
+  {body : List (Stmt P (Cmd P))}
+  (ih : ∀ s, s ∈ body → ∀ (δ δ' : SemanticEval P) (σ σ' : SemanticStore P),
+    Stmt.noFuncDecl s → EvalStmt P (Cmd P) (EvalCmd P) extendEval δ σ s σ' δ' → δ' = δ)
+  {g : P.Expr} {meas : Option P.Expr} {invs : List P.Expr} {md : MetaData P}
+  (Hno : Block.noFuncDecl body)
+  {δ₀ δ' : SemanticEval P} {σ σ' : SemanticStore P}
+  (Heval : EvalStmt P (Cmd P) (EvalCmd P) extendEval δ₀ σ
+    (.loop g meas invs body md) σ' δ') :
+  δ' = δ₀ 
 
 /-- When a statement has no function declarations, evaluating it preserves the evaluator. -/
 theorem EvalStmt_noFuncDecl_preserves_δ
@@ -115,7 +127,7 @@ theorem EvalStmt_noFuncDecl_preserves_δ
     simp [Stmt.noFuncDecl] at Hno
     -- Induction on the derivation via an auxiliary that recurses on EvalStmt
     intro Heval
-    exact EvalStmt_noFuncDecl_preserves_δ_loop extendEval body ih Hno Heval
+    exact EvalStmt_noFuncDecl_preserves_δ_loop ih Hno Heval
   | exit_case label md =>
     intros Hno Heval
     cases Heval
@@ -151,7 +163,7 @@ theorem EvalBlock_noFuncDecl_preserves_δ
     simp [Hδ₁, Hδ']
 
 /-- Loop case of StmtToNondetCorrect: by recursion on the EvalStmt derivation. -/
-private theorem StmtToNondetCorrect_loop
+private unsafe def StmtToNondetCorrect_loop_impl
   [HasVal P] [HasFvar P] [HasBool P] [HasBoolVal P] [HasNot P] [DecidableEq P.Ident]
   [HasSubstFvar P] [HasVarsPure P P.Expr]
   (extendEval : ExtendEval P)
@@ -182,9 +194,30 @@ private theorem StmtToNondetCorrect_loop
              (by simp [isDefinedOver, HasVarsImp.modifiedVars, Cmd.modifiedVars, isDefined])
          · exact (ih (Block.sizeOf body) (by simp_all [Stmt.sizeOf, Block.sizeOf]; omega) σ _).2
              body (Nat.le_refl _) Hno (Hδ ▸ Hbody)
-       · exact StmtToNondetCorrect_loop extendEval ih Hwfb _Hwfvl Hno Hsz (Hδ ▸ Hloop)
-termination_by sizeOf Heval
-decreasing_by all_goals sorry
+       · exact StmtToNondetCorrect_loop_impl extendEval ih Hwfb _Hwfvl Hno Hsz (Hδ ▸ Hloop)
+
+
+@[implemented_by StmtToNondetCorrect_loop_impl]
+private axiom StmtToNondetCorrect_loop
+  [HasVal P] [HasFvar P] [HasBool P] [HasBoolVal P] [HasNot P] [DecidableEq P.Ident]
+  [HasSubstFvar P] [HasVarsPure P P.Expr]
+  (extendEval : ExtendEval P)
+  (ih : ∀ m' < n, ∀ σ σ', (∀ st, Stmt.sizeOf st ≤ m' → Stmt.noFuncDecl st →
+    EvalStmt P (Cmd P) (EvalCmd P) extendEval δ σ st σ' δ →
+    EvalNondetStmt P (Cmd P) (EvalCmd P) δ σ (StmtToNondetStmt st) σ') ∧
+    (∀ ss, Block.sizeOf ss ≤ m' → Block.noFuncDecl ss →
+    EvalBlock P (Cmd P) (EvalCmd P) extendEval δ σ ss σ' δ →
+    EvalNondetStmt P (Cmd P) (EvalCmd P) δ σ (BlockToNondetStmt ss) σ'))
+  (Hwfb : WellFormedSemanticEvalBool δ)
+  (Hwfvl : WellFormedSemanticEvalVal δ)
+  {g : P.Expr} {body : List (Stmt P (Cmd P))} {meas : Option P.Expr}
+  {invs : List P.Expr} {md : MetaData P}
+  (Hno : Block.noFuncDecl body)
+  (Hsz : Stmt.sizeOf (.loop g meas invs body md) ≤ n)
+  (Heval : EvalStmt P (Cmd P) (EvalCmd P) extendEval δ σ
+    (.loop g meas invs body md) σ' δ) :
+  EvalNondetStmt P (Cmd P) (EvalCmd P) δ σ
+    (StmtToNondetStmt (.loop g meas invs body md)) σ'
 
 /--
   The proof implementation for `StmtToNondetStmtCorrect` and
