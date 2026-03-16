@@ -197,7 +197,6 @@ theorem assign_prepends_eval
     (v_old val : LaurelValue)
     (hx_def : σ x.text = some v_old)
     (hfresh : σ snap.text = none)
-    (hne : snap.text ≠ x.text)
     (he_eval : ∀ σ₀, (∀ y, y ≠ snap.text → σ₀ y = σ y) →
       EvalLaurelStmt δ π h σ₀ e h σ₀ (.normal val)) :
     EvalLaurelBlock δ π h σ
@@ -207,7 +206,7 @@ theorem assign_prepends_eval
   -- The snapshot store: snap gets v_old (= σ x), everything else unchanged
   let σ_snap : LaurelStore := fun y => if y == snap.text then some v_old else σ y
   have h_snap_x : σ_snap x.text = some v_old := by
-    simp [σ_snap, hne, hx_def]
+    simp [σ_snap, hx_def]
   have he_snap : EvalLaurelStmt δ π h σ_snap e h σ_snap (.normal val) :=
     he_eval σ_snap (fun y hne' => by simp [σ_snap, beq_iff_eq, hne'])
   have h_init : InitStore σ snap.text v_old σ_snap :=
@@ -295,7 +294,7 @@ theorem allPrepends_eval
     obtain ⟨v_old, hx_def⟩ := Option.isSome_iff_exists.mp htarget_def
     -- Evaluate the assignment prepends
     have hassign := assign_prepends_eval δ π h σ_rest x snap e ty md tmd
-      v_old val hx_def hsnap_fresh hne he_eval
+      v_old val hx_def hsnap_fresh he_eval
     -- Compose
     exact ⟨_, EvalLaurelBlock_append hrest_eval (by simp [ArgSpec.prepends]) hassign⟩
 
