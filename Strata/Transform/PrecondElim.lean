@@ -236,6 +236,9 @@ def transformStmt (s : Statement)
     let measureAsserts := match measure with
       | none => []
       | some m => collectPrecondAsserts F m "loop_measure" md
+    let measureAssertsEnd := match measure with
+      | none => []
+      | some m => collectPrecondAsserts F m "loop_measure_end" md
     let invAsserts := invariant.flatMap (fun inv => collectPrecondAsserts F inv "loop_invariant" md)
     let guardAsserts := collectPrecondAsserts F guard "loop_guard" md
     let guardAssertsEnd := collectPrecondAsserts F guard "loop_guard_end" md
@@ -244,7 +247,7 @@ def transformStmt (s : Statement)
     setFactory savedF
     return (changed || !invAsserts.isEmpty || !guardAsserts.isEmpty || !measureAsserts.isEmpty,
       guardAsserts ++ invAsserts ++ measureAsserts ++
-      [.loop guard measure invariant (body' ++ guardAssertsEnd) md])
+      [.loop guard measure invariant (body' ++ measureAssertsEnd ++ guardAssertsEnd) md])
   | .exit lbl md =>
     return (false, [.exit lbl md])
   | .funcDecl decl md => do

@@ -516,6 +516,10 @@ Obligation: measure_lb_0
 Property: assert
 Result: ✅ pass
 
+Obligation: loop_measure_end_calls_Int.SafeDiv_0
+Property: division by zero check
+Result: ✅ pass
+
 Obligation: arbitrary_iter_maintain_invariant_0_0
 Property: assert
 Result: ✅ pass
@@ -573,6 +577,10 @@ Obligation: measure_lb_0
 Property: assert
 Result: ❌ fail
 
+Obligation: loop_measure_end_calls_Int.SafeDiv_0
+Property: division by zero check
+Result: ❌ fail
+
 Obligation: arbitrary_iter_maintain_invariant_0_0
 Property: assert
 Result: ✅ pass
@@ -591,3 +599,68 @@ Result: ✅ pass
 -/
 #guard_msgs in
 #eval verify precondElimInMeasureBadPgm (options := .quiet)
+
+---------------------------------------------------------------------
+
+-- This example shows why `loop_measure_end` is necessary even when
+-- `loop_measure` passes.  The precondition `d > 0` guarantees `k > 0`
+-- at loop entry, so `loop_measure_calls_Int.SafeDiv_0` passes.  But
+-- the body decrements `k`, which can reach 0 on the second iteration,
+-- causing `loop_measure_end_calls_Int.SafeDiv_0` (and `measure_lb_0`,
+-- `measure_decrease_0`) to fail.
+def precondElimMeasureBodyMutatesPgm :=
+#strata
+program Core;
+
+procedure countdownMutateD(n : int, d : int) returns (i : int)
+spec {
+  requires (n >= 0);
+  requires (d > 0);
+  ensures (i >= 0);
+}
+{
+  var k : int;
+  i := n;
+  k := d;
+  while (i >= 1)
+    decreases i / k
+    invariant i >= 0
+  {
+    k := (k - 1);   // mutates the divisor; may reach 0 after first iteration
+    i := (i - 1);
+  }
+};
+#end
+
+/--
+info:
+Obligation: loop_measure_calls_Int.SafeDiv_0
+Property: division by zero check
+Result: ✅ pass
+
+Obligation: entry_invariant_0_0
+Property: assert
+Result: ✅ pass
+
+Obligation: measure_lb_0
+Property: assert
+Result: ❌ fail
+
+Obligation: loop_measure_end_calls_Int.SafeDiv_0
+Property: division by zero check
+Result: ❌ fail
+
+Obligation: arbitrary_iter_maintain_invariant_0_0
+Property: assert
+Result: ✅ pass
+
+Obligation: measure_decrease_0
+Property: assert
+Result: ❌ fail
+
+Obligation: countdownMutateD_ensures_2
+Property: assert
+Result: ✅ pass
+-/
+#guard_msgs in
+#eval verify precondElimMeasureBodyMutatesPgm (options := .quiet)
