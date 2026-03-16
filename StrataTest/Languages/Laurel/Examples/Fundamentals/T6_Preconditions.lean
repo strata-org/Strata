@@ -39,7 +39,6 @@ function aFunctionWithPrecondition(x: int): int
 procedure aFunctionWithPreconditionCaller() {
   var x: int := aFunctionWithPrecondition(0)
 //              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
-// Error ranges are too wide because Core does not use expression locations
 };
 
 procedure multipleRequires(x: int, y: int) returns (r: int)
