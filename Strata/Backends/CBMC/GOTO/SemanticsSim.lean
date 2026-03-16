@@ -526,4 +526,83 @@ theorem sim_block
     exact sim_block hmid hrest hname_inj hstmt_sim
 termination_by stmts.length
 
+/-! ## ExecRange ↔ ExecProg Composition -/
+
+/-- Composing `ExecRange` with `ExecProg`: if we execute a range of
+    instructions from `pc` to `pc_end`, and then `ExecProg` continues
+    from `pc_end`, the whole thing is an `ExecProg` from `pc`.
+
+    This is the key lemma connecting block-level execution (ExecRange)
+    to program-level execution (ExecProg). -/
+theorem ExecRange_then_ExecProg
+    {callResult : CallResultRel} {eval : ExprEval} {fenv : FuncEnv}
+    {prog : Program} {pc pc_end : Nat} {σ σ_mid σ' : Store}
+    {retVal : Option Value}
+    (hrange : ExecRange callResult eval fenv prog pc_end pc σ σ_mid)
+    (hprog : ExecProg callResult eval fenv prog pc_end σ_mid σ' retVal) :
+    ExecProg callResult eval fenv prog pc σ σ' retVal :=
+  match hrange with
+  | .done => hprog
+  | .step _hlt hstep _hle hrest =>
+    .step hstep (ExecRange_then_ExecProg hrest hprog)
+
+/-- Composing two `ExecRange`s: if we execute from `pc` to `pc_mid`,
+    then from `pc_mid` to `pc_end`, the whole thing is an `ExecRange`
+    from `pc` to `pc_end` (provided `pc_mid ≤ pc_end`). -/
+theorem ExecRange_trans
+    {callResult : CallResultRel} {eval : ExprEval} {fenv : FuncEnv}
+    {prog : Program} {pc pc_mid pc_end : Nat} {σ σ_mid σ' : Store}
+    (h1 : ExecRange callResult eval fenv prog pc_mid pc σ σ_mid)
+    (h2 : ExecRange callResult eval fenv prog pc_end pc_mid σ_mid σ')
+    (hle : pc_mid ≤ pc_end) :
+    ExecRange callResult eval fenv prog pc_end pc σ σ' :=
+  match h1 with
+  | .done => h2
+  | .step hlt hstep hle' hrest =>
+    .step (Nat.lt_of_lt_of_le hlt hle) hstep
+      (Nat.le_trans hle' hle) (ExecRange_trans hrest h2 hle)
+
+/-! ## End-to-End Simulation -/
+
+/-- End-to-end simulation: if an Imperative block evaluates, and the
+    translated GOTO instructions execute as an `ExecRange`, and `ExecProg`
+    continues from `pc_end`, then:
+    1. There exists a GOTO store corresponding to the Imperative post-state
+    2. The full program executes from `pc_start` to completion
+
+    This composes `sim_block` with `ExecRange_then_ExecProg`. -/
+theorem sim_end_to_end
+    {P : PureExpr} {Cmd : Type} {EvalC : EvalCmdParam P Cmd}
+    {extendEval : ExtendEval P}
+    [DecidableEq P.Ident] [HasBool P] [vc : ValueCorr P]
+    [HasVarsImp P (List (Stmt P Cmd))] [HasVarsImp P Cmd]
+    [HasFvar P] [HasVal P] [HasNot P]
+    {callResult : CallResultRel} {eval : ExprEval} {fenv : FuncEnv}
+    {prog : Program} {pc_start pc_end : Nat}
+    {nameMap : P.Ident → String}
+    {δ δ' : SemanticEval P}
+    {σ_imp σ_imp' : SemanticStore P} {σ_goto σ_goto_end σ_goto' : Store}
+    {retVal : Option Value}
+    {stmts : List (Stmt P Cmd)}
+    -- Imperative block evaluates
+    (heval : EvalBlock P Cmd EvalC extendEval δ σ_imp stmts σ_imp' δ')
+    -- Stores correspond before execution
+    (hcorr_s : StoreCorr nameMap σ_imp σ_goto)
+    (hname_inj : Function.Injective nameMap)
+    -- Each statement preserves store correspondence
+    (hstmt_sim : ∀ δ_cur δ_cur' σ_i σ_i' σ_g s,
+      StoreCorr nameMap σ_i σ_g →
+      EvalStmt P Cmd EvalC extendEval δ_cur σ_i s σ_i' δ_cur' →
+      ∃ σ_g', StoreCorr nameMap σ_i' σ_g')
+    -- The translated instructions execute as a range
+    (hrange : ExecRange callResult eval fenv prog pc_end pc_start σ_goto σ_goto_end)
+    -- Program continues from pc_end
+    (hprog : ExecProg callResult eval fenv prog pc_end σ_goto_end σ_goto' retVal) :
+    -- Conclusion: there exists a corresponding Imperative post-store,
+    -- AND the full program executes from pc_start
+    (∃ σ_g', StoreCorr nameMap σ_imp' σ_g') ∧
+    ExecProg callResult eval fenv prog pc_start σ_goto σ_goto' retVal :=
+  ⟨sim_block hcorr_s heval hname_inj hstmt_sim,
+   ExecRange_then_ExecProg hrange hprog⟩
+
 end CProverGOTO.Semantics

@@ -103,8 +103,9 @@ The semantics is informed by CBMC's concrete interpreter
       → See `SemanticsEval.lean`: `concreteEval₂`
 - [x] Statement-level simulation for block and loop
       → See `SemanticsSim.lean`: `sim_block`, `ExecLoop`, `sim_loop`
-- [ ] End-to-end theorem: `EvalBlock` implies `ExecProg` on translated program
-      (requires connecting `ExecRange` composition to `ExecProg`)
+- [x] End-to-end theorem: `EvalBlock` implies `ExecProg` on translated program
+      → See `SemanticsSim.lean`: `sim_end_to_end`, `ExecRange_then_ExecProg`,
+        `ExecRange_trans`
 - [x] Loop evaluation rules added to Imperative `EvalStmt`
       → See `StmtSemantics.lean`: `loop_false_sem`, `loop_true_sem`
       (3 sorry's introduced in `DetToNondetCorrect.lean` — the DetToNondet
