@@ -439,7 +439,7 @@ private def verifyIncremental
     let results := smtResults.map coreSMTResultToVCResult
     for r in results do
       let marker := match r.outcome with
-        | .ok o => s!"{o.emoji} {o.label}"
+        | .ok o => s!"{o.emoji ()} {o.label ()}"
         | .error e => s!"🚨 {e}"
       let suffix := match Imperative.getFileRange r.obligation.metadata with
         | some fr =>
@@ -493,12 +493,12 @@ private def verifyBatch
                 let pos := (Lean.FileMap.ofString srcText).toPosition (fr.range).start
                 if vcResult.isFailure then
                   (s!"Assertion failed at line {pos.line}, col {pos.column}: ", "")
-                | _ =>
+                else
                   ("", s!" (at line {pos.line}, col {pos.column})")
               | _ =>
                 if vcResult.isFailure then
                   (s!"Assertion failed at byte {(fr.range).start}: ", "")
-                | _ =>
+                else
                   ("", s!" (at byte {(fr.range).start})")
           | none =>
             if vcResult.isFailure then
