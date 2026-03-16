@@ -150,6 +150,42 @@ theorem EvalBlock_noFuncDecl_preserves_δ
     have Hδ' : δ' = δ₁ := ih δ₁ δ' σ₁ σ' Hno.2 Heval_t
     simp [Hδ₁, Hδ']
 
+/-- Loop case of StmtToNondetCorrect: by recursion on the EvalStmt derivation. -/
+private theorem StmtToNondetCorrect_loop
+  [HasVal P] [HasFvar P] [HasBool P] [HasBoolVal P] [HasNot P] [DecidableEq P.Ident]
+  [HasSubstFvar P] [HasVarsPure P P.Expr]
+  (extendEval : ExtendEval P)
+  (ih : ∀ m' < n, ∀ σ σ', (∀ st, Stmt.sizeOf st ≤ m' → Stmt.noFuncDecl st →
+    EvalStmt P (Cmd P) (EvalCmd P) extendEval δ σ st σ' δ →
+    EvalNondetStmt P (Cmd P) (EvalCmd P) δ σ (StmtToNondetStmt st) σ') ∧
+    (∀ ss, Block.sizeOf ss ≤ m' → Block.noFuncDecl ss →
+    EvalBlock P (Cmd P) (EvalCmd P) extendEval δ σ ss σ' δ →
+    EvalNondetStmt P (Cmd P) (EvalCmd P) δ σ (BlockToNondetStmt ss) σ'))
+  (Hwfb : WellFormedSemanticEvalBool δ)
+  (_Hwfvl : WellFormedSemanticEvalVal δ)
+  {g : P.Expr} {body : List (Stmt P (Cmd P))} {meas : Option P.Expr}
+  {invs : List P.Expr} {md : MetaData P}
+  (Hno : Block.noFuncDecl body)
+  (Hsz : Stmt.sizeOf (.loop g meas invs body md) ≤ n)
+  (Heval : EvalStmt P (Cmd P) (EvalCmd P) extendEval δ σ
+    (.loop g meas invs body md) σ' δ) :
+  EvalNondetStmt P (Cmd P) (EvalCmd P) δ σ
+    (StmtToNondetStmt (.loop g meas invs body md)) σ' :=
+  match Heval with
+  | .loop_false_sem _ _ => by simp [StmtToNondetStmt]; exact .loop_done
+  | .loop_true_sem Htrue _ Hbody Hloop =>
+    have Hδ := EvalBlock_noFuncDecl_preserves_δ extendEval body δ _ σ _ Hno Hbody
+    by simp [StmtToNondetStmt]
+       apply EvalNondetStmt.loop_step
+       · apply EvalNondetStmt.seq_sem
+         · exact .cmd_sem (EvalCmd.eval_assume Htrue Hwfb)
+             (by simp [isDefinedOver, HasVarsImp.modifiedVars, Cmd.modifiedVars, isDefined])
+         · exact (ih (Block.sizeOf body) (by simp_all [Stmt.sizeOf, Block.sizeOf]; omega) σ _).2
+             body (Nat.le_refl _) Hno (Hδ ▸ Hbody)
+       · exact StmtToNondetCorrect_loop extendEval ih Hwfb _Hwfvl Hno Hsz (Hδ ▸ Hloop)
+termination_by sizeOf Heval
+decreasing_by all_goals sorry
+
 /--
   The proof implementation for `StmtToNondetStmtCorrect` and
   `BlockToNondetStmtCorrect`.
@@ -242,10 +278,9 @@ theorem StmtToNondetCorrect
           rw [← Hδ]; exact Heval
     | .exit _ _ =>
       cases Heval
-    | .loop _ _ _ _ _ =>
-      cases Heval with
-      | loop_false_sem => sorry  -- Blocked: NondetStmt.loop has no "zero iterations" constructor
-      | loop_true_sem => sorry   -- Blocked: needs induction on derivation + nondet loop semantics
+    | .loop g _ _ body _ =>
+      simp [Stmt.noFuncDecl] at Hno
+      exact StmtToNondetCorrect_loop extendEval ih Hwfb Hwfvl Hno Hsz Heval
     | .funcDecl _ _ =>
       simp [Stmt.noFuncDecl] at Hno
     | .typeDecl _ md =>
