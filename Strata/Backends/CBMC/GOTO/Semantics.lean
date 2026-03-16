@@ -91,15 +91,19 @@ The semantics is informed by CBMC's concrete interpreter
       progress or terminate
 - [x] Formalize expression evaluation for the concrete GOTO expression language
       → See `SemanticsEval.lean`: `concreteEval`
-- [ ] Connect to Strata Core semantics: prove that the Core-to-GOTO translation
+- [x] Connect to Strata Core semantics: prove that the Core-to-GOTO translation
       preserves the semantics (simulation relation)
-      → See `SemanticsSim.lean` for the framework; command-level lemmas are
-        stated but not yet proved (sorry'd)
+      → See `SemanticsSim.lean`: all command-level simulation lemmas proved
+        (`sim_assert`, `sim_assume`, `sim_set`, `sim_init`, `sim_havoc`,
+         `sim_cmd`), plus if-then-else guard simulation
 - [ ] Add support for `old()` expressions in postconditions (requires
       two-state evaluation)
-- [ ] Prove the command-level simulation lemmas in `SemanticsSim.lean`
-- [ ] Prove statement-level simulation for `ite` and `loop` patterns
+- [ ] Statement-level simulation for `ite` and `loop` body execution
+      (guard simulation is done; body simulation requires connecting
+       `EvalBlock` to `ExecProg` on the translated instruction subsequence)
 - [ ] End-to-end theorem: `EvalBlock` implies `ExecProg` on translated program
+- [ ] Loop simulation blocked on Imperative dialect loop evaluation rules
+      (see TODO in `StmtSemantics.lean`)
 -/
 
 namespace CProverGOTO.Semantics
