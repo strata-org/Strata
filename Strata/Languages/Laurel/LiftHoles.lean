@@ -36,8 +36,6 @@ structure HoleLiftState where
   counter : Nat := 0
   /-- Semantic model for type inference. -/
   model : SemanticModel
-  /-- All procedures in the program (fallback for unresolved identifiers). -/
-  procedures : List Procedure := []
   /-- Output type of the procedure currently being processed (for Return). -/
   currentOutputType : HighTypeMd := ⟨.Top, #[]⟩
 
@@ -63,16 +61,11 @@ private def inferComparisonArgType (args : List StmtExprMd) : HoleLiftM HighType
     | _ => return ← exprType a
   return defaultHoleType
 
-/-- Look up the input parameter types for a callee via the semantic model,
-    falling back to a linear search of the procedure list. -/
+/-- Look up the input parameter types for a callee via the semantic model. -/
 private def calleeParamTypes (callee : Identifier) : HoleLiftM (Option (List HighTypeMd)) := do
   match (← get).model.get callee with
   | .staticProcedure proc => return some (proc.inputs.map (·.type))
-  | _ =>
-    -- Fallback for unresolved identifiers (e.g. in tests with manual ASTs)
-    match (← get).procedures.find? (·.name == callee) with
-    | some proc => return some (proc.inputs.map (·.type))
-    | none => return none
+  | _ => return none
 
 mutual
 /-- Lift holes from a list of arguments, collecting declarations. -/
@@ -275,7 +268,6 @@ as the RHS of a `LocalVariable` initializer (translated as havoc).
 def liftHoles (model : SemanticModel) (program : Program) : Program :=
   let initState : HoleLiftState := {
     model := model
-    procedures := program.staticProcedures
     currentOutputType := defaultHoleType
   }
   let (procs, _) := (program.staticProcedures.mapM liftHoleProcedure).run initState
