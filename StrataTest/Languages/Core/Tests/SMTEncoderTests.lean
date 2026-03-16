@@ -236,11 +236,11 @@ info: "; x\n(declare-const x Real)\n(define-fun t0 () Real x)\n; y\n(declare-con
 -/
 #guard_msgs in
 #eval toSMTTermString
-  (.app ()
-    (.app ()
-      (.op () "Real.Div" (.some (.arrow .real (.arrow .real .real))))
-      (.fvar () "x" (.some .real)))
-    (.fvar () "y" (.some .real)))
+  (.app sr
+    (.app sr
+      (.op sr "Real.Div" (.some (.arrow .real (.arrow .real .real))))
+      (.fvar sr "x" (.some .real)))
+    (.fvar sr "y" (.some .real)))
   (E := {Env.init with exprEnv := {
     Env.init.exprEnv with
       config := { Env.init.exprEnv.config with

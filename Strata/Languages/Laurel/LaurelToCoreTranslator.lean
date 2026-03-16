@@ -136,6 +136,7 @@ def translateExpr (expr : StmtExprMd)
   | .LiteralBool b => return .const sr (.boolConst b)
   | .LiteralInt i => return .const sr (.intConst i)
   | .LiteralString s => return .const sr (.strConst s)
+  | .LiteralDecimal d => return .const sr (.realConst (Strata.Decimal.toRat d))
   | .Identifier name =>
       -- First check if this name is bound by an enclosing quantifier
       match boundVars.findIdx? (· == name) with
@@ -147,7 +148,7 @@ def translateExpr (expr : StmtExprMd)
         | .field _ f =>
             return .op Strata.SourceRange.none ⟨f.name.text, ()⟩ none
         | astNode =>
-            return .fvar Strata.SourceRange.none ⟨name.text, ()⟩ (some (translateType model $ astNode.getType.getD (panic! "LaurelToCore.translateExpr"))) -- nopanic:ok
+            return .fvar Strata.SourceRange.none ⟨name.text, ()⟩ (some (translateType model $ astNode.getType.getD (panic! "LaurelToCore.translateExpr"))) -- nopanic:ok)
   | .PrimitiveOp op [e] =>
     match op with
     | .Not =>
@@ -155,13 +156,18 @@ def translateExpr (expr : StmtExprMd)
       return .app Strata.SourceRange.none boolNotOp re
     | .Neg =>
       let re ← translateExpr e boundVars isPureContext
-      return .app Strata.SourceRange.none intNegOp re
+      let isReal := match (computeExprType model e).val with
+        | .TReal => true | _ => false
+      return .app Strata.SourceRange.none (if isReal then realNegOp else intNegOp) re
     | _ => panic! s!"translateExpr: Invalid unary op: {repr op}"
   | .PrimitiveOp op [e1, e2] =>
     let re1 ← translateExpr e1 boundVars isPureContext
     let re2 ← translateExpr e2 boundVars isPureContext
     let binOp (bop : Core.Expression.Expr) : Core.Expression.Expr :=
       LExpr.mkApp Strata.SourceRange.none bop [re1, re2]
+    let isReal := match (computeExprType model e1).val, (computeExprType model e2).val with
+      | .TReal, _ | _, .TReal => true
+      | _, _ => false
     match op with
     | .Eq => return .eq Strata.SourceRange.none re1 re2
     | .Neq => return .app Strata.SourceRange.none boolNotOp (.eq Strata.SourceRange.none re1 re2)
@@ -207,11 +213,21 @@ def translateExpr (expr : StmtExprMd)
   | .Forall ⟨ name, ty ⟩ trigger body =>
       let coreTy := translateType model ty
       let coreBody ← translateExpr body (name :: boundVars) isPureContext
-      return LExpr.all Strata.SourceRange.none name.text (some coreTy) coreBody
-  | .Exists ⟨ name, ty ⟩ body =>
+      match _: trigger with
+      | some trig =>
+        let coreTrig ← translateExpr trig (name :: boundVars) isPureContext
+        return LExpr.allTr Strata.SourceRange.none name.text (some coreTy) coreTrig coreBody
+      | none =>
+        return LExpr.all Strata.SourceRange.none name.text (some coreTy) coreBody
+  | .Exists ⟨ name, ty ⟩ trigger body =>
       let coreTy := translateType model ty
       let coreBody ← translateExpr body (name :: boundVars) isPureContext
-      return LExpr.exist Strata.SourceRange.none name.text (some coreTy) coreBody
+      match _: trigger with
+      | some trig =>
+        let coreTrig ← translateExpr trig (name :: boundVars) isPureContext
+        return LExpr.existTr Strata.SourceRange.none name.text (some coreTy) coreTrig coreBody
+      | none =>
+        return LExpr.exist Strata.SourceRange.none name.text (some coreTy) coreBody
   | .Hole => return dummy
   | .ReferenceEquals e1 e2 =>
       let re1 ← translateExpr e1 boundVars isPureContext
@@ -235,7 +251,7 @@ def translateExpr (expr : StmtExprMd)
       disallowed md "local variables in functions are not YET supported"
       -- This doesn't work because of a limitation in Core.
       -- let coreMonoType := translateType ty
-      -- return .app () (.abs () (some coreMonoType) bodyExpr) valueExpr
+      -- return .app Strata.SourceRange.none (.abs () (some coreMonoType) bodyExpr) valueExpr
   | .Block (⟨ .LocalVariable name ty none, md⟩ :: rest) label =>
     disallowed md "local variables in functions must have initializers"
   | .Block (⟨ .IfThenElse cond thenBranch (some elseBranch), md⟩ :: rest) label =>
@@ -640,3 +656,119 @@ def translate (options: LaurelTranslateOptions) (program : Program): Except (Arr
   let (program, model) := (result.program, result.model)
   -- dbg_trace "=== Program after heapParameterization + modifiesClausesTransform ==="
   -- dbg_trace (toString (Std.Format.pretty (Std.ToFormat.format program)))
+  -- dbg_trace "================================="
+  let program := liftExpressionAssignments model program
+  let program := eliminateReturnsInExpressionTransform program
+  let result := resolve program (some model)
+  let (program, model) := (result.program, result.model)
+
+  let (program, constrainedTypeDiags) := constrainedTypeElim model program
+  let result := resolve program (some model)
+  let (program, model) := (result.program, result.model)
+
+  let resolutionDiags := result.errors
+  if options.emitResolutionErrors && !resolutionDiags.isEmpty then
+    .error resolutionDiags
+  else
+    let coreProgram ← translateLaurelToCore model program
+    pure (coreProgram, diamondErrors ++ modifiesDiags ++ constrainedTypeDiags.toList)
+  where
+
+  translateLaurelToCore (model: SemanticModel) (program : Program): Except (Array DiagnosticModel) Core.Program := do
+
+    -- Procedures marked isFunctional are translated to Core functions; all others become Core procedures.
+    -- External procedures are completely ignored (not translated to Core).
+    let nonExternal := program.staticProcedures.filter (fun p => !p.body.isExternal)
+    let (markedPure, procProcs) := nonExternal.partition (·.isFunctional)
+    let initState : TranslateState := {model := model}
+    -- Try to translate each isFunctional procedure to a Core function, collecting errors for failures
+    let (pureErrors, pureFuncDecls) := markedPure.foldl (fun (errs, decls) p =>
+      match tryTranslatePureToFunction p initState with
+      | .error es => (errs ++ es.toList, decls)
+      | .ok d     => (errs, decls.push d)) ([], #[])
+    -- Translate procedures using the monad, collecting diagnostics from the final state
+    let (procedures, procState) := runTranslateM initState do
+      procProcs.mapM translateProcedure
+    let procDiags := procState.diagnostics
+
+    -- Translate Laurel constants to Core function declarations (0-ary functions)
+    let (constantDecls, constantsState) := runTranslateM initState $ program.constants.mapM fun c => do
+      let coreTy := translateType model c.type
+      let body ← c.initializer.mapM (translateExpr ·)
+      return Core.Decl.func {
+        name := ⟨c.name.text, ()⟩
+        typeArgs := []
+        inputs := []
+        output := coreTy
+        body := body
+      }
+
+    -- Collect ALL errors from both functions, procedures, and resolution before deciding whether to fail
+    let allErrors :=
+      -- Not including resolution diagnostics yet because the Python through Laurel pipeline
+      -- does not resolve yet.
+      -- resolutionDiags.toList ++
+      pureErrors ++ procDiags ++ constantsState.diagnostics
+    if !allErrors.isEmpty then
+      .error allErrors.toArray
+    let procDecls := procedures.map (fun p => Core.Decl.proc p .empty)
+
+    -- Translate Laurel datatype definitions to Core declarations.
+    -- Datatypes are grouped by mutual references (SCC) so mutually recursive
+    -- datatypes share a single `.data` declaration.
+    let laurelDatatypes := program.types.filterMap fun td => match td with
+      | .Datatype dt => some dt
+      | _ => none
+    let ldatatypes := laurelDatatypes.map (translateDatatypeDefinition model)
+    let groups := groupDatatypes laurelDatatypes ldatatypes
+    let groupedDatatypeDecls := groups.map fun group => Core.Decl.type (.data group)
+    let program := {
+      decls := groupedDatatypeDecls ++ constantDecls ++ pureFuncDecls.toList ++ procDecls
+    }
+
+    -- dbg_trace "=== Generated Strata Core Program ==="
+    -- dbg_trace (toString (Std.Format.pretty (Strata.Core.formatProgram program) 100))
+    -- dbg_trace "================================="
+    pure program
+
+
+/--
+Verify a Laurel program using an SMT solver
+-/
+def verifyToVcResults (program : Program)
+    (options : VerifyOptions := .default)
+    : IO (Except (Array DiagnosticModel) VCResults) := do
+  let (strataCoreProgram, translateDiags) ← match translate { emitResolutionErrors := true } program with
+    | .error translateErrorDiags => return .error translateErrorDiags
+    | .ok result => pure result
+
+  -- Enable removeIrrelevantAxioms to avoid polluting simple assertions with heap axioms
+  let options := { options with removeIrrelevantAxioms := true }
+  let runner tempDir :=
+    EIO.toIO (fun f => IO.Error.userError (toString f))
+        (Core.verify strataCoreProgram tempDir .none options)
+  let ioResult ← match options.vcDirectory with
+    | .none => IO.FS.withTempDir runner
+    | .some p => IO.FS.createDirAll ⟨p.toString⟩; runner ⟨p.toString⟩
+  if translateDiags.isEmpty then
+    return .ok ioResult
+  else
+    return .error (translateDiags ++ ioResult.filterMap toDiagnosticModel)
+
+
+def verifyToDiagnostics (files: Map Strata.Uri Lean.FileMap) (program : Program)
+    (options : VerifyOptions := .default): IO (Array Diagnostic) := do
+  let results <- verifyToVcResults program options
+  match results with
+  | .error errors => return errors.map (fun dm => dm.toDiagnostic files)
+  | .ok results => return results.filterMap (fun dm => dm.toDiagnostic files)
+
+
+def verifyToDiagnosticModels (program : Program) (options : VerifyOptions := .default) : IO (Array DiagnosticModel) := do
+  let results <- verifyToVcResults program options
+  match results with
+  | .error errors => return errors
+  | .ok results => return results.filterMap toDiagnosticModel
+
+end -- public section
+end Laurel
