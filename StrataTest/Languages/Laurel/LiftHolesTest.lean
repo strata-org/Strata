@@ -447,4 +447,133 @@ deterministic
       (some (bare (.PrimitiveOp .Mul [bare (.LiteralDecimal ⟨314, -2⟩), bare .Hole]))))
   ] none))
 
+/-! ## Call argument and return type inference -/
+
+/-- Helper: build a program with extra procedures (for callee lookup), lift holes,
+    and print only the named procedure. -/
+private def liftAndPrintWith (name : String) (body : StmtExprMd)
+    (inputs : List Parameter := []) (outputs : List Parameter := [])
+    (extraProcs : List Procedure := []) : IO Unit := do
+  let proc : Procedure := {
+    name := name
+    inputs := inputs
+    outputs := outputs
+    preconditions := []
+    determinism := .deterministic none
+    decreases := none
+    isFunctional := false
+    body := .Transparent body
+    md := emptyMd
+  }
+  let prog : Program := {
+    staticProcedures := extraProcs ++ [proc]
+    staticFields := []
+    types := []
+  }
+  let lifted := liftHoles prog
+  -- The test procedure is always last; print only it
+  match lifted.staticProcedures.getLast? with
+  | some p => IO.println (toString (Std.Format.pretty (Std.ToFormat.format p)))
+  | none => IO.println "ERROR: no procedures"
+
+private def mkExternalProc (name : String) (inputs : List Parameter)
+    (outputs : List Parameter := []) : Procedure := {
+  name := name
+  inputs := inputs
+  outputs := outputs
+  preconditions := []
+  determinism := .deterministic none
+  decreases := none
+  isFunctional := false
+  body := .External
+  md := emptyMd
+}
+
+-- Hole in call arg with known callee → infers param type (int).
+/--
+info: procedure test() returns ⏎
+()
+deterministic
+{ var $hole_0: int; f(1, $hole_0) }
+-/
+#guard_msgs in
+#eval! liftAndPrintWith "test"
+  (bare (.Block [
+    bare (.StaticCall "f" [bare (.LiteralInt 1), bare .Hole])
+  ] none))
+  (extraProcs := [mkExternalProc "f"
+    [mkParam "a" .TInt, mkParam "b" .TInt]])
+
+-- Hole in first call arg, second arg is string → infers param types positionally.
+/--
+info: procedure test() returns ⏎
+()
+deterministic
+{ var $hole_0: bool; g($hole_0, "hi") }
+-/
+#guard_msgs in
+#eval! liftAndPrintWith "test"
+  (bare (.Block [
+    bare (.StaticCall "g" [bare .Hole, bare (.LiteralString "hi")])
+  ] none))
+  (extraProcs := [mkExternalProc "g"
+    [mkParam "flag" .TBool, mkParam "msg" .TString]])
+
+-- Hole in call arg with unknown callee → falls back to Top.
+/--
+info: procedure test() returns ⏎
+()
+deterministic
+{ var $hole_0: ⊤; unknown(1, $hole_0) }
+-/
+#guard_msgs in
+#eval! liftAndPrintWith "test"
+  (bare (.Block [
+    bare (.StaticCall "unknown" [bare (.LiteralInt 1), bare .Hole])
+  ] none))
+
+-- Hole in call arg inside typed LocalVariable, callee known → param type (not var type).
+/--
+info: procedure test() returns ⏎
+()
+deterministic
+{ var $hole_0: bool; var x: int := compute($hole_0) }
+-/
+#guard_msgs in
+#eval! liftAndPrintWith "test"
+  (bare (.Block [
+    bare (.LocalVariable "x" (bareType .TInt)
+      (some (bare (.StaticCall "compute" [bare .Hole]))))
+  ] none))
+  (extraProcs := [mkExternalProc "compute"
+    [mkParam "flag" .TBool]
+    [mkParam "result" .TInt]])
+
+-- Hole as return value with known output type → infers int.
+/--
+info: procedure test() returns ⏎
+(result: int)
+deterministic
+{ var $hole_0: int; return $hole_0 }
+-/
+#guard_msgs in
+#eval! liftAndPrintWith "test"
+  (bare (.Block [
+    bare (.Return (some (bare .Hole)))
+  ] none))
+  (outputs := [mkParam "result" .TInt])
+
+-- Hole in return with no output params → Top.
+/--
+info: procedure test() returns ⏎
+()
+deterministic
+{ var $hole_0: ⊤; return $hole_0 }
+-/
+#guard_msgs in
+#eval! liftAndPrintWith "test"
+  (bare (.Block [
+    bare (.Return (some (bare .Hole)))
+  ] none))
+
 end Laurel

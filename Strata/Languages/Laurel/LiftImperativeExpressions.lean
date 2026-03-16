@@ -446,6 +446,10 @@ has no initializer, giving it an arbitrary value — a sound over-approximation.
 /-- Counter state for generating fresh hole variable names. -/
 structure HoleLiftState where
   counter : Nat := 0
+  /-- All procedures in the program, used to look up parameter types. -/
+  procedures : List Procedure := []
+  /-- Output type of the procedure currently being processed (for Return). -/
+  currentOutputType : HighTypeMd := ⟨.Top, #[]⟩
 
 private abbrev HoleLiftM := StateM HoleLiftState
 
@@ -477,6 +481,20 @@ private def inferComparisonArgType (args : List StmtExprMd) : HighTypeMd :=
   args.findSome? (fun a => match a.val with | .Hole => none | _ => inferType a.val)
     |>.getD defaultHoleType
 
+/-- Look up the input parameter types for a callee by name. -/
+private def calleeParamTypes (callee : Identifier) : HoleLiftM (Option (List HighTypeMd)) := do
+  match (← get).procedures.find? (·.name == callee) with
+  | some proc => return some (proc.inputs.map (·.type))
+  | none => return none
+
+/-- Look up the return type for a callee by name (single-output procedures only). -/
+private def calleeReturnType (callee : Identifier) : HoleLiftM (Option HighTypeMd) := do
+  match (← get).procedures.find? (·.name == callee) with
+  | some proc => match proc.outputs with
+    | [single] => return some single.type
+    | _ => return none
+  | none => return none
+
 mutual
 /-- Lift holes from a list of arguments, collecting declarations. -/
 private def liftHoleArgs (args : List StmtExprMd) (expectedType : HighTypeMd) : HoleLiftM (List StmtExprMd × List StmtExprMd) := do
@@ -486,6 +504,19 @@ private def liftHoleArgs (args : List StmtExprMd) (expectedType : HighTypeMd) : 
     let (a', ds) ← liftHoleExpr a expectedType
     newArgs := newArgs ++ [a']
     decls := decls ++ ds
+  return (newArgs, decls)
+
+/-- Lift holes from a list of arguments where each position may have a different expected type. -/
+private def liftHoleArgsTyped (args : List StmtExprMd) (types : List HighTypeMd) : HoleLiftM (List StmtExprMd × List StmtExprMd) := do
+  let mut newArgs : List StmtExprMd := []
+  let mut decls : List StmtExprMd := []
+  let mut i := 0
+  for a in args do
+    let ty := types.getD i defaultHoleType
+    let (a', ds) ← liftHoleExpr a ty
+    newArgs := newArgs ++ [a']
+    decls := decls ++ ds
+    i := i + 1
   return (newArgs, decls)
 
 /-- Replace every `.Hole` in an expression with a fresh variable reference,
@@ -506,7 +537,10 @@ private def liftHoleExpr (expr : StmtExprMd) (expectedType : HighTypeMd) : HoleL
       let (newArgs, decls) ← liftHoleArgs args argType
       return (⟨.PrimitiveOp op newArgs, md⟩, decls)
   | .StaticCall callee args =>
-      let (newArgs, decls) ← liftHoleArgs args defaultHoleType
+      let (newArgs, decls) ← do
+        match (← calleeParamTypes callee) with
+        | some paramTypes => liftHoleArgsTyped args paramTypes
+        | none => liftHoleArgs args defaultHoleType
       return (⟨.StaticCall callee newArgs, md⟩, decls)
   | .InstanceCall target callee args =>
       let (target', d1) ← liftHoleExpr target defaultHoleType
@@ -613,10 +647,14 @@ private def liftHoleStmt (stmt : StmtExprMd) : HoleLiftM (List StmtExprMd × Lis
       let (cond', decls) ← liftHoleExpr cond (bareType .TBool)
       return ([⟨.Assume cond', md⟩], decls)
   | .StaticCall callee args =>
-      let (newArgs, decls) ← liftHoleArgs args defaultHoleType
+      let (newArgs, decls) ← do
+        match (← calleeParamTypes callee) with
+        | some paramTypes => liftHoleArgsTyped args paramTypes
+        | none => liftHoleArgs args defaultHoleType
       return ([⟨.StaticCall callee newArgs, md⟩], decls)
   | .Return (some retExpr) =>
-      let (retExpr', decls) ← liftHoleExpr retExpr defaultHoleType
+      let retType := (← get).currentOutputType
+      let (retExpr', decls) ← liftHoleExpr retExpr retType
       return ([⟨.Return (some retExpr'), md⟩], decls)
   | _ => return ([stmt], [])
 
@@ -631,8 +669,11 @@ private def liftHoleStmtList (stmts : List StmtExprMd) : HoleLiftM (List StmtExp
 end
 
 private def liftHoleProcedure (proc : Procedure) : HoleLiftM Procedure := do
-  -- Reset counter per procedure for deterministic, debuggable output
-  modify fun _ => { counter := 0 }
+  -- Reset counter per procedure; set output type for Return inference
+  let outputType := match proc.outputs with
+    | [single] => single.type
+    | _ => defaultHoleType
+  modify fun s => { s with counter := 0, currentOutputType := outputType }
   match proc.body with
   | .Transparent bodyExpr =>
       let (stmts, decls) ← liftHoleStmt bodyExpr
@@ -655,7 +696,10 @@ Lift `.Hole` nodes out of expression positions so that every Hole only appears
 as the RHS of a `LocalVariable` initializer (translated as havoc).
 -/
 def liftHoles (program : Program) : Program :=
-  let initState : HoleLiftState := {}
+  let initState : HoleLiftState := {
+    procedures := program.staticProcedures
+    currentOutputType := defaultHoleType
+  }
   let (procs, _) := (program.staticProcedures.mapM liftHoleProcedure).run initState
   { program with staticProcedures := procs }
 
