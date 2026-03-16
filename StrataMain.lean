@@ -390,7 +390,7 @@ def buildPySpecPrelude (pyspecPaths : Array String) : IO PySpecPrelude := do
       laurelProceduresFromCorePart
   }
 
-  -- TODO remove this when we turn on Laurel resolution error for the Python pipeline
+  -- TODO remove this when we turn on Laurel resolution errors for the Python pipeline
   -- Check for duplicate names in preludeInLaurel's top-level declarations
   let mut seenNames : Std.HashSet String := {}
   for proc in preludeInLaurel.staticProcedures do
@@ -526,7 +526,7 @@ def pyAnalyzeLaurelCommand : Command where
             IO.println "\n==== Core Program ===="
             IO.print (coreProgram, modifiesDiags)
 
-          let (preludeDecls, userDecls) := coreProgram.decls.span (fun d => toString d.name != "END_MARKER")
+          let (preludeDecls, userDecls) := coreProgram.decls.span (fun d => toString d.name != "FIRST_END_MARKER")
           let coreProgram := {decls :=
             preludeDecls ++
             Strata.Python.coreOnlyFromRuntimeCorePart ++
