@@ -25,7 +25,9 @@ private def bareType (v : HighType) : HighTypeMd := ⟨v, emptyMd⟩
 private def mkParam (n : String) (t : HighType) : Parameter :=
   { name := n, type := bareType t }
 
--- Helper: build a single-procedure program, lift holes, and print.
+private def emptyModel : SemanticModel := { nextId := 0, compositeCount := 0, refToDef := {} }
+
+/-- Helper: build a single-procedure program, lift holes, and print. -/
 private def liftAndPrint (name : String) (body : StmtExprMd) : IO Unit := do
   let proc : Procedure := {
     name := name
@@ -39,7 +41,7 @@ private def liftAndPrint (name : String) (body : StmtExprMd) : IO Unit := do
     md := emptyMd
   }
   let prog : Program := { staticProcedures := [proc], staticFields := [], types := [] }
-  let lifted := liftHoles prog
+  let lifted := liftHoles emptyModel prog
   for p in lifted.staticProcedures do
     IO.println (toString (Std.Format.pretty (Std.ToFormat.format p)))
 
@@ -349,17 +351,17 @@ deterministic
       none)
   ] none))
 
--- Hole in Lt inside while condition → Top (comparison arg).
+-- Hole in Lt inside while condition → int (inferred from sibling literal).
 /--
 info: procedure test() returns ⏎
 ()
 deterministic
-{ var $hole_0: ⊤; while i < $hole_0 { {  } } }
+{ var $hole_0: int; while 0 < $hole_0 { {  } } }
 -/
 #guard_msgs in
 #eval! liftAndPrint "test" (bare (.Block [
     bare (.While
-      (bare (.PrimitiveOp .Lt [bare (.Identifier "i"), bare .Hole]))
+      (bare (.PrimitiveOp .Lt [bare (.LiteralInt 0), bare .Hole]))
       [] none (bare (.Block [] none)))
   ] none))
 
@@ -425,12 +427,12 @@ deterministic
 info: procedure test() returns ⏎
 ()
 deterministic
-{ var $hole_0: int; assert n - $hole_0 <= 10 }
+{ var $hole_0: int; assert 5 - $hole_0 <= 10 }
 -/
 #guard_msgs in
 #eval! liftAndPrint "test" (bare (.Block [
     bare (.Assert (bare (.PrimitiveOp .Leq [
-      bare (.PrimitiveOp .Sub [bare (.Identifier "n"), bare .Hole]),
+      bare (.PrimitiveOp .Sub [bare (.LiteralInt 5), bare .Hole]),
       bare (.LiteralInt 10)])))
   ] none))
 
@@ -470,8 +472,7 @@ private def liftAndPrintWith (name : String) (body : StmtExprMd)
     staticFields := []
     types := []
   }
-  let lifted := liftHoles prog
-  -- The test procedure is always last; print only it
+  let lifted := liftHoles emptyModel prog
   match lifted.staticProcedures.getLast? with
   | some p => IO.println (toString (Std.Format.pretty (Std.ToFormat.format p)))
   | none => IO.println "ERROR: no procedures"

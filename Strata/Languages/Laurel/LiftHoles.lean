@@ -7,6 +7,7 @@ module
 
 public import Strata.Languages.Laurel.Laurel
 public import Strata.Languages.Laurel.LaurelFormat
+public import Strata.Languages.Laurel.LaurelTypes
 
 /-!
 # Hole Lifting
@@ -16,6 +17,9 @@ as the RHS of a `LocalVariable` initializer (which the translator handles as hav
 
 A Hole in expression position is replaced by a fresh variable whose declaration
 has no initializer, giving it an arbitrary value — a sound over-approximation.
+
+The type assigned to each lifted variable is inferred from its surrounding
+context using the `SemanticModel` and `computeExprType`.
 -/
 
 namespace Strata
@@ -24,17 +28,15 @@ namespace Laurel
 public section
 
 private def emptyMd : Imperative.MetaData Core.Expression := #[]
-
-/-- Wrap a StmtExpr value with empty metadata -/
 private def bare (v : StmtExpr) : StmtExprMd := ⟨v, emptyMd⟩
-
-/-- Wrap a HighType value with empty metadata -/
 private def bareType (v : HighType) : HighTypeMd := ⟨v, emptyMd⟩
 
+/-- State for the hole lifting pass. -/
 structure HoleLiftState where
-  /-- Counter state for generating fresh hole variable names. -/
   counter : Nat := 0
-  /-- All procedures in the program, used to look up parameter types. -/
+  /-- Semantic model for type inference. -/
+  model : SemanticModel
+  /-- All procedures in the program (fallback for unresolved identifiers). -/
   procedures : List Procedure := []
   /-- Output type of the procedure currently being processed (for Return). -/
   currentOutputType : HighTypeMd := ⟨.Top, #[]⟩
@@ -48,40 +50,29 @@ private def freshHoleVar : HoleLiftM Identifier := do
 
 private def defaultHoleType : HighTypeMd := bareType .Top
 
-/-- Lightweight syntactic type inference — returns a type when it can be
-    determined without a semantic model (literals, arithmetic ops, etc.). -/
-private def inferType : StmtExpr → Option HighTypeMd
-  | .LiteralInt _     => some (bareType .TInt)
-  | .LiteralBool _    => some (bareType .TBool)
-  | .LiteralString _  => some (bareType .TString)
-  | .LiteralDecimal _ => some (bareType .TReal)
-  | .PrimitiveOp op _ =>
-      match op with
-      | .Eq | .Neq | .And | .Or | .Not | .Implies
-      | .Lt | .Leq | .Gt | .Geq => some (bareType .TBool)
-      | .StrConcat => some (bareType .TString)
-      | _ => none
-  | _ => none
+/-- Compute the type of an expression using the semantic model. -/
+private def exprType (expr : StmtExprMd) : HoleLiftM HighTypeMd := do
+  return computeExprType (← get).model expr
 
 /-- For a comparison operator, infer the argument type from the first
-    non-hole sibling whose type can be determined syntactically. -/
-private def inferComparisonArgType (args : List StmtExprMd) : HighTypeMd :=
-  args.findSome? (fun a => match a.val with | .Hole => none | _ => inferType a.val)
-    |>.getD defaultHoleType
+    non-hole sibling whose type can be determined via the semantic model. -/
+private def inferComparisonArgType (args : List StmtExprMd) : HoleLiftM HighTypeMd := do
+  for a in args do
+    match a.val with
+    | .Hole => continue
+    | _ => return ← exprType a
+  return defaultHoleType
 
-/-- Look up the input parameter types for a callee by name. -/
+/-- Look up the input parameter types for a callee via the semantic model,
+    falling back to a linear search of the procedure list. -/
 private def calleeParamTypes (callee : Identifier) : HoleLiftM (Option (List HighTypeMd)) := do
-  match (← get).procedures.find? (·.name == callee) with
-  | some proc => return some (proc.inputs.map (·.type))
-  | none => return none
-
-/-- Look up the return type for a callee by name (single-output procedures only). -/
-private def calleeReturnType (callee : Identifier) : HoleLiftM (Option HighTypeMd) := do
-  match (← get).procedures.find? (·.name == callee) with
-  | some proc => match proc.outputs with
-    | [single] => return some single.type
-    | _ => return none
-  | none => return none
+  match (← get).model.get callee with
+  | .staticProcedure proc => return some (proc.inputs.map (·.type))
+  | _ =>
+    -- Fallback for unresolved identifiers (e.g. in tests with manual ASTs)
+    match (← get).procedures.find? (·.name == callee) with
+    | some proc => return some (proc.inputs.map (·.type))
+    | none => return none
 
 mutual
 /-- Lift holes from a list of arguments, collecting declarations. -/
@@ -119,9 +110,9 @@ private def liftHoleExpr (expr : StmtExprMd) (expectedType : HighTypeMd) : HoleL
       let decl := bare (.LocalVariable v expectedType none)
       return (⟨.Identifier v, md⟩, [decl])
   | .PrimitiveOp op args =>
-      let argType := match op with
+      let argType ← match op with
         | .Eq | .Neq | .Lt | .Leq | .Gt | .Geq => inferComparisonArgType args
-        | _ => expectedType
+        | _ => pure expectedType
       let (newArgs, decls) ← liftHoleArgs args argType
       return (⟨.PrimitiveOp op newArgs, md⟩, decls)
   | .StaticCall callee args =>
@@ -251,13 +242,11 @@ private def liftHoleStmtList (stmts : List StmtExprMd) : HoleLiftM (List StmtExp
   let mut result : List StmtExprMd := []
   for s in stmts do
     let (expanded, decls) ← liftHoleStmt s
-    -- Inline declarations immediately before the statement that needs them
     result := result ++ decls ++ expanded
   return result
 end
 
 private def liftHoleProcedure (proc : Procedure) : HoleLiftM Procedure := do
-  -- Reset counter per procedure; set output type for Return inference
   let outputType := match proc.outputs with
     | [single] => single.type
     | _ => defaultHoleType
@@ -283,8 +272,9 @@ private def liftHoleProcedure (proc : Procedure) : HoleLiftM Procedure := do
 Lift `.Hole` nodes out of expression positions so that every Hole only appears
 as the RHS of a `LocalVariable` initializer (translated as havoc).
 -/
-def liftHoles (program : Program) : Program :=
+def liftHoles (model : SemanticModel) (program : Program) : Program :=
   let initState : HoleLiftState := {
+    model := model
     procedures := program.staticProcedures
     currentOutputType := defaultHoleType
   }
