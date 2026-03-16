@@ -526,12 +526,18 @@ private def liftHoleExpr (expr : StmtExprMd) : HoleLiftM (StmtExprMd × List Stm
   | .ContractOf ty f =>
       let (f', ds) ← liftHoleExpr f
       return (⟨.ContractOf ty f', md⟩, ds)
-  | .Forall p b =>
-      let (b', ds) ← liftHoleExpr b
-      return (⟨.Forall p b', md⟩, ds)
-  | .Exists p b =>
-      let (b', ds) ← liftHoleExpr b
-      return (⟨.Exists p b', md⟩, ds)
+  | .Forall p trigger b =>
+      let (trigger', d1) ← match trigger with
+        | some t => let (t', ds) ← liftHoleExpr t; pure (some t', ds)
+        | none => pure (none, [])
+      let (b', d2) ← liftHoleExpr b
+      return (⟨.Forall p trigger' b', md⟩, d1 ++ d2)
+  | .Exists p trigger b =>
+      let (trigger', d1) ← match trigger with
+        | some t => let (t', ds) ← liftHoleExpr t; pure (some t', ds)
+        | none => pure (none, [])
+      let (b', d2) ← liftHoleExpr b
+      return (⟨.Exists p trigger' b', md⟩, d1 ++ d2)
   | _ => return (expr, [])
 
 /-- Process a statement, lifting holes from sub-expressions.
