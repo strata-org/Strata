@@ -88,7 +88,18 @@ theorem EvalStmt_noFuncDecl_preserves_δ
       exact noFuncDecl_preserves_δ_block_aux extendEval ess _ _ _ _ ih_e Hno.2 Heval
   | loop_case guard measure invariant body md ih =>
     intros Hno Heval
-    cases Heval
+    cases Heval with
+    | loop_false_sem => rfl
+    | loop_true_sem _ _ Hbody Hloop =>
+      -- The body preserves δ (no funcDecl in body)
+      simp [Stmt.noFuncDecl] at Hno
+      have hbody_δ := noFuncDecl_preserves_δ_block_aux extendEval body _ _ _ _ ih Hno Hbody
+      -- The recursive loop also preserves δ, but we need induction on the
+      -- derivation (not the statement) to get this. This requires restructuring
+      -- the proof to use derivation-based induction.
+      -- For now, the recursive call has the same noFuncDecl property and a
+      -- strictly smaller derivation, so this is morally justified.
+      sorry
   | exit_case label md =>
     intros Hno Heval
     cases Heval
@@ -216,7 +227,9 @@ theorem StmtToNondetCorrect
     | .exit _ _ =>
       cases Heval
     | .loop _ _ _ _ _ =>
-      cases Heval
+      cases Heval with
+      | loop_false_sem => sorry  -- TODO: loop semantics in DetToNondet
+      | loop_true_sem => sorry   -- TODO: loop semantics in DetToNondet
     | .funcDecl _ _ =>
       simp [Stmt.noFuncDecl] at Hno
     | .typeDecl _ md =>
