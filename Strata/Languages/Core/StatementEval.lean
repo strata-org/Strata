@@ -409,48 +409,6 @@ def processExit : Statements → Option (Option String) → (Statements × Optio
 | rest, .none => (rest, .none)
 | _, .some exitLabel => ([], .some exitLabel) -- Skip all remaining statements
 
-/--
-Merge `EnvWithNext` results that share the same exit label after block exit
-consumption.
-
-This function is safe to use even without enforced label uniqueness because it
-only merges paths that result from evaluating the same block's statements. All
-paths in the input list are siblings (they started from the same entry point),
-so if they converge to the same exit label, they represent different execution
-paths through the same code that should be merged.
-
-The function handles two cases:
-1. Exactly two paths with the same label: Merges them using the ite condition
-   extracted from their path conditions. The environment whose newest path
-   condition is positive (not negated) is treated as E1 (true branch).
-2. Other cases (1 path, or 3+ paths): Returns paths unmerged to avoid
-   corrupting the path-condition structure with repeated `Env.merge` calls.
-
-Note: This merging is essential to prevent path multiplication in the VCG.
-Without it, subsequent procedures would be verified once per path from the
-previous procedure, causing duplicate proof obligations (see issue #419).
--/
-private def mergeByExitLabel (ewns : List EnvWithNext) : List EnvWithNext :=
-  let labels := ewns.map (·.exitLabel) |>.eraseDups
-  labels.flatMap fun label =>
-    let group := ewns.filter (·.exitLabel == label)
-    match group with
-    | [ewn1, ewn2] =>
-      -- Determine which is the true branch by checking if its newest path
-      -- condition is the positive (non-negated) ite condition.
-      -- The true branch's condition is `cond'`, the false branch's is
-      -- `ite cond' false true` (i.e., negation).
-      let (ewn_t, ewn_f, cond) := match ewn1.env.pathConditions.newest with
-        | (_, c) :: _ =>
-          match c with
-          | .ite _ inner (.false _) (.true _) =>
-            -- ewn1 has the negated condition, so it's the false branch
-            (ewn2, ewn1, inner)
-          | _ => (ewn1, ewn2, c)
-        | [] => (ewn1, ewn2, LExpr.true ())
-      [{ ewn_t with env := Env.merge cond ewn_t.env ewn_f.env }]
-    | _ => group
-
 mutual
 def evalAuxGo (steps : Nat) (old_var_subst : SubstMap) (Ewn : EnvWithNext) (ss : Statements) (optExit : Option (Option String)) :
     List EnvWithNext :=
@@ -494,11 +452,7 @@ def evalAuxGo (steps : Nat) (old_var_subst : SubstMap) (Ewn : EnvWithNext) (ss :
                                               let ss' := ewn.stk.top
                                               let s' := Imperative.Stmt.block label ss' md
                                               orig_stk.appendToTop [s'] })
-            -- After consuming exits, multiple paths may converge to the same
-            -- exit label. Merge them to prevent path multiplication.
-            -- This is safe because all paths in Ewns are siblings (they all
-            -- result from evaluating the same block's statements).
-            mergeByExitLabel Ewns
+            Ewns
 
           | .ite cond then_ss else_ss md =>
             let orig_stk := Ewn.stk
@@ -617,31 +571,17 @@ def processIteBranches (steps : Nat) (old_var_subst : SubstMap) (Ewn : EnvWithNe
                     .none
                     (orig_stk.appendToTop [s'])]
   | _, _ =>
-    -- Group results by exit label and merge true/false branches within each
-    -- group using the ite condition `cond'`. This happens *before* popping
-    -- the ite scope so that the path-condition structure is still intact.
-    let labels := (Ewns_t ++ Ewns_f).map (·.exitLabel) |>.eraseDups
-    let merged := labels.flatMap fun label =>
-      let ts := Ewns_t.filter (·.exitLabel == label)
-      let fs := Ewns_f.filter (·.exitLabel == label)
-      match ts, fs with
-      | [ewn_t], [ewn_f] =>
-        let s' := Imperative.Stmt.ite cond' ewn_t.stk.top ewn_f.stk.top md
-        [EnvWithNext.mk (Env.merge cond' ewn_t.env ewn_f.env).popScope
-                        label
-                        (orig_stk.appendToTop [s'])]
-      | _, _ =>
-        -- Unmatched paths: pop scope and pass through individually.
-        let ts' := ts.map fun ewn =>
-          let s' := Imperative.Stmt.ite (LExpr.true ()) ewn.stk.top [] md
-          { ewn with env := ewn.env.popScope,
-                     stk := orig_stk.appendToTop [s'] }
-        let fs' := fs.map fun ewn =>
-          let s' := Imperative.Stmt.ite (LExpr.false ()) [] ewn.stk.top md
-          { ewn with env := ewn.env.popScope,
-                     stk := orig_stk.appendToTop [s'] }
-        ts' ++ fs'
-    merged
+    let Ewns_t := Ewns_t.map
+                      (fun (ewn : EnvWithNext) =>
+                        let s' := Imperative.Stmt.ite (LExpr.true ()) ewn.stk.top [] md
+                        { ewn with env := ewn.env.popScope,
+                                   stk := orig_stk.appendToTop [s']})
+    let Ewns_f := Ewns_f.map
+                      (fun (ewn : EnvWithNext) =>
+                        let s' := Imperative.Stmt.ite (LExpr.false ()) [] ewn.stk.top md
+                        { ewn with env := ewn.env.popScope,
+                                   stk := orig_stk.appendToTop [s']})
+  Ewns_t ++ Ewns_f
   termination_by (steps, Imperative.Block.sizeOf then_ss + Imperative.Block.sizeOf else_ss)
 end
 
