@@ -341,22 +341,24 @@ def translateStmt (outputParams : List Parameter) (stmt : StmtExprMd)
           if model.isFunction callee then
             -- Translate as expression (function application)
             let coreExpr ← translateExpr (⟨ .StaticCall callee args, callMd ⟩)
-            return [Core.Statement.init ident coreType (some coreExpr) md]
+            -- Use callMd so VCG errors point at the initializer expression
+            return [Core.Statement.init ident coreType (some coreExpr) callMd]
           else
             -- Translate as: var name; call name := callee(args)
             let coreArgs ← args.mapM (fun a => translateExpr a)
             let defaultExpr := defaultExprForType model ty
             let initStmt := Core.Statement.init ident coreType (some defaultExpr) md
-            let callStmt := Core.Statement.call [ident] callee.text coreArgs md
+            let callStmt := Core.Statement.call [ident] callee.text coreArgs callMd
             return [initStmt, callStmt]
-      | some (⟨ .InstanceCall .., _⟩) =>
+      | some (⟨ .InstanceCall .., instanceMd⟩) =>
           -- Instance method call as initializer: var name := target.method(args)
           -- Havoc the result since instance methods may be on unmodeled types
-          let initStmt := Core.Statement.init ident coreType none md
+          let initStmt := Core.Statement.init ident coreType none instanceMd
           return [initStmt]
       | some initExpr =>
           let coreExpr ← translateExpr initExpr
-          return [Core.Statement.init ident coreType (some coreExpr) md]
+          -- Use initExpr.md so VCG errors point at the initializer expression
+          return [Core.Statement.init ident coreType (some coreExpr) initExpr.md]
       | none =>
           return [Core.Statement.init ident coreType none md]
   | .Assign targets value =>

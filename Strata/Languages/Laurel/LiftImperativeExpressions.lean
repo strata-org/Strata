@@ -352,7 +352,7 @@ def transformStmt (stmt : StmtExprMd) : LiftM (List StmtExprMd) := do
           -- If the initializer is a direct imperative StaticCall, don't lift it —
           -- translateStmt handles LocalVariable + StaticCall directly as a call statement.
           match _: initExpr with
-          | WithMetadata.mk initExprVal md =>
+          | WithMetadata.mk initExprVal initMd =>
           match _: initExprVal with
           | .StaticCall callee args =>
               let imperative := (← get).imperativeNames
@@ -361,7 +361,7 @@ def transformStmt (stmt : StmtExprMd) : LiftM (List StmtExprMd) := do
                 let seqArgs ← args.mapM transformExpr
                 let argPrepends ← takePrepends
                 modify fun s => { s with subst := [] }
-                return argPrepends ++ [⟨.LocalVariable name ty (some ⟨.StaticCall callee seqArgs, initExpr.md⟩), md⟩]
+                return argPrepends ++ [⟨.LocalVariable name ty (some ⟨.StaticCall callee seqArgs, initMd⟩), md⟩]
               else
                 let seqInit ← transformExpr initExpr
                 let prepends ← takePrepends
