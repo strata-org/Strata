@@ -456,6 +456,27 @@ private def freshHoleVar : HoleLiftM Identifier := do
 
 private def defaultHoleType : HighTypeMd := bareType .Top
 
+/-- Lightweight syntactic type inference — returns a type when it can be
+    determined without a semantic model (literals, arithmetic ops, etc.). -/
+private def inferType : StmtExpr → Option HighTypeMd
+  | .LiteralInt _     => some (bareType .TInt)
+  | .LiteralBool _    => some (bareType .TBool)
+  | .LiteralString _  => some (bareType .TString)
+  | .LiteralDecimal _ => some (bareType .TReal)
+  | .PrimitiveOp op _ =>
+      match op with
+      | .Eq | .Neq | .And | .Or | .Not | .Implies
+      | .Lt | .Leq | .Gt | .Geq => some (bareType .TBool)
+      | .StrConcat => some (bareType .TString)
+      | _ => none
+  | _ => none
+
+/-- For a comparison operator, infer the argument type from the first
+    non-hole sibling whose type can be determined syntactically. -/
+private def inferComparisonArgType (args : List StmtExprMd) : HighTypeMd :=
+  args.findSome? (fun a => match a.val with | .Hole => none | _ => inferType a.val)
+    |>.getD defaultHoleType
+
 mutual
 /-- Lift holes from a list of arguments, collecting declarations. -/
 private def liftHoleArgs (args : List StmtExprMd) (expectedType : HighTypeMd) : HoleLiftM (List StmtExprMd × List StmtExprMd) := do
@@ -480,7 +501,7 @@ private def liftHoleExpr (expr : StmtExprMd) (expectedType : HighTypeMd) : HoleL
       return (⟨.Identifier v, md⟩, [decl])
   | .PrimitiveOp op args =>
       let argType := match op with
-        | .Eq | .Neq | .Lt | .Leq | .Gt | .Geq => defaultHoleType
+        | .Eq | .Neq | .Lt | .Leq | .Gt | .Geq => inferComparisonArgType args
         | _ => expectedType
       let (newArgs, decls) ← liftHoleArgs args argType
       return (⟨.PrimitiveOp op newArgs, md⟩, decls)

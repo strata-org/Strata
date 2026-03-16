@@ -70,12 +70,12 @@ deterministic
     bare (.LocalVariable "x" (bareType .TInt) (some (bare .Hole)))
   ] none))
 
--- Hole in comparison arg inside assert → Top (comparison arg type unknown).
+-- Hole in comparison arg inside assert → int (inferred from sibling literal).
 /--
 info: procedure test() returns ⏎
 ()
 deterministic
-{ var $hole_0: ⊤; assert $hole_0 > 0 }
+{ var $hole_0: int; assert $hole_0 > 0 }
 -/
 #guard_msgs in
 #eval! liftAndPrint "test" (bare (.Block [
@@ -332,12 +332,12 @@ deterministic
 
 /-! ## Combinations: holes in nested contexts -/
 
--- Hole in Add inside Gt inside if condition → Top (comparison arg).
+-- Hole in Add inside Gt inside if condition → int (inferred from sibling literal 0).
 /--
 info: procedure test() returns ⏎
 ()
 deterministic
-{ var $hole_0: ⊤; if 1 + $hole_0 > 0 then { assert true } }
+{ var $hole_0: int; if 1 + $hole_0 > 0 then { assert true } }
 -/
 #guard_msgs in
 #eval! liftAndPrint "test" (bare (.Block [
@@ -376,12 +376,12 @@ deterministic
       (some (bare (.StaticCall "compute" [bare .Hole]))))
   ] none))
 
--- Hole in And: Gt arg (Top) + direct And arg (bool).
+-- Hole in And: Gt arg (int from sibling) + direct And arg (bool).
 /--
 info: procedure test() returns ⏎
 ()
 deterministic
-{ var $hole_0: ⊤; var $hole_1: bool; assert $hole_0 > 0 && $hole_1 }
+{ var $hole_0: int; var $hole_1: bool; assert $hole_0 > 0 && $hole_1 }
 -/
 #guard_msgs in
 #eval! liftAndPrint "test" (bare (.Block [
@@ -420,12 +420,12 @@ deterministic
       none)
   ] none))
 
--- Hole in Sub inside Leq inside assert → Top (comparison arg).
+-- Hole in Sub inside Leq inside assert → int (Leq infers int from sibling literal 10).
 /--
 info: procedure test() returns ⏎
 ()
 deterministic
-{ var $hole_0: ⊤; assert n - $hole_0 <= 10 }
+{ var $hole_0: int; assert n - $hole_0 <= 10 }
 -/
 #guard_msgs in
 #eval! liftAndPrint "test" (bare (.Block [
