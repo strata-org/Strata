@@ -83,14 +83,12 @@ private def coreSMTResultToVCResult (r : Strata.Core.CoreSMT.CoreSMTResult) : Co
   match r.error with
   | some msg => { obligation := r.obligation, outcome := .error msg }
   | none =>
-    let satResult : Strata.SMT.Result := match r.satResult with
+    let toResult (d : Strata.SMT.Decision) : Strata.SMT.Result := match d with
       | .sat => .sat ""
       | .unsat => .unsat
       | .unknown => .unknown
-    let valResult : Strata.SMT.Result := match r.valResult with
-      | .sat => .sat ""
-      | .unsat => .unsat
-      | .unknown => .unknown
+    let satResult := toResult r.satResult
+    let valResult := toResult r.valResult
     let vcOutcome : Core.VCOutcome := {
       satisfiabilityProperty := satResult
       validityProperty := valResult
