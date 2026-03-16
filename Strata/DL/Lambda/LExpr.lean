@@ -589,9 +589,18 @@ private def formatLExpr (T : LExprParamsT) [ToFormat T.base.IDMeta] [ToFormat T.
     match ty with
     | none => f!"{x}"
     | some ty => f!"({x} : {ty})"
-  | .abs _ _ _ e1 => Format.paren (f!"λ {formatLExpr T e1}")
-  | .quant _ .all _ _ _ e1 => Format.paren (f!"∀ {formatLExpr T e1}")
-  | .quant _ .exist _ _ _ e1 => Format.paren (f!"∃ {formatLExpr T e1}")
+  | .abs _ _ ty e1 =>
+    match ty with
+    | none => Format.paren (f!"λ {formatLExpr T e1}")
+    | some ty => Format.paren (f!"λ (bvar:{ty}) {formatLExpr T e1}")
+  | .quant _ .all _ ty _ e1 =>
+      match ty with
+      | none => Format.paren (f!"∀ {formatLExpr T e1}")
+      | some ty => Format.paren (f!"∀ (bvar:{ty}) {formatLExpr T e1}")
+  | .quant _ .exist _ ty _ e1 =>
+      match ty with
+      | none => Format.paren (f!"∃ {formatLExpr T e1}")
+      | some ty => Format.paren (f!"∃ (bvar:{ty}) {formatLExpr T e1}")
   | .app m fn arg =>
     let fmts := (collectAppSpine e).attach.map (fun ⟨ec, hec⟩ =>
       have : sizeOf ec < sizeOf e := collectAppSpine_lt e ec hec ⟨m, fn, arg, by subst_vars; rfl⟩

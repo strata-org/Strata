@@ -88,15 +88,15 @@ def typeCheckAndPartialEval (options : VerifyOptions) (program : Program)
       dbg_trace f!"{formatProofObligations E.deferred}"
   return pEs
 
-instance : ToString (Program) where
+instance instCoreProgramString : ToString (Program) where
   toString p := toString (Core.formatProgram p)
 
-instance : Std.ToFormat Program where
+instance instCoreProgramFormat : Std.ToFormat Program where
   format := Core.formatProgram
 
 /-- Format a single `Core.Expression.Expr` using the DDM pretty-printer.
     This instance shadows the generic `ToFormat (LExpr T)` from `LExpr.lean`. -/
-instance : Std.ToFormat Expression.Expr where
+instance instCoreExprFormat : Std.ToFormat Expression.Expr where
   format e := Core.formatExprs [e]
 
 end -- public section
