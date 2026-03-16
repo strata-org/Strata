@@ -213,6 +213,40 @@ theorem assumes_reach
       exact assume_reaches π φ l e m σ δ h_true h_wf
     · exact ih (fun s h => h_all_assume s (List.mem_cons_of_mem _ h))
 
+/-- A single unconstrained init can step from a store without x to a store with x. -/
+theorem init_unconstrained_step
+    (π : String → Option Procedure) (φ : CoreEval → PureFunc Expression → CoreEval)
+    (x : CoreIdent) (ty : LMonoTy) (σ_prev σ : CoreStore) (δ : CoreEval) (v : Expression.Expr)
+    (h_none : σ_prev x = none)
+    (h_some : σ x = some v)
+    (h_rest : ∀ y, x ≠ y → σ y = σ_prev y)
+    (h_wfv : WellFormedSemanticEvalVar δ) :
+    CoreStepStar π φ
+      (.stmt (Statement.init x (Lambda.LTy.forAll [] ty) none #[]) σ_prev δ)
+      (.terminal σ δ) :=
+  ReflTrans.step _ _ _
+    (StepStmt.step_cmd (EvalCommand.cmd_sem
+      (EvalCmd.eval_init_unconstrained (InitState.init h_none h_some h_rest) h_wfv)))
+    (ReflTrans.refl _)
+
+/-- A constrained init (init x ty (some e)) steps when e evaluates to a value. -/
+theorem init_constrained_step
+    (π : String → Option Procedure) (φ : CoreEval → PureFunc Expression → CoreEval)
+    (x : CoreIdent) (ty : LMonoTy) (e : Expression.Expr)
+    (σ_prev σ : CoreStore) (δ : CoreEval) (v : Expression.Expr)
+    (h_eval : δ σ_prev e = some v)
+    (h_none : σ_prev x = none)
+    (h_some : σ x = some v)
+    (h_rest : ∀ y, x ≠ y → σ y = σ_prev y)
+    (h_wfv : WellFormedSemanticEvalVar δ) :
+    CoreStepStar π φ
+      (.stmt (Statement.init x (Lambda.LTy.forAll [] ty) (some e) #[]) σ_prev δ)
+      (.terminal σ δ) :=
+  ReflTrans.step _ _ _
+    (StepStmt.step_cmd (EvalCommand.cmd_sem
+      (EvalCmd.eval_init h_eval (InitState.init h_none h_some h_rest) h_wfv)))
+    (ReflTrans.refl _)
+
 /-- For any target state where preconditions hold, there exists an initial state
     from which pre_body (inits + assumes) executes to reach that target state. -/
 theorem pre_body_reaches_any_state
@@ -233,15 +267,6 @@ theorem pre_body_reaches_any_state
           ensuresToAsserts proc.spec.postconditions) blk_md) :
     ∃ (σ_init : CoreStore) (δ_init : CoreEval),
       CoreStepStar π φ (.stmts pre_body σ_init δ_init) (.terminal σ δ) := by
-  -- The pre_body consists of init statements followed by assume statements.
-  -- For any target state (σ, δ) where preconditions hold:
-  -- 1. Each unconstrained init (init x ty none) can produce any value for x
-  --    via InitState, so we can reach any target store
-  -- 2. Each constrained init (init g ty (some e)) evaluates e and stores the result
-  -- 3. Each assume passes because preconditions hold
-  --
-  -- The initial store σ_init is constructed by removing all initialized variables
-  -- from σ, so that InitState's precondition (σ x = none) is satisfied.
   sorry
 
 /-- The postcondition assert is reachable in the verification block when the body executes. -/
