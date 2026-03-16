@@ -11,7 +11,7 @@ assigned to each lifted variable is inferred from its surrounding context.
 -/
 
 import Strata.Languages.Laurel.Laurel
-import Strata.Languages.Laurel.LiftImperativeExpressions
+import Strata.Languages.Laurel.LiftHoles
 import Strata.Languages.Laurel.LaurelFormat
 
 open Strata.Laurel

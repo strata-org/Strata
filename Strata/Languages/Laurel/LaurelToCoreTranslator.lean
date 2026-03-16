@@ -12,6 +12,7 @@ public import Strata.Languages.Core.Procedure
 public import Strata.Languages.Core.Options
 public import Strata.Languages.Laurel.Laurel
 public import Strata.Languages.Laurel.LiftImperativeExpressions
+public import Strata.Languages.Laurel.LiftHoles
 import Strata.Languages.Laurel.EliminateReturnsInExpression
 public import Strata.Languages.Laurel.HeapParameterization
 public import Strata.Languages.Laurel.TypeHierarchy
