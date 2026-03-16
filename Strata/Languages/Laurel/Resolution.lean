@@ -93,17 +93,17 @@ inductive AstNode where
 instance : Inhabited AstNode where
   default := AstNode.unresolved
 
-def AstNode.getType (node: AstNode): Option HighTypeMd := match node with
+def AstNode.getType (node: AstNode): HighTypeMd := match node with
  | .var _ type => type
  | .parameter p => p.type
  | .field _ f => f.type
- | .datatypeConstructor type _ => some ⟨ .UserDefined type, default ⟩
+ | .datatypeConstructor type _ => ⟨ .UserDefined type, default ⟩
  | .constant c => c.type
  | .quantifierVar _ type => type
  | .unresolved =>
     -- The Python through Laurel pipeline does not resolve yet
-    some ⟨ .UserDefined "dummyName", default ⟩
- | _ => dbg_trace s!"SOUND BUG: getType called on {repr node}"; none
+    ⟨ .UserDefined "dummyName", default ⟩
+ | _ => dbg_trace s!"SOUND BUG: getType called on {repr node}"; ⟨ .Top, default ⟩
 
 /-! ## Resolution result -/
 
@@ -201,12 +201,9 @@ private def targetTypeName (target : StmtExprMd) : ResolveM (Option String) := d
   | .Identifier ref =>
     match s.scope.get? ref.text with
     | some (_, node) =>
-      match node.getType with
-      | some ty =>
-        match ty.val with
-        | .UserDefined typRef => pure (some typRef.text)
-        | _ => pure none
-      | none => pure none
+      match node.getType.val with
+      | .UserDefined typRef => pure (some typRef.text)
+      | _ => pure none
     | none => pure none
   | _ => pure none
 

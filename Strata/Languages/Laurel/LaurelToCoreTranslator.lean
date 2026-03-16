@@ -61,15 +61,13 @@ def translateType (model : SemanticModel) (ty : HighTypeMd) : LMonoTy :=
   | .TCore s => .tcons s []
   | .TFloat64 => dbg_trace "NOT SUPPORTED YET: Float64"; .tcons "Float64IsNotSupportedYet" []
   | .TReal => LMonoTy.real
-  | .Top => LMonoTy.bool
-  | _ => panic s!"translateType: unsupported type {ToFormat.format ty}"
+  | .Top => .tcons "Top" []
+  | _ => dbg_trace s!"NOT SUPPORTED YET: {repr ty.val}"; .tcons "Float64IsNotSupportedYet" []
 termination_by ty.val
 decreasing_by all_goals (first | (cases elementType; term_by_mem) | (cases keyType; term_by_mem) | (cases valueType; term_by_mem))
 
 def lookupType (model : SemanticModel) (name : Identifier) : LMonoTy :=
-  match (model.get name).getType with
-  | .some ty => translateType model ty
-  | none => panic s!"no type for {name}"
+  translateType model (model.get name).getType
 
 def isFieldName (fieldNames : List Identifier) (name : Identifier) : Bool :=
   fieldNames.contains name
@@ -122,15 +120,15 @@ def translateExpr (expr : StmtExprMd)
     : TranslateM Core.Expression.Expr := do
   let s ← get
   let model := s.model
-  -- Dummy expression used as placeholder when an error is emitted in pure context
-  let dummy := .fvar () (⟨s!"DUMMY_VAR_{← freshId}", ()⟩) none
+  let md := expr.md
   -- Emit an error in pure context; panic in impure context (lifting invariant violated)
   let disallowed (md : MetaData) (msg : String) : TranslateM Core.Expression.Expr := do
     if isPureContext then
       emitDiagnostic (md.toDiagnostic msg)
-      return dummy
+      dummy
     else
-      panic! s!"translateExpr: {msg} (should have been lifted): {Std.Format.pretty (Std.ToFormat.format md)}"
+      emitDiagnostic (md.toDiagnostic s!"Internal error: {msg} (should have been lifted)")
+      dummy
   match h: expr.val with
   | .LiteralBool b => return .const () (.boolConst b)
   | .LiteralInt i => return .const () (.intConst i)
@@ -147,7 +145,7 @@ def translateExpr (expr : StmtExprMd)
         | .field _ f =>
             return .op () ⟨f.name.text, ()⟩ none
         | astNode =>
-            return .fvar () ⟨name.text, ()⟩ (some (translateType model $ astNode.getType.getD (panic! "LaurelToCore.translateExpr")))
+            return .fvar () ⟨name.text, ()⟩ (some (translateType model $ astNode.getType))
   | .PrimitiveOp op [e] =>
     match op with
     | .Not =>
@@ -158,7 +156,9 @@ def translateExpr (expr : StmtExprMd)
       let isReal := match (computeExprType model e).val with
         | .TReal => true | _ => false
       return .app () (if isReal then realNegOp else intNegOp) re
-    | _ => panic! s!"translateExpr: Invalid unary op: {repr op}"
+    | _ =>
+      emitDiagnostic (md.toDiagnostic s!"Internal error: translateExpr: Invalid unary op: {repr op}")
+      dummy
   | .PrimitiveOp op [e1, e2] =>
     let re1 ← translateExpr e1 boundVars isPureContext
     let re2 ← translateExpr e2 boundVars isPureContext
@@ -227,7 +227,7 @@ def translateExpr (expr : StmtExprMd)
         return LExpr.existTr () name.text (some coreTy) coreTrig coreBody
       | none =>
         return LExpr.exist () name.text (some coreTy) coreBody
-  | .Hole => return dummy
+  | .Hole => dummy
   | .ReferenceEquals e1 e2 =>
       let re1 ← translateExpr e1 boundVars isPureContext
       let re2 ← translateExpr e2 boundVars isPureContext
@@ -282,6 +282,9 @@ def translateExpr (expr : StmtExprMd)
   termination_by expr
   decreasing_by
     all_goals (have := WithMetadata.sizeOf_val_lt expr; term_by_mem)
+where
+dummy: TranslateM Core.Expression.Expr := do
+    return .fvar () (⟨s!"DUMMY_VAR_{← freshId}", ()⟩) none
 
 def getNameFromMd (md : Imperative.MetaData Core.Expression): String :=
   let fileRange := (Imperative.getFileRange md).getD (panic "getNameFromMd bug")
@@ -501,69 +504,6 @@ def translateProcedure (proc : Procedure) : TranslateM Core.Procedure := do
   let body : List Core.Statement := [.block "$body" bodyStmts .empty]
   let spec : Core.Procedure.Spec := { modifies, preconditions, postconditions }
   return { header, spec, body }
-
-/--
-Check if a Laurel expression is pure (contains no side effects).
-Used to determine if a procedure can be translated as a Core function.
--/
-private def isPureExpr(expr: StmtExprMd): Bool :=
-  match _h : expr.val with
-  | .LiteralBool _ => true
-  | .LiteralInt _ => true
-  | .LiteralString _ => true
-  | .LiteralDecimal _ => true
-  | .Identifier _ => true
-  | .PrimitiveOp _ args => args.attach.all (fun ⟨a, _⟩ => isPureExpr a)
-  | .IfThenElse c t none => isPureExpr c && isPureExpr t
-  | .IfThenElse c t (some e) => isPureExpr c && isPureExpr t && isPureExpr e
-  | .StaticCall _ args => args.attach.all (fun ⟨a, _⟩ => isPureExpr a)
-  | .New _ => false
-  | .ReferenceEquals e1 e2 => isPureExpr e1 && isPureExpr e2
-  | .Block [single] _ => isPureExpr single
-  | .Block _ _ => false
-  -- Statement-like
-  | .LocalVariable .. => true
-  | .While .. => false
-  | .Exit .. => false
-  | .Return .. => false
-  -- Expression-like
-  | .Assign .. => false
-  | .FieldSelect .. => true
-  | .PureFieldUpdate .. => true
-  -- Instance related
-  | .This => panic s!"isPureExpr not implemented for This"
-  | .AsType .. => panic s!"isPureExpr not supported for AsType"
-  | .IsType .. => panic s!"isPureExpr not supported for IsType"
-  | .InstanceCall .. => panic s!"isPureExpr not supported for InstanceCall"
-  -- Verification specific
-  | .Forall .. => panic s!"isPureExpr not implemented for Forall"
-  | .Exists .. => panic s!"isPureExpr not implemented for Exists"
-  | .Assigned .. => panic s!"isPureExpr not supported for AsType"
-  | .Old .. => panic s!"isPureExpr not supported for AsType"
-  | .Fresh .. => panic s!"isPureExpr not supported for AsType"
-  | .Assert .. => panic s!"isPureExpr not implemented for Assert"
-  | .Assume .. => panic s!"isPureExpr not implemented for Assume"
-  | .ProveBy .. => panic s!"isPureExpr not implemented for ProveBy"
-  | .ContractOf .. => panic s!"isPureExpr not implemented for ContractOf"
-  | .Abstract => panic s!"isPureExpr not implemented for Abstract"
-  | .All => panic s!"isPureExpr not implemented for All"
-  -- Dynamic / closures
-  | .Hole => true
-  termination_by sizeOf expr
-  decreasing_by all_goals (have := WithMetadata.sizeOf_val_lt expr; term_by_mem)
-
-/-- Check if a pure-marked procedure can actually be represented as a Core function:
-    transparent body that is a pure expression and has exactly one output. -/
-private def canBeCoreFunctionBody (proc : Procedure) : Bool :=
-  match proc.body with
-  | .Transparent bodyExpr =>
-    isPureExpr bodyExpr &&
-    proc.outputs.length == 1
-  | .Opaque _ bodyExprOption _ =>
-    (bodyExprOption.map isPureExpr).getD true &&
-    proc.outputs.length == 1
-  | .External => false
-  | _ => false
 
 /--
 Translate a Laurel Procedure to a Core Function (when applicable) using `TranslateM`.

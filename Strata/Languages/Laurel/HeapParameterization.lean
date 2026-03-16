@@ -199,7 +199,7 @@ Returns the qualified field name "DeclaringType.fieldName".
 def resolveQualifiedFieldName (model: SemanticModel) (fieldName : Identifier) : String :=
   match model.get fieldName with
     | .field owner _ => owner.text ++ "." ++ fieldName.text
-    | _ => panic! s!"resolveQualifiedFieldName {fieldName} did not resolve to a field"
+    | _ => dbg_trace s!"Internal error: resolveQualifiedFieldName {fieldName} did not resolve to a field"; "UnresolvedField"
 
 /--
 Transform an expression, adding heap parameters where needed.
@@ -215,7 +215,7 @@ where
     match _h : expr with
     | .FieldSelect selectTarget fieldName =>
         let qualifiedName : Identifier := resolveQualifiedFieldName model fieldName
-        let valTy := (model.get fieldName).getType.getD (panic! "heapTransformExpr1")
+        let valTy := (model.get fieldName).getType
         let readExpr := ⟨ .StaticCall "readField" [mkMd (.Identifier heapVar), selectTarget, mkMd (.StaticCall qualifiedName [])], md ⟩
         -- Unwrap Box: apply the appropriate destructor
         return mkMd <| .StaticCall (boxDestructorName valTy.val) [readExpr]
@@ -270,7 +270,7 @@ where
         match targets with
         | [⟨.FieldSelect target fieldName, _fieldSelectMd⟩] =>
             let qualifiedName : Identifier := resolveQualifiedFieldName model fieldName
-            let valTy := (model.get fieldName).getType.getD (panic! "heapTransformExpr2")
+            let valTy := (model.get fieldName).getType
             let target' ← recurse target
             let v' ← recurse v
             -- Wrap value in Box constructor
