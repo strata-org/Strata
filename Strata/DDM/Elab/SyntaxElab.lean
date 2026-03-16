@@ -175,8 +175,8 @@ private def add (m : SyntaxElabMap) (dialect : String) (name : String) (se : Syn
 
 private def addDecl (m : SyntaxElabMap) (dialect : String) (d : Decl) : Except String SyntaxElabMap :=
   match d with
-  | .op d => do let se ← opDeclElaborator! d; .ok (m.add dialect d.name se)
-  | .function d => do let se ← fnDeclElaborator! d; .ok (m.add dialect d.name se)
+  | .op d => (m.add dialect d.name ·) <$> opDeclElaborator! d
+  | .function d => (m.add dialect d.name ·) <$> fnDeclElaborator! d
   | _ => .ok m
 
 def addDialect (m : SyntaxElabMap) (d : Dialect) : Except String SyntaxElabMap :=

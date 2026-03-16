@@ -583,7 +583,7 @@ private def scopeIndex (metadata : Metadata) : Except String (Option Nat) :=
   match metadata[MetadataAttr.scopeName]? with
   | none => .ok none
   | some #[.catbvar idx] => .ok (some idx)
-  | some args => .error s!"Unexpected argument count to {MetadataAttr.scopeName.fullName}: {args.size}"
+  | some _ => .error s!"Unexpected argument count to {MetadataAttr.scopeName.fullName}"
 
 /-- Returns the typeParams index if @[scopeTVar] is present.
     Converts .type bindings from typeParams into .tvar bindings for constructor elaboration. -/
@@ -591,7 +591,7 @@ def scopeTVarIndex (metadata : Metadata) : Except String (Option Nat) :=
   match metadata[q`StrataDDL.scopeTVar]? with
   | none => .ok none
   | some #[.catbvar idx] => .ok (some idx)
-  | some args => .error s!"Unexpected argument count to scopeTVar: {args.size}"
+  | some _ => .error s!"Unexpected argument count to scopeTVar"
 
 /-- Returns (nameIndex, argsIndex, typeIndex) if @[scopeSelf] is present.
     Used to bring a function's own name into scope within its body. -/
@@ -599,7 +599,7 @@ def scopeSelfIndex (metadata : Metadata) : Except String (Option (Nat × Nat × 
   match metadata[q`StrataDDL.scopeSelf]? with
   | none => .ok none
   | some #[.catbvar n, .catbvar a, .catbvar t] => .ok (some (n, a, t))
-  | some args => .error s!"Unexpected argument count to scopeSelf: {args.size}"
+  | some _ => .error s!"Unexpected argument count to scopeSelf"
 
 /-- Returns the name index if @[declareTVar] is present.
     Used for operations that introduce a type variable (creates .tvar binding in result context). -/
@@ -607,14 +607,14 @@ def declareTVarIndex (metadata : Metadata) : Except String (Option Nat) :=
   match metadata[q`StrataDDL.declareTVar]? with
   | none => .ok none
   | some #[.catbvar nameIdx] => .ok (some nameIdx)
-  | some args => .error s!"Unexpected argument count to declareTVar: {args.size}"
+  | some _ => .error s!"Unexpected argument count to declareTVar"
 
 /-- Returns the index of the value in the binding for the given variable of the scope to use. -/
 private def resultIndex (metadata : Metadata) : Except String (Option Nat) :=
   match metadata[MetadataAttr.scopeName]? with
   | none => .ok none
   | some #[.catbvar idx] => .ok (some idx)
-  | some args => .error s!"Unexpected argument to {MetadataAttr.scopeName.fullName}: {args.size}"
+  | some _ => .error s!"Unexpected argument to {MetadataAttr.scopeName.fullName}"
 
 /-- Returns the index of the value in the binding for the given variable of the scope to use. -/
 def resultLevel (varCount : Nat) (metadata : Metadata) : Except String (Option (Fin varCount)) := do
@@ -630,7 +630,7 @@ def preRegisterTypesIndex (metadata : Metadata) : Except String (Option Nat) :=
   match metadata[q`StrataDDL.preRegisterTypes]? with
   | none => .ok none
   | some #[.catbvar idx] => .ok (some idx)
-  | some args => .error s!"Unexpected argument count to preRegisterTypes: {args.size}"
+  | some _ => .error s!"Unexpected argument count to preRegisterTypes"
 
 /-- Returns the level for @[preRegisterTypes] metadata, if present. -/
 def preRegisterTypesLevel (varCount : Nat) (metadata : Metadata) : Except String (Option (Fin varCount)) := do

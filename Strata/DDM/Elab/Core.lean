@@ -1349,10 +1349,10 @@ partial def extractDatatypeInfo (gctx0 : GlobalContext) (child : Syntax) : ElabM
       return gctx0
   let some childDecl := dialects.lookupOpDecl childIdent
     | logInternalError childLoc s!"extractDatatypeInfo: unknown op declaration {childIdent}"
-      return default
+      return gctx0
   let some childSe := syntaxElabs[childIdent]?
     | logInternalError childLoc s!"extractDatatypeInfo: no syntax elaborator for {childIdent}"
-      return default
+      return gctx0
   let childStxArgs := child.getArgs
   let childArgDecls := childDecl.argDecls.toArray
   let mut gctxLoop := gctx0
