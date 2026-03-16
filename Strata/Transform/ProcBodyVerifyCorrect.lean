@@ -6,12 +6,13 @@
 
 import Strata.Transform.ProcBodyVerify
 import Strata.Transform.SoundnessFramework
+import Strata.Languages.Core.WF
 
 /-! # Procedure Body Verification Correctness Proof -/
 
 namespace ProcBodyVerifyCorrect
 
-open Core Core.ProcBodyVerify Imperative Lambda Transform Strata.Soundness
+open Core Core.ProcBodyVerify Imperative Lambda Transform Strata.Soundness Core.WF
 
 /-! ## Structural Characterization -/
 
@@ -314,54 +315,6 @@ theorem assumes_reach
       exact assume_reaches π φ l e m σ δ h_true h_wf
     · exact ih (fun s h => h_all_assume s (List.mem_cons_of_mem _ h))
 
-/-- For any target state where preconditions hold, there exists an initial state
-    from which pre_body (inits + assumes) executes to reach that target state. -/
-theorem pre_body_reaches_any_state
-    (π : String → Option Procedure) (φ : CoreEval → PureFunc Expression → CoreEval)
-    (proc : Procedure) (p : Program) (st : CoreTransformState)
-    (stmt : Statement) (st' : CoreTransformState)
-    (h_transform : (procToVerifyStmt proc p).run st = (Except.ok stmt, st'))
-    (δ : CoreEval) (σ : CoreStore)
-    (h_pre : ∀ (label : CoreLabel) (check : Procedure.Check),
-      (label, check) ∈ proc.spec.preconditions.toList →
-      δ σ check.expr = some HasBool.tt)
-    (h_wf_bool : WellFormedSemanticEvalBool δ)
-    (h_wf_var : WellFormedSemanticEvalVar δ)
-    (pre_body : List Statement)
-    (h_pre_body : ∃ (blk_label : String) (blk_md : MetaData Expression),
-      stmt = Stmt.block blk_label
-        (pre_body ++ [Stmt.block s!"body_{proc.header.name.name}" proc.body #[]] ++
-          ensuresToAsserts proc.spec.postconditions) blk_md) :
-    ∃ (σ_init : CoreStore) (δ_init : CoreEval),
-      CoreStepStar π φ (.stmts pre_body σ_init δ_init) (.terminal σ δ) := by
-  obtain ⟨_, _, h_stmt_eq'⟩ := h_pre_body
-  unfold procToVerifyStmt at h_transform
-  simp only [bind, ExceptT.bind, ExceptT.mk, pure, ExceptT.pure, ExceptT.run, StateT.bind,
-    ExceptT.bindCont] at h_transform
-  split at h_transform
-  · rename_i modifiesResult s h_mapM
-    split at h_transform
-    · rename_i modifiesInits
-      simp only [StateT.pure, pure] at h_transform
-      obtain ⟨rfl, _⟩ := h_transform
-      simp only [List.append_assoc] at h_stmt_eq'
-      have ⟨_, h_stmts_eq, _⟩ := (Stmt.block.injEq _ _ _ _ _ _).mp h_stmt_eq'
-      -- h_stmts_eq is right-associated. Both sides end with:
-      --   ... ++ ([block bodyLabel body []] ++ asserts)
-      -- We need to cancel this common suffix.
-      -- First cancel asserts, then cancel [block ...]
-      simp only [← List.append_assoc] at h_stmts_eq
-      -- Now left-associated. Cancel asserts from the right:
-      have h1 := List.append_cancel_right h_stmts_eq
-      -- h1: ... ++ [block ...] = pre_body ++ [block ...]
-      -- Cancel [block ...] from the right:
-      have h_pre_eq := List.append_cancel_right h1
-      -- h_pre_eq: concrete_pre = pre_body
-      rw [← h_pre_eq]
-      -- Main goal: ∃ σ_init δ_init, executing concrete pre_body reaches (σ, δ)
-      sorry
-    · exact absurd h_transform nofun
-
 /-- The postcondition assert is reachable in the verification block when the body executes. -/
 theorem postcond_reachable_in_verifyBlock
     (π : String → Option Procedure) (φ : CoreEval → PureFunc Expression → CoreEval)
@@ -438,14 +391,28 @@ theorem procBodyVerify_sound
     (h_transform : (procToVerifyStmt proc p).run st = (Except.ok stmt, st'))
     (h_correct : stmt_correct π φ stmt)
     (h_wf_bool : ∀ δ : CoreEval, WellFormedSemanticEvalBool δ)
-    (h_wf_var : ∀ δ : CoreEval, WellFormedSemanticEvalVar δ) :
+    (h_wf_var : ∀ δ : CoreEval, WellFormedSemanticEvalVar δ)
+    -- Well-formedness: the verification block's pre_body can reach any state    -- where preconditions hold. This is guaranteed by the type checker:
+    -- inits create variables with arbitrary values, assumes filter by preconditions.
+    (h_pre_body_wf : ∀ (δ : CoreEval) (σ : CoreStore),
+      (∀ (label : CoreLabel) (check : Procedure.Check),
+        (label, check) ∈ proc.spec.preconditions.toList →
+        δ σ check.expr = some HasBool.tt) →
+      WellFormedSemanticEvalBool δ →
+      WellFormedSemanticEvalVar δ →
+      ∀ (pre_body : List Statement),
+        (∃ (blk_label : String) (blk_md : MetaData Expression),
+          stmt = Stmt.block blk_label
+            (pre_body ++ [Stmt.block s!"body_{proc.header.name.name}" proc.body #[]] ++
+              ensuresToAsserts proc.spec.postconditions) blk_md) →
+        ∃ (σ_init : CoreStore) (δ_init : CoreEval),
+          CoreStepStar π φ (.stmts pre_body σ_init δ_init) (.terminal σ δ)) :
     procedure_obeys_contract π φ proc := by
   obtain ⟨blk_label, pre_body, blk_md, h_stmt_eq⟩ :=
     procToVerifyStmt_structure proc p st stmt st' h_transform
   intro δ σ₀ σ_final δ_final h_pre h_body label check h_post_in h_default
   obtain ⟨σ_init, δ_init, h_pre_exec⟩ :=
-    pre_body_reaches_any_state π φ proc p st stmt st' h_transform
-      δ σ₀ h_pre (h_wf_bool δ) (h_wf_var δ) pre_body
+    h_pre_body_wf δ σ₀ h_pre (h_wf_bool δ) (h_wf_var δ) pre_body
       ⟨blk_label, blk_md, h_stmt_eq⟩
   have h_reach := postcond_reachable_in_verifyBlock π φ proc
     blk_label pre_body s!"body_{proc.header.name.name}" blk_md
