@@ -91,7 +91,7 @@ private axiom EvalStmt_noFuncDecl_preserves_δ_loop
   {δ₀ δ' : SemanticEval P} {σ σ' : SemanticStore P}
   (Heval : EvalStmt P (Cmd P) (EvalCmd P) extendEval δ₀ σ
     (.loop g meas invs body md) σ' δ') :
-  δ' = δ₀ 
+  δ' = δ₀
 
 /-- When a statement has no function declarations, evaluating it preserves the evaluator. -/
 theorem EvalStmt_noFuncDecl_preserves_δ
