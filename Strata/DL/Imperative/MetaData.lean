@@ -261,6 +261,21 @@ def MetaData.getPropertyType {P : PureExpr} [BEq P.Ident] (md : MetaData P) : Op
     | _ => none
   | none => none
 
+/-- Metadata field for property summaries attached to assert/requires/ensures clauses. -/
+def MetaData.propertySummary : MetaDataElem.Field P := .label "propertySummary"
+
+/-- Read the property summary from metadata, if present. -/
+def MetaData.getPropertySummary {P : PureExpr} [BEq P.Ident] (md : MetaData P) : Option String :=
+  match md.findElem MetaData.propertySummary with
+  | some elem => match elem.value with
+    | .msg s => some s
+    | _ => none
+  | none => none
+
+/-- Push a property summary into metadata. -/
+def MetaData.withPropertySummary {P : PureExpr} (md : MetaData P) (msg : String) : MetaData P :=
+  md.pushElem MetaData.propertySummary (.msg msg)
+
 ---------------------------------------------------------------------
 
 end -- public section

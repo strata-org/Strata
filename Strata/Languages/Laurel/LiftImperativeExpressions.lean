@@ -178,7 +178,7 @@ def transformExpr (expr : StmtExprMd) : LiftM StmtExprMd := do
   | .Identifier name =>
       return ⟨.Identifier (← getSubst name), md⟩
 
-  | .LiteralInt _ | .LiteralBool _ | .LiteralString _ => return expr
+  | .LiteralInt _ | .LiteralBool _ | .LiteralString _ | .LiteralDecimal _ => return expr
 
   | .Assign targets value =>
       -- The expression result is the current substitution for the first target

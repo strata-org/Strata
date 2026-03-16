@@ -92,20 +92,20 @@ def resolveExpr (ptMap : ConstrainedTypeMap) : StmtExprMd → StmtExprMd
     ⟨.LocalVariable n (resolveType ptMap ty) (some (resolveExpr ptMap init)), md⟩
   | ⟨.LocalVariable n ty none, md⟩ =>
     ⟨.LocalVariable n (resolveType ptMap ty) none, md⟩
-  | ⟨.Forall param body, md⟩ =>
+  | ⟨.Forall param trigger body, md⟩ =>
     let body' := resolveExpr ptMap body
     let param' := { param with type := resolveType ptMap param.type }
     let injected := match constraintCallFor ptMap param.type.val param.name md with
       | some c => ⟨.PrimitiveOp .Implies [c, body'], md⟩
       | none => body'
-    ⟨.Forall param' injected, md⟩
-  | ⟨.Exists param body, md⟩ =>
+    ⟨.Forall param' trigger injected, md⟩
+  | ⟨.Exists param trigger body, md⟩ =>
     let body' := resolveExpr ptMap body
     let param' := { param with type := resolveType ptMap param.type }
     let injected := match constraintCallFor ptMap param.type.val param.name md with
       | some c => ⟨.PrimitiveOp .And [c, body'], md⟩
       | none => body'
-    ⟨.Exists param' injected, md⟩
+    ⟨.Exists param' trigger injected, md⟩
   | ⟨.AsType t ty, md⟩ => ⟨.AsType (resolveExpr ptMap t) (resolveType ptMap ty), md⟩
   | ⟨.IsType t ty, md⟩ => ⟨.IsType (resolveExpr ptMap t) (resolveType ptMap ty), md⟩
   | ⟨.PrimitiveOp op args, md⟩ =>

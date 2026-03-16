@@ -432,7 +432,7 @@ partial def toSMTOp (E : Env) (fn : CoreIdent) (fnty : LMonoTy) (ctx : SMT.Conte
     | "Real.Add"     => .ok (.app Op.add,        .real,   ctx)
     | "Real.Sub"     => .ok (.app Op.sub,        .real,   ctx)
     | "Real.Mul"     => .ok (.app Op.mul,        .real,   ctx)
-    | "Real.Div"     => .ok (.app Op.div,        .real,   ctx)
+    | "Real.Div"     => .ok (.app Op.rdiv,       .real,   ctx)
     | "Real.Lt"      => .ok (.app Op.lt,         .bool,   ctx)
     | "Real.Le"      => .ok (.app Op.le,         .bool,   ctx)
     | "Real.Gt"      => .ok (.app Op.gt,         .bool,   ctx)

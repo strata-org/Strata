@@ -426,6 +426,8 @@ info: ok: #[ASSERT skip]
 -------------------------------------------------------------------------------
 
 -- Test that contracts are included in the function symbol's code type
+/-- info: Except.ok () -/
+#guard_msgs in
 #eval do
   let reqExpr ← CProverGOTO.exprToJson
     (CProverGOTO.Expr.gt (.symbol "x" .Integer) (.constant "0" .Integer))
@@ -467,6 +469,8 @@ info: ok: #[DECL (decl (i : unsignedbv[32])),
           return format ans.instructions
 
 -- The backward GOTO (location 5, targeting location 2) should have the invariant
+/-- info: ok: () -/
+#guard_msgs in
 #eval do
   let ans ← Imperative.Stmts.toGotoTransform Lambda.TEnv.default "testInv" ExampleLoopInvariant
   let backGotos := ans.instructions.toList.filter (fun (i : CProverGOTO.Instruction) =>
@@ -493,6 +497,8 @@ private def ExampleLoopMeasure : List (Imperative.Stmt LExprTP (Imperative.Cmd L
      []
      {}]
 
+/-- info: ok: () -/
+#guard_msgs in
 #eval do
   let ans ← Imperative.Stmts.toGotoTransform Lambda.TEnv.default "testMeas" ExampleLoopMeasure
   let backGotos := ans.instructions.toList.filter (fun (i : CProverGOTO.Instruction) =>
