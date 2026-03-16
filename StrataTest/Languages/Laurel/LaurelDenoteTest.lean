@@ -30,14 +30,14 @@ def emptyProc : ProcEnv := fun _ => none
 
 def trivialEval : LaurelEval := fun σ e =>
   match e with
-  | .Identifier name => σ name
+  | .Identifier name => σ name.text
   | .LiteralInt i => some (.vInt i)
   | .LiteralBool b => some (.vBool b)
   | .LiteralString s => some (.vString s)
   | _ => none
 
 def singleStore (name : Identifier) (v : LaurelValue) : LaurelStore :=
-  fun x => if x == name then some v else none
+  fun x => if x == name.text then some v else none
 
 /-- Extract just the outcome from a denote result. -/
 def getOutcome (r : Option (Outcome × LaurelStore × LaurelHeap)) : Option Outcome :=
@@ -46,7 +46,7 @@ def getOutcome (r : Option (Outcome × LaurelStore × LaurelHeap)) : Option Outc
 /-- Extract outcome and a store lookup from a denote result. -/
 def getOutcomeAndVar (r : Option (Outcome × LaurelStore × LaurelHeap))
     (name : Identifier) : Option (Outcome × Option LaurelValue) :=
-  r.map (fun (o, σ, _) => (o, σ name))
+  r.map (fun (o, σ, _) => (o, σ name.text))
 
 /-- Check that a denote result has the expected outcome and the store is unchanged. -/
 def checkPure (r : Option (Outcome × LaurelStore × LaurelHeap))
@@ -319,6 +319,7 @@ def checkPure (r : Option (Outcome × LaurelStore × LaurelHeap))
     outputs := [{ name := "result", type := ⟨.TInt, emd⟩ }]
     preconditions := []
     determinism := .deterministic none
+    isFunctional := false
     decreases := none
     body := .Transparent (mk (.PrimitiveOp .Add [mk (.Identifier "n"), mk (.LiteralInt 1)]))
     md := emd
@@ -336,6 +337,7 @@ def checkPure (r : Option (Outcome × LaurelStore × LaurelHeap))
     outputs := [{ name := "result", type := ⟨.TInt, emd⟩ }]
     preconditions := []
     determinism := .deterministic none
+    isFunctional := false
     decreases := none
     body := .Transparent (mk (.Return (some (mk (.Identifier "n")))))
     md := emd
@@ -353,6 +355,7 @@ def checkPure (r : Option (Outcome × LaurelStore × LaurelHeap))
     outputs := []
     preconditions := []
     determinism := .deterministic none
+    isFunctional := false
     decreases := none
     body := .Transparent (mk (.Return none))
     md := emd
@@ -429,7 +432,7 @@ def checkPure (r : Option (Outcome × LaurelStore × LaurelHeap))
 #guard
   let δ : LaurelEval := fun σ e =>
     match e with
-    | .Old ⟨.Identifier name, _⟩ => σ name
+    | .Old ⟨.Identifier name, _⟩ => σ name.text
     | _ => trivialEval σ e
   getOutcome (denoteStmt δ emptyProc 10 emptyHeap (singleStore "x" (.vInt 99))
     (.Old (mk (.Identifier "x"))))
@@ -442,7 +445,7 @@ def checkPure (r : Option (Outcome × LaurelStore × LaurelHeap))
     | .Forall _ _ _ => some (.vBool true)
     | _ => none
   getOutcome (denoteStmt δ emptyProc 10 emptyHeap emptyStore
-    (.Forall "x" ⟨.TInt, emd⟩ (mk (.LiteralBool true))))
+    (.Forall ⟨"x", ⟨.TInt, emd⟩⟩ none (mk (.LiteralBool true))))
   = some (.normal (.vBool true))
 
 -- Exists (delegated to δ)
@@ -452,7 +455,7 @@ def checkPure (r : Option (Outcome × LaurelStore × LaurelHeap))
     | .Exists _ _ _ => some (.vBool true)
     | _ => none
   getOutcome (denoteStmt δ emptyProc 10 emptyHeap emptyStore
-    (.Exists "x" ⟨.TInt, emd⟩ (mk (.LiteralBool true))))
+    (.Exists ⟨"x", ⟨.TInt, emd⟩⟩ none (mk (.LiteralBool true))))
   = some (.normal (.vBool true))
 
 /-! ## This Test -/
@@ -510,6 +513,7 @@ def checkPure (r : Option (Outcome × LaurelStore × LaurelHeap))
     outputs := [{ name := "result", type := ⟨.TInt, emd⟩ }]
     preconditions := []
     determinism := .deterministic none
+    isFunctional := false
     decreases := none
     body := .Transparent (mk (.LiteralInt 100))
     md := emd

@@ -25,7 +25,7 @@ namespace Strata.Laurel
 /-! ## UpdateStore -/
 
 theorem updateStore_sound {σ σ' : LaurelStore} {x : Identifier} {v : LaurelValue} :
-    updateStore σ x v = some σ' → UpdateStore σ x v σ' := by
+    updateStore σ x v = some σ' → UpdateStore σ x.text v σ' := by
   intro h
   simp [updateStore] at h
   split at h <;> simp at h
@@ -36,20 +36,20 @@ theorem updateStore_sound {σ σ' : LaurelStore} {x : Identifier} {v : LaurelVal
       (fun y hne => by simp [Ne.symm hne])
 
 theorem updateStore_complete {σ σ' : LaurelStore} {x : Identifier} {v : LaurelValue} :
-    UpdateStore σ x v σ' → updateStore σ x v = some σ' := by
+    UpdateStore σ x.text v σ' → updateStore σ x v = some σ' := by
   intro h
   cases h with
   | update hold hnew hrest =>
     simp [updateStore, hold]
     funext y
-    by_cases heq : y = x
+    by_cases heq : y = x.text
     · subst heq; simp; exact hnew.symm
     · simp [heq]; exact (hrest y (Ne.symm heq)).symm
 
 /-! ## InitStore -/
 
 theorem initStore_sound {σ σ' : LaurelStore} {x : Identifier} {v : LaurelValue} :
-    initStore σ x v = some σ' → InitStore σ x v σ' := by
+    initStore σ x v = some σ' → InitStore σ x.text v σ' := by
   intro h
   simp [initStore] at h
   split at h <;> simp at h
@@ -60,13 +60,13 @@ theorem initStore_sound {σ σ' : LaurelStore} {x : Identifier} {v : LaurelValue
       (fun y hne => by simp [Ne.symm hne])
 
 theorem initStore_complete {σ σ' : LaurelStore} {x : Identifier} {v : LaurelValue} :
-    InitStore σ x v σ' → initStore σ x v = some σ' := by
+    InitStore σ x.text v σ' → initStore σ x v = some σ' := by
   intro h
   cases h with
   | init hnone hnew hrest =>
     simp [initStore, hnone]
     funext y
-    by_cases heq : y = x
+    by_cases heq : y = x.text
     · subst heq; simp; exact hnew.symm
     · simp [heq]; exact (hrest y (Ne.symm heq)).symm
 
@@ -149,7 +149,7 @@ theorem findSmallestFree_below_occupied (h : LaurelHeap) (n : Nat) (bound : Nat)
 
 /-! ## AllocHeap -/
 
-theorem allocHeap_sound {h : LaurelHeap} {typeName : Identifier}
+theorem allocHeap_sound {h : LaurelHeap} {typeName : String}
     {addr : Nat} {h' : LaurelHeap} :
     allocHeap h typeName = some (addr, h') → AllocHeap h typeName addr h' := by
   intro heq
@@ -163,7 +163,7 @@ theorem allocHeap_sound {h : LaurelHeap} {typeName : Identifier}
     · simp
     · intro a hne; simp [Ne.symm hne]
 
-theorem allocHeap_complete {h h' : LaurelHeap} {typeName : Identifier} {addr : Nat}
+theorem allocHeap_complete {h h' : LaurelHeap} {typeName : String} {addr : Nat}
     (hbound : addr ≤ heapSearchBound := by simp [heapSearchBound]; omega) :
     AllocHeap h typeName addr h' → allocHeap h typeName = some (addr, h') := by
   intro halloc
@@ -181,7 +181,7 @@ theorem allocHeap_complete {h h' : LaurelHeap} {typeName : Identifier} {addr : N
 /-! ## HeapFieldWrite -/
 
 theorem heapFieldWrite_sound {h h' : LaurelHeap} {addr : Nat}
-    {field : Identifier} {v : LaurelValue} :
+    {field : String} {v : LaurelValue} :
     heapFieldWrite' h addr field v = some h' → HeapFieldWrite h addr field v h' := by
   intro heq
   simp [heapFieldWrite'] at heq
@@ -193,7 +193,7 @@ theorem heapFieldWrite_sound {h h' : LaurelHeap} {addr : Nat}
     · intro a hne; simp [Ne.symm hne]
 
 theorem heapFieldWrite_complete {h h' : LaurelHeap} {addr : Nat}
-    {field : Identifier} {v : LaurelValue} :
+    {field : String} {v : LaurelValue} :
     HeapFieldWrite h addr field v h' → heapFieldWrite' h addr field v = some h' := by
   intro hw
   cases hw with

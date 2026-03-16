@@ -33,10 +33,10 @@ theorem lift_single_assign_correct
     (e : StmtExprMd) (ty : HighTypeMd)
     (md tmd : Imperative.MetaData Core.Expression)
     (v_old v_new result : LaurelValue)
-    (hx_def : σ x = some v_old)
-    (hfresh : σ snap = none)
-    (hne : snap ≠ x)
-    (he_ext : ∀ σ', (∀ y, y ≠ snap → σ' y = σ y) →
+    (hx_def : σ x.text = some v_old)
+    (hfresh : σ snap.text = none)
+    (hne : snap.text ≠ x.text)
+    (he_ext : ∀ σ', (∀ y, y ≠ snap.text → σ' y = σ y) →
       EvalLaurelStmt δ π h σ' e h σ' (.normal v_new))
     (hop : evalPrimOp op [v_old, v_new] = some result) :
     ∃ σ_block, EvalLaurelBlock δ π h σ
@@ -44,20 +44,20 @@ theorem lift_single_assign_correct
         ⟨.Assign [⟨.Identifier x, tmd⟩] e, md⟩,
         ⟨.PrimitiveOp op [⟨.Identifier snap, md⟩, ⟨.Identifier x, md⟩], md⟩ ]
       h σ_block (.normal result) := by
-  let σ_snap : LaurelStore := fun y => if y == snap then some v_old else σ y
-  let σ_final : LaurelStore := fun y => if y == x then some v_new else σ_snap y
-  have h_snap_self : σ_snap snap = some v_old := by simp [σ_snap]
-  have h_snap_x : σ_snap x = some v_old := by
+  let σ_snap : LaurelStore := fun y => if y == snap.text then some v_old else σ y
+  let σ_final : LaurelStore := fun y => if y == x.text then some v_new else σ_snap y
+  have h_snap_self : σ_snap snap.text = some v_old := by simp [σ_snap]
+  have h_snap_x : σ_snap x.text = some v_old := by
     simp only [σ_snap]; simp [beq_iff_eq, Ne.symm hne, hx_def]
-  have h_final_snap : σ_final snap = some v_old := by
+  have h_final_snap : σ_final snap.text = some v_old := by
     simp only [σ_final]; simp [beq_iff_eq, hne, h_snap_self]
-  have h_final_x : σ_final x = some v_new := by simp [σ_final]
+  have h_final_x : σ_final x.text = some v_new := by simp [σ_final]
   have he_snap : EvalLaurelStmt δ π h σ_snap e h σ_snap (.normal v_new) := by
     apply he_ext; intro y hne'; simp only [σ_snap]; simp [beq_iff_eq, hne']
-  have h_init : InitStore σ snap v_old σ_snap :=
+  have h_init : InitStore σ snap.text v_old σ_snap :=
     .init hfresh h_snap_self (fun y hne' => by
       simp only [σ_snap]; simp [beq_iff_eq, Ne.symm hne'])
-  have h_upd : UpdateStore σ_snap x v_new σ_final :=
+  have h_upd : UpdateStore σ_snap x.text v_new σ_final :=
     .update (v' := v_old) h_snap_x h_final_x (fun y hne' => by
       simp only [σ_final]; simp [beq_iff_eq, Ne.symm hne'])
   exact ⟨σ_final, .cons_normal
@@ -83,10 +83,10 @@ theorem lift_single_assign_from_eval
       ⟨.PrimitiveOp op [⟨.Identifier x, md⟩,
                          ⟨.Assign [⟨.Identifier x, tmd⟩] e, md⟩], md⟩
       h' σ' (.normal result))
-    (hfresh : σ snap = none)
-    (hne : snap ≠ x)
+    (hfresh : σ snap.text = none)
+    (hne : snap.text ≠ x.text)
     (he_pure : EvalLaurelStmt δ π h σ e h σ (.normal v_new))
-    (he_ext : ∀ σ₀, (∀ y, y ≠ snap → σ₀ y = σ y) →
+    (he_ext : ∀ σ₀, (∀ y, y ≠ snap.text → σ₀ y = σ y) →
       EvalLaurelStmt δ π h σ₀ e h σ₀ (.normal v_new)) :
     ∃ σ_block, EvalLaurelBlock δ π h σ
       [ ⟨.LocalVariable snap ty (some ⟨.Identifier x, md⟩), md⟩,
@@ -147,8 +147,8 @@ def argValues : List ArgSpec → List LaurelValue
 def applyArgEffect (σ : LaurelStore) : ArgSpec → LaurelStore
   | .pure _ _ => σ
   | .assign x snap _ _ val =>
-    fun y => if y == x then some val
-             else if y == snap then σ x
+    fun y => if y == x.text then some val
+             else if y == snap.text then σ x.text
              else σ y
 
 /-- Thread store effects right-to-left: for `[a₁, ..., aₙ]`, apply aₙ first,
@@ -161,11 +161,11 @@ def threadEffectsRL (σ : LaurelStore) : List ArgSpec → LaurelStore
 
 theorem threadEffectsRL_preserves_none
     {σ : LaurelStore} {name : Identifier}
-    (hfresh : σ name = none)
+    (hfresh : σ name.text = none)
     (hne : ∀ spec ∈ specs, match spec with
-      | .assign x snap _ _ _ => name ≠ x ∧ name ≠ snap
+      | .assign x snap _ _ _ => name.text ≠ x.text ∧ name.text ≠ snap.text
       | .pure _ _ => True) :
-    threadEffectsRL σ specs name = none := by
+    threadEffectsRL σ specs name.text = none := by
   match specs with
   | [] => exact hfresh
   | (.pure _ _) :: rest =>
@@ -195,34 +195,34 @@ theorem assign_prepends_eval
     (x snap : Identifier) (e : StmtExprMd) (ty : HighTypeMd)
     (md tmd : Imperative.MetaData Core.Expression)
     (v_old val : LaurelValue)
-    (hx_def : σ x = some v_old)
-    (hfresh : σ snap = none)
-    (hne : snap ≠ x)
-    (he_eval : ∀ σ₀, (∀ y, y ≠ snap → σ₀ y = σ y) →
+    (hx_def : σ x.text = some v_old)
+    (hfresh : σ snap.text = none)
+    (hne : snap.text ≠ x.text)
+    (he_eval : ∀ σ₀, (∀ y, y ≠ snap.text → σ₀ y = σ y) →
       EvalLaurelStmt δ π h σ₀ e h σ₀ (.normal val)) :
     EvalLaurelBlock δ π h σ
       (ArgSpec.prepends md tmd (ArgSpec.assign x snap e ty val))
       h (applyArgEffect σ (ArgSpec.assign x snap e ty val)) (.normal val) := by
   simp only [ArgSpec.prepends, applyArgEffect]
   -- The snapshot store: snap gets v_old (= σ x), everything else unchanged
-  let σ_snap : LaurelStore := fun y => if y == snap then some v_old else σ y
-  have h_snap_x : σ_snap x = some v_old := by
-    simp [σ_snap, beq_iff_eq, Ne.symm hne, hx_def]
+  let σ_snap : LaurelStore := fun y => if y == snap.text then some v_old else σ y
+  have h_snap_x : σ_snap x.text = some v_old := by
+    simp [σ_snap, hne, hx_def]
   have he_snap : EvalLaurelStmt δ π h σ_snap e h σ_snap (.normal val) :=
     he_eval σ_snap (fun y hne' => by simp [σ_snap, beq_iff_eq, hne'])
-  have h_init : InitStore σ snap v_old σ_snap :=
+  have h_init : InitStore σ snap.text v_old σ_snap :=
     .init hfresh (by simp [σ_snap]) (fun y hne' => by
       simp [σ_snap, beq_iff_eq, Ne.symm hne'])
   -- The final store after assignment
   let σ_final : LaurelStore :=
-    fun y => if y == x then some val else σ_snap y
-  have hσ_final_x : σ_final x = some val := by simp [σ_final]
-  have h_upd : UpdateStore σ_snap x val σ_final :=
+    fun y => if y == x.text then some val else σ_snap y
+  have hσ_final_x : σ_final x.text = some val := by simp [σ_final]
+  have h_upd : UpdateStore σ_snap x.text val σ_final :=
     .update (v' := v_old) h_snap_x hσ_final_x
       (fun y hne' => by simp [σ_final, beq_iff_eq, Ne.symm hne'])
   -- σ_final = applyArgEffect result (the nested if-then-else)
-  suffices h_eq : σ_final = fun y => if y == x then some val
-      else if y == snap then σ x else σ y by
+  suffices h_eq : σ_final = fun y => if y == x.text then some val
+      else if y == snap.text then σ x.text else σ y by
     rw [h_eq] at h_upd
     exact .cons_normal
       (.local_var_init (.identifier hx_def) hfresh h_init)
@@ -255,15 +255,15 @@ inductive SpecsOK :
   | cons_assign :
     SpecsOK δ π h σ md tmd rest →
     -- snap is fresh in σ and not affected by any spec in rest
-    (σ snap = none) →
+    (σ snap.text = none) →
     (∀ spec ∈ rest, match spec with
-      | .assign x' snap' _ _ _ => snap ≠ x' ∧ snap ≠ snap'
+      | .assign x' snap' _ _ _ => snap.text ≠ x'.text ∧ snap.text ≠ snap'.text
       | .pure _ _ => True) →
-    (snap ≠ x) →
+    (snap.text ≠ x.text) →
     -- target is defined after threading rest
-    ((threadEffectsRL σ rest x).isSome) →
+    ((threadEffectsRL σ rest x.text).isSome) →
     -- e evaluates purely in the store after threading rest
-    (∀ σ₀, (∀ y, y ≠ snap → σ₀ y = threadEffectsRL σ rest y) →
+    (∀ σ₀, (∀ y, y ≠ snap.text → σ₀ y = threadEffectsRL σ rest y) →
       EvalLaurelStmt δ π h σ₀ e h σ₀ (.normal val)) →
     SpecsOK δ π h σ md tmd (ArgSpec.assign x snap e ty val :: rest)
 
@@ -287,7 +287,7 @@ theorem allPrepends_eval
     simp only [allPrepends, threadEffectsRL]
     let σ_rest := threadEffectsRL σ rest
     -- snap is fresh in σ_rest
-    have hsnap_fresh : σ_rest snap = none := by
+    have hsnap_fresh : σ_rest snap.text = none := by
       apply threadEffectsRL_preserves_none hfresh_σ
       intro spec hmem
       exact hfresh_rest spec hmem
@@ -513,7 +513,7 @@ theorem transformStmt_block_correct
     {δ : LaurelEval} {π : ProcEnv}
     {h : LaurelHeap} {σ : LaurelStore}
     {stmts_flat : List StmtExprMd}
-    {label : Option Identifier}
+    {label : Option String}
     {md : Imperative.MetaData Core.Expression}
     {h' : LaurelHeap} {σ' : LaurelStore} {o : Outcome}
     (hinner : EvalLaurelBlock δ π h σ stmts_flat h' σ' o)
@@ -558,7 +558,7 @@ theorem transformed_block_cons_exit
     {δ : LaurelEval} {π : ProcEnv}
     {h : LaurelHeap} {σ : LaurelStore}
     {stmts₁ : List StmtExprMd} {stmts_rest : List StmtExprMd}
-    {h' : LaurelHeap} {σ' : LaurelStore} {label : Identifier}
+    {h' : LaurelHeap} {σ' : LaurelStore} {label : String}
     (hfirst : EvalLaurelBlock δ π h σ stmts₁ h' σ' (.exit label)) :
     EvalLaurelBlock δ π h σ (stmts₁ ++ stmts_rest) h' σ' (.exit label) := by
   match hfirst with

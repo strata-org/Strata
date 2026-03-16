@@ -35,7 +35,7 @@ def HeapInBound (h : LaurelHeap) : Prop :=
   ∀ addr, h addr = none → (∀ a, a < addr → (h a).isSome) → addr ≤ heapSearchBound
 
 /-- If `HeapInBound h` and `AllocHeap h typeName addr h'`, then `addr ≤ heapSearchBound`. -/
-theorem AllocHeap_addr_bound {h h' : LaurelHeap} {typeName : Identifier} {addr : Nat}
+theorem AllocHeap_addr_bound {h h' : LaurelHeap} {typeName : String} {addr : Nat}
     (hib : HeapInBound h) (halloc : AllocHeap h typeName addr h') :
     addr ≤ heapSearchBound := by
   cases halloc with
@@ -47,7 +47,7 @@ private theorem denoteBlock_exit_of_head
     {δ : LaurelEval} {π : ProcEnv} {fuel : Nat}
     {h : LaurelHeap} {σ : LaurelStore}
     {s : StmtExprMd} {rest : List StmtExprMd}
-    {label : Identifier} {σ' : LaurelStore} {h' : LaurelHeap}
+    {label : String} {σ' : LaurelStore} {h' : LaurelHeap}
     (hs : denoteStmt δ π fuel h σ s.val = some (.exit label, σ', h')) :
     denoteBlock δ π (fuel + 1) h σ (s :: rest) = some (.exit label, σ', h') := by
   cases rest with

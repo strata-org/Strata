@@ -3,10 +3,12 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.Languages.Laurel.Laurel
+public import Strata.Languages.Laurel.Laurel
 import Strata.Languages.Laurel.LaurelFormat
 import Strata.Languages.Laurel.LaurelTypes
+public import Strata.Languages.Laurel.Resolution
 import Strata.Languages.Core.Verifier
 import Strata.Util.Tactics
 
@@ -63,7 +65,13 @@ Becomes:
 -/
 
 /-- Substitution map: variable name → name to use in expressions -/
-private abbrev SubstMap := Map Identifier Identifier
+private abbrev SubstMap := List (Identifier × Identifier)
+
+private def SubstMap.find? (m : SubstMap) (key : Identifier) : Option Identifier :=
+  (List.find? (fun (k, _) => k == key) m).map (·.2)
+
+private def SubstMap.insert (m : SubstMap) (key : Identifier) (val : Identifier) : SubstMap :=
+  (key, val) :: m.filter (fun (k, _) => !(k == key))
 
 structure LiftState where
   /-- Statements to prepend (in reverse order — newest first) -/
@@ -72,10 +80,10 @@ structure LiftState where
   varCounters : List (Identifier × Nat) := []
   /-- Substitution map: variable name → name to use -/
   subst : SubstMap := []
-  /-- Type environment -/
-  env : TypeEnv := []
-  /-- Type definitions from the program -/
-  types : List TypeDefinition := []
+  /-- Type environment for local variable lookups -/
+  env : List (Identifier × HighTypeMd) := []
+  /-- Semantic model for type computation -/
+  model : SemanticModel
   /-- Global counter for fresh conditional variables -/
   condCounter : Nat := 0
   /-- Names of imperative procedures whose calls must be lifted from expression position -/
@@ -131,7 +139,7 @@ private def setSubst (varName : Identifier) (value : Identifier) : LiftM Unit :=
 
 private def computeType (expr : StmtExprMd) : LiftM HighTypeMd := do
   let s ← get
-  return computeExprType s.env s.types expr s.procedures
+  return computeExprType s.model expr
 
 /-- Check if an expression contains any assignments or imperative calls (recursively). -/
 def containsAssignmentOrImperativeCall (imperativeNames : List Identifier) (expr : StmtExprMd) : Bool :=
@@ -429,7 +437,7 @@ def transformProcedureBody (body : StmtExprMd) : LiftM StmtExprMd := do
   | multiple => pure (bare (.Block multiple none))
 
 def transformProcedure (proc : Procedure) : LiftM Procedure := do
-  let initEnv : TypeEnv :=
+  let initEnv : List (Identifier × HighTypeMd) :=
     proc.inputs.map (fun p => (p.name, p.type)) ++
     proc.outputs.map (fun p => (p.name, p.type))
   modify fun s => { s with subst := [], prependedStmts := [], varCounters := [], env := initEnv }
@@ -442,14 +450,21 @@ def transformProcedure (proc : Procedure) : LiftM Procedure := do
       pure { proc with body := .Opaque postconds impl' modif }
   | .Abstract _ =>
       pure proc
+  | .External =>
+      pure proc
 
 /--
 Transform a program to lift all assignments that occur in an expression context.
 -/
-def liftImperativeExpressions (program : Program) : Program :=
+public def liftExpressionAssignments (model : SemanticModel) (program : Program) : Program :=
   let imperativeNames := program.staticProcedures.filter (fun p => !p.isFunctional) |>.map (·.name)
-  let initState : LiftState := { types := program.types, imperativeNames := imperativeNames, procedures := program.staticProcedures }
+  let initState : LiftState := { model := model, imperativeNames := imperativeNames, procedures := program.staticProcedures }
   let (seqProcedures, _) := (program.staticProcedures.mapM transformProcedure).run initState
   { program with staticProcedures := seqProcedures }
+
+/-- Backward-compatible alias. -/
+public def liftImperativeExpressions (program : Program) : Program :=
+  let model : SemanticModel := { nextId := 0, compositeCount := 0, refToDef := {} }
+  liftExpressionAssignments model program
 
 end Laurel

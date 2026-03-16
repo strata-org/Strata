@@ -17,8 +17,8 @@ namespace Strata.Laurel
 
 /-! ## Store Monotonicity -/
 
-theorem UpdateStore_def_monotone {σ σ' : LaurelStore} {x : Identifier} {v : LaurelValue}
-    {vs : List Identifier} :
+theorem UpdateStore_def_monotone {σ σ' : LaurelStore} {x : String} {v : LaurelValue}
+    {vs : List String} :
     (∀ y, y ∈ vs → (σ y).isSome) →
     UpdateStore σ x v σ' →
     (∀ y, y ∈ vs → (σ' y).isSome) := by
@@ -29,8 +29,8 @@ theorem UpdateStore_def_monotone {σ σ' : LaurelStore} {x : Identifier} {v : La
     · subst heq; simp [Hnew]
     · rw [Hrest y heq]; exact Hdef y Hy
 
-theorem InitStore_def_monotone {σ σ' : LaurelStore} {x : Identifier} {v : LaurelValue}
-    {vs : List Identifier} :
+theorem InitStore_def_monotone {σ σ' : LaurelStore} {x : String} {v : LaurelValue}
+    {vs : List String} :
     (∀ y, y ∈ vs → (σ y).isSome) →
     InitStore σ x v σ' →
     (∀ y, y ∈ vs → (σ' y).isSome) := by
@@ -43,7 +43,7 @@ theorem InitStore_def_monotone {σ σ' : LaurelStore} {x : Identifier} {v : Laur
 
 /-! ## Determinism of Store Operations -/
 
-theorem UpdateStore_deterministic {σ σ₁ σ₂ : LaurelStore} {x : Identifier} {v : LaurelValue} :
+theorem UpdateStore_deterministic {σ σ₁ σ₂ : LaurelStore} {x : String} {v : LaurelValue} :
     UpdateStore σ x v σ₁ →
     UpdateStore σ x v σ₂ →
     σ₁ = σ₂ := by
@@ -55,7 +55,7 @@ theorem UpdateStore_deterministic {σ σ₁ σ₂ : LaurelStore} {x : Identifier
   · subst heq; simp_all
   · rw [Hrest1 y heq, Hrest2 y heq]
 
-theorem InitStore_deterministic {σ σ₁ σ₂ : LaurelStore} {x : Identifier} {v : LaurelValue} :
+theorem InitStore_deterministic {σ σ₁ σ₂ : LaurelStore} {x : String} {v : LaurelValue} :
     InitStore σ x v σ₁ →
     InitStore σ x v σ₂ →
     σ₁ = σ₂ := by
@@ -72,7 +72,7 @@ theorem InitStore_deterministic {σ σ₁ σ₂ : LaurelStore} {x : Identifier} 
 /-- AllocHeap is deterministic because the `alloc` constructor requires `addr`
 to be the smallest free address (all smaller addresses are occupied). -/
 theorem AllocHeap_deterministic {h h₁ h₂ : LaurelHeap}
-    {typeName : Identifier} {addr₁ addr₂ : Nat} :
+    {typeName : String} {addr₁ addr₂ : Nat} :
     AllocHeap h typeName addr₁ h₁ →
     AllocHeap h typeName addr₂ h₂ →
     addr₁ = addr₂ ∧ h₁ = h₂ := by
@@ -91,7 +91,7 @@ theorem AllocHeap_deterministic {h h₁ h₂ : LaurelHeap}
       else rw [hrest1 a heq, hrest2 a heq]⟩
 
 theorem HeapFieldWrite_deterministic {h h₁ h₂ : LaurelHeap}
-    {addr : Nat} {field : Identifier} {v : LaurelValue} :
+    {addr : Nat} {field : String} {v : LaurelValue} :
     HeapFieldWrite h addr field v h₁ →
     HeapFieldWrite h addr field v h₂ →
     h₁ = h₂ := by
@@ -131,11 +131,11 @@ theorem EvalArgs_deterministic {δ : LaurelEval} {σ : LaurelStore}
 
 /-! ## catchExit Properties -/
 
-theorem catchExit_normal (label : Option Identifier) (v : LaurelValue) :
+theorem catchExit_normal (label : Option String) (v : LaurelValue) :
     catchExit label (.normal v) = .normal v := by
   cases label <;> simp [catchExit]
 
-theorem catchExit_return (label : Option Identifier) (rv : Option LaurelValue) :
+theorem catchExit_return (label : Option String) (rv : Option LaurelValue) :
     catchExit label (.ret rv) = .ret rv := by
   cases label <;> simp [catchExit]
 
@@ -579,25 +579,25 @@ end
 /-! ## Store Operation Lemmas -/
 
 /-- InitStore on a fresh name preserves existing variable values. -/
-theorem InitStore_get_other {σ σ' : LaurelStore} {x y : Identifier} {v : LaurelValue}
+theorem InitStore_get_other {σ σ' : LaurelStore} {x y : String} {v : LaurelValue}
     (hinit : InitStore σ x v σ') (hne : x ≠ y) :
     σ' y = σ y := by
   cases hinit with | init _ _ hrest => exact hrest y hne
 
 /-- UpdateStore preserves values of other variables. -/
-theorem UpdateStore_get_other {σ σ' : LaurelStore} {x y : Identifier} {v : LaurelValue}
+theorem UpdateStore_get_other {σ σ' : LaurelStore} {x y : String} {v : LaurelValue}
     (hup : UpdateStore σ x v σ') (hne : x ≠ y) :
     σ' y = σ y := by
   cases hup with | update _ _ hrest => exact hrest y hne
 
 /-- UpdateStore sets the target variable. -/
-theorem UpdateStore_get_self {σ σ' : LaurelStore} {x : Identifier} {v : LaurelValue}
+theorem UpdateStore_get_self {σ σ' : LaurelStore} {x : String} {v : LaurelValue}
     (hup : UpdateStore σ x v σ') :
     σ' x = some v := by
   cases hup with | update _ hnew _ => exact hnew
 
 /-- InitStore sets the target variable. -/
-theorem InitStore_get_self {σ σ' : LaurelStore} {x : Identifier} {v : LaurelValue}
+theorem InitStore_get_self {σ σ' : LaurelStore} {x : String} {v : LaurelValue}
     (hinit : InitStore σ x v σ') :
     σ' x = some v := by
   cases hinit with | init _ hnew _ => exact hnew

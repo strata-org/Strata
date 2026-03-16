@@ -32,14 +32,14 @@ namespace Strata.Laurel
 
 /-- Update an existing variable in the store. Returns `none` if the variable is not present. -/
 def updateStore (σ : LaurelStore) (x : Identifier) (v : LaurelValue) : Option LaurelStore :=
-  match σ x with
-  | some _ => some (fun y => if y == x then some v else σ y)
+  match σ x.text with
+  | some _ => some (fun y => if y == x.text then some v else σ y)
   | none => none
 
 /-- Initialize a new variable in the store. Returns `none` if the variable already exists. -/
 def initStore (σ : LaurelStore) (x : Identifier) (v : LaurelValue) : Option LaurelStore :=
-  match σ x with
-  | none => some (fun y => if y == x then some v else σ y)
+  match σ x.text with
+  | none => some (fun y => if y == x.text then some v else σ y)
   | some _ => none
 
 /-- Upper bound on the address range searched by `findSmallestFree` and `allocHeap`. -/
@@ -56,14 +56,14 @@ def findSmallestFree (h : LaurelHeap) (n : Nat) (bound : Nat := heapSearchBound)
 
 /-- Allocate a new object on the heap with the given type name.
 Returns `none` when the heap is full (all addresses in the search range are occupied). -/
-def allocHeap (h : LaurelHeap) (typeName : Identifier) : Option (Nat × LaurelHeap) :=
+def allocHeap (h : LaurelHeap) (typeName : String) : Option (Nat × LaurelHeap) :=
   let addr := findSmallestFree h 0
   match h addr with
   | none => some (addr, fun a => if a == addr then some (typeName, fun _ => none) else h a)
   | some _ => none
 
 /-- Write a value to a field of a heap object. Returns `none` if the address is not allocated. -/
-def heapFieldWrite' (h : LaurelHeap) (addr : Nat) (field : Identifier) (v : LaurelValue)
+def heapFieldWrite' (h : LaurelHeap) (addr : Nat) (field : String) (v : LaurelValue)
     : Option LaurelHeap :=
   match h addr with
   | some (tag, fields) =>
@@ -85,10 +85,11 @@ def denoteStmt (δ : LaurelEval) (π : ProcEnv) (fuel : Nat)
     | .LiteralInt i => some (.normal (.vInt i), σ, h)
     | .LiteralBool b => some (.normal (.vBool b), σ, h)
     | .LiteralString s => some (.normal (.vString s), σ, h)
+    | .LiteralDecimal _ => none  -- no runtime representation for decimals
 
     -- Variables
     | .Identifier name =>
-      match σ name with
+      match σ name.text with
       | some v => some (.normal v, σ, h)
       | none => none
 
@@ -145,7 +146,7 @@ def denoteStmt (δ : LaurelEval) (π : ProcEnv) (fuel : Nat)
     | .Assign [⟨.Identifier name, _⟩] value =>
       match denoteStmt δ π fuel h σ value.val with
       | some (.normal v, σ₁, h₁) =>
-        match σ₁ name with
+        match σ₁ name.text with
         | some _ =>
           match updateStore σ₁ name v with
           | some σ₂ => some (.normal v, σ₂, h₁)
@@ -159,7 +160,7 @@ def denoteStmt (δ : LaurelEval) (π : ProcEnv) (fuel : Nat)
       | some (.normal (.vRef addr), σ₁, h₁) =>
         match denoteStmt δ π fuel h₁ σ₁ value.val with
         | some (.normal v, σ₂, h₂) =>
-          match heapFieldWrite' h₂ addr fieldName v with
+          match heapFieldWrite' h₂ addr fieldName.text v with
           | some h₃ => some (.normal v, σ₂, h₃)
           | none => none
         | _ => none
@@ -216,14 +217,14 @@ def denoteStmt (δ : LaurelEval) (π : ProcEnv) (fuel : Nat)
 
     -- OO Features
     | .New typeName =>
-      match allocHeap h typeName with
+      match allocHeap h typeName.text with
       | some (addr, h') => some (.normal (.vRef addr), σ, h')
       | none => none
 
     | .FieldSelect target fieldName =>
       match denoteStmt δ π fuel h σ target.val with
       | some (.normal (.vRef addr), σ₁, h₁) =>
-        match heapFieldRead h₁ addr fieldName with
+        match heapFieldRead h₁ addr fieldName.text with
         | some v => some (.normal v, σ₁, h₁)
         | none => none
       | _ => none
@@ -233,7 +234,7 @@ def denoteStmt (δ : LaurelEval) (π : ProcEnv) (fuel : Nat)
       | some (.normal (.vRef addr), σ₁, h₁) =>
         match denoteStmt δ π fuel h₁ σ₁ newVal.val with
         | some (.normal v, σ₂, h₂) =>
-          match heapFieldWrite' h₂ addr fieldName v with
+          match heapFieldWrite' h₂ addr fieldName.text v with
           | some h₃ => some (.normal (.vRef addr), σ₂, h₃)
           | none => none
         | _ => none
@@ -253,7 +254,7 @@ def denoteStmt (δ : LaurelEval) (π : ProcEnv) (fuel : Nat)
       | some (.normal (.vRef addr), σ₁, h₁) =>
         match h₁ addr with
         | some (typeName, _) =>
-          match π (typeName ++ "." ++ callee) with
+          match π (↑(typeName ++ "." ++ callee.text)) with
           | some proc =>
             match denoteArgs δ π fuel h₁ σ₁ args with
             | some (vals, σ₂, h₂) =>

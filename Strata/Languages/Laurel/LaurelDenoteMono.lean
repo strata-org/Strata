@@ -36,6 +36,7 @@ theorem denoteStmt_fuel_mono
     | LiteralInt => exact heval
     | LiteralBool => exact heval
     | LiteralString => exact heval
+    | LiteralDecimal => exact heval
     | Identifier name => exact heval
     | PrimitiveOp op args =>
       match hargs : denoteArgs δ π n h σ args with
@@ -315,7 +316,7 @@ theorem denoteStmt_fuel_mono
         match hlook : h₁ addr with
         | some (typeName, _) =>
           simp [hlook] at heval ⊢
-          match hproc : π (typeName ++ "." ++ callee) with
+          match hproc : π (↑(typeName ++ "." ++ callee.text)) with
           | some proc =>
             simp [hproc] at heval ⊢
             match hargs : denoteArgs δ π n h₁ σ₁ args with

@@ -30,14 +30,14 @@ def emptyProc : ProcEnv := fun _ => none
 
 def trivialEval : LaurelEval := fun σ e =>
   match e with
-  | .Identifier name => σ name
+  | .Identifier name => σ name.text
   | .LiteralInt i => some (.vInt i)
   | .LiteralBool b => some (.vBool b)
   | .LiteralString s => some (.vString s)
   | _ => none
 
 def singleStore (name : Identifier) (v : LaurelValue) : LaurelStore :=
-  fun x => if x == name then some v else none
+  fun x => if x == name.text then some v else none
 
 /-! ## Literal Tests -/
 

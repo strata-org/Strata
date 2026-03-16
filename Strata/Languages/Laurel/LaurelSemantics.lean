@@ -62,6 +62,19 @@ The following `StmtExpr` constructors have no evaluation rules and will get stuc
 
 namespace Strata.Laurel
 
+/-- Structural `DecidableEq` for `Identifier` comparing both `text` and `uniqueId`.
+    Note: the `BEq` instance in `Laurel.lean` only compares `.text` (temporary hack).
+    Proofs that rely on `BEq` agreeing with `DecidableEq` should use `Identifier.beq_eq`
+    or work with `BEq` directly. -/
+instance : DecidableEq Identifier := fun a b =>
+  match decEq a.text b.text, decEq a.uniqueId b.uniqueId with
+  | .isTrue ht, .isTrue hu =>
+    .isTrue (by cases a; cases b; simp at ht hu; simp [ht, hu])
+  | .isFalse ht, _ =>
+    .isFalse (by intro heq; cases heq; exact ht rfl)
+  | _, .isFalse hu =>
+    .isFalse (by intro heq; cases heq; exact hu rfl)
+
 /-! ## Values -/
 
 inductive LaurelValue where
@@ -74,8 +87,11 @@ inductive LaurelValue where
 
 /-! ## Store and Heap -/
 
-abbrev LaurelStore := Identifier → Option LaurelValue
-abbrev LaurelHeap := Nat → Option (Identifier × (Identifier → Option LaurelValue))
+/-- Variable store keyed by `String` (the `.text` of an `Identifier`).
+    Using `String` ensures `BEq` and `DecidableEq` agree, which is required
+    by the bridging proofs between relational and denotational semantics. -/
+abbrev LaurelStore := String → Option LaurelValue
+abbrev LaurelHeap := Nat → Option (String × (String → Option LaurelValue))
 abbrev LaurelEval := LaurelStore → StmtExpr → Option LaurelValue
 abbrev ProcEnv := Identifier → Option Procedure
 
@@ -83,20 +99,20 @@ abbrev ProcEnv := Identifier → Option Procedure
 
 inductive Outcome where
   | normal : LaurelValue → Outcome
-  | exit   : Identifier → Outcome
+  | exit   : String → Outcome
   | ret    : Option LaurelValue → Outcome
   deriving Repr, BEq, Inhabited, DecidableEq
 
 /-! ## Store Operations -/
 
-inductive UpdateStore : LaurelStore → Identifier → LaurelValue → LaurelStore → Prop where
+inductive UpdateStore : LaurelStore → String → LaurelValue → LaurelStore → Prop where
   | update :
     σ x = .some v' →
     σ' x = .some v →
     (∀ y, x ≠ y → σ' y = σ y) →
     UpdateStore σ x v σ'
 
-inductive InitStore : LaurelStore → Identifier → LaurelValue → LaurelStore → Prop where
+inductive InitStore : LaurelStore → String → LaurelValue → LaurelStore → Prop where
   | init :
     σ x = none →
     σ' x = .some v →
@@ -111,7 +127,7 @@ all addresses below `addr` must be occupied (`(h a).isSome`).
 This invariant makes allocation deterministic but precludes heap deallocation.
 If Laurel ever needs a `free` operation, this must be relaxed to a free-list
 model, which would invalidate `AllocHeap_deterministic` and downstream proofs. -/
-inductive AllocHeap : LaurelHeap → Identifier → Nat → LaurelHeap → Prop where
+inductive AllocHeap : LaurelHeap → String → Nat → LaurelHeap → Prop where
   | alloc :
     h addr = none →
     (∀ a, a < addr → (h a).isSome) →
@@ -119,12 +135,12 @@ inductive AllocHeap : LaurelHeap → Identifier → Nat → LaurelHeap → Prop 
     (∀ a, addr ≠ a → h' a = h a) →
     AllocHeap h typeName addr h'
 
-def heapFieldRead (h : LaurelHeap) (addr : Nat) (field : Identifier) : Option LaurelValue :=
+def heapFieldRead (h : LaurelHeap) (addr : Nat) (field : String) : Option LaurelValue :=
   match h addr with
   | some (_, fields) => fields field
   | none => none
 
-inductive HeapFieldWrite : LaurelHeap → Nat → Identifier → LaurelValue → LaurelHeap → Prop where
+inductive HeapFieldWrite : LaurelHeap → Nat → String → LaurelValue → LaurelHeap → Prop where
   | write :
     h addr = .some (tag, fields) →
     h' addr = .some (tag, fun f => if f == field then some v else fields f) →
@@ -133,7 +149,7 @@ inductive HeapFieldWrite : LaurelHeap → Nat → Identifier → LaurelValue →
 
 /-! ## Helpers -/
 
-def catchExit : Option Identifier → Outcome → Outcome
+def catchExit : Option String → Outcome → Outcome
   | some l, .exit l' => if l == l' then .normal .vVoid else .exit l'
   | _, o => o
 
@@ -177,13 +193,13 @@ where
   go (σ : LaurelStore) : List Parameter → List LaurelValue → Option LaurelStore
     | [], [] => some σ
     | p :: ps, v :: vs =>
-      if σ p.name = none then
-        go (fun x => if x == p.name then some v else σ x) ps vs
+      if σ p.name.text = none then
+        go (fun x => if x == p.name.text then some v else σ x) ps vs
       else none
     | _, _ => none
 
-def HighType.typeName : HighType → Identifier
-  | .UserDefined name => name
+def HighType.typeName : HighType → String
+  | .UserDefined name => name.text
   | _ => ""
 
 /-- Non-mutual argument evaluation using the expression evaluator δ. -/
@@ -212,7 +228,7 @@ inductive EvalLaurelStmt :
   -- Variables
 
   | identifier :
-    σ name = some v →
+    σ name.text = some v →
     EvalLaurelStmt δ π h σ ⟨.Identifier name, md⟩ h σ (.normal v)
 
   -- Primitive Operations (uses mutual EvalStmtArgs for effectful args)
@@ -284,19 +300,19 @@ inductive EvalLaurelStmt :
 
   | assign_single :
     EvalLaurelStmt δ π h σ value h₁ σ₁ (.normal v) →
-    σ₁ name = some _ →
-    UpdateStore σ₁ name v σ₂ →
+    σ₁ name.text = some _ →
+    UpdateStore σ₁ name.text v σ₂ →
     EvalLaurelStmt δ π h σ ⟨.Assign [⟨.Identifier name, tmd⟩] value, md⟩ h₁ σ₂ (.normal v)
 
   | local_var_init :
     EvalLaurelStmt δ π h σ init h₁ σ₁ (.normal v) →
-    σ₁ name = none →
-    InitStore σ₁ name v σ₂ →
+    σ₁ name.text = none →
+    InitStore σ₁ name.text v σ₂ →
     EvalLaurelStmt δ π h σ ⟨.LocalVariable name ty (some init), md⟩ h₁ σ₂ (.normal .vVoid)
 
   | local_var_uninit :
-    σ name = none →
-    InitStore σ name .vVoid σ' →
+    σ name.text = none →
+    InitStore σ name.text .vVoid σ' →
     EvalLaurelStmt δ π h σ ⟨.LocalVariable name ty none, md⟩ h σ' (.normal .vVoid)
 
   -- Verification Constructs
@@ -344,18 +360,18 @@ inductive EvalLaurelStmt :
   -- OO Features
 
   | new_obj :
-    AllocHeap h typeName addr h' →
+    AllocHeap h typeName.text addr h' →
     EvalLaurelStmt δ π h σ ⟨.New typeName, md⟩ h' σ (.normal (.vRef addr))
 
   | field_select :
     EvalLaurelStmt δ π h σ target h₁ σ₁ (.normal (.vRef addr)) →
-    heapFieldRead h₁ addr fieldName = some v →
+    heapFieldRead h₁ addr fieldName.text = some v →
     EvalLaurelStmt δ π h σ ⟨.FieldSelect target fieldName, md⟩ h₁ σ₁ (.normal v)
 
   | pure_field_update :
     EvalLaurelStmt δ π h σ target h₁ σ₁ (.normal (.vRef addr)) →
     EvalLaurelStmt δ π h₁ σ₁ newVal h₂ σ₂ (.normal v) →
-    HeapFieldWrite h₂ addr fieldName v h₃ →
+    HeapFieldWrite h₂ addr fieldName.text v h₃ →
     EvalLaurelStmt δ π h σ ⟨.PureFieldUpdate target fieldName newVal, md⟩ h₃ σ₂ (.normal (.vRef addr))
 
   | reference_equals :
@@ -366,7 +382,7 @@ inductive EvalLaurelStmt :
   | instance_call :
     EvalLaurelStmt δ π h σ target h₁ σ₁ (.normal (.vRef addr)) →
     h₁ addr = some (typeName, _) →
-    π (typeName ++ "." ++ callee) = some proc →
+    π (↑(typeName ++ "." ++ callee.text)) = some proc →
     EvalStmtArgs δ π h₁ σ₁ args h₂ σ₂ vals →
     bindParams proc.inputs ((.vRef addr) :: vals) = some σBound →
     getBody proc = some body →
@@ -376,7 +392,7 @@ inductive EvalLaurelStmt :
   | instance_call_return :
     EvalLaurelStmt δ π h σ target h₁ σ₁ (.normal (.vRef addr)) →
     h₁ addr = some (typeName, _) →
-    π (typeName ++ "." ++ callee) = some proc →
+    π (↑(typeName ++ "." ++ callee.text)) = some proc →
     EvalStmtArgs δ π h₁ σ₁ args h₂ σ₂ vals →
     bindParams proc.inputs ((.vRef addr) :: vals) = some σBound →
     getBody proc = some body →
@@ -386,7 +402,7 @@ inductive EvalLaurelStmt :
   | instance_call_return_void :
     EvalLaurelStmt δ π h σ target h₁ σ₁ (.normal (.vRef addr)) →
     h₁ addr = some (typeName, _) →
-    π (typeName ++ "." ++ callee) = some proc →
+    π (↑(typeName ++ "." ++ callee.text)) = some proc →
     EvalStmtArgs δ π h₁ σ₁ args h₂ σ₂ vals →
     bindParams proc.inputs ((.vRef addr) :: vals) = some σBound →
     getBody proc = some body →
@@ -446,7 +462,7 @@ inductive EvalLaurelStmt :
   | assign_field :
     EvalLaurelStmt δ π h σ target h₁ σ₁ (.normal (.vRef addr)) →
     EvalLaurelStmt δ π h₁ σ₁ value h₂ σ₂ (.normal v) →
-    HeapFieldWrite h₂ addr fieldName v h₃ →
+    HeapFieldWrite h₂ addr fieldName.text v h₃ →
     EvalLaurelStmt δ π h σ
       ⟨.Assign [⟨.FieldSelect target fieldName, tmd⟩] value, md⟩ h₃ σ₂ (.normal v)
 
