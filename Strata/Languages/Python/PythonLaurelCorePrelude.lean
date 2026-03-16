@@ -299,6 +299,10 @@ inline function Any_get! (dictOrList: Any, index: Any): Any
     exception (IndexError("Invalid subscription"))
 }
 
+// Slice: returns a sub-list given optional lower and upper bounds.
+// Opaque for now — can be refined with axioms later.
+function Any_slice (collection: Any, lower: Any, upper: Any): Any;
+
 inline function Any_set (dictOrList: Any, index: Any, val: Any): Any
   requires  (Any..isfrom_Dict(dictOrList) && Any..isfrom_string(index)) ||
             (Any..isfrom_ListAny(dictOrList) && Any..isfrom_int(index) && Any..as_int!(index) >= 0 && Any..as_int!(index) < List_len(Any..as_ListAny!(dictOrList)));

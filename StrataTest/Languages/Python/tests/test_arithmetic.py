@@ -23,5 +23,11 @@ def main():
     quot: int = a // b
     assert quot == 5, "floor division implemented incorrectly"
 
+    # Exponentiation
+    base: int = 2
+    exp: int = 3
+    power: int = base ** exp
+    assert power == 8, "exponentiation implemented incorrectly"
+
 if __name__ == "__main__":
     main()

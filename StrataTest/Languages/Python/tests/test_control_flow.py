@@ -71,5 +71,32 @@ def main():
     
     assert h == 70, "if with >= implemented incorrectly"
 
+    # Ternary if expression (true branch)
+    tx: int = 10
+    ty: int = 1 if tx > 5 else 0
+    assert ty == 1
+
+    # Ternary if expression (false branch)
+    tz: int = 1 if tx < 5 else 0
+    assert tz == 0
+
+    # Break in while loop
+    bk: int = 0
+    while bk < 10:
+        if bk == 5:
+            break
+        bk = bk + 1
+    assert bk >= 0
+
+    # Continue in while loop
+    total: int = 0
+    ci: int = 0
+    while ci < 5:
+        ci = ci + 1
+        if ci == 3:
+            continue
+        total = total + ci
+    assert total >= 0
+
 if __name__ == "__main__":
     main()

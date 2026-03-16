@@ -19,3 +19,18 @@ assert "Frank" in company["engineering"]["frontend"]["members"]
 
 assert "management" in company
 
+
+# Slice tests
+numbers = [1, 2, 3, 4, 5]
+
+# Slice with lower bound only
+tail = numbers[1:]
+assert tail != None
+
+# Slice with upper bound only
+head = numbers[:3]
+assert head != None
+
+# Slice with both bounds
+middle = numbers[1:4]
+assert middle != None

@@ -336,6 +336,7 @@ partial def translateExpr (ctx : TranslationContext) (e : Python.expr SourceRang
       | .Div _ => return mkStmtExprMd .Hole -- Floating-point are not supported yet
       | .FloorDiv _ => .ok "PFloorDiv"  -- Python // maps to Laurel Div
       | .Mod _ => .ok "PMod"
+      | .Pow _ => .ok "PPow"
       | .BitAnd _ => return mkStmtExprMd .Hole --TODO: Adding BitVector subtype in Any type, then the related operations
       | .BitOr _ => return mkStmtExprMd .Hole
       | .BitXor _ => return mkStmtExprMd .Hole
@@ -400,14 +401,21 @@ partial def translateExpr (ctx : TranslationContext) (e : Python.expr SourceRang
 
   | .Call _ f args kwargs => translateCall ctx f args.val.toList kwargs.val.toList
 
-  -- Subscript access: dict['key'] or list[0]
-  -- Abstract: return havoc'd value (sound for any dict/list operation)
-  -- Note: Creates free variables which cause type errors in some contexts (if conditions)
-  -- TODO: Handle by creating explicit variable declarations
+  -- Subscript access: dict['key'] or list[0] or list[1:3]
   | .Subscript _ val slice _ =>
     let dictOrList ← translateExpr ctx val
-    let index ← translateExpr ctx slice
-    return mkStmtExprMd (.StaticCall "Any_get" [dictOrList, index])
+    match slice with
+    | .Slice _ lower upper _step => do
+      let lowerExpr ← match lower.val with
+        | some l => translateExpr ctx l
+        | none => .ok AnyNone
+      let upperExpr ← match upper.val with
+        | some u => translateExpr ctx u
+        | none => .ok AnyNone
+      return mkStmtExprMd (.StaticCall "Any_slice" [dictOrList, lowerExpr, upperExpr])
+    | _ => do
+      let index ← translateExpr ctx slice
+      return mkStmtExprMd (.StaticCall "Any_get" [dictOrList, index])
 
   -- Attribute access: obj.attr or obj.method
   | .Attribute _ obj attr _ => do
@@ -962,6 +970,7 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
       | .Mult _ => .ok "PMul"
       | .FloorDiv _ => .ok "PFloorDiv"
       | .Mod _ => .ok "PMod"
+      | .Pow _ => .ok "PPow"
       | _ => throw (.unsupportedConstruct s!"AugAssign operator not yet supported: {repr op}" (toString (repr s)))
     let binExpr := mkStmtExprMd (StmtExpr.StaticCall opName [lhsExpr, rhsExpr])
     let assignStmt := mkStmtExprMdWithLoc (StmtExpr.Assign [lhsExpr] binExpr) md

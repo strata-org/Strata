@@ -46,4 +46,20 @@ assert(1048): ✅ pass (at line 61, col 4)
 ite_cond_calls_Any_to_bool_0: ✅ pass
 assert_assert(1224)_calls_Any_to_bool_0: ✅ pass (at line 72, col 4)
 assert(1224): ✅ pass (at line 72, col 4)
+set_ty_calls_Any_to_bool_0: ✅ pass
+assert_assert(1374)_calls_Any_to_bool_0: ✅ pass (at line 77, col 4)
+assert(1374): ✅ pass (at line 77, col 4)
+set_tz_calls_Any_to_bool_0: ✅ pass
+assert_assert(1470)_calls_Any_to_bool_0: ✅ pass (at line 81, col 4)
+assert(1470): ✅ pass (at line 81, col 4)
+loop_guard_calls_Any_to_bool_0: ✅ pass (at line 85, col 4)
+ite_cond_calls_Any_to_bool_0: ✅ pass
+loop_guard_end_calls_Any_to_bool_0: ✅ pass (at line 85, col 4)
+assert_assert(1609)_calls_Any_to_bool_0: ❓ unknown (at line 89, col 4)
+assert(1609): ❓ unknown (at line 89, col 4)
+loop_guard_calls_Any_to_bool_0: ✅ pass (at line 94, col 4)
+ite_cond_calls_Any_to_bool_0: ✅ pass
+loop_guard_end_calls_Any_to_bool_0: ✅ pass (at line 94, col 4)
+assert_assert(1799)_calls_Any_to_bool_0: ❓ unknown (at line 99, col 4)
+assert(1799): ❓ unknown (at line 99, col 4)
 ite_cond_calls_Any_to_bool_0: ✅ pass
