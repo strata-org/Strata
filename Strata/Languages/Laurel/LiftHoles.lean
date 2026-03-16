@@ -31,8 +31,8 @@ private def bare (v : StmtExpr) : StmtExprMd := ⟨v, emptyMd⟩
 /-- Wrap a HighType value with empty metadata -/
 private def bareType (v : HighType) : HighTypeMd := ⟨v, emptyMd⟩
 
-/-- Counter state for generating fresh hole variable names. -/
 structure HoleLiftState where
+  /-- Counter state for generating fresh hole variable names. -/
   counter : Nat := 0
   /-- All procedures in the program, used to look up parameter types. -/
   procedures : List Procedure := []
