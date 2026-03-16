@@ -186,4 +186,39 @@ theorem ExecProg_deterministic
       have ⟨hpc, hσ⟩ := StepInstr_deterministic_no_nondet _heval hcall (hnn _) hstep1 hstep2
       subst hpc; subst hσ; exact ih hcont2
 
+/-! ## Progress -/
+
+/-- An instruction at `pc` is a terminator (END_FUNCTION or SET_RETURN_VALUE). -/
+def IsTerminator (prog : Program) (pc : Nat) : Prop :=
+  instrType prog pc = some .END_FUNCTION ∨
+  instrType prog pc = some .SET_RETURN_VALUE
+
+/-- An ASSUME instruction at `pc` blocks (guard is false). -/
+def AssumeBlocks (eval : ExprEval) (prog : Program) (pc : Nat) (σ : Store) : Prop :=
+  instrType prog pc = some .ASSUME ∧
+  (instrGuard prog pc).bind (eval σ ·) = some (.vBool false)
+
+/-- Progress: if the PC is in bounds and the instruction is not a terminator,
+    then either the instruction steps or it's a blocking ASSUME.
+
+    This is stated for the concrete case where the evaluator succeeds on
+    all guards and expressions. A more general version would need to handle
+    evaluation failure. -/
+theorem progress
+    {callResult : CallResultRel} {eval : ExprEval} {fenv : FuncEnv}
+    {prog : Program} {pc : Nat} {σ : Store}
+    (hbound : pc < prog.instructions.size)
+    (hnot_term : ¬ IsTerminator prog pc)
+    -- The evaluator succeeds on the guard
+    (hguard : ∀ g, instrGuard prog pc = some g → ∃ v, eval σ g = some v)
+    -- The evaluator succeeds on assign rhs
+    (hrhs : ∀ c rhs, instrCode prog pc = some c → getAssignRhs c = some rhs →
+            rhs.id ≠ .side_effect .Nondet → ∃ v, eval σ rhs = some v)
+    -- Function calls succeed
+    (hcall : ∀ c name, instrCode prog pc = some c → getCallCallee c = some name →
+             ∃ σ' rv, callResult eval fenv name σ σ' rv) :
+    (∃ pc' σ', StepInstr callResult eval fenv prog pc σ pc' σ') ∨
+    AssumeBlocks eval prog pc σ := by
+  sorry
+
 end CProverGOTO.Semantics

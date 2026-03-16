@@ -100,11 +100,13 @@ The semantics is informed by CBMC's concrete interpreter
 - [ ] Add support for `old()` expressions in postconditions (requires
       two-state evaluation)
 - [ ] Statement-level simulation for `ite` and `loop` body execution
-      (guard simulation is done; body simulation requires connecting
-       `EvalBlock` to `ExecProg` on the translated instruction subsequence)
+      (guard simulation is done; `sim_block` proved for sequential
+       composition; connecting to `ExecRange` on translated instructions
+       requires knowing the translation output shape)
 - [ ] End-to-end theorem: `EvalBlock` implies `ExecProg` on translated program
 - [ ] Loop simulation blocked on Imperative dialect loop evaluation rules
       (see TODO in `StmtSemantics.lean`)
+- [ ] Progress theorem (stated with sorry in `SemanticsProps.lean`)
 -/
 
 namespace CProverGOTO.Semantics

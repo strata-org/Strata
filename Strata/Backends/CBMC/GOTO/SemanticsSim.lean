@@ -8,6 +8,7 @@ import Strata.Backends.CBMC.GOTO.Semantics
 import Strata.Backends.CBMC.GOTO.SemanticsProps
 import Strata.Backends.CBMC.GOTO.SemanticsEval
 import Strata.DL.Imperative.CmdSemantics
+import Strata.DL.Imperative.StmtSemantics
 
 /-!
 # Simulation Relation: Imperative Semantics ↔ GOTO Semantics
@@ -258,8 +259,7 @@ theorem sim_havoc [DecidableEq P.Ident] [HasBool P]
 theorem sim_cmd [DecidableEq P.Ident] [HasFvar P] [HasBool P] [HasNot P]
     [vc : ValueCorr P]
     {nameMap : P.Ident → String}
-    {_toGotoExpr : P.Expr → Option Expr}
-    {δ : SemanticEval P} {_eval : ExprEval}
+    {δ : SemanticEval P}
     {σ_imp σ_imp' : SemanticStore P} {σ_goto : Store}
     {c : Cmd P}
     (hcorr_s : StoreCorr nameMap σ_imp σ_goto)
@@ -366,5 +366,88 @@ theorem sim_ite_false_guard [DecidableEq P.Ident] [HasBool P]
   obtain ⟨v_goto, hv, heval⟩ := h
   rw [vc.ff_corr] at hv
   exact hnot _ _ (Option.some.inj hv ▸ heval)
+
+/-! ## Instruction Range Execution -/
+
+/-- Execute a contiguous range of GOTO instructions from `pc` until the PC
+    leaves the range `[pc_start, pc_end)`, or until END_FUNCTION/out-of-bounds.
+
+    This captures the semantics of executing a "block" of translated
+    instructions: the translation produces instructions in a contiguous
+    range, and execution stays within that range (except for GOTO jumps
+    that target within the range) until it falls through the end.
+
+    `ExecRange callResult eval fenv prog pc_start pc_end σ σ'` means:
+    starting at `pc_start` with store `σ`, executing instructions that
+    stay within `[pc_start, pc_end)` terminates with the PC at `pc_end`
+    and store `σ'`. -/
+inductive ExecRange (callResult : CallResultRel) (eval : ExprEval) (fenv : FuncEnv)
+    (prog : Program) (pc_end : Nat) :
+    Nat → Store → Store → Prop where
+  /-- Reached the end of the range. -/
+  | done :
+    ExecRange callResult eval fenv prog pc_end pc_end σ σ
+  /-- Take one step within the range, then continue. -/
+  | step :
+    pc < pc_end →
+    StepInstr callResult eval fenv prog pc σ pc' σ' →
+    -- The step stays within the range or reaches the end
+    pc' ≤ pc_end →
+    ExecRange callResult eval fenv prog pc_end pc' σ' σ'' →
+    ExecRange callResult eval fenv prog pc_end pc σ σ''
+
+/-! ## Statement-Level Simulation -/
+
+/-- Simulation for a command statement: if `EvalCmd` steps the Imperative
+    store, then there exists a corresponding GOTO store.
+
+    This is just `sim_cmd` re-exported with a cleaner name for the
+    statement-level context. -/
+theorem sim_cmd_stmt [DecidableEq P.Ident] [HasFvar P] [HasBool P] [HasNot P]
+    [vc : ValueCorr P]
+    {nameMap : P.Ident → String}
+    {σ_imp σ_imp' : SemanticStore P} {σ_goto : Store}
+    {δ : SemanticEval P}
+    {c : Cmd P}
+    (hcorr_s : StoreCorr nameMap σ_imp σ_goto)
+    (heval : EvalCmd P δ σ_imp c σ_imp')
+    (hname_inj : Function.Injective nameMap)
+    (hval_total : ∀ v : P.Expr, ∃ vg, vc.toValue v = some vg) :
+    ∃ σ_goto' : Store, StoreCorr nameMap σ_imp' σ_goto' :=
+  sim_cmd hcorr_s heval hname_inj hval_total
+
+/-- Simulation for a block (sequential composition): if `EvalBlock` steps
+    through a list of statements, and each individual statement's simulation
+    holds, then the overall block simulation holds.
+
+    This follows by induction on the `EvalBlock` derivation. Each step
+    produces a corresponding intermediate GOTO store via `hstmt_sim`,
+    which is then fed to the next step. -/
+theorem sim_block
+    {P : PureExpr} {Cmd : Type} {EvalC : EvalCmdParam P Cmd}
+    {extendEval : ExtendEval P}
+    [DecidableEq P.Ident] [HasBool P] [vc : ValueCorr P]
+    [HasVarsImp P (List (Stmt P Cmd))] [HasVarsImp P Cmd]
+    [HasFvar P] [HasVal P] [HasNot P]
+    {nameMap : P.Ident → String}
+    {δ δ' : SemanticEval P}
+    {σ_imp σ_imp' : SemanticStore P} {σ_goto : Store}
+    {stmts : List (Stmt P Cmd)}
+    (hcorr_s : StoreCorr nameMap σ_imp σ_goto)
+    (heval : EvalBlock P Cmd EvalC extendEval δ σ_imp stmts σ_imp' δ')
+    (hname_inj : Function.Injective nameMap)
+    -- Each statement preserves store correspondence
+    (hstmt_sim : ∀ δ_cur δ_cur' σ_i σ_i' σ_g s,
+      StoreCorr nameMap σ_i σ_g →
+      EvalStmt P Cmd EvalC extendEval δ_cur σ_i s σ_i' δ_cur' →
+      ∃ σ_g', StoreCorr nameMap σ_i' σ_g') :
+    ∃ σ_goto' : Store, StoreCorr nameMap σ_imp' σ_goto' := by
+  -- Use well-founded recursion on the length of stmts
+  match stmts, heval with
+  | [], .stmts_none_sem => exact ⟨σ_goto, hcorr_s⟩
+  | _ :: rest, .stmts_some_sem hstmt hrest =>
+    obtain ⟨σ_mid, hmid⟩ := hstmt_sim _ _ _ _ _ _ hcorr_s hstmt
+    exact sim_block hmid hrest hname_inj hstmt_sim
+termination_by stmts.length
 
 end CProverGOTO.Semantics
