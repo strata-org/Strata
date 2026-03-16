@@ -26,11 +26,11 @@ function assertAndAssumeInFunctions(a: int) returns (r: int)
 // because Core expressions do not support let bindings
 function letsInFunction() returns (r: int) {
   var x: int := 0;
-//^^^^^^^^^^^^^^^ error: local variables in functions are not YET supported
+//              ^ error: local variables in functions are not YET supported
   var y: int := x + 1;
-//^^^^^^^^^^^^^^^^^^^ error: local variables in functions are not YET supported
+//              ^^^^^ error: local variables in functions are not YET supported
   var z: int := y + 1;
-//^^^^^^^^^^^^^^^^^^^ error: local variables in functions are not YET supported
+//              ^^^^^ error: local variables in functions are not YET supported
   z
 };
 
