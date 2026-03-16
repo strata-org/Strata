@@ -434,5 +434,199 @@ def liftExpressionAssignments (model: SemanticModel) (program : Program) : Progr
   let (seqProcedures, _) := (program.staticProcedures.mapM transformProcedure).run initState
   { program with staticProcedures := seqProcedures }
 
+/-! ## Hole Lifting
+
+Lift `.Hole` nodes out of expression positions so that every Hole only appears
+as the RHS of a `LocalVariable` initializer (which the translator handles as havoc).
+
+A Hole in expression position is replaced by a fresh variable whose declaration
+has no initializer, giving it an arbitrary value — a sound over-approximation.
+-/
+
+/-- Counter state for generating fresh hole variable names. -/
+structure HoleLiftState where
+  counter : Nat := 0
+
+private abbrev HoleLiftM := StateM HoleLiftState
+
+private def freshHoleVar : HoleLiftM Identifier := do
+  let n := (← get).counter
+  modify fun s => { s with counter := n + 1 }
+  return s!"$hole_{n}"
+
+private def holeType : HighTypeMd := bareType (.TCore "Any")
+
+mutual
+/-- Lift holes from a list of arguments, collecting declarations. -/
+private def liftHoleArgs (args : List StmtExprMd) : HoleLiftM (List StmtExprMd × List StmtExprMd) := do
+  let mut newArgs : List StmtExprMd := []
+  let mut decls : List StmtExprMd := []
+  for a in args do
+    let (a', ds) ← liftHoleExpr a
+    newArgs := newArgs ++ [a']
+    decls := decls ++ ds
+  return (newArgs, decls)
+
+/-- Replace every `.Hole` in an expression with a fresh variable reference,
+    accumulating `LocalVariable` declarations (no initializer) to prepend. -/
+private def liftHoleExpr (expr : StmtExprMd) : HoleLiftM (StmtExprMd × List StmtExprMd) := do
+  match expr with
+  | WithMetadata.mk val md =>
+  match val with
+  | .Hole =>
+      let v ← freshHoleVar
+      let decl := bare (.LocalVariable v holeType none)
+      return (⟨.Identifier v, md⟩, [decl])
+  | .PrimitiveOp op args =>
+      let (newArgs, decls) ← liftHoleArgs args
+      return (⟨.PrimitiveOp op newArgs, md⟩, decls)
+  | .StaticCall callee args =>
+      let (newArgs, decls) ← liftHoleArgs args
+      return (⟨.StaticCall callee newArgs, md⟩, decls)
+  | .InstanceCall target callee args =>
+      let (target', d1) ← liftHoleExpr target
+      let (newArgs, d2) ← liftHoleArgs args
+      return (⟨.InstanceCall target' callee newArgs, md⟩, d1 ++ d2)
+  | .ReferenceEquals lhs rhs =>
+      let (lhs', d1) ← liftHoleExpr lhs
+      let (rhs', d2) ← liftHoleExpr rhs
+      return (⟨.ReferenceEquals lhs' rhs', md⟩, d1 ++ d2)
+  | .IfThenElse cond th el =>
+      let (cond', d1) ← liftHoleExpr cond
+      let (th', d2) ← liftHoleExpr th
+      let (el', d3) ← match el with
+        | some e => do let (e', ds) ← liftHoleExpr e; pure (some e', ds)
+        | none => pure (none, [])
+      return (⟨.IfThenElse cond' th' el', md⟩, d1 ++ d2 ++ d3)
+  | .Block stmts label =>
+      let stmts' ← liftHoleStmtList stmts
+      return (⟨.Block stmts' label, md⟩, [])
+  | .Assign targets value =>
+      let (value', decls) ← liftHoleExpr value
+      return (⟨.Assign targets value', md⟩, decls)
+  | .LocalVariable name ty init =>
+      match init with
+      | some initExpr =>
+          let (initExpr', decls) ← liftHoleExpr initExpr
+          return (⟨.LocalVariable name ty (some initExpr'), md⟩, decls)
+      | none => return (expr, [])
+  | .Old v =>
+      let (v', ds) ← liftHoleExpr v
+      return (⟨.Old v', md⟩, ds)
+  | .Fresh v =>
+      let (v', ds) ← liftHoleExpr v
+      return (⟨.Fresh v', md⟩, ds)
+  | .Assigned n =>
+      let (n', ds) ← liftHoleExpr n
+      return (⟨.Assigned n', md⟩, ds)
+  | .ProveBy v p =>
+      let (v', d1) ← liftHoleExpr v
+      let (p', d2) ← liftHoleExpr p
+      return (⟨.ProveBy v' p', md⟩, d1 ++ d2)
+  | .ContractOf ty f =>
+      let (f', ds) ← liftHoleExpr f
+      return (⟨.ContractOf ty f', md⟩, ds)
+  | .Forall p b =>
+      let (b', ds) ← liftHoleExpr b
+      return (⟨.Forall p b', md⟩, ds)
+  | .Exists p b =>
+      let (b', ds) ← liftHoleExpr b
+      return (⟨.Exists p b', md⟩, ds)
+  | _ => return (expr, [])
+
+/-- Process a statement, lifting holes from sub-expressions.
+    Returns the replacement statements (may expand) and any declarations to hoist. -/
+private def liftHoleStmt (stmt : StmtExprMd) : HoleLiftM (List StmtExprMd × List StmtExprMd) := do
+  match stmt with
+  | WithMetadata.mk val md =>
+  match val with
+  | .LocalVariable name ty (some initExpr) =>
+      -- If the initializer IS a bare Hole, keep it in place (translator handles this as havoc)
+      match initExpr.val with
+      | .Hole => return ([stmt], [])
+      | _ =>
+          let (initExpr', decls) ← liftHoleExpr initExpr
+          return ([⟨.LocalVariable name ty (some initExpr'), md⟩], decls)
+  | .Assign targets value =>
+      let (value', decls) ← liftHoleExpr value
+      return ([⟨.Assign targets value', md⟩], decls)
+  | .Block stmts label =>
+      let stmts' ← liftHoleStmtList stmts
+      return ([⟨.Block stmts' label, md⟩], [])
+  | .IfThenElse cond th el =>
+      let (cond', d1) ← liftHoleExpr cond
+      let (th', d2) ← liftHoleStmt th
+      let thStmts := bare (.Block th' none)
+      let (el', d3) ← match el with
+        | some e => do let (es, ds) ← liftHoleStmt e; pure (some (bare (.Block es none)), ds)
+        | none => pure (none, [])
+      return ([⟨.IfThenElse cond' thStmts el', md⟩], d1 ++ d2 ++ d3)
+  | .While cond invs dec body =>
+      let (cond', d1) ← liftHoleExpr cond
+      let mut invDecls : List StmtExprMd := []
+      let mut newInvs : List StmtExprMd := []
+      for inv in invs do
+        let (inv', ds) ← liftHoleExpr inv
+        newInvs := newInvs ++ [inv']
+        invDecls := invDecls ++ ds
+      let (dec', d3) ← match dec with
+        | some d => do let (d', ds) ← liftHoleExpr d; pure (some d', ds)
+        | none => pure (none, [])
+      let (bodyStmts, d2) ← liftHoleStmt body
+      let bodyBlock := bare (.Block bodyStmts none)
+      return ([⟨.While cond' newInvs dec' bodyBlock, md⟩], d1 ++ invDecls ++ d3 ++ d2)
+  | .Assert cond =>
+      let (cond', decls) ← liftHoleExpr cond
+      return ([⟨.Assert cond', md⟩], decls)
+  | .Assume cond =>
+      let (cond', decls) ← liftHoleExpr cond
+      return ([⟨.Assume cond', md⟩], decls)
+  | .StaticCall callee args =>
+      let (newArgs, decls) ← liftHoleArgs args
+      return ([⟨.StaticCall callee newArgs, md⟩], decls)
+  | .Return (some retExpr) =>
+      let (retExpr', decls) ← liftHoleExpr retExpr
+      return ([⟨.Return (some retExpr'), md⟩], decls)
+  | _ => return ([stmt], [])
+
+/-- Process a list of statements, inlining hoisted declarations before each statement. -/
+private def liftHoleStmtList (stmts : List StmtExprMd) : HoleLiftM (List StmtExprMd) := do
+  let mut result : List StmtExprMd := []
+  for s in stmts do
+    let (expanded, decls) ← liftHoleStmt s
+    -- Inline declarations immediately before the statement that needs them
+    result := result ++ decls ++ expanded
+  return result
+end
+
+private def liftHoleProcedure (proc : Procedure) : HoleLiftM Procedure := do
+  -- Reset counter per procedure for deterministic, debuggable output
+  modify fun _ => { counter := 0 }
+  match proc.body with
+  | .Transparent bodyExpr =>
+      let (stmts, decls) ← liftHoleStmt bodyExpr
+      if decls.isEmpty && stmts.length == 1 then
+        return { proc with body := .Transparent stmts.head! }
+      else
+        let body := bare (.Block (decls ++ stmts) none)
+        return { proc with body := .Transparent body }
+  | .Opaque postconds (some impl) modif =>
+      let (stmts, decls) ← liftHoleStmt impl
+      if decls.isEmpty && stmts.length == 1 then
+        return { proc with body := .Opaque postconds (some stmts.head!) modif }
+      else
+        let body := bare (.Block (decls ++ stmts) none)
+        return { proc with body := .Opaque postconds (some body) modif }
+  | _ => return proc
+
+/--
+Lift `.Hole` nodes out of expression positions so that every Hole only appears
+as the RHS of a `LocalVariable` initializer (translated as havoc).
+-/
+def liftHoles (program : Program) : Program :=
+  let initState : HoleLiftState := {}
+  let (procs, _) := (program.staticProcedures.mapM liftHoleProcedure).run initState
+  { program with staticProcedures := procs }
+
 end -- public section
 end Laurel

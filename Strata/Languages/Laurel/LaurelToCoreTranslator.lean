@@ -354,6 +354,9 @@ def translateStmt (outputParams : List Parameter) (stmt : StmtExprMd)
           -- Havoc the result since instance methods may be on unmodeled types
           let initStmt := Core.Statement.init ident coreType none md
           return [initStmt]
+      | some (⟨ .Hole, _⟩) =>
+          -- Hole initializer: treat as havoc (init without value)
+          return [Core.Statement.init ident coreType none md]
       | some initExpr =>
           let coreExpr ← translateExpr initExpr
           return [Core.Statement.init ident coreType (some coreExpr) md]
@@ -656,6 +659,7 @@ def translate (options: LaurelTranslateOptions) (program : Program): Except (Arr
   -- dbg_trace "=== Program after heapParameterization + modifiesClausesTransform ==="
   -- dbg_trace (toString (Std.Format.pretty (Std.ToFormat.format program)))
   -- dbg_trace "================================="
+  let program := liftHoles program
   let program := liftExpressionAssignments model program
   let program := eliminateReturnsInExpressionTransform program
   let result := resolve program (some model)
