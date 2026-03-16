@@ -105,9 +105,10 @@ The semantics is informed by CBMC's concrete interpreter
       → See `SemanticsSim.lean`: `sim_block`, `ExecLoop`, `sim_loop`
 - [ ] End-to-end theorem: `EvalBlock` implies `ExecProg` on translated program
       (requires connecting `ExecRange` composition to `ExecProg`)
-- [ ] Loop simulation at Imperative level blocked on missing loop evaluation
-      rules in `StmtSemantics.lean`; loop semantics defined directly via
-      compiled GOTO pattern (`ExecLoop`)
+- [x] Loop evaluation rules added to Imperative `EvalStmt`
+      → See `StmtSemantics.lean`: `loop_false_sem`, `loop_true_sem`
+      (3 sorry's introduced in `DetToNondetCorrect.lean` — the DetToNondet
+       correctness proof needs restructuring for derivation-based induction)
 - [x] Progress theorems (per-instruction-type)
       → See `SemanticsProps.lean`: `progress_skip`, `progress_assign`, etc.
 -/
