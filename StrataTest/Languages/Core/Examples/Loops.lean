@@ -474,3 +474,120 @@ Result: ✅ pass
 #eval verify nestedPgm (options := .quiet)
 
 ---------------------------------------------------------------------
+
+-- A loop where the `decreases` clause uses integer division `i / d`.
+-- Division maps to `Int.SafeDiv`, so a precondition check (d != 0) must be
+-- discharged for the measure expression.  The procedure precondition `d > 0`
+-- covers it.  The measure itself is non-negative (from `i >= 0`) and
+-- decreases by 1 each iteration (integer division by d drops when i drops by d).
+def precondElimInMeasurePgm :=
+#strata
+program Core;
+
+procedure countdownByD(n : int, d : int) returns (i : int)
+spec {
+  requires (n >= 0);
+  requires (d > 0);
+  ensures (i >= 0);
+  ensures (i < d);
+}
+{
+  i := n;
+  while (i >= d)
+    decreases i / d
+    invariant i >= 0
+  {
+    i := (i - d);
+  }
+};
+#end
+
+/--
+info:
+Obligation: loop_measure_calls_Int.SafeDiv_0
+Property: division by zero check
+Result: ✅ pass
+
+Obligation: entry_invariant_0_0
+Property: assert
+Result: ✅ pass
+
+Obligation: measure_lb_0
+Property: assert
+Result: ✅ pass
+
+Obligation: arbitrary_iter_maintain_invariant_0_0
+Property: assert
+Result: ✅ pass
+
+Obligation: measure_decrease_0
+Property: assert
+Result: ✅ pass
+
+Obligation: countdownByD_ensures_2
+Property: assert
+Result: ✅ pass
+
+Obligation: countdownByD_ensures_3
+Property: assert
+Result: ✅ pass
+-/
+#guard_msgs in
+#eval verify precondElimInMeasurePgm (options := .quiet)
+
+-- Now, we show the precondition (d > 0) is necessary for the measure-related
+-- checks.
+def precondElimInMeasureBadPgm :=
+#strata
+program Core;
+procedure countdownByDBad(n : int, d : int) returns (i : int)
+spec {
+  requires (n >= 0);
+  // requires (d > 0); NEED THIS
+  ensures (i >= 0);
+  ensures (i < d);
+}
+{
+  i := n;
+  while (i >= d)
+    decreases i / d
+    invariant i >= 0
+  {
+    i := (i - d);
+  }
+};
+#end
+
+
+/--
+info:
+Obligation: loop_measure_calls_Int.SafeDiv_0
+Property: division by zero check
+Result: ❌ fail
+
+Obligation: entry_invariant_0_0
+Property: assert
+Result: ✅ pass
+
+Obligation: measure_lb_0
+Property: assert
+Result: ❌ fail
+
+Obligation: arbitrary_iter_maintain_invariant_0_0
+Property: assert
+Result: ✅ pass
+
+Obligation: measure_decrease_0
+Property: assert
+Result: ❌ fail
+
+Obligation: countdownByDBad_ensures_1
+Property: assert
+Result: ✅ pass
+
+Obligation: countdownByDBad_ensures_2
+Property: assert
+Result: ✅ pass
+-/
+#guard_msgs in
+#eval verify precondElimInMeasureBadPgm (options := .quiet)
