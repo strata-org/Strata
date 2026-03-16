@@ -42,8 +42,10 @@ def mkExprNot
 
 def mkExprOld
     (e : Core.Expression.Expr)
-    : Core.Expression.Expr :=
-  .app () Core.polyOldOp e
+    : Except String Core.Expression.Expr :=
+  match e with
+  | .fvar m ident ty => .ok (.fvar m (Core.CoreIdent.mkOld ident.name) ty)
+  | _ => .error s!"old: expected an identifier, got {e}"
 
 def mkExprMapSelect
     (mapExpr idxExpr : Core.Expression.Expr)

@@ -229,7 +229,10 @@ def toCoreExpr (e : Boole.Expr) : TranslateM Core.Expression.Expr := do
   | .mul_expr m ty a b => toCoreTypedBin m ty "Mul" (← toCoreExpr a) (← toCoreExpr b)
   | .div_expr m ty a b => toCoreTypedBin m ty "Div" (← toCoreExpr a) (← toCoreExpr b)
   | .mod_expr m ty a b => toCoreTypedBin m ty "Mod" (← toCoreExpr a) (← toCoreExpr b)
-  | .old _ _ a => return CoreBridge.mkExprOld (← toCoreExpr a)
+  | .old _ _ a =>
+      match CoreBridge.mkExprOld (← toCoreExpr a) with
+      | .ok e => return e
+      | .error msg => throw (.fromMessage msg)
   | .forall _ ds body
   | .forall_unicode _ ds body
   | .forallT _ ds _ body => toCoreQuant true ds body
@@ -470,6 +473,15 @@ def toCoreDatatype
              constrs := constrs
              constrs_ne := by simp [h] }
 
+def toCoreDatatypeDecl (decl : BooleDDM.DatatypeDecl SourceRange) : TranslateM (Lambda.LDatatype Unit) := do
+  match decl with
+  | .datatype_decl m ⟨_, dtypeName⟩ ⟨_, typeParams?⟩ ctors =>
+    let typeParams := match typeParams? with
+      | none => []
+      | some bs => (bindingsToList bs).map bindingName
+    withTypeBVars typeParams do
+      toCoreDatatype m dtypeName typeParams ctors
+
 def toCoreSpecElts (_m : SourceRange) (pname : String) (elts : Array (BooleDDM.SpecElt SourceRange)) : TranslateM Core.Procedure.Spec := do
   let mut modifies : List (List Core.Expression.Ident) := []
   let mut reqs : List (Core.CoreLabel × Core.Procedure.Check) := []
@@ -506,9 +518,7 @@ def registerCommandSymbols (cmd : BooleDDM.Command SourceRange) : List Bool :=
   | .command_var _ _ => [false]
   -- Procedure names are referenced by call statements directly and are not Expr.fvar symbols.
   | .command_procedure _ _ _ _ _ _ _ => []
-  | .command_datatype _ _ _ _ => [false]
-  | .command_mutual _ ⟨_, cmds⟩ =>
-    (cmds.map registerCommandSymbols).toList.flatten
+  | .command_datatypes _ ⟨_, decls⟩ => decls.toList.map (fun _ => false)
   | .command_block _ _ => []
   | .command_axiom _ _ _ => []
   | .command_distinct _ _ _ => []
@@ -595,28 +605,8 @@ def toCoreDecls (cmd : BooleDDM.Command SourceRange) : TranslateM (List Core.Dec
       spec := { modifies := [], preconditions := [], postconditions := [] }
       body := ← toCoreBlock b
     }]
-  | .command_datatype m ⟨_, dtypeName⟩ ⟨_, typeParams?⟩ ctors =>
-    let typeParams := match typeParams? with
-      | none => []
-      | some bs => (bindingsToList bs).map bindingName
-    withTypeBVars typeParams do
-      return [CoreBridge.mkTypeDataDecl [← toCoreDatatype m dtypeName typeParams ctors]]
-  | .command_mutual m ⟨_, cmds⟩ =>
-    let mut dts : List (Lambda.LDatatype Unit) := []
-    for cmd in cmds.toList do
-      match cmd with
-      | .command_datatype dm ⟨_, dtypeName⟩ ⟨_, typeParams?⟩ ctors =>
-        let typeParams := match typeParams? with
-          | none => []
-          | some bs => (bindingsToList bs).map bindingName
-        let dt ← withTypeBVars typeParams do
-          toCoreDatatype dm dtypeName typeParams ctors
-        dts := dts ++ [dt]
-      | _ =>
-        throwAt m "Mutual blocks currently support only datatype declarations"
-    let some _ := dts.head?
-      | throwAt m "Mutual block must contain at least one datatype declaration"
-    return [CoreBridge.mkTypeDataDecl dts]
+  | .command_datatypes _ ⟨_, decls⟩ =>
+    return [CoreBridge.mkTypeDataDecl (← decls.toList.mapM toCoreDatatypeDecl)]
 
 def toCoreProgram (p : Boole.Program) (gctx : GlobalContext := {}) : Except DiagnosticModel Core.Program := do
   match p with

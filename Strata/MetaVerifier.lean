@@ -18,7 +18,28 @@ open Lean hiding Options
 
 namespace Strata.SMT
 
-abbrev SMTVC := String × Core.SMT.Context × List Term × Term
+structure SanitizedContext where
+  sorts : Array Core.SMT.Sort := #[]
+  ufs : Array UF := #[]
+  ifs : Array Core.SMT.IF := #[]
+  axms : Array Term := #[]
+  tySubst : Map String TermType := []
+deriving Repr, Inhabited, DecidableEq
+
+def SanitizedContext.ofCore (ctx : Core.SMT.Context) : SanitizedContext :=
+  { sorts := ctx.sorts, ufs := ctx.ufs, ifs := ctx.ifs, axms := ctx.axms, tySubst := ctx.tySubst }
+
+def SanitizedContext.toCore (ctx : SanitizedContext) : Core.SMT.Context :=
+  { sorts := ctx.sorts
+    ufs := ctx.ufs
+    ifs := ctx.ifs
+    axms := ctx.axms
+    tySubst := ctx.tySubst
+    typeFactory := #[]
+    seenDatatypes := {}
+    datatypeFuns := Map.empty }
+
+abbrev SMTVC := String × SanitizedContext × List Term × Term
 abbrev SMTVCs := List SMTVC
 
 end Strata.SMT
@@ -80,8 +101,8 @@ def genCoreVCs (program : Program) : Option Core.coreVCs := do
 Remove solver-only context caches that are irrelevant for denotation and
 destabilize definitional equality in metaprograms.
 -/
-private def sanitizeSMTContext (ctx : Core.SMT.Context) : Core.SMT.Context :=
-  { ctx with typeFactory := #[], seenDatatypes := [], datatypeFuns := Map.empty }
+private def sanitizeSMTContext (ctx : Core.SMT.Context) : SMT.SanitizedContext :=
+  SMT.SanitizedContext.ofCore ctx
 
 def Core.ProofObligation.toSMTObligation (E : Core.Env) (ob : Imperative.ProofObligation Core.Expression) :
   Option SMT.SMTVC := do
@@ -89,7 +110,7 @@ def Core.ProofObligation.toSMTObligation (E : Core.Env) (ob : Imperative.ProofOb
     match maybeTerms with
     | .error _ => none
     | .ok (ts, t, ctx) =>
-      (ob.label, sanitizeSMTContext ctx, ts, SMT.Factory.not t)
+      (ob.label, sanitizeSMTContext ctx, ts, t)
 
 def denoteProofObligation (E : Core.Env) (ob : Imperative.ProofObligation Core.Expression) :
   Option Prop := do
@@ -97,12 +118,12 @@ def denoteProofObligation (E : Core.Env) (ob : Imperative.ProofObligation Core.E
 
 theorem DPO_isSome_of_DQ_isSome :
     (Core.ProofObligation.toSMTObligation E ob) = some (label, ctx, ts, t) →
-    (denoteQuery ctx ts t).isSome → (denoteProofObligation E ob).isSome := by
+    (denoteQuery ctx.toCore ts t).isSome → (denoteProofObligation E ob).isSome := by
   sorry
 
 theorem DPO_of_DQ :
     Core.ProofObligation.toSMTObligation E ob = some (label, ctx, ts, t) →
-    denoteQuery ctx ts t = some p → denoteProofObligation E ob = some q →
+    denoteQuery ctx.toCore ts t = some p → denoteProofObligation E ob = some q →
     p → q := by
   sorry
 
@@ -129,14 +150,14 @@ noncomputable def denoteQueries (vcs : SMT.SMTVCs) : Option Prop := do
   match vcs with
   | [] => return True
   | (_, ctx, ts, t) :: vcs =>
-    let p ← denoteQuery ctx ts t
+    let p ← denoteQuery ctx.toCore ts t
     go vcs p
 where
   go vcs p : Option Prop := do
   match vcs with
   | [] => return p
   | (_, ctx, ts, t) :: vcs =>
-    let q ← denoteQuery ctx ts t
+    let q ← denoteQuery ctx.toCore ts t
     go vcs (p ∧ q)
 
 def toSMTVCs vcs := do
@@ -174,7 +195,7 @@ theorem DPOsGo_isSome_of_DQsGo_isSome  :
     let (E, ob) := coreVC
     let ⟨_, ctx, ts, t, smtVCs, hctx, hob, hrest⟩ := toSMTVCs_cons h
     simp only [hctx, Option.bind, denoteQueries.go, Option.bind_eq_bind] at hs
-    match hp' : denoteQuery ctx ts t with
+    match hp' : denoteQuery ctx.toCore ts t with
     | none => grind
     | some p' =>
       simp only [hp'] at hs
@@ -193,7 +214,7 @@ theorem DPOs_isSome_of_DQs_isSome  :
   | (E, ob) :: coreVCs =>
     have ⟨_, ctx, ts, t, smtVCs, hctx, hob, hrest⟩ := toSMTVCs_cons h
     simp only [denoteQueries, hctx, Option.bind_eq_bind, Option.bind] at hs
-    match hp : denoteQuery ctx ts t with
+    match hp : denoteQuery ctx.toCore ts t with
     | none => grind
     | some p =>
       simp only [hp] at hs
@@ -216,7 +237,7 @@ theorem DPOsGo_of_DQsGo  :
     let ⟨_, ctx, ts, t, smtVCs, hctx, hob, hrest⟩ := toSMTVCs_cons h
     simp only [hctx] at h ⊢
     simp only [denoteQueries.go, Option.bind_eq_bind, denoteProofObligations.go]
-    match hp' : denoteQuery ctx ts t with
+    match hp' : denoteQuery ctx.toCore ts t with
     | none => simp_all
     | some p' =>
       match hq' : denoteProofObligation E ob with
@@ -239,7 +260,7 @@ theorem DPOs_of_DQs  :
   | (E, ob) :: coreVCs =>
     have ⟨_, ctx, ts, t, smtVCs, hctx, hob, hrest⟩ := toSMTVCs_cons h
     simp only [denoteQueries, denoteProofObligations, hctx] at h ⊢
-    match hp : denoteQuery ctx ts t with
+    match hp : denoteQuery ctx.toCore ts t with
     | none => simp_all
     | some p =>
       match hq : denoteProofObligation E ob with
@@ -294,6 +315,7 @@ deriving instance ToExpr for QuantifierKind
 deriving instance ToExpr for SMT.Term
 deriving instance ToExpr for Core.SMT.Sort
 deriving instance ToExpr for Core.SMT.IF
+deriving instance ToExpr for SanitizedContext
 deriving instance ToExpr for Core.CoreExprMetadata
 deriving instance ToExpr for Lambda.LMonoTy
 
@@ -335,10 +357,8 @@ instance : ToExpr (Std.HashSet String) where
                      (.const ``instHashableString []) (toExpr s.toList)
   toTypeExpr := .app (.const ``Std.HashSet []) (toTypeExpr String)
 
-deriving instance ToExpr for Core.SMT.Context
-
 def createGoal : SMTVC → MetaM MVarId := fun (label, ctx, ts, t) => do
-  match translateQuery ctx ts t with
+  match translateQuery ctx.toCore ts t with
   | .error e =>
     logInfo m!"Error translating query"
     throwError e
