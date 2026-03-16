@@ -15,6 +15,7 @@ namespace Laurel
 def program := r"
 composite Container {
   var intValue: int // var indicates mutable field
+  var realValue: real
   var boolValue: bool
 }
 
@@ -27,7 +28,11 @@ procedure newsAreNotEqual() {
 procedure simpleAssign() {
   var c: Container := new Container;
   c#intValue := 2;
-  assert c#intValue == 2
+  c#realValue := 3.0;
+  c#boolValue := true;
+  assert c#intValue == 2;
+  assert c#realValue == 3.0;
+  assert c#boolValue == true
 };
 
 procedure updatesAndAliasing()

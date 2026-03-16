@@ -199,6 +199,7 @@ private def boxConstructorDef (model : SemanticModel) (ty : HighType) : Option D
   match ty with
   | .TInt => some { name := "BoxInt", args := [{ name := "intVal", type := ⟨.TInt, #[]⟩ }] }
   | .TBool => some { name := "BoxBool", args := [{ name := "boolVal", type := ⟨.TBool, #[]⟩ }] }
+  | .TReal => some { name := "BoxReal", args := [{ name := "realVal", type := ⟨.TReal, #[]⟩ }] }
   | .TFloat64 => some { name := "BoxFloat64", args := [{ name := "float64Val", type := ⟨.TFloat64, #[]⟩ }] }
   | .UserDefined name =>
       if isDatatype model name then
