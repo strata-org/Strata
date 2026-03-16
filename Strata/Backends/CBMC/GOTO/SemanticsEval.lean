@@ -28,14 +28,17 @@ Covers the expression forms produced by Strata's Lambda-to-GOTO translation
 ### Not handled (returns `none`)
 - **Side effects**: `Nondet`, `Assign` (handled at instruction level)
 - **Function application**: `functionApplication` (uninterpreted)
-- **`Old`**: requires two-state evaluation
+- **`Old`**: handled by `concreteEval₂` (two-state evaluator)
 - **Quantifiers**: `Forall`, `Exists` (specification-only)
 - **Bitvector bit-ops**: `Shl`, `Ashr`, `Lshr`, `Bitand`, `Bitor`, `Bitxor`,
   `Concatenation`, `Extractbits`
+- **Real arithmetic**: `vReal` values are parsed but arithmetic/comparison
+  operations on reals are not yet implemented (returns `none`)
 
 ## TODO
 - [ ] Bitvector bit-level operations (width-aware)
-- [ ] `Old` expression support (two-state evaluator)
+- [ ] Bitvector width normalization (truncate results modulo `2^w`)
+- [ ] Real arithmetic (rational operations on `vReal`)
 - [ ] Prove correspondence with Lambda expression evaluation
 -/
 
@@ -123,7 +126,7 @@ partial def concreteEval : ExprEval := fun σ e =>
   | .binary .Index, [arr, idx] => do
     let .vArray elems ← concreteEval σ arr | none
     let .vInt i ← concreteEval σ idx | none
-    elems[i.toNat]?
+    if i < 0 then none else elems[i.toNat]?
 
   -- Ternary
   | .ternary .ite, [c, t, el] => do
@@ -133,6 +136,7 @@ partial def concreteEval : ExprEval := fun σ e =>
     let .vArray elems ← concreteEval σ arr | none
     let .vInt i ← concreteEval σ idx | none
     let v ← concreteEval σ val
+    if i < 0 then none else
     some (.vArray (elems.set i.toNat v))
 
   -- Multiary

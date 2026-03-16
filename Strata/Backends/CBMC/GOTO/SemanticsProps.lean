@@ -17,11 +17,12 @@ operational semantics defined in `Semantics.lean`.
 ### Completed
 - Store operation lemmas (update idempotence, commutativity, etc.)
 - Determinism of `StepInstr` for deterministic evaluators (excluding `assign_nondet`)
+- Determinism of `ExecProg` for nondet-free programs (`ExecProg_deterministic`)
+- Per-instruction-type progress lemmas (`progress_skip`, `progress_assign`, etc.)
+- Composite well-formed program progress (`progress_wellformed`)
 - Additional reachability lemmas
 
 ### TODO
-- [ ] Determinism of `ExecProg` (requires induction on derivation depth)
-- [ ] Progress: well-formed programs always step or are at END_FUNCTION
 - [ ] Store monotonicity: DECL only adds, DEAD only removes
 -/
 

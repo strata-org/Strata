@@ -146,7 +146,14 @@ def Store.empty : Store := fun _ => none
 def Store.update (σ : Store) (name : String) (v : Value) : Store :=
   fun x => if x == name then some v else σ x
 
-/-- Declare a variable with a default value. -/
+/-- Declare a variable with a default value.
+    Note: In CBMC, DECL introduces a symbol but the value is undefined until
+    assigned. We use `.vEmpty` as a sentinel. The translation pipeline always
+    follows DECL with an ASSIGN (for `init x ty (some e)`) or with a nondet
+    ASSIGN (for `havoc`), so `.vEmpty` is never observed in well-formed
+    translated programs. For `init x ty none` (unconstrained init), the
+    Imperative semantics uses `InitState` with an arbitrary value, which
+    corresponds to the DECL + nondet ASSIGN pattern in GOTO. -/
 def Store.declare (σ : Store) (name : String) : Store :=
   fun x => if x == name then some .vEmpty else σ x
 

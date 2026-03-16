@@ -22,7 +22,7 @@ def testEval : ExprEval
   | σ, e => match e.id with
     | .nullary (.constant "true") => some (.vBool true)
     | .nullary (.constant "false") => some (.vBool false)
-    | .nullary (.constant v) => some (.vInt (v.toInt!))
+    | .nullary (.constant v) => v.toInt?.map .vInt
     | .nullary (.symbol name) => σ name
     | _ => none
 
