@@ -93,7 +93,9 @@ private def coreSMTResultToVCResult (r : Strata.Core.CoreSMT.CoreSMTResult) : Co
       satisfiabilityProperty := satResult
       validityProperty := valResult
     }
-    let diagnosis := r.diagnosisInfo.map fun d => Core.DiagnosisInfo.mk d.isRefuted d.diagnosedFailures d.statePathCondition
+    let diagnosis := r.diagnosisInfo.map fun d =>
+      { isRefuted := d.isRefuted,
+        statePathCondition := d.statePathCondition : Core.DiagnosisInfo }
     { obligation := r.obligation, outcome := .ok vcOutcome, diagnosis }
 
 def main (args : List String) : IO UInt32 := do

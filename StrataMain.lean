@@ -407,8 +407,10 @@ private def coreSMTResultToVCResult (r : Strata.Core.CoreSMT.CoreSMTResult) : Co
       satisfiabilityProperty := satResult
       validityProperty := valResult
     }
-    -- Convert diagnosis info
-    let diagnosis := r.diagnosisInfo.map fun d => Core.DiagnosisInfo.mk d.isRefuted d.diagnosedFailures d.statePathCondition
+    -- Convert diagnosis info (CoreSMT types → Core types via structural conversion)
+    let diagnosis := r.diagnosisInfo.map fun d =>
+      { isRefuted := d.isRefuted,
+        statePathCondition := d.statePathCondition : Core.DiagnosisInfo }
     { obligation := r.obligation, outcome := .ok vcOutcome, diagnosis }
 
 /-- Verify a Core program using the incremental CoreSMT engine.
@@ -482,7 +484,7 @@ private def verifyBatch
     let (locationPrefix, locationSuffix) := match Imperative.getFileRange vcResult.obligation.metadata with
       | some fr =>
         if fr.range.isNone then ("", "")
-        | _ =>
+        else
           match pySourceOpt with
           | some (pyPath, srcText) =>
             match fr.file with
