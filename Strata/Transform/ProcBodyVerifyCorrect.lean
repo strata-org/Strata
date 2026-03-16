@@ -20,9 +20,10 @@ theorem procToVerifyStmt_structure
     (proc : Procedure) (p : Program) (st : CoreTransformState)
     (stmt : Statement) (st' : CoreTransformState)
     (h : (procToVerifyStmt proc p).run st = (Except.ok stmt, st')) :
-    ∃ (label : String) (pre_body : List Statement) (bodyLabel : String) (md : MetaData Expression),
+    ∃ (label : String) (pre_body : List Statement) (md : MetaData Expression),
       stmt = Stmt.block label
-        (pre_body ++ [Stmt.block bodyLabel proc.body #[]] ++ ensuresToAsserts proc.spec.postconditions) md := by
+        (pre_body ++ [Stmt.block s!"body_{proc.header.name.name}" proc.body #[]] ++
+          ensuresToAsserts proc.spec.postconditions) md := by
   unfold procToVerifyStmt at h
   simp only [bind, ExceptT.bind, ExceptT.mk, pure, ExceptT.pure, ExceptT.run, StateT.bind] at h
   simp only [ExceptT.bindCont] at h
@@ -32,7 +33,7 @@ theorem procToVerifyStmt_structure
     · rename_i modifiesInits
       simp only [StateT.pure, pure] at h
       obtain ⟨rfl, _⟩ := h
-      exact ⟨_, _, _, _, rfl⟩
+      exact ⟨_, _, _, rfl⟩
     · rename_i e; exact absurd h nofun
 /-! ## Helper Lemmas -/
 
@@ -260,14 +261,40 @@ theorem pre_body_reaches_any_state
       δ σ check.expr = some HasBool.tt)
     (h_wf_bool : WellFormedSemanticEvalBool δ)
     (h_wf_var : WellFormedSemanticEvalVar δ)
-    (pre_body : List Statement) (bodyLabel : String)
+    (pre_body : List Statement)
     (h_pre_body : ∃ (blk_label : String) (blk_md : MetaData Expression),
       stmt = Stmt.block blk_label
-        (pre_body ++ [Stmt.block bodyLabel proc.body #[]] ++
+        (pre_body ++ [Stmt.block s!"body_{proc.header.name.name}" proc.body #[]] ++
           ensuresToAsserts proc.spec.postconditions) blk_md) :
     ∃ (σ_init : CoreStore) (δ_init : CoreEval),
       CoreStepStar π φ (.stmts pre_body σ_init δ_init) (.terminal σ δ) := by
-  sorry
+  obtain ⟨_, _, h_stmt_eq'⟩ := h_pre_body
+  unfold procToVerifyStmt at h_transform
+  simp only [bind, ExceptT.bind, ExceptT.mk, pure, ExceptT.pure, ExceptT.run, StateT.bind,
+    ExceptT.bindCont] at h_transform
+  split at h_transform
+  · rename_i modifiesResult s h_mapM
+    split at h_transform
+    · rename_i modifiesInits
+      simp only [StateT.pure, pure] at h_transform
+      obtain ⟨rfl, _⟩ := h_transform
+      simp only [List.append_assoc] at h_stmt_eq'
+      have ⟨_, h_stmts_eq, _⟩ := (Stmt.block.injEq _ _ _ _ _ _).mp h_stmt_eq'
+      -- h_stmts_eq is right-associated. Both sides end with:
+      --   ... ++ ([block bodyLabel body []] ++ asserts)
+      -- We need to cancel this common suffix.
+      -- First cancel asserts, then cancel [block ...]
+      simp only [← List.append_assoc] at h_stmts_eq
+      -- Now left-associated. Cancel asserts from the right:
+      have h1 := List.append_cancel_right h_stmts_eq
+      -- h1: ... ++ [block ...] = pre_body ++ [block ...]
+      -- Cancel [block ...] from the right:
+      have h_pre_eq := List.append_cancel_right h1
+      -- h_pre_eq: concrete_pre = pre_body
+      rw [← h_pre_eq]
+      -- Main goal: ∃ σ_init δ_init, executing concrete pre_body reaches (σ, δ)
+      sorry
+    · exact absurd h_transform nofun
 
 /-- The postcondition assert is reachable in the verification block when the body executes. -/
 theorem postcond_reachable_in_verifyBlock
@@ -347,19 +374,17 @@ theorem procBodyVerify_sound
     (h_wf_bool : ∀ δ : CoreEval, WellFormedSemanticEvalBool δ)
     (h_wf_var : ∀ δ : CoreEval, WellFormedSemanticEvalVar δ) :
     procedure_obeys_contract π φ proc := by
-  obtain ⟨blk_label, pre_body, bodyLabel, blk_md, h_stmt_eq⟩ :=
+  obtain ⟨blk_label, pre_body, blk_md, h_stmt_eq⟩ :=
     procToVerifyStmt_structure proc p st stmt st' h_transform
   intro δ σ₀ σ_final δ_final h_pre h_body label check h_post_in h_default
-  -- There exists an initial state from which pre_body reaches (σ₀, δ)
   obtain ⟨σ_init, δ_init, h_pre_exec⟩ :=
     pre_body_reaches_any_state π φ proc p st stmt st' h_transform
-      δ σ₀ h_pre (h_wf_bool δ) (h_wf_var δ) pre_body bodyLabel
+      δ σ₀ h_pre (h_wf_bool δ) (h_wf_var δ) pre_body
       ⟨blk_label, blk_md, h_stmt_eq⟩
-  -- The postcondition assert is reachable
   have h_reach := postcond_reachable_in_verifyBlock π φ proc
-    blk_label pre_body bodyLabel blk_md σ_init δ_init δ σ₀ σ_final δ_final
+    blk_label pre_body s!"body_{proc.header.name.name}" blk_md
+    σ_init δ_init δ σ₀ σ_final δ_final
     label check h_pre_exec h_body h_post_in h_default
-  -- Apply stmt_correct
   rw [h_stmt_eq] at h_correct
   exact h_correct ⟨label, check.expr, check.md⟩
     ⟨σ_final, δ_final, ⟨label, check.expr, check.md⟩⟩ h_reach rfl
