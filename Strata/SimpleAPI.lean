@@ -24,8 +24,8 @@ import Strata.Languages.Laurel.Grammar.ConcreteToAbstractTreeTranslator
 public import Strata.Languages.Laurel.Laurel
 import Strata.Languages.Laurel.LaurelToCoreTranslator
 
-import Strata.Languages.Python.Python
 import Strata.Languages.Python.Specs
+import Strata.Languages.Python.Specs.DDM
 
 /-! ## Simple Strata API
 
