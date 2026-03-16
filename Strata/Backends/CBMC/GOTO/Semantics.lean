@@ -97,8 +97,9 @@ The semantics is informed by CBMC's concrete interpreter
       → See `SemanticsSim.lean`: all command-level simulation lemmas proved
         (`sim_assert`, `sim_assume`, `sim_set`, `sim_init`, `sim_havoc`,
          `sim_cmd`), plus if-then-else guard simulation
-- [ ] Add support for `old()` expressions in postconditions (requires
-      two-state evaluation)
+- [x] Add support for `old()` expressions in postconditions
+      → See `Semantics.lean`: `ExprEval₂`, `ExprEval.withOld`
+      → See `SemanticsEval.lean`: `concreteEval₂`
 - [ ] Statement-level simulation for `ite` and `loop` body execution
       (guard simulation is done; `sim_block` proved for sequential
        composition; connecting to `ExecRange` on translated instructions
@@ -106,7 +107,8 @@ The semantics is informed by CBMC's concrete interpreter
 - [ ] End-to-end theorem: `EvalBlock` implies `ExecProg` on translated program
 - [ ] Loop simulation blocked on Imperative dialect loop evaluation rules
       (see TODO in `StmtSemantics.lean`)
-- [ ] Progress theorem (stated with sorry in `SemanticsProps.lean`)
+- [x] Progress theorems (per-instruction-type)
+      → See `SemanticsProps.lean`: `progress_skip`, `progress_assign`, etc.
 -/
 
 namespace CProverGOTO.Semantics
@@ -153,6 +155,18 @@ def Store.kill (σ : Store) (name : String) : Store :=
 
 /-- Abstract expression evaluator. -/
 abbrev ExprEval := Store → Expr → Option Value
+
+/-- Two-state expression evaluator for postconditions with `old()`.
+    Takes both the pre-state (at procedure entry) and the current state. -/
+abbrev ExprEval₂ := Store → Store → Expr → Option Value
+
+/-- Lift a single-state evaluator to a two-state evaluator that handles `old()`.
+    `old(e)` evaluates `e` in the pre-state; all other expressions use the
+    current state. -/
+def ExprEval.withOld (eval : ExprEval) : ExprEval₂ := fun σ_old σ_cur e =>
+  match e.id, e.operands with
+  | .unary .Old, [inner] => eval σ_old inner
+  | _, _ => eval σ_cur e
 
 /-! ## Function Environment -/
 

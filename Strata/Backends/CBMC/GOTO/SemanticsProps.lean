@@ -198,27 +198,122 @@ def AssumeBlocks (eval : ExprEval) (prog : Program) (pc : Nat) (σ : Store) : Pr
   instrType prog pc = some .ASSUME ∧
   (instrGuard prog pc).bind (eval σ ·) = some (.vBool false)
 
-/-- Progress: if the PC is in bounds and the instruction is not a terminator,
-    then either the instruction steps or it's a blocking ASSUME.
+/-- The instruction types that Strata's translation produces. -/
+def IsSupportedInstrType (ty : InstructionType) : Prop :=
+  ty = .SKIP ∨ ty = .LOCATION ∨ ty = .ASSIGN ∨ ty = .DECL ∨ ty = .DEAD ∨
+  ty = .GOTO ∨ ty = .ASSUME ∨ ty = .ASSERT ∨ ty = .FUNCTION_CALL ∨
+  ty = .END_FUNCTION ∨ ty = .SET_RETURN_VALUE
 
-    This is stated for the concrete case where the evaluator succeeds on
-    all guards and expressions. A more general version would need to handle
-    evaluation failure. -/
-theorem progress
+/-- Progress for SKIP and LOCATION: always step. -/
+theorem progress_skip
     {callResult : CallResultRel} {eval : ExprEval} {fenv : FuncEnv}
     {prog : Program} {pc : Nat} {σ : Store}
-    (hbound : pc < prog.instructions.size)
-    (hnot_term : ¬ IsTerminator prog pc)
-    -- The evaluator succeeds on the guard
-    (hguard : ∀ g, instrGuard prog pc = some g → ∃ v, eval σ g = some v)
-    -- The evaluator succeeds on assign rhs
-    (hrhs : ∀ c rhs, instrCode prog pc = some c → getAssignRhs c = some rhs →
-            rhs.id ≠ .side_effect .Nondet → ∃ v, eval σ rhs = some v)
-    -- Function calls succeed
-    (hcall : ∀ c name, instrCode prog pc = some c → getCallCallee c = some name →
-             ∃ σ' rv, callResult eval fenv name σ σ' rv) :
+    (hty : instrType prog pc = some .SKIP) :
+    ∃ pc' σ', StepInstr callResult eval fenv prog pc σ pc' σ' :=
+  ⟨pc + 1, σ, .skip hty⟩
+
+theorem progress_location
+    {callResult : CallResultRel} {eval : ExprEval} {fenv : FuncEnv}
+    {prog : Program} {pc : Nat} {σ : Store}
+    (hty : instrType prog pc = some .LOCATION) :
+    ∃ pc' σ', StepInstr callResult eval fenv prog pc σ pc' σ' :=
+  ⟨pc + 1, σ, .location hty⟩
+
+/-- Progress for DECL: always steps if the code has a symbol name. -/
+theorem progress_decl
+    {callResult : CallResultRel} {eval : ExprEval} {fenv : FuncEnv}
+    {prog : Program} {pc : Nat} {σ : Store}
+    (hty : instrType prog pc = some .DECL)
+    (hcode : ∃ name, (instrCode prog pc).bind getSymbolName = some name) :
+    ∃ pc' σ', StepInstr callResult eval fenv prog pc σ pc' σ' := by
+  obtain ⟨name, hname⟩ := hcode
+  exact ⟨pc + 1, σ.declare name, .decl hty hname⟩
+
+/-- Progress for DEAD: always steps if the code has a symbol name. -/
+theorem progress_dead
+    {callResult : CallResultRel} {eval : ExprEval} {fenv : FuncEnv}
+    {prog : Program} {pc : Nat} {σ : Store}
+    (hty : instrType prog pc = some .DEAD)
+    (hcode : ∃ name, (instrCode prog pc).bind getSymbolName = some name) :
+    ∃ pc' σ', StepInstr callResult eval fenv prog pc σ pc' σ' := by
+  obtain ⟨name, hname⟩ := hcode
+  exact ⟨pc + 1, σ.kill name, .dead hty hname⟩
+
+/-- Progress for ASSIGN: steps if the rhs evaluates (or is nondet). -/
+theorem progress_assign
+    {callResult : CallResultRel} {eval : ExprEval} {fenv : FuncEnv}
+    {prog : Program} {pc : Nat} {σ : Store}
+    (hty : instrType prog pc = some .ASSIGN)
+    (hlhs : ∃ name, (instrCode prog pc).bind getAssignLhs = some name)
+    (hrhs : ∃ rhs, (instrCode prog pc).bind getAssignRhs = some rhs)
+    -- Either rhs evaluates or is nondet
+    (heval_or_nondet : ∀ rhs, (instrCode prog pc).bind getAssignRhs = some rhs →
+      (∃ v, eval σ rhs = some v) ∨ rhs.id = .side_effect .Nondet) :
+    ∃ pc' σ', StepInstr callResult eval fenv prog pc σ pc' σ' := by
+  obtain ⟨name, hname⟩ := hlhs
+  obtain ⟨rhs, hrhs_eq⟩ := hrhs
+  cases heval_or_nondet rhs hrhs_eq with
+  | inl hev =>
+    obtain ⟨v, hv⟩ := hev
+    exact ⟨pc + 1, σ.update name v, .assign hty hname hrhs_eq hv⟩
+  | inr hnd =>
+    exact ⟨pc + 1, σ.update name .vEmpty, .assign_nondet hty hname hrhs_eq hnd⟩
+
+/-- Progress for ASSERT: always steps (pass or fail) if guard evaluates to bool. -/
+theorem progress_assert
+    {callResult : CallResultRel} {eval : ExprEval} {fenv : FuncEnv}
+    {prog : Program} {pc : Nat} {σ : Store}
+    (hty : instrType prog pc = some .ASSERT)
+    (hguard : ∃ b, (instrGuard prog pc).bind (eval σ ·) = some (.vBool b)) :
+    ∃ pc' σ', StepInstr callResult eval fenv prog pc σ pc' σ' := by
+  obtain ⟨b, hb⟩ := hguard
+  cases b with
+  | true => exact ⟨pc + 1, σ, .assert_pass hty hb⟩
+  | false => exact ⟨pc + 1, σ, .assert_fail hty hb⟩
+
+/-- Progress for ASSUME: steps if guard is true, blocks if false. -/
+theorem progress_assume
+    {callResult : CallResultRel} {eval : ExprEval} {fenv : FuncEnv}
+    {prog : Program} {pc : Nat} {σ : Store}
+    (hty : instrType prog pc = some .ASSUME)
+    (hguard : ∃ b, (instrGuard prog pc).bind (eval σ ·) = some (.vBool b)) :
     (∃ pc' σ', StepInstr callResult eval fenv prog pc σ pc' σ') ∨
     AssumeBlocks eval prog pc σ := by
-  sorry
+  obtain ⟨b, hb⟩ := hguard
+  cases b with
+  | true => left; exact ⟨pc + 1, σ, .assume_pass hty hb⟩
+  | false => right; exact ⟨hty, hb⟩
+
+/-- Progress for GOTO: steps if guard evaluates to bool and target resolves. -/
+theorem progress_goto
+    {callResult : CallResultRel} {eval : ExprEval} {fenv : FuncEnv}
+    {prog : Program} {pc : Nat} {σ : Store}
+    (hty : instrType prog pc = some .GOTO)
+    (hguard : ∃ b, (instrGuard prog pc).bind (eval σ ·) = some (.vBool b))
+    -- Well-formed GOTO has a target
+    (htgt_exists : ∃ tgt, instrTarget prog pc = some (some tgt))
+    (htgt_resolves : ∀ tgt, instrTarget prog pc = some (some tgt) →
+            ∃ idx, findLocIdx prog.instructions tgt = some idx) :
+    ∃ pc' σ', StepInstr callResult eval fenv prog pc σ pc' σ' := by
+  obtain ⟨b, hb⟩ := hguard
+  cases b with
+  | false => exact ⟨pc + 1, σ, .goto_not_taken hty hb⟩
+  | true =>
+    obtain ⟨tgt, htgt⟩ := htgt_exists
+    obtain ⟨idx, hidx⟩ := htgt_resolves tgt htgt
+    exact ⟨idx, σ, .goto_taken hty htgt hb hidx⟩
+
+/-- Progress for FUNCTION_CALL: steps if callee resolves. -/
+theorem progress_function_call
+    {callResult : CallResultRel} {eval : ExprEval} {fenv : FuncEnv}
+    {prog : Program} {pc : Nat} {σ : Store}
+    (hty : instrType prog pc = some .FUNCTION_CALL)
+    (hcallee : ∃ name, (instrCode prog pc).bind getCallCallee = some name)
+    (hcall : ∀ name, (instrCode prog pc).bind getCallCallee = some name →
+             ∃ σ' rv, callResult eval fenv name σ σ' rv) :
+    ∃ pc' σ', StepInstr callResult eval fenv prog pc σ pc' σ' := by
+  obtain ⟨name, hname⟩ := hcallee
+  obtain ⟨σ', rv, hcr⟩ := hcall name hname
+  exact ⟨pc + 1, _, .function_call hty hname hcr rfl⟩
 
 end CProverGOTO.Semantics

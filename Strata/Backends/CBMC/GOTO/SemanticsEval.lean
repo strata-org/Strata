@@ -175,4 +175,11 @@ where
     | .vBV _ a, .vBV _ b => some (.vBool (f a b))
     | _, _ => none
 
+/-- Two-state concrete evaluator that handles `old()` expressions.
+    `old(e)` evaluates `e` in `σ_old`; everything else uses `σ_cur`. -/
+partial def concreteEval₂ : ExprEval₂ := fun σ_old σ_cur e =>
+  match e.id, e.operands with
+  | .unary .Old, [inner] => concreteEval σ_old inner
+  | _, _ => concreteEval σ_cur e
+
 end CProverGOTO.Semantics
