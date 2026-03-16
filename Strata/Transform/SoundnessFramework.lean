@@ -35,26 +35,22 @@ structure AssertId where
 
 /-! ## Program State -/
 
-/-- A program state carries the store, evaluator, and an optional assertion id.
-    When execution is about to execute an assert command, `pc` is `some`. -/
+/-- A program state at an assertion: carries the store, evaluator, and assertion id. -/
 structure ProgramState where
   store : CoreStore
   eval  : CoreEval
-  pc    : Option AssertId
+  pc    : AssertId
 
 /-- Extract a `ProgramState` from a small-step configuration.
-    Detects asserts at the head of `.stmt`, `.stmts`, `.block`, and `.seq` configs. -/
+    Returns `some` only when at an assert command. -/
 def ProgramState.ofConfig : CoreConfig → Option ProgramState
   | .stmt (Stmt.cmd (CmdExt.cmd (Cmd.assert label expr md))) σ δ =>
-    some ⟨σ, δ, some ⟨label, expr, md⟩⟩
+    some ⟨σ, δ, ⟨label, expr, md⟩⟩
   | .stmts (Stmt.cmd (CmdExt.cmd (Cmd.assert label expr md)) :: _) σ δ =>
-    some ⟨σ, δ, some ⟨label, expr, md⟩⟩
+    some ⟨σ, δ, ⟨label, expr, md⟩⟩
   | .block _ inner => ProgramState.ofConfig inner
   | .seq inner _ => ProgramState.ofConfig inner
-  | .stmt _ σ δ => some ⟨σ, δ, none⟩
-  | .stmts _ σ δ => some ⟨σ, δ, none⟩
-  | .terminal σ δ => some ⟨σ, δ, none⟩
-  | .exiting _ σ δ => some ⟨σ, δ, none⟩
+  | _ => none
 
 /-- A program state is reachable from a statement if there exists an initial
     configuration and a multi-step execution path to a configuration whose
@@ -74,7 +70,7 @@ def stmt_valid
     (stmt : Statement) (a : AssertId) : Prop :=
   ∀ (ps : ProgramState),
     reachable π φ stmt ps →
-    ps.pc = some a →
+    ps.pc = a →
     ps.eval ps.store a.expr = some HasBool.tt
 
 /-- `stmt_correct` is validity for all assertion ids. -/
@@ -87,12 +83,10 @@ def stmt_correct
 
 /-- A procedure obeys its contract: for all initial states where preconditions
     hold, if the body executes to a terminal state, then all postconditions
-    either hold at exit or are unreachable in the verification block.
-    Uses small-step semantics. -/
+    hold at exit. Uses small-step semantics. -/
 def procedure_obeys_contract
     (π : String → Option Procedure) (φ : CoreEval → PureFunc Expression → CoreEval)
-    (proc : Procedure)
-    (verification_stmt : Statement) : Prop :=
+    (proc : Procedure) : Prop :=
   ∀ (δ : CoreEval) (σ₀ σ_final : CoreStore) (δ_final : CoreEval),
     (∀ (label : CoreLabel) (check : Procedure.Check),
       (label, check) ∈ proc.spec.preconditions.toList →
@@ -101,10 +95,7 @@ def procedure_obeys_contract
     (∀ (label : CoreLabel) (check : Procedure.Check),
       (label, check) ∈ proc.spec.postconditions.toList →
       check.attr = Procedure.CheckAttr.Default →
-      -- The postcondition holds at exit OR is unreachable in the verification block
-      δ_final σ_final check.expr = some HasBool.tt ∨
-      ¬ reachable π φ verification_stmt
-        ⟨σ_final, δ_final, some ⟨label, check.expr, check.md⟩⟩)
+      δ_final σ_final check.expr = some HasBool.tt)
 
 /-! ## Transformation Structure -/
 

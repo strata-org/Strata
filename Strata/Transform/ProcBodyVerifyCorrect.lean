@@ -30,7 +30,7 @@ theorem procToVerifyStmt_structure
   · rename_i a s h_mapM
     split at h
     · rename_i modifiesInits
-      simp only [StateT.pure, pure, Prod.mk.injEq] at h
+      simp only [StateT.pure, pure] at h
       obtain ⟨rfl, _⟩ := h
       exact ⟨_, _, _, _, rfl⟩
     · rename_i e; exact absurd h nofun
@@ -181,42 +181,104 @@ theorem assert_skips_to_terminal
 
 /-! ## Soundness Theorem -/
 
-/-- Soundness of ProcBodyVerify: if the verification block is correct,
-    then the procedure obeys its contract. -/
-theorem procBodyVerify_sound
-    -- Given a procedure environment and function extension mechanism
+/-- The postcondition assert is reachable in the verification block when the body executes. -/
+theorem postcond_reachable_in_verifyBlock
     (π : String → Option Procedure) (φ : CoreEval → PureFunc Expression → CoreEval)
-    -- Given a procedure and a program context
-    (proc : Procedure) (p : Program) (st : CoreTransformState)
-    -- If procToVerifyStmt produces a verification statement `stmt`
-    (stmt : Statement) (st' : CoreTransformState)
-    (h_transform : (procToVerifyStmt proc p).run st = (Except.ok stmt, st'))
-    -- And every assertion in `stmt` is valid (holds at all reachable states)
-    (h_correct : stmt_correct π φ stmt) :
-    -- Then the procedure obeys its contract:
-    -- for all initial states where preconditions hold,
-    -- if the body executes to completion,
-    -- then all postconditions hold at exit.
-    procedure_obeys_contract π φ proc stmt := by
-  obtain ⟨blk_label, pre_body, bodyLabel, blk_md, h_stmt_eq⟩ :=
-    procToVerifyStmt_structure proc p st stmt st' h_transform
-  intro δ σ₀ σ_final δ_final h_pre h_body label check h_post_in h_default
+    (proc : Procedure) (blk_label : String) (pre_body : List Statement)
+    (bodyLabel : String) (blk_md : MetaData Expression)
+    (δ₀ : CoreEval) (σ₀ σ_final : CoreStore) (δ_final : CoreEval)
+    (label : CoreLabel) (check : Procedure.Check)
+    (h_pre_exec : CoreStepStar π φ (.stmts pre_body σ₀ δ₀) (.terminal σ₀ δ₀))
+    (h_body : CoreStepStar π φ (.stmts proc.body σ₀ δ₀) (.terminal σ_final δ_final))
+    (h_post_in : (label, check) ∈ proc.spec.postconditions.toList)
+    (h_default : check.attr = Procedure.CheckAttr.Default) :
+    reachable π φ
+      (Stmt.block blk_label (pre_body ++ [Stmt.block bodyLabel proc.body #[]] ++
+        ensuresToAsserts proc.spec.postconditions) blk_md)
+      ⟨σ_final, δ_final, ⟨label, check.expr, check.md⟩⟩ := by
+  -- The assert statement for this postcondition
   have h_assert_in : Statement.assert label check.expr check.md ∈
       ensuresToAsserts proc.spec.postconditions := by
     unfold ensuresToAsserts; simp only [List.mem_filterMap]
     exact ⟨(label, check), h_post_in, by simp [h_default]⟩
+  -- Find the position of this assert in the list
+  obtain ⟨asserts_before, asserts_after, h_split⟩ :=
+    List.mem_iff_append.mp h_assert_in
+  -- Construct the execution path
+  unfold reachable
+  refine ⟨δ₀, σ₀, ?cfg, ?path, ?state⟩
+  case cfg =>
+    exact .block blk_label
+      (.stmts (Statement.assert label check.expr check.md :: asserts_after) σ_final δ_final)
+  case state =>
+    simp only [ProgramState.ofConfig]
+  case path =>
+    -- Enter the block
+    apply ReflTrans.step _ (.block blk_label (.stmts _ σ₀ δ₀))
+    · exact StepStmt.step_block
+    -- Reassociate: (pre_body ++ [body_block]) ++ asserts = pre_body ++ ([body_block] ++ asserts)
+    rw [List.append_assoc] at *
+    apply ReflTrans_Transitive
+    · -- Execute pre_body
+      apply block_lift_steps
+      exact stmts_process_to_suffix _ _ pre_body _ _ _ _ _ h_pre_exec
+    -- Now at: block(stmts([body_block] ++ asserts))
+    apply ReflTrans_Transitive
+    · apply block_lift_steps
+      -- Step into body_block :: asserts
+      apply seq_process_stmt
+      exact block_stmt_to_terminal _ _ bodyLabel proc.body #[] _ _ _ _ h_body
+    -- Now at: block(stmts(asserts))
+    -- Split asserts at our target
+    rw [h_split]
+    apply ReflTrans_Transitive
+    · apply block_lift_steps
+      apply stmts_process_to_suffix _ _ asserts_before
+      apply assert_skips_to_terminal
+      intro s hs
+      have : s ∈ ensuresToAsserts proc.spec.postconditions := by
+        rw [h_split]; exact List.mem_append_left _ hs
+      unfold ensuresToAsserts at this
+      simp only [List.mem_filterMap] at this
+      obtain ⟨⟨l, c⟩, _, h_eq⟩ := this
+      split at h_eq
+      · exact absurd h_eq nofun
+      · simp only [Option.some.injEq] at h_eq; exact ⟨_, _, _, h_eq.symm⟩
+    -- Now at: block(stmts(assert :: asserts_after))
+    exact ReflTrans.refl _
+
+/-- Soundness of ProcBodyVerify: if the verification block is correct,
+    then the procedure obeys its contract. -/
+theorem procBodyVerify_sound
+    (π : String → Option Procedure) (φ : CoreEval → PureFunc Expression → CoreEval)
+    (proc : Procedure) (p : Program) (st : CoreTransformState)
+    (stmt : Statement) (st' : CoreTransformState)
+    (h_transform : (procToVerifyStmt proc p).run st = (Except.ok stmt, st'))
+    (h_correct : stmt_correct π φ stmt)
+    -- The pre_body (inits + assumes) executes without changing state when preconditions hold
+    (h_pre_exec : ∀ (δ : CoreEval) (σ : CoreStore),
+      (∀ (label : CoreLabel) (check : Procedure.Check),
+        (label, check) ∈ proc.spec.preconditions.toList →
+        δ σ check.expr = some HasBool.tt) →
+      ∀ (blk_label : String) (pre_body : List Statement) (bodyLabel : String)
+        (blk_md : MetaData Expression),
+        stmt = Stmt.block blk_label
+          (pre_body ++ [Stmt.block bodyLabel proc.body #[]] ++
+            ensuresToAsserts proc.spec.postconditions) blk_md →
+        CoreStepStar π φ (.stmts pre_body σ δ) (.terminal σ δ)) :
+    procedure_obeys_contract π φ proc := by
+  obtain ⟨blk_label, pre_body, bodyLabel, blk_md, h_stmt_eq⟩ :=
+    procToVerifyStmt_structure proc p st stmt st' h_transform
+  intro δ σ₀ σ_final δ_final h_pre h_body label check h_post_in h_default
+  -- Get pre_body execution
+  have h_pre_exec' := h_pre_exec δ σ₀ h_pre blk_label pre_body bodyLabel blk_md h_stmt_eq
+  -- The postcondition assert is reachable
+  have h_reach := postcond_reachable_in_verifyBlock π φ proc
+    blk_label pre_body bodyLabel blk_md δ σ₀ σ_final δ_final
+    label check h_pre_exec' h_body h_post_in h_default
+  -- Apply stmt_correct
   rw [h_stmt_eq] at h_correct
-  -- Either the postcondition assert is reachable or it isn't
-  by_cases h_reach : reachable π φ
-    (Stmt.block blk_label (pre_body ++ [Stmt.block bodyLabel proc.body #[]] ++
-      ensuresToAsserts proc.spec.postconditions) blk_md)
-    ⟨σ_final, δ_final, some ⟨label, check.expr, check.md⟩⟩
-  · -- Reachable: h_correct gives us the result
-    left
-    exact h_correct ⟨label, check.expr, check.md⟩
-      ⟨σ_final, δ_final, some ⟨label, check.expr, check.md⟩⟩ h_reach rfl
-  · -- Not reachable: vacuously passing
-    right
-    rwa [h_stmt_eq]
+  exact h_correct ⟨label, check.expr, check.md⟩
+    ⟨σ_final, δ_final, ⟨label, check.expr, check.md⟩⟩ h_reach rfl
 
 end ProcBodyVerifyCorrect
