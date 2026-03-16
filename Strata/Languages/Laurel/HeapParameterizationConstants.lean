@@ -39,8 +39,6 @@ program Laurel;
 // Composite: datatype with a reference (int)
 datatype Composite { MkComposite(ref: int) }
 
-datatype Float64IsNotSupportedYet {}
-
 // Heap: contains the data map and a nextReference for allocation
 datatype Heap {
   MkHeap(data: Map Composite Map Field Box, nextReference: int)

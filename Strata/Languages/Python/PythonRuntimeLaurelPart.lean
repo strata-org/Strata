@@ -84,6 +84,8 @@ datatype DictStrAny {
   DictStrAny_cons (key: string, val: Any, tail: DictStrAny)
 }
 
+datatype END_MARKER { }
+
 #end
 
 /--
