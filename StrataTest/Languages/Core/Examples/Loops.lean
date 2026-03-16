@@ -8,8 +8,97 @@ import Strata.Languages.Core.Program
 import Strata.Languages.Core.Verifier
 import Strata.Transform.StructuredToUnstructured
 
----------------------------------------------------------------------
 namespace Strata
+
+def singleCFG (p : Program) (n : Nat) : Imperative.CFG String
+    (Imperative.DetBlock String Core.Command Core.Expression) :=
+  let corePgm : Core.Program := TransM.run Inhabited.default (translateProgram p) |>.fst
+  let proc := match corePgm.decls[n]? with
+              | .some (.proc p _) => p | _ => Inhabited.default
+  Imperative.stmtsToCFG proc.body
+
+---------------------------------------------------------------------
+
+def measureFailExamplePgm :=
+#strata
+program Core;
+
+procedure countUp(n : int) returns (i : int)
+spec {
+  requires (n >= 0);
+  ensures (i == n);
+}
+{
+  i := 0;
+  while (i < n)
+    decreases n // WRONG
+    invariant 0 <= i
+    invariant i <= n
+  {
+    i := (i + 1);
+  }
+};
+#end
+
+/--
+info: Entry: before_loop$_7
+
+before_loop$_7:
+  i := 0
+  condGoto true loop_entry$_1 loop_entry$_1
+loop_entry$_1:
+  assert [inv$_5] 0 <= i
+  assert [inv$_6] i <= n
+  init (loop_measure$_2 : int)
+  assume [assume_loop_measure$_2] loop_measure$_2 == n
+  assert [measure_lb_loop_measure$_2] !(loop_measure$_2 < 0)
+  condGoto i < n l$_4 end$_0
+l$_4:
+  i := i + 1
+  condGoto true measure_decrease$_3 measure_decrease$_3
+measure_decrease$_3:
+  assert [measure_decrease_loop_measure$_2] n < loop_measure$_2
+  condGoto true loop_entry$_1 loop_entry$_1
+end$_0:
+  finish
+-/
+#guard_msgs in
+#eval (Std.format (singleCFG measureFailExamplePgm 0))
+
+/--
+info:
+Obligation: entry_invariant_0_0
+Property: assert
+Result: ✅ pass
+
+Obligation: entry_invariant_0_1
+Property: assert
+Result: ✅ pass
+
+Obligation: measure_lb_0
+Property: assert
+Result: ✅ pass
+
+Obligation: arbitrary_iter_maintain_invariant_0_0
+Property: assert
+Result: ✅ pass
+
+Obligation: arbitrary_iter_maintain_invariant_0_1
+Property: assert
+Result: ✅ pass
+
+Obligation: measure_decrease_0
+Property: assert
+Result: ❌ fail
+
+Obligation: countUp_ensures_1
+Property: assert
+Result: ✅ pass
+-/
+#guard_msgs in
+#eval verify measureFailExamplePgm (options := .quiet)
+
+---------------------------------------------------------------------
 
 def gaussPgm :=
 #strata
@@ -25,6 +114,7 @@ spec {
   i := 0;
   s := 0;
   while (i < n)
+    decreases n - i
     invariant 0 <= i
     invariant i <= n
     invariant s == (i * (i + 1)) / 2
@@ -35,30 +125,29 @@ spec {
 };
 #end
 
-def singleCFG (p : Program) (n : Nat) : Imperative.CFG String (Imperative.DetBlock String Core.Command Core.Expression) :=
-  let corePgm : Core.Program := TransM.run Inhabited.default (translateProgram p) |>.fst
-  let proc := match corePgm.decls[n]? with | .some (.proc p _) => p | _ => Inhabited.default
-  Imperative.stmtsToCFG proc.body
-
 /--
-info: Entry: before_loop$_6
+info: Entry: before_loop$_8
 
-before_loop$_6:
+before_loop$_8:
   init (i : int)
-  i := #0
-  s := #0
-  condGoto #true loop_entry$_1 loop_entry$_1
+  i := 0
+  s := 0
+  condGoto true loop_entry$_1 loop_entry$_1
 loop_entry$_1:
-  assert [inv$_3] ((~Int.Le : (arrow int (arrow int bool))) #0 (i : int))
-  assert [inv$_4] ((~Int.Le : (arrow int (arrow int bool))) (i : int) (n : int))
-  assert [inv$_5] ((s : int) == ((~Int.SafeDiv : (arrow int (arrow int int)))
-  ((~Int.Mul : (arrow int (arrow int int))) (i : int) ((~Int.Add : (arrow int (arrow int int))) (i : int) #1))
-  #2))
-  condGoto ((~Int.Lt : (arrow int (arrow int bool))) (i : int) (n : int)) l$_2 end$_0
-l$_2:
-  i := ((~Int.Add : (arrow int (arrow int int))) (i : int) #1)
-  s := ((~Int.Add : (arrow int (arrow int int))) (s : int) (i : int))
-  condGoto #true loop_entry$_1 loop_entry$_1
+  assert [inv$_5] 0 <= i
+  assert [inv$_6] i <= n
+  assert [inv$_7] s == i * (i + 1) / 2
+  init (loop_measure$_2 : int)
+  assume [assume_loop_measure$_2] loop_measure$_2 == n - i
+  assert [measure_lb_loop_measure$_2] !(loop_measure$_2 < 0)
+  condGoto i < n l$_4 end$_0
+l$_4:
+  i := i + 1
+  s := s + i
+  condGoto true measure_decrease$_3 measure_decrease$_3
+measure_decrease$_3:
+  assert [measure_decrease_loop_measure$_2] n - i < loop_measure$_2
+  condGoto true loop_entry$_1 loop_entry$_1
 end$_0:
   finish
 -/
@@ -105,6 +194,20 @@ sum_requires_0: $__n2 >= 0
 Obligation:
 true
 
+Label: measure_lb_0
+Property: assert
+Assumptions:
+<label_ite_cond_true: (~Int.Lt i n)>: 0 < $__n2
+assume_guard_0: $__i5 < $__n2
+assume_invariant_0_0: 0 <= $__i5
+assume_invariant_0_1: $__i5 <= $__n2
+assume_invariant_0_2: $__s6 == $__i5 * ($__i5 + 1) / 2
+assume_measure_0: $__$__loop_measure_07 == $__n2 - $__i5
+sum_requires_0: $__n2 >= 0
+assume_entry_invariant_0_1: 0 <= $__n2
+Obligation:
+!($__$__loop_measure_07 < 0)
+
 Label: arbitrary_iter_maintain_invariant_0_0
 Property: assert
 Assumptions:
@@ -113,6 +216,7 @@ assume_guard_0: $__i5 < $__n2
 assume_invariant_0_0: 0 <= $__i5
 assume_invariant_0_1: $__i5 <= $__n2
 assume_invariant_0_2: $__s6 == $__i5 * ($__i5 + 1) / 2
+assume_measure_0: $__$__loop_measure_07 == $__n2 - $__i5
 sum_requires_0: $__n2 >= 0
 assume_entry_invariant_0_1: 0 <= $__n2
 Obligation:
@@ -126,6 +230,7 @@ assume_guard_0: $__i5 < $__n2
 assume_invariant_0_0: 0 <= $__i5
 assume_invariant_0_1: $__i5 <= $__n2
 assume_invariant_0_2: $__s6 == $__i5 * ($__i5 + 1) / 2
+assume_measure_0: $__$__loop_measure_07 == $__n2 - $__i5
 sum_requires_0: $__n2 >= 0
 assume_entry_invariant_0_1: 0 <= $__n2
 Obligation:
@@ -139,10 +244,25 @@ assume_guard_0: $__i5 < $__n2
 assume_invariant_0_0: 0 <= $__i5
 assume_invariant_0_1: $__i5 <= $__n2
 assume_invariant_0_2: $__s6 == $__i5 * ($__i5 + 1) / 2
+assume_measure_0: $__$__loop_measure_07 == $__n2 - $__i5
 sum_requires_0: $__n2 >= 0
 assume_entry_invariant_0_1: 0 <= $__n2
 Obligation:
 $__s6 + ($__i5 + 1) == ($__i5 + 1) * ($__i5 + 1 + 1) / 2
+
+Label: measure_decrease_0
+Property: assert
+Assumptions:
+<label_ite_cond_true: (~Int.Lt i n)>: 0 < $__n2
+assume_guard_0: $__i5 < $__n2
+assume_invariant_0_0: 0 <= $__i5
+assume_invariant_0_1: $__i5 <= $__n2
+assume_invariant_0_2: $__s6 == $__i5 * ($__i5 + 1) / 2
+assume_measure_0: $__$__loop_measure_07 == $__n2 - $__i5
+sum_requires_0: $__n2 >= 0
+assume_entry_invariant_0_1: 0 <= $__n2
+Obligation:
+$__n2 - ($__i5 + 1) < $__$__loop_measure_07
 
 Label: sum_ensures_1
 Property: assert
@@ -154,13 +274,14 @@ assume_guard_0: if 0 < $__n2 then $__i5 < $__n2 else true
 assume_invariant_0_0: if 0 < $__n2 then 0 <= $__i5 else true
 assume_invariant_0_1: if 0 < $__n2 then $__i5 <= $__n2 else true
 assume_invariant_0_2: if 0 < $__n2 then $__s6 == $__i5 * ($__i5 + 1) / 2 else true
-not_guard_0: if 0 < $__n2 then !($__i7 < $__n2) else true
-invariant_0_0: if 0 < $__n2 then 0 <= $__i7 else true
-invariant_0_1: if 0 < $__n2 then $__i7 <= $__n2 else true
-invariant_0_2: if 0 < $__n2 then $__s8 == $__i7 * ($__i7 + 1) / 2 else true
+assume_measure_0: if 0 < $__n2 then $__$__loop_measure_07 == $__n2 - $__i5 else true
+not_guard_0: if 0 < $__n2 then !($__i8 < $__n2) else true
+invariant_0_0: if 0 < $__n2 then 0 <= $__i8 else true
+invariant_0_1: if 0 < $__n2 then $__i8 <= $__n2 else true
+invariant_0_2: if 0 < $__n2 then $__s9 == $__i8 * ($__i8 + 1) / 2 else true
 <label_ite_cond_false: !(~Int.Lt i n)>: if if 0 < $__n2 then false else true then if 0 < $__n2 then false else true else true
 Obligation:
-if 0 < $__n2 then $__s8 else 0 == $__n2 * ($__n2 + 1) / 2
+if 0 < $__n2 then $__s9 else 0 == $__n2 * ($__n2 + 1) / 2
 
 ---
 info:
@@ -184,6 +305,10 @@ Obligation: entry_invariant_0_2
 Property: assert
 Result: ✅ pass
 
+Obligation: measure_lb_0
+Property: assert
+Result: ✅ pass
+
 Obligation: arbitrary_iter_maintain_invariant_0_0
 Property: assert
 Result: ✅ pass
@@ -196,12 +321,18 @@ Obligation: arbitrary_iter_maintain_invariant_0_2
 Property: assert
 Result: ✅ pass
 
+Obligation: measure_decrease_0
+Property: assert
+Result: ✅ pass
+
 Obligation: sum_ensures_1
 Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
 #eval verify gaussPgm
+
+---------------------------------------------------------------------
 
 def nestedPgm :=
 #strata
@@ -219,12 +350,14 @@ spec {
   var y: int;
   x := 0;
   while (x < n)
+    decreases (n - x)
     invariant x >= 0
     invariant x <= n
     invariant n < top
   {
     y := 0;
     while (y < x)
+      decreases (x - y)
       invariant y >= 0
       invariant y <= x
     {
@@ -236,31 +369,43 @@ spec {
 #end
 
 /--
-info: Entry: before_loop$_11
+info: Entry: before_loop$_15
 
-before_loop$_11:
+before_loop$_15:
   init (x : int)
   init (y : int)
-  x := #0
-  condGoto #true loop_entry$_1 loop_entry$_1
+  x := 0
+  condGoto true loop_entry$_1 loop_entry$_1
 loop_entry$_1:
-  assert [inv$_8] ((~Int.Ge : (arrow int (arrow int bool))) (x : int) #0)
-  assert [inv$_9] ((~Int.Le : (arrow int (arrow int bool))) (x : int) (n : int))
-  assert [inv$_10] ((~Int.Lt : (arrow int (arrow int bool))) (n : int) (~top : int))
-  condGoto ((~Int.Lt : (arrow int (arrow int bool))) (x : int) (n : int)) before_loop$_7 end$_0
-before_loop$_7:
-  y := #0
-  condGoto #true loop_entry$_3 loop_entry$_3
-loop_entry$_3:
-  assert [inv$_5] ((~Int.Ge : (arrow int (arrow int bool))) (y : int) #0)
-  assert [inv$_6] ((~Int.Le : (arrow int (arrow int bool))) (y : int) (x : int))
-  condGoto ((~Int.Lt : (arrow int (arrow int bool))) (y : int) (x : int)) l$_4 l$_2
+  assert [inv$_12] x >= 0
+  assert [inv$_13] x <= n
+  assert [inv$_14] n < top
+  init (loop_measure$_2 : int)
+  assume [assume_loop_measure$_2] loop_measure$_2 == n - x
+  assert [measure_lb_loop_measure$_2] !(loop_measure$_2 < 0)
+  condGoto x < n before_loop$_11 end$_0
+before_loop$_11:
+  y := 0
+  condGoto true loop_entry$_5 loop_entry$_5
+loop_entry$_5:
+  assert [inv$_9] y >= 0
+  assert [inv$_10] y <= x
+  init (loop_measure$_6 : int)
+  assume [assume_loop_measure$_6] loop_measure$_6 == x - y
+  assert [measure_lb_loop_measure$_6] !(loop_measure$_6 < 0)
+  condGoto y < x l$_8 l$_4
+l$_8:
+  y := y + 1
+  condGoto true measure_decrease$_7 measure_decrease$_7
+measure_decrease$_7:
+  assert [measure_decrease_loop_measure$_6] x - y < loop_measure$_6
+  condGoto true loop_entry$_5 loop_entry$_5
 l$_4:
-  y := ((~Int.Add : (arrow int (arrow int int))) (y : int) #1)
-  condGoto #true loop_entry$_3 loop_entry$_3
-l$_2:
-  x := ((~Int.Add : (arrow int (arrow int int))) (x : int) #1)
-  condGoto #true loop_entry$_1 loop_entry$_1
+  x := x + 1
+  condGoto true measure_decrease$_3 measure_decrease$_3
+measure_decrease$_3:
+  assert [measure_decrease_loop_measure$_2] n - x < loop_measure$_2
+  condGoto true loop_entry$_1 loop_entry$_1
 end$_0:
   finish
 -/
@@ -281,6 +426,10 @@ Obligation: entry_invariant_0_2
 Property: assert
 Result: ✅ pass
 
+Obligation: measure_lb_0
+Property: assert
+Result: ✅ pass
+
 Obligation: entry_invariant_1_0
 Property: assert
 Result: ✅ pass
@@ -289,11 +438,19 @@ Obligation: entry_invariant_1_1
 Property: assert
 Result: ✅ pass
 
+Obligation: measure_lb_1
+Property: assert
+Result: ✅ pass
+
 Obligation: arbitrary_iter_maintain_invariant_1_0
 Property: assert
 Result: ✅ pass
 
 Obligation: arbitrary_iter_maintain_invariant_1_1
+Property: assert
+Result: ✅ pass
+
+Obligation: measure_decrease_1
 Property: assert
 Result: ✅ pass
 
@@ -308,6 +465,202 @@ Result: ✅ pass
 Obligation: arbitrary_iter_maintain_invariant_0_2
 Property: assert
 Result: ✅ pass
+
+Obligation: measure_decrease_0
+Property: assert
+Result: ✅ pass
 -/
 #guard_msgs in
 #eval verify nestedPgm (options := .quiet)
+
+---------------------------------------------------------------------
+
+-- A loop where the `decreases` clause uses integer division `i / d`.
+-- Division maps to `Int.SafeDiv`, so a precondition check (d != 0) must be
+-- discharged for the measure expression.  The procedure precondition `d > 0`
+-- covers it.  The measure itself is non-negative (from `i >= 0`) and
+-- decreases by 1 each iteration (integer division by d drops when i drops by d).
+def precondElimInMeasurePgm :=
+#strata
+program Core;
+
+procedure countdownByD(n : int, d : int) returns (i : int)
+spec {
+  requires (n >= 0);
+  requires (d > 0);
+  ensures (i >= 0);
+  ensures (i < d);
+}
+{
+  i := n;
+  while (i >= d)
+    decreases i / d
+    invariant i >= 0
+  {
+    i := (i - d);
+  }
+};
+#end
+
+/--
+info:
+Obligation: loop_measure_calls_Int.SafeDiv_0
+Property: division by zero check
+Result: ✅ pass
+
+Obligation: entry_invariant_0_0
+Property: assert
+Result: ✅ pass
+
+Obligation: measure_lb_0
+Property: assert
+Result: ✅ pass
+
+Obligation: loop_measure_end_calls_Int.SafeDiv_0
+Property: division by zero check
+Result: ✅ pass
+
+Obligation: arbitrary_iter_maintain_invariant_0_0
+Property: assert
+Result: ✅ pass
+
+Obligation: measure_decrease_0
+Property: assert
+Result: ✅ pass
+
+Obligation: countdownByD_ensures_2
+Property: assert
+Result: ✅ pass
+
+Obligation: countdownByD_ensures_3
+Property: assert
+Result: ✅ pass
+-/
+#guard_msgs in
+#eval verify precondElimInMeasurePgm (options := .quiet)
+
+-- Now, we show the precondition (d > 0) is necessary for the measure-related
+-- checks.
+def precondElimInMeasureBadPgm :=
+#strata
+program Core;
+procedure countdownByDBad(n : int, d : int) returns (i : int)
+spec {
+  requires (n >= 0);
+  // requires (d > 0); NEED THIS
+  ensures (i >= 0);
+  ensures (i < d);
+}
+{
+  i := n;
+  while (i >= d)
+    decreases i / d
+    invariant i >= 0
+  {
+    i := (i - d);
+  }
+};
+#end
+
+
+/--
+info:
+Obligation: loop_measure_calls_Int.SafeDiv_0
+Property: division by zero check
+Result: ❌ fail
+
+Obligation: entry_invariant_0_0
+Property: assert
+Result: ✅ pass
+
+Obligation: measure_lb_0
+Property: assert
+Result: ❌ fail
+
+Obligation: loop_measure_end_calls_Int.SafeDiv_0
+Property: division by zero check
+Result: ❌ fail
+
+Obligation: arbitrary_iter_maintain_invariant_0_0
+Property: assert
+Result: ✅ pass
+
+Obligation: measure_decrease_0
+Property: assert
+Result: ❌ fail
+
+Obligation: countdownByDBad_ensures_1
+Property: assert
+Result: ✅ pass
+
+Obligation: countdownByDBad_ensures_2
+Property: assert
+Result: ✅ pass
+-/
+#guard_msgs in
+#eval verify precondElimInMeasureBadPgm (options := .quiet)
+
+---------------------------------------------------------------------
+
+-- This example shows why `loop_measure_end` is necessary even when
+-- `loop_measure` passes.  The precondition `d > 0` guarantees `k > 0`
+-- at loop entry, so `loop_measure_calls_Int.SafeDiv_0` passes.  But
+-- the body decrements `k`, which can reach 0 on the second iteration,
+-- causing `loop_measure_end_calls_Int.SafeDiv_0` (and `measure_lb_0`,
+-- `measure_decrease_0`) to fail.
+def precondElimMeasureBodyMutatesPgm :=
+#strata
+program Core;
+
+procedure countdownMutateD(n : int, d : int) returns (i : int)
+spec {
+  requires (n >= 0);
+  requires (d > 0);
+  ensures (i >= 0);
+}
+{
+  var k : int;
+  i := n;
+  k := d;
+  while (i >= 1)
+    decreases i / k
+    invariant i >= 0
+  {
+    k := (k - 1);   // mutates the divisor; may reach 0 after first iteration
+    i := (i - 1);
+  }
+};
+#end
+
+/--
+info:
+Obligation: loop_measure_calls_Int.SafeDiv_0
+Property: division by zero check
+Result: ✅ pass
+
+Obligation: entry_invariant_0_0
+Property: assert
+Result: ✅ pass
+
+Obligation: measure_lb_0
+Property: assert
+Result: ❌ fail
+
+Obligation: loop_measure_end_calls_Int.SafeDiv_0
+Property: division by zero check
+Result: ❌ fail
+
+Obligation: arbitrary_iter_maintain_invariant_0_0
+Property: assert
+Result: ✅ pass
+
+Obligation: measure_decrease_0
+Property: assert
+Result: ❌ fail
+
+Obligation: countdownMutateD_ensures_2
+Property: assert
+Result: ✅ pass
+-/
+#guard_msgs in
+#eval verify precondElimMeasureBodyMutatesPgm (options := .quiet)
