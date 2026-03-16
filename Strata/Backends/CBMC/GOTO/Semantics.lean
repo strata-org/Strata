@@ -101,13 +101,13 @@ The semantics is informed by CBMC's concrete interpreter
 - [x] Add support for `old()` expressions in postconditions
       → See `Semantics.lean`: `ExprEval₂`, `ExprEval.withOld`
       → See `SemanticsEval.lean`: `concreteEval₂`
-- [ ] Statement-level simulation for `ite` and `loop` body execution
-      (guard simulation is done; `sim_block` proved for sequential
-       composition; connecting to `ExecRange` on translated instructions
-       requires knowing the translation output shape)
+- [x] Statement-level simulation for block and loop
+      → See `SemanticsSim.lean`: `sim_block`, `ExecLoop`, `sim_loop`
 - [ ] End-to-end theorem: `EvalBlock` implies `ExecProg` on translated program
-- [ ] Loop simulation blocked on Imperative dialect loop evaluation rules
-      (see TODO in `StmtSemantics.lean`)
+      (requires connecting `ExecRange` composition to `ExecProg`)
+- [ ] Loop simulation at Imperative level blocked on missing loop evaluation
+      rules in `StmtSemantics.lean`; loop semantics defined directly via
+      compiled GOTO pattern (`ExecLoop`)
 - [x] Progress theorems (per-instruction-type)
       → See `SemanticsProps.lean`: `progress_skip`, `progress_assign`, etc.
 -/

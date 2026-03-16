@@ -323,6 +323,110 @@ rules (see the TODO in `StmtSemantics.lean`), so the loop simulation
 cannot be completed until that is addressed.
 -/
 
+/-! ## Instruction Range Execution -/
+
+/-- Execute a contiguous range of GOTO instructions from `pc` until the PC
+    leaves the range `[pc_start, pc_end)`, or until END_FUNCTION/out-of-bounds.
+
+    This captures the semantics of executing a "block" of translated
+    instructions: the translation produces instructions in a contiguous
+    range, and execution stays within that range (except for GOTO jumps
+    that target within the range) until it falls through the end.
+
+    `ExecRange callResult eval fenv prog pc_start pc_end σ σ'` means:
+    starting at `pc_start` with store `σ`, executing instructions that
+    stay within `[pc_start, pc_end)` terminates with the PC at `pc_end`
+    and store `σ'`. -/
+inductive ExecRange (callResult : CallResultRel) (eval : ExprEval) (fenv : FuncEnv)
+    (prog : Program) (pc_end : Nat) :
+    Nat → Store → Store → Prop where
+  /-- Reached the end of the range. -/
+  | done :
+    ExecRange callResult eval fenv prog pc_end pc_end σ σ
+  /-- Take one step within the range, then continue. -/
+  | step :
+    pc < pc_end →
+    StepInstr callResult eval fenv prog pc σ pc' σ' →
+    -- The step stays within the range or reaches the end
+    pc' ≤ pc_end →
+    ExecRange callResult eval fenv prog pc_end pc' σ' σ'' →
+    ExecRange callResult eval fenv prog pc_end pc σ σ''
+
+/-! ## Loop Semantics via Compiled GOTO Pattern
+
+The Imperative dialect does not define evaluation rules for loops
+(see TODO in `StmtSemantics.lean`). However, loops are compiled to
+a specific GOTO instruction pattern:
+
+```
+  pc_start:   LOCATION loop_start
+  pc_start+1: GOTO [!guard] pc_end     -- exit if guard false
+  pc_start+2: <body instructions>
+  ...
+  pc_back:    GOTO pc_start            -- back edge
+  pc_end:     LOCATION loop_end
+```
+
+We define loop semantics directly via this compiled pattern, using
+`ExecRange` for the body and induction on a fuel/iteration count
+for termination.
+-/
+
+/-- A compiled loop executes zero or more iterations.
+    Each iteration: guard is true → execute body → back to start.
+    Terminates when guard is false.
+
+    `ExecLoop callResult eval fenv prog pc_guard pc_body_start pc_back pc_end σ σ'`
+    means: starting with store `σ`, the loop at `pc_guard` (the GOTO [!guard]
+    instruction) executes zero or more iterations and terminates with store `σ'`.
+
+    - `pc_guard`: the GOTO [!guard] pc_end instruction
+    - `pc_body_start`: first instruction of the body (pc_guard + 1)
+    - `pc_back`: the back-edge GOTO pc_start instruction
+    - `pc_end`: the LOCATION after the loop
+-/
+inductive ExecLoop (callResult : CallResultRel) (eval : ExprEval) (fenv : FuncEnv)
+    (prog : Program) (pc_guard pc_body_start pc_back pc_end : Nat) :
+    Store → Store → Prop where
+  /-- Guard is false: exit the loop. -/
+  | done :
+    (instrGuard prog pc_guard).bind (eval σ ·) = some (.vBool false) →
+    ExecLoop callResult eval fenv prog pc_guard pc_body_start pc_back pc_end σ σ
+  /-- Guard is true: execute body, then loop. -/
+  | iter :
+    (instrGuard prog pc_guard).bind (eval σ ·) = some (.vBool true) →
+    -- Execute the body (from pc_body_start to pc_back)
+    ExecRange callResult eval fenv prog pc_back pc_body_start σ σ_body →
+    -- The back edge takes us back to the guard
+    -- (we skip the LOCATION at pc_start and go directly to pc_guard)
+    ExecLoop callResult eval fenv prog pc_guard pc_body_start pc_back pc_end σ_body σ' →
+    ExecLoop callResult eval fenv prog pc_guard pc_body_start pc_back pc_end σ σ'
+
+/-- ExecLoop preserves store correspondence.
+
+    If each iteration's body preserves store correspondence (via `hbody_sim`),
+    then the entire loop preserves store correspondence. -/
+theorem sim_loop [DecidableEq P.Ident] [HasBool P]
+    [vc : ValueCorr P]
+    {callResult : CallResultRel} {eval : ExprEval} {fenv : FuncEnv}
+    {prog : Program} {pc_guard pc_body_start pc_back pc_end : Nat}
+    {nameMap : P.Ident → String}
+    {σ_imp : SemanticStore P} {σ_goto σ_goto' : Store}
+    (hcorr_s : StoreCorr nameMap σ_imp σ_goto)
+    (hloop : ExecLoop callResult eval fenv prog
+              pc_guard pc_body_start pc_back pc_end σ_goto σ_goto')
+    -- Each iteration's body preserves store correspondence
+    (hbody_sim : ∀ σ_i σ_g σ_g',
+      StoreCorr nameMap σ_i σ_g →
+      ExecRange callResult eval fenv prog pc_back pc_body_start σ_g σ_g' →
+      ∃ σ_i', StoreCorr nameMap σ_i' σ_g') :
+    ∃ σ_imp'', StoreCorr nameMap σ_imp'' σ_goto' :=
+  match hloop with
+  | .done _ => ⟨σ_imp, hcorr_s⟩
+  | .iter _ hbody hrest =>
+    let ⟨σ_mid, hmid⟩ := hbody_sim _ _ _ hcorr_s hbody
+    sim_loop hmid hrest hbody_sim
+
 /-! ## If-Then-Else Simulation -/
 
 /-- If the Imperative evaluator says `cond` is `tt`, and the GOTO translation
@@ -367,34 +471,6 @@ theorem sim_ite_false_guard [DecidableEq P.Ident] [HasBool P]
   rw [vc.ff_corr] at hv
   exact hnot _ _ (Option.some.inj hv ▸ heval)
 
-/-! ## Instruction Range Execution -/
-
-/-- Execute a contiguous range of GOTO instructions from `pc` until the PC
-    leaves the range `[pc_start, pc_end)`, or until END_FUNCTION/out-of-bounds.
-
-    This captures the semantics of executing a "block" of translated
-    instructions: the translation produces instructions in a contiguous
-    range, and execution stays within that range (except for GOTO jumps
-    that target within the range) until it falls through the end.
-
-    `ExecRange callResult eval fenv prog pc_start pc_end σ σ'` means:
-    starting at `pc_start` with store `σ`, executing instructions that
-    stay within `[pc_start, pc_end)` terminates with the PC at `pc_end`
-    and store `σ'`. -/
-inductive ExecRange (callResult : CallResultRel) (eval : ExprEval) (fenv : FuncEnv)
-    (prog : Program) (pc_end : Nat) :
-    Nat → Store → Store → Prop where
-  /-- Reached the end of the range. -/
-  | done :
-    ExecRange callResult eval fenv prog pc_end pc_end σ σ
-  /-- Take one step within the range, then continue. -/
-  | step :
-    pc < pc_end →
-    StepInstr callResult eval fenv prog pc σ pc' σ' →
-    -- The step stays within the range or reaches the end
-    pc' ≤ pc_end →
-    ExecRange callResult eval fenv prog pc_end pc' σ' σ'' →
-    ExecRange callResult eval fenv prog pc_end pc σ σ''
 
 /-! ## Statement-Level Simulation -/
 
