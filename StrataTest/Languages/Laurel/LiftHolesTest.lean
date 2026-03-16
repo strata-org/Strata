@@ -66,7 +66,7 @@ private def printProgram (p : Program) : IO Unit := do
 info: procedure holeInPrimitiveOp() returns ⏎
 ()
 deterministic
-{ var $hole_0: Core(Any); var x: int := 1 + $hole_0 }
+{ var $hole_0: int; var x: int := 1 + $hole_0 }
 procedure holeAsInitializer() returns ⏎
 ()
 deterministic
@@ -74,7 +74,7 @@ deterministic
 procedure holeInAssert() returns ⏎
 ()
 deterministic
-{ var $hole_0: Core(Any); assert $hole_0 > 0 }
+{ var $hole_0: ⊤; assert $hole_0 > 0 }
 -/
 #guard_msgs in
 #eval! printProgram (liftHoles testProgram)

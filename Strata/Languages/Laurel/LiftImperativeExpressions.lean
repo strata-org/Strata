@@ -454,89 +454,93 @@ private def freshHoleVar : HoleLiftM Identifier := do
   modify fun s => { s with counter := n + 1 }
   return s!"$hole_{n}"
 
-private def holeType : HighTypeMd := bareType (.TCore "Any")
+private def defaultHoleType : HighTypeMd := bareType .Top
 
 mutual
 /-- Lift holes from a list of arguments, collecting declarations. -/
-private def liftHoleArgs (args : List StmtExprMd) : HoleLiftM (List StmtExprMd × List StmtExprMd) := do
+private def liftHoleArgs (args : List StmtExprMd) (expectedType : HighTypeMd) : HoleLiftM (List StmtExprMd × List StmtExprMd) := do
   let mut newArgs : List StmtExprMd := []
   let mut decls : List StmtExprMd := []
   for a in args do
-    let (a', ds) ← liftHoleExpr a
+    let (a', ds) ← liftHoleExpr a expectedType
     newArgs := newArgs ++ [a']
     decls := decls ++ ds
   return (newArgs, decls)
 
 /-- Replace every `.Hole` in an expression with a fresh variable reference,
-    accumulating `LocalVariable` declarations (no initializer) to prepend. -/
-private def liftHoleExpr (expr : StmtExprMd) : HoleLiftM (StmtExprMd × List StmtExprMd) := do
+    accumulating `LocalVariable` declarations (no initializer) to prepend.
+    `expectedType` is the type inferred from the surrounding context. -/
+private def liftHoleExpr (expr : StmtExprMd) (expectedType : HighTypeMd) : HoleLiftM (StmtExprMd × List StmtExprMd) := do
   match expr with
   | WithMetadata.mk val md =>
   match val with
   | .Hole =>
       let v ← freshHoleVar
-      let decl := bare (.LocalVariable v holeType none)
+      let decl := bare (.LocalVariable v expectedType none)
       return (⟨.Identifier v, md⟩, [decl])
   | .PrimitiveOp op args =>
-      let (newArgs, decls) ← liftHoleArgs args
+      let argType := match op with
+        | .Eq | .Neq | .Lt | .Leq | .Gt | .Geq => defaultHoleType
+        | _ => expectedType
+      let (newArgs, decls) ← liftHoleArgs args argType
       return (⟨.PrimitiveOp op newArgs, md⟩, decls)
   | .StaticCall callee args =>
-      let (newArgs, decls) ← liftHoleArgs args
+      let (newArgs, decls) ← liftHoleArgs args defaultHoleType
       return (⟨.StaticCall callee newArgs, md⟩, decls)
   | .InstanceCall target callee args =>
-      let (target', d1) ← liftHoleExpr target
-      let (newArgs, d2) ← liftHoleArgs args
+      let (target', d1) ← liftHoleExpr target defaultHoleType
+      let (newArgs, d2) ← liftHoleArgs args defaultHoleType
       return (⟨.InstanceCall target' callee newArgs, md⟩, d1 ++ d2)
   | .ReferenceEquals lhs rhs =>
-      let (lhs', d1) ← liftHoleExpr lhs
-      let (rhs', d2) ← liftHoleExpr rhs
+      let (lhs', d1) ← liftHoleExpr lhs defaultHoleType
+      let (rhs', d2) ← liftHoleExpr rhs defaultHoleType
       return (⟨.ReferenceEquals lhs' rhs', md⟩, d1 ++ d2)
   | .IfThenElse cond th el =>
-      let (cond', d1) ← liftHoleExpr cond
-      let (th', d2) ← liftHoleExpr th
+      let (cond', d1) ← liftHoleExpr cond (bareType .TBool)
+      let (th', d2) ← liftHoleExpr th expectedType
       let (el', d3) ← match el with
-        | some e => do let (e', ds) ← liftHoleExpr e; pure (some e', ds)
+        | some e => do let (e', ds) ← liftHoleExpr e expectedType; pure (some e', ds)
         | none => pure (none, [])
       return (⟨.IfThenElse cond' th' el', md⟩, d1 ++ d2 ++ d3)
   | .Block stmts label =>
       let stmts' ← liftHoleStmtList stmts
       return (⟨.Block stmts' label, md⟩, [])
   | .Assign targets value =>
-      let (value', decls) ← liftHoleExpr value
+      let (value', decls) ← liftHoleExpr value defaultHoleType
       return (⟨.Assign targets value', md⟩, decls)
   | .LocalVariable name ty init =>
       match init with
       | some initExpr =>
-          let (initExpr', decls) ← liftHoleExpr initExpr
+          let (initExpr', decls) ← liftHoleExpr initExpr ty
           return (⟨.LocalVariable name ty (some initExpr'), md⟩, decls)
       | none => return (expr, [])
   | .Old v =>
-      let (v', ds) ← liftHoleExpr v
+      let (v', ds) ← liftHoleExpr v expectedType
       return (⟨.Old v', md⟩, ds)
   | .Fresh v =>
-      let (v', ds) ← liftHoleExpr v
+      let (v', ds) ← liftHoleExpr v defaultHoleType
       return (⟨.Fresh v', md⟩, ds)
   | .Assigned n =>
-      let (n', ds) ← liftHoleExpr n
+      let (n', ds) ← liftHoleExpr n defaultHoleType
       return (⟨.Assigned n', md⟩, ds)
   | .ProveBy v p =>
-      let (v', d1) ← liftHoleExpr v
-      let (p', d2) ← liftHoleExpr p
+      let (v', d1) ← liftHoleExpr v expectedType
+      let (p', d2) ← liftHoleExpr p defaultHoleType
       return (⟨.ProveBy v' p', md⟩, d1 ++ d2)
   | .ContractOf ty f =>
-      let (f', ds) ← liftHoleExpr f
+      let (f', ds) ← liftHoleExpr f defaultHoleType
       return (⟨.ContractOf ty f', md⟩, ds)
   | .Forall p trigger b =>
       let (trigger', d1) ← match trigger with
-        | some t => let (t', ds) ← liftHoleExpr t; pure (some t', ds)
+        | some t => let (t', ds) ← liftHoleExpr t defaultHoleType; pure (some t', ds)
         | none => pure (none, [])
-      let (b', d2) ← liftHoleExpr b
+      let (b', d2) ← liftHoleExpr b (bareType .TBool)
       return (⟨.Forall p trigger' b', md⟩, d1 ++ d2)
   | .Exists p trigger b =>
       let (trigger', d1) ← match trigger with
-        | some t => let (t', ds) ← liftHoleExpr t; pure (some t', ds)
+        | some t => let (t', ds) ← liftHoleExpr t defaultHoleType; pure (some t', ds)
         | none => pure (none, [])
-      let (b', d2) ← liftHoleExpr b
+      let (b', d2) ← liftHoleExpr b (bareType .TBool)
       return (⟨.Exists p trigger' b', md⟩, d1 ++ d2)
   | _ => return (expr, [])
 
@@ -551,16 +555,16 @@ private def liftHoleStmt (stmt : StmtExprMd) : HoleLiftM (List StmtExprMd × Lis
       match initExpr.val with
       | .Hole => return ([stmt], [])
       | _ =>
-          let (initExpr', decls) ← liftHoleExpr initExpr
+          let (initExpr', decls) ← liftHoleExpr initExpr ty
           return ([⟨.LocalVariable name ty (some initExpr'), md⟩], decls)
   | .Assign targets value =>
-      let (value', decls) ← liftHoleExpr value
+      let (value', decls) ← liftHoleExpr value defaultHoleType
       return ([⟨.Assign targets value', md⟩], decls)
   | .Block stmts label =>
       let stmts' ← liftHoleStmtList stmts
       return ([⟨.Block stmts' label, md⟩], [])
   | .IfThenElse cond th el =>
-      let (cond', d1) ← liftHoleExpr cond
+      let (cond', d1) ← liftHoleExpr cond (bareType .TBool)
       let (th', d2) ← liftHoleStmt th
       let thStmts := bare (.Block th' none)
       let (el', d3) ← match el with
@@ -568,30 +572,30 @@ private def liftHoleStmt (stmt : StmtExprMd) : HoleLiftM (List StmtExprMd × Lis
         | none => pure (none, [])
       return ([⟨.IfThenElse cond' thStmts el', md⟩], d1 ++ d2 ++ d3)
   | .While cond invs dec body =>
-      let (cond', d1) ← liftHoleExpr cond
+      let (cond', d1) ← liftHoleExpr cond (bareType .TBool)
       let mut invDecls : List StmtExprMd := []
       let mut newInvs : List StmtExprMd := []
       for inv in invs do
-        let (inv', ds) ← liftHoleExpr inv
+        let (inv', ds) ← liftHoleExpr inv (bareType .TBool)
         newInvs := newInvs ++ [inv']
         invDecls := invDecls ++ ds
       let (dec', d3) ← match dec with
-        | some d => do let (d', ds) ← liftHoleExpr d; pure (some d', ds)
+        | some d => do let (d', ds) ← liftHoleExpr d (bareType .TInt); pure (some d', ds)
         | none => pure (none, [])
       let (bodyStmts, d2) ← liftHoleStmt body
       let bodyBlock := bare (.Block bodyStmts none)
       return ([⟨.While cond' newInvs dec' bodyBlock, md⟩], d1 ++ invDecls ++ d3 ++ d2)
   | .Assert cond =>
-      let (cond', decls) ← liftHoleExpr cond
+      let (cond', decls) ← liftHoleExpr cond (bareType .TBool)
       return ([⟨.Assert cond', md⟩], decls)
   | .Assume cond =>
-      let (cond', decls) ← liftHoleExpr cond
+      let (cond', decls) ← liftHoleExpr cond (bareType .TBool)
       return ([⟨.Assume cond', md⟩], decls)
   | .StaticCall callee args =>
-      let (newArgs, decls) ← liftHoleArgs args
+      let (newArgs, decls) ← liftHoleArgs args defaultHoleType
       return ([⟨.StaticCall callee newArgs, md⟩], decls)
   | .Return (some retExpr) =>
-      let (retExpr', decls) ← liftHoleExpr retExpr
+      let (retExpr', decls) ← liftHoleExpr retExpr defaultHoleType
       return ([⟨.Return (some retExpr'), md⟩], decls)
   | _ => return ([stmt], [])
 
