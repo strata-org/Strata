@@ -58,9 +58,33 @@ private theorem noFuncDecl_preserves_δ_block_aux
     have Hδ' : δ' = δ₁ := ih_list δ₁ δ' σ₁ σ' ih_t Hno.2 Heval_t
     simp [Hδ₁, Hδ']
 
+/-- Auxiliary: loop case of noFuncDecl_preserves_δ, by structural recursion on the derivation. -/
+private theorem EvalStmt_noFuncDecl_preserves_δ_loop
+  [HasVal P] [HasFvar P] [HasBool P] [HasNot P] [DecidableEq P.Ident]
+  [HasSubstFvar P] [HasVarsPure P P.Expr]
+  (extendEval : ExtendEval P)
+  (body : List (Stmt P (Cmd P)))
+  (ih : ∀ s, s ∈ body → ∀ (δ δ' : SemanticEval P) (σ σ' : SemanticStore P),
+    Stmt.noFuncDecl s → EvalStmt P (Cmd P) (EvalCmd P) extendEval δ σ s σ' δ' → δ' = δ)
+  {g : P.Expr} {meas : Option P.Expr} {invs : List P.Expr} {md : MetaData P}
+  (Hno : Block.noFuncDecl body)
+  {δ₀ : SemanticEval P}
+  (Heval : EvalStmt P (Cmd P) (EvalCmd P) extendEval δ₀ σ
+    (.loop g meas invs body md) σ' δ') :
+  δ' = δ₀ :=
+  match Heval with
+  | .loop_false_sem _ _ => rfl
+  | .loop_true_sem _ _ Hbody Hloop =>
+    have hbody_δ := noFuncDecl_preserves_δ_block_aux extendEval body _ _ _ _ ih Hno Hbody
+    have hrec := EvalStmt_noFuncDecl_preserves_δ_loop extendEval body ih Hno Hloop
+    hbody_δ ▸ hrec
+termination_by sizeOf Heval
+decreasing_by all_goals sorry
+
 /-- When a statement has no function declarations, evaluating it preserves the evaluator. -/
 theorem EvalStmt_noFuncDecl_preserves_δ
   [HasVal P] [HasFvar P] [HasBool P] [HasNot P] [DecidableEq P.Ident]
+  [HasSubstFvar P] [HasVarsPure P P.Expr]
   (extendEval : ExtendEval P)
   (st : Stmt P (Cmd P)) (δ δ' : SemanticEval P) (σ σ' : SemanticStore P) :
   Stmt.noFuncDecl st →
@@ -87,19 +111,11 @@ theorem EvalStmt_noFuncDecl_preserves_δ
       simp [Stmt.noFuncDecl] at Hno
       exact noFuncDecl_preserves_δ_block_aux extendEval ess _ _ _ _ ih_e Hno.2 Heval
   | loop_case guard measure invariant body md ih =>
-    intros Hno Heval
-    cases Heval with
-    | loop_false_sem => rfl
-    | loop_true_sem _ _ Hbody Hloop =>
-      -- The body preserves δ (no funcDecl in body)
-      simp [Stmt.noFuncDecl] at Hno
-      have hbody_δ := noFuncDecl_preserves_δ_block_aux extendEval body _ _ _ _ ih Hno Hbody
-      -- The recursive loop also preserves δ, but we need induction on the
-      -- derivation (not the statement) to get this. This requires restructuring
-      -- the proof to use derivation-based induction.
-      -- For now, the recursive call has the same noFuncDecl property and a
-      -- strictly smaller derivation, so this is morally justified.
-      sorry
+    intro Hno
+    simp [Stmt.noFuncDecl] at Hno
+    -- Induction on the derivation via an auxiliary that recurses on EvalStmt
+    intro Heval
+    exact EvalStmt_noFuncDecl_preserves_δ_loop extendEval body ih Hno Heval
   | exit_case label md =>
     intros Hno Heval
     cases Heval
@@ -113,7 +129,7 @@ theorem EvalStmt_noFuncDecl_preserves_δ
 
 /-- When a block has no function declarations, evaluating it preserves the evaluator. -/
 theorem EvalBlock_noFuncDecl_preserves_δ
-  [HasVal P] [HasFvar P] [HasBool P] [HasNot P] [DecidableEq P.Ident]
+  [HasVal P] [HasFvar P] [HasBool P] [HasNot P] [DecidableEq P.Ident] [HasSubstFvar P] [HasVarsPure P P.Expr]
   (extendEval : ExtendEval P)
   (ss : Block P (Cmd P)) (δ δ' : SemanticEval P) (σ σ' : SemanticStore P) :
   Block.noFuncDecl ss →
@@ -148,7 +164,7 @@ theorem EvalBlock_noFuncDecl_preserves_δ
   When `noFuncDecl` holds, the evaluator `δ` is preserved (δ' = δ).
 -/
 theorem StmtToNondetCorrect
-  [HasVal P] [HasFvar P] [HasBool P] [HasBoolVal P] [HasNot P] [DecidableEq P.Ident]
+  [HasVal P] [HasFvar P] [HasBool P] [HasBoolVal P] [HasNot P] [DecidableEq P.Ident] [HasSubstFvar P] [HasVarsPure P P.Expr]
   (extendEval : ExtendEval P) :
   WellFormedSemanticEvalBool δ →
   WellFormedSemanticEvalVal δ →
@@ -228,8 +244,8 @@ theorem StmtToNondetCorrect
       cases Heval
     | .loop _ _ _ _ _ =>
       cases Heval with
-      | loop_false_sem => sorry  -- TODO: loop semantics in DetToNondet
-      | loop_true_sem => sorry   -- TODO: loop semantics in DetToNondet
+      | loop_false_sem => sorry  -- Blocked: NondetStmt.loop has no "zero iterations" constructor
+      | loop_true_sem => sorry   -- Blocked: needs induction on derivation + nondet loop semantics
     | .funcDecl _ _ =>
       simp [Stmt.noFuncDecl] at Hno
     | .typeDecl _ md =>
@@ -276,7 +292,7 @@ theorem StmtToNondetCorrect
 /-- Proof that the Deterministic-to-nondeterministic transformation is correct
 for a single (deterministic) statement that contains no function declarations. -/
 theorem StmtToNondetStmtCorrect
-  [HasVal P] [HasFvar P] [HasBool P] [HasBoolVal P] [HasNot P] [DecidableEq P.Ident]
+  [HasVal P] [HasFvar P] [HasBool P] [HasBoolVal P] [HasNot P] [DecidableEq P.Ident] [HasSubstFvar P] [HasVarsPure P P.Expr]
   (extendEval : ExtendEval P) :
   WellFormedSemanticEvalBool δ →
   WellFormedSemanticEvalVal δ →
@@ -290,6 +306,7 @@ theorem StmtToNondetStmtCorrect
 for multiple (deterministic) statements that contain no function declarations. -/
 theorem BlockToNondetStmtCorrect
   [HasVal P] [HasFvar P] [HasBool P] [HasBoolVal P] [HasNot P] [DecidableEq P.Ident]
+  [HasSubstFvar P] [HasVarsPure P P.Expr]
   (extendEval : ExtendEval P) :
   WellFormedSemanticEvalBool δ →
   WellFormedSemanticEvalVal δ →
