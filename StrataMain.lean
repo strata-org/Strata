@@ -354,9 +354,6 @@ private def combineLaurelPrograms (first: Strata.Laurel.Program) (second: Strata
 def buildPySpecPrelude (pyspecPaths : Array String) : IO PySpecPrelude := do
   let mut preludeInLaurel : Strata.Laurel.Program := Strata.Python.pythonRuntimeLaurelPart
   let mut preludeInCoreDecls : List Core.Decl := Strata.Python.coreOnlyFromRuntimeCorePart
-  let mut existingNames : Std.HashSet String :=
-    preludeInLaurel.staticProcedures.foldl (init := {}) fun s d =>
-      [d.name.text].foldl (init := s) fun s n => s.insert n
   let mut allOverloads : Strata.Python.Specs.ToLaurel.OverloadTable := {}
   for ionPath in pyspecPaths do
     let ionFile : System.FilePath := ionPath
@@ -380,20 +377,20 @@ def buildPySpecPrelude (pyspecPaths : Array String) : IO PySpecPrelude := do
         (overloads.fold (init := existing) fun acc k v => acc.insert k v)
 
     preludeInLaurel := combineLaurelPrograms preludeInLaurel result.program
-    match Strata.Laurel.translate { emitResolutionErrors := false } preludeInLaurel with
-    | .error diagnostics =>
-      exitFailure s!"PySpec Laurel to Core translation failed for {ionPath}: {diagnostics}"
-    | .ok (coreSpec, _modifiesDiags) =>
-      -- Register new names, failing on collisions
-      for d in coreSpec.decls do
-        for n in Core.Decl.names d do
-          if existingNames.contains n.name then
-            exitFailure s!"Core name collision in PySpec {ionPath}: {n.name}"
-          existingNames := existingNames.insert n.name
-      preludeInCoreDecls := preludeInCoreDecls ++ coreSpec.decls
-  let preludeInCore : Core.Program := { decls := preludeInCoreDecls }
 
-  preludeInLaurel := { preludeInLaurel with staticProcedures := preludeInLaurel.staticProcedures ++ preludeFunctions ++ preludeProcedures }
+  match Strata.Laurel.translate { emitResolutionErrors := false } preludeInLaurel with
+  | .error diagnostics =>
+    exitFailure s!"PySpec Laurel to Core translation failed: {diagnostics}"
+  | .ok (coreSpec, _modifiesDiags) =>
+    preludeInCoreDecls := preludeInCoreDecls ++ coreSpec.decls
+
+  preludeInLaurel := { preludeInLaurel with
+    staticProcedures :=
+      preludeInLaurel.staticProcedures ++
+      laurelFunctionFromPreludeCorePart ++
+      laurelProceduresFromCorePart
+  }
+  let preludeInCore : Core.Program := { decls := preludeInCoreDecls }
   return { preludeInLaurel := preludeInLaurel, preludeInCore := preludeInCore, overloads := allOverloads }
   where
   preludeInCoreFunctionNames := Strata.Python.coreOnlyFromRuntimeCorePart.filterMap (λ decl =>
@@ -405,7 +402,7 @@ def buildPySpecPrelude (pyspecPaths : Array String) : IO PySpecPrelude := do
         |.proc => some decl.name.name
         | _ => none)
 
-  preludeProcedures : List Strata.Laurel.Procedure := preludeInCoreProcedureNames.map (λ funcname =>
+  laurelProceduresFromCorePart : List Strata.Laurel.Procedure := preludeInCoreProcedureNames.map (λ funcname =>
   {
     name := {text:= funcname} ,
     inputs := [],
@@ -419,7 +416,7 @@ def buildPySpecPrelude (pyspecPaths : Array String) : IO PySpecPrelude := do
     }
   )
 
-  preludeFunctions : List Strata.Laurel.Procedure := preludeInCoreFunctionNames.map (λ funcname =>
+  laurelFunctionFromPreludeCorePart : List Strata.Laurel.Procedure := preludeInCoreFunctionNames.map (λ funcname =>
   {
     name := {text:= funcname} ,
     inputs := [],
@@ -494,8 +491,6 @@ def pyAnalyzeLaurelCommand : Command where
       | .error e =>
         exitFailure s!"Python to Laurel translation failed: {e}"
       | .ok (laurelProgram, ctx) =>
-        -- Combine the Laurel prelude declarations with the translated program
-        let pythonRuntimeLaurelPart := Strata.Python.pythonRuntimeLaurelPart
         let combinedLaurelProgram : Strata.Laurel.Program := combineLaurelPrograms pySpecResult.preludeInLaurel laurelProgram
 
         if verbose then
