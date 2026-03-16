@@ -72,10 +72,12 @@ private def listLenAxioms := genRecursiveAxioms listLenFunc tf pe ()
   | .ok axs => return format axs[0]!
 
 -- Cons axiom: ∀ hd:int, tl:IntList with trigger on listLen(Cons(hd, tl))
-/-- info: (∀ (∀ (((~listLen : (arrow IntList int))
+/--
+info: (∀ (bvar:int) (∀ (bvar:IntList) (((~listLen : (arrow IntList int))
     ((~Cons : (arrow int (arrow IntList IntList)))
      %1
-     %0)) == ((~Int.Add : (arrow int (arrow int int))) #1 ((~listLen : (arrow IntList int)) %0))))) -/
+     %0)) == ((~Int.Add : (arrow int (arrow int int))) #1 ((~listLen : (arrow IntList int)) %0)))))
+-/
 #guard_msgs in
 #eval do
   match listLenAxioms with
@@ -144,7 +146,7 @@ private def lookupAxioms := genRecursiveAxioms lookupFunc tf pe2 ()
 
 -- Nil axiom: ∀ key:int. lookup(key, Nil) = false
 /--
-info: (∀ (((~lookup : (arrow int (arrow IntList bool))) %0 (~Nil : IntList)) == #false))
+info: (∀ (bvar:int) (((~lookup : (arrow int (arrow IntList bool))) %0 (~Nil : IntList)) == #false))
 -/
 #guard_msgs in
 #eval do
@@ -154,7 +156,7 @@ info: (∀ (((~lookup : (arrow int (arrow IntList bool))) %0 (~Nil : IntList)) =
 
 -- Cons axiom: ∀ key:int, hd:int, tl:IntList. lookup(key, Cons(hd,tl)) = ...
 /--
-info: (∀ (∀ (∀ (((~lookup : (arrow int (arrow IntList bool)))
+info: (∀ (bvar:int) (∀ (bvar:int) (∀ (bvar:IntList) (((~lookup : (arrow int (arrow IntList bool)))
      %2
      ((~Cons : (arrow int (arrow IntList IntList)))
       %1
@@ -223,7 +225,10 @@ private def replaceAxioms := genRecursiveAxioms replaceFunc tf pe3 ()
 
 -- Nil axiom: ∀ key:int, val:int. replace(key, Nil, val) = Nil
 /--
-info: (∀ (∀ (((~replace : (arrow int (arrow IntList (arrow int IntList)))) %1 (~Nil : IntList) %0) == (~Nil : IntList))))
+info: (∀ (bvar:int) (∀ (bvar:int) (((~replace : (arrow int (arrow IntList (arrow int IntList))))
+    %1
+    (~Nil : IntList)
+    %0) == (~Nil : IntList))))
 -/
 #guard_msgs in
 #eval do
@@ -233,7 +238,7 @@ info: (∀ (∀ (((~replace : (arrow int (arrow IntList (arrow int IntList)))) %
 
 -- Cons axiom: ∀ key:int, hd:int, tl:IntList, val:int. replace(key, Cons(hd,tl), val) = ...
 /--
-info: (∀ (∀ (∀ (∀ (((~replace : (arrow int (arrow IntList (arrow int IntList))))
+info: (∀ (bvar:int) (∀ (bvar:int) (∀ (bvar:int) (∀ (bvar:IntList) (((~replace : (arrow int (arrow IntList (arrow int IntList))))
       %3
       ((~Cons : (arrow int (arrow IntList IntList))) %1 %0)
       %2) == (if (%1 == %3) then ((~Cons : (arrow int (arrow IntList IntList)))

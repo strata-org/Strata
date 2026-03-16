@@ -127,7 +127,7 @@ def prod (e1 e2: LExpr TestParams.mono) : LExpr TestParams.mono := (LExpr.op () 
 info: Annotated expression:
 ((~Tup$Elim : (arrow (Tup int string) (arrow (arrow int (arrow string int)) int)))
  ((~Prod : (arrow int (arrow string (Tup int string)))) #3 #a)
- (λ (λ %1)))
+ (λ (bvar:int) (λ (bvar:string) %1)))
 
 ---
 info: #3
@@ -140,7 +140,7 @@ info: #3
 info: Annotated expression:
 ((~Tup$Elim : (arrow (Tup int string) (arrow (arrow int (arrow string string)) string)))
  ((~Prod : (arrow int (arrow string (Tup int string)))) #3 #a)
- (λ (λ %0)))
+ (λ (bvar:int) (λ (bvar:string) %0)))
 
 ---
 info: #a
@@ -157,8 +157,8 @@ info: Annotated expression:
   ((~Prod : (arrow string (arrow (Tup int string) (Tup string (Tup int string)))))
    #a
    ((~Prod : (arrow int (arrow string (Tup int string)))) #1 #b))
-  (λ (λ %0)))
- (λ (λ %1)))
+  (λ (bvar:string) (λ (bvar:(Tup int string)) %0)))
+ (λ (bvar:int) (λ (bvar:string) %1)))
 
 ---
 info: #1
@@ -194,7 +194,7 @@ info: Annotated expression:
 ((~List$Elim : (arrow (List $__ty5) (arrow int (arrow (arrow $__ty5 (arrow (List $__ty5) (arrow int int))) int))))
  (~Nil : (List $__ty5))
  #1
- (λ (λ (λ #1))))
+ (λ (bvar:$__ty5) (λ (bvar:(List $__ty5)) (λ (bvar:int) #1))))
 
 ---
 info: #1
@@ -212,7 +212,7 @@ info: Annotated expression:
 ((~List$Elim : (arrow (List int) (arrow int (arrow (arrow int (arrow (List int) (arrow int int))) int))))
  ((~Cons : (arrow int (arrow (List int) (List int)))) #2 (~Nil : (List int)))
  #0
- (λ (λ (λ %2))))
+ (λ (bvar:int) (λ (bvar:(List int)) (λ (bvar:int) %2))))
 
 ---
 info: #2
@@ -351,14 +351,16 @@ info: Annotated expression:
    ((~Prod : (arrow int (arrow string (Tup int string)))) #4 #b)
    (~Nil : (List (Tup int string)))))
  #0
- (λ (λ (λ ((~Int.Add : (arrow int (arrow int int)))
-     ((~Tup$Elim : (arrow (Tup int string) (arrow (arrow int (arrow string int)) int))) %2 (λ (λ %1)))
+ (λ (bvar:(Tup int string)) (λ (bvar:(List (Tup int string))) (λ (bvar:int) ((~Int.Add : (arrow int (arrow int int)))
+     ((~Tup$Elim : (arrow (Tup int string) (arrow (arrow int (arrow string int)) int)))
+      %2
+      (λ (bvar:int) (λ (bvar:string) %1)))
      ((~List$Elim : (arrow (List (Tup int string)) (arrow int (arrow (arrow (Tup int string) (arrow (List (Tup int string)) (arrow int int))) int))))
       %1
       #1
-      (λ (λ (λ ((~Tup$Elim : (arrow (Tup int string) (arrow (arrow int (arrow string int)) int)))
+      (λ (bvar:(Tup int string)) (λ (bvar:(List (Tup int string))) (λ (bvar:int) ((~Tup$Elim : (arrow (Tup int string) (arrow (arrow int (arrow string int)) int)))
           %2
-          (λ (λ %1))))))))))))
+          (λ (bvar:int) (λ (bvar:string) %1))))))))))))
 
 ---
 info: #7
@@ -390,7 +392,7 @@ info: Annotated expression:
    #b
    ((~Cons : (arrow string (arrow (List string) (List string)))) #c (~Nil : (List string)))))
  #0
- (λ (λ (λ ((~Int.Add : (arrow int (arrow int int))) #1 %0)))))
+ (λ (bvar:string) (λ (bvar:(List string)) (λ (bvar:int) ((~Int.Add : (arrow int (arrow int int))) #1 %0)))))
 
 ---
 info: #3
@@ -433,7 +435,7 @@ info: Annotated expression:
                #13
                ((~Cons : (arrow int (arrow (List int) (List int)))) #14 (~Nil : (List int)))))))))))))))))
  #0
- (λ (λ (λ ((~Int.Add : (arrow int (arrow int int))) #1 %0)))))
+ (λ (bvar:int) (λ (bvar:(List int)) (λ (bvar:int) ((~Int.Add : (arrow int (arrow int int))) #1 %0)))))
 
 ---
 info: #15
@@ -464,8 +466,10 @@ info: Annotated expression:
   ((~Cons : (arrow int (arrow (List int) (List int))))
    #4
    ((~Cons : (arrow int (arrow (List int) (List int)))) #6 (~Nil : (List int)))))
- (λ %0)
- (λ (λ (λ (λ ((~Cons : (arrow int (arrow (List int) (List int)))) %3 (%1 %0))))))
+ (λ (bvar:(List int)) %0)
+ (λ (bvar:int) (λ (bvar:(List int)) (λ (bvar:(arrow (List int) (List int))) (λ (bvar:(List int)) ((~Cons : (arrow int (arrow (List int) (List int))))
+      %3
+      (%1 %0))))))
  ((~Cons : (arrow int (arrow (List int) (List int))))
   #1
   ((~Cons : (arrow int (arrow (List int) (List int))))
@@ -558,12 +562,14 @@ info: Annotated expression:
      (~Leaf : (binTree int))
      (~Leaf : (binTree int))))))
  (~Nil : (List int))
- (λ (λ (λ (λ (λ ((~Cons : (arrow int (arrow (List int) (List int))))
+ (λ (bvar:int) (λ (bvar:(binTree int)) (λ (bvar:(binTree int)) (λ (bvar:(List int)) (λ (bvar:(List int)) ((~Cons : (arrow int (arrow (List int) (List int))))
        %4
        ((~List$Elim : (arrow (List int) (arrow (arrow (List int) (List int)) (arrow (arrow int (arrow (List int) (arrow (arrow (List int) (List int)) (arrow (List int) (List int))))) (arrow (List int) (List int))))))
         %1
-        (λ %0)
-        (λ (λ (λ (λ ((~Cons : (arrow int (arrow (List int) (List int)))) %3 (%1 %0))))))
+        (λ (bvar:(List int)) %0)
+        (λ (bvar:int) (λ (bvar:(List int)) (λ (bvar:(arrow (List int) (List int))) (λ (bvar:(List int)) ((~Cons : (arrow int (arrow (List int) (List int))))
+             %3
+             (%1 %0))))))
         %0))))))))
 
 ---
@@ -622,13 +628,13 @@ def height (n: Nat) (t: LExpr TestParams.mono) : LExpr TestParams.mono :=
 info: Annotated expression:
 ((~tree$Elim : (arrow (tree int) (arrow (arrow int int) (arrow (arrow (arrow int (tree int)) (arrow (arrow int int) int)) int))))
  ((~Node : (arrow (arrow int (tree int)) (tree int)))
-  (λ ((~Node : (arrow (arrow int (tree int)) (tree int)))
-    (λ (if (((~Int.Add : (arrow int (arrow int int)))
+  (λ (bvar:int) ((~Node : (arrow (arrow int (tree int)) (tree int)))
+    (λ (bvar:int) (if (((~Int.Add : (arrow int (arrow int int)))
         %1
         %0) == #0) then ((~Node : (arrow (arrow int (tree int)) (tree int)))
-       (λ ((~Leaf : (arrow int (tree int))) #3))) else ((~Leaf : (arrow int (tree int))) #4))))))
- (λ #0)
- (λ (λ ((~Int.Add : (arrow int (arrow int int))) #1 (%0 #0)))))
+       (λ (bvar:int) ((~Leaf : (arrow int (tree int))) #3))) else ((~Leaf : (arrow int (tree int))) #4))))))
+ (λ (bvar:int) #0)
+ (λ (bvar:(arrow int (tree int))) (λ (bvar:(arrow int int)) ((~Int.Add : (arrow int (arrow int int))) #1 (%0 #0)))))
 
 ---
 info: #3
@@ -641,13 +647,13 @@ info: #3
 info: Annotated expression:
 ((~tree$Elim : (arrow (tree int) (arrow (arrow int int) (arrow (arrow (arrow int (tree int)) (arrow (arrow int int) int)) int))))
  ((~Node : (arrow (arrow int (tree int)) (tree int)))
-  (λ ((~Node : (arrow (arrow int (tree int)) (tree int)))
-    (λ (if (((~Int.Add : (arrow int (arrow int int)))
+  (λ (bvar:int) ((~Node : (arrow (arrow int (tree int)) (tree int)))
+    (λ (bvar:int) (if (((~Int.Add : (arrow int (arrow int int)))
         %1
         %0) == #0) then ((~Node : (arrow (arrow int (tree int)) (tree int)))
-       (λ ((~Leaf : (arrow int (tree int))) #3))) else ((~Leaf : (arrow int (tree int))) #4))))))
- (λ #0)
- (λ (λ ((~Int.Add : (arrow int (arrow int int))) #1 (%0 #1)))))
+       (λ (bvar:int) ((~Leaf : (arrow int (tree int))) #3))) else ((~Leaf : (arrow int (tree int))) #4))))))
+ (λ (bvar:int) #0)
+ (λ (bvar:(arrow int (tree int))) (λ (bvar:(arrow int int)) ((~Int.Add : (arrow int (arrow int int))) #1 (%0 #1)))))
 
 ---
 info: #2
@@ -949,9 +955,11 @@ def roseTree5 : LExpr TestParams.mono :=
 info: Annotated expression:
 ((~RoseTree$Elim : (arrow (RoseTree int) (arrow (arrow int (arrow (Forest int) (arrow int int))) (arrow int (arrow (arrow (RoseTree int) (arrow (Forest int) (arrow int (arrow int int)))) int)))))
  ((~Node : (arrow int (arrow (Forest int) (RoseTree int)))) #1 (~FNil : (Forest int)))
- (λ (λ (λ ((~Int.Add : (arrow int (arrow int int))) #1 %0))))
+ (λ (bvar:int) (λ (bvar:(Forest int)) (λ (bvar:int) ((~Int.Add : (arrow int (arrow int int))) #1 %0))))
  #0
- (λ (λ (λ (λ ((~Int.Add : (arrow int (arrow int int))) %1 %0))))))
+ (λ (bvar:(RoseTree int)) (λ (bvar:(Forest int)) (λ (bvar:int) (λ (bvar:int) ((~Int.Add : (arrow int (arrow int int)))
+      %1
+      %0))))))
 
 ---
 info: #1
@@ -978,9 +986,11 @@ info: Annotated expression:
     ((~FCons : (arrow (RoseTree int) (arrow (Forest int) (Forest int))))
      ((~Node : (arrow int (arrow (Forest int) (RoseTree int)))) #4 (~FNil : (Forest int)))
      (~FNil : (Forest int))))))
- (λ (λ (λ ((~Int.Add : (arrow int (arrow int int))) #1 %0))))
+ (λ (bvar:int) (λ (bvar:(Forest int)) (λ (bvar:int) ((~Int.Add : (arrow int (arrow int int))) #1 %0))))
  #0
- (λ (λ (λ (λ ((~Int.Add : (arrow int (arrow int int))) %1 %0))))))
+ (λ (bvar:(RoseTree int)) (λ (bvar:(Forest int)) (λ (bvar:int) (λ (bvar:int) ((~Int.Add : (arrow int (arrow int int)))
+      %1
+      %0))))))
 
 ---
 info: #5
@@ -1106,10 +1116,12 @@ info: Annotated expression:
       ((~NodeC : (arrow TyA (arrow TyA TyC)))
        ((~MkA : (arrow TyB TyA)) ((~MkB : (arrow TyC TyB)) ((~LeafC : (arrow int TyC)) #2)))
        ((~MkA : (arrow TyB TyA)) ((~MkB : (arrow TyC TyB)) ((~LeafC : (arrow int TyC)) #3)))))))))
- (λ (λ ((~Int.Add : (arrow int (arrow int int))) #1 %0)))
- (λ (λ ((~Int.Add : (arrow int (arrow int int))) #1 %0)))
- (λ #1)
- (λ (λ (λ (λ ((~Int.Add : (arrow int (arrow int int))) #1 ((~Int.Add : (arrow int (arrow int int))) %1 %0)))))))
+ (λ (bvar:TyB) (λ (bvar:int) ((~Int.Add : (arrow int (arrow int int))) #1 %0)))
+ (λ (bvar:TyC) (λ (bvar:int) ((~Int.Add : (arrow int (arrow int int))) #1 %0)))
+ (λ (bvar:int) #1)
+ (λ (bvar:TyA) (λ (bvar:TyA) (λ (bvar:int) (λ (bvar:int) ((~Int.Add : (arrow int (arrow int int)))
+      #1
+      ((~Int.Add : (arrow int (arrow int int))) %1 %0)))))))
 
 ---
 info: #15
