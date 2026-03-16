@@ -27,13 +27,14 @@ No inference is performed — all types are determined by annotations on paramet
 and variable declarations.
 -/
 def computeExprType (model : SemanticModel) (expr : StmtExprMd) : HighTypeMd :=
-  match expr with
+  match _: expr with
   | WithMetadata.mk val md =>
-  match val with
+  match _: val with
   -- Literals
   | .LiteralInt _ => ⟨ .TInt, md ⟩
   | .LiteralBool _ => ⟨ .TBool, md ⟩
   | .LiteralString _ => ⟨ .TString, md ⟩
+  | .LiteralDecimal _ => ⟨ .TReal, md ⟩
   -- Variables
   | .Identifier id => (model.get id).getType.getD (panic "computeExprType1")
   -- Field access
@@ -42,20 +43,28 @@ def computeExprType (model : SemanticModel) (expr : StmtExprMd) : HighTypeMd :=
   | .PureFieldUpdate target _ _ => computeExprType model target
   -- Calls — we don't track return types here, so fall back to TVoid
   | .StaticCall callee _ => match model.get callee with
+    | .datatypeConstructor t _ => ⟨ .UserDefined t, md, ⟩
+    | .parameter p => p.type
     | .staticProcedure proc => match proc.outputs with
       | [singleOutput] => singleOutput.type
       | _ => { val := .TVoid, md := default }
-    | .unresolved =>
-        -- The Python through Laurel pipeline does not resolve yet
-        { val := .TVoid, md := default }
+    | .unresolved => { val := .Top, md := default }
     | astNode => panic! s!"static call to {callee} not to a procedure but to a {repr astNode}"
   | .InstanceCall _ _ _ => panic "Not supported InstanceCall"
   -- Operators
-  | .PrimitiveOp op _ =>
-      match op with
-      | .Eq | .Neq | .And | .Or | .Not | .Implies | .Lt | .Leq | .Gt | .Geq => ⟨ .TBool, md ⟩
-      | .Neg | .Add | .Sub | .Mul | .Div | .Mod | .DivT | .ModT => ⟨ .TInt, md ⟩
-      | .StrConcat => ⟨ .TString, md ⟩
+  | .PrimitiveOp op args =>
+      match args with
+      | head :: tail =>
+        match op with
+        | .Eq | .Neq | .And | .Or | .Not | .Implies | .Lt | .Leq | .Gt | .Geq => ⟨ .TBool, md ⟩
+        | .Neg | .Add | .Sub | .Mul | .Div | .Mod | .DivT | .ModT =>
+          match (computeExprType model head).val with
+            | .TFloat64  => ⟨ .TFloat64, md ⟩
+            | .TReal => ⟨ .TReal, md ⟩
+            | .TInt => ⟨ .TInt, md ⟩
+            | _ => ⟨ .TCore "unknown", md ⟩
+        | .StrConcat => ⟨ .TString, md ⟩
+      | _ => ⟨ .TCore "unknown", md ⟩
   -- Control flow
   | .IfThenElse _ thenBranch _ => computeExprType model thenBranch
   | .Block stmts _ => match _blockGetLastResult: stmts.getLast? with
@@ -73,23 +82,23 @@ def computeExprType (model : SemanticModel) (expr : StmtExprMd) : HighTypeMd :=
   | .Assume _ => ⟨ .TVoid, md ⟩
   -- Instance related
   | .New name => ⟨ .UserDefined name, md ⟩
-  | .This => panic "Not supported" -- would need `this` type from context
+  | .This => panic "'This' not supported" -- would need `this` type from context
   | .ReferenceEquals _ _ => ⟨ .TBool, md ⟩
   | .AsType _ ty => ty
   | .IsType _ _ => ⟨ .TBool, md ⟩
   -- Verification specific
-  | .Forall _ _ => ⟨ .TBool, md ⟩
-  | .Exists _ _ => ⟨ .TBool, md ⟩
+  | .Forall _ _ _ => ⟨ .TBool, md ⟩
+  | .Exists _ _ _ => ⟨ .TBool, md ⟩
   | .Assigned _ => ⟨ .TBool, md ⟩
   | .Old v => computeExprType model v
   | .Fresh _ => ⟨ .TBool, md ⟩
   -- Proof related
   | .ProveBy v _ => computeExprType model v
-  | .ContractOf _ _ => panic "Not supported"
+  | .ContractOf _ _ => panic "ContractOf Not supported"
   -- Special
-  | .Abstract => panic "Not supported"
-  | .All => panic "Not supported"
-  | .Hole => panic "Not supported"
+  | .Abstract => panic "Abstract Not supported"
+  | .All => panic "All Not supported"
+  | .Hole => ⟨ .Top, md ⟩
 
 end Strata.Laurel
 
