@@ -3,12 +3,15 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.Languages.Core.Verifier
-import Strata.Languages.Python.Regex.ReToCore
+public import Strata.Languages.Core.Verifier
+public import Strata.Languages.Python.Regex.ReToCore
 
 namespace Strata
 namespace Python
+
+public section
 
 -------------------------------------------------------------------------------
 
@@ -98,5 +101,7 @@ def ReFactory : @Factory Core.CoreLParams :=
     #[
       reCompileFunc
     ]
+
+end -- public section
 
 -------------------------------------------------------------------------------

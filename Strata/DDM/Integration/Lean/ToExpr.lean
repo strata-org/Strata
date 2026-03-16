@@ -41,6 +41,7 @@ instance : ToExpr SepFormat where
     | .space => mkConst ``SepFormat.space
     | .spacePrefix => mkConst ``SepFormat.spacePrefix
     | .newline => mkConst ``SepFormat.newline
+    | .semicolon => mkConst ``SepFormat.semicolon
 
 end SepFormat
 

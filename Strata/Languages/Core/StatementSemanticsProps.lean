@@ -3,16 +3,28 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.DL.Imperative.CmdSemantics
-import Strata.DL.Imperative.StmtSemantics
-import Strata.DL.Imperative.HasVars
-import Strata.DL.Util.Nodup
-import Strata.DL.Util.ListUtils
-import Strata.Languages.Core.Procedure
-import Strata.Languages.Core.Statement
-import Strata.Languages.Core.StatementSemantics
+public import Strata.DL.Imperative.CmdSemantics
+import all Strata.DL.Imperative.CmdSemantics
+public import Strata.DL.Imperative.StmtSemantics
+import all Strata.DL.Imperative.StmtSemantics
+public import Strata.DL.Imperative.HasVars
+import all Strata.DL.Imperative.HasVars
+public import Strata.DL.Util.Nodup
+import all Strata.DL.Util.Nodup
+public import Strata.DL.Util.ListUtils
+import all Strata.DL.Util.ListUtils
+public import Strata.Languages.Core.Procedure
+public import Strata.Languages.Core.Statement
+import all Strata.Languages.Core.Statement
+public import Strata.Languages.Core.StatementSemantics
+import all Strata.Languages.Core.StatementSemantics
+import all Strata.DL.Imperative.Cmd
+import all Strata.DL.Imperative.Stmt
 import Strata.Util.Tactics
+
+public section
 
 /-! ## Theorems related to StatementSemantics -/
 
@@ -2098,3 +2110,7 @@ theorem EvalExpressionIsDefined :
   case eq m e₁ e₂ ih₁ ih₂ =>
     have ⟨h₁, h₂⟩ := Hwfc.definedness.eqdef σ m e₁ e₂ Hsome
     grind
+
+end Core
+
+end -- public section

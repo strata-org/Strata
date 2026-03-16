@@ -11,7 +11,7 @@ import        Strata.DDM.Format
 import all    Strata.DDM.Util.Fin
 public import Strata.DDM.Util.SourceRange
 import        Strata.Languages.Python.ReadPython
-import        Strata.Languages.Python.Specs.DDM
+public import Strata.Languages.Python.Specs.DDM
 import        Strata.Languages.Python.Specs.PySpecM
 public import Strata.Languages.Python.Specs.Decls
 import        Strata.Util.DecideProp

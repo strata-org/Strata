@@ -370,24 +370,26 @@ op constructorListAtom (c : Constructor) : ConstructorList => "\n  " c;
 op constructorListPush (cl : ConstructorList, c : Constructor)
     : ConstructorList => cl ",\n  " c;
 
-// @[scopeDatatype(name, typeParams)] brings datatype name and parameters into
-// scope when parsing constructors for recursive types
+// preRegisterTypes on command_datatypes handles bringing datatype names into
+// scope; @[scopeTVar(typeParams)] brings type parameters into scope for constructors.
+category DatatypeDecl;
+
 @[declareDatatype(name, typeParams, constructors,
     perConstructor([.datatype, .literal "..is", .constructor],
                    [.datatype], .builtin "bool"),
     perField([.datatype, .literal "..", .field], [.datatype], .fieldType),
     perField([.datatype, .literal "..", .field, .literal "!"], [.datatype], .fieldType))]
-op command_datatype (name : Ident,
-                     typeParams : Option Bindings,
-                     @[scopeDatatype(name, typeParams)] constructors : ConstructorList)
-      : Command =>
-      "datatype " name typeParams " {" constructors "\n}" ";\n";
+op datatype_decl (name : Ident,
+                  typeParams : Option Bindings,
+                  @[scopeTVar(typeParams)] constructors : ConstructorList)
+      : DatatypeDecl =>
+      "datatype " name typeParams " {" constructors "\n}";
 
-// Mutual block for defining mutually recursive types
-// Type names are pre-registered via @[preRegisterTypes] before elaboration
-@[scope(commands), preRegisterTypes(commands)]
-op command_mutual (commands : SpacePrefixSepBy Command) : Command =>
-  "mutual\n  " indent(2, commands) "end;\n";
+// Unified datatype command: one or more datatype declarations separated by
+// newlines, ending with a semicolon.
+@[scope(datatypes), preRegisterTypes(datatypes)]
+op command_datatypes (datatypes : NewlineSepBy DatatypeDecl) : Command =>
+  datatypes ";\n";
 
 #end
 

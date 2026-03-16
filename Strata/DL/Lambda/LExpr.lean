@@ -303,6 +303,7 @@ namespace LExpr
 instance (T : LExprParamsT) [Inhabited T.base.Metadata] : Inhabited (LExpr T) where
   default := .boolConst default false
 
+@[expose]
 def LExpr.getVars (e : LExpr T) : List (Identifier T.base.IDMeta) := match e with
   | .const _ _ => [] | .bvar _ _ => [] | .op _ _ _ => []
   | .fvar _ y _ => [y]

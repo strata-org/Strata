@@ -161,6 +161,25 @@ info: "; m\n(declare-const m (Array Int Int))\n(define-fun t0 () (Array Int Int)
       }
    }})
 
+-- Test that UF input types use Array when useArrayTheory=true (regression for Map/Array mismatch)
+/--
+info: "; m\n(declare-const m (Array Int Int))\n(define-fun t0 () (Array Int Int) m)\n; getFirst\n(declare-fun getFirst ((Array Int Int)) Int)\n(define-fun t1 () Int (getFirst t0))\n"
+-/
+#guard_msgs in
+#eval toSMTTermString
+  (.app () (.op () (⟨"getFirst", ()⟩) (.some (.arrow (mapTy .int .int) .int)))
+           (.fvar () (⟨"m", ()⟩) (.some (mapTy .int .int))))
+  (useArrayTheory := true)
+  (E := {Env.init with exprEnv := {
+    Env.init.exprEnv with
+      config := { Env.init.exprEnv.config with
+        factory :=
+          Core.Factory.push $
+          LFunc.mk (⟨"getFirst", ()⟩) [] false false
+            [(⟨"m", ()⟩, mapTy .int .int)] .int .none #[] .none [] []
+      }
+   }})
+
 -- Test empty string falls back to generated names
 /-- info: "(define-fun t0 () Bool (forall (($__bv0 Int)) (exists (($__bv1 Int)) (= $__bv0 $__bv1))))\n" -/
 #guard_msgs in
@@ -203,6 +222,29 @@ info: "; x\n(declare-const x String)\n(define-fun t0 () String x)\n(define-fun t
 #guard_msgs in
 #eval toSMTTermString
   (.eq () (.fvar () "x" (.some .string)) (.strConst () "{\"key\":\"val\"}"))
+
+-- Test that negative integer constants are lowered to (- N) form
+/-- info: Except.ok "(- 1)" -/
+#guard_msgs in
+#eval Strata.SMTDDM.termToString (.prim (.int (-1)))
+
+-- Test that Real.Div encodes to `/` (real division) not `div` (integer division).
+/--
+info: "; x\n(declare-const x Real)\n(define-fun t0 () Real x)\n; y\n(declare-const y Real)\n(define-fun t1 () Real y)\n(define-fun t2 () Real (|/| t0 t1))\n"
+-/
+#guard_msgs in
+#eval toSMTTermString
+  (.app ()
+    (.app ()
+      (.op () "Real.Div" (.some (.arrow .real (.arrow .real .real))))
+      (.fvar () "x" (.some .real)))
+    (.fvar () "y" (.some .real)))
+  (E := {Env.init with exprEnv := {
+    Env.init.exprEnv with
+      config := { Env.init.exprEnv.config with
+        factory := Core.Factory
+      }
+   }})
 
 end ArrayTheory
 

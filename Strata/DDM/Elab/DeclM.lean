@@ -73,7 +73,22 @@ def mkSourceRange? (stx:Syntax) : Option SourceRange :=
       | Nat.succ n => Id.run do
         let some s := sourceLocPos args[0]
           | return none
-        let some t := sourceLocEnd args[n]
+        -- Walk backwards to find the last arg with a non-zero-width range.
+        -- Empty optional nodes (absent optionals) have start == stop and sit
+        -- after trailing whitespace/comments, so we skip them.
+        let mut stopPos : Option String.Pos.Raw := none
+        let mut i := n
+        repeat
+          let ep := sourceLocEnd args[i]!
+          let sp := sourceLocPos args[i]!
+          match ep, sp with
+          | some e, some s2 =>
+            if e != s2 || i == 0 then stopPos := some e
+          | some e, none => stopPos := some e
+          | none, _ => pure ()
+          if stopPos.isSome || i == 0 then break
+          i := i - 1
+        let some t := stopPos
           | return none
         some { start := s, stop := t }
   | .missing => none

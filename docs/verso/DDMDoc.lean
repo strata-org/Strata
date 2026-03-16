@@ -616,18 +616,25 @@ together. It is best illustrated with an example (from the Core dialect):
 @[declareDatatype(name, typeParams, constructors,
     perConstructor([.datatype, .literal "..is", .constructor], [.datatype], .builtin "bool"),
     perField([.field], [.datatype], .fieldType))]
-op command_datatype (name : Ident,
-                     typeParams : Option Bindings,
-                     @[scopeDatatype(name, typeParams)] constructors : ConstructorList)
-  : Command =>
-  "datatype " name typeParams " {" constructors "}" ";\n";
+op datatype_decl (name : Ident,
+                  typeParams : Option Bindings,
+                  @[scopeTVar(typeParams)] constructors : ConstructorList)
+  : DatatypeDecl =>
+  "datatype " name typeParams " {" constructors "}";
+
+@[scope(datatypes), preRegisterTypes(datatypes)]
+op command_datatypes (datatypes : NewlineSepBy DatatypeDecl) : Command =>
+  datatypes ";\n";
 ```
 
-`@[declareDatatype]` declares a datatype command operator given the datatype
+`@[declareDatatype]` declares a datatype operator given the datatype
 name, the optional type parameters, the constructor list, and zero or more
-[function templates](#datatypes-function-templates) to expand. Note that the `@[scopeDatatype]`
-annotation brings the datatype name and type parameters into scope when
-parsing the constructors, enabling recursive type references.
+[function templates](#datatypes-function-templates) to expand. The `@[scopeTVar]`
+annotation converts type parameter bindings into type variables when
+parsing the constructors, enabling polymorphic type references.
+The `@[preRegisterTypes]` annotation on the wrapping command pre-registers
+all datatype names before elaboration, enabling recursive and mutually
+recursive type references.
 
 #### Function Templates
 %%%

@@ -3,13 +3,16 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.Languages.Core.Statement
-import Strata.Languages.Core.CallGraph
-import Strata.Languages.Core.CoreGen
-import Strata.DL.Util.LabelGen
+public import Strata.Languages.Core.Statement
+public import Strata.Languages.Core.CallGraph
+public import Strata.Languages.Core.CoreGen
+public import Strata.DL.Util.LabelGen
 
 /-! # Utility functions for program transformation in Strata Core -/
+
+public section
 
 namespace Core
 namespace Transform
@@ -23,6 +26,7 @@ def createHavoc (ident : Expression.Ident)
     (md : Imperative.MetaData Expression)
   : Statement := Statement.havoc ident md
 
+@[expose]
 def createHavocs (ident : List Expression.Ident) (md : (Imperative.MetaData Expression))
   : List Statement := ident.map (createHavoc · md)
 
@@ -30,6 +34,7 @@ def createFvar (ident : Expression.Ident)
   : Expression.Expr
   := Lambda.LExpr.fvar ((): ExpressionMetadata) ident none
 
+@[expose]
 def createFvars (ident : List Expression.Ident)
   : List Expression.Expr
   := ident.map createFvar
@@ -74,6 +79,7 @@ def genOldExprIdents (idents : List Expression.Ident)
   := List.mapM genOldExprIdent idents
 
 /-- Checks whether a variable `ident` can be found in program `p` -/
+@[expose]
 def isGlobalVar (p : Program) (ident : Expression.Ident) : Bool :=
   (p.find? .var ident).isSome
 
@@ -116,8 +122,10 @@ def CoreTransformState.emp : CoreTransformState :=
   { genState := .emp, currentProgram := .none,
     currentProcedureName := .none, cachedAnalyses := .emp }
 
+@[expose]
 abbrev Err := String
 
+@[expose]
 abbrev CoreTransformM := ExceptT Err (StateM CoreTransformState)
 
 /-- A lifter from CoreGenM to (StateM CoreTransformState) -/
@@ -150,14 +158,17 @@ def getFactory : CoreTransformM (@Lambda.Factory CoreLParams) := do
 def setFactory (F : @Lambda.Factory CoreLParams) : CoreTransformM Unit :=
   modify fun σ => { σ with factory := some F }
 
+@[expose]
 def getIdentTy? (p : Program) (id : Expression.Ident) := p.getVarTy? id
 
+@[expose]
 def getIdentTy! (p : Program) (id : Expression.Ident)
   : CoreTransformM (Expression.Ty) := do
   match getIdentTy? p id with
   | none => throw s!"failed to find type for {Std.format id}"
   | some ty => return ty
 
+@[expose]
 def getIdentTys! (p : Program) (ids : List Expression.Ident)
   : CoreTransformM (List Expression.Ty) := do
   match ids with
@@ -361,7 +372,7 @@ def runProgram
   return (changed, newProg)
 
 
-@[simp]
+@[expose, simp]
 def runWith {α : Type} (p : α) (f : α → CoreTransformM β)
     (s : CoreTransformState):
   Except Err β × CoreTransformState :=
@@ -374,4 +385,7 @@ def run {α : Type} (p : α) (f : α → CoreTransformM β)
   (runWith p f s).fst
 
 end Transform
+
 end Core
+
+end -- public section
