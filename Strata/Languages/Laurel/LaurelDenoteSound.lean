@@ -344,11 +344,7 @@ theorem denoteStmt_sound
       match hc : denoteStmt δ π n h σ c.val with
       | some (.normal (.vBool true), σ_c, h_c) =>
         simp [hc] at heval; obtain ⟨rfl, rfl, rfl⟩ := heval
-        -- The relational assert_true requires the condition to be pure.
-        -- ih_stmt gives EvalLaurelStmt δ π h σ c h_c σ_c (.normal true),
-        -- but we need h_c = h ∧ σ_c = σ. This holds for well-formed programs
-        -- where assert conditions are side-effect-free.
-        sorry
+        exact .assert_true (ih_stmt c.md hc)
       | some (.normal (.vBool false), _, _) | some (.normal (.vInt _), _, _)
       | some (.normal (.vString _), _, _) | some (.normal .vVoid, _, _)
       | some (.normal (.vRef _), _, _) | some (.exit _, _, _)
@@ -358,7 +354,7 @@ theorem denoteStmt_sound
       match hc : denoteStmt δ π n h σ c.val with
       | some (.normal (.vBool true), σ_c, h_c) =>
         simp [hc] at heval; obtain ⟨rfl, rfl, rfl⟩ := heval
-        sorry
+        exact .assume_true (ih_stmt c.md hc)
       | some (.normal (.vBool false), _, _) | some (.normal (.vInt _), _, _)
       | some (.normal (.vString _), _, _) | some (.normal .vVoid, _, _)
       | some (.normal (.vRef _), _, _) | some (.exit _, _, _)

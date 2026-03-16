@@ -316,17 +316,24 @@ inductive EvalLaurelStmt :
     EvalLaurelStmt δ π h σ ⟨.LocalVariable name ty none, md⟩ h σ' (.normal .vVoid)
 
   -- Verification Constructs
-  -- Note: assert_true and assume_true require the condition to be pure
-  -- (no side effects on heap or store). Conditions with side effects have
-  -- no derivation. This is intentional — assert/assume conditions should
-  -- be specification-level expressions, not effectful computations.
+  -- Assert and assume evaluate their condition and discard any state effects.
+  -- The condition may produce side effects in the denotational interpreter
+  -- (e.g., assignments in expression position), but the result always uses
+  -- the original heap and store. This matches the denotational interpreter's
+  -- behavior: `denoteStmt` for Assert/Assume returns `(σ, h)` regardless of
+  -- what the condition evaluation produces.
+  --
+  -- NOTE: A more principled design would restrict the condition to a
+  -- syntactically pure fragment (no assignments, calls, or allocations)
+  -- and prove that pure expressions preserve state. See the design note
+  -- in `docs/designs/design-assert-assume-purity.md` for the roadmap.
 
   | assert_true :
-    EvalLaurelStmt δ π h σ c h σ (.normal (.vBool true)) →
+    EvalLaurelStmt δ π h σ c h' σ' (.normal (.vBool true)) →
     EvalLaurelStmt δ π h σ ⟨.Assert c, md⟩ h σ (.normal .vVoid)
 
   | assume_true :
-    EvalLaurelStmt δ π h σ c h σ (.normal (.vBool true)) →
+    EvalLaurelStmt δ π h σ c h' σ' (.normal (.vBool true)) →
     EvalLaurelStmt δ π h σ ⟨.Assume c, md⟩ h σ (.normal .vVoid)
 
   -- Static Calls (arguments evaluated via EvalStmtArgs for effectful args)
