@@ -94,32 +94,46 @@ def substVarNames {Metadata IDMeta: Type} [DecidableEq IDMeta]
   | .ite _ c t e' => .ite () (substVarNames c frto) (substVarNames t frto) (substVarNames e' frto)
   | .eq _ e1 e2 => .eq () (substVarNames e1 frto) (substVarNames e2 frto)
 
+/-- Convert metadata from `Core.Expression` to `Core.ExprStr`, preserving
+    label-keyed elements (fileRange, propertySummary, etc.) and dropping
+    variable-keyed elements whose identifier type changes. -/
+private def convertMetaData (md : Imperative.MetaData Core.Expression)
+    : Imperative.MetaData Core.ExprStr :=
+  md.filterMap fun elem =>
+    match elem.fld with
+    | .label l => match elem.value with
+      | .msg s => some ⟨.label l, .msg s⟩
+      | .fileRange r => some ⟨.label l, .fileRange r⟩
+      | .switch b => some ⟨.label l, .switch b⟩
+      | .expr _ => none
+    | .var _ => none
+
 def Core.Cmd.renameVars (frto : Map String String) (c : Imperative.Cmd Core.Expression)
     : Imperative.Cmd Core.ExprStr :=
   match c with
-  | .init name ty e _ =>
+  | .init name ty e md =>
     let e' := e.map (substVarNames · frto)
     let name_alt := frto.find? (Core.CoreIdent.toPretty name)
     let new := name_alt.getD (Core.CoreIdent.toPretty name)
-    .init new ty e' .empty
-  | .set name e _ =>
+    .init new ty e' (convertMetaData md)
+  | .set name e md =>
     let e' := substVarNames e frto
     let name_alt := frto.find? (Core.CoreIdent.toPretty name)
     let new := name_alt.getD (Core.CoreIdent.toPretty name)
-    .set new e' .empty
-  | .havoc name _ =>
+    .set new e' (convertMetaData md)
+  | .havoc name md =>
     let name_alt := frto.find? (Core.CoreIdent.toPretty name)
     let new := name_alt.getD (Core.CoreIdent.toPretty name)
-    .havoc new .empty
-  | .assume label e _ =>
+    .havoc new (convertMetaData md)
+  | .assume label e md =>
     let e' := substVarNames e frto
-    .assume label e' .empty
-  | .assert label e _ =>
+    .assume label e' (convertMetaData md)
+  | .assert label e md =>
     let e' := substVarNames e frto
-    .assert label e' .empty
-  | .cover label e _ =>
+    .assert label e' (convertMetaData md)
+  | .cover label e md =>
     let e' := substVarNames e frto
-    .cover label e' .empty
+    .cover label e' (convertMetaData md)
 
 def Core.Cmds.renameVars (frto : Map String String)
     (cs : Imperative.Cmds Core.Expression) : Imperative.Cmds Core.ExprStr :=

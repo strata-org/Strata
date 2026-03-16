@@ -58,35 +58,35 @@ private def inc (as : ArgElaborators) : ArgElaborators :=
 
 private def push (as : ArgElaborators)
          (argDecls : ArgDecls)
-         (argLevel : Fin argDecls.size) : ArgElaborators :=
+         (argLevel : Fin argDecls.size) : Except String ArgElaborators := do
   let sc := as.syntaxCount
   let as := as.inc
   let newElab : ArgElaborator := {
     syntaxLevel := sc
     argLevel := argLevel.val
-    contextLevel := argDecls.argScopeLevel argLevel
-    scopeTVar := argDecls.argScopeTVarLevel argLevel
-    scopeSelf := argDecls.argScopeSelfLevel argLevel
+    contextLevel := ← argDecls.argScopeLevel argLevel
+    scopeTVar := ← argDecls.argScopeTVarLevel argLevel
+    scopeSelf := ← argDecls.argScopeSelfLevel argLevel
   }
   have scp : sc < sc + 1 := by grind
-  { as with argElaborators := as.argElaborators.push ⟨newElab, scp⟩ }
+  return { as with argElaborators := as.argElaborators.push ⟨newElab, scp⟩ }
 
 end ArgElaborators
 
-private def addElaborators (argDecls : ArgDecls) (p : ArgElaborators) (a : SyntaxDefAtom) : ArgElaborators :=
+private def addElaborators (argDecls : ArgDecls) (p : ArgElaborators) (a : SyntaxDefAtom) : Except String ArgElaborators :=
   match a with
   | .ident level _prec =>
     if h : level < argDecls.size then
       p.push argDecls ⟨level, h⟩
     else
-      panic! "Invalid index"
+      .error s!"Invalid index {level}"
   | .str s =>
     if s.trimAscii.isEmpty then
-      p
+      .ok p
     else
-      p.inc
+      .ok p.inc
   | .indent _ as =>
-    as.attach.foldl (init := p) (fun p ⟨a, _⟩ => addElaborators argDecls p a)
+    as.attach.foldlM (init := p) (fun p ⟨a, _⟩ => addElaborators argDecls p a)
 
 /-- Information needed to elaborate operations or functions. -/
 structure SyntaxElaborator where
@@ -117,26 +117,28 @@ argument positions.  For `.passthrough`, this is trivial: one syntax
 position maps directly to argument 0.  For `.mk`, we walk the atoms to
 discover which syntax positions correspond to which arguments, then sort
 by argument level for elaboration order. -/
-private def mkSyntaxElab! (argDecls : ArgDecls) (stx : SyntaxDef) (opMd : Metadata) : SyntaxElaborator :=
+private def mkSyntaxElab! (argDecls : ArgDecls) (stx : SyntaxDef) (opMd : Metadata) : Except String SyntaxElaborator := do
+  let preRegTypesScope ← opMd.preRegisterTypesLevel argDecls.size
+  let resultScope ← opMd.resultLevel argDecls.size
   match stx with
-  | .passthrough => Id.run do
+  | .passthrough =>
     -- Passthrough requires at least one argument.
     let .isTrue h := decideProp (0 < argDecls.size)
-      | return panic! "Passthrough syntax requires at least one argument"
+      | .error "Passthrough syntax requires at least one argument"
     let ae : ArgElaborator := {
       syntaxLevel := 0
       argLevel := 0
-      contextLevel := argDecls.argScopeLevel ⟨0, h⟩
-      scopeTVar := argDecls.argScopeTVarLevel ⟨0, h⟩
-      scopeSelf := argDecls.argScopeSelfLevel ⟨0, h⟩
+      contextLevel := ← argDecls.argScopeLevel ⟨0, h⟩
+      scopeTVar := ← argDecls.argScopeTVarLevel ⟨0, h⟩
+      scopeSelf := ← argDecls.argScopeSelfLevel ⟨0, h⟩
     }
     let elabs := #[⟨ae, Nat.zero_lt_one⟩]
-    {
+    .ok {
       syntaxCount := 1
       argElaborators := elabs
-      resultScope := opMd.resultLevel argDecls.size
+      resultScope
       argElabIndex := buildArgElabIndex argDecls elabs
-      preRegisterTypesScope := opMd.preRegisterTypesLevel argDecls.size
+      preRegisterTypesScope := preRegTypesScope
     }
   | .std atoms _ =>
     let init : ArgElaborators := {
@@ -144,24 +146,24 @@ private def mkSyntaxElab! (argDecls : ArgDecls) (stx : SyntaxDef) (opMd : Metada
       argElaborators := Array.mkEmpty argDecls.size
     }
     -- Walk atoms to discover argument references and their syntax positions.
-    let as := atoms.foldl (init := init) (addElaborators argDecls)
+    let as ← atoms.foldlM (init := init) (addElaborators argDecls)
     -- In the case with no syntax there is still a single expected
     -- syntax argument with the empty string.
     let as := if as.syntaxCount = 0 then as.inc else as
     -- Sort by argument level so elaboration processes args in order.
     let elabs := as.argElaborators.qsort (·.val.argLevel < ·.val.argLevel)
-    {
+    .ok {
       syntaxCount := as.syntaxCount
       argElaborators := elabs
-      resultScope := opMd.resultLevel argDecls.size
+      resultScope
       argElabIndex := buildArgElabIndex argDecls elabs
-      preRegisterTypesScope := opMd.preRegisterTypesLevel argDecls.size
+      preRegisterTypesScope := preRegTypesScope
     }
 
-private def opDeclElaborator! (decl : OpDecl) : SyntaxElaborator :=
+private def opDeclElaborator! (decl : OpDecl) : Except String SyntaxElaborator :=
   mkSyntaxElab! decl.argDecls decl.syntaxDef decl.metadata
 
-private def fnDeclElaborator! (decl : FunctionDecl) : SyntaxElaborator :=
+private def fnDeclElaborator! (decl : FunctionDecl) : Except String SyntaxElaborator :=
   mkSyntaxElab! decl.argDecls decl.syntaxDef decl.metadata
 
 abbrev SyntaxElabMap := Std.HashMap QualifiedIdent SyntaxElaborator
@@ -171,14 +173,14 @@ namespace SyntaxElabMap
 private def add (m : SyntaxElabMap) (dialect : String) (name : String) (se : SyntaxElaborator) : SyntaxElabMap :=
   m.insert { dialect, name := name } se
 
-private def addDecl (m : SyntaxElabMap) (dialect : String) (d : Decl) : SyntaxElabMap :=
+private def addDecl (m : SyntaxElabMap) (dialect : String) (d : Decl) : Except String SyntaxElabMap :=
   match d with
-  | .op d => m.add dialect d.name (opDeclElaborator! d)
-  | .function d => m.add dialect d.name (fnDeclElaborator! d)
-  | _ => m
+  | .op d => (m.add dialect d.name ·) <$> opDeclElaborator! d
+  | .function d => (m.add dialect d.name ·) <$> fnDeclElaborator! d
+  | _ => .ok m
 
-def addDialect (m : SyntaxElabMap) (d : Dialect) : SyntaxElabMap :=
-  d.declarations.foldl (·.addDecl d.name) m
+def addDialect (m : SyntaxElabMap) (d : Dialect) : Except String SyntaxElabMap :=
+  d.declarations.foldlM (·.addDecl d.name) m
 
 end Strata.Elab.SyntaxElabMap
 end
