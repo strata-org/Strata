@@ -181,8 +181,8 @@ structure Procedure : Type where
   isFunctional : Bool
   /-- The procedure body: transparent, opaque, or abstract. -/
   body : Body
-  /-- Source-level metadata. -/
-  md : Imperative.MetaData Core.Expression
+  /-- Source-level metadata (locations, annotations). -/
+  md : MetaData
 
 /--
 A typed parameter for a procedure.
@@ -450,6 +450,11 @@ inductive TypeDefinition where
   /-- An algebriac datatype. -/
   | Datatype (ty : DatatypeDefinition)
   deriving Inhabited
+
+def TypeDefinition.name : TypeDefinition → Identifier
+  | .Composite ty => ty.name
+  | .Constrained ty => ty.name
+  | .Datatype ty => ty.name
 
 structure Constant where
   name : Identifier

@@ -353,7 +353,6 @@ private def combineLaurelPrograms (first: Strata.Laurel.Program) (second: Strata
     Also accumulates overload dispatch tables. -/
 def buildPySpecPrelude (pyspecPaths : Array String) : IO PySpecPrelude := do
   let mut preludeInLaurel : Strata.Laurel.Program := Strata.Python.pythonRuntimeLaurelPart
-  let mut preludeInCoreDecls : List Core.Decl := Strata.Python.coreOnlyFromRuntimeCorePart
   let mut allOverloads : Strata.Python.Specs.ToLaurel.OverloadTable := {}
   for ionPath in pyspecPaths do
     let ionFile : System.FilePath := ionPath
@@ -378,11 +377,11 @@ def buildPySpecPrelude (pyspecPaths : Array String) : IO PySpecPrelude := do
 
     preludeInLaurel := combineLaurelPrograms preludeInLaurel result.program
 
-  match Strata.Laurel.translate { emitResolutionErrors := false } preludeInLaurel with
+  let preludeInCoreDecls : List Core.Decl ← match Strata.Laurel.translate { emitResolutionErrors := false } preludeInLaurel with
   | .error diagnostics =>
     exitFailure s!"PySpec Laurel to Core translation failed: {diagnostics}"
   | .ok (coreSpec, _modifiesDiags) =>
-    preludeInCoreDecls := preludeInCoreDecls ++ coreSpec.decls
+    pure $ Strata.Python.coreOnlyFromRuntimeCorePart ++ coreSpec.decls
 
   preludeInLaurel := { preludeInLaurel with
     staticProcedures :=
@@ -390,6 +389,26 @@ def buildPySpecPrelude (pyspecPaths : Array String) : IO PySpecPrelude := do
       laurelFunctionFromPreludeCorePart ++
       laurelProceduresFromCorePart
   }
+
+  -- TODO remove this when we turn on Laurel resolution error for the Python pipeline
+  -- Check for duplicate names in preludeInLaurel's top-level declarations
+  let mut seenNames : Std.HashSet String := {}
+  for proc in preludeInLaurel.staticProcedures do
+    let name := proc.name.text
+    if seenNames.contains name then
+      exitFailure s!"Duplicate procedure name in Python prelude: {name}"
+    seenNames := seenNames.insert name
+  for field in preludeInLaurel.staticFields do
+    let name := field.name.text
+    if seenNames.contains name then
+      exitFailure s!"Duplicate field name in Python prelude: {name}"
+    seenNames := seenNames.insert name
+  for ty in preludeInLaurel.types do
+    let name := ty.name.text
+    if seenNames.contains name then
+      exitFailure s!"Duplicate type name in Python prelude: {name}"
+    seenNames := seenNames.insert name
+
   let preludeInCore : Core.Program := { decls := preludeInCoreDecls }
   return { preludeInLaurel := preludeInLaurel, preludeInCore := preludeInCore, overloads := allOverloads }
   where
@@ -517,7 +536,7 @@ def pyAnalyzeLaurelCommand : Command where
           if !collisions.isEmpty then
             let names := ", ".intercalate (collisions.map (·.name))
             exitFailure s!"Core name collision between program and prelude: {names}"
-          let (preludeDecls, userDecls) := programDecls.span (fun d => !(toString d.name).contains "END_MARKER")
+          let (preludeDecls, userDecls) := programDecls.span (fun d => toString d.name != "END_MARKER")
           let coreProgram := {decls :=
             preludeDecls ++
             Strata.Python.coreOnlyFromRuntimeCorePart ++
