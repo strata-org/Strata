@@ -41,7 +41,8 @@ def flushCmds
 
 /-- Translate a list of statements to basic blocks, accumulating commands -/
 def stmtsToBlocks
-  [HasBool P] [HasPassiveCmds P CmdT]
+  [HasBool P] [HasPassiveCmds P CmdT] [HasInit P CmdT]
+  [HasIdent P] [HasFvar P] [HasIntOrder P] [HasNot P]
   (k : String)
   (ss : List (Stmt P CmdT))
   (exitConts : List (String × String))
@@ -84,20 +85,40 @@ match ss with
   -- Flush accumulated commands
   let (accumEntry, accumBlocks) ← flushCmds "ite$" accum (.some (.condGoto c tl fl)) l
   pure (accumEntry, accumBlocks ++ tbs ++ fbs ++ bsNext)
-| .loop c _m is bss _md :: rest => do
+| .loop c m is bss _md :: rest => do
   -- Process rest first
   let (kNext, bsNext) ← stmtsToBlocks k rest exitConts []
   -- Create loop entry block
   let lentry ← StringGenState.gen "loop_entry$"
-  let (bl, bbs) ← stmtsToBlocks lentry bss exitConts []
-  let cmds : List CmdT ←
+  -- Handle measure: generate entry-block commands and a decrease-assert block
+  -- that the body jumps through before looping back.
+  let (measureCmds, bodyK, decreaseBlocks) ←
+    match m with
+    | none => pure ([], lentry, [])
+    | some mExpr => do
+      let mLabel ← StringGenState.gen "loop_measure$"
+      let mIdent := HasIdent.ident mLabel
+      let mOldExpr := HasFvar.mkFvar mIdent
+      let initCmd  := HasInit.init mIdent HasIntOrder.intTy none MetaData.empty
+      let assumeCmd := HasPassiveCmds.assume s!"assume_{mLabel}"
+                         (HasIntOrder.eq mOldExpr mExpr) MetaData.empty
+      let lbCmd    := HasPassiveCmds.assert s!"measure_lb_{mLabel}"
+                         (HasNot.not (HasIntOrder.lt mOldExpr HasIntOrder.zero)) MetaData.empty
+      let decCmd   := HasPassiveCmds.assert s!"measure_decrease_{mLabel}"
+                         (HasIntOrder.lt mExpr mOldExpr) MetaData.empty
+      let ldec ← StringGenState.gen "measure_decrease$"
+      let decBlock := (ldec, { cmds := [decCmd], transfer := .goto lentry })
+      pure ([initCmd, assumeCmd, lbCmd], ldec, [decBlock])
+  -- Body jumps to bodyK (either directly to lentry, or through the decrease block)
+  let (bl, bbs) ← stmtsToBlocks bodyK bss exitConts []
+  let invCmds : List CmdT ←
     is.mapM (fun i => do
       let invLabel ← StringGenState.gen "inv$"
       pure (HasPassiveCmds.assert invLabel i MetaData.empty))
-  let b := (lentry, { cmds := cmds, transfer := .condGoto c bl kNext })
+  let b := (lentry, { cmds := invCmds ++ measureCmds, transfer := .condGoto c bl kNext })
   -- Flush accumulated commands
   let (accumEntry, accumBlocks) ← flushCmds "before_loop$" accum .none lentry
-  pure (accumEntry, accumBlocks ++ [b] ++ bbs ++ bsNext)
+  pure (accumEntry, accumBlocks ++ [b] ++ bbs ++ decreaseBlocks ++ bsNext)
 | .exit l? _md :: _ => do
   -- Find the continuation of the block labeled `l`, or the most recently-added
   -- block if `l` is `.none`.
@@ -122,7 +143,8 @@ match ss with
   flushCmds exitName accum .none bk
 
 def stmtsToCFGM
-  [HasBool P] [HasPassiveCmds P CmdT]
+  [HasBool P] [HasPassiveCmds P CmdT] [HasInit P CmdT]
+  [HasIdent P] [HasFvar P] [HasIntOrder P] [HasNot P]
   (ss : List (Stmt P CmdT)) :
   StringGenM (CFG String (DetBlock String CmdT P)) := do
   let lend ← StringGenState.gen "end$"
@@ -131,7 +153,8 @@ def stmtsToCFGM
   pure { entry := l, blocks := bs ++ [bend] }
 
 def stmtsToCFG
-  [HasBool P] [HasPassiveCmds P CmdT]
+  [HasBool P] [HasPassiveCmds P CmdT] [HasInit P CmdT]
+  [HasIdent P] [HasFvar P] [HasIntOrder P] [HasNot P]
   (ss : List (Stmt P CmdT)) :
   CFG String (DetBlock String CmdT P) :=
   (stmtsToCFGM ss StringGenState.emp).fst
