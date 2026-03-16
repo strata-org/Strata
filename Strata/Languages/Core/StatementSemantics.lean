@@ -38,9 +38,9 @@ instance : HasSubstFvar Core.Expression where
   substFvar := Lambda.LExpr.substFvar
 
 instance : HasIntOrder Core.Expression where
-  eq    e1 e2 := .eq () e1 e2
-  lt    e1 e2 := .app () (.app () Core.intLtOp e1) e2
-  zero        := .intConst () 0
+  eq    e1 e2 := .eq Strata.SourceRange.none e1 e2
+  lt    e1 e2 := .app Strata.SourceRange.none (.app Strata.SourceRange.none Core.intLtOp e1) e2
+  zero        := .intConst Strata.SourceRange.none 0
   intTy       := .forAll [] (.tcons "int" [])
 
 instance : HasIdent Core.Expression where
