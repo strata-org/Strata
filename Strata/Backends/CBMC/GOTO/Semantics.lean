@@ -84,15 +84,22 @@ The semantics is informed by CBMC's concrete interpreter
 - Trace recording (not modeled; we only track state transitions)
 
 ## TODO
-- [ ] Prove determinism of the single-step relation (for deterministic `eval`)
+- [x] Prove determinism of the single-step relation (for deterministic `eval`)
+      → See `SemanticsProps.lean`: `StepInstr_deterministic_no_nondet`
+- [ ] Prove determinism of `ExecProg` (requires induction on derivation depth)
 - [ ] Prove that well-formed programs (from Strata's translation) always make
       progress or terminate
+- [x] Formalize expression evaluation for the concrete GOTO expression language
+      → See `SemanticsEval.lean`: `concreteEval`
 - [ ] Connect to Strata Core semantics: prove that the Core-to-GOTO translation
       preserves the semantics (simulation relation)
+      → See `SemanticsSim.lean` for the framework; command-level lemmas are
+        stated but not yet proved (sorry'd)
 - [ ] Add support for `old()` expressions in postconditions (requires
       two-state evaluation)
-- [ ] Formalize expression evaluation for the concrete GOTO expression language
-      (currently abstracted)
+- [ ] Prove the command-level simulation lemmas in `SemanticsSim.lean`
+- [ ] Prove statement-level simulation for `ite` and `loop` patterns
+- [ ] End-to-end theorem: `EvalBlock` implies `ExecProg` on translated program
 -/
 
 namespace CProverGOTO.Semantics
