@@ -526,17 +526,7 @@ def pyAnalyzeLaurelCommand : Command where
             IO.println "\n==== Core Program ===="
             IO.print (coreProgram, modifiesDiags)
 
-          let programDecls := coreProgram.decls --
-          -- Check for name collisions between program and prelude
-          let preludeNames : Std.HashSet String :=
-            pyPrelude.decls.flatMap Core.Decl.names
-              |>.foldl (init := {}) fun s n => s.insert n.name
-          let collisions := programDecls.flatMap fun d =>
-            d.names.filter fun n => preludeNames.contains n.name
-          if !collisions.isEmpty then
-            let names := ", ".intercalate (collisions.map (·.name))
-            exitFailure s!"Core name collision between program and prelude: {names}"
-          let (preludeDecls, userDecls) := programDecls.span (fun d => toString d.name != "END_MARKER")
+          let (preludeDecls, userDecls) := coreProgram.decls.span (fun d => toString d.name != "END_MARKER")
           let coreProgram := {decls :=
             preludeDecls ++
             Strata.Python.coreOnlyFromRuntimeCorePart ++
@@ -544,6 +534,16 @@ def pyAnalyzeLaurelCommand : Command where
           if verbose then
             IO.println "\n==== Core Program with pyPrelude ===="
             IO.print (coreProgram, modifiesDiags)
+
+          -- TODO remove this check when we turn on emitResolutionErrors on the Laurel.translate call
+          -- Check for duplicate names in Core top-level declarations
+          let allNames := coreProgram.decls.flatMap Core.Decl.names
+          let mut seenCoreNames : Std.HashSet String := {}
+          for n in allNames do
+            let name := n.name
+            if seenCoreNames.contains name then
+              exitFailure s!"Duplicate name in Core program: {name}"
+            seenCoreNames := seenCoreNames.insert name
 
           -- Verify using Core verifier
           let baseOptions : VerifyOptions :=
