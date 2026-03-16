@@ -397,8 +397,8 @@ private def coreSMTResultToVCResult (r : Strata.Core.CoreSMT.CoreSMTResult) : Co
   match r.error with
   | some msg => { obligation := r.obligation, outcome := .error msg }
   | none =>
-    let toResult (d : Strata.SMT.Decision) : Strata.SMT.Result := match d with
-      | .sat => .sat ""
+    let toResult (d : Strata.SMT.Decision) : Imperative.SMT.Result Core.Expression.Ident := match d with
+      | .sat => .sat []
       | .unsat => .unsat
       | .unknown => .unknown
     let satResult := toResult r.satResult
