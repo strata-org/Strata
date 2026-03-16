@@ -439,7 +439,7 @@ private def verifyIncremental
     let results := smtResults.map coreSMTResultToVCResult
     for r in results do
       let marker := match r.outcome with
-        | .ok o => s!"{Std.format o}"
+        | .ok o => if o.isPass then "✅ pass" else if o.isAlwaysFalse then "❌ fail" else "❓ unknown"
         | .error e => s!"🚨 {e}"
       let suffix := match Imperative.getFileRange r.obligation.metadata with
         | some fr =>
@@ -506,7 +506,7 @@ private def verifyBatch
             else
               ("", s!" (at byte {(fr.range).start})")
       | none => ("", "")
-    s := s ++ s!"{locationPrefix}{vcResult.obligation.label}: {match vcResult.outcome with | .ok o => Std.format o | .error e => e}{locationSuffix}\n"
+    s := s ++ s!"{locationPrefix}{vcResult.obligation.label}: {match vcResult.outcome with | .ok o => if o.isPass then "pass" else if o.isAlwaysFalse then "fail" else "unknown" | .error e => e}{locationSuffix}\n"
   IO.println s
   return vcResults
 
