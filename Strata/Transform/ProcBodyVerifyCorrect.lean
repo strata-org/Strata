@@ -182,38 +182,6 @@ theorem assert_skips_to_terminal
 
 /-! ## Soundness Theorem -/
 
-/-- An assume executes successfully when the condition holds. -/
-theorem assume_reaches
-    (π : String → Option Procedure) (φ : CoreEval → PureFunc Expression → CoreEval)
-    (label : CoreLabel) (expr : Expression.Expr) (md : MetaData Expression)
-    (σ : CoreStore) (δ : CoreEval)
-    (h_true : δ σ expr = some HasBool.tt)
-    (h_wf : WellFormedSemanticEvalBool δ) :
-    CoreStepStar π φ
-      (.stmt (Statement.assume label expr md) σ δ)
-      (.terminal σ δ) :=
-  ReflTrans.step _ _ _
-    (StepStmt.step_cmd (EvalCommand.cmd_sem (EvalCmd.eval_assume h_true h_wf)))
-    (ReflTrans.refl _)
-
-/-- A list of assumes executes when all conditions hold. -/
-theorem assumes_reach
-    (π : String → Option Procedure) (φ : CoreEval → PureFunc Expression → CoreEval)
-    (assumes : List Statement)
-    (σ : CoreStore) (δ : CoreEval)
-    (h_all_assume : ∀ s, s ∈ assumes → ∃ l e m,
-      s = Statement.assume l e m ∧ δ σ e = some HasBool.tt)
-    (h_wf : WellFormedSemanticEvalBool δ) :
-    CoreStepStar π φ (.stmts assumes σ δ) (.terminal σ δ) := by
-  induction assumes with
-  | nil => exact ReflTrans.step _ _ _ StepStmt.step_stmts_nil (ReflTrans.refl _)
-  | cons s rest ih =>
-    obtain ⟨l, e, m, rfl, h_true⟩ := h_all_assume s List.mem_cons_self
-    apply ReflTrans_Transitive
-    · apply seq_process_stmt
-      exact assume_reaches π φ l e m σ δ h_true h_wf
-    · exact ih (fun s h => h_all_assume s (List.mem_cons_of_mem _ h))
-
 /-- A single unconstrained init can step from a store without x to a store with x. -/
 theorem init_unconstrained_step
     (π : String → Option Procedure) (φ : CoreEval → PureFunc Expression → CoreEval)
@@ -247,6 +215,104 @@ theorem init_constrained_step
     (StepStmt.step_cmd (EvalCommand.cmd_sem
       (EvalCmd.eval_init h_eval (InitState.init h_none h_some h_rest) h_wfv)))
     (ReflTrans.refl _)
+
+/-- A list of unconstrained inits can reach any target store from a store
+    where all the initialized variables are undefined. -/
+theorem unconstrained_inits_reach
+    (π : String → Option Procedure) (φ : CoreEval → PureFunc Expression → CoreEval)
+    (vars : List (CoreIdent × LMonoTy)) (σ_target : CoreStore) (δ : CoreEval)
+    (h_wfv : WellFormedSemanticEvalVar δ)
+    -- All variables being initialized are defined in the target store
+    (h_defined : ∀ p, p ∈ vars → ∃ v, σ_target p.1 = some v)
+    -- All variables being initialized are distinct
+    (h_nodup : (vars.map Prod.fst).Nodup) :
+    ∃ (σ_init : CoreStore),
+      -- The initial store agrees with target on non-initialized variables
+      (∀ x, x ∉ vars.map Prod.fst → σ_init x = σ_target x) ∧
+      -- The initial store has none for initialized variables
+      (∀ x, x ∈ vars.map Prod.fst → σ_init x = none) ∧
+      CoreStepStar π φ
+        (.stmts (vars.map fun (id, ty) => Statement.init id (Lambda.LTy.forAll [] ty) none #[])
+          σ_init δ)
+        (.terminal σ_target δ) := by
+  induction vars with
+  | nil =>
+    exact ⟨σ_target, fun _ _ => rfl, fun _ h => by simp at h,
+      ReflTrans.step _ _ _ StepStmt.step_stmts_nil (ReflTrans.refl _)⟩
+  | cons p rest ih =>
+    obtain ⟨x, ty⟩ := p
+    simp only [List.map_cons, List.nodup_cons] at h_nodup
+    obtain ⟨h_x_notin, h_rest_nodup⟩ := h_nodup
+    have h_rest_defined : ∀ p, p ∈ rest → ∃ v, σ_target p.1 = some v :=
+      fun p hp => h_defined p (List.mem_cons_of_mem _ hp)
+    obtain ⟨σ_mid, h_mid_agree, h_mid_none, h_rest_exec⟩ := ih h_rest_defined h_rest_nodup
+    -- σ_mid has: rest vars = none, other vars = σ_target
+    -- We need σ_init that also has x = none
+    obtain ⟨v, h_v⟩ := h_defined ⟨x, ty⟩ List.mem_cons_self
+    -- σ_init is σ_mid with x set to none
+    let σ_init : CoreStore := fun y => if y = x then none else σ_mid y
+    refine ⟨σ_init, ?_, ?_, ?_⟩
+    · -- σ_init agrees with σ_target on non-initialized variables
+      intro y hy
+      simp only [List.map_cons, List.mem_cons, not_or] at hy
+      simp only [σ_init, if_neg hy.1]
+      exact h_mid_agree y (fun h => hy.2 h)
+    · -- σ_init has none for all initialized variables
+      intro y hy
+      simp only [List.map_cons, List.mem_cons] at hy
+      cases hy with
+      | inl h => simp only [σ_init, h, if_pos rfl]
+      | inr h =>
+        simp only [σ_init]
+        have : y ≠ x := fun heq => h_x_notin (heq ▸ h)
+        simp only [if_neg this]
+        exact h_mid_none y h
+    · -- Execution: init x then rest
+      simp only [List.map_cons]
+      apply ReflTrans_Transitive
+      · apply seq_process_stmt
+        -- Execute init x from σ_init to σ_mid
+        -- σ_init x = none, σ_mid x = σ_target x = some v
+        have h_init_none : σ_init x = none := by simp [σ_init]
+        have h_mid_x : σ_mid x = some v := by
+          rw [h_mid_agree x h_x_notin]; exact h_v
+        have h_mid_rest : ∀ y, x ≠ y → σ_mid y = σ_init y := by
+          intro y hne; simp [σ_init, if_neg (Ne.symm hne)]
+        exact init_unconstrained_step π φ x ty σ_init σ_mid δ v
+          h_init_none h_mid_x h_mid_rest h_wfv
+      · exact h_rest_exec
+
+/-- An assume executes successfully when the condition holds. -/
+theorem assume_reaches
+    (π : String → Option Procedure) (φ : CoreEval → PureFunc Expression → CoreEval)
+    (label : CoreLabel) (expr : Expression.Expr) (md : MetaData Expression)
+    (σ : CoreStore) (δ : CoreEval)
+    (h_true : δ σ expr = some HasBool.tt)
+    (h_wf : WellFormedSemanticEvalBool δ) :
+    CoreStepStar π φ
+      (.stmt (Statement.assume label expr md) σ δ)
+      (.terminal σ δ) :=
+  ReflTrans.step _ _ _
+    (StepStmt.step_cmd (EvalCommand.cmd_sem (EvalCmd.eval_assume h_true h_wf)))
+    (ReflTrans.refl _)
+
+/-- A list of assumes executes when all conditions hold. -/
+theorem assumes_reach
+    (π : String → Option Procedure) (φ : CoreEval → PureFunc Expression → CoreEval)
+    (assumes : List Statement)
+    (σ : CoreStore) (δ : CoreEval)
+    (h_all_assume : ∀ s, s ∈ assumes → ∃ l e m,
+      s = Statement.assume l e m ∧ δ σ e = some HasBool.tt)
+    (h_wf : WellFormedSemanticEvalBool δ) :
+    CoreStepStar π φ (.stmts assumes σ δ) (.terminal σ δ) := by
+  induction assumes with
+  | nil => exact ReflTrans.step _ _ _ StepStmt.step_stmts_nil (ReflTrans.refl _)
+  | cons s rest ih =>
+    obtain ⟨l, e, m, rfl, h_true⟩ := h_all_assume s List.mem_cons_self
+    apply ReflTrans_Transitive
+    · apply seq_process_stmt
+      exact assume_reaches π φ l e m σ δ h_true h_wf
+    · exact ih (fun s h => h_all_assume s (List.mem_cons_of_mem _ h))
 
 /-- For any target state where preconditions hold, there exists an initial state
     from which pre_body (inits + assumes) executes to reach that target state. -/
