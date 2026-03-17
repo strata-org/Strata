@@ -37,6 +37,15 @@ instance : HasFvar Core.Expression where
 instance : HasSubstFvar Core.Expression where
   substFvar := Lambda.LExpr.substFvar
 
+instance : HasIntOrder Core.Expression where
+  eq    e1 e2 := .eq () e1 e2
+  lt    e1 e2 := .app () (.app () Core.intLtOp e1) e2
+  zero        := .intConst () 0
+  intTy       := .forAll [] (.tcons "int" [])
+
+instance : HasIdent Core.Expression where
+  ident s := ⟨s, ()⟩
+
 @[expose, match_pattern]
 def Core.true : Core.Expression.Expr := .boolConst () Bool.true
 @[expose, match_pattern]

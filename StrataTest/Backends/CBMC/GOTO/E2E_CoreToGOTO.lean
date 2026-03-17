@@ -374,3 +374,45 @@ procedure test(x : int) returns () {
   let gotoStr := goto.pretty
   -- The GOTO output should contain non-zero line numbers from source locations
   assert! (gotoStr.splitOn "\"line\"").length > 1
+
+-------------------------------------------------------------------------------
+
+-- Test: property summary in metadata flows to GOTO JSON comment field
+-- We parse a Core program, then inject a property summary into the assert's
+-- metadata before translating to GOTO.
+
+private def injectPropertySummary (stmts : List Core.Statement) (msg : String)
+    : List Core.Statement :=
+  stmts.map fun s => match s with
+    | .cmd (.cmd (.assert label b md)) =>
+      .cmd (.cmd (.assert label b (md.withPropertySummary msg)))
+    | other => other
+
+private def coreToGotoJsonWithSummary (p : Strata.Program) (summary : String) :
+    Except Std.Format (Lean.Json × Lean.Json) := do
+  let cprog := translateCore p
+  let Env := Lambda.TEnv.default
+  let procs := cprog.decls.filterMap fun d => d.getProc?
+  let p := procs[0]!
+  let p' : Core.Procedure := { p with body := injectPropertySummary p.body summary }
+  let pname := Core.CoreIdent.toPretty p'.header.name
+  let ctx ← procedureToGotoCtx Env p'
+  let json ← (CoreToGOTO.CProverGOTO.Context.toJson pname ctx.1).mapError (fun e => f!"{e}")
+  return (json.symtab, json.goto)
+
+def E2E_PropertySummary :=
+#strata
+program Core;
+procedure test(x : int) returns () {
+  assert (x > 0);
+};
+#end
+
+#eval do
+  let (.ok (_, goto)) := coreToGotoJsonWithSummary E2E_PropertySummary "x must be positive"
+    | IO.throwServerError "translation failed"
+  let gotoStr := goto.pretty
+  -- The GOTO JSON should contain the property summary as the comment
+  assert! (gotoStr.splitOn "x must be positive").length > 1
+  -- It should NOT contain the default label as the comment
+  assert! (gotoStr.splitOn "assert_0").length == 1
