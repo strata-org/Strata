@@ -9,15 +9,15 @@ public import Strata.Languages.Laurel.Laurel
 public import Strata.Languages.Laurel.LaurelFormat
 
 /-!
-# Hole Elimination
+# Deterministic Hole Elimination
 
-Replace each typed `.Hole` with a call to a freshly generated uninterpreted
-function whose parameters mirror the enclosing callable's inputs.
+Replace each deterministic typed `.Hole` with a call to a freshly generated
+uninterpreted function whose parameters mirror the enclosing callable's inputs.
 
 This pass assumes `inferHoleTypes` has already annotated every `Hole` with a
 type. It works uniformly for both procedures and functions.
 
-After this pass the program contains no `Hole` nodes.
+After this pass the program contains only non-deterministic `Hole` nodes.
 -/
 
 namespace Strata
@@ -57,13 +57,17 @@ private def mkHoleCall (holeType : HighTypeMd) : ElimHoleM StmtExprMd := do
   return bare (.StaticCall holeName (inputs.map (fun p => bare (.Identifier p.name))))
 
 mutual
-/-- Replace every `.Hole` in an expression with a call to a fresh uninterpreted function. -/
+/--
+Replace every deterministic `.Hole` in an expression with a call to a
+fresh uninterpreted function.
+-/
 private def elimExpr (expr : StmtExprMd) : ElimHoleM StmtExprMd := do
   match expr with
   | WithMetadata.mk val md =>
   match val with
-  | .Hole (some ty) => mkHoleCall ty
-  | .Hole none => mkHoleCall ⟨.Top, md⟩
+  | .Hole true (some ty) => mkHoleCall ty
+  | .Hole true none => mkHoleCall ⟨.Top, md⟩
+  | .Hole false _ => return expr
   | .PrimitiveOp op args => return ⟨.PrimitiveOp op (← args.mapM elimExpr), md⟩
   | .StaticCall callee args => return ⟨.StaticCall callee (← args.mapM elimExpr), md⟩
   | .InstanceCall target callee args =>
@@ -109,8 +113,9 @@ private def elimStmt (stmt : StmtExprMd) : ElimHoleM StmtExprMd := do
   | .Assume cond => return ⟨.Assume (← elimExpr cond), md⟩
   | .StaticCall callee args => return ⟨.StaticCall callee (← args.mapM elimExpr), md⟩
   | .Return (some retExpr) => return ⟨.Return (some (← elimExpr retExpr)), md⟩
-  | .Hole (some ty) => mkHoleCall ty
-  | .Hole none => mkHoleCall ⟨.Top, md⟩
+  | .Hole true (some ty) => mkHoleCall ty
+  | .Hole true none => mkHoleCall ⟨.Top, md⟩
+  | .Hole false _ => return stmt -- Non-deterministic holes are kept
   | _ => return stmt
 
 private def elimStmtList (stmts : List StmtExprMd) : ElimHoleM (List StmtExprMd) :=
@@ -126,9 +131,10 @@ private def elimProcedure (proc : Procedure) : ElimHoleM Procedure := do
   | _ => return proc
 
 /--
-Replace every `.Hole` in the program with a call to a freshly generated
-uninterpreted function. Works uniformly for both procedures and functions.
-After this pass the program contains no `Hole` nodes.
+Replace every deterministic `.Hole` in the program with a call to a freshly
+generated uninterpreted function. Works uniformly for both procedures and
+functions.
+After this pass the program contains only non-deterministic `Hole` nodes.
 
 Assumes `inferHoleTypes` has already annotated holes with types.
 -/

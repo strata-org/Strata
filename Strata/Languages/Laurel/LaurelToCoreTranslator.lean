@@ -229,8 +229,8 @@ def translateExpr (expr : StmtExprMd)
         return LExpr.existTr () name.text (some coreTy) coreTrig coreBody
       | none =>
         return LExpr.exist () name.text (some coreTy) coreBody
-  | .Hole _ =>
-      -- Holes should have been eliminated by eliminateHoles before translation.
+  | .Hole _ _ =>
+      -- Holes should have been eliminated before translation.
       disallowed expr.md "holes should have been eliminated before translation"
   | .ReferenceEquals e1 e2 =>
       let re1 ← translateExpr e1 boundVars isPureContext
@@ -358,7 +358,7 @@ def translateStmt (outputParams : List Parameter) (stmt : StmtExprMd)
           -- Havoc the result since instance methods may be on unmodeled types
           let initStmt := Core.Statement.init ident coreType none md
           return [initStmt]
-      | some (⟨ .Hole _, _⟩) =>
+      | some (⟨ .Hole _ _, _⟩) =>
           -- Hole initializer: treat as havoc (init without value)
           return [Core.Statement.init ident coreType none md]
       | some initExpr =>
@@ -555,7 +555,7 @@ private def isPureExpr(expr: StmtExprMd): Bool :=
   | .Abstract => panic s!"isPureExpr not implemented for Abstract"
   | .All => panic s!"isPureExpr not implemented for All"
   -- Dynamic / closures
-  | .Hole _ => true
+  | .Hole _ _ => true
   termination_by sizeOf expr
   decreasing_by all_goals (have := WithMetadata.sizeOf_val_lt expr; term_by_mem)
 

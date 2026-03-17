@@ -98,7 +98,7 @@ def computeExprType (model : SemanticModel) (expr : StmtExprMd) : HighTypeMd :=
   -- Special
   | .Abstract => panic "Abstract Not supported"
   | .All => panic "All Not supported"
-  | .Hole type => match type with
+  | .Hole _ type => match type with
     | some ty => ty
     | none =>  type.getD ⟨ .Top, md ⟩
 

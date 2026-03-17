@@ -380,11 +380,11 @@ def resolveStmtExpr (exprMd : StmtExprMd) : ResolveM StmtExprMd := do
     pure (.ContractOf ty fn')
   | .Abstract => pure .Abstract
   | .All => pure .All
-  | .Hole type => match type with
+  | .Hole det type => match type with
     | some ty =>
       let ty' ← resolveHighType ty
-      pure (.Hole ty')
-    | none => pure (.Hole none)
+      pure (.Hole det ty')
+    | none => pure (.Hole det none)
   return ⟨val', md⟩
   termination_by exprMd
   decreasing_by all_goals term_by_mem
@@ -603,7 +603,7 @@ private def collectStmtExpr (map : Std.HashMap Nat AstNode) (expr : StmtExprMd)
     collectStmtExpr map proof
   | .ContractOf _ fn => collectStmtExpr map fn
   | .New _ | .This | .Exit _ | .LiteralInt _ | .LiteralBool _ | .LiteralString _ | .LiteralDecimal _
-  | .Abstract | .All | .Hole _ => map
+  | .Abstract | .All | .Hole _ _ => map
 
 private def collectBody (map : Std.HashMap Nat AstNode) (body : Body)
     : Std.HashMap Nat AstNode :=

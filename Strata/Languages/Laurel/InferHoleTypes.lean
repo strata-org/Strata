@@ -29,7 +29,7 @@ private def defaultHoleType : HighTypeMd := bareType .Top
 /-- Compute the expected type for an argument of a comparison operator
     by looking at the first non-hole sibling. -/
 private def inferComparisonArgType (model : SemanticModel) (args : List StmtExprMd) : HighTypeMd :=
-  args.findSome? (fun a => match a.val with | .Hole _ => none | _ => some (computeExprType model a))
+  args.findSome? (fun a => match a.val with | .Hole _ _ => none | _ => some (computeExprType model a))
     |>.getD defaultHoleType
 
 /-- Get the expected type for each argument of a call from the callee's parameter list. -/
@@ -62,7 +62,7 @@ private def inferExpr (expr : StmtExprMd) (expectedType : HighTypeMd) : InferHol
   match expr with
   | WithMetadata.mk val md =>
   match val with
-  | .Hole _ => return ⟨.Hole (some expectedType), md⟩
+  | .Hole det _ => return ⟨.Hole det (some expectedType), md⟩
   | .PrimitiveOp op args =>
       let argType := match op with
         | .Eq | .Neq | .Lt | .Leq | .Gt | .Geq => inferComparisonArgType model args
@@ -141,7 +141,7 @@ private def inferStmt (stmt : StmtExprMd) : InferHoleM StmtExprMd := do
       return ⟨.StaticCall callee args', md⟩
   | .Return (some retExpr) =>
       return ⟨.Return (some (← inferExpr retExpr (← get).currentOutputType)), md⟩
-  | .Hole _ => return ⟨.Hole (some (← get).currentOutputType), md⟩
+  | .Hole det _ => return ⟨.Hole det (some (← get).currentOutputType), md⟩
   | _ => return stmt
 
 private def inferStmtList (stmts : List StmtExprMd) : InferHoleM (List StmtExprMd) :=

@@ -361,4 +361,37 @@ deterministic
 function test(x: int): int { <?> };
 "
 
+/-! ## Nondeterministic holes (<??>) -/
+
+-- Nondet hole in procedure → preserved after eliminateHoles (lifted by liftExpressionAssignments).
+/--
+info: procedure test() returns ⏎
+()
+deterministic
+{ assert <??> }
+-/
+#guard_msgs in
+#eval! parseElimAndPrint r"
+procedure test() { assert <??> };
+"
+
+-- Mixed: det hole eliminated, nondet hole preserved.
+/--
+info: function $hole_0() returns ⏎
+($result: int)
+deterministic
+⏎
+procedure test() returns ⏎
+()
+deterministic
+{ var x: int := $hole_0(); assert <??> }
+-/
+#guard_msgs in
+#eval! parseElimAndPrint r"
+procedure test() { var x: int := <?>; assert <??> };
+"
+
+-- Nondet hole in function → should be rejected (not tested here since
+-- the error occurs at Core translation time, which requires the full pipeline).
+
 end Laurel
