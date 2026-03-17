@@ -380,7 +380,7 @@ def resolveStmtExpr (exprMd : StmtExprMd) : ResolveM StmtExprMd := do
     pure (.ContractOf ty fn')
   | .Abstract => pure .Abstract
   | .All => pure .All
-  | .Hole type => match type with 
+  | .Hole type => match type with
     | some ty =>
       let ty' ← resolveHighType ty
       pure (.Hole ty')
