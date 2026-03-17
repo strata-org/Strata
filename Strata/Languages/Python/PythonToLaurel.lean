@@ -200,8 +200,11 @@ def translateType (ctx : TranslationContext) (typeStr : String) : Except Transla
     match pythonTypeToCoreType typeStr with
     | some coreType => .ok (mkCoreType coreType)
     | none =>
+      -- Check if it's a user-defined composite type
+      if ctx.compositeTypes.any (fun ct => ct.name == typeStr) then
+        .ok (mkHighTypeMd (.UserDefined typeStr))
       -- Check if it's a prelude type
-      if ctx.preludeTypes.contains typeStr then
+      else if ctx.preludeTypes.contains typeStr then
         .ok (mkCoreType typeStr)
       else
         -- Map it to a core PyAnyType
@@ -940,6 +943,36 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
 
   | .Raise _ _ _ => return (ctx, [mkStmtExprMd .Hole])
 
+  -- With statement: with EXPR as VAR: BODY
+  -- Desugars to: mgr = EXPR; VAR = mgr.__enter__(); BODY; mgr.__exit__()
+  | .With _ items body _ => do
+    let mut setupStmts : List StmtExprMd := []
+    let mut cleanupStmts : List StmtExprMd := []
+    let mut currentCtx := ctx
+    for item in items.val do
+      match item with
+      | .mk_withitem _ ctxExpr optVars =>
+        let mgrName := s!"with_mgr_{ctxExpr.toAst.ann.start.byteIdx}"
+        let mgrExpr ← translateExpr currentCtx ctxExpr
+        let mgrTy ← inferExprType currentCtx ctxExpr
+        let mgrLauTy ← translateType currentCtx mgrTy
+        let mgrDecl := mkStmtExprMd (StmtExpr.LocalVariable mgrName mgrLauTy (some mgrExpr))
+        let mgrRef := mkStmtExprMd (StmtExpr.Identifier mgrName)
+        currentCtx := {currentCtx with variableTypes := currentCtx.variableTypes ++ [(mgrName, mgrTy)]}
+        let enterCall := mkStmtExprMd (StmtExpr.InstanceCall mgrRef "__enter__" [])
+        match optVars.val with
+        | some varExpr =>
+          let varName := pyExprToString varExpr
+          let varDecl := mkStmtExprMd (StmtExpr.LocalVariable varName AnyTy (some enterCall))
+          currentCtx := {currentCtx with variableTypes := currentCtx.variableTypes ++ [(varName, PyLauType.Any)]}
+          setupStmts := setupStmts ++ [mgrDecl, varDecl]
+        | none =>
+          setupStmts := setupStmts ++ [mgrDecl, enterCall]
+        cleanupStmts := cleanupStmts ++ [mkStmtExprMd (StmtExpr.InstanceCall mgrRef "__exit__" [])]
+    let (bodyCtx, bodyStmts) ← translateStmtList currentCtx body.val.toList
+    let block := mkStmtExprMdWithLoc (StmtExpr.Block (setupStmts ++ bodyStmts ++ cleanupStmts) none) md
+    return (bodyCtx, [block])
+
   -- For loop: for target in iter: body
   -- Abstract: execute body once with havoc'd target, then havoc all modified variables
   -- This is sound: if there are 0 iterations, we havoc; if >0, we execute once and havoc
@@ -1042,7 +1075,7 @@ def pyFuncDefToPythonFunctionDecl  (ctx : TranslationContext) (f : Python.stmt S
   | _ => throw (.internalError "Expected FunctionDef")
 
 /-- Translate Python function to Laurel Procedure -/
-def translateFunction (ctx : TranslationContext) (funcDecl : PythonFunctionDecl) (body: List (Python.stmt SourceRange))
+def translateFunction (ctx : TranslationContext) (sourceRange: SourceRange) (funcDecl : PythonFunctionDecl) (body: List (Python.stmt SourceRange))
     : Except TranslationError (Laurel.Procedure × TranslationContext) := do
 
     -- Translate parameters
@@ -1083,7 +1116,7 @@ def translateFunction (ctx : TranslationContext) (funcDecl : PythonFunctionDecl)
       determinism := .deterministic none -- TODO: need to set reads
       decreases := none
       body := Body.Transparent bodyBlock
-      md := default
+      md := sourceRangeToMetaData ctx.filePath sourceRange
       isFunctional := false
     }
 
@@ -1197,6 +1230,7 @@ def translateMethod (ctx : TranslationContext) (className : String)
     let bodyStmts := prependExceptHandlingHelper bodyStmts
     let bodyBlock := mkStmtExprMd (StmtExpr.Block bodyStmts none)
 
+    let md := sourceRangeToMetaData ctx.filePath methodStmt.ann
     return {
       name := methodName
       inputs := inputs
@@ -1206,7 +1240,7 @@ def translateMethod (ctx : TranslationContext) (className : String)
       isFunctional := false
       decreases := none
       body := .Transparent bodyBlock
-      md := default
+      md := md
     }
   | _ => throw (.internalError "Expected FunctionDef for method")
 
@@ -1218,7 +1252,8 @@ def extractFieldsFromInit (ctx : TranslationContext) (initBody : Array (Python.s
     match stmt with
     | .AnnAssign _ (.Attribute _ (.Name _ selfName _) attr _) annotation _ _ =>
       if selfName.val == "self" then
-        let fieldType ← translateType ctx (pyExprToString annotation)
+        -- let fieldType ← translateType ctx (pyExprToString annotation)
+        let fieldType ← pure $ ⟨ .UserDefined "Any", default⟩ -- TODO, don't make all fields Any
         fields := fields ++ [{
           name := attr.val
           type := fieldType
@@ -1355,7 +1390,7 @@ def pythonToLaurel (prelude: Core.Program)
       match stmt with
       | .FunctionDef _ _ _ fbody _ _ _ _ =>
         let funcDecl ←  pyFuncDefToPythonFunctionDecl ctx stmt
-        let proc ← translateFunction ctx funcDecl fbody.val.toList
+        let proc ← translateFunction ctx stmt.ann funcDecl fbody.val.toList
         ctx := {ctx with functionSignatures:= ctx.functionSignatures ++ [funcDecl]}
         procedures := procedures ++ [proc.fst]
       | .ClassDef _ _ _ _ _ _ _ =>
@@ -1370,6 +1405,7 @@ def pythonToLaurel (prelude: Core.Program)
     let bodyStmts := (mkStmtExprMd (.LocalVariable "nullcall_ret" AnyTy (some AnyNone))) :: bodyStmts
     let bodyBlock := mkStmtExprMd (StmtExpr.Block bodyStmts none)
 
+    let md := sourceRangeToMetaData ctx.filePath { start := 0, stop := 0 }
     let mainProc : Procedure := {
       name := "__main__",
       inputs := [],
@@ -1378,9 +1414,9 @@ def pythonToLaurel (prelude: Core.Program)
       determinism := .deterministic none, --TODO: need to set reads
       decreases := none,
       body := .Transparent bodyBlock
-      md := default
+      md := md
       isFunctional := false
-      }
+    }
 
     /-
 Compute partial Laurel functions and procedures from the Core functions and procedures

@@ -181,8 +181,8 @@ structure Procedure : Type where
   isFunctional : Bool
   /-- The procedure body: transparent, opaque, or abstract. -/
   body : Body
-  /-- Source-level metadata. -/
-  md : Imperative.MetaData Core.Expression
+  /-- Source-level metadata (locations, annotations). -/
+  md : MetaData
 
 /--
 A typed parameter for a procedure.
@@ -391,6 +391,7 @@ structure CompositeType where
   fields : List Field
   /-- Instance procedures (methods) defined on this type. -/
   instanceProcedures : List Procedure
+  deriving Inhabited
 
 /--
 A constrained (refinement) type defined by a base type and a predicate.
@@ -448,6 +449,12 @@ inductive TypeDefinition where
   | Constrained (ty : ConstrainedType)
   /-- An algebriac datatype. -/
   | Datatype (ty : DatatypeDefinition)
+  deriving Inhabited
+
+def TypeDefinition.name : TypeDefinition → Identifier
+  | .Composite ty => ty.name
+  | .Constrained ty => ty.name
+  | .Datatype ty => ty.name
 
 structure Constant where
   name : Identifier
