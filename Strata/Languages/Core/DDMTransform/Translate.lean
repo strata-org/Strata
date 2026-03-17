@@ -714,6 +714,19 @@ def translateTriggers (p: Program) (bindings : TransBindings) (arg : Arg) :
     return .app () (.app () Core.addTriggerGroupOp g) ts
   | _, _ => panic! s!"Unexpected operator in trigger"
 
+/-- Resolve a function from a `recFuncBlock` by its global-context index. -/
+partial def resolveRecFunc (funcs : List Core.Function) (idx : Nat) : TransM Core.Function := do
+  let gctx := (← StateT.get).globalContext
+  match gctx.nameOf? idx with
+  | some name =>
+    match funcs.find? (fun f => f.name.name == name) with
+    | some f => pure f
+    | none => TransM.error s!"function {name} not found in recFuncBlock"
+  | none =>
+    match funcs with
+    | f :: _ => pure f
+    | [] => TransM.error "Empty recFuncBlock"
+
 partial def translateExpr (p : Program) (bindings : TransBindings) (arg : Arg) :
   TransM Core.Expression.Expr := do
   let .expr expr := arg
@@ -927,16 +940,7 @@ partial def translateExpr (p : Program) (bindings : TransBindings) (arg : Arg) :
             let args ← translateExprs p bindings argsa.toArray
             return .mkApp () func.opExpr args.toList
         | .recFuncBlock funcs _md =>
-          let gctx := (← StateT.get).globalContext
-          let func ← match gctx.nameOf? funcIndex with
-            | some name =>
-              match funcs.find? (fun f => f.name.name == name) with
-              | some f => pure f
-              | none => TransM.error s!"function {name} not found in recFuncBlock"
-            | none =>
-              match funcs with
-              | f :: _ => pure f
-              | [] => TransM.error "Empty recFuncBlock"
+          let func ← resolveRecFunc funcs funcIndex
           match argsa with
           | [] => return func.opExpr
           | _ =>
@@ -959,16 +963,7 @@ partial def translateExpr (p : Program) (bindings : TransBindings) (arg : Arg) :
       -- 0-ary Function
       return (.op () func.name ty?)
     | .recFuncBlock funcs _md =>
-      let gctx := (← StateT.get).globalContext
-      let func ← match gctx.nameOf? i with
-        | some name =>
-          match funcs.find? (fun f => f.name.name == name) with
-          | some f => pure f
-          | none => TransM.error s!"function {name} not found in recFuncBlock"
-        | none =>
-          match funcs with
-          | f :: _ => pure f
-          | [] => TransM.error "Empty recFuncBlock"
+      let func ← resolveRecFunc funcs i
       return (.op () func.name ty?)
     | _ =>
       TransM.error s!"translateExpr unimplemented fvar decl (no args): {format decl}"
@@ -981,16 +976,7 @@ partial def translateExpr (p : Program) (bindings : TransBindings) (arg : Arg) :
       let args ← translateExprs p bindings argsa.toArray
       return .mkApp () func.opExpr args.toList
     | .recFuncBlock funcs _md =>
-      let gctx := (← StateT.get).globalContext
-      let func ← match gctx.nameOf? i with
-        | some name =>
-          match funcs.find? (fun f => f.name.name == name) with
-          | some f => pure f
-          | none => TransM.error s!"function {name} not found in recFuncBlock"
-        | none =>
-          match funcs with
-          | f :: _ => pure f
-          | [] => TransM.error "Empty recFuncBlock"
+      let func ← resolveRecFunc funcs i
       let args ← translateExprs p bindings argsa.toArray
       return .mkApp () func.opExpr args.toList
     | _ =>

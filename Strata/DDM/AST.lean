@@ -593,6 +593,8 @@ def scopeTVarIndex (metadata : Metadata) : Except String (Option Nat) :=
   | some #[.catbvar idx] => .ok (some idx)
   | some _ => .error s!"Unexpected argument count to scopeTVar"
 
+/-- Returns the name index if @[declareTVar] is present.
+    Used for operations that introduce a type variable (creates .tvar binding in result context). -/
 def declareTVarIndex (metadata : Metadata) : Except String (Option Nat) :=
   match metadata[q`StrataDDL.declareTVar]? with
   | none => .ok none
