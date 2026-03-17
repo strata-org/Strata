@@ -919,13 +919,15 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
 
   | .Import _ _ | .ImportFrom _ _ _ _ |.Pass _ => return (ctx, [mkStmtExprMd .Hole])
 
-  -- Try/except - restructured as:
+  -- Try/except. The body is wrapped in a `catchers` block so that
+  -- `exit catchers` (on exception) and `exit try` (on normal completion)
+  -- both use standard labelled-block exits:
   --   try: {
   --     catchers: {
   --       body_stmt_1
   --       if (isError) { exit catchers; }
   --       ...
-  --       exit try;   ← normal completion, skip handlers
+  --       exit try;
   --     }
   --     handler_code
   --   }
