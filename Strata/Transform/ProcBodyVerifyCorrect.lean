@@ -390,16 +390,15 @@ theorem procBodyVerify_sound
     (stmt : Statement) (st' : CoreTransformState)
     (h_transform : (procToVerifyStmt proc p).run st = (Except.ok stmt, st'))
     (h_correct : stmt_correct π φ stmt)
-    (h_wf_bool : ∀ δ : CoreEval, WellFormedSemanticEvalBool δ)
-    (h_wf_var : ∀ δ : CoreEval, WellFormedSemanticEvalVar δ)
-    -- Well-formedness: the verification block's pre_body can reach any state    -- where preconditions hold. This is guaranteed by the type checker:
-    -- inits create variables with arbitrary values, assumes filter by preconditions.
-    (h_pre_body_wf : ∀ (δ : CoreEval) (σ : CoreStore),
+    -- The verification block's pre_body (inits + assumes) does not get stuck:
+    -- for any state where preconditions hold, there exists an initial state
+    -- from which the pre_body executes to that state.
+    -- This is guaranteed by the type checker (inits create variables with
+    -- arbitrary values, assumes pass when preconditions hold).
+    (h_pre_body_exec : ∀ (δ : CoreEval) (σ : CoreStore),
       (∀ (label : CoreLabel) (check : Procedure.Check),
         (label, check) ∈ proc.spec.preconditions.toList →
         δ σ check.expr = some HasBool.tt) →
-      WellFormedSemanticEvalBool δ →
-      WellFormedSemanticEvalVar δ →
       ∀ (pre_body : List Statement),
         (∃ (blk_label : String) (blk_md : MetaData Expression),
           stmt = Stmt.block blk_label
@@ -412,7 +411,7 @@ theorem procBodyVerify_sound
     procToVerifyStmt_structure proc p st stmt st' h_transform
   intro δ σ₀ σ_final δ_final h_pre h_body label check h_post_in h_default
   obtain ⟨σ_init, δ_init, h_pre_exec⟩ :=
-    h_pre_body_wf δ σ₀ h_pre (h_wf_bool δ) (h_wf_var δ) pre_body
+    h_pre_body_exec δ σ₀ h_pre pre_body
       ⟨blk_label, blk_md, h_stmt_eq⟩
   have h_reach := postcond_reachable_in_verifyBlock π φ proc
     blk_label pre_body s!"body_{proc.header.name.name}" blk_md
