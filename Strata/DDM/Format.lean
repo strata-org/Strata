@@ -372,7 +372,10 @@ private partial def ExprF.mformatM (e : ExprF α) (rargs : Array (ArgF α)  := #
         let bindings := op.argDecls
         let .isTrue bsize := decEq args.size bindings.size
               | return panic! "Mismatch betweeen binding and arg size"
-        let argResults := formatArguments (← read) (← get) bindings ⟨args, bsize⟩
+        let argResults ← do
+              match formatArguments (← read) (← get) bindings ⟨args, bsize⟩ with
+              | .ok r => pure r
+              | .error e => return panic! e
         pure <| ppOp (← read).opts op.syntaxDef (Prod.fst <$> argResults)
       | none => ppArgs f.fullName
   | .app _ f a => f.mformatM (rargs.push a)
@@ -442,22 +445,22 @@ private partial def ppArgs (f : StrataFormat) (rargs : Array Arg) : FormatM Prec
     let r ← rargs.foldrM (init := init) (fun a r => return f!"{r},{(←a.mformatM).format})")
     pure <| .atom f!"{r})"
 
-private partial def formatArguments (c : FormatContext) (initState : FormatState) (argDecls : ArgDecls) (args : Vector (ArgF α) argDecls.size) :=
+private partial def formatArguments (c : FormatContext) (initState : FormatState) (argDecls : ArgDecls) (args : Vector (ArgF α) argDecls.size) : Except String (Array (PrecFormat × FormatState)) :=
   let rec aux (a : Array (PrecFormat × FormatState)) :=
         let lvl := a.size
-        if h : lvl < argDecls.size then
-          let s :=
-                match argDecls.argScopeLevel ⟨lvl, h⟩ with
+        if h : lvl < argDecls.size then do
+          let s ← do
+                match ← argDecls.argScopeLevel ⟨lvl, h⟩ with
                 | none =>
-                  initState
+                  pure initState
                 | some ⟨alvl, aisLt⟩  =>
                   have _ : alvl < a.size := by simp at aisLt; omega
-                  a[alvl].snd
+                  pure a[alvl].snd
           -- If @[scopeSelf] is present, insert the function name before the param bindings.
           -- scopeSelf subsumes @[scope]: we get params from argsLevel directly.
-          let s :=
-                match argDecls.argScopeSelfLevel ⟨lvl, h⟩ with
-                | none => s
+          let s ← do
+                match ← argDecls.argScopeSelfLevel ⟨lvl, h⟩ with
+                | none => pure s
                 | some (⟨nameLvl, nameIsLt⟩, ⟨argsLvl, argsIsLt⟩, _) =>
                   have _ : nameLvl < a.size := by simp at nameIsLt; omega
                   have _ : argsLvl < a.size := by simp at argsIsLt; omega
@@ -466,11 +469,11 @@ private partial def formatArguments (c : FormatContext) (initState : FormatState
                     let paramBindings := a[argsLvl].snd.bindings
                     let scopeStart := initState.bindings.size
                     let paramOnly := paramBindings.extract scopeStart paramBindings.size
-                    { s with bindings := s.bindings ++ #[name] ++ paramOnly }
-                  | _ => s
+                    pure { s with bindings := s.bindings ++ #[name] ++ paramOnly }
+                  | _ => pure s
           aux (a.push (args[lvl].mformatM c s))
         else
-          a
+          .ok a
   aux (.mkEmpty argDecls.size)
 
 private partial def OperationF.mformatM (op : OperationF α) : FormatM PrecFormat := do
@@ -480,15 +483,19 @@ private partial def OperationF.mformatM (op : OperationF α) : FormatM PrecForma
     let .isTrue bsize := decEq op.args.size bindings.size
           | return panic! "Mismatch betweeen binding and arg size"
     let args : Vector _ bindings.size := ⟨op.args, bsize⟩
-    let argResults := formatArguments (← read) (← get) bindings args
+    let argResults ← do
+          match formatArguments (← read) (← get) bindings args with
+          | .ok r => pure r
+          | .error e => return panic! e
     let fmt := ppOp (← read).opts decl.syntaxDef (Prod.fst <$> argResults)
     match decl.metadata.resultLevel bindings.size with
-    | some idx =>
+    | .ok (some idx) =>
       if h : idx.val < argResults.size then
         set argResults[idx.val].snd
       else
         panic! "result scope index out of bounds"
-    | none => pure ()
+    | .ok none => pure ()
+    | .error e => return panic! e
     for b in decl.newBindings do
       match args[b.nameIndex.toLevel] with
       | .ident _ e =>
