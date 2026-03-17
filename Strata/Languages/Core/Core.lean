@@ -3,17 +3,19 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-
-import Strata.Languages.Core.Options
-import Strata.Languages.Core.ProgramEval
-import Strata.Languages.Core.ProgramType
-import Strata.Languages.Core.DDMTransform.ASTtoCST
+public import Strata.Languages.Core.Options
+public import Strata.Languages.Core.ProgramEval
+public import Strata.Languages.Core.ProgramType
+public import Strata.Languages.Core.DDMTransform.ASTtoCST
 
 ---------------------------------------------------------------------
 
 namespace Core
 open Strata
+
+public section
 
 /-!
 ## Differences between Boogie and Strata.Core
@@ -86,11 +88,18 @@ def typeCheckAndPartialEval (options : VerifyOptions) (program : Program)
       dbg_trace f!"{formatProofObligations E.deferred}"
   return pEs
 
-instance : ToString (Program) where
+instance instCoreProgramString : ToString (Program) where
   toString p := toString (Core.formatProgram p)
 
-instance : Std.ToFormat Program where
+instance instCoreProgramFormat : Std.ToFormat Program where
   format := Core.formatProgram
+
+/-- Format a single `Core.Expression.Expr` using the DDM pretty-printer.
+    This instance shadows the generic `ToFormat (LExpr T)` from `LExpr.lean`. -/
+instance instCoreExprFormat : Std.ToFormat Expression.Expr where
+  format e := Core.formatExprs [e]
+
+end -- public section
 
 end Core
 

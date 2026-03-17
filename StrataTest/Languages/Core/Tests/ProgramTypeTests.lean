@@ -151,7 +151,6 @@ info: ok: [(type Foo (a : Type, b : Type);
   func Re.Inter :  ((x : regex) (y : regex)) → regex;
   func Re.Comp :  ((x : regex)) → regex;
   func Re.None :  () → regex;
-  func old : ∀[a]. ((x : a)) → a;
   func const : ∀[k, v]. ((d : v)) → (Map k v);
   func select : ∀[k, v]. ((m : (Map k v)) (i : k)) → v;
   func update : ∀[k, v]. ((m : (Map k v)) (i : k) (x : v)) → (Map k v);
@@ -394,6 +393,40 @@ procedure Test () returns ()
 #eval do
   let ans ← typeCheck .default polyFuncProg
   return (format ans)
+
+
+section
+def intIdentityFnPgm : Program := { decls := [
+  .func { name := "intID",
+          typeArgs := [],
+          inputs := [],
+          output := .arrow .int .int,
+          body := some eb[λ %0]
+          }
+]}
+
+-- Overriding Core's formatter since Core's DDM doesn't support lambda
+-- abstractions yet.
+instance : ToFormat Core.Program where
+  format p := f!"{p.decls}"
+
+/--
+info: [Strata.Core] Type checking succeeded.
+
+
+VCs:
+
+---
+info: ok: [func intID :  () → (arrow int int) := ((λ (bvar:int) %0))]
+-/
+#guard_msgs in
+#eval do let ans ← typeCheckAndPartialEval .default intIdentityFnPgm
+          if h : ans.length == 1 then
+            let (pgm, _) := ans[0]'(by grind)
+            return (format pgm)
+          else
+            return (format "Unexpected output")
+end
 
 ---------------------------------------------------------------------
 

@@ -3,10 +3,12 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.Transform.CoreTransform
-import Strata.DL.Lambda.Preconditions
-import Strata.DL.Lambda.TypeFactory
+public import Strata.Transform.CoreTransform
+public import Strata.DL.Lambda.Preconditions
+public import Strata.DL.Lambda.TypeFactory
+import all Strata.DL.Imperative.Stmt
 
 /-! # Partial Function Precondition Elimination
 
@@ -28,6 +30,8 @@ Note that this transformation must be called BEFORE typechecking, since
 in the presence of polymorphic preconditions, the resulting assertions
 have type variables that must be unified.
 -/
+
+public section
 
 namespace Core
 namespace PrecondElim
@@ -220,20 +224,30 @@ def transformStmt (s : Statement)
     setFactory savedF
     return (changed, [.block lbl b' md])
   | .ite c thenb elseb md => do
+    let condAsserts := collectPrecondAsserts F c "ite_cond" md
     let savedF ← getFactory
     let (changed, thenb') ← transformStmts thenb
     setFactory savedF
     let (changed', elseb') ← transformStmts elseb
     setFactory savedF
-    return (changed || changed', [.ite c thenb' elseb' md])
+    return (changed || changed' || !condAsserts.isEmpty,
+      condAsserts ++ [.ite c thenb' elseb' md])
   | .loop guard measure invariant body md => do
+    let measureAsserts := match measure with
+      | none => []
+      | some m => collectPrecondAsserts F m "loop_measure" md
+    let measureAssertsEnd := match measure with
+      | none => []
+      | some m => collectPrecondAsserts F m "loop_measure_end" md
     let invAsserts := invariant.flatMap (fun inv => collectPrecondAsserts F inv "loop_invariant" md)
     let guardAsserts := collectPrecondAsserts F guard "loop_guard" md
+    let guardAssertsEnd := collectPrecondAsserts F guard "loop_guard_end" md
     let savedF ← getFactory
     let (changed, body') ← transformStmts body
     setFactory savedF
-    return (changed || !invAsserts.isEmpty || !guardAsserts.isEmpty,
-      guardAsserts ++ invAsserts ++ [.loop guard measure invariant body' md])
+    return (changed || !invAsserts.isEmpty || !guardAsserts.isEmpty || !measureAsserts.isEmpty,
+      guardAsserts ++ invAsserts ++ measureAsserts ++
+      [.loop guard measure invariant (body' ++ measureAssertsEnd ++ guardAssertsEnd) md])
   | .exit lbl md =>
     return (false, [.exit lbl md])
   | .funcDecl decl md => do
@@ -313,3 +327,5 @@ where
 
 end PrecondElim
 end Core
+
+end -- public section

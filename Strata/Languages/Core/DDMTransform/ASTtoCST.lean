@@ -3,10 +3,14 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.Languages.Core.DDMTransform.Grammar
-import Strata.Languages.Core.Program
-import Strata.DDM.Util.DecimalRat
+public import Strata.Languages.Core.DDMTransform.Grammar
+public import Strata.Languages.Core.Program
+public import Strata.DDM.Util.DecimalRat
+public import Strata.DDM.Format
+
+public section
 
 /-!
 # Core.Program → CoreCST Conversion
@@ -172,7 +176,7 @@ def popScope {M} (ctx : ToCSTContext M) : ToCSTContext M :=
 end ToCSTContext
 
 /-- Monad for AST->CST conversion with context and error collection -/
-abbrev ToCSTM (M : Type) := StateM (ToCSTContext M)
+@[expose] abbrev ToCSTM (M : Type) := StateM (ToCSTContext M)
 
 /-- Log an error in `ToCSTM` without throwing -/
 def ToCSTM.logError {M} [Inhabited M] (fn : String) (desc : String) (detail : String) : ToCSTM M Unit := do
@@ -271,7 +275,7 @@ def datatypeToCST {M} [Inhabited M] (datatypes : List (Lambda.LDatatype Visibili
                            unsafeDestructorNames.toArray))
 
   let processDatatype (dt : Lambda.LDatatype Visibility) :
-      ToCSTM M (Command M) := do
+      ToCSTM M (DatatypeDecl M) := do
     let name : Ann String M := ⟨default, dt.name⟩
     let args : Ann (Option (Bindings M)) M :=
       if dt.typeArgs.isEmpty then
@@ -306,18 +310,11 @@ def datatypeToCST {M} [Inhabited M] (datatypes : List (Lambda.LDatatype Visibili
         pure (constrs.tail.foldl
           (fun acc c => ConstructorList.constructorListPush default acc c)
           (ConstructorList.constructorListAtom default constrs[0]!))
-    pure (.command_datatype default name args constrList)
+    pure (DatatypeDecl.datatype_decl default name args constrList)
 
-  match datatypes with
-  | [dt] => do
-    -- Single datatype - no mutual block needed
-    let cmd ← processDatatype dt
-    pure [cmd]
-  | _ => do
-    -- Multiple datatypes - mutual block with pre-registration handles forward references.
-    let cmds ← datatypes.mapM processDatatype
-    let mutualCmd := Command.command_mutual default ⟨default, cmds.toArray⟩
-    pure [mutualCmd]
+  let decls ← datatypes.mapM processDatatype
+  let datatypesCmd := Command.command_datatypes default ⟨default, decls.toArray⟩
+  pure [datatypesCmd]
 
 /-- Convert a type synonym declaration to CST -/
 def typeSynToCST {M} [Inhabited M] (syn : TypeSynonym)
@@ -713,6 +710,11 @@ partial def lappToExpr {M} [Inhabited M]
   | .app _ (.op _ fn _) e1 => do
     let e1Expr ← lexprToExpr e1 qLevel
     lopToExpr fn.name (e1Expr :: acc)
+  | .app _ (.fvar m fn tp) e1 => do
+    -- Free-variable application: format as fn(args)
+    let fnCST ← lexprToExpr (.fvar m fn tp) qLevel
+    let e1Expr ← lexprToExpr e1 qLevel
+    pure <| (e1Expr :: acc).foldl (fun fnAcc arg => .app default fnAcc arg) fnCST
   | _ => do
     ToCSTM.logError "lappToExpr" "unsupported application" (toString e)
     pure (.btrue default)  -- Default to true literal
@@ -839,11 +841,12 @@ partial def stmtToCST {M} [Inhabited M] (s : Core.Statement)
     let thenCST ← blockToCST thenb
     let elseCST ← elseToCST elseb
     pure (.if_statement default condCST thenCST elseCST)
-  | .loop guard _measure invariant body _md => do
+  | .loop guard measure invariant body _md => do
     let guardCST ← lexprToExpr guard 0
+    let measureCST ← measureToCST measure
     let invs ← invariantsToCST invariant
     let bodyCST ← blockToCST body
-    pure (.while_statement default guardCST invs bodyCST)
+    pure (.while_statement default guardCST measureCST invs bodyCST)
   | .exit label _md => do
     match label with
     | some l =>
@@ -880,6 +883,15 @@ partial def invariantsToCST {M} [Inhabited M]
     let exprCST ← lexprToExpr expr 0
     let restCST ← invariantsToCST rest
     pure (.consInvariants default exprCST restCST)
+
+partial def measureToCST {M} [Inhabited M]
+    (measure : Option (Lambda.LExpr CoreLParams.mono)) :
+    ToCSTM M (Ann (Option (Measure M)) M) := do
+  match measure with
+  | none => pure ⟨default, none⟩
+  | some e =>
+    let exprCST ← lexprToExpr e 0
+    pure ⟨default, some (.measure_mk default exprCST)⟩
 end
 
 /-- Convert a procedure to CST
@@ -1126,8 +1138,9 @@ def Core.formatExprs (exprs : List Core.Expression.Expr)
   if finalCtx.errors.isEmpty then
     formatted
   else
-    formatted ++ " -- Errors: " ++
-    Std.Format.joinSep (finalCtx.errors.toList.map (Std.format ∘ toString)) "; "
+    formatted ++ "\n" ++
+    "-- Errors: " ++
+      Std.Format.joinSep (finalCtx.errors.toList.map (Std.format ∘ toString)) "; "
 
 /-- Render `Core.Program` to a format object.
 
@@ -1177,4 +1190,7 @@ def Core.formatStatement (stmt : Core.Statement)
 end ToCST
 
 ---------------------------------------------------------------------
+
 end Strata
+
+end -- public section

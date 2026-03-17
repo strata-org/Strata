@@ -3,15 +3,16 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-
-
-import Strata.Languages.Core.Statement
-import Strata.Languages.Core.CmdType
-import Strata.Languages.Core.Program
-import Strata.Languages.Core.FunctionType
-import Strata.DL.Imperative.CmdType
+public import Strata.Languages.Core.Statement
+public import Strata.Languages.Core.CmdType
+public import Strata.Languages.Core.Program
+public import Strata.Languages.Core.FunctionType
+public import Strata.DL.Imperative.CmdType
 import Strata.Util.Tactics
+
+public section
 
 namespace Core
 namespace Statement
@@ -76,8 +77,10 @@ def typeCheckCmd (C: LContext CoreLParams) (Env : TEnv Unit) (P : Program) (c : 
         -- Add source location to error messages if not already present.
         .error <| e.withRangeIfUnknown (getFileRange md |>.getD FileRange.unknown)
 
-def typeCheckAux (C: LContext CoreLParams) (Env : TEnv Unit) (P : Program) (op : Option Procedure) (ss : List Statement) :
-  Except DiagnosticModel (List Statement × TEnv Unit × LContext CoreLParams) :=
+def typeCheckAux (C: LContext CoreLParams) (Env : TEnv Unit)
+    (P : Program) (op : Option Procedure) (ss : List Statement) :
+    Except DiagnosticModel
+      (List Statement × TEnv Unit × LContext CoreLParams) :=
   go C Env ss [] []
 where
   go (C : LContext CoreLParams) (Env : TEnv Unit) (ss : List Statement) (acc : List Statement)
@@ -95,6 +98,9 @@ where
           .ok (Stmt.cmd c', Env, C)
 
         | .block label bss md => do
+          if labels.contains label then
+            throw <| md.toDiagnosticF
+              f!"Block label \"{label}\" shadows an enclosing block."
           let (bss', Env, C) ← goBlock C Env bss [] (label :: labels)
           let s' := Stmt.block label bss' md
           .ok (s', Env, C)
@@ -271,5 +277,8 @@ def typeCheck (C: Expression.TyContext) (Env : Expression.TyEnv) (P : Program) (
   .ok (ss', Env)
 
 ---------------------------------------------------------------------
+
 end Statement
 end Core
+
+end -- public section

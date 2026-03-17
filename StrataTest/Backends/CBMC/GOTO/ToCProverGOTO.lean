@@ -426,6 +426,8 @@ info: ok: #[ASSERT skip]
 -------------------------------------------------------------------------------
 
 -- Test that contracts are included in the function symbol's code type
+/-- info: Except.ok () -/
+#guard_msgs in
 #eval do
   let reqExpr ← CProverGOTO.exprToJson
     (CProverGOTO.Expr.gt (.symbol "x" .Integer) (.constant "0" .Integer))
@@ -467,6 +469,8 @@ info: ok: #[DECL (decl (i : unsignedbv[32])),
           return format ans.instructions
 
 -- The backward GOTO (location 5, targeting location 2) should have the invariant
+/-- info: ok: () -/
+#guard_msgs in
 #eval do
   let ans ← Imperative.Stmts.toGotoTransform Lambda.TEnv.default "testInv" ExampleLoopInvariant
   let backGotos := ans.instructions.toList.filter (fun (i : CProverGOTO.Instruction) =>
@@ -493,6 +497,8 @@ private def ExampleLoopMeasure : List (Imperative.Stmt LExprTP (Imperative.Cmd L
      []
      {}]
 
+/-- info: ok: () -/
+#guard_msgs in
 #eval do
   let ans ← Imperative.Stmts.toGotoTransform Lambda.TEnv.default "testMeas" ExampleLoopMeasure
   let backGotos := ans.instructions.toList.filter (fun (i : CProverGOTO.Instruction) =>
@@ -502,6 +508,37 @@ private def ExampleLoopMeasure : List (Imperative.Stmt LExprTP (Imperative.Cmd L
   assert! inv.isSome
   let dec := backGotos[0]!.guard.getNamedField "#spec_decreases"
   assert! dec.isSome
+
+-------------------------------------------------------------------------------
+
+-- Test: property summary in metadata flows to GOTO assert comment
+def ExamplePropertySummary : Imperative.Cmds LExprTP :=
+  let md : Imperative.MetaData LExprTP :=
+    Imperative.MetaData.empty.withPropertySummary "divisor is non-zero"
+  [.assert "assert_0" (.const { underlying := (), type := mty[bool] } (.boolConst true)) md]
+
+/-- info: ok: () -/
+#guard_msgs in
+#eval do
+  let ans ← Imperative.Cmds.toGotoTransform Lambda.TEnv.default "testSummary" ExamplePropertySummary
+  let asserts := ans.instructions.toList.filter (fun (i : CProverGOTO.Instruction) =>
+    i.type == CProverGOTO.InstructionType.ASSERT)
+  assert! asserts.length == 1
+  -- The comment should be the property summary, not the label
+  assert! asserts[0]!.sourceLoc.comment == "divisor is non-zero"
+
+-- Test: without property summary, the label is used as comment
+def ExampleNoPropertySummary : Imperative.Cmds LExprTP :=
+  [.assert "my_label" (.const { underlying := (), type := mty[bool] } (.boolConst true)) .empty]
+
+/-- info: ok: () -/
+#guard_msgs in
+#eval do
+  let ans ← Imperative.Cmds.toGotoTransform Lambda.TEnv.default "testNoSummary" ExampleNoPropertySummary
+  let asserts := ans.instructions.toList.filter (fun (i : CProverGOTO.Instruction) =>
+    i.type == CProverGOTO.InstructionType.ASSERT)
+  assert! asserts.length == 1
+  assert! asserts[0]!.sourceLoc.comment == "my_label"
 
 -------------------------------------------------------------------------------
 

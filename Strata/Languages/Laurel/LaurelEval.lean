@@ -176,6 +176,7 @@ partial def eval (expr : StmtExpr) : Eval TypedValue :=
   | StmtExpr.LiteralBool b => pure <| TypedValue.mk (Value.VBool b) HighType.TBool
   | StmtExpr.LiteralInt i => pure <| TypedValue.mk (Value.VInt i) HighType.TInt
   | StmtExpr.LiteralString s => pure <| TypedValue.mk (Value.VString s) HighType.TString
+  | StmtExpr.LiteralDecimal d => pure <| TypedValue.mk (Value.VFloat64 (Float.ofScientific d.mantissa.natAbs (d.mantissa < 0) d.exponent.natAbs)) HighType.TFloat64
   | StmtExpr.Identifier name => getLocal name
 
   | StmtExpr.IfThenElse condExpr thenBranch elseBranch => do
@@ -311,7 +312,7 @@ partial def eval (expr : StmtExpr) : Eval TypedValue :=
   | StmtExpr.DynamicFieldUpdate _ _ _ => panic! "not implemented: DynamicFieldUpdate"
 
 -- Verification statements
-  | StmtExpr.Assert condExpr => do
+  | StmtExpr.Assert condExpr _ => do
     let cond ← eval condExpr
     if cond.ty.isBool then
       withResult <| EvalResult.TypeError "Condition must be boolean"
