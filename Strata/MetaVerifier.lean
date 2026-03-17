@@ -82,6 +82,10 @@ end Boole
 
 namespace Strata
 
+/--
+Generate verification conditions for a `Strata.Program` by translating it to the
+appropriate frontend verifier and collecting its deferred proof obligations.
+-/
 def genCoreVCs (program : Program) : Option Core.coreVCs := do
   if program.dialect == "Core" then
     let (program, #[]) := TransM.run default (translateProgram program) | none
@@ -112,22 +116,34 @@ def Core.ProofObligation.toSMTObligation (E : Core.Env) (ob : Imperative.ProofOb
     | .ok (ts, t, ctx) =>
       (ob.label, sanitizeSMTContext ctx, ts, t)
 
-def denoteProofObligation (E : Core.Env) (ob : Imperative.ProofObligation Core.Expression) :
+/--
+Interpret a single core proof obligation by first lowering it to an SMT query and
+then reusing the SMT denotation.
+-/
+noncomputable def denoteProofObligation (E : Core.Env) (ob : Imperative.ProofObligation Core.Expression) :
   Option Prop := do
-  sorry
+  let (_, ctx, ts, t) ← Core.ProofObligation.toSMTObligation E ob
+  denoteQuery ctx.toCore ts t
 
 theorem DPO_isSome_of_DQ_isSome :
     (Core.ProofObligation.toSMTObligation E ob) = some (label, ctx, ts, t) →
     (denoteQuery ctx.toCore ts t).isSome → (denoteProofObligation E ob).isSome := by
-  sorry
+  intro hOb hDQ
+  simpa [denoteProofObligation, hOb] using hDQ
 
 theorem DPO_of_DQ :
     Core.ProofObligation.toSMTObligation E ob = some (label, ctx, ts, t) →
     denoteQuery ctx.toCore ts t = some p → denoteProofObligation E ob = some q →
     p → q := by
-  sorry
+  intro hOb hDQ hDPO hp
+  have hDPO' : denoteQuery ctx.toCore ts t = some q := by
+    simpa [denoteProofObligation, hOb] using hDPO
+  have hpq : p = q := by
+    exact Option.some.inj (hDQ.symm.trans hDPO')
+  subst p
+  exact hp
 
-def denoteProofObligations (vcs : Core.coreVCs) : Option Prop := do
+noncomputable def denoteProofObligations (vcs : Core.coreVCs) : Option Prop := do
   match vcs with
   | [] => return True
   | (E, ob) :: vcs =>
@@ -141,11 +157,19 @@ where
     let q ← denoteProofObligation E ob
     go vcs (p ∧ q)
 
-def coreVCsCorrect (program : Program) : Prop :=
+/--
+State semantic correctness of the generated core verification conditions for a
+program.
+-/
+noncomputable def coreVCsCorrect (program : Program) : Prop :=
   match genCoreVCs program with
   | some vcs => (denoteProofObligations vcs).getD False
   | none     => False
 
+/--
+Interpret a list of SMT verification conditions as the conjunction of their
+denotations.
+-/
 noncomputable def denoteQueries (vcs : SMT.SMTVCs) : Option Prop := do
   match vcs with
   | [] => return True
@@ -168,10 +192,17 @@ def toSMTVCs vcs := do
     let vcs ← toSMTVCs vcs
     return (ctx, ts, t) :: vcs
 
+/--
+Generate SMT verification conditions for a `Strata.Program`.
+-/
 def genSMTVCs (program : Program) : Option SMT.SMTVCs := do
   let coreVCs ← genCoreVCs program
   toSMTVCs coreVCs
 
+/--
+State semantic correctness of the SMT verification conditions generated for a
+program.
+-/
 def smtVCsCorrect (program : Program) : Prop :=
   match genSMTVCs program with
   | some vcs => (denoteQueries vcs).getD False
@@ -433,31 +464,23 @@ unsafe def genSMTVCs (mv : MVarId) : MetaM (List MVarId) := do
   mv.assign hP
   return mvs
 
--- unsafe def genCoreVCs (mv : MVarId) : MetaM (List MVarId) := do
---   let type ← mv.getType
---   let some program := type.app1? ``Strata.coreVCsCorrect | throwError "Expected a Strata.coreVCsCorrect goal"
---   logInfo m!"Generating Core VCs for {program}"
---   let mv ← Meta.unfoldTarget mv ``Strata.coreVCsCorrect
---   let ovcs := .app (.const ``Strata.genCoreVCs []) program
---   let ovcsType := .app (.const ``Option [0]) (.const ``Core.coreVCs [])
---   let some evcs ← Meta.evalExpr (Option Core.coreVCs) ovcsType ovcs
---     | throwError "Failed to generate VCs"
---   logInfo m!"Generated Core VCs"
---   let eqVCs := mkApp3 (.const ``Eq [1]) ovcsType ovcs (toExpr (some evcs))
---   -- let hEQVCs := mkApp2 (.const ``Eq.refl [1]) ovcsType (toExpr (some evcs))
---   let hEQVCs ← nativeDecide eqVCs
---   let r ← mv.rewrite (← mv.getType) hEQVCs
---   let mv ← mv.replaceTargetEq r.eNew r.eqProof
---   let mvs ← evcs.mapM SMT.createGoal
---   let ps ← mvs.mapM MVarId.getType
---   let hP := andNIntro (List.zip ps (mvs.map Expr.mvar))
---   mv.assign hP
---   return mvs
+unsafe def genCoreVCs (mv : MVarId) : MetaM (List MVarId) := do
+  let type ← mv.getType
+  let some program := type.app1? ``Strata.coreVCsCorrect | throwError "Expected a Strata.coreVCsCorrect goal"
+  trace[debug] m!"Reducing core VC goal for {program} to SMT VCs"
+  let thm := mkApp (.const ``Strata.coreVCsCorrect_of_smtVCsCorrect []) program
+  let [mv] ← mv.apply thm
+    | throwError "Expected coreVCsCorrect_of_smtVCsCorrect to generate exactly one subgoal"
+  genSMTVCs mv
 
 end Meta
 
 namespace Tactic
 
+/--
+Generate one Lean goal per SMT verification condition in a goal of the form
+`Strata.smtVCsCorrect program`.
+-/
 syntax (name := genSMTVCs) "gen_smt_vcs" : tactic
 
 open Lean Elab Tactic in
@@ -468,13 +491,17 @@ open Lean Elab Tactic in
     Tactic.replaceMainGoal mvs
   | _ => throwUnsupportedSyntax
 
+/--
+Reduce a goal of the form `Strata.coreVCsCorrect program` to SMT verification
+conditions and generate one Lean goal per resulting SMT query.
+-/
 syntax (name := genCoreVCs) "gen_core_vcs" : tactic
 
 open Lean Elab Tactic in
 @[tactic genCoreVCs] unsafe def evalGenCoreVCs : Tactic := fun stx => do
   match stx with
   | `(tactic| gen_core_vcs) =>
-    let mvs ← Meta.genSMTVCs (← Tactic.getMainGoal)
+    let mvs ← Meta.genCoreVCs (← Tactic.getMainGoal)
     Tactic.replaceMainGoal mvs
   | _ => throwUnsupportedSyntax
 
