@@ -78,7 +78,7 @@ function increment(heap: Heap): Heap {
 def heapConstants : Program :=
   match Laurel.TransM.run none (Laurel.parseProgram laurelPreludeDDM) with
   | .ok program => program
-  | .error e => dbg_trace s!"Laurel heap prelude parse error: {e}"; default
+  | .error e => dbg_trace s!"BUG: Laurel heap prelude parse error: {e}"; default
 
 end -- public section
 

@@ -196,10 +196,11 @@ private def mkMd (e : StmtExpr) : StmtExprMd := ⟨e, #[]⟩
 Resolve the owning composite type name for a field access by computing the target expression's type.
 Returns the qualified field name "DeclaringType.fieldName".
 -/
-def resolveQualifiedFieldName (model: SemanticModel) (fieldName : Identifier) : String :=
+def resolveQualifiedFieldName (model: SemanticModel) (fieldName : Identifier) : Option String :=
   match model.get fieldName with
     | .field owner _ => owner.text ++ "." ++ fieldName.text
-    | _ => dbg_trace s!"Internal error: resolveQualifiedFieldName {fieldName} did not resolve to a field"; "UnresolvedField"
+    | .unresolved => none
+    | _ => dbg_trace s!"BUG: resolveQualifiedFieldName {fieldName} did resolved to something other than a field"; none
 
 /--
 Transform an expression, adding heap parameters where needed.
@@ -213,8 +214,10 @@ where
   recurse (exprMd : StmtExprMd) (valueUsed : Bool := true) : TransformM StmtExprMd := do
     let ⟨expr, md⟩ := exprMd
     match _h : expr with
-    | .FieldSelect selectTarget fieldName =>
-        let qualifiedName : Identifier := resolveQualifiedFieldName model fieldName
+    | .FieldSelect selectTarget fieldName => do
+        let some qualifiedName := resolveQualifiedFieldName model fieldName
+          | default
+
         let valTy := (model.get fieldName).getType
         let readExpr := ⟨ .StaticCall "readField" [mkMd (.Identifier heapVar), selectTarget, mkMd (.StaticCall qualifiedName [])], md ⟩
         -- Unwrap Box: apply the appropriate destructor
@@ -269,7 +272,8 @@ where
     | .Assign targets v =>
         match targets with
         | [⟨.FieldSelect target fieldName, _fieldSelectMd⟩] =>
-            let qualifiedName : Identifier := resolveQualifiedFieldName model fieldName
+            let some qualifiedName := resolveQualifiedFieldName model fieldName
+              | default
             let valTy := (model.get fieldName).getType
             let target' ← recurse target
             let v' ← recurse v

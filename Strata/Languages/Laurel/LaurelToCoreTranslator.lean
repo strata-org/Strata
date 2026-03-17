@@ -231,7 +231,7 @@ def translateExpr (expr : StmtExprMd)
         return LExpr.existTr () name.text (some coreTy) coreTrig coreBody
       | none =>
         return LExpr.exist () name.text (some coreTy) coreBody
-  | .Hole => dummy
+  | .Hole => throwDiagnostic $ md.toDiagnostic "hole should have been lowered" DiagnosticType.StrataBug
   | .ReferenceEquals e1 e2 =>
       let re1 ← translateExpr e1 boundVars isPureContext
       let re2 ← translateExpr e2 boundVars isPureContext
@@ -288,12 +288,9 @@ def translateExpr (expr : StmtExprMd)
   termination_by expr
   decreasing_by
     all_goals (have := WithMetadata.sizeOf_val_lt expr; term_by_mem)
-where
-dummy: TranslateM Core.Expression.Expr := do
-    return .fvar () (⟨s!"DUMMY_VAR_{← freshId}", ()⟩) none
 
 def getNameFromMd (md : Imperative.MetaData Core.Expression): String :=
-  let fileRange := (Imperative.getFileRange md).getD (dbg_trace "getNameFromMd bug"; default)
+  let fileRange := (Imperative.getFileRange md).getD (dbg_trace "BUG: metadata without a filerange"; default)
   s!"({fileRange.range.start})"
 
 def defaultExprForType (model : SemanticModel) (ty : HighTypeMd) : Core.Expression.Expr :=

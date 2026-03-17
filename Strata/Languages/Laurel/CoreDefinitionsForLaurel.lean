@@ -44,7 +44,7 @@ The core map operation definitions as a `Laurel.Program`, parsed at compile time
 def coreDefinitionsForLaurel : Program :=
   match TransM.run none (parseProgram coreDefinitionsForLaurelDDM) with
   | .ok program => program
-  | .error e => dbg_trace s!"CoreDefinitionsForLaurel parse error: {e}"; default
+  | .error e => dbg_trace s!"BUG: CoreDefinitionsForLaurel parse error: {e}"; default
 
 end -- public section
 
