@@ -447,10 +447,6 @@ def translateStmt (outputParams : List Parameter) (stmt : StmtExprMd)
       let bodyStmts ← translateStmt outputParams body
       return [Imperative.Stmt.loop condExpr decreasingExprCore invExprs bodyStmts md]
   | .Exit target =>
-      -- Translate all labelled exits to Core exit statements.
-      -- Loop exits (break/continue) exit their labelled block.
-      -- Try/except exits (exception_handlers, try_end) now also use
-      -- proper labelled blocks with the restructured try/except pattern.
       return [Imperative.Stmt.exit (some target) md]
   | _ =>
       -- Expression in statement position: preserve as an unused variable init
