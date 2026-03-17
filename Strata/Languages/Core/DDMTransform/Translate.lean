@@ -1576,7 +1576,7 @@ partial def translateRecFuncBlock (p : Program) (bindings : TransBindings) (op :
   if fnOps.size == 0 then
     TransM.error "Recursive function block must contain at least one function"
   else
-    -- First pass: allocate placeholder fvars (like datatypes)
+    -- First pass: allocate placeholder fvars
     let mut bindingsWithPlaceholders := bindings
     for fnOp in fnOps do
       let fname ← translateIdent Core.CoreIdent fnOp.args[0]!
@@ -1600,7 +1600,7 @@ partial def translateRecFuncBlock (p : Program) (bindings : TransBindings) (op :
     let md ← getOpMetaData op
     let decl := Core.Decl.recFuncBlock funcs md
 
-    -- Replace placeholder freeVars with the real combined decl (like datatypes).
+    -- Replace placeholder freeVars with the real combined decl.
     let mut finalBindings := bindings
     for i in [:fnOps.size] do
       let idx := bindings.freeVars.size + i
