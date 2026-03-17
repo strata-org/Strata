@@ -29,8 +29,17 @@ def typeCheck (C: Core.Expression.TyContext) (Env : Core.Expression.TyEnv) (func
   let type ← func.type
   let (monoty, Env) ← LTy.instantiateWithCheck type C Env
   let monotys := monoty.destructArrow
-  let input_mtys := monotys.dropLast
-  let output_mty := monotys.getLast (by exact LMonoTy.destructArrow_non_empty monoty)
+  -- Use the number of formal parameters to determine which arrow components are
+  -- inputs.
+  let numInputs := func.inputs.keys.length
+  let input_mtys := monotys.take numInputs
+  let remaining := monotys.drop numInputs
+  -- Reconstruct the output type from the arrow components after the `numInputs`
+  -- inputs.
+  let output_mty : LMonoTy :=
+    let last := remaining.getLast? |>.getD
+      (monotys.getLast (by exact LMonoTy.destructArrow_non_empty monoty))
+    LMonoTy.mkArrow' last remaining.dropLast
   -- Resolve type aliases and monomorphize inputs and output.
   let func := { func with
                   typeArgs := monoty.freeVars.eraseDups,
@@ -49,6 +58,9 @@ def typeCheck (C: Core.Expression.TyContext) (Env : Core.Expression.TyEnv) (func
     let (retty, Env) ← (LFunc.outputPolyType func).instantiateWithCheck C Env
     let S ← Constraints.unify [(retty, bodyty)] (TEnv.stateSubstInfo Env) |>.mapError format
     let Env := TEnv.updateSubst Env S
+    -- Apply the outer unification substitution back to the body so that type
+    -- variables introduced inside it are resolved.
+    let bodya := LExpr.applySubstT bodya S.subst
     let Env := TEnv.popContext Env
     -- Resolve type aliases and monomorphize the body.
     let new_func := { func with body := some bodya.unresolved }

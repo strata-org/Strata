@@ -1086,7 +1086,7 @@ def pyFuncDefToPythonFunctionDecl  (ctx : TranslationContext) (f : Python.stmt S
   | _ => throw (.internalError "Expected FunctionDef")
 
 /-- Translate Python function to Laurel Procedure -/
-def translateFunction (ctx : TranslationContext) (funcDecl : PythonFunctionDecl) (body: List (Python.stmt SourceRange))
+def translateFunction (ctx : TranslationContext) (sourceRange: SourceRange) (funcDecl : PythonFunctionDecl) (body: List (Python.stmt SourceRange))
     : Except TranslationError (Laurel.Procedure × TranslationContext) := do
 
     -- Translate parameters
@@ -1127,7 +1127,7 @@ def translateFunction (ctx : TranslationContext) (funcDecl : PythonFunctionDecl)
       determinism := .deterministic none -- TODO: need to set reads
       decreases := none
       body := Body.Transparent bodyBlock
-      md := default
+      md := sourceRangeToMetaData ctx.filePath sourceRange
       isFunctional := false
     }
 
@@ -1241,6 +1241,7 @@ def translateMethod (ctx : TranslationContext) (className : String)
     let bodyStmts := prependExceptHandlingHelper bodyStmts
     let bodyBlock := mkStmtExprMd (StmtExpr.Block bodyStmts none)
 
+    let md := sourceRangeToMetaData ctx.filePath methodStmt.ann
     return {
       name := methodName
       inputs := inputs
@@ -1250,7 +1251,7 @@ def translateMethod (ctx : TranslationContext) (className : String)
       isFunctional := false
       decreases := none
       body := .Transparent bodyBlock
-      md := default
+      md := md
     }
   | _ => throw (.internalError "Expected FunctionDef for method")
 
@@ -1262,7 +1263,8 @@ def extractFieldsFromInit (ctx : TranslationContext) (initBody : Array (Python.s
     match stmt with
     | .AnnAssign _ (.Attribute _ (.Name _ selfName _) attr _) annotation _ _ =>
       if selfName.val == "self" then
-        let fieldType ← translateType ctx (pyExprToString annotation)
+        -- let fieldType ← translateType ctx (pyExprToString annotation)
+        let fieldType ← pure $ ⟨ .UserDefined "Any", default⟩ -- TODO, don't make all fields Any
         fields := fields ++ [{
           name := attr.val
           type := fieldType
@@ -1399,7 +1401,7 @@ def pythonToLaurel (prelude: Core.Program)
       match stmt with
       | .FunctionDef _ _ _ fbody _ _ _ _ =>
         let funcDecl ←  pyFuncDefToPythonFunctionDecl ctx stmt
-        let proc ← translateFunction ctx funcDecl fbody.val.toList
+        let proc ← translateFunction ctx stmt.ann funcDecl fbody.val.toList
         ctx := {ctx with functionSignatures:= ctx.functionSignatures ++ [funcDecl]}
         procedures := procedures ++ [proc.fst]
       | .ClassDef _ _ _ _ _ _ _ =>
@@ -1414,6 +1416,7 @@ def pythonToLaurel (prelude: Core.Program)
     let bodyStmts := (mkStmtExprMd (.LocalVariable "nullcall_ret" AnyTy (some AnyNone))) :: bodyStmts
     let bodyBlock := mkStmtExprMd (StmtExpr.Block bodyStmts none)
 
+    let md := sourceRangeToMetaData ctx.filePath { start := 0, stop := 0 }
     let mainProc : Procedure := {
       name := "__main__",
       inputs := [],
@@ -1422,9 +1425,9 @@ def pythonToLaurel (prelude: Core.Program)
       determinism := .deterministic none, --TODO: need to set reads
       decreases := none,
       body := .Transparent bodyBlock
-      md := default
+      md := md
       isFunctional := false
-      }
+    }
 
     /-
 Compute partial Laurel functions and procedures from the Core functions and procedures
