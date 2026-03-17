@@ -116,7 +116,7 @@ Diagnostics for disallowed constructs are emitted into the monad state.
 
 `isPureContext` should be `true` when translating function bodies or contract expressions.
 In that case, disallowed constructs emit `DiagnosticModel` errors into the state.
-When `false` (inside a procedure body statement), disallowed constructs `panic!`
+When `false` (inside a procedure body statement), disallowed constructs throw a diagnostic
 because `liftImperativeExpressions` should have already removed them.
 
 `boundVars` tracks names bound by enclosing Forall/Exists quantifiers (innermost first).
@@ -129,7 +129,6 @@ def translateExpr (expr : StmtExprMd)
   let s ← get
   let model := s.model
   let md := expr.md
-  -- Emit an error in pure context; panic in impure context (lifting invariant violated)
   let disallowed (md : MetaData) (msg : String) : TranslateM Core.Expression.Expr := do
     if isPureContext then
       throwDiagnostic $ md.toDiagnostic msg
