@@ -200,8 +200,11 @@ def translateType (ctx : TranslationContext) (typeStr : String) : Except Transla
     match pythonTypeToCoreType typeStr with
     | some coreType => .ok (mkCoreType coreType)
     | none =>
+      -- Check if it's a user-defined composite type
+      if ctx.compositeTypes.any (fun ct => ct.name == typeStr) then
+        .ok (mkHighTypeMd (.UserDefined typeStr))
       -- Check if it's a prelude type
-      if ctx.preludeTypes.contains typeStr then
+      else if ctx.preludeTypes.contains typeStr then
         .ok (mkCoreType typeStr)
       else
         -- Map it to a core PyAnyType
@@ -939,6 +942,36 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
     return (bodyCtx, [tryBlock])
 
   | .Raise _ _ _ => return (ctx, [mkStmtExprMd .Hole])
+
+  -- With statement: with EXPR as VAR: BODY
+  -- Desugars to: mgr = EXPR; VAR = mgr.__enter__(); BODY; mgr.__exit__()
+  | .With _ items body _ => do
+    let mut setupStmts : List StmtExprMd := []
+    let mut cleanupStmts : List StmtExprMd := []
+    let mut currentCtx := ctx
+    for item in items.val do
+      match item with
+      | .mk_withitem _ ctxExpr optVars =>
+        let mgrName := s!"with_mgr_{ctxExpr.toAst.ann.start.byteIdx}"
+        let mgrExpr ← translateExpr currentCtx ctxExpr
+        let mgrTy ← inferExprType currentCtx ctxExpr
+        let mgrLauTy ← translateType currentCtx mgrTy
+        let mgrDecl := mkStmtExprMd (StmtExpr.LocalVariable mgrName mgrLauTy (some mgrExpr))
+        let mgrRef := mkStmtExprMd (StmtExpr.Identifier mgrName)
+        currentCtx := {currentCtx with variableTypes := currentCtx.variableTypes ++ [(mgrName, mgrTy)]}
+        let enterCall := mkStmtExprMd (StmtExpr.InstanceCall mgrRef "__enter__" [])
+        match optVars.val with
+        | some varExpr =>
+          let varName := pyExprToString varExpr
+          let varDecl := mkStmtExprMd (StmtExpr.LocalVariable varName AnyTy (some enterCall))
+          currentCtx := {currentCtx with variableTypes := currentCtx.variableTypes ++ [(varName, PyLauType.Any)]}
+          setupStmts := setupStmts ++ [mgrDecl, varDecl]
+        | none =>
+          setupStmts := setupStmts ++ [mgrDecl, enterCall]
+        cleanupStmts := cleanupStmts ++ [mkStmtExprMd (StmtExpr.InstanceCall mgrRef "__exit__" [])]
+    let (bodyCtx, bodyStmts) ← translateStmtList currentCtx body.val.toList
+    let block := mkStmtExprMdWithLoc (StmtExpr.Block (setupStmts ++ bodyStmts ++ cleanupStmts) none) md
+    return (bodyCtx, [block])
 
   -- For loop: for target in iter: body
   -- Abstract: execute body once with havoc'd target, then havoc all modified variables
