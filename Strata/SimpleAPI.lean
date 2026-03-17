@@ -24,6 +24,7 @@ import Strata.Languages.Laurel.Grammar.ConcreteToAbstractTreeTranslator
 public import Strata.Languages.Laurel.Laurel
 import Strata.Languages.Laurel.LaurelToCoreTranslator
 
+import Strata.Languages.Python.PySpecPipeline
 import Strata.Languages.Python.Specs
 import Strata.Languages.Python.Specs.DDM
 
@@ -275,5 +276,36 @@ def pySpecs (pythonFile strataDir dialectFile : System.FilePath)
       for w in warnings do
         let _ ← IO.eprintln s!"warning: {w}" |>.toBaseIO
       let _ ← IO.eprintln s!"{warnings.size} warning(s)" |>.toBaseIO
+
+/-! ### Python-to-Core via Laurel pipeline -/
+
+/-- Translate a Python Ion file through the Laurel pipeline to Core.
+    Reads dispatch/pyspec files, resolves overloads, translates
+    Python → Laurel → Core, and prepends the runtime prelude.
+    This is a re-export of `Strata.pyAnalyzeLaurel` from `PySpecPipeline`. -/
+def pyTranslateLaurel := @Strata.pyAnalyzeLaurel
+
+/-! ### Deductive verification of Core programs -/
+
+/-- Run deductive verification on a Core program.
+    Creates a temporary directory for solver interaction,
+    runs the Core verifier, and returns verification-condition results. -/
+def verifyCore (program : Core.Program)
+    (options : Core.VerifyOptions)
+    (moreFns : @Lambda.Factory Core.CoreLParams := Lambda.Factory.default)
+    : EIO String Core.VCResults := do
+  let runVerification (tempDir : System.FilePath) : IO Core.VCResults :=
+    EIO.toIO (IO.Error.userError ∘ toString)
+      (_root_.Core.verify (proceduresToVerify := none) program tempDir options moreFns)
+  let result ← match options.vcDirectory with
+    | .some vcDir =>
+      match ← (IO.FS.createDirAll vcDir *> runVerification vcDir) |>.toBaseIO with
+      | .ok r => pure r
+      | .error e => throw s!"{e}"
+    | .none =>
+      match ← (IO.FS.withTempDir runVerification) |>.toBaseIO with
+      | .ok r => pure r
+      | .error e => throw s!"{e}"
+  return result
 
 end -- public section
