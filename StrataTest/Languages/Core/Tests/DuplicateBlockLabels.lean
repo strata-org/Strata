@@ -39,8 +39,8 @@ def blockLabelUniqueTestPgm2 :=
 program Core;
 
 procedure test () returns () {
-  foo: { exit foo; }   // inner foo
-  foo: { exit foo; }   // different inner foo
+  foo: { exit foo; }
+  foo: { exit foo; }
 };
 #end
 
