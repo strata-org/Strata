@@ -394,6 +394,40 @@ procedure Test () returns ()
   let ans ← typeCheck .default polyFuncProg
   return (format ans)
 
+
+section
+def intIdentityFnPgm : Program := { decls := [
+  .func { name := "intID",
+          typeArgs := [],
+          inputs := [],
+          output := .arrow .int .int,
+          body := some eb[λ %0]
+          }
+]}
+
+-- Overriding Core's formatter since Core's DDM doesn't support lambda
+-- abstractions yet.
+instance : ToFormat Core.Program where
+  format p := f!"{p.decls}"
+
+/--
+info: [Strata.Core] Type checking succeeded.
+
+
+VCs:
+
+---
+info: ok: [func intID :  () → (arrow int int) := ((λ (bvar:int) %0))]
+-/
+#guard_msgs in
+#eval do let ans ← typeCheckAndPartialEval .default intIdentityFnPgm
+          if h : ans.length == 1 then
+            let (pgm, _) := ans[0]'(by grind)
+            return (format pgm)
+          else
+            return (format "Unexpected output")
+end
+
 ---------------------------------------------------------------------
 
 end Tests
