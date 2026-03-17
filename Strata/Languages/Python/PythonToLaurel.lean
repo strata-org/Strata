@@ -393,13 +393,22 @@ partial def translateExpr (ctx : TranslationContext) (e : Python.expr SourceRang
       | _ => throw (.unsupportedConstruct s!"Unary operator not yet supported: {repr op}" (toString (repr e)))
     return mkStmtExprMd (StmtExpr.StaticCall preludeOpnames [operandExpr])
 
-  -- JoinedStr (f-strings) - return first part until we have string concat
+  -- FormattedValue (f-string interpolation {expr}) - convert to string-typed Any
+  | .FormattedValue _ value _ _ =>
+    let inner ← translateExpr ctx value
+    return mkStmtExprMd (.StaticCall "to_string_any" [inner])
+
+  -- JoinedStr (f-strings) - concatenate all parts via PAdd
   | .JoinedStr _ values =>
     if values.val.isEmpty then
-      return mkStmtExprMd (StmtExpr.LiteralString "")
+      return strToAny ""
     else
-      let first ← translateExpr ctx values.val[0]!
-      return first
+      let parts ← values.val.toList.mapM (translateExpr ctx ·)
+      return parts.foldl (fun acc part => mkStmtExprMd (.StaticCall "PAdd" [acc, part])) (strToAny "")
+
+  -- Interpolation / TemplateStr (Python 3.14+ t-strings) - not yet supported
+  | .Interpolation .. => return mkStmtExprMd .Hole
+  | .TemplateStr .. => return mkStmtExprMd .Hole
 
   | .Call _ f args kwargs => translateCall ctx f args.val.toList kwargs.val.toList
 
@@ -515,8 +524,10 @@ partial def inferExprType (ctx : TranslationContext) (e: Python.expr SourceRange
   -- Unary operations
   | .UnaryOp _ _ _ => return PyLauType.Any
 
-  -- JoinedStr (f-strings) - return first part until we have string concat
-  | .JoinedStr _ _ => return PyLauType.Any
+  -- JoinedStr (f-strings) produce strings
+  | .JoinedStr _ _ => return PyLauType.Str
+  -- FormattedValue produces string-typed Any
+  | .FormattedValue _ _ _ _ => return PyLauType.Str
 
   | .Call _ f args _ => getFunctionReturnType ctx f args.val
 
