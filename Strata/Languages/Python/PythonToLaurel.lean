@@ -1246,11 +1246,15 @@ def extractFieldsFromInit (ctx : TranslationContext) (initBody : Array (Python.s
     | .AnnAssign _ (.Attribute _ (.Name _ selfName _) attr _) annotation _ _ =>
       if selfName.val == "self" then
         let fieldType ← translateType ctx (pyExprToString annotation)
-        fields := fields ++ [{
-          name := attr.val
-          type := fieldType
-          isMutable := true
-        }]
+        fields := fields ++ [{ name := attr.val, type := fieldType, isMutable := true }]
+    | .Assign _ targets _ _ =>
+      for target in targets.val do
+        match target with
+        | .Attribute _ (.Name _ selfName _) attr _ =>
+          if selfName.val == "self" then
+            unless fields.any (fun f => f.name == attr.val) do
+              fields := fields ++ [{ name := attr.val, type := mkCoreType PyLauType.Any, isMutable := true }]
+        | _ => pure ()
     | _ => pure ()
   return fields
 
@@ -1267,14 +1271,17 @@ def translateClass (ctx : TranslationContext) (classStmt : Python.stmt SourceRan
           .ok (some (funcDecl))
       | _ => .ok none)
     let ctx := {ctx with functionSignatures:= ctx.functionSignatures ++ classFunDecls}
-    -- Extract fields from __init__ method body
-    let mut fields : List Field := []
+    -- Extract fields from class-level annotations and __init__ body
+    let classLevelFields ← extractClassFields ctx body.val
+    let mut fields := classLevelFields
     for stmt in body.val do
       match stmt with
       | .FunctionDef _ name _ initBody _ _ _ _ =>
         if name.val == "__init__" then
           let initFields ← extractFieldsFromInit ctx initBody.val
-          fields := fields ++ initFields
+          for f in initFields do
+            unless fields.any (fun e => e.name == f.name) do
+              fields := fields ++ [f]
       | _ => pure ()
 
     -- Extract methods from class body
