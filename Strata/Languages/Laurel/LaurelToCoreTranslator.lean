@@ -332,12 +332,13 @@ def translateStmt (outputParams : List Parameter) (stmt : StmtExprMd)
       return [Core.Statement.assume ("assume" ++ getNameFromMd md) coreExpr md]
   | .Block stmts label =>
       let innerStmts ← stmts.flatMapM (fun s => translateStmt outputParams s)
-      -- Only wrap in a Core labelled block for loop labels (break/continue).
-      -- Other labels (try/except) use Exit differently and must stay flat.
-      let isLoopLabel := label.any fun l =>
+      -- Wrap in a Core labelled block for loop labels (break/continue)
+      -- and try/except labels (exception_handlers, try_end).
+      let isLabelledBlock := label.any fun l =>
         l.startsWith "loop_break_" || l.startsWith "loop_continue_" ||
-        l.startsWith "for_break_"  || l.startsWith "for_continue_"
-      if isLoopLabel then
+        l.startsWith "for_break_"  || l.startsWith "for_continue_"  ||
+        l == "exception_handlers"  || l == "try_end"
+      if isLabelledBlock then
         return [Imperative.Stmt.block label.get! innerStmts md]
       else
         return innerStmts
@@ -446,14 +447,11 @@ def translateStmt (outputParams : List Parameter) (stmt : StmtExprMd)
       let bodyStmts ← translateStmt outputParams body
       return [Imperative.Stmt.loop condExpr decreasingExprCore invExprs bodyStmts md]
   | .Exit target =>
-      -- Only translate loop exits (break/continue) to Core exit statements.
-      -- try/except uses Exit differently (as a goto into the handler block)
-      -- and must remain a no-op until proper goto support is added.
-      if target.startsWith "loop_break_" || target.startsWith "loop_continue_" ||
-         target.startsWith "for_break_"  || target.startsWith "for_continue_" then
-        return [Imperative.Stmt.exit (some target) md]
-      else
-        return []
+      -- Translate all labelled exits to Core exit statements.
+      -- Loop exits (break/continue) exit their labelled block.
+      -- Try/except exits (exception_handlers, try_end) now also use
+      -- proper labelled blocks with the restructured try/except pattern.
+      return [Imperative.Stmt.exit (some target) md]
   | _ =>
       -- Expression in statement position: preserve as an unused variable init
       exprAsUnusedInit stmt md

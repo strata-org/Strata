@@ -919,22 +919,33 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
 
   | .Import _ _ | .ImportFrom _ _ _ _ |.Pass _ => return (ctx, [mkStmtExprMd .Hole])
 
-  -- Try/except - wrap body with exception checks and handlers
+  -- Try/except - restructured as:
+  --   try: {
+  --     catchers: {
+  --       body_stmt_1
+  --       if (isError) { exit catchers; }
+  --       ...
+  --       exit try;   ← normal completion, skip handlers
+  --     }
+  --     handler_code
+  --   }
   | .Try _ body handlers _ _ => do
     let tryLabel := "try_end"
-    let handlerLabel := "exception_handlers"
+    let catchersLabel := "exception_handlers"
 
     -- Translate try body
     let (bodyCtx, bodyStmts) ← translateStmtList ctx body.val.toList
 
     -- Insert exception checks after each statement in try body
     let bodyStmtsWithChecks := bodyStmts.flatMap fun stmt =>
-      -- Check if maybe_except is an exception and exit to handlers if so
       let isException := mkStmtExprMd (StmtExpr.StaticCall "isError"
         [mkStmtExprMd (StmtExpr.Identifier "maybe_except")])
       let exitToHandler := mkStmtExprMd (StmtExpr.IfThenElse isException
-        (mkStmtExprMd (StmtExpr.Exit handlerLabel)) none)
+        (mkStmtExprMd (StmtExpr.Exit catchersLabel)) none)
       [stmt, exitToHandler]
+
+    -- Normal completion: exit the try block, skipping handlers
+    let exitTry := mkStmtExprMd (StmtExpr.Exit tryLabel)
 
     -- Translate exception handlers
     let mut handlerStmts : List StmtExprMd := []
@@ -944,11 +955,13 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
         let (_, hStmts) ← translateStmtList bodyCtx handlerBody.val.toList
         handlerStmts := handlerStmts ++ hStmts
 
-    -- Create handler block
-    let handlerBlock := mkStmtExprMd (StmtExpr.Block handlerStmts (some handlerLabel))
+    -- catchers block: body + exit try (normal path)
+    let catchersBlock := mkStmtExprMd (StmtExpr.Block
+      (bodyStmtsWithChecks ++ [exitTry]) (some catchersLabel))
 
-    -- Wrap in try block
-    let tryBlock := mkStmtExprMdWithLoc (StmtExpr.Block (bodyStmtsWithChecks ++ [handlerBlock]) (some tryLabel)) md
+    -- try block: catchers block + handler code
+    let tryBlock := mkStmtExprMdWithLoc (StmtExpr.Block
+      ([catchersBlock] ++ handlerStmts) (some tryLabel)) md
     return (bodyCtx, [tryBlock])
 
   | .Raise _ _ _ => return (ctx, [mkStmtExprMd .Hole])
