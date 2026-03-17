@@ -30,7 +30,7 @@ datatype MyList (a : Type) { Nil(), Cons(hd: a, tl: MyList a) };
 rec function len<a>(@[cases] xs : MyList a) : int
 {
   if MyList..isNil(xs) then 0 else 1 + len(MyList..tl(xs))
-}
+};
 
 #end
 
@@ -65,7 +65,7 @@ datatype IntList { Nil(), Cons(hd: int, tl: IntList) };
 rec function listLen (xs : IntList) : int
 {
   if IntList..isNil(xs) then 0 else 1 + listLen(IntList..tl(xs))
-}
+};
 
 #end
 

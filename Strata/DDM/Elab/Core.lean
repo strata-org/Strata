@@ -1113,6 +1113,10 @@ partial def elabOperation (tctx : TypingContext) (stx : Syntax) : ElabM Tree := 
     match se.preRegisterTypesScope with
     | some scopeArgLevel =>
       elaborateWithPreRegistration argDecls se tctx loc stxArgs scopeArgLevel
+    | none =>
+    match se.preRegisterFunctionsScope with
+    | some scopeArgLevel =>
+      elaborateWithFunctionPreRegistration argDecls se tctx loc stxArgs scopeArgLevel
     | none => do
       let args ← runSyntaxElaborator (argc := argDecls.size) getKind se tctx stxArgs
       return (args, resultContext se tctx args)
@@ -1324,6 +1328,181 @@ partial def elaborateWithPreRegistration
   let preCtx := .empty preGCtx
   let args ← runSyntaxElaborator (argc := argDecls.size) getKind se preCtx stxArgs
   pure (args, resultContext se preCtx args)
+
+/--
+Two-phase elaboration for operations annotated with `@[preRegisterFunctions]`.
+
+Analogous to `elaborateWithPreRegistration` for types, but pre-registers
+expression-level bindings (function signatures) instead of type-level bindings.
+
+- **Phase 1**: For each child, partially elaborate name, bindings, and return type
+  to extract the function signature.
+- **Pre-register**: Add all function signatures as expression-level bindings in the
+  GlobalContext so mutual calls resolve.
+- **Phase 2**: Fully elaborate each child with the updated context.
+-/
+partial def elaborateWithFunctionPreRegistration
+    {argc : Nat}
+    (argDecls : Vector ArgDecl argc)
+    (se : SyntaxElaborator)
+    (tctx0 : TypingContext)
+    (fallbackLoc : SourceRange)
+    (stxArgs : Vector Syntax se.syntaxCount)
+    (scopeArgLevel : Nat) : ElabM (Vector Tree argc × TypingContext) := do
+  let some scopeSyntaxLevel := argSyntaxLevel? se scopeArgLevel
+    | logInternalError fallbackLoc "elaborateWithFunctionPreRegistration: no syntax level for scope arg"
+      return default
+  let .isTrue scopeSLBound := inferInstanceAs (Decidable (scopeSyntaxLevel < se.syntaxCount))
+    | logInternalError fallbackLoc "elaborateWithFunctionPreRegistration: scope syntax level out of bounds"
+      return default
+  let scopeStx := stxArgs[scopeSyntaxLevel]
+  let .isTrue scopeALBound := inferInstanceAs (Decidable (scopeArgLevel < argc))
+    | logInternalError fallbackLoc "elaborateWithFunctionPreRegistration: scope arg level out of bounds"
+      return default
+  let scopeArgDecl := argDecls[scopeArgLevel]
+  let scopeCat ← do
+    match scopeArgDecl.kind with
+    | .cat c => pure c
+    | _ =>
+      logInternalError fallbackLoc "elaborateWithFunctionPreRegistration: expected category for scope arg"
+      return default
+  if scopeCat.args.size ≠ 1 then
+    logInternalError fallbackLoc
+      s!"elaborateWithFunctionPreRegistration: \
+         expected 1 scope cat arg, got {scopeCat.args.size}"
+    return default
+  let some (_sep, getChildren) := scopeSepFormat scopeCat.name
+    | logInternalError fallbackLoc
+        s!"elaborateWithFunctionPreRegistration: \
+           unsupported scope category {scopeCat.name}"
+      return default
+  let children := getChildren scopeStx
+  -- Phase 1: Pre-register all function signatures
+  assert! tctx0.bindings.size = 0
+  let gctx0 : GlobalContext := tctx0.globalContext
+  let preGCtx ← children.foldlM (init := gctx0) fun gctx child =>
+    extractFunctionInfo gctx child
+  -- Phase 2: Elaborate with all function signatures in scope
+  let getKind (i : Fin argDecls.size) := ElabArgKind.ofArgDeclKind argDecls[i].kind
+  let preCtx := .empty preGCtx
+  let args ← runSyntaxElaborator (argc := argDecls.size) getKind se preCtx stxArgs
+  pure (args, resultContext se preCtx args)
+
+/--
+Phase 1 helper for a single child function in a mutual recursive block.
+
+Partially elaborates the child's name, bindings, and return type to extract
+the function signature, then pre-registers it as an expression-level binding
+in the GlobalContext. This makes all sibling function names (including self)
+available when elaborating bodies in Phase 2.
+-/
+partial def extractFunctionInfo (gctx0 : GlobalContext) (child : Syntax) : ElabM GlobalContext := do
+  let dialects := (← read).dialects
+  let syntaxElabs := (← read).syntaxElabs
+  let some childIdent := qualIdentKind child
+    | return panic! s!"Unknown command {child.getKind}"
+  let some childLoc := mkSourceRange? child
+    | panic! "extractFunctionInfo: child missing source location"
+  let some childDecl := dialects.lookupOpDecl childIdent
+    | logInternalError childLoc s!"extractFunctionInfo: unknown op declaration {childIdent}"
+      return default
+  let some childSe := syntaxElabs[childIdent]?
+    | logInternalError childLoc s!"extractFunctionInfo: no syntax elaborator for {childIdent}"
+      return default
+  let childStxArgs := child.getArgs
+  let childArgDecls := childDecl.argDecls.toArray
+  -- Look for @[declareFn(name, args, type)] metadata on the child op
+  for spec in childDecl.newBindings do
+    let (nameArgLevel, argsArgLevel, typeArgLevel) ←
+      match spec with
+      | .value b =>
+        -- declareFn produces a .value binding with nameIndex, argsIndex, typeIndex
+        match b.argsIndex with
+        | some argsIdx => pure (b.nameIndex.toLevel, argsIdx.toLevel, b.typeIndex.toLevel)
+        | none => continue
+      | _ => continue
+    -- Elaborate name
+    let some nameSL := argSyntaxLevel? childSe nameArgLevel
+      | continue
+    if nameSL ≥ childStxArgs.size then continue
+    let .isTrue _ := decideProp (nameArgLevel < childArgDecls.size)
+      | continue
+    let nameCat := childArgDecls[nameArgLevel].kind.categoryOf
+    let (nameTree, nameSuccess) ← runChecked <|
+      catElaborator nameCat (.empty gctx0) childStxArgs[nameSL]!
+    if !nameSuccess then continue
+    let name ←
+      match nameTree.info with
+      | .ofIdentInfo info => pure info.val
+      | _ => logInternalError childLoc "extractFunctionInfo: expected ident for function name"
+             continue
+    -- Elaborate typeArgs (scope parent of bindings) to bring type params into scope
+    let baseCtx := TypingContext.empty gctx0
+    let elabCtx ← do
+      let .isTrue hArgs := decideProp (argsArgLevel < childDecl.argDecls.size)
+        | logInternalError childLoc
+            s!"extractFunctionInfo: argsArgLevel {argsArgLevel} out of bounds ({childDecl.argDecls.size})"
+          pure baseCtx
+      match childDecl.argDecls.argScopeLevel ⟨argsArgLevel, hArgs⟩ with
+      | .error e =>
+        logInternalError childLoc s!"extractFunctionInfo: argScopeLevel error: {e}"
+        pure baseCtx
+      | .ok none => pure baseCtx
+      | .ok (some taFin) =>
+        let taLvl : Nat := taFin
+        let some taSL := argSyntaxLevel? childSe taLvl
+          | logInternalError childLoc "extractFunctionInfo: argSyntaxLevel? failed for typeArgs"
+            pure baseCtx
+        if taSL ≥ childStxArgs.size then
+          logInternalError childLoc
+            s!"extractFunctionInfo: typeArgs syntax level {taSL} out of bounds ({childStxArgs.size})"
+          pure baseCtx
+        else
+          let taCat := childDecl.argDecls[taLvl].kind.categoryOf
+          let (taTree, taOk) ← runChecked <|
+            catElaborator taCat baseCtx childStxArgs[taSL]!
+          if !taOk then
+            logInternalError childLoc "extractFunctionInfo: failed to elaborate typeArgs"
+            pure baseCtx
+          else pure taTree.resultContext
+    -- Elaborate bindings (parameters) to get parameter types
+    let some argsSL := argSyntaxLevel? childSe argsArgLevel
+      | continue
+    if argsSL ≥ childStxArgs.size then continue
+    let .isTrue _ := decideProp (argsArgLevel < childArgDecls.size)
+      | continue
+    let argsCat := childArgDecls[argsArgLevel].kind.categoryOf
+    let (argsTree, argsSuccess) ← runChecked <|
+      catElaborator argsCat elabCtx childStxArgs[argsSL]!
+    if !argsSuccess then continue
+    let params ← collectNewBindingsM 0 argsTree fun _argLoc b =>
+      match b.kind with
+      | .expr tp => pure (some (b.ident, tp))
+      | _ => pure none
+    let params := params.filterMap id
+    -- Elaborate return type
+    let some typeSL := argSyntaxLevel? childSe typeArgLevel
+      | continue
+    if typeSL ≥ childStxArgs.size then continue
+    let .isTrue _ := decideProp (typeArgLevel < childArgDecls.size)
+      | continue
+    let typeCat := childArgDecls[typeArgLevel].kind.categoryOf
+    let (typeTree, typeSuccess) ← runChecked <|
+      catElaborator typeCat elabCtx childStxArgs[typeSL]!
+    if !typeSuccess then continue
+    let retType ←
+      match typeTree.info with
+      | .ofTypeInfo info => pure info.typeExpr
+      | _ => logInternalError childLoc "extractFunctionInfo: expected type for return type"
+             continue
+    -- Build function type: (param1Type → param2Type → ... → retType)
+    let fnType := TypeExprF.mkFunType childLoc params retType
+    -- Register in GlobalContext as an expression binding
+    let .isFalse nameIsNew := decideProp (name ∈ gctx0)
+      | logError childLoc s!"Function '{name}' is already declared."
+        continue
+    return gctx0.define name (.expr fnType) nameIsNew
+  return gctx0
 
 /--
 Phase 1 helper for a single child operation in a mutual block.

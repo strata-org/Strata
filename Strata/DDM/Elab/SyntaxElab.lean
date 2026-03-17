@@ -99,6 +99,8 @@ structure SyntaxElaborator where
   argElabIndex : Array (Option Nat) := #[]
   /-- If set, pre-register type names from children at this arg level before elaboration. -/
   preRegisterTypesScope : Option Nat := none
+  /-- If set, pre-register function signatures from children at this arg level before elaboration. -/
+  preRegisterFunctionsScope : Option Nat := none
 deriving Inhabited, Repr
 
 /-- Build an argElabIndex mapping each argLevel to its
@@ -119,6 +121,7 @@ discover which syntax positions correspond to which arguments, then sort
 by argument level for elaboration order. -/
 private def mkSyntaxElab! (argDecls : ArgDecls) (stx : SyntaxDef) (opMd : Metadata) : Except String SyntaxElaborator := do
   let preRegTypesScope ← opMd.preRegisterTypesLevel argDecls.size
+  let preRegFuncsScope ← opMd.preRegisterFunctionsLevel argDecls.size
   let resultScope ← opMd.resultLevel argDecls.size
   match stx with
   | .passthrough =>
@@ -139,6 +142,7 @@ private def mkSyntaxElab! (argDecls : ArgDecls) (stx : SyntaxDef) (opMd : Metada
       resultScope
       argElabIndex := buildArgElabIndex argDecls elabs
       preRegisterTypesScope := preRegTypesScope
+      preRegisterFunctionsScope := preRegFuncsScope
     }
   | .std atoms _ =>
     let init : ArgElaborators := {
@@ -158,6 +162,7 @@ private def mkSyntaxElab! (argDecls : ArgDecls) (stx : SyntaxDef) (opMd : Metada
       resultScope
       argElabIndex := buildArgElabIndex argDecls elabs
       preRegisterTypesScope := preRegTypesScope
+      preRegisterFunctionsScope := preRegFuncsScope
     }
 
 private def opDeclElaborator! (decl : OpDecl) : Except String SyntaxElaborator :=

@@ -926,7 +926,17 @@ partial def translateExpr (p : Program) (bindings : TransBindings) (arg : Arg) :
           | _ =>
             let args ← translateExprs p bindings argsa.toArray
             return .mkApp () func.opExpr args.toList
-        | .recFuncBlock (func :: _) _md =>
+        | .recFuncBlock funcs _md =>
+          let gctx := (← StateT.get).globalContext
+          let func ← match gctx.nameOf? funcIndex with
+            | some name =>
+              match funcs.find? (fun f => f.name.name == name) with
+              | some f => pure f
+              | none => TransM.error s!"function {name} not found in recFuncBlock"
+            | none =>
+              match funcs with
+              | f :: _ => pure f
+              | [] => TransM.error "Empty recFuncBlock"
           match argsa with
           | [] => return func.opExpr
           | _ =>
@@ -948,7 +958,17 @@ partial def translateExpr (p : Program) (bindings : TransBindings) (arg : Arg) :
     | .func func _md =>
       -- 0-ary Function
       return (.op () func.name ty?)
-    | .recFuncBlock (func :: _) _md =>
+    | .recFuncBlock funcs _md =>
+      let gctx := (← StateT.get).globalContext
+      let func ← match gctx.nameOf? i with
+        | some name =>
+          match funcs.find? (fun f => f.name.name == name) with
+          | some f => pure f
+          | none => TransM.error s!"function {name} not found in recFuncBlock"
+        | none =>
+          match funcs with
+          | f :: _ => pure f
+          | [] => TransM.error "Empty recFuncBlock"
       return (.op () func.name ty?)
     | _ =>
       TransM.error s!"translateExpr unimplemented fvar decl (no args): {format decl}"
@@ -960,7 +980,17 @@ partial def translateExpr (p : Program) (bindings : TransBindings) (arg : Arg) :
     | .func func _md =>
       let args ← translateExprs p bindings argsa.toArray
       return .mkApp () func.opExpr args.toList
-    | .recFuncBlock (func :: _) _md =>
+    | .recFuncBlock funcs _md =>
+      let gctx := (← StateT.get).globalContext
+      let func ← match gctx.nameOf? i with
+        | some name =>
+          match funcs.find? (fun f => f.name.name == name) with
+          | some f => pure f
+          | none => TransM.error s!"function {name} not found in recFuncBlock"
+        | none =>
+          match funcs with
+          | f :: _ => pure f
+          | [] => TransM.error "Empty recFuncBlock"
       let args ← translateExprs p bindings argsa.toArray
       return .mkApp () func.opExpr args.toList
     | _ =>
@@ -1517,21 +1547,112 @@ def translateFunction (status : FnInterp) (p : Program) (bindings : TransBinding
       pure (preconds, some e, #[])
     | .Declaration => pure ([], none, #[])
   let md ← getOpMetaData op
-  let func : Core.Function := {
-                      name := fname,
+  let decl := .func { name := fname,
                       typeArgs := typeArgs.toList,
+                      isRecursive := status matches .RecursiveDefinition,
                       inputs := sig,
                       output := ret,
                       body := body,
                       attr := casesAttr ++ inline?,
-                      preconditions := preconds }
-  let decl := match status with
-    | .RecursiveDefinition => .recFuncBlock [{ func with isRecursive := true }] md
-    | _ => .func { func with isRecursive := false } md
+                      preconditions := preconds } md
   return (decl,
           { bindings with
             boundVars := orig_bbindings,
             freeVars := bindings.freeVars.push decl })
+
+---------------------------------------------------------------------
+-- Mutual recursive function translation
+-- Follows the same pattern as translateDatatypes:
+-- 1. First pass: collect names, allocate placeholder fvars
+-- 2. Second pass: translate bodies with all placeholders in scope
+-- 3. Build combined recFuncBlock decl
+-- 4. Set each function's fvar index to the combined decl
+
+/--
+Translate a single function within a mutual recursive block.
+`fnOp` is a `recfn_decl` operation.
+`preBindings` has placeholder fvars for all functions in the block.
+`siblingExprs` contains the opExpr for each preceding sibling (for bvar resolution).
+-/
+partial def translateRecFnDecl (p : Program) (preBindings : TransBindings)
+    (fnOp : Operation) (siblingExprs : Array Core.Expression.Expr) :
+    TransM Core.Function := do
+  let _ ← @checkOp Core.Function fnOp q`Core.recfn_decl 6
+  let fname ← translateIdent Core.CoreIdent fnOp.args[0]!
+  let typeArgs ← translateTypeArgs fnOp.args[1]!
+  let (sig, casesIdx) ← translateBindingsWithCases preBindings fnOp.args[2]!
+  let ret ← translateLMonoTy preBindings fnOp.args[3]!
+  let in_bindings := (sig.map (fun (v, ty) => (LExpr.fvar () v ty))).toArray
+  -- Build boundVars matching the DDM elaborator's typing context.
+  -- @[declareFn] accumulates sibling bvars across NewlineSepBy children.
+  -- Self-reference goes through fvar (from @[preRegisterFunctions]), not bvar.
+  let tyArgPlaceholders := typeArgs.map fun (ta : TyIdentifier) =>
+    LExpr.op () (ta : Core.CoreIdent) .none
+  let bbindings := preBindings.boundVars ++ siblingExprs ++ tyArgPlaceholders ++ in_bindings
+  let bodyBindings := { preBindings with boundVars := bbindings }
+  let casesAttr := match casesIdx with
+    | some i => #[Strata.DL.Util.FuncAttr.inlineIfConstr i]
+    | none => #[]
+  let preconds ← translateFnPreconds p fname bodyBindings fnOp.args[4]!
+  let body ← translateExpr p bodyBindings fnOp.args[5]!
+  return { name := fname, typeArgs := typeArgs.toList, isRecursive := true,
+           inputs := sig, output := ret, body := some body,
+           attr := casesAttr, preconditions := preconds }
+
+/--
+Translate a `command_recfndefs` block (one or more mutually recursive functions).
+-/
+partial def translateRecFuncBlock (p : Program) (bindings : TransBindings) (op : Operation) :
+    TransM (Core.Decl × TransBindings) := do
+  let _ ← @checkOp (Core.Decl × TransBindings) op q`Core.command_recfndefs 1
+
+  let .seq _ _ declarations := op.args[0]!
+    | TransM.error s!"translateRecFuncBlock expected sequence: {repr op.args[0]!}"
+
+  let fnOps := declarations.filterMap fun arg =>
+    match arg with
+    | .op op => if op.name == q`Core.recfn_decl then some op else none
+    | _ => none
+
+  if fnOps.size == 0 then
+    TransM.error "Recursive function block must contain at least one function"
+  else
+    -- First pass: allocate placeholder fvars (like datatypes)
+    let mut bindingsWithPlaceholders := bindings
+    for fnOp in fnOps do
+      let fname ← translateIdent Core.CoreIdent fnOp.args[0]!
+      let sig ← translateBindings bindingsWithPlaceholders fnOp.args[2]!
+      let ret ← translateLMonoTy bindingsWithPlaceholders fnOp.args[3]!
+      let placeholder : Core.Function := {
+        name := fname, typeArgs := [], inputs := sig, output := ret,
+        body := none, isRecursive := true }
+      let placeholderDecl := Core.Decl.recFuncBlock [placeholder]
+      bindingsWithPlaceholders := { bindingsWithPlaceholders with
+        freeVars := bindingsWithPlaceholders.freeVars.push placeholderDecl }
+
+    -- Second pass: translate each function body with all placeholders in scope.
+    -- @[declareFn] accumulates bvars across siblings, so the i-th function's
+    -- body sees the preceding i siblings as bvars.
+    let (funcsRev, _) ← fnOps.foldlM (init := ([], #[])) fun (acc, siblings) fnOp => do
+      let func ← translateRecFnDecl p bindingsWithPlaceholders fnOp siblings
+      pure (func :: acc, siblings.push func.opExpr)
+    let funcs := funcsRev.reverse
+
+    let md ← getOpMetaData op
+    let decl := Core.Decl.recFuncBlock funcs md
+
+    -- Replace placeholder freeVars with the real combined decl (like datatypes).
+    let mut finalBindings := bindings
+    for i in [:fnOps.size] do
+      let idx := bindings.freeVars.size + i
+      if idx < finalBindings.freeVars.size then
+        finalBindings := { finalBindings with
+          freeVars := finalBindings.freeVars.set! idx decl }
+      else
+        finalBindings := { finalBindings with
+          freeVars := finalBindings.freeVars.push decl }
+
+    return (decl, finalBindings)
 
 ---------------------------------------------------------------------
 
@@ -1774,8 +1895,8 @@ partial def translateCoreDecls (p : Program) (bindings : TransBindings) :
             translateFunction .Definition p bindings op
           | q`Core.command_fndecl =>
             translateFunction .Declaration p bindings op
-          | q`Core.command_recfndef =>
-            translateFunction .RecursiveDefinition p bindings op
+          | q`Core.command_recfndefs =>
+            translateRecFuncBlock p bindings op
           | q`Core.command_block =>
             translateBlockCommand p bindings op
           | _ => TransM.error s!"translateCoreDecls unimplemented for {repr op}"

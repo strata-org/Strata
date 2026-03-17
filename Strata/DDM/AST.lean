@@ -641,6 +641,22 @@ def preRegisterTypesLevel (varCount : Nat) (metadata : Metadata) : Except String
   else
     .error s!"preRegisterTypes index {idx} out of bounds (varCount = {varCount})"
 
+/-- Returns the argument index from @[preRegisterFunctions] metadata, if present. -/
+def preRegisterFunctionsIndex (metadata : Metadata) : Except String (Option Nat) :=
+  match metadata[q`StrataDDL.preRegisterFunctions]? with
+  | none => .ok none
+  | some #[.catbvar idx] => .ok (some idx)
+  | some _ => .error s!"Unexpected argument count to preRegisterFunctions"
+
+/-- Returns the level for @[preRegisterFunctions] metadata, if present. -/
+def preRegisterFunctionsLevel (varCount : Nat) (metadata : Metadata) : Except String (Option (Fin varCount)) := do
+  let some idx ← metadata.preRegisterFunctionsIndex
+    | return none
+  if h : idx < varCount then
+    return some ⟨varCount - (idx + 1), by omega⟩
+  else
+    .error s!"preRegisterFunctions index {idx} out of bounds (varCount = {varCount})"
+
 end Metadata
 
 abbrev Var := String
