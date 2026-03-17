@@ -259,7 +259,7 @@ def resolveDispatch (ctx : TranslationContext)
     | .Attribute _ _ attr _ => attr.val
     | .Name _ n _ => n.val
     | _ => ""
-  match ctx.overloadTable.get? funcName with
+  match ctx.overloadTable[funcName]? with
   | none => return none
   | some fnOverloads =>
     let .isTrue _ := decideProp (args.size > 0)
@@ -268,17 +268,18 @@ def resolveDispatch (ctx : TranslationContext)
             arguments (expected a string literal first argument)")
     match args[0] with
     | .Constant _ (.ConString _ s) _ =>
-      match fnOverloads.get? s.val with
-      | some ident =>
-        let className := if ident.pythonModule.isEmpty then ident.name
-          else ident.pythonModule ++ "_" ++ ident.name
-        return some className
-      | none =>
-        let knownServices := fnOverloads.keys.take 2
-        let suffix := if fnOverloads.size > 2 then s!" ... ({fnOverloads.size} total)" else ""
-        throw (.typeError
-          s!"'{funcName}' called with unknown service name \"{s.val}\"; \
-            known services: {knownServices}{suffix}")
+      let some ident := fnOverloads[s.val]?
+        | let knownServices := fnOverloads.keysArray.insertionSort.take 2
+          let suffix := if fnOverloads.size > 2 then s!" ... ({fnOverloads.size} total)" else ""
+          throw <|
+            .typeError
+              s!"'{funcName}' called with unknown string \"{s.val}\"; known services: {knownServices}{suffix}"
+      let className :=
+        if ident.pythonModule.isEmpty then
+          ident.name
+        else
+          ident.pythonModule ++ "_" ++ ident.name
+      return some className
     | _ => return none
 
 /-! ## Expression Translation -/
@@ -1412,7 +1413,7 @@ def getHighTypeName : Laurel.HighType → String
   | .TInt => "int"
   | .TBool => "bool"
   | .TString => "string"
-  | .TVoid => "bool"
+  | .TVoid => "void"
   | .TFloat64 => "real"
   | .THeap => "Heap"
   | .TTypedField _ => "Field"

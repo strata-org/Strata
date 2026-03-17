@@ -267,34 +267,19 @@ def argToParameter (arg : Arg) : ToLaurelM Parameter := do
   return { name := arg.name, type := ty }
 
 /-- Expand a `**kwargs: Unpack[TypedDict]` into individual `Arg` entries.
-    Reports an error if kwargs is present but not a TypedDict. -/
-public def expandKwargsArgsM (kwargs : Option (String × SpecType))
-    : ToLaurelM (Array Arg) :=
+    Returns an error if kwargs is present but not a TypedDict. -/
+public def expandKwargsArgs (kwargs : Option (String × SpecType))
+    : Except String (Array Arg) :=
   match kwargs with
-  | none => pure #[]
+  | none => .ok #[]
   | some (name, specType) =>
     match specType.atoms.find? fun a => match a with | .typedDict .. => true | _ => false with
     | some (.typedDict fields fieldTypes fieldRequired) =>
-      pure <| fields.mapIdx fun i name =>
+      .ok <| fields.mapIdx fun i name =>
         { name := name
           type := fieldTypes.getD i default
           default := if fieldRequired.getD i true then none else some .none }
-    | _ => do
-      reportError default s!"**{name} has non-TypedDict type; kwargs not expanded"
-      pure #[]
-
-/-- Pure version of `expandKwargsArgsM` for use outside `ToLaurelM`. -/
-public def expandKwargsArgs (kwargs : Option (String × SpecType)) : Array Arg :=
-  match kwargs with
-  | none => #[]
-  | some (_, specType) =>
-    match specType.atoms.find? fun a => match a with | .typedDict .. => true | _ => false with
-    | some (.typedDict fields fieldTypes fieldRequired) =>
-      fields.mapIdx fun i name =>
-        { name := name
-          type := fieldTypes.getD i default
-          default := if fieldRequired.getD i true then none else some .none }
-    | _ => #[]
+    | _ => .error s!"**{name} has non-TypedDict type; kwargs not expanded"
 
 /-- Convert a function declaration to a Laurel Procedure.
     When `isMethod` is true, the first positional arg (`self`) is stripped. -/
@@ -305,7 +290,9 @@ def funcDeclToLaurel (procName : String) (func : FunctionDecl)
       s!"Method '{func.name}' has no arguments (expected 'self' as first parameter)"
   let posArgs := if isMethod then func.args.args.extract 1 func.args.args.size
                  else func.args.args
-  let kwargsArgs ← expandKwargsArgsM func.args.kwargs
+  let kwargsArgs ← match expandKwargsArgs func.args.kwargs with
+    | .ok args => pure args
+    | .error msg => do reportError default msg; pure #[]
   let allArgs := posArgs ++ func.args.kwonly ++ kwargsArgs
   let inputs ← allArgs.mapM argToParameter
   let retType ← specTypeToLaurelType func.returnType

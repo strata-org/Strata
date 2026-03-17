@@ -45,13 +45,11 @@ private def specArgToFuncDeclArg (arg : Python.Specs.Arg)
 /-- Build a PythonFunctionDecl from a PySpec FunctionDecl or class method,
     expanding `**kwargs` TypedDict fields into individual parameters. -/
 private def funcDeclToFunctionDecl (name : String) (args : Python.Specs.ArgDecls)
-    : Python.PythonFunctionDecl :=
-  let kwargsArgs := Python.Specs.ToLaurel.expandKwargsArgs args.kwargs
+    : Except String Python.PythonFunctionDecl := do
+  let kwargsArgs ← Python.Specs.ToLaurel.expandKwargsArgs args.kwargs
   let allArgs := args.args ++ args.kwonly ++ kwargsArgs
-  { name
-    args := allArgs.toList.map specArgToFuncDeclArg
-    hasKwargs := false  -- kwargs already expanded into individual parameters
-    ret := none }
+  pure { name, args := allArgs.toList.map specArgToFuncDeclArg,
+         hasKwargs := false, ret := none }
 
 /-- Extract PythonFunctionDecl entries from pyspec signatures.
     Handles both top-level functions and class methods.
@@ -64,14 +62,14 @@ private def extractFunctionSignatures (sigs : Array Python.Specs.Signature)
     match sig with
     | .functionDecl func =>
       if !func.isOverload then
-        result := result ++ [funcDeclToFunctionDecl (prefixName func.name) func.args]
+        result := result ++ [← funcDeclToFunctionDecl (prefixName func.name) func.args]
     | .classDef cls =>
       let clsName := prefixName cls.name
       for method in cls.methods do
         if method.args.args.size == 0 then
           throw s!"Method '{cls.name}.{method.name}' has no arguments (expected 'self' as first parameter)"
         let posArgs := method.args.args.extract 1 method.args.args.size  -- strip self
-        let decl := funcDeclToFunctionDecl (clsName ++ "_" ++ method.name) { method.args with args := posArgs }
+        let decl ← funcDeclToFunctionDecl (clsName ++ "_" ++ method.name) { method.args with args := posArgs }
         result := result ++ [decl]
     | _ => pure ()
   return result

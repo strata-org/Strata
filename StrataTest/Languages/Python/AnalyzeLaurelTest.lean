@@ -105,7 +105,7 @@ private meta def testCases : List (String × Expected) := [
   .mk "test_required_with_optional.py" .success,
   -- Negative tests
   .mk "test_invalid_service.py" $
-    .fail "Python to Laurel translation failed: Type error: 'connect' called with unknown service name \"invalid\"; known services: [storage, messaging]",
+    .fail "Python to Laurel translation failed: Type error: 'connect' called with unknown string \"invalid\"; known services: #[messaging, storage]",
   .mk "test_invalid_method.py" $
     .fail "Python to Laurel translation failed: Type error: Unknown method 'nonexistent_method'",
   .mk "test_invalid_args.py" $
