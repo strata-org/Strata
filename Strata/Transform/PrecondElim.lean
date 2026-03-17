@@ -53,6 +53,10 @@ def wfProcName (name : String) : String := s!"{name}{wfSuffix}"
 private def classifyPrecondition (funcName : String) : Option String :=
   if funcName.startsWith "Int.SafeDiv" || funcName.startsWith "Int.SafeMod" then
     some Imperative.MetaData.divisionByZero
+  else if funcName.startsWith "Bv1.Safe" || funcName.startsWith "Bv2.Safe" ||
+          funcName.startsWith "Bv8.Safe" || funcName.startsWith "Bv16.Safe" ||
+          funcName.startsWith "Bv32.Safe" || funcName.startsWith "Bv64.Safe" then
+    some Imperative.MetaData.arithmeticOverflow
   else
     none
 
