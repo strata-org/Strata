@@ -680,6 +680,17 @@ def pyAnalyzeToGotoCommand : Command where
         IO.FS.writeFile gotoFile goto.pretty
         IO.println s!"Written {symTabFile} and {gotoFile}"
 
+def pyTranslateLaurelCommand : Command where
+  name := "pyTranslateLaurel"
+  args := [ "file" ]
+  help := "Translate a Strata Python Ion file through Laurel to Strata Core. Write results to stdout."
+  callback := fun v _ => do
+    let pgm ← readPythonStrata v[0]
+    let cmds := Strata.toPyCommands pgm.commands
+    assert! cmds.size == 1
+    let mut coreProgram ← translatePythonToCore false v[0] Array.empty Array.empty
+    IO.print coreProgram
+
 def pyAnalyzeLaurelToGotoCommand : Command where
   name := "pyAnalyzeLaurelToGoto"
   args := [ "file" ]
