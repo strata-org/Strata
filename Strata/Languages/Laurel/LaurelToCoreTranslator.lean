@@ -663,10 +663,10 @@ def translate (options: LaurelTranslateOptions) (program : Program): Except (Arr
   -- dbg_trace "=== Program after heapParameterization + modifiesClausesTransform ==="
   -- dbg_trace (toString (Std.Format.pretty (Std.ToFormat.format program)))
   -- dbg_trace "================================="
-  let program := inferHoleTypes model program
-  let program := eliminateHoles program
   let result := resolve program (some model)
   let (program, model) := (result.program, result.model)
+  let program := inferHoleTypes model program
+  let program := eliminateHoles program
   let program := liftExpressionAssignments model program
   let program := eliminateReturnsInExpressionTransform program
   let result := resolve program (some model)
