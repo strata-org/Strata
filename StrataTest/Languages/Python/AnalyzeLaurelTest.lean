@@ -88,8 +88,14 @@ private meta def runAnalyze (dispatchIon : System.FilePath)
     (tmpDir : System.FilePath) (scriptName : String)
     : IO (Except String Core.Program) := do
   let testIon ← compileTestScript (testDir / scriptName) tmpDir
-  Strata.pyAnalyzeLaurel testIon.toString
-    (dispatchPaths := #[dispatchIon.toString]) |>.toBaseIO
+  let laurel ←
+    match ← Strata.pyAnalyzeLaurel testIon.toString
+        (dispatchPaths := #[dispatchIon.toString]) |>.toBaseIO with
+    | .ok r => pure r
+    | .error msg => return .error msg
+  match Strata.translateCombinedLaurel laurel with
+  | .error diagnostics => return .error s!"Laurel to Core translation failed: {diagnostics}"
+  | .ok (core, _) => return .ok core
 
 /-- Expected outcome for a test case. -/
 private inductive Expected where

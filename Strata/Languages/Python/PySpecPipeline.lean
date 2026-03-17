@@ -249,15 +249,6 @@ public def combinePySpecLaurel (info : Python.PreludeInfo)
     constants := pySpec.constants ++ user.constants
   }
 
-/-- Translate a combined Laurel program to Core. Resolution errors are
-    suppressed because PySpec Laurel procedures reference names defined in the
-    Core prelude (`from_none`, `from_string`, `NoError`, etc.) which the Laurel
-    resolver cannot see — they are merged after translation. Once the Python
-    Core prelude is ported to Laurel, this suppression can be removed. -/
-public def translateCombinedLaurel (combined : Laurel.Program)
-    : Except (Array DiagnosticModel) (Core.Program × Array DiagnosticModel) :=
-  Laurel.translate { emitResolutionErrors := false } combined
-
 /-- `coreFromLaurel` contains External stub declarations for every
     prelude name (e.g. `print`, `from_string`, `Any`).  These stubs
     were added so the Laurel resolver could classify names as
@@ -265,7 +256,7 @@ public def translateCombinedLaurel (combined : Laurel.Program)
     bodies.  This function drops those stubs and prepends the full
     `pythonRuntimeCorePart` (with datatype definitions, procedure
     bodies, etc.) that the Core type-checker and verifier require. -/
-public def replaceStubsWithPrelude (coreFromLaurel : Core.Program) : Core.Program :=
+private def replaceStubsWithPrelude (coreFromLaurel : Core.Program) : Core.Program :=
   let preludeDecls := Python.pythonRuntimeCorePart.decls
   let preludeNames : Std.HashSet String :=
     preludeDecls.foldl (init := {}) fun s d =>
@@ -274,29 +265,46 @@ public def replaceStubsWithPrelude (coreFromLaurel : Core.Program) : Core.Progra
     !(d.names.any (·.name ∈ preludeNames))
   { decls := preludeDecls ++ newDecls }
 
-/-- Run the full pyAnalyzeLaurel pipeline: read a Python Ion program,
+/-- Translate a combined Laurel program to Core and prepend the full
+    runtime prelude.  Resolution errors are suppressed because PySpec
+    Laurel procedures reference names defined in the Core prelude
+    (`from_none`, `from_string`, `NoError`, etc.) which the Laurel
+    resolver cannot see — they are merged after translation. Once the
+    Python Core prelude is ported to Laurel, this suppression can be
+    removed. -/
+public def translateCombinedLaurel (combined : Laurel.Program)
+    : Except (Array DiagnosticModel) (Core.Program × Array DiagnosticModel) :=
+  match Laurel.translate { emitResolutionErrors := false } combined with
+  | .error e => .error e
+  | .ok (core, diags) => .ok (replaceStubsWithPrelude core, diags)
+
+/-- Run the pyAnalyzeLaurel pipeline: read a Python Ion program,
     resolve overloads from dispatch files, load PySpec declarations,
-    translate Python to Laurel, combine with PySpec Laurel, and translate
-    to Core. Returns the Core program ready for verification. -/
+    translate Python to Laurel, and combine with PySpec Laurel.
+    Returns the combined Laurel program ready for
+    `translateCombinedLaurel`.
+
+    The optional `sourcePath` overrides the file path embedded in
+    Laurel metadata (useful when the Ion file was generated from a
+    `.py` source and you want line numbers to refer to the original). -/
 public def pyAnalyzeLaurel
     (pythonIonPath : String)
     (dispatchPaths : Array String := #[])
     (pyspecPaths : Array String := #[])
-    : EIO String Core.Program := do
+    (sourcePath : Option String := none)
+    : EIO String Laurel.Program := do
   let pyModule ← readPythonIonModule pythonIonPath
   let stmts := unwrapModule pyModule
 
   let result ← resolveAndBuildLaurelPrelude dispatchPaths pyspecPaths stmts
   let preludeInfo := buildPreludeInfo result
 
+  let metadataPath := sourcePath.getD pythonIonPath
   let (laurelProgram, _ctx) ←
-    match Python.pythonToLaurel' preludeInfo pyModule none pythonIonPath result.overloads with
+    match Python.pythonToLaurel' preludeInfo pyModule none metadataPath result.overloads with
     | .error e => throw s!"Python to Laurel translation failed: {e}"
     | .ok result => pure result
 
-  let combined := combinePySpecLaurel preludeInfo result.laurelProgram laurelProgram
-  match translateCombinedLaurel combined with
-  | .error diagnostics => throw s!"Laurel to Core translation failed: {diagnostics}"
-  | .ok (coreFromLaurel, _) => pure (replaceStubsWithPrelude coreFromLaurel)
+  return combinePySpecLaurel preludeInfo result.laurelProgram laurelProgram
 
 end Strata

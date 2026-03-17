@@ -356,105 +356,84 @@ def pyAnalyzeLaurelCommand : Command where
     let verbose := pflags.getBool "verbose"
     let outputSarif := pflags.getBool "sarif"
     let filePath := v[0]
-    let pgm ← readPythonStrata filePath
     let pySourceOpt ← tryReadPythonSource filePath
+
     if verbose then
+      let pgm ← readPythonStrata filePath
       IO.println "==== Python AST ===="
       IO.print pgm
-    let cmds := Strata.toPyCommands pgm.commands
-    let .isTrue cmdsPos := decideProp (cmds.size = 1)
-      | exitFailure s!"Internal invariant cmds.size should be one"
 
-    let stmts := Strata.unwrapModule cmds[0]
     let dispatchFiles := pflags.getRepeated "dispatch"
     let pyspecFiles := pflags.getRepeated "pyspec"
-    let pySpecResult ←
-      match ← resolveAndBuildLaurelPrelude dispatchFiles pyspecFiles stmts |>.toBaseIO with
+    let sourcePath := pySourceOpt.map (·.1)
+    let combinedLaurel ←
+      match ← Strata.pyAnalyzeLaurel filePath dispatchFiles pyspecFiles sourcePath |>.toBaseIO with
       | .ok r => pure r
       | .error msg => exitFailure msg
-    let pySpecLaurelPgm := pySpecResult.laurelProgram
-    let overloads := pySpecResult.overloads
 
-    let sourcePathForMetadata := match pySourceOpt with
-      | some (pyPath, _) => pyPath
-      | none => filePath
+    if verbose then
+      IO.println "\n==== Laurel Program ===="
+      IO.println f!"{combinedLaurel}"
 
-    let preludeInfo := buildPreludeInfo pySpecResult
+    let coreProgram ←
+      match Strata.translateCombinedLaurel combinedLaurel with
+      | .error diagnostics =>
+        exitFailure s!"Laurel to Core translation failed: {diagnostics}"
+      | .ok (core, _) => pure core
 
-    let laurelPgm :=
-      Strata.Python.pythonToLaurel'
-        preludeInfo cmds[0] none
-        sourcePathForMetadata overloads
-    match laurelPgm with
-      | .error e =>
-        exitFailure s!"Python to Laurel translation failed: {e}"
-      | .ok (laurelProgram, ctx)  =>
-        if verbose then
-          IO.println "\n==== Laurel Program ===="
-          IO.println f!"{laurelProgram}"
+    if verbose then
+      IO.println "\n==== Core Program ===="
+      IO.print coreProgram
 
-        let combinedLaurel := combinePySpecLaurel preludeInfo pySpecLaurelPgm laurelProgram
+    -- Verify using Core verifier
+    let baseOptions : VerifyOptions :=
+      { VerifyOptions.default with stopOnFirstError := false, verbose := .quiet, solver := "z3" }
+    let options : VerifyOptions := match pflags.getString "vc-directory" with
+      | .some dir => { baseOptions with vcDirectory := some (dir : System.FilePath) }
+      | .none => baseOptions
+    let vcResults ←
+      match ← Strata.verifyCore coreProgram options |>.toBaseIO with
+      | .ok r => pure r
+      | .error msg => exitFailure msg
 
-        match translateCombinedLaurel combinedLaurel with
-        | .error diagnostics =>
-          exitFailure s!"Laurel to Core translation failed: {diagnostics}"
-        | .ok (coreFromLaurel, modifiesDiags) =>
-          if verbose then
-            IO.println "\n==== Core Program ===="
-            IO.print coreFromLaurel
-
-          let coreProgram := replaceStubsWithPrelude coreFromLaurel
-
-          -- Verify using Core verifier
-          let baseOptions : VerifyOptions :=
-            { VerifyOptions.default with stopOnFirstError := false, verbose := .quiet, solver := "z3" }
-          let options : VerifyOptions := match pflags.getString "vc-directory" with
-            | .some dir => { baseOptions with vcDirectory := some (dir : System.FilePath) }
-            | .none => baseOptions
-          let vcResults ←
-            match ← Strata.verifyCore coreProgram options |>.toBaseIO with
-            | .ok r => pure r
-            | .error msg => exitFailure msg
-
-          -- Print results
-          IO.println "\n==== Verification Results ===="
-          let mut s := ""
-          for vcResult in vcResults do
-            let (locationPrefix, locationSuffix) := match Imperative.getFileRange vcResult.obligation.metadata with
-              | some fr =>
-                if fr.range.isNone then ("", "")
+    -- Print results
+    IO.println "\n==== Verification Results ===="
+    let mut s := ""
+    for vcResult in vcResults do
+      let (locationPrefix, locationSuffix) := match Imperative.getFileRange vcResult.obligation.metadata with
+        | some fr =>
+          if fr.range.isNone then ("", "")
+          else
+            match pySourceOpt with
+            | some (pyPath, srcText) =>
+              match fr.file with
+              | .file "" =>
+                if vcResult.isFailure then
+                  (s!"Assertion failed in prelude file: ", "")
                 else
-                  match pySourceOpt with
-                  | some (pyPath, srcText) =>
-                    match fr.file with
-                    | .file path =>
-                      if path == pyPath then
-                        let pos := (Lean.FileMap.ofString srcText).toPosition fr.range.start
-                        if vcResult.isFailure then
-                          (s!"Assertion failed at line {pos.line}, col {pos.column}: ", "")
-                        else
-                          ("", s!" (at line {pos.line}, col {pos.column})")
-                      else
-                        if vcResult.isFailure then
-                          (s!"Assertion failed in prelude file: ", "")
-                        else
-                          ("", s!" (in prelude file)")
-                  | none =>
-                    if vcResult.isFailure then
-                      (s!"Assertion failed: ", "")
-                    else
-                      ("", "")
-              | none => ("", "")
-            let outcomeStr := vcResult.formatOutcome
-            s := s ++ s!"{locationPrefix}{vcResult.obligation.label}: \
-                          {outcomeStr}{locationSuffix}\n"
-          IO.println s
-          -- Output in SARIF format if requested
-          if outputSarif then
-            let files := match pySourceOpt with
-              | some (pyPath, srcText) => Map.empty.insert (Strata.Uri.file pyPath) (Lean.FileMap.ofString srcText)
-              | none => Map.empty
-            Core.Sarif.writeSarifOutput .deductive files vcResults (filePath ++ ".sarif")
+                  ("", s!" (in prelude file)")
+              | .file path =>
+                let pos := (Lean.FileMap.ofString srcText).toPosition fr.range.start
+                if vcResult.isFailure then
+                  (s!"Assertion failed at line {pos.line}, col {pos.column}: ", "")
+                else
+                  ("", s!" (at line {pos.line}, col {pos.column})")
+            | none =>
+              if vcResult.isFailure then
+                (s!"Assertion failed: ", "")
+              else
+                ("", "")
+        | none => ("", "")
+      let outcomeStr := vcResult.formatOutcome
+      s := s ++ s!"{locationPrefix}{vcResult.obligation.label}: \
+                    {outcomeStr}{locationSuffix}\n"
+    IO.println s
+    -- Output in SARIF format if requested
+    if outputSarif then
+      let files := match pySourceOpt with
+        | some (pyPath, srcText) => Map.empty.insert (Strata.Uri.file pyPath) (Lean.FileMap.ofString srcText)
+        | none => Map.empty
+      Core.Sarif.writeSarifOutput .deductive files vcResults (filePath ++ ".sarif")
 
 private def deriveBaseName (file : String) : String :=
   let name := System.FilePath.fileName file |>.getD file

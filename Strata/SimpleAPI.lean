@@ -24,7 +24,7 @@ import Strata.Languages.Laurel.Grammar.ConcreteToAbstractTreeTranslator
 public import Strata.Languages.Laurel.Laurel
 import Strata.Languages.Laurel.LaurelToCoreTranslator
 
-import Strata.Languages.Python.PySpecPipeline
+public import Strata.Languages.Python.PySpecPipeline
 import Strata.Languages.Python.Specs
 import Strata.Languages.Python.Specs.DDM
 
@@ -279,11 +279,18 @@ def pySpecs (pythonFile strataDir dialectFile : System.FilePath)
 
 /-! ### Python-to-Core via Laurel pipeline -/
 
-/-- Translate a Python Ion file through the Laurel pipeline to Core.
-    Reads dispatch/pyspec files, resolves overloads, translates
-    Python → Laurel → Core, and prepends the runtime prelude.
-    This is a re-export of `Strata.pyAnalyzeLaurel` from `PySpecPipeline`. -/
-def pyTranslateLaurel := @Strata.pyAnalyzeLaurel
+/-- Translate a Python Ion file all the way to Core.  Composes
+    `pyAnalyzeLaurel` (Python → combined Laurel) and
+    `translateCombinedLaurel` (Laurel → Core with prelude). -/
+def pyTranslateLaurel
+    (pythonIonPath : String)
+    (dispatchPaths : Array String := #[])
+    (pyspecPaths : Array String := #[])
+    : EIO String Core.Program := do
+  let laurel ← pyAnalyzeLaurel pythonIonPath dispatchPaths pyspecPaths
+  match translateCombinedLaurel laurel with
+  | .error diagnostics => throw s!"Laurel to Core translation failed: {diagnostics}"
+  | .ok (core, _) => pure core
 
 /-! ### Deductive verification of Core programs -/
 
