@@ -71,6 +71,8 @@ def FileRange.format (fr : FileRange) (fileMap : Option Lean.FileMap) (includeEn
     else
       f!"{baseName}({fr.range.start}-{fr.range.stop})"
 
+inductive DiagnosticType where | Warning | UserError | NotYetImplemented | CompilerBug
+
 /-- A diagnostic model that holds a file range and a message.
     This can be converted to a formatted string using a FileMap. -/
 structure DiagnosticModel where

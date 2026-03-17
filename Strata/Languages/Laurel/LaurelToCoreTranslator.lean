@@ -84,16 +84,24 @@ structure TranslateState where
   /-- Constants known to the program (field constants, etc.) -/
   model : SemanticModel
 
-/-- The translation monad: state over Id -/
-@[expose] abbrev TranslateM := StateT TranslateState Id
+/-- The translation monad: state over Except, allowing both accumulated diagnostics and hard failures -/
+@[expose] abbrev TranslateM := StateT TranslateState (Except DiagnosticModel)
 
-/-- Emit a diagnostic into the translation state -/
+/-- Emit a diagnostic into the translation state (soft warning, does not abort) -/
 def emitDiagnostic (d : DiagnosticModel) : TranslateM Unit :=
   modify fun s => { s with diagnostics := s.diagnostics ++ [d] }
 
-/-- Run a `TranslateM` action, returning the result and final state -/
-def runTranslateM (s : TranslateState) (m : TranslateM α) : α × TranslateState :=
+/-- Throw a hard diagnostic error, aborting the current translation -/
+def throwDiagnostic (d : DiagnosticModel) : TranslateM α :=
+  throw d
+
+/-- Run a `TranslateM` action, returning either a hard error or the result and final state -/
+def runTranslateM (s : TranslateState) (m : TranslateM α) : Except DiagnosticModel (α × TranslateState) :=
   m s
+
+/-- Run a `TranslateM` action, lifting a hard `DiagnosticModel` error into an `Array` -/
+def runTranslateMArr (s : TranslateState) (m : TranslateM α) : Except (Array DiagnosticModel) (α × TranslateState) :=
+  (runTranslateM s m).mapError (fun d => #[d])
 
 /-- Allocate a fresh unique ID. -/
 private def freshId : TranslateM Nat := do
@@ -124,11 +132,9 @@ def translateExpr (expr : StmtExprMd)
   -- Emit an error in pure context; panic in impure context (lifting invariant violated)
   let disallowed (md : MetaData) (msg : String) : TranslateM Core.Expression.Expr := do
     if isPureContext then
-      emitDiagnostic (md.toDiagnostic msg)
-      dummy
+      throwDiagnostic $ md.toDiagnostic msg
     else
-      emitDiagnostic (md.toDiagnostic s!"Internal error: {msg} (should have been lifted)")
-      dummy
+      throwDiagnostic $ md.toDiagnostic s!"Internal error: {msg} (should have been lifted)"
   match h: expr.val with
   | .LiteralBool b => return .const () (.boolConst b)
   | .LiteralInt i => return .const () (.intConst i)
@@ -185,14 +191,14 @@ def translateExpr (expr : StmtExprMd)
     | .Gt => return binOp (if isReal then realGtOp else intGtOp)
     | .Geq => return binOp (if isReal then realGeOp else intGeOp)
     | .StrConcat => return binOp strConcatOp
-    | _ => panic! s!"translateExpr: Invalid binary op: {repr op}"
+    | _ => throwDiagnostic $ md.toDiagnostic s!"Not yet implemented: Invalid binary op: {repr op}"
   | .PrimitiveOp op args =>
-    panic! s!"translateExpr: PrimitiveOp {repr op} with {args.length} args"
+      throwDiagnostic $ md.toDiagnostic s!"Not supported: PrimitiveOp {repr op} with {args.length} args"
   | .IfThenElse cond thenBranch elseBranch =>
       let bcond ← translateExpr cond boundVars isPureContext
       let bthen ← translateExpr thenBranch boundVars isPureContext
       let belse ← match elseBranch with
-        | none => panic "if-then without else expression not yet implemented"
+        | none => throwDiagnostic $ md.toDiagnostic s!"Not yet implemented: if-then without else expression not yet implemented"
         | some e =>
             have : sizeOf e < sizeOf expr := by
               have := WithMetadata.sizeOf_val_lt expr
@@ -247,7 +253,7 @@ def translateExpr (expr : StmtExprMd)
   | .Block (⟨ .LocalVariable name ty (some initializer), md⟩ :: rest) label => do
       let valueExpr ← translateExpr  initializer boundVars isPureContext
       let bodyExpr ← translateExpr ⟨ StmtExpr.Block rest label, md ⟩ (name :: boundVars) isPureContext
-      disallowed md "local variables in functions are not YET supported"
+      throwDiagnostic $ md.toDiagnostic "local variables in functions are not YET supported"
       -- This doesn't work because of a limitation in Core.
       -- let coreMonoType := translateType ty
       -- return .app () (.abs () (some coreMonoType) bodyExpr) valueExpr
@@ -256,13 +262,14 @@ def translateExpr (expr : StmtExprMd)
   | .Block (⟨ .IfThenElse cond thenBranch (some elseBranch), md⟩ :: rest) label =>
     disallowed md "if-then-else only supported as the last statement in a block"
 
-  | .IsType _ _ => panic "IsType should have been lowered"
+  | .IsType _ _ => throwDiagnostic $ md.toDiagnostic "Internal error: IsType should have been lowered"
   | .New _ => panic! s!"New should have been eliminated by typeHierarchyTransform"
   | .FieldSelect target fieldId =>
       -- Field selects should have been eliminated by heap parameterization
       -- If we see one here, it's an error in the pipeline
-      panic! s!"FieldSelect should have been eliminated by heap parameterization: {Std.ToFormat.format target}#{fieldId.text}"
-  | .Block _ _ => panic! "block expression should have been lowered in a separate pass"
+      throwDiagnostic $ md.toDiagnostic "Internal error: FieldSelect should have been eliminated by heap parameterization: {Std.ToFormat.format target}#{fieldId.text}"
+  | .Block _ _ =>
+      throwDiagnostic $ md.toDiagnostic "Internal error: block expression should have been lowered in a separate pass"
   | .LocalVariable _ _ _ => panic "local variable expression not yet implemented (should be lowered in a separate pass)"
   | .Return _ => disallowed expr.md "return expression not yet implemented (should be lowered in a separate pass)"
 
@@ -562,11 +569,13 @@ Returns `.error` with diagnostics if the procedure body contains disallowed cons
 -/
 def tryTranslatePureToFunction (proc : Procedure) (initState : TranslateState)
     : Except (Array DiagnosticModel) Core.Decl :=
-  let (decl, finalState) := runTranslateM initState (translateProcedureToFunction proc)
-  if finalState.diagnostics.isEmpty then
-    .ok decl
-  else
-    .error finalState.diagnostics.toArray
+  match runTranslateM initState (translateProcedureToFunction proc) with
+  | .error d => .error #[d]
+  | .ok (decl, finalState) =>
+    if finalState.diagnostics.isEmpty then
+      .ok decl
+    else
+      .error finalState.diagnostics.toArray
 
 structure LaurelTranslateOptions where
   emitResolutionErrors : Bool := true
@@ -626,12 +635,12 @@ def translate (options: LaurelTranslateOptions) (program : Program): Except (Arr
       | .error es => (errs ++ es.toList, decls)
       | .ok d     => (errs, decls.push d)) ([], #[])
     -- Translate procedures using the monad, collecting diagnostics from the final state
-    let (procedures, procState) := runTranslateM initState do
+    let (procedures, procState) ← runTranslateMArr initState do
       procProcs.mapM translateProcedure
     let procDiags := procState.diagnostics
 
     -- Translate Laurel constants to Core function declarations (0-ary functions)
-    let (constantDecls, constantsState) := runTranslateM initState $ program.constants.mapM fun c => do
+    let (constantDecls, constantsState) ← runTranslateMArr initState $ program.constants.mapM fun c => do
       let coreTy := translateType model c.type
       let body ← c.initializer.mapM (translateExpr ·)
       return Core.Decl.func {
