@@ -145,6 +145,15 @@ private def normalizeQuantifierUnicode (src : String) : String :=
 private def isBooleProgram (src : String) : Bool :=
   src.contains "program Boole;"
 
+private def addRawPosOffset (base pos : String.Pos.Raw) : String.Pos.Raw :=
+  ⟨base.byteIdx + pos.byteIdx⟩
+
+private def addSourceRangeOffset (base : String.Pos.Raw) (sr : SourceRange) : SourceRange :=
+  { start := addRawPosOffset base sr.start, stop := addRawPosOffset base sr.stop }
+
+private def offsetProgramRanges (base : String.Pos.Raw) (pgm : Program) : Program :=
+  { pgm with commands := pgm.commands.map (fun cmd => cmd.mapAnn (addSourceRangeOffset base)) }
+
 @[term_elab strataProgram]
 meta def strataProgramImpl : TermElab := fun stx tp => do
   let .atom i v := stx[1]
@@ -158,6 +167,7 @@ meta def strataProgramImpl : TermElab := fun stx tp => do
       normalizeQuantifierUnicode snippet
     else
       snippet
+  let rangesNeedOffset := normalized == snippet
   let inputCtx : InputContext := {
     inputString := normalized
     fileName := inputCtx.fileName
@@ -167,6 +177,7 @@ meta def strataProgramImpl : TermElab := fun stx tp => do
   let leanEnv ← Lean.mkEmptyEnvironment 0
   match Elab.elabProgram s.loaded leanEnv inputCtx 0 inputCtx.endPos with
   | .ok pgm =>
+    let pgm := if rangesNeedOffset then offsetProgramRanges p pgm else pgm
     -- Get Lean name for dialect
     let some (.str name root) := s.nameMap[pgm.dialect]?
       | throwError s!"Unknown dialect {pgm.dialect}"
