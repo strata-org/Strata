@@ -77,8 +77,10 @@ def typeCheckCmd (C: LContext CoreLParams) (Env : TEnv Unit) (P : Program) (c : 
         -- Add source location to error messages if not already present.
         .error <| e.withRangeIfUnknown (getFileRange md |>.getD FileRange.unknown)
 
-def typeCheckAux (C: LContext CoreLParams) (Env : TEnv Unit) (P : Program) (op : Option Procedure) (ss : List Statement) :
-  Except DiagnosticModel (List Statement × TEnv Unit × LContext CoreLParams) :=
+def typeCheckAux (C: LContext CoreLParams) (Env : TEnv Unit)
+    (P : Program) (op : Option Procedure) (ss : List Statement) :
+    Except DiagnosticModel
+      (List Statement × TEnv Unit × LContext CoreLParams) :=
   go C Env ss [] []
 where
   go (C : LContext CoreLParams) (Env : TEnv Unit) (ss : List Statement) (acc : List Statement)
@@ -96,6 +98,9 @@ where
           .ok (Stmt.cmd c', Env, C)
 
         | .block label bss md => do
+          if labels.contains label then
+            throw <| md.toDiagnosticF
+              f!"Block label \"{label}\" shadows an enclosing block."
           let (bss', Env, C) ← goBlock C Env bss [] (label :: labels)
           let s' := Stmt.block label bss' md
           .ok (s', Env, C)
