@@ -134,7 +134,7 @@ def translateExpr (expr : StmtExprMd)
     if isPureContext then
       throwDiagnostic $ md.toDiagnostic msg
     else
-      throwDiagnostic $ md.toDiagnostic s!"Internal error: {msg} (should have been lifted)"
+      throwDiagnostic $ md.toDiagnostic s!"{msg} (should have been lifted)" DiagnosticType.StrataBug
   match h: expr.val with
   | .LiteralBool b => return .const () (.boolConst b)
   | .LiteralInt i => return .const () (.intConst i)
@@ -163,8 +163,7 @@ def translateExpr (expr : StmtExprMd)
         | .TReal => true | _ => false
       return .app () (if isReal then realNegOp else intNegOp) re
     | _ =>
-      emitDiagnostic (md.toDiagnostic s!"Internal error: translateExpr: Invalid unary op: {repr op}")
-      dummy
+      throwDiagnostic $ md.toDiagnostic s!"translateExpr: Invalid unary op: {repr op}" DiagnosticType.StrataBug
   | .PrimitiveOp op [e1, e2] =>
     let re1 ← translateExpr e1 boundVars isPureContext
     let re2 ← translateExpr e2 boundVars isPureContext
@@ -191,14 +190,14 @@ def translateExpr (expr : StmtExprMd)
     | .Gt => return binOp (if isReal then realGtOp else intGtOp)
     | .Geq => return binOp (if isReal then realGeOp else intGeOp)
     | .StrConcat => return binOp strConcatOp
-    | _ => throwDiagnostic $ md.toDiagnostic s!"Not yet implemented: Invalid binary op: {repr op}"
+    | _ => throwDiagnostic $ md.toDiagnostic s!"Invalid binary op: {repr op}" DiagnosticType.NotYetImplemented
   | .PrimitiveOp op args =>
-      throwDiagnostic $ md.toDiagnostic s!"Not supported: PrimitiveOp {repr op} with {args.length} args"
+      throwDiagnostic $ md.toDiagnostic s!"PrimitiveOp {repr op} with {args.length} args is not supported" DiagnosticType.UserError
   | .IfThenElse cond thenBranch elseBranch =>
       let bcond ← translateExpr cond boundVars isPureContext
       let bthen ← translateExpr thenBranch boundVars isPureContext
       let belse ← match elseBranch with
-        | none => throwDiagnostic $ md.toDiagnostic s!"Not yet implemented: if-then without else expression not yet implemented"
+        | none => throwDiagnostic $ md.toDiagnostic s!"if-then without else expression" DiagnosticType.NotYetImplemented
         | some e =>
             have : sizeOf e < sizeOf expr := by
               have := WithMetadata.sizeOf_val_lt expr
@@ -253,7 +252,7 @@ def translateExpr (expr : StmtExprMd)
   | .Block (⟨ .LocalVariable name ty (some initializer), md⟩ :: rest) label => do
       let valueExpr ← translateExpr  initializer boundVars isPureContext
       let bodyExpr ← translateExpr ⟨ StmtExpr.Block rest label, md ⟩ (name :: boundVars) isPureContext
-      throwDiagnostic $ md.toDiagnostic "local variables in functions are not YET supported"
+      throwDiagnostic $ md.toDiagnostic "local variables in functions" DiagnosticType.NotYetImplemented
       -- This doesn't work because of a limitation in Core.
       -- let coreMonoType := translateType ty
       -- return .app () (.abs () (some coreMonoType) bodyExpr) valueExpr
@@ -262,15 +261,16 @@ def translateExpr (expr : StmtExprMd)
   | .Block (⟨ .IfThenElse cond thenBranch (some elseBranch), md⟩ :: rest) label =>
     disallowed md "if-then-else only supported as the last statement in a block"
 
-  | .IsType _ _ => throwDiagnostic $ md.toDiagnostic "Internal error: IsType should have been lowered"
-  | .New _ => panic! s!"New should have been eliminated by typeHierarchyTransform"
+  | .IsType _ _ => throwDiagnostic $ md.toDiagnostic "IsType should have been lowered" DiagnosticType.StrataBug
+  | .New _ => throwDiagnostic $ md.toDiagnostic s!"New should have been eliminated by typeHierarchyTransform" DiagnosticType.StrataBug
   | .FieldSelect target fieldId =>
       -- Field selects should have been eliminated by heap parameterization
       -- If we see one here, it's an error in the pipeline
-      throwDiagnostic $ md.toDiagnostic "Internal error: FieldSelect should have been eliminated by heap parameterization: {Std.ToFormat.format target}#{fieldId.text}"
+      throwDiagnostic $ md.toDiagnostic "FieldSelect should have been eliminated by heap parameterization: {Std.ToFormat.format target}#{fieldId.text}" DiagnosticType.StrataBug
   | .Block _ _ =>
-      throwDiagnostic $ md.toDiagnostic "Internal error: block expression should have been lowered in a separate pass"
-  | .LocalVariable _ _ _ => panic "local variable expression not yet implemented (should be lowered in a separate pass)"
+      throwDiagnostic $ md.toDiagnostic "block expression should have been lowered in a separate pass" DiagnosticType.StrataBug
+  | .LocalVariable _ _ _ =>
+      throwDiagnostic $ md.toDiagnostic "local variable expression not yet implemented (should be lowered in a separate pass)" DiagnosticType.StrataBug
   | .Return _ => disallowed expr.md "return expression not yet implemented (should be lowered in a separate pass)"
 
   | .AsType target _ => panic "AsType expression not implemented"
