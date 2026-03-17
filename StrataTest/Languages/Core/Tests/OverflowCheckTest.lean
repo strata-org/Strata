@@ -46,3 +46,14 @@ open Strata Core Lambda
   (LExpr.mkApp () Core.bv32AddOp [
     .fvar () ⟨"x", ()⟩ (some (.bitvec 32)),
     .fvar () ⟨"y", ()⟩ (some (.bitvec 32))])).length == 0
+
+-- Verify SafeSDiv has 2 preconditions (div-by-zero + overflow)
+#guard (collectWFObligations Core.Factory
+  (LExpr.mkApp () Core.bv32SafeSDivOp [
+    .fvar () ⟨"x", ()⟩ (some (.bitvec 32)),
+    .fvar () ⟨"y", ()⟩ (some (.bitvec 32))])).length == 2
+
+-- Verify SDivOverflow predicate and SafeSDiv/SafeSMod exist
+#check Core.bv32SDivOverflowOp
+#check Core.bv32SafeSDivOp
+#check Core.bv32SafeSModOp

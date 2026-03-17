@@ -18,6 +18,7 @@ import all Strata.DL.Lambda.LTy
 import all Strata.DL.Lambda.LExpr
 import all Strata.DL.Lambda.Factory
 import all Strata.DL.Lambda.FactoryWF
+import Strata.DL.Util.BitVec
 ---------------------------------------------------------------------
 
 namespace Core
@@ -110,7 +111,9 @@ private def BVOpSpecs : Array BVOpSpec := #[
   ⟨"SNegOverflow",  .overflowUnary ``BitVec.negOverflow⟩,
   ⟨"SAddOverflow",  .overflowBinary ``BitVec.saddOverflow⟩,
   ⟨"SSubOverflow",  .overflowBinary ``BitVec.ssubOverflow⟩,
-  ⟨"SMulOverflow",  .overflowBinary ``BitVec.smulOverflow⟩
+  ⟨"SMulOverflow",  .overflowBinary ``BitVec.smulOverflow⟩,
+  -- Signed division overflow predicate: true iff x == INT_MIN ∧ y == -1
+  ⟨"SDivOverflow",  .overflowBinary ``BitVec.sdivOverflow⟩
 ]
 
 open Lean Elab Command in
@@ -166,6 +169,16 @@ private def BVSafeOpSpecs : Array BVSafeOpSpec := #[
   ⟨"SafeNeg", ``BitVec.neg,  "SNegOverflow", true⟩
 ]
 
+/-- Specs for safe signed division operations (need both div-by-zero and overflow preconditions). -/
+private structure BVSafeDivOpSpec where
+  opName : String
+  opFn : Lean.Name
+
+private def BVSafeDivOpSpecs : Array BVSafeDivOpSpec := #[
+  ⟨"SafeSDiv", ``BitVec.sdiv⟩,
+  ⟨"SafeSMod", ``BitVec.srem⟩
+]
+
 open Lean Elab Command in
 /-- Generate safe BV operations with overflow preconditions.
     Each safe operation carries a precondition asserting that the overflow
@@ -207,12 +220,51 @@ elab "ExpandBVSafeOpFuncDefs" "[" sizes:num,* "]" : command => do
                 intro p hp; simp at hp; subst hp
                 native_decide)))
 
+open Lean Elab Command in
+/-- Generate safe signed division/modulo operations with both div-by-zero
+    and overflow (INT_MIN / -1) preconditions. -/
+elab "ExpandBVSafeDivOpFuncDefs" "[" sizes:num,* "]" : command => do
+  for size in sizes.getElems do
+    let s := size.getNat.repr
+    let sizeNum := Syntax.mkNumLit s
+    for spec in BVSafeDivOpSpecs do
+      let funcName := mkIdent (.str .anonymous s!"bv{s}{spec.opName}Func")
+      let opName := Syntax.mkStrLit s!"Bv{s}.{spec.opName}"
+      let overflowFuncName := mkIdent
+        (.str .anonymous s!"bv{s}SDivOverflowFunc")
+      elabCommand (← `(
+        def $funcName : Lambda.WFLFunc CoreLParams :=
+          Lambda.binaryOp (InValTy := BitVec $sizeNum) $opName $(mkIdent spec.opFn) (· != 0)
+            (preconditions := [
+              -- Precondition 1: y ≠ 0 (division by zero)
+              ⟨.app default
+                (Lambda.boolNotFunc (T := CoreLParams)).func.opExpr
+                (.eq default
+                  (.fvar default "y" (some (.bitvec $sizeNum)))
+                  (LExpr.bitvecConst default $sizeNum (0 : BitVec $sizeNum))),
+                default⟩,
+              -- Precondition 2: ¬ SDivOverflow(x, y)
+              ⟨.app default
+                (Lambda.boolNotFunc (T := CoreLParams)).func.opExpr
+                (.app default
+                  (.app default ($overflowFuncName).opExpr
+                    (.fvar default "x" (some (.bitvec $sizeNum))))
+                  (.fvar default "y" (some (.bitvec $sizeNum)))),
+                default⟩])
+            (h_precond := by
+              intro p hp
+              simp only [List.mem_cons, List.mem_singleton, List.mem_nil_iff, or_false] at hp
+              cases hp with
+              | inl h => subst h; native_decide
+              | inr h => subst h; native_decide)))
+
 end -- public meta section
 
 public section
 
 ExpandBVOpFuncDefs[1, 2, 8, 16, 32, 64]
 ExpandBVSafeOpFuncDefs[1, 2, 8, 16, 32, 64]
+ExpandBVSafeDivOpFuncDefs[1, 2, 8, 16, 32, 64]
 
 /- Real Arithmetic Operations -/
 
@@ -380,6 +432,16 @@ macro "ExpandBVSafeOpFuncNames" "[" sizes:num,* "]" : term => do
       allOps := allOps.push (mkIdent (.str (.str .anonymous "Core") name))
   `([$(allOps),*])
 
+open Lean in
+macro "ExpandBVSafeDivOpFuncNames" "[" sizes:num,* "]" : term => do
+  let mut allOps := #[]
+  for size in sizes.getElems do
+    let s := size.getNat.repr
+    for spec in BVSafeDivOpSpecs do
+      let name := s!"bv{s}" ++ spec.opName ++ "Func"
+      allOps := allOps.push (mkIdent (.str (.str .anonymous "Core") name))
+  `([$(allOps),*])
+
 end -- public meta section
 
 public section
@@ -484,7 +546,8 @@ def WFFactory : Lambda.WFLFactory CoreLParams :=
   bv64Extract_15_0_Func,
   bv64Extract_7_0_Func,
 ] ++ (ExpandBVOpFuncNames [1,8,16,32,64])
-  ++ (ExpandBVSafeOpFuncNames [1,8,16,32,64]))
+  ++ (ExpandBVSafeOpFuncNames [1,8,16,32,64])
+  ++ (ExpandBVSafeDivOpFuncNames [1,8,16,32,64]))
 
 @[expose]
 def Factory : @Factory CoreLParams := WFLFactory.toFactory WFFactory
@@ -511,6 +574,15 @@ elab "DefBVSafeOpFuncExprs" "[" sizes:num,* "]" : command => do
       let funcName := mkIdent (.str (.str .anonymous "Core") s!"bv{s}{spec.opName}Func")
       elabCommand (← `(def $opName : Expression.Expr := ($funcName).opExpr))
 
+open Lean Elab Command in
+elab "DefBVSafeDivOpFuncExprs" "[" sizes:num,* "]" : command => do
+  for size in sizes.getElems do
+    let s := size.getNat.repr
+    for spec in BVSafeDivOpSpecs do
+      let opName := mkIdent (.str .anonymous s!"bv{s}{spec.opName}Op")
+      let funcName := mkIdent (.str (.str .anonymous "Core") s!"bv{s}{spec.opName}Func")
+      elabCommand (← `(def $opName : Expression.Expr := ($funcName).opExpr))
+
 end -- public meta section
 
 public section
@@ -520,6 +592,7 @@ instance : Inhabited CoreLParams.Metadata where
 
 DefBVOpFuncExprs [1, 8, 16, 32, 64]
 DefBVSafeOpFuncExprs [1, 8, 16, 32, 64]
+DefBVSafeDivOpFuncExprs [1, 8, 16, 32, 64]
 
 def bv8ConcatOp : Expression.Expr := bv8ConcatFunc.opExpr
 def bv16ConcatOp : Expression.Expr := bv16ConcatFunc.opExpr

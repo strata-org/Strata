@@ -455,7 +455,9 @@ def bvBinaryOpMap {M} [Inhabited M] :
   -- Safe variants map to the same CST constructors
   ("SafeAdd", fun ty arg1 arg2 => .add_expr default ty arg1 arg2),
   ("SafeSub", fun ty arg1 arg2 => .sub_expr default ty arg1 arg2),
-  ("SafeMul", fun ty arg1 arg2 => .mul_expr default ty arg1 arg2)
+  ("SafeMul", fun ty arg1 arg2 => .mul_expr default ty arg1 arg2),
+  ("SafeSDiv", fun ty arg1 arg2 => .bvsdiv default ty arg1 arg2),
+  ("SafeSMod", fun ty arg1 arg2 => .bvsmod default ty arg1 arg2)
 ]
 
 /-- Map from bitvector sizes to their corresponding type constructors -/

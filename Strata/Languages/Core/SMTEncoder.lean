@@ -370,6 +370,19 @@ partial def toSMTOp (E : Env) (fn : CoreIdent) (fnty : LMonoTy) (ctx : SMT.Conte
     .ok (adtApp, smt_outty, ctx)
   | none =>
     -- Not a constructor, tester, or destructor
+    -- Helper: SDivOverflow(x, y) = (x == INT_MIN) ∧ (y == -1)
+    let sdivOverflowEnc := fun (n : Nat) (ctx : SMT.Context) =>
+      let sdivOverflowApp := fun (args : List Term) (_retTy : TermType) =>
+        match args with
+        | [x, y] =>
+          let bvTy := TermType.prim (.bitvec n)
+          let intMin := Term.prim (.bitvec (BitVec.intMin n))
+          let negOne := Term.prim (.bitvec (BitVec.allOnes n))
+          let xIsMin := Term.app Op.eq [x, intMin] .bool
+          let yIsNegOne := Term.app Op.eq [y, negOne] .bool
+          Term.app Op.and [xIsMin, yIsNegOne] .bool
+        | _ => Term.app Op.and [] .bool
+      Except.ok (sdivOverflowApp, TermType.prim .bool, ctx)
     match E.factory.getFactoryLFunc fn.name with
     | none => .error f!"Cannot find function {fn} in Strata Core's Factory!"
     | some func =>
@@ -579,27 +592,42 @@ partial def toSMTOp (E : Env) (fn : CoreIdent) (fnty : LMonoTy) (ctx : SMT.Conte
     | "Bv64.SafeSub" => .ok (.app Op.bvsub,      .bitvec 64, ctx)
     | "Bv64.SafeMul" => .ok (.app Op.bvmul,      .bitvec 64, ctx)
     | "Bv64.SafeNeg" => .ok (.app Op.bvneg,      .bitvec 64, ctx)
+    | "Bv1.SafeSDiv"  => .ok (.app Op.bvsdiv,     .bitvec 1, ctx)
+    | "Bv1.SafeSMod"  => .ok (.app Op.bvsrem,     .bitvec 1, ctx)
+    | "Bv8.SafeSDiv"  => .ok (.app Op.bvsdiv,     .bitvec 8, ctx)
+    | "Bv8.SafeSMod"  => .ok (.app Op.bvsrem,     .bitvec 8, ctx)
+    | "Bv16.SafeSDiv" => .ok (.app Op.bvsdiv,     .bitvec 16, ctx)
+    | "Bv16.SafeSMod" => .ok (.app Op.bvsrem,     .bitvec 16, ctx)
+    | "Bv32.SafeSDiv" => .ok (.app Op.bvsdiv,     .bitvec 32, ctx)
+    | "Bv32.SafeSMod" => .ok (.app Op.bvsrem,     .bitvec 32, ctx)
+    | "Bv64.SafeSDiv" => .ok (.app Op.bvsdiv,     .bitvec 64, ctx)
+    | "Bv64.SafeSMod" => .ok (.app Op.bvsrem,     .bitvec 64, ctx)
     -- Signed overflow predicates
     | "Bv1.SAddOverflow"  => .ok (.app Op.bvsaddo,  .bool, ctx)
     | "Bv1.SSubOverflow"  => .ok (.app Op.bvssubo,  .bool, ctx)
     | "Bv1.SMulOverflow"  => .ok (.app Op.bvsmulo,  .bool, ctx)
     | "Bv1.SNegOverflow"  => .ok (.app Op.bvnego,   .bool, ctx)
+    | "Bv1.SDivOverflow"  => sdivOverflowEnc 1 ctx
     | "Bv8.SAddOverflow"  => .ok (.app Op.bvsaddo,  .bool, ctx)
     | "Bv8.SSubOverflow"  => .ok (.app Op.bvssubo,  .bool, ctx)
     | "Bv8.SMulOverflow"  => .ok (.app Op.bvsmulo,  .bool, ctx)
     | "Bv8.SNegOverflow"  => .ok (.app Op.bvnego,   .bool, ctx)
+    | "Bv8.SDivOverflow"  => sdivOverflowEnc 8 ctx
     | "Bv16.SAddOverflow" => .ok (.app Op.bvsaddo,  .bool, ctx)
     | "Bv16.SSubOverflow" => .ok (.app Op.bvssubo,  .bool, ctx)
     | "Bv16.SMulOverflow" => .ok (.app Op.bvsmulo,  .bool, ctx)
     | "Bv16.SNegOverflow" => .ok (.app Op.bvnego,   .bool, ctx)
+    | "Bv16.SDivOverflow" => sdivOverflowEnc 16 ctx
     | "Bv32.SAddOverflow" => .ok (.app Op.bvsaddo,  .bool, ctx)
     | "Bv32.SSubOverflow" => .ok (.app Op.bvssubo,  .bool, ctx)
     | "Bv32.SMulOverflow" => .ok (.app Op.bvsmulo,  .bool, ctx)
     | "Bv32.SNegOverflow" => .ok (.app Op.bvnego,   .bool, ctx)
+    | "Bv32.SDivOverflow" => sdivOverflowEnc 32 ctx
     | "Bv64.SAddOverflow" => .ok (.app Op.bvsaddo,  .bool, ctx)
     | "Bv64.SSubOverflow" => .ok (.app Op.bvssubo,  .bool, ctx)
     | "Bv64.SMulOverflow" => .ok (.app Op.bvsmulo,  .bool, ctx)
     | "Bv64.SNegOverflow" => .ok (.app Op.bvnego,   .bool, ctx)
+    | "Bv64.SDivOverflow" => sdivOverflowEnc 64 ctx
 
     | "Bv8.Concat"   => .ok (.app Op.bvconcat,   .bitvec 16, ctx)
     | "Bv16.Concat"  => .ok (.app Op.bvconcat,   .bitvec 32, ctx)
