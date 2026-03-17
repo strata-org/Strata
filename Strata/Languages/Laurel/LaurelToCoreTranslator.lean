@@ -172,9 +172,9 @@ def translateExpr (expr : StmtExprMd)
     match op with
     | .Eq => return .eq () re1 re2
     | .Neq => return .app () boolNotOp (.eq () re1 re2)
-    | .And => return binOp boolAndOp
-    | .Or => return binOp boolOrOp
-    | .Implies => return binOp boolImpliesOp
+    | .And => return .ite () re1 re2 (.boolConst () false)
+    | .Or => return .ite () re1 (.boolConst () true) re2
+    | .Implies => return .ite () re1 re2 (.boolConst () true)
     | .Add => return binOp (if isReal then realAddOp else intAddOp)
     | .Sub => return binOp (if isReal then realSubOp else intSubOp)
     | .Mul => return binOp (if isReal then realMulOp else intMulOp)
