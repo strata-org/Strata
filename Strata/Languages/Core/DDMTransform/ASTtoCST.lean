@@ -710,6 +710,11 @@ partial def lappToExpr {M} [Inhabited M]
   | .app _ (.op _ fn _) e1 => do
     let e1Expr ← lexprToExpr e1 qLevel
     lopToExpr fn.name (e1Expr :: acc)
+  | .app _ (.fvar m fn tp) e1 => do
+    -- Free-variable application: format as fn(args)
+    let fnCST ← lexprToExpr (.fvar m fn tp) qLevel
+    let e1Expr ← lexprToExpr e1 qLevel
+    pure <| (e1Expr :: acc).foldl (fun fnAcc arg => .app default fnAcc arg) fnCST
   | _ => do
     ToCSTM.logError "lappToExpr" "unsupported application" (toString e)
     pure (.btrue default)  -- Default to true literal
@@ -836,11 +841,12 @@ partial def stmtToCST {M} [Inhabited M] (s : Core.Statement)
     let thenCST ← blockToCST thenb
     let elseCST ← elseToCST elseb
     pure (.if_statement default condCST thenCST elseCST)
-  | .loop guard _measure invariant body _md => do
+  | .loop guard measure invariant body _md => do
     let guardCST ← lexprToExpr guard 0
+    let measureCST ← measureToCST measure
     let invs ← invariantsToCST invariant
     let bodyCST ← blockToCST body
-    pure (.while_statement default guardCST invs bodyCST)
+    pure (.while_statement default guardCST measureCST invs bodyCST)
   | .exit label _md => do
     match label with
     | some l =>
@@ -877,6 +883,15 @@ partial def invariantsToCST {M} [Inhabited M]
     let exprCST ← lexprToExpr expr 0
     let restCST ← invariantsToCST rest
     pure (.consInvariants default exprCST restCST)
+
+partial def measureToCST {M} [Inhabited M]
+    (measure : Option (Lambda.LExpr CoreLParams.mono)) :
+    ToCSTM M (Ann (Option (Measure M)) M) := do
+  match measure with
+  | none => pure ⟨default, none⟩
+  | some e =>
+    let exprCST ← lexprToExpr e 0
+    pure ⟨default, some (.measure_mk default exprCST)⟩
 end
 
 /-- Convert a procedure to CST
@@ -1123,8 +1138,9 @@ def Core.formatExprs (exprs : List Core.Expression.Expr)
   if finalCtx.errors.isEmpty then
     formatted
   else
-    formatted ++ " -- Errors: " ++
-    Std.Format.joinSep (finalCtx.errors.toList.map (Std.format ∘ toString)) "; "
+    formatted ++ "\n" ++
+    "-- Errors: " ++
+      Std.Format.joinSep (finalCtx.errors.toList.map (Std.format ∘ toString)) "; "
 
 /-- Render `Core.Program` to a format object.
 

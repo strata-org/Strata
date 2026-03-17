@@ -68,8 +68,8 @@ def toLMonoTy {T : LExprParamsT} (e : LExprT T) : LMonoTy :=
 
 /--
 Remove any type annotation stored in metadata for all
-expressions, except the `.op`s and free variables
-`.fvar`s.
+expressions, except the `.op`s, free variables
+`.fvar`s, and bound variables in `.abs` and `.quant`.
 -/
 def unresolved {T : LExprParamsT} (e : LExprT T) : LExpr T.base.mono :=
   match e with
@@ -232,7 +232,7 @@ def resolveAux (C: LContext T) (Env : TEnv T.IDMeta) (e : LExpr T.mono) :
     let (ty, Env) ← do
       match C.functions.find? (fun fn => fn.name == o) with
       | none =>
-        .error f!"{toString $ C.functions.getFunctionNames} Cannot infer the type of this operation: \
+        .error f!"Function names: {toString $ C.functions.getFunctionNames} Cannot infer the type of this operation: \
                   `{o}`"
       | some func => do
           -- `LFunc.type` below will also catch any ill-formed functions (e.g.,
