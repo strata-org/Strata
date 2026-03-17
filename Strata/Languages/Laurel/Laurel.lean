@@ -300,8 +300,9 @@ inductive StmtExpr : Type where
   | Abstract
   /-- Refers to all objects in the heap. Used in reads or modifies clauses. -/
   | All
-  /-- A hole with Top type, useful for partially available programs. -/
-  | Hole
+  /-- A hole representing an unknown expression. The optional type is inferred
+      by the hole type inference pass; `none` means the type has not been inferred yet. -/
+  | Hole (type : Option (WithMetadata HighType) := none)
 
 inductive ContractType where
   | Reads | Modifies | Precondition | PostCondition

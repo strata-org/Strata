@@ -322,8 +322,8 @@ def transformStmt (stmt : StmtExprMd) : LiftM (List StmtExprMd) := do
   | .LocalVariable name ty initializer =>
       match _ : initializer with
       | some initExprMd =>
-          -- If the initializer is a direct imperative StaticCall, don't lift it —
-          -- translateStmt handles LocalVariable + StaticCall directly as a call statement.
+         -- If the initializer is a direct imperative StaticCall, don't lift it —
+         -- translateStmt handles LocalVariable + StaticCall directly as a call statement.
           match _: initExprMd with
           | WithMetadata.mk initExpr _ =>
           match _: initExpr with
