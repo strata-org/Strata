@@ -1487,7 +1487,6 @@ def translateDistinct (p : Program) (bindings : TransBindings) (op : Operation) 
 inductive FnInterp where
   | Definition
   | Declaration
-  | RecursiveDefinition
   deriving Repr
 
 def translateOptionInline (arg : Arg) : TransM (Array Strata.DL.Util.FuncAttr) := do
@@ -1505,55 +1504,29 @@ def translateFunction (status : FnInterp) (p : Program) (bindings : TransBinding
     match status with
     | .Definition           => @checkOp (Core.Decl × TransBindings) op q`Core.command_fndef     7
     | .Declaration          => @checkOp (Core.Decl × TransBindings) op q`Core.command_fndecl    4
-    | .RecursiveDefinition  => @checkOp (Core.Decl × TransBindings) op q`Core.command_recfndef  6
   let fname ← translateIdent Core.CoreIdent op.args[0]!
   let typeArgs ← translateTypeArgs op.args[1]!
-  let sigAndCases : ListMap Core.CoreIdent LMonoTy × Option Nat ← match status with
-    | .RecursiveDefinition => translateBindingsWithCases bindings op.args[2]!
-    | _ => do let sig ← translateBindings bindings op.args[2]!; pure (sig, none)
-  let sig := sigAndCases.1
-  let casesIdx := sigAndCases.2
+  let sig ← translateBindings bindings op.args[2]!
   let ret ← translateLMonoTy bindings op.args[3]!
   let in_bindings := (sig.map (fun (v, ty) => (LExpr.fvar () v ty))).toArray
   let orig_bbindings := bindings.boundVars
-  -- INVARIANT: The binding order here must exactly match the DDM elaborator's
-  -- typing context in `Elab/Core.lean` (the `scopeSelf` branch), which pushes:
-  --   [inherited..., self, typeArgTVars..., params...]
-  -- The `@[scope(typeArgs)] b : Bindings` grammar argument causes the DDM to
-  -- re-push type arg tvar bindings before the value param bindings. We must
-  -- include placeholders for these type args so that de Bruijn indices in the
-  -- elaborated body expression resolve correctly during translation.
-  let bbindings ← match status with
-    | .RecursiveDefinition =>
-      let fnTy := LMonoTy.mkArrow' ret (sig.map Prod.snd)
-      let selfBinding := LExpr.op () fname fnTy
-      let tyArgPlaceholders := typeArgs.map fun (ta: TyIdentifier) =>
-        LExpr.op () (ta : Core.CoreIdent) .none
-      pure (bindings.boundVars ++ #[selfBinding] ++ tyArgPlaceholders ++ in_bindings)
-    | _ => pure (bindings.boundVars ++ in_bindings)
+  let bbindings := bindings.boundVars ++ in_bindings
   let bindings := { bindings with boundVars := bbindings }
-  let casesAttr := match casesIdx with
-    | some i => #[.inlineIfConstr i]
-    | none => #[]
   let (preconds, body, inline?) ← match status with
     | .Definition =>
       let preconds ← translateFnPreconds p fname bindings op.args[4]!
       let e ← translateExpr p bindings op.args[5]!
       let inline? ← translateOptionInline op.args[6]!
       pure (preconds, some e, inline?)
-    | .RecursiveDefinition =>
-      let preconds ← translateFnPreconds p fname bindings op.args[4]!
-      let e ← translateExpr p bindings op.args[5]!
-      pure (preconds, some e, #[])
     | .Declaration => pure ([], none, #[])
   let md ← getOpMetaData op
   let decl := .func { name := fname,
                       typeArgs := typeArgs.toList,
-                      isRecursive := status matches .RecursiveDefinition,
+                      isRecursive := false,
                       inputs := sig,
                       output := ret,
                       body := body,
-                      attr := casesAttr ++ inline?,
+                      attr := inline?,
                       preconditions := preconds } md
   return (decl,
           { bindings with
