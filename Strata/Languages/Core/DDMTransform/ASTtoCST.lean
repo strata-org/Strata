@@ -408,6 +408,12 @@ def handleUnaryOps {M} [Inhabited M] (name : String) (arg : CoreDDM.Expr M)
   | "Bv16.SafeNeg" => pure (.neg_expr default (.bv16 default) arg)
   | "Bv32.SafeNeg" => pure (.neg_expr default (.bv32 default) arg)
   | "Bv64.SafeNeg" => pure (.neg_expr default (.bv64 default) arg)
+  -- Safe unsigned negation variants
+  | "Bv1.SafeUNeg" => pure (.neg_expr default (.bv1 default) arg)
+  | "Bv8.SafeUNeg" => pure (.neg_expr default (.bv8 default) arg)
+  | "Bv16.SafeUNeg" => pure (.neg_expr default (.bv16 default) arg)
+  | "Bv32.SafeUNeg" => pure (.neg_expr default (.bv32 default) arg)
+  | "Bv64.SafeUNeg" => pure (.neg_expr default (.bv64 default) arg)
   -- Signed negation overflow predicates
   | "Bv1.SNegOverflow" => pure (.neg_expr default (.bv1 default) arg)
   | "Bv8.SNegOverflow" => pure (.neg_expr default (.bv8 default) arg)
@@ -457,7 +463,10 @@ def bvBinaryOpMap {M} [Inhabited M] :
   ("SafeSub", fun ty arg1 arg2 => .sub_expr default ty arg1 arg2),
   ("SafeMul", fun ty arg1 arg2 => .mul_expr default ty arg1 arg2),
   ("SafeSDiv", fun ty arg1 arg2 => .bvsdiv default ty arg1 arg2),
-  ("SafeSMod", fun ty arg1 arg2 => .bvsmod default ty arg1 arg2)
+  ("SafeSMod", fun ty arg1 arg2 => .bvsmod default ty arg1 arg2),
+  ("SafeUAdd", fun ty arg1 arg2 => .add_expr default ty arg1 arg2),
+  ("SafeUSub", fun ty arg1 arg2 => .sub_expr default ty arg1 arg2),
+  ("SafeUMul", fun ty arg1 arg2 => .mul_expr default ty arg1 arg2)
 ]
 
 /-- Map from bitvector sizes to their corresponding type constructors -/

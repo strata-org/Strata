@@ -113,7 +113,12 @@ private def BVOpSpecs : Array BVOpSpec := #[
   ⟨"SSubOverflow",  .overflowBinary ``BitVec.ssubOverflow⟩,
   ⟨"SMulOverflow",  .overflowBinary ``BitVec.smulOverflow⟩,
   -- Signed division overflow predicate: true iff x == INT_MIN ∧ y == -1
-  ⟨"SDivOverflow",  .overflowBinary ``BitVec.sdivOverflow⟩
+  ⟨"SDivOverflow",  .overflowBinary ``BitVec.sdivOverflow⟩,
+  -- Unsigned overflow predicates
+  ⟨"UNegOverflow",  .overflowUnary ``BitVec.unegOverflow⟩,
+  ⟨"UAddOverflow",  .overflowBinary ``BitVec.uaddOverflow⟩,
+  ⟨"USubOverflow",  .overflowBinary ``BitVec.usubOverflow⟩,
+  ⟨"UMulOverflow",  .overflowBinary ``BitVec.umulOverflow⟩
 ]
 
 open Lean Elab Command in
@@ -166,7 +171,11 @@ private def BVSafeOpSpecs : Array BVSafeOpSpec := #[
   ⟨"SafeAdd", ``BitVec.add,  "SAddOverflow", false⟩,
   ⟨"SafeSub", ``BitVec.sub,  "SSubOverflow", false⟩,
   ⟨"SafeMul", ``BitVec.mul,  "SMulOverflow", false⟩,
-  ⟨"SafeNeg", ``BitVec.neg,  "SNegOverflow", true⟩
+  ⟨"SafeNeg", ``BitVec.neg,  "SNegOverflow", true⟩,
+  ⟨"SafeUAdd", ``BitVec.add,  "UAddOverflow", false⟩,
+  ⟨"SafeUSub", ``BitVec.sub,  "USubOverflow", false⟩,
+  ⟨"SafeUMul", ``BitVec.mul,  "UMulOverflow", false⟩,
+  ⟨"SafeUNeg", ``BitVec.neg,  "UNegOverflow", true⟩
 ]
 
 /-- Specs for safe signed division operations (need both div-by-zero and overflow preconditions). -/

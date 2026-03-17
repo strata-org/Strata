@@ -375,7 +375,6 @@ partial def toSMTOp (E : Env) (fn : CoreIdent) (fnty : LMonoTy) (ctx : SMT.Conte
       let sdivOverflowApp := fun (args : List Term) (_retTy : TermType) =>
         match args with
         | [x, y] =>
-          let bvTy := TermType.prim (.bitvec n)
           let intMin := Term.prim (.bitvec (BitVec.intMin n))
           let negOne := Term.prim (.bitvec (BitVec.allOnes n))
           let xIsMin := Term.app Op.eq [x, intMin] .bool
@@ -383,10 +382,65 @@ partial def toSMTOp (E : Env) (fn : CoreIdent) (fnty : LMonoTy) (ctx : SMT.Conte
           Term.app Op.and [xIsMin, yIsNegOne] .bool
         | _ => Term.app Op.and [] .bool
       Except.ok (sdivOverflowApp, TermType.prim .bool, ctx)
+    -- USubOverflow(x, y) = bvult(x, y)
+    let usubOverflowEnc := fun (ctx : SMT.Context) =>
+      Except.ok (Term.app Op.bvult, TermType.prim .bool, ctx)
+    -- UAddOverflow(x, y) = bvult(bvadd(x, y), x) — wrapping add < operand means overflow
+    let uaddOverflowEnc := fun (_n : Nat) (ctx : SMT.Context) =>
+      let app := fun (args : List Term) (retTy : TermType) =>
+        match args with
+        | [x, y] =>
+          let sum := Term.app Op.bvadd [x, y] retTy
+          Term.app Op.bvult [sum, x] .bool
+        | _ => Term.app Op.and [] .bool
+      Except.ok (app, TermType.prim .bool, ctx)
+    -- UMulOverflow(x, y) = bvugt(zero_extend(N, x) * zero_extend(N, y), zero_extend(N, MAX))
+    let umulOverflowEnc := fun (n : Nat) (ctx : SMT.Context) =>
+      let app := fun (args : List Term) (_retTy : TermType) =>
+        match args with
+        | [x, y] =>
+          let extTy := TermType.prim (.bitvec (n + n))
+          let xe := Term.app (.zero_extend n) [x] extTy
+          let ye := Term.app (.zero_extend n) [y] extTy
+          let prod := Term.app Op.bvmul [xe, ye] extTy
+          let maxVal := Term.prim (.bitvec (BitVec.allOnes n))
+          let maxExt := Term.app (.zero_extend n) [maxVal] extTy
+          Term.app Op.bvugt [prod, maxExt] .bool
+        | _ => Term.app Op.and [] .bool
+      Except.ok (app, TermType.prim .bool, ctx)
+    -- UNegOverflow(x) = x != 0
+    let unegOverflowEnc := fun (n : Nat) (ctx : SMT.Context) =>
+      let app := fun (args : List Term) (_retTy : TermType) =>
+        match args with
+        | [x] =>
+          let zero := Term.prim (.bitvec (BitVec.zero n))
+          Term.app Op.not [Term.app Op.eq [x, zero] .bool] .bool
+        | _ => Term.app Op.and [] .bool
+      Except.ok (app, TermType.prim .bool, ctx)
     match E.factory.getFactoryLFunc fn.name with
     | none => .error f!"Cannot find function {fn} in Strata Core's Factory!"
     | some func =>
-      match func.name.name with
+      -- Handle unsigned overflow predicates and safe ops via if-then-else
+      -- (kept separate from the main match to avoid C compiler nesting limits)
+      let name := func.name.name
+      if name.startsWith "Bv" && (name.endsWith "UAddOverflow" || name.endsWith "USubOverflow" ||
+         name.endsWith "UMulOverflow" || name.endsWith "UNegOverflow" ||
+         name.endsWith "SafeUAdd" || name.endsWith "SafeUSub" ||
+         name.endsWith "SafeUMul" || name.endsWith "SafeUNeg") then
+        -- Parse size from "BvN.Op"
+        let sizeStr := (name.splitOn ".").head!.drop 2
+        let n := sizeStr.toNat!
+        let bvTy := TermType.prim (.bitvec n)
+        if name.endsWith "UAddOverflow" then uaddOverflowEnc n ctx
+        else if name.endsWith "USubOverflow" then usubOverflowEnc ctx
+        else if name.endsWith "UMulOverflow" then umulOverflowEnc n ctx
+        else if name.endsWith "UNegOverflow" then unegOverflowEnc n ctx
+        else if name.endsWith "SafeUAdd" then .ok (.app Op.bvadd, bvTy, ctx)
+        else if name.endsWith "SafeUSub" then .ok (.app Op.bvsub, bvTy, ctx)
+        else if name.endsWith "SafeUMul" then .ok (.app Op.bvmul, bvTy, ctx)
+        else .ok (.app Op.bvneg, bvTy, ctx) -- SafeUNeg
+      else
+      match name with
     | "Bool.And"     => .ok (.app Op.and,        .bool,   ctx)
     | "Bool.Or"      => .ok (.app Op.or,         .bool,   ctx)
     | "Bool.Not"     => .ok (.app Op.not,        .bool,   ctx)
@@ -628,6 +682,7 @@ partial def toSMTOp (E : Env) (fn : CoreIdent) (fnty : LMonoTy) (ctx : SMT.Conte
     | "Bv64.SMulOverflow" => .ok (.app Op.bvsmulo,  .bool, ctx)
     | "Bv64.SNegOverflow" => .ok (.app Op.bvnego,   .bool, ctx)
     | "Bv64.SDivOverflow" => sdivOverflowEnc 64 ctx
+    -- Unsigned overflow predicates
 
     | "Bv8.Concat"   => .ok (.app Op.bvconcat,   .bitvec 16, ctx)
     | "Bv16.Concat"  => .ok (.app Op.bvconcat,   .bitvec 32, ctx)

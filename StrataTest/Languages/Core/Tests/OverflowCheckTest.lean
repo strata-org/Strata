@@ -57,3 +57,19 @@ open Strata Core Lambda
 #check Core.bv32SDivOverflowOp
 #check Core.bv32SafeSDivOp
 #check Core.bv32SafeSModOp
+
+-- Verify SafeUAdd has 1 precondition (unsigned overflow)
+#guard (collectWFObligations Core.Factory
+  (LExpr.mkApp () Core.bv8SafeUAddOp [
+    .fvar () ⟨"x", ()⟩ (some (.bitvec 8)),
+    .fvar () ⟨"y", ()⟩ (some (.bitvec 8))])).length == 1
+
+-- Verify unsigned overflow predicates exist
+#check Core.bv32UAddOverflowOp
+#check Core.bv32USubOverflowOp
+#check Core.bv32UMulOverflowOp
+#check Core.bv32UNegOverflowOp
+#check Core.bv32SafeUAddOp
+#check Core.bv32SafeUSubOp
+#check Core.bv32SafeUMulOp
+#check Core.bv32SafeUNegOp
