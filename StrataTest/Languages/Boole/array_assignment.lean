@@ -29,8 +29,6 @@ procedure matrix_transpose (A: Matrix, m: int, n: int) returns (B: Matrix)
       // indexing (`arr[i][j]... := v`).
       // Lowering recursively nests map `select`/`update`, so any index depth works.
       B[i][j] := A[j][i];
-      // Previously would have been:
-      // B := B[i := (B[i])[j := (A[j])[i]]];
       j := j + 1;
     }
     i := i + 1;

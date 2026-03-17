@@ -36,6 +36,47 @@ inductive Header where
 | program (loc : SourceRange) (name : DialectName)
 deriving Inhabited
 
+private inductive QuantifierSepState where
+| outside
+| inBinder
+| sawColon
+
+/--
+Canonicalize the legacy dotted Unicode quantifier separator to `::` before DDM
+parsing. This keeps `#strata` generic while accepting both `∀ x . P` and
+`∀ x :: P`.
+-/
+private def normalizeUnicodeQuantifierSeparators (src : String) : String :=
+  (src.foldl
+    (init := ("", QuantifierSepState.outside))
+    (fun (st : String × QuantifierSepState) (ch : Char) =>
+      let (acc, qstate) := st
+      match qstate with
+      | .outside =>
+        if ch == '∀' || ch == '∃' then
+          (acc.push ch, .inBinder)
+        else
+          (acc.push ch, .outside)
+      | .inBinder =>
+        if ch == '.' then
+          (acc ++ "::", .outside)
+        else if ch == ':' then
+          (acc.push ch, .sawColon)
+        else
+          (acc.push ch, .inBinder)
+      | .sawColon =>
+        if ch == ':' then
+          (acc.push ch, .outside)
+        else
+          (acc.push ch, .inBinder))).fst
+
+private def normalizeInputContext (inputContext : InputContext) : InputContext :=
+  let inputString := normalizeUnicodeQuantifierSeparators inputContext.inputString
+  Strata.Parser.stringInputContext (System.FilePath.mk inputContext.fileName) inputString
+
+private def normalizeStopPos (original normalized : InputContext) (stopPos : String.Pos.Raw) : String.Pos.Raw :=
+  if stopPos == original.endPos then normalized.endPos else stopPos
+
 /- Elaborate a Strata program -/
 partial def elabHeader
     (leanEnv : Lean.Environment)
@@ -115,6 +156,9 @@ def elabProgram
     (inputContext : InputContext)
     (startPos : String.Pos.Raw := 0)
     (stopPos : String.Pos.Raw := inputContext.endPos) : Except (Array Message) Program :=
+  let originalInputContext := inputContext
+  let inputContext := normalizeInputContext inputContext
+  let stopPos := normalizeStopPos originalInputContext inputContext stopPos
   assert! "Init" ∈ loader.dialects
   let (header, errors, startPos) := elabHeader leanEnv inputContext startPos stopPos
   if errors.size > 0 then
@@ -426,12 +470,14 @@ def elabDialect
 
 def parseStrataProgramFromDialect (dialects : LoadedDialects) (dialect : DialectName) (input : InputContext) : IO Strata.Program := do
   let leanEnv ← Lean.mkEmptyEnvironment 0
+  let originalInput := input
+  let input := normalizeInputContext input
 
   let isTrue mem := inferInstanceAs (Decidable (dialect ∈ dialects.dialects))
     | throw <| IO.userError "Internal {dialect} missing from loaded dialects."
 
   let strataProgram ←
-    match elabProgramRest dialects leanEnv input dialect mem 0 with
+    match elabProgramRest dialects leanEnv input dialect mem 0 (normalizeStopPos originalInput input input.endPos) with
     | .ok program =>
       pure program
     | .error errors =>
@@ -455,6 +501,9 @@ def parseCategoryFromDialect
     (stopPos : String.Pos.Raw := input.endPos)
     : IO Strata.Operation := do
   let leanEnv ← Lean.mkEmptyEnvironment 0
+  let originalInput := input
+  let input := normalizeInputContext input
+  let stopPos := normalizeStopPos originalInput input stopPos
   -- Open dialects using the same pattern as elabProgramRest: start from
   -- initDeclState (which has Init open) and open each dialect via
   -- ensureLoaded! to avoid panics from HashMap iteration order.

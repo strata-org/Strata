@@ -102,8 +102,11 @@ def genCoreVCs (program : Program) : Option Core.coreVCs := do
     none
 
 /--
-Remove solver-only context caches that are irrelevant for denotation and
-destabilize definitional equality in metaprograms.
+Remove solver-side caches that destabilize definitional equality in metaprograms.
+
+At the moment this is semantically harmless for denotation because
+`Strata.DL.SMT.Denote.denoteQuery` rejects contexts with datatype machinery
+(`typeFactory`, `seenDatatypes`, `datatypeFuns`) populated anyway.
 -/
 private def sanitizeSMTContext (ctx : Core.SMT.Context) : SMT.SanitizedContext :=
   SMT.SanitizedContext.ofCore ctx

@@ -2,9 +2,9 @@
 
 Source: `https://raw.githubusercontent.com/ChengZ3/verus-boogie/boogie/tests/differential_status.md`
 
-Fetched on `2026-03-17`. This is a condensed Boole/Strata backlog derived from the
-`faithful but different`, `not faithful translation`, `others`, and `Gaps`
-sections of the upstream status file.
+This is a condensed Boole/Strata backlog derived from the `faithful but
+different`, `not faithful translation`, `others`, and `Gaps` sections of the
+upstream status file.
 
 ## Semantic fidelity requests
 
@@ -60,23 +60,23 @@ sections of the upstream status file.
 
 ## Boole seed examples
 
-These are now separate Lean examples under [`StrataTest/Languages/Boole/FeatureRequests`](/home/lydia/Desktop/PhD/projects/Strata/StrataTest/Languages/Boole/FeatureRequests).
+These are now separate Lean examples under [`StrataTest/Languages/Boole/FeatureRequests`](../StrataTest/Languages/Boole/FeatureRequests).
 
 | Definition | Primary request(s) |
 | --- | --- |
-| [`datatypes_and_selectors.lean`](/home/lydia/Desktop/PhD/projects/Strata/StrataTest/Languages/Boole/FeatureRequests/datatypes_and_selectors.lean) | Datatype constructor/selector robustness |
-| [`abstract_types_and_stubs.lean`](/home/lydia/Desktop/PhD/projects/Strata/StrataTest/Languages/Boole/FeatureRequests/abstract_types_and_stubs.lean) | Missing model types, stdlib/pervasive stubs |
-| [`nat_int_boundary.lean`](/home/lydia/Desktop/PhD/projects/Strata/StrataTest/Languages/Boole/FeatureRequests/nat_int_boundary.lean) | Native `nat`, coercions |
-| [`map_extensionality.lean`](/home/lydia/Desktop/PhD/projects/Strata/StrataTest/Languages/Boole/FeatureRequests/map_extensionality.lean) | Extensional equality |
-| [`overflow_guard.lean`](/home/lydia/Desktop/PhD/projects/Strata/StrataTest/Languages/Boole/FeatureRequests/overflow_guard.lean) | Overflow guards |
-| [`opaque_reveal_hide.lean`](/home/lydia/Desktop/PhD/projects/Strata/StrataTest/Languages/Boole/FeatureRequests/opaque_reveal_hide.lean) | `opaque`, `reveal`, `hide`, `closed` visibility |
-| [`reveal_with_fuel.lean`](/home/lydia/Desktop/PhD/projects/Strata/StrataTest/Languages/Boole/FeatureRequests/reveal_with_fuel.lean) | `reveal_with_fuel` |
-| [`early_return.lean`](/home/lydia/Desktop/PhD/projects/Strata/StrataTest/Languages/Boole/FeatureRequests/early_return.lean) | Early return |
-| [`widening_casts.lean`](/home/lydia/Desktop/PhD/projects/Strata/StrataTest/Languages/Boole/FeatureRequests/widening_casts.lean) | Widening casts in quantifiers/comparisons |
-| [`choose_operator.lean`](/home/lydia/Desktop/PhD/projects/Strata/StrataTest/Languages/Boole/FeatureRequests/choose_operator.lean) | `choose` |
-| [`higher_order_encoding.lean`](/home/lydia/Desktop/PhD/projects/Strata/StrataTest/Languages/Boole/FeatureRequests/higher_order_encoding.lean) | Higher-order / lambda |
-| [`mutual_recursion.lean`](/home/lydia/Desktop/PhD/projects/Strata/StrataTest/Languages/Boole/FeatureRequests/mutual_recursion.lean) | Mutual recursion / forward references |
-| [`decreases_metadata.lean`](/home/lydia/Desktop/PhD/projects/Strata/StrataTest/Languages/Boole/FeatureRequests/decreases_metadata.lean) | `decreases` preservation |
+| [`datatypes_and_selectors.lean`](../StrataTest/Languages/Boole/FeatureRequests/datatypes_and_selectors.lean) | Datatype constructor/selector robustness |
+| [`abstract_types_and_stubs.lean`](../StrataTest/Languages/Boole/FeatureRequests/abstract_types_and_stubs.lean) | Missing model types, stdlib/pervasive stubs |
+| [`nat_int_boundary.lean`](../StrataTest/Languages/Boole/FeatureRequests/nat_int_boundary.lean) | Native `nat`, coercions |
+| [`map_extensionality.lean`](../StrataTest/Languages/Boole/FeatureRequests/map_extensionality.lean) | Extensional equality |
+| [`overflow_guard.lean`](../StrataTest/Languages/Boole/FeatureRequests/overflow_guard.lean) | Overflow guards |
+| [`opaque_reveal_hide.lean`](../StrataTest/Languages/Boole/FeatureRequests/opaque_reveal_hide.lean) | `opaque`, `reveal`, `hide`, `closed` visibility |
+| [`reveal_with_fuel.lean`](../StrataTest/Languages/Boole/FeatureRequests/reveal_with_fuel.lean) | `reveal_with_fuel` |
+| [`early_return.lean`](../StrataTest/Languages/Boole/FeatureRequests/early_return.lean) | Early return |
+| [`widening_casts.lean`](../StrataTest/Languages/Boole/FeatureRequests/widening_casts.lean) | Widening casts in quantifiers/comparisons |
+| [`choose_operator.lean`](../StrataTest/Languages/Boole/FeatureRequests/choose_operator.lean) | `choose` |
+| [`higher_order_encoding.lean`](../StrataTest/Languages/Boole/FeatureRequests/higher_order_encoding.lean) | Higher-order / lambda |
+| [`mutual_recursion.lean`](../StrataTest/Languages/Boole/FeatureRequests/mutual_recursion.lean) | Mutual recursion / forward references |
+| [`decreases_metadata.lean`](../StrataTest/Languages/Boole/FeatureRequests/decreases_metadata.lean) | `decreases` preservation |
 
 ## Notes
 

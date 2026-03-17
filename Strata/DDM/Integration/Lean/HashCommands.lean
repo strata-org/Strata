@@ -57,6 +57,21 @@ private def mkScopedName {m} [Monad m] [MonadError m] [MonadEnv m] [MonadResolve
     throwError s!"Cannot define {name}: {fullName} already exists."
   return fullName
 
+private def offsetPos (base : String.Pos.Raw) (pos : String.Pos.Raw) : String.Pos.Raw :=
+  ⟨base.byteIdx + pos.byteIdx⟩
+
+private def offsetSourceRange (base : String.Pos.Raw) (sr : SourceRange) : SourceRange :=
+  { start := offsetPos base sr.start, stop := offsetPos base sr.stop }
+
+private def offsetMessage
+    (fullCtx snippetCtx : InputContext)
+    (base : String.Pos.Raw)
+    (msg : Lean.Message) : Lean.Message :=
+  let pos := fullCtx.fileMap.toPosition (offsetPos base (snippetCtx.fileMap.ofPosition msg.pos))
+  let endPos := msg.endPos.map fun endPos =>
+    fullCtx.fileMap.toPosition (offsetPos base (snippetCtx.fileMap.ofPosition endPos))
+  { msg with fileName := fullCtx.fileName, pos := pos, endPos := endPos }
+
 /--
 Add a definition to environment and compile it.
 -/
@@ -127,57 +142,25 @@ def strataDialectImpl: CommandElab := fun (stx : Syntax) => do
 
 declare_tagged_region term strataProgram "#strata" "#end"
 
-private def normalizeQuantifierUnicode (src : String) : String :=
-  let (out, _) := src.foldl
-    (init := ("", false))
-    (fun (st : String × Bool) (ch : Char) =>
-      let (acc, inBinder) := st
-      if !inBinder && ch == '∀' then
-        (acc ++ "forall ", true)
-      else if !inBinder && ch == '∃' then
-        (acc ++ "exists ", true)
-      else if inBinder && ch == '.' then
-        (acc ++ " :: ", false)
-      else
-        (acc.push ch, inBinder))
-  out
-
-private def isBooleProgram (src : String) : Bool :=
-  src.contains "program Boole;"
-
-private def addRawPosOffset (base pos : String.Pos.Raw) : String.Pos.Raw :=
-  ⟨base.byteIdx + pos.byteIdx⟩
-
-private def addSourceRangeOffset (base : String.Pos.Raw) (sr : SourceRange) : SourceRange :=
-  { start := addRawPosOffset base sr.start, stop := addRawPosOffset base sr.stop }
-
-private def offsetProgramRanges (base : String.Pos.Raw) (pgm : Program) : Program :=
-  { pgm with commands := pgm.commands.map (fun cmd => cmd.mapAnn (addSourceRangeOffset base)) }
-
 @[term_elab strataProgram]
 meta def strataProgramImpl : TermElab := fun stx tp => do
   let .atom i v := stx[1]
         | throwError s!"Bad {stx[1]}"
   let .original _ p _ e := i
         | throwError s!"Expected input context"
-  let inputCtx ← (HasInputContext.getInputContext : CoreM _)
-  let snippet := String.Pos.Raw.extract inputCtx.inputString p e
-  let normalized :=
-    if isBooleProgram snippet then
-      normalizeQuantifierUnicode snippet
-    else
-      snippet
-  let rangesNeedOffset := normalized == snippet
+  let fullInputCtx ← (HasInputContext.getInputContext : CoreM _)
+  let snippet := String.Pos.Raw.extract fullInputCtx.inputString p e
   let inputCtx : InputContext := {
-    inputString := normalized
-    fileName := inputCtx.fileName
-    fileMap := FileMap.ofString normalized
+    inputString := snippet
+    fileName := fullInputCtx.fileName
+    fileMap := FileMap.ofString snippet
   }
   let s := (dialectExt.getState (←Lean.getEnv))
   let leanEnv ← Lean.mkEmptyEnvironment 0
   match Elab.elabProgram s.loaded leanEnv inputCtx 0 inputCtx.endPos with
   | .ok pgm =>
-    let pgm := if rangesNeedOffset then offsetProgramRanges p pgm else pgm
+    let commands := pgm.commands.map (fun cmd => cmd.mapAnn (offsetSourceRange p))
+    let pgm := Program.create pgm.dialects pgm.dialect commands
     -- Get Lean name for dialect
     let some (.str name root) := s.nameMap[pgm.dialect]?
       | throwError s!"Unknown dialect {pgm.dialect}"
@@ -193,7 +176,7 @@ meta def strataProgramImpl : TermElab := fun stx tp => do
         (arrayToExpr .zero commandType commandExprs)
   | .error errors =>
     for e in errors do
-      logMessage e
+      logMessage (offsetMessage fullInputCtx inputCtx p e)
     return mkApp2 (mkConst ``sorryAx [1]) (toTypeExpr Program) (toExpr true)
 
 syntax (name := loadDialectCommand) "#load_dialect" str : command

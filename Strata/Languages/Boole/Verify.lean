@@ -5,8 +5,10 @@
 -/
 
 import Strata.Languages.Boole.Boole
-import Strata.Languages.Boole.CoreBridge
+import Strata.Languages.Core.Program
+import Strata.Languages.Core.Statement
 import Strata.Languages.Core.Verifier
+import Strata.DL.Lambda.LExpr
 import Strata.DL.Imperative.Stmt
 
 namespace Strata.Boole
@@ -31,13 +33,13 @@ structure TranslateState where
 
 abbrev TranslateM := StateT TranslateState (Except DiagnosticModel)
 
-def mkIdent (name : String) : Core.Expression.Ident :=
+private def mkIdent (name : String) : Core.Expression.Ident :=
   ⟨name, ()⟩
 
-def throwAt (m : SourceRange) (msg : String) : TranslateM α := do
+private def throwAt (m : SourceRange) (msg : String) : TranslateM α := do
   throw (.withRange ⟨⟨(← get).fileName⟩, m⟩ msg)
 
-def defaultLabel (m : SourceRange) (pfx : String) (l? : Option (BooleDDM.Label SourceRange)) : TranslateM String := do
+private def defaultLabel (m : SourceRange) (pfx : String) (l? : Option (BooleDDM.Label SourceRange)) : TranslateM String := do
   match l? with
   | some (.label _ ⟨_, l⟩) => return l
   | none =>
@@ -45,29 +47,41 @@ def defaultLabel (m : SourceRange) (pfx : String) (l? : Option (BooleDDM.Label S
     modify fun s => { s with labelCounter := i + 1 }
     return s!"{pfx}_{i}_{m.start}"
 
-def withTypeBVars (xs : List String) (k : TranslateM α) : TranslateM α := do
+private def withTypeBVars (xs : List String) (k : TranslateM α) : TranslateM α := do
   let old := (← get).tyBVars
   modify fun s => { s with tyBVars := old ++ xs.toArray }
-  let out ← k
-  modify fun s => { s with tyBVars := old }
-  return out
+  try
+    let out ← k
+    modify fun s => { s with tyBVars := old }
+    return out
+  catch e =>
+    modify fun s => { s with tyBVars := old }
+    throw e
 
-def withBVars (xs : List String) (k : TranslateM α) : TranslateM α := do
+private def withBVars (xs : List String) (k : TranslateM α) : TranslateM α := do
   let old := (← get).bvars
   let fresh := xs.toArray.map (fun n => (.fvar () (mkIdent n) none : Core.Expression.Expr))
   modify fun s => { s with bvars := old ++ fresh }
-  let out ← k
-  modify fun s => { s with bvars := old }
-  return out
+  try
+    let out ← k
+    modify fun s => { s with bvars := old }
+    return out
+  catch e =>
+    modify fun s => { s with bvars := old }
+    throw e
 
-def withBVarExprs (xs : Array Core.Expression.Expr) (k : TranslateM α) : TranslateM α := do
+private def withBVarExprs (xs : Array Core.Expression.Expr) (k : TranslateM α) : TranslateM α := do
   let old := (← get).bvars
   modify fun s => { s with bvars := old ++ xs }
-  let out ← k
-  modify fun s => { s with bvars := old }
-  return out
+  try
+    let out ← k
+    modify fun s => { s with bvars := old }
+    return out
+  catch e =>
+    modify fun s => { s with bvars := old }
+    throw e
 
-def getTypeBVarName (m : SourceRange) (i : Nat) : TranslateM String := do
+private def getTypeBVarName (m : SourceRange) (i : Nat) : TranslateM String := do
   let xs := (← get).tyBVars
   if i < xs.size then
     match xs[(xs.size - i - 1)]? with
@@ -76,12 +90,12 @@ def getTypeBVarName (m : SourceRange) (i : Nat) : TranslateM String := do
   else
     throwAt m s!"Unknown bound type variable with index {i}"
 
-def getFVarName (m : SourceRange) (i : Nat) : TranslateM String := do
+private def getFVarName (m : SourceRange) (i : Nat) : TranslateM String := do
   match (← get).gctx.nameOf? i with
   | some n => return n
   | none => throwAt m s!"Unknown free variable with index {i}"
 
-def getFVarIsOp (m : SourceRange) (i : Nat) : TranslateM Bool := do
+private def getFVarIsOp (m : SourceRange) (i : Nat) : TranslateM Bool := do
   let st ← get
   match st.fvarIsOp[i]? with
   | some b => return b
@@ -91,7 +105,7 @@ def getFVarIsOp (m : SourceRange) (i : Nat) : TranslateM Bool := do
     | some (_, .type _ _) => return false
     | none => throwAt m s!"Unknown free variable with index {i}"
 
-def getBVarExpr (m : SourceRange) (i : Nat) : TranslateM Core.Expression.Expr := do
+private def getBVarExpr (m : SourceRange) (i : Nat) : TranslateM Core.Expression.Expr := do
   let xs := (← get).bvars
   if i < xs.size then
     match xs[(xs.size - i - 1)]? with
@@ -101,31 +115,43 @@ def getBVarExpr (m : SourceRange) (i : Nat) : TranslateM Core.Expression.Expr :=
   else
     throwAt m s!"Unknown bound variable with index {i}"
 
-def typeArgsToList : BooleDDM.TypeArgs SourceRange → List String
+private def typeArgsToList : BooleDDM.TypeArgs SourceRange → List String
   | .type_args _ ⟨_, xs⟩ =>
     xs.toList.map fun
       | .type_var _ ⟨_, n⟩ => n
 
-def bindingsToList : BooleDDM.Bindings SourceRange → List (BooleDDM.Binding SourceRange)
+private def bindingsToList : BooleDDM.Bindings SourceRange → List (BooleDDM.Binding SourceRange)
   | .mkBindings _ ⟨_, xs⟩ => xs.toList
 
-def declListToList : BooleDDM.DeclList SourceRange → List (BooleDDM.Bind SourceRange)
-  | .declAtom _ b => [b]
-  | .declPush _ bs b => declListToList bs ++ [b]
+private def declListToListRev : BooleDDM.DeclList SourceRange → List (BooleDDM.Bind SourceRange) → List (BooleDDM.Bind SourceRange)
+  | .declAtom _ b, acc => b :: acc
+  | .declPush _ bs b, acc => declListToListRev bs (b :: acc)
 
-def monoDeclListToList : BooleDDM.MonoDeclList SourceRange → List (BooleDDM.MonoBind SourceRange)
-  | .monoDeclAtom _ b => [b]
-  | .monoDeclPush _ bs b => monoDeclListToList bs ++ [b]
+private def declListToList : BooleDDM.DeclList SourceRange → List (BooleDDM.Bind SourceRange)
+  | ds => declListToListRev ds []
 
-def constructorListToList : BooleDDM.ConstructorList SourceRange → List (BooleDDM.Constructor SourceRange)
-  | .constructorListAtom _ c => [c]
-  | .constructorListPush _ cs c => constructorListToList cs ++ [c]
+private def monoDeclListToListRev : BooleDDM.MonoDeclList SourceRange → List (BooleDDM.MonoBind SourceRange) → List (BooleDDM.MonoBind SourceRange)
+  | .monoDeclAtom _ b, acc => b :: acc
+  | .monoDeclPush _ bs b, acc => monoDeclListToListRev bs (b :: acc)
 
-def toCoreMetaData (sr : SourceRange) : TranslateM (Imperative.MetaData Core.Expression) := do
+private def monoDeclListToList : BooleDDM.MonoDeclList SourceRange → List (BooleDDM.MonoBind SourceRange)
+  | ds => monoDeclListToListRev ds []
+
+private def constructorListToListRev : BooleDDM.ConstructorList SourceRange → List (BooleDDM.Constructor SourceRange) → List (BooleDDM.Constructor SourceRange)
+  | .constructorListAtom _ c, acc => c :: acc
+  | .constructorListPush _ cs c, acc => constructorListToListRev cs (c :: acc)
+
+private def constructorListToList : BooleDDM.ConstructorList SourceRange → List (BooleDDM.Constructor SourceRange)
+  | cs => constructorListToListRev cs []
+
+private def toCoreMetaData (sr : SourceRange) : TranslateM (Imperative.MetaData Core.Expression) := do
   let file := (← get).fileName
   let uri : Uri := .file file
   let fileRangeElt := ⟨Imperative.MetaData.fileRange, .fileRange ⟨uri, sr⟩⟩
   return #[fileRangeElt]
+
+private def mkCoreApp (op : Core.Expression.Expr) (args : List Core.Expression.Expr) : Core.Expression.Expr :=
+  Lambda.LExpr.mkApp () op args
 
 def toCoreMonoType (t : Boole.Type) : TranslateM Lambda.LMonoTy := do
   match t with
@@ -144,9 +170,9 @@ def toCoreMonoType (t : Boole.Type) : TranslateM Lambda.LMonoTy := do
   | _ => throwAt default "Unsupported type"
 
 def toCoreType (t : Boole.Type) : TranslateM Core.Expression.Ty := do
-  return CoreBridge.monoTyToTy (← toCoreMonoType t)
+  return .forAll [] (← toCoreMonoType t)
 
-def toCoreBinding (b : BooleDDM.Binding SourceRange) : TranslateM (Core.Expression.Ident × Lambda.LMonoTy) := do
+private def toCoreBinding (b : BooleDDM.Binding SourceRange) : TranslateM (Core.Expression.Ident × Lambda.LMonoTy) := do
   match b with
   | .mkBinding _ ⟨_, n⟩ tp =>
     match tp with
@@ -157,27 +183,29 @@ def toCoreBinding (b : BooleDDM.Binding SourceRange) : TranslateM (Core.Expressi
     | .expr ty => return (mkIdent n, ← toCoreMonoType ty)
     | .type m => throwAt m "Unexpected Type parameter in term binding"
 
-def bindingName : BooleDDM.Binding SourceRange → String
+private def bindingName : BooleDDM.Binding SourceRange → String
   | .mkBinding _ ⟨_, n⟩ _ => n
   | .casesBinding _ ⟨_, n⟩ _ => n
 
-def toCoreBind (b : BooleDDM.Bind SourceRange) : TranslateM (Core.Expression.Ident × Core.Expression.Ty) := do
+private def toCoreBind (b : BooleDDM.Bind SourceRange) : TranslateM (Core.Expression.Ident × Core.Expression.Ty) := do
   match b with
   | .bind_mk _ ⟨_, n⟩ _ ty => return (mkIdent n, ← toCoreType ty)
 
-def toCoreMonoBind (b : BooleDDM.MonoBind SourceRange) : TranslateM (Core.Expression.Ident × Lambda.LMonoTy) := do
+private def toCoreMonoBind (b : BooleDDM.MonoBind SourceRange) : TranslateM (Core.Expression.Ident × Lambda.LMonoTy) := do
   match b with
   | .mono_bind_mk _ ⟨_, n⟩ ty => return (mkIdent n, ← toCoreMonoType ty)
 
 def toCoreTypedUn (m : SourceRange) (ty : Boole.Type) (op : String) (a : Core.Expression.Expr) : TranslateM Core.Expression.Expr := do
   let .int _ := ty
     | throwAt m s!"Unsupported typed operator type: {repr ty}"
-  return CoreBridge.mkExprTypedIntUn op a
+  let iop : Core.Expression.Expr := .op () ⟨s!"Int.{op}", ()⟩ none
+  return .app () iop a
 
 def toCoreTypedBin (m : SourceRange) (ty : Boole.Type) (op : String) (a b : Core.Expression.Expr) : TranslateM Core.Expression.Expr := do
   let .int _ := ty
     | throwAt m s!"Unsupported typed operator type: {repr ty}"
-  return CoreBridge.mkExprTypedIntBin op a b
+  let iop : Core.Expression.Expr := .op () ⟨s!"Int.{op}", ()⟩ none
+  return mkCoreApp iop [a, b]
 
 mutual
 
@@ -189,9 +217,36 @@ def toCoreQuant
   let tys ← decls.mapM fun (.bind_mk _ _ _ ty) => toCoreMonoType ty
   let qBVars : Array Core.Expression.Expr := (decls.toArray.mapIdx fun i _ => .bvar () i)
   let body' ← withBVarExprs qBVars (toCoreExpr body)
-  return CoreBridge.mkQuants isForall tys body'
+  let q := if isForall then Lambda.QuantifierKind.all else Lambda.QuantifierKind.exist
+  return tys.foldr (fun ty acc => .quant () q "" (some ty) (.bvar () 0) acc) body'
+
+/--
+Normalize Boole quantifier surface-syntax variants to a single lowering path.
+
+The DDM grammar accepts both ASCII (`forall`, `exists`) and Unicode (`∀`, `∃`)
+spellings, with and without trigger lists. The generated Boole AST keeps those
+spellings as distinct constructors, so the frontend merges them here before
+lowering into Core. Legacy dotted Unicode separators are normalized earlier in
+`Strata.DDM.Elab`, so this helper only needs to collapse the remaining AST
+constructor variants.
+-/
+private def toCoreQuantExpr? (e : Boole.Expr) : Option (TranslateM Core.Expression.Expr) :=
+  match e with
+  | .forall _ ds body
+  | .forall_unicode _ ds body
+  | .forallT _ ds _ body
+  | .forall_unicodeT _ ds _ body =>
+      some (toCoreQuant true ds body)
+  | .exists _ ds body
+  | .exists_unicode _ ds body
+  | .existsT _ ds _ body
+  | .exists_unicodeT _ ds _ body =>
+      some (toCoreQuant false ds body)
+  | _ => none
 
 def toCoreExpr (e : Boole.Expr) : TranslateM Core.Expression.Expr := do
+  if let some q := toCoreQuantExpr? e then
+    return ← q
   match e with
   | .fvar m i =>
     let id := mkIdent (← getFVarName m i)
@@ -201,24 +256,24 @@ def toCoreExpr (e : Boole.Expr) : TranslateM Core.Expression.Expr := do
       return .fvar () id none
   | .bvar m i => getBVarExpr m i
   | .app _ f a => return .app () (← toCoreExpr f) (← toCoreExpr a)
-  | .not _ a => return CoreBridge.mkExprNot (← toCoreExpr a)
+  | .not _ a => return .app () Core.boolNotOp (← toCoreExpr a)
   | .bv1Lit _ ⟨_, n⟩ => return .bitvecConst () 1 n
   | .bv8Lit _ ⟨_, n⟩ => return .bitvecConst () 8 n
   | .bv16Lit _ ⟨_, n⟩ => return .bitvecConst () 16 n
   | .bv32Lit _ ⟨_, n⟩ => return .bitvecConst () 32 n
   | .bv64Lit _ ⟨_, n⟩ => return .bitvecConst () 64 n
   | .natToInt _ ⟨_, n⟩ => return .intConst () (Int.ofNat n)
-  | .if _ _ c t f => return CoreBridge.mkExprIte (← toCoreExpr c) (← toCoreExpr t) (← toCoreExpr f)
-  | .map_get _ _ _ a i => return CoreBridge.mkExprMapSelect (← toCoreExpr a) (← toCoreExpr i)
-  | .map_set _ _ _ a i v => return CoreBridge.mkExprMapUpdate (← toCoreExpr a) (← toCoreExpr i) (← toCoreExpr v)
+  | .if _ _ c t f => return .ite () (← toCoreExpr c) (← toCoreExpr t) (← toCoreExpr f)
+  | .map_get _ _ _ a i => return mkCoreApp Core.mapSelectOp [← toCoreExpr a, ← toCoreExpr i]
+  | .map_set _ _ _ a i v => return mkCoreApp Core.mapUpdateOp [← toCoreExpr a, ← toCoreExpr i, ← toCoreExpr v]
   | .btrue _ => return .true ()
   | .bfalse _ => return .false ()
-  | .and _ a b => return CoreBridge.mkExprBoolAnd (← toCoreExpr a) (← toCoreExpr b)
-  | .or _ a b => return CoreBridge.mkExprBoolOr (← toCoreExpr a) (← toCoreExpr b)
-  | .equiv _ a b => return CoreBridge.mkExprBoolEquiv (← toCoreExpr a) (← toCoreExpr b)
-  | .implies _ a b => return CoreBridge.mkExprBoolImplies (← toCoreExpr a) (← toCoreExpr b)
-  | .equal _ _ a b => return CoreBridge.mkExprEq (← toCoreExpr a) (← toCoreExpr b)
-  | .not_equal _ _ a b => return CoreBridge.mkExprNot (CoreBridge.mkExprEq (← toCoreExpr a) (← toCoreExpr b))
+  | .and _ a b => return mkCoreApp Core.boolAndOp [← toCoreExpr a, ← toCoreExpr b]
+  | .or _ a b => return mkCoreApp Core.boolOrOp [← toCoreExpr a, ← toCoreExpr b]
+  | .equiv _ a b => return mkCoreApp Core.boolEquivOp [← toCoreExpr a, ← toCoreExpr b]
+  | .implies _ a b => return mkCoreApp Core.boolImpliesOp [← toCoreExpr a, ← toCoreExpr b]
+  | .equal _ _ a b => return .eq () (← toCoreExpr a) (← toCoreExpr b)
+  | .not_equal _ _ a b => return .app () Core.boolNotOp (.eq () (← toCoreExpr a) (← toCoreExpr b))
   | .le m ty a b => toCoreTypedBin m ty "Le" (← toCoreExpr a) (← toCoreExpr b)
   | .lt m ty a b => toCoreTypedBin m ty "Lt" (← toCoreExpr a) (← toCoreExpr b)
   | .ge m ty a b => toCoreTypedBin m ty "Ge" (← toCoreExpr a) (← toCoreExpr b)
@@ -230,17 +285,9 @@ def toCoreExpr (e : Boole.Expr) : TranslateM Core.Expression.Expr := do
   | .div_expr m ty a b => toCoreTypedBin m ty "Div" (← toCoreExpr a) (← toCoreExpr b)
   | .mod_expr m ty a b => toCoreTypedBin m ty "Mod" (← toCoreExpr a) (← toCoreExpr b)
   | .old _ _ a =>
-      match CoreBridge.mkExprOld (← toCoreExpr a) with
-      | .ok e => return e
-      | .error msg => throw (.fromMessage msg)
-  | .forall _ ds body
-  | .forall_unicode _ ds body
-  | .forallT _ ds _ body => toCoreQuant true ds body
-  | .exists _ ds body
-  | .exists_unicode _ ds body
-  | .existsT _ ds _ body => toCoreQuant false ds body
-  | .forall_unicodeT _ ds _ body => toCoreQuant true ds body
-  | .exists_unicodeT _ ds _ body => toCoreQuant false ds body
+      match (← toCoreExpr a) with
+      | .fvar m ident ty => return .fvar m (Core.CoreIdent.mkOld ident.name) ty
+      | other => throw (.fromMessage s!"old: expected an identifier, got {other}")
   | _ => throw (.fromMessage s!"Unsupported expression: {repr e}")
 
 end
@@ -248,20 +295,18 @@ end
 def nestMapSet (base : Core.Expression.Expr) (idxs : List Core.Expression.Expr) (rhs : Core.Expression.Expr) : Core.Expression.Expr :=
   match idxs with
   | [] => rhs
-  | [i] => CoreBridge.mkExprMapUpdate base i rhs
+  | [i] => mkCoreApp Core.mapUpdateOp [base, i, rhs]
   | i :: rest =>
-    let innerMap := CoreBridge.mkExprMapSelect base i
+    let innerMap := mkCoreApp Core.mapSelectOp [base, i]
     let updatedInner := nestMapSet innerMap rest rhs
-    CoreBridge.mkExprMapUpdate base i updatedInner
+    mkCoreApp Core.mapUpdateOp [base, i, updatedInner]
 
 def toCoreInvariants (is : BooleDDM.Invariants SourceRange) : TranslateM (List Core.Expression.Expr) := do
-  go is
-where
-  go : BooleDDM.Invariants SourceRange → TranslateM (List Core.Expression.Expr)
-    | .nilInvariants _ => return []
-    | .consInvariants _ e rest => do
-      let e' ← toCoreExpr e
-      return e' :: (← go rest)
+  match is with
+  | .nilInvariants _ => return []
+  | .consInvariants _ e rest => do
+    let e' ← toCoreExpr e
+    return e' :: (← toCoreInvariants rest)
 
 def lowerFor
     (m : SourceRange)
@@ -270,96 +315,94 @@ def lowerFor
     (initExpr guardExpr stepExpr : Core.Expression.Expr)
     (invs : List Core.Expression.Expr)
     (body : List Core.Statement) : TranslateM Core.Statement := do
-  let initStmt : Core.Statement := CoreBridge.mkInitStmt id (CoreBridge.monoTyToTy ty) (some initExpr) (← toCoreMetaData m)
-  let stepStmt : Core.Statement := CoreBridge.mkSetStmt id stepExpr (← toCoreMetaData m)
+  let initStmt : Core.Statement := Core.Statement.init id (.forAll [] ty) (some initExpr) (← toCoreMetaData m)
+  let stepStmt : Core.Statement := Core.Statement.set id stepExpr (← toCoreMetaData m)
   let loopBody := body ++ [stepStmt]
-  return CoreBridge.mkBlockStmt "for" [initStmt, CoreBridge.mkLoopStmt guardExpr none invs loopBody (← toCoreMetaData m)] (← toCoreMetaData m)
+  return .block "for" [initStmt, .loop guardExpr none invs loopBody (← toCoreMetaData m)] (← toCoreMetaData m)
 
-def lowerVarStatement (ds : BooleDDM.DeclList SourceRange) : TranslateM (List Core.Statement) := do
-  let mut out : List Core.Statement := []
-  let mut newBVars : List Core.Expression.Expr := []
+private def lowerVarStatement (m : SourceRange) (ds : BooleDDM.DeclList SourceRange) : TranslateM (List Core.Statement) := do
+  let mut outRev : List Core.Statement := []
+  let mut newBVarsRev : List Core.Expression.Expr := []
   for d in declListToList ds do
     let (id, ty) ← toCoreBind d
     let n := (← get).globalVarCounter
     modify fun st => { st with globalVarCounter := n + 1 }
     let initName := mkIdent s!"init_{id.name}_{n}"
-    newBVars := newBVars ++ [(.fvar () id none : Core.Expression.Expr)]
-    out := out ++ [CoreBridge.mkInitStmt id ty (some (.fvar () initName none)) (← toCoreMetaData default)]
-  modify fun st => { st with bvars := st.bvars ++ newBVars.toArray }
-  return out
+    newBVarsRev := (.fvar () id none : Core.Expression.Expr) :: newBVarsRev
+    outRev := Core.Statement.init id ty (some (.fvar () initName none)) (← toCoreMetaData m) :: outRev
+  modify fun st => { st with bvars := st.bvars ++ newBVarsRev.reverse.toArray }
+  return outRev.reverse
 
 mutual
 
-def toCoreBlock (b : BooleDDM.Block SourceRange) : TranslateM (List Core.Statement) := do
+partial def toCoreBlock (b : BooleDDM.Block SourceRange) : TranslateM (List Core.Statement) := do
   match b with
   | .block _ ⟨_, ss⟩ =>
-    let mut out : List Core.Statement := []
-    for s in ss do
+    let parts ← ss.toList.mapM fun s =>
       match s with
-      | .varStatement _ ds =>
-        out := out ++ (← lowerVarStatement ds)
-      | _ =>
-        out := out ++ [← toCoreStmt s]
-    return out
+      | .varStatement m ds => lowerVarStatement m ds
+      | _ => return [← toCoreStmt s]
+    return parts.flatten
 
-def toCoreStmt (s : BooleDDM.Statement SourceRange) : TranslateM Core.Statement := do
+partial def toCoreStmt (s : BooleDDM.Statement SourceRange) : TranslateM Core.Statement := do
   match s with
   | .varStatement m ds =>
-    let out ← lowerVarStatement ds
+    let out ← lowerVarStatement m ds
     let some first := out.head?
-      | throwAt default "Empty var declaration list"
+      | throwAt m "Empty var declaration list"
     match ds with
     | .declAtom _ _ => return first
-    | _ => return CoreBridge.mkBlockStmt "var" out (← toCoreMetaData m)
+    | _ => return .block "var" out (← toCoreMetaData m)
   | .initStatement m ty ⟨_, n⟩ e =>
     let rhs ← toCoreExpr e
     modify fun st => { st with bvars := st.bvars.push (.fvar () (mkIdent n) none) }
-    return CoreBridge.mkInitStmt (mkIdent n) (← toCoreType ty) (some rhs) (← toCoreMetaData m)
+    return Core.Statement.init (mkIdent n) (← toCoreType ty) (some rhs) (← toCoreMetaData m)
   | .assign m _ lhs rhs =>
     let rec lhsParts (lhs : BooleDDM.Lhs SourceRange) : TranslateM (String × List Core.Expression.Expr) := do
       match lhs with
       | .lhsIdent _ ⟨_, n⟩ => return (n, [])
       | .lhsArray _ _ l i =>
-        let (n, is) ← lhsParts l
-        return (n, is ++ [← toCoreExpr i])
-    let (n, idxs) ← lhsParts lhs
+        let (n, isRev) ← lhsParts l
+        return (n, (← toCoreExpr i) :: isRev)
+    let (n, idxsRev) ← lhsParts lhs
+    let idxs := idxsRev.reverse
     let base := .fvar () (mkIdent n) none
-    return CoreBridge.mkSetStmt (mkIdent n) (nestMapSet base idxs (← toCoreExpr rhs)) (← toCoreMetaData m)
+    return Core.Statement.set (mkIdent n) (nestMapSet base idxs (← toCoreExpr rhs)) (← toCoreMetaData m)
   | .assume m ⟨_, l?⟩ e =>
-    return CoreBridge.mkAssumeStmt (← defaultLabel m "assume" l?) (← toCoreExpr e) (← toCoreMetaData m)
+    return Core.Statement.assume (← defaultLabel m "assume" l?) (← toCoreExpr e) (← toCoreMetaData m)
   | .assert m rc? ⟨_, l?⟩ e =>
     let md ← toCoreMetaData m
     let md := if rc? matches ⟨_, some _⟩ then md.pushElem Imperative.MetaData.reachCheck (.switch true) else md
-    return CoreBridge.mkAssertStmt (← defaultLabel m "assert" l?) (← toCoreExpr e) md
+    return Core.Statement.assert (← defaultLabel m "assert" l?) (← toCoreExpr e) md
   | .cover m rc? ⟨_, l?⟩ e =>
     let md ← toCoreMetaData m
     let md := if rc? matches ⟨_, some _⟩ then md.pushElem Imperative.MetaData.reachCheck (.switch true) else md
-    return CoreBridge.mkCoverStmt (← defaultLabel m "cover" l?) (← toCoreExpr e) md
+    return Core.Statement.cover (← defaultLabel m "cover" l?) (← toCoreExpr e) md
   | .if_statement m c t e =>
     let thenb ← withBVars [] (toCoreBlock t)
     let elseb ← withBVars [] <| match e with
       | .else0 _ => return []
       | .else1 _ b => toCoreBlock b
-    return CoreBridge.mkIteStmt (← toCoreExpr c) thenb elseb (← toCoreMetaData m)
+    return .ite (← toCoreExpr c) thenb elseb (← toCoreMetaData m)
   | .havoc_statement m ⟨_, n⟩ =>
-    return CoreBridge.mkHavocStmt (mkIdent n) (← toCoreMetaData m)
+    return Core.Statement.havoc (mkIdent n) (← toCoreMetaData m)
   | .while_statement m g _ invs b =>
-    return CoreBridge.mkLoopStmt (← toCoreExpr g) none (← toCoreInvariants invs) (← withBVars [] (toCoreBlock b)) (← toCoreMetaData m)
+    return .loop (← toCoreExpr g) none (← toCoreInvariants invs) (← withBVars [] (toCoreBlock b)) (← toCoreMetaData m)
   | .call_statement m ⟨_, lhs⟩ ⟨_, n⟩ ⟨_, args⟩ =>
-    return CoreBridge.mkCallStmt (lhs.toList.map (mkIdent ·.val)) n (← args.toList.mapM toCoreExpr) (← toCoreMetaData m)
+    return Core.Statement.call (lhs.toList.map (mkIdent ·.val)) n (← args.toList.mapM toCoreExpr) (← toCoreMetaData m)
   | .call_unit_statement m ⟨_, n⟩ ⟨_, args⟩ =>
-    return CoreBridge.mkCallStmt [] n (← args.toList.mapM toCoreExpr) (← toCoreMetaData m)
+    return Core.Statement.call [] n (← args.toList.mapM toCoreExpr) (← toCoreMetaData m)
   | .block_statement m ⟨_, l⟩ b =>
-    return CoreBridge.mkBlockStmt l (← withBVars [] (toCoreBlock b)) (← toCoreMetaData m)
+    return .block l (← withBVars [] (toCoreBlock b)) (← toCoreMetaData m)
   | .exit_statement m ⟨_, l⟩ =>
-    return CoreBridge.mkExitStmt l (← toCoreMetaData m)
+    return .exit l (← toCoreMetaData m)
   | .exit_unlabeled_statement m =>
-    return CoreBridge.mkExitStmt none (← toCoreMetaData m)
+    return .exit none (← toCoreMetaData m)
   | .typeDecl_statement m ⟨_, n⟩ ⟨_, args?⟩ =>
     let params := match args? with
       | none => []
       | some bs => (bindingsToList bs).map bindingName
-    return CoreBridge.mkTypeDeclStmt { name := n, params := params } (← toCoreMetaData m)
+    return Core.Statement.typeDecl { name := n, params := params } (← toCoreMetaData m)
   | .funcDecl_statement m ⟨_, n⟩ ⟨_, targs?⟩ bs ret ⟨_, pres⟩ body ⟨_, inline?⟩ =>
     let tys := match targs? with | none => [] | some ts => typeArgsToList ts
     withTypeBVars tys do
@@ -367,9 +410,9 @@ def toCoreStmt (s : BooleDDM.Statement SourceRange) : TranslateM Core.Statement 
       let inputsMono ← bsList.mapM toCoreBinding
       let outputMono ← toCoreMonoType ret
       let inputs : ListMap Core.Expression.Ident Core.Expression.Ty :=
-        inputsMono.map (fun (id, mty) => (id, CoreBridge.monoTyToTy mty))
+        inputsMono.map (fun (id, mty) => (id, .forAll [] mty))
       let inputNames := bsList.map bindingName
-      let (preconds, bodyExpr) ← withBVars inputNames do
+      let pair ← (withBVars inputNames do
         let mut precondsRev : List (DL.Util.FuncPrecondition Core.Expression.Expr Unit) := []
         for p in pres.toList do
           match p with
@@ -377,13 +420,14 @@ def toCoreStmt (s : BooleDDM.Statement SourceRange) : TranslateM Core.Statement 
             precondsRev := { expr := ← toCoreExpr cond, md := () } :: precondsRev
           | _ => pure ()
         let bodyExpr ← toCoreExpr body
-        pure (precondsRev.reverse, bodyExpr)
+        return (precondsRev.reverse, bodyExpr) : TranslateM (List (DL.Util.FuncPrecondition Core.Expression.Expr Unit) × Core.Expression.Expr))
+      let (preconds, bodyExpr) := pair
       let funcTy := Lambda.LMonoTy.mkArrow outputMono ((inputsMono.map (·.2)).reverse)
       let decl : Imperative.PureFunc Core.Expression := {
         name := mkIdent n
         typeArgs := tys
         inputs := inputs
-        output := CoreBridge.monoTyToTy outputMono
+        output := .forAll [] outputMono
         body := some bodyExpr
         attr := if inline?.isSome then #[.inline] else #[]
         axioms := []
@@ -391,7 +435,7 @@ def toCoreStmt (s : BooleDDM.Statement SourceRange) : TranslateM Core.Statement 
       }
       -- Keep function name in local scope for subsequent statements.
       modify fun st => { st with bvars := st.bvars.push (.op () (mkIdent n) (some funcTy)) }
-      return CoreBridge.mkFuncDeclStmt decl (← toCoreMetaData m)
+      return .funcDecl decl (← toCoreMetaData m)
   | .for_statement m v init guard step invs body =>
     let (id, ty) ← toCoreMonoBind v
     withBVars [id.name] do
@@ -408,16 +452,16 @@ def toCoreStmt (s : BooleDDM.Statement SourceRange) : TranslateM Core.Statement 
     let limitExpr ← toCoreExpr limit
     withBVars [id.name] do
       let initExpr ← toCoreExpr init
-      let guard := CoreBridge.mkExprIntLe (.fvar () id none) limitExpr
-      let stepExpr ← match step? with
-        | none => pure (.intConst () 1)
-        | some (.step _ e) => toCoreExpr e
+      let guard := mkCoreApp Core.intLeOp [.fvar () id none, limitExpr]
+      let stepExpr ← ((match step? with
+        | none => return (.intConst () 1)
+        | some (.step _ e) => toCoreExpr e) : TranslateM Core.Expression.Expr)
       let body ← withBVars [] (toCoreBlock body)
       lowerFor
         m id ty
         initExpr
         guard
-        (CoreBridge.mkExprIntAdd (.fvar () id none) stepExpr)
+        (mkCoreApp Core.intAddOp [.fvar () id none, stepExpr])
         (← toCoreInvariants invs)
         body
   | .for_down_to_by_statement m v init limit ⟨_, step?⟩ invs body =>
@@ -425,55 +469,56 @@ def toCoreStmt (s : BooleDDM.Statement SourceRange) : TranslateM Core.Statement 
     let limitExpr ← toCoreExpr limit
     withBVars [id.name] do
       let initExpr ← toCoreExpr init
-      let guard := CoreBridge.mkExprIntLe limitExpr (.fvar () id none)
-      let stepExpr ← match step? with
-        | none => pure (.intConst () 1)
-        | some (.step _ e) => toCoreExpr e
+      let guard := mkCoreApp Core.intLeOp [limitExpr, .fvar () id none]
+      let stepExpr ← ((match step? with
+        | none => return (.intConst () 1)
+        | some (.step _ e) => toCoreExpr e) : TranslateM Core.Expression.Expr)
       let body ← withBVars [] (toCoreBlock body)
       lowerFor
         m id ty
         initExpr
         guard
-        (CoreBridge.mkExprIntSub (.fvar () id none) stepExpr)
+        (mkCoreApp Core.intSubOp [.fvar () id none, stepExpr])
         (← toCoreInvariants invs)
         body
+
 end
 
-def checkAttrOf (f? : Option (BooleDDM.Free SourceRange)) : Core.Procedure.CheckAttr :=
+private def checkAttrOf (f? : Option (BooleDDM.Free SourceRange)) : Core.Procedure.CheckAttr :=
   match f? with
   | some _ => .Free
   | none => .Default
 
-def toCoreDatatypeConstr
+private def toCoreDatatypeConstr
     (dtypeName : String)
     (c : BooleDDM.Constructor SourceRange) : TranslateM (Lambda.LConstr Unit) := do
   match c with
   | .constructor_mk _ ⟨_, cname⟩ ⟨_, fields?⟩ =>
-    let args ← match fields? with
-      | none => pure []
-      | some ⟨_, fs⟩ => fs.toList.mapM toCoreBinding
+    let args ← ((match fields? with
+      | none => return []
+      | some ⟨_, fs⟩ => fs.toList.mapM toCoreBinding) : TranslateM (List (Core.Expression.Ident × Lambda.LMonoTy)))
     return { name := mkIdent cname
              args := args
              testerName := s!"{dtypeName}..is{cname}" }
 
-def toCoreDatatype
+private def toCoreDatatype
     (m : SourceRange)
     (dtypeName : String)
     (typeParams : List String)
     (ctors : BooleDDM.ConstructorList SourceRange) : TranslateM (Lambda.LDatatype Unit) := do
   let ctorList := constructorListToList ctors
-  let some _ := ctorList.head?
-    | throwAt m s!"Datatype {dtypeName} must have at least one constructor"
-  let constrs ← ctorList.mapM (toCoreDatatypeConstr dtypeName)
-  match h : constrs with
+  match ctorList with
   | [] => throwAt m s!"Datatype {dtypeName} must have at least one constructor"
-  | _ :: _ =>
+  | ctor :: rest =>
+    let first ← toCoreDatatypeConstr dtypeName ctor
+    let restConstrs ← rest.mapM (toCoreDatatypeConstr dtypeName)
+    let constrs := first :: restConstrs
     return { name := dtypeName
              typeArgs := typeParams
              constrs := constrs
-             constrs_ne := by simp [h] }
+             constrs_ne := by simp }
 
-def toCoreDatatypeDecl (decl : BooleDDM.DatatypeDecl SourceRange) : TranslateM (Lambda.LDatatype Unit) := do
+private def toCoreDatatypeDecl (decl : BooleDDM.DatatypeDecl SourceRange) : TranslateM (Lambda.LDatatype Unit) := do
   match decl with
   | .datatype_decl m ⟨_, dtypeName⟩ ⟨_, typeParams?⟩ ctors =>
     let typeParams := match typeParams? with
@@ -482,7 +527,7 @@ def toCoreDatatypeDecl (decl : BooleDDM.DatatypeDecl SourceRange) : TranslateM (
     withTypeBVars typeParams do
       toCoreDatatype m dtypeName typeParams ctors
 
-def toCoreSpecElts (_m : SourceRange) (pname : String) (elts : Array (BooleDDM.SpecElt SourceRange)) : TranslateM Core.Procedure.Spec := do
+private def toCoreSpecElts (_m : SourceRange) (pname : String) (elts : Array (BooleDDM.SpecElt SourceRange)) : TranslateM Core.Procedure.Spec := do
   let mut modifies : List (List Core.Expression.Ident) := []
   let mut reqs : List (Core.CoreLabel × Core.Procedure.Check) := []
   let mut enss : List (Core.CoreLabel × Core.Procedure.Check) := []
@@ -496,18 +541,46 @@ def toCoreSpecElts (_m : SourceRange) (pname : String) (elts : Array (BooleDDM.S
       enss := (← defaultLabel em s!"{pname}_ensures" l?, { expr := ← toCoreExpr cond, attr := checkAttrOf free? }) :: enss
   return { modifies := modifies.reverse.flatten, preconditions := reqs.reverse, postconditions := enss.reverse }
 
-def toCoreSpec (m : SourceRange) (pname : String) (spec? : Option (BooleDDM.Spec SourceRange)) : TranslateM Core.Procedure.Spec := do
+private def toCoreSpec (m : SourceRange) (pname : String) (spec? : Option (BooleDDM.Spec SourceRange)) : TranslateM Core.Procedure.Spec := do
   match spec? with
   | none => return { modifies := [], preconditions := [], postconditions := [] }
   | some (.spec_mk _ ⟨_, elts⟩) =>
     toCoreSpecElts m pname elts
+
+private def lowerPureFuncDef
+    (m : SourceRange)
+    (n : String)
+    (tys : List String)
+    (bs : BooleDDM.Bindings SourceRange)
+    (ret : Boole.Type)
+    (pres : Array (BooleDDM.SpecElt SourceRange))
+    (body : Boole.Expr)
+    (inline : Bool) : TranslateM Core.Decl := do
+  withTypeBVars tys do
+    let bsList := bindingsToList bs
+    let inputs ← bsList.mapM toCoreBinding
+    let inputNames := bsList.map bindingName
+    let pres ← withBVars inputNames (toCoreSpecElts m n pres)
+    let pres := pres.preconditions.map (fun (_, c) => ⟨c.expr, ()⟩)
+    let body ← withBVars inputNames (toCoreExpr body)
+    return .func {
+      name := mkIdent n
+      typeArgs := tys
+      inputs := inputs
+      output := ← toCoreMonoType ret
+      body := some body
+      concreteEval := none
+      attr := if inline then #[.inline] else #[]
+      axioms := []
+      preconditions := pres
+    }
 
 /--
 Classify command-introduced free symbols:
 - constant/function declarations are treated as function symbols,
 - variable/type/datatype declarations are treated as term/type symbols.
 -/
-def registerCommandSymbols (cmd : BooleDDM.Command SourceRange) : List Bool :=
+private def registerCommandSymbols (cmd : BooleDDM.Command SourceRange) : List Bool :=
   match cmd with
   | .command_typedecl _ _ _ => [false]
   | .command_typesynonym _ _ _ _ _ => [false]
@@ -526,7 +599,7 @@ def registerCommandSymbols (cmd : BooleDDM.Command SourceRange) : List Bool :=
 /--
 Build the symbol-class table used by `getFVarIsOp`.
 -/
-def initFVarIsOp (p : Boole.Program) : Array Bool :=
+private def initFVarIsOp (p : Boole.Program) : Array Bool :=
   match p with
   | .prog _ ⟨_, cmds⟩ =>
     (cmds.map registerCommandSymbols).toList.flatten.toArray
@@ -546,7 +619,7 @@ def toCoreDecls (cmd : BooleDDM.Command SourceRange) : TranslateM (List Core.Dec
       let body ← match body? with
         | none => return []
         | some b => withBVars (inputNames ++ outputNames) (toCoreBlock b)
-      return [CoreBridge.mkProcDecl {
+      return [.proc {
         header := { name := mkIdent n, typeArgs := tys, inputs := inputs, outputs := outputs }
         spec := spec
         body := body
@@ -555,58 +628,46 @@ def toCoreDecls (cmd : BooleDDM.Command SourceRange) : TranslateM (List Core.Dec
     let params := match args? with
       | none => []
       | some bs => (bindingsToList bs).map bindingName
-    return [CoreBridge.mkTypeConDecl n params]
+    return [.type (.con { name := n, params := params })]
   | .command_typesynonym _ ⟨_, n⟩ ⟨_, args?⟩ _ rhs =>
     let tys := match args? with
       | none => []
       | some bs => (bindingsToList bs).map bindingName
     withTypeBVars tys do
-      return [CoreBridge.mkTypeSynDecl n tys (← toCoreMonoType rhs)]
+      return [.type (.syn { name := n, typeArgs := tys, type := ← toCoreMonoType rhs })]
   | .command_constdecl _ ⟨_, n⟩ ⟨_, targs?⟩ ret =>
     let tys := match targs? with | none => [] | some ts => typeArgsToList ts
     withTypeBVars tys do
-      return [CoreBridge.mkFuncDecl { name := mkIdent n, typeArgs := tys, inputs := [], output := ← toCoreMonoType ret, body := none, concreteEval := none, attr := #[], axioms := [] }]
+      return [.func { name := mkIdent n, typeArgs := tys, inputs := [], output := ← toCoreMonoType ret, body := none, concreteEval := none, attr := #[], axioms := [] }]
   | .command_fndecl _ ⟨_, n⟩ ⟨_, targs?⟩ bs ret =>
     let tys := match targs? with | none => [] | some ts => typeArgsToList ts
     withTypeBVars tys do
-      return [CoreBridge.mkFuncDecl { name := mkIdent n, typeArgs := tys, inputs := ← (bindingsToList bs).mapM toCoreBinding, output := ← toCoreMonoType ret, body := none, concreteEval := none, attr := #[], axioms := [] }]
+      return [.func { name := mkIdent n, typeArgs := tys, inputs := ← (bindingsToList bs).mapM toCoreBinding, output := ← toCoreMonoType ret, body := none, concreteEval := none, attr := #[], axioms := [] }]
   | .command_fndef m ⟨_, n⟩ ⟨_, targs?⟩ bs ret ⟨_, pres⟩ body ⟨_, inline?⟩ =>
     let tys := match targs? with | none => [] | some ts => typeArgsToList ts
-    withTypeBVars tys do
-      let bsList := bindingsToList bs
-      let inputs ← bsList.mapM toCoreBinding
-      let inputNames := bsList.map bindingName
-      let pres ← withBVars inputNames (toCoreSpecElts m n pres)
-      let pres := pres.preconditions.map (fun (_, c) => ⟨c.expr, ()⟩)
-      let body ← withBVars inputNames (toCoreExpr body)
-      return [CoreBridge.mkFuncDecl { name := mkIdent n, typeArgs := tys, inputs := inputs, output := ← toCoreMonoType ret, body := some body, concreteEval := none, attr := if inline?.isSome then #[.inline] else #[], axioms := [], preconditions := pres }]
+    return [← lowerPureFuncDef m n tys bs ret pres body inline?.isSome]
   | .command_recfndef m ⟨_, n⟩ ⟨_, targs?⟩ bs ret ⟨_, pres⟩ body =>
     let tys := match targs? with | none => [] | some ts => typeArgsToList ts
-    withTypeBVars tys do
-      let bsList := bindingsToList bs
-      let inputs ← bsList.mapM toCoreBinding
-      let inputNames := bsList.map bindingName
-      let pres ← withBVars inputNames (toCoreSpecElts m n pres)
-      let pres := pres.preconditions.map (fun (_, c) => ⟨c.expr, ()⟩)
-      let body ← withBVars inputNames (toCoreExpr body)
-      return [CoreBridge.mkFuncDecl { name := mkIdent n, typeArgs := tys, inputs := inputs, output := ← toCoreMonoType ret, body := some body, concreteEval := none, attr := #[], axioms := [], preconditions := pres }]
+    return [← lowerPureFuncDef m n tys bs ret pres body false]
   | .command_var _ b =>
     let (id, ty) ← toCoreBind b
     let i := (← get).globalVarCounter
     modify fun s => { s with globalVarCounter := i + 1 }
-    return [CoreBridge.mkVarDecl id ty (some (.fvar () (mkIdent s!"init_{id.name}_{i}") none))]
+    return [.var id ty (some (.fvar () (mkIdent s!"init_{id.name}_{i}") none))]
   | .command_axiom m ⟨_, l?⟩ e =>
-    return [CoreBridge.mkAxiomDecl (← defaultLabel m "axiom" l?) (← toCoreExpr e)]
+    return [.ax { name := ← defaultLabel m "axiom" l?, e := ← toCoreExpr e }]
   | .command_distinct m ⟨_, l?⟩ ⟨_, es⟩ =>
-    return [CoreBridge.mkDistinctDecl (mkIdent (← defaultLabel m "distinct" l?)) (← es.toList.mapM toCoreExpr)]
+    return [.distinct (mkIdent (← defaultLabel m "distinct" l?)) (← es.toList.mapM toCoreExpr)]
   | .command_block _ b =>
-    return [CoreBridge.mkProcDecl {
+    -- Core decls do not have a standalone "top-level block" form, so a Boole
+    -- command-level block is wrapped as an anonymous procedure declaration.
+    return [.proc {
       header := { name := mkIdent "", typeArgs := [], inputs := [], outputs := [] }
       spec := { modifies := [], preconditions := [], postconditions := [] }
       body := ← toCoreBlock b
     }]
   | .command_datatypes _ ⟨_, decls⟩ =>
-    return [CoreBridge.mkTypeDataDecl (← decls.toList.mapM toCoreDatatypeDecl)]
+    return [.type (.data (← decls.toList.mapM toCoreDatatypeDecl))]
 
 def toCoreProgram (p : Boole.Program) (gctx : GlobalContext := {}) : Except DiagnosticModel Core.Program := do
   match p with

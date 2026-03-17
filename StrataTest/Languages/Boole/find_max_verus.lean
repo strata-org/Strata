@@ -80,16 +80,4 @@ spec {
 };
 #end
 
-theorem findMax_smtVCsCorrect : smtVCsCorrect findMax := by
-  gen_smt_vcs
-  case arbitrary_iter_maintain_invariant_0_3 =>
-    intro Map _ n i max nums get h1 hin h0 ⟨hi1, hi2⟩ (hi3 : ∀ k, _) ⟨j, hi4⟩
-    intros
-    grind
-  case findMax_ensures_1_1080 =>
-    simp only [and_imp]
-    grind
-  case findMax_ensures_2_1143 =>
-    intros
-    grind
-  all_goals (try grind)
+#eval Strata.Boole.verify "cvc5" findMax
