@@ -86,7 +86,10 @@ structure VerifyOptions where
   checkMode : VerificationMode
   /-- Check amount: minimal (only necessary checks) or full (both checks for better messages) -/
   checkLevel : CheckLevel
-  /-- Enable unsigned bitvector overflow checks -/
+  /-- Enable unsigned bitvector overflow checks.
+      When true, front-end translators should emit SafeUAdd/SafeUSub/SafeUMul/SafeUNeg
+      instead of the unchecked variants. Currently not wired to any translator —
+      will be connected when a front-end language (Laurel or C) gains BV types. -/
   unsignedOverflowCheck : Bool
 
 def VerifyOptions.default : VerifyOptions := {

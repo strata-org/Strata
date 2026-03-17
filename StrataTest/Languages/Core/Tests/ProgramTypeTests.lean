@@ -141,10 +141,18 @@ info: ok: [(type Foo (a : Type, b : Type);
   func Float64.SubOverflow :  ((x : float64) (y : float64)) → bool;
   func Float64.MulOverflow :  ((x : float64) (y : float64)) → bool;
   func Float64.DivOverflow :  ((x : float64) (y : float64)) → bool;
-  func Float64.SafeAdd :  ((x : float64) (y : float64)) → float64;
-  func Float64.SafeSub :  ((x : float64) (y : float64)) → float64;
-  func Float64.SafeMul :  ((x : float64) (y : float64)) → float64;
-  func Float64.SafeDiv :  ((x : float64) (y : float64)) → float64;
+  func Float64.SafeAdd :  ((x : float64) (y : float64)) → float64
+    requires ((~Bool.Not : (arrow bool bool))
+   ((~Float64.AddOverflow : (arrow float64 (arrow float64 bool))) (x : float64) (y : float64)));
+  func Float64.SafeSub :  ((x : float64) (y : float64)) → float64
+    requires ((~Bool.Not : (arrow bool bool))
+   ((~Float64.SubOverflow : (arrow float64 (arrow float64 bool))) (x : float64) (y : float64)));
+  func Float64.SafeMul :  ((x : float64) (y : float64)) → float64
+    requires ((~Bool.Not : (arrow bool bool))
+   ((~Float64.MulOverflow : (arrow float64 (arrow float64 bool))) (x : float64) (y : float64)));
+  func Float64.SafeDiv :  ((x : float64) (y : float64)) → float64
+    requires ((~Bool.Not : (arrow bool bool))
+   ((~Float64.DivOverflow : (arrow float64 (arrow float64 bool))) (x : float64) (y : float64)));
   func Bool.And :  ((x : bool) (y : bool)) → bool;
   func Bool.Or :  ((x : bool) (y : bool)) → bool;
   func Bool.Implies :  ((x : bool) (y : bool)) → bool;

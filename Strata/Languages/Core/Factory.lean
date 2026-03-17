@@ -331,16 +331,72 @@ def float64MulOverflowFunc : WFLFunc CoreLParams :=
 def float64DivOverflowFunc : WFLFunc CoreLParams :=
   binaryFuncUneval "Float64.DivOverflow" mty[float64] mty[float64] mty[bool]
 
-/- Float64 Safe Arithmetic (overflow = result becomes ±infinity from finite inputs) -/
+/- Float64 Safe Arithmetic (overflow = result becomes ±infinity from finite inputs)
+   Each safe op carries a precondition: ¬ Float64.*Overflow(x, y) -/
+
+private def mkFloat64OverflowPrecond (overflowFunc : WFLFunc CoreLParams)
+    : Strata.DL.Util.FuncPrecondition (LExpr CoreLParams.mono) CoreLParams.Metadata :=
+  let notE := (boolNotFunc (T := CoreLParams)).func.opExpr
+  ⟨.app default notE
+    (.app default (.app default overflowFunc.opExpr
+      (.fvar default "x" (some .float64)))
+      (.fvar default "y" (some .float64))), default⟩
 
 def float64SafeAddFunc : WFLFunc CoreLParams :=
-  binaryFuncUneval "Float64.SafeAdd" mty[float64] mty[float64] mty[float64]
+  ⟨{ name := "Float64.SafeAdd", inputs := [("x", .float64), ("y", .float64)], output := .float64,
+     preconditions := [mkFloat64OverflowPrecond float64AddOverflowFunc] }, {
+    arg_nodup := by simp
+    body_freevars := by intro b hb; simp at hb
+    concreteEval_argmatch := by intro fn _ _ _ hfn; simp at hfn
+    body_or_concreteEval := by simp
+    typeArgs_nodup := by simp
+    inputs_typevars_in_typeArgs := by intro ty hty; simp [ListMap.values] at hty; rcases hty with rfl | rfl <;> decide
+    output_typevars_in_typeArgs := by decide
+    precond_freevars := by intro p hp; simp [mkFloat64OverflowPrecond] at hp; subst hp; native_decide
+    typeArgs_no_gen_prefix := by simp
+  }⟩
+
 def float64SafeSubFunc : WFLFunc CoreLParams :=
-  binaryFuncUneval "Float64.SafeSub" mty[float64] mty[float64] mty[float64]
+  ⟨{ name := "Float64.SafeSub", inputs := [("x", .float64), ("y", .float64)], output := .float64,
+     preconditions := [mkFloat64OverflowPrecond float64SubOverflowFunc] }, {
+    arg_nodup := by simp
+    body_freevars := by intro b hb; simp at hb
+    concreteEval_argmatch := by intro fn _ _ _ hfn; simp at hfn
+    body_or_concreteEval := by simp
+    typeArgs_nodup := by simp
+    inputs_typevars_in_typeArgs := by intro ty hty; simp [ListMap.values] at hty; rcases hty with rfl | rfl <;> decide
+    output_typevars_in_typeArgs := by decide
+    precond_freevars := by intro p hp; simp [mkFloat64OverflowPrecond] at hp; subst hp; native_decide
+    typeArgs_no_gen_prefix := by simp
+  }⟩
+
 def float64SafeMulFunc : WFLFunc CoreLParams :=
-  binaryFuncUneval "Float64.SafeMul" mty[float64] mty[float64] mty[float64]
+  ⟨{ name := "Float64.SafeMul", inputs := [("x", .float64), ("y", .float64)], output := .float64,
+     preconditions := [mkFloat64OverflowPrecond float64MulOverflowFunc] }, {
+    arg_nodup := by simp
+    body_freevars := by intro b hb; simp at hb
+    concreteEval_argmatch := by intro fn _ _ _ hfn; simp at hfn
+    body_or_concreteEval := by simp
+    typeArgs_nodup := by simp
+    inputs_typevars_in_typeArgs := by intro ty hty; simp [ListMap.values] at hty; rcases hty with rfl | rfl <;> decide
+    output_typevars_in_typeArgs := by decide
+    precond_freevars := by intro p hp; simp [mkFloat64OverflowPrecond] at hp; subst hp; native_decide
+    typeArgs_no_gen_prefix := by simp
+  }⟩
+
 def float64SafeDivFunc : WFLFunc CoreLParams :=
-  binaryFuncUneval "Float64.SafeDiv" mty[float64] mty[float64] mty[float64]
+  ⟨{ name := "Float64.SafeDiv", inputs := [("x", .float64), ("y", .float64)], output := .float64,
+     preconditions := [mkFloat64OverflowPrecond float64DivOverflowFunc] }, {
+    arg_nodup := by simp
+    body_freevars := by intro b hb; simp at hb
+    concreteEval_argmatch := by intro fn _ _ _ hfn; simp at hfn
+    body_or_concreteEval := by simp
+    typeArgs_nodup := by simp
+    inputs_typevars_in_typeArgs := by intro ty hty; simp [ListMap.values] at hty; rcases hty with rfl | rfl <;> decide
+    output_typevars_in_typeArgs := by decide
+    precond_freevars := by intro p hp; simp [mkFloat64OverflowPrecond] at hp; subst hp; native_decide
+    typeArgs_no_gen_prefix := by simp
+  }⟩
 
 /- String Operations -/
 def strLengthFunc : WFLFunc CoreLParams :=
