@@ -388,10 +388,11 @@ partial def toSMTOp (E : Env) (fn : CoreIdent) (fnty : LMonoTy) (ctx : SMT.Conte
       Except.ok (Term.app Op.bvult, TermType.prim .bool, ctx)
     -- UAddOverflow(x, y) = bvult(bvadd(x, y), x) — wrapping add < operand means overflow
     let uaddOverflowEnc := fun (_n : Nat) (ctx : SMT.Context) =>
-      let app := fun (args : List Term) (retTy : TermType) =>
+      let app := fun (args : List Term) (_retTy : TermType) =>
         match args with
         | [x, y] =>
-          let sum := Term.app Op.bvadd [x, y] retTy
+          let bvTy := x.typeOf
+          let sum := Term.app Op.bvadd [x, y] bvTy
           Term.app Op.bvult [sum, x] .bool
         | _ => Term.app Op.and [] .bool
       Except.ok (app, TermType.prim .bool, ctx)
@@ -526,6 +527,24 @@ partial def toSMTOp (E : Env) (fn : CoreIdent) (fnty : LMonoTy) (ctx : SMT.Conte
     | "Float64.Neg"         => .ok (.app Op.fp_neg,        .float64, ctx)
     | "Float64.IsInfinite"  => .ok (.app Op.fp_isInfinite, .bool,    ctx)
     | "Float64.IsNaN"       => .ok (.app Op.fp_isNaN,      .bool,    ctx)
+    -- Float64 overflow predicates: overflow iff finite inputs produce infinite result
+    | "Float64.AddOverflow" | "Float64.SubOverflow"
+    | "Float64.MulOverflow" | "Float64.DivOverflow" =>
+      let fpOp := match name with
+        | "Float64.AddOverflow" => Op.fp_add
+        | "Float64.SubOverflow" => Op.fp_sub
+        | "Float64.MulOverflow" => Op.fp_mul
+        | _ => Op.fp_div
+      let overflowApp := fun (args : List Term) (_retTy : TermType) =>
+        match args with
+        | [x, y] =>
+          let result := Term.app fpOp (Term.rne :: [x, y]) .float64
+          let xFinite := Term.app Op.not [Term.app Op.fp_isInfinite [x] .bool] .bool
+          let yFinite := Term.app Op.not [Term.app Op.fp_isInfinite [y] .bool] .bool
+          let resultInf := Term.app Op.fp_isInfinite [result] .bool
+          Term.app Op.and [xFinite, Term.app Op.and [yFinite, resultInf] .bool] .bool
+        | _ => Term.app Op.and [] .bool
+      .ok (overflowApp, .bool, ctx)
 
     | "Bv1.Neg"     => .ok (.app Op.bvneg,      .bitvec 1, ctx)
     | "Bv1.Add"     => .ok (.app Op.bvadd,      .bitvec 1, ctx)

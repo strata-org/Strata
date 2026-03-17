@@ -91,11 +91,11 @@ info: ok: [(type Foo (a : Type, b : Type);
   Error:
   none
   Subst Map:
-  ⏎
+  
   Expression Env:
   State:
-  ⏎
-  ⏎
+  
+  
   Evaluation Config:
   Eval Depth: 200
   Variable Prefix: $__
@@ -130,6 +130,21 @@ info: ok: [(type Foo (a : Type, b : Type);
   func Real.Le :  ((x : real) (y : real)) → bool;
   func Real.Gt :  ((x : real) (y : real)) → bool;
   func Real.Ge :  ((x : real) (y : real)) → bool;
+  func Float64.Add :  ((x : float64) (y : float64)) → float64;
+  func Float64.Sub :  ((x : float64) (y : float64)) → float64;
+  func Float64.Mul :  ((x : float64) (y : float64)) → float64;
+  func Float64.Div :  ((x : float64) (y : float64)) → float64;
+  func Float64.Neg :  ((x : float64)) → float64;
+  func Float64.IsInfinite :  ((x : float64)) → bool;
+  func Float64.IsNaN :  ((x : float64)) → bool;
+  func Float64.AddOverflow :  ((x : float64) (y : float64)) → bool;
+  func Float64.SubOverflow :  ((x : float64) (y : float64)) → bool;
+  func Float64.MulOverflow :  ((x : float64) (y : float64)) → bool;
+  func Float64.DivOverflow :  ((x : float64) (y : float64)) → bool;
+  func Float64.SafeAdd :  ((x : float64) (y : float64)) → float64;
+  func Float64.SafeSub :  ((x : float64) (y : float64)) → float64;
+  func Float64.SafeMul :  ((x : float64) (y : float64)) → float64;
+  func Float64.SafeDiv :  ((x : float64) (y : float64)) → float64;
   func Bool.And :  ((x : bool) (y : bool)) → bool;
   func Bool.Or :  ((x : bool) (y : bool)) → bool;
   func Bool.Implies :  ((x : bool) (y : bool)) → bool;
@@ -198,6 +213,10 @@ info: ok: [(type Foo (a : Type, b : Type);
   func Bv1.SSubOverflow :  ((x : bv1) (y : bv1)) → bool;
   func Bv1.SMulOverflow :  ((x : bv1) (y : bv1)) → bool;
   func Bv1.SDivOverflow :  ((x : bv1) (y : bv1)) → bool;
+  func Bv1.UNegOverflow :  ((x : bv1)) → bool;
+  func Bv1.UAddOverflow :  ((x : bv1) (y : bv1)) → bool;
+  func Bv1.USubOverflow :  ((x : bv1) (y : bv1)) → bool;
+  func Bv1.UMulOverflow :  ((x : bv1) (y : bv1)) → bool;
   func Bv8.Neg :  ((x : bv8)) → bv8;
   func Bv8.Add :  ((x : bv8) (y : bv8)) → bv8;
   func Bv8.Sub :  ((x : bv8) (y : bv8)) → bv8;
@@ -226,6 +245,10 @@ info: ok: [(type Foo (a : Type, b : Type);
   func Bv8.SSubOverflow :  ((x : bv8) (y : bv8)) → bool;
   func Bv8.SMulOverflow :  ((x : bv8) (y : bv8)) → bool;
   func Bv8.SDivOverflow :  ((x : bv8) (y : bv8)) → bool;
+  func Bv8.UNegOverflow :  ((x : bv8)) → bool;
+  func Bv8.UAddOverflow :  ((x : bv8) (y : bv8)) → bool;
+  func Bv8.USubOverflow :  ((x : bv8) (y : bv8)) → bool;
+  func Bv8.UMulOverflow :  ((x : bv8) (y : bv8)) → bool;
   func Bv16.Neg :  ((x : bv16)) → bv16;
   func Bv16.Add :  ((x : bv16) (y : bv16)) → bv16;
   func Bv16.Sub :  ((x : bv16) (y : bv16)) → bv16;
@@ -254,6 +277,10 @@ info: ok: [(type Foo (a : Type, b : Type);
   func Bv16.SSubOverflow :  ((x : bv16) (y : bv16)) → bool;
   func Bv16.SMulOverflow :  ((x : bv16) (y : bv16)) → bool;
   func Bv16.SDivOverflow :  ((x : bv16) (y : bv16)) → bool;
+  func Bv16.UNegOverflow :  ((x : bv16)) → bool;
+  func Bv16.UAddOverflow :  ((x : bv16) (y : bv16)) → bool;
+  func Bv16.USubOverflow :  ((x : bv16) (y : bv16)) → bool;
+  func Bv16.UMulOverflow :  ((x : bv16) (y : bv16)) → bool;
   func Bv32.Neg :  ((x : bv32)) → bv32;
   func Bv32.Add :  ((x : bv32) (y : bv32)) → bv32;
   func Bv32.Sub :  ((x : bv32) (y : bv32)) → bv32;
@@ -282,6 +309,10 @@ info: ok: [(type Foo (a : Type, b : Type);
   func Bv32.SSubOverflow :  ((x : bv32) (y : bv32)) → bool;
   func Bv32.SMulOverflow :  ((x : bv32) (y : bv32)) → bool;
   func Bv32.SDivOverflow :  ((x : bv32) (y : bv32)) → bool;
+  func Bv32.UNegOverflow :  ((x : bv32)) → bool;
+  func Bv32.UAddOverflow :  ((x : bv32) (y : bv32)) → bool;
+  func Bv32.USubOverflow :  ((x : bv32) (y : bv32)) → bool;
+  func Bv32.UMulOverflow :  ((x : bv32) (y : bv32)) → bool;
   func Bv64.Neg :  ((x : bv64)) → bv64;
   func Bv64.Add :  ((x : bv64) (y : bv64)) → bv64;
   func Bv64.Sub :  ((x : bv64) (y : bv64)) → bv64;
@@ -310,6 +341,10 @@ info: ok: [(type Foo (a : Type, b : Type);
   func Bv64.SSubOverflow :  ((x : bv64) (y : bv64)) → bool;
   func Bv64.SMulOverflow :  ((x : bv64) (y : bv64)) → bool;
   func Bv64.SDivOverflow :  ((x : bv64) (y : bv64)) → bool;
+  func Bv64.UNegOverflow :  ((x : bv64)) → bool;
+  func Bv64.UAddOverflow :  ((x : bv64) (y : bv64)) → bool;
+  func Bv64.USubOverflow :  ((x : bv64) (y : bv64)) → bool;
+  func Bv64.UMulOverflow :  ((x : bv64) (y : bv64)) → bool;
   func Bv1.SafeAdd :  ((x : bv1) (y : bv1)) → bv1
     requires ((~Bool.Not : (arrow bool bool)) ((~Bv1.SAddOverflow : (arrow bv1 (arrow bv1 bool))) (x : bv1) (y : bv1)));
   func Bv1.SafeSub :  ((x : bv1) (y : bv1)) → bv1
@@ -318,6 +353,14 @@ info: ok: [(type Foo (a : Type, b : Type);
     requires ((~Bool.Not : (arrow bool bool)) ((~Bv1.SMulOverflow : (arrow bv1 (arrow bv1 bool))) (x : bv1) (y : bv1)));
   func Bv1.SafeNeg :  ((x : bv1)) → bv1
     requires ((~Bool.Not : (arrow bool bool)) ((~Bv1.SNegOverflow : (arrow bv1 bool)) (x : bv1)));
+  func Bv1.SafeUAdd :  ((x : bv1) (y : bv1)) → bv1
+    requires ((~Bool.Not : (arrow bool bool)) ((~Bv1.UAddOverflow : (arrow bv1 (arrow bv1 bool))) (x : bv1) (y : bv1)));
+  func Bv1.SafeUSub :  ((x : bv1) (y : bv1)) → bv1
+    requires ((~Bool.Not : (arrow bool bool)) ((~Bv1.USubOverflow : (arrow bv1 (arrow bv1 bool))) (x : bv1) (y : bv1)));
+  func Bv1.SafeUMul :  ((x : bv1) (y : bv1)) → bv1
+    requires ((~Bool.Not : (arrow bool bool)) ((~Bv1.UMulOverflow : (arrow bv1 (arrow bv1 bool))) (x : bv1) (y : bv1)));
+  func Bv1.SafeUNeg :  ((x : bv1)) → bv1
+    requires ((~Bool.Not : (arrow bool bool)) ((~Bv1.UNegOverflow : (arrow bv1 bool)) (x : bv1)));
   func Bv8.SafeAdd :  ((x : bv8) (y : bv8)) → bv8
     requires ((~Bool.Not : (arrow bool bool)) ((~Bv8.SAddOverflow : (arrow bv8 (arrow bv8 bool))) (x : bv8) (y : bv8)));
   func Bv8.SafeSub :  ((x : bv8) (y : bv8)) → bv8
@@ -326,6 +369,14 @@ info: ok: [(type Foo (a : Type, b : Type);
     requires ((~Bool.Not : (arrow bool bool)) ((~Bv8.SMulOverflow : (arrow bv8 (arrow bv8 bool))) (x : bv8) (y : bv8)));
   func Bv8.SafeNeg :  ((x : bv8)) → bv8
     requires ((~Bool.Not : (arrow bool bool)) ((~Bv8.SNegOverflow : (arrow bv8 bool)) (x : bv8)));
+  func Bv8.SafeUAdd :  ((x : bv8) (y : bv8)) → bv8
+    requires ((~Bool.Not : (arrow bool bool)) ((~Bv8.UAddOverflow : (arrow bv8 (arrow bv8 bool))) (x : bv8) (y : bv8)));
+  func Bv8.SafeUSub :  ((x : bv8) (y : bv8)) → bv8
+    requires ((~Bool.Not : (arrow bool bool)) ((~Bv8.USubOverflow : (arrow bv8 (arrow bv8 bool))) (x : bv8) (y : bv8)));
+  func Bv8.SafeUMul :  ((x : bv8) (y : bv8)) → bv8
+    requires ((~Bool.Not : (arrow bool bool)) ((~Bv8.UMulOverflow : (arrow bv8 (arrow bv8 bool))) (x : bv8) (y : bv8)));
+  func Bv8.SafeUNeg :  ((x : bv8)) → bv8
+    requires ((~Bool.Not : (arrow bool bool)) ((~Bv8.UNegOverflow : (arrow bv8 bool)) (x : bv8)));
   func Bv16.SafeAdd :  ((x : bv16) (y : bv16)) → bv16
     requires ((~Bool.Not : (arrow bool bool))
    ((~Bv16.SAddOverflow : (arrow bv16 (arrow bv16 bool))) (x : bv16) (y : bv16)));
@@ -337,6 +388,17 @@ info: ok: [(type Foo (a : Type, b : Type);
    ((~Bv16.SMulOverflow : (arrow bv16 (arrow bv16 bool))) (x : bv16) (y : bv16)));
   func Bv16.SafeNeg :  ((x : bv16)) → bv16
     requires ((~Bool.Not : (arrow bool bool)) ((~Bv16.SNegOverflow : (arrow bv16 bool)) (x : bv16)));
+  func Bv16.SafeUAdd :  ((x : bv16) (y : bv16)) → bv16
+    requires ((~Bool.Not : (arrow bool bool))
+   ((~Bv16.UAddOverflow : (arrow bv16 (arrow bv16 bool))) (x : bv16) (y : bv16)));
+  func Bv16.SafeUSub :  ((x : bv16) (y : bv16)) → bv16
+    requires ((~Bool.Not : (arrow bool bool))
+   ((~Bv16.USubOverflow : (arrow bv16 (arrow bv16 bool))) (x : bv16) (y : bv16)));
+  func Bv16.SafeUMul :  ((x : bv16) (y : bv16)) → bv16
+    requires ((~Bool.Not : (arrow bool bool))
+   ((~Bv16.UMulOverflow : (arrow bv16 (arrow bv16 bool))) (x : bv16) (y : bv16)));
+  func Bv16.SafeUNeg :  ((x : bv16)) → bv16
+    requires ((~Bool.Not : (arrow bool bool)) ((~Bv16.UNegOverflow : (arrow bv16 bool)) (x : bv16)));
   func Bv32.SafeAdd :  ((x : bv32) (y : bv32)) → bv32
     requires ((~Bool.Not : (arrow bool bool))
    ((~Bv32.SAddOverflow : (arrow bv32 (arrow bv32 bool))) (x : bv32) (y : bv32)));
@@ -348,6 +410,17 @@ info: ok: [(type Foo (a : Type, b : Type);
    ((~Bv32.SMulOverflow : (arrow bv32 (arrow bv32 bool))) (x : bv32) (y : bv32)));
   func Bv32.SafeNeg :  ((x : bv32)) → bv32
     requires ((~Bool.Not : (arrow bool bool)) ((~Bv32.SNegOverflow : (arrow bv32 bool)) (x : bv32)));
+  func Bv32.SafeUAdd :  ((x : bv32) (y : bv32)) → bv32
+    requires ((~Bool.Not : (arrow bool bool))
+   ((~Bv32.UAddOverflow : (arrow bv32 (arrow bv32 bool))) (x : bv32) (y : bv32)));
+  func Bv32.SafeUSub :  ((x : bv32) (y : bv32)) → bv32
+    requires ((~Bool.Not : (arrow bool bool))
+   ((~Bv32.USubOverflow : (arrow bv32 (arrow bv32 bool))) (x : bv32) (y : bv32)));
+  func Bv32.SafeUMul :  ((x : bv32) (y : bv32)) → bv32
+    requires ((~Bool.Not : (arrow bool bool))
+   ((~Bv32.UMulOverflow : (arrow bv32 (arrow bv32 bool))) (x : bv32) (y : bv32)));
+  func Bv32.SafeUNeg :  ((x : bv32)) → bv32
+    requires ((~Bool.Not : (arrow bool bool)) ((~Bv32.UNegOverflow : (arrow bv32 bool)) (x : bv32)));
   func Bv64.SafeAdd :  ((x : bv64) (y : bv64)) → bv64
     requires ((~Bool.Not : (arrow bool bool))
    ((~Bv64.SAddOverflow : (arrow bv64 (arrow bv64 bool))) (x : bv64) (y : bv64)));
@@ -359,6 +432,17 @@ info: ok: [(type Foo (a : Type, b : Type);
    ((~Bv64.SMulOverflow : (arrow bv64 (arrow bv64 bool))) (x : bv64) (y : bv64)));
   func Bv64.SafeNeg :  ((x : bv64)) → bv64
     requires ((~Bool.Not : (arrow bool bool)) ((~Bv64.SNegOverflow : (arrow bv64 bool)) (x : bv64)));
+  func Bv64.SafeUAdd :  ((x : bv64) (y : bv64)) → bv64
+    requires ((~Bool.Not : (arrow bool bool))
+   ((~Bv64.UAddOverflow : (arrow bv64 (arrow bv64 bool))) (x : bv64) (y : bv64)));
+  func Bv64.SafeUSub :  ((x : bv64) (y : bv64)) → bv64
+    requires ((~Bool.Not : (arrow bool bool))
+   ((~Bv64.USubOverflow : (arrow bv64 (arrow bv64 bool))) (x : bv64) (y : bv64)));
+  func Bv64.SafeUMul :  ((x : bv64) (y : bv64)) → bv64
+    requires ((~Bool.Not : (arrow bool bool))
+   ((~Bv64.UMulOverflow : (arrow bv64 (arrow bv64 bool))) (x : bv64) (y : bv64)));
+  func Bv64.SafeUNeg :  ((x : bv64)) → bv64
+    requires ((~Bool.Not : (arrow bool bool)) ((~Bv64.UNegOverflow : (arrow bv64 bool)) (x : bv64)));
   func Bv1.SafeSDiv :  ((x : bv1) (y : bv1)) → bv1
     requires ((~Bool.Not : (arrow bool bool)) ((y : bv1) == #0))
     requires ((~Bool.Not : (arrow bool bool)) ((~Bv1.SDivOverflow : (arrow bv1 (arrow bv1 bool))) (x : bv1) (y : bv1)));
@@ -397,25 +481,25 @@ info: ok: [(type Foo (a : Type, b : Type);
    ((~Bv64.SDivOverflow : (arrow bv64 (arrow bv64 bool))) (x : bv64) (y : bv64)));
   func fooAliasVal :  () → (Foo int bool);
   func fooVal :  () → (Foo int bool);
-  ⏎
-  ⏎
+  
+  
   Datatypes:
-  ⏎
+  
   Path Conditions:
-  ⏎
-  ⏎
-  ⏎
+  
+  
+  
   Warnings:
   []
   Deferred Proof Obligations:
   Label: test
   Property: assert
   Assumptions:
-  ⏎
-  ⏎
+  
+  
   Proof Obligation:
   ((~fooAliasVal : (Foo int bool)) == (~fooVal : (Foo int bool)))
-  ⏎
+  
   )]
 -/
 #guard_msgs in

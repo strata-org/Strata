@@ -36,6 +36,7 @@ def KnownLTys : LTys :=
    t[string],
    t[regex],
    t[real],
+   t[float64],
    t[Triggers],
    t[TriggerGroup],
    -- Note: t[bv<n>] elaborates to (.forAll [] .tcons "bitvec" <n>).
@@ -319,6 +320,17 @@ def float64IsInfiniteFunc : WFLFunc CoreLParams :=
 def float64IsNaNFunc : WFLFunc CoreLParams :=
   unaryFuncUneval "Float64.IsNaN" mty[float64] mty[bool]
 
+/- Float64 Overflow Predicates -/
+
+def float64AddOverflowFunc : WFLFunc CoreLParams :=
+  binaryFuncUneval "Float64.AddOverflow" mty[float64] mty[float64] mty[bool]
+def float64SubOverflowFunc : WFLFunc CoreLParams :=
+  binaryFuncUneval "Float64.SubOverflow" mty[float64] mty[float64] mty[bool]
+def float64MulOverflowFunc : WFLFunc CoreLParams :=
+  binaryFuncUneval "Float64.MulOverflow" mty[float64] mty[float64] mty[bool]
+def float64DivOverflowFunc : WFLFunc CoreLParams :=
+  binaryFuncUneval "Float64.DivOverflow" mty[float64] mty[float64] mty[bool]
+
 /- Float64 Safe Arithmetic (overflow = result becomes ±infinity from finite inputs) -/
 
 def float64SafeAddFunc : WFLFunc CoreLParams :=
@@ -548,6 +560,10 @@ def WFFactory : Lambda.WFLFactory CoreLParams :=
   float64NegFunc,
   float64IsInfiniteFunc,
   float64IsNaNFunc,
+  float64AddOverflowFunc,
+  float64SubOverflowFunc,
+  float64MulOverflowFunc,
+  float64DivOverflowFunc,
   float64SafeAddFunc,
   float64SafeSubFunc,
   float64SafeMulFunc,
@@ -701,6 +717,10 @@ def float64DivOp : Expression.Expr := float64DivFunc.opExpr
 def float64NegOp : Expression.Expr := float64NegFunc.opExpr
 def float64IsInfiniteOp : Expression.Expr := float64IsInfiniteFunc.opExpr
 def float64IsNaNOp : Expression.Expr := float64IsNaNFunc.opExpr
+def float64AddOverflowOp : Expression.Expr := float64AddOverflowFunc.opExpr
+def float64SubOverflowOp : Expression.Expr := float64SubOverflowFunc.opExpr
+def float64MulOverflowOp : Expression.Expr := float64MulOverflowFunc.opExpr
+def float64DivOverflowOp : Expression.Expr := float64DivOverflowFunc.opExpr
 def float64SafeAddOp : Expression.Expr := float64SafeAddFunc.opExpr
 def float64SafeSubOp : Expression.Expr := float64SafeSubFunc.opExpr
 def float64SafeMulOp : Expression.Expr := float64SafeMulFunc.opExpr
