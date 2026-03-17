@@ -458,13 +458,6 @@ partial def translateExpr (ctx : TranslationContext) (e : Python.expr SourceRang
   -- Generator expression: (x for x in items)
   | .GeneratorExp .. => return mkStmtExprMd .Hole
 
-  -- Ternary expression: body if test else orelse
-  | .IfExp _ body test orelse => do
-    let condExpr ← translateExpr ctx test
-    let thenExpr ← translateExpr ctx body
-    let elseExpr ← translateExpr ctx orelse
-    return mkStmtExprMd (StmtExpr.IfThenElse (Any_to_bool condExpr) thenExpr (some elseExpr))
-
   | _ => throw (.unsupportedConstruct "Expression type not yet supported" (toString (repr e)))
 
 
@@ -946,26 +939,6 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
     return (bodyCtx, [tryBlock])
 
   | .Raise _ _ _ => return (ctx, [mkStmtExprMd .Hole])
-
-  -- Break/Continue: loops are already abstracted, so these are no-ops
-  -- TODO: implement proper Exit labels when loop precision is improved
-  | .Break _ => return (ctx, [mkStmtExprMd .Hole])
-  | .Continue _ => return (ctx, [mkStmtExprMd .Hole])
-
-  -- Augmented assignment: x += e  →  x = x + e
-  | .AugAssign _ lhs op rhs => do
-    let lhsExpr ← translateExpr ctx lhs
-    let rhsExpr ← translateExpr ctx rhs
-    let opName ← match op with
-      | .Add _ => .ok "PAdd"
-      | .Sub _ => .ok "PSub"
-      | .Mult _ => .ok "PMul"
-      | .FloorDiv _ => .ok "PFloorDiv"
-      | .Mod _ => .ok "PMod"
-      | _ => throw (.unsupportedConstruct s!"AugAssign operator not yet supported: {repr op}" (toString (repr s)))
-    let binExpr := mkStmtExprMd (StmtExpr.StaticCall opName [lhsExpr, rhsExpr])
-    let assignStmt := mkStmtExprMdWithLoc (StmtExpr.Assign [lhsExpr] binExpr) md
-    return (ctx, [assignStmt])
 
   -- For loop: for target in iter: body
   -- Abstract: execute body once with havoc'd target, then havoc all modified variables
