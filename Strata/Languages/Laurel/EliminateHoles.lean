@@ -123,7 +123,7 @@ private def elimStmtList (stmts : List StmtExprMd) : ElimHoleM (List StmtExprMd)
 end
 
 private def elimProcedure (proc : Procedure) : ElimHoleM Procedure := do
-  modify fun s => { s with counter := 0, currentInputs := proc.inputs }
+  modify fun s => { s with currentInputs := proc.inputs }
   match proc.body with
   | .Transparent bodyExpr => return { proc with body := .Transparent (← elimStmt bodyExpr) }
   | .Opaque postconds (some impl) modif =>
