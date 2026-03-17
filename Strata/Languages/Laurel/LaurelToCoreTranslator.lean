@@ -236,6 +236,8 @@ def translateExpr (expr : StmtExprMd)
         return LExpr.exist () name.text (some coreTy) coreBody
   | .Hole =>
       let dummy := LExpr.fvar () (⟨s!"DUMMY_VAR_{← freshId}", ()⟩) none
+      -- TODO after https://github.com/strata-org/Strata/pull/584 is merged
+      -- This can become a throwDiagnostic
       dbg_trace "hole should have been lowered"
       pure $ dummy
   | .ReferenceEquals e1 e2 =>
