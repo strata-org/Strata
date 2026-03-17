@@ -60,7 +60,7 @@ info: (λ ((~Int.Div : (arrow int (arrow int int))) #3 %0))
                esM[((~Int.Div ((~Int.Add #2) #1)))]
 /--
 info: Annotated expression:
-((λ (%0 #2)) ((~Int.Div : (arrow int (arrow int int))) #300))
+((λ (bvar:(arrow int int)) (%0 #2)) ((~Int.Div : (arrow int (arrow int int))) #300))
 
 ---
 info: #150

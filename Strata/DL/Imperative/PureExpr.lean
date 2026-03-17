@@ -57,8 +57,18 @@ class HasAnd (P : PureExpr) extends HasBool P where
 class HasImp (P : PureExpr) extends HasBool P where
   imp : P.Expr → P.Expr → P.Expr
 
-class HasEq (P : PureExpr) where
-  eq : P.Expr → P.Expr → P.Expr
+/-- Integer ordering primitives.
+    `zero` is the lower-bound constant for well-foundedness (measure ≥ 0).
+    `intTy` is the type of integer expressions, for variable declarations.
+    `ge` is derivable as `HasNot.not (lt b a)` and is therefore omitted. -/
+class HasIntOrder (P : PureExpr) where
+  eq    : P.Expr → P.Expr → P.Expr
+  lt    : P.Expr → P.Expr → P.Expr
+  zero  : P.Expr
+  intTy : P.Ty
+
+class HasIdent (P : PureExpr) where
+  ident : String → P.Ident
 
 class HasFvar (P : PureExpr) where
   mkFvar : P.Ident → P.Expr
