@@ -323,7 +323,7 @@ where
         let hasPreconds := funcs.any (!·.preconditions.isEmpty)
         let (changed, rest') ← transformDecls rest
         let wfDecls := funcs.filterMap (mkFuncWFProc F')
-        if !wfDecls.isEmpty then return (true, wfDecls ++ [funcDecl] ++ rest')
+        if !wfDecls.isEmpty then return (true, funcDecl :: wfDecls ++ rest')
         else return (changed || hasPreconds, funcDecl :: rest')
       | .type (.data block) _ => do
         let F ← getFactory

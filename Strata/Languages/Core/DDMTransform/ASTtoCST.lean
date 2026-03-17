@@ -1103,11 +1103,11 @@ def declToCST {M} [Inhabited M] (decl : Core.Decl) : ToCSTM M (List (Command M))
     let cmd ← distinctToCST name es md
     pure [cmd]
   | .recFuncBlock funcs md => do
-    let recFnDecls ← funcs.mapM fun func => recFnDeclToCST func md
-    let cmd := Command.command_recfndefs default ⟨default, recFnDecls.toArray⟩
-    -- Register all function names as free variables
+    -- Register function names as free variables so self/sibling calls resolve
     let fnNames := funcs.map (·.name.name)
     modify (·.addGlobalFreeVars fnNames.toArray)
+    let recFnDecls ← funcs.mapM fun func => recFnDeclToCST func md
+    let cmd := Command.command_recfndefs default ⟨default, recFnDecls.toArray⟩
     pure [cmd]
 
 /-- Convert `Core.Program` to a list of CST `Commands` -/
