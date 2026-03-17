@@ -61,7 +61,7 @@ def translateType (model : SemanticModel) (ty : HighTypeMd) : LMonoTy :=
   | .TCore s => .tcons s []
   | .TFloat64 => dbg_trace "NOT SUPPORTED YET: Float64"; .tcons "Float64IsNotSupportedYet" []
   | .TReal => LMonoTy.real
-  | .Top => LMonoTy.bool
+  | .Top => .tcons "Any" []
   | _ => panic s!"translateType: unsupported type {ToFormat.format ty}"
 termination_by ty.val
 decreasing_by all_goals (first | (cases elementType; term_by_mem) | (cases keyType; term_by_mem) | (cases valueType; term_by_mem))
@@ -305,12 +305,11 @@ Preserves the expression so it is not silently dropped from the Core output.
 -/
 private def exprAsUnusedInit (expr : StmtExprMd) (md : Imperative.MetaData Core.Expression)
     : TranslateM (List Core.Statement) := do
-  let model := (← get).model
   let coreExpr ← translateExpr expr
   let id ← freshId
   let ident : Core.CoreIdent := ⟨s!"$unused_{id}", ()⟩
-  let highTy := computeExprType model expr
-  let coreType := LTy.forAll [] (translateType model highTy)
+  let tyVarName := s!"$__ty_unused_{id}"
+  let coreType := LTy.forAll [tyVarName] (.ftvar tyVarName)
   return [Core.Statement.init ident coreType (some coreExpr) md]
 
 /--
