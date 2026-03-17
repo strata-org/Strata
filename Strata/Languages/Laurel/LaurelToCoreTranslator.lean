@@ -131,7 +131,10 @@ def translateExpr (expr : StmtExprMd)
   let md := expr.md
   let disallowed (md : MetaData) (msg : String) : TranslateM Core.Expression.Expr := do
     if isPureContext then
-      throwDiagnostic $ md.toDiagnostic msg
+      -- Dummy expression used as placeholder when an error is emitted in pure context
+      let dummy := LExpr.fvar () (⟨s!"DUMMY_VAR_{← freshId}", ()⟩) none
+      emitDiagnostic $ md.toDiagnostic msg
+      pure $ dummy
     else
       throwDiagnostic $ md.toDiagnostic s!"{msg} (should have been lifted)" DiagnosticType.StrataBug
   match h: expr.val with
@@ -251,7 +254,7 @@ def translateExpr (expr : StmtExprMd)
   | .Block (⟨ .LocalVariable name ty (some initializer), md⟩ :: rest) label => do
       let valueExpr ← translateExpr  initializer boundVars isPureContext
       let bodyExpr ← translateExpr ⟨ StmtExpr.Block rest label, md ⟩ (name :: boundVars) isPureContext
-      throwDiagnostic $ md.toDiagnostic "local variables in functions" DiagnosticType.NotYetImplemented
+      disallowed md "local variables in functions are not YET supported"
       -- This doesn't work because of a limitation in Core.
       -- let coreMonoType := translateType ty
       -- return .app () (.abs () (some coreMonoType) bodyExpr) valueExpr
