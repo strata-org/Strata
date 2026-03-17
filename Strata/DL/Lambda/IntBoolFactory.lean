@@ -145,13 +145,19 @@ def unaryOp (n : T.Identifier)
     {inTy outTy InValTy OutValTy} [ToString OutValTy]
     [hIn : LambdaLeanType inTy InValTy] [hOut : LambdaLeanType outTy OutValTy]
     (op : InValTy → OutValTy)
+    (preconditions :
+      List (FuncPrecondition (LExpr T.mono) T.Metadata) := [])
     (hInTy : inTy.freeVars = [] := by decide)
-    (hOutTy : outTy.freeVars = [] := by decide) : WFLFunc T :=
+    (hOutTy : outTy.freeVars = [] := by decide)
+    (h_precond : ∀ p, p ∈ preconditions →
+      (LExpr.freeVars p.expr).map (·.1.name) ⊆ ["x"]
+      := by simp) : WFLFunc T :=
   let mkConst := LambdaLeanType.mkConst (ValTy := OutValTy) T
   let cevalInTy := LambdaLeanType.cevalTy (ValTy := InValTy) T
   ⟨{ name := n,
      inputs := [("x", inTy)],
      output := outTy,
+     preconditions := preconditions,
      concreteEval := some (fun md args => match args with
        | [x] => match cevalInTy x with
          | some a => .some (mkConst md (op a))
@@ -170,7 +176,9 @@ def unaryOp (n : T.Identifier)
     inputs_typevars_in_typeArgs := by
       intro ity hity; simp [ListMap.values] at hity; subst hity; simp [hInTy]
     output_typevars_in_typeArgs := by simp [hOutTy]
-    precond_freevars := by intro p hp; simp at hp
+    precond_freevars := by
+      intro p hp
+      exact h_precond p hp
     typeArgs_no_gen_prefix := by simp
   }⟩
 

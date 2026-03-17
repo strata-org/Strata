@@ -402,6 +402,18 @@ def handleUnaryOps {M} [Inhabited M] (name : String) (arg : CoreDDM.Expr M)
   | "Bv32.Neg" => pure (.neg_expr default (.bv32 default) arg)
   | "Bv64.Not" => pure (.bvnot default (.bv64 default) arg)
   | "Bv64.Neg" => pure (.neg_expr default (.bv64 default) arg)
+  -- Safe negation variants
+  | "Bv1.SafeNeg" => pure (.neg_expr default (.bv1 default) arg)
+  | "Bv8.SafeNeg" => pure (.neg_expr default (.bv8 default) arg)
+  | "Bv16.SafeNeg" => pure (.neg_expr default (.bv16 default) arg)
+  | "Bv32.SafeNeg" => pure (.neg_expr default (.bv32 default) arg)
+  | "Bv64.SafeNeg" => pure (.neg_expr default (.bv64 default) arg)
+  -- Signed negation overflow predicates
+  | "Bv1.SNegOverflow" => pure (.neg_expr default (.bv1 default) arg)
+  | "Bv8.SNegOverflow" => pure (.neg_expr default (.bv8 default) arg)
+  | "Bv16.SNegOverflow" => pure (.neg_expr default (.bv16 default) arg)
+  | "Bv32.SNegOverflow" => pure (.neg_expr default (.bv32 default) arg)
+  | "Bv64.SNegOverflow" => pure (.neg_expr default (.bv64 default) arg)
   | "Bv8.Extract_7_7" => pure (.bvextract_7_7 default arg)
   | "Bv16.Extract_15_15" => pure (.bvextract_15_15 default arg)
   | "Bv32.Extract_31_31" => pure (.bvextract_31_31 default arg)
@@ -439,7 +451,11 @@ def bvBinaryOpMap {M} [Inhabited M] :
   ("SLe", fun ty arg1 arg2 => .bvsle default ty arg1 arg2),
   ("SLt", fun ty arg1 arg2 => .bvslt default ty arg1 arg2),
   ("SGe", fun ty arg1 arg2 => .bvsge default ty arg1 arg2),
-  ("SGt", fun ty arg1 arg2 => .bvsgt default ty arg1 arg2)
+  ("SGt", fun ty arg1 arg2 => .bvsgt default ty arg1 arg2),
+  -- Safe variants map to the same CST constructors
+  ("SafeAdd", fun ty arg1 arg2 => .add_expr default ty arg1 arg2),
+  ("SafeSub", fun ty arg1 arg2 => .sub_expr default ty arg1 arg2),
+  ("SafeMul", fun ty arg1 arg2 => .mul_expr default ty arg1 arg2)
 ]
 
 /-- Map from bitvector sizes to their corresponding type constructors -/
