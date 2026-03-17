@@ -7,28 +7,27 @@
 import Strata.Languages.Core.Factory
 import Strata.DL.Lambda.Preconditions
 
-/-! # Tests: signed bitvector overflow safe operators
+/-! # Tests: overflow safe operators
 
-Verify that SafeAdd/SafeSub/SafeMul/SafeNeg exist and generate
-WF obligations (overflow preconditions).
+Verify that safe operators exist and generate WF obligations (overflow preconditions).
 -/
 
 open Strata Core Lambda
 
--- Verify safe op expressions exist for multiple sizes
-#check Core.bv8SafeAddOp
-#check Core.bv16SafeAddOp
-#check Core.bv32SafeAddOp
-#check Core.bv32SafeSubOp
-#check Core.bv32SafeMulOp
-#check Core.bv32SafeNegOp
-#check Core.bv64SafeAddOp
+-- Verify safe op expressions exist for multiple sizes (silent compilation check)
+example := Core.bv8SafeAddOp
+example := Core.bv16SafeAddOp
+example := Core.bv32SafeAddOp
+example := Core.bv32SafeSubOp
+example := Core.bv32SafeMulOp
+example := Core.bv32SafeNegOp
+example := Core.bv64SafeAddOp
 
 -- Verify overflow predicate expressions exist
-#check Core.bv32SAddOverflowOp
-#check Core.bv32SSubOverflowOp
-#check Core.bv32SMulOverflowOp
-#check Core.bv32SNegOverflowOp
+example := Core.bv32SAddOverflowOp
+example := Core.bv32SSubOverflowOp
+example := Core.bv32SMulOverflowOp
+example := Core.bv32SNegOverflowOp
 
 -- Verify WF obligations are generated for safe add (1 precondition)
 #guard (collectWFObligations Core.Factory
@@ -54,9 +53,9 @@ open Strata Core Lambda
     .fvar () ⟨"y", ()⟩ (some (.bitvec 32))])).length == 2
 
 -- Verify SDivOverflow predicate and SafeSDiv/SafeSMod exist
-#check Core.bv32SDivOverflowOp
-#check Core.bv32SafeSDivOp
-#check Core.bv32SafeSModOp
+example := Core.bv32SDivOverflowOp
+example := Core.bv32SafeSDivOp
+example := Core.bv32SafeSModOp
 
 -- Verify SafeUAdd has 1 precondition (unsigned overflow)
 #guard (collectWFObligations Core.Factory
@@ -64,23 +63,19 @@ open Strata Core Lambda
     .fvar () ⟨"x", ()⟩ (some (.bitvec 8)),
     .fvar () ⟨"y", ()⟩ (some (.bitvec 8))])).length == 1
 
--- Verify unsigned overflow predicates exist
-#check Core.bv32UAddOverflowOp
-#check Core.bv32USubOverflowOp
-#check Core.bv32UMulOverflowOp
-#check Core.bv32UNegOverflowOp
-#check Core.bv32SafeUAddOp
-#check Core.bv32SafeUSubOp
-#check Core.bv32SafeUMulOp
-#check Core.bv32SafeUNegOp
+-- Verify unsigned overflow predicates and safe ops exist
+example := Core.bv32UAddOverflowOp
+example := Core.bv32USubOverflowOp
+example := Core.bv32UMulOverflowOp
+example := Core.bv32UNegOverflowOp
+example := Core.bv32SafeUAddOp
+example := Core.bv32SafeUSubOp
+example := Core.bv32SafeUMulOp
+example := Core.bv32SafeUNegOp
 
 -- Verify Float64 operations exist in factory
-#check Core.float64AddOp
-#check Core.float64SafeAddOp
-#check Core.float64SafeDivOp
-#check Core.float64IsInfiniteOp
-#check Core.float64IsNaNOp
-
--- Verify Float64 safe ops generate WF obligations
--- (SafeAdd/Sub/Mul/Div are unevaluated, so no preconditions via binaryOp —
---  overflow checks for Float64 will be added via a separate transform)
+example := Core.float64AddOp
+example := Core.float64SafeAddOp
+example := Core.float64SafeDivOp
+example := Core.float64IsInfiniteOp
+example := Core.float64IsNaNOp
