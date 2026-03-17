@@ -150,7 +150,7 @@ def elimStmt (ptMap : ConstrainedTypeMap)
       | none => match callOpt with
         | some c => (none, [⟨.Assume c, md⟩])
         | none => (none, [])
-      | some _ => (init, callOpt.toList.map fun c => ⟨.Assert c, md⟩)
+      | some initExpr => (init, callOpt.toList.map fun c => ⟨.Assert c, initExpr.md⟩)
     pure ([⟨.LocalVariable name ty init', md⟩] ++ check)
 
   | .Assign [target] _ => match target.val with
