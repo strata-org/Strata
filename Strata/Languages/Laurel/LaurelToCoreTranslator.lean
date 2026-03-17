@@ -270,22 +270,22 @@ def translateExpr (expr : StmtExprMd)
   | .Block _ _ =>
       throwDiagnostic $ md.toDiagnostic "block expression should have been lowered in a separate pass" DiagnosticType.StrataBug
   | .LocalVariable _ _ _ =>
-      throwDiagnostic $ md.toDiagnostic "local variable expression not yet implemented (should be lowered in a separate pass)" DiagnosticType.StrataBug
-  | .Return _ => disallowed expr.md "return expression not yet implemented (should be lowered in a separate pass)"
+      throwDiagnostic $ md.toDiagnostic "local variable expression should be lowered in a separate pass" DiagnosticType.StrataBug
+  | .Return _ => disallowed expr.md "return expression should be lowered in a separate pass"
 
-  | .AsType target _ => panic "AsType expression not implemented"
-  | .Assigned _ => panic "assigned expression not implemented"
-  | .Old value => panic "old expression not implemented"
-  | .Fresh _ => panic "fresh expression not implemented"
-  | .Assert _ => panic "assert expression not implemented"
-  | .Assume _ => panic "assume expression not implemented"
-  | .ProveBy value _ => panic "proveBy expression not implemented"
-  | .ContractOf _ _ => panic "contractOf expression not implemented"
-  | .Abstract => panic "abstract expression not implemented"
-  | .All => panic "all expression not implemented"
-  | .InstanceCall target callee args => panic "This expression not implemented"
-  | .PureFieldUpdate _ _ _ => panic "This expression not implemented"
-  | .This => panic "This expression not implemented"
+  | .AsType target _ => throwDiagnostic $ md.toDiagnostic "AsType expression translation" DiagnosticType.NotYetImplemented
+  | .Assigned _ => throwDiagnostic $ md.toDiagnostic "assigned expression translation" DiagnosticType.NotYetImplemented
+  | .Old value => throwDiagnostic $ md.toDiagnostic "old expression translation" DiagnosticType.NotYetImplemented
+  | .Fresh _ => throwDiagnostic $ md.toDiagnostic "fresh expression translation" DiagnosticType.NotYetImplemented
+  | .Assert _ => throwDiagnostic $ md.toDiagnostic "assert expression translation" DiagnosticType.NotYetImplemented
+  | .Assume _ => throwDiagnostic $ md.toDiagnostic "assume expression translation" DiagnosticType.NotYetImplemented
+  | .ProveBy value _ => throwDiagnostic $ md.toDiagnostic "proveBy expression translation" DiagnosticType.NotYetImplemented
+  | .ContractOf _ _ => throwDiagnostic $ md.toDiagnostic "contractOf expression translation" DiagnosticType.NotYetImplemented
+  | .Abstract => throwDiagnostic $ md.toDiagnostic "abstract expression translation" DiagnosticType.NotYetImplemented
+  | .All => throwDiagnostic $ md.toDiagnostic "all expression translation" DiagnosticType.NotYetImplemented
+  | .InstanceCall target callee args => throwDiagnostic $ md.toDiagnostic "instance call expression translation" DiagnosticType.NotYetImplemented
+  | .PureFieldUpdate _ _ _ => throwDiagnostic $ md.toDiagnostic "pure field update expression translation" DiagnosticType.NotYetImplemented
+  | .This => throwDiagnostic $ md.toDiagnostic "this expression translation" DiagnosticType.NotYetImplemented
   termination_by expr
   decreasing_by
     all_goals (have := WithMetadata.sizeOf_val_lt expr; term_by_mem)
@@ -294,7 +294,7 @@ dummy: TranslateM Core.Expression.Expr := do
     return .fvar () (⟨s!"DUMMY_VAR_{← freshId}", ()⟩) none
 
 def getNameFromMd (md : Imperative.MetaData Core.Expression): String :=
-  let fileRange := (Imperative.getFileRange md).getD (panic "getNameFromMd bug")
+  let fileRange := (Imperative.getFileRange md).getD (dbg_trace "getNameFromMd bug"; default)
   s!"({fileRange.range.start})"
 
 def defaultExprForType (model : SemanticModel) (ty : HighTypeMd) : Core.Expression.Expr :=
@@ -409,7 +409,7 @@ def translateStmt (outputParams : List Parameter) (stmt : StmtExprMd)
                 | _ => none
               return (havocStmts)
           | _ =>
-              panic "Assignments with multiple target but without a RHS call should not be constructed"
+              throwDiagnostic $ md.toDiagnostic "Assignments with multiple target but without a RHS call should not be constructed"
   | .IfThenElse cond thenBranch elseBranch =>
       let bcond ← translateExpr cond
       let bthen ← translateStmt outputParams thenBranch
@@ -438,7 +438,8 @@ def translateStmt (outputParams : List Parameter) (stmt : StmtExprMd)
       | none, _ =>
           return [.exit (some "$body") md]
       | some _, none =>
-          panic! "Return statement with value but procedure has no output parameters"
+          emitDiagnostic $ md.toDiagnostic "Return statement with value but procedure has no output parameters"
+          return [.exit (some "$body") md]
   | .While cond invariants decreasesExpr body =>
       let condExpr ← translateExpr cond
       let invExprs ← invariants.mapM (translateExpr)

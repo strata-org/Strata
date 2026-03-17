@@ -320,7 +320,7 @@ instance : Inhabited StmtExprMd where
   default := ⟨ .Hole, .empty ⟩
 
 instance : Inhabited HighTypeMd where
-  default := { val := HighType.TVoid, md := default }
+  default := { val := HighType.Top, md := default }
 
 instance : Inhabited StmtExprMd where
   default := { val := default, md := default }

@@ -49,8 +49,12 @@ def computeExprType (model : SemanticModel) (expr : StmtExprMd) : HighTypeMd :=
       | [singleOutput] => singleOutput.type
       | _ => { val := .TVoid, md := default }
     | .unresolved => { val := .Top, md := default }
-    | astNode => panic! s!"static call to {callee} not to a procedure but to a {repr astNode}"
-  | .InstanceCall _ _ _ => panic "Not supported InstanceCall"
+    | astNode =>
+      dbg_trace s!"BUG: static call to {callee} not to a procedure but to a {repr astNode}"
+      default
+  | .InstanceCall _ _ _ =>
+      dbg_trace "Not yet implemented: computeExprType InstanceCall"
+      default
   -- Operators
   | .PrimitiveOp op args =>
       match args with
@@ -82,7 +86,9 @@ def computeExprType (model : SemanticModel) (expr : StmtExprMd) : HighTypeMd :=
   | .Assume _ => ⟨ .TVoid, md ⟩
   -- Instance related
   | .New name => ⟨ .UserDefined name, md ⟩
-  | .This => panic "'This' not supported" -- would need `this` type from context
+  | .This =>
+      dbg_trace "Not yet implemented: computeExprType This"
+      default
   | .ReferenceEquals _ _ => ⟨ .TBool, md ⟩
   | .AsType _ ty => ty
   | .IsType _ _ => ⟨ .TBool, md ⟩
@@ -94,10 +100,16 @@ def computeExprType (model : SemanticModel) (expr : StmtExprMd) : HighTypeMd :=
   | .Fresh _ => ⟨ .TBool, md ⟩
   -- Proof related
   | .ProveBy v _ => computeExprType model v
-  | .ContractOf _ _ => panic "ContractOf Not supported"
+  | .ContractOf _ _ =>
+      dbg_trace "Not yet implemented: computeExprType ContractOf"
+      default
   -- Special
-  | .Abstract => panic "Abstract Not supported"
-  | .All => panic "All Not supported"
+  | .Abstract =>
+      dbg_trace "Not yet implemented: computeExprType Abstract"
+      default
+  | .All =>
+      dbg_trace "Not yet implemented: computeExprType All"
+      default
   | .Hole => ⟨ .Top, md ⟩
 
 end Strata.Laurel
