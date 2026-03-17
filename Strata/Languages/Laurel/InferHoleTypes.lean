@@ -26,10 +26,13 @@ public section
 private def bareType (v : HighType) : HighTypeMd := ⟨v, (#[] : Imperative.MetaData Core.Expression)⟩
 private def defaultHoleType : HighTypeMd := bareType .Top
 
+/-- Compute the expected type for an argument of a comparison operator
+    by looking at the first non-hole sibling. -/
 private def inferComparisonArgType (model : SemanticModel) (args : List StmtExprMd) : HighTypeMd :=
   args.findSome? (fun a => match a.val with | .Hole _ => none | _ => some (computeExprType model a))
     |>.getD defaultHoleType
 
+/-- Get the expected type for each argument of a call from the callee's parameter list. -/
 private def calleeParamTypes (model : SemanticModel) (callee : Identifier) : Option (List HighTypeMd) :=
   match model.get callee with
   | .staticProcedure proc => some (proc.inputs.map (·.type))
@@ -63,7 +66,15 @@ private def inferExpr (expr : StmtExprMd) (expectedType : HighTypeMd) : InferHol
   | .PrimitiveOp op args =>
       let argType := match op with
         | .Eq | .Neq | .Lt | .Leq | .Gt | .Geq => inferComparisonArgType model args
-        | _ => expectedType
+        | _ =>
+          -- Use computeExprType on the whole expression to get the result type,
+          -- which equals the argument type for arithmetic/logic/string ops.
+          -- Fall back to expectedType if computeExprType can't determine it
+          -- (e.g. when the first arg is a Hole).
+          let computed := computeExprType model expr
+          match computed.val with
+          | .TCore _ | .Top => expectedType
+          | _ => computed
       return ⟨.PrimitiveOp op (← inferArgs args argType), md⟩
   | .StaticCall callee args =>
       let args' ← match calleeParamTypes model callee with
