@@ -284,7 +284,7 @@ def translateExpr (expr : StmtExprMd)
     all_goals (have := WithMetadata.sizeOf_val_lt expr; term_by_mem)
 
 def getNameFromMd (md : Imperative.MetaData Core.Expression): String :=
-  let fileRange := (Imperative.getFileRange md).getD (panic "getNameFromMd bug")
+  let fileRange := (Imperative.getFileRange md).getD (dbg_trace "SOUND BUG in getNameFromMd"; default)
   s!"({fileRange.range.start})"
 
 def defaultExprForType (model : SemanticModel) (ty : HighTypeMd) : Core.Expression.Expr :=

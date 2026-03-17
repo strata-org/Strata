@@ -25,9 +25,11 @@ The heap model uses:
 - `Composite` - datatype with a reference (int) and a runtime type tag
 - `Field` - abstract type for field names (zero-constructor datatype)
 - `TypeTag` - abstract type for type tags (zero-constructor datatype)
-- `Box` - tagged union for field values (int, bool, float64, Composite)
 - `Heap` - datatype with a `data` map and a `nextReference` for allocation
 - `readField` / `updateField` / `increment` - heap access functions
+
+Note: The `Box` datatype is generated dynamically by `heapParameterization`
+based on which field types are actually used in the program.
 -/
 
 private def laurelPreludeDDM :=
@@ -36,17 +38,6 @@ program Laurel;
 
 // Composite: datatype with a reference (int)
 datatype Composite { MkComposite(ref: int) }
-
-datatype Float64IsNotSupportedYet {}
-
-// Box: tagged union for field values
-datatype Box {
-  BoxInt(intVal: int),
-  BoxBool(boolVal: bool),
-  BoxReal(realVal: real),
-  BoxFloat64(float64Val: float64),
-  BoxComposite(compositeVal: Composite)
-}
 
 // Heap: contains the data map and a nextReference for allocation
 datatype Heap {

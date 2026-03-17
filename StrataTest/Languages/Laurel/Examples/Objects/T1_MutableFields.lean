@@ -15,6 +15,7 @@ namespace Laurel
 def program := r"
 composite Container {
   var intValue: int // var indicates mutable field
+  var realValue: real
   var boolValue: bool
 }
 
@@ -27,7 +28,11 @@ procedure newsAreNotEqual() {
 procedure simpleAssign() {
   var c: Container := new Container;
   c#intValue := 2;
-  assert c#intValue == 2
+  c#realValue := 3.0;
+  c#boolValue := true;
+  assert c#intValue == 2;
+  assert c#realValue == 3.0;
+  assert c#boolValue == true
 };
 
 procedure updatesAndAliasing()
@@ -79,6 +84,26 @@ procedure sameFieldNameDifferentType(a: Container, b: SameFieldName) {
 
   assert a#intValue == 1;
   assert b#intValue
+};
+
+datatype Color {
+  Red(),
+  Green(),
+  Blue()
+}
+
+composite Pixel {
+  var x: int
+  var color: Color
+}
+
+procedure datatypeField() {
+  var p: Pixel := new Pixel;
+  p#color := Red();
+  assert Color..isRed(p#color);
+  p#color := Blue();
+  assert Color..isBlue(p#color);
+  assert !Color..isRed(p#color)
 };
 
 // Following test-cases can't be run because Core procedures are not transparent.
