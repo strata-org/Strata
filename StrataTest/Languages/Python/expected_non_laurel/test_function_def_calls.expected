@@ -24,9 +24,3 @@ test_helper_procedure_assert_opt_name_none_or_bar_5: ✅ pass (in prelude)
 (Origin_test_helper_procedure_Requires)req_opt_name_none_or_str: ✅ pass (in prelude)
 
 (Origin_test_helper_procedure_Requires)req_opt_name_none_or_bar: ✅ pass (in prelude)
-
-(Origin_test_helper_procedure_Requires)req_name_is_foo: ✅ pass (in prelude)
-
-(Origin_test_helper_procedure_Requires)req_opt_name_none_or_str: ✅ pass (in prelude)
-
-(Origin_test_helper_procedure_Requires)req_opt_name_none_or_bar: ✅ pass (in prelude)
