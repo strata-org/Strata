@@ -68,8 +68,8 @@ def toLMonoTy {T : LExprParamsT} (e : LExprT T) : LMonoTy :=
 
 /--
 Remove any type annotation stored in metadata for all
-expressions, except the `.op`s and free variables
-`.fvar`s.
+expressions, except the `.op`s, free variables
+`.fvar`s, and bound variables in `.abs` and `.quant`.
 -/
 def unresolved {T : LExprParamsT} (e : LExprT T) : LExpr T.base.mono :=
   match e with

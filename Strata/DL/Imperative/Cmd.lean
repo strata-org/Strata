@@ -85,6 +85,14 @@ class HasHavoc (P : PureExpr) (CmdT : Type) where
 
 instance : HasHavoc P (Cmd P) where
   havoc x md := .havoc x md
+
+/-- Declare a variable with a given type and optional initial value. -/
+class HasInit (P : PureExpr) (CmdT : Type) where
+  init : P.Ident → P.Ty → Option P.Expr → MetaData P → CmdT
+
+instance : HasInit P (Cmd P) where
+  init x ty e md := .init x ty e md
+
 ---------------------------------------------------------------------
 
 mutual
