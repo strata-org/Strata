@@ -216,7 +216,7 @@ where
     match _h : expr with
     | .FieldSelect selectTarget fieldName => do
         let some qualifiedName := resolveQualifiedFieldName model fieldName
-          | default
+          | return ⟨ .Hole, md ⟩
 
         let valTy := (model.get fieldName).getType
         let readExpr := ⟨ .StaticCall "readField" [mkMd (.Identifier heapVar), selectTarget, mkMd (.StaticCall qualifiedName [])], md ⟩
@@ -273,7 +273,7 @@ where
         match targets with
         | [⟨.FieldSelect target fieldName, _fieldSelectMd⟩] =>
             let some qualifiedName := resolveQualifiedFieldName model fieldName
-              | default
+              | return ⟨ .Hole, md ⟩
             let valTy := (model.get fieldName).getType
             let target' ← recurse target
             let v' ← recurse v
