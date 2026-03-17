@@ -37,6 +37,11 @@ info: [Strata.Core] Type checking succeeded.
 
 
 VCs:
+Label: entry_invariant_0_0
+Property: assert
+Obligation:
+false
+
 Label: arbitrary_iter_maintain_invariant_0_0
 Property: assert
 Assumptions:
@@ -44,11 +49,6 @@ Assumptions:
 assume_entry_invariant_0_0: false
 Obligation:
 true
-
-Label: entry_invariant_0_0
-Property: assert
-Obligation:
-false
 
 
 
@@ -75,13 +75,13 @@ procedure zeroIter () returns (s : int)
 
 ---
 info:
-Obligation: arbitrary_iter_maintain_invariant_0_0
-Property: assert
-Result: ✅ pass (❗path unreachable)
-
 Obligation: entry_invariant_0_0
 Property: assert
 Result: ❌ always false and is reachable from declaration entry
+
+Obligation: arbitrary_iter_maintain_invariant_0_0
+Property: assert
+Result: ✅ pass (❗path unreachable)
 -/
 #guard_msgs in
 #eval verify falseInvariantNeverExecuted

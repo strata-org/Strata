@@ -489,11 +489,25 @@ def evalAuxGo (steps : Nat) (old_var_subst : SubstMap) (Ewn : EnvWithNext) (ss :
                                      let s' := Imperative.Stmt.ite cond' ss' [] md
                                      { ewn with stk := orig_stk.appendToTop [s']})
                 Ewns
-              -- Keep the environment order corresponding to program order.
-              if cond'.isTrue then
-                Ewns_t ++ Ewns_f
-              else
-                Ewns_f ++ Ewns_t
+              -- Merge dead-branch obligations directly into each live result.
+              -- Obligations are inserted at the program-order position:
+              --   cond=true  (live=then, dead=else): live_deferred ++ dead_deferred
+              --   cond=false (live=else, dead=then): pre_ITE ++ dead_deferred ++ live_specific
+              -- `pre_size` is the number of deferred obligations that existed before
+              -- this ITE; anything beyond that index was added by the live branch.
+              -- Merging here also prevents Ewns_f from independently processing
+              -- `rest` and generating duplicate obligations.
+              let deadDeferred := Ewns_f.foldl (fun acc ewn => acc ++ ewn.env.deferred) #[]
+              let pre_size     := Ewn.env.deferred.size
+              Ewns_t.map (fun ewn =>
+                let merged :=
+                  if cond'.isTrue then
+                    ewn.env.deferred ++ deadDeferred
+                  else
+                    ewn.env.deferred.extract 0 pre_size ++
+                    deadDeferred ++
+                    ewn.env.deferred.extract pre_size ewn.env.deferred.size
+                { ewn with env.deferred := merged })
             | _ =>
               -- Process both branches.
               processIteBranches steps' old_var_subst
