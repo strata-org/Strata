@@ -96,6 +96,7 @@ private def lMonoTyToTermType (ty : LMonoTy) : TermType :=
   | .tcons "bool" [] => .bool
   | .tcons "int" [] => .int
   | .tcons "real" [] => .real
+  | .tcons "float64" [] => .float64
   | .tcons "string" [] => .string
   | .tcons "regex" [] => .regex
   | .tcons name args => .constr name (args.map lMonoTyToTermType)
@@ -505,6 +506,27 @@ partial def toSMTOp (E : Env) (fn : CoreIdent) (fnty : LMonoTy) (ctx : SMT.Conte
     | "Real.Gt"      => .ok (.app Op.gt,         .bool,   ctx)
     | "Real.Ge"      => .ok (.app Op.ge,         .bool,   ctx)
 
+    -- Float64 arithmetic: encoded as SMT-LIB FP operations with RNE rounding
+    | "Float64.Add" | "Float64.SafeAdd" =>
+      let fpApp := fun (args : List Term) (_retTy : TermType) =>
+        Term.app Op.fp_add (Term.rne :: args) .float64
+      .ok (fpApp, .float64, ctx)
+    | "Float64.Sub" | "Float64.SafeSub" =>
+      let fpApp := fun (args : List Term) (_retTy : TermType) =>
+        Term.app Op.fp_sub (Term.rne :: args) .float64
+      .ok (fpApp, .float64, ctx)
+    | "Float64.Mul" | "Float64.SafeMul" =>
+      let fpApp := fun (args : List Term) (_retTy : TermType) =>
+        Term.app Op.fp_mul (Term.rne :: args) .float64
+      .ok (fpApp, .float64, ctx)
+    | "Float64.Div" | "Float64.SafeDiv" =>
+      let fpApp := fun (args : List Term) (_retTy : TermType) =>
+        Term.app Op.fp_div (Term.rne :: args) .float64
+      .ok (fpApp, .float64, ctx)
+    | "Float64.Neg"         => .ok (.app Op.fp_neg,        .float64, ctx)
+    | "Float64.IsInfinite"  => .ok (.app Op.fp_isInfinite, .bool,    ctx)
+    | "Float64.IsNaN"       => .ok (.app Op.fp_isNaN,      .bool,    ctx)
+
     | "Bv1.Neg"     => .ok (.app Op.bvneg,      .bitvec 1, ctx)
     | "Bv1.Add"     => .ok (.app Op.bvadd,      .bitvec 1, ctx)
     | "Bv1.Sub"     => .ok (.app Op.bvsub,      .bitvec 1, ctx)
@@ -832,6 +854,7 @@ def smtTermToLExpr (t : Strata.SMT.Term)
   | .prim (.real d)       => .realConst () d.toRat
   | .prim (.bitvec b)     => .bitvecConst () _ b
   | .prim (.string s)     => .strConst () s
+  | .prim .rne            => .op () ⟨"RNE", ()⟩ none
   | .var v                =>
     -- Zero-arg constructors arrive as plain variables from the SMT solver.
     -- Mark them with `.op` so the formatter can emit `Name()`.

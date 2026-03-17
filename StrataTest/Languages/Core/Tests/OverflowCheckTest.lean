@@ -73,3 +73,14 @@ open Strata Core Lambda
 #check Core.bv32SafeUSubOp
 #check Core.bv32SafeUMulOp
 #check Core.bv32SafeUNegOp
+
+-- Verify Float64 operations exist in factory
+#check Core.float64AddOp
+#check Core.float64SafeAddOp
+#check Core.float64SafeDivOp
+#check Core.float64IsInfiniteOp
+#check Core.float64IsNaNOp
+
+-- Verify Float64 safe ops generate WF obligations
+-- (SafeAdd/Sub/Mul/Div are unevaluated, so no preconditions via binaryOp —
+--  overflow checks for Float64 will be added via a separate transform)
