@@ -620,73 +620,82 @@ def verifySingleEnv (pE : Program × Env) (options : VerifyOptions)
               {format err}\n\n\
               [DEBUG] Evaluated program: {Core.formatProgram p}\n\n"
   | _ =>
-    let mut results := (#[] : VCResults)
-    for obligation in E.deferred do
-      -- Determine which checks to perform based on metadata or check mode/amount
+    let verifyObligation := fun (obligation : Imperative.ProofObligation Expression) => do
       let (satisfiabilityCheck, validityCheck) :=
         if Imperative.MetaData.hasFullCheck obligation.metadata then
-          (true, true)  -- fullCheck annotation: always run both
+          (true, true)
         else
-          -- Derive checks from check mode and level
           match options.checkMode, options.checkLevel, obligation.property with
-          | _, .full, _ => (true, true)  -- Full: both checks
-          | .bugFindingAssumingCompleteSpec, _, _ => (true, true)  -- This mode requires both checks
-          | .deductive, .minimal, .assert | .deductive, .minimal, .divisionByZero => (false, true)  -- Deductive needs validity
-          | .deductive, .minimalVerbose, .assert | .deductive, .minimalVerbose, .divisionByZero => (false, true)  -- Same checks as minimal
-          | .deductive, .minimal, .cover => (true, false)   -- Cover uses satisfiability
-          | .deductive, .minimalVerbose, .cover => (true, false)   -- Same checks as minimal
-          | .bugFinding, .minimal, .assert | .bugFinding, .minimal, .divisionByZero => (true, false) -- Bug finding needs satisfiability
-          | .bugFinding, .minimalVerbose, .assert | .bugFinding, .minimalVerbose, .divisionByZero => (true, false) -- Same checks as minimal
-          | .bugFinding, .minimal, .cover => (true, false)  -- Cover uses satisfiability
-          | .bugFinding, .minimalVerbose, .cover => (true, false)  -- Same checks as minimal
+          | _, .full, _ => (true, true)
+          | .bugFindingAssumingCompleteSpec, _, _ => (true, true)
+          | .deductive, .minimal, .assert | .deductive, .minimal, .divisionByZero => (false, true)
+          | .deductive, .minimalVerbose, .assert | .deductive, .minimalVerbose, .divisionByZero => (false, true)
+          | .deductive, .minimal, .cover => (true, false)
+          | .deductive, .minimalVerbose, .cover => (true, false)
+          | .bugFinding, .minimal, .assert | .bugFinding, .minimal, .divisionByZero => (true, false)
+          | .bugFinding, .minimalVerbose, .assert | .bugFinding, .minimalVerbose, .divisionByZero => (true, false)
+          | .bugFinding, .minimal, .cover => (true, false)
+          | .bugFinding, .minimalVerbose, .cover => (true, false)
       let (obligation, peSatResult?, peValResult?) ← preprocessObligation obligation p options satisfiabilityCheck validityCheck
-      -- If PE resolved both checks, we're done
       if let (some peSat, some peVal) := (peSatResult?, peValResult?) then
         let outcome := VCOutcome.mk peSat peVal
-        let result : VCResult := { obligation, outcome := .ok outcome, verbose := options.verbose,
-                                    checkLevel := options.checkLevel, checkMode := options.checkMode, lexprModel := [] }
-        results := results.push result
-        if result.isFailure || result.isImplementationError then
-          if options.verbose >= .normal then
-            let prog := f!"\n\n[DEBUG] Evaluated program:\n{Core.formatProgram p}"
-            dbg_trace f!"\n\nResult: {result}\n{prog}"
-          if options.stopOnFirstError then break
-        continue
-      -- Need the solver for at least one check
+        return { obligation, outcome := .ok outcome, verbose := options.verbose,
+                 checkLevel := options.checkLevel, checkMode := options.checkMode, lexprModel := [] }
       let needSatCheck := satisfiabilityCheck && peSatResult?.isNone
       let needValCheck := validityCheck && peValResult?.isNone
       let maybeTerms := ProofObligation.toSMTTerms E obligation SMT.Context.default options.useArrayTheory
       match maybeTerms with
       | .error err =>
         let err := f!"SMT Encoding Error! " ++ err
-        let result := { obligation,
-                        outcome := .error (toString err),
-                        verbose := options.verbose,
-                        checkLevel := options.checkLevel,
-                        checkMode := options.checkMode,
-                        lexprModel := [] }
-        if options.verbose >= .normal then
-          let prog := f!"\n\n[DEBUG] Evaluated program:\n{Core.formatProgram p}"
-          dbg_trace f!"\n\nResult: {result}\n{prog}"
-        results := results.push result
-        if options.stopOnFirstError then break
+        return { obligation, outcome := .error (toString err), verbose := options.verbose,
+                 checkLevel := options.checkLevel, checkMode := options.checkMode, lexprModel := [] }
       | .ok (assumptionTerms, obligationTerm, ctx) =>
         let result ← getObligationResult assumptionTerms obligationTerm ctx obligation p options
                       counter tempDir needSatCheck needValCheck
-        -- Merge PE results with solver results
         let result := match result.outcome with
           | .ok solverOutcome =>
             let satResult := peSatResult?.getD solverOutcome.satisfiabilityProperty
             let valResult := peValResult?.getD solverOutcome.validityProperty
             { result with outcome := .ok (VCOutcome.mk satResult valResult) }
           | .error _ => result
+        return result
+    if options.parallelWorkers > 1 && !options.stopOnFirstError then
+      -- Parallel: process obligations in batches of parallelWorkers
+      let obligations := E.deferred.toList
+      let mut results := (#[] : VCResults)
+      let mut remaining := obligations
+      while !remaining.isEmpty do
+        let batch := remaining.take options.parallelWorkers
+        remaining := remaining.drop options.parallelWorkers
+        let toIO := fun (x : EIO DiagnosticModel VCResult) =>
+          x.toIO (fun dm => IO.Error.userError dm.message)
+        let tasks ← batch.mapM fun obligation =>
+          IO.toEIO (fun e => DiagnosticModel.fromFormat f!"{e}")
+            (IO.asTask (toIO (verifyObligation obligation)))
+        for task in tasks do
+          let taskResult ← IO.toEIO
+            (fun e => DiagnosticModel.fromFormat f!"{e}")
+            (IO.wait task)
+          match taskResult with
+          | .ok result =>
+            results := results.push result
+            if result.isNotSuccess && options.verbose >= .normal then
+              let prog := f!"\n\n[DEBUG] Evaluated program:\n{Core.formatProgram p}"
+              dbg_trace f!"\n\nResult: {result}\n{prog}"
+          | .error e => .error (DiagnosticModel.fromFormat f!"{e}")
+      return results
+    else
+      -- Sequential
+      let mut results := (#[] : VCResults)
+      for obligation in E.deferred do
+        let result ← verifyObligation obligation
         results := results.push result
-        if result.isNotSuccess then
+        if (result.isFailure || result.isImplementationError || result.isNotSuccess) then
           if options.verbose >= .normal then
             let prog := f!"\n\n[DEBUG] Evaluated program:\n{Core.formatProgram p}"
             dbg_trace f!"\n\nResult: {result}\n{prog}"
           if options.stopOnFirstError then break
-    return results
+      return results
 
 /-- Run the Strata Core verification pipeline on a program: transform,
 type-check, partially evaluate, and discharge proof obligations via SMT.

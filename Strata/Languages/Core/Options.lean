@@ -86,6 +86,8 @@ structure VerifyOptions where
   checkMode : VerificationMode
   /-- Check amount: minimal (only necessary checks) or full (both checks for better messages) -/
   checkLevel : CheckLevel
+  /-- Number of parallel solver workers (1 = sequential) -/
+  parallelWorkers : Nat
 
 def VerifyOptions.default : VerifyOptions := {
   verbose := .normal,
@@ -101,6 +103,7 @@ def VerifyOptions.default : VerifyOptions := {
   vcDirectory := .none
   checkMode := .deductive
   checkLevel := .minimal
+  parallelWorkers := 1
 }
 
 instance : Inhabited VerifyOptions where
