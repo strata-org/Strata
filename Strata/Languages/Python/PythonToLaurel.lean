@@ -79,8 +79,8 @@ structure TranslationContext where
   userFunctions : List String := []
   /-- Names of user-defined classes -/
   userClasses : List String := []
-  /-- Map (Classname, Attribute) to its type -/
-  classAttributeType: Std.HashMap (String × String) String := {}
+  /-- Map ClassName -> (FieldName -> HighType) for field access coercions and type inference -/
+  classFieldHighType: Std.HashMap String (Std.HashMap String HighType) := {}
   /-- Names of prelude types -/
   preludeTypes : Std.HashSet String := {}
   /-- Overload dispatch table from PySpec: function name → overloads -/
@@ -179,6 +179,16 @@ def PyLauType.ListStr := "ListStr"
 def PyLauType.Package := "Package"
 def PyLauType.Any := "Any"
 
+/-- Convert a Laurel HighType to a PyLauType string for type inference. -/
+def highTypeToPyLauType : HighType → String
+  | .TInt => PyLauType.Int
+  | .TBool => PyLauType.Bool
+  | .TString => PyLauType.Str
+  | .TFloat64 => PyLauType.Any
+  | .TReal => PyLauType.Any
+  | .UserDefined name => name.text
+  | _ => PyLauType.Any
+
 /-- Map Python type strings to Core type names -/
 def pythonTypeToCoreType (typeStr : String) : Option String :=
   match typeStr with
@@ -223,6 +233,32 @@ def intToAny (i: Int) := mkStmtExprMd (.StaticCall "from_int" [mkStmtExprMd (Stm
 def boolToAny (b: Bool) := mkStmtExprMd (.StaticCall "from_bool" [mkStmtExprMd (StmtExpr.LiteralBool b)])
 def AnyNone := mkStmtExprMd (.StaticCall "from_none" [])
 def Any_to_bool (b: StmtExprMd) := mkStmtExprMd (.StaticCall "Any_to_bool" [b])
+
+/-- Wrap a field access expression in the appropriate Any constructor based on HighType.
+    After heap parameterization, field reads return concrete types (int, bool, etc.)
+    but Python operators expect Any. This coercion bridges the gap. -/
+def wrapFieldInAny (ty : HighType) (expr : StmtExprMd) : Except TranslationError StmtExprMd :=
+  match ty with
+  | .TInt => .ok <| mkStmtExprMd (.StaticCall "from_int" [expr])
+  | .TBool => .ok <| mkStmtExprMd (.StaticCall "from_bool" [expr])
+  | .TFloat64 => .ok <| mkStmtExprMd (.StaticCall "from_float" [expr])
+  | .TReal => .ok <| mkStmtExprMd (.StaticCall "from_float" [expr])
+  | .TString => .ok <| mkStmtExprMd (.StaticCall "from_string" [expr])
+  | other => .error (.typeError s!"wrapFieldInAny: no Any constructor for field type '{repr other}'")
+
+/-- Look up a field's HighType, returning `none` if the class or field is not found. -/
+def tryLookupFieldHighType (ctx : TranslationContext) (className fieldName : String) : Option HighType :=
+  ctx.classFieldHighType[className]?.bind (·[fieldName]?)
+
+/-- Look up a field's HighType, throwing a TranslationError if the class is known but the field is not. -/
+def lookupFieldHighType (ctx : TranslationContext) (className fieldName : String) : Except TranslationError HighType :=
+  match ctx.classFieldHighType[className]? with
+  | none => .error (.typeError s!"lookupFieldHighType: class '{className}' not found in classFieldHighType")
+  | some fields =>
+    match fields[fieldName]? with
+    | none => .error (.typeError s!"lookupFieldHighType: field '{fieldName}' not found on class '{className}'")
+    | some ty => .ok ty
+
 def NoError : StmtExprMd := mkStmtExprMd (StmtExpr.StaticCall "NoError" [])
 
 def getSubscriptList (expr:  Python.expr SourceRange) : List ( Python.expr SourceRange) :=
@@ -437,17 +473,28 @@ partial def translateExpr (ctx : TranslationContext) (e : Python.expr SourceRang
     | .Name _ name _ =>
       if name.val == "self" && ctx.currentClassName.isSome then
         -- self.field in a method - translate to field access
-        return mkStmtExprMd (StmtExpr.FieldSelect
+        let fieldExpr := mkStmtExprMd (StmtExpr.FieldSelect
           (mkStmtExprMd (StmtExpr.Identifier "self"))
           attr.val)
+        let className := ctx.currentClassName.get!
+        let ty ← lookupFieldHighType ctx className attr.val
+        wrapFieldInAny ty fieldExpr
       else
         -- Regular object.field access
         let objExpr ← translateExpr ctx obj
-        return mkStmtExprMd (StmtExpr.FieldSelect objExpr attr.val)
+        let fieldExpr := mkStmtExprMd (StmtExpr.FieldSelect objExpr attr.val)
+        let objType ← inferExprType ctx obj
+        match tryLookupFieldHighType ctx objType attr.val with
+          | some ty => wrapFieldInAny ty fieldExpr
+          | none => return fieldExpr
     | _ =>
       -- Complex object expression - translate and access field
       let objExpr ← translateExpr ctx obj
-      return mkStmtExprMd (StmtExpr.FieldSelect objExpr attr.val)
+      let fieldExpr := mkStmtExprMd (StmtExpr.FieldSelect objExpr attr.val)
+      let objType ← inferExprType ctx obj
+      match tryLookupFieldHighType ctx objType attr.val with
+        | some ty => wrapFieldInAny ty fieldExpr
+        | none => return fieldExpr
 
   -- List literal: [1, 2, 3]
   -- Abstract: return havoc'd list (sound abstraction)
@@ -523,10 +570,10 @@ partial def inferExprType (ctx : TranslationContext) (e: Python.expr SourceRange
       | some (_, ty) => return ty
       | _ => return PyLauType.Package
   | .Attribute _ v attr _ =>
-    let vty ←  inferExprType ctx v
-    match ctx.classAttributeType.get? (vty, attr.val) with
-      | some ty => return ty
-      | _ => return PyLauType.Any
+    let vty ← inferExprType ctx v
+    match tryLookupFieldHighType ctx vty attr.val with
+      | some ty => return (highTypeToPyLauType ty)
+      | none => return PyLauType.Any
   -- Binary operations
   | .BinOp _ _ _ _ => return PyLauType.Any
 
@@ -1297,8 +1344,7 @@ def extractFieldsFromInit (ctx : TranslationContext) (initBody : Array (Python.s
     match stmt with
     | .AnnAssign _ (.Attribute _ (.Name _ selfName _) attr _) annotation _ _ =>
       if selfName.val == "self" then
-        -- let fieldType ← translateType ctx (pyExprToString annotation)
-        let fieldType ← pure $ ⟨ .UserDefined "Any", default⟩ -- TODO, don't make all fields Any
+        let fieldType ← translateType ctx (pyExprToString annotation)
         fields := fields ++ [{
           name := attr.val
           type := fieldType
@@ -1333,6 +1379,10 @@ def translateClass (ctx : TranslationContext) (classStmt : Python.stmt SourceRan
             unless fields.any (fun existing => existing.name.text == f.name.text) do
               fields := fields ++ [f]
       | _ => pure ()
+
+    -- Populate field type maps so method bodies can wrap field accesses in Any coercions
+    let classFields := fields.foldl (fun m f => m.insert f.name.text f.type.val) (ctx.classFieldHighType[className]?.getD {})
+    let ctx := {ctx with classFieldHighType := ctx.classFieldHighType.insert className classFields}
 
     -- Extract methods from class body
     let methodStmts := body.val.toList.filter fun stmt =>
@@ -1501,9 +1551,10 @@ def pythonToLaurel' (info : PreludeInfo)
           | _ => none
       | _ => []
 
-    -- FIRST PASS: Collect all class definitions
+    -- FIRST PASS: Collect all class definitions and field type info
     let mut compositeTypes : List CompositeType := []
     let mut compositeTypeNames := info.compositeTypes
+    let mut classFieldHighType : Std.HashMap String (Std.HashMap String HighType) := {}
     for stmt in body.val do
       match stmt with
       | .ClassDef _ _ _ _ _ _ _ =>
@@ -1511,11 +1562,15 @@ def pythonToLaurel' (info : PreludeInfo)
           preludeProcedures := info.procedures,
           preludeTypes := info.types,
           compositeTypeNames := compositeTypeNames,
+          classFieldHighType := classFieldHighType,
           filePath := filePath
         }
         let composite ← translateClass initCtx stmt
         compositeTypes := compositeTypes ++ [composite]
         compositeTypeNames := compositeTypeNames.insert composite.name.text
+        -- Collect field types for Any coercions in field accesses
+        let fieldMap := composite.fields.foldl (fun m f => m.insert f.name.text f.type.val) (classFieldHighType[composite.name.text]?.getD {})
+        classFieldHighType := classFieldHighType.insert composite.name.text fieldMap
       | _ => pure ()
 
     let mut ctx : TranslationContext := match prev_ctx with
@@ -1529,6 +1584,7 @@ def pythonToLaurel' (info : PreludeInfo)
       preludeTypes := info.types,
       userFunctions := userFunctions,
       compositeTypeNames := compositeTypeNames,
+      classFieldHighType := classFieldHighType,
       overloadTable := overloadTable,
       filePath := filePath
     }
