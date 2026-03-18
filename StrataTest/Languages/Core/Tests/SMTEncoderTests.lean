@@ -248,6 +248,23 @@ info: "; x\n(declare-const x Real)\n(define-fun t0 () Real x)\n; y\n(declare-con
 
 end ArrayTheory
 
+/-! ## Test that built-in types do not produce declare-sort -/
+
+-- Callers of addType (i.e. LMonoTy.toSMTType) should not call addType for
+-- built-in Core types (int, bool, etc.). Array should also not produce a
+-- declare-sort because it is a built-in SMT-LIB sort.
+/-- info: (#[{ name := "Foo", arity := 2 }], true) -/
+#guard_msgs in
+#eval do
+  let ctx := SMT.Context.default
+  -- toSMTType for a user-defined type "Foo" should register the sort
+  let (.ok (_, ctx)) := LMonoTy.toSMTType Env.init (.tcons "Foo" [.tcons "int" [], .tcons "bool" []]) ctx
+    | unreachable!
+  -- Map with useArrayTheory converts to Array; should NOT register a sort
+  let (.ok (_, ctx)) := LMonoTy.toSMTType Env.init (.tcons "Map" [.tcons "int" [], .tcons "int" []]) ctx (useArrayTheory := true)
+    | unreachable!
+  return (ctx.sorts, ctx.sorts.all (fun s => s.name ∉ ["int", "bool", "Array"]))
+
 end Core
 
 /-! ## End-to-End Test with Complete Program -/
