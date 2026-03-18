@@ -541,7 +541,10 @@ def pyAnalyzeLaurelCommand : Command where
             { name := "sarif", help := "Write results as SARIF to <file>.sarif." },
             { name := "vc-directory",
               help := "Store VCs in SMT-Lib format in <dir>.",
-              takesArg := .arg "dir" }]
+              takesArg := .arg "dir" },
+            { name := "parallel",
+              help := "Run up to N solver instances in parallel.",
+              takesArg := .arg "N" }]
   help := "Verify a Python Ion program via the Laurel pipeline. Translates Python to Laurel to Core, then runs SMT verification."
   callback := fun v pflags => do
     let verbose := pflags.getBool "verbose"
@@ -564,9 +567,12 @@ def pyAnalyzeLaurelCommand : Command where
     -- Verify using Core verifier
     let baseOptions : VerifyOptions :=
       { VerifyOptions.default with stopOnFirstError := false, verbose := .quiet, solver := "z3" }
+    let parallelWorkers := match pflags.getString "parallel" with
+      | .some n => n.toNat?.getD 1
+      | .none => 1
     let options : VerifyOptions := match pflags.getString "vc-directory" with
-      | .some dir => { baseOptions with vcDirectory := some (dir : System.FilePath) }
-      | .none => baseOptions
+      | .some dir => { baseOptions with vcDirectory := some (dir : System.FilePath), parallelWorkers }
+      | .none => { baseOptions with parallelWorkers }
     let runVerification tempDir :=
       EIO.toIO
         (fun f => IO.Error.userError (toString f))
