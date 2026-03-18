@@ -27,9 +27,8 @@ private def identAtom (nm : PythonIdent) : SpecAtomType :=
 private def identType (nm : PythonIdent) : SpecType :=
   mkType (identAtom nm)
 
-private def mkArg (name : String) (type : SpecType)
-    (hasDefault := false) : Arg :=
-  { name, type, hasDefault }
+private def mkArg (name : String) (type : SpecType) (default : Option SpecDefault := none) : Arg :=
+  { name, type, default := default }
 
 private def mkFuncSig (name : String) (returnType : SpecType)
     (args : Array Arg := #[]) (kwonly : Array Arg := #[])
@@ -115,8 +114,7 @@ procedure with_kwonly(x:TInt, verbose:TBool) returns(result:TString)
     (args := #[mkArg "flag" (identType .builtinsBool)]),
   mkFuncSig "with_kwonly" (identType .builtinsStr)
     (args := #[mkArg "x" (identType .builtinsInt)])
-    (kwonly := #[mkArg "verbose" (identType .builtinsBool)
-                   (hasDefault := true)])
+    (kwonly := #[mkArg "verbose" (identType .builtinsBool) (default := some .none)])
 ]
 
 /-! ## Complex types (Any, List, Dict, bytes) -/
@@ -257,13 +255,12 @@ procedure MyClass_get_value() returns(result:TString)
 #eval runTest #[
   mkFuncSig "my_func" (identType .builtinsBool)
     (args := #[mkArg "x" (identType .builtinsInt),
-               mkArg "y" (identType .builtinsStr)
-                 (hasDefault := true)]),
+               mkArg "y" (identType .builtinsStr) (some .none)]),
   .classDef {
     loc := loc, name := "MyClass"
     methods := #[
       { loc := loc, nameLoc := loc, name := "get_value"
-        args := { args := #[], kwonly := #[] }
+        args := { args := #[mkArg "self" (identType .builtinsStr)], kwonly := #[] }
         returnType := identType .builtinsStr
         isOverload := false
         preconditions := #[]
@@ -382,7 +379,7 @@ dispatch create_client:
     loc := loc, name := "SvcClient"
     methods := #[
       { loc := loc, nameLoc := loc, name := "do_thing"
-        args := { args := #[mkArg "x" (identType .builtinsStr)]
+        args := { args := #[mkArg "self" (identType .builtinsStr), mkArg "x" (identType .builtinsStr)]
                   kwonly := #[] }
         returnType := identType .builtinsInt
         isOverload := false

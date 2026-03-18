@@ -85,6 +85,8 @@ def main():
     parser = argparse.ArgumentParser(
                     prog='strata_python',
                     description='Strata interface to Python parser')
+    parser.add_argument('-q', '--quiet', action='store_true',
+                        help='Suppress warnings.')
     subparsers = parser.add_subparsers(help="subcommand help")
 
     def write_python_dialect(args):
@@ -109,6 +111,11 @@ def main():
     checkast_command.set_defaults(func=check_ast_imp)
 
     args = parser.parse_args()
+    if not args.quiet and not ion.__IS_C_EXTENSION_SUPPORTED:
+        print("warning: amazon.ion C extension is not available. "
+              "Ion serialization will be significantly slower. "
+              "Use -q to suppress this warning.",
+              file=sys.stderr)
     if hasattr(args, 'func'):
         args.func(args)
     else:
