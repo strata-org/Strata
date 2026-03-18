@@ -48,13 +48,11 @@ def computeExprType (model : SemanticModel) (expr : StmtExprMd) : HighTypeMd :=
     | .staticProcedure proc => match proc.outputs with
       | [singleOutput] => singleOutput.type
       | _ => { val := .TVoid, md := default }
-    | .unresolved => { val := .Top, md := default }
+    | .unresolved => { val := HighType.Unknown, md := default }
     | astNode =>
       dbg_trace s!"BUG: static call to {callee} not to a procedure but to a {repr astNode}"
       default
-  | .InstanceCall _ _ _ =>
-      dbg_trace "Not yet implemented: computeExprType InstanceCall"
-      default
+  | .InstanceCall _ _ _ => default -- TODO: implement
   -- Operators
   | .PrimitiveOp op args =>
       match args with
@@ -86,9 +84,7 @@ def computeExprType (model : SemanticModel) (expr : StmtExprMd) : HighTypeMd :=
   | .Assume _ => ⟨ .TVoid, md ⟩
   -- Instance related
   | .New name => ⟨ .UserDefined name, md ⟩
-  | .This =>
-      dbg_trace "Not yet implemented: computeExprType This"
-      default
+  | .This => default -- TODO: implement
   | .ReferenceEquals _ _ => ⟨ .TBool, md ⟩
   | .AsType _ ty => ty
   | .IsType _ _ => ⟨ .TBool, md ⟩
@@ -104,7 +100,7 @@ def computeExprType (model : SemanticModel) (expr : StmtExprMd) : HighTypeMd :=
   -- Special
   | .Abstract =>default -- TODO: implement
   | .All => default -- TODO: implement
-  | .Hole => ⟨ .Top, md ⟩
+  | .Hole _ typeOption => typeOption.getD  ⟨ HighType.Unknown, md ⟩
 
 end Strata.Laurel
 

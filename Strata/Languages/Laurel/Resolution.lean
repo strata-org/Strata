@@ -103,7 +103,7 @@ def AstNode.getType (node: AstNode): HighTypeMd := match node with
  | .unresolved =>
     -- The Python through Laurel pipeline does not resolve yet
     ⟨ .UserDefined "dummyName", default ⟩
- | _ => dbg_trace s!"SOUND BUG: getType called on {repr node}"; ⟨ .Top, default ⟩
+ | _ => dbg_trace s!"SOUND BUG: getType called on {repr node}"; ⟨ HighType.Unknown, default ⟩
 
 /-! ## Resolution result -/
 
