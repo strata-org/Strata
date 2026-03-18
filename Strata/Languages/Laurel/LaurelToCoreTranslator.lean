@@ -59,10 +59,9 @@ def translateType (model : SemanticModel) (ty : HighTypeMd) : LMonoTy :=
     | some (.datatypeDefinition dt) => .tcons dt.name.text []
     | _ => .tcons "Composite" [] -- fallback for unresolved refs
   | .TCore s => .tcons s []
-  | .TFloat64 => dbg_trace "NOT SUPPORTED YET: Float64"; .tcons "Float64IsNotSupportedYet" []
   | .TReal => LMonoTy.real
   | .Top => LMonoTy.bool -- TODO, abort execution since there is no valid Core type to translate Top to
-  | .TFloat64 => dbg_trace s!"NOT SUPPORTED YET: {repr ty.val}"; .tcons "Float64IsNotSupportedYet" []
+  | _ => dbg_trace s!"NOT SUPPORTED YET: {repr ty.val}"; .tcons "NotSupportedYet" []
 termination_by ty.val
 decreasing_by all_goals (first | (cases elementType; term_by_mem) | (cases keyType; term_by_mem) | (cases valueType; term_by_mem))
 
@@ -83,25 +82,20 @@ structure TranslateState where
   nextId : Nat := 1
   /-- Constants known to the program (field constants, etc.) -/
   model : SemanticModel
+  /-- Do not process the produces Core program, since it has superfluous errors -/
+  coreProgramHasSuperfluousErrors: Bool := false
 
 /-- The translation monad: state over Except, allowing both accumulated diagnostics and hard failures -/
-@[expose] abbrev TranslateM := StateT TranslateState (Except DiagnosticModel)
+@[expose] abbrev TranslateM := OptionT (StateM TranslateState)
 
 /-- Emit a diagnostic into the translation state (soft warning, does not abort) -/
 def emitDiagnostic (d : DiagnosticModel) : TranslateM Unit :=
   modify fun s => { s with diagnostics := s.diagnostics ++ [d] }
 
-/-- Throw a hard diagnostic error, aborting the current translation -/
-def throwDiagnostic (d : DiagnosticModel) : TranslateM α :=
-  throw d
-
 /-- Run a `TranslateM` action, returning either a hard error or the result and final state -/
-def runTranslateM (s : TranslateState) (m : TranslateM α) : Except DiagnosticModel (α × TranslateState) :=
+def runTranslateM (s : TranslateState) (m : TranslateM α) : (Option α × TranslateState) :=
   m s
 
-/-- Run a `TranslateM` action, lifting a hard `DiagnosticModel` error into an `Array` -/
-def runTranslateMArr (s : TranslateState) (m : TranslateM α) : Except (Array DiagnosticModel) (α × TranslateState) :=
-  (runTranslateM s m).mapError (fun d => #[d])
 
 /-- Allocate a fresh unique ID. -/
 private def freshId : TranslateM Nat := do
@@ -109,6 +103,13 @@ private def freshId : TranslateM Nat := do
   let id := s.nextId
   set { s with nextId := id + 1 }
   return id
+
+/-- Throw a hard diagnostic error, aborting the current translation -/
+def throwExprDiagnostic (d : DiagnosticModel): TranslateM Core.Expression.Expr := do
+  emitDiagnostic d
+  modify fun s => { s with coreProgramHasSuperfluousErrors := true }
+  let id ← freshId
+  return LExpr.fvar () (⟨s!"DUMMY_VAR_{id}", ()⟩) none
 
 /--
 Translate Laurel StmtExpr to Core Expression using the `TranslateM` monad.
@@ -131,12 +132,10 @@ def translateExpr (expr : StmtExprMd)
   let md := expr.md
   let disallowed (md : MetaData) (msg : String) : TranslateM Core.Expression.Expr := do
     if isPureContext then
-      -- Dummy expression used as placeholder when an error is emitted in pure context
-      let dummy := LExpr.fvar () (⟨s!"DUMMY_VAR_{← freshId}", ()⟩) none
-      emitDiagnostic $ md.toDiagnostic msg
-      pure $ dummy
+      throwExprDiagnostic $ md.toDiagnostic msg
     else
-      throwDiagnostic $ md.toDiagnostic s!"{msg} (should have been lifted)" DiagnosticType.StrataBug
+      throwExprDiagnostic $ md.toDiagnostic s!"{msg} (should have been lifted)" DiagnosticType.StrataBug
+
   match h: expr.val with
   | .LiteralBool b => return .const () (.boolConst b)
   | .LiteralInt i => return .const () (.intConst i)
@@ -165,7 +164,7 @@ def translateExpr (expr : StmtExprMd)
         | .TReal => true | _ => false
       return .app () (if isReal then realNegOp else intNegOp) re
     | _ =>
-      throwDiagnostic $ md.toDiagnostic s!"translateExpr: Invalid unary op: {repr op}" DiagnosticType.StrataBug
+      throwExprDiagnostic $ md.toDiagnostic s!"translateExpr: Invalid unary op: {repr op}" DiagnosticType.StrataBug
   | .PrimitiveOp op [e1, e2] =>
     let re1 ← translateExpr e1 boundVars isPureContext
     let re2 ← translateExpr e2 boundVars isPureContext
@@ -192,14 +191,16 @@ def translateExpr (expr : StmtExprMd)
     | .Gt => return binOp (if isReal then realGtOp else intGtOp)
     | .Geq => return binOp (if isReal then realGeOp else intGeOp)
     | .StrConcat => return binOp strConcatOp
-    | _ => throwDiagnostic $ md.toDiagnostic s!"Invalid binary op: {repr op}" DiagnosticType.NotYetImplemented
+    | _ =>
+        throwExprDiagnostic $ md.toDiagnostic s!"Invalid binary op: {repr op}" DiagnosticType.NotYetImplemented
   | .PrimitiveOp op args =>
-      throwDiagnostic $ md.toDiagnostic s!"PrimitiveOp {repr op} with {args.length} args is not supported" DiagnosticType.UserError
+      throwExprDiagnostic $ md.toDiagnostic s!"PrimitiveOp {repr op} with {args.length} args is not supported" DiagnosticType.UserError
   | .IfThenElse cond thenBranch elseBranch =>
       let bcond ← translateExpr cond boundVars isPureContext
       let bthen ← translateExpr thenBranch boundVars isPureContext
       let belse ← match elseBranch with
-        | none => throwDiagnostic $ md.toDiagnostic s!"if-then without else expression" DiagnosticType.NotYetImplemented
+        | none =>
+            throwExprDiagnostic $ md.toDiagnostic s!"if-then without else expression" DiagnosticType.NotYetImplemented
         | some e =>
             have : sizeOf e < sizeOf expr := by
               have := WithMetadata.sizeOf_val_lt expr
@@ -235,11 +236,7 @@ def translateExpr (expr : StmtExprMd)
       | none =>
         return LExpr.exist () name.text (some coreTy) coreBody
   | .Hole =>
-      let dummy := LExpr.fvar () (⟨s!"DUMMY_VAR_{← freshId}", ()⟩) none
-      -- TODO after https://github.com/strata-org/Strata/pull/584 is merged
-      -- This can become a throwDiagnostic
-      dbg_trace "hole should have been lowered"
-      pure $ dummy
+      throwExprDiagnostic $ md.toDiagnostic "hole should have been lowered" DiagnosticType.StrataBug
   | .ReferenceEquals e1 e2 =>
       let re1 ← translateExpr e1 boundVars isPureContext
       let re2 ← translateExpr e2 boundVars isPureContext
@@ -268,31 +265,32 @@ def translateExpr (expr : StmtExprMd)
   | .Block (⟨ .IfThenElse cond thenBranch (some elseBranch), md⟩ :: rest) label =>
     disallowed md "if-then-else only supported as the last statement in a block"
 
-  | .IsType _ _ => throwDiagnostic $ md.toDiagnostic "IsType should have been lowered" DiagnosticType.StrataBug
-  | .New _ => throwDiagnostic $ md.toDiagnostic s!"New should have been eliminated by typeHierarchyTransform" DiagnosticType.StrataBug
+  | .IsType _ _ =>
+      throwExprDiagnostic $ md.toDiagnostic "IsType should have been lowered" DiagnosticType.StrataBug
+  | .New _ => throwExprDiagnostic $ md.toDiagnostic s!"New should have been eliminated by typeHierarchyTransform" DiagnosticType.StrataBug
   | .FieldSelect target fieldId =>
       -- Field selects should have been eliminated by heap parameterization
       -- If we see one here, it's an error in the pipeline
-      throwDiagnostic $ md.toDiagnostic "FieldSelect should have been eliminated by heap parameterization: {Std.ToFormat.format target}#{fieldId.text}" DiagnosticType.StrataBug
+      throwExprDiagnostic $ md.toDiagnostic "FieldSelect should have been eliminated by heap parameterization: {Std.ToFormat.format target}#{fieldId.text}" DiagnosticType.StrataBug
   | .Block _ _ =>
-      throwDiagnostic $ md.toDiagnostic "block expression should have been lowered in a separate pass" DiagnosticType.StrataBug
+      throwExprDiagnostic $ md.toDiagnostic "block expression should have been lowered in a separate pass" DiagnosticType.StrataBug
   | .LocalVariable _ _ _ =>
-      throwDiagnostic $ md.toDiagnostic "local variable expression should be lowered in a separate pass" DiagnosticType.StrataBug
+      throwExprDiagnostic $ md.toDiagnostic "local variable expression should be lowered in a separate pass" DiagnosticType.StrataBug
   | .Return _ => disallowed expr.md "return expression should be lowered in a separate pass"
 
-  | .AsType target _ => throwDiagnostic $ md.toDiagnostic "AsType expression translation" DiagnosticType.NotYetImplemented
-  | .Assigned _ => throwDiagnostic $ md.toDiagnostic "assigned expression translation" DiagnosticType.NotYetImplemented
-  | .Old value => throwDiagnostic $ md.toDiagnostic "old expression translation" DiagnosticType.NotYetImplemented
-  | .Fresh _ => throwDiagnostic $ md.toDiagnostic "fresh expression translation" DiagnosticType.NotYetImplemented
-  | .Assert _ => throwDiagnostic $ md.toDiagnostic "assert expression translation" DiagnosticType.NotYetImplemented
-  | .Assume _ => throwDiagnostic $ md.toDiagnostic "assume expression translation" DiagnosticType.NotYetImplemented
-  | .ProveBy value _ => throwDiagnostic $ md.toDiagnostic "proveBy expression translation" DiagnosticType.NotYetImplemented
-  | .ContractOf _ _ => throwDiagnostic $ md.toDiagnostic "contractOf expression translation" DiagnosticType.NotYetImplemented
-  | .Abstract => throwDiagnostic $ md.toDiagnostic "abstract expression translation" DiagnosticType.NotYetImplemented
-  | .All => throwDiagnostic $ md.toDiagnostic "all expression translation" DiagnosticType.NotYetImplemented
-  | .InstanceCall target callee args => throwDiagnostic $ md.toDiagnostic "instance call expression translation" DiagnosticType.NotYetImplemented
-  | .PureFieldUpdate _ _ _ => throwDiagnostic $ md.toDiagnostic "pure field update expression translation" DiagnosticType.NotYetImplemented
-  | .This => throwDiagnostic $ md.toDiagnostic "this expression translation" DiagnosticType.NotYetImplemented
+  | .AsType target _ => throwExprDiagnostic $ md.toDiagnostic "AsType expression translation" DiagnosticType.NotYetImplemented
+  | .Assigned _ => throwExprDiagnostic $ md.toDiagnostic "assigned expression translation" DiagnosticType.NotYetImplemented
+  | .Old value => throwExprDiagnostic $ md.toDiagnostic "old expression translation" DiagnosticType.NotYetImplemented
+  | .Fresh _ => throwExprDiagnostic $ md.toDiagnostic "fresh expression translation" DiagnosticType.NotYetImplemented
+  | .Assert _ => throwExprDiagnostic $ md.toDiagnostic "assert expression translation" DiagnosticType.NotYetImplemented
+  | .Assume _ => throwExprDiagnostic $ md.toDiagnostic "assume expression translation" DiagnosticType.NotYetImplemented
+  | .ProveBy value _ => throwExprDiagnostic $ md.toDiagnostic "proveBy expression translation" DiagnosticType.NotYetImplemented
+  | .ContractOf _ _ => throwExprDiagnostic $ md.toDiagnostic "contractOf expression translation" DiagnosticType.NotYetImplemented
+  | .Abstract => throwExprDiagnostic $ md.toDiagnostic "abstract expression translation" DiagnosticType.NotYetImplemented
+  | .All => throwExprDiagnostic $ md.toDiagnostic "all expression translation" DiagnosticType.NotYetImplemented
+  | .InstanceCall target callee args => throwExprDiagnostic $ md.toDiagnostic "instance call expression translation" DiagnosticType.NotYetImplemented
+  | .PureFieldUpdate _ _ _ => throwExprDiagnostic $ md.toDiagnostic "pure field update expression translation" DiagnosticType.NotYetImplemented
+  | .This => throwExprDiagnostic $ md.toDiagnostic "this expression translation" DiagnosticType.NotYetImplemented
   termination_by expr
   decreasing_by
     all_goals (have := WithMetadata.sizeOf_val_lt expr; term_by_mem)
@@ -413,7 +411,8 @@ def translateStmt (outputParams : List Parameter) (stmt : StmtExprMd)
                 | _ => none
               return (havocStmts)
           | _ =>
-              throwDiagnostic $ md.toDiagnostic "Assignments with multiple target but without a RHS call should not be constructed"
+              emitDiagnostic $ md.toDiagnostic "Assignments with multiple target but without a RHS call should not be constructed"
+              StateT.pure none
   | .IfThenElse cond thenBranch elseBranch =>
       let bcond ← translateExpr cond
       let bthen ← translateStmt outputParams thenBranch
@@ -567,28 +566,14 @@ def translateDatatypeDefinition (model : SemanticModel) (dt : DatatypeDefinition
     constrs_ne := by simp [constrs]; grind
   }
 
-/--
-Try to translate a Laurel Procedure marked `isFunctional` to a Core Function.
-Returns `.error` with diagnostics if the procedure body contains disallowed constructs
-(destructive assignments, loops, or procedure calls).
--/
-def tryTranslatePureToFunction (proc : Procedure) (initState : TranslateState)
-    : Except (Array DiagnosticModel) Core.Decl :=
-  match runTranslateM initState (translateProcedureToFunction proc) with
-  | .error d => .error #[d]
-  | .ok (decl, finalState) =>
-    if finalState.diagnostics.isEmpty then
-      .ok decl
-    else
-      .error finalState.diagnostics.toArray
-
 structure LaurelTranslateOptions where
   emitResolutionErrors : Bool := true
 
+abbrev TranslateResult := (Option Core.Program) × (List DiagnosticModel)
 /--
 Translate Laurel Program to Core Program
 -/
-def translate (options: LaurelTranslateOptions) (program : Program): Except (Array DiagnosticModel) (Core.Program × Array DiagnosticModel) := do
+def translate (options: LaurelTranslateOptions) (program : Program): TranslateResult :=
   let program := { program with
     staticProcedures := coreDefinitionsForLaurel.staticProcedures ++ program.staticProcedures
   }
@@ -619,33 +604,27 @@ def translate (options: LaurelTranslateOptions) (program : Program): Except (Arr
   let result := resolve program (some model)
   let (program, model) := (result.program, result.model)
 
-  let resolutionDiags := result.errors
-  if options.emitResolutionErrors && !resolutionDiags.isEmpty then
-    .error resolutionDiags
-  else
-    let coreProgram ← translateLaurelToCore model program
-    pure (coreProgram, diamondErrors ++ modifiesDiags ++ constrainedTypeDiags.toList)
+    let initState : TranslateState := {model := model }
+  let (coreProgramOption, laurelToCoreErrors) := runTranslateM initState (translateLaurelToCore program)
+  let allDiagnostics := (if options.emitResolutionErrors then result.errors else Array.empty) ++
+    diamondErrors ++ modifiesDiags ++ constrainedTypeDiags.toList
+  (coreProgramOption, allDiagnostics.toList)
   where
 
-  translateLaurelToCore (model: SemanticModel) (program : Program): Except (Array DiagnosticModel) Core.Program := do
+  translateLaurelToCore (program : Program): TranslateM Core.Program := do
+    let model := (← get).model
 
     -- Procedures marked isFunctional are translated to Core functions; all others become Core procedures.
     -- External procedures are completely ignored (not translated to Core).
     let nonExternal := program.staticProcedures.filter (fun p => !p.body.isExternal)
     let (markedPure, procProcs) := nonExternal.partition (·.isFunctional)
-    let initState : TranslateState := {model := model}
     -- Try to translate each isFunctional procedure to a Core function, collecting errors for failures
-    let (pureErrors, pureFuncDecls) := markedPure.foldl (fun (errs, decls) p =>
-      match tryTranslatePureToFunction p initState with
-      | .error es => (errs ++ es.toList, decls)
-      | .ok d     => (errs, decls.push d)) ([], #[])
+    let pureFuncDecls ← markedPure.mapM translateProcedureToFunction
     -- Translate procedures using the monad, collecting diagnostics from the final state
-    let (procedures, procState) ← runTranslateMArr initState do
-      procProcs.mapM translateProcedure
-    let procDiags := procState.diagnostics
+    let procedures ← procProcs.mapM translateProcedure
 
     -- Translate Laurel constants to Core function declarations (0-ary functions)
-    let (constantDecls, constantsState) ← runTranslateMArr initState $ program.constants.mapM fun c => do
+    let constantDecls ← program.constants.mapM fun c => do
       let coreTy := translateType model c.type
       let body ← c.initializer.mapM (translateExpr ·)
       return Core.Decl.func {
@@ -657,13 +636,9 @@ def translate (options: LaurelTranslateOptions) (program : Program): Except (Arr
       }
 
     -- Collect ALL errors from both functions, procedures, and resolution before deciding whether to fail
-    let allErrors :=
-      -- Not including resolution diagnostics yet because the Python through Laurel pipeline
-      -- does not resolve yet.
-      -- resolutionDiags.toList ++
-      pureErrors ++ procDiags ++ constantsState.diagnostics
-    if !allErrors.isEmpty then
-      .error allErrors.toArray
+    -- let allErrors :=pureErrors ++ procDiags ++ constantsState.diagnostics
+    -- if !allErrors.isEmpty then
+    --   .error allErrors.toArray
     let procDecls := procedures.map (fun p => Core.Decl.proc p .empty)
 
     -- Translate Laurel datatype definitions to Core declarations.
@@ -676,7 +651,7 @@ def translate (options: LaurelTranslateOptions) (program : Program): Except (Arr
     let groups := groupDatatypes laurelDatatypes ldatatypes
     let groupedDatatypeDecls := groups.map fun group => Core.Decl.type (.data group)
     let program := {
-      decls := groupedDatatypeDecls ++ constantDecls ++ pureFuncDecls.toList ++ procDecls
+      decls := groupedDatatypeDecls ++ constantDecls ++ pureFuncDecls ++ procDecls
     }
 
     -- dbg_trace "=== Generated Strata Core Program ==="
@@ -690,38 +665,38 @@ Verify a Laurel program using an SMT solver
 -/
 def verifyToVcResults (program : Program)
     (options : VerifyOptions := .default)
-    : IO (Except (Array DiagnosticModel) VCResults) := do
-  let (strataCoreProgram, translateDiags) ← match translate { emitResolutionErrors := true } program with
-    | .error translateErrorDiags => return .error translateErrorDiags
-    | .ok result => pure result
+    : IO (Option VCResults × List DiagnosticModel) := do
+  let (coreProgramOption, translateDiags) := translate { emitResolutionErrors := true } program
 
-  -- Enable removeIrrelevantAxioms to avoid polluting simple assertions with heap axioms
-  let options := { options with removeIrrelevantAxioms := true }
-  let runner tempDir :=
-    EIO.toIO (fun f => IO.Error.userError (toString f))
-        (Core.verify strataCoreProgram tempDir .none options)
-  let ioResult ← match options.vcDirectory with
-    | .none => IO.FS.withTempDir runner
-    | .some p => IO.FS.createDirAll ⟨p.toString⟩; runner ⟨p.toString⟩
-  if translateDiags.isEmpty then
-    return .ok ioResult
-  else
-    return .error (translateDiags ++ ioResult.filterMap toDiagnosticModel)
+  match coreProgramOption with
+  | some coreProgram =>
+    -- Enable removeIrrelevantAxioms to avoid polluting simple assertions with heap axioms
+    let options := { options with removeIrrelevantAxioms := true }
+    let runner tempDir :=
+      EIO.toIO (fun f => IO.Error.userError (toString f))
+          (Core.verify coreProgram tempDir .none options)
+    let ioResult ← match options.vcDirectory with
+      | .none => IO.FS.withTempDir runner
+      | .some p => IO.FS.createDirAll ⟨p.toString⟩; runner ⟨p.toString⟩
+    return (some ioResult, translateDiags)
+  | none => return (none, translateDiags)
 
 
 def verifyToDiagnostics (files: Map Strata.Uri Lean.FileMap) (program : Program)
     (options : VerifyOptions := .default): IO (Array Diagnostic) := do
   let results <- verifyToVcResults program options
-  match results with
-  | .error errors => return errors.map (fun dm => dm.toDiagnostic files)
-  | .ok results => return results.filterMap (fun dm => dm.toDiagnostic files)
-
+  let translationDiags := results.snd.map (fun dm => dm.toDiagnostic files)
+  let vcDiags := match results.fst with
+  | some vcResults => vcResults.toList.filterMap (fun (vcr: VCResult) => vcr.toDiagnostic files)
+  | none => []
+  return (translationDiags ++ vcDiags).toArray
 
 def verifyToDiagnosticModels (program : Program) (options : VerifyOptions := .default) : IO (Array DiagnosticModel) := do
   let results <- verifyToVcResults program options
-  match results with
-  | .error errors => return errors
-  | .ok results => return results.filterMap toDiagnosticModel
+  let vcDiags := match results.fst with
+  | none => []
+  | some vcResults => vcResults.toList.filterMap (fun (vcr: VCResult) => toDiagnosticModel vcr)
+  return (results.snd ++ vcDiags).toArray
 
 end -- public section
 end Laurel
