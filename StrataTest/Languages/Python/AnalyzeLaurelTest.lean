@@ -92,7 +92,7 @@ private meta def runAnalyze (dispatchIon : System.FilePath)
     match ← Strata.pyAnalyzeLaurel testIon.toString
         (dispatchPaths := #[dispatchIon.toString]) |>.toBaseIO with
     | .ok r => pure r
-    | .error msg => return .error msg
+    | .error err => return .error (toString err)
   match Strata.translateCombinedLaurel laurel with
   | .error diagnostics => return .error s!"Laurel to Core translation failed: {diagnostics}"
   | .ok (core, _) => return .ok core
@@ -111,21 +111,21 @@ private meta def testCases : List (String × Expected) := [
   .mk "test_required_with_optional.py" .success,
   -- Negative tests
   .mk "test_invalid_service.py" $
-    .fail "Python to Laurel translation failed: Type error: 'connect' called with unknown string \"invalid\"; known services: #[messaging, storage]",
+    .fail "User code error: 'connect' called with unknown string \"invalid\"; known services: #[messaging, storage]",
   .mk "test_invalid_method.py" $
-    .fail "Python to Laurel translation failed: Type error: Unknown method 'nonexistent_method'",
+    .fail "User code error: Unknown method 'nonexistent_method'",
   .mk "test_invalid_args.py" $
-    .fail "Python to Laurel translation failed: Type error: 'put_item' called with unknown keyword arguments: [Wrong]",
+    .fail "User code error: 'put_item' called with unknown keyword arguments: [Wrong]",
   .mk "test_missing_required.py" $
-    .fail "Python to Laurel translation failed: Type error: 'put_item' called with missing required arguments: [Key, Data]",
+    .fail "User code error: 'put_item' called with missing required arguments: [Key, Data]",
   .mk "test_extra_kwarg.py" $
-    .fail "Python to Laurel translation failed: Type error: 'get_item' called with unknown keyword arguments: [Bogus]",
+    .fail "User code error: 'get_item' called with unknown keyword arguments: [Bogus]",
   .mk "test_no_args.py" $
-    .fail "Python to Laurel translation failed: Type error: 'put_item' called with missing required arguments: [Bucket, Key, Data]",
+    .fail "User code error: 'put_item' called with missing required arguments: [Bucket, Key, Data]",
   .mk "test_optional_missing_required.py" $
-    .fail "Python to Laurel translation failed: Type error: 'list_items' called with missing required arguments: [Bucket]",
+    .fail "User code error: 'list_items' called with missing required arguments: [Bucket]",
   .mk "test_positional_missing.py" $
-    .fail "Python to Laurel translation failed: Type error: 'delete_item' called with missing required arguments: [Key]"
+    .fail "User code error: 'delete_item' called with missing required arguments: [Key]"
 ]
 
 /-- Run a single test case and return an error message on failure, or `none` on success. -/

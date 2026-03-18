@@ -35,6 +35,16 @@ def exitFailure {α} (message : String) (hint : String := "strata --help") : IO 
   IO.eprintln s!"Exception: {message}\n\nRun {hint} for additional help."
   IO.Process.exit 1
 
+/-- Exit with code 1 for user code errors (detected bugs in the Python source). -/
+def exitUserCodeError {α} (message : String) : IO α := do
+  IO.eprintln s!"❌ {message}"
+  IO.Process.exit 1
+
+/-- Exit with code 2 for internal errors (tool limitations or crashes). -/
+def exitInternalError {α} (message : String) : IO α := do
+  IO.eprintln s!"⚠️ {message}"
+  IO.Process.exit 2
+
 def exitCmdFailure {α} (cmdName : String) (message : String) : IO α :=
   exitFailure message (hint := s!"strata {cmdName} --help")
 
@@ -293,6 +303,9 @@ def pyAnalyzeCommand : Command where
       let vcResults ← match options.vcDirectory with
                       | .none => IO.FS.withTempDir runVerification
                       | .some tempDir => runVerification tempDir
+      let mfm : Option (String × Lean.FileMap) := match pySourceOpt with
+        | some (pyPath, srcText) => some (pyPath, .ofString srcText)
+        | none => none
       let mut s := ""
       for vcResult in vcResults do
         -- Build location string based on available metadata
@@ -300,14 +313,13 @@ def pyAnalyzeCommand : Command where
           | some fr =>
             if fr.range.isNone then ("", "")
             else
-              -- Convert byte offset to line/column if we have the source
-              match pySourceOpt with
-              | some (pyPath, srcText) =>
+              match mfm with
+              | some (pyPath, fm) =>
                 -- Check if this metadata is from the Python source (not CorePrelude)
                 match fr.file with
                 | .file path =>
                   if path == pyPath then
-                    let pos := (Lean.FileMap.ofString srcText).toPosition fr.range.start
+                    let pos := fm.toPosition fr.range.start
                     -- For failures, show at beginning; for passes, show at end
                     if vcResult.isFailure then
                       (s!"Assertion failed at line {pos.line}, col {pos.column}: ", "")
@@ -331,8 +343,8 @@ def pyAnalyzeCommand : Command where
       IO.println s
       -- Output in SARIF format if requested
       if outputSarif then
-        let files := match pySourceOpt with
-          | some (pyPath, srcText) => Map.empty.insert (Strata.Uri.file pyPath) (Lean.FileMap.ofString srcText)
+        let files := match mfm with
+          | some (pyPath, fm) => Map.empty.insert (Strata.Uri.file pyPath) fm
           | none => Map.empty
         Core.Sarif.writeSarifOutput .deductive files vcResults (filePath ++ ".sarif")
 
@@ -366,10 +378,22 @@ def pyAnalyzeLaurelCommand : Command where
     let dispatchFiles := pflags.getRepeated "dispatch"
     let pyspecFiles := pflags.getRepeated "pyspec"
     let sourcePath := pySourceOpt.map (·.1)
+    -- Build FileMap for source position resolution.
+    let mfm : Option (String × Lean.FileMap) := match pySourceOpt with
+      | some (pyPath, srcText) => some (pyPath, .ofString srcText)
+      | none => none
     let combinedLaurel ←
       match ← Strata.pyAnalyzeLaurel filePath dispatchFiles pyspecFiles sourcePath |>.toBaseIO with
       | .ok r => pure r
-      | .error msg => exitFailure msg
+      | .error (.userCode range msg) =>
+        let location := if range.isNone then "" else
+          match mfm with
+          | some (_, fm) =>
+            let pos := fm.toPosition range.start
+            s!" at line {pos.line}, col {pos.column}"
+          | none => ""
+        exitUserCodeError s!"{msg}{location}"
+      | .error (.internal msg) => exitInternalError msg
 
     if verbose then
       IO.println "\n==== Laurel Program ===="
@@ -404,8 +428,8 @@ def pyAnalyzeLaurelCommand : Command where
         | some fr =>
           if fr.range.isNone then ("", "")
           else
-            match pySourceOpt with
-            | some (pyPath, srcText) =>
+            match mfm with
+            | some (_, fm) =>
               match fr.file with
               | .file "" =>
                 if vcResult.isFailure then
@@ -413,7 +437,7 @@ def pyAnalyzeLaurelCommand : Command where
                 else
                   ("", s!" (in prelude file)")
               | .file path =>
-                let pos := (Lean.FileMap.ofString srcText).toPosition fr.range.start
+                let pos := fm.toPosition fr.range.start
                 if vcResult.isFailure then
                   (s!"Assertion failed at line {pos.line}, col {pos.column}: ", "")
                 else
@@ -430,8 +454,8 @@ def pyAnalyzeLaurelCommand : Command where
     IO.println s
     -- Output in SARIF format if requested
     if outputSarif then
-      let files := match pySourceOpt with
-        | some (pyPath, srcText) => Map.empty.insert (Strata.Uri.file pyPath) (Lean.FileMap.ofString srcText)
+      let files := match mfm with
+        | some (pyPath, fm) => Map.empty.insert (Strata.Uri.file pyPath) fm
         | none => Map.empty
       Core.Sarif.writeSarifOutput .deductive files vcResults (filePath ++ ".sarif")
 

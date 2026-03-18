@@ -287,7 +287,10 @@ def pyTranslateLaurel
     (dispatchPaths : Array String := #[])
     (pyspecPaths : Array String := #[])
     : EIO String Core.Program := do
-  let laurel ← pyAnalyzeLaurel pythonIonPath dispatchPaths pyspecPaths
+  let laurel ←
+    match ← pyAnalyzeLaurel pythonIonPath dispatchPaths pyspecPaths |>.toBaseIO with
+    | .ok r => pure r
+    | .error err => throw (toString err)
   match translateCombinedLaurel laurel with
   | .error diagnostics => throw s!"Laurel to Core translation failed: {diagnostics}"
   | .ok (core, _) => pure core

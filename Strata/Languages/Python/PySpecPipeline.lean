@@ -278,6 +278,17 @@ public def translateCombinedLaurel (combined : Laurel.Program)
   | .error e => .error e
   | .ok (core, diags) => .ok (replaceStubsWithPrelude core, diags)
 
+/-- Errors from the pyAnalyzeLaurel pipeline, distinguishing user code
+    errors (detected bugs in Python source) from internal tool errors. -/
+public inductive PipelineError where
+  | userCode (range : SourceRange := .none) (msg : String)
+  | internal (msg : String)
+
+public instance : ToString PipelineError where
+  toString
+    | .userCode _ msg => s!"User code error: {msg}"
+    | .internal msg => msg
+
 /-- Run the pyAnalyzeLaurel pipeline: read a Python Ion program,
     resolve overloads from dispatch files, load PySpec declarations,
     translate Python to Laurel, and combine with PySpec Laurel.
@@ -292,17 +303,24 @@ public def pyAnalyzeLaurel
     (dispatchPaths : Array String := #[])
     (pyspecPaths : Array String := #[])
     (sourcePath : Option String := none)
-    : EIO String Laurel.Program := do
-  let pyModule ← readPythonIonModule pythonIonPath
+    : EIO PipelineError Laurel.Program := do
+  let pyModule ←
+    match ← readPythonIonModule pythonIonPath |>.toBaseIO with
+    | .ok r => pure r
+    | .error msg => throw (.internal msg)
   let stmts := unwrapModule pyModule
 
-  let result ← resolveAndBuildLaurelPrelude dispatchPaths pyspecPaths stmts
+  let result ←
+    match ← resolveAndBuildLaurelPrelude dispatchPaths pyspecPaths stmts |>.toBaseIO with
+    | .ok r => pure r
+    | .error msg => throw (.internal msg)
   let preludeInfo := buildPreludeInfo result
 
   let metadataPath := sourcePath.getD pythonIonPath
   let (laurelProgram, _ctx) ←
     match Python.pythonToLaurel' preludeInfo pyModule none metadataPath result.overloads with
-    | .error e => throw s!"Python to Laurel translation failed: {e}"
+    | .error (.userPythonError range msg) => throw (.userCode range msg)
+    | .error e => throw (.internal s!"Python to Laurel translation failed: {e}")
     | .ok result => pure result
 
   return combinePySpecLaurel preludeInfo result.laurelProgram laurelProgram

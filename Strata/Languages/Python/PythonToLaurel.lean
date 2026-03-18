@@ -103,6 +103,10 @@ inductive TranslationError where
   | typeError (msg : String)
   | nameError (name : String)
   | internalError (msg : String)
+  /-- A detected bug in the user's Python code (e.g., missing required arguments,
+      unknown method calls, invalid service names). Unlike other errors which indicate
+      tool limitations, this means the analysis successfully identified a problem. -/
+  | userPythonError (range : SourceRange := .none) (msg : String)
 deriving Repr
 
 def TranslationError.toString : TranslationError → String
@@ -110,9 +114,14 @@ def TranslationError.toString : TranslationError → String
   | .typeError msg => s!"Type error: {msg}"
   | .nameError name => s!"Name not found: {name}"
   | .internalError msg => s!"Internal error: {msg}"
+  | .userPythonError _ msg => s!"User code error: {msg}"
 
 instance : ToString TranslationError where
   toString := TranslationError.toString
+
+/-- Throw a user code error indicating a detected bug in the Python source. -/
+def throwUserError [MonadExceptOf TranslationError m] (range : SourceRange := .none) (msg : String) : m α :=
+  throw (.userPythonError range msg)
 
 /-! ## Helper Functions -/
 
@@ -303,12 +312,11 @@ def resolveDispatch (ctx : TranslationContext)
           s!"Dispatched function '{funcName}' called with no \
             arguments (expected a string literal first argument)")
     match args[0] with
-    | .Constant _ (.ConString _ s) _ =>
+    | .Constant range (.ConString _ s) _ =>
       let some ident := fnOverloads[s.val]?
         | let knownServices := fnOverloads.keysArray.insertionSort.take 2
           let suffix := if fnOverloads.size > 2 then s!" ... ({fnOverloads.size} total)" else ""
-          throw <|
-            .typeError
+          throwUserError range
               s!"'{funcName}' called with unknown string \"{s.val}\"; known services: {knownServices}{suffix}"
       let className :=
         if ident.pythonModule.isEmpty then
@@ -679,6 +687,7 @@ partial def combinePositionalAndKeywordArgs
     (kwords : List (Python.keyword SourceRange))
     (funcDecl: Option PythonFunctionDecl)
     (displayName : String := "")
+    (callRange : SourceRange)
       : Except TranslationError ((List (Python.expr SourceRange)) × (List (Python.keyword SourceRange)) × Bool):= do
   match funcDecl with
   | some funcDecl =>
@@ -687,8 +696,8 @@ partial def combinePositionalAndKeywordArgs
     if !funcDecl.hasKwargs && kwordArgs.length > 0 then
       let extraNames := kwordArgs.filterMap fun kw => match kw with
         | .mk_keyword _ name _ => name.val.map (·.val)
-      throw (.typeError
-        s!"'{name}' called with unknown keyword arguments: {extraNames}")
+      throwUserError callRange
+        s!"'{name}' called with unknown keyword arguments: {extraNames}"
     let kwords := pyKwordsToHashMap kwords
     let unprovidedPosArgs := funcDecl.args.drop posArgs.length
     --every unprovided positional args must have a default value in the function signature or be provided in the kwargs
@@ -696,7 +705,7 @@ partial def combinePositionalAndKeywordArgs
       !(name ∈ kwords.keys) && d.isNone
     if missingArgs.length > 0 then
       let missingNames := missingArgs.map (·.1)
-      throw (.typeError s!"'{name}' called with missing required arguments: {missingNames}")
+      throwUserError callRange s!"'{name}' called with missing required arguments: {missingNames}"
     let filledPosArgs ←
       unprovidedPosArgs.mapM (λ (argName, _, d) =>
         match kwords.get? argName with
@@ -726,18 +735,22 @@ partial def translateCall (ctx : TranslationContext)
   let (funcName, opt_firstarg, unknowtype) ←  refineFunctionCallExpr ctx f
   if !hasModel ctx funcName then
     if opt_firstarg.isSome && !unknowtype then
-      let methodName := match f with
-        | .Attribute _ _ attr _ => attr.val
-        | _ => funcName
-      throw (.typeError s!"Unknown method '{methodName}'")
+      let (methodName, range) := match f with
+        | .Attribute range _ attr _ => (attr.val, range)
+        | _ => (funcName, .none)
+      throwUserError range s!"Unknown method '{methodName}'"
     return mkStmtExprMd .Hole
   -- Step 3: translate the resolved call
   let methodName := match f with
     | .Attribute _ _ attr _ => attr.val
     | _ => funcName
+  let callRange := match f with
+    | .Attribute range _ _ _ => range
+    | .Name range _ _ => range
+    | _ => .none
   let funcDecl := ctx.functionSignatures.find? fun x => x.name == funcName
   let (args, kwords, funcdecl_hasKwargs) ←
-    combinePositionalAndKeywordArgs args kwords funcDecl methodName
+    combinePositionalAndKeywordArgs args kwords funcDecl methodName callRange
   let trans_args ← args.mapM (translateExpr ctx)
   let trans_kwords ← translateKwargs ctx kwords
   let trans_kwords_exprs :=
