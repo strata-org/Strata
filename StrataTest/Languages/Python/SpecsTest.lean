@@ -18,7 +18,7 @@ program PythonSpecs;
 extern "BaseClass" from "basetypes.BaseClass";
 function "dict_function" {
   args: [
-    x : ident("typing.Dict", ident("builtins.int"), ident("typing.Any")) [hasDefault: false]
+    x : ident("typing.Dict", ident("builtins.int"), ident("typing.Any")) [default: ]
   ]
   kwonly: [
   ]
@@ -31,7 +31,7 @@ function "dict_function" {
 }
 function "list_function" {
   args: [
-    x : ident("typing.List", ident("builtins.int")) [hasDefault: false]
+    x : ident("typing.List", ident("builtins.int")) [default: ]
   ]
   kwonly: [
   ]
@@ -44,7 +44,7 @@ function "list_function" {
 }
 function "sequence_function" {
   args: [
-    x : ident("typing.Sequence", ident("builtins.int")) [hasDefault: false]
+    x : ident("typing.Sequence", ident("builtins.int")) [default: ]
   ]
   kwonly: [
   ]
@@ -57,7 +57,7 @@ function "sequence_function" {
 }
 function "base_function"{
   args: [
-    x : ident("basetypes.BaseClass") [hasDefault: false]
+    x : ident("basetypes.BaseClass") [default: ]
   ]
   kwonly: [
   ]
@@ -75,8 +75,8 @@ class "MainClass" {
   subclasses: []
   function "main_method"{
     args: [
-      self : class(MainClass) [hasDefault: false]
-      x : ident("basetypes.BaseClass") [hasDefault: false]
+      self : class(MainClass) [default: ]
+      x : ident("basetypes.BaseClass") [default: ]
     ]
     kwonly: [
     ]
@@ -90,7 +90,7 @@ class "MainClass" {
 }
 function "main_function"{
   args: [
-    x : class(MainClass) [hasDefault: false]
+    x : class(MainClass) [default: ]
   ]
   kwonly: [
   ]
@@ -186,13 +186,13 @@ class "ClassWithInit" {
   classVars: []
   subclasses: [
     class "_InnerHelper" {
-      bases: [".InnerHelper"]
+      bases: ["main.InnerHelper"]
       fields: []
       classVars: []
       subclasses: []
       function "do_work"{
         args: [
-          self : class(_InnerHelper) [hasDefault: false]
+          self : class(_InnerHelper) [default: ]
         ]
         kwonly: [
         ]
@@ -208,27 +208,7 @@ class "ClassWithInit" {
 }
 #end
 
--- We use an environment variable to allow the build process
--- to require the Python test is run.
-meta def pythonTestRequired : IO Bool :=
-  return (← IO.getEnv "PYTHON_TEST").isSome
-
-meta def testCase : IO Unit := do
-  let pythonCmd ←
-    match ← findPython3 (minVersion := 11) (maxVersion := 14) |>.toBaseIO with
-    | .ok cmd =>
-      pure cmd
-    | .error msg =>
-      -- We may skip tests if Python 3 is not available.
-      if ← pythonTestRequired then
-        throw msg
-      return ()
-  if not (← pythonCheckModule pythonCmd "strata.gen") then
-    -- We may skip tests if stratal.gen is not available.
-    if ← pythonTestRequired then
-      throw <| .userError s!"Python Strata libraries not installed in {pythonCmd}."
-    return ()
-  -- Serialize embedded dialect for Python subprocess
+meta def testCase : IO Unit := withPython fun pythonCmd => do
   IO.FS.withTempFile fun _handle dialectFile => do
     IO.FS.writeBinFile dialectFile Strata.Python.Python.toIon
     let pythonFile : System.FilePath := "StrataTest/Languages/Python/Specs/main.py"
@@ -270,17 +250,7 @@ meta def containsSubstr (haystack needle : String) : Bool :=
   (haystack.splitOn needle).length != 1
 
 /-- Test that unsupported patterns emit appropriate warnings. -/
-meta def warningTestCase : IO Unit := do
-  let pythonCmd ←
-    match ← findPython3 (minVersion := 11) (maxVersion := 14) |>.toBaseIO with
-    | .ok cmd => pure cmd
-    | .error msg =>
-      if ← pythonTestRequired then throw msg
-      return ()
-  if not (← pythonCheckModule pythonCmd "strata.gen") then
-    if ← pythonTestRequired then
-      throw <| .userError s!"Python Strata libraries not installed in {pythonCmd}."
-    return ()
+meta def warningTestCase : IO Unit := withPython fun pythonCmd => do
   IO.FS.withTempFile fun _handle dialectFile => do
     IO.FS.writeBinFile dialectFile Strata.Python.Python.toIon
     let pythonFile : System.FilePath := "StrataTest/Languages/Python/Specs/warnings.py"
