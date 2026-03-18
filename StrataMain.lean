@@ -42,7 +42,7 @@ def exitUserCodeError {α} (message : String) : IO α := do
 
 /-- Exit with code 2 for internal errors (tool limitations or crashes). -/
 def exitInternalError {α} (message : String) : IO α := do
-  IO.eprintln s!"⚠️ {message}"
+  IO.eprintln s!"Exception: {message}"
   IO.Process.exit 2
 
 def exitCmdFailure {α} (cmdName : String) (message : String) : IO α :=
@@ -402,7 +402,7 @@ def pyAnalyzeLaurelCommand : Command where
     let coreProgram ←
       match Strata.translateCombinedLaurel combinedLaurel with
       | .error diagnostics =>
-        exitFailure s!"Laurel to Core translation failed: {diagnostics}"
+        exitInternalError s!"Laurel to Core translation failed: {diagnostics}"
       | .ok (core, _) => pure core
 
     if verbose then
@@ -418,7 +418,7 @@ def pyAnalyzeLaurelCommand : Command where
     let vcResults ←
       match ← Strata.verifyCore coreProgram options |>.toBaseIO with
       | .ok r => pure r
-      | .error msg => exitFailure msg
+      | .error msg => exitInternalError msg
 
     -- Print results
     IO.println "\n==== Verification Results ===="
