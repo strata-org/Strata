@@ -141,9 +141,9 @@ def toSMTVCs (vcs : Core.coreVCs) : Option SMT.SMTVCs := do
   match vcs with
   | [] => return []
   | (E, ob) :: vcs =>
-    let (ctx, ts, t) ← Core.ProofObligation.toSMTObligation E ob
+    let (label, ctx, ts, t) ← Core.ProofObligation.toSMTObligation E ob
     let vcs ← toSMTVCs vcs
-    return (ctx, ts, t) :: vcs
+    return (label, ctx, ts, t) :: vcs
 
 /--
 Generate SMT verification conditions for a `Strata.Program`.

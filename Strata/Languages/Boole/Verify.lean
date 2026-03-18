@@ -36,6 +36,8 @@ abbrev TranslateM := StateT TranslateState (Except DiagnosticModel)
 private def mkIdent (name : String) : Core.Expression.Ident :=
   ⟨name, ()⟩
 
+def topLevelBlockProcedureName : String := "__Boole_top"
+
 private def throwAt (m : SourceRange) (msg : String) : TranslateM α := do
   throw (.withRange ⟨⟨(← get).fileName⟩, m⟩ msg)
 
@@ -153,6 +155,23 @@ private def toCoreMetaData (sr : SourceRange) : TranslateM (Imperative.MetaData 
 private def mkCoreApp (op : Core.Expression.Expr) (args : List Core.Expression.Expr) : Core.Expression.Expr :=
   Lambda.LExpr.mkApp () op args
 
+private def typeRange : Boole.Type → SourceRange
+  | .bvar m _ => m
+  | .tvar m _ => m
+  | .fvar m _ _ => m
+  | .arrow m _ _ => m
+  | .bool m => m
+  | .int m => m
+  | .real m => m
+  | .string m => m
+  | .regex m => m
+  | .bv1 m => m
+  | .bv8 m => m
+  | .bv16 m => m
+  | .bv32 m => m
+  | .bv64 m => m
+  | .Map m _ _ => m
+
 def toCoreMonoType (t : Boole.Type) : TranslateM Lambda.LMonoTy := do
   match t with
   | .bvar m n => return .ftvar (← getTypeBVarName m n)
@@ -167,7 +186,7 @@ def toCoreMonoType (t : Boole.Type) : TranslateM Lambda.LMonoTy := do
   | .bv32 _ => return .bitvec 32
   | .bv64 _ => return .bitvec 64
   | .Map _ v k => return .tcons "Map" [← toCoreMonoType k, ← toCoreMonoType v]
-  | _ => throwAt default "Unsupported type"
+  | _ => throwAt (typeRange t) s!"Unsupported Boole type: {repr t}"
 
 def toCoreType (t : Boole.Type) : TranslateM Core.Expression.Ty := do
   return .forAll [] (← toCoreMonoType t)
@@ -663,9 +682,9 @@ def toCoreDecls (cmd : BooleDDM.Command SourceRange) : TranslateM (List Core.Dec
     return [.distinct (mkIdent (← defaultLabel m "distinct" l?)) (← es.toList.mapM toCoreExpr)]
   | .command_block _ b =>
     -- Core decls do not have a standalone "top-level block" form, so a Boole
-    -- command-level block is wrapped as an anonymous procedure declaration.
+    -- command-level block is wrapped as a synthetic procedure declaration.
     return [.proc {
-      header := { name := mkIdent "", typeArgs := [], inputs := [], outputs := [] }
+      header := { name := mkIdent topLevelBlockProcedureName, typeArgs := [], inputs := [], outputs := [] }
       spec := { modifies := [], preconditions := [], postconditions := [] }
       body := ← toCoreBlock b
     }]
