@@ -36,6 +36,84 @@ inductive Header where
 | program (loc : SourceRange) (name : DialectName)
 deriving Inhabited
 
+private inductive QuantifierSepState where
+| outside
+| inBinder
+| sawColon
+
+/--
+Canonicalize the legacy dotted Unicode quantifier separator to `::` before DDM
+parsing. This keeps `#strata` generic while accepting both `∀ x . P` and
+`∀ x :: P`.
+-/
+private def normalizeUnicodeQuantifierSeparators (src : String) : String :=
+  (src.foldl
+    (init := ("", QuantifierSepState.outside))
+    (fun (st : String × QuantifierSepState) (ch : Char) =>
+      let (acc, qstate) := st
+      match qstate with
+      | .outside =>
+        if ch == '∀' || ch == '∃' then
+          (acc.push ch, .inBinder)
+        else
+          (acc.push ch, .outside)
+      | .inBinder =>
+        if ch == '.' then
+          (acc ++ "::", .outside)
+        else if ch == ':' then
+          (acc.push ch, .sawColon)
+        else
+          (acc.push ch, .inBinder)
+      | .sawColon =>
+        if ch == ':' then
+          (acc.push ch, .outside)
+        else
+          (acc.push ch, .inBinder))).fst
+
+private def normalizeInputContext (inputContext : InputContext) : InputContext :=
+  let inputString := normalizeUnicodeQuantifierSeparators inputContext.inputString
+  Strata.Parser.stringInputContext (System.FilePath.mk inputContext.fileName) inputString
+
+private def normalizedQuantifierSepStep (state : QuantifierSepState) (ch : Char) : Nat × QuantifierSepState :=
+  match state with
+  | .outside =>
+    if ch == '∀' || ch == '∃' then
+      (ch.utf8Size, .inBinder)
+    else
+      (ch.utf8Size, .outside)
+  | .inBinder =>
+    if ch == '.' then
+      ("::".utf8ByteSize, .outside)
+    else if ch == ':' then
+      (ch.utf8Size, .sawColon)
+    else
+      (ch.utf8Size, .inBinder)
+  | .sawColon =>
+    if ch == ':' then
+      (ch.utf8Size, .outside)
+    else
+      (ch.utf8Size, .inBinder)
+
+/--
+Translate a byte position in the original input to the corresponding byte
+position in the normalized input after quantifier-separator canonicalization.
+
+This matters for interior positions as well as `endPos`, because replacing `.`
+with `::` inside binders lengthens the input by one byte at each rewrite site.
+-/
+private def normalizePos (src : String) (targetPos : String.Pos.Raw) : String.Pos.Raw := Id.run do
+  let mut origPos : String.Pos.Raw := 0
+  let mut normPos : String.Pos.Raw := 0
+  let mut state := QuantifierSepState.outside
+  while targetPos > origPos && origPos < src.rawEndPos do
+    let ch := origPos.get src
+    let origNext := origPos.next src
+    let (normWidth, nextState) := normalizedQuantifierSepStep state ch
+    origPos := origNext
+    normPos := ⟨normPos.byteIdx + normWidth⟩
+    state := nextState
+  return normPos
+
 /- Elaborate a Strata program -/
 partial def elabHeader
     (leanEnv : Lean.Environment)
@@ -115,6 +193,10 @@ def elabProgram
     (inputContext : InputContext)
     (startPos : String.Pos.Raw := 0)
     (stopPos : String.Pos.Raw := inputContext.endPos) : Except (Array Message) Program :=
+  let originalInputContext := inputContext
+  let inputContext := normalizeInputContext inputContext
+  let startPos := normalizePos originalInputContext.inputString startPos
+  let stopPos := normalizePos originalInputContext.inputString stopPos
   assert! "Init" ∈ loader.dialects
   let (header, errors, startPos) := elabHeader leanEnv inputContext startPos stopPos
   if errors.size > 0 then
@@ -426,12 +508,14 @@ def elabDialect
 
 def parseStrataProgramFromDialect (dialects : LoadedDialects) (dialect : DialectName) (input : InputContext) : IO Strata.Program := do
   let leanEnv ← Lean.mkEmptyEnvironment 0
+  let originalInput := input
+  let input := normalizeInputContext input
 
   let isTrue mem := inferInstanceAs (Decidable (dialect ∈ dialects.dialects))
     | throw <| IO.userError "Internal {dialect} missing from loaded dialects."
 
   let strataProgram ←
-    match elabProgramRest dialects leanEnv input dialect mem 0 with
+    match elabProgramRest dialects leanEnv input dialect mem 0 (normalizePos originalInput.inputString input.endPos) with
     | .ok program =>
       pure program
     | .error errors =>
@@ -455,6 +539,10 @@ def parseCategoryFromDialect
     (stopPos : String.Pos.Raw := input.endPos)
     : IO Strata.Operation := do
   let leanEnv ← Lean.mkEmptyEnvironment 0
+  let originalInput := input
+  let input := normalizeInputContext input
+  let startPos := normalizePos originalInput.inputString startPos
+  let stopPos := normalizePos originalInput.inputString stopPos
   -- Open dialects using the same pattern as elabProgramRest: start from
   -- initDeclState (which has Init open) and open each dialect via
   -- ensureLoaded! to avoid panics from HashMap iteration order.
