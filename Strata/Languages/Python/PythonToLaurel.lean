@@ -1174,7 +1174,7 @@ def extractClassFields (ctx : TranslationContext) (classBody : Array (Python.stm
       -- Class-level annotated assignment: x: int
       let fieldName ← match target with
         | .Name _ name _ => .ok name.val
-        | _ => throw (.unsupportedConstruct "Only simple field names supported" (toString (repr stmt)))
+        | _ => continue  -- Skip non-simple targets, consistent with extractFieldsFromInit
 
       let fieldType ← translateType ctx (pyExprToString annotation)
 

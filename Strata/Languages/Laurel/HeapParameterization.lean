@@ -241,7 +241,9 @@ def resolveQualifiedFieldName (model: SemanticModel) (fieldName : Identifier) : 
     | .field owner _ => owner.text ++ "." ++ fieldName.text
     -- Unresolved fields (e.g., attribute access on external/dynamic types):
     -- fall back to unqualified name. Sound but imprecise.
-    | _ => fieldName.text
+    | _ =>
+      dbg_trace s!"resolveQualifiedFieldName fallback: {fieldName} not resolved to a field"
+      fieldName.text
 
 /--
 Transform an expression, adding heap parameters where needed.

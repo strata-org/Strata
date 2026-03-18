@@ -7,7 +7,7 @@ class CircularBuffer:
         self.name = name
 
 def main():
-    my_buf: CircularBuffer = CircularBuffer(5)
+    my_buf: CircularBuffer = CircularBuffer(5, "circbuff")
     print("Bye")
 
 if __name__ == "__main__":
