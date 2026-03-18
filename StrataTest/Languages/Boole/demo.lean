@@ -41,7 +41,3 @@ theorem loopSimple_smtVCsCorrect : smtVCsCorrect loopSimple := by
   all_goals (try grind)
 
 #print axioms loopSimple_smtVCsCorrect
-
-theorem loopSimple_coreVCsCorrect : coreVCsCorrect loopSimple := by
-  apply coreVCsCorrect_of_smtVCsCorrect
-  exact loopSimple_smtVCsCorrect

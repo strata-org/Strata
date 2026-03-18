@@ -120,56 +120,6 @@ def Core.ProofObligation.toSMTObligation (E : Core.Env) (ob : Imperative.ProofOb
       (ob.label, sanitizeSMTContext ctx, ts, t)
 
 /--
-Interpret a single core proof obligation by first lowering it to an SMT query and
-then reusing the SMT denotation.
--/
-noncomputable def denoteProofObligation (E : Core.Env) (ob : Imperative.ProofObligation Core.Expression) :
-  Option Prop := do
-  let (_, ctx, ts, t) ← Core.ProofObligation.toSMTObligation E ob
-  denoteQuery ctx.toCore ts t
-
-theorem DPO_isSome_of_DQ_isSome :
-    (Core.ProofObligation.toSMTObligation E ob) = some (label, ctx, ts, t) →
-    (denoteQuery ctx.toCore ts t).isSome → (denoteProofObligation E ob).isSome := by
-  intro hOb hDQ
-  simpa [denoteProofObligation, hOb] using hDQ
-
-theorem DPO_of_DQ :
-    Core.ProofObligation.toSMTObligation E ob = some (label, ctx, ts, t) →
-    denoteQuery ctx.toCore ts t = some p → denoteProofObligation E ob = some q →
-    p → q := by
-  intro hOb hDQ hDPO hp
-  have hDPO' : denoteQuery ctx.toCore ts t = some q := by
-    simpa [denoteProofObligation, hOb] using hDPO
-  have hpq : p = q := by
-    exact Option.some.inj (hDQ.symm.trans hDPO')
-  subst p
-  exact hp
-
-noncomputable def denoteProofObligations (vcs : Core.coreVCs) : Option Prop := do
-  match vcs with
-  | [] => return True
-  | (E, ob) :: vcs =>
-    let p ← denoteProofObligation E ob
-    go vcs p
-where
-  go vcs p : Option Prop := do
-  match vcs with
-  | [] => return p
-  | (E, ob) :: vcs =>
-    let q ← denoteProofObligation E ob
-    go vcs (p ∧ q)
-
-/--
-State semantic correctness of the generated core verification conditions for a
-program.
--/
-noncomputable def coreVCsCorrect (program : Program) : Prop :=
-  match genCoreVCs program with
-  | some vcs => (denoteProofObligations vcs).getD False
-  | none     => False
-
-/--
 Interpret a list of SMT verification conditions as the conjunction of their
 denotations.
 -/
@@ -187,7 +137,7 @@ where
     let q ← denoteQuery ctx.toCore ts t
     go vcs (p ∧ q)
 
-def toSMTVCs vcs := do
+def toSMTVCs (vcs : Core.coreVCs) : Option SMT.SMTVCs := do
   match vcs with
   | [] => return []
   | (E, ob) :: vcs =>
@@ -218,113 +168,6 @@ theorem toSMTVCs_cons :
     toSMTVCs coreVCs = some smtVCs := by
   simp only [toSMTVCs, Option.bind_eq_bind, Option.bind]
   grind
-
-theorem DPOsGo_isSome_of_DQsGo_isSome  :
-    toSMTVCs coreVCs = some smtVCs → (denoteQueries.go smtVCs p).isSome →
-    (denoteProofObligations.go coreVCs q).isSome := by
-  intro h hs
-  induction coreVCs generalizing smtVCs p q with
-  | nil => rfl
-  | cons coreVC coreVCs ih =>
-    let (E, ob) := coreVC
-    let ⟨_, ctx, ts, t, smtVCs, hctx, hob, hrest⟩ := toSMTVCs_cons h
-    simp only [hctx, Option.bind, denoteQueries.go, Option.bind_eq_bind] at hs
-    match hp' : denoteQuery ctx.toCore ts t with
-    | none => grind
-    | some p' =>
-      simp only [hp'] at hs
-      simp only [denoteProofObligations.go, Option.bind_eq_bind, Option.bind]
-      split
-      · have := DPO_isSome_of_DQ_isSome hob (Option.isSome_of_eq_some hp')
-        simp_all
-      · simp [ih hrest hs]
-
-theorem DPOs_isSome_of_DQs_isSome  :
-    toSMTVCs coreVCs = some smtVCs → (denoteQueries smtVCs).isSome →
-    (denoteProofObligations coreVCs).isSome := by
-  intro h hs
-  match coreVCs with
-  | [] => rfl
-  | (E, ob) :: coreVCs =>
-    have ⟨_, ctx, ts, t, smtVCs, hctx, hob, hrest⟩ := toSMTVCs_cons h
-    simp only [denoteQueries, hctx, Option.bind_eq_bind, Option.bind] at hs
-    match hp : denoteQuery ctx.toCore ts t with
-    | none => grind
-    | some p =>
-      simp only [hp] at hs
-      simp only [denoteProofObligations, Option.bind_eq_bind, Option.bind]
-      split
-      · have := DPO_isSome_of_DQ_isSome hob (Option.isSome_of_eq_some hp)
-        simp_all
-      · simp [DPOsGo_isSome_of_DQsGo_isSome hrest hs]
-
-theorem DPOsGo_of_DQsGo  :
-    toSMTVCs coreVCs = some smtVCs →
-    denoteQueries.go smtVCs p = some P →
-    denoteProofObligations.go coreVCs q = some Q →
-    (p → q) → P → Q := by
-  intro h
-  induction coreVCs generalizing smtVCs p q P Q with
-  | nil => simp_all [denoteProofObligations.go, denoteQueries.go, toSMTVCs]
-  | cons coreVC coreVCs ih =>
-    let (E, ob) := coreVC
-    let ⟨_, ctx, ts, t, smtVCs, hctx, hob, hrest⟩ := toSMTVCs_cons h
-    simp only [hctx] at h ⊢
-    simp only [denoteQueries.go, Option.bind_eq_bind, denoteProofObligations.go]
-    match hp' : denoteQuery ctx.toCore ts t with
-    | none => simp_all
-    | some p' =>
-      match hq' : denoteProofObligation E ob with
-      | none => simp_all
-      | some q' =>
-        simp only [Option.bind_some]
-        intro hp hq hpq
-        have hp'q' := DPO_of_DQ hob hp' hq'
-        have hpp'qq' : p ∧ p' → q ∧ q' := fun ⟨hp, hp'⟩ => And.intro (hpq hp) (hp'q' hp')
-        apply ih hrest hp hq hpp'qq'
-
-theorem DPOs_of_DQs  :
-    toSMTVCs coreVCs = some smtVCs →
-    denoteQueries smtVCs = some P →
-    denoteProofObligations coreVCs = some Q →
-    P → Q := by
-  intro h
-  match coreVCs with
-  | [] => simp_all [denoteProofObligations, denoteQueries, toSMTVCs]
-  | (E, ob) :: coreVCs =>
-    have ⟨_, ctx, ts, t, smtVCs, hctx, hob, hrest⟩ := toSMTVCs_cons h
-    simp only [denoteQueries, denoteProofObligations, hctx] at h ⊢
-    match hp : denoteQuery ctx.toCore ts t with
-    | none => simp_all
-    | some p =>
-      match hq : denoteProofObligation E ob with
-      | none => simp_all
-      | some q =>
-        simp only [Option.bind_some, Option.bind_eq_bind]
-        intro hP hQ
-        have hpq := DPO_of_DQ hob hp hq
-        apply DPOsGo_of_DQsGo hrest hP hQ hpq
-
-theorem coreVCsCorrect_of_smtVCsCorrect (program : Program) :
-    smtVCsCorrect program → coreVCsCorrect program := by
-  simp only [coreVCsCorrect, smtVCsCorrect, genSMTVCs]
-  match hb : genCoreVCs program with
-  | none => simp_all
-  | some coreVCs =>
-    simp only [Option.bind_eq_bind, Option.bind_some]
-    match hs : toSMTVCs coreVCs with
-    | none => simp_all
-    | some smtVCs =>
-      match hP : denoteQueries smtVCs with
-      | none => simp_all
-      | some P =>
-        match hQ : denoteProofObligations coreVCs with
-        | none =>
-          have := DPOs_isSome_of_DQs_isSome hs (Option.isSome_of_eq_some hP)
-          simp_all
-        | some Q =>
-          simp only [hP, Option.getD_some]
-          exact DPOs_of_DQs hs hP hQ
 
 namespace SMT
 
@@ -467,15 +310,6 @@ unsafe def genSMTVCs (mv : MVarId) : MetaM (List MVarId) := do
   mv.assign hP
   return mvs
 
-unsafe def genCoreVCs (mv : MVarId) : MetaM (List MVarId) := do
-  let type ← mv.getType
-  let some program := type.app1? ``Strata.coreVCsCorrect | throwError "Expected a Strata.coreVCsCorrect goal"
-  trace[debug] m!"Reducing core VC goal for {program} to SMT VCs"
-  let thm := mkApp (.const ``Strata.coreVCsCorrect_of_smtVCsCorrect []) program
-  let [mv] ← mv.apply thm
-    | throwError "Expected coreVCsCorrect_of_smtVCsCorrect to generate exactly one subgoal"
-  genSMTVCs mv
-
 end Meta
 
 namespace Tactic
@@ -491,20 +325,6 @@ open Lean Elab Tactic in
   match stx with
   | `(tactic| gen_smt_vcs) =>
     let mvs ← Meta.genSMTVCs (← Tactic.getMainGoal)
-    Tactic.replaceMainGoal mvs
-  | _ => throwUnsupportedSyntax
-
-/--
-Reduce a goal of the form `Strata.coreVCsCorrect program` to SMT verification
-conditions and generate one Lean goal per resulting SMT query.
--/
-syntax (name := genCoreVCs) "gen_core_vcs" : tactic
-
-open Lean Elab Tactic in
-@[tactic genCoreVCs] unsafe def evalGenCoreVCs : Tactic := fun stx => do
-  match stx with
-  | `(tactic| gen_core_vcs) =>
-    let mvs ← Meta.genCoreVCs (← Tactic.getMainGoal)
     Tactic.replaceMainGoal mvs
   | _ => throwUnsupportedSyntax
 
