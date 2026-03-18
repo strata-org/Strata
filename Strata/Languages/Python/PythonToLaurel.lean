@@ -1040,8 +1040,8 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
   --     handler_code
   --   }
   | .Try _ body handlers _ _ => do
-    let tryLabel := "try_end"
-    let catchersLabel := "exception_handlers"
+    let tryLabel := s!"try_end_{s.toAst.ann.start.byteIdx}"
+    let catchersLabel := s!"exception_handlers_{s.toAst.ann.start.byteIdx}"
 
     -- Translate try body
     let (bodyCtx, bodyStmts) ← translateStmtList ctx body.val.toList
@@ -1058,12 +1058,21 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
     let exitTry := mkStmtExprMd (StmtExpr.Exit tryLabel)
 
     -- Translate exception handlers
+    let mut handlerCtx := bodyCtx
     let mut handlerStmts : List StmtExprMd := []
     for handler in handlers.val do
       match handler with
       | .ExceptHandler _ _ _ handlerBody =>
-        let (_, hStmts) ← translateStmtList bodyCtx handlerBody.val.toList
+        let (hCtx, hStmts) ← translateStmtList bodyCtx handlerBody.val.toList
+        handlerCtx := hCtx
         handlerStmts := handlerStmts ++ hStmts
+
+    -- Merge variable declarations from try body and handler into the
+    -- returned context so that variables assigned in either branch are
+    -- visible after the try/except block (Python scoping).
+    let mergedVars := bodyCtx.variableTypes ++ 
+      (handlerCtx.variableTypes.filter fun (n, _) =>
+        !bodyCtx.variableTypes.any fun (bn, _) => bn == n)
 
     -- catchers block: body + exit try (normal path)
     let catchersBlock := mkStmtExprMd (StmtExpr.Block
@@ -1072,7 +1081,8 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
     -- try block: catchers block + handler code
     let tryBlock := mkStmtExprMdWithLoc (StmtExpr.Block
       ([catchersBlock] ++ handlerStmts) (some tryLabel)) md
-    return (bodyCtx, [tryBlock])
+    let finalCtx := { bodyCtx with variableTypes := mergedVars }
+    return (finalCtx, [tryBlock])
 
   | .Raise _ _ _ => return (ctx, [mkStmtExprMd .Hole])
 
