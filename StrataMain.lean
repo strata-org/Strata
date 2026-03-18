@@ -34,7 +34,7 @@ import Strata.Languages.B3.Verifier
 
 open Strata
 
-open Core (VerifyOptions VerboseMode)
+open Core (VerifyOptions VerboseMode VerificationMode CheckLevel)
 
 def exitFailure {α} (message : String) (hint : String := "strata --help") : IO α := do
   IO.eprintln s!"Exception: {message}\n\nRun {hint} for additional help."
@@ -108,6 +108,30 @@ def buildDialectFileMap (pflags : ParsedFlags) : IO Strata.DialectFileMap := do
   return sp
 
 end ParsedFlags
+
+def parseCheckMode (pflags : ParsedFlags) : IO VerificationMode :=
+  match pflags.getString "check-mode" with
+  | .none => pure .deductive
+  | .some s => match VerificationMode.ofString? s with
+    | .some m => pure m
+    | .none => exitFailure s!"Invalid check mode: '{s}'. Must be {VerificationMode.options}."
+
+def parseCheckLevel (pflags : ParsedFlags) : IO CheckLevel :=
+  match pflags.getString "check-level" with
+  | .none => pure .minimal
+  | .some s => match CheckLevel.ofString? s with
+    | .some l => pure l
+    | .none => exitFailure s!"Invalid check level: '{s}'. Must be {CheckLevel.options}."
+
+def checkModeFlag : Flag :=
+  { name := "check-mode",
+    help := s!"Check mode: {VerificationMode.options}. Default: 'deductive'.",
+    takesArg := .arg "mode" }
+
+def checkLevelFlag : Flag :=
+  { name := "check-level",
+    help := s!"Check level: {CheckLevel.options}. Default: 'minimal'.",
+    takesArg := .arg "level" }
 
 structure Command where
   name : String
@@ -743,7 +767,7 @@ def pyAnalyzeLaurelCommand : Command where
       let files := match mfm with
         | some (pyPath, fm) => Map.empty.insert (Strata.Uri.file pyPath) fm
         | none => Map.empty
-      Core.Sarif.writeSarifOutput .deductive files vcResults (filePath ++ ".sarif")
+      Core.Sarif.writeSarifOutput checkMode files vcResults (filePath ++ ".sarif")
 
 private def deriveBaseName (file : String) : String :=
   let name := System.FilePath.fileName file |>.getD file
