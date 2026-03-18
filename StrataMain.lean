@@ -709,15 +709,12 @@ def pyAnalyzeLaurelCommand : Command where
 
     -- Verify using incremental CoreSMT engine or batch Core verifier
     let incremental := pflags.getBool "incremental"
-    let checkMode ← parseCheckMode pflags
-    let checkLevel ← parseCheckLevel pflags
     let vcResults ←
       if incremental then
         verifyIncremental coreProgram.decls pySourceOpt
       else do
         let baseOptions : VerifyOptions :=
-          { VerifyOptions.default with stopOnFirstError := false, verbose := .quiet, solver := "z3",
-            checkMode := checkMode, checkLevel := checkLevel }
+          { VerifyOptions.default with stopOnFirstError := false, verbose := .quiet, solver := "z3" }
         let options : VerifyOptions := match pflags.getString "vc-directory" with
           | .some dir => { baseOptions with vcDirectory := some (dir : System.FilePath) }
           | .none => baseOptions
@@ -770,7 +767,7 @@ def pyAnalyzeLaurelCommand : Command where
       let files := match mfm with
         | some (pyPath, fm) => Map.empty.insert (Strata.Uri.file pyPath) fm
         | none => Map.empty
-      Core.Sarif.writeSarifOutput checkMode files vcResults (filePath ++ ".sarif")
+      Core.Sarif.writeSarifOutput .deductive files vcResults (filePath ++ ".sarif")
 
 private def deriveBaseName (file : String) : String :=
   let name := System.FilePath.fileName file |>.getD file
