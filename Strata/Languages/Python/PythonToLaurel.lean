@@ -1283,9 +1283,9 @@ def translateClass (ctx : TranslationContext) (classStmt : Python.stmt SourceRan
       | .FunctionDef _ name _ initBody _ _ _ _ =>
         if name.val == "__init__" then
           let initFields ← extractFieldsFromInit ctx initBody.val
-          -- Only add __init__ fields not already declared at class level
+          -- Only add fields not already declared at class level
           for f in initFields do
-            unless fields.any (fun e => e.name == f.name) do
+            unless fields.any (fun existing => existing.name.text == f.name.text) do
               fields := fields ++ [f]
       | _ => pure ()
 
