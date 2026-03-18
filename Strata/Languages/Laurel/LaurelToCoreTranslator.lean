@@ -332,16 +332,9 @@ def translateStmt (outputParams : List Parameter) (stmt : StmtExprMd)
       return [Core.Statement.assume ("assume" ++ getNameFromMd md) coreExpr md]
   | .Block stmts label =>
       let innerStmts ← stmts.flatMapM (fun s => translateStmt outputParams s)
-      -- Wrap in a Core labelled block for loop labels (break/continue)
-      -- and try/except labels (exception_handlers, try_end).
-      let isLabelledBlock := label.any fun l =>
-        l.startsWith "loop_break_" || l.startsWith "loop_continue_" ||
-        l.startsWith "for_break_"  || l.startsWith "for_continue_"  ||
-        l == "exception_handlers"  || l == "try_end"
-      if isLabelledBlock then
-        return [Imperative.Stmt.block label.get! innerStmts md]
-      else
-        return innerStmts
+      match label with
+      | some l => return [Imperative.Stmt.block l innerStmts md]
+      | none   => return innerStmts
   | .LocalVariable id ty initializer =>
       let coreMonoType := translateType model ty
       let coreType := LTy.forAll [] coreMonoType
