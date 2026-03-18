@@ -79,6 +79,11 @@ datatype ListAny {
   ListAny_cons (head: Any, tail: ListAny)
 }
 
+datatype ListStr {
+  ListStr_nil (),
+  ListStr_cons (head: string, tail: ListStr)
+}
+
 datatype DictStrAny {
   DictStrAny_empty (),
   DictStrAny_cons (key: string, val: Any, tail: DictStrAny)
