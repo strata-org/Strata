@@ -1043,8 +1043,36 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
     let tryLabel := s!"try_end_{s.toAst.ann.start.byteIdx}"
     let catchersLabel := s!"exception_handlers_{s.toAst.ann.start.byteIdx}"
 
-    -- Translate try body
-    let (bodyCtx, bodyStmts) ← translateStmtList ctx body.val.toList
+    -- Pre-scan for variable declarations in both branches so they are
+    -- declared in the outer scope (Python scoping: variables assigned
+    -- in try/except are visible after the block).
+    let collectDeclaredNames (stmts : List (Python.stmt SourceRange)) : List String :=
+      stmts.filterMap fun s => match s with
+        | .AnnAssign _ target _ _ _ => some (pyExprToString target)
+        | .Assign _ targets _ _ => targets.val.toList.head?.map (fun t => pyExprToString t)
+        | _ => none
+    let bodyNames := collectDeclaredNames body.val.toList
+    let handlerNames := handlers.val.toList.flatMap fun h => match h with
+      | .ExceptHandler _ _ _ hBody => collectDeclaredNames hBody.val.toList
+    let allNewNames := (bodyNames ++ handlerNames).eraseDups.filter fun n =>
+      !ctx.variableTypes.any fun (vn, _) => vn == n
+    let hoistedDecls : List StmtExprMd := allNewNames.map fun name =>
+      mkStmtExprMd (StmtExpr.LocalVariable (name : String) AnyTy (some (mkStmtExprMd .Hole)))
+    let hoistedCtx := { ctx with variableTypes := ctx.variableTypes ++
+      (allNewNames.map fun n => (n, PyLauType.Any)) }
+
+    -- Translate try body (with hoisted context so inner decls become assigns)
+    let (bodyCtx, bodyStmts) ← translateStmtList hoistedCtx body.val.toList
+
+    -- Translate exception handlers
+    let mut handlerCtx := bodyCtx
+    let mut handlerStmts : List StmtExprMd := []
+    for handler in handlers.val do
+      match handler with
+      | .ExceptHandler _ _ _ handlerBody =>
+        let (hCtx, hStmts) ← translateStmtList hoistedCtx handlerBody.val.toList
+        handlerCtx := hCtx
+        handlerStmts := handlerStmts ++ hStmts
 
     -- Insert exception checks after each statement in try body
     let bodyStmtsWithChecks := bodyStmts.flatMap fun stmt =>
@@ -1057,23 +1085,6 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
     -- Normal completion: exit the try block, skipping handlers
     let exitTry := mkStmtExprMd (StmtExpr.Exit tryLabel)
 
-    -- Translate exception handlers
-    let mut handlerCtx := bodyCtx
-    let mut handlerStmts : List StmtExprMd := []
-    for handler in handlers.val do
-      match handler with
-      | .ExceptHandler _ _ _ handlerBody =>
-        let (hCtx, hStmts) ← translateStmtList bodyCtx handlerBody.val.toList
-        handlerCtx := hCtx
-        handlerStmts := handlerStmts ++ hStmts
-
-    -- Merge variable declarations from try body and handler into the
-    -- returned context so that variables assigned in either branch are
-    -- visible after the try/except block (Python scoping).
-    let mergedVars := bodyCtx.variableTypes ++ 
-      (handlerCtx.variableTypes.filter fun (n, _) =>
-        !bodyCtx.variableTypes.any fun (bn, _) => bn == n)
-
     -- catchers block: body + exit try (normal path)
     let catchersBlock := mkStmtExprMd (StmtExpr.Block
       (bodyStmtsWithChecks ++ [exitTry]) (some catchersLabel))
@@ -1081,8 +1092,11 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
     -- try block: catchers block + handler code
     let tryBlock := mkStmtExprMdWithLoc (StmtExpr.Block
       ([catchersBlock] ++ handlerStmts) (some tryLabel)) md
+    let mergedVars := bodyCtx.variableTypes ++
+      (handlerCtx.variableTypes.filter fun (n, _) =>
+        !bodyCtx.variableTypes.any fun (bn, _) => bn == n)
     let finalCtx := { bodyCtx with variableTypes := mergedVars }
-    return (finalCtx, [tryBlock])
+    return (finalCtx, hoistedDecls ++ [tryBlock])
 
   | .Raise _ _ _ => return (ctx, [mkStmtExprMd .Hole])
 
