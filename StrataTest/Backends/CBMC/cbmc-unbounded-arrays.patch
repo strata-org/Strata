@@ -1,0 +1,228 @@
+diff --git a/src/ansi-c/goto-conversion/goto_check_c.cpp b/src/ansi-c/goto-conversion/goto_check_c.cpp
+index 68c04604a9..375f2779d3 100644
+--- a/src/ansi-c/goto-conversion/goto_check_c.cpp
++++ b/src/ansi-c/goto-conversion/goto_check_c.cpp
+@@ -1594,6 +1594,12 @@ void goto_check_ct::bounds_check_index(
+     throw "bounds check expected array or vector type, got " +
+       array_type.id_string();
+ 
++  // Skip bounds checking for unbounded arrays (no constant size).
++  if(
++    array_type.id() == ID_array &&
++    !to_array_type(array_type).size().is_constant())
++    return;
++
+   std::string name = array_name(expr.array());
+ 
+   const exprt &index = expr.index();
+diff --git a/src/goto-symex/field_sensitivity.cpp b/src/goto-symex/field_sensitivity.cpp
+index 0a5a56b621..14aa17352c 100644
+--- a/src/goto-symex/field_sensitivity.cpp
++++ b/src/goto-symex/field_sensitivity.cpp
+@@ -11,6 +11,7 @@ Author: Michael Tautschnig
+ #include <util/arith_tools.h>
+ #include <util/byte_operators.h>
+ #include <util/c_types.h>
++#include <util/expr_util.h>
+ #include <util/pointer_offset_size.h>
+ 
+ #include "goto_symex_state.h"
+@@ -386,6 +387,25 @@ void field_sensitivityt::field_assignments(
+ /// \param ns: a namespace to resolve type symbols/tag types
+ /// \param state: symbolic execution state
+ /// \param lhs_fs: expanded symbol
++/// Check whether an expression is a function_application returning a type
++/// that contains unbounded arrays (e.g., Heap with Map fields).
++static bool is_opaque_function_app(const exprt &e, const namespacet &ns)
++{
++  if(e.id() != ID_function_application)
++    return false;
++  const typet &t =
++    e.type().id() == ID_struct_tag
++      ? static_cast<const typet &>(ns.follow_tag(to_struct_tag_type(e.type())))
++      : e.type();
++  if(t.id() != ID_struct)
++    return false;
++  for(const auto &comp : to_struct_type(t).components())
++    if(comp.type().id() == ID_array &&
++       !to_array_type(comp.type()).size().is_constant())
++      return true;
++  return false;
++}
++
+ /// \param ssa_rhs: right-hand-side value to assign
+ /// \param target: symbolic execution equation store
+ /// \param allow_pointer_unsoundness: allow pointer unsoundness
+@@ -426,6 +446,8 @@ void field_sensitivityt::field_assignments_rec(
+   else if(
+     ssa_rhs.type().id() == ID_struct || ssa_rhs.type().id() == ID_struct_tag)
+   {
++    if(is_opaque_function_app(ssa_rhs, ns))
++      return;
+     const struct_typet &type =
+       ssa_rhs.type().id() == ID_struct_tag
+         ? ns.follow_tag(to_struct_tag_type(ssa_rhs.type()))
+@@ -556,6 +578,9 @@ void field_sensitivityt::field_assignments_rec(
+ #endif // ENABLE_ARRAY_FIELD_SENSITIVITY
+   else if(lhs_fs.has_operands())
+   {
++    if(is_opaque_function_app(ssa_rhs, ns))
++      return;
++
+     PRECONDITION(
+       ssa_rhs.has_operands() &&
+       lhs_fs.operands().size() == ssa_rhs.operands().size());
+diff --git a/src/pointer-analysis/value_set.cpp b/src/pointer-analysis/value_set.cpp
+index 3641c00fd6..988b3f1a6e 100644
+--- a/src/pointer-analysis/value_set.cpp
++++ b/src/pointer-analysis/value_set.cpp
+@@ -15,6 +15,7 @@ Author: Daniel Kroening, kroening@kroening.com
+ #include <util/bitvector_expr.h>
+ #include <util/byte_operators.h>
+ #include <util/c_types.h>
++#include <util/expr_util.h>
+ #include <util/format_expr.h>
+ #include <util/format_type.h>
+ #include <util/namespace.h>
+@@ -1503,6 +1504,9 @@ void value_sett::assign(
+   bool is_simplified,
+   bool add_to_sets)
+ {
++  if(has_subexpr(rhs, ID_function_application))
++    return;
++
+ #ifdef DEBUG
+   std::cout << "ASSIGN LHS: " << format(lhs) << " : "
+             << format(lhs.type()) << '\n';
+diff --git a/src/solvers/smt2/smt2_conv.cpp b/src/solvers/smt2/smt2_conv.cpp
+index ed0f974150..ca49a39f8f 100644
+--- a/src/solvers/smt2/smt2_conv.cpp
++++ b/src/solvers/smt2/smt2_conv.cpp
+@@ -4563,10 +4563,22 @@ void smt2_convt::convert_with(const with_exprt &expr)
+ 
+     if(use_array_theory(expr))
+     {
++      const typet idx_type = array_type.index_type();
++      const auto is_bv = [](const typet &t) {
++        return t.id() == ID_unsignedbv || t.id() == ID_signedbv ||
++               t.id() == ID_c_bool || t.id() == ID_c_enum ||
++               t.id() == ID_c_enum_tag;
++      };
++      const exprt where =
++        (idx_type != expr.where().type() && is_bv(idx_type) &&
++         is_bv(expr.where().type()))
++          ? static_cast<exprt>(typecast_exprt(expr.where(), idx_type))
++          : expr.where();
++
+       out << "(store ";
+       convert_expr(expr.old());
+       out << " ";
+-      convert_expr(typecast_exprt(expr.where(), array_type.index_type()));
++      convert_expr(where);
+       out << " ";
+       convert_expr(expr.new_value());
+       out << ")";
+@@ -4779,13 +4791,28 @@ void smt2_convt::convert_index(const index_exprt &expr)
+ 
+     if(use_array_theory(expr.array()))
+     {
++      // Typecast the index to the array's index type, but only when both
++      // types are fixed-width bitvectors. For mathematical integers or
++      // struct-typed indices (e.g., map keys), emit directly.
++      const typet idx_type = array_type.index_type();
++      const auto is_bv = [](const typet &t) {
++        return t.id() == ID_unsignedbv || t.id() == ID_signedbv ||
++               t.id() == ID_c_bool || t.id() == ID_c_enum ||
++               t.id() == ID_c_enum_tag;
++      };
++      const exprt index =
++        (idx_type != expr.index().type() && is_bv(idx_type) &&
++         is_bv(expr.index().type()))
++          ? static_cast<exprt>(typecast_exprt(expr.index(), idx_type))
++          : expr.index();
++
+       if(expr.is_boolean() && !use_array_of_bool)
+       {
+         out << "(= ";
+         out << "(select ";
+         convert_expr(expr.array());
+         out << " ";
+-        convert_expr(typecast_exprt(expr.index(), array_type.index_type()));
++        convert_expr(index);
+         out << ")";
+         out << " #b1)";
+       }
+@@ -4794,7 +4821,7 @@ void smt2_convt::convert_index(const index_exprt &expr)
+         out << "(select ";
+         convert_expr(expr.array());
+         out << " ";
+-        convert_expr(typecast_exprt(expr.index(), array_type.index_type()));
++        convert_expr(index);
+         out << ")";
+       }
+     }
+@@ -5928,7 +5955,6 @@ void smt2_convt::convert_type(const typet &type)
+   if(type.id()==ID_array)
+   {
+     const array_typet &array_type=to_array_type(type);
+-    CHECK_RETURN(array_type.size().is_not_nil());
+ 
+     // we always use array theory for top-level arrays
+     const typet &subtype = array_type.element_type();
+@@ -6079,6 +6105,10 @@ void smt2_convt::find_symbols_rec(
+     const array_typet &array_type=to_array_type(type);
+     find_symbols(array_type.size());
+     find_symbols_rec(array_type.element_type(), recstack);
++    const typet &idx_type =
++      static_cast<const typet &>(type.find(ID_C_index_type));
++    if(idx_type.is_not_nil())
++      find_symbols_rec(idx_type, recstack);
+   }
+   else if(type.id()==ID_complex)
+   {
+@@ -6112,10 +6142,30 @@ void smt2_convt::find_symbols_rec(
+     if(use_datatypes &&
+        datatype_map.find(type)==datatype_map.end())
+     {
+-      const std::string smt_typename =
+-        "struct." + std::to_string(datatype_map.size());
++      // Reuse existing datatype for structs with the same tag name
++      // (variants may differ in non-semantic annotations like array sizes).
++      const irep_idt &tag = to_struct_type(type).get_tag();
++      std::string smt_typename;
++      if(!tag.empty())
++      {
++        for(const auto &entry : datatype_map)
++        {
++          if(
++            entry.first.id() == ID_struct &&
++            to_struct_type(entry.first).get_tag() == tag)
++          {
++            smt_typename = entry.second;
++            break;
++          }
++        }
++      }
++      if(smt_typename.empty())
++      {
++        smt_typename =
++          "struct." + std::to_string(datatype_map.size());
++        need_decl = true;
++      }
+       datatype_map[type] = smt_typename;
+-      need_decl=true;
+     }
+ 
+     const struct_typet::componentst &components =
+diff --git a/src/util/irep_ids.def b/src/util/irep_ids.def
+index 840741057d..e7914b8eb6 100644
+--- a/src/util/irep_ids.def
++++ b/src/util/irep_ids.def
+@@ -160,6 +160,7 @@ IREP_ID_TWO(C_default_value, #default_value)
+ IREP_ID_ONE(base_name)
+ IREP_ID_TWO(C_base_name, #base_name)
+ IREP_ID_ONE(string)
++IREP_ID_ONE(regex)
+ IREP_ID_ONE(is_cstring)
+ IREP_ID_TWO(C_string_constant, #string_constant)
+ IREP_ID_ONE(string_constant)

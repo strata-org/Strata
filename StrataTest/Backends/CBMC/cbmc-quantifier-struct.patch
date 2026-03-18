@@ -1,0 +1,602 @@
+diff --git a/src/goto-symex/field_sensitivity.cpp b/src/goto-symex/field_sensitivity.cpp
+index 0a5a56b621..70141a62d7 100644
+--- a/src/goto-symex/field_sensitivity.cpp
++++ b/src/goto-symex/field_sensitivity.cpp
+@@ -25,7 +25,7 @@ exprt field_sensitivityt::apply(
+   ssa_exprt ssa_expr,
+   bool write) const
+ {
+-  if(write)
++  if(write || !enabled)
+     return std::move(ssa_expr);
+   else
+     return get_fields(ns, state, ssa_expr, true);
+@@ -128,6 +128,9 @@ exprt field_sensitivityt::apply(
+   exprt expr,
+   bool write) const
+ {
++  if(!enabled)
++    return expr;
++
+   if(expr.id() != ID_address_of)
+   {
+     Forall_operands(it, expr)
+diff --git a/src/goto-symex/field_sensitivity.h b/src/goto-symex/field_sensitivity.h
+index 12606321ce..b394a8ee15 100644
+--- a/src/goto-symex/field_sensitivity.h
++++ b/src/goto-symex/field_sensitivity.h
+@@ -204,6 +204,10 @@ class field_sensitivityt
+   [[nodiscard]] bool
+   is_divisible(const ssa_exprt &expr, bool disjoined_fields_only) const;
+ 
++  /// Whether field sensitivity is currently enabled (can be temporarily
++  /// disabled for quantifier bodies to preserve algebraic structure).
++  bool enabled = true;
++
+ private:
+   const std::size_t max_field_sensitivity_array_size;
+ 
+diff --git a/src/goto-symex/goto_symex_state.cpp b/src/goto-symex/goto_symex_state.cpp
+index 0608aa29b4..312f5a8c42 100644
+--- a/src/goto-symex/goto_symex_state.cpp
++++ b/src/goto-symex/goto_symex_state.cpp
+@@ -250,8 +250,26 @@ goto_symex_statet::rename(exprt expr, const namespacet &ns)
+     rename<level>(expr.type(), irep_idt(), ns);
+ 
+     // do this recursively
+-    Forall_operands(it, expr)
+-      *it = rename<level>(std::move(*it), ns).get();
++    // For quantifiers, skip renaming bound variables (operand 0) to prevent
++    // field sensitivity from decomposing struct-typed symbols into struct
++    // expressions, which violates the quantifier invariant.
++    if(expr.id() == ID_forall || expr.id() == ID_exists)
++    {
++      PRECONDITION(expr.operands().size() == 2);
++      for(auto &bv : expr.operands()[0].operands())
++        rename<level>(bv.type(), irep_idt(), ns);
++      // Rename body without field sensitivity by temporarily disabling it
++      auto saved = field_sensitivity.enabled;
++      field_sensitivity.enabled = false;
++      expr.operands()[1] =
++        rename<level>(std::move(expr.operands()[1]), ns).get();
++      field_sensitivity.enabled = saved;
++    }
++    else
++    {
++      Forall_operands(it, expr)
++        *it = rename<level>(std::move(*it), ns).get();
++    }
+ 
+     const exprt &c_expr = as_const(expr);
+ 
+@@ -289,8 +307,10 @@ goto_symex_statet::rename(exprt expr, const namespacet &ns)
+       c_expr.type().pretty(),
+       to_if_expr(c_expr).false_case().type().pretty());
+ 
+-    if(level == L2)
++    if(level == L2 && field_sensitivity.enabled)
++    {
+       expr = field_sensitivity.apply(ns, *this, std::move(expr), false);
++    }
+ 
+     return renamedt<exprt, level>{std::move(expr)};
+   }
+diff --git a/src/goto-symex/symex_main.cpp b/src/goto-symex/symex_main.cpp
+index 4fe53bc7c6..85decfe4ff 100644
+--- a/src/goto-symex/symex_main.cpp
++++ b/src/goto-symex/symex_main.cpp
+@@ -198,6 +198,17 @@ void goto_symext::vcc(
+ 
+ void goto_symext::symex_assume(statet &state, const exprt &cond)
+ {
++  // For quantifiers, skip clean_expr and rename to preserve algebraic
++  // datatype structure. Quantifier bodies are pure mathematical expressions
++  // that don't need pointer dereferencing or SSA renaming.
++  if(cond.id() == ID_forall || cond.id() == ID_exists)
++  {
++    exprt simplified_cond = cond;
++    do_simplify(simplified_cond, state.value_set);
++    symex_assume_l2(state, simplified_cond);
++    return;
++  }
++
+   exprt simplified_cond = clean_expr(cond, state, false);
+   simplified_cond = state.rename(std::move(simplified_cond), ns).get();
+   do_simplify(simplified_cond, state.value_set);
+diff --git a/src/solvers/smt2/smt2_conv.cpp b/src/solvers/smt2/smt2_conv.cpp
+index ed0f974150..362e94438e 100644
+--- a/src/solvers/smt2/smt2_conv.cpp
++++ b/src/solvers/smt2/smt2_conv.cpp
+@@ -175,6 +175,7 @@ tvt smt2_convt::l_get(literalt l) const
+ 
+ void smt2_convt::write_header()
+ {
++
+   out << "; SMT 2" << "\n";
+ 
+   switch(solver)
+@@ -724,7 +725,48 @@ smt2_convt::parse_struct(const irept &src, const struct_typet &type)
+ 
+   if(use_datatypes)
+   {
+-    // Structs look like:
++    // Check for multi-constructor ADT
++    const auto &adt_ctors = type.find(irep_idt("#adt_constructors"));
++    if(adt_ctors.is_not_nil() && adt_ctors.get_sub().size() > 1 &&
++       !components.empty() && components[0].get_name() == "$tag")
++    {
++      // Parse multi-constructor value like (from_int 42)
++      // The first sub is the constructor name
++      const irep_idt &ctor_name = src.get_sub().empty()
++        ? src.id() : src.get_sub()[0].id();
++      // Find matching constructor to get tag value and field mapping
++      for(std::size_t ci = 0; ci < adt_ctors.get_sub().size(); ++ci)
++      {
++        const auto &ctor = adt_ctors.get_sub()[ci];
++        if(ctor.find(ID_name).id() == ctor_name)
++        {
++          // Set $tag
++          result.operands()[0] =
++            from_integer(ci, components[0].type());
++          // Parse constructor fields
++          const auto &fields = ctor.find(irep_idt("fields")).get_sub();
++          std::size_t arg_idx = 1; // skip constructor name in src
++          for(const auto &field : fields)
++          {
++            for(std::size_t k = 0; k < components.size(); ++k)
++            {
++              if(components[k].get_name() == field.id() &&
++                 arg_idx < src.get_sub().size())
++              {
++                result.operands()[k] =
++                  parse_rec(src.get_sub()[arg_idx], components[k].type());
++                ++arg_idx;
++              }
++            }
++          }
++          return result;
++        }
++      }
++      // Constructor not found — return default
++      return result;
++    }
++
++    // Single-constructor: Structs look like:
+     //  (mk-struct.1 <component0> <component1> ... <componentN>)
+     std::size_t j = 1;
+     for(std::size_t i=0; i<components.size(); i++)
+@@ -1188,6 +1230,27 @@ std::string smt2_convt::type2id(const typet &type) const
+   {
+     return "A" + type2id(to_array_type(type).element_type());
+   }
++  else if(type.id() == ID_integer)
++  {
++    return "Int";
++  }
++  else if(type.id() == ID_real)
++  {
++    return "Real";
++  }
++  else if(type.id() == ID_string)
++  {
++    return "String";
++  }
++  else if(type.id() == ID_mathematical_function)
++  {
++    std::string result = "MF";
++    const auto &mf = to_mathematical_function_type(type);
++    for(const auto &d : mf.domain())
++      result += "_" + type2id(d);
++    result += "_" + type2id(mf.codomain());
++    return result;
++  }
+   else
+   {
+     UNREACHABLE;
+@@ -2527,6 +2590,32 @@ void smt2_convt::convert_expr(const exprt &expr)
+       // NOLINTNEXTLINE(readability/throw)
+       throw "MathSAT does not support quantifiers";
+ 
++    // DEBUG: dump the actual quantifier expression to file
++    {
++      FILE *f = fopen("/tmp/cbmc_quant_detail.txt", "a");
++      if(f) {
++        fprintf(f, "=== QUANTIFIER ===\n");
++        fprintf(f, "var: %s type: %s\n",
++          quantifier_expr.symbol().get_identifier().c_str(),
++          quantifier_expr.symbol().type().id().c_str());
++        // Check if body contains the bound var as a plain symbol
++        std::function<void(const exprt&, int)> dump = [&](const exprt &e, int depth) {
++          if(depth > 3) return;
++          std::string indent(depth*2, ' ');
++          fprintf(f, "%s%s", indent.c_str(), e.id().c_str());
++          if(e.id() == ID_symbol)
++            fprintf(f, " [%s]", to_symbol_expr(e).get_identifier().c_str());
++          if(e.id() == ID_struct)
++            fprintf(f, " type:%s #ops:%zu", e.type().id().c_str(), e.operands().size());
++          fprintf(f, "\n");
++          for(const auto &op : e.operands())
++            dump(op, depth+1);
++        };
++        fprintf(f, "BODY (top-level):\n");
++        dump(quantifier_expr.where(), 1);
++        fclose(f);
++      }
++    }
+     if(quantifier_expr.id() == ID_forall)
+       out << "(forall ";
+     else if(quantifier_expr.id() == ID_exists)
+@@ -3507,7 +3596,56 @@ void smt2_convt::convert_struct(const struct_exprt &expr)
+   {
+     const std::string &smt_typename = datatype_map.at(struct_type);
+ 
+-    // use the constructor for the Z3 datatype
++    const auto &adt_ctors_cs = struct_type.find(irep_idt("#adt_constructors"));
++    if(adt_ctors_cs.is_not_nil() && adt_ctors_cs.get_sub().size() > 1 &&
++       !components.empty() && components[0].get_name() == "$tag")
++    {
++      const auto &tag_op = expr.operands()[0];
++      const auto &ctors = adt_ctors_cs.get_sub();
++      // Optimization: if tag is constant, directly emit the matching constructor
++      mp_integer const_tag = -1;
++      if(tag_op.is_constant())
++        to_integer(to_constant_expr(tag_op), const_tag);
++
++      if(const_tag >= 0 && const_tag < (mp_integer)ctors.size())
++      {
++        std::size_t ci = numeric_cast_v<std::size_t>(const_tag);
++        const auto &ctor_fields = ctors[ci].find(irep_idt("fields")).get_sub();
++        if(ctor_fields.empty())
++          out << ctors[ci].find(ID_name).id();
++        else
++        {
++          out << "(" << ctors[ci].find(ID_name).id();
++          for(const auto &field : ctor_fields)
++            for(std::size_t j = 0; j < components.size(); ++j)
++              if(components[j].get_name() == field.id())
++              { out << " "; convert_expr(expr.operands()[j]); }
++          out << ")";
++        }
++        return;
++      }
++      // Non-constant tag: emit ite chain
++      for(std::size_t ci = 0; ci < ctors.size(); ++ci)
++      {
++        if(ci + 1 < ctors.size())
++        { out << "(ite (= "; convert_expr(tag_op); out << " " << ci << ") "; }
++        const auto &ctor_fields = ctors[ci].find(irep_idt("fields")).get_sub();
++        if(ctor_fields.empty())
++          out << ctors[ci].find(ID_name).id();
++        else
++        {
++          out << "(" << ctors[ci].find(ID_name).id();
++          for(const auto &field : ctor_fields)
++            for(std::size_t j = 0; j < components.size(); ++j)
++              if(components[j].get_name() == field.id())
++              { out << " "; convert_expr(expr.operands()[j]); }
++          out << ")";
++        }
++        if(ci + 1 < ctors.size()) out << " ";
++      }
++      for(std::size_t ci = 0; ci + 1 < ctors.size(); ++ci) out << ")";
++      return;
++    }
+     out << "(mk-" << smt_typename;
+ 
+     std::size_t i=0;
+@@ -4563,10 +4701,22 @@ void smt2_convt::convert_with(const with_exprt &expr)
+ 
+     if(use_array_theory(expr))
+     {
++      const typet idx_type = array_type.index_type();
++      const auto is_bv = [](const typet &t) {
++        return t.id() == ID_unsignedbv || t.id() == ID_signedbv ||
++               t.id() == ID_c_bool || t.id() == ID_c_enum ||
++               t.id() == ID_c_enum_tag;
++      };
++      const exprt where =
++        (idx_type != expr.where().type() && is_bv(idx_type) &&
++         is_bv(expr.where().type()))
++          ? static_cast<exprt>(typecast_exprt(expr.where(), idx_type))
++          : expr.where();
++
+       out << "(store ";
+       convert_expr(expr.old());
+       out << " ";
+-      convert_expr(typecast_exprt(expr.where(), array_type.index_type()));
++      convert_expr(where);
+       out << " ";
+       convert_expr(expr.new_value());
+       out << ")";
+@@ -4635,11 +4785,37 @@ void smt2_convt::convert_with(const with_exprt &expr)
+     {
+       const std::string &smt_typename = datatype_map.at(expr_type);
+ 
++      const auto &adt_ctors_cw = struct_type.find(irep_idt("#adt_constructors"));
++      if(adt_ctors_cw.is_not_nil() && adt_ctors_cw.get_sub().size() > 1)
++      {
++        const auto &ctors = adt_ctors_cw.get_sub();
++        for(std::size_t ci = 0; ci < ctors.size(); ++ci)
++        {
++          const auto &cn = ctors[ci].find(ID_name).id();
++          const auto &flds = ctors[ci].find(irep_idt("fields")).get_sub();
++          if(ci + 1 < ctors.size())
++          { out << "(ite ((_ is " << cn << ") "; convert_expr(expr.old()); out << ") "; }
++          if(flds.empty())
++            out << cn;
++          else
++          {
++            out << "(" << cn;
++            for(const auto &fld : flds)
++            { out << " "; if(fld.id() == component_name) convert_expr(value); else { out << "(" << smt_typename << "." << fld.id() << " "; convert_expr(expr.old()); out << ")"; } }
++            out << ")";
++          }
++          if(ci + 1 < ctors.size()) out << " ";
++        }
++        for(std::size_t ci = 0; ci + 1 < ctors.size(); ++ci) out << ")";
++      }
++      else
++      {
+       out << "(update-" << smt_typename << "." << component_name << " ";
+       convert_expr(expr.old());
+       out << " ";
+       convert_expr(value);
+       out << ")";
++      }
+     }
+     else
+     {
+@@ -4779,13 +4955,28 @@ void smt2_convt::convert_index(const index_exprt &expr)
+ 
+     if(use_array_theory(expr.array()))
+     {
++      // Typecast the index to the array's index type, but only when both
++      // types are fixed-width bitvectors. For mathematical integers or
++      // struct-typed indices (e.g., map keys), emit directly.
++      const typet idx_type = array_type.index_type();
++      const auto is_bv = [](const typet &t) {
++        return t.id() == ID_unsignedbv || t.id() == ID_signedbv ||
++               t.id() == ID_c_bool || t.id() == ID_c_enum ||
++               t.id() == ID_c_enum_tag;
++      };
++      const exprt index =
++        (idx_type != expr.index().type() && is_bv(idx_type) &&
++         is_bv(expr.index().type()))
++          ? static_cast<exprt>(typecast_exprt(expr.index(), idx_type))
++          : expr.index();
++
+       if(expr.is_boolean() && !use_array_of_bool)
+       {
+         out << "(= ";
+         out << "(select ";
+         convert_expr(expr.array());
+         out << " ";
+-        convert_expr(typecast_exprt(expr.index(), array_type.index_type()));
++        convert_expr(index);
+         out << ")";
+         out << " #b1)";
+       }
+@@ -4794,7 +4985,7 @@ void smt2_convt::convert_index(const index_exprt &expr)
+         out << "(select ";
+         convert_expr(expr.array());
+         out << " ";
+-        convert_expr(typecast_exprt(expr.index(), array_type.index_type()));
++        convert_expr(index);
+         out << ")";
+       }
+     }
+@@ -4860,11 +5051,24 @@ void smt2_convt::convert_member(const member_exprt &expr)
+     {
+       const std::string &smt_typename = datatype_map.at(struct_type);
+ 
+-      out << "(" << smt_typename << "."
+-          << struct_type.get_component(name).get_name()
+-          << " ";
++      const auto &adt_ctors_cm = struct_type.find(irep_idt("#adt_constructors"));
++      if(adt_ctors_cm.is_not_nil() && adt_ctors_cm.get_sub().size() > 1 && name == "$tag")
++      {
++        const auto &ctors = adt_ctors_cm.get_sub();
++        for(std::size_t i = 0; i < ctors.size(); ++i)
++        {
++          if(i + 1 < ctors.size())
++          { out << "(ite ((_ is " << ctors[i].find(ID_name).id() << ") "; convert_expr(struct_op); out << ") " << i << " "; }
++          else out << i;
++        }
++        for(std::size_t i = 0; i + 1 < ctors.size(); ++i) out << ")";
++      }
++      else
++      {
++      out << "(" << smt_typename << "." << struct_type.get_component(name).get_name() << " ";
+       convert_expr(struct_op);
+       out << ")";
++      }
+     }
+     else
+     {
+@@ -5236,6 +5440,38 @@ void smt2_convt::set_to(const exprt &expr, bool value)
+ 
+   exprt prepared_expr = prepare_for_convert_expr(expr);
+ 
++  // DEBUG: check if prepare_for_convert_expr changed quantifiers
++  if((expr.id() == ID_forall || expr.id() == ID_exists) && expr != prepared_expr)
++  {
++    FILE *f = fopen("/tmp/cbmc_prepare_debug.txt", "a");
++    if(f) { fprintf(f, "prepare_for_convert_expr CHANGED a quantifier!\n"); fclose(f); }
++  }
++  if(expr.id() == ID_equal)
++  {
++    const auto &eq = to_equal_expr(expr);
++    if(eq.rhs().id() == ID_forall || eq.rhs().id() == ID_exists)
++    {
++      const auto &q = to_quantifier_expr(eq.rhs());
++      std::function<bool(const exprt&)> has_fs = [&](const exprt &e) -> bool {
++        if(e.id() == ID_symbol && id2string(to_symbol_expr(e).get_identifier()).find("..") != std::string::npos) return true;
++        for(const auto &op : e.operands()) if(has_fs(op)) return true;
++        return false;
++      };
++      if(has_fs(q.where()))
++      {
++        FILE *f = fopen("/tmp/cbmc_prepare_debug.txt", "a");
++        if(f) { fprintf(f, "Quantifier in equality has field-sensitive body BEFORE prepare\n"); fclose(f); }
++      }
++      const auto &prep_eq = to_equal_expr(prepared_expr);
++      const auto &prep_q = to_quantifier_expr(prep_eq.rhs());
++      if(has_fs(prep_q.where()))
++      {
++        FILE *f = fopen("/tmp/cbmc_prepare_debug.txt", "a");
++        if(f) { fprintf(f, "Quantifier in equality has field-sensitive body AFTER prepare\n"); fclose(f); }
++      }
++    }
++  }
++
+ #if 0
+   out << "; CONV: "
+       << format(expr) << "\n";
+@@ -5362,6 +5598,7 @@ void smt2_convt::find_symbols(const exprt &expr)
+     for(const auto &symbol : q_expr.variables())
+     {
+       const auto identifier = symbol.get_identifier();
++      find_symbols(symbol.type());
+       auto id_entry =
+         identifier_map.insert({identifier, identifiert{symbol.type(), true}});
+       shadowed_syms.insert(
+@@ -5928,7 +6165,6 @@ void smt2_convt::convert_type(const typet &type)
+   if(type.id()==ID_array)
+   {
+     const array_typet &array_type=to_array_type(type);
+-    CHECK_RETURN(array_type.size().is_not_nil());
+ 
+     // we always use array theory for top-level arrays
+     const typet &subtype = array_type.element_type();
+@@ -6079,6 +6315,10 @@ void smt2_convt::find_symbols_rec(
+     const array_typet &array_type=to_array_type(type);
+     find_symbols(array_type.size());
+     find_symbols_rec(array_type.element_type(), recstack);
++    const typet &idx_type =
++      static_cast<const typet &>(type.find(ID_C_index_type));
++    if(idx_type.is_not_nil())
++      find_symbols_rec(idx_type, recstack);
+   }
+   else if(type.id()==ID_complex)
+   {
+@@ -6112,10 +6352,30 @@ void smt2_convt::find_symbols_rec(
+     if(use_datatypes &&
+        datatype_map.find(type)==datatype_map.end())
+     {
+-      const std::string smt_typename =
+-        "struct." + std::to_string(datatype_map.size());
++      // Reuse existing datatype for structs with the same tag name
++      // (variants may differ in non-semantic annotations like array sizes).
++      const irep_idt &tag = to_struct_type(type).get_tag();
++      std::string smt_typename;
++      if(!tag.empty())
++      {
++        for(const auto &entry : datatype_map)
++        {
++          if(
++            entry.first.id() == ID_struct &&
++            to_struct_type(entry.first).get_tag() == tag)
++          {
++            smt_typename = entry.second;
++            break;
++          }
++        }
++      }
++      if(smt_typename.empty())
++      {
++        smt_typename =
++          "struct." + std::to_string(datatype_map.size());
++        need_decl = true;
++      }
+       datatype_map[type] = smt_typename;
+-      need_decl=true;
+     }
+ 
+     const struct_typet::componentst &components =
+@@ -6129,31 +6389,44 @@ void smt2_convt::find_symbols_rec(
+     {
+       const std::string &smt_typename = datatype_map.at(type);
+ 
+-      // We're going to create a datatype named something like `struct.0'.
+-      // It's going to have a single constructor named `mk-struct.0' with an
+-      // argument for each member of the struct.  The declaration that
+-      // creates this type looks like:
+-      //
+-      // (declare-datatypes ((struct.0 0)) (((mk-struct.0
+-      //                                   (struct.0.component1 type1)
+-      //                                   ...
+-      //                                   (struct.0.componentN typeN)))))
++      const auto &adt_ctors = to_struct_type(type).find(irep_idt("#adt_constructors"));
++      if(adt_ctors.is_not_nil() && adt_ctors.get_sub().size() > 1)
++      {
++        out << "(declare-datatypes ((" << smt_typename << " 0)) ((";
++        for(const auto &ctor : adt_ctors.get_sub())
++        {
++          const auto &decl_fields = ctor.find(irep_idt("fields")).get_sub();
++          if(decl_fields.empty())
++            out << "(" << ctor.find(ID_name).id() << ") ";
++          else
++          {
++            out << "(" << ctor.find(ID_name).id();
++            for(const auto &field : decl_fields)
++              for(const auto &comp : components)
++                if(comp.get_name() == field.id())
++                { out << " (" << smt_typename << "." << field.id() << " "; convert_type(comp.type()); out << ")"; }
++            out << ") ";
++          }
++        }
++        out << ")))\n";
++      }
++      else
++      {
+       out << "(declare-datatypes ((" << smt_typename << " 0)) "
+           << "(((mk-" << smt_typename << " ";
+-
+       for(const auto &component : components)
+       {
+         if(is_zero_width(component.type(), ns))
+           continue;
+-
+-        out << "(" << smt_typename << "." << component.get_name()
+-                      << " ";
++        out << "(" << smt_typename << "." << component.get_name() << " ";
+         convert_type(component.type());
+         out << ") ";
+       }
+-
+       out << "))))" << "\n";
++      }
+ 
++      if(adt_ctors.is_nil() || adt_ctors.get_sub().size() <= 1)
++      {
+       // Let's also declare convenience functions to update individual
+       // members of the struct whil we're at it.  The functions are
+       // named like `update-struct.0.component1'.  Their declarations
+@@ -6203,7 +6476,7 @@ void smt2_convt::find_symbols_rec(
+ 
+         out << "))" << "\n";
+       }
+-
++      } // end skip update for multi-constructor
+       out << "\n";
+     }
+   }
+diff --git a/src/util/pointer_expr.cpp b/src/util/pointer_expr.cpp
+index 8a11849654..365be82dcb 100644
+--- a/src/util/pointer_expr.cpp
++++ b/src/util/pointer_expr.cpp
+@@ -61,7 +61,13 @@ static void build_object_descriptor_rec(
+     build_object_descriptor_rec(ns, struct_op, dest);
+ 
+     auto offset = member_offset_expr(member, ns);
+-    CHECK_RETURN(offset.has_value());
++    if(!offset.has_value())
++    {
++      // Cannot compute offset for structs with non-constant-width members;
++      // set object to the member expression itself
++      dest.object() = member;
++      return;
++    }
+ 
+     dest.offset() = plus_exprt(
+       dest.offset(),

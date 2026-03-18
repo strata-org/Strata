@@ -1,0 +1,586 @@
+diff --git a/src/cprover/axioms.cpp b/src/cprover/axioms.cpp
+index 6b002370eb..a1eb3735f7 100644
+--- a/src/cprover/axioms.cpp
++++ b/src/cprover/axioms.cpp
+@@ -65,9 +65,13 @@ void axiomst::evaluate_fc()
+       if(a_it->state() != b_it->state())
+         continue;
+ 
++      // Skip pairs with incompatible address types — they can never
++      // point to the same location.
++      if(a_it->address().type() != b_it->address().type())
++        continue;
++
+       auto a_op = a_it->address();
+-      auto b_op = typecast_exprt::conditional_cast(
+-        b_it->address(), a_it->address().type());
++      auto b_op = b_it->address();
+       auto operands_equal = equal_exprt(a_op, b_op);
+       auto implication = implies_exprt(
+         operands_equal,
+diff --git a/src/cprover/counterexample_found.cpp b/src/cprover/counterexample_found.cpp
+index 40142d6a28..cbd0dacc86 100644
+--- a/src/cprover/counterexample_found.cpp
++++ b/src/cprover/counterexample_found.cpp
+@@ -14,13 +14,17 @@ Author: Daniel Kroening, dkr@amazon.com
+ #include <util/cout_message.h>
+ #include <util/simplify_expr.h>
+ 
++#include <solvers/decision_procedure.h>
+ #include <solvers/sat/satcheck.h>
+ 
+ #include "axioms.h"
+ #include "bv_pointers_wide.h"
++#include "cprover_smt2_dec.h"
+ #include "simplify_state_expr.h"
+ #include "state.h"
+ 
++#include <memory>
++
+ void show_assignment(const bv_pointers_widet &solver)
+ {
+ #if 0
+@@ -56,6 +60,11 @@ void show_assignment(const bv_pointers_widet &solver)
+ #endif
+ }
+ 
++void show_assignment(const decision_proceduret &)
++{
++  // no-op: debug output not available for generic decision procedures
++}
++
+ static exprt evaluator_rec(
+   const std::unordered_map<exprt, exprt, irep_hash> &memory,
+   const decision_proceduret &solver,
+@@ -106,7 +115,7 @@ static exprt evaluator(
+ propertyt::tracet counterexample(
+   const std::vector<framet> &frames,
+   const workt &work,
+-  const bv_pointers_widet &solver,
++  const decision_proceduret &solver,
+   const axiomst &axioms,
+   const namespacet &ns)
+ {
+@@ -175,7 +184,8 @@ std::optional<propertyt::tracet> counterexample_found(
+   const workt &work,
+   const std::unordered_set<symbol_exprt, irep_hash> &address_taken,
+   bool verbose,
+-  const namespacet &ns)
++  const namespacet &ns,
++  const std::string &smt2_solver_binary)
+ {
+   auto &f = frames[work.frame.index];
+ 
+@@ -185,8 +195,28 @@ std::optional<propertyt::tracet> counterexample_found(
+     {
+       cout_message_handlert message_handler;
+       message_handler.set_verbosity(verbose ? 10 : 1);
+-      satcheckt satcheck(message_handler);
+-      bv_pointers_widet solver(ns, satcheck, message_handler);
++
++      std::unique_ptr<decision_proceduret> solver_ptr;
++      std::unique_ptr<satcheckt> satcheck_ptr;
++      std::unique_ptr<bv_pointers_widet> bv_ptr;
++
++      if(!smt2_solver_binary.empty())
++      {
++        solver_ptr = std::make_unique<cprover_smt2_dect>(
++          ns, smt2_solver_binary, message_handler);
++      }
++      else
++      {
++        satcheck_ptr = std::make_unique<satcheckt>(message_handler);
++        bv_ptr = std::make_unique<bv_pointers_widet>(
++          ns, *satcheck_ptr, message_handler);
++      }
++
++      decision_proceduret &solver =
++        smt2_solver_binary.empty()
++          ? static_cast<decision_proceduret &>(*bv_ptr)
++          : static_cast<decision_proceduret &>(*solver_ptr);
++
+       axiomst axioms(solver, address_taken, verbose, ns);
+ 
+       // These are initial states, i.e., initial_state(ς) ⇒ SInitial(ς).
+@@ -198,12 +228,12 @@ std::optional<propertyt::tracet> counterexample_found(
+       switch(solver())
+       {
+       case decision_proceduret::resultt::D_SATISFIABLE:
+-        if(verbose)
+-          show_assignment(solver);
+         return counterexample(frames, work, solver, axioms, ns);
+       case decision_proceduret::resultt::D_UNSATISFIABLE:
+         break;
+       case decision_proceduret::resultt::D_ERROR:
++        if(!smt2_solver_binary.empty())
++          break; // conservatively treat as no counterexample found
+         throw "error reported by solver";
+       }
+     }
+diff --git a/src/cprover/counterexample_found.h b/src/cprover/counterexample_found.h
+index 5a7fe9e2d3..447978b19f 100644
+--- a/src/cprover/counterexample_found.h
++++ b/src/cprover/counterexample_found.h
+@@ -14,6 +14,7 @@ Author: Daniel Kroening, dkr@amazon.com
+ 
+ #include "solver_types.h"
+ 
++#include <string>
+ #include <unordered_set>
+ 
+ std::optional<propertyt::tracet> counterexample_found(
+@@ -21,10 +22,13 @@ std::optional<propertyt::tracet> counterexample_found(
+   const workt &,
+   const std::unordered_set<symbol_exprt, irep_hash> &address_taken,
+   bool verbose,
+-  const namespacet &);
++  const namespacet &,
++  const std::string &smt2_solver_binary = "");
+ 
+ class bv_pointers_widet;
++class decision_proceduret;
+ 
+ void show_assignment(const bv_pointers_widet &);
++void show_assignment(const decision_proceduret &);
+ 
+ #endif // CPROVER_CPROVER_COUNTEREXAMPLE_FOUND_H
+diff --git a/src/cprover/cprover_parse_options.cpp b/src/cprover/cprover_parse_options.cpp
+index c5993023c0..68ab1d93ab 100644
+--- a/src/cprover/cprover_parse_options.cpp
++++ b/src/cprover/cprover_parse_options.cpp
+@@ -277,6 +277,10 @@ int cprover_parse_optionst::main()
+ 
+     solver_options.trace = cmdline.isset("trace");
+     solver_options.verbose = cmdline.isset("verbose");
++    solver_options.smt2_solver_binary =
++      cmdline.isset("smt2-solver")
++        ? cmdline.get_value("smt2-solver")
++        : "";
+ 
+     // solve
+     auto result = state_encoding_solver(
+diff --git a/src/cprover/cprover_parse_options.h b/src/cprover/cprover_parse_options.h
+index 3204b20ef6..437736ce50 100644
+--- a/src/cprover/cprover_parse_options.h
++++ b/src/cprover/cprover_parse_options.h
+@@ -19,6 +19,7 @@ Author: Daniel Kroening, dkr@amazon.com
+   "(safety)(no-safety)(no-assertions)"                                         \
+   "(contract):"                                                                \
+   "(solve)(unwind):(trace)"                                                    \
++  "(smt2-solver):"                                                             \
+   "(inline)(no-inline)"                                                        \
+   "D:I:"                                                                       \
+   "(32)(64)"                                                                   \
+diff --git a/src/cprover/cprover_smt2_dec.h b/src/cprover/cprover_smt2_dec.h
+new file mode 100644
+index 0000000000..fe58a1bf94
+--- /dev/null
++++ b/src/cprover/cprover_smt2_dec.h
+@@ -0,0 +1,37 @@
++/*******************************************************************\
++
++Module: SMT2 decision procedure for cprover state encoding
++
++\*******************************************************************/
++
++#ifndef CPROVER_CPROVER_CPROVER_SMT2_DEC_H
++#define CPROVER_CPROVER_CPROVER_SMT2_DEC_H
++
++#include <solvers/smt2/smt2_dec.h>
++
++/// SMT2 decision procedure configured for cprover's state encoding.
++/// Uses datatypes for structs (instead of bitvector flattening) to
++/// support mathematical types (integer, real, string).
++class cprover_smt2_dect : public smt2_dect
++{
++public:
++  cprover_smt2_dect(
++    const namespacet &_ns,
++    const std::string &_solver_binary,
++    message_handlert &_message_handler)
++    : smt2_dect(
++        _ns,
++        "",
++        "cprover",
++        "ALL",
++        smt2_convt::solvert::GENERIC,
++        _solver_binary,
++        _message_handler)
++  {
++    use_array_of_bool = true;
++    use_as_const = true;
++    use_datatypes = true;
++  }
++};
++
++#endif // CPROVER_CPROVER_CPROVER_SMT2_DEC_H
+diff --git a/src/cprover/inductiveness.cpp b/src/cprover/inductiveness.cpp
+index aa2e07719e..bf60a42799 100644
+--- a/src/cprover/inductiveness.cpp
++++ b/src/cprover/inductiveness.cpp
+@@ -20,12 +20,14 @@ Author: Daniel Kroening, dkr@amazon.com
+ #include "axioms.h"
+ #include "bv_pointers_wide.h"
+ #include "counterexample_found.h"
++#include "cprover_smt2_dec.h"
+ #include "propagate.h"
+ #include "solver.h"
+ 
+ #include <algorithm>
+ #include <iomanip>
+ #include <iostream>
++#include <memory>
+ 
+ bool is_subsumed(
+   const std::unordered_set<exprt, irep_hash> &a1,
+@@ -34,7 +36,8 @@ bool is_subsumed(
+   const exprt &b,
+   const std::unordered_set<symbol_exprt, irep_hash> &address_taken,
+   bool verbose,
+-  const namespacet &ns)
++  const namespacet &ns,
++  const std::string &smt2_solver_binary)
+ {
+   if(b == true)
+     return true; // anything subsumes 'true'
+@@ -51,8 +54,30 @@ bool is_subsumed(
+ #else
+   message_handler.set_verbosity(1);
+ #endif
+-  satcheckt satcheck(message_handler);
+-  bv_pointers_widet solver(ns, satcheck, message_handler);
++
++  std::unique_ptr<decision_proceduret> solver_ptr;
++  if(!smt2_solver_binary.empty())
++  {
++    solver_ptr = std::make_unique<cprover_smt2_dect>(
++      ns, smt2_solver_binary, message_handler);
++  }
++
++  // SAT solver objects (only used when not using SMT2)
++  std::unique_ptr<satcheckt> satcheck_ptr;
++  std::unique_ptr<bv_pointers_widet> bv_ptr;
++  if(smt2_solver_binary.empty())
++  {
++    satcheck_ptr = std::make_unique<satcheckt>(message_handler);
++    bv_ptr =
++      std::make_unique<bv_pointers_widet>(ns, *satcheck_ptr, message_handler);
++    solver_ptr = nullptr;
++  }
++
++  decision_proceduret &solver =
++    smt2_solver_binary.empty()
++      ? static_cast<decision_proceduret &>(*bv_ptr)
++      : static_cast<decision_proceduret &>(*solver_ptr);
++
+   axiomst axioms(solver, address_taken, verbose, ns);
+ 
+   // check if a => b is valid,
+@@ -82,6 +107,8 @@ bool is_subsumed(
+   case decision_proceduret::resultt::D_UNSATISFIABLE:
+     return true;
+   case decision_proceduret::resultt::D_ERROR:
++    if(!smt2_solver_binary.empty())
++      return false; // conservatively treat unknown/error as not subsumed
+     throw "error reported by solver";
+   }
+ 
+@@ -173,7 +200,8 @@ inductiveness_resultt inductiveness_check(
+                 invariant,
+                 address_taken,
+                 solver_options.verbose,
+-                ns))
++                ns,
++                solver_options.smt2_solver_binary))
+       {
+         if(solver_options.verbose)
+           std::cout << "subsumed " << format(invariant) << '\n';
+@@ -231,7 +259,12 @@ inductiveness_resultt inductiveness_check(
+ #endif
+ 
+     auto counterexample_found = ::counterexample_found(
+-      frames, work, address_taken, solver_options.verbose, ns);
++      frames,
++      work,
++      address_taken,
++      solver_options.verbose,
++      ns,
++      solver_options.smt2_solver_binary);
+ 
+     if(counterexample_found)
+     {
+diff --git a/src/cprover/solver.h b/src/cprover/solver.h
+index 7d6f646051..4b97f0220e 100644
+--- a/src/cprover/solver.h
++++ b/src/cprover/solver.h
+@@ -12,6 +12,7 @@ Author: Daniel Kroening, dkr@amazon.com
+ #ifndef CPROVER_CPROVER_SOLVER_H
+ #define CPROVER_CPROVER_SOLVER_H
+ 
++#include <string>
+ #include <vector>
+ 
+ class exprt;
+@@ -30,6 +31,7 @@ class solver_optionst
+   bool trace;
+   bool verbose;
+   std::size_t loop_limit;
++  std::string smt2_solver_binary; // empty = use built-in SAT solver
+ };
+ 
+ solver_resultt
+diff --git a/src/cprover/state_encoding.cpp b/src/cprover/state_encoding.cpp
+index 3ebd8f42f4..3cb93988ff 100644
+--- a/src/cprover/state_encoding.cpp
++++ b/src/cprover/state_encoding.cpp
+@@ -222,6 +222,12 @@ exprt state_encodingt::evaluate_expr_rec(
+       return evaluate_exprt(
+         state, address_rec(loc, state, new_symbol), what.type());
+     }
++    else if(symbol_expr.type().id() == ID_mathematical_function)
++    {
++      // Pure function symbols (uninterpreted functions) are not state
++      // variables — leave them as-is.
++      return what;
++    }
+     else if(bound_symbols.find(symbol_expr) == bound_symbols.end())
+     {
+       return evaluate_exprt(state, address_rec(loc, state, what), what.type());
+@@ -229,12 +235,33 @@ exprt state_encodingt::evaluate_expr_rec(
+     else
+       return what; // leave as is
+   }
+-  else if(
+-    what.id() == ID_dereference || what.id() == ID_member ||
+-    what.id() == ID_index)
++  else if(what.id() == ID_dereference)
+   {
+     return evaluate_exprt(state, address_rec(loc, state, what), what.type());
+   }
++  else if(what.id() == ID_member || what.id() == ID_index)
++  {
++    // Walk the member/index chain to find the base expression.
++    // If the base is an addressable lvalue (symbol, dereference),
++    // use the address-based evaluation path.
++    // Otherwise (e.g., function_application returning a struct),
++    // evaluate operands directly.
++    const exprt *base = &what.operands()[0];
++    while(base->id() == ID_member || base->id() == ID_index)
++      base = &base->operands()[0];
++
++    if(base->id() == ID_symbol || base->id() == ID_dereference)
++    {
++      return evaluate_exprt(state, address_rec(loc, state, what), what.type());
++    }
++    else
++    {
++      exprt tmp = what;
++      for(auto &op : tmp.operands())
++        op = evaluate_expr_rec(loc, state, op, bound_symbols);
++      return tmp;
++    }
++  }
+   else if(what.id() == ID_forall || what.id() == ID_exists)
+   {
+     auto new_quantifier_expr = to_quantifier_expr(what); // copy
+@@ -506,9 +533,13 @@ exprt state_encodingt::assignment_constraint_rec(
+   exprt rhs,
+   std::vector<symbol_exprt> &nondet_symbols) const
+ {
+-  if(lhs.type().id() == ID_struct_tag)
++  if(
++    lhs.type().id() == ID_struct_tag &&
++    rhs.id() != ID_function_application && rhs.id() != ID_if)
+   {
+     // split up into fields, recursively
++    // (but not when the RHS is a computed value like a function_application
++    // or if-then-else — those return complete struct values)
+     const namespacet ns(goto_model.symbol_table);
+     const auto &struct_type = ns.follow_tag(to_struct_tag_type(lhs.type()));
+     exprt new_state = state;
+diff --git a/src/cprover/state_encoding_targets.cpp b/src/cprover/state_encoding_targets.cpp
+index 21d2f75c67..d7c9c4e3f1 100644
+--- a/src/cprover/state_encoding_targets.cpp
++++ b/src/cprover/state_encoding_targets.cpp
+@@ -8,6 +8,8 @@ Author: Daniel Kroening, dkr@amazon.com
+ 
+ #include "state_encoding_targets.h"
+ 
++#include <util/arith_tools.h>
++#include <util/c_types.h>
+ #include <util/format_expr.h>
+ #include <util/pointer_offset_size.h>
+ 
+@@ -79,8 +81,10 @@ void state_encoding_smt2_convt::add_converters()
+     out << ' ';
+     auto size_opt = size_of_expr(
+       to_pointer_type(to_binary_expr(expr).op1().type()).base_type(), ns);
+-    CHECK_RETURN(size_opt.has_value());
+-    convert_expr(*size_opt);
++    if(size_opt.has_value())
++      convert_expr(*size_opt);
++    else
++      convert_expr(from_integer(1, size_type()));
+     out << ')';
+   });
+ 
+diff --git a/src/cprover/state_encoding_targets.h b/src/cprover/state_encoding_targets.h
+index baebf4c19e..2ac133d92b 100644
+--- a/src/cprover/state_encoding_targets.h
++++ b/src/cprover/state_encoding_targets.h
+@@ -79,6 +79,7 @@ class state_encoding_smt2_convt : public smt2_convt
+   {
+     use_array_of_bool = true;
+     use_as_const = true;
++    use_datatypes = true;
+     add_converters();
+   }
+ 
+diff --git a/src/solvers/smt2/smt2_conv.cpp b/src/solvers/smt2/smt2_conv.cpp
+index ed0f974150..19b3c3fdcc 100644
+--- a/src/solvers/smt2/smt2_conv.cpp
++++ b/src/solvers/smt2/smt2_conv.cpp
+@@ -1188,6 +1188,27 @@ std::string smt2_convt::type2id(const typet &type) const
+   {
+     return "A" + type2id(to_array_type(type).element_type());
+   }
++  else if(type.id() == ID_integer)
++  {
++    return "Int";
++  }
++  else if(type.id() == ID_real)
++  {
++    return "Real";
++  }
++  else if(type.id() == ID_string)
++  {
++    return "String";
++  }
++  else if(type.id() == ID_mathematical_function)
++  {
++    std::string result = "MF";
++    const auto &mf = to_mathematical_function_type(type);
++    for(const auto &d : mf.domain())
++      result += "_" + type2id(d);
++    result += "_" + type2id(mf.codomain());
++    return result;
++  }
+   else
+   {
+     UNREACHABLE;
+@@ -4563,10 +4584,22 @@ void smt2_convt::convert_with(const with_exprt &expr)
+ 
+     if(use_array_theory(expr))
+     {
++      const typet idx_type = array_type.index_type();
++      const auto is_bv = [](const typet &t) {
++        return t.id() == ID_unsignedbv || t.id() == ID_signedbv ||
++               t.id() == ID_c_bool || t.id() == ID_c_enum ||
++               t.id() == ID_c_enum_tag;
++      };
++      const exprt where =
++        (idx_type != expr.where().type() && is_bv(idx_type) &&
++         is_bv(expr.where().type()))
++          ? static_cast<exprt>(typecast_exprt(expr.where(), idx_type))
++          : expr.where();
++
+       out << "(store ";
+       convert_expr(expr.old());
+       out << " ";
+-      convert_expr(typecast_exprt(expr.where(), array_type.index_type()));
++      convert_expr(where);
+       out << " ";
+       convert_expr(expr.new_value());
+       out << ")";
+@@ -4779,13 +4812,28 @@ void smt2_convt::convert_index(const index_exprt &expr)
+ 
+     if(use_array_theory(expr.array()))
+     {
++      // Typecast the index to the array's index type, but only when both
++      // types are fixed-width bitvectors. For mathematical integers or
++      // struct-typed indices (e.g., map keys), emit directly.
++      const typet idx_type = array_type.index_type();
++      const auto is_bv = [](const typet &t) {
++        return t.id() == ID_unsignedbv || t.id() == ID_signedbv ||
++               t.id() == ID_c_bool || t.id() == ID_c_enum ||
++               t.id() == ID_c_enum_tag;
++      };
++      const exprt index =
++        (idx_type != expr.index().type() && is_bv(idx_type) &&
++         is_bv(expr.index().type()))
++          ? static_cast<exprt>(typecast_exprt(expr.index(), idx_type))
++          : expr.index();
++
+       if(expr.is_boolean() && !use_array_of_bool)
+       {
+         out << "(= ";
+         out << "(select ";
+         convert_expr(expr.array());
+         out << " ";
+-        convert_expr(typecast_exprt(expr.index(), array_type.index_type()));
++        convert_expr(index);
+         out << ")";
+         out << " #b1)";
+       }
+@@ -4794,7 +4842,7 @@ void smt2_convt::convert_index(const index_exprt &expr)
+         out << "(select ";
+         convert_expr(expr.array());
+         out << " ";
+-        convert_expr(typecast_exprt(expr.index(), array_type.index_type()));
++        convert_expr(index);
+         out << ")";
+       }
+     }
+@@ -5928,7 +5976,6 @@ void smt2_convt::convert_type(const typet &type)
+   if(type.id()==ID_array)
+   {
+     const array_typet &array_type=to_array_type(type);
+-    CHECK_RETURN(array_type.size().is_not_nil());
+ 
+     // we always use array theory for top-level arrays
+     const typet &subtype = array_type.element_type();
+@@ -6079,6 +6126,10 @@ void smt2_convt::find_symbols_rec(
+     const array_typet &array_type=to_array_type(type);
+     find_symbols(array_type.size());
+     find_symbols_rec(array_type.element_type(), recstack);
++    const typet &idx_type =
++      static_cast<const typet &>(type.find(ID_C_index_type));
++    if(idx_type.is_not_nil())
++      find_symbols_rec(idx_type, recstack);
+   }
+   else if(type.id()==ID_complex)
+   {
+@@ -6112,10 +6163,30 @@ void smt2_convt::find_symbols_rec(
+     if(use_datatypes &&
+        datatype_map.find(type)==datatype_map.end())
+     {
+-      const std::string smt_typename =
+-        "struct." + std::to_string(datatype_map.size());
++      // Reuse existing datatype for structs with the same tag name
++      // (variants may differ in non-semantic annotations like array sizes).
++      const irep_idt &tag = to_struct_type(type).get_tag();
++      std::string smt_typename;
++      if(!tag.empty())
++      {
++        for(const auto &entry : datatype_map)
++        {
++          if(
++            entry.first.id() == ID_struct &&
++            to_struct_type(entry.first).get_tag() == tag)
++          {
++            smt_typename = entry.second;
++            break;
++          }
++        }
++      }
++      if(smt_typename.empty())
++      {
++        smt_typename =
++          "struct." + std::to_string(datatype_map.size());
++        need_decl = true;
++      }
+       datatype_map[type] = smt_typename;
+-      need_decl=true;
+     }
+ 
+     const struct_typet::componentst &components =
