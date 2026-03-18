@@ -1054,20 +1054,26 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
     -- Pre-scan for variable declarations in both branches so they are
     -- declared in the outer scope (Python scoping: variables assigned
     -- in try/except are visible after the block).
-    let collectDeclaredNames (stmts : List (Python.stmt SourceRange)) : List String :=
+    let collectDeclaredNamesAndTypes (stmts : List (Python.stmt SourceRange)) : List (String × String) :=
       stmts.filterMap fun s => match s with
-        | .AnnAssign _ target _ _ _ => some (pyExprToString target)
-        | .Assign _ targets _ _ => targets.val.toList.head?.map (fun t => pyExprToString t)
+        | .AnnAssign _ target annotation _ _ =>
+          let tyStr := pyExprToString annotation
+          -- Skip composite types: they need special New/init handling
+          -- that doesn't work with hoisted declarations.
+          if tyStr ∈ ctx.compositeTypeNames then none
+          else some (pyExprToString target, tyStr)
+        | .Assign _ targets _ _ => targets.val.toList.head?.map (fun t => (pyExprToString t, PyLauType.Any))
         | _ => none
-    let bodyNames := collectDeclaredNames body.val.toList
-    let handlerNames := handlers.val.toList.flatMap fun h => match h with
-      | .ExceptHandler _ _ _ hBody => collectDeclaredNames hBody.val.toList
-    let allNewNames := (bodyNames ++ handlerNames).eraseDups.filter fun n =>
-      !ctx.variableTypes.any fun (vn, _) => vn == n
-    let hoistedDecls : List StmtExprMd := allNewNames.map fun name =>
+    let bodyDecls := collectDeclaredNamesAndTypes body.val.toList
+    let handlerDecls := handlers.val.toList.flatMap fun h => match h with
+      | .ExceptHandler _ _ _ hBody => collectDeclaredNamesAndTypes hBody.val.toList
+    let allNewDecls := (bodyDecls ++ handlerDecls).foldl (fun acc (n, ty) =>
+      if acc.any (fun (an, _) => an == n) || ctx.variableTypes.any (fun (vn, _) => vn == n)
+      then acc else acc ++ [(n, ty)]) []
+    let hoistedDecls : List StmtExprMd := allNewDecls.map fun (name, _) =>
       mkStmtExprMd (StmtExpr.LocalVariable (name : String) AnyTy (some (mkStmtExprMd .Hole)))
     let hoistedCtx := { ctx with variableTypes := ctx.variableTypes ++
-      (allNewNames.map fun n => (n, PyLauType.Any)) }
+      (allNewDecls.map fun (n, ty) => (n, ty)) }
 
     -- Translate try body (with hoisted context so inner decls become assigns)
     let (bodyCtx, bodyStmts) ← translateStmtList hoistedCtx body.val.toList
