@@ -104,15 +104,19 @@ def buildDialectFileMap (pflags : ParsedFlags) : IO Strata.DialectFileMap := do
 
 end ParsedFlags
 
-def parseCheckMode (pflags : ParsedFlags) : VerificationMode :=
-  match pflags.getString "check-mode" |>.bind VerificationMode.ofString? with
-  | .some m => m
-  | .none => .deductive
+def parseCheckMode (pflags : ParsedFlags) : IO VerificationMode :=
+  match pflags.getString "check-mode" with
+  | .none => pure .deductive
+  | .some s => match VerificationMode.ofString? s with
+    | .some m => pure m
+    | .none => exitFailure s!"Invalid check mode: '{s}'. Must be {VerificationMode.options}."
 
-def parseCheckLevel (pflags : ParsedFlags) : CheckLevel :=
-  match pflags.getString "check-level" |>.bind CheckLevel.ofString? with
-  | .some l => l
-  | .none => .minimal
+def parseCheckLevel (pflags : ParsedFlags) : IO CheckLevel :=
+  match pflags.getString "check-level" with
+  | .none => pure .minimal
+  | .some s => match CheckLevel.ofString? s with
+    | .some l => pure l
+    | .none => exitFailure s!"Invalid check level: '{s}'. Must be {CheckLevel.options}."
 
 def checkModeFlag : Flag :=
   { name := "check-mode",
@@ -431,8 +435,8 @@ def pyAnalyzeLaurelCommand : Command where
       IO.print coreProgram
 
     -- Verify using Core verifier
-    let checkMode := parseCheckMode pflags
-    let checkLevel := parseCheckLevel pflags
+    let checkMode ← parseCheckMode pflags
+    let checkLevel ← parseCheckLevel pflags
     let baseOptions : VerifyOptions :=
       { VerifyOptions.default with
         stopOnFirstError := false, verbose := .quiet, solver := "z3",

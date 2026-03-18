@@ -40,7 +40,7 @@ def VerificationMode.ofString? (s : String) : Option VerificationMode :=
   | _ => none
 
 def VerificationMode.options : String :=
-  "'deductive', 'bugFinding', or 'bugFindingAssumingCompleteSpec'"
+  "'deductive' (prove correctness), 'bugFinding' (find bugs), or 'bugFindingAssumingCompleteSpec' (find bugs assuming complete preconditions)"
 
 def VerboseMode.ofBool (b : Bool) : VerboseMode :=
   match b with
@@ -83,7 +83,7 @@ def CheckLevel.ofString? (s : String) : Option CheckLevel :=
   | _ => none
 
 def CheckLevel.options : String :=
-  "'minimal', 'minimalVerbose', or 'full'"
+  "'minimal' (simple messages), 'minimalVerbose' (detailed messages, one check), or 'full' (both checks, all outcomes)"
 
 structure VerifyOptions where
   verbose : VerboseMode
