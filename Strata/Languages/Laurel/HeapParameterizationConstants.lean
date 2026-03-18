@@ -37,7 +37,7 @@ program Laurel;
 // Composite: datatype with a reference (int)
 datatype Composite { MkComposite(ref: int) }
 
-datatype Float64IsNotSupportedYet {}
+datatype NotSupportedYet {}
 
 // Box: tagged union for field values
 datatype Box {
