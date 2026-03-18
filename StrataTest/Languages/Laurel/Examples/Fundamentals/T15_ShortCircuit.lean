@@ -13,29 +13,62 @@ namespace Strata
 namespace Laurel
 
 def shortCircuitProgram := r"
-function mustNotCall(x: int): int
+function mustNotCallFunc(x: int): int
   requires false
 { x };
 
-// AndThen: false && mustNotCall(0) > 0 — dead branch not evaluated
-procedure testAndThenShortCircuit() {
-  var b: bool := false && mustNotCall(0) > 0;
+procedure mustNotCallProc(): int
+  requires false
+{
+  return 0
+};
+
+// Pure path: function with requires false
+
+procedure testAndThenFunc() {
+  var b: bool := false && mustNotCallFunc(0) > 0;
   assert !b
 };
 
-// OrElse: true || mustNotCall(0) > 0 — dead branch not evaluated
-procedure testOrElseShortCircuit() {
-  var b: bool := true || mustNotCall(0) > 0;
+procedure testOrElseFunc() {
+  var b: bool := true || mustNotCallFunc(0) > 0;
   assert b
 };
 
-// Division by zero in dead branch — not evaluated
+procedure testImpliesFunc() {
+  var b: bool := false ==> mustNotCallFunc(0) > 0;
+  assert b
+};
+
+// Pure path: division by zero
+
 procedure testAndThenDivByZero() {
   assert !(false && 1 / 0 > 0)
 };
 
 procedure testOrElseDivByZero() {
   assert true || 1 / 0 > 0
+};
+
+procedure testImpliesDivByZero() {
+  assert false ==> 1 / 0 > 0
+};
+
+// Imperative path: procedure with requires false
+
+procedure testAndThenProc() {
+  var b: bool := false && mustNotCallProc() > 0;
+  assert !b
+};
+
+procedure testOrElseProc() {
+  var b: bool := true || mustNotCallProc() > 0;
+  assert b
+};
+
+procedure testImpliesProc() {
+  var b: bool := false ==> mustNotCallProc() > 0;
+  assert b
 };
 "
 

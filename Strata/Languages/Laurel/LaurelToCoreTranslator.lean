@@ -12,6 +12,7 @@ public import Strata.Languages.Core.Procedure
 public import Strata.Languages.Core.Options
 public import Strata.Languages.Laurel.Laurel
 public import Strata.Languages.Laurel.LiftImperativeExpressions
+import Strata.Languages.Laurel.DesugarShortCircuit
 public import Strata.Languages.Laurel.InferHoleTypes
 public import Strata.Languages.Laurel.EliminateHoles
 import Strata.Languages.Laurel.EliminateReturnsInExpression
@@ -668,6 +669,7 @@ def translate (options: LaurelTranslateOptions) (program : Program): Except (Arr
   let (program, model) := (result.program, result.model)
   let program := inferHoleTypes model program
   let program := eliminateHoles program
+  let program := desugarShortCircuit model program
   let program := liftExpressionAssignments model program
   let program := eliminateReturnsInExpressionTransform program
   let result := resolve program (some model)
