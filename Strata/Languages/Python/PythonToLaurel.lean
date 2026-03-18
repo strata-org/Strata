@@ -1070,8 +1070,11 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
     let allNewDecls := (bodyDecls ++ handlerDecls).foldl (fun acc (n, ty) =>
       if acc.any (fun (an, _) => an == n) || ctx.variableTypes.any (fun (vn, _) => vn == n)
       then acc else acc ++ [(n, ty)]) []
-    let hoistedDecls : List StmtExprMd := allNewDecls.map fun (name, _) =>
-      mkStmtExprMd (StmtExpr.LocalVariable (name : String) AnyTy (some (mkStmtExprMd .Hole)))
+    let hoistedDecls : List StmtExprMd := allNewDecls.map fun (name, tyStr) =>
+      let ty := match pythonTypeToCoreType tyStr with
+        | some coreType => mkCoreType coreType
+        | none => AnyTy
+      mkStmtExprMd (StmtExpr.LocalVariable (name : String) ty (some (mkStmtExprMd .Hole)))
     let hoistedCtx := { ctx with variableTypes := ctx.variableTypes ++
       (allNewDecls.map fun (n, ty) => (n, ty)) }
 
