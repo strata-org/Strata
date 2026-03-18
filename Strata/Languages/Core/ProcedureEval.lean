@@ -28,7 +28,39 @@ def fixupError (E : Env) : Env :=
                      pathConditions := E.pathConditions.pop }
   | some _ => E
 
-def eval (E : Env) (p : Procedure) : List (Procedure × Env) :=
+/--
+Merge multiple procedure evaluation results into one.
+
+After `fixupError`, all paths through a procedure have identical variable state
+and path conditions — the procedure scope and its path-condition scope have been
+popped, leaving only the outer (global) scope which is the same on every path.
+The differences across paths are:
+
+- `deferred`: path-specific proof obligations (each already carries its own
+  assumptions), which we union. No duplicates arise: `processIteBranches`
+  clears `deferred` on the false branch, so pre-split obligations appear only
+  in the first (true) path; post-split obligations appear in each path under
+  distinct path conditions.
+- `exprEnv.config.gen`: may diverge when branches execute different numbers of
+  `genFVar` calls (e.g. procedure calls only in one branch). We take the max to
+  prevent fresh-variable name collisions in subsequent evaluation.
+
+The `fallback` pair is returned when `results` is empty (which should not occur
+in practice, since `Statement.eval` always produces at least one result).
+-/
+private def mergeResults (fallback : Procedure × Env) (results : List (Procedure × Env)) :
+    Procedure × Env :=
+  match results with
+  | [] => fallback
+  | [(p, E)] => (p, E)
+  | (p, E) :: rest =>
+    let allDeferred := rest.foldl (fun acc (_, e) => acc ++ e.deferred) E.deferred
+    let maxGen      := rest.foldl (fun acc (_, e) => max acc e.exprEnv.config.gen) E.exprEnv.config.gen
+    (p, { E with
+      deferred := allDeferred,
+      exprEnv  := { E.exprEnv with config := { E.exprEnv.config with gen := maxGen } } })
+
+def eval (E : Env) (p : Procedure) : Procedure × Env :=
   -- Generate fresh variables for the globals in the modifies clause, and _update_
   -- the context. These reflect the pre-state values of the globals.
   let modifies_tys :=
@@ -87,14 +119,7 @@ def eval (E : Env) (p : Procedure) : List (Procedure × Env) :=
       p.spec.preconditions
   let body' : List Statement := (StateT.run (Block.removeLoopsM p.body) 0).fst
   let ssEs := Statement.eval E old_g_subst (precond_assumes ++ body' ++ postcond_asserts)
-  ssEs.map (fun (ss, sE) => ({ p with body := ss }, fixupError sE))
-
----------------------------------------------------------------------
-
-def evalOne (E : Env) (p : Procedure) : Procedure × Env :=
-  match eval E p with
-  | [(p', E')] => (p', E')
-  | _ => (p, { E with error := some (.Misc "More than one result environment") })
+  mergeResults (p, E) (ssEs.map (fun (ss, sE) => ({ p with body := ss }, fixupError sE)))
 
 ---------------------------------------------------------------------
 

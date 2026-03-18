@@ -149,6 +149,13 @@ def extractTypeInstantiations (typeVars : List String) (patterns : List LMonoTy)
     Map.empty
 
 
+/--
+Returns true if the given type name is a built-in Core type whose SMT-LIB
+encoding is handled specially and should not be declared via `declare-sort`.
+-/
+def isBuiltinCoreTy (id : String) : Bool :=
+  id ∈ ["bool", "int", "real", "string", "regex"]
+
 /-
 Add a type to the context. Sorts are easy, but datatypes are tricky:
 we must also ensure we add the types of all arguments in the constructors
@@ -160,7 +167,9 @@ partial def SMT.Context.addType (E: Env) (id: String) (args: List LMonoTy) (ctx:
   -- Always recurse into concrete args to register any type references
   let ctx := args.foldl (fun ctx arg =>
     match arg with
-    | .tcons id1 args1 => SMT.Context.addType E id1 args1 ctx
+    | .tcons id1 args1 =>
+      if isBuiltinCoreTy id1 then ctx
+      else SMT.Context.addType E id1 args1 ctx
     | _ => ctx) ctx
   match E.datatypes.getType id with
   | some d =>
@@ -190,7 +199,8 @@ def LMonoTy.toSMTType (E: Env) (ty : LMonoTy) (ctx : SMT.Context) (useArrayTheor
   | .tcons "Map" args =>
     -- When using Array theory, convert Map to Array
     let id := if useArrayTheory then "Array" else "Map"
-    let ctx := SMT.Context.addType E id args ctx
+    let ctx := if useArrayTheory then ctx
+               else SMT.Context.addType E id args ctx
     let (args', ctx) ← LMonoTys.toSMTType E args ctx useArrayTheory
     .ok ((.constr id args'), ctx)
   | .tcons id args =>

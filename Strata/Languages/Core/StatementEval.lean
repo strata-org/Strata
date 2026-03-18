@@ -409,6 +409,23 @@ def processExit : Statements → Option (Option String) → (Statements × Optio
 | rest, .none => (rest, .none)
 | _, .some exitLabel => ([], .some exitLabel) -- Skip all remaining statements
 
+/--
+Collect proof obligations for an unreachable (dead) branch.
+All covers in the dead branch fail (unreachable), and all asserts pass
+(unsatisfiable path conditions).
+-/
+private def collectDeadBranchDeferred
+    (ss_f : Statements) (cond : Expression.Expr)
+    (pathConditions : Imperative.PathConditions Expression) :
+    Imperative.ProofObligations Expression :=
+  if Statements.containsCovers ss_f || Statements.containsAsserts ss_f then
+    let deadLabel := toString (f!"<dead_branch: {cond.eraseTypes}>")
+    let deadPathConds := pathConditions.push [(deadLabel, LExpr.false Strata.SourceRange.none)]
+    createUnreachableCoverObligations deadPathConds (Statements.collectCovers ss_f) ++
+    createUnreachableAssertObligations deadPathConds (Statements.collectAsserts ss_f)
+  else
+    #[]
+
 mutual
 def evalAuxGo (steps : Nat) (old_var_subst : SubstMap) (Ewn : EnvWithNext) (ss : Statements) (optExit : Option (Option String)) :
     List EnvWithNext :=
