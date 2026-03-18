@@ -866,8 +866,12 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
     return (ctx, [retStmt])
 
   -- Assert statement
-  | .Assert _ test _msg => do
+  | .Assert _ test msg => do
     let condExpr ← translateExpr ctx test
+    -- Extract assert message as property summary
+    let md := match msg.val with
+      | some (.Constant _ (.ConString _ str) _) => md.withPropertySummary str.val
+      | _ => md
     -- Check if condition contains a Hole - if so, hoist to variable
     let (condStmts, finalCondExpr, condCtx) :=
       match condExpr.val with
