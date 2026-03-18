@@ -1279,7 +1279,7 @@ def extractClassFields (ctx : TranslationContext) (classBody : Array (Python.stm
       -- Class-level annotated assignment: x: int
       let fieldName ← match target with
         | .Name _ name _ => .ok name.val
-        | _ => throw (.unsupportedConstruct "Only simple field names supported" (toString (repr stmt)))
+        | _ => continue  -- Skip non-simple targets, consistent with extractFieldsFromInit
 
       let fieldType ← translateType ctx (pyExprToString annotation)
 
@@ -1379,9 +1379,9 @@ def translateClass (ctx : TranslationContext) (classStmt : Python.stmt SourceRan
           .ok (some (funcDecl))
       | _ => .ok none)
     let ctx := {ctx with functionSignatures:= ctx.functionSignatures ++ classFunDecls}
-    -- Extract fields from class-level annotations (e.g. `x: int`)
-    let mut fields ← extractClassFields ctx body.val
-    -- Also extract fields from __init__ method body (e.g. `self.x: int = ...`)
+    -- Extract fields from class-level annotations and __init__ body, with dedup
+    let classLevelFields ← extractClassFields ctx body.val
+    let mut fields := classLevelFields
     for stmt in body.val do
       match stmt with
       | .FunctionDef _ name _ initBody _ _ _ _ =>
