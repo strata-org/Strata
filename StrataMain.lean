@@ -377,11 +377,10 @@ def buildPySpecPrelude (pyspecPaths : Array String) : IO PySpecPrelude := do
 
     preludeInLaurel := combineLaurelPrograms preludeInLaurel result.program
 
-  let preludeInCoreDecls : List Core.Decl ← match Strata.Laurel.translate { emitResolutionErrors := false } preludeInLaurel with
-  | .error diagnostics =>
-    exitFailure s!"PySpec Laurel to Core translation failed: {diagnostics}"
-  | .ok (coreSpec, _modifiesDiags) =>
-    pure $ Strata.Python.coreOnlyFromRuntimeCorePart ++ coreSpec.decls
+  let (coreProgramOption, diagnostics) := Strata.Laurel.translate { emitResolutionErrors := false } preludeInLaurel
+  let preludeInCoreDecls ← match coreProgramOption with
+  | none => exitFailure s!"PySpec Laurel to Core translation failed: {diagnostics}"
+  | some coreProgram => pure $ Strata.Python.coreOnlyFromRuntimeCorePart ++ coreProgram.decls
 
   preludeInLaurel := { preludeInLaurel with
     staticProcedures :=
@@ -496,13 +495,13 @@ def translatePythonToCore
 
       -- Translate Laurel to Core
       match Strata.Laurel.translate { emitResolutionErrors := false } combinedLaurelProgram with
-      | .error diagnostics =>
+      | (none, diagnostics) =>
         exitFailure s!"Laurel to Core translation failed: {diagnostics}"
-      | .ok (coreProgramDecls, modifiesDiags) =>
+      | (some coreProgramDecls, diagnostics) =>
         let coreProgram: Core.Program := { decls := coreProgramDecls.decls }
         if verbose then
           IO.println "\n==== Core Program ===="
-          IO.print (coreProgram, modifiesDiags)
+          IO.print (coreProgram, diagnostics)
 
         let (preludeDecls, userDecls) := coreProgram.decls.span (fun d => toString d.name != "FIRST_END_MARKER")
         let coreProgram: Core.Program := {
@@ -513,7 +512,7 @@ def translatePythonToCore
         }
         if verbose then
           IO.println "\n==== Core Program with pyPrelude ===="
-          IO.print (coreProgram, modifiesDiags)
+          IO.print (coreProgram, diagnostics)
 
         -- TODO remove this check when we turn on emitResolutionErrors on the Laurel.translate call
         -- Check for duplicate names in Core top-level declarations
@@ -869,13 +868,12 @@ def laurelAnalyzeCommand : Command where
     match transResult with
     | .error transErrors => exitFailure s!"Translation errors: {transErrors}"
     | .ok laurelProgram =>
-      let results ← Strata.Laurel.verifyToVcResults laurelProgram { VerifyOptions.default with solver := "z3" }
-      match results with
-      | .error errors =>
-        IO.println s!"==== ERRORS ===="
-        for err in errors do
-          IO.println s!"{err.message}"
-      | .ok vcResults =>
+      let (vcResultsOption, errors) ← Strata.Laurel.verifyToVcResults laurelProgram { VerifyOptions.default with solver := "z3" }
+      for err in errors do
+        IO.println s!"{err.message}"
+      match vcResultsOption with
+      | none => return
+      | some vcResults =>
         IO.println s!"==== RESULTS ===="
         for vc in vcResults do
           IO.println s!"{vc.obligation.label}: {match vc.outcome with | .ok o => repr o | .error e => e}"
@@ -897,11 +895,11 @@ def laurelAnalyzeToGotoCommand : Command where
     | .error transErrors => exitFailure s!"Translation errors: {transErrors}"
     | .ok laurelProgram =>
       match Strata.Laurel.translate {} laurelProgram with
-      | .error diags => exitFailure s!"Core translation errors: {diags.map (·.message)}"
-      | .ok coreProgram =>
+      | (none, diags) => exitFailure s!"Core translation errors: {diags.map (·.message)}"
+      | (some coreProgram, errors) =>
         let Ctx := { Lambda.LContext.default with functions := Core.Factory, knownTypes := Core.KnownTypes }
         let Env := Lambda.TEnv.default
-        let (tcPgm, _) ← match Core.Program.typeCheck Ctx Env coreProgram.fst with
+        let (tcPgm, _) ← match Core.Program.typeCheck Ctx Env coreProgram with
           | .ok r => pure r
           | .error e => panic! s!"{e.format none}"
         let procs := tcPgm.decls.filterMap fun d => d.getProc?
@@ -1026,9 +1024,12 @@ def laurelToCoreCommand : Command where
     match transResult with
     | .error transErrors => exitFailure s!"Translation errors: {transErrors}"
     | .ok laurelProgram =>
-      match Strata.Laurel.translate {} laurelProgram with
-      | .error diags => exitFailure s!"Core translation errors: {diags.map (·.message)}"
-      | .ok coreProgram => IO.println (prettyPrintCore coreProgram.fst)
+      let (coreProgramOption, errors) := Strata.Laurel.translate {} laurelProgram
+      if !errors.isEmpty then
+        IO.println s!"Core translation errors: {errors.map (·.message)}"
+      match coreProgramOption with
+      | none => return
+      | some coreProgram => IO.println (prettyPrintCore coreProgram)
 
 /-- Print a string word-wrapped to `width` columns with `indent` spaces of indentation. -/
 private def printIndented (indent : Nat) (s : String) (width : Nat := 80) : IO Unit := do
