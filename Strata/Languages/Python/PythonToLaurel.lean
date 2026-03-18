@@ -823,16 +823,24 @@ partial def translateAssign  (ctx : TranslationContext)
             if fnname.text ∈ ctx.compositeTypeNames then
               let newExpr := mkStmtExprMd (StmtExpr.New fnname)
               let varType := mkHighTypeMd (.UserDefined fnname)
-              let newStmt := mkStmtExprMd (StmtExpr.LocalVariable n.val varType (some newExpr))
-              let initStmt := mkStmtExprMd (StmtExpr.InstanceCall (mkStmtExprMd (StmtExpr.Identifier n.val)) "__init__" args)
-              [newStmt, initStmt]
+              if n.val ∈ ctx.variableTypes.unzip.1 then
+                let assignStmt := mkStmtExprMd (StmtExpr.Assign [targetExpr] newExpr)
+                let initStmt := mkStmtExprMd (StmtExpr.InstanceCall (mkStmtExprMd (StmtExpr.Identifier n.val)) "__init__" args)
+                [assignStmt, initStmt]
+              else
+                let newStmt := mkStmtExprMd (StmtExpr.LocalVariable n.val varType (some newExpr))
+                let initStmt := mkStmtExprMd (StmtExpr.InstanceCall (mkStmtExprMd (StmtExpr.Identifier n.val)) "__init__" args)
+                [newStmt, initStmt]
             else if withException ctx fnname.text then
               [mkStmtExprMd (StmtExpr.Assign [targetExpr, maybeExceptVar] rhs_trans)]
             else [mkStmtExprMd (StmtExpr.Assign [targetExpr] rhs_trans)]
         | .New className =>
-            let varType := mkHighTypeMd (.UserDefined className)
-            let newStmt := mkStmtExprMd (StmtExpr.LocalVariable n.val varType (some rhs_trans))
-            [newStmt]
+            if n.val ∈ ctx.variableTypes.unzip.1 then
+              [mkStmtExprMd (StmtExpr.Assign [targetExpr] rhs_trans)]
+            else
+              let varType := mkHighTypeMd (.UserDefined className)
+              let newStmt := mkStmtExprMd (StmtExpr.LocalVariable n.val varType (some rhs_trans))
+              [newStmt]
         | _ => [mkStmtExprMd (StmtExpr.Assign [targetExpr] rhs_trans)]
         newctx := match rhs_trans.val with
         | .StaticCall fnname _ =>

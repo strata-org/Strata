@@ -23,3 +23,14 @@ def test_var_declared_in_both_branches() -> Any:
         x: Any = 2
     assert x == 1, "x should be visible after try/except"
     return x
+
+def test_multiple_assignments_in_try() -> Any:
+    """Multiple variable assignments in try must not cause duplicate declarations."""
+    try:
+        x: Any = 1
+        y: Any = 2
+    except Exception:
+        x: Any = 10
+        y: Any = 20
+    assert x == 1, "x from try body"
+    return x
