@@ -21,6 +21,7 @@ import Strata.Util.Sarif
 
 /- Strata Languages -/
 import Strata.Languages.Core.FactoryWF
+import Strata.Languages.Core.SeqModel
 import Strata.Languages.Core.StatementSemantics
 import Strata.Languages.Core.SarifOutput
 import Strata.Languages.Laurel.LaurelToCoreTranslator
