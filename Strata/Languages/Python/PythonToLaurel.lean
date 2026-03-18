@@ -1275,14 +1275,18 @@ def translateClass (ctx : TranslationContext) (classStmt : Python.stmt SourceRan
           .ok (some (funcDecl))
       | _ => .ok none)
     let ctx := {ctx with functionSignatures:= ctx.functionSignatures ++ classFunDecls}
-    -- Extract fields from __init__ method body
-    let mut fields : List Field := []
+    -- Extract fields from class-level annotations (e.g. `x: int`)
+    let mut fields ← extractClassFields ctx body.val
+    -- Also extract fields from __init__ method body (e.g. `self.x: int = ...`)
     for stmt in body.val do
       match stmt with
       | .FunctionDef _ name _ initBody _ _ _ _ =>
         if name.val == "__init__" then
           let initFields ← extractFieldsFromInit ctx initBody.val
-          fields := fields ++ initFields
+          -- Only add fields not already declared at class level
+          for f in initFields do
+            unless fields.any (fun existing => existing.name.text == f.name.text) do
+              fields := fields ++ [f]
       | _ => pure ()
 
     -- Extract methods from class body
