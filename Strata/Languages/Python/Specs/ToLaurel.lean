@@ -51,6 +51,9 @@ and only string literal values are extracted. -/
 /-- Context for PySpec to Laurel translation. -/
 structure ToLaurelContext where
   filepath : System.FilePath
+  /-- Module prefix prepended to generated type and procedure names
+      to avoid collisions when multiple PySpec files are combined. -/
+  modulePrefix : String
 
 /-- State for PySpec to Laurel translation. -/
 structure ToLaurelState where
@@ -82,6 +85,13 @@ def pushOverloadEntry (funcName : String) (literalValue : String)
     let existing := s.overloads.getD funcName {}
     let updated := existing.insert literalValue returnType
     { s with overloads := s.overloads.insert funcName updated }
+
+/-- Prepend the module prefix to a name. Returns the name unchanged
+    if the prefix is empty. -/
+def prefixName (name : String) : ToLaurelM String := do
+  let ctx ← read
+  if ctx.modulePrefix.isEmpty then return name
+  return ctx.modulePrefix ++ "_" ++ name
 
 /-! ## Helper Functions -/
 
@@ -243,7 +253,8 @@ def specTypeToLaurelType (ty : SpecType) : ToLaurelM HighTypeMd := do
       if args.size > 0 then
         reportError default
           s!"Generic class '{name}' with type args unsupported"
-      return mkTy (.UserDefined { text := name })
+      let prefixed ← prefixName name
+      return mkTy (.UserDefined { text := prefixed })
     | .intLiteral _ => return mkTy .TInt
     | .stringLiteral _ => return mkTy .TString
     | .typedDict _ _ _ => return mkCore "DictStrAny"
@@ -255,10 +266,34 @@ def argToParameter (arg : Arg) : ToLaurelM Parameter := do
   let ty ← specTypeToLaurelType arg.type
   return { name := arg.name, type := ty }
 
-/-- Convert a function declaration to a Laurel Procedure. -/
+/-- Expand a `**kwargs: Unpack[TypedDict]` into individual `Arg` entries.
+    Returns an error if kwargs is present but not a TypedDict. -/
+public def expandKwargsArgs (kwargs : Option (String × SpecType))
+    : Except String (Array Arg) :=
+  match kwargs with
+  | none => .ok #[]
+  | some (name, specType) =>
+    match specType.atoms.find? fun a => match a with | .typedDict .. => true | _ => false with
+    | some (.typedDict fields fieldTypes fieldRequired) =>
+      .ok <| fields.mapIdx fun i name =>
+        { name := name
+          type := fieldTypes.getD i default
+          default := if fieldRequired.getD i true then none else some .none }
+    | _ => .error s!"**{name} has non-TypedDict type; kwargs not expanded"
+
+/-- Convert a function declaration to a Laurel Procedure.
+    When `isMethod` is true, the first positional arg (`self`) is stripped. -/
 def funcDeclToLaurel (procName : String) (func : FunctionDecl)
-    : ToLaurelM Procedure := do
-  let allArgs := func.args.args ++ func.args.kwonly
+    (isMethod : Bool := false) : ToLaurelM Procedure := do
+  if isMethod && func.args.args.size == 0 then
+    reportError default
+      s!"Method '{func.name}' has no arguments (expected 'self' as first parameter)"
+  let posArgs := if isMethod then func.args.args.extract 1 func.args.args.size
+                 else func.args.args
+  let kwargsArgs ← match expandKwargsArgs func.args.kwargs with
+    | .ok args => pure args
+    | .error msg => do reportError default msg; pure #[]
+  let allArgs := posArgs ++ func.args.kwonly ++ kwargsArgs
   let inputs ← allArgs.mapM argToParameter
   let retType ← specTypeToLaurelType func.returnType
   let outputs : List Parameter :=
@@ -281,23 +316,30 @@ def funcDeclToLaurel (procName : String) (func : FunctionDecl)
 
 /-- Convert a class definition to Laurel types and procedures. -/
 def classDefToLaurel (cls : ClassDef) : ToLaurelM Unit := do
+  let prefixedName ← prefixName cls.name
   let laurelFields ← cls.fields.toList.mapM fun f => do
     let ty ← specTypeToLaurelType f.type
     pure { name := f.name, isMutable := true, type := ty : Laurel.Field }
+  let prefixedBases ← cls.bases.toList.mapM fun cd => do
+    -- Local bases (empty pythonModule) get prefixed; external ones don't
+    let baseName ← if cd.pythonModule.isEmpty then prefixName cd.name
+                    else pure (toString cd)
+    return mkId baseName
   pushType (.Composite {
-    name := cls.name
-    extending := cls.bases.toList.map (fun cd => mkId $ toString cd)
+    name := prefixedName
+    extending := prefixedBases
     fields := laurelFields
     instanceProcedures := []
   })
   for method in cls.methods do
-    let proc ← funcDeclToLaurel (cls.name ++ "_" ++ method.name) method
+    let proc ← funcDeclToLaurel (prefixedName ++ "_" ++ method.name) method (isMethod := true)
     pushProcedure proc
 
 /-- Convert a type definition to a Laurel composite type placeholder. -/
-def typeDefToLaurel (td : TypeDef) : ToLaurelM Unit :=
+def typeDefToLaurel (td : TypeDef) : ToLaurelM Unit := do
+  let prefixedName ← prefixName td.name
   pushType (.Composite {
-    name := td.name
+    name := prefixedName
     extending := []
     fields := []
     instanceProcedures := []
@@ -336,7 +378,10 @@ def extractOverloadEntry (func : FunctionDecl) : ToLaurelM Unit := do
       return
   let retType ←
         match func.returnType.atoms[0] with
-        | .pyClass name _ => pure (PythonIdent.mk "" name)
+        | .pyClass name _ => do
+          let ctx ← read
+          let prefixed ← prefixName name
+          pure (PythonIdent.mk ctx.modulePrefix prefixed)
         | .ident nm _ => pure nm
         | _ =>
           reportError func.loc
@@ -358,8 +403,9 @@ def signatureToLaurel (sig : Signature) : ToLaurelM Unit :=
   | .functionDecl func => do
     if func.isOverload then
       extractOverloadEntry func
-    else
-      let proc ← funcDeclToLaurel func.name func
+    else do
+      let procName ← prefixName func.name
+      let proc ← funcDeclToLaurel procName func
       pushProcedure proc
   | .classDef cls => classDefToLaurel cls
 
@@ -372,8 +418,9 @@ structure TranslationResult where
 /-- Run the translation and return a Laurel Program, dispatch table,
     and any errors. -/
 def signaturesToLaurel (filepath : System.FilePath) (sigs : Array Signature)
+    (modulePrefix : String := "")
     : TranslationResult :=
-  let ctx : ToLaurelContext := { filepath }
+  let ctx : ToLaurelContext := { filepath, modulePrefix }
   let ((), state) := (sigs.forM signatureToLaurel).run ctx |>.run {}
   let pgm : Laurel.Program := {
     staticProcedures := state.procedures.toList
@@ -390,7 +437,7 @@ def signaturesToLaurel (filepath : System.FilePath) (sigs : Array Signature)
     typeDef, externTypeDecl, and non-overload functions. -/
 def extractOverloads (filepath : System.FilePath) (sigs : Array Signature)
     : OverloadTable × Array SpecError :=
-  let ctx : ToLaurelContext := { filepath }
+  let ctx : ToLaurelContext := { filepath, modulePrefix := "" }
   let action := sigs.forM fun sig =>
     match sig with
     | .functionDecl func =>

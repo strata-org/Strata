@@ -99,6 +99,9 @@ def dataDefault (d: LDatatype IDMeta) : LMonoTy :=
 /-- A group of mutually recursive datatypes. -/
 @[expose] abbrev MutualDatatype (IDMeta : Type) := List (LDatatype IDMeta)
 
+instance [DecidableEq IDMeta] : DecidableEq (MutualDatatype IDMeta) :=
+  inferInstance
+
 ---------------------------------------------------------------------
 
 -- Typechecking
@@ -540,6 +543,9 @@ def unsafeDestructorFuncs {T} [BEq T.Identifier] [Inhabited T.IDMeta] [Inhabited
 
 /-- A TypeFactory stores datatypes grouped by mutual recursion. -/
 @[expose] def TypeFactory := Array (MutualDatatype IDMeta)
+
+instance [DecidableEq IDMeta] : DecidableEq (@TypeFactory IDMeta) :=
+  show DecidableEq (Array (MutualDatatype IDMeta)) from inferInstance
 
 instance: ToFormat (@TypeFactory IDMeta) where
   format f :=

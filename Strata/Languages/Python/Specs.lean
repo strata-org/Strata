@@ -5,15 +5,12 @@
 -/
 module
 
-public import Lean.Data.Position
-public import Std.Data.HashSet.Basic
 import        Strata.DDM.Format
 import all    Strata.DDM.Util.Fin
-public import Strata.DDM.Util.SourceRange
 import        Strata.Languages.Python.ReadPython
-public import Strata.Languages.Python.Specs.DDM
-import        Strata.Languages.Python.Specs.PySpecM
+import Strata.Languages.Python.Specs.DDM
 public import Strata.Languages.Python.Specs.Decls
+import        Strata.Languages.Python.Specs.PySpecM
 import        Strata.Util.DecideProp
 
 namespace Strata.Python.Specs
@@ -33,6 +30,14 @@ def baseLogEvent (events : Std.HashSet EventType)
   if event ∈ events then
     let _ ← IO.eprintln s!"[{event}]: {message}" |>.toBaseIO
   pure ()
+
+/--
+Creates `PythonToStrataOptions` from an event set.
+
+Enables `logPerf` when `"perf"` is present.
+-/
+def PythonToStrataOptions.ofEventSet (events : Std.HashSet EventType) : PythonToStrataOptions where
+  logPerf := events.contains "perf"
 
 /--
 A Python module name split into its dot-separated components.
@@ -203,6 +208,9 @@ structure PySpecContext where
   strataDir : System.FilePath
   /-- Callback that takes a module name and provides filepath to module  -/
   moduleReader : ModuleReader
+  /-- Python module name for the current file (e.g., "boto3.dynamodb").
+      Used as `pythonModule` for locally-defined classes. -/
+  currentModule : String
 
 def preludeAtoms : List (String × PythonIdent) := [
   ("bool", .builtinsBool),
@@ -598,17 +606,16 @@ def pySpecArg (usedNames : Std.HashSet String)
         specError loc s!"Unexpected argument to {name.val}"
       pure <| .pyClass loc cl #[]
   assert! comment.val.isNone
-  let hasDefault ←
+  let argDefault ←
     match de with
-    | none =>
-      pure false
+    | none => pure none
     | some d =>
       pyDefaultValue d tp
-      pure true
+      pure (some .none)
   return {
     name := name.val
     type := tp
-    hasDefault := hasDefault
+    default := argDefault
   }
 
 structure SpecAssertionContext where
@@ -1211,7 +1218,8 @@ private def resolveBaseClasses (bases : Array (expr SourceRange))
           | some (.ident pyIdent _) =>
             result := result.push pyIdent
           | some (.pyClass clsName _) =>
-            result := result.push { pythonModule := "", name := clsName }
+            let mod := (← read).currentModule
+            result := result.push { pythonModule := mod, name := clsName }
           | _ =>
             specError base.ann s!"Unknown base class '{name}'"
         | _ =>
@@ -1408,8 +1416,10 @@ partial def resolveModule (loc : SourceRange) (modName : String) :
 
   let pythonCmd := (←read).pythonCmd
   let dialectFile := (←read).dialectFile
+  let options := PythonToStrataOptions.ofEventSet (←read).eventSet
   let commands ←
-    match ← pythonToStrata (pythonCmd := pythonCmd) dialectFile pythonFile |>.toBaseIO with
+    match ← pythonToStrata (pythonCmd := pythonCmd) (options := options)
+      dialectFile pythonFile |>.toBaseIO with
     | .ok r => pure r
     | .error msg =>
       specError loc msg
@@ -1418,7 +1428,7 @@ partial def resolveModule (loc : SourceRange) (modName : String) :
   let warnings := (←get).warnings
   let errorCount := errors.size
   modify fun s => { s with errors := #[], warnings := #[] }
-  let ctx := { (←read) with pythonFile := pythonFile }
+  let ctx := { (←read) with pythonFile := pythonFile, currentModule := modName }
   let initState : PySpecState := { errors, warnings }
   let (sigs, t) ← translateModuleAux commands |>.run ctx |>.run initState
   let newWarnings := t.warnings.size - warnings.size
@@ -1537,11 +1547,16 @@ partial def translate (body : Array (stmt Strata.SourceRange)) : PySpecM Unit :=
 
 partial def translateModuleAux (body : Array (Strata.Python.stmt Strata.SourceRange))
   : PySpecM (Array Signature) := do
+  let ctx ← read
+  let start ← IO.monoNanosNow
   translate body
   let s ← get
   for ⟨cl, t⟩ in s.typeReferences do
     if let .unresolved loc := t then
       specError loc s!"Class {cl} not defined."
+  let stop ← IO.monoNanosNow
+  let elapsedMs := (stop - start) / 1000000
+  baseLogEvent ctx.eventSet "perf" s!"translating {ctx.pythonFile}: {elapsedMs}ms"
   return s.elements
 
 end
@@ -1555,6 +1570,7 @@ def translateModule
     (dialectFile searchPath strataDir pythonFile : System.FilePath)
     (fileMap : Lean.FileMap)
     (body : Array (Strata.Python.stmt Strata.SourceRange))
+    (currentModule : String)
     (pythonCmd : String := "python")
     (events : Std.HashSet EventType := {})
     (skipNames : Std.HashSet PythonIdent := {}) :
@@ -1579,6 +1595,7 @@ def translateModule
         throw s!"Could not read file {pythonPath}: {msg}"
     strataDir := strataDir
     pythonFile := pythonFile
+    currentModule := currentModule
   }
   let (res, s) ← translateModuleAux body |>.run ctx |>.run {}
   let fmm ← fileMapsRef.get
@@ -1608,10 +1625,13 @@ public def translateFile
             throw s!"{pythonFile} must be a file."
           | _ =>
             throw s!"{pythonFile} could not be read: {msg}"
+  let options := PythonToStrataOptions.ofEventSet events
   let body ←
-    match ← pythonToStrata (pythonCmd := pythonCmd) dialectFile pythonFile |>.toBaseIO with
+    match ← pythonToStrata (pythonCmd := pythonCmd) (options := options)
+      dialectFile pythonFile |>.toBaseIO with
     | .ok r => pure r
     | .error msg => throw msg
+  let currentModule := pythonFile.fileStem.getD pythonFile.toString
   let (fmm, sigs, errors, warnings) ←
       translateModule
         (pythonCmd := pythonCmd)
@@ -1623,6 +1643,7 @@ public def translateFile
         (pythonFile := pythonFile)
         (.ofString contents)
         body
+        currentModule
   let ppErr (e : SpecError) : EIO String String :=
         match fmm[e.file]? with
         | none =>
