@@ -32,6 +32,16 @@ inductive VerificationMode where
 instance : Inhabited VerificationMode where
   default := .deductive
 
+def VerificationMode.ofString? (s : String) : Option VerificationMode :=
+  match s with
+  | "deductive" => some .deductive
+  | "bugFinding" => some .bugFinding
+  | "bugFindingAssumingCompleteSpec" => some .bugFindingAssumingCompleteSpec
+  | _ => none
+
+def VerificationMode.options : String :=
+  "'deductive', 'bugFinding', or 'bugFindingAssumingCompleteSpec'"
+
 def VerboseMode.ofBool (b : Bool) : VerboseMode :=
   match b with
   | false => .quiet
@@ -64,6 +74,16 @@ inductive CheckLevel where
 
 instance : Inhabited CheckLevel where
   default := .minimal
+
+def CheckLevel.ofString? (s : String) : Option CheckLevel :=
+  match s with
+  | "minimal" => some .minimal
+  | "minimalVerbose" => some .minimalVerbose
+  | "full" => some .full
+  | _ => none
+
+def CheckLevel.options : String :=
+  "'minimal', 'minimalVerbose', or 'full'"
 
 structure VerifyOptions where
   verbose : VerboseMode
