@@ -4,7 +4,9 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
+import Strata.Backends.CBMC.CollectSymbols
 import Strata.Backends.CBMC.GOTO.CoreToCProverGOTO
+import Strata.Transform.ProcedureInlining
 
 /-! ## Core-to-GOTO translation pipeline
 
@@ -426,5 +428,98 @@ def emitProcWithLifted (Env : Core.Expression.TyEnv) (procName : String)
       symtabObj := symtabObj.insert k v
   | _ => pure ()
   return (Lean.Json.obj symtabObj, Lean.Json.mkObj [("functions", Lean.Json.arr gotoFns)])
+
+/-! ## High-level pipeline steps
+
+Composable building blocks for translating Core programs to GOTO.
+-/
+
+/-- Inline procedure calls repeatedly until a fixpoint is reached.
+    By default inlines all procedures except `main`. -/
+public def inlineCoreFixpoint (program : Core.Program)
+    (doInline : String → Core.Transform.CachedAnalyses → Bool := fun name _ => name ≠ "main")
+    (maxIterations : Nat := 10)
+    : Except String Core.Program := do
+  let mut pgm := program
+  for _ in List.range maxIterations do
+    match Core.Transform.runProgram (targetProcList := .none)
+          (Core.ProcedureInlining.inlineCallCmd (doInline := doInline))
+          pgm .emp with
+    | ⟨.ok (changed, pgm'), _⟩ =>
+      pgm := pgm'
+      if !changed then break
+    | ⟨.error e, _⟩ => throw e
+  return pgm
+
+/-- Type-check a Core program using the standard context and factory.
+    Returns the type-checked program and the resulting type environment. -/
+public def typeCheckCore (program : Core.Program)
+    : Except String (Core.Program × Core.Expression.TyEnv) := do
+  let Ctx := { Lambda.LContext.default with
+    functions := Core.Factory, knownTypes := Core.KnownTypes }
+  let Env := Lambda.TEnv.default
+  match Core.Program.typeCheck Ctx Env program with
+  | .ok (tcPgm, Env') => return (tcPgm, Env')
+  | .error e => throw s!"{e.format none}"
+
+/-- Translate a type-checked Core program to CProver GOTO JSON files.
+    Finds an entry-point procedure from `entryPoints` (defaulting to
+    `["main", "__main__"]`), translates it to GOTO, and writes
+    `<baseName>.symtab.json` and `<baseName>.goto.json`. -/
+public def coreToGotoFiles (tcPgm : Core.Program) (Env : Core.Expression.TyEnv)
+    (baseName : String)
+    (sourceText : Option String := none)
+    (entryPoints : List String := ["main", "__main__"])
+    : EIO String Unit := do
+  let findProc (name : String) := tcPgm.decls.find? fun d =>
+      match d with
+      | .proc p _ => Core.CoreIdent.toPretty p.header.name == name
+      | _ => false
+  let mainDecl ← match entryPoints.findSome? findProc with
+    | some d => pure d
+    | none => throw s!"No entry-point procedure found (tried {entryPoints})"
+  let some p := mainDecl.getProc?
+    | throw "entry point is not a procedure"
+  -- Always use "main" as the GOTO function name (CBMC expects --function main)
+  let procName := "main"
+  let axioms := tcPgm.decls.filterMap fun d => d.getAxiom?
+  let distincts := tcPgm.decls.filterMap fun d => match d with
+    | .distinct name es _ => some (name, es) | _ => none
+  match procedureToGotoCtx Env p sourceText (axioms := axioms) (distincts := distincts)
+        (varTypes := tcPgm.getVarTy?) with
+  | .error e => throw s!"{e}"
+  | .ok (ctx, liftedFuncs) =>
+    let extraSyms ← match collectExtraSymbols tcPgm with
+      | .ok s => pure (Lean.toJson s)
+      | .error e => throw s!"{e}"
+    let (symtab, goto) ←
+      match ← emitProcWithLifted Env procName ctx liftedFuncs extraSyms |>.toBaseIO with
+      | .ok r => pure r
+      | .error e => throw s!"{e}"
+    let symTabFile := s!"{baseName}.symtab.json"
+    let gotoFile := s!"{baseName}.goto.json"
+    match ← IO.FS.writeFile symTabFile symtab.pretty |>.toBaseIO with
+    | .ok () => pure ()
+    | .error e => throw s!"Error writing {symTabFile}: {e}"
+    match ← IO.FS.writeFile gotoFile goto.pretty |>.toBaseIO with
+    | .ok () => pure ()
+    | .error e => throw s!"Error writing {gotoFile}: {e}"
+    let _ ← IO.println s!"Written {symTabFile} and {gotoFile}" |>.toBaseIO
+
+/--
+Inline procedures, type-check, and emit CProver GOTO JSON files.
+-/
+public def inlineCoreToGotoFiles (program : Core.Program)
+    (baseName : String)
+    (sourceText : Option String := none)
+    (entryPoints : List String := ["main", "__main__"])
+    : EIO String Unit := do
+  let inlined ← match inlineCoreFixpoint program with
+    | .ok r => pure r
+    | .error msg => throw msg
+  let (tcPgm, Env) ← match typeCheckCore inlined with
+    | .ok r => pure r
+    | .error msg => throw msg
+  coreToGotoFiles tcPgm Env baseName sourceText entryPoints
 
 end Strata
