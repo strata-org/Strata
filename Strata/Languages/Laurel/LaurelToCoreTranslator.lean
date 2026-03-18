@@ -12,6 +12,8 @@ public import Strata.Languages.Core.Procedure
 public import Strata.Languages.Core.Options
 public import Strata.Languages.Laurel.Laurel
 public import Strata.Languages.Laurel.LiftImperativeExpressions
+public import Strata.Languages.Laurel.InferHoleTypes
+public import Strata.Languages.Laurel.EliminateHoles
 import Strata.Languages.Laurel.EliminateReturnsInExpression
 public import Strata.Languages.Laurel.HeapParameterization
 public import Strata.Languages.Laurel.TypeHierarchy
@@ -227,7 +229,9 @@ def translateExpr (expr : StmtExprMd)
         return LExpr.existTr () name.text (some coreTy) coreTrig coreBody
       | none =>
         return LExpr.exist () name.text (some coreTy) coreBody
-  | .Hole => return dummy
+  | .Hole _ _ =>
+      -- Holes should have been eliminated before translation.
+      disallowed expr.md "holes should have been eliminated before translation"
   | .ReferenceEquals e1 e2 =>
       let re1 ← translateExpr e1 boundVars isPureContext
       let re2 ← translateExpr e2 boundVars isPureContext
@@ -353,6 +357,9 @@ def translateStmt (outputParams : List Parameter) (stmt : StmtExprMd)
           -- Havoc the result since instance methods may be on unmodeled types
           let initStmt := Core.Statement.init ident coreType none md
           return [initStmt]
+      | some (⟨ .Hole _ _, _⟩) =>
+          -- Hole initializer: treat as havoc (init without value)
+          return [Core.Statement.init ident coreType none md]
       | some initExpr =>
           let coreExpr ← translateExpr initExpr
           return [Core.Statement.init ident coreType (some coreExpr) md]
@@ -547,7 +554,7 @@ private def isPureExpr(expr: StmtExprMd): Bool :=
   | .Abstract => panic s!"isPureExpr not implemented for Abstract"
   | .All => panic s!"isPureExpr not implemented for All"
   -- Dynamic / closures
-  | .Hole => true
+  | .Hole _ _ => true
   termination_by sizeOf expr
   decreasing_by all_goals (have := WithMetadata.sizeOf_val_lt expr; term_by_mem)
 
@@ -614,6 +621,9 @@ def translateDatatypeDefinition (model : SemanticModel) (dt : DatatypeDefinition
     constrs_ne := by simp [constrs]; grind
   }
 
+structure LaurelTranslateOptions where
+  emitResolutionErrors : Bool := true
+
 /--
 Try to translate a Laurel Procedure marked `isFunctional` to a Core Function.
 Returns `.error` with diagnostics if the procedure body contains disallowed constructs
@@ -626,9 +636,6 @@ def tryTranslatePureToFunction (proc : Procedure) (initState : TranslateState)
     .ok decl
   else
     .error finalState.diagnostics.toArray
-
-structure LaurelTranslateOptions where
-  emitResolutionErrors : Bool := true
 
 /--
 Translate Laurel Program to Core Program
@@ -655,6 +662,10 @@ def translate (options: LaurelTranslateOptions) (program : Program): Except (Arr
   -- dbg_trace "=== Program after heapParameterization + modifiesClausesTransform ==="
   -- dbg_trace (toString (Std.Format.pretty (Std.ToFormat.format program)))
   -- dbg_trace "================================="
+  let result := resolve program (some model)
+  let (program, model) := (result.program, result.model)
+  let program := inferHoleTypes model program
+  let program := eliminateHoles program
   let program := liftExpressionAssignments model program
   let program := eliminateReturnsInExpressionTransform program
   let result := resolve program (some model)
