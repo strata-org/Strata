@@ -100,16 +100,10 @@ def computeExprType (model : SemanticModel) (expr : StmtExprMd) : HighTypeMd :=
   | .Fresh _ => ⟨ .TBool, md ⟩
   -- Proof related
   | .ProveBy v _ => computeExprType model v
-  | .ContractOf _ _ =>
-      dbg_trace "Not yet implemented: computeExprType ContractOf"
-      default
+  | .ContractOf _ _ => default -- TODO: implement
   -- Special
-  | .Abstract =>
-      dbg_trace "Not yet implemented: computeExprType Abstract"
-      default
-  | .All =>
-      dbg_trace "Not yet implemented: computeExprType All"
-      default
+  | .Abstract =>default -- TODO: implement
+  | .All => default -- TODO: implement
   | .Hole => ⟨ .Top, md ⟩
 
 end Strata.Laurel

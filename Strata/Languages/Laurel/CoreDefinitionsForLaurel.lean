@@ -25,6 +25,8 @@ def coreDefinitionsForLaurelDDM :=
 #strata
 program Laurel;
 
+datatype Float64IsNotSupportedYet {}
+
 // The types for these Map functions are incorrect.
 // We'll fix them when Laurel supports polymorphism
 function select(map: int, key: int) : int
