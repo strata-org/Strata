@@ -977,7 +977,17 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
     let condExpr ← translateExpr ctx test
     let newDecls := collectDeclaredNamesAndTypes (body.val.toList ++ orelse.val.toList)
     let (varDecls, ctx) := createVarDeclStmtsAndCtx ctx newDecls
-    let (bodyCtx, bodyStmts) ← translateStmtList ctx body.val.toList
+    -- Check if condition contains a Hole - if so, hoist to variable to avoid free variable errors
+    let (condStmts, finalCondExpr, condCtx) :=
+      match condExpr.val with
+      | .Hole =>
+        let freshVar := s!"cond_{test.toAst.ann.start.byteIdx}"
+        let varType := AnyTy
+        let varDecl := mkStmtExprMd (StmtExpr.LocalVariable freshVar varType (some condExpr))
+        let varRef := mkStmtExprMd (StmtExpr.Identifier freshVar)
+        ([varDecl], varRef, { ctx with variableTypes := ctx.variableTypes ++ [(freshVar, "Bool")] })
+      | _ => ([], condExpr, ctx)
+    let (bodyCtx, bodyStmts) ← translateStmtList condCtx body.val.toList
     let bodyBlock := mkStmtExprMd (StmtExpr.Block bodyStmts none)
     -- Translate else branch if present
     let elseBlock ← if orelse.val.isEmpty then
@@ -985,9 +995,9 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
     else do
       let (_, elseStmts) ← translateStmtList bodyCtx orelse.val.toList
       .ok (some (mkStmtExprMd (StmtExpr.Block elseStmts none)))
-    let ifStmt := mkStmtExprMdWithLoc (StmtExpr.IfThenElse (Any_to_bool condExpr) bodyBlock elseBlock) md
+    let ifStmt := mkStmtExprMdWithLoc (StmtExpr.IfThenElse (Any_to_bool finalCondExpr) bodyBlock elseBlock) md
 
-    return (bodyCtx, varDecls ++ [ifStmt])
+    return (bodyCtx, varDecls ++ condStmts ++ [ifStmt])
 
   -- While loop
   | .While _ test body _orelse => do
@@ -1049,12 +1059,19 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
     let tryLabel := s!"try_end_{s.toAst.ann.start.byteIdx}"
     let catchersLabel := s!"exception_handlers_{s.toAst.ann.start.byteIdx}"
 
+    -- Extract error variables from except handler names (PythonError type)
+    let errorVars : List String := ((handlers.val.toList.filterMap (fun h => match h with
+          | .ExceptHandler _ _ errname _ => errname.val)).map (fun h => h.val)).dedup.filter
+          (fun e => e ∉ ctx.variableTypes.unzip.fst)
+    let errorTy := mkHighTypeMd (.UserDefined {text := "PythonError"})
+    let errorVarDecls := errorVars.map (fun e => mkStmtExprMd (.LocalVariable {text := e} errorTy none))
+
     -- Pre-scan for variable declarations in both branches so they are
     -- declared in the outer scope (Python scoping: variables assigned
     -- in try/except are visible after the block).
     let bodyDecls := collectDeclaredNamesAndTypes body.val.toList
 
-    let errorVarDecls: List (String × String) := (handlers.val.toList.filterMap (λ h => match h with
+    let errorVarPairs: List (String × String) := (handlers.val.toList.filterMap (λ h => match h with
           | .ExceptHandler _ _ errname _ => errname.val)).map (λ h => (h.val, "PythonError"))
 
     let handlerDecls := handlers.val.toList.flatMap fun h => match h with
@@ -1098,7 +1115,7 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
       (handlerCtx.variableTypes.filter fun (n, _) =>
         !bodyCtx.variableTypes.any fun (bn, _) => bn == n)
     let finalCtx := { bodyCtx with variableTypes := mergedVars }
-    return (finalCtx, hoistedDecls ++ [tryBlock])
+    return (finalCtx, errorVarDecls ++ hoistedDecls ++ [tryBlock])
 
   | .Raise _ _ _ => return (ctx, [mkStmtExprMd .Hole])
 
