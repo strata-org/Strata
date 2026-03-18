@@ -941,9 +941,18 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
     let mut handlerStmts : List StmtExprMd := []
     for handler in handlers.val do
       match handler with
-      | .ExceptHandler _ _ _ handlerBody =>
-        let (_, hStmts) ← translateStmtList bodyCtx handlerBody.val.toList
-        handlerStmts := handlerStmts ++ hStmts
+      | .ExceptHandler _ exTy name handlerBody =>
+        let tyStr := match exTy.val with
+          | some ty => pyExprToString ty
+          | none => PyLauType.Any
+        let (handlerCtx, nameDecl) ← match name.val with
+          | some n =>
+            let laurelTy ← translateType bodyCtx tyStr
+            pure ({bodyCtx with variableTypes := (n.val, tyStr) :: bodyCtx.variableTypes},
+                  [mkStmtExprMd (StmtExpr.LocalVariable n.val laurelTy (some (mkStmtExprMd .Hole)))])
+          | none => pure (bodyCtx, [])
+        let (_, hStmts) ← translateStmtList handlerCtx handlerBody.val.toList
+        handlerStmts := handlerStmts ++ nameDecl ++ hStmts
 
     -- Create handler block
     let handlerBlock := mkStmtExprMd (StmtExpr.Block handlerStmts (some handlerLabel))
