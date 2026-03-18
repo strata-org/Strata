@@ -318,13 +318,15 @@ def seqAppendFunc : WFLFunc CoreLParams :=
               ((~Sequence.length : (Sequence %a) → int) %1))
               ((~Sequence.length : (Sequence %a) → int) %0)))],
       -- select(append(s0, s1), n):
-      --   n < length(s0) ==> select(append(s0,s1), n) == select(s0, n)
+      --   0 <= n < length(s0) ==> select(append(s0,s1), n) == select(s0, n)
       esM[∀ (Sequence %a): -- %2 s0
           (∀ (Sequence %a): -- %1 s1
             (∀ (int): -- %0 n
               {(((~Sequence.select : (Sequence %a) → int → %a)
                     (((~Sequence.append : (Sequence %a) → (Sequence %a) → (Sequence %a)) %2) %1)) %0)}
-              if (((~Int.Lt : int → int → bool) %0) ((~Sequence.length : (Sequence %a) → int) %2))
+              if (((~Bool.And : bool → bool → bool)
+                    (((~Int.Ge : int → int → bool) %0) #0))
+                    (((~Int.Lt : int → int → bool) %0) ((~Sequence.length : (Sequence %a) → int) %2)))
               then
                 (((~Sequence.select : (Sequence %a) → int → %a)
                     (((~Sequence.append : (Sequence %a) → (Sequence %a) → (Sequence %a)) %2) %1)) %0)
@@ -332,13 +334,19 @@ def seqAppendFunc : WFLFunc CoreLParams :=
                 (((~Sequence.select : (Sequence %a) → int → %a) %2) %0)
               else #true))],
       -- select(append(s0, s1), n):
-      --   n >= length(s0) ==> select(append(s0,s1), n) == select(s1, n - length(s0))
+      --   n >= length(s0) && n < length(s0) + length(s1)
+      --     ==> select(append(s0,s1), n) == select(s1, n - length(s0))
       esM[∀ (Sequence %a): -- %2 s0
           (∀ (Sequence %a): -- %1 s1
             (∀ (int): -- %0 n
               {(((~Sequence.select : (Sequence %a) → int → %a)
                     (((~Sequence.append : (Sequence %a) → (Sequence %a) → (Sequence %a)) %2) %1)) %0)}
-              if (((~Int.Ge : int → int → bool) %0) ((~Sequence.length : (Sequence %a) → int) %2))
+              if (((~Bool.And : bool → bool → bool)
+                    (((~Int.Ge : int → int → bool) %0) ((~Sequence.length : (Sequence %a) → int) %2)))
+                    (((~Int.Lt : int → int → bool) %0)
+                      (((~Int.Add : int → int → int)
+                        ((~Sequence.length : (Sequence %a) → int) %2))
+                        ((~Sequence.length : (Sequence %a) → int) %1))))
               then
                 (((~Sequence.select : (Sequence %a) → int → %a)
                     (((~Sequence.append : (Sequence %a) → (Sequence %a) → (Sequence %a)) %2) %1)) %0)
@@ -385,19 +393,22 @@ def seqBuildFunc : WFLFunc CoreLParams :=
                 == %1
               else #true))],
       -- select(build(s, v), i):
-      --   i != length(s) ==> select(build(s,v), i) == select(s, i)
+      --   0 <= i < length(s) ==> select(build(s,v), i) == select(s, i)
       esM[∀ (Sequence %a): -- %2 s
           (∀ (%a): -- %1 v
             (∀ (int): -- %0 i
               {(((~Sequence.select : (Sequence %a) → int → %a)
                     (((~Sequence.build : (Sequence %a) → %a → (Sequence %a)) %2) %1)) %0)}
-              if (%0 == ((~Sequence.length : (Sequence %a) → int) %2))
-              then #true
-              else
+              if (((~Bool.And : bool → bool → bool)
+                    (((~Int.Ge : int → int → bool) %0) #0))
+                    (((~Int.Lt : int → int → bool) %0)
+                      ((~Sequence.length : (Sequence %a) → int) %2)))
+              then
                 (((~Sequence.select : (Sequence %a) → int → %a)
                     (((~Sequence.build : (Sequence %a) → %a → (Sequence %a)) %2) %1)) %0)
                 ==
-                (((~Sequence.select : (Sequence %a) → int → %a) %2) %0)))]
+                (((~Sequence.select : (Sequence %a) → int → %a) %2) %0)
+              else #true))]
     ])
 
 /- A `Sequence` update function with type `∀a. Sequence a → int → a → Sequence a`.
@@ -417,29 +428,40 @@ def seqUpdateFunc : WFLFunc CoreLParams :=
                 ((((~Sequence.update : (Sequence %a) → int → %a → (Sequence %a)) %2) %1) %0))
               ==
               ((~Sequence.length : (Sequence %a) → int) %2)))],
-      -- select(update(s, i, v), i) == v  (same index)
+      -- 0 <= i < length(s) ==> select(update(s, i, v), i) == v  (same index)
       esM[∀ (Sequence %a): -- %2 s
           (∀ (int): -- %1 i
             (∀ (%a): -- %0 v
               {(((~Sequence.select : (Sequence %a) → int → %a)
                   ((((~Sequence.update : (Sequence %a) → int → %a → (Sequence %a)) %2) %1) %0)) %1)}
-              (((~Sequence.select : (Sequence %a) → int → %a)
-                  ((((~Sequence.update : (Sequence %a) → int → %a → (Sequence %a)) %2) %1) %0)) %1)
-              == %0))],
-      -- select(update(s, i, v), n) == select(s, n)  when n != i
+              if (((~Bool.And : bool → bool → bool)
+                    (((~Int.Ge : int → int → bool) %1) #0))
+                    (((~Int.Lt : int → int → bool) %1)
+                      ((~Sequence.length : (Sequence %a) → int) %2)))
+              then
+                (((~Sequence.select : (Sequence %a) → int → %a)
+                    ((((~Sequence.update : (Sequence %a) → int → %a → (Sequence %a)) %2) %1) %0)) %1)
+                == %0
+              else #true))],
+      -- 0 <= n < length(s) && n != i ==> select(update(s, i, v), n) == select(s, n)
       esM[∀ (Sequence %a): -- %3 s
           (∀ (int): -- %2 i
             (∀ (%a): -- %1 v
               (∀ (int): -- %0 n
                 {(((~Sequence.select : (Sequence %a) → int → %a)
                     ((((~Sequence.update : (Sequence %a) → int → %a → (Sequence %a)) %3) %2) %1)) %0)}
-                (if (%0 == %2)
-                 then #true
-                 else
-                   (((~Sequence.select : (Sequence %a) → int → %a)
+                if (((~Bool.And : bool → bool → bool)
+                      (((~Bool.And : bool → bool → bool)
+                        (((~Int.Ge : int → int → bool) %0) #0))
+                        (((~Int.Lt : int → int → bool) %0)
+                          ((~Sequence.length : (Sequence %a) → int) %3))))
+                      (if (%0 == %2) then #false else #true))
+                then
+                  (((~Sequence.select : (Sequence %a) → int → %a)
                       ((((~Sequence.update : (Sequence %a) → int → %a → (Sequence %a)) %3) %2) %1)) %0)
-                   ==
-                   (((~Sequence.select : (Sequence %a) → int → %a) %3) %0)))))]
+                  ==
+                  (((~Sequence.select : (Sequence %a) → int → %a) %3) %0)
+                else #true)))]
     ])
 
 /- A `Sequence` contains function with type `∀a. Sequence a → a → bool`.
@@ -524,17 +546,25 @@ def seqDropFunc : WFLFunc CoreLParams :=
                 ((~Sequence.length : (Sequence %a) → int) %1))
                 %0)
             else #true)],
-      -- select(drop(s, n), j) == select(s, j + n)
+      -- 0 <= j < length(s) - n ==> select(drop(s, n), j) == select(s, j + n)
       esM[∀ (Sequence %a): -- %2 s
           (∀ (int): -- %1 n
             (∀ (int): -- %0 j
               {(((~Sequence.select : (Sequence %a) → int → %a)
                   (((~Sequence.drop : (Sequence %a) → int → (Sequence %a)) %2) %1)) %0)}
-              (((~Sequence.select : (Sequence %a) → int → %a)
-                  (((~Sequence.drop : (Sequence %a) → int → (Sequence %a)) %2) %1)) %0)
-              ==
-              (((~Sequence.select : (Sequence %a) → int → %a) %2)
-                  (((~Int.Add : int → int → int) %0) %1))))]
+              if (((~Bool.And : bool → bool → bool)
+                    (((~Int.Ge : int → int → bool) %0) #0))
+                    (((~Int.Lt : int → int → bool) %0)
+                      (((~Int.Sub : int → int → int)
+                        ((~Sequence.length : (Sequence %a) → int) %2))
+                        %1)))
+              then
+                (((~Sequence.select : (Sequence %a) → int → %a)
+                    (((~Sequence.drop : (Sequence %a) → int → (Sequence %a)) %2) %1)) %0)
+                ==
+                (((~Sequence.select : (Sequence %a) → int → %a) %2)
+                    (((~Int.Add : int → int → int) %0) %1))
+              else #true))]
     ])
 
 def emptyTriggersFunc : WFLFunc CoreLParams :=
