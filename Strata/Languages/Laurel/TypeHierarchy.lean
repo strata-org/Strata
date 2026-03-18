@@ -164,7 +164,7 @@ def validateDiamondFieldAccessesForStmtExpr (model : SemanticModel)
 Validate a Laurel program for diamond-inherited field accesses.
 Returns an array of DiagnosticModel errors.
 -/
-def validateDiamondFieldAccesses (model: SemanticModel) (program : Program) : Array DiagnosticModel :=
+def validateDiamondFieldAccesses (model: SemanticModel) (program : Program) : List DiagnosticModel :=
   let errors := program.staticProcedures.foldl (fun acc proc =>
     let bodyErrors := match proc.body with
       | .Transparent bodyExpr => validateDiamondFieldAccessesForStmtExpr model bodyExpr
@@ -177,7 +177,7 @@ def validateDiamondFieldAccesses (model: SemanticModel) (program : Program) : Ar
       | .Abstract postconds => postconds.foldl (fun acc p => acc ++ validateDiamondFieldAccessesForStmtExpr model p) []
       | .External => []
     acc ++ bodyErrors) []
-  errors.toArray
+  errors
 
 /--
 Lower `IsType target ty` to Laurel-level map lookups:

@@ -605,10 +605,10 @@ def translate (options: LaurelTranslateOptions) (program : Program): TranslateRe
   let (program, model) := (result.program, result.model)
 
     let initState : TranslateState := {model := model }
-  let (coreProgramOption, laurelToCoreErrors) := runTranslateM initState (translateLaurelToCore program)
-  let allDiagnostics := (if options.emitResolutionErrors then result.errors else Array.empty) ++
-    diamondErrors ++ modifiesDiags ++ constrainedTypeDiags.toList
-  (coreProgramOption, allDiagnostics.toList)
+  let (coreProgramOption, translateState) := runTranslateM initState (translateLaurelToCore program)
+  let resolutionErrors: List DiagnosticModel := if options.emitResolutionErrors then result.errors.toList else []
+  let allDiagnostics := resolutionErrors ++ diamondErrors ++ modifiesDiags ++ constrainedTypeDiags ++ translateState.diagnostics
+  (coreProgramOption, allDiagnostics)
   where
 
   translateLaurelToCore (program : Program): TranslateM Core.Program := do
