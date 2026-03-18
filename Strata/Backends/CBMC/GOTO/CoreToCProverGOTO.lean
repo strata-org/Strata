@@ -6,6 +6,7 @@
 
 import Strata.Languages.Core.Verifier
 import Strata.Backends.CBMC.GOTO.InstToJson
+import Strata.Backends.CBMC.GOTO.DefaultSymbols
 import Strata.Backends.CBMC.GOTO.LambdaToCProverGOTO
 import Strata.DL.Imperative.ToCProverGOTO
 
@@ -162,6 +163,11 @@ def CProverGOTO.Context.toJson (programName : String) (ctx : CProverGOTO.Context
   Except String CProverGOTO.Json := do
   let fn_symbol : Map String CProverGOTO.CBMCSymbol :=
     [CProverGOTO.createFunctionSymbol programName ctx.formals ctx.ret ctx.contracts]
+  -- Create contract::FUNC symbol for DFCC if contracts are present
+  let contract_symbol : Map String CProverGOTO.CBMCSymbol :=
+    match CProverGOTO.createContractSymbol programName ctx.formals ctx.ret ctx.contracts with
+    | some entry => [entry]
+    | none => []
   let formals : Map String CProverGOTO.CBMCSymbol :=
     ctx.formals.map (fun (name, ty) =>
         CProverGOTO.createGOTOSymbol programName name (CProverGOTO.mkFormalSymbol programName name)
@@ -179,7 +185,7 @@ def CProverGOTO.Context.toJson (programName : String) (ctx : CProverGOTO.Context
       |>.map fun info =>
         CProverGOTO.createGOTOSymbol programName info.name info.name
           (isParameter := false) (isStateVar := false) (ty := some info.type)
-  let symbols := Lean.toJson (knownSymbols ++ extraSymbols)
+  let symbols := Lean.toJson (knownSymbols ++ extraSymbols ++ contract_symbol)
   let goto_functions ← CProverGOTO.programsToJson [(programName, ctx.program)]
   return { symtab := symbols, goto := goto_functions }
 
@@ -261,7 +267,11 @@ def getGotoJson (programName : String) (env : Program) : IO CProverGOTO.Json := 
 open Strata in
 def writeToGotoJson (programName symTabFileName gotoFileName : String) (env : Program) : IO Unit := do
   let json ← getGotoJson programName env
-  IO.FS.writeFile symTabFileName json.symtab.pretty
+  let mut symtabObj := match json.symtab with | .obj m => m | _ => .empty
+  for (k, v) in CProverGOTO.defaultSymbols (moduleName := programName) do
+    symtabObj := symtabObj.insert k (Lean.toJson v)
+  let symtab := Lean.Json.mkObj [("symbolTable", Lean.Json.obj symtabObj)]
+  IO.FS.writeFile symTabFileName symtab.pretty
   IO.FS.writeFile gotoFileName json.goto.pretty
 
 end CoreToGOTO

@@ -21,6 +21,7 @@ import Strata.Languages.Python.PythonRuntimeLaurelPart
 import Strata.Languages.Python.PythonLaurelCorePrelude
 import Strata.Backends.CBMC.CollectSymbols
 import Strata.Backends.CBMC.GOTO.CoreToGOTOPipeline
+import Strata.Backends.CBMC.GOTO.DefaultSymbols
 
 import Strata.SimpleAPI
 
@@ -661,19 +662,27 @@ def pyAnalyzeToGotoCommand : Command where
       let some p := mainDecl.getProc?
         | panic! "main is not a procedure"
       -- Translate procedure to GOTO (mirrors CoreToGOTO.transformToGoto post-typecheck logic)
+      let tcPgm := inlineFuncDefsInProgram tcPgm
+      let tcPgm := inlineRecFuncDefsInProgram tcPgm
+      let tcPgm := partialEvalDatatypesInProgram tcPgm
       let baseName := deriveBaseName filePath
       let procName := Core.CoreIdent.toPretty p.header.name
       let axioms := tcPgm.decls.filterMap fun d => d.getAxiom?
+      let dtAxioms := generateDatatypeAxioms tcPgm
+      let recAxioms := generateRecFuncAxioms tcPgm (unrollDepth := 0)
+      let axioms := axioms ++ dtAxioms ++ recAxioms
       let distincts := tcPgm.decls.filterMap fun d => match d with
         | .distinct name es _ => some (name, es) | _ => none
+      let gotoDtInfo := collectGotoDatatypeInfo tcPgm
       match procedureToGotoCtx Env p sourceText (axioms := axioms) (distincts := distincts)
-            (varTypes := tcPgm.getVarTy?) with
+            (varTypes := tcPgm.getVarTy?) (asMain := true) with
       | .error e => panic! s!"{e}"
       | .ok (ctx, liftedFuncs) =>
         let extraSyms ← match collectExtraSymbols tcPgm with
           | .ok s => pure (Lean.toJson s)
           | .error e => panic! s!"{e}"
         let (symtab, goto) ← emitProcWithLifted Env procName ctx liftedFuncs extraSyms
+            (moduleName := baseName) (gotoDtInfo := gotoDtInfo)
         let symTabFile := s!"{baseName}.symtab.json"
         let gotoFile := s!"{baseName}.goto.json"
         IO.FS.writeFile symTabFile symtab.pretty
@@ -716,6 +725,9 @@ def pyAnalyzeLaurelToGotoCommand : Command where
     let (tcPgm, _) ← match Core.Program.typeCheck Ctx Env coreProgram with
       | .ok r => pure r
       | .error e => panic! s!"{e.format none}"
+    let tcPgm := inlineFuncDefsInProgram tcPgm
+    let tcPgm := inlineRecFuncDefsInProgram tcPgm
+    let tcPgm := partialEvalDatatypesInProgram tcPgm
     -- Find the main procedure; fall back to __main__ for top-level scripts
     let findProc (name : String) := tcPgm.decls.find? fun d =>
         match d with
@@ -732,16 +744,21 @@ def pyAnalyzeLaurelToGotoCommand : Command where
     -- Always use "main" as the GOTO function name (CBMC expects --function main)
     let procName := "main"
     let axioms := tcPgm.decls.filterMap fun d => d.getAxiom?
+    let dtAxioms := generateDatatypeAxioms tcPgm
+    let recAxioms := generateRecFuncAxioms tcPgm (unrollDepth := 0)
+    let axioms := axioms ++ dtAxioms ++ recAxioms
     let distincts := tcPgm.decls.filterMap fun d => match d with
       | .distinct name es _ => some (name, es) | _ => none
+    let gotoDtInfo := collectGotoDatatypeInfo tcPgm
     match procedureToGotoCtx Env p sourceText (axioms := axioms) (distincts := distincts)
-          (varTypes := tcPgm.getVarTy?) with
+          (varTypes := tcPgm.getVarTy?) (asMain := true) with
     | .error e => panic! s!"{e}"
     | .ok (ctx, liftedFuncs) =>
       let extraSyms ← match collectExtraSymbols tcPgm with
         | .ok s => pure (Lean.toJson s)
         | .error e => panic! s!"{e}"
       let (symtab, goto) ← emitProcWithLifted Env procName ctx liftedFuncs extraSyms
+          (moduleName := baseName) (gotoDtInfo := gotoDtInfo)
       let symTabFile := s!"{baseName}.symtab.json"
       let gotoFile := s!"{baseName}.goto.json"
       IO.FS.writeFile symTabFile symtab.pretty
@@ -904,6 +921,9 @@ def laurelAnalyzeToGotoCommand : Command where
         let (tcPgm, _) ← match Core.Program.typeCheck Ctx Env coreProgram.fst with
           | .ok r => pure r
           | .error e => panic! s!"{e.format none}"
+        let tcPgm := inlineFuncDefsInProgram tcPgm
+        let tcPgm := inlineRecFuncDefsInProgram tcPgm
+        let tcPgm := partialEvalDatatypesInProgram tcPgm
         let procs := tcPgm.decls.filterMap fun d => d.getProc?
         let funcs := tcPgm.decls.filterMap fun d =>
           match d.getFunc? with
@@ -921,8 +941,12 @@ def laurelAnalyzeToGotoCommand : Command where
         let typeSymsJson := Lean.toJson typeSyms
         let sourceText := some content
         let axioms := tcPgm.decls.filterMap fun d => d.getAxiom?
+        let dtAxioms := generateDatatypeAxioms tcPgm
+        let recAxioms := generateRecFuncAxioms tcPgm (unrollDepth := 0)
+        let axioms := axioms ++ dtAxioms ++ recAxioms
         let distincts := tcPgm.decls.filterMap fun d => match d with
           | .distinct name es _ => some (name, es) | _ => none
+        let gotoDtInfo := collectGotoDatatypeInfo tcPgm
         let mut symtabPairs : List (String × Lean.Json) := []
         let mut gotoFns : Array Lean.Json := #[]
         let mut allLiftedFuncs : List Core.Function := []

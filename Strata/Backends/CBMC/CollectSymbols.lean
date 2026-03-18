@@ -42,6 +42,19 @@ private def datatypeToSymbolEntry (dt : Lambda.LDatatype Unit)
         ("type", tyJson)
       ])
     ]
+  -- Build #adt_constructors annotation: list of (name, [field_names])
+  -- This tells CBMC's SMT backend to emit multi-constructor datatypes
+  let mut constrAnnotations : Array Lean.Json := #[]
+  for (constr, tag) in dt.constrs.zip (List.range dt.constrs.length) do
+    let fieldNames := constr.args.map fun (fid, _) => Lean.Json.mkObj [("id", fid.name)]
+    constrAnnotations := constrAnnotations.push (Lean.Json.mkObj [
+      ("id", ""),
+      ("namedSub", Lean.Json.mkObj [
+        ("name", Lean.Json.mkObj [("id", constr.name.name)]),
+        ("tag", Lean.Json.mkObj [("id", toString tag)]),
+        ("fields", Lean.Json.mkObj [("id", ""), ("sub", Lean.Json.arr fieldNames.toArray)])
+      ])
+    ])
   let structTy := Lean.Json.mkObj [
     ("id", "struct"),
     ("namedSub", Lean.Json.mkObj [
@@ -49,6 +62,10 @@ private def datatypeToSymbolEntry (dt : Lambda.LDatatype Unit)
       ("components", Lean.Json.mkObj [
         ("id", ""),
         ("sub", Lean.Json.arr componentsSub)
+      ]),
+      ("#adt_constructors", Lean.Json.mkObj [
+        ("id", ""),
+        ("sub", Lean.Json.arr constrAnnotations)
       ])
     ])
   ]
@@ -72,7 +89,9 @@ private def typeConstructorToSymbolEntry (tc : TypeConstructor) :
     ("namedSub", Lean.Json.mkObj [
       ("#pretty_name", Lean.Json.mkObj [("id", "__padding")]),
       ("name", Lean.Json.mkObj [("id", "__padding")]),
-      ("type", Lean.Json.mkObj [("id", "bool")])
+      ("type", Lean.Json.mkObj [
+        ("id", "unsignedbv"),
+        ("namedSub", Lean.Json.mkObj [("width", Lean.Json.mkObj [("id", "8")])])])
     ])
   ]
   let structTy := Lean.Json.mkObj [
@@ -109,8 +128,7 @@ private def collectDatatypeSymbols (pgm : Core.Program) :
           let entry ← datatypeToSymbolEntry dt mutualNames
           syms := syms ++ [entry]
     | .type (.con tc) _ =>
-      if tc.numargs == 0 then
-        syms := syms ++ [typeConstructorToSymbolEntry tc]
+      syms := syms ++ [typeConstructorToSymbolEntry tc]
     | _ => pure ()
   return syms
 

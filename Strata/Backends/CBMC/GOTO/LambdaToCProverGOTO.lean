@@ -54,9 +54,10 @@ def LMonoTy.toGotoType (ty : LMonoTy) : Except Format CProverGOTO.Ty :=
   | .string => .ok .String
   | .real => .ok .Real
   | .tcons "regex" [] => .ok .Regex
-  | .tcons "Map" [_, vty] => do
+  | .tcons "Map" [kty, vty] => do
+    let keyTy ← toGotoType kty
     let elemTy ← toGotoType vty
-    .ok (CProverGOTO.Ty.Array elemTy)
+    .ok (CProverGOTO.Ty.ArrayIndexed elemTy keyTy)
   | .tcons "arrow" _ => .error f!"[toGotoType] Function types not supported in GOTO translation"
   | .tcons name _ => .ok (CProverGOTO.Ty.StructTag name)
   | _ => .error f!"[toGotoType] Not yet implemented: {ty}"

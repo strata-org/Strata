@@ -74,6 +74,8 @@ inductive Identifier where
   | structTag (name : String)
   /-- Array type with element type -/
   | array
+  /-- Pointer type (subtypes[0] is the pointee type) -/
+  | pointer
   deriving Repr, Inhabited, DecidableEq
 
 instance : ToFormat Identifier where
@@ -82,6 +84,7 @@ instance : ToFormat Identifier where
     | .bitVector bv => f!"{bv}"
     | .structTag name => f!"struct_tag({name})"
     | .array => f!"array"
+    | .pointer => f!"pointer"
 
 end Ty
 
@@ -180,6 +183,15 @@ def StructTag (name : _root_.String) : Ty :=
 @[expose, match_pattern]
 def Array (elemTy : Ty) : Ty :=
   { id := .array, subtypes := [elemTy] }
+
+/-- Array type with explicit index type (for Map types) -/
+def ArrayIndexed (elemTy : Ty) (indexTy : Ty) : Ty :=
+  { id := .array, subtypes := [elemTy, indexTy] }
+
+/-- Pointer type wrapping a pointee type -/
+@[expose, match_pattern]
+def Pointer (pointeeTy : Ty) : Ty :=
+  { id := .pointer, subtypes := [pointeeTy] }
 
 end Ty
 

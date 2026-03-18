@@ -62,7 +62,21 @@ def tyToJson (ty : Ty) : Json :=
     ]
   | .Array elemTy => Json.mkObj [
       ("id", "array"),
-      ("sub", Json.arr #[tyToJson elemTy])
+      ("sub", Json.arr #[tyToJson elemTy]),
+      ("namedSub", Json.mkObj [("size", Json.mkObj [("id", "nil")])])
+    ]
+  | { id := .array, subtypes := [elemTy, indexTy], .. } => Json.mkObj [
+      ("id", "array"),
+      ("sub", Json.arr #[tyToJson elemTy]),
+      ("namedSub", Json.mkObj [
+        ("#index_type", tyToJson indexTy),
+        ("size", Json.mkObj [("id", "nil")])
+      ])
+    ]
+  | .Pointer pointeeTy => Json.mkObj [
+      ("id", "pointer"),
+      ("sub", Json.arr #[tyToJson pointeeTy]),
+      ("namedSub", Json.mkObj [("width", Json.mkObj [("id", "64")])])
     ]
   | _ => Json.mkObj [("id", "unknown")]
 
@@ -155,6 +169,25 @@ def exprToJson (expr : Expr) : Except String Json := do
         ("sub", Json.arr #[fnSymbol, argsTuple]),
         srcField
       ])
+    | .member componentName => do
+      let subs ← expr.operands.mapM exprToJson
+      pure (Json.mkObj [
+        ("id", "member"),
+        ("namedSub", Json.mkObj [
+          ("type", tyToJson expr.type),
+          ("component_name", Json.mkObj [("id", componentName)])
+        ]),
+        ("sub", Json.arr subs.toArray),
+        srcField
+      ])
+    | .struct => do
+      let subs ← expr.operands.mapM exprToJson
+      pure (Json.mkObj [
+        ("id", "struct"),
+        ("namedSub", Json.mkObj [("type", tyToJson expr.type)]),
+        ("sub", Json.arr subs.toArray),
+        srcField
+      ])
     | _ => throw s!"[exprToJson] Unsupported expr: {format expr}"
   return exprObj
   termination_by (SizeOf.sizeOf expr)
@@ -217,9 +250,8 @@ def instructionToJson (inst : Instruction) : Except String Json := do
     ("instructionId", Json.str (toString inst.type)),
     ("locationNumber", Json.num inst.locationNum)
   ]
-  let guardField ← if inst.type == .GOTO || !Expr.beq inst.guard Expr.true then do
+  let guardField ← do
     pure [("guard", ← exprToJsonWithNamedFields inst.guard)]
-  else pure []
   let codeField ← if inst.code == Code.skip then pure [] else do
     pure [("code", ← codeToJson inst.code)]
   let targetsField := match inst.type, inst.target with
@@ -460,7 +492,7 @@ def createFunctionSymbol (programName : String) (formals : Map String Ty) (ret :
       ]),
       ("return_type", tyToJson ret)
     ]
-  let namedSub := baseNamedSub ++ contracts
+  let namedSub := baseNamedSub ++ contracts.filter (·.1 != "#spec_ensures_all")
   let code_type := Json.mkObj [
     ("id", "code"),
     ("namedSub", Json.mkObj namedSub)
@@ -479,5 +511,103 @@ def createFunctionSymbol (programName : String) (formals : Map String Ty) (ret :
     type := code_type
     value := Json.mkObj [("id", "compiled")]
   })
+
+/-- Wrap a contract clause expression in a lambda_exprt binding the function
+    parameters (and optionally __CPROVER_return_value for postconditions).
+    CBMC's DFCC expects: lambda(tuple(params...), body) : mathematical_function -/
+private def wrapInLambda (formals : Map String Ty) (ret : Ty) (clauseJson : Json)
+    (includeReturnValue : Bool := false) : Json :=
+  let retParam := if includeReturnValue && ret != Ty.Empty then
+    [(Json.mkObj [
+      ("namedSub", Json.mkObj [
+        ("type", tyToJson ret),
+        ("identifier", Json.mkObj [("id", "__CPROVER_return_value")])
+      ]),
+      ("id", "symbol")
+    ], tyToJson ret)]
+  else []
+  let formalParams := formals.map fun (name, ty) =>
+    (Json.mkObj [
+      ("namedSub", Json.mkObj [
+        ("type", tyToJson ty),
+        ("identifier", Json.mkObj [("id", name)])
+      ]),
+      ("id", "symbol")
+    ], tyToJson ty)
+  let allParams := retParam ++ formalParams
+  let paramSyms := allParams.map (·.1)
+  let domainTypes := allParams.map (·.2)
+  let tupleExpr := Json.mkObj [
+    ("id", "tuple"),
+    ("sub", Json.arr paramSyms.toArray),
+    ("namedSub", Json.mkObj [("type", Json.mkObj [("id", "tuple")])])
+  ]
+  let mathFuncType := Json.mkObj [
+    ("id", "mathematical_function"),
+    ("sub", Json.arr #[
+      Json.mkObj [("id", ""), ("sub", Json.arr domainTypes.toArray)],
+      Json.mkObj [("id", "bool")]
+    ])
+  ]
+  Json.mkObj [
+    ("id", "lambda"),
+    ("sub", Json.arr #[tupleExpr, clauseJson]),
+    ("namedSub", Json.mkObj [("type", mathFuncType)])
+  ]
+
+/-- Create a `contract::FUNC` symbol for CBMC's DFCC contract checking.
+    The contract clauses are wrapped in lambda expressions binding the
+    function parameters, as expected by goto-instrument --dfcc. -/
+def createContractSymbol (programName : String) (formals : Map String Ty) (ret : Ty)
+    (contracts : List (String × Json)) : Option (String × CBMCSymbol) :=
+  if contracts.isEmpty then none
+  else
+    -- For the contract symbol, use #spec_ensures_all (all postconditions including free)
+    -- instead of #spec_ensures (only checked). Wrap each clause in a lambda.
+    let contractClauses := contracts.filterMap fun (key, clauseJson) =>
+      if key == "#spec_ensures_all" then
+        some ("#spec_ensures", clauseJson)  -- rename to standard key
+      else if key == "#spec_ensures" then
+        none  -- skip checked-only ensures (superseded by _all)
+      else
+        some (key, clauseJson)
+    -- If no _all variant was present, fall back to whatever we have
+    let contractClauses := if contractClauses.any (·.1 == "#spec_ensures") then contractClauses
+      else contracts.filter (·.1 != "#spec_ensures_all")
+    let wrappedContracts := contractClauses.map fun (key, clauseJson) =>
+      let isPost := key == "#spec_ensures"
+      match clauseJson with
+      | .obj fields =>
+        match fields.toList.find? (·.1 == "sub") with
+        | some (_, .arr subs) =>
+          let wrappedSubs := subs.map (wrapInLambda formals ret · (includeReturnValue := isPost))
+          (key, Json.mkObj [("id", ""), ("sub", Json.arr wrappedSubs)])
+        | _ => (key, clauseJson)
+      | _ => (key, clauseJson)
+    let contractName := s!"contract::{programName}"
+    let baseNamedSub := [
+        ("parameters", Json.mkObj [
+          ("sub", Json.arr
+                  (formals.map (fun (name, ty) =>
+                                  mkParam name (mkFormalSymbol programName name) ty)).toArray)
+        ]),
+        ("return_type", tyToJson ret)
+      ]
+    let namedSub := baseNamedSub ++ wrappedContracts
+    let code_type := Json.mkObj [
+      ("id", "code"),
+      ("namedSub", Json.mkObj namedSub)
+    ]
+    some (contractName,
+    {
+      baseName := programName,
+      isProperty := true,
+      mode := "C",
+      module := programName,
+      name := contractName,
+      prettyName := programName,
+      type := code_type
+      value := Json.mkObj [("id", "nil")]
+    })
 
 -------------------------------------------------------------------------------

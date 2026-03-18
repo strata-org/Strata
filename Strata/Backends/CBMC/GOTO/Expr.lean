@@ -57,6 +57,10 @@ inductive Unary where
   | ArrayOf
   /-- `typecast_exprt` -/
   | Typecast
+  /-- `address_of_exprt` -/
+  | AddressOf
+  /-- `dereference_exprt` -/
+  | Dereference
   deriving Repr, Inhabited, DecidableEq
 
 instance : ToFormat Unary where
@@ -68,6 +72,8 @@ instance : ToFormat Unary where
     | .Old => "old"
     | .ArrayOf => "array_of"
     | .Typecast => "typecast"
+    | .AddressOf => "address_of"
+    | .Dereference => "dereference"
 
 /--
 Representation of identifiers specific to binary expressions,
@@ -187,6 +193,10 @@ inductive Identifier where
   | side_effect (s : Identifier.SideEffect)
   /-- `function_application_exprt` - uninterpreted function application -/
   | functionApplication (name : String)
+  /-- `member_exprt` - struct field access with component name -/
+  | member (componentName : String)
+  /-- `struct_exprt` - struct literal (operands are field values in order) -/
+  | struct
   deriving Repr, Inhabited, DecidableEq
 
 instance : ToFormat Identifier where
@@ -198,6 +208,8 @@ instance : ToFormat Identifier where
     | .multiary m => f!"{m}"
     | .side_effect s => f!"{s}"
     | .functionApplication name => f!"function_application({name})"
+    | .member name => f!"member({name})"
+    | .struct => "struct"
 
 end Expr
 -------------------------------------------------------------------------------
@@ -376,8 +388,7 @@ partial def hasUnsupportedQuantifierTypes (e : Expr) : Bool :=
     match e.operands with
     | boundVar :: _ =>
       match boundVar.type.id with
-      | .structTag _ | .primitive .regex | .primitive .empty
-      | .primitive .string => Bool.true
+      | .array | .primitive .regex | .primitive .empty => Bool.true
       | _ => e.operands.any hasUnsupportedQuantifierTypes
     | _ => false
   | _ => e.operands.any hasUnsupportedQuantifierTypes
