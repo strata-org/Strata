@@ -29,7 +29,7 @@ import Strata.SimpleAPI
 
 open Strata
 
-open Core (VerifyOptions VerboseMode)
+open Core (VerifyOptions VerboseMode VerificationMode CheckLevel)
 
 def exitFailure {α} (message : String) (hint : String := "strata --help") : IO α := do
   IO.eprintln s!"Exception: {message}\n\nRun {hint} for additional help."
@@ -103,6 +103,30 @@ def buildDialectFileMap (pflags : ParsedFlags) : IO Strata.DialectFileMap := do
   return sp
 
 end ParsedFlags
+
+def parseCheckMode (pflags : ParsedFlags) : IO VerificationMode :=
+  match pflags.getString "check-mode" with
+  | .none => pure .deductive
+  | .some s => match VerificationMode.ofString? s with
+    | .some m => pure m
+    | .none => exitFailure s!"Invalid check mode: '{s}'. Must be {VerificationMode.options}."
+
+def parseCheckLevel (pflags : ParsedFlags) : IO CheckLevel :=
+  match pflags.getString "check-level" with
+  | .none => pure .minimal
+  | .some s => match CheckLevel.ofString? s with
+    | .some l => pure l
+    | .none => exitFailure s!"Invalid check level: '{s}'. Must be {CheckLevel.options}."
+
+def checkModeFlag : Flag :=
+  { name := "check-mode",
+    help := s!"Check mode: {VerificationMode.options}. Default: 'deductive'.",
+    takesArg := .arg "mode" }
+
+def checkLevelFlag : Flag :=
+  { name := "check-level",
+    help := s!"Check level: {CheckLevel.options}. Default: 'minimal'.",
+    takesArg := .arg "level" }
 
 structure Command where
   name : String
@@ -362,7 +386,8 @@ def pyAnalyzeLaurelCommand : Command where
             { name := "sarif", help := "Write results as SARIF to <file>.sarif." },
             { name := "vc-directory",
               help := "Store VCs in SMT-Lib format in <dir>.",
-              takesArg := .arg "dir" }]
+              takesArg := .arg "dir" },
+            checkModeFlag, checkLevelFlag]
   help := "Verify a Python Ion program via the Laurel pipeline. Translates Python to Laurel to Core, then runs SMT verification."
   callback := fun v pflags => do
     let verbose := pflags.getBool "verbose"
@@ -410,8 +435,12 @@ def pyAnalyzeLaurelCommand : Command where
       IO.print coreProgram
 
     -- Verify using Core verifier
+    let checkMode ← parseCheckMode pflags
+    let checkLevel ← parseCheckLevel pflags
     let baseOptions : VerifyOptions :=
-      { VerifyOptions.default with stopOnFirstError := false, verbose := .quiet, solver := "z3" }
+      { VerifyOptions.default with
+        stopOnFirstError := false, verbose := .quiet, solver := "z3",
+        checkMode := checkMode, checkLevel := checkLevel }
     let options : VerifyOptions := match pflags.getString "vc-directory" with
       | .some dir => { baseOptions with vcDirectory := some (dir : System.FilePath) }
       | .none => baseOptions
@@ -457,7 +486,7 @@ def pyAnalyzeLaurelCommand : Command where
       let files := match mfm with
         | some (pyPath, fm) => Map.empty.insert (Strata.Uri.file pyPath) fm
         | none => Map.empty
-      Core.Sarif.writeSarifOutput .deductive files vcResults (filePath ++ ".sarif")
+      Core.Sarif.writeSarifOutput checkMode files vcResults (filePath ++ ".sarif")
 
 private def deriveBaseName (file : String) : String :=
   let name := System.FilePath.fileName file |>.getD file
