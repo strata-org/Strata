@@ -335,7 +335,7 @@ private def lowerVarStatement (m : SourceRange) (ds : BooleDDM.DeclList SourceRa
 
 mutual
 
-partial def toCoreBlock (b : BooleDDM.Block SourceRange) : TranslateM (List Core.Statement) := do
+def toCoreBlock (b : BooleDDM.Block SourceRange) : TranslateM (List Core.Statement) := do
   match b with
   | .block _ ⟨_, ss⟩ =>
     let parts ← ss.toList.mapM fun s =>
@@ -343,8 +343,10 @@ partial def toCoreBlock (b : BooleDDM.Block SourceRange) : TranslateM (List Core
       | .varStatement m ds => lowerVarStatement m ds
       | _ => return [← toCoreStmt s]
     return parts.flatten
+  termination_by SizeOf.sizeOf b
+  decreasing_by simp_all; term_by_mem
 
-partial def toCoreStmt (s : BooleDDM.Statement SourceRange) : TranslateM Core.Statement := do
+def toCoreStmt (s : BooleDDM.Statement SourceRange) : TranslateM Core.Statement := do
   match s with
   | .varStatement m ds =>
     let out ← lowerVarStatement m ds
@@ -481,6 +483,7 @@ partial def toCoreStmt (s : BooleDDM.Statement SourceRange) : TranslateM Core.St
         (mkCoreApp Core.intSubOp [.fvar () id none, stepExpr])
         (← toCoreInvariants invs)
         body
+  termination_by SizeOf.sizeOf s
 
 end
 
