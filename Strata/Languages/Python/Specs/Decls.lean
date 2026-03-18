@@ -299,10 +299,18 @@ def instDecidableMem (e : SpecAtomType) (tp : SpecType) : Decidable (e ∈ tp) :
 
 end SpecType
 
+/-- A default value for a pyspec argument.
+    TODO: extend with additional constructors (e.g., string, int, bool literals)
+    as PySpec gains support for richer default values. -/
+inductive SpecDefault where
+  /-- Python `None`. -/
+  | none
+deriving Inhabited, Repr
+
 structure Arg where
   name : String
   type : SpecType
-  hasDefault : Bool
+  default : Option SpecDefault := none
 deriving Inhabited
 
 structure ArgDecls where
