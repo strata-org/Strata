@@ -11,7 +11,10 @@ import Strata.Languages.Core.SarifOutput
 import Strata.Languages.Laurel.Grammar.ConcreteToAbstractTreeTranslator
 import Strata.Languages.Laurel.LaurelToCoreTranslator
 import Strata.Languages.Python.Python
+import Strata.Languages.Python.PySpecPipeline
 import Strata.Languages.Python.Specs
+import Strata.Languages.Python.Specs.DDM
+import Strata.Languages.Python.Specs.IdentifyOverloads
 import Strata.Languages.Python.Specs.ToLaurel
 import Strata.Languages.Laurel.LaurelFormat
 import Strata.Languages.Laurel.Laurel
@@ -26,11 +29,21 @@ import Strata.SimpleAPI
 
 open Strata
 
-open Core (VerifyOptions VerboseMode)
+open Core (VerifyOptions VerboseMode VerificationMode CheckLevel)
 
 def exitFailure {α} (message : String) (hint : String := "strata --help") : IO α := do
   IO.eprintln s!"Exception: {message}\n\nRun {hint} for additional help."
   IO.Process.exit 1
+
+/-- Exit with code 1 for user code errors (detected bugs in the Python source). -/
+def exitUserCodeError {α} (message : String) : IO α := do
+  IO.eprintln s!"❌ {message}"
+  IO.Process.exit 1
+
+/-- Exit with code 2 for internal errors (tool limitations or crashes). -/
+def exitInternalError {α} (message : String) : IO α := do
+  IO.eprintln s!"Exception: {message}"
+  IO.Process.exit 2
 
 def exitCmdFailure {α} (cmdName : String) (message : String) : IO α :=
   exitFailure message (hint := s!"strata {cmdName} --help")
@@ -90,6 +103,30 @@ def buildDialectFileMap (pflags : ParsedFlags) : IO Strata.DialectFileMap := do
   return sp
 
 end ParsedFlags
+
+def parseCheckMode (pflags : ParsedFlags) : IO VerificationMode :=
+  match pflags.getString "check-mode" with
+  | .none => pure .deductive
+  | .some s => match VerificationMode.ofString? s with
+    | .some m => pure m
+    | .none => exitFailure s!"Invalid check mode: '{s}'. Must be {VerificationMode.options}."
+
+def parseCheckLevel (pflags : ParsedFlags) : IO CheckLevel :=
+  match pflags.getString "check-level" with
+  | .none => pure .minimal
+  | .some s => match CheckLevel.ofString? s with
+    | .some l => pure l
+    | .none => exitFailure s!"Invalid check level: '{s}'. Must be {CheckLevel.options}."
+
+def checkModeFlag : Flag :=
+  { name := "check-mode",
+    help := s!"Check mode: {VerificationMode.options}. Default: 'deductive'.",
+    takesArg := .arg "mode" }
+
+def checkLevelFlag : Flag :=
+  { name := "check-level",
+    help := s!"Check level: {CheckLevel.options}. Default: 'minimal'.",
+    takesArg := .arg "level" }
 
 structure Command where
   name : String
@@ -290,6 +327,9 @@ def pyAnalyzeCommand : Command where
       let vcResults ← match options.vcDirectory with
                       | .none => IO.FS.withTempDir runVerification
                       | .some tempDir => runVerification tempDir
+      let mfm : Option (String × Lean.FileMap) := match pySourceOpt with
+        | some (pyPath, srcText) => some (pyPath, .ofString srcText)
+        | none => none
       let mut s := ""
       for vcResult in vcResults do
         -- Build location string based on available metadata
@@ -297,14 +337,13 @@ def pyAnalyzeCommand : Command where
           | some fr =>
             if fr.range.isNone then ("", "")
             else
-              -- Convert byte offset to line/column if we have the source
-              match pySourceOpt with
-              | some (pyPath, srcText) =>
+              match mfm with
+              | some (pyPath, fm) =>
                 -- Check if this metadata is from the Python source (not CorePrelude)
                 match fr.file with
                 | .file path =>
                   if path == pyPath then
-                    let pos := (Lean.FileMap.ofString srcText).toPosition fr.range.start
+                    let pos := fm.toPosition fr.range.start
                     -- For failures, show at beginning; for passes, show at end
                     if vcResult.isFailure then
                       (s!"Assertion failed at line {pos.line}, col {pos.column}: ", "")
@@ -328,204 +367,10 @@ def pyAnalyzeCommand : Command where
       IO.println s
       -- Output in SARIF format if requested
       if outputSarif then
-        let files := match pySourceOpt with
-          | some (pyPath, srcText) => Map.empty.insert (Strata.Uri.file pyPath) (Lean.FileMap.ofString srcText)
+        let files := match mfm with
+          | some (pyPath, fm) => Map.empty.insert (Strata.Uri.file pyPath) fm
           | none => Map.empty
         Core.Sarif.writeSarifOutput .deductive files vcResults (filePath ++ ".sarif")
-
-/-- Result of building the PySpec-augmented prelude. -/
-structure PySpecPrelude where
-  preludeInLaurel : Strata.Laurel.Program
-  preludeInCore : Core.Program
-  overloads : Strata.Python.Specs.ToLaurel.OverloadTable
-
-private def combineLaurelPrograms (first: Strata.Laurel.Program) (second: Strata.Laurel.Program): Strata.Laurel.Program :=
-{
-  staticProcedures := first.staticProcedures ++ second.staticProcedures
-  staticFields := first.staticFields ++ second.staticFields
-  types := first.types ++ second.types
-  constants := first.constants ++ second.constants
-}
-
-/-- Build the Core prelude augmented with declarations from PySpec Ion files.
-    Each Ion file is translated PySpec → Laurel → Core, and the resulting declarations
-    are appended to the base prelude (with duplicates filtered out).
-    Also accumulates overload dispatch tables. -/
-def buildPySpecPrelude (pyspecPaths : Array String) : IO PySpecPrelude := do
-  let mut preludeInLaurel : Strata.Laurel.Program := Strata.Python.pythonRuntimeLaurelPart
-  let mut allOverloads : Strata.Python.Specs.ToLaurel.OverloadTable := {}
-  for ionPath in pyspecPaths do
-    let ionFile : System.FilePath := ionPath
-    let some mod := ionFile.fileStem
-      | exitFailure s!"No stem {ionFile}"
-    let .ok _mod := Strata.Python.Specs.ModuleName.ofString mod
-      | exitFailure s!"Invalid module {mod}"
-    let sigs ←
-      match ← Strata.Python.Specs.readDDM ionFile |>.toBaseIO with
-      | .ok t => pure t
-      | .error msg => exitFailure s!"Could not read {ionFile}: {msg}"
-    let result := Strata.Python.Specs.ToLaurel.signaturesToLaurel ionPath sigs
-    if result.errors.size > 0 then
-      IO.eprintln s!"{result.errors.size} PySpec translation warning(s) for {ionPath}:"
-      for err in result.errors do
-        IO.eprintln s!"  {err.file}: {err.message}"
-    -- Merge overload table entries
-    for (funcName, overloads) in result.overloads do
-      let existing := allOverloads.getD funcName {}
-      allOverloads := allOverloads.insert funcName
-        (overloads.fold (init := existing) fun acc k v => acc.insert k v)
-
-    preludeInLaurel := combineLaurelPrograms preludeInLaurel result.program
-
-  let preludeInCoreDecls : List Core.Decl ← match Strata.Laurel.translate { emitResolutionErrors := false } preludeInLaurel with
-  | .error diagnostics =>
-    exitFailure s!"PySpec Laurel to Core translation failed: {diagnostics}"
-  | .ok (coreSpec, _modifiesDiags) =>
-    pure $ Strata.Python.coreOnlyFromRuntimeCorePart ++ coreSpec.decls
-
-  preludeInLaurel := { preludeInLaurel with
-    staticProcedures :=
-      preludeInLaurel.staticProcedures ++
-      laurelFunctionFromPreludeCorePart ++
-      laurelProceduresFromCorePart
-  }
-
-  -- TODO remove this when we turn on Laurel resolution errors for the Python pipeline
-  -- Check for duplicate names in preludeInLaurel's top-level declarations
-  let mut seenNames : Std.HashSet String := {}
-  for proc in preludeInLaurel.staticProcedures do
-    let name := proc.name.text
-    if seenNames.contains name then
-      exitFailure s!"Duplicate procedure name in Python prelude: {name}"
-    seenNames := seenNames.insert name
-  for field in preludeInLaurel.staticFields do
-    let name := field.name.text
-    if seenNames.contains name then
-      exitFailure s!"Duplicate field name in Python prelude: {name}"
-    seenNames := seenNames.insert name
-  for ty in preludeInLaurel.types do
-    let name := ty.name.text
-    if seenNames.contains name then
-      exitFailure s!"Duplicate type name in Python prelude: {name}"
-    seenNames := seenNames.insert name
-
-  let preludeInCore : Core.Program := { decls := preludeInCoreDecls }
-  return { preludeInLaurel := preludeInLaurel, preludeInCore := preludeInCore, overloads := allOverloads }
-  where
-  preludeInCoreFunctionNames := Strata.Python.coreOnlyFromRuntimeCorePart.filterMap (λ decl =>
-    match decl.kind with
-        |.func => some decl.name.name
-        | _ => none)
-  preludeInCoreProcedureNames := Strata.Python.coreOnlyFromRuntimeCorePart.filterMap (λ decl =>
-    match decl.kind with
-        |.proc => some decl.name.name
-        | _ => none)
-
-  laurelProceduresFromCorePart : List Strata.Laurel.Procedure := preludeInCoreProcedureNames.map (λ funcname =>
-  {
-    name := {text:= funcname} ,
-    inputs := [],
-    outputs := [],
-    preconditions := [],
-    determinism := .deterministic none,
-    decreases := none,
-    body := .External
-    md := default
-    isFunctional := true
-    }
-  )
-
-  laurelFunctionFromPreludeCorePart : List Strata.Laurel.Procedure := preludeInCoreFunctionNames.map (λ funcname =>
-  {
-    name := {text:= funcname} ,
-    inputs := [],
-    outputs := [],
-    preconditions := [],
-    determinism := .deterministic none,
-    decreases := none,
-    body := .External
-    md := default
-    isFunctional := true
-    }
-  )
-
-def translatePythonToCore
-  (verbose: Bool)
-  (filePath: String)
-  (pySpecPaths: Array String)
-  (dispatchPaths: Array String): IO Core.Program := do
-  let pgm ← readPythonStrata filePath
-  let cmds := Strata.toPyCommands pgm.commands
-  let pySourceOpt ← tryReadPythonSource filePath
-  let pySpecResult ← buildPySpecPrelude pySpecPaths
-
-  -- Extract overload dispatch tables from --dispatch files
-  let mut allOverloads := pySpecResult.overloads
-  for dispatchPath in dispatchPaths do
-    let ionFile : System.FilePath := dispatchPath
-    let sigs ←
-      match ← Strata.Python.Specs.readDDM ionFile |>.toBaseIO with
-      | .ok t => pure t
-      | .error msg =>
-        exitFailure s!"Could not read dispatch file {ionFile}: {msg}"
-    let (overloads, errors) :=
-      Strata.Python.Specs.ToLaurel.extractOverloads dispatchPath sigs
-    if errors.size > 0 then
-      IO.eprintln s!"{errors.size} dispatch warning(s) for {ionFile}:"
-      for err in errors do
-        IO.eprintln s!"  {err.file}: {err.message}"
-    for (funcName, fnOverloads) in overloads do
-      let existing := allOverloads.getD funcName {}
-      allOverloads := allOverloads.insert funcName
-        (fnOverloads.fold (init := existing) fun acc k v => acc.insert k v)
-
-  let sourcePathForMetadata := match pySourceOpt with
-    | some (pyPath, _) => pyPath
-    | none => filePath
-  let laurelPgm := Strata.Python.pythonToLaurel pySpecResult.preludeInCore cmds[0]! none
-    sourcePathForMetadata allOverloads
-  match laurelPgm with
-    | .error e =>
-      exitFailure s!"Python to Laurel translation failed: {e}"
-    | .ok (laurelProgram, _) =>
-      let combinedLaurelProgram : Strata.Laurel.Program := combineLaurelPrograms pySpecResult.preludeInLaurel laurelProgram
-
-      if verbose then
-        IO.println "\n==== Laurel Program ===="
-        IO.println f!"{combinedLaurelProgram}"
-
-      -- Translate Laurel to Core
-      match Strata.Laurel.translate { emitResolutionErrors := false } combinedLaurelProgram with
-      | .error diagnostics =>
-        exitFailure s!"Laurel to Core translation failed: {diagnostics}"
-      | .ok (coreProgramDecls, modifiesDiags) =>
-        let coreProgram: Core.Program := { decls := coreProgramDecls.decls }
-        if verbose then
-          IO.println "\n==== Core Program ===="
-          IO.print (coreProgram, modifiesDiags)
-
-        let (preludeDecls, userDecls) := coreProgram.decls.span (fun d => toString d.name != "FIRST_END_MARKER")
-        let coreProgram: Core.Program := {
-          decls :=
-          preludeDecls ++
-          Strata.Python.coreOnlyFromRuntimeCorePart ++
-          userDecls
-        }
-        if verbose then
-          IO.println "\n==== Core Program with pyPrelude ===="
-          IO.print (coreProgram, modifiesDiags)
-
-        -- TODO remove this check when we turn on emitResolutionErrors on the Laurel.translate call
-        -- Check for duplicate names in Core top-level declarations
-        let allNames := coreProgram.decls.flatMap Core.Decl.names
-        let mut seenCoreNames : Std.HashSet String := {}
-        for n in allNames do
-          let name := n.name
-          if seenCoreNames.contains name then
-            exitFailure s!"Duplicate name in Core program: {name}"
-          seenCoreNames := seenCoreNames.insert name
-
-        return coreProgram
 
 def pyAnalyzeLaurelCommand : Command where
   name := "pyAnalyzeLaurel"
@@ -541,41 +386,68 @@ def pyAnalyzeLaurelCommand : Command where
             { name := "sarif", help := "Write results as SARIF to <file>.sarif." },
             { name := "vc-directory",
               help := "Store VCs in SMT-Lib format in <dir>.",
-              takesArg := .arg "dir" }]
+              takesArg := .arg "dir" },
+            checkModeFlag, checkLevelFlag]
   help := "Verify a Python Ion program via the Laurel pipeline. Translates Python to Laurel to Core, then runs SMT verification."
   callback := fun v pflags => do
     let verbose := pflags.getBool "verbose"
     let outputSarif := pflags.getBool "sarif"
     let filePath := v[0]
-    let pgm ← readPythonStrata filePath
     let pySourceOpt ← tryReadPythonSource filePath
-    let cmds := Strata.toPyCommands pgm.commands
+
     if verbose then
+      let pgm ← readPythonStrata filePath
       IO.println "==== Python AST ===="
       IO.print pgm
-    assert! cmds.size == 1
 
-    let pySpecPaths := pflags.getRepeated "pyspec"
-    let pySpecResult ← buildPySpecPrelude pySpecPaths
-    let dispatchPaths := pflags.getRepeated "dispatch"
+    let dispatchFiles := pflags.getRepeated "dispatch"
+    let pyspecFiles := pflags.getRepeated "pyspec"
+    let sourcePath := pySourceOpt.map (·.1)
+    -- Build FileMap for source position resolution.
+    let mfm : Option (String × Lean.FileMap) := match pySourceOpt with
+      | some (pyPath, srcText) => some (pyPath, .ofString srcText)
+      | none => none
+    let combinedLaurel ←
+      match ← Strata.pyAnalyzeLaurel filePath dispatchFiles pyspecFiles sourcePath |>.toBaseIO with
+      | .ok r => pure r
+      | .error (.userCode range msg) =>
+        let location := if range.isNone then "" else
+          match mfm with
+          | some (_, fm) =>
+            let pos := fm.toPosition range.start
+            s!" at line {pos.line}, col {pos.column}"
+          | none => ""
+        exitUserCodeError s!"{msg}{location}"
+      | .error (.internal msg) => exitInternalError msg
 
-    let coreProgram ← translatePythonToCore verbose filePath pySpecPaths dispatchPaths
+    if verbose then
+      IO.println "\n==== Laurel Program ===="
+      IO.println f!"{combinedLaurel}"
+
+    let coreProgram ←
+      match Strata.translateCombinedLaurel combinedLaurel with
+      | .error diagnostics =>
+        exitInternalError s!"Laurel to Core translation failed: {diagnostics}"
+      | .ok (core, _) => pure core
+
+    if verbose then
+      IO.println "\n==== Core Program ===="
+      IO.print coreProgram
 
     -- Verify using Core verifier
+    let checkMode ← parseCheckMode pflags
+    let checkLevel ← parseCheckLevel pflags
     let baseOptions : VerifyOptions :=
-      { VerifyOptions.default with stopOnFirstError := false, verbose := .quiet, solver := "z3" }
+      { VerifyOptions.default with
+        stopOnFirstError := false, verbose := .quiet, solver := "z3",
+        checkMode := checkMode, checkLevel := checkLevel }
     let options : VerifyOptions := match pflags.getString "vc-directory" with
       | .some dir => { baseOptions with vcDirectory := some (dir : System.FilePath) }
       | .none => baseOptions
-    let runVerification tempDir :=
-      EIO.toIO
-        (fun f => IO.Error.userError (toString f))
-        (Core.verify coreProgram tempDir .none options)
-    let vcResults ← match options.vcDirectory with
-      | .none => IO.FS.withTempDir runVerification
-      | .some vcDir => do
-        IO.FS.createDirAll vcDir
-        runVerification vcDir
+    let vcResults ←
+      match ← Strata.verifyCore coreProgram options |>.toBaseIO with
+      | .ok r => pure r
+      | .error msg => exitInternalError msg
 
     -- Print results
     IO.println "\n==== Verification Results ===="
@@ -585,21 +457,20 @@ def pyAnalyzeLaurelCommand : Command where
         | some fr =>
           if fr.range.isNone then ("", "")
           else
-            match pySourceOpt with
-            | some (pyPath, srcText) =>
+            match mfm with
+            | some (_, fm) =>
               match fr.file with
-              | .file path =>
-                if path == pyPath then
-                  let pos := (Lean.FileMap.ofString srcText).toPosition fr.range.start
-                  if vcResult.isFailure then
-                    (s!"Assertion failed at line {pos.line}, col {pos.column}: ", "")
-                  else
-                    ("", s!" (at line {pos.line}, col {pos.column})")
+              | .file "" =>
+                if vcResult.isFailure then
+                  (s!"Assertion failed in prelude file: ", "")
                 else
-                  if vcResult.isFailure then
-                    (s!"Assertion failed in prelude file: ", "")
-                  else
-                    ("", s!" (in prelude file)")
+                  ("", s!" (in prelude file)")
+              | .file path =>
+                let pos := fm.toPosition fr.range.start
+                if vcResult.isFailure then
+                  (s!"Assertion failed at line {pos.line}, col {pos.column}: ", "")
+                else
+                  ("", s!" (at line {pos.line}, col {pos.column})")
             | none =>
               if vcResult.isFailure then
                 (s!"Assertion failed: ", "")
@@ -612,10 +483,10 @@ def pyAnalyzeLaurelCommand : Command where
     IO.println s
     -- Output in SARIF format if requested
     if outputSarif then
-      let files := match pySourceOpt with
-        | some (pyPath, srcText) => Map.empty.insert (Strata.Uri.file pyPath) (Lean.FileMap.ofString srcText)
+      let files := match mfm with
+        | some (pyPath, fm) => Map.empty.insert (Strata.Uri.file pyPath) fm
         | none => Map.empty
-      Core.Sarif.writeSarifOutput .deductive files vcResults (filePath ++ ".sarif")
+      Core.Sarif.writeSarifOutput checkMode files vcResults (filePath ++ ".sarif")
 
 private def deriveBaseName (file : String) : String :=
   let name := System.FilePath.fileName file |>.getD file
@@ -683,70 +554,47 @@ def pyAnalyzeToGotoCommand : Command where
 def pyTranslateLaurelCommand : Command where
   name := "pyTranslateLaurel"
   args := [ "file" ]
+  flags := [{ name := "pyspec",
+              help := "Add PySpec-derived Laurel declarations.",
+              takesArg := .repeat "ion_file" },
+            { name := "dispatch",
+              help := "Extract overload dispatch table from a \
+                PySpec Ion file (no Laurel translation).",
+              takesArg := .repeat "ion_file" }]
   help := "Translate a Strata Python Ion file through Laurel to Strata Core. Write results to stdout."
-  callback := fun v _ => do
-    let pgm ← readPythonStrata v[0]
-    let cmds := Strata.toPyCommands pgm.commands
-    assert! cmds.size == 1
-    let mut coreProgram ← translatePythonToCore false v[0] Array.empty Array.empty
+  callback := fun v pflags => do
+    let dispatchFiles := pflags.getRepeated "dispatch"
+    let pyspecFiles := pflags.getRepeated "pyspec"
+    let coreProgram ←
+      match ← Strata.pyTranslateLaurel v[0] dispatchFiles pyspecFiles |>.toBaseIO with
+      | .ok r => pure r
+      | .error msg => exitFailure msg
     IO.print coreProgram
 
 def pyAnalyzeLaurelToGotoCommand : Command where
   name := "pyAnalyzeLaurelToGoto"
   args := [ "file" ]
+  flags := [{ name := "pyspec",
+              help := "Add PySpec-derived Laurel declarations.",
+              takesArg := .repeat "ion_file" },
+            { name := "dispatch",
+              help := "Extract overload dispatch table from a \
+                PySpec Ion file (no Laurel translation).",
+              takesArg := .repeat "ion_file" }]
   help := "Translate a Strata Python Ion file through Laurel to CProver GOTO JSON files."
-  callback := fun v _ => do
+  callback := fun v pflags => do
     let filePath := v[0]
-    let pgm ← readPythonStrata filePath
-    let pySourceOpt ← tryReadPythonSource filePath
-
-    let mut coreProgram ← translatePythonToCore false filePath Array.empty Array.empty
-    for _ in List.range 10 do
-      match Core.Transform.runProgram (targetProcList := .none)
-            (Core.ProcedureInlining.inlineCallCmd
-              (doInline := λ name _ => name ≠ "main"))
-            coreProgram .emp with
-      | ⟨.ok (changed, pgm), _⟩ =>
-        coreProgram := pgm
-        if !changed then break
-      | ⟨.error e, _⟩ => panic! e
-    let Ctx := { Lambda.LContext.default with functions := Core.Factory, knownTypes := Core.KnownTypes }
-    let Env := Lambda.TEnv.default
-    let sourceText := pySourceOpt.map (·.2)
-    let (tcPgm, _) ← match Core.Program.typeCheck Ctx Env coreProgram with
+    let dispatchFiles := pflags.getRepeated "dispatch"
+    let pyspecFiles := pflags.getRepeated "pyspec"
+    let coreProgram ←
+      match ← Strata.pyTranslateLaurel filePath dispatchFiles pyspecFiles |>.toBaseIO with
       | .ok r => pure r
-      | .error e => panic! s!"{e.format none}"
-    -- Find the main procedure; fall back to __main__ for top-level scripts
-    let findProc (name : String) := tcPgm.decls.find? fun d =>
-        match d with
-        | .proc p _ => Core.CoreIdent.toPretty p.header.name == name
-        | _ => false
-    let mainDecl ← match findProc "main" with
-      | some d => pure d
-      | none => match findProc "__main__" with
-        | some d => pure d
-        | none => panic! "No main or __main__ procedure found"
-    let some p := mainDecl.getProc?
-      | panic! "entry point is not a procedure"
+      | .error msg => exitFailure msg
+    let sourceText := (← tryReadPythonSource filePath).map (·.2)
     let baseName := deriveBaseName filePath
-    -- Always use "main" as the GOTO function name (CBMC expects --function main)
-    let procName := "main"
-    let axioms := tcPgm.decls.filterMap fun d => d.getAxiom?
-    let distincts := tcPgm.decls.filterMap fun d => match d with
-      | .distinct name es _ => some (name, es) | _ => none
-    match procedureToGotoCtx Env p sourceText (axioms := axioms) (distincts := distincts)
-          (varTypes := tcPgm.getVarTy?) with
-    | .error e => panic! s!"{e}"
-    | .ok (ctx, liftedFuncs) =>
-      let extraSyms ← match collectExtraSymbols tcPgm with
-        | .ok s => pure (Lean.toJson s)
-        | .error e => panic! s!"{e}"
-      let (symtab, goto) ← emitProcWithLifted Env procName ctx liftedFuncs extraSyms
-      let symTabFile := s!"{baseName}.symtab.json"
-      let gotoFile := s!"{baseName}.goto.json"
-      IO.FS.writeFile symTabFile symtab.pretty
-      IO.FS.writeFile gotoFile goto.pretty
-      IO.println s!"Written {symTabFile} and {gotoFile}"
+    match ← Strata.inlineCoreToGotoFiles coreProgram baseName sourceText |>.toBaseIO with
+    | .ok () => pure ()
+    | .error msg => exitFailure msg
 
 def javaGenCommand : Command where
   name := "javaGen"
@@ -835,6 +683,38 @@ def pySpecToLaurelCommand : Command where
       IO.println s!"  {Strata.Laurel.formatTypeDefinition td}"
     for proc in pgm.staticProcedures do
       IO.println s!"  {Strata.Laurel.formatProcedure proc}"
+
+def pyResolveOverloadsCommand : Command where
+  name := "pyResolveOverloads"
+  args := [ "python_path", "dispatch_ion" ]
+  help := "Identify which overloaded service modules a \
+    Python program uses. Prints one module name per \
+    line to stdout."
+  callback := fun v _ => do
+    let pythonFile : System.FilePath := v[0]
+    let dispatchPath := v[1]
+    -- Read dispatch overload table
+    let overloads ←
+      match ← readDispatchOverloads #[dispatchPath] |>.toBaseIO with
+      | .ok r => pure r
+      | .error msg => exitFailure msg
+    -- Convert .py to Python AST
+    let stmts ←
+      IO.FS.withTempFile fun _handle dialectFile => do
+        IO.FS.writeBinFile dialectFile
+          Strata.Python.Python.toIon
+        match ← Strata.Python.pythonToStrata dialectFile pythonFile |>.toBaseIO with
+        | .ok s => pure s
+        | .error msg => exitFailure msg
+    -- Walk AST and collect modules
+    let state :=
+      Strata.Python.Specs.IdentifyOverloads.resolveOverloads
+        overloads stmts
+    for w in state.warnings do
+      IO.eprintln s!"warning: {w}"
+    let sorted := state.modules.toArray.qsort (· < ·)
+    for m in sorted do
+      IO.println m
 
 def laurelParseCommand : Command where
   name := "laurelParse"
@@ -1061,9 +941,12 @@ def commandGroups : List CommandGroup := [
     commands := [javaGenCommand] },
   { name := "Python"
     commands := [pyAnalyzeCommand, pyAnalyzeLaurelCommand,
+                 pyResolveOverloadsCommand,
                  pySpecsCommand, pySpecToLaurelCommand,
-                 pyAnalyzeLaurelToGotoCommand, pyAnalyzeToGotoCommand,
-                 pyTranslateCommand] },
+                 pyAnalyzeLaurelToGotoCommand,
+                 pyAnalyzeToGotoCommand,
+                 pyTranslateCommand,
+                 pyTranslateLaurelCommand] },
   { name := "Laurel"
     commands := [laurelAnalyzeCommand, laurelAnalyzeBinaryCommand,
                  laurelAnalyzeToGotoCommand, laurelParseCommand,
