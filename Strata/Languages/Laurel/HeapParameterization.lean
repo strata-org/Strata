@@ -155,28 +155,68 @@ structure TransformState where
   heapReaders : List Identifier
   heapWriters : List Identifier
   freshCounter : Nat := 0  -- Counter for generating fresh variable names
+  /-- Box constructors used during transformation, collected for datatype generation -/
+  usedBoxConstructors : List DatatypeConstructor := []
 
 @[expose] abbrev TransformM := StateM TransformState
 
-/-- Get the Box destructor name for a given Laurel HighType -/
-def boxDestructorName (ty : HighType) : Identifier :=
+/-- Check whether a UserDefined type name refers to a Datatype (vs Composite) in the model -/
+private def isDatatype (model : SemanticModel) (name : Identifier) : Bool :=
+  match model.get name with
+  | .datatypeDefinition _ => true
+  | _ => false
+
+/-- Get the Box destructor name for a given Laurel HighType.
+    For UserDefined datatypes, uses "Box..<datatypeName>Val!";
+    for Composite types, uses "Box..compositeVal!". -/
+def boxDestructorName (model : SemanticModel) (ty : HighType) : Identifier :=
   match ty with
   | .TInt => "Box..intVal!"
   | .TBool => "Box..boolVal!"
   | .TFloat64 => "Box..float64Val!"
   | .TReal => "Box..realVal!"
-  | .UserDefined _ => "Box..compositeVal!"
-  | _ => "Box..intVal!"  -- fallback
+  | .UserDefined name =>
+      if isDatatype model name then s!"Box..{name.text}Val!"
+      else "Box..compositeVal!"
+  | _ => dbg_trace "BUG, boxDestructorName bad type "; "boxDestructorNameError"
 
-/-- Get the Box constructor name for a given Laurel HighType -/
-def boxConstructorName (ty : HighType) : Identifier :=
+/-- Get the Box constructor name for a given Laurel HighType.
+    For UserDefined datatypes, uses "Box..<datatypeName>";
+    for Composite types, uses "BoxComposite". -/
+def boxConstructorName (model : SemanticModel) (ty : HighType) : Identifier :=
   match ty with
   | .TInt => "BoxInt"
   | .TBool => "BoxBool"
   | .TFloat64 => "BoxFloat64"
   | .TReal => "BoxReal"
-  | .UserDefined _ => "BoxComposite"
-  | _ => "BoxInt"  -- fallback
+  | .UserDefined name =>
+      if isDatatype model name then s!"Box..{name.text}"
+      else "BoxComposite"
+  | _ => dbg_trace "BUG, boxConstructorName bad type"; "boxConstructorNameError"
+
+/-- Build the DatatypeConstructor for a Box variant from a HighType, for datatype generation -/
+private def boxConstructorDef (model : SemanticModel) (ty : HighType) : Option DatatypeConstructor :=
+  match ty with
+  | .TInt => some { name := "BoxInt", args := [{ name := "intVal", type := ⟨.TInt, #[]⟩ }] }
+  | .TBool => some { name := "BoxBool", args := [{ name := "boolVal", type := ⟨.TBool, #[]⟩ }] }
+  | .TReal => some { name := "BoxReal", args := [{ name := "realVal", type := ⟨.TReal, #[]⟩ }] }
+  | .TFloat64 => some { name := "BoxFloat64", args := [{ name := "float64Val", type := ⟨.TFloat64, #[]⟩ }] }
+  | .UserDefined name =>
+      if isDatatype model name then
+        some { name := s!"Box..{name.text}", args := [{ name := s!"{name.text}Val", type := ⟨.UserDefined name, #[]⟩ }] }
+      else
+        some { name := "BoxComposite", args := [{ name := "compositeVal", type := ⟨.UserDefined "Composite", #[]⟩ }] }
+  | _ => dbg_trace "BUG, boxConstructorDef bad type"; none
+
+/-- Record a Box constructor use in the transform state -/
+private def recordBoxConstructor (model : SemanticModel) (ty : HighType) : TransformM Unit := do
+  let ctorOption := boxConstructorDef model ty
+  match ctorOption with
+  | some ctor =>
+      modify fun s =>
+        if s.usedBoxConstructors.any (fun c => c.name == ctor.name) then s
+        else { s with usedBoxConstructors := s.usedBoxConstructors ++ [ctor] }
+  | _ => return
 
 def readsHeap (name : Identifier) : TransformM Bool := do
   return (← get).heapReaders.contains name
@@ -218,7 +258,8 @@ where
         let valTy := (model.get fieldName).getType.getD (panic! "heapTransformExpr1")
         let readExpr := ⟨ .StaticCall "readField" [mkMd (.Identifier heapVar), selectTarget, mkMd (.StaticCall qualifiedName [])], md ⟩
         -- Unwrap Box: apply the appropriate destructor
-        return mkMd <| .StaticCall (boxDestructorName valTy.val) [readExpr]
+        recordBoxConstructor model valTy.val
+        return mkMd <| .StaticCall (boxDestructorName model valTy.val) [readExpr]
     | .StaticCall callee args =>
         let args' ← args.mapM (recurse ·)
         let calleeReadsHeap ← readsHeap callee
@@ -274,7 +315,8 @@ where
             let target' ← recurse target
             let v' ← recurse v
             -- Wrap value in Box constructor
-            let boxedVal := mkMd <| .StaticCall (boxConstructorName valTy.val) [v']
+            recordBoxConstructor model valTy.val
+            let boxedVal := mkMd <| .StaticCall (boxConstructorName model valTy.val) [v']
             let heapAssign := ⟨ .Assign [mkMd (.Identifier heapVar)]
               (mkMd (.StaticCall "updateField" [mkMd (.Identifier heapVar), target', mkMd (.StaticCall qualifiedName []), boxedVal])), md ⟩
             if valueUsed then
@@ -425,8 +467,8 @@ def heapParameterization (model: SemanticModel) (program : Program) : Program :=
   let allProcs := program.staticProcedures ++ instanceProcs
   let heapReaders := computeReadsHeap allProcs
   let heapWriters := computeWritesHeap allProcs
-  let (procs', _) := (program.staticProcedures.mapM (heapTransformProcedure model)).run
-    { heapReaders, heapWriters }
+  let initState : TransformState := { heapReaders, heapWriters }
+  let (procs', state1) := (program.staticProcedures.mapM (heapTransformProcedure model)).run initState
   -- Collect all qualified field names and generate a Field datatype
   let fieldNames := program.types.foldl (fun acc td =>
     match td with
@@ -435,17 +477,20 @@ def heapParameterization (model: SemanticModel) (program : Program) : Program :=
   let fieldDatatype : TypeDefinition :=
     .Datatype { name := "Field", typeArgs := [], constructors := fieldNames.map fun n => { name := n, args := [] } }
   -- Remove fields from composite types since they are now stored in the heap
-  let types' := program.types.map fun td =>
+  -- Also transform instance procedures, accumulating used Box constructors
+  let (types', state2) := program.types.foldl (fun (accTypes, accState) td =>
     match td with
     | .Composite ct =>
-      -- Also transform instance procedures that may reference fields via the heap
-      let (instProcs', _) := (ct.instanceProcedures.mapM (heapTransformProcedure model)).run
-        { heapReaders, heapWriters }
-      .Composite { ct with fields := [], instanceProcedures := instProcs' }
-    | other => other
+      let (instProcs', s') := (ct.instanceProcedures.mapM (heapTransformProcedure model)).run accState
+      (accTypes ++ [.Composite { ct with fields := [], instanceProcedures := instProcs' }], s')
+    | other => (accTypes ++ [other], accState))
+    ([], state1)
+  -- Generate Box datatype from all constructors used during transformation
+  let boxDatatype : TypeDefinition :=
+    .Datatype { name := "Box", typeArgs := [], constructors := state2.usedBoxConstructors }
   { program with
     staticProcedures := heapConstants.staticProcedures ++ procs',
-    types := fieldDatatype :: heapConstants.types ++ types' }
+    types := fieldDatatype :: boxDatatype :: heapConstants.types ++ types' }
 
 end Strata.Laurel
 

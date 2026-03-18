@@ -51,6 +51,9 @@ instance : HasPassiveCmds Expression Command where
 instance : HasHavoc Expression Command where
   havoc x md := .cmd (.havoc x md)
 
+instance : HasInit Expression Command where
+  init x ty e md := .cmd (.init x ty e md)
+
 instance [ToFormat (Cmd P)] [ToFormat (MetaData P)]
     [ToFormat (List P.Ident)] [ToFormat P.Expr] :
     ToFormat (CmdExt P) where
