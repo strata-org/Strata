@@ -547,14 +547,12 @@ private def coreSMTResultToVCResult (r : Strata.Core.CoreSMT.CoreSMTResult) : Co
       satisfiabilityProperty := satResult
       validityProperty := valResult
     }
-    -- Convert diagnosis info (CoreSMT types → Core types via structural conversion)
     let diagnosis := r.diagnosisInfo.map fun d =>
       { isRefuted := d.isRefuted,
         statePathCondition := d.statePathCondition : Core.DiagnosisInfo }
     { obligation := r.obligation, outcome := .ok vcOutcome, diagnosis }
 
-/-- Verify a Core program using the incremental CoreSMT engine.
-    Prints per-procedure results with diagnosis details inline. -/
+/-- Verify a Core program using the incremental CoreSMT engine. -/
 private def verifyIncremental
     (programDecls : List Core.Decl)
     (pySourceOpt : Option (String × String)) : IO (Array Core.VCResult) := do
@@ -608,48 +606,6 @@ private def verifyIncremental
     allResults := allResults ++ results.toArray
   return allResults
 
-/-- Verify a Core program using the batch SMT file approach.
-    Prints results in the ==== Verification Results ==== format. -/
-private def verifyBatch
-    (coreProgram : Core.Program)
-    (pySourceOpt : Option (String × String)) : IO (Array Core.VCResult) := do
-  let vcResults ← IO.FS.withTempDir (fun tempDir =>
-    EIO.toIO
-      (fun f => IO.Error.userError (toString f))
-      (Core.verify coreProgram tempDir .none
-        { VerifyOptions.default with stopOnFirstError := false, verbose := .quiet, solver := "z3" }))
-  IO.println "\n==== Verification Results ===="
-  let mut s := ""
-  for vcResult in vcResults do
-    let (locationPrefix, locationSuffix) := match Imperative.getFileRange vcResult.obligation.metadata with
-      | some fr =>
-        if fr.range.isNone then ("", "")
-        else
-          match pySourceOpt with
-          | some (pyPath, srcText) =>
-            match fr.file with
-            | .file path =>
-              if path == pyPath then
-                let pos := (Lean.FileMap.ofString srcText).toPosition (fr.range).start
-                if vcResult.isFailure then
-                  (s!"Assertion failed at line {pos.line}, col {pos.column}: ", "")
-                else
-                  ("", s!" (at line {pos.line}, col {pos.column})")
-              else
-                if vcResult.isFailure then
-                  (s!"Assertion failed at byte {(fr.range).start}: ", "")
-                else
-                  ("", s!" (at byte {(fr.range).start})")
-          | none =>
-            if vcResult.isFailure then
-              (s!"Assertion failed at byte {(fr.range).start}: ", "")
-            else
-              ("", s!" (at byte {(fr.range).start})")
-      | none => ("", "")
-    s := s ++ s!"{locationPrefix}{vcResult.obligation.label}: {match vcResult.outcome with | .ok o => if o.isPass then "pass" else if o.isAlwaysFalse then "fail" else "unknown" | .error e => e}{locationSuffix}\n"
-  IO.println s
-  return vcResults
-
 def pyAnalyzeLaurelCommand : Command where
   name := "pyAnalyzeLaurel"
   args := [ "file" ]
@@ -685,73 +641,47 @@ def pyAnalyzeLaurelCommand : Command where
 
     let coreProgram ← translatePythonToCore verbose filePath pySpecPaths dispatchPaths
 
-    -- Verify using Core verifier
-    let baseOptions : VerifyOptions :=
-      { VerifyOptions.default with stopOnFirstError := false, verbose := .quiet, solver := "z3" }
-    let options : VerifyOptions := match pflags.getString "vc-directory" with
-      | .some dir => { baseOptions with vcDirectory := some (dir : System.FilePath) }
-      | .none => baseOptions
-    let runVerification tempDir :=
-      EIO.toIO
-        (fun f => IO.Error.userError (toString f))
-        (Core.verify coreProgram tempDir .none options)
-    let vcResults ← match options.vcDirectory with
-      | .none => IO.FS.withTempDir runVerification
-      | .some vcDir => do
-        IO.FS.createDirAll vcDir
-        runVerification vcDir
+    -- Verify using incremental CoreSMT engine or batch Core verifier
+    let incremental := pflags.getBool "incremental"
+    let vcResults ←
+      if incremental then
+        verifyIncremental coreProgram.decls pySourceOpt
+      else do
+        let baseOptions : VerifyOptions :=
+          { VerifyOptions.default with stopOnFirstError := false, verbose := .quiet, solver := "z3" }
+        let options : VerifyOptions := match pflags.getString "vc-directory" with
+          | .some dir => { baseOptions with vcDirectory := some (dir : System.FilePath) }
+          | .none => baseOptions
+        let runVerification tempDir :=
+          EIO.toIO
+            (fun f => IO.Error.userError (toString f))
+            (Core.verify coreProgram tempDir .none options)
+        let vcResults ← match options.vcDirectory with
+          | .none => IO.FS.withTempDir runVerification
+          | .some vcDir => do
+            IO.FS.createDirAll vcDir
+            runVerification vcDir
+        pure vcResults
 
-        -- Translate Laurel to Core
-        match Strata.Laurel.translate { emitResolutionErrors := false } laurelProgram with
-        | .error diagnostics =>
-          exitFailure s!"Laurel to Core translation failed: {diagnostics}"
-        | .ok (coreProgramDecls, modifiesDiags) =>
-          if verbose then
-            IO.println "\n==== Core Program ===="
-            IO.print (coreProgramDecls, modifiesDiags)
-
-          let programDecls := coreProgramDecls.decls.filter (λ d=> d.name.name != "Box")
-          -- Check for name collisions between program and prelude
-          let preludeNames : Std.HashSet String :=
-            pyPrelude.decls.flatMap Core.Decl.names
-              |>.foldl (init := {}) fun s n => s.insert n.name
-          let collisions := programDecls.flatMap fun d =>
-            d.names.filter fun n => preludeNames.contains n.name
-          if !collisions.isEmpty then
-            let names := ", ".intercalate (collisions.map (·.name))
-            exitFailure s!"Core name collision between program and prelude: {names}"
-          let coreProgram := {decls := pyPrelude.decls ++ programDecls }
-
-          -- Verify using incremental CoreSMT engine or batch Core verifier
-          let incremental := pflags.getBool "incremental"
-          let vcResults ←
-            if incremental then
-              verifyIncremental programDecls pySourceOpt
-            else do
-              let baseOptions : VerifyOptions :=
-                { VerifyOptions.default with stopOnFirstError := false, verbose := .quiet, solver := "z3" }
-              let options : VerifyOptions := match pflags.getString "vc-directory" with
-                | .some dir => { baseOptions with vcDirectory := some (dir : System.FilePath) }
-                | .none => baseOptions
-              let runVerification tempDir :=
-                EIO.toIO
-                  (fun f => IO.Error.userError (toString f))
-                  (Core.verify coreProgram tempDir .none options)
-              let vcResults ← match options.vcDirectory with
-                | .none => IO.FS.withTempDir runVerification
-                | .some vcDir => do
-                  IO.FS.createDirAll vcDir
-                  runVerification vcDir
-              pure vcResults
-
-          -- Print results (non-incremental only; incremental prints per-procedure above)
-          if !incremental then do
-          IO.println "\n==== Verification Results ===="
-          let mut s := ""
-          for vcResult in vcResults do
-            let (locationPrefix, locationSuffix) := match Imperative.getFileRange vcResult.obligation.metadata with
-              | some fr =>
-                if fr.range.isNone then ("", "")
+    -- Print results (non-incremental only; incremental prints per-procedure above)
+    if !incremental then do
+    IO.println "\n==== Verification Results ===="
+    let mut s := ""
+    for vcResult in vcResults do
+      let (locationPrefix, locationSuffix) := match Imperative.getFileRange vcResult.obligation.metadata with
+        | some fr =>
+          if fr.range.isNone then ("", "")
+          else
+            match pySourceOpt with
+            | some (pyPath, srcText) =>
+              match fr.file with
+              | .file path =>
+                if path == pyPath then
+                  let pos := (Lean.FileMap.ofString srcText).toPosition fr.range.start
+                  if vcResult.isFailure then
+                    (s!"Assertion failed at line {pos.line}, col {pos.column}: ", "")
+                  else
+                    ("", s!" (at line {pos.line}, col {pos.column})")
                 else
                   if vcResult.isFailure then
                     (s!"Assertion failed in prelude file: ", "")
