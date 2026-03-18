@@ -9,8 +9,7 @@ translation pipeline used for CBMC verification.
 
 ```
 strata laurelAnalyzeToGoto <file.lr.st>
-python3 process_json.py combine defaults.json <basename>.symtab.json > full.symtab.json
-symtab2gb full.symtab.json --goto-functions <basename>.goto.json --out output.gb
+symtab2gb <basename>.symtab.json --goto-functions <basename>.goto.json --out output.gb
 goto-cc --function main -o output_cc.gb output.gb
 goto-instrument --dfcc main output_cc.gb output_dfcc.gb
 cbmc output_dfcc.gb --function main
@@ -20,8 +19,7 @@ cbmc output_dfcc.gb --function main
 
 ```
 strata pyAnalyzeLaurelToGoto <file.py.ion>
-python3 process_json.py combine defaults.json <basename>.symtab.json > full.symtab.json
-symtab2gb full.symtab.json --goto-functions <basename>.goto.json --out output.gb
+symtab2gb <basename>.symtab.json --goto-functions <basename>.goto.json --out output.gb
 cbmc output.gb --function main --z3
 ```
 
@@ -59,10 +57,13 @@ Both pipelines require a patched CBMC build (see "CBMC Patches" below).
 - Procedure calls → FUNCTION_CALL instructions (including inside if-then-else
   and loops)
 - Axioms (`Decl.ax`) → ASSUME instructions at procedure start (axioms with
-  quantifiers over types unsupported by CBMC's SMT2 backend — `string`,
+  quantifiers over types unsupported by CBMC's SMT2 backend — `array`,
   `struct_tag`, `regex`, `empty` — are silently skipped; see Known Limitations)
 - Distinct declarations (`Decl.distinct`) → pairwise `!=` ASSUME instructions
 - `Map.const` → GOTO `array_of` expression (constant-valued map/array)
+- `Map k v` types → GOTO array with `#index_type` annotation preserving the
+  key type (enables CBMC's SMT2 backend to use the correct sort for array
+  indices instead of defaulting to `c_index_type`)
 - Regex type → GOTO primitive type `regex`, CBMC maps to SMT-LIB `RegLan`
 - String/regex operations → `function_application` in GOTO; CBMC's string
   solver patch maps these to the corresponding SMT-LIB theories
@@ -72,6 +73,30 @@ Both pipelines require a patched CBMC build (see "CBMC Patches" below).
 - Output parameter types emitted in GOTO symbol table (not empty)
 - Source locations reconstructed from byte offsets in the source text and
   propagated to GOTO instructions (CBMC reports correct line numbers)
+- Function definition inlining (`inlineFuncDefsInProgram`): before GOTO
+  translation, fully-applied calls to non-recursive, non-polymorphic functions
+  with known bodies are replaced by the body with arguments substituted. This
+  avoids emitting uninterpreted `mathematical_function` symbols in GOTO.
+- Datatype axiom generation (`generateDatatypeAxioms`): for each datatype
+  constructor `C(f₁:T₁,...,fₙ:Tₙ)` of datatype `D`, generates tester-positive
+  (`D..isC(C(args)) = true`), tester-negative (`D..isC'(C(args)) = false`),
+  and selector (`D..fᵢ!(C(args)) = xᵢ`) axioms. Only for constructors whose
+  field types are all GOTO-translatable.
+- Main parameter conversion (`asMain`): when translating the entry-point
+  procedure, formal parameters are converted to havoc'd local variables so
+  CBMC accepts the function as a standard C entry point (`void main(void)`).
+- Default symbols: architecture constants and CBMC builtins are generated in
+  Lean (`DefaultSymbols.lean`) and included in the symbol table, eliminating
+  the Python `defaults.py` / `process_json.py` combine step.
+- `goto-cc` entry point selection: the Laurel pipeline uses `goto-cc` to
+  select the entry point function, enabling multi-procedure programs.
+- Property summary metadata: user-facing assertion descriptions from Laurel
+  (e.g., "divisor is zero") are propagated through Core metadata to GOTO
+  source location comments, so CBMC reports meaningful descriptions instead
+  of opaque labels like "assert_0".
+- `cprover` backend: an alternative CHC-based verification backend using
+  `cprover --smt2` for programs with mathematical types (Int, Real, String).
+  Enabled via `--backend cprover` in the comparison script.
 
 ## Soundness
 
@@ -162,12 +187,35 @@ not handled:
 
 #### DFCC with mathematical integers
 
-CBMC's DFCC instrumentation requires concrete-sized types for assigns clause
-targets. The `modifies` clause now emits actual variable types (looked up from
-the program's declarations) instead of hardcoded `integer`, which fixes the
-"no definite size for lvalue target" error for programs using bounded types.
-Programs that genuinely use mathematical integers in `modifies` targets will
-still fail, as `integer` has no fixed bit width.
+CBMC's DFCC instrumentation (`goto-instrument --dfcc`) provides native
+contract checking as an alternative to Strata's CallElim transformation.
+
+**What works:** The GOTO backend emits `contract::FUNC` symbols with
+`is_property=true` containing lambda-wrapped `#spec_requires`,
+`#spec_ensures`, and `#spec_assigns` clauses — matching the format
+produced by CBMC's C front-end (`InstToJson.lean: createContractSymbol`,
+`wrapInLambda`). All postconditions (including `free ensures`) are
+included in the contract symbol. `goto-instrument --dfcc` recognizes
+these contracts and begins instrumentation. Use `--no-call-elim` with
+`StrataCoreToGoto` to preserve raw procedure calls for DFCC.
+
+**Blocker:** DFCC requires all assigns-clause targets to have a
+computable byte size (`size_of_expr` in `dfcc_utils.cpp`). Our GOTO
+encoding uses mathematical types that lack byte sizes:
+
+1. **`bool` type**: CBMC's mathematical boolean has no byte size. The C
+   front-end uses `c_bool` (width 8) instead. Changing all `bool` to
+   `c_bool` in the GOTO encoding risks affecting the SMT encoding path.
+
+2. **Abstract struct types**: Partially addressed — padding changed from
+   `bool` to `unsignedbv(8)` so abstract structs have a 1-byte size.
+
+3. **Mathematical integer types**: `__CPROVER_integer` used for Map
+   indices has no byte size.
+
+**Recommendation:** Use CallElim (default) until the type issue is
+resolved. See `docs/DFCC_Integration.md` for detailed analysis and
+three possible fix options.
 
 #### Procedure inlining duplicates variable declarations
 
@@ -179,23 +227,59 @@ the Python pipeline.
 
 ## CBMC Patches
 
-The CI builds CBMC 6.8.0 from source with four patches applied:
+The CI builds CBMC from source at base commit `c15f21fec0` ("Use SMT-LIB div
+for integer division, add string/regex/mod support"), which already includes
+string/regex type support (`String`, `RegLan`), string constant encoding, and
+string/regex function mappings (`Str.Concat` → `str.++`, `Re.Star` → `re.*`,
+etc.). The following patches are applied on top:
 
-1. **`cbmc-string-support.patch`** (`StrataTest/Languages/Python/`): Adds
-   `String` as a recognized type in CBMC's SMT2 backend, enabling string
-   constants and operations to be encoded in SMT-LIB.
+1. **`cbmc-unbounded-arrays.patch`** (`StrataTest/Backends/CBMC/`): Handles
+   unbounded (non-constant-size) arrays used by the heap model. Includes:
+   - Skip value-set tracking for `function_application` RHS (`value_set.cpp`)
+   - Skip field-sensitive decomposition for opaque function applications
+     returning structs with unbounded array components (`field_sensitivity.cpp`)
+   - Skip bounds checking for arrays with non-constant size (`goto_check_c.cpp`)
+   - Remove nil-size `CHECK_RETURN` for arrays, conditional typecast only for
+     bitvector index types, recurse into `#index_type` in `find_symbols_rec`,
+     tag-based dedup for struct datatypes in `datatype_map` (`smt2_conv.cpp`)
+   - Add `ID_regex` to `irep_ids.def`
 
-2. **`cbmc-bounds-check.patch`** (`StrataTest/Languages/Laurel/`): Adjusts
-   bounds checking for the Laurel pipeline.
-
-3. **`cbmc-regex-support.patch`** (`StrataTest/Backends/CBMC/`): Adds `regex`
-   as a primitive type in CBMC, mapped to SMT-LIB `RegLan`.
-
-4. **`cbmc-quantifier-simplify.patch`** (`StrataTest/Backends/CBMC/`): Modifies
+2. **`cbmc-quantifier-simplify.patch`** (`StrataTest/Backends/CBMC/`): Modifies
    the simplifier's preorder traversal to only simplify the body (operand 1) of
    quantifier expressions, leaving bound variables (operand 0) untouched. Without
    this patch, the simplifier converts bound variable symbols into non-symbol
    expressions, violating the `quantifier_exprt` invariant.
+
+3. **`cbmc-bounds-check.patch`** (`StrataTest/Languages/Laurel/`): More
+   extensive bounds checking adjustments for the Laurel DFCC pipeline. Overlaps
+   with the simpler fix in `cbmc-unbounded-arrays.patch`; only needed for the
+   Laurel pipeline.
+
+4. **`cbmc-string-support.patch`** (`StrataTest/Languages/Python/`): Predates
+   the current CBMC base commit and is now redundant — its changes (string type,
+   string constants, `Str.Concat` mapping) are already in the base.
+
+Patches 1 and 2 must be applied in order: `cbmc-unbounded-arrays` first, then
+`cbmc-quantifier-simplify`.
+
+5. **`cprover-strata-support.patch`** (`StrataTest/Backends/CBMC/`): Enables the
+   `cprover` CHC-based verifier to handle GOTO programs from the Strata pipeline.
+   Changes:
+   - Handle `function_application` expressions in `state_encoding.cpp`: skip
+     `address_rec` for `mathematical_function` symbols, walk member/index chains
+     to find addressable bases, skip struct decomposition for computed RHS values
+   - Fallback size for `enter_scope_state` with unsized types
+     (`state_encoding_targets.cpp`)
+   - Enable `use_datatypes` in SMT2 output so structs with mathematical types
+     (Int, Real, String) are encoded as SMT datatypes, not bitvectors
+   - Add `type2id` support for integer, real, string, mathematical_function
+     types (`smt2_conv.cpp`)
+   - Skip incompatible address types in `evaluate_fc` (`axioms.cpp`)
+   - Add `--smt2-solver` CLI option for external SMT solver backend
+   - `cprover_smt2_dec.h`: SMT2 decision procedure with datatypes enabled
+
+   Use `cprover --smt2` to produce the SMT2 encoding (the default built-in
+   solver does not support mathematical types).
 
 Additionally, quantifier bound variables are emitted wrapped in a `tuple` node
 in the GOTO JSON to match CBMC's `binding_exprt` internal structure, which
@@ -205,21 +289,25 @@ expects `op0()` to be a tuple containing the variable list.
 
 ### Axioms with quantifiers over non-primitive types are skipped
 
-CBMC's SMT2 backend cannot encode quantifier bound variables of `string`,
-`struct_tag`, `regex`, or `empty` type. String-typed quantifier variables cause
-Z3 to hang; struct/regex/empty types have no SMT2 sort mapping for quantifier
-variable declarations.
+CBMC's SMT2 backend cannot encode quantifier bound variables of `array`,
+`struct_tag`, `regex`, or `empty` type. Array-typed quantifier variables have
+no finite SMT2 sort; struct/regex/empty types have no SMT2 sort mapping for
+quantifier variable declarations.
 
 The `hasUnsupportedQuantifierTypes` filter in `Expr.lean` detects axioms
-containing quantifiers over these types. Such axioms are silently skipped
+containing quantifiers over these types (`array`, `struct_tag`, `regex`,
+`empty`). Such axioms are silently skipped
 during GOTO emission (see Soundness section for why this is safe).
 
-### Z3 timeout on complex quantified axioms
+### Z3 timeout / cvc5 UNKNOWN on complex quantified axioms
 
-Some tests (`test_missing_models`, `test_precondition_verification` in the
-Python pipeline) produce axioms with deeply nested integer quantifiers that
-cause Z3 to hang indefinitely. These tests are marked SKIP in
-`cbmc_expected.txt`.
+Some tests in the Python pipeline produce axioms with deeply nested quantifiers
+over uninterpreted functions that solvers cannot decide efficiently:
+- `test_missing_models`, `test_precondition_verification`, `test_datetime`,
+  `test_class_field_use`: Z3 hangs indefinitely (TIMEOUT); cvc5 quickly
+  determines the formula is undecidable and returns UNKNOWN in 1–4 seconds.
+
+These tests are marked SKIP in `cbmc_expected.txt`.
 
 ### #490: DDM parser infinite loop with `modifies` before `ensures`
 
