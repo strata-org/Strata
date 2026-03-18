@@ -249,21 +249,11 @@ public def combinePySpecLaurel (info : Python.PreludeInfo)
     constants := pySpec.constants ++ user.constants
   }
 
-/-- `coreFromLaurel` contains External stub declarations for every
-    prelude name (e.g. `print`, `from_string`, `Any`).  These stubs
-    were added so the Laurel resolver could classify names as
-    functions vs procedures, but they carry no type information or
-    bodies.  This function drops those stubs and prepends the full
-    `pythonRuntimeCorePart` (with datatype definitions, procedure
-    bodies, etc.) that the Core type-checker and verifier require. -/
-private def replaceStubsWithPrelude (coreFromLaurel : Core.Program) : Core.Program :=
-  let preludeDecls := Python.pythonRuntimeCorePart.decls
-  let preludeNames : Std.HashSet String :=
-    preludeDecls.foldl (init := {}) fun s d =>
-      d.names.foldl (init := s) (·.insert ·.name)
-  let newDecls := coreFromLaurel.decls.filter fun d =>
-    !(d.names.any (·.name ∈ preludeNames))
-  { decls := preludeDecls ++ newDecls }
+/-- Prepend the full Python runtime Core prelude (datatype definitions,
+    procedure bodies, etc.) to the Core program produced by Laurel
+    translation. -/
+private def prependPrelude (coreFromLaurel : Core.Program) : Core.Program :=
+  { decls := Python.pythonRuntimeCorePart.decls ++ coreFromLaurel.decls }
 
 /-- Translate a combined Laurel program to Core and prepend the full
     runtime prelude.  Resolution errors are suppressed because PySpec
@@ -276,7 +266,7 @@ public def translateCombinedLaurel (combined : Laurel.Program)
     : Except (Array DiagnosticModel) (Core.Program × Array DiagnosticModel) :=
   match Laurel.translate { emitResolutionErrors := false } combined with
   | .error e => .error e
-  | .ok (core, diags) => .ok (replaceStubsWithPrelude core, diags)
+  | .ok (core, diags) => .ok (prependPrelude core, diags)
 
 /-- Errors from the pyAnalyzeLaurel pipeline, distinguishing user code
     errors (detected bugs in Python source) from internal tool errors. -/
