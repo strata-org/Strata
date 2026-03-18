@@ -288,7 +288,10 @@ def seqLengthFunc : WFLFunc CoreLParams :=
           #0)]
     ])
 
-/- An empty `Sequence` constructor with type `∀a. Sequence a`. -/
+/- An empty `Sequence` constructor with type `∀a. Sequence a`.
+   NOTE: This is registered in the Factory for programmatic use, but is not yet
+   parseable from `.st` files because the DDM grammar cannot currently handle
+   0-ary polymorphic functions (no arguments to infer the type parameter from). -/
 def seqEmptyFunc : WFLFunc CoreLParams :=
   polyUneval "Sequence.empty" ["a"] [] (seqTy mty[%a])
     (axioms := [
@@ -466,14 +469,20 @@ def seqTakeFunc : WFLFunc CoreLParams :=
     [("s", seqTy mty[%a]), ("n", mty[int])]
     (seqTy mty[%a])
     (axioms := [
-      -- length(take(s, n)) == n  (when 0 <= n <= length(s))
+      -- 0 <= n <= length(s) ==> length(take(s, n)) == n
       esM[∀ (Sequence %a): -- %1 s
           (∀ (int): -- %0 n
             {((~Sequence.length : (Sequence %a) → int)
               (((~Sequence.take : (Sequence %a) → int → (Sequence %a)) %1) %0))}
-            ((~Sequence.length : (Sequence %a) → int)
-              (((~Sequence.take : (Sequence %a) → int → (Sequence %a)) %1) %0))
-            == %0)],
+            if (((~Bool.And : bool → bool → bool)
+                  (((~Int.Ge : int → int → bool) %0) #0))
+                  (((~Int.Le : int → int → bool) %0)
+                    ((~Sequence.length : (Sequence %a) → int) %1)))
+            then
+              ((~Sequence.length : (Sequence %a) → int)
+                (((~Sequence.take : (Sequence %a) → int → (Sequence %a)) %1) %0))
+              == %0
+            else #true)],
       -- select(take(s, n), j) == select(s, j)  (when 0 <= j < n)
       esM[∀ (Sequence %a): -- %2 s
           (∀ (int): -- %1 n
@@ -498,17 +507,23 @@ def seqDropFunc : WFLFunc CoreLParams :=
     [("s", seqTy mty[%a]), ("n", mty[int])]
     (seqTy mty[%a])
     (axioms := [
-      -- length(drop(s, n)) == length(s) - n
+      -- 0 <= n <= length(s) ==> length(drop(s, n)) == length(s) - n
       esM[∀ (Sequence %a): -- %1 s
           (∀ (int): -- %0 n
             {((~Sequence.length : (Sequence %a) → int)
               (((~Sequence.drop : (Sequence %a) → int → (Sequence %a)) %1) %0))}
-            ((~Sequence.length : (Sequence %a) → int)
-              (((~Sequence.drop : (Sequence %a) → int → (Sequence %a)) %1) %0))
-            ==
-            (((~Int.Sub : int → int → int)
-              ((~Sequence.length : (Sequence %a) → int) %1))
-              %0))],
+            if (((~Bool.And : bool → bool → bool)
+                  (((~Int.Ge : int → int → bool) %0) #0))
+                  (((~Int.Le : int → int → bool) %0)
+                    ((~Sequence.length : (Sequence %a) → int) %1)))
+            then
+              ((~Sequence.length : (Sequence %a) → int)
+                (((~Sequence.drop : (Sequence %a) → int → (Sequence %a)) %1) %0))
+              ==
+              (((~Int.Sub : int → int → int)
+                ((~Sequence.length : (Sequence %a) → int) %1))
+                %0)
+            else #true)],
       -- select(drop(s, n), j) == select(s, j + n)
       esM[∀ (Sequence %a): -- %2 s
           (∀ (int): -- %1 n
@@ -636,10 +651,10 @@ def WFFactory : Lambda.WFLFactory CoreLParams :=
   mapSelectFunc,
   mapUpdateFunc,
 
+  seqLengthFunc,
   seqEmptyFunc,
   seqAppendFunc,
   seqSelectFunc,
-  seqLengthFunc,
   seqBuildFunc,
   seqUpdateFunc,
   seqContainsFunc,

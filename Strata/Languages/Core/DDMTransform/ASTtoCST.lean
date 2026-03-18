@@ -374,7 +374,7 @@ def handleZeroaryOps {M} [Inhabited M] (name : String)
   | "Re.All" => pure (.re_all default)
   | "Re.AllChar" => pure (.re_allchar default)
   | "Re.None" => pure (.re_none default)
-  --| "Sequence.empty" => pure (.seq_empty default (CoreType.tvar default unknownTypeVar))
+  -- TODO: seq_empty is not yet parseable (see Grammar.lean); handle here when added.
   | _ => do
     ToCSTM.logError "lopToExpr" "0-ary op not found" name
     pure (.re_none default)

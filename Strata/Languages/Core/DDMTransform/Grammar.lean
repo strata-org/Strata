@@ -17,6 +17,7 @@ namespace Strata
 ---------------------------------------------------------------------
 ---------------------------------------------------------------------
 
+-- Sequence operations increase the grammar size enough to require a higher recursion limit.
 set_option maxRecDepth 10000
 
 /- DDM support for parsing and pretty-printing Strata Core -/
@@ -94,7 +95,9 @@ fn map_get (K : Type, V : Type, m : Map K V, k : K) : V => m "[" k "]";
 fn map_set (K : Type, V : Type, m : Map K V, k : K, v : V) : Map K V =>
   m "[" k ":=" v "]";
 
-//fn seq_empty (A : Type) : Sequence A => "Sequence.empty" "(" ")";
+// TODO: seq_empty is not yet supported in the grammar because the DDM parser
+// cannot currently handle 0-ary polymorphic functions (no arguments to infer
+// the type parameter from). The Factory definition exists for programmatic use.
 fn seq_length (A : Type, s : Sequence A) : int => "Sequence.length" "(" s ")";
 fn seq_get (A : Type, s : Sequence A, i : int) : A => "Sequence.get" "(" s ", " i ")";
 fn seq_append (A : Type, s1 : Sequence A, s2 : Sequence A) : Sequence A =>

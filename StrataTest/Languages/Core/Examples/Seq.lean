@@ -141,3 +141,55 @@ Result: ❓ unknown
 #eval verify seqPgm
 
 ---------------------------------------------------------------------
+-- Additional tests for append, update, contains, take, and drop.
+---------------------------------------------------------------------
+
+private def seqOpsPgm :=
+#strata
+program Core;
+
+const s : Sequence int;
+
+procedure SeqOps() returns ()
+{
+  var t : Sequence int;
+  var u : Sequence int;
+  var v : Sequence int;
+
+  // Build a sequence [10, 20, 30]
+  t := Sequence.build(Sequence.build(Sequence.build(s, 10), 20), 30);
+  assume [s_empty]: Sequence.length(s) == 0;
+
+  // --- append ---
+  u := Sequence.build(Sequence.build(s, 40), 50);
+  v := Sequence.append(t, u);
+  assert [append_length]: Sequence.length(v) == 5;
+  assert [append_elem_0]: Sequence.get(v, 0) == 10;
+  assert [append_elem_4]: Sequence.get(v, 4) == 50;
+
+  // --- update ---
+  u := Sequence.update(t, 1, 99);
+  assert [update_length]: Sequence.length(u) == 3;
+  assert [update_same]: Sequence.get(u, 1) == 99;
+  assert [update_other]: Sequence.get(u, 0) == 10;
+
+  // --- contains ---
+  assert [contains_yes]: Sequence.contains(t, 20);
+
+  // --- take ---
+  u := Sequence.take(t, 2);
+  assert [take_length]: Sequence.length(u) == 2;
+  assert [take_elem]: Sequence.get(u, 0) == 10;
+
+  // --- drop ---
+  u := Sequence.drop(t, 1);
+  assert [drop_length]: Sequence.length(u) == 2;
+  assert [drop_elem]: Sequence.get(u, 0) == 20;
+};
+#end
+
+/-- info: true -/
+#guard_msgs in
+#eval TransM.run Inhabited.default (translateProgram seqOpsPgm) |>.snd |>.isEmpty
+
+---------------------------------------------------------------------
