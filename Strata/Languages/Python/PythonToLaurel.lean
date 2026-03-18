@@ -974,7 +974,7 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
   | .Assert _ test msg => do
     let condExpr ← translateExpr ctx test
     -- Extract assert message as property summary
-    let md := match msg.val with
+    let md' := match msg.val with
       | some (.Constant _ (.ConString _ str) _) => md.withPropertySummary str.val
       | _ => md
     -- Check if condition contains a Hole - if so, hoist to variable
@@ -988,7 +988,7 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
         ([varDecl], varRef, { ctx with variableTypes := ctx.variableTypes ++ [(freshVar, "bool")] })
       | _ => ([], condExpr, ctx)
 
-    let assertStmt := mkStmtExprMdWithLoc (StmtExpr.Assert (Any_to_bool finalCondExpr)) md
+    let assertStmt := mkStmtExprMdWithLoc (StmtExpr.Assert (Any_to_bool finalCondExpr)) md'
 
     -- Wrap in block if we hoisted condition
     let result := if condStmts.isEmpty then
