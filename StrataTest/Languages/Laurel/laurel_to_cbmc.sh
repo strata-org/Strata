@@ -50,11 +50,7 @@ else
 fi
 
 # Intermediate files are created in cwd with basename
-run "process_json.py combine" python3 "$PROJECT_ROOT/Strata/Backends/CBMC/resources/process_json.py" \
-  combine "$PROJECT_ROOT/Strata/Backends/CBMC/resources/defaults.json" \
-  "$PROJECT_ROOT/$BN.symtab.json" > "$WORK_DIR/$BN.full-symtab.json"
-
-run "symtab2gb" symtab2gb "$WORK_DIR/$BN.full-symtab.json" \
+run "symtab2gb" symtab2gb "$PROJECT_ROOT/$BN.symtab.json" \
   --goto-functions "$PROJECT_ROOT/$BN.goto.json" \
   --out "$WORK_DIR/$BN.gb"
 
@@ -65,4 +61,4 @@ GOTO_INSTRUMENT=${GOTO_INSTRUMENT:-goto-instrument}
 run "goto-instrument --dfcc" "$GOTO_INSTRUMENT" --dfcc main "$WORK_DIR/${BN}_cc.gb" "$WORK_DIR/${BN}_dfcc.gb"
 
 CBMC=${CBMC:-cbmc}
-run "cbmc verification" "$CBMC" "$WORK_DIR/${BN}_dfcc.gb" --function main --z3 --verbosity 9
+run "cbmc verification" "$CBMC" "$WORK_DIR/${BN}_dfcc.gb" --z3 --verbosity 9

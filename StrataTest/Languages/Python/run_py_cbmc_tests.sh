@@ -50,11 +50,15 @@ for ion_file in "$TESTS_DIR"/*.py.ion; do
   fi
 
   # Run the pipeline
-  output=$("$SCRIPT_DIR/py_ion_to_cbmc.sh" "$ion_file" 2>&1)
+  output=$(CBMC_TIMEOUT=${CBMC_TIMEOUT:-120} "$SCRIPT_DIR/py_ion_to_cbmc.sh" "$ion_file" 2>&1)
 
   if echo "$output" | grep -q "VERIFICATION SUCCESSFUL"; then
     result="PASS"
   elif echo "$output" | grep -q "VERIFICATION FAILED"; then
+    result="FAIL"
+  elif echo "$output" | grep -q "VERIFICATION ERROR"; then
+    result="FAIL"
+  elif echo "$output" | grep -q "timeout"; then
     result="FAIL"
   else
     result="ERROR"

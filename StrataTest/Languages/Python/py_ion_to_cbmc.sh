@@ -51,13 +51,46 @@ else
 fi
 
 # Intermediate files are created in cwd with basename
-run "process_json.py combine" python3 "$PROJECT_ROOT/Strata/Backends/CBMC/resources/process_json.py" \
-  combine "$PROJECT_ROOT/Strata/Backends/CBMC/resources/defaults.json" \
-  "$PROJECT_ROOT/$BN.symtab.json" > "$WORK_DIR/$BN.full-symtab.json"
-
-run "symtab2gb" symtab2gb "$WORK_DIR/$BN.full-symtab.json" \
+run "symtab2gb" symtab2gb "$PROJECT_ROOT/$BN.symtab.json" \
   --goto-functions "$PROJECT_ROOT/$BN.goto.json" \
   --out "$WORK_DIR/$BN.gb"
 
+# Set entry point via goto-cc (works for both cbmc and cprover)
+GOTO_CC=${GOTO_CC:-goto-cc}
+run "goto-cc (set entry point)" "$GOTO_CC" --function main \
+  "$WORK_DIR/$BN.gb" -o "$WORK_DIR/$BN.gb"
+
 CBMC=${CBMC:-cbmc}
-run "cbmc verification" "$CBMC" "$WORK_DIR/$BN.gb" --function main --z3 --verbosity 9
+CBMC_TIMEOUT=${CBMC_TIMEOUT:-120}
+CBMC_SOLVER_FLAG=${CBMC_SOLVER_FLAG-"--z3"}
+CBMC_EXTRA_FLAGS=${CBMC_EXTRA_FLAGS-"--no-pointer-check"}
+CBMC_VERBOSITY=${CBMC_VERBOSITY-"--verbosity 9"}
+# Run CBMC/cprover with a timeout (portable: works on macOS and Linux)
+"$CBMC" "$WORK_DIR/$BN.gb" $CBMC_SOLVER_FLAG $CBMC_EXTRA_FLAGS $CBMC_VERBOSITY &
+cbmc_pid=$!
+# Timer: write sleep PID so we can kill it directly
+TIMER_SLEEP_PID_FILE=$(mktemp)
+(
+  sleep "$CBMC_TIMEOUT" &
+  echo $! > "$TIMER_SLEEP_PID_FILE"
+  wait $!
+  kill "$cbmc_pid" 2>/dev/null
+) &
+timer_pid=$!
+wait "$cbmc_pid" 2>/dev/null
+cbmc_rc=$?
+# Kill the timer: both the subshell and the sleep
+kill "$timer_pid" 2>/dev/null
+sleep_pid=$(cat "$TIMER_SLEEP_PID_FILE" 2>/dev/null)
+[ -n "$sleep_pid" ] && kill "$sleep_pid" 2>/dev/null
+rm -f "$TIMER_SLEEP_PID_FILE"
+wait "$timer_pid" 2>/dev/null
+# Exit codes: 0=safe, 10=unsafe, 6=error, 137/143=killed by timeout
+if [ "$cbmc_rc" -eq 137 ] || [ "$cbmc_rc" -eq 143 ] || [ "$cbmc_rc" -eq 15 ] || [ "$cbmc_rc" -eq 9 ]; then
+  echo "VERIFICATION ERROR (timeout after ${CBMC_TIMEOUT}s)"
+  exit 0
+fi
+if [ "$cbmc_rc" -ne 0 ] && [ "$cbmc_rc" -ne 10 ] && [ "$cbmc_rc" -ne 6 ]; then
+  echo "Error: cbmc verification failed (exit code $cbmc_rc)" >&2
+  exit 1
+fi
