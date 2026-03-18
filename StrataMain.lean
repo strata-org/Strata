@@ -709,12 +709,15 @@ def pyAnalyzeLaurelCommand : Command where
 
     -- Verify using incremental CoreSMT engine or batch Core verifier
     let incremental := pflags.getBool "incremental"
+    let checkMode ← parseCheckMode pflags
+    let checkLevel ← parseCheckLevel pflags
     let vcResults ←
       if incremental then
         verifyIncremental coreProgram.decls pySourceOpt
       else do
         let baseOptions : VerifyOptions :=
-          { VerifyOptions.default with stopOnFirstError := false, verbose := .quiet, solver := "z3" }
+          { VerifyOptions.default with stopOnFirstError := false, verbose := .quiet, solver := "z3",
+            checkMode := checkMode, checkLevel := checkLevel }
         let options : VerifyOptions := match pflags.getString "vc-directory" with
           | .some dir => { baseOptions with vcDirectory := some (dir : System.FilePath) }
           | .none => baseOptions
