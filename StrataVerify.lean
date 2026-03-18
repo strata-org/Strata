@@ -40,17 +40,13 @@ def parseOptions (args : List String) : Except Std.Format (VerifyOptions × Stri
          | .none => .error f!"Invalid number of seconds: {secondsStr}"
          | .some n => go {opts with solverTimeout := n} rest procs
       | opts, "--check-mode" :: modeStr :: rest, procs =>
-         match modeStr with
-         | "deductive" => go {opts with checkMode := .deductive} rest procs
-         | "bugFinding" => go {opts with checkMode := .bugFinding} rest procs
-         | "bugFindingAssumingCompleteSpec" => go {opts with checkMode := .bugFindingAssumingCompleteSpec} rest procs
-         | _ => .error f!"Invalid check mode: {modeStr}. Must be 'deductive', 'bugFinding', or 'bugFindingAssumingCompleteSpec'."
+         match Core.VerificationMode.ofString? modeStr with
+         | .some m => go {opts with checkMode := m} rest procs
+         | .none => .error f!"Invalid check mode: {modeStr}. Must be {Core.VerificationMode.options}."
       | opts, "--check-level" :: levelStr :: rest, procs =>
-         match levelStr with
-         | "minimal" => go {opts with checkLevel := .minimal} rest procs
-         | "minimalVerbose" => go {opts with checkLevel := .minimalVerbose} rest procs
-         | "full" => go {opts with checkLevel := .full} rest procs
-         | _ => .error f!"Invalid check level: {levelStr}. Must be 'minimal', 'minimalVerbose', or 'full'."
+         match Core.CheckLevel.ofString? levelStr with
+         | .some l => go {opts with checkLevel := l} rest procs
+         | .none => .error f!"Invalid check level: {levelStr}. Must be {Core.CheckLevel.options}."
       | opts, [file], procs => pure (opts, file, procs)
       | _, [], _ => .error "StrataVerify requires a file as input"
       | _, args, _ => .error f!"Unknown options: {args}"
@@ -70,8 +66,8 @@ def usageMessage : Std.Format :=
   --output-format=sarif       Output results in SARIF format to <file>.sarif{Std.Format.line}  \
   --vc-directory=<dir>        Store VCs in SMT-Lib format in <dir>{Std.Format.line}  \
   --solver <name>             SMT solver executable to use (default: {defaultSolver}){Std.Format.line}  \
-  --check-mode <mode>         Check mode: 'deductive' (default, prove correctness), 'bugFinding' (find bugs), or 'bugFindingAssumingCompleteSpec' (find bugs assuming complete preconditions).{Std.Format.line}  \
-  --check-level <level>       Check level: 'minimal' (default, simple messages), 'minimalVerbose' (detailed messages, one check), or 'full' (both checks, all outcomes)."
+  --check-mode <mode>         Check mode: {Core.VerificationMode.options}. Default: 'deductive'.{Std.Format.line}  \
+  --check-level <level>       Check level: {Core.CheckLevel.options}. Default: 'minimal'."
 
 def main (args : List String) : IO UInt32 := do
   let parseResult := parseOptions args
