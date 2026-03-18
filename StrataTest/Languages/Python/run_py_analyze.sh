@@ -48,7 +48,13 @@ for test_file in tests/test_*.py; do
         if [ -f "$expected_file" ]; then
             (cd ../../../Tools/Python && python3 -m strata.gen py_to_strata --dialect "dialects/Python.dialect.st.ion" "../../StrataTest/Languages/Python/$test_file" "../../StrataTest/Languages/Python/$ion_file")
 
-            output=$(cd ../../.. && ./.lake/build/bin/strata $command "StrataTest/Languages/Python/${ion_file}")
+            extra_flags=""
+            flags_file="${expected_dir}/${base_name}.flags"
+            if [ -f "$flags_file" ]; then
+                extra_flags=$(cat "$flags_file" | tr '\n' ' ')
+            fi
+
+            output=$(cd ../../.. && ./.lake/build/bin/strata $command $extra_flags "StrataTest/Languages/Python/${ion_file}")
 
             if [ $update -eq 1 ]; then
                 echo "$output" > "$expected_file"
