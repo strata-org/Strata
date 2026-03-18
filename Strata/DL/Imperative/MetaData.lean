@@ -233,7 +233,7 @@ def getFileRange {P : PureExpr} [BEq P.Ident] (md: MetaData P) : Option FileRang
 def MetaData.toDiagnostic {P : PureExpr} [BEq P.Ident] (md : MetaData P) (msg : String) (type : DiagnosticType := DiagnosticType.UserError): DiagnosticModel :=
   match getFileRange md with
   | some fr => DiagnosticModel.withRange fr msg type
-  | none => DiagnosticModel.fromMessage msg
+  | none => DiagnosticModel.fromMessage msg type
 
 /-- Create a DiagnosticModel from metadata and a Format message. -/
 def MetaData.toDiagnosticF {P : PureExpr} [BEq P.Ident] (md : MetaData P) (msg : Std.Format) (type : DiagnosticType := DiagnosticType.UserError): DiagnosticModel :=

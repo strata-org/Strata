@@ -115,7 +115,7 @@ structure SemanticModel where
 
 def SemanticModel.get (model: SemanticModel) (iden: Identifier): AstNode :=
   match iden.uniqueId with
-  | some key => (model.refToDef.get? key).get!
+  | some key => (model.refToDef.get? key).getD default
   | none => default
 
 def SemanticModel.isFunction (model: SemanticModel) (id: Identifier): Bool :=

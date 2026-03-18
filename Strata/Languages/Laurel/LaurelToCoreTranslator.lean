@@ -61,8 +61,8 @@ def translateType (model : SemanticModel) (ty : HighTypeMd) : LMonoTy :=
   | .TCore s => .tcons s []
   | .TFloat64 => dbg_trace "NOT SUPPORTED YET: Float64"; .tcons "Float64IsNotSupportedYet" []
   | .TReal => LMonoTy.real
-  | .Top => .tcons "Top" []
-  | _ => dbg_trace s!"NOT SUPPORTED YET: {repr ty.val}"; .tcons "Float64IsNotSupportedYet" []
+  | .Top => LMonoTy.bool -- TODO, abort execution since there is no valid Core type to translate Top to
+  | .TFloat64 => dbg_trace s!"NOT SUPPORTED YET: {repr ty.val}"; .tcons "Float64IsNotSupportedYet" []
 termination_by ty.val
 decreasing_by all_goals (first | (cases elementType; term_by_mem) | (cases keyType; term_by_mem) | (cases valueType; term_by_mem))
 

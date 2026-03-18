@@ -88,8 +88,8 @@ instance : Inhabited DiagnosticModel where
 /-- Create a DiagnosticModel from just a message (using default location).
 This should not be called, it only exists temporarily to enable incrementally
 migrating code without error locations -/
-def DiagnosticModel.fromMessage (msg : String) : DiagnosticModel :=
-  { fileRange := FileRange.unknown, message := msg, type := .UserError }
+def DiagnosticModel.fromMessage (msg : String) (type : DiagnosticType := DiagnosticType.UserError): DiagnosticModel :=
+  { fileRange := FileRange.unknown, message := msg, type := type }
 
 /-- Create a DiagnosticModel from a Format (using default location).
 This should not be called, it only exists temporarily to enable incrementally
