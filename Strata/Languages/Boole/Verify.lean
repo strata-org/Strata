@@ -153,7 +153,7 @@ private def toCoreMetaData (sr : SourceRange) : TranslateM (Imperative.MetaData 
   return #[fileRangeElt]
 
 private def mkCoreApp (op : Core.Expression.Expr) (args : List Core.Expression.Expr) : Core.Expression.Expr :=
-  Lambda.LExpr.mkApp () op args
+  Lambda.LExpr.mkApp Strata.SourceRange.none op args
 
 private def typeRange : Boole.Type → SourceRange
   | .bvar m _ => m
@@ -237,7 +237,7 @@ def toCoreQuant
   let qBVars : Array Core.Expression.Expr := (decls.toArray.mapIdx fun i _ => .bvar Strata.SourceRange.none i)
   let body' ← withBVarExprs qBVars (toCoreExpr body)
   let q := if isForall then Lambda.QuantifierKind.all else Lambda.QuantifierKind.exist
-  return tys.foldr (fun ty acc => .quant () q "" (some ty) (.bvar Strata.SourceRange.none 0) acc) body'
+  return tys.foldr (fun ty acc => .quant Strata.SourceRange.none q "" (some ty) (.bvar Strata.SourceRange.none 0) acc) body'
 
 /--
 Normalize Boole quantifier surface-syntax variants to a single lowering path.
@@ -276,17 +276,17 @@ def toCoreExpr (e : Boole.Expr) : TranslateM Core.Expression.Expr := do
   | .bvar m i => getBVarExpr m i
   | .app _ f a => return .app Strata.SourceRange.none (← toCoreExpr f) (← toCoreExpr a)
   | .not _ a => return .app Strata.SourceRange.none Core.boolNotOp (← toCoreExpr a)
-  | .bv1Lit _ ⟨_, n⟩ => return .bitvecConst () 1 n
-  | .bv8Lit _ ⟨_, n⟩ => return .bitvecConst () 8 n
-  | .bv16Lit _ ⟨_, n⟩ => return .bitvecConst () 16 n
-  | .bv32Lit _ ⟨_, n⟩ => return .bitvecConst () 32 n
-  | .bv64Lit _ ⟨_, n⟩ => return .bitvecConst () 64 n
+  | .bv1Lit _ ⟨_, n⟩ => return .bitvecConst Strata.SourceRange.none 1 n
+  | .bv8Lit _ ⟨_, n⟩ => return .bitvecConst Strata.SourceRange.none 8 n
+  | .bv16Lit _ ⟨_, n⟩ => return .bitvecConst Strata.SourceRange.none 16 n
+  | .bv32Lit _ ⟨_, n⟩ => return .bitvecConst Strata.SourceRange.none 32 n
+  | .bv64Lit _ ⟨_, n⟩ => return .bitvecConst Strata.SourceRange.none 64 n
   | .natToInt _ ⟨_, n⟩ => return .intConst Strata.SourceRange.none (Int.ofNat n)
   | .if _ _ c t f => return .ite Strata.SourceRange.none (← toCoreExpr c) (← toCoreExpr t) (← toCoreExpr f)
   | .map_get _ _ _ a i => return mkCoreApp Core.mapSelectOp [← toCoreExpr a, ← toCoreExpr i]
   | .map_set _ _ _ a i v => return mkCoreApp Core.mapUpdateOp [← toCoreExpr a, ← toCoreExpr i, ← toCoreExpr v]
-  | .btrue _ => return .true ()
-  | .bfalse _ => return .false ()
+  | .btrue _ => return .true Strata.SourceRange.none
+  | .bfalse _ => return .false Strata.SourceRange.none
   | .and _ a b => return mkCoreApp Core.boolAndOp [← toCoreExpr a, ← toCoreExpr b]
   | .or _ a b => return mkCoreApp Core.boolOrOp [← toCoreExpr a, ← toCoreExpr b]
   | .equiv _ a b => return mkCoreApp Core.boolEquivOp [← toCoreExpr a, ← toCoreExpr b]
@@ -434,14 +434,14 @@ def toCoreStmt (s : BooleDDM.Statement SourceRange) : TranslateM Core.Statement 
         inputsMono.map (fun (id, mty) => (id, .forAll [] mty))
       let inputNames := bsList.map bindingName
       let pair ← (withBVars inputNames do
-        let mut precondsRev : List (DL.Util.FuncPrecondition Core.Expression.Expr Unit) := []
+        let mut precondsRev : List (DL.Util.FuncPrecondition Core.Expression.Expr Core.Expression.ExprMetadata) := []
         for p in pres.toList do
           match p with
           | .requires_spec _ _ _ cond =>
-            precondsRev := { expr := ← toCoreExpr cond, md := () } :: precondsRev
+            precondsRev := { expr := ← toCoreExpr cond, md := Strata.SourceRange.none } :: precondsRev
           | _ => pure ()
         let bodyExpr ← toCoreExpr body
-        return (precondsRev.reverse, bodyExpr) : TranslateM (List (DL.Util.FuncPrecondition Core.Expression.Expr Unit) × Core.Expression.Expr))
+        return (precondsRev.reverse, bodyExpr) : TranslateM (List (DL.Util.FuncPrecondition Core.Expression.Expr Core.Expression.ExprMetadata) × Core.Expression.Expr))
       let (preconds, bodyExpr) := pair
       let funcTy := Lambda.LMonoTy.mkArrow outputMono ((inputsMono.map (·.2)).reverse)
       let decl : Imperative.PureFunc Core.Expression := {
@@ -583,7 +583,7 @@ private def lowerPureFuncDef
     let inputs ← bsList.mapM toCoreBinding
     let inputNames := bsList.map bindingName
     let pres ← withBVars inputNames (toCoreSpecElts m n pres)
-    let pres := pres.preconditions.map (fun (_, c) => ⟨c.expr, ()⟩)
+    let pres := pres.preconditions.map (fun (_, c) => ⟨c.expr, Strata.SourceRange.none⟩)
     let body ← withBVars inputNames (toCoreExpr body)
     return .func {
       name := mkIdent n
