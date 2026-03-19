@@ -339,6 +339,13 @@ private def exprAsUnusedInit (expr : StmtExprMd) (md : Imperative.MetaData Core.
   let coreType := LTy.forAll [tyVarName] (.ftvar tyVarName)
   return [Core.Statement.init ident coreType (some coreExpr) md]
 
+/-- Check if a callee resolves to a procedure with no outputs (void). -/
+private def isVoidProcedure (model : SemanticModel) (callee : Identifier) : Bool :=
+  match model.get callee with
+  | .staticProcedure proc => proc.outputs.isEmpty
+  | .instanceProcedure _ proc => proc.outputs.isEmpty
+  | _ => false
+
 /--
 Translate Laurel StmtExpr to Core Statements using the `TranslateM` monad.
 Diagnostics are emitted into the monad state.
@@ -377,14 +384,17 @@ def translateStmt (outputParams : List Parameter) (stmt : StmtExprMd)
             let coreArgs ← args.mapM (fun a => translateExpr a)
             let defaultExpr := defaultExprForType model ty
             let initStmt := Core.Statement.init ident coreType (some defaultExpr) md
-            let callStmt := Core.Statement.call [ident] callee.text coreArgs md
+            -- Void procedures have no outputs; emit call without assignment target
+            let lhs := if isVoidProcedure model callee then [] else [ident]
+            let callStmt := Core.Statement.call lhs callee.text coreArgs md
             return [initStmt, callStmt]
       | some (⟨ .InstanceCall _target callee args, callMd⟩) =>
           -- Instance method call as initializer: var name := target.method(args)
           let coreArgs ← args.mapM (fun a => translateExpr a)
           let defaultExpr := defaultExprForType model ty
           let initStmt := Core.Statement.init ident coreType (some defaultExpr) md
-          let callStmt := Core.Statement.call [ident] callee.text coreArgs callMd
+          let lhs := if isVoidProcedure model callee then [] else [ident]
+          let callStmt := Core.Statement.call lhs callee.text coreArgs callMd
           return [initStmt, callStmt]
       | some (⟨ .Hole _ _, _⟩) =>
           -- Hole initializer: treat as havoc (init without value)
@@ -408,11 +418,13 @@ def translateStmt (outputParams : List Parameter) (stmt : StmtExprMd)
               else
                 -- Procedure calls need to be translated as call statements
                 let coreArgs ← args.mapM (fun a => translateExpr a)
-                return [Core.Statement.call [ident] callee.text coreArgs md]
+                let lhs := if isVoidProcedure model callee then [] else [ident]
+                return [Core.Statement.call lhs callee.text coreArgs md]
           | .InstanceCall _target callee args =>
               -- Instance method call: call callee(args) with result assigned
               let coreArgs ← args.mapM (fun a => translateExpr a)
-              return [Core.Statement.call [ident] callee.text coreArgs md]
+              let lhs := if isVoidProcedure model callee then [] else [ident]
+              return [Core.Statement.call lhs callee.text coreArgs md]
           | _ =>
               let coreExpr ← translateExpr value
               return [Core.Statement.set ident coreExpr md]

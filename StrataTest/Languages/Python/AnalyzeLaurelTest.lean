@@ -94,12 +94,12 @@ private meta def runAnalyze (dispatchIon : System.FilePath)
     | .ok r => pure r
     | .error err => return .error (toString err)
   match Strata.translateCombinedLaurel laurel with
-  | .error diagnostics => return .error s!"Laurel to Core translation failed: {diagnostics}"
-  | .ok (core, _) =>
+  | (some core, []) =>
     -- Also run Core type checking to catch semantic errors (e.g. Heap vs Any)
     match Core.typeCheck Core.VerifyOptions.quiet core with
     | .error diag => return .error s!"Core type checking failed: {diag}"
     | .ok _ => return .ok core
+  | (_, errors) => return .error s!"Laurel to Core translation failed: {errors}"
 
 /-- Expected outcome for a test case. -/
 private inductive Expected where
@@ -118,7 +118,14 @@ private meta def testCases : List (String × Expected) := [
   .mk "test_list_str.py" .success,
   .mk "test_nested_try.py" .success,
   .mk "test_try_scope.py" .success,
-  -- Negative tests
+  .mk "test_ternary.py" .success,
+  .mk "test_pow_operator.py" .success,
+  .mk "test_import_usage.py" .success,
+  .mk "test_except_var_usage.py" .success,
+  .mk "test_fstring.py" .success,
+  .mk "test_instance_call_result.py" .success,
+  .mk "test_while_var_scope.py" .success,
+  -- Negative tests (user errors)
   .mk "test_invalid_service.py" $
     .fail "User code error: 'connect' called with unknown string \"invalid\"; known services: #[messaging, storage]",
   .mk "test_invalid_method.py" $
@@ -135,22 +142,9 @@ private meta def testCases : List (String × Expected) := [
     .fail "User code error: 'list_items' called with missing required arguments: [Bucket]",
   .mk "test_positional_missing.py" $
     .fail "User code error: 'delete_item' called with missing required arguments: [Key]",
-  -- Unsupported Python construct tests (expected failures)
-  -- test_slice, test_tuple_for, test_augassign call list_items which returns None;
-  -- assigning void procedure result causes arity mismatch in Core
-  .mk "test_slice.py" (Expected.failPrefix "Core type checking failed:"),
-  .mk "test_ternary.py" .success,
-  .mk "test_tuple_for.py" (Expected.failPrefix "Core type checking failed:"),
-  .mk "test_augassign.py" (Expected.failPrefix "Core type checking failed:"),
-  .mk "test_pow_operator.py" .success,
-  -- Import handling: module aliases tracked, attribute access on unmodeled modules → Hole
-  .mk "test_import_usage.py" .success,
-  .mk "test_except_var_usage.py" .success,
-  .mk "test_fstring.py" .success,
-  -- InstanceCall: simple case passes even with Hole (no while-loop heap interaction)
-  .mk "test_instance_call_result.py" .success,
-  -- InstanceCall: while loop with hoisted variables and instance method calls
-  .mk "test_while_var_scope.py" .success
+  .mk "test_slice.py" .success,
+  .mk "test_tuple_for.py" .success,
+  .mk "test_augassign.py" .success
 ]
 
 /-- Run a single test case and return an error message on failure, or `none` on success. -/
