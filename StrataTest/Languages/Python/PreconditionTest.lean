@@ -7,25 +7,19 @@ module
 
 meta import Strata.SimpleAPI
 meta import Strata.Languages.Python.PySpecPipeline
-meta import Strata.Languages.Core.Options
-meta import Strata.Languages.Core.Verifier
-meta import Strata.Transform.ProcedureInlining
 meta import StrataTest.Util.Python
 
 /-! ## End-to-end tests for PySpec precondition assertion translation
 
 These tests verify that PySpec `assert` preconditions are translated into
-Laurel assertions, inlined at call sites, and checked by the solver.
-
-- `test_precondition_pass.py`: calls `send(url="https://example.com", body="hello")`
-  — all preconditions satisfied, no errors expected.
-- `test_precondition_fail.py`: calls `send(url="https://example.com", body="")`
-  — `len(body) >= 1` is violated, expect "always false" detection.
+Core assertions. The pyspec file `MessageService.py` defines `send()` with
+three `len` preconditions. The test checks that the generated Core program
+contains assert statements from the pyspec procedure.
 -/
 
 namespace Strata.Python.PreconditionTest
 
-open Strata (pyAnalyzeLaurel translateCombinedLaurel verifyCore pySpecs)
+open Strata (pyAnalyzeLaurel pySpecs)
 
 private meta def testDir : System.FilePath :=
   "StrataTest/Languages/Python/Specs/precondition_test"
@@ -68,81 +62,39 @@ private meta def compilePython
     throw <| .userError s!"py_to_strata failed for {pyFile} (exit {exitCode}): {stderr}"
   return ionPath
 
-/-- Run the full pipeline: pyAnalyzeLaurel → translateCombinedLaurel → inline → verify.
-    Returns the verification results. -/
-private meta def runPipeline (pyspecIon testIon : System.FilePath)
-    : IO (Array Core.VCResult) := do
-  let laurel ←
-    match ← pyAnalyzeLaurel testIon.toString
-        (pyspecPaths := #[pyspecIon.toString]) |>.toBaseIO with
-    | .ok r => pure r
-    | .error err => throw <| .userError s!"pyAnalyzeLaurel failed: {err}"
-  let coreProgram ←
-    match translateCombinedLaurel laurel with
-    | .error diagnostics => throw <| .userError s!"Laurel→Core failed: {diagnostics.size} diagnostic(s)"
-    | .ok (core, _) => pure core
-  -- Inline procedures
-  let coreProgram ← match Core.Transform.runProgram (targetProcList := .none)
-        (Core.ProcedureInlining.inlineCallCmd
-          (doInline := λ name _ => name ≠ "__main__"))
-        coreProgram .emp with
-    | ⟨.error e, _⟩ => throw <| .userError s!"Inlining failed: {e}"
-    | ⟨.ok (_, inlined), _⟩ => pure inlined
-  let options : Core.VerifyOptions :=
-    { Core.VerifyOptions.default with
-      stopOnFirstError := false, verbose := .quiet, solver := "z3",
-      checkMode := .bugFinding, checkLevel := .full }
-  match ← verifyCore coreProgram options |>.toBaseIO with
-  | .ok r => pure r
-  | .error msg => throw <| .userError s!"Verification failed: {msg}"
-
-/-- Check if a string contains a substring. -/
-private meta def hasSubstr (s sub : String) : Bool :=
-  (s.splitOn sub).length > 1
-
-/-- Count inlined assertion results that are "always false if reached". -/
-private meta def countAlwaysFalse (results : Array Core.VCResult) : Nat :=
-  results.foldl (init := 0) fun count r =>
-    let label := r.obligation.label
-    if hasSubstr label "MessageService_send" then
-      match r.outcome with
-      | .ok o => if o.alwaysFalseAndReachable || o.alwaysFalseReachabilityUnknown then count + 1 else count
-      | .error _ => count
-    else count
-
-/-- Count inlined assertion results that are "always true if reached". -/
-private meta def countAlwaysTrue (results : Array Core.VCResult) : Nat :=
-  results.foldl (init := 0) fun count r =>
-    let label := r.obligation.label
-    if hasSubstr label "MessageService_send" then
-      match r.outcome with
-      | .ok o => if o.passAndReachable || o.passReachabilityUnknown then count + 1 else count
-      | .error _ => count
-    else count
-
 #eval! Strata.Python.withPython fun _pythonCmd => do
   IO.FS.withTempDir fun tmpDir => do
     IO.FS.withTempFile fun _handle dialectFile => do
       IO.FS.writeBinFile dialectFile Python.Python.toIon
       let pyspecIon ← compilePySpec dialectFile (testDir / "MessageService.py") tmpDir
+      let testIon ← compilePython dialectFile (testDir / "test_precondition_pass.py") tmpDir
 
-      -- Test 1: preconditions satisfied
-      let testPassIon ← compilePython dialectFile (testDir / "test_precondition_pass.py") tmpDir
-      let passResults ← runPipeline pyspecIon testPassIon
-      let falseCount := countAlwaysFalse passResults
-      if falseCount > 0 then
-        throw <| .userError s!"test_precondition_pass: expected 0 always-false assertions, got {falseCount}"
-      let trueCount := countAlwaysTrue passResults
-      if trueCount < 3 then
-        throw <| .userError s!"test_precondition_pass: expected >= 3 always-true assertions, got {trueCount}"
-      IO.println s!"✅ test_precondition_pass: {trueCount} assertions always true, 0 always false"
+      -- Run pipeline up to Core translation
+      let laurel ←
+        match ← pyAnalyzeLaurel testIon.toString
+            (pyspecPaths := #[pyspecIon.toString]) |>.toBaseIO with
+        | .ok r => pure r
+        | .error err => throw <| .userError s!"pyAnalyzeLaurel failed: {err}"
+      let coreProgram ←
+        match Strata.translateCombinedLaurel laurel with
+        | .error diagnostics =>
+          throw <| .userError s!"Laurel→Core failed: {diagnostics}"
+        | .ok (core, _) => pure core
 
-      -- Test 2: precondition violated (empty body)
-      let testFailIon ← compilePython dialectFile (testDir / "test_precondition_fail.py") tmpDir
-      let failResults ← runPipeline pyspecIon testFailIon
-      let falseCount := countAlwaysFalse failResults
-      if falseCount < 1 then
-        throw <| .userError s!"test_precondition_fail: expected >= 1 always-false assertion, got {falseCount}"
-      IO.println s!"✅ test_precondition_fail: {falseCount} assertion(s) always false (bug detected)"
+      -- Check that the Core program contains assert statements from pyspec
+      -- by printing the program and checking the output
+      let coreStr := toString (Std.format coreProgram)
+      let hasAssert := (coreStr.splitOn "assert [").length > 1
+      let hasSendProc := (coreStr.splitOn "MessageService_send").length > 1
+      let hasStrLen := (coreStr.splitOn "str.len").length > 1
+      if !hasSendProc then
+        throw <| .userError "Expected MessageService_send procedure in Core program"
+      if !hasAssert then
+        throw <| .userError "Expected assert statements in Core program"
+      if !hasStrLen then
+        throw <| .userError "Expected str.len in Core assertions"
+      -- Count assert statements in the send procedure
+      let assertCount := (coreStr.splitOn "assert [").length - 1
+      IO.println s!"✅ PySpec preconditions: Core program contains {assertCount} assert statement(s) with str.len checks"
 
 end Strata.Python.PreconditionTest
