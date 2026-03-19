@@ -5,6 +5,7 @@
 -/
 
 import Strata.Languages.Python.Specs.ToLaurel
+import Strata.Languages.Laurel.LaurelFormat
 
 namespace Strata.Python.Specs.ToLaurel.Tests
 
@@ -43,34 +44,16 @@ private def mkFuncSig (name : String) (returnType : SpecType)
 
 /-! ## Output Formatting -/
 
-private def fmtHighType : HighType → String
-  | .TVoid => "TVoid"
-  | .TBool => "TBool"
-  | .TInt => "TInt"
-  | .TReal => "TReal"
-  | .TFloat64 => "TFloat64"
-  | .TString => "TString"
-  | .THeap => "THeap"
-  | .TTypedField _ => "TTypedField"
-  | .TSet _ => "TSet"
-  | .TMap _ _ => "TMap"
-  | .UserDefined name => s!"UserDefined({name})"
-  | .Applied _ _ => "Applied"
-  | .Pure _ => "Pure"
-  | .Intersection _ => "Intersection"
-  | .TCore s => s!"TCore({s})"
-  | HighType.Unknown => "Unknown"
-
-private def fmtParam (p : Parameter) : String :=
-  s!"{p.name}:{fmtHighType p.type.val}"
-
 private def fmtProc (p : Procedure) : String :=
-  let inputs := ", ".intercalate (p.inputs.map fmtParam)
-  let returns := ", ".intercalate (p.outputs.map fmtParam)
-  if returns.isEmpty then
+  let inputs := ", ".intercalate (p.inputs.map fun i => s!"{Laurel.formatParameter i}")
+  let returns := ", ".intercalate (p.outputs.map fun o => s!"{Laurel.formatParameter o}")
+  let sig := if returns.isEmpty then
     s!"procedure {p.name}({inputs})"
   else
     s!"procedure {p.name}({inputs}) returns({returns})"
+  let reqs := p.preconditions.map fun pre =>
+    s!" requires {Laurel.formatStmtExprVal pre.val}"
+  sig ++ String.join reqs
 
 private def fmtTypeDef : TypeDefinition → String
   | .Composite ty => s!"type {ty.name}"
@@ -98,10 +81,10 @@ private def noneAtom := SpecAtomType.noneType
 /-! ## Primitive and builtin types as args and return types -/
 
 /--
-info: procedure returns_int(x:TCore(Any)) returns(result:TCore(Any))
-procedure returns_bool(a:TCore(Any), b:TCore(Any)) returns(result:TCore(Any))
-procedure returns_real(flag:TCore(Any)) returns(result:TCore(Any))
-procedure with_kwonly(x:TCore(Any), verbose:TCore(Any)) returns(result:TCore(Any))
+info: procedure returns_int(x: Core(Any)) returns(result: Core(Any)) requires Any..isfrom_string(x)
+procedure returns_bool(a: Core(Any), b: Core(Any)) returns(result: Core(Any)) requires Any..isfrom_int(a)
+procedure returns_real(flag: Core(Any)) returns(result: Core(Any)) requires Any..isfrom_bool(flag)
+procedure with_kwonly(x: Core(Any), verbose: Core(Any)) returns(result: Core(Any)) requires Any..isfrom_int(x) requires Any..isfrom_bool(verbose)
 -/
 #guard_msgs in
 #eval runTest #[
@@ -120,12 +103,12 @@ procedure with_kwonly(x:TCore(Any), verbose:TCore(Any)) returns(result:TCore(Any
 /-! ## Complex types (Any, List, Dict, bytes) -/
 
 /--
-info: procedure takes_any(x:TCore(Any)) returns(result:TCore(Any))
-procedure takes_list(items:TCore(Any)) returns(result:TCore(Any))
-procedure returns_dict() returns(result:TCore(Any))
-procedure returns_bytes() returns(result:TCore(Any))
-procedure typed_list() returns(result:TCore(Any))
-procedure typed_dict() returns(result:TCore(Any))
+info: procedure takes_any(x: Core(Any)) returns(result: Core(Any)) requires Any..isfrom_string(x)
+procedure takes_list(items: Core(Any)) returns(result: Core(Any))
+procedure returns_dict() returns(result: Core(Any))
+procedure returns_bytes() returns(result: Core(Any))
+procedure typed_list() returns(result: Core(Any))
+procedure typed_dict() returns(result: Core(Any))
 -/
 #guard_msgs in
 #eval runTest #[
@@ -145,10 +128,10 @@ procedure typed_dict() returns(result:TCore(Any))
 /-! ## Literal types, TypedDict, and string-literal unions -/
 
 /--
-info: procedure int_literal_ret() returns(result:TCore(Any))
-procedure str_literal_ret() returns(result:TCore(Any))
-procedure typed_dict_ret() returns(result:TCore(Any))
-procedure str_enum() returns(result:TCore(Any))
+info: procedure int_literal_ret() returns(result: Core(Any))
+procedure str_literal_ret() returns(result: Core(Any))
+procedure typed_dict_ret() returns(result: Core(Any))
+procedure str_enum() returns(result: Core(Any))
 -/
 #guard_msgs in
 #eval runTest #[
@@ -166,17 +149,17 @@ procedure str_enum() returns(result:TCore(Any))
 /-! ## Optional type patterns (Union[None, T]) -/
 
 /--
-info: procedure opt_str() returns(result:TCore(Any))
-procedure opt_int() returns(result:TCore(Any))
-procedure opt_bool(x:TCore(Any)) returns(result:TCore(Any))
-procedure opt_float() returns(result:TCore(Any))
-procedure opt_list() returns(result:TCore(Any))
-procedure opt_dict() returns(result:TCore(Any))
-procedure opt_any() returns(result:TCore(Any))
-procedure opt_bytes() returns(result:TCore(Any))
-procedure opt_typed_dict() returns(result:TCore(Any))
-procedure opt_str_enum() returns(result:TCore(Any))
-procedure opt_int_enum() returns(result:TCore(Any))
+info: procedure opt_str() returns(result: Core(Any))
+procedure opt_int() returns(result: Core(Any))
+procedure opt_bool(x: Core(Any)) returns(result: Core(Any))
+procedure opt_float() returns(result: Core(Any))
+procedure opt_list() returns(result: Core(Any))
+procedure opt_dict() returns(result: Core(Any))
+procedure opt_any() returns(result: Core(Any))
+procedure opt_bytes() returns(result: Core(Any))
+procedure opt_typed_dict() returns(result: Core(Any))
+procedure opt_str_enum() returns(result: Core(Any))
+procedure opt_int_enum() returns(result: Core(Any))
 -/
 #guard_msgs in
 #eval runTest #[
@@ -248,8 +231,8 @@ info: Union type (None | foo.Bar) not yet supported in Laurel
 /--
 info: type MyClass
 type MyAlias
-procedure my_func(x:TCore(Any), y:TCore(Any)) returns(result:TCore(Any))
-procedure MyClass_get_value() returns(result:TCore(Any))
+procedure my_func(x: Core(Any), y: Core(Any)) returns(result: Core(Any)) requires Any..isfrom_int(x) requires Any..isfrom_string(y)
+procedure MyClass_get_value() returns(result: Core(Any))
 -/
 #guard_msgs in
 #eval runTest #[
@@ -278,7 +261,7 @@ procedure MyClass_get_value() returns(result:TCore(Any))
 
 /--
 info: procedure returns_none()
-procedure takes_none(x:TCore(Any))
+procedure takes_none(x: Core(Any))
 -/
 #guard_msgs in
 #eval runTest #[
@@ -291,7 +274,7 @@ procedure takes_none(x:TCore(Any))
 
 /--
 info: type Foo
-procedure uses_class(x:TCore(Any)) returns(result:TCore(Any))
+procedure uses_class(x: Core(Any)) returns(result: Core(Any))
 -/
 #guard_msgs in
 #eval runTest #[
@@ -359,8 +342,8 @@ private def runDispatchTest (sigs : Array Signature) : IO Unit := do
 -- and a regular function.
 /--
 info: type SvcClient
-procedure SvcClient_do_thing(x:TCore(Any)) returns(result:TCore(Any))
-procedure helper() returns(result:TCore(Any))
+procedure SvcClient_do_thing(x: Core(Any)) returns(result: Core(Any)) requires Any..isfrom_string(x)
+procedure helper() returns(result: Core(Any))
 dispatch create_client:
   "svc_a" -> mod.client.SvcClient
   "svc_b" -> mod.other.OtherClient
