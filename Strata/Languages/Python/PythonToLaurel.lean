@@ -1236,7 +1236,7 @@ def translateFunction (ctx : TranslationContext) (sourceRange: SourceRange) (fun
       inputs:= inputs ++ [{ name := "kwargs", type := paramType }]
 
     -- Translate return type
-    
+
 
     -- Declare an output parameter when the function has a return type annotation.
     -- Return statements explicitly assign to LaurelResult and exit $body.
