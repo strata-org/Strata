@@ -18,8 +18,10 @@ open Std.Format
 def formatOperation : Operation → Format
   | .Eq => "=="
   | .Neq => "!="
-  | .And => "&&"
-  | .Or => "||"
+  | .And => "&"
+  | .Or => "|"
+  | .AndThen => "&&"
+  | .OrElse => "||"
   | .Not => "!"
   | .Implies => "==>"
   | .Neg => "-"
@@ -61,7 +63,7 @@ def formatHighTypeVal : HighType → Format
   | .Intersection types =>
       Format.joinSep (types.map formatHighType) " & "
   | .TCore s => s!"Core({s})"
-  | .Top => "⊤"
+  | HighType.Unknown => "Unknown"
   termination_by t => sizeOf t
   decreasing_by all_goals term_by_mem
 end
@@ -150,7 +152,8 @@ def formatStmtExprVal (s : StmtExpr) : Format :=
   | .ContractOf _ fn => "contractOf(" ++ formatStmtExpr fn ++ ")"
   | .Abstract => "abstract"
   | .All => "all"
-  | .Hole => "<?>"
+  | .Hole true _ => "<?>"
+  | .Hole false _ => "<??>"
   termination_by sizeOf s
   decreasing_by all_goals term_by_mem
 end

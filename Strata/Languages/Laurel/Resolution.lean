@@ -93,17 +93,17 @@ inductive AstNode where
 instance : Inhabited AstNode where
   default := AstNode.unresolved
 
-def AstNode.getType (node: AstNode): Option HighTypeMd := match node with
+def AstNode.getType (node: AstNode): HighTypeMd := match node with
  | .var _ type => type
  | .parameter p => p.type
  | .field _ f => f.type
- | .datatypeConstructor type _ => some ⟨ .UserDefined type, default ⟩
+ | .datatypeConstructor type _ => ⟨ .UserDefined type, default ⟩
  | .constant c => c.type
  | .quantifierVar _ type => type
  | .unresolved =>
     -- The Python through Laurel pipeline does not resolve yet
-    some ⟨ .UserDefined "dummyName", default ⟩
- | _ => dbg_trace s!"SOUND BUG: getType called on {repr node}"; none
+    ⟨ .UserDefined "dummyName", default ⟩
+ | _ => dbg_trace s!"SOUND BUG: getType called on {repr node}"; ⟨ HighType.Unknown, default ⟩
 
 /-! ## Resolution result -/
 
@@ -115,8 +115,8 @@ structure SemanticModel where
 
 def SemanticModel.get (model: SemanticModel) (iden: Identifier): AstNode :=
   match iden.uniqueId with
-  | some key => (model.refToDef.get? key).getD (panic! s!"could not find key {key}")
-  | none => default -- panic! s!"model.get called on identifier {iden.text} without number"
+  | some key => (model.refToDef.get? key).getD default
+  | none => default
 
 def SemanticModel.isFunction (model: SemanticModel) (id: Identifier): Bool :=
   match model.get id with
@@ -159,6 +159,9 @@ structure ResolveState where
   typeScopes : TypeScopes := {}
   /-- Diagnostics collected during resolution. -/
   errors : Array DiagnosticModel := #[]
+  /-- When resolving inside an instance procedure, the owning composite type name.
+      Used by `resolveFieldRef` to resolve `self.field` when `self` has type `Any`. -/
+  instanceTypeName : Option String := none
 
 @[expose] abbrev ResolveM := StateM ResolveState
 
@@ -172,13 +175,13 @@ private def freshId : ResolveM Nat := do
 /-- Register a definition: assign a fresh ID to the identifier and record it in scope with its AstNode. -/
 def defineName (iden : Identifier) (node : AstNode) (overrideResolutionName: Option String := none) : ResolveM Identifier := do
   let resolutionName := overrideResolutionName.getD iden.text
-  let name' ← if iden.uniqueId == none then
-    let id ← freshId
-    pure { iden with uniqueId := some (id) }
-  else
-    pure iden
+  let (name', uniqueId) ← match iden.uniqueId with
+    | some uid => pure (iden, uid)
+    | none =>
+      let id ← freshId
+      pure ({ iden with uniqueId := some (id) }, id)
 
-  modify fun s => { s with scope := s.scope.insert resolutionName (name'.uniqueId.getD (panic "key was just inserted"), node) }
+  modify fun s => { s with scope := s.scope.insert resolutionName (uniqueId, node) }
   return name'
 
 /-- Resolve a reference: look up the name in scope and assign the definition's ID.
@@ -201,30 +204,37 @@ private def targetTypeName (target : StmtExprMd) : ResolveM (Option String) := d
   | .Identifier ref =>
     match s.scope.get? ref.text with
     | some (_, node) =>
-      match node.getType with
-      | some ty =>
-        match ty.val with
-        | .UserDefined typRef => pure (some typRef.text)
-        | _ => pure none
-      | none => pure none
+      match node.getType.val with
+      | .UserDefined typRef => pure (some typRef.text)
+      | _ => pure none
     | none => pure none
   | _ => pure none
 
+/-- Try to resolve a field name via a type scope lookup. Returns `some id` on success. -/
+private def resolveFieldInTypeScope (typeName : String) (fieldName : Identifier) : ResolveM (Option Identifier) := do
+  let s ← get
+  match s.typeScopes.get? typeName with
+  | some typeScope =>
+    match typeScope.get? fieldName.text with
+    | some (defId, _) => return some { fieldName with uniqueId := some defId }
+    | none => return none
+  | none => return none
+
 /-- Resolve a field reference using the target's type to build a qualified lookup key.
-    Falls back to unqualified lookup if the target type cannot be determined. -/
+    Falls back to the instance type name (for `self.field` in instance methods),
+    then to unqualified lookup if the target type cannot be determined. -/
 def resolveFieldRef (target : StmtExprMd) (fieldName : Identifier)
     (md : Imperative.MetaData Core.Expression) : ResolveM Identifier := do
   let typeName? ← targetTypeName target
-  match typeName? with
-  | some typeName =>
-    let s ← get
-    match s.typeScopes.get? typeName with
-    | some typeScope =>
-      match typeScope.get? fieldName.text with
-      | some (defId, _) => return { fieldName with uniqueId := some defId }
-      | none => resolveRef fieldName md
-    | none => resolveRef fieldName md
-  | none => resolveRef fieldName md
+  -- Try type scope from the target's declared type
+  if let some typeName := typeName? then
+    if let some resolved ← resolveFieldInTypeScope typeName fieldName then
+      return resolved
+  -- Fallback: use the owning instance type (handles `self.field` when self has type `Any`)
+  if let some instTypeName := (← get).instanceTypeName then
+    if let some resolved ← resolveFieldInTypeScope instTypeName fieldName then
+      return resolved
+  resolveRef fieldName md
 
 /-- Save and restore scope around a block (for lexical scoping). -/
 def withScope (action : ResolveM α) : ResolveM α := do
@@ -380,7 +390,11 @@ def resolveStmtExpr (exprMd : StmtExprMd) : ResolveM StmtExprMd := do
     pure (.ContractOf ty fn')
   | .Abstract => pure .Abstract
   | .All => pure .All
-  | .Hole => pure .Hole
+  | .Hole det type => match type with
+    | some ty =>
+      let ty' ← resolveHighType ty
+      pure (.Hole det ty')
+    | none => pure (.Hole det none)
   return ⟨val', md⟩
   termination_by exprMd
   decreasing_by all_goals term_by_mem
@@ -441,12 +455,15 @@ def resolveField (ownerName : Identifier) (field : Field) : ResolveM Field := do
 def resolveInstanceProcedure (typeName : Identifier) (proc : Procedure) : ResolveM Procedure := do
   let procName' ← defineName proc.name (.instanceProcedure typeName proc)
   withScope do
+    let savedInstType := (← get).instanceTypeName
+    modify fun s => { s with instanceTypeName := some typeName.text }
     let inputs' ← proc.inputs.mapM resolveParameter
     let outputs' ← proc.outputs.mapM resolveParameter
     let pres' ← proc.preconditions.mapM resolveStmtExpr
     let det' ← resolveDeterminism proc.determinism
     let dec' ← proc.decreases.mapM resolveStmtExpr
     let body' ← resolveBody proc.body
+    modify fun s => { s with instanceTypeName := savedInstType }
     return { name := procName', inputs := inputs', outputs := outputs',
              isFunctional := proc.isFunctional,
              preconditions := pres', determinism := det', decreases := dec',
@@ -599,7 +616,7 @@ private def collectStmtExpr (map : Std.HashMap Nat AstNode) (expr : StmtExprMd)
     collectStmtExpr map proof
   | .ContractOf _ fn => collectStmtExpr map fn
   | .New _ | .This | .Exit _ | .LiteralInt _ | .LiteralBool _ | .LiteralString _ | .LiteralDecimal _
-  | .Abstract | .All | .Hole => map
+  | .Abstract | .All | .Hole _ _ => map
 
 private def collectBody (map : Std.HashMap Nat AstNode) (body : Body)
     : Std.HashMap Nat AstNode :=

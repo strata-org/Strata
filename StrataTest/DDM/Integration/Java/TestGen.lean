@@ -378,4 +378,28 @@ elab "#testRoundtripFiles" : command => do
 
 #testRoundtripFiles
 
+-- Test 15: javaGen works on preloaded dialects via CLI
+elab "#testJavaGenPreloaded" : command => do
+  let dir : System.FilePath := "/tmp/strata-javagen-preloaded-test"
+  if ← dir.pathExists then IO.FS.removeDirAll dir
+  let result ← IO.Process.output {
+    cmd := "lake"
+    args := #["exe", "strata", "javaGen", "Laurel", "com.test.laurel", dir.toString]
+  }
+  if result.exitCode != 0 then
+    Lean.logError s!"javaGen on preloaded Laurel dialect failed:\n{result.stdout}\n{result.stderr}"
+    if ← dir.pathExists then IO.FS.removeDirAll dir
+    return
+  -- Verify some expected files exist
+  let pkgDir := (dir / "com" / "test" / "laurel").toString
+  let mut missing := false
+  for expected in #["Node.java", "StmtExpr.java", "Procedure.java"] do
+    if !(← System.FilePath.pathExists (pkgDir ++ "/" ++ expected)) then
+      Lean.logError s!"Expected file {expected} not found in {pkgDir}"
+      missing := true
+  IO.FS.removeDirAll dir
+  if missing then return
+
+#testJavaGenPreloaded
+
 end Strata.Java.Test

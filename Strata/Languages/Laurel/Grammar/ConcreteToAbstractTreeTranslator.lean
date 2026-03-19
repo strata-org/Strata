@@ -167,6 +167,8 @@ def getBinaryOp? (name : QualifiedIdent) : Option Operation :=
   | q`Laurel.ge => some Operation.Geq
   | q`Laurel.and => some Operation.And
   | q`Laurel.or => some Operation.Or
+  | q`Laurel.andThen => some Operation.AndThen
+  | q`Laurel.orElse => some Operation.OrElse
   | q`Laurel.implies => some Operation.Implies
   | q`Laurel.strConcat => some Operation.StrConcat
   | _ => none
@@ -199,6 +201,13 @@ partial def translateStmtExpr (arg : Arg) : TransM StmtExprMd := do
     | q`Laurel.block, #[arg0] =>
       let stmts ← translateSeqCommand arg0
       return mkStmtExprMd (.Block stmts none) md
+    | q`Laurel.labelledBlock, #[arg0, arg1] =>
+      let stmts ← translateSeqCommand arg0
+      let label ← translateIdent arg1
+      return mkStmtExprMd (.Block stmts (some label.text)) md
+    | q`Laurel.exit, #[arg0] =>
+      let label ← translateIdent arg0
+      return mkStmtExprMd (.Exit label.text) md
     | q`Laurel.literalBool, #[arg0] => return mkStmtExprMd (.LiteralBool (← translateBool arg0)) md
     | q`Laurel.int, #[arg0] =>
       let n ← translateNat arg0
@@ -209,6 +218,8 @@ partial def translateStmtExpr (arg : Arg) : TransM StmtExprMd := do
     | q`Laurel.string, #[arg0] =>
       let s ← translateString arg0
       return mkStmtExprMd (.LiteralString s) md
+    | q`Laurel.hole, #[] => return mkStmtExprMd (.Hole true none) md
+    | q`Laurel.nondetHole, #[] => return mkStmtExprMd (.Hole false none) md
     | q`Laurel.varDecl, #[arg0, typeArg, assignArg] =>
       let name ← translateIdent arg0
       let varType ← match typeArg with
@@ -279,6 +290,21 @@ partial def translateStmtExpr (arg : Arg) : TransM StmtExprMd := do
         | _ => pure []
       let body ← translateStmtExpr bodyArg
       return mkStmtExprMd (.While cond invariants none body) md
+    | q`Laurel.forLoop, #[initArg, condArg, stepArg, invSeqArg, bodyArg] =>
+      let init ← translateStmtExpr initArg
+      let cond ← translateStmtExpr condArg
+      let step ← translateStmtExpr stepArg
+      let invariants ← match invSeqArg with
+        | .seq _ _ clauses => clauses.toList.mapM fun arg => match arg with
+            | .op invOp => match invOp.name, invOp.args with
+              | q`Laurel.invariantClause, #[exprArg] => translateStmtExpr exprArg
+              | _, _ => TransM.error "Expected invariantClause"
+            | _ => TransM.error "Expected operation"
+        | _ => pure []
+      let body ← translateStmtExpr bodyArg
+      let whileBody := mkStmtExprMd (.Block [body, step] none) md
+      let whileStmt := mkStmtExprMd (.While cond invariants none whileBody) md
+      return mkStmtExprMd (.Block [init, whileStmt] none) md
     | q`Laurel.forallExpr, #[nameArg, tyArg, triggerArg, bodyArg] =>
       let name ← translateIdent nameArg
       let ty ← translateHighType tyArg
