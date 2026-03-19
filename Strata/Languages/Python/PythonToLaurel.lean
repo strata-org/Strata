@@ -95,6 +95,8 @@ structure TranslationContext where
   currentClassName : Option String := none
   loopBreakLabel : Option String := none
   loopContinueLabel : Option String := none
+  /-- Abstracted statements recorded for warning emission -/
+  abstractedStatements : List (SourceRange × String) := []
 deriving Inhabited
 
 /-! ## Error Handling -/
@@ -120,6 +122,20 @@ def TranslationError.toString : TranslationError → String
 
 instance : ToString TranslationError where
   toString := TranslationError.toString
+
+/-- Warnings about abstracted constructs (location × description) -/
+abbrev TranslationWarnings := List (SourceRange × String)
+
+/-- Monad for expression translation: can throw errors and accumulate warnings -/
+abbrev ExprM := StateT TranslationWarnings (Except TranslationError)
+
+/-- Record an abstraction warning -/
+def ExprM.warn (loc : SourceRange) (kind : String) : ExprM Unit :=
+  modify (· ++ [(loc, kind)])
+
+/-- Run an ExprM computation, returning result and accumulated warnings -/
+def ExprM.run' (m : ExprM α) : Except TranslationError (α × TranslationWarnings) :=
+  StateT.run m []
 
 /-- Throw a user code error indicating a detected bug in the Python source. -/
 def throwUserError [MonadExceptOf TranslationError m] (range : SourceRange := .none) (msg : String) : m α :=
@@ -155,6 +171,12 @@ def mkStmtExprMd (expr : StmtExpr) : StmtExprMd :=
 /-- Create a StmtExprMd with source location metadata -/
 def mkStmtExprMdWithLoc (expr : StmtExpr) (md : Imperative.MetaData Core.Expression) : StmtExprMd :=
   { val := expr, md := md }
+
+/-- Generate statements that havoc all in-scope variables (assign Hole to each) -/
+def havocAllVars (ctx : TranslationContext) : List StmtExprMd :=
+  ctx.variableTypes.map fun (name, _) =>
+    let target := mkStmtExprMd (.Identifier name)
+    mkStmtExprMd (.Assign [target] (mkStmtExprMd .Hole))
 
 /-- Extract string representation from Python expression (for type annotations) -/
 partial def pyExprToString (e : Python.expr SourceRange) : String :=
@@ -343,23 +365,23 @@ def ListAny_mk (es: List StmtExprMd) : StmtExprMd := match es with
 mutual
 
 partial def translateList (ctx : TranslationContext) (elmts: List (Python.expr SourceRange))
-    : Except TranslationError StmtExprMd := do
+    : ExprM StmtExprMd := do
   let trans_elmts ←  elmts.mapM (translateExpr ctx)
   return  mkStmtExprMd (.StaticCall "from_ListAny" [ListAny_mk trans_elmts])
 
 partial def translateDictStrAny (ctx : TranslationContext)
     (keys: List (Python.opt_expr SourceRange)) (values: List (Python.expr SourceRange))
-      : Except TranslationError StmtExprMd := do
+      : ExprM StmtExprMd := do
   if keys.length != values.length then
     throw (.internalError s!"Invalid Dict: number of keys not match number of values" )
   let kv := keys.zip values
   let val_trans ←  kv.unzip.snd.mapM (translateExpr ctx)
-  let keys ← keys.mapM pyOptExprToString
+  let keys ← (keys.mapM pyOptExprToString : Except _ _)
   return  mkStmtExprMd (.StaticCall "from_Dict" [DictStrAny_mk (keys.zip val_trans)])
 
 /-- Translate Python expression to Laurel StmtExpr -/
 partial def translateExpr (ctx : TranslationContext) (e : Python.expr SourceRange)
-    : Except TranslationError StmtExprMd := do
+    : ExprM StmtExprMd := do
   match e with
   -- Integer literals
   | .Constant _ (.ConPos _ n) _ => return intToAny n.val
@@ -397,17 +419,19 @@ partial def translateExpr (ctx : TranslationContext) (e : Python.expr SourceRang
     let rightExpr ← translateExpr ctx right
     let preludeOpnames ← match op with
       -- Arithmetic
-      | .Add _ => .ok "PAdd"
-      | .Sub _ => .ok "PSub"
-      | .Mult _ => .ok "PMul"
+      | .Add _ => pure "PAdd"
+      | .Sub _ => pure "PSub"
+      | .Mult _ => pure "PMul"
       | .Div _ => return mkStmtExprMd .Hole -- Floating-point are not supported yet
-      | .FloorDiv _ => .ok "PFloorDiv"  -- Python // maps to Laurel Div
-      | .Mod _ => .ok "PMod"
+      | .FloorDiv _ => pure "PFloorDiv"  -- Python // maps to Laurel Div
+      | .Mod _ => pure "PMod"
       | .BitAnd _ => return mkStmtExprMd .Hole --TODO: Adding BitVector subtype in Any type, then the related operations
       | .BitOr _ => return mkStmtExprMd .Hole
       | .BitXor _ => return mkStmtExprMd .Hole
-      -- Unsupported for now
-      | _ => throw (.unsupportedConstruct s!"Binary operator not yet supported: {repr op}" (toString (repr e)))
+      -- Unsupported for now — abstract as Hole (uninterpreted value)
+      | _ =>
+        ExprM.warn left.toAst.ann s!"BinOp({repr op})"
+        return mkStmtExprMd .Hole
     return mkStmtExprMd (StmtExpr.StaticCall preludeOpnames [leftExpr, rightExpr])
 
   -- Comparison operations
@@ -419,14 +443,14 @@ partial def translateExpr (ctx : TranslationContext) (e : Python.expr SourceRang
     let leftExpr ← translateExpr ctx left
     let rightExpr ← translateExpr ctx comparators.val[0]!
     let preludeOpnames ← match ops.val[0]! with
-      | .Eq _ => .ok "PEq"
-      | .NotEq _ => .ok "PNEq"
-      | .Lt _ => .ok "PLt"
-      | .LtE _ => .ok "PLe"
-      | .Gt _ => .ok "PGt"
-      | .GtE _ => .ok "PGe"
-      | .In _ => .ok "PIn"
-      | .NotIn _ => .ok "PNotIn"
+      | .Eq _ => pure "PEq"
+      | .NotEq _ => pure "PNEq"
+      | .Lt _ => pure "PLt"
+      | .LtE _ => pure "PLe"
+      | .Gt _ => pure "PGt"
+      | .GtE _ => pure "PGe"
+      | .In _ => pure "PIn"
+      | .NotIn _ => pure "PNotIn"
       | _ => throw (.unsupportedConstruct s!"Comparison operator not yet supported: {repr ops.val[0]!}" (toString (repr e)))
     return mkStmtExprMd (StmtExpr.StaticCall preludeOpnames [leftExpr, rightExpr])
 
@@ -435,8 +459,8 @@ partial def translateExpr (ctx : TranslationContext) (e : Python.expr SourceRang
     if values.val.size < 2 then
       throw (.internalError "BoolOp must have at least 2 operands")
     let preludeOpnames ← match op with
-      | .And _ => .ok "PAnd"
-      | .Or _ => .ok "POr"
+      | .And _ => pure "PAnd"
+      | .Or _ => pure "POr"
     -- Translate all operands
     let mut exprs : List StmtExprMd := []
     for val in values.val do
@@ -452,8 +476,8 @@ partial def translateExpr (ctx : TranslationContext) (e : Python.expr SourceRang
   | .UnaryOp _ op operand => do
     let operandExpr ← translateExpr ctx operand
     let preludeOpnames ← match op with
-      | .Not _ => .ok "PNot"
-      | .USub _ => .ok "PNeg"
+      | .Not _ => pure "PNot"
+      | .USub _ => pure "PNeg"
       | _ => throw (.unsupportedConstruct s!"Unary operator not yet supported: {repr op}" (toString (repr e)))
     return mkStmtExprMd (StmtExpr.StaticCall preludeOpnames [operandExpr])
 
@@ -536,7 +560,10 @@ partial def translateExpr (ctx : TranslationContext) (e : Python.expr SourceRang
   -- Generator expression: (x for x in items)
   | .GeneratorExp .. => return mkStmtExprMd .Hole
 
-  | _ => throw (.unsupportedConstruct "Expression type not yet supported" (toString (repr e)))
+  -- Unsupported expression — abstract as Hole (uninterpreted value)
+  | _ =>
+    ExprM.warn e.toAst.ann s!"expr({(toString (repr e)).take 40})"
+    return mkStmtExprMd .Hole
 
 
 partial def getListAttributes (expr: Python.expr SourceRange): (Python.expr SourceRange) × List String :=
@@ -638,7 +665,7 @@ partial def translateDictKWords (ctx : TranslationContext) (kw : Python.keyword 
     : Except TranslationError (String × StmtExprMd) := do
   match kw with
   | .mk_keyword _ name expr =>
-    let expr ← translateExpr ctx expr
+    let (expr, _) ← (translateExpr ctx expr).run'
     match name.val with
     | some n => return (n.val, expr)
     | none => throw (.internalError "Expected keyname for Dict Kwargs")
@@ -666,7 +693,7 @@ partial def translateVarKwargs (ctx : TranslationContext) (kwords : List (Python
     match name.val with
     | some _ => throw (.internalError s!"Keyword arg should be a Dict")
     | none =>
-        let expr ← translateExpr ctx expr
+        let (expr, _) ← (translateExpr ctx expr).run'
         return expr
 
 partial def translateKwargs (ctx : TranslationContext) (kwords : List (Python.keyword SourceRange)): Except TranslationError StmtExprMd := do
@@ -753,7 +780,7 @@ partial def translateCall (ctx : TranslationContext)
   let funcDecl := ctx.functionSignatures.find? fun x => x.name == funcName
   let (args, kwords, funcdecl_hasKwargs) ←
     combinePositionalAndKeywordArgs args kwords funcDecl methodName callRange
-  let trans_args ← args.mapM (translateExpr ctx)
+  let trans_args ← args.mapM (fun e => do let (r, _) ← (translateExpr ctx e).run'; pure r)
   let trans_kwords ← translateKwargs ctx kwords
   let trans_kwords_exprs :=
     if kwords.length == 0 then
@@ -762,7 +789,7 @@ partial def translateCall (ctx : TranslationContext)
   match f with
   | .Name  _ _ _ =>  return mkStmtExprMd (StmtExpr.StaticCall funcName (trans_args ++ trans_kwords_exprs))
   | .Attribute _ val attr _ =>
-      let target_trans ← translateExpr ctx val
+      let (target_trans, _) ← (translateExpr ctx val).run'
       if opt_firstarg.isSome then
         return mkStmtExprMd (StmtExpr.InstanceCall target_trans attr.val (trans_args ++ trans_kwords_exprs))
       else
@@ -771,6 +798,17 @@ partial def translateCall (ctx : TranslationContext)
 
 
 end
+
+/-- Run translateExpr, discarding warnings -/
+def translateExprVal (ctx : TranslationContext) (e : Python.expr SourceRange)
+    : Except TranslationError StmtExprMd := do
+  let (result, _) ← (translateExpr ctx e).run'
+  return result
+
+/-- Run translateExpr, returning both result and warnings -/
+def translateExprW (ctx : TranslationContext) (e : Python.expr SourceRange)
+    : Except TranslationError (StmtExprMd × TranslationWarnings) :=
+  (translateExpr ctx e).run'
 
 /-! ## Statement Translation
 
@@ -793,7 +831,7 @@ partial def translateAssign  (ctx : TranslationContext)
                              (rhs: Python.expr SourceRange)
                              (md: Imperative.MetaData Core.Expression)
                     : Except TranslationError (TranslationContext × List StmtExprMd) := do
-  let rhs_trans ←  translateExpr ctx rhs
+  let rhs_trans ←  translateExprVal ctx rhs
   if let .Hole := rhs_trans.val then
   {
     match lhs with
@@ -860,8 +898,8 @@ partial def translateAssign  (ctx : TranslationContext)
     | .Subscript _ _ _ _ =>
         match getSubscriptList lhs with
         | target :: slices =>
-            let target ← translateExpr ctx target
-            let slices ← slices.mapM (translateExpr ctx)
+            let target ← translateExprVal ctx target
+            let slices ← slices.mapM (translateExprVal ctx)
             let anySetsExpr := mkStmtExprMd (StmtExpr.StaticCall "Any_sets" [target, ListAny_mk slices, rhs_trans])
             let assignStmts := [mkStmtExprMd (StmtExpr.Assign [target] anySetsExpr)]
             return (ctx,assignStmts)
@@ -877,7 +915,7 @@ partial def translateAssign  (ctx : TranslationContext)
           let assignStmt := mkStmtExprMdWithLoc (StmtExpr.Assign [fieldAccess] rhs_trans) md
           return (ctx, [assignStmt])
         else
-          let targetExpr ← translateExpr ctx lhs  -- This will handle self.field via translateExpr
+          let targetExpr ← translateExprVal ctx lhs  -- This will handle self.field via translateExpr
           let assignStmt := mkStmtExprMdWithLoc (StmtExpr.Assign [targetExpr] rhs_trans) md
           return (ctx, [assignStmt])
       | _ => throw (.unsupportedConstruct "Assignment targets not yet supported" (toString (repr lhs)))
@@ -911,7 +949,7 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
 
   -- If statement
   | .If _ test body orelse => do
-    let condExpr ← translateExpr ctx test
+    let condExpr ← translateExprVal ctx test
     -- Check if condition contains a Hole - if so, hoist to variable to avoid free variable errors
     let (condStmts, finalCondExpr, condCtx) :=
       match condExpr.val with
@@ -946,7 +984,7 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
   -- While loop
   | .While _ test body _orelse => do
     -- Note: Python while-else not supported yet
-    let condExpr ← translateExpr ctx test
+    let condExpr ← translateExprVal ctx test
     -- Check if condition contains a Hole - if so, hoist to variable
     let (condStmts, finalCondExpr, condCtx) :=
       match condExpr.val with
@@ -978,7 +1016,7 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
   | .Return _ value => do
     let retVal ← match value.val with
       | some expr => do
-        let e ← translateExpr ctx expr
+        let e ← translateExprVal ctx expr
         .ok (some e)
       | none => .ok none
     let retStmt := mkStmtExprMd (StmtExpr.Return retVal)
@@ -986,7 +1024,7 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
 
   -- Assert statement
   | .Assert _ test _msg => do
-    let condExpr ← translateExpr ctx test
+    let condExpr ← translateExprVal ctx test
     -- Check if condition contains a Hole - if so, hoist to variable
     let (condStmts, finalCondExpr, condCtx) :=
       match condExpr.val with
@@ -1010,7 +1048,7 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
 
   -- Expression statement (e.g., function call)
   | .Expr _ value => do
-    let expr ← translateExpr ctx value
+    let expr ← translateExprVal ctx value
     let expr := { expr with md := md }
 
     match expr.val with
@@ -1106,7 +1144,7 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
       match item with
       | .mk_withitem _ ctxExpr optVars =>
         let mgrName := s!"with_mgr_{ctxExpr.toAst.ann.start.byteIdx}"
-        let mgrExpr ← translateExpr currentCtx ctxExpr
+        let mgrExpr ← translateExprVal currentCtx ctxExpr
         let mgrTy ← inferExprType currentCtx ctxExpr
         let mgrLauTy ← translateType currentCtx mgrTy
         let mgrDecl := mkStmtExprMd (StmtExpr.LocalVariable mgrName mgrLauTy (some mgrExpr))
@@ -1136,7 +1174,7 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
       | _ => throw (.unsupportedConstruct "Only simple variable in for target supported" (toString (repr s)))
 
     -- The iterator expression (we abstract it away)
-    let _iterExpr ← translateExpr ctx iter
+    let _iterExpr ← translateExprVal ctx iter
 
     -- Create context with target variable and loop labels
     let breakLabel := s!"for_break_{iter.toAst.ann.start.byteIdx}"
@@ -1160,7 +1198,16 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
     | some lbl => return (ctx, [mkStmtExprMdWithLoc (StmtExpr.Exit lbl) md])
     | none => return (ctx, [mkStmtExprMdWithLoc (StmtExpr.Assert (mkStmtExprMd .Hole)) md])
 
-  | _ => throw (.unsupportedConstruct "Statement type not yet supported" (toString (repr s)))
+  -- Unsupported statement — record the abstraction, havoc all in-scope
+  -- variables (sound: the statement could modify anything), and emit
+  -- `assert *` so the verifier flags the location.
+  | _ =>
+    let stmtName := ((toString (repr s)).takeWhile (· != ' ')).toString
+    let newCtx := { ctx with
+      abstractedStatements := ctx.abstractedStatements ++ [(s.toAst.ann, stmtName)] }
+    let assertStar := mkStmtExprMdWithLoc (StmtExpr.Assert (mkStmtExprMd .Hole)) md
+    let block := mkStmtExprMdWithLoc (StmtExpr.Block (havocAllVars ctx ++ [assertStar]) none) md
+    return (newCtx, [block])
 
 partial def translateStmtList (ctx : TranslationContext) (stmts : List (Python.stmt SourceRange))
     : Except TranslationError (TranslationContext × List StmtExprMd) := do
@@ -1676,7 +1723,7 @@ def pythonToLaurel' (info : PreludeInfo)
         otherStmts := otherStmts ++ [stmt]
 
     ctx := {ctx with variableTypes:= [("nullcall_ret", PyLauType.Any)]}
-    let (_, bodyStmts) ← translateStmtList ctx otherStmts
+    let (finalCtx, bodyStmts) ← translateStmtList ctx otherStmts
     let bodyStmts := prependExceptHandlingHelper bodyStmts
     let bodyStmts := mkStmtExprMd (.LocalVariable "__name__" AnyTy (some <| strToAny "__main__")) :: bodyStmts
     let bodyStmts := (mkStmtExprMd (.LocalVariable "nullcall_ret" AnyTy (some AnyNone))) :: bodyStmts
