@@ -336,7 +336,11 @@ def translateStmt (outputParams : List Parameter) (stmt : StmtExprMd)
   | .Assume cond =>
       let coreExpr ← translateExpr cond [] (isPureContext := true)
       return [Core.Statement.assume ("assume" ++ getNameFromMd md) coreExpr md]
-  | .Block stmts _ => stmts.flatMapM (fun s => translateStmt outputParams s)
+  | .Block stmts label =>
+      let innerStmts ← stmts.flatMapM (fun s => translateStmt outputParams s)
+      match label with
+      | some l => return [Imperative.Stmt.block l innerStmts md]
+      | none   => return innerStmts
   | .LocalVariable id ty initializer =>
       let coreMonoType := translateType model ty
       let coreType := LTy.forAll [] coreMonoType
@@ -444,9 +448,8 @@ def translateStmt (outputParams : List Parameter) (stmt : StmtExprMd)
       let decreasingExprCore ← decreasesExpr.mapM (translateExpr)
       let bodyStmts ← translateStmt outputParams body
       return [Imperative.Stmt.loop condExpr decreasingExprCore invExprs bodyStmts md]
-  | .Exit _ =>
-      dbg_trace "TODO: Exit statement not yet supported"
-      default
+  | .Exit target =>
+      return [Imperative.Stmt.exit (some target) md]
   | _ =>
       -- Expression in statement position: preserve as an unused variable init
       exprAsUnusedInit stmt md
