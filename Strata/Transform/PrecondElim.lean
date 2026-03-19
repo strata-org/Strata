@@ -314,6 +314,17 @@ where
         match mkFuncWFProc F' func with
         | some wfDecl => return (true, wfDecl :: funcDecl :: rest')
         | none => return (changed || hasPreconds, funcDecl :: rest')
+      | .recFuncBlock funcs md => do
+        let F ← getFactory
+        let F' := funcs.foldl (fun F func => F.push func) F
+        setFactory F'
+        let funcs' := funcs.map ({ · with preconditions := [] })
+        let funcDecl := Decl.recFuncBlock funcs' md
+        let hasPreconds := funcs.any (!·.preconditions.isEmpty)
+        let (changed, rest') ← transformDecls rest
+        let wfDecls := funcs.filterMap (mkFuncWFProc F')
+        if !wfDecls.isEmpty then return (true, funcDecl :: wfDecls ++ rest')
+        else return (changed || hasPreconds, funcDecl :: rest')
       | .type (.data block) _ => do
         let F ← getFactory
         let bf ← liftDiag (Lambda.genBlockFactory (T := CoreLParams) block)

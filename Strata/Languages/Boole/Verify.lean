@@ -610,7 +610,7 @@ private def registerCommandSymbols (cmd : BooleDDM.Command SourceRange) : List B
   | .command_constdecl _ _ _ _ => [true]
   | .command_fndecl _ _ _ _ _ => [true]
   | .command_fndef _ _ _ _ _ _ _ _ => [true]
-  | .command_recfndef _ _ _ _ _ _ _ => [true]
+  | .command_recfndefs _ ⟨_, funcs⟩ => funcs.toList.map (fun _ => true)
   | .command_var _ _ => [false]
   -- Procedure names are referenced by call statements directly and are not Expr.fvar symbols.
   | .command_procedure _ _ _ _ _ _ _ => []
@@ -668,12 +668,14 @@ def toCoreDecls (cmd : BooleDDM.Command SourceRange) : TranslateM (List Core.Dec
       return [.func { name := mkIdent n, typeArgs := tys, inputs := ← (bindingsToList bs).mapM toCoreBinding, output := ← toCoreMonoType ret, body := none, concreteEval := none, attr := #[], axioms := [] }]
   | .command_fndef m ⟨_, n⟩ ⟨_, targs?⟩ bs ret ⟨_, pres⟩ body ⟨_, inline?⟩ =>
     let tys := match targs? with | none => [] | some ts => typeArgsToList ts
-    let f ← lowerPureFuncDef m n tys bs ret pres body inline?.isSome
-    return [.func f]
-  | .command_recfndef m ⟨_, n⟩ ⟨_, targs?⟩ bs ret ⟨_, pres⟩ body =>
-    let tys := match targs? with | none => [] | some ts => typeArgsToList ts
-    let f ← lowerPureFuncDef m n tys bs ret pres body false
-    return [.func {f with isRecursive := true}]
+    return [.func (← lowerPureFuncDef m n tys bs ret pres body inline?.isSome)]
+  | .command_recfndefs _ ⟨_, funcs⟩ =>
+    let fs ← funcs.toList.mapM fun
+      | .recfn_decl m ⟨_, n⟩ ⟨_, targs?⟩ bs ret ⟨_, pres⟩ body => do
+        let tys := match targs? with | none => [] | some ts => typeArgsToList ts
+        let f ← lowerPureFuncDef m n tys bs ret pres body false
+        return { f with isRecursive := true }
+    return [.recFuncBlock fs]
   | .command_var _ b =>
     let (id, ty) ← toCoreBind b
     let i := (← get).globalVarCounter
