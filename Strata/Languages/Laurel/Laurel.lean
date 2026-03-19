@@ -59,14 +59,18 @@ inductive Operation : Type where
   | Eq
   /-- Inequality test. -/
   | Neq
-  /-- Logical conjunction. -/
+  /-- Logical conjunction (eager). -/
   | And
-  /-- Logical disjunction. -/
+  /-- Logical disjunction (eager). -/
   | Or
   /-- Logical negation. -/
   | Not
-  /-- Logical implication. -/
+  /-- Logical implication (short-circuit). -/
   | Implies
+  /-- Short-circuit logical conjunction. Only evaluates the second argument if the first is true. -/
+  | AndThen
+  /-- Short-circuit logical disjunction. Only evaluates the second argument if the first is false. -/
+  | OrElse
   /-- Arithmetic negation. Works on `Int` and `Float64`. -/
   | Neg
   /-- Addition. Works on `Int` and `Float64`. -/
@@ -153,8 +157,12 @@ inductive HighType : Type where
   /-- Temporary construct meant to aid the migration of Python->Core to Python->Laurel.
   Type "passed through" from Core. Intended to allow translations to Laurel to refer directly to Core. -/
   | TCore (s: String)
-  /-- The top type, which contains all values. -/
-  | Top
+  /-- Type used internally by the Laurel compilation pipeline.
+  This type is used when a resolution error occurs,
+  to continue compilation without producing superfluous errors
+  Any type can be assigned to unknown and unknown can be assigned to any type.
+  The unknown type can not be represented in Core so its occurence will abort compilation before evaluating Core -/
+  | Unknown
   deriving Repr
 
 mutual
@@ -300,8 +308,13 @@ inductive StmtExpr : Type where
   | Abstract
   /-- Refers to all objects in the heap. Used in reads or modifies clauses. -/
   | All
-  /-- A hole with Top type, useful for partially available programs. -/
-  | Hole
+  /-- A hole representing an unknown expression.
+      - `deterministic`: if true, the hole represents a deterministic unknown
+        (translated as an uninterpreted function); if false, a nondeterministic
+        unknown (translated as a havoced variable). Nondeterministic holes are
+        not allowed in functions.
+      - `type`: inferred by the hole type inference pass; `none` means not yet inferred. -/
+  | Hole (deterministic : Bool := true) (type : Option (WithMetadata HighType) := none)
 
 inductive ContractType where
   | Reads | Modifies | Precondition | PostCondition
@@ -320,7 +333,7 @@ instance : Inhabited StmtExprMd where
   default := ⟨ .Hole, .empty ⟩
 
 instance : Inhabited HighTypeMd where
-  default := { val := HighType.TVoid, md := default }
+  default := { val := HighType.Unknown, md := default }
 
 instance : Inhabited StmtExprMd where
   default := { val := default, md := default }
@@ -342,7 +355,7 @@ def highEq (a : HighTypeMd) (b : HighTypeMd) : Bool := match _a: a.val, _b: b.va
   | HighType.Pure b1, HighType.Pure b2 => highEq b1 b2
   | HighType.Intersection ts1, HighType.Intersection ts2 =>
       ts1.length == ts2.length && (ts1.attach.zip ts2 |>.all (fun (t1, t2) => highEq t1.1 t2))
-  | HighType.Top, HighType.Top => true
+  | HighType.Unknown, HighType.Unknown => true
   | _, _ => false
   termination_by (SizeOf.sizeOf a)
   decreasing_by

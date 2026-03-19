@@ -1,0 +1,42 @@
+/-
+  Copyright Strata Contributors
+
+  SPDX-License-Identifier: Apache-2.0 OR MIT
+-/
+
+import Strata.MetaVerifier
+
+open Strata
+
+private def function_definitions :=
+#strata
+program Boole;
+
+function foo2(x:int) : int
+  { x + 1 }
+function foo(x:int) : bool
+  { foo2(x) > 0 }
+
+procedure test(x:int) returns (r:int)
+spec {
+  ensures (r > 0);
+}
+{
+  if (foo(x)) {
+    r := foo2(x);
+  } else {
+    r := 1;
+  }
+};
+
+#end
+
+/-- info: Obligation: test_ensures_0_318
+Property: assert
+Result: ✅ pass-/
+#guard_msgs in
+#eval Strata.Boole.verify "cvc5" function_definitions (options := .quiet)
+
+example : Strata.smtVCsCorrect function_definitions := by
+  gen_smt_vcs
+  all_goals (try grind)
