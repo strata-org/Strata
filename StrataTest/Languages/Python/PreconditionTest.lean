@@ -77,8 +77,8 @@ private meta def compilePython
         | .error err => throw <| .userError s!"pyAnalyzeLaurel failed: {err}"
       let translateResult := Strata.translateCombinedLaurel laurel
       let coreProgram ← match translateResult with
-        | Except.ok (core, _) => pure core
-        | Except.error _ => throw <| .userError "Laurel→Core translation failed"
+        | (some core, _) => pure core
+        | (none, _) => throw <| .userError "Laurel→Core translation failed"
 
       -- Check that the Core program contains assert statements from pyspec
       -- by printing the program and checking the output
