@@ -239,7 +239,11 @@ Returns the qualified field name "DeclaringType.fieldName".
 def resolveQualifiedFieldName (model: SemanticModel) (fieldName : Identifier) : String :=
   match model.get fieldName with
     | .field owner _ => owner.text ++ "." ++ fieldName.text
-    | _ => panic! s!"resolveQualifiedFieldName {fieldName} did not resolve to a field"
+    -- Unresolved fields (e.g., attribute access on external/dynamic types):
+    -- fall back to unqualified name. Sound but imprecise.
+    | _ =>
+      dbg_trace s!"resolveQualifiedFieldName fallback: {fieldName} not resolved to a field"
+      fieldName.text
 
 /--
 Transform an expression, adding heap parameters where needed.
