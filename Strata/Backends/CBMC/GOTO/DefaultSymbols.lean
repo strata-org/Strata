@@ -159,7 +159,7 @@ private def stringConstValue (s : String) (file : String) (line : String)
       ("size", Lean.Json.mkObj [
         ("id", "constant"),
         ("namedSub", Lean.Json.mkObj [
-          ("type", signedBvType 64 "signed_long_int"),
+          ("type", signedBvType ptrWidth "signed_long_int"),
           ("value", Lean.Json.mkObj [("id", Nat.toDigits 16 len |> String.ofList)])
         ])
       ])
