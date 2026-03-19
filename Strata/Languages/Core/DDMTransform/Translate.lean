@@ -850,7 +850,7 @@ partial def translateExpr (p : Program) (bindings : TransBindings) (arg : Arg) :
          (.some (LMonoTy.mkArrow (Core.seqTy ety) [.int]))
      let s ← translateExpr p bindings sa
      return .mkApp () fn [s]
-  | .fn _ q`Core.seq_get, [_atp, sa, ia] =>
+  | .fn _ q`Core.seq_select, [_atp, sa, ia] =>
      let ety ← translateLMonoTy bindings _atp
      let fn : LExpr Core.CoreLParams.mono :=
        LExpr.op () "Sequence.select"

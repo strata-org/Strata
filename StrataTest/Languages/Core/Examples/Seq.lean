@@ -23,9 +23,9 @@ procedure P() returns ()
   assume [s_empty]: Sequence.length(s) == 0;
 
   assert [t_length]: Sequence.length(t) == 3;
-  assert [t_0]: Sequence.get(t, 0) == 10;
-  assert [t_1]: Sequence.get(t, 1) == 20;
-  assert [t_2]: Sequence.get(t, 2) == 30;
+  assert [t_0]: Sequence.select(t, 0) == 10;
+  assert [t_1]: Sequence.select(t, 1) == 20;
+  assert [t_2]: Sequence.select(t, 2) == 30;
 
   // This should fail: length is 3, not 0
   assert [t_length_wrong]: Sequence.length(t) == 0;
@@ -45,9 +45,9 @@ procedure P () returns ()
   t := Sequence.build(Sequence.build(Sequence.build(s, 10), 20), 30);
   assume [s_empty]: Sequence.length(s) == 0;
   assert [t_length]: Sequence.length(t) == 3;
-  assert [t_0]: Sequence.get(t, 0) == 10;
-  assert [t_1]: Sequence.get(t, 1) == 20;
-  assert [t_2]: Sequence.get(t, 2) == 30;
+  assert [t_0]: Sequence.select(t, 0) == 10;
+  assert [t_1]: Sequence.select(t, 1) == 20;
+  assert [t_2]: Sequence.select(t, 2) == 30;
   assert [t_length_wrong]: Sequence.length(t) == 0;
   };
 -/
@@ -71,21 +71,21 @@ Property: assert
 Assumptions:
 s_empty: Sequence.length(s) == 0
 Obligation:
-Sequence.get(Sequence.build(Sequence.build(Sequence.build(s, 10), 20), 30), 0) == 10
+Sequence.select(Sequence.build(Sequence.build(Sequence.build(s, 10), 20), 30), 0) == 10
 
 Label: t_1
 Property: assert
 Assumptions:
 s_empty: Sequence.length(s) == 0
 Obligation:
-Sequence.get(Sequence.build(Sequence.build(Sequence.build(s, 10), 20), 30), 1) == 20
+Sequence.select(Sequence.build(Sequence.build(Sequence.build(s, 10), 20), 30), 1) == 20
 
 Label: t_2
 Property: assert
 Assumptions:
 s_empty: Sequence.length(s) == 0
 Obligation:
-Sequence.get(Sequence.build(Sequence.build(Sequence.build(s, 10), 20), 30), 2) == 30
+Sequence.select(Sequence.build(Sequence.build(Sequence.build(s, 10), 20), 30), 2) == 30
 
 Label: t_length_wrong
 Property: assert
@@ -109,9 +109,9 @@ procedure P () returns ()
   t := Sequence.build(Sequence.build(Sequence.build(s, 10), 20), 30);
   assume [s_empty]: Sequence.length(s) == 0;
   assert [t_length]: Sequence.length(Sequence.build(Sequence.build(Sequence.build(s, 10), 20), 30)) == 3;
-  assert [t_0]: Sequence.get(Sequence.build(Sequence.build(Sequence.build(s, 10), 20), 30), 0) == 10;
-  assert [t_1]: Sequence.get(Sequence.build(Sequence.build(Sequence.build(s, 10), 20), 30), 1) == 20;
-  assert [t_2]: Sequence.get(Sequence.build(Sequence.build(Sequence.build(s, 10), 20), 30), 2) == 30;
+  assert [t_0]: Sequence.select(Sequence.build(Sequence.build(Sequence.build(s, 10), 20), 30), 0) == 10;
+  assert [t_1]: Sequence.select(Sequence.build(Sequence.build(Sequence.build(s, 10), 20), 30), 1) == 20;
+  assert [t_2]: Sequence.select(Sequence.build(Sequence.build(Sequence.build(s, 10), 20), 30), 2) == 30;
   assert [t_length_wrong]: Sequence.length(Sequence.build(Sequence.build(Sequence.build(s, 10), 20), 30)) == 0;
   };
 
@@ -164,14 +164,14 @@ procedure SeqOps() returns ()
   u := Sequence.build(Sequence.build(s, 40), 50);
   v := Sequence.append(t, u);
   assert [append_length]: Sequence.length(v) == 5;
-  assert [append_elem_0]: Sequence.get(v, 0) == 10;
-  assert [append_elem_4]: Sequence.get(v, 4) == 50;
+  assert [append_elem_0]: Sequence.select(v, 0) == 10;
+  assert [append_elem_4]: Sequence.select(v, 4) == 50;
 
   // --- update ---
   u := Sequence.update(t, 1, 99);
   assert [update_length]: Sequence.length(u) == 3;
-  assert [update_same]: Sequence.get(u, 1) == 99;
-  assert [update_other]: Sequence.get(u, 0) == 10;
+  assert [update_same]: Sequence.select(u, 1) == 99;
+  assert [update_other]: Sequence.select(u, 0) == 10;
 
   // --- contains ---
   assert [contains_yes]: Sequence.contains(t, 20);
@@ -179,12 +179,12 @@ procedure SeqOps() returns ()
   // --- take ---
   u := Sequence.take(t, 2);
   assert [take_length]: Sequence.length(u) == 2;
-  assert [take_elem]: Sequence.get(u, 0) == 10;
+  assert [take_elem]: Sequence.select(u, 0) == 10;
 
   // --- drop ---
   u := Sequence.drop(t, 1);
   assert [drop_length]: Sequence.length(u) == 2;
-  assert [drop_elem]: Sequence.get(u, 0) == 20;
+  assert [drop_elem]: Sequence.select(u, 0) == 20;
 };
 #end
 
@@ -209,14 +209,14 @@ Property: assert
 Assumptions:
 s_empty: Sequence.length(s) == 0
 Obligation:
-Sequence.get(Sequence.append(Sequence.build(Sequence.build(Sequence.build(s, 10), 20), 30), Sequence.build(Sequence.build(s, 40), 50)), 0) == 10
+Sequence.select(Sequence.append(Sequence.build(Sequence.build(Sequence.build(s, 10), 20), 30), Sequence.build(Sequence.build(s, 40), 50)), 0) == 10
 
 Label: append_elem_4
 Property: assert
 Assumptions:
 s_empty: Sequence.length(s) == 0
 Obligation:
-Sequence.get(Sequence.append(Sequence.build(Sequence.build(Sequence.build(s, 10), 20), 30), Sequence.build(Sequence.build(s, 40), 50)), 4) == 50
+Sequence.select(Sequence.append(Sequence.build(Sequence.build(Sequence.build(s, 10), 20), 30), Sequence.build(Sequence.build(s, 40), 50)), 4) == 50
 
 Label: update_length
 Property: assert
@@ -230,14 +230,14 @@ Property: assert
 Assumptions:
 s_empty: Sequence.length(s) == 0
 Obligation:
-Sequence.get(Sequence.update(Sequence.build(Sequence.build(Sequence.build(s, 10), 20), 30), 1, 99), 1) == 99
+Sequence.select(Sequence.update(Sequence.build(Sequence.build(Sequence.build(s, 10), 20), 30), 1, 99), 1) == 99
 
 Label: update_other
 Property: assert
 Assumptions:
 s_empty: Sequence.length(s) == 0
 Obligation:
-Sequence.get(Sequence.update(Sequence.build(Sequence.build(Sequence.build(s, 10), 20), 30), 1, 99), 0) == 10
+Sequence.select(Sequence.update(Sequence.build(Sequence.build(Sequence.build(s, 10), 20), 30), 1, 99), 0) == 10
 
 Label: contains_yes
 Property: assert
@@ -258,7 +258,7 @@ Property: assert
 Assumptions:
 s_empty: Sequence.length(s) == 0
 Obligation:
-Sequence.get(Sequence.take(Sequence.build(Sequence.build(Sequence.build(s, 10), 20), 30), 2), 0) == 10
+Sequence.select(Sequence.take(Sequence.build(Sequence.build(Sequence.build(s, 10), 20), 30), 2), 0) == 10
 
 Label: drop_length
 Property: assert
@@ -272,7 +272,7 @@ Property: assert
 Assumptions:
 s_empty: Sequence.length(s) == 0
 Obligation:
-Sequence.get(Sequence.drop(Sequence.build(Sequence.build(Sequence.build(s, 10), 20), 30), 1), 0) == 20
+Sequence.select(Sequence.drop(Sequence.build(Sequence.build(Sequence.build(s, 10), 20), 30), 1), 0) == 20
 
 
 
@@ -293,19 +293,19 @@ procedure SeqOps () returns ()
   u := Sequence.build(Sequence.build(s, 40), 50);
   v := Sequence.append(Sequence.build(Sequence.build(Sequence.build(s, 10), 20), 30), Sequence.build(Sequence.build(s, 40), 50));
   assert [append_length]: Sequence.length(Sequence.append(Sequence.build(Sequence.build(Sequence.build(s, 10), 20), 30), Sequence.build(Sequence.build(s, 40), 50))) == 5;
-  assert [append_elem_0]: Sequence.get(Sequence.append(Sequence.build(Sequence.build(Sequence.build(s, 10), 20), 30), Sequence.build(Sequence.build(s, 40), 50)), 0) == 10;
-  assert [append_elem_4]: Sequence.get(Sequence.append(Sequence.build(Sequence.build(Sequence.build(s, 10), 20), 30), Sequence.build(Sequence.build(s, 40), 50)), 4) == 50;
+  assert [append_elem_0]: Sequence.select(Sequence.append(Sequence.build(Sequence.build(Sequence.build(s, 10), 20), 30), Sequence.build(Sequence.build(s, 40), 50)), 0) == 10;
+  assert [append_elem_4]: Sequence.select(Sequence.append(Sequence.build(Sequence.build(Sequence.build(s, 10), 20), 30), Sequence.build(Sequence.build(s, 40), 50)), 4) == 50;
   u := Sequence.update(Sequence.build(Sequence.build(Sequence.build(s, 10), 20), 30), 1, 99);
   assert [update_length]: Sequence.length(Sequence.update(Sequence.build(Sequence.build(Sequence.build(s, 10), 20), 30), 1, 99)) == 3;
-  assert [update_same]: Sequence.get(Sequence.update(Sequence.build(Sequence.build(Sequence.build(s, 10), 20), 30), 1, 99), 1) == 99;
-  assert [update_other]: Sequence.get(Sequence.update(Sequence.build(Sequence.build(Sequence.build(s, 10), 20), 30), 1, 99), 0) == 10;
+  assert [update_same]: Sequence.select(Sequence.update(Sequence.build(Sequence.build(Sequence.build(s, 10), 20), 30), 1, 99), 1) == 99;
+  assert [update_other]: Sequence.select(Sequence.update(Sequence.build(Sequence.build(Sequence.build(s, 10), 20), 30), 1, 99), 0) == 10;
   assert [contains_yes]: Sequence.contains(Sequence.build(Sequence.build(Sequence.build(s, 10), 20), 30), 20);
   u := Sequence.take(Sequence.build(Sequence.build(Sequence.build(s, 10), 20), 30), 2);
   assert [take_length]: Sequence.length(Sequence.take(Sequence.build(Sequence.build(Sequence.build(s, 10), 20), 30), 2)) == 2;
-  assert [take_elem]: Sequence.get(Sequence.take(Sequence.build(Sequence.build(Sequence.build(s, 10), 20), 30), 2), 0) == 10;
+  assert [take_elem]: Sequence.select(Sequence.take(Sequence.build(Sequence.build(Sequence.build(s, 10), 20), 30), 2), 0) == 10;
   u := Sequence.drop(Sequence.build(Sequence.build(Sequence.build(s, 10), 20), 30), 1);
   assert [drop_length]: Sequence.length(Sequence.drop(Sequence.build(Sequence.build(Sequence.build(s, 10), 20), 30), 1)) == 2;
-  assert [drop_elem]: Sequence.get(Sequence.drop(Sequence.build(Sequence.build(Sequence.build(s, 10), 20), 30), 1), 0) == 20;
+  assert [drop_elem]: Sequence.select(Sequence.drop(Sequence.build(Sequence.build(Sequence.build(s, 10), 20), 30), 1), 0) == 20;
   };
 
 ---

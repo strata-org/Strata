@@ -534,7 +534,7 @@ def handleBinaryOps {M} [Inhabited M] (name : String)
   -- Map operations
   | "select" => pure (.map_get default ty ty arg1 arg2)
   -- Sequence operations
-  | "Sequence.select" => pure (.seq_get default ty arg1 arg2)
+  | "Sequence.select" => pure (.seq_select default ty arg1 arg2)
   | "Sequence.append" => pure (.seq_append default ty arg1 arg2)
   | "Sequence.build" => pure (.seq_build default ty arg1 arg2)
   | "Sequence.contains" => pure (.seq_contains default ty arg1 arg2)
