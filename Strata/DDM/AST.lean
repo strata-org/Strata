@@ -579,86 +579,71 @@ instance : GetElem? Metadata QualifiedIdent (Array MetadataArg) (fun md i => i �
     | none => none
     | some a => a.args
 
-private def scopeIndex (metadata : Metadata) : Option Nat :=
+private def scopeIndex (metadata : Metadata) : Except String (Option Nat) :=
   match metadata[MetadataAttr.scopeName]? with
-  | none => none
-  | some #[.catbvar idx] => some idx
-  | some _ => panic! s!"Unexpected argument count to {MetadataAttr.scopeName.fullName}"
+  | none => .ok none
+  | some #[.catbvar idx] => .ok (some idx)
+  | some _ => .error s!"Unexpected argument count to {MetadataAttr.scopeName.fullName}"
 
 /-- Returns the typeParams index if @[scopeTVar] is present.
     Converts .type bindings from typeParams into .tvar bindings for constructor elaboration. -/
-def scopeTVarIndex (metadata : Metadata) : Option Nat :=
+def scopeTVarIndex (metadata : Metadata) : Except String (Option Nat) :=
   match metadata[q`StrataDDL.scopeTVar]? with
-  | none => none
-  | some #[.catbvar idx] => some idx
-  | some _ => panic! s!"Unexpected argument count to scopeTVar"
+  | none => .ok none
+  | some #[.catbvar idx] => .ok (some idx)
+  | some _ => .error s!"Unexpected argument count to scopeTVar"
 
 /-- Returns (nameIndex, argsIndex, typeIndex) if @[scopeSelf] is present.
     Used to bring a function's own name into scope within its body. -/
-def scopeSelfIndex (metadata : Metadata) : Option (Nat × Nat × Nat) :=
+def scopeSelfIndex (metadata : Metadata) : Except String (Option (Nat × Nat × Nat)) :=
   match metadata[q`StrataDDL.scopeSelf]? with
-  | none => none
-  | some #[.catbvar n, .catbvar a, .catbvar t] => some (n, a, t)
-  | some _ => panic! s!"Unexpected argument count to scopeSelf"
+  | none => .ok none
+  | some #[.catbvar n, .catbvar a, .catbvar t] => .ok (some (n, a, t))
+  | some _ => .error s!"Unexpected argument count to scopeSelf"
 
 /-- Returns the name index if @[declareTVar] is present.
     Used for operations that introduce a type variable (creates .tvar binding in result context). -/
-def declareTVarIndex (metadata : Metadata) : Option Nat :=
+def declareTVarIndex (metadata : Metadata) : Except String (Option Nat) :=
   match metadata[q`StrataDDL.declareTVar]? with
-  | none => none
-  | some #[.catbvar nameIdx] => some nameIdx
-  | some _ => panic! s!"Unexpected argument count to declareTVar"
+  | none => .ok none
+  | some #[.catbvar nameIdx] => .ok (some nameIdx)
+  | some _ => .error s!"Unexpected argument count to declareTVar"
 
 /-- Returns the index of the value in the binding for the given variable of the scope to use. -/
-private def resultIndex (metadata : Metadata) : Option Nat :=
+private def resultIndex (metadata : Metadata) : Except String (Option Nat) :=
   match metadata[MetadataAttr.scopeName]? with
-  | none => none
-  | some #[.catbvar idx] =>
-    pure idx
-  | _ => panic! "Unexpected argument to {MetadataAttr.scopeName.fullName}"
+  | none => .ok none
+  | some #[.catbvar idx] => .ok (some idx)
+  | some _ => .error s!"Unexpected argument to {MetadataAttr.scopeName.fullName}"
 
 /-- Returns the index of the value in the binding for the given variable of the scope to use. -/
-def resultLevel (varCount : Nat) (metadata : Metadata) : Option (Fin varCount) :=
-  match metadata.resultIndex with
-  | none => none
-  | some idx =>
-    if _ : idx < varCount then
-      some ⟨varCount - (idx + 1), by omega⟩
-    else
-      panic! s!"Scope index {idx} out of bounds (varCount = {varCount})"
+def resultLevel (varCount : Nat) (metadata : Metadata) : Except String (Option (Fin varCount)) := do
+  let some idx ← metadata.resultIndex
+    | return none
+  if h : idx < varCount then
+    return some ⟨varCount - (idx + 1), by omega⟩
+  else
+    .error s!"Scope index {idx} out of bounds (varCount = {varCount})"
 
 /-- Returns the argument index from @[preRegisterTypes] metadata, if present. -/
-def preRegisterTypesIndex (metadata : Metadata) : Option Nat :=
+def preRegisterTypesIndex (metadata : Metadata) : Except String (Option Nat) :=
   match metadata[q`StrataDDL.preRegisterTypes]? with
-  | none => none
-  | some #[.catbvar idx] => some idx
-  | some _ => panic! s!"Unexpected argument count to preRegisterTypes"
+  | none => .ok none
+  | some #[.catbvar idx] => .ok (some idx)
+  | some _ => .error s!"Unexpected argument count to preRegisterTypes"
 
 /-- Returns the level for @[preRegisterTypes] metadata, if present. -/
-def preRegisterTypesLevel (varCount : Nat) (metadata : Metadata) : Option (Fin varCount) :=
-  match metadata.preRegisterTypesIndex with
-  | none => none
-  | some idx =>
-    if _ : idx < varCount then
-      some ⟨varCount - (idx + 1), by omega⟩
-    else
-      panic! s!"preRegisterTypes index {idx} out of bounds (varCount = {varCount})"
+def preRegisterTypesLevel (varCount : Nat) (metadata : Metadata) : Except String (Option (Fin varCount)) := do
+  let some idx ← metadata.preRegisterTypesIndex
+    | return none
+  if h : idx < varCount then
+    return some ⟨varCount - (idx + 1), by omega⟩
+  else
+    .error s!"preRegisterTypes index {idx} out of bounds (varCount = {varCount})"
 
 end Metadata
 
 abbrev Var := String
-
-/--
-Converts a deBruijn index to a level (counting from the start rather than
-the end). Used internally for metadata argument processing.
--/
-private def catbvarLevel (varCount : Nat) : MetadataArg → Nat
-| .catbvar idx =>
-  if idx < varCount then
-    varCount - (idx + 1)
-  else
-    panic! s!"Scope index {idx} out of bounds (varCount = {varCount})"
-| _ => panic! "Unexpected argument to catbvarIndex"
 
 /--
 PreTypes are partially resolved types that may depend on values
@@ -825,42 +810,37 @@ instance : GetElem ArgDecls Nat ArgDecl fun a i => i < a.size where
 protected def foldl {α} (a : ArgDecls) (f : α → ArgDecl → α) (init : α): α  := a.toArray.foldl f init
 
 /-- Returns the index of the value in the binding for the given variable of the scope to use. -/
-def argScopeLevel (argDecls : ArgDecls) (level : Fin argDecls.size) : Option (Fin level.val) :=
-  match argDecls[level].metadata.scopeIndex with
-  | none => none
-  | some idx =>
-    if h : idx < level.val then
-      some ⟨level.val - (idx + 1), by omega⟩
-    else
-      -- TODO: Validate this is checked when attribute parsing occurs.
-      let varCount := argDecls.size
-      panic! s!"Scope index {idx} out of bounds ({level.val}, varCount = {varCount})"
+def argScopeLevel (argDecls : ArgDecls) (level : Fin argDecls.size) : Except String (Option (Fin level.val)) := do
+  let some idx ← argDecls[level].metadata.scopeIndex
+    | return none
+  if h : idx < level.val then
+    return some ⟨level.val - (idx + 1), by omega⟩
+  else
+    .error s!"Scope index {idx} out of bounds ({level.val}, varCount = {argDecls.size})"
 
 /-- Returns the typeParams level if @[scopeTVar] is present. -/
-def argScopeTVarLevel (argDecls : ArgDecls) (level : Fin argDecls.size) : Option (Fin level.val) :=
-  match argDecls[level].metadata.scopeTVarIndex with
-  | none => none
-  | some idx =>
-    if h : idx < level.val then
-      some ⟨level.val - (idx + 1), by omega⟩
-    else
-      panic! s!"scopeTVar index {idx} out of bounds ({level.val})"
+def argScopeTVarLevel (argDecls : ArgDecls) (level : Fin argDecls.size) : Except String (Option (Fin level.val)) := do
+  let some idx ← argDecls[level].metadata.scopeTVarIndex
+    | return none
+  if h : idx < level.val then
+    return some ⟨level.val - (idx + 1), by omega⟩
+  else
+    .error s!"scopeTVar index {idx} out of bounds ({level.val})"
 
 /-- Returns (nameLevel, argsLevel, typeLevel) if @[scopeSelf] is present. -/
 def argScopeSelfLevel (argDecls : ArgDecls) (level : Fin argDecls.size)
-    : Option (Fin level.val × Fin level.val × Fin level.val) :=
-  match argDecls[level].metadata.scopeSelfIndex with
-  | none => none
-  | some (nIdx, aIdx, tIdx) =>
-    if h1 : nIdx < level.val then
-      if h2 : aIdx < level.val then
-        if h3 : tIdx < level.val then
-          some (⟨level.val - (nIdx + 1), by omega⟩,
-                ⟨level.val - (aIdx + 1), by omega⟩,
-                ⟨level.val - (tIdx + 1), by omega⟩)
-        else panic! s!"scopeSelf type index {tIdx} out of bounds ({level.val})"
-      else panic! s!"scopeSelf args index {aIdx} out of bounds ({level.val})"
-    else panic! s!"scopeSelf name index {nIdx} out of bounds ({level.val})"
+    : Except String (Option (Fin level.val × Fin level.val × Fin level.val)) := do
+  let some (nIdx, aIdx, tIdx) ← argDecls[level].metadata.scopeSelfIndex
+    | return none
+  if h1 : nIdx < level.val then
+    if h2 : aIdx < level.val then
+      if h3 : tIdx < level.val then
+        return some (⟨level.val - (nIdx + 1), by omega⟩,
+              ⟨level.val - (aIdx + 1), by omega⟩,
+              ⟨level.val - (tIdx + 1), by omega⟩)
+      else .error s!"scopeSelf type index {tIdx} out of bounds ({level.val})"
+    else .error s!"scopeSelf args index {aIdx} out of bounds ({level.val})"
+  else .error s!"scopeSelf name index {nIdx} out of bounds ({level.val})"
 
 end ArgDecls
 
@@ -1119,10 +1099,11 @@ def parseNewBindings (md : Metadata) (argDecls : ArgDecls) : Array (BindingSpec 
             pure ()
           | _ =>
             newBindingErr s!"Expected {defBinding.ident} to be a Type."
-          let defScopeIndex :=
+          let defScopeIndex ← do
             match defBinding.metadata.scopeIndex with
-            | none => none
-            | some idx => some (defIndex + idx + 1)
+            | .ok none => pure none
+            | .ok (some idx) => pure (some (defIndex + idx + 1))
+            | .error e => newBindingErr e; pure none
           if defScopeIndex ≠ (·.val) <$> argsIndex then
             newBindingErr s!"Scope of definition must match arg scope."
           let defIndex := ⟨defIndex, defP⟩
@@ -1707,8 +1688,9 @@ partial def OperationF.foldBindingSpecs {α β}
       let argsV : Vector (ArgF α) argDecls.size := ⟨args, h⟩
       let init :=
         match decl.metadata.resultLevel argDecls.size with
-        | none => init
-        | some lvl => foldOverArgAtLevel m f init argDecls argsV lvl
+        | .ok none => init
+        | .ok (some lvl) => foldOverArgAtLevel m f init argDecls argsV lvl
+        | .error e => @panic _ ⟨init⟩ e
       decl.newBindings.foldl (init := init) fun a b => f a op.ann b argsV
     else
       @panic _ ⟨init⟩ s!"{op.name} expects {argDecls.size} arguments when {args.size} provided."
@@ -1728,8 +1710,9 @@ private partial def foldOverArgAtLevel {α β}
     : β :=
   let init :=
         match bindings.argScopeLevel level with
-        | none => init
-        | some lvl => foldOverArgAtLevel m f init bindings args ⟨lvl, by omega⟩
+        | .ok none => init
+        | .ok (some lvl) => foldOverArgAtLevel m f init bindings args ⟨lvl, by omega⟩
+        | .error e => @panic _ ⟨init⟩ e
   foldOverArgBindingSpecs m f init args[level]
 
 end
@@ -2265,8 +2248,9 @@ def addCommand (dialects : DialectMap) (gctx : GlobalContext) (op : Operation) :
       | .error "Expected operator declaration"
     let .isTrue h := decideProp (op.args.size = decl.argDecls.size)
       | .error "Expected arguments to match"
+    let x ← decl.metadata.preRegisterTypesLevel decl.argDecls.size
     let (gctx, preRegistered) ←
-      match decl.metadata.preRegisterTypesLevel decl.argDecls.size with
+      match x with
       | some lvl =>
         (foldOverArgAtLevel dialects (preRegisterType dialects) (.ok gctx)
           decl.argDecls ⟨op.args, h⟩ lvl).map (·, true)

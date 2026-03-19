@@ -58,8 +58,8 @@ def DialectParsers.ofDialects (ds : Array Dialect) : Except String DialectParser
     | .ok parsers =>
       .ok (m.insert d.name parsers)
 
-def SyntaxElabMap.ofDialects (ds : Array Dialect) : SyntaxElabMap :=
-  ds.foldl (init := {}) (·.addDialect ·)
+def SyntaxElabMap.ofDialects (ds : Array Dialect) : Except String SyntaxElabMap :=
+  ds.foldlM (init := {}) (·.addDialect ·)
 
 namespace LoadedDialects
 
@@ -74,10 +74,14 @@ def addDialect! (loader : LoadedDialects) (d : Dialect) : LoadedDialects :=
   | .error msg =>
     @panic _ ⟨loader⟩ s!"Could not add open dialect: {eformat msg |>.pretty}"
   | .ok parsers =>
+    match loader.syntaxElabMap.addDialect d with
+    | .error msg =>
+      @panic _ ⟨loader⟩ s!"Could not add dialect syntax elaborators: {msg}"
+    | .ok syntaxElabMap =>
     {
       dialects := loader.dialects.insert! d
       dialectParsers := loader.dialectParsers.insert d.name parsers
-      syntaxElabMap := loader.syntaxElabMap.addDialect d
+      syntaxElabMap
     }
 
 def ofDialects! (ds : Array Dialect) : LoadedDialects :=
@@ -85,10 +89,14 @@ def ofDialects! (ds : Array Dialect) : LoadedDialects :=
   | .error msg =>
     panic s!"Could not add open dialect: {eformat msg |>.pretty}"
   | .ok parsers =>
+    match SyntaxElabMap.ofDialects ds with
+    | .error msg =>
+      panic s!"Could not add dialect syntax elaborators: {msg}"
+    | .ok syntaxElabMap =>
     {
       dialects := .ofList! ds.toList
       dialectParsers := parsers
-      syntaxElabMap := SyntaxElabMap.ofDialects ds
+      syntaxElabMap
     }
 
 end LoadedDialects

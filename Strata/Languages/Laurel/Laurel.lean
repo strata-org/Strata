@@ -59,14 +59,18 @@ inductive Operation : Type where
   | Eq
   /-- Inequality test. -/
   | Neq
-  /-- Logical conjunction. -/
+  /-- Logical conjunction (eager). -/
   | And
-  /-- Logical disjunction. -/
+  /-- Logical disjunction (eager). -/
   | Or
   /-- Logical negation. -/
   | Not
-  /-- Logical implication. -/
+  /-- Logical implication (short-circuit). -/
   | Implies
+  /-- Short-circuit logical conjunction. Only evaluates the second argument if the first is true. -/
+  | AndThen
+  /-- Short-circuit logical disjunction. Only evaluates the second argument if the first is false. -/
+  | OrElse
   /-- Arithmetic negation. Works on `Int` and `Float64`. -/
   | Neg
   /-- Addition. Works on `Int` and `Float64`. -/
@@ -181,8 +185,8 @@ structure Procedure : Type where
   isFunctional : Bool
   /-- The procedure body: transparent, opaque, or abstract. -/
   body : Body
-  /-- Source-level metadata. -/
-  md : Imperative.MetaData Core.Expression
+  /-- Source-level metadata (locations, annotations). -/
+  md : MetaData
 
 /--
 A typed parameter for a procedure.
@@ -300,8 +304,13 @@ inductive StmtExpr : Type where
   | Abstract
   /-- Refers to all objects in the heap. Used in reads or modifies clauses. -/
   | All
-  /-- A hole with Top type, useful for partially available programs. -/
-  | Hole
+  /-- A hole representing an unknown expression.
+      - `deterministic`: if true, the hole represents a deterministic unknown
+        (translated as an uninterpreted function); if false, a nondeterministic
+        unknown (translated as a havoced variable). Nondeterministic holes are
+        not allowed in functions.
+      - `type`: inferred by the hole type inference pass; `none` means not yet inferred. -/
+  | Hole (deterministic : Bool := true) (type : Option (WithMetadata HighType) := none)
 
 inductive ContractType where
   | Reads | Modifies | Precondition | PostCondition
@@ -391,6 +400,7 @@ structure CompositeType where
   fields : List Field
   /-- Instance procedures (methods) defined on this type. -/
   instanceProcedures : List Procedure
+  deriving Inhabited
 
 /--
 A constrained (refinement) type defined by a base type and a predicate.
@@ -448,6 +458,12 @@ inductive TypeDefinition where
   | Constrained (ty : ConstrainedType)
   /-- An algebriac datatype. -/
   | Datatype (ty : DatatypeDefinition)
+  deriving Inhabited
+
+def TypeDefinition.name : TypeDefinition → Identifier
+  | .Composite ty => ty.name
+  | .Constrained ty => ty.name
+  | .Datatype ty => ty.name
 
 structure Constant where
   name : Identifier
