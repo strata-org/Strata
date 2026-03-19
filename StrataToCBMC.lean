@@ -35,11 +35,13 @@ def main (args : List String) : IO Unit := do
       if pgm.commands.size != 1 then
         IO.println "Error: expected exactly 1 function"
       else
+        let baseName := System.FilePath.fileName file |>.getD file
+        let baseName := if baseName.endsWith ".st" then (baseName.dropEnd 3).toString else baseName
         if file.endsWith ".csimp.st" then
           let csimp_prog := C_Simp.get_program pgm
           match CSimp.testSymbols csimp_prog.funcs.head! with
           | .ok s =>
-            let wrapped ← wrapOutput s (moduleName := "")
+            let wrapped ← wrapOutput s (moduleName := baseName)
             IO.println wrapped
           | .error e => throw (IO.userError e)
         else if file.endsWith ".core.st" then
@@ -47,7 +49,7 @@ def main (args : List String) : IO Unit := do
           match core_prog.decls.head! with
             | .proc f => match Core.testSymbols f with
               | .ok s =>
-                let wrapped ← wrapOutput s (moduleName := "")
+                let wrapped ← wrapOutput s (moduleName := baseName)
                 IO.println wrapped
               | .error e => throw (IO.userError e)
             | _ => IO.println "Error: expected Strata Core procedure"
