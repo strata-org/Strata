@@ -36,7 +36,8 @@ handle these correctly.
 
 **Integer**: (none — all integer operators are now handled)
 **Real**: (none — all real operators are now handled)
-**String**: `Str.Concat`, `Str.Length`, `Str.Substr`, `Str.InRegEx`, `Str.ToRegEx`
+**String**: `Str.Concat`, `Str.Length`, `Str.Substr`, `Str.ToLower`, `Str.ToUpper`,
+  `Str.InRegEx`, `Str.ToRegEx`
   (intentionally left as function applications for the CBMC string solver patch)
 **Bitvector**: `Bv{8,16,32,64}.Extract_{hi}_{lo}` maps to GOTO `extractbits`; the
   lower bit index is parsed from the operator name and emitted as a constant operand.
