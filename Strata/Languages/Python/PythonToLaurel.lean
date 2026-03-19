@@ -803,9 +803,9 @@ partial def translateCall (ctx : TranslationContext)
   match f with
   | .Name  _ _ _ =>  return mkStmtExprMd (StmtExpr.StaticCall funcName (trans_args ++ trans_kwords_exprs))
   | .Attribute _ val _attr _ =>
-      let _target_trans ← translateExpr ctx val
+      let target_trans ← translateExpr ctx val
       if opt_firstarg.isSome then
-        return mkStmtExprMd (.Hole)
+        return mkStmtExprMd (StmtExpr.InstanceCall target_trans funcName (trans_args ++ trans_kwords_exprs))
       else
         return mkStmtExprMd (StmtExpr.StaticCall funcName (trans_args ++ trans_kwords_exprs))
   | _ =>  throw (.unsupportedConstruct "Invalid call construct" (toString (repr f)))
@@ -1040,14 +1040,10 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
     let bodyBlock := mkStmtExprMd (StmtExpr.Block bodyStmts (some continueLabel))
     let whileStmt := mkStmtExprMd (StmtExpr.While (Any_to_bool finalCondExpr) [] none bodyBlock)
     let whileWrapped := mkStmtExprMdWithLoc (StmtExpr.Block [whileStmt] (some breakLabel)) md
-    -- Wrap with hoisted declarations and condition stmts
-    let allPreamble := condStmts ++ hoistedDecls
-    let result := if allPreamble.isEmpty then
-      whileWrapped
-    else
-      mkStmtExprMdWithLoc (StmtExpr.Block (allPreamble ++ [whileWrapped]) none) md
 
-    return (loopCtx, [result])
+    -- Return hoisted declarations as separate statements in the parent scope
+    -- (not wrapped in a Block) so they remain in scope after the while loop
+    return (loopCtx, condStmts ++ hoistedDecls ++ [whileWrapped])
 
   -- Return statement: assign to the LaurelResult output parameter, then exit $body.
   | .Return _ value => do

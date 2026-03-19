@@ -295,7 +295,14 @@ def translateExpr (expr : StmtExprMd)
   | .ContractOf _ _ => throwExprDiagnostic $ md.toDiagnostic "contractOf expression translation" DiagnosticType.NotYetImplemented
   | .Abstract => throwExprDiagnostic $ md.toDiagnostic "abstract expression translation" DiagnosticType.NotYetImplemented
   | .All => throwExprDiagnostic $ md.toDiagnostic "all expression translation" DiagnosticType.NotYetImplemented
-  | .InstanceCall target callee args => throwExprDiagnostic $ md.toDiagnostic "instance call expression translation" DiagnosticType.NotYetImplemented
+  | .InstanceCall _target callee args =>
+      -- Note: target (self) is not passed as an argument because PySpec procedures
+      -- have self stripped from their signatures. When user-defined class methods
+      -- are supported, this will need to prepend target to the argument list.
+      let fnOp : Core.Expression.Expr := .op () ⟨callee.text, ()⟩ none
+      args.attach.foldlM (fun acc ⟨arg, _⟩ => do
+        let re ← translateExpr arg boundVars isPureContext
+        return .app () acc re) fnOp
   | .PureFieldUpdate _ _ _ => throwExprDiagnostic $ md.toDiagnostic "pure field update expression translation" DiagnosticType.NotYetImplemented
   | .This => throwExprDiagnostic $ md.toDiagnostic "this expression translation" DiagnosticType.NotYetImplemented
   termination_by expr
@@ -371,11 +378,13 @@ def translateStmt (outputParams : List Parameter) (stmt : StmtExprMd)
             let initStmt := Core.Statement.init ident coreType (some defaultExpr) md
             let callStmt := Core.Statement.call [ident] callee.text coreArgs md
             return [initStmt, callStmt]
-      | some (⟨ .InstanceCall .., _⟩) =>
+      | some (⟨ .InstanceCall _target callee args, callMd⟩) =>
           -- Instance method call as initializer: var name := target.method(args)
-          -- Havoc the result since instance methods may be on unmodeled types
-          let initStmt := Core.Statement.init ident coreType none md
-          return [initStmt]
+          let coreArgs ← args.mapM (fun a => translateExpr a)
+          let defaultExpr := defaultExprForType model ty
+          let initStmt := Core.Statement.init ident coreType (some defaultExpr) md
+          let callStmt := Core.Statement.call [ident] callee.text coreArgs callMd
+          return [initStmt, callStmt]
       | some (⟨ .Hole _ _, _⟩) =>
           -- Hole initializer: treat as havoc (init without value)
           return [Core.Statement.init ident coreType none md]
@@ -399,9 +408,10 @@ def translateStmt (outputParams : List Parameter) (stmt : StmtExprMd)
                 -- Procedure calls need to be translated as call statements
                 let coreArgs ← args.mapM (fun a => translateExpr a)
                 return [Core.Statement.call [ident] callee.text coreArgs md]
-          | .InstanceCall .. =>
-              -- Instance method call: havoc the target variable
-              return [Core.Statement.havoc ident md]
+          | .InstanceCall _target callee args =>
+              -- Instance method call: call callee(args) with result assigned
+              let coreArgs ← args.mapM (fun a => translateExpr a)
+              return [Core.Statement.call [ident] callee.text coreArgs md]
           | _ =>
               let coreExpr ← translateExpr value
               return [Core.Statement.set ident coreExpr md]
@@ -416,13 +426,14 @@ def translateStmt (outputParams : List Parameter) (stmt : StmtExprMd)
                 | .Identifier name => some (⟨name.text, ()⟩)
                 | _ => none
               return [Core.Statement.call lhsIdents callee.text coreArgs value.md]
-          | .InstanceCall .. =>
-              -- Instance method call: havoc all target variables
-              let havocStmts := targets.filterMap fun t =>
+          | .InstanceCall _target callee args =>
+              -- Instance method call: call callee(args) with all targets assigned
+              let coreArgs ← args.mapM (fun a => translateExpr a)
+              let lhsIdents := targets.filterMap fun t =>
                 match t.val with
-                | .Identifier name => some (Core.Statement.havoc ⟨name.text, ()⟩ md)
+                | .Identifier name => some (⟨name.text, ()⟩)
                 | _ => none
-              return (havocStmts)
+              return [Core.Statement.call lhsIdents callee.text coreArgs value.md]
           | _ =>
               emitDiagnostic $ md.toDiagnostic "Assignments with multiple target but without a RHS call should not be constructed"
               returnNone
@@ -441,9 +452,10 @@ def translateStmt (outputParams : List Parameter) (stmt : StmtExprMd)
       else
         let coreArgs ← args.mapM (fun a => translateExpr a)
         return [Core.Statement.call [] callee.text coreArgs md]
-  | .InstanceCall .. =>
-      -- Instance method call as statement: no return value, treated as no-op
-      return ([])
+  | .InstanceCall _target callee args =>
+      -- Instance method call as statement: call callee(args) with no return
+      let coreArgs ← args.mapM (fun a => translateExpr a)
+      return [Core.Statement.call [] callee.text coreArgs md]
   | .Return valueOpt =>
       match valueOpt, outputParams.head? with
       | some value, some outParam =>
@@ -527,6 +539,69 @@ def translateProcedure (proc : Procedure) : TranslateM Core.Procedure := do
   let body : List Core.Statement := [.block "$body" bodyStmts .empty]
   let spec : Core.Procedure.Spec := { modifies, preconditions, postconditions }
   return { header, spec, body }
+
+/--
+Check if a Laurel expression is pure (contains no side effects).
+Used to determine if a procedure can be translated as a Core function.
+-/
+private def isPureExpr(expr: StmtExprMd): Bool :=
+  match _h : expr.val with
+  | .LiteralBool _ => true
+  | .LiteralInt _ => true
+  | .LiteralString _ => true
+  | .LiteralDecimal _ => true
+  | .Identifier _ => true
+  | .PrimitiveOp _ args => args.attach.all (fun ⟨a, _⟩ => isPureExpr a)
+  | .IfThenElse c t none => isPureExpr c && isPureExpr t
+  | .IfThenElse c t (some e) => isPureExpr c && isPureExpr t && isPureExpr e
+  | .StaticCall _ args => args.attach.all (fun ⟨a, _⟩ => isPureExpr a)
+  | .New _ => false
+  | .ReferenceEquals e1 e2 => isPureExpr e1 && isPureExpr e2
+  | .Block [single] _ => isPureExpr single
+  | .Block _ _ => false
+  -- Statement-like
+  | .LocalVariable .. => true
+  | .While .. => false
+  | .Exit .. => false
+  | .Return .. => false
+  -- Expression-like
+  | .Assign .. => false
+  | .FieldSelect .. => true
+  | .PureFieldUpdate .. => true
+  -- Instance related
+  | .This => panic s!"isPureExpr not implemented for This"
+  | .AsType .. => panic s!"isPureExpr not supported for AsType"
+  | .IsType .. => panic s!"isPureExpr not supported for IsType"
+  | .InstanceCall .. => false
+  -- Verification specific
+  | .Forall .. => panic s!"isPureExpr not implemented for Forall"
+  | .Exists .. => panic s!"isPureExpr not implemented for Exists"
+  | .Assigned .. => panic s!"isPureExpr not supported for AsType"
+  | .Old .. => panic s!"isPureExpr not supported for AsType"
+  | .Fresh .. => panic s!"isPureExpr not supported for AsType"
+  | .Assert .. => panic s!"isPureExpr not implemented for Assert"
+  | .Assume .. => panic s!"isPureExpr not implemented for Assume"
+  | .ProveBy .. => panic s!"isPureExpr not implemented for ProveBy"
+  | .ContractOf .. => panic s!"isPureExpr not implemented for ContractOf"
+  | .Abstract => panic s!"isPureExpr not implemented for Abstract"
+  | .All => panic s!"isPureExpr not implemented for All"
+  -- Dynamic / closures
+  | .Hole _ _ => true
+  termination_by sizeOf expr
+  decreasing_by all_goals (have := WithMetadata.sizeOf_val_lt expr; term_by_mem)
+
+/-- Check if a pure-marked procedure can actually be represented as a Core function:
+    transparent body that is a pure expression and has exactly one output. -/
+private def canBeCoreFunctionBody (proc : Procedure) : Bool :=
+  match proc.body with
+  | .Transparent bodyExpr =>
+    isPureExpr bodyExpr &&
+    proc.outputs.length == 1
+  | .Opaque _ bodyExprOption _ =>
+    (bodyExprOption.map isPureExpr).getD true &&
+    proc.outputs.length == 1
+  | .External => false
+  | _ => false
 
 /--
 Translate a Laurel Procedure to a Core Function (when applicable) using `TranslateM`.
