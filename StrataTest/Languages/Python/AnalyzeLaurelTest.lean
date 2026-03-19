@@ -105,6 +105,7 @@ private meta def runAnalyze (dispatchIon : System.FilePath)
 private inductive Expected where
   | success
   | fail (msg : String)
+  | failPrefix (pfx : String)
 
 /-- All dispatch test cases: (filename, expected outcome). -/
 private meta def testCases : List (String × Expected) := [
@@ -133,7 +134,21 @@ private meta def testCases : List (String × Expected) := [
   .mk "test_optional_missing_required.py" $
     .fail "User code error: 'list_items' called with missing required arguments: [Bucket]",
   .mk "test_positional_missing.py" $
-    .fail "User code error: 'delete_item' called with missing required arguments: [Key]"
+    .fail "User code error: 'delete_item' called with missing required arguments: [Key]",
+  -- Unsupported Python construct tests (expected failures)
+  .mk "test_slice.py" (Expected.failPrefix "Python to Laurel translation failed: Unsupported construct: Expression type not yet supported\nAST: Strata.Python.expr.Slice"),
+  .mk "test_ternary.py" (Expected.failPrefix "Python to Laurel translation failed: Unsupported construct: Expression type not yet supported\nAST: Strata.Python.expr.IfExp"),
+  .mk "test_tuple_for.py" (Expected.failPrefix "Python to Laurel translation failed: Unsupported construct: Only simple variable in for target supported"),
+  .mk "test_augassign.py" (Expected.failPrefix "Python to Laurel translation failed: Unsupported construct: Statement type not yet supported\nAST: Strata.Python.stmt.AugAssign"),
+  .mk "test_pow_operator.py" (Expected.failPrefix "Python to Laurel translation failed: Unsupported construct: Binary operator not yet supported: Strata.Python.operator.Pow"),
+  -- Undeclared import variable test (sys is free variable — import not modeled)
+  .mk "test_import_usage.py" (Expected.failPrefix "Core type checking failed:"),
+  -- Exception variable typed as Composite (PythonError) but used where Any expected
+  .mk "test_except_var_usage.py" (Expected.failPrefix "Core type checking failed: Impossible to unify"),
+  -- f-string starting with variable: FormattedValue not yet supported
+  .mk "test_fstring.py" (Expected.failPrefix "Python to Laurel translation failed: Unsupported construct: Expression type not yet supported\nAST: Strata.Python.expr.FormattedValue"),
+  -- Variable declared inside while loop used after loop (Python scoping)
+  .mk "test_while_var_scope.py" (Expected.failPrefix "Core type checking failed:")
 ]
 
 /-- Run a single test case and return an error message on failure, or `none` on success. -/
@@ -149,6 +164,11 @@ private meta def runTestCase (dispatchIon tmpDir : System.FilePath)
   | .fail exp, .error msg =>
     if msg == exp then return none
     else return some s!"{scriptName}: Expected error:\n  {exp}\nGot:\n  {msg}"
+  | .failPrefix _, .ok _ =>
+    return some s!"pyAnalyzeLaurel succeeded on {scriptName} but was expected to fail"
+  | .failPrefix pre, .error msg =>
+    if msg.startsWith pre then return none
+    else return some s!"{scriptName}: Expected error prefix:\n  {pre}\nGot:\n  {msg}"
 
 #eval withPython fun _pythonCmd => do
   IO.FS.withTempDir fun tmpDir => do
