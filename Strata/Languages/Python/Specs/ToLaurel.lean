@@ -261,23 +261,19 @@ def specTypeToLaurelType (ty : SpecType) : ToLaurelM HighTypeMd := do
 
 /-! ## Declaration Translation -/
 
-/-- Convert an Arg to a Laurel Parameter. -/
-def argToParameter (arg : Arg) : ToLaurelM Parameter := do
-  let ty ← specTypeToLaurelType arg.type
-  return { name := arg.name, type := ty }
-
 /-- Create a StmtExprMd wrapping a StmtExpr with empty metadata. -/
 private def mkExpr (e : StmtExpr) : WithMetadata StmtExpr :=
   { val := e, md := default }
 
-/-- Build a precondition expression for a parameter based on its original type.
+/-- Build a precondition expression for a parameter based on its original HighType.
     For simple types, emits `Any..isfrom_string(x)`.
-    For optional types, emits `Any..isfrom_none(x) || Any..isfrom_string(x)`.
+    For optional types, emits `Any..isfrom_none(x) | Any..isfrom_string(x)`.
     Reports a warning for unrecognized types so gaps are visible. -/
-private def anyPreconditionForParam (param : Parameter) : ToLaurelM (Option (WithMetadata StmtExpr)) := do
-  let paramRef := mkExpr (.Identifier param.name)
+private def preconditionForType (paramName : String) (ty : HighType)
+    : ToLaurelM (Option (WithMetadata StmtExpr)) := do
+  let paramRef := mkExpr (.Identifier paramName)
   let mkCall (tester : String) := mkExpr (.StaticCall tester [paramRef])
-  match param.type.val with
+  match ty with
   | .TVoid => return none
   | .TCore "Any" => return none
   | .TString => return some (mkCall "Any..isfrom_string")
@@ -296,8 +292,9 @@ private def anyPreconditionForParam (param : Parameter) : ToLaurelM (Option (Wit
     return some (mkExpr (.PrimitiveOp .Or [mkCall "Any..isfrom_none", mkCall "Any..isfrom_bool"]))
   | other =>
     reportError default
-      s!"No Any precondition tester for type '{repr other}' on parameter '{param.name}'"
+      s!"No Any precondition tester for type '{repr other}' on parameter '{paramName}'"
     return none
+
 
 /-- Map a HighType to the Any constructor name for wrapping typed → Any. -/
 private def anyConstructorForType : HighType → Option String
@@ -345,19 +342,15 @@ def funcDeclToLaurel (procName : String) (func : FunctionDecl)
     | .ok args => pure args
     | .error msg => do reportError default msg; pure #[]
   let allArgs := posArgs ++ func.args.kwonly ++ kwargsArgs
-  -- Get original typed parameters for precondition generation
-  let typedInputs ← allArgs.mapM argToParameter
-  -- Use Any-typed parameters so PySpec procedures are compatible with
-  -- PythonToLaurel's Any-typed world. Type constraints are expressed
-  -- as preconditions instead.
   let anyTy : HighTypeMd := mkCore "Any"
-  let inputs := typedInputs.map fun p => { p with type := anyTy }
-  -- Generate preconditions: requires Any..isfrom_string(Bucket) etc.
-  -- For optional types, generate disjunctions: isfrom_none(x) || isfrom_string(x)
-  let preconditions ← typedInputs.toList.filterMapM fun p =>
-    anyPreconditionForParam p
+  let mut inputs : Array Parameter := .emptyWithCapacity allArgs.size
+  let mut preconditions : Array (WithMetadata StmtExpr) := #[]
+  for arg in allArgs do
+    inputs := inputs.push { name := arg.name, type := anyTy }
+    let originalTy ← specTypeToLaurelType arg.type
+    if let some pre ← preconditionForType arg.name originalTy.val then
+      preconditions := preconditions.push pre
   let retType ← specTypeToLaurelType func.returnType
-  -- Outputs also use Any type; postconditions could constrain them
   let outputs : List Parameter :=
     match retType.val with
     | .TVoid => []
@@ -368,7 +361,7 @@ def funcDeclToLaurel (procName : String) (func : FunctionDecl)
     name := procName
     inputs := inputs.toList
     outputs := outputs
-    preconditions := preconditions
+    preconditions := preconditions.toList
     determinism := .nondeterministic
     decreases := none
     isFunctional := false
