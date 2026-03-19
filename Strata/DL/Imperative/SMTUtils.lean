@@ -213,7 +213,7 @@ def solverResult {P : PureExpr} [ToFormat P.Ident]
 
   let parseVerdict (input : String) : IO (Option (Result P.Ident × String)) := do
     let pos := input.find (· == '\n')
-    let verdict := input.extract input.startPos pos |>.trimAscii
+    let verdict := input.extract input.startPos pos |>.trimAscii.toString
     let rest := (input.extract pos input.endPos |>.drop 1).toString
     match verdict with
     | "sat" =>

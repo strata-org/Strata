@@ -59,14 +59,18 @@ inductive Operation : Type where
   | Eq
   /-- Inequality test. -/
   | Neq
-  /-- Logical conjunction. -/
+  /-- Logical conjunction (eager). -/
   | And
-  /-- Logical disjunction. -/
+  /-- Logical disjunction (eager). -/
   | Or
   /-- Logical negation. -/
   | Not
-  /-- Logical implication. -/
+  /-- Logical implication (short-circuit). -/
   | Implies
+  /-- Short-circuit logical conjunction. Only evaluates the second argument if the first is true. -/
+  | AndThen
+  /-- Short-circuit logical disjunction. Only evaluates the second argument if the first is false. -/
+  | OrElse
   /-- Arithmetic negation. Works on `Int` and `Float64`. -/
   | Neg
   /-- Addition. Works on `Int` and `Float64`. -/
