@@ -75,11 +75,9 @@ private meta def compilePython
             (pyspecPaths := #[pyspecIon.toString]) |>.toBaseIO with
         | .ok r => pure r
         | .error err => throw <| .userError s!"pyAnalyzeLaurel failed: {err}"
-      let coreProgram ←
-        match Strata.translateCombinedLaurel laurel with
-        | .error diagnostics =>
-          throw <| .userError s!"Laurel→Core failed: {diagnostics}"
-        | .ok (core, _) => pure core
+      let coreProgram ← do
+        let (core, _) ← IO.ofExcept (Strata.translateCombinedLaurel laurel |>.mapError toString)
+        pure core
 
       -- Check that the Core program contains assert statements from pyspec
       -- by printing the program and checking the output
