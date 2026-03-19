@@ -209,9 +209,7 @@ private def substOptionExpr (S : Subst) (oe : Option Expression.Expr) : Option E
   | none => none
 
 private def substExprOrNondet (S : Subst) (e : Imperative.ExprOrNondet Expression) : Imperative.ExprOrNondet Expression :=
-  match e with
-  | .det expr => .det (LExpr.applySubst expr S)
-  | .nondet => .nondet
+  e.map (LExpr.applySubst · S)
 
 /--
 Apply type substitution `S` to a command.

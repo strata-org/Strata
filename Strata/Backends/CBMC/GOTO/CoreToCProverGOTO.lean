@@ -112,12 +112,12 @@ def Core.Cmd.renameVars (frto : Map String String) (c : Imperative.Cmd Core.Expr
     : Imperative.Cmd Core.ExprStr :=
   match c with
   | .init name ty e md =>
-    let e' := match e with | .det expr => Imperative.ExprOrNondet.det (substVarNames expr frto) | .nondet => .nondet
+    let e' := e.map (substVarNames · frto)
     let name_alt := frto.find? (Core.CoreIdent.toPretty name)
     let new := name_alt.getD (Core.CoreIdent.toPretty name)
     .init new ty e' (convertMetaData md)
   | .set name e md =>
-    let e' := match e with | .det expr => Imperative.ExprOrNondet.det (substVarNames expr frto) | .nondet => .nondet
+    let e' := e.map (substVarNames · frto)
     let name_alt := frto.find? (Core.CoreIdent.toPretty name)
     let new := name_alt.getD (Core.CoreIdent.toPretty name)
     .set new e' (convertMetaData md)

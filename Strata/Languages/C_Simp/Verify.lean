@@ -39,10 +39,10 @@ def translate_opt_expr (e : Option C_Simp.Expression.Expr) : Option (Lambda.LExp
 def translate_cmd (c: C_Simp.Command) : Core.Command :=
   match c with
   | .init name ty e _md =>
-    let e' := match e with | .det expr => Imperative.ExprOrNondet.det (translate_expr expr) | .nondet => .nondet
+    let e' := e.map translate_expr
     .cmd (.init ⟨name.name, ()⟩ ty e' {})
   | .set name e _md =>
-    let e' := match e with | .det expr => Imperative.ExprOrNondet.det (translate_expr expr) | .nondet => .nondet
+    let e' := e.map translate_expr
     .cmd (.set ⟨name.name, ()⟩ e' {})
   | .assert label b _md => .cmd (.assert label (translate_expr b) {})
   | .assume label b _md =>  .cmd (.assume label (translate_expr b) {})

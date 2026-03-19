@@ -109,10 +109,8 @@ def Command.eraseTypes (c : Command) : Command :=
   match c with
   | .cmd c =>
     match c with
-    | .init name ty (.det expr) md => .cmd $ .init name ty (.det expr.eraseTypes) md
-    | .init name ty .nondet md => .cmd $ .init name ty .nondet md
-    | .set name (.det expr) md => .cmd $ .set name (.det expr.eraseTypes) md
-    | .set name .nondet md => .cmd $ .set name .nondet md
+    | .init name ty e md => .cmd $ .init name ty (e.map Lambda.LExpr.eraseTypes) md
+    | .set name e md => .cmd $ .set name (e.map Lambda.LExpr.eraseTypes) md
     | .assert label b md => .cmd $ .assert label b.eraseTypes md
     | .assume label b md => .cmd $ .assume label b.eraseTypes md
     | .cover label b md => .cmd $ .cover label b.eraseTypes md

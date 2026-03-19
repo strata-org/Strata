@@ -115,6 +115,11 @@ def ExprOrNondet.getVars [HasVarsPure P P.Expr] (e : ExprOrNondet P) : List P.Id
   | .det e => HasVarsPure.getVars e
   | .nondet => []
 
+/-- Map a function over the expression in an `ExprOrNondet`. -/
+def ExprOrNondet.map {P Q : PureExpr} (f : P.Expr → Q.Expr) : ExprOrNondet P → ExprOrNondet Q
+  | .det e => .det (f e)
+  | .nondet => .nondet
+
 mutual
 /-- Get all variables accessed by `c`. -/
 def Cmd.getVars [HasVarsPure P P.Expr] (c : Cmd P) : List P.Ident :=
