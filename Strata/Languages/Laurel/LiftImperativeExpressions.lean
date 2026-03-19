@@ -206,10 +206,15 @@ def transformExpr (expr : StmtExprMd) : LiftM StmtExprMd := do
   | .Assign targets value =>
       -- The expression result is the current substitution for the first target
       -- (we already know what it maps to AFTER this assignment from right-to-left traversal)
-      let firstTarget := targets.head?.getD (panic "Assign must have non-empty targets")
+      let firstTarget ← match targets with
+        | head :: _ => pure head
+        | _ => return expr
+
       let resultExpr ← match firstTarget.val with
         | .Identifier varName => pure (⟨.Identifier (← getSubst varName), md⟩)
-        | _ => panic "Non-identifier targets not supported in the lift expression phase"
+        | _ =>
+          dbg_trace "Strata bug: non-identifier targets should have been removed before the lift expression phase";
+          return expr
 
       -- Use the original value (not seqValue) for the prepended assignment,
       -- because prepended statements execute in program order and don't need substitutions.

@@ -7,6 +7,7 @@ module
 
 import Strata.Languages.Python.PythonToCore
 public import Strata.Languages.Python.PythonToLaurel
+import Strata.Languages.Python.PythonRuntimeLaurelPart
 import Strata.Languages.Python.Specs
 import Strata.Languages.Python.Specs.DDM
 import Strata.Languages.Python.Specs.IdentifyOverloads
@@ -158,10 +159,11 @@ public def buildPySpecLaurel (pyspecPaths : Array String)
       throw s!"PySpec procedure name collision: '{proc.name.text}' defined in both {prevFile} and {srcFile}"
     | none => pure ()
     seenProcs := seenProcs.insert proc.name.text srcFile
+
   let combinedLaurel : Laurel.Program := {
-    staticProcedures := combinedProcedures.toList.map Prod.fst
+    staticProcedures := Strata.Python.pythonRuntimeLaurelPart.staticProcedures ++ combinedProcedures.toList.map Prod.fst
     staticFields := []
-    types := combinedTypes.toList.map Prod.fst
+    types := Strata.Python.pythonRuntimeLaurelPart.types ++ combinedTypes.toList.map Prod.fst
     constants := []
   }
   return { laurelProgram := combinedLaurel, overloads := allOverloads
@@ -234,7 +236,7 @@ public def resolveAndBuildLaurelPrelude
 /-- Build PreludeInfo by merging the base Core prelude with PySpec
     Laurel-level declarations and extracted function signatures. -/
 public def buildPreludeInfo (result : PySpecLaurelResult) : Python.PreludeInfo :=
-  let baseInfo := Python.PreludeInfo.ofCoreProgram Python.pythonRuntimeCorePart
+  let baseInfo := Python.PreludeInfo.ofCoreProgram { decls := Python.coreOnlyFromRuntimeCorePart }
   let merged := baseInfo.merge
     (Python.PreludeInfo.ofLaurelProgram result.laurelProgram)
   { merged with
@@ -258,7 +260,8 @@ public def combinePySpecLaurel (info : Python.PreludeInfo)
     procedure bodies, etc.) to the Core program produced by Laurel
     translation. -/
 private def prependPrelude (coreFromLaurel : Core.Program) : Core.Program :=
-  { decls := Python.pythonRuntimeCorePart.decls ++ coreFromLaurel.decls }
+  let (preludeDecls, userDecls) := coreFromLaurel.decls.span (fun d => toString d.name != "FIRST_END_MARKER")
+  { decls := preludeDecls ++ Python.coreOnlyFromRuntimeCorePart ++ userDecls }
 
 /-- Translate a combined Laurel program to Core and prepend the full
     runtime prelude.  Resolution errors are suppressed because PySpec
@@ -268,10 +271,9 @@ private def prependPrelude (coreFromLaurel : Core.Program) : Core.Program :=
     Python Core prelude is ported to Laurel, this suppression can be
     removed. -/
 public def translateCombinedLaurel (combined : Laurel.Program)
-    : Except (Array DiagnosticModel) (Core.Program × Array DiagnosticModel) :=
-  match Laurel.translate { emitResolutionErrors := false } combined with
-  | .error e => .error e
-  | .ok (core, diags) => .ok (prependPrelude core, diags)
+    : (Option Core.Program × List DiagnosticModel) :=
+  let (coreOption, errors) := Laurel.translate { emitResolutionErrors := false } combined
+  (coreOption.map prependPrelude, errors)
 
 /-- Errors from the pyAnalyzeLaurel pipeline, distinguishing user code
     errors (detected bugs in Python source) from internal tool errors. -/
