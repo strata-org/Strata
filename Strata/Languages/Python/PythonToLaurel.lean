@@ -93,6 +93,8 @@ structure TranslationContext where
   compositeTypeNames : Std.HashSet String := {}
   /-- Track current class during method translation -/
   currentClassName : Option String := none
+  loopBreakLabel : Option String := none
+  loopContinueLabel : Option String := none
 deriving Inhabited
 
 /-! ## Error Handling -/
@@ -956,15 +958,19 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
         ([varDecl], varRef, { ctx with variableTypes := ctx.variableTypes ++ [(freshVar, "bool")] })
       | _ => ([], condExpr, ctx)
 
-    let (loopCtx, bodyStmts) ← translateStmtList condCtx body.val.toList
-    let bodyBlock := mkStmtExprMd (StmtExpr.Block bodyStmts none)
-    let whileStmt := mkStmtExprMdWithLoc (StmtExpr.While (Any_to_bool finalCondExpr) [] none bodyBlock) md
+    let breakLabel := s!"loop_break_{test.toAst.ann.start.byteIdx}"
+    let continueLabel := s!"loop_continue_{test.toAst.ann.start.byteIdx}"
+    let loopCtx := { condCtx with loopBreakLabel := some breakLabel, loopContinueLabel := some continueLabel }
+    let (_, bodyStmts) ← translateStmtList loopCtx body.val.toList
+    let bodyBlock := mkStmtExprMd (StmtExpr.Block bodyStmts (some continueLabel))
+    let whileStmt := mkStmtExprMd (StmtExpr.While (Any_to_bool finalCondExpr) [] none bodyBlock)
+    let whileWrapped := mkStmtExprMdWithLoc (StmtExpr.Block [whileStmt] (some breakLabel)) md
 
     -- Wrap in block if we hoisted condition
     let result := if condStmts.isEmpty then
-      whileStmt
+      whileWrapped
     else
-      mkStmtExprMdWithLoc (StmtExpr.Block (condStmts ++ [whileStmt]) none) md
+      mkStmtExprMdWithLoc (StmtExpr.Block (condStmts ++ [whileWrapped]) none) md
 
     return (loopCtx, [result])
 
@@ -1132,18 +1138,27 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
     -- The iterator expression (we abstract it away)
     let _iterExpr ← translateExpr ctx iter
 
-    -- Create context with target variable
-    let bodyCtx := { ctx with variableTypes := ctx.variableTypes ++ [(targetName, PyLauType.Any)] }
-
-    -- Translate loop body
+    -- Create context with target variable and loop labels
+    let breakLabel := s!"for_break_{iter.toAst.ann.start.byteIdx}"
+    let continueLabel := s!"for_continue_{iter.toAst.ann.start.byteIdx}"
+    let bodyCtx := { ctx with
+      variableTypes := ctx.variableTypes ++ [(targetName, PyLauType.Any)]
+      loopBreakLabel := some breakLabel
+      loopContinueLabel := some continueLabel }
     let (finalCtx, bodyStmts) ← translateStmtList bodyCtx body.val.toList
-
-    -- Create: { target = havoc; body_statements }
-    -- This abstracts: execute body once with arbitrary target value
     let targetDecl := mkStmtExprMd (StmtExpr.LocalVariable targetName AnyTy (some (mkStmtExprMd .Hole)))
-    let loopBlock := mkStmtExprMdWithLoc (StmtExpr.Block ([targetDecl] ++ bodyStmts) none) md
-
+    let innerBlock := mkStmtExprMd (StmtExpr.Block ([targetDecl] ++ bodyStmts) (some continueLabel))
+    let loopBlock := mkStmtExprMdWithLoc (StmtExpr.Block [innerBlock] (some breakLabel)) md
     return (finalCtx, [loopBlock])
+
+  | .Break _ =>
+    match ctx.loopBreakLabel with
+    | some lbl => return (ctx, [mkStmtExprMdWithLoc (StmtExpr.Exit lbl) md])
+    | none => return (ctx, [mkStmtExprMdWithLoc (StmtExpr.Assert (mkStmtExprMd .Hole)) md])
+  | .Continue _ =>
+    match ctx.loopContinueLabel with
+    | some lbl => return (ctx, [mkStmtExprMdWithLoc (StmtExpr.Exit lbl) md])
+    | none => return (ctx, [mkStmtExprMdWithLoc (StmtExpr.Assert (mkStmtExprMd .Hole)) md])
 
   | _ => throw (.unsupportedConstruct "Statement type not yet supported" (toString (repr s)))
 
