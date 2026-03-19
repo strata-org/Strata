@@ -131,11 +131,12 @@ abbrev ExprM := StateT TranslationWarnings (Except TranslationError)
 
 /-- Record an abstraction warning -/
 def ExprM.warn (loc : SourceRange) (kind : String) : ExprM Unit :=
-  modify (· ++ [(loc, kind)])
+  modify ([(loc, kind)] ++ ·)
 
 /-- Run an ExprM computation, returning result and accumulated warnings -/
-def ExprM.run' (m : ExprM α) : Except TranslationError (α × TranslationWarnings) :=
-  StateT.run m []
+def ExprM.run' (m : ExprM α) : Except TranslationError (α × TranslationWarnings) := do
+  let (result, warnings) ← StateT.run m []
+  return (result, warnings.reverse)
 
 /-- Throw a user code error indicating a detected bug in the Python source. -/
 def throwUserError [MonadExceptOf TranslationError m] (range : SourceRange := .none) (msg : String) : m α :=
@@ -788,7 +789,7 @@ partial def translateCall (ctx : TranslationContext)
   match f with
   | .Name  _ _ _ =>  return mkStmtExprMd (StmtExpr.StaticCall funcName (trans_args ++ trans_kwords_exprs))
   | .Attribute _ val attr _ =>
-      let (target_trans, _) ← (translateExpr ctx val).run'
+      let target_trans ← translateExpr ctx val
       if opt_firstarg.isSome then
         return mkStmtExprMd (StmtExpr.InstanceCall target_trans attr.val (trans_args ++ trans_kwords_exprs))
       else
@@ -830,7 +831,8 @@ partial def translateAssign  (ctx : TranslationContext)
                              (rhs: Python.expr SourceRange)
                              (md: Imperative.MetaData Core.Expression)
                     : Except TranslationError (TranslationContext × List StmtExprMd) := do
-  let rhs_trans ←  translateExprVal ctx rhs
+  let (rhs_trans, rhsW) ←  translateExprW ctx rhs
+  let ctx := { ctx with abstractedStatements := ctx.abstractedStatements ++ rhsW }
   if let .Hole := rhs_trans.val then
   {
     match lhs with
@@ -897,8 +899,9 @@ partial def translateAssign  (ctx : TranslationContext)
     | .Subscript _ _ _ _ =>
         match getSubscriptList lhs with
         | target :: slices =>
-            let target ← translateExprVal ctx target
-            let slices ← slices.mapM (translateExprVal ctx)
+            let (target, tW) ← translateExprW ctx target
+            let ctx := { ctx with abstractedStatements := ctx.abstractedStatements ++ tW }
+            let slices ← slices.mapM (fun e => do let (r, w) ← translateExprW ctx e; pure r)
             let anySetsExpr := mkStmtExprMd (StmtExpr.StaticCall "Any_sets" [target, ListAny_mk slices, rhs_trans])
             let assignStmts := [mkStmtExprMd (StmtExpr.Assign [target] anySetsExpr)]
             return (ctx,assignStmts)
@@ -914,7 +917,8 @@ partial def translateAssign  (ctx : TranslationContext)
           let assignStmt := mkStmtExprMdWithLoc (StmtExpr.Assign [fieldAccess] rhs_trans) md
           return (ctx, [assignStmt])
         else
-          let targetExpr ← translateExprVal ctx lhs  -- This will handle self.field via translateExpr
+          let (targetExpr, tW) ← translateExprW ctx lhs
+          let ctx := { ctx with abstractedStatements := ctx.abstractedStatements ++ tW }
           let assignStmt := mkStmtExprMdWithLoc (StmtExpr.Assign [targetExpr] rhs_trans) md
           return (ctx, [assignStmt])
       | _ => throw (.unsupportedConstruct "Assignment targets not yet supported" (toString (repr lhs)))
@@ -1208,7 +1212,14 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
   -- variables (sound: the statement could modify anything), and emit
   -- `assert *` so the verifier flags the location.
   | _ =>
-    let stmtName := ((toString (repr s)).takeWhile (· != ' ')).toString
+    let stmtName := match s with
+      | .Global _ _ => "Global"
+      | .Nonlocal _ _ => "Nonlocal"
+      | .Import _ _ => "Import"
+      | .ImportFrom _ _ _ _ => "ImportFrom"
+      | .Delete _ _ => "Delete"
+      | .With _ _ _ _ => "With"
+      | _ => "unknown"
     let newCtx := { ctx with
       abstractedStatements := ctx.abstractedStatements ++ [(s.toAst.ann, stmtName)] }
     let assertStar := mkStmtExprMdWithLoc (StmtExpr.Assert (mkStmtExprMd .Hole)) md
