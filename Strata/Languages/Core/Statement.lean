@@ -49,7 +49,7 @@ instance : HasPassiveCmds Expression Command where
   assume l e md := .cmd (.assume l e md)
 
 instance : HasHavoc Expression Command where
-  havoc x md := .cmd (.havoc x md)
+  havoc x md := .cmd (.set x .nondet md)
 
 instance : HasInit Expression Command where
   init x ty e md := .cmd (.init x ty e md)
@@ -71,16 +71,16 @@ abbrev Statement := Imperative.Stmt Core.Expression Core.Command
 abbrev Statements := List Statement
 
 @[expose, match_pattern]
-abbrev Statement.init (name : Expression.Ident) (ty : Expression.Ty) (expr : Option Expression.Expr)
+abbrev Statement.init (name : Expression.Ident) (ty : Expression.Ty) (expr : ExprOrNondet Expression)
     (md : MetaData Expression) :=
   @Stmt.cmd Expression Command (CmdExt.cmd (Cmd.init name ty expr md))
 @[expose, match_pattern]
 abbrev Statement.set (name : Expression.Ident) (expr : Expression.Expr)
     (md : MetaData Expression) :=
-  @Stmt.cmd Expression Command (CmdExt.cmd (Cmd.set name expr md))
+  @Stmt.cmd Expression Command (CmdExt.cmd (Cmd.set name (.det expr) md))
 @[expose, match_pattern]
 abbrev Statement.havoc (name : Expression.Ident) (md : MetaData Expression) :=
-  @Stmt.cmd Expression Command (CmdExt.cmd (Cmd.havoc name md))
+  @Stmt.cmd Expression Command (CmdExt.cmd (Cmd.set name .nondet md))
 @[expose, match_pattern]
 abbrev Statement.assert (label : String) (b : Expression.Expr) (md : MetaData Expression) :=
   @Stmt.cmd Expression Command (CmdExt.cmd (Cmd.assert label b md))
@@ -109,9 +109,10 @@ def Command.eraseTypes (c : Command) : Command :=
   match c with
   | .cmd c =>
     match c with
-    | .init name ty e md => .cmd $ .init name ty (e.map Lambda.LExpr.eraseTypes) md
-    | .set name e md => .cmd $ .set name e.eraseTypes md
-    | .havoc name md => .cmd $ .havoc name md
+    | .init name ty (.det expr) md => .cmd $ .init name ty (.det expr.eraseTypes) md
+    | .init name ty .nondet md => .cmd $ .init name ty .nondet md
+    | .set name (.det expr) md => .cmd $ .set name (.det expr.eraseTypes) md
+    | .set name .nondet md => .cmd $ .set name .nondet md
     | .assert label b md => .cmd $ .assert label b.eraseTypes md
     | .assume label b md => .cmd $ .assume label b.eraseTypes md
     | .cover label b md => .cmd $ .cover label b.eraseTypes md
@@ -335,8 +336,10 @@ def Statement.substFvar (s : Core.Statement)
       (fr:Expression.Ident)
       (to:Expression.Expr) : Statement :=
   match s with
-  | .init lhs ty rhs metadata =>
-    .init lhs ty (rhs.map (Lambda.LExpr.substFvar · fr to)) metadata
+  | .init lhs ty (.det rhs) metadata =>
+    .init lhs ty (.det (Lambda.LExpr.substFvar rhs fr to)) metadata
+  | .init lhs ty .nondet metadata =>
+    .init lhs ty .nondet metadata
   | .set lhs rhs metadata =>
     .set lhs (Lambda.LExpr.substFvar rhs fr to) metadata
   | .havoc _ _ => s

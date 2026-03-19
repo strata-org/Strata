@@ -79,13 +79,13 @@ Collect assertions for all expressions in a command.
 def collectCmdPrecondAsserts (F : @Lambda.Factory CoreLParams)
   (cmd : Imperative.Cmd Expression) : List Statement :=
   match cmd with
-  | .init _ _ (some e) md => collectPrecondAsserts F e "init" md
-  | .init _ _ _ _ => []
-  | .set x e md => collectPrecondAsserts F e s!"set_{x.name}" md
+  | .init _ _ (.det e) md => collectPrecondAsserts F e "init" md
+  | .init _ _ .nondet _ => []
+  | .set x (.det e) md => collectPrecondAsserts F e s!"set_{x.name}" md
+  | .set _ .nondet _ => []
   | .assert l e md => collectPrecondAsserts F e s!"assert_{l}" md
   | .assume l e md => collectPrecondAsserts F e s!"assume_{l}" md
   | .cover l e md => collectPrecondAsserts F e s!"cover_{l}" md
-  | .havoc _ _ => []
 
 /--
 Collect assertions for call arguments.
@@ -263,7 +263,7 @@ def transformStmt (s : Statement)
     | some wfStmts =>
       -- Add init statements for function parameters so they're in scope
       let paramInits := decl.inputs.toList.map fun (name, ty) =>
-        Statement.init name ty none md
+        Statement.init name ty .nondet md
       return (hasPreconds, [.block s!"{funcName}{wfSuffix}" (paramInits ++ wfStmts) md, .funcDecl decl' md])
   | .typeDecl _ _ =>
     return (false, [s])  -- Type declarations pass through unchanged

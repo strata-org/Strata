@@ -184,13 +184,13 @@ instance : Inhabited (List Core.Statement × TransBindings) where
   default := ([], {})
 
 instance : Inhabited Core.Decl where
-  default := .var "badguy" (.forAll [] (.tcons "bool" [])) none
+  default := .var "badguy" (.forAll [] (.tcons "bool" [])) .nondet
 
 instance : Inhabited (Core.Procedure.CheckAttr) where
   default := .Default
 
 instance : Inhabited (Core.Decl × TransBindings) where
-  default := (.var "badguy" (.forAll [] (.tcons "bool" [])) none, {})
+  default := (.var "badguy" (.forAll [] (.tcons "bool" [])) .nondet, {})
 
 instance : Inhabited (Core.Decls × TransBindings) where
   default := ([], {})
@@ -1005,7 +1005,7 @@ def initVarStmts (tpids : ListMap Core.Expression.Ident LTy) (bindings : TransBi
   match tpids with
   | [] => return ([], bindings)
   | (id, tp) :: rest =>
-    let s := Core.Statement.init id tp none md
+    let s := Core.Statement.init id tp .nondet md
     let (stmts, bindings) ← initVarStmts rest bindings md
     return ((s :: stmts), bindings)
 
@@ -1037,7 +1037,7 @@ def translateInitStatement (p : Program) (bindings : TransBindings) (args : Arra
     let ty := (.forAll [] mty)
     let newBinding: LExpr Core.CoreLParams.mono := LExpr.fvar () lhs mty
     let bbindings := bindings.boundVars ++ [newBinding]
-    return ([.init lhs ty val md], { bindings with boundVars := bbindings })
+    return ([.init lhs ty (.det val) md], { bindings with boundVars := bbindings })
 
 def translateOptionReachCheck (arg : Arg) : TransM Bool := do
   let .option _ rc := arg
@@ -1722,7 +1722,7 @@ def translateGlobalVar (bindings : TransBindings) (op : Operation) :
   let (id, targs, mty) ← translateBindMk bindings op.args[0]!
   let ty := LTy.forAll targs mty
   let md ← getOpMetaData op
-  let decl := (.var id ty none md)
+  let decl := (.var id ty .nondet md)
   let bindings := incrNum .var_def bindings
   return (decl, { bindings with freeVars := bindings.freeVars.push decl})
 

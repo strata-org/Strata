@@ -130,7 +130,7 @@ def Stmt.removeLoopsM
         -- Variables with `$__` prefix are internal variables.
         let m_old_ident    := HasIdent.ident s!"$__loop_measure_{loop_num}"
         let m_old_expr     := HasFvar.mkFvar m_old_ident
-        let init_m_old     := Stmt.cmd (HasInit.init m_old_ident HasIntOrder.intTy none md)
+        let init_m_old     := Stmt.cmd (HasInit.init m_old_ident HasIntOrder.intTy .nondet md)
         let assume_m_old   := Stmt.cmd (HasPassiveCmds.assume
           s!"assume_measure_{loop_num}" (HasIntOrder.eq m_old_expr m) md)
         let assert_lb      := Stmt.cmd (HasPassiveCmds.assert

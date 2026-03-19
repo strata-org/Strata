@@ -60,9 +60,8 @@ private partial def renameExpr
 private def renameCmd
     (rn : Std.HashMap String String)
     : Imperative.Cmd Core.Expression → Imperative.Cmd Core.Expression
-  | .init name ty e md => .init (renameIdent rn name) ty (e.map (renameExpr rn)) md
-  | .set name e md => .set (renameIdent rn name) (renameExpr rn e) md
-  | .havoc name md => .havoc (renameIdent rn name) md
+  | .init name ty e md => .init (renameIdent rn name) ty (match e with | .det expr => .det (renameExpr rn expr) | .nondet => .nondet) md
+  | .set name e md => .set (renameIdent rn name) (match e with | .det expr => .det (renameExpr rn expr) | .nondet => .nondet) md
   | .assert l e md => .assert l (renameExpr rn e) md
   | .assume l e md => .assume l (renameExpr rn e) md
   | .cover l e md => .cover l (renameExpr rn e) md

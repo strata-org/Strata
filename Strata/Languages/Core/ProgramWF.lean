@@ -278,7 +278,7 @@ private theorem Except_bind_is_ok_rhs {E α β}
   Except_bind_is_ok m h r |>.mp
 
 @[local grind .]
-private theorem WFVarProp_trivial (p : Program) (name : Expression.Ident) (ty : Expression.Ty) (e : Option Expression.Expr) :
+private theorem WFVarProp_trivial (p : Program) (name : Expression.Ident) (ty : Expression.Ty) (e : Imperative.ExprOrNondet Expression) :
   WFVarProp p name ty e := by
   constructor
 

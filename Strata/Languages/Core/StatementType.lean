@@ -208,6 +208,11 @@ private def substOptionExpr (S : Subst) (oe : Option Expression.Expr) : Option E
   | some e => some (LExpr.applySubst e S)
   | none => none
 
+private def substExprOrNondet (S : Subst) (e : Imperative.ExprOrNondet Expression) : Imperative.ExprOrNondet Expression :=
+  match e with
+  | .det expr => .det (LExpr.applySubst expr S)
+  | .nondet => .nondet
+
 /--
 Apply type substitution `S` to a command.
 -/
@@ -215,10 +220,9 @@ def Command.subst (S : Subst) (c : Command) : Command :=
   match c with
   | .cmd c => match c with
     | .init x ty e md =>
-      .cmd $ .init x (LTy.subst S ty) (substOptionExpr S e) md
+      .cmd $ .init x (LTy.subst S ty) (substExprOrNondet S e) md
     | .set x e md =>
-      .cmd $ .set x (e.applySubst S) md
-    | .havoc _ _ => .cmd $ c
+      .cmd $ .set x (substExprOrNondet S e) md
     | .assert label b md =>
       .cmd $ .assert label (b.applySubst S) md
     | .assume label b md =>

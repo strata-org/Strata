@@ -38,9 +38,12 @@ def translate_opt_expr (e : Option C_Simp.Expression.Expr) : Option (Lambda.LExp
 
 def translate_cmd (c: C_Simp.Command) : Core.Command :=
   match c with
-  | .init name ty e _md => .cmd (.init ⟨name.name, ()⟩ ty (translate_opt_expr e) {})
-  | .set name e _md => .cmd (.set ⟨name.name, ()⟩ (translate_expr e) {})
-  | .havoc name _md => .cmd (.havoc ⟨name.name, ()⟩ {})
+  | .init name ty e _md =>
+    let e' := match e with | .det expr => Imperative.ExprOrNondet.det (translate_expr expr) | .nondet => .nondet
+    .cmd (.init ⟨name.name, ()⟩ ty e' {})
+  | .set name e _md =>
+    let e' := match e with | .det expr => Imperative.ExprOrNondet.det (translate_expr expr) | .nondet => .nondet
+    .cmd (.set ⟨name.name, ()⟩ e' {})
   | .assert label b _md => .cmd (.assert label (translate_expr b) {})
   | .assume label b _md =>  .cmd (.assume label (translate_expr b) {})
   | .cover label b _md =>  .cmd (.cover label (translate_expr b) {})
@@ -96,7 +99,7 @@ def loop_elimination_statement(s : C_Simp.Statement) : Core.Statement :=
       let arbitrary_iter_assumes := .block "arbitrary_iter_assumes"
         ([Core.Statement.assume "assume_guard" (translate_expr guard) {}] ++ inv_assumes ++
          [Core.Statement.assume "assume_measure_pos" measure_pos {}]) {}
-      let measure_old_value_assign : Core.Statement := .init "special-name-for-old-measure-value" (.forAll [] (.tcons "int" [])) (some (translate_expr measure)) {}
+      let measure_old_value_assign : Core.Statement := .init "special-name-for-old-measure-value" (.forAll [] (.tcons "int" [])) (.det (translate_expr measure)) {}
       let measure_decreases : Core.Statement := .assert "measure_decreases" (.app () (.app () (.op () "Int.Lt" none) (translate_expr measure)) (.fvar () "special-name-for-old-measure-value" none)) {}
       let measure_imp_not_guard : Core.Statement := .assert "measure_imp_not_guard" (.ite () (.app () (.app () (.op () "Int.Le" none) (translate_expr measure)) (.intConst () 0)) (.app () (.op () "Bool.Not" none) (translate_expr guard)) (.true ())) {}
       let maintain_invariants : List Core.Statement := invList.mapIdx fun i inv =>

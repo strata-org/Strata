@@ -99,7 +99,7 @@ def cmdToJson (e : Core.Command) (loc: SourceLoc) : Except String Json :=
       ])
     | .set ("ret") _ _ =>
       returnStmt loc.functionName
-    | .set name expr _ => do
+    | .set name (.det expr) _ => do
       let exprLoc : SourceLoc := { functionName := loc.functionName, lineNum := "6" }
       return (mkCodeBlock "expression" "6" loc.functionName #[
         mkSideEffect "assign" "6" loc.functionName mkIntType #[
@@ -165,7 +165,7 @@ def cmdToJson (e : Core.Command) (loc: SourceLoc) : Except String Json :=
     | .cover _ _ md =>
        throw s!"{Imperative.MetaData.formatFileRangeD md}\
                   cover unimplemented"
-    | .havoc _ md =>
+    | .set _ .nondet md =>
        throw s!"{Imperative.MetaData.formatFileRangeD md}\
                   havoc unimplemented"
 

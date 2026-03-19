@@ -99,7 +99,7 @@ match ss with
       let mLabel ← StringGenState.gen "loop_measure$"
       let mIdent := HasIdent.ident mLabel
       let mOldExpr := HasFvar.mkFvar mIdent
-      let initCmd  := HasInit.init mIdent HasIntOrder.intTy none MetaData.empty
+      let initCmd  := HasInit.init mIdent HasIntOrder.intTy .nondet MetaData.empty
       let assumeCmd := HasPassiveCmds.assume s!"assume_{mLabel}"
                          (HasIntOrder.eq mOldExpr mExpr) MetaData.empty
       let lbCmd    := HasPassiveCmds.assert s!"measure_lb_{mLabel}"

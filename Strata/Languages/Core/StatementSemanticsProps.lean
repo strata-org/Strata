@@ -1740,7 +1740,7 @@ theorem EvalCmdTouch
     constructor
   case eval_set δ σ x v σ' σ₀ e Hsm Hup Hwf =>
     exact TouchVars.update_some Hup TouchVars.none
-  case eval_havoc x v σ' σ₀ e Hsm Hup Hwf =>
+  case eval_set_nondet x v σ' σ₀ e Hsm Hup Hwf =>
     exact TouchVars.update_some Hup TouchVars.none
   case eval_assert => exact TouchVars.none
   case eval_assume => exact TouchVars.none

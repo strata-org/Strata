@@ -29,7 +29,7 @@ private def xEq1 : E := .eq () x int1
 
 -- 1. cmd: init
 /-- info: init (x : int) := #0 -/
-#guard_msgs in #eval! format (Statement.init "x" intTy int0 .empty : S)
+#guard_msgs in #eval! format (Statement.init "x" intTy (.det int0) .empty : S)
 
 -- 2. cmd: set
 /-- info: x := #42 -/
