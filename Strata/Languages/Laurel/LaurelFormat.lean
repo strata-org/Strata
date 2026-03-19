@@ -18,8 +18,10 @@ open Std.Format
 def formatOperation : Operation → Format
   | .Eq => "=="
   | .Neq => "!="
-  | .And => "&&"
-  | .Or => "||"
+  | .And => "&"
+  | .Or => "|"
+  | .AndThen => "&&"
+  | .OrElse => "||"
   | .Not => "!"
   | .Implies => "==>"
   | .Neg => "-"

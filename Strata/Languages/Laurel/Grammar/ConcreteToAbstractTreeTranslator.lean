@@ -167,6 +167,8 @@ def getBinaryOp? (name : QualifiedIdent) : Option Operation :=
   | q`Laurel.ge => some Operation.Geq
   | q`Laurel.and => some Operation.And
   | q`Laurel.or => some Operation.Or
+  | q`Laurel.andThen => some Operation.AndThen
+  | q`Laurel.orElse => some Operation.OrElse
   | q`Laurel.implies => some Operation.Implies
   | q`Laurel.strConcat => some Operation.StrConcat
   | _ => none
@@ -281,6 +283,21 @@ partial def translateStmtExpr (arg : Arg) : TransM StmtExprMd := do
         | _ => pure []
       let body ← translateStmtExpr bodyArg
       return mkStmtExprMd (.While cond invariants none body) md
+    | q`Laurel.forLoop, #[initArg, condArg, stepArg, invSeqArg, bodyArg] =>
+      let init ← translateStmtExpr initArg
+      let cond ← translateStmtExpr condArg
+      let step ← translateStmtExpr stepArg
+      let invariants ← match invSeqArg with
+        | .seq _ _ clauses => clauses.toList.mapM fun arg => match arg with
+            | .op invOp => match invOp.name, invOp.args with
+              | q`Laurel.invariantClause, #[exprArg] => translateStmtExpr exprArg
+              | _, _ => TransM.error "Expected invariantClause"
+            | _ => TransM.error "Expected operation"
+        | _ => pure []
+      let body ← translateStmtExpr bodyArg
+      let whileBody := mkStmtExprMd (.Block [body, step] none) md
+      let whileStmt := mkStmtExprMd (.While cond invariants none whileBody) md
+      return mkStmtExprMd (.Block [init, whileStmt] none) md
     | q`Laurel.forallExpr, #[nameArg, tyArg, triggerArg, bodyArg] =>
       let name ← translateIdent nameArg
       let ty ← translateHighType tyArg
