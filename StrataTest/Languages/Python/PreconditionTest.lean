@@ -79,7 +79,7 @@ private meta def runPipeline (pyspecIon testIon : System.FilePath)
     | .error err => throw <| .userError s!"pyAnalyzeLaurel failed: {err}"
   let coreProgram ←
     match translateCombinedLaurel laurel with
-    | .error diagnostics => throw <| .userError s!"Laurel→Core failed: {diagnostics}"
+    | .error diagnostics => throw <| .userError s!"Laurel→Core failed: {diagnostics.size} diagnostic(s)"
     | .ok (core, _) => pure core
   -- Inline procedures
   let coreProgram ← match Core.Transform.runProgram (targetProcList := .none)
@@ -120,7 +120,7 @@ private meta def countAlwaysTrue (results : Array Core.VCResult) : Nat :=
       | .error _ => count
     else count
 
-#eval Strata.Python.withPython fun _pythonCmd => do
+#eval! Strata.Python.withPython fun _pythonCmd => do
   IO.FS.withTempDir fun tmpDir => do
     IO.FS.withTempFile fun _handle dialectFile => do
       IO.FS.writeBinFile dialectFile Python.Python.toIon
