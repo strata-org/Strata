@@ -577,7 +577,7 @@ private def lowerPureFuncDef
     (ret : Boole.Type)
     (pres : Array (BooleDDM.SpecElt SourceRange))
     (body : Boole.Expr)
-    (inline : Bool) : TranslateM Core.Decl := do
+    (inline : Bool) : TranslateM Core.Function := do
   withTypeBVars tys do
     let bsList := bindingsToList bs
     let inputs ← bsList.mapM toCoreBinding
@@ -585,7 +585,7 @@ private def lowerPureFuncDef
     let pres ← withBVars inputNames (toCoreSpecElts m n pres)
     let pres := pres.preconditions.map (fun (_, c) => ⟨c.expr, ()⟩)
     let body ← withBVars inputNames (toCoreExpr body)
-    return .func {
+    return {
       name := mkIdent n
       typeArgs := tys
       inputs := inputs
@@ -667,10 +667,12 @@ def toCoreDecls (cmd : BooleDDM.Command SourceRange) : TranslateM (List Core.Dec
       return [.func { name := mkIdent n, typeArgs := tys, inputs := ← (bindingsToList bs).mapM toCoreBinding, output := ← toCoreMonoType ret, body := none, concreteEval := none, attr := #[], axioms := [] }]
   | .command_fndef m ⟨_, n⟩ ⟨_, targs?⟩ bs ret ⟨_, pres⟩ body ⟨_, inline?⟩ =>
     let tys := match targs? with | none => [] | some ts => typeArgsToList ts
-    return [← lowerPureFuncDef m n tys bs ret pres body inline?.isSome]
+    let f ← lowerPureFuncDef m n tys bs ret pres body inline?.isSome
+    return [.func f]
   | .command_recfndef m ⟨_, n⟩ ⟨_, targs?⟩ bs ret ⟨_, pres⟩ body =>
     let tys := match targs? with | none => [] | some ts => typeArgsToList ts
-    return [← lowerPureFuncDef m n tys bs ret pres body false]
+    let f ← lowerPureFuncDef m n tys bs ret pres body false
+    return [.func {f with isRecursive := true}]
   | .command_var _ b =>
     let (id, ty) ← toCoreBind b
     let i := (← get).globalVarCounter

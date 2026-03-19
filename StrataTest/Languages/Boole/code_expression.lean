@@ -67,6 +67,7 @@ procedure D(a : (Map int T), n : int) returns ()
 
 #end
 
+#guard_msgs (drop info) in
 #eval Strata.Boole.verify "cvc5" code_expression
 
 example : Strata.smtVCsCorrect code_expression := by

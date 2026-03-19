@@ -50,6 +50,7 @@ spec {
 };
 #end
 
+#guard_msgs (drop info) in
 #eval Strata.Boole.verify "cvc5" revealWithFuelSeed
 
 example : Strata.smtVCsCorrect revealWithFuelSeed := by
