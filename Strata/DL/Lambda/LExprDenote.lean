@@ -251,7 +251,7 @@ def HasTypeA.quant_inv {T : LExprParams} {Δ : List LMonoTy} {m k name qty tr bo
 /-! ### Denotational Semantics -/
 
 /-- Denote a constant literal. -/
-def denoteConst (tcInterp : String → List LSort → Type) (ρ : TyIdentifier → LSort) : (c : LConst) → TyDenote tcInterp ρ c.ty
+def denoteConst (tcInterp : String → List LSort → Type) (vt : TyIdentifier → LSort) : (c : LConst) → TyDenote tcInterp vt c.ty
     | .boolConst b     => b
     | .intConst i      => i
     | .realConst r     => r
@@ -267,57 +267,56 @@ cleanly separates interpretations (fixed for a theory) from valuations
 noncomputable def LExpr.denote
     {T : LExprParams}
     (tcInterp : String → List LSort → Type)
-    (ρ : TyIdentifier → LSort)
     (opInterp : Identifier T.IDMeta → (s : LSort) → SortDenote tcInterp s)
     (fvarVal : Identifier T.IDMeta → (s : LSort) → SortDenote tcInterp s)
+    (vt : TyIdentifier → LSort)
     {Δ : List LMonoTy}
-    (bvarVal : BVarVal tcInterp ρ Δ)
+    (bvarVal : BVarVal tcInterp vt Δ)
     {e : LExpr T.mono} {τ : LMonoTy}
     (h : HasTypeA Δ e τ)
-    : TyDenote tcInterp ρ τ :=
+    : TyDenote tcInterp vt τ :=
   match e with
   | .const _ c =>
-    HasTypeA.const_inv h ▸ denoteConst tcInterp ρ c
+    HasTypeA.const_inv h ▸ denoteConst tcInterp vt c
   | .op _ o (some ty) =>
-    HasTypeA.op_inv h ▸ opInterp o (ty.substTyVars ρ)
+    HasTypeA.op_inv h ▸ opInterp o (ty.substTyVars vt)
   | .op _ _ none => absurd (HasTypeA_to_typeCheck h) (by simp [typeCheck])
   | .fvar _ x (some ty) =>
-    HasTypeA.fvar_inv h ▸ fvarVal x (ty.substTyVars ρ)
+    HasTypeA.fvar_inv h ▸ fvarVal x (ty.substTyVars vt)
   | .fvar _ _ none => absurd (HasTypeA_to_typeCheck h) (by simp [typeCheck])
   | .bvar _ i =>
     bvarVal.get i (HasTypeA.bvar_inv h)
   | .abs _ _ (some aty) body =>
     let ⟨rty, h_eq, h_body⟩ := HasTypeA.abs_inv h
-    h_eq ▸ fun (x : TyDenote tcInterp ρ aty) =>
-      denote tcInterp ρ opInterp fvarVal (.cons x bvarVal) h_body
+    h_eq ▸ fun (x : TyDenote tcInterp vt aty) =>
+      denote tcInterp opInterp fvarVal vt (.cons x bvarVal) h_body
   | .abs _ _ none _ => absurd (HasTypeA_to_typeCheck h) (by simp [typeCheck])
   | .app _ fn arg =>
     let ⟨aty, h_fn, h_arg⟩ := HasTypeA.app_inv h
-    (denote tcInterp ρ opInterp fvarVal bvarVal h_fn)
-      (denote tcInterp ρ opInterp fvarVal bvarVal h_arg)
+    (denote tcInterp opInterp fvarVal vt bvarVal h_fn)
+      (denote tcInterp opInterp fvarVal vt bvarVal h_arg)
   | .ite _ c t e =>
     let ⟨h_c, h_t, h_e⟩ := HasTypeA.ite_inv h
-    -- Lean does not let us inline this for some reason
-    let cond : Bool := denote tcInterp ρ opInterp fvarVal bvarVal h_c
+    let cond : Bool := denote tcInterp opInterp fvarVal vt bvarVal h_c
     if cond
-    then denote tcInterp ρ opInterp fvarVal bvarVal h_t
-    else denote tcInterp ρ opInterp fvarVal bvarVal h_e
+    then denote tcInterp opInterp fvarVal vt bvarVal h_t
+    else denote tcInterp opInterp fvarVal vt bvarVal h_e
   | .eq _ e1 e2 =>
     let ⟨ty', h_bool, h_1, h_2⟩ := HasTypeA.eq_inv h
-    let v1 := denote tcInterp ρ opInterp fvarVal bvarVal h_1
-    let v2 := denote tcInterp ρ opInterp fvarVal bvarVal h_2
+    let v1 := denote tcInterp opInterp fvarVal vt bvarVal h_1
+    let v2 := denote tcInterp opInterp fvarVal vt bvarVal h_2
     h_bool ▸ (Classical.propDecidable (v1 = v2) |>.decide)
   | .quant _ .all _ (some qty) tr body =>
     let ⟨_τ_tr, h_bool, _h_tr, h_body⟩ := HasTypeA.quant_inv h
     h_bool ▸ (Classical.propDecidable
-      (∀ x : TyDenote tcInterp ρ qty,
-        (denote tcInterp ρ opInterp fvarVal (.cons x bvarVal) h_body : Bool) = true)
+      (∀ x : TyDenote tcInterp vt qty,
+        (denote tcInterp opInterp fvarVal vt (.cons x bvarVal) h_body : Bool) = true)
       |>.decide)
   | .quant _ .exist _ (some qty) tr body =>
     let ⟨_τ_tr, h_bool, _h_tr, h_body⟩ := HasTypeA.quant_inv h
     h_bool ▸ (Classical.propDecidable
-      (∃ x : TyDenote tcInterp ρ qty,
-        (denote tcInterp ρ opInterp fvarVal (.cons x bvarVal) h_body : Bool) = true)
+      (∃ x : TyDenote tcInterp vt qty,
+        (denote tcInterp opInterp fvarVal vt (.cons x bvarVal) h_body : Bool) = true)
       |>.decide)
   | .quant _ _ _ none _ _ =>
     absurd (HasTypeA_to_typeCheck h) (by simp [typeCheck])
