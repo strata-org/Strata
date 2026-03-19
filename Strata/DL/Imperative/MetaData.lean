@@ -10,7 +10,7 @@ public import Strata.DL.Util.DecidableEq
 public import Strata.Util.FileRange
 
 namespace Imperative
-open Strata (DiagnosticModel FileRange)
+open Strata
 
 public section
 
@@ -230,14 +230,14 @@ def getFileRange {P : PureExpr} [BEq P.Ident] (md: MetaData P) : Option FileRang
 
 /-- Create a DiagnosticModel from metadata and a message.
     Uses the file range from metadata if available, otherwise uses a default location. -/
-def MetaData.toDiagnostic {P : PureExpr} [BEq P.Ident] (md : MetaData P) (msg : String) : DiagnosticModel :=
+def MetaData.toDiagnostic {P : PureExpr} [BEq P.Ident] (md : MetaData P) (msg : String) (type : DiagnosticType := DiagnosticType.UserError): DiagnosticModel :=
   match getFileRange md with
-  | some fr => DiagnosticModel.withRange fr msg
-  | none => DiagnosticModel.fromMessage msg
+  | some fr => DiagnosticModel.withRange fr msg type
+  | none => DiagnosticModel.fromMessage msg type
 
 /-- Create a DiagnosticModel from metadata and a Format message. -/
-def MetaData.toDiagnosticF {P : PureExpr} [BEq P.Ident] (md : MetaData P) (msg : Std.Format) : DiagnosticModel :=
-  MetaData.toDiagnostic md (toString msg)
+def MetaData.toDiagnosticF {P : PureExpr} [BEq P.Ident] (md : MetaData P) (msg : Std.Format) (type : DiagnosticType := DiagnosticType.UserError): DiagnosticModel :=
+  MetaData.toDiagnostic md (toString msg) type
 
 /-- Get the file range from metadata as a DiagnosticModel (for formatting).
     This is a compatibility function that formats the file range using byte offsets.
