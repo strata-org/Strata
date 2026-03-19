@@ -541,7 +541,8 @@ def pyAnalyzeLaurelCommand : Command where
       for err in laurelTranslateErrors do
         IO.println err
 
-    -- Print results
+    -- Print results (non-incremental only; incremental prints per-procedure above)
+    if !incremental then do
     IO.println "\n==== Verification Results ===="
     let mut s := ""
     for vcResult in vcResults do
