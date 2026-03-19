@@ -853,7 +853,8 @@ partial def translateAssign  (ctx : TranslationContext)
         | .StaticCall fnname _ =>
             if fnname.text ∈ ctx.compositeTypeNames then
               let resolvedName := resolveTypeName ctx fnname.text
-              {newctx with variableTypes:= newctx.variableTypes ++ [(n.val, resolvedName)]}
+              let resolved := resolveTypeName ctx fnname.text
+              {newctx with variableTypes:= newctx.variableTypes ++ [(n.val, resolved)]}
             else newctx
         | .New className =>
             {newctx with variableTypes:= newctx.variableTypes ++ [(n.val, className.text)]}
