@@ -948,8 +948,8 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
 
   -- If statement
   | .If _ test body orelse => do
-    let (condExpr, _exprW) ← translateExprW ctx test
-    let ctx := { ctx with abstractedStatements := ctx.abstractedStatements ++ _exprW }
+    let (condExpr, exprW) ← translateExprW ctx test
+    let ctx := { ctx with abstractedStatements := ctx.abstractedStatements ++ exprW }
     -- Check if condition contains a Hole - if so, hoist to variable to avoid free variable errors
     let (condStmts, finalCondExpr, condCtx) :=
       match condExpr.val with
@@ -984,8 +984,8 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
   -- While loop
   | .While _ test body _orelse => do
     -- Note: Python while-else not supported yet
-    let (condExpr, _exprW) ← translateExprW ctx test
-    let ctx := { ctx with abstractedStatements := ctx.abstractedStatements ++ _exprW }
+    let (condExpr, exprW) ← translateExprW ctx test
+    let ctx := { ctx with abstractedStatements := ctx.abstractedStatements ++ exprW }
     -- Check if condition contains a Hole - if so, hoist to variable
     let (condStmts, finalCondExpr, condCtx) :=
       match condExpr.val with
@@ -1026,8 +1026,8 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
 
   -- Assert statement
   | .Assert _ test _msg => do
-    let (condExpr, _exprW) ← translateExprW ctx test
-    let ctx := { ctx with abstractedStatements := ctx.abstractedStatements ++ _exprW }
+    let (condExpr, exprW) ← translateExprW ctx test
+    let ctx := { ctx with abstractedStatements := ctx.abstractedStatements ++ exprW }
     -- Check if condition contains a Hole - if so, hoist to variable
     let (condStmts, finalCondExpr, condCtx) :=
       match condExpr.val with
@@ -1051,8 +1051,8 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
 
   -- Expression statement (e.g., function call)
   | .Expr _ value => do
-    let (expr, _exprW) ← translateExprW ctx value
-    let ctx := { ctx with abstractedStatements := ctx.abstractedStatements ++ _exprW }
+    let (expr, exprW) ← translateExprW ctx value
+    let ctx := { ctx with abstractedStatements := ctx.abstractedStatements ++ exprW }
     let expr := { expr with md := md }
 
     match expr.val with
@@ -1179,8 +1179,8 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
       | _ => throw (.unsupportedConstruct "Only simple variable in for target supported" (toString (repr s)))
 
     -- The iterator expression (we abstract it away)
-    let (_iterExpr, _exprW) ← translateExprW ctx iter
-    let ctx := { ctx with abstractedStatements := ctx.abstractedStatements ++ _exprW }
+    let (_iterExpr, exprW) ← translateExprW ctx iter
+    let ctx := { ctx with abstractedStatements := ctx.abstractedStatements ++ exprW }
 
     -- Create context with target variable and loop labels
     let breakLabel := s!"for_break_{iter.toAst.ann.start.byteIdx}"
