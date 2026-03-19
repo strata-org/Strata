@@ -30,6 +30,8 @@ public structure PySpecLaurelResult where
   laurelProgram : Laurel.Program
   overloads : OverloadTable
   functionSignatures : List Python.PythonFunctionDecl := []
+  /-- Maps unprefixed class names to prefixed names for type resolution. -/
+  typeAliases : Std.HashMap String String := {}
 
 /-! ### Private Helpers -/
 
@@ -109,6 +111,7 @@ public def buildPySpecLaurel (pyspecPaths : Array String)
   let mut combinedTypes : Array (Laurel.TypeDefinition × String) := #[]
   let mut allOverloads := overloads
   let mut funcSigs : List Python.PythonFunctionDecl := []
+  let mut allTypeAliases : Std.HashMap String String := {}
   for ionPath in pyspecPaths do
     let ionFile : System.FilePath := ionPath
     let some mod := ionFile.fileStem
@@ -120,7 +123,7 @@ public def buildPySpecLaurel (pyspecPaths : Array String)
       match ← Python.Specs.readDDM ionFile |>.toBaseIO with
       | .ok t => pure t
       | .error msg => throw s!"Could not read {ionFile}: {msg}"
-    let { program, errors, overloads } :=
+    let { program, errors, overloads, typeAliases } :=
       Python.Specs.ToLaurel.signaturesToLaurel ionPath sigs modulePrefix
     if errors.size > 0 then
       let _ ← IO.eprintln
@@ -128,6 +131,7 @@ public def buildPySpecLaurel (pyspecPaths : Array String)
       for err in errors do
         let _ ← IO.eprintln s!"  {err.file}: {err.message}" |>.toBaseIO
     allOverloads := mergeOverloads allOverloads overloads
+    allTypeAliases := typeAliases.fold (init := allTypeAliases) fun m k v => m.insert k v
     match extractFunctionSignatures sigs modulePrefix with
     | .ok fs => funcSigs := funcSigs ++ fs
     | .error msg => throw msg
@@ -161,7 +165,7 @@ public def buildPySpecLaurel (pyspecPaths : Array String)
     constants := []
   }
   return { laurelProgram := combinedLaurel, overloads := allOverloads
-           functionSignatures := funcSigs }
+           functionSignatures := funcSigs, typeAliases := allTypeAliases }
 
 /-- Read dispatch Ion files and merge their overload tables. -/
 public def readDispatchOverloads
@@ -235,7 +239,8 @@ public def buildPreludeInfo (result : PySpecLaurelResult) : Python.PreludeInfo :
     (Python.PreludeInfo.ofLaurelProgram result.laurelProgram)
   { merged with
     functionSignatures :=
-      result.functionSignatures ++ merged.functionSignatures }
+      result.functionSignatures ++ merged.functionSignatures
+    typeAliases := result.typeAliases }
 
 /-- Combine PySpec and user Laurel programs into a single program,
     prepending External stubs so the Laurel `resolve` pass can see
