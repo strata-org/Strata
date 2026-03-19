@@ -302,7 +302,8 @@ op command_fndecl (name : Ident,
 category Inline;
 op inline () : Inline => "inline";
 
--- Note: when editing command_fndef, consider whether recfn_decl needs matching edits.
+// Note: when editing command_fndef, consider whether recfn_decl needs
+// matching edits.
 @[declareFn(name, b, r)]
 op command_fndef (name : Ident,
                   typeArgs : Option TypeArgs,
