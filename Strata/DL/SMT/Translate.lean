@@ -263,6 +263,8 @@ def translateSort (ty : TermType) : TranslateM Expr := do
     throw m!"Error: regexes are not supported"
   | .prim .trigger =>
     throw m!"Error: triggers are not supported"
+  | .prim .float64 =>
+    throw m!"Error: float64 is not supported in Lean denotation"
   | .option ty => do
     let ty ← translateSort ty
     return .app (.const ``Option [0]) ty

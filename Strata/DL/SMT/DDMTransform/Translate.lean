@@ -79,6 +79,9 @@ private def translateFromTermPrim (t:SMT.TermPrim):
       (.qi_ident srnone (.iden_indexed srnone bvty (Ann.mk srnone #[val]))))
   | .string s =>
     return .spec_constant_term srnone (.sc_str srnone s)
+  | .rne =>
+    return (.qual_identifier srnone
+      (.qi_ident srnone (.iden_simple srnone (mkSymbol "RNE"))))
 
 -- List of SMTSort to Array.
 private def translateFromSMTSortList (l: List (SMTSort SourceRange)):
@@ -99,6 +102,13 @@ private def translateFromTermType (t:SMT.TermType):
           (Ann.mk srnone #[idx])))
     | .trigger =>
       throw "don't know how to translate a trigger type"
+    | .float64 =>
+      let idx11 : Index SourceRange := .ind_numeral srnone 11
+      let idx53 : Index SourceRange := .ind_numeral srnone 53
+      return (.smtsort_ident srnone
+        (.iden_indexed srnone
+          (mkSymbol "FloatingPoint")
+          (Ann.mk srnone #[idx11, idx53])))
     | _ =>
       let res:String ← match tp with
           | .bool => .ok "Bool"

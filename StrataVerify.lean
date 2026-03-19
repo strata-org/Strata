@@ -47,6 +47,17 @@ def parseOptions (args : List String) : Except Std.Format (VerifyOptions × Stri
          match Core.CheckLevel.ofString? levelStr with
          | .some l => go {opts with checkLevel := l} rest procs
          | .none => .error f!"Invalid check level: {levelStr}. Must be {Core.CheckLevel.options}."
+      | opts, "--overflow-checks" :: checksStr :: rest, procs =>
+         let checks := checksStr.splitOn ","
+         let oc := checks.foldl (fun acc c =>
+           match c.trim with
+           | "signed"   => { acc with signedBV := true }
+           | "unsigned" => { acc with unsignedBV := true }
+           | "float64"  => { acc with float64 := true }
+           | "none"     => { signedBV := false, unsignedBV := false, float64 := false }
+           | "all"      => { signedBV := true, unsignedBV := true, float64 := true }
+           | _          => acc) opts.overflowChecks
+         go {opts with overflowChecks := oc} rest procs
       | opts, [file], procs => pure (opts, file, procs)
       | _, [], _ => .error "StrataVerify requires a file as input"
       | _, args, _ => .error f!"Unknown options: {args}"
@@ -67,7 +78,8 @@ def usageMessage : Std.Format :=
   --vc-directory=<dir>        Store VCs in SMT-Lib format in <dir>{Std.Format.line}  \
   --solver <name>             SMT solver executable to use (default: {defaultSolver}){Std.Format.line}  \
   --check-mode <mode>         Check mode: {Core.VerificationMode.options}. Default: 'deductive'.{Std.Format.line}  \
-  --check-level <level>       Check level: {Core.CheckLevel.options}. Default: 'minimal'."
+  --check-level <level>       Check level: {Core.CheckLevel.options}. Default: 'minimal'.{Std.Format.line}  \
+  --overflow-checks <list>    Comma-separated overflow checks to enable: 'signed' (default), 'unsigned', 'float64', 'all', or 'none'."
 
 def main (args : List String) : IO UInt32 := do
   let parseResult := parseOptions args

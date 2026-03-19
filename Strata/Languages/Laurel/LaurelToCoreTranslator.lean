@@ -33,6 +33,7 @@ import Strata.Util.Tactics
 open Core (VCResult VCResults VerifyOptions)
 open Core (intAddOp intSubOp intMulOp intSafeDivOp intSafeModOp intSafeDivTOp intSafeModTOp intNegOp intLtOp intLeOp intGtOp intGeOp boolAndOp boolOrOp boolNotOp boolImpliesOp strConcatOp)
 open Core (realAddOp realSubOp realMulOp realDivOp realNegOp realLtOp realLeOp realGtOp realGeOp)
+open Core (float64AddOp float64SubOp float64MulOp float64DivOp float64SafeAddOp float64SafeSubOp float64SafeMulOp float64SafeDivOp float64NegOp)
 
 namespace Strata.Laurel
 
@@ -62,7 +63,7 @@ def translateType (model : SemanticModel) (ty : HighTypeMd) : LMonoTy :=
     | some (.datatypeDefinition dt) => .tcons dt.name.text []
     | _ => .tcons "Composite" [] -- fallback for unresolved refs
   | .TCore s => .tcons s []
-  | .TFloat64 => dbg_trace "NOT SUPPORTED YET: Float64"; .tcons "Float64IsNotSupportedYet" []
+  | .TFloat64 => LMonoTy.float64
   | .TReal => LMonoTy.real
   | .Top => .tcons "Any" []
   | _ => panic s!"translateType: unsupported type {ToFormat.format ty}"
@@ -88,6 +89,8 @@ structure TranslateState where
   nextId : Nat := 1
   /-- Constants known to the program (field constants, etc.) -/
   model : SemanticModel
+  /-- Overflow check configuration -/
+  overflowChecks : Core.OverflowChecks := {}
 
 /-- The translation monad: state over Id -/
 @[expose] abbrev TranslateM := StateT TranslateState Id
@@ -160,7 +163,9 @@ def translateExpr (expr : StmtExprMd)
       let re ← translateExpr e boundVars isPureContext
       let isReal := match (computeExprType model e).val with
         | .TReal => true | _ => false
-      return .app () (if isReal then realNegOp else intNegOp) re
+      let isFloat64 := match (computeExprType model e).val with
+        | .TFloat64 => true | _ => false
+      return .app () (if isFloat64 then float64NegOp else if isReal then realNegOp else intNegOp) re
     | _ => panic! s!"translateExpr: Invalid unary op: {repr op}"
   | .PrimitiveOp op [e1, e2] =>
     let re1 ← translateExpr e1 boundVars isPureContext
@@ -170,6 +175,9 @@ def translateExpr (expr : StmtExprMd)
     let isReal := match (computeExprType model e1).val, (computeExprType model e2).val with
       | .TReal, _ | _, .TReal => true
       | _, _ => false
+    let isFloat64 := match (computeExprType model e1).val, (computeExprType model e2).val with
+      | .TFloat64, _ | _, .TFloat64 => true
+      | _, _ => false
     match op with
     | .Eq => return .eq () re1 re2
     | .Neq => return .app () boolNotOp (.eq () re1 re2)
@@ -178,10 +186,10 @@ def translateExpr (expr : StmtExprMd)
     | .AndThen => return .ite () re1 re2 (.boolConst () false)
     | .OrElse => return .ite () re1 (.boolConst () true) re2
     | .Implies => return .ite () re1 re2 (.boolConst () true)
-    | .Add => return binOp (if isReal then realAddOp else intAddOp)
-    | .Sub => return binOp (if isReal then realSubOp else intSubOp)
-    | .Mul => return binOp (if isReal then realMulOp else intMulOp)
-    | .Div => return binOp (if isReal then realDivOp else intSafeDivOp)
+    | .Add => return binOp (if isFloat64 then (if s.overflowChecks.float64 then float64SafeAddOp else float64AddOp) else if isReal then realAddOp else intAddOp)
+    | .Sub => return binOp (if isFloat64 then (if s.overflowChecks.float64 then float64SafeSubOp else float64SubOp) else if isReal then realSubOp else intSubOp)
+    | .Mul => return binOp (if isFloat64 then (if s.overflowChecks.float64 then float64SafeMulOp else float64MulOp) else if isReal then realMulOp else intMulOp)
+    | .Div => return binOp (if isFloat64 then (if s.overflowChecks.float64 then float64SafeDivOp else float64DivOp) else if isReal then realDivOp else intSafeDivOp)
     | .Mod => return binOp intSafeModOp
     | .DivT => return binOp intSafeDivTOp
     | .ModT => return binOp intSafeModTOp
@@ -626,6 +634,7 @@ def translateDatatypeDefinition (model : SemanticModel) (dt : DatatypeDefinition
 
 structure LaurelTranslateOptions where
   emitResolutionErrors : Bool := true
+  overflowChecks : Core.OverflowChecks := {}
 
 /--
 Try to translate a Laurel Procedure marked `isFunctional` to a Core Function.
@@ -693,7 +702,7 @@ def translate (options: LaurelTranslateOptions) (program : Program): Except (Arr
     -- External procedures are completely ignored (not translated to Core).
     let nonExternal := program.staticProcedures.filter (fun p => !p.body.isExternal)
     let (markedPure, procProcs) := nonExternal.partition (·.isFunctional)
-    let initState : TranslateState := {model := model}
+    let initState : TranslateState := {model := model, overflowChecks := options.overflowChecks}
     -- Try to translate each isFunctional procedure to a Core function, collecting errors for failures
     let (pureErrors, pureFuncDecls) := markedPure.foldl (fun (errs, decls) p =>
       match tryTranslatePureToFunction p initState with
