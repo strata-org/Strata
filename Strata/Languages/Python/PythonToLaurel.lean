@@ -93,8 +93,6 @@ structure TranslationContext where
   compositeTypeNames : Std.HashSet String := {}
   /-- Track current class during method translation -/
   currentClassName : Option String := none
-  loopBreakLabel : Option String := none
-  loopContinueLabel : Option String := none
 deriving Inhabited
 
 /-! ## Error Handling -/
@@ -151,13 +149,6 @@ def mkCoreType (s: String): HighTypeMd :=
 /-- Create a StmtExprMd with default metadata -/
 def mkStmtExprMd (expr : StmtExpr) : StmtExprMd :=
   { val := expr, md := defaultMetadata }
-
-partial def collectNames (e : Python.expr SourceRange) : List String :=
-  match e with
-  | .Name _ name _ => [name.val]
-  | .Tuple _ elts _ => elts.val.toList.flatMap collectNames
-  | .Starred _ inner _ => collectNames inner
-  | _ => []
 
 /-- Create a StmtExprMd with source location metadata -/
 def mkStmtExprMdWithLoc (expr : StmtExpr) (md : Imperative.MetaData Core.Expression) : StmtExprMd :=
@@ -965,19 +956,15 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
         ([varDecl], varRef, { ctx with variableTypes := ctx.variableTypes ++ [(freshVar, "bool")] })
       | _ => ([], condExpr, ctx)
 
-    let breakLabel := s!"loop_break_{test.toAst.ann.start.byteIdx}"
-    let continueLabel := s!"loop_continue_{test.toAst.ann.start.byteIdx}"
-    let loopCtx := { condCtx with loopBreakLabel := some breakLabel, loopContinueLabel := some continueLabel }
-    let (_, bodyStmts) ← translateStmtList loopCtx body.val.toList
-    let bodyBlock := mkStmtExprMd (StmtExpr.Block bodyStmts (some continueLabel))
-    let whileStmt := mkStmtExprMd (StmtExpr.While (Any_to_bool finalCondExpr) [] none bodyBlock)
-    let whileWrapped := mkStmtExprMdWithLoc (StmtExpr.Block [whileStmt] (some breakLabel)) md
+    let (loopCtx, bodyStmts) ← translateStmtList condCtx body.val.toList
+    let bodyBlock := mkStmtExprMd (StmtExpr.Block bodyStmts none)
+    let whileStmt := mkStmtExprMdWithLoc (StmtExpr.While (Any_to_bool finalCondExpr) [] none bodyBlock) md
 
     -- Wrap in block if we hoisted condition
     let result := if condStmts.isEmpty then
-      whileWrapped
+      whileStmt
     else
-      mkStmtExprMdWithLoc (StmtExpr.Block (condStmts ++ [whileWrapped]) none) md
+      mkStmtExprMdWithLoc (StmtExpr.Block (condStmts ++ [whileStmt]) none) md
 
     return (loopCtx, [result])
 
@@ -1035,18 +1022,7 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
 
   | .Import _ _ | .ImportFrom _ _ _ _ |.Pass _ => return (ctx, [mkStmtExprMd .Hole])
 
-  -- Try/except. The body is wrapped in a `catchers` block so that
-  -- `exit catchers` (on exception) and `exit try` (on normal completion)
-  -- both use standard labelled-block exits:
-  --   try: {
-  --     catchers: {
-  --       body_stmt_1
-  --       if (isError) { exit catchers; }
-  --       ...
-  --       exit try;
-  --     }
-  --     handler_code
-  --   }
+  -- Try/except - wrap body with exception checks and handlers
   | .Try _ body handlers _ _ => do
     let tryLabel := s!"try_end_{s.toAst.ann.start.byteIdx}"
     let catchersLabel := s!"exception_handlers_{s.toAst.ann.start.byteIdx}"
@@ -1057,11 +1033,7 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
     let collectDeclaredNamesAndTypes (stmts : List (Python.stmt SourceRange)) : List (String × String) :=
       stmts.filterMap fun s => match s with
         | .AnnAssign _ target annotation _ _ =>
-          let tyStr := pyExprToString annotation
-          -- Skip composite types: they need special New/init handling
-          -- that doesn't work with hoisted declarations.
-          if tyStr ∈ ctx.compositeTypeNames then none
-          else some (pyExprToString target, tyStr)
+          some (pyExprToString target, pyExprToString annotation)
         | .Assign _ targets _ _ => targets.val.toList.head?.map (fun t => (pyExprToString t, PyLauType.Any))
         | _ => none
     let bodyDecls := collectDeclaredNamesAndTypes body.val.toList
@@ -1070,11 +1042,9 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
     let allNewDecls := (bodyDecls ++ handlerDecls).foldl (fun acc (n, ty) =>
       if acc.any (fun (an, _) => an == n) || ctx.variableTypes.any (fun (vn, _) => vn == n)
       then acc else acc ++ [(n, ty)]) []
-    let hoistedDecls : List StmtExprMd := allNewDecls.map fun (name, tyStr) =>
-      let ty := match pythonTypeToCoreType tyStr with
-        | some coreType => mkCoreType coreType
-        | none => AnyTy
-      mkStmtExprMd (StmtExpr.LocalVariable (name : String) ty (some (mkStmtExprMd .Hole)))
+    let hoistedDecls : List StmtExprMd := ← allNewDecls.mapM fun (name, tyStr) => do
+      let ty ← translateType ctx tyStr
+      return mkStmtExprMd (StmtExpr.LocalVariable (name : String) ty (some (mkStmtExprMd .Hole)))
     let hoistedCtx := { ctx with variableTypes := ctx.variableTypes ++
       (allNewDecls.map fun (n, ty) => (n, ty)) }
 
@@ -1160,26 +1130,17 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
     let _iterExpr ← translateExpr ctx iter
 
     -- Create context with target variable
-    let breakLabel := s!"for_break_{iter.toAst.ann.start.byteIdx}"
-    let continueLabel := s!"for_continue_{iter.toAst.ann.start.byteIdx}"
-    let bodyCtx := { ctx with
-      variableTypes := ctx.variableTypes ++ [(targetName, PyLauType.Any)]
-      loopBreakLabel := some breakLabel
-      loopContinueLabel := some continueLabel }
-    let (finalCtx, bodyStmts) ← translateStmtList bodyCtx body.val.toList
-    let targetDecl := mkStmtExprMd (StmtExpr.LocalVariable targetName AnyTy (some (mkStmtExprMd .Hole)))
-    let innerBlock := mkStmtExprMd (StmtExpr.Block ([targetDecl] ++ bodyStmts) (some continueLabel))
-    let loopBlock := mkStmtExprMdWithLoc (StmtExpr.Block [innerBlock] (some breakLabel)) md
-    return (finalCtx, [loopBlock])
+    let bodyCtx := { ctx with variableTypes := ctx.variableTypes ++ [(targetName, PyLauType.Any)] }
 
-  | .Break _ =>
-    match ctx.loopBreakLabel with
-    | some lbl => return (ctx, [mkStmtExprMdWithLoc (StmtExpr.Exit lbl) md])
-    | none => return (ctx, [mkStmtExprMdWithLoc (StmtExpr.Assert (mkStmtExprMd .Hole)) md])
-  | .Continue _ =>
-    match ctx.loopContinueLabel with
-    | some lbl => return (ctx, [mkStmtExprMdWithLoc (StmtExpr.Exit lbl) md])
-    | none => return (ctx, [mkStmtExprMdWithLoc (StmtExpr.Assert (mkStmtExprMd .Hole)) md])
+    -- Translate loop body
+    let (finalCtx, bodyStmts) ← translateStmtList bodyCtx body.val.toList
+
+    -- Create: { target = havoc; body_statements }
+    -- This abstracts: execute body once with arbitrary target value
+    let targetDecl := mkStmtExprMd (StmtExpr.LocalVariable targetName AnyTy (some (mkStmtExprMd .Hole)))
+    let loopBlock := mkStmtExprMdWithLoc (StmtExpr.Block ([targetDecl] ++ bodyStmts) none) md
+
+    return (finalCtx, [loopBlock])
 
   | _ => throw (.unsupportedConstruct "Statement type not yet supported" (toString (repr s)))
 
@@ -1357,7 +1318,7 @@ def extractClassFields (ctx : TranslationContext) (classBody : Array (Python.stm
       -- Class-level annotated assignment: x: int
       let fieldName ← match target with
         | .Name _ name _ => .ok name.val
-        | _ => throw (.unsupportedConstruct "Only simple field names supported" (toString (repr stmt)))
+        | _ => continue  -- Skip non-simple targets, consistent with extractFieldsFromInit
 
       let fieldType ← translateType ctx (pyExprToString annotation)
 
@@ -1457,9 +1418,9 @@ def translateClass (ctx : TranslationContext) (classStmt : Python.stmt SourceRan
           .ok (some (funcDecl))
       | _ => .ok none)
     let ctx := {ctx with functionSignatures:= ctx.functionSignatures ++ classFunDecls}
-    -- Extract fields from class-level annotations (e.g. `x: int`)
-    let mut fields ← extractClassFields ctx body.val
-    -- Also extract fields from __init__ method body (e.g. `self.x: int = ...`)
+    -- Extract fields from class-level annotations and __init__ body, with dedup
+    let classLevelFields ← extractClassFields ctx body.val
+    let mut fields := classLevelFields
     for stmt in body.val do
       match stmt with
       | .FunctionDef _ name _ initBody _ _ _ _ =>

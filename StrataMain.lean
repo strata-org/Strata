@@ -29,7 +29,7 @@ import Strata.SimpleAPI
 
 open Strata
 
-open Core (VerifyOptions VerboseMode)
+open Core (VerifyOptions VerboseMode VerificationMode CheckLevel)
 
 def exitFailure {α} (message : String) (hint : String := "strata --help") : IO α := do
   IO.eprintln s!"Exception: {message}\n\nRun {hint} for additional help."
@@ -103,6 +103,30 @@ def buildDialectFileMap (pflags : ParsedFlags) : IO Strata.DialectFileMap := do
   return sp
 
 end ParsedFlags
+
+def parseCheckMode (pflags : ParsedFlags) : IO VerificationMode :=
+  match pflags.getString "check-mode" with
+  | .none => pure .deductive
+  | .some s => match VerificationMode.ofString? s with
+    | .some m => pure m
+    | .none => exitFailure s!"Invalid check mode: '{s}'. Must be {VerificationMode.options}."
+
+def parseCheckLevel (pflags : ParsedFlags) : IO CheckLevel :=
+  match pflags.getString "check-level" with
+  | .none => pure .minimal
+  | .some s => match CheckLevel.ofString? s with
+    | .some l => pure l
+    | .none => exitFailure s!"Invalid check level: '{s}'. Must be {CheckLevel.options}."
+
+def checkModeFlag : Flag :=
+  { name := "check-mode",
+    help := s!"Check mode: {VerificationMode.options}. Default: 'deductive'.",
+    takesArg := .arg "mode" }
+
+def checkLevelFlag : Flag :=
+  { name := "check-level",
+    help := s!"Check level: {CheckLevel.options}. Default: 'minimal'.",
+    takesArg := .arg "level" }
 
 structure Command where
   name : String
@@ -362,7 +386,8 @@ def pyAnalyzeLaurelCommand : Command where
             { name := "sarif", help := "Write results as SARIF to <file>.sarif." },
             { name := "vc-directory",
               help := "Store VCs in SMT-Lib format in <dir>.",
-              takesArg := .arg "dir" }]
+              takesArg := .arg "dir" },
+            checkModeFlag, checkLevelFlag]
   help := "Verify a Python Ion program via the Laurel pipeline. Translates Python to Laurel to Core, then runs SMT verification."
   callback := fun v pflags => do
     let verbose := pflags.getBool "verbose"
@@ -410,8 +435,12 @@ def pyAnalyzeLaurelCommand : Command where
       IO.print coreProgram
 
     -- Verify using Core verifier
+    let checkMode ← parseCheckMode pflags
+    let checkLevel ← parseCheckLevel pflags
     let baseOptions : VerifyOptions :=
-      { VerifyOptions.default with stopOnFirstError := false, verbose := .quiet, solver := "z3" }
+      { VerifyOptions.default with
+        stopOnFirstError := false, verbose := .quiet, solver := "z3",
+        checkMode := checkMode, checkLevel := checkLevel }
     let options : VerifyOptions := match pflags.getString "vc-directory" with
       | .some dir => { baseOptions with vcDirectory := some (dir : System.FilePath) }
       | .none => baseOptions
@@ -457,7 +486,7 @@ def pyAnalyzeLaurelCommand : Command where
       let files := match mfm with
         | some (pyPath, fm) => Map.empty.insert (Strata.Uri.file pyPath) fm
         | none => Map.empty
-      Core.Sarif.writeSarifOutput .deductive files vcResults (filePath ++ ".sarif")
+      Core.Sarif.writeSarifOutput checkMode files vcResults (filePath ++ ".sarif")
 
 private def deriveBaseName (file : String) : String :=
   let name := System.FilePath.fileName file |>.getD file
@@ -569,22 +598,26 @@ def pyAnalyzeLaurelToGotoCommand : Command where
 
 def javaGenCommand : Command where
   name := "javaGen"
-  args := [ "dialect-file", "package", "output-dir" ]
+  args := [ "dialect", "package", "output-dir" ]
   flags := [includeFlag]
-  help := "Generate Java source files from a DDM dialect definition. Writes .java files under output-dir."
+  help := "Generate Java source files from a DDM dialect definition. Accepts a dialect name (e.g. Laurel) or a dialect file path."
   callback := fun v pflags => do
     let fm ← pflags.buildDialectFileMap
-    let pd ← Strata.readStrataFile fm v[0]
-    match pd with
-    | .dialect d =>
-      match Strata.Java.generateDialect d v[1] with
-      | .ok files =>
-        Strata.Java.writeJavaFiles v[2] v[1] files
-        IO.println s!"Generated Java files for {d.name} in {v[2]}/{Strata.Java.packageToPath v[1]}"
-      | .error msg =>
-        exitFailure s!"Error generating Java: {msg}"
-    | .program _ =>
-      exitFailure "Expected a dialect file, not a program file."
+    let ld ← fm.getLoaded
+    let d ← if mem : v[0] ∈ ld.dialects then
+      pure ld.dialects[v[0]]
+    else
+      match ← Strata.readStrataFile fm v[0] with
+      | .dialect d => pure d
+      | .program _ => exitFailure "Expected a dialect file, not a program file."
+    match Strata.Java.generateDialect d v[1] with
+    | .ok files =>
+      Strata.Java.writeJavaFiles v[2] v[1] files
+      IO.println s!"Generated Java files for {d.name} in {v[2]}/{Strata.Java.packageToPath v[1]}"
+    | .error msg =>
+      exitFailure s!"Error generating Java: {msg}"
+
+def laurelVerifyOptions : VerifyOptions := { VerifyOptions.default with solver := "z3" }
 
 def deserializeIonToLaurelFiles (bytes : ByteArray) : IO (List Strata.StrataFile) := do
   match Strata.Program.filesFromIon Strata.Laurel.Laurel_map bytes with
@@ -620,7 +653,7 @@ def laurelAnalyzeBinaryCommand : Command where
           types := combinedProgram.types ++ laurelProgram.types
         }
 
-    let diagnostics ← Strata.Laurel.verifyToDiagnosticModels combinedProgram
+    let diagnostics ← Strata.Laurel.verifyToDiagnosticModels combinedProgram laurelVerifyOptions
 
     IO.println s!"==== DIAGNOSTICS ===="
     for diag in diagnostics do
@@ -720,7 +753,7 @@ def laurelAnalyzeCommand : Command where
     match transResult with
     | .error transErrors => exitFailure s!"Translation errors: {transErrors}"
     | .ok laurelProgram =>
-      let results ← Strata.Laurel.verifyToVcResults laurelProgram { VerifyOptions.default with solver := "z3" }
+      let results ← Strata.Laurel.verifyToVcResults laurelProgram laurelVerifyOptions
       match results with
       | .error errors =>
         IO.println s!"==== ERRORS ===="
