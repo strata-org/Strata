@@ -774,7 +774,7 @@ partial def translateCall (ctx : TranslationContext)
       if opt_firstarg.isSome then
         -- If the resolved method name is a known procedure (e.g. from pyspec),
         -- emit StaticCall so it can be inlined and its assertions checked.
-        if hasModel ctx funcName then
+        if funcName ∈ ctx.preludeProcedures then
           return mkStmtExprMd (StmtExpr.StaticCall funcName (trans_args ++ trans_kwords_exprs))
         else
           return mkStmtExprMd (StmtExpr.InstanceCall target_trans attr.val (trans_args ++ trans_kwords_exprs))
