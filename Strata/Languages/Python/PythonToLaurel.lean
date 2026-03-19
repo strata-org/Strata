@@ -1004,6 +1004,7 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
     let whileWrapped := mkStmtExprMdWithLoc (StmtExpr.Block [whileStmt] (some breakLabel)) md
     return (loopCtx, varDecls ++ [whileWrapped])
 
+
   -- Return statement: assign to the LaurelResult output parameter, then exit $body.
   | .Return _ value => do
     let stmts ← match value.val with
