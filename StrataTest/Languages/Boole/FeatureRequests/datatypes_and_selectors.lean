@@ -39,7 +39,27 @@ spec {
 };
 #end
 
-#eval Strata.Boole.verify "cvc5" datatypeSelectorsSeed
+/-- info: Obligation: assert_1_687
+Property: assert
+Result: ✅ pass
+
+Obligation: assert_assert_2_718_calls_OptionInt..val_0
+Property: assert
+Result: ✅ pass
+
+Obligation: assert_2_718
+Property: assert
+Result: ✅ pass
+
+Obligation: set_ok_calls_OptionInt..val_0
+Property: assert
+Result: ✅ pass
+
+Obligation: datatype_selector_seed_ensures_0_631
+Property: assert
+Result: ✅ pass-/
+#guard_msgs in
+#eval Strata.Boole.verify "cvc5" datatypeSelectorsSeed (options := .quiet)
 
 example : Strata.smtVCsCorrect datatypeSelectorsSeed := by
   gen_smt_vcs

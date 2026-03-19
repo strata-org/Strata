@@ -41,7 +41,27 @@ spec {
 };
 #end
 
-#eval Strata.Boole.verify "cvc5" decreasesMetadataSeed
+/-- info: Obligation: entry_invariant_0_0
+Property: assert
+Result: ✅ pass
+
+Obligation: entry_invariant_0_1
+Property: assert
+Result: ✅ pass
+
+Obligation: arbitrary_iter_maintain_invariant_0_0
+Property: assert
+Result: ✅ pass
+
+Obligation: arbitrary_iter_maintain_invariant_0_1
+Property: assert
+Result: ✅ pass
+
+Obligation: loop_measure_seed_ensures_1_744
+Property: assert
+Result: ✅ pass-/
+#guard_msgs in
+#eval Strata.Boole.verify "cvc5" decreasesMetadataSeed (options:=.quiet)
 
 example : Strata.smtVCsCorrect decreasesMetadataSeed := by
   gen_smt_vcs
