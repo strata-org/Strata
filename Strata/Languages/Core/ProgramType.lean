@@ -143,7 +143,8 @@ C are already well-typed.
             .error (DiagnosticModel.withRange fileRange <|
               f!"recursive function '{func.name}' cannot be marked inline")
           else pure ()) ()
-        -- Phase 1: Add ALL function signatures as stubs so mutual calls resolve
+        -- Phase 1: Add ALL function signatures as stubs so mutual calls resolve.
+        -- Note: duplicate function names have already been checked by addListWithError above.
         let C' := funcs.foldl (fun C func =>
           C.addFactoryFunction { name := func.name, typeArgs := func.typeArgs,
                                  inputs := func.inputs, output := func.output }) C

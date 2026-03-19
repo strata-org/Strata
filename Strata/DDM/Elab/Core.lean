@@ -1112,11 +1112,13 @@ partial def elabOperation (tctx : TypingContext) (stx : Syntax) : ElabM Tree := 
   let ((args, newCtx), success) ← runChecked <|
     match se.preRegisterTypesScope with
     | some scopeArgLevel =>
-      elaborateWithPreRegistration argDecls se tctx loc stxArgs scopeArgLevel
+      elaborateWithPreRegistrationCore argDecls se tctx loc stxArgs scopeArgLevel
+        "elaborateWithPreRegistration" extractDatatypeInfo
     | none =>
     match se.preRegisterFunctionsScope with
     | some scopeArgLevel =>
-      elaborateWithFunctionPreRegistration argDecls se tctx loc stxArgs scopeArgLevel
+      elaborateWithPreRegistrationCore argDecls se tctx loc stxArgs scopeArgLevel
+        "elaborateWithFunctionPreRegistration" extractFunctionInfo
     | none => do
       let args ← runSyntaxElaborator (argc := argDecls.size) getKind se tctx stxArgs
       return (args, resultContext se tctx args)
@@ -1237,126 +1239,68 @@ partial def runSyntaxElaborator
   return trees.map (·.getD default)
 
 /--
-Two-phase elaboration for operations annotated with `@[preRegisterTypes]`.
+Two-phase elaboration for operations annotated with `@[preRegisterTypes]` or
+`@[preRegisterFunctions]`.
 
-When a parent operation (like `mutual`) has `@[preRegisterTypes(scope)]`, its children
-may reference each other's types before they are declared. This function handles that by:
+- **Phase 1**: Resolve the scope argument, extract children, and fold `extractInfo`
+  over them to pre-register names in the `GlobalContext`.
+- **Phase 2**: Fully elaborate all args with the updated context.
 
-- **Phase 1**: For each child, partially elaborate name + typeParams args (which don't
-  reference sibling types) to extract type names and parameter names.
-- **Pre-register**: Pre-register all extracted types so mutual references resolve.
-- **Phase 2**: Fully elaborate each child with the updated context. Name args that were
-  already elaborated in Phase 1 are passed via `preElabMap` to avoid redundant work.
-  The remaining parent args are then elaborated by `runSyntaxElaborator`.
+`label` is used in error messages to identify the caller.
 
-**Known deviation**: typeParams args are elaborated twice — once in Phase 1 (against
-`tctx0`) to extract param names, and again in Phase 2 (against the per-child context).
-Phase 1 typeParams trees cannot be reused because `collectNewBindingsM` requires
-`tree.info.inputCtx.bindings.size ≥ initialScope`, which fails when the Phase 1 context
-is smaller than the Phase 2 per-child context.
+For `@[preRegisterTypes]`: pre-registers type-level bindings so mutual type references
+resolve. **Known deviation**: typeParams args are elaborated twice — once in Phase 1
+(against `tctx0`) to extract param names, and again in Phase 2 (against the per-child
+context). Phase 1 typeParams trees cannot be reused because `collectNewBindingsM`
+requires `tree.info.inputCtx.bindings.size ≥ initialScope`, which fails when the
+Phase 1 context is smaller than the Phase 2 per-child context.
+
+For `@[preRegisterFunctions]`: pre-registers expression-level bindings (function
+signatures) so mutual calls resolve.
 -/
-partial def elaborateWithPreRegistration
+partial def elaborateWithPreRegistrationCore
     {argc : Nat}
     (argDecls : Vector ArgDecl argc)
     (se : SyntaxElaborator)
     (tctx0 : TypingContext)
     (fallbackLoc : SourceRange)
     (stxArgs : Vector Syntax se.syntaxCount)
-    (scopeArgLevel : Nat) : ElabM (Vector Tree argc × TypingContext) := do
-  -- Resolve scope: find the scope arg's syntax, category, and children
+    (scopeArgLevel : Nat)
+    (label : String)
+    (extractInfo : GlobalContext → Syntax → ElabM GlobalContext)
+    : ElabM (Vector Tree argc × TypingContext) := do
   let some scopeSyntaxLevel := argSyntaxLevel? se scopeArgLevel
-    | logInternalError fallbackLoc "elaborateWithPreRegistration: no syntax level for scope arg"
+    | logInternalError fallbackLoc s!"{label}: no syntax level for scope arg"
       return default
   let .isTrue scopeSLBound := inferInstanceAs (Decidable (scopeSyntaxLevel < se.syntaxCount))
-    | logInternalError fallbackLoc "elaborateWithPreRegistration: scope syntax level out of bounds"
+    | logInternalError fallbackLoc s!"{label}: scope syntax level out of bounds"
       return default
   let scopeStx := stxArgs[scopeSyntaxLevel]
   let .isTrue scopeALBound := inferInstanceAs (Decidable (scopeArgLevel < argc))
-    | logInternalError fallbackLoc "elaborateWithPreRegistration: scope arg level out of bounds"
+    | logInternalError fallbackLoc s!"{label}: scope arg level out of bounds"
       return default
   let scopeArgDecl := argDecls[scopeArgLevel]
   let scopeCat ← do
     match scopeArgDecl.kind with
     | .cat c => pure c
     | _ =>
-      logInternalError fallbackLoc "elaborateWithPreRegistration: expected category for scope arg"
+      logInternalError fallbackLoc s!"{label}: expected category for scope arg"
       return default
   if scopeCat.args.size ≠ 1 then
-    logInternalError fallbackLoc
-      s!"elaborateWithPreRegistration: \
-         expected 1 scope cat arg, got {scopeCat.args.size}"
-    return default
-  let some (sep, getChildren) := scopeSepFormat scopeCat.name
-    | logInternalError fallbackLoc
-        s!"elaborateWithPreRegistration: \
-           unsupported scope category {scopeCat.name}"
-      return default
-  let children := getChildren scopeStx
-  -- Phase 1: Pre-register add all types so mutual references resolve
-  assert! tctx0.bindings.size = 0
-  let gctx0 : GlobalContext := tctx0.globalContext
-  let preGCtx ← children.foldlM (init := gctx0) fun preCtx child =>
-    extractDatatypeInfo preCtx child
-  -- Phase 2: Elaborate args with the scope tree pre-elaborated
-  let getKind (i : Fin argDecls.size) := ElabArgKind.ofArgDeclKind argDecls[i].kind
-  let preCtx := .empty preGCtx
-  let args ← runSyntaxElaborator (argc := argDecls.size) getKind se preCtx stxArgs
-  pure (args, resultContext se preCtx args)
-
-/--
-Two-phase elaboration for operations annotated with `@[preRegisterFunctions]`.
-
-Analogous to `elaborateWithPreRegistration` for types, but pre-registers
-expression-level bindings (function signatures) instead of type-level bindings.
-
-- **Phase 1**: For each child, partially elaborate name, bindings, and return type
-  to extract the function signature.
-- **Pre-register**: Add all function signatures as expression-level bindings in the
-  GlobalContext so mutual calls resolve.
-- **Phase 2**: Fully elaborate each child with the updated context.
--/
-partial def elaborateWithFunctionPreRegistration
-    {argc : Nat}
-    (argDecls : Vector ArgDecl argc)
-    (se : SyntaxElaborator)
-    (tctx0 : TypingContext)
-    (fallbackLoc : SourceRange)
-    (stxArgs : Vector Syntax se.syntaxCount)
-    (scopeArgLevel : Nat) : ElabM (Vector Tree argc × TypingContext) := do
-  let some scopeSyntaxLevel := argSyntaxLevel? se scopeArgLevel
-    | logInternalError fallbackLoc "elaborateWithFunctionPreRegistration: no syntax level for scope arg"
-      return default
-  let .isTrue scopeSLBound := inferInstanceAs (Decidable (scopeSyntaxLevel < se.syntaxCount))
-    | logInternalError fallbackLoc "elaborateWithFunctionPreRegistration: scope syntax level out of bounds"
-      return default
-  let scopeStx := stxArgs[scopeSyntaxLevel]
-  let .isTrue scopeALBound := inferInstanceAs (Decidable (scopeArgLevel < argc))
-    | logInternalError fallbackLoc "elaborateWithFunctionPreRegistration: scope arg level out of bounds"
-      return default
-  let scopeArgDecl := argDecls[scopeArgLevel]
-  let scopeCat ← do
-    match scopeArgDecl.kind with
-    | .cat c => pure c
-    | _ =>
-      logInternalError fallbackLoc "elaborateWithFunctionPreRegistration: expected category for scope arg"
-      return default
-  if scopeCat.args.size ≠ 1 then
-    logInternalError fallbackLoc
-      s!"elaborateWithFunctionPreRegistration: \
-         expected 1 scope cat arg, got {scopeCat.args.size}"
+    logInternalError fallbackLoc s!"{label}: expected 1 scope cat arg, got {scopeCat.args.size}"
     return default
   let some (_sep, getChildren) := scopeSepFormat scopeCat.name
-    | logInternalError fallbackLoc
-        s!"elaborateWithFunctionPreRegistration: \
-           unsupported scope category {scopeCat.name}"
+    | logInternalError fallbackLoc s!"{label}: unsupported scope category {scopeCat.name}"
       return default
   let children := getChildren scopeStx
-  -- Phase 1: Pre-register all function signatures
-  assert! tctx0.bindings.size = 0
+  -- Phase 1: Pre-register all names so mutual references resolve
+  if tctx0.bindings.size ≠ 0 then
+    logInternalError fallbackLoc s!"{label}: expected empty local bindings"
+    return default
   let gctx0 : GlobalContext := tctx0.globalContext
   let preGCtx ← children.foldlM (init := gctx0) fun gctx child =>
-    extractFunctionInfo gctx child
-  -- Phase 2: Elaborate with all function signatures in scope
+    extractInfo gctx child
+  -- Phase 2: Elaborate with the pre-registered context
   let getKind (i : Fin argDecls.size) := ElabArgKind.ofArgDeclKind argDecls[i].kind
   let preCtx := .empty preGCtx
   let args ← runSyntaxElaborator (argc := argDecls.size) getKind se preCtx stxArgs

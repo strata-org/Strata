@@ -722,10 +722,7 @@ partial def resolveRecFunc (funcs : List Core.Function) (idx : Nat) : TransM Cor
     match funcs.find? (fun f => f.name.name == name) with
     | some f => pure f
     | none => TransM.error s!"function {name} not found in recFuncBlock"
-  | none =>
-    match funcs with
-    | f :: _ => pure f
-    | [] => TransM.error "Empty recFuncBlock"
+  | none => TransM.error s!"resolveRecFunc: no name for index {idx} in global context"
 
 partial def translateExpr (p : Program) (bindings : TransBindings) (arg : Arg) :
   TransM Core.Expression.Expr := do

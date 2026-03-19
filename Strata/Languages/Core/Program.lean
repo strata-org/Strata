@@ -85,6 +85,8 @@ def Decl.name (d : Decl) : Expression.Ident :=
   | .distinct n _ _ => n
   | .proc p _       => p.header.name
   | .func f _       => f.name
+  -- A recFuncBlock can never be empty in a well-typed program
+  -- (see ProgramType.lean), so this case is unreachable.
   | .recFuncBlock [] _ => ""
   | .recFuncBlock (f :: _) _ => f.name
 
