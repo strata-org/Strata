@@ -94,8 +94,8 @@ private meta def runAnalyze (dispatchIon : System.FilePath)
     | .ok r => pure r
     | .error err => return .error (toString err)
   match Strata.translateCombinedLaurel laurel with
-  | .error diagnostics => return .error s!"Laurel to Core translation failed: {diagnostics}"
-  | .ok (core, _) => return .ok core
+  | (some core, []) => .ok $ pure core
+  | (_, errors) => .error s!"Laurel to Core translation failed: {errors}"
 
 /-- Expected outcome for a test case. -/
 private inductive Expected where

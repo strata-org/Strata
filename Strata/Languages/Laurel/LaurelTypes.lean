@@ -36,9 +36,9 @@ def computeExprType (model : SemanticModel) (expr : StmtExprMd) : HighTypeMd :=
   | .LiteralString _ => ⟨ .TString, md ⟩
   | .LiteralDecimal _ => ⟨ .TReal, md ⟩
   -- Variables
-  | .Identifier id => (model.get id).getType.getD (panic "computeExprType1")
+  | .Identifier id => (model.get id).getType
   -- Field access
-  | .FieldSelect _ fieldName => (model.get fieldName).getType.getD (panic "computeExprType2")
+  | .FieldSelect _ fieldName => (model.get fieldName).getType
   -- Pure field update returns the same type as the target
   | .PureFieldUpdate target _ _ => computeExprType model target
   -- Calls — we don't track return types here, so fall back to TVoid
@@ -48,9 +48,11 @@ def computeExprType (model : SemanticModel) (expr : StmtExprMd) : HighTypeMd :=
     | .staticProcedure proc => match proc.outputs with
       | [singleOutput] => singleOutput.type
       | _ => { val := .TVoid, md := default }
-    | .unresolved => { val := .Top, md := default }
-    | astNode => panic! s!"static call to {callee} not to a procedure but to a {repr astNode}"
-  | .InstanceCall _ _ _ => panic "Not supported InstanceCall"
+    | .unresolved => { val := HighType.Unknown, md := default }
+    | astNode =>
+      dbg_trace s!"BUG: static call to {callee} not to a procedure but to a {repr astNode}"
+      default
+  | .InstanceCall _ _ _ => default -- TODO: implement
   -- Operators
   | .PrimitiveOp op args =>
       match args with
@@ -82,7 +84,7 @@ def computeExprType (model : SemanticModel) (expr : StmtExprMd) : HighTypeMd :=
   | .Assume _ => ⟨ .TVoid, md ⟩
   -- Instance related
   | .New name => ⟨ .UserDefined name, md ⟩
-  | .This => panic "'This' not supported" -- would need `this` type from context
+  | .This => default -- TODO: implement
   | .ReferenceEquals _ _ => ⟨ .TBool, md ⟩
   | .AsType _ ty => ty
   | .IsType _ _ => ⟨ .TBool, md ⟩
@@ -94,13 +96,11 @@ def computeExprType (model : SemanticModel) (expr : StmtExprMd) : HighTypeMd :=
   | .Fresh _ => ⟨ .TBool, md ⟩
   -- Proof related
   | .ProveBy v _ => computeExprType model v
-  | .ContractOf _ _ => panic "ContractOf Not supported"
+  | .ContractOf _ _ => default -- TODO: implement
   -- Special
-  | .Abstract => panic "Abstract Not supported"
-  | .All => panic "All Not supported"
-  | .Hole _ type => match type with
-    | some ty => ty
-    | none =>  type.getD ⟨ .Top, md ⟩
+  | .Abstract =>default -- TODO: implement
+  | .All => default -- TODO: implement
+  | .Hole _ typeOption => typeOption.getD  ⟨ HighType.Unknown, md ⟩
 
 end Strata.Laurel
 
