@@ -53,9 +53,12 @@ category ClassVarDecl;
 op mkClassVarDecl(name : Ident, value : Ident) : ClassVarDecl =>
   name " = " value "\n";
 
+category SpecDefault;
+op noneDefault() : SpecDefault => "None";
+
 category ArgDecl;
-op mkArgDecl (name : Ident, argType : SpecType, hasDefault : Bool) : ArgDecl =>
-  name " : " argType " [" "hasDefault" ": " hasDefault "]\n";
+op mkArgDecl (name : Ident, argType : SpecType, argDefault : Option SpecDefault) : ArgDecl =>
+  name " : " argType " [" "default" ": " argDefault "]\n";
 
 category KwargsDecl;
 op mkKwargsDecl(name : Ident, kwargsType : SpecType) : KwargsDecl =>
@@ -227,8 +230,11 @@ decreasing_by
 
 end
 
+private def SpecDefault.toDDM : Specs.SpecDefault → DDM.SpecDefault SourceRange
+  | .none => .noneDefault .none
+
 private def Arg.toDDM (d : Arg) : DDM.ArgDecl SourceRange :=
-  .mkArgDecl .none ⟨.none, d.name⟩ d.type.toDDM ⟨.none, d.hasDefault⟩
+  .mkArgDecl .none ⟨.none, d.name⟩ d.type.toDDM ⟨.none, d.default.map (·.toDDM)⟩
 
 private def SpecExpr.toDDM (e : SpecExpr) : DDM.SpecExprDecl SourceRange :=
   match e with
@@ -349,12 +355,15 @@ decreasing_by
   · decreasing_tactic
   · decreasing_tactic
 
+private def DDM.SpecDefault.fromDDM : DDM.SpecDefault SourceRange → Specs.SpecDefault
+  | .noneDefault _ => .none
+
 private def DDM.ArgDecl.fromDDM (d : DDM.ArgDecl SourceRange) : Specs.Arg :=
-  let .mkArgDecl _ ⟨_, name⟩ type ⟨_, hasDefault⟩ := d
+  let .mkArgDecl _ ⟨_, name⟩ type ⟨_, default⟩ := d
   {
     name := name
     type := type.fromDDM
-    hasDefault := hasDefault
+    default := default.map (·.fromDDM)
   }
 
 private def DDM.SpecExprDecl.fromDDM (d : DDM.SpecExprDecl SourceRange) : Specs.SpecExpr :=

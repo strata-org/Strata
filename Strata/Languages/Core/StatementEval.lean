@@ -409,6 +409,23 @@ def processExit : Statements → Option (Option String) → (Statements × Optio
 | rest, .none => (rest, .none)
 | _, .some exitLabel => ([], .some exitLabel) -- Skip all remaining statements
 
+/--
+Collect proof obligations for an unreachable (dead) branch.
+All covers in the dead branch fail (unreachable), and all asserts pass
+(unsatisfiable path conditions).
+-/
+private def collectDeadBranchDeferred
+    (ss_f : Statements) (cond : Expression.Expr)
+    (pathConditions : Imperative.PathConditions Expression) :
+    Imperative.ProofObligations Expression :=
+  if Statements.containsCovers ss_f || Statements.containsAsserts ss_f then
+    let deadLabel := toString (f!"<dead_branch: {cond.eraseTypes}>")
+    let deadPathConds := pathConditions.push [(deadLabel, LExpr.false ())]
+    createUnreachableCoverObligations deadPathConds (Statements.collectCovers ss_f) ++
+    createUnreachableAssertObligations deadPathConds (Statements.collectAsserts ss_f)
+  else
+    #[]
+
 mutual
 def evalAuxGo (steps : Nat) (old_var_subst : SubstMap) (Ewn : EnvWithNext) (ss : Statements) (optExit : Option (Option String)) :
     List EnvWithNext :=
@@ -460,40 +477,21 @@ def evalAuxGo (steps : Nat) (old_var_subst : SubstMap) (Ewn : EnvWithNext) (ss :
             let cond' := Ewn.env.exprEval cond
             match cond' with
             | .true _ | .false _ =>
-              let (ss_t, ss_f) := if cond'.isTrue then (then_ss, else_ss) else (else_ss, then_ss)
-              let Ewns_f :=
-                -- Check if `ss_f` contains covers and asserts whose
-                -- verification status needs to be reported.
-                -- All covers in `ss_f` will fail (unreachable). For now, we
-                -- don't distinguish between unreachable and unsatisfiable
-                -- covers.
-                -- All asserts in `ss_f` will succeed (unsatisfiable path
-                -- conditions).
-                if Statements.containsCovers ss_f || Statements.containsAsserts ss_f then
-                  let ss_f_covers := Statements.collectCovers ss_f
-                  let ss_f_asserts := Statements.collectAsserts ss_f
-                  let deadLabel := toString (f!"<dead_branch: {cond.eraseTypes}>")
-                  let deadPathConds := Ewn.env.pathConditions.push [(deadLabel, LExpr.false ())]
-                  let deferred := createUnreachableCoverObligations deadPathConds ss_f_covers
-                  let deferred := deferred ++ createUnreachableAssertObligations deadPathConds ss_f_asserts
-                  -- No need to retain older deferred obligations in a dead branch.
-                  [{ Ewn with env.deferred := deferred }]
-                else
-                  []
-              let Ewns_t :=
-                -- Process `ss_t`.
-                let Ewns := go' Ewn ss_t .none
-                let Ewns := Ewns.map
-                                (fun (ewn : EnvWithNext) =>
-                                     let ss' := ewn.stk.top
-                                     let s' := Imperative.Stmt.ite cond' ss' [] md
-                                     { ewn with stk := orig_stk.appendToTop [s']})
-                Ewns
-              -- Keep the environment order corresponding to program order.
-              if cond'.isTrue then
-                Ewns_t ++ Ewns_f
-              else
-                Ewns_f ++ Ewns_t
+              let (ss_live, ss_dead) :=
+                if cond'.isTrue then (then_ss, else_ss) else (else_ss, then_ss)
+              let deadDeferred := collectDeadBranchDeferred ss_dead cond Ewn.env.pathConditions
+              let Ewns :=
+                (go' Ewn ss_live .none).map fun (ewn : EnvWithNext) =>
+                  { ewn with stk := orig_stk.appendToTop [.ite cond' ewn.stk.top [] md] }
+              -- Prepend dead-branch obligations to the first result only.
+              -- Pre-ITE obligations flow through the live branch naturally;
+              -- processIteBranches keeps them in the first (true-path) result,
+              -- so mergeResults won't duplicate them.
+              match Ewns with
+              | [] => []
+              | first :: rest =>
+                { first with env.deferred :=
+                    deadDeferred ++ first.env.deferred } :: rest
             | _ =>
               -- Process both branches.
               processIteBranches steps' old_var_subst

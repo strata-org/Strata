@@ -125,7 +125,7 @@ private def computeType (expr : StmtExprMd) : LiftM HighTypeMd := do
   return computeExprType s.model expr
 
 /-- Check if an expression contains any assignments or imperative calls (recursively). -/
-private def containsAssignmentOrImperativeCall (model: SemanticModel) (expr : StmtExprMd) : Bool :=
+def containsAssignmentOrImperativeCall (model: SemanticModel) (expr : StmtExprMd) : Bool :=
   match expr with
   | WithMetadata.mk val _ =>
   match val with
@@ -141,6 +141,23 @@ private def containsAssignmentOrImperativeCall (model: SemanticModel) (expr : St
       containsAssignmentOrImperativeCall model cond ||
       containsAssignmentOrImperativeCall model th ||
       match el with | some e => containsAssignmentOrImperativeCall model e | none => false
+  | _ => false
+  termination_by expr
+  decreasing_by
+    all_goals ((try cases x); simp_all; try term_by_mem)
+
+/-- Check if an expression contains any nondeterministic holes (recursively). -/
+private def containsNondetHole (expr : StmtExprMd) : Bool :=
+  match expr with
+  | WithMetadata.mk val _ =>
+  match val with
+  | .Hole false _ => true
+  | .PrimitiveOp _ args => args.attach.any (fun x => containsNondetHole x.val)
+  | .StaticCall _ args => args.attach.any (fun x => containsNondetHole x.val)
+  | .Block stmts _ => stmts.attach.any (fun x => containsNondetHole x.val)
+  | .IfThenElse cond th el =>
+      containsNondetHole cond || containsNondetHole th ||
+      match el with | some e => containsNondetHole e | none => false
   | _ => false
   termination_by expr
   decreasing_by
@@ -179,6 +196,12 @@ def transformExpr (expr : StmtExprMd) : LiftM StmtExprMd := do
       return ⟨.Identifier (← getSubst name), md⟩
 
   | .LiteralInt _ | .LiteralBool _ | .LiteralString _ | .LiteralDecimal _ => return expr
+
+  | .Hole false (some holeType) =>
+      -- Nondeterministic typed hole: lift to a fresh variable with no initializer (havoc)
+      let holeVar ← freshCondVar
+      addPrepend (bare (.LocalVariable holeVar holeType none))
+      return bare (.Identifier holeVar)
 
   | .Assign targets value =>
       -- The expression result is the current substitution for the first target
@@ -306,14 +329,25 @@ def transformStmt (stmt : StmtExprMd) : LiftM (List StmtExprMd) := do
   match stmt with
   | WithMetadata.mk val md =>
   match val with
-  | .Assert _ =>
-      -- Do not transform assert conditions: impure expressions inside contracts
-      -- must be rejected by the translator, not silently lifted.
-      return [stmt]
+  | .Assert cond =>
+      -- Do not transform assert conditions with assignments — they must be rejected.
+      -- But nondeterministic holes need to be lifted.
+      if containsNondetHole cond && !containsAssignmentOrImperativeCall (← get).model cond then
+        let seqCond ← transformExpr cond
+        let prepends ← takePrepends
+        modify fun s => { s with subst := [] }
+        return prepends ++ [⟨.Assert seqCond, md⟩]
+      else
+        return [stmt]
 
-  | .Assume _ =>
-      -- Do not transform assume conditions: same reasoning as assert.
-      return [stmt]
+  | .Assume cond =>
+      if containsNondetHole cond && !containsAssignmentOrImperativeCall (← get).model cond then
+        let seqCond ← transformExpr cond
+        let prepends ← takePrepends
+        modify fun s => { s with subst := [] }
+        return prepends ++ [⟨.Assume seqCond, md⟩]
+      else
+        return [stmt]
 
   | .Block stmts metadata =>
       let seqStmts ← stmts.mapM transformStmt
@@ -322,8 +356,8 @@ def transformStmt (stmt : StmtExprMd) : LiftM (List StmtExprMd) := do
   | .LocalVariable name ty initializer =>
       match _ : initializer with
       | some initExprMd =>
-          -- If the initializer is a direct imperative StaticCall, don't lift it —
-          -- translateStmt handles LocalVariable + StaticCall directly as a call statement.
+         -- If the initializer is a direct imperative StaticCall, don't lift it —
+         -- translateStmt handles LocalVariable + StaticCall directly as a call statement.
           match _: initExprMd with
           | WithMetadata.mk initExpr _ =>
           match _: initExpr with
@@ -388,15 +422,29 @@ def transformStmt (stmt : StmtExprMd) : LiftM (List StmtExprMd) := do
   | .While cond invs dec body =>
       let seqCond ← transformExpr cond
       let condPrepends ← takePrepends
+      -- Process invariants and decreases through transformExpr for nondet holes
+      let seqInvs ← invs.mapM transformExpr
+      let invPrepends ← takePrepends
+      let seqDec ← match dec with
+        | some d => pure (some (← transformExpr d))
+        | none => pure none
+      let decPrepends ← takePrepends
       let seqBody ← do
         let stmts ← transformStmt body
         pure (bare (.Block stmts none))
-      return condPrepends ++ [⟨.While seqCond invs dec seqBody, md⟩]
+      return condPrepends ++ invPrepends ++ decPrepends ++
+        [⟨.While seqCond seqInvs seqDec seqBody, md⟩]
 
   | .StaticCall name args =>
       let seqArgs ← args.mapM transformExpr
       let prepends ← takePrepends
       return prepends ++ [⟨.StaticCall name seqArgs, md⟩]
+
+  | .Return (some retExpr) =>
+      let seqRet ← transformExpr retExpr
+      let prepends ← takePrepends
+      modify fun s => { s with subst := [] }
+      return prepends ++ [⟨.Return (some seqRet), md⟩]
 
   | _ =>
       return [stmt]
