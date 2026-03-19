@@ -192,7 +192,7 @@ def boxConstructorName (model : SemanticModel) (ty : HighType) : Identifier :=
   | .UserDefined name =>
       if isDatatype model name then s!"Box..{name.text}"
       else "BoxComposite"
-  | _ => dbg_trace "BUG, boxConstructorName bad type"; "boxConstructorNameError"
+  | ty => dbg_trace "BUG, boxConstructorName bad type: {repr ty}"; "boxConstructorNameError"
 
 /-- Build the DatatypeConstructor for a Box variant from a HighType, for datatype generation -/
 private def boxConstructorDef (model : SemanticModel) (ty : HighType) : Option DatatypeConstructor :=
@@ -206,7 +206,7 @@ private def boxConstructorDef (model : SemanticModel) (ty : HighType) : Option D
         some { name := s!"Box..{name.text}", args := [{ name := s!"{name.text}Val", type := ⟨.UserDefined name, #[]⟩ }] }
       else
         some { name := "BoxComposite", args := [{ name := "compositeVal", type := ⟨.UserDefined "Composite", #[]⟩ }] }
-  | _ => dbg_trace "BUG, boxConstructorDef bad type"; none
+  | ty => dbg_trace s!"BUG, boxConstructorDef bad type: {repr ty}"; none
 
 /-- Record a Box constructor use in the transform state -/
 private def recordBoxConstructor (model : SemanticModel) (ty : HighType) : TransformM Unit := do

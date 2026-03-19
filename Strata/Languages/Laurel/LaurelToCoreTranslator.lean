@@ -99,6 +99,9 @@ def emitDiagnostic (d : DiagnosticModel) : TranslateM Unit :=
 def runTranslateM (s : TranslateState) (m : TranslateM α) : (Option α × TranslateState) :=
   m s
 
+def returnNone: TranslateM α :=
+  dbg_trace "returning None"
+  StateT.pure none
 
 /-- Allocate a fresh unique ID. -/
 private def freshId : TranslateM Nat := do
@@ -420,7 +423,7 @@ def translateStmt (outputParams : List Parameter) (stmt : StmtExprMd)
               return (havocStmts)
           | _ =>
               emitDiagnostic $ md.toDiagnostic "Assignments with multiple target but without a RHS call should not be constructed"
-              StateT.pure none
+              returnNone
   | .IfThenElse cond thenBranch elseBranch =>
       let bcond ← translateExpr cond
       let bthen ← translateStmt outputParams thenBranch
@@ -457,9 +460,8 @@ def translateStmt (outputParams : List Parameter) (stmt : StmtExprMd)
       let decreasingExprCore ← decreasesExpr.mapM (translateExpr)
       let bodyStmts ← translateStmt outputParams body
       return [Imperative.Stmt.loop condExpr decreasingExprCore invExprs bodyStmts md]
-  | .Exit _ =>
-      dbg_trace "TODO: Exit statement not yet supported"
-      default
+  | .Exit target =>
+      return [Imperative.Stmt.exit (some target) md]
   | _ =>
       -- Expression in statement position: preserve as an unused variable init
       exprAsUnusedInit stmt md
