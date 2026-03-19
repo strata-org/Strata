@@ -56,7 +56,7 @@ def computeExprType (model : SemanticModel) (expr : StmtExprMd) : HighTypeMd :=
       match args with
       | head :: tail =>
         match op with
-        | .Eq | .Neq | .And | .Or | .Not | .Implies | .Lt | .Leq | .Gt | .Geq => ⟨ .TBool, md ⟩
+        | .Eq | .Neq | .And | .Or | .AndThen | .OrElse | .Not | .Implies | .Lt | .Leq | .Gt | .Geq => ⟨ .TBool, md ⟩
         | .Neg | .Add | .Sub | .Mul | .Div | .Mod | .DivT | .ModT =>
           match (computeExprType model head).val with
             | .TFloat64  => ⟨ .TFloat64, md ⟩
@@ -98,7 +98,9 @@ def computeExprType (model : SemanticModel) (expr : StmtExprMd) : HighTypeMd :=
   -- Special
   | .Abstract => panic "Abstract Not supported"
   | .All => panic "All Not supported"
-  | .Hole => ⟨ .Top, md ⟩
+  | .Hole _ type => match type with
+    | some ty => ty
+    | none =>  type.getD ⟨ .Top, md ⟩
 
 end Strata.Laurel
 

@@ -32,6 +32,16 @@ inductive VerificationMode where
 instance : Inhabited VerificationMode where
   default := .deductive
 
+def VerificationMode.ofString? (s : String) : Option VerificationMode :=
+  match s with
+  | "deductive" => some .deductive
+  | "bugFinding" => some .bugFinding
+  | "bugFindingAssumingCompleteSpec" => some .bugFindingAssumingCompleteSpec
+  | _ => none
+
+def VerificationMode.options : String :=
+  "'deductive' (prove correctness), 'bugFinding' (find bugs), or 'bugFindingAssumingCompleteSpec' (find bugs assuming complete preconditions)"
+
 def VerboseMode.ofBool (b : Bool) : VerboseMode :=
   match b with
   | false => .quiet
@@ -76,6 +86,16 @@ structure OverflowChecks where
   /-- Check float64 overflow to ±∞ (defined in IEEE 754). -/
   float64    : Bool := false
   deriving Repr, Inhabited
+
+def CheckLevel.ofString? (s : String) : Option CheckLevel :=
+  match s with
+  | "minimal" => some .minimal
+  | "minimalVerbose" => some .minimalVerbose
+  | "full" => some .full
+  | _ => none
+
+def CheckLevel.options : String :=
+  "'minimal' (simple messages), 'minimalVerbose' (detailed messages, one check), or 'full' (both checks, all outcomes)"
 
 structure VerifyOptions where
   verbose : VerboseMode

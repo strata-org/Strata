@@ -333,7 +333,7 @@ partial def eval (expr : StmtExpr) : Eval TypedValue :=
   | StmtExpr.Complete _ => panic! "not implemented: Complete"
 
 -- Used for incomplete code during development
-  | StmtExpr.Hole => pure <| TypedValue.mk Value.VUnknown HighType.Dynamic
+  | StmtExpr.Hole _ _ => pure <| TypedValue.mk Value.VUnknown HighType.Dynamic
   | _ => panic! "not implemented"
 
 
