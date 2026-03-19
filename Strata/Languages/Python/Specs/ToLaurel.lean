@@ -266,6 +266,38 @@ def argToParameter (arg : Arg) : ToLaurelM Parameter := do
   let ty ← specTypeToLaurelType arg.type
   return { name := arg.name, type := ty }
 
+/-- Create a StmtExprMd wrapping a StmtExpr with empty metadata. -/
+private def mkExpr (e : StmtExpr) : WithMetadata StmtExpr :=
+  { val := e, md := default }
+
+/-- Map a HighType to the Any datatype tester name, if applicable.
+    Returns `none` for types that don't map to a single Any constructor. -/
+private def anyTesterForType : HighType → Option String
+  | .TString => some "Any..isfrom_string"
+  | .TInt => some "Any..isfrom_int"
+  | .TBool => some "Any..isfrom_bool"
+  | .TCore "DictStrAny" => some "Any..isfrom_Dict"
+  | .TCore "ListAny" => some "Any..isfrom_ListAny"
+  | _ => none
+
+/-- Map a HighType to the Any constructor name for wrapping typed → Any. -/
+private def anyConstructorForType : HighType → Option String
+  | .TString => some "from_string"
+  | .TInt => some "from_int"
+  | .TBool => some "from_bool"
+  | .TCore "DictStrAny" => some "from_Dict"
+  | .TCore "ListAny" => some "from_ListAny"
+  | _ => none
+
+/-- Map a HighType to the Any destructor name for unwrapping Any → typed. -/
+private def anyDestructorForType : HighType → Option String
+  | .TString => some "Any..as_string!"
+  | .TInt => some "Any..as_int!"
+  | .TBool => some "Any..as_bool!"
+  | .TCore "DictStrAny" => some "Any..as_Dict!"
+  | .TCore "ListAny" => some "Any..as_ListAny!"
+  | _ => none
+
 /-- Expand a `**kwargs: Unpack[TypedDict]` into individual `Arg` entries.
     Returns an error if kwargs is present but not a TypedDict. -/
 public def expandKwargsArgs (kwargs : Option (String × SpecType))
@@ -294,19 +326,33 @@ def funcDeclToLaurel (procName : String) (func : FunctionDecl)
     | .ok args => pure args
     | .error msg => do reportError default msg; pure #[]
   let allArgs := posArgs ++ func.args.kwonly ++ kwargsArgs
-  let inputs ← allArgs.mapM argToParameter
+  -- Get original typed parameters for precondition generation
+  let typedInputs ← allArgs.mapM argToParameter
+  -- Use Any-typed parameters so PySpec procedures are compatible with
+  -- PythonToLaurel's Any-typed world. Type constraints are expressed
+  -- as preconditions instead.
+  let anyTy : HighTypeMd := mkCore "Any"
+  let inputs := typedInputs.map fun p => { p with type := anyTy }
+  -- Generate preconditions: requires Any..isfrom_string(Bucket) etc.
+  let preconditions := typedInputs.toList.filterMap fun p =>
+    match anyTesterForType p.type.val with
+    | some testerName =>
+      let paramRef := mkExpr (.Identifier p.name)
+      some (mkExpr (.StaticCall testerName [paramRef]))
+    | none => none
   let retType ← specTypeToLaurelType func.returnType
+  -- Outputs also use Any type; postconditions could constrain them
   let outputs : List Parameter :=
     match retType.val with
     | .TVoid => []
-    | _ => [{ name := "result", type := retType }]
+    | _ => [{ name := "result", type := anyTy }]
   if func.preconditions.size > 0 || func.postconditions.size > 0 then
     reportError func.loc "Preconditions/postconditions not yet supported"
   return {
     name := procName
     inputs := inputs.toList
     outputs := outputs
-    preconditions := []
+    preconditions := preconditions
     determinism := .nondeterministic
     decreases := none
     isFunctional := false
