@@ -1110,29 +1110,32 @@ partial def translateStmt (p : Program) (bindings : TransBindings) (arg : Arg) :
     let md ← getOpMetaData op
     return ([.assume l c md], bindings)
   | q`Core.if_statement, #[ca, ta, fa] =>
-    let c ← translateExpr p bindings ca
     let (tss, thenBindings) ← translateBlock p bindings ta
     let (fss, elseBindings) ← translateElse p { bindings with gen := thenBindings.gen } fa
     let md ← getOpMetaData op
-    return ([.ite (.det c) tss fss md], { bindings with gen := elseBindings.gen })
-  | q`Core.if_nondet_statement, #[ta, fa] =>
-    let (tss, thenBindings) ← translateBlock p bindings ta
-    let (fss, elseBindings) ← translateElse p { bindings with gen := thenBindings.gen } fa
-    let md ← getOpMetaData op
-    return ([.ite .nondet tss fss md], { bindings with gen := elseBindings.gen })
+    -- Check if condition is the nondet star expression
+    let isNondet := match ca with
+      | .expr (ExprF.fn _ ⟨_, "bstar"⟩) => true
+      | _ => false
+    let cond : Imperative.ExprOrNondet Core.Expression ← if isNondet then
+      pure .nondet
+    else
+      pure (.det (← translateExpr p bindings ca))
+    return ([.ite cond tss fss md], { bindings with gen := elseBindings.gen })
   | q`Core.while_statement, #[ca, ma, ia, ba] =>
-    let c ← translateExpr p bindings ca
     let measure ← translateMeasure p bindings ma
     let invs ← translateInvariants p bindings ia
     let (bodyss, bindings) ← translateBlock p bindings ba
     let md ← getOpMetaData op
-    return ([.loop (.det c) measure invs bodyss md], bindings)
-  | q`Core.while_nondet_statement, #[ma, ia, ba] =>
-    let measure ← translateMeasure p bindings ma
-    let invs ← translateInvariants p bindings ia
-    let (bodyss, bindings) ← translateBlock p bindings ba
-    let md ← getOpMetaData op
-    return ([.loop .nondet measure invs bodyss md], bindings)
+    -- Check if guard is the nondet star expression
+    let isNondet := match ca with
+      | .expr (ExprF.fn _ ⟨_, "bstar"⟩) => true
+      | _ => false
+    let guard : Imperative.ExprOrNondet Core.Expression ← if isNondet then
+      pure .nondet
+    else
+      pure (.det (← translateExpr p bindings ca))
+    return ([.loop guard measure invs bodyss md], bindings)
   | q`Core.call_statement, #[lsa, fa, esa] =>
     let ls  ← translateCommaSep (translateIdent Core.CoreIdent) lsa
     let f   ← translateIdent String fa

@@ -334,10 +334,8 @@ def Statement.substFvar (s : Core.Statement)
       (fr:Expression.Ident)
       (to:Expression.Expr) : Statement :=
   match s with
-  | .init lhs ty (.det rhs) metadata =>
-    .init lhs ty (.det (Lambda.LExpr.substFvar rhs fr to)) metadata
-  | .init lhs ty .nondet metadata =>
-    .init lhs ty .nondet metadata
+  | .init lhs ty e metadata =>
+    .init lhs ty (e.map (Lambda.LExpr.substFvar · fr to)) metadata
   | .set lhs rhs metadata =>
     .set lhs (Lambda.LExpr.substFvar rhs fr to) metadata
   | .havoc _ _ => s
