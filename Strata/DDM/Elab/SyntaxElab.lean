@@ -27,9 +27,6 @@ structure ArgElaborator where
   contextLevel : Option (Fin argLevel) := .none
   -- Type variable scope: typeParamsLevel — converts .type bindings to .tvar bindings
   scopeTVar : Option (Fin argLevel) := .none
-  -- Self scope: (nameLevel, argsLevel, typeLevel) for recursive function definitions
-  -- When set, the function name is added to the typing context as an expression
-  scopeSelf : Option (Fin argLevel × Fin argLevel × Fin argLevel) := .none
 deriving Inhabited, Repr
 
 abbrev ArgElaboratorArray (sc : Nat) :=
@@ -66,7 +63,6 @@ private def push (as : ArgElaborators)
     argLevel := argLevel.val
     contextLevel := ← argDecls.argScopeLevel argLevel
     scopeTVar := ← argDecls.argScopeTVarLevel argLevel
-    scopeSelf := ← argDecls.argScopeSelfLevel argLevel
   }
   have scp : sc < sc + 1 := by grind
   return { as with argElaborators := as.argElaborators.push ⟨newElab, scp⟩ }
@@ -99,6 +95,8 @@ structure SyntaxElaborator where
   argElabIndex : Array (Option Nat) := #[]
   /-- If set, pre-register type names from children at this arg level before elaboration. -/
   preRegisterTypesScope : Option Nat := none
+  /-- If set, pre-register function signatures from children at this arg level before elaboration. -/
+  preRegisterFunctionsScope : Option Nat := none
 deriving Inhabited, Repr
 
 /-- Build an argElabIndex mapping each argLevel to its
@@ -119,6 +117,7 @@ discover which syntax positions correspond to which arguments, then sort
 by argument level for elaboration order. -/
 private def mkSyntaxElab! (argDecls : ArgDecls) (stx : SyntaxDef) (opMd : Metadata) : Except String SyntaxElaborator := do
   let preRegTypesScope ← opMd.preRegisterTypesLevel argDecls.size
+  let preRegFuncsScope ← opMd.preRegisterFunctionsLevel argDecls.size
   let resultScope ← opMd.resultLevel argDecls.size
   match stx with
   | .passthrough =>
@@ -130,7 +129,6 @@ private def mkSyntaxElab! (argDecls : ArgDecls) (stx : SyntaxDef) (opMd : Metada
       argLevel := 0
       contextLevel := ← argDecls.argScopeLevel ⟨0, h⟩
       scopeTVar := ← argDecls.argScopeTVarLevel ⟨0, h⟩
-      scopeSelf := ← argDecls.argScopeSelfLevel ⟨0, h⟩
     }
     let elabs := #[⟨ae, Nat.zero_lt_one⟩]
     .ok {
@@ -139,6 +137,7 @@ private def mkSyntaxElab! (argDecls : ArgDecls) (stx : SyntaxDef) (opMd : Metada
       resultScope
       argElabIndex := buildArgElabIndex argDecls elabs
       preRegisterTypesScope := preRegTypesScope
+      preRegisterFunctionsScope := preRegFuncsScope
     }
   | .std atoms _ =>
     let init : ArgElaborators := {
@@ -158,6 +157,7 @@ private def mkSyntaxElab! (argDecls : ArgDecls) (stx : SyntaxDef) (opMd : Metada
       resultScope
       argElabIndex := buildArgElabIndex argDecls elabs
       preRegisterTypesScope := preRegTypesScope
+      preRegisterFunctionsScope := preRegFuncsScope
     }
 
 private def opDeclElaborator! (decl : OpDecl) : Except String SyntaxElaborator :=
