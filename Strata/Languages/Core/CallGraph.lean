@@ -168,10 +168,12 @@ def Program.toProcedureCG (prog : Program) : ProcedureCG :=
   buildCallGraph procedures
 
 def Program.toFunctionCG (prog : Program) : FunctionCG :=
-  let functions := prog.decls.filterMap (fun decl =>
+  let functions := prog.decls.flatMap (fun decl =>
     match decl with
-    | .func f _ => some (CoreIdent.toPretty f.name, extractCallsFromFunction f)
-    | _ => none)
+    | .func f _ => [(CoreIdent.toPretty f.name, extractCallsFromFunction f)]
+    | .recFuncBlock fs _ => fs.map (fun f =>
+        (CoreIdent.toPretty f.name, extractCallsFromFunction f))
+    | _ => [])
   buildCallGraph functions
 
 ---------------------------------------------------------------------

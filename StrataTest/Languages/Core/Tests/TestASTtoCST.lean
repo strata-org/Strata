@@ -435,4 +435,71 @@ spec {
 
 -------------------------------------------------------------------------------
 
+private def recFuncPgm : Program :=
+#strata
+program Core;
+
+datatype IntList { Nil(), Cons(hd: int, tl: IntList) };
+
+rec function listLen (@[cases] xs : IntList) : int
+{
+  if IntList..isNil(xs) then 0 else 1 + listLen(IntList..tl(xs))
+};
+
+#end
+
+/-- info: datatype IntList {(
+  (Nil())),
+  (Cons(hd : int, tl : IntList))
+};
+rec function listLen (@[cases] xs : IntList) : int
+{
+  if IntList..isNil(xs) then 0 else 1 + listLen(IntList..tl(xs))
+};
+-/
+#guard_msgs in
+#eval ASTtoCST recFuncPgm
+
+-------------------------------------------------------------------------------
+
+private def mutualRecFuncPgm : Program :=
+#strata
+program Core;
+
+datatype RoseTree { Leaf(val: int), Node(children: RoseList) }
+datatype RoseList { RNil(), RCons(hd: RoseTree, tl: RoseList) };
+
+rec function treeSize (@[cases] t : RoseTree) : int
+{
+  if RoseTree..isLeaf(t) then 1 else listSize(RoseTree..children(t))
+}
+function listSize (@[cases] xs : RoseList) : int
+{
+  if RoseList..isRNil(xs) then 0 else treeSize(RoseList..hd(xs)) + listSize(RoseList..tl(xs))
+};
+
+#end
+
+/-- info: datatype RoseTree {(
+  (Leaf(val : int))),
+  (Node(children : RoseList))
+}
+datatype RoseList {(
+  (RNil())),
+  (RCons(hd : RoseTree, tl : RoseList))
+};
+rec function treeSize (@[cases] t : RoseTree) : int
+{
+  if RoseTree..isLeaf(t) then 1 else listSize(RoseTree..children(t))
+}
+function listSize (@[cases] xs : RoseList) : int
+{
+  if RoseList..isRNil(xs) then 0 else treeSize(RoseList..hd(xs)) + listSize(RoseList..tl(xs))
+};
+-/
+#guard_msgs in
+#eval ASTtoCST mutualRecFuncPgm
+
+-------------------------------------------------------------------------------
+
 end Strata.Test
