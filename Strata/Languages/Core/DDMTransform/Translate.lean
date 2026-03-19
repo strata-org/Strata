@@ -842,6 +842,76 @@ partial def translateExpr (p : Program) (bindings : TransBindings) (arg : Arg) :
      let i ← translateExpr p bindings ia
      let x ← translateExpr p bindings xa
      return .mkApp sr fn [m, i, x]
+  -- Seq operations
+  -- TODO: seq_empty is not yet parseable (see Grammar.lean); handle here when added.
+  | .fn _ q`Core.seq_length, [_atp, sa] =>
+     let ety ← translateLMonoTy bindings _atp
+     let fn : LExpr Core.CoreLParams.mono :=
+       LExpr.op sr "Sequence.length"
+         (.some (LMonoTy.mkArrow (Core.seqTy ety) [.int]))
+     let s ← translateExpr p bindings sa
+     return .mkApp sr fn [s]
+  | .fn _ q`Core.seq_select, [_atp, sa, ia] =>
+     let ety ← translateLMonoTy bindings _atp
+     let fn : LExpr Core.CoreLParams.mono :=
+       LExpr.op sr "Sequence.select"
+         (.some (LMonoTy.mkArrow (Core.seqTy ety) [.int, ety]))
+     let s ← translateExpr p bindings sa
+     let i ← translateExpr p bindings ia
+     return .mkApp sr fn [s, i]
+  | .fn _ q`Core.seq_append, [_atp, s1a, s2a] =>
+     let ety ← translateLMonoTy bindings _atp
+     let fn : LExpr Core.CoreLParams.mono :=
+       LExpr.op sr "Sequence.append"
+         (.some (LMonoTy.mkArrow (Core.seqTy ety)
+           [Core.seqTy ety, Core.seqTy ety]))
+     let s1 ← translateExpr p bindings s1a
+     let s2 ← translateExpr p bindings s2a
+     return .mkApp sr fn [s1, s2]
+  | .fn _ q`Core.seq_build, [_atp, sa, va] =>
+     let ety ← translateLMonoTy bindings _atp
+     let fn : LExpr Core.CoreLParams.mono :=
+       LExpr.op sr "Sequence.build"
+         (.some (LMonoTy.mkArrow (Core.seqTy ety) [ety, Core.seqTy ety]))
+     let s ← translateExpr p bindings sa
+     let v ← translateExpr p bindings va
+     return .mkApp sr fn [s, v]
+  | .fn _ q`Core.seq_update, [_atp, sa, ia, va] =>
+     let ety ← translateLMonoTy bindings _atp
+     let fn : LExpr Core.CoreLParams.mono :=
+       LExpr.op sr "Sequence.update"
+         (.some (LMonoTy.mkArrow (Core.seqTy ety)
+           [.int, ety, Core.seqTy ety]))
+     let s ← translateExpr p bindings sa
+     let i ← translateExpr p bindings ia
+     let v ← translateExpr p bindings va
+     return .mkApp sr fn [s, i, v]
+  | .fn _ q`Core.seq_contains, [_atp, sa, va] =>
+     let ety ← translateLMonoTy bindings _atp
+     let fn : LExpr Core.CoreLParams.mono :=
+       LExpr.op sr "Sequence.contains"
+         (.some (LMonoTy.mkArrow (Core.seqTy ety) [ety, .bool]))
+     let s ← translateExpr p bindings sa
+     let v ← translateExpr p bindings va
+     return .mkApp sr fn [s, v]
+  | .fn _ q`Core.seq_take, [_atp, sa, na] =>
+     let ety ← translateLMonoTy bindings _atp
+     let fn : LExpr Core.CoreLParams.mono :=
+       LExpr.op sr "Sequence.take"
+         (.some (LMonoTy.mkArrow (Core.seqTy ety)
+           [.int, Core.seqTy ety]))
+     let s ← translateExpr p bindings sa
+     let n ← translateExpr p bindings na
+     return .mkApp sr fn [s, n]
+  | .fn _ q`Core.seq_drop, [_atp, sa, na] =>
+     let ety ← translateLMonoTy bindings _atp
+     let fn : LExpr Core.CoreLParams.mono :=
+       LExpr.op sr "Sequence.drop"
+         (.some (LMonoTy.mkArrow (Core.seqTy ety)
+           [.int, Core.seqTy ety]))
+     let s ← translateExpr p bindings sa
+     let n ← translateExpr p bindings na
+     return .mkApp sr fn [s, n]
   -- Quantifiers
   | .fn _ q`Core.forall, [xsa, ba] =>
     translateQuantifier .all p bindings xsa .none ba
@@ -1062,7 +1132,7 @@ partial def translateFnPreconds (p : Program) (name : Core.CoreIdent) (bindings 
       let args ← checkOpArg specElt q`Core.requires_spec 3
       let _l ← translateOptionLabel s!"{name.name}_requires_{count}" args[0]!
       let e ← translateExpr p bindings args[2]!
-      return (acc ++ [⟨e, specElt.ann⟩], count + 1)
+      return (acc ++ [⟨e, Strata.SourceRange.none⟩], count + 1)
     | _ => TransM.error s!"translateFnPreconds: only requires allowed, got {repr op.name}"
   return preconds.1
 
@@ -1158,8 +1228,8 @@ partial def translateStmt (p : Program) (bindings : TransBindings) (arg : Arg) :
     -- The function name is NOT in scope inside the body (declareFn adds it
     -- for subsequent statements only). So body bindings = outer + parameters.
     let funcType := Lambda.LMonoTy.mkArrow outputMono (inputs.values.reverse)
-    let funcBinding : LExpr Core.CoreLParams.mono := .op namea.ann name (some funcType)
-    let in_bindings := (inputs.map (fun (v, ty) => (LExpr.fvar bindingsa.ann v ty))).toArray
+    let funcBinding : LExpr Core.CoreLParams.mono := .op Strata.SourceRange.none name (some funcType)
+    let in_bindings := (inputs.map (fun (v, ty) => (LExpr.fvar Strata.SourceRange.none v ty))).toArray
 
     let bodyBindings := { bindings with boundVars := bindings.boundVars ++ in_bindings }
     -- Translate preconditions
@@ -1353,8 +1423,8 @@ def translateProcedure (p : Program) (bindings : TransBindings) (op : Operation)
   let typeArgs ← translateTypeArgs op.args[1]!
   let sig ← translateBindings bindings op.args[2]!
   let ret ← translateOptionMonoDeclList bindings op.args[3]!
-  let in_bindings := (sig.map (fun (v, ty) => (LExpr.fvar op.args[2]!.ann v ty))).toArray
-  let out_bindings := (ret.map (fun (v, ty) => (LExpr.fvar op.args[3]!.ann v ty))).toArray
+  let in_bindings := (sig.map (fun (v, ty) => (LExpr.fvar Strata.SourceRange.none v ty))).toArray
+  let out_bindings := (ret.map (fun (v, ty) => (LExpr.fvar Strata.SourceRange.none v ty))).toArray
   -- This bindings order -- original, then inputs, and then outputs, is
   -- critical here. Is this right though?
   let origBindings := bindings
@@ -1474,9 +1544,7 @@ def translateFunction (status : FnInterp) (p : Program) (bindings : TransBinding
   let sig := sigAndCases.1
   let casesIdx := sigAndCases.2
   let ret ← translateLMonoTy bindings op.args[3]!
-  let in_bindings := (sig.map (fun (v, ty) => (LExpr.fvar op.args[2]!.ann v ty))).toArray
-  -- This bindings order -- original, then inputs, is
-  -- critical here. Is this right though?
+  let in_bindings := (sig.map (fun (v, ty) => (LExpr.fvar Strata.SourceRange.none v ty))).toArray
   let orig_bbindings := bindings.boundVars
   -- INVARIANT: The binding order here must exactly match the DDM elaborator's
   -- typing context in `Elab/Core.lean` (the `scopeSelf` branch), which pushes:
