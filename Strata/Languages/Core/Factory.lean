@@ -455,7 +455,7 @@ def seqUpdateFunc : WFLFunc CoreLParams :=
                         (((~Int.Ge : int → int → bool) %0) #0))
                         (((~Int.Lt : int → int → bool) %0)
                           ((~Sequence.length : (Sequence %a) → int) %3))))
-                      (if (%0 == %2) then #false else #true))
+                      ((~Bool.Not : bool → bool) (%0 == %2)))
                 then
                   (((~Sequence.select : (Sequence %a) → int → %a)
                       ((((~Sequence.update : (Sequence %a) → int → %a → (Sequence %a)) %3) %2) %1)) %0)
