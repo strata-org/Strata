@@ -125,7 +125,7 @@ private def computeType (expr : StmtExprMd) : LiftM HighTypeMd := do
   return computeExprType s.model expr
 
 /-- Check if an expression contains any assignments or imperative calls (recursively). -/
-private def containsAssignmentOrImperativeCall (model: SemanticModel) (expr : StmtExprMd) : Bool :=
+def containsAssignmentOrImperativeCall (model: SemanticModel) (expr : StmtExprMd) : Bool :=
   match expr with
   | WithMetadata.mk val _ =>
   match val with

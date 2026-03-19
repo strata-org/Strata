@@ -598,22 +598,26 @@ def pyAnalyzeLaurelToGotoCommand : Command where
 
 def javaGenCommand : Command where
   name := "javaGen"
-  args := [ "dialect-file", "package", "output-dir" ]
+  args := [ "dialect", "package", "output-dir" ]
   flags := [includeFlag]
-  help := "Generate Java source files from a DDM dialect definition. Writes .java files under output-dir."
+  help := "Generate Java source files from a DDM dialect definition. Accepts a dialect name (e.g. Laurel) or a dialect file path."
   callback := fun v pflags => do
     let fm ← pflags.buildDialectFileMap
-    let pd ← Strata.readStrataFile fm v[0]
-    match pd with
-    | .dialect d =>
-      match Strata.Java.generateDialect d v[1] with
-      | .ok files =>
-        Strata.Java.writeJavaFiles v[2] v[1] files
-        IO.println s!"Generated Java files for {d.name} in {v[2]}/{Strata.Java.packageToPath v[1]}"
-      | .error msg =>
-        exitFailure s!"Error generating Java: {msg}"
-    | .program _ =>
-      exitFailure "Expected a dialect file, not a program file."
+    let ld ← fm.getLoaded
+    let d ← if mem : v[0] ∈ ld.dialects then
+      pure ld.dialects[v[0]]
+    else
+      match ← Strata.readStrataFile fm v[0] with
+      | .dialect d => pure d
+      | .program _ => exitFailure "Expected a dialect file, not a program file."
+    match Strata.Java.generateDialect d v[1] with
+    | .ok files =>
+      Strata.Java.writeJavaFiles v[2] v[1] files
+      IO.println s!"Generated Java files for {d.name} in {v[2]}/{Strata.Java.packageToPath v[1]}"
+    | .error msg =>
+      exitFailure s!"Error generating Java: {msg}"
+
+def laurelVerifyOptions : VerifyOptions := { VerifyOptions.default with solver := "z3" }
 
 def deserializeIonToLaurelFiles (bytes : ByteArray) : IO (List Strata.StrataFile) := do
   match Strata.Program.filesFromIon Strata.Laurel.Laurel_map bytes with
@@ -649,7 +653,7 @@ def laurelAnalyzeBinaryCommand : Command where
           types := combinedProgram.types ++ laurelProgram.types
         }
 
-    let diagnostics ← Strata.Laurel.verifyToDiagnosticModels combinedProgram
+    let diagnostics ← Strata.Laurel.verifyToDiagnosticModels combinedProgram laurelVerifyOptions
 
     IO.println s!"==== DIAGNOSTICS ===="
     for diag in diagnostics do
@@ -749,7 +753,7 @@ def laurelAnalyzeCommand : Command where
     match transResult with
     | .error transErrors => exitFailure s!"Translation errors: {transErrors}"
     | .ok laurelProgram =>
-      let results ← Strata.Laurel.verifyToVcResults laurelProgram { VerifyOptions.default with solver := "z3" }
+      let results ← Strata.Laurel.verifyToVcResults laurelProgram laurelVerifyOptions
       match results with
       | .error errors =>
         IO.println s!"==== ERRORS ===="
