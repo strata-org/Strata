@@ -45,6 +45,7 @@ procedure opaque_reveal_hide_seed(x: int) returns ()
 };
 #end
 
+#guard_msgs (drop info) in
 #eval Strata.Boole.verify "cvc5" opaqueRevealHideSeed
 
 example : Strata.smtVCsCorrect opaqueRevealHideSeed := by

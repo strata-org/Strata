@@ -59,7 +59,7 @@ private def fmtHighType : HighType → String
   | .Pure _ => "Pure"
   | .Intersection _ => "Intersection"
   | .TCore s => s!"TCore({s})"
-  | .Top => "Top"
+  | HighType.Unknown => "Unknown"
 
 private def fmtParam (p : Parameter) : String :=
   s!"{p.name}:{fmtHighType p.type.val}"
