@@ -30,7 +30,7 @@ import Strata.Util.Tactics
 open Core (VCResult VCResults VerifyOptions)
 open Core (intAddOp intSubOp intMulOp intSafeDivOp intSafeModOp intSafeDivTOp intSafeModTOp intNegOp intLtOp intLeOp intGtOp intGeOp boolAndOp boolOrOp boolNotOp boolImpliesOp strConcatOp)
 open Core (realAddOp realSubOp realMulOp realDivOp realNegOp realLtOp realLeOp realGtOp realGeOp)
-open Core (float64SafeAddOp float64SafeSubOp float64SafeMulOp float64SafeDivOp float64NegOp)
+open Core (float64AddOp float64SubOp float64MulOp float64DivOp float64SafeAddOp float64SafeSubOp float64SafeMulOp float64SafeDivOp float64NegOp)
 
 namespace Strata.Laurel
 
@@ -86,6 +86,8 @@ structure TranslateState where
   nextId : Nat := 1
   /-- Constants known to the program (field constants, etc.) -/
   model : SemanticModel
+  /-- Overflow check configuration -/
+  overflowChecks : Core.OverflowChecks := {}
 
 /-- The translation monad: state over Id -/
 @[expose] abbrev TranslateM := StateT TranslateState Id
@@ -179,10 +181,10 @@ def translateExpr (expr : StmtExprMd)
     | .And => return binOp boolAndOp
     | .Or => return binOp boolOrOp
     | .Implies => return binOp boolImpliesOp
-    | .Add => return binOp (if isFloat64 then float64SafeAddOp else if isReal then realAddOp else intAddOp)
-    | .Sub => return binOp (if isFloat64 then float64SafeSubOp else if isReal then realSubOp else intSubOp)
-    | .Mul => return binOp (if isFloat64 then float64SafeMulOp else if isReal then realMulOp else intMulOp)
-    | .Div => return binOp (if isFloat64 then float64SafeDivOp else if isReal then realDivOp else intSafeDivOp)
+    | .Add => return binOp (if isFloat64 then (if s.overflowChecks.float64 then float64SafeAddOp else float64AddOp) else if isReal then realAddOp else intAddOp)
+    | .Sub => return binOp (if isFloat64 then (if s.overflowChecks.float64 then float64SafeSubOp else float64SubOp) else if isReal then realSubOp else intSubOp)
+    | .Mul => return binOp (if isFloat64 then (if s.overflowChecks.float64 then float64SafeMulOp else float64MulOp) else if isReal then realMulOp else intMulOp)
+    | .Div => return binOp (if isFloat64 then (if s.overflowChecks.float64 then float64SafeDivOp else float64DivOp) else if isReal then realDivOp else intSafeDivOp)
     | .Mod => return binOp intSafeModOp
     | .DivT => return binOp intSafeDivTOp
     | .ModT => return binOp intSafeModTOp
@@ -636,6 +638,7 @@ def tryTranslatePureToFunction (proc : Procedure) (initState : TranslateState)
 
 structure LaurelTranslateOptions where
   emitResolutionErrors : Bool := true
+  overflowChecks : Core.OverflowChecks := {}
 
 /--
 Translate Laurel Program to Core Program
@@ -685,7 +688,7 @@ def translate (options: LaurelTranslateOptions) (program : Program): Except (Arr
     -- External procedures are completely ignored (not translated to Core).
     let nonExternal := program.staticProcedures.filter (fun p => !p.body.isExternal)
     let (markedPure, procProcs) := nonExternal.partition (·.isFunctional)
-    let initState : TranslateState := {model := model}
+    let initState : TranslateState := {model := model, overflowChecks := options.overflowChecks}
     -- Try to translate each isFunctional procedure to a Core function, collecting errors for failures
     let (pureErrors, pureFuncDecls) := markedPure.foldl (fun (errs, decls) p =>
       match tryTranslatePureToFunction p initState with

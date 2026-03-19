@@ -65,6 +65,18 @@ inductive CheckLevel where
 instance : Inhabited CheckLevel where
   default := .minimal
 
+/-- Configuration for which arithmetic overflow checks to enable.
+    Defaults match C/IEEE 754 semantics: signed BV overflow is UB (checked),
+    unsigned BV wraps (unchecked), float64 overflows to ±∞ (unchecked). -/
+structure OverflowChecks where
+  /-- Check signed bitvector overflow (undefined behavior in C). -/
+  signedBV   : Bool := true
+  /-- Check unsigned bitvector overflow (defined wrapping in C). -/
+  unsignedBV : Bool := false
+  /-- Check float64 overflow to ±∞ (defined in IEEE 754). -/
+  float64    : Bool := false
+  deriving Repr, Inhabited
+
 structure VerifyOptions where
   verbose : VerboseMode
   parseOnly : Bool
@@ -86,11 +98,8 @@ structure VerifyOptions where
   checkMode : VerificationMode
   /-- Check amount: minimal (only necessary checks) or full (both checks for better messages) -/
   checkLevel : CheckLevel
-  /-- Enable unsigned bitvector overflow checks.
-      When true, front-end translators should emit SafeUAdd/SafeUSub/SafeUMul/SafeUNeg
-      instead of the unchecked variants. Currently not wired to any translator —
-      will be connected when a front-end language (Laurel or C) gains BV types. -/
-  unsignedOverflowCheck : Bool
+  /-- Overflow check configuration: which arithmetic overflow checks to enable. -/
+  overflowChecks : OverflowChecks := {}
 
 def VerifyOptions.default : VerifyOptions := {
   verbose := .normal,
@@ -106,7 +115,6 @@ def VerifyOptions.default : VerifyOptions := {
   vcDirectory := .none
   checkMode := .deductive
   checkLevel := .minimal
-  unsignedOverflowCheck := false
 }
 
 instance : Inhabited VerifyOptions where
