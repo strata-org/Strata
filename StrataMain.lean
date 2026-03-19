@@ -435,15 +435,6 @@ def pyAnalyzeLaurelCommand : Command where
       IO.println "\n==== Core Program ===="
       IO.print coreProgram
 
-    -- Inline procedure calls (needed for pyspec precondition assertions to
-    -- be checked at call sites with concrete arguments)
-    let coreProgram ← match Core.Transform.runProgram (targetProcList := .none)
-          (Core.ProcedureInlining.inlineCallCmd
-            (doInline := λ name _ => name ≠ "__main__"))
-          coreProgram .emp with
-      | ⟨.error e, _⟩ => exitInternalError s!"Inlining failed: {e}"
-      | ⟨.ok (_, inlined), _⟩ => pure inlined
-
     -- Verify using Core verifier
     let checkMode ← parseCheckMode pflags
     let checkLevel ← parseCheckLevel pflags
