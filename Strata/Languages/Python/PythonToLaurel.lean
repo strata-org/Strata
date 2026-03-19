@@ -90,6 +90,9 @@ structure TranslationContext where
   currentClassName : Option String := none
   loopBreakLabel : Option String := none
   loopContinueLabel : Option String := none
+  /-- Map from Python identifier to module name for `import` statements.
+      E.g., `import servicelib as s` adds `"s" → "servicelib"`. -/
+  moduleAliases : Std.HashMap String String := {}
 deriving Inhabited
 
 /-! ## Error Handling -/
@@ -517,6 +520,10 @@ partial def translateExpr (ctx : TranslationContext) (e : Python.expr SourceRang
         let className := ctx.currentClassName.get!
         let ty ← lookupFieldHighType ctx className attr.val
         wrapFieldInAny ty fieldExpr
+      else if name.val ∈ ctx.moduleAliases && name.val ∉ ctx.variableTypes.unzip.fst then
+        -- Module attribute access (e.g. sys.argv) — module is not a runtime
+        -- variable, so produce Hole rather than an undeclared Identifier.
+        return mkStmtExprMd .Hole
       else
         -- Regular object.field access
         let objExpr ← translateExpr ctx obj
@@ -593,7 +600,7 @@ partial def reMapFunctionName (ctx: TranslationContext) (fname: String) : String
 partial def isPackage (ctx : TranslationContext) (expr: Python.expr SourceRange) : Bool :=
   let (root, _):= getListAttributes expr
   match root with
-  | .Name _ n _ => n.val ∉ ctx.variableTypes.unzip.fst
+  | .Name _ n _ => n.val ∉ ctx.variableTypes.unzip.fst || n.val ∈ ctx.moduleAliases
   | _ => false
 
 partial def inferExprType (ctx : TranslationContext) (e: Python.expr SourceRange) : Except TranslationError String := do
@@ -799,7 +806,6 @@ partial def translateCall (ctx : TranslationContext)
       let _target_trans ← translateExpr ctx val
       if opt_firstarg.isSome then
         return mkStmtExprMd (.Hole)
-        --return mkStmtExprMd (StmtExpr.InstanceCall target_trans attr.val (trans_args ++ trans_kwords_exprs))
       else
         return mkStmtExprMd (StmtExpr.StaticCall funcName (trans_args ++ trans_kwords_exprs))
   | _ =>  throw (.unsupportedConstruct "Invalid call construct" (toString (repr f)))
@@ -1080,7 +1086,18 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
         | _ => return (ctx, [expr])
     | _ => return (ctx, [expr])
 
-  | .Import _ _ => return (ctx, [mkStmtExprMd .Hole])
+  | .Import _ names => do
+    -- Register each imported module: map Python identifier → module name.
+    -- Supports aliasing: `import servicelib as s` maps "s" → "servicelib".
+    -- Module identifiers are kept OUT of variableTypes so that isPackage
+    -- correctly identifies them as package references.  Attribute access on
+    -- unmodeled modules (e.g. sys.argv) produces Hole via translateExpr.
+    let newModuleAliases := names.val.toList.foldl (fun m a =>
+      let moduleName := a.name
+      let pyIdent := a.asname.getD moduleName
+      m.insert pyIdent moduleName) ctx.moduleAliases
+    let newCtx := { ctx with moduleAliases := newModuleAliases }
+    return (newCtx, [mkStmtExprMd .Hole])
 
   | .ImportFrom _ _ _ _ |.Pass _ => return (ctx, [mkStmtExprMd .Hole])
 
@@ -1753,6 +1770,13 @@ def pythonToLaurel' (info : PreludeInfo)
         procedures := procedures ++ [proc.fst]
       | .ClassDef _ _ _ _ _ _ _ =>
         pure ()  -- Already processed in first pass
+      | .Import _ names =>
+        -- Register module aliases early so they are available to functions
+        -- defined later in the same module.
+        let newAliases := names.val.toList.foldl (fun m a =>
+          m.insert (a.asname.getD a.name) a.name) ctx.moduleAliases
+        ctx := { ctx with moduleAliases := newAliases }
+        otherStmts := otherStmts ++ [stmt]
       | _ =>
         otherStmts := otherStmts ++ [stmt]
 

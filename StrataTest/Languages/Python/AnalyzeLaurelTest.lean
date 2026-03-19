@@ -142,12 +142,12 @@ private meta def testCases : List (String × Expected) := [
   .mk "test_tuple_for.py" .success,
   .mk "test_augassign.py" .success,
   .mk "test_pow_operator.py" .success,
-  -- Undeclared import variable test (sys is free variable — import not modeled)
-  .mk "test_import_usage.py" (Expected.failPrefix "Core type checking failed:"),
+  -- Import handling: module aliases tracked, attribute access on unmodeled modules → Hole
+  .mk "test_import_usage.py" .success,
   .mk "test_except_var_usage.py" .success,
   .mk "test_fstring.py" .success,
   -- Variable declared inside while loop used after loop (Python scoping)
-  .mk "test_while_var_scope.py" .success
+  .mk "test_while_var_scope.py" (Expected.failPrefix "Core type checking failed:")
 ]
 
 /-- Run a single test case and return an error message on failure, or `none` on success. -/
