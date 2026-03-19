@@ -523,7 +523,6 @@ partial def translateExpr (ctx : TranslationContext) (e : Python.expr SourceRang
   -- Abstract: return havoc'd tuple (sound abstraction)
   | .Tuple .. => return mkStmtExprMd .Hole
 
-
   -- List comprehension: [x for x in items]
   -- Abstract: return havoc'd list (sound abstraction)
   | .ListComp .. => return mkStmtExprMd .Hole
@@ -1237,9 +1236,10 @@ def translateFunction (ctx : TranslationContext) (sourceRange: SourceRange) (fun
       inputs:= inputs ++ [{ name := "kwargs", type := paramType }]
 
     -- Translate return type
+    
 
-
-    -- Determine outputs based on return type
+    -- Declare an output parameter when the function has a return type annotation.
+    -- Return statements explicitly assign to LaurelResult and exit $body.
     let outputs : List Parameter :=
       match funcDecl.ret with
       | none => []
