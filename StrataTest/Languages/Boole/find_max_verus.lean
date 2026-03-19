@@ -80,4 +80,44 @@ spec {
 };
 #end
 
-#eval Strata.Boole.verify "cvc5" findMax
+/-- info: Obligation: entry_invariant_0_0
+Property: assert
+Result: ✅ pass
+
+Obligation: entry_invariant_0_1
+Property: assert
+Result: ✅ pass
+
+Obligation: entry_invariant_0_2
+Property: assert
+Result: ✅ pass
+
+Obligation: entry_invariant_0_3
+Property: assert
+Result: ❓ unknown
+
+Obligation: arbitrary_iter_maintain_invariant_0_0
+Property: assert
+Result: ✅ pass
+
+Obligation: arbitrary_iter_maintain_invariant_0_1
+Property: assert
+Result: ✅ pass
+
+Obligation: arbitrary_iter_maintain_invariant_0_2
+Property: assert
+Result: ✅ pass
+
+Obligation: arbitrary_iter_maintain_invariant_0_3
+Property: assert
+Result: ✅ pass
+
+Obligation: findMax_ensures_1_1165
+Property: assert
+Result: ✅ pass
+
+Obligation: findMax_ensures_2_1228
+Property: assert
+Result: ✅ pass-/
+#guard_msgs in
+#eval Strata.Boole.verify "cvc5" findMax (options := .quiet)

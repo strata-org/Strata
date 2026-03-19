@@ -3,10 +3,10 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-
+module
 import Strata.Languages.Laurel.Grammar.LaurelGrammar
 import Strata.Languages.Laurel.Grammar.ConcreteToAbstractTreeTranslator
-import Strata.Languages.Laurel.Laurel
+public import Strata.Languages.Laurel.Laurel
 
 namespace Strata
 namespace Python
@@ -79,6 +79,11 @@ datatype ListAny {
   ListAny_cons (head: Any, tail: ListAny)
 }
 
+datatype ListStr {
+  ListStr_nil (),
+  ListStr_cons (head: string, tail: ListStr)
+}
+
 datatype DictStrAny {
   DictStrAny_empty (),
   DictStrAny_cons (key: string, val: Any, tail: DictStrAny)
@@ -91,7 +96,7 @@ datatype FIRST_END_MARKER { }
 /--
 Parse the Laurel DDM prelude into a Laurel Program.
 -/
-def pythonRuntimeLaurelPart : Laurel.Program :=
+public def pythonRuntimeLaurelPart : Laurel.Program :=
   match Laurel.TransM.run none (Laurel.parseProgram pythonRuntimeLaurelPartDDM) with
   | .ok p => p
   | .error e => dbg_trace s!"SOUND BUG: Failed to parse Python runtime Laurel part: {e}"; default
