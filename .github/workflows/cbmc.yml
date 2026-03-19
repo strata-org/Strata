@@ -95,8 +95,12 @@ jobs:
       - name: Run legacy CBMC test (C_Simp)
         shell: bash
         run: |
-          export CBMC_DIR="$(dirname $(which cbmc))/"
-          ./Strata/Backends/CBMC/run_strata_cbmc.sh Strata/Backends/CBMC/tests/simpleTest.csimp.st
+          lake exe StrataToCBMC Strata/Backends/CBMC/tests/simpleTest.csimp.st > symtab.json
+          symtab2gb symtab.json --out full.goto
+          goto-instrument --enforce-contract simpleTest full.goto full_checking.goto
+          OUTPUT=$(cbmc full_checking.goto --function simpleTest --trace)
+          echo "$OUTPUT"
+          [[ "$OUTPUT" == *"VERIFICATION SUCCESSFUL"* ]]
       - name: Run Python CBMC pipeline tests
         shell: bash
         run: |
