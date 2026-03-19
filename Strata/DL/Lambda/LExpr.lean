@@ -266,6 +266,7 @@ def LExpr.sizeOf: LExpr T → Nat
 /--
 Get type of a constant `c`
 -/
+@[expose]
 def LConst.ty (c: LConst) : LMonoTy :=
   match c with
   | .intConst _ => .int
