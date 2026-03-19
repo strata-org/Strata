@@ -177,6 +177,52 @@ def strSubstrFunc : WFLFunc CoreLParams :=
   polyUneval "Str.Substr" []
     [("x", mty[string]), ("i", mty[int]), ("n", mty[int])] mty[string]
 
+def strToLowerFunc : WFLFunc CoreLParams :=
+  unaryOp "Str.ToLower" String.toLower (axioms := [
+    -- Idempotence: `toLower(toLower(s)) == toLower(s)`
+    esM[∀ (string): -- %0 s
+        {((~Str.ToLower : string → string) ((~Str.ToLower : string → string) %0))}
+        ((~Str.ToLower : string → string) ((~Str.ToLower : string → string) %0))
+        == ((~Str.ToLower : string → string) %0)],
+    -- Length preservation: `length(toLower(s)) == length(s)`
+    esM[∀ (string): -- %0 s
+        {((~Str.ToLower : string → string) %0)}
+        ((~Str.Length : string → int) ((~Str.ToLower : string → string) %0))
+        == ((~Str.Length : string → int) %0)],
+    -- Concat distributivity: `toLower(s1 ++ s2) == toLower(s1) ++ toLower(s2)`
+    -- `str.concat` is a built-in SMT op so we elide any trigger here.
+    esM[∀ (string): -- %1 s1
+        (∀ (string): -- %0 s2
+          ((~Str.ToLower : string → string)
+            (((~Str.Concat : string → string → string) %1) %0))
+          == (((~Str.Concat : string → string → string)
+                ((~Str.ToLower : string → string) %1))
+                ((~Str.ToLower : string → string) %0)))]
+  ])
+
+def strToUpperFunc : WFLFunc CoreLParams :=
+  unaryOp "Str.ToUpper" String.toUpper (axioms := [
+    -- Idempotence: `toUpper(toUpper(s)) == toUpper(s)`
+    esM[∀ (string): -- %0 s
+        {((~Str.ToUpper : string → string) ((~Str.ToUpper : string → string) %0))}
+        ((~Str.ToUpper : string → string) ((~Str.ToUpper : string → string) %0))
+        == ((~Str.ToUpper : string → string) %0)],
+    -- Length preservation: `length(toUpper(s)) == length(s)`
+    esM[∀ (string): -- %0 s
+        {((~Str.ToUpper : string → string) %0)}
+        ((~Str.Length : string → int) ((~Str.ToUpper : string → string) %0))
+        == ((~Str.Length : string → int) %0)],
+    -- Concat distributivity: `toUpper(s1 ++ s2) == toUpper(s1) ++ toUpper(s2)`
+    -- `str.concat` is a built-in SMT op so we elide any trigger here.
+    esM[∀ (string): -- %1 s1
+        (∀ (string): -- %0 s2
+          ((~Str.ToUpper : string → string)
+            (((~Str.Concat : string → string → string) %1) %0))
+          == (((~Str.Concat : string → string → string)
+                ((~Str.ToUpper : string → string) %1))
+                ((~Str.ToUpper : string → string) %0)))]
+  ])
+
 def strToRegexFunc : WFLFunc CoreLParams :=
   unaryFuncUneval "Str.ToRegEx" mty[string] mty[regex]
 
@@ -366,6 +412,8 @@ def WFFactory : Lambda.WFLFactory CoreLParams :=
   strLengthFunc,
   strConcatFunc,
   strSubstrFunc,
+  strToLowerFunc,
+  strToUpperFunc,
   strToRegexFunc,
   strInRegexFunc,
   reAllFunc,
@@ -483,6 +531,8 @@ def boolNotOp : Expression.Expr := (@boolNotFunc CoreLParams _).opExpr
 def strLengthOp : Expression.Expr := strLengthFunc.opExpr
 def strConcatOp : Expression.Expr := strConcatFunc.opExpr
 def strSubstrOp : Expression.Expr := strSubstrFunc.opExpr
+def strToLowerOp : Expression.Expr := strToLowerFunc.opExpr
+def strToUpperOp : Expression.Expr := strToUpperFunc.opExpr
 def strToRegexOp : Expression.Expr := strToRegexFunc.opExpr
 def strInRegexOp : Expression.Expr := strInRegexFunc.opExpr
 def reAllOp : Expression.Expr := reAllFunc.opExpr

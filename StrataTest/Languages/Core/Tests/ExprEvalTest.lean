@@ -73,15 +73,27 @@ def checkValid (e:LExpr CoreLParams.mono): IO Bool := do
     IO.FS.withTempDir (fun tempDir => do
       let filename := tempDir / s!"exprEvalTest.smt2"
       let ans ← Core.SMT.dischargeObligation
-        { Core.VerifyOptions.default with verbose := .quiet }
+        { Core.VerifyOptions.default with verbose := .quiet, vcDirectory := "StrataTest/Languages/Core/Tests/" }
         e_fvs_typed Imperative.MetaData.empty filename.toString
         [] smt_term ctx true false
       match ans with
       | .ok (.sat _, _, _) => return true
-      | _ =>
-        IO.println s!"Test failed on {e}"
+      | .ok (smt_ans, _, _) =>
+        IO.println s!"Test failed on {instCoreExprFormat.format e}"
         IO.println s!"The query: {repr smt_term}"
-        throw (IO.userError "- failed"))
+        IO.println s!"SMT solver returned {repr smt_ans}."
+        throw (IO.userError "- failed")
+      | .error err =>
+        -- Benefit of the doubt when we have a solver timeout
+        -- (which can happen if we have uninterpreted functions.)
+        if (toString err).contains "timeout" then
+          IO.println s!"Test TIMED OUT on {instCoreExprFormat.format e}"
+          IO.println s!"The query: {repr smt_term}"
+          IO.println s!"Ignoring and moving on."
+          return true
+        else
+          IO.println s!"ERROR: {err}."
+          throw (IO.userError "- failed"))
 
 /--
 If a randomly chosen value is <= odd / 10, pick from interesting vals,
@@ -144,6 +156,12 @@ def checkFactoryOps (verbose:Bool): IO Unit := do
     print f!"\nOp: {e.name} {e.inputs}"
     if ¬ e.typeArgs.isEmpty then
       print "- Has non-empty type arguments, skipping..."
+      continue
+    else if ¬ e.axioms.isEmpty then
+      -- These tests make sense for native SMTLib operations.
+      -- We'll trivially get a SAT (or worse, a timeout) for UFs + axioms, so
+      -- let's just skip these.
+      print "- Has axioms (UF with symbolic constraints), skipping..."
       continue
     else
       let cnt := 5

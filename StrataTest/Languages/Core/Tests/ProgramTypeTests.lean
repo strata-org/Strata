@@ -138,6 +138,8 @@ info: ok: [(type Foo (a : Type, b : Type);
   func Str.Length :  ((x : string)) → int;
   func Str.Concat :  ((x : string) (y : string)) → string;
   func Str.Substr :  ((x : string) (i : int) (n : int)) → string;
+  func Str.ToLower :  ((x : string)) → string;
+  func Str.ToUpper :  ((x : string)) → string;
   func Str.ToRegEx :  ((x : string)) → regex;
   func Str.InRegEx :  ((x : string) (y : regex)) → bool;
   func Re.All :  () → regex;
