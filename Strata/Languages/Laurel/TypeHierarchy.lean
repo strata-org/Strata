@@ -99,7 +99,7 @@ Returns true if the type or any of its ancestors declares the field.
 def canReachField (model : SemanticModel) (typeName : Identifier) (fieldName : Identifier) : Bool :=
   match model.get fieldName with
   | .field owner _ => ((computeAncestors model typeName).find? (fun t => t.name == owner)).isSome
-  | _ => panic! s!"{fieldName} did not resolve to a field"
+  | _ => false -- recover from a resolution error
 
 /--
 Check if a field is inherited through multiple parent paths (diamond inheritance).
@@ -164,7 +164,7 @@ def validateDiamondFieldAccessesForStmtExpr (model : SemanticModel)
 Validate a Laurel program for diamond-inherited field accesses.
 Returns an array of DiagnosticModel errors.
 -/
-def validateDiamondFieldAccesses (model: SemanticModel) (program : Program) : Array DiagnosticModel :=
+def validateDiamondFieldAccesses (model: SemanticModel) (program : Program) : List DiagnosticModel :=
   let errors := program.staticProcedures.foldl (fun acc proc =>
     let bodyErrors := match proc.body with
       | .Transparent bodyExpr => validateDiamondFieldAccessesForStmtExpr model bodyExpr
@@ -177,21 +177,21 @@ def validateDiamondFieldAccesses (model: SemanticModel) (program : Program) : Ar
       | .Abstract postconds => postconds.foldl (fun acc p => acc ++ validateDiamondFieldAccessesForStmtExpr model p) []
       | .External => []
     acc ++ bodyErrors) []
-  errors.toArray
+  errors
 
 /--
 Lower `IsType target ty` to Laurel-level map lookups:
   `select(select(ancestorsPerType(), Composite..typeTag!(target)), TypeName_TypeTag())`
 -/
 def lowerIsType (target : StmtExprMd) (ty : HighTypeMd) (md : Imperative.MetaData Core.Expression) : StmtExprMd :=
-  let typeName := match ty.val with
-    | .UserDefined name => name.text
-    | _ => panic! s!"IsType: expected UserDefined type"
-  let typeTag := mkMd (.StaticCall "Composite..typeTag!" [target])
-  let ancestorsPerType := mkMd (.StaticCall "ancestorsPerType" [])
-  let innerMap := mkMd (.StaticCall "select" [ancestorsPerType, typeTag])
-  let typeConst := mkMd (.StaticCall (mkId $ typeName ++ "_TypeTag") [])
-  ⟨.StaticCall "select" [innerMap, typeConst], md⟩
+  match ty.val with
+    | .UserDefined name => let typeName := name.text
+        let typeTag := mkMd (.StaticCall "Composite..typeTag!" [target])
+        let ancestorsPerType := mkMd (.StaticCall "ancestorsPerType" [])
+        let innerMap := mkMd (.StaticCall "select" [ancestorsPerType, typeTag])
+        let typeConst := mkMd (.StaticCall (mkId $ typeName ++ "_TypeTag") [])
+        ⟨.StaticCall "select" [innerMap, typeConst], md⟩
+    | _ => ⟨ .Hole, md ⟩
 
 /-- State for the type hierarchy rewrite monad -/
 structure THState where
