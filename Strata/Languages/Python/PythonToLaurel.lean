@@ -523,26 +523,6 @@ partial def translateExpr (ctx : TranslationContext) (e : Python.expr SourceRang
   -- Abstract: return havoc'd tuple (sound abstraction)
   | .Tuple .. => return mkStmtExprMd .Hole
 
-  | .Slice _ start stop _ =>
-      match start.val, stop.val with
-        | some start, some stop =>
-            let start ← translateExpr ctx start
-            let stop ← translateExpr ctx stop
-            let start := mkStmtExprMd (.StaticCall "Any..as_int!" [start])
-            let stop := mkStmtExprMd (.StaticCall "Some" [mkStmtExprMd (.StaticCall "Any..as_int!" [stop])])
-            return mkStmtExprMd (.StaticCall "from_Range" [start, stop])
-        | some start, none =>
-            let start ← translateExpr ctx start
-            let start := mkStmtExprMd (.StaticCall "Any..as_int!" [start])
-            return mkStmtExprMd (.StaticCall "from_Range" [start, optNone])
-        | none ,some stop =>
-            let start := mkStmtExprMd (.LiteralInt 0)
-            let stop ← translateExpr ctx stop
-            let stop := mkStmtExprMd (.StaticCall "Some" [mkStmtExprMd (.StaticCall "Any..as_int!" [stop])])
-            return mkStmtExprMd (.StaticCall "from_Range" [start, stop])
-        | _ , _ =>
-            let start := mkStmtExprMd (.LiteralInt 0)
-            return mkStmtExprMd (.StaticCall "from_Range" [start, optNone])
 
   -- List comprehension: [x for x in items]
   -- Abstract: return havoc'd list (sound abstraction)
@@ -984,15 +964,15 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
     let whileWrapped := mkStmtExprMdWithLoc (StmtExpr.Block [whileStmt] (some breakLabel)) md
     return (loopCtx, [whileWrapped])
 
-  -- Return statement
+  -- Return statement: assign to the LaurelResult output parameter, then exit $body.
   | .Return _ value => do
-    let retVal ← match value.val with
+    let stmts ← match value.val with
       | some expr => do
         let e ← translateExpr ctx expr
-        .ok (some e)
-      | none => .ok none
-    let retStmt := mkStmtExprMd (StmtExpr.Return retVal)
-    return (ctx, [retStmt])
+        let assign := mkStmtExprMd (StmtExpr.Assign [mkStmtExprMd (StmtExpr.Identifier "LaurelResult")] e)
+        .ok [assign, mkStmtExprMd (StmtExpr.Exit "$body")]
+      | none => .ok [mkStmtExprMd (StmtExpr.Exit "$body")]
+    return (ctx, stmts)
 
   -- Assert statement
   | .Assert _ test _msg => do
