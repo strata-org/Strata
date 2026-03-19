@@ -1048,7 +1048,8 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
         else AnyTy
       mkStmtExprMd (StmtExpr.LocalVariable (name : String) ty (some (mkStmtExprMd .Hole)))
     let hoistedCtx := { ctx with variableTypes := ctx.variableTypes ++
-      (allNewDecls.map fun (n, ty) => (n, ty)) }
+      (allNewDecls.map fun (n, ty) =>
+        if ty ∈ ctx.compositeTypeNames then (n, ty) else (n, PyLauType.Any)) }
 
     -- Translate try body (with hoisted context so inner decls become assigns)
     let (bodyCtx, bodyStmts) ← translateStmtList hoistedCtx body.val.toList
