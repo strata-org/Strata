@@ -137,19 +137,17 @@ private meta def testCases : List (String × Expected) := [
   .mk "test_positional_missing.py" $
     .fail "User code error: 'delete_item' called with missing required arguments: [Key]",
   -- Unsupported Python construct tests (expected failures)
-  .mk "test_slice.py" (Expected.failPrefix "Python to Laurel translation failed: Unsupported construct: Expression type not yet supported\nAST: Strata.Python.expr.Slice"),
-  .mk "test_ternary.py" (Expected.failPrefix "Python to Laurel translation failed: Unsupported construct: Expression type not yet supported\nAST: Strata.Python.expr.IfExp"),
-  .mk "test_tuple_for.py" (Expected.failPrefix "Python to Laurel translation failed: Unsupported construct: Only simple variable in for target supported"),
-  .mk "test_augassign.py" (Expected.failPrefix "Python to Laurel translation failed: Unsupported construct: Statement type not yet supported\nAST: Strata.Python.stmt.AugAssign"),
-  .mk "test_pow_operator.py" (Expected.failPrefix "Python to Laurel translation failed: Unsupported construct: Binary operator not yet supported: Strata.Python.operator.Pow"),
+  .mk "test_slice.py" .success,
+  .mk "test_ternary.py" .success,
+  .mk "test_tuple_for.py" .success,
+  .mk "test_augassign.py" .success,
+  .mk "test_pow_operator.py" .success,
   -- Undeclared import variable test (sys is free variable — import not modeled)
   .mk "test_import_usage.py" (Expected.failPrefix "Core type checking failed:"),
-  -- Exception variable typed as Composite (PythonError) but used where Any expected
-  .mk "test_except_var_usage.py" (Expected.failPrefix "Core type checking failed: Impossible to unify"),
-  -- f-string starting with variable: FormattedValue not yet supported
-  .mk "test_fstring.py" (Expected.failPrefix "Python to Laurel translation failed: Unsupported construct: Expression type not yet supported\nAST: Strata.Python.expr.FormattedValue"),
+  .mk "test_except_var_usage.py" .success,
+  .mk "test_fstring.py" .success,
   -- Variable declared inside while loop used after loop (Python scoping)
-  .mk "test_while_var_scope.py" (Expected.failPrefix "Core type checking failed:")
+  .mk "test_while_var_scope.py" .success
 ]
 
 /-- Run a single test case and return an error message on failure, or `none` on success. -/
