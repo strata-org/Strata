@@ -772,9 +772,12 @@ partial def translateCall (ctx : TranslationContext)
   | .Attribute _ val _attr _ =>
       let _target_trans ← translateExpr ctx val
       if opt_firstarg.isSome then
-        -- If the resolved method name is a known procedure (e.g. from pyspec),
-        -- emit StaticCall so it can be inlined and its assertions checked.
-        if funcName ∈ ctx.preludeProcedures then
+        -- Only emit StaticCall when the caller type was resolved through a
+        -- pyspec type alias, indicating the procedure has precondition assertions.
+        let callerTy := match f with
+          | .Attribute _ v _ _ => (inferExprType ctx v).toOption.getD ""
+          | _ => ""
+        if ctx.typeAliases.contains callerTy && funcName ∈ ctx.preludeProcedures then
           return mkStmtExprMd (StmtExpr.StaticCall funcName (trans_args ++ trans_kwords_exprs))
         else
           return mkStmtExprMd (.Hole)
@@ -827,9 +830,8 @@ partial def translateAssign  (ctx : TranslationContext)
         let assignStmts := match rhs_trans.val with
         | .StaticCall fnname args =>
             if fnname.text ∈ ctx.compositeTypeNames then
-              let resolvedName := mkId (resolveTypeName ctx fnname.text)
-              let newExpr := mkStmtExprMd (StmtExpr.New resolvedName)
-              let varType := mkHighTypeMd (.UserDefined resolvedName)
+              let newExpr := mkStmtExprMd (StmtExpr.New fnname)
+              let varType := mkHighTypeMd (.UserDefined fnname)
               if n.val ∈ ctx.variableTypes.unzip.1 then
                 let assignStmt := mkStmtExprMd (StmtExpr.Assign [targetExpr] newExpr)
                 let initStmt := mkStmtExprMd (StmtExpr.InstanceCall (mkStmtExprMd (StmtExpr.Identifier n.val)) "__init__" args)
@@ -852,7 +854,6 @@ partial def translateAssign  (ctx : TranslationContext)
         newctx := match rhs_trans.val with
         | .StaticCall fnname _ =>
             if fnname.text ∈ ctx.compositeTypeNames then
-              let resolvedName := resolveTypeName ctx fnname.text
               let resolved := resolveTypeName ctx fnname.text
               {newctx with variableTypes:= newctx.variableTypes ++ [(n.val, resolved)]}
             else newctx
