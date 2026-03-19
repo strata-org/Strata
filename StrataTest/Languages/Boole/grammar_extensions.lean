@@ -90,6 +90,7 @@ procedure test_arrays () returns ()
 
 #end
 
+#guard_msgs (drop info) in
 #eval Strata.Boole.verify "cvc5" grammarExtensions
 
 example : Strata.smtVCsCorrect grammarExtensions := by

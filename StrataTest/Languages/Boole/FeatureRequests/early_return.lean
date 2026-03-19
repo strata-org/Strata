@@ -47,7 +47,11 @@ spec {
 };
 #end
 
-#eval Strata.Boole.verify "cvc5" earlyReturnSeed
+/-- info: Obligation: abs_seed_ensures_0_643
+Property: assert
+Result: ✅ pass-/
+#guard_msgs in
+#eval Strata.Boole.verify "cvc5" earlyReturnSeed (options := .quiet)
 
 example : Strata.smtVCsCorrect earlyReturnSeed := by
   gen_smt_vcs

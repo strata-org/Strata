@@ -162,7 +162,59 @@ spec
 
 #end
 
-#eval Strata.Boole.verify "cvc5" verification_coverage
+/-- info: Obligation: entry_invariant_0_0
+Property: assert
+Result: ✅ pass
+
+Obligation: arbitrary_iter_maintain_invariant_0_0
+Property: assert
+Result: ✅ pass
+
+Obligation: sum_ensures_1_652
+Property: assert
+Result: ✅ pass
+
+Obligation: testEnsuresCallee_ensures_3_1982
+Property: assert
+Result: ✅ pass
+
+Obligation: testEnsuresCallee_ensures_4_2024
+Property: assert
+Result: ✅ pass
+
+Obligation: (Origin_testEnsuresCallee_Requires)testEnsuresCallee_requires_2_1940
+Property: assert
+Result: ✅ pass
+
+Obligation: (Origin_testEnsuresCallee_Requires)testEnsuresCallee_requires_2_1940
+Property: assert
+Result: ✅ pass
+
+Obligation: assert_7_2457
+Property: assert
+Result: ✅ pass
+
+Obligation: testEnsuresCaller_ensures_6_2218
+Property: assert
+Result: ✅ pass
+
+Obligation: obviouslyUnconstrainedCode_ensures_10_2722
+Property: assert
+Result: ✅ pass
+
+Obligation: contradictoryEnsuresClause_ensures_12_3048
+Property: assert
+Result: ✅ pass
+
+Obligation: (Origin_contradictoryEnsuresClause_Requires)contradictoryEnsuresClause_requires_11_2978
+Property: assert
+Result: ✅ pass
+
+Obligation: usesSomeInteger_ensures_15_3713
+Property: assert
+Result: ✅ pass-/
+#guard_msgs in
+#eval Strata.Boole.verify "cvc5" verification_coverage (options := .quiet)
 
 example : Strata.smtVCsCorrect verification_coverage := by
   gen_smt_vcs

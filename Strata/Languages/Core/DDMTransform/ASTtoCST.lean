@@ -201,6 +201,9 @@ def lmonoTyToCoreType {M} [Inhabited M] (ty : Lambda.LMonoTy) :
     let kty ← lmonoTyToCoreType k
     let vty ← lmonoTyToCoreType v
     pure (.Map default kty vty)
+  | .tcons "Sequence" [e] => do
+    let ety ← lmonoTyToCoreType e
+    pure (.Sequence default ety)
   | .tcons "arrow" [a, b] => do
     let aty ← lmonoTyToCoreType a
     let bty ← lmonoTyToCoreType b
@@ -371,6 +374,7 @@ def handleZeroaryOps {M} [Inhabited M] (name : String)
   | "Re.All" => pure (.re_all default)
   | "Re.AllChar" => pure (.re_allchar default)
   | "Re.None" => pure (.re_none default)
+  -- TODO: seq_empty is not yet parseable (see Grammar.lean); handle here when added.
   | _ => do
     ToCSTM.logError "lopToExpr" "0-ary op not found" name
     pure (.re_none default)
@@ -391,6 +395,8 @@ def handleUnaryOps {M} [Inhabited M] (name : String) (arg : CoreDDM.Expr M)
   | "Re.Star" => pure (.re_star default arg)
   | "Re.Plus" => pure (.re_plus default arg)
   | "Re.Comp" => pure (.re_comp default arg)
+  -- Sequences
+  | "Sequence.length" => pure (.seq_length default ty arg)
   -- Bitvectors
   | "Bv1.Not" => pure (.bvnot default (.bv1 default) arg)
   | "Bv1.Neg" => pure (.neg_expr default (.bv1 default) arg)
@@ -527,6 +533,13 @@ def handleBinaryOps {M} [Inhabited M] (name : String)
   | "Bool.Equiv" => pure (.equiv default arg1 arg2)
   -- Map operations
   | "select" => pure (.map_get default ty ty arg1 arg2)
+  -- Sequence operations
+  | "Sequence.select" => pure (.seq_select default ty arg1 arg2)
+  | "Sequence.append" => pure (.seq_append default ty arg1 arg2)
+  | "Sequence.build" => pure (.seq_build default ty arg1 arg2)
+  | "Sequence.contains" => pure (.seq_contains default ty arg1 arg2)
+  | "Sequence.take" => pure (.seq_take default ty arg1 arg2)
+  | "Sequence.drop" => pure (.seq_drop default ty arg1 arg2)
   -- String and Regex operations
   | "Str.Concat" => pure (.str_concat default arg1 arg2)
   | "Str.InRegEx" => pure (.str_inregex default arg1 arg2)
@@ -543,6 +556,8 @@ def handleTernaryOps {M} [Inhabited M] (name : String)
   match name with
   -- Maps
   | "update" => pure (.map_set default ty ty arg1 arg2 arg3)
+  -- Sequences
+  | "Sequence.update" => pure (.seq_update default ty arg1 arg2 arg3)
   -- Strings and regexes
   | "Str.Substr" => pure (.str_substr default arg1 arg2 arg3)
   | "Re.Loop" => pure (.re_loop default arg1 arg2 arg3)
