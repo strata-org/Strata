@@ -170,7 +170,7 @@ def translateExpr (expr : StmtExprMd)
       let isReal := match (computeExprType model e).val with
         | .TReal => true | _ => false
       return .app Strata.SourceRange.none (if isReal then realNegOp else intNegOp) re
-    | _ => panic! s!"translateExpr: Invalid unary op: {repr op}"
+    | _ => panic! s!"translateExpr: Invalid unary op: {repr op}" -- nopanic:ok
   | .PrimitiveOp op [e1, e2] =>
     let re1 ← translateExpr e1 boundVars isPureContext
     let re2 ← translateExpr e2 boundVars isPureContext
