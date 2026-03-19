@@ -270,15 +270,34 @@ def argToParameter (arg : Arg) : ToLaurelM Parameter := do
 private def mkExpr (e : StmtExpr) : WithMetadata StmtExpr :=
   { val := e, md := default }
 
-/-- Map a HighType to the Any datatype tester name, if applicable.
-    Returns `none` for types that don't map to a single Any constructor. -/
-private def anyTesterForType : HighType → Option String
-  | .TString => some "Any..isfrom_string"
-  | .TInt => some "Any..isfrom_int"
-  | .TBool => some "Any..isfrom_bool"
-  | .TCore "DictStrAny" => some "Any..isfrom_Dict"
-  | .TCore "ListAny" => some "Any..isfrom_ListAny"
-  | _ => none
+/-- Build a precondition expression for a parameter based on its original type.
+    For simple types, emits `Any..isfrom_string(x)`.
+    For optional types, emits `Any..isfrom_none(x) || Any..isfrom_string(x)`.
+    Reports a warning for unrecognized types so gaps are visible. -/
+private def anyPreconditionForParam (param : Parameter) : ToLaurelM (Option (WithMetadata StmtExpr)) := do
+  let paramRef := mkExpr (.Identifier param.name)
+  let mkCall (tester : String) := mkExpr (.StaticCall tester [paramRef])
+  match param.type.val with
+  | .TVoid => return none
+  | .TCore "Any" => return none
+  | .TString => return some (mkCall "Any..isfrom_string")
+  | .TInt => return some (mkCall "Any..isfrom_int")
+  | .TBool => return some (mkCall "Any..isfrom_bool")
+  | .TReal => return some (mkCall "Any..isfrom_float")
+  | .TCore "DictStrAny" => return some (mkCall "Any..isfrom_Dict")
+  | .TCore "ListAny" => return some (mkCall "Any..isfrom_ListAny")
+  | .TCore "ListStr" => return some (mkCall "Any..isfrom_ListAny")
+  | .UserDefined _ => return some (mkCall "Any..isfrom_ClassInstance")
+  | .TCore "StrOrNone" =>
+    return some (mkExpr (.PrimitiveOp .Or [mkCall "Any..isfrom_none", mkCall "Any..isfrom_string"]))
+  | .TCore "IntOrNone" =>
+    return some (mkExpr (.PrimitiveOp .Or [mkCall "Any..isfrom_none", mkCall "Any..isfrom_int"]))
+  | .TCore "BoolOrNone" =>
+    return some (mkExpr (.PrimitiveOp .Or [mkCall "Any..isfrom_none", mkCall "Any..isfrom_bool"]))
+  | other =>
+    reportError default
+      s!"No Any precondition tester for type '{repr other}' on parameter '{param.name}'"
+    return none
 
 /-- Map a HighType to the Any constructor name for wrapping typed → Any. -/
 private def anyConstructorForType : HighType → Option String
@@ -334,12 +353,9 @@ def funcDeclToLaurel (procName : String) (func : FunctionDecl)
   let anyTy : HighTypeMd := mkCore "Any"
   let inputs := typedInputs.map fun p => { p with type := anyTy }
   -- Generate preconditions: requires Any..isfrom_string(Bucket) etc.
-  let preconditions := typedInputs.toList.filterMap fun p =>
-    match anyTesterForType p.type.val with
-    | some testerName =>
-      let paramRef := mkExpr (.Identifier p.name)
-      some (mkExpr (.StaticCall testerName [paramRef]))
-    | none => none
+  -- For optional types, generate disjunctions: isfrom_none(x) || isfrom_string(x)
+  let preconditions ← typedInputs.toList.filterMapM fun p =>
+    anyPreconditionForParam p
   let retType ← specTypeToLaurelType func.returnType
   -- Outputs also use Any type; postconditions could constrain them
   let outputs : List Parameter :=

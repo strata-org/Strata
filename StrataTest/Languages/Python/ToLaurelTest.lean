@@ -82,7 +82,7 @@ private def noneAtom := SpecAtomType.noneType
 
 /--
 info: procedure returns_int(x: Core(Any)) returns(result: Core(Any)) requires Any..isfrom_string(x)
-procedure returns_bool(a: Core(Any), b: Core(Any)) returns(result: Core(Any)) requires Any..isfrom_int(a)
+procedure returns_bool(a: Core(Any), b: Core(Any)) returns(result: Core(Any)) requires Any..isfrom_int(a) requires Any..isfrom_float(b)
 procedure returns_real(flag: Core(Any)) returns(result: Core(Any)) requires Any..isfrom_bool(flag)
 procedure with_kwonly(x: Core(Any), verbose: Core(Any)) returns(result: Core(Any)) requires Any..isfrom_int(x) requires Any..isfrom_bool(verbose)
 -/
@@ -104,7 +104,7 @@ procedure with_kwonly(x: Core(Any), verbose: Core(Any)) returns(result: Core(Any
 
 /--
 info: procedure takes_any(x: Core(Any)) returns(result: Core(Any)) requires Any..isfrom_string(x)
-procedure takes_list(items: Core(Any)) returns(result: Core(Any))
+procedure takes_list(items: Core(Any)) returns(result: Core(Any)) requires Any..isfrom_ListAny(items)
 procedure returns_dict() returns(result: Core(Any))
 procedure returns_bytes() returns(result: Core(Any))
 procedure typed_list() returns(result: Core(Any))
@@ -151,7 +151,7 @@ procedure str_enum() returns(result: Core(Any))
 /--
 info: procedure opt_str() returns(result: Core(Any))
 procedure opt_int() returns(result: Core(Any))
-procedure opt_bool(x: Core(Any)) returns(result: Core(Any))
+procedure opt_bool(x: Core(Any)) returns(result: Core(Any)) requires Any..isfrom_none(x) | Any..isfrom_string(x)
 procedure opt_float() returns(result: Core(Any))
 procedure opt_list() returns(result: Core(Any))
 procedure opt_dict() returns(result: Core(Any))
@@ -274,7 +274,7 @@ procedure takes_none(x: Core(Any))
 
 /--
 info: type Foo
-procedure uses_class(x: Core(Any)) returns(result: Core(Any))
+procedure uses_class(x: Core(Any)) returns(result: Core(Any)) requires Any..isfrom_ClassInstance(x)
 -/
 #guard_msgs in
 #eval runTest #[
