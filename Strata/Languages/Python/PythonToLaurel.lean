@@ -1004,16 +1004,16 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
     let whileWrapped := mkStmtExprMdWithLoc (StmtExpr.Block [whileStmt] (some breakLabel)) md
     return (loopCtx, [whileWrapped])
 
-  -- Return statement
+  -- Return statement: assign to the LaurelResult output parameter, then exit $body.
   | .Return _ value => do
-    let (retVal, ctx) ← match value.val with
+    let stmts ← match value.val with
       | some expr => do
         let (e, exprW) ← translateExprW ctx expr
         let ctx := { ctx with abstractedStatements := ctx.abstractedStatements ++ exprW }
-        .ok (some e, ctx)
-      | none => .ok (none, ctx)
-    let retStmt := mkStmtExprMd (StmtExpr.Return retVal)
-    return (ctx, [retStmt])
+        let assign := mkStmtExprMd (StmtExpr.Assign [mkStmtExprMd (StmtExpr.Identifier "LaurelResult")] e)
+        .ok [assign, mkStmtExprMd (StmtExpr.Exit "$body")]
+      | none => .ok [mkStmtExprMd (StmtExpr.Exit "$body")]
+    return (ctx, stmts)
 
   -- Assert statement
   | .Assert _ test _msg => do
@@ -1326,7 +1326,8 @@ def translateFunction (ctx : TranslationContext) (sourceRange: SourceRange) (fun
     -- Translate return type
 
 
-    -- Determine outputs based on return type
+    -- Declare an output parameter when the function has a return type annotation.
+    -- Return statements explicitly assign to LaurelResult and exit $body.
     let outputs : List Parameter :=
       match funcDecl.ret with
       | none => []
