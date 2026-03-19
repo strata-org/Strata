@@ -4,7 +4,7 @@
 # Verifies that Laurel `assert ... summary "..."` annotations appear in
 # CBMC's verification output as property descriptions.
 
-set -e
+set -eo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../../../.." && pwd)"
@@ -13,7 +13,7 @@ CBMC=${CBMC:-cbmc}
 SYMTAB2GB=${SYMTAB2GB:-symtab2gb}
 
 WORK=$(mktemp -d)
-trap "rm -rf $WORK" EXIT
+trap 'rm -rf "$WORK"' EXIT
 
 # Step 1: Create Laurel program with property summaries
 cat > "$WORK/test.lr.st" << 'LAUREL'

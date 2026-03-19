@@ -13,7 +13,7 @@ DIALECT="$PROJECT_ROOT/Tools/Python/dialects/Python.dialect.st.ion"
 PYTHON=${PYTHON:-python3}
 
 WORK=$(mktemp -d)
-trap "rm -rf $WORK" EXIT
+trap 'rm -rf "$WORK"' EXIT
 
 # Create Python test file with assert messages
 cat > "$WORK/test.py" << 'PY'
@@ -30,7 +30,7 @@ PY
 (cd "$WORK" && "$STRATA" pyAnalyzeLaurelToGoto test.py.ion) 2>/dev/null
 
 # Verify GOTO JSON contains property summaries
-python3 -c "
+"$PYTHON" -c "
 import json, sys
 with open('$WORK/test.goto.json') as f:
     data = json.load(f)
