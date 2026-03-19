@@ -1113,13 +1113,12 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
     -- Havoc the target(s) (Ellipsis always translates to Hole)
     let sr := target.ann
     let holeRhs := expr.Constant sr (constant.ConEllipsis sr) ⟨sr, none⟩
-    let (bodyCtxNoLabels, assignStmts) ← translateAssign ctx target none holeRhs md
+    let (bodyCtxNoLabels, targetDecls) ← translateAssign ctx target none holeRhs md
     let bodyCtx := { bodyCtxNoLabels with
       loopBreakLabel := some breakLabel
       loopContinueLabel := some continueLabel }
     let (finalCtx, bodyStmts) ← translateStmtList bodyCtx body.val.toList
-    let targetDecl := mkStmtExprMd (StmtExpr.LocalVariable targetName AnyTy (some (mkStmtExprMd .Hole)))
-    let innerBlock := mkStmtExprMd (StmtExpr.Block (assignStmts ++ bodyStmts) (some continueLabel))
+    let innerBlock := mkStmtExprMd (StmtExpr.Block (targetDecls ++ bodyStmts) (some continueLabel))
     let loopBlock := mkStmtExprMdWithLoc (StmtExpr.Block [innerBlock] (some breakLabel)) md
     return (finalCtx, [loopBlock])
 
