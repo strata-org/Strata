@@ -351,14 +351,12 @@ private def formatAssertionMessage (msg : Array MessagePart) : String :=
 
 /-- Build a procedure body that asserts preconditions and havocs outputs. -/
 def buildSpecBody (preconditions : Array Assertion) (outputs : List Parameter)
-    : ToLaurelM (Body × Nat) := do
+    : ToLaurelM Body := do
   let mut stmts : List StmtExprMd := []
-  let mut translatedCount := 0
   for assertion in preconditions do
     match specExprToLaurel assertion.formula with
     | some condExpr =>
       stmts := stmts ++ [mkStmt (.Assert condExpr)]
-      translatedCount := translatedCount + 1
     | none =>
       -- Emit assert true for untranslatable preconditions so they're visible but don't block
       let msg := formatAssertionMessage assertion.message
@@ -369,7 +367,7 @@ def buildSpecBody (preconditions : Array Assertion) (outputs : List Parameter)
     let hole := mkStmt (.Hole (deterministic := false) (type := some output.type))
     stmts := stmts ++ [mkStmt (.Assign [mkStmt (.Identifier output.name)] hole)]
   let body := mkStmt (.Block stmts none)
-  return (.Transparent body, translatedCount)
+  return .Transparent body
 
 /-! ## Declaration Translation -/
 
@@ -412,7 +410,7 @@ def funcDeclToLaurel (procName : String) (func : FunctionDecl)
     match retType.val with
     | .TVoid => []
     | _ => [{ name := "result", type := retType }]
-  if func.preconditions.size > 0 || func.postconditions.size > 0 then
+  if func.postconditions.size > 0 then
     reportError func.loc "Postconditions not yet supported"
   -- When preconditions exist, use TCore "Any" for all parameters and outputs
   -- to match the Python→Laurel pipeline's Any-wrapping convention.
@@ -421,7 +419,7 @@ def funcDeclToLaurel (procName : String) (func : FunctionDecl)
       let anyTy : HighTypeMd := mkCore "Any"
       let anyInputs := inputs.map fun p => { p with type := anyTy }
       let anyOutputs := outputs.map fun p => { p with type := anyTy }
-      let (body, _) ← buildSpecBody func.preconditions anyOutputs
+      let body ← buildSpecBody func.preconditions anyOutputs
       pure (anyInputs, anyOutputs, body)
     else
       pure (inputs, outputs, Body.Opaque [] none [])
