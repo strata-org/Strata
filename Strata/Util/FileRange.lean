@@ -71,31 +71,35 @@ def FileRange.format (fr : FileRange) (fileMap : Option Lean.FileMap) (includeEn
     else
       f!"{baseName}({fr.range.start}-{fr.range.stop})"
 
+inductive DiagnosticType where | Warning | UserError | NotYetImplemented | StrataBug
+  deriving Repr, BEq, Inhabited
+
 /-- A diagnostic model that holds a file range and a message.
     This can be converted to a formatted string using a FileMap. -/
 structure DiagnosticModel where
   fileRange : FileRange
   message : String
+  type : DiagnosticType
   deriving Repr, BEq, Inhabited
 
 instance : Inhabited DiagnosticModel where
-  default := { fileRange := FileRange.unknown, message := "" }
+  default := { fileRange := FileRange.unknown, message := "", type := .UserError }
 
 /-- Create a DiagnosticModel from just a message (using default location).
 This should not be called, it only exists temporarily to enable incrementally
 migrating code without error locations -/
-def DiagnosticModel.fromMessage (msg : String) : DiagnosticModel :=
-  { fileRange := FileRange.unknown, message := msg }
+def DiagnosticModel.fromMessage (msg : String) (type : DiagnosticType := DiagnosticType.UserError): DiagnosticModel :=
+  { fileRange := FileRange.unknown, message := msg, type := type }
 
 /-- Create a DiagnosticModel from a Format (using default location).
 This should not be called, it only exists temporarily to enable incrementally
 migrating code without error locations -/
 def DiagnosticModel.fromFormat (fmt : Std.Format) : DiagnosticModel :=
-  { fileRange := FileRange.unknown, message := toString fmt }
+  { fileRange := FileRange.unknown, message := toString fmt, type := .UserError }
 
 /-- Create a DiagnosticModel with source location. -/
-def DiagnosticModel.withRange (fr : FileRange) (msg : Format) : DiagnosticModel :=
-  { fileRange := fr, message := toString msg }
+def DiagnosticModel.withRange (fr : FileRange) (msg : Format) (type : DiagnosticType := DiagnosticType.UserError): DiagnosticModel :=
+  { fileRange := fr, message := toString msg, type := type }
 
 /-- Format a DiagnosticModel using a FileMap to convert byte offsets to line/column positions. -/
 def DiagnosticModel.format (dm : DiagnosticModel) (fileMap : Option Lean.FileMap) (includeEnd? : Bool := true) : Std.Format :=
