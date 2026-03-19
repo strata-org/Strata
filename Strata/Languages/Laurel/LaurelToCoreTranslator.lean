@@ -350,7 +350,11 @@ def translateStmt (outputParams : List Parameter) (stmt : StmtExprMd)
   | .Assume cond =>
       let coreExpr ← translateExpr cond [] (isPureContext := true)
       return [Core.Statement.assume ("assume" ++ getNameFromMd md) coreExpr md]
-  | .Block stmts _ => stmts.flatMapM (fun s => translateStmt outputParams s)
+  | .Block stmts label =>
+      let innerStmts ← stmts.flatMapM (fun s => translateStmt outputParams s)
+      match label with
+      | some l => return [Imperative.Stmt.block l innerStmts md]
+      | none   => return innerStmts
   | .LocalVariable id ty initializer =>
       let coreMonoType := translateType model ty
       let coreType := LTy.forAll [] coreMonoType

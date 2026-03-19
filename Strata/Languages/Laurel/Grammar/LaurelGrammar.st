@@ -94,6 +94,8 @@ op assert (cond : StmtExpr, errorMessage: Option OptionalErrorMessage) : StmtExp
 op assume (cond : StmtExpr) : StmtExpr => @[prec(0)] "assume " cond:0;
 op return (value : StmtExpr) : StmtExpr => @[prec(0)] "return " value:0;
 op block (stmts : SemicolonSepBy StmtExpr) : StmtExpr => @[prec(1000)] "{" stmts "}";
+op labelledBlock (stmts : SemicolonSepBy StmtExpr, label : Ident) : StmtExpr => @[prec(1000)] "{" stmts "}" label;
+op exit (label : Ident) : StmtExpr => @[prec(0)] "exit " label;
 
 // While loops
 category InvariantClause;
