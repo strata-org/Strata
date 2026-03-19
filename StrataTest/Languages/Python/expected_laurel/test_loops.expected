@@ -42,4 +42,3 @@ loop_guard_calls_Any_to_bool_0: ✅ pass (at line 22, col 4)
 loop_guard_end_calls_Any_to_bool_0: ✅ pass (at line 22, col 4)
 assert_assert(531)_calls_Any_to_bool_0: ❓ unknown (at line 24, col 4)
 assert(531): ❓ unknown (at line 24, col 4)
-
