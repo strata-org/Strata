@@ -53,6 +53,26 @@ instance : Imperative.HasBool LExprTP where
   tt := .const { underlying := (), type := mty[bool] } (.boolConst true)
   ff := .const { underlying := (), type := mty[bool] } (.boolConst false)
 
+instance : Imperative.HasIdent LExprTP where
+  ident s := ⟨s, ()⟩
+
+private abbrev md : Lambda.Typed Unit := { underlying := (), type := mty[bool] }
+
+instance : Imperative.HasFvar LExprTP where
+  mkFvar := (.fvar md · none)
+  getFvar
+  | .fvar _ v _ => some v
+  | _ => none
+
+instance : Imperative.HasIntOrder LExprTP where
+  eq    e1 e2 := .eq md e1 e2
+  lt    e1 e2 := .app md (.app md (.op md ⟨"Int.Lt", ()⟩ none) e1) e2
+  zero        := .intConst md 0
+  intTy       := .tcons "int" []
+
+instance : Imperative.HasNot LExprTP where
+  not e := .app md (.op md ⟨"Bool.Not", ()⟩ none) e
+
 -------------------------------------------------------------------------------
 
 /-! ### Test: simple sequential commands -/
