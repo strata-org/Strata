@@ -171,6 +171,7 @@ private def typeRange : Boole.Type → SourceRange
   | .bv32 m => m
   | .bv64 m => m
   | .Map m _ _ => m
+  | .Sequence m _ => m
 
 def toCoreMonoType (t : Boole.Type) : TranslateM Lambda.LMonoTy := do
   match t with

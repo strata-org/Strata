@@ -123,7 +123,7 @@ error:  ❌ Type checking error.
 This type declaration's name is reserved!
 int := bool
 KnownTypes' names:
-[arrow, TriggerGroup, real, string, bitvec, Triggers, int, bool, Map, regex]
+[arrow, Sequence, TriggerGroup, real, string, bitvec, Triggers, int, bool, Map, regex]
 -/
 #guard_msgs in
 #eval verify typeDeclPgm4
