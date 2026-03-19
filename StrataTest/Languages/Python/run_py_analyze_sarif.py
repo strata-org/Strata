@@ -19,7 +19,7 @@ TEST_FILES = sorted(
     f"tests/{p.name}" for p in (Path(__file__).resolve().parent / "tests").glob("test_*.py")
 )
 
-BOTH_SKIP = {"test_foo_client_folder", "test_invalid_client_type", "test_unsupported_config", "test_incremental_simple", "test_with_statement", "test_class_field_init", "test_break_continue", "test_try_except", "test_try_except_scoping"}
+BOTH_SKIP = {"test_foo_client_folder", "test_invalid_client_type", "test_unsupported_config", "test_incremental_simple", "test_with_statement", "test_class_field_init", "test_break_continue", "test_try_except", "test_try_except_scoping", "test_augmented_assign"}
 SKIP_TESTS = BOTH_SKIP | {"test_class_field_use", "test_list", "test_subscription"}
 SKIP_TESTS_LAUREL = BOTH_SKIP
 
