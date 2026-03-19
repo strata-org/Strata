@@ -1023,6 +1023,9 @@ partial def translateExpr (p : Program) (bindings : TransBindings) (arg : Arg) :
     | .func func _md =>
       -- 0-ary Function
       return (.op sr func.name ty?)
+    | .recFuncBlock funcs _md =>
+      let func ← resolveRecFunc funcs i
+      return (.op sr func.name ty?)
     | _ =>
       TransM.error s!"translateExpr unimplemented fvar decl (no args): {format decl}"
   | .fvar _ i, argsa =>
@@ -1031,6 +1034,10 @@ partial def translateExpr (p : Program) (bindings : TransBindings) (arg : Arg) :
     let decl := bindings.freeVars[i]!
     match decl with
     | .func func _md =>
+      let args ← translateExprs p bindings argsa.toArray
+      return .mkApp sr func.opExpr args.toList
+    | .recFuncBlock funcs _md =>
+      let func ← resolveRecFunc funcs i
       let args ← translateExprs p bindings argsa.toArray
       return .mkApp sr func.opExpr args.toList
     | _ =>
@@ -1548,7 +1555,7 @@ def translateFunction (status : FnInterp) (p : Program) (bindings : TransBinding
   let typeArgs ← translateTypeArgs op.args[1]!
   let sig ← translateBindings bindings op.args[2]!
   let ret ← translateLMonoTy bindings op.args[3]!
-  let in_bindings := (sig.map (fun (v, ty) => (LExpr.fvar Strata.SourceRange.none v ty))).toArray
+  let in_bindings := (sig.map (fun (v, ty) => (LExpr.fvar op.args[2]!.ann v ty))).toArray
   let orig_bbindings := bindings.boundVars
   -- INVARIANT: The binding order here must exactly match the DDM elaborator's
   -- typing context in `Elab/Core.lean` (the `scopeSelf` branch), which pushes:
@@ -1558,7 +1565,7 @@ def translateFunction (status : FnInterp) (p : Program) (bindings : TransBinding
   -- include placeholders for these type args so that de Bruijn indices in the
   -- elaborated body expression resolve correctly during translation.
   let bbindings ← match status with
-    | .RecursiveDefinition =>
+    | .Definition =>
       let fnTy := LMonoTy.mkArrow' ret (sig.map Prod.snd)
       let selfBinding := LExpr.op op.args[2]!.ann fname fnTy
       let tyArgPlaceholders := typeArgs.map fun (ta: TyIdentifier) =>
@@ -1609,12 +1616,12 @@ partial def translateRecFnDecl (p : Program) (preBindings : TransBindings)
   let typeArgs ← translateTypeArgs fnOp.args[1]!
   let (sig, casesIdx) ← translateBindingsWithCases preBindings fnOp.args[2]!
   let ret ← translateLMonoTy preBindings fnOp.args[3]!
-  let in_bindings := (sig.map (fun (v, ty) => (LExpr.fvar () v ty))).toArray
+  let in_bindings := (sig.map (fun (v, ty) => (LExpr.fvar fnOp.args[2]!.ann v ty))).toArray
   -- Build boundVars matching the DDM elaborator's typing context.
   -- @[declareFn] accumulates sibling bvars across NewlineSepBy children.
   -- Self-reference goes through fvar (from @[preRegisterFunctions]), not bvar.
   let tyArgPlaceholders := typeArgs.map fun (ta : TyIdentifier) =>
-    LExpr.op () (ta : Core.CoreIdent) .none
+    LExpr.op fnOp.args[2]!.ann (ta : Core.CoreIdent) .none
   let bbindings := preBindings.boundVars ++ siblingExprs ++ tyArgPlaceholders ++ in_bindings
   let bodyBindings := { preBindings with boundVars := bbindings }
   let casesAttr := match casesIdx with
