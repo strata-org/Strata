@@ -662,10 +662,10 @@ partial def refineFunctionCallExpr (ctx : TranslationContext) (func: Python.expr
 
 --Kwargs can be a single Dict variable: func_call (**var) or a normal Kwargs (key1 = val1, key2 =val2 ...)
 partial def translateDictKWords (ctx : TranslationContext) (kw : Python.keyword SourceRange)
-    : Except TranslationError (String × StmtExprMd) := do
+    : ExprM (String × StmtExprMd) := do
   match kw with
   | .mk_keyword _ name expr =>
-    let (expr, _) ← (translateExpr ctx expr).run'
+    let expr ← translateExpr ctx expr
     match name.val with
     | some n => return (n.val, expr)
     | none => throw (.internalError "Expected keyname for Dict Kwargs")
@@ -687,16 +687,15 @@ partial def isVarKwargs (kwords : List (Python.keyword SourceRange)) : Bool :=
     | some _ => false
     | none => true
 
-partial def translateVarKwargs (ctx : TranslationContext) (kwords : List (Python.keyword SourceRange)) : Except TranslationError StmtExprMd := do
+partial def translateVarKwargs (ctx : TranslationContext) (kwords : List (Python.keyword SourceRange)) : ExprM StmtExprMd := do
   match kwords[0]! with
   | .mk_keyword _ name expr =>
     match name.val with
     | some _ => throw (.internalError s!"Keyword arg should be a Dict")
     | none =>
-        let (expr, _) ← (translateExpr ctx expr).run'
-        return expr
+        translateExpr ctx expr
 
-partial def translateKwargs (ctx : TranslationContext) (kwords : List (Python.keyword SourceRange)): Except TranslationError StmtExprMd := do
+partial def translateKwargs (ctx : TranslationContext) (kwords : List (Python.keyword SourceRange)): ExprM StmtExprMd := do
   if isVarKwargs kwords then
     translateVarKwargs ctx kwords
   else
@@ -754,7 +753,7 @@ partial def translateCall (ctx : TranslationContext)
                           (f : Python.expr SourceRange)
                           (args : List (Python.expr SourceRange))
                           (kwords : List (Python.keyword SourceRange))
-    : Except TranslationError StmtExprMd := do
+    : ExprM StmtExprMd := do
   -- Step 1: factory dispatch (e.g., boto3.client('iam'))
   if let some className ← resolveDispatch ctx f args.toArray then
     return mkStmtExprMd (.New className)
@@ -780,7 +779,7 @@ partial def translateCall (ctx : TranslationContext)
   let funcDecl := ctx.functionSignatures.find? fun x => x.name == funcName
   let (args, kwords, funcdecl_hasKwargs) ←
     combinePositionalAndKeywordArgs args kwords funcDecl methodName callRange
-  let trans_args ← args.mapM (fun e => do let (r, _) ← (translateExpr ctx e).run'; pure r)
+  let trans_args ← args.mapM (translateExpr ctx)
   let trans_kwords ← translateKwargs ctx kwords
   let trans_kwords_exprs :=
     if kwords.length == 0 then
@@ -949,7 +948,8 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
 
   -- If statement
   | .If _ test body orelse => do
-    let condExpr ← translateExprVal ctx test
+    let (condExpr, _exprW) ← translateExprW ctx test
+    let ctx := { ctx with abstractedStatements := ctx.abstractedStatements ++ _exprW }
     -- Check if condition contains a Hole - if so, hoist to variable to avoid free variable errors
     let (condStmts, finalCondExpr, condCtx) :=
       match condExpr.val with
@@ -984,7 +984,8 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
   -- While loop
   | .While _ test body _orelse => do
     -- Note: Python while-else not supported yet
-    let condExpr ← translateExprVal ctx test
+    let (condExpr, _exprW) ← translateExprW ctx test
+    let ctx := { ctx with abstractedStatements := ctx.abstractedStatements ++ _exprW }
     -- Check if condition contains a Hole - if so, hoist to variable
     let (condStmts, finalCondExpr, condCtx) :=
       match condExpr.val with
@@ -1014,17 +1015,19 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
 
   -- Return statement
   | .Return _ value => do
-    let retVal ← match value.val with
+    let (retVal, ctx) ← match value.val with
       | some expr => do
-        let e ← translateExprVal ctx expr
-        .ok (some e)
-      | none => .ok none
+        let (e, exprW) ← translateExprW ctx expr
+        let ctx := { ctx with abstractedStatements := ctx.abstractedStatements ++ exprW }
+        .ok (some e, ctx)
+      | none => .ok (none, ctx)
     let retStmt := mkStmtExprMd (StmtExpr.Return retVal)
     return (ctx, [retStmt])
 
   -- Assert statement
   | .Assert _ test _msg => do
-    let condExpr ← translateExprVal ctx test
+    let (condExpr, _exprW) ← translateExprW ctx test
+    let ctx := { ctx with abstractedStatements := ctx.abstractedStatements ++ _exprW }
     -- Check if condition contains a Hole - if so, hoist to variable
     let (condStmts, finalCondExpr, condCtx) :=
       match condExpr.val with
@@ -1048,7 +1051,8 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
 
   -- Expression statement (e.g., function call)
   | .Expr _ value => do
-    let expr ← translateExprVal ctx value
+    let (expr, _exprW) ← translateExprW ctx value
+    let ctx := { ctx with abstractedStatements := ctx.abstractedStatements ++ _exprW }
     let expr := { expr with md := md }
 
     match expr.val with
@@ -1144,7 +1148,8 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
       match item with
       | .mk_withitem _ ctxExpr optVars =>
         let mgrName := s!"with_mgr_{ctxExpr.toAst.ann.start.byteIdx}"
-        let mgrExpr ← translateExprVal currentCtx ctxExpr
+        let (mgrExpr, exprW) ← translateExprW currentCtx ctxExpr
+        currentCtx := { currentCtx with abstractedStatements := currentCtx.abstractedStatements ++ exprW }
         let mgrTy ← inferExprType currentCtx ctxExpr
         let mgrLauTy ← translateType currentCtx mgrTy
         let mgrDecl := mkStmtExprMd (StmtExpr.LocalVariable mgrName mgrLauTy (some mgrExpr))
@@ -1174,7 +1179,8 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
       | _ => throw (.unsupportedConstruct "Only simple variable in for target supported" (toString (repr s)))
 
     -- The iterator expression (we abstract it away)
-    let _iterExpr ← translateExprVal ctx iter
+    let (_iterExpr, _exprW) ← translateExprW ctx iter
+    let ctx := { ctx with abstractedStatements := ctx.abstractedStatements ++ _exprW }
 
     -- Create context with target variable and loop labels
     let breakLabel := s!"for_break_{iter.toAst.ann.start.byteIdx}"
