@@ -100,7 +100,6 @@ def runTranslateM (s : TranslateState) (m : TranslateM α) : (Option α × Trans
   m s
 
 def returnNone: TranslateM α :=
-  dbg_trace "returning None"
   StateT.pure none
 
 /-- Allocate a fresh unique ID. -/
