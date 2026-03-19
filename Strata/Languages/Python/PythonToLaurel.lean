@@ -1076,10 +1076,19 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
     let mut handlerStmts : List StmtExprMd := []
     for handler in handlers.val do
       match handler with
-      | .ExceptHandler _ _ _ handlerBody =>
-        let (hCtx, hStmts) ← translateStmtList hoistedCtx handlerBody.val.toList
+      | .ExceptHandler _ exTy name handlerBody =>
+        let tyStr := match exTy.val with
+          | some ty => pyExprToString ty
+          | none => PyLauType.Any
+        let (localCtx, nameDecl) ← match name.val with
+          | some n =>
+            let laurelTy ← translateType hoistedCtx tyStr
+            pure ({hoistedCtx with variableTypes := (n.val, tyStr) :: hoistedCtx.variableTypes},
+                  [mkStmtExprMd (StmtExpr.LocalVariable n.val laurelTy (some (mkStmtExprMd .Hole)))])
+          | none => pure (hoistedCtx, [])
+        let (hCtx, hStmts) ← translateStmtList localCtx handlerBody.val.toList
         handlerCtx := hCtx
-        handlerStmts := handlerStmts ++ hStmts
+        handlerStmts := handlerStmts ++ nameDecl ++ hStmts
 
     -- Insert exception checks after each statement in try body
     let bodyStmtsWithChecks := bodyStmts.flatMap fun stmt =>
