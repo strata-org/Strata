@@ -59,7 +59,7 @@ def computeExprType (model : SemanticModel) (expr : StmtExprMd) : HighTypeMd :=
     | .staticProcedure proc => match proc.outputs with
       | [singleOutput] => singleOutput.type
       | _ => { val := .TVoid, md := default }
-    | _ => { val := .Top, md := default }
+    | _ => { val := HighType.Unknown, md := default }
   -- Operators
   | .PrimitiveOp op args =>
       match args with
