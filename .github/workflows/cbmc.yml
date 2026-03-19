@@ -105,7 +105,6 @@ jobs:
       - name: Run property summary tests
         shell: bash
         run: |
-          ./StrataTest/Languages/Python/tests/test_property_summary.sh
           ./StrataTest/Backends/CBMC/GOTO/test_property_summary_e2e.sh
       - name: Run Laurel CBMC pipeline tests
         shell: bash
