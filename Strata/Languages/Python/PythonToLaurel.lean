@@ -1643,9 +1643,6 @@ def pythonToLaurel' (info : PreludeInfo)
     let mut ctx : TranslationContext := match prev_ctx with
     | some prev_ctx => prev_ctx
     | _ =>
-    -- Add unprefixed class names from pyspec type aliases
-    let compositeTypeNames := info.typeAliases.fold (init := compositeTypeNames)
-      fun s unprefixed _ => s.insert unprefixed
     -- Add unprefixed method names as procedure aliases
     -- e.g. MessageService_send → same signature as prefix_MessageService_send
     let preludeProcedures := info.typeAliases.fold (init := info.procedures)
