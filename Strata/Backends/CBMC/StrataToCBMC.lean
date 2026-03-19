@@ -307,7 +307,7 @@ def blockToJson (b: Imperative.Block Strata.C_Simp.Expression Strata.C_Simp.Comm
  def stmtToJson (e : Strata.C_Simp.Statement) (loc: SourceLoc) : Except String Json :=
   match e with
   | .cmd cmd => cmdToJson cmd loc
-  | .ite cond thenb elseb _ => do
+  | .ite (.det cond) thenb elseb _ => do
     return Json.mkObj [
       ("id", "code"),
       ("namedSub", Json.mkObj [

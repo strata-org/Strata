@@ -66,7 +66,7 @@ subst:
                       [Statement.init "z" t[bool] (.det eb[zinit]) .empty,
                        Statement.assume "z_false" eb[z == #false] .empty,
 
-                      .ite eb[z == #false]
+                      .ite (.det eb[z == #false])
                         [Statement.set "x" eb[y] .empty]
                         [Statement.assert "trivial" eb[#true] .empty]
                         .empty,
@@ -114,7 +114,7 @@ subst: [($__ty0, int)]
 #eval do let ans ← typeCheck LContext.default TEnv.default Program.init none
                     [
                     .init "x" t[int] (.det eb[#0]) .empty,
-                    .ite eb[x == #3]
+                    .ite (.det eb[x == #3])
                     [
                       Statement.init "y" t[∀α. %α] (.det eb[x]) .empty,
                       Statement.assert "local_y_eq_3" eb[y == #3] .empty

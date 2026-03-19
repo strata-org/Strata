@@ -52,8 +52,16 @@ def translate_stmt (s: Imperative.Stmt C_Simp.Expression C_Simp.Command) : Core.
   match s with
   | .cmd c => .cmd (translate_cmd c)
   | .block l b _md => .block l (b.map translate_stmt) {}
-  | .ite cond thenb elseb _md => .ite (translate_expr cond) (thenb.map translate_stmt) (elseb.map translate_stmt) {}
-  | .loop guard measure invariant body _md => .loop (translate_expr guard) (translate_opt_expr measure) (invariant.map translate_expr) (body.map translate_stmt) {}
+  | .ite cond thenb elseb _md =>
+    let cond' := match cond with
+      | .det e => Imperative.ExprOrNondet.det (translate_expr e)
+      | .nondet => .nondet
+    .ite cond' (thenb.map translate_stmt) (elseb.map translate_stmt) {}
+  | .loop guard measure invariant body _md =>
+    let guard' := match guard with
+      | .det e => Imperative.ExprOrNondet.det (translate_expr e)
+      | .nondet => .nondet
+    .loop guard' (translate_opt_expr measure) (invariant.map translate_expr) (body.map translate_stmt) {}
   | .funcDecl _ _ => panic! "C_Simp does not support function declarations"
   | .typeDecl _ _ => panic! "C_Simp does not support type declarations"
   | .exit label _md => .exit label {}
@@ -81,9 +89,8 @@ other analyses.
 def loop_elimination_statement(s : C_Simp.Statement) : Core.Statement :=
   match s with
   | .loop guard measure invList body _ =>
-    match measure, invList with
-    | .some measure, _ =>
-      -- let bodyss : := body.ss
+    match guard, measure, invList with
+    | .det guard_expr, .some measure, _ =>
       let assigned_vars := (Imperative.Block.modifiedVars body).map (λ s => ⟨s.name, ()⟩)
       let havocd : Core.Statement := .block "loop havoc" (assigned_vars.map (λ n => Core.Statement.havoc n {})) {}
 
@@ -97,11 +104,11 @@ def loop_elimination_statement(s : C_Simp.Statement) : Core.Statement :=
       let inv_assumes : List Core.Statement := invList.mapIdx fun i inv =>
         Core.Statement.assume s!"assume_invariant_{i}" (translate_expr inv) {}
       let arbitrary_iter_assumes := .block "arbitrary_iter_assumes"
-        ([Core.Statement.assume "assume_guard" (translate_expr guard) {}] ++ inv_assumes ++
+        ([Core.Statement.assume "assume_guard" (translate_expr guard_expr) {}] ++ inv_assumes ++
          [Core.Statement.assume "assume_measure_pos" measure_pos {}]) {}
       let measure_old_value_assign : Core.Statement := .init "special-name-for-old-measure-value" (.forAll [] (.tcons "int" [])) (.det (translate_expr measure)) {}
       let measure_decreases : Core.Statement := .assert "measure_decreases" (.app () (.app () (.op () "Int.Lt" none) (translate_expr measure)) (.fvar () "special-name-for-old-measure-value" none)) {}
-      let measure_imp_not_guard : Core.Statement := .assert "measure_imp_not_guard" (.ite () (.app () (.app () (.op () "Int.Le" none) (translate_expr measure)) (.intConst () 0)) (.app () (.op () "Bool.Not" none) (translate_expr guard)) (.true ())) {}
+      let measure_imp_not_guard : Core.Statement := .assert "measure_imp_not_guard" (.ite () (.app () (.app () (.op () "Int.Le" none) (translate_expr measure)) (.intConst () 0)) (.app () (.op () "Bool.Not" none) (translate_expr guard_expr)) (.true ())) {}
       let maintain_invariants : List Core.Statement := invList.mapIdx fun i inv =>
         .assert s!"arbitrary_iter_maintain_invariant_{i}" (translate_expr inv) {}
       let body_statements : List Core.Statement := body.map translate_stmt
@@ -109,12 +116,12 @@ def loop_elimination_statement(s : C_Simp.Statement) : Core.Statement :=
         ([havocd, arbitrary_iter_assumes, measure_old_value_assign] ++ body_statements ++
          [measure_decreases, measure_imp_not_guard] ++ maintain_invariants) {}
 
-      let not_guard : Core.Statement := .assume "not_guard" (.app () (.op () "Bool.Not" none) (translate_expr guard)) {}
+      let not_guard : Core.Statement := .assume "not_guard" (.app () (.op () "Bool.Not" none) (translate_expr guard_expr)) {}
       let invariant_assumes : List Core.Statement := invList.mapIdx fun i inv =>
         .assume s!"invariant_{i}" (translate_expr inv) {}
 
-      .ite (translate_expr guard) ([first_iter_facts, arbitrary_iter_facts, havocd, not_guard] ++ invariant_assumes) [] {}
-    | _, _ => panic! "Loop elimination require measure and invariant"
+      .ite (.det (translate_expr guard_expr)) ([first_iter_facts, arbitrary_iter_facts, havocd, not_guard] ++ invariant_assumes) [] {}
+    | _, _, _ => panic! "Loop elimination require measure and invariant"
   | _ => translate_stmt s
 
 -- C_Simp functions are Strata Core procedures

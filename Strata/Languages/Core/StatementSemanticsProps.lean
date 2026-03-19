@@ -2065,6 +2065,8 @@ theorem EvalStmtRefinesContract
   | .block_sem Heval => .block_sem (EvalBlockRefinesContract Heval)
   | .ite_true_sem Hcond Hwf Heval => .ite_true_sem Hcond Hwf (EvalBlockRefinesContract Heval)
   | .ite_false_sem Hcond Hwf Heval => .ite_false_sem Hcond Hwf (EvalBlockRefinesContract Heval)
+  | .ite_nondet_true_sem Heval => .ite_nondet_true_sem (EvalBlockRefinesContract Heval)
+  | .ite_nondet_false_sem Heval => .ite_nondet_false_sem (EvalBlockRefinesContract Heval)
   | .funcDecl_sem => .funcDecl_sem
   | .typeDecl_sem => .typeDecl_sem
 

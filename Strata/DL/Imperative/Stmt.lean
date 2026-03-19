@@ -33,11 +33,13 @@ inductive Stmt (P : PureExpr) (Cmd : Type) : Type where
   | cmd      (cmd : Cmd)
   /-- An block containing a `List` of `Stmt`. -/
   | block    (label : String) (b : List (Stmt P Cmd)) (md : MetaData P)
-  /-- A conditional execution statement. -/
-  | ite      (cond : P.Expr)  (thenb : List (Stmt P Cmd)) (elseb : List (Stmt P Cmd)) (md : MetaData P)
+  /-- A conditional execution statement. When `cond` is `.nondet`, the branch
+  is chosen non-deterministically. -/
+  | ite      (cond : ExprOrNondet P)  (thenb : List (Stmt P Cmd)) (elseb : List (Stmt P Cmd)) (md : MetaData P)
   /-- An iterated execution statement. Includes an optional measure (for
-  termination) and invariants. -/
-  | loop     (guard : P.Expr) (measure : Option P.Expr) (invariants : List P.Expr)
+  termination) and invariants. When `guard` is `.nondet`, the loop iterates
+  a non-deterministic number of times. -/
+  | loop     (guard : ExprOrNondet P) (measure : Option P.Expr) (invariants : List P.Expr)
              (body : List (Stmt P Cmd)) (md : MetaData P)
   /-- An exit statement that transfers control out of the nearest enclosing
   block with the given label. If no label is provided, exits the nearest
@@ -68,11 +70,11 @@ def Stmt.inductionOn {P : PureExpr} {Cmd : Type}
     (block_case : ∀ (label : String) (b : List (Stmt P Cmd)) (md : MetaData P),
       (∀ s, s ∈ b → motive s) →
       motive (Stmt.block label b md))
-    (ite_case : ∀ (cond : P.Expr) (thenb elseb : List (Stmt P Cmd)) (md : MetaData P),
+    (ite_case : ∀ (cond : ExprOrNondet P) (thenb elseb : List (Stmt P Cmd)) (md : MetaData P),
       (∀ s, s ∈ thenb → motive s) →
       (∀ s, s ∈ elseb → motive s) →
       motive (Stmt.ite cond thenb elseb md))
-    (loop_case : ∀ (guard : P.Expr) (measure : Option P.Expr) (invariant : List P.Expr)
+    (loop_case : ∀ (guard : ExprOrNondet P) (measure : Option P.Expr) (invariant : List P.Expr)
       (body : List (Stmt P Cmd)) (md : MetaData P),
       (∀ s, s ∈ body → motive s) →
       motive (Stmt.loop guard measure invariant body md))
@@ -109,8 +111,8 @@ def Stmt.sizeOf (s : Imperative.Stmt P C) : Nat :=
   match s with
   | .cmd c => 1 + SizeOf.sizeOf c
   | .block _ bss _ => 1 + Block.sizeOf bss
-  | .ite c tss ess _ => 3 + sizeOf c + Block.sizeOf tss + Block.sizeOf ess
-  | .loop g _ _ bss _ => 3 + sizeOf g + Block.sizeOf bss
+  | .ite _ tss ess _ => 3 + Block.sizeOf tss + Block.sizeOf ess
+  | .loop _ _ _ bss _ => 3 + Block.sizeOf bss
   | .exit _ _ => 1
   | .funcDecl _ _ => 1
   | .typeDecl _ _ => 1
@@ -193,8 +195,8 @@ def Stmt.getVars [HasVarsPure P P.Expr] [HasVarsPure P C] (s : Stmt P C) : List 
   match s with
   | .cmd cmd => HasVarsPure.getVars cmd
   | .block _ bss _ => Block.getVars bss
-  | .ite _ tbss ebss _ => Block.getVars tbss ++ Block.getVars ebss
-  | .loop _ _ _ bss _ => Block.getVars bss
+  | .ite cond tbss ebss _ => cond.getVars ++ Block.getVars tbss ++ Block.getVars ebss
+  | .loop guard _ _ bss _ => guard.getVars ++ Block.getVars bss
   | .exit _ _  => []
   | .funcDecl decl _ =>
     -- Get free variables from function body, excluding formal parameters

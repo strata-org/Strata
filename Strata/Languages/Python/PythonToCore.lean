@@ -328,7 +328,7 @@ def noneOrExpr (translation_ctx : TranslationContext) (fname n : String) (e: Cor
 
 def handleCallThrow (jmp_target : String) : Core.Statement :=
   let cond := .app () (.op () "ExceptOrNone..isExceptOrNone_mk_code" none) (.fvar () "maybe_except" none)
-  .ite cond [.exit (some jmp_target) .empty] [] .empty
+  .ite (.det cond) [.exit (some jmp_target) .empty] [] .empty
 
 def deduplicateTypeAnnotations (l : List (String × Option String)) : List (String × String) := Id.run do
   let mut m : Map String String := []
@@ -634,7 +634,7 @@ partial def exceptHandlersToCore (jmp_targets: List String) (translation_ctx: Tr
       [.set "exception_ty_matches" (.boolConst () false) md]
     let cond := .fvar () "exception_ty_matches" none
     let body_if_matches := body.val.toList.flatMap (λ s => (PyStmtToCore jmp_targets.tail! translation_ctx s).fst) ++ [.exit (some jmp_targets[1]!) md]
-    set_ex_ty_matches ++ [.ite cond body_if_matches [] md]
+    set_ex_ty_matches ++ [.ite (.det cond) body_if_matches [] md]
 
 partial def handleFunctionCall (lhs: List Core.Expression.Ident)
                                (fname: String)
@@ -677,7 +677,7 @@ partial def handleComprehension (translation_ctx: TranslationContext) (lhs: Pyth
     let guard := .app () (.op () "Bool.Not" none) (.eq () (.app () (.op () "dict_str_any_length" none) res.expr) (.intConst () 0))
     let then_ss: List Core.Statement := [.havoc (PyExprToString lhs) md]
     let else_ss: List Core.Statement := [.set (PyExprToString lhs) (.op () "ListStr_nil" none) md]
-    res.stmts ++ [.ite guard then_ss else_ss md]
+    res.stmts ++ [.ite (.det guard) then_ss else_ss md]
 
 partial def PyStmtToCore (jmp_targets: List String) (translation_ctx : TranslationContext) (s : Python.stmt SourceRange) : List Core.Statement × TranslationContext :=
   assert! jmp_targets.length > 0
@@ -730,7 +730,7 @@ partial def PyStmtToCore (jmp_targets: List String) (translation_ctx : Translati
     | .FunctionDef _ _ _ _ _ _ _ _ => panic! "Can't translate FunctionDef to Strata Core statement"
     | .If _ test then_b else_b =>
       let guard_ctx := {translation_ctx with expectedType := some (.tcons "bool" [])}
-      ([.ite (PyExprToCore guard_ctx test).expr (ArrPyStmtToCore translation_ctx then_b.val).fst (ArrPyStmtToCore translation_ctx else_b.val).fst md], none)
+      ([.ite (.det (PyExprToCore guard_ctx test).expr) (ArrPyStmtToCore translation_ctx then_b.val).fst (ArrPyStmtToCore translation_ctx else_b.val).fst md], none)
     | .Return _ v =>
       match v.val with
       | .some v => ([.set "ret" (PyExprToCore translation_ctx v).expr md, .exit (some jmp_targets[0]!) md], none) -- TODO: need to thread return value name here. For now, assume "ret"
@@ -741,13 +741,13 @@ partial def PyStmtToCore (jmp_targets: List String) (translation_ctx : Translati
       match tgt with
       | .Name _ n _ =>
         let assign_tgt := [(.init n.val dictStrAnyType (.det dummyDictStrAny) md)]
-        ([.ite guard (assign_tgt ++ (ArrPyStmtToCore translation_ctx body.val).fst) [] md], none)
+        ([.ite (.det guard) (assign_tgt ++ (ArrPyStmtToCore translation_ctx body.val).fst) [] md], none)
       | _ => panic! s!"tgt must be single name: {repr tgt}"
       -- TODO: missing havoc
     | .While _ test body _ =>
       -- Do one unrolling:
       let guard := .app () (.op () "Bool.Not" none) (.eq () (.app () (.op () "dict_str_any_length" none) (PyExprToCore default test).expr) (.intConst () 0))
-      ([.ite guard (ArrPyStmtToCore translation_ctx body.val).fst [] md], none)
+      ([.ite (.det guard) (ArrPyStmtToCore translation_ctx body.val).fst [] md], none)
       -- TODO: missing havoc
     | .Assert sr a _ =>
       let res := PyExprToCore translation_ctx a

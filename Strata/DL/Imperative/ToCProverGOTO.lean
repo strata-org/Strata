@@ -299,7 +299,9 @@ def Stmt.toGotoInstructions {P} [G: ToGoto P] [BEq P.Ident]
       LOCATION end_label         ; after conditional
     -/
     let srcLoc := metadataToSourceLoc md functionName trans.sourceText
-    let cond_expr ← G.toGotoExpr cond
+    let cond_expr ← match cond with
+      | .det e => G.toGotoExpr e
+      | .nondet => pure { id := .side_effect .Nondet, type := .Boolean, operands := [] : Expr }
     let (trans, goto_else_idx) := emitCondGoto (Expr.not cond_expr) srcLoc trans
     let trans ← Block.toGotoInstructions trans.T functionName thenb trans
     let (trans, goto_end_idx) := emitUncondGoto srcLoc trans
@@ -324,7 +326,9 @@ def Stmt.toGotoInstructions {P} [G: ToGoto P] [BEq P.Ident]
     let srcLoc := metadataToSourceLoc md functionName trans.sourceText
     let loop_start_loc := trans.nextLoc
     let trans := emitLabel s!"loop_start_{loop_start_loc}" srcLoc trans
-    let guard_expr ← G.toGotoExpr guard
+    let guard_expr ← match guard with
+      | .det e => G.toGotoExpr e
+      | .nondet => pure { id := .side_effect .Nondet, type := .Boolean, operands := [] : Expr }
     let (trans, goto_end_idx) := emitCondGoto (Expr.not guard_expr) srcLoc trans
     let trans ← Block.toGotoInstructions trans.T functionName body trans
     -- Back edge: attach loop invariants and/or decreases clause

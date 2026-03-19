@@ -163,8 +163,8 @@ info: ok: #[LOCATION skip,
 def ExampleStmt2 : List (Imperative.Stmt LExprTP (Imperative.Cmd LExprTP)) :=
   [.cmd (.init (Lambda.Identifier.mk "x" ()) mty[bv32] (.det (.const { underlying := (), type := mty[bv32] } (.bitvecConst 32 0))) {}),
    .cmd (.init (Lambda.Identifier.mk "y" ()) mty[bv32] (.det (.const { underlying := (), type := mty[bv32] } (.bitvecConst 32 0))) {}),
-   .ite
-     (.const { underlying := (), type := mty[bool] } (.boolConst true))
+   .ite (.det
+     (.const { underlying := (), type := mty[bool] } (.boolConst true)))
      [.cmd (.set (Lambda.Identifier.mk "x" ()) (.det (.const { underlying := (), type := mty[bv32] } (.bitvecConst 32 10))) {})]
      [.cmd (.set (Lambda.Identifier.mk "y" ()) (.det (.const { underlying := (), type := mty[bv32] } (.bitvecConst 32 20))) {})]
      {}]
@@ -190,8 +190,8 @@ info: ok: #[DECL (decl (x : unsignedbv[32])),
 /-- Test loop statement transformation -/
 def ExampleStmt3 : List (Imperative.Stmt LExprTP (Imperative.Cmd LExprTP)) :=
   [.cmd (.init (Lambda.Identifier.mk "i" ()) mty[bv32] (.det (.const { underlying := (), type := mty[bv32] } (.bitvecConst 32 0))) {}),
-   .loop
-     (.const { underlying := (), type := mty[bool] } (.boolConst true))
+   .loop (.det
+     (.const { underlying := (), type := mty[bool] } (.boolConst true)))
      none
      []
      [.cmd (.set (Lambda.Identifier.mk "i" ()) (.det (addBV32LExpr
@@ -218,8 +218,8 @@ info: ok: #[DECL (decl (i : unsignedbv[32])),
 def ExampleStmt4 : List (Imperative.Stmt LExprTP (Imperative.Cmd LExprTP)) :=
   [.block "outer"
     [.cmd (.init (Lambda.Identifier.mk "x" ()) mty[bv32] (.det (.const { underlying := (), type := mty[bv32] } (.bitvecConst 32 0))) {}),
-     .ite
-       (.const { underlying := (), type := mty[bool] } (.boolConst true))
+     .ite (.det
+       (.const { underlying := (), type := mty[bool] } (.boolConst true)))
        [.cmd (.set (Lambda.Identifier.mk "x" ()) (.det (.const { underlying := (), type := mty[bv32] } (.bitvecConst 32 100))) {})]
        []
        {}]
@@ -270,12 +270,12 @@ info: ok: #[DECL (decl (x : unsignedbv[32])),
 def ExampleStmt6 : List (Imperative.Stmt LExprTP (Imperative.Cmd LExprTP)) :=
   [.cmd (.init (Lambda.Identifier.mk "i" ()) mty[bv32] (.det (.const { underlying := (), type := mty[bv32] } (.bitvecConst 32 0))) {}),
    .cmd (.init (Lambda.Identifier.mk "sum" ()) mty[bv32] (.det (.const { underlying := (), type := mty[bv32] } (.bitvecConst 32 0))) {}),
-   .loop
-     (.const { underlying := (), type := mty[bool] } (.boolConst true))
+   .loop (.det
+     (.const { underlying := (), type := mty[bool] } (.boolConst true)))
      none
      []
-     [.ite
-       (.const { underlying := (), type := mty[bool] } (.boolConst true))
+     [.ite (.det
+       (.const { underlying := (), type := mty[bool] } (.boolConst true)))
        [.cmd (.set (Lambda.Identifier.mk "sum" ()) (.det (addBV32LExpr
          (.fvar { underlying := (), type := mty[bv32] } (Lambda.Identifier.mk "sum" ()) (some mty[bv32]))
          (.fvar { underlying := (), type := mty[bv32] } (Lambda.Identifier.mk "i" ()) (some mty[bv32])))) {})]
@@ -345,8 +345,8 @@ info: ok: #[LOCATION skip,
 /-- Test empty branches in if-then-else -/
 def ExampleStmt8 : List (Imperative.Stmt LExprTP (Imperative.Cmd LExprTP)) :=
   [.cmd (.init (Lambda.Identifier.mk "x" ()) mty[bv32] (.det (.const { underlying := (), type := mty[bv32] } (.bitvecConst 32 0))) {}),
-   .ite
-     (.const { underlying := (), type := mty[bool] } (.boolConst true))
+   .ite (.det
+     (.const { underlying := (), type := mty[bool] } (.boolConst true)))
      []
      [.cmd (.set (Lambda.Identifier.mk "x" ()) (.det (.const { underlying := (), type := mty[bv32] } (.bitvecConst 32 100))) {})]
      {}]
@@ -368,8 +368,8 @@ info: ok: #[DECL (decl (x : unsignedbv[32])),
 
 /-- Test loop with empty body -/
 def ExampleStmt9 : List (Imperative.Stmt LExprTP (Imperative.Cmd LExprTP)) :=
-  [.loop
-     (.const { underlying := (), type := mty[bool] } (.boolConst false))
+  [.loop (.det
+     (.const { underlying := (), type := mty[bool] } (.boolConst false)))
      none
      []
      []
@@ -387,8 +387,8 @@ info: ok: #[LOCATION skip, GOTO skip [((not(false : bool)) : bool)], GOTO skip, 
 /-- Test assertions and assumptions within control flow -/
 def ExampleStmt10 : List (Imperative.Stmt LExprTP (Imperative.Cmd LExprTP)) :=
   [.cmd (.init (Lambda.Identifier.mk "x" ()) mty[bv32] (.det (.const { underlying := (), type := mty[bv32] } (.bitvecConst 32 5))) {}),
-   .ite
-     (.const { underlying := (), type := mty[bool] } (.boolConst true))
+   .ite (.det
+     (.const { underlying := (), type := mty[bool] } (.boolConst true)))
      [.cmd (.assume "precond" (.const { underlying := (), type := mty[bool] } (.boolConst true)) {}),
       .cmd (.set (Lambda.Identifier.mk "x" ()) (.det (.const { underlying := (), type := mty[bv32] } (.bitvecConst 32 10))) {}),
       .cmd (.assert "postcond" (.const { underlying := (), type := mty[bool] } (.boolConst true)) {})]
@@ -446,8 +446,8 @@ info: ok: #[ASSERT skip]
 -- Test loop with invariant attaches #spec_loop_invariant to backward GOTO
 def ExampleLoopInvariant : List (Imperative.Stmt LExprTP (Imperative.Cmd LExprTP)) :=
   [.cmd (.init (Lambda.Identifier.mk "i" ()) mty[bv32] (.det (.const { underlying := (), type := mty[bv32] } (.bitvecConst 32 0))) {}),
-   .loop
-     (.const { underlying := (), type := mty[bool] } (.boolConst true))
+   .loop (.det
+     (.const { underlying := (), type := mty[bool] } (.boolConst true)))
      none
      [(.const { underlying := (), type := mty[bool] } (.boolConst true))]  -- invariant: true
      [.cmd (.set (Lambda.Identifier.mk "i" ()) (.det (addBV32LExpr
@@ -488,7 +488,7 @@ private def ExampleLoopMeasure : List (Imperative.Stmt LExprTP (Imperative.Cmd L
      (.det (.const { underlying := (), type := mty[int] } (.intConst 10))) {}),
    .loop
      -- guard: true
-     (.const { underlying := (), type := mty[bool] } (.boolConst true))
+     (.det (.const { underlying := (), type := mty[bool] } (.boolConst true)))
      -- measure: i
      (some (.fvar { underlying := (), type := mty[int] } (Lambda.Identifier.mk "i" ()) (some mty[int])))
      -- invariants: [true]

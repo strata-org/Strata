@@ -26,11 +26,17 @@ def StmtToNondetStmt {P : PureExpr} [Imperative.HasBool P] [HasNot P]
   | .cmd    cmd => .cmd cmd
   | .block  _ bss _ => BlockToNondetStmt bss
   | .ite    cond tss ess md =>
-    .choice
-      (.seq (.assume "true_cond" cond md) (BlockToNondetStmt tss))
-      (.seq ((.assume "false_cond" (Imperative.HasNot.not cond) md)) (BlockToNondetStmt ess))
+    match cond with
+    | .det c =>
+      .choice
+        (.seq (.assume "true_cond" c md) (BlockToNondetStmt tss))
+        (.seq ((.assume "false_cond" (Imperative.HasNot.not c) md)) (BlockToNondetStmt ess))
+    | .nondet =>
+      .choice (BlockToNondetStmt tss) (BlockToNondetStmt ess)
   | .loop   guard _measure _inv bss md =>
-    .loop (.seq (.assume "guard" guard md) (BlockToNondetStmt bss))
+    match guard with
+    | .det g => .loop (.seq (.assume "guard" g md) (BlockToNondetStmt bss))
+    | .nondet => .loop (BlockToNondetStmt bss)
   | .typeDecl _ md => (.assume "skip" Imperative.HasBool.tt md)
   | .exit _ md => (.assume "skip" Imperative.HasBool.tt md)
   | .funcDecl _ md => (.assume "skip" Imperative.HasBool.tt md)

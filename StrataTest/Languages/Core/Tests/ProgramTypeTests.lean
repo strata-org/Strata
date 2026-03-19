@@ -325,7 +325,7 @@ def outOfScopeVarProg : Program := { decls := [
                   postconditions := [] },
               body := [
                 Statement.set "y" eb[((~Bool.Or x) x)] .empty,
-                .ite eb[(x == #true)]
+                .ite (.det eb[(x == #true)])
                   [Statement.init "q" t[int] (.det eb[#0]) .empty,
                            Statement.set "q" eb[#1] .empty,
                            Statement.set "y" eb[#true] .empty]

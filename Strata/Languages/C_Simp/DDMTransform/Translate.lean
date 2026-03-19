@@ -401,9 +401,9 @@ partial def translateStmt (bindings : TransBindings) (arg : Arg) :
     return ([(.cmd (.set id (.det val) md))], bindings)
   | q`C_Simp.if_command, #[ca, ta, fa] =>
     let c ← translateExpr bindings ca
-    return ([(.ite c (← translateBlock bindings ta) (← translateElse bindings fa) md)], bindings)
+    return ([(.ite (.det c) (← translateBlock bindings ta) (← translateElse bindings fa) md)], bindings)
   | q`C_Simp.while_command, #[ga, measurea, invarianta, ba] =>
-    return ([.loop (← translateExpr bindings ga) (← translateMeasure bindings measurea) (← translateInvariant bindings invarianta) (← translateBlock bindings ba) md], bindings)
+    return ([.loop (.det (← translateExpr bindings ga)) (← translateMeasure bindings measurea) (← translateInvariant bindings invarianta) (← translateBlock bindings ba) md], bindings)
   | q`C_Simp.return, #[_tpa, ea] =>
     -- Return statements are assignments to the global `return` variable
     -- TODO: I don't think this works if we have functions with different return types

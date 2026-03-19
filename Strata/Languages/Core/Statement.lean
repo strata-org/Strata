@@ -353,10 +353,10 @@ def Statement.substFvar (s : Core.Statement)
   | .block lbl b metadata =>
     .block lbl (Block.substFvar b fr to) metadata
   | .ite cond thenb elseb metadata =>
-    .ite (Lambda.LExpr.substFvar cond fr to) (Block.substFvar thenb fr to)
+    .ite (cond.map (Lambda.LExpr.substFvar · fr to)) (Block.substFvar thenb fr to)
           (Block.substFvar elseb fr to) metadata
   | .loop guard measure invariant body metadata =>
-    .loop (Lambda.LExpr.substFvar guard fr to)
+    .loop (guard.map (Lambda.LExpr.substFvar · fr to))
           (Option.map (Lambda.LExpr.substFvar · fr to) measure)
           (invariant.map (Lambda.LExpr.substFvar · fr to))
           (Block.substFvar body fr to)

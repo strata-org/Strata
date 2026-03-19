@@ -18,7 +18,7 @@ section NondetExamples
 open Imperative
 
 def NondetTest1 : Stmt Expression (Cmd Expression) :=
-  .ite (Core.true) [.cmd $ .set "x" .nondet .empty ] [.cmd $ .set "y" .nondet .empty ] .empty
+  .ite (.det Core.true) [.cmd $ .set "x" .nondet .empty ] [.cmd $ .set "y" .nondet .empty ] .empty
 
 def NondetTest1Ans : NondetStmt Expression (Cmd Expression) :=
   .choice

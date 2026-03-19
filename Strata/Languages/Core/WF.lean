@@ -67,9 +67,9 @@ structure WFcallProp (p : Program) (lhs : List Expression.Ident) (procName : Str
 
 structure WFblockProp (Cmd : Type) (p : Program) (label : String) (b : Block) : Prop where
 
-structure WFifProp    (Cmd : Type) (p : Program) (cond : Expression.Expr)  (thenb : Block) (elseb : Block) : Prop where
+structure WFifProp    (Cmd : Type) (p : Program) (cond : ExprOrNondet Expression)  (thenb : Block) (elseb : Block) : Prop where
 
-structure WFloopProp    (Cmd : Type) (p : Program) (guard : Expression.Expr) (measure : Option Expression.Expr) (invariant : List Expression.Expr) (b : Block) : Prop where
+structure WFloopProp    (Cmd : Type) (p : Program) (guard : ExprOrNondet Expression) (measure : Option Expression.Expr) (invariant : List Expression.Expr) (b : Block) : Prop where
 
 structure WFexitProp  (p : Program) (label : Option String) : Prop where
 
@@ -91,9 +91,9 @@ structure WFfuncDeclProp (p : Program) (decl : Imperative.PureFunc Expression) :
 def WFStatementProp (p : Program) (stmt : Statement) : Prop := match stmt with
   | .cmd   cmd => WFCmdExtProp p cmd
   | .block (label : String) (b : Block) _ => WFblockProp (CmdExt Expression) p label b
-  | .ite   (cond : Expression.Expr) (thenb : Block) (elseb : Block) _ =>
+  | .ite   (cond : ExprOrNondet Expression) (thenb : Block) (elseb : Block) _ =>
      WFifProp (CmdExt Expression) p cond thenb elseb
-  | .loop  (guard : Expression.Expr) (measure : Option Expression.Expr) (invariant : List Expression.Expr) (body : Block) _ =>
+  | .loop  (guard : ExprOrNondet Expression) (measure : Option Expression.Expr) (invariant : List Expression.Expr) (body : Block) _ =>
      WFloopProp (CmdExt Expression) p guard measure invariant body
   | .exit (label : Option String) _ => WFexitProp p label
   | .funcDecl decl _ => WFfuncDeclProp p decl

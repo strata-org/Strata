@@ -259,7 +259,7 @@ private def prog1 : Statements :=
    [Statement.init "z" t[bool] (.det eb[zinit]) .empty,
     Statement.assume "z_false" eb[z == #false] .empty,
 
-   .ite eb[z == #false]
+   .ite (.det eb[z == #false])
      [Statement.set "x" eb[y] .empty]
      -- The "trivial" assertion, though unreachable, is still verified away by the
      -- PE because the conclusion of the proof obligation evaluates to `true`.

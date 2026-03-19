@@ -837,16 +837,24 @@ partial def stmtToCST {M} [Inhabited M] (s : Core.Statement)
     let blockCST ← blockToCST stmts
     pure (.block_statement default labelAnn blockCST)
   | .ite cond thenb elseb _md => do
-    let condCST ← lexprToExpr cond 0
     let thenCST ← blockToCST thenb
     let elseCST ← elseToCST elseb
-    pure (.if_statement default condCST thenCST elseCST)
+    match cond with
+    | .det e =>
+      let condCST ← lexprToExpr e 0
+      pure (.if_statement default condCST thenCST elseCST)
+    | .nondet =>
+      pure (.if_nondet_statement default thenCST elseCST)
   | .loop guard measure invariant body _md => do
-    let guardCST ← lexprToExpr guard 0
     let measureCST ← measureToCST measure
     let invs ← invariantsToCST invariant
     let bodyCST ← blockToCST body
-    pure (.while_statement default guardCST measureCST invs bodyCST)
+    match guard with
+    | .det e =>
+      let guardCST ← lexprToExpr e 0
+      pure (.while_statement default guardCST measureCST invs bodyCST)
+    | .nondet =>
+      pure (.while_nondet_statement default measureCST invs bodyCST)
   | .exit label _md => do
     match label with
     | some l =>

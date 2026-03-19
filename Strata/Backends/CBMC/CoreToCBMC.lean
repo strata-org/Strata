@@ -188,7 +188,7 @@ def stmtToJson {P : Imperative.PureExpr} (I : Lambda.LExprParams) [IdentToStr (L
   (e : Imperative.Stmt P Command) (loc: SourceLoc) : Except String Json :=
   match e with
   | .cmd cmd => cmdToJson cmd loc
-  | .ite cond thenb elseb _ => do
+  | .ite (.det cond) thenb elseb _ => do
     let converted_cond : Lambda.LExpr I.mono := @HasLExpr.expr_eq P (I:=I) _ ▸ cond
     return Json.mkObj [
       ("id", "code"),

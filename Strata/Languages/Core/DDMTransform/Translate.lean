@@ -1114,14 +1114,25 @@ partial def translateStmt (p : Program) (bindings : TransBindings) (arg : Arg) :
     let (tss, thenBindings) ← translateBlock p bindings ta
     let (fss, elseBindings) ← translateElse p { bindings with gen := thenBindings.gen } fa
     let md ← getOpMetaData op
-    return ([.ite c tss fss md], { bindings with gen := elseBindings.gen })
+    return ([.ite (.det c) tss fss md], { bindings with gen := elseBindings.gen })
+  | q`Core.if_nondet_statement, #[ta, fa] =>
+    let (tss, thenBindings) ← translateBlock p bindings ta
+    let (fss, elseBindings) ← translateElse p { bindings with gen := thenBindings.gen } fa
+    let md ← getOpMetaData op
+    return ([.ite .nondet tss fss md], { bindings with gen := elseBindings.gen })
   | q`Core.while_statement, #[ca, ma, ia, ba] =>
     let c ← translateExpr p bindings ca
     let measure ← translateMeasure p bindings ma
     let invs ← translateInvariants p bindings ia
     let (bodyss, bindings) ← translateBlock p bindings ba
     let md ← getOpMetaData op
-    return ([.loop c measure invs bodyss md], bindings)
+    return ([.loop (.det c) measure invs bodyss md], bindings)
+  | q`Core.while_nondet_statement, #[ma, ia, ba] =>
+    let measure ← translateMeasure p bindings ma
+    let invs ← translateInvariants p bindings ia
+    let (bodyss, bindings) ← translateBlock p bindings ba
+    let md ← getOpMetaData op
+    return ([.loop .nondet measure invs bodyss md], bindings)
   | q`Core.call_statement, #[lsa, fa, esa] =>
     let ls  ← translateCommaSep (translateIdent Core.CoreIdent) lsa
     let f   ← translateIdent String fa

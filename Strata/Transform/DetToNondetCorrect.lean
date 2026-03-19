@@ -86,6 +86,12 @@ theorem EvalStmt_noFuncDecl_preserves_δ
     | ite_false_sem _ _ Heval =>
       simp [Stmt.noFuncDecl] at Hno
       exact noFuncDecl_preserves_δ_block_aux extendEval ess _ _ _ _ ih_e Hno.2 Heval
+    | ite_nondet_true_sem Heval =>
+      simp [Stmt.noFuncDecl] at Hno
+      exact noFuncDecl_preserves_δ_block_aux extendEval tss _ _ _ _ ih_t Hno.1 Heval
+    | ite_nondet_false_sem Heval =>
+      simp [Stmt.noFuncDecl] at Hno
+      exact noFuncDecl_preserves_δ_block_aux extendEval ess _ _ _ _ ih_e Hno.2 Heval
   | loop_case guard measure invariant body md ih =>
     intros Hno Heval
     cases Heval
@@ -207,12 +213,30 @@ theorem StmtToNondetCorrect
         . apply EvalNondetStmt.cmd_sem
           refine EvalCmd.eval_assume ?_ Hwfb
           simp [WellFormedSemanticEvalBool] at Hwfb
-          exact (Hwfb σ c).2.mp Hfalse
+          exact (Hwfb σ _).2.mp Hfalse
           simp [isDefinedOver, HasVarsImp.modifiedVars, Cmd.modifiedVars, isDefined]
         . apply (ih _ _).2
           omega
           exact Hno.2
           rw [← Hδ]; exact Heval
+      | ite_nondet_true_sem Heval =>
+        simp [Stmt.noFuncDecl] at Hno
+        have Hδ : _ = δ := EvalBlock_noFuncDecl_preserves_δ extendEval tss δ _ σ σ' Hno.1 Heval
+        specialize ih (Block.sizeOf tss) (by simp_all; omega)
+        refine EvalNondetStmt.choice_left_sem Hwfb ?_
+        apply (ih _ _).2
+        omega
+        exact Hno.1
+        rw [← Hδ]; exact Heval
+      | ite_nondet_false_sem Heval =>
+        simp [Stmt.noFuncDecl] at Hno
+        have Hδ : _ = δ := EvalBlock_noFuncDecl_preserves_δ extendEval ess δ _ σ σ' Hno.2 Heval
+        specialize ih (Block.sizeOf ess) (by simp_all; omega)
+        refine EvalNondetStmt.choice_right_sem Hwfb ?_
+        apply (ih _ _).2
+        omega
+        exact Hno.2
+        rw [← Hδ]; exact Heval
     | .exit _ _ =>
       cases Heval
     | .loop _ _ _ _ _ =>

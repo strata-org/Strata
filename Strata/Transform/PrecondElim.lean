@@ -224,7 +224,9 @@ def transformStmt (s : Statement)
     setFactory savedF
     return (changed, [.block lbl b' md])
   | .ite c thenb elseb md => do
-    let condAsserts := collectPrecondAsserts F c "ite_cond" md
+    let condAsserts := match c with
+      | .det e => collectPrecondAsserts F e "ite_cond" md
+      | .nondet => []
     let savedF ← getFactory
     let (changed, thenb') ← transformStmts thenb
     setFactory savedF
@@ -240,8 +242,12 @@ def transformStmt (s : Statement)
       | none => []
       | some m => collectPrecondAsserts F m "loop_measure_end" md
     let invAsserts := invariant.flatMap (fun inv => collectPrecondAsserts F inv "loop_invariant" md)
-    let guardAsserts := collectPrecondAsserts F guard "loop_guard" md
-    let guardAssertsEnd := collectPrecondAsserts F guard "loop_guard_end" md
+    let guardAsserts := match guard with
+      | .det g => collectPrecondAsserts F g "loop_guard" md
+      | .nondet => []
+    let guardAssertsEnd := match guard with
+      | .det g => collectPrecondAsserts F g "loop_guard_end" md
+      | .nondet => []
     let savedF ← getFactory
     let (changed, body') ← transformStmts body
     setFactory savedF
