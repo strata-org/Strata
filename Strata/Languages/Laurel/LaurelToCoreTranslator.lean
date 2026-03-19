@@ -175,9 +175,9 @@ def translateExpr (expr : StmtExprMd)
     | .Neq => return .app Strata.SourceRange.none boolNotOp (.eq Strata.SourceRange.none re1 re2)
     | .And => return binOp boolAndOp
     | .Or => return binOp boolOrOp
-    | .AndThen => return .ite () re1 re2 (.boolConst () false)
-    | .OrElse => return .ite () re1 (.boolConst () true) re2
-    | .Implies => return .ite () re1 re2 (.boolConst () true)
+    | .AndThen => return .ite Strata.SourceRange.none re1 re2 (.boolConst Strata.SourceRange.none false)
+    | .OrElse => return .ite Strata.SourceRange.none re1 (.boolConst Strata.SourceRange.none true) re2
+    | .Implies => return .ite Strata.SourceRange.none re1 re2 (.boolConst Strata.SourceRange.none true)
     | .Add => return binOp (if isReal then realAddOp else intAddOp)
     | .Sub => return binOp (if isReal then realSubOp else intSubOp)
     | .Mul => return binOp (if isReal then realMulOp else intMulOp)
