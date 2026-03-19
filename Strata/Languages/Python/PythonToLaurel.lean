@@ -93,6 +93,8 @@ structure TranslationContext where
   compositeTypeNames : Std.HashSet String := {}
   /-- Track current class during method translation -/
   currentClassName : Option String := none
+  loopBreakLabel : Option String := none
+  loopContinueLabel : Option String := none
 deriving Inhabited
 
 /-! ## Error Handling -/
@@ -814,16 +816,24 @@ partial def translateAssign  (ctx : TranslationContext)
             if fnname.text ∈ ctx.compositeTypeNames then
               let newExpr := mkStmtExprMd (StmtExpr.New fnname)
               let varType := mkHighTypeMd (.UserDefined fnname)
-              let newStmt := mkStmtExprMd (StmtExpr.LocalVariable n.val varType (some newExpr))
-              let initStmt := mkStmtExprMd (StmtExpr.InstanceCall (mkStmtExprMd (StmtExpr.Identifier n.val)) "__init__" args)
-              [newStmt, initStmt]
+              if n.val ∈ ctx.variableTypes.unzip.1 then
+                let assignStmt := mkStmtExprMd (StmtExpr.Assign [targetExpr] newExpr)
+                let initStmt := mkStmtExprMd (StmtExpr.InstanceCall (mkStmtExprMd (StmtExpr.Identifier n.val)) "__init__" args)
+                [assignStmt, initStmt]
+              else
+                let newStmt := mkStmtExprMd (StmtExpr.LocalVariable n.val varType (some newExpr))
+                let initStmt := mkStmtExprMd (StmtExpr.InstanceCall (mkStmtExprMd (StmtExpr.Identifier n.val)) "__init__" args)
+                [newStmt, initStmt]
             else if withException ctx fnname.text then
               [mkStmtExprMd (StmtExpr.Assign [targetExpr, maybeExceptVar] rhs_trans)]
             else [mkStmtExprMd (StmtExpr.Assign [targetExpr] rhs_trans)]
         | .New className =>
-            let varType := mkHighTypeMd (.UserDefined className)
-            let newStmt := mkStmtExprMd (StmtExpr.LocalVariable n.val varType (some rhs_trans))
-            [newStmt]
+            if n.val ∈ ctx.variableTypes.unzip.1 then
+              [mkStmtExprMd (StmtExpr.Assign [targetExpr] rhs_trans)]
+            else
+              let varType := mkHighTypeMd (.UserDefined className)
+              let newStmt := mkStmtExprMd (StmtExpr.LocalVariable n.val varType (some rhs_trans))
+              [newStmt]
         | _ => [mkStmtExprMd (StmtExpr.Assign [targetExpr] rhs_trans)]
         newctx := match rhs_trans.val with
         | .StaticCall fnname _ =>
@@ -948,15 +958,19 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
         ([varDecl], varRef, { ctx with variableTypes := ctx.variableTypes ++ [(freshVar, "bool")] })
       | _ => ([], condExpr, ctx)
 
-    let (loopCtx, bodyStmts) ← translateStmtList condCtx body.val.toList
-    let bodyBlock := mkStmtExprMd (StmtExpr.Block bodyStmts none)
-    let whileStmt := mkStmtExprMdWithLoc (StmtExpr.While (Any_to_bool finalCondExpr) [] none bodyBlock) md
+    let breakLabel := s!"loop_break_{test.toAst.ann.start.byteIdx}"
+    let continueLabel := s!"loop_continue_{test.toAst.ann.start.byteIdx}"
+    let loopCtx := { condCtx with loopBreakLabel := some breakLabel, loopContinueLabel := some continueLabel }
+    let (_, bodyStmts) ← translateStmtList loopCtx body.val.toList
+    let bodyBlock := mkStmtExprMd (StmtExpr.Block bodyStmts (some continueLabel))
+    let whileStmt := mkStmtExprMd (StmtExpr.While (Any_to_bool finalCondExpr) [] none bodyBlock)
+    let whileWrapped := mkStmtExprMdWithLoc (StmtExpr.Block [whileStmt] (some breakLabel)) md
 
     -- Wrap in block if we hoisted condition
     let result := if condStmts.isEmpty then
-      whileStmt
+      whileWrapped
     else
-      mkStmtExprMdWithLoc (StmtExpr.Block (condStmts ++ [whileStmt]) none) md
+      mkStmtExprMdWithLoc (StmtExpr.Block (condStmts ++ [whileWrapped]) none) md
 
     return (loopCtx, [result])
 
@@ -1016,35 +1030,69 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
 
   -- Try/except - wrap body with exception checks and handlers
   | .Try _ body handlers _ _ => do
-    let tryLabel := "try_end"
-    let handlerLabel := "exception_handlers"
+    let tryLabel := s!"try_end_{s.toAst.ann.start.byteIdx}"
+    let catchersLabel := s!"exception_handlers_{s.toAst.ann.start.byteIdx}"
 
-    -- Translate try body
-    let (bodyCtx, bodyStmts) ← translateStmtList ctx body.val.toList
+    -- Pre-scan for variable declarations in both branches so they are
+    -- declared in the outer scope (Python scoping: variables assigned
+    -- in try/except are visible after the block).
+    let collectDeclaredNamesAndTypes (stmts : List (Python.stmt SourceRange)) : List (String × String) :=
+      stmts.filterMap fun s => match s with
+        | .AnnAssign _ target annotation _ _ =>
+          some (pyExprToString target, pyExprToString annotation)
+        | .Assign _ targets _ _ => targets.val.toList.head?.map (fun t => (pyExprToString t, PyLauType.Any))
+        | _ => none
+    let bodyDecls := collectDeclaredNamesAndTypes body.val.toList
+    let handlerDecls := handlers.val.toList.flatMap fun h => match h with
+      | .ExceptHandler _ _ _ hBody => collectDeclaredNamesAndTypes hBody.val.toList
+    let allNewDecls := (bodyDecls ++ handlerDecls).foldl (fun acc (n, ty) =>
+      if acc.any (fun (an, _) => an == n) || ctx.variableTypes.any (fun (vn, _) => vn == n)
+      then acc else acc ++ [(n, ty)]) []
+    let hoistedDecls : List StmtExprMd := allNewDecls.map fun (name, tyStr) =>
+      let ty := if tyStr ∈ ctx.compositeTypeNames then
+          mkHighTypeMd (.UserDefined tyStr)
+        else AnyTy
+      mkStmtExprMd (StmtExpr.LocalVariable (name : String) ty (some (mkStmtExprMd .Hole)))
+    let hoistedCtx := { ctx with variableTypes := ctx.variableTypes ++
+      (allNewDecls.map fun (n, ty) =>
+        if ty ∈ ctx.compositeTypeNames then (n, ty) else (n, PyLauType.Any)) }
 
-    -- Insert exception checks after each statement in try body
-    let bodyStmtsWithChecks := bodyStmts.flatMap fun stmt =>
-      -- Check if maybe_except is an exception and exit to handlers if so
-      let isException := mkStmtExprMd (StmtExpr.StaticCall "isError"
-        [mkStmtExprMd (StmtExpr.Identifier "maybe_except")])
-      let exitToHandler := mkStmtExprMd (StmtExpr.IfThenElse isException
-        (mkStmtExprMd (StmtExpr.Exit handlerLabel)) none)
-      [stmt, exitToHandler]
+    -- Translate try body (with hoisted context so inner decls become assigns)
+    let (bodyCtx, bodyStmts) ← translateStmtList hoistedCtx body.val.toList
 
     -- Translate exception handlers
+    let mut handlerCtx := bodyCtx
     let mut handlerStmts : List StmtExprMd := []
     for handler in handlers.val do
       match handler with
       | .ExceptHandler _ _ _ handlerBody =>
-        let (_, hStmts) ← translateStmtList bodyCtx handlerBody.val.toList
+        let (hCtx, hStmts) ← translateStmtList hoistedCtx handlerBody.val.toList
+        handlerCtx := hCtx
         handlerStmts := handlerStmts ++ hStmts
 
-    -- Create handler block
-    let handlerBlock := mkStmtExprMd (StmtExpr.Block handlerStmts (some handlerLabel))
+    -- Insert exception checks after each statement in try body
+    let bodyStmtsWithChecks := bodyStmts.flatMap fun stmt =>
+      let isException := mkStmtExprMd (StmtExpr.StaticCall "isError"
+        [mkStmtExprMd (StmtExpr.Identifier "maybe_except")])
+      let exitToHandler := mkStmtExprMd (StmtExpr.IfThenElse isException
+        (mkStmtExprMd (StmtExpr.Exit catchersLabel)) none)
+      [stmt, exitToHandler]
 
-    -- Wrap in try block
-    let tryBlock := mkStmtExprMdWithLoc (StmtExpr.Block (bodyStmtsWithChecks ++ [handlerBlock]) (some tryLabel)) md
-    return (bodyCtx, [tryBlock])
+    -- Normal completion: exit the try block, skipping handlers
+    let exitTry := mkStmtExprMd (StmtExpr.Exit tryLabel)
+
+    -- catchers block: body + exit try (normal path)
+    let catchersBlock := mkStmtExprMd (StmtExpr.Block
+      (bodyStmtsWithChecks ++ [exitTry]) (some catchersLabel))
+
+    -- try block: catchers block + handler code
+    let tryBlock := mkStmtExprMdWithLoc (StmtExpr.Block
+      ([catchersBlock] ++ handlerStmts) (some tryLabel)) md
+    let mergedVars := bodyCtx.variableTypes ++
+      (handlerCtx.variableTypes.filter fun (n, _) =>
+        !bodyCtx.variableTypes.any fun (bn, _) => bn == n)
+    let finalCtx := { bodyCtx with variableTypes := mergedVars }
+    return (finalCtx, hoistedDecls ++ [tryBlock])
 
   | .Raise _ _ _ => return (ctx, [mkStmtExprMd .Hole])
 
@@ -1090,18 +1138,27 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
     -- The iterator expression (we abstract it away)
     let _iterExpr ← translateExpr ctx iter
 
-    -- Create context with target variable
-    let bodyCtx := { ctx with variableTypes := ctx.variableTypes ++ [(targetName, PyLauType.Any)] }
-
-    -- Translate loop body
+    -- Create context with target variable and loop labels
+    let breakLabel := s!"for_break_{iter.toAst.ann.start.byteIdx}"
+    let continueLabel := s!"for_continue_{iter.toAst.ann.start.byteIdx}"
+    let bodyCtx := { ctx with
+      variableTypes := ctx.variableTypes ++ [(targetName, PyLauType.Any)]
+      loopBreakLabel := some breakLabel
+      loopContinueLabel := some continueLabel }
     let (finalCtx, bodyStmts) ← translateStmtList bodyCtx body.val.toList
-
-    -- Create: { target = havoc; body_statements }
-    -- This abstracts: execute body once with arbitrary target value
     let targetDecl := mkStmtExprMd (StmtExpr.LocalVariable targetName AnyTy (some (mkStmtExprMd .Hole)))
-    let loopBlock := mkStmtExprMdWithLoc (StmtExpr.Block ([targetDecl] ++ bodyStmts) none) md
-
+    let innerBlock := mkStmtExprMd (StmtExpr.Block ([targetDecl] ++ bodyStmts) (some continueLabel))
+    let loopBlock := mkStmtExprMdWithLoc (StmtExpr.Block [innerBlock] (some breakLabel)) md
     return (finalCtx, [loopBlock])
+
+  | .Break _ =>
+    match ctx.loopBreakLabel with
+    | some lbl => return (ctx, [mkStmtExprMdWithLoc (StmtExpr.Exit lbl) md])
+    | none => return (ctx, [mkStmtExprMdWithLoc (StmtExpr.Assert (mkStmtExprMd .Hole)) md])
+  | .Continue _ =>
+    match ctx.loopContinueLabel with
+    | some lbl => return (ctx, [mkStmtExprMdWithLoc (StmtExpr.Exit lbl) md])
+    | none => return (ctx, [mkStmtExprMdWithLoc (StmtExpr.Assert (mkStmtExprMd .Hole)) md])
 
   | _ => throw (.unsupportedConstruct "Statement type not yet supported" (toString (repr s)))
 

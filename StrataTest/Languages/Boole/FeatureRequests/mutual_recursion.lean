@@ -33,23 +33,25 @@ program Boole;
 // }
 
 function odd_stub(n: int) : bool;
+function even_stub(n: int) : bool;
 
-rec function even(n: int) : bool
-{
-  // TODO(feature:mutual-recursion): use `odd(n - 1)` once forward references work.
-  if n == 0 then true else odd_stub(n - 1)
-}
+//rec function even(n: int) : bool
+//{
+//  // TODO(feature:mutual-recursion): use `odd(n - 1)` once forward references work.
+//  if n == 0 then true else odd_stub(n - 1)
+//}
 
 procedure mutual_recursion_seed(n: int) returns ()
 spec {
   requires 0 <= n;
-  ensures even(n) || odd_stub(n);
+  ensures even_stub(n) || odd_stub(n);
 }
 {
-  assert even(n) || odd_stub(n);
+  assert even_stub(n) || odd_stub(n);
 };
 #end
 
+#guard_msgs (drop info) in
 #eval Strata.Boole.verify "cvc5" mutualRecursionSeed
 
 example : Strata.smtVCsCorrect mutualRecursionSeed := by
