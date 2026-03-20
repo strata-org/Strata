@@ -529,6 +529,38 @@ def translateProcedure (proc : Procedure) : TranslateM Core.Procedure := do
   let spec : Core.Procedure.Spec := { modifies, preconditions, postconditions }
   return { header, spec, body }
 
+partial def isRecursiveExpr (model: SemanticModel) (proc: Procedure) (expr : StmtExpr) : Bool := match expr with
+  | .StaticCall callee args =>
+    -- Compare by text name: the callee's uniqueId in the body may differ from the
+    -- declaration's uniqueId (they are resolved separately), so text comparison is correct.
+    callee.text == proc.name.text || args.any (fun a => isRecursiveExpr model proc a.val)
+  | .IfThenElse cond thenBr elseBr =>
+      isRecursiveExpr model proc cond.val || isRecursiveExpr model proc thenBr.val || (elseBr.any (fun e => isRecursiveExpr model proc e.val))
+  | .Block stmts _ => stmts.any (fun s => isRecursiveExpr model proc s.val)
+  | .LocalVariable _ _ init => init.any (fun i => isRecursiveExpr model proc i.val)
+  | .While cond invs dec body =>
+      isRecursiveExpr model proc cond.val || invs.any (fun i => isRecursiveExpr model proc i.val) ||
+      dec.any (fun d => isRecursiveExpr model proc d.val) || isRecursiveExpr model proc body.val
+  | .Return val => val.any (fun v => isRecursiveExpr model proc v.val)
+  | .Assign targets value => targets.any (fun t => isRecursiveExpr model proc t.val) || isRecursiveExpr model proc value.val
+  | .FieldSelect target _ => isRecursiveExpr model proc target.val
+  | .PureFieldUpdate target _ newVal => isRecursiveExpr model proc target.val || isRecursiveExpr model proc newVal.val
+  | .PrimitiveOp _ args => args.any (fun a => isRecursiveExpr model proc a.val)
+  | .ReferenceEquals lhs rhs => isRecursiveExpr model proc lhs.val || isRecursiveExpr model proc rhs.val
+  | .AsType target _ => isRecursiveExpr model proc target.val
+  | .IsType target _ => isRecursiveExpr model proc target.val
+  | .InstanceCall target _ args => isRecursiveExpr model proc target.val || args.any (fun a => isRecursiveExpr model proc a.val)
+  | .Forall _ trigger body => trigger.any (fun t => isRecursiveExpr model proc t.val) || isRecursiveExpr model proc body.val
+  | .Exists _ trigger body => trigger.any (fun t => isRecursiveExpr model proc t.val) || isRecursiveExpr model proc body.val
+  | .Assigned name => isRecursiveExpr model proc name.val
+  | .Old val => isRecursiveExpr model proc val.val
+  | .Fresh val => isRecursiveExpr model proc val.val
+  | .Assert cond => isRecursiveExpr model proc cond.val
+  | .Assume cond => isRecursiveExpr model proc cond.val
+  | .ProveBy value proof => isRecursiveExpr model proc value.val || isRecursiveExpr model proc proof.val
+  | .ContractOf _ fn => isRecursiveExpr model proc fn.val
+  | _ => false
+
 /--
 Translate a Laurel Procedure to a Core Function (when applicable) using `TranslateM`.
 Diagnostics for disallowed constructs in the function body are emitted into the monad state.
@@ -544,20 +576,50 @@ def translateProcedureToFunction (proc : Procedure) : TranslateM Core.Decl := do
     let checkExpr ← translateExpr precondition [] true
     return { expr := checkExpr, md := () })
 
+  -- Check whether the body contains a self-referential StaticCall (i.e. the function is recursive).
+  let isRecursive := match proc.body with
+    | .Transparent bodyExpr => isRecursiveExpr model proc bodyExpr.val
+    | .Opaque _ (some bodyExpr) _ => isRecursiveExpr model proc bodyExpr.val
+    | _ => false
+
+  -- For recursive functions, infer the @[cases] parameter index: the first input
+  -- whose type is a user-defined datatype (has constructors). This is the argument
+  -- the partial evaluator will case-split on to unfold the recursion.
+  let casesIdx : Option Nat :=
+    if !isRecursive then none
+    else proc.inputs.findIdx? fun p =>
+      match p.type.val with
+      | .UserDefined name => match model.get name with
+        | .datatypeDefinition _ => true
+        | _ => false
+      | _ => false
+  let attr : Array Strata.DL.Util.FuncAttr :=
+    match casesIdx with
+    | some i => #[.inlineIfConstr i]
+    | none => #[]
+
   let body ← match proc.body with
     | .Transparent bodyExpr => some <$> translateExpr bodyExpr [] (isPureContext := true)
     | .Opaque _ (some bodyExpr) _ =>
       emitDiagnostic (proc.md.toDiagnostic "functions with postconditions are not yet supported")
       some <$> translateExpr bodyExpr [] (isPureContext := true)
     | _ => pure none
-  return .func {
+  let f : Core.Function := {
     name := ⟨proc.name.text, ()⟩
     typeArgs := []
     inputs := inputs
     output := outputTy
     body := body
     preconditions := preconditions
+    isRecursive := isRecursive
+    attr := attr
   }
+  -- Recursive functions must be wrapped in recFuncBlock so the type checker
+  -- pre-registers the signature before checking the body (enabling self-calls).
+  if isRecursive then
+    return .recFuncBlock [f]
+  else
+    return .func f
 
 /--
 Translate a Laurel DatatypeDefinition to an `LDatatype Unit`.
@@ -622,7 +684,7 @@ def translate (options: LaurelTranslateOptions) (program : Program): TranslateRe
   let result := resolve program (some model)
   let (program, model) := (result.program, result.model)
 
-    let initState : TranslateState := {model := model }
+  let initState : TranslateState := {model := model }
   let (coreProgramOption, translateState) := runTranslateM initState (translateLaurelToCore program)
   let resolutionErrors: List DiagnosticModel := if options.emitResolutionErrors then result.errors.toList else []
   let allDiagnostics := resolutionErrors ++ diamondErrors ++ modifiesDiags ++ constrainedTypeDiags ++ translateState.diagnostics
