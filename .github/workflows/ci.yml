@@ -30,7 +30,7 @@ jobs:
           - stable
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
       - name: Install cvc5
         shell: bash
         run: |
@@ -129,7 +129,7 @@ jobs:
           - stable
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
       - name: Check copyright headers
@@ -151,7 +151,7 @@ jobs:
       contents: read
       actions: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Build API documentation package
         uses: leanprover/lean-action@v1
         with:
@@ -196,7 +196,7 @@ jobs:
       matrix:
         python_version: [3.11, 3.12, 3.13, 3.14]
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v6
     - uses: actions/setup-python@v5
       with:
         python-version: ${{ matrix.python_version }}
