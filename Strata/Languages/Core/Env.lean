@@ -202,6 +202,22 @@ def Env.addFactory (E : Env) (f : (@Lambda.Factory CoreLParams)) : Except Diagno
   let exprEnv ← E.exprEnv.addFactory f
   .ok { E with exprEnv := exprEnv }
 
+/-- Validate that all `@[cases]` parameters in a recursive function block
+    reference known datatypes. This is checked at evaluation time because
+    it is an SMT backend limitation, not a type system constraint. -/
+def validateCasesTypes (funcs : List Function) (tf : @Lambda.TypeFactory Unit) :
+    Except DiagnosticModel Unit := do
+  for func in funcs do
+    let recIdx ← (Strata.DL.Util.FuncAttr.findInlineIfConstr func.attr).elim
+      (.error (.fromFormat f!"Recursive function '{func.name}' requires a @[cases] parameter")) .ok
+    let recTy ← func.inputs.values[recIdx]?.elim
+      (.error (.fromFormat f!"'{func.name}': @[cases] index {recIdx} out of bounds")) .ok
+    match recTy with
+    | .tcons n _ =>
+      if (tf.toList.find? (·.any (·.name == n))).isNone then
+        .error (.fromFormat f!"'{func.name}': @[cases] type '{n}' is not a known datatype")
+    | _ => .error (.fromFormat f!"'{func.name}': @[cases] type is not a datatype")
+
 /-- Add a function to the environment. For recursive functions, checks that
     the `@[cases]` attribute was provided (which sets `inlineIfConstr`), and
     rejects cases not yet supported for SMT verification (polymorphic recursive

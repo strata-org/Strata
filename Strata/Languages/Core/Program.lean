@@ -27,7 +27,7 @@ instance : Inhabited TypeDecl where
 -- Note: ToFormat CoreLParams.Identifier is now defined in Identifiers.lean
 
 inductive DeclKind : Type where
-  | var | type | ax | distinct | proc | func
+  | var | type | ax | distinct | proc | func | recFuncBlock
   deriving DecidableEq, Repr
 
 instance : ToFormat DeclKind where
@@ -38,6 +38,7 @@ instance : ToFormat DeclKind where
     | .distinct => "distinct"
     | .proc => "procedure"
     | .func => "function"
+    | .recFuncBlock => "recursive functions"
 
 /--
 A Strata Core declaration.
@@ -53,6 +54,7 @@ inductive Decl where
   | distinct (name : Expression.Ident) (es : List Expression.Expr) (md : MetaData Core.Expression := .empty)
   | proc (d : Procedure) (md : MetaData Core.Expression := .empty)
   | func (f : Function) (md : MetaData Core.Expression := .empty)
+  | recFuncBlock (fs : List Function) (md : MetaData Core.Expression := .empty)
   deriving Inhabited
 
 def Decl.metadata (d : Decl) : MetaData Expression :=
@@ -63,6 +65,7 @@ def Decl.metadata (d : Decl) : MetaData Expression :=
   | .distinct _ _ md => md
   | .proc _ md       => md
   | .func _ md       => md
+  | .recFuncBlock _ md => md
 
 def Decl.kind (d : Decl) : DeclKind :=
   match d with
@@ -72,6 +75,7 @@ def Decl.kind (d : Decl) : DeclKind :=
   | .distinct _ _ _ => .distinct
   | .proc _ _   => .proc
   | .func _ _   => .func
+  | .recFuncBlock _ _ => .recFuncBlock
 
 def Decl.name (d : Decl) : Expression.Ident :=
   match d with
@@ -81,11 +85,17 @@ def Decl.name (d : Decl) : Expression.Ident :=
   | .distinct n _ _ => n
   | .proc p _       => p.header.name
   | .func f _       => f.name
+  -- A recFuncBlock can never be empty in a well-typed program
+  -- (see ProgramType.lean), so this case is unreachable.
+  | .recFuncBlock [] _ => ""
+  | .recFuncBlock (f :: _) _ => f.name
 
-/-- Get all names from a declaration. For mutual datatypes, returns all datatype names. -/
+/-- Get all names from a declaration. For mutual datatypes, returns all datatype names.
+    For recFuncBlock, returns all function names. -/
 @[expose] def Decl.names (d : Decl) : List Expression.Ident :=
   match d with
   | .type t _ => t.names
+  | .recFuncBlock fs _ => fs.map (·.name)
   | _ => [d.name]
 
 def Decl.getVar? (d : Decl) :
@@ -127,11 +137,17 @@ def Decl.getFunc? (d : Decl) : Option Function :=
 def Decl.getFunc (d : Decl) (H: d.kind = .func): Function :=
   let .func f _ := d; f
 
+def Decl.getRecFuncBlock? (d : Decl) : Option (List Function) :=
+  match d with
+  | .recFuncBlock fs _ => some fs
+  | _ => none
+
 def Decl.eraseTypes (d : Decl) : Decl :=
   match d with
   | .ax a md     => .ax a.eraseTypes md
   | .proc p md   => .proc p.eraseTypes md
   | .func f md   => .func f.eraseTypes md
+  | .recFuncBlock fs md => .recFuncBlock (fs.map (·.eraseTypes)) md
   | .var _ _ _ _ | .type _ _ | .distinct _ _ _ => d
 
 /-- Remove all metadata from a declaration. -/
@@ -143,6 +159,7 @@ def Decl.stripMetaData (d : Decl) : Decl :=
   | .distinct n es _ => .distinct n es
   | .proc p _ => .proc p.stripMetaData
   | .func f _ => .func f
+  | .recFuncBlock fs _ => .recFuncBlock fs
 
 -- Metadata not included.
 instance : ToFormat Decl where
@@ -154,6 +171,9 @@ instance : ToFormat Decl where
     | .distinct l es _md  => f!"distinct [{l}] {es}"
     | .proc p _md => f!"{p}"
     | .func f _md => f!"{f}"
+    | .recFuncBlock fs _md =>
+      let fmts := fs.map (fun f => format f)
+      f!"mutual{Format.line}{Format.joinSep fmts Format.line}{Format.line}end"
 
 def Decl.formatWithMetaData (decl : Decl) : Format :=
   f!"{decl.metadata}{decl}"
@@ -244,7 +264,16 @@ def Program.Procedure.find? (P : Program) (x : Expression.Ident) : Option Proced
   | some d => some $ d.getProc $ Program.find?_kind H
 
 def Program.Function.find? (P : Program) (x : Expression.Ident)
-  : Option Function := do (← P.find? .func x).getFunc?
+  : Option Function :=
+  go P.decls
+where go
+  | [] => none
+  | .func f _ :: rest => if f.name == x then some f else go rest
+  | .recFuncBlock fs _ :: rest =>
+      match fs.find? (·.name == x) with
+      | some f => some f
+      | none => go rest
+  | _ :: rest => go rest
 
 -- accessor methods based on find?
 

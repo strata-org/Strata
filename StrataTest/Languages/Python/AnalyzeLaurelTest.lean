@@ -94,8 +94,12 @@ private meta def runAnalyze (dispatchIon : System.FilePath)
     | .ok r => pure r
     | .error err => return .error (toString err)
   match Strata.translateCombinedLaurel laurel with
-  | (some core, []) => .ok $ pure core
-  | (_, errors) => .error s!"Laurel to Core translation failed: {errors}"
+  | (some core, []) =>
+    -- Also run Core type checking to catch semantic errors (e.g. Heap vs Any)
+    match Core.typeCheck Core.VerifyOptions.quiet core with
+    | .error diag => return .error s!"Core type checking failed: {diag}"
+    | .ok _ => return .ok core
+  | (_, errors) => return .error s!"Laurel to Core translation failed: {errors}"
 
 /-- Expected outcome for a test case. -/
 private inductive Expected where
@@ -109,6 +113,10 @@ private meta def testCases : List (String × Expected) := [
   .mk "test_multi_service.py" .success,
   .mk "test_annotation_fallback.py" .success,
   .mk "test_required_with_optional.py" .success,
+  .mk "test_heap_return.py" .success,
+  .mk "test_list_str.py" .success,
+  .mk "test_nested_try.py" .success,
+  .mk "test_try_scope.py" .success,
   -- Negative tests
   .mk "test_invalid_service.py" $
     .fail "User code error: 'connect' called with unknown string \"invalid\"; known services: #[messaging, storage]",
