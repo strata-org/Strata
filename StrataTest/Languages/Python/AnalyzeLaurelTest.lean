@@ -105,6 +105,7 @@ private meta def runAnalyze (dispatchIon : System.FilePath)
 private inductive Expected where
   | success
   | fail (msg : String)
+  | failPrefix (pfx : String)
 
 /-- All dispatch test cases: (filename, expected outcome). -/
 private meta def testCases : List (String × Expected) := [
@@ -117,7 +118,14 @@ private meta def testCases : List (String × Expected) := [
   .mk "test_list_str.py" .success,
   .mk "test_nested_try.py" .success,
   .mk "test_try_scope.py" .success,
-  -- Negative tests
+  .mk "test_ternary.py" .success,
+  .mk "test_pow_operator.py" .success,
+  .mk "test_import_usage.py" .success,
+  .mk "test_except_var_usage.py" .success,
+  .mk "test_fstring.py" .success,
+  .mk "test_instance_call_result.py" .success,
+  .mk "test_while_var_scope.py" .success,
+  -- Negative tests (user errors)
   .mk "test_invalid_service.py" $
     .fail "User code error: 'connect' called with unknown string \"invalid\"; known services: #[messaging, storage]",
   .mk "test_invalid_method.py" $
@@ -133,7 +141,33 @@ private meta def testCases : List (String × Expected) := [
   .mk "test_optional_missing_required.py" $
     .fail "User code error: 'list_items' called with missing required arguments: [Bucket]",
   .mk "test_positional_missing.py" $
-    .fail "User code error: 'delete_item' called with missing required arguments: [Key]"
+    .fail "User code error: 'delete_item' called with missing required arguments: [Key]",
+  .mk "test_slice.py" .success,
+  .mk "test_tuple_for.py" .success,
+  .mk "test_augassign.py" .success,
+  -- Cat 3: Box..Any — class with Any-typed field, Box constructor references undefined type
+  .mk "test_box_any_type.py" $
+    .fail "Core type checking failed: Error in datatype Box, constructor Box..Any: Undefined type 'Any'",
+  -- Cat 5: Hole nested in kwarg not lifted before Core translation
+  .mk "test_unlifted_hole.py" $
+    .fail "Laurel to Core translation failed: [holes should have been eliminated before translation (should have been lifted)]",
+  -- Cat 6: wrapFieldInAny — class with Any-typed field accessed
+  .mk "test_any_field_access.py" $
+    .fail "Python to Laurel translation failed: Type error: wrapFieldInAny: no Any constructor for field type 'Core(Any)'",
+  -- Expected failures: known issues to fix (see fix_types_plan.md)
+  -- Cat 1: __init__ not found — user-defined class constructors not registered as procedures
+  .mk "test_class_init_kwargs.py" $
+    .fail "Core type checking failed: [call __init__((~DictStrAny_insert ~DictStrAny_empty #region (~from_string #us-west-2)))]: Procedure __init__ not found!",
+  .mk "test_class_init_noargs.py" $
+    .fail "Core type checking failed: [call __init__()]: Procedure __init__ not found!",
+  -- Cat 2: Any vs Composite — composite-typed var in context expecting Any
+  .mk "test_any_vs_composite.py" $
+    .fail "Core type checking failed: Impossible to unify Any with Composite.",
+  -- Cat 4: __enter__ not found — with statement on unmodeled context manager
+  .mk "test_with_open.py" $
+    .fail "Core type checking failed: [call [f] := __enter__()]: Procedure __enter__ not found!",
+  -- Cat 7: Non-modeled function call arity mismatch
+  .mk "test_nonmodeled_call.py" (Expected.failPrefix "Core type checking failed:")
 ]
 
 /-- Run a single test case and return an error message on failure, or `none` on success. -/
@@ -149,6 +183,11 @@ private meta def runTestCase (dispatchIon tmpDir : System.FilePath)
   | .fail exp, .error msg =>
     if msg == exp then return none
     else return some s!"{scriptName}: Expected error:\n  {exp}\nGot:\n  {msg}"
+  | .failPrefix _, .ok _ =>
+    return some s!"pyAnalyzeLaurel succeeded on {scriptName} but was expected to fail"
+  | .failPrefix pre, .error msg =>
+    if msg.startsWith pre then return none
+    else return some s!"{scriptName}: Expected error prefix:\n  {pre}\nGot:\n  {msg}"
 
 #eval withPython fun _pythonCmd => do
   IO.FS.withTempDir fun tmpDir => do
