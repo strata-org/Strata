@@ -97,9 +97,27 @@ def reCompileFunc : LFunc Core.CoreLParams :=
           | _ => .none)
       }
 
+-- Laurel pipeline: re_compile_str(pattern : string) : regex
+-- Same expansion as reCompileFunc but without flags or Except wrapping.
+def reCompileStrFunc : LFunc Core.CoreLParams :=
+    { name := "re_compile_str",
+      typeArgs := [],
+      inputs := [("pattern", mty[string])],
+      output := mty[regex],
+      concreteEval := some
+        (fun _ args => match args with
+          | [LExpr.strConst () s] =>
+            let (expr, maybe_err) := pythonRegexToCore s .fullmatch
+            match maybe_err with
+            | none => .some expr
+            | some _ => .none
+          | _ => .none)
+      }
+
 def ReFactory : @Factory Core.CoreLParams :=
     #[
-      reCompileFunc
+      reCompileFunc,
+      reCompileStrFunc
     ]
 
 end -- public section
