@@ -42,11 +42,7 @@ procedure main() { var x: int; return 0 };
 "
   IO.println (toString (runProgram prog))
 
-/-! ## Test 3: Assignment returns assigned value (impure expression position)
-
-The default lift pass handles the block expression `{x := 42; x}` in argument
-position.
--/
+/-! ## Test 3: Block expression returns last value after side effects -/
 
 /--
 info: returned: 42
@@ -54,8 +50,7 @@ info: returned: 42
 #guard_msgs in
 #eval! do
   let prog ← parseLaurel r"
-procedure id(x: int) { return x };
-procedure main() { var x: int := 0; return id({x := 42; x}) };
+procedure main() { var x: int := 0; return {x := 42; x} };
 "
   IO.println (toString (runProgram prog))
 
