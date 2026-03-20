@@ -148,7 +148,7 @@ private meta def testCases : List (String × Expected) := [
   .mk "test_augassign.py" .success,
   .mk "test_unlifted_hole.py" .success,
   -- Expected failures: known issues to fix (see fix_types_plan.md)
-  -- Box constructor / type issues in user-defined class __init__ bodies
+  -- __init__ call arity mismatch (heap args not threaded correctly)
   .mk "test_class_init_kwargs.py" (Expected.failPrefix "Core type checking failed:"),
   .mk "test_class_init_noargs.py" (Expected.failPrefix "Core type checking failed:"),
   -- Any vs Composite type mismatch
