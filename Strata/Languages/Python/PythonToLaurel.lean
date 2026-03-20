@@ -980,6 +980,8 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
   | .While _ test body _orelse => do
     -- Note: Python while-else not supported yet
     let condExpr ← translateExpr ctx test
+    let newDecls := collectDeclaredNamesAndTypes body.val.toList
+    let (varDecls, ctx) := createVarDeclStmtsAndCtx ctx newDecls
     let breakLabel := s!"loop_break_{test.toAst.ann.start.byteIdx}"
     let continueLabel := s!"loop_continue_{test.toAst.ann.start.byteIdx}"
     let loopCtx := { ctx with loopBreakLabel := some breakLabel, loopContinueLabel := some continueLabel }
@@ -987,7 +989,7 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
     let bodyBlock := mkStmtExprMd (StmtExpr.Block bodyStmts (some continueLabel))
     let whileStmt := mkStmtExprMd (StmtExpr.While (Any_to_bool condExpr) [] none bodyBlock)
     let whileWrapped := mkStmtExprMdWithLoc (StmtExpr.Block [whileStmt] (some breakLabel)) md
-    return (loopCtx, [whileWrapped])
+    return (loopCtx, varDecls ++ [whileWrapped])
 
   -- Return statement: assign to the LaurelResult output parameter, then exit $body.
   | .Return _ value => do
@@ -1132,7 +1134,8 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
 
     -- The iterator expression (we abstract it away)
     let _iterExpr ← translateExpr ctx iter
-
+    let newDecls := collectDeclaredNamesAndTypes body.val.toList
+    let (varDecls, ctx) := createVarDeclStmtsAndCtx ctx newDecls
     -- Create context with target variable and loop labels
     let breakLabel := s!"for_break_{iter.toAst.ann.start.byteIdx}"
     let continueLabel := s!"for_continue_{iter.toAst.ann.start.byteIdx}"
@@ -1144,7 +1147,7 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
     let targetDecl := mkStmtExprMd (StmtExpr.LocalVariable targetName AnyTy (some (mkStmtExprMd .Hole)))
     let innerBlock := mkStmtExprMd (StmtExpr.Block ([targetDecl] ++ bodyStmts) (some continueLabel))
     let loopBlock := mkStmtExprMdWithLoc (StmtExpr.Block [innerBlock] (some breakLabel)) md
-    return (finalCtx, [loopBlock])
+    return (finalCtx, varDecls ++ [loopBlock])
 
   | .Break _ =>
     match ctx.loopBreakLabel with
