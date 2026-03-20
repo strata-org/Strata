@@ -90,6 +90,18 @@ datatype DictStrAny {
 }
 
 // /////////////////////////////////////////////////////////////////////////////////////
+// DictStrAny functions
+// /////////////////////////////////////////////////////////////////////////////////////
+
+function Any_sets (/* @[cases] */ indices: ListAny, dictOrList: Any, val: Any): Any
+{
+  if ListAny..isListAny_nil(indices) then dictOrList
+  else if ListAny..isListAny_nil(ListAny..tail!(indices)) then Any_set!(dictOrList, ListAny..head!(indices), val)
+  else Any_set!(dictOrList, ListAny..head!(indices),
+    Any_sets(ListAny..tail!(indices), Any_get!(dictOrList, ListAny..head!(indices)), val))
+};
+
+// /////////////////////////////////////////////////////////////////////////////////////
 // For testing purpose
 // /////////////////////////////////////////////////////////////////////////////////////
 
@@ -103,18 +115,6 @@ procedure test_helper_procedure(req_name : Any, opt_name : Any) returns (ret: An
   assert (Any..isfrom_none(opt_name)) || (Any..isfrom_string(opt_name)) summary "assert_opt_name_none_or_str";
   assert (opt_name == from_none()) || (opt_name == from_string("bar")) summary "assert_opt_name_none_or_bar";
   assume (Error..isNoError(maybe_except)) // summary "assume_maybe_except_none"
-};
-
-// /////////////////////////////////////////////////////////////////////////////////////
-// DictStrAny functions
-// /////////////////////////////////////////////////////////////////////////////////////
-
-function Any_sets (dictOrList: Any, /* @[cases] */ indices: ListAny, val: Any): Any
-{
-  if ListAny..isListAny_nil(indices) then dictOrList
-  else if ListAny..isListAny_nil(ListAny..tail!(indices)) then Any_set!(dictOrList, ListAny..head!(indices), val)
-  else Any_set!(dictOrList, ListAny..head!(indices),
-    Any_sets(Any_get!(dictOrList, ListAny..head!(indices)), ListAny..tail!(indices), val))
 };
 
 datatype FIRST_END_MARKER { }

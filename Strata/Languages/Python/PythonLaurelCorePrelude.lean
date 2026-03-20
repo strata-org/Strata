@@ -351,14 +351,6 @@ inline function Any_set! (dictOrList: Any, index: Any, val: Any): Any
     exception (IndexError("Index out of bound"))
 }
 
-rec function Any_sets (dictOrList: Any, @[cases] indices: ListAny, val: Any): Any
-{
-  if ListAny..isListAny_nil(indices) then dictOrList
-  else if ListAny..isListAny_nil(ListAny..tail!(indices)) then Any_set!(dictOrList, ListAny..head!(indices), val)
-  else Any_set!(dictOrList, ListAny..head!(indices),
-    Any_sets(Any_get!(dictOrList, ListAny..head!(indices)), ListAny..tail!(indices), val))
-};
-
 inline function PIn (v: Any, dictOrList: Any) : Any
   requires (Any..isfrom_Dict(dictOrList) && Any..isfrom_string(v)) || Any..isfrom_ListAny(dictOrList);
 {
