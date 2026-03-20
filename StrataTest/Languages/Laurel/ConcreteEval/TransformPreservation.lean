@@ -12,6 +12,8 @@ import StrataTest.Languages.Laurel.ConcreteEval.TestHelper
 Runs every string-based ConcreteEval test after the full
 Laurel→Laurel lowering pipeline from LaurelToCoreTranslator.translate.
 
+TODO: find a way to not duplicate the test cases and their expected results
+
 ## Status
 - Passing: 77 / 94 tests (output matches direct mode)
 - Failing: 17 / 94 tests (output differs from direct mode)
