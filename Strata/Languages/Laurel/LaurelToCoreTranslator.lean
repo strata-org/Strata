@@ -587,6 +587,9 @@ structure LaurelTranslateOptions where
 /--
 Apply the full Laurel→Laurel lowering pipeline (all passes before the Laurel→Core translation).
 Returns the lowered program.
+
+TODO: Refactor `translate` to call `lowerLaurelToLaurel` internally so the
+Laurel→Laurel pass sequence is defined in exactly one place.
 -/
 def lowerLaurelToLaurel (program : Program) : Program :=
   let program := { program with
@@ -601,8 +604,6 @@ def lowerLaurelToLaurel (program : Program) : Program :=
   let result := resolve program (some model)
   let (program, model) := (result.program, result.model)
   let (program, _) := modifiesClausesTransform model program
-  let result := resolve program (some model)
-  let (program, model) := (result.program, result.model)
   let result := resolve program (some model)
   let (program, model) := (result.program, result.model)
   let program := inferHoleTypes model program

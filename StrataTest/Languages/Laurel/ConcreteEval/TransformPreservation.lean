@@ -17,10 +17,10 @@ Laurel→Laurel lowering pipeline from LaurelToCoreTranslator.translate.
 - Failing: 17 / 94 tests (output differs from direct mode)
 
 ## Known failure categories
-- heapParameterization (13 tests): all tests using composite types / heap
+- heapParameterization (12 tests): all tests using composite types / heap
   objects fail because the evaluator does not handle heap-parameterized
   programs (field accesses become map select/store operations).
-- liftExpressionAssignments (4 tests): nested procedure calls in expression
+- liftExpressionAssignments (5 tests): nested procedure calls in expression
   position are lifted into temporaries, and side-effect evaluation order
   changes break tests that depend on left-to-right argument evaluation.
 -/
@@ -919,9 +919,13 @@ procedure main() { noop(); return 0 };
 /-! ## SideEffects -/
 
 /-! ### SideEffects Test 1: Left-to-right argument evaluation — FAILS after transforms
-liftExpressionAssignments changes evaluation order: side effects in arguments
-are lifted before the call, so x stays 0 instead of being modified during
-argument evaluation. Direct mode: returned 12. After transforms: returned 0.
+liftExpressionAssignments lifts block expressions out of argument positions into
+preceding statements. The lifting traverses arguments right-to-left, creating
+snapshot variables that capture each variable's value *before* the block's
+assignment. Both lifted blocks independently see the original x=0: the first
+block's snapshot captures x=0 and assigns 0 to its temporary, and the second
+block's snapshot also captures x=0 and assigns 0 to its temporary. The call
+then receives add(0, 0) = 0. Direct mode: returned 12. After transforms: returned 0.
 -/
 /--
 info: returned: 0
