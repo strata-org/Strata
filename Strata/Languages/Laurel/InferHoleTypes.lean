@@ -24,7 +24,7 @@ namespace Laurel
 public section
 
 private def bareType (v : HighType) : HighTypeMd := ⟨v, (#[] : Imperative.MetaData Core.Expression)⟩
-private def defaultHoleType : HighTypeMd := bareType .Top
+private def defaultHoleType : HighTypeMd := bareType .Unknown
 
 /-- Compute the expected type for an argument of a comparison operator
     by looking at the first non-hole sibling. -/
@@ -40,7 +40,7 @@ private def calleeParamTypes (model : SemanticModel) (callee : Identifier) : Opt
 
 structure InferHoleState where
   model : SemanticModel
-  currentOutputType : HighTypeMd := ⟨.Top, #[]⟩
+  currentOutputType : HighTypeMd := ⟨.Unknown, #[]⟩
 
 private abbrev InferHoleM := StateM InferHoleState
 
@@ -73,7 +73,7 @@ private def inferExpr (expr : StmtExprMd) (expectedType : HighTypeMd) : InferHol
           -- (e.g. when the first arg is a Hole).
           let computed := computeExprType model expr
           match computed.val with
-          | .TCore _ | .Top => expectedType
+          | .TCore _ | .Unknown => expectedType
           | _ => computed
       return ⟨.PrimitiveOp op (← inferArgs args argType), md⟩
   | .StaticCall callee args =>

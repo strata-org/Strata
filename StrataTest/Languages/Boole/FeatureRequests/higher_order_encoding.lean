@@ -36,7 +36,11 @@ spec {
 };
 #end
 
-#eval Strata.Boole.verify "cvc5" higherOrderSeed
+/-- info: Obligation: higher_order_seed_ensures_0_615
+Property: assert
+Result: ✅ pass-/
+#guard_msgs in
+#eval Strata.Boole.verify "cvc5" higherOrderSeed (options:=.quiet)
 
 example : Strata.smtVCsCorrect higherOrderSeed := by
   gen_smt_vcs

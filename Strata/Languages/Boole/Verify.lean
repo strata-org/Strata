@@ -171,6 +171,7 @@ private def typeRange : Boole.Type → SourceRange
   | .bv32 m => m
   | .bv64 m => m
   | .Map m _ _ => m
+  | .Sequence m _ => m
 
 def toCoreMonoType (t : Boole.Type) : TranslateM Lambda.LMonoTy := do
   match t with
@@ -577,7 +578,7 @@ private def lowerPureFuncDef
     (ret : Boole.Type)
     (pres : Array (BooleDDM.SpecElt SourceRange))
     (body : Boole.Expr)
-    (inline : Bool) : TranslateM Core.Decl := do
+    (inline : Bool) : TranslateM Core.Function := do
   withTypeBVars tys do
     let bsList := bindingsToList bs
     let inputs ← bsList.mapM toCoreBinding
@@ -585,7 +586,7 @@ private def lowerPureFuncDef
     let pres ← withBVars inputNames (toCoreSpecElts m n pres)
     let pres := pres.preconditions.map (fun (_, c) => ⟨c.expr, ()⟩)
     let body ← withBVars inputNames (toCoreExpr body)
-    return .func {
+    return {
       name := mkIdent n
       typeArgs := tys
       inputs := inputs
@@ -609,7 +610,7 @@ private def registerCommandSymbols (cmd : BooleDDM.Command SourceRange) : List B
   | .command_constdecl _ _ _ _ => [true]
   | .command_fndecl _ _ _ _ _ => [true]
   | .command_fndef _ _ _ _ _ _ _ _ => [true]
-  | .command_recfndef _ _ _ _ _ _ _ => [true]
+  | .command_recfndefs _ ⟨_, funcs⟩ => funcs.toList.map (fun _ => true)
   | .command_var _ _ => [false]
   -- Procedure names are referenced by call statements directly and are not Expr.fvar symbols.
   | .command_procedure _ _ _ _ _ _ _ => []
@@ -667,10 +668,14 @@ def toCoreDecls (cmd : BooleDDM.Command SourceRange) : TranslateM (List Core.Dec
       return [.func { name := mkIdent n, typeArgs := tys, inputs := ← (bindingsToList bs).mapM toCoreBinding, output := ← toCoreMonoType ret, body := none, concreteEval := none, attr := #[], axioms := [] }]
   | .command_fndef m ⟨_, n⟩ ⟨_, targs?⟩ bs ret ⟨_, pres⟩ body ⟨_, inline?⟩ =>
     let tys := match targs? with | none => [] | some ts => typeArgsToList ts
-    return [← lowerPureFuncDef m n tys bs ret pres body inline?.isSome]
-  | .command_recfndef m ⟨_, n⟩ ⟨_, targs?⟩ bs ret ⟨_, pres⟩ body =>
-    let tys := match targs? with | none => [] | some ts => typeArgsToList ts
-    return [← lowerPureFuncDef m n tys bs ret pres body false]
+    return [.func (← lowerPureFuncDef m n tys bs ret pres body inline?.isSome)]
+  | .command_recfndefs _ ⟨_, funcs⟩ =>
+    let fs ← funcs.toList.mapM fun
+      | .recfn_decl m ⟨_, n⟩ ⟨_, targs?⟩ bs ret ⟨_, pres⟩ body => do
+        let tys := match targs? with | none => [] | some ts => typeArgsToList ts
+        let f ← lowerPureFuncDef m n tys bs ret pres body false
+        return { f with isRecursive := true }
+    return [.recFuncBlock fs]
   | .command_var _ b =>
     let (id, ty) ← toCoreBind b
     let i := (← get).globalVarCounter

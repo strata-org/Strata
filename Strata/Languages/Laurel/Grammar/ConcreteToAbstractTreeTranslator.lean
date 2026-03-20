@@ -201,6 +201,13 @@ partial def translateStmtExpr (arg : Arg) : TransM StmtExprMd := do
     | q`Laurel.block, #[arg0] =>
       let stmts ← translateSeqCommand arg0
       return mkStmtExprMd (.Block stmts none) md
+    | q`Laurel.labelledBlock, #[arg0, arg1] =>
+      let stmts ← translateSeqCommand arg0
+      let label ← translateIdent arg1
+      return mkStmtExprMd (.Block stmts (some label.text)) md
+    | q`Laurel.exit, #[arg0] =>
+      let label ← translateIdent arg0
+      return mkStmtExprMd (.Exit label.text) md
     | q`Laurel.literalBool, #[arg0] => return mkStmtExprMd (.LiteralBool (← translateBool arg0)) md
     | q`Laurel.int, #[arg0] =>
       let n ← translateNat arg0
