@@ -268,7 +268,13 @@ private def prependPrelude (coreFromLaurel : Core.Program) : Core.Program :=
 public def translateCombinedLaurel (combined : Laurel.Program)
     : (Option Core.Program × List DiagnosticModel) :=
   let (coreOption, errors) := Laurel.translate { emitResolutionErrors := false } combined
-  (coreOption.map prependPrelude, errors)
+  (coreOption.map (fun core =>
+    let prepended := prependPrelude core
+    -- dbg_trace "=== Final Core Program ==="
+    -- dbg_trace (toString (Std.Format.pretty (Strata.Core.formatProgram prepended) 100))
+    -- dbg_trace "================================="
+    prepended
+  ), errors)
 
 /-- Errors from the pyAnalyzeLaurel pipeline, distinguishing user code
     errors (detected bugs in Python source) from internal tool errors. -/

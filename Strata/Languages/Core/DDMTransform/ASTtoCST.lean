@@ -57,7 +57,7 @@ namespace ASTToCSTError
 
 def toString {M} [ToString M] : ASTToCSTError M → String
   | unsupportedConstruct fn desc ctx _m =>
-    s!"Unsupported construct in {fn}: {desc}\nContext: {ctx}"
+    s!"Unsupported construct in {fn}: {desc}\n"
 
 instance {M} [ToString M] : ToString (ASTToCSTError M) where
   toString := ASTToCSTError.toString
