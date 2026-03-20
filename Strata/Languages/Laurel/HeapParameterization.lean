@@ -175,7 +175,7 @@ def boxDestructorName (model : SemanticModel) (ty : HighType) : Identifier :=
   | .TBool => "Box..boolVal!"
   | .TFloat64 => "Box..float64Val!"
   | .TReal => "Box..realVal!"
-  | .TString => "Box..stringVal"
+  | .TString => "Box..stringVal!"
   | .UserDefined name =>
       if isDatatype model name then s!"Box..{name.text}Val!"
       else "Box..compositeVal!"
