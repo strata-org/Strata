@@ -335,10 +335,10 @@ def lowerFor
     (initExpr guardExpr stepExpr : Core.Expression.Expr)
     (invs : List Core.Expression.Expr)
     (body : List Core.Statement) : TranslateM Core.Statement := do
-  let initStmt : Core.Statement := Core.Statement.init id (.forAll [] ty) (some initExpr) (← toCoreMetaData m)
+  let initStmt : Core.Statement := Core.Statement.init id (.forAll [] ty) (.det initExpr) (← toCoreMetaData m)
   let stepStmt : Core.Statement := Core.Statement.set id stepExpr (← toCoreMetaData m)
   let loopBody := body ++ [stepStmt]
-  return .block "for" [initStmt, .loop guardExpr none invs loopBody (← toCoreMetaData m)] (← toCoreMetaData m)
+  return .block "for" [initStmt, .loop (.det guardExpr) none invs loopBody (← toCoreMetaData m)] (← toCoreMetaData m)
 
 private def lowerVarStatement (m : SourceRange) (ds : BooleDDM.DeclList SourceRange) : TranslateM (List Core.Statement) := do
   let mut outRev : List Core.Statement := []
@@ -349,7 +349,7 @@ private def lowerVarStatement (m : SourceRange) (ds : BooleDDM.DeclList SourceRa
     modify fun st => { st with globalVarCounter := n + 1 }
     let initName := mkIdent s!"init_{id.name}_{n}"
     newBVarsRev := (.fvar () id none : Core.Expression.Expr) :: newBVarsRev
-    outRev := Core.Statement.init id ty (some (.fvar () initName none)) (← toCoreMetaData m) :: outRev
+    outRev := Core.Statement.init id ty (.det (.fvar () initName none)) (← toCoreMetaData m) :: outRev
   modify fun st => { st with bvars := st.bvars ++ newBVarsRev.reverse.toArray }
   return outRev.reverse
 
@@ -378,7 +378,7 @@ def toCoreStmt (s : BooleDDM.Statement SourceRange) : TranslateM Core.Statement 
   | .initStatement m ty ⟨_, n⟩ e =>
     let rhs ← toCoreExpr e
     modify fun st => { st with bvars := st.bvars.push (.fvar () (mkIdent n) none) }
-    return Core.Statement.init (mkIdent n) (← toCoreType ty) (some rhs) (← toCoreMetaData m)
+    return Core.Statement.init (mkIdent n) (← toCoreType ty) (.det rhs) (← toCoreMetaData m)
   | .assign m _ lhs rhs =>
     let rec lhsParts (lhs : BooleDDM.Lhs SourceRange) : TranslateM (String × List Core.Expression.Expr) := do
       match lhs with
@@ -405,11 +405,11 @@ def toCoreStmt (s : BooleDDM.Statement SourceRange) : TranslateM Core.Statement 
     let elseb ← withBVars [] <| match e with
       | .else0 _ => return []
       | .else1 _ b => toCoreBlock b
-    return .ite (← toCoreExpr c) thenb elseb (← toCoreMetaData m)
+    return .ite (.det (← toCoreExpr c)) thenb elseb (← toCoreMetaData m)
   | .havoc_statement m ⟨_, n⟩ =>
     return Core.Statement.havoc (mkIdent n) (← toCoreMetaData m)
   | .while_statement m g _ invs b =>
-    return .loop (← toCoreExpr g) none (← toCoreInvariants invs) (← withBVars [] (toCoreBlock b)) (← toCoreMetaData m)
+    return .loop (.det (← toCoreExpr g)) none (← toCoreInvariants invs) (← withBVars [] (toCoreBlock b)) (← toCoreMetaData m)
   | .call_statement m ⟨_, lhs⟩ ⟨_, n⟩ ⟨_, args⟩ =>
     return Core.Statement.call (lhs.toList.map (mkIdent ·.val)) n (← args.toList.mapM toCoreExpr) (← toCoreMetaData m)
   | .call_unit_statement m ⟨_, n⟩ ⟨_, args⟩ =>
@@ -680,7 +680,7 @@ def toCoreDecls (cmd : BooleDDM.Command SourceRange) : TranslateM (List Core.Dec
     let (id, ty) ← toCoreBind b
     let i := (← get).globalVarCounter
     modify fun s => { s with globalVarCounter := i + 1 }
-    return [.var id ty (some (.fvar () (mkIdent s!"init_{id.name}_{i}") none))]
+    return [.var id ty (.det (.fvar () (mkIdent s!"init_{id.name}_{i}") none))]
   | .command_axiom m ⟨_, l?⟩ e =>
     return [.ax { name := ← defaultLabel m "axiom" l?, e := ← toCoreExpr e }]
   | .command_distinct m ⟨_, l?⟩ ⟨_, es⟩ =>

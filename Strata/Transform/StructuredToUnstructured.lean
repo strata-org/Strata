@@ -83,7 +83,10 @@ match ss with
   let (tl, tbs) ← stmtsToBlocks kNext tss exitConts []
   let (fl, fbs) ← stmtsToBlocks kNext fss exitConts []
   -- Flush accumulated commands
-  let (accumEntry, accumBlocks) ← flushCmds "ite$" accum (.some (.condGoto c tl fl)) l
+  let cExpr := match c with
+    | .det e => e
+    | .nondet => HasBool.tt  -- Fallback: treat nondet as true (conservative)
+  let (accumEntry, accumBlocks) ← flushCmds "ite$" accum (.some (.condGoto cExpr tl fl)) l
   pure (accumEntry, accumBlocks ++ tbs ++ fbs ++ bsNext)
 | .loop c m is bss _md :: rest => do
   -- Process rest first
@@ -99,7 +102,7 @@ match ss with
       let mLabel ← StringGenState.gen "loop_measure$"
       let mIdent := HasIdent.ident mLabel
       let mOldExpr := HasFvar.mkFvar mIdent
-      let initCmd  := HasInit.init mIdent HasIntOrder.intTy none MetaData.empty
+      let initCmd  := HasInit.init mIdent HasIntOrder.intTy .nondet MetaData.empty
       let assumeCmd := HasPassiveCmds.assume s!"assume_{mLabel}"
                          (HasIntOrder.eq mOldExpr mExpr) MetaData.empty
       let lbCmd    := HasPassiveCmds.assert s!"measure_lb_{mLabel}"
@@ -115,7 +118,10 @@ match ss with
     is.mapM (fun i => do
       let invLabel ← StringGenState.gen "inv$"
       pure (HasPassiveCmds.assert invLabel i MetaData.empty))
-  let b := (lentry, { cmds := invCmds ++ measureCmds, transfer := .condGoto c bl kNext })
+  let cExpr := match c with
+    | .det e => e
+    | .nondet => HasBool.tt  -- Fallback: treat nondet as true (conservative)
+  let b := (lentry, { cmds := invCmds ++ measureCmds, transfer := .condGoto cExpr bl kNext })
   -- Flush accumulated commands
   let (accumEntry, accumBlocks) ← flushCmds "before_loop$" accum .none lentry
   pure (accumEntry, accumBlocks ++ [b] ++ bbs ++ decreaseBlocks ++ bsNext)
