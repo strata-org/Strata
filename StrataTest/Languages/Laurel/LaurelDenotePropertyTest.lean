@@ -266,12 +266,11 @@ def arithTotalProp (a b : Int) : Bool :=
   (b == 0 || (evalPrimOp .Mod [.vInt a, .vInt b]).isSome) &&
   (evalPrimOp .Neg [.vInt a]).isSome
 
-/-- Boolean ops on bools return some. -/
+/-- Boolean ops on bools return some (Implies is short-circuit, handled in denoteStmt). -/
 def boolTotalProp (a b : Bool) : Bool :=
   (evalPrimOp .And [.vBool a, .vBool b]).isSome &&
   (evalPrimOp .Or [.vBool a, .vBool b]).isSome &&
-  (evalPrimOp .Not [.vBool a]).isSome &&
-  (evalPrimOp .Implies [.vBool a, .vBool b]).isSome
+  (evalPrimOp .Not [.vBool a]).isSome
 
 /-- Comparison ops on ints return some. -/
 def cmpTotalProp (a b : Int) : Bool :=

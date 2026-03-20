@@ -93,7 +93,32 @@ def denoteStmt (δ : LaurelEval) (π : ProcEnv) (fuel : Nat)
       | some v => some (.normal v, σ, h)
       | none => none
 
-    -- Primitive Operations
+    -- Short-circuit Primitive Operations
+    | .PrimitiveOp .AndThen [a, b] =>
+      match denoteStmt δ π fuel h σ a.val with
+      | some (.normal (.vBool true), σ₁, h₁) =>
+        denoteStmt δ π fuel h₁ σ₁ b.val
+      | some (.normal (.vBool false), σ₁, h₁) =>
+        some (.normal (.vBool false), σ₁, h₁)
+      | _ => none
+
+    | .PrimitiveOp .OrElse [a, b] =>
+      match denoteStmt δ π fuel h σ a.val with
+      | some (.normal (.vBool true), σ₁, h₁) =>
+        some (.normal (.vBool true), σ₁, h₁)
+      | some (.normal (.vBool false), σ₁, h₁) =>
+        denoteStmt δ π fuel h₁ σ₁ b.val
+      | _ => none
+
+    | .PrimitiveOp .Implies [a, b] =>
+      match denoteStmt δ π fuel h σ a.val with
+      | some (.normal (.vBool false), σ₁, h₁) =>
+        some (.normal (.vBool true), σ₁, h₁)
+      | some (.normal (.vBool true), σ₁, h₁) =>
+        denoteStmt δ π fuel h₁ σ₁ b.val
+      | _ => none
+
+    -- Eager Primitive Operations
     | .PrimitiveOp op args =>
       match denoteArgs δ π fuel h σ args with
       | some (vals, σ', h') =>

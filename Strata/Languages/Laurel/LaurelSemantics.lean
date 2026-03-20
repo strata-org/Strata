@@ -110,13 +110,14 @@ def evalPrimOp (op : Operation) (args : List LaurelValue) : Option LaurelValue :
   | .And,     [.vBool a, .vBool b] => some (.vBool (a && b))
   | .Or,      [.vBool a, .vBool b] => some (.vBool (a || b))
   | .Not,     [.vBool a]           => some (.vBool (!a))
-  | .Implies, [.vBool a, .vBool b] => some (.vBool (!a || b))
   | .Add, [.vInt a, .vInt b] => some (.vInt (a + b))
   | .Sub, [.vInt a, .vInt b] => some (.vInt (a - b))
   | .Mul, [.vInt a, .vInt b] => some (.vInt (a * b))
   | .Neg, [.vInt a]          => some (.vInt (-a))
-  | .Div, [.vInt a, .vInt b] => if b != 0 then some (.vInt (a / b)) else none
-  | .Mod, [.vInt a, .vInt b] => if b != 0 then some (.vInt (a % b)) else none
+  | .Div,  [.vInt a, .vInt b] => if b != 0 then some (.vInt (a / b)) else none
+  | .Mod,  [.vInt a, .vInt b] => if b != 0 then some (.vInt (a % b)) else none
+  | .DivT, [.vInt a, .vInt b] => if b != 0 then some (.vInt (a.tdiv b)) else none
+  | .ModT, [.vInt a, .vInt b] => if b != 0 then some (.vInt (a.tmod b)) else none
   | .Eq,  [.vInt a, .vInt b] => some (.vBool (a == b))
   | .Neq, [.vInt a, .vInt b] => some (.vBool (a != b))
   | .Lt,  [.vInt a, .vInt b] => some (.vBool (a < b))
@@ -130,7 +131,28 @@ def evalPrimOp (op : Operation) (args : List LaurelValue) : Option LaurelValue :
   | .StrConcat, [.vString a, .vString b] => some (.vString (a ++ b))
   | .Eq,  [.vRef a, .vRef b] => some (.vBool (a == b))
   | .Neq, [.vRef a, .vRef b] => some (.vBool (a != b))
-  | _, _ => none
+  -- Arity/type mismatches for each operation (no wildcard catch-all):
+  | .And, _ => none
+  | .Or, _ => none
+  | .Not, _ => none
+  | .Implies, _ => none
+  | .AndThen, _ => none
+  | .OrElse, _ => none
+  | .Neg, _ => none
+  | .Add, _ => none
+  | .Sub, _ => none
+  | .Mul, _ => none
+  | .Div, _ => none
+  | .Mod, _ => none
+  | .DivT, _ => none
+  | .ModT, _ => none
+  | .Eq, _ => none
+  | .Neq, _ => none
+  | .Lt, _ => none
+  | .Leq, _ => none
+  | .Gt, _ => none
+  | .Geq, _ => none
+  | .StrConcat, _ => none
 
 def getBody : Procedure → Option StmtExprMd
   | { body := .Transparent b, .. } => some b

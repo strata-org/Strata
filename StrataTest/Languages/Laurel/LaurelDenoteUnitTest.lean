@@ -76,6 +76,26 @@ def getOutcomeAndVar (r : Option (Outcome × LaurelStore × LaurelHeap))
 
 #guard evalPrimOp .Div [.vInt 5, .vInt 0] = none
 #guard evalPrimOp .Mod [.vInt 5, .vInt 0] = none
+#guard evalPrimOp .DivT [.vInt 5, .vInt 0] = none
+#guard evalPrimOp .ModT [.vInt 5, .vInt 0] = none
+
+/-! ## evalPrimOp: Truncation division and modulus -/
+
+-- DivT (truncation toward zero)
+#guard evalPrimOp .DivT [.vInt 7, .vInt 2] = some (.vInt 3)
+#guard evalPrimOp .DivT [.vInt (-7), .vInt 2] = some (.vInt (-3))
+#guard evalPrimOp .DivT [.vInt 7, .vInt (-2)] = some (.vInt (-3))
+#guard evalPrimOp .DivT [.vInt (-7), .vInt (-2)] = some (.vInt 3)
+
+-- ModT (truncation modulus)
+#guard evalPrimOp .ModT [.vInt 7, .vInt 2] = some (.vInt 1)
+#guard evalPrimOp .ModT [.vInt (-7), .vInt 2] = some (.vInt (-1))
+#guard evalPrimOp .ModT [.vInt 7, .vInt (-2)] = some (.vInt 1)
+#guard evalPrimOp .ModT [.vInt (-7), .vInt (-2)] = some (.vInt (-1))
+
+-- Short-circuit ops return none in evalPrimOp (handled in denoteStmt)
+#guard evalPrimOp .AndThen [.vBool true, .vBool false] = none
+#guard evalPrimOp .OrElse [.vBool false, .vBool true] = none
 
 /-! ## evalPrimOp: Comparison -/
 
@@ -104,10 +124,10 @@ def getOutcomeAndVar (r : Option (Outcome × LaurelStore × LaurelHeap))
 #guard evalPrimOp .Or [.vBool true, .vBool false] = some (.vBool true)
 #guard evalPrimOp .Or [.vBool false, .vBool true] = some (.vBool true)
 
--- Implies
-#guard evalPrimOp .Implies [.vBool true, .vBool false] = some (.vBool false)
-#guard evalPrimOp .Implies [.vBool false, .vBool false] = some (.vBool true)
-#guard evalPrimOp .Implies [.vBool true, .vBool true] = some (.vBool true)
+-- Implies (handled in denoteStmt as short-circuit; evalPrimOp returns none)
+#guard evalPrimOp .Implies [.vBool true, .vBool false] = none
+#guard evalPrimOp .Implies [.vBool false, .vBool false] = none
+#guard evalPrimOp .Implies [.vBool true, .vBool true] = none
 
 /-! ## evalPrimOp: String -/
 
@@ -412,16 +432,16 @@ def getOutcomeAndVar (r : Option (Outcome × LaurelStore × LaurelHeap))
 #guard denoteStmt trivialEval emptyProc 10 emptyHeap emptyStore
     (.Assign [⟨.Identifier "x", emd⟩, ⟨.Identifier "y", emd⟩] (mk (.LiteralInt 1))) = none
 
-/-! ## denoteStmt: Short-circuit And/Or/Implies via denoteStmt -/
+/-! ## denoteStmt: Short-circuit AndThen/OrElse/Implies via denoteStmt -/
 
--- And short-circuits: false && (stuck) → false
+-- AndThen short-circuits: false && (stuck) → false
 #guard getOutcome (denoteStmt trivialEval emptyProc 10 emptyHeap emptyStore
-    (.PrimitiveOp .And [mk (.LiteralBool false), mk (.Identifier "undef")]))
+    (.PrimitiveOp .AndThen [mk (.LiteralBool false), mk (.Identifier "undef")]))
   = some (.normal (.vBool false))
 
--- Or short-circuits: true || (stuck) → true
+-- OrElse short-circuits: true || (stuck) → true
 #guard getOutcome (denoteStmt trivialEval emptyProc 10 emptyHeap emptyStore
-    (.PrimitiveOp .Or [mk (.LiteralBool true), mk (.Identifier "undef")]))
+    (.PrimitiveOp .OrElse [mk (.LiteralBool true), mk (.Identifier "undef")]))
   = some (.normal (.vBool true))
 
 -- Implies short-circuits: false => (stuck) → true
@@ -429,13 +449,13 @@ def getOutcomeAndVar (r : Option (Outcome × LaurelStore × LaurelHeap))
     (.PrimitiveOp .Implies [mk (.LiteralBool false), mk (.Identifier "undef")]))
   = some (.normal (.vBool true))
 
--- And does NOT short-circuit on true: true && undef → none
+-- AndThen does NOT short-circuit on true: true && undef → none
 #guard denoteStmt trivialEval emptyProc 10 emptyHeap emptyStore
-    (.PrimitiveOp .And [mk (.LiteralBool true), mk (.Identifier "undef")]) = none
+    (.PrimitiveOp .AndThen [mk (.LiteralBool true), mk (.Identifier "undef")]) = none
 
--- Or does NOT short-circuit on false: false || undef → none
+-- OrElse does NOT short-circuit on false: false || undef → none
 #guard denoteStmt trivialEval emptyProc 10 emptyHeap emptyStore
-    (.PrimitiveOp .Or [mk (.LiteralBool false), mk (.Identifier "undef")]) = none
+    (.PrimitiveOp .OrElse [mk (.LiteralBool false), mk (.Identifier "undef")]) = none
 
 -- Implies does NOT short-circuit on true: true => undef → none
 #guard denoteStmt trivialEval emptyProc 10 emptyHeap emptyStore

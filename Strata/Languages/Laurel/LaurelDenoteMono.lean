@@ -39,11 +39,136 @@ theorem denoteStmt_fuel_mono
     | LiteralDecimal => exact heval
     | Identifier name => exact heval
     | PrimitiveOp op args =>
-      match hargs : denoteArgs δ π n h σ args with
-      | some (vals, σ', h') =>
-        have := denoteArgs_fuel_mono hle' hargs
-        simp [hargs] at heval; simp [this]; exact heval
-      | none => simp [hargs] at heval
+      cases op with
+      | AndThen =>
+        cases args with
+        | cons a tail =>
+          cases tail with
+          | cons b tail₂ =>
+            cases tail₂ with
+            | nil =>
+              simp only [denoteStmt] at heval ⊢
+              match ha : denoteStmt δ π n h σ a.val with
+              | some (.normal (.vBool true), σ₁, h₁) =>
+                have := denoteStmt_fuel_mono hle' ha
+                simp [ha] at heval; simp [this]
+                exact denoteStmt_fuel_mono hle' heval
+              | some (.normal (.vBool false), σ₁, h₁) =>
+                have := denoteStmt_fuel_mono hle' ha
+                simp [ha] at heval; simp [this]; exact heval
+              | some (.normal (.vInt _), _, _) => simp [ha] at heval
+              | some (.normal (.vString _), _, _) => simp [ha] at heval
+              | some (.normal .vVoid, _, _) => simp [ha] at heval
+              | some (.normal (.vRef _), _, _) => simp [ha] at heval
+              | some (.exit _, _, _) => simp [ha] at heval
+              | some (.ret _, _, _) => simp [ha] at heval
+              | none => simp [ha] at heval
+            | cons c rest =>
+              match hargs : denoteArgs δ π n h σ (a :: b :: c :: rest) with
+              | some (vals, σ', h') =>
+                have := denoteArgs_fuel_mono hle' hargs
+                simp [hargs] at heval; simp [this]; exact heval
+              | none => simp [hargs] at heval
+          | nil =>
+            match hargs : denoteArgs δ π n h σ [a] with
+            | some (vals, σ', h') =>
+              have := denoteArgs_fuel_mono hle' hargs
+              simp [hargs] at heval; simp [this]; exact heval
+            | none => simp [hargs] at heval
+        | nil =>
+          match hargs : denoteArgs δ π n h σ ([] : List StmtExprMd) with
+          | some (vals, σ', h') =>
+            have := denoteArgs_fuel_mono hle' hargs
+            simp [hargs] at heval; simp [this]; exact heval
+          | none => simp [hargs] at heval
+      | OrElse =>
+        cases args with
+        | cons a tail =>
+          cases tail with
+          | cons b tail₂ =>
+            cases tail₂ with
+            | nil =>
+              simp only [denoteStmt] at heval ⊢
+              match ha : denoteStmt δ π n h σ a.val with
+              | some (.normal (.vBool true), σ₁, h₁) =>
+                have := denoteStmt_fuel_mono hle' ha
+                simp [ha] at heval; simp [this]; exact heval
+              | some (.normal (.vBool false), σ₁, h₁) =>
+                have := denoteStmt_fuel_mono hle' ha
+                simp [ha] at heval; simp [this]
+                exact denoteStmt_fuel_mono hle' heval
+              | some (.normal (.vInt _), _, _) => simp [ha] at heval
+              | some (.normal (.vString _), _, _) => simp [ha] at heval
+              | some (.normal .vVoid, _, _) => simp [ha] at heval
+              | some (.normal (.vRef _), _, _) => simp [ha] at heval
+              | some (.exit _, _, _) => simp [ha] at heval
+              | some (.ret _, _, _) => simp [ha] at heval
+              | none => simp [ha] at heval
+            | cons c rest =>
+              match hargs : denoteArgs δ π n h σ (a :: b :: c :: rest) with
+              | some (vals, σ', h') =>
+                have := denoteArgs_fuel_mono hle' hargs
+                simp [hargs] at heval; simp [this]; exact heval
+              | none => simp [hargs] at heval
+          | nil =>
+            match hargs : denoteArgs δ π n h σ [a] with
+            | some (vals, σ', h') =>
+              have := denoteArgs_fuel_mono hle' hargs
+              simp [hargs] at heval; simp [this]; exact heval
+            | none => simp [hargs] at heval
+        | nil =>
+          match hargs : denoteArgs δ π n h σ ([] : List StmtExprMd) with
+          | some (vals, σ', h') =>
+            have := denoteArgs_fuel_mono hle' hargs
+            simp [hargs] at heval; simp [this]; exact heval
+          | none => simp [hargs] at heval
+      | Implies =>
+        cases args with
+        | cons a tail =>
+          cases tail with
+          | cons b tail₂ =>
+            cases tail₂ with
+            | nil =>
+              simp only [denoteStmt] at heval ⊢
+              match ha : denoteStmt δ π n h σ a.val with
+              | some (.normal (.vBool false), σ₁, h₁) =>
+                have := denoteStmt_fuel_mono hle' ha
+                simp [ha] at heval; simp [this]; exact heval
+              | some (.normal (.vBool true), σ₁, h₁) =>
+                have := denoteStmt_fuel_mono hle' ha
+                simp [ha] at heval; simp [this]
+                exact denoteStmt_fuel_mono hle' heval
+              | some (.normal (.vInt _), _, _) => simp [ha] at heval
+              | some (.normal (.vString _), _, _) => simp [ha] at heval
+              | some (.normal .vVoid, _, _) => simp [ha] at heval
+              | some (.normal (.vRef _), _, _) => simp [ha] at heval
+              | some (.exit _, _, _) => simp [ha] at heval
+              | some (.ret _, _, _) => simp [ha] at heval
+              | none => simp [ha] at heval
+            | cons c rest =>
+              match hargs : denoteArgs δ π n h σ (a :: b :: c :: rest) with
+              | some (vals, σ', h') =>
+                have := denoteArgs_fuel_mono hle' hargs
+                simp [hargs] at heval; simp [this]; exact heval
+              | none => simp [hargs] at heval
+          | nil =>
+            match hargs : denoteArgs δ π n h σ [a] with
+            | some (vals, σ', h') =>
+              have := denoteArgs_fuel_mono hle' hargs
+              simp [hargs] at heval; simp [this]; exact heval
+            | none => simp [hargs] at heval
+        | nil =>
+          match hargs : denoteArgs δ π n h σ ([] : List StmtExprMd) with
+          | some (vals, σ', h') =>
+            have := denoteArgs_fuel_mono hle' hargs
+            simp [hargs] at heval; simp [this]; exact heval
+          | none => simp [hargs] at heval
+      | _ =>
+        match hargs : denoteArgs δ π n h σ args with
+        | some (vals, σ', h') =>
+          have := denoteArgs_fuel_mono hle' hargs
+          simp [hargs] at heval; simp [this]; exact heval
+        | none => simp [hargs] at heval
     | IfThenElse c thenBr elseBr =>
       cases elseBr with
       | some elseBr =>

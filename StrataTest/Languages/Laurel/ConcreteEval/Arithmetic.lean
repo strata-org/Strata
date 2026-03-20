@@ -151,14 +151,55 @@ procedure main() { return (-3) + (-4) };
 "
   IO.println (toString (runProgram prog))
 
-/-! ## Test 12: DivT — no evalPrimOp case, stuck
+/-! ## Test 12: DivT — truncation division -/
 
-`/t` (truncation division) parses successfully but `evalPrimOp` has no
-case for `DivT`, so evaluation gets stuck and `runProgram` reports
-fuel exhausted.
+/--
+info: returned: 3
 -/
--- INTENDED: should return 3
--- CURRENT: stuck (no evalPrimOp case for DivT)
+#guard_msgs in
+#eval! do
+  let prog ← parseLaurel (applyLift := false) r"
+procedure main() { return 7 /t 2 };
+"
+  IO.println (toString (runProgram prog))
+
+/-! ## Test 13: ModT — truncation modulus -/
+
+/--
+info: returned: 1
+-/
+#guard_msgs in
+#eval! do
+  let prog ← parseLaurel (applyLift := false) r"
+procedure main() { return 7 %t 2 };
+"
+  IO.println (toString (runProgram prog))
+
+/-! ## Test 14: DivT with negative dividend (truncation toward zero) -/
+
+/--
+info: returned: -3
+-/
+#guard_msgs in
+#eval! do
+  let prog ← parseLaurel (applyLift := false) r"
+procedure main() { return (-7) /t 2 };
+"
+  IO.println (toString (runProgram prog))
+
+/-! ## Test 15: ModT with negative dividend -/
+
+/--
+info: returned: -1
+-/
+#guard_msgs in
+#eval! do
+  let prog ← parseLaurel (applyLift := false) r"
+procedure main() { return (-7) %t 2 };
+"
+  IO.println (toString (runProgram prog))
+
+/-! ## Test 16: DivT by zero — stuck -/
 
 /--
 info: error: fuel exhausted
@@ -166,7 +207,19 @@ info: error: fuel exhausted
 #guard_msgs in
 #eval! do
   let prog ← parseLaurel (applyLift := false) r"
-procedure main() { return 7 /t 2 };
+procedure main() { return 7 /t 0 };
+"
+  IO.println (toString (runProgram prog))
+
+/-! ## Test 17: ModT by zero — stuck -/
+
+/--
+info: error: fuel exhausted
+-/
+#guard_msgs in
+#eval! do
+  let prog ← parseLaurel (applyLift := false) r"
+procedure main() { return 7 %t 0 };
 "
   IO.println (toString (runProgram prog))
 
