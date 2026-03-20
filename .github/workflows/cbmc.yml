@@ -46,7 +46,7 @@ jobs:
               chmod +x "${ARCHIVE_NAME}/bin/z3"
               echo "$GITHUB_WORKSPACE/${ARCHIVE_NAME}/bin/" >> $GITHUB_PATH
       - name: Prepare ccache
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           save-always: true
           path: .ccache
@@ -74,7 +74,7 @@ jobs:
           ccache -s
           echo "$GITHUB_WORKSPACE/cbmc-src/build/bin/" >> $GITHUB_PATH
       - name: Restore lake cache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v5
         with:
           path: .lake
           key: lake-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}-${{ hashFiles('lake-manifest.json') }}-${{ hashFiles('**/*.st') }}-${{ github.sha }}
@@ -85,7 +85,7 @@ jobs:
         with:
           use-github-cache: false
       - name: Save lake cache
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v5
         with:
           path: .lake
           key: lake-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}-${{ hashFiles('lake-manifest.json') }}-${{ hashFiles('**/*.st') }}-${{ github.sha }}
