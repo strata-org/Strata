@@ -51,7 +51,6 @@ theorem denoteStmt_fuel_mono
           | cons b tail₂ =>
             cases tail₂ with
             | nil =>
-              simp only [denoteStmt] at heval ⊢
               match ha : denoteStmt δ π n h σ a.val with
               | some (.normal (.vBool true), σ₁, h₁) =>
                 have := denoteStmt_fuel_mono hle' ha
@@ -92,7 +91,6 @@ theorem denoteStmt_fuel_mono
           | cons b tail₂ =>
             cases tail₂ with
             | nil =>
-              simp only [denoteStmt] at heval ⊢
               match ha : denoteStmt δ π n h σ a.val with
               | some (.normal (.vBool true), σ₁, h₁) =>
                 have := denoteStmt_fuel_mono hle' ha
@@ -133,7 +131,6 @@ theorem denoteStmt_fuel_mono
           | cons b tail₂ =>
             cases tail₂ with
             | nil =>
-              simp only [denoteStmt] at heval ⊢
               match ha : denoteStmt δ π n h σ a.val with
               | some (.normal (.vBool false), σ₁, h₁) =>
                 have := denoteStmt_fuel_mono hle' ha
