@@ -31,11 +31,11 @@ The encoding pipeline has two layers:
 2. **Encoder layer** (`EncoderM`): Sits on top of `SolverM` and manages
    A-normal form decomposition purely in the `Term` domain:
    - **Term → abbreviated Term cache** (`terms`): Maps each `Term` to its
-     abbreviated `Term.var` reference (e.g., a variable named `t0`, `t1`).
+     abbreviated `Term.var` reference (e.g., a variable named `$__t.0`, `$__t.1`).
      Large terms are broken into small `define-fun` definitions with short
      names, and the Solver handles all `Term → String` conversion.
    - **UF → abbreviated name cache** (`ufs`): Maps uninterpreted functions to
-     their abbreviated identifiers (e.g., `f0`, `f1`).
+     their abbreviated identifiers (e.g., `$__f.0`, `$__f.1`).
 
 The Encoder works purely with `Term` values. The `SolverM` layer handles all
 string conversion and caching when emitting commands.
@@ -72,10 +72,10 @@ open Solver
 public section
 
 structure EncoderState where
-  /-- Maps a `Term` to its abbreviated `Term` (a `Term.var` with name like `t0`).
+  /-- Maps a `Term` to its abbreviated `Term` (a `Term.var` with name like `$__t.0`).
       This is a cache after converting terms to A-Normal Form. -/
   terms : Std.HashMap Term Term
-  /-- Maps a `UF` to its abbreviated SMT identifier (e.g., `f0`, `f1`). -/
+  /-- Maps a `UF` to its abbreviated SMT identifier (e.g., `$__f.0`, `$__f.1`). -/
   ufs   : Std.HashMap UF String
 
 def EncoderState.init : EncoderState where
@@ -146,8 +146,12 @@ def findUniqueName (baseName : String) (startSuffix : Nat) (isUsed : String → 
     omega
   loop (if startSuffix == 1 then baseName else disambiguateName baseName (startSuffix - 1)) startSuffix limit
 
-def termId (n : Nat)                    : String := s!"t{n}"
-def ufId (n : Nat)                      : String := s!"f{n}"
+/-- The `$__` prefix is reserved for internal use and cannot appear in user
+    identifiers (see `Strata.DL.Lambda.LState.EvalConfig.varPrefix`).
+    The `.` after `t`/`f` prevents collision with Lambda-generated names
+    like `$__t0` (variable `t`, index 0). -/
+def termId (n : Nat)                    : String := s!"$__t.{n}"
+def ufId (n : Nat)                      : String := s!"$__f.{n}"
 
 def termNum : EncoderM Nat := do return (← get).terms.size
 def ufNum   : EncoderM Nat := do return (← get).ufs.size

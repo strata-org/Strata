@@ -271,7 +271,9 @@ partial def toSMTTerm (E : Env) (bvs : BoundVars) (e : LExpr CoreLParams.mono) (
   | .quant _ _ _ .none _ _ => .error f!"Cannot encode untyped quantifier {e}"
   | .quant _ qk name (.some ty) tr e =>
     let fvarNames := (e.collectFvarNames.map (·.name)).toArray
-    -- Generate base name using global counter to ensure uniqueness across terms
+    -- Generate base name using global counter to ensure uniqueness across terms.
+    -- The `$__` prefix is reserved for internal use and cannot appear in user
+    -- identifiers (see `Strata.DL.Lambda.LState.EvalConfig.varPrefix`).
     let (baseName, startSuffix) :=
       if name.isEmpty then
         (s!"$__bv{ctx.bvCounter}", 1)
