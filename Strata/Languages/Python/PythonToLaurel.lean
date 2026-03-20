@@ -911,6 +911,28 @@ partial def translateAssign  (ctx : TranslationContext)
       | _ => throw (.unsupportedConstruct "Assignment targets not yet supported" (toString (repr lhs)))
     | _ => throw (.unsupportedConstruct "Assignment targets not yet supported" (toString (repr lhs)))
 
+def collectDeclaredNamesAndTypes (stmts : List (Python.stmt SourceRange)) : List (String × String) :=
+  stmts.filterMap fun s => match s with
+    | .AnnAssign _ target annotation _ _ =>
+      some (pyExprToString target, pyExprToString annotation)
+    | .Assign _ targets _ _ => targets.val.toList.head?.map (fun t => (pyExprToString t, PyLauType.Any))
+    | _ => none
+
+def createVarDeclStmtsAndCtx (ctx : TranslationContext) (newDecls : List (String × String))
+    : List StmtExprMd × TranslationContext :=
+  let newDecls := newDecls.foldl (fun acc (n, ty) =>
+      if acc.any (fun (an, _) => an == n) || ctx.variableTypes.any (fun (vn, _) => vn == n)
+      then acc else acc ++ [(n, ty)]) []
+  let hoistedDecls : List StmtExprMd := newDecls.map fun (name, tyStr) =>
+      let ty := if tyStr ∈ ctx.compositeTypeNames || tyStr == "PythonError" then
+          mkHighTypeMd (.UserDefined tyStr)
+        else AnyTy
+      mkStmtExprMd (StmtExpr.LocalVariable (name : String) ty (some (mkStmtExprMd .Hole)))
+  let hoistedCtx := { ctx with variableTypes := ctx.variableTypes ++
+      (newDecls.map fun (n, ty) =>
+        if ty ∈ ctx.compositeTypeNames || ty == "PythonError" then (n, ty) else (n, PyLauType.Any)) }
+  (hoistedDecls, hoistedCtx)
+
 mutual
 
 partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRange)
@@ -940,6 +962,8 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
   -- If statement
   | .If _ test body orelse => do
     let condExpr ← translateExpr ctx test
+    let newDecls := collectDeclaredNamesAndTypes (body.val.toList ++ orelse.val.toList)
+    let (varDecls, ctx) := createVarDeclStmtsAndCtx ctx newDecls
     let (bodyCtx, bodyStmts) ← translateStmtList ctx body.val.toList
     let bodyBlock := mkStmtExprMd (StmtExpr.Block bodyStmts none)
     -- Translate else branch if present
@@ -950,12 +974,14 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
       .ok (some (mkStmtExprMd (StmtExpr.Block elseStmts none)))
     let ifStmt := mkStmtExprMdWithLoc (StmtExpr.IfThenElse (Any_to_bool condExpr) bodyBlock elseBlock) md
 
-    return (bodyCtx, [ifStmt])
+    return (bodyCtx, varDecls ++ [ifStmt])
 
   -- While loop
   | .While _ test body _orelse => do
     -- Note: Python while-else not supported yet
     let condExpr ← translateExpr ctx test
+    let newDecls := collectDeclaredNamesAndTypes body.val.toList
+    let (varDecls, ctx) := createVarDeclStmtsAndCtx ctx newDecls
     let breakLabel := s!"loop_break_{test.toAst.ann.start.byteIdx}"
     let continueLabel := s!"loop_continue_{test.toAst.ann.start.byteIdx}"
     let loopCtx := { ctx with loopBreakLabel := some breakLabel, loopContinueLabel := some continueLabel }
@@ -963,7 +989,7 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
     let bodyBlock := mkStmtExprMd (StmtExpr.Block bodyStmts (some continueLabel))
     let whileStmt := mkStmtExprMd (StmtExpr.While (Any_to_bool condExpr) [] none bodyBlock)
     let whileWrapped := mkStmtExprMdWithLoc (StmtExpr.Block [whileStmt] (some breakLabel)) md
-    return (loopCtx, [whileWrapped])
+    return (loopCtx, varDecls ++ [whileWrapped])
 
   -- Return statement: assign to the LaurelResult output parameter, then exit $body.
   | .Return _ value => do
@@ -1012,12 +1038,6 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
     -- Pre-scan for variable declarations in both branches so they are
     -- declared in the outer scope (Python scoping: variables assigned
     -- in try/except are visible after the block).
-    let collectDeclaredNamesAndTypes (stmts : List (Python.stmt SourceRange)) : List (String × String) :=
-      stmts.filterMap fun s => match s with
-        | .AnnAssign _ target annotation _ _ =>
-          some (pyExprToString target, pyExprToString annotation)
-        | .Assign _ targets _ _ => targets.val.toList.head?.map (fun t => (pyExprToString t, PyLauType.Any))
-        | _ => none
     let bodyDecls := collectDeclaredNamesAndTypes body.val.toList
 
     let errorVarDecls: List (String × String) := (handlers.val.toList.filterMap (λ h => match h with
@@ -1025,17 +1045,9 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
 
     let handlerDecls := handlers.val.toList.flatMap fun h => match h with
       | .ExceptHandler _ _ _ hBody => collectDeclaredNamesAndTypes hBody.val.toList
-    let allNewDecls := (bodyDecls ++ errorVarDecls ++ handlerDecls).foldl (fun acc (n, ty) =>
-      if acc.any (fun (an, _) => an == n) || ctx.variableTypes.any (fun (vn, _) => vn == n)
-      then acc else acc ++ [(n, ty)]) []
-    let hoistedDecls : List StmtExprMd := allNewDecls.map fun (name, tyStr) =>
-      let ty := if tyStr ∈ ctx.compositeTypeNames || tyStr == "PythonError" then
-          mkHighTypeMd (.UserDefined tyStr)
-        else AnyTy
-      mkStmtExprMd (StmtExpr.LocalVariable (name : String) ty (some (mkStmtExprMd .Hole)))
-    let hoistedCtx := { ctx with variableTypes := ctx.variableTypes ++
-      (allNewDecls.map fun (n, ty) =>
-        if ty ∈ ctx.compositeTypeNames || ty == "PythonError" then (n, ty) else (n, PyLauType.Any)) }
+
+    let allNewDecls := (bodyDecls ++ errorVarDecls ++ handlerDecls)
+    let (hoistedDecls, hoistedCtx) := createVarDeclStmtsAndCtx ctx allNewDecls
 
     -- Translate try body (with hoisted context so inner decls become assigns)
     let (bodyCtx, bodyStmts) ← translateStmtList hoistedCtx body.val.toList
@@ -1122,7 +1134,8 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
 
     -- The iterator expression (we abstract it away)
     let _iterExpr ← translateExpr ctx iter
-
+    let newDecls := collectDeclaredNamesAndTypes body.val.toList
+    let (varDecls, ctx) := createVarDeclStmtsAndCtx ctx newDecls
     -- Create context with target variable and loop labels
     let breakLabel := s!"for_break_{iter.toAst.ann.start.byteIdx}"
     let continueLabel := s!"for_continue_{iter.toAst.ann.start.byteIdx}"
@@ -1134,7 +1147,7 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
     let targetDecl := mkStmtExprMd (StmtExpr.LocalVariable targetName AnyTy (some (mkStmtExprMd .Hole)))
     let innerBlock := mkStmtExprMd (StmtExpr.Block ([targetDecl] ++ bodyStmts) (some continueLabel))
     let loopBlock := mkStmtExprMdWithLoc (StmtExpr.Block [innerBlock] (some breakLabel)) md
-    return (finalCtx, [loopBlock])
+    return (finalCtx, varDecls ++ [loopBlock])
 
   | .Break _ =>
     match ctx.loopBreakLabel with
