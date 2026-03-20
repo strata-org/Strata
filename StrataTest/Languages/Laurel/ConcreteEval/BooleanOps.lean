@@ -16,8 +16,9 @@ in the unevaluated branch.
 All tests use `parseLaurel (applyLift := false)`. The lift pass hoists
 block-expression side effects before the enclosing operator, which
 breaks short-circuit observability. Without the lift pass, the
-denotational interpreter (`denoteStmt`) evaluates `And`/`Or`/`Implies`
-with proper short-circuit semantics.
+denotational interpreter (`denoteStmt`) evaluates `AndThen`/`OrElse`/`Implies`
+with proper short-circuit semantics, while `And`/`Or` are evaluated eagerly
+via `evalPrimOp`.
 -/
 
 namespace Strata.Laurel.ConcreteEval.BooleanOpsTest

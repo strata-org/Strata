@@ -96,6 +96,7 @@ def getOutcomeAndVar (r : Option (Outcome × LaurelStore × LaurelHeap))
 -- Short-circuit ops return none in evalPrimOp (handled in denoteStmt)
 #guard evalPrimOp .AndThen [.vBool true, .vBool false] = none
 #guard evalPrimOp .OrElse [.vBool false, .vBool true] = none
+#guard evalPrimOp .Implies [.vBool false, .vBool true] = none
 
 /-! ## evalPrimOp: Comparison -/
 

@@ -264,6 +264,8 @@ def arithTotalProp (a b : Int) : Bool :=
   (evalPrimOp .Mul [.vInt a, .vInt b]).isSome &&
   (b == 0 || (evalPrimOp .Div [.vInt a, .vInt b]).isSome) &&
   (b == 0 || (evalPrimOp .Mod [.vInt a, .vInt b]).isSome) &&
+  (b == 0 || (evalPrimOp .DivT [.vInt a, .vInt b]).isSome) &&
+  (b == 0 || (evalPrimOp .ModT [.vInt a, .vInt b]).isSome) &&
   (evalPrimOp .Neg [.vInt a]).isSome
 
 /-- Boolean ops on bools return some (Implies is short-circuit, handled in denoteStmt). -/

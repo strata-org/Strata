@@ -38,6 +38,10 @@ theorem denoteStmt_fuel_mono
     | LiteralString => exact heval
     | LiteralDecimal => exact heval
     | Identifier name => exact heval
+    -- TODO: The AndThen/OrElse/Implies cases below share nearly identical structure
+    -- (~43 lines each). Consider extracting a shared tactic or private lemma that
+    -- handles the common pattern: case-split on first arg result, apply IH on the
+    -- recursive branch, discharge impossible cases. This would reduce ~130 lines to ~50.
     | PrimitiveOp op args =>
       cases op with
       | AndThen =>

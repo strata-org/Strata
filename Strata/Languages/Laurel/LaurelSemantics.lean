@@ -107,6 +107,9 @@ def catchExit : Option String → Outcome → Outcome
 
 def evalPrimOp (op : Operation) (args : List LaurelValue) : Option LaurelValue :=
   match op, args with
+  -- `And`/`Or` are eager boolean operators: both operands are fully evaluated.
+  -- `AndThen`/`OrElse`/`Implies` are short-circuit operators handled in `denoteStmt`
+  -- (they return `none` here because evalPrimOp only handles eager evaluation).
   | .And,     [.vBool a, .vBool b] => some (.vBool (a && b))
   | .Or,      [.vBool a, .vBool b] => some (.vBool (a || b))
   | .Not,     [.vBool a]           => some (.vBool (!a))
