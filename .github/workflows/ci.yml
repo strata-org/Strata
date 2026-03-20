@@ -71,7 +71,7 @@ jobs:
         with:
           dotnet-version: '8.0.x'
       - name: Restore lake cache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v5
         with:
           path: .lake
           key: lake-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}-${{ hashFiles('lake-manifest.json') }}-${{ hashFiles('**/*.st') }}-${{ github.sha }}
@@ -84,7 +84,7 @@ jobs:
         with:
           use-github-cache: false
       - name: Save lake cache
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v5
         with:
           path: .lake
           key: lake-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}-${{ hashFiles('lake-manifest.json') }}-${{ hashFiles('**/*.st') }}-${{ github.sha }}
@@ -157,7 +157,7 @@ jobs:
         with:
           lake-package-directory: 'docs/api'
       - name: Restore lake cache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v5
         with:
           path: |
             .lake
@@ -175,7 +175,7 @@ jobs:
         run: ./generate.sh
         working-directory: docs/verso
       - name: Save lake cache
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v5
         with:
           path: |
             .lake
