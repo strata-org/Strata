@@ -51,13 +51,16 @@ inductive EvalNondetStmt (P : PureExpr) (Cmd : Type) (EvalCmd : EvalCmdParam P C
     ----
     EvalNondetStmt P Cmd EvalCmd δ σ (.choice s1 s2) σ'
 
-  /-
-  | loop_sem :
-    EvalNondetStmt P δ σ₀ σ s σ' →
-    EvalNondetStmt P δ σ₀ σ' (.loop s) σ'' →
+  /-- Loop: zero iterations. -/
+  | loop_done :
+    EvalNondetStmt P Cmd EvalCmd δ σ (.loop s) σ
+
+  /-- Loop: execute body once, then loop again. -/
+  | loop_step :
+    EvalNondetStmt P Cmd EvalCmd δ σ s σ' →
+    EvalNondetStmt P Cmd EvalCmd δ σ' (.loop s) σ'' →
     ----
-    EvalNondetStmt P δ σ₀ σ (.loop s) σ''
-    -/
+    EvalNondetStmt P Cmd EvalCmd δ σ (.loop s) σ''
 
 end
 
