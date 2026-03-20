@@ -306,12 +306,10 @@ inductive EvalCmd [HasFvar P] [HasBool P] [HasNot P] :
     ----
     EvalCmd δ σ (.havoc x _) σ'
 
-  /-- If `e` evaluates to true in `σ`, evaluate to the same `σ`. This semantics
-  does not have a concept of an erroneous execution. -/
+  /-- An assert is a check with no effect on the program state (a skip).
+  The assertion condition is checked separately by the verification framework,
+  not by the operational semantics. -/
   | eval_assert :
-    δ σ e = .some HasBool.tt →
-    WellFormedSemanticEvalBool δ →
-    ----
     EvalCmd δ σ (.assert _ e _) σ
 
   /-- If `e` evaluates to true in `σ`, evaluate to the same `σ`. -/
