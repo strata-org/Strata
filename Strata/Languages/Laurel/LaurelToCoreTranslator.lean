@@ -364,27 +364,25 @@ def translateStmt (outputParams : List Parameter) (stmt : StmtExprMd)
           if model.isFunction callee then
             -- Translate as expression (function application)
             let coreExpr ← translateExpr (⟨ .StaticCall callee args, callMd ⟩)
-            -- Use callMd so VCG errors point at the initializer expression
-            return [Core.Statement.init ident coreType (some coreExpr) callMd]
+            return [Core.Statement.init ident coreType (some coreExpr) md]
           else
             -- Translate as: var name; call name := callee(args)
             let coreArgs ← args.mapM (fun a => translateExpr a)
             let defaultExpr := defaultExprForType model ty
             let initStmt := Core.Statement.init ident coreType (some defaultExpr) md
-            let callStmt := Core.Statement.call [ident] callee.text coreArgs callMd
+            let callStmt := Core.Statement.call [ident] callee.text coreArgs md
             return [initStmt, callStmt]
-      | some (⟨ .InstanceCall .., instanceMd⟩) =>
+      | some (⟨ .InstanceCall .., _⟩) =>
           -- Instance method call as initializer: var name := target.method(args)
           -- Havoc the result since instance methods may be on unmodeled types
-          let initStmt := Core.Statement.init ident coreType none instanceMd
+          let initStmt := Core.Statement.init ident coreType none md
           return [initStmt]
       | some (⟨ .Hole _ _, _⟩) =>
           -- Hole initializer: treat as havoc (init without value)
           return [Core.Statement.init ident coreType none md]
       | some initExpr =>
           let coreExpr ← translateExpr initExpr
-          -- Use initExpr.md so VCG errors point at the initializer expression
-          return [Core.Statement.init ident coreType (some coreExpr) initExpr.md]
+          return [Core.Statement.init ident coreType (some coreExpr) md]
       | none =>
           return [Core.Statement.init ident coreType none md]
   | .Assign targets value =>
@@ -607,6 +605,9 @@ def lowerLaurelToLaurel (program : Program) : LowerResult :=
   let (program, modifiesDiags) := modifiesClausesTransform model program
   let result := resolve program (some model)
   let (program, model) := (result.program, result.model)
+  -- dbg_trace "=== Program after heapParameterization + modifiesClausesTransform ==="
+  -- dbg_trace (toString (Std.Format.pretty (Std.ToFormat.format program)))
+  -- dbg_trace "================================="
   let program := inferHoleTypes model program
   let program := eliminateHoles program
   let program := desugarShortCircuit model program
@@ -615,8 +616,7 @@ def lowerLaurelToLaurel (program : Program) : LowerResult :=
   let result := resolve program (some model)
   let (program, model) := (result.program, result.model)
   let (program, constrainedTypeDiags) := constrainedTypeElim model program
-  let result := (resolve program (some model) , diamondErrors ++ modifiesDiags ++ constrainedTypeDiags)
-  result
+  (resolve program (some model) , diamondErrors ++ modifiesDiags ++ constrainedTypeDiags)
 
 abbrev TranslateResult := (Option Core.Program) × (List DiagnosticModel)
 /--
