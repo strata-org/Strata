@@ -1118,9 +1118,9 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
       loopBreakLabel := some breakLabel
       loopContinueLabel := some continueLabel }
     let (finalCtx, bodyStmts) ← translateStmtList bodyCtx body.val.toList
-    let innerBlock := mkStmtExprMd (StmtExpr.Block (targetDecls ++ bodyStmts) (some continueLabel))
+    let innerBlock := mkStmtExprMd (StmtExpr.Block bodyStmts (some continueLabel))
     let loopBlock := mkStmtExprMdWithLoc (StmtExpr.Block [innerBlock] (some breakLabel)) md
-    return (finalCtx, [loopBlock])
+    return (finalCtx, targetDecls ++ [loopBlock])
 
   | .Break _ =>
     match ctx.loopBreakLabel with
