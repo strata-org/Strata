@@ -10,6 +10,7 @@ import Strata.Languages.Laurel.Grammar.LaurelGrammar
 import Strata.Languages.Laurel.Grammar.ConcreteToAbstractTreeTranslator
 import Strata.Languages.Laurel.Resolution
 import Strata.Languages.Laurel.LaurelConcreteEval
+import Strata.Languages.Laurel.LaurelToCoreTranslator
 
 /-!
 # Shared Test Helpers for Laurel ConcreteEval Tests
@@ -36,6 +37,16 @@ def parseLaurel (input : String) : IO Laurel.Program := do
   | .ok program =>
     let result := resolve program
     return result.program
+
+/-- Parse and apply the full Laurel→Laurel lowering pipeline (all passes before Laurel→Core). -/
+def parseLaurelTransformed (input : String) : IO Laurel.Program := do
+  let inputCtx := Strata.Parser.stringInputContext "test" input
+  let dialects := Strata.Elab.LoadedDialects.ofDialects! #[initDialect, Laurel]
+  let strataProgram ← parseStrataProgramFromDialect dialects Laurel.name inputCtx
+  let uri := Strata.Uri.file "test"
+  match Laurel.TransM.run uri (Laurel.parseProgram strataProgram) with
+  | .error e => throw (IO.userError s!"Translation errors: {e}")
+  | .ok program => return lowerLaurelToLaurel program
 
 /-! ## Programmatic AST Helpers -/
 

@@ -584,6 +584,38 @@ def translateDatatypeDefinition (model : SemanticModel) (dt : DatatypeDefinition
 structure LaurelTranslateOptions where
   emitResolutionErrors : Bool := true
 
+/--
+Apply the full Laurel→Laurel lowering pipeline (all passes before the Laurel→Core translation).
+Returns the lowered program.
+-/
+def lowerLaurelToLaurel (program : Program) : Program :=
+  let program := { program with
+    staticProcedures := coreDefinitionsForLaurel.staticProcedures ++ program.staticProcedures
+  }
+  let result := resolve program
+  let (program, model) := (result.program, result.model)
+  let program := heapParameterization model program
+  let result := resolve program (some model)
+  let (program, model) := (result.program, result.model)
+  let program := typeHierarchyTransform model program
+  let result := resolve program (some model)
+  let (program, model) := (result.program, result.model)
+  let (program, _) := modifiesClausesTransform model program
+  let result := resolve program (some model)
+  let (program, model) := (result.program, result.model)
+  let result := resolve program (some model)
+  let (program, model) := (result.program, result.model)
+  let program := inferHoleTypes model program
+  let program := eliminateHoles program
+  let program := desugarShortCircuit model program
+  let program := liftExpressionAssignments model program
+  let program := eliminateReturnsInExpressionTransform program
+  let result := resolve program (some model)
+  let (program, model) := (result.program, result.model)
+  let (program, _) := constrainedTypeElim model program
+  let result := resolve program (some model)
+  result.program
+
 abbrev TranslateResult := (Option Core.Program) × (List DiagnosticModel)
 /--
 Translate Laurel Program to Core Program
