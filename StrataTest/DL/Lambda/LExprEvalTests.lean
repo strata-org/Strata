@@ -109,7 +109,7 @@ example: steps_well test2 := by
   · repeat constructor
   take_step; reduce_beta
   take_step; constructor <;> try inhabited_metadata
-  · apply Step.eq_reduce <;> try discharge_isCanonicalValue
+  · apply Step.eq_reduce_false <;> try discharge_isCanonicalValue <;> try rfl
     · inhabited_metadata
   take_step; apply Step.ite_reduce_else
   apply ReflTrans.refl
@@ -144,7 +144,7 @@ example: steps_well test4 := by
   unfold steps_well Scopes.toEnv test4
   take_step; reduce_beta
   take_step; apply Step.ite_reduce_cond <;> try inhabited_metadata
-  · apply Step.eq_reduce <;> try discharge_isCanonicalValue
+  · apply Step.eq_reduce_false <;> try discharge_isCanonicalValue <;> try rfl
     · inhabited_metadata
   take_step; apply Step.ite_reduce_else
   take_step; apply Step.reduce_1; inhabited_metadata; apply Step.expand_fvar; rfl
@@ -165,7 +165,7 @@ example: steps_well test5 := by
   unfold steps_well Scopes.toEnv test5
   take_step; reduce_beta
   take_step; apply Step.ite_reduce_cond; inhabited_metadata
-  · apply Step.eq_reduce <;> try discharge_isCanonicalValue
+  · apply Step.eq_reduce_false <;> try discharge_isCanonicalValue <;> try rfl
     · inhabited_metadata
   take_step; apply Step.ite_reduce_else
   take_step; apply Step.reduce_1; inhabited_metadata; apply Step.expand_fvar; rfl
