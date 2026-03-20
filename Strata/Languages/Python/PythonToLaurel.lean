@@ -255,6 +255,7 @@ def wrapFieldInAny (ty : HighType) (expr : StmtExprMd) : Except TranslationError
   | .TFloat64 => .ok <| mkStmtExprMd (.StaticCall "from_float" [expr])
   | .TReal => .ok <| mkStmtExprMd (.StaticCall "from_float" [expr])
   | .TString => .ok <| mkStmtExprMd (.StaticCall "from_string" [expr])
+  | .TCore "Any" => .ok expr
   | other => .error (.typeError s!"wrapFieldInAny: no Any constructor for field type '{repr other}'")
 
 /-- Look up a field's HighType, returning `none` if the class or field is not found. -/
