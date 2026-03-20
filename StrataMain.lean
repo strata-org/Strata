@@ -387,6 +387,9 @@ def pyAnalyzeLaurelCommand : Command where
             { name := "vc-directory",
               help := "Store VCs in SMT-Lib format in <dir>.",
               takesArg := .arg "dir" },
+            { name := "parallel",
+              help := "Run up to N solver instances in parallel.",
+              takesArg := .arg "N" },
             checkModeFlag, checkLevelFlag]
   help := "Verify a Python Ion program via the Laurel pipeline. Translates Python to Laurel to Core, then runs SMT verification."
   callback := fun v pflags => do
@@ -442,21 +445,24 @@ def pyAnalyzeLaurelCommand : Command where
       { VerifyOptions.default with
         stopOnFirstError := false, verbose := .quiet, solver := "z3",
         checkMode := checkMode, checkLevel := checkLevel }
+    let parallelWorkers := match pflags.getString "parallel" with
+      | .some n => n.toNat?.getD 1
+      | .none => 1
     let options : VerifyOptions := match pflags.getString "vc-directory" with
-      | .some dir => { baseOptions with vcDirectory := some (dir : System.FilePath) }
-      | .none => baseOptions
+      | .some dir => { baseOptions with vcDirectory := some (dir : System.FilePath), parallelWorkers }
+      | .none => { baseOptions with parallelWorkers }
     let vcResults ←
       match ← Strata.verifyCore coreProgram options |>.toBaseIO with
       | .ok r => pure r
       | .error msg => exitInternalError msg
 
-    -- Print results
+    -- Print translation errors
     if !laurelTranslateErrors.isEmpty then
       IO.println "\n==== Errors ===="
       for err in laurelTranslateErrors do
         IO.println err
 
-    -- Print results
+    -- Print verification results
     IO.println "\n==== Verification Results ===="
     let mut s := ""
     for vcResult in vcResults do

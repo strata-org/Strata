@@ -39,6 +39,11 @@ def parseOptions (args : List String) : Except Std.Format (VerifyOptions × Stri
          match n? with
          | .none => .error f!"Invalid number of seconds: {secondsStr}"
          | .some n => go {opts with solverTimeout := n} rest procs
+      | opts, "--parallel" :: nStr :: rest, procs =>
+         match String.toNat? nStr with
+         | .none => .error f!"Invalid number of workers: {nStr}"
+         | .some n => if n == 0 then .error "Number of workers must be at least 1"
+                      else go {opts with parallelWorkers := n} rest procs
       | opts, "--check-mode" :: modeStr :: rest, procs =>
          match Core.VerificationMode.ofString? modeStr with
          | .some m => go {opts with checkMode := m} rest procs
@@ -67,7 +72,8 @@ def usageMessage : Std.Format :=
   --vc-directory=<dir>        Store VCs in SMT-Lib format in <dir>{Std.Format.line}  \
   --solver <name>             SMT solver executable to use (default: {defaultSolver}){Std.Format.line}  \
   --check-mode <mode>         Check mode: {Core.VerificationMode.options}. Default: 'deductive'.{Std.Format.line}  \
-  --check-level <level>       Check level: {Core.CheckLevel.options}. Default: 'minimal'."
+  --check-level <level>       Check level: {Core.CheckLevel.options}. Default: 'minimal'.{Std.Format.line}  \
+  --parallel <N>              Run up to N solver instances in parallel (default: 1, sequential)."
 
 def main (args : List String) : IO UInt32 := do
   let parseResult := parseOptions args
