@@ -94,9 +94,9 @@ datatype DictStrAny {
 // /////////////////////////////////////////////////////////////////////////////////////
 
 procedure test_helper_procedure(req_name : Any, opt_name : Any) returns (ret: Any, maybe_except: Error)
-  requires req_name == from_string("foo") summary "req_name_is_foo"
-  requires (Any..isfrom_none(opt_name)) || (Any..isfrom_string(opt_name)) summary "req_opt_name_none_or_str"
-  requires (opt_name == from_none()) || (opt_name == from_string("bar")) summary "req_opt_name_none_or_bar"
+  requires req_name == from_string("foo") summary "(Origin_test_helper_procedure_Requires)req_name_is_foo"
+  requires (Any..isfrom_none(opt_name)) || (Any..isfrom_string(opt_name)) summary "(Origin_test_helper_procedure_Requires)req_opt_name_none_or_str"
+  requires (opt_name == from_none()) || (opt_name == from_string("bar")) summary "(Origin_test_helper_procedure_Requires)req_opt_name_none_or_bar"
   ensures (Error..isNoError(maybe_except)) summary "ensures_maybe_except_none"
 {
   assert req_name == from_string("foo") summary "assert_name_is_foo";
