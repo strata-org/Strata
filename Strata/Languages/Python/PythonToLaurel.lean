@@ -462,13 +462,17 @@ partial def translateExpr (ctx : TranslationContext) (e : Python.expr SourceRang
     let inner ← translateExpr ctx value
     return mkStmtExprMd (.StaticCall "to_string_any" [inner])
 
-  -- JoinedStr (f-strings) - concatenate all parts via PAdd
+  -- JoinedStr (f-strings) - concatenate string parts via str.concat
   | .JoinedStr _ values =>
     if values.val.isEmpty then
       return strToAny ""
     else
       let parts ← values.val.toList.mapM (translateExpr ctx ·)
-      return parts.foldl (fun acc part => mkStmtExprMd (.StaticCall "PAdd" [acc, part])) (strToAny "")
+      let unwrap (e : StmtExprMd) := mkStmtExprMd (.StaticCall "Any..as_string!" [e])
+      let concat := parts.foldl (fun acc part =>
+        mkStmtExprMd (.PrimitiveOp .StrConcat [acc, unwrap part]))
+        (mkStmtExprMd (.LiteralString ""))
+      return mkStmtExprMd (.StaticCall "from_string" [concat])
 
   -- Interpolation / TemplateStr (Python 3.14+ t-strings) - not yet supported
   | .Interpolation .. => return mkStmtExprMd .Hole
