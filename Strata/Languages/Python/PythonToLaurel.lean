@@ -459,8 +459,19 @@ partial def translateExpr (ctx : TranslationContext) (e : Python.expr SourceRang
 
   -- FormattedValue (f-string interpolation {expr}) - convert to string-typed Any
   | .FormattedValue _ value _ _ =>
+    let ty ← inferExprType ctx value
     let inner ← translateExpr ctx value
-    return mkStmtExprMd (.StaticCall "to_string_any" [inner])
+    let asAny ← if ty ∈ ctx.compositeTypeNames then
+        let fields := (ctx.classFieldHighType[ty]?.getD {}).toList
+        let dict ← fields.foldlM (fun acc (fname, fty) =>
+          return mkStmtExprMd (.StaticCall "DictStrAny_cons"
+            [mkStmtExprMd (.LiteralString fname),
+             ← wrapFieldInAny fty (mkStmtExprMd (.FieldSelect inner fname)), acc]))
+          (mkStmtExprMd (.StaticCall "DictStrAny_empty" []))
+        pure <| mkStmtExprMd (.StaticCall "from_ClassInstance"
+          [mkStmtExprMd (.LiteralString ty), dict])
+      else pure inner
+    return mkStmtExprMd (.StaticCall "to_string_any" [asAny])
 
   -- JoinedStr (f-strings) - concatenate string parts via str.concat
   | .JoinedStr _ values =>
@@ -1033,19 +1044,10 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
     let mut handlerStmts : List StmtExprMd := []
     for handler in handlers.val do
       match handler with
-      | .ExceptHandler _ exTy name handlerBody =>
-        let tyStr := match exTy.val with
-          | some ty => pyExprToString ty
-          | none => PyLauType.Any
-        let (localCtx, nameDecl) ← match name.val with
-          | some n =>
-            let laurelTy ← translateType hoistedCtx tyStr
-            pure ({hoistedCtx with variableTypes := (n.val, tyStr) :: hoistedCtx.variableTypes},
-                  [mkStmtExprMd (StmtExpr.LocalVariable n.val laurelTy (some (mkStmtExprMd .Hole)))])
-          | none => pure (hoistedCtx, [])
-        let (hCtx, hStmts) ← translateStmtList localCtx handlerBody.val.toList
+      | .ExceptHandler _ _ _ handlerBody =>
+        let (hCtx, hStmts) ← translateStmtList hoistedCtx handlerBody.val.toList
         handlerCtx := hCtx
-        handlerStmts := handlerStmts ++ nameDecl ++ hStmts
+        handlerStmts := handlerStmts ++ hStmts
 
     -- Insert exception checks after each statement in try body
     let bodyStmtsWithChecks := bodyStmts.flatMap fun stmt =>
