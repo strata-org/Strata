@@ -552,6 +552,7 @@ def pyAnalyzeToGotoCommand : Command where
           | .ok s => pure (Lean.toJson s)
           | .error e => panic! s!"{e}"
         let (symtab, goto) ← emitProcWithLifted Env procName ctx liftedFuncs extraSyms
+              (moduleName := baseName)
         let symTabFile := s!"{baseName}.symtab.json"
         let gotoFile := s!"{baseName}.goto.json"
         IO.FS.writeFile symTabFile symtab.pretty
@@ -861,7 +862,12 @@ def laurelAnalyzeToGotoCommand : Command where
           if !seen.contains k then
             seen := seen.insert k
             dedupPairs := dedupPairs ++ [(k, v)]
-        let symtab := Lean.Json.mkObj dedupPairs
+        -- Add CBMC default symbols (architecture constants, builtins)
+        -- and wrap in {"symbolTable": ...} for symtab2gb
+        let symtabObj := dedupPairs.foldl
+          (fun (acc : Std.TreeMap.Raw String Lean.Json) (k, v) => acc.insert k v)
+          .empty
+        let symtab := CProverGOTO.wrapSymtab symtabObj (moduleName := baseName)
         let goto := Lean.Json.mkObj [("functions", Lean.Json.arr gotoFns)]
         let symTabFile := s!"{baseName}.symtab.json"
         let gotoFile := s!"{baseName}.goto.json"
