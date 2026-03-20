@@ -214,6 +214,24 @@ info: "; m\n(declare-const m (Array Int Int))\n(define-fun t0 () (Array Int Int)
   (.quant () .all "x" (.some .int) (LExpr.noTrigger ())
    (.eq () (.bvar () 0) (.fvar () "x" (.some .int))))
 
+-- Test that bound variable names are globally unique across multiple terms.
+-- Two independent forall terms encoded via toSMTTerms should get distinct $__bv names.
+-- Before the fix, both terms would use $__bv0; now they get $__bv0 and $__bv1.
+#guard
+  match toSMTTerms Env.init [
+    -- Term 1: ∀ x:Int. x = x
+    (.quant () .all "" (.some .int) (LExpr.noTrigger ())
+     (.eq () (.bvar () 0) (.bvar () 0))),
+    -- Term 2: ∀ y:Bool. y
+    (.quant () .all "" (.some .bool) (LExpr.noTrigger ())
+     (.bvar () 0))
+  ] SMT.Context.default with
+  | .ok (smts, _) =>
+    smts.map (fun t => Strata.SMTDDM.termToString t) ==
+      [.ok "(forall (($__bv0 Int)) (= $__bv0 $__bv0))",
+       .ok "(forall (($__bv1 Bool)) $__bv1)"]
+  | .error _ => false
+
 -- Test string literal containing double quotes is properly escaped for SMT-LIB 2.7
 -- In SMT-LIB 2.7, double quotes inside strings are escaped by doubling: "a""b" represents a"b
 /--

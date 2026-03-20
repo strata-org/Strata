@@ -94,10 +94,23 @@ def smtReservedKeywords : List String :=
   -- SMT-LIB reserved words from the DDM parser
   let parserKeywords := _root_.Strata.reservedKeywords.map (·.2)
   -- Additional keywords not in the parser list
-  parserKeywords ++ ["select", "store", "and", "or", "not", "ite",
-   "true", "false", "Int", "Bool", "Real", "Array", "BitVec",
-   -- Theory function symbols that cvc5 disallows shadowing
-   "abs", "mod", "div", "to_real", "to_int", "is_int"]
+  parserKeywords ++
+   ["true", "false", "Int", "Bool", "Real", "Array", "BitVec",
+   -- Core theory symbols
+   "abs", "and", "distinct", "/", "=", ">", ">=", "ite", "=>",
+   "div", "is_int", "<", "<=", "-", "mod", "*", "not", "or", "+",
+   "to_int", "to_real", "xor",
+   -- String theory symbols
+   "str.at", "str.++", "str.contains", "str.from_code", "str.from_int",
+   "str.in_re", "str.indexof", "str.is_digit", "str.<=", "str.len",
+   "str.<", "str.prefixof", "str.replace", "str.substr", "str.suffixof",
+   "str.to_code", "str.to_int", "str.to_re",
+   -- Regex theory symbols
+   "re.*", "re.+", "re.opt", "re.++", "re.union", "re.inter", "re.diff",
+   "re.comp", "re.loop", "re.^", "re.range", "re.none", "re.all",
+   "re.allchar",
+   -- Array theory symbols
+   "select", "store"]
 
 /-- Generate a disambiguated name by appending @suffix -/
 def disambiguateName (baseName : String) (suffix : Nat) : String :=
@@ -325,11 +338,8 @@ Then you can run any `SolverM` action `act` with `act |>.run solver`, where
 `solver` is a `Solver` instance you can construct using functions in
 Solver.lean.
 
-Note that `encode` itself first resets the solver in order to define datatypes
-etc.
 -/
 def encode (ts : List Term) : SolverM Unit := do
-  Solver.reset
   Solver.setLogic "ALL"
   Solver.declareDatatype "Option" ["X"]
     [⟨"none", []⟩, ⟨"some", [("val", .constr "X" [])]⟩]
