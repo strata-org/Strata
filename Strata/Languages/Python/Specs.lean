@@ -539,6 +539,11 @@ def pySpecValue (expr : expr SourceRange) : PySpecM SpecValue := do
     let some v := ←getNameValue? ident.val
       | specError expr.ann s!"Unknown identifier {ident.val}."; return default
     pure v
+  | .Attribute _ (.Name _ ⟨_, modName⟩ (.Load _)) ⟨_, attrName⟩ (.Load _) =>
+    let qualName := s!"{modName}.{attrName}"
+    let some v := ←getNameValue? qualName
+      | specError expr.ann s!"Unknown identifier {qualName}."; return default
+    pure v
   | .Subscript _ (.Name paramLoc ⟨_, paramType⟩ (.Load _)) subscriptArgs _ =>
     let (success, sargs) ← runChecked <| pySpecValue subscriptArgs
     if success then
@@ -1310,13 +1315,6 @@ partial def pySpecClassBody (loc : SourceRange) (className : String)
     methods := methods
   }
 
-def checkLevel (loc : SourceRange) (level : Option (int SourceRange)) : PySpecM Unit := do
-  match level with
-  | some lvl =>
-    if lvl.value ≠ 0 then
-      specError loc s!"Local import {lvl.value} not supported."
-  | none =>
-    specError loc s!"Missing import level."
 
 def translateImportFrom (mod : String) (types : Std.HashMap String SpecValue)
       (names : Array (alias SourceRange)) : PySpecM Unit := do
@@ -1459,6 +1457,56 @@ partial def resolveModuleCached (loc : SourceRange) (modName : String)
     modify fun s => { s with typeSigs := s.typeSigs.insert modName r }
     return r
 
+/-- Handle a bare `import module` statement by resolving the module and
+    registering its exported names under the qualified `module.name` pattern. -/
+partial def translateImport (loc : SourceRange)
+    (names : Array (alias SourceRange)) : PySpecM Unit := do
+  for a in names do
+    let mod := a.name
+    let asname := a.asname.getD mod
+    if let some types ← resolveModuleCached loc mod then
+      for (name, tpv) in types do
+        setNameValue s!"{asname}.{name}" tpv
+    else
+      let source : PythonIdent := { pythonModule := mod, name := asname }
+      let tpv : SpecValue := .typeValue (.ident loc source)
+      setNameValue asname tpv
+      pushSignature (.externTypeDecl asname source)
+
+/-- Handle a `from [.] module import name` statement. Supports both absolute
+    imports (level 0) and single-level relative imports (level 1).
+    `pyModule` is the module string (already unwrapped from the annotation).
+    `level` is the raw import level from the AST. -/
+partial def translateImportFromStmt (loc : SourceRange)
+    (pyModule : Option (Ann String SourceRange))
+    (names : Array (alias SourceRange))
+    (level : Option (int SourceRange)) : PySpecM Unit := do
+
+  if let some lvlE := level then
+    let lvl := lvlE.value
+    if lvl > 1 then
+      specError loc s!"Relative imports above the current directory (level {lvl}) are not yet supported; use an absolute import or a single-level relative import (from .Module import Name) instead."
+      return
+
+  let some ⟨_, mod⟩ := pyModule
+    | specError loc s!"Package-level imports (from . import Name) are not supported; use 'from .Module import Name' instead."
+      return
+  -- For level 1 (from .X import Y), the module name is already relative
+  -- to the search path (same directory), so we use it directly.
+  if let some types ← resolveModuleCached loc mod then
+    translateImportFrom mod types names
+  else
+    -- Module resolution failed; register imported names as opaque extern
+    -- types so that downstream references don't produce unknown-identifier
+    -- errors.
+    for a in names do
+      let name := a.name
+      let asname := a.asname.getD name
+      let source : PythonIdent := { pythonModule := mod, name := name }
+      let tpv : SpecValue := .typeValue (.ident loc source)
+      setNameValue asname tpv
+      pushSignature (.externTypeDecl asname source)
+
 partial def translate (body : Array (stmt Strata.SourceRange)) : PySpecM Unit := do
   for stmt in body do
     match stmt with
@@ -1508,26 +1556,9 @@ partial def translate (body : Array (stmt Strata.SourceRange)) : PySpecM Unit :=
       let d ← pySpecFunctionArgs (className := none) loc funName args body decorators returns
       pushSignature (.functionDecl d)
     | .Import loc names =>
-      specError loc s!"Import of {repr names} not supported."
+      translateImport loc names.val
     | .ImportFrom loc ⟨_, pyModule⟩ ⟨_, names⟩ ⟨_, level⟩ =>
-      let (success, ()) ← runChecked <| checkLevel loc level
-      if not success then
-        continue
-      let some ⟨_, mod⟩ := pyModule
-        | specError loc s!"Local imports not supported"; continue
-      if let some types ← resolveModuleCached loc mod then
-        translateImportFrom mod types names
-      else
-        -- Module resolution failed; register imported names as opaque extern
-        -- types so that downstream references don't produce unknown-identifier
-        -- errors.
-        for a in names do
-          let name := a.name
-          let asname := a.asname.getD name
-          let source : PythonIdent := { pythonModule := mod, name := name }
-          let tpv : SpecValue := .typeValue (.ident loc source)
-          setNameValue asname tpv
-          pushSignature (.externTypeDecl asname source)
+      translateImportFromStmt loc pyModule names level
     | .ClassDef loc ⟨_classNameLoc, className⟩ bases keywords stmts decorators typeParams =>
       if ←shouldSkip className then
         logEvent "skip" s!"Skipping class {className}"
