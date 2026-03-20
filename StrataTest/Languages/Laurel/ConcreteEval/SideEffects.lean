@@ -10,8 +10,7 @@ import StrataTest.Languages.Laurel.ConcreteEval.TestHelper
 # Side Effects and Evaluation Order Tests
 
 Tests for side effects in expression position and left-to-right evaluation
-order of arguments. All tests use `parseLaurel` with the lift pass enabled
-(default) since impure expressions appear in expression position.
+order of arguments. The evaluation order is directly from `denoteArgs`.
 
 The `denoteArgs` function in `LaurelDenote.lean` evaluates arguments
 left-to-right, threading store and heap through each argument evaluation.
@@ -106,10 +105,7 @@ procedure main() {
 Each iteration: side effect adds 10 to x, id returns that value which is
 assigned back. After 3 iterations: x = 30.
 
-Note: block expressions in while *conditions* are not supported with the
-lift pass (the condition prepends are hoisted before the loop, executing
-only once). This test uses side effects in call arguments inside the loop
-body instead.
+This test uses side effects in call arguments inside the loop body.
 -/
 
 /--

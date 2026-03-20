@@ -9,7 +9,6 @@ import Strata.DDM.BuiltinDialects.Init
 import Strata.Languages.Laurel.Grammar.LaurelGrammar
 import Strata.Languages.Laurel.Grammar.ConcreteToAbstractTreeTranslator
 import Strata.Languages.Laurel.Resolution
-import Strata.Languages.Laurel.LiftImperativeExpressions
 import Strata.Languages.Laurel.LaurelConcreteEval
 
 /-!
@@ -27,7 +26,7 @@ open Strata.Laurel
 
 /-! ## Parsing Helper -/
 
-def parseLaurel (input : String) (applyLift : Bool := true) : IO Laurel.Program := do
+def parseLaurel (input : String) : IO Laurel.Program := do
   let inputCtx := Strata.Parser.stringInputContext "test" input
   let dialects := Strata.Elab.LoadedDialects.ofDialects! #[initDialect, Laurel]
   let strataProgram ← parseStrataProgramFromDialect dialects Laurel.name inputCtx
@@ -36,11 +35,7 @@ def parseLaurel (input : String) (applyLift : Bool := true) : IO Laurel.Program 
   | .error e => throw (IO.userError s!"Translation errors: {e}")
   | .ok program =>
     let result := resolve program
-    let (program, model) := (result.program, result.model)
-    if applyLift then
-      return (liftExpressionAssignments model program)
-    else
-      return program
+    return result.program
 
 /-! ## Programmatic AST Helpers -/
 

@@ -116,7 +116,7 @@ info: returned: 42
 -/
 #guard_msgs in
 #eval! do
-  let prog ← parseLaurel (applyLift := false) r"
+  let prog ← parseLaurel r"
 procedure main() {
   if (true) { if (true) { if (true) { return 42 } } }
 };

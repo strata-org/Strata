@@ -30,7 +30,7 @@ info: returned: 42
 -/
 #guard_msgs in
 #eval! do
-  let prog ← parseLaurel (applyLift := false) r"
+  let prog ← parseLaurel r"
 procedure main() { return 42 };
 "
   IO.println (toString (runProgram prog))
@@ -107,7 +107,7 @@ info: returned: -1
 -/
 #guard_msgs in
 #eval! do
-  let prog ← parseLaurel (applyLift := false) r"
+  let prog ← parseLaurel r"
 procedure lazyAnd(x: int) {
   var sum : int := 0;
   if (x < 0 && {sum := 1; sum == 1}) { sum := 42} else { sum := sum - 1};
@@ -123,7 +123,7 @@ info: returned: -1
 -/
 #guard_msgs in
 #eval! do
-  let prog ← parseLaurel (applyLift := false) r"
+  let prog ← parseLaurel r"
 procedure lazyAnd(x: int) {
   var sum : int := 0;
   if (x < 0 && {sum := 1; sum == 1}) { sum := 42} else { sum := sum - 1};
@@ -140,7 +140,7 @@ info: returned: -1
 -/
 #guard_msgs in
 #eval! do
-  let prog ← parseLaurel (applyLift := false) r"
+  let prog ← parseLaurel r"
 procedure lazyOr(x: int) {
   var sum : int := 0;
   if (x > 0 || {sum := 1; sum == 1}) { sum := sum - 1} else { sum := 42};

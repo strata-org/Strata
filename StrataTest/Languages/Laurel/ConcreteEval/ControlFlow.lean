@@ -25,7 +25,7 @@ info: returned: 1
 -/
 #guard_msgs in
 #eval! do
-  let prog ← parseLaurel (applyLift := false) r"
+  let prog ← parseLaurel r"
 procedure main() {
   if (true) { return 1 } else { return 2 }
 };
@@ -39,7 +39,7 @@ info: returned: 2
 -/
 #guard_msgs in
 #eval! do
-  let prog ← parseLaurel (applyLift := false) r"
+  let prog ← parseLaurel r"
 procedure main() {
   if (false) { return 1 } else { return 2 }
 };
@@ -53,7 +53,7 @@ info: returned: 1
 -/
 #guard_msgs in
 #eval! do
-  let prog ← parseLaurel (applyLift := false) r"
+  let prog ← parseLaurel r"
 procedure main() {
   if (true) { return 1 };
   return 0
@@ -68,7 +68,7 @@ info: returned: 0
 -/
 #guard_msgs in
 #eval! do
-  let prog ← parseLaurel (applyLift := false) r"
+  let prog ← parseLaurel r"
 procedure main() {
   var x: int := 0;
   if (false) { x := 1 };
@@ -84,7 +84,7 @@ info: returned: 2
 -/
 #guard_msgs in
 #eval! do
-  let prog ← parseLaurel (applyLift := false) r"
+  let prog ← parseLaurel r"
 procedure main() {
   var x: int := 15;
   if (x > 10) {
@@ -101,7 +101,7 @@ info: returned: 0
 -/
 #guard_msgs in
 #eval! do
-  let prog ← parseLaurel (applyLift := false) r"
+  let prog ← parseLaurel r"
 procedure main() {
   var x: int := 0;
   while (false) { x := 1 };
@@ -117,7 +117,7 @@ info: returned: 42
 -/
 #guard_msgs in
 #eval! do
-  let prog ← parseLaurel (applyLift := false) r"
+  let prog ← parseLaurel r"
 procedure main() {
   var x: int := 0;
   var done: bool := false;
@@ -134,7 +134,7 @@ info: returned: 5
 -/
 #guard_msgs in
 #eval! do
-  let prog ← parseLaurel (applyLift := false) r"
+  let prog ← parseLaurel r"
 procedure main() {
   var i: int := 0;
   while (i < 100) {
@@ -153,7 +153,7 @@ info: returned: 42
 -/
 #guard_msgs in
 #eval! do
-  let prog ← parseLaurel (applyLift := false) r"
+  let prog ← parseLaurel r"
 procedure main() {
   var x: int := 0;
   if (true) {
@@ -179,7 +179,7 @@ info: returned: 1
 -/
 #guard_msgs in
 #eval! do
-  let prog ← parseLaurel (applyLift := false) r"
+  let prog ← parseLaurel r"
 procedure main() {
   var sum: int := 0;
   var i: int := 0;
@@ -208,7 +208,7 @@ info: error: fuel exhausted
 -/
 #guard_msgs in
 #eval! do
-  let prog ← parseLaurel (applyLift := false) r"
+  let prog ← parseLaurel r"
 procedure main() {
   var x: int := 0;
   while (true) { x := x + 1 };
@@ -230,7 +230,7 @@ info: error: fuel exhausted
 -/
 #guard_msgs in
 #eval! do
-  let prog ← parseLaurel (applyLift := false) r"
+  let prog ← parseLaurel r"
 procedure main() {
   while (true) { var x: int := 0 };
   return 0

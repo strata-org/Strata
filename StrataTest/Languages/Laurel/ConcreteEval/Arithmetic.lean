@@ -26,7 +26,7 @@ info: returned: 7
 -/
 #guard_msgs in
 #eval! do
-  let prog ← parseLaurel (applyLift := false) r"
+  let prog ← parseLaurel r"
 procedure main() { return 3 + 4 };
 "
   IO.println (toString (runProgram prog))
@@ -38,7 +38,7 @@ info: returned: 7
 -/
 #guard_msgs in
 #eval! do
-  let prog ← parseLaurel (applyLift := false) r"
+  let prog ← parseLaurel r"
 procedure main() { return 10 - 3 };
 "
   IO.println (toString (runProgram prog))
@@ -50,7 +50,7 @@ info: returned: 42
 -/
 #guard_msgs in
 #eval! do
-  let prog ← parseLaurel (applyLift := false) r"
+  let prog ← parseLaurel r"
 procedure main() { return 6 * 7 };
 "
   IO.println (toString (runProgram prog))
@@ -62,7 +62,7 @@ info: returned: 3
 -/
 #guard_msgs in
 #eval! do
-  let prog ← parseLaurel (applyLift := false) r"
+  let prog ← parseLaurel r"
 procedure main() { return 7 / 2 };
 "
   IO.println (toString (runProgram prog))
@@ -74,7 +74,7 @@ info: returned: 1
 -/
 #guard_msgs in
 #eval! do
-  let prog ← parseLaurel (applyLift := false) r"
+  let prog ← parseLaurel r"
 procedure main() { return 7 % 2 };
 "
   IO.println (toString (runProgram prog))
@@ -86,7 +86,7 @@ info: returned: -5
 -/
 #guard_msgs in
 #eval! do
-  let prog ← parseLaurel (applyLift := false) r"
+  let prog ← parseLaurel r"
 procedure main() { return 0 - 5 };
 "
   IO.println (toString (runProgram prog))
@@ -98,7 +98,7 @@ info: error: fuel exhausted
 -/
 #guard_msgs in
 #eval! do
-  let prog ← parseLaurel (applyLift := false) r"
+  let prog ← parseLaurel r"
 procedure main() { return 1 / 0 };
 "
   IO.println (toString (runProgram prog))
@@ -110,7 +110,7 @@ info: error: fuel exhausted
 -/
 #guard_msgs in
 #eval! do
-  let prog ← parseLaurel (applyLift := false) r"
+  let prog ← parseLaurel r"
 procedure main() { return 1 % 0 };
 "
   IO.println (toString (runProgram prog))
@@ -122,7 +122,7 @@ info: returned: 1000000000000000000
 -/
 #guard_msgs in
 #eval! do
-  let prog ← parseLaurel (applyLift := false) r"
+  let prog ← parseLaurel r"
 procedure main() { return 1000000000 * 1000000000 };
 "
   IO.println (toString (runProgram prog))
@@ -134,7 +134,7 @@ info: returned: 15
 -/
 #guard_msgs in
 #eval! do
-  let prog ← parseLaurel (applyLift := false) r"
+  let prog ← parseLaurel r"
 procedure main() { return (2 + 3) * (4 - 1) };
 "
   IO.println (toString (runProgram prog))
@@ -146,7 +146,7 @@ info: returned: -7
 -/
 #guard_msgs in
 #eval! do
-  let prog ← parseLaurel (applyLift := false) r"
+  let prog ← parseLaurel r"
 procedure main() { return (-3) + (-4) };
 "
   IO.println (toString (runProgram prog))
@@ -158,7 +158,7 @@ info: returned: 3
 -/
 #guard_msgs in
 #eval! do
-  let prog ← parseLaurel (applyLift := false) r"
+  let prog ← parseLaurel r"
 procedure main() { return 7 /t 2 };
 "
   IO.println (toString (runProgram prog))
@@ -170,7 +170,7 @@ info: returned: 1
 -/
 #guard_msgs in
 #eval! do
-  let prog ← parseLaurel (applyLift := false) r"
+  let prog ← parseLaurel r"
 procedure main() { return 7 %t 2 };
 "
   IO.println (toString (runProgram prog))
@@ -182,7 +182,7 @@ info: returned: -3
 -/
 #guard_msgs in
 #eval! do
-  let prog ← parseLaurel (applyLift := false) r"
+  let prog ← parseLaurel r"
 procedure main() { return (-7) /t 2 };
 "
   IO.println (toString (runProgram prog))
@@ -194,7 +194,7 @@ info: returned: -1
 -/
 #guard_msgs in
 #eval! do
-  let prog ← parseLaurel (applyLift := false) r"
+  let prog ← parseLaurel r"
 procedure main() { return (-7) %t 2 };
 "
   IO.println (toString (runProgram prog))
@@ -206,7 +206,7 @@ info: error: fuel exhausted
 -/
 #guard_msgs in
 #eval! do
-  let prog ← parseLaurel (applyLift := false) r"
+  let prog ← parseLaurel r"
 procedure main() { return 7 /t 0 };
 "
   IO.println (toString (runProgram prog))
@@ -218,7 +218,7 @@ info: error: fuel exhausted
 -/
 #guard_msgs in
 #eval! do
-  let prog ← parseLaurel (applyLift := false) r"
+  let prog ← parseLaurel r"
 procedure main() { return 7 %t 0 };
 "
   IO.println (toString (runProgram prog))

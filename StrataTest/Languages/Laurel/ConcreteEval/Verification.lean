@@ -68,8 +68,8 @@ procedure main() { assume false; return 1 };
 /-! ## Test 5: Assert purity — side effects in condition discarded
 
 The semantics evaluates the condition but returns the original σ and h.
-We use `parseLaurel true` (with lift) so the impure expression `{x := 1; true}`
-is handled. After assert, x should still be 0.
+The denotational interpreter handles the impure expression `{x := 1; true}`
+natively. After assert, x should still be 0.
 -/
 
 /--
@@ -77,7 +77,7 @@ info: returned: 0
 -/
 #guard_msgs in
 #eval! do
-  let prog ← parseLaurel (applyLift := true) r"
+  let prog ← parseLaurel r"
 procedure main() {
   var x: int := 0;
   assert {x := 1; true};

@@ -25,7 +25,7 @@ info: returned: 42
 -/
 #guard_msgs in
 #eval! do
-  let prog ← parseLaurel (applyLift := false) r"
+  let prog ← parseLaurel r"
 procedure main() { return 42 };
 "
   IO.println (toString (runProgram prog))
@@ -37,7 +37,7 @@ info: returned: -7
 -/
 #guard_msgs in
 #eval! do
-  let prog ← parseLaurel (applyLift := false) r"
+  let prog ← parseLaurel r"
 procedure main() { return -7 };
 "
   IO.println (toString (runProgram prog))
@@ -49,7 +49,7 @@ info: returned: 0
 -/
 #guard_msgs in
 #eval! do
-  let prog ← parseLaurel (applyLift := false) r"
+  let prog ← parseLaurel r"
 procedure main() { return 0 };
 "
   IO.println (toString (runProgram prog))
@@ -61,7 +61,7 @@ info: returned: 1
 -/
 #guard_msgs in
 #eval! do
-  let prog ← parseLaurel (applyLift := false) r"
+  let prog ← parseLaurel r"
 procedure main() {
   if (true) { return 1 } else { return 0 }
 };
@@ -75,7 +75,7 @@ info: returned: 0
 -/
 #guard_msgs in
 #eval! do
-  let prog ← parseLaurel (applyLift := false) r"
+  let prog ← parseLaurel r"
 procedure main() {
   if (false) { return 1 } else { return 0 }
 };
@@ -89,7 +89,7 @@ info: returned: 1
 -/
 #guard_msgs in
 #eval! do
-  let prog ← parseLaurel (applyLift := false) r#"
+  let prog ← parseLaurel r#"
 procedure main() {
   if ("hello" == "hello") { return 1 } else { return 0 }
 };
@@ -103,7 +103,7 @@ info: returned: 1
 -/
 #guard_msgs in
 #eval! do
-  let prog ← parseLaurel (applyLift := false) r#"
+  let prog ← parseLaurel r#"
 procedure main() {
   if ("" == "") { return 1 } else { return 0 }
 };
@@ -117,7 +117,7 @@ info: returned: 0
 -/
 #guard_msgs in
 #eval! do
-  let prog ← parseLaurel (applyLift := false) r"
+  let prog ← parseLaurel r"
 procedure noop() { var x: int := 1 };
 procedure main() { noop(); return 0 };
 "

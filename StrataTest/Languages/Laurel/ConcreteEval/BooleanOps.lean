@@ -13,12 +13,9 @@ Tests for comparison operators, boolean operations, and short-circuit
 semantics. Short-circuit tests verify that side effects do NOT occur
 in the unevaluated branch.
 
-All tests use `parseLaurel (applyLift := false)`. The lift pass hoists
-block-expression side effects before the enclosing operator, which
-breaks short-circuit observability. Without the lift pass, the
-denotational interpreter (`denoteStmt`) evaluates `AndThen`/`OrElse`/`Implies`
-with proper short-circuit semantics, while `And`/`Or` are evaluated eagerly
-via `evalPrimOp`.
+All tests use `parseLaurel`. The denotational interpreter (`denoteStmt`)
+evaluates `AndThen`/`OrElse`/`Implies` with proper short-circuit semantics,
+while `And`/`Or` are evaluated eagerly via `evalPrimOp`.
 -/
 
 namespace Strata.Laurel.ConcreteEval.BooleanOpsTest
@@ -35,7 +32,7 @@ info: returned: 1
 -/
 #guard_msgs in
 #eval! do
-  let prog ← parseLaurel (applyLift := false) r"
+  let prog ← parseLaurel r"
 procedure main() {
   var a: bool := 1 < 2;
   var b: bool := 2 <= 2;
@@ -53,7 +50,7 @@ info: returned: 1
 -/
 #guard_msgs in
 #eval! do
-  let prog ← parseLaurel (applyLift := false) r"
+  let prog ← parseLaurel r"
 procedure main() {
   if (5 == 5 && 5 != 6) { return 1 } else { return 0 }
 };
@@ -67,7 +64,7 @@ info: returned: 1
 -/
 #guard_msgs in
 #eval! do
-  let prog ← parseLaurel (applyLift := false) r"
+  let prog ← parseLaurel r"
 procedure main() {
   if (true == true && true != false) { return 1 } else { return 0 }
 };
@@ -81,7 +78,7 @@ info: returned: 1
 -/
 #guard_msgs in
 #eval! do
-  let prog ← parseLaurel (applyLift := false) r#"
+  let prog ← parseLaurel r#"
 procedure main() {
   if ("abc" == "abc" && "abc" != "def") { return 1 } else { return 0 }
 };
@@ -95,7 +92,7 @@ info: returned: 1
 -/
 #guard_msgs in
 #eval! do
-  let prog ← parseLaurel (applyLift := false) r"
+  let prog ← parseLaurel r"
 procedure main() {
   if (!false && !(!true)) { return 1 } else { return 0 }
 };
@@ -109,7 +106,7 @@ info: returned: 1
 -/
 #guard_msgs in
 #eval! do
-  let prog ← parseLaurel (applyLift := false) r#"
+  let prog ← parseLaurel r#"
 procedure main() {
   if ("ab" ++ "cd" == "abcd") { return 1 } else { return 0 }
 };
@@ -125,7 +122,7 @@ info: returned: 0
 -/
 #guard_msgs in
 #eval! do
-  let prog ← parseLaurel (applyLift := false) r"
+  let prog ← parseLaurel r"
 procedure main() {
   var x: int := 0;
   var b: bool := false && {x := 1; true};
@@ -141,7 +138,7 @@ info: returned: 1
 -/
 #guard_msgs in
 #eval! do
-  let prog ← parseLaurel (applyLift := false) r"
+  let prog ← parseLaurel r"
 procedure main() {
   var x: int := 0;
   var b: bool := true && {x := 1; true};
@@ -157,7 +154,7 @@ info: returned: 0
 -/
 #guard_msgs in
 #eval! do
-  let prog ← parseLaurel (applyLift := false) r"
+  let prog ← parseLaurel r"
 procedure main() {
   var x: int := 0;
   var b: bool := false && (true && {x := 1; true});
@@ -175,7 +172,7 @@ info: returned: 0
 -/
 #guard_msgs in
 #eval! do
-  let prog ← parseLaurel (applyLift := false) r"
+  let prog ← parseLaurel r"
 procedure main() {
   var x: int := 0;
   var b: bool := true || {x := 1; false};
@@ -191,7 +188,7 @@ info: returned: 1
 -/
 #guard_msgs in
 #eval! do
-  let prog ← parseLaurel (applyLift := false) r"
+  let prog ← parseLaurel r"
 procedure main() {
   var x: int := 0;
   var b: bool := false || {x := 1; true};
@@ -207,7 +204,7 @@ info: returned: 0
 -/
 #guard_msgs in
 #eval! do
-  let prog ← parseLaurel (applyLift := false) r"
+  let prog ← parseLaurel r"
 procedure main() {
   var x: int := 0;
   var b: bool := true || (false || {x := 1; true});
@@ -225,7 +222,7 @@ info: returned: 0
 -/
 #guard_msgs in
 #eval! do
-  let prog ← parseLaurel (applyLift := false) r"
+  let prog ← parseLaurel r"
 procedure main() {
   var x: int := 0;
   var b: bool := false ==> {x := 1; false};
@@ -241,7 +238,7 @@ info: returned: 1
 -/
 #guard_msgs in
 #eval! do
-  let prog ← parseLaurel (applyLift := false) r"
+  let prog ← parseLaurel r"
 procedure main() {
   var x: int := 0;
   var b: bool := true ==> {x := 1; true};
@@ -259,7 +256,7 @@ info: returned: 10
 -/
 #guard_msgs in
 #eval! do
-  let prog ← parseLaurel (applyLift := false) r"
+  let prog ← parseLaurel r"
 procedure main() {
   var x: int := 0;
   var b: bool := (true || {x := x + 1; true}) && (false || {x := x + 10; true});
