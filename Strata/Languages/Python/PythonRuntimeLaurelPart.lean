@@ -89,6 +89,97 @@ datatype DictStrAny {
   DictStrAny_cons (key: string, val: Any, tail: DictStrAny)
 }
 
+// /////////////////////////////////////////////////////////////////////////////////////
+//Functions that we provide to Python user
+//to write assertions/contracts about about types of variables
+
+function isBool (v: Any) : Any {
+  from_bool (Any..isfrom_bool(v))
+};
+
+function isInt (v: Any) : Any {
+  from_bool (Any..isfrom_int(v))
+};
+
+function isFloat (v: Any) : Any {
+  from_bool (Any..isfrom_float(v))
+};
+
+function isString (v: Any) : Any {
+  from_bool (Any..isfrom_string(v))
+};
+
+function isdatetime (v: Any) : Any {
+  from_bool (Any..isfrom_datetime(v))
+};
+
+function isDict (v: Any) : Any {
+  from_bool (Any..isfrom_Dict(v))
+};
+
+function isList (v: Any) : Any {
+  from_bool (Any..isfrom_ListAny(v))
+};
+
+function isClassInstance (v: Any) : Any {
+  from_bool (Any..isfrom_ClassInstance(v))
+};
+
+function isInstance_of_Int (v: Any) : Any {
+  from_bool (Any..isfrom_int(v) || Any..isfrom_bool(v))
+};
+
+function isInstance_of_Float (v: Any) : Any {
+  from_bool (Any..isfrom_float(v) || Any..isfrom_int(v) || Any..isfrom_bool(v))
+};
+
+
+// /////////////////////////////////////////////////////////////////////////////////////
+//Functions that we provide to Python user
+//to write assertions/contracts about about types of errors
+// /////////////////////////////////////////////////////////////////////////////////////
+
+function isTypeError (e: Error) : Any {
+  from_bool (Error..isTypeError(e))
+};
+
+function isAttributeError (e: Error) : Any {
+  from_bool (Error..isAttributeError(e))
+};
+
+function isAssertionError (e: Error) : Any {
+  from_bool (Error..isAssertionError(e))
+};
+
+function isUnimplementedError (e: Error) : Any {
+  from_bool (Error..isUnimplementedError(e))
+};
+
+function isUndefinedError (e: Error) : Any {
+  from_bool (Error..isUndefinedError(e))
+};
+
+function isError (e: Error) : bool {
+  ! Error..isNoError(e)
+};
+
+
+// /////////////////////////////////////////////////////////////////////////////////////
+// For testing purpose
+// /////////////////////////////////////////////////////////////////////////////////////
+
+procedure test_helper_procedure(req_name : Any, opt_name : Any) returns (ret: Any, maybe_except: Error)
+  requires req_name == from_string("foo") summary "req_name_is_foo"
+  requires (Any..isfrom_none(opt_name)) || (Any..isfrom_string(opt_name)) summary "req_opt_name_none_or_str"
+  requires (opt_name == from_none()) || (opt_name == from_string("bar")) summary "req_opt_name_none_or_bar"
+  ensures (Error..isNoError(maybe_except)) summary "ensures_maybe_except_none"
+{
+  assert req_name == from_string("foo") summary "assert_name_is_foo";
+  assert (Any..isfrom_none(opt_name)) || (Any..isfrom_string(opt_name)) summary "assert_opt_name_none_or_str";
+  assert (opt_name == from_none()) || (opt_name == from_string("bar")) summary "assert_opt_name_none_or_bar";
+  assume (Error..isNoError(maybe_except)) // summary "assume_maybe_except_none"
+};
+
 datatype FIRST_END_MARKER { }
 
 #end
@@ -97,7 +188,7 @@ datatype FIRST_END_MARKER { }
 Parse the Laurel DDM prelude into a Laurel Program.
 -/
 public def pythonRuntimeLaurelPart : Laurel.Program :=
-  match Laurel.TransM.run none (Laurel.parseProgram pythonRuntimeLaurelPartDDM) with
+  match Laurel.TransM.run (some $ .file "") (Laurel.parseProgram pythonRuntimeLaurelPartDDM) with
   | .ok p => p
   | .error e => dbg_trace s!"SOUND BUG: Failed to parse Python runtime Laurel part: {e}"; default
 

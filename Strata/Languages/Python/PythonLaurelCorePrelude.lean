@@ -99,78 +99,6 @@ type CoreOnlyDelimiter;
 // Core-only declarations (not expressed in Laurel)
 // =====================================================================
 
-// /////////////////////////////////////////////////////////////////////////////////////
-//Functions that we provide to Python user
-//to write assertions/contracts about about types of variables
-
-inline function isBool (v: Any) : Any {
-  from_bool (Any..isfrom_bool(v))
-}
-
-inline function isInt (v: Any) : Any {
-  from_bool (Any..isfrom_int(v))
-}
-
-inline function isFloat (v: Any) : Any {
-  from_bool (Any..isfrom_float(v))
-}
-
-inline function isString (v: Any) : Any {
-  from_bool (Any..isfrom_string(v))
-}
-
-inline function isdatetime (v: Any) : Any {
-  from_bool (Any..isfrom_datetime(v))
-}
-
-inline function isDict (v: Any) : Any {
-  from_bool (Any..isfrom_Dict(v))
-}
-
-inline function isList (v: Any) : Any {
-  from_bool (Any..isfrom_ListAny(v))
-}
-
-inline function isClassInstance (v: Any) : Any {
-  from_bool (Any..isfrom_ClassInstance(v))
-}
-
-inline function isInstance_of_Int (v: Any) : Any {
-  from_bool (Any..isfrom_int(v) || Any..isfrom_bool(v))
-}
-
-inline function isInstance_of_Float (v: Any) : Any {
-  from_bool (Any..isfrom_float(v) || Any..isfrom_int(v) || Any..isfrom_bool(v))
-}
-
-// /////////////////////////////////////////////////////////////////////////////////////
-//Functions that we provide to Python user
-//to write assertions/contracts about about types of errors
-// /////////////////////////////////////////////////////////////////////////////////////
-
-inline function isTypeError (e: Error) : Any {
-  from_bool (Error..isTypeError(e))
-}
-
-inline function isAttributeError (e: Error) : Any {
-  from_bool (Error..isAttributeError(e))
-}
-
-inline function isAssertionError (e: Error) : Any {
-  from_bool (Error..isAssertionError(e))
-}
-
-inline function isUnimplementedError (e: Error) : Any {
-  from_bool (Error..isUnimplementedError(e))
-}
-
-inline function isUndefinedError (e: Error) : Any {
-  from_bool (Error..isUndefinedError(e))
-}
-
-inline function isError (e: Error) : bool {
-  ! Error..isNoError(e)
-}
 
 // /////////////////////////////////////////////////////////////////////////////////////
 //The following function convert Any type to bool
@@ -808,24 +736,6 @@ spec{
         hours_i := Any..as_int!(hours);
   }
   delta := from_int ((((days_i * 24) + hours_i) * 3600) * 1000000);
-};
-
-// /////////////////////////////////////////////////////////////////////////////////////
-// For testing purpose
-// /////////////////////////////////////////////////////////////////////////////////////
-
-procedure test_helper_procedure(req_name : Any, opt_name : Any) returns (ret: Any, maybe_except: Error)
-spec {
-  requires [req_name_is_foo]: req_name == from_string("foo");
-  requires [req_opt_name_none_or_str]: (Any..isfrom_none(opt_name)) || (Any..isfrom_string(opt_name));
-  requires [req_opt_name_none_or_bar]: (opt_name == from_none()) || (opt_name == from_string("bar"));
-  ensures [ensures_maybe_except_none]: (Error..isNoError(maybe_except));
-}
-{
-  assert [assert_name_is_foo]: req_name == from_string("foo");
-  assert [assert_opt_name_none_or_str]: (Any..isfrom_none(opt_name)) || (Any..isfrom_string(opt_name));
-  assert [assert_opt_name_none_or_bar]: (opt_name == from_none()) || (opt_name == from_string("bar"));
-  assume [assume_maybe_except_none]: (Error..isNoError(maybe_except));
 };
 
 procedure print(msg : Any) returns ();

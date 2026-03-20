@@ -3,7 +3,7 @@ import test_helper
 # Test function defs
 
 def my_f(s: str):
-    test_helper.procedure(s)
+    test_helper.procedure(s, none)
 
 def main():
     my_f("foo")
