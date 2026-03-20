@@ -154,6 +154,14 @@ def mkStmtExprMd (expr : StmtExpr) : StmtExprMd :=
 def mkStmtExprMdWithLoc (expr : StmtExpr) (md : Imperative.MetaData Core.Expression) : StmtExprMd :=
   { val := expr, md := md }
 
+/-- Flatten a user-defined instance method call to a static call with self as the
+    first argument.  The callee name is qualified as `ClassName_methodName`.
+    This keeps user-defined class methods consistent with how PySpec generates
+    procedures (flat static procedures) while still threading the receiver. -/
+def mkInstanceMethodCall (className : String) (methodName : String)
+    (self : StmtExprMd) (args : List StmtExprMd) : StmtExprMd :=
+  mkStmtExprMd (StmtExpr.StaticCall (className ++ "_" ++ methodName) (self :: args))
+
 /-- Extract string representation from Python expression (for type annotations) -/
 partial def pyExprToString (e : Python.expr SourceRange) : String :=
   match e with
@@ -802,10 +810,10 @@ partial def translateCall (ctx : TranslationContext)
     else [trans_kwords]
   match f with
   | .Name  _ _ _ =>  return mkStmtExprMd (StmtExpr.StaticCall funcName (trans_args ++ trans_kwords_exprs))
-  | .Attribute _ val _attr _ =>
+  | .Attribute _ val _ _ =>
       let target_trans ← translateExpr ctx val
       if opt_firstarg.isSome then
-        return mkStmtExprMd (StmtExpr.InstanceCall target_trans funcName (trans_args ++ trans_kwords_exprs))
+        return mkStmtExprMd (StmtExpr.StaticCall funcName (target_trans :: trans_args ++ trans_kwords_exprs))
       else
         return mkStmtExprMd (StmtExpr.StaticCall funcName (trans_args ++ trans_kwords_exprs))
   | _ =>  throw (.unsupportedConstruct "Invalid call construct" (toString (repr f)))
@@ -874,13 +882,13 @@ partial def translateAssign  (ctx : TranslationContext)
             if fnname.text ∈ ctx.compositeTypeNames then
               let newExpr := mkStmtExprMd (StmtExpr.New fnname)
               let varType := mkHighTypeMd (.UserDefined fnname)
+              let selfRef := mkStmtExprMd (StmtExpr.Identifier n.val)
+              let initStmt := mkInstanceMethodCall fnname.text "__init__" selfRef args
               if n.val ∈ ctx.variableTypes.unzip.1 then
                 let assignStmt := mkStmtExprMd (StmtExpr.Assign [targetExpr] newExpr)
-                let initStmt := mkStmtExprMd (StmtExpr.InstanceCall (mkStmtExprMd (StmtExpr.Identifier n.val)) "__init__" args)
                 [assignStmt, initStmt]
               else
                 let newStmt := mkStmtExprMd (StmtExpr.LocalVariable n.val varType (some newExpr))
-                let initStmt := mkStmtExprMd (StmtExpr.InstanceCall (mkStmtExprMd (StmtExpr.Identifier n.val)) "__init__" args)
                 [newStmt, initStmt]
             else if withException ctx fnname.text then
               [mkStmtExprMd (StmtExpr.Assign [targetExpr, maybeExceptVar] rhs_trans)]
@@ -1177,7 +1185,7 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
         let mgrDecl := mkStmtExprMd (StmtExpr.LocalVariable mgrName mgrLauTy (some mgrExpr))
         let mgrRef := mkStmtExprMd (StmtExpr.Identifier mgrName)
         currentCtx := {currentCtx with variableTypes := currentCtx.variableTypes ++ [(mgrName, mgrTy)]}
-        let enterCall := mkStmtExprMd (StmtExpr.InstanceCall mgrRef "__enter__" [])
+        let enterCall := mkInstanceMethodCall mgrTy "__enter__" mgrRef []
         match optVars.val with
         | some varExpr =>
           let varName := pyExprToString varExpr
@@ -1191,7 +1199,7 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
             setupStmts := setupStmts ++ [mgrDecl, varDecl]
         | none =>
           setupStmts := setupStmts ++ [mgrDecl, enterCall]
-        cleanupStmts := cleanupStmts ++ [mkStmtExprMd (StmtExpr.InstanceCall mgrRef "__exit__" [])]
+        cleanupStmts := cleanupStmts ++ [mkInstanceMethodCall mgrTy "__exit__" mgrRef []]
     let (bodyCtx, bodyStmts) ← translateStmtList currentCtx body.val.toList
     let block := mkStmtExprMdWithLoc (StmtExpr.Block (setupStmts ++ bodyStmts ++ cleanupStmts) none) md
     return (bodyCtx, [block])
@@ -1439,7 +1447,7 @@ def translateMethod (ctx : TranslationContext) (className : String)
     : Except TranslationError Procedure := do
   match methodStmt with
   | .FunctionDef _ name args body _ ret _ _ => do
-    let methodName := name.val
+    let qualifiedName := className ++ "_" ++ name.val
 
     -- First parameter is self - type it as the class
     let selfParam : Parameter := {
@@ -1478,7 +1486,7 @@ def translateMethod (ctx : TranslationContext) (className : String)
 
     let md := sourceRangeToMetaData ctx.filePath methodStmt.ann
     return {
-      name := methodName
+      name := qualifiedName
       inputs := inputs
       outputs := outputs
       preconditions := [mkStmtExprMd (StmtExpr.LiteralBool true)]
@@ -1507,7 +1515,9 @@ def extractFieldsFromInit (ctx : TranslationContext) (initBody : Array (Python.s
     | _ => pure ()
   return fields
 
-/-- Translate a Python class to a Laurel CompositeType -/
+/-- Translate a Python class to a Laurel CompositeType and its flattened static procedures.
+    Instance methods are emitted as static procedures with `ClassName_methodName` naming
+    and `self` as the first parameter, rather than as instance procedures on the type. -/
 def translateClass (ctx : TranslationContext) (classStmt : Python.stmt SourceRange)
     : Except TranslationError (CompositeType × List Procedure) := do
   match classStmt with
@@ -1544,18 +1554,18 @@ def translateClass (ctx : TranslationContext) (classStmt : Python.stmt SourceRan
       | .FunctionDef _ _ _ _ _ _ _ _ => true
       | _ => false
 
-    -- Translate each method
-    let mut instanceProcedures : List Procedure := []
+    -- Translate each method as a static procedure with qualified name
+    let mut methodProcs : List Procedure := []
     for methodStmt in methodStmts do
       let proc ← translateMethod ctx className methodStmt
-      instanceProcedures := instanceProcedures ++ [proc]
+      methodProcs := methodProcs ++ [proc]
 
     return ({
       name := className
       extending := []  -- No inheritance support for now
       fields := fields
-      instanceProcedures := [] -- Laurel does not yet support instance procedures, so treat them as if they were static
-    }, instanceProcedures)
+      instanceProcedures := []
+    }, methodProcs)
   | _ => throw (.internalError "Expected ClassDef")
 
 def getFunctions (decls: List Core.Decl) : List String :=
@@ -1716,6 +1726,7 @@ def pythonToLaurel' (info : PreludeInfo)
 
     -- FIRST PASS: Collect all class definitions and field type info
     let mut compositeTypes : List CompositeType := [pyErrorTy]
+    let mut classStaticProcs : List Procedure := []
     let mut compositeTypeNames := info.compositeTypes.insert "PythonError"
     let mut classFieldHighType : Std.HashMap String (Std.HashMap String HighType) := {}
     for stmt in body.val do
@@ -1728,10 +1739,9 @@ def pythonToLaurel' (info : PreludeInfo)
           classFieldHighType := classFieldHighType,
           filePath := filePath
         }
-        let (composite, _instanceProcedures) ← translateClass initCtx stmt
-        -- TODO uncomment this line and resolve compilation issues
-        -- procedures := procedures ++ _instanceProcedures
+        let (composite, classMethodProcs) ← translateClass initCtx stmt
         compositeTypes := compositeTypes ++ [composite]
+        classStaticProcs := classStaticProcs ++ classMethodProcs
         compositeTypeNames := compositeTypeNames.insert composite.name.text
         -- Collect field types for Any coercions in field accesses
         let fieldMap := composite.fields.foldl (fun m f => m.insert f.name.text f.type.val) (classFieldHighType[composite.name.text]?.getD {})
@@ -1797,7 +1807,7 @@ def pythonToLaurel' (info : PreludeInfo)
     }
 
     let program : Laurel.Program := {
-      staticProcedures := procedures ++ [mainProc]
+      staticProcedures := classStaticProcs ++ procedures ++ [mainProc]
       staticFields := []
       types := compositeTypes.map TypeDefinition.Composite
       constants := []

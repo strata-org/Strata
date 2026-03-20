@@ -329,7 +329,10 @@ def funcDeclToLaurel (procName : String) (func : FunctionDecl)
     | .error msg => do reportError default msg; pure #[]
   let allArgs := posArgs ++ func.args.kwonly ++ kwargsArgs
   let anyTy : HighTypeMd := mkCore "Any"
-  let mut inputs : Array Parameter := .emptyWithCapacity allArgs.size
+  let compositeTy : HighTypeMd := ⟨.UserDefined "Composite", #[]⟩
+  let mut inputs : Array Parameter := .emptyWithCapacity (allArgs.size + if isMethod then 1 else 0)
+  if isMethod then
+    inputs := inputs.push { name := "self", type := compositeTy }
   let mut preconditions : Array (WithMetadata StmtExpr) := #[]
   for arg in allArgs do
     inputs := inputs.push { name := arg.name, type := anyTy }

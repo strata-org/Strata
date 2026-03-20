@@ -146,29 +146,24 @@ private meta def testCases : List (String × Expected) := [
   .mk "test_slice.py" .success,
   .mk "test_tuple_for.py" .success,
   .mk "test_augassign.py" .success,
-  -- Cat 3: Box..Any — class with Any-typed field, Box constructor references undefined type
-  .mk "test_box_any_type.py" $
-    .fail "Core type checking failed: Error in datatype Box, constructor Box..Any: Undefined type 'Any'",
-  -- Cat 5: Hole nested in kwarg not lifted before Core translation
-  .mk "test_unlifted_hole.py" $
-    .fail "Laurel to Core translation failed: [holes should have been eliminated before translation (should have been lifted)]",
-  -- Cat 6: wrapFieldInAny — class with Any-typed field accessed
-  .mk "test_any_field_access.py" $
-    .fail "Python to Laurel translation failed: Type error: wrapFieldInAny: no Any constructor for field type 'Core(Any)'",
+  .mk "test_unlifted_hole.py" .success,
   -- Expected failures: known issues to fix (see fix_types_plan.md)
-  -- Cat 1: __init__ not found — user-defined class constructors not registered as procedures
-  .mk "test_class_init_kwargs.py" $
-    .fail "Core type checking failed: [call __init__((~DictStrAny_insert ~DictStrAny_empty #region (~from_string #us-west-2)))]: Procedure __init__ not found!",
-  .mk "test_class_init_noargs.py" $
-    .fail "Core type checking failed: [call __init__()]: Procedure __init__ not found!",
-  -- Cat 2: Any vs Composite — composite-typed var in context expecting Any
+  -- Box constructor / type issues in user-defined class __init__ bodies
+  .mk "test_class_init_kwargs.py" (Expected.failPrefix "Core type checking failed:"),
+  .mk "test_class_init_noargs.py" (Expected.failPrefix "Core type checking failed:"),
+  -- Any vs Composite type mismatch
   .mk "test_any_vs_composite.py" $
     .fail "Core type checking failed: Impossible to unify Any with Composite.",
-  -- Cat 4: __enter__ not found — with statement on unmodeled context manager
-  .mk "test_with_open.py" $
-    .fail "Core type checking failed: [call [f] := __enter__()]: Procedure __enter__ not found!",
-  -- Cat 7: Non-modeled function call arity mismatch
-  .mk "test_nonmodeled_call.py" (Expected.failPrefix "Core type checking failed:")
+  -- Unmodeled context manager (open) — type inferred as Any
+  .mk "test_with_open.py" (Expected.failPrefix "Core type checking failed:"),
+  -- Non-modeled function call arity mismatch
+  .mk "test_nonmodeled_call.py" (Expected.failPrefix "Core type checking failed:"),
+  -- Box..Any — class with Any-typed field
+  .mk "test_box_any_type.py" $
+    .fail "Core type checking failed: Error in datatype Box, constructor Box..Any: Undefined type 'Any'",
+  -- wrapFieldInAny — class with Any-typed field accessed
+  .mk "test_any_field_access.py" $
+    .fail "Python to Laurel translation failed: Type error: wrapFieldInAny: no Any constructor for field type 'Core(Any)'"
 ]
 
 /-- Run a single test case and return an error message on failure, or `none` on success. -/

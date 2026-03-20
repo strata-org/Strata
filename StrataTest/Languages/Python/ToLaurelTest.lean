@@ -232,7 +232,7 @@ info: Union type (None | foo.Bar) not yet supported in Laurel
 info: type MyClass
 type MyAlias
 procedure my_func(x: Core(Any), y: Core(Any)) returns(result: Core(Any)) requires Any..isfrom_int(x) requires Any..isfrom_string(y)
-procedure MyClass_get_value() returns(result: Core(Any))
+procedure MyClass_get_value(self: Composite) returns(result: Core(Any))
 -/
 #guard_msgs in
 #eval runTest #[
@@ -342,7 +342,7 @@ private def runDispatchTest (sigs : Array Signature) : IO Unit := do
 -- and a regular function.
 /--
 info: type SvcClient
-procedure SvcClient_do_thing(x: Core(Any)) returns(result: Core(Any)) requires Any..isfrom_string(x)
+procedure SvcClient_do_thing(self: Composite, x: Core(Any)) returns(result: Core(Any)) requires Any..isfrom_string(x)
 procedure helper() returns(result: Core(Any))
 dispatch create_client:
   "svc_a" -> mod.client.SvcClient
