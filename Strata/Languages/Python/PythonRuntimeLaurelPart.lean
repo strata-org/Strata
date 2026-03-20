@@ -90,8 +90,50 @@ datatype DictStrAny {
 }
 
 // /////////////////////////////////////////////////////////////////////////////////////
+// ListAny functions
+// /////////////////////////////////////////////////////////////////////////////////////
+
+function List_len (l : ListAny) : int
+  external;
+
+function List_set (l : ListAny, i : int, v: Any) : ListAny
+  external;
+
+// /////////////////////////////////////////////////////////////////////////////////////
 // DictStrAny functions
 // /////////////////////////////////////////////////////////////////////////////////////
+
+function DictStrAny_insert (/* @[cases] */ d : DictStrAny, key: string, val: Any) : DictStrAny
+{
+  if DictStrAny..isDictStrAny_empty(d) then DictStrAny_cons(key, val, DictStrAny_empty())
+  else if DictStrAny..key!(d) == key then DictStrAny_cons(key, val, DictStrAny..tail!(d))
+  else DictStrAny_cons(DictStrAny..key!(d), DictStrAny..val!(d), DictStrAny_insert(DictStrAny..tail!(d), key, val))
+};
+
+/*inline*/ function Any_set (dictOrList: Any, index: Any, val: Any): Any
+  requires  (Any..isfrom_Dict(dictOrList) && Any..isfrom_string(index)) ||
+            (Any..isfrom_ListAny(dictOrList) && Any..isfrom_int(index) && Any..as_int!(index) >= 0 && Any..as_int!(index) < List_len(Any..as_ListAny!(dictOrList)))
+{
+  if Any..isfrom_Dict(dictOrList) then
+    from_Dict(DictStrAny_insert(Any..as_Dict!(dictOrList), Any..as_string!(index), val))
+  else
+    from_ListAny(List_set(Any..as_ListAny!(dictOrList), Any..as_int!(index), val))
+};
+
+/*inline*/ function Any_set! (dictOrList: Any, index: Any, val: Any): Any
+{
+  if Any..isexception(dictOrList) then dictOrList
+  else if Any..isexception(index) then index
+  else if Any..isexception(val) then val
+  else if !(Any..isfrom_Dict(dictOrList) && Any..isfrom_string(index)) && !(Any..isfrom_ListAny(dictOrList) && Any..isfrom_int(index)) then
+    exception (TypeError("Invalid subscription type"))
+  else if Any..isfrom_Dict(dictOrList) && Any..isfrom_string(index) then
+    from_Dict(DictStrAny_insert(Any..as_Dict!(dictOrList), Any..as_string!(index), val))
+  else if Any..isfrom_ListAny(dictOrList) && Any..isfrom_int(index) && Any..as_int!(index) >= 0 && Any..as_int!(index) < List_len(Any..as_ListAny!(dictOrList)) then
+    from_ListAny(List_set(Any..as_ListAny!(dictOrList), Any..as_int!(index), val))
+  else
+    exception (IndexError("Index out of bound"))
+};
 
 function Any_sets (/* @[cases] */ indices: ListAny, dictOrList: Any, val: Any): Any
 {
