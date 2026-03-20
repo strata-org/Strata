@@ -190,6 +190,12 @@ theorem LExpr.HasTypeA_iff_typeCheck {T : LExprParams} (Δ : List LMonoTy)
     HasTypeA Δ e τ ↔ typeCheck Δ e = some τ :=
   ⟨HasTypeA_to_typeCheck, typeCheck_to_HasTypeA⟩
 
+theorem HasTypeA_unique {T : LExprParams} {Δ : List LMonoTy} {e : LExpr T.mono} {τ₁ τ₂ : LMonoTy}
+    (h₁ : LExpr.HasTypeA Δ e τ₁) (h₂ : LExpr.HasTypeA Δ e τ₂) : τ₁ = τ₂ := by
+  have := LExpr.HasTypeA_to_typeCheck h₁
+  have := LExpr.HasTypeA_to_typeCheck h₂
+  simp_all
+
 end -- public section
 
 end Lambda

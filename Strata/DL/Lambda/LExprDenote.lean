@@ -6,8 +6,22 @@
 module
 
 import Strata.DL.Lambda.LExprAnnotated
+import Strata.DL.Lambda.Factory
 
 namespace Lambda
+
+-- TODO: move
+
+/-- Pointwise relation between two lists. -/
+inductive List.Forall₂ (R : α → β → Prop) : List α → List β → Prop where
+  | nil : Forall₂ R [] []
+  | cons : R a b → Forall₂ R as bs → Forall₂ R (a :: as) (b :: bs)
+
+theorem List.Forall₂.head {R : α → β → Prop} (h : Forall₂ R (a :: as) (b :: bs)) : R a b := by
+  cases h; assumption
+
+theorem List.Forall₂.tail {R : α → β → Prop} (h : Forall₂ R (a :: as) (b :: bs)) : Forall₂ R as bs := by
+  cases h; assumption
 
 /-! ### Sorts and Type Denotation -/
 
@@ -16,6 +30,76 @@ variables. -/
 inductive LSort where
   | tcons (name : String) (args : List LSort)
   | bitvec (size : Nat)
+
+def LSort_eqb (s1 s2: LSort) : Bool :=
+  match s1, s2 with
+  | .tcons n1 a1, .tcons n2 a2 =>
+    n1 == n2 && LSort_eqb_list a1 a2
+  | .bitvec s1, .bitvec s2 => s1 == s2
+  | _ , _ => false
+where LSort_eqb_list : List LSort → List LSort → Bool
+  | [], [] => true
+  | x :: xs, y :: ys => LSort_eqb x y && LSort_eqb_list xs ys
+  | _, _ => false
+
+theorem LSort.ind (P : LSort → Prop)
+    (htcons : ∀ name args, (∀ x, x ∈ args → P x) → P (.tcons name args))
+    (hbitvec : ∀ n, P (.bitvec n)) : ∀ s, P s
+  | .tcons name args => htcons name args (fun x _ => ind P htcons hbitvec x)
+  | .bitvec n => hbitvec n
+
+private theorem LSort_eqb_list_eq
+    (ih : ∀ x ∈ a1, ∀ s2, LSort_eqb x s2 = true → x = s2)
+    (heq : LSort_eqb.LSort_eqb_list a1 a2 = true) : a1 = a2 := by
+  induction a1 generalizing a2 with
+  | nil => cases a2 <;> simp_all [LSort_eqb.LSort_eqb_list]
+  | cons h t iht =>
+    cases a2 with
+    | nil => simp [LSort_eqb.LSort_eqb_list] at heq
+    | cons h2 t2 =>
+      simp [LSort_eqb.LSort_eqb_list] at heq
+      obtain ⟨hh, ht⟩ := heq
+      congr 1
+      · exact ih h (List.mem_cons_self ..) h2 hh
+      · exact iht (fun x hx => ih x (List.mem_cons_of_mem _ hx)) ht
+
+private theorem LSort_eqb_eq {s1 s2} (heq: LSort_eqb s1 s2 = true) :
+  s1 = s2 := by
+  induction s1 using LSort.ind generalizing s2 with
+  | htcons n1 a1 ih =>
+    cases s2 with
+    | bitvec => simp [LSort_eqb] at heq
+    | tcons n2 a2 =>
+      simp [LSort_eqb] at heq
+      obtain ⟨hn, ha⟩ := heq
+      subst_vars; congr 1
+      exact LSort_eqb_list_eq ih ha
+  | hbitvec n1 =>
+    cases s2 with
+    | tcons => simp [LSort_eqb] at heq
+    | bitvec => simp [LSort_eqb] at heq; exact congrArg _ heq
+
+instance : BEq LSort := ⟨LSort_eqb⟩
+
+private theorem LSort_eqb_refl : ∀ a : LSort, LSort_eqb a a = true := by
+  intro a; induction a using LSort.ind with
+  | htcons n args ih =>
+    simp [LSort_eqb]
+    induction args with
+    | nil => simp [LSort_eqb.LSort_eqb_list]
+    | cons x xs ihxs =>
+      simp [LSort_eqb.LSort_eqb_list]
+      exact ⟨ih x (List.mem_cons_self ..), ihxs (fun z hz => ih z (List.mem_cons_of_mem _ hz))⟩
+  | hbitvec => simp [LSort_eqb]
+
+instance : DecidableEq LSort := fun a b =>
+  if h : LSort_eqb a b then isTrue (LSort_eqb_eq h)
+  else isFalse (fun heq => h (heq ▸ LSort_eqb_refl a))
+
+/-- Iterated arrow at the sort level: `mkArrow ret [s₁, s₂] = s₁ → s₂ → ret`. -/
+def LSort.mkArrow (ret : LSort) : List LSort → LSort
+  | [] => ret
+  | s :: ss => .tcons "arrow" [s, LSort.mkArrow ret ss]
 
 /-- Substitute all free type variables in a monomorphic type, producing a
 ground sort. -/
@@ -29,10 +113,14 @@ where
   | [] => []
   | x :: xs => substTyVars ρ x :: map xs
 
+/-- Interpretation of type constructors: maps a constructor name and its
+sort arguments to a Lean `Type`. -/
+def TyConstrInterp := String → List LSort → Type
+
 /-- Interpret a sort into a Lean `Type`. Built-in sorts (bool, int, real,
 string, bitvec, arrow) are mapped to their Lean counterparts; all others
 are delegated to `tcInterp`. -/
-def SortDenote (tcInterp : String → List LSort → Type) : LSort → Type
+def SortDenote (tcInterp : TyConstrInterp) : LSort → Type
   | .tcons "bool" []      => Bool
   | .tcons "int" []       => Int
   | .tcons "real" []      => Rat
@@ -41,9 +129,12 @@ def SortDenote (tcInterp : String → List LSort → Type) : LSort → Type
   | .tcons "arrow" [a, b] => SortDenote tcInterp a → SortDenote tcInterp b
   | .tcons name args      => tcInterp name args
 
+/-- Type-variable valuation: maps each type variable to a sort. -/
+def TyVarVal := TyIdentifier → LSort
+
 /-- Two-pass type denotation: substitute type variables, then interpret. -/
-abbrev TyDenote (tcInterp : String → List LSort → Type)
-    (ρ : TyIdentifier → LSort) (ty : LMonoTy) : Type :=
+abbrev TyDenote (tcInterp : TyConstrInterp)
+    (ρ : TyVarVal) (ty : LMonoTy) : Type :=
   SortDenote tcInterp (LMonoTy.substTyVars ρ ty)
 
 /-! ### Bound Variable Valuation -/
@@ -62,9 +153,41 @@ def HList.get {α : Type} {f : α → Type} {as : List α} {a : α} :
 
 /-- Bound variable valuation: an `HList` of semantic values indexed by the
 typing context. -/
-abbrev BVarVal (tcInterp : String → List LSort → Type)
-    (ρ : TyIdentifier → LSort) (Δ : List LMonoTy) :=
+abbrev BVarVal (tcInterp : TyConstrInterp)
+    (ρ : TyVarVal) (Δ : List LMonoTy) :=
   HList (TyDenote tcInterp ρ) Δ
+
+/-! ### Intepreting Free Variables and Operators -/
+
+/-- Maps each identifier and sort to a semantic value of that sort.
+Used for both operator interpretations (`OpInterp`) and free-variable
+valuations (`FreeVarVal`). -/
+def IdentInterp (T : LExprParams)
+    (tcInterp : TyConstrInterp) :=
+  Identifier T.IDMeta → (s : LSort) → SortDenote tcInterp s
+
+/-- Operator interpretation: gives meaning to each named operation. -/
+abbrev OpInterp := IdentInterp
+/-- Free-variable valuation: maps each free variable to its value. -/
+abbrev FreeVarVal := IdentInterp
+
+/-- Update an identifier interpretation so that the names in `bindings` map to
+the corresponding values from `vals`. Names not in `bindings` keep their
+original interpretation. -/
+def IdentInterp.withArgs [DecidableEq T.IDMeta]
+    {tcInterp : TyConstrInterp}
+    (fvarVal : IdentInterp T tcInterp)
+    (bindings : List (Identifier T.IDMeta × LSort))
+    (vals : HList (SortDenote tcInterp) (bindings.map Prod.snd))
+    : IdentInterp T tcInterp :=
+  fun x s =>
+  match bindings, vals with
+  | [], .nil => fvarVal x s
+  | (name, s1) :: rest, .cons v vs =>
+    if x = name then
+      if hs : s = s1 then hs ▸ v
+      else (fvarVal.withArgs rest vs) x s
+    else (fvarVal.withArgs rest vs) x s
 
 /-! ### Inversion lemmas for `HasTypeA`
 
@@ -251,7 +374,7 @@ def HasTypeA.quant_inv {T : LExprParams} {Δ : List LMonoTy} {m k name qty tr bo
 /-! ### Denotational Semantics -/
 
 /-- Denote a constant literal. -/
-def denoteConst (tcInterp : String → List LSort → Type) (vt : TyIdentifier → LSort) : (c : LConst) → TyDenote tcInterp vt c.ty
+def denoteConst (tcInterp : TyConstrInterp) (vt : TyVarVal) : (c : LConst) → TyDenote tcInterp vt c.ty
     | .boolConst b     => b
     | .intConst i      => i
     | .realConst r     => r
@@ -266,10 +389,10 @@ cleanly separates interpretations (fixed for a theory) from valuations
 (vary per context), enabling change-of-valuation theorems. -/
 noncomputable def LExpr.denote
     {T : LExprParams}
-    (tcInterp : String → List LSort → Type)
-    (opInterp : Identifier T.IDMeta → (s : LSort) → SortDenote tcInterp s)
-    (fvarVal : Identifier T.IDMeta → (s : LSort) → SortDenote tcInterp s)
-    (vt : TyIdentifier → LSort)
+    (tcInterp : TyConstrInterp)
+    (opInterp : OpInterp T tcInterp)
+    (fvarVal : FreeVarVal T tcInterp)
+    (vt : TyVarVal)
     {Δ : List LMonoTy}
     (bvarVal : BVarVal tcInterp vt Δ)
     {e : LExpr T.mono} {τ : LMonoTy}
@@ -332,10 +455,10 @@ and `eq`/`quant` state their conditions propositionally. -/
 well-typed expression `e` (of type `τ` in context `Δ`) denotes the value `v`. -/
 inductive Denotes
     {T : LExprParams}
-    (tcInterp : String → List LSort → Type)
-    (opInterp : Identifier T.IDMeta → (s : LSort) → SortDenote tcInterp s)
-    (fvarVal : Identifier T.IDMeta → (s : LSort) → SortDenote tcInterp s)
-    (vt : TyIdentifier → LSort)
+    (tcInterp : TyConstrInterp)
+    (opInterp : OpInterp T tcInterp)
+    (fvarVal : FreeVarVal T tcInterp)
+    (vt : TyVarVal)
     : {Δ : List LMonoTy} → (bvarVal : BVarVal tcInterp vt Δ) →
       (e : LExpr T.mono) → (τ : LMonoTy) → LExpr.HasTypeA Δ e τ →
       TyDenote tcInterp vt τ → Prop where
@@ -417,10 +540,10 @@ local macro "typecheck_split" h1a:ident h1b:ident h2:ident h3:ident heq:ident
 
 theorem denote_Denotes
     {T : LExprParams}
-    (tcInterp : String → List LSort → Type)
-    (opInterp : Identifier T.IDMeta → (s : LSort) → SortDenote tcInterp s)
-    (fvarVal : Identifier T.IDMeta → (s : LSort) → SortDenote tcInterp s)
-    (vt : TyIdentifier → LSort)
+    (tcInterp : TyConstrInterp)
+    (opInterp : OpInterp T tcInterp)
+    (fvarVal : FreeVarVal T tcInterp)
+    (vt : TyVarVal)
     {Δ : List LMonoTy}
     (bvarVal : BVarVal tcInterp vt Δ)
     (e : LExpr T.mono) (τ : LMonoTy)
@@ -565,31 +688,12 @@ theorem denote_Denotes
   | .quant _ _ _ none _ _ =>
     exact absurd (LExpr.HasTypeA_to_typeCheck h) (by simp [LExpr.typeCheck])
 
-theorem HasTypeA_unique {T : LExprParams} {Δ : List LMonoTy} {e : LExpr T.mono} {τ₁ τ₂ : LMonoTy}
-    (h₁ : LExpr.HasTypeA Δ e τ₁) (h₂ : LExpr.HasTypeA Δ e τ₂) : τ₁ = τ₂ := by
-  have := LExpr.HasTypeA_to_typeCheck h₁
-  have := LExpr.HasTypeA_to_typeCheck h₂
-  simp_all
-
-theorem denote_proof_irrel
-    {T : LExprParams}
-    {tcInterp : String → List LSort → Type}
-    {opInterp : Identifier T.IDMeta → (s : LSort) → SortDenote tcInterp s}
-    {fvarVal : Identifier T.IDMeta → (s : LSort) → SortDenote tcInterp s}
-    {vt : TyIdentifier → LSort}
-    {Δ : List LMonoTy}
-    {bvarVal : BVarVal tcInterp vt Δ}
-    {e : LExpr T.mono} {τ : LMonoTy}
-    (h1 h2 : LExpr.HasTypeA Δ e τ)
-    : LExpr.denote tcInterp opInterp fvarVal vt bvarVal h1
-    = LExpr.denote tcInterp opInterp fvarVal vt bvarVal h2 := by rfl
-
 theorem Denotes_denote
     {T : LExprParams}
-    {tcInterp : String → List LSort → Type}
-    {opInterp : Identifier T.IDMeta → (s : LSort) → SortDenote tcInterp s}
-    {fvarVal : Identifier T.IDMeta → (s : LSort) → SortDenote tcInterp s}
-    {vt : TyIdentifier → LSort}
+    {tcInterp : TyConstrInterp}
+    {opInterp : OpInterp T tcInterp}
+    {fvarVal : FreeVarVal T tcInterp}
+    {vt : TyVarVal}
     {Δ : List LMonoTy}
     {bvarVal : BVarVal tcInterp vt Δ}
     {e : LExpr T.mono} {τ : LMonoTy}
@@ -706,5 +810,92 @@ theorem Denotes_denote
     typecheck_split h_body h_body h_body h_tr heq =>
       apply Eq.symm; rw [decide_eq_false_iff_not]
       intro ⟨w, hw⟩; have := hw.symm.trans (ih w).symm; contradiction
+
+/-! ### Factory-consistent interpretations
+
+We define what it means for an `opInterp` to be *consistent* with a factory:
+for every function that has a body, the interpretation of the op applied to
+argument values equals the denotation of the body under a valuation that maps
+the formal parameters to those argument values. -/
+
+section FactoryConsistent
+
+variable {T : LExprParams}
+variable (tcInterp : TyConstrInterp)
+variable (opInterp : OpInterp T tcInterp)
+
+/-- Apply a curried `SortDenote` value of iterated-arrow sort to an `HList`
+of argument values. -/
+def SortDenote.applyArgs
+    : {args : List LSort} → {ret : LSort} →
+      SortDenote tcInterp (LSort.mkArrow ret args) →
+      HList (SortDenote tcInterp) args →
+      SortDenote tcInterp ret
+  | [], _, f, .nil => f
+  | _ :: _, _, f, .cons x xs => applyArgs (f x) xs
+
+/-- An `opInterp` is consistent with an `LFunc` whose definition is given by
+`body`: for every choice of argument values, the interpretation of the op
+applied to those arguments equals the denotation of the body under the
+valuation that maps the formal parameters to those arguments. -/
+def LFunc.InterpConsistentBody [DecidableEq T.IDMeta]
+    (f : LFunc T) (body : LExpr T.mono) : Prop :=
+  ∀ (vt : TyVarVal)
+    (fvarVal : FreeVarVal T tcInterp),
+  let bindings : List (Identifier T.IDMeta × LSort) :=
+    f.inputs.map (fun (id, ty) => (id, LMonoTy.substTyVars vt ty))
+  let inputSorts := bindings.map Prod.snd
+  let outputSort := LMonoTy.substTyVars vt f.output
+  let fullSort := LSort.mkArrow outputSort inputSorts
+  ∀ (h_body : LExpr.HasTypeA [] body f.output)
+    (args : HList (SortDenote tcInterp) inputSorts),
+    SortDenote.applyArgs tcInterp (opInterp f.name fullSort) args =
+    LExpr.denote tcInterp opInterp
+      (fvarVal.withArgs bindings args)
+      vt .nil h_body
+
+/-- Denote a list of well-typed expressions into an `HList` of semantic values. -/
+noncomputable def denoteArgs
+    (fvarVal : FreeVarVal T tcInterp) (vt : TyVarVal)
+    : {argExprs : List (LExpr T.mono)} → {tys : List LMonoTy} →
+      List.Forall₂ (LExpr.HasTypeA []) argExprs tys →
+      HList (SortDenote tcInterp) (tys.map (LMonoTy.substTyVars vt))
+  | [], [], _ => .nil
+  | _ :: _, _ :: _, h =>
+    .cons (LExpr.denote tcInterp opInterp fvarVal vt .nil h.head)
+          (denoteArgs fvarVal vt h.tail)
+
+/-- An `opInterp` is consistent with an `LFunc` whose definition is given by
+a `concreteEval` function: whenever `ceval md argExprs = some resultExpr` and
+all expressions are well-typed, the denotation of the result equals the
+interpretation of the op applied to the denotations of the arguments. -/
+def LFunc.InterpConsistentEval [DecidableEq T.IDMeta]
+    (f : LFunc T) (ceval : T.Metadata → List (LExpr T.mono) → Option (LExpr T.mono)) : Prop :=
+  ∀ (vt : TyVarVal)
+    (fvarVal : FreeVarVal T tcInterp)
+    (md : T.Metadata)
+    (argExprs : List (LExpr T.mono))
+    (resultExpr : LExpr T.mono),
+  ceval md argExprs = some resultExpr →
+  let inputTys := List.map Prod.snd f.inputs
+  let inputSorts := inputTys.map (LMonoTy.substTyVars vt)
+  let outputSort := LMonoTy.substTyVars vt f.output
+  let fullSort := LSort.mkArrow outputSort inputSorts
+  ∀ (h_args : List.Forall₂ (LExpr.HasTypeA []) argExprs inputTys)
+    (h_result : LExpr.HasTypeA [] resultExpr f.output),
+  LExpr.denote tcInterp opInterp fvarVal vt .nil h_result =
+    SortDenote.applyArgs tcInterp (opInterp f.name fullSort)
+      (denoteArgs tcInterp opInterp fvarVal vt h_args)
+
+/-- A factory is consistent with an `opInterp` when every function with a body
+is `InterpConsistentBody` and every function with a `concreteEval` is
+`InterpConsistentEval`. -/
+def Factory.InterpConsistent [DecidableEq T.IDMeta] (F : @Factory T) : Prop :=
+  (∀ f ∈ F, ∀ body, f.body = some body →
+    LFunc.InterpConsistentBody tcInterp opInterp f body) ∧
+  (∀ f ∈ F, ∀ ceval, f.concreteEval = some ceval →
+    LFunc.InterpConsistentEval tcInterp opInterp f ceval)
+
+end FactoryConsistent
 
 end Lambda
