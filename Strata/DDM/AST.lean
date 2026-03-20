@@ -593,14 +593,6 @@ def scopeTVarIndex (metadata : Metadata) : Except String (Option Nat) :=
   | some #[.catbvar idx] => .ok (some idx)
   | some _ => .error s!"Unexpected argument count to scopeTVar"
 
-/-- Returns (nameIndex, argsIndex, typeIndex) if @[scopeSelf] is present.
-    Used to bring a function's own name into scope within its body. -/
-def scopeSelfIndex (metadata : Metadata) : Except String (Option (Nat × Nat × Nat)) :=
-  match metadata[q`StrataDDL.scopeSelf]? with
-  | none => .ok none
-  | some #[.catbvar n, .catbvar a, .catbvar t] => .ok (some (n, a, t))
-  | some _ => .error s!"Unexpected argument count to scopeSelf"
-
 /-- Returns the name index if @[declareTVar] is present.
     Used for operations that introduce a type variable (creates .tvar binding in result context). -/
 def declareTVarIndex (metadata : Metadata) : Except String (Option Nat) :=
@@ -640,6 +632,22 @@ def preRegisterTypesLevel (varCount : Nat) (metadata : Metadata) : Except String
     return some ⟨varCount - (idx + 1), by omega⟩
   else
     .error s!"preRegisterTypes index {idx} out of bounds (varCount = {varCount})"
+
+/-- Returns the argument index from @[preRegisterFunctions] metadata, if present. -/
+def preRegisterFunctionsIndex (metadata : Metadata) : Except String (Option Nat) :=
+  match metadata[q`StrataDDL.preRegisterFunctions]? with
+  | none => .ok none
+  | some #[.catbvar idx] => .ok (some idx)
+  | some _ => .error s!"Unexpected argument count to preRegisterFunctions"
+
+/-- Returns the level for @[preRegisterFunctions] metadata, if present. -/
+def preRegisterFunctionsLevel (varCount : Nat) (metadata : Metadata) : Except String (Option (Fin varCount)) := do
+  let some idx ← metadata.preRegisterFunctionsIndex
+    | return none
+  if h : idx < varCount then
+    return some ⟨varCount - (idx + 1), by omega⟩
+  else
+    .error s!"preRegisterFunctions index {idx} out of bounds (varCount = {varCount})"
 
 end Metadata
 
@@ -826,21 +834,6 @@ def argScopeTVarLevel (argDecls : ArgDecls) (level : Fin argDecls.size) : Except
     return some ⟨level.val - (idx + 1), by omega⟩
   else
     .error s!"scopeTVar index {idx} out of bounds ({level.val})"
-
-/-- Returns (nameLevel, argsLevel, typeLevel) if @[scopeSelf] is present. -/
-def argScopeSelfLevel (argDecls : ArgDecls) (level : Fin argDecls.size)
-    : Except String (Option (Fin level.val × Fin level.val × Fin level.val)) := do
-  let some (nIdx, aIdx, tIdx) ← argDecls[level].metadata.scopeSelfIndex
-    | return none
-  if h1 : nIdx < level.val then
-    if h2 : aIdx < level.val then
-      if h3 : tIdx < level.val then
-        return some (⟨level.val - (nIdx + 1), by omega⟩,
-              ⟨level.val - (aIdx + 1), by omega⟩,
-              ⟨level.val - (tIdx + 1), by omega⟩)
-      else .error s!"scopeSelf type index {tIdx} out of bounds ({level.val})"
-    else .error s!"scopeSelf args index {aIdx} out of bounds ({level.val})"
-  else .error s!"scopeSelf name index {nIdx} out of bounds ({level.val})"
 
 end ArgDecls
 

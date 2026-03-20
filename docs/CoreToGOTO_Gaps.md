@@ -9,8 +9,7 @@ translation pipeline used for CBMC verification.
 
 ```
 strata laurelAnalyzeToGoto <file.lr.st>
-python3 process_json.py combine defaults.json <basename>.symtab.json > full.symtab.json
-symtab2gb full.symtab.json --goto-functions <basename>.goto.json --out output.gb
+symtab2gb <basename>.symtab.json --goto-functions <basename>.goto.json --out output.gb
 goto-cc --function main -o output_cc.gb output.gb
 goto-instrument --dfcc main output_cc.gb output_dfcc.gb
 cbmc output_dfcc.gb --function main
@@ -20,8 +19,7 @@ cbmc output_dfcc.gb --function main
 
 ```
 strata pyAnalyzeLaurelToGoto <file.py.ion>
-python3 process_json.py combine defaults.json <basename>.symtab.json > full.symtab.json
-symtab2gb full.symtab.json --goto-functions <basename>.goto.json --out output.gb
+symtab2gb <basename>.symtab.json --goto-functions <basename>.goto.json --out output.gb
 cbmc output.gb --function main --z3
 ```
 
@@ -159,6 +157,29 @@ not handled:
   transformations in the pipeline.
 
 ### Known Limitations
+
+#### Hardcoded architecture configuration
+
+The CBMC default symbols (`DefaultSymbols.lean`) use `ArchConfig.default`,
+which is hardcoded to arm64/macOS/LP64. This means all generated symbol tables
+assume 64-bit pointers, 64-bit `long`, little-endian byte order, etc.
+
+To support cross-platform verification (e.g., 32-bit targets, Windows LLP64,
+big-endian architectures):
+
+1. Make `ArchConfig` configurable via a CLI flag (e.g., `--arch-config <file>`
+   or `--target <triple>`).
+2. Thread the `ArchConfig` through `CProverGOTO.wrapSymtab` at each call site
+   (in `CoreToCProverGOTO.writeToGotoJson`, `CoreToGOTOPipeline.emitProcWithLifted`,
+   and `StrataMain.laurelAnalyzeToGotoCommand`).
+3. Optionally provide preset configurations for common targets (e.g.,
+   `ArchConfig.x86_64_linux`, `ArchConfig.arm64_macos`).
+
+Key parameters that vary across platforms:
+- `pointerWidth`: 32 on ILP32, 64 on LP64/LLP64
+- `longIntWidth`: 32 on LLP64 (Windows), 64 on LP64 (Linux/macOS)
+- `endianness`: 1 = little-endian, 2 = big-endian
+- `arch`/`os`: string identifiers for the target platform
 
 #### DFCC with mathematical integers
 

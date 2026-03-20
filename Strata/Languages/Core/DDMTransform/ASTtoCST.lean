@@ -986,6 +986,44 @@ def procToCST {M} [Inhabited M] (proc : Core.Procedure) : ToCSTM M (Command M) :
   modify ToCSTContext.popScope
   pure (.command_procedure default name typeArgs inputs outputs spec body)
 
+/-- Convert a recursive function to a RecFnDecl CST node -/
+def recFnDeclToCST {M} [Inhabited M]
+    (func : Lambda.LFunc CoreLParams)
+    (_md : Imperative.MetaData Expression) : ToCSTM M (RecFnDecl M) := do
+  modify ToCSTContext.pushScope
+  let name : Ann String M := ⟨default, func.name.name⟩
+  let typeArgs : Ann (Option (TypeArgs M)) M :=
+    if func.typeArgs.isEmpty then ⟨default, none⟩
+    else
+      let tvars := func.typeArgs.map fun tv =>
+        TypeVar.type_var default (⟨default, tv⟩ : Ann String M)
+      ⟨default, some (TypeArgs.type_args default ⟨default, tvars.toArray⟩)⟩
+  let processInput (id : CoreLParams.Identifier) (ty : Lambda.LMonoTy) (isCases : Bool) :
+          ToCSTM M (Binding M × String) := do
+    let paramName : Ann String M := ⟨default, id.name⟩
+    let paramType ← lmonoTyToCoreType ty
+    let binding := if isCases then
+      Binding.casesBinding default paramName (TypeP.expr paramType)
+    else
+      Binding.mkBinding default paramName (TypeP.expr paramType)
+    pure (binding, id.name)
+  let casesIdx := func.attr.findSome? fun
+    | .inlineIfConstr i => some i
+    | _ => none
+  let results ← func.inputs.toArray.mapIdxM fun idx (id, ty) =>
+    processInput id ty (casesIdx == some idx)
+  let bindings := results.map (·.1)
+  let paramNames := results.map (·.2)
+  let b : Bindings M := .mkBindings default ⟨default, bindings⟩
+  let r ← lmonoTyToCoreType func.output
+  modify (·.addScopedBoundVars (reverse? := false) paramNames)
+  let preconds ← precondsToSpecElts func.preconditions
+  let bodyExpr ← match func.body with
+    | some body => lexprToExpr body 0
+    | none => pure (.btrue default)  -- shouldn't happen for recursive functions
+  modify ToCSTContext.popScope
+  pure (.recfn_decl default name typeArgs b r preconds bodyExpr)
+
 /-- Convert a function declaration to CST -/
 def funcToCST {M} [Inhabited M]
     (func : Lambda.LFunc CoreLParams)
@@ -1078,6 +1116,13 @@ def declToCST {M} [Inhabited M] (decl : Core.Decl) : ToCSTM M (List (Command M))
     pure [cmd]
   | .distinct name es md => do
     let cmd ← distinctToCST name es md
+    pure [cmd]
+  | .recFuncBlock funcs md => do
+    -- Register function names as free variables so self/sibling calls resolve
+    let fnNames := funcs.map (·.name.name)
+    modify (·.addGlobalFreeVars fnNames.toArray)
+    let recFnDecls ← funcs.mapM fun func => recFnDeclToCST func md
+    let cmd := Command.command_recfndefs default ⟨default, recFnDecls.toArray⟩
     pure [cmd]
 
 /-- Convert `Core.Program` to a list of CST `Commands` -/
