@@ -149,20 +149,38 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+      actions: write
     steps:
       - uses: actions/checkout@v4
       - name: Build API documentation package
         uses: leanprover/lean-action@v1
         with:
           lake-package-directory: 'docs/api'
+      - name: Restore lake cache
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            .lake
+            docs/verso/.lake
+          key: docs-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain', 'docs/verso/lean-toolchain') }}-${{ hashFiles('lake-manifest.json', 'docs/verso/lake-manifest.json') }}-${{ hashFiles('**/*.st') }}-${{ github.sha }}
+          restore-keys: |
+            docs-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain', 'docs/verso/lean-toolchain') }}-${{ hashFiles('lake-manifest.json', 'docs/verso/lake-manifest.json') }}-${{ hashFiles('**/*.st') }}
       - name: Build documentation package
         uses: leanprover/lean-action@v1
         with:
           build-args: '--wfail'
           lake-package-directory: 'docs/verso'
+          use-github-cache: false
       - name: Build documentation
         run: ./generate.sh
         working-directory: docs/verso
+      - name: Save lake cache
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            .lake
+            docs/verso/.lake
+          key: docs-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain', 'docs/verso/lean-toolchain') }}-${{ hashFiles('lake-manifest.json', 'docs/verso/lake-manifest.json') }}-${{ hashFiles('**/*.st') }}-${{ github.sha }}
       - name: Check for broken links
         uses: lycheeverse/lychee-action@v2
         with:
