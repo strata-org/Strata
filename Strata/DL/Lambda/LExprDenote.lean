@@ -23,6 +23,12 @@ theorem List.Forall₂.head {R : α → β → Prop} (h : Forall₂ R (a :: as) 
 theorem List.Forall₂.tail {R : α → β → Prop} (h : Forall₂ R (a :: as) (b :: bs)) : Forall₂ R as bs := by
   cases h; assumption
 
+theorem List.Forall₂.length_eq {R : α → β → Prop} {as : List α} {bs : List β}
+    (h : Forall₂ R as bs) : as.length = bs.length := by
+  induction h with
+  | nil => rfl
+  | cons _ _ ih => simp [ih]
+
 /-! ### Sorts and Type Denotation -/
 
 /-- A sort is a ground monomorphic type — an `LMonoTy` with no free type
@@ -395,7 +401,7 @@ noncomputable def LExpr.denote
     (vt : TyVarVal)
     {Δ : List LMonoTy}
     (bvarVal : BVarVal tcInterp vt Δ)
-    {e : LExpr T.mono} {τ : LMonoTy}
+    (e : LExpr T.mono) (τ : LMonoTy)
     (h : HasTypeA Δ e τ)
     : TyDenote tcInterp vt τ :=
   match e with
@@ -412,34 +418,34 @@ noncomputable def LExpr.denote
   | .abs _ _ (some aty) body =>
     let ⟨rty, h_eq, h_body⟩ := HasTypeA.abs_inv h
     h_eq ▸ fun (x : TyDenote tcInterp vt aty) =>
-      denote tcInterp opInterp fvarVal vt (.cons x bvarVal) h_body
+      denote tcInterp opInterp fvarVal vt (.cons x bvarVal) body rty h_body
   | .abs _ _ none _ => absurd (HasTypeA_to_typeCheck h) (by simp [typeCheck])
   | .app _ fn arg =>
     let ⟨aty, h_fn, h_arg⟩ := HasTypeA.app_inv h
-    (denote tcInterp opInterp fvarVal vt bvarVal h_fn)
-      (denote tcInterp opInterp fvarVal vt bvarVal h_arg)
+    (denote tcInterp opInterp fvarVal vt bvarVal fn (.arrow aty τ) h_fn)
+      (denote tcInterp opInterp fvarVal vt bvarVal arg aty h_arg)
   | .ite _ c t e =>
     let ⟨h_c, h_t, h_e⟩ := HasTypeA.ite_inv h
-    let cond : Bool := denote tcInterp opInterp fvarVal vt bvarVal h_c
+    let cond : Bool := denote tcInterp opInterp fvarVal vt bvarVal c .bool h_c
     if cond
-    then denote tcInterp opInterp fvarVal vt bvarVal h_t
-    else denote tcInterp opInterp fvarVal vt bvarVal h_e
+    then denote tcInterp opInterp fvarVal vt bvarVal t τ h_t
+    else denote tcInterp opInterp fvarVal vt bvarVal e τ h_e
   | .eq _ e1 e2 =>
     let ⟨ty', h_bool, h_1, h_2⟩ := HasTypeA.eq_inv h
-    let v1 := denote tcInterp opInterp fvarVal vt bvarVal h_1
-    let v2 := denote tcInterp opInterp fvarVal vt bvarVal h_2
+    let v1 := denote tcInterp opInterp fvarVal vt bvarVal e1 ty' h_1
+    let v2 := denote tcInterp opInterp fvarVal vt bvarVal e2 ty' h_2
     h_bool ▸ (Classical.propDecidable (v1 = v2) |>.decide)
   | .quant _ .all _ (some qty) tr body =>
     let ⟨_τ_tr, h_bool, _h_tr, h_body⟩ := HasTypeA.quant_inv h
     h_bool ▸ (Classical.propDecidable
       (∀ x : TyDenote tcInterp vt qty,
-        (denote tcInterp opInterp fvarVal vt (.cons x bvarVal) h_body : Bool) = true)
+        (denote tcInterp opInterp fvarVal vt (.cons x bvarVal) body .bool h_body : Bool) = true)
       |>.decide)
   | .quant _ .exist _ (some qty) tr body =>
     let ⟨_τ_tr, h_bool, _h_tr, h_body⟩ := HasTypeA.quant_inv h
     h_bool ▸ (Classical.propDecidable
       (∃ x : TyDenote tcInterp vt qty,
-        (denote tcInterp opInterp fvarVal vt (.cons x bvarVal) h_body : Bool) = true)
+        (denote tcInterp opInterp fvarVal vt (.cons x bvarVal) body .bool h_body : Bool) = true)
       |>.decide)
   | .quant _ _ _ none _ _ =>
     absurd (HasTypeA_to_typeCheck h) (by simp [typeCheck])
@@ -549,7 +555,7 @@ theorem denote_Denotes
     (e : LExpr T.mono) (τ : LMonoTy)
     (h : LExpr.HasTypeA Δ e τ)
     : Denotes tcInterp opInterp fvarVal vt bvarVal e τ h
-        (LExpr.denote tcInterp opInterp fvarVal vt bvarVal h) := by
+        (LExpr.denote tcInterp opInterp fvarVal vt bvarVal e τ h) := by
   match e with
   | .const _ c =>
     have heq := HasTypeA.const_inv h
@@ -623,7 +629,7 @@ theorem denote_Denotes
         (htrue ▸ denote_Denotes tcInterp opInterp fvarVal vt bvarVal c _ h_c')
         (denote_Denotes tcInterp opInterp fvarVal vt bvarVal t _ h_t')
     · rename_i hntrue
-      have hf : LExpr.denote tcInterp opInterp fvarVal vt bvarVal h_c' = false :=
+      have hf : LExpr.denote tcInterp opInterp fvarVal vt bvarVal _ _ h_c' = false :=
         Bool.eq_false_iff.mpr hntrue
       exact .ite_false bvarVal
         (hf ▸ denote_Denotes tcInterp opInterp fvarVal vt bvarVal c _ h_c')
@@ -636,8 +642,8 @@ theorem denote_Denotes
     split
     rename_i x ty'' h_bool' h_1' h_2' heq
     typecheck_split h_1' h_2' h_2' h_1' heq =>
-      by_cases hv : LExpr.denote tcInterp opInterp fvarVal vt bvarVal h_1' =
-                    LExpr.denote tcInterp opInterp fvarVal vt bvarVal h_2'
+      by_cases hv : LExpr.denote tcInterp opInterp fvarVal vt bvarVal e1 ty'' h_1' =
+                    LExpr.denote tcInterp opInterp fvarVal vt bvarVal e2 ty'' h_2'
       · simp [hv]
         exact .eq_true bvarVal
           (denote_Denotes tcInterp opInterp fvarVal vt bvarVal e1 _ h_1')
@@ -656,13 +662,13 @@ theorem denote_Denotes
     rename_i x τ_tr' h_bool' h_tr' h_body' heq
     typecheck_split h_body' h_body' h_body' h_tr' heq =>
       by_cases hv : ∀ x : TyDenote tcInterp vt qty,
-        (LExpr.denote tcInterp opInterp fvarVal vt (.cons x bvarVal) h_body' : Bool) = true
+        (LExpr.denote tcInterp opInterp fvarVal vt (.cons x bvarVal) body .bool h_body' : Bool) = true
       · simp [hv]
         exact .quant_all_true bvarVal fun x =>
           hv x ▸ denote_Denotes tcInterp opInterp fvarVal vt (.cons x bvarVal) body _ h_body'
       · simp [hv]
         have ⟨w, hw⟩ := Classical.not_forall.mp hv
-        have hwf : (LExpr.denote tcInterp opInterp fvarVal vt (.cons w bvarVal) h_body' : Bool) = false :=
+        have hwf : (LExpr.denote tcInterp opInterp fvarVal vt (.cons w bvarVal) body .bool h_body' : Bool) = false :=
           Bool.eq_false_iff.mpr hw
         exact .quant_all_false bvarVal w
           (hwf ▸ denote_Denotes tcInterp opInterp fvarVal vt (.cons w bvarVal) body _ h_body')
@@ -675,14 +681,14 @@ theorem denote_Denotes
     rename_i x τ_tr' h_bool' h_tr' h_body' heq
     typecheck_split h_body' h_body' h_body' h_tr' heq =>
       by_cases hv : ∃ x : TyDenote tcInterp vt qty,
-        (LExpr.denote tcInterp opInterp fvarVal vt (.cons x bvarVal) h_body' : Bool) = true
+        (LExpr.denote tcInterp opInterp fvarVal vt (.cons x bvarVal) body .bool h_body' : Bool) = true
       · simp [hv]
         have ⟨w, hw⟩ := hv
         exact .quant_exist_true bvarVal w
           (hw ▸ denote_Denotes tcInterp opInterp fvarVal vt (.cons w bvarVal) body _ h_body')
       · simp [hv]
         exact .quant_exist_false bvarVal fun x =>
-          let hf : (LExpr.denote tcInterp opInterp fvarVal vt (.cons x bvarVal) h_body' : Bool) = false :=
+          let hf : (LExpr.denote tcInterp opInterp fvarVal vt (.cons x bvarVal) body .bool h_body' : Bool) = false :=
             Bool.eq_false_iff.mpr (fun hp => hv ⟨x, hp⟩)
           hf ▸ denote_Denotes tcInterp opInterp fvarVal vt (.cons x bvarVal) body _ h_body'
   | .quant _ _ _ none _ _ =>
@@ -700,7 +706,7 @@ theorem Denotes_denote
     {h : LExpr.HasTypeA Δ e τ}
     {v : TyDenote tcInterp vt τ}
     (hd : Denotes tcInterp opInterp fvarVal vt bvarVal e τ h v)
-    : v = LExpr.denote tcInterp opInterp fvarVal vt bvarVal h := by
+    : v = LExpr.denote tcInterp opInterp fvarVal vt bvarVal e τ h := by
   induction hd with
   | const => unfold LExpr.denote; simp
   | op => unfold LExpr.denote; simp
@@ -755,7 +761,7 @@ theorem Denotes_denote
     split
     · exact iht
     · rename_i hntrue
-      have : LExpr.denote tcInterp opInterp fvarVal vt _ h_c = true := ihc.symm
+      have : LExpr.denote tcInterp opInterp fvarVal vt _ _ _ h_c = true := ihc.symm
       contradiction
   | ite_false _ hc he ihc ihe =>
     unfold LExpr.denote
@@ -763,7 +769,7 @@ theorem Denotes_denote
     dsimp only
     split
     · rename_i htrue
-      have : LExpr.denote tcInterp opInterp fvarVal vt _ h_c = false := ihc.symm
+      have : LExpr.denote tcInterp opInterp fvarVal vt _ _ _ h_c = false := ihc.symm
       simp_all
     · exact ihe
   | eq_true _ h1 h2 ih1 ih2 =>
@@ -801,7 +807,7 @@ theorem Denotes_denote
     unfold LExpr.denote; simp only [HasTypeA.quant_inv]
     split; rename_i x τ_tr h_bool h_tr h_body heq
     typecheck_split h_body h_body h_body h_tr heq =>
-      have hexists : ∃ x, LExpr.denote tcInterp opInterp fvarVal vt (.cons x _) h_body = true :=
+      have hexists : ∃ x, LExpr.denote tcInterp opInterp fvarVal vt (.cons x _) _ .bool h_body = true :=
         ⟨w, ih.symm⟩
       simp [hexists]
   | quant_exist_false _ hall ih =>
@@ -852,7 +858,7 @@ def LFunc.InterpConsistentBody [DecidableEq T.IDMeta]
     SortDenote.applyArgs tcInterp (opInterp f.name fullSort) args =
     LExpr.denote tcInterp opInterp
       (fvarVal.withArgs bindings args)
-      vt .nil h_body
+      vt .nil body f.output h_body
 
 /-- Denote a list of well-typed expressions into an `HList` of semantic values. -/
 noncomputable def denoteArgs
@@ -861,8 +867,8 @@ noncomputable def denoteArgs
       List.Forall₂ (LExpr.HasTypeA []) argExprs tys →
       HList (SortDenote tcInterp) (tys.map (LMonoTy.substTyVars vt))
   | [], [], _ => .nil
-  | _ :: _, _ :: _, h =>
-    .cons (LExpr.denote tcInterp opInterp fvarVal vt .nil h.head)
+  | e :: _, ty :: _, h =>
+    .cons (LExpr.denote tcInterp opInterp fvarVal vt .nil e ty h.head)
           (denoteArgs fvarVal vt h.tail)
 
 /-- An `opInterp` is consistent with an `LFunc` whose definition is given by
@@ -883,9 +889,14 @@ def LFunc.InterpConsistentEval [DecidableEq T.IDMeta]
   let fullSort := LSort.mkArrow outputSort inputSorts
   ∀ (h_args : List.Forall₂ (LExpr.HasTypeA []) argExprs inputTys)
     (h_result : LExpr.HasTypeA [] resultExpr f.output),
-  LExpr.denote tcInterp opInterp fvarVal vt .nil h_result =
+  LExpr.denote tcInterp opInterp fvarVal vt .nil resultExpr f.output h_result =
     SortDenote.applyArgs tcInterp (opInterp f.name fullSort)
       (denoteArgs tcInterp opInterp fvarVal vt h_args)
+
+/-- A factory is well-typed when every function body type-checks at the
+function's declared output type. -/
+def Factory.WellTyped (F : @Factory T) : Prop :=
+  ∀ f ∈ F, ∀ body, f.body = some body → LExpr.HasTypeA [] body f.output
 
 /-- A factory is consistent with an `opInterp` when every function with a body
 is `InterpConsistentBody` and every function with a `concreteEval` is
@@ -897,5 +908,22 @@ def Factory.InterpConsistent [DecidableEq T.IDMeta] (F : @Factory T) : Prop :=
     LFunc.InterpConsistentEval tcInterp opInterp f ceval)
 
 end FactoryConsistent
+
+section EnvConsistent
+
+variable {T : LExprParams}
+variable (tcInterp : TyConstrInterp)
+variable (opInterp : OpInterp T tcInterp)
+
+/-- A free-variable valuation `fvarVal` is consistent with an environment `env`
+when every binding `env x = some e` that is well-typed at `ty` denotes to the
+same value as `fvarVal x (substTyVars vt ty)`. -/
+def Env.InterpConsistent (env : T.Identifier → Option (LExpr T.mono)) (fvarVal : FreeVarVal T tcInterp) : Prop :=
+  ∀ (vt : TyVarVal) (x : T.Identifier) (e : LExpr T.mono) (ty : LMonoTy),
+    env x = some e →
+    ∀ (h : LExpr.HasTypeA [] e ty),
+      LExpr.denote tcInterp opInterp fvarVal vt .nil e ty h = fvarVal x (ty.substTyVars vt)
+
+end EnvConsistent
 
 end Lambda

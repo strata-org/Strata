@@ -103,6 +103,11 @@ def ListMap.keys (m : ListMap α β) : List α :=
   | [] => []
   | (a, _) :: m => a :: keys m
 
+theorem ListMap.keys_eq_map_fst (m : ListMap α β) : m.keys = m.map Prod.fst := by
+  induction m with
+  | nil => rfl
+  | cons p t ih => cases p; simp [ListMap.keys, ih]
+
 @[expose]
 def ListMap.values (m : ListMap α β) : List β :=
   match m with
