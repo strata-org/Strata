@@ -271,6 +271,7 @@ def lookupFieldHighType (ctx : TranslationContext) (className fieldName : String
     | some ty => .ok ty
 
 def NoError : StmtExprMd := mkStmtExprMd (StmtExpr.StaticCall "NoError" [])
+def optNone := mkStmtExprMd (StmtExpr.StaticCall "None" [])
 
 def getSubscriptList (expr:  Python.expr SourceRange) : List ( Python.expr SourceRange) :=
   match expr with
@@ -356,6 +357,30 @@ partial def translateDictStrAny (ctx : TranslationContext)
   let val_trans ←  kv.unzip.snd.mapM (translateExpr ctx)
   let keys ← keys.mapM pyOptExprToString
   return  mkStmtExprMd (.StaticCall "from_Dict" [DictStrAny_mk (keys.zip val_trans)])
+
+partial def translateSlice (ctx : TranslationContext) (start stop step: Option (expr SourceRange))
+    : Except TranslationError StmtExprMd := do
+    if step.isSome then
+        throw (.unsupportedConstruct "Expression type not yet supported" (toString (repr step)))
+    match start, stop with
+        | some start, some stop =>
+            let start ← translateExpr ctx start
+            let stop ← translateExpr ctx stop
+            let start := mkStmtExprMd (.StaticCall "Any..as_int!" [start])
+            let stop := mkStmtExprMd (.StaticCall "Some" [mkStmtExprMd (.StaticCall "Any..as_int!" [stop])])
+            return mkStmtExprMd (.StaticCall "from_Slice" [start, stop])
+        | some start, none =>
+            let start ← translateExpr ctx start
+            let start := mkStmtExprMd (.StaticCall "Any..as_int!" [start])
+            return mkStmtExprMd (.StaticCall "from_Slice" [start, optNone])
+        | none, some stop =>
+            let start := mkStmtExprMd (.LiteralInt 0)
+            let stop ← translateExpr ctx stop
+            let stop := mkStmtExprMd (.StaticCall "Some" [mkStmtExprMd (.StaticCall "Any..as_int!" [stop])])
+            return mkStmtExprMd (.StaticCall "from_Slice" [start, stop])
+        | _ , _ =>
+            let start := mkStmtExprMd (.LiteralInt 0)
+            return mkStmtExprMd (.StaticCall "from_Slice" [start, optNone])
 
 /-- Translate Python expression to Laurel StmtExpr -/
 partial def translateExpr (ctx : TranslationContext) (e : Python.expr SourceRange)
@@ -473,7 +498,9 @@ partial def translateExpr (ctx : TranslationContext) (e : Python.expr SourceRang
   -- TODO: Handle by creating explicit variable declarations
   | .Subscript _ val slice _ =>
     let dictOrList ← translateExpr ctx val
-    let index ← translateExpr ctx slice
+    let index ←  match slice with
+      | .Slice _ start stop step => translateSlice ctx start.val stop.val step.val
+      | _ => translateExpr ctx slice
     return mkStmtExprMd (.StaticCall "Any_get" [dictOrList, index])
 
   -- Attribute access: obj.attr or obj.method
