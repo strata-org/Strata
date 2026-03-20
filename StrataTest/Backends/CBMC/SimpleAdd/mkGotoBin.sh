@@ -9,15 +9,9 @@ pushd ../../../../
 lake exe StrataCoreToGoto --output-dir StrataTest/Backends/CBMC/SimpleAdd StrataTest/Backends/CBMC/SimpleAdd/simpleAdd.core.st
 popd
 
-# Merge generated file ../simpleAdd.symtab.json with
-# symtab_cprover_intrinsics.json.
-python3 ../../../../Strata/Backends/CBMC/resources/process_json.py combine ../../../../Strata/Backends/CBMC/resources/defaults.json simpleAdd.symtab.json > simpleAdd.symtab.full.json
-# jq -s '.[0].symbolTable += .[1] | .[0]' ../symtab_cprover_intrinsics.json simpleAdd.symtab.json > simpleAdd.symtab.full.json
-
-ls -l *.json
-
+# The symtab.json now includes CBMC default symbols directly.
 echo "Constructing a GOTO binary from the JSON files:"
-symtab2gb simpleAdd.symtab.full.json --goto-functions simpleAdd.goto.json --out newSimpleAdd.gb
+symtab2gb simpleAdd.symtab.json --goto-functions simpleAdd.goto.json --out newSimpleAdd.gb
 
 echo "Running CBMC on the GOTO binary:"
 
