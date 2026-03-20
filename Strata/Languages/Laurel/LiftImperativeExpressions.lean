@@ -223,24 +223,53 @@ def transformExpr (expr : StmtExprMd) : LiftM StmtExprMd := do
       return resultExpr
 
   | .PrimitiveOp op args =>
-      -- Process arguments right to left
-      let seqArgs ← args.reverse.mapM transformExpr
+      -- Process arguments right to left (for substitution mechanism)
+      let seqArgs ← args.reverse.attach.mapM fun ⟨arg, _⟩ => transformExpr arg
       return ⟨.PrimitiveOp op seqArgs.reverse, md⟩
 
   | .StaticCall callee args =>
     let model := (← get).model
-    let seqArgs ← args.reverse.mapM transformExpr
-    let seqCall := ⟨.StaticCall callee seqArgs.reverse, md⟩
+    -- Process arguments right-to-left (for substitution mechanism).
+    -- Isolate each arg's prepends, capture side-effectful args in temps,
+    -- then combine prepend groups in left-to-right order.
+    let savedPrepends := (← get).prependedStmts
+    let results ← args.reverse.attach.mapM fun ⟨arg, _⟩ => do
+      modify fun s => { s with prependedStmts := [] }
+      let seqArg ← transformExpr arg
+      let argPrepends ← takePrepends
+      if !argPrepends.isEmpty then
+        let needsCapture := match seqArg.val with
+          | .Identifier name => !name.text.startsWith "$"
+          | _ => true
+        if needsCapture then
+          let tmpVar ← freshCondVar
+          let tmpType ← computeType arg
+          let capture := [bare (.LocalVariable tmpVar tmpType none),
+                          ⟨.Assign [bare (.Identifier tmpVar)] seqArg, md⟩]
+          return (argPrepends ++ capture, bare (.Identifier tmpVar))
+        else
+          return (argPrepends, seqArg)
+      else
+        return ([], seqArg)
+    -- Restore saved prepends and add arg groups in left-to-right order
+    modify fun s => { s with prependedStmts := savedPrepends }
+    -- results is in right-to-left order; reverse to get left-to-right
+    let resultsLR := results.reverse
+    let seqArgs := resultsLR.map (·.2)
+    -- Emit groups right-to-left so that left groups end up on top of the
+    -- cons-based prepend stack (executed first). Each group's statements
+    -- are in program order, so reverse before cons-ing.
+    results.forM fun (group, _) => group.reverse.forM addPrepend
+    let seqCall := ⟨.StaticCall callee seqArgs, md⟩
     if model.isFunction callee then
       return seqCall
     else
-      -- Imperative call in expression position: lift it like an assignment
-      -- Order matters: assign must be prepended first (it's newest-first),
-      -- so that when reversed the var declaration comes before the call.
+      let allArgPrepends ← takePrepends
       let callResultVar ← freshCondVar
       let callResultType ← computeType expr
       addPrepend (⟨.Assign [bare (.Identifier callResultVar)] seqCall, md⟩)
       addPrepend (bare (.LocalVariable callResultVar callResultType none))
+      allArgPrepends.reverse.forM addPrepend
       return bare (.Identifier callResultVar)
 
   | .IfThenElse cond thenBranch elseBranch =>

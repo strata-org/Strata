@@ -15,16 +15,13 @@ Laurel→Laurel lowering pipeline from LaurelToCoreTranslator.translate.
 TODO: find a way to not duplicate the test cases and their expected results
 
 ## Status
-- Passing: 77 / 94 tests (output matches direct mode)
-- Failing: 17 / 94 tests (output differs from direct mode)
+- Passing: 82 / 94 tests (output matches direct mode)
+- Failing: 12 / 94 tests (output differs from direct mode)
 
 ## Known failure categories
 - heapParameterization (12 tests): all tests using composite types / heap
   objects fail because the evaluator does not handle heap-parameterized
   programs (field accesses become map select/store operations).
-- liftExpressionAssignments (5 tests): nested procedure calls in expression
-  position are lifted into temporaries, and side-effect evaluation order
-  changes break tests that depend on left-to-right argument evaluation.
 -/
 
 namespace Strata.Laurel.ConcreteEval.TransformPreservationTest
@@ -859,12 +856,9 @@ procedure main() { return double(21) };
 "
   IO.println (toString (runProgram prog))
 
-/-! ### Procedures Test 5: Nested procedure calls — FAILS after transforms
-liftExpressionAssignments lifts nested calls into temporaries that the
-evaluator cannot resolve.
--/
+/-! ### Procedures Test 5: Nested procedure calls -/
 /--
-info: error: fuel exhausted
+info: returned: 26
 -/
 #guard_msgs in
 #eval! do
@@ -920,17 +914,9 @@ procedure main() { noop(); return 0 };
 
 /-! ## SideEffects -/
 
-/-! ### SideEffects Test 1: Left-to-right argument evaluation — FAILS after transforms
-liftExpressionAssignments lifts block expressions out of argument positions into
-preceding statements. The lifting traverses arguments right-to-left, creating
-snapshot variables that capture each variable's value *before* the block's
-assignment. Both lifted blocks independently see the original x=0: the first
-block's snapshot captures x=0 and assigns 0 to its temporary, and the second
-block's snapshot also captures x=0 and assigns 0 to its temporary. The call
-then receives add(0, 0) = 0. Direct mode: returned 12. After transforms: returned 0.
--/
+/-! ### SideEffects Test 1: Left-to-right argument evaluation -/
 /--
-info: returned: 0
+info: returned: 12
 -/
 #guard_msgs in
 #eval! do
@@ -959,12 +945,9 @@ procedure main() {
 "
   IO.println (toString (runProgram prog))
 
-/-! ### SideEffects Test 3: Block expression as argument — FAILS after transforms
-liftExpressionAssignments lifts the block expression, introducing a local
-variable that the evaluator cannot resolve.
--/
+/-! ### SideEffects Test 3: Block expression as argument -/
 /--
-info: error: fuel exhausted
+info: returned: 15
 -/
 #guard_msgs in
 #eval! do
@@ -1010,12 +993,9 @@ procedure main() {
 "
   IO.println (toString (runProgram prog))
 
-/-! ### SideEffects Test 6: Nested calls with side effects — FAILS after transforms
-liftExpressionAssignments lifts nested calls into temporaries that the
-evaluator cannot resolve.
--/
+/-! ### SideEffects Test 6: Nested calls with side effects -/
 /--
-info: error: fuel exhausted
+info: returned: 12
 -/
 #guard_msgs in
 #eval! do
