@@ -309,11 +309,16 @@ public def pyAnalyzeLaurel
   let preludeInfo := buildPreludeInfo result
 
   let metadataPath := sourcePath.getD pythonIonPath
-  let (laurelProgram, _ctx) ←
+  let (laurelProgram, ctx) ←
     match Python.pythonToLaurel' preludeInfo pyModule none metadataPath result.overloads with
     | .error (.userPythonError range msg) => throw (.userCode range msg)
     | .error e => throw (.internal s!"Python to Laurel translation failed: {e}")
-    | .ok result => pure result
+    | .ok r => pure r
+
+  if !ctx.abstractedStatements.isEmpty then
+    let _ ← IO.eprintln s!"{ctx.abstractedStatements.length} abstracted construct(s) (not fully translated):" |>.toBaseIO
+    for (loc, kind) in ctx.abstractedStatements do
+      let _ ← IO.eprintln s!"  {loc}: {kind}" |>.toBaseIO
 
   return combinePySpecLaurel preludeInfo result.laurelProgram laurelProgram
 
