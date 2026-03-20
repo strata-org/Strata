@@ -20,7 +20,8 @@ TEST_FILES = sorted(
 )
 
 BOTH_SKIP = {"test_foo_client_folder", "test_invalid_client_type", "test_unsupported_config"}
-SKIP_TESTS = BOTH_SKIP | {"test_class_field_use", "test_list", "test_subscription", "test_with_statement", "test_class_field_init", "test_break_continue", "test_try_except", "test_try_except_scoping", "test_augmented_assign", 
+SKIP_TESTS = BOTH_SKIP | {"test_class_field_use",
+ "test_list", "test_subscription", "test_with_statement", "test_class_field_init", "test_break_continue", "test_try_except", "test_try_except_scoping", "test_augmented_assign", "test_return_types", "test_default_params", "test_dict_operations", "test_class_methods", "test_boolean_logic", "test_multiple_except", "test_for_loop", "test_while_loop", "test_nested_calls", "test_multi_function", "test_class_with_methods", "test_module_level", "test_if_elif", "test_variable_reassign"}
 SKIP_TESTS_LAUREL = BOTH_SKIP
 
 
