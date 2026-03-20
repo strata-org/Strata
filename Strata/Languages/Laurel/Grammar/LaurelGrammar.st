@@ -88,7 +88,7 @@ category OptionalElse;
 op optionalElse(stmts : StmtExpr) : OptionalElse => @[prec(0)] "else" stmts;
 
 op ifThenElse (cond: StmtExpr, thenBranch: StmtExpr, elseBranch: Option OptionalElse): StmtExpr =>
-  @[prec(20)] "if (" cond ") " thenBranch:0 elseBranch:0;
+  @[prec(20)] "if " cond " then " thenBranch:0 elseBranch:0;
 
 op assert (cond : StmtExpr, errorMessage: Option OptionalErrorMessage) : StmtExpr => @[prec(0)] "assert " cond:0 errorMessage:0;
 op assume (cond : StmtExpr) : StmtExpr => @[prec(0)] "assume " cond:0;
