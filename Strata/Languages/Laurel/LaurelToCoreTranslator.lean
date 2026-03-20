@@ -582,15 +582,16 @@ def translateDatatypeDefinition (model : SemanticModel) (dt : DatatypeDefinition
 structure LaurelTranslateOptions where
   emitResolutionErrors : Bool := true
 
-abbrev TranslateResult := (Option Core.Program) × (List DiagnosticModel)
 /--
-Translate Laurel Program to Core Program
+Apply the full Laurel→Laurel lowering pipeline (all passes before the Laurel→Core translation).
+Returns the lowered program.
 -/
-def translate (options: LaurelTranslateOptions) (program : Program): TranslateResult :=
+abbrev LowerResult := (ResolutionResult) × (List DiagnosticModel)
+
+def lowerLaurelToLaurel (program : Program) : LowerResult :=
   let program := { program with
     staticProcedures := coreDefinitionsForLaurel.staticProcedures ++ program.staticProcedures
   }
-
   let result := resolve program
   let (program, model) := (result.program, result.model)
   let diamondErrors := validateDiamondFieldAccesses model program
@@ -598,7 +599,6 @@ def translate (options: LaurelTranslateOptions) (program : Program): TranslateRe
   let program := heapParameterization model program
   let result := resolve program (some model)
   let (program, model) := (result.program, result.model)
-
   let program := typeHierarchyTransform model program
   let result := resolve program (some model)
   let (program, model) := (result.program, result.model)
@@ -608,8 +608,6 @@ def translate (options: LaurelTranslateOptions) (program : Program): TranslateRe
   -- dbg_trace "=== Program after heapParameterization + modifiesClausesTransform ==="
   -- dbg_trace (toString (Std.Format.pretty (Std.ToFormat.format program)))
   -- dbg_trace "================================="
-  let result := resolve program (some model)
-  let (program, model) := (result.program, result.model)
   let program := inferHoleTypes model program
   let program := eliminateHoles program
   let program := desugarShortCircuit model program
@@ -617,15 +615,22 @@ def translate (options: LaurelTranslateOptions) (program : Program): TranslateRe
   let program := eliminateReturnsInExpressionTransform program
   let result := resolve program (some model)
   let (program, model) := (result.program, result.model)
-
   let (program, constrainedTypeDiags) := constrainedTypeElim model program
-  let result := resolve program (some model)
+  (resolve program (some model) , diamondErrors ++ modifiesDiags ++ constrainedTypeDiags)
+
+abbrev TranslateResult := (Option Core.Program) × (List DiagnosticModel)
+/--
+Translate Laurel Program to Core Program
+-/
+def translate (options: LaurelTranslateOptions) (program : Program): TranslateResult :=
+  let (result, lowerErrors) := lowerLaurelToLaurel program
+
   let (program, model) := (result.program, result.model)
 
     let initState : TranslateState := {model := model }
   let (coreProgramOption, translateState) := runTranslateM initState (translateLaurelToCore program)
   let resolutionErrors: List DiagnosticModel := if options.emitResolutionErrors then result.errors.toList else []
-  let allDiagnostics := resolutionErrors ++ diamondErrors ++ modifiesDiags ++ constrainedTypeDiags ++ translateState.diagnostics
+  let allDiagnostics := resolutionErrors ++ lowerErrors ++ translateState.diagnostics
   let coreProgramOption := if translateState.coreProgramHasSuperfluousErrors then none else coreProgramOption
   (coreProgramOption, allDiagnostics)
   where
