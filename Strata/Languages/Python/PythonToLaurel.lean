@@ -91,6 +91,8 @@ structure TranslationContext where
   filePath : String := ""
   /-- Known composite type names (user-defined classes + PySpec types) -/
   compositeTypeNames : Std.HashSet String := {}
+  /-- Maps unprefixed class names to prefixed names (from pyspec). -/
+  typeAliases : Std.HashMap String String := {}
   /-- Track current class during method translation -/
   currentClassName : Option String := none
   loopBreakLabel : Option String := none
@@ -98,6 +100,11 @@ structure TranslationContext where
 deriving Inhabited
 
 /-! ## Error Handling -/
+
+/-- Resolve a type name through aliases. Returns the prefixed name if an alias
+    exists, otherwise the original name. -/
+def resolveTypeName (ctx : TranslationContext) (name : String) : String :=
+  ctx.typeAliases.getD name name
 
 /-- Translation errors with context -/
 inductive TranslationError where
@@ -658,7 +665,8 @@ partial def refineFunctionCallExpr (ctx : TranslationContext) (func: Python.expr
         if callerTy == PyLauType.Any then
           return ("AnyTyInstance" ++ "@" ++ callname, some v, true)
         else
-          return (callerTy ++ "_" ++ callname, some v, false)
+          let resolvedTy := resolveTypeName ctx callerTy
+          return (resolvedTy ++ "_" ++ callname, some v, false)
     | _ => throw (.internalError s!"{repr func} is not a function")
 
 --Kwargs can be a single Dict variable: func_call (**var) or a normal Kwargs (key1 = val1, key2 =val2 ...)
@@ -792,8 +800,15 @@ partial def translateCall (ctx : TranslationContext)
   | .Attribute _ val _attr _ =>
       let _target_trans ← translateExpr ctx val
       if opt_firstarg.isSome then
-        return mkStmtExprMd (.Hole)
-        --return mkStmtExprMd (StmtExpr.InstanceCall target_trans attr.val (trans_args ++ trans_kwords_exprs))
+        -- Only emit StaticCall when the caller type was resolved through a
+        -- pyspec type alias, indicating the procedure has precondition assertions.
+        let callerTy := match f with
+          | .Attribute _ v _ _ => (inferExprType ctx v).toOption.getD ""
+          | _ => ""
+        if ctx.typeAliases.contains callerTy && funcName ∈ ctx.preludeProcedures then
+          return mkStmtExprMd (StmtExpr.StaticCall funcName (trans_args ++ trans_kwords_exprs))
+        else
+          return mkStmtExprMd (.Hole)
       else
         return mkStmtExprMd (StmtExpr.StaticCall funcName (trans_args ++ trans_kwords_exprs))
   | _ =>  throw (.unsupportedConstruct "Invalid call construct" (toString (repr f)))
@@ -884,7 +899,8 @@ partial def translateAssign  (ctx : TranslationContext)
         newctx := match rhs_trans.val with
         | .StaticCall fnname _ =>
             if fnname.text ∈ ctx.compositeTypeNames then
-              {newctx with variableTypes:= newctx.variableTypes ++ [(n.val, fnname.text)]}
+              let resolved := resolveTypeName ctx fnname.text
+              {newctx with variableTypes:= newctx.variableTypes ++ [(n.val, resolved)]}
             else newctx
         | .New className =>
             {newctx with variableTypes:= newctx.variableTypes ++ [(n.val, className.text)]}
@@ -1546,6 +1562,8 @@ structure PreludeInfo where
   functions : List String := []
   /-- Procedure names (non-function callables) -/
   procedureNames : List String := []
+  /-- Maps unprefixed class names to prefixed names (from pyspec). -/
+  typeAliases : Std.HashMap String String := {}
 
 /-- Extract `PreludeInfo` from a `Core.Program`. -/
 def PreludeInfo.ofCoreProgram (prelude : Core.Program) : PreludeInfo where
@@ -1627,6 +1645,7 @@ def PreludeInfo.merge (a b : PreludeInfo) : PreludeInfo where
   functionSignatures := a.functionSignatures ++ b.functionSignatures
   functions := a.functions ++ b.functions
   procedureNames := a.procedureNames ++ b.procedureNames
+  typeAliases := b.typeAliases.fold (init := a.typeAliases) fun m k v => m.insert k v
 
 /-- Translate Python module to Laurel Program using pre-extracted prelude info. -/
 def pythonToLaurel' (info : PreludeInfo)
@@ -1681,9 +1700,18 @@ def pythonToLaurel' (info : PreludeInfo)
     let mut ctx : TranslationContext := match prev_ctx with
     | some prev_ctx => prev_ctx
     | _ =>
+    -- Add unprefixed method names as procedure aliases
+    -- e.g. MessageService_send → same signature as prefix_MessageService_send
+    let preludeProcedures := info.typeAliases.fold (init := info.procedures)
+      fun procs unprefixed prefixed =>
+        procs.fold (init := procs) fun procs' name sig =>
+          if name.startsWith (prefixed ++ "_") then
+            let unprefixedName := unprefixed ++ name.drop prefixed.length
+            procs'.insert unprefixedName sig
+          else procs'
     {
       currentClassName := none,
-      preludeProcedures := info.procedures,
+      preludeProcedures := preludeProcedures,
       functionSignatures := info.functionSignatures
       preludeFunctions := info.functions
       preludeTypes := info.types,
@@ -1691,6 +1719,7 @@ def pythonToLaurel' (info : PreludeInfo)
       compositeTypeNames := compositeTypeNames,
       classFieldHighType := classFieldHighType,
       overloadTable := overloadTable,
+      typeAliases := info.typeAliases,
       filePath := filePath
     }
 
