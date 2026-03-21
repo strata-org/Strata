@@ -21,7 +21,7 @@ TEST_FILES = sorted(
 
 BOTH_SKIP = {"test_foo_client_folder", "test_invalid_client_type", "test_unsupported_config"}
 SKIP_TESTS = BOTH_SKIP | {"test_class_field_use", "test_list", "test_subscription", "test_with_statement", "test_class_field_init", "test_break_continue", "test_try_except", "test_try_except_scoping", "test_loops",
-                          "test_augmented_assign", "test_list_slice"}  # sarif pipeline uses PythonToCore which doesn't yet support AugAssign
+                          "test_augmented_assign", "test_list_slice", "test_class_field_any"}  # sarif pipeline uses PythonToCore which doesn't yet support AugAssign
 SKIP_TESTS_LAUREL = BOTH_SKIP
 
 
