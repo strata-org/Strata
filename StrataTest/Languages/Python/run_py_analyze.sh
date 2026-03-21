@@ -1,17 +1,29 @@
 #!/bin/bash
 
-# Usage: ./run_py_analyze.sh [laurel] [--update]
-# Run without arguments for pyAnalyze, with "laurel" for pyAnalyzeLaurel
-# With --update, overwrite existing expected files with actual output
+# Usage: ./run_py_analyze.sh [--incremental] [laurel]
+# Run without arguments for pyAnalyze
+# --incremental: Use pyAnalyzeLaurel --incremental
+# laurel: Use pyAnalyzeLaurel
 
 failed=0
-update=0
+incremental=false
 mode="core"
 
-for arg in "$@"; do
-    case "$arg" in
-        --update) update=1 ;;
-        *) mode="$arg" ;;
+# Parse flags
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --incremental)
+            incremental=true
+            shift
+            ;;
+        laurel)
+            mode="laurel"
+            shift
+            ;;
+        *)
+            echo "Unknown argument: $1"
+            exit 1
+            ;;
     esac
 done
 
@@ -19,10 +31,19 @@ if [ "$mode" = "laurel" ]; then
     command="pyAnalyzeLaurel"
     expected_dir="expected_laurel"
     skip_tests=""
+    if [ "$incremental" = true ]; then
+        command="$command --incremental"
+        expected_dir="expected_incremental"
+        skip_tests=""
+    fi
 else
     command="pyAnalyze"
     expected_dir="expected_non_laurel"
     skip_tests=""
+    if [ "$incremental" = true ]; then
+        echo "Error: --incremental requires laurel mode"
+        exit 1
+    fi
 fi
 
 (cd ../../.. && lake exe strata --help > /dev/null)

@@ -16,7 +16,7 @@ open Std (ToFormat Format format)
 
 public section
 
-@[expose] abbrev ExpressionMetadata := Unit
+@[expose] abbrev ExpressionMetadata := Strata.SourceRange
 
 @[expose]
 abbrev Expression : Imperative.PureExpr :=
@@ -33,7 +33,7 @@ instance : Imperative.HasVarsPure Expression Expression.Expr where
   getVars := Lambda.LExpr.LExpr.getVars
 
 instance : Inhabited Expression.Expr where
-  default := .intConst () 0
+  default := .intConst Strata.SourceRange.none 0
 
 ---------------------------------------------------------------------
 

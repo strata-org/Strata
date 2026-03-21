@@ -26,6 +26,11 @@ import Strata.Backends.CBMC.CollectSymbols
 import Strata.Backends.CBMC.GOTO.CoreToGOTOPipeline
 
 import Strata.SimpleAPI
+import Strata.Languages.Core.DDMTransform.ASTtoCST
+import Strata.Languages.Core.CoreSMT.Verifier
+import Strata.Languages.Core.CoreSMT.State
+import Strata.DL.SMT.SolverInterface
+import Strata.Languages.B3.Verifier
 
 open Strata
 
@@ -372,6 +377,80 @@ def pyAnalyzeCommand : Command where
           | none => Map.empty
         Core.Sarif.writeSarifOutput .deductive files vcResults (filePath ++ ".sarif")
 
+/-- Convert a CoreSMTResult to a Core.VCResult -/
+private def coreSMTResultToVCResult (r : Strata.Core.CoreSMT.CoreSMTResult) : Core.VCResult :=
+  match r.error with
+  | some msg => { obligation := r.obligation, outcome := .error msg }
+  | none =>
+    let toResult (d : Strata.SMT.Decision) : Imperative.SMT.Result Core.Expression.Ident := match d with
+      | .sat => .sat []
+      | .unsat => .unsat
+      | .unknown => .unknown
+    let satResult := toResult r.satResult
+    let valResult := toResult r.valResult
+    let vcOutcome : Core.VCOutcome := {
+      satisfiabilityProperty := satResult
+      validityProperty := valResult
+    }
+    let diagnosis := r.diagnosisInfo.map fun d =>
+      { isRefuted := d.isRefuted,
+        statePathCondition := d.statePathCondition : Core.DiagnosisInfo }
+    { obligation := r.obligation, outcome := .ok vcOutcome, diagnosis }
+
+/-- Verify a Core program using the incremental CoreSMT engine. -/
+private def verifyIncremental
+    (programDecls : List Core.Decl)
+    (pySourceOpt : Option (String × String)) : IO (Array Core.VCResult) := do
+  let solver ← Strata.B3.Verifier.createInteractiveSolver Core.defaultSolver
+  let solverInterface ← Strata.SMT.mkSolverInterfaceFromSolver solver
+  let state := Strata.Core.CoreSMT.CoreSMTState.init solverInterface { accumulateErrors := true }
+  let procs := programDecls.filterMap fun d => match d with
+    | .proc p _ =>
+      if p.header.inputs.isEmpty && p.header.outputs.isEmpty then
+        let cleaned := Strata.Core.CoreSMT.removeUnusedVarsStmts p.body
+        some (p.header.name.name, Imperative.Stmt.block p.header.name.name cleaned .empty)
+      else none
+    | _ => none
+  let mut allResults : Array Core.VCResult := #[]
+  let mut state := state
+  let mut smtCtx := Core.SMT.Context.default
+  for (procName, block) in procs do
+    IO.println s!"procedure {procName}:"
+    let (state', smtCtx', smtResults) ← Strata.Core.CoreSMT.verify state Core.Env.init [block] smtCtx
+    state := state'
+    smtCtx := smtCtx'
+    let results := smtResults.map coreSMTResultToVCResult
+    for r in results do
+      let marker := match r.outcome with
+        | .ok o => if o.isPass then "✅ pass" else if o.isAlwaysFalse then "❌ fail" else "❓ unknown"
+        | .error e => s!"🚨 {e}"
+      let suffix := match Imperative.getFileRange r.obligation.metadata with
+        | some fr =>
+          if fr.range.isNone then ""
+          else match pySourceOpt with
+            | some (pyPath, srcText) =>
+              match fr.file with
+              | .file path =>
+                if path == pyPath then
+                  let pos := (Lean.FileMap.ofString srcText).toPosition (fr.range).start
+                  s!" (line {pos.line}, col {pos.column})"
+                else s!" (byte {(fr.range).start})"
+            | none => s!" (byte {(fr.range).start})"
+        | none => ""
+      IO.println s!"  {r.obligation.label}: {marker}{suffix}"
+      if let some diag := r.diagnosis then
+        for failure in diag.diagnosedFailures do
+          let failureKind := if failure.isRefuted then "it is impossible that" else "could not prove"
+          let exprStr := (Strata.Core.formatExprs [failure.expression]).pretty
+          IO.println s!"    └─ {failureKind} {exprStr}"
+          let assumptions := failure.report.context.pathCondition
+          if !assumptions.isEmpty then
+            IO.println s!"       under the assumptions"
+            for assumption in assumptions do
+              IO.println s!"         {(Strata.Core.formatExprs [assumption]).pretty}"
+    allResults := allResults ++ results.toArray
+  return allResults
+
 def pyAnalyzeLaurelCommand : Command where
   name := "pyAnalyzeLaurel"
   args := [ "file" ]
@@ -387,6 +466,7 @@ def pyAnalyzeLaurelCommand : Command where
             { name := "vc-directory",
               help := "Store VCs in SMT-Lib format in <dir>.",
               takesArg := .arg "dir" },
+            { name := "incremental", help := "Use the incremental (in-memory) CoreSMT verification engine." },
             checkModeFlag, checkLevelFlag]
   help := "Verify a Python Ion program via the Laurel pipeline. Translates Python to Laurel to Core, then runs SMT verification."
   callback := fun v pflags => do
@@ -435,20 +515,25 @@ def pyAnalyzeLaurelCommand : Command where
       IO.println "\n==== Core Program ===="
       IO.print coreProgram
 
-    -- Verify using Core verifier
+    -- Verify using incremental CoreSMT engine or batch Core verifier
+    let incremental := pflags.getBool "incremental"
     let checkMode ← parseCheckMode pflags
     let checkLevel ← parseCheckLevel pflags
-    let baseOptions : VerifyOptions :=
-      { VerifyOptions.default with
-        stopOnFirstError := false, verbose := .quiet, solver := "z3",
-        checkMode := checkMode, checkLevel := checkLevel }
-    let options : VerifyOptions := match pflags.getString "vc-directory" with
-      | .some dir => { baseOptions with vcDirectory := some (dir : System.FilePath) }
-      | .none => baseOptions
     let vcResults ←
-      match ← Strata.verifyCore coreProgram options |>.toBaseIO with
-      | .ok r => pure r
-      | .error msg => exitInternalError msg
+      if incremental then
+        verifyIncremental coreProgram.decls pySourceOpt
+      else do
+        let baseOptions : VerifyOptions :=
+          { VerifyOptions.default with
+            stopOnFirstError := false, verbose := .quiet, solver := "z3" }
+        let options : VerifyOptions := match pflags.getString "vc-directory" with
+          | .some dir => { baseOptions with vcDirectory := some (dir : System.FilePath) }
+          | .none => baseOptions
+        let vcResults ←
+          match ← Strata.verifyCore coreProgram options |>.toBaseIO with
+          | .ok r => pure r
+          | .error msg => exitInternalError msg
+        pure vcResults
 
     -- Print results
     if !laurelTranslateErrors.isEmpty then
@@ -456,7 +541,8 @@ def pyAnalyzeLaurelCommand : Command where
       for err in laurelTranslateErrors do
         IO.println err
 
-    -- Print results
+    -- Print results (non-incremental only; incremental prints per-procedure above)
+    if !incremental then do
     IO.println "\n==== Verification Results ===="
     let mut s := ""
     for vcResult in vcResults do

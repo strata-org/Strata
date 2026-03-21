@@ -13,28 +13,30 @@ namespace Core
 open Lambda
 open Strata.SMT
 
+private abbrev sr := Strata.SourceRange.none
+
 /-- info: "(define-fun t0 () Bool (forall ((n Int)) (exists ((m Int)) (= n m))))\n" -/
 #guard_msgs in
 #eval toSMTTermString
-  (.quant () .all "n" (.some .int) (LExpr.noTrigger ())
-   (.quant () .exist "m" (.some .int) (LExpr.noTrigger ())
-   (.eq () (.bvar () 1) (.bvar () 0))))
+(.quant sr .all "n" (.some .int) (LExpr.noTrigger sr)
+   (.quant sr .exist "m" (.some .int) (LExpr.noTrigger sr)
+   (.eq sr (.bvar sr 1) (.bvar sr 0))))
 
 /--
 info: "; x\n(declare-const x Int)\n(define-fun t0 () Bool (exists ((i Int)) (= i x)))\n"
 -/
 #guard_msgs in
 #eval toSMTTermString
-   (.quant () .exist "i" (.some .int) (LExpr.noTrigger ())
-   (.eq () (.bvar () 0) (.fvar () "x" (.some .int))))
+(.quant sr .exist "i" (.some .int) (LExpr.noTrigger sr)
+   (.eq sr (.bvar sr 0) (.fvar sr "x" (.some .int))))
 
 /--
 info: "; f\n(declare-fun f (Int) Int)\n; x\n(declare-const x Int)\n(define-fun t0 () Bool (exists ((i Int)) (! (= i x) :pattern ((f i)))))\n"
 -/
 #guard_msgs in
 #eval toSMTTermString
-   (.quant ()  .exist "i" (.some .int) (.app () (.fvar () "f" (.some (.arrow .int .int))) (.bvar () 0))
-   (.eq () (.bvar () 0) (.fvar () "x" (.some .int))))
+(.quant sr  .exist "i" (.some .int) (.app sr (.fvar sr "f" (.some (.arrow .int .int))) (.bvar sr 0))
+   (.eq sr (.bvar sr 0) (.fvar sr "x" (.some .int))))
 
 
 /--
@@ -42,23 +44,23 @@ info: "; f\n(declare-fun f (Int) Int)\n; x\n(declare-const x Int)\n(define-fun t
 -/
 #guard_msgs in
 #eval toSMTTermString
-   (.quant () .exist "i" (.some .int) (.app () (.fvar () "f" (.some (.arrow .int .int))) (.bvar () 0))
-   (.eq () (.app () (.fvar () "f" (.some (.arrow .int .int))) (.bvar () 0)) (.fvar () "x" (.some .int))))
+(.quant sr .exist "i" (.some .int) (.app sr (.fvar sr "f" (.some (.arrow .int .int))) (.bvar sr 0))
+   (.eq sr (.app sr (.fvar sr "f" (.some (.arrow .int .int))) (.bvar sr 0)) (.fvar sr "x" (.some .int))))
 
 /-- info: "Cannot encode expression f(bvar!0)\n-- Errors: Unsupported construct in lexprToExpr: bvar index out of bounds: 0\nContext: Global scope:\n  freeVars: [f]" -/
 #guard_msgs in
 #eval toSMTTermString
-   (.quant () .exist "i" (.some .int) (.app () (.fvar () "f" (.none)) (.bvar () 0))
-   (.eq () (.app () (.fvar () "f" (.some (.arrow .int .int))) (.bvar () 0)) (.fvar () "x" (.some .int))))
+(.quant sr .exist "i" (.some .int) (.app sr (.fvar sr "f" (.none)) (.bvar sr 0))
+   (.eq sr (.app sr (.fvar sr "f" (.some (.arrow .int .int))) (.bvar sr 0)) (.fvar sr "x" (.some .int))))
 
 /--
 info: "; f\n(declare-const f (arrow Int Int))\n; f\n(declare-fun f@1 (Int) Int)\n; x\n(declare-const x Int)\n(define-fun t0 () Bool (exists ((i Int)) (! (= (f@1 i) x) :pattern (f))))\n"
 -/
 #guard_msgs in
 #eval toSMTTermString
-   (.quant () .exist "i" (.some .int)
-   (mkTriggerExpr [[.fvar () "f" (.some (.arrow .int .int))]])
-   (.eq () (.app () (.fvar () "f" (.some (.arrow .int .int))) (.bvar () 0)) (.fvar () "x" (.some .int))))
+(.quant sr .exist "i" (.some .int)
+   (mkTriggerExpr [[.fvar sr "f" (.some (.arrow .int .int))]])
+   (.eq sr (.app sr (.fvar sr "f" (.some (.arrow .int .int))) (.bvar sr 0)) (.fvar sr "x" (.some .int))))
    (ctx := SMT.Context.default)
    (E := {Env.init with exprEnv := {
     Env.init.exprEnv with
@@ -72,8 +74,8 @@ info: "; f\n(declare-fun f (Int Int) Int)\n; x\n(declare-const x Int)\n(define-f
 -/
 #guard_msgs in
 #eval toSMTTermString
-   (.quant () .all "m" (.some .int) (.bvar () 0) (.quant () .all "n" (.some .int) (.app () (.app () (.op () "f" (.some (.arrow .int (.arrow .int .int)))) (.bvar () 0)) (.bvar () 1))
-   (.eq () (.app () (.app () (.op () "f" (.some (.arrow .int (.arrow .int .int)))) (.bvar () 0)) (.bvar () 1)) (.fvar () "x" (.some .int)))))
+(.quant sr .all "m" (.some .int) (.bvar sr 0) (.quant sr .all "n" (.some .int) (.app sr (.app sr (.op sr "f" (.some (.arrow .int (.arrow .int .int)))) (.bvar sr 0)) (.bvar sr 1))
+   (.eq sr (.app sr (.app sr (.op sr "f" (.some (.arrow .int (.arrow .int .int)))) (.bvar sr 0)) (.bvar sr 1)) (.fvar sr "x" (.some .int)))))
    (ctx := SMT.Context.mk #[] #[UF.mk "f" ((TermVar.mk "m" TermType.int) ::(TermVar.mk "n" TermType.int) :: []) TermType.int] #[] #[] [] #[] {} [])
    (E := {Env.init with exprEnv := {
     Env.init.exprEnv with
@@ -90,8 +92,8 @@ info: "; f\n(declare-fun f (Int Int) Int)\n; x\n(declare-const x Int)\n(define-f
 -/
 #guard_msgs in -- No valid trigger
 #eval toSMTTermString
-   (.quant () .all "m" (.some .int) (.bvar () 0) (.quant () .all "n" (.some .int) (.bvar () 0)
-   (.eq () (.app () (.app () (.op () "f" (.some (.arrow .int (.arrow .int .int)))) (.bvar () 0)) (.bvar () 1)) (.fvar () "x" (.some .int)))))
+(.quant sr .all "m" (.some .int) (.bvar sr 0) (.quant sr .all "n" (.some .int) (.bvar sr 0)
+   (.eq sr (.app sr (.app sr (.op sr "f" (.some (.arrow .int (.arrow .int .int)))) (.bvar sr 0)) (.bvar sr 1)) (.fvar sr "x" (.some .int)))))
    (ctx := SMT.Context.mk #[] #[UF.mk "f" ((TermVar.mk "m" TermType.int) ::(TermVar.mk "n" TermType.int) :: []) TermType.int] #[] #[] [] #[] {} [])
    (E := {Env.init with exprEnv := {
     Env.init.exprEnv with
@@ -112,9 +114,9 @@ info: "; m\n(declare-const m (Array Int Int))\n(define-fun t0 () (Array Int Int)
 -/
 #guard_msgs in
 #eval toSMTTermString
-  (.app () (.app () (.op () "select" (.some (.arrow (mapTy .int .int) (.arrow .int .int))))
-    (.fvar () "m" (.some (mapTy .int .int))))
-    (.fvar () "i" (.some .int)))
+  (.app sr (.app sr (.op sr "select" (.some (.arrow (mapTy .int .int) (.arrow .int .int))))
+    (.fvar sr "m" (.some (mapTy .int .int))))
+    (.fvar sr "i" (.some .int)))
   (useArrayTheory := true)
   (E := {Env.init with exprEnv := {
     Env.init.exprEnv with
@@ -129,10 +131,10 @@ info: "; m\n(declare-const m (Array Int Int))\n(define-fun t0 () (Array Int Int)
 -/
 #guard_msgs in
 #eval toSMTTermString
-  (.app () (.app () (.app () (.op () "update" (.some (.arrow (mapTy .int .int) (.arrow .int (.arrow .int (mapTy .int .int))))))
-    (.fvar () "m" (.some (mapTy .int .int))))
-    (.fvar () "i" (.some .int)))
-    (.fvar () "v" (.some .int)))
+  (.app sr (.app sr (.app sr (.op sr "update" (.some (.arrow (mapTy .int .int) (.arrow .int (.arrow .int (mapTy .int .int))))))
+    (.fvar sr "m" (.some (mapTy .int .int))))
+    (.fvar sr "i" (.some .int)))
+    (.fvar sr "v" (.some .int)))
   (useArrayTheory := true)
   (E := {Env.init with exprEnv := {
     Env.init.exprEnv with
@@ -147,12 +149,12 @@ info: "; m\n(declare-const m (Array Int Int))\n(define-fun t0 () (Array Int Int)
 -/
 #guard_msgs in
 #eval toSMTTermString
-  (.app () (.app () (.op () "select" (.some (.arrow (mapTy .int .int) (.arrow .int .int))))
-    (.app () (.app () (.app () (.op () "update" (.some (.arrow (mapTy .int .int) (.arrow .int (.arrow .int (mapTy .int .int))))))
-      (.fvar () "m" (.some (mapTy .int .int))))
-      (.fvar () "i" (.some .int)))
-      (.fvar () "v" (.some .int))))
-    (.fvar () "j" (.some .int)))
+  (.app sr (.app sr (.op sr "select" (.some (.arrow (mapTy .int .int) (.arrow .int .int))))
+    (.app sr (.app sr (.app sr (.op sr "update" (.some (.arrow (mapTy .int .int) (.arrow .int (.arrow .int (mapTy .int .int))))))
+      (.fvar sr "m" (.some (mapTy .int .int))))
+      (.fvar sr "i" (.some .int)))
+      (.fvar sr "v" (.some .int))))
+    (.fvar sr "j" (.some .int)))
   (useArrayTheory := true)
   (E := {Env.init with exprEnv := {
     Env.init.exprEnv with
@@ -167,8 +169,8 @@ info: "; m\n(declare-const m (Array Int Int))\n(define-fun t0 () (Array Int Int)
 -/
 #guard_msgs in
 #eval toSMTTermString
-  (.app () (.op () (⟨"getFirst", ()⟩) (.some (.arrow (mapTy .int .int) .int)))
-           (.fvar () (⟨"m", ()⟩) (.some (mapTy .int .int))))
+  (.app sr (.op sr (⟨"getFirst", ()⟩) (.some (.arrow (mapTy .int .int) .int)))
+           (.fvar sr (⟨"m", ()⟩) (.some (mapTy .int .int))))
   (useArrayTheory := true)
   (E := {Env.init with exprEnv := {
     Env.init.exprEnv with
@@ -184,35 +186,35 @@ info: "; m\n(declare-const m (Array Int Int))\n(define-fun t0 () (Array Int Int)
 /-- info: "(define-fun t0 () Bool (forall (($__bv0 Int)) (exists (($__bv1 Int)) (= $__bv0 $__bv1))))\n" -/
 #guard_msgs in
 #eval toSMTTermString
-  (.quant () .all "" (.some .int) (LExpr.noTrigger ())
-   (.quant () .exist "" (.some .int) (LExpr.noTrigger ())
-   (.eq () (.bvar () 1) (.bvar () 0))))
+  (.quant sr .all "" (.some .int) (LExpr.noTrigger sr)
+   (.quant sr .exist "" (.some .int) (LExpr.noTrigger sr)
+   (.eq sr (.bvar sr 1) (.bvar sr 0))))
 
 -- Test name clash between two nested quantifiers with same name
 -- Expected: Inner x should be disambiguated to x@1
 /-- info: "(define-fun t0 () Bool (forall ((x Int)) (exists ((x@1 Int)) (= x x@1))))\n" -/
 #guard_msgs in
 #eval toSMTTermString
-  (.quant () .all "x" (.some .int) (LExpr.noTrigger ())
-   (.quant () .exist "x" (.some .int) (LExpr.noTrigger ())
-   (.eq () (.bvar () 1) (.bvar () 0))))
+  (.quant sr .all "x" (.some .int) (LExpr.noTrigger sr)
+   (.quant sr .exist "x" (.some .int) (LExpr.noTrigger sr)
+   (.eq sr (.bvar sr 1) (.bvar sr 0))))
 
 -- Test x, x, x@1 scenario: nested quantifiers both named "x", then bvar named "x@1"
 -- Expected: outer x stays x, inner x becomes x@1, bvar "x@1" becomes x@2
 /-- info: "(define-fun t0 () Bool (forall ((x Int) (x@1 Int) (x@2 Int)) (= x@2 x)))\n" -/
 #guard_msgs in
 #eval toSMTTermString
-  (.quant () .all "x" (.some .int) (LExpr.noTrigger ())
-   (.quant () .all "x" (.some .int) (LExpr.noTrigger ())
-    (.quant () .all "x@1" (.some .int) (LExpr.noTrigger ())
-     (.eq () (.bvar () 0) (.bvar () 2)))))
+  (.quant sr .all "x" (.some .int) (LExpr.noTrigger sr)
+   (.quant sr .all "x" (.some .int) (LExpr.noTrigger sr)
+    (.quant sr .all "x@1" (.some .int) (LExpr.noTrigger sr)
+     (.eq sr (.bvar sr 0) (.bvar sr 2)))))
 
 
 /-- info: "; x\n(declare-const x Int)\n(define-fun t0 () Bool (forall ((x@1 Int)) (= x@1 x)))\n" -/
 #guard_msgs in
 #eval toSMTTermString
-  (.quant () .all "x" (.some .int) (LExpr.noTrigger ())
-   (.eq () (.bvar () 0) (.fvar () "x" (.some .int))))
+  (.quant sr .all "x" (.some .int) (LExpr.noTrigger sr)
+   (.eq sr (.bvar sr 0) (.fvar sr "x" (.some .int))))
 
 -- Test string literal containing double quotes is properly escaped for SMT-LIB 2.7
 -- In SMT-LIB 2.7, double quotes inside strings are escaped by doubling: "a""b" represents a"b
@@ -221,7 +223,7 @@ info: "; x\n(declare-const x String)\n(define-fun t0 () String x)\n(define-fun t
 -/
 #guard_msgs in
 #eval toSMTTermString
-  (.eq () (.fvar () "x" (.some .string)) (.strConst () "{\"key\":\"val\"}"))
+  (.eq sr (.fvar sr "x" (.some .string)) (.strConst sr "{\"key\":\"val\"}"))
 
 -- Test that negative integer constants are lowered to (- N) form
 /-- info: Except.ok "(- 1)" -/
@@ -234,11 +236,11 @@ info: "; x\n(declare-const x Real)\n(define-fun t0 () Real x)\n; y\n(declare-con
 -/
 #guard_msgs in
 #eval toSMTTermString
-  (.app ()
-    (.app ()
-      (.op () "Real.Div" (.some (.arrow .real (.arrow .real .real))))
-      (.fvar () "x" (.some .real)))
-    (.fvar () "y" (.some .real)))
+  (.app sr
+    (.app sr
+      (.op sr "Real.Div" (.some (.arrow .real (.arrow .real .real))))
+      (.fvar sr "x" (.some .real)))
+    (.fvar sr "y" (.some .real)))
   (E := {Env.init with exprEnv := {
     Env.init.exprEnv with
       config := { Env.init.exprEnv.config with

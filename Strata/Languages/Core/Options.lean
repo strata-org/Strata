@@ -106,6 +106,9 @@ structure VerifyOptions where
   checkMode : VerificationMode
   /-- Check amount: minimal (only necessary checks) or full (both checks for better messages) -/
   checkLevel : CheckLevel
+  /-- Use the incremental (in-memory) CoreSMT verification engine instead of
+      the default batch SMT file approach. -/
+  incremental : Bool
 
 def VerifyOptions.default : VerifyOptions := {
   verbose := .normal,
@@ -121,6 +124,7 @@ def VerifyOptions.default : VerifyOptions := {
   vcDirectory := .none
   checkMode := .deductive
   checkLevel := .minimal
+  incremental := false
 }
 
 instance : Inhabited VerifyOptions where
