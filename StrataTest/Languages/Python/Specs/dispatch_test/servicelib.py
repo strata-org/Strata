@@ -1,5 +1,5 @@
+from .Messaging import Messaging
 from Storage import Storage
-from Messaging import Messaging
 from typing import Literal, overload
 
 @overload
