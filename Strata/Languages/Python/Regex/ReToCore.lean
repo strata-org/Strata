@@ -16,6 +16,7 @@ public section
 -------------------------------------------------------------------------------
 
 open Lambda.LExpr
+open Lambda.LTy.Syntax
 open Core
 
 /--
@@ -107,12 +108,12 @@ private def RegexAST.hasNonAnchorContent (r : RegexAST) : Bool :=
 
 -- Type annotations for regex ops.  concreteEval runs after the type-checker,
 -- so expressions it produces must already carry annotations for the SMT encoder.
-private def reTy : Lambda.LMonoTy := .tcons "regex" []
-private def s2r  : Lambda.LMonoTy := .tcons "arrow" [.tcons "string" [], reTy]
-private def r2r  : Lambda.LMonoTy := .tcons "arrow" [reTy, reTy]
-private def rr2r : Lambda.LMonoTy := .tcons "arrow" [reTy, .tcons "arrow" [reTy, reTy]]
-private def ss2r : Lambda.LMonoTy := .tcons "arrow" [.tcons "string" [], .tcons "arrow" [.tcons "string" [], reTy]]
-private def rii2r : Lambda.LMonoTy := .tcons "arrow" [reTy, .tcons "arrow" [.tcons "int" [], .tcons "arrow" [.tcons "int" [], reTy]]]
+private def reTy  := mty[regex]
+private def s2r   := mty[string → regex]
+private def r2r   := mty[regex → regex]
+private def rr2r  := mty[regex → (regex → regex)]
+private def ss2r  := mty[string → (string → regex)]
+private def rii2r := mty[regex → (int → (int → regex))]
 
 /--
 Empty regex pattern; matches an empty string.
