@@ -48,7 +48,8 @@ datatype Error () {
   AssertionError (Assertion_msg : string),
   UnimplementedError (Unimplement_msg : string),
   UndefinedError (Undefined_msg : string),
-  IndexError (IndexError_msg : string)
+  IndexError (IndexError_msg : string),
+  RePatternError (Re_msg : string)
 };
 
 // /////////////////////////////////////////////////////////////////////////////////////
@@ -101,6 +102,7 @@ datatype DictStrAny () {
 function re_fullmatch_str(pattern : string) : regex;
 function re_match_str(pattern : string) : regex;
 function re_search_str(pattern : string) : regex;
+function re_pattern_error(pattern : string) : Error;
 
 type CoreOnlyDelimiter;
 
@@ -165,23 +167,29 @@ inline function re_compile(pattern : Any) : Any
 inline function re_fullmatch(pattern : Any, s : Any) : Any
   requires Any..isfrom_string(pattern) && Any..isfrom_string(s);
 {
-  if re_fullmatch_bool(Any..as_string!(pattern), Any..as_string!(s))
-  then mk_re_Match(Any..as_string!(s))
-  else from_none()
+  if Error..isRePatternError(re_pattern_error(Any..as_string!(pattern)))
+  then exception(re_pattern_error(Any..as_string!(pattern)))
+  else if re_fullmatch_bool(Any..as_string!(pattern), Any..as_string!(s))
+       then mk_re_Match(Any..as_string!(s))
+       else from_none()
 }
 inline function re_match(pattern : Any, s : Any) : Any
   requires Any..isfrom_string(pattern) && Any..isfrom_string(s);
 {
-  if re_match_bool(Any..as_string!(pattern), Any..as_string!(s))
-  then mk_re_Match(Any..as_string!(s))
-  else from_none()
+  if Error..isRePatternError(re_pattern_error(Any..as_string!(pattern)))
+  then exception(re_pattern_error(Any..as_string!(pattern)))
+  else if re_match_bool(Any..as_string!(pattern), Any..as_string!(s))
+       then mk_re_Match(Any..as_string!(s))
+       else from_none()
 }
 inline function re_search(pattern : Any, s : Any) : Any
   requires Any..isfrom_string(pattern) && Any..isfrom_string(s);
 {
-  if re_search_bool(Any..as_string!(pattern), Any..as_string!(s))
-  then mk_re_Match(Any..as_string!(s))
-  else from_none()
+  if Error..isRePatternError(re_pattern_error(Any..as_string!(pattern)))
+  then exception(re_pattern_error(Any..as_string!(pattern)))
+  else if re_search_bool(Any..as_string!(pattern), Any..as_string!(s))
+       then mk_re_Match(Any..as_string!(s))
+       else from_none()
 }
 
 // /////////////////////////////////////////////////////////////////////////////////////
