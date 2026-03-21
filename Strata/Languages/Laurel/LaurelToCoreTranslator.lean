@@ -630,6 +630,27 @@ def translate (options: LaurelTranslateOptions) (program : Program): TranslateRe
   (coreProgramOption, allDiagnostics)
   where
 
+  /--
+  Translate Laurel datatype definitions to Core declarations.
+  Datatypes are grouped by mutual references (SCC) so mutually recursive
+  datatypes share a single `.data` declaration.
+  -/
+  translateTypes (program : Program) (model : SemanticModel) : TranslateM (List Core.Decl) := do
+    -- Emit diagnostics for composite types that have instance procedures.
+    for td in program.types do
+      if let .Composite ct := td then
+        for proc in ct.instanceProcedures do
+          emitDiagnostic $ proc.md.toDiagnostic
+            s!"Instance procedure '{proc.name.text}' on composite type '{ct.name.text}' is not yet supported"
+            DiagnosticType.NotYetImplemented
+    -- Translate datatype definitions to Core declarations.
+    let laurelDatatypes := program.types.filterMap fun td => match td with
+      | .Datatype dt => some dt
+      | _ => none
+    let ldatatypes := laurelDatatypes.map (translateDatatypeDefinition model)
+    let groups := groupDatatypes laurelDatatypes ldatatypes
+    return groups.map fun group => Core.Decl.type (.data group)
+
   translateLaurelToCore (program : Program): TranslateM Core.Program := do
     let model := (← get).model
 
@@ -661,14 +682,7 @@ def translate (options: LaurelTranslateOptions) (program : Program): TranslateRe
     let procDecls := procedures.map (fun p => Core.Decl.proc p .empty)
 
     -- Translate Laurel datatype definitions to Core declarations.
-    -- Datatypes are grouped by mutual references (SCC) so mutually recursive
-    -- datatypes share a single `.data` declaration.
-    let laurelDatatypes := program.types.filterMap fun td => match td with
-      | .Datatype dt => some dt
-      | _ => none
-    let ldatatypes := laurelDatatypes.map (translateDatatypeDefinition model)
-    let groups := groupDatatypes laurelDatatypes ldatatypes
-    let groupedDatatypeDecls := groups.map fun group => Core.Decl.type (.data group)
+    let groupedDatatypeDecls ← translateTypes program model
     let program := {
       decls := groupedDatatypeDecls ++ constantDecls ++ pureFuncDecls ++ procDecls
     }
