@@ -246,6 +246,14 @@ info: "; x\n(declare-const x Real)\n(define-fun t0 () Real x)\n; y\n(declare-con
       }
    }})
 
+/--
+info: "; Str.ToLower\n(declare-fun Str.ToLower (String) String)\n(define-fun t0 () String (Str.ToLower \"a\"))\n"
+-/
+#guard_msgs in
+#eval toSMTTermString $
+        LExpr.app () (LExpr.op () { name := "Str.ToLower", metadata := () } (.some (.arrow .string .string)))
+            (LExpr.const () (.strConst "a"))
+
 end ArrayTheory
 
 /-! ## Test that built-in types do not produce declare-sort -/
