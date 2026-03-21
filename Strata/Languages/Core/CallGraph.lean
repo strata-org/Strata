@@ -179,37 +179,22 @@ def Program.toFunctionCG (prog : Program) : FunctionCG :=
 ---------------------------------------------------------------------
 
 /--
-Function to _relevant_ axioms mapping
+Map from user-defined functions to their _immediately_ relevant axiom names.
+An axiom `a` is immediately relevant for a function `f` if `f` occurs in the
+body of `a`, including in any trigger expressions.
 
-For now, our definition of a "relevant axiom" is quite weak: an axiom `a` is
-relevant for a function `f` if `f` occurs in the body of `a`, including in any
-trigger expressions.
+Builtin functions (e.g. `Bool.And`, `Bool.Implies`, arithmetic operators) are
+excluded from the map keys. Because builtins appear in nearly every axiom body,
+including them would make almost every axiom "immediately relevant" to any goal
+that touches a builtin, collapsing the relevance filter entirely.
 
-Eventually, we will compute a transitive closure involving both axioms and
-functions. E.g., consider the following example that we don't handle yet:
-
-```
-axiom1 : forall x :: g(x) == false
-axiom2 : forall x :: f(x) == g(x)
-----------------------------------
-goal : forall x, f(x) == true
-```
-
-Right now, we will determine that only `axiom2` is relevant for the goal, which
-means that the solver will return `unknown` in this case instead of `failed`.
-
-Note: one way to make the dependency analysis better right now is to use the
-triggers to mention relevant functions. E.g., now `axiom1` has `f` in its body,
-so it is relevant for the goal.
-
-```
-axiom1 : forall x :: {f(x)} g(x) == false
-axiom2 : forall x :: f(x) == g(x)
-----------------------------------
-goal : forall x, f(x) == true
-```
+Future improvement: quantifier triggers could make relevance analysis more
+precise — an axiom is only instantiable via its triggers, so only the trigger
+functions should create relevance edges (see Boogie PR #427).
 -/
-def Program.toFunctionAxiomMap (prog : Program) : Std.HashMap String (List String) :=
+abbrev FuncAxMap := Std.HashMap String (List String)
+
+def Program.functionImmediateAxiomMap (prog : Program) : FuncAxMap :=
   let axioms := prog.decls.filterMap (fun decl =>
     match decl with
     | .ax a _ => some a
@@ -217,7 +202,9 @@ def Program.toFunctionAxiomMap (prog : Program) : Std.HashMap String (List Strin
 
   let functionAxiomPairs := axioms.flatMap (fun ax =>
     let ops := Lambda.LExpr.getOps ax.e
-    ops.map (fun op => (CoreIdent.toPretty op, ax)))
+    ops.filterMap (fun op =>
+      let fname := CoreIdent.toPretty op
+      if builtinFunctions.contains fname then none else some (fname, ax)))
 
   functionAxiomPairs.foldl
     (fun acc (funcName, ax) =>
@@ -225,23 +212,45 @@ def Program.toFunctionAxiomMap (prog : Program) : Std.HashMap String (List Strin
       acc.insert funcName (ax.name :: existing).dedup)
     Std.HashMap.emptyWithCapacity
 
-instance : Std.ToFormat (Std.HashMap String (List Axiom)) where
-  format m :=
-    let entries :=
-      m.toList.map
-        (fun (k, v) => f!"{k}: [{Std.Format.joinSep (v.map Std.format) ", "}]")
-    f!"{Std.Format.joinSep entries ", \n"}"
+/--
+Fixed-point computation for axiom relevance. Starting from
+`relevantFunctions`, finds all axioms that immediately mention those
+functions, then expands the relevant-function set with functions appearing
+in those newly discovered axioms (and their call-graph neighbors), repeating
+until no new axioms are found.
 
-def Program.getIrrelevantAxioms (prog : Program) (functions : List String) : List String :=
-  let functionsSet := functions.toArray.qsort (· < ·) -- Sort for binary search
-  prog.decls.filterMap (fun decl =>
-    match decl with
-    | .ax a _ =>
-      let ops := Lambda.LExpr.getOps a.e
-      let hasRelevantOp := ops.any (fun op =>
-        functionsSet.binSearch (CoreIdent.toPretty op) (· < ·) |>.isSome)
-      if hasRelevantOp then none else some a.name
-    | _ => none)
+Terminates because each recursive call strictly grows `discoveredAxioms`
+by at least one element (checked via `newAxioms.isEmpty`), and the total
+number of axioms is bounded by `fuel` (initially `prog.decls.length`).
+-/
+private def computeRelevantAxiomsAux (prog : Program) (cg : FunctionCG)
+    (fmap : FuncAxMap) (fuel : Nat)
+    (relevantFunctions discoveredAxioms : List String) : List String :=
+  match fuel with
+  | 0 => discoveredAxioms
+  | n + 1 =>
+    let newAxioms := relevantFunctions.flatMap (fun fn => fmap.getD fn []) |>.dedup
+    let newAxioms := newAxioms.filter (fun a => a ∉ discoveredAxioms)
+    if newAxioms.isEmpty then discoveredAxioms
+    else
+      let allAxioms := (discoveredAxioms ++ newAxioms).dedup
+      -- Find functions mentioned in newly discovered axioms (excluding builtins).
+      let newFunctions := newAxioms.flatMap (fun axName =>
+        match prog.getAxiom? ⟨axName, ()⟩ with
+        | some ax => (Lambda.LExpr.getOps ax.e).filterMap (fun op =>
+            let fname := CoreIdent.toPretty op
+            if builtinFunctions.contains fname then none else some fname)
+        | none => [])
+      -- Expand with call graph neighbors.
+      let expandedFunctions := newFunctions.flatMap (fun fn =>
+        fn :: cg.getCalleesClosure fn ++ cg.getCallersClosure fn) |>.dedup
+      let updatedRelevantFunctions := (relevantFunctions ++ expandedFunctions).dedup
+      computeRelevantAxiomsAux prog cg fmap n updatedRelevantFunctions allAxioms
+termination_by fuel
+
+def computeRelevantAxioms (prog : Program) (cg : FunctionCG) (fmap : FuncAxMap)
+    (relevantFunctions discoveredAxioms : List String) : List String :=
+  computeRelevantAxiomsAux prog cg fmap prog.decls.length relevantFunctions discoveredAxioms
 
 ---------------------------------------------------------------------
 
