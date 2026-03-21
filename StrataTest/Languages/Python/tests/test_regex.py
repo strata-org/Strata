@@ -155,5 +155,350 @@ def main():
     m = re.fullmatch(r"a{2,4}", "aaaaa")
     assert m == None, "fullmatch loop above max"
 
+    # Group loops
+    m = re.fullmatch(r"(ab){2}", "abab")
+    assert m != None, "fullmatch group loop match"
+
+    m = re.fullmatch(r"(ab){2}", "ab")
+    assert m == None, "fullmatch group loop too few"
+
+    m = re.fullmatch(r"(ab){2,3}", "ababab")
+    assert m != None, "fullmatch group loop 3 reps"
+
+    m = re.fullmatch(r"(ab){2,3}", "ab")
+    assert m == None, "fullmatch group loop 1 rep"
+
+    # ── Anchors: basic behavior ──────────────────────────────────────
+
+    # fullmatch: ^ and $ are redundant (whole string must match)
+    m = re.fullmatch(r"^a", "a")
+    assert m != None, "fullmatch ^a match"
+
+    m = re.fullmatch(r"^a", "ba")
+    assert m == None, "fullmatch ^a reject"
+
+    m = re.fullmatch(r"a$", "a")
+    assert m != None, "fullmatch a$ match"
+
+    m = re.fullmatch(r"a$", "ab")
+    assert m == None, "fullmatch a$ reject"
+
+    m = re.fullmatch(r"^a$", "a")
+    assert m != None, "fullmatch ^a$ match"
+
+    m = re.fullmatch(r"^a$", "ab")
+    assert m == None, "fullmatch ^a$ reject trailing"
+
+    m = re.fullmatch(r"^a$", "ba")
+    assert m == None, "fullmatch ^a$ reject leading"
+
+    # ^$ matches only the empty string
+    m = re.fullmatch(r"^$", "")
+    assert m != None, "fullmatch ^$ on empty"
+
+    m = re.fullmatch(r"^$", "a")
+    assert m == None, "fullmatch ^$ on non-empty"
+
+    m = re.match(r"^$", "")
+    assert m != None, "match ^$ on empty"
+
+    m = re.match(r"^$", "a")
+    assert m == None, "match ^$ on non-empty"
+
+    m = re.search(r"^$", "")
+    assert m != None, "search ^$ on empty"
+
+    m = re.search(r"^$", "a")
+    assert m == None, "search ^$ on non-empty"
+
+    # ── Anchors in match mode ────────────────────────────────────────
+
+    # ^ is a no-op in match (already anchored at start)
+    m = re.match(r"^a", "a")
+    assert m != None, "match ^a"
+
+    m = re.match(r"^a", "ab")
+    assert m != None, "match ^a trailing ok"
+
+    m = re.match(r"^a", "ba")
+    assert m == None, "match ^a reject"
+
+    # $ cuts off trailing content
+    m = re.match(r"^a$", "a")
+    assert m != None, "match ^a$ exact"
+
+    m = re.match(r"^a$", "ab")
+    assert m == None, "match ^a$ reject trailing"
+
+    m = re.match(r"a$", "a")
+    assert m != None, "match a$ exact"
+
+    m = re.match(r"a$", "ab")
+    assert m == None, "match a$ reject trailing"
+
+    m = re.match(r"a.*$", "axyz")
+    assert m != None, "match a.*$ accepts"
+
+    m = re.match(r"a.*$", "b")
+    assert m == None, "match a.*$ rejects"
+
+    # ── Anchors in search mode ───────────────────────────────────────
+
+    # basic search
+    m = re.search(r"a", "xax")
+    assert m != None, "search a in middle"
+
+    m = re.search(r"a", "xyz")
+    assert m == None, "search a not found"
+
+    # ^ prevents free prefix
+    m = re.search(r"^a", "abc")
+    assert m != None, "search ^a at start"
+
+    m = re.search(r"^a", "xabc")
+    assert m == None, "search ^a reject non-start"
+
+    m = re.search(r"^a", "a")
+    assert m != None, "search ^a exact"
+
+    # $ prevents free suffix
+    m = re.search(r"a$", "ba")
+    assert m != None, "search a$ at end"
+
+    m = re.search(r"a$", "ab")
+    assert m == None, "search a$ reject non-end"
+
+    m = re.search(r"a$", "xyzba")
+    assert m != None, "search a$ deep end"
+
+    m = re.search(r"a$", "xyzbax")
+    assert m == None, "search a$ reject trailing"
+
+    # ^...$ in search: forces exact match
+    m = re.search(r"^a$", "a")
+    assert m != None, "search ^a$ exact"
+
+    m = re.search(r"^a$", "xa")
+    assert m == None, "search ^a$ reject prefix"
+
+    m = re.search(r"^a$", "ax")
+    assert m == None, "search ^a$ reject suffix"
+
+    # ── Multi-char anchors in search ─────────────────────────────────
+
+    m = re.search(r"^abc", "abcxyz")
+    assert m != None, "search ^abc at start"
+
+    m = re.search(r"^abc", "xabc")
+    assert m == None, "search ^abc reject non-start"
+
+    m = re.search(r"abc$", "xyzabc")
+    assert m != None, "search abc$ at end"
+
+    m = re.search(r"abc$", "abcx")
+    assert m == None, "search abc$ reject non-end"
+
+    m = re.search(r"^abc$", "abc")
+    assert m != None, "search ^abc$ exact"
+
+    m = re.search(r"^abc$", "xabc")
+    assert m == None, "search ^abc$ reject prefix"
+
+    m = re.search(r"^abc$", "abcx")
+    assert m == None, "search ^abc$ reject suffix"
+
+    # ── Anchors with quantifiers ─────────────────────────────────────
+
+    m = re.fullmatch(r"^a{3}$", "aaa")
+    assert m != None, "fullmatch ^a{3}$ match"
+
+    m = re.fullmatch(r"^a{3}$", "aa")
+    assert m == None, "fullmatch ^a{3}$ too few"
+
+    m = re.fullmatch(r"^a{3}$", "aaaa")
+    assert m == None, "fullmatch ^a{3}$ too many"
+
+    m = re.match(r"^a{3}$", "aaa")
+    assert m != None, "match ^a{3}$ exact"
+
+    m = re.match(r"^a{3}$", "aaab")
+    assert m == None, "match ^a{3}$ reject trailing"
+
+    m = re.match(r"a{3}", "aaab")
+    assert m != None, "match a{3} trailing ok"
+
+    # ── Escaped metacharacters ───────────────────────────────────────
+
+    m = re.fullmatch(r"a\.b", "a.b")
+    assert m != None, "escaped dot matches literal"
+
+    m = re.fullmatch(r"a\.b", "axb")
+    assert m == None, "escaped dot rejects non-dot"
+
+    m = re.fullmatch(r"a\+b", "a+b")
+    assert m != None, "escaped plus matches literal"
+
+    m = re.fullmatch(r"a\+b", "ab")
+    assert m == None, "escaped plus rejects"
+
+    m = re.fullmatch(r"a\*b", "a*b")
+    assert m != None, "escaped star matches literal"
+
+    m = re.fullmatch(r"a\*b", "aab")
+    assert m == None, "escaped star rejects"
+
+    m = re.fullmatch(r"a\?b", "a?b")
+    assert m != None, "escaped question matches literal"
+
+    m = re.fullmatch(r"a\?b", "ab")
+    assert m == None, "escaped question rejects"
+
+    m = re.fullmatch(r"a\(b\)", "a(b)")
+    assert m != None, "escaped parens match literal"
+
+    m = re.fullmatch(r"a\(b\)", "ab")
+    assert m == None, "escaped parens reject"
+
+    m = re.fullmatch(r"a\\b", "a\\b")
+    assert m != None, "escaped backslash matches literal"
+
+    m = re.fullmatch(r"a\\b", "ab")
+    assert m == None, "escaped backslash rejects"
+
+    # Escaped metacharacters with search
+    m = re.search(r"a\.b", "xa.by")
+    assert m != None, "search escaped dot"
+
+    m = re.search(r"a\\b", "xa\\by")
+    assert m != None, "search escaped backslash"
+
+    m = re.search(r"a\\b", "xaby")
+    assert m == None, "search escaped backslash reject"
+
+    # ── Colon in patterns ────────────────────────────────────────────
+
+    m = re.fullmatch(r"a:b", "a:b")
+    assert m != None, "colon literal match"
+
+    m = re.fullmatch(r"a:b", "ab")
+    assert m == None, "colon literal reject"
+
+    m = re.fullmatch(r"[a-z]+:[0-9]+", "foo:42")
+    assert m != None, "colon class match"
+
+    m = re.fullmatch(r"[a-z]+:[0-9]+", "foo42")
+    assert m == None, "colon class reject"
+
+    m = re.search(r"[a-z]+:[0-9]+", "xfoo:42y")
+    assert m != None, "search colon class"
+
+    m = re.match(r"^[a-z]+:[0-9]+$", "foo:42")
+    assert m != None, "match anchored colon"
+
+    m = re.match(r"^[a-z]+:[0-9]+$", "foo:42x")
+    assert m == None, "match anchored colon reject trailing"
+
+    # ── Multi-char patterns ──────────────────────────────────────────
+
+    m = re.fullmatch(r"abc.*def", "abcdef")
+    assert m != None, "wildcard empty middle"
+
+    m = re.fullmatch(r"abc.*def", "abcXXdef")
+    assert m != None, "wildcard non-empty middle"
+
+    m = re.fullmatch(r"abc.*def", "abcXXdeg")
+    assert m == None, "wildcard wrong ending"
+
+    m = re.search(r"abc.*def", "xabcXXdefy")
+    assert m != None, "search wildcard"
+
+    # Multi-char alternation
+    m = re.fullmatch(r"abc|def", "abc")
+    assert m != None, "multi-char alt first"
+
+    m = re.fullmatch(r"abc|def", "def")
+    assert m != None, "multi-char alt second"
+
+    m = re.fullmatch(r"abc|def", "abcdef")
+    assert m == None, "multi-char alt reject concat"
+
+    m = re.search(r"abc|def", "xdefy")
+    assert m != None, "search multi-char alt"
+
+    # ── Anchors inside alternation ───────────────────────────────────
+
+    m = re.fullmatch(r"^a|b$", "a")
+    assert m != None, "fullmatch ^a|b$ first branch"
+
+    m = re.fullmatch(r"^a|b$", "b")
+    assert m != None, "fullmatch ^a|b$ second branch"
+
+    m = re.fullmatch(r"^a|b$", "ab")
+    assert m == None, "fullmatch ^a|b$ reject"
+
+    m = re.search(r"^a|b$", "axyz")
+    assert m != None, "search ^a|b$ start anchor"
+
+    m = re.search(r"^a|b$", "xyzb")
+    assert m != None, "search ^a|b$ end anchor"
+
+    m = re.search(r"^a|b$", "xyzc")
+    assert m == None, "search ^a|b$ neither"
+
+    # ── Compile + anchors: mode applied at match time ────────────────
+
+    p = re.compile(r"^abc$")
+
+    m = re.fullmatch(p, "abc")
+    assert m != None, "compiled ^abc$ fullmatch"
+
+    m = re.search(p, "abc")
+    assert m != None, "compiled ^abc$ search exact"
+
+    m = re.search(p, "xabc")
+    assert m == None, "compiled ^abc$ search reject prefix"
+
+    m = re.match(p, "abc")
+    assert m != None, "compiled ^abc$ match exact"
+
+    m = re.match(p, "abcx")
+    assert m == None, "compiled ^abc$ match reject trailing"
+
+    # ── Expected failures (currently unknown due to Laurel pipeline limitation) ──
+    # The Laurel pipeline's Any-typed encoding makes counterexample finding
+    # intractable for cvc5, so these produce 'unknown' rather than 'fail'.
+    # They document properties the solver SHOULD be able to disprove.
+
+    # Claim a non-match is a match
+    m = re.fullmatch(r"a", "b")
+    assert m != None, "EXPECTED_FAIL: fullmatch a on b"
+
+    m = re.fullmatch(r"abc", "abd")
+    assert m != None, "EXPECTED_FAIL: fullmatch abc on abd"
+
+    m = re.fullmatch(r"[a-z]+", "ABC")
+    assert m != None, "EXPECTED_FAIL: fullmatch [a-z]+ on ABC"
+
+    # Anchors should prevent match
+    m = re.fullmatch(r"^abc$", "abcd")
+    assert m != None, "EXPECTED_FAIL: fullmatch ^abc$ on abcd"
+
+    m = re.search(r"^abc", "xabc")
+    assert m != None, "EXPECTED_FAIL: search ^abc in xabc"
+
+    m = re.search(r"abc$", "abcx")
+    assert m != None, "EXPECTED_FAIL: search abc$ in abcx"
+
+    m = re.match(r"^a$", "ab")
+    assert m != None, "EXPECTED_FAIL: match ^a$ in ab"
+
+    # Compiled pattern with anchors
+    p = re.compile(r"^abc$")
+    m = re.search(p, "xabc")
+    assert m != None, "EXPECTED_FAIL: compiled ^abc$ search xabc"
+
+    m = re.match(p, "abcx")
+    assert m != None, "EXPECTED_FAIL: compiled ^abc$ match abcx"
+
 if __name__ == "__main__":
     main()
