@@ -500,5 +500,73 @@ def main():
     m = re.match(p, "abcx")
     assert m != None, "EXPECTED_FAIL: compiled ^abc$ match abcx"
 
+    # ── Malformed patterns (pattern errors) ──────────────────────────
+    # Our pipeline returns exception(RePatternError(...)) for genuinely
+    # malformed patterns, modeling Python's re.error.
+    #
+    # Style 1 (m != None): the solver proves exception(...) != from_none().
+    # These pass because the solver can show UNSAT for the negation.
+    #
+    # Style 2 (try/except): the idiomatic Python exception-handling pattern.
+    # After concreteEval, the VC for these simplifies to literally
+    # (assert true), but cvc5/z3 return 'unknown' because the quantified
+    # prelude axioms (forall over Any for List_len, datetime_strptime, etc.)
+    # make SAT-finding intractable.  Enabling removeIrrelevantAxioms in
+    # VerifyOptions can help in the future.
+
+    # -- Style 1: m != None (passes) --
+
+    m = re.fullmatch(r"(abc", "abc")
+    assert m != None, "malformed: unmatched paren is exception, not None"
+
+    m = re.fullmatch(r"a**", "a")
+    assert m != None, "malformed: nothing to repeat is exception, not None"
+
+    m = re.fullmatch(r"x{100,2}", "x")
+    assert m != None, "malformed: bad bounds is exception, not None"
+
+    m = re.search(r"(abc", "xabcx")
+    assert m != None, "malformed: search with bad pattern is exception, not None"
+
+    m = re.match(r"a**", "aaa")
+    assert m != None, "malformed: match with bad pattern is exception, not None"
+
+    # -- Style 2: try/except (currently unknown, see note above) --
+
+    caught = False
+    try:
+        m = re.fullmatch(r"(abc", "abc")
+    except Exception:
+        caught = True
+    assert caught, "malformed: unmatched paren should raise"
+
+    caught = False
+    try:
+        m = re.fullmatch(r"a**", "a")
+    except Exception:
+        caught = True
+    assert caught, "malformed: nothing to repeat should raise"
+
+    caught = False
+    try:
+        m = re.fullmatch(r"x{100,2}", "x")
+    except Exception:
+        caught = True
+    assert caught, "malformed: bad bounds should raise"
+
+    caught = False
+    try:
+        m = re.search(r"(abc", "xabcx")
+    except Exception:
+        caught = True
+    assert caught, "malformed: search with bad pattern should raise"
+
+    caught = False
+    try:
+        m = re.match(r"a**", "aaa")
+    except Exception:
+        caught = True
+    assert caught, "malformed: match with bad pattern should raise"
+
 if __name__ == "__main__":
     main()

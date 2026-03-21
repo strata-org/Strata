@@ -93,18 +93,18 @@ def rePatternErrorFunc : LFunc Core.CoreLParams :=
     { name := "re_pattern_error",
       typeArgs := [],
       inputs := [("pattern", mty[string])],
-      output := .tcons "Error" [],
+      output := mty[Error],
       concreteEval := some
         (fun _ args => match args with
           | [LExpr.strConst () s] =>
             let (_, maybe_err) := pythonRegexToCore s .fullmatch
             match maybe_err with
             | none =>
-              .some (LExpr.mkApp () (.op () "NoError" none) [])
+              .some (LExpr.mkApp () (.op () "NoError" (some mty[Error])) [])
             | some (ParseError.unimplemented ..) =>
-              .some (LExpr.mkApp () (.op () "NoError" none) [])
+              .some (LExpr.mkApp () (.op () "NoError" (some mty[Error])) [])
             | some (ParseError.patternError msg ..) =>
-              .some (LExpr.mkApp () (.op () "RePatternError" none)
+              .some (LExpr.mkApp () (.op () "RePatternError" (some mty[string → Error]))
                   [.strConst () (toString msg)])
           | _ => .none)
       }
