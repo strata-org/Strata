@@ -94,11 +94,13 @@ datatype DictStrAny () {
   DictStrAny_cons (key: string, val: Any, tail: DictStrAny)
 };
 
-// Forward declaration: needed so the inline functions after CoreOnlyDelimiter
-// can reference re_compile_str during DDM parsing.  Filtered out at merge
-// (precedes the sentinel).  The real definition with concreteEval is supplied
-// by ReFactory at verification time.
-function re_compile_str(pattern : string) : regex;
+// Forward declarations: needed so the inline functions after CoreOnlyDelimiter
+// can reference these during DDM parsing.  Filtered out at merge (precede the
+// sentinel).  The real definitions with concreteEval are supplied by ReFactory
+// at verification time.
+function re_fullmatch_str(pattern : string) : regex;
+function re_match_str(pattern : string) : regex;
+function re_search_str(pattern : string) : regex;
 
 type CoreOnlyDelimiter;
 
@@ -109,52 +111,40 @@ type CoreOnlyDelimiter;
 // /////////////////////////////////////////////////////////////////////////////////////
 // Regex support
 //
-// re_compile_str is the raw string->regex conversion, uninterpreted
-// for non-literal patterns.  When the pattern argument is a string
-// literal, the Laurel->Core translator expands it at translation time
-// via pythonRegexToCore, so the call never reaches the solver.
-//
-// The _bool helpers encode the SMT-LIB membership check with the
-// correct anchoring per Python match mode.  They are not called from
-// Python directly — the Any-typed wrappers below use them.
-//
-// All Python-facing functions are Any-typed to match the pipeline.
-//
 // Python signatures:
 //   re.compile(pattern: str) -> re.Pattern
 //   re.match(pattern: str | re.Pattern, string: str) -> re.Match | None
 //   re.search(pattern: str | re.Pattern, string: str) -> re.Match | None
 //   re.fullmatch(pattern: str | re.Pattern, string: str) -> re.Match | None
 //
-// The pattern argument to match/search/fullmatch may be either a string
-// (from_string) or a pre-compiled regex (from_regex).  re_to_regex
-// normalises both cases to a raw regex value.
+// Architecture:
+//
+// re.compile is a semantic no-op — it returns the pattern string unchanged.
+// The mode-specific factory functions re_fullmatch_str, re_match_str,
+// re_search_str each compile a pattern string to a regex with the correct
+// MatchMode (via pythonRegexToCore), so anchors (^/$) are handled properly.
+// Their concreteEval fires when the pattern is a string literal.
+//
+// The _bool helpers call the mode-specific factories, so there is a single
+// source of truth for mode-specific compilation.
 //
 // On match, we return a from_ClassInstance wrapping a concrete re_Match
 // with pos=0 and endpos=str.len(s), which is sound for the module-level
 // API (no pos/endpos parameters).
 // /////////////////////////////////////////////////////////////////////////////////////
 
-// re_compile_str is declared via ReFactory (with concreteEval for literal
-// pattern expansion), not in this prelude, to avoid duplicate definitions.
+// Mode-specific factory functions are declared via ReFactory (with concreteEval
+// for literal pattern expansion), not in this prelude, to avoid duplicate
+// definitions.
 
-function re_fullmatch_bool(pattern : regex, s : string) : bool {
-  str.in.re(s, pattern)
+inline function re_fullmatch_bool(pattern : string, s : string) : bool {
+  str.in.re(s, re_fullmatch_str(pattern))
 }
-function re_match_bool(pattern : regex, s : string) : bool {
-  str.in.re(s, re.concat(pattern, re.*(re.allchar())))
+inline function re_match_bool(pattern : string, s : string) : bool {
+  str.in.re(s, re_match_str(pattern))
 }
-function re_search_bool(pattern : regex, s : string) : bool {
-  str.in.re(s, re.concat(re.*(re.allchar()), re.concat(pattern, re.*(re.allchar()))))
-}
-
-// Normalise pattern: str | re.Pattern -> regex
-inline function re_to_regex(pattern : Any) : regex
-  requires Any..isfrom_string(pattern) || Any..isfrom_regex(pattern);
-{
-  if Any..isfrom_string(pattern)
-  then re_compile_str(Any..as_string!(pattern))
-  else Any..as_regex!(pattern)
+inline function re_search_bool(pattern : string, s : string) : bool {
+  str.in.re(s, re_search_str(pattern))
 }
 
 inline function mk_re_Match(s : string) : Any {
@@ -165,30 +155,31 @@ inline function mk_re_Match(s : string) : Any {
           DictStrAny_empty()))))
 }
 
+// re.compile is a no-op: returns the pattern string unchanged.
 inline function re_compile(pattern : Any) : Any
   requires Any..isfrom_string(pattern);
 {
-  from_regex(re_compile_str(Any..as_string!(pattern)))
+  pattern
 }
 
 inline function re_fullmatch(pattern : Any, s : Any) : Any
-  requires (Any..isfrom_string(pattern) || Any..isfrom_regex(pattern)) && Any..isfrom_string(s);
+  requires Any..isfrom_string(pattern) && Any..isfrom_string(s);
 {
-  if re_fullmatch_bool(re_to_regex(pattern), Any..as_string!(s))
+  if re_fullmatch_bool(Any..as_string!(pattern), Any..as_string!(s))
   then mk_re_Match(Any..as_string!(s))
   else from_none()
 }
 inline function re_match(pattern : Any, s : Any) : Any
-  requires (Any..isfrom_string(pattern) || Any..isfrom_regex(pattern)) && Any..isfrom_string(s);
+  requires Any..isfrom_string(pattern) && Any..isfrom_string(s);
 {
-  if re_match_bool(re_to_regex(pattern), Any..as_string!(s))
+  if re_match_bool(Any..as_string!(pattern), Any..as_string!(s))
   then mk_re_Match(Any..as_string!(s))
   else from_none()
 }
 inline function re_search(pattern : Any, s : Any) : Any
-  requires (Any..isfrom_string(pattern) || Any..isfrom_regex(pattern)) && Any..isfrom_string(s);
+  requires Any..isfrom_string(pattern) && Any..isfrom_string(s);
 {
-  if re_search_bool(re_to_regex(pattern), Any..as_string!(s))
+  if re_search_bool(Any..as_string!(pattern), Any..as_string!(s))
   then mk_re_Match(Any..as_string!(s))
   else from_none()
 }

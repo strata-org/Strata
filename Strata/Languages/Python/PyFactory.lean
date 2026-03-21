@@ -97,27 +97,36 @@ def reCompileFunc : LFunc Core.CoreLParams :=
           | _ => .none)
       }
 
--- Laurel pipeline: re_compile_str(pattern : string) : regex
--- Same expansion as reCompileFunc but without flags or Except wrapping.
-def reCompileStrFunc : LFunc Core.CoreLParams :=
-    { name := "re_compile_str",
+-- Laurel pipeline: mode-specific regex compilation.
+-- Each function compiles a Python regex string with the correct MatchMode so
+-- that anchors (^/$) are handled properly.  re.compile itself is a semantic
+-- no-op (returns the pattern string unchanged); the mode is applied at the
+-- point where matching actually happens.
+private def mkModeCompileFunc (name : String) (mode : MatchMode) : LFunc Core.CoreLParams :=
+    { name := name,
       typeArgs := [],
       inputs := [("pattern", mty[string])],
       output := mty[regex],
       concreteEval := some
         (fun _ args => match args with
           | [LExpr.strConst () s] =>
-            let (expr, maybe_err) := pythonRegexToCore s .fullmatch
+            let (expr, maybe_err) := pythonRegexToCore s mode
             match maybe_err with
             | none => .some expr
             | some _ => .none
           | _ => .none)
       }
 
+def reFullmatchStrFunc : LFunc Core.CoreLParams := mkModeCompileFunc "re_fullmatch_str" .fullmatch
+def reMatchStrFunc     : LFunc Core.CoreLParams := mkModeCompileFunc "re_match_str"     .match
+def reSearchStrFunc    : LFunc Core.CoreLParams := mkModeCompileFunc "re_search_str"    .search
+
 def ReFactory : @Factory Core.CoreLParams :=
     #[
       reCompileFunc,
-      reCompileStrFunc
+      reFullmatchStrFunc,
+      reMatchStrFunc,
+      reSearchStrFunc
     ]
 
 end -- public section

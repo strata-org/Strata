@@ -1,8 +1,5 @@
 
 ==== Verification Results ====
-re_fullmatch_body_calls_re_to_regex_0: ✅ pass
-re_match_body_calls_re_to_regex_0: ✅ pass
-re_search_body_calls_re_to_regex_0: ✅ pass
 List_get_body_calls_List_get_0: ✅ pass
 List_take_body_calls_List_take_0: ✅ pass
 List_drop_body_calls_List_drop_0: ✅ pass
