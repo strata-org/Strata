@@ -42,19 +42,17 @@ def Cache.build (prog : Program) : Cache :=
     axiomMap := prog.functionImmediateAxiomMap }
 
 /-- Compute the axioms irrelevant to `functions` using precomputed `cache`.
-  This is the efficient per-goal counterpart of the old
-  `Program.getIrrelevantAxioms`: it uses the transitive fixed-point algorithm
-  (`computeRelevantAxioms`) but reuses the prebuilt call graph and axiom map
-  instead of reconstructing them on every call. -/
+  Uses the transitive fixed-point algorithm (`computeRelevantAxioms`) and
+  reuses the prebuilt call graph and axiom map for efficiency. -/
 def getIrrelevantAxioms (prog : Program) (cache : Cache) (functions : List String)
     : List String :=
-  let allAxioms := prog.decls.filterMap (fun decl =>
+  let allAxiomNames := prog.decls.filterMap (fun decl =>
     match decl with | .ax a _ => some a.name | _ => none)
   let relevantAxioms := functions.flatMap (fun f =>
     let initialFns :=
       (f :: cache.funcCG.getCalleesClosure f ++ cache.funcCG.getCallersClosure f).dedup
-    computeRelevantAxioms prog cache.funcCG cache.axiomMap initialFns []) |>.dedup
-  allAxioms.filter (fun a => a ∉ relevantAxioms)
+    computeRelevantAxioms prog cache.funcCG cache.axiomMap allAxiomNames initialFns []) |>.dedup
+  allAxiomNames.filter (fun a => a ∉ relevantAxioms)
 
 end IrrelevantAxioms
 
