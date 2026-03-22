@@ -404,7 +404,7 @@ def toCoreStmt (s : BooleDDM.Statement SourceRange) : TranslateM Core.Statement 
   | .if_statement m c t e =>
     let thenb ← withBVars [] (toCoreBlock t)
     let elseb ← withBVars [] <| match e with
-      | .else0 _ => return []
+      | .else0 _ => pure []
       | .else1 _ b => toCoreBlock b
     return .ite (← toCoreExpr c) thenb elseb (← toCoreMetaData m)
   | .havoc_statement m ⟨_, n⟩ =>
@@ -477,7 +477,7 @@ def toCoreStmt (s : BooleDDM.Statement SourceRange) : TranslateM Core.Statement 
       let initExpr ← toCoreExpr init
       let guard := mkCoreApp Core.intLeOp [.fvar () id none, limitExpr]
       let stepExpr ← ((match step? with
-        | none => return (.intConst () 1)
+        | none => pure (.intConst () 1)
         | some (.step _ e) => toCoreExpr e) : TranslateM Core.Expression.Expr)
       let body ← withBVars [] (toCoreBlock body)
       lowerFor
@@ -494,7 +494,7 @@ def toCoreStmt (s : BooleDDM.Statement SourceRange) : TranslateM Core.Statement 
       let initExpr ← toCoreExpr init
       let guard := mkCoreApp Core.intLeOp [limitExpr, .fvar () id none]
       let stepExpr ← ((match step? with
-        | none => return (.intConst () 1)
+        | none => pure (.intConst () 1)
         | some (.step _ e) => toCoreExpr e) : TranslateM Core.Expression.Expr)
       let body ← withBVars [] (toCoreBlock body)
       lowerFor
@@ -519,7 +519,7 @@ private def toCoreDatatypeConstr
   match c with
   | .constructor_mk _ ⟨_, cname⟩ ⟨_, fields?⟩ =>
     let args ← ((match fields? with
-      | none => return []
+      | none => pure []
       | some ⟨_, fs⟩ => fs.toList.mapM toCoreBinding) : TranslateM (List (Core.Expression.Ident × Lambda.LMonoTy)))
     return { name := mkIdent cname
              args := args
