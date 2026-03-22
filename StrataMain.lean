@@ -317,7 +317,7 @@ def pyAnalyzeCommand : Command where
               { VerifyOptions.default with
                 stopOnFirstError := false,
                 verbose := verboseMode,
-                removeIrrelevantAxioms := true,
+                removeIrrelevantAxioms := .Precise,
                 solver := solverName }
       let runVerification tempDir :=
           EIO.toIO
@@ -441,6 +441,7 @@ def pyAnalyzeLaurelCommand : Command where
     let baseOptions : VerifyOptions :=
       { VerifyOptions.default with
         stopOnFirstError := false, verbose := .quiet, solver := "z3",
+        removeIrrelevantAxioms := .Off,
         checkMode := checkMode, checkLevel := checkLevel }
     let options : VerifyOptions := match pflags.getString "vc-directory" with
       | .some dir => { baseOptions with vcDirectory := some (dir : System.FilePath) }
