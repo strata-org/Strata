@@ -553,7 +553,7 @@ def preprocessObligation (obligation : ProofObligation Expression) (p : Program)
   let obligation ←
     match options.removeIrrelevantAxioms, axiomCache, obligation.property with
     | .Off, _, _ | _, .none, _ | _, _, .cover => pure obligation
-    | mode, .some cache, _ =>
+    | mode, .some cache, _ => -- All property types except `.cover`.
       if peSatResult.isSome && peValResult.isSome then pure obligation
       else do
         let consequentFns := obligation.obligation.getOps.map CoreIdent.toPretty
