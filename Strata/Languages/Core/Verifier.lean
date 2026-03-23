@@ -783,7 +783,7 @@ def verify
 def toDiagnosticModel (vcr : Core.VCResult) : Option DiagnosticModel :=
   let fileRange := (Imperative.getFileRange vcr.obligation.metadata).getD default
   match vcr.outcome with
-  | .error msg => some { fileRange, message := s!"analysis error: {msg}" }
+  | .error msg => some { fileRange, message := s!"analysis error: {msg}", type := DiagnosticType.StrataBug }
   | .ok outcome =>
     let message? : Option String :=
       if vcr.obligation.property == .cover then
@@ -799,12 +799,13 @@ def toDiagnosticModel (vcr : Core.VCResult) : Option DiagnosticModel :=
         else if outcome.alwaysFalseAndReachable || outcome.canBeTrueOrFalseAndIsReachable || outcome.canBeFalseAndIsReachable then
           some s!"{description} does not hold"
         else some s!"{description} could not be proved"
-    message?.map fun message => { fileRange, message }
+    message?.map fun message => { fileRange, message, type := DiagnosticType.UserError }
 
 structure Diagnostic where
   start : Lean.Position
   ending : Lean.Position
   message : String
+  type : DiagnosticType
   deriving Repr, BEq
 
 def DiagnosticModel.toDiagnostic (files: Map Strata.Uri Lean.FileMap) (dm: DiagnosticModel): Diagnostic :=
@@ -816,6 +817,7 @@ def DiagnosticModel.toDiagnostic (files: Map Strata.Uri Lean.FileMap) (dm: Diagn
     start := { line := startPos.line, column := startPos.column }
     ending := { line := endPos.line, column := endPos.column }
     message := dm.message
+    type := dm.type
   }
 
 def Core.VCResult.toDiagnostic (files: Map Strata.Uri Lean.FileMap) (vcr : Core.VCResult) : Option Diagnostic := do

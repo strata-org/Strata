@@ -154,6 +154,12 @@ structure WFProcedureProp (p : Program) (d : Procedure) : Prop where
   wfspec : WFSpecProp p d.spec d
 structure WFFunctionProp (p : Program) (f : Function) : Prop where
 
+structure WFRecFuncBlockProp (p : Program) (fs : List Function) : Prop where
+  nonempty : fs ≠ []
+  namesDistinct : (fs.map (·.name)).Nodup
+  noInline : ∀ f ∈ fs, ¬ f.attr.any (· == .inline)
+  wfFuncs : ∀ f ∈ fs, WFFunctionProp p f
+
 @[simp, expose, grind]
 def WFDeclProp (p : Program) (decl : Decl) : Prop := match decl with
   | .var name ty e _ => WFVarProp p name ty e
@@ -162,6 +168,7 @@ def WFDeclProp (p : Program) (decl : Decl) : Prop := match decl with
   | .distinct l es _ => WFDistinctDeclarationProp p l es
   | .proc d _ => WFProcedureProp p d
   | .func f _ => WFFunctionProp p f
+  | .recFuncBlock fs _ => WFRecFuncBlockProp p fs
 
 @[expose, simp] abbrev WFDeclsProp (p : Program) := Forall (WFDeclProp p)
 

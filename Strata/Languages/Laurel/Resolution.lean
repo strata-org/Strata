@@ -93,17 +93,17 @@ inductive AstNode where
 instance : Inhabited AstNode where
   default := AstNode.unresolved
 
-def AstNode.getType (node: AstNode): Option HighTypeMd := match node with
+def AstNode.getType (node: AstNode): HighTypeMd := match node with
  | .var _ type => type
  | .parameter p => p.type
  | .field _ f => f.type
- | .datatypeConstructor type _ => some ⟨ .UserDefined type, default ⟩
+ | .datatypeConstructor type _ => ⟨ .UserDefined type, default ⟩
  | .constant c => c.type
  | .quantifierVar _ type => type
  | .unresolved =>
     -- The Python through Laurel pipeline does not resolve yet
-    some ⟨ .UserDefined "dummyName", default ⟩
- | _ => dbg_trace s!"SOUND BUG: getType called on {repr node}"; none
+    ⟨ .UserDefined "dummyName", default ⟩
+ | _ => dbg_trace s!"SOUND BUG: getType called on {repr node}"; ⟨ HighType.Unknown, default ⟩
 
 /-! ## Resolution result -/
 
@@ -115,8 +115,8 @@ structure SemanticModel where
 
 def SemanticModel.get (model: SemanticModel) (iden: Identifier): AstNode :=
   match iden.uniqueId with
-  | some key => (model.refToDef.get? key).getD (panic! s!"could not find key {key}")
-  | none => default -- panic! s!"model.get called on identifier {iden.text} without number"
+  | some key => (model.refToDef.get? key).getD default
+  | none => default
 
 def SemanticModel.isFunction (model: SemanticModel) (id: Identifier): Bool :=
   match model.get id with
@@ -175,13 +175,13 @@ private def freshId : ResolveM Nat := do
 /-- Register a definition: assign a fresh ID to the identifier and record it in scope with its AstNode. -/
 def defineName (iden : Identifier) (node : AstNode) (overrideResolutionName: Option String := none) : ResolveM Identifier := do
   let resolutionName := overrideResolutionName.getD iden.text
-  let name' ← if iden.uniqueId == none then
-    let id ← freshId
-    pure { iden with uniqueId := some (id) }
-  else
-    pure iden
+  let (name', uniqueId) ← match iden.uniqueId with
+    | some uid => pure (iden, uid)
+    | none =>
+      let id ← freshId
+      pure ({ iden with uniqueId := some (id) }, id)
 
-  modify fun s => { s with scope := s.scope.insert resolutionName (name'.uniqueId.getD (panic "key was just inserted"), node) }
+  modify fun s => { s with scope := s.scope.insert resolutionName (uniqueId, node) }
   return name'
 
 /-- Resolve a reference: look up the name in scope and assign the definition's ID.
@@ -204,12 +204,9 @@ private def targetTypeName (target : StmtExprMd) : ResolveM (Option String) := d
   | .Identifier ref =>
     match s.scope.get? ref.text with
     | some (_, node) =>
-      match node.getType with
-      | some ty =>
-        match ty.val with
-        | .UserDefined typRef => pure (some typRef.text)
-        | _ => pure none
-      | none => pure none
+      match node.getType.val with
+      | .UserDefined typRef => pure (some typRef.text)
+      | _ => pure none
     | none => pure none
   | _ => pure none
 

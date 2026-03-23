@@ -34,6 +34,7 @@ private def pythonRuntimeCorePartDDM :=
 #strata
 program Core;
 
+
 // =====================================================================
 // Forward declarations of types defined in PythonRuntimeLaurelPart.
 // These are needed so the DDM parser can resolve references in axioms
@@ -65,6 +66,11 @@ datatype Error () {
 // In this prelude, we model datetime as a single int and assume
 // that the conversion from a string constant is handled by the translator.
 
+datatype OptionInt {
+  Some (unwrap: int),
+  None ()
+}
+
 datatype Any () {
   from_none (),
   from_bool (as_bool : bool),
@@ -75,6 +81,7 @@ datatype Any () {
   from_Dict (as_Dict: DictStrAny),
   from_ListAny (as_ListAny : ListAny),
   from_ClassInstance (classname : string, instance_attributes: DictStrAny),
+  from_Slice(start: int, stop: OptionInt),
   exception (get_error: Error)
 }
 
@@ -196,20 +203,20 @@ inline function Any_to_bool (v: Any) : bool
 rec function List_len (@[cases] l : ListAny) : int
 {
   if ListAny..isListAny_nil(l) then 0 else 1 + List_len(ListAny..tail!(l))
-}
+};
 
 axiom [List_len_pos]: forall l : ListAny :: List_len(l) >= 0;
 
 rec function List_contains (@[cases] l : ListAny, x: Any) : bool
 {
   if ListAny..isListAny_nil(l) then false else (ListAny..head!(l) == x) || List_contains(ListAny..tail!(l), x)
-}
+};
 
 rec function List_extend (@[cases] l1 : ListAny, l2: ListAny) : ListAny
 {
   if ListAny..isListAny_nil(l1) then l2
   else ListAny_cons(ListAny..head!(l1), List_extend(ListAny..tail!(l1), l2))
-}
+};
 
 rec function List_get (@[cases] l : ListAny, i : int) : Any
   requires i >= 0 && i < List_len(l);
@@ -217,7 +224,7 @@ rec function List_get (@[cases] l : ListAny, i : int) : Any
   if ListAny..isListAny_nil(l) then from_none()
   else if  i == 0 then ListAny..head!(l)
   else List_get(ListAny..tail!(l), i - 1)
-}
+};
 
 rec function List_take (@[cases] l : ListAny, i: int) : ListAny
   requires i >= 0 && i <= List_len(l);
@@ -225,7 +232,7 @@ rec function List_take (@[cases] l : ListAny, i: int) : ListAny
   if ListAny..isListAny_nil(l) then ListAny_nil()
   else if  i == 0 then ListAny_nil()
   else ListAny_cons(ListAny..head!(l), List_take(ListAny..tail!(l), i - 1))
-}
+};
 
 axiom [List_take_len]: forall l : ListAny, i: int :: {List_len(List_take(l,i))}
   (i >= 0 && i <= List_len(l)) ==> List_len(List_take(l,i)) == i;
@@ -236,7 +243,7 @@ rec function List_drop (@[cases] l : ListAny, i: int) : ListAny
   if ListAny..isListAny_nil(l) then ListAny_nil()
   else if  i == 0 then l
   else List_drop(ListAny..tail!(l), i - 1)
-}
+};
 
 axiom [List_drop_len]: forall l : ListAny, i: int :: {List_len(List_drop(l,i))}
   (i >= 0 && i <= List_len(l)) ==> List_len(List_drop(l,i)) == List_len(l) - i;
@@ -253,7 +260,7 @@ rec function List_set (@[cases] l : ListAny, i : int, v: Any) : ListAny
   if ListAny..isListAny_nil(l) then ListAny_nil()
   else if  i == 0 then ListAny_cons(v, ListAny..tail!(l))
   else ListAny_cons(ListAny..head!(l), List_set(ListAny..tail!(l), i - 1, v))
-}
+};
 
 rec function List_map (@[cases] l : ListAny, f: Any -> Any) : ListAny
 {
@@ -261,7 +268,7 @@ rec function List_map (@[cases] l : ListAny, f: Any -> Any) : ListAny
     ListAny_nil()
   else
     ListAny_cons(f(ListAny..head!(l)), List_map(ListAny..tail!(l), f))
-}
+};
 
 rec function List_filter (@[cases] l : ListAny, f: Any -> bool) : ListAny
 {
@@ -271,7 +278,7 @@ rec function List_filter (@[cases] l : ListAny, f: Any -> bool) : ListAny
     ListAny_cons(ListAny..head!(l), List_filter(ListAny..tail!(l), f))
   else
     List_filter(ListAny..tail!(l), f)
-}
+};
 
 //Require recursive function on int
 function List_repeat (l: ListAny, n: int): ListAny;
@@ -285,7 +292,7 @@ rec function DictStrAny_contains (@[cases] d : DictStrAny, key: string) : bool
 {
   if DictStrAny..isDictStrAny_empty(d) then false
   else (DictStrAny..key!(d) == key) || DictStrAny_contains(DictStrAny..tail!(d), key)
-}
+};
 
 rec function DictStrAny_get (@[cases] d : DictStrAny, key: string) : Any
   requires DictStrAny_contains(d, key);
@@ -293,23 +300,30 @@ rec function DictStrAny_get (@[cases] d : DictStrAny, key: string) : Any
   if  DictStrAny..isDictStrAny_empty(d) then from_none()
   else if DictStrAny..key!(d) == key then DictStrAny..val!(d)
   else DictStrAny_get(DictStrAny..tail!(d), key)
-}
+};
 
 rec function DictStrAny_insert (@[cases] d : DictStrAny, key: string, val: Any) : DictStrAny
 {
   if DictStrAny..isDictStrAny_empty(d) then DictStrAny_cons(key, val, DictStrAny_empty())
   else if DictStrAny..key!(d) == key then DictStrAny_cons(key, val, DictStrAny..tail!(d))
   else DictStrAny_cons(DictStrAny..key!(d), DictStrAny..val!(d), DictStrAny_insert(DictStrAny..tail!(d), key, val))
-}
+};
 
 inline function Any_get (dictOrList: Any, index: Any): Any
   requires  (Any..isfrom_Dict(dictOrList) && Any..isfrom_string(index) && DictStrAny_contains(Any..as_Dict!(dictOrList), Any..as_string!(index))) ||
-            (Any..isfrom_ListAny(dictOrList) && Any..isfrom_int(index) && Any..as_int!(index) >= 0 && Any..as_int!(index) < List_len(Any..as_ListAny!(dictOrList)));
+            (Any..isfrom_ListAny(dictOrList) && Any..isfrom_int(index) && Any..as_int!(index) >= 0 && Any..as_int!(index) < List_len(Any..as_ListAny!(dictOrList)))||
+            (Any..isfrom_ListAny(dictOrList) && Any..isfrom_Slice(index) && Any..start!(index) >= 0 && Any..start!(index) < List_len(Any..as_ListAny!(dictOrList)) &&
+                ((OptionInt..isSome(Any..stop!(index))) &&  OptionInt..unwrap!(Any..stop!(index)) >= 0 && OptionInt..unwrap!(Any..stop!(index)) <= List_len(Any..as_ListAny!(dictOrList)) && Any..start!(index) <= OptionInt..unwrap!(Any..stop!(index))
+                  || (OptionInt..isNone(Any..stop!(index)))));
 {
   if Any..isfrom_Dict(dictOrList) then
     DictStrAny_get(Any..as_Dict!(dictOrList), Any..as_string!(index))
-  else
+  else if Any..isfrom_ListAny(dictOrList) && Any..isfrom_int(index) then
     List_get(Any..as_ListAny!(dictOrList), Any..as_int!(index))
+  else if Any..isfrom_ListAny(dictOrList) && Any..isfrom_Slice(index) && OptionInt..isSome(Any..stop!(index)) then
+    from_ListAny(List_slice(Any..as_ListAny!(dictOrList), Any..start!(index), OptionInt..unwrap!(Any..stop!(index))))
+  else
+    from_ListAny(List_drop(Any..as_ListAny!(dictOrList), Any..start!(index)))
 }
 
 inline function Any_get! (dictOrList: Any, index: Any): Any
@@ -357,7 +371,7 @@ rec function Any_sets (dictOrList: Any, @[cases] indices: ListAny, val: Any): An
   else if ListAny..isListAny_nil(ListAny..tail!(indices)) then Any_set!(dictOrList, ListAny..head!(indices), val)
   else Any_set!(dictOrList, ListAny..head!(indices),
     Any_sets(Any_get!(dictOrList, ListAny..head!(indices)), ListAny..tail!(indices), val))
-}
+};
 
 inline function PIn (v: Any, dictOrList: Any) : Any
   requires (Any..isfrom_Dict(dictOrList) && Any..isfrom_string(v)) || Any..isfrom_ListAny(dictOrList);

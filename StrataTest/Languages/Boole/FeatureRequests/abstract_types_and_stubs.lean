@@ -41,6 +41,7 @@ spec {
 };
 #end
 
+#guard_msgs (drop info) in
 #eval Strata.Boole.verify "cvc5" abstractTypesAndStubsSeed
 
 example : Strata.smtVCsCorrect abstractTypesAndStubsSeed := by

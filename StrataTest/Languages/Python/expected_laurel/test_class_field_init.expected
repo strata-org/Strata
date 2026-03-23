@@ -9,6 +9,8 @@ List_set_body_calls_List_set_0: ✅ pass
 DictStrAny_get_body_calls_DictStrAny_get_0: ✅ pass
 Any_get_body_calls_DictStrAny_get_0: ✅ pass
 Any_get_body_calls_List_get_1: ✅ pass
+Any_get_body_calls_List_slice_2: ✅ pass
+Any_get_body_calls_List_drop_3: ✅ pass
 Any_get!_body_calls_DictStrAny_get_0: ✅ pass
 Any_get!_body_calls_List_get_1: ✅ pass
 Any_set_body_calls_List_set_0: ✅ pass

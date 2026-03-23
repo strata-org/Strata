@@ -400,7 +400,7 @@ symtab/goto JSON.
 -/
 def emitProcWithLifted (Env : Core.Expression.TyEnv) (procName : String)
     (ctx : CoreToGOTO.CProverGOTO.Context) (liftedFuncs : List Core.Function)
-    (extraSyms : Lean.Json)
+    (extraSyms : Lean.Json) (moduleName : String)
     : IO (Lean.Json × Lean.Json) := do
   let json ← IO.ofExcept (CoreToGOTO.CProverGOTO.Context.toJson procName ctx)
   let mut symtabObj := match json.symtab with | .obj m => m | _ => .empty
@@ -427,7 +427,8 @@ def emitProcWithLifted (Env : Core.Expression.TyEnv) (procName : String)
   | .obj m => for (k, v) in m.toList do
       symtabObj := symtabObj.insert k v
   | _ => pure ()
-  return (Lean.Json.obj symtabObj, Lean.Json.mkObj [("functions", Lean.Json.arr gotoFns)])
+  let symtab := CProverGOTO.wrapSymtab symtabObj (moduleName := moduleName)
+  return (symtab, Lean.Json.mkObj [("functions", Lean.Json.arr gotoFns)])
 
 /-! ## High-level pipeline steps
 
@@ -493,7 +494,7 @@ public def coreToGotoFiles (tcPgm : Core.Program) (Env : Core.Expression.TyEnv)
       | .ok s => pure (Lean.toJson s)
       | .error e => throw s!"{e}"
     let (symtab, goto) ←
-      match ← emitProcWithLifted Env procName ctx liftedFuncs extraSyms |>.toBaseIO with
+      match ← emitProcWithLifted Env procName ctx liftedFuncs extraSyms (moduleName := baseName) |>.toBaseIO with
       | .ok r => pure r
       | .error e => throw s!"{e}"
     let symTabFile := s!"{baseName}.symtab.json"

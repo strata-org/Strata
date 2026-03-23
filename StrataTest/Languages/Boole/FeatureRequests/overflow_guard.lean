@@ -40,7 +40,19 @@ spec {
 };
 #end
 
-#eval Strata.Boole.verify "cvc5" overflowGuardSeed
+/-- info: Obligation: assert_6_825
+Property: assert
+Result: ✅ pass
+
+Obligation: overflow_guard_seed_ensures_4_762
+Property: assert
+Result: ✅ pass
+
+Obligation: overflow_guard_seed_ensures_5_784
+Property: assert
+Result: ✅ pass-/
+#guard_msgs in
+#eval Strata.Boole.verify "cvc5" overflowGuardSeed (options := .quiet)
 
 example : Strata.smtVCsCorrect overflowGuardSeed := by
   gen_smt_vcs
