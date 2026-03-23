@@ -43,6 +43,8 @@ structure SMT.Context where
   typeFactory : @Lambda.TypeFactory CoreLParams.IDMeta := #[]
   seenDatatypes : Std.HashSet String := {}
   datatypeFuns : Map String (Op.DatatypeFuncs × LConstr CoreLParams.IDMeta) := Map.empty
+  /-- Global counter for generating unique bound variable names across all terms. -/
+  bvCounter : Nat := 0
 deriving Repr, Inhabited
 
 def SMT.Context.default : SMT.Context := {}
@@ -269,12 +271,15 @@ partial def toSMTTerm (E : Env) (bvs : BoundVars) (e : LExpr CoreLParams.mono) (
   | .quant _ _ _ .none _ _ => .error f!"Cannot encode untyped quantifier {e}"
   | .quant _ qk name (.some ty) tr e =>
     let fvarNames := (e.collectFvarNames.map (·.name)).toArray
-    -- Generate base name and extract any existing suffix
+    -- Generate base name using global counter to ensure uniqueness across terms.
+    -- The `$__` prefix is reserved for internal use and cannot appear in user
+    -- identifiers (see `Strata.DL.Lambda.LState.EvalConfig.varPrefix`).
     let (baseName, startSuffix) :=
       if name.isEmpty then
-        (s!"$__bv{bvs.length}", 1)
+        (s!"$__bv{ctx.bvCounter}", 1)
       else
         Encoder.breakDisambiguatedName name
+    let ctx := { ctx with bvCounter := ctx.bvCounter + 1 }
     -- Check for clashes with existing bvars, fvars in ctx, and fvars in body
     let isUsed := fun candidate =>
       bvs.any (fun (n, _) => n == candidate) ||
