@@ -208,11 +208,12 @@ rec function List_len (@[cases] l : ListAny) : int
 axiom [List_len_pos]: forall l : ListAny :: List_len(l) >= 0;
 
 // Length of an Any value: dispatches to Str.Length for strings, List_len for lists.
+// Returns 0 for unsupported types.
 inline function Any_len (v: Any) : int
-  requires Any..isfrom_string(v) || Any..isfrom_ListAny(v);
 {
   if Any..isfrom_string(v) then str.len(Any..as_string!(v))
-  else List_len(Any..as_ListAny!(v))
+  else if Any..isfrom_ListAny(v) then List_len(Any..as_ListAny!(v))
+  else 0
 };
 
 rec function List_contains (@[cases] l : ListAny, x: Any) : bool
