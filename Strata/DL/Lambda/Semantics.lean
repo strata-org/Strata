@@ -308,52 +308,126 @@ theorem app_arg (h : Canonicalize F rf a a') :
     Canonicalize F rf (.app m f a) (.app m f a') :=
   .app .refl h
 
--- Transitivity is not straightforward for the new Canonicalize definition.
--- It requires showing that the composition of two canonicalizations can be
--- expressed as a single canonicalization. This holds but requires careful
--- case analysis and is proved separately where needed.
--- For now, we state it with sorry as a key dependency.
+-- Local transitivity for ReflTrans (the main ReflTrans_trans is defined later).
+private theorem reflTransTrans {r : Relation (LExpr Tbase.mono)} {x y z : LExpr Tbase.mono}
+    (h1 : ReflTrans r x y) (h2 : ReflTrans r y z) : ReflTrans r x z := by
+  induction h1 with
+  | refl => exact h2
+  | step _ b _ hab _ ih => exact ReflTrans.step _ b _ hab (ih h2)
+
+-- Local lifting lemmas for steps in app context.
+private theorem stepStar_app_fn (e1 e1' e2 : LExpr Tbase.mono) (m : Tbase.Metadata)
+    (h : ReflTrans (Step F rf) e1 e1') :
+    ReflTrans (Step F rf) (.app m e1 e2) (.app m e1' e2) := by
+  induction h with
+  | refl => exact .refl _
+  | step x y z hxy _ ih =>
+    exact .step _ (.app m y e2) _ (Step.reduce_1 (m' := m) x y e2 hxy) ih
+
+private theorem stepStar_app_arg (e1 e2 e2' : LExpr Tbase.mono) (m : Tbase.Metadata)
+    (h : ReflTrans (Step F rf) e2 e2') :
+    ReflTrans (Step F rf) (.app m e1 e2) (.app m e1 e2') := by
+  induction h with
+  | refl => exact .refl _
+  | step x y z hxy _ ih =>
+    exact .step _ (.app m e1 y) _ (Step.reduce_2 (m' := m) e1 x y hxy) ih
+
+-- Abs expressions cannot be stepped: no Step rule applies to .abs.
+private theorem step_abs_stuck :
+    ∀ (e' : LExpr Tbase.mono), ¬ Step F rf (.abs m n t body) e' := by
+  intro e' h; cases h with
+  | expand_fn _ _ _ _ _ _ h => simp [Factory.callOfLFunc, getLFuncCall, getLFuncCall.go] at h
+  | eval_fn _ _ _ _ _ _ h => simp [Factory.callOfLFunc, getLFuncCall, getLFuncCall.go] at h
+
+-- Quant expressions cannot be stepped: no Step rule applies to .quant.
+private theorem step_quant_stuck :
+    ∀ (e' : LExpr Tbase.mono), ¬ Step F rf (.quant m qk n ty tr body) e' := by
+  intro e' h; cases h with
+  | expand_fn _ _ _ _ _ _ h => simp [Factory.callOfLFunc, getLFuncCall, getLFuncCall.go] at h
+  | eval_fn _ _ _ _ _ _ h => simp [Factory.callOfLFunc, getLFuncCall, getLFuncCall.go] at h
+
+-- If .abs can't step, then ReflTrans on .abs is refl.
+private theorem ReflTrans_abs_refl
+    (h : ReflTrans (Step F rf) (.abs m n t body) c) :
+    c = .abs m n t body := by
+  cases h with
+  | refl => rfl
+  | step _ b _ hab _ => exact absurd hab (step_abs_stuck _)
+
+-- If .quant can't step, then ReflTrans on .quant is refl.
+private theorem ReflTrans_quant_refl
+    (h : ReflTrans (Step F rf) (.quant m qk n ty tr body) c) :
+    c = .quant m qk n ty tr body := by
+  cases h with
+  | refl => rfl
+  | step _ b _ hab _ => exact absurd hab (step_quant_stuck _)
+
+/-- Core helper for transitivity: given `a →Canon→ b →* c →Canon→ d`,
+    produce `∃ X, a →* X ∧ X →Canon→ d`.
+    This combines canonicalization with intermediate stepping. -/
+private theorem step_compose
+    (canon₁ : Canonicalize F rf a b)
+    (steps₂ : ReflTrans (Step F rf) b c)
+    (canon₂ : Canonicalize F rf c d) :
+    ∃ X, ReflTrans (Step F rf) a X ∧ Canonicalize F rf X d := by
+  induction canon₁ generalizing c d with
+  | refl => exact ⟨c, steps₂, canon₂⟩
+  | abs isteps icanon ih =>
+    have heq := ReflTrans_abs_refl steps₂
+    subst heq
+    cases canon₂ with
+    | refl => exact ⟨_, .refl _, .abs isteps icanon⟩
+    | abs isteps₂ icanon₂ =>
+      obtain ⟨Xi, si, ci⟩ := ih isteps₂ icanon₂
+      exact ⟨_, .refl _, .abs (reflTransTrans isteps si) ci⟩
+  | quant str ctr sbody cbody ih_tr ih_body =>
+    have heq := ReflTrans_quant_refl steps₂
+    subst heq
+    cases canon₂ with
+    | refl => exact ⟨_, .refl _, .quant str ctr sbody cbody⟩
+    | quant str₂ ctr₂ sbody₂ cbody₂ =>
+      obtain ⟨Xtr, sttr, cttr⟩ := ih_tr str₂ ctr₂
+      obtain ⟨Xb, stb, ctb⟩ := ih_body sbody₂ cbody₂
+      exact ⟨_, .refl _, .quant (reflTransTrans str sttr) cttr
+                                (reflTransTrans sbody stb) ctb⟩
+  | app cf ca ihf iha =>
+    cases steps₂ with
+    | refl =>
+      cases canon₂ with
+      | refl => exact ⟨_, .refl _, .app cf ca⟩
+      | app cf₂ ca₂ =>
+        obtain ⟨Xf, sf, cf'⟩ := ihf (.refl _) cf₂
+        obtain ⟨Xa, sa, ca'⟩ := iha (.refl _) ca₂
+        refine ⟨.app _ Xf Xa, ?_, .app cf' ca'⟩
+        exact reflTransTrans (stepStar_app_fn _ _ _ _ sf)
+                             (stepStar_app_arg _ _ _ _ sa)
+    | step _ z _ step_one rest =>
+      -- App body canonicalized then stepped: requires canonicalize-step
+      -- commutation (diamond property). This is the hardest sub-case.
+      sorry
+
 theorem trans (h₁ : Canonicalize F rf a b) (h₂ : Canonicalize F rf b c) :
     Canonicalize F rf a c := by
   induction h₁ generalizing c with
   | refl => exact h₂
-  | abs step₁ canon₁ ih =>
-    cases h₂ with
-    | refl => exact .abs step₁ canon₁
-    | abs step₂ canon₂ =>
-      cases canon₁ with
-      | refl =>
-        -- canon₁ = refl: bv₁ = bb. Compose ba →* bb →* bv₂.
-        apply Canonicalize.abs _ canon₂
-        clear ih; clear canon₂
-        induction step₁ with
-        | refl => exact step₂
-        | step _ b _ hab _ ih_step => exact .step _ b _ hab (ih_step step₂)
-      | abs step₁' canon₁' =>
-        -- bb is abs → stuck for Step → bb = bv₂
-        have h_eq := ReflTrans_stuck step₂ (step_abs_stuck F rf _ _ _)
-        subst h_eq; exact .abs step₁ (ih canon₂)
-      | quant step_t₁' canon_t₁' step_b₁' canon_b₁' =>
-        -- bb is quant → stuck for Step → bb = bv₂
-        have h_eq := ReflTrans_stuck step₂ (step_quant_stuck F rf _ _ _ _ _)
-        subst h_eq; exact .abs step₁ (ih canon₂)
-      | app canon_f₁' canon_a₁' =>
-        -- bb is app. If bb can step, we can't compose. But the ih handles
-        -- the full Canon(bb, c) → Canon(bv₁, c) transformation.
-        -- Here canon₂ starts from bv₂ (not bb), and bb →* bv₂ is step₂.
-        -- We need Canon(bb, bc) to apply ih, but bb →* bv₂ ≠ bb when bb can step.
-        sorry
-  | quant step_t₁ canon_t₁ step_b₁ canon_b₁ ih_t ih_b =>
-    cases h₂ with
-    | refl => exact .quant step_t₁ canon_t₁ step_b₁ canon_b₁
-    | quant step_t₂ canon_t₂ step_b₂ canon_b₂ =>
-      -- Compose type and body parts separately using same strategy as abs
-      sorry
-  | app canon_f₁ canon_a₁ ih_f ih_a =>
-    cases h₂ with
-    | refl => exact .app canon_f₁ canon_a₁
-    | app canon_f₂ canon_a₂ =>
-      exact .app (ih_f canon_f₂) (ih_a canon_a₂)
+  | abs steps₁ canon₁ ih =>
+    match h₂ with
+    | .refl => exact .abs steps₁ canon₁
+    | .abs steps₂ canon₂ =>
+      obtain ⟨X, stepsX, canonX⟩ := step_compose canon₁ steps₂ canon₂
+      exact .abs (reflTransTrans steps₁ stepsX) canonX
+  | quant steps_tr canon_tr steps_body canon_body ih_tr ih_body =>
+    match h₂ with
+    | .refl => exact .quant steps_tr canon_tr steps_body canon_body
+    | .quant steps_tr₂ canon_tr₂ steps_body₂ canon_body₂ =>
+      obtain ⟨Xtr, str, ctr⟩ := step_compose canon_tr steps_tr₂ canon_tr₂
+      obtain ⟨Xb, stb, ctb⟩ := step_compose canon_body steps_body₂ canon_body₂
+      exact .quant (reflTransTrans steps_tr str) ctr
+                   (reflTransTrans steps_body stb) ctb
+  | app cf ca ihf iha =>
+    match h₂ with
+    | .refl => exact .app cf ca
+    | .app cf₂ ca₂ => exact .app (ihf cf₂) (iha ca₂)
 
 end Canonicalize
 
