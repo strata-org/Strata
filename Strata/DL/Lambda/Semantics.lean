@@ -3073,21 +3073,25 @@ theorem ValEquiv.trans
   induction h₁ generalizing e₃ with
   | const => cases h₂; exact .const
   | op => cases h₂; exact .op
-  | abs hc₁ hc₂ canon₁ canon₂ heq₁₂ =>
-    -- e₁ = .abs m₁ n t b₁, e₂ = .abs m₂ n t b₂
-    -- canon₁: Canon(b₁, b₁'), canon₂: Canon(b₂, b₂'), heq₁₂: b₁'.eM = b₂'.eM
+  | abs hc₁ hc₂ cs₁ cs₂ heq₁₂ =>
     cases h₂ with
-    | abs hc₂' hc₃ canon₂' canon₃ heq₂₃ =>
-      -- canon₂: Canon(b₂, b₂'), canon₂': Canon(b₂, b₂'')
-      -- Need: b₂'.eM = b₂''.eM (Canonicalize confluence on b₂).
-      -- This requires Step confluence (Step_diamond) to show that different
-      -- canonicalization paths of the same expression agree modulo eM.
-      sorry
+    | abs hc₂' hc₃ cs₂' cs₃ heq₂₃ =>
+      -- cs₁: b₁ →CS→ ?, cs₂: b₂ →CS→ ?, heq₁₂: ?.eM = ?.eM
+      -- cs₂': b₂ →CS→ ??, cs₃: b₃ →CS→ ??, heq₂₃: ??.eM = ??.eM
+      -- Use cs₁ for b₁ side, cs₃ for b₃ side.
+      -- Bridge: heq₁₂ relates cs₁-endpoint to cs₂-endpoint,
+      -- heq₂₃ relates cs₂'-endpoint to cs₃-endpoint.
+      -- Need CanonStar confluence: cs₂-endpoint.eM = cs₂'-endpoint.eM.
+      -- CanonStar confluence: cs₂ and cs₂' both start from b₂, so their
+      -- endpoints agree modulo eraseMetadata.
+      have h_bridge := heq₁₂.trans (Eq.trans (sorry) heq₂₃)
+      exact .abs hc₁ hc₃ cs₁ cs₃ h_bridge
   | quant hc₁ hc₂ ct₁ ct₂ heqt cb₁ cb₂ heqb =>
     cases h₂ with
     | quant hc₂' hc₃ ct₂' ct₃ heqt' cb₂' cb₃ heqb' =>
-      -- Same issue: need Canonicalize confluence for type and body of b₂.
-      sorry
+      have h_bridge_t := heqt.trans (Eq.trans (sorry) heqt')
+      have h_bridge_b := heqb.trans (Eq.trans (sorry) heqb')
+      exact .quant hc₁ hc₃ ct₁ ct₃ h_bridge_t cb₁ cb₃ h_bridge_b
   | app hc₁ hf₁₂ ha₁₂ ih_f ih_a =>
     -- e₁ = .app m₁ f₁ a₁, e₂ = .app m₂ f₂ a₂
     -- hf₁₂ : ValEquiv F rf f₁ f₂, ha₁₂ : ValEquiv F rf a₁ a₂
