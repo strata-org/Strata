@@ -802,9 +802,7 @@ partial def translateCall (ctx : TranslationContext)
       if opt_firstarg.isSome then
         -- Only emit StaticCall when the caller type was resolved through a
         -- pyspec type alias, indicating the procedure has precondition assertions.
-        let callerTy := match f with
-          | .Attribute _ v _ _ => (inferExprType ctx v).toOption.getD ""
-          | _ => ""
+        let callerTy := (inferExprType ctx val).toOption.getD ""
         if ctx.typeAliases.contains callerTy && funcName ∈ ctx.preludeProcedures then
           return mkStmtExprMd (StmtExpr.StaticCall funcName (trans_args ++ trans_kwords_exprs))
         else
@@ -1704,7 +1702,7 @@ def pythonToLaurel' (info : PreludeInfo)
     -- e.g. MessageService_send → same signature as prefix_MessageService_send
     let preludeProcedures := info.typeAliases.fold (init := info.procedures)
       fun procs unprefixed prefixed =>
-        procs.fold (init := procs) fun procs' name sig =>
+        info.procedures.fold (init := procs) fun procs' name sig =>
           if name.startsWith (prefixed ++ "_") then
             let unprefixedName := unprefixed ++ name.drop prefixed.length
             procs'.insert unprefixedName sig

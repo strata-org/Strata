@@ -291,25 +291,16 @@ partial def specExprToLaurel (e : SpecExpr) : Option StmtExprMd :=
       let unwrapped := mkStmt (.StaticCall (mkId "Any..as_string!") [s])
       mkStmt (.StaticCall (mkId "from_int") [mkStmt (.StaticCall (mkId "Str.Length") [unwrapped])])
   | .intGe subject bound => do
-    -- Compare as ints: Any..as_int!(subject) >= Any..as_int!(bound)
-    let s ← specExprToLaurel subject
-    let b ← specExprToLaurel bound
-    let sInt := mkStmt (.StaticCall (mkId "Any..as_int!") [s])
-    let bInt := mkStmt (.StaticCall (mkId "Any..as_int!") [b])
-    some (mkStmt (.PrimitiveOp .Geq [sInt, bInt]))
+    let s ← specExprToLaurel subject; let b ← specExprToLaurel bound
+    some (mkStmt (.PrimitiveOp .Geq [mkStmt (.StaticCall (mkId "Any..as_int!") [s]), mkStmt (.StaticCall (mkId "Any..as_int!") [b])]))
   | .intLe subject bound => do
-    let s ← specExprToLaurel subject
-    let b ← specExprToLaurel bound
-    let sInt := mkStmt (.StaticCall (mkId "Any..as_int!") [s])
-    let bInt := mkStmt (.StaticCall (mkId "Any..as_int!") [b])
-    some (mkStmt (.PrimitiveOp .Leq [sInt, bInt]))
+    let s ← specExprToLaurel subject; let b ← specExprToLaurel bound
+    some (mkStmt (.PrimitiveOp .Leq [mkStmt (.StaticCall (mkId "Any..as_int!") [s]), mkStmt (.StaticCall (mkId "Any..as_int!") [b])]))
   | .floatGe subject bound => do
-    let s ← specExprToLaurel subject
-    let b ← specExprToLaurel bound
+    let s ← specExprToLaurel subject; let b ← specExprToLaurel bound
     some (mkStmt (.PrimitiveOp .Geq [s, b]))
   | .floatLe subject bound => do
-    let s ← specExprToLaurel subject
-    let b ← specExprToLaurel bound
+    let s ← specExprToLaurel subject; let b ← specExprToLaurel bound
     some (mkStmt (.PrimitiveOp .Leq [s, b]))
   | .not inner =>
     inner |> specExprToLaurel |>.map fun i =>
@@ -342,27 +333,26 @@ partial def specExprToLaurel (e : SpecExpr) : Option StmtExprMd :=
   | .forallList _ _ _ => none -- TODO: quantifiers
   | .forallDict _ _ _ _ => none -- TODO: quantifiers
 
-/-- Format an Assertion's message parts into a string for diagnostics. -/
 private def formatAssertionMessage (msg : Array MessagePart) : String :=
   let parts := msg.map fun
     | .str s => s
     | .expr _ => "<expr>"
   String.join parts.toList
 
-/-- Build a procedure body that asserts preconditions and havocs outputs. -/
+/-- Build a procedure body that asserts preconditions.
+    Outputs are already initialized non-deterministically. -/
 def buildSpecBody (preconditions : Array Assertion)
     : ToLaurelM Body := do
   let mut stmts : List StmtExprMd := []
   for assertion in preconditions do
     match specExprToLaurel assertion.formula with
     | some condExpr =>
-      stmts := stmts ++ [mkStmt (.Assert condExpr)]
+      stmts := mkStmt (.Assert condExpr) :: stmts
     | none =>
-      -- Emit assert true for untranslatable preconditions so they're visible but don't block
       let msg := formatAssertionMessage assertion.message
       reportError default s!"Untranslatable precondition (emitting assert true): {msg}"
-      stmts := stmts ++ [mkStmt (.Assert (mkStmt (.LiteralBool true)))]
-  let body := mkStmt (.Block stmts none)
+      stmts := mkStmt (.Assert (mkStmt (.LiteralBool true))) :: stmts
+  let body := mkStmt (.Block stmts.reverse none)
   return .Transparent body
 
 /-! ## Declaration Translation -/
