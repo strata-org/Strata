@@ -658,6 +658,55 @@ private theorem substFvars_append_closed
     simp only [List.foldl]; rw [substFvar_no_freeVars _ h]; exact ih
 
 omit [DecidableEq Tbase.Metadata] [DecidableEq Tbase.Identifier] in
+private theorem substFvars_const'
+    (m : Tbase.Metadata) (c : LConst)
+    (sm : Map Tbase.Identifier (LExpr Tbase.mono)) :
+    LExpr.substFvars (LExpr.const m c) sm = LExpr.const m c := by
+  simp only [LExpr.substFvars]
+  induction sm with
+  | nil => simp [List.foldl]
+  | cons p rest ih => simp [List.foldl, LExpr.substFvar, ih]
+
+omit [DecidableEq Tbase.Metadata] [DecidableEq Tbase.Identifier] in
+private theorem substFvars_op'
+    (m : Tbase.Metadata) (n : Identifier Tbase.IDMeta) (t : Option Tbase.mono.TypeType)
+    (sm : Map Tbase.Identifier (LExpr Tbase.mono)) :
+    LExpr.substFvars (LExpr.op m n t) sm = LExpr.op m n t := by
+  simp only [LExpr.substFvars]
+  induction sm with
+  | nil => simp [List.foldl]
+  | cons p rest ih => simp [List.foldl, LExpr.substFvar, ih]
+
+omit [DecidableEq Tbase.Metadata] [DecidableEq Tbase.Identifier] in
+private theorem substFvars_bvar
+    (m : Tbase.Metadata) (i : Nat)
+    (sm : Map Tbase.Identifier (LExpr Tbase.mono)) :
+    LExpr.substFvars (LExpr.bvar m i) sm = LExpr.bvar m i := by
+  simp only [LExpr.substFvars]
+  induction sm with
+  | nil => simp [List.foldl]
+  | cons p rest ih => simp [List.foldl, LExpr.substFvar, ih]
+
+omit [DecidableEq Tbase.Metadata] [DecidableEq Tbase.Identifier] in
+private theorem substFvarsFromState_const
+    (σ : LState Tbase) (m : Tbase.Metadata) (c : LConst) :
+    LExpr.substFvarsFromState σ (LExpr.const m c) = LExpr.const m c := by
+  simp [LExpr.substFvarsFromState, substFvars_const']
+
+omit [DecidableEq Tbase.Metadata] [DecidableEq Tbase.Identifier] in
+private theorem substFvarsFromState_op
+    (σ : LState Tbase) (m : Tbase.Metadata) (n : Identifier Tbase.IDMeta)
+    (t : Option Tbase.mono.TypeType) :
+    LExpr.substFvarsFromState σ (LExpr.op m n t) = LExpr.op m n t := by
+  simp [LExpr.substFvarsFromState, substFvars_op']
+
+omit [DecidableEq Tbase.Metadata] [DecidableEq Tbase.Identifier] in
+private theorem substFvarsFromState_bvar
+    (σ : LState Tbase) (m : Tbase.Metadata) (i : Nat) :
+    LExpr.substFvarsFromState σ (LExpr.bvar m i) = LExpr.bvar m i := by
+  simp [LExpr.substFvarsFromState, substFvars_bvar]
+
+omit [DecidableEq Tbase.Metadata] [DecidableEq Tbase.Identifier] in
 theorem substFvars_ite
     (m : Tbase.Metadata) (c t f : LExpr Tbase.mono)
     (sm : Map Tbase.Identifier (LExpr Tbase.mono)) :
@@ -2730,10 +2779,16 @@ theorem eval_StepStar
         rename_i h_no_call
         unfold LExpr.evalCore
         split
-        · -- const/op/bvar: e' = e, both sides are the same
+        · -- const: substFvarsFromState preserves const
+          rename_i m c
+          exact ⟨_, ReflTrans.refl _, by
+            simp only [substFvarsFromState_const]; exact ValEquiv.const⟩
+        · -- op: substFvarsFromState preserves op
+          rename_i m n t
+          exact ⟨_, ReflTrans.refl _, by
+            simp only [substFvarsFromState_op]; exact ValEquiv.op⟩
+        · -- bvar: no ValEquiv constructor for bvar (bvar should not appear in well-formed open terms)
           exact ⟨_, ReflTrans.refl _, ValEquiv.refl_sorry _ _ _ sorry⟩
-        · exact ⟨_, ReflTrans.refl _, ValEquiv.refl_sorry _ _ _ sorry⟩
-        · exact ⟨_, ReflTrans.refl _, ValEquiv.refl_sorry _ _ _ sorry⟩
         · -- fvar m x ty
           rename_i m x ty
           cases hfind : σ.state.find? x with
