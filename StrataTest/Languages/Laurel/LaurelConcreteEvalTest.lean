@@ -9,7 +9,7 @@ import StrataTest.Languages.Laurel.ConcreteEval.TestHelper
 /-!
 # Tests for Laurel Concrete Program Evaluator
 
-Tests that `evalProgram` and `runProgram` correctly wire up `denoteStmt`
+Tests that `evalProgram` and `runProgram` correctly wire up `interpStmt`
 for whole `Laurel.Program` values.
 
 Tests 1–8 use the Laurel parser to build programs from source strings.

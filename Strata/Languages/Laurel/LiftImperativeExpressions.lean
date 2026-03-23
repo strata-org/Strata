@@ -229,7 +229,29 @@ def transformExpr (expr : StmtExprMd) : LiftM StmtExprMd := do
 
   | .StaticCall callee args =>
     let model := (← get).model
-    -- Process arguments right-to-left (for substitution mechanism).
+    -- Why this is more complex than PrimitiveOp's right-to-left traversal:
+    --
+    -- PrimitiveOp can simply process args R-to-L because the substitution
+    -- mechanism handles variable snapshots. But for imperative StaticCalls,
+    -- we must also lift the call itself to a prepend, and the interaction
+    -- between arg prepends and the call prepend creates two bugs that the
+    -- simple approach doesn't fix:
+    --
+    -- Bug 1 (nested calls): `add(mul(2,3), mul(4,5))` — if we just process
+    -- args R-to-L and collect all prepends, the outer call's temp is declared
+    -- before inner calls' temps, referencing undeclared variables.
+    --
+    -- Bug 2 (evaluation order): `add({x:=1;x}, {x:=x+10;x})` — if we mix
+    -- all arg prepends together, arg2's side effect `x:=x+10` executes before
+    -- arg1's `x:=1`, breaking left-to-right evaluation order. We must:
+    --   (a) isolate each arg's prepends so they don't leak across args
+    --   (b) capture side-effectful results in temporaries
+    --   (c) emit prepend groups in left-to-right order
+    --
+    -- The simple fix (just reordering the call's prepend relative to arg
+    -- prepends) handles Bug 1 but NOT Bug 2. Both bugs are covered by
+    -- TransformPreservation tests in StrataTest/Languages/Laurel/ConcreteEval/.
+    --
     -- Isolate each arg's prepends, capture side-effectful args in temps,
     -- then combine prepend groups in left-to-right order.
     let savedPrepends := (← get).prependedStmts

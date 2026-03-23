@@ -68,7 +68,7 @@ procedure main() { assume false; return 1 };
 /-! ## Test 5: Assert purity — side effects in condition discarded
 
 The semantics evaluates the condition but returns the original σ and h.
-The denotational interpreter handles the impure expression `{x := 1; true}`
+The interpreter handles the impure expression `{x := 1; true}`
 natively. After assert, x should still be 0.
 -/
 

@@ -176,7 +176,7 @@ Call `inc` twice, expect `n` = 2.
 
 /-! ## Test 8: Field access on unallocated address → stuck — programmatic AST
 
-Use `denoteStmt` directly with a store where `"x"` maps to `.vRef 999` and an
+Use `interpStmt` directly with a store where `"x"` maps to `.vRef 999` and an
 empty heap.  `FieldSelect (Identifier "x") "f"` evaluates the target to
 `.vRef 999`, then `heapFieldRead` returns `none` because address 999 was never
 allocated.
@@ -186,6 +186,6 @@ allocated.
   let σ : LaurelStore := fun x => if x == "x" then some (.vRef 999) else none
   let h : LaurelHeap := fun _ => none
   let expr := StmtExpr.FieldSelect (mk (.Identifier "x")) "f"
-  (denoteStmt defaultEval (fun _ => none) 100 h σ expr).isNone
+  (interpStmt defaultEval (fun _ => none) 100 h σ expr).isNone
 
 end Strata.Laurel.ConcreteEval.HeapObjectsTest

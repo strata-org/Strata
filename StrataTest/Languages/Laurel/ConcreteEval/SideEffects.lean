@@ -10,9 +10,9 @@ import StrataTest.Languages.Laurel.ConcreteEval.TestHelper
 # Side Effects and Evaluation Order Tests
 
 Tests for side effects in expression position and left-to-right evaluation
-order of arguments. The evaluation order is directly from `denoteArgs`.
+order of arguments. The evaluation order is directly from `interpArgs`.
 
-The `denoteArgs` function in `LaurelDenote.lean` evaluates arguments
+The `interpArgs` function in `LaurelInterpreter.lean` evaluates arguments
 left-to-right, threading store and heap through each argument evaluation.
 These tests are prescriptive — they define the intended evaluation order.
 -/

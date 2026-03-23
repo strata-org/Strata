@@ -4,17 +4,17 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import Strata.Languages.Laurel.LaurelDenote
+import Strata.Languages.Laurel.LaurelInterpreter
 
 /-!
-# Integration Scenario Tests for Laurel Denotational Interpreter
+# Integration Scenario Tests for Laurel Interpreter
 
 Multi-feature scenario tests exercising realistic Laurel programs through
-the denotational interpreter. Tests combine multiple language features to
+the interpreter. Tests combine multiple language features to
 validate that semantics composes correctly.
 -/
 
-namespace Strata.Laurel.DenoteIntegrationTest
+namespace Strata.Laurel.InterpreterIntegrationTest
 
 open Strata.Laurel
 
@@ -78,7 +78,7 @@ def mkProc (name : String) (inputs : List (String × HighType))
   let factProc := mkProc "fact" [("n", .TInt)] factBody
   let π : ProcEnv := fun name => if name == "fact" then some factProc else none
   -- fact(5) = 120
-  getOutcome (denoteStmt trivialEval π 1000 emptyHeap emptyStore
+  getOutcome (interpStmt trivialEval π 1000 emptyHeap emptyStore
     (.StaticCall "fact" [mk (.LiteralInt 5)]))
   = some (.normal (.vInt 120))
 
@@ -96,7 +96,7 @@ def mkProc (name : String) (inputs : List (String × HighType))
   let fibProc := mkProc "fib" [("n", .TInt)] fibBody
   let π : ProcEnv := fun name => if name == "fib" then some fibProc else none
   -- fib(6) = 8
-  getOutcome (denoteStmt trivialEval π 1000 emptyHeap emptyStore
+  getOutcome (interpStmt trivialEval π 1000 emptyHeap emptyStore
     (.StaticCall "fib" [mk (.LiteralInt 6)]))
   = some (.normal (.vInt 8))
 
@@ -123,7 +123,7 @@ def mkProc (name : String) (inputs : List (String × HighType))
       mk (.Assign [⟨.Identifier "i", emd⟩]
         (mk (.PrimitiveOp .Add [mk (.Identifier "i"), mk (.LiteralInt 1)])))
     ] none))
-  let r := denoteStmt trivialEval emptyProc 1000 emptyHeap σ₀ outerLoop
+  let r := interpStmt trivialEval emptyProc 1000 emptyHeap σ₀ outerLoop
   -- 3 outer × 3 inner = 9
   getVar r "sum" = some (.vInt 9)
 
@@ -140,7 +140,7 @@ def mkProc (name : String) (inputs : List (String × HighType))
         (mk (.Return (some (mk (.Identifier "x")))))
         none)
     ] none))
-  getOutcome (denoteStmt trivialEval emptyProc 1000 emptyHeap σ₀ body)
+  getOutcome (interpStmt trivialEval emptyProc 1000 emptyHeap σ₀ body)
   = some (.ret (some (.vInt 5)))
 
 -- Exit from deeply nested blocks (3+ levels)
@@ -153,7 +153,7 @@ def mkProc (name : String) (inputs : List (String × HighType))
     ] none),
     mk (.LiteralInt 999)  -- should not be reached
   ] (some "outer")
-  getOutcome (denoteStmt trivialEval emptyProc 100 emptyHeap emptyStore prog)
+  getOutcome (interpStmt trivialEval emptyProc 100 emptyHeap emptyStore prog)
   = some (.normal .vVoid)
 
 -- While loop with if-then-else containing exit to labeled outer block
@@ -171,7 +171,7 @@ def mkProc (name : String) (inputs : List (String × HighType))
           (some (mk (.LiteralBool true))))
       ] none)))
   ] (some "done")
-  getOutcomeAndVar (denoteStmt trivialEval emptyProc 1000 emptyHeap σ₀ prog) "x"
+  getOutcomeAndVar (interpStmt trivialEval emptyProc 1000 emptyHeap σ₀ prog) "x"
   = some (.normal .vVoid, some (.vInt 4))
 
 -- Block with multiple labeled sub-blocks and targeted exits
@@ -188,7 +188,7 @@ def mkProc (name : String) (inputs : List (String × HighType))
     ] (some "b2")),
     mk (.Assign [⟨.Identifier "r", emd⟩] (mk (.LiteralInt 3)))
   ] none
-  getVar (denoteStmt trivialEval emptyProc 100 emptyHeap σ₀ prog) "r"
+  getVar (interpStmt trivialEval emptyProc 100 emptyHeap σ₀ prog) "r"
   = some (.vInt 3)
 
 /-! ## 3. Effectful Expressions in Complex Positions -/
@@ -202,7 +202,7 @@ def mkProc (name : String) (inputs : List (String × HighType))
        mk (.LiteralInt 3)]))
     (mk (.LiteralInt 1))
     (some (mk (.LiteralInt 0)))
-  let r := denoteStmt trivialEval emptyProc 100 emptyHeap σ₀ prog
+  let r := interpStmt trivialEval emptyProc 100 emptyHeap σ₀ prog
   getOutcome r = some (.normal (.vInt 1))
 
 -- Assignment in while-condition: while (x := x + 1) < 5 do skip
@@ -215,7 +215,7 @@ def mkProc (name : String) (inputs : List (String × HighType))
        mk (.LiteralInt 5)]))
     [] none
     (mk (.Block [] none))
-  let r := denoteStmt trivialEval emptyProc 100 emptyHeap σ₀ prog
+  let r := interpStmt trivialEval emptyProc 100 emptyHeap σ₀ prog
   getVar r "x" = some (.vInt 5)
 
 -- Nested assignments in arguments: (x := 1) + (y := 2) = 3
@@ -224,7 +224,7 @@ def mkProc (name : String) (inputs : List (String × HighType))
   let prog := StmtExpr.PrimitiveOp .Add
     [mk (.Assign [⟨.Identifier "x", emd⟩] (mk (.LiteralInt 1))),
      mk (.Assign [⟨.Identifier "y", emd⟩] (mk (.LiteralInt 2)))]
-  let r := denoteStmt trivialEval emptyProc 100 emptyHeap σ₀ prog
+  let r := interpStmt trivialEval emptyProc 100 emptyHeap σ₀ prog
   getOutcome r = some (.normal (.vInt 3))
 
 -- Assignment in both branches of if-then-else
@@ -234,7 +234,7 @@ def mkProc (name : String) (inputs : List (String × HighType))
     (mk (.LiteralBool false))
     (mk (.Assign [⟨.Identifier "x", emd⟩] (mk (.LiteralInt 10))))
     (some (mk (.Assign [⟨.Identifier "x", emd⟩] (mk (.LiteralInt 20)))))
-  let r := denoteStmt trivialEval emptyProc 100 emptyHeap σ₀ prog
+  let r := interpStmt trivialEval emptyProc 100 emptyHeap σ₀ prog
   getOutcomeAndVar r "x" = some (.normal (.vInt 20), some (.vInt 20))
 
 /-! ## 4. Object-Oriented Programs -/
@@ -249,7 +249,7 @@ def mkProc (name : String) (inputs : List (String × HighType))
       mk (.FieldSelect (mk (.Identifier "obj")) "x"),
       mk (.FieldSelect (mk (.Identifier "obj")) "y")])
   ] none
-  getOutcome (denoteStmt trivialEval emptyProc 100 emptyHeap emptyStore prog)
+  getOutcome (interpStmt trivialEval emptyProc 100 emptyHeap emptyStore prog)
   = some (.normal (.vInt 30))
 
 -- Method call that modifies object fields via heap
@@ -273,7 +273,7 @@ def mkProc (name : String) (inputs : List (String × HighType))
     mk (.InstanceCall (mk (.Identifier "o")) "setX" [mk (.LiteralInt 42)]),
     mk (.FieldSelect (mk (.Identifier "o")) "x")
   ] none
-  getOutcome (denoteStmt trivialEval π 100 emptyHeap emptyStore prog)
+  getOutcome (interpStmt trivialEval π 100 emptyHeap emptyStore prog)
   = some (.normal (.vInt 42))
 
 -- Multiple objects with independent field stores
@@ -285,7 +285,7 @@ def mkProc (name : String) (inputs : List (String × HighType))
     mk (.Assign [⟨.FieldSelect (mk (.Identifier "b")) "v", emd⟩] (mk (.LiteralInt 2))),
     mk (.FieldSelect (mk (.Identifier "a")) "v")
   ] none
-  getOutcome (denoteStmt trivialEval emptyProc 100 emptyHeap emptyStore prog)
+  getOutcome (interpStmt trivialEval emptyProc 100 emptyHeap emptyStore prog)
   = some (.normal (.vInt 1))
 
 -- Chain: new → field update → method call → field select
@@ -307,7 +307,7 @@ def mkProc (name : String) (inputs : List (String × HighType))
     mk (.Assign [⟨.FieldSelect (mk (.Identifier "c")) "f", emd⟩] (mk (.LiteralInt 77))),
     mk (.InstanceCall (mk (.Identifier "c")) "getF" [])
   ] none
-  getOutcome (denoteStmt trivialEval π 100 emptyHeap emptyStore prog)
+  getOutcome (interpStmt trivialEval π 100 emptyHeap emptyStore prog)
   = some (.normal (.vInt 77))
 
 -- ReferenceEquals after aliasing
@@ -317,7 +317,7 @@ def mkProc (name : String) (inputs : List (String × HighType))
     mk (.LocalVariable "b" ⟨.UserDefined "T", emd⟩ (some (mk (.Identifier "a")))),
     mk (.ReferenceEquals (mk (.Identifier "a")) (mk (.Identifier "b")))
   ] none
-  getOutcome (denoteStmt trivialEval emptyProc 100 emptyHeap emptyStore prog)
+  getOutcome (interpStmt trivialEval emptyProc 100 emptyHeap emptyStore prog)
   = some (.normal (.vBool true))
 
 /-! ## 5. Procedure Interaction Patterns -/
@@ -333,7 +333,7 @@ def mkProc (name : String) (inputs : List (String × HighType))
     if name == "double" then some double
     else if name == "quadruple" then some quadruple
     else none
-  getOutcome (denoteStmt trivialEval π 100 emptyHeap emptyStore
+  getOutcome (interpStmt trivialEval π 100 emptyHeap emptyStore
     (.StaticCall "quadruple" [mk (.LiteralInt 3)]))
   = some (.normal (.vInt 12))
 
@@ -346,7 +346,7 @@ def mkProc (name : String) (inputs : List (String × HighType))
     ] none)
   let π : ProcEnv := fun name => if name == "safeDiv" then some safeDiv else none
   -- safeDiv(10, 2) = 5
-  getOutcome (denoteStmt trivialEval π 100 emptyHeap emptyStore
+  getOutcome (interpStmt trivialEval π 100 emptyHeap emptyStore
     (.StaticCall "safeDiv" [mk (.LiteralInt 10), mk (.LiteralInt 2)]))
   = some (.normal (.vInt 5))
 
@@ -362,7 +362,7 @@ def mkProc (name : String) (inputs : List (String × HighType))
     ] none)
   let π : ProcEnv := fun name => if name == "earlyRet" then some earlyRet else none
   -- earlyRet(-5) = -1
-  getOutcome (denoteStmt trivialEval π 100 emptyHeap emptyStore
+  getOutcome (interpStmt trivialEval π 100 emptyHeap emptyStore
     (.StaticCall "earlyRet" [mk (.LiteralInt (-5))]))
   = some (.normal (.vInt (-1)))
 
@@ -375,7 +375,7 @@ def mkProc (name : String) (inputs : List (String × HighType))
       mk (.Return (some (mk (.Identifier "x"))))
     ] none)
   let π : ProcEnv := fun name => if name == "setX" then some setX else none
-  let r := denoteStmt trivialEval π 100 emptyHeap σ₀
+  let r := interpStmt trivialEval π 100 emptyHeap σ₀
     (.StaticCall "setX" [])
   -- Procedure returns 999 (its local x), caller's x unchanged
   getOutcome r = some (.normal (.vInt 999)) &&
@@ -391,7 +391,7 @@ def mkProc (name : String) (inputs : List (String × HighType))
     mk (.Assign [⟨.Identifier "b", emd⟩] (mk (.PrimitiveOp .Add [mk (.Identifier "a"), mk (.LiteralInt 1)]))),
     mk (.Assign [⟨.Identifier "c", emd⟩] (mk (.PrimitiveOp .Add [mk (.Identifier "b"), mk (.LiteralInt 1)])))
   ] none
-  let r := denoteStmt trivialEval emptyProc 100 emptyHeap σ₀ prog
+  let r := interpStmt trivialEval emptyProc 100 emptyHeap σ₀ prog
   getVar r "a" = some (.vInt 1) &&
   getVar r "b" = some (.vInt 2) &&
   getVar r "c" = some (.vInt 3)
@@ -408,7 +408,7 @@ def mkProc (name : String) (inputs : List (String × HighType))
       mk (.Assign [⟨.Identifier "i", emd⟩]
         (mk (.PrimitiveOp .Add [mk (.Identifier "i"), mk (.LiteralInt 1)])))
     ] none))
-  let r := denoteStmt trivialEval emptyProc 1000 emptyHeap σ₀ prog
+  let r := interpStmt trivialEval emptyProc 1000 emptyHeap σ₀ prog
   getVar r "sum" = some (.vInt 15)
 
 -- Swap pattern: t := x; x := y; y := t
@@ -419,7 +419,7 @@ def mkProc (name : String) (inputs : List (String × HighType))
     mk (.Assign [⟨.Identifier "x", emd⟩] (mk (.Identifier "y"))),
     mk (.Assign [⟨.Identifier "y", emd⟩] (mk (.Identifier "t")))
   ] none
-  let r := denoteStmt trivialEval emptyProc 100 emptyHeap σ₀ prog
+  let r := interpStmt trivialEval emptyProc 100 emptyHeap σ₀ prog
   getVar r "x" = some (.vInt 20) &&
   getVar r "y" = some (.vInt 10)
 
@@ -431,18 +431,18 @@ def mkProc (name : String) (inputs : List (String × HighType))
     | 0, inner => inner
     | n + 1, inner => .Block [mk (nestBlocks n inner)] none
   let prog := nestBlocks 15 (.LiteralInt 42)
-  getOutcome (denoteStmt trivialEval emptyProc 100 emptyHeap emptyStore prog)
+  getOutcome (interpStmt trivialEval emptyProc 100 emptyHeap emptyStore prog)
   = some (.normal (.vInt 42))
 
 -- Empty program (empty block)
 #guard
-  getOutcome (denoteStmt trivialEval emptyProc 10 emptyHeap emptyStore
+  getOutcome (interpStmt trivialEval emptyProc 10 emptyHeap emptyStore
     (.Block [] none))
   = some (.normal .vVoid)
 
 -- Program that exhausts fuel (infinite loop with limited fuel → none)
 #guard
-  denoteStmt trivialEval emptyProc 10 emptyHeap emptyStore
+  interpStmt trivialEval emptyProc 10 emptyHeap emptyStore
     (.While (mk (.LiteralBool true)) [] none (mk (.Block [] none)))
   = none
 
@@ -451,7 +451,7 @@ def mkProc (name : String) (inputs : List (String × HighType))
   let stmts : List StmtExprMd := List.range 20 |>.map fun i =>
     mk (.LocalVariable (s!"v{i}") ⟨.TInt, emd⟩ (some (mk (.LiteralInt (Int.ofNat i)))))
   let prog := StmtExpr.Block (stmts ++ [mk (.Identifier "v19")]) none
-  getOutcome (denoteStmt trivialEval emptyProc 100 emptyHeap emptyStore prog)
+  getOutcome (interpStmt trivialEval emptyProc 100 emptyHeap emptyStore prog)
   = some (.normal (.vInt 19))
 
-end Strata.Laurel.DenoteIntegrationTest
+end Strata.Laurel.InterpreterIntegrationTest

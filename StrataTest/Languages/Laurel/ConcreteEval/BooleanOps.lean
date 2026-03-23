@@ -13,7 +13,7 @@ Tests for comparison operators, boolean operations, and short-circuit
 semantics. Short-circuit tests verify that side effects do NOT occur
 in the unevaluated branch.
 
-All tests use `parseLaurel`. The denotational interpreter (`denoteStmt`)
+All tests use `parseLaurel`. The interpreter (`interpStmt`)
 evaluates `AndThen`/`OrElse`/`Implies` with proper short-circuit semantics,
 while `And`/`Or` are evaluated eagerly via `evalPrimOp`.
 -/

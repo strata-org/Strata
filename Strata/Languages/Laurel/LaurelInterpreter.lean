@@ -7,7 +7,7 @@
 import Strata.Languages.Laurel.LaurelSemantics
 
 /-!
-# Fuel-Based Denotational Interpreter for Laurel IR
+# Fuel-Based Interpreter for Laurel IR
 
 A computable interpreter mirroring the relational semantics in
 `LaurelSemantics.lean` (Option A from the design document
@@ -20,6 +20,15 @@ decremented on every recursive call. Returns `none` on fuel exhaustion
 or stuck states. Reuses existing `Outcome`, `LaurelValue`, `LaurelStore`,
 `LaurelHeap` types unchanged.
 
+## Delegation via `δ : LaurelEval`
+
+The `δ` parameter is a callback that lets callers plug in custom handling
+for constructs the interpreter cannot evaluate natively (quantifiers,
+specification constructs like `Old`, `Fresh`, `Assigned`, `ContractOf`).
+The default `δ` (`defaultEval` in `LaurelConcreteEval.lean`) returns `none`
+for all of these, which is equivalent to "stuck / not implemented".
+Test harnesses can provide richer `δ` implementations.
+
 ## Intentionally Omitted Constructs
 
 `Abstract`, `All`, `Hole` return `none`, matching the relational semantics
@@ -31,136 +40,136 @@ namespace Strata.Laurel
 /-! ## Computable Store/Heap Helpers -/
 
 /-- Update an existing variable in the store. Returns `none` if the variable is not present. -/
-def updateStore (σ : LaurelStore) (x : Identifier) (v : LaurelValue) : Option LaurelStore :=
-  match σ x.text with
-  | some _ => some (fun y => if y == x.text then some v else σ y)
+def updateStore (store : LaurelStore) (x : Identifier) (v : LaurelValue) : Option LaurelStore :=
+  match store x.text with
+  | some _ => some (fun y => if y == x.text then some v else store y)
   | none => none
 
 /-- Initialize a new variable in the store. Returns `none` if the variable already exists. -/
-def initStore (σ : LaurelStore) (x : Identifier) (v : LaurelValue) : Option LaurelStore :=
-  match σ x.text with
-  | none => some (fun y => if y == x.text then some v else σ y)
+def initStore (store : LaurelStore) (x : Identifier) (v : LaurelValue) : Option LaurelStore :=
+  match store x.text with
+  | none => some (fun y => if y == x.text then some v else store y)
   | some _ => none
 
 /-- Upper bound on the address range searched by `findSmallestFree` and `allocHeap`. -/
 def heapSearchBound : Nat := 10000
 
 /-- Find the smallest free address in the heap, searching up to `bound` addresses from `n`. -/
-def findSmallestFree (h : LaurelHeap) (n : Nat) (bound : Nat := heapSearchBound) : Nat :=
+def findSmallestFree (heap : LaurelHeap) (n : Nat) (bound : Nat := heapSearchBound) : Nat :=
   match bound with
   | 0 => n
   | bound + 1 =>
-    match h n with
-    | some _ => findSmallestFree h (n + 1) bound
+    match heap n with
+    | some _ => findSmallestFree heap (n + 1) bound
     | none => n
 
 /-- Allocate a new object on the heap with the given type name.
 Returns `none` when the heap is full (all addresses in the search range are occupied). -/
-def allocHeap (h : LaurelHeap) (typeName : String) : Option (Nat × LaurelHeap) :=
-  let addr := findSmallestFree h 0
-  match h addr with
-  | none => some (addr, fun a => if a == addr then some (typeName, fun _ => none) else h a)
+def allocHeap (heap : LaurelHeap) (typeName : String) : Option (Nat × LaurelHeap) :=
+  let addr := findSmallestFree heap 0
+  match heap addr with
+  | none => some (addr, fun a => if a == addr then some (typeName, fun _ => none) else heap a)
   | some _ => none
 
 /-- Write a value to a field of a heap object. Returns `none` if the address is not allocated. -/
-def heapFieldWrite' (h : LaurelHeap) (addr : Nat) (field : String) (v : LaurelValue)
+def heapFieldWrite' (heap : LaurelHeap) (addr : Nat) (field : String) (v : LaurelValue)
     : Option LaurelHeap :=
-  match h addr with
+  match heap addr with
   | some (tag, fields) =>
-      some (fun a => if a == addr then some (tag, fun f => if f == field then some v else fields f) else h a)
+      some (fun a => if a == addr then some (tag, fun f => if f == field then some v else fields f) else heap a)
   | none => none
 
-/-! ## Denotational Interpreter -/
+/-! ## Interpreter -/
 
 mutual
 /-- Evaluate a single statement/expression. -/
-def denoteStmt (δ : LaurelEval) (π : ProcEnv) (fuel : Nat)
-    (h : LaurelHeap) (σ : LaurelStore) (stmt : StmtExpr)
+def interpStmt (δ : LaurelEval) (π : ProcEnv) (fuel : Nat)
+    (heap : LaurelHeap) (store : LaurelStore) (stmt : StmtExpr)
     : Option (Outcome × LaurelStore × LaurelHeap) :=
   match fuel with
   | 0 => none
   | fuel + 1 =>
     match stmt with
     -- Literals
-    | .LiteralInt i => some (.normal (.vInt i), σ, h)
-    | .LiteralBool b => some (.normal (.vBool b), σ, h)
-    | .LiteralString s => some (.normal (.vString s), σ, h)
+    | .LiteralInt i => some (.normal (.vInt i), store, heap)
+    | .LiteralBool b => some (.normal (.vBool b), store, heap)
+    | .LiteralString s => some (.normal (.vString s), store, heap)
     | .LiteralDecimal _ => none  -- no runtime representation for decimals
 
     -- Variables
     | .Identifier name =>
-      match σ name.text with
-      | some v => some (.normal v, σ, h)
+      match store name.text with
+      | some v => some (.normal v, store, heap)
       | none => none
 
     -- Short-circuit Primitive Operations
     | .PrimitiveOp .AndThen [a, b] =>
-      match denoteStmt δ π fuel h σ a.val with
+      match interpStmt δ π fuel heap store a.val with
       | some (.normal (.vBool true), σ₁, h₁) =>
-        denoteStmt δ π fuel h₁ σ₁ b.val
+        interpStmt δ π fuel h₁ σ₁ b.val
       | some (.normal (.vBool false), σ₁, h₁) =>
         some (.normal (.vBool false), σ₁, h₁)
       | _ => none
 
     | .PrimitiveOp .OrElse [a, b] =>
-      match denoteStmt δ π fuel h σ a.val with
+      match interpStmt δ π fuel heap store a.val with
       | some (.normal (.vBool true), σ₁, h₁) =>
         some (.normal (.vBool true), σ₁, h₁)
       | some (.normal (.vBool false), σ₁, h₁) =>
-        denoteStmt δ π fuel h₁ σ₁ b.val
+        interpStmt δ π fuel h₁ σ₁ b.val
       | _ => none
 
     | .PrimitiveOp .Implies [a, b] =>
-      match denoteStmt δ π fuel h σ a.val with
+      match interpStmt δ π fuel heap store a.val with
       | some (.normal (.vBool false), σ₁, h₁) =>
         some (.normal (.vBool true), σ₁, h₁)
       | some (.normal (.vBool true), σ₁, h₁) =>
-        denoteStmt δ π fuel h₁ σ₁ b.val
+        interpStmt δ π fuel h₁ σ₁ b.val
       | _ => none
 
     -- Eager Primitive Operations
     | .PrimitiveOp op args =>
-      match denoteArgs δ π fuel h σ args with
-      | some (vals, σ', h') =>
+      match interpArgs δ π fuel heap store args with
+      | some (vals, store', h') =>
         match evalPrimOp op vals with
-        | some result => some (.normal result, σ', h')
+        | some result => some (.normal result, store', h')
         | none => none
       | none => none
 
     -- Control Flow
     | .IfThenElse c thenBr (some elseBr) =>
-      match denoteStmt δ π fuel h σ c.val with
-      | some (.normal (.vBool true), σ₁, h₁) => denoteStmt δ π fuel h₁ σ₁ thenBr.val
-      | some (.normal (.vBool false), σ₁, h₁) => denoteStmt δ π fuel h₁ σ₁ elseBr.val
+      match interpStmt δ π fuel heap store c.val with
+      | some (.normal (.vBool true), σ₁, h₁) => interpStmt δ π fuel h₁ σ₁ thenBr.val
+      | some (.normal (.vBool false), σ₁, h₁) => interpStmt δ π fuel h₁ σ₁ elseBr.val
       | _ => none
 
     | .IfThenElse c thenBr none =>
-      match denoteStmt δ π fuel h σ c.val with
-      | some (.normal (.vBool true), σ₁, h₁) => denoteStmt δ π fuel h₁ σ₁ thenBr.val
+      match interpStmt δ π fuel heap store c.val with
+      | some (.normal (.vBool true), σ₁, h₁) => interpStmt δ π fuel h₁ σ₁ thenBr.val
       | some (.normal (.vBool false), σ₁, h₁) => some (.normal .vVoid, σ₁, h₁)
       | _ => none
 
     | .Block stmts label =>
-      match denoteBlock δ π fuel h σ stmts with
-      | some (outcome, σ', h') => some (catchExit label outcome, σ', h')
+      match interpBlock δ π fuel heap store stmts with
+      | some (outcome, store', h') => some (catchExit label outcome, store', h')
       | none => none
 
-    | .Exit target => some (.exit target, σ, h)
+    | .Exit target => some (.exit target, store, heap)
 
     | .Return (some val) =>
-      match denoteStmt δ π fuel h σ val.val with
-      | some (.normal v, σ', h') => some (.ret (some v), σ', h')
+      match interpStmt δ π fuel heap store val.val with
+      | some (.normal v, store', h') => some (.ret (some v), store', h')
       | _ => none
 
-    | .Return none => some (.ret none, σ, h)
+    | .Return none => some (.ret none, store, heap)
 
     -- While Loop
     | .While c invs dec body =>
-      match denoteStmt δ π fuel h σ c.val with
+      match interpStmt δ π fuel heap store c.val with
       | some (.normal (.vBool true), σ₁, h₁) =>
-        match denoteStmt δ π fuel h₁ σ₁ body.val with
+        match interpStmt δ π fuel h₁ σ₁ body.val with
         | some (.normal _, σ₂, h₂) =>
-          denoteStmt δ π fuel h₂ σ₂ (.While c invs dec body)
+          interpStmt δ π fuel h₂ σ₂ (.While c invs dec body)
         | some (.exit label, σ₂, h₂) => some (.exit label, σ₂, h₂)
         | some (.ret rv, σ₂, h₂) => some (.ret rv, σ₂, h₂)
         | none => none
@@ -169,7 +178,7 @@ def denoteStmt (δ : LaurelEval) (π : ProcEnv) (fuel : Nat)
 
     -- Assignments
     | .Assign [⟨.Identifier name, _⟩] value =>
-      match denoteStmt δ π fuel h σ value.val with
+      match interpStmt δ π fuel heap store value.val with
       | some (.normal v, σ₁, h₁) =>
         match σ₁ name.text with
         | some _ =>
@@ -181,9 +190,9 @@ def denoteStmt (δ : LaurelEval) (π : ProcEnv) (fuel : Nat)
 
     -- Field Assignment
     | .Assign [⟨.FieldSelect target fieldName, _⟩] value =>
-      match denoteStmt δ π fuel h σ target.val with
+      match interpStmt δ π fuel heap store target.val with
       | some (.normal (.vRef addr), σ₁, h₁) =>
-        match denoteStmt δ π fuel h₁ σ₁ value.val with
+        match interpStmt δ π fuel h₁ σ₁ value.val with
         | some (.normal v, σ₂, h₂) =>
           match heapFieldWrite' h₂ addr fieldName.text v with
           | some h₃ => some (.normal v, σ₂, h₃)
@@ -194,7 +203,7 @@ def denoteStmt (δ : LaurelEval) (π : ProcEnv) (fuel : Nat)
     | .Assign _ _ => none  -- multi-target not supported
 
     | .LocalVariable name _ty (some init) =>
-      match denoteStmt δ π fuel h σ init.val with
+      match interpStmt δ π fuel heap store init.val with
       | some (.normal v, σ₁, h₁) =>
         match initStore σ₁ name v with
         | some σ₂ => some (.normal .vVoid, σ₂, h₁)
@@ -202,35 +211,43 @@ def denoteStmt (δ : LaurelEval) (π : ProcEnv) (fuel : Nat)
       | _ => none
 
     | .LocalVariable name _ty none =>
-      match initStore σ name .vVoid with
-      | some σ' => some (.normal .vVoid, σ', h)
+      match initStore store name .vVoid with
+      | some store' => some (.normal .vVoid, store', heap)
       | none => none
 
     -- Verification Constructs
-    -- The relational semantics requires assert/assume conditions to be pure
-    -- (no side effects). We evaluate the condition and check it's true,
-    -- but return the original store/heap since conditions must be pure.
+    -- Assert/assume conditions must be pure (no side effects on store or heap).
+    -- Runtime compilation may erase these constructs, so their bodies must not
+    -- have observable effects. We enforce this by discarding the post-condition
+    -- store/heap and returning the originals. A condition with side effects will
+    -- appear to have no effect, which is the correct semantics for erasable
+    -- constructs. The relational semantics separately requires purity as a
+    -- well-formedness condition on programs.
+    -- TODO: Enriching Outcome with DiagnosticModel would allow reporting
+    -- which assertion failed and where, rather than just returning none.
+    -- TODO: To implement `Old`, thread a pre-state snapshot captured at
+    -- procedure entry through the interpreter.
     | .Assert c =>
-      match denoteStmt δ π fuel h σ c.val with
-      | some (.normal (.vBool true), _, _) => some (.normal .vVoid, σ, h)
+      match interpStmt δ π fuel heap store c.val with
+      | some (.normal (.vBool true), _, _) => some (.normal .vVoid, store, heap)
       | _ => none
 
     | .Assume c =>
-      match denoteStmt δ π fuel h σ c.val with
-      | some (.normal (.vBool true), _, _) => some (.normal .vVoid, σ, h)
+      match interpStmt δ π fuel heap store c.val with
+      | some (.normal (.vBool true), _, _) => some (.normal .vVoid, store, heap)
       | _ => none
 
     -- Static Calls
     | .StaticCall callee args =>
       match π callee with
       | some proc =>
-        match denoteArgs δ π fuel h σ args with
+        match interpArgs δ π fuel heap store args with
         | some (vals, σ₁, h₁) =>
           match bindParams proc.inputs vals with
           | some σBound =>
             match getBody proc with
             | some body =>
-              match denoteStmt δ π fuel h₁ σBound body.val with
+              match interpStmt δ π fuel h₁ σBound body.val with
               | some (.normal v, _, h') => some (.normal v, σ₁, h')
               | some (.ret (some v), _, h') => some (.normal v, σ₁, h')
               | some (.ret none, _, h') => some (.normal .vVoid, σ₁, h')
@@ -242,12 +259,12 @@ def denoteStmt (δ : LaurelEval) (π : ProcEnv) (fuel : Nat)
 
     -- OO Features
     | .New typeName =>
-      match allocHeap h typeName.text with
-      | some (addr, h') => some (.normal (.vRef addr), σ, h')
+      match allocHeap heap typeName.text with
+      | some (addr, h') => some (.normal (.vRef addr), store, h')
       | none => none
 
     | .FieldSelect target fieldName =>
-      match denoteStmt δ π fuel h σ target.val with
+      match interpStmt δ π fuel heap store target.val with
       | some (.normal (.vRef addr), σ₁, h₁) =>
         match heapFieldRead h₁ addr fieldName.text with
         | some v => some (.normal v, σ₁, h₁)
@@ -255,9 +272,9 @@ def denoteStmt (δ : LaurelEval) (π : ProcEnv) (fuel : Nat)
       | _ => none
 
     | .PureFieldUpdate target fieldName newVal =>
-      match denoteStmt δ π fuel h σ target.val with
+      match interpStmt δ π fuel heap store target.val with
       | some (.normal (.vRef addr), σ₁, h₁) =>
-        match denoteStmt δ π fuel h₁ σ₁ newVal.val with
+        match interpStmt δ π fuel h₁ σ₁ newVal.val with
         | some (.normal v, σ₂, h₂) =>
           match heapFieldWrite' h₂ addr fieldName.text v with
           | some h₃ => some (.normal (.vRef addr), σ₂, h₃)
@@ -266,28 +283,28 @@ def denoteStmt (δ : LaurelEval) (π : ProcEnv) (fuel : Nat)
       | _ => none
 
     | .ReferenceEquals lhs rhs =>
-      match denoteStmt δ π fuel h σ lhs.val with
+      match interpStmt δ π fuel heap store lhs.val with
       | some (.normal (.vRef a), σ₁, h₁) =>
-        match denoteStmt δ π fuel h₁ σ₁ rhs.val with
+        match interpStmt δ π fuel h₁ σ₁ rhs.val with
         | some (.normal (.vRef b), σ₂, h₂) =>
           some (.normal (.vBool (a == b)), σ₂, h₂)
         | _ => none
       | _ => none
 
     | .InstanceCall target callee args =>
-      match denoteStmt δ π fuel h σ target.val with
+      match interpStmt δ π fuel heap store target.val with
       | some (.normal (.vRef addr), σ₁, h₁) =>
         match h₁ addr with
         | some (typeName, _) =>
           match π (↑(typeName ++ "." ++ callee.text)) with
           | some proc =>
-            match denoteArgs δ π fuel h₁ σ₁ args with
+            match interpArgs δ π fuel h₁ σ₁ args with
             | some (vals, σ₂, h₂) =>
               match bindParams proc.inputs ((.vRef addr) :: vals) with
               | some σBound =>
                 match getBody proc with
                 | some body =>
-                  match denoteStmt δ π fuel h₂ σBound body.val with
+                  match interpStmt δ π fuel h₂ σBound body.val with
                   | some (.normal v, _, h₃) => some (.normal v, σ₂, h₃)
                   | some (.ret (some v), _, h₃) => some (.normal v, σ₂, h₃)
                   | some (.ret none, _, h₃) => some (.normal .vVoid, σ₂, h₃)
@@ -300,13 +317,13 @@ def denoteStmt (δ : LaurelEval) (π : ProcEnv) (fuel : Nat)
       | _ => none
 
     | .This =>
-      match σ "this" with
-      | some v => some (.normal v, σ, h)
+      match store "this" with
+      | some v => some (.normal v, store, heap)
       | none => none
 
     -- Type Operations
     | .IsType target ty =>
-      match denoteStmt δ π fuel h σ target.val with
+      match interpStmt δ π fuel heap store target.val with
       | some (.normal (.vRef addr), σ₁, h₁) =>
         match h₁ addr with
         | some (actualType, _) =>
@@ -315,43 +332,48 @@ def denoteStmt (δ : LaurelEval) (π : ProcEnv) (fuel : Nat)
       | _ => none
 
     | .AsType target _ty =>
-      match denoteStmt δ π fuel h σ target.val with
+      match interpStmt δ π fuel heap store target.val with
       | some (.normal v, σ₁, h₁) => some (.normal v, σ₁, h₁)
       | _ => none
 
     -- Quantifiers (delegated to δ)
+    -- TODO: Consider adding a `typeValues : LaurelType → Option (List LaurelValue)`
+    -- field to δ that enumerates values for finite types (bool, bounded ints),
+    -- enabling concrete evaluation of Forall/Exists over enumerable domains.
     | .Forall name ty body =>
-      match δ σ (.Forall name ty body) with
-      | some v => some (.normal v, σ, h)
+      match δ store (.Forall name ty body) with
+      | some v => some (.normal v, store, heap)
       | none => none
 
     | .Exists name ty body =>
-      match δ σ (.Exists name ty body) with
-      | some v => some (.normal v, σ, h)
+      match δ store (.Exists name ty body) with
+      | some v => some (.normal v, store, heap)
       | none => none
 
     -- Specification Constructs (delegated to δ)
+    -- TODO: Implementing Old requires threading a pre-state snapshot
+    -- (store + heap) captured at procedure entry through the interpreter.
     | .Old val =>
-      match δ σ (.Old val) with
-      | some v => some (.normal v, σ, h)
+      match δ store (.Old val) with
+      | some v => some (.normal v, store, heap)
       | none => none
 
     | .Fresh val =>
-      match δ σ (.Fresh val) with
-      | some v => some (.normal v, σ, h)
+      match δ store (.Fresh val) with
+      | some v => some (.normal v, store, heap)
       | none => none
 
     | .Assigned name =>
-      match δ σ (.Assigned name) with
-      | some v => some (.normal v, σ, h)
+      match δ store (.Assigned name) with
+      | some v => some (.normal v, store, heap)
       | none => none
 
     | .ProveBy value _proof =>
-      denoteStmt δ π fuel h σ value.val
+      interpStmt δ π fuel heap store value.val
 
     | .ContractOf ct func =>
-      match δ σ (.ContractOf ct func) with
-      | some v => some (.normal v, σ, h)
+      match δ store (.ContractOf ct func) with
+      | some v => some (.normal v, store, heap)
       | none => none
 
     -- Intentionally omitted
@@ -360,36 +382,36 @@ def denoteStmt (δ : LaurelEval) (π : ProcEnv) (fuel : Nat)
     | .Hole _ _ => none
 
 /-- Evaluate a block (list of statements). -/
-def denoteBlock (δ : LaurelEval) (π : ProcEnv) (fuel : Nat)
-    (h : LaurelHeap) (σ : LaurelStore) (stmts : List StmtExprMd)
+def interpBlock (δ : LaurelEval) (π : ProcEnv) (fuel : Nat)
+    (heap : LaurelHeap) (store : LaurelStore) (stmts : List StmtExprMd)
     : Option (Outcome × LaurelStore × LaurelHeap) :=
   match fuel with
   | 0 => none
   | fuel + 1 =>
     match stmts with
-    | [] => some (.normal .vVoid, σ, h)
+    | [] => some (.normal .vVoid, store, heap)
     | [s] =>
-      denoteStmt δ π fuel h σ s.val
+      interpStmt δ π fuel heap store s.val
     | s :: rest =>
-      match denoteStmt δ π fuel h σ s.val with
-      | some (.normal _, σ₁, h₁) => denoteBlock δ π fuel h₁ σ₁ rest
+      match interpStmt δ π fuel heap store s.val with
+      | some (.normal _, σ₁, h₁) => interpBlock δ π fuel h₁ σ₁ rest
       | some (.exit label, σ₁, h₁) => some (.exit label, σ₁, h₁)
       | some (.ret rv, σ₁, h₁) => some (.ret rv, σ₁, h₁)
       | none => none
 
 /-- Evaluate a list of arguments left-to-right, threading heap and store. -/
-def denoteArgs (δ : LaurelEval) (π : ProcEnv) (fuel : Nat)
-    (h : LaurelHeap) (σ : LaurelStore) (args : List StmtExprMd)
+def interpArgs (δ : LaurelEval) (π : ProcEnv) (fuel : Nat)
+    (heap : LaurelHeap) (store : LaurelStore) (args : List StmtExprMd)
     : Option (List LaurelValue × LaurelStore × LaurelHeap) :=
   match fuel with
   | 0 => none
   | fuel + 1 =>
     match args with
-    | [] => some ([], σ, h)
+    | [] => some ([], store, heap)
     | e :: es =>
-      match denoteStmt δ π fuel h σ e.val with
+      match interpStmt δ π fuel heap store e.val with
       | some (.normal v, σ₁, h₁) =>
-        match denoteArgs δ π fuel h₁ σ₁ es with
+        match interpArgs δ π fuel h₁ σ₁ es with
         | some (vs, σ₂, h₂) => some (v :: vs, σ₂, h₂)
         | none => none
       | _ => none

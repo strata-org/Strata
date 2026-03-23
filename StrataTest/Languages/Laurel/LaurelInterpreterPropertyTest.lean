@@ -4,17 +4,17 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import Strata.Languages.Laurel.LaurelDenote
+import Strata.Languages.Laurel.LaurelInterpreter
 import Plausible
 
 /-!
-# Property-Based Tests for Laurel Denotational Interpreter
+# Property-Based Tests for Laurel Interpreter
 
 Plausible-based property tests validating structural invariants of the
-Laurel denotational interpreter across randomly generated inputs.
+Laurel interpreter across randomly generated inputs.
 -/
 
-namespace Strata.Laurel.DenotePropertyTest
+namespace Strata.Laurel.InterpreterPropertyTest
 
 open Strata.Laurel
 open Plausible
@@ -194,13 +194,13 @@ instance : Arbitrary TestStore where
 
 /-! ## 1. Fuel Monotonicity -/
 
-/-- If denoteStmt succeeds with fuel₁, it gives the same result with fuel₁ + k. -/
+/-- If interpStmt succeeds with fuel₁, it gives the same result with fuel₁ + k. -/
 def fuelMonoProp (e : TestExpr) (ts : TestStore) (fuel₁ : Fin 20) (k : Fin 20) : Bool :=
   let s := e.toStmtExpr
   let f1 := fuel₁.val + 1
   let f2 := f1 + k.val
-  let r1 := denoteStmt trivialEval emptyProc f1 emptyHeap ts.store s
-  let r2 := denoteStmt trivialEval emptyProc f2 emptyHeap ts.store s
+  let r1 := interpStmt trivialEval emptyProc f1 emptyHeap ts.store s
+  let r2 := interpStmt trivialEval emptyProc f2 emptyHeap ts.store s
   match r1 with
   | some _ => resultAgrees r1 r2 ts.vars
   | none => true
@@ -215,8 +215,8 @@ def fuelMonoProp (e : TestExpr) (ts : TestStore) (fuel₁ : Fin 20) (k : Fin 20)
 def unusedStoreIrrelevantProp (i : Int) (extraVal : LaurelValue) : Bool :=
   let σ1 : LaurelStore := emptyStore
   let σ2 : LaurelStore := fun x => if x == "__unused__" then some extraVal else none
-  let r1 := denoteStmt trivialEval emptyProc 5 emptyHeap σ1 (.LiteralInt i)
-  let r2 := denoteStmt trivialEval emptyProc 5 emptyHeap σ2 (.LiteralInt i)
+  let r1 := interpStmt trivialEval emptyProc 5 emptyHeap σ1 (.LiteralInt i)
+  let r2 := interpStmt trivialEval emptyProc 5 emptyHeap σ2 (.LiteralInt i)
   match r1, r2 with
   | some (o1, _, _), some (o2, _, _) => o1 == o2
   | none, none => true
@@ -230,19 +230,19 @@ def unusedStoreIrrelevantProp (i : Int) (extraVal : LaurelValue) : Bool :=
 /-- Literals return the corresponding value and don't modify the store. -/
 def litIntStable (i : Int) : Bool :=
   let σ : LaurelStore := fun x => if x == "x" then some (.vInt 42) else none
-  match denoteStmt trivialEval emptyProc 5 emptyHeap σ (.LiteralInt i) with
+  match interpStmt trivialEval emptyProc 5 emptyHeap σ (.LiteralInt i) with
   | some (.normal (.vInt j), σ', _) => i == j && σ' "x" == some (.vInt 42)
   | _ => false
 
 def litBoolStable (b : Bool) : Bool :=
   let σ : LaurelStore := fun x => if x == "x" then some (.vInt 42) else none
-  match denoteStmt trivialEval emptyProc 5 emptyHeap σ (.LiteralBool b) with
+  match interpStmt trivialEval emptyProc 5 emptyHeap σ (.LiteralBool b) with
   | some (.normal (.vBool b'), σ', _) => b == b' && σ' "x" == some (.vInt 42)
   | _ => false
 
 def litStrStable (s : String) : Bool :=
   let σ : LaurelStore := fun x => if x == "x" then some (.vInt 42) else none
-  match denoteStmt trivialEval emptyProc 5 emptyHeap σ (.LiteralString s) with
+  match interpStmt trivialEval emptyProc 5 emptyHeap σ (.LiteralString s) with
   | some (.normal (.vString s'), σ', _) => s == s' && σ' "x" == some (.vInt 42)
   | _ => false
 
@@ -268,7 +268,7 @@ def arithTotalProp (a b : Int) : Bool :=
   (b == 0 || (evalPrimOp .ModT [.vInt a, .vInt b]).isSome) &&
   (evalPrimOp .Neg [.vInt a]).isSome
 
-/-- Boolean ops on bools return some (Implies is short-circuit, handled in denoteStmt). -/
+/-- Boolean ops on bools return some (Implies is short-circuit, handled in interpStmt). -/
 def boolTotalProp (a b : Bool) : Bool :=
   (evalPrimOp .And [.vBool a, .vBool b]).isSome &&
   (evalPrimOp .Or [.vBool a, .vBool b]).isSome &&
@@ -376,18 +376,18 @@ def strConcatTypePresProp (a b : String) : Bool :=
 /-- A block of int literals returns the value of the last literal. -/
 def blockLastValueProp2 (a b : Int) : Bool :=
   let stmts := [mk (.LiteralInt a), mk (.LiteralInt b)]
-  match denoteBlock trivialEval emptyProc 20 emptyHeap emptyStore stmts with
+  match interpBlock trivialEval emptyProc 20 emptyHeap emptyStore stmts with
   | some (.normal (.vInt v), _, _) => v == b
   | _ => false
 
 def blockLastValueProp3 (a b c : Int) : Bool :=
   let stmts := [mk (.LiteralInt a), mk (.LiteralInt b), mk (.LiteralInt c)]
-  match denoteBlock trivialEval emptyProc 20 emptyHeap emptyStore stmts with
+  match interpBlock trivialEval emptyProc 20 emptyHeap emptyStore stmts with
   | some (.normal (.vInt v), _, _) => v == c
   | _ => false
 
 def blockSingletonProp (a : Int) : Bool :=
-  match denoteBlock trivialEval emptyProc 20 emptyHeap emptyStore [mk (.LiteralInt a)] with
+  match interpBlock trivialEval emptyProc 20 emptyHeap emptyStore [mk (.LiteralInt a)] with
   | some (.normal (.vInt v), _, _) => v == a
   | _ => false
 
@@ -406,7 +406,7 @@ def blockSingletonProp (a : Int) : Bool :=
     statements after it. -/
 def exitPropagationProp (i : Int) (label : String) (j : Int) : Bool :=
   let stmts := [mk (.LiteralInt i), mk (.Exit label), mk (.LiteralInt j)]
-  match denoteBlock trivialEval emptyProc 20 emptyHeap emptyStore stmts with
+  match interpBlock trivialEval emptyProc 20 emptyHeap emptyStore stmts with
   | some (.exit l, _, _) => l == label
   | _ => false
 
@@ -416,7 +416,7 @@ def exitPropagationProp (i : Int) (label : String) (j : Int) : Bool :=
 /-- Exit at the first position also propagates. -/
 def exitFirstProp (label : String) (i : Int) : Bool :=
   let stmts := [mk (.Exit label), mk (.LiteralInt i)]
-  match denoteBlock trivialEval emptyProc 20 emptyHeap emptyStore stmts with
+  match interpBlock trivialEval emptyProc 20 emptyHeap emptyStore stmts with
   | some (.exit l, _, _) => l == label
   | _ => false
 
@@ -430,7 +430,7 @@ def storeThreadingIntProp (v : Int) : Bool :=
   let name := mkId "fresh_var"
   let localDecl := mk (.LocalVariable name (mkTy .TInt) (some (mk (.LiteralInt v))))
   let lookup := mk (.Identifier name)
-  match denoteBlock trivialEval emptyProc 20 emptyHeap emptyStore [localDecl, lookup] with
+  match interpBlock trivialEval emptyProc 20 emptyHeap emptyStore [localDecl, lookup] with
   | some (.normal (.vInt v'), _, _) => v == v'
   | _ => false
 
@@ -442,11 +442,11 @@ def storeThreadingBoolProp (b : Bool) : Bool :=
   let name := mkId "fresh_var"
   let localDecl := mk (.LocalVariable name (mkTy .TBool) (some (mk (.LiteralBool b))))
   let lookup := mk (.Identifier name)
-  match denoteBlock trivialEval emptyProc 20 emptyHeap emptyStore [localDecl, lookup] with
+  match interpBlock trivialEval emptyProc 20 emptyHeap emptyStore [localDecl, lookup] with
   | some (.normal (.vBool b'), _, _) => b == b'
   | _ => false
 
 #eval Testable.check (cfg := { numInst := 300, quiet := true })
   (∀ b : Bool, storeThreadingBoolProp b)
 
-end Strata.Laurel.DenotePropertyTest
+end Strata.Laurel.InterpreterPropertyTest

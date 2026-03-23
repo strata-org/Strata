@@ -4,14 +4,16 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import Strata.Languages.Laurel.LaurelDenote
+import Strata.Languages.Laurel.LaurelInterpreter
 
 /-!
 # Concrete Program Evaluator for Laurel
 
-Bridges the gap between `denoteStmt` (which operates on individual statements)
+Bridges the gap between `interpStmt` (which operates on individual statements)
 and `Laurel.Program` (which is the top-level program structure). Given a program,
-builds the required environments and calls `denoteStmt` on the `main` procedure's body.
+builds the required environments and calls `interpStmt` on the `main` procedure's body.
+
+See `LaurelSemantics.lean` for the module layering rationale.
 -/
 
 namespace Strata.Laurel
@@ -49,16 +51,16 @@ def buildProcEnv (prog : Program) : ProcEnv :=
 /-- Build an initial store from static fields, all initialized to `vVoid`. -/
 def buildInitialStore (prog : Program) : LaurelStore :=
   let fields := prog.staticFields
-  fields.foldl (fun σ f => fun x => if x == f.name.text then some .vVoid else σ x)
+  fields.foldl (fun acc f => fun x => if x == f.name.text then some .vVoid else acc x)
     (fun _ => none)
 
 /-! ## Default Expression Evaluator -/
 
 /-- A `LaurelEval` that handles identifiers and literals.
     Specification constructs return `none`. -/
-def defaultEval : LaurelEval := fun σ e =>
-  match e with
-  | .Identifier name => σ name.text
+def defaultEval : LaurelEval := fun st expr =>
+  match expr with
+  | .Identifier name => st name.text
   | .LiteralInt i => some (.vInt i)
   | .LiteralBool b => some (.vBool b)
   | .LiteralString s => some (.vString s)
@@ -70,16 +72,16 @@ def defaultEval : LaurelEval := fun σ e =>
     Returns `none` if there is no `main` or it has no body. -/
 def evalProgram (prog : Program) (fuel : Nat := 10000)
     : Option (Outcome × LaurelStore × LaurelHeap) :=
-  let π := buildProcEnv prog
+  let procEnv := buildProcEnv prog
   match prog.staticProcedures.find? (fun p => p.name.text == "main") with
   | none => none
   | some mainProc =>
     match getBody mainProc with
     | none => none
     | some body =>
-      let σ₀ := buildInitialStore prog
-      let h₀ : LaurelHeap := fun _ => none
-      denoteStmt defaultEval π fuel h₀ σ₀ body.val
+      let initStore := buildInitialStore prog
+      let initHeap : LaurelHeap := fun _ => none
+      interpStmt defaultEval procEnv fuel initHeap initStore body.val
 
 /-! ## User-Friendly Result Type -/
 
@@ -112,8 +114,8 @@ def runProgram (prog : Program) (fuel : Nat := 10000) : EvalResult :=
     | none => .noBody
     | some _ =>
       match evalProgram prog fuel with
-      | some (.normal v, σ, h) => .success v σ h
-      | some (.ret rv, σ, h) => .returned rv σ h
+      | some (.normal v, st, hp) => .success v st hp
+      | some (.ret rv, st, hp) => .returned rv st hp
       | some (.exit label, _, _) => .stuck s!"uncaught exit '{label}'"
       | none => .fuelExhausted
 

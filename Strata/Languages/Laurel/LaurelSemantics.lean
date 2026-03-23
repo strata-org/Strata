@@ -10,7 +10,15 @@ import Strata.Languages.Laurel.Laurel
 # Laurel Semantic Types and Helpers
 
 Shared type definitions (values, stores, heaps, outcomes) and helper
-functions used by the denotational interpreter and concrete evaluator.
+functions used by the interpreter (`LaurelInterpreter.lean`) and
+concrete evaluator (`LaurelConcreteEval.lean`).
+
+## Module Layering
+
+- `LaurelSemantics` — types and pure helpers (this file)
+- `LaurelInterpreter` — fuel-based recursive interpreter over `StmtExpr`
+- `LaurelConcreteEval` — bridges interpreter to `Laurel.Program` (builds
+  `ProcEnv`, initial store, runs `main`)
 -/
 namespace Strata.Laurel
 
@@ -41,7 +49,7 @@ inductive LaurelValue where
 
 /-- Variable store keyed by `String` (the `.text` of an `Identifier`).
     Using `String` ensures `BEq` and `DecidableEq` agree, which is required
-    by the bridging proofs between relational and denotational semantics. -/
+    by the bridging proofs between relational and interpreter semantics. -/
 abbrev LaurelStore := String → Option LaurelValue
 abbrev LaurelHeap := Nat → Option (String × (String → Option LaurelValue))
 abbrev LaurelEval := LaurelStore → StmtExpr → Option LaurelValue
@@ -108,7 +116,7 @@ def catchExit : Option String → Outcome → Outcome
 def evalPrimOp (op : Operation) (args : List LaurelValue) : Option LaurelValue :=
   match op, args with
   -- `And`/`Or` are eager boolean operators: both operands are fully evaluated.
-  -- `AndThen`/`OrElse`/`Implies` are short-circuit operators handled in `denoteStmt`
+  -- `AndThen`/`OrElse`/`Implies` are short-circuit operators handled in `interpStmt`
   -- (they return `none` here because evalPrimOp only handles eager evaluation).
   | .And,     [.vBool a, .vBool b] => some (.vBool (a && b))
   | .Or,      [.vBool a, .vBool b] => some (.vBool (a || b))

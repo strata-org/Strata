@@ -27,8 +27,8 @@ import Strata.Languages.Core.SarifOutput
 import Strata.Languages.Laurel.LaurelToCoreTranslator
 import Strata.Languages.Laurel.LaurelSemantics
 import Strata.Languages.Laurel.LaurelConcreteEval
-import Strata.Languages.Laurel.LaurelDenote
-import Strata.Languages.Laurel.LaurelDenoteMono
+import Strata.Languages.Laurel.LaurelInterpreter
+import Strata.Languages.Laurel.LaurelInterpreterMono
 
 /- Code Transforms -/
 import Strata.Transform.CallElimCorrect
