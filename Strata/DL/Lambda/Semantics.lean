@@ -862,7 +862,33 @@ private theorem StepStar_substFvar (F : @Factory Tbase) (rf : Env Tbase)
     (a a' : LExpr Tbase.mono)
     (h : ReflTrans (Step F rf) a a') :
     ReflTrans (Step F rf) (LExpr.substFvar body fr a) (LExpr.substFvar body fr a') := by
-  sorry
+  induction body with
+  | const => simp [LExpr.substFvar]; exact ReflTrans.refl _
+  | op => simp [LExpr.substFvar]; exact ReflTrans.refl _
+  | bvar => simp [LExpr.substFvar]; exact ReflTrans.refl _
+  | fvar m x ty =>
+    simp only [LExpr.substFvar]
+    split
+    · exact h
+    · exact ReflTrans.refl _
+  | app m e1 e2 ih1 ih2 =>
+    simp only [LExpr.substFvar]
+    exact ReflTrans_trans
+      (StepStar_app_fn F rf _ _ _ m ih1)
+      (StepStar_app_arg F rf _ _ _ m ih2)
+  | ite m c t f ih1 ih2 ih3 =>
+    -- Requires composing StepStar_ite_cond/then/else with metadata tracking
+    sorry
+  | eq m e1 e2 ih1 ih2 =>
+    -- Requires StepStar_eq_lhs/rhs composition + isCanonicalValue proof
+    sorry
+  | abs m name ty body ih =>
+    -- Step cannot go under abs binders. This case would need a rule like
+    -- Step.reduce_abs or Canonicalize-based stepping.
+    sorry
+  | quant m qk name ty tr body ih1 ih2 =>
+    -- Step cannot go under quant binders.
+    sorry
 
 omit [DecidableEq Tbase.Metadata] [DecidableEq Tbase.Identifier] in
 private theorem StepStar_substFvars (F : @Factory Tbase) (rf : Env Tbase)
@@ -1672,8 +1698,11 @@ private theorem substFvarsFromState_idem
       LExpr.substFvarsFromState σ e := by
   simp only [LExpr.substFvarsFromState]
   apply substFvars_idem
-  -- All values in the state map are canonical, hence have empty freeVars.
-  sorry -- needs: toSingleMap values are canonical → freeVars = []
+  -- Need: all values in toSingleMap (including shadowed entries) have empty freeVars.
+  -- Current hEnv only covers the first-match (toEnv) values, not shadowed entries.
+  -- This requires either: (a) strengthening hEnv to cover all scopes, or
+  -- (b) proving substFvars_idem with a weaker "effective values only" condition.
+  sorry
 
 -- Canonical values are normal forms: no Step rule can fire on them.
 omit [DecidableEq Tbase.Metadata] [DecidableEq Tbase.Identifier] in
