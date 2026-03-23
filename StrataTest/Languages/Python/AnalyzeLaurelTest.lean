@@ -65,16 +65,17 @@ private meta def compilePython
   return ionPath
 
 /-- Set up the test fixture: compile all pyspec files and the dispatch file.
-    Returns (dispatchIonPath, pyspecDir). -/
+    Returns (dispatchIonPath, pyspecPaths). -/
 private meta def setupFixture (_pythonCmd : System.FilePath)
-    (outDir : System.FilePath) : IO System.FilePath := do
+    (outDir : System.FilePath) : IO (System.FilePath × Array String) := do
   IO.FS.withTempFile fun _handle dialectFile => do
     IO.FS.writeBinFile dialectFile Python.Python.toIon
     -- Compile service specs
     let _ ← compilePySpec dialectFile (testDir / "Storage.py") outDir
     let _ ← compilePySpec dialectFile (testDir / "Messaging.py") outDir
     -- Compile dispatch file
-    compilePySpec dialectFile (testDir / "servicelib.py") outDir
+    let dispatchIon ← compilePySpec dialectFile (testDir / "servicelib.py") outDir
+    return (dispatchIon, #[])
 
 /-- Compile a test Python file to Ion format. -/
 private meta def compileTestScript (pyFile : System.FilePath)
@@ -86,11 +87,13 @@ private meta def compileTestScript (pyFile : System.FilePath)
 /-- Run pyAnalyzeLaurel on a test script within the shared fixture. -/
 private meta def runAnalyze (dispatchIon : System.FilePath)
     (tmpDir : System.FilePath) (scriptName : String)
+    (pyspecPaths : Array String := #[])
     : IO (Except String Core.Program) := do
   let testIon ← compileTestScript (testDir / scriptName) tmpDir
   let laurel ←
     match ← Strata.pyAnalyzeLaurel testIon.toString
-        (dispatchPaths := #[dispatchIon.toString]) |>.toBaseIO with
+        (dispatchPaths := #[dispatchIon.toString])
+        (pyspecPaths := pyspecPaths) |>.toBaseIO with
     | .ok r => pure r
     | .error err => return .error (toString err)
   match Strata.translateCombinedLaurel laurel with
@@ -138,8 +141,9 @@ private meta def testCases : List (String × Expected) := [
 
 /-- Run a single test case and return an error message on failure, or `none` on success. -/
 private meta def runTestCase (dispatchIon tmpDir : System.FilePath)
-    (scriptName : String) (expected : Expected) : IO (Option String) := do
-  let result ← runAnalyze dispatchIon tmpDir scriptName
+    (scriptName : String) (expected : Expected)
+    (pyspecPaths : Array String := #[]) : IO (Option String) := do
+  let result ← runAnalyze dispatchIon tmpDir scriptName pyspecPaths
   match expected, result with
   | .success, .ok _ => return none
   | .success, .error msg =>
@@ -152,7 +156,7 @@ private meta def runTestCase (dispatchIon tmpDir : System.FilePath)
 
 #eval withPython fun _pythonCmd => do
   IO.FS.withTempDir fun tmpDir => do
-    let dispatchIon ← setupFixture _pythonCmd tmpDir
+    let (dispatchIon, pyspecPaths) ← setupFixture _pythonCmd tmpDir
     -- Launch all tests concurrently, checking for duplicate filenames
     let mut seen : Std.HashSet String := {}
     let mut tasks : Array (String × Task (Except IO.Error (Option String))) := #[]
@@ -160,7 +164,7 @@ private meta def runTestCase (dispatchIon tmpDir : System.FilePath)
       if scriptName ∈ seen then
         throw <| IO.userError s!"Duplicate test filename: {scriptName}"
       seen := seen.insert scriptName
-      let task ← IO.asTask (runTestCase dispatchIon tmpDir scriptName expected)
+      let task ← IO.asTask (runTestCase dispatchIon tmpDir scriptName expected pyspecPaths)
       tasks := tasks.push (scriptName, task)
     -- Collect results
     let mut errors : Array String := #[]
