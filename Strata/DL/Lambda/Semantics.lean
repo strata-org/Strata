@@ -110,13 +110,25 @@ inductive Step (F:@Factory Tbase) (rf:Env Tbase)
     Step F rf eelse eelse' →
     Step F rf (.ite m econd ethen eelse) (.ite m' econd ethen eelse')
 
-/-- Evaluation of equality. Reduce after both operands evaluate to values. -/
-| eq_reduce:
-  ∀ (e1 e2 eres:LExpr Tbase.mono)
+/-- Evaluation of equality to true. Always allowed. -/
+| eq_reduce_true:
+  ∀ (e1 e2:LExpr Tbase.mono)
     (H1:LExpr.isCanonicalValue F e1)
     (H2:LExpr.isCanonicalValue F e2),
-    eres = .const mc (.boolConst (LExpr.eql F e1 e2 H1 H2)) →
-    Step F rf (.eq m e1 e2) eres
+    LExpr.eql F e1 e2 H1 H2 = true →
+    Step F rf (.eq m e1 e2) (.const mc (.boolConst true))
+
+/-- Evaluation of equality to false. Only when neither side contains a binder,
+    because syntactic inequality under binders does not imply semantic inequality
+    (e.g., `λx. x+1` vs `λx. 1+x`). -/
+| eq_reduce_false:
+  ∀ (e1 e2:LExpr Tbase.mono)
+    (H1:LExpr.isCanonicalValue F e1)
+    (H2:LExpr.isCanonicalValue F e2),
+    LExpr.eql F e1 e2 H1 H2 = false →
+    e1.containsBinder = false →
+    e2.containsBinder = false →
+    Step F rf (.eq m e1 e2) (.const mc (.boolConst false))
 
 /-- Evaluation of the left-hand side of an equality. -/
 | eq_reduce_lhs:
