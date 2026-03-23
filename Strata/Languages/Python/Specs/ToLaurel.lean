@@ -268,9 +268,9 @@ private def mkStmt (e : StmtExpr) : StmtExprMd :=
   { val := e, md := .empty }
 
 /-- Translate a SpecExpr to a Laurel StmtExpr.
-    All values are assumed to be Core(Any)-typed, matching the Python pipeline.
+    All values are assumed to be Any-typed (the Python prelude's universal type).
     Returns `none` for unsupported expressions (placeholders).
-    Uses Core prelude function names (Str.Length, DictStrAny_contains, etc.)
+    Uses Core prelude function names (Any_len, DictStrAny_contains, etc.)
     which are resolved after the Core prelude is prepended. -/
 partial def specExprToLaurel (e : SpecExpr) : Option StmtExprMd :=
   match e with
