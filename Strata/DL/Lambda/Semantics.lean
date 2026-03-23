@@ -1601,11 +1601,49 @@ private theorem callOfLFunc_replace_last_arg
     (h : F.callOfLFunc (.app m e1 e2) = some (op, args, fn)) :
     ∃ pre, args = pre ++ [e2] ∧
       F.callOfLFunc (.app m' e1 e2') = some (op, pre ++ [e2'], fn) := by
-  -- getLFuncCall.go decomposes e1 independently of e2/e2', collecting them
-  -- in the accumulator. The accumulator change lemma (getLFuncCall_go_acc_change)
-  -- establishes that replacing e2 with e2' gives the same op with modified args.
-  -- The factory lookup and arity check in callOfLFunc are then identical.
-  sorry
+  -- getLFuncCall decomposes via go, putting e2 in the accumulator.
+  -- The go recursion depends only on e1, so replacing e2→e2' preserves op.
+  have ⟨h_glfc, m_op, name_op, ty_op, h_op_eq⟩ := callOfLFunc_getLFuncCall h
+  -- Get the inner prefix and the modified getLFuncCall result
+  have h_split : ∃ pre, args = pre ++ [e2] ∧
+      getLFuncCall (.app m' e1 e2') = (op, pre ++ [e2']) := by
+    unfold getLFuncCall at h_glfc ⊢
+    match e1 with
+    | .app m1 e1' arg1 =>
+      simp only [getLFuncCall.go, List.append_nil] at h_glfc ⊢
+      obtain ⟨inner, h_eq, h_go'⟩ :=
+        getLFuncCall_go_acc_change e1' [arg1, e2] [arg1, e2'] op args h_glfc
+      exact ⟨inner ++ [arg1], by rw [h_eq]; simp [List.append_assoc],
+        by rw [h_go']; simp [List.append_assoc]⟩
+    | .op m1 fn_name fn_ty =>
+      simp only [getLFuncCall.go, List.append_nil] at h_glfc
+      obtain ⟨rfl, rfl⟩ := h_glfc; exact ⟨[], rfl, by simp [getLFuncCall.go]⟩
+    | .const _ _ | .bvar _ _ | .fvar _ _ _ | .abs _ _ _ _ | .quant _ _ _ _ _ _
+    | .ite _ _ _ _ | .eq _ _ _ =>
+      simp only [getLFuncCall.go] at h_glfc
+      obtain ⟨rfl, _⟩ := h_glfc; simp_all
+  obtain ⟨pre, h_args_eq, h_glfc'⟩ := h_split
+  refine ⟨pre, h_args_eq, ?_⟩
+  -- callOfLFunc = getLFuncCall + match op + factory lookup + arity check.
+  -- op and fn are the same; arity is preserved since |pre ++ [e2]| = |pre ++ [e2']|.
+  subst h_args_eq; subst h_op_eq
+  -- Extract factory lookup and arity check from h
+  simp only [Factory.callOfLFunc] at h
+  rw [h_glfc] at h; simp only at h
+  -- h is now about getFactoryLFunc + arity check on (pre ++ [e2])
+  cases h_fac : Factory.getFactoryLFunc F name_op.name with
+  | none => simp [h_fac] at h
+  | some func =>
+    simp only [h_fac] at h
+    simp only [Factory.callOfLFunc, h_glfc', h_fac]
+    -- Both share the same arity check value (lengths are equal)
+    have h_len : (pre ++ [e2']).length = (pre ++ [e2]).length := by simp
+    -- Split the arity match in h to extract fn = func
+    split at h <;> simp at h
+    obtain ⟨_, rfl, rfl⟩ := h
+    -- Now rebuild with same arity check for pre ++ [e2']
+    rename_i h_arity
+    rw [h_len, h_arity]
 
 ---------------------------------------------------------------------
 -- Helpers for canonical_value_not_step
@@ -2331,9 +2369,28 @@ theorem Step_diamond
       subst h_new; rw [h_args_eq]
       exact StepStar_substFvars F rf fnbody
         (fn.inputs.keys.zip (pre ++ [e2])) (fn.inputs.keys.zip (pre ++ [e2']))
-        (by -- keys are the same: zip preserves fst when the list lengths match
-            sorry)
+        (by -- keys are the same: both zip with same keys, same-length values
+            suffices ∀ (ks : List Tbase.Identifier) (vs₁ vs₂ : List (LExpr Tbase.mono)),
+                vs₁.length = vs₂.length →
+                (ks.zip vs₁).map Prod.fst = (ks.zip vs₂).map Prod.fst by
+              exact this _ _ _ (by simp)
+            intro ks vs₁ vs₂ hlen
+            induction ks generalizing vs₁ vs₂ with
+            | nil => simp
+            | cons k ks ih =>
+              cases vs₁ with
+              | nil => cases vs₂ with | nil => simp | cons _ _ => simp at hlen
+              | cons v₁ rest₁ =>
+                cases vs₂ with
+                | nil => simp at hlen
+                | cons v₂ rest₂ =>
+                  simp only [List.zip_cons_cons, List.map_cons, List.cons.injEq, true_and]
+                  exact ih rest₁ rest₂ (by simp at hlen; exact hlen))
         (by -- per-entry stepping: identical except last entry (e2 → e2')
+            intro k v v' hm hm'
+            -- zip (ks) (pre ++ [e2]) and zip (ks) (pre ++ [e2']) differ only at last
+            -- For matching pre entries: v = v', so ReflTrans.refl
+            -- For the e2/e2' entry: we have h_step₁ : Step F rf e2 e2'
             sorry)
     | eval_fn e_full callee e_result args fn denotefn h_call h_ceval h_res =>
       -- eval_fn vs reduce_2: concreteEval result is opaque w.r.t. argument stepping.
@@ -2674,8 +2731,24 @@ theorem Step_diamond
       subst h_new₁; rw [h_args_eq]
       exact StepStar_substFvars F rf fnbody₁
         (fn₁.inputs.keys.zip (pre ++ [e2_r])) (fn₁.inputs.keys.zip (pre ++ [e2']))
-        (by sorry)
-        (by sorry)
+        (by suffices ∀ (ks : List Tbase.Identifier) (vs₁ vs₂ : List (LExpr Tbase.mono)),
+                vs₁.length = vs₂.length →
+                (ks.zip vs₁).map Prod.fst = (ks.zip vs₂).map Prod.fst by
+              exact this _ _ _ (by simp)
+            intro ks vs₁ vs₂ hlen
+            induction ks generalizing vs₁ vs₂ with
+            | nil => simp
+            | cons k ks ih =>
+              cases vs₁ with
+              | nil => cases vs₂ with | nil => simp | cons _ _ => simp at hlen
+              | cons v₁ rest₁ =>
+                cases vs₂ with
+                | nil => simp at hlen
+                | cons v₂ rest₂ =>
+                  simp only [List.zip_cons_cons, List.map_cons, List.cons.injEq, true_and]
+                  exact ih rest₁ rest₂ (by simp at hlen; exact hlen))
+        (by intro k v v' hm hm'
+            sorry)
     | ite_reduce_then =>
       simp [Factory.callOfLFunc, getLFuncCall, getLFuncCall.go] at h_call₁
     | ite_reduce_else =>
