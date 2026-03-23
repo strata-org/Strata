@@ -142,12 +142,14 @@ evaluates all arguments independently (not left-to-right). -/
     Step F rf e1 e1' →
     Step F rf (.eq m e1 e2) (.eq m' e1' e2)
 
-/-- Evaluation of the right-hand side of an equality. -/
+/-- Evaluation of the right-hand side of an equality.
+Note: this rule does NOT require the LHS to be a canonical value.
+This relaxes the strict call-by-value discipline, analogous to how
+`reduce_2` was relaxed for application arguments. -/
 | eq_reduce_rhs:
-  ∀ (v1 e2 e2':LExpr Tbase.mono),
-    LExpr.isCanonicalValue F v1 →
+  ∀ (e1 e2 e2':LExpr Tbase.mono),
     Step F rf e2 e2' →
-    Step F rf (.eq m v1 e2) (.eq m' v1 e2')
+    Step F rf (.eq m e1 e2) (.eq m' e1 e2')
 
 /-- Evaluate a built-in function when a body expression is available in the
 `Factory` argument `F`. This is consistent with what `LExpr.eval` does (modulo
@@ -450,14 +452,6 @@ inductive ValEquiv (F : @Factory Tbase) (rf : Env Tbase)
 -- Reflexivity, symmetry, transitivity are proved after the helper lemmas
 -- (see after canonical_value_not_step).
 
--- Placeholder: ValEquiv.refl is proved later in the file.
--- We declare it as sorry here so downstream code compiles during development.
-omit [DecidableEq Tbase.Metadata] [DecidableEq Tbase.Identifier] in
-theorem ValEquiv.refl_sorry (F : @Factory Tbase) (rf : Env Tbase) (e : LExpr Tbase.mono)
-    (hc : LExpr.isCanonicalValue F e = true) :
-    ValEquiv F rf e e := by
-  sorry
-
 omit [DecidableEq Tbase.Metadata] [DecidableEq Tbase.Identifier] [DecidableEq Tbase.IDMeta] in
 theorem ReflTrans_trans {r : Relation (LExpr Tbase.mono)} {x y z : LExpr Tbase.mono}
     (h1 : ReflTrans r x y) (h2 : ReflTrans r y z) : ReflTrans r x z := by
@@ -515,16 +509,16 @@ theorem StepStar_eq_lhs (F : @Factory Tbase) (rf : Env Tbase)
 
 omit [DecidableEq Tbase.Metadata] [DecidableEq Tbase.Identifier] in
 theorem StepStar_eq_rhs (F : @Factory Tbase) (rf : Env Tbase)
-    (v1 : LExpr Tbase.mono) (hv1 : LExpr.isCanonicalValue F v1 = true)
+    (e1 : LExpr Tbase.mono)
     (e2 e2' : LExpr Tbase.mono) (m : Tbase.Metadata)
     (h : ReflTrans (Step F rf) e2 e2') :
-    ∃ m', ReflTrans (Step F rf) (.eq m v1 e2) (.eq m' v1 e2') := by
+    ∃ m', ReflTrans (Step F rf) (.eq m e1 e2) (.eq m' e1 e2') := by
   induction h with
   | refl => exact ⟨m, ReflTrans.refl _⟩
   | step x y z hxy _ ih =>
     obtain ⟨m1, h1⟩ := ih
-    exact ⟨m1, ReflTrans.step _ (.eq m v1 y) _
-      (Step.eq_reduce_rhs (m' := m) v1 x y hv1 hxy) h1⟩
+    exact ⟨m1, ReflTrans.step _ (.eq m e1 y) _
+      (Step.eq_reduce_rhs (m' := m) e1 x y hxy) h1⟩
 
 omit [DecidableEq Tbase.Metadata] [DecidableEq Tbase.Identifier] in
 theorem StepStar_app_fn (F : @Factory Tbase) (rf : Env Tbase)
@@ -968,6 +962,64 @@ theorem substFvars_app
 -- require a Step rule for stepping inside binders (which doesn't
 -- exist), so those cases are left as sorry.
 
+-- Metadata-preserving ite/eq congruence lemmas (the existing StepStar_ite_*
+-- return ∃ m', but we need metadata preserved for substFvar composition).
+
+omit [DecidableEq Tbase.Metadata] [DecidableEq Tbase.Identifier] in
+private theorem StepStar_ite_cond_pres (F : @Factory Tbase) (rf : Env Tbase)
+    (c c' t f : LExpr Tbase.mono) (m : Tbase.Metadata)
+    (h : ReflTrans (Step F rf) c c') :
+    ReflTrans (Step F rf) (.ite m c t f) (.ite m c' t f) := by
+  induction h with
+  | refl => exact ReflTrans.refl _
+  | step x y z hxy _ ih =>
+    exact ReflTrans.step _ (.ite m y t f) _
+      (Step.ite_reduce_cond (m' := m) x y t f hxy) ih
+
+omit [DecidableEq Tbase.Metadata] [DecidableEq Tbase.Identifier] in
+private theorem StepStar_ite_then_pres (F : @Factory Tbase) (rf : Env Tbase)
+    (c t t' f : LExpr Tbase.mono) (m : Tbase.Metadata)
+    (h : ReflTrans (Step F rf) t t') :
+    ReflTrans (Step F rf) (.ite m c t f) (.ite m c t' f) := by
+  induction h with
+  | refl => exact ReflTrans.refl _
+  | step x y z hxy _ ih =>
+    exact ReflTrans.step _ (.ite m c y f) _
+      (Step.ite_reduce_then_branch (m' := m) c x y f hxy) ih
+
+omit [DecidableEq Tbase.Metadata] [DecidableEq Tbase.Identifier] in
+private theorem StepStar_ite_else_pres (F : @Factory Tbase) (rf : Env Tbase)
+    (c t f f' : LExpr Tbase.mono) (m : Tbase.Metadata)
+    (h : ReflTrans (Step F rf) f f') :
+    ReflTrans (Step F rf) (.ite m c t f) (.ite m c t f') := by
+  induction h with
+  | refl => exact ReflTrans.refl _
+  | step x y z hxy _ ih =>
+    exact ReflTrans.step _ (.ite m c t y) _
+      (Step.ite_reduce_else_branch (m' := m) c t x y hxy) ih
+
+omit [DecidableEq Tbase.Metadata] [DecidableEq Tbase.Identifier] in
+private theorem StepStar_eq_lhs_pres (F : @Factory Tbase) (rf : Env Tbase)
+    (e1 e1' e2 : LExpr Tbase.mono) (m : Tbase.Metadata)
+    (h : ReflTrans (Step F rf) e1 e1') :
+    ReflTrans (Step F rf) (.eq m e1 e2) (.eq m e1' e2) := by
+  induction h with
+  | refl => exact ReflTrans.refl _
+  | step x y z hxy _ ih =>
+    exact ReflTrans.step _ (.eq m y e2) _
+      (Step.eq_reduce_lhs (m' := m) x y e2 hxy) ih
+
+omit [DecidableEq Tbase.Metadata] [DecidableEq Tbase.Identifier] in
+private theorem StepStar_eq_rhs_pres (F : @Factory Tbase) (rf : Env Tbase)
+    (e1 e2 e2' : LExpr Tbase.mono) (m : Tbase.Metadata)
+    (h : ReflTrans (Step F rf) e2 e2') :
+    ReflTrans (Step F rf) (.eq m e1 e2) (.eq m e1 e2') := by
+  induction h with
+  | refl => exact ReflTrans.refl _
+  | step x y z hxy _ ih =>
+    exact ReflTrans.step _ (.eq m e1 y) _
+      (Step.eq_reduce_rhs (m' := m) e1 x y hxy) ih
+
 omit [DecidableEq Tbase.Metadata] [DecidableEq Tbase.Identifier] in
 private theorem StepStar_substFvar (F : @Factory Tbase) (rf : Env Tbase)
     (body : LExpr Tbase.mono) (fr : Tbase.Identifier)
@@ -989,11 +1041,17 @@ private theorem StepStar_substFvar (F : @Factory Tbase) (rf : Env Tbase)
       (StepStar_app_fn F rf _ _ _ m ih1)
       (StepStar_app_arg F rf _ _ _ m ih2)
   | ite m c t f ih1 ih2 ih3 =>
-    -- Requires composing StepStar_ite_cond/then/else with metadata tracking
-    sorry
+    simp only [LExpr.substFvar]
+    exact ReflTrans_trans
+      (ReflTrans_trans
+        (StepStar_ite_cond_pres F rf _ _ _ _ m ih1)
+        (StepStar_ite_then_pres F rf _ _ _ _ m ih2))
+      (StepStar_ite_else_pres F rf _ _ _ _ m ih3)
   | eq m e1 e2 ih1 ih2 =>
-    -- Requires StepStar_eq_lhs/rhs composition + isCanonicalValue proof
-    sorry
+    simp only [LExpr.substFvar]
+    exact ReflTrans_trans
+      (StepStar_eq_lhs_pres F rf _ _ _ m ih1)
+      (StepStar_eq_rhs_pres F rf _ _ _ m ih2)
   | abs m name ty body ih =>
     -- Step cannot go under abs binders. This case would need a rule like
     -- Step.reduce_abs or Canonicalize-based stepping.
@@ -2301,7 +2359,7 @@ theorem Step_diamond
       -- Result: e₁ = .const mc (.boolConst true), e₂ = .eq m' e1' v2.
       -- e₁ is stuck; e₂ may eventually re-reduce to true.
       sorry -- needs isCanonicalValue proof for v1 (not available from eq_reduce_true)
-    | @eq_reduce_rhs _ _ _ _ e2' hv₁' h_step =>
+    | @eq_reduce_rhs _ _ _ _ e2' h_step =>
       sorry -- needs isCanonicalValue proof for v2 (not available from eq_reduce_true)
     | expand_fn _ _ _ _ _ _ h_call =>
       simp [Factory.callOfLFunc, getLFuncCall, getLFuncCall.go] at h_call
@@ -2319,7 +2377,7 @@ theorem Step_diamond
       exact ⟨_, _, ReflTrans.refl _, ReflTrans.refl _, eraseMetadata_const_congr⟩
     | eq_reduce_lhs _ e1' _ h_step =>
       sorry -- needs isCanonicalValue proof for v1 (not available from eq_reduce_false)
-    | @eq_reduce_rhs _ _ _ _ e2' hv₁' h_step =>
+    | @eq_reduce_rhs _ _ _ _ e2' h_step =>
       sorry -- needs isCanonicalValue proof for v2 (not available from eq_reduce_false)
     | expand_fn _ _ _ _ _ _ h_call =>
       simp [Factory.callOfLFunc, getLFuncCall, getLFuncCall.go] at h_call
@@ -2343,9 +2401,12 @@ theorem Step_diamond
       exact ⟨.eq m1'' e₃ e2, .eq m2'' e₃' e2,
              hss1, hss2,
              eraseMetadata_eq_congr heq rfl⟩
-    | @eq_reduce_rhs _ m2' _ _ e2' hv₁ h_step₂ =>
-      -- eq_reduce_rhs requires isCanonicalValue F e1 = true, but h_step₁ steps e1.
-      exact absurd h_step₁ (canonical_value_not_step F rf e1 hWF hv₁ e1')
+    | @eq_reduce_rhs _ m2' _ _ e2' h_step₂ =>
+      -- LHS steps e1→e1', RHS steps e2→e2'. Join at (.eq _ e1' e2').
+      exact ⟨.eq m' e1' e2', .eq m2' e1' e2',
+             ReflTrans.step _ _ _ (Step.eq_reduce_rhs (m' := m') e1' e2 e2' h_step₂) (ReflTrans.refl _),
+             ReflTrans.step _ _ _ (Step.eq_reduce_lhs (m' := m2') e1 e1' e2' h_step₁) (ReflTrans.refl _),
+             eraseMetadata_eq_congr rfl rfl⟩
     | expand_fn _ _ _ _ _ _ h_call =>
       simp [Factory.callOfLFunc, getLFuncCall, getLFuncCall.go] at h_call
     | eval_fn _ _ _ _ _ _ h_call =>
@@ -2354,20 +2415,24 @@ theorem Step_diamond
   -- ═══════════════════════════════════════════════════════════════
   -- Case: h₁ = eq_reduce_rhs
   -- ═══════════════════════════════════════════════════════════════
-  | @eq_reduce_rhs m m' v1 e2 e2' hv₁ h_step₁ =>
+  | @eq_reduce_rhs m m' e1 e2 e2' h_step₁ =>
     cases h₂ with
     | @eq_reduce_true _ mc' _ _ hv₁' hv₂ heres =>
       sorry -- needs isCanonicalValue proof for e2 (not available from eq_reduce_true)
     | @eq_reduce_false _ mc' _ _ hv₁' hv₂ heres hcb₁ hcb₂ =>
       sorry -- needs isCanonicalValue proof for e2 (not available from eq_reduce_false)
     | eq_reduce_lhs _ e1' _ h_step₂ =>
-      exact absurd h_step₂ (canonical_value_not_step F rf v1 hWF hv₁ e1')
-    | @eq_reduce_rhs _ m2' _ _ e2'' hv₁' h_step₂ =>
+      -- RHS steps e2→e2', LHS steps e1→e1'. Join at (.eq _ e1' e2').
+      exact ⟨.eq m' e1' e2', .eq m' e1' e2',
+             ReflTrans.step _ _ _ (Step.eq_reduce_lhs (m' := m') e1 e1' e2' h_step₂) (ReflTrans.refl _),
+             ReflTrans.step _ _ _ (Step.eq_reduce_rhs (m' := m') e1' e2 e2' h_step₁) (ReflTrans.refl _),
+             rfl⟩
+    | @eq_reduce_rhs _ m2' _ _ e2'' h_step₂ =>
       -- Both step the RHS: use IH on the sub-step
       have ⟨e₃, e₃', hc₁, hc₂, heq⟩ := Step_diamond F rf hWF hFC e2 e2' e2'' h_step₁ h_step₂
-      obtain ⟨m1'', hss1⟩ := StepStar_eq_rhs F rf v1 hv₁ e2' e₃ m' hc₁
-      obtain ⟨m2'', hss2⟩ := StepStar_eq_rhs F rf v1 hv₁ e2'' e₃' m2' hc₂
-      exact ⟨.eq m1'' v1 e₃, .eq m2'' v1 e₃',
+      obtain ⟨m1'', hss1⟩ := StepStar_eq_rhs F rf e1 e2' e₃ m' hc₁
+      obtain ⟨m2'', hss2⟩ := StepStar_eq_rhs F rf e1 e2'' e₃' m2' hc₂
+      exact ⟨.eq m1'' e1 e₃, .eq m2'' e1 e₃',
              hss1, hss2,
              eraseMetadata_eq_congr rfl heq⟩
     | expand_fn _ _ _ _ _ _ h_call =>
@@ -2414,7 +2479,7 @@ theorem Step_diamond
       simp [Factory.callOfLFunc, getLFuncCall, getLFuncCall.go] at h_call₁
     | eq_reduce_lhs _ _ _ h_step =>
       simp [Factory.callOfLFunc, getLFuncCall, getLFuncCall.go] at h_call₁
-    | eq_reduce_rhs _ _ _ _ h_step =>
+    | eq_reduce_rhs _ _ _ h_step =>
       simp [Factory.callOfLFunc, getLFuncCall, getLFuncCall.go] at h_call₁
 
   -- ═══════════════════════════════════════════════════════════════
@@ -2460,7 +2525,7 @@ theorem Step_diamond
       simp [Factory.callOfLFunc, getLFuncCall, getLFuncCall.go] at h_call₁
     | eq_reduce_lhs _ _ _ h_step =>
       simp [Factory.callOfLFunc, getLFuncCall, getLFuncCall.go] at h_call₁
-    | eq_reduce_rhs _ _ _ _ h_step =>
+    | eq_reduce_rhs _ _ _ h_step =>
       simp [Factory.callOfLFunc, getLFuncCall, getLFuncCall.go] at h_call₁
   termination_by e.sizeOf
   decreasing_by all_goals sorry -- termination: recursive calls on strict sub-expressions
@@ -2468,10 +2533,17 @@ theorem Step_diamond
 -- Determinism of Canonicalize (up to eraseMetadata): if we canonicalize
 -- the same expression two ways, the results agree modulo metadata.
 -- This is the key property needed for ValEquiv.trans.
--- With the new Canonicalize (value-only), this reduces to:
--- 1. Step confluence (up to eM) for the StepStar parts inside binders
--- 2. Recursive determinism for the sub-canonicalizations
--- Both depend on Step_diamond (above) and standard confluence arguments.
+--
+-- NOTE: This statement is likely too strong as written. Canonicalize.refl allows
+-- stopping early (e.g., Canon(abs body, abs body) via .refl) while another
+-- canonicalization path may go deeper (e.g., Canon(abs body, abs body') via .abs
+-- with body →* body_v and Canon body_v body'). In that case v₁.eM ≠ v₂.eM.
+-- The fix is either:
+--   (a) Restrict Canonicalize so .refl only applies to fully-canonical exprs, or
+--   (b) Replace this with Canonicalize_confluent (∃ joinable further-canonicalizations)
+--       and add Canonicalize.trans as a constructor, or
+--   (c) Add a hypothesis that h₁ and h₂ are both "maximal" canonicalizations.
+-- With any of these fixes, ValEquiv.trans (which depends on this) goes through.
 theorem Canonicalize_deterministic
     {Tbase : LExprParams} [DecidableEq Tbase.Metadata]
     [DecidableEq Tbase.Identifier] [DecidableEq Tbase.IDMeta]
@@ -2788,14 +2860,43 @@ theorem ValEquiv.symm {F : @Factory Tbase} {rf : Env Tbase} {e₁ e₂ : LExpr T
   | app hc hf ha ihf iha =>
     exact .app (isCanonicalValue_ValEquiv_app _ _ _ _ _ _ _ _ hc hf ha) ihf iha
 
-omit [DecidableEq Tbase.Metadata] [DecidableEq Tbase.Identifier] in
 -- Transitivity requires confluence of Canonicalize (different canonicalization
 -- paths for the middle expression must produce eraseMetadata-equal results).
-omit [DecidableEq Tbase.Metadata] [DecidableEq Tbase.Identifier] in
-theorem ValEquiv.trans {F : @Factory Tbase} {rf : Env Tbase} {e₁ e₂ e₃ : LExpr Tbase.mono}
+theorem ValEquiv.trans
+    {Tbase : LExprParams} [DecidableEq Tbase.Metadata]
+    [DecidableEq Tbase.Identifier] [DecidableEq Tbase.IDMeta]
+    {F : @Factory Tbase} {rf : Env Tbase}
+    (hWF : FactoryWF F)
+    {e₁ e₂ e₃ : LExpr Tbase.mono}
     (h₁ : ValEquiv F rf e₁ e₂) (h₂ : ValEquiv F rf e₂ e₃) :
     ValEquiv F rf e₁ e₃ := by
-  sorry
+  induction h₁ generalizing e₃ with
+  | const => cases h₂; exact .const
+  | op => cases h₂; exact .op
+  | abs hc₁ hc₂ canon₁ canon₂ heq₁₂ =>
+    -- e₁ = .abs m₁ n t b₁, e₂ = .abs m₂ n t b₂
+    -- canon₁: Canon(b₁, b₁'), canon₂: Canon(b₂, b₂'), heq₁₂: b₁'.eM = b₂'.eM
+    cases h₂ with
+    | abs hc₂' hc₃ canon₂' canon₃ heq₂₃ =>
+      -- canon₂': Canon(b₂, b₂''), canon₃: Canon(b₃, b₃'), heq₂₃: b₂''.eM = b₃'.eM
+      -- By Canonicalize_deterministic on b₂: b₂'.eM = b₂''.eM
+      have h_det := Canonicalize_deterministic F rf hWF _ _ _ canon₂ canon₂'
+      exact .abs hc₁ hc₃ canon₁ canon₃ (heq₁₂.trans (h_det.trans heq₂₃))
+  | quant hc₁ hc₂ ct₁ ct₂ heqt cb₁ cb₂ heqb =>
+    cases h₂ with
+    | quant hc₂' hc₃ ct₂' ct₃ heqt' cb₂' cb₃ heqb' =>
+      have h_det_t := Canonicalize_deterministic F rf hWF _ _ _ ct₂ ct₂'
+      have h_det_b := Canonicalize_deterministic F rf hWF _ _ _ cb₂ cb₂'
+      exact .quant hc₁ hc₃ ct₁ ct₃ (heqt.trans (h_det_t.trans heqt'))
+                                     cb₁ cb₃ (heqb.trans (h_det_b.trans heqb'))
+  | app hc₁ hf₁₂ ha₁₂ ih_f ih_a =>
+    -- e₁ = .app m₁ f₁ a₁, e₂ = .app m₂ f₂ a₂
+    -- hf₁₂ : ValEquiv F rf f₁ f₂, ha₁₂ : ValEquiv F rf a₁ a₂
+    -- ih_f : ∀ e₃, ValEquiv F rf f₂ e₃ → ValEquiv F rf f₁ e₃
+    -- ih_a : ∀ e₃, ValEquiv F rf a₂ e₃ → ValEquiv F rf a₁ e₃
+    cases h₂ with
+    | app hc₂ hf₂₃ ha₂₃ =>
+      exact .app hc₁ (ih_f hf₂₃) (ih_a ha₂₃)
 
 ---------------------------------------------------------------------
 
@@ -2994,7 +3095,7 @@ theorem eval_StepStar
   unfold StepStar
   induction n generalizing e with
   | zero =>
-    exact ⟨e, ReflTrans.refl e, by simp [LExpr.eval]; exact ValEquiv.refl_sorry _ _ _ sorry⟩
+    exact ⟨e, ReflTrans.refl e, by simp [LExpr.eval]; exact ValEquiv.refl _ _ _ sorry⟩
   | succ n ih =>
     simp only [LExpr.eval]
     split
@@ -3106,13 +3207,13 @@ theorem eval_StepStar
           exact ⟨_, ReflTrans.refl _, by
             simp only [substFvarsFromState_op]; exact ValEquiv.op⟩
         · -- bvar: no ValEquiv constructor for bvar (bvar should not appear in well-formed open terms)
-          exact ⟨_, ReflTrans.refl _, ValEquiv.refl_sorry _ _ _ sorry⟩
+          exact ⟨_, ReflTrans.refl _, ValEquiv.refl _ _ _ sorry⟩
         · -- fvar m x ty
           rename_i m x ty
           cases hfind : σ.state.find? x with
           | none =>
             have hD := Maps_findD_find?_none σ.state x (ty, LExpr.fvar m x ty) hfind
-            exact ⟨.fvar m x ty, ReflTrans.refl _, by rw [hD]; exact ValEquiv.refl_sorry _ _ _ sorry⟩
+            exact ⟨.fvar m x ty, ReflTrans.refl _, by rw [hD]; exact ValEquiv.refl _ _ _ sorry⟩
           | some val =>
             have henv_x : Scopes.toEnv σ.state x = some val.snd := by
               simp [Scopes.toEnv, hfind]
@@ -3132,12 +3233,12 @@ theorem eval_StepStar
           rename_i m_abs name ty body
           refine ⟨_, ReflTrans.refl _, ?_⟩
           rw [substFvarsFromState_idem σ σ.config.factory _ hEnv]
-          exact ValEquiv.refl_sorry _ _ _ sorry
+          exact ValEquiv.refl _ _ _ sorry
         · -- quant: same as abs
           rename_i m_q qk name ty tr body
           refine ⟨_, ReflTrans.refl _, ?_⟩
           rw [substFvarsFromState_idem σ σ.config.factory _ hEnv]
-          exact ValEquiv.refl_sorry _ _ _ sorry
+          exact ValEquiv.refl _ _ _ sorry
         · sorry -- app: requires nested induction on expression structure
         · sorry -- eq: requires nested induction on expression structure
         · sorry -- ite: requires nested induction on expression structure
