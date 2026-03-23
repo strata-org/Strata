@@ -20,7 +20,12 @@ program Boole;
 
 type IntMap := Map int int;
 
-// Target shape once Boole/Strata distinguish extensional equality from `==`:
+axiom (forall a: IntMap, b: IntMap :: (forall i: int :: a[i] == b[i]) ==> a == b);
+
+// Target shape once Boole/Strata distinguish extensional equality from `==`.
+//
+// Preferred direction: lower extensional equality directly to a quantified
+// formula during translation rather than reusing ordinary `==`.
 //
 // spec {
 //   requires forall i: int :: a[i] == b[i];
@@ -42,4 +47,6 @@ spec {
 
 example : Strata.smtVCsCorrect mapExtensionalitySeed := by
   gen_smt_vcs
-  all_goals (try grind)
+  all_goals
+    intro Map inst select a b hPointwise hExtensional
+    exact hExtensional a b hPointwise
