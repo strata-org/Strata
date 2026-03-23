@@ -292,9 +292,11 @@ partial def specExprToLaurel (e : SpecExpr) : ToLaurelM (Option StmtExprMd) :=
     reportError default s!"isinstance check for '{typeName}' not yet supported in preconditions"
     return none
   | .len subject => do
+    -- len(x) where x is Any: Str.Length(Any..as_string!(x)) wrapped as from_int
     let s? ← specExprToLaurel subject
     return s?.map fun s =>
-      mkStmt (.StaticCall (mkId "from_int") [mkStmt (.StaticCall (mkId "Any_len") [s])])
+      let unwrapped := mkStmt (.StaticCall (mkId "Any..as_string!") [s])
+      mkStmt (.StaticCall (mkId "from_int") [mkStmt (.StaticCall (mkId "Str.Length") [unwrapped])])
   | .intGe subject bound => do
     let s? ← specExprToLaurel subject; let b? ← specExprToLaurel bound
     return do
