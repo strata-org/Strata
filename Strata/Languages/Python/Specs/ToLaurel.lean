@@ -350,7 +350,7 @@ private def formatAssertionMessage (msg : Array MessagePart) : String :=
   String.join parts.toList
 
 /-- Build a procedure body that asserts preconditions and havocs outputs. -/
-def buildSpecBody (preconditions : Array Assertion) (outputs : List Parameter)
+def buildSpecBody (preconditions : Array Assertion)
     : ToLaurelM Body := do
   let mut stmts : List StmtExprMd := []
   for assertion in preconditions do
@@ -362,10 +362,6 @@ def buildSpecBody (preconditions : Array Assertion) (outputs : List Parameter)
       let msg := formatAssertionMessage assertion.message
       reportError default s!"Untranslatable precondition (emitting assert true): {msg}"
       stmts := stmts ++ [mkStmt (.Assert (mkStmt (.LiteralBool true)))]
-  -- Havoc each output by assigning a nondeterministic hole
-  for output in outputs do
-    let hole := mkStmt (.Hole (deterministic := false) (type := some output.type))
-    stmts := stmts ++ [mkStmt (.Assign [mkStmt (.Identifier output.name)] hole)]
   let body := mkStmt (.Block stmts none)
   return .Transparent body
 
@@ -419,7 +415,7 @@ def funcDeclToLaurel (procName : String) (func : FunctionDecl)
       let anyTy : HighTypeMd := mkCore "Any"
       let anyInputs := inputs.map fun p => { p with type := anyTy }
       let anyOutputs := outputs.map fun p => { p with type := anyTy }
-      let body ← buildSpecBody func.preconditions anyOutputs
+      let body ← buildSpecBody func.preconditions
       pure (anyInputs, anyOutputs, body)
     else
       pure (inputs, outputs, Body.Opaque [] none [])
