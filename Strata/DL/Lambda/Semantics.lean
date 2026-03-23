@@ -2116,37 +2116,43 @@ theorem canonical_value_not_step
 -- The abs/quant cases go under binders (Canonicalize.abs/quant with step from IH),
 -- the app case uses Canonicalize.app, and ite/eq don't have Canonicalize constructors
 -- (they're handled by Step before we get to values).
-theorem Canonicalize_substFvar
+-- Changed return type from Canonicalize (CanonRel false) to CanonStar (CanonRel true)
+-- since Canonicalize has no refl/ite/eq constructors.
+theorem CanonStar_substFvar
     {Tbase : LExprParams} [DecidableEq Tbase.Metadata]
     [DecidableEq Tbase.Identifier] [DecidableEq Tbase.IDMeta]
     (F : @Factory Tbase) (rf : Env Tbase)
     (body : LExpr Tbase.mono) (x : Identifier Tbase.IDMeta)
     (a a' : LExpr Tbase.mono)
     (h : Step F rf a a') :
-    Canonicalize F rf (LExpr.substFvar body x a) (LExpr.substFvar body x a') := by
+    CanonStar F rf (LExpr.substFvar body x a) (LExpr.substFvar body x a') := by
   induction body with
-  | const => simp [LExpr.substFvar]; sorry -- needs CanonStar-level step
-  | op => simp [LExpr.substFvar]; sorry
-  | bvar => simp [LExpr.substFvar]; sorry
+  | const => simp [LExpr.substFvar]; exact .refl
+  | op => simp [LExpr.substFvar]; exact .refl
+  | bvar => simp [LExpr.substFvar]; exact .refl
   | fvar m y ty =>
     simp only [LExpr.substFvar]
     split
-    · sorry -- y == x: need Canonicalize(a, a') which requires step at top level
-    · sorry -- y ≠ x: identity, but Canonicalize has no refl
+    · exact .step h .refl -- y == x: a →Step a', done
+    · exact .refl -- y ≠ x: identity
   | abs m name ty body' ih =>
     simp only [LExpr.substFvar]
-    exact .abs (.canon ih .refl)
+    exact .canon (.abs ih) .refl
   | quant m qk name ty tr body' ih_tr ih_body =>
     simp only [LExpr.substFvar]
-    exact .quant (.canon ih_tr .refl) (.canon ih_body .refl)
+    exact .canon (.quant ih_tr ih_body) .refl
   | app m e1 e2 ih1 ih2 =>
     simp only [LExpr.substFvar]
-    exact .app (.canon ih1 .refl) (.canon ih2 .refl)
+    exact .canon (.app ih1 ih2) .refl
   | ite m c t f ih1 ih2 ih3 =>
-    -- No Canonicalize constructor for ite.
+    simp only [LExpr.substFvar]
+    -- Requires lifting CanonStar through ite structure.
+    -- CanonStar includes Canonicalize which goes under binders, but ite
+    -- has no Canonicalize constructor, so the lift is non-trivial.
     sorry
   | eq m e1 e2 ih1 ih2 =>
-    -- No Canonicalize constructor for eq.
+    simp only [LExpr.substFvar]
+    -- Same issue as ite: no Canonicalize constructor for eq.
     sorry
 
 ---------------------------------------------------------------------
