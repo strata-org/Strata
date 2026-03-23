@@ -62,7 +62,7 @@ def Map.union (m1 m2 : Map α β) : Map α β :=
 
 abbrev Map.empty : Map α β := []
 
-def Map.find? [DecidableEq α] (m : Map α β) (a' : α) : Option β :=
+@[expose] def Map.find? [DecidableEq α] (m : Map α β) (a' : α) : Option β :=
   match m with
   | [] => none
   | (a, b) :: m => if a = a' then some b else find? m a'

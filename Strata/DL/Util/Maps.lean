@@ -88,13 +88,13 @@ Flatten the Maps `ms` to get a single map.
 Searching for `(x : α)` after flattening will proceed from the newest to
 the oldest Map.
 -/
-def Maps.toSingleMap (ms : Maps α β) : Map α β :=
+@[expose] def Maps.toSingleMap (ms : Maps α β) : Map α β :=
   ms.flatten
 
 /--
 Look up `(x : α)` in all the maps in `ms`.
 -/
-def Maps.find? [DecidableEq α] (ms : Maps α β) (x : α) : Option β :=
+@[expose] def Maps.find? [DecidableEq α] (ms : Maps α β) (x : α) : Option β :=
   match ms with
   | [] => none
   | m :: rest =>
@@ -106,7 +106,7 @@ def Maps.find? [DecidableEq α] (ms : Maps α β) (x : α) : Option β :=
 Look up `(x : α)` in all the maps in `ms`, returning the default element `d` if
 `x` is not found.
 -/
-def Maps.findD [DecidableEq α] (ms : Maps α β) (x : α) (d : β) : β :=
+@[expose] def Maps.findD [DecidableEq α] (ms : Maps α β) (x : α) (d : β) : β :=
   match ms with
   | [] => d
   | m :: rest =>
