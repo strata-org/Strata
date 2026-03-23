@@ -342,24 +342,11 @@ inductive StepStmt
       (.exiting (.some l) σ' δ')
 
 
-/--
-Multi-step execution: reflexive transitive closure of single steps.
--/
-abbrev StepStmtStar
-  {CmdT : Type}
-  (P : PureExpr)
-  (EvalCmd : EvalCmdParam P CmdT)
-  (extendEval : ExtendEval P)
-  [DecidableEq P.Ident]
-  [HasVarsImp P (List (Stmt P CmdT))]
-  [HasVarsImp P CmdT] [HasFvar P] [HasVal P]
-  [HasBool P] [HasNot P] :
-  Config P CmdT → Config P CmdT → Prop := ReflTrans (StepStmt P EvalCmd extendEval)
+/-! ## Multi-step execution: reflexive transitive closure of single steps. -/
 
-/-- A statement evaluates successfully if it can step from *some* initial PC
-    to a terminal configuration.
--/
-def EvalStmtSmall
+section
+
+variable
   {CmdT : Type}
   (P : PureExpr)
   [DecidableEq P.Ident]
@@ -368,30 +355,24 @@ def EvalStmtSmall
   [HasBool P] [HasNot P]
   (EvalCmd : EvalCmdParam P CmdT)
   (extendEval : ExtendEval P)
-  (δ : SemanticEval P)
-  (σ : SemanticStore P)
-  (s : Stmt P CmdT)
-  (σ' : SemanticStore P)
-  (δ' : SemanticEval P) : Prop :=
+
+abbrev StepStmtStar :
+    Config P CmdT → Config P CmdT → Prop :=
+  ReflTrans (StepStmt P EvalCmd extendEval)
+
+/-- A statement evaluates successfully if it can step from *some* initial PC
+    to a terminal configuration. -/
+def EvalStmtSmall
+    (δ : SemanticEval P) (σ : SemanticStore P) (s : Stmt P CmdT)
+    (σ' : SemanticStore P) (δ' : SemanticEval P) : Prop :=
   ∃ pc : ProgramCounter,
     StepStmtStar P EvalCmd extendEval (.stmt s σ δ pc) (.terminal σ' δ')
 
 /-- A list of statements evaluates successfully if it can step from *some*
-    initial PC to a terminal configuration.
--/
+    initial PC to a terminal configuration. -/
 def EvalStmtsSmall
-  (P : PureExpr)
-  [DecidableEq P.Ident]
-  [HasVarsImp P (List (Stmt P CmdT))]
-  [HasVarsImp P CmdT] [HasFvar P] [HasVal P]
-  [HasBool P] [HasNot P]
-  (EvalCmd : EvalCmdParam P CmdT)
-  (extendEval : ExtendEval P)
-  (δ : SemanticEval P)
-  (σ : SemanticStore P)
-  (ss : List (Stmt P CmdT))
-  (σ' : SemanticStore P)
-  (δ' : SemanticEval P) : Prop :=
+    (δ : SemanticEval P) (σ : SemanticStore P) (ss : List (Stmt P CmdT))
+    (σ' : SemanticStore P) (δ' : SemanticEval P) : Prop :=
   ∃ pc : ProgramCounter,
     StepStmtStar P EvalCmd extendEval (.stmts ss σ δ pc) (.terminal σ' δ')
 
@@ -399,56 +380,101 @@ def EvalStmtsSmall
 
 /-! ## Basic Properties and Theorems -/
 
-/--
-Empty statement list evaluation.
--/
+/-- Empty statement list evaluation. -/
 theorem evalStmtsSmallNil
-  (P : PureExpr)
-  [DecidableEq P.Ident]
-  [HasVarsImp P (List (Stmt P CmdT))]
-  [HasVarsImp P CmdT] [HasFvar P] [HasVal P]
-  [HasBool P] [HasNot P]
-  (δ : SemanticEval P)
-  (σ : SemanticStore P)
-  (EvalCmd : EvalCmdParam P CmdT)
-  (extendEval : ExtendEval P) :
-  EvalStmtsSmall P EvalCmd extendEval δ σ [] σ δ := by
-    unfold EvalStmtsSmall
-    exact ⟨[], .step _ _ _ StepStmt.step_stmts_nil (.refl _)⟩
+    (δ : SemanticEval P) (σ : SemanticStore P) :
+    EvalStmtsSmall P EvalCmd extendEval δ σ [] σ δ := by
+  unfold EvalStmtsSmall
+  exact ⟨[], .step _ _ _ StepStmt.step_stmts_nil (.refl _)⟩
 
-/--
-Configuration is terminal if no further steps are possible.
--/
+/-- Configuration is terminal if no further steps are possible. -/
 def IsTerminal
-  {CmdT : Type}
-  (P : PureExpr)
-  [DecidableEq P.Ident]
-  [HasVarsImp P (List (Stmt P CmdT))]
-  [HasVarsImp P CmdT] [HasFvar P] [HasVal P]
-  [HasBool P] [HasNot P]
-  (EvalCmd : EvalCmdParam P CmdT)
-  (extendEval : ExtendEval P)
-  (c : Config P CmdT) : Prop :=
+    (c : Config P CmdT) : Prop :=
   ∀ c', ¬ StepStmt P EvalCmd extendEval c c'
 
-/--
-Terminal configurations are indeed terminal.
--/
+/-- Terminal configurations are indeed terminal. -/
 theorem terminalIsTerminal
-  {CmdT : Type}
-  (P : PureExpr)
-  [DecidableEq P.Ident]
-  [HasVarsImp P (List (Stmt P CmdT))]
-  [HasVarsImp P CmdT] [HasFvar P] [HasVal P]
-  [HasBool P] [HasNot P]
-  (σ : SemanticStore P)
-  (δ : SemanticEval P)
-  (EvalCmd : EvalCmdParam P CmdT)
-  (extendEval : ExtendEval P) :
-  IsTerminal P EvalCmd extendEval (.terminal σ δ) := by
+    (σ : SemanticStore P) (δ : SemanticEval P) :
+    IsTerminal P EvalCmd extendEval (.terminal σ δ) := by
   unfold IsTerminal
   intro c' h
   cases h
+
+/-!
+### Stepping through a statement list
+
+When executing `.stmts (s :: ss) σ δ pc`, the semantics first enters a
+`.seq` context (via `step_stmts_cons`), executes `s` to terminal, then
+resumes with `.stmts ss σ' δ' pc'` where `pc'` has its head index
+incremented by one.
+
+The proof proceeds in two parts:
+1. A helper lemma (`seq_inner_star`) showing that multi-step execution of
+   the inner config lifts to multi-step execution of the enclosing `.seq`.
+2. The main theorem (`stmts_cons_step`) composing the pieces.
+-/
+
+/-- Transitivity of `ReflTrans`: if `r* x y` and `r* y z` then `r* x z`.
+    This is a local helper that avoids the opaque `Transitive` wrapper
+    from `Relations.lean` (which becomes opaque across module boundaries). -/
+private theorem reflTrans_trans {r : Relation A}
+    {x y z : A} (h1 : ReflTrans r x y) (h2 : ReflTrans r y z) :
+    ReflTrans r x z := by
+  induction h1 with
+  | refl => exact h2
+  | step _ mid _ hstep _ ih => exact .step _ mid _ hstep (ih h2)
+
+/-- Helper: if the inner config of a `.seq` takes multiple steps, the
+    enclosing `.seq` takes the same number of steps.
+    Proved by induction on the multi-step derivation. -/
+theorem seq_inner_star
+    (inner inner' : Config P CmdT)
+    (ss : List (Stmt P CmdT))
+    (tailPc : ProgramCounter)
+    (h : StepStmtStar P EvalCmd extendEval inner inner') :
+    StepStmtStar P EvalCmd extendEval
+      (.seq inner ss tailPc)
+      (.seq inner' ss tailPc) := by
+  induction h with
+  | refl => exact .refl _
+  | step _ mid _ hstep _ ih =>
+    exact .step _ _ _ (.step_seq_inner hstep) ih
+
+/-- When executing `.stmts (s :: ss) σ δ pc`, if the head statement `s`
+    multi-steps to `.terminal σ' δ'`, then the whole list multi-steps to
+    `.stmts ss σ' δ' pc'` where `pc'` is `pc` with its head index
+    incremented by one:
+    - if `pc = i :: ctx` then `pc' = (i + 1) :: ctx`
+    - if `pc = []` then `pc' = []`
+
+    This captures the fundamental sequencing behaviour of statement lists
+    in the small-step semantics. -/
+theorem stmts_cons_step
+    (s : Stmt P CmdT) (ss : List (Stmt P CmdT))
+    (σ σ' : SemanticStore P) (δ δ' : SemanticEval P)
+    (pc : ProgramCounter)
+    (hstmt : StepStmtStar P EvalCmd extendEval
+      (.stmt s σ δ pc) (.terminal σ' δ')) :
+    let pc' := match pc with | i :: ctx => (i + 1) :: ctx | [] => []
+    StepStmtStar P EvalCmd extendEval
+      (.stmts (s :: ss) σ δ pc)
+      (.stmts ss σ' δ' pc') := by
+  intro pc'
+  -- Step 1: .stmts (s :: ss) σ δ pc  →  .seq (.stmt s σ δ pc) ss pc'
+  --         via step_stmts_cons
+  apply ReflTrans.step _ (.seq (.stmt s σ δ pc) ss pc')
+  · exact .step_stmts_cons (by cases pc <;> rfl)
+  -- Step 2: .seq (.stmt s σ δ pc) ss pc'  →*  .seq (.terminal σ' δ') ss pc'
+  --         by lifting hstmt through the seq context
+  have h2 := seq_inner_star P EvalCmd extendEval _ _ ss pc' hstmt
+  -- Step 3: .seq (.terminal σ' δ') ss pc'  →  .stmts ss σ' δ' pc'
+  --         via step_seq_done, then chain with h2 by induction
+  suffices h3 : StepStmtStar P EvalCmd extendEval
+      (.seq (.terminal σ' δ') ss pc') (.stmts ss σ' δ' pc') from
+    reflTrans_trans h2 h3
+  exact .step _ _ _ .step_seq_done (.refl _)
+
+end -- section
 
 end -- public section
 end Imperative
