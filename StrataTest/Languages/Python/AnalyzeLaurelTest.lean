@@ -215,11 +215,11 @@ Verifies that calling `put_item(Bucket="", ...)` produces a `✖️ always false
 result for the `len(Bucket) >= 1` assertion. -/
 
 /--
-info: Storage_Storage_put_item_assert(0)_8: ✔️ always true if reached
-Storage_Storage_put_item_assert(0)_8: ✔️ always true if reached
-Storage_Storage_put_item_assert(0)_8: ✔️ always true if reached
-Storage_Storage_put_item_assert(0)_8: ✖️ always false if reached
-Storage_Storage_put_item_assert(0)_8: ✔️ always true if reached
+info: Storage_Storage_put_item_assert(0)_8: ✔️ always true if reached (Required parameter 'Bucket' is missing)
+Storage_Storage_put_item_assert(0)_8: ✔️ always true if reached (Required parameter 'Key' is missing)
+Storage_Storage_put_item_assert(0)_8: ✔️ always true if reached (Required parameter 'Data' is missing)
+Storage_Storage_put_item_assert(0)_8: ✖️ always false if reached (Bucket must not be empty)
+Storage_Storage_put_item_assert(0)_8: ✔️ always true if reached (Key must not be empty)
 -/
 #guard_msgs in
 #eval withPython fun _pythonCmd => do
@@ -232,6 +232,11 @@ Storage_Storage_put_item_assert(0)_8: ✔️ always true if reached
     | .ok vcResults =>
       for r in vcResults do
         if r.obligation.label.startsWith "Storage_" then
-          IO.println s!"{r.obligation.label}: {r.formatOutcome}"
+          let msg := r.obligation.metadata.findSome? fun elem =>
+            match elem.fld, elem.value with
+            | .label "message", .msg s => some s
+            | _, _ => none
+          let msgStr := msg.map (s!" ({·})") |>.getD ""
+          IO.println s!"{r.obligation.label}: {r.formatOutcome}{msgStr}"
 
 end Strata.Python.AnalyzeLaurelTest

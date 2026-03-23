@@ -268,14 +268,19 @@ private def mkStmt (e : StmtExpr) : StmtExprMd :=
   { val := e, md := .empty }
 
 /-- Create metadata with a file range from the current pyspec file. -/
-private def mkMdWithFileRange (loc : SourceRange) : ToLaurelM (Imperative.MetaData Core.Expression) := do
+private def mkMdWithFileRange (loc : SourceRange) (msg : String := "")
+    : ToLaurelM (Imperative.MetaData Core.Expression) := do
   let ctx ← read
   let fr : FileRange := { file := .file ctx.filepath.toString, range := loc }
-  return #[⟨Imperative.MetaData.fileRange, .fileRange fr⟩]
+  let mut md : Imperative.MetaData Core.Expression := #[⟨Imperative.MetaData.fileRange, .fileRange fr⟩]
+  if !msg.isEmpty then
+    md := md.push ⟨.label "message", .msg msg⟩
+  return md
 
-/-- Wrap a StmtExpr with metadata containing a file range. -/
-private def mkStmtWithLoc (e : StmtExpr) (loc : SourceRange) : ToLaurelM StmtExprMd := do
-  let md ← mkMdWithFileRange loc
+/-- Wrap a StmtExpr with metadata containing a file range and optional message. -/
+private def mkStmtWithLoc (e : StmtExpr) (loc : SourceRange) (msg : String := "")
+    : ToLaurelM StmtExprMd := do
+  let md ← mkMdWithFileRange loc msg
   return { val := e, md := md }
 
 /-- Translate a SpecExpr to a Laurel StmtExpr.
@@ -374,17 +379,17 @@ def buildSpecBody (preconditions : Array Assertion) (requiredParams : Array Stri
   for param in requiredParams do
     let cond := mkStmt (.PrimitiveOp .Not
       [mkStmt (.StaticCall (mkId "Any..isfrom_none") [mkStmt (.Identifier (mkId param))])])
-    let assertStmt ← mkStmtWithLoc (.Assert cond) default
+    let assertStmt ← mkStmtWithLoc (.Assert cond) default s!"Required parameter '{param}' is missing"
     stmts := assertStmt :: stmts
   for assertion in preconditions do
+    let msg := formatAssertionMessage assertion.message
     match ← specExprToLaurel assertion.formula with
     | some condExpr =>
-      let assertStmt ← mkStmtWithLoc (.Assert condExpr) default
+      let assertStmt ← mkStmtWithLoc (.Assert condExpr) default msg
       stmts := assertStmt :: stmts
     | none =>
-      let msg := formatAssertionMessage assertion.message
       reportError default s!"Untranslatable precondition (emitting assert true): {msg}"
-      let assertStmt ← mkStmtWithLoc (.Assert (mkStmt (.LiteralBool true))) default
+      let assertStmt ← mkStmtWithLoc (.Assert (mkStmt (.LiteralBool true))) default msg
       stmts := assertStmt :: stmts
   let body := mkStmt (.Block stmts.reverse none)
   return .Transparent body
