@@ -308,189 +308,29 @@ theorem app_arg (h : Canonicalize F rf a a') :
     Canonicalize F rf (.app m f a) (.app m f a') :=
   .app .refl h
 
--- Local transitivity for ReflTrans (the main ReflTrans_trans is defined later).
-private theorem reflTransTrans {r : Relation (LExpr Tbase.mono)} {x y z : LExpr Tbase.mono}
-    (h1 : ReflTrans r x y) (h2 : ReflTrans r y z) : ReflTrans r x z := by
-  induction h1 with
-  | refl => exact h2
-  | step _ b _ hab _ ih => exact ReflTrans.step _ b _ hab (ih h2)
-
--- Local lifting lemmas for steps in app context.
-private theorem stepStar_app_fn (e1 e1' e2 : LExpr Tbase.mono) (m : Tbase.Metadata)
-    (h : ReflTrans (Step F rf) e1 e1') :
-    ReflTrans (Step F rf) (.app m e1 e2) (.app m e1' e2) := by
-  induction h with
-  | refl => exact .refl _
-  | step x y z hxy _ ih =>
-    exact .step _ (.app m y e2) _ (Step.reduce_1 (m' := m) x y e2 hxy) ih
-
-private theorem stepStar_app_arg (e1 e2 e2' : LExpr Tbase.mono) (m : Tbase.Metadata)
-    (h : ReflTrans (Step F rf) e2 e2') :
-    ReflTrans (Step F rf) (.app m e1 e2) (.app m e1 e2') := by
-  induction h with
-  | refl => exact .refl _
-  | step x y z hxy _ ih =>
-    exact .step _ (.app m e1 y) _ (Step.reduce_2 (m' := m) e1 x y hxy) ih
-
--- Abs expressions cannot be stepped: no Step rule applies to .abs.
-private theorem step_abs_stuck :
-    ∀ (e' : LExpr Tbase.mono), ¬ Step F rf (.abs m n t body) e' := by
-  intro e' h; cases h with
-  | expand_fn _ _ _ _ _ _ h => simp [Factory.callOfLFunc, getLFuncCall, getLFuncCall.go] at h
-  | eval_fn _ _ _ _ _ _ h => simp [Factory.callOfLFunc, getLFuncCall, getLFuncCall.go] at h
-
--- Quant expressions cannot be stepped: no Step rule applies to .quant.
-private theorem step_quant_stuck :
-    ∀ (e' : LExpr Tbase.mono), ¬ Step F rf (.quant m qk n ty tr body) e' := by
-  intro e' h; cases h with
-  | expand_fn _ _ _ _ _ _ h => simp [Factory.callOfLFunc, getLFuncCall, getLFuncCall.go] at h
-  | eval_fn _ _ _ _ _ _ h => simp [Factory.callOfLFunc, getLFuncCall, getLFuncCall.go] at h
-
--- If .abs can't step, then ReflTrans on .abs is refl.
-private theorem ReflTrans_abs_refl
-    (h : ReflTrans (Step F rf) (.abs m n t body) c) :
-    c = .abs m n t body := by
-  cases h with
-  | refl => rfl
-  | step _ b _ hab _ => exact absurd hab (step_abs_stuck _)
-
--- If .quant can't step, then ReflTrans on .quant is refl.
-private theorem ReflTrans_quant_refl
-    (h : ReflTrans (Step F rf) (.quant m qk n ty tr body) c) :
-    c = .quant m qk n ty tr body := by
-  cases h with
-  | refl => rfl
-  | step _ b _ hab _ => exact absurd hab (step_quant_stuck _)
-
--- Lift a non-empty step sequence on function part to app context, with
--- arbitrary output metadata at the last step.
-private theorem step_then_star_app_fn
-    (h₀ : Step F rf e1 e_mid) (h_rest : ReflTrans (Step F rf) e_mid e1')
-    (e2 : LExpr Tbase.mono) (m m' : Tbase.Metadata) :
-    ReflTrans (Step F rf) (.app m e1 e2) (.app m' e1' e2) := by
-  induction h_rest generalizing e1 m with
-  | refl =>
-    exact .step _ _ _ (Step.reduce_1 (m' := m') _ _ _ h₀) (.refl _)
-  | step _ y _ hy _ ih =>
-    exact .step _ _ _ (Step.reduce_1 (m' := m) _ _ _ h₀) (ih hy m)
-
--- Same for argument part.
-private theorem step_then_star_app_arg
-    (h₀ : Step F rf e2 e_mid) (h_rest : ReflTrans (Step F rf) e_mid e2')
-    (e1 : LExpr Tbase.mono) (m m' : Tbase.Metadata) :
-    ReflTrans (Step F rf) (.app m e1 e2) (.app m' e1 e2') := by
-  induction h_rest generalizing e2 m with
-  | refl =>
-    exact .step _ _ _ (Step.reduce_2 (m' := m') _ _ _ h₀) (.refl _)
-  | step _ y _ hy _ ih =>
-    exact .step _ _ _ (Step.reduce_2 (m' := m) _ _ _ h₀) (ih hy m)
-
-/-- Diamond property: if `a →Canon→ b` and `b →Step→ c`, then
-    `∃ a', a →* a' ∧ a' →Canon→ c`.
-    Pushes canonicalization past a single step. -/
-private theorem canon_step_commute
-    (canon : Canonicalize F rf a b)
-    (step : Step F rf b c') :
-    ∃ a', ReflTrans (Step F rf) a a' ∧ Canonicalize F rf a' c' := by
-  induction canon generalizing c' with
-  | refl => exact ⟨c', .step _ _ _ step (.refl _), .refl⟩
-  | abs => exact absurd step (step_abs_stuck _)
-  | quant => exact absurd step (step_quant_stuck _)
-  | app cf ca ihf iha =>
-    cases step with
-    | reduce_1 _ _ _ hf =>
-      obtain ⟨fa, sfa, cfa⟩ := ihf hf
-      -- fa →Canon→ f'', sfa : f →* fa
-      -- Build: (.app m f a₁) →* (.app m' fa a₁) →Canon→ (.app m' f'' a₁')
-      cases sfa with
-      | refl =>
-        -- Zero steps on f: metadata may mismatch. Unreachable in practice
-        -- (ihf always returns ≥1 step), but Lean requires handling it.
-        sorry
-      | step _ f_mid _ hf_first sfa_rest =>
-        exact ⟨_, step_then_star_app_fn hf_first sfa_rest _ _ _, .app cfa ca⟩
-    | reduce_2 _ _ _ ha =>
-      obtain ⟨aa, saa, caa⟩ := iha ha
-      cases saa with
-      | refl => sorry -- same unreachable metadata case as reduce_1
-      | step _ a_mid _ ha_first saa_rest =>
-        exact ⟨_, step_then_star_app_arg ha_first saa_rest _ _ _, .app cf caa⟩
-    | beta _ _ _ hcv hsubst =>
-      -- Beta: requires substitution–canonicalize compatibility.
-      sorry
-    | expand_fn _ _ _ _ _ _ hcall hbody hnew =>
-      -- Factory expand_fn: requires callOfLFunc–canonicalize compatibility.
-      sorry
-    | eval_fn _ _ _ _ _ _ hcall heval hres =>
-      -- Factory eval_fn: requires concreteEval–canonicalize compatibility.
-      sorry
-
-/-- Core helper for transitivity: given `a →Canon→ b →* c →Canon→ d`,
-    produce `∃ X, a →* X ∧ X →Canon→ d`.
-    Uses well-founded recursion on `(sizeOf canon₁, sizeOf steps₂ + sizeOf canon₂)`. -/
-private theorem step_compose
-    (canon₁ : Canonicalize F rf a b)
-    (steps₂ : ReflTrans (Step F rf) b c)
-    (canon₂ : Canonicalize F rf c d) :
-    ∃ X, ReflTrans (Step F rf) a X ∧ Canonicalize F rf X d := by
-  cases canon₁ with
-  | refl => exact ⟨c, steps₂, canon₂⟩
-  | abs isteps icanon =>
-    have heq := ReflTrans_abs_refl steps₂; subst heq
-    cases canon₂ with
-    | refl => exact ⟨_, .refl _, .abs isteps icanon⟩
-    | abs isteps₂ icanon₂ =>
-      have ⟨Xi, si, ci⟩ := step_compose icanon isteps₂ icanon₂
-      exact ⟨_, .refl _, .abs (reflTransTrans isteps si) ci⟩
-  | quant str ctr sbody cbody =>
-    have heq := ReflTrans_quant_refl steps₂; subst heq
-    cases canon₂ with
-    | refl => exact ⟨_, .refl _, .quant str ctr sbody cbody⟩
-    | quant str₂ ctr₂ sbody₂ cbody₂ =>
-      have ⟨Xtr, sttr, cttr⟩ := step_compose ctr str₂ ctr₂
-      have ⟨Xb, stb, ctb⟩ := step_compose cbody sbody₂ cbody₂
-      exact ⟨_, .refl _, .quant (reflTransTrans str sttr) cttr
-                                (reflTransTrans sbody stb) ctb⟩
-  | app cf ca =>
-    cases steps₂ with
-    | refl =>
-      cases canon₂ with
-      | refl => exact ⟨_, .refl _, .app cf ca⟩
-      | app cf₂ ca₂ =>
-        have ⟨Xf, sf, cf'⟩ := step_compose cf (.refl _) cf₂
-        have ⟨Xa, sa, ca'⟩ := step_compose ca (.refl _) ca₂
-        refine ⟨.app _ Xf Xa, ?_, .app cf' ca'⟩
-        exact reflTransTrans (stepStar_app_fn _ _ _ _ sf)
-                             (stepStar_app_arg _ _ _ _ sa)
-    | step _ z _ step_one rest =>
-      have ⟨a', sa, ca'⟩ := canon_step_commute (.app cf ca) step_one
-      have ⟨X, sX, cX⟩ := step_compose ca' rest canon₂
-      exact ⟨X, reflTransTrans sa sX, cX⟩
-termination_by sizeOf canon₁ + sizeOf steps₂ + sizeOf canon₂
-decreasing_by all_goals simp_wf; sorry
-
-theorem trans (h₁ : Canonicalize F rf a b) (h₂ : Canonicalize F rf b c) :
-    Canonicalize F rf a c := by
-  induction h₁ generalizing c with
-  | refl => exact h₂
-  | abs steps₁ canon₁ ih =>
-    match h₂ with
-    | .refl => exact .abs steps₁ canon₁
-    | .abs steps₂ canon₂ =>
-      obtain ⟨X, stepsX, canonX⟩ := step_compose canon₁ steps₂ canon₂
-      exact .abs (reflTransTrans steps₁ stepsX) canonX
-  | quant steps_tr canon_tr steps_body canon_body ih_tr ih_body =>
-    match h₂ with
-    | .refl => exact .quant steps_tr canon_tr steps_body canon_body
-    | .quant steps_tr₂ canon_tr₂ steps_body₂ canon_body₂ =>
-      obtain ⟨Xtr, str, ctr⟩ := step_compose canon_tr steps_tr₂ canon_tr₂
-      obtain ⟨Xb, stb, ctb⟩ := step_compose canon_body steps_body₂ canon_body₂
-      exact .quant (reflTransTrans steps_tr str) ctr
-                   (reflTransTrans steps_body stb) ctb
-  | app cf ca ihf iha =>
-    match h₂ with
-    | .refl => exact .app cf ca
-    | .app cf₂ ca₂ => exact .app (ihf cf₂) (iha ca₂)
+-- NOTE: Canonicalize is NOT transitive.
+--
+-- Counterexample: let rf x = some (.const mc v).
+--   a = .abs m₁ n₁ t₁ (.app m₂ (.abs m₃ n₃ t₃ (.bvar 0)) (.abs m₄ n₄ t₄ (.fvar x ty)))
+-- First canonicalization (h₁): go under outer abs, canonicalize the inner abs argument
+-- (expanding fvar x → const), producing:
+--   b = .abs m₁ n₁ t₁ (.app m₂ (.abs m₃ n₃ t₃ (.bvar 0)) (.abs m₄ n₄ t₄ (.const mc v)))
+-- Second canonicalization (h₂): go under outer abs, now the app argument IS canonical
+-- (fvar was expanded), so beta fires, producing:
+--   c = .abs m₁ n₁ t₁ (.abs m₄ n₄ t₄ (.const mc v))
+-- For Canonicalize a c: we need .abs (body →* X) (X →Canon→ ...), but the body
+-- (.app m₂ (.abs ...) (.abs m₄ n₄ t₄ (.fvar x ty))) is STUCK — no Step rule fires
+-- (the argument .abs has an fvar so it's not canonical, blocking beta; and .abs can't
+-- be stepped by reduce_1/reduce_2). Since body can't step, X = body, but
+-- Canonicalize (.app ...) (.abs ...) is impossible (Canonicalize preserves top-level
+-- constructor).
+--
+-- The root cause: the .app constructor of Canonicalize can make sub-expressions
+-- canonical (by going under binders), which enables new beta reductions that weren't
+-- possible before. But the .abs constructor requires stepping FIRST, then
+-- canonicalizing — it cannot interleave "canonicalize to enable a step, then step."
+-- Transitivity would require a richer Canonicalize definition that allows such
+-- interleaving (e.g., iterated step-then-canonicalize).
 
 end Canonicalize
 
@@ -2172,15 +2012,8 @@ theorem canonical_value_not_step
 ---------------------------------------------------------------------
 -- Confluence helpers
 
--- Transitivity of Canonicalize: delegates to Canonicalize.trans (sorry).
-theorem Canonicalize_trans
-    {Tbase : LExprParams} [DecidableEq Tbase.Metadata]
-    [DecidableEq Tbase.Identifier] [DecidableEq Tbase.IDMeta]
-    (F : @Factory Tbase) (rf : Env Tbase)
-    (a b c : LExpr Tbase.mono)
-    (h₁ : Canonicalize F rf a b) (h₂ : Canonicalize F rf b c) :
-    Canonicalize F rf a c :=
-  Canonicalize.trans h₁ h₂
+-- Canonicalize.trans was previously stated here but is false — see the note
+-- above the Canonicalize definition for the counterexample.
 
 -- If Step F rf a a', then Canonicalize F rf (substFvar body x a) (substFvar body x a').
 -- With the new Canonicalize (value-only, under binders), this requires showing
