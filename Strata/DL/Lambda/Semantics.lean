@@ -182,6 +182,32 @@ theorem step_const_stuck:
   intro H
   contradiction
 
+omit [DecidableEq Tbase.Metadata] [DecidableEq Tbase.Identifier] in
+theorem step_abs_stuck:
+  ∀ (F:@Factory Tbase) r n t body e,
+  ¬ Step F r (.abs m n t body) e := by
+  intros; intro H; cases H with
+  | expand_fn _ _ _ _ _ _ h => simp [Factory.callOfLFunc, getLFuncCall, getLFuncCall.go] at h
+  | eval_fn _ _ _ _ _ _ h => simp [Factory.callOfLFunc, getLFuncCall, getLFuncCall.go] at h
+
+omit [DecidableEq Tbase.Metadata] [DecidableEq Tbase.Identifier] in
+theorem step_quant_stuck:
+  ∀ (F:@Factory Tbase) r qk n ty tr body e,
+  ¬ Step F r (.quant m qk n ty tr body) e := by
+  intros; intro H; cases H with
+  | expand_fn _ _ _ _ _ _ h => simp [Factory.callOfLFunc, getLFuncCall, getLFuncCall.go] at h
+  | eval_fn _ _ _ _ _ _ h => simp [Factory.callOfLFunc, getLFuncCall, getLFuncCall.go] at h
+
+-- If e is stuck for Step, then ReflTrans (Step) e e' implies e = e'.
+omit [DecidableEq Tbase.Metadata] [DecidableEq Tbase.Identifier] in
+theorem ReflTrans_stuck {e e' : LExpr Tbase.mono}
+    (h : ReflTrans (Step F rf) e e')
+    (h_stuck : ∀ e'', ¬ Step F rf e e'') :
+    e = e' := by
+  cases h with
+  | refl => rfl
+  | step _ b _ hab _ => exact absurd hab (h_stuck b)
+
 -- canonical_value_not_step is proved after the helper lemmas below (see ~line 965).
 
 /--
@@ -287,7 +313,45 @@ theorem app_arg (h : Canonicalize F rf a a') :
 -- For now, we state it with sorry as a key dependency.
 theorem trans (h₁ : Canonicalize F rf a b) (h₂ : Canonicalize F rf b c) :
     Canonicalize F rf a c := by
-  sorry
+  induction h₁ generalizing c with
+  | refl => exact h₂
+  | abs step₁ canon₁ ih =>
+    cases h₂ with
+    | refl => exact .abs step₁ canon₁
+    | abs step₂ canon₂ =>
+      cases canon₁ with
+      | refl =>
+        -- canon₁ = refl: bv₁ = bb. Compose ba →* bb →* bv₂.
+        apply Canonicalize.abs _ canon₂
+        clear ih; clear canon₂
+        induction step₁ with
+        | refl => exact step₂
+        | step _ b _ hab _ ih_step => exact .step _ b _ hab (ih_step step₂)
+      | abs step₁' canon₁' =>
+        -- bb is abs → stuck for Step → bb = bv₂
+        have h_eq := ReflTrans_stuck step₂ (step_abs_stuck F rf _ _ _)
+        subst h_eq; exact .abs step₁ (ih canon₂)
+      | quant step_t₁' canon_t₁' step_b₁' canon_b₁' =>
+        -- bb is quant → stuck for Step → bb = bv₂
+        have h_eq := ReflTrans_stuck step₂ (step_quant_stuck F rf _ _ _ _ _)
+        subst h_eq; exact .abs step₁ (ih canon₂)
+      | app canon_f₁' canon_a₁' =>
+        -- bb is app. If bb can step, we can't compose. But the ih handles
+        -- the full Canon(bb, c) → Canon(bv₁, c) transformation.
+        -- Here canon₂ starts from bv₂ (not bb), and bb →* bv₂ is step₂.
+        -- We need Canon(bb, bc) to apply ih, but bb →* bv₂ ≠ bb when bb can step.
+        sorry
+  | quant step_t₁ canon_t₁ step_b₁ canon_b₁ ih_t ih_b =>
+    cases h₂ with
+    | refl => exact .quant step_t₁ canon_t₁ step_b₁ canon_b₁
+    | quant step_t₂ canon_t₂ step_b₂ canon_b₂ =>
+      -- Compose type and body parts separately using same strategy as abs
+      sorry
+  | app canon_f₁ canon_a₁ ih_f ih_a =>
+    cases h₂ with
+    | refl => exact .app canon_f₁ canon_a₁
+    | app canon_f₂ canon_a₂ =>
+      exact .app (ih_f canon_f₂) (ih_a canon_a₂)
 
 end Canonicalize
 
@@ -1822,7 +1886,32 @@ theorem Canonicalize_substFvar
     (a a' : LExpr Tbase.mono)
     (h : Step F rf a a') :
     Canonicalize F rf (LExpr.substFvar body x a) (LExpr.substFvar body x a') := by
-  sorry
+  induction body with
+  | const => simp [LExpr.substFvar]; exact .refl
+  | op => simp [LExpr.substFvar]; exact .refl
+  | bvar => simp [LExpr.substFvar]; exact .refl
+  | fvar m y ty =>
+    simp only [LExpr.substFvar]
+    split
+    · -- y == x: result is a vs a'. Need Canon(a, a').
+      -- Canonicalize has no "step at top level" constructor.
+      sorry
+    · exact .refl
+  | abs m name ty body' ih =>
+    simp only [LExpr.substFvar]
+    exact .abs (ReflTrans.refl _) ih
+  | quant m qk name ty tr body' ih_tr ih_body =>
+    simp only [LExpr.substFvar]
+    exact .quant (ReflTrans.refl _) ih_tr (ReflTrans.refl _) ih_body
+  | app m e1 e2 ih1 ih2 =>
+    simp only [LExpr.substFvar]
+    exact .app ih1 ih2
+  | ite m c t f ih1 ih2 ih3 =>
+    -- No Canonicalize constructor for ite.
+    sorry
+  | eq m e1 e2 ih1 ih2 =>
+    -- No Canonicalize constructor for eq.
+    sorry
 
 ---------------------------------------------------------------------
 -- Confluence
@@ -2343,7 +2432,6 @@ theorem Step_diamond
     | eq_reduce_rhs _ _ _ _ h_step =>
       simp [Factory.callOfLFunc, getLFuncCall, getLFuncCall.go] at h_call₁
   termination_by e.sizeOf
-  decreasing_by all_goals sorry -- termination: recursive calls on strict sub-expressions
 
 -- Determinism of Canonicalize (up to eraseMetadata): if we canonicalize
 -- the same expression two ways, the results agree modulo metadata.
