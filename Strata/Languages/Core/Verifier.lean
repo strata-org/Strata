@@ -48,7 +48,6 @@ def encodeCore (ctx : Core.SMT.Context) (prelude : SolverM Unit)
     (md : Imperative.MetaData Core.Expression)
     (satisfiabilityCheck validityCheck : Bool) :
     SolverM (List String × EncoderState) := do
-  Solver.reset
   Solver.setLogic "ALL"
   prelude
   let _ ← ctx.sorts.mapM (fun s => Solver.declareSort s.name s.arity)
