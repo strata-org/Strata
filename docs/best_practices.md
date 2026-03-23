@@ -221,10 +221,18 @@ Don't reinvent expression or statement representations. [`C_Simp`](https://githu
 
 ### How do I contribute my front-end back to the Strata ecosystem?
 
-> TODO: mention that dialects can be independent or part of the official Strata codebase
+A new front-end dialect can live either in its own independent repository or within the official [strata-org/Strata](https://github.com/strata-org/Strata) repository. An independent repository is a good starting point — it lets you iterate quickly without coordination overhead. You can depend on Strata as a Lake dependency and develop at your own pace.
 
-> TODO: mention that for a new FE to be within the strata.org repo, we need a quality bar and a path towards the quality bar for FE officially maintained by AWS.
+To have your front-end included in the official Strata repository, it must meet a quality bar that ensures long-term maintainability:
+
+- A clear translation pipeline with tests covering the supported language features.
+- Consistent code structure following the patterns described in the [codebase structure](#how-should-i-structure-my-front-end-codebase) section.
+- Documentation of design decisions and known limitations.
+
+If your front-end doesn't yet meet this bar, that's fine — we can work with you to define a path to get there. Front-ends that are officially maintained by AWS within the strata-org repository are held to a higher standard, including ongoing maintenance commitments and broader test coverage.
 
 ### How do I ask for Strata features for my front-end and what support can I expect from Strata maintainers?
 
-> TODO: if feature is interesting for multiple languages, it will be considered and prioritized. If not, we can help by reviewing PR...
+If a feature you need would benefit multiple source languages (e.g., a new Laurel construct, a Core transformation, or a DDM capability), it will be considered and prioritized by the Strata maintainers. Open an issue on the [strata-org/Strata](https://github.com/strata-org/Strata) repository describing the feature, the use case, and which languages would benefit.
+
+For features that are specific to a single front-end, the Strata team can help by reviewing pull requests and providing guidance on how to integrate with existing infrastructure, but the implementation responsibility stays with the front-end team.
