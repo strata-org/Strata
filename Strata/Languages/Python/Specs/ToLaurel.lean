@@ -267,6 +267,17 @@ def specTypeToLaurelType (ty : SpecType) : ToLaurelM HighTypeMd := do
 private def mkStmt (e : StmtExpr) : StmtExprMd :=
   { val := e, md := .empty }
 
+/-- Create metadata with a file range from the current pyspec file. -/
+private def mkMdWithFileRange (loc : SourceRange) : ToLaurelM (Imperative.MetaData Core.Expression) := do
+  let ctx ← read
+  let fr : FileRange := { file := .file ctx.filepath.toString, range := loc }
+  return #[⟨Imperative.MetaData.fileRange, .fileRange fr⟩]
+
+/-- Wrap a StmtExpr with metadata containing a file range. -/
+private def mkStmtWithLoc (e : StmtExpr) (loc : SourceRange) : ToLaurelM StmtExprMd := do
+  let md ← mkMdWithFileRange loc
+  return { val := e, md := md }
+
 /-- Translate a SpecExpr to a Laurel StmtExpr.
     All values are assumed to be Any-typed (the Python prelude's universal type).
     Returns `none` for unsupported expressions (placeholders).
@@ -363,15 +374,18 @@ def buildSpecBody (preconditions : Array Assertion) (requiredParams : Array Stri
   for param in requiredParams do
     let cond := mkStmt (.PrimitiveOp .Not
       [mkStmt (.StaticCall (mkId "Any..isfrom_none") [mkStmt (.Identifier (mkId param))])])
-    stmts := mkStmt (.Assert cond) :: stmts
+    let assertStmt ← mkStmtWithLoc (.Assert cond) default
+    stmts := assertStmt :: stmts
   for assertion in preconditions do
     match ← specExprToLaurel assertion.formula with
     | some condExpr =>
-      stmts := mkStmt (.Assert condExpr) :: stmts
+      let assertStmt ← mkStmtWithLoc (.Assert condExpr) default
+      stmts := assertStmt :: stmts
     | none =>
       let msg := formatAssertionMessage assertion.message
       reportError default s!"Untranslatable precondition (emitting assert true): {msg}"
-      stmts := mkStmt (.Assert (mkStmt (.LiteralBool true))) :: stmts
+      let assertStmt ← mkStmtWithLoc (.Assert (mkStmt (.LiteralBool true))) default
+      stmts := assertStmt :: stmts
   let body := mkStmt (.Block stmts.reverse none)
   return .Transparent body
 

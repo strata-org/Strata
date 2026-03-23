@@ -7,6 +7,7 @@ module
 
 meta import Strata.SimpleAPI
 meta import Strata.Languages.Python.PySpecPipeline
+meta import Strata.Transform.ProcedureInlining
 meta import StrataTest.Util.Python
 
 /-! ## End-to-end tests for `pyAnalyzeLaurel` with dispatch
@@ -104,6 +105,38 @@ private meta def runAnalyze (dispatchIon : System.FilePath)
     | .ok _ => return .ok core
   | (_, errors) => return .error s!"Laurel to Core translation failed: {errors}"
 
+/-- Run pyAnalyzeLaurel with inlining and verification, returning the formatted results. -/
+private meta def runAnalyzeAndVerify (dispatchIon : System.FilePath)
+    (tmpDir : System.FilePath) (scriptName : String)
+    (pyspecPaths : Array String := #[])
+    : IO (Except String (Array Core.VCResult)) := do
+  let testIon ← compileTestScript (testDir / scriptName) tmpDir
+  let laurel ←
+    match ← Strata.pyAnalyzeLaurel testIon.toString
+        (dispatchPaths := #[dispatchIon.toString])
+        (pyspecPaths := pyspecPaths) |>.toBaseIO with
+    | .ok r => pure r
+    | .error err => return .error (toString err)
+  let (coreProgramOption, _) := Strata.translateCombinedLaurel laurel
+  let coreProgram ← match coreProgramOption with
+    | none => return .error "Laurel to Core translation failed"
+    | some core => pure core
+  -- Inline all non-main procedures
+  let coreProgram ← match Core.Transform.runProgram (targetProcList := .none)
+        (Core.ProcedureInlining.inlineCallCmd
+          (doInline := λ name _ => name ≠ "__main__"))
+        coreProgram .emp with
+    | ⟨.error e, _⟩ => return .error s!"Inlining failed: {e}"
+    | ⟨.ok (_, inlined), _⟩ => pure inlined
+  -- Verify
+  let options : Core.VerifyOptions :=
+    { Core.VerifyOptions.default with
+      stopOnFirstError := false, verbose := .quiet, solver := "z3",
+      checkMode := .bugFinding, checkLevel := .full }
+  match ← Strata.verifyCore coreProgram options |>.toBaseIO with
+  | .ok results => return .ok results
+  | .error msg => return .error (toString msg)
+
 /-- Expected outcome for a test case. -/
 private inductive Expected where
   | success
@@ -175,5 +208,30 @@ private meta def runTestCase (dispatchIon tmpDir : System.FilePath)
       | .error e => errors := errors.push s!"Task error: {e}"
     if errors.size > 0 then
       throw <| IO.userError ("\n".intercalate errors.toList)
+
+/-! ## Precondition violation test
+
+Verifies that calling `put_item(Bucket="", ...)` produces a `✖️ always false`
+result for the `len(Bucket) >= 1` assertion. -/
+
+/--
+info: Storage_Storage_put_item_assert(0)_8: ✔️ always true if reached
+Storage_Storage_put_item_assert(0)_8: ✔️ always true if reached
+Storage_Storage_put_item_assert(0)_8: ✔️ always true if reached
+Storage_Storage_put_item_assert(0)_8: ✖️ always false if reached
+Storage_Storage_put_item_assert(0)_8: ✔️ always true if reached
+-/
+#guard_msgs in
+#eval withPython fun _pythonCmd => do
+  IO.FS.withTempDir fun tmpDir => do
+    let (dispatchIon, pyspecPaths) ← setupFixture _pythonCmd tmpDir
+    let result ← runAnalyzeAndVerify dispatchIon tmpDir
+      "test_precondition_violation.py" pyspecPaths
+    match result with
+    | .error msg => IO.println s!"error: {msg}"
+    | .ok vcResults =>
+      for r in vcResults do
+        if r.obligation.label.startsWith "Storage_" then
+          IO.println s!"{r.obligation.label}: {r.formatOutcome}"
 
 end Strata.Python.AnalyzeLaurelTest
