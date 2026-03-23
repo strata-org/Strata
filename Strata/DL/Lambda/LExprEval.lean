@@ -38,8 +38,8 @@ type annotations.
 def eqModuloMeta (e1 e2 : LExpr T) : Bool :=
   e1.eraseMetadata == e2.eraseMetadata
 
-/-- Given two Option Bool, gives `and` result if at least
-  one is `some`, treating `none` as `true`. -/
+/-- Three-valued `and` for `Option Bool`: `some false` if either is `some false`,
+  `some true` if both are `some true`, `none` (inconclusive) otherwise. -/
 def opt_and (o1 o2: Option Bool) :=
   match o1, o2 with
   | some false, _ => some false
@@ -110,9 +110,6 @@ def eql (F : @Factory T.base) (e1 e2 : LExpr T) : Option Bool :=
 
 /--
 Canonical values of `LExpr`s.
-
-Equality is simply `==` (or more accurately, `eqModuloMeta`) for these
-`LExpr`s. Also see `eql` for a version that can compare nested metadata.
 
 If `e:LExpr` is `.app`, say `e1 e2 .. en`, `e` is a canonical value if
 (1) `e1` is a constructor and `e2 .. en` are all canonical values, or
