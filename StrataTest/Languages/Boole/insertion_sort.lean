@@ -21,6 +21,7 @@ procedure InsertionSort() returns ()
 spec
 {
   modifies A;
+  requires 0 <= n;
   requires n <= 1;
   ensures ∀ i:int, j:int . 0 <= i && i <= j && j < n ==> A[i] <= A[j];
 }
@@ -30,7 +31,7 @@ spec
 
   // for-loop syntax + array assignment syntax + quantifier syntax
   for i : int := 1 to (n - 1) by 1
-    invariant 1 <= i && i <= n
+    invariant 1 <= i && i <= n + 1
     invariant ∀ p:int, q:int . 0 <= p && p <= q && q < i ==> A[p] <= A[q]
   {
     key := A[i];
