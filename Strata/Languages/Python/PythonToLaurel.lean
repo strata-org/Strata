@@ -93,6 +93,8 @@ structure TranslationContext where
   compositeTypeNames : Std.HashSet String := {}
   /-- Maps unprefixed class names to prefixed names (from pyspec). -/
   typeAliases : Std.HashMap String String := {}
+  /-- Procedure names with transparent bodies (can be inlined / emit StaticCall). -/
+  inlinableProcedures : Std.HashSet String := {}
   /-- Track current class during method translation -/
   currentClassName : Option String := none
   loopBreakLabel : Option String := none
@@ -800,10 +802,9 @@ partial def translateCall (ctx : TranslationContext)
   | .Attribute _ val _attr _ =>
       let _target_trans ← translateExpr ctx val
       if opt_firstarg.isSome then
-        -- Only emit StaticCall when the caller type was resolved through a
-        -- pyspec type alias, indicating the procedure has precondition assertions.
-        let callerTy := (inferExprType ctx val).toOption.getD ""
-        if ctx.typeAliases.contains callerTy && funcName ∈ ctx.preludeProcedures then
+        -- Emit StaticCall only for procedures with transparent bodies
+        -- (e.g. pyspec with precondition assertions). Opaque procedures stay as Hole.
+        if funcName ∈ ctx.inlinableProcedures then
           return mkStmtExprMd (StmtExpr.StaticCall funcName (trans_args ++ trans_kwords_exprs))
         else
           return mkStmtExprMd (.Hole)
@@ -873,8 +874,9 @@ partial def translateAssign  (ctx : TranslationContext)
         let assignStmts := match rhs_trans.val with
         | .StaticCall fnname args =>
             if fnname.text ∈ ctx.compositeTypeNames then
-              let newExpr := mkStmtExprMd (StmtExpr.New fnname)
-              let varType := mkHighTypeMd (.UserDefined fnname)
+              let resolvedId := mkId (resolveTypeName ctx fnname.text)
+              let newExpr := mkStmtExprMd (StmtExpr.New resolvedId)
+              let varType := mkHighTypeMd (.UserDefined resolvedId)
               if n.val ∈ ctx.variableTypes.unzip.1 then
                 let assignStmt := mkStmtExprMd (StmtExpr.Assign [targetExpr] newExpr)
                 let initStmt := mkStmtExprMd (StmtExpr.InstanceCall (mkStmtExprMd (StmtExpr.Identifier n.val)) "__init__" args)
@@ -1562,6 +1564,8 @@ structure PreludeInfo where
   procedureNames : List String := []
   /-- Maps unprefixed class names to prefixed names (from pyspec). -/
   typeAliases : Std.HashMap String String := {}
+  /-- Names of procedures with transparent bodies (can be inlined). -/
+  inlinableProcedures : Std.HashSet String := {}
 
 /-- Extract `PreludeInfo` from a `Core.Program`. -/
 def PreludeInfo.ofCoreProgram (prelude : Core.Program) : PreludeInfo where
@@ -1634,6 +1638,9 @@ def PreludeInfo.ofLaurelProgram (prog : Laurel.Program) : PreludeInfo where
   procedureNames :=
     prog.staticProcedures.filterMap fun p =>
       if p.body.isExternal || p.isFunctional then none else some p.name.text
+  inlinableProcedures :=
+    prog.staticProcedures.foldl (init := {}) fun s p =>
+      if p.body.isTransparent then s.insert p.name.text else s
 
 /-- Merge two `PreludeInfo` values by concatenating each field. -/
 def PreludeInfo.merge (a b : PreludeInfo) : PreludeInfo where
@@ -1644,6 +1651,7 @@ def PreludeInfo.merge (a b : PreludeInfo) : PreludeInfo where
   functions := a.functions ++ b.functions
   procedureNames := a.procedureNames ++ b.procedureNames
   typeAliases := b.typeAliases.fold (init := a.typeAliases) fun m k v => m.insert k v
+  inlinableProcedures := b.inlinableProcedures.fold (init := a.inlinableProcedures) fun s n => s.insert n
 
 /-- Translate Python module to Laurel Program using pre-extracted prelude info. -/
 def pythonToLaurel' (info : PreludeInfo)
@@ -1707,6 +1715,16 @@ def pythonToLaurel' (info : PreludeInfo)
             let unprefixedName := unprefixed ++ name.drop prefixed.length
             procs'.insert unprefixedName sig
           else procs'
+    -- Add unprefixed class names so Python type annotations resolve
+    let compositeTypeNames := info.typeAliases.fold (init := compositeTypeNames)
+      fun s unprefixed _ => s.insert unprefixed
+    -- Add unprefixed procedure names to inlinableProcedures
+    let inlinableProcedures := info.typeAliases.fold (init := info.inlinableProcedures)
+      fun s unprefixed prefixed =>
+        info.inlinableProcedures.fold (init := s) fun s' name =>
+          if name.startsWith (prefixed ++ "_") then
+            s'.insert (unprefixed ++ name.drop prefixed.length)
+          else s'
     {
       currentClassName := none,
       preludeProcedures := preludeProcedures,
@@ -1717,6 +1735,7 @@ def pythonToLaurel' (info : PreludeInfo)
       compositeTypeNames := compositeTypeNames,
       classFieldHighType := classFieldHighType,
       overloadTable := overloadTable,
+      inlinableProcedures := inlinableProcedures,
       typeAliases := info.typeAliases,
       filePath := filePath
     }
