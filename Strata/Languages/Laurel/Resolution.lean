@@ -499,9 +499,14 @@ def resolveTypeDefinition (td : TypeDefinition) : ResolveM TypeDefinition := do
   | .Constrained ct =>
     let ctName' ← defineName ct.name (.constrainedType ct)
     let base' ← resolveHighType ct.base
-    let constraint' ← resolveStmtExpr ct.constraint
-    let witness' ← resolveStmtExpr ct.witness
-    return .Constrained { name := ctName', base := base', valueName := ct.valueName,
+    -- The valueName (e.g. `x` in `constrained nat = x: int where x >= 0`) must be
+    -- in scope when resolving the constraint and witness expressions.
+    let (valueName', constraint', witness') ← withScope do
+      let valueName' ← defineName ct.valueName (.quantifierVar ct.valueName base')
+      let constraint' ← resolveStmtExpr ct.constraint
+      let witness' ← resolveStmtExpr ct.witness
+      return (valueName', constraint', witness')
+    return .Constrained { name := ctName', base := base', valueName := valueName',
                           constraint := constraint', witness := witness' }
   | .Datatype dt =>
     let dtName' ← defineName dt.name (.datatypeDefinition dt)

@@ -78,7 +78,7 @@ procedure dag(a: int) returns (r: int)
   };
   assert if a > 0 then { b == 1 } else { true };
   assert if a > 0 then { b == 2 } else { true };
-//^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
+//^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
   return b
 };
 "
