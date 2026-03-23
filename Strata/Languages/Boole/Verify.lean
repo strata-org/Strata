@@ -227,11 +227,9 @@ def toCoreTypedBin (m : SourceRange) (ty : Boole.Type) (op : String) (a b : Core
   let iop : Core.Expression.Expr := .op () ⟨s!"Int.{op}", ()⟩ none
   return mkCoreApp iop [a, b]
 
-private def oldNamePrefix : String := "old "
-
 private def oldifyExpr : Core.Expression.Expr → Core.Expression.Expr
   | .fvar m ident ty =>
-      let ident' := if ident.name.startsWith oldNamePrefix then ident else Core.CoreIdent.mkOld ident.name
+      let ident' := if Core.CoreIdent.isOldIdent ident then ident else Core.CoreIdent.mkOld ident.name
       .fvar m ident' ty
   | .app m f a => .app m (oldifyExpr f) (oldifyExpr a)
   | .eq m a b => .eq m (oldifyExpr a) (oldifyExpr b)

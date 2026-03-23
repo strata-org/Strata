@@ -34,6 +34,9 @@ def CoreIdent.toPretty (x : CoreIdent) : String := x.name
 /-- Create the `old g` identifier for a global variable named `name`. -/
 def CoreIdent.mkOld (name : String) : CoreIdent := ⟨"old " ++ name, ()⟩
 
+/-- Check whether an identifier is already an `old`-prefixed global name. -/
+def CoreIdent.isOldIdent (ident : CoreIdent) : Bool := ident.name.startsWith "old "
+
 instance : ToFormat CoreIdent where
   format i := CoreIdent.toPretty i
 
