@@ -12,7 +12,7 @@ public import Strata.Languages.Laurel.LaurelTypes
 public import Strata.Languages.Laurel.LaurelToCoreTranslator
 public import Strata.Languages.Core.Verifier
 public import Strata.Languages.Python.PythonDialect
-public import Strata.Languages.Python.PythonLaurelCorePrelude
+public import Strata.Languages.Python.PythonRuntimeCorePart
 public import Strata.Languages.Python.Specs.ToLaurel
 public import Strata.Languages.Core.Program
 

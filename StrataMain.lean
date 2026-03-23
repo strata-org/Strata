@@ -21,7 +21,7 @@ import Strata.Languages.Laurel.Laurel
 import Strata.Transform.ProcedureInlining
 import Strata.Languages.Python.CorePrelude
 import Strata.Languages.Python.PythonRuntimeLaurelPart
-import Strata.Languages.Python.PythonLaurelCorePrelude
+import Strata.Languages.Python.PythonRuntimeCorePart
 import Strata.Backends.CBMC.CollectSymbols
 import Strata.Backends.CBMC.GOTO.CoreToGOTOPipeline
 
