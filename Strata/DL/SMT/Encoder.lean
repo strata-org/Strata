@@ -96,6 +96,8 @@ def smtReservedKeywords : List String :=
   -- Additional keywords not in the parser list
   parserKeywords ++
    ["true", "false", "Int", "Bool", "Real", "Array", "BitVec",
+   -- Symbols from SMT. Note: this must be synchronized with Strata's internal SMT solver which has a denylist of
+   -- names of variables/UFs/sorts.
    -- Core theory symbols
    "abs", "and", "distinct", "/", "=", ">", ">=", "ite", "=>",
    "div", "is_int", "<", "<=", "-", "mod", "*", "not", "or", "+",
