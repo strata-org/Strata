@@ -33,10 +33,10 @@ inductive EvalProvenance
 
 /--
 Check for boolean equality of two expressions `e1` and `e2` after erasing any
-type annotations.
+metadata.
 -/
 def eqModuloTypes (e1 e2 : LExpr T) : Bool :=
-  e1.eraseMetadata.eraseTypes == e2.eraseMetadata.eraseTypes
+  e1.eraseMetadata == e2.eraseMetadata
 
 /--
 Canonical values of `LExpr`s.

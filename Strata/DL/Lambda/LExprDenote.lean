@@ -817,6 +817,199 @@ theorem Denotes_denote
       apply Eq.symm; rw [decide_eq_false_iff_not]
       intro ⟨w, hw⟩; have := hw.symm.trans (ih w).symm; contradiction
 
+/-! ### Unfolding lemmas for `denote`
+
+These lemmas expose the structure of `denote` for each expression form,
+proved via `Denotes` to avoid dependent-type casts from the `_inv` lemmas. -/
+
+/-- Unfolding lemma for `denote` of an application. -/
+theorem denote_app
+    {T : LExprParams}
+    {tcInterp : TyConstrInterp}
+    {opInterp : OpInterp T tcInterp}
+    {fvarVal : FreeVarVal T tcInterp}
+    {vt : TyVarVal}
+    {m : T.Metadata} {fn arg : LExpr T.mono} {aty τ : LMonoTy} {Δ : List LMonoTy}
+    (bvarVal : BVarVal tcInterp vt Δ)
+    (h_fn : LExpr.HasTypeA Δ fn (.arrow aty τ))
+    (h_arg : LExpr.HasTypeA Δ arg aty)
+    (h_app : LExpr.HasTypeA Δ (.app m fn arg) τ)
+    : LExpr.denote tcInterp opInterp fvarVal vt bvarVal (.app m fn arg) τ h_app =
+      (LExpr.denote tcInterp opInterp fvarVal vt bvarVal fn (.arrow aty τ) h_fn)
+        (LExpr.denote tcInterp opInterp fvarVal vt bvarVal arg aty h_arg) := by
+  have hd_fn := denote_Denotes tcInterp opInterp fvarVal vt bvarVal fn (.arrow aty τ) h_fn
+  have hd_arg := denote_Denotes tcInterp opInterp fvarVal vt bvarVal arg aty h_arg
+  have hd_app := Denotes.app bvarVal (h := h_app) hd_fn hd_arg
+  exact (Denotes_denote hd_app).symm
+
+/-- Unfolding lemma for `denote` of an abstraction. -/
+theorem denote_abs
+    {T : LExprParams}
+    {tcInterp : TyConstrInterp}
+    {opInterp : OpInterp T tcInterp}
+    {fvarVal : FreeVarVal T tcInterp}
+    {vt : TyVarVal}
+    {m : T.Metadata} {name : String} {body : LExpr T.mono} {aty rty : LMonoTy} {Δ : List LMonoTy}
+    (bvarVal : BVarVal tcInterp vt Δ)
+    (h_body : LExpr.HasTypeA (aty :: Δ) body rty)
+    (h_abs : LExpr.HasTypeA Δ (.abs m name (some aty) body) (.arrow aty rty))
+    : LExpr.denote tcInterp opInterp fvarVal vt bvarVal
+        (.abs m name (some aty) body) (.arrow aty rty) h_abs =
+      fun x => LExpr.denote tcInterp opInterp fvarVal vt (.cons x bvarVal) body rty h_body := by
+  have hd_body : ∀ x, Denotes tcInterp opInterp fvarVal vt (.cons x bvarVal) body rty h_body
+      (LExpr.denote tcInterp opInterp fvarVal vt (.cons x bvarVal) body rty h_body) :=
+    fun x => denote_Denotes tcInterp opInterp fvarVal vt (.cons x bvarVal) body rty h_body
+  have hd_abs := Denotes.abs bvarVal (h := h_abs) hd_body
+  exact (Denotes_denote hd_abs).symm
+
+/-- Unfolding lemma for `denote` of `eq` when operands are equal. -/
+theorem denote_eq_true
+    {T : LExprParams}
+    {tcInterp : TyConstrInterp}
+    {opInterp : OpInterp T tcInterp}
+    {fvarVal : FreeVarVal T tcInterp}
+    {vt : TyVarVal}
+    {m : T.Metadata} {e1 e2 : LExpr T.mono} {ty' : LMonoTy} {Δ : List LMonoTy}
+    (bvarVal : BVarVal tcInterp vt Δ)
+    (h_1 : LExpr.HasTypeA Δ e1 ty')
+    (h_2 : LExpr.HasTypeA Δ e2 ty')
+    (h_eq : LExpr.HasTypeA Δ (.eq m e1 e2) .bool)
+    (heq : LExpr.denote tcInterp opInterp fvarVal vt bvarVal e1 ty' h_1 =
+           LExpr.denote tcInterp opInterp fvarVal vt bvarVal e2 ty' h_2)
+    : LExpr.denote tcInterp opInterp fvarVal vt bvarVal (.eq m e1 e2) .bool h_eq = true := by
+  have hd1 := denote_Denotes tcInterp opInterp fvarVal vt bvarVal e1 ty' h_1
+  have hd2 := denote_Denotes tcInterp opInterp fvarVal vt bvarVal e2 ty' h_2
+  rw [heq] at hd1
+  exact (Denotes_denote (Denotes.eq_true bvarVal (h := h_eq) hd1 hd2)).symm
+
+/-- Unfolding lemma for `denote` of `eq` when operands are not equal. -/
+theorem denote_eq_false
+    {T : LExprParams}
+    {tcInterp : TyConstrInterp}
+    {opInterp : OpInterp T tcInterp}
+    {fvarVal : FreeVarVal T tcInterp}
+    {vt : TyVarVal}
+    {m : T.Metadata} {e1 e2 : LExpr T.mono} {ty' : LMonoTy} {Δ : List LMonoTy}
+    (bvarVal : BVarVal tcInterp vt Δ)
+    (h_1 : LExpr.HasTypeA Δ e1 ty')
+    (h_2 : LExpr.HasTypeA Δ e2 ty')
+    (h_eq : LExpr.HasTypeA Δ (.eq m e1 e2) .bool)
+    (hne : LExpr.denote tcInterp opInterp fvarVal vt bvarVal e1 ty' h_1 ≠
+           LExpr.denote tcInterp opInterp fvarVal vt bvarVal e2 ty' h_2)
+    : LExpr.denote tcInterp opInterp fvarVal vt bvarVal (.eq m e1 e2) .bool h_eq = false := by
+  have hd1 := denote_Denotes tcInterp opInterp fvarVal vt bvarVal e1 ty' h_1
+  have hd2 := denote_Denotes tcInterp opInterp fvarVal vt bvarVal e2 ty' h_2
+  exact (Denotes_denote (Denotes.eq_false bvarVal (h := h_eq) hd1 hd2 hne)).symm
+
+/-- Unfolding lemma for `denote` of an `ite`. -/
+theorem denote_ite
+    {T : LExprParams}
+    {tcInterp : TyConstrInterp}
+    {opInterp : OpInterp T tcInterp}
+    {fvarVal : FreeVarVal T tcInterp}
+    {vt : TyVarVal}
+    {m : T.Metadata} {c t e : LExpr T.mono} {τ : LMonoTy} {Δ : List LMonoTy}
+    (bvarVal : BVarVal tcInterp vt Δ)
+    (h_c : LExpr.HasTypeA Δ c .bool)
+    (h_t : LExpr.HasTypeA Δ t τ)
+    (h_e : LExpr.HasTypeA Δ e τ)
+    (h_ite : LExpr.HasTypeA Δ (.ite m c t e) τ)
+    : LExpr.denote tcInterp opInterp fvarVal vt bvarVal (.ite m c t e) τ h_ite =
+      bif LExpr.denote tcInterp opInterp fvarVal vt bvarVal c .bool h_c
+      then LExpr.denote tcInterp opInterp fvarVal vt bvarVal t τ h_t
+      else LExpr.denote tcInterp opInterp fvarVal vt bvarVal e τ h_e := by
+  cases hb : LExpr.denote tcInterp opInterp fvarVal vt bvarVal c .bool h_c with
+  | true =>
+    simp
+    have hd_c := denote_Denotes tcInterp opInterp fvarVal vt bvarVal c .bool h_c
+    rw [hb] at hd_c
+    have hd_t := denote_Denotes tcInterp opInterp fvarVal vt bvarVal t τ h_t
+    have hd_ite := Denotes.ite_true bvarVal (h := h_ite) hd_c hd_t
+    exact (Denotes_denote hd_ite).symm
+  | false =>
+    simp
+    have hd_c := denote_Denotes tcInterp opInterp fvarVal vt bvarVal c .bool h_c
+    rw [hb] at hd_c
+    have hd_e := denote_Denotes tcInterp opInterp fvarVal vt bvarVal e τ h_e
+    have hd_ite := Denotes.ite_false bvarVal (h := h_ite) hd_c hd_e
+    exact (Denotes_denote hd_ite).symm
+
+/-- Unfolding lemma for `denote` of `quant .all` when the body is true for all values. -/
+theorem denote_quant_all_true
+    {T : LExprParams}
+    {tcInterp : TyConstrInterp}
+    {opInterp : OpInterp T tcInterp}
+    {fvarVal : FreeVarVal T tcInterp}
+    {vt : TyVarVal}
+    {m : T.Metadata} {name : String} {tr body : LExpr T.mono} {qty : LMonoTy} {Δ : List LMonoTy}
+    (bvarVal : BVarVal tcInterp vt Δ)
+    (h_body : LExpr.HasTypeA (qty :: Δ) body .bool)
+    (h_quant : LExpr.HasTypeA Δ (.quant m .all name (some qty) tr body) .bool)
+    (hall : ∀ x : TyDenote tcInterp vt qty,
+      (LExpr.denote tcInterp opInterp fvarVal vt (.cons x bvarVal) body .bool h_body : Bool) = true)
+    : LExpr.denote tcInterp opInterp fvarVal vt bvarVal
+        (.quant m .all name (some qty) tr body) .bool h_quant = true := by
+  have hd := Denotes.quant_all_true bvarVal (h := h_quant) fun x =>
+    hall x ▸ denote_Denotes tcInterp opInterp fvarVal vt (.cons x bvarVal) body .bool h_body
+  exact (Denotes_denote hd).symm
+
+/-- Unfolding lemma for `denote` of `quant .all` when the body is false for some value. -/
+theorem denote_quant_all_false
+    {T : LExprParams}
+    {tcInterp : TyConstrInterp}
+    {opInterp : OpInterp T tcInterp}
+    {fvarVal : FreeVarVal T tcInterp}
+    {vt : TyVarVal}
+    {m : T.Metadata} {name : String} {tr body : LExpr T.mono} {qty : LMonoTy} {Δ : List LMonoTy}
+    (bvarVal : BVarVal tcInterp vt Δ)
+    (h_body : LExpr.HasTypeA (qty :: Δ) body .bool)
+    (h_quant : LExpr.HasTypeA Δ (.quant m .all name (some qty) tr body) .bool)
+    (w : TyDenote tcInterp vt qty)
+    (hw : (LExpr.denote tcInterp opInterp fvarVal vt (.cons w bvarVal) body .bool h_body : Bool) = false)
+    : LExpr.denote tcInterp opInterp fvarVal vt bvarVal
+        (.quant m .all name (some qty) tr body) .bool h_quant = false := by
+  have hd := Denotes.quant_all_false bvarVal (h := h_quant) w
+    (hw ▸ denote_Denotes tcInterp opInterp fvarVal vt (.cons w bvarVal) body .bool h_body)
+  exact (Denotes_denote hd).symm
+
+/-- Unfolding lemma for `denote` of `quant .exist` when the body is true for some value. -/
+theorem denote_quant_exist_true
+    {T : LExprParams}
+    {tcInterp : TyConstrInterp}
+    {opInterp : OpInterp T tcInterp}
+    {fvarVal : FreeVarVal T tcInterp}
+    {vt : TyVarVal}
+    {m : T.Metadata} {name : String} {tr body : LExpr T.mono} {qty : LMonoTy} {Δ : List LMonoTy}
+    (bvarVal : BVarVal tcInterp vt Δ)
+    (h_body : LExpr.HasTypeA (qty :: Δ) body .bool)
+    (h_quant : LExpr.HasTypeA Δ (.quant m .exist name (some qty) tr body) .bool)
+    (w : TyDenote tcInterp vt qty)
+    (hw : (LExpr.denote tcInterp opInterp fvarVal vt (.cons w bvarVal) body .bool h_body : Bool) = true)
+    : LExpr.denote tcInterp opInterp fvarVal vt bvarVal
+        (.quant m .exist name (some qty) tr body) .bool h_quant = true := by
+  have hd := Denotes.quant_exist_true bvarVal (h := h_quant) w
+    (hw ▸ denote_Denotes tcInterp opInterp fvarVal vt (.cons w bvarVal) body .bool h_body)
+  exact (Denotes_denote hd).symm
+
+/-- Unfolding lemma for `denote` of `quant .exist` when the body is false for all values. -/
+theorem denote_quant_exist_false
+    {T : LExprParams}
+    {tcInterp : TyConstrInterp}
+    {opInterp : OpInterp T tcInterp}
+    {fvarVal : FreeVarVal T tcInterp}
+    {vt : TyVarVal}
+    {m : T.Metadata} {name : String} {tr body : LExpr T.mono} {qty : LMonoTy} {Δ : List LMonoTy}
+    (bvarVal : BVarVal tcInterp vt Δ)
+    (h_body : LExpr.HasTypeA (qty :: Δ) body .bool)
+    (h_quant : LExpr.HasTypeA Δ (.quant m .exist name (some qty) tr body) .bool)
+    (hall : ∀ x : TyDenote tcInterp vt qty,
+      (LExpr.denote tcInterp opInterp fvarVal vt (.cons x bvarVal) body .bool h_body : Bool) = false)
+    : LExpr.denote tcInterp opInterp fvarVal vt bvarVal
+        (.quant m .exist name (some qty) tr body) .bool h_quant = false := by
+  have hd := Denotes.quant_exist_false bvarVal (h := h_quant) fun x =>
+    (hall x) ▸ denote_Denotes tcInterp opInterp fvarVal vt (.cons x bvarVal) body .bool h_body
+  exact (Denotes_denote hd).symm
+
 /-! ### Factory-consistent interpretations
 
 We define what it means for an `opInterp` to be *consistent* with a factory:

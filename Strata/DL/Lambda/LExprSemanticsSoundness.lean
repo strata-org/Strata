@@ -96,6 +96,158 @@ theorem substFvars_denote
         (LExpr.substFvars body bindings) τ h_subst := by
   sorry
 
+/-! ### Metadata Doesn't Affect Typing or Denotations -/
+
+-- Easier to prove by computation than via HasTypeA directly
+omit [DecidableEq T.Metadata] [DecidableEq T.Identifier] [DecidableEq T.IDMeta] in
+theorem replaceMetadata_typeCheck {e: LExpr T.mono}
+  (f : T.Metadata → NewMetadata):
+  LExpr.typeCheck Δ e = LExpr.typeCheck Δ (e.replaceMetadata f) := by
+  induction e generalizing Δ <;> simp[LExpr.replaceMetadata, LExpr.typeCheck] <;> try grind
+  case op m o ty => cases ty <;> simp[LExpr.typeCheck]
+  case fvar m name ty => cases ty <;> simp[LExpr.typeCheck]
+  case abs m name ty body IH =>
+    cases ty <;> simp[LExpr.typeCheck, IH]
+  case quant m k name ty tr body IHtr IH =>
+    cases ty <;> simp[LExpr.typeCheck, IH, IHtr]
+
+omit [DecidableEq T.Metadata] [DecidableEq T.Identifier] [DecidableEq T.IDMeta] in
+theorem replaceMetadata_HasTypeA {e: LExpr T.mono}
+  (f : T.Metadata → NewMetadata)
+  (h₁ : LExpr.HasTypeA Δ e τ):
+  LExpr.HasTypeA Δ (LExpr.replaceMetadata e f) τ := by
+  rw[LExpr.HasTypeA_iff_typeCheck ] at h₁ |-
+  rw[←replaceMetadata_typeCheck]
+  exact h₁
+
+theorem denote_replaceMetadata
+    {T : LExprParams}
+    (tcInterp : TyConstrInterp)
+    (opInterp : OpInterp T tcInterp)
+    (fvarVal : FreeVarVal T tcInterp)
+    (vt : TyVarVal)
+    {Δ : List LMonoTy}
+    (bvarVal : BVarVal tcInterp vt Δ)
+    {e₁ : LExpr T.mono} {τ : LMonoTy} (f : T.Metadata → NewMetadata)
+    (h₁ : LExpr.HasTypeA Δ e₁ τ):
+    let T' : LExprParams := ⟨NewMetadata, T.IDMeta⟩
+    let opInterp' : OpInterp T' tcInterp := opInterp
+    let fvarVal' : FreeVarVal T' tcInterp := fvarVal
+    LExpr.denote tcInterp opInterp fvarVal vt bvarVal e₁ τ h₁ =
+    LExpr.denote tcInterp opInterp' fvarVal' vt bvarVal (LExpr.replaceMetadata e₁ f) τ (replaceMetadata_HasTypeA f h₁) := by
+    induction e₁ generalizing Δ τ with
+    | const m c =>
+      cases h₁ with | const => simp [LExpr.replaceMetadata, LExpr.denote]
+    | op m o ty =>
+      cases ty with
+      | none => exact absurd (LExpr.HasTypeA_to_typeCheck h₁) (by simp [LExpr.typeCheck])
+      | some ty => cases h₁ with | op => simp [LExpr.replaceMetadata, LExpr.denote]
+    | fvar m x ty =>
+      cases ty with
+      | none => exact absurd (LExpr.HasTypeA_to_typeCheck h₁) (by simp [LExpr.typeCheck])
+      | some ty => cases h₁ with | fvar => simp [LExpr.replaceMetadata, LExpr.denote]
+    | bvar m i =>
+      cases h₁ with | bvar h_lookup => simp [LExpr.replaceMetadata, LExpr.denote]
+    | app m fn arg ih_fn ih_arg =>
+      have ⟨aty, h_fn, h_arg⟩ := HasTypeA.app_inv h₁
+      have h_fn' := replaceMetadata_HasTypeA f h_fn
+      have h_arg' := replaceMetadata_HasTypeA f h_arg
+      have h_app' : LExpr.HasTypeA Δ (.app (f m) (fn.replaceMetadata f) (arg.replaceMetadata f)) τ :=
+        .app h_fn' h_arg'
+      rw [denote_app bvarVal h_fn h_arg h₁]
+      simp only [LExpr.replaceMetadata]
+      rw [denote_app bvarVal h_fn' h_arg' h_app',
+          ih_fn bvarVal h_fn, ih_arg bvarVal h_arg]
+    | abs m name ty body ih_body =>
+      cases ty with
+      | none => exact absurd (LExpr.HasTypeA_to_typeCheck h₁) (by simp [LExpr.typeCheck])
+      | some aty =>
+        cases h₁ with
+        | abs h_body =>
+          rename_i rty
+          have h_body' := replaceMetadata_HasTypeA f h_body
+          rw [denote_abs bvarVal h_body (LExpr.HasTypeA.abs h_body)]
+          simp only [LExpr.replaceMetadata]
+          rw [denote_abs bvarVal h_body' (.abs h_body')]
+          funext x
+          exact ih_body (.cons x bvarVal) h_body
+    | ite m c t e ih_c ih_t ih_e =>
+      cases h₁ with
+      | ite h_c h_t h_e =>
+        have h_c' := replaceMetadata_HasTypeA f h_c
+        have h_t' := replaceMetadata_HasTypeA f h_t
+        have h_e' := replaceMetadata_HasTypeA f h_e
+        rw [denote_ite bvarVal h_c h_t h_e]
+        simp only [LExpr.replaceMetadata]
+        rw [denote_ite bvarVal h_c' h_t' h_e' (.ite h_c' h_t' h_e'),
+            ih_c bvarVal h_c, ih_t bvarVal h_t, ih_e bvarVal h_e]
+    | eq m e1 e2 ih1 ih2 =>
+      cases h₁ with
+      | eq h_1 h_2 =>
+        have h_1' := replaceMetadata_HasTypeA f h_1
+        have h_2' := replaceMetadata_HasTypeA f h_2
+        by_cases heq : LExpr.denote tcInterp opInterp fvarVal vt bvarVal e1 _ h_1 =
+          LExpr.denote tcInterp opInterp fvarVal vt bvarVal e2 _ h_2
+        · rw [denote_eq_true bvarVal h_1 h_2 _ heq]
+          simp only [LExpr.replaceMetadata]
+          rw [denote_eq_true bvarVal h_1' h_2' (.eq h_1' h_2')
+                (by rw [← ih1 bvarVal h_1, ← ih2 bvarVal h_2]; exact heq)]
+        · rw [denote_eq_false bvarVal h_1 h_2 _ heq]
+          simp only [LExpr.replaceMetadata]
+          rw [denote_eq_false bvarVal h_1' h_2' (.eq h_1' h_2')
+                (by rw [← ih1 bvarVal h_1, ← ih2 bvarVal h_2]; exact heq)]
+    | quant m k name ty tr body ih_tr ih_body =>
+      cases ty with
+      | none => exact absurd (LExpr.HasTypeA_to_typeCheck h₁) (by simp [LExpr.typeCheck])
+      | some qty =>
+        cases h₁ with
+        | quant h_tr h_body =>
+          have h_body' := replaceMetadata_HasTypeA f h_body
+          have h_tr' := replaceMetadata_HasTypeA f h_tr
+          cases k with
+          | all =>
+            by_cases hall : ∀ x : TyDenote tcInterp vt qty,
+                (LExpr.denote tcInterp opInterp fvarVal vt (.cons x bvarVal) body .bool h_body : Bool) = true
+            · rw [denote_quant_all_true bvarVal h_body _ hall]
+              simp only [LExpr.replaceMetadata]
+              exact (denote_quant_all_true bvarVal h_body' (.quant h_tr' h_body')
+                (fun x => by rw [← ih_body (.cons x bvarVal) h_body]; exact hall x)).symm
+            · have ⟨w, hw⟩ := Classical.not_forall.mp hall
+              have hwf : (LExpr.denote tcInterp opInterp fvarVal vt (.cons w bvarVal) body .bool h_body : Bool) = false :=
+                Bool.eq_false_iff.mpr hw
+              rw [denote_quant_all_false bvarVal h_body _ w hwf]
+              simp only [LExpr.replaceMetadata]
+              exact (denote_quant_all_false bvarVal h_body' (.quant h_tr' h_body') w
+                (by rw [← ih_body (.cons w bvarVal) h_body]; exact hwf)).symm
+          | exist =>
+            by_cases hexist : ∃ x : TyDenote tcInterp vt qty,
+                (LExpr.denote tcInterp opInterp fvarVal vt (.cons x bvarVal) body .bool h_body : Bool) = true
+            · obtain ⟨w, hw⟩ := hexist
+              rw [denote_quant_exist_true bvarVal h_body _ w hw]
+              simp only [LExpr.replaceMetadata]
+              exact (denote_quant_exist_true bvarVal h_body' (.quant h_tr' h_body') w
+                (by rw [← ih_body (.cons w bvarVal) h_body]; exact hw)).symm
+            · have hexist_neg : ∀ x : TyDenote tcInterp vt qty,
+                  ¬ ((LExpr.denote tcInterp opInterp fvarVal vt (.cons x bvarVal) body .bool h_body : Bool) = true) :=
+                fun x h => hexist ⟨x, h⟩
+              have hexist_f : ∀ x : TyDenote tcInterp vt qty,
+                  (LExpr.denote tcInterp opInterp fvarVal vt (.cons x bvarVal) body .bool h_body : Bool) = false :=
+                fun x => Bool.eq_false_iff.mpr (hexist_neg x)
+              rw [denote_quant_exist_false bvarVal h_body _ hexist_f]
+              simp only [LExpr.replaceMetadata]
+              exact (denote_quant_exist_false bvarVal h_body' (.quant h_tr' h_body')
+                (fun x => by rw [← ih_body (.cons x bvarVal) h_body]; exact hexist_f x)).symm
+
+omit [DecidableEq T.Metadata] [DecidableEq T.Identifier] in
+theorem eql_rewrite
+  {F : @Factory T}
+  {e₁ e₂ : LExpr T.mono}
+  (hv₁ : LExpr.isCanonicalValue F e₁)
+  (hv₂ : LExpr.isCanonicalValue F e₂):
+  LExpr.eql F e₁ e₂ hv₁ hv₂ = LExpr.eqModuloTypes e₁ e₂ := by
+  unfold LExpr.eql; split <;> grind
+
+omit [DecidableEq T.Metadata] [DecidableEq T.Identifier] in
 /-- For canonical values, if syntactic equality (`eql`) returns true, then the
 denotations are equal. -/
 theorem eql_true_implies_denote_eq
@@ -108,7 +260,21 @@ theorem eql_true_implies_denote_eq
     (heql : LExpr.eql F e₁ e₂ hv₁ hv₂ = true)
     : LExpr.denote tcInterp opInterp fvarVal vt .nil e₁ τ h₁ =
       LExpr.denote tcInterp opInterp fvarVal vt .nil e₂ τ h₂ := by
-  sorry
+    rw[eql_rewrite] at heql
+    unfold LExpr.eqModuloTypes at heql
+    -- Lean is confused by BEq and DecidableEq
+    have heq: (e₁.eraseMetadata = e₂.eraseMetadata) := by
+      unfold BEq.beq instBEqLExprOfIdentifier at heql
+      simp at heql
+      rw[LExpr.beq_eq] at heql
+      exact heql
+    rw[denote_replaceMetadata _ _ _ _ .nil (fun _ => ()) h₁]
+    rw[denote_replaceMetadata _ _ _ _ .nil (fun _ => ()) h₂]
+    unfold LExpr.eraseMetadata at heq
+    generalize replaceMetadata_HasTypeA (fun _ => ()) h₁ = ht₁
+    generalize e₁.replaceMetadata (fun _ => ()) = e₁' at *
+    subst heq
+    rfl
 
 /-- For binder-free canonical values, if syntactic equality (`eql`) returns
 false, then the denotations are not equal. The `containsBinder = false`
@@ -158,104 +324,6 @@ theorem callOfLFunc_denote
           (denoteArgs tcInterp opInterp fvarVal vt h_args) := by
   sorry
 
-omit [DecidableEq T.Metadata] [DecidableEq T.Identifier] [DecidableEq T.IDMeta] in
-/-- Unfolding lemma for `denote` of an application:
-`denote (app m fn arg) τ h = (denote fn (arrow aty τ) h_fn) (denote arg aty h_arg)`.
-Proved via `Denotes` to avoid dependent-type casts from `app_inv`. -/
-theorem denote_app
-    {fn arg : LExpr T.mono} {aty τ : LMonoTy} {Δ : List LMonoTy}
-    (bvarVal : BVarVal tcInterp vt Δ)
-    (h_fn : LExpr.HasTypeA Δ fn (.arrow aty τ))
-    (h_arg : LExpr.HasTypeA Δ arg aty)
-    (h_app : LExpr.HasTypeA Δ (.app m fn arg) τ)
-    : LExpr.denote tcInterp opInterp fvarVal vt bvarVal (.app m fn arg) τ h_app =
-      (LExpr.denote tcInterp opInterp fvarVal vt bvarVal fn (.arrow aty τ) h_fn)
-        (LExpr.denote tcInterp opInterp fvarVal vt bvarVal arg aty h_arg) := by
-  have hd_fn := denote_Denotes tcInterp opInterp fvarVal vt bvarVal fn (.arrow aty τ) h_fn
-  have hd_arg := denote_Denotes tcInterp opInterp fvarVal vt bvarVal arg aty h_arg
-  have hd_app := Denotes.app bvarVal (h := h_app) hd_fn hd_arg
-  exact (Denotes_denote hd_app).symm
-
-omit [DecidableEq T.Metadata] [DecidableEq T.Identifier] [DecidableEq T.IDMeta] in
-/-- Unfolding lemma for `denote` of an abstraction:
-`denote (abs m name (some aty) body) (arrow aty rty) h = fun x => denote body rty h_body`
-with `x` consed onto the bound-variable valuation.
-Proved via `Denotes` to avoid dependent-type casts from `abs_inv`. -/
-theorem denote_abs
-    {body : LExpr T.mono} {aty rty : LMonoTy} {Δ : List LMonoTy}
-    (bvarVal : BVarVal tcInterp vt Δ)
-    (h_body : LExpr.HasTypeA (aty :: Δ) body rty)
-    (h_abs : LExpr.HasTypeA Δ (.abs m name (some aty) body) (.arrow aty rty))
-    : LExpr.denote tcInterp opInterp fvarVal vt bvarVal
-        (.abs m name (some aty) body) (.arrow aty rty) h_abs =
-      fun x => LExpr.denote tcInterp opInterp fvarVal vt (.cons x bvarVal) body rty h_body := by
-  have hd_body : ∀ x, Denotes tcInterp opInterp fvarVal vt (.cons x bvarVal) body rty h_body
-      (LExpr.denote tcInterp opInterp fvarVal vt (.cons x bvarVal) body rty h_body) :=
-    fun x => denote_Denotes tcInterp opInterp fvarVal vt (.cons x bvarVal) body rty h_body
-  have hd_abs := Denotes.abs bvarVal (h := h_abs) hd_body
-  exact (Denotes_denote hd_abs).symm
-
-omit [DecidableEq T.Metadata] [DecidableEq T.Identifier] [DecidableEq T.IDMeta] in
-/-- Unfolding lemma for `denote` of `eq` when operands are equal. -/
-theorem denote_eq_true
-    {e1 e2 : LExpr T.mono} {ty' : LMonoTy} {Δ : List LMonoTy}
-    (bvarVal : BVarVal tcInterp vt Δ)
-    (h_1 : LExpr.HasTypeA Δ e1 ty')
-    (h_2 : LExpr.HasTypeA Δ e2 ty')
-    (h_eq : LExpr.HasTypeA Δ (.eq m e1 e2) .bool)
-    (heq : LExpr.denote tcInterp opInterp fvarVal vt bvarVal e1 ty' h_1 =
-           LExpr.denote tcInterp opInterp fvarVal vt bvarVal e2 ty' h_2)
-    : LExpr.denote tcInterp opInterp fvarVal vt bvarVal (.eq m e1 e2) .bool h_eq = true := by
-  have hd1 := denote_Denotes tcInterp opInterp fvarVal vt bvarVal e1 ty' h_1
-  have hd2 := denote_Denotes tcInterp opInterp fvarVal vt bvarVal e2 ty' h_2
-  rw [heq] at hd1
-  exact (Denotes_denote (Denotes.eq_true bvarVal (h := h_eq) hd1 hd2)).symm
-
-omit [DecidableEq T.Metadata] [DecidableEq T.Identifier] [DecidableEq T.IDMeta] in
-/-- Unfolding lemma for `denote` of `eq` when operands are not equal. -/
-theorem denote_eq_false
-    {e1 e2 : LExpr T.mono} {ty' : LMonoTy} {Δ : List LMonoTy}
-    (bvarVal : BVarVal tcInterp vt Δ)
-    (h_1 : LExpr.HasTypeA Δ e1 ty')
-    (h_2 : LExpr.HasTypeA Δ e2 ty')
-    (h_eq : LExpr.HasTypeA Δ (.eq m e1 e2) .bool)
-    (hne : LExpr.denote tcInterp opInterp fvarVal vt bvarVal e1 ty' h_1 ≠
-           LExpr.denote tcInterp opInterp fvarVal vt bvarVal e2 ty' h_2)
-    : LExpr.denote tcInterp opInterp fvarVal vt bvarVal (.eq m e1 e2) .bool h_eq = false := by
-  have hd1 := denote_Denotes tcInterp opInterp fvarVal vt bvarVal e1 ty' h_1
-  have hd2 := denote_Denotes tcInterp opInterp fvarVal vt bvarVal e2 ty' h_2
-  exact (Denotes_denote (Denotes.eq_false bvarVal (h := h_eq) hd1 hd2 hne)).symm
-
-omit [DecidableEq T.Metadata] [DecidableEq T.Identifier] [DecidableEq T.IDMeta] in
-/-- Unfolding lemma for `denote` of an `ite`:
-`denote (ite m c t e) τ h = if denote c .bool h_c then denote t τ h_t else denote e τ h_e`.
-Proved via `Denotes` to avoid dependent-type casts from `ite_inv`. -/
-theorem denote_ite
-    {c t e : LExpr T.mono} {τ : LMonoTy} {Δ : List LMonoTy}
-    (bvarVal : BVarVal tcInterp vt Δ)
-    (h_c : LExpr.HasTypeA Δ c .bool)
-    (h_t : LExpr.HasTypeA Δ t τ)
-    (h_e : LExpr.HasTypeA Δ e τ)
-    (h_ite : LExpr.HasTypeA Δ (.ite m c t e) τ)
-    : LExpr.denote tcInterp opInterp fvarVal vt bvarVal (.ite m c t e) τ h_ite =
-      bif LExpr.denote tcInterp opInterp fvarVal vt bvarVal c .bool h_c
-      then LExpr.denote tcInterp opInterp fvarVal vt bvarVal t τ h_t
-      else LExpr.denote tcInterp opInterp fvarVal vt bvarVal e τ h_e := by
-  cases hb : LExpr.denote tcInterp opInterp fvarVal vt bvarVal c .bool h_c with
-  | true =>
-    simp
-    have hd_c := denote_Denotes tcInterp opInterp fvarVal vt bvarVal c .bool h_c
-    rw [hb] at hd_c
-    have hd_t := denote_Denotes tcInterp opInterp fvarVal vt bvarVal t τ h_t
-    have hd_ite := Denotes.ite_true bvarVal (h := h_ite) hd_c hd_t
-    exact (Denotes_denote hd_ite).symm
-  | false =>
-    simp
-    have hd_c := denote_Denotes tcInterp opInterp fvarVal vt bvarVal c .bool h_c
-    rw [hb] at hd_c
-    have hd_e := denote_Denotes tcInterp opInterp fvarVal vt bvarVal e τ h_e
-    have hd_ite := Denotes.ite_false bvarVal (h := h_ite) hd_c hd_e
-    exact (Denotes_denote hd_ite).symm
 
 /-! ### Main theorem -/
 
@@ -284,8 +352,8 @@ theorem Step.denote_preserved
     cases htyabs with
     | abs =>
       rename_i h_body
-      rw [denote_app tcInterp opInterp fvarVal vt .nil (.abs h_body) htyv2,
-          denote_abs tcInterp opInterp fvarVal vt .nil h_body]
+      rw [denote_app .nil (.abs h_body) htyv2,
+          denote_abs .nil h_body]
       exact (subst_denote tcInterp opInterp fvarVal vt .nil h_body htyv2 h₂).symm
   | reduce_2 v1 e2 e2' hval hstep' ih =>
     cases h₁ with
@@ -294,8 +362,8 @@ theorem Step.denote_preserved
       | app h_fn' h_arg' =>
         have haty := HasTypeA_unique h_fn h_fn'
         cases haty
-        rw [denote_app tcInterp opInterp fvarVal vt .nil h_fn h_arg,
-            denote_app tcInterp opInterp fvarVal vt .nil h_fn' h_arg']
+        rw [denote_app .nil h_fn h_arg,
+            denote_app .nil h_fn' h_arg']
         congr 1
         rw[ih h_arg h_arg']
   | reduce_1 e1 e1' e2 hstep' ih =>
@@ -305,21 +373,21 @@ theorem Step.denote_preserved
       | app h_fn' h_arg' =>
         have haty := HasTypeA_unique h_arg h_arg'
         subst haty
-        rw [denote_app tcInterp opInterp fvarVal vt .nil h_fn h_arg,
-            denote_app tcInterp opInterp fvarVal vt .nil h_fn' h_arg']
+        rw [denote_app .nil h_fn h_arg,
+            denote_app .nil h_fn' h_arg']
         congr 1
         rw[ih h_fn h_fn']
   | ite_reduce_then ethen eelse =>
     cases h₁ with
     | ite h_c h_t h_e =>
-      rw [denote_ite tcInterp opInterp fvarVal vt .nil h_c h_t h_e]
+      rw [denote_ite .nil h_c h_t h_e]
       have hc: LExpr.denote tcInterp opInterp fvarVal vt .nil
           (.const _ (.boolConst true)) .bool h_c = true := by rfl
       rw [hc]; rfl
   | ite_reduce_else ethen eelse =>
     cases h₁ with
     | ite h_c h_t h_e =>
-      rw [denote_ite tcInterp opInterp fvarVal vt .nil h_c h_t h_e]
+      rw [denote_ite .nil h_c h_t h_e]
       have hc : LExpr.denote tcInterp opInterp fvarVal vt .nil
           (.const _ (.boolConst false)) .bool h_c = false := by rfl
       rw [hc]; rfl
@@ -328,35 +396,35 @@ theorem Step.denote_preserved
     | ite h_c h_t h_e =>
       cases h₂ with
       | ite h_c' h_t' h_e' =>
-        rw [denote_ite tcInterp opInterp fvarVal vt .nil h_c h_t h_e,
-            denote_ite tcInterp opInterp fvarVal vt .nil h_c' h_t' h_e']
+        rw [denote_ite .nil h_c h_t h_e,
+            denote_ite .nil h_c' h_t' h_e']
         rw [ih h_c h_c']
   | ite_reduce_then_branch econd ethen ethen' eelse hstep' ih =>
     cases h₁ with
     | ite h_c h_t h_e =>
       cases h₂ with
       | ite h_c' h_t' h_e' =>
-        rw [denote_ite tcInterp opInterp fvarVal vt .nil h_c h_t h_e,
-            denote_ite tcInterp opInterp fvarVal vt .nil h_c' h_t' h_e']
+        rw [denote_ite .nil h_c h_t h_e,
+            denote_ite .nil h_c' h_t' h_e']
         rw [ih h_t h_t']
   | ite_reduce_else_branch econd ethen eelse eelse' hstep' ih =>
     cases h₁ with
     | ite h_c h_t h_e =>
       cases h₂ with
       | ite h_c' h_t' h_e' =>
-        rw [denote_ite tcInterp opInterp fvarVal vt .nil h_c h_t h_e,
-            denote_ite tcInterp opInterp fvarVal vt .nil h_c' h_t' h_e']
+        rw [denote_ite .nil h_c h_t h_e,
+            denote_ite .nil h_c' h_t' h_e']
         rw [ih h_e h_e']
   | eq_reduce_true e1 e2 hv1 hv2 heql =>
     cases h₁ with
     | eq h_1 h_2 =>
-      rw [denote_eq_true tcInterp opInterp fvarVal vt .nil h_1 h_2 _
+      rw [denote_eq_true .nil h_1 h_2 _
           (eql_true_implies_denote_eq tcInterp opInterp fvarVal vt hv1 hv2 h_1 h_2 heql)]
       rfl
   | eq_reduce_false e1 e2 hv1 hv2 heql hnb1 hnb2 =>
     cases h₁ with
     | eq h_1 h_2 =>
-      rw [denote_eq_false tcInterp opInterp fvarVal vt .nil h_1 h_2 _
+      rw [denote_eq_false .nil h_1 h_2 _
           (eql_false_no_binders_implies_denote_ne tcInterp opInterp fvarVal vt
             hv1 hv2 h_1 h_2 heql hnb1 hnb2)]
       rfl
@@ -369,11 +437,11 @@ theorem Step.denote_preserved
         have ih_eq := ih h_1 h_1'
         by_cases heq : LExpr.denote tcInterp opInterp fvarVal vt .nil e1 _ h_1 =
             LExpr.denote tcInterp opInterp fvarVal vt .nil e2 _ h_2
-        · rw [denote_eq_true tcInterp opInterp fvarVal vt .nil h_1 h_2 _ heq,
-              denote_eq_true tcInterp opInterp fvarVal vt .nil h_1' h_2' _
+        · rw [denote_eq_true .nil h_1 h_2 _ heq,
+              denote_eq_true .nil h_1' h_2' _
                 (by rw [← ih_eq]; exact heq)]
-        · rw [denote_eq_false tcInterp opInterp fvarVal vt .nil h_1 h_2 _ heq,
-              denote_eq_false tcInterp opInterp fvarVal vt .nil h_1' h_2' _
+        · rw [denote_eq_false .nil h_1 h_2 _ heq,
+              denote_eq_false .nil h_1' h_2' _
                 (by rw [← ih_eq]; exact heq)]
   | eq_reduce_rhs v1 e2 e2' hv1 hstep' ih =>
     cases h₁ with
@@ -384,11 +452,11 @@ theorem Step.denote_preserved
         have ih_eq := ih h_2 h_2'
         by_cases heq : LExpr.denote tcInterp opInterp fvarVal vt .nil v1 _ h_1 =
             LExpr.denote tcInterp opInterp fvarVal vt .nil e2 _ h_2
-        · rw [denote_eq_true tcInterp opInterp fvarVal vt .nil h_1 h_2 _ heq,
-              denote_eq_true tcInterp opInterp fvarVal vt .nil h_1' h_2' _
+        · rw [denote_eq_true .nil h_1 h_2 _ heq,
+              denote_eq_true .nil h_1' h_2' _
                 (by rw [← ih_eq]; exact heq)]
-        · rw [denote_eq_false tcInterp opInterp fvarVal vt .nil h_1 h_2 _ heq,
-              denote_eq_false tcInterp opInterp fvarVal vt .nil h_1' h_2' _
+        · rw [denote_eq_false .nil h_1 h_2 _ heq,
+              denote_eq_false .nil h_1' h_2' _
                 (by rw [← ih_eq]; exact heq)]
   | expand_fn e callee fnbody new_body args fn hcall hbody heq =>
     subst heq
