@@ -221,15 +221,74 @@ Don't reinvent expression or statement representations. [`C_Simp`](https://githu
 
 ### How do I contribute my front-end back to the Strata ecosystem?
 
-A new front-end dialect can live either in its own independent repository or within the official [strata-org/Strata](https://github.com/strata-org/Strata) repository. An independent repository is a good starting point — it lets you iterate quickly without coordination overhead. You can depend on Strata as a Lake dependency and develop at your own pace.
+There are three ways to host a new front-end, each with different tradeoffs for developers and users. The right choice depends on your project's maturity, how tightly you want to coordinate with the Strata team, and how much autonomy you need.
 
-To have your front-end included in the official Strata repository, it must meet a quality bar that ensures long-term maintainability:
+#### Option 1: Inside the official Strata repository
+
+Your front-end lives alongside the core Strata code in [strata-org/Strata](https://github.com/strata-org/Strata).
+
+**Developer experience:**
+- Direct access to all internal APIs with no dependency indirection.
+- When Strata maintainers make breaking changes to internal APIs (e.g., renaming a Laurel constructor, changing a DDM type), they can fix your front-end in the same PR. You don't wake up to a broken build after a Strata update.
+- Your front-end is built and tested on every Strata CI run. This catches regressions early, but also means your tests must pass for anyone's PR to merge.
+- You need to coordinate with Strata maintainers on code review, style, and structure. There is more process overhead.
+
+**User experience:**
+- Users get your front-end automatically when they clone Strata and run `lake build`. Zero extra setup.
+- `lake exe StrataVerify MyFile.yourlang.st` works out of the box.
+- Your front-end appears in the same documentation, examples directory, and test suite. It feels like a first-class part of Strata.
+
+**Requirements:** To have your front-end included in the official repository, it must meet a quality bar that ensures long-term maintainability:
 
 - A clear translation pipeline with tests covering the supported language features.
 - Consistent code structure following the patterns described in the [codebase structure](#how-should-i-structure-my-front-end-codebase) section.
 - Documentation of design decisions and known limitations.
 
-If your front-end doesn't yet meet this bar, that's fine — we can work with you to define a path to get there. Front-ends that are officially maintained by AWS within the strata-org repository are held to a higher standard, including ongoing maintenance commitments and broader test coverage.
+Front-ends that are officially maintained by AWS within the strata-org repository are held to a higher standard, including ongoing maintenance commitments and broader test coverage.
+
+#### Option 2: Separate repository in the `strata-org` GitHub organization
+
+Your front-end lives in its own repository (e.g., `strata-org/strata-yourlang`) under the Strata GitHub organization.
+
+**Developer experience:**
+- You have your own repository with your own CI, release cadence, and PR process.
+- You depend on Strata as a Lake dependency (a `[[require]]` in your `lakefile.toml` pointing at `strata-org/Strata`), pinning to a specific Strata revision and updating on your own schedule.
+- When Strata makes a breaking change, you are responsible for updating your code to match. There is a lag between Strata changes and your adaptation.
+- Being in the `strata-org` organization signals that the project is recognized by the Strata community. Strata maintainers have direct visibility since they own the org, which makes it easier to coordinate on compatibility.
+- Less coordination overhead than option 1, but you give up some autonomy (org admins control repository settings and permissions).
+
+**User experience:**
+- Users need to add your repository as a Lake dependency or clone it separately. It's an extra setup step.
+- Users may hit version mismatches — your front-end might be pinned to a specific Strata revision while they are on main. They need to be aware of compatibility.
+- Discoverability is good — users browsing the `strata-org` GitHub organization will find your front-end alongside Strata itself.
+
+#### Option 3: Separate repository outside the `strata-org` organization
+
+Your front-end lives in your own GitHub organization or personal account.
+
+**Developer experience:**
+- Maximum autonomy. Your repository, your organization, your rules. No coordination with Strata maintainers required.
+- Same Lake dependency mechanism as option 2 — you pin to a Strata revision and update when you want.
+- Same responsibility for tracking breaking changes as option 2.
+- The downside is isolation: Strata maintainers have no visibility into your project. If they are considering a breaking change, they won't know to check whether it affects you.
+
+**User experience:**
+- Same setup burden as option 2 (add a Lake dependency, build separately).
+- Discoverability is comparable to option 2: the Strata repository maintains a list of known external front-ends, so users browsing Strata will find your project. However, there is no organizational endorsement — the listing makes your front-end discoverable but does not imply that the Strata team vouches for its quality or maintenance status.
+- Version compatibility is entirely on the user to figure out. The listing in Strata can include a note about which Strata version your front-end was last tested against, but there is no organizational mechanism to enforce that it stays up to date.
+
+#### How to choose
+
+| Dimension | In Strata repo | Separate repo in `strata-org` | Separate repo outside |
+|---|---|---|---|
+| Breaking change protection | Strata maintainers fix your code | You fix it yourself | You fix it yourself |
+| User setup | Zero (comes with Strata) | One extra Lake dependency | One extra Lake dependency |
+| Development velocity | Slower (shared CI, reviews) | Medium (own CI, some coordination) | Fastest (fully independent) |
+| Discoverability | Automatic | Good (same org) | Good (listed in Strata repo) |
+| Trust signal to users | Strongest (part of official project) | Good (endorsed by org) | Neutral (listed, not endorsed) |
+| Maintenance commitment | Shared with Strata team | Yours, but visible to org | Entirely yours |
+
+A natural progression is to start with option 3 (or option 2 if you can get org access) to iterate quickly with minimal coordination overhead, then move to option 1 once the front-end is mature and meets the quality bar. If your front-end doesn't yet meet the bar for option 1, that's fine — we can work with you to define a path to get there.
 
 ### How do I ask for Strata features for my front-end and what support can I expect from Strata maintainers?
 
