@@ -24,7 +24,7 @@ namespace Lambda
 public section
 
 variable {Tbase : LExprParams} [DecidableEq Tbase.Metadata]
-    [DecidableEq Tbase.Identifier] [DecidableEq Tbase.IDMeta]
+    [DecidableEq Tbase.Identifier] [DecidableEq Tbase.IDMeta] [Inhabited Tbase.IDMeta]
 
 open Lambda
 
@@ -115,7 +115,7 @@ inductive Step (F:@Factory Tbase) (rf:Env Tbase)
   ∀ (e1 e2:LExpr Tbase.mono)
     (H1:LExpr.isCanonicalValue F e1)
     (H2:LExpr.isCanonicalValue F e2),
-    LExpr.eql F e1 e2 H1 H2 = true →
+    LExpr.eql F e1 e2 = some true →
     Step F rf (.eq m e1 e2) (.const mc (.boolConst true))
 
 /-- Evaluation of equality to false. Only when neither side contains a binder,
@@ -125,9 +125,7 @@ inductive Step (F:@Factory Tbase) (rf:Env Tbase)
   ∀ (e1 e2:LExpr Tbase.mono)
     (H1:LExpr.isCanonicalValue F e1)
     (H2:LExpr.isCanonicalValue F e2),
-    LExpr.eql F e1 e2 H1 H2 = false →
-    e1.containsBinder = false →
-    e2.containsBinder = false →
+    LExpr.eql F e1 e2 = some false →
     Step F rf (.eq m e1 e2) (.const mc (.boolConst false))
 
 /-- Evaluation of the left-hand side of an equality. -/

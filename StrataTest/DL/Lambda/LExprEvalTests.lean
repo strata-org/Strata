@@ -47,6 +47,10 @@ macro "reduce_beta": tactic => `(tactic |
 macro "inhabited_metadata": tactic => `(tactic |
     solve | (simp; apply ())
   )
+-- Solve equaliy goals
+macro "discharge_eq" : tactic => `(tactic |
+  solve | simp[eql, eqModuloMeta, LExpr.eraseMetadata,
+  LExpr.replaceMetadata, BEq.beq, LExpr.beq])
 
 private abbrev TestParams : LExprParams := ⟨Unit, Unit⟩
 
@@ -110,7 +114,8 @@ example: steps_well test2 := by
   take_step; reduce_beta
   take_step; constructor <;> try inhabited_metadata
   · apply Step.eq_reduce_false <;> try discharge_isCanonicalValue <;> try rfl
-    · inhabited_metadata
+    inhabited_metadata
+    discharge_eq
   take_step; apply Step.ite_reduce_else
   apply ReflTrans.refl
 
@@ -145,7 +150,8 @@ example: steps_well test4 := by
   take_step; reduce_beta
   take_step; apply Step.ite_reduce_cond <;> try inhabited_metadata
   · apply Step.eq_reduce_false <;> try discharge_isCanonicalValue <;> try rfl
-    · inhabited_metadata
+    inhabited_metadata
+    discharge_eq
   take_step; apply Step.ite_reduce_else
   take_step; apply Step.reduce_1; inhabited_metadata; apply Step.expand_fvar; rfl
   take_step; reduce_beta
@@ -166,7 +172,8 @@ example: steps_well test5 := by
   take_step; reduce_beta
   take_step; apply Step.ite_reduce_cond; inhabited_metadata
   · apply Step.eq_reduce_false <;> try discharge_isCanonicalValue <;> try rfl
-    · inhabited_metadata
+    inhabited_metadata
+    discharge_eq
   take_step; apply Step.ite_reduce_else
   take_step; apply Step.reduce_1; inhabited_metadata; apply Step.expand_fvar; rfl
   take_refl
