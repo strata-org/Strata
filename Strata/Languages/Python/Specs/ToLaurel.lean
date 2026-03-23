@@ -328,16 +328,19 @@ partial def specExprToLaurel (e : SpecExpr) : ToLaurelM (Option StmtExprMd) :=
       eqs.foldl (init := mkStmt (.LiteralBool false)) fun acc eq =>
         mkStmt (.PrimitiveOp .Or [acc, eq])
   | .containsKey container key => do
-    let c? ← specExprToLaurel container
-    return c?.map fun c =>
-      let unwrapped := mkStmt (.StaticCall (mkId "Any..as_Dict!") [c])
-      mkStmt (.StaticCall (mkId "DictStrAny_contains") [unwrapped, mkStmt (.LiteralString key)])
-  | .regexMatch subject pattern => do
-    let s? ← specExprToLaurel subject
-    return s?.map fun s =>
-      let sStr := mkStmt (.StaticCall (mkId "Any..as_string!") [s])
-      let regex := mkStmt (.StaticCall (mkId "re_search_str") [mkStmt (.LiteralString pattern)])
-      mkStmt (.StaticCall (mkId "Str.InRegEx") [sStr, regex])
+    match container with
+    | .var "kwargs" =>
+      -- containsKey(kwargs, "key") → parameter was provided (not None)
+      return some (mkStmt (.PrimitiveOp .Not
+        [mkStmt (.StaticCall (mkId "Any..isfrom_none") [mkStmt (.Identifier (mkId key))])]))
+    | _ =>
+      let c? ← specExprToLaurel container
+      return c?.map fun c =>
+        let unwrapped := mkStmt (.StaticCall (mkId "Any..as_Dict!") [c])
+        mkStmt (.StaticCall (mkId "DictStrAny_contains") [unwrapped, mkStmt (.LiteralString key)])
+  | .regexMatch _ _ => do
+    reportError default "regexMatch not yet supported (requires PR #623)"
+    return none
   | .forallList _ _ _ => do
     reportError default "forallList quantifier not yet supported in preconditions"
     return none
@@ -353,9 +356,14 @@ private def formatAssertionMessage (msg : Array MessagePart) : String :=
 
 /-- Build a procedure body that asserts preconditions.
     Outputs are already initialized non-deterministically. -/
-def buildSpecBody (preconditions : Array Assertion)
+def buildSpecBody (preconditions : Array Assertion) (requiredParams : Array String := #[])
     : ToLaurelM Body := do
   let mut stmts : List StmtExprMd := []
+  -- Assert that required parameters are provided (not None)
+  for param in requiredParams do
+    let cond := mkStmt (.PrimitiveOp .Not
+      [mkStmt (.StaticCall (mkId "Any..isfrom_none") [mkStmt (.Identifier (mkId param))])])
+    stmts := mkStmt (.Assert cond) :: stmts
   for assertion in preconditions do
     match ← specExprToLaurel assertion.formula with
     | some condExpr =>
@@ -418,6 +426,8 @@ def funcDeclToLaurel (procName : String) (func : FunctionDecl)
       let anyInputs := inputs.map fun p => { p with type := anyTy }
       let anyOutputs := outputs.map fun p => { p with type := anyTy }
       let body ← buildSpecBody func.preconditions
+        (requiredParams := allArgs.filterMap fun a =>
+          if a.default.isNone then some a.name else none)
       pure (anyInputs, anyOutputs, body)
     else
       pure (inputs, outputs, Body.Opaque [] none [])
