@@ -2162,6 +2162,24 @@ theorem CanonStar_substFvar
     simp only [LExpr.substFvar]
     exact CanonStar.trans (CanonStar.eq_lhs ih1) (CanonStar.eq_rhs ih2)
 
+-- Multi-step version: if a →* a' (via ReflTrans Step), then
+-- CanonStar (substFvar body x a) (substFvar body x a').
+-- Works for ALL body constructors (including abs/quant) because
+-- CanonStar can go under binders where Step cannot.
+omit [DecidableEq Tbase.Metadata] [DecidableEq Tbase.Identifier] in
+theorem CanonStar_substFvar_star
+    {Tbase : LExprParams} [DecidableEq Tbase.Metadata]
+    [DecidableEq Tbase.Identifier] [DecidableEq Tbase.IDMeta]
+    (F : @Factory Tbase) (rf : Env Tbase)
+    (body : LExpr Tbase.mono) (x : Identifier Tbase.IDMeta)
+    (a a' : LExpr Tbase.mono)
+    (h : ReflTrans (Step F rf) a a') :
+    CanonStar F rf (LExpr.substFvar body x a) (LExpr.substFvar body x a') := by
+  induction h with
+  | refl => exact .refl _
+  | step _ _ _ hab _ ih =>
+    exact CanonStar.trans (CanonStar_substFvar F rf body x _ _ hab) ih
+
 ---------------------------------------------------------------------
 -- Confluence
 
