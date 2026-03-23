@@ -526,7 +526,7 @@ def pyAnalyzeToGotoCommand : Command where
     | ⟨.error e, _⟩ => panic! e
     | ⟨.ok (_changed, newPgm), _⟩ =>
       -- Type-check the full program (registers Python types like ExceptOrNone)
-      let Ctx := { Lambda.LContext.default with functions := Core.Factory, knownTypes := Core.KnownTypes }
+      let Ctx := { Lambda.LContext.default with functions := Strata.Python.PythonFactory, knownTypes := Core.KnownTypes }
       let Env := Lambda.TEnv.default
       let (tcPgm, _) ← match Core.Program.typeCheck Ctx Env newPgm with
         | .ok r => pure r
@@ -601,7 +601,8 @@ def pyAnalyzeLaurelToGotoCommand : Command where
       | .error msg => exitFailure msg
     let sourceText := (← tryReadPythonSource filePath).map (·.2)
     let baseName := deriveBaseName filePath
-    match ← Strata.inlineCoreToGotoFiles coreProgram baseName sourceText |>.toBaseIO with
+    match ← Strata.inlineCoreToGotoFiles coreProgram baseName sourceText
+              (factory := Strata.Python.PythonFactory) |>.toBaseIO with
     | .ok () => pure ()
     | .error msg => exitFailure msg
 

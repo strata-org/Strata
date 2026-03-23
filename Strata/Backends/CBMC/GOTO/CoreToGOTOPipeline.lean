@@ -455,9 +455,10 @@ public def inlineCoreFixpoint (program : Core.Program)
 /-- Type-check a Core program using the standard context and factory.
     Returns the type-checked program and the resulting type environment. -/
 public def typeCheckCore (program : Core.Program)
+    (factory : @Lambda.Factory Core.CoreLParams := Core.Factory)
     : Except String (Core.Program × Core.Expression.TyEnv) := do
   let Ctx := { Lambda.LContext.default with
-    functions := Core.Factory, knownTypes := Core.KnownTypes }
+    functions := factory, knownTypes := Core.KnownTypes }
   let Env := Lambda.TEnv.default
   match Core.Program.typeCheck Ctx Env program with
   | .ok (tcPgm, Env') => return (tcPgm, Env')
@@ -514,11 +515,12 @@ public def inlineCoreToGotoFiles (program : Core.Program)
     (baseName : String)
     (sourceText : Option String := none)
     (entryPoints : List String := ["main", "__main__"])
+    (factory : @Lambda.Factory Core.CoreLParams := Core.Factory)
     : EIO String Unit := do
   let inlined ← match inlineCoreFixpoint program with
     | .ok r => pure r
     | .error msg => throw msg
-  let (tcPgm, Env) ← match typeCheckCore inlined with
+  let (tcPgm, Env) ← match typeCheckCore inlined factory with
     | .ok r => pure r
     | .error msg => throw msg
   coreToGotoFiles tcPgm Env baseName sourceText entryPoints

@@ -117,6 +117,10 @@ def ReFactory : @Factory Core.CoreLParams :=
       rePatternErrorFunc
     ]
 
+/-- Core.Factory extended with regex factory functions. -/
+def PythonFactory : @Lambda.Factory Core.CoreLParams :=
+    Core.Factory.append ReFactory
+
 end -- public section
 
 -------------------------------------------------------------------------------
