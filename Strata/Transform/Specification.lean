@@ -53,15 +53,18 @@ Copied from `SoundnessFramework.lean` (branch `proc-body-verify`). -/
 
 abbrev CoreConfig := Config Expression Command
 
+/-- Core-specific execution environment. -/
+abbrev CoreEnv := Env Expression
+
 abbrev CoreStep
     (π : String → Option Procedure)
     (φ : CoreEval → PureFunc Expression → CoreEval) :=
-  StepStmt Expression (EvalCommand π φ) (EvalPureFunc φ)
+  StepStmt Expression (EvalCmdParamF.ofPlain (EvalCommand π φ)) (EvalPureFunc φ)
 
 abbrev CoreStepStar
     (π : String → Option Procedure)
     (φ : CoreEval → PureFunc Expression → CoreEval) :=
-  StepStmtStar Expression (EvalCommand π φ) (EvalPureFunc φ)
+  StepStmtStar Expression (EvalCmdParamF.ofPlain (EvalCommand π φ)) (EvalPureFunc φ)
 
 /-! ## Assertion Identity
 
@@ -86,33 +89,33 @@ whose label and expression match `aid`. -/
     (branch `proc-body-verify`).  Simplified: returns a `Prop` instead of
     wrapping in `Option ProgramState`, and does not recurse into `block`/`seq`. -/
 def isAtAssert : CoreConfig → AssertId → Prop
-  | .stmt (.cmd (.cmd (.assert label expr _))) _ _ _, aid =>
+  | .stmt (.cmd (.cmd (.assert label expr _))) _ _, aid =>
     aid.label = label ∧ aid.expr = expr
-  | .stmts ((.cmd (.cmd (.assert label expr _))) :: _) _ _ _, aid =>
+  | .stmts ((.cmd (.cmd (.assert label expr _))) :: _) _ _, aid =>
     aid.label = label ∧ aid.expr = expr
   | _, _ => False
 
 /-- Extract the store from a configuration.
     Adapted from `Config.getδ` in `DetToNondetCorrectSmallStep.lean`
     (branch `atomb/det-nondet-small-step`); analogous accessor for the store.
-    Updated for `Config` with `ProgramCounter` fields and `seq` with `tailPc`. -/
+    Updated for `Config` with `Env` and `ProgramCounter` fields. -/
 def CoreConfig.getStore : CoreConfig → CoreStore
-  | .stmt _ σ _ _ => σ
-  | .stmts _ σ _ _ => σ
-  | .terminal σ _ => σ
-  | .exiting _ σ _ => σ
+  | .stmt _ ρ _ => ρ.store
+  | .stmts _ ρ _ => ρ.store
+  | .terminal ρ => ρ.store
+  | .exiting _ ρ => ρ.store
   | .block _ inner => CoreConfig.getStore inner
   | .seq inner _ _ => CoreConfig.getStore inner
 
 /-- Extract the evaluator from a configuration.
     Adapted from `Config.getδ` in `DetToNondetCorrectSmallStep.lean`
-    (branch `atomb/det-nondet-small-step`), updated for `Config.block`
-    and `Config.seq` from `proc-body-verify`, and new `ProgramCounter` fields. -/
+    (branch `atomb/det-nondet-small-step`), updated for `Config` with
+    `Env` and `ProgramCounter` fields. -/
 def CoreConfig.getEval : CoreConfig → CoreEval
-  | .stmt _ _ δ _ => δ
-  | .stmts _ _ δ _ => δ
-  | .terminal _ δ => δ
-  | .exiting _ _ δ => δ
+  | .stmt _ ρ _ => ρ.eval
+  | .stmts _ ρ _ => ρ.eval
+  | .terminal ρ => ρ.eval
+  | .exiting _ ρ => ρ.eval
   | .block _ inner => CoreConfig.getEval inner
   | .seq inner _ _ => CoreConfig.getEval inner
 
@@ -120,25 +123,36 @@ def CoreConfig.getEval : CoreConfig → CoreEval
     Returns `[]` for terminal/exiting configurations. Recurses into
     block/seq wrappers. -/
 def CoreConfig.getPC : CoreConfig → ProgramCounter
-  | .stmt _ _ _ pc => pc
-  | .stmts _ _ _ pc => pc
-  | .terminal _ _ => []
-  | .exiting _ _ _ => []
+  | .stmt _ _ pc => pc
+  | .stmts _ _ pc => pc
+  | .terminal _ => []
+  | .exiting _ _ => []
   | .block _ inner => CoreConfig.getPC inner
   | .seq inner _ _ => CoreConfig.getPC inner
+
+/-- Extract the execution environment from a configuration.
+    Recurses into block/seq wrappers. For terminal/exiting, returns
+    the stored environment directly. -/
+def CoreConfig.getEnv : CoreConfig → CoreEnv
+  | .stmt _ ρ _ => ρ
+  | .stmts _ ρ _ => ρ
+  | .terminal ρ => ρ
+  | .exiting _ ρ => ρ
+  | .block _ inner => CoreConfig.getEnv inner
+  | .seq inner _ _ => CoreConfig.getEnv inner
 
 /-! ## Style A — Reachability-based assertion validity
 
 A statement `s` satisfies `AllAssertsValid` if, for every execution path
-starting from *any* initial state `(σ₀, δ)` and *any* initial program
+starting from *any* initial environment `ρ₀` and *any* initial program
 counter, whenever the small-step execution reaches a configuration that
 is at an assert `a`, the assert expression evaluates to `true` in the
 current store.
 -/
 
 /-- An assert `a` is *reachable* from statement `s` at configuration `cfg`
-    if there exist initial state components and an initial program counter
-    such that multi-step execution from `(.stmt s σ₀ δ pc₀)` reaches `cfg`
+    if there exist an initial environment and an initial program counter
+    such that multi-step execution from `(.stmt s ρ₀ pc₀)` reaches `cfg`
     and `cfg` is at assert `a`.
     Adapted from `reachable` in `SoundnessFramework.lean`
     (branch `proc-body-verify`); uses `isAtAssert` instead of
@@ -147,8 +161,8 @@ def Reachable
     (π : String → Option Procedure)
     (φ : CoreEval → PureFunc Expression → CoreEval)
     (s : Statement) (a : AssertId) (cfg : CoreConfig) : Prop :=
-  ∃ (σ₀ : CoreStore) (δ : CoreEval) (pc₀ : ProgramCounter),
-    CoreStepStar π φ (.stmt s σ₀ δ pc₀) cfg ∧
+  ∃ (ρ₀ : CoreEnv) (pc₀ : ProgramCounter),
+    CoreStepStar π φ (.stmt s ρ₀ pc₀) cfg ∧
     isAtAssert cfg a
 
 /-- Assert `a` is *valid* in statement `s` if, for every reachable
@@ -185,18 +199,17 @@ The triple quantifies over all initial program counters.
 /-- Partial-correctness Hoare triple using small-step semantics.
     Inspired by `procedure_obeys_contract` in `SoundnessFramework.lean`
     (branch `proc-body-verify`), generalized to arbitrary pre/postconditions
-    on stores and evaluators.  Quantifies over all initial PCs. -/
+    on environments.  Quantifies over all initial PCs. -/
 def HoareTriple
     (π : String → Option Procedure)
     (φ : CoreEval → PureFunc Expression → CoreEval)
-    (P : CoreStore → CoreEval → Prop)
+    (P : CoreEnv → Prop)
     (s : Statement)
-    (Q : CoreStore → CoreEval → Prop) : Prop :=
-  ∀ (σ₀ : CoreStore) (δ : CoreEval) (pc₀ : ProgramCounter)
-    (σ' : CoreStore) (δ' : CoreEval),
-    P σ₀ δ →
-    CoreStepStar π φ (.stmt s σ₀ δ pc₀) (.terminal σ' δ') →
-    Q σ' δ'
+    (Q : CoreEnv → Prop) : Prop :=
+  ∀ (ρ₀ : CoreEnv) (pc₀ : ProgramCounter) (ρ' : CoreEnv),
+    P ρ₀ →
+    CoreStepStar π φ (.stmt s ρ₀ pc₀) (.terminal ρ') →
+    Q ρ'
 
 /-! ## Relationship between Style A and Style B
 
@@ -227,15 +240,15 @@ Theorem: AssertValid π φ (assert label expr md) ⟨label, expr⟩ →
 
 Proof:
   1. Assume AssertValid holds.
-  2. Let σ₀, δ, pc₀ be an initial state and suppose the assert steps to
-     terminal σ', δ'.
+  2. Let ρ₀, pc₀ be an initial environment and suppose the assert steps to
+     terminal ρ'.
   3. By inversion on the multi-step execution of a single assert command:
      the only step is step_cmd (eval_assert), which requires
-     δ σ₀ expr = some tt and produces σ' = σ₀, δ' = δ.
-  4. The initial configuration .stmt (assert ..) σ₀ δ pc₀ satisfies
+     ρ₀.eval ρ₀.store expr = some tt and produces ρ' = { ρ₀ with store := σ' }.
+  4. The initial configuration .stmt (assert ..) ρ₀ pc₀ satisfies
      isAtAssert, and is reachable in zero steps.
-  5. By AssertValid applied to this configuration: δ σ₀ expr = some tt.
-  6. Since σ' = σ₀ and δ' = δ, we have δ' σ' expr = some tt.
+  5. By AssertValid applied to this configuration: ρ₀.eval ρ₀.store expr = some tt.
+  6. Since ρ'.eval = ρ₀.eval and ρ'.store = σ', we have the result.
   7. done
      by 5 and 6.
 
@@ -247,17 +260,18 @@ Theorem: HoareTriple π φ True (assert label expr md) (expr = true) →
 Proof:
   1. Assume the Hoare triple holds.
   2. Let cfg be reachable from (assert label expr md) at the assert.
-  3. By definition, there exist σ₀, δ, pc₀ with
-     CoreStepStar (.stmt (assert ..) σ₀ δ pc₀) cfg and isAtAssert cfg.
+  3. By definition, there exist ρ₀, pc₀ with
+     CoreStepStar (.stmt (assert ..) ρ₀ pc₀) cfg and isAtAssert cfg.
   4. For a single assert command, the only config satisfying isAtAssert
-     is .stmt (assert ..) σ₀ δ pc₀ itself (reached in zero steps).
+     is .stmt (assert ..) ρ₀ pc₀ itself (reached in zero steps).
      by: the assert command can only step to .terminal (via step_cmd),
      and .terminal does not satisfy isAtAssert.
-  5. So cfg = .stmt (assert label expr md) σ₀ δ pc₀, and we need
-     δ σ₀ expr = some tt.
+  5. So cfg = .stmt (assert label expr md) ρ₀ pc₀, and we need
+     ρ₀.eval ρ₀.store expr = some tt.
   6. The Hoare triple says: if the assert steps to terminal, then
-     δ' σ' expr = some tt. By eval_assert, stepping requires
-     δ σ₀ expr = some tt and produces σ' = σ₀, δ' = δ.
+     ρ'.eval ρ'.store expr = some tt. By eval_assert, stepping requires
+     ρ₀.eval ρ₀.store expr = some tt and produces ρ'.store = ρ₀.store,
+     ρ'.eval = ρ₀.eval.
   7. But we need the expression to be true *before* stepping, not after.
      The Hoare triple only tells us something when execution terminates.
   8. We need an additional assumption: the assert is not stuck, i.e.,
@@ -265,16 +279,16 @@ Proof:
 -/
 
 /-- Auxiliary: for a single assert command, the only configuration
-    reachable from `.stmt (assert ..) σ δ pc₀` that satisfies `isAtAssert`
+    reachable from `.stmt (assert ..) ρ pc₀` that satisfies `isAtAssert`
     is the initial configuration itself. -/
 private theorem assert_reachable_is_initial
     (π : String → Option Procedure)
     (φ : CoreEval → PureFunc Expression → CoreEval)
     (label : CoreLabel) (expr : Expression.Expr) (md : MetaData Expression)
-    (σ₀ : CoreStore) (δ : CoreEval) (pc₀ : ProgramCounter) (cfg : CoreConfig)
-    (hstar : CoreStepStar π φ (.stmt (Statement.assert label expr md) σ₀ δ pc₀) cfg)
+    (ρ₀ : CoreEnv) (pc₀ : ProgramCounter) (cfg : CoreConfig)
+    (hstar : CoreStepStar π φ (.stmt (Statement.assert label expr md) ρ₀ pc₀) cfg)
     (hat : isAtAssert cfg ⟨label, expr⟩) :
-    cfg = .stmt (Statement.assert label expr md) σ₀ δ pc₀ := by
+    cfg = .stmt (Statement.assert label expr md) ρ₀ pc₀ := by
   -- A single assert command can only step to .terminal via step_cmd.
   -- .terminal does not satisfy isAtAssert. So cfg must be the initial config.
   cases hstar with
@@ -283,11 +297,11 @@ private theorem assert_reachable_is_initial
     -- The only step from .stmt (.cmd (.cmd (.assert ..))) is step_cmd
     cases hstep with
     | step_cmd hcmd =>
-      -- mid = .terminal σ₀ δ, and hrest : CoreStepStar (.terminal ..) cfg
+      -- mid = .terminal { ρ₀ with store := σ' }, and hrest : CoreStepStar (.terminal ..) cfg
       -- .terminal cannot step further, so cfg = .terminal ..
-          cases hrest with
+      cases hrest with
       | refl =>
-        -- cfg = .terminal σ₀ δ, but isAtAssert (.terminal ..) is False
+        -- cfg = .terminal .., but isAtAssert (.terminal ..) is False
         exact absurd hat (by simp [isAtAssert])
       | step _ _ _ hstep2 _ =>
         -- .terminal cannot step
@@ -303,23 +317,27 @@ theorem assertValid_implies_hoareTriple
     (hs : s = Statement.assert label expr md)
     (hvalid : AssertValid π φ s ⟨label, expr⟩) :
     HoareTriple π φ
-      (fun _ _ => True)
+      (fun _ => True)
       s
-      (fun σ' δ' => δ' σ' expr = some HasBool.tt) := by
+      (fun ρ' => ρ'.eval ρ'.store expr = some HasBool.tt) := by
   subst hs
-  intro σ₀ δ pc₀ σ' δ' _ hstar
+  intro ρ₀ pc₀ ρ' _ hstar
   -- Invert the multi-step execution of a single assert command.
   -- The only step is step_cmd (eval_assert).
   cases hstar with
   | step _ mid _ hstep hrest =>
     cases hstep with
     | step_cmd hcmd =>
-      cases hcmd with
+      -- hcmd : EvalCommand π φ ... σ' ∧ f = false  (ofPlain is abbrev)
+      obtain ⟨hcmd', hf⟩ := hcmd
+      subst hf
+      cases hcmd' with
       | cmd_sem heval =>
         cases heval with
         | eval_assert htt _ =>
-          -- htt : δ σ₀ expr = some HasBool.tt
-          -- mid = .terminal σ₀ δ, so hrest : CoreStepStar (.terminal σ₀ δ) (.terminal σ' δ')
+          -- htt : ρ₀.eval ρ₀.store expr = some HasBool.tt
+          -- hrest : CoreStepStar (.terminal ..) (.terminal ρ')
+          simp [Bool.or_false] at hrest
           cases hrest with
           | refl => exact htt
           | step _ _ _ hstep2 _ => exact absurd hstep2 (by intro h; cases h)
@@ -338,33 +356,37 @@ theorem hoareTriple_implies_assertValid
     (s : Statement)
     (hs : s = Statement.assert label expr md)
     (hoare : HoareTriple π φ
-      (fun _ _ => True)
+      (fun _ => True)
       s
-      (fun σ' δ' => δ' σ' expr = some HasBool.tt))
+      (fun ρ' => ρ'.eval ρ'.store expr = some HasBool.tt))
     -- Additional hypothesis: the assert is not stuck. For every initial
-    -- state and PC, the assert command can step to terminal.
-    (hprogress : ∀ (σ₀ : CoreStore) (δ : CoreEval) (pc₀ : ProgramCounter),
-      ∃ (σ' : CoreStore) (δ' : CoreEval),
-        CoreStepStar π φ (.stmt s σ₀ δ pc₀) (.terminal σ' δ')) :
+    -- environment and PC, the assert command can step to terminal.
+    (hprogress : ∀ (ρ₀ : CoreEnv) (pc₀ : ProgramCounter),
+      ∃ (ρ' : CoreEnv),
+        CoreStepStar π φ (.stmt s ρ₀ pc₀) (.terminal ρ')) :
     AssertValid π φ s ⟨label, expr⟩ := by
   subst hs
   intro cfg hreach
-  obtain ⟨σ₀, δ, pc₀, hstar, hat⟩ := hreach
+  obtain ⟨ρ₀, pc₀, hstar, hat⟩ := hreach
   -- cfg must be the initial configuration
-  have heq := assert_reachable_is_initial π φ label expr md σ₀ δ pc₀ cfg hstar hat
+  have heq := assert_reachable_is_initial π φ label expr md ρ₀ pc₀ cfg hstar hat
   subst heq
-  -- Now we need: δ σ₀ expr = some HasBool.tt
+  -- Now we need: ρ₀.eval ρ₀.store expr = some HasBool.tt
   -- Use progress to get a terminal state, then apply the Hoare triple.
-  obtain ⟨σ', δ', hterm⟩ := hprogress σ₀ δ pc₀
+  obtain ⟨ρ', hterm⟩ := hprogress ρ₀ pc₀
   simp only [CoreConfig.getEval, CoreConfig.getStore]
   cases hterm with
   | step _ mid _ hstep hrest =>
     cases hstep with
     | step_cmd hcmd =>
-      cases hcmd with
+      -- hcmd : EvalCommand π φ ... σ' ∧ f = false  (ofPlain is abbrev)
+      obtain ⟨hcmd', hf⟩ := hcmd
+      subst hf
+      cases hcmd' with
       | cmd_sem heval =>
         cases heval with
         | eval_assert htt _ =>
+          simp [Bool.or_false] at hrest
           cases hrest with
           | refl => exact htt
           | step _ _ _ hstep2 _ => exact absurd hstep2 (by intro h; cases h)
@@ -379,14 +401,14 @@ theorem assertValid_implies_hoareTriple_iff
     (label : CoreLabel) (expr : Expression.Expr) (md : MetaData Expression)
     (s : Statement)
     (hs : s = Statement.assert label expr md)
-    (hprogress : ∀ (σ₀ : CoreStore) (δ : CoreEval) (pc₀ : ProgramCounter),
-      ∃ (σ' : CoreStore) (δ' : CoreEval),
-        CoreStepStar π φ (.stmt s σ₀ δ pc₀) (.terminal σ' δ')) :
+    (hprogress : ∀ (ρ₀ : CoreEnv) (pc₀ : ProgramCounter),
+      ∃ (ρ' : CoreEnv),
+        CoreStepStar π φ (.stmt s ρ₀ pc₀) (.terminal ρ')) :
     AssertValid π φ s ⟨label, expr⟩ ↔
     HoareTriple π φ
-      (fun _ _ => True)
+      (fun _ => True)
       s
-      (fun σ' δ' => δ' σ' expr = some HasBool.tt) :=
+      (fun ρ' => ρ'.eval ρ'.store expr = some HasBool.tt) :=
   ⟨assertValid_implies_hoareTriple π φ label expr md s hs,
    fun h => hoareTriple_implies_assertValid π φ label expr md s hs h hprogress⟩
 

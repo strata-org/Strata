@@ -39,6 +39,25 @@ Commands do not modify the evaluator - only `funcDecl` statements do.
 @[expose] abbrev EvalCmdParam (P : PureExpr) (Cmd : Type) :=
   SemanticEval P → SemanticStore P → Cmd → SemanticStore P → Prop
 
+/--
+Evaluation relation of an Imperative command `Cmd` with a failure flag.
+Like `EvalCmdParam` but additionally reports whether the command observed
+a failure (e.g., an assertion whose guard is false).  The `Bool` is `true`
+when the command signals a failure.
+
+Used by the small-step semantics (`StepStmt`) where the failure flag is
+accumulated in `Env.hasFailure`.  The big-step semantics continue to use
+the plain `EvalCmdParam`.
+-/
+@[expose] abbrev EvalCmdParamF (P : PureExpr) (Cmd : Type) :=
+  SemanticEval P → SemanticStore P → Cmd → SemanticStore P → Bool → Prop
+
+/-- Lift a plain `EvalCmdParam` to an `EvalCmdParamF` that always reports
+    no failure (`false`). -/
+abbrev EvalCmdParamF.ofPlain {P : PureExpr} {Cmd : Type}
+    (ec : EvalCmdParam P Cmd) : EvalCmdParamF P Cmd :=
+  fun δ σ c σ' f => ec δ σ c σ' ∧ f = false
+
 /-- ### Well-Formedness of `SemanticStore`s -/
 
 def isDefined {P : PureExpr} (σ : SemanticStore P) (vs : List P.Ident) : Prop :=
