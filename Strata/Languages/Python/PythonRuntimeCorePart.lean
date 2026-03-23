@@ -105,24 +105,6 @@ type CoreOnlyDelimiter;
 // Core-only declarations (not expressed in Laurel)
 // =====================================================================
 
-
-// /////////////////////////////////////////////////////////////////////////////////////
-//The following function convert Any type to bool
-//based on the Python definition of truthiness for basic types
-// https://docs.python.org/3/library/stdtypes.html
-// /////////////////////////////////////////////////////////////////////////////////////
-
-inline function Any_to_bool (v: Any) : bool
-  requires (Any..isfrom_bool(v) || Any..isfrom_none(v) || Any..isfrom_string(v) || Any..isfrom_int(v));
-{
-  if Any..isfrom_bool(v) then Any..as_bool!(v) else
-  if Any..isfrom_none(v) then false else
-  if Any..isfrom_string(v) then !(Any..as_string!(v) == "") else
-  if Any..isfrom_int(v) then !(Any..as_int!(v) == 0) else
-  false
-  //WILL BE ADDED
-}
-
 // /////////////////////////////////////////////////////////////////////////////////////
 // ListAny functions
 // /////////////////////////////////////////////////////////////////////////////////////
@@ -131,7 +113,6 @@ axiom [List_len_pos]: forall l : ListAny :: List_len(l) >= 0;
 
 axiom [List_take_len]: forall l : ListAny, i: int :: {List_len(List_take(l,i))}
   (i >= 0 && i <= List_len(l)) ==> List_len(List_take(l,i)) == i;
-
 
 axiom [List_drop_len]: forall l : ListAny, i: int :: {List_len(List_drop(l,i))}
   (i >= 0 && i <= List_len(l)) ==> List_len(List_drop(l,i)) == List_len(l) - i;

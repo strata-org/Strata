@@ -254,8 +254,7 @@ public def combinePySpecLaurel
     procedure bodies, etc.) to the Core program produced by Laurel
     translation. -/
 private def prependPrelude (coreFromLaurel : Core.Program) : Core.Program :=
-  let (preludeDecls, userDecls) := coreFromLaurel.decls.span (fun d => toString d.name != "FIRST_END_MARKER")
-  { decls := preludeDecls ++ Python.coreOnlyFromRuntimeCorePart ++ userDecls }
+  { decls := coreFromLaurel.decls ++ Python.coreOnlyFromRuntimeCorePart  }
 
 /-- Translate a combined Laurel program to Core and prepend the full
     runtime prelude.  Resolution errors are suppressed because PySpec

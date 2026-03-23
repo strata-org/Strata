@@ -162,6 +162,22 @@ function isError (e: Error) : bool {
   ! Error..isNoError(e)
 };
 
+// /////////////////////////////////////////////////////////////////////////////////////
+//The following function convert Any type to bool
+//based on the Python definition of truthiness for basic types
+// https://docs.python.org/3/library/stdtypes.html
+// /////////////////////////////////////////////////////////////////////////////////////
+
+function Any_to_bool (v: Any) : bool
+  requires (Any..isfrom_bool(v) || Any..isfrom_none(v) || Any..isfrom_string(v) || Any..isfrom_int(v))
+{
+  if (Any..isfrom_bool(v)) then Any..as_bool!(v) else
+  if (Any..isfrom_none(v)) then false else
+  if (Any..isfrom_string(v)) then !(Any..as_string!(v) == "") else
+  if (Any..isfrom_int(v)) then !(Any..as_int!(v) == 0) else
+  false
+  //WILL BE ADDED
+};
 
 // /////////////////////////////////////////////////////////////////////////////////////
 // ListAny functions
@@ -420,7 +436,7 @@ function PAdd (v1: Any, v2: Any) : Any
   else if Any..isfrom_float(v1) && Any..isfrom_float(v2) then
     from_float(Any..as_float!(v1) + Any..as_float!(v2))
   else if Any..isfrom_string(v1) && Any..isfrom_string(v2) then
-    from_string(str.concat(Any..as_string!(v1),Any..as_string!(v2)))
+    from_string(Str.Concat(Any..as_string!(v1),Any..as_string!(v2)))
   else if Any..isfrom_ListAny(v1) && Any..isfrom_ListAny(v2) then
     from_ListAny(List_extend(Any..as_ListAny!(v1),Any..as_ListAny!(v2)))
   else if Any..isfrom_datetime(v1) && Any..isfrom_int(v2) then
@@ -764,8 +780,6 @@ procedure test_helper_procedure(req_name : Any, opt_name : Any) returns (ret: An
 };
 
 procedure print(msg : Any) returns ();
-
-datatype FIRST_END_MARKER { }
 
 #end
 
