@@ -442,6 +442,21 @@ case cons h t ih =>
   | intro b Hin =>
   refine ⟨b, Or.inr Hin⟩
 
+/-- Decompose `List.mapM` on a cons list into head and tail results. -/
+theorem List.mapM_cons_some {f : α → Option β} {a : α} {as : List α} {bs : List β}
+    (h : (a :: as).mapM f = some bs) :
+    ∃ b bs', f a = some b ∧ as.mapM f = some bs' ∧ bs = b :: bs' := by
+  simp only [List.mapM_cons, bind, Option.bind] at h
+  cases hfa : f a with
+  | none => simp [hfa] at h
+  | some b =>
+    simp [hfa] at h
+    cases hrest : as.mapM f with
+    | none => simp [hrest] at h
+    | some bs' =>
+      simp [hrest] at h
+      exact ⟨b, bs', rfl, rfl, h.symm⟩
+
 theorem List.PredDisjoint_comm :
   PredDisjoint P Q → PredDisjoint Q P := fun H x Hq Hp => H x Hp Hq
 
