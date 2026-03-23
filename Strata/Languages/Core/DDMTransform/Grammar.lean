@@ -324,6 +324,8 @@ op command_fndecl (name : Ident,
 category Inline;
 op inline () : Inline => "inline";
 
+// Note: when editing command_fndef, consider whether recfn_decl needs
+// matching edits.
 @[declareFn(name, b, r)]
 op command_fndef (name : Ident,
                   typeArgs : Option TypeArgs,
@@ -337,14 +339,22 @@ op command_fndef (name : Ident,
                   inline? : Option Inline) : Command =>
   inline? "function " name typeArgs b " : " r indent(2, preconds) " {\n  " indent(2, c) "\n}\n";
 
+// Recursive (and mutually recursive) function declarations.
+// A single recursive function is a 1-element block, just like datatypes.
+category RecFnDecl;
+
 @[declareFn(name, b, r)]
-op command_recfndef (name : Ident,
-                     typeArgs : Option TypeArgs,
-                     @[scope(typeArgs)] b : Bindings,
-                     @[scope(typeArgs)] r : Type,
-                     @[scope(b)] preconds : Seq SpecElt,
-                     @[scopeSelf(name, b, r)] c : r) : Command =>
-  "rec " "function " name typeArgs b " : " r indent(2, preconds) "\n{\n  " indent(2, c) "\n}\n";
+op recfn_decl (name : Ident,
+               typeArgs : Option TypeArgs,
+               @[scope(typeArgs)] b : Bindings,
+               @[scope(typeArgs)] r : Type,
+               @[scope(b)] preconds : Seq SpecElt,
+               @[scope(b)] c : r) : RecFnDecl =>
+  "function " name typeArgs b " : " r indent(2, preconds) "\n{\n  " indent(2, c) "\n}";
+
+@[scope(recfns), preRegisterFunctions(recfns)]
+op command_recfndefs (recfns : NewlineSepBy RecFnDecl) : Command =>
+  "rec " recfns ";\n";
 
 // Function declaration statement
 @[declareFn(name, b, r)]
