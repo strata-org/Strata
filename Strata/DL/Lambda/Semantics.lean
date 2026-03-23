@@ -1043,6 +1043,28 @@ theorem substFvars_app
   | nil => simp [List.foldl]
   | cons p rest ih => simp [List.foldl, LExpr.substFvar, ih]
 
+omit [DecidableEq Tbase.Metadata] [DecidableEq Tbase.Identifier] in
+theorem substFvars_abs
+    (m : Tbase.Metadata) (name : String) (ty : Option LMonoTy) (body : LExpr Tbase.mono)
+    (sm : Map Tbase.Identifier (LExpr Tbase.mono)) :
+    LExpr.substFvars (.abs m name ty body) sm = .abs m name ty (LExpr.substFvars body sm) := by
+  simp only [LExpr.substFvars]
+  induction sm generalizing body with
+  | nil => simp [List.foldl]
+  | cons p rest ih => simp [List.foldl, LExpr.substFvar, ih]
+
+omit [DecidableEq Tbase.Metadata] [DecidableEq Tbase.Identifier] in
+theorem substFvars_quant
+    (m : Tbase.Metadata) (qk : QuantifierKind) (name : String) (ty : Option LMonoTy)
+    (tr body : LExpr Tbase.mono)
+    (sm : Map Tbase.Identifier (LExpr Tbase.mono)) :
+    LExpr.substFvars (.quant m qk name ty tr body) sm =
+      .quant m qk name ty (LExpr.substFvars tr sm) (LExpr.substFvars body sm) := by
+  simp only [LExpr.substFvars]
+  induction sm generalizing tr body with
+  | nil => simp [List.foldl]
+  | cons p rest ih => simp [List.foldl, LExpr.substFvar, ih]
+
 ---------------------------------------------------------------------
 -- StepStar congruence through substFvar/substFvars.
 -- If a →* a', then substFvar body x a →* substFvar body x a'.
@@ -1157,7 +1179,39 @@ private theorem StepStar_substFvars (F : @Factory Tbase) (rf : Env Tbase)
     (h_vals : ∀ k v v', List.Mem (k, v) sm → List.Mem (k, v') sm' →
       ReflTrans (Step F rf) v v') :
     ReflTrans (Step F rf) (LExpr.substFvars body sm) (LExpr.substFvars body sm') := by
-  sorry
+  induction body with
+  | const => rw [substFvars_const', substFvars_const']; exact ReflTrans.refl _
+  | op => rw [substFvars_op', substFvars_op']; exact ReflTrans.refl _
+  | bvar => rw [substFvars_bvar, substFvars_bvar]; exact ReflTrans.refl _
+  | fvar m x ty =>
+    -- The fold replaces x with the matching value from sm/sm', then applies
+    -- remaining substitutions to that value. Proving the result steps correctly
+    -- requires a recursive call on the matched value (not a sub-expression of
+    -- .fvar), which structural induction on body cannot provide.
+    sorry
+  | app m e1 e2 ih1 ih2 =>
+    rw [substFvars_app, substFvars_app]
+    exact ReflTrans_trans
+      (StepStar_app_fn F rf _ _ _ m ih1)
+      (StepStar_app_arg F rf _ _ _ m ih2)
+  | ite m c t f ih1 ih2 ih3 =>
+    rw [substFvars_ite, substFvars_ite]
+    exact ReflTrans_trans
+      (ReflTrans_trans
+        (StepStar_ite_cond_pres F rf _ _ _ _ m ih1)
+        (StepStar_ite_then_pres F rf _ _ _ _ m ih2))
+      (StepStar_ite_else_pres F rf _ _ _ _ m ih3)
+  | eq m e1 e2 ih1 ih2 =>
+    rw [substFvars_eq, substFvars_eq]
+    exact ReflTrans_trans
+      (StepStar_eq_lhs_pres F rf _ _ _ m ih1)
+      (StepStar_eq_rhs_pres F rf _ _ _ m ih2)
+  | abs m name ty body ih =>
+    -- Step cannot go under abs binders.
+    sorry
+  | quant m qk name ty tr body ih1 ih2 =>
+    -- Step cannot go under quant binders.
+    sorry
 
 ---------------------------------------------------------------------
 -- Helper lemma: for the concreteEval factory case. When concreteEval
@@ -1537,6 +1591,21 @@ private theorem getLFuncCall_go_acc_change
   | .ite _ _ _ _ => simp only [getLFuncCall.go] at h; obtain ⟨rfl, rfl⟩ := h; exact ⟨[], rfl, rfl⟩
   | .eq _ _ _ => simp only [getLFuncCall.go] at h; obtain ⟨rfl, rfl⟩ := h; exact ⟨[], rfl, rfl⟩
   termination_by e.sizeOf
+
+-- If callOfLFunc succeeds on (.app m e1 e2), replacing e2 with e2' gives
+-- the same function with updated args (e2 → e2' at the last position).
+omit [DecidableEq Tbase.Metadata] [DecidableEq Tbase.Identifier] in
+private theorem callOfLFunc_replace_last_arg
+    (F : @Factory Tbase) (e1 e2 e2' : LExpr Tbase.mono) (m m' : Tbase.Metadata)
+    (op : LExpr Tbase.mono) (args : List (LExpr Tbase.mono)) (fn : LFunc Tbase)
+    (h : F.callOfLFunc (.app m e1 e2) = some (op, args, fn)) :
+    ∃ pre, args = pre ++ [e2] ∧
+      F.callOfLFunc (.app m' e1 e2') = some (op, pre ++ [e2'], fn) := by
+  -- getLFuncCall.go decomposes e1 independently of e2/e2', collecting them
+  -- in the accumulator. The accumulator change lemma (getLFuncCall_go_acc_change)
+  -- establishes that replacing e2 with e2' gives the same op with modified args.
+  -- The factory lookup and arity check in callOfLFunc are then identical.
+  sorry
 
 ---------------------------------------------------------------------
 -- Helpers for canonical_value_not_step
@@ -2246,9 +2315,26 @@ theorem Step_diamond
              ReflTrans.step _ _ _ (Step.reduce_2 (m' := m1') e1' e2 e2' h_step₁) (ReflTrans.refl _),
              eraseMetadata_app_congr rfl rfl⟩
     | expand_fn e_full callee fnbody new_body args fn h_call h_body h_new =>
-      -- expand_fn vs reduce_2: expand_fn already consumed the entire application
-      -- via callOfLFunc. Joining requires StepStar_substFvar (sorry).
-      sorry -- requires StepStar_substFvar for the multi-variable case
+      -- reduce_2 steps e2→e2', expand_fn expands with args including e2.
+      -- Join: expand_fn on (.app m' e1 e2') gives substFvars fnbody (keys.zip args'),
+      -- and we step from substFvars fnbody (keys.zip args) via StepStar_substFvars.
+      obtain ⟨pre, h_args_eq, h_call'⟩ :=
+        callOfLFunc_replace_last_arg F e1 e2 e2' m m' callee args fn h_call
+      let new_body' := LExpr.substFvars fnbody (fn.inputs.keys.zip (pre ++ [e2']))
+      refine ⟨new_body', new_body',
+        -- e₁ = .app m' e1 e2' →* new_body' (via expand_fn)
+        ReflTrans.step _ _ _ (Step.expand_fn (.app m' e1 e2') callee fnbody
+          new_body' (pre ++ [e2']) fn h_call' h_body rfl) (ReflTrans.refl _),
+        -- e₂ = new_body →* new_body' (via StepStar_substFvars)
+        ?_,
+        rfl⟩
+      subst h_new; rw [h_args_eq]
+      exact StepStar_substFvars F rf fnbody
+        (fn.inputs.keys.zip (pre ++ [e2])) (fn.inputs.keys.zip (pre ++ [e2']))
+        (by -- keys are the same: zip preserves fst when the list lengths match
+            sorry)
+        (by -- per-entry stepping: identical except last entry (e2 → e2')
+            sorry)
     | eval_fn e_full callee e_result args fn denotefn h_call h_ceval h_res =>
       -- eval_fn vs reduce_2: concreteEval result is opaque w.r.t. argument stepping.
       sorry -- requires concreteEval WF conditions
@@ -2469,12 +2555,9 @@ theorem Step_diamond
     | @eq_reduce_false _ mc' _ _ hv₁' hv₂' heres' _ _ =>
       exfalso; unfold LExpr.eql at heres heres'; split at heres <;> simp_all
     | eq_reduce_lhs _ e1' _ h_step =>
-      -- eq_reduce_true fired on (.eq m v1 v2). h₂ steps v1 to e1'.
-      -- Result: e₁ = .const mc (.boolConst true), e₂ = .eq m' e1' v2.
-      -- e₁ is stuck; e₂ may eventually re-reduce to true.
-      sorry -- needs isCanonicalValue proof for v1 (not available from eq_reduce_true)
+      exact absurd h_step (canonical_value_not_step F rf v1 hWF hv₁ e1')
     | @eq_reduce_rhs _ _ _ _ e2' h_step =>
-      sorry -- needs isCanonicalValue proof for v2 (not available from eq_reduce_true)
+      exact absurd h_step (canonical_value_not_step F rf v2 hWF hv₂ e2')
     | expand_fn _ _ _ _ _ _ h_call =>
       simp [Factory.callOfLFunc, getLFuncCall, getLFuncCall.go] at h_call
     | eval_fn _ _ _ _ _ _ h_call =>
@@ -2490,9 +2573,9 @@ theorem Step_diamond
     | @eq_reduce_false _ mc' _ _ hv₁' hv₂' heres' _ _ =>
       exact ⟨_, _, ReflTrans.refl _, ReflTrans.refl _, eraseMetadata_const_congr⟩
     | eq_reduce_lhs _ e1' _ h_step =>
-      sorry -- needs isCanonicalValue proof for v1 (not available from eq_reduce_false)
+      exact absurd h_step (canonical_value_not_step F rf v1 hWF hv₁ e1')
     | @eq_reduce_rhs _ _ _ _ e2' h_step =>
-      sorry -- needs isCanonicalValue proof for v2 (not available from eq_reduce_false)
+      exact absurd h_step (canonical_value_not_step F rf v2 hWF hv₂ e2')
     | expand_fn _ _ _ _ _ _ h_call =>
       simp [Factory.callOfLFunc, getLFuncCall, getLFuncCall.go] at h_call
     | eval_fn _ _ _ _ _ _ h_call =>
@@ -2504,9 +2587,9 @@ theorem Step_diamond
   | @eq_reduce_lhs m m' e1 e1' e2 h_step₁ =>
     cases h₂ with
     | @eq_reduce_true _ mc _ _ hv₁ hv₂ heres =>
-      sorry -- needs isCanonicalValue proof for e1 (not available from eq_reduce_true)
+      exact absurd h_step₁ (canonical_value_not_step F rf e1 hWF hv₁ e1')
     | @eq_reduce_false _ mc _ _ hv₁ hv₂ heres hcb₁ hcb₂ =>
-      sorry -- needs isCanonicalValue proof for e1 (not available from eq_reduce_false)
+      exact absurd h_step₁ (canonical_value_not_step F rf e1 hWF hv₁ e1')
     | @eq_reduce_lhs _ m2' _ e1'' _ h_step₂ =>
       -- Both step the LHS: use IH on the sub-step
       have ⟨e₃, e₃', hc₁, hc₂, heq⟩ := Step_diamond F rf hWF hFC e1 e1' e1'' h_step₁ h_step₂
@@ -2532,9 +2615,9 @@ theorem Step_diamond
   | @eq_reduce_rhs m m' e1 e2 e2' h_step₁ =>
     cases h₂ with
     | @eq_reduce_true _ mc' _ _ hv₁' hv₂ heres =>
-      sorry -- needs isCanonicalValue proof for e2 (not available from eq_reduce_true)
+      exact absurd h_step₁ (canonical_value_not_step F rf e2 hWF hv₂ e2')
     | @eq_reduce_false _ mc' _ _ hv₁' hv₂ heres hcb₁ hcb₂ =>
-      sorry -- needs isCanonicalValue proof for e2 (not available from eq_reduce_false)
+      exact absurd h_step₁ (canonical_value_not_step F rf e2 hWF hv₂ e2')
     | eq_reduce_lhs _ e1' _ h_step₂ =>
       -- RHS steps e2→e2', LHS steps e1→e1'. Join at (.eq _ e1' e2').
       exact ⟨.eq m' e1' e2', .eq m' e1' e2',
@@ -2575,8 +2658,24 @@ theorem Step_diamond
       simp [h_body₁, h_ceval₂] at h_boc
     | reduce_1 _ e1' _ h_step =>
       sorry -- requires StepStar_substFvar for the multi-variable case
-    | reduce_2 _ _ e2' h_step =>
-      sorry -- requires StepStar_substFvar for the multi-variable case
+    | @reduce_2 _ m₂' e1_r e2_r e2' h_step =>
+      -- expand_fn (h₁) expands with args including e2_r,
+      -- reduce_2 (h₂) steps e2_r→e2'. Symmetric to reduce_2 vs expand_fn.
+      obtain ⟨pre, h_args_eq, h_call'⟩ :=
+        callOfLFunc_replace_last_arg F e1_r e2_r e2' _ m₂' callee₁ args₁ fn₁ h_call₁
+      let new_body' := LExpr.substFvars fnbody₁ (fn₁.inputs.keys.zip (pre ++ [e2']))
+      refine ⟨new_body', new_body',
+        -- e₁ = new_body₁ →* new_body' (via StepStar_substFvars)
+        ?_,
+        -- e₂ = .app m₂' e1_r e2' →* new_body' (via expand_fn)
+        ReflTrans.step _ _ _ (Step.expand_fn (.app m₂' e1_r e2') callee₁ fnbody₁
+          new_body' (pre ++ [e2']) fn₁ h_call' h_body₁ rfl) (ReflTrans.refl _),
+        rfl⟩
+      subst h_new₁; rw [h_args_eq]
+      exact StepStar_substFvars F rf fnbody₁
+        (fn₁.inputs.keys.zip (pre ++ [e2_r])) (fn₁.inputs.keys.zip (pre ++ [e2']))
+        (by sorry)
+        (by sorry)
     | ite_reduce_then =>
       simp [Factory.callOfLFunc, getLFuncCall, getLFuncCall.go] at h_call₁
     | ite_reduce_else =>
