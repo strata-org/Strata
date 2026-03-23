@@ -1053,6 +1053,39 @@ private theorem StepStar_substFvars (F : @Factory Tbase) (rf : Env Tbase)
     -- Step cannot go under quant binders.
     sorry
 
+-- Stepping the last arg in a zip-based substFvars: if a →* a', then
+-- substFvars body (zip keys (pre ++ [a])) →* substFvars body (zip keys (pre ++ [a'])).
+-- Uses fold decomposition: the shared prefix fold is identical, only the last
+-- substFvar call differs, which is handled by StepStar_substFvar.
+omit [DecidableEq Tbase.Metadata] [DecidableEq Tbase.Identifier] in
+private theorem StepStar_substFvars_last_arg (F : @Factory Tbase) (rf : Env Tbase)
+    (body : LExpr Tbase.mono)
+    (keys : List Tbase.Identifier) (pre : List (LExpr Tbase.mono))
+    (a a' : LExpr Tbase.mono)
+    (h : ReflTrans (Step F rf) a a')
+    (h_len : keys.length = pre.length + 1) :
+    ReflTrans (Step F rf)
+      (LExpr.substFvars body (keys.zip (pre ++ [a])))
+      (LExpr.substFvars body (keys.zip (pre ++ [a']))) := by
+  -- Split keys at the boundary
+  have h_take_len : (keys.take pre.length).length = pre.length := by
+    simp [Nat.min_eq_left (by omega : pre.length ≤ keys.length)]
+  -- zip distributes over the split
+  have h_zip : ∀ x, keys.zip (pre ++ [x]) =
+      (keys.take pre.length).zip pre ++ (keys.drop pre.length).zip [x] := by
+    intro x
+    rw [← List.zip_append h_take_len, List.take_append_drop]
+  -- The drop has exactly 1 element
+  have h_drop_one : ∃ k, keys.drop pre.length = [k] := by
+    have h_drop_len : (keys.drop pre.length).length = 1 := by simp; omega
+    exact match keys.drop pre.length, h_drop_len with | [k], _ => ⟨k, rfl⟩
+  obtain ⟨k_last, h_dk⟩ := h_drop_one
+  -- Rewrite using fold decomposition
+  simp only [LExpr.substFvars, h_zip, List.foldl_append, h_dk, List.zip_cons_cons,
+    List.zip_nil_right, List.foldl_cons, List.foldl_nil]
+  -- Goal: substFvar X k_last a →* substFvar X k_last a'
+  exact StepStar_substFvar F rf _ k_last a a' h
+
 ---------------------------------------------------------------------
 -- Helper lemma: for the concreteEval factory case. When concreteEval
 -- succeeds on evaluated args, we need to relate the result to what
@@ -1517,6 +1550,29 @@ private theorem callOfLFunc_func_mem
     simp only [h_gf] at h
     cases aPA <;> simp at h <;> split at h <;> simp at h
     all_goals (obtain ⟨_, _, rfl⟩ := h; exact getFactoryLFunc_mem F _ _ h_gf)
+
+-- callOfLFunc (non-partial) checks args.length == fn.inputs.length.
+omit [DecidableEq Tbase.Metadata] [DecidableEq Tbase.Identifier] in
+private theorem callOfLFunc_arity
+    (F : @Factory Tbase) (e : LExpr Tbase.mono)
+    (op : LExpr Tbase.mono) (args : List (LExpr Tbase.mono)) (fn : LFunc Tbase)
+    (h : F.callOfLFunc e = some (op, args, fn)) :
+    args.length = fn.inputs.length := by
+  simp only [Factory.callOfLFunc] at h
+  cases h_lfc : getLFuncCall e with | mk op' args' =>
+  simp only [h_lfc] at h
+  cases op' <;> simp at h
+  rename_i m_op name_op ty_op
+  cases h_gf : F.getFactoryLFunc name_op.name with
+  | none => simp [h_gf] at h
+  | some func =>
+    simp only [h_gf] at h
+    split at h
+    · -- matchesArg = true: extract the arity and the result
+      rename_i h_arity
+      simp at h; obtain ⟨_, rfl, rfl⟩ := h
+      simp at h_arity; exact h_arity
+    · simp at h
 
 -- Helper: if callOfLFunc with partial app returns (op, args, f) with the
 -- canonical condition (isConstr || blt), and callOfLFunc with full arity
@@ -2200,34 +2256,41 @@ theorem Step_diamond
         ?_,
         rfl⟩
       subst h_new; rw [h_args_eq]
-      exact StepStar_substFvars F rf fnbody
-        (fn.inputs.keys.zip (pre ++ [e2])) (fn.inputs.keys.zip (pre ++ [e2']))
-        (by -- keys are the same: both zip with same keys, same-length values
-            suffices ∀ (ks : List Tbase.Identifier) (vs₁ vs₂ : List (LExpr Tbase.mono)),
-                vs₁.length = vs₂.length →
-                (ks.zip vs₁).map Prod.fst = (ks.zip vs₂).map Prod.fst by
-              exact this _ _ _ (by simp)
-            intro ks vs₁ vs₂ hlen
-            induction ks generalizing vs₁ vs₂ with
-            | nil => simp
-            | cons k ks ih =>
-              cases vs₁ with
-              | nil => cases vs₂ with | nil => simp | cons _ _ => simp at hlen
-              | cons v₁ rest₁ =>
-                cases vs₂ with
-                | nil => simp at hlen
-                | cons v₂ rest₂ =>
-                  simp only [List.zip_cons_cons, List.map_cons, List.cons.injEq, true_and]
-                  exact ih rest₁ rest₂ (by simp at hlen; exact hlen))
-        (by -- per-entry stepping: identical except last entry (e2 → e2')
-            intro k v v' hm hm'
-            -- zip (ks) (pre ++ [e2]) and zip (ks) (pre ++ [e2']) differ only at last
-            -- For matching pre entries: v = v', so ReflTrans.refl
-            -- For the e2/e2' entry: we have h_step₁ : Step F rf e2 e2'
-            sorry)
-    | eval_fn e_full callee e_result args fn denotefn h_call h_ceval h_res =>
-      -- eval_fn vs reduce_2: concreteEval result is opaque w.r.t. argument stepping.
-      sorry -- requires concreteEval WF conditions
+      exact StepStar_substFvars_last_arg F rf fnbody fn.inputs.keys pre e2 e2'
+        (.step _ _ _ h_step₁ (.refl _))
+        (by have := callOfLFunc_arity F _ _ _ _ h_call; simp_all)
+    | eval_fn _ callee_r _ args_r fn_r denotefn_r h_call_r h_ceval_r h_res_r =>
+      -- h₁ = reduce_2 (e2→e2'), h₂ = eval_fn. Symmetric to eval_fn vs reduce_2.
+      obtain ⟨pre, h_args_eq, h_call'⟩ :=
+        callOfLFunc_replace_last_arg F e1 e2 e2' _ _ callee_r args_r fn_r h_call_r
+      let args' := pre ++ [e2']
+      have h_len : args_r.length = args'.length := by simp [h_args_eq, args']
+      have h_per_arg : ∀ i (hi₁ : i < args_r.length) (hi₂ : i < args'.length),
+          ReflTrans (Step F rf) args_r[i] args'[i] := by
+        intro i hi₁ hi₂
+        rw [h_args_eq] at hi₁
+        simp only [h_args_eq]
+        by_cases h : i < pre.length
+        · -- i < pre.length: both lists give pre[i] → refl
+          change ReflTrans (Step F rf) (pre ++ [e2])[i] (pre ++ [e2'])[i]
+          simp [List.getElem_append_left h]; exact .refl _
+        · -- i = pre.length: e2 → e2' via h_step₁
+          have hi : i = pre.length := by simp at hi₁; omega
+          subst hi
+          change ReflTrans (Step F rf) (pre ++ [e2])[pre.length] (pre ++ [e2'])[pre.length]
+          simp [List.getElem_append_right]; exact .step _ _ _ h_step₁ (.refl _)
+      have h_mem := callOfLFunc_func_mem F _ _ _ fn_r false h_call_r
+      obtain ⟨result', h_ceval', e₃, e₃', h_s₃, h_s₃', h_eq₃⟩ :=
+        hFC.eval_arg_step fn_r h_mem denotefn_r h_ceval_r _ args_r _ h_res_r.symm
+          args' h_len h_per_arg
+      -- e₁ = .app m' e1 e2' (from reduce_2), e₂ = eval result (from eval_fn)
+      -- e₁ →Step (eval_fn on stepped args) result' →* e₃'
+      -- e₂ →* e₃
+      exact ⟨e₃', e₃,
+        .step _ result' _
+          (.eval_fn _ callee_r result' args' fn_r denotefn_r h_call' h_ceval_r h_ceval'.symm)
+          h_s₃',
+        h_s₃, h_eq₃.symm⟩
 
   -- ═══════════════════════════════════════════════════════════════
   -- Case: h₁ = reduce_1 (step the function)
@@ -2562,26 +2625,9 @@ theorem Step_diamond
           new_body' (pre ++ [e2']) fn₁ h_call' h_body₁ rfl) (ReflTrans.refl _),
         rfl⟩
       subst h_new₁; rw [h_args_eq]
-      exact StepStar_substFvars F rf fnbody₁
-        (fn₁.inputs.keys.zip (pre ++ [e2_r])) (fn₁.inputs.keys.zip (pre ++ [e2']))
-        (by suffices ∀ (ks : List Tbase.Identifier) (vs₁ vs₂ : List (LExpr Tbase.mono)),
-                vs₁.length = vs₂.length →
-                (ks.zip vs₁).map Prod.fst = (ks.zip vs₂).map Prod.fst by
-              exact this _ _ _ (by simp)
-            intro ks vs₁ vs₂ hlen
-            induction ks generalizing vs₁ vs₂ with
-            | nil => simp
-            | cons k ks ih =>
-              cases vs₁ with
-              | nil => cases vs₂ with | nil => simp | cons _ _ => simp at hlen
-              | cons v₁ rest₁ =>
-                cases vs₂ with
-                | nil => simp at hlen
-                | cons v₂ rest₂ =>
-                  simp only [List.zip_cons_cons, List.map_cons, List.cons.injEq, true_and]
-                  exact ih rest₁ rest₂ (by simp at hlen; exact hlen))
-        (by intro k v v' hm hm'
-            sorry)
+      exact StepStar_substFvars_last_arg F rf fnbody₁ fn₁.inputs.keys pre e2_r e2'
+        (.step _ _ _ h_step (.refl _))
+        (by have := callOfLFunc_arity F _ _ _ _ h_call₁; simp_all)
     | ite_reduce_then =>
       simp [Factory.callOfLFunc, getLFuncCall, getLFuncCall.go] at h_call₁
     | ite_reduce_else =>
@@ -2625,9 +2671,35 @@ theorem Step_diamond
         _ _ _ _ _ (h_res₁.symm) (h_res₂.symm)
       exact ⟨_, _, ReflTrans.refl _, ReflTrans.refl _, heq⟩
     | reduce_1 _ e1' _ h_step =>
-      sorry -- requires callOfLFunc_reduce_1 lemma + hFC.eval_arg_step
-    | reduce_2 _ _ e2' h_step =>
-      sorry -- requires callOfLFunc_reduce_2 lemma + hFC.eval_arg_step
+      sorry -- requires callOfLFunc inner-arg replacement + hFC.eval_arg_step
+    | @reduce_2 _ m₂' e1_r e2_r e2' h_step =>
+      -- eval_fn (h₁) vs reduce_2 (h₂): last arg stepped e2_r→e2'.
+      -- Use callOfLFunc_replace_last_arg to get eval_fn on stepped app.
+      -- Then use hFC.eval_arg_step to join results.
+      obtain ⟨pre, h_args_eq, h_call'⟩ :=
+        callOfLFunc_replace_last_arg F e1_r e2_r e2' _ m₂' callee₁ args₁ fn₁ h_call₁
+      let args' := pre ++ [e2']
+      have h_len : args₁.length = args'.length := by simp [h_args_eq, args']
+      have h_per_arg : ∀ i (hi₁ : i < args₁.length) (hi₂ : i < args'.length),
+          ReflTrans (Step F rf) args₁[i] args'[i] := by
+        intro i hi₁ hi₂
+        rw [h_args_eq] at hi₁
+        simp only [h_args_eq]
+        by_cases h : i < pre.length
+        · change ReflTrans (Step F rf) (pre ++ [e2_r])[i] (pre ++ [e2'])[i]
+          simp [List.getElem_append_left h]; exact .refl _
+        · have hi : i = pre.length := by simp at hi₁; omega
+          subst hi
+          change ReflTrans (Step F rf) (pre ++ [e2_r])[pre.length] (pre ++ [e2'])[pre.length]
+          simp [List.getElem_append_right]; exact .step _ _ _ h_step (.refl _)
+      have h_mem := callOfLFunc_func_mem F _ _ _ fn₁ false h_call₁
+      obtain ⟨result', h_ceval', e₃, e₃', h_s₃, h_s₃', h_eq₃⟩ :=
+        hFC.eval_arg_step fn₁ h_mem denotefn₁ h_ceval₁ _ args₁ _ h_res₁.symm
+          args' h_len h_per_arg
+      exact ⟨e₃, e₃', h_s₃,
+        .step _ result' _
+          (.eval_fn _ callee₁ result' args' fn₁ denotefn₁ h_call' h_ceval₁ h_ceval'.symm)
+          h_s₃', h_eq₃⟩
     | ite_reduce_then =>
       simp [Factory.callOfLFunc, getLFuncCall, getLFuncCall.go] at h_call₁
     | ite_reduce_else =>
