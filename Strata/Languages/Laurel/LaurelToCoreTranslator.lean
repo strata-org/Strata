@@ -654,6 +654,9 @@ def translate (options: LaurelTranslateOptions) (program : Program): TranslateRe
     staticProcedures := coreDefinitionsForLaurel.staticProcedures ++ program.staticProcedures
   }
 
+  -- dbg_trace "=== Initial Laurel program ==="
+  -- dbg_trace (toString (Std.Format.pretty (Std.ToFormat.format program)))
+  -- dbg_trace "================================="
   let result := resolve program
   let resolutionErrors: List DiagnosticModel := if options.emitResolutionErrors then result.errors.toList else []
   let (program, model) := (result.program, result.model)
@@ -669,9 +672,6 @@ def translate (options: LaurelTranslateOptions) (program : Program): TranslateRe
   let (program, modifiesDiags) := modifiesClausesTransform model program
   let result := resolve program (some model)
   let (program, model) := (result.program, result.model)
-  -- dbg_trace "=== Program after heapParameterization + modifiesClausesTransform ==="
-  -- dbg_trace (toString (Std.Format.pretty (Std.ToFormat.format program)))
-  -- dbg_trace "================================="
   let result := resolve program (some model)
   let (program, model) := (result.program, result.model)
   let program := inferHoleTypes model program
