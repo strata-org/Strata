@@ -1,15 +1,6 @@
-/-
-  Copyright Strata Contributors
-
-  SPDX-License-Identifier: Apache-2.0 OR MIT
--/
 module
-public import Std.Data.HashMap.Basic
-public import Strata.Languages.Python.Specs.Decls
 
-public section
-
-namespace Strata.Python.Specs
+import Std.Data.HashMap.Basic
 
 /--
 All overloads for a single function name: maps a string literal
@@ -21,7 +12,3 @@ and only string literal values are extracted. -/
 
 /-- Dispatch table: function name → its overloads. -/
 @[expose] abbrev OverloadTable := Std.HashMap String FunctionOverloads
-
-end Strata.Python.Specs
-
-end -- public section

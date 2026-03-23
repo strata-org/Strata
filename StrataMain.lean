@@ -10,20 +10,14 @@ import Strata.Languages.Core.Options
 import Strata.Languages.Core.SarifOutput
 import Strata.Languages.Laurel.Grammar.ConcreteToAbstractTreeTranslator
 import Strata.Languages.Laurel.LaurelToCoreTranslator
-import Strata.Languages.Python.Python
-import Strata.Languages.Python.PySpecPipeline
-import Strata.Languages.Python.Specs
-import Strata.Languages.Python.Specs.DDM
-import Strata.Languages.Python.Specs.IdentifyOverloads
-import Strata.Languages.Python.Specs.ToLaurel
 import Strata.Languages.Laurel.LaurelFormat
 import Strata.Languages.Laurel.Laurel
 import Strata.Transform.ProcedureInlining
-import Strata.Languages.Python.CorePrelude
-import Strata.Languages.Python.PythonRuntimeLaurelPart
-import Strata.Languages.Python.PythonLaurelCorePrelude
 import Strata.Backends.CBMC.CollectSymbols
 import Strata.Backends.CBMC.GOTO.CoreToGOTOPipeline
+
+import Strata.Languages.Python.CorePrelude
+import Strata.Languages.Python.PythonToCore
 
 import Strata.SimpleAPI
 
@@ -204,12 +198,24 @@ def diffCommand : Command where
     | _, _ =>
       exitFailure "Cannot compare dialect def with another dialect/program."
 
-def readPythonStrata (strataPath : String) : IO Strata.Program := do
+def unwrapModule (c : Python.Command SourceRange) : Array (Python.stmt SourceRange) :=
+  match c with
+  | Python.Command.Module _ body _ => body.val
+  | _ => panic! "Expected module"
+
+public def toPyCommands (a : Array Operation) : Array (Python.stmt SourceRange) :=
+  let pyCmds := a.map (λ op => match Python.Command.ofAst op with
+    | .error e => panic! s!"Failed to translate to Python.Command: {e}"
+    | .ok cmd => cmd)
+  assert! pyCmds.size == 1
+  unwrapModule pyCmds[0]!
+
+def readPythonStrata (strataPath : String) : IO (Array (Python.stmt SourceRange)) := do
   let bytes ← Strata.Util.readBinInputSource strataPath
   if ! Ion.isIonFile bytes then
-    exitFailure s!"pyAnalyze expected Ion file"
+    exitFailure s!"Expected Ion file"
   match Strata.Program.fromIon Strata.Python.Python_map Strata.Python.Python.name bytes with
-  | .ok pgm => pure pgm
+  | .ok pgm => pure <| toPyCommands pgm.commands
   | .error msg => exitFailure msg
 
 def pySpecsCommand : Command where
@@ -245,15 +251,19 @@ def pySpecsCommand : Command where
       | .ok () => pure ()
       | .error msg => exitFailure msg
 
+def pythonToCore (insideMod : Array (Python.stmt SourceRange)) (filePath : String) : Core.Program :=
+  let preludePgm := Strata.Python.Core.prelude
+  let pgm := Strata.pythonToCore Python.coreSignatures insideMod Strata.Python.Core.prelude filePath
+  { decls := preludePgm.decls ++ pgm.decls }
+
 def pyTranslateCommand : Command where
   name := "pyTranslate"
   args := [ "file" ]
   help := "Translate a Python Ion program to Core and print the result to stdout."
   callback := fun v _ => do
-    let pgm ← readPythonStrata v[0]
+    let pyCmds ← readPythonStrata v[0]
     let preludePgm := Strata.Python.Core.prelude
-    let bpgm := Strata.pythonToCore Strata.Python.coreSignatures pgm preludePgm
-    let newPgm : Core.Program := { decls := preludePgm.decls ++ bpgm.decls }
+    let newPgm := _root_.pythonToCore pyCmds ""
     IO.print newPgm
 
 /-- Derive Python source file path from Ion file path.
@@ -288,18 +298,14 @@ def pyAnalyzeCommand : Command where
     let verbose := pflags.getBool "verbose"
     let outputSarif := pflags.getBool "sarif"
     let filePath := v[0]
-    let pgm ← readPythonStrata filePath
+    let pyCmds ← readPythonStrata filePath
     -- Try to read the Python source for line number conversion
     let pySourceOpt ← tryReadPythonSource filePath
-    if verbose then
-      IO.print pgm
-    let preludePgm := Strata.Python.Core.prelude
     -- Use the Python source path if available, otherwise fall back to Ion path
     let sourcePathForMetadata := match pySourceOpt with
       | some (pyPath, _) => pyPath
       | none => filePath
-    let bpgm := Strata.pythonToCore Strata.Python.coreSignatures pgm preludePgm sourcePathForMetadata
-    let newPgm : Core.Program := { decls := preludePgm.decls ++ bpgm.decls }
+    let newPgm := _root_.pythonToCore pyCmds sourcePathForMetadata
     if verbose then
       IO.print newPgm
     match Core.Transform.runProgram (targetProcList := .none)
@@ -395,11 +401,6 @@ def pyAnalyzeLaurelCommand : Command where
     let filePath := v[0]
     let pySourceOpt ← tryReadPythonSource filePath
 
-    if verbose then
-      let pgm ← readPythonStrata filePath
-      IO.println "==== Python AST ===="
-      IO.print pgm
-
     let dispatchFiles := pflags.getRepeated "dispatch"
     let pyspecFiles := pflags.getRepeated "pyspec"
     let sourcePath := pySourceOpt.map (·.1)
@@ -408,7 +409,7 @@ def pyAnalyzeLaurelCommand : Command where
       | some (pyPath, srcText) => some (pyPath, .ofString srcText)
       | none => none
     let combinedLaurel ←
-      match ← Strata.pyAnalyzeLaurel filePath dispatchFiles pyspecFiles sourcePath |>.toBaseIO with
+      match ← Strata.pyAnalyzeLaurelFromPaths filePath dispatchFiles pyspecFiles sourcePath |>.toBaseIO with
       | .ok r => pure r
       | .error (.userCode range msg) =>
         let location := if range.isNone then "" else
@@ -419,12 +420,11 @@ def pyAnalyzeLaurelCommand : Command where
           | none => ""
         exitUserCodeError s!"{msg}{location}"
       | .error (.internal msg) => exitInternalError msg
-
     if verbose then
       IO.println "\n==== Laurel Program ===="
       IO.println f!"{combinedLaurel}"
 
-    let (coreProgramOption, laurelTranslateErrors) := Strata.translateCombinedLaurel combinedLaurel
+    let (coreProgramOption, laurelTranslateErrors) := Strata.pyTranslateCombinedLaurel combinedLaurel
     let coreProgram ←
       match coreProgramOption with
       | none =>
@@ -509,15 +509,16 @@ def pyAnalyzeToGotoCommand : Command where
   help := "Translate a Strata Python Ion file to CProver GOTO JSON files."
   callback := fun v _ => do
     let filePath := v[0]
-    let pgm ← readPythonStrata filePath
+    let pyCmds ← readPythonStrata filePath
     let pySourceOpt ← tryReadPythonSource filePath
     let preludePgm := Strata.Python.Core.prelude
+
     let sourcePathForMetadata := match pySourceOpt with
       | some (pyPath, _) => pyPath
       | none => filePath
-    let bpgm := Strata.pythonToCore Strata.Python.coreSignatures pgm preludePgm sourcePathForMetadata
     let sourceText := pySourceOpt.map (·.2)
-    let newPgm : Core.Program := { decls := preludePgm.decls ++ bpgm.decls }
+
+    let newPgm:= _root_.pythonToCore pyCmds sourcePathForMetadata
     match Core.Transform.runProgram (targetProcList := .none)
           (Core.ProcedureInlining.inlineCallCmd
             (doInline := λ name _ => name ≠ "main"))
@@ -683,7 +684,7 @@ def pySpecToLaurelCommand : Command where
       match ← Strata.Python.Specs.readDDM ionFile |>.toBaseIO with
       | .ok t => pure t
       | .error msg => exitFailure s!"Could not read {ionFile}: {msg}"
-    let result := Strata.Python.Specs.ToLaurel.signaturesToLaurel pythonFile sigs
+    let result := Strata.Python.Specs.ToLaurel.signaturesToLaurel pythonFile sigs (toString mod)
     if result.errors.size > 0 then
       IO.eprintln s!"{result.errors.size} translation warning(s):"
       for err in result.errors do
@@ -705,27 +706,19 @@ def pyResolveOverloadsCommand : Command where
   callback := fun v _ => do
     let pythonFile : System.FilePath := v[0]
     let dispatchPath := v[1]
-    -- Read dispatch overload table
-    let overloads ←
-      match ← readDispatchOverloads #[dispatchPath] |>.toBaseIO with
+    -- Parse Python file and resolve overloads
+    let pyStmts ←
+      match ← Strata.withPythonDialect (fun df =>
+        Strata.pyParsePythonFile df pythonFile) |>.toBaseIO with
+      | .ok s => pure s
+      | .error msg => exitFailure msg
+    let result ←
+      match ← Strata.pyResolveOverloads #[dispatchPath] pyStmts |>.toBaseIO with
       | .ok r => pure r
       | .error msg => exitFailure msg
-    -- Convert .py to Python AST
-    let stmts ←
-      IO.FS.withTempFile fun _handle dialectFile => do
-        IO.FS.writeBinFile dialectFile
-          Strata.Python.Python.toIon
-        match ← Strata.Python.pythonToStrata dialectFile pythonFile |>.toBaseIO with
-        | .ok s => pure s
-        | .error msg => exitFailure msg
-    -- Walk AST and collect modules
-    let state :=
-      Strata.Python.Specs.IdentifyOverloads.resolveOverloads
-        overloads stmts
-    for w in state.warnings do
+    for w in result.warnings do
       IO.eprintln s!"warning: {w}"
-    let sorted := state.modules.toArray.qsort (· < ·)
-    for m in sorted do
+    for m in result.modules do
       IO.println m
 
 def laurelParseCommand : Command where

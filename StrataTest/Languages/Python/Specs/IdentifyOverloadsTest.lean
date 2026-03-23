@@ -5,11 +5,10 @@
 -/
 module
 
-meta import Strata.SimpleAPI
-meta import Strata.Languages.Python.PySpecPipeline
-meta import Strata.Languages.Python.PythonToCore
-meta import Strata.Languages.Python.Specs.IdentifyOverloads
+meta import all Strata.SimpleAPI.Python
 meta import StrataTest.Util.Python
+meta import Strata.Languages.Python.Specs.IdentifyOverloads
+
 
 /-! ## Unit tests for `resolveOverloads`
 
@@ -20,78 +19,32 @@ fewer.
 
 namespace Strata.Python.Specs.IdentifyOverloadsTest
 
-open Strata (readDispatchOverloads readPythonIonModule unwrapModule pySpecs)
+open Strata (readDispatchOverloads pySpecs withPythonDialect pyParsePythonFile)
+open Strata.Python.Specs (ModuleName)
 open Strata.Python.Specs.IdentifyOverloads (resolveOverloads)
-open Strata.Python.Specs.ToLaurel (OverloadTable)
+open Strata.Python (OverloadTable)
 
 private meta def testDir : System.FilePath :=
   "StrataTest/Languages/Python/Specs/dispatch_test"
 
-/-- Compile a Python source file to Ion and return the path. -/
-private meta def compilePython
-    (pyFile : System.FilePath) (outDir : System.FilePath)
-    : IO System.FilePath := do
-  IO.FS.withTempFile fun _handle dialectFile => do
-    IO.FS.writeBinFile dialectFile Python.Python.toIon
-    let some stem := pyFile.fileStem
-      | throw <| .userError s!"No stem for {pyFile}"
-    let ionPath := outDir / s!"{stem}.python.st.ion"
-    let spawnArgs : IO.Process.SpawnArgs := {
-      cmd := "python"
-      args := #["-m", "strata.gen", "py_to_strata",
-                "--dialect", dialectFile.toString,
-                pyFile.toString, ionPath.toString]
-      cwd := none
-      inheritEnv := true
-      stdin := .null
-      stdout := .piped
-      stderr := .piped
-    }
-    let child ← IO.Process.spawn spawnArgs
-    let _stdout ← child.stdout.readToEnd
-    let stderr ← child.stderr.readToEnd
-    let exitCode ← child.wait
-    if exitCode ≠ 0 then
-      throw <| .userError
-        s!"py_to_strata failed for {pyFile} (exit {exitCode}): {stderr}"
-    return ionPath
-
 /-- Compile the dispatch pyspec and return the overload table. -/
 private meta def buildOverloadTable
-    (outDir : System.FilePath) : IO OverloadTable := do
-  IO.FS.withTempFile fun _handle dialectFile => do
-    IO.FS.writeBinFile dialectFile Python.Python.toIon
-    -- Compile servicelib dispatch file to pyspec Ion
-    let pyFile := testDir / "servicelib.py"
-    let some stem := pyFile.fileStem
-      | throw <| .userError s!"No stem for {pyFile}"
-    let ionPath := outDir / s!"{stem}.pyspec.st.ion"
-    match ← pySpecs pyFile outDir dialectFile
-        (warningOutput := .none) |>.toBaseIO with
-    | .ok () => pure ()
-    | .error msg =>
-      throw <| .userError s!"pySpecs failed for {pyFile}: {msg}"
-    match ← readDispatchOverloads #[ionPath.toString] |>.toBaseIO with
-    | .ok tbl => return tbl
-    | .error msg =>
-      throw <| .userError s!"readDispatchOverloads failed: {msg}"
-
-/-- Parse a user Python Ion file into statements. -/
-private meta def parseStmts (ionPath : System.FilePath)
-    : IO (Array (Python.stmt SourceRange)) := do
-  match ← readPythonIonModule ionPath.toString |>.toBaseIO with
-  | .ok cmd => return unwrapModule cmd
-  | .error msg =>
-    throw <| .userError s!"readPythonIonModule failed: {msg}"
+    (dialectFile : System.FilePath) (outDir : System.FilePath)
+    : EIO String OverloadTable := do
+  let pyFile := testDir / "servicelib.py"
+  pySpecs pyFile outDir dialectFile (warningOutput := .none)
+  let .ok mod := ModuleName.ofString "servicelib"
+    | throw "Invalid module name"
+  readDispatchOverloads outDir #[mod]
 
 /-- Run resolveOverloads on a test file and return the module set. -/
 private meta def resolveFile
+    (dialectFile : System.FilePath)
     (tbl : OverloadTable) (pyFile : System.FilePath)
-    (outDir : System.FilePath)
-    : IO (Std.HashSet String) := do
-  let ionPath ← compilePython pyFile outDir
-  let stmts ← parseStmts ionPath
-  return (resolveOverloads tbl stmts).modules
+    : EIO String (Std.HashSet String) := do
+  let stmts ← pyParsePythonFile dialectFile pyFile
+  return (resolveOverloads tbl stmts.stmts).modules
+
 
 /-- A test case: Python file and exact expected module set. -/
 private structure TestCase where
@@ -124,9 +77,13 @@ private meta def testCases : List TestCase := [
 
 /-- Run a single test case and return an error message on failure. -/
 private meta def runTestCase
-    (tbl : OverloadTable) (outDir : System.FilePath)
+    (dialectFile : System.FilePath)
+    (tbl : OverloadTable)
     (tc : TestCase) : IO (Option String) := do
-  let modules ← resolveFile tbl (testDir / tc.file) outDir
+  let modules ←
+    match ← resolveFile dialectFile tbl (testDir / tc.file) |>.toBaseIO with
+    | .ok m => pure m
+    | .error msg => return some s!"{tc.file}: {msg}"
   let expected : Std.HashSet String :=
     tc.expected.foldl (init := {}) fun s m => s.insert m
   if modules == expected then return none
@@ -137,24 +94,28 @@ private meta def runTestCase
 
 #eval withPython fun _pythonCmd => do
   IO.FS.withTempDir fun tmpDir => do
-    let tbl ← buildOverloadTable tmpDir
-    -- Launch all tests concurrently
-    let mut seen : Std.HashSet String := {}
-    let mut tasks : Array (String × Task (Except IO.Error (Option String))) := #[]
-    for tc in testCases do
-      if tc.file ∈ seen then
-        throw <| IO.userError s!"Duplicate test filename: {tc.file}"
-      seen := seen.insert tc.file
-      let task ← IO.asTask (runTestCase tbl tmpDir tc)
-      tasks := tasks.push (tc.file, task)
-    -- Collect results
-    let mut errors : Array String := #[]
-    for (_, task) in tasks do
-      match ← IO.wait task with
-      | .ok (some err) => errors := errors.push err
-      | .ok none => pure ()
-      | .error e => errors := errors.push s!"Task error: {e}"
-    if errors.size > 0 then
-      throw <| IO.userError ("\n".intercalate errors.toList)
+    match ← withPythonDialect (fun dialectFile => do
+      let tbl ← buildOverloadTable dialectFile tmpDir
+      -- Launch all tests concurrently
+      let mut seen : Std.HashSet String := {}
+      let mut tasks : Array (String × Task (Except IO.Error (Option String))) := #[]
+      for tc in testCases do
+        if tc.file ∈ seen then
+          throw s!"Duplicate test filename: {tc.file}"
+        seen := seen.insert tc.file
+        let task ← IO.asTask (runTestCase dialectFile tbl tc)
+        tasks := tasks.push (tc.file, task)
+      -- Collect results
+      let mut errors : Array String := #[]
+      for (_, task) in tasks do
+        match ← IO.wait task with
+        | .ok (some err) => errors := errors.push err
+        | .ok none => pure ()
+        | .error e => errors := errors.push s!"Task error: {e}"
+      if errors.size > 0 then
+        throw ("\n".intercalate errors.toList)
+    ) |>.toBaseIO with
+    | .ok () => pure ()
+    | .error msg => throw <| IO.userError msg
 
 end Strata.Python.Specs.IdentifyOverloadsTest

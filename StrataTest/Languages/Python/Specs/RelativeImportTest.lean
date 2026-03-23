@@ -93,7 +93,13 @@ private meta def positiveCases : Array PositiveCase := #[
   -- Mixed absolute and relative imports in the same file
   { file := "mixed_imports.py" },
   -- Bare import: import SiblingModule
-  { file := "bare_import.py" }
+  { file := "bare_import.py" },
+  -- Package dotted import: from service.module import ServiceClass
+  { file := "pkg_import_dotted.py" },
+  -- Package import via __init__.py: from service import ServiceClass
+  { file := "pkg_import_from.py" },
+  -- Package-level relative import: from . import module (inside service/)
+  { file := "service/alt_init_module.py" }
 ]
 
 -- Single negative test file exercises all unsupported import forms.
@@ -101,7 +107,6 @@ private meta def positiveCases : Array PositiveCase := #[
 private meta def negativeCases : Array NegativeCase := #[
   { file := "negative_imports.py"
     expectedErrors := #[
-      "from . import",      -- from . import X (no module name)
       "not yet supported",  -- from ..Module import X (level 2)
       "not found"           -- from .NonExistent import X (missing module)
     ] }

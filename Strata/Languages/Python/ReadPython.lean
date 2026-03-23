@@ -135,9 +135,9 @@ def pythonToStrata (dialectFile pythonFile : System.FilePath)
     | .error msg =>
       throw s!"Cannot create temporary file: {msg}"
   try
-    runWithOptions options s!"parsing {pythonFile}"
-      (runPyToStrata pythonCmd options.extraPythonArgs
-        dialectFile pythonFile strataFile)
+    runWithOptions options s!"parsing {pythonFile}" <|
+      runPyToStrata pythonCmd options.extraPythonArgs
+        dialectFile pythonFile strataFile
     runWithOptions options s!"reading {pythonFile}" (readParseStrataFile strataFile)
   finally
     match ← IO.FS.removeFile strataFile |>.toBaseIO with

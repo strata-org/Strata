@@ -6,7 +6,7 @@
 module
 
 meta import Strata.SimpleAPI
-meta import Strata.Languages.Python.PySpecPipeline
+meta import Strata.SimpleAPI.Python
 meta import StrataTest.Util.Python
 
 /-! ## End-to-end tests for `pyAnalyzeLaurel` with dispatch
@@ -20,6 +20,7 @@ Messaging) are generic and not tied to any cloud provider.
 namespace Strata.Python.AnalyzeLaurelTest
 
 open Strata (pyAnalyzeLaurel pySpecs)
+open Strata.Python.Specs (ModuleName)
 
 private meta def testDir : System.FilePath :=
   "StrataTest/Languages/Python/Specs/dispatch_test"
@@ -65,16 +66,19 @@ private meta def compilePython
   return ionPath
 
 /-- Set up the test fixture: compile all pyspec files and the dispatch file.
-    Returns (dispatchIonPath, pyspecDir). -/
+    Returns the dispatch module name (all ion files are written to outDir). -/
 private meta def setupFixture (_pythonCmd : System.FilePath)
-    (outDir : System.FilePath) : IO System.FilePath := do
+    (outDir : System.FilePath) : IO ModuleName := do
   IO.FS.withTempFile fun _handle dialectFile => do
     IO.FS.writeBinFile dialectFile Python.Python.toIon
     -- Compile service specs
     let _ ← compilePySpec dialectFile (testDir / "Storage.py") outDir
     let _ ← compilePySpec dialectFile (testDir / "Messaging.py") outDir
     -- Compile dispatch file
-    compilePySpec dialectFile (testDir / "servicelib.py") outDir
+    let _ ← compilePySpec dialectFile (testDir / "servicelib.py") outDir
+    match ModuleName.ofString "servicelib" with
+    | .ok mod => pure mod
+    | .error e => throw <| .userError e
 
 /-- Compile a test Python file to Ion format. -/
 private meta def compileTestScript (pyFile : System.FilePath)
@@ -84,13 +88,16 @@ private meta def compileTestScript (pyFile : System.FilePath)
     compilePython dialectFile pyFile outDir
 
 /-- Run pyAnalyzeLaurel on a test script within the shared fixture. -/
-private meta def runAnalyze (dispatchIon : System.FilePath)
+private meta def runAnalyze (specRoot : System.FilePath)
+    (dispatchModule : ModuleName)
     (tmpDir : System.FilePath) (scriptName : String)
     : IO (Except String Core.Program) := do
   let testIon ← compileTestScript (testDir / scriptName) tmpDir
   let laurel ←
     match ← Strata.pyAnalyzeLaurel testIon.toString
-        (dispatchPaths := #[dispatchIon.toString]) |>.toBaseIO with
+        (specRoot := specRoot)
+        (dispatchModules := #[dispatchModule])
+        (pyspecModules := #[]) |>.toBaseIO with
     | .ok r => pure r
     | .error err => return .error (toString err)
   match Strata.translateCombinedLaurel laurel with
@@ -137,9 +144,10 @@ private meta def testCases : List (String × Expected) := [
 ]
 
 /-- Run a single test case and return an error message on failure, or `none` on success. -/
-private meta def runTestCase (dispatchIon tmpDir : System.FilePath)
+private meta def runTestCase (specRoot : System.FilePath) (dispatchModule : ModuleName)
+    (tmpDir : System.FilePath)
     (scriptName : String) (expected : Expected) : IO (Option String) := do
-  let result ← runAnalyze dispatchIon tmpDir scriptName
+  let result ← runAnalyze specRoot dispatchModule tmpDir scriptName
   match expected, result with
   | .success, .ok _ => return none
   | .success, .error msg =>
@@ -152,7 +160,7 @@ private meta def runTestCase (dispatchIon tmpDir : System.FilePath)
 
 #eval withPython fun _pythonCmd => do
   IO.FS.withTempDir fun tmpDir => do
-    let dispatchIon ← setupFixture _pythonCmd tmpDir
+    let dispatchModule ← setupFixture _pythonCmd tmpDir
     -- Launch all tests concurrently, checking for duplicate filenames
     let mut seen : Std.HashSet String := {}
     let mut tasks : Array (String × Task (Except IO.Error (Option String))) := #[]
@@ -160,7 +168,7 @@ private meta def runTestCase (dispatchIon tmpDir : System.FilePath)
       if scriptName ∈ seen then
         throw <| IO.userError s!"Duplicate test filename: {scriptName}"
       seen := seen.insert scriptName
-      let task ← IO.asTask (runTestCase dispatchIon tmpDir scriptName expected)
+      let task ← IO.asTask (runTestCase tmpDir dispatchModule tmpDir scriptName expected)
       tasks := tasks.push (scriptName, task)
     -- Collect results
     let mut errors : Array String := #[]

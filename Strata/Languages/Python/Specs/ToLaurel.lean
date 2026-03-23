@@ -6,9 +6,10 @@
 module
 
 public import Strata.Languages.Laurel.Laurel
+public import Strata.Languages.Python.OverloadTable
 public import Strata.Languages.Python.Specs.Decls
 public import Strata.Languages.Python.Specs.PySpecM
-public import Strata.Util.DecideProp
+import Strata.Util.DecideProp
 
 /-!
 # PySpec to Laurel Translation
@@ -32,19 +33,6 @@ public section
 
 open Strata.Laurel
 open Strata.Python.Specs (SpecError)
-
-/-! ## Overload Dispatch Table -/
-
-/--
-All overloads for a single function name: maps a string literal
-argument value to the return type (`PythonIdent`).
-
-N.B. Current limitations: dispatch is always on the first positional argument,
-and only string literal values are extracted. -/
-@[expose] abbrev FunctionOverloads := Std.HashMap String PythonIdent
-
-/-- Dispatch table: function name → its overloads. -/
-@[expose] abbrev OverloadTable := Std.HashMap String FunctionOverloads
 
 /-! ## ToLaurelM Monad -/
 
@@ -418,7 +406,7 @@ structure TranslationResult where
 /-- Run the translation and return a Laurel Program, dispatch table,
     and any errors. -/
 def signaturesToLaurel (filepath : System.FilePath) (sigs : Array Signature)
-    (modulePrefix : String := "")
+    (modulePrefix : String)
     : TranslationResult :=
   let ctx : ToLaurelContext := { filepath, modulePrefix }
   let ((), state) := (sigs.forM signatureToLaurel).run ctx |>.run {}
