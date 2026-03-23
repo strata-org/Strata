@@ -267,7 +267,7 @@ private def prependPrelude (coreFromLaurel : Core.Program) : Core.Program :=
     removed. -/
 public def translateCombinedLaurel (combined : Laurel.Program)
     : (Option Core.Program × List DiagnosticModel) :=
-  let (coreOption, errors) := Laurel.translate {} combined
+  let (coreOption, errors) := Laurel.translate { inlineFunctionsWhenPossible := true } combined
   (coreOption.map (fun core =>
     let prepended := prependPrelude core
     -- dbg_trace "=== Final Core Program ==="

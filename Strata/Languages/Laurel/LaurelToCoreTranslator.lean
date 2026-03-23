@@ -561,11 +561,15 @@ partial def isRecursiveExpr (model: SemanticModel) (proc: Procedure) (expr : Stm
   | .ContractOf _ fn => isRecursiveExpr model proc fn.val
   | _ => false
 
+structure LaurelTranslateOptions where
+  emitResolutionErrors : Bool := true
+  inlineFunctionsWhenPossible : Bool := false
+
 /--
 Translate a Laurel Procedure to a Core Function (when applicable) using `TranslateM`.
 Diagnostics for disallowed constructs in the function body are emitted into the monad state.
 -/
-def translateProcedureToFunction (proc : Procedure) : TranslateM Core.Decl := do
+def translateProcedureToFunction (options: LaurelTranslateOptions) (proc : Procedure) : TranslateM Core.Decl := do
   let model := (← get).model
   let inputs := proc.inputs.map (translateParameterToCore model)
   let outputTy := match proc.outputs.head? with
@@ -596,7 +600,7 @@ def translateProcedureToFunction (proc : Procedure) : TranslateM Core.Decl := do
   let attr : Array Strata.DL.Util.FuncAttr :=
     match casesIdx with
     | some i => #[.inlineIfConstr i]
-    | none => #[]
+    | none => if options.inlineFunctionsWhenPossible then #[.inline] else #[]
 
   let body ← match proc.body with
     | .Transparent bodyExpr => some <$> translateExpr bodyExpr [] (isPureContext := true)
@@ -641,9 +645,6 @@ def translateDatatypeDefinition (model : SemanticModel) (dt : DatatypeDefinition
     constrs_ne := by simp [constrs]; grind
   }
 
-structure LaurelTranslateOptions where
-  emitResolutionErrors : Bool := true
-
 abbrev TranslateResult := (Option Core.Program) × (List DiagnosticModel)
 /--
 Translate Laurel Program to Core Program
@@ -685,7 +686,7 @@ def translate (options: LaurelTranslateOptions) (program : Program): TranslateRe
   let (program, model) := (result.program, result.model)
 
   let initState : TranslateState := {model := model }
-  let (coreProgramOption, translateState) := runTranslateM initState (translateLaurelToCore program)
+  let (coreProgramOption, translateState) := runTranslateM initState (translateLaurelToCore options program)
   let resolutionErrors: List DiagnosticModel := if options.emitResolutionErrors then result.errors.toList else []
   let allDiagnostics := resolutionErrors ++ diamondErrors ++ modifiesDiags ++ constrainedTypeDiags ++ translateState.diagnostics
   let coreProgramOption := if translateState.coreProgramHasSuperfluousErrors then none else coreProgramOption
@@ -713,7 +714,7 @@ def translate (options: LaurelTranslateOptions) (program : Program): TranslateRe
     let groups := groupDatatypes laurelDatatypes ldatatypes
     return groups.map fun group => Core.Decl.type (.data group)
 
-  translateLaurelToCore (program : Program): TranslateM Core.Program := do
+  translateLaurelToCore (options: LaurelTranslateOptions) (program : Program): TranslateM Core.Program := do
     let model := (← get).model
 
     -- Procedures marked isFunctional are translated to Core functions; all others become Core procedures.
@@ -721,7 +722,7 @@ def translate (options: LaurelTranslateOptions) (program : Program): TranslateRe
     let nonExternal := program.staticProcedures.filter (fun p => !p.body.isExternal)
     let (markedPure, procProcs) := nonExternal.partition (·.isFunctional)
     -- Try to translate each isFunctional procedure to a Core function, collecting errors for failures
-    let pureFuncDecls ← markedPure.mapM translateProcedureToFunction
+    let pureFuncDecls ← markedPure.mapM (translateProcedureToFunction options)
     -- Translate procedures using the monad, collecting diagnostics from the final state
     let procedures ← procProcs.mapM translateProcedure
 
@@ -761,7 +762,7 @@ Verify a Laurel program using an SMT solver
 def verifyToVcResults (program : Program)
     (options : VerifyOptions := .default)
     : IO (Option VCResults × List DiagnosticModel) := do
-  let (coreProgramOption, translateDiags) := translate { emitResolutionErrors := true } program
+  let (coreProgramOption, translateDiags) := translate {} program
 
   match coreProgramOption with
   | some coreProgram =>
@@ -775,7 +776,6 @@ def verifyToVcResults (program : Program)
       | .some p => IO.FS.createDirAll ⟨p.toString⟩; runner ⟨p.toString⟩
     return (some ioResult, translateDiags)
   | none => return (none, translateDiags)
-
 
 def verifyToDiagnostics (files: Map Strata.Uri Lean.FileMap) (program : Program)
     (options : VerifyOptions := .default): IO (Array Diagnostic) := do
