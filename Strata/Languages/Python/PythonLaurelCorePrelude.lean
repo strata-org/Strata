@@ -5,7 +5,7 @@
 -/
 module
 
--- TODO: rename file to PythonRuntimeCorePart
+-- TODO: rename file to PythonLaurelCorePrelude
 import Strata.DDM.Elab
 import Strata.DDM.AST
 import Strata.Languages.Core.DDMTransform.Grammar
@@ -30,7 +30,7 @@ are filtered out.
 
 The original `CorePrelude.lean` remains unchanged for the Python-through-Core pipeline.
 -/
-private def pythonRuntimeCorePartDDM :=
+private def PythonLaurelCorePreludeDDM :=
 #strata
 program Core;
 
@@ -153,8 +153,8 @@ These are declarations that cannot be expressed in Laurel grammar.
 The returned program includes forward declarations of types from the
 Laurel prelude; callers should filter out duplicates when merging.
 -/
-def pythonRuntimeCorePart : Core.Program :=
-  Core.getProgram pythonRuntimeCorePartDDM |>.fst
+def PythonLaurelCorePrelude : Core.Program :=
+  Core.getProgram PythonLaurelCorePreludeDDM |>.fst
 
 /--
 Get only the Core-only declarations, dropping the forward declarations
@@ -162,11 +162,11 @@ that precede the `type CoreOnlyDelimiter;` sentinel (and the sentinel itself).
 Everything after the delimiter is a genuine Core-only declaration.
 -/
 def coreOnlyFromRuntimeCorePart : List Core.Decl :=
-  let decls := pythonRuntimeCorePart.decls
+  let decls := PythonLaurelCorePrelude.decls
   -- Drop everything up to and including the CoreOnlyDelimiter sentinel
   match decls.dropWhile (fun d => d.name.name != "CoreOnlyDelimiter") with
   | _ :: rest => rest   -- drop the delimiter itself
-  | [] => dbg_trace "SOUND BUG: CoreOnlyDelimiter sentinel not found in pythonRuntimeCorePart"; []
+  | [] => dbg_trace "SOUND BUG: CoreOnlyDelimiter sentinel not found in PythonLaurelCorePrelude"; []
 
 end -- public section
 
