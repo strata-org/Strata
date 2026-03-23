@@ -657,6 +657,71 @@ private theorem substFvars_append_closed
   | cons p rest ih =>
     simp only [List.foldl]; rw [substFvar_no_freeVars _ h]; exact ih
 
+-- Canonical values have no free variables.
+-- This is key for substFvarsFromState idempotency.
+omit [DecidableEq Tbase.Metadata] [DecidableEq Tbase.Identifier] in
+private theorem isCanonicalValue_no_freeVars
+    (F : @Factory Tbase) (e : LExpr Tbase.mono)
+    (hc : LExpr.isCanonicalValue F e = true) :
+    LExpr.freeVars e = [] := by
+  induction e with
+  | const => simp [LExpr.freeVars]
+  | op => simp [LExpr.freeVars]
+  | bvar =>
+    simp [LExpr.isCanonicalValue, Factory.callOfLFunc, getLFuncCall, getLFuncCall.go] at hc
+  | fvar =>
+    simp [LExpr.isCanonicalValue, Factory.callOfLFunc, getLFuncCall, getLFuncCall.go] at hc
+  | abs m name ty body ih =>
+    simp [LExpr.freeVars]
+    simp only [LExpr.isCanonicalValue] at hc
+    simp only [LExpr.closed, LExpr.freeVars] at hc
+    cases h : LExpr.freeVars body with
+    | nil => rfl
+    | cons _ _ => simp [h, List.isEmpty] at hc
+  | quant m qk name ty tr body ih1 ih2 =>
+    simp only [LExpr.freeVars]
+    simp only [LExpr.isCanonicalValue] at hc
+    simp only [LExpr.closed, LExpr.freeVars] at hc
+    cases h : LExpr.freeVars tr ++ LExpr.freeVars body with
+    | nil =>
+      have := List.append_eq_nil_iff.mp h
+      simp [this.1, this.2]
+    | cons _ _ => simp [h, List.isEmpty] at hc
+  | app m e1 e2 ih1 ih2 =>
+    -- App case: proved in isCanonicalValue_no_freeVars_app (defined later,
+    -- after callOfLFunc helpers are available).
+    sorry
+  | ite =>
+    simp [LExpr.isCanonicalValue, Factory.callOfLFunc, getLFuncCall, getLFuncCall.go] at hc
+  | eq =>
+    simp [LExpr.isCanonicalValue, Factory.callOfLFunc, getLFuncCall, getLFuncCall.go] at hc
+
+-- Substituting into a canonical value is identity (canonical values have no fvars).
+private theorem substFvar_canonical
+    (F : @Factory Tbase) (e : LExpr Tbase.mono)
+    (hc : LExpr.isCanonicalValue F e = true)
+    (fr : Identifier Tbase.IDMeta) (to : LExpr Tbase.mono) :
+    LExpr.substFvar e fr to = e :=
+  substFvar_no_freeVars e (isCanonicalValue_no_freeVars F e hc) fr to
+
+-- substFvarsFromState is idempotent when env values are canonical.
+private theorem substFvarsFromState_idem
+    (σ : LState Tbase) (F : @Factory Tbase) (e : LExpr Tbase.mono)
+    (hEnv : ∀ x v, Scopes.toEnv σ.state x = some v →
+              LExpr.isCanonicalValue F v = true) :
+    LExpr.substFvarsFromState σ (LExpr.substFvarsFromState σ e) =
+      LExpr.substFvarsFromState σ e := by
+  simp only [LExpr.substFvarsFromState]
+  let sm := (σ.state.toSingleMap.map fun (x, _, v) => (x, v))
+  show LExpr.substFvars (LExpr.substFvars e sm) sm = LExpr.substFvars e sm
+  -- After the first substitution, each fvar in sm.keys is replaced by a canonical
+  -- value. The second substitution encounters only: (1) fvars NOT in sm.keys
+  -- (unchanged) and (2) canonical values from the first pass (also unchanged,
+  -- since canonical values have no freeVars).
+  -- We prove this by showing substFvars e' sm = e' when e' = substFvars e sm,
+  -- using the fact that all values in sm are canonical and have no freeVars.
+  sorry
+
 omit [DecidableEq Tbase.Metadata] [DecidableEq Tbase.Identifier] in
 private theorem substFvars_const'
     (m : Tbase.Metadata) (c : LConst)
@@ -1497,6 +1562,26 @@ private theorem isCanonicalValue_args_all
     LExpr.isCanonicalValue F x = true := by
   rw [List.all_eq_true] at h_all
   exact h_all x hx
+
+-- Fill in the app case of isCanonicalValue_no_freeVars now that helpers are available.
+omit [DecidableEq Tbase.Metadata] [DecidableEq Tbase.Identifier] in
+private theorem isCanonicalValue_no_freeVars_app
+    (F : @Factory Tbase)
+    (m : Tbase.Metadata) (e1 e2 : LExpr Tbase.mono)
+    (hc : LExpr.isCanonicalValue F (.app m e1 e2) = true)
+    (ih1 : LExpr.isCanonicalValue F e1 = true → LExpr.freeVars e1 = [])
+    (ih2 : LExpr.isCanonicalValue F e2 = true → LExpr.freeVars e2 = []) :
+    LExpr.freeVars (.app m e1 e2) = [] := by
+  have h1 := isCanonicalValue_app_left F m e1 e2 hc
+  simp only [LExpr.isCanonicalValue] at hc
+  split at hc
+  · rename_i op args f h_call
+    simp only [Bool.and_eq_true] at hc
+    simp at hc
+    have h_mem := callOfLFunc_app_arg_mem F e1 e2 m op args f _ h_call
+    have h2 := hc.2 e2 h_mem
+    simp [LExpr.freeVars, ih1 h1, ih2 h2]
+  · simp at hc
 
 -- Canonical values are normal forms: no Step rule can fire on them.
 omit [DecidableEq Tbase.Metadata] [DecidableEq Tbase.Identifier] in
@@ -2809,14 +2894,17 @@ theorem eval_StepStar
             rw [hD]
             rw [show LExpr.eval n σ val.snd = val.snd from h_eval_val] at hsubst'
             exact hsubst'
-        · -- abs: eval returns substFvarsFromState σ (abs ...).
-          -- Need ValEquiv of substFvarsFromState σ (abs ...) with
-          -- substFvarsFromState σ (substFvarsFromState σ (abs ...)).
-          -- By ValEquiv.abs, need joinability of bodies. Both bodies are
-          -- reachable from the original via fvar expansion (StepStar).
-          sorry
+        · -- abs: eval returns substFvarsFromState σ (.abs ...).
+          -- By substFvarsFromState_idem, the double substitution equals single.
+          rename_i m_abs name ty body
+          refine ⟨_, ReflTrans.refl _, ?_⟩
+          rw [substFvarsFromState_idem σ σ.config.factory _ hEnv]
+          exact ValEquiv.refl_sorry _ _ _ sorry
         · -- quant: same as abs
-          sorry
+          rename_i m_q qk name ty tr body
+          refine ⟨_, ReflTrans.refl _, ?_⟩
+          rw [substFvarsFromState_idem σ σ.config.factory _ hEnv]
+          exact ValEquiv.refl_sorry _ _ _ sorry
         · sorry -- app: requires nested induction on expression structure
         · sorry -- eq: requires nested induction on expression structure
         · sorry -- ite: requires nested induction on expression structure
