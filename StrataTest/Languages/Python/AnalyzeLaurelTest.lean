@@ -7,6 +7,7 @@ module
 
 meta import Strata.SimpleAPI
 meta import Strata.Languages.Python.PySpecPipeline
+meta import Strata.Languages.Python.PyFactory
 meta import StrataTest.Util.Python
 
 /-! ## End-to-end tests for `pyAnalyzeLaurel` with dispatch
@@ -96,7 +97,7 @@ private meta def runAnalyze (dispatchIon : System.FilePath)
   match Strata.translateCombinedLaurel laurel with
   | (some core, []) =>
     -- Also run Core type checking to catch semantic errors (e.g. Heap vs Any)
-    match Core.typeCheck Core.VerifyOptions.quiet core with
+    match Core.typeCheck Core.VerifyOptions.quiet core (moreFns := Strata.Python.ReFactory) with
     | .error diag => return .error s!"Core type checking failed: {diag}"
     | .ok _ => return .ok core
   | (_, errors) => return .error s!"Laurel to Core translation failed: {errors}"
