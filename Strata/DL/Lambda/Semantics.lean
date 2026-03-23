@@ -2742,43 +2742,16 @@ theorem Step_diamond
       simp [Factory.callOfLFunc, getLFuncCall, getLFuncCall.go] at h_call₁
   termination_by e.sizeOf
 
--- Determinism of Canonicalize (up to eraseMetadata): if we canonicalize
--- the same expression two ways, the results agree modulo metadata.
--- This is the key property needed for ValEquiv.trans.
+-- NOTE: Canonicalize_deterministic (previously here) was removed because Step is
+-- not deterministic — the same expression can be canonicalized in multiple ways
+-- (e.g., Canonicalize.refl vs going deeper). This also invalidated
+-- Canonicalize_confluent which depended on it.
 --
--- NOTE: This statement is likely too strong as written. Canonicalize.refl allows
--- stopping early (e.g., Canon(abs body, abs body) via .refl) while another
--- canonicalization path may go deeper (e.g., Canon(abs body, abs body') via .abs
--- with body →* body_v and Canon body_v body'). In that case v₁.eM ≠ v₂.eM.
--- The fix is either:
---   (a) Restrict Canonicalize so .refl only applies to fully-canonical exprs, or
---   (b) Replace this with Canonicalize_confluent (∃ joinable further-canonicalizations)
---       and add Canonicalize.trans as a constructor, or
---   (c) Add a hypothesis that h₁ and h₂ are both "maximal" canonicalizations.
--- With any of these fixes, ValEquiv.trans (which depends on this) goes through.
-theorem Canonicalize_deterministic
-    {Tbase : LExprParams} [DecidableEq Tbase.Metadata]
-    [DecidableEq Tbase.Identifier] [DecidableEq Tbase.IDMeta]
-    (F : @Factory Tbase) (rf : Env Tbase)
-    (hWF : FactoryWF F)
-    (e v₁ v₂ : LExpr Tbase.mono)
-    (h₁ : Canonicalize F rf e v₁) (h₂ : Canonicalize F rf e v₂) :
-    v₁.eraseMetadata = v₂.eraseMetadata := by
-  sorry
-
--- Confluence of Canonicalize: if e canonicalizes to both v₁ and v₂,
--- they can be further canonicalized to a common expression.
--- With the new value-only Canonicalize, this follows from determinism.
-theorem Canonicalize_confluent
-    {Tbase : LExprParams} [DecidableEq Tbase.Metadata]
-    [DecidableEq Tbase.Identifier] [DecidableEq Tbase.IDMeta]
-    (F : @Factory Tbase) (rf : Env Tbase)
-    (hWF : FactoryWF F)
-    (e v₁ v₂ : LExpr Tbase.mono)
-    (h₁ : Canonicalize F rf e v₁) (h₂ : Canonicalize F rf e v₂) :
-    ∃ v₃ v₃', Canonicalize F rf v₁ v₃ ∧ Canonicalize F rf v₂ v₃' ∧
-      v₃.eraseMetadata = v₃'.eraseMetadata := by
-  exact ⟨v₁, v₂, .refl, .refl, Canonicalize_deterministic F rf hWF e v₁ v₂ h₁ h₂⟩
+-- ValEquiv.trans (abs/quant cases) previously used Canonicalize_deterministic
+-- to show that two canonicalizations of the same body b₂ agree modulo eM.
+-- Without it, these cases need Canonicalize confluence, which itself requires
+-- Step confluence (Step_diamond). The abs/quant cases of ValEquiv.trans now
+-- use sorry for this specific sub-goal.
 
 ---------------------------------------------------------------------
 -- ValEquiv properties (proved after helper lemmas are available)
@@ -3090,17 +3063,16 @@ theorem ValEquiv.trans
     -- canon₁: Canon(b₁, b₁'), canon₂: Canon(b₂, b₂'), heq₁₂: b₁'.eM = b₂'.eM
     cases h₂ with
     | abs hc₂' hc₃ canon₂' canon₃ heq₂₃ =>
-      -- canon₂': Canon(b₂, b₂''), canon₃: Canon(b₃, b₃'), heq₂₃: b₂''.eM = b₃'.eM
-      -- By Canonicalize_deterministic on b₂: b₂'.eM = b₂''.eM
-      have h_det := Canonicalize_deterministic F rf hWF _ _ _ canon₂ canon₂'
-      exact .abs hc₁ hc₃ canon₁ canon₃ (heq₁₂.trans (h_det.trans heq₂₃))
+      -- canon₂: Canon(b₂, b₂'), canon₂': Canon(b₂, b₂'')
+      -- Need: b₂'.eM = b₂''.eM (Canonicalize confluence on b₂).
+      -- This requires Step confluence (Step_diamond) to show that different
+      -- canonicalization paths of the same expression agree modulo eM.
+      sorry
   | quant hc₁ hc₂ ct₁ ct₂ heqt cb₁ cb₂ heqb =>
     cases h₂ with
     | quant hc₂' hc₃ ct₂' ct₃ heqt' cb₂' cb₃ heqb' =>
-      have h_det_t := Canonicalize_deterministic F rf hWF _ _ _ ct₂ ct₂'
-      have h_det_b := Canonicalize_deterministic F rf hWF _ _ _ cb₂ cb₂'
-      exact .quant hc₁ hc₃ ct₁ ct₃ (heqt.trans (h_det_t.trans heqt'))
-                                     cb₁ cb₃ (heqb.trans (h_det_b.trans heqb'))
+      -- Same issue: need Canonicalize confluence for type and body of b₂.
+      sorry
   | app hc₁ hf₁₂ ha₁₂ ih_f ih_a =>
     -- e₁ = .app m₁ f₁ a₁, e₂ = .app m₂ f₂ a₂
     -- hf₁₂ : ValEquiv F rf f₁ f₂, ha₁₂ : ValEquiv F rf a₁ a₂
