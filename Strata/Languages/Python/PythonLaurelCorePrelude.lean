@@ -34,6 +34,7 @@ private def PythonLaurelCorePreludeDDM :=
 #strata
 program Core;
 
+
 // =====================================================================
 // Forward declarations of types defined in PythonRuntimeLaurelPart.
 // These are needed so the DDM parser can resolve references in axioms
@@ -65,6 +66,11 @@ datatype Error () {
 // In this prelude, we model datetime as a single int and assume
 // that the conversion from a string constant is handled by the translator.
 
+datatype OptionInt {
+  Some (unwrap: int),
+  None ()
+}
+
 datatype Any () {
   from_none (),
   from_bool (as_bool : bool),
@@ -75,6 +81,7 @@ datatype Any () {
   from_Dict (as_Dict: DictStrAny),
   from_ListAny (as_ListAny : ListAny),
   from_ClassInstance (classname : string, instance_attributes: DictStrAny),
+  from_Slice(start: int, stop: OptionInt),
   exception (get_error: Error)
 }
 
@@ -135,7 +142,6 @@ rec function List_filter (@[cases] l : ListAny, f: Any -> bool) : ListAny
   else
     List_filter(ListAny..tail!(l), f)
 };
-
 
 // /////////////////////////////////////////////////////////////////////////////////////
 // Modelling some datetime-related Python operations, for testing purpose
