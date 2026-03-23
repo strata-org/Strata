@@ -445,7 +445,11 @@ def pyAnalyzeLaurelCommand : Command where
                 (doInline := λ name _ => name ≠ "__main__"))
               coreProgram .emp with
         | ⟨.error e, _⟩ => exitInternalError s!"Inlining failed: {e}"
-        | ⟨.ok (_, inlined), _⟩ => pure inlined
+        | ⟨.ok (_, inlined), _⟩ => do
+          if verbose then
+            IO.println "\n==== Core Program (after inlining) ===="
+            IO.print inlined
+          pure inlined
       else pure coreProgram
 
     -- Verify using Core verifier

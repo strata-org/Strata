@@ -862,8 +862,15 @@ partial def translateAssign  (ctx : TranslationContext)
         let targetExpr := mkStmtExprMd (StmtExpr.Identifier n.val)
         return (ctx, [mkStmtExprMd (StmtExpr.Assign [targetExpr] rhs_trans)])
       else
-        let initStmt := mkStmtExprMd (StmtExpr.LocalVariable n.val AnyTy (mkStmtExprMd .Hole))
-        let newctx := {ctx with variableTypes:=(n.val, "Any")::ctx.variableTypes}
+        -- Use type annotation if it matches a known composite type
+        let annType := annotation.map (fun a => pyExprToString a) |>.getD "Any"
+        let resolvedType := resolveTypeName ctx annType
+        let (varTy, trackType) :=
+          if annType ∈ ctx.compositeTypeNames then
+            (mkHighTypeMd (.UserDefined (mkId resolvedType)), resolvedType)
+          else (AnyTy, "Any")
+        let initStmt := mkStmtExprMd (StmtExpr.LocalVariable n.val varTy (mkStmtExprMd .Hole))
+        let newctx := {ctx with variableTypes:=(n.val, trackType)::ctx.variableTypes}
         return (newctx, [initStmt])
     | _ => return (ctx, [mkStmtExprMd .Hole])
   }
