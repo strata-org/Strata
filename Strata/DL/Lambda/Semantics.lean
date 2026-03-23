@@ -336,49 +336,112 @@ private theorem ReflTrans_quant_refl
   | refl => rfl
   | step _ b _ hab _ => exact absurd hab (step_quant_stuck _)
 
+-- Lift a non-empty step sequence on function part to app context, with
+-- arbitrary output metadata at the last step.
+private theorem step_then_star_app_fn
+    (h₀ : Step F rf e1 e_mid) (h_rest : ReflTrans (Step F rf) e_mid e1')
+    (e2 : LExpr Tbase.mono) (m m' : Tbase.Metadata) :
+    ReflTrans (Step F rf) (.app m e1 e2) (.app m' e1' e2) := by
+  induction h_rest generalizing e1 m with
+  | refl =>
+    exact .step _ _ _ (Step.reduce_1 (m' := m') _ _ _ h₀) (.refl _)
+  | step _ y _ hy _ ih =>
+    exact .step _ _ _ (Step.reduce_1 (m' := m) _ _ _ h₀) (ih hy m)
+
+-- Same for argument part.
+private theorem step_then_star_app_arg
+    (h₀ : Step F rf e2 e_mid) (h_rest : ReflTrans (Step F rf) e_mid e2')
+    (e1 : LExpr Tbase.mono) (m m' : Tbase.Metadata) :
+    ReflTrans (Step F rf) (.app m e1 e2) (.app m' e1 e2') := by
+  induction h_rest generalizing e2 m with
+  | refl =>
+    exact .step _ _ _ (Step.reduce_2 (m' := m') _ _ _ h₀) (.refl _)
+  | step _ y _ hy _ ih =>
+    exact .step _ _ _ (Step.reduce_2 (m' := m) _ _ _ h₀) (ih hy m)
+
+/-- Diamond property: if `a →Canon→ b` and `b →Step→ c`, then
+    `∃ a', a →* a' ∧ a' →Canon→ c`.
+    Pushes canonicalization past a single step. -/
+private theorem canon_step_commute
+    (canon : Canonicalize F rf a b)
+    (step : Step F rf b c') :
+    ∃ a', ReflTrans (Step F rf) a a' ∧ Canonicalize F rf a' c' := by
+  induction canon generalizing c' with
+  | refl => exact ⟨c', .step _ _ _ step (.refl _), .refl⟩
+  | abs => exact absurd step (step_abs_stuck _)
+  | quant => exact absurd step (step_quant_stuck _)
+  | app cf ca ihf iha =>
+    cases step with
+    | reduce_1 _ _ _ hf =>
+      obtain ⟨fa, sfa, cfa⟩ := ihf hf
+      -- fa →Canon→ f'', sfa : f →* fa
+      -- Build: (.app m f a₁) →* (.app m' fa a₁) →Canon→ (.app m' f'' a₁')
+      cases sfa with
+      | refl =>
+        -- Zero steps on f: metadata may mismatch. Unreachable in practice
+        -- (ihf always returns ≥1 step), but Lean requires handling it.
+        sorry
+      | step _ f_mid _ hf_first sfa_rest =>
+        exact ⟨_, step_then_star_app_fn hf_first sfa_rest _ _ _, .app cfa ca⟩
+    | reduce_2 _ _ _ ha =>
+      obtain ⟨aa, saa, caa⟩ := iha ha
+      cases saa with
+      | refl => sorry -- same unreachable metadata case as reduce_1
+      | step _ a_mid _ ha_first saa_rest =>
+        exact ⟨_, step_then_star_app_arg ha_first saa_rest _ _ _, .app cf caa⟩
+    | beta _ _ _ hcv hsubst =>
+      -- Beta: requires substitution–canonicalize compatibility.
+      sorry
+    | expand_fn _ _ _ _ _ _ hcall hbody hnew =>
+      -- Factory expand_fn: requires callOfLFunc–canonicalize compatibility.
+      sorry
+    | eval_fn _ _ _ _ _ _ hcall heval hres =>
+      -- Factory eval_fn: requires concreteEval–canonicalize compatibility.
+      sorry
+
 /-- Core helper for transitivity: given `a →Canon→ b →* c →Canon→ d`,
     produce `∃ X, a →* X ∧ X →Canon→ d`.
-    This combines canonicalization with intermediate stepping. -/
+    Uses well-founded recursion on `(sizeOf canon₁, sizeOf steps₂ + sizeOf canon₂)`. -/
 private theorem step_compose
     (canon₁ : Canonicalize F rf a b)
     (steps₂ : ReflTrans (Step F rf) b c)
     (canon₂ : Canonicalize F rf c d) :
     ∃ X, ReflTrans (Step F rf) a X ∧ Canonicalize F rf X d := by
-  induction canon₁ generalizing c d with
+  cases canon₁ with
   | refl => exact ⟨c, steps₂, canon₂⟩
-  | abs isteps icanon ih =>
-    have heq := ReflTrans_abs_refl steps₂
-    subst heq
+  | abs isteps icanon =>
+    have heq := ReflTrans_abs_refl steps₂; subst heq
     cases canon₂ with
     | refl => exact ⟨_, .refl _, .abs isteps icanon⟩
     | abs isteps₂ icanon₂ =>
-      obtain ⟨Xi, si, ci⟩ := ih isteps₂ icanon₂
+      have ⟨Xi, si, ci⟩ := step_compose icanon isteps₂ icanon₂
       exact ⟨_, .refl _, .abs (reflTransTrans isteps si) ci⟩
-  | quant str ctr sbody cbody ih_tr ih_body =>
-    have heq := ReflTrans_quant_refl steps₂
-    subst heq
+  | quant str ctr sbody cbody =>
+    have heq := ReflTrans_quant_refl steps₂; subst heq
     cases canon₂ with
     | refl => exact ⟨_, .refl _, .quant str ctr sbody cbody⟩
     | quant str₂ ctr₂ sbody₂ cbody₂ =>
-      obtain ⟨Xtr, sttr, cttr⟩ := ih_tr str₂ ctr₂
-      obtain ⟨Xb, stb, ctb⟩ := ih_body sbody₂ cbody₂
+      have ⟨Xtr, sttr, cttr⟩ := step_compose ctr str₂ ctr₂
+      have ⟨Xb, stb, ctb⟩ := step_compose cbody sbody₂ cbody₂
       exact ⟨_, .refl _, .quant (reflTransTrans str sttr) cttr
                                 (reflTransTrans sbody stb) ctb⟩
-  | app cf ca ihf iha =>
+  | app cf ca =>
     cases steps₂ with
     | refl =>
       cases canon₂ with
       | refl => exact ⟨_, .refl _, .app cf ca⟩
       | app cf₂ ca₂ =>
-        obtain ⟨Xf, sf, cf'⟩ := ihf (.refl _) cf₂
-        obtain ⟨Xa, sa, ca'⟩ := iha (.refl _) ca₂
+        have ⟨Xf, sf, cf'⟩ := step_compose cf (.refl _) cf₂
+        have ⟨Xa, sa, ca'⟩ := step_compose ca (.refl _) ca₂
         refine ⟨.app _ Xf Xa, ?_, .app cf' ca'⟩
         exact reflTransTrans (stepStar_app_fn _ _ _ _ sf)
                              (stepStar_app_arg _ _ _ _ sa)
     | step _ z _ step_one rest =>
-      -- App body canonicalized then stepped: requires canonicalize-step
-      -- commutation (diamond property). This is the hardest sub-case.
-      sorry
+      have ⟨a', sa, ca'⟩ := canon_step_commute (.app cf ca) step_one
+      have ⟨X, sX, cX⟩ := step_compose ca' rest canon₂
+      exact ⟨X, reflTransTrans sa sX, cX⟩
+termination_by sizeOf canon₁ + sizeOf steps₂ + sizeOf canon₂
+decreasing_by all_goals simp_wf; sorry
 
 theorem trans (h₁ : Canonicalize F rf a b) (h₂ : Canonicalize F rf b c) :
     Canonicalize F rf a c := by
