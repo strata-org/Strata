@@ -338,14 +338,6 @@ inductive ValEquiv (F : @Factory Tbase) (rf : Env Tbase)
 -- Reflexivity, symmetry, transitivity are proved after the helper lemmas
 -- (see after canonical_value_not_step).
 
--- Placeholder: ValEquiv.refl is proved later in the file.
--- We declare it as sorry here so downstream code compiles during development.
-omit [DecidableEq Tbase.Metadata] [DecidableEq Tbase.Identifier] in
-theorem ValEquiv.refl_sorry (F : @Factory Tbase) (rf : Env Tbase) (e : LExpr Tbase.mono)
-    (hc : LExpr.isCanonicalValue F e = true) :
-    ValEquiv F rf e e := by
-  sorry
-
 omit [DecidableEq Tbase.Metadata] [DecidableEq Tbase.Identifier] [DecidableEq Tbase.IDMeta] in
 theorem ReflTrans_trans {r : Relation (LExpr Tbase.mono)} {x y z : LExpr Tbase.mono}
     (h1 : ReflTrans r x y) (h2 : ReflTrans r y z) : ReflTrans r x z := by
@@ -2356,10 +2348,17 @@ theorem Step_diamond
 -- Determinism of Canonicalize (up to eraseMetadata): if we canonicalize
 -- the same expression two ways, the results agree modulo metadata.
 -- This is the key property needed for ValEquiv.trans.
--- With the new Canonicalize (value-only), this reduces to:
--- 1. Step confluence (up to eM) for the StepStar parts inside binders
--- 2. Recursive determinism for the sub-canonicalizations
--- Both depend on Step_diamond (above) and standard confluence arguments.
+--
+-- NOTE: This statement is likely too strong as written. Canonicalize.refl allows
+-- stopping early (e.g., Canon(abs body, abs body) via .refl) while another
+-- canonicalization path may go deeper (e.g., Canon(abs body, abs body') via .abs
+-- with body →* body_v and Canon body_v body'). In that case v₁.eM ≠ v₂.eM.
+-- The fix is either:
+--   (a) Restrict Canonicalize so .refl only applies to fully-canonical exprs, or
+--   (b) Replace this with Canonicalize_confluent (∃ joinable further-canonicalizations)
+--       and add Canonicalize.trans as a constructor, or
+--   (c) Add a hypothesis that h₁ and h₂ are both "maximal" canonicalizations.
+-- With any of these fixes, ValEquiv.trans (which depends on this) goes through.
 theorem Canonicalize_deterministic
     {Tbase : LExprParams} [DecidableEq Tbase.Metadata]
     [DecidableEq Tbase.Identifier] [DecidableEq Tbase.IDMeta]
@@ -2676,14 +2675,43 @@ theorem ValEquiv.symm {F : @Factory Tbase} {rf : Env Tbase} {e₁ e₂ : LExpr T
   | app hc hf ha ihf iha =>
     exact .app (isCanonicalValue_ValEquiv_app _ _ _ _ _ _ _ _ hc hf ha) ihf iha
 
-omit [DecidableEq Tbase.Metadata] [DecidableEq Tbase.Identifier] in
 -- Transitivity requires confluence of Canonicalize (different canonicalization
 -- paths for the middle expression must produce eraseMetadata-equal results).
-omit [DecidableEq Tbase.Metadata] [DecidableEq Tbase.Identifier] in
-theorem ValEquiv.trans {F : @Factory Tbase} {rf : Env Tbase} {e₁ e₂ e₃ : LExpr Tbase.mono}
+theorem ValEquiv.trans
+    {Tbase : LExprParams} [DecidableEq Tbase.Metadata]
+    [DecidableEq Tbase.Identifier] [DecidableEq Tbase.IDMeta]
+    {F : @Factory Tbase} {rf : Env Tbase}
+    (hWF : FactoryWF F)
+    {e₁ e₂ e₃ : LExpr Tbase.mono}
     (h₁ : ValEquiv F rf e₁ e₂) (h₂ : ValEquiv F rf e₂ e₃) :
     ValEquiv F rf e₁ e₃ := by
-  sorry
+  induction h₁ generalizing e₃ with
+  | const => cases h₂; exact .const
+  | op => cases h₂; exact .op
+  | abs hc₁ hc₂ canon₁ canon₂ heq₁₂ =>
+    -- e₁ = .abs m₁ n t b₁, e₂ = .abs m₂ n t b₂
+    -- canon₁: Canon(b₁, b₁'), canon₂: Canon(b₂, b₂'), heq₁₂: b₁'.eM = b₂'.eM
+    cases h₂ with
+    | abs hc₂' hc₃ canon₂' canon₃ heq₂₃ =>
+      -- canon₂': Canon(b₂, b₂''), canon₃: Canon(b₃, b₃'), heq₂₃: b₂''.eM = b₃'.eM
+      -- By Canonicalize_deterministic on b₂: b₂'.eM = b₂''.eM
+      have h_det := Canonicalize_deterministic F rf hWF _ _ _ canon₂ canon₂'
+      exact .abs hc₁ hc₃ canon₁ canon₃ (heq₁₂.trans (h_det.trans heq₂₃))
+  | quant hc₁ hc₂ ct₁ ct₂ heqt cb₁ cb₂ heqb =>
+    cases h₂ with
+    | quant hc₂' hc₃ ct₂' ct₃ heqt' cb₂' cb₃ heqb' =>
+      have h_det_t := Canonicalize_deterministic F rf hWF _ _ _ ct₂ ct₂'
+      have h_det_b := Canonicalize_deterministic F rf hWF _ _ _ cb₂ cb₂'
+      exact .quant hc₁ hc₃ ct₁ ct₃ (heqt.trans (h_det_t.trans heqt'))
+                                     cb₁ cb₃ (heqb.trans (h_det_b.trans heqb'))
+  | app hc₁ hf₁₂ ha₁₂ ih_f ih_a =>
+    -- e₁ = .app m₁ f₁ a₁, e₂ = .app m₂ f₂ a₂
+    -- hf₁₂ : ValEquiv F rf f₁ f₂, ha₁₂ : ValEquiv F rf a₁ a₂
+    -- ih_f : ∀ e₃, ValEquiv F rf f₂ e₃ → ValEquiv F rf f₁ e₃
+    -- ih_a : ∀ e₃, ValEquiv F rf a₂ e₃ → ValEquiv F rf a₁ e₃
+    cases h₂ with
+    | app hc₂ hf₂₃ ha₂₃ =>
+      exact .app hc₁ (ih_f hf₂₃) (ih_a ha₂₃)
 
 ---------------------------------------------------------------------
 
@@ -2882,7 +2910,7 @@ theorem eval_StepStar
   unfold StepStar
   induction n generalizing e with
   | zero =>
-    exact ⟨e, ReflTrans.refl e, by simp [LExpr.eval]; exact ValEquiv.refl_sorry _ _ _ sorry⟩
+    exact ⟨e, ReflTrans.refl e, by simp [LExpr.eval]; exact ValEquiv.refl _ _ _ sorry⟩
   | succ n ih =>
     simp only [LExpr.eval]
     split
@@ -2994,13 +3022,13 @@ theorem eval_StepStar
           exact ⟨_, ReflTrans.refl _, by
             simp only [substFvarsFromState_op]; exact ValEquiv.op⟩
         · -- bvar: no ValEquiv constructor for bvar (bvar should not appear in well-formed open terms)
-          exact ⟨_, ReflTrans.refl _, ValEquiv.refl_sorry _ _ _ sorry⟩
+          exact ⟨_, ReflTrans.refl _, ValEquiv.refl _ _ _ sorry⟩
         · -- fvar m x ty
           rename_i m x ty
           cases hfind : σ.state.find? x with
           | none =>
             have hD := Maps_findD_find?_none σ.state x (ty, LExpr.fvar m x ty) hfind
-            exact ⟨.fvar m x ty, ReflTrans.refl _, by rw [hD]; exact ValEquiv.refl_sorry _ _ _ sorry⟩
+            exact ⟨.fvar m x ty, ReflTrans.refl _, by rw [hD]; exact ValEquiv.refl _ _ _ sorry⟩
           | some val =>
             have henv_x : Scopes.toEnv σ.state x = some val.snd := by
               simp [Scopes.toEnv, hfind]
@@ -3020,12 +3048,12 @@ theorem eval_StepStar
           rename_i m_abs name ty body
           refine ⟨_, ReflTrans.refl _, ?_⟩
           rw [substFvarsFromState_idem σ σ.config.factory _ hEnv]
-          exact ValEquiv.refl_sorry _ _ _ sorry
+          exact ValEquiv.refl _ _ _ sorry
         · -- quant: same as abs
           rename_i m_q qk name ty tr body
           refine ⟨_, ReflTrans.refl _, ?_⟩
           rw [substFvarsFromState_idem σ σ.config.factory _ hEnv]
-          exact ValEquiv.refl_sorry _ _ _ sorry
+          exact ValEquiv.refl _ _ _ sorry
         · sorry -- app: requires nested induction on expression structure
         · sorry -- eq: requires nested induction on expression structure
         · sorry -- ite: requires nested induction on expression structure
