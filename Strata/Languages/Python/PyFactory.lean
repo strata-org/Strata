@@ -97,7 +97,7 @@ def rePatternErrorFunc : LFunc Core.CoreLParams :=
       concreteEval := some
         (fun _ args => match args with
           | [LExpr.strConst () s] =>
-            let (_, maybe_err) := pythonRegexToCore s .fullmatch
+            let (_, maybe_err) := pythonRegexToCore s .fullmatch -- mode irrelevant: errors come from parseTop before mode-specific compilation
             match maybe_err with
             | none =>
               .some (LExpr.mkApp () (.op () "NoError" (some mty[Error])) [])

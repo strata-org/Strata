@@ -56,10 +56,7 @@ def translateType (model : SemanticModel) (ty : HighTypeMd) : LMonoTy :=
   | .TSet elementType => Core.mapTy (translateType model elementType) LMonoTy.bool
   | .TMap keyType valueType => Core.mapTy (translateType model keyType) (translateType model valueType)
   | .UserDefined name =>
-    -- Composite types map to "Composite"; datatypes map to their own name.
-    -- "regex" is a Core builtin sort used by the regex prelude; pass it through.
-    if name.text == "regex" then .tcons "regex" []
-    else match name.uniqueId.bind model.refToDef.get? with
+    match name.uniqueId.bind model.refToDef.get? with
     | some (.compositeType _) => .tcons "Composite" []
     | some (.datatypeDefinition dt) => .tcons dt.name.text []
     | _ => .tcons "Composite" [] -- fallback for unresolved refs
