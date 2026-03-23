@@ -96,17 +96,36 @@ theorem substFvars_denote
         (LExpr.substFvars body bindings) τ h_subst := by
   sorry
 
-/-- For canonical values, syntactic equality (`eql`) agrees with semantic
-equality under denotation. -/
-theorem eql_iff_denote_eq
+/-- For canonical values, if syntactic equality (`eql`) returns true, then the
+denotations are equal. -/
+theorem eql_true_implies_denote_eq
     {F : @Factory T}
     {e₁ e₂ : LExpr T.mono} {τ : LMonoTy}
     (hv₁ : LExpr.isCanonicalValue F e₁)
     (hv₂ : LExpr.isCanonicalValue F e₂)
     (h₁ : LExpr.HasTypeA [] e₁ τ)
     (h₂ : LExpr.HasTypeA [] e₂ τ)
-    : LExpr.eql F e₁ e₂ hv₁ hv₂ = true ↔
-      LExpr.denote tcInterp opInterp fvarVal vt .nil e₁ τ h₁ =
+    (heql : LExpr.eql F e₁ e₂ hv₁ hv₂ = true)
+    : LExpr.denote tcInterp opInterp fvarVal vt .nil e₁ τ h₁ =
+      LExpr.denote tcInterp opInterp fvarVal vt .nil e₂ τ h₂ := by
+  sorry
+
+/-- For binder-free canonical values, if syntactic equality (`eql`) returns
+false, then the denotations are not equal. The `containsBinder = false`
+precondition is essential: for expressions with binders, structural inequality
+does not imply semantic inequality (e.g., `λ (if #true then %0 else %0)` vs
+`λ %0`). -/
+theorem eql_false_no_binders_implies_denote_ne
+    {F : @Factory T}
+    {e₁ e₂ : LExpr T.mono} {τ : LMonoTy}
+    (hv₁ : LExpr.isCanonicalValue F e₁)
+    (hv₂ : LExpr.isCanonicalValue F e₂)
+    (h₁ : LExpr.HasTypeA [] e₁ τ)
+    (h₂ : LExpr.HasTypeA [] e₂ τ)
+    (heql : LExpr.eql F e₁ e₂ hv₁ hv₂ = false)
+    (hnb₁ : e₁.containsBinder = false)
+    (hnb₂ : e₂.containsBinder = false)
+    : LExpr.denote tcInterp opInterp fvarVal vt .nil e₁ τ h₁ ≠
       LExpr.denote tcInterp opInterp fvarVal vt .nil e₂ τ h₂ := by
   sorry
 
@@ -328,23 +347,19 @@ theorem Step.denote_preserved
         rw [denote_ite tcInterp opInterp fvarVal vt .nil h_c h_t h_e,
             denote_ite tcInterp opInterp fvarVal vt .nil h_c' h_t' h_e']
         rw [ih h_e h_e']
-  | eq_reduce e1 e2 eres hv1 hv2 heq =>
-    subst heq
+  | eq_reduce_true e1 e2 hv1 hv2 heql =>
     cases h₁ with
     | eq h_1 h_2 =>
-      revert h₂
-      cases hb : LExpr.eql F e1 e2 hv1 hv2 with
-      | true =>
-        intros h₂
-        rw [denote_eq_true tcInterp opInterp fvarVal vt .nil h_1 h_2 _
-            ((eql_iff_denote_eq tcInterp opInterp fvarVal vt hv1 hv2 h_1 h_2).mp hb)]
-        rfl
-      | false =>
-        intros h₂
-        rw [denote_eq_false tcInterp opInterp fvarVal vt .nil h_1 h_2 _
-            (mt (eql_iff_denote_eq tcInterp opInterp fvarVal vt hv1 hv2 h_1 h_2).mpr
-              (by simp [hb]))]
-        rfl
+      rw [denote_eq_true tcInterp opInterp fvarVal vt .nil h_1 h_2 _
+          (eql_true_implies_denote_eq tcInterp opInterp fvarVal vt hv1 hv2 h_1 h_2 heql)]
+      rfl
+  | eq_reduce_false e1 e2 hv1 hv2 heql hnb1 hnb2 =>
+    cases h₁ with
+    | eq h_1 h_2 =>
+      rw [denote_eq_false tcInterp opInterp fvarVal vt .nil h_1 h_2 _
+          (eql_false_no_binders_implies_denote_ne tcInterp opInterp fvarVal vt
+            hv1 hv2 h_1 h_2 heql hnb1 hnb2)]
+      rfl
   | eq_reduce_lhs e1 e1' e2 hstep' ih =>
     cases h₁ with
     | eq h_1 h_2 =>
