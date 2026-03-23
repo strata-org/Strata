@@ -7,7 +7,6 @@ module
 
 public import Strata.DL.Imperative.CmdSemantics
 public import Strata.DL.Imperative.Stmt
-public import Strata.DL.Imperative.StmtSemantics
 public import Strata.DL.Util.Relations
 
 ---------------------------------------------------------------------
@@ -21,6 +20,9 @@ public section
 This module defines small-step operational semantics for the Imperative
 dialect's statement constructs.
 -/
+
+/-- Type of a function that extends the semantic evaluator with a new function definition. -/
+@[expose] abbrev ExtendEval (P : PureExpr) := SemanticEval P → SemanticStore P → PureFunc P → SemanticEval P
 
 /--
 Configuration for small-step semantics, representing the current execution
@@ -199,6 +201,7 @@ inductive StepStmt
 /--
 Multi-step execution: reflexive transitive closure of single steps.
 -/
+@[expose]
 def StepStmtStar
   {CmdT : Type}
   (P : PureExpr)
@@ -213,6 +216,7 @@ def StepStmtStar
 /-- A statement evaluates successfully if it can step to a terminal
 configuration.
 -/
+@[expose]
 def EvalStmtSmall
   {CmdT : Type}
   (P : PureExpr)
@@ -232,6 +236,7 @@ def EvalStmtSmall
 /-- A list of statements evaluates successfully if it can step to a terminal
 configuration.
 -/
+@[expose]
 def EvalStmtsSmall
   (P : PureExpr)
   [DecidableEq P.Ident]
