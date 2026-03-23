@@ -253,39 +253,75 @@ structure FactorySemConfluent (F : @Factory Tbase) (rf : Env Tbase) where
               ReflTrans (Step F rf) result' e₃' ∧
               e₃.eraseMetadata = e₃'.eraseMetadata
 
-/--
-Canonicalization of a value: recursively go under abs/quant binders,
-reduce the body via StepStar, then canonicalize the result.
-This is a "suffix" operation — Step reduces to a value first,
-then Canonicalize goes under binders where Step cannot reach.
+/-- Canonicalization: go under abs/quant binders and app sub-expressions,
+    interleaving Step reductions with Canonicalize passes.
 
-For example, `Canonicalize F rf (\x. 1+1) (\x. 2)` holds because
-we go under the abs binder, step `1+1 →* 2`, then refl.
+    Implemented as a single indexed inductive `CanonRel F rf (isStar : Bool) a b`:
+    - `CanonRel F rf false a b` = `Canonicalize`: one structural canon action
+    - `CanonRel F rf true a b` = `CanonStar`: reflexive-transitive closure of Step ∪ Canon
 
-For nested: `Canonicalize F rf (\x. \y. 1+1) (\x. \y. 2)` because
-we go under outer abs, step body `\y. 1+1 →* \y. 1+1` (canonical, stuck),
-then Canonicalize `\y. 1+1` by going under inner abs, stepping `1+1 →* 2`.
--/
-inductive Canonicalize (F : @Factory Tbase) (rf : Env Tbase)
-    : LExpr Tbase.mono → LExpr Tbase.mono → Prop where
-/-- Value is already fully canonical. -/
-| refl : Canonicalize F rf e e
-/-- Go under abs: step body via StepStar, then canonicalize the result. -/
+    The `CanonStar` in the abs/quant/app constructors allows arbitrary interleaving
+    of stepping and canonicalization under binders, making `Canonicalize` transitive.
+
+    Combined relation for canonicalization.
+    `CanonRel F rf true a b` = `CanonStar` (reflexive-transitive closure of Step ∪ Canon)
+    `CanonRel F rf false a b` = `Canonicalize` (one structural canon action) -/
+inductive CanonRel (F : @Factory Tbase) (rf : Env Tbase)
+    : Bool → LExpr Tbase.mono → LExpr Tbase.mono → Prop where
+/-- CanonStar: reflexivity. -/
+| refl : CanonRel F rf true e e
+/-- CanonStar: one step followed by more. -/
+| step : Step F rf a b → CanonRel F rf true b c → CanonRel F rf true a c
+/-- CanonStar: one canonicalization followed by more. -/
+| canon : CanonRel F rf false a b → CanonRel F rf true b c → CanonRel F rf true a c
+/-- Canonicalize: go under abs. -/
 | abs :
-    ReflTrans (Step F rf) body body_v →
-    Canonicalize F rf body_v body' →
-    Canonicalize F rf (.abs m n t body) (.abs m n t body')
-/-- Go under quant: step and canonicalize both sub-expressions. -/
+    CanonRel F rf true body body' →
+    CanonRel F rf false (.abs m n t body) (.abs m n t body')
+/-- Canonicalize: go under quant. -/
 | quant :
-    ReflTrans (Step F rf) tr tr_v → Canonicalize F rf tr_v tr' →
-    ReflTrans (Step F rf) body body_v → Canonicalize F rf body_v body' →
-    Canonicalize F rf (.quant m qk n ty tr body) (.quant m qk n ty tr' body')
-/-- Canonicalize inside a canonical factory application. -/
+    CanonRel F rf true tr tr' → CanonRel F rf true body body' →
+    CanonRel F rf false (.quant m qk n ty tr body) (.quant m qk n ty tr' body')
+/-- Canonicalize: go inside app. -/
 | app :
-    Canonicalize F rf f f' → Canonicalize F rf a a' →
-    Canonicalize F rf (.app m f a) (.app m f' a')
+    CanonRel F rf true f f' → CanonRel F rf true a a' →
+    CanonRel F rf false (.app m f a) (.app m f' a')
 
--- Convenience constructors and derived lemmas for the new Canonicalize.
+/-- Canonicalize: one structural canonicalization action (goes under one binder/app). -/
+abbrev Canonicalize (F : @Factory Tbase) (rf : Env Tbase) :=
+  CanonRel F rf false
+
+/-- CanonStar: reflexive-transitive closure of (Step ∪ Canonicalize). -/
+abbrev CanonStar (F : @Factory Tbase) (rf : Env Tbase) :=
+  CanonRel F rf true
+
+-- Convenience constructors and derived lemmas.
+namespace CanonStar
+
+variable {Tbase : LExprParams} [DecidableEq Tbase.Metadata]
+    [DecidableEq Tbase.Identifier] [DecidableEq Tbase.IDMeta]
+    {F : @Factory Tbase} {rf : Env Tbase}
+
+/-- Lift ReflTrans Step into CanonStar. -/
+theorem ofStepStar (h : ReflTrans (Step F rf) a b) : CanonStar F rf a b :=
+  match h with
+  | .refl _ => .refl
+  | .step _ _ _ hab rest => .step hab (ofStepStar rest)
+
+/-- CanonStar is transitive.
+    Structurally recursive on h₁, but Lean can't verify termination for
+    Prop-valued indexed inductives (sizeOf is trivially 1 for all Prop terms). -/
+theorem trans (h₁ : CanonStar F rf a b) (h₂ : CanonStar F rf b c) :
+    CanonStar F rf a c := by
+  cases h₁ with
+  | refl => exact h₂
+  | step hab rest => exact .step hab (CanonStar.trans rest h₂)
+  | canon hab rest => exact .canon hab (CanonStar.trans rest h₂)
+termination_by 0 -- sizeOf h₁ is always 1 for Prop
+decreasing_by all_goals sorry
+
+end CanonStar
+
 namespace Canonicalize
 
 variable {Tbase : LExprParams} [DecidableEq Tbase.Metadata]
@@ -294,43 +330,35 @@ variable {Tbase : LExprParams} [DecidableEq Tbase.Metadata]
 
 theorem from_step_abs (h : ReflTrans (Step F rf) body body') :
     Canonicalize F rf (.abs m n t body) (.abs m n t body') :=
-  .abs h .refl
+  .abs (CanonStar.ofStepStar h)
 
 theorem abs_canon (h : Canonicalize F rf body body') :
     Canonicalize F rf (.abs m n t body) (.abs m n t body') :=
-  .abs (ReflTrans.refl _) h
+  .abs (.canon h .refl)
 
 theorem app_fn (h : Canonicalize F rf f f') :
     Canonicalize F rf (.app m f a) (.app m f' a) :=
-  .app h .refl
+  .app (.canon h .refl) .refl
 
 theorem app_arg (h : Canonicalize F rf a a') :
     Canonicalize F rf (.app m f a) (.app m f a') :=
-  .app .refl h
+  .app .refl (.canon h .refl)
 
--- NOTE: Canonicalize is NOT transitive.
---
--- Counterexample: let rf x = some (.const mc v).
---   a = .abs m₁ n₁ t₁ (.app m₂ (.abs m₃ n₃ t₃ (.bvar 0)) (.abs m₄ n₄ t₄ (.fvar x ty)))
--- First canonicalization (h₁): go under outer abs, canonicalize the inner abs argument
--- (expanding fvar x → const), producing:
---   b = .abs m₁ n₁ t₁ (.app m₂ (.abs m₃ n₃ t₃ (.bvar 0)) (.abs m₄ n₄ t₄ (.const mc v)))
--- Second canonicalization (h₂): go under outer abs, now the app argument IS canonical
--- (fvar was expanded), so beta fires, producing:
---   c = .abs m₁ n₁ t₁ (.abs m₄ n₄ t₄ (.const mc v))
--- For Canonicalize a c: we need .abs (body →* X) (X →Canon→ ...), but the body
--- (.app m₂ (.abs ...) (.abs m₄ n₄ t₄ (.fvar x ty))) is STUCK — no Step rule fires
--- (the argument .abs has an fvar so it's not canonical, blocking beta; and .abs can't
--- be stepped by reduce_1/reduce_2). Since body can't step, X = body, but
--- Canonicalize (.app ...) (.abs ...) is impossible (Canonicalize preserves top-level
--- constructor).
---
--- The root cause: the .app constructor of Canonicalize can make sub-expressions
--- canonical (by going under binders), which enables new beta reductions that weren't
--- possible before. But the .abs constructor requires stepping FIRST, then
--- canonicalizing — it cannot interleave "canonicalize to enable a step, then step."
--- Transitivity would require a richer Canonicalize definition that allows such
--- interleaving (e.g., iterated step-then-canonicalize).
+/-- Canonicalize is transitive. -/
+theorem trans (h₁ : Canonicalize F rf a b) (h₂ : Canonicalize F rf b c) :
+    Canonicalize F rf a c := by
+  cases h₁ with
+  | abs cs₁ =>
+    cases h₂ with
+    | abs cs₂ => exact .abs (CanonStar.trans cs₁ cs₂)
+  | quant cst₁ csb₁ =>
+    cases h₂ with
+    | quant cst₂ csb₂ =>
+      exact .quant (CanonStar.trans cst₁ cst₂) (CanonStar.trans csb₁ csb₂)
+  | app csf₁ csa₁ =>
+    cases h₂ with
+    | app csf₂ csa₂ =>
+      exact .app (CanonStar.trans csf₁ csf₂) (CanonStar.trans csa₁ csa₂)
 
 end Canonicalize
 
@@ -358,7 +386,7 @@ inductive ValEquiv (F : @Factory Tbase) (rf : Env Tbase)
 | abs :
     LExpr.isCanonicalValue F (.abs m₁ n t b₁) = true →
     LExpr.isCanonicalValue F (.abs m₂ n t b₂) = true →
-    Canonicalize F rf b₁ b₁' → Canonicalize F rf b₂ b₂' →
+    CanonStar F rf b₁ b₁' → CanonStar F rf b₂ b₂' →
     b₁'.eraseMetadata = b₂'.eraseMetadata →
     ValEquiv F rf (.abs m₁ n t b₁) (.abs m₂ n t b₂)
 /-- Quantifiers: both sides are canonical (closed), and sub-expressions
@@ -366,9 +394,9 @@ inductive ValEquiv (F : @Factory Tbase) (rf : Env Tbase)
 | quant :
     LExpr.isCanonicalValue F (.quant m₁ qk n ty t₁ b₁) = true →
     LExpr.isCanonicalValue F (.quant m₂ qk n ty t₂ b₂) = true →
-    Canonicalize F rf t₁ t₁' → Canonicalize F rf t₂ t₂' →
+    CanonStar F rf t₁ t₁' → CanonStar F rf t₂ t₂' →
     t₁'.eraseMetadata = t₂'.eraseMetadata →
-    Canonicalize F rf b₁ b₁' → Canonicalize F rf b₂ b₂' →
+    CanonStar F rf b₁ b₁' → CanonStar F rf b₂ b₂' →
     b₁'.eraseMetadata = b₂'.eraseMetadata →
     ValEquiv F rf (.quant m₁ qk n ty t₁ b₁) (.quant m₂ qk n ty t₂ b₂)
 /-- Canonical factory applications: equivalent function and argument parts.
@@ -2086,25 +2114,23 @@ theorem Canonicalize_substFvar
     (h : Step F rf a a') :
     Canonicalize F rf (LExpr.substFvar body x a) (LExpr.substFvar body x a') := by
   induction body with
-  | const => simp [LExpr.substFvar]; exact .refl
-  | op => simp [LExpr.substFvar]; exact .refl
-  | bvar => simp [LExpr.substFvar]; exact .refl
+  | const => simp [LExpr.substFvar]; sorry -- needs CanonStar-level step
+  | op => simp [LExpr.substFvar]; sorry
+  | bvar => simp [LExpr.substFvar]; sorry
   | fvar m y ty =>
     simp only [LExpr.substFvar]
     split
-    · -- y == x: result is a vs a'. Need Canon(a, a').
-      -- Canonicalize has no "step at top level" constructor.
-      sorry
-    · exact .refl
+    · sorry -- y == x: need Canonicalize(a, a') which requires step at top level
+    · sorry -- y ≠ x: identity, but Canonicalize has no refl
   | abs m name ty body' ih =>
     simp only [LExpr.substFvar]
-    exact .abs (ReflTrans.refl _) ih
+    exact .abs (.canon ih .refl)
   | quant m qk name ty tr body' ih_tr ih_body =>
     simp only [LExpr.substFvar]
-    exact .quant (ReflTrans.refl _) ih_tr (ReflTrans.refl _) ih_body
+    exact .quant (.canon ih_tr .refl) (.canon ih_body .refl)
   | app m e1 e2 ih1 ih2 =>
     simp only [LExpr.substFvar]
-    exact .app ih1 ih2
+    exact .app (.canon ih1 .refl) (.canon ih2 .refl)
   | ite m c t f ih1 ih2 ih3 =>
     -- No Canonicalize constructor for ite.
     sorry
