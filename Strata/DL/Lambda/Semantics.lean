@@ -308,17 +308,28 @@ theorem ofStepStar (h : ReflTrans (Step F rf) a b) : CanonStar F rf a b :=
   | .refl _ => .refl
   | .step _ _ _ hab rest => .step hab (ofStepStar rest)
 
-/-- CanonStar is transitive.
-    Structurally recursive on h₁, but Lean can't verify termination for
-    Prop-valued indexed inductives (sizeOf is trivially 1 for all Prop terms). -/
+/-- CanonStar is transitive. Proof uses CanonRel.rec to work around Lean's
+    inability to verify structural recursion on Prop-valued indexed inductives. -/
 theorem trans (h₁ : CanonStar F rf a b) (h₂ : CanonStar F rf b c) :
     CanonStar F rf a c := by
-  cases h₁ with
-  | refl => exact h₂
-  | step hab rest => exact .step hab (CanonStar.trans rest h₂)
-  | canon hab rest => exact .canon hab (CanonStar.trans rest h₂)
-termination_by 0 -- sizeOf h₁ is always 1 for Prop
-decreasing_by all_goals sorry
+  suffices ∀ (a : LExpr Tbase.mono),
+    CanonStar F rf a b →
+    ∀ c, CanonStar F rf b c → CanonStar F rf a c
+    from this a h₁ c h₂
+  -- Generalize to CanonRel with Bool-indexed motive
+  intro a₀ h₀; revert a₀
+  suffices ∀ (b₁ : Bool) (a₂ a₃ : LExpr Tbase.mono),
+    CanonRel F rf b₁ a₂ a₃ →
+    (match b₁ with | true => ∀ c, CanonStar F rf a₃ c → CanonStar F rf a₂ c | false => True)
+    from fun a₀ h₀ => this true a₀ b h₀
+  intro b₁ a₂ a₃ h
+  induction h with
+  | refl => exact fun c h₂ => h₂
+  | step hab _ ih => exact fun c h₂ => .step hab (ih c h₂)
+  | canon hab _ _ ih => exact fun c h₂ => .canon hab (ih c h₂)
+  | abs => trivial
+  | quant => trivial
+  | app => trivial
 
 end CanonStar
 
