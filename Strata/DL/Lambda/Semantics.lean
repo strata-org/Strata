@@ -253,55 +253,47 @@ structure FactorySemConfluent (F : @Factory Tbase) (rf : Env Tbase) where
               ReflTrans (Step F rf) result' e₃' ∧
               e₃.eraseMetadata = e₃'.eraseMetadata
 
-/-- Canonicalization: go under abs/quant binders and app sub-expressions,
-    interleaving Step reductions with Canonicalize passes.
+/-- Single-step canonicalization: either a Step reduction, or going under
+    one binder (abs/quant) or app sub-expression by one Canonicalize step.
+    This is a small-step relation; `CanonStar` is its reflexive-transitive closure. -/
+inductive Canonicalize (F : @Factory Tbase) (rf : Env Tbase)
+    : LExpr Tbase.mono → LExpr Tbase.mono → Prop where
+/-- Lift a Step into Canonicalize. -/
+| step : Step F rf a b → Canonicalize F rf a b
+/-- Go under abs binder. -/
+| abs : Canonicalize F rf body body' →
+    Canonicalize F rf (.abs m n t body) (.abs m n t body')
+/-- Go under quant: step the trigger. -/
+| quant_tr : Canonicalize F rf tr tr' →
+    Canonicalize F rf (.quant m qk n ty tr body) (.quant m qk n ty tr' body)
+/-- Go under quant: step the body. -/
+| quant_body : Canonicalize F rf body body' →
+    Canonicalize F rf (.quant m qk n ty tr body) (.quant m qk n ty tr body')
+/-- Go inside app: step the function. -/
+| app_fn : Canonicalize F rf f f' →
+    Canonicalize F rf (.app m f a) (.app m f' a)
+/-- Go inside app: step the argument. -/
+| app_arg : Canonicalize F rf a a' →
+    Canonicalize F rf (.app m f a) (.app m f a')
+/-- Go inside ite: step the condition. -/
+| ite_cond : Canonicalize F rf c c' →
+    Canonicalize F rf (.ite m c t f) (.ite m c' t f)
+/-- Go inside ite: step the then branch. -/
+| ite_then : Canonicalize F rf t t' →
+    Canonicalize F rf (.ite m c t f) (.ite m c t' f)
+/-- Go inside ite: step the else branch. -/
+| ite_else : Canonicalize F rf f f' →
+    Canonicalize F rf (.ite m c t f) (.ite m c t f')
+/-- Go inside eq: step the lhs. -/
+| eq_lhs : Canonicalize F rf e1 e1' →
+    Canonicalize F rf (.eq m e1 e2) (.eq m e1' e2)
+/-- Go inside eq: step the rhs. -/
+| eq_rhs : Canonicalize F rf e2 e2' →
+    Canonicalize F rf (.eq m e1 e2) (.eq m e1 e2')
 
-    Implemented as a single indexed inductive `CanonRel F rf (isStar : Bool) a b`:
-    - `CanonRel F rf false a b` = `Canonicalize`: one structural canon action
-    - `CanonRel F rf true a b` = `CanonStar`: reflexive-transitive closure of Step ∪ Canon
-
-    The `CanonStar` in the abs/quant/app constructors allows arbitrary interleaving
-    of stepping and canonicalization under binders, making `Canonicalize` transitive.
-
-    Combined relation for canonicalization.
-    `CanonRel F rf true a b` = `CanonStar` (reflexive-transitive closure of Step ∪ Canon)
-    `CanonRel F rf false a b` = `Canonicalize` (one structural canon action) -/
-inductive CanonRel (F : @Factory Tbase) (rf : Env Tbase)
-    : Bool → LExpr Tbase.mono → LExpr Tbase.mono → Prop where
-/-- CanonStar: reflexivity. -/
-| refl : CanonRel F rf true e e
-/-- CanonStar: one step followed by more. -/
-| step : Step F rf a b → CanonRel F rf true b c → CanonRel F rf true a c
-/-- CanonStar: one canonicalization followed by more. -/
-| canon : CanonRel F rf false a b → CanonRel F rf true b c → CanonRel F rf true a c
-/-- Canonicalize: go under abs. -/
-| abs :
-    CanonRel F rf true body body' →
-    CanonRel F rf false (.abs m n t body) (.abs m n t body')
-/-- Canonicalize: go under quant. -/
-| quant :
-    CanonRel F rf true tr tr' → CanonRel F rf true body body' →
-    CanonRel F rf false (.quant m qk n ty tr body) (.quant m qk n ty tr' body')
-/-- Canonicalize: go inside app. -/
-| app :
-    CanonRel F rf true f f' → CanonRel F rf true a a' →
-    CanonRel F rf false (.app m f a) (.app m f' a')
-/-- Canonicalize: go inside ite (all three sub-expressions). -/
-| ite :
-    CanonRel F rf true c c' → CanonRel F rf true t t' → CanonRel F rf true f f' →
-    CanonRel F rf false (.ite m c t f) (.ite m c' t' f')
-/-- Canonicalize: go inside eq (both sub-expressions). -/
-| eq :
-    CanonRel F rf true e1 e1' → CanonRel F rf true e2 e2' →
-    CanonRel F rf false (.eq m e1 e2) (.eq m e1' e2')
-
-/-- Canonicalize: one structural canonicalization action (goes under one binder/app). -/
-abbrev Canonicalize (F : @Factory Tbase) (rf : Env Tbase) :=
-  CanonRel F rf false
-
-/-- CanonStar: reflexive-transitive closure of (Step ∪ Canonicalize). -/
+/-- CanonStar: reflexive-transitive closure of Canonicalize (= Step ∪ structural). -/
 abbrev CanonStar (F : @Factory Tbase) (rf : Env Tbase) :=
-  CanonRel F rf true
+  ReflTrans (Canonicalize F rf)
 
 -- Convenience constructors and derived lemmas.
 namespace CanonStar
@@ -311,86 +303,89 @@ variable {Tbase : LExprParams} [DecidableEq Tbase.Metadata]
     {F : @Factory Tbase} {rf : Env Tbase}
 
 /-- Lift ReflTrans Step into CanonStar. -/
-theorem ofStepStar (h : ReflTrans (Step F rf) a b) : CanonStar F rf a b :=
-  match h with
-  | .refl _ => .refl
-  | .step _ _ _ hab rest => .step hab (ofStepStar rest)
+theorem ofStepStar (h : ReflTrans (Step F rf) a b) : CanonStar F rf a b := by
+  induction h with
+  | refl => exact .refl _
+  | step _ _ _ hab _ ih => exact .step _ _ _ (.step hab) ih
 
-/-- CanonStar is transitive. Proof uses CanonRel.rec to work around Lean's
-    inability to verify structural recursion on Prop-valued indexed inductives. -/
+/-- CanonStar is transitive (inherited from ReflTrans). -/
 theorem trans (h₁ : CanonStar F rf a b) (h₂ : CanonStar F rf b c) :
     CanonStar F rf a c := by
-  suffices ∀ (a : LExpr Tbase.mono),
-    CanonStar F rf a b →
-    ∀ c, CanonStar F rf b c → CanonStar F rf a c
-    from this a h₁ c h₂
-  -- Generalize to CanonRel with Bool-indexed motive
-  intro a₀ h₀; revert a₀
-  suffices ∀ (b₁ : Bool) (a₂ a₃ : LExpr Tbase.mono),
-    CanonRel F rf b₁ a₂ a₃ →
-    (match b₁ with | true => ∀ c, CanonStar F rf a₃ c → CanonStar F rf a₂ c | false => True)
-    from fun a₀ h₀ => this true a₀ b h₀
-  intro b₁ a₂ a₃ h
+  induction h₁ with
+  | refl => exact h₂
+  | step _ _ _ hab _ ih => exact .step _ _ _ hab (ih h₂)
+
+/-- Lift CanonStar under abs. -/
+theorem abs (h : CanonStar F rf body body') :
+    CanonStar F rf (.abs m n t body) (.abs m n t body') := by
   induction h with
-  | refl => exact fun c h₂ => h₂
-  | step hab _ ih => exact fun c h₂ => .step hab (ih c h₂)
-  | canon hab _ _ ih => exact fun c h₂ => .canon hab (ih c h₂)
-  | abs => trivial
-  | quant => trivial
-  | app => trivial
-  | ite => trivial
-  | eq => trivial
+  | refl => exact .refl _
+  | step _ _ _ hab _ ih => exact .step _ _ _ (.abs hab) ih
+
+/-- Lift CanonStar under quant trigger. -/
+theorem quant_tr (h : CanonStar F rf tr tr') :
+    CanonStar F rf (.quant m qk n ty tr body) (.quant m qk n ty tr' body) := by
+  induction h with
+  | refl => exact .refl _
+  | step _ _ _ hab _ ih => exact .step _ _ _ (.quant_tr hab) ih
+
+/-- Lift CanonStar under quant body. -/
+theorem quant_body (h : CanonStar F rf body body') :
+    CanonStar F rf (.quant m qk n ty tr body) (.quant m qk n ty tr body') := by
+  induction h with
+  | refl => exact .refl _
+  | step _ _ _ hab _ ih => exact .step _ _ _ (.quant_body hab) ih
+
+/-- Lift CanonStar under app function. -/
+theorem app_fn (h : CanonStar F rf f f') :
+    CanonStar F rf (.app m f a) (.app m f' a) := by
+  induction h with
+  | refl => exact .refl _
+  | step _ _ _ hab _ ih => exact .step _ _ _ (.app_fn hab) ih
+
+/-- Lift CanonStar under app argument. -/
+theorem app_arg (h : CanonStar F rf a a') :
+    CanonStar F rf (.app m f a) (.app m f a') := by
+  induction h with
+  | refl => exact .refl _
+  | step _ _ _ hab _ ih => exact .step _ _ _ (.app_arg hab) ih
+
+/-- Lift CanonStar under ite condition. -/
+theorem ite_cond (h : CanonStar F rf c c') :
+    CanonStar F rf (.ite m c t f) (.ite m c' t f) := by
+  induction h with
+  | refl => exact .refl _
+  | step _ _ _ hab _ ih => exact .step _ _ _ (.ite_cond hab) ih
+
+/-- Lift CanonStar under ite then branch. -/
+theorem ite_then (h : CanonStar F rf t t') :
+    CanonStar F rf (.ite m c t f) (.ite m c t' f) := by
+  induction h with
+  | refl => exact .refl _
+  | step _ _ _ hab _ ih => exact .step _ _ _ (.ite_then hab) ih
+
+/-- Lift CanonStar under ite else branch. -/
+theorem ite_else (h : CanonStar F rf f f') :
+    CanonStar F rf (.ite m c t f) (.ite m c t f') := by
+  induction h with
+  | refl => exact .refl _
+  | step _ _ _ hab _ ih => exact .step _ _ _ (.ite_else hab) ih
+
+/-- Lift CanonStar under eq lhs. -/
+theorem eq_lhs (h : CanonStar F rf e1 e1') :
+    CanonStar F rf (.eq m e1 e2) (.eq m e1' e2) := by
+  induction h with
+  | refl => exact .refl _
+  | step _ _ _ hab _ ih => exact .step _ _ _ (.eq_lhs hab) ih
+
+/-- Lift CanonStar under eq rhs. -/
+theorem eq_rhs (h : CanonStar F rf e2 e2') :
+    CanonStar F rf (.eq m e1 e2) (.eq m e1 e2') := by
+  induction h with
+  | refl => exact .refl _
+  | step _ _ _ hab _ ih => exact .step _ _ _ (.eq_rhs hab) ih
 
 end CanonStar
-
-namespace Canonicalize
-
-variable {Tbase : LExprParams} [DecidableEq Tbase.Metadata]
-    [DecidableEq Tbase.Identifier] [DecidableEq Tbase.IDMeta]
-    {F : @Factory Tbase} {rf : Env Tbase}
-
-theorem from_step_abs (h : ReflTrans (Step F rf) body body') :
-    Canonicalize F rf (.abs m n t body) (.abs m n t body') :=
-  .abs (CanonStar.ofStepStar h)
-
-theorem abs_canon (h : Canonicalize F rf body body') :
-    Canonicalize F rf (.abs m n t body) (.abs m n t body') :=
-  .abs (.canon h .refl)
-
-theorem app_fn (h : Canonicalize F rf f f') :
-    Canonicalize F rf (.app m f a) (.app m f' a) :=
-  .app (.canon h .refl) .refl
-
-theorem app_arg (h : Canonicalize F rf a a') :
-    Canonicalize F rf (.app m f a) (.app m f a') :=
-  .app .refl (.canon h .refl)
-
-/-- Canonicalize is transitive. -/
-theorem trans (h₁ : Canonicalize F rf a b) (h₂ : Canonicalize F rf b c) :
-    Canonicalize F rf a c := by
-  cases h₁ with
-  | abs cs₁ =>
-    cases h₂ with
-    | abs cs₂ => exact .abs (CanonStar.trans cs₁ cs₂)
-  | quant cst₁ csb₁ =>
-    cases h₂ with
-    | quant cst₂ csb₂ =>
-      exact .quant (CanonStar.trans cst₁ cst₂) (CanonStar.trans csb₁ csb₂)
-  | app csf₁ csa₁ =>
-    cases h₂ with
-    | app csf₂ csa₂ =>
-      exact .app (CanonStar.trans csf₁ csf₂) (CanonStar.trans csa₁ csa₂)
-  | ite csc₁ cst₁ csf₁ =>
-    cases h₂ with
-    | ite csc₂ cst₂ csf₂ =>
-      exact .ite (CanonStar.trans csc₁ csc₂) (CanonStar.trans cst₁ cst₂)
-                 (CanonStar.trans csf₁ csf₂)
-  | eq cs1₁ cs2₁ =>
-    cases h₂ with
-    | eq cs1₂ cs2₂ =>
-      exact .eq (CanonStar.trans cs1₁ cs1₂) (CanonStar.trans cs2₁ cs2₂)
-
-end Canonicalize
 
 /--
 Value equivalence for canonical values. Two canonical values are `ValEquiv`
@@ -2129,14 +2124,10 @@ theorem canonical_value_not_step
 -- Canonicalize.trans was previously stated here but is false — see the note
 -- above the Canonicalize definition for the counterexample.
 
--- If Step F rf a a', then Canonicalize F rf (substFvar body x a) (substFvar body x a').
--- With the new Canonicalize (value-only, under binders), this requires showing
--- that substFvar preserves the structure that Canonicalize expects.
--- The abs/quant cases go under binders (Canonicalize.abs/quant with step from IH),
--- the app case uses Canonicalize.app, and ite/eq don't have Canonicalize constructors
--- (they're handled by Step before we get to values).
--- Changed return type from Canonicalize (CanonRel false) to CanonStar (CanonRel true)
--- since Canonicalize has no refl/ite/eq constructors.
+-- If Step F rf a a', then CanonStar F rf (substFvar body x a) (substFvar body x a').
+-- Uses CanonStar (not Canonicalize) because base cases (const/op/bvar) and ite/eq
+-- don't have Canonicalize constructors. The abs/quant/app cases go through
+-- Canonicalize wrapped in CanonStar; ite/eq use StepStar lifted to CanonStar.
 theorem CanonStar_substFvar
     {Tbase : LExprParams} [DecidableEq Tbase.Metadata]
     [DecidableEq Tbase.Identifier] [DecidableEq Tbase.IDMeta]
@@ -2146,29 +2137,30 @@ theorem CanonStar_substFvar
     (h : Step F rf a a') :
     CanonStar F rf (LExpr.substFvar body x a) (LExpr.substFvar body x a') := by
   induction body with
-  | const => simp [LExpr.substFvar]; exact .refl
-  | op => simp [LExpr.substFvar]; exact .refl
-  | bvar => simp [LExpr.substFvar]; exact .refl
+  | const => simp [LExpr.substFvar]; exact .refl _
+  | op => simp [LExpr.substFvar]; exact .refl _
+  | bvar => simp [LExpr.substFvar]; exact .refl _
   | fvar m y ty =>
     simp only [LExpr.substFvar]
     split
-    · exact .step h .refl -- y == x: a →Step a', done
-    · exact .refl -- y ≠ x: identity
+    · exact .step _ _ _ (.step h) (.refl _)
+    · exact .refl _
   | abs m name ty body' ih =>
     simp only [LExpr.substFvar]
-    exact .canon (.abs ih) .refl
+    exact CanonStar.abs ih
   | quant m qk name ty tr body' ih_tr ih_body =>
     simp only [LExpr.substFvar]
-    exact .canon (.quant ih_tr ih_body) .refl
+    exact CanonStar.trans (CanonStar.quant_tr ih_tr) (CanonStar.quant_body ih_body)
   | app m e1 e2 ih1 ih2 =>
     simp only [LExpr.substFvar]
-    exact .canon (.app ih1 ih2) .refl
+    exact CanonStar.trans (CanonStar.app_fn ih1) (CanonStar.app_arg ih2)
   | ite m c t f ih1 ih2 ih3 =>
     simp only [LExpr.substFvar]
-    exact .canon (.ite ih1 ih2 ih3) .refl
+    exact CanonStar.trans (CanonStar.trans (CanonStar.ite_cond ih1) (CanonStar.ite_then ih2))
+                          (CanonStar.ite_else ih3)
   | eq m e1 e2 ih1 ih2 =>
     simp only [LExpr.substFvar]
-    exact .canon (.eq ih1 ih2) .refl
+    exact CanonStar.trans (CanonStar.eq_lhs ih1) (CanonStar.eq_rhs ih2)
 
 ---------------------------------------------------------------------
 -- Confluence
@@ -2800,8 +2792,8 @@ theorem ValEquiv.refl (F : @Factory Tbase) (rf : Env Tbase) (e : LExpr Tbase.mon
   induction e with
   | const => exact .const
   | op => exact .op
-  | abs => exact .abs hc hc .refl .refl rfl
-  | quant => exact .quant hc hc .refl .refl rfl .refl .refl rfl
+  | abs => exact .abs hc hc (.refl _) (.refl _) rfl
+  | quant => exact .quant hc hc (.refl _) (.refl _) rfl (.refl _) (.refl _) rfl
   | app m e1 e2 ih1 ih2 =>
     have h_e1 := isCanonicalValue_app_left F m e1 e2 hc
     simp [LExpr.isCanonicalValue] at hc
