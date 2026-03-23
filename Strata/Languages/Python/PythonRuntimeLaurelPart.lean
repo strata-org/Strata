@@ -25,6 +25,7 @@ private def pythonRuntimeLaurelPartDDM :=
 #strata
 program Laurel;
 
+
 // /////////////////////////////////////////////////////////////////////////////////////
 
 // Exceptions
@@ -62,6 +63,11 @@ datatype Error {
 // Note: Core uses mutual/end blocks for Any and ListAny.
 // Laurel does not support mutual blocks, so they are declared separately.
 
+datatype OptionInt {
+  Some (unwrap: int),
+  None ()
+}
+
 datatype Any {
   from_none (),
   from_bool (as_bool : bool),
@@ -72,6 +78,7 @@ datatype Any {
   from_Dict (as_Dict: DictStrAny),
   from_ListAny (as_ListAny : ListAny),
   from_ClassInstance (classname : string, instance_attributes: DictStrAny),
+  from_Slice(start: int, stop: OptionInt),
   exception (get_error: Error)
 }
 

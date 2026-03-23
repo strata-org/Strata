@@ -85,6 +85,19 @@ def isConstrApp (F : @Factory T.base) (e : LExpr T) : Bool :=
   | none => false
 
 /--
+Check if `e` contains a binder (abstraction or quantifier) anywhere in its
+structure. Used to prevent reducing equality to `false` under binders, since
+syntactic inequality does not imply semantic inequality for expressions with
+binders (e.g., `λx. x+1` vs `λx. 1+x`).
+-/
+def containsBinder (e : LExpr T) : Bool :=
+  match e with
+  | .abs _ _ _ _ | .quant _ _ _ _ _ _ => true
+  | .app _ e1 e2 | .eq _ e1 e2 => containsBinder e1 || containsBinder e2
+  | .ite _ c t f => containsBinder c || containsBinder t || containsBinder f
+  | _ => false
+
+/--
 Equality of canonical values `e1` and `e2`.
 
 We can tolerate nested metadata here.
@@ -232,7 +245,14 @@ def evalEq (n' : Nat) (σ : LState TBase) (m: TBase.Metadata) (e1 e2 : LExpr TBa
              isCanonicalValue σ.config.factory e2' then
     if eql σ.config.factory e1' e2' h.left h.right then
       LExpr.true m
-    else LExpr.false m
+    else
+      -- Do not reduce to false if either side contains a binder (abs/quant),
+      -- because syntactic inequality under binders does not imply semantic
+      -- inequality (e.g., λx. x+1 vs λx. 1+x).
+      if e1'.containsBinder || e2'.containsBinder then
+        .eq m e1' e2'
+      else
+        LExpr.false m
   else
     .eq m e1' e2'
 
