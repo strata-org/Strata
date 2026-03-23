@@ -585,7 +585,7 @@ private def lowerPureFuncDef
     let inputs ← bsList.mapM toCoreBinding
     let inputNames := bsList.map bindingName
     let pres ← withBVars inputNames (toCoreSpecElts m n pres)
-    let pres := pres.preconditions.map (fun (_, c) => ⟨c.expr, ()⟩)
+    let pres := pres.preconditions.map (fun (_, c) => ⟨c.expr, Strata.SourceRange.none⟩)
     let body ← withBVars inputNames (toCoreExpr body)
     return {
       name := mkIdent n
