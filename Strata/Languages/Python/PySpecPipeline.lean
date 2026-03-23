@@ -242,10 +242,9 @@ public def buildPreludeInfo (result : PySpecLaurelResult) : Python.PreludeInfo :
 /-- Combine PySpec and user Laurel programs into a single program,
     prepending External stubs so the Laurel `resolve` pass can see
     prelude names (e.g. `print`, `from_string`). -/
-public def combinePySpecLaurel (info : Python.PreludeInfo)
+public def combinePySpecLaurel
     (pySpec user : Laurel.Program) : Laurel.Program :=
-  let stubs := Python.preludeStubs info
-  { staticProcedures := stubs ++ pySpec.staticProcedures ++ user.staticProcedures
+  { staticProcedures := pySpec.staticProcedures ++ user.staticProcedures
     staticFields := pySpec.staticFields ++ user.staticFields
     types := pySpec.types ++ user.types
     constants := pySpec.constants ++ user.constants
@@ -321,6 +320,6 @@ public def pyAnalyzeLaurel
     | .error e => throw (.internal s!"Python to Laurel translation failed: {e}")
     | .ok result => pure result
 
-  return combinePySpecLaurel preludeInfo result.laurelProgram laurelProgram
+  return combinePySpecLaurel result.laurelProgram laurelProgram
 
 end Strata

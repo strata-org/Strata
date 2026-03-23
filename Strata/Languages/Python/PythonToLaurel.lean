@@ -1688,21 +1688,6 @@ def pythonToLaurel' (info : PreludeInfo)
 
   | _ => throw (.internalError "Expected Module")
 
-/-- Generate External procedure stubs for prelude names so the Laurel
-    `resolve` pass can see them. -/
-def preludeStubs (info : PreludeInfo) : List Laurel.Procedure :=
-  let functionStubs := info.functions.map fun funcname =>
-    { name := { text := funcname }, inputs := [], outputs := [],
-      preconditions := [], determinism := .deterministic none,
-      decreases := none, body := .External, md := default,
-      isFunctional := true }
-  let procedureStubs := info.procedureNames.map fun funcname =>
-    { name := { text := funcname }, inputs := [], outputs := [],
-      preconditions := [], determinism := .deterministic none,
-      decreases := none, body := .External, md := default,
-      isFunctional := false }
-  functionStubs ++ procedureStubs
-
 /-- Translate Python module to Laurel Program.
     Delegates to `pythonToLaurel'` after extracting prelude info,
     then prepends External stubs so the Laurel resolve pass can
@@ -1714,10 +1699,7 @@ def pythonToLaurel (prelude: Core.Program)
     (overloadTable : Specs.ToLaurel.OverloadTable := {})
     : Except TranslationError (Laurel.Program × TranslationContext) := do
   let info := PreludeInfo.ofCoreProgram prelude
-  let (program, ctx) ← pythonToLaurel' info pyModule prev_ctx filePath overloadTable
-  let stubs := preludeStubs info
-  return ({ program with
-    staticProcedures := stubs ++ program.staticProcedures }, ctx)
+  pythonToLaurel' info pyModule prev_ctx filePath overloadTable
 
 
 end -- public section
