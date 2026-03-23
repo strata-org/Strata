@@ -704,6 +704,115 @@ private theorem substFvar_canonical
     LExpr.substFvar e fr to = e :=
   substFvar_no_freeVars e (isCanonicalValue_no_freeVars F e hc) fr to
 
+-- substFvar with a closed value doesn't grow freeVars: if k was not free
+-- in e, it's not free after substFvar e fr to (when to is closed).
+private theorem substFvar_freeVars_not_mem
+    {T : LExprParams} [DecidableEq T.IDMeta]
+    (e : LExpr T.mono) (fr : T.Identifier) (to : LExpr T.mono)
+    (hto : LExpr.freeVars to = [])
+    (k : Identifier T.IDMeta)
+    (hk : k ∉ (LExpr.freeVars e).map Prod.fst) :
+    k ∉ (LExpr.freeVars (LExpr.substFvar e fr to)).map Prod.fst := by
+  induction e with
+  | const => simp [LExpr.substFvar, LExpr.freeVars]
+  | op => simp [LExpr.substFvar, LExpr.freeVars]
+  | bvar => simp [LExpr.substFvar, LExpr.freeVars]
+  | fvar m x ty =>
+    simp only [LExpr.substFvar]
+    split
+    · simp [LExpr.freeVars, hto]
+    · exact hk
+  | abs m name ty body ih =>
+    simp only [LExpr.substFvar, LExpr.freeVars] at *; exact ih hk
+  | quant m qk name ty tr body ih1 ih2 =>
+    simp only [LExpr.substFvar, LExpr.freeVars, List.map_append, List.mem_append, not_or] at *
+    exact ⟨ih1 hk.1, ih2 hk.2⟩
+  | app m e1 e2 ih1 ih2 =>
+    simp only [LExpr.substFvar, LExpr.freeVars, List.map_append, List.mem_append, not_or] at *
+    exact ⟨ih1 hk.1, ih2 hk.2⟩
+  | ite m c t f ih1 ih2 ih3 =>
+    simp only [LExpr.substFvar, LExpr.freeVars, List.map_append, List.mem_append, not_or] at *
+    exact ⟨⟨ih1 hk.1.1, ih2 hk.1.2⟩, ih3 hk.2⟩
+  | eq m e1 e2 ih1 ih2 =>
+    simp only [LExpr.substFvar, LExpr.freeVars, List.map_append, List.mem_append, not_or] at *
+    exact ⟨ih1 hk.1, ih2 hk.2⟩
+
+-- After substFvar e fr v where v is closed, fr is not free in the result.
+private theorem substFvar_eliminates_key
+    {T : LExprParams} [DecidableEq T.IDMeta]
+    (e : LExpr T.mono) (fr : T.Identifier) (v : LExpr T.mono)
+    (hv : LExpr.freeVars v = []) :
+    fr ∉ (LExpr.freeVars (LExpr.substFvar e fr v)).map Prod.fst := by
+  induction e with
+  | const => simp [LExpr.substFvar, LExpr.freeVars]
+  | op => simp [LExpr.substFvar, LExpr.freeVars]
+  | bvar => simp [LExpr.substFvar, LExpr.freeVars]
+  | fvar m x ty =>
+    simp only [LExpr.substFvar]
+    split
+    · simp [LExpr.freeVars, hv]
+    · rename_i h_ne
+      simp only [LExpr.freeVars, List.map, List.mem_cons, List.mem_nil_iff, or_false]
+      intro h_eq; simp [h_eq] at h_ne
+  | abs _ _ _ _ ih => simp only [LExpr.substFvar, LExpr.freeVars] at *; exact ih
+  | quant _ _ _ _ _ _ ih1 ih2 =>
+    simp only [LExpr.substFvar, LExpr.freeVars, List.map_append, List.mem_append, not_or] at *
+    exact ⟨ih1, ih2⟩
+  | app _ _ _ ih1 ih2 =>
+    simp only [LExpr.substFvar, LExpr.freeVars, List.map_append, List.mem_append, not_or] at *
+    exact ⟨ih1, ih2⟩
+  | ite _ _ _ _ ih1 ih2 ih3 =>
+    simp only [LExpr.substFvar, LExpr.freeVars, List.map_append, List.mem_append, not_or] at *
+    exact ⟨⟨ih1, ih2⟩, ih3⟩
+  | eq _ _ _ ih1 ih2 =>
+    simp only [LExpr.substFvar, LExpr.freeVars, List.map_append, List.mem_append, not_or] at *
+    exact ⟨ih1, ih2⟩
+
+-- substFvars preserves "not free": if k ∉ freeVars e and all values in sm are
+-- closed, then k ∉ freeVars (substFvars e sm).
+omit [DecidableEq Tbase.Metadata] [DecidableEq Tbase.Identifier] in
+private theorem substFvars_preserves_not_free
+    (e : LExpr Tbase.mono)
+    (sm : List (Tbase.Identifier × LExpr Tbase.mono))
+    (k : Tbase.Identifier)
+    (hk : k ∉ (LExpr.freeVars e).map Prod.fst)
+    (h_vals : ∀ p, p ∈ sm → LExpr.freeVars p.2 = []) :
+    k ∉ (LExpr.freeVars (LExpr.substFvars e sm)).map Prod.fst := by
+  induction sm generalizing e with
+  | nil => simp only [LExpr.substFvars, List.foldl]; exact hk
+  | cons p rest ih =>
+    simp only [LExpr.substFvars, List.foldl] at *
+    exact ih (LExpr.substFvar e p.1 p.2)
+      (substFvar_freeVars_not_mem e p.1 p.2 (h_vals p (.head _)) k hk)
+      (fun q hm => h_vals q (.tail _ hm))
+
+-- substFvars with closed values: idempotent.
+omit [DecidableEq Tbase.Metadata] [DecidableEq Tbase.Identifier] in
+private theorem substFvars_idem
+    (e : LExpr Tbase.mono)
+    (sm : List (Tbase.Identifier × LExpr Tbase.mono))
+    (h_vals : ∀ p, p ∈ sm → LExpr.freeVars p.2 = []) :
+    LExpr.substFvars (LExpr.substFvars e sm) sm = LExpr.substFvars e sm := by
+  induction sm generalizing e with
+  | nil => rfl
+  | cons p rest ih =>
+    have hpv : LExpr.freeVars p.2 = [] := h_vals p (.head _)
+    have h_rest : ∀ q, q ∈ rest → LExpr.freeVars q.2 = [] :=
+      fun q hm => h_vals q (.tail _ hm)
+    let e₁ := LExpr.substFvar e p.1 p.2
+    -- substFvars e (p :: rest) = substFvars e₁ rest
+    show LExpr.substFvars (LExpr.substFvars e₁ rest) (p :: rest) =
+         LExpr.substFvars e₁ rest
+    -- LHS unfolds to: substFvars (substFvar (substFvars e₁ rest) p.1 p.2) rest
+    show LExpr.substFvars (LExpr.substFvar (LExpr.substFvars e₁ rest) p.1 p.2) rest =
+         LExpr.substFvars e₁ rest
+    -- Step 1: substFvar (substFvars e₁ rest) p.1 p.2 = substFvars e₁ rest
+    have h_elim := substFvar_eliminates_key e p.1 p.2 hpv
+    have h_not_free := substFvars_preserves_not_free _ rest p.1 h_elim h_rest
+    rw [substFvar_not_freeVar _ p.1 p.2 h_not_free]
+    -- Step 2: substFvars (substFvars e₁ rest) rest = substFvars e₁ rest (by IH)
+    exact ih e₁ h_rest
+
 -- substFvarsFromState is idempotent when env values are canonical.
 private theorem substFvarsFromState_idem
     (σ : LState Tbase) (F : @Factory Tbase) (e : LExpr Tbase.mono)
@@ -712,15 +821,9 @@ private theorem substFvarsFromState_idem
     LExpr.substFvarsFromState σ (LExpr.substFvarsFromState σ e) =
       LExpr.substFvarsFromState σ e := by
   simp only [LExpr.substFvarsFromState]
-  let sm := (σ.state.toSingleMap.map fun (x, _, v) => (x, v))
-  show LExpr.substFvars (LExpr.substFvars e sm) sm = LExpr.substFvars e sm
-  -- After the first substitution, each fvar in sm.keys is replaced by a canonical
-  -- value. The second substitution encounters only: (1) fvars NOT in sm.keys
-  -- (unchanged) and (2) canonical values from the first pass (also unchanged,
-  -- since canonical values have no freeVars).
-  -- We prove this by showing substFvars e' sm = e' when e' = substFvars e sm,
-  -- using the fact that all values in sm are canonical and have no freeVars.
-  sorry
+  apply substFvars_idem
+  -- All values in the state map are canonical, hence have empty freeVars.
+  sorry -- needs: toSingleMap values are canonical → freeVars = []
 
 omit [DecidableEq Tbase.Metadata] [DecidableEq Tbase.Identifier] in
 private theorem substFvars_const'
