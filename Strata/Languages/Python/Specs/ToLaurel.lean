@@ -272,65 +272,76 @@ private def mkStmt (e : StmtExpr) : StmtExprMd :=
     Returns `none` for unsupported expressions (placeholders).
     Uses Core prelude function names (Any_len, DictStrAny_contains, etc.)
     which are resolved after the Core prelude is prepended. -/
-partial def specExprToLaurel (e : SpecExpr) : Option StmtExprMd :=
+partial def specExprToLaurel (e : SpecExpr) : ToLaurelM (Option StmtExprMd) :=
   match e with
-  | .placeholder => none
-  | .var name => some (mkStmt (.Identifier (mkId name)))
-  | .intLit v => some (mkStmt (.StaticCall (mkId "from_int") [mkStmt (.LiteralInt v)]))
-  | .floatLit _ => none -- TODO: decimal literals
+  | .placeholder => do
+    reportError default "Placeholder expression not translatable"
+    return none
+  | .var name => return some (mkStmt (.Identifier (mkId name)))
+  | .intLit v => return some (mkStmt (.StaticCall (mkId "from_int") [mkStmt (.LiteralInt v)]))
+  | .floatLit _ => do
+    reportError default "Float literals not yet supported in preconditions"
+    return none
   | .getIndex subject field =>
     match subject with
-    -- kwargs["fieldName"] → direct reference to the expanded parameter
-    | .var "kwargs" => some (mkStmt (.Identifier (mkId field)))
-    | _ => subject |> specExprToLaurel |>.map fun s =>
-             mkStmt (.FieldSelect s (mkId field))
-  | .isInstanceOf _ _ => none -- TODO: isinstance checks
-  | .len subject =>
-    -- Any_len dispatches to Str.Length for strings, List_len for lists
-    subject |> specExprToLaurel |>.map fun s =>
+    | .var "kwargs" => return some (mkStmt (.Identifier (mkId field)))
+    | _ => do
+      let s? ← specExprToLaurel subject
+      return s?.map fun s => mkStmt (.FieldSelect s (mkId field))
+  | .isInstanceOf _ typeName => do
+    reportError default s!"isinstance check for '{typeName}' not yet supported in preconditions"
+    return none
+  | .len subject => do
+    let s? ← specExprToLaurel subject
+    return s?.map fun s =>
       mkStmt (.StaticCall (mkId "from_int") [mkStmt (.StaticCall (mkId "Any_len") [s])])
   | .intGe subject bound => do
-    let s ← specExprToLaurel subject; let b ← specExprToLaurel bound
-    some (mkStmt (.PrimitiveOp .Geq [mkStmt (.StaticCall (mkId "Any..as_int!") [s]), mkStmt (.StaticCall (mkId "Any..as_int!") [b])]))
+    let s? ← specExprToLaurel subject; let b? ← specExprToLaurel bound
+    return do
+      let s ← s?; let b ← b?
+      some (mkStmt (.PrimitiveOp .Geq [mkStmt (.StaticCall (mkId "Any..as_int!") [s]), mkStmt (.StaticCall (mkId "Any..as_int!") [b])]))
   | .intLe subject bound => do
-    let s ← specExprToLaurel subject; let b ← specExprToLaurel bound
-    some (mkStmt (.PrimitiveOp .Leq [mkStmt (.StaticCall (mkId "Any..as_int!") [s]), mkStmt (.StaticCall (mkId "Any..as_int!") [b])]))
+    let s? ← specExprToLaurel subject; let b? ← specExprToLaurel bound
+    return do
+      let s ← s?; let b ← b?
+      some (mkStmt (.PrimitiveOp .Leq [mkStmt (.StaticCall (mkId "Any..as_int!") [s]), mkStmt (.StaticCall (mkId "Any..as_int!") [b])]))
   | .floatGe subject bound => do
-    let s ← specExprToLaurel subject; let b ← specExprToLaurel bound
-    some (mkStmt (.PrimitiveOp .Geq [s, b]))
+    let s? ← specExprToLaurel subject; let b? ← specExprToLaurel bound
+    return do let s ← s?; let b ← b?; some (mkStmt (.PrimitiveOp .Geq [s, b]))
   | .floatLe subject bound => do
-    let s ← specExprToLaurel subject; let b ← specExprToLaurel bound
-    some (mkStmt (.PrimitiveOp .Leq [s, b]))
-  | .not inner =>
-    inner |> specExprToLaurel |>.map fun i =>
-      mkStmt (.PrimitiveOp .Not [i])
+    let s? ← specExprToLaurel subject; let b? ← specExprToLaurel bound
+    return do let s ← s?; let b ← b?; some (mkStmt (.PrimitiveOp .Leq [s, b]))
+  | .not inner => do
+    let i? ← specExprToLaurel inner
+    return i?.map fun i => mkStmt (.PrimitiveOp .Not [i])
   | .implies cond body => do
-    let c ← specExprToLaurel cond
-    let b ← specExprToLaurel body
-    some (mkStmt (.PrimitiveOp .Implies [c, b]))
-  | .enumMember subject values =>
-    -- Check if Any..as_string!(subject) is one of the string values
-    subject |> specExprToLaurel |>.map fun s =>
+    let c? ← specExprToLaurel cond; let b? ← specExprToLaurel body
+    return do let c ← c?; let b ← b?; some (mkStmt (.PrimitiveOp .Implies [c, b]))
+  | .enumMember subject values => do
+    let s? ← specExprToLaurel subject
+    return s?.map fun s =>
       let sStr := mkStmt (.StaticCall (mkId "Any..as_string!") [s])
       let eqs := values.toList.map fun v =>
         mkStmt (.PrimitiveOp .Eq [sStr, mkStmt (.LiteralString v)])
       eqs.foldl (init := mkStmt (.LiteralBool false)) fun acc eq =>
         mkStmt (.PrimitiveOp .Or [acc, eq])
-  | .containsKey container key =>
-    -- DictStrAny_contains(Any..as_Dict!(container), key)
-    container |> specExprToLaurel |>.map fun c =>
+  | .containsKey container key => do
+    let c? ← specExprToLaurel container
+    return c?.map fun c =>
       let unwrapped := mkStmt (.StaticCall (mkId "Any..as_Dict!") [c])
       mkStmt (.StaticCall (mkId "DictStrAny_contains") [unwrapped, mkStmt (.LiteralString key)])
-  | .regexMatch subject pattern =>
-    -- re_search_str compiles a Python regex pattern into an SMT regex.
-    -- Str.InRegEx checks if a string matches a regex.
-    -- These are defined in the Core factory / PR 623.
-    subject |> specExprToLaurel |>.map fun s =>
+  | .regexMatch subject pattern => do
+    let s? ← specExprToLaurel subject
+    return s?.map fun s =>
       let sStr := mkStmt (.StaticCall (mkId "Any..as_string!") [s])
       let regex := mkStmt (.StaticCall (mkId "re_search_str") [mkStmt (.LiteralString pattern)])
       mkStmt (.StaticCall (mkId "Str.InRegEx") [sStr, regex])
-  | .forallList _ _ _ => none -- TODO: quantifiers
-  | .forallDict _ _ _ _ => none -- TODO: quantifiers
+  | .forallList _ _ _ => do
+    reportError default "forallList quantifier not yet supported in preconditions"
+    return none
+  | .forallDict _ _ _ _ => do
+    reportError default "forallDict quantifier not yet supported in preconditions"
+    return none
 
 private def formatAssertionMessage (msg : Array MessagePart) : String :=
   let parts := msg.map fun
@@ -344,7 +355,7 @@ def buildSpecBody (preconditions : Array Assertion)
     : ToLaurelM Body := do
   let mut stmts : List StmtExprMd := []
   for assertion in preconditions do
-    match specExprToLaurel assertion.formula with
+    match ← specExprToLaurel assertion.formula with
     | some condExpr =>
       stmts := mkStmt (.Assert condExpr) :: stmts
     | none =>
