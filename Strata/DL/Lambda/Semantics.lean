@@ -192,6 +192,40 @@ Multi-step execution: reflexive transitive closure of single steps.
   ReflTrans (Step F rf)
 
 /--
+Confluence properties for Factory's `concreteEval` operations.
+States that concrete evaluators are well-behaved with respect to
+the operational semantics: they are metadata-independent, and if
+the inputs to a factory operation are further reduced, the output
+is also further reduced (joinable via StepStar).
+-/
+structure FactorySemConfluent (F : @Factory Tbase) (rf : Env Tbase) where
+  /-- `concreteEval` is independent of metadata (up to `eraseMetadata`):
+      if the same function is called with the same arguments but
+      different metadata, the results agree modulo metadata. -/
+  eval_metadata_indep :
+    ∀ fn, fn ∈ F → ∀ denotefn, fn.concreteEval = some denotefn →
+      ∀ m₁ m₂ args e₁ e₂,
+        denotefn m₁ args = some e₁ → denotefn m₂ args = some e₂ →
+        e₁.eraseMetadata = e₂.eraseMetadata
+  /-- `concreteEval` is confluent with argument stepping:
+      if `denotefn m args = some result` and we step the arguments
+      (each arg via `ReflTrans Step`), then `denotefn` also succeeds
+      on the stepped arguments, and the two results are joinable
+      via `ReflTrans Step` modulo `eraseMetadata`. -/
+  eval_arg_step :
+    ∀ fn, fn ∈ F → ∀ denotefn, fn.concreteEval = some denotefn →
+      ∀ m args result, denotefn m args = some result →
+        ∀ args',
+          args.length = args'.length →
+          (∀ i (hi₁ : i < args.length) (hi₂ : i < args'.length),
+            ReflTrans (Step F rf) args[i] args'[i]) →
+          ∃ result', denotefn m args' = some result' ∧
+            ∃ e₃ e₃',
+              ReflTrans (Step F rf) result e₃ ∧
+              ReflTrans (Step F rf) result' e₃' ∧
+              e₃.eraseMetadata = e₃'.eraseMetadata
+
+/--
 Canonicalization of a value: recursively go under abs/quant binders,
 reduce the body via StepStar, then canonicalize the result.
 This is a "suffix" operation — Step reduces to a value first,
@@ -1611,6 +1645,7 @@ theorem Step_diamond
     [DecidableEq Tbase.Identifier] [DecidableEq Tbase.IDMeta]
     (F : @Factory Tbase) (rf : Env Tbase)
     (hWF : FactoryWF F)
+    (hFC : FactorySemConfluent F rf)
     (e e₁ e₂ : LExpr Tbase.mono)
     (h₁ : Step F rf e e₁) (h₂ : Step F rf e e₂) :
     ∃ e₃ e₃', ReflTrans (Step F rf) e₁ e₃ ∧ ReflTrans (Step F rf) e₂ e₃' ∧
@@ -1660,7 +1695,7 @@ theorem Step_diamond
       exact absurd h_step₁ (canonical_value_not_step F rf e2 hWF hv₂ e2')
     | @reduce_2 _ m2' _ _ e2'' h_step₂ =>
       -- Both step the argument: use IH on the sub-step
-      have ⟨e₃, e₃', hc₁, hc₂, heq⟩ := Step_diamond F rf hWF e2 e2' e2'' h_step₁ h_step₂
+      have ⟨e₃, e₃', hc₁, hc₂, heq⟩ := Step_diamond F rf hWF hFC e2 e2' e2'' h_step₁ h_step₂
       exact ⟨.app m' e1 e₃, .app m2' e1 e₃',
              StepStar_app_arg F rf e1 e2' e₃ m' hc₁,
              StepStar_app_arg F rf e1 e2'' e₃' m2' hc₂,
@@ -1692,7 +1727,7 @@ theorem Step_diamond
         simp [Factory.callOfLFunc, getLFuncCall, getLFuncCall.go] at h_call
     | @reduce_1 _ m1' _ e1'' _ h_step₂ =>
       -- Both step the function: use IH on the sub-step
-      have ⟨e₃, e₃', hc₁, hc₂, heq⟩ := Step_diamond F rf hWF e1 e1' e1'' h_step₁ h_step₂
+      have ⟨e₃, e₃', hc₁, hc₂, heq⟩ := Step_diamond F rf hWF hFC e1 e1' e1'' h_step₁ h_step₂
       exact ⟨.app m' e₃ e2, .app m1' e₃' e2,
              StepStar_app_fn F rf e1' e₃ e2 m' hc₁,
              StepStar_app_fn F rf e1'' e₃' e2 m1' hc₂,
@@ -1777,7 +1812,7 @@ theorem Step_diamond
       exact absurd h_step₁ (step_const_stuck F rf _ _)
     | @ite_reduce_cond _ m2' _ econd'' _ _ h_step₂ =>
       -- Both step the condition: use IH on the sub-step
-      have ⟨e₃, e₃', hc₁, hc₂, heq⟩ := Step_diamond F rf hWF econd econd' econd'' h_step₁ h_step₂
+      have ⟨e₃, e₃', hc₁, hc₂, heq⟩ := Step_diamond F rf hWF hFC econd econd' econd'' h_step₁ h_step₂
       -- Lift through ite_cond
       obtain ⟨m1'', hss1⟩ := StepStar_ite_cond F rf econd' e₃ ethen eelse m' hc₁
       obtain ⟨m2'', hss2⟩ := StepStar_ite_cond F rf econd'' e₃' ethen eelse m2' hc₂
@@ -1828,7 +1863,7 @@ theorem Step_diamond
              eraseMetadata_ite_congr rfl rfl rfl⟩
     | @ite_reduce_then_branch _ m2' _ _ ethen'' _ h_step₂ =>
       -- Both step the then-branch: use IH on the sub-step
-      have ⟨e₃, e₃', hc₁, hc₂, heq⟩ := Step_diamond F rf hWF ethen_tb ethen'_tb ethen'' h_step₁ h_step₂
+      have ⟨e₃, e₃', hc₁, hc₂, heq⟩ := Step_diamond F rf hWF hFC ethen_tb ethen'_tb ethen'' h_step₁ h_step₂
       obtain ⟨m1'', hss1⟩ := StepStar_ite_then F rf econd_tb ethen'_tb e₃ eelse_tb m'_tb hc₁
       obtain ⟨m2'', hss2⟩ := StepStar_ite_then F rf econd_tb ethen'' e₃' eelse_tb m2' hc₂
       exact ⟨.ite m1'' econd_tb e₃ eelse_tb, .ite m2'' econd_tb e₃' eelse_tb,
@@ -1874,7 +1909,7 @@ theorem Step_diamond
              eraseMetadata_ite_congr rfl rfl rfl⟩
     | @ite_reduce_else_branch _ m2' _ _ _ eelse'' h_step₂ =>
       -- Both step the else-branch: use IH on the sub-step
-      have ⟨e₃, e₃', hc₁, hc₂, heq⟩ := Step_diamond F rf hWF eelse_eb eelse'_eb eelse'' h_step₁ h_step₂
+      have ⟨e₃, e₃', hc₁, hc₂, heq⟩ := Step_diamond F rf hWF hFC eelse_eb eelse'_eb eelse'' h_step₁ h_step₂
       obtain ⟨m1'', hss1⟩ := StepStar_ite_else F rf econd_eb ethen_eb eelse'_eb e₃ m'_eb hc₁
       obtain ⟨m2'', hss2⟩ := StepStar_ite_else F rf econd_eb ethen_eb eelse'' e₃' m2' hc₂
       exact ⟨.ite m1'' econd_eb ethen_eb e₃, .ite m2'' econd_eb ethen_eb e₃',
@@ -1886,17 +1921,39 @@ theorem Step_diamond
       simp [Factory.callOfLFunc, getLFuncCall, getLFuncCall.go] at h_call
 
   -- ═══════════════════════════════════════════════════════════════
-  -- Case: h₁ = eq_reduce
+  -- Case: h₁ = eq_reduce_true
   -- ═══════════════════════════════════════════════════════════════
-  | @eq_reduce m mc v1 v2 eres hv₁ hv₂ heres =>
+  | @eq_reduce_true m mc v1 v2 hv₁ hv₂ heres =>
     cases h₂ with
-    | @eq_reduce _ mc' _ _ eres' hv₁' hv₂' heres' =>
-      subst heres; subst heres'
+    | @eq_reduce_true _ mc' _ _ hv₁' hv₂' heres' =>
+      exact ⟨_, _, ReflTrans.refl _, ReflTrans.refl _, eraseMetadata_const_congr⟩
+    | @eq_reduce_false _ mc' _ _ hv₁' hv₂' heres' _ _ =>
+      exfalso; unfold LExpr.eql at heres heres'; split at heres <;> simp_all
+    | eq_reduce_lhs _ e1' _ h_step =>
+      -- eq_reduce_true fired on (.eq m v1 v2). h₂ steps v1 to e1'.
+      -- Result: e₁ = .const mc (.boolConst true), e₂ = .eq m' e1' v2.
+      -- e₁ is stuck; e₂ may eventually re-reduce to true.
+      sorry -- needs isCanonicalValue proof for v1 (not available from eq_reduce_true)
+    | @eq_reduce_rhs _ _ _ _ e2' hv₁' h_step =>
+      sorry -- needs isCanonicalValue proof for v2 (not available from eq_reduce_true)
+    | expand_fn _ _ _ _ _ _ h_call =>
+      simp [Factory.callOfLFunc, getLFuncCall, getLFuncCall.go] at h_call
+    | eval_fn _ _ _ _ _ _ h_call =>
+      simp [Factory.callOfLFunc, getLFuncCall, getLFuncCall.go] at h_call
+
+  -- ═══════════════════════════════════════════════════════════════
+  -- Case: h₁ = eq_reduce_false
+  -- ═══════════════════════════════════════════════════════════════
+  | @eq_reduce_false m mc v1 v2 hv₁ hv₂ heres hcb₁ hcb₂ =>
+    cases h₂ with
+    | @eq_reduce_true _ mc' _ _ hv₁' hv₂' heres' =>
+      exfalso; unfold LExpr.eql at heres heres'; split at heres <;> simp_all
+    | @eq_reduce_false _ mc' _ _ hv₁' hv₂' heres' _ _ =>
       exact ⟨_, _, ReflTrans.refl _, ReflTrans.refl _, eraseMetadata_const_congr⟩
     | eq_reduce_lhs _ e1' _ h_step =>
-      exact absurd h_step (canonical_value_not_step F rf v1 hWF hv₁ e1')
+      sorry -- needs isCanonicalValue proof for v1 (not available from eq_reduce_false)
     | @eq_reduce_rhs _ _ _ _ e2' hv₁' h_step =>
-      exact absurd h_step (canonical_value_not_step F rf v2 hWF hv₂ e2')
+      sorry -- needs isCanonicalValue proof for v2 (not available from eq_reduce_false)
     | expand_fn _ _ _ _ _ _ h_call =>
       simp [Factory.callOfLFunc, getLFuncCall, getLFuncCall.go] at h_call
     | eval_fn _ _ _ _ _ _ h_call =>
@@ -1907,11 +1964,13 @@ theorem Step_diamond
   -- ═══════════════════════════════════════════════════════════════
   | @eq_reduce_lhs m m' e1 e1' e2 h_step₁ =>
     cases h₂ with
-    | eq_reduce v1 v2 eres hv₁ hv₂ heres =>
-      exact absurd h_step₁ (canonical_value_not_step F rf e1 hWF hv₁ e1')
+    | @eq_reduce_true _ mc _ _ hv₁ hv₂ heres =>
+      sorry -- needs isCanonicalValue proof for e1 (not available from eq_reduce_true)
+    | @eq_reduce_false _ mc _ _ hv₁ hv₂ heres hcb₁ hcb₂ =>
+      sorry -- needs isCanonicalValue proof for e1 (not available from eq_reduce_false)
     | @eq_reduce_lhs _ m2' _ e1'' _ h_step₂ =>
       -- Both step the LHS: use IH on the sub-step
-      have ⟨e₃, e₃', hc₁, hc₂, heq⟩ := Step_diamond F rf hWF e1 e1' e1'' h_step₁ h_step₂
+      have ⟨e₃, e₃', hc₁, hc₂, heq⟩ := Step_diamond F rf hWF hFC e1 e1' e1'' h_step₁ h_step₂
       obtain ⟨m1'', hss1⟩ := StepStar_eq_lhs F rf e1' e₃ e2 m' hc₁
       obtain ⟨m2'', hss2⟩ := StepStar_eq_lhs F rf e1'' e₃' e2 m2' hc₂
       exact ⟨.eq m1'' e₃ e2, .eq m2'' e₃' e2,
@@ -1930,13 +1989,15 @@ theorem Step_diamond
   -- ═══════════════════════════════════════════════════════════════
   | @eq_reduce_rhs m m' v1 e2 e2' hv₁ h_step₁ =>
     cases h₂ with
-    | @eq_reduce _ mc' _ _ eres hv₁' hv₂ heres =>
-      exact absurd h_step₁ (canonical_value_not_step F rf e2 hWF hv₂ e2')
+    | @eq_reduce_true _ mc' _ _ hv₁' hv₂ heres =>
+      sorry -- needs isCanonicalValue proof for e2 (not available from eq_reduce_true)
+    | @eq_reduce_false _ mc' _ _ hv₁' hv₂ heres hcb₁ hcb₂ =>
+      sorry -- needs isCanonicalValue proof for e2 (not available from eq_reduce_false)
     | eq_reduce_lhs _ e1' _ h_step₂ =>
       exact absurd h_step₂ (canonical_value_not_step F rf v1 hWF hv₁ e1')
     | @eq_reduce_rhs _ m2' _ _ e2'' hv₁' h_step₂ =>
       -- Both step the RHS: use IH on the sub-step
-      have ⟨e₃, e₃', hc₁, hc₂, heq⟩ := Step_diamond F rf hWF e2 e2' e2'' h_step₁ h_step₂
+      have ⟨e₃, e₃', hc₁, hc₂, heq⟩ := Step_diamond F rf hWF hFC e2 e2' e2'' h_step₁ h_step₂
       obtain ⟨m1'', hss1⟩ := StepStar_eq_rhs F rf v1 hv₁ e2' e₃ m' hc₁
       obtain ⟨m2'', hss2⟩ := StepStar_eq_rhs F rf v1 hv₁ e2'' e₃' m2' hc₂
       exact ⟨.eq m1'' v1 e₃, .eq m2'' v1 e₃',
@@ -1980,7 +2041,9 @@ theorem Step_diamond
       simp [Factory.callOfLFunc, getLFuncCall, getLFuncCall.go] at h_call₁
     | ite_reduce_else_branch _ _ _ _ h_step =>
       simp [Factory.callOfLFunc, getLFuncCall, getLFuncCall.go] at h_call₁
-    | eq_reduce _ _ _ _ _ =>
+    | eq_reduce_true _ _ _ _ _ =>
+      simp [Factory.callOfLFunc, getLFuncCall, getLFuncCall.go] at h_call₁
+    | eq_reduce_false _ _ _ _ _ _ _ =>
       simp [Factory.callOfLFunc, getLFuncCall, getLFuncCall.go] at h_call₁
     | eq_reduce_lhs _ _ _ h_step =>
       simp [Factory.callOfLFunc, getLFuncCall, getLFuncCall.go] at h_call₁
@@ -2005,13 +2068,15 @@ theorem Step_diamond
       rw [h_call₁] at h_call₂; cases h_call₂
       rw [h_ceval₁] at h_ceval₂; cases h_ceval₂
       -- Same function, same args, same denotefn. But metadata m may differ.
-      -- denotefn m₁ args = some e₁ and denotefn m₂ args = some e₂
-      -- These may differ if denotefn depends on metadata.
-      sorry -- requires WF condition that concreteEval is metadata-independent (up to eraseMetadata)
+      -- Use FactorySemConfluent.eval_metadata_indep to close.
+      have h_mem := callOfLFunc_func_mem F _ _ _ fn₁ false h_call₁
+      have heq := hFC.eval_metadata_indep fn₁ h_mem denotefn₁ h_ceval₁
+        _ _ _ _ _ (h_res₁.symm) (h_res₂.symm)
+      exact ⟨_, _, ReflTrans.refl _, ReflTrans.refl _, heq⟩
     | reduce_1 _ e1' _ h_step =>
-      sorry -- requires concreteEval WF conditions
+      sorry -- requires callOfLFunc_reduce_1 lemma + hFC.eval_arg_step
     | reduce_2 _ _ e2' h_step =>
-      sorry -- requires concreteEval WF conditions
+      sorry -- requires callOfLFunc_reduce_2 lemma + hFC.eval_arg_step
     | ite_reduce_then =>
       simp [Factory.callOfLFunc, getLFuncCall, getLFuncCall.go] at h_call₁
     | ite_reduce_else =>
@@ -2022,14 +2087,16 @@ theorem Step_diamond
       simp [Factory.callOfLFunc, getLFuncCall, getLFuncCall.go] at h_call₁
     | ite_reduce_else_branch _ _ _ _ h_step =>
       simp [Factory.callOfLFunc, getLFuncCall, getLFuncCall.go] at h_call₁
-    | eq_reduce _ _ _ _ _ =>
+    | eq_reduce_true _ _ _ _ _ =>
+      simp [Factory.callOfLFunc, getLFuncCall, getLFuncCall.go] at h_call₁
+    | eq_reduce_false _ _ _ _ _ _ _ =>
       simp [Factory.callOfLFunc, getLFuncCall, getLFuncCall.go] at h_call₁
     | eq_reduce_lhs _ _ _ h_step =>
       simp [Factory.callOfLFunc, getLFuncCall, getLFuncCall.go] at h_call₁
     | eq_reduce_rhs _ _ _ _ h_step =>
       simp [Factory.callOfLFunc, getLFuncCall, getLFuncCall.go] at h_call₁
   termination_by e.sizeOf
-  decreasing_by all_goals sorry -- termination measure for recursive calls on subexpressions
+  decreasing_by all_goals sorry -- termination: recursive calls on strict sub-expressions
 
 -- Determinism of Canonicalize (up to eraseMetadata): if we canonicalize
 -- the same expression two ways, the results agree modulo metadata.
@@ -2592,7 +2659,26 @@ theorem eval_StepStar
           let eval_args := args.map (LExpr.eval n σ)
           have h_keys_eq : (lfunc.inputs.keys.zip args).map Prod.fst =
               (lfunc.inputs.keys.zip eval_args).map Prod.fst := by
-            sorry -- keys of zip are the same when value lists have equal length
+            suffices ∀ (ks : List Tbase.Identifier) (vs₁ vs₂ : List (LExpr Tbase.mono)),
+                vs₁.length = vs₂.length →
+                (ks.zip vs₁).map Prod.fst = (ks.zip vs₂).map Prod.fst by
+              exact this _ _ _ (by simp [eval_args])
+            intro ks vs₁ vs₂ hlen
+            induction ks generalizing vs₁ vs₂ with
+            | nil => simp
+            | cons k ks ih =>
+              cases vs₁ with
+              | nil =>
+                have h0 := hlen; simp at h0
+                cases vs₂ with
+                | nil => simp
+                | cons _ _ => simp at h0
+              | cons v₁ rest₁ =>
+                cases vs₂ with
+                | nil => simp at hlen
+                | cons v₂ rest₂ =>
+                  simp only [List.zip_cons_cons, List.map_cons, List.cons.injEq, true_and]
+                  exact ih rest₁ rest₂ (by simp at hlen; exact hlen)
           have h_step_body : ReflTrans (Step σ.config.factory (Scopes.toEnv σ.state))
               (LExpr.substFvars fnbody (lfunc.inputs.keys.zip args))
               (LExpr.substFvars fnbody (lfunc.inputs.keys.zip eval_args)) :=
