@@ -173,11 +173,11 @@ Some considerations include:
 
 - The biggest performance bottleneck is usually the SMT solver. Transformations that produce smaller, more modular verification conditions (VCs) win.
 
-- Prefer generating multiple smaller procedures with tight contracts over one monolithic procedure. The `CallElim` transformation replaces calls with `assert pre; havoc; assume post`, which is much cheaper than inlining entire bodies.
+- Prefer generating multiple smaller procedures with tight contracts over one monolithic procedure. The [`CallElim`](https://github.com/strata-org/Strata/blob/main/Strata/Transform/CallElim.lean) transformation replaces calls with `assert pre; havoc; assume post`, which is much cheaper than inlining entire bodies.
 
 - If your dialect has features that map to quantifiers (e.g., `forall x in collection`), be careful — quantifiers are expensive for SMT solvers. Use triggers where possible (Lambda expressions support quantifiers with triggers) but also consider whether an encoding that does not use quantifiers is possible.
 
-- The order you compose transformations matters. For example, if your dialect has both loops and procedure calls, translating to Core first and then running `CallElim` → `LoopElim` is the standard pipeline. But if your high-level construct can be desugared to avoid loops entirely (e.g., bounded iteration → unrolling), doing that before hitting Core avoids the need for loop invariants.
+- The order you compose transformations matters. For example, if your dialect has both loops and procedure calls, translating to Core first and then running [`CallElim`](https://github.com/strata-org/Strata/blob/main/Strata/Transform/CallElim.lean) → [`LoopElim`](https://github.com/strata-org/Strata/blob/main/Strata/Transform/LoopElim.lean) is the standard pipeline. But if your high-level construct can be desugared to avoid loops entirely (e.g., bounded iteration → unrolling), doing that before hitting Core avoids the need for loop invariants.
 
 - Core's `Map` type uses Select/Store axioms, which are well-supported by SMT but can be expensive with many updates. If your dialect has data structures that map to nested maps (e.g., objects with fields that are themselves maps), the encoding can explode. Consider flattening where possible.
 
@@ -187,16 +187,16 @@ Some considerations include:
 
 ### How should I structure my front-end codebase?
 
-Add each new dialect under `Strata/Languages/YourDialect/`. The existing dialects follow a consistent pattern, with the following categories of files:
+Add each new dialect under [`Strata/Languages/YourDialect/`](https://github.com/strata-org/Strata/blob/main/Strata/Languages/). The existing dialects follow a consistent pattern, with the following categories of files:
 
 1. **Root module file (`YourDialect.lean`)** — Re-exports everything. This is the entry point. Keep it minimal, just imports.
 
-2. **Grammar / Parsing** — Every dialect that parses `.st` files has a subdirectory for this. The naming varies: Core uses `DDMTransform/`, Laurel uses `Grammar/`. Typical contents:
+2. **Grammar / Parsing** — Every dialect that parses `.st` files has a subdirectory for this. The naming varies: Core uses [`DDMTransform/`](https://github.com/strata-org/Strata/blob/main/Strata/Languages/Core/DDMTransform/), Laurel uses [`Grammar/`](https://github.com/strata-org/Strata/blob/main/Strata/Languages/Laurel/Grammar/). Typical contents:
    - A grammar definition file (`Grammar.lean` or `Parse.lean`) — DDM grammar definition (concrete syntax tree)
    - A CST-to-AST translation file (`Translate.lean`, `ASTtoCST.lean`, or `ConcreteToAbstractTreeTranslator.lean`)
-   - Optionally a `.st` grammar file (like Laurel's `LaurelGrammar.st`)
+   - Optionally a `.st` grammar file (like Laurel's [`LaurelGrammar.st`](https://github.com/strata-org/Strata/blob/main/Strata/Languages/Laurel/Grammar/LaurelGrammar.st))
 
-3. **AST and type definitions** — The core data structures of your dialect. Look at how C_Simp defines its expression/statement types by reusing the Lambda and Imperative expression and statement types:
+3. **AST and type definitions** — The core data structures of your dialect. Look at how [`C_Simp`](https://github.com/strata-org/Strata/blob/main/Strata/Languages/C_Simp/) defines its expression/statement types by reusing the Lambda and Imperative expression and statement types:
    - Define type aliases for expressions using `Lambda.LExpr` or Core expressions
    - Define commands and statements using `Imperative.Stmt`/`Imperative.Cmd`
    - Add dialect-specific constructs (like Laurel's `Identifier`, `Operation`, `TypeHierarchy`)
@@ -204,20 +204,20 @@ Add each new dialect under `Strata/Languages/YourDialect/`. The existing dialect
 4. **Translation to a lower dialect** — The key file. This could translate directly to Core, or go through an intermediate dialect such as Laurel.
 
 5. **Dialect-specific passes** — You may want to do pre-translation transformations on your own AST. Laurel is the best example here with multiple passes:
-   - `Resolution.lean` — Name resolution
-   - `DesugarShortCircuit.lean` — Desugar complex expressions
-   - `LiftImperativeExpressions.lean` — Normalize expressions
-   - `HeapParameterization.lean` — Heap modeling
-   - `EliminateHoles.lean`, `InferHoleTypes.lean` — Type inference
+   - [`Resolution.lean`](https://github.com/strata-org/Strata/blob/main/Strata/Languages/Laurel/Resolution.lean) — Name resolution
+   - [`DesugarShortCircuit.lean`](https://github.com/strata-org/Strata/blob/main/Strata/Languages/Laurel/DesugarShortCircuit.lean) — Desugar complex expressions
+   - [`LiftImperativeExpressions.lean`](https://github.com/strata-org/Strata/blob/main/Strata/Languages/Laurel/LiftImperativeExpressions.lean) — Normalize expressions
+   - [`HeapParameterization.lean`](https://github.com/strata-org/Strata/blob/main/Strata/Languages/Laurel/HeapParameterization.lean) — Heap modeling
+   - [`EliminateHoles.lean`](https://github.com/strata-org/Strata/blob/main/Strata/Languages/Laurel/EliminateHoles.lean), [`InferHoleTypes.lean`](https://github.com/strata-org/Strata/blob/main/Strata/Languages/Laurel/InferHoleTypes.lean) — Type inference
 
 6. **Analysis entry point (such as verification)** — Orchestrates a full pipeline: parse → transform → translate → analyze.
 
-Add a mirrored test structure under `StrataTest/Languages/YourDialect/`:
+Add a mirrored test structure under [`StrataTest/Languages/YourDialect/`](https://github.com/strata-org/Strata/blob/main/StrataTest/Languages/):
 - Unit test `.lean` files at the top level
 - `examples/` or `tests/` subdirectory for `.st` test programs
 - `expected_*/` directories for golden-file testing if needed
 
-Don't reinvent expression or statement representations. C_Simp shows an example of this. Your dialect should parameterize over these existing building blocks when possible and only add what's genuinely new.
+Don't reinvent expression or statement representations. [`C_Simp`](https://github.com/strata-org/Strata/blob/main/Strata/Languages/C_Simp/) shows an example of this. Your dialect should parameterize over these existing building blocks when possible and only add what's genuinely new.
 
 ### How do I contribute my front-end back to the Strata ecosystem?
 
