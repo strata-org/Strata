@@ -162,7 +162,16 @@ spec
 
 #end
 
-/-- info: Obligation: entry_invariant_0_0
+/-- info:
+Obligation: assert_2_406
+Property: assert
+Result: ✅ pass
+
+Obligation: assert_3_509
+Property: assert
+Result: ✅ pass
+
+Obligation: entry_invariant_0_0
 Property: assert
 Result: ✅ pass
 
@@ -170,47 +179,63 @@ Obligation: arbitrary_iter_maintain_invariant_0_0
 Property: assert
 Result: ✅ pass
 
-Obligation: sum_ensures_1_652
+Obligation: sum_ensures_5_652
 Property: assert
 Result: ✅ pass
 
-Obligation: testEnsuresCallee_ensures_3_1982
+Obligation: assert_9_1184
 Property: assert
 Result: ✅ pass
 
-Obligation: testEnsuresCallee_ensures_4_2024
+Obligation: assert_11_1418
 Property: assert
 Result: ✅ pass
 
-Obligation: (Origin_testEnsuresCallee_Requires)testEnsuresCallee_requires_2_1940
+Obligation: assert_15_1683
 Property: assert
 Result: ✅ pass
 
-Obligation: (Origin_testEnsuresCallee_Requires)testEnsuresCallee_requires_2_1940
+Obligation: assert_17_1819
 Property: assert
 Result: ✅ pass
 
-Obligation: assert_7_2457
+Obligation: testEnsuresCallee_ensures_19_1982
 Property: assert
 Result: ✅ pass
 
-Obligation: testEnsuresCaller_ensures_6_2218
+Obligation: testEnsuresCallee_ensures_20_2024
 Property: assert
 Result: ✅ pass
 
-Obligation: obviouslyUnconstrainedCode_ensures_10_2722
+Obligation: (Origin_testEnsuresCallee_Requires)testEnsuresCallee_requires_18_1940
 Property: assert
 Result: ✅ pass
 
-Obligation: contradictoryEnsuresClause_ensures_12_3048
+Obligation: (Origin_testEnsuresCallee_Requires)testEnsuresCallee_requires_18_1940
 Property: assert
 Result: ✅ pass
 
-Obligation: (Origin_contradictoryEnsuresClause_Requires)contradictoryEnsuresClause_requires_11_2978
+Obligation: assert_23_2457
 Property: assert
 Result: ✅ pass
 
-Obligation: usesSomeInteger_ensures_15_3713
+Obligation: testEnsuresCaller_ensures_22_2218
+Property: assert
+Result: ✅ pass
+
+Obligation: obviouslyUnconstrainedCode_ensures_26_2722
+Property: assert
+Result: ✅ pass
+
+Obligation: contradictoryEnsuresClause_ensures_28_3048
+Property: assert
+Result: ✅ pass
+
+Obligation: (Origin_contradictoryEnsuresClause_Requires)contradictoryEnsuresClause_requires_27_2978
+Property: assert
+Result: ✅ pass
+
+Obligation: usesSomeInteger_ensures_31_3713
 Property: assert
 Result: ✅ pass-/
 #guard_msgs in
