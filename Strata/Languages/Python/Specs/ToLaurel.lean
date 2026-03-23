@@ -286,10 +286,9 @@ partial def specExprToLaurel (e : SpecExpr) : Option StmtExprMd :=
              mkStmt (.FieldSelect s (mkId field))
   | .isInstanceOf _ _ => none -- TODO: isinstance checks
   | .len subject =>
-    -- len(x) where x is Any: Str.Length(Any..as_string!(x)) wrapped back as from_int
+    -- Any_len dispatches to Str.Length for strings, List_len for lists
     subject |> specExprToLaurel |>.map fun s =>
-      let unwrapped := mkStmt (.StaticCall (mkId "Any..as_string!") [s])
-      mkStmt (.StaticCall (mkId "from_int") [mkStmt (.StaticCall (mkId "Str.Length") [unwrapped])])
+      mkStmt (.StaticCall (mkId "from_int") [mkStmt (.StaticCall (mkId "Any_len") [s])])
   | .intGe subject bound => do
     let s ← specExprToLaurel subject; let b ← specExprToLaurel bound
     some (mkStmt (.PrimitiveOp .Geq [mkStmt (.StaticCall (mkId "Any..as_int!") [s]), mkStmt (.StaticCall (mkId "Any..as_int!") [b])]))
@@ -323,13 +322,13 @@ partial def specExprToLaurel (e : SpecExpr) : Option StmtExprMd :=
       let unwrapped := mkStmt (.StaticCall (mkId "Any..as_Dict!") [c])
       mkStmt (.StaticCall (mkId "DictStrAny_contains") [unwrapped, mkStmt (.LiteralString key)])
   | .regexMatch subject pattern =>
-    -- Assumes future Laurel functions:
-    --   string_to_regex(pattern: string) -> Regex
-    --   regex_matches(regex: Regex, subject: string) -> bool
+    -- re_search_str compiles a Python regex pattern into an SMT regex.
+    -- Str.InRegEx checks if a string matches a regex.
+    -- These are defined in the Core factory / PR 623.
     subject |> specExprToLaurel |>.map fun s =>
       let sStr := mkStmt (.StaticCall (mkId "Any..as_string!") [s])
-      let regex := mkStmt (.StaticCall (mkId "string_to_regex") [mkStmt (.LiteralString pattern)])
-      mkStmt (.StaticCall (mkId "regex_matches") [regex, sStr])
+      let regex := mkStmt (.StaticCall (mkId "re_search_str") [mkStmt (.LiteralString pattern)])
+      mkStmt (.StaticCall (mkId "Str.InRegEx") [sStr, regex])
   | .forallList _ _ _ => none -- TODO: quantifiers
   | .forallDict _ _ _ _ => none -- TODO: quantifiers
 
