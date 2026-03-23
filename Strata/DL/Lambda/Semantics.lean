@@ -286,6 +286,14 @@ inductive CanonRel (F : @Factory Tbase) (rf : Env Tbase)
 | app :
     CanonRel F rf true f f' → CanonRel F rf true a a' →
     CanonRel F rf false (.app m f a) (.app m f' a')
+/-- Canonicalize: go inside ite (all three sub-expressions). -/
+| ite :
+    CanonRel F rf true c c' → CanonRel F rf true t t' → CanonRel F rf true f f' →
+    CanonRel F rf false (.ite m c t f) (.ite m c' t' f')
+/-- Canonicalize: go inside eq (both sub-expressions). -/
+| eq :
+    CanonRel F rf true e1 e1' → CanonRel F rf true e2 e2' →
+    CanonRel F rf false (.eq m e1 e2) (.eq m e1' e2')
 
 /-- Canonicalize: one structural canonicalization action (goes under one binder/app). -/
 abbrev Canonicalize (F : @Factory Tbase) (rf : Env Tbase) :=
@@ -330,6 +338,8 @@ theorem trans (h₁ : CanonStar F rf a b) (h₂ : CanonStar F rf b c) :
   | abs => trivial
   | quant => trivial
   | app => trivial
+  | ite => trivial
+  | eq => trivial
 
 end CanonStar
 
@@ -370,6 +380,15 @@ theorem trans (h₁ : Canonicalize F rf a b) (h₂ : Canonicalize F rf b c) :
     cases h₂ with
     | app csf₂ csa₂ =>
       exact .app (CanonStar.trans csf₁ csf₂) (CanonStar.trans csa₁ csa₂)
+  | ite csc₁ cst₁ csf₁ =>
+    cases h₂ with
+    | ite csc₂ cst₂ csf₂ =>
+      exact .ite (CanonStar.trans csc₁ csc₂) (CanonStar.trans cst₁ cst₂)
+                 (CanonStar.trans csf₁ csf₂)
+  | eq cs1₁ cs2₁ =>
+    cases h₂ with
+    | eq cs1₂ cs2₂ =>
+      exact .eq (CanonStar.trans cs1₁ cs1₂) (CanonStar.trans cs2₁ cs2₂)
 
 end Canonicalize
 
@@ -2146,14 +2165,10 @@ theorem CanonStar_substFvar
     exact .canon (.app ih1 ih2) .refl
   | ite m c t f ih1 ih2 ih3 =>
     simp only [LExpr.substFvar]
-    -- Requires lifting CanonStar through ite structure.
-    -- CanonStar includes Canonicalize which goes under binders, but ite
-    -- has no Canonicalize constructor, so the lift is non-trivial.
-    sorry
+    exact .canon (.ite ih1 ih2 ih3) .refl
   | eq m e1 e2 ih1 ih2 =>
     simp only [LExpr.substFvar]
-    -- Same issue as ite: no Canonicalize constructor for eq.
-    sorry
+    exact .canon (.eq ih1 ih2) .refl
 
 ---------------------------------------------------------------------
 -- Confluence
