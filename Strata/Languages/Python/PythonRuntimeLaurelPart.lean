@@ -90,6 +90,79 @@ datatype DictStrAny {
 }
 
 // /////////////////////////////////////////////////////////////////////////////////////
+//Functions that we provide to Python user
+//to write assertions/contracts about about types of variables
+
+function isBool (v: Any) : Any {
+  from_bool (Any..isfrom_bool(v))
+};
+
+function isInt (v: Any) : Any {
+  from_bool (Any..isfrom_int(v))
+};
+
+function isFloat (v: Any) : Any {
+  from_bool (Any..isfrom_float(v))
+};
+
+function isString (v: Any) : Any {
+  from_bool (Any..isfrom_string(v))
+};
+
+function isdatetime (v: Any) : Any {
+  from_bool (Any..isfrom_datetime(v))
+};
+
+function isDict (v: Any) : Any {
+  from_bool (Any..isfrom_Dict(v))
+};
+
+function isList (v: Any) : Any {
+  from_bool (Any..isfrom_ListAny(v))
+};
+
+function isClassInstance (v: Any) : Any {
+  from_bool (Any..isfrom_ClassInstance(v))
+};
+
+function isInstance_of_Int (v: Any) : Any {
+  from_bool (Any..isfrom_int(v) || Any..isfrom_bool(v))
+};
+
+function isInstance_of_Float (v: Any) : Any {
+  from_bool (Any..isfrom_float(v) || Any..isfrom_int(v) || Any..isfrom_bool(v))
+};
+
+// /////////////////////////////////////////////////////////////////////////////////////
+//Functions that we provide to Python user
+//to write assertions/contracts about about types of errors
+// /////////////////////////////////////////////////////////////////////////////////////
+
+function isTypeError (e: Error) : Any {
+  from_bool (Error..isTypeError(e))
+};
+
+function isAttributeError (e: Error) : Any {
+  from_bool (Error..isAttributeError(e))
+};
+
+function isAssertionError (e: Error) : Any {
+  from_bool (Error..isAssertionError(e))
+};
+
+function isUnimplementedError (e: Error) : Any {
+  from_bool (Error..isUnimplementedError(e))
+};
+
+function isUndefinedError (e: Error) : Any {
+  from_bool (Error..isUndefinedError(e))
+};
+
+function isError (e: Error) : bool {
+  ! Error..isNoError(e)
+};
+
+// /////////////////////////////////////////////////////////////////////////////////////
 // ListAny functions
 // /////////////////////////////////////////////////////////////////////////////////////
 
