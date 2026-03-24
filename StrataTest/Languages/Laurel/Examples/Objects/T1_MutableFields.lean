@@ -12,11 +12,12 @@ open StrataTest.Util
 namespace Strata
 namespace Laurel
 
-def program := r"
+def program := r#"
 composite Container {
   var intValue: int // var indicates mutable field
   var realValue: real
   var boolValue: bool
+  var stringValue: string
 }
 
 procedure newsAreNotEqual() {
@@ -27,12 +28,20 @@ procedure newsAreNotEqual() {
 
 procedure simpleAssign() {
   var c: Container := new Container;
+  var iv: int := c#intValue;
+  var rv: real := c#realValue;
+  var bv: bool := c#boolValue;
+  var sv: string := c#stringValue;
+
   c#intValue := 2;
   c#realValue := 3.0;
   c#boolValue := true;
+  c#stringValue := "hello";
+
   assert c#intValue == 2;
   assert c#realValue == 3.0;
-  assert c#boolValue == true
+  assert c#boolValue == true;
+  assert c#stringValue == "hello"
 };
 
 procedure updatesAndAliasing()
@@ -128,7 +137,7 @@ procedure datatypeField() {
 //   assert d#intValue == 1;
 //   assert x == 4;
 // }
-"
+"#
 
 #guard_msgs(drop info, error) in
 #eval testInputWithOffset "MutableFields" program 14 processLaurelFile
