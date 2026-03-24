@@ -530,16 +530,16 @@ def translateProcedure (proc : Procedure) : TranslateM Core.Procedure := do
   return { header, spec, body }
 
 /--
-Generate a Core axiom for a Laurel procedure that has an `autoInvoke` trigger.
+Generate a Core axiom for a Laurel procedure that has an `invokeOn` trigger.
 
 The axiom universally quantifies over the procedure's input parameters, uses the
-`autoInvoke` expression as the SMT trigger, and asserts the conjunction of all
+`invokeOn` expression as the SMT trigger, and asserts the conjunction of all
 postconditions from an `Opaque` body.
 
-For a procedure `f(x: Int)` with `autoInvoke { f(x) }` and `ensures P(x)`, this emits:
-  `axiom autoInvoke_f: ∀ x: int :: { f(x) } P(x)`
+For a procedure `f(x: Int)` with `invokeOn { f(x) }` and `ensures P(x)`, this emits:
+  `axiom invokeOn_f: ∀ x: int :: { f(x) } P(x)`
 -/
-def translateAutoInvokeAxiom (proc : Procedure) (trigger : StmtExprMd)
+def translateInvokeOnAxiom (proc : Procedure) (trigger : StmtExprMd)
     : TranslateM (Option Core.Decl) := do
   let model := (← get).model
   let postconds := match proc.body with
@@ -558,7 +558,7 @@ def translateAutoInvokeAxiom (proc : Procedure) (trigger : StmtExprMd)
   -- Wrap in ∀ from outermost (first param) to innermost (last param).
   -- The trigger is placed on the innermost quantifier.
   let quantified := buildQuants model proc.inputs bodyExpr triggerExpr
-  return some (.ax { name := s!"autoInvoke_{proc.name.text}", e := quantified })
+  return some (.ax { name := s!"invokeOn_{proc.name.text}", e := quantified })
 where
   /-- Build `∀ p1 ... pn :: { trigger } body`. The trigger is on the innermost quantifier. -/
   buildQuants (model : SemanticModel) (params : List Parameter)
@@ -769,10 +769,10 @@ def translate (options: LaurelTranslateOptions) (program : Program): TranslateRe
     -- Translate procedures using the monad, collecting diagnostics from the final state
     let procedures ← procProcs.mapM translateProcedure
 
-    -- Generate autoInvoke axioms for procedures that declare one
-    let autoInvokeAxioms ← procProcs.filterMapM (fun proc =>
-      match proc.autoInvoke with
-      | some trigger => translateAutoInvokeAxiom proc trigger
+    -- Generate invokeOn axioms for procedures that declare one
+    let invokeOnAxioms ← procProcs.filterMapM (fun proc =>
+      match proc.invokeOn with
+      | some trigger => translateInvokeOnAxiom proc trigger
       | none => pure none)
 
     -- Translate Laurel constants to Core function declarations (0-ary functions)
@@ -796,7 +796,7 @@ def translate (options: LaurelTranslateOptions) (program : Program): TranslateRe
     -- Translate Laurel datatype definitions to Core declarations.
     let groupedDatatypeDecls ← translateTypes program model
     let program := {
-      decls := groupedDatatypeDecls ++ constantDecls ++ pureFuncDecls ++ procDecls ++ autoInvokeAxioms
+      decls := groupedDatatypeDecls ++ constantDecls ++ pureFuncDecls ++ procDecls ++ invokeOnAxioms
     }
 
     -- dbg_trace "=== Generated Strata Core Program ==="

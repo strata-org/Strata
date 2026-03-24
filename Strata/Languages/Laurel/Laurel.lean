@@ -192,7 +192,7 @@ structure Procedure : Type where
   /-- Optional trigger for auto-invocation. When present, the translator also emits an axiom
       whose body is the ensures clause universally quantified over the procedure's inputs,
       with this expression as the SMT trigger. -/
-  autoInvoke : Option (WithMetadata StmtExpr) := none
+  invokeOn : Option (WithMetadata StmtExpr) := none
   /-- Source-level metadata (locations, annotations). -/
   md : MetaData
 
