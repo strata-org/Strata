@@ -121,6 +121,7 @@ def SemanticModel.get (model: SemanticModel) (iden: Identifier): AstNode :=
 def SemanticModel.isFunction (model: SemanticModel) (id: Identifier): Bool :=
   match model.get id with
       | .staticProcedure proc => proc.isFunctional
+      | .instanceProcedure _ proc => proc.isFunctional
       | .parameter _ => true
       | .datatypeConstructor _ _ => true
       | .constant _ => true

@@ -173,13 +173,13 @@ def boxDestructorName (model : SemanticModel) (ty : HighType) : Identifier :=
   match ty with
   | .TInt => "Box..intVal!"
   | .TBool => "Box..boolVal!"
+  | .TString => "Box..stringVal!"
   | .TFloat64 => "Box..float64Val!"
   | .TReal => "Box..realVal!"
-  | .TString => "Box..stringVal!"
   | .UserDefined name =>
       if isDatatype model name then s!"Box..{name.text}Val!"
       else "Box..compositeVal!"
-  | .TCore name => s!"Box..{name}Val!"
+  | .TCore name => s!"Box..{name}Val"
   | _ => dbg_trace f!"BUG, boxDestructorName bad type {ty}"; "boxDestructorNameError"
 
 /-- Get the Box constructor name for a given Laurel HighType.
@@ -189,9 +189,9 @@ def boxConstructorName (model : SemanticModel) (ty : HighType) : Identifier :=
   match ty with
   | .TInt => "BoxInt"
   | .TBool => "BoxBool"
+  | .TString => "BoxString"
   | .TFloat64 => "BoxFloat64"
   | .TReal => "BoxReal"
-  | .TString => "BoxString"
   | .UserDefined name =>
       if isDatatype model name then s!"Box..{name.text}"
       else "BoxComposite"
@@ -203,9 +203,9 @@ private def boxConstructorDef (model : SemanticModel) (ty : HighType) : Option D
   match ty with
   | .TInt => some { name := "BoxInt", args := [{ name := "intVal", type := ⟨.TInt, #[]⟩ }] }
   | .TBool => some { name := "BoxBool", args := [{ name := "boolVal", type := ⟨.TBool, #[]⟩ }] }
+  | .TString => some { name := "BoxString", args := [{ name := "stringVal", type := ⟨.TString, #[]⟩ }] }
   | .TReal => some { name := "BoxReal", args := [{ name := "realVal", type := ⟨.TReal, #[]⟩ }] }
   | .TFloat64 => some { name := "BoxFloat64", args := [{ name := "float64Val", type := ⟨.TFloat64, #[]⟩ }] }
-  | .TString => some { name := "BoxString", args := [{ name := "stringVal", type := ⟨.TString, #[]⟩ }] }
   | .UserDefined name =>
       if isDatatype model name then
         some { name := s!"Box..{name.text}", args := [{ name := s!"{name.text}Val", type := ⟨.UserDefined name, #[]⟩ }] }
