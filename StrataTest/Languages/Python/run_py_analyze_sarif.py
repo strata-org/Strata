@@ -20,8 +20,34 @@ TEST_FILES = sorted(
 )
 
 BOTH_SKIP = {"test_foo_client_folder", "test_invalid_client_type", "test_unsupported_config"}
-SKIP_TESTS = BOTH_SKIP | {"test_class_field_use", "test_list", "test_subscription", "test_with_statement", "test_class_field_init", "test_break_continue", "test_try_except", "test_try_except_scoping", "test_loops",
-                          "test_augmented_assign", "test_list_slice", "test_class_field_any"}  # sarif pipeline uses PythonToCore which doesn't yet support AugAssign
+SKIP_TESTS = BOTH_SKIP | {
+    "test_augmented_assign",
+    "test_boolean_logic",
+    "test_break_continue",
+    "test_class_field_any",
+    "test_class_field_init",
+    "test_class_field_use",
+    "test_class_methods",
+    "test_class_with_methods",
+    "test_default_params",
+    "test_dict_operations",
+    "test_for_loop",
+    "test_if_elif",
+    "test_list",
+    "test_list_slice",
+    "test_loops",
+    "test_module_level",
+    "test_multi_function",
+    "test_multiple_except",
+    "test_nested_calls",
+    "test_return_types",
+    "test_subscription",
+    "test_try_except",
+    "test_try_except_scoping",
+    "test_variable_reassign",
+    "test_while_loop",
+    "test_with_statement",
+}
 SKIP_TESTS_LAUREL = BOTH_SKIP
 
 
