@@ -1717,7 +1717,7 @@ theorem HavocVarsDefined :
 
 theorem EvalCmdDefMonotone' :
   isDefined σ v →
-  EvalCmd Core.Expression δ σ c σ' →
+  EvalCmd Core.Expression δ σ c σ' f →
   isDefined σ' v := by
   intros Hdef Heval
   cases Heval <;> try exact Hdef
@@ -1728,7 +1728,7 @@ theorem EvalCmdDefMonotone' :
 
 theorem EvalCmdTouch
   [HasVal P] [HasFvar P] [HasBool P] [HasBoolVal P] [HasNot P] :
-  EvalCmd P δ σ c σ' →
+  EvalCmd P δ σ c σ' f →
   TouchVars σ (HasVarsImp.touchedVars c) σ' := by
   intro Heval
   induction Heval <;> simp [HasVarsImp.touchedVars, Cmd.definedVars, Cmd.modifiedVars]
@@ -1742,7 +1742,8 @@ theorem EvalCmdTouch
     exact TouchVars.update_some Hup TouchVars.none
   case eval_havoc x v σ' σ₀ e Hsm Hup Hwf =>
     exact TouchVars.update_some Hup TouchVars.none
-  case eval_assert => exact TouchVars.none
+  case eval_assert_pass => exact TouchVars.none
+  case eval_assert_fail => exact TouchVars.none
   case eval_assume => exact TouchVars.none
   case eval_cover => exact TouchVars.none
 
@@ -1781,9 +1782,9 @@ theorem UpdateStatesTouchVars : UpdateStates σ vars modvals σ' → TouchVars �
     apply Hup2
 
 theorem EvalCmdRefinesContract :
-EvalCmd Expression δ σ c σ' →
+EvalCmd Expression δ σ c σ' f →
 EvalCommandContract π δ σ (CmdExt.cmd c) σ' := by
-intros H; constructor; assumption
+intros H; constructor; exact ⟨f, H⟩
 
 theorem InvStoresUpdatedStateDisjRightMono :
   ¬ k' ∈ ks →

@@ -333,14 +333,21 @@ theorem assertValid_implies_hoareTriple
       subst hf
       cases hcmd' with
       | cmd_sem heval =>
+        obtain ⟨fi, heval⟩ := heval
         cases heval with
-        | eval_assert htt _ =>
+        | eval_assert_pass htt _ =>
           -- htt : ρ₀.eval ρ₀.store expr = some HasBool.tt
           -- hrest : CoreStepStar (.terminal ..) (.terminal ρ')
           simp [Bool.or_false] at hrest
           cases hrest with
           | refl => exact htt
           | step _ _ _ hstep2 _ => exact absurd hstep2 (by intro h; cases h)
+        | eval_assert_fail hne _ =>
+          -- Use hvalid: the initial config is reachable and at the assert
+          have hreach : Reachable π φ (Statement.assert label expr md) ⟨label, expr⟩
+              (.stmt (Statement.assert label expr md) ρ₀ pc₀) :=
+            ⟨ρ₀, pc₀, ReflTrans.refl _, ⟨rfl, rfl⟩⟩
+          exact absurd (hvalid _ hreach) hne
 
 /-- Style B implies Style A, given that the assert is not stuck
     (i.e., for every reachable assert configuration, execution can
@@ -375,20 +382,34 @@ theorem hoareTriple_implies_assertValid
   -- Use progress to get a terminal state, then apply the Hoare triple.
   obtain ⟨ρ', hterm⟩ := hprogress ρ₀ pc₀
   simp only [CoreConfig.getEval, CoreConfig.getStore]
+  -- Apply the Hoare triple to get the postcondition on ρ'
+  have hpost := hoare ρ₀ pc₀ ρ' trivial hterm
+  -- Now invert the execution to show ρ'.eval = ρ₀.eval and ρ'.store = ρ₀.store
+  -- A single assert command steps via step_cmd to terminal, so:
   cases hterm with
   | step _ mid _ hstep hrest =>
     cases hstep with
     | step_cmd hcmd =>
-      -- hcmd : EvalCommand π φ ... σ' ∧ f = false  (ofPlain is abbrev)
       obtain ⟨hcmd', hf⟩ := hcmd
       subst hf
       cases hcmd' with
       | cmd_sem heval =>
+        -- Assert commands don't change the store or evaluator.
+        -- mid = .terminal { store := σ', eval := ρ₀.eval, hasFailure := ρ₀.hasFailure || false }
+        -- where σ' = ρ₀.store (from eval_assert_pass or eval_assert_fail)
+        obtain ⟨fi, heval⟩ := heval
         cases heval with
-        | eval_assert htt _ =>
+        | eval_assert_pass htt _ => exact htt
+        | eval_assert_fail hne _ =>
+          -- σ' = ρ₀.store, so mid has store = ρ₀.store, eval = ρ₀.eval
+          -- hrest goes from .terminal to .terminal ρ', so ρ' = mid's env
           simp [Bool.or_false] at hrest
           cases hrest with
-          | refl => exact htt
+          | refl =>
+            -- ρ' = { store := ρ₀.store, eval := ρ₀.eval, hasFailure := ρ₀.hasFailure }
+            -- hpost : ρ'.eval ρ'.store expr = some HasBool.tt
+            -- But ρ'.eval = ρ₀.eval and ρ'.store = ρ₀.store, so this is our goal
+            exact hpost
           | step _ _ _ hstep2 _ => exact absurd hstep2 (by intro h; cases h)
 
 /-! ## Equivalence for a single assert command -/

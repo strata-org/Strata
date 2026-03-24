@@ -58,6 +58,12 @@ abbrev EvalCmdParamF.ofPlain {P : PureExpr} {Cmd : Type}
     (ec : EvalCmdParam P Cmd) : EvalCmdParamF P Cmd :=
   fun δ σ c σ' f => ec δ σ c σ' ∧ f = false
 
+/-- Project an `EvalCmdParamF` to an `EvalCmdParam` by existentially
+    quantifying over the failure flag. -/
+abbrev EvalCmdParamF.toPlain {P : PureExpr} {Cmd : Type}
+    (ec : EvalCmdParamF P Cmd) : EvalCmdParam P Cmd :=
+  fun δ σ c σ' => ∃ f, ec δ σ c σ' f
+
 /-- ### Well-Formedness of `SemanticStore`s -/
 
 def isDefined {P : PureExpr} (σ : SemanticStore P) (vs : List P.Ident) : Prop :=
@@ -292,23 +298,33 @@ inductive InitState : SemanticStore P → P.Ident → P.Expr → SemanticStore P
 An inductively-defined operational semantics for `Cmd` that depends on variable
 lookup (`σ`) and expression evaluation (`δ`) functions.
 Commands do not modify the evaluator - only `funcDecl` statements do.
+
+The `Bool` output parameter is a *failure flag*: `true` when the command
+signals an assertion failure, `false` otherwise.  Only `eval_assert_fail`
+sets it to `true`; all other constructors report `false`.
+
+This makes `EvalCmd` directly usable as an `EvalCmdParamF` for the
+small-step semantics, where the failure flag is accumulated in
+`Env.hasFailure`.  For the big-step semantics (which use `EvalCmdParam`,
+the 4-argument version), project away the flag with
+`EvalCmdParamF.toPlain` or `EvalCmd.toPlain`.
 -/
 inductive EvalCmd [HasFvar P] [HasBool P] [HasNot P] :
-  SemanticEval P → SemanticStore P → Cmd P → SemanticStore P → Prop where
+  SemanticEval P → SemanticStore P → Cmd P → SemanticStore P → Bool → Prop where
   /-- If `e` evaluates to a value `v`, initialize `x` according to `InitState`. -/
   | eval_init :
     δ σ e = .some v →
     InitState P σ x v σ' →
     WellFormedSemanticEvalVar δ →
     ---
-    EvalCmd δ σ (.init x _ (some e) _) σ'
+    EvalCmd δ σ (.init x _ (some e) _) σ' false
 
   /-- Initialize `x` with an unconstrained value (havoc semantics). -/
   | eval_init_unconstrained :
     InitState P σ x v σ' →
     WellFormedSemanticEvalVar δ →
     ---
-    EvalCmd δ σ (.init x _ none _) σ'
+    EvalCmd δ σ (.init x _ none _) σ' false
 
   /-- If `e` evaluates to a value `v`, assign `x` according to `UpdateState`. -/
   | eval_set :
@@ -316,35 +332,50 @@ inductive EvalCmd [HasFvar P] [HasBool P] [HasNot P] :
     UpdateState P σ x v σ' →
     WellFormedSemanticEvalVar δ →
     ----
-    EvalCmd δ σ (.set x e _) σ'
+    EvalCmd δ σ (.set x e _) σ' false
 
   /-- Assign `x` an arbitrary value `v` according to `UpdateState`. -/
   | eval_havoc :
     UpdateState P σ x v σ' →
     WellFormedSemanticEvalVar δ →
     ----
-    EvalCmd δ σ (.havoc x _) σ'
+    EvalCmd δ σ (.havoc x _) σ' false
 
-  /-- If `e` evaluates to true in `σ`, evaluate to the same `σ`. This semantics
-  does not have a concept of an erroneous execution. -/
-  | eval_assert :
+  /-- Assert passes: `e` evaluates to true, no failure. The store is unchanged. -/
+  | eval_assert_pass :
     δ σ e = .some HasBool.tt →
     WellFormedSemanticEvalBool δ →
     ----
-    EvalCmd δ σ (.assert _ e _) σ
+    EvalCmd δ σ (.assert _ e _) σ false
+
+  /-- Assert fails: `e` does not evaluate to true, failure flag is set.
+      The store is unchanged — the command is an unconditional skip on the
+      store, but the failure flag records the violation. -/
+  | eval_assert_fail :
+    δ σ e ≠ .some HasBool.tt →
+    WellFormedSemanticEvalBool δ →
+    ----
+    EvalCmd δ σ (.assert _ e _) σ true
 
   /-- If `e` evaluates to true in `σ`, evaluate to the same `σ`. -/
   | eval_assume :
     δ σ e = .some HasBool.tt →
     WellFormedSemanticEvalBool δ →
     ----
-    EvalCmd δ σ (.assume _ e _) σ
+    EvalCmd δ σ (.assume _ e _) σ false
 
   /-- A cover, when encountered, is essentially a skip. -/
   | eval_cover :
     WellFormedSemanticEvalBool δ →
     ----
-    EvalCmd δ σ (.cover _ e _) σ
+    EvalCmd δ σ (.cover _ e _) σ false
+
+/-- Project `EvalCmd` (5-arg, with failure flag) to `EvalCmdParam` (4-arg)
+    by existentially quantifying over the flag.  This is the canonical way
+    to use `EvalCmd` with the big-step semantics (`EvalStmt`). -/
+abbrev EvalCmd.toPlain {P : PureExpr} [HasFvar P] [HasBool P] [HasNot P] :
+    EvalCmdParam P (Cmd P) :=
+  fun δ σ c σ' => ∃ f, EvalCmd P δ σ c σ' f
 
 end section
 

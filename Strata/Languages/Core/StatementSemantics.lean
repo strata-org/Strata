@@ -255,7 +255,7 @@ def EvalPureFunc (φ : CoreEval → PureFunc Expression → CoreEval) : Imperati
 inductive EvalCommand (π : String → Option Procedure) (φ : CoreEval → PureFunc Expression → CoreEval) : CoreEval →
   CoreStore → Command → CoreStore → Prop where
   | cmd_sem {δ σ c σ'} :
-    Imperative.EvalCmd Expression δ σ c σ' →
+    Imperative.EvalCmd.toPlain (P := Expression) δ σ c σ' →
     ----
     EvalCommand π φ δ σ (CmdExt.cmd c) σ'
 
@@ -315,7 +315,7 @@ inductive EvalCommand (π : String → Option Procedure) (φ : CoreEval → Pure
 inductive EvalCommandContract : (String → Option Procedure)  → CoreEval →
   CoreStore → Command → CoreStore → Prop where
   | cmd_sem {π δ σ c σ'} :
-    Imperative.EvalCmd Expression δ σ c σ' →
+    Imperative.EvalCmd.toPlain (P := Expression) δ σ c σ' →
     ----
     EvalCommandContract π δ σ (CmdExt.cmd c) σ'
 

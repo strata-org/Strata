@@ -37,9 +37,9 @@ private theorem noFuncDecl_preserves_δ_block_aux
   (extendEval : ExtendEval P)
   (ss : Block P (Cmd P)) (δ δ' : SemanticEval P) (σ σ' : SemanticStore P)
   (ih : ∀ s, s ∈ ss → ∀ (δ δ' : SemanticEval P) (σ σ' : SemanticStore P),
-    Stmt.noFuncDecl s → EvalStmt P (Cmd P) (EvalCmd P) extendEval δ σ s σ' δ' → δ' = δ)
+    Stmt.noFuncDecl s → EvalStmt P (Cmd P) EvalCmd.toPlain extendEval δ σ s σ' δ' → δ' = δ)
   (Hno : Block.noFuncDecl ss)
-  (Heval : EvalBlock P (Cmd P) (EvalCmd P) extendEval δ σ ss σ' δ') :
+  (Heval : EvalBlock P (Cmd P) EvalCmd.toPlain extendEval δ σ ss σ' δ') :
   δ' = δ := by
   induction ss generalizing σ σ' δ δ' with
   | nil =>
@@ -53,7 +53,7 @@ private theorem noFuncDecl_preserves_δ_block_aux
     have h_mem : h ∈ h :: t := by simp
     have Hδ₁ : δ₁ = δ := ih h h_mem δ δ₁ σ σ₁ Hno.1 Heval_h
     have ih_t : ∀ s, s ∈ t → ∀ (δ δ' : SemanticEval P) (σ σ' : SemanticStore P),
-      Stmt.noFuncDecl s → EvalStmt P (Cmd P) (EvalCmd P) extendEval δ σ s σ' δ' → δ' = δ :=
+      Stmt.noFuncDecl s → EvalStmt P (Cmd P) EvalCmd.toPlain extendEval δ σ s σ' δ' → δ' = δ :=
       fun s hs => ih s (by simp [hs])
     have Hδ' : δ' = δ₁ := ih_list δ₁ δ' σ₁ σ' ih_t Hno.2 Heval_t
     simp [Hδ₁, Hδ']
@@ -64,7 +64,7 @@ theorem EvalStmt_noFuncDecl_preserves_δ
   (extendEval : ExtendEval P)
   (st : Stmt P (Cmd P)) (δ δ' : SemanticEval P) (σ σ' : SemanticStore P) :
   Stmt.noFuncDecl st →
-  EvalStmt P (Cmd P) (EvalCmd P) extendEval δ σ st σ' δ' →
+  EvalStmt P (Cmd P) EvalCmd.toPlain extendEval δ σ st σ' δ' →
   δ' = δ := by
   induction st using Stmt.inductionOn generalizing δ δ' σ σ' with
   | cmd_case c =>
@@ -106,7 +106,7 @@ theorem EvalBlock_noFuncDecl_preserves_δ
   (extendEval : ExtendEval P)
   (ss : Block P (Cmd P)) (δ δ' : SemanticEval P) (σ σ' : SemanticStore P) :
   Block.noFuncDecl ss →
-  EvalBlock P (Cmd P) (EvalCmd P) extendEval δ σ ss σ' δ' →
+  EvalBlock P (Cmd P) EvalCmd.toPlain extendEval δ σ ss σ' δ' →
   δ' = δ := by
   induction ss generalizing δ δ' σ σ' with
   | nil =>
@@ -144,26 +144,26 @@ theorem StmtToNondetCorrect
   (∀ st,
     Stmt.sizeOf st ≤ m →
     Stmt.noFuncDecl st →
-    EvalStmt P (Cmd P) (EvalCmd P) extendEval δ σ st σ' δ →
-    EvalNondetStmt P (Cmd P) (EvalCmd P) δ σ (StmtToNondetStmt st) σ') ∧
+    EvalStmt P (Cmd P) EvalCmd.toPlain extendEval δ σ st σ' δ →
+    EvalNondetStmt P (Cmd P) EvalCmd.toPlain δ σ (StmtToNondetStmt st) σ') ∧
   (∀ ss,
     Block.sizeOf ss ≤ m →
     Block.noFuncDecl ss →
-    EvalBlock P (Cmd P) (EvalCmd P) extendEval δ σ ss σ' δ →
-    EvalNondetStmt P (Cmd P) (EvalCmd P) δ σ (BlockToNondetStmt ss) σ') := by
+    EvalBlock P (Cmd P) EvalCmd.toPlain extendEval δ σ ss σ' δ →
+    EvalNondetStmt P (Cmd P) EvalCmd.toPlain δ σ (BlockToNondetStmt ss) σ') := by
   intros Hwfb Hwfvl
   apply Nat.strongRecOn (motive := λ m ↦
     ∀ σ σ',
     (∀ st,
       Stmt.sizeOf st ≤ m →
       Stmt.noFuncDecl st →
-      EvalStmt P (Cmd P) (EvalCmd P) extendEval δ σ st σ' δ →
-      EvalNondetStmt P (Cmd P) (EvalCmd P) δ σ (StmtToNondetStmt st) σ') ∧
+      EvalStmt P (Cmd P) EvalCmd.toPlain extendEval δ σ st σ' δ →
+      EvalNondetStmt P (Cmd P) EvalCmd.toPlain δ σ (StmtToNondetStmt st) σ') ∧
     (∀ ss,
       Block.sizeOf ss ≤ m →
       Block.noFuncDecl ss →
-      EvalBlock P (Cmd P) (EvalCmd P) extendEval δ σ ss σ' δ →
-      EvalNondetStmt P (Cmd P) (EvalCmd P) δ σ (BlockToNondetStmt ss) σ')
+      EvalBlock P (Cmd P) EvalCmd.toPlain extendEval δ σ ss σ' δ →
+      EvalNondetStmt P (Cmd P) EvalCmd.toPlain δ σ (BlockToNondetStmt ss) σ')
   )
   intros n ih σ σ'
   refine ⟨?_, ?_⟩
@@ -192,7 +192,7 @@ theorem StmtToNondetCorrect
         refine EvalNondetStmt.choice_left_sem Hwfb ?_
         apply EvalNondetStmt.seq_sem
         . apply EvalNondetStmt.cmd_sem
-          exact EvalCmd.eval_assume Htrue Hwfb
+          exact ⟨false, EvalCmd.eval_assume Htrue Hwfb⟩
           simp [isDefinedOver, HasVarsImp.modifiedVars, Cmd.modifiedVars, isDefined]
         . apply (ih _ _).2
           omega
@@ -205,7 +205,7 @@ theorem StmtToNondetCorrect
         refine EvalNondetStmt.choice_right_sem Hwfb ?_
         apply EvalNondetStmt.seq_sem
         . apply EvalNondetStmt.cmd_sem
-          refine EvalCmd.eval_assume ?_ Hwfb
+          refine ⟨false, EvalCmd.eval_assume ?_ Hwfb⟩
           simp [WellFormedSemanticEvalBool] at Hwfb
           exact (Hwfb σ c).2.mp Hfalse
           simp [isDefinedOver, HasVarsImp.modifiedVars, Cmd.modifiedVars, isDefined]
@@ -224,22 +224,21 @@ theorem StmtToNondetCorrect
       | typeDecl_sem =>
         simp [StmtToNondetStmt]
         apply EvalNondetStmt.cmd_sem
-        · apply EvalCmd.eval_assume
-          · have ⟨Htt, _⟩ := HasBoolVal.bool_is_val (P := P)
-            exact Hwfvl.2 HasBool.tt σ Htt
-          · exact Hwfb
+        · exact ⟨false, EvalCmd.eval_assume
+            (by have ⟨Htt, _⟩ := HasBoolVal.bool_is_val (P := P); exact Hwfvl.2 HasBool.tt σ Htt)
+            Hwfb⟩
         · simp [isDefinedOver, HasVarsImp.modifiedVars, Cmd.modifiedVars, isDefined]
   . intros ss Hsz Hno Heval
     cases ss <;>
     cases Heval
     case stmts_none_sem =>
       simp [BlockToNondetStmt]
-      constructor
-      constructor
-      · simp [WellFormedSemanticEvalVal] at Hwfvl
-        have Hval : HasVal.value (HasBool.tt (P := P)) := HasBoolVal.bool_is_val.1
-        exact Hwfvl.2 HasBool.tt σ Hval
-      · assumption
+      apply EvalNondetStmt.cmd_sem
+      · exact ⟨false, EvalCmd.eval_assume
+          (by simp [WellFormedSemanticEvalVal] at Hwfvl
+              have Hval : HasVal.value (HasBool.tt (P := P)) := HasBoolVal.bool_is_val.1
+              exact Hwfvl.2 HasBool.tt σ Hval)
+          Hwfb⟩
       · intros id Hin
         simp [HasVarsImp.modifiedVars, Cmd.modifiedVars] at Hin
     case stmts_some_sem h t σ'' δ₁ Heval Hevals =>
@@ -268,8 +267,8 @@ theorem StmtToNondetStmtCorrect
   WellFormedSemanticEvalBool δ →
   WellFormedSemanticEvalVal δ →
   Stmt.noFuncDecl st →
-  EvalStmt P (Cmd P) (EvalCmd P) extendEval δ σ st σ' δ →
-  EvalNondetStmt P (Cmd P) (EvalCmd P) δ σ (StmtToNondetStmt st) σ' := by
+  EvalStmt P (Cmd P) EvalCmd.toPlain extendEval δ σ st σ' δ →
+  EvalNondetStmt P (Cmd P) EvalCmd.toPlain δ σ (StmtToNondetStmt st) σ' := by
   intros Hwfb Hwfv Hno Heval
   exact (StmtToNondetCorrect extendEval Hwfb Hwfv (m:=st.sizeOf)).1 st (Nat.le_refl _) Hno Heval
 
@@ -281,8 +280,8 @@ theorem BlockToNondetStmtCorrect
   WellFormedSemanticEvalBool δ →
   WellFormedSemanticEvalVal δ →
   Block.noFuncDecl ss →
-  EvalBlock P (Cmd P) (EvalCmd P) extendEval δ σ ss σ' δ →
-  EvalNondetStmt P (Cmd P) (EvalCmd P) δ σ (BlockToNondetStmt ss) σ' := by
+  EvalBlock P (Cmd P) EvalCmd.toPlain extendEval δ σ ss σ' δ →
+  EvalNondetStmt P (Cmd P) EvalCmd.toPlain δ σ (BlockToNondetStmt ss) σ' := by
   intros Hwfb Hwfv Hno Heval
   exact (StmtToNondetCorrect extendEval Hwfb Hwfv (m:=Block.sizeOf ss)).2 ss (Nat.le_refl _) Hno Heval
 

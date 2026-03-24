@@ -91,8 +91,8 @@ end
 theorem eval_stmts_singleton
   [DecidableEq P.Ident]
   [HasVarsImp P (List (Stmt P (Cmd P)))] [HasVarsImp P (Cmd P)] [HasFvar P] [HasVal P] [HasBool P] [HasNot P] :
-  EvalBlock P (Cmd P) (EvalCmd P) extendEval δ σ [cmd] σ' δ' ↔
-  EvalStmt P (Cmd P) (EvalCmd P) extendEval δ σ cmd σ' δ' := by
+  EvalBlock P (Cmd P) EvalCmd.toPlain extendEval δ σ [cmd] σ' δ' ↔
+  EvalStmt P (Cmd P) EvalCmd.toPlain extendEval δ σ cmd σ' δ' := by
   constructor <;> intro Heval
   · cases Heval with | stmts_some_sem Heval Hempty =>
       cases Hempty; exact Heval
@@ -101,9 +101,9 @@ theorem eval_stmts_singleton
 theorem eval_stmts_concat
   [DecidableEq P.Ident]
   [HasVarsImp P (List (Stmt P (Cmd P)))] [HasVarsImp P (Cmd P)] [HasFvar P] [HasVal P] [HasBool P] [HasNot P] :
-  EvalBlock P (Cmd P) (EvalCmd P) extendEval δ σ cmds1 σ' δ' →
-  EvalBlock P (Cmd P) (EvalCmd P) extendEval δ' σ' cmds2 σ'' δ'' →
-  EvalBlock P (Cmd P) (EvalCmd P) extendEval δ σ (cmds1 ++ cmds2) σ'' δ'' := by
+  EvalBlock P (Cmd P) EvalCmd.toPlain extendEval δ σ cmds1 σ' δ' →
+  EvalBlock P (Cmd P) EvalCmd.toPlain extendEval δ' σ' cmds2 σ'' δ'' →
+  EvalBlock P (Cmd P) EvalCmd.toPlain extendEval δ σ (cmds1 ++ cmds2) σ'' δ'' := by
   intro Heval1 Heval2
   induction cmds1 generalizing cmds2 σ δ
   · simp only [List.nil_append]
@@ -115,14 +115,26 @@ theorem eval_stmts_concat
 
 theorem EvalCmdDefMonotone [HasFvar P] [HasBool P] [HasNot P] :
   isDefined σ v →
-  EvalCmd P δ σ c σ' →
+  EvalCmd P δ σ c σ' f →
   isDefined σ' v := by
   intros Hdef Heval
-  cases Heval <;> try exact Hdef
-  next _ Hup => exact InitStateDefMonotone Hdef Hup  -- eval_init
-  next Hup => exact InitStateDefMonotone Hdef Hup    -- eval_init_unconstrained
-  next _ Hup => exact UpdateStateDefMonotone Hdef Hup
-  next Hup => exact UpdateStateDefMonotone Hdef Hup
+  cases Heval with
+  | eval_init _ hinit _ => exact InitStateDefMonotone Hdef hinit
+  | eval_init_unconstrained hinit _ => exact InitStateDefMonotone Hdef hinit
+  | eval_set _ hup _ => exact UpdateStateDefMonotone Hdef hup
+  | eval_havoc hup _ => exact UpdateStateDefMonotone Hdef hup
+  | eval_assert_pass _ _ => exact Hdef
+  | eval_assert_fail _ _ => exact Hdef
+  | eval_assume _ _ => exact Hdef
+  | eval_cover _ => exact Hdef
+
+/-- Variant of `EvalCmdDefMonotone` for the projected 4-arg relation. -/
+theorem EvalCmdDefMonotone' [HasFvar P] [HasBool P] [HasNot P] :
+  isDefined σ v →
+  EvalCmd.toPlain (P := P) δ σ c σ' →
+  isDefined σ' v := by
+  intro Hdef ⟨f, Heval⟩
+  exact EvalCmdDefMonotone Hdef Heval
 
 theorem EvalBlockEmpty {P : PureExpr} {Cmd : Type} {EvalCmd : EvalCmdParam P Cmd}
   {extendEval : ExtendEval P}
@@ -138,13 +150,13 @@ theorem EvalStmtDefMonotone
   [HasVal P] [HasFvar P] [HasBool P] [HasBoolVal P] [HasNot P]
   :
   isDefined σ v →
-  EvalStmt P (Cmd P) (EvalCmd P) extendEval δ σ s σ' δ' →
+  EvalStmt P (Cmd P) EvalCmd.toPlain extendEval δ σ s σ' δ' →
   isDefined σ' v := by
   intros Hdef Heval
   match s with
   | .cmd c =>
     cases Heval; next Hwf Hup =>
-    exact EvalCmdDefMonotone Hdef Hup
+    exact EvalCmdDefMonotone' Hdef Hup
   | .block l bss  _ =>
     cases Heval; next Hwf Hup =>
     apply EvalBlockDefMonotone <;> assumption
@@ -163,7 +175,7 @@ theorem EvalBlockDefMonotone
   [HasVal P] [HasFvar P] [HasBool P] [HasBoolVal P] [HasNot P]
   :
   isDefined σ v →
-  EvalBlock P (Cmd P) (EvalCmd P) extendEval δ σ ss σ' δ' →
+  EvalBlock P (Cmd P) EvalCmd.toPlain extendEval δ σ ss σ' δ' →
   isDefined σ' v := by
   intros Hdef Heval
   cases ss with
