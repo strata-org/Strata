@@ -5,13 +5,13 @@ def main():
     # Test minimal precondition verification
 
     # Should succeed
-    test_helper.procedure("foo", opt_name = None)
+    test_helper.procedure("foo")
 
     # Should succeed
     test_helper.procedure("foo", opt_name = "bar")
 
     # Should error
-    test_helper.procedure("Foo", opt_name = None)
+    test_helper.procedure("foo")
 
     # Should error
     test_helper.procedure("foo", opt_name = "Bar")

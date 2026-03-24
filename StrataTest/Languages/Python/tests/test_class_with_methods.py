@@ -25,7 +25,7 @@ def main():
     name: str = store.get_name()
     assert name == "mystore", "get_name should return mystore"
 
-    test_helper.procedure("foo", opt_name = None)
+    test_helper.procedure("foo")
 
 if __name__ == "__main__":
     main()
