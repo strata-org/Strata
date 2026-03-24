@@ -34,35 +34,13 @@ current state. This allows for two-state expressions and predicates.
 /--
 Evaluation relation of an Imperative command `Cmd`.
 Commands do not modify the evaluator - only `funcDecl` statements do.
--/
--- (FIXME) Change to a type class?
-@[expose] abbrev EvalCmdParam (P : PureExpr) (Cmd : Type) :=
-  SemanticEval P → SemanticStore P → Cmd → SemanticStore P → Prop
 
-/--
-Evaluation relation of an Imperative command `Cmd` with a failure flag.
-Like `EvalCmdParam` but additionally reports whether the command observed
+The Bool flag reports whether the command observed
 a failure (e.g., an assertion whose guard is false).  The `Bool` is `true`
 when the command signals a failure.
-
-Used by the small-step semantics (`StepStmt`) where the failure flag is
-accumulated in `Env.hasFailure`.  The big-step semantics continue to use
-the plain `EvalCmdParam`.
 -/
-@[expose] abbrev EvalCmdParamF (P : PureExpr) (Cmd : Type) :=
+@[expose] abbrev EvalCmdParam (P : PureExpr) (Cmd : Type) :=
   SemanticEval P → SemanticStore P → Cmd → SemanticStore P → Bool → Prop
-
-/-- Lift a plain `EvalCmdParam` to an `EvalCmdParamF` that always reports
-    no failure (`false`). -/
-abbrev EvalCmdParamF.ofPlain {P : PureExpr} {Cmd : Type}
-    (ec : EvalCmdParam P Cmd) : EvalCmdParamF P Cmd :=
-  fun δ σ c σ' f => ec δ σ c σ' ∧ f = false
-
-/-- Project an `EvalCmdParamF` to an `EvalCmdParam` by existentially
-    quantifying over the failure flag. -/
-abbrev EvalCmdParamF.toPlain {P : PureExpr} {Cmd : Type}
-    (ec : EvalCmdParamF P Cmd) : EvalCmdParam P Cmd :=
-  fun δ σ c σ' => ∃ f, ec δ σ c σ' f
 
 /-- ### Well-Formedness of `SemanticStore`s -/
 
@@ -303,11 +281,8 @@ The `Bool` output parameter is a *failure flag*: `true` when the command
 signals an assertion failure, `false` otherwise.  Only `eval_assert_fail`
 sets it to `true`; all other constructors report `false`.
 
-This makes `EvalCmd` directly usable as an `EvalCmdParamF` for the
-small-step semantics, where the failure flag is accumulated in
-`Env.hasFailure`.  For the big-step semantics (which use `EvalCmdParam`,
-the 4-argument version), project away the flag with
-`EvalCmdParamF.toPlain` or `EvalCmd.toPlain`.
+The failure flag is accumulated in `Env.hasFailure` by the statement
+semantics (`EvalStmt`).
 -/
 inductive EvalCmd [HasFvar P] [HasBool P] [HasNot P] :
   SemanticEval P → SemanticStore P → Cmd P → SemanticStore P → Bool → Prop where
@@ -369,13 +344,6 @@ inductive EvalCmd [HasFvar P] [HasBool P] [HasNot P] :
     WellFormedSemanticEvalBool δ →
     ----
     EvalCmd δ σ (.cover _ e _) σ false
-
-/-- Project `EvalCmd` (5-arg, with failure flag) to `EvalCmdParam` (4-arg)
-    by existentially quantifying over the flag.  This is the canonical way
-    to use `EvalCmd` with the big-step semantics (`EvalStmt`). -/
-abbrev EvalCmd.toPlain {P : PureExpr} [HasFvar P] [HasBool P] [HasNot P] :
-    EvalCmdParam P (Cmd P) :=
-  fun δ σ c σ' => ∃ f, EvalCmd P δ σ c σ' f
 
 end section
 

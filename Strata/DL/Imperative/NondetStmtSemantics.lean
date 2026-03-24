@@ -27,7 +27,7 @@ inductive EvalNondetStmt (P : PureExpr) (Cmd : Type) (EvalCmd : EvalCmdParam P C
   [HasVarsImp P (List (Stmt P Cmd))] [HasVarsImp P Cmd] [HasFvar P] [HasBool P] [HasNot P] :
   SemanticEval P → SemanticStore P → NondetStmt P Cmd → SemanticStore P → Prop where
   | cmd_sem :
-    EvalCmd δ σ c σ' →
+    EvalCmd δ σ c σ' f →
     -- We only require definedness on the statement level so that the requirement is fine-grained
     isDefinedOver (HasVarsImp.modifiedVars) σ c →
     ----

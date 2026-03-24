@@ -605,7 +605,7 @@ namespace SmallStepTests
 
 open Statement Lambda Lambda.LTy.Syntax Lambda.LExpr.SyntaxMono Core.Syntax
 open Imperative (PureFunc Config StepStmt StepStmtStar
-                  EvalCmd EvalCmdParamF InitState UpdateState
+                  EvalCmd InitState UpdateState
                   SemanticStore SemanticEval ProgramCounter
                   WellFormedSemanticEvalBool WellFormedSemanticEvalVar)
 
@@ -644,10 +644,10 @@ def noExtend : CoreEval → PureFunc Expression → CoreEval := fun δ _ => δ
 
 abbrev TestConfig := Config Expression Command
 abbrev TestStep := StepStmt Expression
-    (EvalCmdParamF.ofPlain (Core.EvalCommand noProcedures noExtend))
+    (Core.EvalCommand noProcedures noExtend)
     (Core.EvalPureFunc noExtend)
 abbrev TestStepStar := StepStmtStar Expression
-    (EvalCmdParamF.ofPlain (Core.EvalCommand noProcedures noExtend))
+    (Core.EvalCommand noProcedures noExtend)
     (Core.EvalPureFunc noExtend)
 
 /-! ### Tactic macros for small-step proofs
@@ -744,42 +744,35 @@ example : TestStepStar
   take_step; enter_stmts
   -- Step 2: seq (stmt init) → seq (terminal ρ₁)
   take_step; seq_inner; step_cmd
-  constructor
-  · -- EvalCommand: cmd_sem (eval_init)
-    apply EvalCommand.cmd_sem
-    exact ⟨false, EvalCmd.eval_init (v := LExpr.intConst () 0)
-      (by rfl)
-      (InitState.init (σ' := σ₁) (by rfl) (by rfl) (by intro y hne; simp [σ₁]; intro h; exact absurd h hne.symm))
-      simpleEval_wfVar⟩
-  · rfl  -- hasAssertFailure = false
+  apply EvalCommand.cmd_sem
+  exact EvalCmd.eval_init (v := LExpr.intConst () 0)
+    (by rfl)
+    (InitState.init (σ' := σ₁) (by rfl) (by rfl) (by intro y hne; simp [σ₁]; intro h; exact absurd h hne.symm))
+    simpleEval_wfVar
   -- Step 3: seq (terminal ρ₁) → stmts [set; assert]
   take_step; seq_done
   -- Step 4: stmts [set; assert] → seq (stmt set) [assert]
   take_step; enter_stmts
   -- Step 5: seq (stmt set) → seq (terminal ρ₂)
   take_step; seq_inner; step_cmd
-  constructor
-  · apply EvalCommand.cmd_sem
-    exact ⟨false, EvalCmd.eval_set (v := LExpr.intConst () 18)
-      (by rfl)
-      (UpdateState.update (σ' := σ₂) (by rfl) (by rfl)
-        (by intro y hne; simp only [σ₂, σ₁]; split <;> simp_all))
-      simpleEval_wfVar⟩
-  · rfl
+  apply EvalCommand.cmd_sem
+  exact EvalCmd.eval_set (v := LExpr.intConst () 18)
+    (by rfl)
+    (UpdateState.update (σ' := σ₂) (by rfl) (by rfl)
+      (by intro y hne; simp only [σ₂, σ₁]; split <;> simp_all))
+    simpleEval_wfVar
   -- Step 6: seq (terminal ρ₂) → stmts [assert]
   take_step; seq_done
   -- Step 7: stmts [assert] → seq (stmt assert) []
   take_step; enter_stmts
   -- Step 8: seq (stmt assert) → seq (terminal ρ₂)
   take_step; seq_inner; step_cmd
-  constructor
-  · -- Normalize the nested env projections from prior steps
-    show EvalCommand noProcedures noExtend simpleEval σ₂ _ _
-    apply EvalCommand.cmd_sem
-    exact ⟨false, EvalCmd.eval_assert_pass
-      (by simp only [simpleEval, σ₂, Imperative.HasBool.tt, Core.true]; native_decide)
-      simpleEval_wfBool⟩
-  · rfl
+  -- Normalize the nested env projections from prior steps
+  show EvalCommand noProcedures noExtend simpleEval σ₂ _ _ _
+  apply EvalCommand.cmd_sem
+  exact EvalCmd.eval_assert_pass
+    (by simp only [simpleEval, σ₂, Imperative.HasBool.tt, Core.true]; native_decide)
+    simpleEval_wfBool
   -- Step 9: seq (terminal ρ₂) → stmts []
   take_step; seq_done
   -- Step 10: stmts [] → terminal ρ₂

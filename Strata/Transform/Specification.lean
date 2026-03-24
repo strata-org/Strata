@@ -59,12 +59,12 @@ abbrev CoreEnv := Env Expression
 abbrev CoreStep
     (π : String → Option Procedure)
     (φ : CoreEval → PureFunc Expression → CoreEval) :=
-  StepStmt Expression (EvalCmdParamF.ofPlain (EvalCommand π φ)) (EvalPureFunc φ)
+  StepStmt Expression (EvalCommand π φ) (EvalPureFunc φ)
 
 abbrev CoreStepStar
     (π : String → Option Procedure)
     (φ : CoreEval → PureFunc Expression → CoreEval) :=
-  StepStmtStar Expression (EvalCmdParamF.ofPlain (EvalCommand π φ)) (EvalPureFunc φ)
+  StepStmtStar Expression (EvalCommand π φ) (EvalPureFunc φ)
 
 /-! ## Assertion Identity
 
@@ -328,12 +328,9 @@ theorem assertValid_implies_hoareTriple
   | step _ mid _ hstep hrest =>
     cases hstep with
     | step_cmd hcmd =>
-      -- hcmd : EvalCommand π φ ... σ' ∧ f = false  (ofPlain is abbrev)
-      obtain ⟨hcmd', hf⟩ := hcmd
-      subst hf
-      cases hcmd' with
+      -- hcmd : EvalCommand π φ ρ₀.eval ρ₀.store c σ' hasAssertFailure
+      cases hcmd with
       | cmd_sem heval =>
-        obtain ⟨fi, heval⟩ := heval
         cases heval with
         | eval_assert_pass htt _ =>
           -- htt : ρ₀.eval ρ₀.store expr = some HasBool.tt
@@ -390,14 +387,10 @@ theorem hoareTriple_implies_assertValid
   | step _ mid _ hstep hrest =>
     cases hstep with
     | step_cmd hcmd =>
-      obtain ⟨hcmd', hf⟩ := hcmd
-      subst hf
-      cases hcmd' with
+      -- hcmd : EvalCommand π φ ρ₀.eval ρ₀.store c σ' hasAssertFailure
+      cases hcmd with
       | cmd_sem heval =>
         -- Assert commands don't change the store or evaluator.
-        -- mid = .terminal { store := σ', eval := ρ₀.eval, hasFailure := ρ₀.hasFailure || false }
-        -- where σ' = ρ₀.store (from eval_assert_pass or eval_assert_fail)
-        obtain ⟨fi, heval⟩ := heval
         cases heval with
         | eval_assert_pass htt _ => exact htt
         | eval_assert_fail hne _ =>

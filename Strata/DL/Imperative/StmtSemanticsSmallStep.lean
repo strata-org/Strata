@@ -99,23 +99,6 @@ def ProgramCounter.resolveStmt {P : PureExpr} {CmdT : Type}
     | .loop _ _ _ body _ => resolve pc body
     | _ => none
 
-/-! ## Execution Environment
-
-An `Env` bundles the store, expression evaluator, and a cumulative failure
-flag into a single record.  The `hasFailure` flag is OR-ed with the
-per-command failure flag returned by `EvalCmdParamF` at each `step_cmd`,
-so it monotonically accumulates assertion failures along an execution path.
--/
-
-/-- Execution environment: store, evaluator, and cumulative failure flag. -/
-structure Env (P : PureExpr) where
-  /-- The current variable store. -/
-  store : SemanticStore P
-  /-- The current expression evaluator. -/
-  eval  : SemanticEval P
-  /-- Cumulative failure flag — `true` once any command has signalled failure. -/
-  hasFailure : Bool := false
-
 /-! ## Small-Step Operational Semantics for Statements
 
 This module defines small-step operational semantics for the Imperative
@@ -196,7 +179,7 @@ section
 variable {CmdT : Type} (P : PureExpr) [HasBool P] [HasNot P]
 
 inductive StepStmt
-  (EvalCmd : EvalCmdParamF P CmdT)
+  (EvalCmd : EvalCmdParam P CmdT)
   (extendEval : ExtendEval P) :
   Config P CmdT → Config P CmdT → Prop where
 
@@ -368,7 +351,7 @@ variable
   {CmdT : Type}
   (P : PureExpr)
   [HasBool P] [HasNot P]
-  (EvalCmd : EvalCmdParamF P CmdT)
+  (EvalCmd : EvalCmdParam P CmdT)
   (extendEval : ExtendEval P)
 
 abbrev StepStmtStar :
