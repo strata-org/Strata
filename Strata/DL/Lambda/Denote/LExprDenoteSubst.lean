@@ -13,8 +13,7 @@ import all Strata.DL.Lambda.Denote.LExprDenoteProps
 
 namespace Lambda
 
-variable {T : LExprParams} [DecidableEq T.Metadata] [DecidableEq T.Identifier]
-    [DecidableEq T.IDMeta] [Inhabited T.mono.base.IDMeta]
+variable {T : LExprParams}
 variable (tcInterp : TyConstrInterp)
 variable (opInterp : OpInterp T tcInterp)
 variable (fvarVal : FreeVarVal T tcInterp)
@@ -53,8 +52,6 @@ case abs m name (some bty) sub_body:
 case ite/eq/quant: Similar decomposition with unfolding lemmas + IH.
 -/
 
-omit [DecidableEq
-  T.Metadata] [DecidableEq T.Identifier] [DecidableEq T.IDMeta] [Inhabited T.mono.base.IDMeta] in
 /-- Generalized substitution lemma: `substK k` at depth `k` in a context
     `Δ₁ ++ [aty]` with `|Δ₁| = k`. The substituted value `v` must be locally
     closed and well-typed in the empty context. -/
@@ -226,8 +223,6 @@ theorem substK_denote
           rw [hexist_f] at ih_body
           exact ih_body.symm
 
-omit [DecidableEq
-  T.Metadata] [DecidableEq T.Identifier] [DecidableEq T.IDMeta] [Inhabited T.mono.base.IDMeta] in
 /-- Bound-variable substitution commutes with denotation. -/
 theorem subst_denote
     {body : LExpr T.mono} {v : LExpr T.mono}
@@ -243,7 +238,7 @@ theorem subst_denote
   exact substK_denote (Δ₁ := []) _ _ _ _ _ h_body h_v h_subst h_lc
 
 /-- Free-variable substitution commutes with denotation. -/
-theorem substFvars_denote
+theorem substFvars_denote [DecidableEq T.IDMeta]
     {body : LExpr T.mono} {τ : LMonoTy}
     {bindings : List (T.Identifier × LExpr T.mono)}
     {sortBindings : List (Identifier T.IDMeta × LSort)}

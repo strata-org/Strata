@@ -12,8 +12,7 @@ import Strata.DL.Lambda.Denote.HList
 
 namespace Lambda
 
-variable {T : LExprParams} [DecidableEq T.Metadata] [DecidableEq T.Identifier]
-    [DecidableEq T.IDMeta] [Inhabited T.mono.base.IDMeta]
+variable {T : LExprParams}
 variable (tcInterp : TyConstrInterp)
 variable (opInterp : OpInterp T tcInterp)
 variable (fvarVal : FreeVarVal T tcInterp)
@@ -35,8 +34,6 @@ theorem SortDenote.applyArgs_cast_eq {xs ys : List LSort} {ret : LSort}
 
 /-! ### Denotation irrelevance for locally closed expressions -/
 
-omit [DecidableEq
-  T.Metadata] [DecidableEq T.Identifier] [DecidableEq T.IDMeta] [Inhabited T.mono.base.IDMeta] in
 /-- Generalized denotation irrelevance: if `lcAt |Δ₁| e`, then the denotation
     depends only on the prefix `bv₁` (of length `|Δ₁|`), not the suffix. -/
 theorem denote_suffix_irrel
@@ -167,8 +164,6 @@ theorem denote_suffix_irrel
           simp only [HList.append] at ih_body
           rw [← ih_body]; exact hexist_f x
 
-omit [DecidableEq
-  T.Metadata] [DecidableEq T.Identifier] [DecidableEq T.IDMeta] [Inhabited T.mono.base.IDMeta] in
 /-- Special case: if `lcAt 0 e`, the denotation is independent of the
     entire bound-variable valuation. -/
 theorem denote_irrel_of_lcAt
@@ -186,7 +181,6 @@ theorem denote_irrel_of_lcAt
 /-! ### Metadata Doesn't Affect Typing or Denotations -/
 
 -- Easier to prove by computation than via HasTypeA directly
-omit [DecidableEq T.Metadata] [DecidableEq T.Identifier] [DecidableEq T.IDMeta] [Inhabited T.mono.base.IDMeta] in
 theorem replaceMetadata_typeCheck {e: LExpr T.mono}
   (f : T.Metadata → NewMetadata):
   LExpr.typeCheck Δ e = LExpr.typeCheck Δ (e.replaceMetadata f) := by
@@ -198,7 +192,6 @@ theorem replaceMetadata_typeCheck {e: LExpr T.mono}
   case quant m k name ty tr body IHtr IH =>
     cases ty <;> simp[LExpr.typeCheck, IH, IHtr]
 
-omit [DecidableEq T.Metadata] [DecidableEq T.Identifier] [DecidableEq T.IDMeta]  [Inhabited T.mono.base.IDMeta]in
 theorem replaceMetadata_HasTypeA {e: LExpr T.mono}
   (f : T.Metadata → NewMetadata)
   (h₁ : LExpr.HasTypeA Δ e τ):

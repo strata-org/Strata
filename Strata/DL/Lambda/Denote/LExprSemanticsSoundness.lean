@@ -14,8 +14,7 @@ import all Strata.DL.Lambda.Denote.LExprDenoteSubst
 
 namespace Lambda
 
-variable {T : LExprParams} [DecidableEq T.Metadata] [DecidableEq T.Identifier]
-    [DecidableEq T.IDMeta] [Inhabited T.mono.base.IDMeta]
+variable {T : LExprParams}
 variable (tcInterp : TyConstrInterp)
 variable (opInterp : OpInterp T tcInterp)
 variable (fvarVal : FreeVarVal T tcInterp)
@@ -23,7 +22,6 @@ variable (vt : TyVarVal)
 
 /-! ### Helper lemmas -/
 
-omit [DecidableEq T.Metadata] [DecidableEq T.Identifier] [DecidableEq T.IDMeta] [Inhabited T.mono.base.IDMeta] in
 /-- `callOfLFunc` only returns functions that are members of the factory. -/
 theorem Factory.callOfLFunc_mem {F : @Factory T} {e : LExpr T.mono} {callee args fn} :
     F.callOfLFunc e = some (callee, args, fn) → fn ∈ F := by
@@ -47,7 +45,9 @@ theorem Factory.callOfLFunc_mem {F : @Factory T} {e : LExpr T.mono} {callee args
 --   (hv₂ : LExpr.isCanonicalValue F e₂):
 --   LExpr.eql F e₁ e₂ hv₁ hv₂ = LExpr.eqModuloTypes e₁ e₂ := by
 --   unfold LExpr.eql; split <;> grind
-omit [DecidableEq T.Metadata] [DecidableEq T.Identifier] in
+section -- [DecidableEq T.IDMeta] [Inhabited T.mono.base.IDMeta]
+variable [DecidableEq T.IDMeta] [Inhabited T.mono.base.IDMeta]
+
 theorem eqModuloMeta_true_implies_denote_eq
     {e₁ e₂ : LExpr T.mono} {τ : LMonoTy}
     (h₁ : LExpr.HasTypeA [] e₁ τ)
@@ -71,7 +71,6 @@ theorem eqModuloMeta_true_implies_denote_eq
     rfl
 
 
-omit [DecidableEq T.Metadata] [DecidableEq T.Identifier] in
 /-- For canonical values, if syntactic equality (`eql`) returns true, then the
 denotations are equal. -/
 theorem eql_true_implies_denote_eq
@@ -330,5 +329,7 @@ theorem StepStar.denote_preserved
     : LExpr.denote tcInterp opInterp fvarVal vt .nil e₁ τ h₁ =
       LExpr.denote tcInterp opInterp fvarVal vt .nil e₂ τ h₂ := by
   sorry
+
+end -- section [DecidableEq T.IDMeta] [Inhabited T.mono.base.IDMeta]
 
 end Lambda
