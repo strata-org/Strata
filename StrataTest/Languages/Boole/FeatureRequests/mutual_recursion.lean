@@ -35,6 +35,8 @@ program Boole;
 function odd_stub(n: int) : bool;
 function even_stub(n: int) : bool;
 
+axiom (forall n: int :: 0 <= n ==> even_stub(n) || odd_stub(n));
+
 //rec function even(n: int) : bool
 //{
 //  // TODO(feature:mutual-recursion): use `odd(n - 1)` once forward references work.
