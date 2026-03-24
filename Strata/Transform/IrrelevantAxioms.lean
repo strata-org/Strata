@@ -5,7 +5,7 @@
 -/
 module
 
-public import Strata.Languages.Core.CallGraph
+public import Strata.Transform.CoreTransform
 
 /-! # Per-goal irrelevant-axiom filtering for Strata Core verification
 
@@ -53,6 +53,21 @@ def getIrrelevantAxioms (prog : Program) (cache : Cache) (functions : List Strin
       (f :: cache.funcCG.getCalleesClosure f ++ cache.funcCG.getCallersClosure f).dedup
     computeRelevantAxioms prog cache.funcCG cache.axiomMap allAxiomNames initialFns []) |>.dedup
   allAxiomNames.filter (fun a => a ∉ relevantAxioms)
+
+open Transform in
+/-- Remove irrelevant axiom declarations from `prog` given a list of relevant
+    function names. Returns the pruned program via `CoreTransformM`. -/
+def run (prog : Program) (functions : List String) : CoreTransformM Program := do
+  let cache := Cache.build prog
+  let irrelevant := getIrrelevantAxioms prog cache functions
+  let irrelevantSet := irrelevant.toArray.qsort (· < ·)
+  let isIrrelevant (name : String) :=
+    irrelevantSet.binSearch name (· < ·) |>.isSome
+  let prunedDecls := prog.decls.filter (fun decl =>
+    match decl with
+    | .ax a _ => !isIrrelevant a.name
+    | _ => true)
+  return { prog with decls := prunedDecls }
 
 end IrrelevantAxioms
 
