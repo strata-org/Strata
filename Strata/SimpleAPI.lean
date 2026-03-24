@@ -234,13 +234,11 @@ def pySpecs (pythonFile strataDir dialectFile : System.FilePath)
       throw s!"Expected {pythonFile} to be a regular file"
   | .error e => throw s!"Cannot access {pythonFile}: {e}"
 
-  -- Parse skip names into PythonIdents
-  let some fileStem := pythonFile.fileStem
-    | throw s!"No file stem for {pythonFile}"
-
-  let mod ← match Strata.Python.Specs.ModuleName.ofString fileStem with
-    | .ok m => pure m
-    | .error e => throw s!"Invalid module name '{fileStem}': {e}"
+  -- Derive module name from the file path
+  let (mod, _searchRoot) ← match Strata.Python.Specs.ModuleName.ofFile pythonFile with
+    | .ok r => pure r
+    | .error e => throw e
+  let fileStem := toString mod
 
   let skipIdents := skipNames.foldl (init := {}) fun acc s =>
     match Python.PythonIdent.ofString s with
@@ -257,8 +255,9 @@ def pySpecs (pythonFile strataDir dialectFile : System.FilePath)
     | .ok () => pure ()
     | .error e => throw s!"Could not create {strataDir}: {e}"
 
+  let searchPath := pythonFile.parent.getD pythonFile
   let (sigs, warnings) ← Strata.Python.Specs.translateFile
-    dialectFile strataDir pythonFile
+    dialectFile strataDir pythonFile searchPath
     (events := events) (skipNames := skipIdents)
 
   let strataFile := strataDir / mod.strataFileName

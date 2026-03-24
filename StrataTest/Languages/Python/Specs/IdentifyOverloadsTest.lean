@@ -63,13 +63,11 @@ private meta def buildOverloadTable
   IO.FS.withTempFile fun _handle dialectFile => do
     IO.FS.writeBinFile dialectFile Python.Python.toIon
     -- Compile servicelib dispatch file to pyspec Ion
-    let pyFile := testDir / "servicelib.py"
-    let some stem := pyFile.fileStem
-      | throw <| .userError s!"No stem for {pyFile}"
-    let ionPath := outDir / s!"{stem}.pyspec.st.ion"
-    match ← pySpecs pyFile outDir dialectFile (warningOutput := .none) |>.toBaseIO with
-    | .ok () =>
-      pure ()
+    let pyFile := testDir / "servicelib" / "__init__.py"
+    let ionPath := outDir / "servicelib.pyspec.st.ion"
+    match ← pySpecs pyFile outDir dialectFile
+        (warningOutput := .none) |>.toBaseIO with
+    | .ok () => pure ()
     | .error msg =>
       throw <| .userError s!"pySpecs failed for {pyFile}: {msg}"
     match ← readDispatchOverloads #[ionPath.toString] |>.toBaseIO with

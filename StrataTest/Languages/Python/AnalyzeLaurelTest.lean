@@ -34,8 +34,11 @@ private meta def compilePySpec
       (warningOutput := .none) |>.toBaseIO with
   | .ok () => pure ()
   | .error msg => throw <| .userError s!"pySpecs failed for {pyFile}: {msg}"
-  let some stem := pyFile.fileStem
-    | throw <| .userError s!"No stem for {pyFile}"
+  -- Derive the module stem: parent dir name for __init__.py, file stem otherwise
+  let some stem := if pyFile.fileName == some "__init__.py"
+      then pyFile.parent >>= (·.fileName)
+      else pyFile.fileStem
+    | throw <| .userError s!"Cannot derive module name from {pyFile}"
   return outDir / s!"{stem}.pyspec.st.ion"
 
 /-- Compile a Python source file to a `.python.st.ion` Ion file.
@@ -71,11 +74,8 @@ private meta def setupFixture (_pythonCmd : System.FilePath)
     (outDir : System.FilePath) : IO System.FilePath := do
   IO.FS.withTempFile fun _handle dialectFile => do
     IO.FS.writeBinFile dialectFile Python.Python.toIon
-    -- Compile service specs
-    let _ ← compilePySpec dialectFile (testDir / "Storage.py") outDir
-    let _ ← compilePySpec dialectFile (testDir / "Messaging.py") outDir
-    -- Compile dispatch file
-    compilePySpec dialectFile (testDir / "servicelib.py") outDir
+    -- Compile dispatch file (resolves relative imports to Storage/Messaging)
+    compilePySpec dialectFile (testDir / "servicelib" / "__init__.py") outDir
 
 /-- Compile a test Python file to Ion format. -/
 private meta def compileTestScript (pyFile : System.FilePath)
