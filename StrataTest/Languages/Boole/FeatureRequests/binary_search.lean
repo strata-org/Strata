@@ -111,4 +111,5 @@ spec
 
 #end
 
+#guard_msgs(drop info, error) in
 #eval Strata.Boole.verify "cvc5" binarySearchPgm

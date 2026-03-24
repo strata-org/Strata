@@ -1672,8 +1672,8 @@ def pythonToLaurel' (info : PreludeInfo)
           classFieldHighType := classFieldHighType,
           filePath := filePath
         }
-        let (composite, instanceProcedures) ← translateClass initCtx stmt
-        procedures := procedures ++ instanceProcedures
+        let (composite, _instanceProcedures) ← translateClass initCtx stmt
+        procedures := procedures -- TODO, compile instanceProcedure ++ _instanceProcedures
         compositeTypes := compositeTypes ++ [composite]
         compositeTypeNames := compositeTypeNames.insert composite.name.text
         -- Collect field types for Any coercions in field accesses
