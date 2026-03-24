@@ -6,8 +6,8 @@
 module
 
 import Strata.Languages.Laurel.LaurelToCoreTranslator
-import Strata.Languages.Python.PythonToCore
 public import Strata.Languages.Python.PythonToLaurel
+import Strata.Languages.Python.ReadPython
 import Strata.Languages.Python.PythonLaurelCorePrelude
 import Strata.Languages.Python.PythonRuntimeLaurelPart
 import Strata.Languages.Python.Specs
@@ -84,23 +84,6 @@ private def mergeOverloads (old new : OverloadTable) : OverloadTable :=
   new.fold (init := old) fun o name n =>
     o.alter name fun s => some <| s.getD {} |>.union n
 
-/-- Read a Python Ion program and return the single module command.
-    Throws if the file is not Ion or does not contain exactly one module. -/
-public def readPythonIonModule (strataPath : String)
-    : EIO String (Python.Command SourceRange) := do
-  let bytes ←
-    match ← IO.FS.readBinFile strataPath |>.toBaseIO with
-    | .ok b => pure b
-    | .error msg => throw s!"Error reading {strataPath}: {msg}"
-  if !Ion.isIonFile bytes then
-    throw s!"{strataPath} is not an Ion file"
-  let pgm ← match Program.fromIon Python.Python_map Python.Python.name bytes with
-    | .ok pgm => pure pgm
-    | .error msg => throw s!"Error parsing {strataPath}: {msg}"
-  let cmds := toPyCommands pgm.commands
-  let .isTrue _ := decideProp (cmds.size = 1)
-    | throw s!"Expected 1 module in {strataPath}, got {cmds.size}"
-  return cmds[0]
 
 /-- Read PySpec Ion files and collect their Laurel declarations and overload
     tables into a single combined result. Each Ion file is parsed and translated
@@ -299,11 +282,10 @@ public def pyAnalyzeLaurel
     (pyspecPaths : Array String := #[])
     (sourcePath : Option String := none)
     : EIO PipelineError Laurel.Program := do
-  let pyModule ←
-    match ← readPythonIonModule pythonIonPath |>.toBaseIO with
+  let stmts ←
+    match ← Python.readPythonStrata pythonIonPath |>.toBaseIO with
     | .ok r => pure r
     | .error msg => throw (.internal msg)
-  let stmts := unwrapModule pyModule
 
   let result ←
     match ← resolveAndBuildLaurelPrelude dispatchPaths pyspecPaths stmts |>.toBaseIO with
@@ -313,7 +295,7 @@ public def pyAnalyzeLaurel
 
   let metadataPath := sourcePath.getD pythonIonPath
   let (laurelProgram, _ctx) ←
-    match Python.pythonToLaurel' preludeInfo pyModule none metadataPath result.overloads with
+    match Python.pythonToLaurel' preludeInfo stmts none metadataPath result.overloads with
     | .error (.userPythonError range msg) => throw (.userCode range msg)
     | .error e => throw (.internal s!"Python to Laurel translation failed: {e}")
     | .ok result => pure result
