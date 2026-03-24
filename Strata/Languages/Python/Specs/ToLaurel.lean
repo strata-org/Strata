@@ -437,14 +437,13 @@ def funcDeclToLaurel (procName : String) (func : FunctionDecl)
           if a.default.isNone then some a.name else none)
       pure (anyInputs, anyOutputs, body)
     else
-      -- Opaque methods: use Any for all parameters and outputs to match
-      -- the Python→Laurel pipeline's Any-wrapping convention.
-      let anyTy : HighTypeMd := mkCore "Any"
-      let anyInputs := inputs.map fun p => { p with type := anyTy }
-      let opaqueOutputs := if outputs.isEmpty
-        then [{ name := "result", type := anyTy : Parameter }]
-        else outputs.map fun p => { p with type := anyTy }
-      pure (anyInputs, opaqueOutputs, Body.Opaque [] none [])
+      -- Opaque methods: add an Any return value so callers can assign
+      -- the result (the pyspec may declare NoneType even when the method
+      -- returns a response object).
+      let opaqueOutputs := if outputs.isEmpty && isMethod
+        then [{ name := "result", type := mkCore "Any" : Parameter }]
+        else outputs
+      pure (inputs, opaqueOutputs, Body.Opaque [] none [])
   return {
     name := procName
     inputs := inputs.toList
