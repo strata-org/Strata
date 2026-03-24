@@ -243,7 +243,7 @@ def pySpecs (pythonFile strataDir dialectFile : System.FilePath)
     | .error e => throw s!"Invalid module name '{fileStem}': {e}"
 
   let skipIdents := skipNames.foldl (init := {}) fun acc s =>
-    match Strata.Python.Specs.PythonIdent.ofString s with
+    match Python.PythonIdent.ofString s with
     | some id => acc.insert id
     | none => acc.insert { pythonModule := fileStem, name := s }
 
