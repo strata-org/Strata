@@ -1,18 +1,22 @@
 #!/bin/bash
 
-# Usage: ./run_py_analyze.sh [laurel] [--update]
+# Usage: ./run_py_analyze.sh [laurel] [--update] [--filter <pattern>]
 # Run without arguments for pyAnalyze, with "laurel" for pyAnalyzeLaurel
 # With --update, overwrite existing expected files with actual output
+# With --filter <pattern>, only run tests whose name contains <pattern>
 
 failed=0
 update=0
 mode="core"
+filter=""
 
-for arg in "$@"; do
-    case "$arg" in
+while [ $# -gt 0 ]; do
+    case "$1" in
         --update) update=1 ;;
-        *) mode="$arg" ;;
+        --filter) filter="$2"; shift ;;
+        *) mode="$1" ;;
     esac
+    shift
 done
 
 if [ "$mode" = "laurel" ]; then
@@ -41,6 +45,11 @@ for test_file in tests/test_*.py; do
             fi
         done
         [ $skip -eq 1 ] && continue
+
+        # Apply name filter if specified
+        if [ -n "$filter" ] && [[ "$base_name" != *"$filter"* ]]; then
+            continue
+        fi
 
         ion_file="tests/${base_name}.python.st.ion"
         expected_file="${expected_dir}/${base_name}.expected"
