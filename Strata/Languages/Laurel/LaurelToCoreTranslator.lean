@@ -588,8 +588,12 @@ def translateInvokeOnAxiom (proc : Procedure) (trigger : StmtExprMd)
     | .Opaque postconds _ _ => postconds
     | _ => []
   if postconds.isEmpty then return none
-  -- All input param names become bound variables (outermost first = index 0 for first param)
-  let boundVars := proc.inputs.map (·.name)
+  -- All input param names become bound variables.
+  -- buildQuants nests ∀ p1, ∀ p2, ..., ∀ pn :: body, so inside body the innermost
+  -- binder (pn) is de Bruijn index 0, and the outermost (p1) is index n-1.
+  -- translateExpr uses findIdx? on boundVars, so we must list params innermost-first
+  -- (i.e. reversed) so that pn → 0, ..., p1 → n-1.
+  let boundVars := proc.inputs.reverse.map (·.name)
   -- Translate postconditions and trigger with the full bound-var context
   let postcondExprs ← postconds.mapM (fun pc => translateExpr pc boundVars (isPureContext := true))
   let bodyExpr : Core.Expression.Expr := match postcondExprs with
