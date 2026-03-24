@@ -195,6 +195,10 @@ function List_len (l : ListAny) : int
   if ListAny..isListAny_nil(l) then 0 else 1 + List_len(ListAny..tail!(l))
 };
 
+procedure List_len_pos(l : ListAny)
+  // autoinvoke
+  ensures List_len(l) >= 0;
+
 function List_contains (l : ListAny, x: Any) : bool
 {
   if ListAny..isListAny_nil(l) then false else (ListAny..head!(l) == x) || List_contains(ListAny..tail!(l), x)
@@ -222,6 +226,10 @@ function List_take (l : ListAny, i: int) : ListAny
   else ListAny_cons(ListAny..head!(l), List_take(ListAny..tail!(l), i - 1))
 };
 
+procedure List_take_len(l : ListAny, i: int)
+  // autoinvoke {List_len(List_take(l,i))}
+  ensures i >= 0 && i <= List_len(l) ==> List_len(List_take(l,i)) == i;
+
 function List_drop (l : ListAny, i: int) : ListAny
   requires i >= 0 && i <= List_len(l)
 {
@@ -229,6 +237,10 @@ function List_drop (l : ListAny, i: int) : ListAny
   else if  i == 0 then l
   else List_drop(ListAny..tail!(l), i - 1)
 };
+
+procedure List_drop_len(l : ListAny, i: int)
+  // autoinvoke {List_len(List_drop(l,i))}
+  ensures i >= 0 && i <= List_len(l) ==> List_len(List_drop(l,i)) == List_len(l) - i;
 
 function List_slice (l : ListAny, start : int, stop: int) : ListAny
   requires start >= 0 && start < List_len(l) && stop >= 0 && stop <= List_len(l) && start <= stop
@@ -429,6 +441,8 @@ function PNot (v: Any) : Any
 // /////////////////////////////////////////////////////////////////////////////////////
 // Modelling of Python binary operations
 // /////////////////////////////////////////////////////////////////////////////////////
+
+function Str.Concat(s: string, s2: string): string external;
 
 function PAdd (v1: Any, v2: Any) : Any
 {
@@ -734,6 +748,10 @@ function to_string_any(a: Any) : Any {
 };
 
 function datetime_strptime(dtstring: Any, format: Any) : Any;
+
+procedure datetime_tostring_cancel(dt: Any)
+  // autoinvoke
+  ensures datetime_strptime(to_string_any(dt), from_string ("%Y-%m-%d")) == dt;
 
 procedure datetime_date(d: Any) returns (ret: Any, error: Error)
   requires Any..isfrom_datetime(d) summary "d_type"

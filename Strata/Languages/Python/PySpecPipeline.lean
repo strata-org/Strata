@@ -250,10 +250,10 @@ public def combinePySpecLaurel
     constants := pySpec.constants ++ user.constants
   }
 
-/-- Prepend the full Python runtime Core prelude (datatype definitions,
+/-- Prepend the Core part of the Python runtime (datatype definitions,
     procedure bodies, etc.) to the Core program produced by Laurel
     translation. -/
-private def prependPrelude (coreFromLaurel : Core.Program) : Core.Program :=
+private def prependCorePartOfRuntime (coreFromLaurel : Core.Program) : Core.Program :=
   { decls := coreFromLaurel.decls ++ Python.coreOnlyFromRuntimeCorePart  }
 
 /-- Translate a combined Laurel program to Core and prepend the full
@@ -267,7 +267,7 @@ public def translateCombinedLaurel (combined : Laurel.Program)
     : (Option Core.Program × List DiagnosticModel) :=
   let (coreOption, errors) := Laurel.translate { inlineFunctionsWhenPossible := true } combined
   (coreOption.map (fun core =>
-    let prepended := prependPrelude core
+    let prepended := prependCorePartOfRuntime core
     -- dbg_trace "=== Final Core Program ==="
     -- dbg_trace (toString (Std.Format.pretty (Strata.Core.formatProgram prepended) 100))
     -- dbg_trace "================================="

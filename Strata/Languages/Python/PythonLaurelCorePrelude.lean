@@ -116,14 +116,6 @@ type CoreOnlyDelimiter;
 // ListAny functions
 // /////////////////////////////////////////////////////////////////////////////////////
 
-axiom [List_len_pos]: forall l : ListAny :: List_len(l) >= 0;
-
-axiom [List_take_len]: forall l : ListAny, i: int :: {List_len(List_take(l,i))}
-  (i >= 0 && i <= List_len(l)) ==> List_len(List_take(l,i)) == i;
-
-axiom [List_drop_len]: forall l : ListAny, i: int :: {List_len(List_drop(l,i))}
-  (i >= 0 && i <= List_len(l)) ==> List_len(List_drop(l,i)) == List_len(l) - i;
-
 // TODO introduce procedure types in Laurel so we can move this to the Laurel part
 rec function List_map (@[cases] l : ListAny, f: Any -> Any) : ListAny
 {
@@ -146,9 +138,6 @@ rec function List_filter (@[cases] l : ListAny, f: Any -> bool) : ListAny
 // /////////////////////////////////////////////////////////////////////////////////////
 // Modelling some datetime-related Python operations, for testing purpose
 // /////////////////////////////////////////////////////////////////////////////////////
-
-axiom [datetime_tostring_cancel]: forall dt: Any ::
-  datetime_strptime(to_string_any(dt), from_string ("%Y-%m-%d")) == dt;
 
 #end
 
