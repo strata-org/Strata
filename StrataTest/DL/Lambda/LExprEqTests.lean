@@ -93,6 +93,13 @@ private abbrev eqMM (F : @Factory TP) (e1 e2 : LExpr TP.mono) : Option Bool :=
 #guard_msgs in
 #eval eqMM emptyFactory esM[λ %0] esM[#1]
 
+/-! ### Real constant equality tests -/
+
+-- Different real constants are incomparable (eql cannot decide inequality)
+/-- info: none -/
+#guard_msgs in
+#eval eqMM emptyFactory (LExpr.realConst () 1) (LExpr.realConst () 2)
+
 /-! ### Datatype constructor equality tests -/
 
 private def intListTy : LDatatype Unit :=

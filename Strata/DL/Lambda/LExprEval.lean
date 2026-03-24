@@ -68,8 +68,11 @@ def eql (F : @Factory T.base) (e1 e2 : LExpr T) : Option Bool :=
   else
   -- Disproving equality is harder, we have several special cases
   match _he: e1, e2 with
-  -- Case 1: Syntactic inequality of constants implies semantic inequality
-  | .const _ c1, .const _ c2 => some (c1 == c2)
+  -- Case 1: Syntactic inequality of (non-real) constants implies semantic inequality
+  | .const _ c1, .const _ c2 =>
+    match c1, c2 with
+    | .realConst _, .realConst _ => none
+    | _, _ =>  some (c1 == c2)
   -- Case 2: Comparing Lambdas
   | .abs _ _ ty1 e1, .abs _ _ ty2 e2 =>
     if ty1 != ty2 then some false
