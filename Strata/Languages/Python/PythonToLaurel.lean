@@ -1110,12 +1110,6 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
     let tryLabel := s!"try_end_{s.toAst.ann.start.byteIdx}"
     let catchersLabel := s!"exception_handlers_{s.toAst.ann.start.byteIdx}"
 
-    -- Extract error variables from except handler names (PythonError type)
-    let errorVars : List String := ((handlers.val.toList.filterMap (fun h => match h with
-          | .ExceptHandler _ _ errname _ => errname.val)).map (fun h => h.val)).dedup.filter
-          (fun e => e ∉ ctx.variableTypes.unzip.fst)
-    let errorVarDecls := errorVars.map (fun e => mkStmtExprMd (.LocalVariable {text := e} AnyTy none))
-
     -- Pre-scan for variable declarations in both branches so they are
     -- declared in the outer scope (Python scoping: variables assigned
     -- in try/except are visible after the block).
@@ -1127,7 +1121,7 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
     let handlerDecls := handlers.val.toList.flatMap fun h => match h with
       | .ExceptHandler _ _ _ hBody => collectDeclaredNamesAndTypes hBody.val.toList
 
-    let allNewDecls := (bodyDecls ++ errorVarDecls ++ handlerDecls)
+    let allNewDecls := (bodyDecls ++ errorVarPairs ++ handlerDecls)
     let (hoistedDecls, hoistedCtx) := createVarDeclStmtsAndCtx ctx allNewDecls
 
     -- Translate try body (with hoisted context so inner decls become assigns)
@@ -1165,7 +1159,7 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
       (handlerCtx.variableTypes.filter fun (n, _) =>
         !bodyCtx.variableTypes.any fun (bn, _) => bn == n)
     let finalCtx := { bodyCtx with variableTypes := mergedVars }
-    return (finalCtx, errorVarDecls ++ hoistedDecls ++ [tryBlock])
+    return (finalCtx, hoistedDecls ++ [tryBlock])
 
   | .Raise _ _ _ => return (ctx, [mkStmtExprMd .Hole])
 
