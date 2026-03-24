@@ -6,6 +6,8 @@
 module
 
 public import Strata.DL.Lambda.LExpr
+public import Strata.DL.Lambda.LExprWF
+import all Strata.DL.Lambda.LExprWF
 
 /-! ## Type Checking for Annotated Lambda Expressions
 
@@ -195,6 +197,137 @@ theorem HasTypeA_unique {T : LExprParams} {Δ : List LMonoTy} {e : LExpr T.mono}
   have := LExpr.HasTypeA_to_typeCheck h₁
   have := LExpr.HasTypeA_to_typeCheck h₂
   simp_all
+
+/-! ### HasTypeA implies lcAt -/
+
+/-- Well-typed expressions have all bound variables within the context. -/
+theorem HasTypeA_lcAt {T : LExprParams} {e : LExpr T.mono} {Δ : List LMonoTy} {τ : LMonoTy}
+    (h : LExpr.HasTypeA Δ e τ) : LExpr.lcAt Δ.length e = true := by
+  induction h with
+  | const => simp [LExpr.lcAt]
+  | op => simp [LExpr.lcAt]
+  | fvar => simp [LExpr.lcAt]
+  | bvar hlookup => simp [LExpr.lcAt]; grind
+  | abs _ ih => simp [LExpr.lcAt, ih] at *
+  | quant _ _ ih_tr ih_body => simp [LExpr.lcAt, ih_tr, ih_body] at *
+  | app _ _ ih_fn ih_arg => simp [LExpr.lcAt, ih_fn, ih_arg]
+  | ite _ _ _ ih_c ih_t ih_e => simp [LExpr.lcAt, ih_c, ih_t, ih_e]
+  | eq _ _ ih1 ih2 => simp [LExpr.lcAt, ih1, ih2]
+
+/-- Well-typed in the empty context implies locally closed. -/
+theorem HasTypeA_nil_lcAt {T : LExprParams} {e : LExpr T.mono} {τ : LMonoTy}
+    (h : LExpr.HasTypeA [] e τ) : LExpr.lcAt 0 e = true :=
+  HasTypeA_lcAt h
+
+/-! ### typeCheck context irrelevance for lcAt expressions -/
+
+/-- typeCheck depends only on the first k context entries for lcAt k expressions. -/
+theorem typeCheck_of_lcAt_aux {T : LExprParams}
+    {e : LExpr T.mono} {k : Nat} {Δ Δ' : List LMonoTy}
+    (hlc : LExpr.lcAt k e = true)
+    (hagree : ∀ i, i < k → Δ[i]? = Δ'[i]?)
+    : LExpr.typeCheck Δ e = LExpr.typeCheck Δ' e := by
+  induction e generalizing k Δ Δ' with
+  | const => rfl
+  | op m o ty => cases ty <;> rfl
+  | fvar m name ty => cases ty <;> rfl
+  | bvar m i =>
+    simp only [LExpr.typeCheck]
+    simp [LExpr.lcAt] at hlc
+    exact hagree i hlc
+  | app m fn arg ih_fn ih_arg =>
+    simp [LExpr.lcAt] at hlc
+    simp only [LExpr.typeCheck]
+    rw [ih_fn hlc.1 hagree, ih_arg hlc.2 hagree]
+  | ite m c t e ih_c ih_t ih_e =>
+    simp [LExpr.lcAt] at hlc
+    simp only [LExpr.typeCheck]
+    rw [ih_c hlc.1.1 hagree, ih_t hlc.1.2 hagree, ih_e hlc.2 hagree]
+  | eq m e1 e2 ih1 ih2 =>
+    simp [LExpr.lcAt] at hlc
+    simp only [LExpr.typeCheck]
+    rw [ih1 hlc.1 hagree, ih2 hlc.2 hagree]
+  | abs m name ty body ih =>
+    cases ty with
+    | none => simp [LExpr.typeCheck]
+    | some aty' =>
+      simp [LExpr.lcAt] at hlc
+      simp only [LExpr.typeCheck]
+      rw [@ih _ (aty' :: Δ) (aty' :: Δ') hlc]
+      grind
+  | quant m qk name qty tr body ih_tr ih_body =>
+    cases qty with
+    | none => simp [LExpr.typeCheck]
+    | some qty' =>
+      simp [LExpr.lcAt] at hlc
+      simp only [LExpr.typeCheck]
+      have hagree' : ∀ i, i < k + 1 → (qty' :: Δ)[i]? = (qty' :: Δ')[i]? := fun i hi => by
+        cases i with
+        | zero => rfl
+        | succ j => simp [List.getElem?_cons_succ]; exact hagree j (by omega)
+      rw [ih_tr hlc.1 hagree', ih_body hlc.2 hagree']
+
+/-- typeCheck is independent of context for closed terms (lcAt 0). -/
+theorem typeCheck_of_lcAt {T : LExprParams}
+    {e : LExpr T.mono} {Δ' : List LMonoTy}
+    (hlc : LExpr.lcAt 0 e = true)
+    : LExpr.typeCheck Δ' e = LExpr.typeCheck [] e :=
+  typeCheck_of_lcAt_aux hlc (by omega)
+
+/-- Substitution preserves typeCheck results. -/
+theorem substK_typeCheck {T : LExprParams}
+    {e : LExpr T.mono} {v : LExpr T.mono}
+    {aty : LMonoTy} {Δ₁ : List LMonoTy}
+    (h_v : LExpr.HasTypeA [] v aty)
+    : LExpr.typeCheck Δ₁ (LExpr.substK Δ₁.length (fun _ => v) e) =
+      LExpr.typeCheck (Δ₁ ++ [aty]) e := by
+  induction e generalizing Δ₁ with
+  | const => rfl
+  | op m o ty => cases ty <;> rfl
+  | fvar m name ty => cases ty <;> rfl
+  | bvar m i =>
+    simp only [LExpr.substK, LExpr.typeCheck]
+    by_cases h : i == Δ₁.length
+    · have hi : i = Δ₁.length := by grind
+      subst hi; simp
+      rw [typeCheck_of_lcAt (HasTypeA_nil_lcAt h_v),
+          LExpr.HasTypeA_to_typeCheck h_v]
+    · simp [h]
+      have hi : i ≠ Δ₁.length := by grind
+      by_cases hlt : i < Δ₁.length
+      · simp[LExpr.typeCheck]
+        grind
+      · have hge : i ≥ Δ₁.length + 1 := by omega
+        simp [List.getElem?_append_right (by omega : Δ₁.length ≤ i)]
+        simp[LExpr.typeCheck]
+        grind
+  | abs m name ty body ih =>
+    cases ty with
+    | none => simp [LExpr.substK, LExpr.typeCheck]
+    | some aty' =>
+      simp only [LExpr.substK, LExpr.typeCheck]
+      have h_len : (aty' :: Δ₁).length = Δ₁.length + 1 := by grind
+      rw [show LExpr.typeCheck (aty' :: Δ₁) (LExpr.substK (Δ₁.length + 1) (fun x => v) body)
+            = LExpr.typeCheck (aty' :: (Δ₁ ++ [aty])) body from by rw [← h_len, ih]; simp [List.cons_append]]
+  | app m fn arg ih_fn ih_arg =>
+    simp only [LExpr.substK, LExpr.typeCheck]
+    rw [ih_fn, ih_arg]
+  | ite m c t e ih_c ih_t ih_e =>
+    simp only [LExpr.substK, LExpr.typeCheck]
+    rw [ih_c, ih_t, ih_e]
+  | eq m e1 e2 ih1 ih2 =>
+    simp only [LExpr.substK, LExpr.typeCheck]
+    rw [ih1, ih2]
+  | quant m qk name qty tr body ih_tr ih_body =>
+    cases qty with
+    | none => simp [LExpr.substK, LExpr.typeCheck]
+    | some qty' =>
+      simp only [LExpr.substK, LExpr.typeCheck]
+      have h_len : (qty' :: Δ₁).length = Δ₁.length + 1 := by grind
+      rw [show LExpr.typeCheck (qty' :: Δ₁) (LExpr.substK (Δ₁.length + 1) (fun x => v) tr)
+            = LExpr.typeCheck (qty' :: (Δ₁ ++ [aty])) tr from by rw [← h_len, ih_tr]; simp [List.cons_append],
+          show LExpr.typeCheck (qty' :: Δ₁) (LExpr.substK (Δ₁.length + 1) (fun x => v) body)
+            = LExpr.typeCheck (qty' :: (Δ₁ ++ [aty])) body from by rw [← h_len, ih_body]; simp [List.cons_append]]
 
 end -- public section
 

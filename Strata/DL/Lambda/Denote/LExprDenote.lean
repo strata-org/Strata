@@ -5,7 +5,8 @@
 -/
 module
 
-import Strata.DL.Lambda.LExprAnnotated
+import Strata.DL.Lambda.Denote.LExprAnnotated
+public import Strata.DL.Lambda.Denote.HList
 import Strata.DL.Lambda.Factory
 
 namespace Lambda
@@ -144,18 +145,6 @@ abbrev TyDenote (tcInterp : TyConstrInterp)
   SortDenote tcInterp (LMonoTy.substTyVars ρ ty)
 
 /-! ### Bound Variable Valuation -/
-
-/-- A heterogeneous list indexed by a list of elements of type `α`. -/
-inductive HList {α : Type} (f : α → Type) : List α → Type where
-  | nil  : HList f []
-  | cons : f a → HList f as → HList f (a :: as)
-
-/-- Look up the `i`-th element of an `HList`, given a proof that the list
-maps index `i` to `a`. -/
-def HList.get {α : Type} {f : α → Type} {as : List α} {a : α} :
-    HList f as → (i : Nat) → as[i]? = some a → f a
-  | .cons x _, 0, h => by simp at h; subst h; exact x
-  | .cons _ xs, n + 1, h => by simp at h; exact xs.get n h
 
 /-- Bound variable valuation: an `HList` of semantic values indexed by the
 typing context. -/
@@ -821,6 +810,19 @@ theorem Denotes_denote
 
 These lemmas expose the structure of `denote` for each expression form,
 proved via `Denotes` to avoid dependent-type casts from the `_inv` lemmas. -/
+
+/-- Unfolding lemma for `denote` of a bound variable. -/
+theorem denote_bvar
+    {T : LExprParams}
+    (tcInterp : TyConstrInterp)
+    (opInterp : OpInterp T tcInterp)
+    (fvarVal : FreeVarVal T tcInterp)
+    (vt : TyVarVal)
+    {m : T.mono.base.Metadata} {i : Nat} {τ : LMonoTy} {Δ : List LMonoTy}
+    (bvarVal : BVarVal tcInterp vt Δ)
+    (h : LExpr.HasTypeA Δ (.bvar m i) τ)
+    : LExpr.denote tcInterp opInterp fvarVal vt bvarVal (.bvar m i) τ h =
+      bvarVal.get i (HasTypeA.bvar_inv h) := by rfl
 
 /-- Unfolding lemma for `denote` of an application. -/
 theorem denote_app

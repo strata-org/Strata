@@ -1,0 +1,334 @@
+/-
+  Copyright Strata Contributors
+
+  SPDX-License-Identifier: Apache-2.0 OR MIT
+-/
+module
+
+import Strata.DL.Lambda.Denote.LExprAnnotated
+import all Strata.DL.Lambda.Denote.LExprDenote
+import all Strata.DL.Lambda.Semantics
+import Strata.DL.Lambda.Denote.HList
+import all Strata.DL.Lambda.Denote.LExprDenoteProps
+import all Strata.DL.Lambda.Denote.LExprDenoteSubst
+
+namespace Lambda
+
+variable {T : LExprParams} [DecidableEq T.Metadata] [DecidableEq T.Identifier]
+    [DecidableEq T.IDMeta] [Inhabited T.mono.base.IDMeta]
+variable (tcInterp : TyConstrInterp)
+variable (opInterp : OpInterp T tcInterp)
+variable (fvarVal : FreeVarVal T tcInterp)
+variable (vt : TyVarVal)
+
+/-! ### Helper lemmas -/
+
+omit [DecidableEq T.Metadata] [DecidableEq T.Identifier] [DecidableEq T.IDMeta] [Inhabited T.mono.base.IDMeta] in
+/-- `callOfLFunc` only returns functions that are members of the factory. -/
+theorem Factory.callOfLFunc_mem {F : @Factory T} {e : LExpr T.mono} {callee args fn} :
+    F.callOfLFunc e = some (callee, args, fn) → fn ∈ F := by
+  simp [Factory.callOfLFunc]
+  cases getLFuncCall e with | mk op args' =>
+  simp; cases op <;> simp
+  rename_i m name ty
+  cases h : F.getFactoryLFunc name.name <;> simp
+  rename_i func
+  cases args'.length == func.inputs.length <;> simp
+  intro _ _ h_fn; subst h_fn
+  exact Array.mem_of_find?_eq_some h
+
+/-! ### Weakening and context-irrelevance for lcAt 0 expressions -/
+
+-- omit [DecidableEq T.Metadata] [DecidableEq T.Identifier] in
+-- theorem eql_rewrite
+--   {F : @Factory T}
+--   {e₁ e₂ : LExpr T.mono}
+--   (hv₁ : LExpr.isCanonicalValue F e₁)
+--   (hv₂ : LExpr.isCanonicalValue F e₂):
+--   LExpr.eql F e₁ e₂ hv₁ hv₂ = LExpr.eqModuloTypes e₁ e₂ := by
+--   unfold LExpr.eql; split <;> grind
+omit [DecidableEq T.Metadata] [DecidableEq T.Identifier] in
+theorem eqModuloMeta_true_implies_denote_eq
+    {e₁ e₂ : LExpr T.mono} {τ : LMonoTy}
+    (h₁ : LExpr.HasTypeA [] e₁ τ)
+    (h₂ : LExpr.HasTypeA [] e₂ τ)
+    (heql : LExpr.eqModuloMeta e₁ e₂ = true)
+    : LExpr.denote tcInterp opInterp fvarVal vt .nil e₁ τ h₁ =
+      LExpr.denote tcInterp opInterp fvarVal vt .nil e₂ τ h₂ := by
+    unfold LExpr.eqModuloMeta at heql
+    -- Lean is confused by BEq and DecidableEq
+    have heq: (e₁.eraseMetadata = e₂.eraseMetadata) := by
+      unfold BEq.beq instBEqLExprOfIdentifier at heql
+      simp at heql
+      rw[LExpr.beq_eq] at heql
+      exact heql
+    rw[denote_replaceMetadata _ _ _ _ .nil (fun _ => ()) h₁]
+    rw[denote_replaceMetadata _ _ _ _ .nil (fun _ => ()) h₂]
+    unfold LExpr.eraseMetadata at heq
+    generalize replaceMetadata_HasTypeA (fun _ => ()) h₁ = ht₁
+    generalize e₁.replaceMetadata (fun _ => ()) = e₁' at *
+    subst heq
+    rfl
+
+
+omit [DecidableEq T.Metadata] [DecidableEq T.Identifier] in
+/-- For canonical values, if syntactic equality (`eql`) returns true, then the
+denotations are equal. -/
+theorem eql_true_implies_denote_eq
+    {F : @Factory T}
+    {e₁ e₂ : LExpr T.mono} {τ : LMonoTy}
+    (h₁ : LExpr.HasTypeA [] e₁ τ)
+    (h₂ : LExpr.HasTypeA [] e₂ τ)
+    (heql : LExpr.eql F e₁ e₂ = some true)
+    : LExpr.denote tcInterp opInterp fvarVal vt .nil e₁ τ h₁ =
+      LExpr.denote tcInterp opInterp fvarVal vt .nil e₂ τ h₂ := by
+    sorry
+
+/-- For binder-free canonical values, if syntactic equality (`eql`) returns
+false, then the denotations are not equal. The `containsBinder = false`
+precondition is essential: for expressions with binders, structural inequality
+does not imply semantic inequality (e.g., `λ (if #true then %0 else %0)` vs
+`λ %0`). -/
+theorem eql_false_implies_denote_ne
+    {F : @Factory T}
+    {e₁ e₂ : LExpr T.mono} {τ : LMonoTy}
+    (h₁ : LExpr.HasTypeA [] e₁ τ)
+    (h₂ : LExpr.HasTypeA [] e₂ τ)
+    (heql : LExpr.eql F e₁ e₂ = some false)
+    : LExpr.denote tcInterp opInterp fvarVal vt .nil e₁ τ h₁ ≠
+      LExpr.denote tcInterp opInterp fvarVal vt .nil e₂ τ h₂ := by
+  sorry
+
+/-- If `callOfLFunc F e = some (callee, args, fn)` and `e : τ` and `F` is
+well-typed, then `τ = fn.output`. -/
+theorem callOfLFunc_output_type
+    {F : @Factory T}
+    {e : LExpr T.mono} {τ : LMonoTy}
+    {callee : LExpr T.mono} {args : List (LExpr T.mono)} {fn : LFunc T}
+    (hFwt : Factory.WellTyped F)
+    (hcall : Factory.callOfLFunc F e = some (callee, args, fn))
+    (h : LExpr.HasTypeA [] e τ)
+    : τ = fn.output := by
+  sorry
+
+/-- If `callOfLFunc F e = some (callee, args, fn)` and `e` is well-typed, then
+the denotation of `e` equals `opInterp fn.name` applied to the denotations of
+`args`. -/
+theorem callOfLFunc_denote
+    {F : @Factory T}
+    {e : LExpr T.mono} {τ : LMonoTy}
+    {callee : LExpr T.mono} {args : List (LExpr T.mono)} {fn : LFunc T}
+    (hcall : Factory.callOfLFunc F e = some (callee, args, fn))
+    (h : LExpr.HasTypeA [] e τ)
+    : ∃ (h_args : List.Forall₂ (LExpr.HasTypeA []) args (List.map Prod.snd fn.inputs)),
+      let inputSorts := (List.map Prod.snd fn.inputs).map (LMonoTy.substTyVars vt)
+      let fullSort := LSort.mkArrow (LMonoTy.substTyVars vt τ) inputSorts
+      LExpr.denote tcInterp opInterp fvarVal vt .nil e τ h =
+        SortDenote.applyArgs tcInterp (opInterp fn.name fullSort)
+          (denoteArgs tcInterp opInterp fvarVal vt h_args) := by
+  sorry
+
+
+/-! ### Main theorem -/
+
+/-- If `e₁` steps to `e₂` under a factory `F` and environment `env`, and both
+are well-typed at the same type `τ`, then (given consistency of the factory and
+environment with the semantic interpretations) they have the same denotation. -/
+theorem Step.denote_preserved
+    {F : @Factory T} {env : Env T}
+    {e₁ e₂ : LExpr T.mono} {τ : LMonoTy}
+    (hstep : Step F env e₁ e₂)
+    (h₁ : LExpr.HasTypeA [] e₁ τ)
+    (h₂ : LExpr.HasTypeA [] e₂ τ)
+    (hF : Factory.InterpConsistent tcInterp opInterp F)
+    (hFwt : Factory.WellTyped F)
+    (hEnv : Env.InterpConsistent tcInterp opInterp env fvarVal)
+    : LExpr.denote tcInterp opInterp fvarVal vt .nil e₁ τ h₁ =
+      LExpr.denote tcInterp opInterp fvarVal vt .nil e₂ τ h₂ := by
+  induction hstep generalizing τ with
+  | expand_fvar x e henv =>
+    cases h₁ with
+    | fvar => simp [LExpr.denote]; exact (hEnv vt x _ _ henv h₂).symm
+  | beta e1 v2 eres hval heq =>
+    subst heq
+    cases h₁
+    rename_i aty htyv2 htyabs
+    cases htyabs with
+    | abs =>
+      rename_i h_body
+      rw [denote_app .nil (.abs h_body) htyv2,
+          denote_abs .nil h_body]
+      exact (subst_denote tcInterp opInterp fvarVal vt h_body htyv2 h₂
+              (HasTypeA_nil_lcAt htyv2)).symm
+  | reduce_2 v1 e2 e2' hstep' ih =>
+    cases h₁ with
+    | app h_fn h_arg =>
+      cases h₂ with
+      | app h_fn' h_arg' =>
+        have haty := HasTypeA_unique h_fn h_fn'
+        cases haty
+        rw [denote_app .nil h_fn h_arg,
+            denote_app .nil h_fn' h_arg']
+        congr 1
+        rw[ih h_arg h_arg']
+  | reduce_1 e1 e1' e2 hstep' ih =>
+    cases h₁ with
+    | app h_fn h_arg =>
+      cases h₂ with
+      | app h_fn' h_arg' =>
+        have haty := HasTypeA_unique h_arg h_arg'
+        subst haty
+        rw [denote_app .nil h_fn h_arg,
+            denote_app .nil h_fn' h_arg']
+        congr 1
+        rw[ih h_fn h_fn']
+  | ite_reduce_then ethen eelse =>
+    cases h₁ with
+    | ite h_c h_t h_e =>
+      rw [denote_ite .nil h_c h_t h_e]
+      have hc: LExpr.denote tcInterp opInterp fvarVal vt .nil
+          (.const _ (.boolConst true)) .bool h_c = true := by rfl
+      rw [hc]; rfl
+  | ite_reduce_else ethen eelse =>
+    cases h₁ with
+    | ite h_c h_t h_e =>
+      rw [denote_ite .nil h_c h_t h_e]
+      have hc : LExpr.denote tcInterp opInterp fvarVal vt .nil
+          (.const _ (.boolConst false)) .bool h_c = false := by rfl
+      rw [hc]; rfl
+  | ite_reduce_cond econd econd' ethen eelse hstep' ih =>
+    cases h₁ with
+    | ite h_c h_t h_e =>
+      cases h₂ with
+      | ite h_c' h_t' h_e' =>
+        rw [denote_ite .nil h_c h_t h_e,
+            denote_ite .nil h_c' h_t' h_e']
+        rw [ih h_c h_c']
+  | ite_reduce_then_branch econd ethen ethen' eelse hstep' ih =>
+    cases h₁ with
+    | ite h_c h_t h_e =>
+      cases h₂ with
+      | ite h_c' h_t' h_e' =>
+        rw [denote_ite .nil h_c h_t h_e,
+            denote_ite .nil h_c' h_t' h_e']
+        rw [ih h_t h_t']
+  | ite_reduce_else_branch econd ethen eelse eelse' hstep' ih =>
+    cases h₁ with
+    | ite h_c h_t h_e =>
+      cases h₂ with
+      | ite h_c' h_t' h_e' =>
+        rw [denote_ite .nil h_c h_t h_e,
+            denote_ite .nil h_c' h_t' h_e']
+        rw [ih h_e h_e']
+  | eq_reduce_true e1 e2 heql =>
+    cases h₁ with
+    | eq h_1 h_2 =>
+      rw [denote_eq_true .nil h_1 h_2 _
+          (eql_true_implies_denote_eq tcInterp opInterp fvarVal vt h_1 h_2 heql)]
+      rfl
+  | eq_reduce_false e1 e2 heql =>
+    cases h₁ with
+    | eq h_1 h_2 =>
+      rw [denote_eq_false .nil h_1 h_2 _
+          (eql_false_implies_denote_ne tcInterp opInterp fvarVal vt
+            h_1 h_2 heql)]
+      rfl
+  | eq_reduce_lhs e1 e1' e2 hstep' ih =>
+    cases h₁ with
+    | eq h_1 h_2 =>
+      cases h₂ with
+      | eq h_1' h_2' =>
+        have hty := HasTypeA_unique h_2 h_2'; subst hty
+        have ih_eq := ih h_1 h_1'
+        by_cases heq : LExpr.denote tcInterp opInterp fvarVal vt .nil e1 _ h_1 =
+            LExpr.denote tcInterp opInterp fvarVal vt .nil e2 _ h_2
+        · rw [denote_eq_true .nil h_1 h_2 _ heq,
+              denote_eq_true .nil h_1' h_2' _
+                (by rw [← ih_eq]; exact heq)]
+        · rw [denote_eq_false .nil h_1 h_2 _ heq,
+              denote_eq_false .nil h_1' h_2' _
+                (by rw [← ih_eq]; exact heq)]
+  | eq_reduce_rhs v1 e2 e2' hstep' ih =>
+    cases h₁ with
+    | eq h_1 h_2 =>
+      cases h₂ with
+      | eq h_1' h_2' =>
+        have hty := HasTypeA_unique h_1 h_1'; subst hty
+        have ih_eq := ih h_2 h_2'
+        by_cases heq : LExpr.denote tcInterp opInterp fvarVal vt .nil v1 _ h_1 =
+            LExpr.denote tcInterp opInterp fvarVal vt .nil e2 _ h_2
+        · rw [denote_eq_true .nil h_1 h_2 _ heq,
+              denote_eq_true .nil h_1' h_2' _
+                (by rw [← ih_eq]; exact heq)]
+        · rw [denote_eq_false .nil h_1 h_2 _ heq,
+              denote_eq_false .nil h_1' h_2' _
+                (by rw [← ih_eq]; exact heq)]
+  | expand_fn e callee fnbody new_body args fn hcall hbody heq =>
+    subst heq
+    obtain ⟨h_args, h_denote_e⟩ := callOfLFunc_denote tcInterp opInterp fvarVal vt hcall h₁
+    have h_tau : τ = fn.output := callOfLFunc_output_type hFwt hcall h₁
+    subst h_tau
+    have hfn_in : fn ∈ F := Factory.callOfLFunc_mem hcall
+    have h_body_ty : LExpr.HasTypeA [] fnbody fn.output := hFwt fn hfn_in fnbody hbody
+    have h_map_eq : (List.map Prod.snd fn.inputs).map (LMonoTy.substTyVars vt) =
+        (fn.inputs.map (fun (id, ty) => (id, LMonoTy.substTyVars vt ty))).map Prod.snd := by
+      simp [List.map_map, Function.comp]
+    -- Transport denoteArgs to the InterpConsistentBody index
+    let args' : HList (SortDenote tcInterp)
+        ((fn.inputs.map (fun (id, ty) => (id, LMonoTy.substTyVars vt ty))).map Prod.snd) :=
+      HList.cast h_map_eq (denoteArgs tcInterp opInterp fvarVal vt h_args)
+    have h_consistent := hF.1 fn hfn_in fnbody hbody vt fvarVal h_body_ty args'
+    have h_arity : args.length = fn.inputs.length := by
+      have := h_args.length_eq; simp at this; exact this
+    have h_keys : (fn.inputs.keys.zip args).map Prod.fst =
+        (fn.inputs.map (fun (id, ty) => (id, LMonoTy.substTyVars vt ty))).map Prod.fst := by
+      rw [ListMap.keys_eq_map_fst,
+          List.map_fst_zip (l₁ := fn.inputs.map Prod.fst) (l₂ := args) (by simp; omega),
+          List.map_map]; rfl
+    have h_len : (fn.inputs.keys.zip args).length =
+        (fn.inputs.map (fun (id, ty) => (id, LMonoTy.substTyVars vt ty))).length := by
+      simp [ListMap.keys_eq_map_fst, List.length_zip, h_arity]
+    have h_subst := substFvars_denote tcInterp opInterp fvarVal vt
+        (sortBindings := fn.inputs.map (fun (id, ty) => (id, LMonoTy.substTyVars vt ty)))
+        h_body_ty h₂ args' h_keys h_len
+    rw [h_denote_e, ← h_subst]
+    -- Goal: applyArgs (opInterp fn.name (mkArrow ret xs)) (denoteArgs h_args)
+    --     = denote (withArgs ...) fnbody
+    -- h_consistent: applyArgs (opInterp fn.name (mkArrow ret ys)) args' = same RHS
+    -- Use applyArgs_cast_eq to rewrite LHS, replacing (denoteArgs h_args) with args'
+    rw [SortDenote.applyArgs_cast_eq tcInterp h_map_eq (opInterp fn.name)
+        (denoteArgs tcInterp opInterp fvarVal vt h_args)]
+    exact h_consistent
+  | eval_fn e callee e' args fn denotefn hcall heval hresult =>
+    have h_tau := callOfLFunc_output_type hFwt hcall h₁; subst h_tau
+    obtain ⟨h_args, h_denote_e⟩ := callOfLFunc_denote tcInterp opInterp fvarVal vt hcall h₁
+    have hfn_in : fn ∈ F := Factory.callOfLFunc_mem hcall
+    rename_i m
+    have h_consistent := hF.2 fn hfn_in denotefn heval vt fvarVal m args e'
+        hresult.symm h_args h₂
+    rw [h_denote_e, ← h_consistent]
+
+/-- A single step preserves well-typedness. -/
+theorem Step.type_preserved
+    {F : @Factory T} {env : Env T}
+    {e₁ e₂ : LExpr T.mono} {τ : LMonoTy}
+    (hstep : Step F env e₁ e₂)
+    (h₁ : LExpr.HasTypeA [] e₁ τ)
+    : LExpr.HasTypeA [] e₂ τ := by
+  sorry
+
+/-- Multi-step version: if `e₁` reduces to `e₂` in zero or more steps, and
+both are well-typed at `τ`, they have the same denotation. -/
+theorem StepStar.denote_preserved
+    {F : @Factory T} {env : Env T}
+    {e₁ e₂ : LExpr T.mono} {τ : LMonoTy}
+    (hsteps : StepStar F env e₁ e₂)
+    (h₁ : LExpr.HasTypeA [] e₁ τ)
+    (h₂ : LExpr.HasTypeA [] e₂ τ)
+    (hF : Factory.InterpConsistent tcInterp opInterp F)
+    (hEnv : Env.InterpConsistent tcInterp opInterp env fvarVal)
+    : LExpr.denote tcInterp opInterp fvarVal vt .nil e₁ τ h₁ =
+      LExpr.denote tcInterp opInterp fvarVal vt .nil e₂ τ h₂ := by
+  sorry
+
+end Lambda
