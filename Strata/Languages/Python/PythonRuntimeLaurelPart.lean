@@ -139,6 +139,18 @@ function re_Match_lastindex  (self : re_Match) : int;
 function re_Match_lastgroup  (self : re_Match) : string;
 function re_Match_groups     (self : re_Match) : ListStr;
 
+function re_fullmatch_str(s: string): Core regex
+  external;
+function re_match_str(s: string): Core regex
+  external;
+function re_search_str(s: string): Core regex
+  external;
+function re_pattern_error(s: string): Error
+  external;
+
+function Str.InRegEx(s: string, r: Core regex): bool external;
+function Str.Length(s: string): int external;
+
 // Regex support
 //
 // Python signatures:
@@ -168,20 +180,20 @@ function re_Match_groups     (self : re_Match) : ListStr;
 // definitions.
 
 function re_fullmatch_bool(pattern : string, s : string) : bool {
-  str.in.re(s, re_fullmatch_str(pattern))
+  Str.InRegEx(s, re_fullmatch_str(pattern))
 };
 function re_match_bool(pattern : string, s : string) : bool {
-  str.in.re(s, re_match_str(pattern))
+  Str.InRegEx(s, re_match_str(pattern))
 };
 function re_search_bool(pattern : string, s : string) : bool {
-  str.in.re(s, re_search_str(pattern))
+  Str.InRegEx(s, re_search_str(pattern))
 };
 
 function mk_re_Match(s : string) : Any {
   from_ClassInstance("re_Match",
     DictStrAny_cons("re_match_string", from_string(s),
       DictStrAny_cons("re_match_pos", from_int(0),
-        DictStrAny_cons("re_match_endpos", from_int(str.len(s)),
+        DictStrAny_cons("re_match_endpos", from_int(Str.Length(s)),
           DictStrAny_empty()))))
 };
 
