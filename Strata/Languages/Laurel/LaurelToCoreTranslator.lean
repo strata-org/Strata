@@ -56,7 +56,6 @@ def translateType (model : SemanticModel) (ty : HighTypeMd) : LMonoTy :=
   | .TSet elementType => Core.mapTy (translateType model elementType) LMonoTy.bool
   | .TMap keyType valueType => Core.mapTy (translateType model keyType) (translateType model valueType)
   | .UserDefined name =>
-    -- Composite types map to "Composite"; datatypes map to their own name
     match name.uniqueId.bind model.refToDef.get? with
     | some (.compositeType _) => .tcons "Composite" []
     | some (.datatypeDefinition dt) => .tcons dt.name.text []
@@ -892,7 +891,7 @@ def verifyToVcResults (program : Program)
   match coreProgramOption with
   | some coreProgram =>
     -- Enable removeIrrelevantAxioms to avoid polluting simple assertions with heap axioms
-    let options := { options with removeIrrelevantAxioms := true }
+    let options := { options with removeIrrelevantAxioms := .Precise }
     let runner tempDir :=
       EIO.toIO (fun f => IO.Error.userError (toString f))
           (Core.verify coreProgram tempDir .none options)

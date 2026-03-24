@@ -9,6 +9,8 @@ op boolType : LaurelType => "bool";
 op realType : LaurelType => "real";
 op float64Type : LaurelType => "float64";
 op stringType : LaurelType => "string";
+// Core type passthrough: parsed as Ident, translated to HighType.TCore
+op coreType (name: Ident): LaurelType => "Core " name;
 op mapType (keyType: LaurelType, valueType: LaurelType): LaurelType => "Map " keyType " " valueType;
 op compositeType (name: Ident): LaurelType => name;
 

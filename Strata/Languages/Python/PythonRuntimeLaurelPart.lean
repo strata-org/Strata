@@ -42,7 +42,8 @@ datatype Error {
   AssertionError (Assertion_msg : string),
   UnimplementedError (Unimplement_msg : string),
   UndefinedError (Undefined_msg : string),
-  IndexError (IndexError_msg : string)
+  IndexError (IndexError_msg : string),
+  RePatternError (Re_msg : string)
 }
 
 // /////////////////////////////////////////////////////////////////////////////////////
@@ -95,6 +96,129 @@ datatype DictStrAny {
   DictStrAny_empty (),
   DictStrAny_cons (key: string, val: Any, tail: DictStrAny)
 }
+
+
+// Regex support — re.Match
+//
+// Models Python's re.Match as a composite (reference) type following the
+// module_Class naming convention (re_Match).
+//
+// The Python-through-Laurel pipeline is entirely Any-typed: all user
+// variables and function inputs/outputs are wrapped in the Any datatype.
+// Consequently, re_match/re_search/re_fullmatch return Any (from_none
+// or from_ClassInstance wrapping a re_Match).  If the pipeline ever
+// moves to concrete types, these should return re_Match | None directly.
+//
+// Fields that can be determined from the call site are set concretely
+// in the Core-only prelude.  pos and endpos are sound as 0 / str.len
+// for the module-level re.match/re.search/re.fullmatch API which does
+// not accept pos/endpos arguments.  If compiled-pattern method calls
+// with explicit pos/endpos are supported later, those values must be
+// threaded through.
+//
+// Methods that depend on capture groups (group, start, end, span,
+// groups, lastindex, lastgroup) are uninterpreted because SMT-LIB's
+// string theory has no capture group support.  This is a sound
+// over-approximation: the solver treats them as abstract, so
+// verification results involving these will be inconclusive rather
+// than unsound.
+
+composite re_Match {
+  var re_match_string : string
+  var re_match_pos : int
+  var re_match_endpos : int
+}
+
+// re.Match methods — uninterpreted (capture groups are beyond SMT-LIB)
+function re_Match_group (self : re_Match, n : int) : string;
+function re_Match_start (self : re_Match, n : int) : int;
+function re_Match_end   (self : re_Match, n : int) : int;
+function re_Match_span_start (self : re_Match, n : int) : int;
+function re_Match_span_end   (self : re_Match, n : int) : int;
+function re_Match_lastindex  (self : re_Match) : int;
+function re_Match_lastgroup  (self : re_Match) : string;
+function re_Match_groups     (self : re_Match) : ListStr;
+
+// Regex support
+//
+// Python signatures:
+//   re.compile(pattern: str) -> re.Pattern
+//   re.match(pattern: str | re.Pattern, string: str) -> re.Match | None
+//   re.search(pattern: str | re.Pattern, string: str) -> re.Match | None
+//   re.fullmatch(pattern: str | re.Pattern, string: str) -> re.Match | None
+//
+// Architecture:
+//
+// re.compile is a semantic no-op — it returns the pattern string unchanged.
+// The mode-specific factory functions re_fullmatch_str, re_match_str,
+// re_search_str each compile a pattern string to a regex with the correct
+// MatchMode (via pythonRegexToCore), so anchors (^/$) are handled properly.
+// Their concreteEval fires when the pattern is a string literal.
+//
+// The _bool helpers call the mode-specific factories, so there is a single
+// source of truth for mode-specific compilation.
+//
+// On match, we return a from_ClassInstance wrapping a concrete re_Match
+// with pos=0 and endpos=str.len(s), which is sound for the module-level
+// API (no pos/endpos parameters).
+// /////////////////////////////////////////////////////////////////////////////////////
+
+// Mode-specific factory functions are declared via ReFactory (with concreteEval
+// for literal pattern expansion), not in this prelude, to avoid duplicate
+// definitions.
+
+function re_fullmatch_bool(pattern : string, s : string) : bool {
+  str.in.re(s, re_fullmatch_str(pattern))
+};
+function re_match_bool(pattern : string, s : string) : bool {
+  str.in.re(s, re_match_str(pattern))
+};
+function re_search_bool(pattern : string, s : string) : bool {
+  str.in.re(s, re_search_str(pattern))
+};
+
+function mk_re_Match(s : string) : Any {
+  from_ClassInstance("re_Match",
+    DictStrAny_cons("re_match_string", from_string(s),
+      DictStrAny_cons("re_match_pos", from_int(0),
+        DictStrAny_cons("re_match_endpos", from_int(str.len(s)),
+          DictStrAny_empty()))))
+};
+
+// re.compile is a no-op: returns the pattern string unchanged.
+function re_compile(pattern : Any) : Any
+  requires Any..isfrom_string(pattern)
+{
+  pattern
+};
+
+function re_fullmatch(pattern : Any, s : Any) : Any
+  requires Any..isfrom_string(pattern) && Any..isfrom_string(s)
+{
+  if Error..isRePatternError(re_pattern_error(Any..as_string!(pattern)))
+  then exception(re_pattern_error(Any..as_string!(pattern)))
+  else if re_fullmatch_bool(Any..as_string!(pattern), Any..as_string!(s))
+       then mk_re_Match(Any..as_string!(s))
+       else from_none()
+};
+function re_match(pattern : Any, s : Any) : Any
+  requires Any..isfrom_string(pattern) && Any..isfrom_string(s)
+{
+  if Error..isRePatternError(re_pattern_error(Any..as_string!(pattern)))
+  then exception(re_pattern_error(Any..as_string!(pattern)))
+  else if re_match_bool(Any..as_string!(pattern), Any..as_string!(s))
+       then mk_re_Match(Any..as_string!(s))
+       else from_none()
+};
+function re_search(pattern : Any, s : Any) : Any
+  requires Any..isfrom_string(pattern) && Any..isfrom_string(s)
+{
+  if Error..isRePatternError(re_pattern_error(Any..as_string!(pattern)))
+  then exception(re_pattern_error(Any..as_string!(pattern)))
+  else if re_search_bool(Any..as_string!(pattern), Any..as_string!(s))
+       then mk_re_Match(Any..as_string!(s))
+       else from_none()
+};
 
 // /////////////////////////////////////////////////////////////////////////////////////
 //Functions that we provide to Python user
