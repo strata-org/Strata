@@ -703,7 +703,7 @@ def verifyToVcResults (program : Program)
   match coreProgramOption with
   | some coreProgram =>
     -- Enable removeIrrelevantAxioms to avoid polluting simple assertions with heap axioms
-    let options := { options with removeIrrelevantAxioms := true }
+    let options := { options with removeIrrelevantAxioms := .Precise }
     let runner tempDir :=
       EIO.toIO (fun f => IO.Error.userError (toString f))
           (Core.verify coreProgram tempDir .none options)
