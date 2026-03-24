@@ -30,14 +30,19 @@ procedure axiomDoesNotFireBecauseOfPattern(x: int) {
 //^^^^^^^^^^^ error: assertion could not be proved
 };
 
-function A(x: int, y: real);
-function Z(x: real): bool;
-procedure PAndZ(x: int, y: real)
-  invokeOn P(x, y)
-  ensures P(x, y) && Z(y);
+function A(x: int, y: real): bool;
+function B(x: real): bool;
+procedure AAndB(x: int, y: real)
+  invokeOn A(x, y)
+  ensures A(x, y) && B(y);
 
-procedure invokePAndZ(x: int, y :real) {
-  assert P(x, y) && Z(y)
+procedure invokeA(x: int, y :real) {
+  assert A(x, y)
+};
+
+procedure invokeB(x: int, y :real) {
+  assert B(y)
+//^^^^^^^^^^^ error: assertion could not be proved
 };
 
 "#
