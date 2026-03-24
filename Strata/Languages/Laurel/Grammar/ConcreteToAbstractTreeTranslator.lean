@@ -511,7 +511,7 @@ def parseComposite (arg : Arg) : TransM TypeDefinition := do
   let .op op := arg
     | TransM.error s!"parseComposite expects operation"
   match op.name, op.args with
-  | q`Laurel.composite, #[nameArg, extendsArg, fieldsArg] =>
+  | q`Laurel.composite, #[nameArg, extendsArg, fieldsArg, procsArg] =>
     let name ← translateIdent nameArg
     let extending ← match extendsArg with
       | .option _ (some (.op extendsOp)) => match extendsOp.name, extendsOp.args with
@@ -525,7 +525,10 @@ def parseComposite (arg : Arg) : TransM TypeDefinition := do
     let fields ← match fieldsArg with
       | .seq _ _ args => args.toList.mapM parseField
       | _ => pure []
-    return .Composite { name := name, extending := extending, fields := fields, instanceProcedures := [] }
+    let instanceProcedures ← match procsArg with
+      | .seq _ _ args => args.toList.mapM parseProcedure
+      | _ => pure []
+    return .Composite { name := name, extending := extending, fields := fields, instanceProcedures := instanceProcedures }
   | _, _ =>
     TransM.error s!"parseComposite expects composite, got {repr op.name}"
 

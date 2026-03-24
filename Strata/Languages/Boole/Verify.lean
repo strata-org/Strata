@@ -181,6 +181,7 @@ def toCoreMonoType (t : Boole.Type) : TranslateM Lambda.LMonoTy := do
   | .arrow _ a b => return .arrow (← toCoreMonoType a) (← toCoreMonoType b)
   | .bool _ => return .bool
   | .int _ => return .int
+  | .string _ => return .string
   | .bv1 _ => return .bitvec 1
   | .bv8 _ => return .bitvec 8
   | .bv16 _ => return .bitvec 16
@@ -403,7 +404,7 @@ def toCoreStmt (s : BooleDDM.Statement SourceRange) : TranslateM Core.Statement 
   | .if_statement m c t e =>
     let thenb ← withBVars [] (toCoreBlock t)
     let elseb ← withBVars [] <| match e with
-      | .else0 _ => return []
+      | .else0 _ => pure []
       | .else1 _ b => toCoreBlock b
     return .ite (← toCoreExpr c) thenb elseb (← toCoreMetaData m)
   | .havoc_statement m ⟨_, n⟩ =>
@@ -476,7 +477,7 @@ def toCoreStmt (s : BooleDDM.Statement SourceRange) : TranslateM Core.Statement 
       let initExpr ← toCoreExpr init
       let guard := mkCoreApp Core.intLeOp [.fvar () id none, limitExpr]
       let stepExpr ← ((match step? with
-        | none => return (.intConst () 1)
+        | none => pure (.intConst () 1)
         | some (.step _ e) => toCoreExpr e) : TranslateM Core.Expression.Expr)
       let body ← withBVars [] (toCoreBlock body)
       lowerFor
@@ -493,7 +494,7 @@ def toCoreStmt (s : BooleDDM.Statement SourceRange) : TranslateM Core.Statement 
       let initExpr ← toCoreExpr init
       let guard := mkCoreApp Core.intLeOp [limitExpr, .fvar () id none]
       let stepExpr ← ((match step? with
-        | none => return (.intConst () 1)
+        | none => pure (.intConst () 1)
         | some (.step _ e) => toCoreExpr e) : TranslateM Core.Expression.Expr)
       let body ← withBVars [] (toCoreBlock body)
       lowerFor
@@ -518,7 +519,7 @@ private def toCoreDatatypeConstr
   match c with
   | .constructor_mk _ ⟨_, cname⟩ ⟨_, fields?⟩ =>
     let args ← ((match fields? with
-      | none => return []
+      | none => pure []
       | some ⟨_, fs⟩ => fs.toList.mapM toCoreBinding) : TranslateM (List (Core.Expression.Ident × Lambda.LMonoTy)))
     return { name := mkIdent cname
              args := args
@@ -629,18 +630,23 @@ private def initFVarIsOp (p : Boole.Program) : Array Bool :=
 
 def toCoreDecls (cmd : BooleDDM.Command SourceRange) : TranslateM (List Core.Decl) := do
   match cmd with
-  | .command_procedure m ⟨_, n⟩ ⟨_, targs?⟩ ins ⟨_, outs?⟩ ⟨_, spec?⟩ ⟨_, body?⟩ =>
+  | .command_procedure m nameAnn targsAnn ins outsAnn specAnn bodyAnn =>
+    let n := nameAnn.val
+    let targs? := targsAnn.val
+    let outs? := outsAnn.val
+    let spec? := specAnn.val
+    let body? := bodyAnn.val
     let tys := match targs? with | none => [] | some ts => typeArgsToList ts
     withTypeBVars tys do
       let inputs ← (bindingsToList ins).mapM toCoreBinding
       let outputs ← match outs? with
-        | none => return []
+        | none => pure []
         | some os => (monoDeclListToList os).mapM toCoreMonoBind
       let inputNames := inputs.map (·.fst.name)
       let outputNames := outputs.map (·.fst.name)
       let spec ← withBVars (inputNames ++ outputNames) (toCoreSpec m n spec?)
       let body ← match body? with
-        | none => return []
+        | none => pure []
         | some b => withBVars (inputNames ++ outputNames) (toCoreBlock b)
       return [.proc {
         header := { name := mkIdent n, typeArgs := tys, inputs := inputs, outputs := outputs }
