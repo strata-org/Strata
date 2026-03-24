@@ -269,13 +269,7 @@ private def prependCorePartOfRuntime (coreFromLaurel : Core.Program) : Core.Prog
 public def translateCombinedLaurel (combined : Laurel.Program)
     : (Option Core.Program × List DiagnosticModel) :=
   let (coreOption, errors) := Laurel.translate { inlineFunctionsWhenPossible := true } combined
-  (coreOption.map (fun core =>
-    let prepended := prependCorePartOfRuntime core
-    -- dbg_trace "=== Final Core Program ==="
-    -- dbg_trace (toString (Std.Format.pretty (Strata.Core.formatProgram prepended) 100))
-    -- dbg_trace "================================="
-    prepended
-  ), errors)
+  (coreOption.map prependCorePartOfRuntime, errors)
 
 /-- Errors from the pyAnalyzeLaurel pipeline, distinguishing user code
     errors (detected bugs in Python source) from internal tool errors. -/

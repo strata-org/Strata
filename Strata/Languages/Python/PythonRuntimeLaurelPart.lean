@@ -754,7 +754,7 @@ procedure datetime_tostring_cancel(dt: Any)
   ensures datetime_strptime(to_string_any(dt), from_string ("%Y-%m-%d")) == dt;
 
 procedure datetime_date(d: Any) returns (ret: Any, error: Error)
-  requires Any..isfrom_datetime(d) summary "d_type"
+  requires Any..isfrom_datetime(d) summary "(Origin_datetime_date_Requires)d_type"
   ensures Any..isfrom_datetime(ret) && Any..as_datetime!(ret) <= Any..as_datetime!(d) summary "ret_type"
 {
   var timedt: int;
@@ -778,10 +778,10 @@ procedure datetime_now() returns (ret: Any)
 };
 
 procedure timedelta(days: Any, hours: Any) returns (delta : Any, maybe_except: Error)
-  requires Any..isfrom_none(days) || Any..isfrom_int(days) summary "days_type"
-  requires Any..isfrom_none(hours) || Any..isfrom_int(hours) summary "hours_type"
-  requires Any..isfrom_int(days) ==> Any..as_int!(days)>=0 summary "days_pos"
-  requires Any..isfrom_int(hours) ==> Any..as_int!(hours)>=0 summary "hours_pos"
+  requires Any..isfrom_none(days) || Any..isfrom_int(days) summary "(Origin_timedelta_Requires)"
+  requires Any..isfrom_none(hours) || Any..isfrom_int(hours) summary "(Origin_timedelta_Requires)hours_type"
+  requires Any..isfrom_int(days) ==> Any..as_int!(days)>=0 summary "(Origin_timedelta_Requires)days_pos"
+  requires Any..isfrom_int(hours) ==> Any..as_int!(hours)>=0 summary "(Origin_timedelta_Requires)hours_pos"
   ensures Any..isfrom_int(delta) && Any..as_int!(delta)>=0 summary "ret_pos"
 {
   var days_i : int := 0;
