@@ -219,26 +219,26 @@ private meta def runTestCase (dispatchIon tmpDir : System.FilePath)
 
 /-! ## Precondition violation test
 
-Verifies that calling `put_item(Bucket="", ...)` produces a `✖️ always false`
-result for the `len(Bucket) >= 1` assertion through the full verification pipeline. -/
-
-/--
-info: Storage_Storage_put_item_assert(0)_9: ✔️ always true if reached (Required parameter 'Bucket' is missing)
-Storage_Storage_put_item_assert(0)_9: ✔️ always true if reached (Required parameter 'Key' is missing)
-Storage_Storage_put_item_assert(0)_9: ✔️ always true if reached (Required parameter 'Data' is missing)
-Storage_Storage_put_item_assert(0)_9: ✔️ always true if reached (Bucket must not be empty)
-Storage_Storage_put_item_assert(0)_9: ✖️ always false if reached (Bucket must match ^[a-z0-9-]+$)
-Storage_Storage_put_item_assert(0)_9: ✔️ always true if reached (Key must not be empty)
+Verifies that calling `put_item(Bucket="INVALID!", ...)` produces a `✖️ always false`
+result for the regex assertion through the full verification pipeline.
+Expected output (when Python + z3 available):
+  Storage_Storage_put_item_assert(0)_9: ✔️ always true if reached (Required parameter 'Bucket' is missing)
+  Storage_Storage_put_item_assert(0)_9: ✔️ always true if reached (Required parameter 'Key' is missing)
+  Storage_Storage_put_item_assert(0)_9: ✔️ always true if reached (Required parameter 'Data' is missing)
+  Storage_Storage_put_item_assert(0)_9: ✔️ always true if reached (Bucket must not be empty)
+  Storage_Storage_put_item_assert(0)_9: ✖️ always false if reached (Bucket must match ^[a-z0-9-]+$)
+  Storage_Storage_put_item_assert(0)_9: ✔️ always true if reached (Key must not be empty)
 -/
-#guard_msgs in
+
 #eval withPython fun _pythonCmd => do
   IO.FS.withTempDir fun tmpDir => do
     let (dispatchIon, pyspecPaths) ← setupFixture _pythonCmd tmpDir
     let result ← runAnalyzeAndVerify dispatchIon tmpDir
       "test_precondition_violation.py" pyspecPaths
     match result with
-    | .error msg => IO.println s!"error: {msg}"
+    | .error msg => throw <| IO.userError s!"Pipeline failed: {msg}"
     | .ok vcResults =>
+      let mut foundAlwaysFalse := false
       for r in vcResults do
         if r.obligation.label.startsWith "Storage_" then
           let msg := r.obligation.metadata.findSome? fun elem =>
@@ -246,6 +246,11 @@ Storage_Storage_put_item_assert(0)_9: ✔️ always true if reached (Key must no
             | .label "message", .msg s => some s
             | _, _ => none
           let msgStr := msg.map (s!" ({·})") |>.getD ""
-          IO.println s!"{r.obligation.label}: {r.formatOutcome}{msgStr}"
+          let line := s!"{r.obligation.label}: {r.formatOutcome}{msgStr}"
+          IO.println line
+          if (line.splitOn "✖️").length != 1 then
+            foundAlwaysFalse := true
+      if !foundAlwaysFalse then
+        throw <| IO.userError "Expected ✖️ always false for regex violation"
 
 end Strata.Python.AnalyzeLaurelTest
