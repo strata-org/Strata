@@ -196,7 +196,7 @@ function List_len (l : ListAny) : int
 };
 
 procedure List_len_pos(l : ListAny)
-  // autoinvoke
+  invokeOn List_len(l)
   ensures List_len(l) >= 0;
 
 function List_contains (l : ListAny, x: Any) : bool
@@ -227,7 +227,7 @@ function List_take (l : ListAny, i: int) : ListAny
 };
 
 procedure List_take_len(l : ListAny, i: int)
-  // autoinvoke {List_len(List_take(l,i))}
+  invokeOn List_len(List_take(l,i))
   ensures i >= 0 && i <= List_len(l) ==> List_len(List_take(l,i)) == i;
 
 function List_drop (l : ListAny, i: int) : ListAny
@@ -239,7 +239,7 @@ function List_drop (l : ListAny, i: int) : ListAny
 };
 
 procedure List_drop_len(l : ListAny, i: int)
-  // autoinvoke {List_len(List_drop(l,i))}
+  invokeOn List_len(List_drop(l,i))
   ensures i >= 0 && i <= List_len(l) ==> List_len(List_drop(l,i)) == List_len(l) - i;
 
 function List_slice (l : ListAny, start : int, stop: int) : ListAny
@@ -750,7 +750,7 @@ function to_string_any(a: Any) : Any {
 function datetime_strptime(dtstring: Any, format: Any) : Any;
 
 procedure datetime_tostring_cancel(dt: Any)
-  // autoinvoke
+  invokeOn datetime_strptime(to_string_any(dt), from_string ("%Y-%m-%d"))
   ensures datetime_strptime(to_string_any(dt), from_string ("%Y-%m-%d")) == dt;
 
 procedure datetime_date(d: Any) returns (ret: Any, error: Error)

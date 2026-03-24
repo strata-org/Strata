@@ -8,7 +8,7 @@ module
 -- Laurel dialect definition, loaded from LaurelGrammar.st
 -- NOTE: Changes to LaurelGrammar.st are not automatically tracked by the build system.
 -- Update this file (e.g. this comment) to trigger a recompile after modifying LaurelGrammar.st.
--- Last grammar change: composite op moved after Procedure category; accepts Seq Procedure for instance procedures.
+-- Last grammar change: added invokeOn clause before ensures in procedure/function ops.
 public import Strata.DDM.Integration.Lean
 public meta import Strata.DDM.Integration.Lean
 

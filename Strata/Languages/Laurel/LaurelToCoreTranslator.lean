@@ -530,15 +530,57 @@ def translateProcedure (proc : Procedure) : TranslateM Core.Procedure := do
   return { header, spec, body }
 
 /--
-Generate a Core axiom for a Laurel procedure that has an `invokeOn` trigger.
-
-The axiom universally quantifies over the procedure's input parameters, uses the
-`invokeOn` expression as the SMT trigger, and asserts the conjunction of all
-postconditions from an `Opaque` body.
-
-For a procedure `f(x: Int)` with `invokeOn { f(x) }` and `ensures P(x)`, this emits:
-  `axiom invokeOn_f: ∀ x: int :: { f(x) } P(x)`
+Collect all `StaticCall` callee names referenced anywhere in a `StmtExpr`.
+Used to determine which functions an invokeOn axiom depends on.
 -/
+partial def collectStaticCallNames (expr : StmtExpr) : List String :=
+  match expr with
+  | .StaticCall callee args =>
+      callee.text :: args.flatMap (fun a => collectStaticCallNames a.val)
+  | .PrimitiveOp _ args => args.flatMap (fun a => collectStaticCallNames a.val)
+  | .IfThenElse cond t e =>
+      collectStaticCallNames cond.val ++
+      collectStaticCallNames t.val ++
+      (e.toList.flatMap (fun x => collectStaticCallNames x.val))
+  | .Block stmts _ => stmts.flatMap (fun s => collectStaticCallNames s.val)
+  | .Assign targets v =>
+      targets.flatMap (fun t => collectStaticCallNames t.val) ++
+      collectStaticCallNames v.val
+  | .LocalVariable _ _ init => init.toList.flatMap (fun i => collectStaticCallNames i.val)
+  | .Return v => v.toList.flatMap (fun x => collectStaticCallNames x.val)
+  | .While cond invs dec body =>
+      collectStaticCallNames cond.val ++
+      invs.flatMap (fun i => collectStaticCallNames i.val) ++
+      dec.toList.flatMap (fun d => collectStaticCallNames d.val) ++
+      collectStaticCallNames body.val
+  | .Forall _ trig body =>
+      trig.toList.flatMap (fun t => collectStaticCallNames t.val) ++
+      collectStaticCallNames body.val
+  | .Exists _ trig body =>
+      trig.toList.flatMap (fun t => collectStaticCallNames t.val) ++
+      collectStaticCallNames body.val
+  | .FieldSelect t _ => collectStaticCallNames t.val
+  | .PureFieldUpdate t _ v => collectStaticCallNames t.val ++ collectStaticCallNames v.val
+  | .InstanceCall t _ args =>
+      collectStaticCallNames t.val ++ args.flatMap (fun a => collectStaticCallNames a.val)
+  | .Old v | .Fresh v | .Assert v | .Assume v => collectStaticCallNames v.val
+  | .ProveBy v p => collectStaticCallNames v.val ++ collectStaticCallNames p.val
+  | .ReferenceEquals l r => collectStaticCallNames l.val ++ collectStaticCallNames r.val
+  | .AsType t _ | .IsType t _ => collectStaticCallNames t.val
+  | .ContractOf _ f => collectStaticCallNames f.val
+  | .Assigned v => collectStaticCallNames v.val
+  | _ => []
+
+/--
+Collect the function names that an invokeOn axiom (from `proc`) depends on.
+These are the `StaticCall` names appearing in the procedure's postconditions.
+-/
+def invokeOnAxiomDeps (proc : Procedure) : List String :=
+  match proc.body with
+  | .Opaque postconds _ _ =>
+      (postconds.flatMap (fun pc => collectStaticCallNames pc.val)).eraseDups
+  | _ => []
+
 def translateInvokeOnAxiom (proc : Procedure) (trigger : StmtExprMd)
     : TranslateM (Option Core.Decl) := do
   let model := (← get).model
@@ -766,14 +808,44 @@ def translate (options: LaurelTranslateOptions) (program : Program): TranslateRe
     let (markedPure, procProcs) := nonExternal.partition (·.isFunctional)
     -- Try to translate each isFunctional procedure to a Core function, collecting errors for failures
     let pureFuncDecls ← markedPure.mapM (translateProcedureToFunction options)
-    -- Translate procedures using the monad, collecting diagnostics from the final state
-    let procedures ← procProcs.mapM translateProcedure
 
-    -- Generate invokeOn axioms for procedures that declare one
-    let invokeOnAxioms ← procProcs.filterMapM (fun proc =>
-      match proc.invokeOn with
-      | some trigger => translateInvokeOnAxiom proc trigger
-      | none => pure none)
+    -- Collect invokeOn axioms from non-functional procedures, paired with their
+    -- function dependencies (StaticCall names in postconditions).
+    let pendingAxioms : List (Core.Decl × List String) ←
+      program.staticProcedures.filterMapM (fun proc => do
+        match proc.invokeOn with
+        | none => pure none
+        | some trigger => do
+          let axDecl? ← translateInvokeOnAxiom proc trigger
+          return axDecl?.map (fun ax => (ax, invokeOnAxiomDeps proc)))
+
+    -- Build the set of function names defined in pureFuncDecls (in order).
+    let funcNames : List String := markedPure.map (·.name.text)
+
+    -- Interleave pureFuncDecls with axioms in topological order:
+    -- after emitting each function, immediately emit any pending axioms whose
+    -- every function dependency has now been emitted.
+    let (interleavedFuncAxioms, remainingAxioms) :=
+      funcNames.foldl (fun (acc : List Core.Decl × List (Core.Decl × List String))
+                           (fname : String) =>
+        let (emitted, pending) := acc
+        -- Find the function decl for this name
+        let funcDecl := pureFuncDecls.find? (fun d => d.name.name == fname)
+        let emitted' := emitted ++ funcDecl.toList
+        -- Track which names are now defined
+        let definedSoFar := (emitted'.filterMap (fun d =>
+          match d with | .func f => some f.name.name | .recFuncBlock (f :: _) => some f.name.name | _ => none))
+        -- Emit any pending axioms whose deps are all satisfied
+        let (ready, stillPending) := pending.partition (fun (_, deps) =>
+          deps.all (fun dep => !funcNames.contains dep || definedSoFar.contains dep))
+        (emitted' ++ ready.map (·.1), stillPending))
+      ([], pendingAxioms)
+    -- Append any axioms that had no function deps (or deps outside pureFuncDecls)
+    let funcAndAxiomDecls := interleavedFuncAxioms ++ remainingAxioms.map (·.1)
+    -- Translate procedures using the monad, collecting diagnostics from the final state.
+    let procDecls ← procProcs.mapM (fun proc => do
+      let coreProc ← translateProcedure proc
+      return Core.Decl.proc coreProc .empty)
 
     -- Translate Laurel constants to Core function declarations (0-ary functions)
     let constantDecls ← program.constants.mapM fun c => do
@@ -791,12 +863,11 @@ def translate (options: LaurelTranslateOptions) (program : Program): TranslateRe
     -- let allErrors :=pureErrors ++ procDiags ++ constantsState.diagnostics
     -- if !allErrors.isEmpty then
     --   .error allErrors.toArray
-    let procDecls := procedures.map (fun p => Core.Decl.proc p .empty)
 
     -- Translate Laurel datatype definitions to Core declarations.
     let groupedDatatypeDecls ← translateTypes program model
     let program := {
-      decls := groupedDatatypeDecls ++ constantDecls ++ pureFuncDecls ++ procDecls ++ invokeOnAxioms
+      decls := groupedDatatypeDecls ++ constantDecls ++ funcAndAxiomDecls ++ procDecls
     }
 
     -- dbg_trace "=== Generated Strata Core Program ==="
