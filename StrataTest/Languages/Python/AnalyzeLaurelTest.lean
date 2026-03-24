@@ -131,7 +131,7 @@ private meta def runAnalyzeAndVerify (dispatchIon : System.FilePath)
   -- Verify
   let options : Core.VerifyOptions :=
     { Core.VerifyOptions.default with
-      stopOnFirstError := false, verbose := .quiet, solver := "z3",
+      stopOnFirstError := false, verbose := .quiet, solver := "cvc5",
       checkMode := .bugFinding, checkLevel := .full }
   match ← Strata.verifyCore coreProgram options |>.toBaseIO with
   | .ok results => return .ok results
