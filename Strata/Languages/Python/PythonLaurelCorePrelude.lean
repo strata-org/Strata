@@ -101,19 +101,19 @@ datatype DictStrAny () {
   DictStrAny_cons (key: string, val: Any, tail: DictStrAny)
 };
 
+// Forward declarations: needed so the inline functions after CoreOnlyDelimiter
+// can reference these during DDM parsing.  The real definitions with
+// concreteEval are supplied by ReFactory at verification time.
+function re_fullmatch_str(pattern : string) : regex;
+function re_match_str(pattern : string) : regex;
+function re_search_str(pattern : string) : regex;
+function re_pattern_error(pattern : string) : Error;
+
 type CoreOnlyDelimiter;
 
 // =====================================================================
 // Core-only declarations (not expressed in Laurel)
 // =====================================================================
-
-// Forward declarations for regex factory functions.
-// The real definitions with concreteEval are supplied by ReFactory
-// at verification time.
-function re_fullmatch_str(pattern : string) : regex;
-function re_match_str(pattern : string) : regex;
-function re_search_str(pattern : string) : regex;
-function re_pattern_error(pattern : string) : Error;
 
 // /////////////////////////////////////////////////////////////////////////////////////
 // Regex support

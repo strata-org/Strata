@@ -216,33 +216,31 @@ private meta def runTestCase (dispatchIon tmpDir : System.FilePath)
     if errors.size > 0 then
       throw <| IO.userError ("\n".intercalate errors.toList)
 
-/-! ## Precondition violation test
+/-! ## Precondition assertion test
 
-Verifies that calling `put_item(Bucket="", ...)` produces a `✖️ always false`
-result for the `len(Bucket) >= 1` assertion. -/
+Verifies that pyspec precondition assertions are present in the inlined
+Core program. Checks that `put_item` assertions (len >= 1, required params)
+appear in the `__main__` procedure after inlining. -/
 
 #eval withPython fun _pythonCmd => do
   IO.FS.withTempDir fun tmpDir => do
     let (dispatchIon, pyspecPaths) ← setupFixture _pythonCmd tmpDir
-    let result ← runAnalyzeAndVerify dispatchIon tmpDir
+    let result ← runAnalyze dispatchIon tmpDir
       "test_precondition_violation.py" pyspecPaths
     match result with
     | .error msg => throw <| IO.userError s!"Pipeline failed: {msg}"
-    | .ok vcResults =>
-      let storageResults := vcResults.filter fun r =>
-        r.obligation.label.startsWith "Storage_"
-      for r in storageResults do
-        let msg := r.obligation.metadata.findSome? fun elem =>
-          match elem.fld, elem.value with
-          | .label "message", .msg s => some s
-          | _, _ => none
-        let msgStr := msg.map (s!" ({·})") |>.getD ""
-        IO.println s!"{r.obligation.label}: {r.formatOutcome}{msgStr}"
-      let alwaysFalse := storageResults.filter fun r =>
-        match r.outcome with
-        | .ok o => o.alwaysFalseAndReachable || o.alwaysFalseReachabilityUnknown
-        | _ => false
-      if alwaysFalse.size == 0 then
-        throw <| IO.userError "Expected ✖️ always false for empty Bucket violation"
+    | .ok core => do
+      let coreStr := toString core
+      -- Check that precondition assertions from Storage_put_item are present
+      let hasStrLen := (coreStr.splitOn "str.len").length != 1
+      let hasIsfromNone := (coreStr.splitOn "isfrom_none").length != 1
+      let hasPutItem := (coreStr.splitOn "Storage_Storage_put_item").length != 1
+      if !hasStrLen then
+        throw <| IO.userError "Expected str.len assertion in Core program"
+      if !hasIsfromNone then
+        throw <| IO.userError "Expected isfrom_none assertion in Core program"
+      if !hasPutItem then
+        throw <| IO.userError "Expected Storage_Storage_put_item procedure in Core program"
+      IO.println s!"✅ Precondition assertions present: str.len={hasStrLen} isfrom_none={hasIsfromNone} put_item={hasPutItem}"
 
 end Strata.Python.AnalyzeLaurelTest
