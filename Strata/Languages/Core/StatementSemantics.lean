@@ -54,6 +54,7 @@ def Core.false : Core.Expression.Expr := .boolConst () Bool.false
 instance : HasBool Core.Expression where
   tt := Core.true
   ff := Core.false
+  tt_is_not_ff := by unfold Core.true Core.false; unfold Lambda.LExpr.boolConst; simp
 
 instance : HasNot Core.Expression where
   not

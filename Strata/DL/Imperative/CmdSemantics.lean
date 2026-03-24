@@ -327,7 +327,7 @@ inductive EvalCmd [HasFvar P] [HasBool P] [HasNot P] :
       The store is unchanged — the command is an unconditional skip on the
       store, but the failure flag records the violation. -/
   | eval_assert_fail :
-    δ σ e ≠ .some HasBool.tt →
+    δ σ e = .some HasBool.ff →
     WellFormedSemanticEvalBool δ →
     ----
     EvalCmd δ σ (.assert _ e _) σ true

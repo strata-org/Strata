@@ -228,10 +228,10 @@ theorem assert_elim
               exact EvalBlock.stmts_some_sem
                 (EvalStmt.cmd_sem (EvalCmd.eval_assert_pass h1 Hwf) (by assumption))
                 EvalBlock.stmts_none_sem
-            | eval_assert_fail h2 _ => exact absurd h1 h2
+            | eval_assert_fail h2 _ => grind [HasBool.tt_is_not_ff]
           | eval_assert_fail h1 _ =>
             cases Hcmd2 with
-            | eval_assert_pass h2 _ => exact absurd h2 h1
+            | eval_assert_pass h2 _ => grind [HasBool.tt_is_not_ff]
             | eval_assert_fail _ _ =>
               suffices h : EvalBlock P (Cmd P) (EvalCmd P) extendEval ρ
                   [.cmd (.assert l3 e md3)]
