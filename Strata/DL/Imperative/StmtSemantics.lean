@@ -38,7 +38,7 @@ structure Env (P : PureExpr) where
 mutual
 
 /--
-An inductively-defined operational semantics that depends on
+An inductively-defined big-step operational semantics that depends on
 environment lookup and evaluation functions for expressions.
 
 Note that `EvalStmt` is parameterized by commands `Cmd` as well as their

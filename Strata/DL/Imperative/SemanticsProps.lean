@@ -68,36 +68,138 @@ theorem eval_stmt_assert_eq_of_pure_expr_eq
         apply EvalStmt.cmd_sem (EvalCmd.eval_assert_fail hne Hwf) (by assumption)
   )
 
+/-! ### hasFailure monotonicity and irrelevance
+
+`hasFailure` is never consulted by any `EvalStmt` / `EvalBlock` premise,
+so it is both *monotone* (once `true`, stays `true`) and *irrelevant*
+(changing only `hasFailure` in the input env yields an execution with the
+same `store` and `eval` in the output).
+-/
+
+mutual
+theorem EvalStmt_hasFailure_monotone
+  {P : PureExpr} {Cmd : Type} {EvalCmd : EvalCmdParam P Cmd}
+  {extendEval : ExtendEval P}
+  {ρ ρ' : Env P} {s : Stmt P Cmd}
+  [DecidableEq P.Ident]
+  [HasVarsImp P (List (Stmt P Cmd))] [HasVarsImp P Cmd] [HasFvar P] [HasVal P] [HasBool P] [HasNot P] :
+  EvalStmt P Cmd EvalCmd extendEval ρ s ρ' →
+  ρ.hasFailure = true → ρ'.hasFailure = true := by
+  intro Heval Hf
+  cases Heval with
+  | cmd_sem _ _ => simp [Hf]
+  | block_sem Hblock => exact EvalBlock_hasFailure_monotone Hblock Hf
+  | ite_true_sem _ _ Hblock => exact EvalBlock_hasFailure_monotone Hblock Hf
+  | ite_false_sem _ _ Hblock => exact EvalBlock_hasFailure_monotone Hblock Hf
+  | funcDecl_sem => simp [Hf]
+  | typeDecl_sem => exact Hf
+
+theorem EvalBlock_hasFailure_monotone
+  {P : PureExpr} {Cmd : Type} {EvalCmd : EvalCmdParam P Cmd}
+  {extendEval : ExtendEval P}
+  {ρ ρ' : Env P} {ss : List (Stmt P Cmd)}
+  [DecidableEq P.Ident]
+  [HasVarsImp P (List (Stmt P Cmd))] [HasVarsImp P Cmd] [HasFvar P] [HasVal P] [HasBool P] [HasNot P] :
+  EvalBlock P Cmd EvalCmd extendEval ρ ss ρ' →
+  ρ.hasFailure = true → ρ'.hasFailure = true := by
+  intro Heval Hf
+  cases Heval with
+  | stmts_none_sem => exact Hf
+  | stmts_some_sem Hstmt Hblock =>
+    exact EvalBlock_hasFailure_monotone Hblock (EvalStmt_hasFailure_monotone Hstmt Hf)
+end
+
+mutual
+theorem EvalStmt_hasFailure_irrel
+  {P : PureExpr} {Cmd : Type} {EvalCmd : EvalCmdParam P Cmd}
+  {extendEval : ExtendEval P}
+  {ρ ρ' : Env P} {s : Stmt P Cmd}
+  [DecidableEq P.Ident]
+  [HasVarsImp P (List (Stmt P Cmd))] [HasVarsImp P Cmd] [HasFvar P] [HasVal P] [HasBool P] [HasNot P] :
+  EvalStmt P Cmd EvalCmd extendEval ρ s ρ' →
+  ∀ (ρ₂ : Env P), ρ₂.store = ρ.store → ρ₂.eval = ρ.eval →
+  ∃ ρ₂', EvalStmt P Cmd EvalCmd extendEval ρ₂ s ρ₂' ∧
+    ρ₂'.store = ρ'.store ∧ ρ₂'.eval = ρ'.eval := by
+  intro Heval ρ₂ Hstore Heval_eq
+  cases Heval with
+  | cmd_sem Hcmd Hdef =>
+    refine ⟨{ ρ₂ with store := _, hasFailure := ρ₂.hasFailure || _ },
+      EvalStmt.cmd_sem (Heval_eq ▸ Hstore ▸ Hcmd) (Hstore ▸ Hdef), ?_, ?_⟩
+    · simp
+    · simp [Heval_eq]
+  | block_sem Hblock =>
+    have ⟨ρ₂', Hblock₂, Hs, He⟩ := EvalBlock_hasFailure_irrel Hblock ρ₂ Hstore Heval_eq
+    exact ⟨ρ₂', EvalStmt.block_sem Hblock₂, Hs, He⟩
+  | ite_true_sem Hcond Hwf Hblock =>
+    have ⟨ρ₂', Hblock₂, Hs, He⟩ := EvalBlock_hasFailure_irrel Hblock ρ₂ Hstore Heval_eq
+    exact ⟨ρ₂', EvalStmt.ite_true_sem (Heval_eq ▸ Hstore ▸ Hcond) (Heval_eq ▸ Hwf) Hblock₂, Hs, He⟩
+  | ite_false_sem Hcond Hwf Hblock =>
+    have ⟨ρ₂', Hblock₂, Hs, He⟩ := EvalBlock_hasFailure_irrel Hblock ρ₂ Hstore Heval_eq
+    exact ⟨ρ₂', EvalStmt.ite_false_sem (Heval_eq ▸ Hstore ▸ Hcond) (Heval_eq ▸ Hwf) Hblock₂, Hs, He⟩
+  | funcDecl_sem =>
+    refine ⟨{ ρ₂ with eval := extendEval ρ₂.eval ρ₂.store _ }, EvalStmt.funcDecl_sem, ?_, ?_⟩
+    · simp [Hstore]
+    · simp [Heval_eq, Hstore]
+  | typeDecl_sem =>
+    exact ⟨ρ₂, EvalStmt.typeDecl_sem, Hstore, Heval_eq⟩
+
+theorem EvalBlock_hasFailure_irrel
+  {P : PureExpr} {Cmd : Type} {EvalCmd : EvalCmdParam P Cmd}
+  {extendEval : ExtendEval P}
+  {ρ ρ' : Env P} {ss : List (Stmt P Cmd)}
+  [DecidableEq P.Ident]
+  [HasVarsImp P (List (Stmt P Cmd))] [HasVarsImp P Cmd] [HasFvar P] [HasVal P] [HasBool P] [HasNot P] :
+  EvalBlock P Cmd EvalCmd extendEval ρ ss ρ' →
+  ∀ (ρ₂ : Env P), ρ₂.store = ρ.store → ρ₂.eval = ρ.eval →
+  ∃ ρ₂', EvalBlock P Cmd EvalCmd extendEval ρ₂ ss ρ₂' ∧
+    ρ₂'.store = ρ'.store ∧ ρ₂'.eval = ρ'.eval := by
+  intro Heval ρ₂ Hstore Heval_eq
+  cases Heval with
+  | stmts_none_sem =>
+    exact ⟨ρ₂, EvalBlock.stmts_none_sem, Hstore, Heval_eq⟩
+  | stmts_some_sem Hstmt Hblock =>
+    have ⟨ρ₂', Hstmt₂, Hs₁, He₁⟩ := EvalStmt_hasFailure_irrel Hstmt ρ₂ Hstore Heval_eq
+    have ⟨ρ₂'', Hblock₂, Hs₂, He₂⟩ := EvalBlock_hasFailure_irrel Hblock ρ₂' Hs₁ He₁
+    exact ⟨ρ₂'', EvalBlock.stmts_some_sem Hstmt₂ Hblock₂, Hs₂, He₂⟩
+end
+
+/-! ### Assert elimination -/
+
 theorem eval_stmts_assert_elim
   [DecidableEq P.Ident]
   [HasVarsImp P (List (Stmt P (Cmd P)))] [HasFvar P] [HasVal P] [HasBool P] [HasNot P] :
   WellFormedSemanticEvalBool ρ.eval →
   EvalBlock P (Cmd P) (EvalCmd P) extendEval ρ (.cmd (.assert l1 e md1) :: cmds) ρ' →
-  EvalBlock P (Cmd P) (EvalCmd P) extendEval ρ cmds ρ' := by
+  ∃ ρ'', EvalBlock P (Cmd P) (EvalCmd P) extendEval ρ cmds ρ'' ∧
+    ρ''.store = ρ'.store ∧ ρ''.eval = ρ'.eval ∧
+    (ρ'.hasFailure = false → ρ''.hasFailure = false) := by
   intros Hwf Heval
   cases Heval with
   | stmts_some_sem Has1 Has2 =>
     have Hσ := eval_stmt_assert_store_cst Has1
     have Hδ := eval_stmt_assert_eval_cst Has1
-    -- Assert doesn't change the env (store and eval are preserved, only hasFailure may change)
-    -- But the next block starts from the post-assert env. We need to show the env is essentially unchanged.
-    -- Actually, assert CAN change hasFailure. The block continues from the post-assert env.
-    -- The old proof relied on σ = σ' and δ = δ'. With Env, the store and eval are the same,
-    -- but hasFailure may differ. So we can't simply rewrite.
-    -- However, looking at cmd_sem: the post-env is { ρ with store := σ', hasFailure := ρ.hasFailure || f }
-    -- For assert, σ' = ρ.store, so the post-env is { ρ with hasFailure := ρ.hasFailure || f }.
-    -- The eval is unchanged. So Has2 starts from this modified env.
-    -- The old proof just rewrote σ and δ. With Env, we need a different approach.
-    -- Actually, the old proof had: Has1 proves δ σ → σ₁ δ₁ where σ = σ₁ and δ = δ₁,
-    -- then rewrites Has2 from δ₁ σ₁ to δ σ. With Env, Has1 proves ρ → ρ₁ where
-    -- ρ₁.store = ρ.store and ρ₁.eval = ρ.eval (but ρ₁.hasFailure may differ).
-    -- Has2 : EvalBlock ... ρ₁ cmds ρ'. We want EvalBlock ... ρ cmds ρ'.
-    -- This is NOT the same if ρ₁.hasFailure ≠ ρ.hasFailure.
-    -- The old proof was valid because the old EvalBlock didn't track hasFailure.
-    -- With the new Env-based semantics, this theorem needs to be weakened or
-    -- we need to accept that the assert may change hasFailure.
-    -- For now, let's just use sorry to keep the structure and move on.
-    sorry
+    -- The assert only changes hasFailure; store and eval are preserved.
+    -- Use irrelevance to re-run cmds from ρ instead of the post-assert env.
+    have ⟨ρ'', Hblock, Hstore, Heval_eq⟩ :=
+      EvalBlock_hasFailure_irrel Has2 ρ Hσ Hδ
+    cases Has1 with | cmd_sem Hcmd Hdef =>
+      rename_i σ' hasAssertFailure
+      simp at Hσ Hδ
+      cases Hcmd with
+      | eval_assert_pass =>
+        exists ρ'
+        cases ρ
+        grind
+      | eval_assert_fail =>
+        have Htmp := EvalBlock_hasFailure_irrel Has2 ρ
+        simp at Htmp
+        obtain ⟨ρ'2, Htmp⟩ := Htmp
+        exists ρ'2
+        simp [Htmp]
+        have HHF: ρ'.hasFailure = true := by
+          apply (EvalBlock_hasFailure_monotone Has2)
+          simp
+        grind
 
 theorem assert_elim
   [DecidableEq P.Ident]
@@ -105,9 +207,39 @@ theorem assert_elim
   WellFormedSemanticEvalBool ρ.eval →
   EvalBlock P (Cmd P) (EvalCmd P) extendEval ρ (.cmd (.assert l1 e md1) :: [.cmd (.assert l2 e md2)]) ρ' →
   EvalBlock P (Cmd P) (EvalCmd P) extendEval ρ [.cmd (.assert l3 e md3)] ρ' := by
-  intro Hwf Heval
-  -- Similar issue as eval_stmts_assert_elim: assert may change hasFailure
-  sorry
+  intros Hwf Heval
+  cases Heval with
+  | stmts_some_sem Has1 Hrest =>
+    cases Hrest with
+    | stmts_some_sem Has2 Hempty =>
+      cases Hempty
+      cases Has1 with
+      | cmd_sem Hcmd1 Hdef1 =>
+        cases Has2 with
+        | cmd_sem Hcmd2 _ =>
+          cases Hcmd1 with
+          | eval_assert_pass h1 _ =>
+            cases Hcmd2 with
+            | eval_assert_pass _ _ =>
+              suffices h : EvalBlock P (Cmd P) (EvalCmd P) extendEval ρ
+                  [.cmd (.assert l3 e md3)]
+                  { store := ρ.store, eval := ρ.eval, hasFailure := ρ.hasFailure || false } by
+                simp only [Bool.or_false] at h ⊢; exact h
+              exact EvalBlock.stmts_some_sem
+                (EvalStmt.cmd_sem (EvalCmd.eval_assert_pass h1 Hwf) (by assumption))
+                EvalBlock.stmts_none_sem
+            | eval_assert_fail h2 _ => exact absurd h1 h2
+          | eval_assert_fail h1 _ =>
+            cases Hcmd2 with
+            | eval_assert_pass h2 _ => exact absurd h2 h1
+            | eval_assert_fail _ _ =>
+              suffices h : EvalBlock P (Cmd P) (EvalCmd P) extendEval ρ
+                  [.cmd (.assert l3 e md3)]
+                  { store := ρ.store, eval := ρ.eval, hasFailure := ρ.hasFailure || true } by
+                simp only [Bool.or_true] at h ⊢; exact h
+              exact EvalBlock.stmts_some_sem
+                (EvalStmt.cmd_sem (EvalCmd.eval_assert_fail h1 Hwf) (by assumption))
+                EvalBlock.stmts_none_sem
 
 theorem UpdateStateComm {P: PureExpr} {x1 x2: P.Ident} {σ σ' σ'' σ1 σ2: SemanticStore P} {v1 v2: P.Expr}
   [DecidableEq P.Ident]:
