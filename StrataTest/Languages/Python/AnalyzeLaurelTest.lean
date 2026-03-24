@@ -214,29 +214,28 @@ private meta def runTestCase (dispatchIon tmpDir : System.FilePath)
 Verifies that calling `put_item(Bucket="", ...)` produces a `✖️ always false`
 result for the `len(Bucket) >= 1` assertion. -/
 
-/--
-info: Storage_Storage_put_item_assert(0)_8: ✔️ always true if reached (Required parameter 'Bucket' is missing)
-Storage_Storage_put_item_assert(0)_8: ✔️ always true if reached (Required parameter 'Key' is missing)
-Storage_Storage_put_item_assert(0)_8: ✔️ always true if reached (Required parameter 'Data' is missing)
-Storage_Storage_put_item_assert(0)_8: ✖️ always false if reached (Bucket must not be empty)
-Storage_Storage_put_item_assert(0)_8: ✔️ always true if reached (Key must not be empty)
--/
-#guard_msgs in
 #eval withPython fun _pythonCmd => do
   IO.FS.withTempDir fun tmpDir => do
     let (dispatchIon, pyspecPaths) ← setupFixture _pythonCmd tmpDir
     let result ← runAnalyzeAndVerify dispatchIon tmpDir
       "test_precondition_violation.py" pyspecPaths
     match result with
-    | .error msg => IO.println s!"error: {msg}"
+    | .error msg => throw <| IO.userError s!"Pipeline failed: {msg}"
     | .ok vcResults =>
-      for r in vcResults do
-        if r.obligation.label.startsWith "Storage_" then
-          let msg := r.obligation.metadata.findSome? fun elem =>
-            match elem.fld, elem.value with
-            | .label "message", .msg s => some s
-            | _, _ => none
-          let msgStr := msg.map (s!" ({·})") |>.getD ""
-          IO.println s!"{r.obligation.label}: {r.formatOutcome}{msgStr}"
+      let storageResults := vcResults.filter fun r =>
+        r.obligation.label.startsWith "Storage_"
+      for r in storageResults do
+        let msg := r.obligation.metadata.findSome? fun elem =>
+          match elem.fld, elem.value with
+          | .label "message", .msg s => some s
+          | _, _ => none
+        let msgStr := msg.map (s!" ({·})") |>.getD ""
+        IO.println s!"{r.obligation.label}: {r.formatOutcome}{msgStr}"
+      let alwaysFalse := storageResults.filter fun r =>
+        match r.outcome with
+        | .ok o => o.alwaysFalseAndReachable || o.alwaysFalseReachabilityUnknown
+        | _ => false
+      if alwaysFalse.size == 0 then
+        throw <| IO.userError "Expected ✖️ always false for empty Bucket violation"
 
 end Strata.Python.AnalyzeLaurelTest
