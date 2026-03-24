@@ -451,16 +451,6 @@ This corresponds to Definition 2 from the soundness document: the
 transformation does not fabricate validity.
 -/
 
-/-- A transformation on statements, using the `CoreTransformM` monad.
-    The transformation may fail (returning an error) or carry state
-    (e.g., fresh name generation).
-    Adapted from `Transformation` in `SoundnessFramework.lean`
-    (branch `proc-body-verify`); uses `CoreTransformM` instead of a
-    pure function. -/
-structure Transformation where
-  /-- The monadic transformation function on statements. -/
-  transform : Statement → CoreTransformM Statement
-
 /-- A transformation is *sound* if it preserves assertion validity:
     whenever the transformation succeeds (producing `s'` from `s` in
     some initial state `st`) and assert `a` is valid in `s'`, then
@@ -469,27 +459,25 @@ structure Transformation where
     Note the direction: valid in T(s) ⟹ valid in s.
     This means T does not fabricate validity — if T(s) says "all asserts
     pass," then they genuinely pass in s. -/
-def Transformation.Sound
-    (T : Transformation)
+def TransformSound
+    (T : Statement → CoreTransformM Statement)
     (π : String → Option Procedure)
     (φ : CoreEval → PureFunc Expression → CoreEval) : Prop :=
   ∀ (s s' : Statement) (a : AssertId)
     (st st' : CoreTransformState),
-    (T.transform s).run st = (.ok s', st') →
+    (T s).run st = (.ok s', st') →
     AssertValid π φ s' a →
     AssertValid π φ s a
 
 /-- Composition of sound transformations is sound. -/
 theorem sound_comp
-    (T₁ T₂ : Transformation)
+    (T₁ T₂ : Statement → CoreTransformM Statement)
     (π : String → Option Procedure)
     (φ : CoreEval → PureFunc Expression → CoreEval)
-    (h₁ : T₁.Sound π φ)
-    (h₂ : T₂.Sound π φ) :
-    (⟨fun s => T₁.transform s >>= T₂.transform⟩ : Transformation).Sound π φ := by
+    (h₁ : TransformSound T₁ π φ)
+    (h₂ : TransformSound T₂ π φ) :
+    TransformSound (fun s => T₁ s >>= T₂) π φ := by
   intro s s'' a st st'' hrun hvalid
-  -- Beta-reduce the structure projection
-  dsimp [Transformation.transform] at hrun
   -- Unfold the monadic bind to expose the intermediate result of T₁
   simp only [bind, ExceptT.bind] at hrun
   unfold ExceptT.bindCont at hrun
@@ -497,7 +485,7 @@ theorem sound_comp
   unfold StateT.bind at hrun
   simp only [] at hrun
   -- Split on the result of T₁.  Unfold ExceptT.run in h1 so it matches hrun.
-  match h1 : (T₁.transform s).run st with
+  match h1 : (T₁ s).run st with
   | (.ok s', st') =>
     unfold ExceptT.run at h1
     rw [h1] at hrun
@@ -522,13 +510,13 @@ are valid in the original program. -/
 /-- End-to-end: if `T` is sound and all asserts are valid in `T(s)`,
     then all asserts are valid in `s`. -/
 theorem endToEnd_allAsserts
-    (T : Transformation)
+    (T : Statement → CoreTransformM Statement)
     (π : String → Option Procedure)
     (φ : CoreEval → PureFunc Expression → CoreEval)
     (s s' : Statement)
     (st st' : CoreTransformState)
-    (hrun : (T.transform s).run st = (.ok s', st'))
-    (hsound : T.Sound π φ)
+    (hrun : (T s).run st = (.ok s', st'))
+    (hsound : TransformSound T π φ)
     (hvalid : AllAssertsValid π φ s') :
     AllAssertsValid π φ s := by
   intro a
