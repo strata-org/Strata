@@ -8,6 +8,7 @@
 failed=0
 incremental=false
 mode="core"
+filter=""
 
 # Parse flags
 while [[ $# -gt 0 ]]; do
@@ -25,6 +26,7 @@ while [[ $# -gt 0 ]]; do
             exit 1
             ;;
     esac
+    shift
 done
 
 if [ "$mode" = "laurel" ]; then
@@ -62,6 +64,11 @@ for test_file in tests/test_*.py; do
             fi
         done
         [ $skip -eq 1 ] && continue
+
+        # Apply name filter if specified
+        if [ -n "$filter" ] && [[ "$base_name" != *"$filter"* ]]; then
+            continue
+        fi
 
         ion_file="tests/${base_name}.python.st.ion"
         expected_file="${expected_dir}/${base_name}.expected"
