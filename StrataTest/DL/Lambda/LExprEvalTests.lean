@@ -541,7 +541,13 @@ def test21 := TestCase.mk
 #guard_msgs in
 #eval check test21
 
--- TODO: steps_well proof of test21
+example: steps_well test21 := by
+  unfold steps_well Scopes.toEnv test21
+  take_step; apply Step.reduce_2
+  · inhabited_metadata
+  · apply Step.eval_fn <;> try discharge_isCanonicalValue
+    · inhabited_metadata
+  take_refl
 
 
 def test22 := TestCase.mk
@@ -553,7 +559,24 @@ def test22 := TestCase.mk
 #guard_msgs in
 #eval check test22
 
--- TODO: steps_well proof of test22
+example: steps_well test22 := by
+  unfold steps_well Scopes.toEnv test22
+  take_step; apply Step.reduce_1
+  · inhabited_metadata
+  · apply Step.reduce_2
+    · inhabited_metadata
+    · apply Step.reduce_2
+      · inhabited_metadata
+      · apply Step.eval_fn <;> try discharge_isCanonicalValue
+        · inhabited_metadata
+  take_step; apply Step.reduce_1
+  · inhabited_metadata
+  · apply Step.reduce_2
+    · inhabited_metadata
+    · apply Step.eval_fn <;> try discharge_isCanonicalValue
+      · simp; rfl
+      · inhabited_metadata
+  take_refl
 
 
 def test23 := TestCase.mk
@@ -565,7 +588,33 @@ def test23 := TestCase.mk
 #guard_msgs in
 #eval check test23
 
--- TODO: stuck proof of test23
+-- Small step stucks because 'Int.Le' is not in the test factory and 'y' is unresolvable.
+example: stuck test23 := by
+  intros e H
+  cases H <;> try contradiction
+  case reduce_1 =>
+    rename_i _ h
+    cases h <;> try contradiction
+    case reduce_2 =>
+      rename_i _ h
+      cases h <;> try contradiction
+      case reduce_2 =>
+        rename_i _ h
+        cases h <;> try contradiction
+        case expand_fn =>
+          rename_i a a2 a3
+          cases a2; contradiction
+        case eval_fn =>
+          rename_i a a2 a3 he
+          cases a3
+          cases a2; unfold denoteInt at he; contradiction
+      case expand_fn =>
+        rename_i a a2 a3
+        cases a2; contradiction
+      case eval_fn =>
+        rename_i a a2 a3 he
+        cases a3
+        cases a2; unfold denoteInt at he; contradiction
 
 
 def test24 := TestCase.mk
@@ -577,7 +626,18 @@ def test24 := TestCase.mk
 #guard_msgs in
 #eval check test24
 
--- TODO: stuck proof of test24
+-- Small step stucks because 'x' is unresolvable.
+example: stuck test24 := by
+  intros e H
+  cases H <;> try contradiction
+  case expand_fn =>
+    rename_i a a2 a3
+    cases a2
+    contradiction
+  case eval_fn =>
+    rename_i a a2 a3 he
+    cases a3
+    cases a2; unfold denoteInt at he; contradiction
 
 
 end EvalTest
