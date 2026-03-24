@@ -47,7 +47,6 @@ def encodeCore (ctx : Core.SMT.Context) (prelude : SolverM Unit)
     (md : Imperative.MetaData Core.Expression)
     (satisfiabilityCheck validityCheck : Bool) :
     SolverM (List String × EncoderState) := do
-  Solver.reset
   Solver.setLogic "ALL"
   prelude
   let _ ← ctx.sorts.mapM (fun s => Solver.declareSort s.name s.arity)
@@ -640,18 +639,19 @@ def verifySingleEnv (pE : Program × Env) (options : VerifyOptions)
           | .bugFinding, .minimal, .cover => (true, false)  -- Cover uses satisfiability
           | .bugFinding, .minimalVerbose, .cover => (true, false)  -- Same checks as minimal
       let (obligation, peSatResult?, peValResult?) ← preprocessObligation obligation p options satisfiabilityCheck validityCheck
-      -- If PE resolved both checks, we're done
-      if let (some peSat, some peVal) := (peSatResult?, peValResult?) then
-        let outcome := VCOutcome.mk peSat peVal
-        let result : VCResult := { obligation, outcome := .ok outcome, verbose := options.verbose,
-                                    checkLevel := options.checkLevel, checkMode := options.checkMode, lexprModel := [] }
-        results := results.push result
-        if result.isFailure || result.isImplementationError then
-          if options.verbose >= .normal then
-            let prog := f!"\n\n[DEBUG] Evaluated program:\n{Core.formatProgram p}"
-            dbg_trace f!"\n\nResult: {result}\n{prog}"
-          if options.stopOnFirstError then break
-        continue
+      -- If PE resolved both checks, we're done, unless we always want to generate SMT queries
+      if not options.alwaysRunSMT then
+        if let (some peSat, some peVal) := (peSatResult?, peValResult?) then
+          let outcome := VCOutcome.mk peSat peVal
+          let result : VCResult := { obligation, outcome := .ok outcome, verbose := options.verbose,
+                                      checkLevel := options.checkLevel, checkMode := options.checkMode, lexprModel := [] }
+          results := results.push result
+          if result.isFailure || result.isImplementationError then
+            if options.verbose >= .normal then
+              let prog := f!"\n\n[DEBUG] Evaluated program:\n{Core.formatProgram p}"
+              dbg_trace f!"\n\nResult: {result}\n{prog}"
+            if options.stopOnFirstError then break
+          continue
       -- Need the solver for at least one check
       let needSatCheck := satisfiabilityCheck && peSatResult?.isNone
       let needValCheck := validityCheck && peValResult?.isNone
