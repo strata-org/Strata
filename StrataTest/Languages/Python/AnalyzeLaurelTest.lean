@@ -6,7 +6,7 @@
 module
 
 meta import Strata.SimpleAPI
-meta import Strata.Languages.Python.PySpecPipeline
+meta import Strata.SimpleAPI.Python
 meta import Strata.Languages.Python.PyFactory
 meta import StrataTest.Util.Python
 
@@ -20,7 +20,7 @@ Messaging) are generic and not tied to any cloud provider.
 
 namespace Strata.Python.AnalyzeLaurelTest
 
-open Strata (pyAnalyzeLaurel pySpecs)
+open Strata (pyAnalyzeLaurelFromPaths pySpecs translateCombinedLaurel)
 
 private meta def testDir : System.FilePath :=
   "StrataTest/Languages/Python/Specs/dispatch_test"
@@ -34,8 +34,11 @@ private meta def compilePySpec
       (warningOutput := .none) |>.toBaseIO with
   | .ok () => pure ()
   | .error msg => throw <| .userError s!"pySpecs failed for {pyFile}: {msg}"
-  let some stem := pyFile.fileStem
-    | throw <| .userError s!"No stem for {pyFile}"
+  -- Derive the module stem: parent dir name for __init__.py, file stem otherwise
+  let some stem := if pyFile.fileName == some "__init__.py"
+      then pyFile.parent >>= (·.fileName)
+      else pyFile.fileStem
+    | throw <| .userError s!"Cannot derive module name from {pyFile}"
   return outDir / s!"{stem}.pyspec.st.ion"
 
 /-- Compile a Python source file to a `.python.st.ion` Ion file.
@@ -71,11 +74,8 @@ private meta def setupFixture (_pythonCmd : System.FilePath)
     (outDir : System.FilePath) : IO System.FilePath := do
   IO.FS.withTempFile fun _handle dialectFile => do
     IO.FS.writeBinFile dialectFile Python.Python.toIon
-    -- Compile service specs
-    let _ ← compilePySpec dialectFile (testDir / "Storage.py") outDir
-    let _ ← compilePySpec dialectFile (testDir / "Messaging.py") outDir
-    -- Compile dispatch file
-    compilePySpec dialectFile (testDir / "servicelib.py") outDir
+    -- Compile dispatch file (resolves relative imports to Storage/Messaging)
+    compilePySpec dialectFile (testDir / "servicelib" / "__init__.py") outDir
 
 /-- Compile a test Python file to Ion format. -/
 private meta def compileTestScript (pyFile : System.FilePath)
@@ -90,11 +90,11 @@ private meta def runAnalyze (dispatchIon : System.FilePath)
     : IO (Except String Core.Program) := do
   let testIon ← compileTestScript (testDir / scriptName) tmpDir
   let laurel ←
-    match ← Strata.pyAnalyzeLaurel testIon.toString
+    match ← pyAnalyzeLaurelFromPaths testIon.toString
         (dispatchPaths := #[dispatchIon.toString]) |>.toBaseIO with
     | .ok r => pure r
     | .error err => return .error (toString err)
-  match Strata.translateCombinedLaurel laurel with
+  match translateCombinedLaurel laurel with
   | (some core, []) =>
     -- Also run Core type checking to catch semantic errors (e.g. Heap vs Any)
     match Core.typeCheck Core.VerifyOptions.quiet core (moreFns := Strata.Python.ReFactory) with

@@ -24,9 +24,7 @@ import Strata.Languages.Laurel.Grammar.ConcreteToAbstractTreeTranslator
 public import Strata.Languages.Laurel.Laurel
 import Strata.Languages.Laurel.LaurelToCoreTranslator
 
-public import Strata.Languages.Python.PySpecPipeline
-import Strata.Languages.Python.Specs
-import Strata.Languages.Python.Specs.DDM
+public import Strata.SimpleAPI.Python
 
 /-! ## Simple Strata API
 
@@ -193,108 +191,6 @@ Do deductive verification of a Core program, including any external solver
 invocation that is necessary.
 -/
 noncomputable opaque Core.verify : Core.Program → Core.VerifyOptions → IO Core.VCResults
-
-/-- Controls how translation warnings are reported. -/
-inductive WarningOutput where
-  /-- Suppress all warning output. -/
-  | none
-  /-- Print only a count summary (e.g., "3 warning(s)"). -/
-  | summary
-  /-- Print each warning followed by a count summary. -/
-  | detail
-deriving Inhabited, BEq
-
-/--
-Translate a Python source file into PySpec signatures and write the result as a
-DDM Ion file under `strataDir`. The output filename is derived from the Python
-module name (e.g., `foo.bar` → `foo.bar.pyspec.st.ion`).
-
-The `dialectFile` path points to a serialized Python dialect used during
-translation. Optional `events` controls logging (e.g., `"import"` for
-import progress).
-
-Each entry in `skipNames` is either a qualified `"module.name"` string
-(split on the last dot) or an unqualified `"name"` string (the module is
-inferred from the Python file stem). Matching top-level definitions are
-omitted from the output, except overloaded variants which are always kept.
-
-The `warningOutput` parameter controls how translation warnings are reported
-to stderr: `.none` suppresses them, `.summary` prints only a count, and
-`.detail` prints each warning followed by a count.
--/
-def pySpecs (pythonFile strataDir dialectFile : System.FilePath)
-    (events : Std.HashSet String := {})
-    (skipNames : Array String := #[])
-    (warningOutput : WarningOutput := .detail)
-    : EIO String Unit := do
-  -- Validate source file
-  match ← pythonFile.metadata |>.toBaseIO with
-  | .ok md =>
-    if md.type != .file then
-      throw s!"Expected {pythonFile} to be a regular file"
-  | .error e => throw s!"Cannot access {pythonFile}: {e}"
-
-  -- Parse skip names into PythonIdents
-  let some fileStem := pythonFile.fileStem
-    | throw s!"No file stem for {pythonFile}"
-
-  let mod ← match Strata.Python.Specs.ModuleName.ofString fileStem with
-    | .ok m => pure m
-    | .error e => throw s!"Invalid module name '{fileStem}': {e}"
-
-  let skipIdents := skipNames.foldl (init := {}) fun acc s =>
-    match Python.PythonIdent.ofString s with
-    | some id => acc.insert id
-    | none => acc.insert { pythonModule := fileStem, name := s }
-
-  -- Create directory if it doesn't exist
-  match ← strataDir.metadata |>.toBaseIO with
-  | .ok md =>
-    if md.type != .dir then
-      throw s!"Expected {strataDir} to be a directory"
-  | .error _ =>
-    match ← IO.FS.createDirAll strataDir |>.toBaseIO with
-    | .ok () => pure ()
-    | .error e => throw s!"Could not create {strataDir}: {e}"
-
-  let (sigs, warnings) ← Strata.Python.Specs.translateFile
-    dialectFile strataDir pythonFile
-    (events := events) (skipNames := skipIdents)
-
-  let strataFile := strataDir / mod.strataFileName
-  match ← Strata.Python.Specs.writeDDM strataFile sigs |>.toBaseIO with
-  | .ok () => pure ()
-  | .error e => throw s!"Could not write {strataFile}: {e}"
-
-  -- Report warnings
-  if warnings.size > 0 then
-    match warningOutput with
-    | .none => pure ()
-    | .summary =>
-      let _ ← IO.eprintln s!"{warnings.size} warning(s)" |>.toBaseIO
-    | .detail =>
-      for w in warnings do
-        let _ ← IO.eprintln s!"warning: {w}" |>.toBaseIO
-      let _ ← IO.eprintln s!"{warnings.size} warning(s)" |>.toBaseIO
-
-/-! ### Python-to-Core via Laurel pipeline -/
-
-/-- Translate a Python Ion file all the way to Core.  Composes
-    `pyAnalyzeLaurel` (Python → combined Laurel) and
-    `translateCombinedLaurel` (Laurel → Core with prelude). -/
-def pyTranslateLaurel
-    (pythonIonPath : String)
-    (dispatchPaths : Array String := #[])
-    (pyspecPaths : Array String := #[])
-    : EIO String (Core.Program × List DiagnosticModel) := do
-  let laurel ←
-    match ← pyAnalyzeLaurel pythonIonPath dispatchPaths pyspecPaths |>.toBaseIO with
-    | .ok r => pure r
-    | .error err => throw (toString err)
-  let (coreOption, laurelTranslateErrors) := translateCombinedLaurel laurel
-  match coreOption with
-  | none => throw s!"Laurel to Core translation failed: {laurelTranslateErrors}"
-  | some core => pure (core, laurelTranslateErrors)
 
 /-! ### Deductive verification of Core programs -/
 
