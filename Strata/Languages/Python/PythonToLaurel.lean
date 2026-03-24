@@ -1591,9 +1591,9 @@ def PreludeInfo.ofLaurelProgram (prog : Laurel.Program) : PreludeInfo where
     prog.staticProcedures.filterMap fun p =>
       if p.body.isExternal then none
       else
-        let noDefault : Option (Python.expr SourceRange) := none
+        let noneexpr : Python.expr SourceRange := .Constant default (.ConNone default) default
         let args := p.inputs.map fun param =>
-          (param.name.text, getHighTypeName param.type.val, noDefault)
+          (param.name.text, getHighTypeName param.type.val, some noneexpr)
         let ret := p.outputs.head?.map fun param => getHighTypeName param.type.val
         some { name := p.name.text, args := args, hasKwargs := false, ret := ret }
   functions :=
