@@ -817,7 +817,8 @@ def translate (options: LaurelTranslateOptions) (program : Program): TranslateRe
         | none => pure none
         | some trigger => do
           let axDecl? ← translateInvokeOnAxiom proc trigger
-          return axDecl?.map (fun ax => (ax, invokeOnAxiomDeps proc)))
+          return axDecl?.map (fun ax => (ax, invokeOnAxiomDeps proc))
+          )
 
     -- Build the set of function names defined in pureFuncDecls (in order).
     let funcNames : List String := markedPure.map (·.name.text)

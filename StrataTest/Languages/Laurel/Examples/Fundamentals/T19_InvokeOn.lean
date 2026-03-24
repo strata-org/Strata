@@ -13,95 +13,32 @@ open Strata
 namespace Strata.Laurel
 
 def program := r#"
-// abs returns the absolute value of x.
-// The invokeOn trigger fires whenever abs(x) appears in the SMT context,
-// automatically instantiating the axiom: abs(x) >= 0.
-function abs(x: int): int {
-  if x >= 0 then x else -x
+function P(x: int): bool;
+function Q(x: int): bool;
+
+procedure PAndQ(x: int)
+  invokeOn P(x)
+  ensures P(x) && Q(x);
+
+// The axiom fires because P(x) appears in the goal.
+procedure fireAxiomUsingPattern(x: int) {
+  assert P(x)
 };
 
-procedure abs_nonneg(x: int)
-  invokeOn abs(x)
-  ensures abs(x) >= 0;
-
-// The axiom fires because abs(n) appears in the goal.
-procedure useAbsAxiom(n: int) {
-  assert abs(n) >= 0
+procedure axiomDoesNotFireBecauseOfPattern(x: int) {
+  assert Q(x)
+//^^^^^^^^^^^ error: assertion does not hold
 };
 
-// The axiom fires for a concrete expression too.
-procedure useAbsAxiomConcrete() {
-  assert abs(-5) >= 0
+function Z(x: real): bool;
+procedure PAndZ(x: int, y: real)
+  invokeOn P(x)
+  ensures P(x) && Z(y);
+
+procedure invokePAndZ(x: int, y :real) {
+  assert P(x) && Z(y)
 };
 
-// Without the axiom, a false claim about abs should fail.
-procedure wrongAbsClaim(n: int) {
-  assert abs(n) < 0
-//^^^^^^^^^^^^^^^^^ error: assertion does not hold
-};
-
-// double_abs: abs(abs(x)) == abs(x).
-// The invokeOn trigger is abs(abs(x)), so the axiom fires when that
-// exact pattern appears, giving us abs(abs(x)) >= 0 for free.
-procedure abs_abs_nonneg(x: int)
-  invokeOn abs(abs(x))
-  ensures abs(abs(x)) >= 0;
-
-procedure useAbsAbsAxiom(n: int) {
-  assert abs(abs(n)) >= 0
-};
-
-// A procedure with multiple parameters: invokeOn fires on max(a, b).
-function max(a: int, b: int): int {
-  if a >= b then a else b
-};
-
-procedure max_ge_left(a: int, b: int)
-  invokeOn max(a, b)
-  ensures max(a, b) >= a;
-
-procedure max_ge_right(a: int, b: int)
-  invokeOn max(a, b)
-  ensures max(a, b) >= b;
-
-// Both axioms fire because max(x, y) appears in the goal.
-procedure useMaxAxioms(x: int, y: int) {
-  assert max(x, y) >= x;
-  assert max(x, y) >= y
-};
-
-// A wrong claim about max should fail even with the axiom.
-procedure wrongMaxClaim(x: int, y: int) {
-  assert max(x, y) == x
-//^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
-};
-
-// A procedure with two parameters of different types (int and bool).
-// scale(x, flag) returns x when flag is true, and 0 otherwise.
-// The invokeOn trigger fires on scale(x, flag), giving us the ensures for free.
-function scale(x: int, flag: bool): int {
-  if flag then x else 0
-};
-
-procedure scale_nonneg_when_flag(x: int, flag: bool)
-  invokeOn scale(x, flag)
-  ensures flag ==> scale(x, flag) == x;
-
-procedure scale_zero_when_not_flag(x: int, flag: bool)
-  invokeOn scale(x, flag)
-  ensures !flag ==> scale(x, flag) == 0;
-
-// Both axioms fire because scale(n, b) appears in the goal.
-procedure useScaleAxioms(n: int, b: bool) {
-  assert b ==> scale(n, b) == n;
-  assert !b ==> scale(n, b) == 0
-};
-
-// A wrong claim about scale should fail.
-procedure wrongScaleClaim(n: int, b: bool) {
-  assert scale(n, b) == n
-//^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
-};
 "#
 
 #guard_msgs (drop info, error) in
