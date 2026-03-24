@@ -120,13 +120,13 @@ def CoreConfig.getEval : CoreConfig → CoreEval
   | .seq inner _ _ => CoreConfig.getEval inner
 
 /-- Extract the program counter from a configuration, if present.
-    Returns `[]` for terminal/exiting configurations. Recurses into
+    Returns `none` for terminal/exiting configurations. Recurses into
     block/seq wrappers. -/
-def CoreConfig.getPC : CoreConfig → ProgramCounter
-  | .stmt _ _ pc => pc
-  | .stmts _ _ pc => pc
-  | .terminal _ => []
-  | .exiting _ _ => []
+def CoreConfig.getPC : CoreConfig → Option ProgramCounter
+  | .stmt _ _ pc => some pc
+  | .stmts _ _ pc => some pc
+  | .terminal _ => none
+  | .exiting _ _ => none
   | .block _ inner => CoreConfig.getPC inner
   | .seq inner _ _ => CoreConfig.getPC inner
 
@@ -150,31 +150,32 @@ is at an assert `a`, the assert expression evaluates to `true` in the
 current store.
 -/
 
-/-- An assert `a` is *reachable* from statement `s` at configuration `cfg`
-    if there exist an initial environment and an initial program counter
-    such that multi-step execution from `(.stmt s ρ₀ pc₀)` reaches `cfg`
-    and `cfg` is at assert `a`.
+/-- A configuration `cfg` is *reachable* from statement `s` with initial
+    environment `ρ₀` and program counter `pc₀` if multi-step execution
+    from `(.stmt s ρ₀ pc₀)` reaches `cfg` and `cfg` has program counter
+    `pc`.
     Adapted from `reachable` in `SoundnessFramework.lean`
-    (branch `proc-body-verify`); uses `isAtAssert` instead of
-    `ProgramState.ofConfig`. -/
+    (branch `proc-body-verify`). -/
 def Reachable
     (π : String → Option Procedure)
     (φ : CoreEval → PureFunc Expression → CoreEval)
-    (s : Statement) (a : AssertId) (cfg : CoreConfig) : Prop :=
-  ∃ (ρ₀ : CoreEnv) (pc₀ : ProgramCounter),
-    CoreStepStar π φ (.stmt s ρ₀ pc₀) cfg ∧
-    isAtAssert cfg a
+    (s : Statement) (ρ₀ : CoreEnv) (pc₀ : ProgramCounter)
+    (pc : ProgramCounter) (cfg : CoreConfig) : Prop :=
+  CoreStepStar π φ (.stmt s ρ₀ pc₀) cfg ∧
+  cfg.getPC = some pc
 
-/-- Assert `a` is *valid* in statement `s` if, for every reachable
-    configuration at `a`, the assert expression evaluates to `true`.
+/-- Assert `a` is *valid* in statement `s` if, for every initial
+    environment, initial program counter, and reachable configuration
+    at the assert's program counter, the assert expression evaluates
+    to `true`.
     Adapted from `stmt_valid` in `SoundnessFramework.lean`
     (branch `proc-body-verify`). -/
 def AssertValid
     (π : String → Option Procedure)
     (φ : CoreEval → PureFunc Expression → CoreEval)
-    (s : Statement) (a : AssertId) : Prop :=
-  ∀ (cfg : CoreConfig),
-    Reachable π φ s a cfg →
+    (s : Statement) (a : AssertId) (pc : ProgramCounter) : Prop :=
+  ∀ (ρ₀ : CoreEnv) (pc₀ : ProgramCounter) (cfg : CoreConfig),
+    Reachable π φ s ρ₀ pc₀ pc cfg →
     cfg.getEval cfg.getStore a.expr = some HasBool.tt
 
 /-- *All* asserts are valid in statement `s`.
@@ -184,7 +185,7 @@ def AllAssertsValid
     (π : String → Option Procedure)
     (φ : CoreEval → PureFunc Expression → CoreEval)
     (s : Statement) : Prop :=
-  ∀ (a : AssertId), AssertValid π φ s a
+  ∀ (a : AssertId) (pc : ProgramCounter), AssertValid π φ s a pc
 
 /-! ## Style B — Hoare-triple assertion validity
 
@@ -315,7 +316,7 @@ theorem assertValid_implies_hoareTriple
     (label : CoreLabel) (expr : Expression.Expr) (md : MetaData Expression)
     (s : Statement)
     (hs : s = Statement.assert label expr md)
-    (hvalid : AssertValid π φ s ⟨label, expr⟩) :
+    (hvalid : ∀ pc, AssertValid π φ s ⟨label, expr⟩ pc) :
     HoareTriple π φ
       (fun _ => True)
       s
@@ -339,12 +340,16 @@ theorem assertValid_implies_hoareTriple
           cases hrest with
           | refl => exact htt
           | step _ _ _ hstep2 _ => exact absurd hstep2 (by intro h; cases h)
-        | eval_assert_fail hne _ =>
-          -- Use hvalid: the initial config is reachable and at the assert
-          have hreach : Reachable π φ (Statement.assert label expr md) ⟨label, expr⟩
+        | eval_assert_fail hff _ =>
+          -- Use hvalid: the initial config is reachable at pc₀
+          have hreach : Reachable π φ (Statement.assert label expr md) ρ₀ pc₀ pc₀
               (.stmt (Statement.assert label expr md) ρ₀ pc₀) :=
-            ⟨ρ₀, pc₀, ReflTrans.refl _, ⟨rfl, rfl⟩⟩
-          exact absurd (hvalid _ hreach) hne
+            ⟨ReflTrans.refl _, rfl⟩
+          -- hvalid gives expr = tt, but hff says expr = ff — contradiction
+          have htt := hvalid pc₀ ρ₀ pc₀ _ hreach
+          simp only [CoreConfig.getEval, CoreConfig.getStore] at htt
+          rw [hff] at htt
+          exact absurd (Option.some.inj htt) HasBool.tt_is_not_ff.symm
 
 /-- Style B implies Style A, given that the assert is not stuck
     (i.e., for every reachable assert configuration, execution can
@@ -367,43 +372,43 @@ theorem hoareTriple_implies_assertValid
     -- environment and PC, the assert command can step to terminal.
     (hprogress : ∀ (ρ₀ : CoreEnv) (pc₀ : ProgramCounter),
       ∃ (ρ' : CoreEnv),
-        CoreStepStar π φ (.stmt s ρ₀ pc₀) (.terminal ρ')) :
-    AssertValid π φ s ⟨label, expr⟩ := by
+        CoreStepStar π φ (.stmt s ρ₀ pc₀) (.terminal ρ'))
+    (pc : ProgramCounter) :
+    AssertValid π φ s ⟨label, expr⟩ pc := by
   subst hs
-  intro cfg hreach
-  obtain ⟨ρ₀, pc₀, hstar, hat⟩ := hreach
-  -- cfg must be the initial configuration
-  have heq := assert_reachable_is_initial π φ label expr md ρ₀ pc₀ cfg hstar hat
-  subst heq
-  -- Now we need: ρ₀.eval ρ₀.store expr = some HasBool.tt
-  -- Use progress to get a terminal state, then apply the Hoare triple.
-  obtain ⟨ρ', hterm⟩ := hprogress ρ₀ pc₀
-  simp only [CoreConfig.getEval, CoreConfig.getStore]
-  -- Apply the Hoare triple to get the postcondition on ρ'
-  have hpost := hoare ρ₀ pc₀ ρ' trivial hterm
-  -- Now invert the execution to show ρ'.eval = ρ₀.eval and ρ'.store = ρ₀.store
-  -- A single assert command steps via step_cmd to terminal, so:
-  cases hterm with
+  intro ρ₀ pc₀ cfg hreach
+  obtain ⟨hstar, hpc⟩ := hreach
+  -- For a single assert, cfg must be the initial configuration (the only
+  -- reachable config with a PC, since .terminal has getPC = none).
+  cases hstar with
+  | refl =>
+    -- cfg = initial config, so we need ρ₀.eval ρ₀.store expr = some HasBool.tt
+    -- Use progress to get a terminal state, then apply the Hoare triple.
+    obtain ⟨ρ', hterm⟩ := hprogress ρ₀ pc₀
+    simp only [CoreConfig.getEval, CoreConfig.getStore]
+    have hpost := hoare ρ₀ pc₀ ρ' trivial hterm
+    -- Invert the execution to extract the result
+    cases hterm with
+    | step _ mid _ hstep hrest =>
+      cases hstep with
+      | step_cmd hcmd =>
+        cases hcmd with
+        | cmd_sem heval =>
+          cases heval with
+          | eval_assert_pass htt _ => exact htt
+          | eval_assert_fail _ _ =>
+            simp at hrest
+            cases hrest with
+            | refl => exact hpost
+            | step _ _ _ hstep2 _ => exact absurd hstep2 (by intro h; cases h)
   | step _ mid _ hstep hrest =>
+    -- The only step from .stmt (assert ..) is step_cmd to .terminal
     cases hstep with
     | step_cmd hcmd =>
-      -- hcmd : EvalCommand π φ ρ₀.eval ρ₀.store c σ' hasAssertFailure
-      cases hcmd with
-      | cmd_sem heval =>
-        -- Assert commands don't change the store or evaluator.
-        cases heval with
-        | eval_assert_pass htt _ => exact htt
-        | eval_assert_fail hne _ =>
-          -- σ' = ρ₀.store, so mid has store = ρ₀.store, eval = ρ₀.eval
-          -- hrest goes from .terminal to .terminal ρ', so ρ' = mid's env
-          simp [Bool.or_false] at hrest
-          cases hrest with
-          | refl =>
-            -- ρ' = { store := ρ₀.store, eval := ρ₀.eval, hasFailure := ρ₀.hasFailure }
-            -- hpost : ρ'.eval ρ'.store expr = some HasBool.tt
-            -- But ρ'.eval = ρ₀.eval and ρ'.store = ρ₀.store, so this is our goal
-            exact hpost
-          | step _ _ _ hstep2 _ => exact absurd hstep2 (by intro h; cases h)
+      -- mid = .terminal .., which has getPC = none
+      cases hrest with
+      | refl => simp [CoreConfig.getPC] at hpc
+      | step _ _ _ hstep2 _ => exact absurd hstep2 (by intro h; cases h)
 
 /-! ## Equivalence for a single assert command -/
 
@@ -418,13 +423,13 @@ theorem assertValid_implies_hoareTriple_iff
     (hprogress : ∀ (ρ₀ : CoreEnv) (pc₀ : ProgramCounter),
       ∃ (ρ' : CoreEnv),
         CoreStepStar π φ (.stmt s ρ₀ pc₀) (.terminal ρ')) :
-    AssertValid π φ s ⟨label, expr⟩ ↔
+    (∀ pc, AssertValid π φ s ⟨label, expr⟩ pc) ↔
     HoareTriple π φ
       (fun _ => True)
       s
       (fun ρ' => ρ'.eval ρ'.store expr = some HasBool.tt) :=
   ⟨assertValid_implies_hoareTriple π φ label expr md s hs,
-   fun h => hoareTriple_implies_assertValid π φ label expr md s hs h hprogress⟩
+   fun h pc => hoareTriple_implies_assertValid π φ label expr md s hs h hprogress pc⟩
 
 /-! ## Transformation Correctness
 
@@ -457,11 +462,11 @@ def Transformation.Sound
     (T : Transformation)
     (π : String → Option Procedure)
     (φ : CoreEval → PureFunc Expression → CoreEval) : Prop :=
-  ∀ (s s' : Statement) (a : AssertId)
+  ∀ (s s' : Statement) (a : AssertId) (pc : ProgramCounter)
     (st st' : CoreTransformState),
     (T.transform s).run st = (.ok s', st') →
-    AssertValid π φ s' a →
-    AssertValid π φ s a
+    AssertValid π φ s' a pc →
+    AssertValid π φ s a pc
 
 /-- Composition of sound transformations is sound. -/
 theorem sound_comp
@@ -471,7 +476,7 @@ theorem sound_comp
     (h₁ : T₁.Sound π φ)
     (h₂ : T₂.Sound π φ) :
     (⟨fun s => T₁.transform s >>= T₂.transform⟩ : Transformation).Sound π φ := by
-  intro s s'' a st st'' hrun hvalid
+  intro s s'' a pc st st'' hrun hvalid
   -- Beta-reduce the structure projection
   dsimp [Transformation.transform] at hrun
   -- Unfold the monadic bind to expose the intermediate result of T₁
@@ -486,7 +491,7 @@ theorem sound_comp
     unfold ExceptT.run at h1
     rw [h1] at hrun
     dsimp [pure, bind, Except.bind, Id.run] at hrun
-    exact h₁ s s' a st st' (by unfold ExceptT.run; exact h1) (h₂ s' s'' a st' st'' hrun hvalid)
+    exact h₁ s s' a pc st st' (by unfold ExceptT.run; exact h1) (h₂ s' s'' a pc st' st'' hrun hvalid)
   | (.error e, st') =>
     unfold ExceptT.run at h1
     rw [h1] at hrun
@@ -515,8 +520,8 @@ theorem endToEnd_allAsserts
     (hsound : T.Sound π φ)
     (hvalid : AllAssertsValid π φ s') :
     AllAssertsValid π φ s := by
-  intro a
-  exact hsound s s' a st st' hrun (hvalid a)
+  intro a pc
+  exact hsound s s' a pc st st' hrun (hvalid a pc)
 
 end Transform
 end Core
