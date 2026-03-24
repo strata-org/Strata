@@ -60,12 +60,10 @@ open Transform in
 def run (prog : Program) (functions : List String) : CoreTransformM Program := do
   let cache := Cache.build prog
   let irrelevant := getIrrelevantAxioms prog cache functions
-  let irrelevantSet := irrelevant.toArray.qsort (· < ·)
-  let isIrrelevant (name : String) :=
-    irrelevantSet.binSearch name (· < ·) |>.isSome
+  let irrelevantSet := Std.HashSet.ofList irrelevant
   let prunedDecls := prog.decls.filter (fun decl =>
     match decl with
-    | .ax a _ => !isIrrelevant a.name
+    | .ax a _ => !irrelevantSet.contains a.name
     | _ => true)
   return { prog with decls := prunedDecls }
 
