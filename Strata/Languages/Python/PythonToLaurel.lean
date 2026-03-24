@@ -249,7 +249,7 @@ def strToAny (s: String) := mkStmtExprMd (.StaticCall "from_string" [mkStmtExprM
 def intToAny (i: Int) := mkStmtExprMd (.StaticCall "from_int" [mkStmtExprMd (StmtExpr.LiteralInt i)])
 def boolToAny (b: Bool) := mkStmtExprMd (.StaticCall "from_bool" [mkStmtExprMd (StmtExpr.LiteralBool b)])
 def AnyNone := mkStmtExprMd (.StaticCall "from_none" [])
-def Any_to_bool (b: StmtExprMd) := mkStmtExprMd (.StaticCall "Any_to_bool" [b])
+def python_is_truthy (b: StmtExprMd) := mkStmtExprMd (.StaticCall "python_is_truthy" [b])
 
 /-- Wrap a field access expression in the appropriate Any constructor based on HighType.
     After heap parameterization, field reads return concrete types (int, bool, etc.)
@@ -1020,7 +1020,7 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
     else do
       let (_, elseStmts) ← translateStmtList bodyCtx orelse.val.toList
       .ok (some (mkStmtExprMd (StmtExpr.Block elseStmts none)))
-    let ifStmt := mkStmtExprMdWithLoc (StmtExpr.IfThenElse (Any_to_bool finalCondExpr) bodyBlock elseBlock) md
+    let ifStmt := mkStmtExprMdWithLoc (StmtExpr.IfThenElse (python_is_truthy finalCondExpr) bodyBlock elseBlock) md
 
     return (bodyCtx, varDecls ++ condStmts ++ [ifStmt])
 
@@ -1046,7 +1046,7 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
     let loopCtx := { hoistedCtx with loopBreakLabel := some breakLabel, loopContinueLabel := some continueLabel }
     let (_, bodyStmts) ← translateStmtList loopCtx body.val.toList
     let bodyBlock := mkStmtExprMd (StmtExpr.Block bodyStmts (some continueLabel))
-    let whileStmt := mkStmtExprMd (StmtExpr.While (Any_to_bool finalCondExpr) [] none bodyBlock)
+    let whileStmt := mkStmtExprMd (StmtExpr.While (python_is_truthy finalCondExpr) [] none bodyBlock)
     let whileWrapped := mkStmtExprMdWithLoc (StmtExpr.Block [whileStmt] (some breakLabel)) md
 
     -- Return hoisted declarations as separate statements in the parent scope
@@ -1066,7 +1066,7 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
   -- Assert statement
   | .Assert _ test _msg => do
     let condExpr ← translateExpr ctx test
-    let assertStmt := mkStmtExprMdWithLoc (StmtExpr.Assert (Any_to_bool condExpr)) md
+    let assertStmt := mkStmtExprMdWithLoc (StmtExpr.Assert (python_is_truthy condExpr)) md
     return (ctx, [assertStmt])
 
   --Ignore comments in source code

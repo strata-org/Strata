@@ -272,12 +272,11 @@ inline function isError (e: Error) : bool {
 }
 
 // /////////////////////////////////////////////////////////////////////////////////////
-//The following function convert Any type to bool
-//based on the Python definition of truthiness for basic types
+//The following function implements Python truthiness for basic types
 // https://docs.python.org/3/library/stdtypes.html
 // /////////////////////////////////////////////////////////////////////////////////////
 
-inline function Any_to_bool (v: Any) : bool
+inline function python_is_truthy (v: Any) : bool
   requires (Any..isfrom_bool(v) || Any..isfrom_none(v) || Any..isfrom_string(v) || Any..isfrom_int(v));
 {
   if (Any..isfrom_bool(v)) then Any..as_bool!(v) else
@@ -826,13 +825,13 @@ inline function PNEq (v: Any, v': Any) : Any {
 inline function PAnd (v1: Any, v2: Any) : Any
   requires (Any..isfrom_bool(v1) || Any..isfrom_none(v1) || Any..isfrom_string(v1) || Any..isfrom_int(v1));
 {
-  if ! Any_to_bool (v1) then v1 else v2
+  if ! python_is_truthy (v1) then v1 else v2
 }
 
 inline function POr (v1: Any, v2: Any) : Any
   requires (Any..isfrom_bool(v1) || Any..isfrom_none(v1) || Any..isfrom_string(v1) || Any..isfrom_int(v1));
 {
-  if Any_to_bool (v1) then v1 else v2
+  if python_is_truthy (v1) then v1 else v2
 }
 
 

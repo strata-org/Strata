@@ -103,9 +103,7 @@ procedure with_kwonly(x: Core(Any), verbose: Core(Any)) returns(result: Core(Any
 /-! ## Complex types (Any, List, Dict, bytes) -/
 
 /--
-info: procedure takes_any(x: Core(Any)) returns(result: Core(Any)) requires Any..isfrom_string(x)
-procedure takes_list(items: Core(Any)) returns(result: Core(Any)) requires Any..isfrom_ListAny(items)
-procedure returns_dict() returns(result: Core(Any))
+info: procedure takes_any(x: Core(Any)) returns(result: Core(Any))
 procedure returns_bytes() returns(result: Core(Any))
 procedure typed_list() returns(result: Core(Any))
 procedure typed_dict() returns(result: Core(Any))
@@ -114,9 +112,6 @@ procedure typed_dict() returns(result: Core(Any))
 #eval runTest #[
   mkFuncSig "takes_any" (identType .builtinsInt)
     (args := #[mkArg "x" (identType .typingAny)]),
-  mkFuncSig "takes_list" (identType .builtinsBool)
-    (args := #[mkArg "items" (identType .typingList)]),
-  mkFuncSig "returns_dict" (identType .typingDict),
   mkFuncSig "returns_bytes" (identType .builtinsBytes),
   mkFuncSig "typed_list"
     (mkType (.ident .typingList #[identType .builtinsStr])),
@@ -124,6 +119,21 @@ procedure typed_dict() returns(result: Core(Any))
     (mkType (.ident .typingDict
       #[identType .builtinsStr, identType .builtinsInt]))
 ]
+
+/--
+info: Bare List without element type not supported: element type may include composites incompatible with Any
+-/
+#guard_msgs in
+#eval runTestErrors
+  #[mkFuncSig "takes_list" (identType .builtinsBool)
+    (args := #[mkArg "items" (identType .typingList)])]
+
+/--
+info: Bare Dict without type args not supported: value type may include composites incompatible with Any
+-/
+#guard_msgs in
+#eval runTestErrors
+  #[mkFuncSig "returns_dict" (identType .typingDict)]
 
 /-! ## Literal types, TypedDict, and string-literal unions -/
 
@@ -153,8 +163,6 @@ info: procedure opt_str() returns(result: Core(Any))
 procedure opt_int() returns(result: Core(Any))
 procedure opt_bool(x: Core(Any)) returns(result: Core(Any)) requires Any..isfrom_none(x) | Any..isfrom_string(x)
 procedure opt_float() returns(result: Core(Any))
-procedure opt_list() returns(result: Core(Any))
-procedure opt_dict() returns(result: Core(Any))
 procedure opt_any() returns(result: Core(Any))
 procedure opt_bytes() returns(result: Core(Any))
 procedure opt_typed_dict() returns(result: Core(Any))
@@ -173,10 +181,6 @@ procedure opt_int_enum() returns(result: Core(Any))
       (mkUnion #[noneAtom, identAtom .builtinsStr])]),
   mkFuncSig "opt_float"
     (mkUnion #[noneAtom, identAtom .builtinsFloat]),
-  mkFuncSig "opt_list"
-    (mkUnion #[noneAtom, identAtom .typingList]),
-  mkFuncSig "opt_dict"
-    (mkUnion #[noneAtom, identAtom .typingDict]),
   mkFuncSig "opt_any"
     (mkUnion #[noneAtom, identAtom .typingAny]),
   mkFuncSig "opt_bytes"
@@ -191,10 +195,26 @@ procedure opt_int_enum() returns(result: Core(Any))
     (mkUnion #[noneAtom, .intLiteral 1, .intLiteral 2])
 ]
 
+/--
+info: Union type (None | typing.List) not yet supported
+-/
+#guard_msgs in
+#eval runTestErrors
+  #[mkFuncSig "opt_list"
+    (mkUnion #[noneAtom, identAtom .typingList])]
+
+/--
+info: Union type (None | typing.Dict) not yet supported
+-/
+#guard_msgs in
+#eval runTestErrors
+  #[mkFuncSig "opt_dict"
+    (mkUnion #[noneAtom, identAtom .typingDict])]
+
 /-! ## Error cases -/
 
 /--
-info: Unknown type 'foo.Bar' mapped to TString
+info: No Any precondition for ident type 'foo.Bar'
 -/
 #guard_msgs in
 #eval runTestErrors
@@ -202,14 +222,14 @@ info: Unknown type 'foo.Bar' mapped to TString
     (identType (PythonIdent.mk "foo" "Bar"))]
 
 /--
-info: Empty type (no atoms) encountered in Laurel conversion
+info: Empty type (no atoms) encountered
 -/
 #guard_msgs in
 #eval runTestErrors
   #[mkFuncSig "f" { atoms := #[], loc := default }]
 
 /--
-info: Union type (builtins.str | builtins.int) not yet supported in Laurel
+info: Union type (builtins.str | builtins.int) not yet supported
 -/
 #guard_msgs in
 #eval runTestErrors
@@ -218,7 +238,7 @@ info: Union type (builtins.str | builtins.int) not yet supported in Laurel
                identAtom .builtinsInt])]
 
 /--
-info: Union type (None | foo.Bar) not yet supported in Laurel
+info: Union type (None | foo.Bar) not yet supported
 -/
 #guard_msgs in
 #eval runTestErrors
@@ -274,7 +294,7 @@ procedure takes_none(x: Core(Any))
 
 /--
 info: type Foo
-procedure uses_class(x: Core(Any)) returns(result: Core(Any)) requires Any..isfrom_ClassInstance(x)
+procedure uses_class(x: Composite) returns(result: Composite)
 -/
 #guard_msgs in
 #eval runTest #[

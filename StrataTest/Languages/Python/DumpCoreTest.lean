@@ -58,7 +58,7 @@ private meta def compilePython
   return ionPath
 
 -- *** CHANGE THIS to investigate a different test ***
-private def scriptName : String := "test_unlifted_hole.py"
+private def scriptName : String := "test_class_init_kwargs.py"
 
 #eval withPython fun _pythonCmd => do
   IO.FS.withTempDir fun tmpDir => do
@@ -78,6 +78,11 @@ private def scriptName : String := "test_unlifted_hole.py"
         | .error err =>
           IO.eprintln s!"pyAnalyzeLaurel failed: {err}"
           return
+
+      -- Dump Laurel IR
+      IO.println "=== Laurel Program ==="
+      IO.println s!"{Strata.Laurel.formatProgram laurel}"
+      IO.println ""
 
       -- Translate to Core
       match Strata.translateCombinedLaurel laurel with
