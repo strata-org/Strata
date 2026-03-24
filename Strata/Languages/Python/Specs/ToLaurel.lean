@@ -435,7 +435,13 @@ def funcDeclToLaurel (procName : String) (func : FunctionDecl)
           if a.default.isNone then some a.name else none)
       pure (anyInputs, anyOutputs, body)
     else
-      pure (inputs, outputs, Body.Opaque [] none [])
+      -- Opaque methods always get an Any return value so callers can assign
+      -- the result (the pyspec may declare NoneType even when the method
+      -- returns a response object).
+      let opaqueOutputs := if outputs.isEmpty
+        then [{ name := "result", type := mkCore "Any" : Parameter }]
+        else outputs
+      pure (inputs, opaqueOutputs, Body.Opaque [] none [])
   return {
     name := procName
     inputs := inputs.toList

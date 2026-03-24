@@ -253,7 +253,10 @@ public def buildPreludeInfo (result : PySpecLaurelResult) : Python.PreludeInfo :
 public def combinePySpecLaurel (info : Python.PreludeInfo)
     (pySpec user : Laurel.Program) : Laurel.Program :=
   let stubs := Python.preludeStubs info
-  { staticProcedures := stubs ++ pySpec.staticProcedures ++ user.staticProcedures
+  let pySpecNames : Std.HashSet String := pySpec.staticProcedures.foldl (init := {})
+    fun s p => if !p.body.isExternal then s.insert p.name.text else s
+  let filteredStubs := stubs.filter fun p => !pySpecNames.contains p.name.text
+  { staticProcedures := filteredStubs ++ pySpec.staticProcedures ++ user.staticProcedures
     staticFields := pySpec.staticFields ++ user.staticFields
     types := pySpec.types ++ user.types
     constants := pySpec.constants ++ user.constants
