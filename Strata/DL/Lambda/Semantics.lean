@@ -112,9 +112,9 @@ inductive Step (F:@Factory Tbase) (rf:Env Tbase)
 
 /-- Evaluation of equality to true. Always allowed. -/
 | eq_reduce_true:
-  ∀ (e1 e2:LExpr Tbase.mono)
-    (H1:LExpr.isCanonicalValue F e1)
-    (H2:LExpr.isCanonicalValue F e2),
+  ∀ (e1 e2:LExpr Tbase.mono),
+    LExpr.isCanonicalValue F e1 →
+    LExpr.isCanonicalValue F e2 →
     LExpr.eql F e1 e2 = some true →
     Step F rf (.eq m e1 e2) (.const mc (.boolConst true))
 
@@ -122,9 +122,9 @@ inductive Step (F:@Factory Tbase) (rf:Env Tbase)
     because syntactic inequality under binders does not imply semantic inequality
     (e.g., `λx. x+1` vs `λx. 1+x`). -/
 | eq_reduce_false:
-  ∀ (e1 e2:LExpr Tbase.mono)
-    (H1:LExpr.isCanonicalValue F e1)
-    (H2:LExpr.isCanonicalValue F e2),
+  ∀ (e1 e2:LExpr Tbase.mono),
+    LExpr.isCanonicalValue F e1 →
+    LExpr.isCanonicalValue F e2 →
     LExpr.eql F e1 e2 = some false →
     Step F rf (.eq m e1 e2) (.const mc (.boolConst false))
 
