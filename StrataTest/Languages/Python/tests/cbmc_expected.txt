@@ -17,3 +17,17 @@ test_datetime.py.ion            SKIP
 test_foo_client_folder.py.ion   SKIP
 test_invalid_client_type.py.ion SKIP
 test_unsupported_config.py.ion  SKIP
+test_return_types.py.ion        SKIP
+test_default_params.py.ion      SKIP
+test_dict_operations.py.ion     SKIP
+test_class_methods.py.ion       SKIP
+test_boolean_logic.py.ion       SKIP
+test_multiple_except.py.ion     SKIP
+test_for_loop.py.ion            SKIP
+test_while_loop.py.ion          SKIP
+test_nested_calls.py.ion        SKIP
+test_multi_function.py.ion      SKIP
+test_class_with_methods.py.ion  SKIP
+test_module_level.py.ion        SKIP
+test_if_elif.py.ion             SKIP
+test_variable_reassign.py.ion   SKIP
