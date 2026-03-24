@@ -27,11 +27,6 @@ possible. It is intended for use cases that are essentially equivalent to more
 fine-grained or more structured equivalents of what the `strata` CLI can
 currently do.
 
-**Note:** Several functions in this API are currently unimplemented due to
-functionality that remains to be implemented in the DDM. These functions are
-declared using `noncomputable opaque` to define the intended API surface; these
-should not be invoked yet.
-
 It involves several key types:
 
 * `Strata.Dialect`: The formal description of a Strata dialect. Used only to
@@ -48,6 +43,11 @@ It involves several key types:
 
 * `Core.VCResults`: The results of attempting to prove each verification condition
   that arises from deductive verification of a Core program.
+
+**Note:** Several functions in this API are currently unimplemented due to
+functionality that remains to be implemented in the DDM. These functions are
+declared using `noncomputable opaque` to define the intended API surface and
+should not be invoked yet.
 -/
 
 namespace Strata
@@ -170,7 +170,7 @@ The `doInline` predicate decides, for each call site, whether to inline.
 When `none`, all calls are inlined.
 -/
 structure Core.InlineTransformOptions where
-  doInline : Option (String → _root_.Core.Transform.CachedAnalyses → Bool) := none
+  doInline : Option (String → Core.Transform.CachedAnalyses → Bool) := none
 
 /--
 Transform a Core program to inline some or all procedure calls.
