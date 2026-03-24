@@ -5,16 +5,11 @@
 -/
 module
 
-public import Strata.DDM.Elab
-public import Strata.DDM.AST
-public import Strata.Languages.Laurel.Laurel
-public import Strata.Languages.Laurel.LaurelTypes
-public import Strata.Languages.Laurel.LaurelToCoreTranslator
-public import Strata.Languages.Core.Verifier
-public import Strata.Languages.Python.PythonDialect
-public import Strata.Languages.Python.PythonLaurelCorePrelude
-public import Strata.Languages.Python.Specs.ToLaurel
 public import Strata.Languages.Core.Program
+public import Strata.Languages.Laurel.Laurel
+public import Strata.Languages.Python.OverloadTable
+public import Strata.Languages.Python.PythonDialect
+import Strata.Util.DecideProp
 
 /-!
 # Python to Laurel Translation
@@ -84,7 +79,7 @@ structure TranslationContext where
   /-- Names of prelude types -/
   preludeTypes : Std.HashSet String := {}
   /-- Overload dispatch table from PySpec: function name → overloads -/
-  overloadTable : Specs.ToLaurel.OverloadTable := {}
+  overloadTable : OverloadTable := {}
   /-- Behavior for unmodeled functions -/
   unmodeledBehavior : UnmodeledFunctionBehavior := .havocOutputs
   /-- File path for source location metadata -/
@@ -1633,7 +1628,7 @@ def pythonToLaurel' (info : PreludeInfo)
     (pyModule : Python.Command SourceRange)
     (prev_ctx: Option TranslationContext := none)
     (filePath : String := "")
-    (overloadTable : Specs.ToLaurel.OverloadTable := {})
+    (overloadTable : OverloadTable := {})
     : Except TranslationError (Laurel.Program × TranslationContext) := do
   match pyModule with
   | .Module _ body _ => do
@@ -1767,7 +1762,7 @@ def pythonToLaurel (prelude: Core.Program)
     (pyModule : Python.Command SourceRange)
     (prev_ctx: Option TranslationContext := none)
     (filePath : String := "")
-    (overloadTable : Specs.ToLaurel.OverloadTable := {})
+    (overloadTable : OverloadTable := {})
     : Except TranslationError (Laurel.Program × TranslationContext) := do
   let info := PreludeInfo.ofCoreProgram prelude
   let (program, ctx) ← pythonToLaurel' info pyModule prev_ctx filePath overloadTable

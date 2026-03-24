@@ -129,6 +129,8 @@ structure VerifyOptions where
   checkMode : VerificationMode
   /-- Check amount: minimal (only necessary checks) or full (both checks for better messages) -/
   checkLevel : CheckLevel
+  /-- Always run SMT solver, even if the verification condition is trivial. -/
+  alwaysRunSMT : Bool
 
 def VerifyOptions.default : VerifyOptions := {
   verbose := .normal,
@@ -144,6 +146,7 @@ def VerifyOptions.default : VerifyOptions := {
   vcDirectory := .none
   checkMode := .deductive
   checkLevel := .minimal
+  alwaysRunSMT := false
 }
 
 instance : Inhabited VerifyOptions where
