@@ -12,7 +12,7 @@ import all Strata.DL.Lambda.Semantics
 namespace Lambda
 
 variable {T : LExprParams} [DecidableEq T.Metadata] [DecidableEq T.Identifier]
-    [DecidableEq T.IDMeta]
+    [DecidableEq T.IDMeta] [Inhabited T.mono.base.IDMeta]
 variable (tcInterp : TyConstrInterp)
 variable (opInterp : OpInterp T tcInterp)
 variable (fvarVal : FreeVarVal T tcInterp)
@@ -121,7 +121,7 @@ theorem replaceMetadata_HasTypeA {e: LExpr T.mono}
   exact h₁
 
 theorem denote_replaceMetadata
-    {T : LExprParams}
+    {T : LExprParams} [Inhabited T.mono.base.IDMeta]
     (tcInterp : TyConstrInterp)
     (opInterp : OpInterp T tcInterp)
     (fvarVal : FreeVarVal T tcInterp)
@@ -238,30 +238,23 @@ theorem denote_replaceMetadata
               exact (denote_quant_exist_false bvarVal h_body' (.quant h_tr' h_body')
                 (fun x => by rw [← ih_body (.cons x bvarVal) h_body]; exact hexist_f x)).symm
 
+-- omit [DecidableEq T.Metadata] [DecidableEq T.Identifier] in
+-- theorem eql_rewrite
+--   {F : @Factory T}
+--   {e₁ e₂ : LExpr T.mono}
+--   (hv₁ : LExpr.isCanonicalValue F e₁)
+--   (hv₂ : LExpr.isCanonicalValue F e₂):
+--   LExpr.eql F e₁ e₂ hv₁ hv₂ = LExpr.eqModuloTypes e₁ e₂ := by
+--   unfold LExpr.eql; split <;> grind
 omit [DecidableEq T.Metadata] [DecidableEq T.Identifier] in
-theorem eql_rewrite
-  {F : @Factory T}
-  {e₁ e₂ : LExpr T.mono}
-  (hv₁ : LExpr.isCanonicalValue F e₁)
-  (hv₂ : LExpr.isCanonicalValue F e₂):
-  LExpr.eql F e₁ e₂ hv₁ hv₂ = LExpr.eqModuloTypes e₁ e₂ := by
-  unfold LExpr.eql; split <;> grind
-
-omit [DecidableEq T.Metadata] [DecidableEq T.Identifier] in
-/-- For canonical values, if syntactic equality (`eql`) returns true, then the
-denotations are equal. -/
-theorem eql_true_implies_denote_eq
-    {F : @Factory T}
+theorem eqModuloMeta_true_implies_denote_eq
     {e₁ e₂ : LExpr T.mono} {τ : LMonoTy}
-    (hv₁ : LExpr.isCanonicalValue F e₁)
-    (hv₂ : LExpr.isCanonicalValue F e₂)
     (h₁ : LExpr.HasTypeA [] e₁ τ)
     (h₂ : LExpr.HasTypeA [] e₂ τ)
-    (heql : LExpr.eql F e₁ e₂ hv₁ hv₂ = true)
+    (heql : LExpr.eqModuloMeta e₁ e₂ = true)
     : LExpr.denote tcInterp opInterp fvarVal vt .nil e₁ τ h₁ =
       LExpr.denote tcInterp opInterp fvarVal vt .nil e₂ τ h₂ := by
-    rw[eql_rewrite] at heql
-    unfold LExpr.eqModuloTypes at heql
+    unfold LExpr.eqModuloMeta at heql
     -- Lean is confused by BEq and DecidableEq
     have heq: (e₁.eraseMetadata = e₂.eraseMetadata) := by
       unfold BEq.beq instBEqLExprOfIdentifier at heql
@@ -276,6 +269,20 @@ theorem eql_true_implies_denote_eq
     subst heq
     rfl
 
+
+omit [DecidableEq T.Metadata] [DecidableEq T.Identifier] in
+/-- For canonical values, if syntactic equality (`eql`) returns true, then the
+denotations are equal. -/
+theorem eql_true_implies_denote_eq
+    {F : @Factory T}
+    {e₁ e₂ : LExpr T.mono} {τ : LMonoTy}
+    (h₁ : LExpr.HasTypeA [] e₁ τ)
+    (h₂ : LExpr.HasTypeA [] e₂ τ)
+    (heql : LExpr.eql F e₁ e₂ = some true)
+    : LExpr.denote tcInterp opInterp fvarVal vt .nil e₁ τ h₁ =
+      LExpr.denote tcInterp opInterp fvarVal vt .nil e₂ τ h₂ := by
+    sorry
+
 /-- For binder-free canonical values, if syntactic equality (`eql`) returns
 false, then the denotations are not equal. The `containsBinder = false`
 precondition is essential: for expressions with binders, structural inequality
@@ -284,13 +291,9 @@ does not imply semantic inequality (e.g., `λ (if #true then %0 else %0)` vs
 theorem eql_false_no_binders_implies_denote_ne
     {F : @Factory T}
     {e₁ e₂ : LExpr T.mono} {τ : LMonoTy}
-    (hv₁ : LExpr.isCanonicalValue F e₁)
-    (hv₂ : LExpr.isCanonicalValue F e₂)
     (h₁ : LExpr.HasTypeA [] e₁ τ)
     (h₂ : LExpr.HasTypeA [] e₂ τ)
-    (heql : LExpr.eql F e₁ e₂ hv₁ hv₂ = false)
-    (hnb₁ : e₁.containsBinder = false)
-    (hnb₂ : e₂.containsBinder = false)
+    (heql : LExpr.eql F e₁ e₂ = some false)
     : LExpr.denote tcInterp opInterp fvarVal vt .nil e₁ τ h₁ ≠
       LExpr.denote tcInterp opInterp fvarVal vt .nil e₂ τ h₂ := by
   sorry
@@ -355,7 +358,7 @@ theorem Step.denote_preserved
       rw [denote_app .nil (.abs h_body) htyv2,
           denote_abs .nil h_body]
       exact (subst_denote tcInterp opInterp fvarVal vt .nil h_body htyv2 h₂).symm
-  | reduce_2 v1 e2 e2' hval hstep' ih =>
+  | reduce_2 v1 e2 e2' hstep' ih =>
     cases h₁ with
     | app h_fn h_arg =>
       cases h₂ with
@@ -415,18 +418,18 @@ theorem Step.denote_preserved
         rw [denote_ite .nil h_c h_t h_e,
             denote_ite .nil h_c' h_t' h_e']
         rw [ih h_e h_e']
-  | eq_reduce_true e1 e2 hv1 hv2 heql =>
+  | eq_reduce_true e1 e2 heql =>
     cases h₁ with
     | eq h_1 h_2 =>
       rw [denote_eq_true .nil h_1 h_2 _
-          (eql_true_implies_denote_eq tcInterp opInterp fvarVal vt hv1 hv2 h_1 h_2 heql)]
+          (eql_true_implies_denote_eq tcInterp opInterp fvarVal vt h_1 h_2 heql)]
       rfl
-  | eq_reduce_false e1 e2 hv1 hv2 heql hnb1 hnb2 =>
+  | eq_reduce_false e1 e2 heql =>
     cases h₁ with
     | eq h_1 h_2 =>
       rw [denote_eq_false .nil h_1 h_2 _
           (eql_false_no_binders_implies_denote_ne tcInterp opInterp fvarVal vt
-            hv1 hv2 h_1 h_2 heql hnb1 hnb2)]
+            h_1 h_2 heql)]
       rfl
   | eq_reduce_lhs e1 e1' e2 hstep' ih =>
     cases h₁ with
@@ -443,7 +446,7 @@ theorem Step.denote_preserved
         · rw [denote_eq_false .nil h_1 h_2 _ heq,
               denote_eq_false .nil h_1' h_2' _
                 (by rw [← ih_eq]; exact heq)]
-  | eq_reduce_rhs v1 e2 e2' hv1 hstep' ih =>
+  | eq_reduce_rhs v1 e2 e2' hstep' ih =>
     cases h₁ with
     | eq h_1 h_2 =>
       cases h₂ with

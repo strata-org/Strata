@@ -24,7 +24,7 @@ namespace Lambda
 public section
 
 variable {Tbase : LExprParams} [DecidableEq Tbase.Metadata]
-    [DecidableEq Tbase.Identifier] [DecidableEq Tbase.IDMeta]
+    [DecidableEq Tbase.Identifier] [DecidableEq Tbase.IDMeta] [Inhabited Tbase.IDMeta]
 
 open Lambda
 
@@ -72,7 +72,6 @@ inductive Step (F:@Factory Tbase) (rf:Env Tbase)
 /-- Call-by-value semantics: argument evaluation. -/
 | reduce_2:
   ∀ (v1 e2 e2':LExpr Tbase.mono),
-    LExpr.isCanonicalValue F v1 →
     Step F rf e2 e2' →
     Step F rf (.app m v1 e2) (.app m' v1 e2')
 
@@ -112,22 +111,16 @@ inductive Step (F:@Factory Tbase) (rf:Env Tbase)
 
 /-- Evaluation of equality to true. Always allowed. -/
 | eq_reduce_true:
-  ∀ (e1 e2:LExpr Tbase.mono)
-    (H1:LExpr.isCanonicalValue F e1)
-    (H2:LExpr.isCanonicalValue F e2),
-    LExpr.eql F e1 e2 H1 H2 = true →
+  ∀ (e1 e2:LExpr Tbase.mono),
+    LExpr.eql F e1 e2 = some true →
     Step F rf (.eq m e1 e2) (.const mc (.boolConst true))
 
 /-- Evaluation of equality to false. Only when neither side contains a binder,
     because syntactic inequality under binders does not imply semantic inequality
     (e.g., `λx. x+1` vs `λx. 1+x`). -/
 | eq_reduce_false:
-  ∀ (e1 e2:LExpr Tbase.mono)
-    (H1:LExpr.isCanonicalValue F e1)
-    (H2:LExpr.isCanonicalValue F e2),
-    LExpr.eql F e1 e2 H1 H2 = false →
-    e1.containsBinder = false →
-    e2.containsBinder = false →
+  ∀ (e1 e2:LExpr Tbase.mono),
+    LExpr.eql F e1 e2 = some false →
     Step F rf (.eq m e1 e2) (.const mc (.boolConst false))
 
 /-- Evaluation of the left-hand side of an equality. -/
@@ -139,7 +132,6 @@ inductive Step (F:@Factory Tbase) (rf:Env Tbase)
 /-- Evaluation of the right-hand side of an equality. -/
 | eq_reduce_rhs:
   ∀ (v1 e2 e2':LExpr Tbase.mono),
-    LExpr.isCanonicalValue F v1 →
     Step F rf e2 e2' →
     Step F rf (.eq m v1 e2) (.eq m' v1 e2')
 

@@ -254,7 +254,7 @@ abbrev LExpr.allUntyped {T : LExprParamsT} (m : T.base.Metadata) := @LExpr.quant
 abbrev LExpr.existUntypedTr {T : LExprParamsT} (m : T.base.Metadata) := @LExpr.quant T m .exist "" .none
 abbrev LExpr.existUntyped {T : LExprParamsT} (m : T.base.Metadata) := @LExpr.quant T m .exist "" .none (LExpr.noTrigger m)
 
-@[simp]
+@[simp, expose]
 def LExpr.sizeOf: LExpr T → Nat
   | LExpr.abs _ _ _ e => 2 + sizeOf e
   | LExpr.quant _ _ _ _ tr e => 3 + sizeOf e + sizeOf tr
