@@ -6,9 +6,8 @@
 module
 
 meta import Strata.SimpleAPI
-meta import Strata.Languages.Python.PySpecPipeline
-meta import Strata.Languages.Python.ReadPython
-meta import Strata.Languages.Python.PythonToCore
+meta import Strata.SimpleAPI.Python
+meta import Strata.Languages.Python.Specs
 meta import Strata.Languages.Python.Specs.IdentifyOverloads
 meta import StrataTest.Util.Python
 
@@ -21,41 +20,13 @@ fewer.
 
 namespace Strata.Python.Specs.IdentifyOverloadsTest
 
-open Strata (readDispatchOverloads pySpecs)
+open Strata (pySpecs withPythonDialect pyParsePythonFile readDispatchOverloads)
+open Strata.Python.Specs (ModuleName)
 open Strata.Python.Specs.IdentifyOverloads (resolveOverloads)
 open Strata.Python (OverloadTable)
 
 private meta def testDir : System.FilePath :=
   "StrataTest/Languages/Python/Specs/dispatch_test"
-
-/-- Compile a Python source file to Ion and return the path. -/
-private meta def compilePython
-    (pyFile : System.FilePath) (outDir : System.FilePath)
-    : IO System.FilePath := do
-  IO.FS.withTempFile fun _handle dialectFile => do
-    IO.FS.writeBinFile dialectFile Python.Python.toIon
-    let some stem := pyFile.fileStem
-      | throw <| .userError s!"No stem for {pyFile}"
-    let ionPath := outDir / s!"{stem}.python.st.ion"
-    let spawnArgs : IO.Process.SpawnArgs := {
-      cmd := "python"
-      args := #["-m", "strata.gen", "py_to_strata",
-                "--dialect", dialectFile.toString,
-                pyFile.toString, ionPath.toString]
-      cwd := none
-      inheritEnv := true
-      stdin := .null
-      stdout := .piped
-      stderr := .piped
-    }
-    let child ← IO.Process.spawn spawnArgs
-    let _stdout ← child.stdout.readToEnd
-    let stderr ← child.stderr.readToEnd
-    let exitCode ← child.wait
-    if exitCode ≠ 0 then
-      throw <| .userError
-        s!"py_to_strata failed for {pyFile} (exit {exitCode}): {stderr}"
-    return ionPath
 
 /-- Compile the dispatch pyspec and return the overload table. -/
 private meta def buildOverloadTable
@@ -64,34 +35,27 @@ private meta def buildOverloadTable
     IO.FS.writeBinFile dialectFile Python.Python.toIon
     -- Compile servicelib dispatch file to pyspec Ion
     let pyFile := testDir / "servicelib" / "__init__.py"
-    let ionPath := outDir / "servicelib.pyspec.st.ion"
     match ← pySpecs pyFile outDir dialectFile
         (warningOutput := .none) |>.toBaseIO with
     | .ok () => pure ()
     | .error msg =>
       throw <| .userError s!"pySpecs failed for {pyFile}: {msg}"
-    match ← readDispatchOverloads #[ionPath.toString] |>.toBaseIO with
+    let .ok dispatchMod := ModuleName.ofString "servicelib"
+      | throw <| .userError "Invalid module name"
+    match ← readDispatchOverloads outDir #[dispatchMod] |>.toBaseIO with
     | .ok tbl => return tbl
     | .error msg =>
       throw <| .userError s!"readDispatchOverloads failed: {msg}"
 
-/-- Parse a user Python Ion file into statements. -/
-private meta def parseStmts (ionPath : System.FilePath)
-    : IO (Array (Python.stmt SourceRange)) := do
-  match ← Strata.Python.readPythonStrata ionPath.toString |>.toBaseIO with
-  | .ok stmts =>
-    return stmts
-  | .error msg =>
-    throw <| .userError s!"readPythonStrata failed: {msg}"
-
 /-- Run resolveOverloads on a test file and return the module set. -/
 private meta def resolveFile
     (tbl : OverloadTable) (pyFile : System.FilePath)
-    (outDir : System.FilePath)
     : IO (Std.HashSet String) := do
-  let ionPath ← compilePython pyFile outDir
-  let stmts ← parseStmts ionPath
-  return (resolveOverloads tbl stmts).modules
+  let stmts ←
+    match ← withPythonDialect (fun df => pyParsePythonFile df pyFile) |>.toBaseIO with
+    | .ok s => pure s
+    | .error msg => throw <| .userError s!"pyParsePythonFile failed: {msg}"
+  return (resolveOverloads tbl stmts.stmts).modules
 
 /-- A test case: Python file and exact expected module set. -/
 private structure TestCase where
@@ -124,9 +88,9 @@ private meta def testCases : List TestCase := [
 
 /-- Run a single test case and return an error message on failure. -/
 private meta def runTestCase
-    (tbl : OverloadTable) (outDir : System.FilePath)
+    (tbl : OverloadTable)
     (tc : TestCase) : IO (Option String) := do
-  let modules ← resolveFile tbl (testDir / tc.file) outDir
+  let modules ← resolveFile tbl (testDir / tc.file)
   let expected : Std.HashSet String :=
     tc.expected.foldl (init := {}) fun s m => s.insert m
   if modules == expected then return none
@@ -145,7 +109,7 @@ private meta def runTestCase
       if tc.file ∈ seen then
         throw <| IO.userError s!"Duplicate test filename: {tc.file}"
       seen := seen.insert tc.file
-      let task ← IO.asTask (runTestCase tbl tmpDir tc)
+      let task ← IO.asTask (runTestCase tbl tc)
       tasks := tasks.push (tc.file, task)
     -- Collect results
     let mut errors : Array String := #[]

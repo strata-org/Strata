@@ -6,7 +6,7 @@
 module
 
 meta import Strata.SimpleAPI
-meta import Strata.Languages.Python.PySpecPipeline
+meta import Strata.SimpleAPI.Python
 meta import Strata.Languages.Python.PyFactory
 meta import StrataTest.Util.Python
 
@@ -20,7 +20,7 @@ Messaging) are generic and not tied to any cloud provider.
 
 namespace Strata.Python.AnalyzeLaurelTest
 
-open Strata (pyAnalyzeLaurel pySpecs)
+open Strata (pyAnalyzeLaurelFromPaths pySpecs translateCombinedLaurel)
 
 private meta def testDir : System.FilePath :=
   "StrataTest/Languages/Python/Specs/dispatch_test"
@@ -90,11 +90,11 @@ private meta def runAnalyze (dispatchIon : System.FilePath)
     : IO (Except String Core.Program) := do
   let testIon ← compileTestScript (testDir / scriptName) tmpDir
   let laurel ←
-    match ← Strata.pyAnalyzeLaurel testIon.toString
+    match ← pyAnalyzeLaurelFromPaths testIon.toString
         (dispatchPaths := #[dispatchIon.toString]) |>.toBaseIO with
     | .ok r => pure r
     | .error err => return .error (toString err)
-  match Strata.translateCombinedLaurel laurel with
+  match translateCombinedLaurel laurel with
   | (some core, []) =>
     -- Also run Core type checking to catch semantic errors (e.g. Heap vs Any)
     match Core.typeCheck Core.VerifyOptions.quiet core (moreFns := Strata.Python.ReFactory) with
