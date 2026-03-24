@@ -404,7 +404,7 @@ public structure TranslationResult where
 /-- Run the translation and return a Laurel Program, dispatch table,
     and any errors. -/
 public def signaturesToLaurel (filepath : System.FilePath) (sigs : Array Signature)
-    (modulePrefix : String := "")
+    (modulePrefix : String)
     : TranslationResult :=
   let ctx : ToLaurelContext := { filepath, modulePrefix }
   let ((), state) := (sigs.forM signatureToLaurel).run ctx |>.run {}
