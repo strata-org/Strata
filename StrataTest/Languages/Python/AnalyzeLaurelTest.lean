@@ -226,7 +226,7 @@ result for the `len(Bucket) >= 1` assertion through the full verification pipeli
 info: Storage_Storage_put_item_assert(0)_9: ✔️ always true if reached (Required parameter 'Bucket' is missing)
 Storage_Storage_put_item_assert(0)_9: ✔️ always true if reached (Required parameter 'Key' is missing)
 Storage_Storage_put_item_assert(0)_9: ✔️ always true if reached (Required parameter 'Data' is missing)
-Storage_Storage_put_item_assert(0)_9: ✖️ always false if reached (Bucket must not be empty)
+Storage_Storage_put_item_assert(0)_9: ✔️ always true if reached (Bucket must not be empty)
 Storage_Storage_put_item_assert(0)_9: ✖️ always false if reached (Bucket must match ^[a-z0-9-]+$)
 Storage_Storage_put_item_assert(0)_9: ✔️ always true if reached (Key must not be empty)
 -/
