@@ -15,11 +15,9 @@ while [[ $# -gt 0 ]]; do
     case $1 in
         --incremental)
             incremental=true
-            shift
             ;;
         laurel)
             mode="laurel"
-            shift
             ;;
         *)
             echo "Unknown argument: $1"
