@@ -40,7 +40,7 @@ def eqModuloMeta (e1 e2 : LExpr T) : Bool :=
 
 /-- Three-valued `and` for `Option Bool`: `some false` if either is `some false`,
   `some true` if both are `some true`, `none` (inconclusive) otherwise. -/
-def opt_and (o1 o2: Option Bool) :=
+def eqlCombine (o1 o2: Option Bool) :=
   match o1, o2 with
   | some false, _ => some false
   | _, some false => some false
@@ -85,7 +85,7 @@ def eql (F : @Factory T.base) (e1 e2 : LExpr T) : Option Bool :=
   | .const _ _, .abs _ _ _ _ => some false
   | .abs _ _ _ _, .const _ _ => some false
   -- Case 3: datatype constructor applications
-  | _e3, _ =>
+  | _, _ =>
     match _h1: Factory.callOfLFunc F e1 false, _h2: Factory.callOfLFunc F e2 false with
     | some (_, args1, f1), some (_, args2, f2) =>
       -- Only apply disjointness/injectivity to constructors
@@ -96,7 +96,7 @@ def eql (F : @Factory T.base) (e1 e2 : LExpr T) : Option Bool :=
       -- If any are not equal, then they are not equal by injectivity
       -- Otherwise, incomparable
       List.foldl (fun acc (⟨a1, _⟩, a2) =>
-        opt_and acc (eql F a1 a2)
+        eqlCombine acc (eql F a1 a2)
       ) (some true) (args1.attach.zip args2)
     | _, _ => none
   termination_by e1.sizeOf
@@ -296,7 +296,7 @@ def evalEq (n' : Nat) (σ : LState TBase) (m: TBase.Metadata) (e1 e2 : LExpr TBa
   if eqModuloMeta e1' e2' then
     -- Short-circuit: e1' and e2' are syntactically the same after type erasure.
     LExpr.true m
-  else if h: isCanonicalValue σ.config.factory e1' ∧
+  else if isCanonicalValue σ.config.factory e1' ∧
              isCanonicalValue σ.config.factory e2' then
     match eql σ.config.factory e1' e2' with
     | some b => .const m (.boolConst b)
