@@ -66,6 +66,9 @@ abbrev CoreStepStar
     (φ : CoreEval → PureFunc Expression → CoreEval) :=
   StepStmtStar Expression (EvalCommand π φ) (EvalPureFunc φ)
 
+variable (π : String → Option Procedure)
+variable (φ : CoreEval → PureFunc Expression → CoreEval)
+
 /-! ## Assertion Identity
 
 An assertion is identified by its label (a `CoreLabel`, i.e., `String`).
@@ -157,8 +160,6 @@ current store.
     Adapted from `reachable` in `SoundnessFramework.lean`
     (branch `proc-body-verify`). -/
 def Reachable
-    (π : String → Option Procedure)
-    (φ : CoreEval → PureFunc Expression → CoreEval)
     (s : Statement) (ρ₀ : CoreEnv) (pc₀ : ProgramCounter)
     (pc : ProgramCounter) (cfg : CoreConfig) : Prop :=
   CoreStepStar π φ (.stmt s ρ₀ pc₀) cfg ∧
@@ -171,20 +172,17 @@ def Reachable
     Adapted from `stmt_valid` in `SoundnessFramework.lean`
     (branch `proc-body-verify`). -/
 def AssertValid
-    (π : String → Option Procedure)
-    (φ : CoreEval → PureFunc Expression → CoreEval)
     (s : Statement) (a : AssertId) : Prop :=
   ∀ (ρ₀ : CoreEnv) (pc₀ pc : ProgramCounter) (cfg : CoreConfig),
     Reachable π φ s ρ₀ pc₀ pc cfg →
     isAtAssert cfg a →
     cfg.getEval cfg.getStore a.expr = some HasBool.tt
 
-/-- *All* asserts are valid in statement `s`.
+/-- All asserts are valid in statement `s`. Assert `a` does not have to be
+    constrainted to those in `s` because AssertValid uses partial correctness.
     Adapted from `stmt_correct` in `SoundnessFramework.lean`
     (branch `proc-body-verify`). -/
 def AllAssertsValid
-    (π : String → Option Procedure)
-    (φ : CoreEval → PureFunc Expression → CoreEval)
     (s : Statement) : Prop :=
   ∀ (a : AssertId), AssertValid π φ s a
 
@@ -207,8 +205,6 @@ The triple quantifies over all initial program counters.
     failures) and the postcondition includes `ρ'.hasFailure = false` (no
     assertion failures after execution). -/
 def HoareTriple
-    (π : String → Option Procedure)
-    (φ : CoreEval → PureFunc Expression → CoreEval)
     (P : CoreEnv → Prop)
     (s : Statement)
     (Q : CoreEnv → Prop) : Prop :=
@@ -238,58 +234,10 @@ is the initial `.stmt` configuration itself (zero steps from the start),
 because the assert command has exactly one step (to `.terminal`).
 -/
 
-/-
-Informal proof of A ⟹ B:
-
-Theorem: AssertValid π φ (assert label expr md) ⟨label, expr⟩ →
-         HoareTriple π φ True (assert label expr md) (expr = true)
-
-Proof:
-  1. Assume AssertValid holds.
-  2. Let ρ₀, pc₀ be an initial environment and suppose the assert steps to
-     terminal ρ'.
-  3. By inversion on the multi-step execution of a single assert command:
-     the only step is step_cmd (eval_assert), which requires
-     ρ₀.eval ρ₀.store expr = some tt and produces ρ' = { ρ₀ with store := σ' }.
-  4. The initial configuration .stmt (assert ..) ρ₀ pc₀ satisfies
-     isAtAssert, and is reachable in zero steps.
-  5. By AssertValid applied to this configuration: ρ₀.eval ρ₀.store expr = some tt.
-  6. Since ρ'.eval = ρ₀.eval and ρ'.store = σ', we have the result.
-  7. done
-     by 5 and 6.
-
-Informal proof of B ⟹ A:
-
-Theorem: HoareTriple π φ True (assert label expr md) (expr = true) →
-         AssertValid π φ (assert label expr md) ⟨label, expr⟩
-
-Proof:
-  1. Assume the Hoare triple holds.
-  2. Let cfg be reachable from (assert label expr md) at the assert.
-  3. By definition, there exist ρ₀, pc₀ with
-     CoreStepStar (.stmt (assert ..) ρ₀ pc₀) cfg and isAtAssert cfg.
-  4. For a single assert command, the only config satisfying isAtAssert
-     is .stmt (assert ..) ρ₀ pc₀ itself (reached in zero steps).
-     by: the assert command can only step to .terminal (via step_cmd),
-     and .terminal does not satisfy isAtAssert.
-  5. So cfg = .stmt (assert label expr md) ρ₀ pc₀, and we need
-     ρ₀.eval ρ₀.store expr = some tt.
-  6. The Hoare triple says: if the assert steps to terminal, then
-     ρ'.eval ρ'.store expr = some tt. By eval_assert, stepping requires
-     ρ₀.eval ρ₀.store expr = some tt and produces ρ'.store = ρ₀.store,
-     ρ'.eval = ρ₀.eval.
-  7. But we need the expression to be true *before* stepping, not after.
-     The Hoare triple only tells us something when execution terminates.
-  8. We need an additional assumption: the assert is not stuck, i.e.,
-     execution can proceed. We add this as a hypothesis.
--/
-
 /-- Auxiliary: for a single assert command, the only configuration
     reachable from `.stmt (assert ..) ρ pc₀` that satisfies `isAtAssert`
     is the initial configuration itself. -/
 private theorem assert_reachable_is_initial
-    (π : String → Option Procedure)
-    (φ : CoreEval → PureFunc Expression → CoreEval)
     (label : CoreLabel) (expr : Expression.Expr) (md : MetaData Expression)
     (ρ₀ : CoreEnv) (pc₀ : ProgramCounter) (cfg : CoreConfig)
     (hstar : CoreStepStar π φ (.stmt (Statement.assert label expr md) ρ₀ pc₀) cfg)
@@ -316,8 +264,6 @@ private theorem assert_reachable_is_initial
 /-- Style A implies Style B: if all reachable assert configurations have
     `expr = true`, then the Hoare triple holds. -/
 theorem assertValid_implies_hoareTriple
-    (π : String → Option Procedure)
-    (φ : CoreEval → PureFunc Expression → CoreEval)
     (label : CoreLabel) (expr : Expression.Expr) (md : MetaData Expression)
     (s : Statement)
     (hs : s = Statement.assert label expr md)
@@ -364,8 +310,6 @@ theorem assertValid_implies_hoareTriple
     In practice, this hypothesis holds when the evaluator is well-formed
     and the expression is well-typed. -/
 theorem hoareTriple_implies_assertValid
-    (π : String → Option Procedure)
-    (φ : CoreEval → PureFunc Expression → CoreEval)
     (label : CoreLabel) (expr : Expression.Expr) (md : MetaData Expression)
     (s : Statement)
     (hs : s = Statement.assert label expr md)
@@ -426,8 +370,6 @@ theorem hoareTriple_implies_assertValid
 /-- For a single assert command, Style A implies Style B unconditionally.
     Style B implies Style A given a progress assumption. -/
 theorem assertValid_implies_hoareTriple_iff
-    (π : String → Option Procedure)
-    (φ : CoreEval → PureFunc Expression → CoreEval)
     (label : CoreLabel) (expr : Expression.Expr) (md : MetaData Expression)
     (s : Statement)
     (hs : s = Statement.assert label expr md)
@@ -459,10 +401,8 @@ transformation does not fabricate validity.
     Note the direction: valid in T(s) ⟹ valid in s.
     This means T does not fabricate validity — if T(s) says "all asserts
     pass," then they genuinely pass in s. -/
-def TransformSound
-    (T : Statement → CoreTransformM Statement)
-    (π : String → Option Procedure)
-    (φ : CoreEval → PureFunc Expression → CoreEval) : Prop :=
+def Sound
+    (T : Statement → CoreTransformM Statement) : Prop :=
   ∀ (s s' : Statement) (a : AssertId)
     (st st' : CoreTransformState),
     (T s).run st = (.ok s', st') →
@@ -472,11 +412,9 @@ def TransformSound
 /-- Composition of sound transformations is sound. -/
 theorem sound_comp
     (T₁ T₂ : Statement → CoreTransformM Statement)
-    (π : String → Option Procedure)
-    (φ : CoreEval → PureFunc Expression → CoreEval)
-    (h₁ : TransformSound T₁ π φ)
-    (h₂ : TransformSound T₂ π φ) :
-    TransformSound (fun s => T₁ s >>= T₂) π φ := by
+    (h₁ : Sound π φ T₁)
+    (h₂ : Sound π φ T₂) :
+    Sound π φ (fun s => T₁ s >>= T₂) := by
   intro s s'' a st st'' hrun hvalid
   -- Unfold the monadic bind to expose the intermediate result of T₁
   simp only [bind, ExceptT.bind] at hrun
@@ -507,20 +445,58 @@ If a pipeline of transformations is sound and the VCGen reports that
 all asserts are valid in the final transformed program, then all asserts
 are valid in the original program. -/
 
-/-- End-to-end: if `T` is sound and all asserts are valid in `T(s)`,
-    then all asserts are valid in `s`. -/
-theorem endToEnd_allAsserts
+/-- End-to-end: if `T` is sound and assert `a` is valid in `T(s)`,
+    then `a` is also valid in `s`. -/
+theorem sound_assertValid
     (T : Statement → CoreTransformM Statement)
-    (π : String → Option Procedure)
-    (φ : CoreEval → PureFunc Expression → CoreEval)
+    (a : AssertId)
     (s s' : Statement)
     (st st' : CoreTransformState)
     (hrun : (T s).run st = (.ok s', st'))
-    (hsound : TransformSound T π φ)
+    (hsound : Sound π φ T)
+    (hvalid : AssertValid π φ s' a) :
+    AssertValid π φ s a :=
+  hsound s s' a st st' hrun hvalid
+
+/-- End-to-end: if `T` is sound and all asserts are valid in `T(s)`,
+    then all asserts are valid in `s`. -/
+theorem sound_allAsserts
+    (T : Statement → CoreTransformM Statement)
+    (s s' : Statement)
+    (st st' : CoreTransformState)
+    (hrun : (T s).run st = (.ok s', st'))
+    (hsound : Sound π φ T)
     (hvalid : AllAssertsValid π φ s') :
-    AllAssertsValid π φ s := by
-  intro a
-  exact hsound s s' a st st' hrun (hvalid a)
+    AllAssertsValid π φ s :=
+  fun a => sound_assertValid π φ T a s s' st st' hrun hsound (hvalid a)
+
+/-- If `T` is sound and the assert-specific Hoare triple holds for the
+    transformed `s'`, then it also holds for the original `s`.
+
+    Note: `hs` / `hs'` (requiring `s` and `s'` to be single assert
+    commands) are needed because the equivalence between Hoare triples
+    and `AssertValid` only applies to single assert commands.
+    For compound statements, use `sound_allAsserts` directly. -/
+theorem sound_hoareTriple
+    (T : Statement → CoreTransformM Statement)
+    (label : CoreLabel) (expr : Expression.Expr) (md md' : MetaData Expression)
+    (s s' : Statement)
+    (st st' : CoreTransformState)
+    (hs : s = Statement.assert label expr md)
+    (hs' : s' = Statement.assert label expr md')
+    (hrun : (T s).run st = (.ok s', st'))
+    (hsound : Sound π φ T)
+    (hprogress : ∀ (ρ₀ : CoreEnv) (pc₀ : ProgramCounter),
+      ∃ (ρ' : CoreEnv), CoreStepStar π φ (.stmt s' ρ₀ pc₀) (.terminal ρ'))
+    (hoare : HoareTriple π φ
+      (fun _ => True) s'
+      (fun ρ' => ρ'.eval ρ'.store expr = some HasBool.tt)) :
+    HoareTriple π φ
+      (fun _ => True) s
+      (fun ρ' => ρ'.eval ρ'.store expr = some HasBool.tt) :=
+  assertValid_implies_hoareTriple π φ label expr md s hs
+    (hsound s s' ⟨label, expr⟩ st st' hrun
+      (hoareTriple_implies_assertValid π φ label expr md' s' hs' hoare hprogress))
 
 end Transform
 end Core
