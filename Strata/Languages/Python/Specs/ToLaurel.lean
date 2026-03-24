@@ -376,8 +376,8 @@ def buildSpecBody (preconditions : Array Assertion) (requiredParams : Array Stri
       let assertStmt ← mkStmtWithLoc (.Assert condExpr) default msg
       stmts := assertStmt :: stmts
     | none =>
-      reportError default s!"Untranslatable precondition (emitting assert true): {msg}"
-      let assertStmt ← mkStmtWithLoc (.Assert (mkStmt (.LiteralBool true))) default msg
+      reportError default s!"Untranslatable precondition (emitting nondeterministic assert): {msg}"
+      let assertStmt ← mkStmtWithLoc (.Assert (mkStmt .Hole)) default msg
       stmts := assertStmt :: stmts
   let body := mkStmt (.Block stmts.reverse none)
   return .Transparent body

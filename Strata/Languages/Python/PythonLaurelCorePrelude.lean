@@ -102,8 +102,9 @@ datatype DictStrAny () {
 };
 
 // Forward declarations: needed so the inline functions after CoreOnlyDelimiter
-// can reference these during DDM parsing.  The real definitions with
-// concreteEval are supplied by ReFactory at verification time.
+// can reference these during DDM parsing.  Filtered out at merge (precede the
+// sentinel).  The real definitions with concreteEval are supplied by ReFactory
+// at verification time.
 function re_fullmatch_str(pattern : string) : regex;
 function re_match_str(pattern : string) : regex;
 function re_search_str(pattern : string) : regex;

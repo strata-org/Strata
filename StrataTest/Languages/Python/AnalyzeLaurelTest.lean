@@ -216,11 +216,12 @@ private meta def runTestCase (dispatchIon tmpDir : System.FilePath)
     if errors.size > 0 then
       throw <| IO.userError ("\n".intercalate errors.toList)
 
-/-! ## Precondition assertion test
+/-! ## Precondition violation test
 
-Verifies that pyspec precondition assertions are present in the inlined
-Core program. Checks that `put_item` assertions (len >= 1, required params)
-appear in the `__main__` procedure after inlining. -/
+Verifies that calling `put_item(Bucket="", ...)` generates precondition
+assertions in the Core program. Full SMT verification is tested via the
+CLI pipeline (the interpreted-mode type checker has a known issue with
+PR #623 regex forward declarations). -/
 
 #eval withPython fun _pythonCmd => do
   IO.FS.withTempDir fun tmpDir => do
@@ -231,7 +232,6 @@ appear in the `__main__` procedure after inlining. -/
     | .error msg => throw <| IO.userError s!"Pipeline failed: {msg}"
     | .ok core => do
       let coreStr := toString core
-      -- Check that precondition assertions from Storage_put_item are present
       let hasStrLen := (coreStr.splitOn "str.len").length != 1
       let hasIsfromNone := (coreStr.splitOn "isfrom_none").length != 1
       let hasPutItem := (coreStr.splitOn "Storage_Storage_put_item").length != 1
