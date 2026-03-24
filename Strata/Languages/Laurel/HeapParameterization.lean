@@ -175,6 +175,7 @@ def boxDestructorName (model : SemanticModel) (ty : HighType) : Identifier :=
   | .TBool => "Box..boolVal!"
   | .TFloat64 => "Box..float64Val!"
   | .TReal => "Box..realVal!"
+  | .TString => "Box..stringVal!"
   | .UserDefined name =>
       if isDatatype model name then s!"Box..{name.text}Val!"
       else "Box..compositeVal!"
@@ -190,11 +191,12 @@ def boxConstructorName (model : SemanticModel) (ty : HighType) : Identifier :=
   | .TBool => "BoxBool"
   | .TFloat64 => "BoxFloat64"
   | .TReal => "BoxReal"
+  | .TString => "BoxString"
   | .UserDefined name =>
       if isDatatype model name then s!"Box..{name.text}"
       else "BoxComposite"
   | .TCore name => s!"Box..{name}"
-  | ty => dbg_trace "BUG, boxConstructorName bad type: {repr ty}"; "boxConstructorNameError"
+  | ty => dbg_trace s!"BUG, boxConstructorName bad type: {repr ty}"; "boxConstructorNameError"
 
 /-- Build the DatatypeConstructor for a Box variant from a HighType, for datatype generation -/
 private def boxConstructorDef (model : SemanticModel) (ty : HighType) : Option DatatypeConstructor :=
@@ -203,6 +205,7 @@ private def boxConstructorDef (model : SemanticModel) (ty : HighType) : Option D
   | .TBool => some { name := "BoxBool", args := [{ name := "boolVal", type := ⟨.TBool, #[]⟩ }] }
   | .TReal => some { name := "BoxReal", args := [{ name := "realVal", type := ⟨.TReal, #[]⟩ }] }
   | .TFloat64 => some { name := "BoxFloat64", args := [{ name := "float64Val", type := ⟨.TFloat64, #[]⟩ }] }
+  | .TString => some { name := "BoxString", args := [{ name := "stringVal", type := ⟨.TString, #[]⟩ }] }
   | .UserDefined name =>
       if isDatatype model name then
         some { name := s!"Box..{name.text}", args := [{ name := s!"{name.text}Val", type := ⟨.UserDefined name, #[]⟩ }] }

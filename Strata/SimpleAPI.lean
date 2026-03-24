@@ -11,6 +11,9 @@ public import Strata.Transform.CoreTransform
 import Strata.Transform.CallElim
 import Strata.Transform.ProcedureInlining
 
+public import Strata.Languages.Core.Options
+public import Strata.Languages.Core.Verifier
+import Strata.Languages.Laurel.LaurelToCoreTranslator
 public import Strata.Languages.Python.PySpecPipeline
 import Strata.Languages.Python.Specs
 import Strata.Languages.Python.Specs.DDM
@@ -277,7 +280,7 @@ def pySpecs (pythonFile strataDir dialectFile : System.FilePath)
     | .error e => throw s!"Invalid module name '{fileStem}': {e}"
 
   let skipIdents := skipNames.foldl (init := {}) fun acc s =>
-    match Strata.Python.Specs.PythonIdent.ofString s with
+    match Python.PythonIdent.ofString s with
     | some id => acc.insert id
     | none => acc.insert { pythonModule := fileStem, name := s }
 

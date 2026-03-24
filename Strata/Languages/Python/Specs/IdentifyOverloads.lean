@@ -5,8 +5,8 @@
 -/
 module
 
+public import Strata.Languages.Python.OverloadTable
 public import Strata.Languages.Python.PythonDialect
-public import Strata.Languages.Python.Specs.OverloadTable
 import Strata.Languages.Python.Specs.ToLaurel
 
 /-!
@@ -25,17 +25,17 @@ to determine which `.pyspec.st.ion` files are needed.
 
 namespace Strata.Python.Specs.IdentifyOverloads
 
-open Strata.Python (stmt expr)
-open Strata.Python.Specs (PythonIdent)
-open Strata.Python.Specs.ToLaurel (OverloadTable)
+open Strata.Python (stmt expr OverloadTable PythonIdent)
 
 /-- State accumulated while walking the AST. -/
 public structure ResolveState where
   modules  : Std.HashSet String := {}
   warnings : Array String := #[]
 
-/-- Monad for the overload-resolution walker. -/
-abbrev ResolveM := StateM ResolveState
+/-- Monad for the overload-resolution walker.
+    Reads an `OverloadTable` from the environment and accumulates
+    resolved modules and warnings in `ResolveState`. -/
+abbrev ResolveM := ReaderT OverloadTable (StateM ResolveState)
 
 /-- Record a warning about an unhandled AST node. -/
 def warn (msg : String) : ResolveM Unit :=
@@ -54,221 +54,206 @@ mutual
 /-- Walk an expression, checking `Call` nodes against
     the overload table and recursing into sub-expressions. -/
 partial def walkExpr
-    (tbl : OverloadTable)
     (e : expr SourceRange)
     : ResolveM Unit := do
   match e with
   -- The interesting case: function calls
-  | .Call _ f args kwargs => do
+  | .Call _ f ⟨_, args⟩ ⟨_, kwargs⟩ => do
     -- Check dispatch
-    let funcName := match f with
-      | .Attribute _ _ attr _ => attr.val
-      | .Name _ n _ => n.val
-      | _ => ""
-    match tbl.get? funcName with
-    | some fnOverloads =>
-      if h : args.val.size > 0 then
-        match args.val[0] with
-        | .Constant _ (.ConString _ s) _ =>
-          if let some pyId := fnOverloads.get? s.val then
-            recordModule pyId.pythonModule
-        | _ => pure ()
-    | none => pure ()
+    if h : args.size > 0 then
+      if let (.Constant _ (.ConString _ ⟨_, s⟩) _) := args[0] then
+        let maybeFuncName :=
+              match f with
+              | .Attribute _ _ attr _ => some attr.val
+              | .Name _ n _ => some n.val
+              | _ => none
+        if let some funcName := maybeFuncName then
+          if let some fnOverloads := (← read)[funcName]? then
+            if let some pyId := fnOverloads[s]? then
+              recordModule pyId.pythonModule
     -- Recurse into func, args, keyword values
-    walkExpr tbl f
-    for arg in args.val do
-      walkExpr tbl arg
-    for kw in kwargs.val do
-      match kw with
-      | .mk_keyword _ _ kwVal => walkExpr tbl kwVal
+    walkExpr f
+    args.forM walkExpr
+    kwargs.forM (walkExpr ·.value)
 
   -- Recurse into sub-expressions for all other forms
-  | .BoolOp _ _ values => do
-    for v in values.val do walkExpr tbl v
+  | .BoolOp _ _ ⟨_, values⟩ =>
+    values.forM walkExpr
   | .NamedExpr _ target value =>
-    walkExpr tbl target
-    walkExpr tbl value
+    walkExpr target
+    walkExpr value
   | .BinOp _ left _ right =>
-    walkExpr tbl left
-    walkExpr tbl right
+    walkExpr left
+    walkExpr right
   | .UnaryOp _ _ operand =>
-    walkExpr tbl operand
+    walkExpr operand
   | .Lambda _ _ body =>
-    walkExpr tbl body
+    walkExpr body
   | .IfExp _ test body orelse =>
-    walkExpr tbl test
-    walkExpr tbl body
-    walkExpr tbl orelse
-  | .Dict _ keys values => do
-    for k in keys.val do
+    walkExpr test
+    walkExpr body
+    walkExpr orelse
+  | .Dict _ ⟨_, keys⟩ ⟨_, values⟩ => do
+    for k in keys do
       match k with
-      | .some_expr _ ke => walkExpr tbl ke
+      | .some_expr _ ke => walkExpr ke
       | _ => pure ()
-    for v in values.val do walkExpr tbl v
-  | .Set _ elts => do
-    for e in elts.val do walkExpr tbl e
-  | .ListComp _ elt gens =>
-    walkExpr tbl elt
-    for g in gens.val do walkComprehension tbl g
-  | .SetComp _ elt gens =>
-    walkExpr tbl elt
-    for g in gens.val do walkComprehension tbl g
-  | .DictComp _ key value gens =>
-    walkExpr tbl key
-    walkExpr tbl value
-    for g in gens.val do walkComprehension tbl g
-  | .GeneratorExp _ elt gens =>
-    walkExpr tbl elt
-    for g in gens.val do walkComprehension tbl g
+    values.forM walkExpr
+  | .Set _ ⟨_, elts⟩ =>
+    elts.forM walkExpr
+  | .ListComp _ elt ⟨_, gens⟩ =>
+    walkExpr elt
+    gens.forM walkComprehension
+  | .SetComp _ elt ⟨_, gens⟩ =>
+    walkExpr elt
+    gens.forM walkComprehension
+  | .DictComp _ key value ⟨_, gens⟩ =>
+    walkExpr key
+    walkExpr value
+    gens.forM walkComprehension
+  | .GeneratorExp _ elt ⟨_, gens⟩ =>
+    walkExpr elt
+    gens.forM walkComprehension
   | .Await _ value =>
-    walkExpr tbl value
-  | .Yield _ value => do
-    if let some v := value.val then walkExpr tbl v
+    walkExpr value
+  | .Yield _ ⟨_, value⟩ => do
+    value.forM walkExpr
   | .YieldFrom _ value =>
-    walkExpr tbl value
-  | .Compare _ left _ comparators => do
-    walkExpr tbl left
-    for c in comparators.val do walkExpr tbl c
-  | .FormattedValue _ value _ fmtSpec => do
-    walkExpr tbl value
-    if let some fs := fmtSpec.val then
-      walkExpr tbl fs
-  | .Interpolation _ value _ _ fmtSpec => do
-    walkExpr tbl value
-    if let some fs := fmtSpec.val then
-      walkExpr tbl fs
-  | .JoinedStr _ values => do
-    for v in values.val do walkExpr tbl v
-  | .TemplateStr _ values => do
-    for v in values.val do walkExpr tbl v
+    walkExpr value
+  | .Compare _ left _ ⟨_, comparators⟩ => do
+    walkExpr left
+    comparators.forM walkExpr
+  | .FormattedValue _ value _ ⟨_, fmtSpec⟩ => do
+    walkExpr value
+    fmtSpec.forM walkExpr
+  | .Interpolation _ value _ _ ⟨_, fmtSpec⟩ => do
+    walkExpr value
+    fmtSpec.forM walkExpr
+  | .JoinedStr _ ⟨_, values⟩ => do
+    values.forM walkExpr
+  | .TemplateStr _ ⟨_, values⟩ => do
+    values.forM walkExpr
   | .Subscript _ value slice _ =>
-    walkExpr tbl value
-    walkExpr tbl slice
+    walkExpr value
+    walkExpr slice
   | .Starred _ value _ =>
-    walkExpr tbl value
-  | .List _ elts _ => do
-    for e in elts.val do walkExpr tbl e
-  | .Tuple _ elts _ => do
-    for e in elts.val do walkExpr tbl e
-  | .Slice _ lower upper step => do
-    if let some l := lower.val then walkExpr tbl l
-    if let some u := upper.val then walkExpr tbl u
-    if let some s := step.val then walkExpr tbl s
+    walkExpr value
+  | .List _ ⟨_, elts⟩ _ =>
+    elts.forM walkExpr
+  | .Tuple _ ⟨_, elts⟩ _ =>
+    elts.forM walkExpr
+  | .Slice _ ⟨_, lower⟩ ⟨_, upper⟩ ⟨_, step⟩ => do
+    lower.forM walkExpr
+    upper.forM walkExpr
+    step.forM walkExpr
   | .Attribute _ value _ _ =>
-    walkExpr tbl value
+    walkExpr value
   -- Leaf nodes — no sub-expressions
   | .Constant .. | .Name .. =>
     pure ()
 
 /-- Walk a comprehension's sub-expressions. -/
 partial def walkComprehension
-    (tbl : OverloadTable)
     (g : Strata.Python.comprehension SourceRange)
     : ResolveM Unit := do
   match g with
-  | .mk_comprehension _ target iter ifs _ =>
-    walkExpr tbl target
-    walkExpr tbl iter
-    for cond in ifs.val do walkExpr tbl cond
+  | .mk_comprehension _ target iter ⟨_, ifs⟩ _ =>
+    walkExpr target
+    walkExpr iter
+    ifs.forM walkExpr
 
 /-- Walk a single statement, recursing into
     sub-expressions and sub-statement bodies. -/
 partial def walkStmt
-    (tbl : OverloadTable)
     (s : stmt SourceRange)
     : ResolveM Unit := do
   match s with
-  | .FunctionDef _ _ _ body _ _ _ _ =>
-    walkStmts tbl body.val
-  | .AsyncFunctionDef _ _ _ body _ _ _ _ =>
-    walkStmts tbl body.val
-  | .ClassDef _ _ _ _ body _ _ =>
-    walkStmts tbl body.val
-  | .Return _ value => do
-    if let some v := value.val then walkExpr tbl v
-  | .Delete _ targets => do
-    for t in targets.val do walkExpr tbl t
-  | .Assign _ targets value _ => do
-    for t in targets.val do walkExpr tbl t
-    walkExpr tbl value
+  | .FunctionDef _ _ _ ⟨_, body⟩ _ _ _ _ =>
+    walkStmts body
+  | .AsyncFunctionDef _ _ _ ⟨_, body⟩ _ _ _ _ =>
+    walkStmts body
+  | .ClassDef _ _ _ _ ⟨_, body⟩ _ _ =>
+    walkStmts body
+  | .Return _ ⟨_, value⟩ =>
+    value.forM walkExpr
+  | .Delete _ ⟨_, targets⟩ =>
+    targets.forM walkExpr
+  | .Assign _ ⟨_, targets⟩ value _ => do
+    targets.forM walkExpr
+    walkExpr value
   | .AugAssign _ target _ value =>
-    walkExpr tbl target
-    walkExpr tbl value
-  | .AnnAssign _ target _ value _ => do
-    walkExpr tbl target
-    if let some v := value.val then walkExpr tbl v
-  | .For _ target iter body orelse _ =>
-    walkExpr tbl target
-    walkExpr tbl iter
-    walkStmts tbl body.val
-    walkStmts tbl orelse.val
-  | .AsyncFor _ target iter body orelse _ =>
-    walkExpr tbl target
-    walkExpr tbl iter
-    walkStmts tbl body.val
-    walkStmts tbl orelse.val
-  | .While _ test body orelse =>
-    walkExpr tbl test
-    walkStmts tbl body.val
-    walkStmts tbl orelse.val
-  | .If _ test body orelse =>
-    walkExpr tbl test
-    walkStmts tbl body.val
-    walkStmts tbl orelse.val
-  | .With _ items body _ => do
-    for item in items.val do
+    walkExpr target
+    walkExpr value
+  | .AnnAssign _ target _ ⟨_, value⟩ _ => do
+    walkExpr target
+    value.forM walkExpr
+  | .For _ target iter ⟨_, body⟩ ⟨_, orelse⟩ _ =>
+    walkExpr target
+    walkExpr iter
+    walkStmts body
+    walkStmts orelse
+  | .AsyncFor _ target iter ⟨_, body⟩ ⟨_, orelse⟩ _ =>
+    walkExpr target
+    walkExpr iter
+    walkStmts body
+    walkStmts orelse
+  | .While _ test ⟨_, body⟩ ⟨_, orelse⟩ =>
+    walkExpr test
+    walkStmts body
+    walkStmts orelse
+  | .If _ test ⟨_, body⟩ ⟨_, orelse⟩ =>
+    walkExpr test
+    walkStmts body
+    walkStmts orelse
+  | .With _ ⟨_, items⟩ ⟨_, body⟩ _ => do
+    for item in items do
       match item with
-      | .mk_withitem _ ctxExpr optVars =>
-        walkExpr tbl ctxExpr
-        if let some v := optVars.val then
-          walkExpr tbl v
-    walkStmts tbl body.val
-  | .AsyncWith _ items body _ => do
-    for item in items.val do
+      | .mk_withitem _ ctxExpr ⟨_, optVars⟩ =>
+        walkExpr ctxExpr
+        optVars.forM walkExpr
+    walkStmts body
+  | .AsyncWith _ ⟨_, items⟩ ⟨_, body⟩ _ => do
+    for item in items do
       match item with
-      | .mk_withitem _ ctxExpr optVars =>
-        walkExpr tbl ctxExpr
-        if let some v := optVars.val then
-          walkExpr tbl v
-    walkStmts tbl body.val
-  | .Raise _ exc cause => do
-    if let some e := exc.val then walkExpr tbl e
-    if let some c := cause.val then walkExpr tbl c
-  | .Try _ body handlers orelse finalbody => do
-    walkStmts tbl body.val
-    for h in handlers.val do
+      | .mk_withitem _ ctxExpr ⟨_, optVars⟩ =>
+        walkExpr ctxExpr
+        optVars.forM walkExpr
+    walkStmts body
+  | .Raise _ ⟨_, exc⟩ ⟨_, cause⟩ => do
+    exc.forM walkExpr
+    cause.forM walkExpr
+  | .Try _ ⟨_, body⟩ ⟨_, handlers⟩ ⟨_, orelse⟩ ⟨_, finalbody⟩ => do
+    walkStmts body
+    for h in handlers do
       match h with
-      | .ExceptHandler _ exType _ hBody =>
-        if let some t := exType.val then
-          walkExpr tbl t
-        walkStmts tbl hBody.val
-    walkStmts tbl orelse.val
-    walkStmts tbl finalbody.val
-  | .TryStar _ body handlers orelse finalbody => do
-    walkStmts tbl body.val
-    for h in handlers.val do
+      | .ExceptHandler _ ⟨_, exType⟩ _ ⟨_, hBody⟩ =>
+        exType.forM walkExpr
+        walkStmts hBody
+    walkStmts orelse
+    walkStmts finalbody
+  | .TryStar _ ⟨_, body⟩ ⟨_, handlers⟩ ⟨_, orelse⟩ ⟨_, finalbody⟩ => do
+    walkStmts body
+    for h in handlers do
       match h with
-      | .ExceptHandler _ exType _ hBody =>
-        if let some t := exType.val then
-          walkExpr tbl t
-        walkStmts tbl hBody.val
-    walkStmts tbl orelse.val
-    walkStmts tbl finalbody.val
-  | .Assert _ test msg => do
-    walkExpr tbl test
-    if let some m := msg.val then walkExpr tbl m
+      | .ExceptHandler _ ⟨_, exType⟩ _ ⟨_, hBody⟩ =>
+        exType.forM walkExpr
+        walkStmts hBody
+    walkStmts orelse
+    walkStmts finalbody
+  | .Assert _ test ⟨_, msg⟩ => do
+    walkExpr test
+    msg.forM walkExpr
   | .Expr _ value =>
-    walkExpr tbl value
-  | .Match _ subject cases => do
-    walkExpr tbl subject
-    for c in cases.val do
+    walkExpr value
+  | .Match _ subject ⟨_, cases⟩ => do
+    walkExpr subject
+    for c in cases do
       match c with
-      | .mk_match_case _ _pat guard cBody =>
-        if let some g := guard.val then
-          walkExpr tbl g
-        walkStmts tbl cBody.val
+      | .mk_match_case _ _pat ⟨_, guard⟩ ⟨_, cBody⟩ =>
+        guard.forM walkExpr
+        walkStmts cBody
   | .TypeAlias _ _ _ value =>
-    walkExpr tbl value
+    walkExpr value
   -- Leaf statements — no sub-expressions to walk
   | .Import .. | .ImportFrom .. | .Global ..
   | .Nonlocal .. | .Pass .. | .Break ..
@@ -277,10 +262,9 @@ partial def walkStmt
 
 /-- Walk an array of statements. -/
 partial def walkStmts
-    (tbl : OverloadTable)
     (stmts : Array (stmt SourceRange))
     : ResolveM Unit := do
-  for s in stmts do walkStmt tbl s
+  stmts.forM walkStmt
 
 end
 
@@ -290,6 +274,6 @@ public def resolveOverloads
     (overloads : OverloadTable)
     (stmts : Array (stmt SourceRange))
     : ResolveState :=
-  (walkStmts overloads stmts |>.run {}).2
+  (walkStmts stmts |>.run overloads |>.run {}).2
 
 end Strata.Python.Specs.IdentifyOverloads
