@@ -5,16 +5,11 @@
 -/
 module
 
-public import Strata.DDM.Elab
-public import Strata.DDM.AST
-public import Strata.Languages.Laurel.Laurel
-public import Strata.Languages.Laurel.LaurelTypes
-public import Strata.Languages.Laurel.LaurelToCoreTranslator
-public import Strata.Languages.Core.Verifier
-public import Strata.Languages.Python.PythonDialect
-public import Strata.Languages.Python.PythonLaurelCorePrelude
-public import Strata.Languages.Python.Specs.ToLaurel
 public import Strata.Languages.Core.Program
+public import Strata.Languages.Laurel.Laurel
+public import Strata.Languages.Python.OverloadTable
+public import Strata.Languages.Python.PythonDialect
+import Strata.Util.DecideProp
 
 /-!
 # Python to Laurel Translation
@@ -84,7 +79,7 @@ structure TranslationContext where
   /-- Names of prelude types -/
   preludeTypes : Std.HashSet String := {}
   /-- Overload dispatch table from PySpec: function name → overloads -/
-  overloadTable : Specs.ToLaurel.OverloadTable := {}
+  overloadTable : OverloadTable := {}
   /-- Behavior for unmodeled functions -/
   unmodeledBehavior : UnmodeledFunctionBehavior := .havocOutputs
   /-- File path for source location metadata -/
@@ -1434,7 +1429,7 @@ def translateMethod (ctx : TranslationContext) (className : String)
         let retType ← translateType ctx (pyExprToString retExpr)
         pure (match retType.val with
           | HighType.TVoid => []
-          | _ => [{name := "result", type := retType}])
+          | _ => [{name := "LaurelResult", type := AnyTy}])
       | none => pure []
 
     -- Translate method body with class context
@@ -1476,7 +1471,7 @@ def extractFieldsFromInit (ctx : TranslationContext) (initBody : Array (Python.s
 
 /-- Translate a Python class to a Laurel CompositeType -/
 def translateClass (ctx : TranslationContext) (classStmt : Python.stmt SourceRange)
-    : Except TranslationError CompositeType := do
+    : Except TranslationError (CompositeType × List Procedure) := do
   match classStmt with
   | .ClassDef _ className _bases _ body _ _ =>
     let className := className.val
@@ -1517,12 +1512,12 @@ def translateClass (ctx : TranslationContext) (classStmt : Python.stmt SourceRan
       let proc ← translateMethod ctx className methodStmt
       instanceProcedures := instanceProcedures ++ [proc]
 
-    return {
+    return ({
       name := className
       extending := []  -- No inheritance support for now
       fields := fields
-      instanceProcedures := instanceProcedures
-    }
+      instanceProcedures := [] -- Laurel does not yet support instance procedures, so treat them as if they were static
+    }, instanceProcedures)
   | _ => throw (.internalError "Expected ClassDef")
 
 def getFunctions (decls: List Core.Decl) : List String :=
@@ -1665,7 +1660,7 @@ def pythonToLaurel' (info : PreludeInfo)
     (pyModule : Python.Command SourceRange)
     (prev_ctx: Option TranslationContext := none)
     (filePath : String := "")
-    (overloadTable : Specs.ToLaurel.OverloadTable := {})
+    (overloadTable : OverloadTable := {})
     : Except TranslationError (Laurel.Program × TranslationContext) := do
   match pyModule with
   | .Module _ body _ => do
@@ -1688,6 +1683,8 @@ def pythonToLaurel' (info : PreludeInfo)
       instanceProcedures := []
     }
 
+    let mut procedures : List Procedure := []
+
     -- FIRST PASS: Collect all class definitions and field type info
     let mut compositeTypes : List CompositeType := [pyErrorTy]
     let mut compositeTypeNames := info.compositeTypes.insert "PythonError"
@@ -1702,7 +1699,9 @@ def pythonToLaurel' (info : PreludeInfo)
           classFieldHighType := classFieldHighType,
           filePath := filePath
         }
-        let composite ← translateClass initCtx stmt
+        let (composite, _instanceProcedures) ← translateClass initCtx stmt
+        -- TODO uncomment this line and resolve compilation issues
+        -- procedures := procedures ++ _instanceProcedures
         compositeTypes := compositeTypes ++ [composite]
         compositeTypeNames := compositeTypeNames.insert composite.name.text
         -- Collect field types for Any coercions in field accesses
@@ -1748,7 +1747,6 @@ def pythonToLaurel' (info : PreludeInfo)
     }
 
     -- Separate functions from other statements
-    let mut procedures : List Procedure := []
     let mut otherStmts : List (Python.stmt SourceRange) := []
 
     for stmt in body.val do
@@ -1817,7 +1815,7 @@ def pythonToLaurel (prelude: Core.Program)
     (pyModule : Python.Command SourceRange)
     (prev_ctx: Option TranslationContext := none)
     (filePath : String := "")
-    (overloadTable : Specs.ToLaurel.OverloadTable := {})
+    (overloadTable : OverloadTable := {})
     : Except TranslationError (Laurel.Program × TranslationContext) := do
   let info := PreludeInfo.ofCoreProgram prelude
   let (program, ctx) ← pythonToLaurel' info pyModule prev_ctx filePath overloadTable

@@ -5,8 +5,8 @@
 -/
 module
 
+public import Strata.Languages.Python.OverloadTable
 public import Strata.Languages.Python.PythonDialect
-public import Strata.Languages.Python.Specs.OverloadTable
 import Strata.Languages.Python.Specs.ToLaurel
 
 /-!
@@ -25,9 +25,7 @@ to determine which `.pyspec.st.ion` files are needed.
 
 namespace Strata.Python.Specs.IdentifyOverloads
 
-open Strata.Python (stmt expr)
-open Strata.Python.Specs (PythonIdent)
-open Strata.Python.Specs.ToLaurel (OverloadTable)
+open Strata.Python (stmt expr OverloadTable PythonIdent)
 
 /-- State accumulated while walking the AST. -/
 public structure ResolveState where
