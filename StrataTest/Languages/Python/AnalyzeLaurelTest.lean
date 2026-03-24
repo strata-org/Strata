@@ -177,7 +177,12 @@ private meta def testCases : List (String × Expected) := [
   .mk "test_optional_missing_required.py" $
     .fail "User code error: 'list_items' called with missing required arguments: [Bucket]",
   .mk "test_positional_missing.py" $
-    .fail "User code error: 'delete_item' called with missing required arguments: [Key]"
+    .fail "User code error: 'delete_item' called with missing required arguments: [Key]",
+  -- Type alias resolution tests (TDD for resolveTypeName refactoring)
+  .mk "test_method_dispatch.py" .success,
+  .mk "test_annotation_dispatch.py" .success,
+  .mk "test_constructor_dispatch.py" .success,
+  .mk "test_reassign_dispatch.py" .success
 ]
 
 /-- Run a single test case and return an error message on failure, or `none` on success. -/
@@ -252,5 +257,36 @@ Expected output (when Python + z3 available):
             foundAlwaysFalse := true
       if !foundAlwaysFalse then
         throw <| IO.userError "Expected ✖️ always false for regex violation"
+
+/-! ## Precondition with alias test
+
+Verifies that calling `put_item(Bucket="", ...)` through the alias resolution
+path produces a `✖️ always false` result for the "Bucket must not be empty"
+assertion. This exercises the full pipeline with type alias resolution.
+-/
+
+#eval withPython fun _pythonCmd => do
+  IO.FS.withTempDir fun tmpDir => do
+    let (dispatchIon, pyspecPaths) ← setupFixture _pythonCmd tmpDir
+    let result ← runAnalyzeAndVerify dispatchIon tmpDir
+      "test_precondition_with_alias.py" pyspecPaths
+    match result with
+    | .error msg => throw <| IO.userError s!"Pipeline failed: {msg}"
+    | .ok vcResults =>
+      let mut foundAlwaysFalse := false
+      for r in vcResults do
+        if r.obligation.label.startsWith "Storage_" then
+          let msg := r.obligation.metadata.findSome? fun elem =>
+            match elem.fld, elem.value with
+            | .label "message", .msg s => some s
+            | _, _ => none
+          let msgStr := msg.map (s!" ({·})") |>.getD ""
+          let line := s!"{r.obligation.label}: {r.formatOutcome}{msgStr}"
+          IO.println line
+          if (line.splitOn "✖️").length != 1 then
+            foundAlwaysFalse := true
+      if !foundAlwaysFalse then
+        throw <| IO.userError
+          "Expected ✖️ always false for empty bucket violation"
 
 end Strata.Python.AnalyzeLaurelTest
