@@ -1721,9 +1721,6 @@ def pythonToLaurel' (info : PreludeInfo)
             let unprefixedName := unprefixed ++ name.drop prefixed.length
             procs'.insert unprefixedName sig
           else procs'
-    -- Add unprefixed class names so Python type annotations resolve
-    let compositeTypeNames := info.typeAliases.fold (init := compositeTypeNames)
-      fun s unprefixed _ => s.insert unprefixed
     -- Add unprefixed procedure names to inlinableProcedures
     let inlinableProcedures := info.typeAliases.fold (init := info.inlinableProcedures)
       fun s unprefixed prefixed =>
