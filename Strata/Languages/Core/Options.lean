@@ -109,6 +109,8 @@ structure VerifyOptions where
   /-- Use the incremental (in-memory) CoreSMT verification engine instead of
       the default batch SMT file approach. -/
   incremental : Bool
+  /-- Always run SMT solver, even if the verification condition is trivial. -/
+  alwaysRunSMT : Bool
 
 def VerifyOptions.default : VerifyOptions := {
   verbose := .normal,
@@ -125,6 +127,7 @@ def VerifyOptions.default : VerifyOptions := {
   checkMode := .deductive
   checkLevel := .minimal
   incremental := false
+  alwaysRunSMT := false
 }
 
 instance : Inhabited VerifyOptions where
