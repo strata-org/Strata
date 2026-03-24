@@ -222,9 +222,6 @@ def ofOptionM {α β} [Repr α] [SizeOf α]
       pure { ann := ann, val := none }
     | some v =>
       (fun v => { ann := ann, val := some v }) <$> act v (by decreasing_tactic)
-  -- Treat Init.boolFalse as none (used by some generators to represent absent optional values)
-  | .op ⟨ann, q`Init.boolFalse, #[]⟩ =>
-      pure { ann := ann, val := none }
   | _ => throwExpected "option" arg
 
 def ofSeqM {α β} [Repr α] [SizeOf α]
