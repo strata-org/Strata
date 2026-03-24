@@ -146,13 +146,13 @@ theorem StmtToNondetCorrect
     Stmt.noFuncDecl st →
     ∀ (ρ ρ' : Env P), ρ.eval = δ → ρ'.eval = δ →
     EvalStmt P (Cmd P) (EvalCmd P) extendEval ρ st ρ' →
-    EvalNondetStmt P (Cmd P) (EvalCmd P) δ ρ.store (StmtToNondetStmt st) ρ'.store) ∧
+    EvalNondetStmt P (Cmd P) (EvalCmd P) ρ (StmtToNondetStmt st) ρ') ∧
   (∀ ss,
     Block.sizeOf ss ≤ m →
     Block.noFuncDecl ss →
     ∀ (ρ ρ' : Env P), ρ.eval = δ → ρ'.eval = δ →
     EvalBlock P (Cmd P) (EvalCmd P) extendEval ρ ss ρ' →
-    EvalNondetStmt P (Cmd P) (EvalCmd P) δ ρ.store (BlockToNondetStmt ss) ρ'.store) := by
+    EvalNondetStmt P (Cmd P) (EvalCmd P) ρ (BlockToNondetStmt ss) ρ') := by
   intros Hwfb Hwfvl
   apply Nat.strongRecOn (motive := λ m ↦
     (∀ st,
@@ -160,68 +160,55 @@ theorem StmtToNondetCorrect
       Stmt.noFuncDecl st →
       ∀ (ρ ρ' : Env P), ρ.eval = δ → ρ'.eval = δ →
       EvalStmt P (Cmd P) (EvalCmd P) extendEval ρ st ρ' →
-      EvalNondetStmt P (Cmd P) (EvalCmd P) δ ρ.store (StmtToNondetStmt st) ρ'.store) ∧
+      EvalNondetStmt P (Cmd P) (EvalCmd P) ρ (StmtToNondetStmt st) ρ') ∧
     (∀ ss,
       Block.sizeOf ss ≤ m →
       Block.noFuncDecl ss →
       ∀ (ρ ρ' : Env P), ρ.eval = δ → ρ'.eval = δ →
       EvalBlock P (Cmd P) (EvalCmd P) extendEval ρ ss ρ' →
-      EvalNondetStmt P (Cmd P) (EvalCmd P) δ ρ.store (BlockToNondetStmt ss) ρ'.store)
+      EvalNondetStmt P (Cmd P) (EvalCmd P) ρ (BlockToNondetStmt ss) ρ')
   )
   intros n ih
+  -- Helper: the env produced by assume (|| false) is propositionally the input
+  have assume_env_eq : ∀ (ρ : Env P),
+      ({ store := ρ.store, eval := ρ.eval, hasFailure := ρ.hasFailure || false } : Env P) = ρ := by
+    intro ρ; cases ρ; simp [Bool.or_false]
   refine ⟨?_, ?_⟩
   . intros st Hsz Hno ρ ρ' Hρδ Hρ'δ Heval
     match st with
     | .cmd c =>
       cases Heval with
       | cmd_sem Hcmd Hdef =>
-        simp at *
-        rw [Hρδ] at Hcmd
         exact EvalNondetStmt.cmd_sem Hcmd Hdef
     | .block _ bss _ =>
       cases Heval with
       | block_sem Heval =>
       simp [Stmt.noFuncDecl] at Hno
       specialize ih (Block.sizeOf bss) (by simp_all; omega)
-      apply ih.2
-      · omega
-      · exact Hno
-      · exact Hρδ
-      · exact Hρ'δ
-      · exact Heval
+      exact ih.2 _ (by omega) Hno ρ ρ' Hρδ Hρ'δ Heval
     | .ite c tss ess _ =>
       cases Heval with
       | ite_true_sem Htrue Hwfb' Heval =>
         simp [Stmt.noFuncDecl] at Hno
         specialize ih (Block.sizeOf tss) (by simp_all; omega)
-        rw [Hρδ] at Htrue
-        refine EvalNondetStmt.choice_left_sem Hwfb ?_
-        apply EvalNondetStmt.seq_sem
-        . apply EvalNondetStmt.cmd_sem
-          exact EvalCmd.eval_assume Htrue Hwfb
-          simp [isDefinedOver, HasVarsImp.modifiedVars, Cmd.modifiedVars, isDefined]
-        . apply ih.2
-          · omega
-          · exact Hno.1
-          · exact Hρδ
-          · exact Hρ'δ
-          · exact Heval
+        have Hnd := ih.2 _ (by omega) Hno.1 ρ ρ' Hρδ Hρ'δ Heval
+        rw [← assume_env_eq ρ] at Hnd
+        exact EvalNondetStmt.choice_left_sem Hwfb'
+          (EvalNondetStmt.seq_sem
+            (EvalNondetStmt.cmd_sem (EvalCmd.eval_assume Htrue Hwfb')
+              (by simp [isDefinedOver, HasVarsImp.modifiedVars, Cmd.modifiedVars, isDefined]))
+            Hnd)
       | ite_false_sem Hfalse Hwfb' Heval =>
         simp [Stmt.noFuncDecl] at Hno
         specialize ih (Block.sizeOf ess) (by simp_all; omega)
-        rw [Hρδ] at Hfalse
-        refine EvalNondetStmt.choice_right_sem Hwfb ?_
-        apply EvalNondetStmt.seq_sem
-        . apply EvalNondetStmt.cmd_sem
-          refine EvalCmd.eval_assume ?_ Hwfb
-          exact (Hwfb ρ.store c).2.mp Hfalse
-          simp [isDefinedOver, HasVarsImp.modifiedVars, Cmd.modifiedVars, isDefined]
-        . apply ih.2
-          · omega
-          · exact Hno.2
-          · exact Hρδ
-          · exact Hρ'δ
-          · exact Heval
+        have Hnd := ih.2 _ (by omega) Hno.2 ρ ρ' Hρδ Hρ'δ Heval
+        rw [← assume_env_eq ρ] at Hnd
+        exact EvalNondetStmt.choice_right_sem Hwfb'
+          (EvalNondetStmt.seq_sem
+            (EvalNondetStmt.cmd_sem
+              (EvalCmd.eval_assume ((Hwfb' ρ.store c).2.mp Hfalse) Hwfb')
+              (by simp [isDefinedOver, HasVarsImp.modifiedVars, Cmd.modifiedVars, isDefined]))
+            Hnd)
     | .exit _ _ =>
       cases Heval
     | .loop _ _ _ _ _ =>
@@ -231,23 +218,30 @@ theorem StmtToNondetCorrect
     | .typeDecl _ md =>
       cases Heval with
       | typeDecl_sem =>
-        simp [StmtToNondetStmt]
+        simp only [StmtToNondetStmt, NondetStmt.assume]
+        suffices h : EvalNondetStmt P (Cmd P) (EvalCmd P) ρ _
+            { store := ρ.store, eval := ρ.eval, hasFailure := ρ.hasFailure || false } by
+          rw [assume_env_eq] at h; exact h
         apply EvalNondetStmt.cmd_sem
         · exact EvalCmd.eval_assume
-            (by have ⟨Htt, _⟩ := HasBoolVal.bool_is_val (P := P); exact Hwfvl.2 HasBool.tt ρ.store Htt)
-            Hwfb
+            (by have ⟨Htt, _⟩ := HasBoolVal.bool_is_val (P := P)
+                rw [Hρδ]; exact Hwfvl.2 HasBool.tt ρ.store Htt)
+            (by rw [Hρδ]; exact Hwfb)
         · simp [isDefinedOver, HasVarsImp.modifiedVars, Cmd.modifiedVars, isDefined]
   . intros ss Hsz Hno ρ ρ' Hρδ Hρ'δ Heval
     cases ss <;>
     cases Heval
     case stmts_none_sem =>
-      simp [BlockToNondetStmt]
+      simp only [BlockToNondetStmt, NondetStmt.assume]
+      suffices h : EvalNondetStmt P (Cmd P) (EvalCmd P) ρ _
+          { store := ρ.store, eval := ρ.eval, hasFailure := ρ.hasFailure || false } by
+        rw [assume_env_eq] at h; exact h
       apply EvalNondetStmt.cmd_sem
       · exact EvalCmd.eval_assume
           (by simp [WellFormedSemanticEvalVal] at Hwfvl
               have Hval : HasVal.value (HasBool.tt (P := P)) := HasBoolVal.bool_is_val.1
-              exact Hwfvl.2 HasBool.tt ρ.store Hval)
-          Hwfb
+              rw [Hρδ]; exact Hwfvl.2 HasBool.tt ρ.store Hval)
+          (by rw [Hρδ]; exact Hwfb)
       · intros id Hin
         simp [HasVarsImp.modifiedVars, Cmd.modifiedVars] at Hin
     case stmts_some_sem h t ρ₁ Heval Hevals =>
@@ -255,22 +249,11 @@ theorem StmtToNondetCorrect
       simp [Block.sizeOf] at Hsz
       simp [Block.noFuncDecl] at Hno
       have Hδ₁ : ρ₁.eval = ρ.eval := EvalStmt_noFuncDecl_preserves_eval extendEval h ρ ρ₁ Hno.1 Heval
-      -- Now ρ₁.eval = ρ.eval = δ
       have Hρ₁δ : ρ₁.eval = δ := by rw [Hδ₁, Hρδ]
       specialize ih (h.sizeOf + Block.sizeOf t) (by omega)
-      constructor
-      . apply ih.1
-        · omega
-        · exact Hno.1
-        · exact Hρδ
-        · exact Hρ₁δ
-        · exact Heval
-      . apply ih.2
-        · omega
-        · exact Hno.2
-        · exact Hρ₁δ
-        · exact Hρ'δ
-        · exact Hevals
+      exact EvalNondetStmt.seq_sem
+        (ih.1 _ (by omega) Hno.1 ρ ρ₁ Hρδ Hρ₁δ Heval)
+        (ih.2 _ (by omega) Hno.2 ρ₁ ρ' Hρ₁δ Hρ'δ Hevals)
 
 /-- Proof that the Deterministic-to-nondeterministic transformation is correct
 for a single (deterministic) statement that contains no function declarations. -/
@@ -282,7 +265,7 @@ theorem StmtToNondetStmtCorrect
   Stmt.noFuncDecl st →
   ∀ (ρ ρ' : Env P), ρ.eval = δ → ρ'.eval = δ →
   EvalStmt P (Cmd P) (EvalCmd P) extendEval ρ st ρ' →
-  EvalNondetStmt P (Cmd P) (EvalCmd P) δ ρ.store (StmtToNondetStmt st) ρ'.store := by
+  EvalNondetStmt P (Cmd P) (EvalCmd P) ρ (StmtToNondetStmt st) ρ' := by
   intros Hwfb Hwfv Hno ρ ρ' Hρδ Hρ'δ Heval
   exact (StmtToNondetCorrect extendEval Hwfb Hwfv (m:=st.sizeOf)).1 st (Nat.le_refl _) Hno ρ ρ' Hρδ Hρ'δ Heval
 
@@ -296,7 +279,7 @@ theorem BlockToNondetStmtCorrect
   Block.noFuncDecl ss →
   ∀ (ρ ρ' : Env P), ρ.eval = δ → ρ'.eval = δ →
   EvalBlock P (Cmd P) (EvalCmd P) extendEval ρ ss ρ' →
-  EvalNondetStmt P (Cmd P) (EvalCmd P) δ ρ.store (BlockToNondetStmt ss) ρ'.store := by
+  EvalNondetStmt P (Cmd P) (EvalCmd P) ρ (BlockToNondetStmt ss) ρ' := by
   intros Hwfb Hwfv Hno ρ ρ' Hρδ Hρ'δ Heval
   exact (StmtToNondetCorrect extendEval Hwfb Hwfv (m:=Block.sizeOf ss)).2 ss (Nat.le_refl _) Hno ρ ρ' Hρδ Hρ'δ Heval
 
