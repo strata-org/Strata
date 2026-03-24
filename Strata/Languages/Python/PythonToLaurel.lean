@@ -1487,7 +1487,8 @@ def translateClass (ctx : TranslationContext) (classStmt : Python.stmt SourceRan
     let mut instanceProcedures : List Procedure := []
     for methodStmt in methodStmts do
       let proc ← translateMethod ctx className methodStmt
-      instanceProcedures := instanceProcedures ++ [proc]
+        -- TODO don't replace the body with an empty one
+      instanceProcedures := instanceProcedures ++ [{ proc with body := .Opaque [] .none [] }]
 
     return ({
       name := className
@@ -1667,9 +1668,8 @@ def pythonToLaurel' (info : PreludeInfo)
           classFieldHighType := classFieldHighType,
           filePath := filePath
         }
-        let (composite, _instanceProcedures) ← translateClass initCtx stmt
-        -- TODO uncomment this line and resolve compilation issues
-        -- procedures := procedures ++ _instanceProcedures
+        let (composite, instanceProcedures) ← translateClass initCtx stmt
+        procedures := procedures ++ instanceProcedures
         compositeTypes := compositeTypes ++ [composite]
         compositeTypeNames := compositeTypeNames.insert composite.name.text
         -- Collect field types for Any coercions in field accesses
