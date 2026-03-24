@@ -485,7 +485,7 @@ partial def translateExpr (ctx : TranslationContext) (e : Python.expr SourceRang
     else
       let first ← translateExpr ctx values.val[0]!
       return first
-      
+
   | .IfExp _ cond thenb elseb =>
     let condExpr ← translateExpr ctx cond
     let thenExpr ← translateExpr ctx thenb
