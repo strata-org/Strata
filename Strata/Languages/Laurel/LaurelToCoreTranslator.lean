@@ -56,7 +56,6 @@ def translateType (model : SemanticModel) (ty : HighTypeMd) : LMonoTy :=
   | .TSet elementType => Core.mapTy (translateType model elementType) LMonoTy.bool
   | .TMap keyType valueType => Core.mapTy (translateType model keyType) (translateType model valueType)
   | .UserDefined name =>
-    -- Composite types map to "Composite"; datatypes map to their own name
     match name.uniqueId.bind model.refToDef.get? with
     | some (.compositeType _) => .tcons "Composite" []
     | some (.datatypeDefinition dt) => .tcons dt.name.text []

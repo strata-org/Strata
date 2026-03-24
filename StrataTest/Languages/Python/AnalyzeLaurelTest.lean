@@ -8,6 +8,7 @@ module
 meta import Strata.SimpleAPI
 meta import Strata.Languages.Python.PySpecPipeline
 meta import Strata.Transform.ProcedureInlining
+meta import Strata.Languages.Python.PyFactory
 meta import StrataTest.Util.Python
 
 /-! ## End-to-end tests for `pyAnalyzeLaurel` with dispatch
@@ -100,7 +101,7 @@ private meta def runAnalyze (dispatchIon : System.FilePath)
   match Strata.translateCombinedLaurel laurel with
   | (some core, []) =>
     -- Also run Core type checking to catch semantic errors (e.g. Heap vs Any)
-    match Core.typeCheck Core.VerifyOptions.quiet core with
+    match Core.typeCheck Core.VerifyOptions.quiet core (moreFns := Strata.Python.ReFactory) with
     | .error diag => return .error s!"Core type checking failed: {diag}"
     | .ok _ => return .ok core
   | (_, errors) => return .error s!"Laurel to Core translation failed: {errors}"
@@ -122,9 +123,15 @@ private meta def runAnalyzeAndVerify (dispatchIon : System.FilePath)
     | none => return .error "Laurel to Core translation failed"
     | some core => pure core
   -- Inline all non-main procedures
+  -- Inline all non-main, non-prelude procedures
+  let mut preludeNames : Std.HashSet String := {}
+  for d in coreProgram.decls do
+    if toString d.name == "FIRST_END_MARKER" then break
+    if let some p := d.getProc? then
+      preludeNames := preludeNames.insert (Core.CoreIdent.toPretty p.header.name)
   let coreProgram ← match Core.Transform.runProgram (targetProcList := .none)
         (Core.ProcedureInlining.inlineCallCmd
-          (doInline := λ name _ => name ≠ "__main__"))
+          (doInline := λ name _ => name ≠ "__main__" && !preludeNames.contains name))
         coreProgram .emp with
     | ⟨.error e, _⟩ => return .error s!"Inlining failed: {e}"
     | ⟨.ok (_, inlined), _⟩ => pure inlined

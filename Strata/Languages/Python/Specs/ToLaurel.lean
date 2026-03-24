@@ -340,9 +340,11 @@ partial def specExprToLaurel (e : SpecExpr) : ToLaurelM (Option StmtExprMd) :=
       return c?.map fun c =>
         let unwrapped := mkStmt (.StaticCall (mkId "Any..as_Dict!") [c])
         mkStmt (.StaticCall (mkId "DictStrAny_contains") [unwrapped, mkStmt (.LiteralString key)])
-  | .regexMatch _ _ => do
-    reportError default "regexMatch not yet supported (requires PR #623)"
-    return none
+  | .regexMatch subject pattern => do
+    let s? ← specExprToLaurel subject
+    return s?.map fun s =>
+      let sStr := mkStmt (.StaticCall (mkId "Any..as_string!") [s])
+      mkStmt (.StaticCall (mkId "re_search_bool") [mkStmt (.LiteralString pattern), sStr])
   | .forallList _ _ _ => do
     reportError default "forallList quantifier not yet supported in preconditions"
     return none
