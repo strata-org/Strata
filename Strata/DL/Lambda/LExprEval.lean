@@ -293,16 +293,9 @@ def evalEq (n' : Nat) (σ : LState TBase) (m: TBase.Metadata) (e1 e2 : LExpr TBa
   open LTy.Syntax in
   let e1' := eval n' σ e1
   let e2' := eval n' σ e2
-  if eqModuloMeta e1' e2' then
-    -- Short-circuit: e1' and e2' are syntactically the same after type erasure.
-    LExpr.true m
-  else if isCanonicalValue σ.config.factory e1' ∧
-             isCanonicalValue σ.config.factory e2' then
-    match eql σ.config.factory e1' e2' with
-    | some b => .const m (.boolConst b)
-    | none => .eq m e1' e2'
-  else
-    .eq m e1' e2'
+  match eql σ.config.factory e1' e2' with
+  | some b => .const m (.boolConst b)
+  | none => .eq m e1' e2'
 
 def evalApp (n' : Nat) (σ : LState TBase) (e e1 e2 : LExpr TBase.mono) : LExpr TBase.mono :=
   let e1' := eval n' σ e1
