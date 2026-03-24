@@ -529,6 +529,49 @@ def translateProcedure (proc : Procedure) : TranslateM Core.Procedure := do
   let spec : Core.Procedure.Spec := { modifies, preconditions, postconditions }
   return { header, spec, body }
 
+/--
+Generate a Core axiom for a Laurel procedure that has an `autoInvoke` trigger.
+
+The axiom universally quantifies over the procedure's input parameters, uses the
+`autoInvoke` expression as the SMT trigger, and asserts the conjunction of all
+postconditions from an `Opaque` body.
+
+For a procedure `f(x: Int)` with `autoInvoke { f(x) }` and `ensures P(x)`, this emits:
+  `axiom autoInvoke_f: ∀ x: int :: { f(x) } P(x)`
+-/
+def translateAutoInvokeAxiom (proc : Procedure) (trigger : StmtExprMd)
+    : TranslateM (Option Core.Decl) := do
+  let model := (← get).model
+  let postconds := match proc.body with
+    | .Opaque postconds _ _ => postconds
+    | _ => []
+  if postconds.isEmpty then return none
+  -- All input param names become bound variables (outermost first = index 0 for first param)
+  let boundVars := proc.inputs.map (·.name)
+  -- Translate postconditions and trigger with the full bound-var context
+  let postcondExprs ← postconds.mapM (fun pc => translateExpr pc boundVars (isPureContext := true))
+  let bodyExpr : Core.Expression.Expr := match postcondExprs with
+    | [] => .const () (.boolConst true)
+    | [e] => e
+    | e :: rest => rest.foldl (fun acc x => LExpr.mkApp () boolAndOp [acc, x]) e
+  let triggerExpr ← translateExpr trigger boundVars (isPureContext := true)
+  -- Wrap in ∀ from outermost (first param) to innermost (last param).
+  -- The trigger is placed on the innermost quantifier.
+  let quantified := buildQuants model proc.inputs bodyExpr triggerExpr
+  return some (.ax { name := s!"autoInvoke_{proc.name.text}", e := quantified })
+where
+  /-- Build `∀ p1 ... pn :: { trigger } body`. The trigger is on the innermost quantifier. -/
+  buildQuants (model : SemanticModel) (params : List Parameter)
+      (body : Core.Expression.Expr) (trigger : Core.Expression.Expr)
+      : Core.Expression.Expr :=
+    match params with
+    | [] => body
+    | [p] =>
+      LExpr.allTr () p.name.text (some (translateType model p.type)) trigger body
+    | p :: rest =>
+      LExpr.all () p.name.text (some (translateType model p.type))
+        (buildQuants model rest body trigger)
+
 partial def isRecursiveExpr (model: SemanticModel) (proc: Procedure) (expr : StmtExpr) : Bool := match expr with
   | .StaticCall callee args =>
     -- Compare by text name: the callee's uniqueId in the body may differ from the
@@ -726,6 +769,12 @@ def translate (options: LaurelTranslateOptions) (program : Program): TranslateRe
     -- Translate procedures using the monad, collecting diagnostics from the final state
     let procedures ← procProcs.mapM translateProcedure
 
+    -- Generate autoInvoke axioms for procedures that declare one
+    let autoInvokeAxioms ← procProcs.filterMapM (fun proc =>
+      match proc.autoInvoke with
+      | some trigger => translateAutoInvokeAxiom proc trigger
+      | none => pure none)
+
     -- Translate Laurel constants to Core function declarations (0-ary functions)
     let constantDecls ← program.constants.mapM fun c => do
       let coreTy := translateType model c.type
@@ -747,7 +796,7 @@ def translate (options: LaurelTranslateOptions) (program : Program): TranslateRe
     -- Translate Laurel datatype definitions to Core declarations.
     let groupedDatatypeDecls ← translateTypes program model
     let program := {
-      decls := groupedDatatypeDecls ++ constantDecls ++ pureFuncDecls ++ procDecls
+      decls := groupedDatatypeDecls ++ constantDecls ++ pureFuncDecls ++ procDecls ++ autoInvokeAxioms
     }
 
     -- dbg_trace "=== Generated Strata Core Program ==="
