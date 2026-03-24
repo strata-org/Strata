@@ -55,7 +55,7 @@ Returns `some true` if provably equal, `some false` if provably not equal,
 
 This test is relatively conservative:
 - Terms are equal if syntactically equal
-- Syntactically different constants are not equal
+- Syntactically different, non-real constants are not equal
 - Closed lambdas of the same type are compared extensionally (i.e.
 syntactically after substituting a fresh variable for the body). Note that this
 does not evaluate the body, which may not be a canonical value.
