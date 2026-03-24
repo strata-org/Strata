@@ -28,10 +28,16 @@ procedure newsAreNotEqual() {
 
 procedure simpleAssign() {
   var c: Container := new Container;
+  var iv: int := c#intValue;
+  var rv: real := c#realValue;
+  var bv: bool := c#boolValue;
+  var sv: string := c#stringValue;
+
   c#intValue := 2;
   c#realValue := 3.0;
   c#boolValue := true;
   c#stringValue := "hello";
+
   assert c#intValue == 2;
   assert c#realValue == 3.0;
   assert c#boolValue == true;
