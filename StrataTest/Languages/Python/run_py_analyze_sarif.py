@@ -40,6 +40,8 @@ SKIP_TESTS = BOTH_SKIP | {
     "test_multi_function",
     "test_multiple_except",
     "test_nested_calls",
+    "test_regex_negative",
+    "test_regex_positive",
     "test_return_types",
     "test_subscription",
     "test_try_except",

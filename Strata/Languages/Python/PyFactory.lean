@@ -16,91 +16,110 @@ public section
 -------------------------------------------------------------------------------
 
 /-
-Candidate translation pass for Python `re` code:
+## Python regex verification — factory functions
 
-## Python Code:
+These factory functions provide `concreteEval` implementations that call
+`pythonRegexToCore` to translate Python regex pattern strings into SMT-LIB
+regex expressions at verification time.
 
-```
-...
-PATTERN = r"^[a-z0-9][a-z0-9.-]{1,3}[a-z0-9]$"
-REGEX = re.compile(PATTERN) # default flags == 0
-...
-if not re.match(REGEX, name) then # default flags == 0
-  return False
-...
-```
+### Architecture
 
-## Corresponding Strata.Core:
+Python's `re.compile` is a semantic no-op in the Laurel pipeline — it returns
+the pattern string unchanged.  The actual compilation to SMT-LIB regex happens
+at the point of matching (`re.fullmatch`, `re.match`, `re.search`), where the
+match mode is known.
 
-```
-procedure _main () {
+This is important because `pythonRegexToCore` produces *different* regex
+expressions depending on the mode -- in particular, it handles anchors (`^`/`$`)
+by generating a union of anchor-activation variants with appropriate `.*`
+wrapping (see `ReToCore.lean`).  Compiling once at `re.compile` time would
+require knowing the eventual match mode, which is not available.
 
-var PATTERN : string = "^[a-z0-9][a-z0-9.-]{1,3}[a-z0-9]$";
+### Factory functions
 
-var REGEX : regex;
-var $__REGEX : Except Error regex := PyReCompile(PATTERN, 0)
+Each call to `re.fullmatch(pattern, s)` (and similarly `re.match`/`re.search`)
+causes `pythonRegexToCore` to be called twice via `concreteEval`:
 
-if ExceptErrorRegex_isOK($__REGEX) then {
-  REGEX := ExceptErrorRegex_getOK($__REGEX);
-} else if (Error_isUnimplemented(ExceptErrorRegex_getError($__REGEX)) then {
-  // Unsupported by Strata.
-  havoc REGEX;
-} else {
-  //
-  // TODO: Implement a version of `assert` that takes an expression to be
-  // evaluated when the assertion fails. In this case, we'd display the
-  // (computed) error message in `ExceptErrorRegex_getError($__REGEX)`.
-  //
-  // E.g., `assert false (printOnFailure := ExceptErrorRegex_getError($__REGEX));`
-  //
-  assert false;
-}
-...
+1. **`re_pattern_error(pattern)`** — Parses the pattern and returns
+   `NoError()` on success or `RePatternError(msg)` for a genuinely malformed
+   pattern.  Unimplemented features return `NoError()` because Python would
+   succeed at runtime; the mode-specific factory staying uninterpreted provides
+   a sound over-approximation for those cases.  The prelude checks this first
+   and returns `exception(err)` for pattern errors, modeling Python's
+   `re.error`.
 
-if not PyReMatch(REGEX, name, 0) then
-  return false
-}
-```
+2. **`re_fullmatch_str(pattern)`** (or `re_match_str`/`re_search_str`) —
+   Compiles the pattern with the correct `MatchMode`.  Returns the compiled
+   regex on success, or `.none` on error (leaving the function uninterpreted).
+   Since pattern errors are already caught by `re_pattern_error`, the `.none`
+   case here only fires for unimplemented features, producing `unknown` VCs —
+   a sound over-approximation.
 
+The double parse is defensible because `pythonRegexToCore` is fast enough -- it
+runs at translation time, not solver time, and keeps the factory functions
+orthogonal.
 -/
 
 open Core
 open Lambda LTy.Syntax LExpr.SyntaxMono
 
-def reCompileFunc : LFunc Core.CoreLParams :=
-    { name := "PyReCompile",
+-- Mode-specific regex compilation.  Each function compiles a Python regex
+-- string with the correct MatchMode so that anchors (^/$) are handled
+-- properly.
+private def mkModeCompileFunc (name : String) (mode : MatchMode) :
+    LFunc Core.CoreLParams :=
+    { name := name,
       typeArgs := [],
-      inputs := [("string", mty[string]),
-                 ("flags", mty[int])]
-      output := mty[ExceptErrorRegex],
+      inputs := [("pattern", mty[string])],
+      output := mty[regex],
       concreteEval := some
         (fun _ args => match args with
-          | [LExpr.strConst () s, LExpr.intConst () 0] =>
-            -- This function has a concrete evaluation implementation only when
-            -- flags == 0.
-            -- (FIXME): We use `.match` mode below because we support only
-            -- `re.match` for now. However, `re.compile` isn't mode-specific in
-            -- general.
-            let (expr, maybe_err) := pythonRegexToCore s .match
+          | [LExpr.strConst () s] =>
+            let (expr, maybe_err) := pythonRegexToCore s mode
+            match maybe_err with
+            | none => .some expr
+            | some _ => .none
+          | _ => .none)
+      }
+
+def reFullmatchStrFunc : LFunc Core.CoreLParams :=
+  mkModeCompileFunc "re_fullmatch_str" .fullmatch
+def reMatchStrFunc     : LFunc Core.CoreLParams :=
+  mkModeCompileFunc "re_match_str"     .match
+def reSearchStrFunc    : LFunc Core.CoreLParams :=
+  mkModeCompileFunc "re_search_str"    .search
+
+def rePatternErrorFunc : LFunc Core.CoreLParams :=
+    { name := "re_pattern_error",
+      typeArgs := [],
+      inputs := [("pattern", mty[string])],
+      output := mty[Error],
+      concreteEval := some
+        (fun _ args => match args with
+          | [LExpr.strConst () s] =>
+            let (_, maybe_err) := pythonRegexToCore s .fullmatch -- mode irrelevant: errors come from parseTop before mode-specific compilation
             match maybe_err with
             | none =>
-              -- Note: Do not use `eb` (in Strata Core Syntax) here (e.g., see below)
-              -- eb[(~ExceptErrorRegex_mkOK expr)]
-              -- that captures `expr` as an `.fvar`.
-              .some (LExpr.mkApp () (.op () "ExceptErrorRegex_mkOK" none) [expr])
-            | some (ParseError.unimplemented msg _pattern _pos) =>
-              .some (LExpr.mkApp () (.op () "ExceptErrorRegex_mkErr" none)
-                  [LExpr.mkApp () (.op () "Error_Unimplemented" none) [.strConst () (toString msg)]])
-            | some (ParseError.patternError msg _pattern _pos) =>
-              .some (LExpr.mkApp () (.op () "ExceptErrorRegex_mkErr" none)
-                  [LExpr.mkApp () (.op () "Error_RePatternErr" none) [.strConst () (toString msg)]])
+              .some (LExpr.mkApp () (.op () "NoError" (some mty[Error])) [])
+            | some (ParseError.unimplemented ..) =>
+              .some (LExpr.mkApp () (.op () "NoError" (some mty[Error])) [])
+            | some (ParseError.patternError msg ..) =>
+              .some (LExpr.mkApp () (.op () "RePatternError" (some mty[string → Error]))
+                  [.strConst () (toString msg)])
           | _ => .none)
       }
 
 def ReFactory : @Factory Core.CoreLParams :=
     #[
-      reCompileFunc
+      reFullmatchStrFunc,
+      reMatchStrFunc,
+      reSearchStrFunc,
+      rePatternErrorFunc
     ]
+
+/-- Core.Factory extended with regex factory functions. -/
+def PythonFactory : @Lambda.Factory Core.CoreLParams :=
+    Core.Factory.append ReFactory
 
 end -- public section
 

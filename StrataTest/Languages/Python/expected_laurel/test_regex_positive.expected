@@ -1,0 +1,453 @@
+
+==== Verification Results ====
+List_get_body_calls_List_get_0: ✅ pass
+List_take_body_calls_List_take_0: ✅ pass
+List_drop_body_calls_List_drop_0: ✅ pass
+List_slice_body_calls_List_drop_0: ✅ pass
+List_slice_body_calls_List_take_1: ✅ pass
+List_set_body_calls_List_set_0: ✅ pass
+DictStrAny_get_body_calls_DictStrAny_get_0: ✅ pass
+Any_get_body_calls_DictStrAny_get_0: ✅ pass
+Any_get_body_calls_List_get_1: ✅ pass
+Any_get_body_calls_List_slice_2: ✅ pass
+Any_get_body_calls_List_drop_3: ✅ pass
+Any_get!_body_calls_DictStrAny_get_0: ✅ pass
+Any_get!_body_calls_List_get_1: ✅ pass
+Any_set_body_calls_List_set_0: ✅ pass
+Any_set!_body_calls_List_set_0: ✅ pass
+PFloorDiv_body_calls_Int.SafeDiv_0: ✅ pass
+PFloorDiv_body_calls_Int.SafeDiv_1: ✅ pass
+PFloorDiv_body_calls_Int.SafeDiv_2: ✅ pass
+PFloorDiv_body_calls_Int.SafeDiv_3: ✅ pass
+PAnd_body_calls_Any_to_bool_0: ✅ pass
+POr_body_calls_Any_to_bool_0: ✅ pass
+ret_type: ✅ pass (in prelude file)
+ret_type: ✅ pass (in prelude file)
+ret_pos: ✅ pass (in prelude file)
+assert_name_is_foo: ✅ pass (in prelude file)
+assert_opt_name_none_or_str: ✅ pass (in prelude file)
+assert_opt_name_none_or_bar: ✅ pass (in prelude file)
+ensures_maybe_except_none: ✅ pass (in prelude file)
+set_m_calls_re_fullmatch_0: ✅ pass
+assert_assert(215)_calls_Any_to_bool_0: ✅ pass (at line 8, col 4)
+assert(215): ✅ pass (at line 8, col 4)
+set_m_calls_re_fullmatch_0: ✅ pass
+assert_assert(308)_calls_Any_to_bool_0: ✅ pass (at line 11, col 4)
+assert(308): ✅ pass (at line 11, col 4)
+set_m_calls_re_fullmatch_0: ✅ pass
+assert_assert(440)_calls_Any_to_bool_0: ✅ pass (at line 15, col 4)
+assert(440): ✅ pass (at line 15, col 4)
+set_m_calls_re_fullmatch_0: ✅ pass
+assert_assert(540)_calls_Any_to_bool_0: ✅ pass (at line 18, col 4)
+assert(540): ✅ pass (at line 18, col 4)
+set_m_calls_re_fullmatch_0: ✅ pass
+assert_assert(672)_calls_Any_to_bool_0: ✅ pass (at line 22, col 4)
+assert(672): ✅ pass (at line 22, col 4)
+set_m_calls_re_fullmatch_0: ✅ pass
+assert_assert(790)_calls_Any_to_bool_0: ✅ pass (at line 25, col 4)
+assert(790): ✅ pass (at line 25, col 4)
+set_m_calls_re_fullmatch_0: ✅ pass
+assert_assert(921)_calls_Any_to_bool_0: ✅ pass (at line 29, col 4)
+assert(921): ✅ pass (at line 29, col 4)
+set_m_calls_re_fullmatch_0: ✅ pass
+assert_assert(1021)_calls_Any_to_bool_0: ✅ pass (at line 32, col 4)
+assert(1021): ✅ pass (at line 32, col 4)
+set_m_calls_re_fullmatch_0: ✅ pass
+assert_assert(1147)_calls_Any_to_bool_0: ✅ pass (at line 36, col 4)
+assert(1147): ✅ pass (at line 36, col 4)
+set_m_calls_re_fullmatch_0: ✅ pass
+assert_assert(1239)_calls_Any_to_bool_0: ✅ pass (at line 39, col 4)
+assert(1239): ✅ pass (at line 39, col 4)
+set_m_calls_re_fullmatch_0: ✅ pass
+assert_assert(1332)_calls_Any_to_bool_0: ✅ pass (at line 42, col 4)
+assert(1332): ✅ pass (at line 42, col 4)
+set_m_calls_re_fullmatch_0: ✅ pass
+assert_assert(1446)_calls_Any_to_bool_0: ✅ pass (at line 46, col 4)
+assert(1446): ✅ pass (at line 46, col 4)
+set_m_calls_re_fullmatch_0: ✅ pass
+assert_assert(1539)_calls_Any_to_bool_0: ✅ pass (at line 49, col 4)
+assert(1539): ✅ pass (at line 49, col 4)
+set_m_calls_re_fullmatch_0: ✅ pass
+assert_assert(1666)_calls_Any_to_bool_0: ✅ pass (at line 53, col 4)
+assert(1666): ✅ pass (at line 53, col 4)
+set_m_calls_re_fullmatch_0: ✅ pass
+assert_assert(1766)_calls_Any_to_bool_0: ✅ pass (at line 56, col 4)
+assert(1766): ✅ pass (at line 56, col 4)
+set_m_calls_re_fullmatch_0: ✅ pass
+assert_assert(1864)_calls_Any_to_bool_0: ✅ pass (at line 59, col 4)
+assert(1864): ✅ pass (at line 59, col 4)
+set_m_calls_re_fullmatch_0: ✅ pass
+assert_assert(1984)_calls_Any_to_bool_0: ✅ pass (at line 63, col 4)
+assert(1984): ✅ pass (at line 63, col 4)
+set_m_calls_re_fullmatch_0: ✅ pass
+assert_assert(2090)_calls_Any_to_bool_0: ✅ pass (at line 66, col 4)
+assert(2090): ✅ pass (at line 66, col 4)
+set_m_calls_re_fullmatch_0: ✅ pass
+assert_assert(2198)_calls_Any_to_bool_0: ✅ pass (at line 69, col 4)
+assert(2198): ✅ pass (at line 69, col 4)
+set_m_calls_re_fullmatch_0: ✅ pass
+assert_assert(2333)_calls_Any_to_bool_0: ✅ pass (at line 73, col 4)
+assert(2333): ✅ pass (at line 73, col 4)
+set_m_calls_re_fullmatch_0: ✅ pass
+assert_assert(2436)_calls_Any_to_bool_0: ✅ pass (at line 76, col 4)
+assert(2436): ✅ pass (at line 76, col 4)
+set_m_calls_re_match_0: ✅ pass
+assert_assert(2696)_calls_Any_to_bool_0: ✅ pass (at line 81, col 4)
+assert(2696): ✅ pass (at line 81, col 4)
+set_m_calls_re_match_0: ✅ pass
+assert_assert(2787)_calls_Any_to_bool_0: ✅ pass (at line 84, col 4)
+assert(2787): ✅ pass (at line 84, col 4)
+set_m_calls_re_match_0: ✅ pass
+assert_assert(2892)_calls_Any_to_bool_0: ✅ pass (at line 87, col 4)
+assert(2892): ✅ pass (at line 87, col 4)
+set_m_calls_re_match_0: ✅ pass
+assert_assert(2985)_calls_Any_to_bool_0: ✅ pass (at line 90, col 4)
+assert(2985): ✅ pass (at line 90, col 4)
+set_m_calls_re_search_0: ✅ pass
+assert_assert(3241)_calls_Any_to_bool_0: ✅ pass (at line 95, col 4)
+assert(3241): ✅ pass (at line 95, col 4)
+set_m_calls_re_search_0: ✅ pass
+assert_assert(3341)_calls_Any_to_bool_0: ✅ pass (at line 98, col 4)
+assert(3341): ✅ pass (at line 98, col 4)
+set_m_calls_re_search_0: ✅ pass
+assert_assert(3441)_calls_Any_to_bool_0: ✅ pass (at line 101, col 4)
+assert(3441): ✅ pass (at line 101, col 4)
+set_m_calls_re_search_0: ✅ pass
+assert_assert(3531)_calls_Any_to_bool_0: ✅ pass (at line 104, col 4)
+assert(3531): ✅ pass (at line 104, col 4)
+set_p_calls_re_compile_0: ✅ pass
+set_m_calls_re_fullmatch_0: ✅ pass
+assert_assert(3791)_calls_Any_to_bool_0: ✅ pass (at line 111, col 4)
+assert(3791): ✅ pass (at line 111, col 4)
+set_m_calls_re_fullmatch_0: ✅ pass
+assert_assert(3881)_calls_Any_to_bool_0: ✅ pass (at line 114, col 4)
+assert(3881): ✅ pass (at line 114, col 4)
+set_m_calls_re_match_0: ✅ pass
+assert_assert(3981)_calls_Any_to_bool_0: ✅ pass (at line 117, col 4)
+assert(3981): ✅ pass (at line 117, col 4)
+set_m_calls_re_search_0: ✅ pass
+assert_assert(4077)_calls_Any_to_bool_0: ✅ pass (at line 120, col 4)
+assert(4077): ✅ pass (at line 120, col 4)
+set_m_calls_re_fullmatch_0: ✅ pass
+assert_assert(4378)_calls_Any_to_bool_0: ✅ pass (at line 126, col 4)
+assert(4378): ✅ pass (at line 126, col 4)
+set_m_calls_re_fullmatch_0: ✅ pass
+assert_assert(4474)_calls_Any_to_bool_0: ✅ pass (at line 129, col 4)
+assert(4474): ✅ pass (at line 129, col 4)
+set_m_calls_re_fullmatch_0: ✅ pass
+assert_assert(4593)_calls_Any_to_bool_0: ✅ pass (at line 133, col 4)
+assert(4593): ✅ pass (at line 133, col 4)
+set_m_calls_re_fullmatch_0: ✅ pass
+assert_assert(4672)_calls_Any_to_bool_0: ✅ pass (at line 136, col 4)
+assert(4672): ✅ pass (at line 136, col 4)
+set_m_calls_re_fullmatch_0: ✅ pass
+assert_assert(4794)_calls_Any_to_bool_0: ✅ pass (at line 140, col 4)
+assert(4794): ✅ pass (at line 140, col 4)
+set_m_calls_re_fullmatch_0: ✅ pass
+assert_assert(4886)_calls_Any_to_bool_0: ✅ pass (at line 143, col 4)
+assert(4886): ✅ pass (at line 143, col 4)
+set_m_calls_re_fullmatch_0: ✅ pass
+assert_assert(5008)_calls_Any_to_bool_0: ✅ pass (at line 147, col 4)
+assert(5008): ✅ pass (at line 147, col 4)
+set_m_calls_re_fullmatch_0: ✅ pass
+assert_assert(5092)_calls_Any_to_bool_0: ✅ pass (at line 150, col 4)
+assert(5092): ✅ pass (at line 150, col 4)
+set_m_calls_re_fullmatch_0: ✅ pass
+assert_assert(5173)_calls_Any_to_bool_0: ✅ pass (at line 153, col 4)
+assert(5173): ✅ pass (at line 153, col 4)
+set_m_calls_re_fullmatch_0: ✅ pass
+assert_assert(5264)_calls_Any_to_bool_0: ✅ pass (at line 156, col 4)
+assert(5264): ✅ pass (at line 156, col 4)
+set_m_calls_re_fullmatch_0: ✅ pass
+assert_assert(5373)_calls_Any_to_bool_0: ✅ pass (at line 160, col 4)
+assert(5373): ✅ pass (at line 160, col 4)
+set_m_calls_re_fullmatch_0: ✅ pass
+assert_assert(5464)_calls_Any_to_bool_0: ✅ pass (at line 163, col 4)
+assert(5464): ✅ pass (at line 163, col 4)
+set_m_calls_re_fullmatch_0: ✅ pass
+assert_assert(5563)_calls_Any_to_bool_0: ✅ pass (at line 166, col 4)
+assert(5563): ✅ pass (at line 166, col 4)
+set_m_calls_re_fullmatch_0: ✅ pass
+assert_assert(5657)_calls_Any_to_bool_0: ✅ pass (at line 169, col 4)
+assert(5657): ✅ pass (at line 169, col 4)
+set_m_calls_re_fullmatch_0: ✅ pass
+assert_assert(5960)_calls_Any_to_bool_0: ✅ pass (at line 175, col 4)
+assert(5960): ✅ pass (at line 175, col 4)
+set_m_calls_re_fullmatch_0: ✅ pass
+assert_assert(6038)_calls_Any_to_bool_0: ✅ pass (at line 178, col 4)
+assert(6038): ✅ pass (at line 178, col 4)
+set_m_calls_re_fullmatch_0: ✅ pass
+assert_assert(6116)_calls_Any_to_bool_0: ✅ pass (at line 181, col 4)
+assert(6116): ✅ pass (at line 181, col 4)
+set_m_calls_re_fullmatch_0: ✅ pass
+assert_assert(6194)_calls_Any_to_bool_0: ✅ pass (at line 184, col 4)
+assert(6194): ✅ pass (at line 184, col 4)
+set_m_calls_re_fullmatch_0: ✅ pass
+assert_assert(6273)_calls_Any_to_bool_0: ✅ pass (at line 187, col 4)
+assert(6273): ✅ pass (at line 187, col 4)
+set_m_calls_re_fullmatch_0: ✅ pass
+assert_assert(6353)_calls_Any_to_bool_0: ✅ pass (at line 190, col 4)
+assert(6353): ✅ pass (at line 190, col 4)
+set_m_calls_re_fullmatch_0: ✅ pass
+assert_assert(6443)_calls_Any_to_bool_0: ✅ pass (at line 193, col 4)
+assert(6443): ✅ pass (at line 193, col 4)
+set_m_calls_re_fullmatch_0: ✅ pass
+assert_assert(6568)_calls_Any_to_bool_0: ✅ pass (at line 197, col 4)
+assert(6568): ✅ pass (at line 197, col 4)
+set_m_calls_re_fullmatch_0: ✅ pass
+assert_assert(6648)_calls_Any_to_bool_0: ✅ pass (at line 200, col 4)
+assert(6648): ✅ pass (at line 200, col 4)
+set_m_calls_re_match_0: ✅ pass
+assert_assert(6727)_calls_Any_to_bool_0: ✅ pass (at line 203, col 4)
+assert(6727): ✅ pass (at line 203, col 4)
+set_m_calls_re_match_0: ✅ pass
+assert_assert(6799)_calls_Any_to_bool_0: ✅ pass (at line 206, col 4)
+assert(6799): ✅ pass (at line 206, col 4)
+set_m_calls_re_search_0: ✅ pass
+assert_assert(6875)_calls_Any_to_bool_0: ✅ pass (at line 209, col 4)
+assert(6875): ✅ pass (at line 209, col 4)
+set_m_calls_re_search_0: ✅ pass
+assert_assert(6949)_calls_Any_to_bool_0: ✅ pass (at line 212, col 4)
+assert(6949): ✅ pass (at line 212, col 4)
+set_m_calls_re_match_0: ✅ pass
+assert_assert(7239)_calls_Any_to_bool_0: ✅ pass (at line 218, col 4)
+assert(7239): ✅ pass (at line 218, col 4)
+set_m_calls_re_match_0: ✅ pass
+assert_assert(7303)_calls_Any_to_bool_0: ✅ pass (at line 221, col 4)
+assert(7303): ✅ pass (at line 221, col 4)
+set_m_calls_re_match_0: ✅ pass
+assert_assert(7379)_calls_Any_to_bool_0: ✅ pass (at line 224, col 4)
+assert(7379): ✅ pass (at line 224, col 4)
+set_m_calls_re_match_0: ✅ pass
+assert_assert(7484)_calls_Any_to_bool_0: ✅ pass (at line 228, col 4)
+assert(7484): ✅ pass (at line 228, col 4)
+set_m_calls_re_match_0: ✅ pass
+assert_assert(7556)_calls_Any_to_bool_0: ✅ pass (at line 231, col 4)
+assert(7556): ✅ pass (at line 231, col 4)
+set_m_calls_re_match_0: ✅ pass
+assert_assert(7636)_calls_Any_to_bool_0: ✅ pass (at line 234, col 4)
+assert(7636): ✅ pass (at line 234, col 4)
+set_m_calls_re_match_0: ✅ pass
+assert_assert(7706)_calls_Any_to_bool_0: ✅ pass (at line 237, col 4)
+assert(7706): ✅ pass (at line 237, col 4)
+set_m_calls_re_match_0: ✅ pass
+assert_assert(7790)_calls_Any_to_bool_0: ✅ pass (at line 240, col 4)
+assert(7790): ✅ pass (at line 240, col 4)
+set_m_calls_re_match_0: ✅ pass
+assert_assert(7865)_calls_Any_to_bool_0: ✅ pass (at line 243, col 4)
+assert(7865): ✅ pass (at line 243, col 4)
+set_m_calls_re_search_0: ✅ pass
+assert_assert(8114)_calls_Any_to_bool_0: ✅ pass (at line 249, col 4)
+assert(8114): ✅ pass (at line 249, col 4)
+set_m_calls_re_search_0: ✅ pass
+assert_assert(8189)_calls_Any_to_bool_0: ✅ pass (at line 252, col 4)
+assert(8189): ✅ pass (at line 252, col 4)
+set_m_calls_re_search_0: ✅ pass
+assert_assert(8294)_calls_Any_to_bool_0: ✅ pass (at line 256, col 4)
+assert(8294): ✅ pass (at line 256, col 4)
+set_m_calls_re_search_0: ✅ pass
+assert_assert(8371)_calls_Any_to_bool_0: ✅ pass (at line 259, col 4)
+assert(8371): ✅ pass (at line 259, col 4)
+set_m_calls_re_search_0: ✅ pass
+assert_assert(8453)_calls_Any_to_bool_0: ✅ pass (at line 262, col 4)
+assert(8453): ✅ pass (at line 262, col 4)
+set_m_calls_re_search_0: ✅ pass
+assert_assert(8554)_calls_Any_to_bool_0: ✅ pass (at line 266, col 4)
+assert(8554): ✅ pass (at line 266, col 4)
+set_m_calls_re_search_0: ✅ pass
+assert_assert(8627)_calls_Any_to_bool_0: ✅ pass (at line 269, col 4)
+assert(8627): ✅ pass (at line 269, col 4)
+set_m_calls_re_search_0: ✅ pass
+assert_assert(8711)_calls_Any_to_bool_0: ✅ pass (at line 272, col 4)
+assert(8711): ✅ pass (at line 272, col 4)
+set_m_calls_re_search_0: ✅ pass
+assert_assert(8790)_calls_Any_to_bool_0: ✅ pass (at line 275, col 4)
+assert(8790): ✅ pass (at line 275, col 4)
+set_m_calls_re_search_0: ✅ pass
+assert_assert(8914)_calls_Any_to_bool_0: ✅ pass (at line 279, col 4)
+assert(8914): ✅ pass (at line 279, col 4)
+set_m_calls_re_search_0: ✅ pass
+assert_assert(8988)_calls_Any_to_bool_0: ✅ pass (at line 282, col 4)
+assert(8988): ✅ pass (at line 282, col 4)
+set_m_calls_re_search_0: ✅ pass
+assert_assert(9070)_calls_Any_to_bool_0: ✅ pass (at line 285, col 4)
+assert(9070): ✅ pass (at line 285, col 4)
+set_m_calls_re_search_0: ✅ pass
+assert_assert(9300)_calls_Any_to_bool_0: ✅ pass (at line 290, col 4)
+assert(9300): ✅ pass (at line 290, col 4)
+set_m_calls_re_search_0: ✅ pass
+assert_assert(9381)_calls_Any_to_bool_0: ✅ pass (at line 293, col 4)
+assert(9381): ✅ pass (at line 293, col 4)
+set_m_calls_re_search_0: ✅ pass
+assert_assert(9472)_calls_Any_to_bool_0: ✅ pass (at line 296, col 4)
+assert(9472): ✅ pass (at line 296, col 4)
+set_m_calls_re_search_0: ✅ pass
+assert_assert(9551)_calls_Any_to_bool_0: ✅ pass (at line 299, col 4)
+assert(9551): ✅ pass (at line 299, col 4)
+set_m_calls_re_search_0: ✅ pass
+assert_assert(9638)_calls_Any_to_bool_0: ✅ pass (at line 302, col 4)
+assert(9638): ✅ pass (at line 302, col 4)
+set_m_calls_re_search_0: ✅ pass
+assert_assert(9718)_calls_Any_to_bool_0: ✅ pass (at line 305, col 4)
+assert(9718): ✅ pass (at line 305, col 4)
+set_m_calls_re_search_0: ✅ pass
+assert_assert(9806)_calls_Any_to_bool_0: ✅ pass (at line 308, col 4)
+assert(9806): ✅ pass (at line 308, col 4)
+set_m_calls_re_fullmatch_0: ✅ pass
+assert_assert(10048)_calls_Any_to_bool_0: ✅ pass (at line 313, col 4)
+assert(10048): ✅ pass (at line 313, col 4)
+set_m_calls_re_fullmatch_0: ✅ pass
+assert_assert(10134)_calls_Any_to_bool_0: ✅ pass (at line 316, col 4)
+assert(10134): ✅ pass (at line 316, col 4)
+set_m_calls_re_fullmatch_0: ✅ pass
+assert_assert(10224)_calls_Any_to_bool_0: ✅ pass (at line 319, col 4)
+assert(10224): ✅ pass (at line 319, col 4)
+set_m_calls_re_match_0: ✅ pass
+assert_assert(10310)_calls_Any_to_bool_0: ✅ pass (at line 322, col 4)
+assert(10310): ✅ pass (at line 322, col 4)
+set_m_calls_re_match_0: ✅ pass
+assert_assert(10390)_calls_Any_to_bool_0: ✅ pass (at line 325, col 4)
+assert(10390): ✅ pass (at line 325, col 4)
+set_m_calls_re_match_0: ✅ pass
+assert_assert(10478)_calls_Any_to_bool_0: ✅ pass (at line 328, col 4)
+assert(10478): ✅ pass (at line 328, col 4)
+set_m_calls_re_fullmatch_0: ✅ pass
+assert_assert(10718)_calls_Any_to_bool_0: ✅ pass (at line 333, col 4)
+assert(10718): ✅ pass (at line 333, col 4)
+set_m_calls_re_fullmatch_0: ✅ pass
+assert_assert(10808)_calls_Any_to_bool_0: ✅ pass (at line 336, col 4)
+assert(10808): ✅ pass (at line 336, col 4)
+set_m_calls_re_fullmatch_0: ✅ pass
+assert_assert(10898)_calls_Any_to_bool_0: ✅ pass (at line 339, col 4)
+assert(10898): ✅ pass (at line 339, col 4)
+set_m_calls_re_fullmatch_0: ✅ pass
+assert_assert(10988)_calls_Any_to_bool_0: ✅ pass (at line 342, col 4)
+assert(10988): ✅ pass (at line 342, col 4)
+set_m_calls_re_fullmatch_0: ✅ pass
+assert_assert(11071)_calls_Any_to_bool_0: ✅ pass (at line 345, col 4)
+assert(11071): ✅ pass (at line 345, col 4)
+set_m_calls_re_fullmatch_0: ✅ pass
+assert_assert(11162)_calls_Any_to_bool_0: ✅ pass (at line 348, col 4)
+assert(11162): ✅ pass (at line 348, col 4)
+set_m_calls_re_fullmatch_0: ✅ pass
+assert_assert(11245)_calls_Any_to_bool_0: ✅ pass (at line 351, col 4)
+assert(11245): ✅ pass (at line 351, col 4)
+set_m_calls_re_fullmatch_0: ✅ pass
+assert_assert(11339)_calls_Any_to_bool_0: ✅ pass (at line 354, col 4)
+assert(11339): ✅ pass (at line 354, col 4)
+set_m_calls_re_fullmatch_0: ✅ pass
+assert_assert(11429)_calls_Any_to_bool_0: ✅ pass (at line 357, col 4)
+assert(11429): ✅ pass (at line 357, col 4)
+set_m_calls_re_fullmatch_0: ✅ pass
+assert_assert(11521)_calls_Any_to_bool_0: ✅ pass (at line 360, col 4)
+assert(11521): ✅ pass (at line 360, col 4)
+set_m_calls_re_fullmatch_0: ✅ pass
+assert_assert(11606)_calls_Any_to_bool_0: ✅ pass (at line 363, col 4)
+assert(11606): ✅ pass (at line 363, col 4)
+set_m_calls_re_fullmatch_0: ✅ pass
+assert_assert(11701)_calls_Any_to_bool_0: ✅ pass (at line 366, col 4)
+assert(11701): ✅ pass (at line 366, col 4)
+set_m_calls_re_search_0: ✅ pass
+assert_assert(11829)_calls_Any_to_bool_0: ✅ pass (at line 370, col 4)
+assert(11829): ✅ pass (at line 370, col 4)
+set_m_calls_re_search_0: ✅ pass
+assert_assert(11910)_calls_Any_to_bool_0: ✅ pass (at line 373, col 4)
+assert(11910): ✅ pass (at line 373, col 4)
+set_m_calls_re_search_0: ✅ pass
+assert_assert(11995)_calls_Any_to_bool_0: ✅ pass (at line 376, col 4)
+assert(11995): ✅ pass (at line 376, col 4)
+set_m_calls_re_fullmatch_0: ✅ pass
+assert_assert(12253)_calls_Any_to_bool_0: ✅ pass (at line 381, col 4)
+assert(12253): ✅ pass (at line 381, col 4)
+set_m_calls_re_fullmatch_0: ✅ pass
+assert_assert(12333)_calls_Any_to_bool_0: ✅ pass (at line 384, col 4)
+assert(12333): ✅ pass (at line 384, col 4)
+set_m_calls_re_fullmatch_0: ✅ pass
+assert_assert(12428)_calls_Any_to_bool_0: ✅ pass (at line 387, col 4)
+assert(12428): ✅ pass (at line 387, col 4)
+set_m_calls_re_fullmatch_0: ✅ pass
+assert_assert(12519)_calls_Any_to_bool_0: ✅ pass (at line 390, col 4)
+assert(12519): ✅ pass (at line 390, col 4)
+set_m_calls_re_search_0: ✅ pass
+assert_assert(12611)_calls_Any_to_bool_0: ✅ pass (at line 393, col 4)
+assert(12611): ✅ pass (at line 393, col 4)
+set_m_calls_re_match_0: ✅ pass
+assert_assert(12702)_calls_Any_to_bool_0: ✅ pass (at line 396, col 4)
+assert(12702): ✅ pass (at line 396, col 4)
+set_m_calls_re_match_0: ✅ pass
+assert_assert(12796)_calls_Any_to_bool_0: ✅ pass (at line 399, col 4)
+assert(12796): ✅ pass (at line 399, col 4)
+set_m_calls_re_fullmatch_0: ✅ pass
+assert_assert(13063)_calls_Any_to_bool_0: ✅ pass (at line 404, col 4)
+assert(13063): ✅ pass (at line 404, col 4)
+set_m_calls_re_fullmatch_0: ✅ pass
+assert_assert(13156)_calls_Any_to_bool_0: ✅ pass (at line 407, col 4)
+assert(13156): ✅ pass (at line 407, col 4)
+set_m_calls_re_fullmatch_0: ✅ pass
+assert_assert(13253)_calls_Any_to_bool_0: ✅ pass (at line 410, col 4)
+assert(13253): ✅ pass (at line 410, col 4)
+set_m_calls_re_search_0: ✅ pass
+assert_assert(13345)_calls_Any_to_bool_0: ✅ pass (at line 413, col 4)
+assert(13345): ✅ pass (at line 413, col 4)
+set_m_calls_re_fullmatch_0: ✅ pass
+assert_assert(13455)_calls_Any_to_bool_0: ✅ pass (at line 417, col 4)
+assert(13455): ✅ pass (at line 417, col 4)
+set_m_calls_re_fullmatch_0: ✅ pass
+assert_assert(13541)_calls_Any_to_bool_0: ✅ pass (at line 420, col 4)
+assert(13541): ✅ pass (at line 420, col 4)
+set_m_calls_re_fullmatch_0: ✅ pass
+assert_assert(13631)_calls_Any_to_bool_0: ✅ pass (at line 423, col 4)
+assert(13631): ✅ pass (at line 423, col 4)
+set_m_calls_re_search_0: ✅ pass
+assert_assert(13724)_calls_Any_to_bool_0: ✅ pass (at line 426, col 4)
+assert(13724): ✅ pass (at line 426, col 4)
+set_m_calls_re_fullmatch_0: ✅ pass
+assert_assert(13954)_calls_Any_to_bool_0: ✅ pass (at line 431, col 4)
+assert(13954): ✅ pass (at line 431, col 4)
+set_m_calls_re_fullmatch_0: ✅ pass
+assert_assert(14044)_calls_Any_to_bool_0: ✅ pass (at line 434, col 4)
+assert(14044): ✅ pass (at line 434, col 4)
+set_m_calls_re_fullmatch_0: ✅ pass
+assert_assert(14136)_calls_Any_to_bool_0: ✅ pass (at line 437, col 4)
+assert(14136): ✅ pass (at line 437, col 4)
+set_m_calls_re_search_0: ✅ pass
+assert_assert(14220)_calls_Any_to_bool_0: ✅ pass (at line 440, col 4)
+assert(14220): ✅ pass (at line 440, col 4)
+set_m_calls_re_search_0: ✅ pass
+assert_assert(14307)_calls_Any_to_bool_0: ✅ pass (at line 443, col 4)
+assert(14307): ✅ pass (at line 443, col 4)
+set_m_calls_re_search_0: ✅ pass
+assert_assert(14392)_calls_Any_to_bool_0: ✅ pass (at line 446, col 4)
+assert(14392): ✅ pass (at line 446, col 4)
+set_p_calls_re_compile_0: ✅ pass
+set_m_calls_re_fullmatch_0: ✅ pass
+assert_assert(14608)_calls_Any_to_bool_0: ✅ pass (at line 453, col 4)
+assert(14608): ✅ pass (at line 453, col 4)
+set_m_calls_re_search_0: ✅ pass
+assert_assert(14686)_calls_Any_to_bool_0: ✅ pass (at line 456, col 4)
+assert(14686): ✅ pass (at line 456, col 4)
+set_m_calls_re_search_0: ✅ pass
+assert_assert(14768)_calls_Any_to_bool_0: ✅ pass (at line 459, col 4)
+assert(14768): ✅ pass (at line 459, col 4)
+set_m_calls_re_match_0: ✅ pass
+assert_assert(14856)_calls_Any_to_bool_0: ✅ pass (at line 462, col 4)
+assert(14856): ✅ pass (at line 462, col 4)
+set_m_calls_re_match_0: ✅ pass
+assert_assert(14936)_calls_Any_to_bool_0: ✅ pass (at line 465, col 4)
+assert(14936): ✅ pass (at line 465, col 4)
+set_m_calls_re_fullmatch_0: ✅ pass
+assert_assert(15360)_calls_Any_to_bool_0: ✅ pass (at line 473, col 4)
+assert(15360): ✅ pass (at line 473, col 4)
+set_m_calls_re_fullmatch_0: ✅ pass
+assert_assert(15469)_calls_Any_to_bool_0: ✅ pass (at line 476, col 4)
+assert(15469): ✅ pass (at line 476, col 4)
+set_m_calls_re_fullmatch_0: ✅ pass
+assert_assert(15585)_calls_Any_to_bool_0: ✅ pass (at line 479, col 4)
+assert(15585): ✅ pass (at line 479, col 4)
+set_m_calls_re_search_0: ✅ pass
+assert_assert(15691)_calls_Any_to_bool_0: ✅ pass (at line 482, col 4)
+assert(15691): ✅ pass (at line 482, col 4)
+set_m_calls_re_match_0: ✅ pass
+assert_assert(15806)_calls_Any_to_bool_0: ✅ pass (at line 485, col 4)
+assert(15806): ✅ pass (at line 485, col 4)
+ite_cond_calls_Any_to_bool_0: ✅ pass
