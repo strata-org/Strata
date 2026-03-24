@@ -75,6 +75,33 @@ procedure wrongMaxClaim(x: int, y: int) {
   assert max(x, y) == x
 //^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
 };
+
+// A procedure with two parameters of different types (int and bool).
+// scale(x, flag) returns x when flag is true, and 0 otherwise.
+// The invokeOn trigger fires on scale(x, flag), giving us the ensures for free.
+function scale(x: int, flag: bool): int {
+  if flag then x else 0
+};
+
+procedure scale_nonneg_when_flag(x: int, flag: bool)
+  invokeOn scale(x, flag)
+  ensures flag ==> scale(x, flag) == x;
+
+procedure scale_zero_when_not_flag(x: int, flag: bool)
+  invokeOn scale(x, flag)
+  ensures !flag ==> scale(x, flag) == 0;
+
+// Both axioms fire because scale(n, b) appears in the goal.
+procedure useScaleAxioms(n: int, b: bool) {
+  assert b ==> scale(n, b) == n;
+  assert !b ==> scale(n, b) == 0
+};
+
+// A wrong claim about scale should fail.
+procedure wrongScaleClaim(n: int, b: bool) {
+  assert scale(n, b) == n
+//^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
+};
 "#
 
 #guard_msgs (drop info, error) in
