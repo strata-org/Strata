@@ -311,10 +311,18 @@ partial def specExprToLaurel (e : SpecExpr) : ToLaurelM (Option StmtExprMd) :=
       some (mkStmt (.PrimitiveOp .Leq [mkStmt (.StaticCall (mkId "Any..as_int!") [s]), mkStmt (.StaticCall (mkId "Any..as_int!") [b])]))
   | .floatGe subject bound => do
     let s? ← specExprToLaurel subject; let b? ← specExprToLaurel bound
-    return do let s ← s?; let b ← b?; some (mkStmt (.PrimitiveOp .Geq [s, b]))
+    return do
+      let s ← s?; let b ← b?
+      let sF := mkStmt (.StaticCall (mkId "Any..as_float!") [s])
+      let bF := mkStmt (.StaticCall (mkId "Any..as_float!") [b])
+      some (mkStmt (.PrimitiveOp .Geq [sF, bF]))
   | .floatLe subject bound => do
     let s? ← specExprToLaurel subject; let b? ← specExprToLaurel bound
-    return do let s ← s?; let b ← b?; some (mkStmt (.PrimitiveOp .Leq [s, b]))
+    return do
+      let s ← s?; let b ← b?
+      let sF := mkStmt (.StaticCall (mkId "Any..as_float!") [s])
+      let bF := mkStmt (.StaticCall (mkId "Any..as_float!") [b])
+      some (mkStmt (.PrimitiveOp .Leq [sF, bF]))
   | .not inner => do
     let i? ← specExprToLaurel inner
     return i?.map fun i => mkStmt (.PrimitiveOp .Not [i])
