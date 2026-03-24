@@ -5,13 +5,16 @@
 -/
 module
 
+import Strata.Languages.Laurel.LaurelToCoreTranslator
 import Strata.Languages.Python.PythonToCore
 public import Strata.Languages.Python.PythonToLaurel
+import Strata.Languages.Python.PythonLaurelCorePrelude
 import Strata.Languages.Python.PythonRuntimeLaurelPart
 import Strata.Languages.Python.Specs
 import Strata.Languages.Python.Specs.DDM
 import Strata.Languages.Python.Specs.IdentifyOverloads
 import Strata.Languages.Python.Specs.ToLaurel
+import Strata.Util.DecideProp
 
 /-! ## PySpec Pipeline
 
@@ -22,7 +25,7 @@ and translates through to Core for verification.
 
 namespace Strata
 
-open Python.Specs.ToLaurel (OverloadTable)
+open Python (OverloadTable)
 
 /-! ### Types -/
 
