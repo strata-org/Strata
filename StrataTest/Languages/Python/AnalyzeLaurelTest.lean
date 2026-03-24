@@ -138,9 +138,10 @@ private meta def runAnalyzeAndVerify (dispatchIon : System.FilePath)
   -- Verify
   let options : Core.VerifyOptions :=
     { Core.VerifyOptions.default with
-      stopOnFirstError := false, verbose := .quiet, solver := "cvc5",
+      stopOnFirstError := false, verbose := .quiet, solver := "z3",
       checkMode := .bugFinding, checkLevel := .full }
-  match ← Strata.verifyCore coreProgram options |>.toBaseIO with
+  match ← Strata.verifyCore coreProgram options
+      (moreFns := Strata.Python.ReFactory) |>.toBaseIO with
   | .ok results => return .ok results
   | .error msg => return .error (toString msg)
 
@@ -218,29 +219,33 @@ private meta def runTestCase (dispatchIon tmpDir : System.FilePath)
 
 /-! ## Precondition violation test
 
-Verifies that calling `put_item(Bucket="", ...)` generates precondition
-assertions in the Core program. Full SMT verification is tested via the
-CLI pipeline (the interpreted-mode type checker has a known issue with
-PR #623 regex forward declarations). -/
+Verifies that calling `put_item(Bucket="", ...)` produces a `✖️ always false`
+result for the `len(Bucket) >= 1` assertion through the full verification pipeline. -/
 
+/--
+info: Storage_Storage_put_item_assert(0)_9: ✔️ always true if reached (Required parameter 'Bucket' is missing)
+Storage_Storage_put_item_assert(0)_9: ✔️ always true if reached (Required parameter 'Key' is missing)
+Storage_Storage_put_item_assert(0)_9: ✔️ always true if reached (Required parameter 'Data' is missing)
+Storage_Storage_put_item_assert(0)_9: ✖️ always false if reached (Bucket must not be empty)
+Storage_Storage_put_item_assert(0)_9: ✖️ always false if reached (Bucket must match ^[a-z0-9-]+$)
+Storage_Storage_put_item_assert(0)_9: ✔️ always true if reached (Key must not be empty)
+-/
+#guard_msgs in
 #eval withPython fun _pythonCmd => do
   IO.FS.withTempDir fun tmpDir => do
     let (dispatchIon, pyspecPaths) ← setupFixture _pythonCmd tmpDir
-    let result ← runAnalyze dispatchIon tmpDir
+    let result ← runAnalyzeAndVerify dispatchIon tmpDir
       "test_precondition_violation.py" pyspecPaths
     match result with
-    | .error msg => throw <| IO.userError s!"Pipeline failed: {msg}"
-    | .ok core => do
-      let coreStr := toString core
-      let hasStrLen := (coreStr.splitOn "str.len").length != 1
-      let hasIsfromNone := (coreStr.splitOn "isfrom_none").length != 1
-      let hasPutItem := (coreStr.splitOn "Storage_Storage_put_item").length != 1
-      if !hasStrLen then
-        throw <| IO.userError "Expected str.len assertion in Core program"
-      if !hasIsfromNone then
-        throw <| IO.userError "Expected isfrom_none assertion in Core program"
-      if !hasPutItem then
-        throw <| IO.userError "Expected Storage_Storage_put_item procedure in Core program"
-      IO.println s!"✅ Precondition assertions present: str.len={hasStrLen} isfrom_none={hasIsfromNone} put_item={hasPutItem}"
+    | .error msg => IO.println s!"error: {msg}"
+    | .ok vcResults =>
+      for r in vcResults do
+        if r.obligation.label.startsWith "Storage_" then
+          let msg := r.obligation.metadata.findSome? fun elem =>
+            match elem.fld, elem.value with
+            | .label "message", .msg s => some s
+            | _, _ => none
+          let msgStr := msg.map (s!" ({·})") |>.getD ""
+          IO.println s!"{r.obligation.label}: {r.formatOutcome}{msgStr}"
 
 end Strata.Python.AnalyzeLaurelTest

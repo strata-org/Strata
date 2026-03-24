@@ -267,7 +267,15 @@ public def combinePySpecLaurel (info : Python.PreludeInfo)
     translation. -/
 private def prependPrelude (coreFromLaurel : Core.Program) : Core.Program :=
   let (preludeDecls, userDecls) := coreFromLaurel.decls.span (fun d => toString d.name != "FIRST_END_MARKER")
-  { decls := preludeDecls ++ Python.coreOnlyFromRuntimeCorePart ++ userDecls }
+  -- The Core-only prelude has proper signatures for functions that the
+  -- Laurel→Core translator may have produced as empty-signature stubs.
+  -- Filter stubs from preludeDecls when a proper declaration exists.
+  let coreOnly := Python.coreOnlyFromRuntimeCorePart
+  let coreOnlyNames : Std.HashSet String := coreOnly.foldl (init := {})
+    fun s d => s.insert (toString d.name)
+  let filteredPrelude := preludeDecls.filter
+    fun d => !coreOnlyNames.contains (toString d.name)
+  { decls := filteredPrelude ++ coreOnly ++ userDecls }
 
 /-- Translate a combined Laurel program to Core and prepend the full
     runtime prelude.  Resolution errors are suppressed because PySpec
