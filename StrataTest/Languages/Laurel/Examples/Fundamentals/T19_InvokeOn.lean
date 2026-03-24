@@ -27,21 +27,23 @@ procedure fireAxiomUsingPattern(x: int) {
 
 procedure axiomDoesNotFireBecauseOfPattern(x: int) {
   assert Q(x)
-//^^^^^^^^^^^ error: assertion does not hold
+//^^^^^^^^^^^ error: assertion could not be proved
 };
 
+function A(x: int, y: real);
 function Z(x: real): bool;
 procedure PAndZ(x: int, y: real)
-  invokeOn P(x)
-  ensures P(x) && Z(y);
+  invokeOn P(x, y)
+  ensures P(x, y) && Z(y);
 
 procedure invokePAndZ(x: int, y :real) {
-  assert P(x) && Z(y)
+  assert P(x, y) && Z(y)
 };
 
 "#
 
 #guard_msgs (drop info, error) in
-#eval testInputWithOffset "InvokeOn" program 14 processLaurelFile
+#eval testInputWithOffset "InvokeOn" program 14
+  (Strata.Laurel.processLaurelFileWithOptions { Core.VerifyOptions.default with solver := "z3" })
 
 end Strata.Laurel
