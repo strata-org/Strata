@@ -58,17 +58,20 @@ assert_assert(1133)_calls_Any_to_bool_0: ✅ pass (at line 37, col 4)
 assert(1133): ❓ unknown (at line 37, col 4)
 set_m_calls_re_fullmatch_0: ✅ pass
 assert_assert(1495)_calls_Any_to_bool_0: ✅ pass (at line 47, col 4)
-assert(1495): ❓ unknown (at line 47, col 4)
+Assertion failed at line 47, col 4: assert(1495): ❌ fail
 set_m_calls_re_fullmatch_0: ✅ pass
 assert_assert(1667)_calls_Any_to_bool_0: ✅ pass (at line 54, col 4)
-assert(1667): ❓ unknown (at line 54, col 4)
+Assertion failed at line 54, col 4: assert(1667): ❌ fail
 set_m_calls_re_fullmatch_0: ✅ pass
 assert_assert(1846)_calls_Any_to_bool_0: ✅ pass (at line 61, col 4)
-assert(1846): ❓ unknown (at line 61, col 4)
+Assertion failed at line 61, col 4: assert(1846): ❌ fail
 set_m_calls_re_search_0: ✅ pass
 assert_assert(2015)_calls_Any_to_bool_0: ✅ pass (at line 68, col 4)
-assert(2015): ❓ unknown (at line 68, col 4)
+Assertion failed at line 68, col 4: assert(2015): ❌ fail
 set_m_calls_re_match_0: ✅ pass
 assert_assert(2193)_calls_Any_to_bool_0: ✅ pass (at line 75, col 4)
-assert(2193): ❓ unknown (at line 75, col 4)
+Assertion failed at line 75, col 4: assert(2193): ❌ fail
 ite_cond_calls_Any_to_bool_0: ✅ pass
+
+DETAIL: 58 passed, 5 failed, 9 inconclusive
+RESULT: Failures found

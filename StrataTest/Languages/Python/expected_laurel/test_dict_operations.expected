@@ -58,3 +58,6 @@ assert_assert(557)_calls_Any_get_1: ✅ pass (at line 27, col 0)
 assert_assert(557)_calls_Any_get_2: ✅ pass (at line 27, col 0)
 assert_assert(557)_calls_Any_to_bool_3: ✅ pass (at line 27, col 0)
 assert(557): ✅ pass (at line 27, col 0)
+
+DETAIL: 58 passed, 0 failed, 0 inconclusive
+RESULT: Analysis success
