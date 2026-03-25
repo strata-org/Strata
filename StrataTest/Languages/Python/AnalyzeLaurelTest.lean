@@ -182,7 +182,13 @@ private meta def testCases : List (String × Expected) := [
   .mk "test_method_dispatch.py" .success,
   .mk "test_annotation_dispatch.py" .success,
   .mk "test_constructor_dispatch.py" .success,
-  .mk "test_reassign_dispatch.py" .success
+  .mk "test_reassign_dispatch.py" .success,
+  -- Bug regression: procedure/function names used as type annotations should
+  -- NOT create UserDefined types (only composite types should).
+  .mk "test_procedure_as_annotation.py" $
+    .fail "User code error: 'Storage_put_item' is not a type",
+  .mk "test_procedure_as_param_type.py" $
+    .fail "User code error: 'Storage_put_item' is not a type"
 ]
 
 /-- Run a single test case and return an error message on failure, or `none` on success. -/

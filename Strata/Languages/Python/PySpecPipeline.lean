@@ -242,10 +242,40 @@ public def buildPreludeInfo (result : PySpecLaurelResult) : Python.PreludeInfo :
   let baseInfo := Python.PreludeInfo.ofCoreProgram { decls := Python.coreOnlyFromRuntimeCorePart }
   let merged := baseInfo.merge
     (Python.PreludeInfo.ofLaurelProgram result.laurelProgram)
+  -- Build importedSymbols from merged info + type aliases
+  -- Register composite types under their Laurel names
+  let symbols : Std.HashMap String Python.ImportedSymbol :=
+    merged.compositeTypes.fold (init := {}) fun m name =>
+      m.insert name (.compositeType name)
+  -- Register procedures under their Laurel names
+  let symbols := merged.procedures.fold (init := symbols) fun m name sig =>
+    let inlinable := merged.inlinableProcedures.contains name
+    m.insert name (.procedure name sig inlinable)
+  -- Register functions under their Laurel names
+  let symbols := merged.functions.foldl (init := symbols) fun m name =>
+    m.insert name (.function name)
+  -- Add unprefixed aliases from typeAliases
+  let symbols := result.typeAliases.fold (init := symbols)
+    fun syms unprefixed prefixed =>
+      -- Composite type alias: Storage → dispatch_test_Storage_Storage
+      let syms := if merged.compositeTypes.contains prefixed then
+        syms.insert unprefixed (.compositeType prefixed) else syms
+      -- Procedure aliases: Storage_put_item → ...
+      let syms := merged.procedures.fold (init := syms) fun s name sig =>
+        if name.startsWith (prefixed ++ "_") then
+          let unprefixedName := unprefixed ++ name.drop prefixed.length
+          let inlinable := merged.inlinableProcedures.contains name
+          s.insert unprefixedName (.procedure name sig inlinable)
+        else s
+      -- Function aliases
+      merged.functions.foldl (init := syms) fun s name =>
+        if name.startsWith (prefixed ++ "_") then
+          s.insert (unprefixed ++ name.drop prefixed.length) (.function name)
+        else s
   { merged with
     functionSignatures :=
       result.functionSignatures ++ merged.functionSignatures
-    typeAliases := result.typeAliases }
+    importedSymbols := symbols }
 
 /-- Combine PySpec and user Laurel programs into a single program,
     prepending External stubs so the Laurel `resolve` pass can see
