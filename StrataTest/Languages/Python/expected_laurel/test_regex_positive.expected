@@ -451,3 +451,6 @@ set_m_calls_re_match_0: ✅ pass
 assert_assert(15806)_calls_Any_to_bool_0: ✅ pass (at line 485, col 4)
 assert(15806): ✅ pass (at line 485, col 4)
 ite_cond_calls_Any_to_bool_0: ✅ pass
+
+DETAIL: 451 passed, 0 failed, 0 inconclusive
+RESULT: Analysis success
