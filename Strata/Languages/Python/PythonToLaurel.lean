@@ -62,14 +62,22 @@ structure PythonFunctionDecl where
   ret : Option String
 deriving Repr, Inhabited
 
+/-- A symbol imported from a PySpec module, carrying its Laurel-internal
+    name and enough metadata for the translator to use it directly. -/
+inductive ImportedSymbol where
+  /-- A composite type (user-defined class from PySpec). -/
+  | compositeType (laurelName : String)
+  /-- A procedure with its signature and whether it can be inlined. -/
+  | procedure (laurelName : String) (sig : CoreProcedureSignature)
+      (inlinable : Bool)
+  /-- A function (pure, functional callable). -/
+  | function (laurelName : String)
+deriving Inhabited
+
 structure TranslationContext where
   variableTypes : List (String × String) := []
   /-- List of function signatures -/
   functionSignatures : List PythonFunctionDecl := []
-  /-- Map from prelude procedure names to their full signatures -/
-  preludeProcedures : Std.HashMap String CoreProcedureSignature := {}
-  /-- Names of prelude functions (non-procedure callables) -/
-  preludeFunctions : List String := []
   /-- Names of user-defined functions -/
   userFunctions : List String := []
   /-- Names of user-defined classes -/
@@ -84,8 +92,8 @@ structure TranslationContext where
   unmodeledBehavior : UnmodeledFunctionBehavior := .havocOutputs
   /-- File path for source location metadata -/
   filePath : String := ""
-  /-- Known composite type names (user-defined classes + PySpec types) -/
-  compositeTypeNames : Std.HashSet String := {}
+  /-- Maps Python-visible names to their structured symbol info. -/
+  importedSymbols : Std.HashMap String ImportedSymbol := {}
   /-- Track current class during method translation -/
   currentClassName : Option String := none
   loopBreakLabel : Option String := none
@@ -93,6 +101,7 @@ structure TranslationContext where
 deriving Inhabited
 
 /-! ## Error Handling -/
+
 
 /-- Translation errors with context -/
 inductive TranslationError where
@@ -209,7 +218,7 @@ def pythonTypeToCoreType (typeStr : String) : Option String :=
 def isKnownType (ctx : TranslationContext) (typeStr : String) : Bool :=
   typeStr ∈ ["int", "bool", "str"] ||
   (pythonTypeToCoreType typeStr).isSome ||
-  typeStr ∈ ctx.compositeTypeNames ||
+  typeStr ∈ ctx.importedSymbols ||
   typeStr ∈ ctx.preludeTypes
 
 /-- Translate Python type annotation to Laurel HighType -/
@@ -224,14 +233,18 @@ def translateType (ctx : TranslationContext) (typeStr : String) : Except Transla
     | some coreType => .ok (mkCoreType coreType)
     | none =>
       -- Check if it matches a known composite type (user-defined or PySpec)
-      if typeStr ∈ ctx.compositeTypeNames then
-        .ok (mkHighTypeMd (.UserDefined typeStr))
-      -- Check if it's a prelude type (Core types like DictStrAny)
-      else if typeStr ∈ ctx.preludeTypes then
-        .ok (mkCoreType typeStr)
-      else
-        -- Map it to a core PyAnyType
-        .ok (mkCoreType PyLauType.Any)
+      match ctx.importedSymbols[typeStr]? with
+      | some (ImportedSymbol.compositeType laurelName) =>
+        .ok (mkHighTypeMd (.UserDefined laurelName))
+      | some _ =>
+        .error (.userPythonError .none s!"'{typeStr}' is not a type")
+      | none =>
+        -- Check if it's a prelude type (Core types like DictStrAny)
+        if typeStr ∈ ctx.preludeTypes then
+          .ok (mkCoreType typeStr)
+        else
+          -- Map it to a core PyAnyType
+          .ok (mkCoreType PyLauType.Any)
 
 def AnyTy := mkCoreType PyLauType.Any
 def strToAny (s: String) := mkStmtExprMd (.StaticCall "from_string" [mkStmtExprMd (StmtExpr.LiteralString s)])
@@ -330,8 +343,7 @@ def resolveDispatch (ctx : TranslationContext)
 
 /-- Check if a function has a model (is in prelude or user-defined) -/
 def hasModel (ctx : TranslationContext) (funcName : String) : Bool :=
-  funcName ∈ ctx.preludeProcedures || funcName ∈ ctx.userFunctions ||
-  ctx.preludeFunctions.contains funcName || funcName ∈ ctx.compositeTypeNames
+  funcName ∈ ctx.importedSymbols || funcName ∈ ctx.userFunctions
 
 def ListAny_mk (es: List StmtExprMd) : StmtExprMd := match es with
   | [] => mkStmtExprMd (.StaticCall "ListAny_nil" [])
@@ -659,7 +671,11 @@ partial def refineFunctionCallExpr (ctx : TranslationContext) (func: Python.expr
         if callerTy == PyLauType.Any then
           return ("AnyTyInstance" ++ "@" ++ callname, some v, true)
         else
-          return (callerTy ++ "_" ++ callname, some v, false)
+          let resolvedTy :=
+            match ctx.importedSymbols[callerTy]? with
+            | some (ImportedSymbol.compositeType laurelName) => laurelName
+            | _ => callerTy
+          return (resolvedTy ++ "_" ++ callname, some v, false)
     | _ => throw (.internalError s!"{repr func} is not a function")
 
 --Kwargs can be a single Dict variable: func_call (**var) or a normal Kwargs (key1 = val1, key2 =val2 ...)
@@ -793,8 +809,12 @@ partial def translateCall (ctx : TranslationContext)
   | .Attribute _ val _attr _ =>
       let _target_trans ← translateExpr ctx val
       if opt_firstarg.isSome then
-        return mkStmtExprMd (.Hole)
-        --return mkStmtExprMd (StmtExpr.InstanceCall target_trans attr.val (trans_args ++ trans_kwords_exprs))
+        -- Emit StaticCall only for procedures with transparent bodies
+        -- (e.g. pyspec with precondition assertions). Opaque procedures stay as Hole.
+        if let some (ImportedSymbol.procedure _ _ true) := ctx.importedSymbols[funcName]? then
+          return mkStmtExprMd (StmtExpr.StaticCall funcName (trans_args ++ trans_kwords_exprs))
+        else
+          return mkStmtExprMd (.Hole)
       else
         return mkStmtExprMd (StmtExpr.StaticCall funcName (trans_args ++ trans_kwords_exprs))
   | _ =>  throw (.unsupportedConstruct "Invalid call construct" (toString (repr f)))
@@ -809,9 +829,10 @@ These functions are mutually recursive.
 -/
 
 def withException (ctx : TranslationContext) (funcname: String) : Bool :=
-  if funcname ∈ ctx.preludeFunctions then false else
-  match ctx.preludeProcedures[funcname]? with
-  | some sig => sig.outputs.length > 0 && sig.outputs.getLast! == "Error"
+  match ctx.importedSymbols[funcname]? with
+  | some (ImportedSymbol.function _) => false
+  | some (ImportedSymbol.procedure _ sig _) =>
+    sig.outputs.length > 0 && sig.outputs.getLast! == "Error"
   | _ => false
 
 def maybeExceptVar := mkStmtExprMd (.Identifier "maybe_except")
@@ -849,8 +870,16 @@ partial def translateAssign  (ctx : TranslationContext)
         let targetExpr := mkStmtExprMd (StmtExpr.Identifier n.val)
         return (ctx, [mkStmtExprMd (StmtExpr.Assign [targetExpr] rhs_trans)])
       else
-        let initStmt := mkStmtExprMd (StmtExpr.LocalVariable n.val AnyTy (mkStmtExprMd .Hole))
-        let newctx := {ctx with variableTypes:=(n.val, "Any")::ctx.variableTypes}
+        -- Use type annotation if it matches a known composite type
+        let annType := annotation.map (fun a => pyExprToString a) |>.getD "Any"
+        let (varTy, trackType) ← match ctx.importedSymbols[annType]? with
+          | some (ImportedSymbol.compositeType laurelName) =>
+            pure (mkHighTypeMd (.UserDefined (mkId laurelName)), laurelName)
+          | some _ =>
+            throw (.userPythonError lhs.ann s!"'{annType}' is not a type")
+          | _ => pure (AnyTy, "Any")
+        let initStmt := mkStmtExprMd (StmtExpr.LocalVariable n.val varTy (mkStmtExprMd .Hole))
+        let newctx := {ctx with variableTypes:=(n.val, trackType)::ctx.variableTypes}
         return (newctx, [initStmt])
     | _ => return (ctx, [mkStmtExprMd .Hole])
   }
@@ -860,9 +889,10 @@ partial def translateAssign  (ctx : TranslationContext)
         let targetExpr := mkStmtExprMd (StmtExpr.Identifier n.val)
         let assignStmts := match rhs_trans.val with
         | .StaticCall fnname args =>
-            if fnname.text ∈ ctx.compositeTypeNames then
-              let newExpr := mkStmtExprMd (StmtExpr.New fnname)
-              let varType := mkHighTypeMd (.UserDefined fnname)
+            if let some (ImportedSymbol.compositeType laurelName) := ctx.importedSymbols[fnname.text]? then
+              let resolvedId := mkId laurelName
+              let newExpr := mkStmtExprMd (StmtExpr.New resolvedId)
+              let varType := mkHighTypeMd (.UserDefined resolvedId)
               if n.val ∈ ctx.variableTypes.unzip.1 then
                 let assignStmt := mkStmtExprMd (StmtExpr.Assign [targetExpr] newExpr)
                 let initStmt := mkStmtExprMd (StmtExpr.InstanceCall (mkStmtExprMd (StmtExpr.Identifier n.val)) "__init__" args)
@@ -884,8 +914,8 @@ partial def translateAssign  (ctx : TranslationContext)
         | _ => [mkStmtExprMd (StmtExpr.Assign [targetExpr] rhs_trans)]
         newctx := match rhs_trans.val with
         | .StaticCall fnname _ =>
-            if fnname.text ∈ ctx.compositeTypeNames then
-              {newctx with variableTypes:= newctx.variableTypes ++ [(n.val, fnname.text)]}
+            if let some (ImportedSymbol.compositeType laurelName) := ctx.importedSymbols[fnname.text]? then
+              {newctx with variableTypes:= newctx.variableTypes ++ [(n.val, laurelName)]}
             else newctx
         | .New className =>
             {newctx with variableTypes:= newctx.variableTypes ++ [(n.val, className.text)]}
@@ -942,14 +972,19 @@ def createVarDeclStmtsAndCtx (ctx : TranslationContext) (newDecls : List (String
   let newDecls := newDecls.foldl (fun acc (n, ty) =>
       if acc.any (fun (an, _) => an == n) || ctx.variableTypes.any (fun (vn, _) => vn == n)
       then acc else acc ++ [(n, ty)]) []
+  let isCompositeOrError (tyStr : String) : Bool :=
+    tyStr == "PythonError" ||
+    match ctx.importedSymbols[tyStr]? with
+    | some (ImportedSymbol.compositeType _) => true
+    | _ => false
   let hoistedDecls : List StmtExprMd := newDecls.map fun (name, tyStr) =>
-      let ty := if tyStr ∈ ctx.compositeTypeNames || tyStr == "PythonError" then
+      let ty := if isCompositeOrError tyStr then
           mkHighTypeMd (.UserDefined tyStr)
         else AnyTy
       mkStmtExprMd (StmtExpr.LocalVariable (name : String) ty (some (mkStmtExprMd .Hole)))
   let hoistedCtx := { ctx with variableTypes := ctx.variableTypes ++
       (newDecls.map fun (n, ty) =>
-        if ty ∈ ctx.compositeTypeNames || ty == "PythonError" then (n, ty) else (n, PyLauType.Any)) }
+        if isCompositeOrError ty then (n, ty) else (n, PyLauType.Any)) }
   (hoistedDecls, hoistedCtx)
 
 mutual
@@ -1271,11 +1306,14 @@ def translateFunction (ctx : TranslationContext) (sourceRange: SourceRange) (fun
     -- Translate parameters
     let mut inputs : List Parameter := []
 
-    inputs := funcDecl.args.map (fun (name, ty, _) =>
-        if ty ∈ ctx.compositeTypeNames then
-          { name := name, type := mkHighTypeMd (.UserDefined ty) }
-        else
-          { name := name, type := AnyTy})
+    inputs ← funcDecl.args.mapM (fun (name, ty, _) => do
+        match ctx.importedSymbols[ty]? with
+        | some (ImportedSymbol.compositeType _) =>
+          pure { name := name, type := mkHighTypeMd (.UserDefined ty) }
+        | some _ =>
+          throw (.userPythonError sourceRange s!"'{ty}' is not a type")
+        | _ =>
+          pure { name := name, type := AnyTy})
     if funcDecl.hasKwargs then
       let paramType ← translateType ctx PyLauType.DictStrAny
       inputs:= inputs ++ [{ name := "kwargs", type := paramType }]
@@ -1547,6 +1585,11 @@ structure PreludeInfo where
   functions : List String := []
   /-- Procedure names (non-function callables) -/
   procedureNames : List String := []
+  /-- Names of procedures with transparent bodies (can be inlined). -/
+  inlinableProcedures : Std.HashSet String := {}
+  /-- Maps Python-visible names to their structured symbol info.
+      Includes both canonical Laurel names and unprefixed aliases. -/
+  importedSymbols : Std.HashMap String ImportedSymbol := {}
 
 /-- Extract `PreludeInfo` from a `Core.Program`. -/
 def PreludeInfo.ofCoreProgram (prelude : Core.Program) : PreludeInfo where
@@ -1589,8 +1632,10 @@ def PreludeInfo.ofLaurelProgram (prog : Laurel.Program) : PreludeInfo where
     prog.staticProcedures.foldl (init := {}) fun m p =>
       if p.body.isExternal || p.isFunctional then m
       else
-        let ins := p.inputs.map fun param => getHighTypeName param.type.val
-        let outs := p.outputs.map fun param => getHighTypeName param.type.val
+        -- Use "Any" for all parameter types to match the Python→Laurel
+        -- pipeline's Any-wrapping convention at call sites.
+        let ins := p.inputs.map fun _ => "Any"
+        let outs := p.outputs.map fun _ => "Any"
         m.insert p.name.text { inputs := ins, outputs := outs }
   functionSignatures :=
     prog.staticProcedures.filterMap fun p =>
@@ -1619,6 +1664,9 @@ def PreludeInfo.ofLaurelProgram (prog : Laurel.Program) : PreludeInfo where
   procedureNames :=
     prog.staticProcedures.filterMap fun p =>
       if p.body.isExternal || p.isFunctional then none else some p.name.text
+  inlinableProcedures :=
+    prog.staticProcedures.foldl (init := {}) fun s p =>
+      if p.body.isTransparent then s.insert p.name.text else s
 
 /-- Merge two `PreludeInfo` values by concatenating each field. -/
 def PreludeInfo.merge (a b : PreludeInfo) : PreludeInfo where
@@ -1628,6 +1676,8 @@ def PreludeInfo.merge (a b : PreludeInfo) : PreludeInfo where
   functionSignatures := a.functionSignatures ++ b.functionSignatures
   functions := a.functions ++ b.functions
   procedureNames := a.procedureNames ++ b.procedureNames
+  inlinableProcedures := b.inlinableProcedures.fold (init := a.inlinableProcedures) fun s n => s.insert n
+  importedSymbols := b.importedSymbols.fold (init := a.importedSymbols) fun m k v => m.insert k v
 
 /-- Translate Python module to Laurel Program using pre-extracted prelude info. -/
 def pythonToLaurel' (info : PreludeInfo)
@@ -1661,10 +1711,13 @@ def pythonToLaurel' (info : PreludeInfo)
   for stmt in body do
     match stmt with
     | .ClassDef _ _ _ _ _ _ _ =>
+      -- Build importedSymbols with user-defined classes discovered so far
+      let localSymbols := compositeTypeNames.fold
+        (init := info.importedSymbols) fun m name =>
+          m.insert name (ImportedSymbol.compositeType name)
       let initCtx : TranslationContext := {
-        preludeProcedures := info.procedures,
         preludeTypes := info.types,
-        compositeTypeNames := compositeTypeNames,
+        importedSymbols := localSymbols,
         classFieldHighType := classFieldHighType,
         filePath := filePath
       }
@@ -1676,25 +1729,28 @@ def pythonToLaurel' (info : PreludeInfo)
       classFieldHighType := classFieldHighType.insert composite.name.text fieldMap
     | _ => pure ()
 
+  -- Merge user-defined class names into importedSymbols
+  let importedSymbols := compositeTypeNames.fold
+    (init := info.importedSymbols) fun m name =>
+      m.insert name (ImportedSymbol.compositeType name)
+
   let mut ctx : TranslationContext := match prev_ctx with
   | some prev_ctx => prev_ctx
   | _ =>
   {
     currentClassName := none,
-    preludeProcedures := info.procedures,
     functionSignatures := info.functionSignatures
-    preludeFunctions := info.functions
     preludeTypes := info.types,
     userFunctions := userFunctions,
-    compositeTypeNames := compositeTypeNames,
     classFieldHighType := classFieldHighType,
     overloadTable := overloadTable,
+    importedSymbols := importedSymbols,
     filePath := filePath
   }
 
   -- Separate functions from other statements
-  let mut procedures : List Procedure := []
-  let mut otherStmts : List (Python.stmt SourceRange) := []
+  let mut procedures : Array Procedure := #[]
+  let mut otherStmts : Array (Python.stmt SourceRange) := #[]
 
   for stmt in body do
     match stmt with
@@ -1702,14 +1758,14 @@ def pythonToLaurel' (info : PreludeInfo)
       let funcDecl ←  pyFuncDefToPythonFunctionDecl ctx stmt
       let proc ← translateFunction ctx stmt.ann funcDecl fbody.val.toList
       ctx := {ctx with functionSignatures:= ctx.functionSignatures ++ [funcDecl]}
-      procedures := procedures ++ [proc.fst]
+      procedures := procedures.push proc.fst
     | .ClassDef _ _ _ _ _ _ _ =>
       pure ()  -- Already processed in first pass
     | _ =>
-      otherStmts := otherStmts ++ [stmt]
+      otherStmts := otherStmts.push stmt
 
   ctx := {ctx with variableTypes:= [("nullcall_ret", PyLauType.Any)]}
-  let (_, bodyStmts) ← translateStmtList ctx otherStmts
+  let (_, bodyStmts) ← translateStmtList ctx otherStmts.toList
   let bodyStmts := prependExceptHandlingHelper bodyStmts
   let bodyStmts := mkStmtExprMd (.LocalVariable "__name__" AnyTy (some <| strToAny "__main__")) :: bodyStmts
   let bodyStmts := (mkStmtExprMd (.LocalVariable "nullcall_ret" AnyTy (some AnyNone))) :: bodyStmts
@@ -1729,7 +1785,7 @@ def pythonToLaurel' (info : PreludeInfo)
   }
 
   let program : Laurel.Program := {
-    staticProcedures := procedures ++ [mainProc]
+    staticProcedures := procedures.push mainProc |>.toList
     staticFields := []
     types := compositeTypes.map TypeDefinition.Composite
     constants := []
