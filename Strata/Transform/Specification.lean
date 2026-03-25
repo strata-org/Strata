@@ -385,13 +385,10 @@ namespace Hoare
 
 /-- Partial-correctness Hoare triple using small-step semantics.
 
-    `Triple` covers only normal termination (`.terminal`).  Early exits
-    (`.exiting`) are handled at the `TripleBlock` level — `seq_cons`
-    requires `s.exitsCoveredByBlocks []` to ensure the head statement
-    cannot escape, and `block` catches exits from the body.
-
+    `Triple` covers only normal termination (`.terminal`).
     This terminal-only definition keeps the `AssertValid ↔ Triple`
-    equivalence clean (no extra assumptions needed). -/
+    equivalence clean (no extra assumptions needed).
+-/
 def Triple
     (Pre : Env P → Prop)
     (s : Stmt P (Cmd P))
@@ -408,10 +405,13 @@ def Triple
 
 /-- Partial-correctness Hoare triple for a list of statements (a block body).
     Unlike `Triple`, this covers both normal termination (`.terminal`) and
-    early exit (`.exiting`), because the outermost block can catch exits and
-    convert them to `.terminal`.
+    early exit (`.exiting`) because blocks catch exits. Some exits can `leak`
+    the outermost block though, and it might require additional constraints
+    on Hoare rules.
 
-    Triple can be unconditionally derived from TripleBlock through the `block` rule.
+    Triple can be unconditionally derived from TripleBlock through
+    TripleBlock.toTriple. TripleBlock can be derived from Triple only when
+    all exits are caught by blocks (there should be no leaking exits).
 -/
 def TripleBlock
     (Pre : Env P → Prop)
@@ -479,92 +479,6 @@ theorem cmd (c : Cmd P) (Pre Post : Env P → Prop)
         simp [hf₀] at hp ⊢; exact ⟨hp, hfeq⟩
       | step _ _ _ h _ => exact nomatch h
 
-/-- Helper: invert a seq execution that reaches terminal.
-    The inner config must terminate, then the tail stmts run to terminal. -/
-private theorem seq_reaches_terminal
-    {inner : Config P (Cmd P)} {ss : List (Stmt P (Cmd P))} {ρ' : Env P}
-    (hstar : StepStmtStar P (EvalCmd P) extendEval (.seq inner ss) (.terminal ρ')) :
-    ∃ ρ₁, StepStmtStar P (EvalCmd P) extendEval inner (.terminal ρ₁) ∧
-      StepStmtStar P (EvalCmd P) extendEval (.stmts ss ρ₁) (.terminal ρ') := by
-  suffices ∀ src tgt, StepStmtStar P (EvalCmd P) extendEval src tgt →
-      ∀ inner ss ρ', src = .seq inner ss → tgt = .terminal ρ' →
-      ∃ ρ₁, StepStmtStar P (EvalCmd P) extendEval inner (.terminal ρ₁) ∧
-        StepStmtStar P (EvalCmd P) extendEval (.stmts ss ρ₁) (.terminal ρ') from
-    this _ _ hstar _ _ _ rfl rfl
-  intro src tgt hstar_g
-  induction hstar_g with
-  | refl => intro _ _ _ hsrc htgt; subst hsrc; cases htgt
-  | step _ mid _ hstep hrest ih =>
-    intro inner ss ρ' hsrc htgt; subst hsrc
-    cases hstep with
-    | step_seq_inner h =>
-      have ⟨ρ₁, hterm, htail⟩ := ih _ _ _ rfl htgt
-      exact ⟨ρ₁, .step _ _ _ h hterm, htail⟩
-    | step_seq_done => subst htgt; exact ⟨_, .refl _, hrest⟩
-    | step_seq_exit => subst htgt; cases hrest with | step _ _ _ h _ => cases h
-
-/-- Helper: invert a seq execution that reaches exiting.
-    Either the inner exited (propagated by seq), or the inner terminated
-    and the tail stmts exited. -/
-private theorem seq_reaches_exiting
-    {inner : Config P (Cmd P)} {ss : List (Stmt P (Cmd P))} {lbl : Option String} {ρ' : Env P}
-    (hstar : StepStmtStar P (EvalCmd P) extendEval (.seq inner ss) (.exiting lbl ρ')) :
-    (StepStmtStar P (EvalCmd P) extendEval inner (.exiting lbl ρ')) ∨
-    (∃ ρ₁, StepStmtStar P (EvalCmd P) extendEval inner (.terminal ρ₁) ∧
-      StepStmtStar P (EvalCmd P) extendEval (.stmts ss ρ₁) (.exiting lbl ρ')) := by
-  suffices ∀ src tgt, StepStmtStar P (EvalCmd P) extendEval src tgt →
-      ∀ inner ss lbl ρ', src = .seq inner ss → tgt = .exiting lbl ρ' →
-      (StepStmtStar P (EvalCmd P) extendEval inner (.exiting lbl ρ')) ∨
-      (∃ ρ₁, StepStmtStar P (EvalCmd P) extendEval inner (.terminal ρ₁) ∧
-        StepStmtStar P (EvalCmd P) extendEval (.stmts ss ρ₁) (.exiting lbl ρ')) from
-    this _ _ hstar _ _ _ _ rfl rfl
-  intro src tgt hstar_g
-  induction hstar_g with
-  | refl => intro _ _ _ _ hsrc htgt; subst hsrc; cases htgt
-  | step _ mid _ hstep hrest ih =>
-    intro inner ss lbl ρ' hsrc htgt; subst hsrc
-    cases hstep with
-    | step_seq_inner h =>
-      match ih _ _ _ _ rfl htgt with
-      | .inl hexit => exact .inl (.step _ _ _ h hexit)
-      | .inr ⟨ρ₁, hterm, htail⟩ => exact .inr ⟨ρ₁, .step _ _ _ h hterm, htail⟩
-    | step_seq_done => subst htgt; exact .inr ⟨_, .refl _, hrest⟩
-    | step_seq_exit => exact .inl (htgt ▸ hrest)
-
-private theorem block_reaches_terminal
-    {inner : Config P (Cmd P)} {l : String} {ρ' : Env P}
-    (hstar : StepStmtStar P (EvalCmd P) extendEval (.block l inner) (.terminal ρ')) :
-    StepStmtStar P (EvalCmd P) extendEval inner (.terminal ρ') ∨
-    (∃ lbl, StepStmtStar P (EvalCmd P) extendEval inner (.exiting lbl ρ')) := by
-  suffices ∀ src tgt, StepStmtStar P (EvalCmd P) extendEval src tgt →
-      ∀ inner ρ', src = .block l inner → tgt = .terminal ρ' →
-      StepStmtStar P (EvalCmd P) extendEval inner (.terminal ρ') ∨
-      (∃ lbl, StepStmtStar P (EvalCmd P) extendEval inner (.exiting lbl ρ')) from
-    this _ _ hstar _ _ rfl rfl
-  intro src tgt hstar_g
-  induction hstar_g with
-  | refl => intro _ _ hsrc htgt; subst hsrc; cases htgt
-  | step _ mid _ hstep hrest ih =>
-    intro inner ρ' hsrc htgt; subst hsrc
-    cases hstep with
-    | step_block_body h =>
-      match ih _ _ rfl htgt with
-      | .inl hterm => exact .inl (.step _ _ _ h hterm)
-      | .inr ⟨lbl, hexit⟩ => exact .inr ⟨lbl, .step _ _ _ h hexit⟩
-    | step_block_done => subst htgt; exact .inl hrest
-    | step_block_exit_none =>
-      subst htgt; cases hrest with
-      | refl => exact .inr ⟨.none, .refl _⟩
-      | step _ _ _ h _ => cases h
-    | step_block_exit_match =>
-      subst htgt; cases hrest with
-      | refl => exact .inr ⟨.some _, .refl _⟩
-      | step _ _ _ h _ => cases h
-    | step_block_exit_mismatch =>
-      subst htgt
-      -- .exiting propagates out of block — but then it can't reach .terminal
-      cases hrest with
-      | step _ _ _ h _ => cases h
 
 /-- Sequential cons: if the head statement satisfies `{P} s {Q}` and
     the tail satisfies `{Q} ss {R}`, then `{P} s :: ss {R}`. -/
@@ -590,14 +504,14 @@ theorem seq_cons {s : Stmt P (Cmd P)} {ss : List (Stmt P (Cmd P))}
     cases hterm with
     | step _ _ _ hstep hrest => cases hstep with
       | step_stmts_cons =>
-        have ⟨ρ₁, hterm_s, hrest_ss⟩ := seq_reaches_terminal P extendEval hrest
+        have ⟨ρ₁, hterm_s, hrest_ss⟩ := seq_reaches_terminal P (EvalCmd P) extendEval hrest
         have ⟨hmid, hf₁⟩ := h₁ ρ₀ ρ₁ hpre hwfb hf₀ hterm_s
         exact h₂ ρ₁ ρ' hmid (hwfb_preserved ρ₁ hterm_s) hf₁ (.inl hrest_ss)
   | .inr ⟨lbl, hexit⟩ =>
     cases hexit with
     | step _ _ _ hstep hrest => cases hstep with
       | step_stmts_cons =>
-        match seq_reaches_exiting P extendEval hrest with
+        match seq_reaches_exiting P (EvalCmd P) extendEval hrest with
         | .inl hexit_inner =>
           -- s exited — impossible by exitsCoveredByBlocks
           exact absurd hexit_inner
@@ -606,38 +520,9 @@ theorem seq_cons {s : Stmt P (Cmd P)} {ss : List (Stmt P (Cmd P))}
           have ⟨hmid, hf₁⟩ := h₁ ρ₀ ρ₁ hpre hwfb hf₀ hterm_s
           exact h₂ ρ₁ ρ' hmid (hwfb_preserved ρ₁ hterm_s) hf₁ (.inr ⟨lbl, hexit_ss⟩)
 
-/-- Wrapping a block: if `{P} ss {Q}` as a statement list,
-    then `{P} block l ss md {Q}` as a statement. -/
-private theorem block_reaches_exiting
-    {inner : Config P (Cmd P)} {l : String} {lbl : Option String} {ρ' : Env P}
-    (hstar : StepStmtStar P (EvalCmd P) extendEval (.block l inner) (.exiting lbl ρ')) :
-    ∃ lbl_inner, StepStmtStar P (EvalCmd P) extendEval inner (.exiting lbl_inner ρ') := by
-  suffices ∀ src tgt, StepStmtStar P (EvalCmd P) extendEval src tgt →
-      ∀ inner lbl ρ', src = .block l inner → tgt = .exiting lbl ρ' →
-      ∃ lbl_inner, StepStmtStar P (EvalCmd P) extendEval inner (.exiting lbl_inner ρ') from
-    this _ _ hstar _ _ _ rfl rfl
-  intro src tgt hstar_g
-  induction hstar_g with
-  | refl => intro _ _ _ hsrc htgt; subst hsrc; cases htgt
-  | step _ mid _ hstep hrest ih =>
-    intro inner lbl ρ' hsrc htgt; subst hsrc
-    cases hstep with
-    | step_block_body h =>
-      have ⟨lbl_inner, hexit⟩ := ih _ _ _ rfl htgt
-      exact ⟨lbl_inner, .step _ _ _ h hexit⟩
-    | step_block_done =>
-      subst htgt; cases hrest with | step _ _ _ h _ => cases h
-    | step_block_exit_none =>
-      subst htgt; cases hrest with | step _ _ _ h _ => cases h
-    | step_block_exit_match =>
-      subst htgt; cases hrest with | step _ _ _ h _ => cases h
-    | step_block_exit_mismatch =>
-      subst htgt
-      cases hrest with
-      | refl => exact ⟨_, .refl _⟩
-      | step _ _ _ h _ => cases h
-
-theorem block {ss : List (Stmt P (Cmd P))} {l : String} {md : MetaData P}
+/-- Lift a `TripleBlock` to a `Triple` by wrapping in a block.
+    The block catches exits from the body, converting them to terminal. -/
+theorem TripleBlock.toTriple {ss : List (Stmt P (Cmd P))} {l : String} {md : MetaData P}
     {Pre Post : Env P → Prop}
     (h : TripleBlock P extendEval Pre ss Post) :
     Triple P extendEval Pre (.block l ss md) Post := by
@@ -645,14 +530,53 @@ theorem block {ss : List (Stmt P (Cmd P))} {l : String} {md : MetaData P}
   cases hstar with
   | step _ _ _ hstep hrest => cases hstep with
     | step_block =>
-      match block_reaches_terminal P extendEval hrest with
+      match block_reaches_terminal P (EvalCmd P) extendEval hrest with
       | .inl hterm => exact h ρ₀ ρ' hpre hwfb hf₀ (.inl hterm)
       | .inr ⟨lbl, hexit_inner⟩ => exact h ρ₀ ρ' hpre hwfb hf₀ (.inr ⟨lbl, hexit_inner⟩)
+
+/-- Lift a `Triple` to a `TripleBlock` for a singleton list.
+    Requires `exitsCoveredByBlocks` so the exit disjunct is vacuous. -/
+theorem Triple.toTripleBlock {s : Stmt P (Cmd P)}
+    {Pre Post : Env P → Prop}
+    (h : Triple P extendEval Pre s Post)
+    (hnoesc : Stmt.exitsCoveredByBlocks [] s) :
+    TripleBlock P extendEval Pre [s] Post := by
+  intro ρ₀ ρ' hpre hwfb hf₀ hdone
+  match hdone with
+  | .inl hterm =>
+    -- .stmts [s] ρ₀ →* .terminal ρ'
+    -- Invert: .stmts [s] ρ₀ → .seq (.stmt s ρ₀) [] →* .terminal ρ'
+    cases hterm with
+    | step _ _ _ hstep hrest => cases hstep with
+      | step_stmts_cons =>
+        have ⟨ρ₁, hterm_s, hrest_nil⟩ := seq_reaches_terminal P (EvalCmd P) extendEval hrest
+        have ⟨hp, hf⟩ := h ρ₀ ρ₁ hpre hwfb hf₀ hterm_s
+        -- hrest_nil : .stmts [] ρ₁ →* .terminal ρ', so ρ' = ρ₁
+        cases hrest_nil with
+        | step _ _ _ h1 r1 => cases h1 with
+          | step_stmts_nil => cases r1 with
+            | refl => exact ⟨hp, hf⟩
+            | step _ _ _ h _ => exact nomatch h
+  | .inr ⟨lbl, hexit⟩ =>
+    -- .stmts [s] ρ₀ →* .exiting lbl ρ'
+    -- s can't exit by exitsCoveredByBlocks
+    cases hexit with
+    | step _ _ _ hstep hrest => cases hstep with
+      | step_stmts_cons =>
+        match seq_reaches_exiting P (EvalCmd P) extendEval hrest with
+        | .inl hexit_s =>
+          exact absurd hexit_s
+            (exitsCoveredByBlocks_noEscape P (EvalCmd P) extendEval s hnoesc ρ₀ lbl ρ')
+        | .inr ⟨ρ₁, hterm_s, hexit_nil⟩ =>
+          -- .stmts [] ρ₁ →* .exiting — impossible
+          cases hexit_nil with
+          | step _ _ _ h _ => cases h with
+            | step_stmts_nil => rename_i r; cases r with | step _ _ _ h _ => cases h
 
 /-- Empty block is skip: the environment is unchanged. -/
 theorem skip (l : String) (md : MetaData P) (Pre : Env P → Prop) :
     Triple P extendEval Pre (.block l [] md) Pre :=
-  block P extendEval (skip_block P extendEval Pre)
+  (skip_block P extendEval Pre).toTriple
 
 /-- If-then-else rule. -/
 theorem ite {c : P.Expr} {tss ess : List (Stmt P (Cmd P))} {md : MetaData P}

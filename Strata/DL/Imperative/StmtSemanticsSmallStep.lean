@@ -457,6 +457,124 @@ theorem stmts_cons_step
     reflTrans_trans h2 h3
   exact .step _ _ _ .step_seq_done (.refl _)
 
+/-! ## Inversion lemmas for seq and block execution -/
+
+/-- Invert a seq execution reaching terminal: the inner terminates,
+    then the tail stmts run to terminal. -/
+theorem seq_reaches_terminal
+    {inner : Config P CmdT} {ss : List (Stmt P CmdT)} {ρ' : Env P}
+    (hstar : StepStmtStar P EvalCmd extendEval (.seq inner ss) (.terminal ρ')) :
+    ∃ ρ₁, StepStmtStar P EvalCmd extendEval inner (.terminal ρ₁) ∧
+      StepStmtStar P EvalCmd extendEval (.stmts ss ρ₁) (.terminal ρ') := by
+  suffices ∀ src tgt, StepStmtStar P EvalCmd extendEval src tgt →
+      ∀ inner ss ρ', src = .seq inner ss → tgt = .terminal ρ' →
+      ∃ ρ₁, StepStmtStar P EvalCmd extendEval inner (.terminal ρ₁) ∧
+        StepStmtStar P EvalCmd extendEval (.stmts ss ρ₁) (.terminal ρ') from
+    this _ _ hstar _ _ _ rfl rfl
+  intro src tgt hstar_g
+  induction hstar_g with
+  | refl => intro _ _ _ hsrc htgt; subst hsrc; cases htgt
+  | step _ mid _ hstep hrest ih =>
+    intro inner ss ρ' hsrc htgt; subst hsrc
+    cases hstep with
+    | step_seq_inner h =>
+      have ⟨ρ₁, hterm, htail⟩ := ih _ _ _ rfl htgt
+      exact ⟨ρ₁, .step _ _ _ h hterm, htail⟩
+    | step_seq_done => subst htgt; exact ⟨_, .refl _, hrest⟩
+    | step_seq_exit => subst htgt; cases hrest with | step _ _ _ h _ => cases h
+
+/-- Invert a seq execution reaching exiting: either the inner exited
+    (propagated), or the inner terminated and the tail exited. -/
+theorem seq_reaches_exiting
+    {inner : Config P CmdT} {ss : List (Stmt P CmdT)} {lbl : Option String} {ρ' : Env P}
+    (hstar : StepStmtStar P EvalCmd extendEval (.seq inner ss) (.exiting lbl ρ')) :
+    (StepStmtStar P EvalCmd extendEval inner (.exiting lbl ρ')) ∨
+    (∃ ρ₁, StepStmtStar P EvalCmd extendEval inner (.terminal ρ₁) ∧
+      StepStmtStar P EvalCmd extendEval (.stmts ss ρ₁) (.exiting lbl ρ')) := by
+  suffices ∀ src tgt, StepStmtStar P EvalCmd extendEval src tgt →
+      ∀ inner ss lbl ρ', src = .seq inner ss → tgt = .exiting lbl ρ' →
+      (StepStmtStar P EvalCmd extendEval inner (.exiting lbl ρ')) ∨
+      (∃ ρ₁, StepStmtStar P EvalCmd extendEval inner (.terminal ρ₁) ∧
+        StepStmtStar P EvalCmd extendEval (.stmts ss ρ₁) (.exiting lbl ρ')) from
+    this _ _ hstar _ _ _ _ rfl rfl
+  intro src tgt hstar_g
+  induction hstar_g with
+  | refl => intro _ _ _ _ hsrc htgt; subst hsrc; cases htgt
+  | step _ mid _ hstep hrest ih =>
+    intro inner ss lbl ρ' hsrc htgt; subst hsrc
+    cases hstep with
+    | step_seq_inner h =>
+      match ih _ _ _ _ rfl htgt with
+      | .inl hexit => exact .inl (.step _ _ _ h hexit)
+      | .inr ⟨ρ₁, hterm, htail⟩ => exact .inr ⟨ρ₁, .step _ _ _ h hterm, htail⟩
+    | step_seq_done => subst htgt; exact .inr ⟨_, .refl _, hrest⟩
+    | step_seq_exit => exact .inl (htgt ▸ hrest)
+
+/-- Invert a block execution reaching terminal: the inner either
+    terminated or exited (caught by the block). -/
+theorem block_reaches_terminal
+    {inner : Config P CmdT} {l : String} {ρ' : Env P}
+    (hstar : StepStmtStar P EvalCmd extendEval (.block l inner) (.terminal ρ')) :
+    StepStmtStar P EvalCmd extendEval inner (.terminal ρ') ∨
+    (∃ lbl, StepStmtStar P EvalCmd extendEval inner (.exiting lbl ρ')) := by
+  suffices ∀ src tgt, StepStmtStar P EvalCmd extendEval src tgt →
+      ∀ inner ρ', src = .block l inner → tgt = .terminal ρ' →
+      StepStmtStar P EvalCmd extendEval inner (.terminal ρ') ∨
+      (∃ lbl, StepStmtStar P EvalCmd extendEval inner (.exiting lbl ρ')) from
+    this _ _ hstar _ _ rfl rfl
+  intro src tgt hstar_g
+  induction hstar_g with
+  | refl => intro _ _ hsrc htgt; subst hsrc; cases htgt
+  | step _ mid _ hstep hrest ih =>
+    intro inner ρ' hsrc htgt; subst hsrc
+    cases hstep with
+    | step_block_body h =>
+      match ih _ _ rfl htgt with
+      | .inl hterm => exact .inl (.step _ _ _ h hterm)
+      | .inr ⟨lbl, hexit⟩ => exact .inr ⟨lbl, .step _ _ _ h hexit⟩
+    | step_block_done => subst htgt; exact .inl hrest
+    | step_block_exit_none =>
+      subst htgt; cases hrest with
+      | refl => exact .inr ⟨.none, .refl _⟩
+      | step _ _ _ h _ => cases h
+    | step_block_exit_match =>
+      subst htgt; cases hrest with
+      | refl => exact .inr ⟨.some _, .refl _⟩
+      | step _ _ _ h _ => cases h
+    | step_block_exit_mismatch =>
+      subst htgt; cases hrest with | step _ _ _ h _ => cases h
+
+/-- Invert a block execution reaching exiting: the inner must have
+    exited with a label that didn't match the block. -/
+theorem block_reaches_exiting
+    {inner : Config P CmdT} {l : String} {lbl : Option String} {ρ' : Env P}
+    (hstar : StepStmtStar P EvalCmd extendEval (.block l inner) (.exiting lbl ρ')) :
+    ∃ lbl_inner, StepStmtStar P EvalCmd extendEval inner (.exiting lbl_inner ρ') := by
+  suffices ∀ src tgt, StepStmtStar P EvalCmd extendEval src tgt →
+      ∀ inner lbl ρ', src = .block l inner → tgt = .exiting lbl ρ' →
+      ∃ lbl_inner, StepStmtStar P EvalCmd extendEval inner (.exiting lbl_inner ρ') from
+    this _ _ hstar _ _ _ rfl rfl
+  intro src tgt hstar_g
+  induction hstar_g with
+  | refl => intro _ _ _ hsrc htgt; subst hsrc; cases htgt
+  | step _ mid _ hstep hrest ih =>
+    intro inner lbl ρ' hsrc htgt; subst hsrc
+    cases hstep with
+    | step_block_body h =>
+      have ⟨lbl_inner, hexit⟩ := ih _ _ _ rfl htgt
+      exact ⟨lbl_inner, .step _ _ _ h hexit⟩
+    | step_block_done =>
+      subst htgt; cases hrest with | step _ _ _ h _ => cases h
+    | step_block_exit_none =>
+      subst htgt; cases hrest with | step _ _ _ h _ => cases h
+    | step_block_exit_match =>
+      subst htgt; cases hrest with | step _ _ _ h _ => cases h
+    | step_block_exit_mismatch =>
+      subst htgt
+      cases hrest with
+      | refl => exact ⟨_, .refl _⟩
+      | step _ _ _ h _ => cases h
+
 /-! ## Store/eval simulation and hasFailure irrelevance -/
 
 /-- Two configs agree on store/eval (may differ on hasFailure). -/
