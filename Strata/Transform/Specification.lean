@@ -15,9 +15,29 @@ All definitions are parametric over a `Lang P` structure that abstracts the
 statement type, configuration type, step relation, and assert detection,
 sharing the pure-expression parameter `P`.
 
-`Overapproximates` is *bilingual*: it relates two (possibly different)
-`Lang P` values, so it can express cross-language transformations such as
+## Two ways to specify transformation soundness
+
+There are two predicates for describing the correctness of a program
+transformation `T : L₁.StmtT → Option L₂.StmtT`:
+
+1. **`Sound`** — directly states that `T` preserves assertion validity:
+   if every assert is valid in the transformed program (`AssertValid L₂`),
+   then every assert is valid in the original (`AssertValid L₁`).
+
+2. **`Overapproximates`** — states that the set of reachable terminal/exiting
+   environments in the source is a subset of those reachable in the target.
+   This is a semantic simulation condition.
+
+Both predicates are *bilingual*: they relate two (possibly different) `Lang P`
+values, so they can express cross-language transformations such as
 deterministic-to-nondeterministic.
+
+It is proven that both specifications imply `AssertValid`:
+- `Sound` does so directly by definition (`sound_assertValid`, `sound_allAsserts`).
+- `Overapproximates` does so via Hoare triples: `overapproximates_triple` shows
+  that overapproximation preserves `Hoare.Triple`, which is equivalent to
+  `AssertValid` by the bidirectional theorems `hoareTriple_implies_assertValid`
+  and `assertValid_implies_hoareTriple`.
 -/
 
 public section
@@ -84,7 +104,16 @@ def AllAssertsValid (s : L.StmtT) : Prop :=
   ∀ (a : AssertId P), AssertValid L s a
 
 
-/-! ## Style B — Hoare-triple assertion validity -/
+/-! ## Style B — Hoare-triple assertion validity
+
+**Usage note:** When building Hoare-logic proofs for a transformation, use
+`Triple` (not `TripleBlock`). `Triple` is the top-level specification that
+connects to `AssertValid` via `hoareTriple_implies_assertValid` /
+`assertValid_implies_hoareTriple`. `TripleBlock` is an internal helper for
+reasoning about statement-list bodies inside blocks — it accounts for exiting
+configurations that the enclosing block may catch. Structural rules like
+`seq_cons` produce `TripleBlock` results, which are then lifted back to
+`Triple` via `TripleBlock.toTriple` when wrapping in a block. -/
 
 namespace Hoare
 

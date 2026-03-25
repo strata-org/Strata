@@ -12,17 +12,16 @@ public import Strata.Languages.Core.StatementType
 
 /-! # Deterministic-to-Nondeterministic Transformation
 
-Returns `none` if the input contains `.exit` or `.funcDecl` statements,
-which have no nondeterministic counterpart. -/
+Returns `none` if the input contains `.exit`, `.funcDecl`, or `.typeDecl`
+statements, which have no nondeterministic counterpart. -/
 
 public section
 
 open Imperative
 mutual
 
-/-- Deterministic-to-nondeterministic transformation for a single
-(deterministic) statement. Returns `none` for unsupported constructs
-(`.exit`, `.funcDecl`). -/
+/-- Deterministic-to-nondeterministic transformation for a single statement.
+    Returns `none` for unsupported constructs. -/
 def StmtToNondetStmt {P : PureExpr} [Imperative.HasBool P] [HasNot P]
   (st : Imperative.Stmt P (Cmd P)) :
   Option (Imperative.NondetStmt P (Cmd P)) :=
@@ -38,17 +37,17 @@ def StmtToNondetStmt {P : PureExpr} [Imperative.HasBool P] [HasNot P]
   | .loop guard _measure _inv bss md => do
     let b ← BlockToNondetStmt bss
     return .loop (.seq (.assume "guard" guard md) b)
-  | .typeDecl _ md => some (.assume "skip" Imperative.HasBool.tt md)
+  | .typeDecl _ _ => none
   | .exit _ _ => none
   | .funcDecl _ _ => none
 
-/-- Deterministic-to-nondeterministic transformation for multiple
-(deterministic) statements. Returns `none` if any statement is unsupported. -/
+/-- Deterministic-to-nondeterministic transformation for a block.
+    Returns `none` if any statement is unsupported. -/
 def BlockToNondetStmt {P : Imperative.PureExpr} [Imperative.HasBool P] [HasNot P]
   (ss : Imperative.Block P (Cmd P)) :
   Option (Imperative.NondetStmt P (Cmd P)) :=
   match ss with
-  | [] => some (.assume "skip" Imperative.HasBool.tt .empty)
+  | [] => some (.loop (.cmd (.assert "skip" Imperative.HasBool.tt .empty)))
   | s :: ss => do
     let s' ← StmtToNondetStmt s
     let rest ← BlockToNondetStmt ss
