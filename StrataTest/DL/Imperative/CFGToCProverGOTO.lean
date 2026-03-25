@@ -136,6 +136,10 @@ info: ok: #[LOCATION 0,
   return format ans.instructions
 
 -- Verify all emitted GOTOs have resolved targets
+/--
+info: ok: ()
+-/
+#guard_msgs in
 #eval do
   let cfg := Imperative.stmtsToCFG iteCmds
   let ans ← Imperative.detCFGToGotoTransform Lambda.TEnv.default "test" cfg
@@ -188,6 +192,10 @@ info: ok: #[LOCATION 0,
   return format ans.instructions
 
 -- Verify the loop back-edge: there should be a GOTO targeting the loop entry
+/--
+info: ok: ()
+-/
+#guard_msgs in
 #eval do
   let cfg := Imperative.stmtsToCFG loopCmds
   let ans ← Imperative.detCFGToGotoTransform Lambda.TEnv.default "test" cfg
@@ -271,6 +279,10 @@ info: ok: #[LOCATION 0,
 
 /-! ### Test: all GOTOs have resolved targets (sequential) -/
 
+/--
+info: ok: ()
+-/
+#guard_msgs in
 #eval do
   let cfg := Imperative.stmtsToCFG seqCmds
   let ans ← Imperative.detCFGToGotoTransform Lambda.TEnv.default "test" cfg
