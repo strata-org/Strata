@@ -204,12 +204,10 @@ def diffCommand : Command where
     | _, _ =>
       exitFailure "Cannot compare dialect def with another dialect/program."
 
-def readPythonStrata (strataPath : String) : IO Strata.Program := do
+def readPythonStrata (strataPath : String) : IO (Array (Strata.Python.stmt SourceRange)) := do
   let bytes ← Strata.Util.readBinInputSource strataPath
-  if ! Ion.isIonFile bytes then
-    exitFailure s!"pyAnalyze expected Ion file"
-  match Strata.Program.fromIon Strata.Python.Python_map Strata.Python.Python.name bytes with
-  | .ok pgm => pure pgm
+  match Strata.Python.readPythonStrataBytes strataPath bytes with
+  | .ok stmts => pure stmts
   | .error msg => exitFailure msg
 
 def pySpecsCommand : Command where
@@ -250,9 +248,9 @@ def pyTranslateCommand : Command where
   args := [ "file" ]
   help := "Translate a Python Ion program to Core and print the result to stdout."
   callback := fun v _ => do
-    let pgm ← readPythonStrata v[0]
+    let stmts ← readPythonStrata v[0]
     let preludePgm := Strata.Python.Core.prelude
-    let bpgm := Strata.pythonToCore Strata.Python.coreSignatures pgm preludePgm
+    let bpgm := Strata.pythonToCore Strata.Python.coreSignatures stmts preludePgm
     let newPgm : Core.Program := { decls := preludePgm.decls ++ bpgm.decls }
     IO.print newPgm
 
@@ -288,17 +286,15 @@ def pyAnalyzeCommand : Command where
     let verbose := pflags.getBool "verbose"
     let outputSarif := pflags.getBool "sarif"
     let filePath := v[0]
-    let pgm ← readPythonStrata filePath
+    let stmts ← readPythonStrata filePath
     -- Try to read the Python source for line number conversion
     let pySourceOpt ← tryReadPythonSource filePath
-    if verbose then
-      IO.print pgm
     let preludePgm := Strata.Python.Core.prelude
     -- Use the Python source path if available, otherwise fall back to Ion path
     let sourcePathForMetadata := match pySourceOpt with
       | some (pyPath, _) => pyPath
       | none => filePath
-    let bpgm := Strata.pythonToCore Strata.Python.coreSignatures pgm preludePgm sourcePathForMetadata
+    let bpgm := Strata.pythonToCore Strata.Python.coreSignatures stmts preludePgm sourcePathForMetadata
     let newPgm : Core.Program := { decls := preludePgm.decls ++ bpgm.decls }
     if verbose then
       IO.print newPgm
@@ -394,11 +390,6 @@ def pyAnalyzeLaurelCommand : Command where
     let outputSarif := pflags.getBool "sarif"
     let filePath := v[0]
     let pySourceOpt ← tryReadPythonSource filePath
-
-    if verbose then
-      let pgm ← readPythonStrata filePath
-      IO.println "==== Python AST ===="
-      IO.print pgm
 
     let dispatchFiles := pflags.getRepeated "dispatch"
     let pyspecFiles := pflags.getRepeated "pyspec"
@@ -511,13 +502,13 @@ def pyAnalyzeToGotoCommand : Command where
   help := "Translate a Strata Python Ion file to CProver GOTO JSON files."
   callback := fun v _ => do
     let filePath := v[0]
-    let pgm ← readPythonStrata filePath
+    let stmts ← readPythonStrata filePath
     let pySourceOpt ← tryReadPythonSource filePath
     let preludePgm := Strata.Python.Core.prelude
     let sourcePathForMetadata := match pySourceOpt with
       | some (pyPath, _) => pyPath
       | none => filePath
-    let bpgm := Strata.pythonToCore Strata.Python.coreSignatures pgm preludePgm sourcePathForMetadata
+    let bpgm := Strata.pythonToCore Strata.Python.coreSignatures stmts preludePgm sourcePathForMetadata
     let sourceText := pySourceOpt.map (·.2)
     let newPgm : Core.Program := { decls := preludePgm.decls ++ bpgm.decls }
     match Core.Transform.runProgram (targetProcList := .none)
@@ -686,7 +677,7 @@ def pySpecToLaurelCommand : Command where
       match ← Strata.Python.Specs.readDDM ionFile |>.toBaseIO with
       | .ok t => pure t
       | .error msg => exitFailure s!"Could not read {ionFile}: {msg}"
-    let result := Strata.Python.Specs.ToLaurel.signaturesToLaurel pythonFile sigs
+    let result := Strata.Python.Specs.ToLaurel.signaturesToLaurel pythonFile sigs ""
     if result.errors.size > 0 then
       IO.eprintln s!"{result.errors.size} translation warning(s):"
       for err in result.errors do
