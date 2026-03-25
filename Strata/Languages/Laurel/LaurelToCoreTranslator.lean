@@ -29,6 +29,7 @@ import Strata.DL.Lambda.LExpr
 import Strata.Languages.Laurel.LaurelFormat
 import Strata.Languages.Laurel.ConstrainedTypeElim
 import Strata.Util.Tactics
+import Strata.DDM.Util.Graph.Tarjan
 
 open Core (VCResult VCResults VerifyOptions)
 open Core (intAddOp intSubOp intMulOp intSafeDivOp intSafeModOp intSafeDivTOp intSafeModTOp intNegOp intLtOp intLeOp intGtOp intGeOp boolAndOp boolOrOp boolNotOp boolImpliesOp strConcatOp)
@@ -657,7 +658,7 @@ structure LaurelTranslateOptions where
 Translate a Laurel Procedure to a Core Function (when applicable) using `TranslateM`.
 Diagnostics for disallowed constructs in the function body are emitted into the monad state.
 -/
-def translateProcedureToFunction (options: LaurelTranslateOptions) (proc : Procedure) : TranslateM Core.Decl := do
+def translateProcedureToFunction (options: LaurelTranslateOptions) (isRecursive: Bool) (proc : Procedure) : TranslateM Core.Decl := do
   let model := (← get).model
   let inputs := proc.inputs.map (translateParameterToCore model)
   let outputTy := match proc.outputs.head? with
@@ -667,12 +668,6 @@ def translateProcedureToFunction (options: LaurelTranslateOptions) (proc : Proce
   let preconditions ← proc.preconditions.mapM (fun precondition => do
     let checkExpr ← translateExpr precondition [] true
     return { expr := checkExpr, md := () })
-
-  -- Check whether the body contains a self-referential StaticCall (i.e. the function is recursive).
-  let isRecursive := match proc.body with
-    | .Transparent bodyExpr => isRecursiveExpr model proc bodyExpr.val
-    | .Opaque _ (some bodyExpr) _ => isRecursiveExpr model proc bodyExpr.val
-    | _ => false
 
   -- For recursive functions, infer the @[cases] parameter index: the first input
   -- whose type is a user-defined datatype (has constructors). This is the argument
@@ -706,12 +701,7 @@ def translateProcedureToFunction (options: LaurelTranslateOptions) (proc : Proce
     isRecursive := isRecursive
     attr := attr
   }
-  -- Recursive functions must be wrapped in recFuncBlock so the type checker
-  -- pre-registers the signature before checking the body (enabling self-calls).
-  if isRecursive then
-    return .recFuncBlock [f]
-  else
-    return .func f
+  return .func f
 
 /--
 Translate a Laurel DatatypeDefinition to an `LDatatype Unit`.
@@ -805,51 +795,91 @@ def translate (options: LaurelTranslateOptions) (program : Program): TranslateRe
   translateLaurelToCore (options: LaurelTranslateOptions) (program : Program): TranslateM Core.Program := do
     let model := (← get).model
 
-    -- Procedures marked isFunctional are translated to Core functions; all others become Core procedures.
     -- External procedures are completely ignored (not translated to Core).
     let nonExternal := program.staticProcedures.filter (fun p => !p.body.isExternal)
-    let (markedPure, procProcs) := nonExternal.partition (·.isFunctional)
-    -- Try to translate each isFunctional procedure to a Core function, collecting errors for failures
-    let pureFuncDecls ← markedPure.mapM (translateProcedureToFunction options)
 
-    -- Collect invokeOn axioms from non-functional procedures, paired with their
-    -- function dependencies (StaticCall names in postconditions).
-    let pendingAxioms : List (Core.Decl × List String) ←
-      program.staticProcedures.filterMapM (fun proc => do
-        match proc.invokeOn with
-        | none => pure none
-        | some trigger => do
-          let axDecl? ← translateInvokeOnAxiom proc trigger
-          return axDecl?.map (fun ax => (ax, invokeOnAxiomDeps proc))
-          )
+    -- Build a call-graph over all non-external procedures.
+    -- An edge proc → callee means proc's body/contracts contain a StaticCall to callee.
+    let nonExternalArr : Array Procedure := nonExternal.toArray
+    let nameToIdx : Std.HashMap String Nat :=
+      nonExternalArr.foldl (fun (acc : Std.HashMap String Nat × Nat) proc =>
+        (acc.1.insert proc.name.text acc.2, acc.2 + 1)) ({}, 0) |>.1
 
-    -- Build the set of function names defined in pureFuncDecls (in order).
-    let funcNames : List String := markedPure.map (·.name.text)
+    -- Collect all callee names from a procedure's body and contracts.
+    let procCallees (proc : Procedure) : List String :=
+      let bodyExprs : List StmtExpr := match proc.body with
+        | .Transparent b => [b.val]
+        | .Opaque postconds (some impl) _ => postconds.map (·.val) ++ [impl.val]
+        | .Opaque postconds none _ => postconds.map (·.val)
+        | _ => []
+      let contractExprs : List StmtExpr :=
+        proc.preconditions.map (·.val) ++
+        proc.invokeOn.toList.map (·.val)
+      (bodyExprs ++ contractExprs).flatMap collectStaticCallNames
 
-    -- Interleave pureFuncDecls with axioms in topological order:
-    -- after emitting each function, immediately emit any pending axioms whose
-    -- every function dependency has now been emitted.
-    let (interleavedFuncAxioms, remainingAxioms) :=
-      funcNames.foldl (fun (acc : List Core.Decl × List (Core.Decl × List String))
-                           (fname : String) =>
-        let (emitted, pending) := acc
-        -- Find the function decl for this name
-        let funcDecl := pureFuncDecls.find? (fun d => d.name.name == fname)
-        let emitted' := emitted ++ funcDecl.toList
-        -- Track which names are now defined
-        let definedSoFar := (emitted'.filterMap (fun d =>
-          match d with | .func f => some f.name.name | .recFuncBlock (f :: _) => some f.name.name | _ => none))
-        -- Emit any pending axioms whose deps are all satisfied
-        let (ready, stillPending) := pending.partition (fun (_, deps) =>
-          deps.all (fun dep => !funcNames.contains dep || definedSoFar.contains dep))
-        (emitted' ++ ready.map (·.1), stillPending))
-      ([], pendingAxioms)
-    -- Append any axioms that had no function deps (or deps outside pureFuncDecls)
-    let funcAndAxiomDecls := interleavedFuncAxioms ++ remainingAxioms.map (·.1)
-    -- Translate procedures using the monad, collecting diagnostics from the final state.
-    let procDecls ← procProcs.mapM (fun proc => do
-      let coreProc ← translateProcedure proc
-      return Core.Decl.proc coreProc .empty)
+    -- Build the OutGraph for Tarjan.
+    let n := nonExternalArr.size
+    let graph : Strata.OutGraph n :=
+      nonExternalArr.foldl (fun (acc : Strata.OutGraph n × Nat) proc =>
+        let callerIdx := acc.2
+        let g := acc.1
+        let callees := procCallees proc
+        let g' := callees.foldl (fun g callee =>
+          match nameToIdx.get? callee with
+          | some calleeIdx => g.addEdge! callerIdx calleeIdx
+          | none => g) g
+        (g', callerIdx + 1)) (Strata.OutGraph.empty n, 0) |>.1
+
+    -- Run Tarjan's SCC algorithm. Results are in reverse topological order
+    -- (a node appears after all nodes that have paths to it).
+    let sccs := Strata.OutGraph.tarjan graph
+
+    -- For each SCC, determine if it is purely functional or contains procedures.
+    -- Procedures can't call functions (only functions can call functions), so an SCC
+    -- either contains only functional procedures or only non-functional procedures.
+    let sccDecls ← sccs.toList.mapM fun scc => do
+      let procs := scc.toList.filterMap fun idx =>
+        nonExternalArr[idx.val]?
+      let isFuncSCC := procs.all (·.isFunctional)
+      if isFuncSCC then
+        -- Translate all as Core functions.
+        -- An SCC is recursive if it has >1 member, or if the single node has a self-edge.
+        let isRecursive := procs.length > 1 ||
+          (match scc.toList.head? with
+           | some node => (graph.nodesOut node).contains node
+           | none => false)
+
+        -- A single-element SCC → .func; multi-element SCC → .recFuncBlock.
+        let funcs ← procs.mapM (translateProcedureToFunction options isRecursive )
+        if procs.length > 1 then
+          -- Collect all Core.Function values from the translated decls.
+          let coreFuncs := funcs.filterMap (fun d => match d with
+            | .func f => some f
+            | _ => none)
+          return [Core.Decl.recFuncBlock coreFuncs]
+        else
+          return funcs
+      else
+        -- Non-functional SCC: emit invokeOn axiom (if any) after each procedure.
+        -- So it can not be used to prove the procedure
+        procs.flatMapM fun proc => do
+          let axiomDecls : List Core.Decl ← match proc.invokeOn with
+            | none => pure []
+            | some trigger => do
+              let axDecl? ← translateInvokeOnAxiom proc trigger
+              return axDecl?.toList
+          let procDecl ← translateProcedure proc
+          return [Core.Decl.proc procDecl .empty] ++ axiomDecls
+
+    -- Topological sort: tarjan already gives reverse-topological order (dependencies first).
+    -- We additionally want procedure SCCs to come before function SCCs at the same level,
+    -- so that invokeOn axioms (which reference functions) are placed after the functions
+    -- they depend on. Since tarjan output is already dependency-first, we just stable-sort
+    -- to move procedure-containing SCCs before function-only SCCs within the same position.
+    -- The tarjan output is already correct topological order; we emit it as-is since
+    -- procedure SCCs naturally depend on function SCCs (functions are called by procedures),
+    -- so functions will already appear before procedures in the tarjan output.
+    let orderedDecls := sccDecls.flatten
 
     -- Translate Laurel constants to Core function declarations (0-ary functions)
     let constantDecls ← program.constants.mapM fun c => do
@@ -863,15 +893,10 @@ def translate (options: LaurelTranslateOptions) (program : Program): TranslateRe
         body := body
       }
 
-    -- Collect ALL errors from both functions, procedures, and resolution before deciding whether to fail
-    -- let allErrors :=pureErrors ++ procDiags ++ constantsState.diagnostics
-    -- if !allErrors.isEmpty then
-    --   .error allErrors.toArray
-
     -- Translate Laurel datatype definitions to Core declarations.
     let groupedDatatypeDecls ← translateTypes program model
     let program := {
-      decls := groupedDatatypeDecls ++ constantDecls ++ funcAndAxiomDecls ++ procDecls
+      decls := groupedDatatypeDecls ++ constantDecls ++ orderedDecls
     }
 
     -- dbg_trace "=== Generated Strata Core Program ==="
