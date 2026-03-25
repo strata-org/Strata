@@ -826,7 +826,7 @@ def translate (options: LaurelTranslateOptions) (program : Program): TranslateRe
         let callees := procCallees proc
         let g' := callees.foldl (fun g callee =>
           match nameToIdx.get? callee with
-          | some calleeIdx => g.addEdge! callerIdx calleeIdx
+          | some calleeIdx => g.addEdge! calleeIdx callerIdx
           | none => g) g
         (g', callerIdx + 1)) (Strata.OutGraph.empty n, 0) |>.1
 
@@ -849,10 +849,10 @@ def translate (options: LaurelTranslateOptions) (program : Program): TranslateRe
            | some node => (graph.nodesOut node).contains node
            | none => false)
 
-        -- A single-element SCC → .func; multi-element SCC → .recFuncBlock.
-        let funcs ← procs.mapM (translateProcedureToFunction options isRecursive )
-        if procs.length > 1 then
-          -- Collect all Core.Function values from the translated decls.
+        -- A single-element SCC → .func (or .recFuncBlock if recursive); multi-element SCC → .recFuncBlock.
+        let funcs ← procs.mapM (translateProcedureToFunction options isRecursive)
+        if isRecursive then
+          -- Wrap all recursive functions (single self-recursive or mutual) in recFuncBlock.
           let coreFuncs := funcs.filterMap (fun d => match d with
             | .func f => some f
             | _ => none)
