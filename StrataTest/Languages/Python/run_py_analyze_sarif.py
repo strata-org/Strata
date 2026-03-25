@@ -33,6 +33,7 @@ SKIP_TESTS = BOTH_SKIP | {
     "test_dict_operations",
     "test_for_loop",
     "test_if_elif",
+    "test_ifexpr",
     "test_list",
     "test_list_slice",
     "test_loops",

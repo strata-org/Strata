@@ -486,6 +486,12 @@ partial def translateExpr (ctx : TranslationContext) (e : Python.expr SourceRang
       let first ← translateExpr ctx values.val[0]!
       return first
 
+  | .IfExp _ cond thenb elseb =>
+    let condExpr ← translateExpr ctx cond
+    let thenExpr ← translateExpr ctx thenb
+    let elseExpr ← translateExpr ctx elseb
+    return mkStmtExprMd (StmtExpr.IfThenElse (Any_to_bool condExpr) thenExpr elseExpr)
+
   | .Call _ f args kwargs => translateCall ctx f args.val.toList kwargs.val.toList
 
   -- Subscript access: dict['key'] or list[0]
