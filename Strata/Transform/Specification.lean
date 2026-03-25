@@ -41,71 +41,6 @@ public section
 
 namespace Imperative
 
-/-! ## Configuration accessors
-
-Defined in the `Imperative` namespace so that dot notation works
-on `Config P (Cmd P)`. -/
-
-variable {P : PureExpr}
-
-/-- Extract the store from a configuration. -/
-def Config.getStore : Config P (Cmd P) → SemanticStore P
-  | .stmt _ ρ => ρ.store
-  | .stmts _ ρ => ρ.store
-  | .terminal ρ => ρ.store
-  | .exiting _ ρ => ρ.store
-  | .block _ inner => inner.getStore
-  | .seq inner _ => inner.getStore
-
-/-- Extract the evaluator from a configuration. -/
-def Config.getEval : Config P (Cmd P) → SemanticEval P
-  | .stmt _ ρ => ρ.eval
-  | .stmts _ ρ => ρ.eval
-  | .terminal ρ => ρ.eval
-  | .exiting _ ρ => ρ.eval
-  | .block _ inner => inner.getEval
-  | .seq inner _ => inner.getEval
-
-/-- Extract the execution environment from a configuration. -/
-def Config.getEnv : Config P (Cmd P) → Env P
-  | .stmt _ ρ => ρ
-  | .stmts _ ρ => ρ
-  | .terminal ρ => ρ
-  | .exiting _ ρ => ρ
-  | .block _ inner => inner.getEnv
-  | .seq inner _ => inner.getEnv
-
-variable {P : PureExpr}
-
-/-- `noMatchingAssert` for statements and statement lists.
-    Returns `True` when `s` does not syntactically contain any `assert`
-    command with the given label. -/
-def Stmt.noMatchingAssert : Stmt P (Cmd P) → String → Prop
-  | .cmd (.assert l _ _), label => l ≠ label
-  | .cmd _, _ => True
-  | .block _ ss _, label => Stmts.noMatchingAssert ss label
-  | .ite _ tss ess _, label =>
-    Stmts.noMatchingAssert tss label ∧ Stmts.noMatchingAssert ess label
-  | .loop _ _ _ body _, label => Stmts.noMatchingAssert body label
-  | .exit _ _, _ => True
-  | .funcDecl _ _, _ => True
-  | .typeDecl _ _, _ => True
-where
-  /-- Helper for lists of statements. -/
-  Stmts.noMatchingAssert : List (Stmt P (Cmd P)) → String → Prop
-    | [], _ => True
-    | s :: ss, label => s.noMatchingAssert label ∧ Stmts.noMatchingAssert ss label
-
-/-- Extend `noMatchingAssert` to configurations. -/
-def Config.noMatchingAssert : Config P (Cmd P) → String → Prop
-  | .stmt s _, label => s.noMatchingAssert label
-  | .stmts ss _, label => Stmt.noMatchingAssert.Stmts.noMatchingAssert ss label
-  | .terminal _, _ => True
-  | .exiting _ _, _ => True
-  | .block _ inner, label => inner.noMatchingAssert label
-  | .seq inner ss, label =>
-    inner.noMatchingAssert label ∧ Stmt.noMatchingAssert.Stmts.noMatchingAssert ss label
-
 namespace Specification
 
 variable (P : PureExpr) [HasFvar P] [HasBool P] [HasNot P]
@@ -237,6 +172,8 @@ theorem noMatchingAssert_implies_no_reachable_assert
   | step _ _ _ hstep _ ih =>
     exact ih (@step_preserves_noMatchingAssert P _ _ _ extendEval _ _ _ hstep hno_c)
 
+
+
 /-! ## Style A — Reachability-based assertion validity -/
 
 /-- A configuration `cfg` is *reachable* from statement `s` with initial
@@ -262,6 +199,8 @@ def AllAssertsValid
     (s : Stmt P (Cmd P)) : Prop :=
   ∀ (a : AssertId P), AssertValid P extendEval s a
 
+
+
 /-! ## Style B — Hoare-triple assertion validity -/
 
 /-- Partial-correctness Hoare triple using small-step semantics.
@@ -281,26 +220,6 @@ def HoareTriple
     Post ρ' ∧ ρ'.hasFailure = false
 
 /-! ## Small-step helper lemmas -/
-
-/-- Lifting multi-step execution through a block context. -/
-private theorem block_inner_star
-    (inner inner' : Config P (Cmd P))
-    (label : String)
-    (h : StepStmtStar P (EvalCmd P) extendEval inner inner') :
-    StepStmtStar P (EvalCmd P) extendEval (.block label inner) (.block label inner') := by
-  induction h with
-  | refl => exact .refl _
-  | step _ mid _ hstep _ ih => exact .step _ _ _ (.step_block_body hstep) ih
-
-/-- Transitivity of `ReflTrans`. -/
-private theorem reflTrans_trans
-    {x y z : Config P (Cmd P)}
-    (h1 : StepStmtStar P (EvalCmd P) extendEval x y)
-    (h2 : StepStmtStar P (EvalCmd P) extendEval y z) :
-    StepStmtStar P (EvalCmd P) extendEval x z := by
-  induction h1 with
-  | refl => exact h2
-  | step _ mid _ hstep _ ih => exact .step _ mid _ hstep (ih h2)
 
 /-- If execution inside a block reaches a config where isAtAssert holds,
     then the config must be `.block label inner` where `inner` is reachable
@@ -364,173 +283,6 @@ private theorem seq_isAtAssert_cases
       | refl => exact absurd hat (by simp [isAtAssert])
       | step _ _ _ h _ => exact absurd h (by intro h; cases h)
 
-/-- Two configs agree on store/eval (may differ on hasFailure). -/
-private def ConfigSE : Config P (Cmd P) → Config P (Cmd P) → Prop
-  | .stmt s₁ ρ₁, .stmt s₂ ρ₂ => s₁ = s₂ ∧ ρ₁.store = ρ₂.store ∧ ρ₁.eval = ρ₂.eval
-  | .stmts ss₁ ρ₁, .stmts ss₂ ρ₂ => ss₁ = ss₂ ∧ ρ₁.store = ρ₂.store ∧ ρ₁.eval = ρ₂.eval
-  | .terminal ρ₁, .terminal ρ₂ => ρ₁.store = ρ₂.store ∧ ρ₁.eval = ρ₂.eval
-  | .exiting l₁ ρ₁, .exiting l₂ ρ₂ => l₁ = l₂ ∧ ρ₁.store = ρ₂.store ∧ ρ₁.eval = ρ₂.eval
-  | .block l₁ i₁, .block l₂ i₂ => l₁ = l₂ ∧ ConfigSE i₁ i₂
-  | .seq i₁ ss₁, .seq i₂ ss₂ => ss₁ = ss₂ ∧ ConfigSE i₁ i₂
-  | _, _ => False
-
-/-- Single-step simulation: if two configs agree on store/eval and one steps,
-    the other can take the same step with store/eval preserved. -/
-private def step_simulation
-    (c₁ c₁' c₂ : Config P (Cmd P))
-    (hstep : StepStmt P (EvalCmd P) extendEval c₁ c₁')
-    (heq : ConfigSE P c₁ c₂) :
-    ∃ c₂', StepStmt P (EvalCmd P) extendEval c₂ c₂' ∧ ConfigSE P c₁' c₂' := by
-  -- Case-split on c₂ to unfold ConfigSE, then apply the matching step rule.
-  -- For each StepStmt constructor, the guard only depends on store/eval
-  -- (which are equal), so the same rule applies to c₂.
-  cases hstep with
-  | step_cmd hcmd =>
-    cases c₂ with
-    | stmt _ ρ₂ => obtain ⟨rfl, hs, he⟩ := heq; exact ⟨_, .step_cmd (hs ▸ he ▸ hcmd), rfl, he⟩
-    | _ => exact nomatch heq
-  | step_block =>
-    cases c₂ with
-    | stmt _ ρ₂ => obtain ⟨rfl, hs, he⟩ := heq; exact ⟨_, .step_block, rfl, rfl, hs, he⟩
-    | _ => exact nomatch heq
-  | step_ite_true hc hw =>
-    cases c₂ with
-    | stmt _ ρ₂ =>
-      have h := heq.1; subst h; exact ⟨_, .step_ite_true (heq.2.2 ▸ heq.2.1 ▸ hc) (heq.2.2 ▸ hw),
-        ⟨rfl, heq.2.1, heq.2.2⟩⟩
-    | _ => exact nomatch heq
-  | step_ite_false hc hw =>
-    cases c₂ with
-    | stmt _ ρ₂ =>
-      have h := heq.1; subst h; exact ⟨_, .step_ite_false (heq.2.2 ▸ heq.2.1 ▸ hc) (heq.2.2 ▸ hw),
-        ⟨rfl, heq.2.1, heq.2.2⟩⟩
-    | _ => exact nomatch heq
-  | step_loop_enter hc hw =>
-    cases c₂ with
-    | stmt _ ρ₂ =>
-      have h := heq.1; subst h; exact ⟨_, .step_loop_enter (heq.2.2 ▸ heq.2.1 ▸ hc) (heq.2.2 ▸ hw),
-        ⟨rfl, heq.2.1, heq.2.2⟩⟩
-    | _ => exact nomatch heq
-  | step_loop_exit hc hw =>
-    cases c₂ with
-    | stmt _ ρ₂ =>
-      have h := heq.1; subst h; exact ⟨_, .step_loop_exit (heq.2.2 ▸ heq.2.1 ▸ hc) (heq.2.2 ▸ hw),
-        ⟨heq.2.1, heq.2.2⟩⟩
-    | _ => exact nomatch heq
-  | step_exit =>
-    cases c₂ with
-    | stmt _ ρ₂ => obtain ⟨rfl, hs, he⟩ := heq; exact ⟨_, .step_exit, rfl, hs, he⟩
-    | _ => exact nomatch heq
-  | step_funcDecl =>
-    cases c₂ with
-    | stmt _ ρ₂ => obtain ⟨rfl, hs, he⟩ := heq; exact ⟨_, .step_funcDecl, hs, by simp [he, hs]⟩
-    | _ => exact nomatch heq
-  | step_typeDecl =>
-    cases c₂ with
-    | stmt _ ρ₂ => obtain ⟨rfl, hs, he⟩ := heq; exact ⟨_, .step_typeDecl, hs, he⟩
-    | _ => exact nomatch heq
-  | step_stmts_nil =>
-    cases c₂ with
-    | stmts _ ρ₂ => obtain ⟨rfl, hs, he⟩ := heq; exact ⟨_, .step_stmts_nil, hs, he⟩
-    | _ => exact nomatch heq
-  | step_stmts_cons =>
-    cases c₂ with
-    | stmts _ ρ₂ => obtain ⟨rfl, hs, he⟩ := heq; exact ⟨_, .step_stmts_cons, rfl, rfl, hs, he⟩
-    | _ => exact nomatch heq
-  | step_seq_inner h =>
-    cases c₂ with
-    | seq i₂ _ =>
-      have hrs := heq.1; subst hrs
-      have ⟨c₂', h₂, heq₂⟩ := step_simulation _ _ _ h heq.2
-      exact ⟨_, .step_seq_inner h₂, ⟨rfl, heq₂⟩⟩
-    | _ => exact nomatch heq
-  | step_seq_done =>
-    cases c₂ with
-    | seq i₂ _ =>
-      have hrs := heq.1; subst hrs
-      cases i₂ with
-      | terminal ρ₂ => exact ⟨_, .step_seq_done, ⟨rfl, heq.2.1, heq.2.2⟩⟩
-      | _ => exact nomatch heq.2
-    | _ => exact nomatch heq
-  | step_seq_exit =>
-    cases c₂ with
-    | seq i₂ _ =>
-      cases i₂ with
-      | exiting _ _ => exact ⟨_, .step_seq_exit, ⟨heq.2.1, heq.2.2.1, heq.2.2.2⟩⟩
-      | _ => exact nomatch heq.2
-    | _ => exact nomatch heq
-  | step_block_body h =>
-    cases c₂ with
-    | block _ i₂ =>
-      have hrs := heq.1; subst hrs
-      have ⟨c₂', h₂, heq₂⟩ := step_simulation _ _ _ h heq.2
-      exact ⟨_, .step_block_body h₂, ⟨rfl, heq₂⟩⟩
-    | _ => exact nomatch heq
-  | step_block_done =>
-    cases c₂ with
-    | block _ i₂ =>
-      have hrs := heq.1; subst hrs
-      cases i₂ with
-      | terminal ρ₂ => exact ⟨_, .step_block_done, ⟨heq.2.1, heq.2.2⟩⟩
-      | _ => exact nomatch heq.2
-    | _ => exact nomatch heq
-  | step_block_exit_none =>
-    cases c₂ with
-    | block _ i₂ =>
-      cases i₂ with
-      | exiting l₂ ρ₂ =>
-        have hl := heq.2.1; cases hl
-        exact ⟨_, .step_block_exit_none, ⟨heq.2.2.1, heq.2.2.2⟩⟩
-      | _ => exact nomatch heq.2
-    | _ => exact nomatch heq
-  | step_block_exit_match hl =>
-    cases c₂ with
-    | block _ i₂ =>
-      have hlb := heq.1; subst hlb
-      cases i₂ with
-      | exiting l₂ ρ₂ =>
-        have hl₂ := heq.2.1; subst hl₂
-        exact ⟨_, .step_block_exit_match hl, ⟨heq.2.2.1, heq.2.2.2⟩⟩
-      | _ => exact nomatch heq.2
-    | _ => exact nomatch heq
-  | step_block_exit_mismatch hl =>
-    cases c₂ with
-    | block _ i₂ =>
-      have hlb := heq.1; subst hlb
-      cases i₂ with
-      | exiting l₂ ρ₂ =>
-        have hl₂ := heq.2.1; subst hl₂
-        exact ⟨_, .step_block_exit_mismatch hl, ⟨rfl, heq.2.2.1, heq.2.2.2⟩⟩
-      | _ => exact nomatch heq.2
-    | _ => exact nomatch heq
-
-/-- The terminal state's store and eval are independent of the starting
-    `hasFailure` flag.  Proved by simulation: each step preserves
-    store/eval equivalence, so the terminal states agree. -/
-theorem smallStep_hasFailure_irrel
-    (s : Stmt P (Cmd P)) (ρ ρ' : Env P)
-    (h : StepStmtStar P (EvalCmd P) extendEval (.stmt s ρ) (.terminal ρ')) :
-    ∀ (ρ₂ : Env P), ρ₂.store = ρ.store → ρ₂.eval = ρ.eval →
-    ∃ ρ₂', StepStmtStar P (EvalCmd P) extendEval (.stmt s ρ₂) (.terminal ρ₂') ∧
-      ρ₂'.store = ρ'.store ∧ ρ₂'.eval = ρ'.eval := by
-  intro ρ₂ hs he
-  -- Lift single-step simulation to multi-step
-  suffices ∀ (c₁ c₂ : Config P (Cmd P)),
-      ConfigSE P c₁ c₂ →
-      ∀ c₁', StepStmtStar P (EvalCmd P) extendEval c₁ c₁' →
-      ∃ c₂', StepStmtStar P (EvalCmd P) extendEval c₂ c₂' ∧ ConfigSE P c₁' c₂' by
-    have heq_init : ConfigSE P (.stmt s ρ) (.stmt s ρ₂) := ⟨rfl, hs.symm, he.symm⟩
-    have ⟨c₂', hstar₂, heq₂⟩ := this _ _ heq_init _ h
-    match c₂', heq₂ with
-    | .terminal ρ₂', heq_t => exact ⟨ρ₂', hstar₂, heq_t.1.symm, heq_t.2.symm⟩
-  intro c₁ c₂ heq c₁' hstar
-  induction hstar generalizing c₂ with
-  | refl => exact ⟨c₂, .refl _, heq⟩
-  | step _ mid _ hstep _ ih =>
-    have ⟨mid₂, hstep₂, heq_mid⟩ := step_simulation P extendEval _ _ _ hstep heq
-    have ⟨c₂', hstar₂, heq_final⟩ := ih _ heq_mid
-    exact ⟨c₂', .step _ _ _ hstep₂ hstar₂, heq_final⟩
-
 /-- For a single assert command, any config reachable from `.stmts [assert] ρ`
     that satisfies `isAtAssert` has getEval = ρ.eval and getStore = ρ.store. -/
 private theorem assert_tail_getEvalStore
@@ -580,6 +332,8 @@ private theorem assert_tail_getEvalStore
                     cases hr4 with
                     | refl => exact absurd hat (by simp [isAtAssert])
                     | step _ _ _ h5 _ => exact absurd h5 (by intro h; cases h)
+
+
 
 /-! ## General connection between HoareTriple and AssertValid
 
@@ -696,7 +450,7 @@ theorem hoareTriple_implies_assertValid
                         cases h_assume_rest with
                         | refl =>
                           have ⟨ρ'_clean, hterm_clean, hs_eq, he_eq⟩ :=
-                            @smallStep_hasFailure_irrel P _ _ _ extendEval
+                            smallStep_hasFailure_irrel P (EvalCmd P) extendEval
                               st _ ρ' hterm_st { ρ₀ with hasFailure := false } rfl rfl
                           have ⟨hpost, _⟩ := hoare { ρ₀ with hasFailure := false } ρ'_clean
                             hpre hwfb rfl hterm_clean
@@ -742,7 +496,7 @@ private theorem step_preserves_noFailure
   | step_seq_exit => exact hnf
   | step_block_body h ih =>
     exact ih
-      (fun a cfg hr hat => hv a (.block _ cfg) (block_inner_star P extendEval _ _ _ hr) hat) hnf
+      (fun a cfg hr hat => hv a (.block _ cfg) (block_inner_star P (EvalCmd P) extendEval _ _ _ hr) hat) hnf
   | step_block_done => exact hnf
   | step_block_exit_none => exact hnf
   | step_block_exit_match _ => exact hnf
@@ -819,7 +573,7 @@ private theorem composite_allAssertsValid_implies_st
   have h3 := seq_inner_star P (EvalCmd P) extendEval _ _ [assert_stmt] hstar
   -- Compose and lift through block
   have h_inner := reflTrans_trans (h1 := reflTrans_trans (h1 := h1) (h2 := h2)) (h2 := h3)
-  have h_block := block_inner_star P extendEval _ _ block_label h_inner
+  have h_block := block_inner_star P (EvalCmd P) extendEval _ _ block_label h_inner
   have h_start : StepStmtStar P (EvalCmd P) extendEval
       (.stmt (.block block_label body block_md) ρ₀) (.block block_label (.stmts body ρ₀)) :=
     .step _ _ _ StepStmt.step_block (.refl _)
@@ -883,7 +637,7 @@ theorem assertValid_implies_hoareTriple
   -- Compose: stmts body ρ₀ →* seq (stmt assert ρ') []
   have h_inner := reflTrans_trans (h1 := reflTrans_trans (h1 := h1) (h2 := h2)) (h2 := h3)
   -- Lift through block: block bl (stmts body ρ₀) →* block bl (seq (stmt assert ρ') [])
-  have h_block := block_inner_star P extendEval _ _ block_label h_inner
+  have h_block := block_inner_star P (EvalCmd P) extendEval _ _ block_label h_inner
   -- Start: stmt (block ...) ρ₀ → block bl (stmts body ρ₀)
   have h_start : StepStmtStar P (EvalCmd P) extendEval
       (.stmt (.block block_label body block_md) ρ₀) (.block block_label (.stmts body ρ₀)) :=
