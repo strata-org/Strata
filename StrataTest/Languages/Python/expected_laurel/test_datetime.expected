@@ -9,6 +9,8 @@ List_set_body_calls_List_set_0: ✅ pass
 DictStrAny_get_body_calls_DictStrAny_get_0: ✅ pass
 Any_get_body_calls_DictStrAny_get_0: ✅ pass
 Any_get_body_calls_List_get_1: ✅ pass
+Any_get_body_calls_List_slice_2: ✅ pass
+Any_get_body_calls_List_drop_3: ✅ pass
 Any_get!_body_calls_DictStrAny_get_0: ✅ pass
 Any_get!_body_calls_List_get_1: ✅ pass
 Any_set_body_calls_List_set_0: ✅ pass
@@ -37,5 +39,5 @@ assert_assert(673)_calls_Any_to_bool_0: ✅ pass (at line 25, col 0)
 assert(673): ✅ pass (at line 25, col 0)
 assert_assert(758)_calls_Any_to_bool_0: ✅ pass (at line 27, col 0)
 assert(758): ✅ pass (at line 27, col 0)
-assert_assert(798)_calls_Any_to_bool_0: ✅ pass (at line 30, col 0)
-assert(798): ✅ pass (at line 30, col 0)
+assert_assert(859)_calls_Any_to_bool_0: ✅ pass (at line 30, col 0)
+assert(859): ✅ pass (at line 30, col 0)

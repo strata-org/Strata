@@ -30,7 +30,7 @@ jobs:
           - stable
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
       - name: Install cvc5
         shell: bash
         run: |
@@ -67,11 +67,11 @@ jobs:
               chmod +x "${ARCHIVE_NAME}/bin/z3"
               echo "$GITHUB_WORKSPACE/${ARCHIVE_NAME}/bin/" >> $GITHUB_PATH
       - name: Install .NET
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v5
         with:
           dotnet-version: '8.0.x'
       - name: Restore lake cache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v5
         with:
           path: .lake
           key: lake-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}-${{ hashFiles('lake-manifest.json') }}-${{ hashFiles('**/*.st') }}-${{ github.sha }}
@@ -84,7 +84,7 @@ jobs:
         with:
           use-github-cache: false
       - name: Save lake cache
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v5
         with:
           path: .lake
           key: lake-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}-${{ hashFiles('lake-manifest.json') }}-${{ hashFiles('**/*.st') }}-${{ github.sha }}
@@ -100,7 +100,7 @@ jobs:
         working-directory: Examples
         shell: bash
         run: ./run_examples.sh
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: '3.14'
       - name: Build using pip
@@ -129,7 +129,7 @@ jobs:
           - stable
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
       - name: Check copyright headers
@@ -149,20 +149,38 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+      actions: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Build API documentation package
         uses: leanprover/lean-action@v1
         with:
           lake-package-directory: 'docs/api'
+      - name: Restore lake cache
+        uses: actions/cache/restore@v5
+        with:
+          path: |
+            .lake
+            docs/verso/.lake
+          key: docs-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain', 'docs/verso/lean-toolchain') }}-${{ hashFiles('lake-manifest.json', 'docs/verso/lake-manifest.json') }}-${{ hashFiles('**/*.st') }}-${{ github.sha }}
+          restore-keys: |
+            docs-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain', 'docs/verso/lean-toolchain') }}-${{ hashFiles('lake-manifest.json', 'docs/verso/lake-manifest.json') }}-${{ hashFiles('**/*.st') }}
       - name: Build documentation package
         uses: leanprover/lean-action@v1
         with:
           build-args: '--wfail'
           lake-package-directory: 'docs/verso'
+          use-github-cache: false
       - name: Build documentation
         run: ./generate.sh
         working-directory: docs/verso
+      - name: Save lake cache
+        uses: actions/cache/save@v5
+        with:
+          path: |
+            .lake
+            docs/verso/.lake
+          key: docs-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain', 'docs/verso/lean-toolchain') }}-${{ hashFiles('lake-manifest.json', 'docs/verso/lake-manifest.json') }}-${{ hashFiles('**/*.st') }}-${{ github.sha }}
       - name: Check for broken links
         uses: lycheeverse/lychee-action@v2
         with:
@@ -178,8 +196,8 @@ jobs:
       matrix:
         python_version: [3.11, 3.12, 3.13, 3.14]
     steps:
-    - uses: actions/checkout@v4
-    - uses: actions/setup-python@v5
+    - uses: actions/checkout@v6
+    - uses: actions/setup-python@v6
       with:
         python-version: ${{ matrix.python_version }}
     - name: Build using pip

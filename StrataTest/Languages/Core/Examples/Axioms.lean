@@ -126,7 +126,8 @@ assert [axiomPgm2_main_assert]: (x >= 0 ==> f(x) > x);
 /-- info: [] -/
 #guard_msgs in
 #eval let (program, _) := Core.getProgram axiomPgm2
-      Std.format (Core.Program.getIrrelevantAxioms program ["f"])
+      let cache := Core.IrrelevantAxioms.Cache.build program
+      Std.format (Core.IrrelevantAxioms.getIrrelevantAxioms program cache ["f"])
 
 /--
 info: [Strata.Core] Type checking succeeded.
