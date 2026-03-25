@@ -486,6 +486,12 @@ partial def translateExpr (ctx : TranslationContext) (e : Python.expr SourceRang
       let first ← translateExpr ctx values.val[0]!
       return first
 
+  | .IfExp _ cond thenb elseb =>
+    let condExpr ← translateExpr ctx cond
+    let thenExpr ← translateExpr ctx thenb
+    let elseExpr ← translateExpr ctx elseb
+    return mkStmtExprMd (StmtExpr.IfThenElse (Any_to_bool condExpr) thenExpr elseExpr)
+
   | .Call _ f args kwargs => translateCall ctx f args.val.toList kwargs.val.toList
 
   -- Subscript access: dict['key'] or list[0]
@@ -1626,132 +1632,126 @@ def PreludeInfo.merge (a b : PreludeInfo) : PreludeInfo where
 
 /-- Translate Python module to Laurel Program using pre-extracted prelude info. -/
 def pythonToLaurel' (info : PreludeInfo)
-    (pyModule : Python.Command SourceRange)
+    (body : Array (stmt SourceRange))
     (prev_ctx: Option TranslationContext := none)
     (filePath : String := "")
     (overloadTable : OverloadTable := {})
     : Except TranslationError (Laurel.Program × TranslationContext) := do
-  match pyModule with
-  | .Module _ body _ => do
-    -- Collect user function names (top-level and class methods)
-    let userFunctions := body.val.toList.flatMap fun stmt =>
-      match stmt with
-      | .FunctionDef _ name _ _ _ _ _ _ => [name.val]
-      | .ClassDef _ className _ _ clsBody _ _ =>
-        clsBody.val.toList.filterMap fun s =>
-          match s with
-          | .FunctionDef _ methodName _ _ _ _ _ _ =>
-            some (className.val ++ "_" ++ methodName.val)
-          | _ => none
-      | _ => []
+  -- Collect user function names (top-level and class methods)
+  let userFunctions := body.toList.flatMap fun stmt =>
+    match stmt with
+    | .FunctionDef _ name _ _ _ _ _ _ => [name.val]
+    | .ClassDef _ className _ _ clsBody _ _ =>
+      clsBody.val.toList.filterMap fun s =>
+        match s with
+        | .FunctionDef _ methodName _ _ _ _ _ _ =>
+          some (className.val ++ "_" ++ methodName.val)
+        | _ => none
+    | _ => []
+  let pyErrorTy : CompositeType := {
+    name := {text := "PythonError"}
+    extending := []  -- No inheritance support for now
+    fields := [{name:= "response", isMutable:= false, type:= AnyTy}]
+    instanceProcedures := []
+  }
 
-    let pyErrorTy : CompositeType := {
-      name := {text := "PythonError"}
-      extending := []  -- No inheritance support for now
-      fields := [{name:= "response", isMutable:= false, type:= AnyTy}]
-      instanceProcedures := []
-    }
+  -- FIRST PASS: Collect all class definitions and field type info
+  let mut procedures : List Procedure := []
 
-    let mut procedures : List Procedure := []
+  let mut compositeTypes : List CompositeType := [pyErrorTy]
+  let mut compositeTypeNames := info.compositeTypes.insert "PythonError"
+  let mut classFieldHighType : Std.HashMap String (Std.HashMap String HighType) := {}
+  for stmt in body do
+    match stmt with
+    | .ClassDef _ _ _ _ _ _ _ =>
+      let initCtx : TranslationContext := {
+        preludeProcedures := info.procedures,
+        preludeTypes := info.types,
+        compositeTypeNames := compositeTypeNames,
+        classFieldHighType := classFieldHighType,
+        filePath := filePath
+      }
+      let (composite, instanceProcedures) ← translateClass initCtx stmt
+      procedures := procedures ++ instanceProcedures
+      compositeTypes := compositeTypes ++ [composite]
+      compositeTypeNames := compositeTypeNames.insert composite.name.text
+      -- Collect field types for Any coercions in field accesses
+      let fieldMap := composite.fields.foldl (fun m f => m.insert f.name.text f.type.val) (classFieldHighType[composite.name.text]?.getD {})
+      classFieldHighType := classFieldHighType.insert composite.name.text fieldMap
+    | _ => pure ()
 
-    -- FIRST PASS: Collect all class definitions and field type info
-    let mut compositeTypes : List CompositeType := [pyErrorTy]
-    let mut compositeTypeNames := info.compositeTypes.insert "PythonError"
-    let mut classFieldHighType : Std.HashMap String (Std.HashMap String HighType) := {}
-    for stmt in body.val do
-      match stmt with
-      | .ClassDef _ _ _ _ _ _ _ =>
-        let initCtx : TranslationContext := {
-          preludeProcedures := info.procedures,
-          preludeTypes := info.types,
-          compositeTypeNames := compositeTypeNames,
-          classFieldHighType := classFieldHighType,
-          filePath := filePath
-        }
-        let (composite, instanceProcedures) ← translateClass initCtx stmt
-        procedures := procedures ++ instanceProcedures
-        compositeTypes := compositeTypes ++ [composite]
-        compositeTypeNames := compositeTypeNames.insert composite.name.text
-        -- Collect field types for Any coercions in field accesses
-        let fieldMap := composite.fields.foldl (fun m f => m.insert f.name.text f.type.val) (classFieldHighType[composite.name.text]?.getD {})
-        classFieldHighType := classFieldHighType.insert composite.name.text fieldMap
-      | _ => pure ()
+  let mut ctx : TranslationContext := match prev_ctx with
+  | some prev_ctx => prev_ctx
+  | _ =>
+  {
+    currentClassName := none,
+    preludeProcedures := info.procedures,
+    functionSignatures := info.functionSignatures
+    preludeFunctions := info.functions
+    preludeTypes := info.types,
+    userFunctions := userFunctions,
+    compositeTypeNames := compositeTypeNames,
+    classFieldHighType := classFieldHighType,
+    overloadTable := overloadTable,
+    filePath := filePath
+  }
 
-    let mut ctx : TranslationContext := match prev_ctx with
-    | some prev_ctx => prev_ctx
+  -- Separate functions from other statements
+  let mut otherStmts : List (Python.stmt SourceRange) := []
+
+  for stmt in body do
+    match stmt with
+    | .FunctionDef _ _ _ fbody _ _ _ _ =>
+      let funcDecl ←  pyFuncDefToPythonFunctionDecl ctx stmt
+      let proc ← translateFunction ctx stmt.ann funcDecl fbody.val.toList
+      ctx := {ctx with functionSignatures:= ctx.functionSignatures ++ [funcDecl]}
+      procedures := procedures ++ [proc.fst]
+    | .ClassDef _ _ _ _ _ _ _ =>
+      pure ()  -- Already processed in first pass
     | _ =>
-    {
-      currentClassName := none,
-      preludeProcedures := info.procedures,
-      functionSignatures := info.functionSignatures
-      preludeFunctions := info.functions
-      preludeTypes := info.types,
-      userFunctions := userFunctions,
-      compositeTypeNames := compositeTypeNames,
-      classFieldHighType := classFieldHighType,
-      overloadTable := overloadTable,
-      filePath := filePath
-    }
+      otherStmts := otherStmts ++ [stmt]
 
-    -- Separate functions from other statements
-    let mut otherStmts : List (Python.stmt SourceRange) := []
+  ctx := {ctx with variableTypes:= [("nullcall_ret", PyLauType.Any)]}
+  let (_, bodyStmts) ← translateStmtList ctx otherStmts
+  let bodyStmts := prependExceptHandlingHelper bodyStmts
+  let bodyStmts := mkStmtExprMd (.LocalVariable "__name__" AnyTy (some <| strToAny "__main__")) :: bodyStmts
+  let bodyStmts := (mkStmtExprMd (.LocalVariable "nullcall_ret" AnyTy (some AnyNone))) :: bodyStmts
+  let bodyBlock := mkStmtExprMd (StmtExpr.Block bodyStmts none)
 
-    for stmt in body.val do
-      match stmt with
-      | .FunctionDef _ _ _ fbody _ _ _ _ =>
-        let funcDecl ←  pyFuncDefToPythonFunctionDecl ctx stmt
-        let proc ← translateFunction ctx stmt.ann funcDecl fbody.val.toList
-        ctx := {ctx with functionSignatures:= ctx.functionSignatures ++ [funcDecl]}
-        procedures := procedures ++ [proc.fst]
-      | .ClassDef _ _ _ _ _ _ _ =>
-        pure ()  -- Already processed in first pass
-      | _ =>
-        otherStmts := otherStmts ++ [stmt]
+  let md := sourceRangeToMetaData ctx.filePath { start := 0, stop := 0 }
+  let mainProc : Procedure := {
+    name := "__main__",
+    inputs := [],
+    outputs := [],
+    preconditions := [],
+    determinism := .deterministic none,
+    decreases := none,
+    body := .Transparent bodyBlock
+    md := md
+    isFunctional := false
+  }
 
-    ctx := {ctx with variableTypes:= [("nullcall_ret", PyLauType.Any)]}
-    let (_, bodyStmts) ← translateStmtList ctx otherStmts
-    let bodyStmts := prependExceptHandlingHelper bodyStmts
-    let bodyStmts := mkStmtExprMd (.LocalVariable "__name__" AnyTy (some <| strToAny "__main__")) :: bodyStmts
-    let bodyStmts := (mkStmtExprMd (.LocalVariable "nullcall_ret" AnyTy (some AnyNone))) :: bodyStmts
-    let bodyBlock := mkStmtExprMd (StmtExpr.Block bodyStmts none)
+  let program : Laurel.Program := {
+    staticProcedures := procedures ++ [mainProc]
+    staticFields := []
+    types := compositeTypes.map TypeDefinition.Composite
+    constants := []
+  }
 
-    let md := sourceRangeToMetaData ctx.filePath { start := 0, stop := 0 }
-    let mainProc : Procedure := {
-      name := "__main__",
-      inputs := [],
-      outputs := [],
-      preconditions := [],
-      determinism := .deterministic none,
-      decreases := none,
-      body := .Transparent bodyBlock
-      md := md
-      isFunctional := false
-    }
-
-    let program : Laurel.Program := {
-      staticProcedures := procedures ++ [mainProc]
-      staticFields := []
-      types := compositeTypes.map TypeDefinition.Composite
-      constants := []
-    }
-
-    return (program, ctx)
-
-  | _ => throw (.internalError "Expected Module")
+  return (program, ctx)
 
 /-- Translate Python module to Laurel Program.
     Delegates to `pythonToLaurel'` after extracting prelude info,
     then prepends External stubs so the Laurel resolve pass can
     see prelude names. -/
 def pythonToLaurel (prelude: Core.Program)
-    (pyModule : Python.Command SourceRange)
+    (pyCommands : Array (stmt SourceRange))
     (prev_ctx: Option TranslationContext := none)
     (filePath : String := "")
     (overloadTable : OverloadTable := {})
     : Except TranslationError (Laurel.Program × TranslationContext) := do
   let info := PreludeInfo.ofCoreProgram prelude
-  pythonToLaurel' info pyModule prev_ctx filePath overloadTable
-
+  pythonToLaurel' info pyCommands prev_ctx filePath overloadTable
 
 end -- public section
 end Strata.Python
