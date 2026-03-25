@@ -147,11 +147,11 @@ def ExampleStmt1 : List (Imperative.Stmt LExprTP (Imperative.Cmd LExprTP)) :=
     {}]
 
 /--
-info: ok: #[LOCATION skip,
+info: ok: #[LOCATION 0,
  DECL (decl (x : unsignedbv[32])),
  ASSIGN (assign (x : unsignedbv[32]) (10 : unsignedbv[32])),
  ASSIGN (assign (x : unsignedbv[32]) (20 : unsignedbv[32])),
- LOCATION skip]
+ LOCATION 4]
 -/
 #guard_msgs in
 #eval do let ans ← Imperative.Stmts.toGotoTransform Lambda.TEnv.default "test1" ExampleStmt1
@@ -177,9 +177,9 @@ info: ok: #[DECL (decl (x : unsignedbv[32])),
  GOTO 7 [((not(true : bool)) : bool)],
  ASSIGN (assign (x : unsignedbv[32]) (10 : unsignedbv[32])),
  GOTO 9,
- LOCATION skip,
+ LOCATION 7,
  ASSIGN (assign (y : unsignedbv[32]) (20 : unsignedbv[32])),
- LOCATION skip]
+ LOCATION 9]
 -/
 #guard_msgs in
 #eval do let ans ← Imperative.Stmts.toGotoTransform Lambda.TEnv.default "test2" ExampleStmt2
@@ -202,11 +202,11 @@ def ExampleStmt3 : List (Imperative.Stmt LExprTP (Imperative.Cmd LExprTP)) :=
 /--
 info: ok: #[DECL (decl (i : unsignedbv[32])),
  ASSIGN (assign (i : unsignedbv[32]) (0 : unsignedbv[32])),
- LOCATION skip,
+ LOCATION 2,
  GOTO 6 [((not(true : bool)) : bool)],
  ASSIGN (assign (i : unsignedbv[32]) (((i : unsignedbv[32]) + (1 : unsignedbv[32])) : unsignedbv[32])),
  GOTO 2,
- LOCATION skip]
+ LOCATION 6]
 -/
 #guard_msgs in
 #eval do let ans ← Imperative.Stmts.toGotoTransform Lambda.TEnv.default "test3" ExampleStmt3
@@ -226,15 +226,15 @@ def ExampleStmt4 : List (Imperative.Stmt LExprTP (Imperative.Cmd LExprTP)) :=
     {}]
 
 /--
-info: ok: #[LOCATION skip,
+info: ok: #[LOCATION 0,
  DECL (decl (x : unsignedbv[32])),
  ASSIGN (assign (x : unsignedbv[32]) (0 : unsignedbv[32])),
  GOTO 6 [((not(true : bool)) : bool)],
  ASSIGN (assign (x : unsignedbv[32]) (100 : unsignedbv[32])),
  GOTO 7,
- LOCATION skip,
- LOCATION skip,
- LOCATION skip]
+ LOCATION 6,
+ LOCATION 7,
+ LOCATION 8]
 -/
 #guard_msgs in
 #eval do let ans ← Imperative.Stmts.toGotoTransform Lambda.TEnv.default "test4" ExampleStmt4
@@ -256,9 +256,9 @@ info: ok: #[DECL (decl (x : unsignedbv[32])),
  ASSIGN (assign (x : unsignedbv[32]) (0 : unsignedbv[32])),
  GOTO 6,
  ASSIGN (assign (x : unsignedbv[32]) (10 : unsignedbv[32])),
- LOCATION skip,
+ LOCATION 4,
  ASSIGN (assign (x : unsignedbv[32]) (20 : unsignedbv[32])),
- LOCATION skip]
+ LOCATION 6]
 -/
 #guard_msgs in
 #eval do let ans ← Imperative.Stmts.toGotoTransform Lambda.TEnv.default "test5" ExampleStmt5
@@ -291,16 +291,16 @@ info: ok: #[DECL (decl (i : unsignedbv[32])),
  ASSIGN (assign (i : unsignedbv[32]) (0 : unsignedbv[32])),
  DECL (decl (sum : unsignedbv[32])),
  ASSIGN (assign (sum : unsignedbv[32]) (0 : unsignedbv[32])),
- LOCATION skip,
+ LOCATION 4,
  GOTO 13 [((not(true : bool)) : bool)],
  GOTO 9 [((not(true : bool)) : bool)],
  ASSIGN (assign (sum : unsignedbv[32]) (((sum : unsignedbv[32]) + (i : unsignedbv[32])) : unsignedbv[32])),
  GOTO 10,
- LOCATION skip,
- LOCATION skip,
+ LOCATION 9,
+ LOCATION 10,
  ASSIGN (assign (i : unsignedbv[32]) (((i : unsignedbv[32]) + (1 : unsignedbv[32])) : unsignedbv[32])),
  GOTO 4,
- LOCATION skip]
+ LOCATION 13]
 -/
 #guard_msgs in
 #eval do let ans ← Imperative.Stmts.toGotoTransform Lambda.TEnv.default "test6" ExampleStmt6
@@ -324,17 +324,17 @@ def ExampleStmt7 : List (Imperative.Stmt LExprTP (Imperative.Cmd LExprTP)) :=
      {}]
 
 /--
-info: ok: #[LOCATION skip,
+info: ok: #[LOCATION 0,
  DECL (decl (x : unsignedbv[32])),
  ASSIGN (assign (x : unsignedbv[32]) (10 : unsignedbv[32])),
- LOCATION skip,
- LOCATION skip,
+ LOCATION 3,
+ LOCATION 4,
  DECL (decl (y : unsignedbv[32])),
  ASSIGN (assign (y : unsignedbv[32]) (20 : unsignedbv[32])),
- LOCATION skip,
- LOCATION skip,
+ LOCATION 7,
+ LOCATION 8,
  ASSIGN (assign (x : unsignedbv[32]) (((x : unsignedbv[32]) + (y : unsignedbv[32])) : unsignedbv[32])),
- LOCATION skip]
+ LOCATION 10]
 -/
 #guard_msgs in
 #eval do let ans ← Imperative.Stmts.toGotoTransform Lambda.TEnv.default "test7" ExampleStmt7
@@ -356,9 +356,9 @@ info: ok: #[DECL (decl (x : unsignedbv[32])),
  ASSIGN (assign (x : unsignedbv[32]) (0 : unsignedbv[32])),
  GOTO 4 [((not(true : bool)) : bool)],
  GOTO 6,
- LOCATION skip,
+ LOCATION 4,
  ASSIGN (assign (x : unsignedbv[32]) (100 : unsignedbv[32])),
- LOCATION skip]
+ LOCATION 6]
 -/
 #guard_msgs in
 #eval do let ans ← Imperative.Stmts.toGotoTransform Lambda.TEnv.default "test8" ExampleStmt8
@@ -376,7 +376,7 @@ def ExampleStmt9 : List (Imperative.Stmt LExprTP (Imperative.Cmd LExprTP)) :=
      {}]
 
 /--
-info: ok: #[LOCATION skip, GOTO 3 [((not(false : bool)) : bool)], GOTO 0, LOCATION skip]
+info: ok: #[LOCATION 0, GOTO 3 [((not(false : bool)) : bool)], GOTO 0, LOCATION 3]
 -/
 #guard_msgs in
 #eval do let ans ← Imperative.Stmts.toGotoTransform Lambda.TEnv.default "test9" ExampleStmt9
@@ -403,8 +403,8 @@ info: ok: #[DECL (decl (x : unsignedbv[32])),
  ASSIGN (assign (x : unsignedbv[32]) (10 : unsignedbv[32])),
  ASSERT skip,
  GOTO 8,
- LOCATION skip,
- LOCATION skip]
+ LOCATION 7,
+ LOCATION 8]
 -/
 #guard_msgs in
 #eval do let ans ← Imperative.Stmts.toGotoTransform Lambda.TEnv.default "test10" ExampleStmt10
@@ -458,11 +458,11 @@ def ExampleLoopInvariant : List (Imperative.Stmt LExprTP (Imperative.Cmd LExprTP
 /--
 info: ok: #[DECL (decl (i : unsignedbv[32])),
  ASSIGN (assign (i : unsignedbv[32]) (0 : unsignedbv[32])),
- LOCATION skip,
+ LOCATION 2,
  GOTO 6 [((not(true : bool)) : bool)],
  ASSIGN (assign (i : unsignedbv[32]) (((i : unsignedbv[32]) + (1 : unsignedbv[32])) : unsignedbv[32])),
  GOTO 2,
- LOCATION skip]
+ LOCATION 6]
 -/
 #guard_msgs in
 #eval do let ans ← Imperative.Stmts.toGotoTransform Lambda.TEnv.default "testInv" ExampleLoopInvariant

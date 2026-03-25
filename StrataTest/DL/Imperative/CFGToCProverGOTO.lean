@@ -84,13 +84,13 @@ private def seqCmds : List (Imperative.Stmt LExprTP (Imperative.Cmd LExprTP)) :=
     (.const { underlying := (), type := mty[bv32] } (.bitvecConst 32 42)) {})]
 
 /--
-info: ok: #[LOCATION skip,
+info: ok: #[LOCATION 0,
  DECL (decl (x : unsignedbv[32])),
  ASSIGN (assign (x : unsignedbv[32]) (0 : unsignedbv[32])),
  ASSIGN (assign (x : unsignedbv[32]) (42 : unsignedbv[32])),
  GOTO 6 [((not(true : bool)) : bool)],
  GOTO 6,
- LOCATION skip]
+ LOCATION 6]
 -/
 #guard_msgs in
 #eval do
@@ -114,20 +114,20 @@ private def iteCmds : List (Imperative.Stmt LExprTP (Imperative.Cmd LExprTP)) :=
      {}]
 
 /--
-info: ok: #[LOCATION skip,
+info: ok: #[LOCATION 0,
  DECL (decl (x : unsignedbv[32])),
  ASSIGN (assign (x : unsignedbv[32]) (0 : unsignedbv[32])),
  GOTO 9 [((not(true : bool)) : bool)],
  GOTO 5,
- LOCATION skip,
+ LOCATION 5,
  ASSIGN (assign (x : unsignedbv[32]) (10 : unsignedbv[32])),
  GOTO 13 [((not(true : bool)) : bool)],
  GOTO 13,
- LOCATION skip,
+ LOCATION 9,
  ASSIGN (assign (x : unsignedbv[32]) (20 : unsignedbv[32])),
  GOTO 13 [((not(true : bool)) : bool)],
  GOTO 13,
- LOCATION skip]
+ LOCATION 13]
 -/
 #guard_msgs in
 #eval do
@@ -167,19 +167,19 @@ private def loopCmds : List (Imperative.Stmt LExprTP (Imperative.Cmd LExprTP)) :
      {}]
 
 /--
-info: ok: #[LOCATION skip,
+info: ok: #[LOCATION 0,
  DECL (decl (i : unsignedbv[32])),
  ASSIGN (assign (i : unsignedbv[32]) (0 : unsignedbv[32])),
  GOTO 5 [((not(true : bool)) : bool)],
  GOTO 5,
- LOCATION skip,
+ LOCATION 5,
  GOTO 12 [((not(true : bool)) : bool)],
  GOTO 8,
- LOCATION skip,
+ LOCATION 8,
  ASSIGN (assign (i : unsignedbv[32]) (((i : unsignedbv[32]) + (1 : unsignedbv[32])) : unsignedbv[32])),
  GOTO 5 [((not(true : bool)) : bool)],
  GOTO 5,
- LOCATION skip]
+ LOCATION 12]
 -/
 #guard_msgs in
 #eval do
@@ -204,7 +204,7 @@ info: ok: #[LOCATION skip,
 private def emptyCmds : List (Imperative.Stmt LExprTP (Imperative.Cmd LExprTP)) := []
 
 /--
-info: ok: #[LOCATION skip]
+info: ok: #[LOCATION 0]
 -/
 #guard_msgs in
 #eval do
@@ -221,7 +221,7 @@ private def assertAssumeCmds : List (Imperative.Stmt LExprTP (Imperative.Cmd LEx
    .cmd (.assert "post" (.const { underlying := (), type := mty[bool] } (.boolConst true)) {})]
 
 /--
-info: ok: #[LOCATION skip, ASSUME skip, ASSERT skip, GOTO 5 [((not(true : bool)) : bool)], GOTO 5, LOCATION skip]
+info: ok: #[LOCATION 0, ASSUME skip, ASSERT skip, GOTO 5 [((not(true : bool)) : bool)], GOTO 5, LOCATION 5]
 -/
 #guard_msgs in
 #eval do
@@ -239,13 +239,13 @@ private def havocCmds : List (Imperative.Stmt LExprTP (Imperative.Cmd LExprTP)) 
    .cmd (.havoc (Lambda.Identifier.mk "x" ()) {})]
 
 /--
-info: ok: #[LOCATION skip,
+info: ok: #[LOCATION 0,
  DECL (decl (x : unsignedbv[32])),
  ASSIGN (assign (x : unsignedbv[32]) (0 : unsignedbv[32])),
  ASSIGN (assign (x : unsignedbv[32]) (nondet : unsignedbv[32])),
  GOTO 6 [((not(true : bool)) : bool)],
  GOTO 6,
- LOCATION skip]
+ LOCATION 6]
 -/
 #guard_msgs in
 #eval do
