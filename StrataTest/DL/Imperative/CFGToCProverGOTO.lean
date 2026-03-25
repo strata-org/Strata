@@ -221,7 +221,7 @@ private def assertAssumeCmds : List (Imperative.Stmt LExprTP (Imperative.Cmd LEx
    .cmd (.assert "post" (.const { underlying := (), type := mty[bool] } (.boolConst true)) {})]
 
 /--
-info: ok: #[LOCATION 0, ASSUME skip, ASSERT skip, GOTO 5 [((not(true : bool)) : bool)], GOTO 5, LOCATION 5]
+info: ok: #[LOCATION 0, ASSUME, ASSERT, GOTO 5 [((not(true : bool)) : bool)], GOTO 5, LOCATION 5]
 -/
 #guard_msgs in
 #eval do

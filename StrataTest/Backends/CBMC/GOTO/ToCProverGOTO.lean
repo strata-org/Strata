@@ -399,9 +399,9 @@ def ExampleStmt10 : List (Imperative.Stmt LExprTP (Imperative.Cmd LExprTP)) :=
 info: ok: #[DECL (decl (x : unsignedbv[32])),
  ASSIGN (assign (x : unsignedbv[32]) (5 : unsignedbv[32])),
  GOTO 7 [((not(true : bool)) : bool)],
- ASSUME skip,
+ ASSUME,
  ASSIGN (assign (x : unsignedbv[32]) (10 : unsignedbv[32])),
- ASSERT skip,
+ ASSERT,
  GOTO 8,
  LOCATION 7,
  LOCATION 8]
@@ -417,7 +417,7 @@ def ExampleCover : List (Imperative.Stmt LExprTP (Imperative.Cmd LExprTP)) :=
   [.cmd (.cover "reachable" (.const { underlying := (), type := mty[bool] } (.boolConst true)) {})]
 
 /--
-info: ok: #[ASSERT skip]
+info: ok: #[ASSERT]
 -/
 #guard_msgs in
 #eval do let ans ← Imperative.Stmts.toGotoTransform Lambda.TEnv.default "testCover" ExampleCover
