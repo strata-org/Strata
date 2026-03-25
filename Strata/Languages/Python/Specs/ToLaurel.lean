@@ -229,7 +229,15 @@ def specTypeToLaurelType (ty : SpecType) : ToLaurelM HighTypeMd := do
       if nm == PythonIdent.noneType then return mkTy .TVoid
       -- TODO: add proper CorePrelude types for these
       if nm == PythonIdent.typingAny then return unsupportedType
-      if nm == PythonIdent.typingList then return mkCore "ListStr"
+      if nm == PythonIdent.typingList then
+        -- Validate element type args: composites (UserDefined) cannot be embedded in Any
+        for arg in args do
+          match arg.atoms[0]? with
+          | some (SpecAtomType.pyClass name _) =>
+            reportError default
+              s!"List[{name}] not supported: composites live on the heap and cannot be embedded in Any"
+          | _ => pure ()
+        return mkCore "ListAny"
       if nm == PythonIdent.typingDict then return mkCore "DictStrAny"
       if nm == PythonIdent.builtinsBytes then return unsupportedType
       if args.size > 0 then
@@ -392,10 +400,154 @@ def buildSpecBody (preconditions : Array Assertion) (requiredParams : Array Stri
 
 /-! ## Declaration Translation -/
 
-/-- Convert an Arg to a Laurel Parameter. -/
-def argToParameter (arg : Arg) : ToLaurelM Parameter := do
-  let ty ← specTypeToLaurelType arg.type
-  return { name := arg.name, type := ty }
+/-- Create a StmtExprMd wrapping a StmtExpr with empty metadata. -/
+private def mkExpr (e : StmtExpr) : WithMetadata StmtExpr :=
+  { val := e, md := default }
+
+/-- Translate a PySpec parameter type directly to its Laurel type and constraints.
+    Value-world types (primitives, dicts, lists) become `Core(Any)` with an
+    `isfrom_X` precondition.  Heap-world types (user-defined classes) become
+    `Composite` with no precondition.  Returns `(laurelType, preconditions)`.
+
+    This function operates on `SpecType` atoms directly — it does NOT
+    delegate to `specTypeToLaurelType`, avoiding the intermediate HighType
+    that would be immediately discarded. -/
+private def specTypeToLaurelActual (paramExpr : WithMetadata StmtExpr) (ty : SpecType)
+    : ToLaurelM (HighTypeMd × Array (WithMetadata StmtExpr)) := do
+  let anyTy : HighTypeMd := mkCore "Any"
+  let compositeTy : HighTypeMd := ⟨.UserDefined "Composite", #[]⟩
+  let mkCall (tester : String) := mkExpr (.StaticCall tester [paramExpr])
+  let mkOr (a b : WithMetadata StmtExpr) := mkExpr (.PrimitiveOp .Or [a, b])
+
+  let isNoneType (atom : SpecAtomType) : Bool :=
+    match atom with
+    | .ident nm args => nm == PythonIdent.noneType && args.isEmpty
+    | _ => false
+
+  -- Helper: translate a single non-None atom to its constraint.
+  -- Returns `none` for unsupported/unrecognized types.
+  let atomConstraint (atom : SpecAtomType) : ToLaurelM (Option (WithMetadata StmtExpr)) := do
+    match atom with
+    | .ident nm args =>
+      if nm == PythonIdent.builtinsInt then return some (mkCall "Any..isfrom_int")
+      if nm == PythonIdent.builtinsBool then return some (mkCall "Any..isfrom_bool")
+      if nm == PythonIdent.builtinsStr then return some (mkCall "Any..isfrom_string")
+      if nm == PythonIdent.builtinsFloat then return some (mkCall "Any..isfrom_float")
+      if nm == PythonIdent.noneType then return none  -- no constraint
+      if nm == PythonIdent.typingAny then return none  -- unconstrained
+      if nm == PythonIdent.typingList then
+        -- Validate: reject composite element types
+        for arg in args do
+          match arg.atoms[0]? with
+          | some (SpecAtomType.pyClass name _) =>
+            reportError default
+              s!"List[{name}] not supported: composites live on the heap and cannot be embedded in Any"
+          | _ => pure ()
+        return some (mkCall "Any..isfrom_ListAny")
+      if nm == PythonIdent.typingDict then
+        return some (mkCall "Any..isfrom_Dict")
+      if nm == PythonIdent.builtinsBytes then return none  -- unsupported
+      return none  -- unknown ident type, no constraint
+    | .pyClass .. => return none  -- composites handled at type level, not constraint
+    | .intLiteral _ => return some (mkCall "Any..isfrom_int")
+    | .stringLiteral _ => return some (mkCall "Any..isfrom_string")
+    | .typedDict .. => return some (mkCall "Any..isfrom_Dict")
+
+  -- Helper: translate a single atom to its (type, constraints).
+  let atomToActual (atom : SpecAtomType) : ToLaurelM (HighTypeMd × Array (WithMetadata StmtExpr)) := do
+    match atom with
+    | .pyClass name args =>
+      if args.size > 0 then
+        reportError default s!"Generic class '{name}' with type args unsupported"
+      return (compositeTy, #[])
+    | other =>
+      match ← atomConstraint other with
+      | some c => return (anyTy, #[c])
+      | none => return (anyTy, #[])
+
+  -- Empty type — no constraint
+  if ty.atoms.size == 0 then
+    return (anyTy, #[])
+
+  -- Single atom — most common case
+  if ty.atoms.size == 1 then
+    return ← atomToActual ty.atoms[0]!
+
+  -- Multi-atom (union types) — all unions are value-world (Core(Any))
+
+  -- Check for None in the union (Optional pattern)
+  let hasNone := ty.atoms.any isNoneType
+  let otherAtoms := ty.atoms.filter (fun a => !isNoneType a)
+
+  -- All string literals → isfrom_string (+ isfrom_none if Optional)
+  if otherAtoms.all (fun a => match a with | .stringLiteral _ => true | _ => false) then
+    let strPre := mkCall "Any..isfrom_string"
+    if hasNone then return (anyTy, #[mkOr (mkCall "Any..isfrom_none") strPre])
+    return (anyTy, #[strPre])
+
+  -- All int literals → isfrom_int (+ isfrom_none if Optional)
+  if otherAtoms.all (fun a => match a with | .intLiteral _ => true | _ => false) then
+    let intPre := mkCall "Any..isfrom_int"
+    if hasNone then return (anyTy, #[mkOr (mkCall "Any..isfrom_none") intPre])
+    return (anyTy, #[intPre])
+
+  -- All TypedDicts → isfrom_Dict (+ isfrom_none if Optional)
+  if otherAtoms.all (fun a => match a with | .typedDict .. => true | _ => false) then
+    let dictPre := mkCall "Any..isfrom_Dict"
+    if hasNone then return (anyTy, #[mkOr (mkCall "Any..isfrom_none") dictPre])
+    return (anyTy, #[dictPre])
+
+  -- Union[None, single-atom] — Optional patterns
+  if hasNone && otherAtoms.size == 1 then
+    -- Pure constraint lookup (no error reporting) for the non-None atom
+    let optConstraint? : Option (WithMetadata StmtExpr) := match otherAtoms[0]! with
+      | .ident nm _ =>
+        if nm == PythonIdent.builtinsStr then some (mkCall "Any..isfrom_string")
+        else if nm == PythonIdent.builtinsInt then some (mkCall "Any..isfrom_int")
+        else if nm == PythonIdent.builtinsBool then some (mkCall "Any..isfrom_bool")
+        else if nm == PythonIdent.builtinsFloat then some (mkCall "Any..isfrom_float")
+        else if nm == PythonIdent.typingList then some (mkCall "Any..isfrom_ListAny")
+        else if nm == PythonIdent.typingDict then some (mkCall "Any..isfrom_Dict")
+        else none
+      | .intLiteral _ => some (mkCall "Any..isfrom_int")
+      | .stringLiteral _ => some (mkCall "Any..isfrom_string")
+      | .typedDict .. => some (mkCall "Any..isfrom_Dict")
+      | _ => none
+    if let some c := optConstraint? then
+      return (anyTy, #[mkOr (mkCall "Any..isfrom_none") c])
+    -- Known but unconstrained types (Any, bytes, noneType) — no error
+    match otherAtoms[0]! with
+    | .ident nm _ =>
+      if nm == PythonIdent.typingAny || nm == PythonIdent.builtinsBytes
+         || nm == PythonIdent.noneType then
+        return (anyTy, #[])
+    | _ => pure ()
+    -- Unknown ident or pyClass in Optional — fall through to unrecognized union error
+    pure ()
+
+  -- Unrecognized union
+  let unionStr := formatUnionType ty.atoms
+  reportError default s!"Union type ({unionStr}) not yet supported"
+  return (anyTy, #[])
+
+
+/-- Map a HighType to the Any constructor name for wrapping typed → Any. -/
+private def anyConstructorForType : HighType → Option String
+  | .TString => some "from_string"
+  | .TInt => some "from_int"
+  | .TBool => some "from_bool"
+  | .TCore "DictStrAny" => some "from_Dict"
+  | .TCore "ListAny" => some "from_ListAny"
+  | _ => none
+
+/-- Map a HighType to the Any destructor name for unwrapping Any → typed. -/
+private def anyDestructorForType : HighType → Option String
+  | .TString => some "Any..as_string!"
+  | .TInt => some "Any..as_int!"
+  | .TBool => some "Any..as_bool!"
+  | .TCore "DictStrAny" => some "Any..as_Dict!"
+  | .TCore "ListAny" => some "Any..as_ListAny!"
+  | _ => none
 
 /-- Expand a `**kwargs: Unpack[TypedDict]` into individual `Arg` entries.
     Returns an error if kwargs is present but not a TypedDict. -/
@@ -425,38 +577,38 @@ def funcDeclToLaurel (procName : String) (func : FunctionDecl)
     | .ok args => pure args
     | .error msg => do reportError default msg; pure #[]
   let allArgs := posArgs ++ func.args.kwonly ++ kwargsArgs
-  let inputs ← allArgs.mapM argToParameter
-  let retType ← specTypeToLaurelType func.returnType
-  let outputs : List Parameter :=
-    match retType.val with
-    | .TVoid => []
-    | _ => [{ name := "result", type := retType }]
-  if func.postconditions.size > 0 then
-    reportError func.loc "Postconditions not yet supported"
-  -- When preconditions exist, use TCore "Any" for all parameters and outputs
-  -- to match the Python→Laurel pipeline's Any-wrapping convention.
-  let (inputs, outputs, body) ←
+  let mut inputs : Array Parameter := .emptyWithCapacity allArgs.size
+  let mut preconditions : Array (WithMetadata StmtExpr) := #[]
+  for arg in allArgs do
+    let paramExpr := mkExpr (.Identifier arg.name)
+    let (laurelTy, constraints) ← specTypeToLaurelActual paramExpr arg.type
+    inputs := inputs.push { name := arg.name, type := laurelTy }
+    preconditions := preconditions ++ constraints
+  -- Return type: check for void (NoneType) directly, otherwise use specTypeToLaurelActual
+  let isVoidReturn := func.returnType.atoms.size == 1 &&
+    match func.returnType.atoms[0]? with
+    | some (SpecAtomType.ident nm #[]) => nm == PythonIdent.noneType
+    | _ => false
+  let (outputs, postconditions) ←
+    if isVoidReturn then
+      pure ([], #[])
+    else do
+      let resultExpr := mkExpr (.Identifier "result")
+      let (retTy, retConstraints) ← specTypeToLaurelActual resultExpr func.returnType
+      pure ([{ name := "result", type := retTy }], retConstraints)
+  -- When preconditions exist, build a transparent body with assertions
+  let body ←
     if func.preconditions.size > 0 then do
-      let anyTy : HighTypeMd := mkCore "Any"
-      let anyInputs := inputs.map fun p => { p with type := anyTy }
-      let anyOutputs := outputs.map fun p => { p with type := anyTy }
-      let body ← buildSpecBody func.preconditions
+      buildSpecBody func.preconditions
         (requiredParams := allArgs.filterMap fun a =>
           if a.default.isNone then some a.name else none)
-      pure (anyInputs, anyOutputs, body)
     else
-      -- Opaque methods: add an Any return value so callers can assign
-      -- the result (the pyspec may declare NoneType even when the method
-      -- returns a response object).
-      let opaqueOutputs := if outputs.isEmpty && isMethod
-        then [{ name := "result", type := mkCore "Any" : Parameter }]
-        else outputs
-      pure (inputs, opaqueOutputs, Body.Opaque [] none [])
+      pure (Body.Opaque postconditions.toList none [])
   return {
     name := procName
     inputs := inputs.toList
     outputs := outputs
-    preconditions := []
+    preconditions := preconditions.toList
     determinism := .nondeterministic
     decreases := none
     isFunctional := false
