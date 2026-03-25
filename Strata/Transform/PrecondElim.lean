@@ -91,7 +91,7 @@ def collectCmdPrecondAsserts (F : @Lambda.Factory CoreLParams)
 Collect assertions for call arguments.
 -/
 def collectCallPrecondAsserts (F : @Lambda.Factory CoreLParams) (pname : String)
-  (args : List Expression.Expr) (md : Imperative.MetaData Expression := .empty)
+  (args : List Expression.Expr) (md : Imperative.MetaData Expression)
   : List Statement :=
   args.flatMap fun arg => collectPrecondAsserts F arg s!"call_{pname}_arg" md
 
