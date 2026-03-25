@@ -28,3 +28,6 @@ assert_name_is_foo: ✅ pass (in prelude file)
 assert_opt_name_none_or_str: ✅ pass (in prelude file)
 assert_opt_name_none_or_bar: ✅ pass (in prelude file)
 ensures_maybe_except_none: ✅ pass (in prelude file)
+
+DETAIL: 28 passed, 0 failed, 0 inconclusive
+RESULT: Analysis success

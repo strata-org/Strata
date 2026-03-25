@@ -34,10 +34,13 @@ ensures_maybe_except_none: ✅ pass (in prelude file)
 (Origin_test_helper_procedure_Requires)req_name_is_foo: ✅ pass (in prelude file)
 (Origin_test_helper_procedure_Requires)req_opt_name_none_or_str: ✅ pass (in prelude file)
 (Origin_test_helper_procedure_Requires)req_opt_name_none_or_bar: ✅ pass (in prelude file)
-(Origin_test_helper_procedure_Requires)req_name_is_foo: ❓ unknown (in prelude file)
+Assertion failed in prelude file: (Origin_test_helper_procedure_Requires)req_name_is_foo: ❌ fail
 (Origin_test_helper_procedure_Requires)req_opt_name_none_or_str: ✅ pass (in prelude file)
 (Origin_test_helper_procedure_Requires)req_opt_name_none_or_bar: ✅ pass (in prelude file)
 (Origin_test_helper_procedure_Requires)req_name_is_foo: ✅ pass (in prelude file)
 (Origin_test_helper_procedure_Requires)req_opt_name_none_or_str: ✅ pass (in prelude file)
-(Origin_test_helper_procedure_Requires)req_opt_name_none_or_bar: ❓ unknown (in prelude file)
+Assertion failed in prelude file: (Origin_test_helper_procedure_Requires)req_opt_name_none_or_bar: ❌ fail
 ite_cond_calls_Any_to_bool_0: ✅ pass
+
+DETAIL: 39 passed, 2 failed, 0 inconclusive
+RESULT: Failures found
