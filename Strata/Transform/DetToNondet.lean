@@ -10,7 +10,10 @@ public import Strata.DL.Imperative.Stmt
 public import Strata.DL.Imperative.NondetStmt
 public import Strata.Languages.Core.StatementType
 
-/-! # Deterministic-to-Nondeterministic Transformation -/
+/-! # Deterministic-to-Nondeterministic Transformation
+
+Returns `none` if the input contains `.exit` or `.funcDecl` statements,
+which have no nondeterministic counterpart. -/
 
 public section
 
@@ -18,31 +21,38 @@ open Imperative
 mutual
 
 /-- Deterministic-to-nondeterministic transformation for a single
-(deterministic) statement -/
+(deterministic) statement. Returns `none` for unsupported constructs
+(`.exit`, `.funcDecl`). -/
 def StmtToNondetStmt {P : PureExpr} [Imperative.HasBool P] [HasNot P]
   (st : Imperative.Stmt P (Cmd P)) :
-  Imperative.NondetStmt P (Cmd P) :=
+  Option (Imperative.NondetStmt P (Cmd P)) :=
   match st with
-  | .cmd    cmd => .cmd cmd
-  | .block  _ bss _ => BlockToNondetStmt bss
-  | .ite    cond tss ess md =>
-    .choice
-      (.seq (.assume "true_cond" cond md) (BlockToNondetStmt tss))
-      (.seq ((.assume "false_cond" (Imperative.HasNot.not cond) md)) (BlockToNondetStmt ess))
-  | .loop   guard _measure _inv bss md =>
-    .loop (.seq (.assume "guard" guard md) (BlockToNondetStmt bss))
-  | .typeDecl _ md => (.assume "skip" Imperative.HasBool.tt md)
-  | .exit _ md => (.assume "skip" Imperative.HasBool.tt md)
-  | .funcDecl _ md => (.assume "skip" Imperative.HasBool.tt md)
+  | .cmd cmd => some (.cmd cmd)
+  | .block _ bss _ => BlockToNondetStmt bss
+  | .ite cond tss ess md => do
+    let t ← BlockToNondetStmt tss
+    let e ← BlockToNondetStmt ess
+    return .choice
+      (.seq (.assume "true_cond" cond md) t)
+      (.seq (.assume "false_cond" (Imperative.HasNot.not cond) md) e)
+  | .loop guard _measure _inv bss md => do
+    let b ← BlockToNondetStmt bss
+    return .loop (.seq (.assume "guard" guard md) b)
+  | .typeDecl _ md => some (.assume "skip" Imperative.HasBool.tt md)
+  | .exit _ _ => none
+  | .funcDecl _ _ => none
 
 /-- Deterministic-to-nondeterministic transformation for multiple
-(deterministic) statements -/
+(deterministic) statements. Returns `none` if any statement is unsupported. -/
 def BlockToNondetStmt {P : Imperative.PureExpr} [Imperative.HasBool P] [HasNot P]
   (ss : Imperative.Block P (Cmd P)) :
-  Imperative.NondetStmt P (Cmd P) :=
+  Option (Imperative.NondetStmt P (Cmd P)) :=
   match ss with
-  | [] => (.assume "skip" Imperative.HasBool.tt .empty)
-  | s :: ss => .seq (StmtToNondetStmt s) (BlockToNondetStmt ss)
+  | [] => some (.assume "skip" Imperative.HasBool.tt .empty)
+  | s :: ss => do
+    let s' ← StmtToNondetStmt s
+    let rest ← BlockToNondetStmt ss
+    return .seq s' rest
 end
 
 end

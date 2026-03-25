@@ -69,6 +69,7 @@ abbrev Lang.standard (P : PureExpr) [HasFvar P] [HasBool P] [HasNot P]
 variable {P : PureExpr} [HasFvar P] [HasBool P] [HasNot P]
 variable (L : Lang P)
 
+
 /-! ## Style A — Reachability-based assertion validity -/
 
 /-- Assert `a` is *valid* in statement `s`. -/
