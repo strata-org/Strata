@@ -5,7 +5,6 @@
 -/
 module
 
--- TODO: rename file to PythonLaurelCorePrelude
 import Strata.DDM.Elab
 import Strata.DDM.AST
 import Strata.Languages.Core.DDMTransform.Grammar

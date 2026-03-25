@@ -571,16 +571,6 @@ partial def collectStaticCallNames (expr : StmtExpr) : List String :=
   | .Assigned v => collectStaticCallNames v.val
   | _ => []
 
-/--
-Collect the function names that an invokeOn axiom (from `proc`) depends on.
-These are the `StaticCall` names appearing in the procedure's postconditions.
--/
-def invokeOnAxiomDeps (proc : Procedure) : List String :=
-  match proc.body with
-  | .Opaque postconds _ _ =>
-      (postconds.flatMap (fun pc => collectStaticCallNames pc.val)).eraseDups
-  | _ => []
-
 def translateInvokeOnAxiom (proc : Procedure) (trigger : StmtExprMd)
     : TranslateM (Option Core.Decl) := do
   let model := (← get).model
@@ -617,38 +607,6 @@ where
     | p :: rest =>
       LExpr.all () p.name.text (some (translateType model p.type))
         (buildQuants model rest body trigger)
-
-partial def isRecursiveExpr (model: SemanticModel) (proc: Procedure) (expr : StmtExpr) : Bool := match expr with
-  | .StaticCall callee args =>
-    -- Compare by text name: the callee's uniqueId in the body may differ from the
-    -- declaration's uniqueId (they are resolved separately), so text comparison is correct.
-    callee.text == proc.name.text || args.any (fun a => isRecursiveExpr model proc a.val)
-  | .IfThenElse cond thenBr elseBr =>
-      isRecursiveExpr model proc cond.val || isRecursiveExpr model proc thenBr.val || (elseBr.any (fun e => isRecursiveExpr model proc e.val))
-  | .Block stmts _ => stmts.any (fun s => isRecursiveExpr model proc s.val)
-  | .LocalVariable _ _ init => init.any (fun i => isRecursiveExpr model proc i.val)
-  | .While cond invs dec body =>
-      isRecursiveExpr model proc cond.val || invs.any (fun i => isRecursiveExpr model proc i.val) ||
-      dec.any (fun d => isRecursiveExpr model proc d.val) || isRecursiveExpr model proc body.val
-  | .Return val => val.any (fun v => isRecursiveExpr model proc v.val)
-  | .Assign targets value => targets.any (fun t => isRecursiveExpr model proc t.val) || isRecursiveExpr model proc value.val
-  | .FieldSelect target _ => isRecursiveExpr model proc target.val
-  | .PureFieldUpdate target _ newVal => isRecursiveExpr model proc target.val || isRecursiveExpr model proc newVal.val
-  | .PrimitiveOp _ args => args.any (fun a => isRecursiveExpr model proc a.val)
-  | .ReferenceEquals lhs rhs => isRecursiveExpr model proc lhs.val || isRecursiveExpr model proc rhs.val
-  | .AsType target _ => isRecursiveExpr model proc target.val
-  | .IsType target _ => isRecursiveExpr model proc target.val
-  | .InstanceCall target _ args => isRecursiveExpr model proc target.val || args.any (fun a => isRecursiveExpr model proc a.val)
-  | .Forall _ trigger body => trigger.any (fun t => isRecursiveExpr model proc t.val) || isRecursiveExpr model proc body.val
-  | .Exists _ trigger body => trigger.any (fun t => isRecursiveExpr model proc t.val) || isRecursiveExpr model proc body.val
-  | .Assigned name => isRecursiveExpr model proc name.val
-  | .Old val => isRecursiveExpr model proc val.val
-  | .Fresh val => isRecursiveExpr model proc val.val
-  | .Assert cond => isRecursiveExpr model proc cond.val
-  | .Assume cond => isRecursiveExpr model proc cond.val
-  | .ProveBy value proof => isRecursiveExpr model proc value.val || isRecursiveExpr model proc proof.val
-  | .ContractOf _ fn => isRecursiveExpr model proc fn.val
-  | _ => false
 
 structure LaurelTranslateOptions where
   emitResolutionErrors : Bool := true
@@ -860,8 +818,8 @@ def translate (options: LaurelTranslateOptions) (program : Program): TranslateRe
         else
           return funcs
       else
-        -- Non-functional SCC: emit invokeOn axiom (if any) before each procedure,
-        -- so the axiom is in scope when the procedure's VCs are checked.
+        -- Non-functional SCC: emit invokeOn axiom (if any) after each procedure,
+        -- so the axiom is not in scope when the procedure's VCs are checked.
         procs.flatMapM fun proc => do
           let axiomDecls : List Core.Decl ← match proc.invokeOn with
             | none => pure []
