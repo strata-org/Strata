@@ -33,3 +33,6 @@ assert(114): ✅ pass (at line 6, col 4)
 assert_assert(264)_calls_Any_to_bool_0: ✅ pass (at line 11, col 4)
 assert(264): ✅ pass (at line 11, col 4)
 ite_cond_calls_Any_to_bool_0: ✅ pass
+
+DETAIL: 33 passed, 0 failed, 0 inconclusive
+RESULT: Analysis success

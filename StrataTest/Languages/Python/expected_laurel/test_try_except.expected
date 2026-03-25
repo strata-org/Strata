@@ -31,4 +31,7 @@ ensures_maybe_except_none: ✅ pass (in prelude file)
 assert_assert(129)_calls_Any_to_bool_0: ✅ pass (at line 7, col 4)
 assert(129): ✅ pass (at line 7, col 4)
 assert_assert(358)_calls_Any_to_bool_0: ✅ pass (at line 17, col 4)
-assert(358): ❓ unknown (at line 17, col 4)
+Assertion failed at line 17, col 4: assert(358): ❌ fail
+
+DETAIL: 31 passed, 1 failed, 0 inconclusive
+RESULT: Failures found

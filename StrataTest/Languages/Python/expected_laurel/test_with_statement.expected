@@ -29,8 +29,11 @@ assert_opt_name_none_or_str: ✅ pass (in prelude file)
 assert_opt_name_none_or_bar: ✅ pass (in prelude file)
 ensures_maybe_except_none: ✅ pass (in prelude file)
 assert_assert(368)_calls_Any_to_bool_0: ✅ pass (at line 19, col 4)
-assert(368): ❓ unknown (at line 19, col 4)
+Assertion failed at line 19, col 4: assert(368): ❌ fail
 assert_assert(500)_calls_Any_to_bool_0: ✅ pass (at line 25, col 8)
-assert(500): ❓ unknown (at line 25, col 8)
+Assertion failed at line 25, col 8: assert(500): ❌ fail
 assert_assert(666)_calls_Any_to_bool_0: ✅ pass (at line 32, col 8)
 assert(666): ❓ unknown (at line 32, col 8)
+
+DETAIL: 31 passed, 2 failed, 1 inconclusive
+RESULT: Failures found

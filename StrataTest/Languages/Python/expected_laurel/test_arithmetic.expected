@@ -40,3 +40,6 @@ set_quot_calls_PFloorDiv_0: ✅ pass
 assert_assert(567)_calls_Any_to_bool_0: ✅ pass (at line 24, col 4)
 assert(567): ✅ pass (at line 24, col 4)
 ite_cond_calls_Any_to_bool_0: ✅ pass
+
+DETAIL: 40 passed, 0 failed, 0 inconclusive
+RESULT: Analysis success

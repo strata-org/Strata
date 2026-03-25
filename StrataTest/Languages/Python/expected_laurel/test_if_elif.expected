@@ -28,9 +28,9 @@ assert_name_is_foo: ✅ pass (in prelude file)
 assert_opt_name_none_or_str: ✅ pass (in prelude file)
 assert_opt_name_none_or_bar: ✅ pass (in prelude file)
 ensures_maybe_except_none: ✅ pass (in prelude file)
-ite_cond_calls_Any_to_bool_0: ❓ unknown
+ite_cond_calls_Any_to_bool_0: ❌ fail
 ite_cond_calls_Any_to_bool_0: ✅ pass
-ite_cond_calls_Any_to_bool_0: ❓ unknown
+ite_cond_calls_Any_to_bool_0: ❌ fail
 assert_assert(225)_calls_Any_to_bool_0: ✅ pass (at line 13, col 4)
 assert(225): ❓ unknown (at line 13, col 4)
 assert_assert(302)_calls_Any_to_bool_0: ✅ pass (at line 16, col 4)
@@ -40,3 +40,6 @@ assert(371): ❓ unknown (at line 19, col 4)
 assert_assert(444)_calls_Any_to_bool_0: ✅ pass (at line 22, col 4)
 assert(444): ❓ unknown (at line 22, col 4)
 ite_cond_calls_Any_to_bool_0: ✅ pass
+
+DETAIL: 34 passed, 2 failed, 4 inconclusive
+RESULT: Failures found
