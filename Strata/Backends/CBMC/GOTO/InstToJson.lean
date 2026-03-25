@@ -64,6 +64,12 @@ def tyToJson (ty : Ty) : Json :=
       ("id", "array"),
       ("sub", Json.arr #[tyToJson elemTy])
     ]
+  | { id := .code, .. } => Json.mkObj [
+      ("id", "code"),
+      ("namedSub", Json.mkObj [
+        ("parameters", Json.mkObj [("sub", Json.arr #[])]),
+        ("return_type", Json.mkObj [("id", "empty")])])
+    ]
   | _ => Json.mkObj [("id", "unknown")]
 
 /-- Convert `Expr` to JSON format -/
