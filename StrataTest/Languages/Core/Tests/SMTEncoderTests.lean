@@ -289,7 +289,7 @@ end ArrayTheory
 
 -- encodeCore should only include nullary UFs (constants) in the ids passed to
 -- get-value. Non-nullary UFs like `f(x : Int) : Int` cannot be queried via
--- get-value in SMT solvers.
+-- get-value in some SMT solvers.
 /-- info: (["c"], true) -/
 #guard_msgs in
 #eval show IO _ from do
