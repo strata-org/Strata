@@ -21,7 +21,8 @@ open Strata.Python (processPythonFile withPython)
 open Strata.Parser (stringInputContext)
 
 -- Passing assertions produce no diagnostics.
-#eval withPython fun pythonCmd => do
+#guard_msgs in
+#eval withPython (warnOnSkip := false) fun pythonCmd => do
   let program :=
 "def main() -> None:
     x: int = 5
@@ -34,7 +35,8 @@ open Strata.Parser (stringInputContext)
     throw <| .userError s!"Expected 0 diagnostics, got {diags.size}"
 
 -- Failing assertion produces a diagnostic with the expected message.
-#eval withPython fun pythonCmd => do
+#guard_msgs in
+#eval withPython (warnOnSkip := false) fun pythonCmd => do
   let program :=
 "def main() -> None:
     x: int = 5
@@ -45,7 +47,8 @@ open Strata.Parser (stringInputContext)
     throw <| .userError s!"Expected 'assertion does not hold', got: {diags.map (·.message)}"
 
 -- Mix of passing and failing assertions: only failing ones produce diagnostics.
-#eval withPython fun pythonCmd => do
+#guard_msgs in
+#eval withPython (warnOnSkip := false) fun pythonCmd => do
   let program :=
 "def main() -> None:
     x: int = 5
@@ -59,7 +62,8 @@ open Strata.Parser (stringInputContext)
     throw <| .userError s!"Expected 2 diagnostics, got {diags.size}: {diags.map (·.message)}"
 
 -- Diagnostic line numbers point to the correct assertion.
-#eval withPython fun pythonCmd => do
+#guard_msgs in
+#eval withPython (warnOnSkip := false) fun pythonCmd => do
   let program :=
 "def main() -> None:
     x: int = 5
@@ -76,7 +80,9 @@ open Strata.Parser (stringInputContext)
     throw <| .userError s!"Expected a failing diagnostic"
 
 -- Annotated-style test using testInputWithOffset and # comment expectations.
-#eval withPython fun pythonCmd => do
+-- testInputWithOffset prints on success; we validate silently here instead.
+#guard_msgs in
+#eval withPython (warnOnSkip := false) fun pythonCmd => do
   let program :=
 "def main() -> None:
     x: int = 5
@@ -84,7 +90,15 @@ open Strata.Parser (stringInputContext)
     assert x == 6
 #   ^^^^^^^^^^^^^ error: assertion does not hold
 "
-  testInputWithOffset "AnnotatedPython" program 0
-    (processPythonFile pythonCmd)
+  let inputContext := stringInputContext "AnnotatedPython" program
+  let expectations := parseDiagnosticExpectations program
+  let expectedErrors := expectations.filter (fun e => e.level == "error")
+  let diagnostics ← processPythonFile pythonCmd inputContext
+  for exp in expectedErrors do
+    unless diagnostics.any (fun d => matchesDiagnostic d exp) do
+      throw <| .userError s!"Unmatched expectation: line {exp.line}, {exp.message}"
+  for d in diagnostics do
+    unless expectedErrors.any (fun exp => matchesDiagnostic d exp) do
+      throw <| .userError s!"Unexpected diagnostic: line {d.start.line}, {d.message}"
 
 end Strata.Python.VerifyPythonTest
