@@ -1749,8 +1749,8 @@ def pythonToLaurel' (info : PreludeInfo)
   }
 
   -- Separate functions from other statements
-  let mut procedures : List Procedure := []
-  let mut otherStmts : List (Python.stmt SourceRange) := []
+  let mut procedures : Array Procedure := #[]
+  let mut otherStmts : Array (Python.stmt SourceRange) := #[]
 
   for stmt in body do
     match stmt with
@@ -1758,14 +1758,14 @@ def pythonToLaurel' (info : PreludeInfo)
       let funcDecl ←  pyFuncDefToPythonFunctionDecl ctx stmt
       let proc ← translateFunction ctx stmt.ann funcDecl fbody.val.toList
       ctx := {ctx with functionSignatures:= ctx.functionSignatures ++ [funcDecl]}
-      procedures := procedures ++ [proc.fst]
+      procedures := procedures.push proc.fst
     | .ClassDef _ _ _ _ _ _ _ =>
       pure ()  -- Already processed in first pass
     | _ =>
-      otherStmts := otherStmts ++ [stmt]
+      otherStmts := otherStmts.push stmt
 
   ctx := {ctx with variableTypes:= [("nullcall_ret", PyLauType.Any)]}
-  let (_, bodyStmts) ← translateStmtList ctx otherStmts
+  let (_, bodyStmts) ← translateStmtList ctx otherStmts.toList
   let bodyStmts := prependExceptHandlingHelper bodyStmts
   let bodyStmts := mkStmtExprMd (.LocalVariable "__name__" AnyTy (some <| strToAny "__main__")) :: bodyStmts
   let bodyStmts := (mkStmtExprMd (.LocalVariable "nullcall_ret" AnyTy (some AnyNone))) :: bodyStmts
@@ -1785,7 +1785,7 @@ def pythonToLaurel' (info : PreludeInfo)
   }
 
   let program : Laurel.Program := {
-    staticProcedures := procedures ++ [mainProc]
+    staticProcedures := procedures.push mainProc |>.toList
     staticFields := []
     types := compositeTypes.map TypeDefinition.Composite
     constants := []
