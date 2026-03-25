@@ -15,6 +15,28 @@ All definitions are parametric over a `Lang P` structure that abstracts the
 statement type, configuration type, step relation, and assert detection,
 sharing the pure-expression parameter `P`.
 
+## Two definitions of assertion validity
+
+An `assert label expr` command is *valid* when its expression evaluates to
+true in every reachable configuration where the assert is about to execute.
+This module provides two equivalent formulations:
+
+1. **`AssertValid` (reachability-based)** — for every initial environment `ρ₀`
+   and every configuration `cfg` reachable from `s`, if `cfg` is at the
+   assert (detected by `isAtAssert`), then `cfg.getEval cfg.getStore a.expr
+   = some HasBool.tt`.  This is a direct, semantic definition: walk the
+   execution graph and check each assert site.
+
+2. **`Hoare.Triple` (Hoare-triple-based)** — a partial-correctness triple
+   `{Pre} s {Post}` holds when, for every `ρ₀` satisfying `Pre` with a
+   well-formed evaluator and no prior failure, if `s` terminates at `ρ'`
+   then `Post ρ'` holds and `hasFailure` is still false.  Since assert
+   failure is recorded in `hasFailure`, the postcondition
+   `ρ'.hasFailure = false` captures that all asserts passed.
+
+The two are shown equivalent by `hoareTriple_implies_assertValid` and
+`assertValid_implies_hoareTriple`.
+
 ## Two ways to specify transformation soundness
 
 There are two predicates for describing the correctness of a program
@@ -139,11 +161,13 @@ def TripleBlock
 
 /-! ## Parametric Hoare rules -/
 
+omit [HasVal P] in
 /-- False precondition proves anything -/
 theorem false_pre (s : L.StmtT) (Post : Env P → Prop) :
     Triple L (fun _ => False) s Post := by
   intro _ _ hpre; exact absurd hpre id
 
+omit [HasVal P] in
 /-- Consequence (weakening): strengthen precondition, weaken postconditions. -/
 theorem consequence
     {Pre Pre' : Env P → Prop} {Post Post' : Env P → Prop} {s : L.StmtT}
@@ -162,6 +186,7 @@ section ImperativeRules
 variable {CmdT : Type} (evalCmd : EvalCmdParam P CmdT) (extendEval : ExtendEval P)
 variable (isAtAssertFn : Config P CmdT → AssertId P → Prop)
 
+ omit [HasVal P] in
 /-- Empty statement list is skip. -/
 theorem skip_block (Pre : Env P → Prop) :
     TripleBlock (Lang.imperative P CmdT evalCmd extendEval isAtAssertFn) Pre [] Pre := by
@@ -178,6 +203,7 @@ theorem skip_block (Pre : Env P → Prop) :
     | step _ _ _ h _ => cases h with
       | step_stmts_nil => rename_i r; cases r with | step _ _ _ h _ => cases h
 
+omit [HasVal P] in
 /-- A single command. -/
 theorem cmd (c : CmdT) (Pre Post : Env P → Prop)
     (h : ∀ ρ₀ σ' f, Pre ρ₀ → WellFormedSemanticEvalBool ρ₀.eval → ρ₀.hasFailure = false →
@@ -194,6 +220,7 @@ theorem cmd (c : CmdT) (Pre Post : Env P → Prop)
         simp [hf₀] at hp ⊢; exact ⟨hp, hfeq⟩
       | step _ _ _ h _ => exact nomatch h
 
+omit [HasVal P] in
 /-- Sequential cons. -/
 theorem seq_cons {s : Stmt P CmdT} {ss : List (Stmt P CmdT)}
     {Pre Mid Post : Env P → Prop}
@@ -228,6 +255,7 @@ theorem seq_cons {s : Stmt P CmdT} {ss : List (Stmt P CmdT)}
           have ⟨hmid, hf₁⟩ := h₁ ρ₀ ρ₁ hpre hwfb hf₀ hterm_s
           exact h₂ ρ₁ ρ' hmid (hwfb_preserved ρ₁ hterm_s) hf₁ (.inr ⟨lbl, hexit_ss⟩)
 
+omit [HasVal P] in
 /-- Lift a `TripleBlock` to a `Triple` by wrapping in a block. -/
 theorem TripleBlock.toTriple {ss : List (Stmt P CmdT)} {l : String} {md : MetaData P}
     {Pre Post : Env P → Prop}
@@ -241,6 +269,7 @@ theorem TripleBlock.toTriple {ss : List (Stmt P CmdT)} {l : String} {md : MetaDa
       | .inl hterm => exact h ρ₀ ρ' hpre hwfb hf₀ (.inl hterm)
       | .inr ⟨lbl, hexit_inner⟩ => exact h ρ₀ ρ' hpre hwfb hf₀ (.inr ⟨lbl, hexit_inner⟩)
 
+omit [HasVal P] in
 /-- Lift a `Triple` to a `TripleBlock` for a singleton list. -/
 theorem Triple.toTripleBlock {s : Stmt P CmdT}
     {Pre Post : Env P → Prop}
@@ -273,11 +302,13 @@ theorem Triple.toTripleBlock {s : Stmt P CmdT}
           | step _ _ _ h _ => cases h with
             | step_stmts_nil => rename_i r; cases r with | step _ _ _ h _ => cases h
 
+omit [HasVal P] in
 /-- Empty block is skip. -/
 theorem skip (l : String) (md : MetaData P) (Pre : Env P → Prop) :
     Triple (Lang.imperative P CmdT evalCmd extendEval isAtAssertFn) Pre (.block l [] md) Pre :=
   (skip_block evalCmd extendEval isAtAssertFn Pre).toTriple
 
+omit [HasVal P] in
 /-- If-then-else rule. -/
 theorem ite {c : P.Expr} {tss ess : List (Stmt P CmdT)} {md : MetaData P}
     {Pre Post : Env P → Prop}
@@ -471,6 +502,7 @@ def Sound (L₁ L₂ : Lang P) (T : L₁.StmtT → Option L₂.StmtT) : Prop :=
   ∀ (s : L₁.StmtT) (s' : L₂.StmtT) (a : AssertId P),
     T s = some s' → AssertValid L₂ s' a → AssertValid L₁ s a
 
+omit [HasVal P] in
 theorem sound_comp (L₁ L₂ L₃ : Lang P)
     (T₁ : L₁.StmtT → Option L₂.StmtT) (T₂ : L₂.StmtT → Option L₃.StmtT)
     (h₁ : Sound L₁ L₂ T₁) (h₂ : Sound L₂ L₃ T₂) :
@@ -481,18 +513,21 @@ theorem sound_comp (L₁ L₂ L₃ : Lang P)
   | some s' => rw [h1] at hrun; exact h₁ s s' a h1 (h₂ s' s'' a hrun hvalid)
   | none => rw [h1] at hrun; exact absurd hrun (by nofun)
 
+ omit [HasVal P] in
 theorem sound_assertValid (L₁ L₂ : Lang P)
     (T : L₁.StmtT → Option L₂.StmtT) (a : AssertId P)
     (s : L₁.StmtT) (s' : L₂.StmtT)
     (ht : T s = some s') (hsound : Sound L₁ L₂ T) (hvalid : AssertValid L₂ s' a) :
     AssertValid L₁ s a := hsound s s' a ht hvalid
 
+omit [HasVal P] in
 theorem sound_allAsserts (L₁ L₂ : Lang P)
     (T : L₁.StmtT → Option L₂.StmtT)
     (s : L₁.StmtT) (s' : L₂.StmtT) (ht : T s = some s')
     (hsound : Sound L₁ L₂ T) (hvalid : AllAssertsValid L₂ s') :
     AllAssertsValid L₁ s := fun a => hsound s s' a ht (hvalid a)
 
+omit [HasVal P] in
 theorem sound_id : Sound L L some := by
   intro s s' a ht hvalid; simp at ht; subst ht; exact hvalid
 
@@ -574,6 +609,7 @@ abbrev Lang.imperativeBlock : Lang P where
   getEval := Config.getEval
   getStore := Config.getStore
 
+omit [HasFvar P] [HasBool P] [HasNot P] [HasVal P] in
 private theorem mapM_noFuncDecl
     (T : Stmt P CmdT → Option (Stmt P CmdT))
     (hnofd_T : ∀ s s', T s = some s' → Stmt.noFuncDecl s = true)
