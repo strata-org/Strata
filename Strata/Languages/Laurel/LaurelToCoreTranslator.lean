@@ -556,7 +556,7 @@ def translateProcedureToFunction (proc : Procedure) : TranslateM Core.Decl := do
     output := outputTy
     body := body
     preconditions := preconditions
-  }
+  } proc.md
 
 /--
 Translate a Laurel DatatypeDefinition to an `LDatatype Unit`.
@@ -648,7 +648,7 @@ def translate (options: LaurelTranslateOptions) (program : Program): TranslateRe
       | _ => none
     let ldatatypes := laurelDatatypes.map (translateDatatypeDefinition model)
     let groups := groupDatatypes laurelDatatypes ldatatypes
-    return groups.map fun group => Core.Decl.type (.data group)
+    return groups.map fun group => Core.Decl.type (.data group) .empty
 
   translateLaurelToCore (program : Program): TranslateM Core.Program := do
     let model := (← get).model
@@ -672,7 +672,7 @@ def translate (options: LaurelTranslateOptions) (program : Program): TranslateRe
         inputs := []
         output := coreTy
         body := body
-      }
+      } .empty
 
     -- Collect ALL errors from both functions, procedures, and resolution before deciding whether to fail
     -- let allErrors :=pureErrors ++ procDiags ++ constantsState.diagnostics
