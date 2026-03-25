@@ -339,6 +339,7 @@ variable
   (EvalCmd : EvalCmdParam P CmdT)
   (extendEval : ExtendEval P)
 
+/-- A multi-step execution of Imperative. -/
 abbrev StepStmtStar :
     Config P CmdT → Config P CmdT → Prop :=
   ReflTrans (StepStmt P EvalCmd extendEval)
