@@ -403,13 +403,30 @@ private def exitPyAnalyzeKnownLimitation {α} (message : String) : IO α := do
 private def printPyAnalyzeSummary (vcResults : Array Core.VCResult) : IO Unit := do
   let nSuccess      := vcResults.filter (·.isSuccess)             |>.size
   let nFailure      := vcResults.filter (·.isFailure)             |>.size
-  let nInconclusive := vcResults.filter (·.isUnknown)             |>.size
-  let nImplError    := vcResults.filter (·.isImplementationError) |>.size
-  if nSuccess + nFailure + nInconclusive + nImplError != vcResults.size then
+  -- Inconclusive covers two cases:
+  --  · (unknown, unknown)  — isUnknown: both checks inconclusive
+  --  · (sat,     unknown)  — satisfiableValidityUnknown: validity unknown
+  let nInconclusive := vcResults.filter (fun r => r.isUnknown ||
+      match r.outcome with
+      | .ok o => o.satisfiableValidityUnknown
+      | _     => false)                                            |>.size
+  -- Unreachable: (unsat, unsat) — dead code path
+  let nUnreachable  := vcResults.filter (·.isUnreachable)         |>.size
+  -- Implementation errors cover two cases:
+  --  · outer Except is .error  — isImplementationError
+  --  · either SMT property is .err (solver error on a specific check)
+  let nImplError    := vcResults.filter (fun r => r.isImplementationError ||
+      match r.outcome with
+      | .ok o => match o.satisfiabilityProperty, o.validityProperty with
+                 | .err _, _ | _, .err _ => true
+                 | _,      _             => false
+      | _     => false)                                            |>.size
+  if nSuccess + nFailure + nInconclusive + nUnreachable + nImplError != vcResults.size then
     exitPyAnalyzeInternalError s!"Unaccounted VC results: \
-      {nSuccess} + {nFailure} + {nInconclusive} + {nImplError} ≠ {vcResults.size}"
-  let implErrorStr := if nImplError > 0 then s!", {nImplError} implementation errors" else ""
-  let counts := s!"{nSuccess} passed, {nFailure} failed, {nInconclusive} inconclusive{implErrorStr}"
+      {nSuccess} + {nFailure} + {nInconclusive} + {nUnreachable} + {nImplError} ≠ {vcResults.size}"
+  let unreachableStr := if nUnreachable > 0 then s!", {nUnreachable} unreachable" else ""
+  let implErrorStr   := if nImplError > 0   then s!", {nImplError} implementation errors" else ""
+  let counts := s!"{nSuccess} passed, {nFailure} failed, {nInconclusive} inconclusive{unreachableStr}{implErrorStr}"
   if nImplError > 0 then
     exitPyAnalyzeInternalError s!"An unexpected result was produced. {counts}"
   else if nFailure > 0 then
