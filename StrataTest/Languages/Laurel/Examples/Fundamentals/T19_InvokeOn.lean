@@ -45,6 +45,14 @@ procedure invokeB(x: int, y :real) {
 //^^^^^^^^^^^ error: assertion could not be proved
 };
 
+
+procedure badPostcondition(x: int)
+  invokeOn P(x)
+  ensures P(x)
+{
+  assert false
+};
+
 "#
 
 #guard_msgs (drop info, error) in

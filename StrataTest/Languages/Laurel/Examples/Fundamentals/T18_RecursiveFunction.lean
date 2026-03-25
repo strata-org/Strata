@@ -31,6 +31,22 @@ procedure testListLen() {
   var xs: IntList := Cons(1, Cons(2, Nil()));
   assert listLen(xs) == 2
 };
+
+// Mutual recursion
+function listLenEven(xs: IntList): bool {
+  if IntList..isNil(xs) then true
+  else listLenOdd(IntList..tail!(xs))
+};
+
+function listLenOdd(xs: IntList): bool {
+  if IntList..isNil(xs) then false
+  else listLenEven(IntList..tail!(xs))
+};
+
+procedure testMutualRecursion() {
+  var xs: IntList := Cons(1, Cons(2, Nil()));
+  assert listLenEven(xs) == true
+};
 "
 
 #guard_msgs (drop info, error) in
