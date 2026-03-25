@@ -98,10 +98,10 @@ private def noneAtom := SpecAtomType.noneType
 /-! ## Primitive and builtin types as args and return types -/
 
 /--
-info: procedure returns_int(x:TString) returns(result:TInt)
-procedure returns_bool(a:TInt, b:TReal) returns(result:TBool)
-procedure returns_real(flag:TBool) returns(result:TReal)
-procedure with_kwonly(x:TInt, verbose:TBool) returns(result:TString)
+info: procedure returns_int(x:TCore(Any)) returns(result:TCore(Any))
+procedure returns_bool(a:TCore(Any), b:TCore(Any)) returns(result:TCore(Any))
+procedure returns_real(flag:TCore(Any)) returns(result:TCore(Any))
+procedure with_kwonly(x:TCore(Any), verbose:TCore(Any)) returns(result:TCore(Any))
 -/
 #guard_msgs in
 #eval runTest #[
@@ -120,12 +120,12 @@ procedure with_kwonly(x:TInt, verbose:TBool) returns(result:TString)
 /-! ## Complex types (Any, List, Dict, bytes) -/
 
 /--
-info: procedure takes_any(x:TString) returns(result:TInt)
-procedure takes_list(items:TCore(ListStr)) returns(result:TBool)
-procedure returns_dict() returns(result:TCore(DictStrAny))
-procedure returns_bytes() returns(result:TString)
-procedure typed_list() returns(result:TCore(ListStr))
-procedure typed_dict() returns(result:TCore(DictStrAny))
+info: procedure takes_any(x:TCore(Any)) returns(result:TCore(Any))
+procedure takes_list(items:TCore(Any)) returns(result:TCore(Any))
+procedure returns_dict() returns(result:TCore(Any))
+procedure returns_bytes() returns(result:TCore(Any))
+procedure typed_list() returns(result:TCore(Any))
+procedure typed_dict() returns(result:TCore(Any))
 -/
 #guard_msgs in
 #eval runTest #[
@@ -145,10 +145,10 @@ procedure typed_dict() returns(result:TCore(DictStrAny))
 /-! ## Literal types, TypedDict, and string-literal unions -/
 
 /--
-info: procedure int_literal_ret() returns(result:TInt)
-procedure str_literal_ret() returns(result:TString)
-procedure typed_dict_ret() returns(result:TCore(DictStrAny))
-procedure str_enum() returns(result:TString)
+info: procedure int_literal_ret() returns(result:TCore(Any))
+procedure str_literal_ret() returns(result:TCore(Any))
+procedure typed_dict_ret() returns(result:TCore(Any))
+procedure str_enum() returns(result:TCore(Any))
 -/
 #guard_msgs in
 #eval runTest #[
@@ -166,17 +166,17 @@ procedure str_enum() returns(result:TString)
 /-! ## Optional type patterns (Union[None, T]) -/
 
 /--
-info: procedure opt_str() returns(result:TCore(StrOrNone))
-procedure opt_int() returns(result:TCore(IntOrNone))
-procedure opt_bool(x:TCore(StrOrNone)) returns(result:TCore(BoolOrNone))
-procedure opt_float() returns(result:TString)
-procedure opt_list() returns(result:TString)
-procedure opt_dict() returns(result:TString)
-procedure opt_any() returns(result:TString)
-procedure opt_bytes() returns(result:TString)
-procedure opt_typed_dict() returns(result:TCore(DictStrAny))
-procedure opt_str_enum() returns(result:TCore(StrOrNone))
-procedure opt_int_enum() returns(result:TCore(IntOrNone))
+info: procedure opt_str() returns(result:TCore(Any))
+procedure opt_int() returns(result:TCore(Any))
+procedure opt_bool(x:TCore(Any)) returns(result:TCore(Any))
+procedure opt_float() returns(result:TCore(Any))
+procedure opt_list() returns(result:TCore(Any))
+procedure opt_dict() returns(result:TCore(Any))
+procedure opt_any() returns(result:TCore(Any))
+procedure opt_bytes() returns(result:TCore(Any))
+procedure opt_typed_dict() returns(result:TCore(Any))
+procedure opt_str_enum() returns(result:TCore(Any))
+procedure opt_int_enum() returns(result:TCore(Any))
 -/
 #guard_msgs in
 #eval runTest #[
@@ -211,22 +211,22 @@ procedure opt_int_enum() returns(result:TCore(IntOrNone))
 /-! ## Error cases -/
 
 /--
-info: Unknown type 'foo.Bar' mapped to TString
+info: procedure f() returns(result:TCore(Any))
 -/
 #guard_msgs in
-#eval runTestErrors
+#eval runTest
   #[mkFuncSig "f"
     (identType (PythonIdent.mk "foo" "Bar"))]
 
 /--
-info: Empty type (no atoms) encountered in Laurel conversion
+info: procedure f() returns(result:TCore(Any))
 -/
 #guard_msgs in
-#eval runTestErrors
+#eval runTest
   #[mkFuncSig "f" { atoms := #[], loc := default }]
 
 /--
-info: Union type (builtins.str | builtins.int) not yet supported in Laurel
+info: Union type (builtins.str | builtins.int) not yet supported
 -/
 #guard_msgs in
 #eval runTestErrors
@@ -235,7 +235,7 @@ info: Union type (builtins.str | builtins.int) not yet supported in Laurel
                identAtom .builtinsInt])]
 
 /--
-info: Union type (None | foo.Bar) not yet supported in Laurel
+info: Union type (None | foo.Bar) not yet supported
 -/
 #guard_msgs in
 #eval runTestErrors
@@ -248,8 +248,8 @@ info: Union type (None | foo.Bar) not yet supported in Laurel
 /--
 info: type MyClass
 type MyAlias
-procedure my_func(x:TInt, y:TString) returns(result:TBool)
-procedure MyClass_get_value() returns(result:TString)
+procedure my_func(x:TCore(Any), y:TCore(Any)) returns(result:TCore(Any))
+procedure MyClass_get_value() returns(result:TCore(Any))
 -/
 #guard_msgs in
 #eval runTest #[
@@ -278,7 +278,7 @@ procedure MyClass_get_value() returns(result:TString)
 
 /--
 info: procedure returns_none()
-procedure takes_none(x:TVoid)
+procedure takes_none(x:TCore(Any))
 -/
 #guard_msgs in
 #eval runTest #[
@@ -291,7 +291,7 @@ procedure takes_none(x:TVoid)
 
 /--
 info: type Foo
-procedure uses_class(x:UserDefined(Foo)) returns(result:UserDefined(Foo))
+procedure uses_class(x:UserDefined(Composite)) returns(result:UserDefined(Composite))
 -/
 #guard_msgs in
 #eval runTest #[
@@ -359,8 +359,8 @@ private def runDispatchTest (sigs : Array Signature) : IO Unit := do
 -- and a regular function.
 /--
 info: type SvcClient
-procedure SvcClient_do_thing(x:TString) returns(result:TInt)
-procedure helper() returns(result:TBool)
+procedure SvcClient_do_thing(x:TCore(Any)) returns(result:TCore(Any))
+procedure helper() returns(result:TCore(Any))
 dispatch create_client:
   "svc_a" -> mod.client.SvcClient
   "svc_b" -> mod.other.OtherClient
