@@ -200,8 +200,8 @@ def findPython3 (minVersion : Nat) (maxVersion : Nat) : IO System.FilePath := do
   throw <| IO.userError s!"Python 3.{minVersion} or later not found."
 
 /-- Run an action with a Python 3 command that has `strata.gen` installed.
-    Skips silently if Python is unavailable, unless `PYTHON_TEST` is set
-    in which case it throws. -/
+    Skips with a warning if Python is unavailable (disable via `warnOnSkip`).
+    Throws if `PYTHON_TEST` is set in the environment. -/
 def withPython (action : System.FilePath → IO Unit) (warnOnSkip : Bool := true) : IO Unit := do
   let required := (← IO.getEnv "PYTHON_TEST").isSome
   let pythonCmd ←

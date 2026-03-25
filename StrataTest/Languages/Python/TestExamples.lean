@@ -24,7 +24,8 @@ namespace Strata.Python
 def processPythonFile (pythonCmd : System.FilePath) (input : InputContext)
     : IO (Array Diagnostic) := do
   IO.FS.withTempDir fun tmpDir => do
-    -- Write Python source
+    -- Write Python source (temp filename is irrelevant; the temp dir is ephemeral
+    -- and the URI for diagnostic mapping comes from input.fileMap, not this path)
     let pyFile := tmpDir / "test.py"
     IO.FS.writeFile pyFile input.inputString
 
@@ -40,12 +41,12 @@ def processPythonFile (pythonCmd : System.FilePath) (input : InputContext)
                 "--dialect", dialectFile.toString,
                 pyFile.toString, ionFile.toString]
       inheritEnv := true
-      stdin := .null, stdout := .piped, stderr := .piped
+      stdin := .null, stdout := .null, stderr := .piped
     }
     let stderr ← child.stderr.readToEnd
     let exitCode ← child.wait
     if exitCode ≠ 0 then
-      throw <| .userError s!"py_to_strata failed: {stderr}"
+      throw <| .userError s!"py_to_strata failed (exit code {exitCode}): {stderr}"
 
     -- Translate Python Ion → Laurel
     let laurel ←
