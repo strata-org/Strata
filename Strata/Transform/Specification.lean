@@ -7,6 +7,7 @@ module
 
 public import Strata.DL.Imperative.StmtSemanticsSmallStep
 import all Strata.DL.Imperative.CmdSemantics
+import Strata.DL.Util.ListUtils
 
 /-! # Soundness Specification
 
@@ -483,6 +484,9 @@ theorem assertValid_implies_hoareTriple
 
 end Hoare
 
+
+namespace Transform
+
 /-! ## Transformation Correctness
 
 A program transformation is a partial function on statements
@@ -493,6 +497,8 @@ A transformation `T` is *sound* (w.r.t. assertion checks) if:
 for every assert `a`, if `T s = some s'` and `a` is valid in `s'`,
 then `a` is valid in `s`.
 -/
+
+/-! ## The Sound predicate and its properties -/
 
 /-- A transformation is *sound* if it preserves assertion validity. -/
 def Sound
@@ -518,8 +524,6 @@ theorem sound_comp
     rw [h1] at hrun
     exact absurd hrun (by nofun)
 
-/-! ## End-to-end soundness -/
-
 /-- If `T` is sound and assert `a` is valid in the output,
     then `a` is also valid in the input. -/
 theorem sound_assertValid
@@ -543,6 +547,125 @@ theorem sound_allAsserts
     AllAssertsValid P extendEval s :=
   fun a => sound_assertValid P extendEval T a s s' ht hsound (hvalid a)
 
+/-- Identity transform is sound. -/
+theorem sound_id :
+    Sound P extendEval some := by
+  intro s s' a ht hvalid
+  simp at ht; subst ht; exact hvalid
+
+/-! ## The Overapproximate predicate and its properties -/
+
+/-- A transformation `T` *overapproximates* if, for every input statement `st`,
+    `T(st)` can reach every configuration that `st` can.  That is, `T(st)`'s
+    reachable states are a superset of `st`'s. -/
+def Overapproximates
+    (T : Stmt P (Cmd P) → Option (Stmt P (Cmd P))) : Prop :=
+  ∀ (st s' : Stmt P (Cmd P)),
+    T st = some s' →
+    ∀ (ρ₀ : Env P) (σ : Config P (Cmd P)),
+      StepStmtStar P (EvalCmd P) extendEval (.stmt st ρ₀) σ →
+      StepStmtStar P (EvalCmd P) extendEval (.stmt s' ρ₀) σ
+
+/-- If `T` overapproximates and a Hoare triple holds on `T(st)`,
+    then the same triple holds on `st`. -/
+theorem overapproximates_triple
+    (T : Stmt P (Cmd P) → Option (Stmt P (Cmd P)))
+    (st s' : Stmt P (Cmd P))
+    (ht : T st = some s')
+    (hsem : Overapproximates P extendEval T)
+    {Pre Post : Env P → Prop}
+    (htriple : Hoare.Triple P extendEval Pre s' Post) :
+    Hoare.Triple P extendEval Pre st Post := by
+  intro ρ₀ ρ' hpre hwfb hf₀ hstar
+  exact htriple ρ₀ ρ' hpre hwfb hf₀ (hsem st s' ht ρ₀ _ hstar)
+
+/-- If `T` overapproximates, then `T` is sound. -/
+theorem overapproximates_sound
+    (T : Stmt P (Cmd P) → Option (Stmt P (Cmd P)))
+    (hsem : Overapproximates P extendEval T) :
+    Sound P extendEval T := by
+  intro s s' a ht hvalid ρ₀ cfg hstar hat
+  exact hvalid ρ₀ cfg (hsem s s' ht ρ₀ _ hstar) hat
+
+/-- Identity transform overapproximates. -/
+theorem overapproximates_id :
+    Overapproximates P extendEval some := by
+  intro st s' ht ρ₀ σ hstar
+  simp at ht; subst ht; exact hstar
+
+/-- Composition of overapproximating transforms overapproximates. -/
+theorem overapproximates_comp
+    (T₁ T₂ : Stmt P (Cmd P) → Option (Stmt P (Cmd P)))
+    (h₁ : Overapproximates P extendEval T₁)
+    (h₂ : Overapproximates P extendEval T₂) :
+    Overapproximates P extendEval (fun s => T₁ s >>= T₂) := by
+  intro st s'' ht ρ₀ σ hstar
+  simp [bind, Option.bind] at ht
+  match h : T₁ st with
+  | some s' =>
+    rw [h] at ht
+    exact h₂ s' s'' ht ρ₀ σ (h₁ st s' h ρ₀ σ hstar)
+  | none => rw [h] at ht; exact absurd ht (by nofun)
+
+/-- Pointwise application of an overapproximating transform to a statement list
+    preserves reachability of terminal and exiting configurations (with the same
+    exit label).
+    Note: this cannot be generalized to arbitrary intermediate configurations
+    such as `.seq`, because those carry the remaining statement list — which
+    differs between the original and transformed programs. Only `.terminal`
+    and `.exiting` have escaped the `.seq`/`.stmts` wrapper. -/
+theorem overapproximates_stmts
+    (T : Stmt P (Cmd P) → Option (Stmt P (Cmd P)))
+    (hsem : Overapproximates P extendEval T)
+    (ss : List (Stmt P (Cmd P))) :
+    ∀ (ss' : List (Stmt P (Cmd P))),
+      ss.mapM T = some ss' →
+      ∀ (ρ₀ ρ' : Env P),
+        (StepStmtStar P (EvalCmd P) extendEval (.stmts ss ρ₀) (.terminal ρ') →
+         StepStmtStar P (EvalCmd P) extendEval (.stmts ss' ρ₀) (.terminal ρ'))
+        ∧
+        (∀ lbl, StepStmtStar P (EvalCmd P) extendEval (.stmts ss ρ₀) (.exiting lbl ρ') →
+                StepStmtStar P (EvalCmd P) extendEval (.stmts ss' ρ₀) (.exiting lbl ρ')) := by
+  induction ss with
+  | nil =>
+    intro ss' hmap ρ₀ ρ'
+    have : ss' = [] := by simp [List.mapM_nil] at hmap; exact hmap
+    subst this; exact ⟨id, fun _ => id⟩
+  | cons s rest ih =>
+    intro ss' hmap ρ₀ ρ'
+    have ⟨s', rest', hs, hrm, hss'⟩ := List.mapM_cons_some hmap
+    subst hss'
+    constructor
+    · -- Terminal
+      intro hstar
+      cases hstar with
+      | step _ _ _ hstep hrest_exec => cases hstep with
+        | step_stmts_cons =>
+          have ⟨ρ₁, hterm_s, hterm_rest⟩ := seq_reaches_terminal P (EvalCmd P) extendEval hrest_exec
+          exact reflTrans_trans
+            (stmts_cons_step P (EvalCmd P) extendEval s' rest' ρ₀ ρ₁
+              (hsem s s' hs ρ₀ _ hterm_s))
+            ((ih rest' hrm ρ₁ ρ').1 hterm_rest)
+    · -- Exiting (label is preserved)
+      intro lbl hstar
+      cases hstar with
+      | step _ _ _ hstep hrest_exec => cases hstep with
+        | step_stmts_cons =>
+          match seq_reaches_exiting P (EvalCmd P) extendEval hrest_exec with
+          | .inl hexit_s =>
+            -- Exit came from s; replay through s' via overapproximates
+            exact .step _ _ _ .step_stmts_cons
+              (reflTrans_trans (seq_inner_star P (EvalCmd P) extendEval _ _ rest'
+                (hsem s s' hs ρ₀ _ hexit_s))
+                (.step _ _ _ .step_seq_exit (.refl _)))
+          | .inr ⟨ρ₁, hterm_s, hexit_rest⟩ =>
+            -- s terminated at ρ₁, exit came from rest
+            exact reflTrans_trans
+              (stmts_cons_step P (EvalCmd P) extendEval s' rest' ρ₀ ρ₁
+                (hsem s s' hs ρ₀ _ hterm_s))
+              ((ih rest' hrm ρ₁ ρ').2 lbl hexit_rest)
+
+end Transform
 end Specification
 end Imperative
 
