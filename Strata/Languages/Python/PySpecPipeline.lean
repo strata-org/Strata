@@ -6,8 +6,8 @@
 module
 
 import Strata.Languages.Laurel.LaurelToCoreTranslator
-import Strata.Languages.Python.PythonToCore
 public import Strata.Languages.Python.PythonToLaurel
+import Strata.Languages.Python.ReadPython
 import Strata.Languages.Python.PythonLaurelCorePrelude
 import Strata.Languages.Python.PythonRuntimeLaurelPart
 import Strata.Languages.Python.Specs
@@ -34,6 +34,8 @@ public structure PySpecLaurelResult where
   laurelProgram : Laurel.Program
   overloads : OverloadTable
   functionSignatures : List Python.PythonFunctionDecl := []
+  /-- Maps unprefixed class names to prefixed names for type resolution. -/
+  typeAliases : Std.HashMap String String := {}
 
 /-! ### Private Helpers -/
 
@@ -84,23 +86,6 @@ private def mergeOverloads (old new : OverloadTable) : OverloadTable :=
   new.fold (init := old) fun o name n =>
     o.alter name fun s => some <| s.getD {} |>.union n
 
-/-- Read a Python Ion program and return the single module command.
-    Throws if the file is not Ion or does not contain exactly one module. -/
-public def readPythonIonModule (strataPath : String)
-    : EIO String (Python.Command SourceRange) := do
-  let bytes ←
-    match ← IO.FS.readBinFile strataPath |>.toBaseIO with
-    | .ok b => pure b
-    | .error msg => throw s!"Error reading {strataPath}: {msg}"
-  if !Ion.isIonFile bytes then
-    throw s!"{strataPath} is not an Ion file"
-  let pgm ← match Program.fromIon Python.Python_map Python.Python.name bytes with
-    | .ok pgm => pure pgm
-    | .error msg => throw s!"Error parsing {strataPath}: {msg}"
-  let cmds := toPyCommands pgm.commands
-  let .isTrue _ := decideProp (cmds.size = 1)
-    | throw s!"Expected 1 module in {strataPath}, got {cmds.size}"
-  return cmds[0]
 
 /-- Read PySpec Ion files and collect their Laurel declarations and overload
     tables into a single combined result. Each Ion file is parsed and translated
@@ -113,6 +98,7 @@ public def buildPySpecLaurel (pyspecPaths : Array String)
   let mut combinedTypes : Array (Laurel.TypeDefinition × String) := #[]
   let mut allOverloads := overloads
   let mut funcSigs : List Python.PythonFunctionDecl := []
+  let mut allTypeAliases : Std.HashMap String String := {}
   for ionPath in pyspecPaths do
     let ionFile : System.FilePath := ionPath
     let some mod := ionFile.fileStem
@@ -124,7 +110,7 @@ public def buildPySpecLaurel (pyspecPaths : Array String)
       match ← Python.Specs.readDDM ionFile |>.toBaseIO with
       | .ok t => pure t
       | .error msg => throw s!"Could not read {ionFile}: {msg}"
-    let { program, errors, overloads } :=
+    let { program, errors, overloads, typeAliases } :=
       Python.Specs.ToLaurel.signaturesToLaurel ionPath sigs modulePrefix
     if errors.size > 0 then
       let _ ← IO.eprintln
@@ -132,6 +118,7 @@ public def buildPySpecLaurel (pyspecPaths : Array String)
       for err in errors do
         let _ ← IO.eprintln s!"  {err.file}: {err.message}" |>.toBaseIO
     allOverloads := mergeOverloads allOverloads overloads
+    allTypeAliases := typeAliases.fold (init := allTypeAliases) fun m k v => m.insert k v
     match extractFunctionSignatures sigs modulePrefix with
     | .ok fs => funcSigs := funcSigs ++ fs
     | .error msg => throw msg
@@ -166,7 +153,7 @@ public def buildPySpecLaurel (pyspecPaths : Array String)
     constants := []
   }
   return { laurelProgram := combinedLaurel, overloads := allOverloads
-           functionSignatures := funcSigs }
+           functionSignatures := funcSigs, typeAliases := allTypeAliases }
 
 /-- Read dispatch Ion files and merge their overload tables. -/
 public def readDispatchOverloads
@@ -238,9 +225,40 @@ public def buildPreludeInfo (result : PySpecLaurelResult) : Python.PreludeInfo :
   let baseInfo := Python.PreludeInfo.ofCoreProgram { decls := Python.coreOnlyFromRuntimeCorePart }
   let merged := baseInfo.merge
     (Python.PreludeInfo.ofLaurelProgram result.laurelProgram)
+  -- Build importedSymbols from merged info + type aliases
+  -- Register composite types under their Laurel names
+  let symbols : Std.HashMap String Python.ImportedSymbol :=
+    merged.compositeTypes.fold (init := {}) fun m name =>
+      m.insert name (.compositeType name)
+  -- Register procedures under their Laurel names
+  let symbols := merged.procedures.fold (init := symbols) fun m name sig =>
+    let inlinable := merged.inlinableProcedures.contains name
+    m.insert name (.procedure name sig inlinable)
+  -- Register functions under their Laurel names
+  let symbols := merged.functions.foldl (init := symbols) fun m name =>
+    m.insert name (.function name)
+  -- Add unprefixed aliases from typeAliases
+  let symbols := result.typeAliases.fold (init := symbols)
+    fun syms unprefixed prefixed =>
+      -- Composite type alias: Storage → dispatch_test_Storage_Storage
+      let syms := if merged.compositeTypes.contains prefixed then
+        syms.insert unprefixed (.compositeType prefixed) else syms
+      -- Procedure aliases: Storage_put_item → ...
+      let syms := merged.procedures.fold (init := syms) fun s name sig =>
+        if name.startsWith (prefixed ++ "_") then
+          let unprefixedName := unprefixed ++ name.drop prefixed.length
+          let inlinable := merged.inlinableProcedures.contains name
+          s.insert unprefixedName (.procedure name sig inlinable)
+        else s
+      -- Function aliases
+      merged.functions.foldl (init := syms) fun s name =>
+        if name.startsWith (prefixed ++ "_") then
+          s.insert (unprefixed ++ name.drop prefixed.length) (.function name)
+        else s
   { merged with
     functionSignatures :=
-      result.functionSignatures ++ merged.functionSignatures }
+      result.functionSignatures ++ merged.functionSignatures
+    importedSymbols := symbols }
 
 /-- Combine PySpec and user Laurel programs into a single program,
     prepending External stubs so the Laurel `resolve` pass can see
@@ -248,7 +266,10 @@ public def buildPreludeInfo (result : PySpecLaurelResult) : Python.PreludeInfo :
 public def combinePySpecLaurel (info : Python.PreludeInfo)
     (pySpec user : Laurel.Program) : Laurel.Program :=
   let stubs := Python.preludeStubs info
-  { staticProcedures := stubs ++ pySpec.staticProcedures ++ user.staticProcedures
+  let pySpecNames : Std.HashSet String := pySpec.staticProcedures.foldl (init := {})
+    fun s p => if !p.body.isExternal then s.insert p.name.text else s
+  let filteredStubs := stubs.filter fun p => !pySpecNames.contains p.name.text
+  { staticProcedures := filteredStubs ++ pySpec.staticProcedures ++ user.staticProcedures
     staticFields := pySpec.staticFields ++ user.staticFields
     types := pySpec.types ++ user.types
     constants := pySpec.constants ++ user.constants
@@ -259,7 +280,15 @@ public def combinePySpecLaurel (info : Python.PreludeInfo)
     translation. -/
 private def prependPrelude (coreFromLaurel : Core.Program) : Core.Program :=
   let (preludeDecls, userDecls) := coreFromLaurel.decls.span (fun d => toString d.name != "FIRST_END_MARKER")
-  { decls := preludeDecls ++ Python.coreOnlyFromRuntimeCorePart ++ userDecls }
+  -- The Core-only prelude has proper signatures for functions that the
+  -- Laurel→Core translator may have produced as empty-signature stubs.
+  -- Filter stubs from preludeDecls when a proper declaration exists.
+  let coreOnly := Python.coreOnlyFromRuntimeCorePart
+  let coreOnlyNames : Std.HashSet String := coreOnly.foldl (init := {})
+    fun s d => s.insert (toString d.name)
+  let filteredPrelude := preludeDecls.filter
+    fun d => !coreOnlyNames.contains (toString d.name)
+  { decls := filteredPrelude ++ coreOnly ++ userDecls }
 
 /-- Translate a combined Laurel program to Core and prepend the full
     runtime prelude.  Resolution errors are suppressed because PySpec
@@ -299,11 +328,10 @@ public def pyAnalyzeLaurel
     (pyspecPaths : Array String := #[])
     (sourcePath : Option String := none)
     : EIO PipelineError Laurel.Program := do
-  let pyModule ←
-    match ← readPythonIonModule pythonIonPath |>.toBaseIO with
+  let stmts ←
+    match ← Python.readPythonStrata pythonIonPath |>.toBaseIO with
     | .ok r => pure r
     | .error msg => throw (.internal msg)
-  let stmts := unwrapModule pyModule
 
   let result ←
     match ← resolveAndBuildLaurelPrelude dispatchPaths pyspecPaths stmts |>.toBaseIO with
@@ -313,7 +341,7 @@ public def pyAnalyzeLaurel
 
   let metadataPath := sourcePath.getD pythonIonPath
   let (laurelProgram, _ctx) ←
-    match Python.pythonToLaurel' preludeInfo pyModule none metadataPath result.overloads with
+    match Python.pythonToLaurel' preludeInfo stmts none metadataPath result.overloads with
     | .error (.userPythonError range msg) => throw (.userCode range msg)
     | .error e => throw (.internal s!"Python to Laurel translation failed: {e}")
     | .ok result => pure result
