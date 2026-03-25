@@ -164,18 +164,18 @@ where
   | labels, .seq inner ss =>
     Config.exitsCoveredByBlocks labels inner ∧ Stmt.exitsCoveredByBlocks.Block.exitsCoveredByBlocks labels ss
 
-/-! ## Single-step relation
-
-`StepStmt` defines a single execution step from one configuration to another.
-The expression evaluator is part of the `Env` and can be extended by
-`funcDecl` statements.  The cumulative failure flag in `Env.hasFailure` is
-OR-ed with the per-command failure flag at each `step_cmd`.
--/
+/-! ## Single-step relation -/
 
 section
 
 variable {CmdT : Type} (P : PureExpr) [HasBool P] [HasNot P]
 
+/--
+`StepStmt` defines a single execution step from one configuration to another.
+The expression evaluator is part of the `Env` and can be extended by
+`funcDecl` statements.  The cumulative failure flag in `Env.hasFailure` is
+OR-ed with the per-command failure flag at each `step_cmd`.
+-/
 inductive StepStmt
   (EvalCmd : EvalCmdParam P CmdT)
   (extendEval : ExtendEval P) :
@@ -742,6 +742,7 @@ theorem smallStep_hasFailure_irrel
 
 /-! ## Well-paired exits: preservation and no-escape -/
 
+omit [HasBool P] [HasNot P] in
 private theorem block_exitsCoveredByBlocks_append
     (labels : List String) (ss₁ ss₂ : List (Stmt P CmdT))
     (h₁ : Stmt.exitsCoveredByBlocks.Block.exitsCoveredByBlocks labels ss₁)
@@ -939,6 +940,7 @@ structure AssertId where
   | .seq inner _, aid => isAtAssert inner aid
   | _, _ => False
 
+omit [HasFvar P] [HasBool P] [HasNot P] in
 /-- If a config has no matching assert, then `isAtAssert` doesn't match. -/
 private theorem noMatchingAssert_not_isAtAssert
     (cfg : Config P (Cmd P)) (label : String) (expr : P.Expr)
@@ -969,6 +971,7 @@ private theorem noMatchingAssert_not_isAtAssert
   | .block _ inner => exact noMatchingAssert_not_isAtAssert inner label expr hno
   | .seq inner _ => exact noMatchingAssert_not_isAtAssert inner label expr hno.1
 
+omit [HasFvar P] [HasBool P] [HasNot P] in
 /-- Helper: `Stmts.noMatchingAssert` for concatenation. -/
 private theorem stmts_noMatchingAssert_append
     (ss₁ ss₂ : List (Stmt P (Cmd P))) (label : String)

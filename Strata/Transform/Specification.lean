@@ -556,8 +556,8 @@ theorem sound_id :
 /-! ## The Overapproximate predicate and its properties -/
 
 /-- A transformation `T` *overapproximates* if, for every input statement `st`,
-    `T(st)` can reach every configuration that `st` can.  That is, `T(st)`'s
-    reachable states are a superset of `st`'s. -/
+    every configuration reachable from `st` is also reachable from `T(st)`.
+    That is, `T(st)`'s reachable states are a superset of `st`'s. -/
 def Overapproximates
     (T : Stmt P (Cmd P) → Option (Stmt P (Cmd P))) : Prop :=
   ∀ (st s' : Stmt P (Cmd P)),
