@@ -10,10 +10,21 @@ import all    Strata.DDM.Util.Fin
 import        Strata.Languages.Python.ReadPython
 import Strata.Languages.Python.Specs.DDM
 public import Strata.Languages.Python.Specs.Decls
-import        Strata.Languages.Python.Specs.PySpecM
+import        Strata.Languages.Python.Specs.Error
 import        Strata.Util.DecideProp
 
 namespace Strata.Python.Specs
+
+/-- Type class for monads that support PySpec error and warning reporting. -/
+public class PySpecMClass (m : Type → Type) where
+  /-- Report an error at a specific source location. -/
+  specError (loc : SourceRange) (message : String) : m Unit
+  /-- Report a warning at a specific source location. -/
+  specWarning (loc : SourceRange) (message : String) : m Unit
+  /-- Run an action and check if any new errors were reported. -/
+  runChecked {α} (act : m α) : m (Bool × α)
+
+open PySpecMClass (specError specWarning runChecked)
 
 /-- String identifier for event types. -/
 public abbrev EventType := String

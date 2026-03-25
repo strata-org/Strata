@@ -22,7 +22,7 @@ namespace Strata.Python.Specs.IdentifyOverloadsTest
 
 open Strata (readDispatchOverloads readPythonIonModule unwrapModule pySpecs)
 open Strata.Python.Specs.IdentifyOverloads (resolveOverloads)
-open Strata.Python.Specs.ToLaurel (OverloadTable)
+open Strata.Python (OverloadTable)
 
 private meta def testDir : System.FilePath :=
   "StrataTest/Languages/Python/Specs/dispatch_test"

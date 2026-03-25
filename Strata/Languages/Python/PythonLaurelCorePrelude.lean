@@ -49,7 +49,8 @@ datatype Error () {
   AssertionError (Assertion_msg : string),
   UnimplementedError (Unimplement_msg : string),
   UndefinedError (Undefined_msg : string),
-  IndexError (IndexError_msg : string)
+  IndexError (IndexError_msg : string),
+  RePatternError (Re_msg : string)
 };
 
 // /////////////////////////////////////////////////////////////////////////////////////
@@ -100,11 +101,102 @@ datatype DictStrAny () {
   DictStrAny_cons (key: string, val: Any, tail: DictStrAny)
 };
 
+// Forward declarations: needed so the inline functions after CoreOnlyDelimiter
+// can reference these during DDM parsing.  Filtered out at merge (precede the
+// sentinel).  The real definitions with concreteEval are supplied by ReFactory
+// at verification time.
+function re_fullmatch_str(pattern : string) : regex;
+function re_match_str(pattern : string) : regex;
+function re_search_str(pattern : string) : regex;
+function re_pattern_error(pattern : string) : Error;
+
 type CoreOnlyDelimiter;
 
 // =====================================================================
 // Core-only declarations (not expressed in Laurel)
 // =====================================================================
+
+// /////////////////////////////////////////////////////////////////////////////////////
+// Regex support
+//
+// Python signatures:
+//   re.compile(pattern: str) -> re.Pattern
+//   re.match(pattern: str | re.Pattern, string: str) -> re.Match | None
+//   re.search(pattern: str | re.Pattern, string: str) -> re.Match | None
+//   re.fullmatch(pattern: str | re.Pattern, string: str) -> re.Match | None
+//
+// Architecture:
+//
+// re.compile is a semantic no-op — it returns the pattern string unchanged.
+// The mode-specific factory functions re_fullmatch_str, re_match_str,
+// re_search_str each compile a pattern string to a regex with the correct
+// MatchMode (via pythonRegexToCore), so anchors (^/$) are handled properly.
+// Their concreteEval fires when the pattern is a string literal.
+//
+// The _bool helpers call the mode-specific factories, so there is a single
+// source of truth for mode-specific compilation.
+//
+// On match, we return a from_ClassInstance wrapping a concrete re_Match
+// with pos=0 and endpos=str.len(s), which is sound for the module-level
+// API (no pos/endpos parameters).
+// /////////////////////////////////////////////////////////////////////////////////////
+
+// Mode-specific factory functions are declared via ReFactory (with concreteEval
+// for literal pattern expansion), not in this prelude, to avoid duplicate
+// definitions.
+
+inline function re_fullmatch_bool(pattern : string, s : string) : bool {
+  str.in.re(s, re_fullmatch_str(pattern))
+}
+inline function re_match_bool(pattern : string, s : string) : bool {
+  str.in.re(s, re_match_str(pattern))
+}
+inline function re_search_bool(pattern : string, s : string) : bool {
+  str.in.re(s, re_search_str(pattern))
+}
+
+inline function mk_re_Match(s : string) : Any {
+  from_ClassInstance("re_Match",
+    DictStrAny_cons("re_match_string", from_string(s),
+      DictStrAny_cons("re_match_pos", from_int(0),
+        DictStrAny_cons("re_match_endpos", from_int(str.len(s)),
+          DictStrAny_empty()))))
+}
+
+// re.compile is a no-op: returns the pattern string unchanged.
+inline function re_compile(pattern : Any) : Any
+  requires Any..isfrom_string(pattern);
+{
+  pattern
+}
+
+inline function re_fullmatch(pattern : Any, s : Any) : Any
+  requires Any..isfrom_string(pattern) && Any..isfrom_string(s);
+{
+  if Error..isRePatternError(re_pattern_error(Any..as_string!(pattern)))
+  then exception(re_pattern_error(Any..as_string!(pattern)))
+  else if re_fullmatch_bool(Any..as_string!(pattern), Any..as_string!(s))
+       then mk_re_Match(Any..as_string!(s))
+       else from_none()
+}
+inline function re_match(pattern : Any, s : Any) : Any
+  requires Any..isfrom_string(pattern) && Any..isfrom_string(s);
+{
+  if Error..isRePatternError(re_pattern_error(Any..as_string!(pattern)))
+  then exception(re_pattern_error(Any..as_string!(pattern)))
+  else if re_match_bool(Any..as_string!(pattern), Any..as_string!(s))
+       then mk_re_Match(Any..as_string!(s))
+       else from_none()
+}
+inline function re_search(pattern : Any, s : Any) : Any
+  requires Any..isfrom_string(pattern) && Any..isfrom_string(s);
+{
+  if Error..isRePatternError(re_pattern_error(Any..as_string!(pattern)))
+  then exception(re_pattern_error(Any..as_string!(pattern)))
+  else if re_search_bool(Any..as_string!(pattern), Any..as_string!(s))
+       then mk_re_Match(Any..as_string!(s))
+       else from_none()
+}
 
 // /////////////////////////////////////////////////////////////////////////////////////
 //Functions that we provide to Python user
