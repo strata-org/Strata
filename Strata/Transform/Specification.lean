@@ -11,14 +11,13 @@ import Strata.DL.Util.ListUtils
 
 /-! # Soundness Specification
 
-This file defines two styles of top-level soundness for assertion checks,
-proves that the Hoare-triple style (B) is a special case of the reachability
-style (A), and defines correctness of program transformations.
+All definitions are parametric over a `Lang P` structure that abstracts the
+statement type, configuration type, step relation, and assert detection,
+sharing the pure-expression parameter `P`.
 
-All definitions are parametric over a `Lang` structure that abstracts the
-statement type, configuration type, step relation, and assert detection.
-Concrete instances are provided for the Imperative dialect
-(`Lang.imperative`) and its standard command set (`Lang.standard`).
+`Overapproximates` is *bilingual*: it relates two (possibly different)
+`Lang P` values, so it can express cross-language transformations such as
+deterministic-to-nondeterministic.
 -/
 
 public section
@@ -29,19 +28,14 @@ namespace Specification
 
 /-! ## Language bundle -/
 
-/-- Bundles the abstract ingredients for small-step statement semantics.
-    Users may instantiate this with custom statement/config types. -/
-structure Lang where
-  /-- The pure expression parameter. -/
-  P : PureExpr
-  [hasFvar : HasFvar P]
-  [hasBool : HasBool P]
-  [hasNot : HasNot P]
+/-- Bundles the abstract ingredients for small-step statement semantics,
+    parameterized by a shared pure-expression system `P`. -/
+structure Lang (P : PureExpr) [HasFvar P] [HasBool P] [HasNot P] where
   /-- Statement type. -/
   StmtT : Type
   /-- Configuration type. -/
   CfgT : Type
-  /-- Multi-step relation (reflexive–transitive closure of single steps). -/
+  /-- Multi-step relation. -/
   star : CfgT → CfgT → Prop
   /-- Embed a single statement and env into a config. -/
   stmtCfg : StmtT → Env P → CfgT
@@ -58,69 +52,56 @@ structure Lang where
   /-- Extract store from a configuration. -/
   getStore : CfgT → SemanticStore P
 
-attribute [instance] Lang.hasFvar Lang.hasBool Lang.hasNot
-
-/-- Build a `Lang` from an `Imperative.Stmt`/`Config` with a given command
+/-- Build a `Lang` from `Imperative.Stmt`/`Config` with a given command
     type and evaluator. -/
 abbrev Lang.imperative (P : PureExpr) [HasFvar P] [HasBool P] [HasNot P]
     (CmdT : Type) (evalCmd : EvalCmdParam P CmdT) (extendEval : ExtendEval P)
-    (isAtAssert : Config P CmdT → AssertId P → Prop) : Lang :=
-  ⟨P, Stmt P CmdT, Config P CmdT, StepStmtStar P evalCmd extendEval,
+    (isAtAssert : Config P CmdT → AssertId P → Prop) : Lang P :=
+  ⟨Stmt P CmdT, Config P CmdT, StepStmtStar P evalCmd extendEval,
    .stmt, .stmts, .terminal, .exiting, isAtAssert, Config.getEval, Config.getStore⟩
 
 /-- The standard `Lang` for `Cmd P` / `EvalCmd P` / `isAtAssert`. -/
 abbrev Lang.standard (P : PureExpr) [HasFvar P] [HasBool P] [HasNot P]
-    (extendEval : ExtendEval P) : Lang :=
+    (extendEval : ExtendEval P) : Lang P :=
   Lang.imperative P (Cmd P) (EvalCmd P) extendEval (Imperative.isAtAssert P)
 
-variable (L : Lang)
 
+variable {P : PureExpr} [HasFvar P] [HasBool P] [HasNot P]
+variable (L : Lang P)
 
 /-! ## Style A — Reachability-based assertion validity -/
 
-/-- Assert `a` is *valid* in statement `s` if, for every initial
-    environment and reachable configuration that is at assert `a`,
-    the assert expression evaluates to `true`. -/
-def AssertValid
-    (s : L.StmtT) (a : AssertId L.P) : Prop :=
-  ∀ (ρ₀ : Env L.P) (cfg : L.CfgT),
+/-- Assert `a` is *valid* in statement `s`. -/
+def AssertValid (s : L.StmtT) (a : AssertId P) : Prop :=
+  ∀ (ρ₀ : Env P) (cfg : L.CfgT),
     L.star (L.stmtCfg s ρ₀) cfg →
     L.isAtAssert cfg a →
     L.getEval cfg (L.getStore cfg) a.expr = some HasBool.tt
 
 /-- All asserts are valid in statement `s`. -/
 def AllAssertsValid (s : L.StmtT) : Prop :=
-  ∀ (a : AssertId L.P), AssertValid L s a
-
+  ∀ (a : AssertId P), AssertValid L s a
 
 
 /-! ## Style B — Hoare-triple assertion validity -/
 
 namespace Hoare
 
-/-- Partial-correctness Hoare triple using small-step semantics.
-    Covers only normal termination (`.terminal`). -/
+/-- Partial-correctness Hoare triple. -/
 def Triple
-    (Pre : Env L.P → Prop)
-    (s : L.StmtT)
-    (Post : Env L.P → Prop) : Prop :=
-  ∀ (ρ₀ ρ' : Env L.P),
-    Pre ρ₀ →
-    WellFormedSemanticEvalBool ρ₀.eval →
-    ρ₀.hasFailure = false →
+    (Pre : Env P → Prop) (s : L.StmtT) (Post : Env P → Prop) : Prop :=
+  ∀ (ρ₀ ρ' : Env P),
+    Pre ρ₀ → WellFormedSemanticEvalBool ρ₀.eval → ρ₀.hasFailure = false →
     L.star (L.stmtCfg s ρ₀) (L.terminalCfg ρ') →
     Post ρ' ∧ ρ'.hasFailure = false
 
-/-- Partial-correctness Hoare triple for a list of statements (a block body).
-    Covers both normal termination and early exit. -/
+/-- Partial-correctness Hoare triple for a block body.
+    The output configuration is allowed to be still in an exiting mode
+    (see Config.exiting) because the outer block can catch the exit. -/
 def TripleBlock
-    (Pre : Env L.P → Prop)
-    (ss : List L.StmtT)
-    (Post : Env L.P → Prop) : Prop :=
-  ∀ (ρ₀ ρ' : Env L.P),
-    Pre ρ₀ →
-    WellFormedSemanticEvalBool ρ₀.eval →
-    ρ₀.hasFailure = false →
+    (Pre : Env P → Prop) (ss : List L.StmtT) (Post : Env P → Prop) : Prop :=
+  ∀ (ρ₀ ρ' : Env P),
+    Pre ρ₀ → WellFormedSemanticEvalBool ρ₀.eval → ρ₀.hasFailure = false →
     (L.star (L.stmtsCfg ss ρ₀) (L.terminalCfg ρ') ∨
      ∃ lbl, L.star (L.stmtsCfg ss ρ₀) (L.exitingCfg lbl ρ')) →
     Post ρ' ∧ ρ'.hasFailure = false
@@ -128,14 +109,14 @@ def TripleBlock
 
 /-! ## Parametric Hoare rules -/
 
-/-- False precondition: any postcondition holds vacuously. -/
-theorem false_pre (s : L.StmtT) (Post : Env L.P → Prop) :
+/-- False precondition proves anything -/
+theorem false_pre (s : L.StmtT) (Post : Env P → Prop) :
     Triple L (fun _ => False) s Post := by
   intro _ _ hpre; exact absurd hpre id
 
 /-- Consequence (weakening): strengthen precondition, weaken postconditions. -/
 theorem consequence
-    {Pre Pre' : Env L.P → Prop} {Post Post' : Env L.P → Prop} {s : L.StmtT}
+    {Pre Pre' : Env P → Prop} {Post Post' : Env P → Prop} {s : L.StmtT}
     (h : Triple L Pre s Post)
     (hpre : ∀ ρ, Pre' ρ → Pre ρ) (hpost : ∀ ρ, Post ρ → Post' ρ) :
     Triple L Pre' s Post' := by
@@ -144,15 +125,10 @@ theorem consequence
   exact ⟨hpost ρ' hp, hf⟩
 
 
-/-! ## Structural Hoare rules (Imperative-specific)
-
-The following rules rely on the concrete structure of `Imperative.Stmt`
-and `Config` (step constructors, decomposition lemmas).  They are stated
-for `Lang.imperative`. -/
+/-! ## Structural Hoare rules (Imperative-specific) -/
 
 section ImperativeRules
 
-variable {P : PureExpr} [HasFvar P] [HasBool P] [HasNot P]
 variable {CmdT : Type} (evalCmd : EvalCmdParam P CmdT) (extendEval : ExtendEval P)
 variable (isAtAssertFn : Config P CmdT → AssertId P → Prop)
 
@@ -287,41 +263,39 @@ theorem ite {c : P.Expr} {tss ess : List (Stmt P CmdT)} {md : MetaData P}
 end ImperativeRules
 
 
-/-! ## Connection between HoareTriple and AssertValid (Imperative-specific)
-
-These theorems rely on properties of `isAtAssert` specific to `Cmd P`. -/
+/-! ## Connection between HoareTriple and AssertValid (standard Lang) -/
 
 section StandardConnection
 
-variable (P : PureExpr) [HasFvar P] [HasBool P] [HasNot P]
-variable (extendEval : ExtendEval P)
+variable (P' : PureExpr) [HasFvar P'] [HasBool P'] [HasNot P']
+variable (extendEval : ExtendEval P')
 
 /-- The composite statement `assume pre; st; assert post` wrapped in a block. -/
 def PredicatedStmt
-    (pre_label : String) (pre_expr : P.Expr) (pre_md : MetaData P)
-    (st : Stmt P (Cmd P))
-    (post_label : String) (post_expr : P.Expr) (post_md : MetaData P)
-    (block_label : String) (block_md : MetaData P) : Stmt P (Cmd P) :=
+    (pre_label : String) (pre_expr : P'.Expr) (pre_md : MetaData P')
+    (st : Stmt P' (Cmd P'))
+    (post_label : String) (post_expr : P'.Expr) (post_md : MetaData P')
+    (block_label : String) (block_md : MetaData P') : Stmt P' (Cmd P') :=
   .block block_label
     [.cmd (.assume pre_label pre_expr pre_md), st, .cmd (.assert post_label post_expr post_md)]
     block_md
 
 /-- **Direction 1**: Hoare triple implies assert validity for `PredicatedStmt`. -/
 theorem hoareTriple_implies_assertValid
-    (pre_label : String) (pre_expr : P.Expr) (pre_md : MetaData P)
-    (st : Stmt P (Cmd P))
-    (post_label : String) (post_expr : P.Expr) (post_md : MetaData P)
-    (block_label : String) (block_md : MetaData P)
-    (hoare : Triple (Lang.standard P extendEval)
+    (pre_label : String) (pre_expr : P'.Expr) (pre_md : MetaData P')
+    (st : Stmt P' (Cmd P'))
+    (post_label : String) (post_expr : P'.Expr) (post_md : MetaData P')
+    (block_label : String) (block_md : MetaData P')
+    (hoare : Triple (Lang.standard P' extendEval)
       (fun ρ => ρ.eval ρ.store pre_expr = some HasBool.tt)
       st
       (fun ρ => ρ.eval ρ.store post_expr = some HasBool.tt))
     (hno : st.noMatchingAssert post_label) :
-    AssertValid (Lang.standard P extendEval)
-      (PredicatedStmt P pre_label pre_expr pre_md st post_label post_expr post_md block_label block_md)
+    AssertValid (Lang.standard P' extendEval)
+      (PredicatedStmt P' pre_label pre_expr pre_md st post_label post_expr post_md block_label block_md)
       ⟨post_label, post_expr⟩ := by
   intro ρ₀ cfg hreach hat
-  have hno_match := noMatchingAssert_implies_no_reachable_assert P extendEval st post_label post_expr hno
+  have hno_match := noMatchingAssert_implies_no_reachable_assert P' extendEval st post_label post_expr hno
   unfold PredicatedStmt at hreach
   cases hreach with
   | refl => exact absurd hat (by simp [isAtAssert])
@@ -329,14 +303,14 @@ theorem hoareTriple_implies_assertValid
     cases hstep with
     | step_block =>
       have ⟨inner, heq_cfg, hinner_star, hat_inner⟩ :=
-        block_isAtAssert_inner P extendEval _ _ _ _ hrest hat
+        block_isAtAssert_inner P' extendEval _ _ _ _ hrest hat
       subst heq_cfg
       cases hinner_star with
       | refl => exact absurd hat_inner (by simp [isAtAssert])
       | step _ _ _ hstep2 hrest2 =>
         cases hstep2 with
         | step_stmts_cons =>
-          match seq_isAtAssert_cases P extendEval _ _ _ _ hrest2 hat_inner with
+          match seq_isAtAssert_cases P' extendEval _ _ _ _ hrest2 hat_inner with
           | .inl ⟨_, _, hreach_assume, hat_assume⟩ =>
             cases hreach_assume with
             | refl => exact absurd hat_assume (by simp [isAtAssert])
@@ -347,7 +321,7 @@ theorem hoareTriple_implies_assertValid
           | .inr ⟨ρ₁, hterm_assume, hrest_stmts, hat_stmts⟩ =>
             cases hrest_stmts with
             | refl =>
-              have : ¬ isAtAssert P (.stmts (st :: [.cmd (.assert post_label post_expr post_md)]) ρ₁)
+              have : ¬ isAtAssert P' (.stmts (st :: [.cmd (.assert post_label post_expr post_md)]) ρ₁)
                   ⟨post_label, post_expr⟩ := by
                 intro h_at
                 match st with
@@ -363,7 +337,7 @@ theorem hoareTriple_implies_assertValid
             | step _ _ _ hstep3 hrest3 =>
               cases hstep3 with
               | step_stmts_cons =>
-                match seq_isAtAssert_cases P extendEval _ _ _ _ hrest3 hat_stmts with
+                match seq_isAtAssert_cases P' extendEval _ _ _ _ hrest3 hat_stmts with
                 | .inl ⟨_, _, hreach_st, hat_st⟩ =>
                   exact absurd hat_st (hno_match ρ₁ _ hreach_st)
                 | .inr ⟨ρ', hterm_st, hrest_assert, hat_assert⟩ =>
@@ -376,13 +350,13 @@ theorem hoareTriple_implies_assertValid
                         cases h_assume_rest with
                         | refl =>
                           have ⟨ρ'_clean, hterm_clean, hs_eq, he_eq⟩ :=
-                            smallStep_hasFailure_irrel P (EvalCmd P) extendEval
+                            smallStep_hasFailure_irrel P' (EvalCmd P') extendEval
                               st _ ρ' hterm_st { ρ₀ with hasFailure := false } rfl rfl
                           have ⟨hpost, _⟩ := hoare { ρ₀ with hasFailure := false } ρ'_clean
                             hpre hwfb rfl hterm_clean
                           simp only [hs_eq, he_eq] at hpost
                           simp only [Config.getEval, Config.getStore]
-                          have ⟨he, hs⟩ := assert_tail_getEvalStore P extendEval
+                          have ⟨he, hs⟩ := assert_tail_getEvalStore P' extendEval
                             ρ' post_label post_expr post_md inner ⟨post_label, post_expr⟩
                             hrest_assert hat_inner
                           rw [he, hs]; exact hpost
@@ -391,67 +365,67 @@ theorem hoareTriple_implies_assertValid
 
 /-- **Direction 2**: Assert validity for `PredicatedStmt` implies Hoare triple. -/
 theorem assertValid_implies_hoareTriple
-    (pre_label : String) (pre_expr : P.Expr) (pre_md : MetaData P)
-    (st : Stmt P (Cmd P))
-    (post_label : String) (post_expr : P.Expr) (post_md : MetaData P)
-    (block_label : String) (block_md : MetaData P)
-    (hvalid : AllAssertsValid (Lang.standard P extendEval)
-      (PredicatedStmt P pre_label pre_expr pre_md st post_label post_expr post_md block_label block_md)) :
-    Triple (Lang.standard P extendEval)
+    (pre_label : String) (pre_expr : P'.Expr) (pre_md : MetaData P')
+    (st : Stmt P' (Cmd P'))
+    (post_label : String) (post_expr : P'.Expr) (post_md : MetaData P')
+    (block_label : String) (block_md : MetaData P')
+    (hvalid : AllAssertsValid (Lang.standard P' extendEval)
+      (PredicatedStmt P' pre_label pre_expr pre_md st post_label post_expr post_md block_label block_md)) :
+    Triple (Lang.standard P' extendEval)
       (fun ρ => ρ.eval ρ.store pre_expr = some HasBool.tt)
       st
       (fun ρ => ρ.eval ρ.store post_expr = some HasBool.tt) := by
   intro ρ₀ ρ' hpre hwfb hf₀ hstar
-  let assume_stmt : Stmt P (Cmd P) := .cmd (.assume pre_label pre_expr pre_md)
-  let assert_stmt : Stmt P (Cmd P) := .cmd (.assert post_label post_expr post_md)
-  let body : List (Stmt P (Cmd P)) := [assume_stmt, st, assert_stmt]
-  have hvalid_st : ∀ (a : AssertId P) (cfg : Config P (Cmd P)),
-      StepStmtStar P (EvalCmd P) extendEval (.stmt st ρ₀) cfg →
-      isAtAssert P cfg a →
+  let assume_stmt : Stmt P' (Cmd P') := .cmd (.assume pre_label pre_expr pre_md)
+  let assert_stmt : Stmt P' (Cmd P') := .cmd (.assert post_label post_expr post_md)
+  let body : List (Stmt P' (Cmd P')) := [assume_stmt, st, assert_stmt]
+  have hvalid_st : ∀ (a : AssertId P') (cfg : Config P' (Cmd P')),
+      StepStmtStar P' (EvalCmd P') extendEval (.stmt st ρ₀) cfg →
+      isAtAssert P' cfg a →
       cfg.getEval cfg.getStore a.expr = some HasBool.tt := by
     intro a cfg hstar_st hat
-    have h_assume : StepStmtStar P (EvalCmd P) extendEval
+    have h_assume : StepStmtStar P' (EvalCmd P') extendEval
         (.stmt assume_stmt ρ₀) (.terminal { ρ₀ with store := ρ₀.store, hasFailure := ρ₀.hasFailure || false }) :=
       .step _ _ _ (StepStmt.step_cmd (EvalCmd.eval_assume hpre hwfb)) (.refl _)
-    have h_ρ₁_eq : ({ store := ρ₀.store, eval := ρ₀.eval, hasFailure := ρ₀.hasFailure || false } : Env P) = ρ₀ := by
+    have h_ρ₁_eq : ({ store := ρ₀.store, eval := ρ₀.eval, hasFailure := ρ₀.hasFailure || false } : Env P') = ρ₀ := by
       cases ρ₀; simp [Bool.or_false]
-    have h1 := stmts_cons_step P (EvalCmd P) extendEval assume_stmt [st, assert_stmt] ρ₀ _ h_assume
+    have h1 := stmts_cons_step P' (EvalCmd P') extendEval assume_stmt [st, assert_stmt] ρ₀ _ h_assume
     rw [h_ρ₁_eq] at h1
-    have h2 : StepStmtStar P (EvalCmd P) extendEval
+    have h2 : StepStmtStar P' (EvalCmd P') extendEval
         (.stmts [st, assert_stmt] ρ₀) (.seq (.stmt st ρ₀) [assert_stmt]) :=
       .step _ _ _ StepStmt.step_stmts_cons (.refl _)
-    have h3 := seq_inner_star P (EvalCmd P) extendEval _ _ [assert_stmt] hstar_st
+    have h3 := seq_inner_star P' (EvalCmd P') extendEval _ _ [assert_stmt] hstar_st
     have h_inner := reflTrans_trans (h1 := reflTrans_trans (h1 := h1) (h2 := h2)) (h2 := h3)
-    have h_block := block_inner_star P (EvalCmd P) extendEval _ _ block_label h_inner
-    have h_start : StepStmtStar P (EvalCmd P) extendEval
+    have h_block := block_inner_star P' (EvalCmd P') extendEval _ _ block_label h_inner
+    have h_start : StepStmtStar P' (EvalCmd P') extendEval
         (.stmt (.block block_label body block_md) ρ₀) (.block block_label (.stmts body ρ₀)) :=
       .step _ _ _ StepStmt.step_block (.refl _)
     have h_full := reflTrans_trans (h1 := h_start) (h2 := h_block)
     have h_result := hvalid a ρ₀ _ h_full hat
     simp only [Config.getEval, Config.getStore] at h_result ⊢
     exact h_result
-  have h_assume : StepStmtStar P (EvalCmd P) extendEval
+  have h_assume : StepStmtStar P' (EvalCmd P') extendEval
       (.stmt assume_stmt ρ₀) (.terminal { ρ₀ with store := ρ₀.store, hasFailure := ρ₀.hasFailure || false }) :=
     .step _ _ _ (StepStmt.step_cmd (EvalCmd.eval_assume hpre hwfb)) (.refl _)
-  have h_ρ₁_eq : ({ store := ρ₀.store, eval := ρ₀.eval, hasFailure := ρ₀.hasFailure || false } : Env P) = ρ₀ := by
+  have h_ρ₁_eq : ({ store := ρ₀.store, eval := ρ₀.eval, hasFailure := ρ₀.hasFailure || false } : Env P') = ρ₀ := by
     cases ρ₀; simp [Bool.or_false]
-  have h1 := stmts_cons_step P (EvalCmd P) extendEval assume_stmt [st, assert_stmt] ρ₀ _ h_assume
+  have h1 := stmts_cons_step P' (EvalCmd P') extendEval assume_stmt [st, assert_stmt] ρ₀ _ h_assume
   rw [h_ρ₁_eq] at h1
-  have h2 := stmts_cons_step P (EvalCmd P) extendEval st [assert_stmt] ρ₀ ρ' hstar
-  have h3 : StepStmtStar P (EvalCmd P) extendEval
+  have h2 := stmts_cons_step P' (EvalCmd P') extendEval st [assert_stmt] ρ₀ ρ' hstar
+  have h3 : StepStmtStar P' (EvalCmd P') extendEval
       (.stmts [assert_stmt] ρ') (.seq (.stmt assert_stmt ρ') []) :=
     .step _ _ _ StepStmt.step_stmts_cons (.refl _)
   have h_inner := reflTrans_trans (h1 := reflTrans_trans (h1 := h1) (h2 := h2)) (h2 := h3)
-  have h_block := block_inner_star P (EvalCmd P) extendEval _ _ block_label h_inner
-  have h_start : StepStmtStar P (EvalCmd P) extendEval
+  have h_block := block_inner_star P' (EvalCmd P') extendEval _ _ block_label h_inner
+  have h_start : StepStmtStar P' (EvalCmd P') extendEval
       (.stmt (.block block_label body block_md) ρ₀) (.block block_label (.stmts body ρ₀)) :=
     .step _ _ _ StepStmt.step_block (.refl _)
   have h_full := reflTrans_trans (h1 := h_start) (h2 := h_block)
-  have h_at : isAtAssert P (.block block_label (.seq (.stmt assert_stmt ρ') [])) ⟨post_label, post_expr⟩ := by
+  have h_at : isAtAssert P' (.block block_label (.seq (.stmt assert_stmt ρ') [])) ⟨post_label, post_expr⟩ := by
     simp [isAtAssert, assert_stmt]
   have h_result := hvalid ⟨post_label, post_expr⟩ ρ₀ _ h_full h_at
   simp only [Config.getEval, Config.getStore] at h_result
-  exact ⟨h_result, allAssertsValid_preserves_noFailure P extendEval
+  exact ⟨h_result, allAssertsValid_preserves_noFailure P' extendEval
     (ρ₀ := ρ₀) (ρ' := ρ') st hvalid_st hf₀ hstar⟩
 
 end StandardConnection
@@ -461,120 +435,102 @@ end Hoare
 
 namespace Transform
 
-/-! ## Transformation Correctness -/
+/-- A transformation is *sound* if it preserves assertion validity.
+    Bilingual: source and target may live in different languages. -/
+def Sound (L₁ L₂ : Lang P) (T : L₁.StmtT → Option L₂.StmtT) : Prop :=
+  ∀ (s : L₁.StmtT) (s' : L₂.StmtT) (a : AssertId P),
+    T s = some s' → AssertValid L₂ s' a → AssertValid L₁ s a
 
-/-- A transformation is *sound* if it preserves assertion validity. -/
-def Sound
-    (T : L.StmtT → Option L.StmtT) : Prop :=
-  ∀ (s s' : L.StmtT) (a : AssertId L.P),
-    T s = some s' →
-    AssertValid L s' a →
-    AssertValid L s a
-
-/-- Composition of sound transformations is sound. -/
-theorem sound_comp
-    (T₁ T₂ : L.StmtT → Option L.StmtT)
-    (h₁ : Sound L T₁)
-    (h₂ : Sound L T₂) :
-    Sound L (fun s => T₁ s >>= T₂) := by
+theorem sound_comp (L₁ L₂ L₃ : Lang P)
+    (T₁ : L₁.StmtT → Option L₂.StmtT) (T₂ : L₂.StmtT → Option L₃.StmtT)
+    (h₁ : Sound L₁ L₂ T₁) (h₂ : Sound L₂ L₃ T₂) :
+    Sound L₁ L₃ (fun s => T₁ s >>= T₂) := by
   intro s s'' a hrun hvalid
   simp [bind, Option.bind] at hrun
   match h1 : T₁ s with
-  | some s' =>
-    rw [h1] at hrun
-    exact h₁ s s' a h1 (h₂ s' s'' a hrun hvalid)
-  | none =>
-    rw [h1] at hrun
-    exact absurd hrun (by nofun)
+  | some s' => rw [h1] at hrun; exact h₁ s s' a h1 (h₂ s' s'' a hrun hvalid)
+  | none => rw [h1] at hrun; exact absurd hrun (by nofun)
 
-theorem sound_assertValid
-    (T : L.StmtT → Option L.StmtT)
-    (a : AssertId L.P) (s s' : L.StmtT)
-    (ht : T s = some s')
-    (hsound : Sound L T)
-    (hvalid : AssertValid L s' a) :
-    AssertValid L s a :=
-  hsound s s' a ht hvalid
+theorem sound_assertValid (L₁ L₂ : Lang P)
+    (T : L₁.StmtT → Option L₂.StmtT) (a : AssertId P)
+    (s : L₁.StmtT) (s' : L₂.StmtT)
+    (ht : T s = some s') (hsound : Sound L₁ L₂ T) (hvalid : AssertValid L₂ s' a) :
+    AssertValid L₁ s a := hsound s s' a ht hvalid
 
-theorem sound_allAsserts
-    (T : L.StmtT → Option L.StmtT)
-    (s s' : L.StmtT) (ht : T s = some s')
-    (hsound : Sound L T)
-    (hvalid : AllAssertsValid L s') :
-    AllAssertsValid L s :=
-  fun a => sound_assertValid L T a s s' ht hsound (hvalid a)
+theorem sound_allAsserts (L₁ L₂ : Lang P)
+    (T : L₁.StmtT → Option L₂.StmtT)
+    (s : L₁.StmtT) (s' : L₂.StmtT) (ht : T s = some s')
+    (hsound : Sound L₁ L₂ T) (hvalid : AllAssertsValid L₂ s') :
+    AllAssertsValid L₁ s := fun a => hsound s s' a ht (hvalid a)
 
-/-- Identity transform is sound. -/
-theorem sound_id :
-    Sound L some := by
-  intro s s' a ht hvalid
-  simp at ht; subst ht; exact hvalid
+theorem sound_id : Sound L L some := by
+  intro s s' a ht hvalid; simp at ht; subst ht; exact hvalid
 
-/-! ## The Overapproximate predicate and its properties -/
+/-! ## Bilingual Overapproximate predicate
 
-/-- A transformation `T` *overapproximates* if, for every input statement `st`,
-    every configuration reachable from `st` is also reachable from `T(st)`. -/
-def Overapproximates
-    (T : L.StmtT → Option L.StmtT) : Prop :=
-  ∀ (st s' : L.StmtT),
+`Overapproximates L₁ L₂ T` says that any terminal or exiting env reachable
+from `st` in `L₁` is also reachable from `T st` in `L₂`.
+When `L₁ = L₂`, this specializes to the single-language case. -/
+
+/-- Bilingual overapproximation: terminal/exiting envs reachable from the
+    source are also reachable from the target. -/
+def Overapproximates (L₁ L₂ : Lang P) (T : L₁.StmtT → Option L₂.StmtT) : Prop :=
+  ∀ (st : L₁.StmtT) (s' : L₂.StmtT),
     T st = some s' →
-    ∀ (ρ₀ : Env L.P) (σ : L.CfgT),
-      L.star (L.stmtCfg st ρ₀) σ →
-      L.star (L.stmtCfg s' ρ₀) σ
+    ∀ (ρ₀ ρ' : Env P),
+      (L₁.star (L₁.stmtCfg st ρ₀) (L₁.terminalCfg ρ') →
+       L₂.star (L₂.stmtCfg s' ρ₀) (L₂.terminalCfg ρ'))
+      ∧
+      (∀ lbl, L₁.star (L₁.stmtCfg st ρ₀) (L₁.exitingCfg lbl ρ') →
+              L₂.star (L₂.stmtCfg s' ρ₀) (L₂.exitingCfg lbl ρ'))
 
-/-- If `T` overapproximates and a Hoare triple holds on `T(st)`,
-    then the same triple holds on `st`. -/
-theorem overapproximates_triple
-    (T : L.StmtT → Option L.StmtT)
-    (st s' : L.StmtT) (ht : T st = some s')
-    (hsem : Overapproximates L T)
-    {Pre Post : Env L.P → Prop}
-    (htriple : Hoare.Triple L Pre s' Post) :
-    Hoare.Triple L Pre st Post := by
+/-- If `T` overapproximates and a Hoare triple holds on `T(st)` in L₂,
+    then the triple holds on `st` in L₁. -/
+theorem overapproximates_triple (L₁ L₂ : Lang P)
+    (T : L₁.StmtT → Option L₂.StmtT)
+    (st : L₁.StmtT) (s' : L₂.StmtT) (ht : T st = some s')
+    (hsem : Overapproximates L₁ L₂ T)
+    {Pre Post : Env P → Prop}
+    (htriple : Hoare.Triple L₂ Pre s' Post) :
+    Hoare.Triple L₁ Pre st Post := by
   intro ρ₀ ρ' hpre hwfb hf₀ hstar
-  exact htriple ρ₀ ρ' hpre hwfb hf₀ (hsem st s' ht ρ₀ _ hstar)
+  exact htriple ρ₀ ρ' hpre hwfb hf₀ ((hsem st s' ht ρ₀ ρ').1 hstar)
 
-/-- If `T` overapproximates, then `T` is sound. -/
-theorem overapproximates_sound
-    (T : L.StmtT → Option L.StmtT)
-    (hsem : Overapproximates L T) :
-    Sound L T := by
-  intro s s' a ht hvalid ρ₀ cfg hstar hat
-  exact hvalid ρ₀ cfg (hsem s s' ht ρ₀ _ hstar) hat
+theorem overapproximates_id (L₁ : Lang P) :
+    Overapproximates L₁ L₁ some := by
+  intro st s' ht ρ₀ ρ'
+  simp at ht; subst ht; exact ⟨id, fun _ => id⟩
 
-/-- Identity transform overapproximates. -/
-theorem overapproximates_id :
-    Overapproximates L some := by
-  intro st s' ht ρ₀ σ hstar
-  simp at ht; subst ht; exact hstar
-
-/-- Composition of overapproximating transforms overapproximates. -/
-theorem overapproximates_comp
-    (T₁ T₂ : L.StmtT → Option L.StmtT)
-    (h₁ : Overapproximates L T₁)
-    (h₂ : Overapproximates L T₂) :
-    Overapproximates L (fun s => T₁ s >>= T₂) := by
-  intro st s'' ht ρ₀ σ hstar
+theorem overapproximates_comp (L₁ L₂ L₃ : Lang P)
+    (T₁ : L₁.StmtT → Option L₂.StmtT) (T₂ : L₂.StmtT → Option L₃.StmtT)
+    (h₁ : Overapproximates L₁ L₂ T₁)
+    (h₂ : Overapproximates L₂ L₃ T₂) :
+    Overapproximates L₁ L₃ (fun s => T₁ s >>= T₂) := by
+  intro st s'' ht ρ₀ ρ'
   simp [bind, Option.bind] at ht
   match h : T₁ st with
   | some s' =>
     rw [h] at ht
-    exact h₂ s' s'' ht ρ₀ σ (h₁ st s' h ρ₀ σ hstar)
+    constructor
+    · intro hstar; exact (h₂ s' s'' ht ρ₀ ρ').1 ((h₁ st s' h ρ₀ ρ').1 hstar)
+    · intro lbl hstar; exact (h₂ s' s'' ht ρ₀ ρ').2 lbl ((h₁ st s' h ρ₀ ρ').2 lbl hstar)
   | none => rw [h] at ht; exact absurd ht (by nofun)
 
-/-! ## Statement-list overapproximation (Imperative-specific) -/
+/-! ## Statement-list overapproximation (Imperative-specific)
+
+Uses `Overapproximates L L T` (single-language): the proof decomposes
+seq execution into terminal/exiting outcomes of individual statements,
+which is exactly what `Overapproximates` provides. -/
 
 section ImperativeStmts
 
-variable {P : PureExpr} [HasFvar P] [HasBool P] [HasNot P]
 variable {CmdT : Type} (evalCmd : EvalCmdParam P CmdT) (extendEval : ExtendEval P)
 variable (isAtAssertFn : Config P CmdT → AssertId P → Prop)
 
-/-- Pointwise application of an overapproximating transform to a statement list
-    preserves reachability of terminal and exiting configurations. -/
+
 theorem overapproximates_stmts
     (T : Stmt P CmdT → Option (Stmt P CmdT))
-    (hsem : Overapproximates (Lang.imperative P CmdT evalCmd extendEval isAtAssertFn) T)
+    (hsem : Overapproximates (Lang.imperative P CmdT evalCmd extendEval isAtAssertFn) (Lang.imperative P CmdT evalCmd extendEval isAtAssertFn) T)
     (ss : List (Stmt P CmdT)) :
     ∀ (ss' : List (Stmt P CmdT)),
       ss.mapM T = some ss' →
@@ -601,7 +557,7 @@ theorem overapproximates_stmts
           have ⟨ρ₁, hterm_s, hterm_rest⟩ := seq_reaches_terminal P evalCmd extendEval hrest_exec
           exact reflTrans_trans
             (stmts_cons_step P evalCmd extendEval s' rest' ρ₀ ρ₁
-              (hsem s s' hs ρ₀ _ hterm_s))
+              ((hsem s s' hs ρ₀ ρ₁).1 hterm_s))
             ((ih rest' hrm ρ₁ ρ').1 hterm_rest)
     · intro lbl hstar
       cases hstar with
@@ -611,12 +567,12 @@ theorem overapproximates_stmts
           | .inl hexit_s =>
             exact .step _ _ _ .step_stmts_cons
               (reflTrans_trans (seq_inner_star P evalCmd extendEval _ _ rest'
-                (hsem s s' hs ρ₀ _ hexit_s))
+                ((hsem s s' hs ρ₀ ρ').2 lbl hexit_s))
                 (.step _ _ _ .step_seq_exit (.refl _)))
           | .inr ⟨ρ₁, hterm_s, hexit_rest⟩ =>
             exact reflTrans_trans
               (stmts_cons_step P evalCmd extendEval s' rest' ρ₀ ρ₁
-                (hsem s s' hs ρ₀ _ hterm_s))
+                ((hsem s s' hs ρ₀ ρ₁).1 hterm_s))
               ((ih rest' hrm ρ₁ ρ').2 lbl hexit_rest)
 
 end ImperativeStmts
