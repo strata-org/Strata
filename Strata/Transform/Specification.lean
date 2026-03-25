@@ -86,7 +86,7 @@ abbrev Lang.standard (P : PureExpr) [HasFvar P] [HasBool P] [HasNot P]
   Lang.imperative P (Cmd P) (EvalCmd P) extendEval (Imperative.isAtAssert P)
 
 
-variable {P : PureExpr} [HasFvar P] [HasBool P] [HasNot P]
+variable {P : PureExpr} [HasFvar P] [HasBool P] [HasNot P] [HasVal P]
 variable (L : Lang P)
 
 
@@ -496,7 +496,7 @@ theorem sound_allAsserts (L₁ L₂ : Lang P)
 theorem sound_id : Sound L L some := by
   intro s s' a ht hvalid; simp at ht; subst ht; exact hvalid
 
-/-! ## Bilingual Overapproximate predicate
+/-! ## Overapproximate predicate
 
 `Overapproximates L₁ L₂ T` says that any terminal or exiting env reachable
 from `st` in `L₁` is also reachable from `T st` in `L₂`.
@@ -508,6 +508,8 @@ def Overapproximates (L₁ L₂ : Lang P) (T : L₁.StmtT → Option L₂.StmtT)
   ∀ (st : L₁.StmtT) (s' : L₂.StmtT),
     T st = some s' →
     ∀ (ρ₀ ρ' : Env P),
+      WellFormedSemanticEvalBool ρ₀.eval →
+      WellFormedSemanticEvalVal ρ₀.eval →
       (L₁.star (L₁.stmtCfg st ρ₀) (L₁.terminalCfg ρ') →
        L₂.star (L₂.stmtCfg s' ρ₀) (L₂.terminalCfg ρ'))
       ∧
@@ -521,14 +523,15 @@ theorem overapproximates_triple (L₁ L₂ : Lang P)
     (st : L₁.StmtT) (s' : L₂.StmtT) (ht : T st = some s')
     (hsem : Overapproximates L₁ L₂ T)
     {Pre Post : Env P → Prop}
-    (htriple : Hoare.Triple L₂ Pre s' Post) :
+    (htriple : Hoare.Triple L₂ Pre s' Post)
+    (hwfv : ∀ ρ₀ : Env P, Pre ρ₀ → WellFormedSemanticEvalVal ρ₀.eval) :
     Hoare.Triple L₁ Pre st Post := by
   intro ρ₀ ρ' hpre hwfb hf₀ hstar
-  exact htriple ρ₀ ρ' hpre hwfb hf₀ ((hsem st s' ht ρ₀ ρ').1 hstar)
+  exact htriple ρ₀ ρ' hpre hwfb hf₀ ((hsem st s' ht ρ₀ ρ' hwfb (hwfv ρ₀ hpre)).1 hstar)
 
 theorem overapproximates_id (L₁ : Lang P) :
     Overapproximates L₁ L₁ some := by
-  intro st s' ht ρ₀ ρ'
+  intro st s' ht ρ₀ ρ' _ _
   simp at ht; subst ht; exact ⟨id, fun _ => id⟩
 
 theorem overapproximates_comp (L₁ L₂ L₃ : Lang P)
@@ -536,14 +539,14 @@ theorem overapproximates_comp (L₁ L₂ L₃ : Lang P)
     (h₁ : Overapproximates L₁ L₂ T₁)
     (h₂ : Overapproximates L₂ L₃ T₂) :
     Overapproximates L₁ L₃ (fun s => T₁ s >>= T₂) := by
-  intro st s'' ht ρ₀ ρ'
+  intro st s'' ht ρ₀ ρ' hwfb hwfv
   simp [bind, Option.bind] at ht
   match h : T₁ st with
   | some s' =>
     rw [h] at ht
     constructor
-    · intro hstar; exact (h₂ s' s'' ht ρ₀ ρ').1 ((h₁ st s' h ρ₀ ρ').1 hstar)
-    · intro lbl hstar; exact (h₂ s' s'' ht ρ₀ ρ').2 lbl ((h₁ st s' h ρ₀ ρ').2 lbl hstar)
+    · intro hstar; exact (h₂ s' s'' ht ρ₀ ρ' hwfb hwfv).1 ((h₁ st s' h ρ₀ ρ' hwfb hwfv).1 hstar)
+    · intro lbl hstar; exact (h₂ s' s'' ht ρ₀ ρ' hwfb hwfv).2 lbl ((h₁ st s' h ρ₀ ρ' hwfb hwfv).2 lbl hstar)
   | none => rw [h] at ht; exact absurd ht (by nofun)
 
 /-! ## Statement-list overapproximation (Imperative-specific)
@@ -557,14 +560,42 @@ section ImperativeStmts
 variable {CmdT : Type} (evalCmd : EvalCmdParam P CmdT) (extendEval : ExtendEval P)
 variable (isAtAssertFn : Config P CmdT → AssertId P → Prop)
 
+/-- `Lang` for block-level (statement-list) overapproximation.
+    `StmtT` is `List (Stmt P CmdT)` and `stmtCfg` embeds via `.stmts`. -/
+abbrev Lang.imperativeBlock : Lang P where
+  StmtT := List (Stmt P CmdT)
+  CfgT := Config P CmdT
+  star := StepStmtStar P evalCmd extendEval
+  stmtCfg := .stmts
+  stmtsCfg := fun sss ρ => .stmts sss.flatten ρ
+  terminalCfg := .terminal
+  exitingCfg := .exiting
+  isAtAssert := isAtAssertFn
+  getEval := Config.getEval
+  getStore := Config.getStore
 
-theorem overapproximates_stmts
+private theorem mapM_noFuncDecl
+    (T : Stmt P CmdT → Option (Stmt P CmdT))
+    (hnofd_T : ∀ s s', T s = some s' → Stmt.noFuncDecl s = true)
+    (ss : List (Stmt P CmdT)) (ss' : List (Stmt P CmdT))
+    (hmap : ss.mapM T = some ss') :
+    Block.noFuncDecl ss = true := by
+  induction ss generalizing ss' with
+  | nil => simp [Block.noFuncDecl]
+  | cons s rest ih =>
+    have ⟨s', rest', hs, hrm, hss'⟩ := List.mapM_cons_some hmap
+    simp [Block.noFuncDecl, hnofd_T s s' hs, ih rest' hrm]
+
+private theorem overapproximates_stmts_aux
     (T : Stmt P CmdT → Option (Stmt P CmdT))
     (hsem : Overapproximates (Lang.imperative P CmdT evalCmd extendEval isAtAssertFn) (Lang.imperative P CmdT evalCmd extendEval isAtAssertFn) T)
-    (ss : List (Stmt P CmdT)) :
+    (ss : List (Stmt P CmdT))
+    (hnofd : Block.noFuncDecl ss = true) :
     ∀ (ss' : List (Stmt P CmdT)),
       ss.mapM T = some ss' →
       ∀ (ρ₀ ρ' : Env P),
+        WellFormedSemanticEvalBool ρ₀.eval →
+        WellFormedSemanticEvalVal ρ₀.eval →
         (StepStmtStar P evalCmd extendEval (.stmts ss ρ₀) (.terminal ρ') →
          StepStmtStar P evalCmd extendEval (.stmts ss' ρ₀) (.terminal ρ'))
         ∧
@@ -572,23 +603,32 @@ theorem overapproximates_stmts
                 StepStmtStar P evalCmd extendEval (.stmts ss' ρ₀) (.exiting lbl ρ')) := by
   induction ss with
   | nil =>
-    intro ss' hmap ρ₀ ρ'
+    intro ss' hmap ρ₀ ρ' _ _
     have : ss' = [] := by simp [List.mapM_nil] at hmap; exact hmap
     subst this; exact ⟨id, fun _ => id⟩
   | cons s rest ih =>
-    intro ss' hmap ρ₀ ρ'
+    intro ss' hmap ρ₀ ρ' hwfb hwfv
+    simp [Block.noFuncDecl, Bool.and_eq_true] at hnofd
+    have ⟨hnofd_s, hnofd_rest⟩ := hnofd
     have ⟨s', rest', hs, hrm, hss'⟩ := List.mapM_cons_some hmap
     subst hss'
+    have eval_preserved : ∀ ρ₁ : Env P,
+        StepStmtStar P evalCmd extendEval (.stmt s ρ₀) (.terminal ρ₁) →
+        WellFormedSemanticEvalBool ρ₁.eval ∧ WellFormedSemanticEvalVal ρ₁.eval := by
+      intro ρ₁ hterm_s
+      have heq := smallStep_noFuncDecl_preserves_eval P evalCmd extendEval s ρ₀ ρ₁ hnofd_s hterm_s
+      exact ⟨heq ▸ hwfb, heq ▸ hwfv⟩
     constructor
     · intro hstar
       cases hstar with
       | step _ _ _ hstep hrest_exec => cases hstep with
         | step_stmts_cons =>
           have ⟨ρ₁, hterm_s, hterm_rest⟩ := seq_reaches_terminal P evalCmd extendEval hrest_exec
+          have ⟨hwfb₁, hwfv₁⟩ := eval_preserved ρ₁ hterm_s
           exact reflTrans_trans
             (stmts_cons_step P evalCmd extendEval s' rest' ρ₀ ρ₁
-              ((hsem s s' hs ρ₀ ρ₁).1 hterm_s))
-            ((ih rest' hrm ρ₁ ρ').1 hterm_rest)
+              ((hsem s s' hs ρ₀ ρ₁ hwfb hwfv).1 hterm_s))
+            ((ih hnofd_rest rest' hrm ρ₁ ρ' hwfb₁ hwfv₁).1 hterm_rest)
     · intro lbl hstar
       cases hstar with
       | step _ _ _ hstep hrest_exec => cases hstep with
@@ -597,13 +637,26 @@ theorem overapproximates_stmts
           | .inl hexit_s =>
             exact .step _ _ _ .step_stmts_cons
               (reflTrans_trans (seq_inner_star P evalCmd extendEval _ _ rest'
-                ((hsem s s' hs ρ₀ ρ').2 lbl hexit_s))
+                ((hsem s s' hs ρ₀ ρ' hwfb hwfv).2 lbl hexit_s))
                 (.step _ _ _ .step_seq_exit (.refl _)))
           | .inr ⟨ρ₁, hterm_s, hexit_rest⟩ =>
+            have ⟨hwfb₁, hwfv₁⟩ := eval_preserved ρ₁ hterm_s
             exact reflTrans_trans
               (stmts_cons_step P evalCmd extendEval s' rest' ρ₀ ρ₁
-                ((hsem s s' hs ρ₀ ρ₁).1 hterm_s))
-              ((ih rest' hrm ρ₁ ρ').2 lbl hexit_rest)
+                ((hsem s s' hs ρ₀ ρ₁ hwfb hwfv).1 hterm_s))
+              ((ih hnofd_rest rest' hrm ρ₁ ρ' hwfb₁ hwfv₁).2 lbl hexit_rest)
+
+theorem overapproximates_stmts
+    (T : Stmt P CmdT → Option (Stmt P CmdT))
+    (hsem : Overapproximates (Lang.imperative P CmdT evalCmd extendEval isAtAssertFn) (Lang.imperative P CmdT evalCmd extendEval isAtAssertFn) T)
+    (hnofd_T : ∀ s s', T s = some s' → Stmt.noFuncDecl s = true) :
+    Overapproximates
+      (Lang.imperativeBlock evalCmd extendEval isAtAssertFn)
+      (Lang.imperativeBlock evalCmd extendEval isAtAssertFn)
+      (fun ss => ss.mapM T) := by
+  intro ss ss' hmap ρ₀ ρ' hwfb hwfv
+  exact overapproximates_stmts_aux evalCmd extendEval isAtAssertFn T hsem ss
+    (mapM_noFuncDecl T hnofd_T ss ss' hmap) ss' hmap ρ₀ ρ' hwfb hwfv
 
 end ImperativeStmts
 

@@ -933,6 +933,25 @@ theorem smallStep_noFuncDecl_preserves_eval
     have ⟨heq, hnofd_mid⟩ := step_preserves_eval_noFuncDecl P EvalCmd extendEval _ _ hstep hnofd_c
     rw [ih hnofd_mid, heq]
 
+/-- When a block has no function declarations, small-step execution
+    preserves the evaluator. -/
+theorem smallStep_noFuncDecl_preserves_eval_block
+    (bss : List (Stmt P CmdT)) (ρ ρ' : Env P)
+    (hnofd : Block.noFuncDecl bss = true)
+    (hstar : StepStmtStar P EvalCmd extendEval (.stmts bss ρ) (.terminal ρ')) :
+    ρ'.eval = ρ.eval := by
+  suffices ∀ c₁ c₂,
+      Config.noFuncDecl c₁ →
+      StepStmtStar P EvalCmd extendEval c₁ c₂ →
+      c₂.getEnv.eval = c₁.getEnv.eval by
+    exact this _ _ (show Config.noFuncDecl (.stmts bss ρ) from hnofd) hstar
+  intro c₁ c₂ hnofd_c hstar_c
+  induction hstar_c with
+  | refl => rfl
+  | step _ mid _ hstep _ ih =>
+    have ⟨heq, hnofd_mid⟩ := step_preserves_eval_noFuncDecl P EvalCmd extendEval _ _ hstep hnofd_c
+    rw [ih hnofd_mid, heq]
+
 end -- section
 
 section
