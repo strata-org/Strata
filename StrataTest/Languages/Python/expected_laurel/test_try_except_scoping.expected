@@ -34,3 +34,6 @@ assert_assert(638)_calls_Any_to_bool_0: ✅ pass (at line 24, col 4)
 assert(638): ✅ pass (at line 24, col 4)
 assert_assert(952)_calls_Any_to_bool_0: ✅ pass (at line 35, col 4)
 assert(952): ✅ pass (at line 35, col 4)
+
+DETAIL: 34 passed, 0 failed, 0 inconclusive
+RESULT: Analysis success
