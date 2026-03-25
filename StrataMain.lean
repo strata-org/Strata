@@ -426,6 +426,29 @@ def pyAnalyzeLaurelCommand : Command where
       IO.println "\n==== Core Program ===="
       IO.print coreProgram
 
+    -- Inline pyspec procedures so their precondition assertions are checked
+    -- at call sites with concrete arguments.
+    let pyspecFiles := pflags.getRepeated "pyspec"
+    let coreProgram ←
+      if pyspecFiles.size > 0 then
+        -- Collect prelude procedure names to avoid inlining them
+        let mut preludeNames : Std.HashSet String := {}
+        for d in coreProgram.decls do
+          if toString d.name == "FIRST_END_MARKER" then break
+          if let some p := d.getProc? then
+            preludeNames := preludeNames.insert (Core.CoreIdent.toPretty p.header.name)
+        match Core.Transform.runProgram (targetProcList := .none)
+              (Core.ProcedureInlining.inlineCallCmd
+                (doInline := λ name _ => name ≠ "__main__" && !preludeNames.contains name))
+              coreProgram .emp with
+        | ⟨.error e, _⟩ => exitInternalError s!"Inlining failed: {e}"
+        | ⟨.ok (_, inlined), _⟩ => do
+          if verbose then
+            IO.println "\n==== Core Program (after inlining) ===="
+            IO.print inlined
+          pure inlined
+      else pure coreProgram
+
     -- Verify using Core verifier
     let checkMode ← parseCheckMode pflags
     let checkLevel ← parseCheckLevel pflags
