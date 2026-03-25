@@ -64,7 +64,8 @@ def encodeCore (ctx : Core.SMT.Context) (prelude : SolverM Unit)
   -- Encode the obligation term Q (not negated)
   let (obligationId, estate) ← (encodeTerm False obligationTerm) |>.run estate
 
-  let ids := estate.ufs.values
+  let ids := estate.ufs.toList.filterMap fun (uf, id) =>
+    if uf.args.isEmpty then some id else none
 
   -- Choose encoding strategy: use check-sat-assuming only when doing both checks
   let bothChecks := satisfiabilityCheck && validityCheck
