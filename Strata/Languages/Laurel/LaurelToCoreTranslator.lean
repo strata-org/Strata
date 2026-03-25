@@ -860,14 +860,14 @@ def translate (options: LaurelTranslateOptions) (program : Program): TranslateRe
         else
           return funcs
       else
-        -- Non-functional SCC: emit invokeOn axiom (if any) after each procedure.
-        -- So it can not be used to prove the procedure
+        -- Non-functional SCC: emit invokeOn axiom (if any) before each procedure,
+        -- so the axiom is in scope when the procedure's VCs are checked.
         procs.flatMapM fun proc => do
           let axiomDecls : List Core.Decl ← match proc.invokeOn with
             | none => pure []
             | some trigger => do
               let axDecl? ← translateInvokeOnAxiom proc trigger
-              return axDecl?.toList
+              pure axDecl?.toList
           let procDecl ← translateProcedure proc
           return [Core.Decl.proc procDecl .empty] ++ axiomDecls
 

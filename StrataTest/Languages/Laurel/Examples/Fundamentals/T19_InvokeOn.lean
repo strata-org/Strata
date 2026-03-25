@@ -45,12 +45,12 @@ procedure invokeB(x: int, y :real) {
 //^^^^^^^^^^^ error: assertion could not be proved
 };
 
-
+function R(x: int): bool;
 procedure badPostcondition(x: int)
-  invokeOn P(x)
-  ensures P(x)
+  invokeOn R(x)
+  ensures R(x)
+//        ^^^^ error: assertion does not hold
 {
-  assert false
 };
 
 "#
