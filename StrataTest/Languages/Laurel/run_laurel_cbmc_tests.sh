@@ -10,7 +10,6 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 STRATA="${STRATA:-$PROJECT_ROOT/.lake/build/bin/strata}"
 CBMC="${CBMC:-cbmc}"
 SYMTAB2GB="${SYMTAB2GB:-symtab2gb}"
-PYTHON="${PYTHON:-python3}"
 
 WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT
@@ -29,26 +28,19 @@ for lr in "${FILES[@]}"; do
   lr_abs="$(cd "$(dirname "$lr")" && pwd)/$(basename "$lr")"
 
   # Step 1: Laurel → GOTO JSON (run from WORK dir so output lands there)
-  if ! (cd "$WORK" && "$STRATA" laurelAnalyzeToGoto "$lr_abs") >/dev/null 2>&1; then
-    echo "SKIP: $bn (translation failed)"; errors=$((errors+1)); continue
+  if ! (cd "$WORK" && "$STRATA" laurelAnalyzeToGoto "$lr_abs") > "$WORK/${bn}.translate.log" 2>&1; then
+    echo "SKIP: $bn (translation failed)"
+    cat "$WORK/${bn}.translate.log"
+    errors=$((errors+1)); continue
   fi
 
-  # Step 2: Wrap symtab for symtab2gb
-  "$PYTHON" -c "
-import json, sys
-with open('$WORK/${bn}.lr.symtab.json') as f: data = json.load(f)
-data['__CPROVER_initialize'] = {'baseName':'__CPROVER_initialize','mode':'C','module':'','name':'__CPROVER_initialize','prettyName':'__CPROVER_initialize','type':{'id':'code','namedSub':{'parameters':{'sub':[]},'return_type':{'id':'empty'}}},'value':{'id':'nil'}}
-data['__CPROVER_rounding_mode'] = {'baseName':'__CPROVER_rounding_mode','isLvalue':True,'isStaticLifetime':True,'isStateVar':True,'mode':'C','module':'','name':'__CPROVER_rounding_mode','prettyName':'__CPROVER_rounding_mode','type':{'id':'signedbv','namedSub':{'width':{'id':'32'}}},'value':{'id':'nil'}}
-with open('$WORK/${bn}.wrapped.json','w') as f: json.dump({'symbolTable':data},f)
-" || { echo "SKIP: $bn (wrap failed)"; errors=$((errors+1)); continue; }
-
-  # Step 3: symtab2gb
-  "$SYMTAB2GB" "$WORK/${bn}.wrapped.json" \
+  # Step 2: symtab2gb
+  "$SYMTAB2GB" "$WORK/${bn}.lr.symtab.json" \
     --goto-functions "$WORK/${bn}.lr.goto.json" \
     --out "$WORK/${bn}.gb" 2>/dev/null || {
     echo "SKIP: $bn (symtab2gb failed)"; errors=$((errors+1)); continue; }
 
-  # Step 4: Find functions with properties and verify each
+  # Step 3: Find functions with properties and verify each
   funcs=$("$CBMC" "$WORK/${bn}.gb" --show-properties 2>&1 | \
     grep ' function ' | grep -v 'Removal of' | sed 's/.* function //' | sort -u)
 
@@ -77,3 +69,4 @@ done
 
 echo ""
 echo "Results: $passed passed, $errors errors"
+exit $((errors > 0 ? 1 : 0))

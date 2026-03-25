@@ -13,7 +13,8 @@ procedure intInRange(n: jint) {
 };
 
 procedure charIsUnsigned(c: jchar) {
-  assert c >= 0
+  assert c >= 0;
+  assert c <= 65535
 };
 
 procedure safeByteAdd(a: jbyte, b: jbyte) returns (r: jint) {
