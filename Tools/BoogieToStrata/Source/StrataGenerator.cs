@@ -22,6 +22,11 @@ public class FieldTypeCollector : ReadOnlyVisitor {
 
 public class StrataGenerator : ReadOnlyVisitor {
     private readonly Stack<string> _breakLabels = new();
+    /// <summary>
+    /// Set of block labels that are valid exit targets at the current nesting level.
+    /// Updated by EmitWithExitWrappers as wrapper blocks are opened/closed.
+    /// </summary>
+    private readonly HashSet<string> _enclosingLabels = new();
     private readonly VCGenOptions _options;
     private readonly Program _program;
     private readonly Dictionary<Type, HashSet<string>> _uniqueConstants = new();
@@ -848,6 +853,35 @@ public class StrataGenerator : ReadOnlyVisitor {
         return targets;
     }
 
+    /// <summary>
+    /// Recursively collect goto target labels from BigBlocks, including
+    /// targets inside nested if/while bodies. This ensures wrapper blocks
+    /// are created at the right level for gotos that cross nesting boundaries.
+    /// </summary>
+    private static void CollectNestedGotoTargets(IList<BigBlock> bigBlocks, HashSet<string> targets) {
+        foreach (var bb in bigBlocks) {
+            if (bb.tc is GotoCmd gotoCmd) {
+                foreach (var target in gotoCmd.LabelTargets) {
+                    targets.Add(target.Label);
+                }
+            } else if (bb.tc is ReturnCmd) {
+                targets.Add("_exit");
+            }
+            if (bb.ec is IfCmd ifCmd) {
+                CollectNestedGotoTargets(ifCmd.Thn.BigBlocks, targets);
+                if (ifCmd.ElseBlock != null) {
+                    CollectNestedGotoTargets(ifCmd.ElseBlock.BigBlocks, targets);
+                }
+                if (ifCmd.ElseIf != null) {
+                    var tmp = new BigBlock(ifCmd.ElseIf.tok, null, new List<Cmd>(), ifCmd.ElseIf, null);
+                    CollectNestedGotoTargets(new List<BigBlock> { tmp }, targets);
+                }
+            } else if (bb.ec is WhileCmd whileCmd) {
+                CollectNestedGotoTargets(whileCmd.Body.BigBlocks, targets);
+            }
+        }
+    }
+
     public override GotoCmd VisitGotoCmd(GotoCmd node) {
         if (node.LabelTargets.Count == 1) {
             IndentLine($"exit {Name(node.LabelTargets[0].Label)};");
@@ -1018,9 +1052,12 @@ public class StrataGenerator : ReadOnlyVisitor {
     }
 
     private void EmitBigBlock(BigBlock bigBlock) {
-        if (bigBlock.LabelName != null) {
-            IndentLine($"{Name(bigBlock.LabelName)}: {{");
+        // Skip emitting the label if there's already an enclosing wrapper with the same name
+        bool emitLabel = bigBlock.LabelName != null && !_enclosingLabels.Contains(bigBlock.LabelName);
+        if (emitLabel) {
+            IndentLine($"{Name(bigBlock.LabelName!)}: {{");
             IncIndent();
+            _enclosingLabels.Add(bigBlock.LabelName!);
         }
 
         foreach (var simpleCmd in bigBlock.simpleCmds) {
@@ -1033,7 +1070,8 @@ public class StrataGenerator : ReadOnlyVisitor {
             Visit(bigBlock.tc);
         }
 
-        if (bigBlock.LabelName != null) {
+        if (emitLabel) {
+            _enclosingLabels.Remove(bigBlock.LabelName!);
             DecIndent();
             IndentLine("}");
         }
@@ -1061,11 +1099,13 @@ public class StrataGenerator : ReadOnlyVisitor {
         foreach (var (label, _) in wrappers) {
             IndentLine($"{Name(label)}: {{");
             IncIndent();
+            _enclosingLabels.Add(label);
         }
 
         for (var i = 0; i < count; i++) {
             foreach (var (label, closeAt) in wrappers) {
                 if (closeAt == i) {
+                    _enclosingLabels.Remove(label);
                     DecIndent();
                     IndentLine("}");
                 }
@@ -1075,15 +1115,56 @@ public class StrataGenerator : ReadOnlyVisitor {
 
         foreach (var (label, closeAt) in wrappers) {
             if (closeAt == count) {
+                _enclosingLabels.Remove(label);
                 DecIndent();
                 IndentLine("}");
             }
         }
     }
 
+    /// <summary>
+    /// Compute the maximum source index for each goto target label.
+    /// For each BigBlock at index i, collect all goto targets (including from
+    /// nested if/while bodies) and record the latest source index.
+    /// </summary>
+    private static Dictionary<string, int> ComputeMaxSourceForTarget(IList<BigBlock> bigBlocks) {
+        var maxSourceForTarget = new Dictionary<string, int>();
+        for (var i = 0; i < bigBlocks.Count; i++) {
+            var bbTargets = new HashSet<string>();
+            CollectNestedGotoTargets(new List<BigBlock> { bigBlocks[i] }, bbTargets);
+            foreach (var t in bbTargets) {
+                if (!maxSourceForTarget.ContainsKey(t) || i > maxSourceForTarget[t]) {
+                    maxSourceForTarget[t] = i;
+                }
+            }
+        }
+        return maxSourceForTarget;
+    }
+
+    /// <summary>
+    /// Detect back-edge targets: labels where a goto source is at or after the target index.
+    /// The synthetic "_exit" label (procedure exit) is excluded since it represents
+    /// procedure return, not a loop target.
+    /// Returns a dictionary mapping back-edge target label to the loop end index (inclusive).
+    /// </summary>
+    private static Dictionary<string, int> DetectBackEdges(
+        Dictionary<string, int> labelToIndex,
+        Dictionary<string, int> maxSourceForTarget) {
+        var backEdges = new Dictionary<string, int>();
+        foreach (var (label, maxSource) in maxSourceForTarget) {
+            if (label == "_exit") continue;
+            if (labelToIndex.TryGetValue(label, out var targetIdx) && maxSource >= targetIdx) {
+                backEdges[label] = maxSource;
+            }
+        }
+        return backEdges;
+    }
+
     private void EmitStmtList(StmtList stmtList) {
         var bigBlocks = stmtList.BigBlocks;
+        // Collect goto targets from direct children AND nested structures
         var gotoTargets = CollectGotoTargets(bigBlocks, bb => bb.tc);
+        CollectNestedGotoTargets(bigBlocks, gotoTargets);
 
         if (gotoTargets.Count == 0) {
             EmitSeparated(bigBlocks, EmitBigBlock, "\n");
@@ -1100,10 +1181,151 @@ public class StrataGenerator : ReadOnlyVisitor {
             labelToIndex["_exit"] = bigBlocks.Count;
         }
 
-        EmitWithExitWrappers(gotoTargets, labelToIndex, bigBlocks.Count, i => {
-            if (i > 0) { WriteLine(); }
-            EmitBigBlock(bigBlocks[i]);
+        var maxSourceForTarget = ComputeMaxSourceForTarget(bigBlocks);
+        var backEdges = DetectBackEdges(labelToIndex, maxSourceForTarget);
+
+        if (backEdges.Count == 0) {
+            // No backward gotos — use simple forward wrapper emission
+            EmitWithExitWrappers(gotoTargets, labelToIndex, bigBlocks.Count, i => {
+                if (i > 0) { WriteLine(); }
+                EmitBigBlock(bigBlocks[i]);
+            });
+            return;
+        }
+
+        // Compute loop regions: each back-edge target defines a loop from
+        // targetIdx to loopEnd (inclusive). Merge overlapping regions with
+        // the same start; reject overlapping regions with different starts
+        // (irreducible control flow that can't be encoded as structured loops).
+        var loopRegions = new List<(int start, int end, List<string> labels)>();
+        foreach (var (label, loopEnd) in backEdges.OrderBy(kv => labelToIndex[kv.Key])) {
+            var loopStart = labelToIndex[label];
+            if (loopRegions.Count > 0 && loopStart <= loopRegions[^1].end) {
+                var last = loopRegions[^1];
+                if (loopStart != last.start) {
+                    throw new StrataConversionException(bigBlocks[loopStart].tok,
+                        $"Irreducible control-flow: overlapping loop regions " +
+                        $"between labels '{string.Join(", ", last.labels)}' and '{label}'");
+                }
+                last.labels.Add(label);
+                loopRegions[^1] = (last.start, Math.Max(last.end, loopEnd), last.labels);
+            } else {
+                loopRegions.Add((loopStart, loopEnd, new List<string> { label }));
+            }
+        }
+
+        // Build forward-only closeAt: back-edge targets close at their target index
+        // (for the outer wrapper that forward gotos use to reach the loop).
+        // Non-back-edge targets use their normal label index.
+        var forwardCloseAt = new Dictionary<string, int>();
+        foreach (var t in gotoTargets) {
+            if (labelToIndex.TryGetValue(t, out var idx)) {
+                forwardCloseAt[t] = idx;
+            }
+        }
+
+        // Determine which forward targets have closeAt within each loop region.
+        // These need to be emitted inside the while body, not outside.
+        var innerTargets = new Dictionary<int, HashSet<string>>(); // regionIndex -> labels
+        foreach (var t in gotoTargets) {
+            if (backEdges.ContainsKey(t)) continue; // back-edge targets handled separately
+            if (!forwardCloseAt.TryGetValue(t, out var closeAt)) continue;
+            for (var r = 0; r < loopRegions.Count; r++) {
+                var (start, end, _) = loopRegions[r];
+                if (closeAt > start && closeAt <= end) {
+                    if (!innerTargets.ContainsKey(r)) {
+                        innerTargets[r] = new HashSet<string>();
+                    }
+                    innerTargets[r].Add(t);
+                }
+            }
+        }
+
+        // Remove inner targets from the outer wrapper set.
+        // Back-edge targets stay in outer wrappers (closing at their target index)
+        // so that forward gotos from before the loop can reach the loop entry.
+        var outerTargets = new HashSet<string>(gotoTargets);
+        foreach (var (_, labels) in innerTargets) {
+            outerTargets.ExceptWith(labels);
+        }
+
+        // Build outer closeAt map (only for outer targets)
+        var outerCloseAt = new Dictionary<string, int>();
+        foreach (var t in outerTargets) {
+            if (forwardCloseAt.TryGetValue(t, out var idx)) {
+                outerCloseAt[t] = idx;
+            }
+        }
+
+        // Emit using outer wrappers, but replace loop regions with while(*) blocks
+        var emittedCount = 0;
+        EmitWithExitWrappers(outerTargets, outerCloseAt, bigBlocks.Count, i => {
+            // Skip indices inside a loop region (already emitted by EmitLoopRegion)
+            if (loopRegions.Any(r => i > r.start && i <= r.end)) return;
+
+            if (emittedCount > 0) { WriteLine(); }
+            emittedCount++;
+
+            // Check if this index starts a loop region
+            var regionIdx = loopRegions.FindIndex(r => r.start == i);
+            if (regionIdx >= 0) {
+                var (start, end, backEdgeLabels) = loopRegions[regionIdx];
+                EmitLoopRegion(bigBlocks, start, end, backEdgeLabels,
+                    labelToIndex, innerTargets.GetValueOrDefault(regionIdx));
+            } else {
+                EmitBigBlock(bigBlocks[i]);
+            }
         });
+    }
+
+    /// <summary>
+    /// Emit a loop region as a while(*) block. The back-edge target label wraps
+    /// the entire loop body so that `exit label` acts as "continue".
+    /// Forward targets within the loop body use inner wrappers.
+    /// </summary>
+    private void EmitLoopRegion(
+        IList<BigBlock> bigBlocks, int start, int end,
+        List<string> backEdgeLabels,
+        Dictionary<string, int> labelToIndex,
+        HashSet<string>? innerTargetLabels) {
+        var loopCount = end - start + 1;
+
+        IndentLine("while (true)");
+        IndentLine("{");
+        IncIndent();
+
+        // The back-edge target labels wrap the entire loop body.
+        // `exit <label>` from inside = exits wrapper = falls to end of while body = re-iterates.
+        foreach (var label in backEdgeLabels.OrderByDescending(l => labelToIndex[l])) {
+            IndentLine($"{Name(label)}: {{");
+            IncIndent();
+            _enclosingLabels.Add(label);
+        }
+
+        // Build inner wrappers for forward targets within the loop body
+        var innerCloseAt = new Dictionary<string, int>();
+        if (innerTargetLabels != null) {
+            foreach (var t in innerTargetLabels) {
+                // closeAt is relative to the loop body start
+                innerCloseAt[t] = labelToIndex[t] - start;
+            }
+        }
+        var innerTargets = innerTargetLabels ?? new HashSet<string>();
+
+        EmitWithExitWrappers(innerTargets, innerCloseAt, loopCount, i => {
+            if (i > 0) { WriteLine(); }
+            EmitBigBlock(bigBlocks[start + i]);
+        });
+
+        // Close back-edge target wrappers
+        foreach (var label in backEdgeLabels.OrderBy(l => labelToIndex[l])) {
+            _enclosingLabels.Remove(label);
+            DecIndent();
+            IndentLine("}");
+        }
+
+        DecIndent();
+        IndentLine("}");
     }
 
     public override Block VisitBlock(Block node) {
