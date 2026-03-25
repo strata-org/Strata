@@ -13,6 +13,8 @@ public import Strata.Transform.DetToNondet
 public import Strata.Transform.Specification
 import all Strata.Transform.Specification
 import all Strata.Transform.DetToNondet
+import all Strata.DL.Imperative.Stmt
+import all Strata.DL.Imperative.StmtSemanticsSmallStep
 import all Strata.DL.Imperative.CmdSemantics
 
 /-! # Deterministic-to-Nondeterministic Transformation Correctness (Small-Step) -/
@@ -66,9 +68,54 @@ theorem nondet_seq_terminal
     (reflTrans_trans (nondet_seq_inner_star _ _ s2 h1)
       (.step _ _ _ .step_seq_done (.refl _))) h2)
 
+omit [HasFvar P] [HasBool P] [HasNot P] in
 private theorem assume_env_eq (ρ : Env P) :
     ({ ρ with store := ρ.store, hasFailure := ρ.hasFailure || false } : Env P) = ρ := by
   cases ρ; simp [Bool.or_false]
+
+/-! ## Transform-success helpers: extract sub-transform results -/
+
+private theorem ite_transform_some
+    (cond : P.Expr) (tss ess : List (Stmt P (Cmd P))) (md : MetaData P)
+    (ns : NondetStmt P (Cmd P))
+    (ht : StmtToNondetStmt (.ite cond tss ess md) = some ns) :
+    ∃ t e, BlockToNondetStmt tss = some t ∧ BlockToNondetStmt ess = some e ∧
+      ns = .choice
+        (.seq (.cmd (.assume "true_cond" cond md)) t)
+        (.seq (.cmd (.assume "false_cond" (HasNot.not cond) md)) e) := by
+  rw [StmtToNondetStmt.eq_3] at ht
+  match h1 : BlockToNondetStmt tss, h2 : BlockToNondetStmt ess with
+  | some t, some e =>
+    simp [h1, h2, bind, Option.bind] at ht
+    exact ⟨t, e, rfl, rfl, ht.symm⟩
+  | some _, none => simp [h1, h2, bind, Option.bind] at ht
+  | none, _ => simp [h1, bind, Option.bind] at ht
+
+private theorem loop_transform_some
+    (g : P.Expr) (m : Option P.Expr) (inv : List P.Expr)
+    (body : List (Stmt P (Cmd P))) (md : MetaData P)
+    (ns : NondetStmt P (Cmd P))
+    (ht : StmtToNondetStmt (.loop g m inv body md) = some ns) :
+    ∃ b, BlockToNondetStmt body = some b ∧
+      ns = .loop (.seq (.cmd (.assume "guard" g md)) b) := by
+  rw [StmtToNondetStmt.eq_4] at ht
+  match hb : BlockToNondetStmt body with
+  | some b => simp [hb, bind, Option.bind] at ht; exact ⟨b, rfl, ht.symm⟩
+  | none => simp [hb, bind, Option.bind] at ht
+
+private theorem block_transform_some
+    (s : Stmt P (Cmd P)) (rest : List (Stmt P (Cmd P)))
+    (ns : NondetStmt P (Cmd P))
+    (ht : BlockToNondetStmt (s :: rest) = some ns) :
+    ∃ s' rest', StmtToNondetStmt s = some s' ∧ BlockToNondetStmt rest = some rest' ∧
+      ns = .seq s' rest' := by
+  rw [BlockToNondetStmt.eq_2] at ht
+  match hs : StmtToNondetStmt s, hr : BlockToNondetStmt rest with
+  | some s', some r' =>
+    simp [hs, hr, bind, Option.bind] at ht
+    exact ⟨s', r', rfl, rfl, ht.symm⟩
+  | some _, none => simp [hs, hr, bind, Option.bind] at ht
+  | none, _ => simp [hs, bind, Option.bind] at ht
 
 /-! ## exitsCoveredByBlocks from successful transform -/
 
@@ -83,13 +130,13 @@ private theorem stmtToNondet_some_exitsCovered
     simp [Stmt.exitsCoveredByBlocks]; rw [StmtToNondetStmt.eq_2] at ht
     exact blockHelper (l :: labels) bss ns ht
   | .ite _ tss ess _ =>
-    rw [StmtToNondetStmt.eq_3] at ht; simp [bind, Option.bind] at ht
+    have ⟨t, e, ht_t, ht_e, _⟩ := ite_transform_some _ tss ess _ _ ht
     simp [Stmt.exitsCoveredByBlocks]
-    match ht_t : BlockToNondetStmt tss, ht_e : BlockToNondetStmt ess with
-    | some t, some e => exact ⟨blockHelper labels tss t ht_t, blockHelper labels ess e ht_e⟩
-    | some _, none => simp [ht_t, ht_e] at ht
-    | none, _ => simp [ht_t] at ht
-  | .loop _ _ _ _ _ => simp [StmtToNondetStmt.eq_4] at ht
+    exact ⟨blockHelper labels tss t ht_t, blockHelper labels ess e ht_e⟩
+  | .loop _ _ _ body _ =>
+    have ⟨b, hb, _⟩ := loop_transform_some _ _ _ body _ _ ht
+    simp [Stmt.exitsCoveredByBlocks]
+    exact blockHelper labels body b hb
   | .typeDecl _ _ => simp [StmtToNondetStmt.eq_5] at ht
   | .exit _ _ => simp [StmtToNondetStmt.eq_6] at ht
   | .funcDecl _ _ => simp [StmtToNondetStmt.eq_7] at ht
@@ -100,13 +147,9 @@ where
     match bss with
     | [] => simp [Stmt.exitsCoveredByBlocks.Block.exitsCoveredByBlocks]
     | s :: rest =>
-      rw [BlockToNondetStmt.eq_2] at ht; simp [bind, Option.bind] at ht
-      match hs : StmtToNondetStmt s, hr : BlockToNondetStmt rest with
-      | some s', some r' =>
-        simp [Stmt.exitsCoveredByBlocks.Block.exitsCoveredByBlocks]
-        exact ⟨stmtToNondet_some_exitsCovered labels s s' hs, blockHelper labels rest r' hr⟩
-      | some _, none => simp [hs, hr] at ht
-      | none, _ => simp [hs] at ht
+      have ⟨s', r', hs, hr, _⟩ := block_transform_some s rest ns ht
+      simp [Stmt.exitsCoveredByBlocks.Block.exitsCoveredByBlocks]
+      exact ⟨stmtToNondet_some_exitsCovered labels s s' hs, blockHelper labels rest r' hr⟩
 
 /-! ## noFuncDecl from successful transform -/
 
@@ -120,13 +163,13 @@ private theorem stmtToNondet_some_noFuncDecl
     simp [Stmt.noFuncDecl]; rw [StmtToNondetStmt.eq_2] at ht
     exact blockHelper bss ns ht
   | .ite _ tss ess _ =>
-    rw [StmtToNondetStmt.eq_3] at ht; simp [bind, Option.bind] at ht
+    have ⟨t, e, ht_t, ht_e, _⟩ := ite_transform_some _ tss ess _ _ ht
     simp [Stmt.noFuncDecl]
-    match ht_t : BlockToNondetStmt tss, ht_e : BlockToNondetStmt ess with
-    | some t, some e => exact ⟨blockHelper tss t ht_t, blockHelper ess e ht_e⟩
-    | some _, none => simp [ht_t, ht_e] at ht
-    | none, _ => simp [ht_t] at ht
-  | .loop _ _ _ _ _ => simp [StmtToNondetStmt.eq_4] at ht
+    exact ⟨blockHelper tss t ht_t, blockHelper ess e ht_e⟩
+  | .loop _ _ _ body _ =>
+    have ⟨b, hb, _⟩ := loop_transform_some _ _ _ body _ _ ht
+    simp [Stmt.noFuncDecl]
+    exact blockHelper body b hb
   | .typeDecl _ _ => simp [StmtToNondetStmt.eq_5] at ht
   | .exit _ _ => simp [StmtToNondetStmt.eq_6] at ht
   | .funcDecl _ _ => simp [StmtToNondetStmt.eq_7] at ht
@@ -137,53 +180,185 @@ where
     match bss with
     | [] => simp [Block.noFuncDecl]
     | s :: rest =>
-      rw [BlockToNondetStmt.eq_2] at ht; simp [bind, Option.bind] at ht
-      match hs : StmtToNondetStmt s, hr : BlockToNondetStmt rest with
-      | some s', some r' =>
-        simp [Block.noFuncDecl]
-        exact ⟨stmtToNondet_some_noFuncDecl s s' hs, blockHelper rest r' hr⟩
-      | some _, none => simp [hs, hr] at ht
-      | none, _ => simp [hs] at ht
+      have ⟨s', r', hs, hr, _⟩ := block_transform_some s rest ns ht
+      simp [Block.noFuncDecl]
+      exact ⟨stmtToNondet_some_noFuncDecl s s' hs, blockHelper rest r' hr⟩
+
+/-! ## Block exitsCovered from successful transform (empty labels) -/
+
+private theorem blockToNondet_some_exitsCovered_nil
+    (bss : List (Stmt P (Cmd P))) (ns : NondetStmt P (Cmd P))
+    (ht : BlockToNondetStmt bss = some ns) :
+    Stmt.exitsCoveredByBlocks.Block.exitsCoveredByBlocks (P := P) (CmdT := Cmd P) [] bss := by
+  match bss with
+  | [] => simp [Stmt.exitsCoveredByBlocks.Block.exitsCoveredByBlocks]
+  | s :: rest =>
+    have ⟨s', r', hs, hr, _⟩ := block_transform_some s rest ns ht
+    simp [Stmt.exitsCoveredByBlocks.Block.exitsCoveredByBlocks]
+    exact ⟨stmtToNondet_some_exitsCovered [] s s' hs, blockToNondet_some_exitsCovered_nil rest r' hr⟩
+
+/-! ## Type-valued ReflTrans for structural recursion -/
+
+private inductive ReflTransT {A : Type} (r : A → A → Prop) : A → A → Type where
+  | refl : ∀ x, ReflTransT r x x
+  | step : ∀ x y z, r x y → ReflTransT r y z → ReflTransT r x z
+
+private theorem reflTrans_nonempty_T {A : Type} {r : A → A → Prop} {a b : A} :
+    ReflTrans r a b → Nonempty (ReflTransT r a b) := by
+  intro h; induction h with
+  | refl => exact ⟨.refl _⟩
+  | step _ _ _ hstep _ ih => exact ih.elim fun rest => ⟨.step _ _ _ hstep rest⟩
+
+private noncomputable def reflTrans_to_T {A : Type} {r : A → A → Prop} {a b : A} :
+    ReflTrans r a b → ReflTransT r a b :=
+  fun h => Classical.choice (reflTrans_nonempty_T h)
+
+private theorem reflTransT_to_prop {A : Type} {r : A → A → Prop} {a b : A} :
+    ReflTransT r a b → ReflTrans r a b := by
+  intro h; induction h with
+  | refl => exact .refl _
+  | step _ _ _ hstep _ ih => exact .step _ _ _ hstep ih
+
+private def ReflTransT.len : @ReflTransT A r a b → Nat
+  | .refl _ => 0
+  | .step _ _ _ _ rest => 1 + rest.len
+
+/-! ## ReflTransT decomposition helpers -/
+
+private theorem seqT_reaches_terminal
+    (extendEval : ExtendEval P)
+    {inner : Config P (Cmd P)} {ss : List (Stmt P (Cmd P))} {ρ' : Env P}
+    (hstar : ReflTransT (StepStmt P (EvalCmd P) extendEval) (.seq inner ss) (.terminal ρ')) :
+    ∃ (ρ₁ : Env P), ∃ (h1 : ReflTransT (StepStmt P (EvalCmd P) extendEval) inner (.terminal ρ₁)),
+      ∃ (h2 : ReflTransT (StepStmt P (EvalCmd P) extendEval) (.stmts ss ρ₁) (.terminal ρ')),
+      h1.len + h2.len < hstar.len := by
+  match hstar with
+  | .step _ _ _ (.step_seq_inner h) hrest =>
+    have ⟨ρ₁, hterm, htail, hlen⟩ := seqT_reaches_terminal extendEval hrest
+    exact ⟨ρ₁, .step _ _ _ h hterm, htail, by simp [ReflTransT.len]; omega⟩
+  | .step _ _ _ .step_seq_done hrest => exact ⟨_, .refl _, hrest, by show 0 + hrest.len < 1 + hrest.len; omega⟩
+  | .step _ _ _ .step_seq_exit hrest =>
+    match hrest with
+    | .step _ _ _ h _ => exact nomatch h
+
+private theorem stmtsT_cons_terminal
+    (extendEval : ExtendEval P)
+    {s : Stmt P (Cmd P)} {rest : List (Stmt P (Cmd P))} {ρ₀ ρ' : Env P}
+    (hstar : ReflTransT (StepStmt P (EvalCmd P) extendEval) (.stmts (s :: rest) ρ₀) (.terminal ρ')) :
+    ∃ (ρ₁ : Env P), ∃ (h1 : ReflTransT (StepStmt P (EvalCmd P) extendEval) (.stmt s ρ₀) (.terminal ρ₁)),
+      ∃ (h2 : ReflTransT (StepStmt P (EvalCmd P) extendEval) (.stmts rest ρ₁) (.terminal ρ')),
+      h1.len + h2.len + 2 ≤ hstar.len := by
+  match hstar with
+  | .step _ _ _ .step_stmts_cons hrest =>
+    have ⟨ρ₁, h1, h2, hlen⟩ := seqT_reaches_terminal extendEval hrest
+    exact ⟨ρ₁, h1, h2, by simp [ReflTransT.len]; omega⟩
+
+private theorem stmtsT_append_terminal
+    (extendEval : ExtendEval P)
+    (ss₁ : List (Stmt P (Cmd P))) (s : Stmt P (Cmd P)) (ρ₀ ρ' : Env P)
+    (hstar : ReflTransT (StepStmt P (EvalCmd P) extendEval) (.stmts (ss₁ ++ [s]) ρ₀) (.terminal ρ'))
+    (hcov : Stmt.exitsCoveredByBlocks.Block.exitsCoveredByBlocks (P := P) (CmdT := Cmd P) [] ss₁) :
+    ∃ (ρ₁ : Env P), ∃ (hss : StepStmtStar P (EvalCmd P) extendEval (.stmts ss₁ ρ₀) (.terminal ρ₁)),
+      ∃ (hs : ReflTransT (StepStmt P (EvalCmd P) extendEval) (.stmt s ρ₁) (.terminal ρ')),
+      hs.len < hstar.len := by
+  induction ss₁ generalizing ρ₀ with
+  | nil =>
+    have ⟨ρ₁, h1, h2, hlen⟩ := stmtsT_cons_terminal extendEval hstar
+    -- h2 : ReflTransT ... (.stmts [] ρ₁) (.terminal ρ')
+    -- Must be: step via step_stmts_nil then refl, so ρ₁ = ρ'
+    have hρ : ρ₁ = ρ' := by
+      match h2 with
+      | .step _ _ _ .step_stmts_nil (.refl _) => rfl
+    subst hρ
+    exact ⟨ρ₀, .step _ _ _ .step_stmts_nil (.refl _), h1, by omega⟩
+  | cons s' rest' ih =>
+    -- Note: (s' :: rest') ++ [s] = s' :: (rest' ++ [s]) by definitional reduction
+    have ⟨ρ₁, h_s', h_rest, hlen₁⟩ := stmtsT_cons_terminal extendEval hstar
+    have ⟨ρ₂, h_rest', h_s, hlen₂⟩ := ih ρ₁ h_rest hcov.2
+    exact ⟨ρ₂,
+      reflTrans_trans
+        (stmts_cons_step P (EvalCmd P) extendEval s' rest' ρ₀ ρ₁ (reflTransT_to_prop h_s'))
+        h_rest',
+      h_s, by omega⟩
+
+/-! ## Loop simulation -/
+
+private noncomputable def loop_sim
+    (extendEval : ExtendEval P)
+    (g : P.Expr) (m : Option P.Expr) (inv : List P.Expr)
+    (body : List (Stmt P (Cmd P))) (md : MetaData P)
+    (b : NondetStmt P (Cmd P))
+    (sim_body : ∀ ρ₀ ρ',
+      StepStmtStar P (EvalCmd P) extendEval (.stmts body ρ₀) (.terminal ρ') →
+      StepNondetStar P (EvalCmd P) (.stmt b ρ₀) (.terminal ρ'))
+    (hcov : Stmt.exitsCoveredByBlocks.Block.exitsCoveredByBlocks (P := P) (CmdT := Cmd P) [] body)
+    (ρ₀ ρ' : Env P)
+    (hstarT : ReflTransT (StepStmt P (EvalCmd P) extendEval)
+      (.stmt (.loop g m inv body md) ρ₀) (.terminal ρ')) :
+    StepNondetStar P (EvalCmd P)
+      (.stmt (.loop (.seq (.cmd (.assume "guard" g md)) b)) ρ₀) (.terminal ρ') :=
+  match hstarT with
+  | .step _ _ _ (.step_loop_exit _ _) (.refl _) =>
+    .step _ _ _ .step_loop_zero (.refl _)
+  | .step _ _ _ (.step_loop_exit _ _) (.step _ _ _ h _) => nomatch h
+  | .step _ _ _ (.step_loop_enter hg hwfb) hrest =>
+    let ⟨ρ₁, hbody, hloop_stmtT, hlen_loop⟩ :=
+      stmtsT_append_terminal extendEval body (.loop g m inv body md) ρ₀ ρ' hrest hcov
+    let nondet_body := sim_body ρ₀ ρ₁ hbody
+    have h_assume : StepNondetStar P (EvalCmd P)
+        (.stmt (.cmd (.assume "guard" g md)) ρ₀) (.terminal ρ₀) := by
+      have raw : StepNondetStar P (EvalCmd P)
+          (.stmt (.cmd (.assume "guard" g md)) ρ₀)
+          (.terminal { ρ₀ with store := ρ₀.store, hasFailure := ρ₀.hasFailure || false }) :=
+        .step _ _ _ (.step_cmd (EvalCmd.eval_assume hg hwfb)) (.refl _)
+      rwa [assume_env_eq] at raw
+    let h_iter : StepNondetStar P (EvalCmd P)
+        (.stmt (.seq (.cmd (.assume "guard" g md)) b) ρ₀) (.terminal ρ₁) :=
+      nondet_seq_terminal _ b ρ₀ ρ₀ ρ₁ h_assume nondet_body
+    let nondet_loop := loop_sim extendEval g m inv body md b sim_body hcov ρ₁ ρ' hloop_stmtT
+    .step _ _ _ .step_loop_step
+      (reflTrans_trans
+        (nondet_seq_inner_star _ _
+          (.loop (.seq (.cmd (.assume "guard" g md)) b)) h_iter)
+        (.step _ _ _ .step_seq_done nondet_loop))
+  termination_by hstarT.len
+  decreasing_by
+    simp_all [ReflTransT.len]
+    omega
 
 /-! ## Core simulation by strong induction on statement/block size -/
 
 private theorem simulation
-    (extendEval : ExtendEval P) (m : Nat) :
+    (extendEval : ExtendEval P) (sz : Nat) :
     (∀ (st : Stmt P (Cmd P)) (ns : NondetStmt P (Cmd P)),
-      st.sizeOf ≤ m → StmtToNondetStmt st = some ns →
+      st.sizeOf ≤ sz → StmtToNondetStmt st = some ns →
       ∀ (ρ₀ ρ' : Env P),
         StepStmtStar P (EvalCmd P) extendEval (.stmt st ρ₀) (.terminal ρ') →
         StepNondetStar P (EvalCmd P) (.stmt ns ρ₀) (.terminal ρ'))
     ∧
     (∀ (bss : List (Stmt P (Cmd P))) (ns : NondetStmt P (Cmd P)),
-      Block.sizeOf bss ≤ m → BlockToNondetStmt bss = some ns →
+      Block.sizeOf bss ≤ sz → BlockToNondetStmt bss = some ns →
       ∀ (ρ₀ ρ' : Env P),
         StepStmtStar P (EvalCmd P) extendEval (.stmts bss ρ₀) (.terminal ρ') →
         StepNondetStar P (EvalCmd P) (.stmt ns ρ₀) (.terminal ρ')) := by
-  induction m with
+  induction sz with
   | zero =>
     constructor
     · intro st ns hsz ht ρ₀ ρ' hstar
-      -- Stmt.sizeOf is always ≥ 1, so sizeOf ≤ 0 is impossible
       match st with
       | .cmd _ | .block .. | .ite .. | .loop .. | .exit .. | .funcDecl .. | .typeDecl .. =>
-        simp [Stmt.sizeOf] at hsz
+        simp_all [Stmt.sizeOf]
     · intro bss ns hsz ht ρ₀ ρ' hstar
       match bss with
       | [] =>
-        -- BlockToNondetStmt [] = some (.loop _)
         simp [BlockToNondetStmt.eq_1] at ht; subst ht
-        -- Det: .stmts [] ρ₀ → .terminal ρ₀
         cases hstar with
         | step _ _ _ h1 r1 => cases h1 with
           | step_stmts_nil =>
             cases r1 with
-            | refl =>
-              -- Nondet: .loop _ steps to .terminal ρ₀ via step_loop_zero
-              exact .step _ _ _ .step_loop_zero (.refl _)
+            | refl => exact .step _ _ _ .step_loop_zero (.refl _)
             | step _ _ _ h _ => exact nomatch h
-      | s :: _ =>
-        simp [Block.sizeOf] at hsz
+      | s :: _ => simp_all [Block.sizeOf]
   | succ n ih =>
     constructor
 
@@ -206,44 +381,61 @@ private theorem simulation
           | step_block =>
             match block_reaches_terminal P (EvalCmd P) extendEval r1 with
             | .inl hterm =>
-              -- Inner stmts terminated normally
-              have : Block.sizeOf bss ≤ n := by simp [Stmt.sizeOf] at hsz; omega
+              have : Block.sizeOf bss ≤ n := by
+                simp_all [Stmt.sizeOf]; omega
               exact ih.2 bss ns this ht ρ₀ ρ' hterm
             | .inr ⟨lbl, hexit⟩ =>
-              -- Inner stmts exited — impossible since no exits
-              have hcov := stmtToNondet_some_exitsCovered [] (.block _l bss _md) _
-                (by rw [StmtToNondetStmt.eq_2]; exact ht)
-              simp [Stmt.exitsCoveredByBlocks] at hcov
-              exact absurd (ReflTrans.step _ _ _ StepStmt.step_block
-                (reflTrans_trans (block_inner_star P (EvalCmd P) extendEval _ _ _l hexit)
-                  (.step _ _ _ StepStmt.step_block_exit_catch (.refl _))))
-                (by intro h; sorry) -- TODO: need a simpler approach for this contradiction
+              exact absurd hexit (block_exitsCoveredByBlocks_noEscape P (EvalCmd P) extendEval bss
+                (blockToNondet_some_exitsCovered_nil bss ns ht) ρ₀ lbl ρ')
 
       | .ite cond tss ess md =>
-        rw [StmtToNondetStmt.eq_3] at ht; simp [bind, Option.bind] at ht
-        match ht_tss : BlockToNondetStmt tss, ht_ess : BlockToNondetStmt ess with
-        | some t, some e =>
-          simp [ht_tss, ht_ess] at ht; subst ht
-          cases hstar with
-          | step _ _ _ h1 r1 => cases h1 with
-            | step_ite_true hcond hwfb =>
-              have : Block.sizeOf tss ≤ n := by simp [Stmt.sizeOf] at hsz; omega
-              have hnd := ih.2 tss t this ht_tss ρ₀ ρ' r1
-              exact .step _ _ _ .step_choice_left
-                (nondet_seq_terminal _ t ρ₀ ρ₀ ρ'
-                  (.step _ _ _ (.step_cmd (EvalCmd.eval_assume hcond hwfb)) (.refl _))
-                  (by rw [assume_env_eq]; exact hnd))
-            | step_ite_false hcond hwfb =>
-              have : Block.sizeOf ess ≤ n := by simp [Stmt.sizeOf] at hsz; omega
-              have hnd := ih.2 ess e this ht_ess ρ₀ ρ' r1
-              exact .step _ _ _ .step_choice_right
-                (nondet_seq_terminal _ e ρ₀ ρ₀ ρ'
-                  (.step _ _ _ (.step_cmd (EvalCmd.eval_assume ((hwfb ρ₀.store cond).2.mp hcond) hwfb)) (.refl _))
-                  (by rw [assume_env_eq]; exact hnd))
-        | some _, none => simp [ht_tss] at ht
-        | none, _ => simp at ht
+        have ⟨t, e, ht_tss, ht_ess, hns⟩ := ite_transform_some cond tss ess md ns ht
+        subst hns
+        cases hstar with
+        | step _ _ _ h1 r1 => cases h1 with
+          | step_ite_true hcond hwfb =>
+            have : Block.sizeOf tss ≤ n := by
+              simp_all [Stmt.sizeOf]; omega
+            have hnd := ih.2 tss t this ht_tss ρ₀ ρ' r1
+            have h_assume : StepNondetStar P (EvalCmd P)
+                (.stmt (.cmd (.assume "true_cond" cond md)) ρ₀) (.terminal ρ₀) := by
+              have heq := assume_env_eq ρ₀
+              have : StepNondetStar P (EvalCmd P)
+                  (.stmt (.cmd (.assume "true_cond" cond md)) ρ₀)
+                  (.terminal { ρ₀ with store := ρ₀.store, hasFailure := ρ₀.hasFailure || false }) :=
+                .step _ _ _ (.step_cmd (EvalCmd.eval_assume hcond hwfb)) (.refl _)
+              rw [heq] at this; exact this
+            exact .step _ _ _ .step_choice_left
+              (nondet_seq_terminal _ t ρ₀ ρ₀ ρ' h_assume hnd)
+          | step_ite_false hcond hwfb =>
+            have : Block.sizeOf ess ≤ n := by
+              simp_all [Stmt.sizeOf]; omega
+            have hnd := ih.2 ess e this ht_ess ρ₀ ρ' r1
+            have hcond_neg := (hwfb ρ₀.store cond).2.mp hcond
+            have h_assume : StepNondetStar P (EvalCmd P)
+                (.stmt (.cmd (.assume "false_cond" (HasNot.not cond) md)) ρ₀) (.terminal ρ₀) := by
+              have heq := assume_env_eq ρ₀
+              have : StepNondetStar P (EvalCmd P)
+                  (.stmt (.cmd (.assume "false_cond" (HasNot.not cond) md)) ρ₀)
+                  (.terminal { ρ₀ with store := ρ₀.store, hasFailure := ρ₀.hasFailure || false }) :=
+                .step _ _ _ (.step_cmd (EvalCmd.eval_assume hcond_neg hwfb)) (.refl _)
+              rw [heq] at this; exact this
+            exact .step _ _ _ .step_choice_right
+              (nondet_seq_terminal _ e ρ₀ ρ₀ ρ' h_assume hnd)
 
-      | .loop _ _ _ _ _ => simp [StmtToNondetStmt.eq_4] at ht
+      | .loop g m' inv body md =>
+        have ⟨b, hb, hns⟩ := loop_transform_some g m' inv body md ns ht
+        subst hns
+        have hsz_body : Block.sizeOf body ≤ n := by
+          simp_all [Stmt.sizeOf]; omega
+        have sim_body : ∀ ρ₀ ρ',
+            StepStmtStar P (EvalCmd P) extendEval (.stmts body ρ₀) (.terminal ρ') →
+            StepNondetStar P (EvalCmd P) (.stmt b ρ₀) (.terminal ρ') :=
+          fun ρ₀ ρ' h => ih.2 body b hsz_body hb ρ₀ ρ' h
+        have hcov := blockToNondet_some_exitsCovered_nil body b hb
+        exact loop_sim extendEval g m' inv body md b sim_body hcov ρ₀ ρ'
+          (reflTrans_to_T hstar)
+
       | .typeDecl _ _ => simp [StmtToNondetStmt.eq_5] at ht
       | .exit _ _ => simp [StmtToNondetStmt.eq_6] at ht
       | .funcDecl _ _ => simp [StmtToNondetStmt.eq_7] at ht
@@ -261,21 +453,19 @@ private theorem simulation
             | step _ _ _ h _ => exact nomatch h
 
       | s :: rest =>
-        rw [BlockToNondetStmt.eq_2] at ht; simp [bind, Option.bind] at ht
-        match hs : StmtToNondetStmt s, hr : BlockToNondetStmt rest with
-        | some s', some rest' =>
-          simp [hs, hr] at ht; subst ht
-          cases hstar with
-          | step _ _ _ h1 r1 => cases h1 with
-            | step_stmts_cons =>
-              have ⟨ρ₁, hterm_s, hterm_rest⟩ := seq_reaches_terminal P (EvalCmd P) extendEval r1
-              have hsz_s : Stmt.sizeOf s ≤ n := by simp [Block.sizeOf] at hsz; omega
-              have hsz_r : Block.sizeOf rest ≤ n := by simp [Block.sizeOf] at hsz; omega
-              exact nondet_seq_terminal s' rest' ρ₀ ρ₁ ρ'
-                (ih.1 s s' hsz_s hs ρ₀ ρ₁ hterm_s)
-                (ih.2 rest rest' hsz_r hr ρ₁ ρ' hterm_rest)
-        | some _, none => simp [hs] at ht
-        | none, _ => simp at ht
+        have ⟨s', rest', hs, hr, hns⟩ := block_transform_some s rest ns ht
+        subst hns
+        cases hstar with
+        | step _ _ _ h1 r1 => cases h1 with
+          | step_stmts_cons =>
+            have ⟨ρ₁, hterm_s, hterm_rest⟩ := seq_reaches_terminal P (EvalCmd P) extendEval r1
+            have hsz_s : Stmt.sizeOf s ≤ n := by
+              simp_all [Block.sizeOf]; omega
+            have hsz_r : Block.sizeOf rest ≤ n := by
+              simp_all [Block.sizeOf]; omega
+            exact nondet_seq_terminal s' rest' ρ₀ ρ₁ ρ'
+              (ih.1 s s' hsz_s hs ρ₀ ρ₁ hterm_s)
+              (ih.2 rest rest' hsz_r hr ρ₁ ρ' hterm_rest)
 
 /-- If det stmt reaches terminal, nondet transform reaches terminal. -/
 theorem stmtToNondet_terminal

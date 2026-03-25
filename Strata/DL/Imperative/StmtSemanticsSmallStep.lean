@@ -823,6 +823,29 @@ theorem exitsCoveredByBlocks_noEscape
   | step _ _ _ hstep _ ih =>
     exact ih (step_preserves_exitsCoveredByBlocks P EvalCmd extendEval [] _ _ hstep hwp_c)
 
+/-- Well-paired statement lists cannot escape via `.exiting`:
+    if all exits in `bss` are caught by enclosing blocks
+    (`Block.exitsCoveredByBlocks [] bss`), then `.stmts bss ρ` never reaches `.exiting`. -/
+theorem block_exitsCoveredByBlocks_noEscape
+    (bss : List (Stmt P CmdT))
+    (hwp : Stmt.exitsCoveredByBlocks.Block.exitsCoveredByBlocks [] bss) :
+    ∀ (ρ : Env P) (lbl : Option String) (ρ' : Env P),
+      ¬ StepStmtStar P EvalCmd extendEval (.stmts bss ρ) (.exiting lbl ρ') := by
+  intro ρ lbl ρ' hstar
+  suffices ∀ c₁ c₂,
+      c₁.exitsCoveredByBlocks ([] : List String) →
+      StepStmtStar P EvalCmd extendEval c₁ c₂ →
+      c₂.exitsCoveredByBlocks ([] : List String) by
+    have hwp' := this _ _ (show Config.exitsCoveredByBlocks [] (.stmts bss ρ) from hwp) hstar
+    cases lbl with
+    | none => exact absurd hwp' (by simp [Config.exitsCoveredByBlocks])
+    | some l => exact absurd hwp' (by simp [Config.exitsCoveredByBlocks])
+  intro c₁ c₂ hwp_c hstar_c
+  induction hstar_c with
+  | refl => exact hwp_c
+  | step _ _ _ hstep _ ih =>
+    exact ih (step_preserves_exitsCoveredByBlocks P EvalCmd extendEval [] _ _ hstep hwp_c)
+
 /-! ## noFuncDecl preserves eval (small-step) -/
 
 /-- A single step preserves eval when noFuncDecl holds.
