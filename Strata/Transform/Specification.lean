@@ -718,66 +718,6 @@ theorem hoareTriple_implies_assertValid
                         | step _ _ _ h _ => exact absurd h (by intro h; cases h)
 
 
-/-- `AllAssertsValid` for the composite implies `AllAssertsValid` for `st`
-    when run from an env reachable via the composite's assume prefix.
-    This connects composite-level validity to statement-level validity
-    by showing that configs reachable during `st`'s execution correspond
-    to configs reachable inside the composite (through block/seq wrappers).
-
-    Note: `WellFormedSemanticEvalBool ρ₀.eval` is required only for the
-    `assume` step at the start of the composite, which uses the initial
-    env's evaluator. -/
-private theorem composite_allAssertsValid_implies_st
-    (pre_label : String) (pre_expr : P.Expr) (pre_md : MetaData P)
-    (st : Stmt P (Cmd P))
-    (post_label : String) (post_expr : P.Expr) (post_md : MetaData P)
-    (block_label : String) (block_md : MetaData P)
-    (hvalid : AllAssertsValid P extendEval
-      (PredicatedStmt P pre_label pre_expr pre_md st post_label post_expr post_md block_label block_md)) :
-    ∀ (ρ₀ : Env P),
-      WellFormedSemanticEvalBool ρ₀.eval →
-      ρ₀.eval ρ₀.store pre_expr = some HasBool.tt →
-      ρ₀.hasFailure = false →
-      ∀ (a : AssertId P) (cfg : Config P (Cmd P)),
-        StepStmtStar P (EvalCmd P) extendEval (.stmt st ρ₀) cfg →
-        isAtAssert P cfg a →
-        cfg.getEval cfg.getStore a.expr = some HasBool.tt := by
-  intro ρ₀ hwfb hpre hf₀ a cfg hstar hat
-  -- Build composite execution prefix: block → stmts → assume → stmts [st, ...]
-  -- Then embed st's execution inside the composite via block/seq lifting.
-  let assume_stmt : Stmt P (Cmd P) := .cmd (.assume pre_label pre_expr pre_md)
-  let assert_stmt : Stmt P (Cmd P) := .cmd (.assert post_label post_expr post_md)
-  let body : List (Stmt P (Cmd P)) := [assume_stmt, st, assert_stmt]
-  -- Assume step
-  have h_assume : StepStmtStar P (EvalCmd P) extendEval
-      (.stmt assume_stmt ρ₀) (.terminal { ρ₀ with store := ρ₀.store, hasFailure := ρ₀.hasFailure || false }) :=
-    .step _ _ _ (StepStmt.step_cmd (EvalCmd.eval_assume hpre hwfb)) (.refl _)
-  have h_ρ₁_eq : ({ store := ρ₀.store, eval := ρ₀.eval, hasFailure := ρ₀.hasFailure || false } : Env P) = ρ₀ := by
-    cases ρ₀; simp [Bool.or_false]
-  -- stmts [assume, st, assert] ρ₀ →* stmts [st, assert] ρ₀
-  have h1 := stmts_cons_step P (EvalCmd P) extendEval assume_stmt [st, assert_stmt] ρ₀ _ h_assume
-  rw [h_ρ₁_eq] at h1
-  -- stmts [st, assert] ρ₀ → seq (.stmt st ρ₀) [assert]
-  have h2 : StepStmtStar P (EvalCmd P) extendEval
-      (.stmts [st, assert_stmt] ρ₀) (.seq (.stmt st ρ₀) [assert_stmt]) :=
-    .step _ _ _ StepStmt.step_stmts_cons (.refl _)
-  -- seq (.stmt st ρ₀) [assert] →* seq cfg [assert] (lifting st's execution)
-  have h3 := seq_inner_star P (EvalCmd P) extendEval _ _ [assert_stmt] hstar
-  -- Compose and lift through block
-  have h_inner := reflTrans_trans (h1 := reflTrans_trans (h1 := h1) (h2 := h2)) (h2 := h3)
-  have h_block := block_inner_star P (EvalCmd P) extendEval _ _ block_label h_inner
-  have h_start : StepStmtStar P (EvalCmd P) extendEval
-      (.stmt (.block block_label body block_md) ρ₀) (.block block_label (.stmts body ρ₀)) :=
-    .step _ _ _ StepStmt.step_block (.refl _)
-  have h_full := reflTrans_trans (h1 := h_start) (h2 := h_block)
-  -- The target config is .block bl (.seq cfg [assert]), which satisfies
-  -- isAtAssert iff cfg does (recursion through block → seq → cfg)
-  have hat_composite : isAtAssert P (.block block_label (.seq cfg [assert_stmt])) a := hat
-  -- Apply hvalid
-  have h_result := hvalid a ρ₀ _ h_full hat_composite
-  simp only [Config.getEval, Config.getStore] at h_result ⊢
-  exact h_result
-
 /--
     **Direction 2** (`assertValid_implies_hoareTriple`):
     If `AllAssertsValid` holds for the composite `assume pre; st; assert post`,
@@ -785,10 +725,7 @@ private theorem composite_allAssertsValid_implies_st
 
     The `AllAssertsValid` hypothesis (rather than just `AssertValid` for the
     post assert) ensures that all intermediate asserts in `st` also pass,
-    which is needed for the `hasFailure = false` postcondition.
-
-    `Triple` is terminal-only, so no extra assumptions about exits are
-    needed — `AllAssertsValid` fully constrains the terminal case. -/
+    which is needed for the `hasFailure = false` postcondition. -/
 theorem assertValid_implies_hoareTriple
     (pre_label : String) (pre_expr : P.Expr) (pre_md : MetaData P)
     (st : Stmt P (Cmd P))
@@ -800,48 +737,62 @@ theorem assertValid_implies_hoareTriple
       (fun ρ => ρ.eval ρ.store pre_expr = some HasBool.tt)
       st
       (fun ρ => ρ.eval ρ.store post_expr = some HasBool.tt) := by
-  -- Derive noFailure from hvalid via composite_allAssertsValid_implies_st
-  have hvalid_st := composite_allAssertsValid_implies_st P extendEval
-    pre_label pre_expr pre_md st post_label post_expr post_md block_label block_md hvalid
   intro ρ₀ ρ' hpre hwfb hf₀ hstar
   let assume_stmt : Stmt P (Cmd P) := .cmd (.assume pre_label pre_expr pre_md)
   let assert_stmt : Stmt P (Cmd P) := .cmd (.assert post_label post_expr post_md)
   let body : List (Stmt P (Cmd P)) := [assume_stmt, st, assert_stmt]
-  -- Step 1: assume passes, producing ρ₁ (propositionally = ρ₀ since hf₀)
+  -- Helper: embed st's execution inside the composite to derive assert validity.
+  -- For any config reachable from st, if it's at an assert, the assert passes.
+  have hvalid_st : ∀ (a : AssertId P) (cfg : Config P (Cmd P)),
+      StepStmtStar P (EvalCmd P) extendEval (.stmt st ρ₀) cfg →
+      isAtAssert P cfg a →
+      cfg.getEval cfg.getStore a.expr = some HasBool.tt := by
+    intro a cfg hstar_st hat
+    -- Build composite execution: block → stmts → assume → stmts [st, ...] → st → cfg
+    have h_assume : StepStmtStar P (EvalCmd P) extendEval
+        (.stmt assume_stmt ρ₀) (.terminal { ρ₀ with store := ρ₀.store, hasFailure := ρ₀.hasFailure || false }) :=
+      .step _ _ _ (StepStmt.step_cmd (EvalCmd.eval_assume hpre hwfb)) (.refl _)
+    have h_ρ₁_eq : ({ store := ρ₀.store, eval := ρ₀.eval, hasFailure := ρ₀.hasFailure || false } : Env P) = ρ₀ := by
+      cases ρ₀; simp [Bool.or_false]
+    have h1 := stmts_cons_step P (EvalCmd P) extendEval assume_stmt [st, assert_stmt] ρ₀ _ h_assume
+    rw [h_ρ₁_eq] at h1
+    have h2 : StepStmtStar P (EvalCmd P) extendEval
+        (.stmts [st, assert_stmt] ρ₀) (.seq (.stmt st ρ₀) [assert_stmt]) :=
+      .step _ _ _ StepStmt.step_stmts_cons (.refl _)
+    have h3 := seq_inner_star P (EvalCmd P) extendEval _ _ [assert_stmt] hstar_st
+    have h_inner := reflTrans_trans (h1 := reflTrans_trans (h1 := h1) (h2 := h2)) (h2 := h3)
+    have h_block := block_inner_star P (EvalCmd P) extendEval _ _ block_label h_inner
+    have h_start : StepStmtStar P (EvalCmd P) extendEval
+        (.stmt (.block block_label body block_md) ρ₀) (.block block_label (.stmts body ρ₀)) :=
+      .step _ _ _ StepStmt.step_block (.refl _)
+    have h_full := reflTrans_trans (h1 := h_start) (h2 := h_block)
+    have h_result := hvalid a ρ₀ _ h_full hat
+    simp only [Config.getEval, Config.getStore] at h_result ⊢
+    exact h_result
+  -- Post: build composite execution through to the assert after st.
   have h_assume : StepStmtStar P (EvalCmd P) extendEval
       (.stmt assume_stmt ρ₀) (.terminal { ρ₀ with store := ρ₀.store, hasFailure := ρ₀.hasFailure || false }) :=
     .step _ _ _ (StepStmt.step_cmd (EvalCmd.eval_assume hpre hwfb)) (.refl _)
   have h_ρ₁_eq : ({ store := ρ₀.store, eval := ρ₀.eval, hasFailure := ρ₀.hasFailure || false } : Env P) = ρ₀ := by
     cases ρ₀; simp [Bool.or_false]
-  -- Step 2: stmts [assume, st, assert] ρ₀ →* stmts [st, assert] ρ₁
   have h1 := stmts_cons_step P (EvalCmd P) extendEval assume_stmt [st, assert_stmt] ρ₀ _ h_assume
   rw [h_ρ₁_eq] at h1
-  -- Step 3: stmts [st, assert] ρ₀ →* stmts [assert] ρ'
   have h2 := stmts_cons_step P (EvalCmd P) extendEval st [assert_stmt] ρ₀ ρ' hstar
-  -- Step 4: stmts [assert] ρ' → seq (stmt assert ρ') []
   have h3 : StepStmtStar P (EvalCmd P) extendEval
       (.stmts [assert_stmt] ρ') (.seq (.stmt assert_stmt ρ') []) :=
     .step _ _ _ StepStmt.step_stmts_cons (.refl _)
-  -- Compose: stmts body ρ₀ →* seq (stmt assert ρ') []
   have h_inner := reflTrans_trans (h1 := reflTrans_trans (h1 := h1) (h2 := h2)) (h2 := h3)
-  -- Lift through block: block bl (stmts body ρ₀) →* block bl (seq (stmt assert ρ') [])
   have h_block := block_inner_star P (EvalCmd P) extendEval _ _ block_label h_inner
-  -- Start: stmt (block ...) ρ₀ → block bl (stmts body ρ₀)
   have h_start : StepStmtStar P (EvalCmd P) extendEval
       (.stmt (.block block_label body block_md) ρ₀) (.block block_label (.stmts body ρ₀)) :=
     .step _ _ _ StepStmt.step_block (.refl _)
-  -- Full execution: stmt (PredicatedStmt ...) ρ₀ →* block bl (seq (stmt assert ρ') [])
   have h_full := reflTrans_trans (h1 := h_start) (h2 := h_block)
-  -- The target config satisfies isAtAssert (recurse: block → seq → stmt assert)
   have h_at : isAtAssert P (.block block_label (.seq (.stmt assert_stmt ρ') [])) ⟨post_label, post_expr⟩ := by
     simp [isAtAssert, assert_stmt]
-  -- Apply hvalid (specialized to the post assert) at the reachable config
   have h_result := hvalid ⟨post_label, post_expr⟩ ρ₀ _ h_full h_at
-  -- Simplify getEval/getStore through block → seq → stmt
   simp only [Config.getEval, Config.getStore] at h_result
-  -- Post ρ' holds; hasFailure = false from allAssertsValid_preserves_noFailure
   exact ⟨h_result, allAssertsValid_preserves_noFailure P extendEval
-    (ρ₀ := ρ₀) (ρ' := ρ') st (hvalid_st ρ₀ hwfb hpre hf₀) hf₀ hstar⟩
+    (ρ₀ := ρ₀) (ρ' := ρ') st hvalid_st hf₀ hstar⟩
 
 end Hoare
 
