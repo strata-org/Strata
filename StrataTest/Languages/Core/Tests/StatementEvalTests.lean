@@ -606,7 +606,7 @@ namespace SmallStepTests
 open Statement Lambda Lambda.LTy.Syntax Lambda.LExpr.SyntaxMono Core.Syntax
 open Imperative (PureFunc Config StepStmt StepStmtStar
                   EvalCmd InitState UpdateState
-                  SemanticStore SemanticEval ProgramCounter
+                  SemanticStore SemanticEval
                   WellFormedSemanticEvalBool WellFormedSemanticEvalVar)
 
 /-! ### Simple evaluator for the small-step world
@@ -661,7 +661,7 @@ macro "take_step" : tactic => `(tactic| apply ReflTrans.step)
 macro "take_refl" : tactic => `(tactic| apply ReflTrans.refl)
 
 /-- Enter a statement list: apply `step_stmts_cons` to split head from tail. -/
-macro "enter_stmts" : tactic => `(tactic| (apply StepStmt.step_stmts_cons; rfl))
+macro "enter_stmts" : tactic => `(tactic| apply StepStmt.step_stmts_cons)
 
 /-- Finish an empty statement list: apply `step_stmts_nil`. -/
 macro "finish_stmts" : tactic => `(tactic| apply StepStmt.step_stmts_nil)
@@ -724,21 +724,21 @@ under the small-step semantics.
 
 The execution trace is:
 ```
-  .stmts [init; set; assert] ρ₀ [0]
-→ .seq (.stmt (init x := 0) ρ₀ [0]) [set; assert] [1]
-→ .seq (.terminal ρ₁) [set; assert] [1]
-→ .stmts [set; assert] ρ₁ [1]
-→ .seq (.stmt (set x := 18) ρ₁ [1]) [assert] [2]
-→ .seq (.terminal ρ₂) [assert] [2]
-→ .stmts [assert] ρ₂ [2]
-→ .seq (.stmt (assert x==18) ρ₂ [2]) [] [3]
-→ .seq (.terminal ρ₂) [] [3]
-→ .stmts [] ρ₂ [3]
+  .stmts [init; set; assert] ρ₀
+→ .seq (.stmt (init x := 0) ρ₀) [set; assert]
+→ .seq (.terminal ρ₁) [set; assert]
+→ .stmts [set; assert] ρ₁
+→ .seq (.stmt (set x := 18) ρ₁) [assert]
+→ .seq (.terminal ρ₂) [assert]
+→ .stmts [assert] ρ₂
+→ .seq (.stmt (assert x==18) ρ₂) []
+→ .seq (.terminal ρ₂) []
+→ .stmts [] ρ₂
 → .terminal ρ₂
 ```
 -/
 example : TestStepStar
-    (.stmts ss_test1 ρ₀ [0])
+    (.stmts ss_test1 ρ₀)
     (.terminal ρ₂) := by
   -- Step 1: stmts [init; set; assert] → seq (stmt init) [set; assert]
   take_step; enter_stmts

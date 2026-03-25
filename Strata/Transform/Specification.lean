@@ -26,16 +26,10 @@ evaluates to `true` in the current store.
 
 ## Style B — Hoare-triple assertion validity
 
-For a given precondition P and postcondition Q (both predicates on stores),
-if the initial store satisfies P and the statement executes to a terminal
-store, then the terminal store satisfies Q.  This is the classical partial-
+For a given precondition P and postcondition Q (both predicates on envs),
+if the initial env satisfies P and the statement executes to a terminal
+env, then the terminal env satisfies Q.  This is the classical partial-
 correctness Hoare triple {P} S {Q}.
-
-## Theorem: B is a special case of A
-
-We show that if a Hoare triple holds for a statement whose body is
-`assert label expr` (i.e., the postcondition is exactly that `expr` holds),
-then the reachability-based validity also holds for that assert label.
 
 ## Transformation correctness
 
@@ -56,40 +50,30 @@ variable {P : PureExpr}
 
 /-- Extract the store from a configuration. -/
 def Config.getStore : Config P (Cmd P) → SemanticStore P
-  | .stmt _ ρ _ => ρ.store
-  | .stmts _ ρ _ => ρ.store
+  | .stmt _ ρ => ρ.store
+  | .stmts _ ρ => ρ.store
   | .terminal ρ => ρ.store
   | .exiting _ ρ => ρ.store
   | .block _ inner => inner.getStore
-  | .seq inner _ _ => inner.getStore
+  | .seq inner _ => inner.getStore
 
 /-- Extract the evaluator from a configuration. -/
 def Config.getEval : Config P (Cmd P) → SemanticEval P
-  | .stmt _ ρ _ => ρ.eval
-  | .stmts _ ρ _ => ρ.eval
+  | .stmt _ ρ => ρ.eval
+  | .stmts _ ρ => ρ.eval
   | .terminal ρ => ρ.eval
   | .exiting _ ρ => ρ.eval
   | .block _ inner => inner.getEval
-  | .seq inner _ _ => inner.getEval
-
-/-- Extract the program counter from a configuration, if present.
-    Returns `none` for terminal/exiting configurations. -/
-def Config.getPC : Config P (Cmd P) → Option ProgramCounter
-  | .stmt _ _ pc => some pc
-  | .stmts _ _ pc => some pc
-  | .terminal _ => none
-  | .exiting _ _ => none
-  | .block _ inner => inner.getPC
-  | .seq inner _ _ => inner.getPC
+  | .seq inner _ => inner.getEval
 
 /-- Extract the execution environment from a configuration. -/
 def Config.getEnv : Config P (Cmd P) → Env P
-  | .stmt _ ρ _ => ρ
-  | .stmts _ ρ _ => ρ
+  | .stmt _ ρ => ρ
+  | .stmts _ ρ => ρ
   | .terminal ρ => ρ
   | .exiting _ ρ => ρ
   | .block _ inner => inner.getEnv
-  | .seq inner _ _ => inner.getEnv
+  | .seq inner _ => inner.getEnv
 
 namespace Specification
 
@@ -108,33 +92,33 @@ structure AssertId where
 /-! ## Detecting an assert in a configuration -/
 
 /-- `isAtAssert cfg aid` holds when the head of `cfg` is an `assert` command
-    whose label and expression match `aid`. -/
+    whose label and expression match `aid`.  Recurses into `block` and `seq`
+    wrappers so that asserts inside compound statements are visible. -/
 def isAtAssert : Config P (Cmd P) → AssertId P → Prop
-  | .stmt (.cmd (.assert label expr _)) _ _, aid =>
+  | .stmt (.cmd (.assert label expr _)) _, aid =>
     aid.label = label ∧ aid.expr = expr
-  | .stmts ((.cmd (.assert label expr _)) :: _) _ _, aid =>
+  | .stmts ((.cmd (.assert label expr _)) :: _) _, aid =>
     aid.label = label ∧ aid.expr = expr
+  | .block _ inner, aid => isAtAssert inner aid
+  | .seq inner _, aid => isAtAssert inner aid
   | _, _ => False
 
 /-! ## Style A — Reachability-based assertion validity -/
 
 /-- A configuration `cfg` is *reachable* from statement `s` with initial
-    environment `ρ₀` and program counter `pc₀` if multi-step execution
-    from `(.stmt s ρ₀ pc₀)` reaches `cfg` and `cfg` has program counter `pc`. -/
+    environment `ρ₀` if multi-step execution from `(.stmt s ρ₀)` reaches
+    `cfg`. -/
 def Reachable
-    (s : Stmt P (Cmd P)) (ρ₀ : Env P) (pc₀ : ProgramCounter)
-    (pc : ProgramCounter) (cfg : Config P (Cmd P)) : Prop :=
-  StepStmtStar P (EvalCmd P) extendEval (.stmt s ρ₀ pc₀) cfg ∧
-  cfg.getPC = some pc
+    (s : Stmt P (Cmd P)) (ρ₀ : Env P) (cfg : Config P (Cmd P)) : Prop :=
+  StepStmtStar P (EvalCmd P) extendEval (.stmt s ρ₀) cfg
 
 /-- Assert `a` is *valid* in statement `s` if, for every initial
-    environment, initial program counter, and reachable configuration
-    at program counter `pc` that is at assert `a`, the assert expression
-    evaluates to `true`. -/
+    environment and reachable configuration that is at assert `a`,
+    the assert expression evaluates to `true`. -/
 def AssertValid
     (s : Stmt P (Cmd P)) (a : AssertId P) : Prop :=
-  ∀ (ρ₀ : Env P) (pc₀ pc : ProgramCounter) (cfg : Config P (Cmd P)),
-    Reachable P extendEval s ρ₀ pc₀ pc cfg →
+  ∀ (ρ₀ : Env P) (cfg : Config P (Cmd P)),
+    Reachable P extendEval s ρ₀ cfg →
     isAtAssert P cfg a →
     cfg.getEval cfg.getStore a.expr = some HasBool.tt
 
@@ -147,7 +131,6 @@ def AllAssertsValid
 /-! ## Style B — Hoare-triple assertion validity -/
 
 /-- Partial-correctness Hoare triple using small-step semantics.
-    Quantifies over all initial PCs.
 
     The precondition includes `ρ₀.hasFailure = false` (no prior assertion
     failures) and the postcondition includes `ρ'.hasFailure = false` (no
@@ -156,9 +139,9 @@ def HoareTriple
     (Pre : Env P → Prop)
     (s : Stmt P (Cmd P))
     (Post : Env P → Prop) : Prop :=
-  ∀ (ρ₀ : Env P) (pc₀ : ProgramCounter) (ρ' : Env P),
+  ∀ (ρ₀ ρ' : Env P),
     Pre ρ₀ → ρ₀.hasFailure = false →
-    StepStmtStar P (EvalCmd P) extendEval (.stmt s ρ₀ pc₀) (.terminal ρ') →
+    StepStmtStar P (EvalCmd P) extendEval (.stmt s ρ₀) (.terminal ρ') →
     Post ρ' ∧ ρ'.hasFailure = false
 
 /-! ## Relationship between Style A and Style B
@@ -169,11 +152,7 @@ because the assert command has exactly one step (to `.terminal`).
 -/
 
 /-- Style A implies Style B for a single assert command: if all reachable
-    assert configurations have `expr = true`, then the Hoare triple holds.
-
-    This proof inverts the small-step execution of a single assert and
-    uses `EvalCmd P` constructors (`eval_assert_pass` / `eval_assert_fail`)
-    directly. -/
+    assert configurations have `expr = true`, then the Hoare triple holds. -/
 theorem assertValid_implies_hoareTriple
     (label : String) (expr : P.Expr) (md : MetaData P)
     (s : Stmt P (Cmd P))
@@ -183,7 +162,7 @@ theorem assertValid_implies_hoareTriple
       (fun _ => True) s
       (fun ρ' => ρ'.eval ρ'.store expr = some HasBool.tt) := by
   subst hs
-  intro ρ₀ pc₀ ρ' _ hf₀ hstar
+  intro ρ₀ ρ' _ hf₀ hstar
   cases hstar with
   | step _ mid _ hstep hrest =>
     cases hstep with
@@ -195,17 +174,17 @@ theorem assertValid_implies_hoareTriple
         | refl => exact ⟨htt, rfl⟩
         | step _ _ _ hstep2 _ => exact absurd hstep2 (by intro h; cases h)
       | eval_assert_fail hff _ =>
-        have hreach : Reachable P extendEval (.cmd (.assert label expr md)) ρ₀ pc₀ pc₀
-            (.stmt (.cmd (.assert label expr md)) ρ₀ pc₀) :=
-          ⟨ReflTrans.refl _, rfl⟩
-        have htt := hvalid ρ₀ pc₀ pc₀ _ hreach ⟨rfl, rfl⟩
+        have hreach : Reachable P extendEval (.cmd (.assert label expr md)) ρ₀
+            (.stmt (.cmd (.assert label expr md)) ρ₀) :=
+          ReflTrans.refl _
+        have htt := hvalid ρ₀ _ hreach ⟨rfl, rfl⟩
         simp only [Config.getEval, Config.getStore] at htt
         rw [hff] at htt
         exact absurd (Option.some.inj htt) HasBool.tt_is_not_ff.symm
 
 /-- Style B implies Style A for a single assert command, given that the
-    assert is not stuck (i.e., for every initial environment and PC,
-    the assert command can step to terminal). -/
+    assert is not stuck (i.e., for every initial environment, the assert
+    command can step to terminal). -/
 theorem hoareTriple_implies_assertValid
     (label : String) (expr : P.Expr) (md : MetaData P)
     (s : Stmt P (Cmd P))
@@ -213,16 +192,15 @@ theorem hoareTriple_implies_assertValid
     (hoare : HoareTriple P extendEval
       (fun _ => True) s
       (fun ρ' => ρ'.eval ρ'.store expr = some HasBool.tt))
-    (hprogress : ∀ (ρ₀ : Env P) (pc₀ : ProgramCounter),
+    (hprogress : ∀ (ρ₀ : Env P),
       ∃ (ρ' : Env P),
-        StepStmtStar P (EvalCmd P) extendEval (.stmt s ρ₀ pc₀) (.terminal ρ')) :
+        StepStmtStar P (EvalCmd P) extendEval (.stmt s ρ₀) (.terminal ρ')) :
     AssertValid P extendEval s ⟨label, expr⟩ := by
   subst hs
-  intro ρ₀ pc₀ pc cfg hreach hat
-  obtain ⟨hstar, hpc⟩ := hreach
+  intro ρ₀ cfg hstar hat
   cases hstar with
   | refl =>
-    obtain ⟨ρ', hterm⟩ := hprogress ρ₀ pc₀
+    have ⟨ρ', hterm⟩ := hprogress ρ₀
     simp only [Config.getEval, Config.getStore]
     cases hterm with
     | step _ mid _ hstep hrest =>
@@ -232,18 +210,19 @@ theorem hoareTriple_implies_assertValid
         | eval_assert_pass htt _ => exact htt
         | eval_assert_fail hff hwfb =>
           have hterm' : StepStmtStar P (EvalCmd P) extendEval
-              (.stmt (.cmd (.assert label expr md)) { ρ₀ with hasFailure := false } pc₀)
+              (.stmt (.cmd (.assert label expr md)) { ρ₀ with hasFailure := false })
               (.terminal { store := ρ₀.store, eval := ρ₀.eval, hasFailure := true }) :=
             ReflTrans.step _ _ _
               (StepStmt.step_cmd (EvalCmd.eval_assert_fail hff hwfb))
               (ReflTrans.refl _)
-          have ⟨_, hf'⟩ := hoare { ρ₀ with hasFailure := false } pc₀ _ trivial rfl hterm'
+          have ⟨_, hf'⟩ := hoare { ρ₀ with hasFailure := false } _ trivial rfl hterm'
           exact absurd hf' (by simp)
   | step _ mid _ hstep hrest =>
     cases hstep with
     | step_cmd hcmd =>
+      -- mid = .terminal .., which doesn't satisfy isAtAssert
       cases hrest with
-      | refl => simp [Config.getPC] at hpc
+      | refl => exact absurd hat (by simp [isAtAssert])
       | step _ _ _ hstep2 _ => exact absurd hstep2 (by intro h; cases h)
 
 /-! ## Equivalence for a single assert command -/
@@ -254,15 +233,101 @@ theorem assertValid_implies_hoareTriple_iff
     (label : String) (expr : P.Expr) (md : MetaData P)
     (s : Stmt P (Cmd P))
     (hs : s = .cmd (.assert label expr md))
-    (hprogress : ∀ (ρ₀ : Env P) (pc₀ : ProgramCounter),
+    (hprogress : ∀ (ρ₀ : Env P),
       ∃ (ρ' : Env P),
-        StepStmtStar P (EvalCmd P) extendEval (.stmt s ρ₀ pc₀) (.terminal ρ')) :
+        StepStmtStar P (EvalCmd P) extendEval (.stmt s ρ₀) (.terminal ρ')) :
     AssertValid P extendEval s ⟨label, expr⟩ ↔
     HoareTriple P extendEval
       (fun _ => True) s
       (fun ρ' => ρ'.eval ρ'.store expr = some HasBool.tt) :=
   ⟨assertValid_implies_hoareTriple P extendEval label expr md s hs,
    fun h => hoareTriple_implies_assertValid P extendEval label expr md s hs h hprogress⟩
+
+/-! ## Small-step helper lemmas -/
+
+/-- Lifting multi-step execution through a block context. -/
+private theorem block_inner_star
+    (inner inner' : Config P (Cmd P))
+    (label : String)
+    (h : StepStmtStar P (EvalCmd P) extendEval inner inner') :
+    StepStmtStar P (EvalCmd P) extendEval (.block label inner) (.block label inner') := by
+  induction h with
+  | refl => exact .refl _
+  | step _ mid _ hstep _ ih => exact .step _ _ _ (.step_block_body hstep) ih
+
+/-- Transitivity of `ReflTrans`. -/
+private theorem reflTrans_trans
+    {x y z : Config P (Cmd P)}
+    (h1 : StepStmtStar P (EvalCmd P) extendEval x y)
+    (h2 : StepStmtStar P (EvalCmd P) extendEval y z) :
+    StepStmtStar P (EvalCmd P) extendEval x z := by
+  induction h1 with
+  | refl => exact h2
+  | step _ mid _ hstep _ ih => exact .step _ mid _ hstep (ih h2)
+
+/-! ## General connection between HoareTriple and AssertValid
+
+For a general statement `st` (not just a single assert), we can connect
+`HoareTriple` and `AssertValid` by forming a composite program:
+
+    assume pre_expr; st; assert post_expr
+
+The `assume` encodes the precondition (filtering executions where the
+precondition holds) and the `assert` encodes the postcondition.  We wrap
+this sequence in a block to form a single `Stmt`.
+
+**Direction 1** (`hoareTriple_implies_assertValid_general`):
+If `{P} st {Q}` holds (where P ↔ `pre_expr = tt` and Q ↔ `post_expr = tt`),
+then `AssertValid` holds for the composite `assume pre; st; assert post`.
+
+**Direction 2** (`assertValid_implies_hoareTriple_general`):
+If `AssertValid` holds for the composite `assume pre; st; assert post`,
+then `{P} st {Q}` holds.
+-/
+
+/-- The composite statement `assume pre; st; assert post` wrapped in a block.
+    This encodes a Hoare triple `{pre} st {post}` as a single statement
+    whose assert validity captures the triple's meaning. -/
+def hoareBlock
+    (pre_label : String) (pre_expr : P.Expr) (pre_md : MetaData P)
+    (st : Stmt P (Cmd P))
+    (post_label : String) (post_expr : P.Expr) (post_md : MetaData P)
+    (block_label : String) (block_md : MetaData P) : Stmt P (Cmd P) :=
+  .block block_label
+    [.cmd (.assume pre_label pre_expr pre_md), st, .cmd (.assert post_label post_expr post_md)]
+    block_md
+
+theorem hoareTriple_implies_assertValid_general
+    (pre_label : String) (pre_expr : P.Expr) (pre_md : MetaData P)
+    (st : Stmt P (Cmd P))
+    (post_label : String) (post_expr : P.Expr) (post_md : MetaData P)
+    (block_label : String) (block_md : MetaData P)
+    (hoare : HoareTriple P extendEval
+      (fun ρ => ρ.eval ρ.store pre_expr = some HasBool.tt)
+      st
+      (fun ρ => ρ.eval ρ.store post_expr = some HasBool.tt)) :
+    AssertValid P extendEval
+      (hoareBlock P pre_label pre_expr pre_md st post_label post_expr post_md block_label block_md)
+      ⟨post_label, post_expr⟩ := by
+  sorry
+
+theorem assertValid_implies_hoareTriple_general
+    (pre_label : String) (pre_expr : P.Expr) (pre_md : MetaData P)
+    (st : Stmt P (Cmd P))
+    (post_label : String) (post_expr : P.Expr) (post_md : MetaData P)
+    (block_label : String) (block_md : MetaData P)
+    (hvalid : AssertValid P extendEval
+      (hoareBlock P pre_label pre_expr pre_md st post_label post_expr post_md block_label block_md)
+      ⟨post_label, post_expr⟩)
+    (hprogress : ∀ (ρ₀ : Env P),
+      ρ₀.eval ρ₀.store pre_expr = some HasBool.tt →
+      ∃ (ρ' : Env P),
+        StepStmtStar P (EvalCmd P) extendEval (.stmt st ρ₀) (.terminal ρ')) :
+    HoareTriple P extendEval
+      (fun ρ => ρ.eval ρ.store pre_expr = some HasBool.tt)
+      st
+      (fun ρ => ρ.eval ρ.store post_expr = some HasBool.tt) := by
+  sorry
 
 /-! ## Transformation Correctness
 
@@ -275,13 +340,7 @@ for every assert `a`, if `T s = some s'` and `a` is valid in `s'`,
 then `a` is valid in `s`.
 -/
 
-/-- A transformation is *sound* if it preserves assertion validity:
-    whenever `T s = some s'` and assert `a` is valid in `s'`,
-    then `a` is also valid in `s`.
-
-    Note the direction: valid in T(s) ⟹ valid in s.
-    This means T does not fabricate validity — if T(s) says "all asserts
-    pass," then they genuinely pass in s. -/
+/-- A transformation is *sound* if it preserves assertion validity. -/
 def Sound
     (T : Stmt P (Cmd P) → Option (Stmt P (Cmd P))) : Prop :=
   ∀ (s s' : Stmt P (Cmd P)) (a : AssertId P),
@@ -331,12 +390,7 @@ theorem sound_allAsserts
   fun a => sound_assertValid P extendEval T a s s' ht hsound (hvalid a)
 
 /-- If `T` is sound and the assert-specific Hoare triple holds for the
-    output `s'`, then it also holds for the input `s`.
-
-    Note: `hs` / `hs'` (requiring `s` and `s'` to be single assert
-    commands) are needed because the equivalence between Hoare triples
-    and `AssertValid` only applies to single assert commands.
-    For compound statements, use `sound_allAsserts` directly. -/
+    output `s'`, then it also holds for the input `s`. -/
 theorem sound_hoareTriple
     (T : Stmt P (Cmd P) → Option (Stmt P (Cmd P)))
     (label : String) (expr : P.Expr) (md md' : MetaData P)
@@ -345,8 +399,9 @@ theorem sound_hoareTriple
     (hs' : s' = .cmd (.assert label expr md'))
     (ht : T s = some s')
     (hsound : Sound P extendEval T)
-    (hprogress : ∀ (ρ₀ : Env P) (pc₀ : ProgramCounter),
-      ∃ (ρ' : Env P), StepStmtStar P (EvalCmd P) extendEval (.stmt s' ρ₀ pc₀) (.terminal ρ'))
+    (hprogress : ∀ (ρ₀ : Env P),
+      ∃ (ρ' : Env P),
+        StepStmtStar P (EvalCmd P) extendEval (.stmt s' ρ₀) (.terminal ρ'))
     (hoare : HoareTriple P extendEval
       (fun _ => True) s'
       (fun ρ' => ρ'.eval ρ'.store expr = some HasBool.tt)) :
