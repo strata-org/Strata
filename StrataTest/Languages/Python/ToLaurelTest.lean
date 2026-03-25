@@ -78,8 +78,8 @@ private def fmtTypeDef : TypeDefinition → String
   | .Datatype ty => s!"datatype {ty.name}"
 
 /-- Run signaturesToLaurel and print formatted output. Asserts no errors. -/
-private def runTest (sigs : Array Signature) : IO Unit := do
-  let result := signaturesToLaurel "<test>" sigs
+private def runTest (sigs : Array Signature) (modulePrefix : String := "") : IO Unit := do
+  let result := signaturesToLaurel "<test>" sigs modulePrefix
   assert! result.errors.size = 0
   for td in result.program.types do
     IO.println (fmtTypeDef td)
@@ -87,8 +87,8 @@ private def runTest (sigs : Array Signature) : IO Unit := do
     IO.println (fmtProc proc)
 
 /-- Run signaturesToLaurel expecting errors. Print error messages. -/
-private def runTestErrors (sigs : Array Signature) : IO Unit := do
-  let result := signaturesToLaurel "<test>" sigs
+private def runTestErrors (sigs : Array Signature) (modulePrefix : String := "") : IO Unit := do
+  let result := signaturesToLaurel "<test>" sigs modulePrefix
   assert! result.errors.size > 0
   for err in result.errors do
     IO.println err.message
@@ -323,8 +323,8 @@ private def mkOverload (name : String) (returnType : SpecType)
 
 /-- Run signaturesToLaurel and print the full result: Laurel output,
     dispatch table, and method registry. Sorts by key for stable output. -/
-private def runFullTest (sigs : Array Signature) : IO Unit := do
-  let result := signaturesToLaurel "<test>" sigs
+private def runFullTest (sigs : Array Signature) (modulePrefix : String := "") : IO Unit := do
+  let result := signaturesToLaurel "<test>" sigs modulePrefix
   if result.errors.size > 0 then
     IO.println s!"errors: {result.errors.size}"
     for err in result.errors do
