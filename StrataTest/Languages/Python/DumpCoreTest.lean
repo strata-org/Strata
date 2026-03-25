@@ -7,6 +7,7 @@ module
 
 meta import Strata.SimpleAPI
 meta import Strata.Languages.Python.PySpecPipeline
+meta import Strata.Languages.Laurel.LaurelFormat
 meta import StrataTest.Util.Python
 
 /-! ## Core IR dump for debugging type checking failures

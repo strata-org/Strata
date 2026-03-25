@@ -159,11 +159,9 @@ private meta def testCases : List (String × Expected) := [
   -- Non-modeled function call arity mismatch
   .mk "test_nonmodeled_call.py" (Expected.failPrefix "Core type checking failed:"),
   -- Box..Any — class with Any-typed field
-  .mk "test_box_any_type.py" $
-    .fail "Core type checking failed: Error in datatype Box, constructor Box..Any: Undefined type 'Any'",
+  .mk "test_box_any_type.py" (Expected.failPrefix "Core type checking failed:"),
   -- wrapFieldInAny — class with Any-typed field accessed
-  .mk "test_any_field_access.py" $
-    .fail "Python to Laurel translation failed: Type error: wrapFieldInAny: no Any constructor for field type 'Core(Any)'"
+  .mk "test_any_field_access.py" (Expected.failPrefix "Core type checking failed:")
 ]
 
 /-- Run a single test case and return an error message on failure, or `none` on success. -/

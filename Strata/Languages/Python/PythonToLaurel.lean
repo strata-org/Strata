@@ -962,13 +962,13 @@ def createVarDeclStmtsAndCtx (ctx : TranslationContext) (newDecls : List (String
       if acc.any (fun (an, _) => an == n) || ctx.variableTypes.any (fun (vn, _) => vn == n)
       then acc else acc ++ [(n, ty)]) []
   let hoistedDecls : List StmtExprMd := newDecls.map fun (name, tyStr) =>
-      let ty := if tyStr ∈ ctx.compositeTypeNames || tyStr == "PythonError" then
+      let ty := if tyStr ∈ ctx.compositeTypeNames then
           mkHighTypeMd (.UserDefined tyStr)
         else AnyTy
       mkStmtExprMd (StmtExpr.LocalVariable (name : String) ty (some (mkStmtExprMd .Hole)))
   let hoistedCtx := { ctx with variableTypes := ctx.variableTypes ++
       (newDecls.map fun (n, ty) =>
-        if ty ∈ ctx.compositeTypeNames || ty == "PythonError" then (n, ty) else (n, PyLauType.Any)) }
+        if ty ∈ ctx.compositeTypeNames then (n, ty) else (n, PyLauType.Any)) }
   (hoistedDecls, hoistedCtx)
 
 mutual
@@ -1116,7 +1116,7 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
     let bodyDecls := collectDeclaredNamesAndTypes body.val.toList
 
     let errorVarPairs: List (String × String) := (handlers.val.toList.filterMap (λ h => match h with
-          | .ExceptHandler _ _ errname _ => errname.val)).map (λ h => (h.val, "PythonError"))
+          | .ExceptHandler _ _ errname _ => errname.val)).map (λ h => (h.val, "Any"))
 
     let handlerDecls := handlers.val.toList.flatMap fun h => match h with
       | .ExceptHandler _ _ _ hBody => collectDeclaredNamesAndTypes hBody.val.toList
