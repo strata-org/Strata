@@ -31,7 +31,7 @@ ensures_maybe_except_none: ✅ pass (in prelude file)
 loop_guard_calls_Any_to_bool_0: ✅ pass
 loop_guard_end_calls_Any_to_bool_0: ✅ pass
 assert_assert(134)_calls_Any_to_bool_0: ✅ pass (at line 7, col 4)
-assert(134): ❓ unknown (at line 7, col 4)
+Assertion failed at line 7, col 4: assert(134): ❌ fail
 loop_guard_calls_Any_to_bool_0: ✅ pass
 ite_cond_calls_Any_to_bool_0: ✅ pass
 assert_assert(344)_calls_Any_to_bool_0: ✅ pass (at line 16, col 4)
@@ -47,3 +47,6 @@ assert(589): ❓ unknown (at line 27, col 4)
 loop_guard_end_calls_Any_to_bool_0: ✅ pass
 assert_assert(589)_calls_Any_to_bool_0: ✅ pass (at line 27, col 4)
 assert(589): ❓ unknown (at line 27, col 4)
+
+DETAIL: 44 passed, 1 failed, 2 inconclusive
+RESULT: Failures found

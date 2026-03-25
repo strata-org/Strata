@@ -29,4 +29,7 @@ assert_opt_name_none_or_str: ✅ pass (in prelude file)
 assert_opt_name_none_or_bar: ✅ pass (in prelude file)
 ensures_maybe_except_none: ✅ pass (in prelude file)
 assert_assert(285)_calls_Any_to_bool_0: ✅ pass (at line 14, col 4)
-assert(285): ❓ unknown (at line 14, col 4)
+Assertion failed at line 14, col 4: assert(285): ❌ fail
+
+DETAIL: 29 passed, 1 failed, 0 inconclusive
+RESULT: Failures found

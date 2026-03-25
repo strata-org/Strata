@@ -37,7 +37,7 @@ assert(158): ✅ pass (at line 8, col 4)
 loop_guard_calls_Any_to_bool_0: ✅ pass
 loop_guard_end_calls_Any_to_bool_0: ✅ pass
 assert_assert(318)_calls_Any_to_bool_0: ✅ pass (at line 16, col 4)
-assert(318): ❓ unknown (at line 16, col 4)
+Assertion failed at line 16, col 4: assert(318): ❌ fail
 ite_cond_calls_Any_to_bool_0: ✅ pass
 assert_assert(496)_calls_Any_to_bool_0: ✅ pass (at line 25, col 4)
 assert(496): ✅ pass (at line 25, col 4)
@@ -45,3 +45,6 @@ ite_cond_calls_Any_to_bool_0: ✅ pass
 assert_assert(612)_calls_Any_to_bool_0: ✅ pass (at line 32, col 4)
 assert(612): ✅ pass (at line 32, col 4)
 ite_cond_calls_Any_to_bool_0: ✅ pass
+
+DETAIL: 44 passed, 1 failed, 0 inconclusive
+RESULT: Failures found

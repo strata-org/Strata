@@ -302,15 +302,19 @@ public def translateCombinedLaurel (combined : Laurel.Program)
   let (coreOption, errors) := Laurel.translate { emitResolutionErrors := false } combined
   (coreOption.map prependPrelude, errors)
 
-/-- Errors from the pyAnalyzeLaurel pipeline, distinguishing user code
-    errors (detected bugs in Python source) from internal tool errors. -/
+/-- Errors from the pyAnalyzeLaurel pipeline. -/
 public inductive PipelineError where
+  /-- The Python source contains invalid code (bad method name, wrong arguments, etc.). -/
   | userCode (range : SourceRange := .none) (msg : String)
+  /-- The pipeline encountered a Python construct it intentionally does not yet support. -/
+  | knownLimitation (msg : String)
+  /-- An unexpected failure — likely a bug in the tool itself. -/
   | internal (msg : String)
 
 public instance : ToString PipelineError where
   toString
     | .userCode _ msg => s!"User code error: {msg}"
+    | .knownLimitation msg => s!"Known limitation: {msg}"
     | .internal msg => msg
 
 /-- Run the pyAnalyzeLaurel pipeline: read a Python Ion program,
@@ -343,6 +347,8 @@ public def pyAnalyzeLaurel
   let (laurelProgram, _ctx) ←
     match Python.pythonToLaurel' preludeInfo stmts none metadataPath result.overloads with
     | .error (.userPythonError range msg) => throw (.userCode range msg)
+    | .error (.unsupportedConstruct msg ast) =>
+        throw (.knownLimitation s!"Unsupported construct: {msg}\nAST: {ast}")
     | .error e => throw (.internal s!"Python to Laurel translation failed: {e}")
     | .ok result => pure result
 

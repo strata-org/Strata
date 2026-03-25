@@ -28,14 +28,17 @@ assert_name_is_foo: ✅ pass (in prelude file)
 assert_opt_name_none_or_str: ✅ pass (in prelude file)
 assert_opt_name_none_or_bar: ✅ pass (in prelude file)
 ensures_maybe_except_none: ✅ pass (in prelude file)
-loop_guard_calls_Any_to_bool_0: ❓ unknown
+loop_guard_calls_Any_to_bool_0: ❌ fail
 loop_guard_end_calls_Any_to_bool_0: ✅ pass
 assert_assert(325)_calls_Any_to_bool_0: ✅ pass (at line 15, col 4)
 assert(325): ❓ unknown (at line 15, col 4)
 assert_assert(421)_calls_Any_to_bool_0: ✅ pass (at line 18, col 4)
 assert(421): ❓ unknown (at line 18, col 4)
 assert_assert(501)_calls_Any_to_bool_0: ✅ pass (at line 21, col 4)
-assert(501): ❓ unknown (at line 21, col 4)
+Assertion failed at line 21, col 4: assert(501): ❌ fail
 assert_assert(571)_calls_Any_to_bool_0: ✅ pass (at line 24, col 4)
-assert(571): ❓ unknown (at line 24, col 4)
+Assertion failed at line 24, col 4: assert(571): ❌ fail
 ite_cond_calls_Any_to_bool_0: ✅ pass
+
+DETAIL: 34 passed, 3 failed, 2 inconclusive
+RESULT: Failures found
