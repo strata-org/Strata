@@ -122,6 +122,48 @@ where
   | .seq inner ss, label =>
     inner.noMatchingAssert label ∧ Stmt.noMatchingAssert.Stmts.noMatchingAssert ss label
 
+/-- Config-level noFuncDecl predicate. -/
+def Config.noFuncDecl : Config P CmdT → Prop
+  | .stmt s _ => Stmt.noFuncDecl s = true
+  | .stmts ss _ => Block.noFuncDecl ss = true
+  | .terminal _ => True
+  | .exiting _ _ => True
+  | .block _ inner => Config.noFuncDecl inner
+  | .seq inner ss => Config.noFuncDecl inner ∧ Block.noFuncDecl ss = true
+
+/-! ## Well-paired exits
+
+`exitsCoveredByBlocks labels s` holds when every `exit` statement in `s` is caught
+by an enclosing `block` — either within `s` itself or with a label in
+`labels` (representing blocks that enclose `s` externally).
+
+When `s.exitsCoveredByBlocks []`, execution of `s` can never produce `.exiting`. -/
+
+@[expose] def Stmt.exitsCoveredByBlocks : List String → Stmt P CmdT → Prop
+  | _, .cmd _ => True
+  | labels, .block l ss _ => Block.exitsCoveredByBlocks (l :: labels) ss
+  | labels, .ite _ tss ess _ => Block.exitsCoveredByBlocks labels tss ∧ Block.exitsCoveredByBlocks labels ess
+  | labels, .loop _ _ _ body _ => Block.exitsCoveredByBlocks labels body
+  | labels, .exit none _ => labels.length > 0
+  | labels, .exit (some l) _ => l ∈ labels
+  | _, .funcDecl _ _ => True
+  | _, .typeDecl _ _ => True
+where
+  Block.exitsCoveredByBlocks : List String → List (Stmt P CmdT) → Prop
+    | _, [] => True
+    | labels, s :: ss => Stmt.exitsCoveredByBlocks labels s ∧ Block.exitsCoveredByBlocks labels ss
+
+/-- Extend `exitsCoveredByBlocks` to configurations. -/
+@[expose] def Config.exitsCoveredByBlocks : List String → Config P CmdT → Prop
+  | labels, .stmt s _ => s.exitsCoveredByBlocks labels
+  | labels, .stmts ss _ => Stmt.exitsCoveredByBlocks.Block.exitsCoveredByBlocks labels ss
+  | _, .terminal _ => True
+  | labels, .exiting none _ => labels.length > 0
+  | labels, .exiting (some l) _ => l ∈ labels
+  | labels, .block l inner => Config.exitsCoveredByBlocks (l :: labels) inner
+  | labels, .seq inner ss =>
+    Config.exitsCoveredByBlocks labels inner ∧ Stmt.exitsCoveredByBlocks.Block.exitsCoveredByBlocks labels ss
+
 /-! ## Single-step relation
 
 `StepStmt` defines a single execution step from one configuration to another.
@@ -579,6 +621,175 @@ theorem smallStep_hasFailure_irrel
     have ⟨mid₂, hstep₂, heq_mid⟩ := step_simulation P EvalCmd extendEval _ _ _ hstep heq
     have ⟨c₂', hstar₂, heq_final⟩ := ih _ heq_mid
     exact ⟨c₂', .step _ _ _ hstep₂ hstar₂, heq_final⟩
+
+/-! ## Well-paired exits: preservation and no-escape -/
+
+private theorem block_exitsCoveredByBlocks_append
+    (labels : List String) (ss₁ ss₂ : List (Stmt P CmdT))
+    (h₁ : Stmt.exitsCoveredByBlocks.Block.exitsCoveredByBlocks labels ss₁)
+    (h₂ : Stmt.exitsCoveredByBlocks.Block.exitsCoveredByBlocks labels ss₂) :
+    Stmt.exitsCoveredByBlocks.Block.exitsCoveredByBlocks labels (ss₁ ++ ss₂) := by
+  induction ss₁ with
+  | nil => exact h₂
+  | cons s ss ih => exact ⟨h₁.1, ih h₁.2⟩
+
+/-- A single step preserves `Config.exitsCoveredByBlocks`. -/
+private theorem step_preserves_exitsCoveredByBlocks
+    (labels : List String)
+    (c₁ c₂ : Config P CmdT)
+    (hstep : StepStmt P EvalCmd extendEval c₁ c₂)
+    (hwp : c₁.exitsCoveredByBlocks labels) :
+    c₂.exitsCoveredByBlocks labels := by
+  -- Prove a generalized version where labels is universally quantified,
+  -- so the IH works at any nesting depth (needed for step_block_body).
+  suffices ∀ c₁ c₂, StepStmt P EvalCmd extendEval c₁ c₂ →
+      ∀ labels, c₁.exitsCoveredByBlocks labels → c₂.exitsCoveredByBlocks labels by
+    exact this c₁ c₂ hstep labels hwp
+  intro c₁ c₂ hstep
+  induction hstep with
+  | step_cmd => intro _ _; trivial
+  | step_block => intro _ hwp; exact hwp
+  | step_ite_true => intro _ hwp; exact hwp.1
+  | step_ite_false => intro _ hwp; exact hwp.2
+  | step_loop_enter _ _ =>
+    intro labels hwp
+    simp only [Config.exitsCoveredByBlocks, Stmt.exitsCoveredByBlocks] at hwp ⊢
+    exact block_exitsCoveredByBlocks_append (P := P) (CmdT := CmdT) labels _ _ hwp ⟨hwp, True.intro⟩
+  | step_loop_exit => intro _ _; trivial
+  | step_exit =>
+    intro labels hwp
+    -- hwp is about .stmt (.exit lbl md) but goal is about .exiting lbl
+    -- Both pattern-match on the Option lbl; case split to reduce.
+    revert hwp; cases ‹Option String› <;> exact id
+  | step_funcDecl => intro _ _; trivial
+  | step_typeDecl => intro _ _; trivial
+  | step_stmts_nil => intro _ _; trivial
+  | step_stmts_cons => intro _ hwp; exact ⟨hwp.1, hwp.2⟩
+  | step_seq_inner _ ih => intro labels hwp; exact ⟨ih labels hwp.1, hwp.2⟩
+  | step_seq_done => intro _ hwp; exact hwp.2
+  | step_seq_exit => intro _ hwp; exact hwp.1
+  | step_block_body _ ih => intro labels hwp; exact ih _ hwp
+  | step_block_done => intro _ _; trivial
+  | step_block_exit_none => intro _ _; trivial
+  | step_block_exit_match => intro _ _; trivial
+  | step_block_exit_mismatch hne =>
+    intro labels hwp
+    simp only [Config.exitsCoveredByBlocks, List.mem_cons] at hwp ⊢
+    exact hwp.resolve_left (fun h => hne (h ▸ rfl))
+
+/-- Well-paired statements cannot escape via `.exiting`:
+    if all exits in `s` are caught by enclosing blocks
+    (`s.exitsCoveredByBlocks []`), then `s` never reaches `.exiting`. -/
+theorem exitsCoveredByBlocks_noEscape
+    (s : Stmt P CmdT)
+    (hwp : s.exitsCoveredByBlocks []) :
+    ∀ (ρ : Env P) (lbl : Option String) (ρ' : Env P),
+      ¬ StepStmtStar P EvalCmd extendEval (.stmt s ρ) (.exiting lbl ρ') := by
+  intro ρ lbl ρ' hstar
+  -- Prove Config.exitsCoveredByBlocks [] is preserved, then show .exiting contradicts it.
+  suffices ∀ c₁ c₂,
+      c₁.exitsCoveredByBlocks ([] : List String) →
+      StepStmtStar P EvalCmd extendEval c₁ c₂ →
+      c₂.exitsCoveredByBlocks ([] : List String) by
+    have hwp' := this _ _ (show Config.exitsCoveredByBlocks [] (.stmt s ρ) from hwp) hstar
+    -- Config.exitsCoveredByBlocks [] (.exiting lbl ρ') requires:
+    --   lbl = none → [].length > 0 (False)
+    --   lbl = some l → l ∈ [] (False)
+    cases lbl with
+    | none => exact absurd hwp' (by simp [Config.exitsCoveredByBlocks])
+    | some l => exact absurd hwp' (by simp [Config.exitsCoveredByBlocks])
+  intro c₁ c₂ hwp_c hstar_c
+  induction hstar_c with
+  | refl => exact hwp_c
+  | step _ _ _ hstep _ ih =>
+    exact ih (step_preserves_exitsCoveredByBlocks P EvalCmd extendEval [] _ _ hstep hwp_c)
+
+/-! ## noFuncDecl preserves eval (small-step) -/
+
+/-- A single step preserves eval when noFuncDecl holds.
+    The only step that changes eval is step_funcDecl, which is excluded. -/
+private theorem step_preserves_eval_noFuncDecl
+    (c₁ c₂ : Config P CmdT)
+    (hstep : StepStmt P EvalCmd extendEval c₁ c₂)
+    (hnofd : Config.noFuncDecl c₁) :
+    c₂.getEnv.eval = c₁.getEnv.eval ∧ Config.noFuncDecl c₂ := by
+  suffices ∀ c₁ c₂, StepStmt P EvalCmd extendEval c₁ c₂ →
+      ∀ (_ : Config.noFuncDecl c₁),
+      c₂.getEnv.eval = c₁.getEnv.eval ∧ Config.noFuncDecl c₂ by
+    exact this c₁ c₂ hstep hnofd
+  intro c₁ c₂ hstep
+  induction hstep with
+  | step_cmd => intro _; exact ⟨rfl, trivial⟩
+  | step_block =>
+    intro hnofd
+    simp only [Config.noFuncDecl, Stmt.noFuncDecl] at hnofd ⊢
+    exact ⟨rfl, hnofd⟩
+  | step_ite_true =>
+    intro hnofd
+    simp only [Config.noFuncDecl, Stmt.noFuncDecl, Bool.and_eq_true] at hnofd
+    exact ⟨rfl, hnofd.1⟩
+  | step_ite_false =>
+    intro hnofd
+    simp only [Config.noFuncDecl, Stmt.noFuncDecl, Bool.and_eq_true] at hnofd
+    exact ⟨rfl, hnofd.2⟩
+  | step_loop_enter =>
+    intro hnofd
+    refine ⟨rfl, ?_⟩
+    simp only [Config.noFuncDecl, Stmt.noFuncDecl] at hnofd ⊢
+    -- Need: Block.noFuncDecl (body ++ [loop]) from Block.noFuncDecl body
+    have h_append : ∀ (ss₁ ss₂ : List (Stmt P CmdT)),
+        Block.noFuncDecl ss₁ = true → Block.noFuncDecl ss₂ = true →
+        Block.noFuncDecl (ss₁ ++ ss₂) = true := by
+      intro ss₁; induction ss₁ with
+      | nil => intro _ _ h; exact h
+      | cons s ss ih =>
+        intro ss₂ h₁ h₂
+        simp only [Block.noFuncDecl] at h₁ ⊢
+        cases hs : Stmt.noFuncDecl s
+        · simp [hs] at h₁
+        · simp_all [Block.noFuncDecl]
+    exact h_append _ _ hnofd (by simp [Block.noFuncDecl, Stmt.noFuncDecl, hnofd])
+  | step_loop_exit => intro _; exact ⟨rfl, trivial⟩
+  | step_exit => intro _; exact ⟨rfl, trivial⟩
+  | step_funcDecl =>
+    intro hnofd; simp [Config.noFuncDecl, Stmt.noFuncDecl] at hnofd
+  | step_typeDecl => intro _; exact ⟨rfl, trivial⟩
+  | step_stmts_nil => intro _; exact ⟨rfl, trivial⟩
+  | step_stmts_cons =>
+    intro hnofd
+    refine ⟨rfl, ?_⟩
+    simp only [Config.noFuncDecl, Block.noFuncDecl, Bool.and_eq_true] at hnofd ⊢
+    exact hnofd
+  | step_seq_inner _ ih =>
+    intro hnofd
+    have ⟨heq, hnofd'⟩ := ih hnofd.1
+    exact ⟨heq, hnofd', hnofd.2⟩
+  | step_seq_done => intro hnofd; exact ⟨rfl, hnofd.2⟩
+  | step_seq_exit => intro _; exact ⟨rfl, trivial⟩
+  | step_block_body _ ih => intro hnofd; exact ih hnofd
+  | step_block_done => intro _; exact ⟨rfl, trivial⟩
+  | step_block_exit_none => intro _; exact ⟨rfl, trivial⟩
+  | step_block_exit_match => intro _; exact ⟨rfl, trivial⟩
+  | step_block_exit_mismatch => intro _; exact ⟨rfl, trivial⟩
+
+/-- When a statement has no function declarations, small-step execution
+    preserves the evaluator. -/
+theorem smallStep_noFuncDecl_preserves_eval
+    (s : Stmt P CmdT) (ρ ρ' : Env P)
+    (hnofd : Stmt.noFuncDecl s = true)
+    (hstar : StepStmtStar P EvalCmd extendEval (.stmt s ρ) (.terminal ρ')) :
+    ρ'.eval = ρ.eval := by
+  suffices ∀ c₁ c₂,
+      Config.noFuncDecl c₁ →
+      StepStmtStar P EvalCmd extendEval c₁ c₂ →
+      c₂.getEnv.eval = c₁.getEnv.eval by
+    exact this _ _ (show Config.noFuncDecl (.stmt s ρ) from hnofd) hstar
+  intro c₁ c₂ hnofd_c hstar_c
+  induction hstar_c with
+  | refl => rfl
+  | step _ mid _ hstep _ ih =>
+    have ⟨heq, hnofd_mid⟩ := step_preserves_eval_noFuncDecl P EvalCmd extendEval _ _ hstep hnofd_c
+    rw [ih hnofd_mid, heq]
 
 end -- section
 
