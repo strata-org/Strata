@@ -9,6 +9,8 @@ List_set_body_calls_List_set_0: ✅ pass
 DictStrAny_get_body_calls_DictStrAny_get_0: ✅ pass
 Any_get_body_calls_DictStrAny_get_0: ✅ pass
 Any_get_body_calls_List_get_1: ✅ pass
+Any_get_body_calls_List_slice_2: ✅ pass
+Any_get_body_calls_List_drop_3: ✅ pass
 Any_get!_body_calls_DictStrAny_get_0: ✅ pass
 Any_get!_body_calls_List_get_1: ✅ pass
 Any_set_body_calls_List_set_0: ✅ pass
@@ -29,9 +31,9 @@ ensures_maybe_except_none: ✅ pass (in prelude file)
 (Origin_test_helper_procedure_Requires)req_name_is_foo: ❓ unknown (in prelude file)
 (Origin_test_helper_procedure_Requires)req_opt_name_none_or_str: ✅ pass (in prelude file)
 (Origin_test_helper_procedure_Requires)req_opt_name_none_or_bar: ✅ pass (in prelude file)
-(Origin_test_helper_procedure_Requires)req_name_is_foo: ❓ unknown (in prelude file)
+(Origin_test_helper_procedure_Requires)req_name_is_foo: ✅ pass (in prelude file)
 (Origin_test_helper_procedure_Requires)req_opt_name_none_or_str: ✅ pass (in prelude file)
 (Origin_test_helper_procedure_Requires)req_opt_name_none_or_bar: ✅ pass (in prelude file)
-(Origin_test_helper_procedure_Requires)req_name_is_foo: ❓ unknown (in prelude file)
+(Origin_test_helper_procedure_Requires)req_name_is_foo: ✅ pass (in prelude file)
 (Origin_test_helper_procedure_Requires)req_opt_name_none_or_str: ✅ pass (in prelude file)
 (Origin_test_helper_procedure_Requires)req_opt_name_none_or_bar: ✅ pass (in prelude file)

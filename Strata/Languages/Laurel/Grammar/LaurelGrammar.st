@@ -9,6 +9,8 @@ op boolType : LaurelType => "bool";
 op realType : LaurelType => "real";
 op float64Type : LaurelType => "float64";
 op stringType : LaurelType => "string";
+// Core type passthrough: parsed as Ident, translated to HighType.TCore
+op coreType (name: Ident): LaurelType => "Core " name;
 op mapType (keyType: LaurelType, valueType: LaurelType): LaurelType => "Map " keyType " " valueType;
 op compositeType (name: Ident): LaurelType => name;
 
@@ -94,6 +96,8 @@ op assert (cond : StmtExpr, errorMessage: Option OptionalErrorMessage) : StmtExp
 op assume (cond : StmtExpr) : StmtExpr => @[prec(0)] "assume " cond:0;
 op return (value : StmtExpr) : StmtExpr => @[prec(0)] "return " value:0;
 op block (stmts : SemicolonSepBy StmtExpr) : StmtExpr => @[prec(1000)] "{" stmts "}";
+op labelledBlock (stmts : SemicolonSepBy StmtExpr, label : Ident) : StmtExpr => @[prec(1000)] "{" stmts "}" label;
+op exit (label : Ident) : StmtExpr => @[prec(0)] "exit " label;
 
 // While loops
 category InvariantClause;
@@ -122,7 +126,6 @@ category OptionalExtends;
 op optionalExtends(parents: CommaSepBy Ident): OptionalExtends => "extends " parents;
 
 category Composite;
-op composite (name: Ident, extending: Option OptionalExtends, fields: Seq Field): Composite => "composite " name extending "{" fields "}";
 
 // Datatype definitions
 category DatatypeConstructorArg;
@@ -176,6 +179,8 @@ op function (name : Ident, parameters: CommaSepBy Parameter,
   modifies: Seq ModifiesClause,
   body : Option OptionalBody) : Procedure =>
   "function " name "(" parameters ")" returnType returnParameters requires ensures modifies body ";";
+
+op composite (name: Ident, extending: Option OptionalExtends, fields: Seq Field, procedures: Seq Procedure): Composite => "composite " name extending "{" fields procedures "}";
 
 category ConstrainedType;
 op constrainedType (name: Ident, valueName: Ident, base: LaurelType,

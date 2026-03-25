@@ -243,7 +243,7 @@ def pySpecs (pythonFile strataDir dialectFile : System.FilePath)
     | .error e => throw s!"Invalid module name '{fileStem}': {e}"
 
   let skipIdents := skipNames.foldl (init := {}) fun acc s =>
-    match Strata.Python.Specs.PythonIdent.ofString s with
+    match Python.PythonIdent.ofString s with
     | some id => acc.insert id
     | none => acc.insert { pythonModule := fileStem, name := s }
 
@@ -286,14 +286,15 @@ def pyTranslateLaurel
     (pythonIonPath : String)
     (dispatchPaths : Array String := #[])
     (pyspecPaths : Array String := #[])
-    : EIO String Core.Program := do
+    : EIO String (Core.Program × List DiagnosticModel) := do
   let laurel ←
     match ← pyAnalyzeLaurel pythonIonPath dispatchPaths pyspecPaths |>.toBaseIO with
     | .ok r => pure r
     | .error err => throw (toString err)
-  match translateCombinedLaurel laurel with
-  | .error diagnostics => throw s!"Laurel to Core translation failed: {diagnostics}"
-  | .ok (core, _) => pure core
+  let (coreOption, laurelTranslateErrors) := translateCombinedLaurel laurel
+  match coreOption with
+  | none => throw s!"Laurel to Core translation failed: {laurelTranslateErrors}"
+  | some core => pure (core, laurelTranslateErrors)
 
 /-! ### Deductive verification of Core programs -/
 

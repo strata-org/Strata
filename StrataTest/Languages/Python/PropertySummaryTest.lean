@@ -50,7 +50,7 @@ private meta def getPropertySummaries (pythonCmd : System.FilePath) : IO (Array 
     if exitCode ≠ 0 then
       throw <| .userError s!"py_to_strata failed: {stderr}"
     -- Translate to Core
-    let core ← match ← pyTranslateLaurel ionFile.toString |>.toBaseIO with
+    let (core, _diags) ← match ← pyTranslateLaurel ionFile.toString |>.toBaseIO with
       | .ok r => pure r
       | .error msg => throw <| .userError s!"pyTranslateLaurel failed: {msg}"
     -- Verify

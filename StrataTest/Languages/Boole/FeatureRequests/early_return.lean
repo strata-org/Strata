@@ -18,7 +18,11 @@ private def earlyReturnSeed : Strata.Program :=
 #strata
 program Boole;
 
-// Target shape once Boole has native return support:
+// Target shape once Boole has native return support.
+//
+// Preferred implementation strategy: wrap the procedure body in a
+// synthetic labeled block and lower `return` to output assignments plus
+// `exit` from that block.
 //
 // procedure abs_seed(x: int) returns (r: int)
 // spec {
@@ -47,7 +51,12 @@ spec {
 };
 #end
 
-#eval Strata.Boole.verify "cvc5" earlyReturnSeed
+/-- info:
+Obligation: abs_seed_ensures_0_813
+Property: assert
+Result: ✅ pass-/
+#guard_msgs in
+#eval Strata.Boole.verify "cvc5" earlyReturnSeed (options := .quiet)
 
 example : Strata.smtVCsCorrect earlyReturnSeed := by
   gen_smt_vcs

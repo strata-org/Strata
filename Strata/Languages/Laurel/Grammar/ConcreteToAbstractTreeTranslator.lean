@@ -93,6 +93,7 @@ partial def translateHighType (arg : Arg) : TransM HighTypeMd := do
     | q`Laurel.float64Type, _ => return mkHighTypeMd .TFloat64 md
     | q`Laurel.realType, _ => return mkHighTypeMd .TReal md
     | q`Laurel.stringType, _ => return mkHighTypeMd .TString md
+    | q`Laurel.coreType, #[.ident _ name] => return mkHighTypeMd (.TCore name) md
     | q`Laurel.mapType, #[keyArg, valArg] =>
       let keyType ← translateHighType keyArg
       let valType ← translateHighType valArg
@@ -201,6 +202,13 @@ partial def translateStmtExpr (arg : Arg) : TransM StmtExprMd := do
     | q`Laurel.block, #[arg0] =>
       let stmts ← translateSeqCommand arg0
       return mkStmtExprMd (.Block stmts none) md
+    | q`Laurel.labelledBlock, #[arg0, arg1] =>
+      let stmts ← translateSeqCommand arg0
+      let label ← translateIdent arg1
+      return mkStmtExprMd (.Block stmts (some label.text)) md
+    | q`Laurel.exit, #[arg0] =>
+      let label ← translateIdent arg0
+      return mkStmtExprMd (.Exit label.text) md
     | q`Laurel.literalBool, #[arg0] => return mkStmtExprMd (.LiteralBool (← translateBool arg0)) md
     | q`Laurel.int, #[arg0] =>
       let n ← translateNat arg0
@@ -504,7 +512,7 @@ def parseComposite (arg : Arg) : TransM TypeDefinition := do
   let .op op := arg
     | TransM.error s!"parseComposite expects operation"
   match op.name, op.args with
-  | q`Laurel.composite, #[nameArg, extendsArg, fieldsArg] =>
+  | q`Laurel.composite, #[nameArg, extendsArg, fieldsArg, procsArg] =>
     let name ← translateIdent nameArg
     let extending ← match extendsArg with
       | .option _ (some (.op extendsOp)) => match extendsOp.name, extendsOp.args with
@@ -518,7 +526,10 @@ def parseComposite (arg : Arg) : TransM TypeDefinition := do
     let fields ← match fieldsArg with
       | .seq _ _ args => args.toList.mapM parseField
       | _ => pure []
-    return .Composite { name := name, extending := extending, fields := fields, instanceProcedures := [] }
+    let instanceProcedures ← match procsArg with
+      | .seq _ _ args => args.toList.mapM parseProcedure
+      | _ => pure []
+    return .Composite { name := name, extending := extending, fields := fields, instanceProcedures := instanceProcedures }
   | _, _ =>
     TransM.error s!"parseComposite expects composite, got {repr op.name}"
 

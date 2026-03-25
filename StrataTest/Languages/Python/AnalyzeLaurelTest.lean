@@ -7,6 +7,7 @@ module
 
 meta import Strata.SimpleAPI
 meta import Strata.Languages.Python.PySpecPipeline
+meta import Strata.Languages.Python.PyFactory
 meta import StrataTest.Util.Python
 
 /-! ## End-to-end tests for `pyAnalyzeLaurel` with dispatch
@@ -94,8 +95,12 @@ private meta def runAnalyze (dispatchIon : System.FilePath)
     | .ok r => pure r
     | .error err => return .error (toString err)
   match Strata.translateCombinedLaurel laurel with
-  | .error diagnostics => return .error s!"Laurel to Core translation failed: {diagnostics}"
-  | .ok (core, _) => return .ok core
+  | (some core, []) =>
+    -- Also run Core type checking to catch semantic errors (e.g. Heap vs Any)
+    match Core.typeCheck Core.VerifyOptions.quiet core (moreFns := Strata.Python.ReFactory) with
+    | .error diag => return .error s!"Core type checking failed: {diag}"
+    | .ok _ => return .ok core
+  | (_, errors) => return .error s!"Laurel to Core translation failed: {errors}"
 
 /-- Expected outcome for a test case. -/
 private inductive Expected where
@@ -109,6 +114,10 @@ private meta def testCases : List (String × Expected) := [
   .mk "test_multi_service.py" .success,
   .mk "test_annotation_fallback.py" .success,
   .mk "test_required_with_optional.py" .success,
+  .mk "test_heap_return.py" .success,
+  .mk "test_list_str.py" .success,
+  .mk "test_nested_try.py" .success,
+  .mk "test_try_scope.py" .success,
   -- Negative tests
   .mk "test_invalid_service.py" $
     .fail "User code error: 'connect' called with unknown string \"invalid\"; known services: #[messaging, storage]",

@@ -317,7 +317,7 @@ def pyAnalyzeCommand : Command where
               { VerifyOptions.default with
                 stopOnFirstError := false,
                 verbose := verboseMode,
-                removeIrrelevantAxioms := true,
+                removeIrrelevantAxioms := .Precise,
                 solver := solverName }
       let runVerification tempDir :=
           EIO.toIO
@@ -424,11 +424,12 @@ def pyAnalyzeLaurelCommand : Command where
       IO.println "\n==== Laurel Program ===="
       IO.println f!"{combinedLaurel}"
 
+    let (coreProgramOption, laurelTranslateErrors) := Strata.translateCombinedLaurel combinedLaurel
     let coreProgram ←
-      match Strata.translateCombinedLaurel combinedLaurel with
-      | .error diagnostics =>
-        exitInternalError s!"Laurel to Core translation failed: {diagnostics}"
-      | .ok (core, _) => pure core
+      match coreProgramOption with
+      | none =>
+        exitInternalError s!"Laurel to Core translation failed: {laurelTranslateErrors}"
+      | some core => pure core
 
     if verbose then
       IO.println "\n==== Core Program ===="
@@ -440,14 +441,22 @@ def pyAnalyzeLaurelCommand : Command where
     let baseOptions : VerifyOptions :=
       { VerifyOptions.default with
         stopOnFirstError := false, verbose := .quiet, solver := "z3",
+        removeIrrelevantAxioms := .Off,
         checkMode := checkMode, checkLevel := checkLevel }
     let options : VerifyOptions := match pflags.getString "vc-directory" with
       | .some dir => { baseOptions with vcDirectory := some (dir : System.FilePath) }
       | .none => baseOptions
     let vcResults ←
-      match ← Strata.verifyCore coreProgram options |>.toBaseIO with
+      match ← Strata.verifyCore coreProgram options
+                (moreFns := Strata.Python.ReFactory) |>.toBaseIO with
       | .ok r => pure r
       | .error msg => exitInternalError msg
+
+    -- Print results
+    if !laurelTranslateErrors.isEmpty then
+      IO.println "\n==== Errors ===="
+      for err in laurelTranslateErrors do
+        IO.println err
 
     -- Print results
     IO.println "\n==== Verification Results ===="
@@ -518,7 +527,7 @@ def pyAnalyzeToGotoCommand : Command where
     | ⟨.error e, _⟩ => panic! e
     | ⟨.ok (_changed, newPgm), _⟩ =>
       -- Type-check the full program (registers Python types like ExceptOrNone)
-      let Ctx := { Lambda.LContext.default with functions := Core.Factory, knownTypes := Core.KnownTypes }
+      let Ctx := { Lambda.LContext.default with functions := Strata.Python.PythonFactory, knownTypes := Core.KnownTypes }
       let Env := Lambda.TEnv.default
       let (tcPgm, _) ← match Core.Program.typeCheck Ctx Env newPgm with
         | .ok r => pure r
@@ -545,6 +554,7 @@ def pyAnalyzeToGotoCommand : Command where
           | .ok s => pure (Lean.toJson s)
           | .error e => panic! s!"{e}"
         let (symtab, goto) ← emitProcWithLifted Env procName ctx liftedFuncs extraSyms
+              (moduleName := baseName)
         let symTabFile := s!"{baseName}.symtab.json"
         let gotoFile := s!"{baseName}.goto.json"
         IO.FS.writeFile symTabFile symtab.pretty
@@ -586,13 +596,14 @@ def pyAnalyzeLaurelToGotoCommand : Command where
     let filePath := v[0]
     let dispatchFiles := pflags.getRepeated "dispatch"
     let pyspecFiles := pflags.getRepeated "pyspec"
-    let coreProgram ←
+    let (coreProgram, laurelTranslateErrors) ←
       match ← Strata.pyTranslateLaurel filePath dispatchFiles pyspecFiles |>.toBaseIO with
       | .ok r => pure r
       | .error msg => exitFailure msg
     let sourceText := (← tryReadPythonSource filePath).map (·.2)
     let baseName := deriveBaseName filePath
-    match ← Strata.inlineCoreToGotoFiles coreProgram baseName sourceText |>.toBaseIO with
+    match ← Strata.inlineCoreToGotoFiles coreProgram baseName sourceText
+              (factory := Strata.Python.PythonFactory) |>.toBaseIO with
     | .ok () => pure ()
     | .error msg => exitFailure msg
 
@@ -753,13 +764,14 @@ def laurelAnalyzeCommand : Command where
     match transResult with
     | .error transErrors => exitFailure s!"Translation errors: {transErrors}"
     | .ok laurelProgram =>
-      let results ← Strata.Laurel.verifyToVcResults laurelProgram laurelVerifyOptions
-      match results with
-      | .error errors =>
+      let (vcResultsOption, errors) ← Strata.Laurel.verifyToVcResults laurelProgram { VerifyOptions.default with solver := "z3" }
+      if !errors.isEmpty then
         IO.println s!"==== ERRORS ===="
-        for err in errors do
-          IO.println s!"{err.message}"
-      | .ok vcResults =>
+      for err in errors do
+        IO.println s!"{err.message}"
+      match vcResultsOption with
+      | none => return
+      | some vcResults =>
         IO.println s!"==== RESULTS ===="
         for vc in vcResults do
           IO.println s!"{vc.obligation.label}: {match vc.outcome with | .ok o => repr o | .error e => e}"
@@ -781,11 +793,11 @@ def laurelAnalyzeToGotoCommand : Command where
     | .error transErrors => exitFailure s!"Translation errors: {transErrors}"
     | .ok laurelProgram =>
       match Strata.Laurel.translate {} laurelProgram with
-      | .error diags => exitFailure s!"Core translation errors: {diags.map (·.message)}"
-      | .ok coreProgram =>
+      | (none, diags) => exitFailure s!"Core translation errors: {diags.map (·.message)}"
+      | (some coreProgram, errors) =>
         let Ctx := { Lambda.LContext.default with functions := Core.Factory, knownTypes := Core.KnownTypes }
         let Env := Lambda.TEnv.default
-        let (tcPgm, _) ← match Core.Program.typeCheck Ctx Env coreProgram.fst with
+        let (tcPgm, _) ← match Core.Program.typeCheck Ctx Env coreProgram with
           | .ok r => pure r
           | .error e => panic! s!"{e.format none}"
         let procs := tcPgm.decls.filterMap fun d => d.getProc?
@@ -853,7 +865,12 @@ def laurelAnalyzeToGotoCommand : Command where
           if !seen.contains k then
             seen := seen.insert k
             dedupPairs := dedupPairs ++ [(k, v)]
-        let symtab := Lean.Json.mkObj dedupPairs
+        -- Add CBMC default symbols (architecture constants, builtins)
+        -- and wrap in {"symbolTable": ...} for symtab2gb
+        let symtabObj := dedupPairs.foldl
+          (fun (acc : Std.TreeMap.Raw String Lean.Json) (k, v) => acc.insert k v)
+          .empty
+        let symtab := CProverGOTO.wrapSymtab symtabObj (moduleName := baseName)
         let goto := Lean.Json.mkObj [("functions", Lean.Json.arr gotoFns)]
         let symTabFile := s!"{baseName}.symtab.json"
         let gotoFile := s!"{baseName}.goto.json"
@@ -910,9 +927,12 @@ def laurelToCoreCommand : Command where
     match transResult with
     | .error transErrors => exitFailure s!"Translation errors: {transErrors}"
     | .ok laurelProgram =>
-      match Strata.Laurel.translate {} laurelProgram with
-      | .error diags => exitFailure s!"Core translation errors: {diags.map (·.message)}"
-      | .ok coreProgram => IO.println (prettyPrintCore coreProgram.fst)
+      let (coreProgramOption, errors) := Strata.Laurel.translate {} laurelProgram
+      if !errors.isEmpty then
+        IO.println s!"Core translation errors: {errors.map (·.message)}"
+      match coreProgramOption with
+      | none => return
+      | some coreProgram => IO.println (prettyPrintCore coreProgram)
 
 /-- Print a string word-wrapped to `width` columns with `indent` spaces of indentation. -/
 private def printIndented (indent : Nat) (s : String) (width : Nat := 80) : IO Unit := do

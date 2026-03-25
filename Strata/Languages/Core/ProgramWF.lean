@@ -302,6 +302,14 @@ private theorem WFFunctionProp_trivial (p : Program) (f : Function) :
   WFFunctionProp p f := by
   constructor
 
+private theorem List.foldlM_error_conditional (f: α → Bool) (g: α → β) (l: List α):
+  List.foldlM (fun _ x =>
+    if f x then Except.error (g x)
+    else Except.ok ()) () l = Except.ok x →
+  ∀ y, y ∈ l → ¬ (f y) := by
+  induction l generalizing x <;> grind
+
+
 attribute [local grind .] Procedure.typeCheckWF
 
 /--
@@ -329,6 +337,36 @@ private theorem Program.typeCheck.goWF : Program.typeCheck.go p C T ds [] = .ok 
       grind
     | .func func md =>
       grind
+    | .recFuncBlock funcs md =>
+      simp only [] at q
+      split at q
+      -- First contradiction: empty funcs list
+      case isTrue =>
+        simp [Except_bind_is_ok, tryCatch, tryCatchThe, MonadExceptOf.tryCatch] at q
+        rcases q with ⟨x, ⟨y, ⟨z, ⟨hcon, _⟩⟩⟩⟩
+        contradiction
+      simp only [Except_bind_is_ok] at q
+      rcases q with ⟨res, ⟨q, hty⟩⟩
+      simp only [Except.tryCatch, tryCatch, tryCatchThe, MonadExceptOf.tryCatch, Except.bind, bind, pure, Except.pure] at q
+      split at q <;> try contradiction
+      cases q
+      rename_i q
+      split at q <;> try contradiction
+      rename_i hinline_poly
+      split at q <;> try contradiction
+      rename_i htypecheck
+      cases q; simp at hty
+      -- Get info about inline, no poly, no dups
+      have hin:= List.foldlM_error_conditional _ _ _ hinline_poly
+      have hnodup := Identifiers.addListWithErrorNoDup ident_eq
+      simp only[Decl.names] at hnodup
+      unfold WFDeclsProp
+      refine (List.Forall_cons (WFDeclProp p) (Decl.recFuncBlock funcs md) t).mpr ?_
+      constructor
+      case right => grind
+      case left =>
+        simp only [WFDeclProp]
+        constructor <;> grind
 
 -- Reasoning about unique identifiers
 
@@ -358,6 +396,15 @@ syntax "split_contra_case" ident : tactic
 macro_rules
   | `(tactic|split_contra_case $t) =>
   `(tactic| split at $t:ident <;> (try contradiction); cases $t:ident)
+
+/-- `List.foldl addFactoryFunction` does not change `idents`. -/
+private theorem foldl_addFactoryFunction_idents {T : LExprParams} {C : LContext T} {fs : List α} {g : α → LFunc T} :
+    (fs.foldl (fun C f => C.addFactoryFunction (g f)) C).idents = C.idents := by
+  induction fs generalizing C with
+  | nil => rfl
+  | cons _ _ ih =>
+    simp only [List.foldl, LContext.addFactoryFunction]
+    exact ih
 
 /-- If `Except.mapError` returns `.ok`, then the underlying result was also `.ok`. -/
 private theorem Except.mapError_ok {α β γ} {f : α → β} {e : Except α γ} {v : γ} :
@@ -431,8 +478,6 @@ private theorem Program.typeCheckFunctionDisjoint :
         grind
     | func f =>
       split_contra_case Hty; rename_i Hty
-      split at Hty <;> try contradiction
-      simp only[pure, Except.pure, Except.mapError] at Hty
       split_contra_case Hty; rename_i Hty
       specialize (IH tcok)
       match hx with
@@ -445,6 +490,25 @@ private theorem Program.typeCheckFunctionDisjoint :
         specialize a_in' tcok a_in x_in
         have a_notin := IH x a_in';
         simp only[LContext.addFactoryFunction] at a_notin
+        grind
+    | recFuncBlock fs =>
+      split_contra_case Hty; rename_i Hty
+      split at Hty <;> try contradiction
+      simp only[pure, Except.pure] at Hty
+      split at Hty <;> try contradiction
+      split at Hty <;> try contradiction
+      cases Hty; simp at tcok
+      rename_i Heq
+      specialize (IH tcok)
+      match hx with
+      | Or.inl hx =>
+        have Hnotin := (Identifiers.addListWithErrorNotin Hid x)
+        simp [Decl.names] at *; grind
+      | Or.inr (Exists.intro a (And.intro a_in x_in)) =>
+        have Hcontains := Identifiers.addListWithErrorContains Hid x
+        specialize a_in' tcok a_in x_in
+        have a_notin := IH x a_in'
+        rw[foldl_addFactoryFunction_idents] at a_notin
         grind
     | type t =>
       cases t with (simp only[] at Hty <;> split_contra_case Hty <;> rename_i Hty; split_contra Hty <;> rename_i Hty)
@@ -530,8 +594,6 @@ private theorem Program.typeCheckFunctionNoDup : Program.typeCheck.go p C T decl
       simp_all; grind
     | func f =>
       split_contra_case Hty; rename_i Hty
-      split at Hty <;> try contradiction
-      simp only[pure, Except.pure, Except.mapError] at Hty
       split_contra_case Hty; rename_i Hty
       specialize (IH tcok)
       apply List.nodup_append.mpr; (repeat (constructor <;> try grind)); apply IH
@@ -541,6 +603,23 @@ private theorem Program.typeCheckFunctionNoDup : Program.typeCheck.go p C T decl
       have x_contains := (Identifiers.addListWithErrorContains Hid x)
       simp_all
       simp[LContext.addFactoryFunction] at Hdisj
+      grind
+    | recFuncBlock fs =>
+      split_contra_case Hty; rename_i Hty
+      split at Hty <;> try contradiction
+      simp only[pure, Except.pure] at Hty
+      split at Hty <;> try contradiction
+      split at Hty <;> try contradiction
+      cases Hty; simp at tcok
+      specialize (IH tcok)
+      apply List.nodup_append.mpr
+      constructor; apply (Identifiers.addListWithErrorNoDup Hid)
+      constructor; apply IH
+      intros a a_in; simp[Decl.names] at a_in
+      intros x x_in
+      have Hdisj := Program.typeCheckFunctionDisjoint tcok _ x_in
+      have x_contains := (Identifiers.addListWithErrorContains Hid x)
+      rw [foldl_addFactoryFunction_idents] at Hdisj
       grind
     | type td =>
       specialize (IH tcok)

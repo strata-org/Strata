@@ -171,6 +171,7 @@ private def typeRange : Boole.Type → SourceRange
   | .bv32 m => m
   | .bv64 m => m
   | .Map m _ _ => m
+  | .Sequence m _ => m
 
 def toCoreMonoType (t : Boole.Type) : TranslateM Lambda.LMonoTy := do
   match t with
@@ -180,6 +181,7 @@ def toCoreMonoType (t : Boole.Type) : TranslateM Lambda.LMonoTy := do
   | .arrow _ a b => return .arrow (← toCoreMonoType a) (← toCoreMonoType b)
   | .bool _ => return .bool
   | .int _ => return .int
+  | .string _ => return .string
   | .bv1 _ => return .bitvec 1
   | .bv8 _ => return .bitvec 8
   | .bv16 _ => return .bitvec 16
@@ -402,7 +404,7 @@ def toCoreStmt (s : BooleDDM.Statement SourceRange) : TranslateM Core.Statement 
   | .if_statement m c t e =>
     let thenb ← withBVars [] (toCoreBlock t)
     let elseb ← withBVars [] <| match e with
-      | .else0 _ => return []
+      | .else0 _ => pure []
       | .else1 _ b => toCoreBlock b
     return .ite (← toCoreExpr c) thenb elseb (← toCoreMetaData m)
   | .havoc_statement m ⟨_, n⟩ =>
@@ -475,7 +477,7 @@ def toCoreStmt (s : BooleDDM.Statement SourceRange) : TranslateM Core.Statement 
       let initExpr ← toCoreExpr init
       let guard := mkCoreApp Core.intLeOp [.fvar () id none, limitExpr]
       let stepExpr ← ((match step? with
-        | none => return (.intConst () 1)
+        | none => pure (.intConst () 1)
         | some (.step _ e) => toCoreExpr e) : TranslateM Core.Expression.Expr)
       let body ← withBVars [] (toCoreBlock body)
       lowerFor
@@ -492,7 +494,7 @@ def toCoreStmt (s : BooleDDM.Statement SourceRange) : TranslateM Core.Statement 
       let initExpr ← toCoreExpr init
       let guard := mkCoreApp Core.intLeOp [limitExpr, .fvar () id none]
       let stepExpr ← ((match step? with
-        | none => return (.intConst () 1)
+        | none => pure (.intConst () 1)
         | some (.step _ e) => toCoreExpr e) : TranslateM Core.Expression.Expr)
       let body ← withBVars [] (toCoreBlock body)
       lowerFor
@@ -517,7 +519,7 @@ private def toCoreDatatypeConstr
   match c with
   | .constructor_mk _ ⟨_, cname⟩ ⟨_, fields?⟩ =>
     let args ← ((match fields? with
-      | none => return []
+      | none => pure []
       | some ⟨_, fs⟩ => fs.toList.mapM toCoreBinding) : TranslateM (List (Core.Expression.Ident × Lambda.LMonoTy)))
     return { name := mkIdent cname
              args := args
@@ -577,7 +579,7 @@ private def lowerPureFuncDef
     (ret : Boole.Type)
     (pres : Array (BooleDDM.SpecElt SourceRange))
     (body : Boole.Expr)
-    (inline : Bool) : TranslateM Core.Decl := do
+    (inline : Bool) : TranslateM Core.Function := do
   withTypeBVars tys do
     let bsList := bindingsToList bs
     let inputs ← bsList.mapM toCoreBinding
@@ -585,7 +587,7 @@ private def lowerPureFuncDef
     let pres ← withBVars inputNames (toCoreSpecElts m n pres)
     let pres := pres.preconditions.map (fun (_, c) => ⟨c.expr, ()⟩)
     let body ← withBVars inputNames (toCoreExpr body)
-    return .func {
+    return {
       name := mkIdent n
       typeArgs := tys
       inputs := inputs
@@ -609,7 +611,7 @@ private def registerCommandSymbols (cmd : BooleDDM.Command SourceRange) : List B
   | .command_constdecl _ _ _ _ => [true]
   | .command_fndecl _ _ _ _ _ => [true]
   | .command_fndef _ _ _ _ _ _ _ _ => [true]
-  | .command_recfndef _ _ _ _ _ _ _ => [true]
+  | .command_recfndefs _ ⟨_, funcs⟩ => funcs.toList.map (fun _ => true)
   | .command_var _ _ => [false]
   -- Procedure names are referenced by call statements directly and are not Expr.fvar symbols.
   | .command_procedure _ _ _ _ _ _ _ => []
@@ -628,18 +630,23 @@ private def initFVarIsOp (p : Boole.Program) : Array Bool :=
 
 def toCoreDecls (cmd : BooleDDM.Command SourceRange) : TranslateM (List Core.Decl) := do
   match cmd with
-  | .command_procedure m ⟨_, n⟩ ⟨_, targs?⟩ ins ⟨_, outs?⟩ ⟨_, spec?⟩ ⟨_, body?⟩ =>
+  | .command_procedure m nameAnn targsAnn ins outsAnn specAnn bodyAnn =>
+    let n := nameAnn.val
+    let targs? := targsAnn.val
+    let outs? := outsAnn.val
+    let spec? := specAnn.val
+    let body? := bodyAnn.val
     let tys := match targs? with | none => [] | some ts => typeArgsToList ts
     withTypeBVars tys do
       let inputs ← (bindingsToList ins).mapM toCoreBinding
       let outputs ← match outs? with
-        | none => return []
+        | none => pure []
         | some os => (monoDeclListToList os).mapM toCoreMonoBind
       let inputNames := inputs.map (·.fst.name)
       let outputNames := outputs.map (·.fst.name)
       let spec ← withBVars (inputNames ++ outputNames) (toCoreSpec m n spec?)
       let body ← match body? with
-        | none => return []
+        | none => pure []
         | some b => withBVars (inputNames ++ outputNames) (toCoreBlock b)
       return [.proc {
         header := { name := mkIdent n, typeArgs := tys, inputs := inputs, outputs := outputs }
@@ -667,10 +674,14 @@ def toCoreDecls (cmd : BooleDDM.Command SourceRange) : TranslateM (List Core.Dec
       return [.func { name := mkIdent n, typeArgs := tys, inputs := ← (bindingsToList bs).mapM toCoreBinding, output := ← toCoreMonoType ret, body := none, concreteEval := none, attr := #[], axioms := [] }]
   | .command_fndef m ⟨_, n⟩ ⟨_, targs?⟩ bs ret ⟨_, pres⟩ body ⟨_, inline?⟩ =>
     let tys := match targs? with | none => [] | some ts => typeArgsToList ts
-    return [← lowerPureFuncDef m n tys bs ret pres body inline?.isSome]
-  | .command_recfndef m ⟨_, n⟩ ⟨_, targs?⟩ bs ret ⟨_, pres⟩ body =>
-    let tys := match targs? with | none => [] | some ts => typeArgsToList ts
-    return [← lowerPureFuncDef m n tys bs ret pres body false]
+    return [.func (← lowerPureFuncDef m n tys bs ret pres body inline?.isSome)]
+  | .command_recfndefs _ ⟨_, funcs⟩ =>
+    let fs ← funcs.toList.mapM fun
+      | .recfn_decl m ⟨_, n⟩ ⟨_, targs?⟩ bs ret ⟨_, pres⟩ body => do
+        let tys := match targs? with | none => [] | some ts => typeArgsToList ts
+        let f ← lowerPureFuncDef m n tys bs ret pres body false
+        return { f with isRecursive := true }
+    return [.recFuncBlock fs]
   | .command_var _ b =>
     let (id, ty) ← toCoreBind b
     let i := (← get).globalVarCounter
