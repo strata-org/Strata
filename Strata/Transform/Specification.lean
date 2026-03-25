@@ -75,6 +75,37 @@ def Config.getEnv : Config P (Cmd P) → Env P
   | .block _ inner => inner.getEnv
   | .seq inner _ => inner.getEnv
 
+variable {P : PureExpr}
+
+/-- `noMatchingAssert` for statements and statement lists.
+    Returns `True` when `s` does not syntactically contain any `assert`
+    command with the given label. -/
+def Stmt.noMatchingAssert : Stmt P (Cmd P) → String → Prop
+  | .cmd (.assert l _ _), label => l ≠ label
+  | .cmd _, _ => True
+  | .block _ ss _, label => Stmts.noMatchingAssert ss label
+  | .ite _ tss ess _, label =>
+    Stmts.noMatchingAssert tss label ∧ Stmts.noMatchingAssert ess label
+  | .loop _ _ _ body _, label => Stmts.noMatchingAssert body label
+  | .exit _ _, _ => True
+  | .funcDecl _ _, _ => True
+  | .typeDecl _ _, _ => True
+where
+  /-- Helper for lists of statements. -/
+  Stmts.noMatchingAssert : List (Stmt P (Cmd P)) → String → Prop
+    | [], _ => True
+    | s :: ss, label => s.noMatchingAssert label ∧ Stmts.noMatchingAssert ss label
+
+/-- Extend `noMatchingAssert` to configurations. -/
+def Config.noMatchingAssert : Config P (Cmd P) → String → Prop
+  | .stmt s _, label => s.noMatchingAssert label
+  | .stmts ss _, label => Stmt.noMatchingAssert.Stmts.noMatchingAssert ss label
+  | .terminal _, _ => True
+  | .exiting _ _, _ => True
+  | .block _ inner, label => inner.noMatchingAssert label
+  | .seq inner ss, label =>
+    inner.noMatchingAssert label ∧ Stmt.noMatchingAssert.Stmts.noMatchingAssert ss label
+
 namespace Specification
 
 variable (P : PureExpr) [HasFvar P] [HasBool P] [HasNot P]
@@ -102,6 +133,109 @@ def isAtAssert : Config P (Cmd P) → AssertId P → Prop
   | .block _ inner, aid => isAtAssert inner aid
   | .seq inner _, aid => isAtAssert inner aid
   | _, _ => False
+
+/-- If a config has no matching assert, then `isAtAssert` doesn't match. -/
+private theorem noMatchingAssert_not_isAtAssert
+    (cfg : Config P (Cmd P)) (label : String) (expr : P.Expr)
+    (hno : cfg.noMatchingAssert label) :
+    ¬ isAtAssert P cfg ⟨label, expr⟩ := by
+  match cfg with
+  | .stmt (.cmd (.assert l _ _)) _ =>
+    simp [Config.noMatchingAssert, Stmt.noMatchingAssert] at hno
+    simp [isAtAssert]; exact fun h _ => hno (h ▸ rfl)
+  | .stmt (.cmd (.init ..)) _ | .stmt (.cmd (.set ..)) _
+  | .stmt (.cmd (.havoc ..)) _ | .stmt (.cmd (.assume ..)) _
+  | .stmt (.cmd (.cover ..)) _
+  | .stmt (.block ..) _ | .stmt (.ite ..) _ | .stmt (.loop ..) _
+  | .stmt (.exit ..) _ | .stmt (.funcDecl ..) _ | .stmt (.typeDecl ..) _ =>
+    simp [isAtAssert]
+  | .stmts [] _ => simp [isAtAssert]
+  | .stmts ((.cmd (.assert l _ _)) :: _) _ =>
+    simp [Config.noMatchingAssert, Stmt.noMatchingAssert.Stmts.noMatchingAssert, Stmt.noMatchingAssert] at hno
+    simp [isAtAssert]; exact fun h _ => hno.1 (h ▸ rfl)
+  | .stmts ((.cmd (.init ..)) :: _) _ | .stmts ((.cmd (.set ..)) :: _) _
+  | .stmts ((.cmd (.havoc ..)) :: _) _ | .stmts ((.cmd (.assume ..)) :: _) _
+  | .stmts ((.cmd (.cover ..)) :: _) _
+  | .stmts ((.block ..) :: _) _ | .stmts ((.ite ..) :: _) _
+  | .stmts ((.loop ..) :: _) _ | .stmts ((.exit ..) :: _) _
+  | .stmts ((.funcDecl ..) :: _) _ | .stmts ((.typeDecl ..) :: _) _ =>
+    simp [isAtAssert]
+  | .terminal _ | .exiting _ _ => simp [isAtAssert]
+  | .block _ inner => exact noMatchingAssert_not_isAtAssert inner label expr hno
+  | .seq inner _ => exact noMatchingAssert_not_isAtAssert inner label expr hno.1
+
+/-- Helper: `Stmts.noMatchingAssert` for concatenation. -/
+private theorem stmts_noMatchingAssert_append
+    (ss₁ ss₂ : List (Stmt P (Cmd P))) (label : String)
+    (h₁ : Stmt.noMatchingAssert.Stmts.noMatchingAssert ss₁ label)
+    (h₂ : Stmt.noMatchingAssert.Stmts.noMatchingAssert ss₂ label) :
+    Stmt.noMatchingAssert.Stmts.noMatchingAssert (ss₁ ++ ss₂) label := by
+  induction ss₁ with
+  | nil => exact h₂
+  | cons s ss ih =>
+    exact ⟨h₁.1, ih h₁.2⟩
+
+/-- A single step preserves `Config.noMatchingAssert`. -/
+private def step_preserves_noMatchingAssert
+    (c₁ c₂ : Config P (Cmd P)) (label : String)
+    (hstep : StepStmt P (EvalCmd P) extendEval c₁ c₂)
+    (hno : c₁.noMatchingAssert label) :
+    c₂.noMatchingAssert label := by
+  cases hstep with
+  | step_cmd => trivial
+  | step_block => exact hno
+  | step_ite_true => exact hno.1
+  | step_ite_false => exact hno.2
+  | step_loop_enter =>
+    -- Config: .stmts (body ++ [.loop ..]) ρ. Need Stmts.noMatchingAssert.
+    -- hno : Stmt.noMatchingAssert (.loop ..) label = Stmts.noMatchingAssert body label
+    simp only [Config.noMatchingAssert, Stmt.noMatchingAssert] at hno ⊢
+    apply stmts_noMatchingAssert_append
+    exact hno
+    exact ⟨hno, True.intro⟩
+  | step_loop_exit => trivial
+  | step_exit => trivial
+  | step_funcDecl => trivial
+  | step_typeDecl => trivial
+  | step_stmts_nil => trivial
+  | step_stmts_cons => exact ⟨hno.1, hno.2⟩
+  | step_seq_inner h =>
+    constructor
+    · apply step_preserves_noMatchingAssert; exact h; exact hno.1
+    · exact hno.2
+  | step_seq_done => exact hno.2
+  | step_seq_exit => trivial
+  | step_block_body h =>
+    -- h : StepStmt inner inner', hno : inner.noMatchingAssert label
+    -- Goal: inner'.noMatchingAssert label (= (.block _ inner').noMatchingAssert)
+    have := step_preserves_noMatchingAssert (c₁ := _) (c₂ := _) (label := _) h hno
+    exact this
+  | step_block_done => trivial
+  | step_block_exit_none => trivial
+  | step_block_exit_match => trivial
+  | step_block_exit_mismatch => trivial
+
+/-- The syntactic check implies that no reachable config from `st`
+    satisfies `isAtAssert` for the given label and expression. -/
+theorem noMatchingAssert_implies_no_reachable_assert
+    (st : Stmt P (Cmd P)) (label : String) (expr : P.Expr)
+    (hno : st.noMatchingAssert label) :
+    ∀ (ρ : Env P) (cfg : Config P (Cmd P)),
+      StepStmtStar P (EvalCmd P) extendEval (.stmt st ρ) cfg →
+      ¬ isAtAssert P cfg ⟨label, expr⟩ := by
+  intro ρ cfg hstar
+  -- Prove cfg.noMatchingAssert by showing it's preserved at each step.
+  suffices ∀ (c₁ c₂ : Config P (Cmd P)),
+      c₁.noMatchingAssert label →
+      StepStmtStar P (EvalCmd P) extendEval c₁ c₂ →
+      c₂.noMatchingAssert label from
+    noMatchingAssert_not_isAtAssert P cfg label expr
+      (this (.stmt st ρ) cfg (show Config.noMatchingAssert (.stmt st ρ) label from hno) hstar)
+  intro c₁ c₂ hno_c hstar_c
+  induction hstar_c with
+  | refl => exact hno_c
+  | step _ _ _ hstep _ ih =>
+    exact ih (@step_preserves_noMatchingAssert P _ _ _ extendEval _ _ _ hstep hno_c)
 
 /-! ## Style A — Reachability-based assertion validity -/
 
@@ -143,105 +277,6 @@ def HoareTriple
     Pre ρ₀ → ρ₀.hasFailure = false →
     StepStmtStar P (EvalCmd P) extendEval (.stmt s ρ₀) (.terminal ρ') →
     Post ρ' ∧ ρ'.hasFailure = false
-
-/-! ## Relationship between Style A and Style B
-
-For a single assert command, the only configuration satisfying `isAtAssert`
-is the initial `.stmt` configuration itself (zero steps from the start),
-because the assert command has exactly one step (to `.terminal`).
--/
-
-/-- Style A implies Style B for a single assert command: if all reachable
-    assert configurations have `expr = true`, then the Hoare triple holds. -/
-theorem assertValid_implies_hoareTriple
-    (label : String) (expr : P.Expr) (md : MetaData P)
-    (s : Stmt P (Cmd P))
-    (hs : s = .cmd (.assert label expr md))
-    (hvalid : AssertValid P extendEval s ⟨label, expr⟩) :
-    HoareTriple P extendEval
-      (fun _ => True) s
-      (fun ρ' => ρ'.eval ρ'.store expr = some HasBool.tt) := by
-  subst hs
-  intro ρ₀ ρ' _ hf₀ hstar
-  cases hstar with
-  | step _ mid _ hstep hrest =>
-    cases hstep with
-    | step_cmd hcmd =>
-      cases hcmd with
-      | eval_assert_pass htt _ =>
-        simp [hf₀] at hrest
-        cases hrest with
-        | refl => exact ⟨htt, rfl⟩
-        | step _ _ _ hstep2 _ => exact absurd hstep2 (by intro h; cases h)
-      | eval_assert_fail hff _ =>
-        have hreach : Reachable P extendEval (.cmd (.assert label expr md)) ρ₀
-            (.stmt (.cmd (.assert label expr md)) ρ₀) :=
-          ReflTrans.refl _
-        have htt := hvalid ρ₀ _ hreach ⟨rfl, rfl⟩
-        simp only [Config.getEval, Config.getStore] at htt
-        rw [hff] at htt
-        exact absurd (Option.some.inj htt) HasBool.tt_is_not_ff.symm
-
-/-- Style B implies Style A for a single assert command, given that the
-    assert is not stuck (i.e., for every initial environment, the assert
-    command can step to terminal). -/
-theorem hoareTriple_implies_assertValid
-    (label : String) (expr : P.Expr) (md : MetaData P)
-    (s : Stmt P (Cmd P))
-    (hs : s = .cmd (.assert label expr md))
-    (hoare : HoareTriple P extendEval
-      (fun _ => True) s
-      (fun ρ' => ρ'.eval ρ'.store expr = some HasBool.tt))
-    (hprogress : ∀ (ρ₀ : Env P),
-      ∃ (ρ' : Env P),
-        StepStmtStar P (EvalCmd P) extendEval (.stmt s ρ₀) (.terminal ρ')) :
-    AssertValid P extendEval s ⟨label, expr⟩ := by
-  subst hs
-  intro ρ₀ cfg hstar hat
-  cases hstar with
-  | refl =>
-    have ⟨ρ', hterm⟩ := hprogress ρ₀
-    simp only [Config.getEval, Config.getStore]
-    cases hterm with
-    | step _ mid _ hstep hrest =>
-      cases hstep with
-      | step_cmd hcmd =>
-        cases hcmd with
-        | eval_assert_pass htt _ => exact htt
-        | eval_assert_fail hff hwfb =>
-          have hterm' : StepStmtStar P (EvalCmd P) extendEval
-              (.stmt (.cmd (.assert label expr md)) { ρ₀ with hasFailure := false })
-              (.terminal { store := ρ₀.store, eval := ρ₀.eval, hasFailure := true }) :=
-            ReflTrans.step _ _ _
-              (StepStmt.step_cmd (EvalCmd.eval_assert_fail hff hwfb))
-              (ReflTrans.refl _)
-          have ⟨_, hf'⟩ := hoare { ρ₀ with hasFailure := false } _ trivial rfl hterm'
-          exact absurd hf' (by simp)
-  | step _ mid _ hstep hrest =>
-    cases hstep with
-    | step_cmd hcmd =>
-      -- mid = .terminal .., which doesn't satisfy isAtAssert
-      cases hrest with
-      | refl => exact absurd hat (by simp [isAtAssert])
-      | step _ _ _ hstep2 _ => exact absurd hstep2 (by intro h; cases h)
-
-/-! ## Equivalence for a single assert command -/
-
-/-- For a single assert command, Style A implies Style B unconditionally.
-    Style B implies Style A given a progress assumption. -/
-theorem assertValid_implies_hoareTriple_iff
-    (label : String) (expr : P.Expr) (md : MetaData P)
-    (s : Stmt P (Cmd P))
-    (hs : s = .cmd (.assert label expr md))
-    (hprogress : ∀ (ρ₀ : Env P),
-      ∃ (ρ' : Env P),
-        StepStmtStar P (EvalCmd P) extendEval (.stmt s ρ₀) (.terminal ρ')) :
-    AssertValid P extendEval s ⟨label, expr⟩ ↔
-    HoareTriple P extendEval
-      (fun _ => True) s
-      (fun ρ' => ρ'.eval ρ'.store expr = some HasBool.tt) :=
-  ⟨assertValid_implies_hoareTriple P extendEval label expr md s hs,
-   fun h => hoareTriple_implies_assertValid P extendEval label expr md s hs h hprogress⟩
 
 /-! ## Small-step helper lemmas -/
 
@@ -327,19 +362,172 @@ private theorem seq_isAtAssert_cases
       | refl => exact absurd hat (by simp [isAtAssert])
       | step _ _ _ h _ => exact absurd h (by intro h; cases h)
 
+/-- Two configs agree on store/eval (may differ on hasFailure). -/
+private def ConfigSE : Config P (Cmd P) → Config P (Cmd P) → Prop
+  | .stmt s₁ ρ₁, .stmt s₂ ρ₂ => s₁ = s₂ ∧ ρ₁.store = ρ₂.store ∧ ρ₁.eval = ρ₂.eval
+  | .stmts ss₁ ρ₁, .stmts ss₂ ρ₂ => ss₁ = ss₂ ∧ ρ₁.store = ρ₂.store ∧ ρ₁.eval = ρ₂.eval
+  | .terminal ρ₁, .terminal ρ₂ => ρ₁.store = ρ₂.store ∧ ρ₁.eval = ρ₂.eval
+  | .exiting l₁ ρ₁, .exiting l₂ ρ₂ => l₁ = l₂ ∧ ρ₁.store = ρ₂.store ∧ ρ₁.eval = ρ₂.eval
+  | .block l₁ i₁, .block l₂ i₂ => l₁ = l₂ ∧ ConfigSE i₁ i₂
+  | .seq i₁ ss₁, .seq i₂ ss₂ => ss₁ = ss₂ ∧ ConfigSE i₁ i₂
+  | _, _ => False
+
+/-- Single-step simulation: if two configs agree on store/eval and one steps,
+    the other can take the same step with store/eval preserved. -/
+private def step_simulation
+    (c₁ c₁' c₂ : Config P (Cmd P))
+    (hstep : StepStmt P (EvalCmd P) extendEval c₁ c₁')
+    (heq : ConfigSE P c₁ c₂) :
+    ∃ c₂', StepStmt P (EvalCmd P) extendEval c₂ c₂' ∧ ConfigSE P c₁' c₂' := by
+  -- Case-split on c₂ to unfold ConfigSE, then apply the matching step rule.
+  -- For each StepStmt constructor, the guard only depends on store/eval
+  -- (which are equal), so the same rule applies to c₂.
+  cases hstep with
+  | step_cmd hcmd =>
+    cases c₂ with
+    | stmt _ ρ₂ => obtain ⟨rfl, hs, he⟩ := heq; exact ⟨_, .step_cmd (hs ▸ he ▸ hcmd), rfl, he⟩
+    | _ => exact nomatch heq
+  | step_block =>
+    cases c₂ with
+    | stmt _ ρ₂ => obtain ⟨rfl, hs, he⟩ := heq; exact ⟨_, .step_block, rfl, rfl, hs, he⟩
+    | _ => exact nomatch heq
+  | step_ite_true hc hw =>
+    cases c₂ with
+    | stmt _ ρ₂ =>
+      have h := heq.1; subst h; exact ⟨_, .step_ite_true (heq.2.2 ▸ heq.2.1 ▸ hc) (heq.2.2 ▸ hw),
+        ⟨rfl, heq.2.1, heq.2.2⟩⟩
+    | _ => exact nomatch heq
+  | step_ite_false hc hw =>
+    cases c₂ with
+    | stmt _ ρ₂ =>
+      have h := heq.1; subst h; exact ⟨_, .step_ite_false (heq.2.2 ▸ heq.2.1 ▸ hc) (heq.2.2 ▸ hw),
+        ⟨rfl, heq.2.1, heq.2.2⟩⟩
+    | _ => exact nomatch heq
+  | step_loop_enter hc hw =>
+    cases c₂ with
+    | stmt _ ρ₂ =>
+      have h := heq.1; subst h; exact ⟨_, .step_loop_enter (heq.2.2 ▸ heq.2.1 ▸ hc) (heq.2.2 ▸ hw),
+        ⟨rfl, heq.2.1, heq.2.2⟩⟩
+    | _ => exact nomatch heq
+  | step_loop_exit hc hw =>
+    cases c₂ with
+    | stmt _ ρ₂ =>
+      have h := heq.1; subst h; exact ⟨_, .step_loop_exit (heq.2.2 ▸ heq.2.1 ▸ hc) (heq.2.2 ▸ hw),
+        ⟨heq.2.1, heq.2.2⟩⟩
+    | _ => exact nomatch heq
+  | step_exit =>
+    cases c₂ with
+    | stmt _ ρ₂ => obtain ⟨rfl, hs, he⟩ := heq; exact ⟨_, .step_exit, rfl, hs, he⟩
+    | _ => exact nomatch heq
+  | step_funcDecl =>
+    cases c₂ with
+    | stmt _ ρ₂ => obtain ⟨rfl, hs, he⟩ := heq; exact ⟨_, .step_funcDecl, hs, by simp [he, hs]⟩
+    | _ => exact nomatch heq
+  | step_typeDecl =>
+    cases c₂ with
+    | stmt _ ρ₂ => obtain ⟨rfl, hs, he⟩ := heq; exact ⟨_, .step_typeDecl, hs, he⟩
+    | _ => exact nomatch heq
+  | step_stmts_nil =>
+    cases c₂ with
+    | stmts _ ρ₂ => obtain ⟨rfl, hs, he⟩ := heq; exact ⟨_, .step_stmts_nil, hs, he⟩
+    | _ => exact nomatch heq
+  | step_stmts_cons =>
+    cases c₂ with
+    | stmts _ ρ₂ => obtain ⟨rfl, hs, he⟩ := heq; exact ⟨_, .step_stmts_cons, rfl, rfl, hs, he⟩
+    | _ => exact nomatch heq
+  | step_seq_inner h =>
+    cases c₂ with
+    | seq i₂ _ =>
+      have hrs := heq.1; subst hrs
+      have ⟨c₂', h₂, heq₂⟩ := step_simulation _ _ _ h heq.2
+      exact ⟨_, .step_seq_inner h₂, ⟨rfl, heq₂⟩⟩
+    | _ => exact nomatch heq
+  | step_seq_done =>
+    cases c₂ with
+    | seq i₂ _ =>
+      have hrs := heq.1; subst hrs
+      cases i₂ with
+      | terminal ρ₂ => exact ⟨_, .step_seq_done, ⟨rfl, heq.2.1, heq.2.2⟩⟩
+      | _ => exact nomatch heq.2
+    | _ => exact nomatch heq
+  | step_seq_exit =>
+    cases c₂ with
+    | seq i₂ _ =>
+      cases i₂ with
+      | exiting _ _ => exact ⟨_, .step_seq_exit, ⟨heq.2.1, heq.2.2.1, heq.2.2.2⟩⟩
+      | _ => exact nomatch heq.2
+    | _ => exact nomatch heq
+  | step_block_body h =>
+    cases c₂ with
+    | block _ i₂ =>
+      have hrs := heq.1; subst hrs
+      have ⟨c₂', h₂, heq₂⟩ := step_simulation _ _ _ h heq.2
+      exact ⟨_, .step_block_body h₂, ⟨rfl, heq₂⟩⟩
+    | _ => exact nomatch heq
+  | step_block_done =>
+    cases c₂ with
+    | block _ i₂ =>
+      have hrs := heq.1; subst hrs
+      cases i₂ with
+      | terminal ρ₂ => exact ⟨_, .step_block_done, ⟨heq.2.1, heq.2.2⟩⟩
+      | _ => exact nomatch heq.2
+    | _ => exact nomatch heq
+  | step_block_exit_none =>
+    cases c₂ with
+    | block _ i₂ =>
+      cases i₂ with
+      | exiting l₂ ρ₂ =>
+        have hl := heq.2.1; cases hl
+        exact ⟨_, .step_block_exit_none, ⟨heq.2.2.1, heq.2.2.2⟩⟩
+      | _ => exact nomatch heq.2
+    | _ => exact nomatch heq
+  | step_block_exit_match hl =>
+    cases c₂ with
+    | block _ i₂ =>
+      have hlb := heq.1; subst hlb
+      cases i₂ with
+      | exiting l₂ ρ₂ =>
+        have hl₂ := heq.2.1; subst hl₂
+        exact ⟨_, .step_block_exit_match hl, ⟨heq.2.2.1, heq.2.2.2⟩⟩
+      | _ => exact nomatch heq.2
+    | _ => exact nomatch heq
+  | step_block_exit_mismatch hl =>
+    cases c₂ with
+    | block _ i₂ =>
+      have hlb := heq.1; subst hlb
+      cases i₂ with
+      | exiting l₂ ρ₂ =>
+        have hl₂ := heq.2.1; subst hl₂
+        exact ⟨_, .step_block_exit_mismatch hl, ⟨rfl, heq.2.2.1, heq.2.2.2⟩⟩
+      | _ => exact nomatch heq.2
+    | _ => exact nomatch heq
+
 /-- The terminal state's store and eval are independent of the starting
-    `hasFailure` flag.  This holds because `hasFailure` is purely accumulated
-    (OR-ed at each step) and never consulted by any step rule's guard.
-    Proving this from first principles requires mutual induction over all
-    configuration types; we state it as an axiom. -/
-axiom smallStep_hasFailure_irrel
-    (P : PureExpr) [HasBool P] [HasNot P]
-    (EvalCmd : EvalCmdParam P (Cmd P)) (extendEval : ExtendEval P)
+    `hasFailure` flag.  Proved by simulation: each step preserves
+    store/eval equivalence, so the terminal states agree. -/
+theorem smallStep_hasFailure_irrel
     (s : Stmt P (Cmd P)) (ρ ρ' : Env P)
-    (h : StepStmtStar P EvalCmd extendEval (.stmt s ρ) (.terminal ρ')) :
+    (h : StepStmtStar P (EvalCmd P) extendEval (.stmt s ρ) (.terminal ρ')) :
     ∀ (ρ₂ : Env P), ρ₂.store = ρ.store → ρ₂.eval = ρ.eval →
-    ∃ ρ₂', StepStmtStar P EvalCmd extendEval (.stmt s ρ₂) (.terminal ρ₂') ∧
-      ρ₂'.store = ρ'.store ∧ ρ₂'.eval = ρ'.eval
+    ∃ ρ₂', StepStmtStar P (EvalCmd P) extendEval (.stmt s ρ₂) (.terminal ρ₂') ∧
+      ρ₂'.store = ρ'.store ∧ ρ₂'.eval = ρ'.eval := by
+  intro ρ₂ hs he
+  -- Lift single-step simulation to multi-step
+  suffices ∀ (c₁ c₂ : Config P (Cmd P)),
+      ConfigSE P c₁ c₂ →
+      ∀ c₁', StepStmtStar P (EvalCmd P) extendEval c₁ c₁' →
+      ∃ c₂', StepStmtStar P (EvalCmd P) extendEval c₂ c₂' ∧ ConfigSE P c₁' c₂' by
+    have heq_init : ConfigSE P (.stmt s ρ) (.stmt s ρ₂) := ⟨rfl, hs.symm, he.symm⟩
+    have ⟨c₂', hstar₂, heq₂⟩ := this _ _ heq_init _ h
+    match c₂', heq₂ with
+    | .terminal ρ₂', heq_t => exact ⟨ρ₂', hstar₂, heq_t.1.symm, heq_t.2.symm⟩
+  intro c₁ c₂ heq c₁' hstar
+  induction hstar generalizing c₂ with
+  | refl => exact ⟨c₂, .refl _, heq⟩
+  | step _ mid _ hstep _ ih =>
+    have ⟨mid₂, hstep₂, heq_mid⟩ := step_simulation P extendEval _ _ _ hstep heq
+    have ⟨c₂', hstar₂, heq_final⟩ := ih _ heq_mid
+    exact ⟨c₂', .step _ _ _ hstep₂ hstar₂, heq_final⟩
 
 /-- For a single assert command, any config reachable from `.stmts [assert] ρ`
     that satisfies `isAtAssert` has getEval = ρ.eval and getStore = ρ.store. -/
@@ -423,7 +611,7 @@ def hoareBlock
     [.cmd (.assume pre_label pre_expr pre_md), st, .cmd (.assert post_label post_expr post_md)]
     block_md
 
-theorem hoareTriple_implies_assertValid_general
+theorem hoareTriple_implies_assertValid
     (pre_label : String) (pre_expr : P.Expr) (pre_md : MetaData P)
     (st : Stmt P (Cmd P))
     (post_label : String) (post_expr : P.Expr) (post_md : MetaData P)
@@ -432,16 +620,14 @@ theorem hoareTriple_implies_assertValid_general
       (fun ρ => ρ.eval ρ.store pre_expr = some HasBool.tt)
       st
       (fun ρ => ρ.eval ρ.store post_expr = some HasBool.tt))
-    -- st does not contain any assert matching ⟨post_label, post_expr⟩.
-    -- This ensures the only reachable config satisfying isAtAssert is the
-    -- explicit assert at the end of the composite.
-    (hno_match : ∀ (ρ : Env P) (cfg : Config P (Cmd P)),
-      StepStmtStar P (EvalCmd P) extendEval (.stmt st ρ) cfg →
-      ¬ isAtAssert P cfg ⟨post_label, post_expr⟩) :
+    -- st does not syntactically contain any assert with label `post_label`.
+    (hno : st.noMatchingAssert post_label) :
     AssertValid P extendEval
       (hoareBlock P pre_label pre_expr pre_md st post_label post_expr post_md block_label block_md)
       ⟨post_label, post_expr⟩ := by
   intro ρ₀ cfg hreach hat
+  -- Derive the execution-level no-match property from the syntactic check
+  have hno_match := noMatchingAssert_implies_no_reachable_assert P extendEval st post_label post_expr hno
   -- Decompose block execution via block_isAtAssert_inner
   unfold hoareBlock Reachable at hreach
   cases hreach with
@@ -505,37 +691,14 @@ theorem hoareTriple_implies_assertValid_general
                     | step_cmd hcmd =>
                       cases hcmd with
                       | eval_assume hpre hwfb =>
-                        -- hpre : ρ₀.eval ρ₀.store pre_expr = some HasBool.tt
-                        -- ρ₁ = { ρ₀ with hasFailure := ρ₀.hasFailure || false }
-                        -- Apply Hoare triple with clean env { ρ₀ with hasFailure := false }
-                        -- which has same store/eval as ρ₁.
-                        -- The assert only checks eval/store, not hasFailure.
-                        -- cfg.getEval/getStore recurse to ρ'.eval/ρ'.store.
-                        -- We need: ρ'.eval ρ'.store post_expr = some HasBool.tt
-                        -- Use hoare with { ρ₁ with hasFailure := false }:
-                        -- Pre holds (same eval/store), hasFailure = false.
-                        -- But we need StepStmtStar from { ρ₁ with hasFailure := false }.
-                        -- hterm_st is from ρ₁ (which may have hasFailure ≠ false).
-                        -- We need hasFailure-irrelevance for small-step... or bypass.
-                        -- Actually: h_assume_rest gives ρ₁ from .terminal {...} to .terminal ρ₁.
-                        -- After step_cmd eval_assume: terminal env is
-                        -- { ρ₀ with store := ρ₀.store, hasFailure := ρ₀.hasFailure || false }
-                        -- h_assume_rest : StepStmtStar (.terminal ...) (.terminal ρ₁)
-                        -- Terminal can't step, so h_assume_rest is refl.
                         cases h_assume_rest with
                         | refl =>
-                          -- After refl, the env in hterm_st is
-                          -- { ρ₀ with hasFailure := ρ₀.hasFailure || false }
-                          -- Use hasFailure-irrelevance to get execution from clean env
                           have ⟨ρ'_clean, hterm_clean, hs_eq, he_eq⟩ :=
-                            smallStep_hasFailure_irrel P (EvalCmd P) extendEval
+                            @smallStep_hasFailure_irrel P _ _ _ extendEval
                               st _ ρ' hterm_st { ρ₀ with hasFailure := false } rfl rfl
                           have ⟨hpost, _⟩ := hoare { ρ₀ with hasFailure := false } ρ'_clean
                             hpre rfl hterm_clean
-                          -- hpost : ρ'_clean.eval ρ'_clean.store post_expr = some HasBool.tt
-                          -- Transfer to ρ' via store/eval equality
                           simp only [hs_eq, he_eq] at hpost
-                          -- Use assert_tail_getEvalStore to connect inner's env to ρ'
                           simp only [Config.getEval, Config.getStore]
                           have ⟨he, hs⟩ := assert_tail_getEvalStore P extendEval
                             ρ' post_label post_expr post_md inner ⟨post_label, post_expr⟩
@@ -543,27 +706,155 @@ theorem hoareTriple_implies_assertValid_general
                           rw [he, hs]; exact hpost
                         | step _ _ _ h _ => exact absurd h (by intro h; cases h)
 
-/-- If `AssertValid` holds for `assume pre; st; assert post`, and `st`
-    makes progress (always terminates when precondition holds), then
-    whenever `pre_expr = tt` at the initial env and `st` terminates at ρ',
-    `post_expr = tt` at ρ'.
+/-- Single-step: if hasFailure is false and all reachable asserts pass,
+    then hasFailure stays false after one step. -/
+private theorem step_preserves_noFailure
+    (c₁ c₂ : Config P (Cmd P))
+    (hv : ∀ a cfg, StepStmtStar P (EvalCmd P) extendEval c₁ cfg →
+      isAtAssert P cfg a → cfg.getEval cfg.getStore a.expr = some HasBool.tt)
+    (hnf : c₁.getEnv.hasFailure = false)
+    (hstep : StepStmt P (EvalCmd P) extendEval c₁ c₂) :
+    c₂.getEnv.hasFailure = false := by
+  induction hstep with
+  | step_cmd hcmd =>
+    cases hcmd with
+    | eval_assert_fail hff _ =>
+      have htt := hv ⟨_, _⟩ _ (.refl _) ⟨rfl, rfl⟩
+      simp only [Config.getEval, Config.getStore] at htt
+      rw [hff] at htt; exact absurd (Option.some.inj htt) HasBool.tt_is_not_ff.symm
+    | _ => simp_all [Config.getEnv]
+  | step_block => simp [Config.getEnv]; exact hnf
+  | step_ite_true _ _ => exact hnf
+  | step_ite_false _ _ => exact hnf
+  | step_loop_enter _ _ => exact hnf
+  | step_loop_exit _ _ => exact hnf
+  | step_exit => exact hnf
+  | step_funcDecl => simp [Config.getEnv]; exact hnf
+  | step_typeDecl => exact hnf
+  | step_stmts_nil => exact hnf
+  | step_stmts_cons => exact hnf
+  | step_seq_inner h ih =>
+    exact ih
+      (fun a cfg hr hat => hv a (.seq cfg _) (seq_inner_star P (EvalCmd P) extendEval _ _ _ hr) hat) hnf
+  | step_seq_done => exact hnf
+  | step_seq_exit => exact hnf
+  | step_block_body h ih =>
+    exact ih
+      (fun a cfg hr hat => hv a (.block _ cfg) (block_inner_star P extendEval _ _ _ hr) hat) hnf
+  | step_block_done => exact hnf
+  | step_block_exit_none => exact hnf
+  | step_block_exit_match _ => exact hnf
+  | step_block_exit_mismatch _ => exact hnf
 
-    The `WellFormedSemanticEvalBool` hypothesis is needed to construct
-    the `assume` step in the composite execution. -/
-theorem assertValid_implies_hoareTriple_general
+private theorem allAssertsValid_preserves_noFailure
+    (st : Stmt P (Cmd P))
+    (hvalid : ∀ (a : AssertId P) (cfg : Config P (Cmd P)),
+      StepStmtStar P (EvalCmd P) extendEval (.stmt st ρ₀) cfg →
+      isAtAssert P cfg a → cfg.getEval cfg.getStore a.expr = some HasBool.tt)
+    (hf₀ : ρ₀.hasFailure = false)
+    (hstar : StepStmtStar P (EvalCmd P) extendEval (.stmt st ρ₀) (.terminal ρ')) :
+    ρ'.hasFailure = false := by
+  -- Lift step_preserves_noFailure to multi-step via induction.
+  suffices ∀ c₁ c₂,
+      (∀ a cfg, StepStmtStar P (EvalCmd P) extendEval c₁ cfg →
+        isAtAssert P cfg a → cfg.getEval cfg.getStore a.expr = some HasBool.tt) →
+      c₁.getEnv.hasFailure = false →
+      StepStmtStar P (EvalCmd P) extendEval c₁ c₂ →
+      c₂.getEnv.hasFailure = false by
+    exact this _ _ hvalid hf₀ hstar
+  intro c₁ c₂ hv hnf hstar_c
+  induction hstar_c with
+  | refl => exact hnf
+  | step _ mid _ hstep _ ih =>
+    exact ih
+      (fun a cfg h hat => hv a _ (.step _ _ _ hstep h) hat)
+      (step_preserves_noFailure P extendEval _ _ hv hnf hstep)
+
+/-- `AllAssertsValid` for the composite implies `AllAssertsValid` for `st`
+    when run from an env reachable via the composite's assume prefix.
+    This connects composite-level validity to statement-level validity
+    by showing that configs reachable during `st`'s execution correspond
+    to configs reachable inside the composite (through block/seq wrappers). -/
+private theorem composite_allAssertsValid_implies_st
     (pre_label : String) (pre_expr : P.Expr) (pre_md : MetaData P)
     (st : Stmt P (Cmd P))
     (post_label : String) (post_expr : P.Expr) (post_md : MetaData P)
     (block_label : String) (block_md : MetaData P)
     (hwfb : ∀ (δ : SemanticEval P), WellFormedSemanticEvalBool δ)
-    (hvalid : AssertValid P extendEval
-      (hoareBlock P pre_label pre_expr pre_md st post_label post_expr post_md block_label block_md)
-      ⟨post_label, post_expr⟩) :
-    ∀ (ρ₀ ρ' : Env P),
+    (hvalid : AllAssertsValid P extendEval
+      (hoareBlock P pre_label pre_expr pre_md st post_label post_expr post_md block_label block_md)) :
+    ∀ (ρ₀ : Env P),
       ρ₀.eval ρ₀.store pre_expr = some HasBool.tt →
       ρ₀.hasFailure = false →
-      StepStmtStar P (EvalCmd P) extendEval (.stmt st ρ₀) (.terminal ρ') →
-      ρ'.eval ρ'.store post_expr = some HasBool.tt := by
+      ∀ (a : AssertId P) (cfg : Config P (Cmd P)),
+        StepStmtStar P (EvalCmd P) extendEval (.stmt st ρ₀) cfg →
+        isAtAssert P cfg a →
+        cfg.getEval cfg.getStore a.expr = some HasBool.tt := by
+  intro ρ₀ hpre hf₀ a cfg hstar hat
+  -- Build composite execution prefix: block → stmts → assume → stmts [st, ...]
+  -- Then embed st's execution inside the composite via block/seq lifting.
+  let assume_stmt : Stmt P (Cmd P) := .cmd (.assume pre_label pre_expr pre_md)
+  let assert_stmt : Stmt P (Cmd P) := .cmd (.assert post_label post_expr post_md)
+  let body : List (Stmt P (Cmd P)) := [assume_stmt, st, assert_stmt]
+  -- Assume step
+  have h_assume : StepStmtStar P (EvalCmd P) extendEval
+      (.stmt assume_stmt ρ₀) (.terminal { ρ₀ with store := ρ₀.store, hasFailure := ρ₀.hasFailure || false }) :=
+    .step _ _ _ (StepStmt.step_cmd (EvalCmd.eval_assume hpre (hwfb ρ₀.eval))) (.refl _)
+  have h_ρ₁_eq : ({ store := ρ₀.store, eval := ρ₀.eval, hasFailure := ρ₀.hasFailure || false } : Env P) = ρ₀ := by
+    cases ρ₀; simp [Bool.or_false]
+  -- stmts [assume, st, assert] ρ₀ →* stmts [st, assert] ρ₀
+  have h1 := stmts_cons_step P (EvalCmd P) extendEval assume_stmt [st, assert_stmt] ρ₀ _ h_assume
+  rw [h_ρ₁_eq] at h1
+  -- stmts [st, assert] ρ₀ → seq (.stmt st ρ₀) [assert]
+  have h2 : StepStmtStar P (EvalCmd P) extendEval
+      (.stmts [st, assert_stmt] ρ₀) (.seq (.stmt st ρ₀) [assert_stmt]) :=
+    .step _ _ _ StepStmt.step_stmts_cons (.refl _)
+  -- seq (.stmt st ρ₀) [assert] →* seq cfg [assert] (lifting st's execution)
+  have h3 := seq_inner_star P (EvalCmd P) extendEval _ _ [assert_stmt] hstar
+  -- Compose and lift through block
+  have h_inner := reflTrans_trans (h1 := reflTrans_trans (h1 := h1) (h2 := h2)) (h2 := h3)
+  have h_block := block_inner_star P extendEval _ _ block_label h_inner
+  have h_start : StepStmtStar P (EvalCmd P) extendEval
+      (.stmt (.block block_label body block_md) ρ₀) (.block block_label (.stmts body ρ₀)) :=
+    .step _ _ _ StepStmt.step_block (.refl _)
+  have h_full := reflTrans_trans (h1 := h_start) (h2 := h_block)
+  -- The target config is .block bl (.seq cfg [assert]), which satisfies
+  -- isAtAssert iff cfg does (recursion through block → seq → cfg)
+  have hat_composite : isAtAssert P (.block block_label (.seq cfg [assert_stmt])) a := hat
+  -- Apply hvalid
+  have h_result := hvalid a ρ₀ _ h_full hat_composite
+  simp only [Config.getEval, Config.getStore] at h_result ⊢
+  exact h_result
+
+/-- If `AllAssertsValid` holds for the composite `assume pre; st; assert post`,
+    then the Hoare triple `{pre_expr = tt} st {post_expr = tt}` holds.
+
+    The `AllAssertsValid` hypothesis (rather than just `AssertValid` for the
+    post assert) ensures that all intermediate asserts in `st` also pass,
+    which is needed for the `hasFailure = false` postcondition.
+
+    The `WellFormedSemanticEvalBool` hypothesis is needed to construct
+    the `assume` step in the composite execution.
+
+    The `noFailure` hypothesis states that `st` preserves `hasFailure = false`
+    when started from a failure-free environment.  This follows from
+    `AllAssertsValid` for `st` (since all assert expressions evaluate to `tt`,
+    only `eval_assert_pass` fires, keeping `hasAssertFailure = false`). -/
+theorem assertValid_implies_hoareTriple
+    (pre_label : String) (pre_expr : P.Expr) (pre_md : MetaData P)
+    (st : Stmt P (Cmd P))
+    (post_label : String) (post_expr : P.Expr) (post_md : MetaData P)
+    (block_label : String) (block_md : MetaData P)
+    (hwfb : ∀ (δ : SemanticEval P), WellFormedSemanticEvalBool δ)
+    (hvalid : AllAssertsValid P extendEval
+      (hoareBlock P pre_label pre_expr pre_md st post_label post_expr post_md block_label block_md)) :
+    HoareTriple P extendEval
+      (fun ρ => ρ.eval ρ.store pre_expr = some HasBool.tt)
+      st
+      (fun ρ => ρ.eval ρ.store post_expr = some HasBool.tt) := by
+  -- Derive noFailure from hvalid via composite_allAssertsValid_implies_st
+  have hvalid_st := composite_allAssertsValid_implies_st P extendEval
+    pre_label pre_expr pre_md st post_label post_expr post_md block_label block_md hwfb hvalid
   intro ρ₀ ρ' hpre hf₀ hstar
   -- Build the composite execution: block [assume pre; st; assert post]
   -- Starting from ρ₀, the assume passes (since hpre holds), then st runs
@@ -599,11 +890,13 @@ theorem assertValid_implies_hoareTriple_general
   -- The target config satisfies isAtAssert (recurse: block → seq → stmt assert)
   have h_at : isAtAssert P (.block block_label (.seq (.stmt assert_stmt ρ') [])) ⟨post_label, post_expr⟩ := by
     simp [isAtAssert, assert_stmt]
-  -- Apply hvalid: the config is reachable and at the assert
-  have h_result := hvalid ρ₀ _ h_full h_at
+  -- Apply hvalid (specialized to the post assert) at the reachable config
+  have h_result := hvalid ⟨post_label, post_expr⟩ ρ₀ _ h_full h_at
   -- Simplify getEval/getStore through block → seq → stmt
   simp only [Config.getEval, Config.getStore] at h_result
-  exact h_result
+  -- Post ρ' holds; hasFailure = false from allAssertsValid_preserves_noFailure
+  exact ⟨h_result, allAssertsValid_preserves_noFailure P extendEval
+    (ρ₀ := ρ₀) (ρ' := ρ') st (hvalid_st ρ₀ hpre hf₀) hf₀ hstar⟩
 
 /-! ## Transformation Correctness
 
@@ -665,6 +958,7 @@ theorem sound_allAsserts
     AllAssertsValid P extendEval s :=
   fun a => sound_assertValid P extendEval T a s s' ht hsound (hvalid a)
 
+/-
 /-- If `T` is sound and the assert-specific Hoare triple holds for the
     output `s'`, then it also holds for the input `s`. -/
 theorem sound_hoareTriple
@@ -687,6 +981,7 @@ theorem sound_hoareTriple
   assertValid_implies_hoareTriple P extendEval label expr md s hs
     (hsound s s' ⟨label, expr⟩ ht
       (hoareTriple_implies_assertValid P extendEval label expr md' s' hs' hoare hprogress))
+-/
 
 end Specification
 end Imperative
