@@ -185,9 +185,10 @@ def Array (elemTy : Ty) : Ty :=
   { id := .array, subtypes := [elemTy] }
 
 /-- Code (function) type with parameter types and return type.
-    Used for FUNCTION_CALL callee symbols. -/
-def mkCode (_paramTypes : List Ty) (_returnType : Ty) : Ty :=
-  { id := .code, subtypes := [] }
+    Used for FUNCTION_CALL callee symbols.
+    Encodes as subtypes = [returnType] ++ paramTypes. -/
+def mkCode (paramTypes : List Ty) (returnType : Ty) : Ty :=
+  { id := .code, subtypes := returnType :: paramTypes }
 
 end Ty
 
