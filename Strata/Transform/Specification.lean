@@ -266,15 +266,17 @@ def AllAssertsValid
 
 /-- Partial-correctness Hoare triple using small-step semantics.
 
-    The precondition includes `ρ₀.hasFailure = false` (no prior assertion
-    failures) and the postcondition includes `ρ'.hasFailure = false` (no
-    assertion failures after execution). -/
+    The precondition includes `WellFormedSemanticEvalBool ρ₀.eval`
+    (the evaluator satisfies the boolean well-formedness condition)
+    and `ρ₀.hasFailure = false` (no prior assertion failures).
+    The postcondition includes `ρ'.hasFailure = false` (no assertion
+    failures after execution of 's'). -/
 def HoareTriple
     (Pre : Env P → Prop)
     (s : Stmt P (Cmd P))
     (Post : Env P → Prop) : Prop :=
   ∀ (ρ₀ ρ' : Env P),
-    Pre ρ₀ → ρ₀.hasFailure = false →
+    Pre ρ₀ → WellFormedSemanticEvalBool ρ₀.eval → ρ₀.hasFailure = false →
     StepStmtStar P (EvalCmd P) extendEval (.stmt s ρ₀) (.terminal ρ') →
     Post ρ' ∧ ρ'.hasFailure = false
 
@@ -697,7 +699,7 @@ theorem hoareTriple_implies_assertValid
                             @smallStep_hasFailure_irrel P _ _ _ extendEval
                               st _ ρ' hterm_st { ρ₀ with hasFailure := false } rfl rfl
                           have ⟨hpost, _⟩ := hoare { ρ₀ with hasFailure := false } ρ'_clean
-                            hpre rfl hterm_clean
+                            hpre hwfb rfl hterm_clean
                           simp only [hs_eq, he_eq] at hpost
                           simp only [Config.getEval, Config.getStore]
                           have ⟨he, hs⟩ := assert_tail_getEvalStore P extendEval
@@ -774,23 +776,27 @@ private theorem allAssertsValid_preserves_noFailure
     when run from an env reachable via the composite's assume prefix.
     This connects composite-level validity to statement-level validity
     by showing that configs reachable during `st`'s execution correspond
-    to configs reachable inside the composite (through block/seq wrappers). -/
+    to configs reachable inside the composite (through block/seq wrappers).
+
+    Note: `WellFormedSemanticEvalBool ρ₀.eval` is required only for the
+    `assume` step at the start of the composite, which uses the initial
+    env's evaluator. -/
 private theorem composite_allAssertsValid_implies_st
     (pre_label : String) (pre_expr : P.Expr) (pre_md : MetaData P)
     (st : Stmt P (Cmd P))
     (post_label : String) (post_expr : P.Expr) (post_md : MetaData P)
     (block_label : String) (block_md : MetaData P)
-    (hwfb : ∀ (δ : SemanticEval P), WellFormedSemanticEvalBool δ)
     (hvalid : AllAssertsValid P extendEval
       (hoareBlock P pre_label pre_expr pre_md st post_label post_expr post_md block_label block_md)) :
     ∀ (ρ₀ : Env P),
+      WellFormedSemanticEvalBool ρ₀.eval →
       ρ₀.eval ρ₀.store pre_expr = some HasBool.tt →
       ρ₀.hasFailure = false →
       ∀ (a : AssertId P) (cfg : Config P (Cmd P)),
         StepStmtStar P (EvalCmd P) extendEval (.stmt st ρ₀) cfg →
         isAtAssert P cfg a →
         cfg.getEval cfg.getStore a.expr = some HasBool.tt := by
-  intro ρ₀ hpre hf₀ a cfg hstar hat
+  intro ρ₀ hwfb hpre hf₀ a cfg hstar hat
   -- Build composite execution prefix: block → stmts → assume → stmts [st, ...]
   -- Then embed st's execution inside the composite via block/seq lifting.
   let assume_stmt : Stmt P (Cmd P) := .cmd (.assume pre_label pre_expr pre_md)
@@ -799,7 +805,7 @@ private theorem composite_allAssertsValid_implies_st
   -- Assume step
   have h_assume : StepStmtStar P (EvalCmd P) extendEval
       (.stmt assume_stmt ρ₀) (.terminal { ρ₀ with store := ρ₀.store, hasFailure := ρ₀.hasFailure || false }) :=
-    .step _ _ _ (StepStmt.step_cmd (EvalCmd.eval_assume hpre (hwfb ρ₀.eval))) (.refl _)
+    .step _ _ _ (StepStmt.step_cmd (EvalCmd.eval_assume hpre hwfb)) (.refl _)
   have h_ρ₁_eq : ({ store := ρ₀.store, eval := ρ₀.eval, hasFailure := ρ₀.hasFailure || false } : Env P) = ρ₀ := by
     cases ρ₀; simp [Bool.or_false]
   -- stmts [assume, st, assert] ρ₀ →* stmts [st, assert] ρ₀
@@ -833,19 +839,16 @@ private theorem composite_allAssertsValid_implies_st
     post assert) ensures that all intermediate asserts in `st` also pass,
     which is needed for the `hasFailure = false` postcondition.
 
-    The `WellFormedSemanticEvalBool` hypothesis is needed to construct
-    the `assume` step in the composite execution.
-
-    The `noFailure` hypothesis states that `st` preserves `hasFailure = false`
-    when started from a failure-free environment.  This follows from
-    `AllAssertsValid` for `st` (since all assert expressions evaluate to `tt`,
-    only `eval_assert_pass` fires, keeping `hasAssertFailure = false`). -/
+    `WellFormedSemanticEvalBool ρ₀.eval` is needed to construct the
+    `assume` step in the composite execution; it is supplied by
+    `HoareTriple`'s built-in well-formedness premise.  Only the initial
+    evaluator matters — see the comment on
+    `composite_allAssertsValid_implies_st` for details. -/
 theorem assertValid_implies_hoareTriple
     (pre_label : String) (pre_expr : P.Expr) (pre_md : MetaData P)
     (st : Stmt P (Cmd P))
     (post_label : String) (post_expr : P.Expr) (post_md : MetaData P)
     (block_label : String) (block_md : MetaData P)
-    (hwfb : ∀ (δ : SemanticEval P), WellFormedSemanticEvalBool δ)
     (hvalid : AllAssertsValid P extendEval
       (hoareBlock P pre_label pre_expr pre_md st post_label post_expr post_md block_label block_md)) :
     HoareTriple P extendEval
@@ -854,8 +857,8 @@ theorem assertValid_implies_hoareTriple
       (fun ρ => ρ.eval ρ.store post_expr = some HasBool.tt) := by
   -- Derive noFailure from hvalid via composite_allAssertsValid_implies_st
   have hvalid_st := composite_allAssertsValid_implies_st P extendEval
-    pre_label pre_expr pre_md st post_label post_expr post_md block_label block_md hwfb hvalid
-  intro ρ₀ ρ' hpre hf₀ hstar
+    pre_label pre_expr pre_md st post_label post_expr post_md block_label block_md hvalid
+  intro ρ₀ ρ' hpre hwfb hf₀ hstar
   -- Build the composite execution: block [assume pre; st; assert post]
   -- Starting from ρ₀, the assume passes (since hpre holds), then st runs
   -- to ρ', then the execution reaches the assert with env ρ'.
@@ -865,7 +868,7 @@ theorem assertValid_implies_hoareTriple
   -- Step 1: assume passes, producing ρ₁ (propositionally = ρ₀ since hf₀)
   have h_assume : StepStmtStar P (EvalCmd P) extendEval
       (.stmt assume_stmt ρ₀) (.terminal { ρ₀ with store := ρ₀.store, hasFailure := ρ₀.hasFailure || false }) :=
-    .step _ _ _ (StepStmt.step_cmd (EvalCmd.eval_assume hpre (hwfb ρ₀.eval))) (.refl _)
+    .step _ _ _ (StepStmt.step_cmd (EvalCmd.eval_assume hpre hwfb)) (.refl _)
   have h_ρ₁_eq : ({ store := ρ₀.store, eval := ρ₀.eval, hasFailure := ρ₀.hasFailure || false } : Env P) = ρ₀ := by
     cases ρ₀; simp [Bool.or_false]
   -- Step 2: stmts [assume, st, assert] ρ₀ →* stmts [st, assert] ρ₁
@@ -896,7 +899,7 @@ theorem assertValid_implies_hoareTriple
   simp only [Config.getEval, Config.getStore] at h_result
   -- Post ρ' holds; hasFailure = false from allAssertsValid_preserves_noFailure
   exact ⟨h_result, allAssertsValid_preserves_noFailure P extendEval
-    (ρ₀ := ρ₀) (ρ' := ρ') st (hvalid_st ρ₀ hpre hf₀) hf₀ hstar⟩
+    (ρ₀ := ρ₀) (ρ' := ρ') st (hvalid_st ρ₀ hwfb hpre hf₀) hf₀ hstar⟩
 
 /-! ## Transformation Correctness
 
@@ -957,31 +960,6 @@ theorem sound_allAsserts
     (hvalid : AllAssertsValid P extendEval s') :
     AllAssertsValid P extendEval s :=
   fun a => sound_assertValid P extendEval T a s s' ht hsound (hvalid a)
-
-/-
-/-- If `T` is sound and the assert-specific Hoare triple holds for the
-    output `s'`, then it also holds for the input `s`. -/
-theorem sound_hoareTriple
-    (T : Stmt P (Cmd P) → Option (Stmt P (Cmd P)))
-    (label : String) (expr : P.Expr) (md md' : MetaData P)
-    (s s' : Stmt P (Cmd P))
-    (hs : s = .cmd (.assert label expr md))
-    (hs' : s' = .cmd (.assert label expr md'))
-    (ht : T s = some s')
-    (hsound : Sound P extendEval T)
-    (hprogress : ∀ (ρ₀ : Env P),
-      ∃ (ρ' : Env P),
-        StepStmtStar P (EvalCmd P) extendEval (.stmt s' ρ₀) (.terminal ρ'))
-    (hoare : HoareTriple P extendEval
-      (fun _ => True) s'
-      (fun ρ' => ρ'.eval ρ'.store expr = some HasBool.tt)) :
-    HoareTriple P extendEval
-      (fun _ => True) s
-      (fun ρ' => ρ'.eval ρ'.store expr = some HasBool.tt) :=
-  assertValid_implies_hoareTriple P extendEval label expr md s hs
-    (hsound s s' ⟨label, expr⟩ ht
-      (hoareTriple_implies_assertValid P extendEval label expr md' s' hs' hoare hprogress))
--/
 
 end Specification
 end Imperative
