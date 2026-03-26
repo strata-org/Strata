@@ -175,10 +175,12 @@ def boxDestructorName (model : SemanticModel) (ty : HighType) : Identifier :=
   | .TBool => "Box..boolVal!"
   | .TFloat64 => "Box..float64Val!"
   | .TReal => "Box..realVal!"
+  | .TString => "Box..stringVal!"
   | .UserDefined name =>
       if isDatatype model name then s!"Box..{name.text}Val!"
       else "Box..compositeVal!"
-  | _ => dbg_trace "BUG, boxDestructorName bad type "; "boxDestructorNameError"
+  | .TCore name => s!"Box..{name}Val!"
+  | _ => dbg_trace f!"BUG, boxDestructorName bad type {ty}"; "boxDestructorNameError"
 
 /-- Get the Box constructor name for a given Laurel HighType.
     For UserDefined datatypes, uses "Box..<datatypeName>";
@@ -189,10 +191,12 @@ def boxConstructorName (model : SemanticModel) (ty : HighType) : Identifier :=
   | .TBool => "BoxBool"
   | .TFloat64 => "BoxFloat64"
   | .TReal => "BoxReal"
+  | .TString => "BoxString"
   | .UserDefined name =>
       if isDatatype model name then s!"Box..{name.text}"
       else "BoxComposite"
-  | ty => dbg_trace "BUG, boxConstructorName bad type: {repr ty}"; "boxConstructorNameError"
+  | .TCore name => s!"Box..{name}"
+  | ty => dbg_trace s!"BUG, boxConstructorName bad type: {repr ty}"; "boxConstructorNameError"
 
 /-- Build the DatatypeConstructor for a Box variant from a HighType, for datatype generation -/
 private def boxConstructorDef (model : SemanticModel) (ty : HighType) : Option DatatypeConstructor :=
@@ -201,11 +205,14 @@ private def boxConstructorDef (model : SemanticModel) (ty : HighType) : Option D
   | .TBool => some { name := "BoxBool", args := [{ name := "boolVal", type := ⟨.TBool, #[]⟩ }] }
   | .TReal => some { name := "BoxReal", args := [{ name := "realVal", type := ⟨.TReal, #[]⟩ }] }
   | .TFloat64 => some { name := "BoxFloat64", args := [{ name := "float64Val", type := ⟨.TFloat64, #[]⟩ }] }
+  | .TString => some { name := "BoxString", args := [{ name := "stringVal", type := ⟨.TString, #[]⟩ }] }
   | .UserDefined name =>
       if isDatatype model name then
         some { name := s!"Box..{name.text}", args := [{ name := s!"{name.text}Val", type := ⟨.UserDefined name, #[]⟩ }] }
       else
         some { name := "BoxComposite", args := [{ name := "compositeVal", type := ⟨.UserDefined "Composite", #[]⟩ }] }
+  | .TCore name =>
+        some { name := s!"Box..{name}", args := [{ name := s!"{name}Val", type := ⟨.TCore name, #[]⟩ }] }
   | ty => dbg_trace s!"BUG, boxConstructorDef bad type: {repr ty}"; none
 
 /-- Record a Box constructor use in the transform state -/
@@ -270,7 +277,7 @@ where
         if calleeWritesHeap then
           if valueUsed then
             let freshVar ← freshVarName
-            let varDecl := mkMd (.LocalVariable freshVar ⟨.TInt, #[]⟩ none)
+            let varDecl := mkMd (.LocalVariable freshVar (computeExprType model exprMd) none)
             let callWithHeap := ⟨ .Assign
               [mkMd (.Identifier heapVar), mkMd (.Identifier freshVar)]
               (⟨ .StaticCall callee (mkMd (.Identifier heapVar) :: args'), md ⟩), md ⟩

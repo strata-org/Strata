@@ -171,6 +171,7 @@ private def typeRange : Boole.Type → SourceRange
   | .bv32 m => m
   | .bv64 m => m
   | .Map m _ _ => m
+  | .Sequence m _ => m
 
 def toCoreMonoType (t : Boole.Type) : TranslateM Lambda.LMonoTy := do
   match t with
@@ -180,6 +181,7 @@ def toCoreMonoType (t : Boole.Type) : TranslateM Lambda.LMonoTy := do
   | .arrow _ a b => return .arrow (← toCoreMonoType a) (← toCoreMonoType b)
   | .bool _ => return .bool
   | .int _ => return .int
+  | .string _ => return .string
   | .bv1 _ => return .bitvec 1
   | .bv8 _ => return .bitvec 8
   | .bv16 _ => return .bitvec 16
@@ -225,6 +227,15 @@ def toCoreTypedBin (m : SourceRange) (ty : Boole.Type) (op : String) (a b : Core
     | throwAt m s!"Unsupported typed operator type: {repr ty}"
   let iop : Core.Expression.Expr := .op () ⟨s!"Int.{op}", ()⟩ none
   return mkCoreApp iop [a, b]
+
+private def oldifyExpr : Core.Expression.Expr → Core.Expression.Expr
+  | .fvar m ident ty =>
+      let ident' := if Core.CoreIdent.isOldIdent ident then ident else Core.CoreIdent.mkOld ident.name
+      .fvar m ident' ty
+  | .app m f a => .app m (oldifyExpr f) (oldifyExpr a)
+  | .eq m a b => .eq m (oldifyExpr a) (oldifyExpr b)
+  | .ite m c t f => .ite m (oldifyExpr c) (oldifyExpr t) (oldifyExpr f)
+  | e => e
 
 mutual
 
@@ -304,9 +315,7 @@ def toCoreExpr (e : Boole.Expr) : TranslateM Core.Expression.Expr := do
   | .div_expr m ty a b => toCoreTypedBin m ty "Div" (← toCoreExpr a) (← toCoreExpr b)
   | .mod_expr m ty a b => toCoreTypedBin m ty "Mod" (← toCoreExpr a) (← toCoreExpr b)
   | .old _ _ a =>
-      match (← toCoreExpr a) with
-      | .fvar m ident ty => return .fvar m (Core.CoreIdent.mkOld ident.name) ty
-      | other => throw (.fromMessage s!"old: expected an identifier, got {other}")
+      return oldifyExpr (← toCoreExpr a)
   | _ => throw (.fromMessage s!"Unsupported expression: {repr e}")
 
 end
@@ -402,7 +411,7 @@ def toCoreStmt (s : BooleDDM.Statement SourceRange) : TranslateM Core.Statement 
   | .if_statement m c t e =>
     let thenb ← withBVars [] (toCoreBlock t)
     let elseb ← withBVars [] <| match e with
-      | .else0 _ => return []
+      | .else0 _ => pure []
       | .else1 _ b => toCoreBlock b
     return .ite (← toCoreExpr c) thenb elseb (← toCoreMetaData m)
   | .havoc_statement m ⟨_, n⟩ =>
@@ -475,7 +484,7 @@ def toCoreStmt (s : BooleDDM.Statement SourceRange) : TranslateM Core.Statement 
       let initExpr ← toCoreExpr init
       let guard := mkCoreApp Core.intLeOp [.fvar () id none, limitExpr]
       let stepExpr ← ((match step? with
-        | none => return (.intConst () 1)
+        | none => pure (.intConst () 1)
         | some (.step _ e) => toCoreExpr e) : TranslateM Core.Expression.Expr)
       let body ← withBVars [] (toCoreBlock body)
       lowerFor
@@ -492,7 +501,7 @@ def toCoreStmt (s : BooleDDM.Statement SourceRange) : TranslateM Core.Statement 
       let initExpr ← toCoreExpr init
       let guard := mkCoreApp Core.intLeOp [limitExpr, .fvar () id none]
       let stepExpr ← ((match step? with
-        | none => return (.intConst () 1)
+        | none => pure (.intConst () 1)
         | some (.step _ e) => toCoreExpr e) : TranslateM Core.Expression.Expr)
       let body ← withBVars [] (toCoreBlock body)
       lowerFor
@@ -517,7 +526,7 @@ private def toCoreDatatypeConstr
   match c with
   | .constructor_mk _ ⟨_, cname⟩ ⟨_, fields?⟩ =>
     let args ← ((match fields? with
-      | none => return []
+      | none => pure []
       | some ⟨_, fs⟩ => fs.toList.mapM toCoreBinding) : TranslateM (List (Core.Expression.Ident × Lambda.LMonoTy)))
     return { name := mkIdent cname
              args := args
@@ -609,7 +618,7 @@ private def registerCommandSymbols (cmd : BooleDDM.Command SourceRange) : List B
   | .command_constdecl _ _ _ _ => [true]
   | .command_fndecl _ _ _ _ _ => [true]
   | .command_fndef _ _ _ _ _ _ _ _ => [true]
-  | .command_recfndef _ _ _ _ _ _ _ => [true]
+  | .command_recfndefs _ ⟨_, funcs⟩ => funcs.toList.map (fun _ => true)
   | .command_var _ _ => [false]
   -- Procedure names are referenced by call statements directly and are not Expr.fvar symbols.
   | .command_procedure _ _ _ _ _ _ _ => []
@@ -628,60 +637,69 @@ private def initFVarIsOp (p : Boole.Program) : Array Bool :=
 
 def toCoreDecls (cmd : BooleDDM.Command SourceRange) : TranslateM (List Core.Decl) := do
   match cmd with
-  | .command_procedure m ⟨_, n⟩ ⟨_, targs?⟩ ins ⟨_, outs?⟩ ⟨_, spec?⟩ ⟨_, body?⟩ =>
+  | .command_procedure m nameAnn targsAnn ins outsAnn specAnn bodyAnn =>
+    let n := nameAnn.val
+    let targs? := targsAnn.val
+    let outs? := outsAnn.val
+    let spec? := specAnn.val
+    let body? := bodyAnn.val
     let tys := match targs? with | none => [] | some ts => typeArgsToList ts
     withTypeBVars tys do
       let inputs ← (bindingsToList ins).mapM toCoreBinding
       let outputs ← match outs? with
-        | none => return []
+        | none => pure []
         | some os => (monoDeclListToList os).mapM toCoreMonoBind
       let inputNames := inputs.map (·.fst.name)
       let outputNames := outputs.map (·.fst.name)
       let spec ← withBVars (inputNames ++ outputNames) (toCoreSpec m n spec?)
       let body ← match body? with
-        | none => return []
+        | none => pure []
         | some b => withBVars (inputNames ++ outputNames) (toCoreBlock b)
       return [.proc {
         header := { name := mkIdent n, typeArgs := tys, inputs := inputs, outputs := outputs }
         spec := spec
         body := body
-      }]
+      } .empty]
   | .command_typedecl _ ⟨_, n⟩ ⟨_, args?⟩ =>
     let params := match args? with
       | none => []
       | some bs => (bindingsToList bs).map bindingName
-    return [.type (.con { name := n, params := params })]
+    return [.type (.con { name := n, params := params }) .empty]
   | .command_typesynonym _ ⟨_, n⟩ ⟨_, args?⟩ _ rhs =>
     let tys := match args? with
       | none => []
       | some bs => (bindingsToList bs).map bindingName
     withTypeBVars tys do
-      return [.type (.syn { name := n, typeArgs := tys, type := ← toCoreMonoType rhs })]
+      return [.type (.syn { name := n, typeArgs := tys, type := ← toCoreMonoType rhs }) .empty]
   | .command_constdecl _ ⟨_, n⟩ ⟨_, targs?⟩ ret =>
     let tys := match targs? with | none => [] | some ts => typeArgsToList ts
     withTypeBVars tys do
-      return [.func { name := mkIdent n, typeArgs := tys, inputs := [], output := ← toCoreMonoType ret, body := none, concreteEval := none, attr := #[], axioms := [] }]
+      return [.func { name := mkIdent n, typeArgs := tys, inputs := [], output := ← toCoreMonoType ret, body := none, concreteEval := none, attr := #[], axioms := [] } .empty]
   | .command_fndecl _ ⟨_, n⟩ ⟨_, targs?⟩ bs ret =>
     let tys := match targs? with | none => [] | some ts => typeArgsToList ts
     withTypeBVars tys do
-      return [.func { name := mkIdent n, typeArgs := tys, inputs := ← (bindingsToList bs).mapM toCoreBinding, output := ← toCoreMonoType ret, body := none, concreteEval := none, attr := #[], axioms := [] }]
+      return [
+        .func { name := mkIdent n, typeArgs := tys, inputs := ← (bindingsToList bs).mapM toCoreBinding, output := ← toCoreMonoType ret, body := none, concreteEval := none, attr := #[], axioms := [] }
+           .empty]
   | .command_fndef m ⟨_, n⟩ ⟨_, targs?⟩ bs ret ⟨_, pres⟩ body ⟨_, inline?⟩ =>
     let tys := match targs? with | none => [] | some ts => typeArgsToList ts
-    let f ← lowerPureFuncDef m n tys bs ret pres body inline?.isSome
-    return [.func f]
-  | .command_recfndef m ⟨_, n⟩ ⟨_, targs?⟩ bs ret ⟨_, pres⟩ body =>
-    let tys := match targs? with | none => [] | some ts => typeArgsToList ts
-    let f ← lowerPureFuncDef m n tys bs ret pres body false
-    return [.func {f with isRecursive := true}]
+    return [.func (← lowerPureFuncDef m n tys bs ret pres body inline?.isSome) .empty]
+  | .command_recfndefs _ ⟨_, funcs⟩ =>
+    let fs ← funcs.toList.mapM fun
+      | .recfn_decl m ⟨_, n⟩ ⟨_, targs?⟩ bs ret ⟨_, pres⟩ body => do
+        let tys := match targs? with | none => [] | some ts => typeArgsToList ts
+        let f ← lowerPureFuncDef m n tys bs ret pres body false
+        return { f with isRecursive := true }
+    return [.recFuncBlock fs .empty]
   | .command_var _ b =>
     let (id, ty) ← toCoreBind b
     let i := (← get).globalVarCounter
     modify fun s => { s with globalVarCounter := i + 1 }
-    return [.var id ty (some (.fvar () (mkIdent s!"init_{id.name}_{i}") none))]
+    return [.var id ty (some (.fvar () (mkIdent s!"init_{id.name}_{i}") none)) .empty]
   | .command_axiom m ⟨_, l?⟩ e =>
-    return [.ax { name := ← defaultLabel m "axiom" l?, e := ← toCoreExpr e }]
+    return [.ax { name := ← defaultLabel m "axiom" l?, e := ← toCoreExpr e } .empty]
   | .command_distinct m ⟨_, l?⟩ ⟨_, es⟩ =>
-    return [.distinct (mkIdent (← defaultLabel m "distinct" l?)) (← es.toList.mapM toCoreExpr)]
+    return [.distinct (mkIdent (← defaultLabel m "distinct" l?)) (← es.toList.mapM toCoreExpr) .empty]
   | .command_block _ b =>
     -- Core decls do not have a standalone "top-level block" form, so a Boole
     -- command-level block is wrapped as a synthetic procedure declaration.
@@ -689,9 +707,9 @@ def toCoreDecls (cmd : BooleDDM.Command SourceRange) : TranslateM (List Core.Dec
       header := { name := mkIdent topLevelBlockProcedureName, typeArgs := [], inputs := [], outputs := [] }
       spec := { modifies := [], preconditions := [], postconditions := [] }
       body := ← toCoreBlock b
-    }]
+    } .empty]
   | .command_datatypes _ ⟨_, decls⟩ =>
-    return [.type (.data (← decls.toList.mapM toCoreDatatypeDecl))]
+    return [.type (.data (← decls.toList.mapM toCoreDatatypeDecl)) .empty]
 
 def toCoreProgram (p : Boole.Program) (gctx : GlobalContext := {}) : Except DiagnosticModel Core.Program := do
   match p with

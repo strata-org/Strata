@@ -42,6 +42,9 @@ open Lambda (LMonoTy LTy LExpr)
 
 public section
 
+private def mdWithUnknownLoc : Imperative.MetaData Core.Expression :=
+  #[⟨Imperative.MetaData.fileRange, .fileRange FileRange.unknown⟩]
+
 /-
 Translate Laurel HighType to Core Type
 -/
@@ -56,7 +59,6 @@ def translateType (model : SemanticModel) (ty : HighTypeMd) : LMonoTy :=
   | .TSet elementType => Core.mapTy (translateType model elementType) LMonoTy.bool
   | .TMap keyType valueType => Core.mapTy (translateType model keyType) (translateType model valueType)
   | .UserDefined name =>
-    -- Composite types map to "Composite"; datatypes map to their own name
     match name.uniqueId.bind model.refToDef.get? with
     | some (.compositeType _) => .tcons "Composite" []
     | some (.datatypeDefinition dt) => .tcons dt.name.text []
@@ -433,7 +435,7 @@ def translateStmt (outputParams : List Parameter) (stmt : StmtExprMd)
       let belse ← match elseBranch with
                   | some e => translateStmt outputParams e
                   | none => pure []
-      return [Imperative.Stmt.ite bcond bthen belse .empty]
+      return [Imperative.Stmt.ite bcond bthen belse md]
   | .StaticCall callee args =>
       -- Check if this is a function or procedure
       if model.isFunction callee then
@@ -523,9 +525,9 @@ def translateProcedure (proc : Procedure) : TranslateM Core.Procedure := do
     match proc.body with
     | .Transparent bodyExpr => translateStmt proc.outputs bodyExpr
     | .Opaque _postconds (some impl) _ => translateStmt proc.outputs impl
-    | _ => pure [Core.Statement.assume "no_body" (.const () (.boolConst false)) .empty]
+    | _ => pure [Core.Statement.assume "no_body" (.const () (.boolConst false)) mdWithUnknownLoc]
   -- Wrap body in a labeled block so early returns (exit) work correctly.
-  let body : List Core.Statement := [.block "$body" bodyStmts .empty]
+  let body : List Core.Statement := [.block "$body" bodyStmts mdWithUnknownLoc]
   let spec : Core.Procedure.Spec := { modifies, preconditions, postconditions }
   return { header, spec, body }
 
@@ -557,7 +559,7 @@ def translateProcedureToFunction (proc : Procedure) : TranslateM Core.Decl := do
     output := outputTy
     body := body
     preconditions := preconditions
-  }
+  } proc.md
 
 /--
 Translate a Laurel DatatypeDefinition to an `LDatatype Unit`.
@@ -583,10 +585,15 @@ structure LaurelTranslateOptions where
   emitResolutionErrors : Bool := true
 
 abbrev TranslateResult := (Option Core.Program) × (List DiagnosticModel)
+
+/-- Like `translate` but also returns the lowered Laurel program (after all
+    Laurel-to-Laurel passes, before the final translation to Core). -/
+abbrev TranslateResultWithLaurel := (Option Core.Program) × (List DiagnosticModel) × Program
+
 /--
-Translate Laurel Program to Core Program
+Translate Laurel Program to Core Program, also returning the lowered Laurel program.
 -/
-def translate (options: LaurelTranslateOptions) (program : Program): TranslateResult :=
+def translateWithLaurel (options: LaurelTranslateOptions) (program : Program): TranslateResultWithLaurel :=
   let program := { program with
     staticProcedures := coreDefinitionsForLaurel.staticProcedures ++ program.staticProcedures
   }
@@ -627,8 +634,29 @@ def translate (options: LaurelTranslateOptions) (program : Program): TranslateRe
   let resolutionErrors: List DiagnosticModel := if options.emitResolutionErrors then result.errors.toList else []
   let allDiagnostics := resolutionErrors ++ diamondErrors ++ modifiesDiags ++ constrainedTypeDiags ++ translateState.diagnostics
   let coreProgramOption := if translateState.coreProgramHasSuperfluousErrors then none else coreProgramOption
-  (coreProgramOption, allDiagnostics)
+  (coreProgramOption, allDiagnostics, program)
   where
+
+  /--
+  Translate Laurel datatype definitions to Core declarations.
+  Datatypes are grouped by mutual references (SCC) so mutually recursive
+  datatypes share a single `.data` declaration.
+  -/
+  translateTypes (program : Program) (model : SemanticModel) : TranslateM (List Core.Decl) := do
+    -- Emit diagnostics for composite types that have instance procedures.
+    for td in program.types do
+      if let .Composite ct := td then
+        for proc in ct.instanceProcedures do
+          emitDiagnostic $ proc.md.toDiagnostic
+            s!"Instance procedure '{proc.name.text}' on composite type '{ct.name.text}' is not yet supported"
+            DiagnosticType.NotYetImplemented
+    -- Translate datatype definitions to Core declarations.
+    let laurelDatatypes := program.types.filterMap fun td => match td with
+      | .Datatype dt => some dt
+      | _ => none
+    let ldatatypes := laurelDatatypes.map (translateDatatypeDefinition model)
+    let groups := groupDatatypes laurelDatatypes ldatatypes
+    return groups.map fun group => Core.Decl.type (.data group) mdWithUnknownLoc
 
   translateLaurelToCore (program : Program): TranslateM Core.Program := do
     let model := (← get).model
@@ -652,23 +680,16 @@ def translate (options: LaurelTranslateOptions) (program : Program): TranslateRe
         inputs := []
         output := coreTy
         body := body
-      }
+      } mdWithUnknownLoc
 
     -- Collect ALL errors from both functions, procedures, and resolution before deciding whether to fail
     -- let allErrors :=pureErrors ++ procDiags ++ constantsState.diagnostics
     -- if !allErrors.isEmpty then
     --   .error allErrors.toArray
-    let procDecls := procedures.map (fun p => Core.Decl.proc p .empty)
+    let procDecls := procedures.map (fun p => Core.Decl.proc p mdWithUnknownLoc)
 
     -- Translate Laurel datatype definitions to Core declarations.
-    -- Datatypes are grouped by mutual references (SCC) so mutually recursive
-    -- datatypes share a single `.data` declaration.
-    let laurelDatatypes := program.types.filterMap fun td => match td with
-      | .Datatype dt => some dt
-      | _ => none
-    let ldatatypes := laurelDatatypes.map (translateDatatypeDefinition model)
-    let groups := groupDatatypes laurelDatatypes ldatatypes
-    let groupedDatatypeDecls := groups.map fun group => Core.Decl.type (.data group)
+    let groupedDatatypeDecls ← translateTypes program model
     let program := {
       decls := groupedDatatypeDecls ++ constantDecls ++ pureFuncDecls ++ procDecls
     }
@@ -678,6 +699,13 @@ def translate (options: LaurelTranslateOptions) (program : Program): TranslateRe
     -- dbg_trace "================================="
     pure program
 
+
+/--
+Translate Laurel Program to Core Program
+-/
+def translate (options: LaurelTranslateOptions) (program : Program): TranslateResult :=
+  let (core, diags, _) := translateWithLaurel options program
+  (core, diags)
 
 /--
 Verify a Laurel program using an SMT solver
@@ -690,7 +718,7 @@ def verifyToVcResults (program : Program)
   match coreProgramOption with
   | some coreProgram =>
     -- Enable removeIrrelevantAxioms to avoid polluting simple assertions with heap axioms
-    let options := { options with removeIrrelevantAxioms := true }
+    let options := { options with removeIrrelevantAxioms := .Precise }
     let runner tempDir :=
       EIO.toIO (fun f => IO.Error.userError (toString f))
           (Core.verify coreProgram tempDir .none options)

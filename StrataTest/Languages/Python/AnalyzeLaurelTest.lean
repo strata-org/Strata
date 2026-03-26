@@ -7,6 +7,8 @@ module
 
 meta import Strata.SimpleAPI
 meta import Strata.Languages.Python.PySpecPipeline
+meta import Strata.Transform.ProcedureInlining
+meta import Strata.Languages.Python.PyFactory
 meta import StrataTest.Util.Python
 
 /-! ## End-to-end tests for `pyAnalyzeLaurel` with dispatch
@@ -19,23 +21,10 @@ Messaging) are generic and not tied to any cloud provider.
 
 namespace Strata.Python.AnalyzeLaurelTest
 
-open Strata (pyAnalyzeLaurel pySpecs)
+open Strata (pyAnalyzeLaurel pySpecsDir)
 
 private meta def testDir : System.FilePath :=
   "StrataTest/Languages/Python/Specs/dispatch_test"
-
-/-- Compile a Python source file to a `.pyspec.st.ion` Ion file using `pySpecs`.
-    Returns the path to the generated Ion file. -/
-private meta def compilePySpec
-    (dialectFile : System.FilePath) (pyFile : System.FilePath)
-    (outDir : System.FilePath) : IO System.FilePath := do
-  match ← pySpecs pyFile outDir dialectFile
-      (warningOutput := .none) |>.toBaseIO with
-  | .ok () => pure ()
-  | .error msg => throw <| .userError s!"pySpecs failed for {pyFile}: {msg}"
-  let some stem := pyFile.fileStem
-    | throw <| .userError s!"No stem for {pyFile}"
-  return outDir / s!"{stem}.pyspec.st.ion"
 
 /-- Compile a Python source file to a `.python.st.ion` Ion file.
     Returns the path to the generated Ion file. -/
@@ -64,17 +53,18 @@ private meta def compilePython
     throw <| .userError s!"py_to_strata failed for {pyFile} (exit {exitCode}): {stderr}"
   return ionPath
 
-/-- Set up the test fixture: compile all pyspec files and the dispatch file.
-    Returns (dispatchIonPath, pyspecDir). -/
+/-- Set up the test fixture: compile all servicelib modules and return the
+    spec directory.  The dispatch and pyspec modules are resolved by name. -/
 private meta def setupFixture (_pythonCmd : System.FilePath)
-    (outDir : System.FilePath) : IO System.FilePath := do
+    (outDir : System.FilePath) : IO Unit := do
   IO.FS.withTempFile fun _handle dialectFile => do
     IO.FS.writeBinFile dialectFile Python.Python.toIon
-    -- Compile service specs
-    let _ ← compilePySpec dialectFile (testDir / "Storage.py") outDir
-    let _ ← compilePySpec dialectFile (testDir / "Messaging.py") outDir
-    -- Compile dispatch file
-    compilePySpec dialectFile (testDir / "servicelib.py") outDir
+    -- Compile all servicelib modules (dispatch + individual services)
+    match ← pySpecsDir testDir outDir dialectFile
+        (modules := #["servicelib", "servicelib.Storage", "servicelib.Messaging"])
+        (warningOutput := .none) |>.toBaseIO with
+    | .ok () => pure ()
+    | .error msg => throw <| IO.userError s!"pySpecsDir failed: {msg}"
 
 /-- Compile a test Python file to Ion format. -/
 private meta def compileTestScript (pyFile : System.FilePath)
@@ -84,18 +74,58 @@ private meta def compileTestScript (pyFile : System.FilePath)
     compilePython dialectFile pyFile outDir
 
 /-- Run pyAnalyzeLaurel on a test script within the shared fixture. -/
-private meta def runAnalyze (dispatchIon : System.FilePath)
+private meta def runAnalyze
     (tmpDir : System.FilePath) (scriptName : String)
     : IO (Except String Core.Program) := do
   let testIon ← compileTestScript (testDir / scriptName) tmpDir
   let laurel ←
     match ← Strata.pyAnalyzeLaurel testIon.toString
-        (dispatchPaths := #[dispatchIon.toString]) |>.toBaseIO with
+        (dispatchModules := #["servicelib"])
+        (specDir := tmpDir) |>.toBaseIO with
     | .ok r => pure r
     | .error err => return .error (toString err)
   match Strata.translateCombinedLaurel laurel with
-  | (some core, []) => .ok $ pure core
-  | (_, errors) => .error s!"Laurel to Core translation failed: {errors}"
+  | (some core, []) =>
+    -- Also run Core type checking to catch semantic errors (e.g. Heap vs Any)
+    match Core.typeCheck Core.VerifyOptions.quiet core (moreFns := Strata.Python.ReFactory) with
+    | .error diag => return .error s!"Core type checking failed: {diag}"
+    | .ok _ => return .ok core
+  | (_, errors) => return .error s!"Laurel to Core translation failed: {errors}"
+
+/-- Run pyAnalyzeLaurel with inlining and verification, returning the formatted results. -/
+private meta def runAnalyzeAndVerify
+    (tmpDir : System.FilePath) (scriptName : String)
+    : IO (Except String (Array Core.VCResult)) := do
+  let testIon ← compileTestScript (testDir / scriptName) tmpDir
+  let laurel ←
+    match ← Strata.pyAnalyzeLaurel testIon.toString
+        (dispatchModules := #["servicelib"])
+        (specDir := tmpDir) |>.toBaseIO with
+    | .ok r => pure r
+    | .error err => return .error (toString err)
+  let (coreProgramOption, _) := Strata.translateCombinedLaurel laurel
+  let coreProgram ← match coreProgramOption with
+    | none => return .error "Laurel to Core translation failed"
+    | some core => pure core
+  -- Split prelude / user procedure names at FIRST_END_MARKER
+  let (preludeNames, userProcNames) := Strata.splitProcNames coreProgram
+  -- Inline all non-main, non-prelude procedures
+  let coreProgram ← match Core.Transform.runProgram (targetProcList := .none)
+        (Core.ProcedureInlining.inlineCallCmd
+          (doInline := λ name _ => name ≠ "__main__" && !preludeNames.contains name))
+        coreProgram .emp with
+    | ⟨.error e, _⟩ => return .error s!"Inlining failed: {e}"
+    | ⟨.ok (_, inlined), _⟩ => pure inlined
+  -- Verify
+  let options : Core.VerifyOptions :=
+    { Core.VerifyOptions.default with
+      stopOnFirstError := false, verbose := .quiet, solver := "z3",
+      checkMode := .bugFinding, checkLevel := .full }
+  match ← Core.verifyProgram coreProgram options
+      (moreFns := Strata.Python.ReFactory)
+      (proceduresToVerify := some userProcNames) |>.toBaseIO with
+  | .ok results => return .ok results
+  | .error msg => return .error (toString msg)
 
 /-- Expected outcome for a test case. -/
 private inductive Expected where
@@ -109,6 +139,12 @@ private meta def testCases : List (String × Expected) := [
   .mk "test_multi_service.py" .success,
   .mk "test_annotation_fallback.py" .success,
   .mk "test_required_with_optional.py" .success,
+  .mk "test_heap_return.py" .success,
+  .mk "test_list_str.py" .success,
+  .mk "test_nested_try.py" .success,
+  .mk "test_try_scope.py" .success,
+  .mk "test_dict_expand.py" .success,
+  .mk "test_dict_expand_optional.py" .success,
   -- Negative tests
   .mk "test_invalid_service.py" $
     .fail "User code error: 'connect' called with unknown string \"invalid\"; known services: #[messaging, storage]",
@@ -125,13 +161,24 @@ private meta def testCases : List (String × Expected) := [
   .mk "test_optional_missing_required.py" $
     .fail "User code error: 'list_items' called with missing required arguments: [Bucket]",
   .mk "test_positional_missing.py" $
-    .fail "User code error: 'delete_item' called with missing required arguments: [Key]"
+    .fail "User code error: 'delete_item' called with missing required arguments: [Key]",
+  -- Type alias resolution tests (TDD for resolveTypeName refactoring)
+  .mk "test_method_dispatch.py" .success,
+  .mk "test_annotation_dispatch.py" .success,
+  .mk "test_constructor_dispatch.py" .success,
+  .mk "test_reassign_dispatch.py" .success,
+  -- Bug regression: procedure/function names used as type annotations should
+  -- NOT create UserDefined types (only composite types should).
+  .mk "test_procedure_as_annotation.py" $
+    .fail "User code error: 'Storage_put_item' is not a type",
+  .mk "test_procedure_as_param_type.py" $
+    .fail "User code error: 'Storage_put_item' is not a type"
 ]
 
 /-- Run a single test case and return an error message on failure, or `none` on success. -/
-private meta def runTestCase (dispatchIon tmpDir : System.FilePath)
+private meta def runTestCase (tmpDir : System.FilePath)
     (scriptName : String) (expected : Expected) : IO (Option String) := do
-  let result ← runAnalyze dispatchIon tmpDir scriptName
+  let result ← runAnalyze tmpDir scriptName
   match expected, result with
   | .success, .ok _ => return none
   | .success, .error msg =>
@@ -144,7 +191,7 @@ private meta def runTestCase (dispatchIon tmpDir : System.FilePath)
 
 #eval withPython fun _pythonCmd => do
   IO.FS.withTempDir fun tmpDir => do
-    let dispatchIon ← setupFixture _pythonCmd tmpDir
+    setupFixture _pythonCmd tmpDir
     -- Launch all tests concurrently, checking for duplicate filenames
     let mut seen : Std.HashSet String := {}
     let mut tasks : Array (String × Task (Except IO.Error (Option String))) := #[]
@@ -152,7 +199,7 @@ private meta def runTestCase (dispatchIon tmpDir : System.FilePath)
       if scriptName ∈ seen then
         throw <| IO.userError s!"Duplicate test filename: {scriptName}"
       seen := seen.insert scriptName
-      let task ← IO.asTask (runTestCase dispatchIon tmpDir scriptName expected)
+      let task ← IO.asTask (runTestCase tmpDir scriptName expected)
       tasks := tasks.push (scriptName, task)
     -- Collect results
     let mut errors : Array String := #[]
@@ -163,5 +210,72 @@ private meta def runTestCase (dispatchIon tmpDir : System.FilePath)
       | .error e => errors := errors.push s!"Task error: {e}"
     if errors.size > 0 then
       throw <| IO.userError ("\n".intercalate errors.toList)
+
+/-! ## Precondition violation test
+
+Verifies that calling `put_item(Bucket="INVALID!", ...)` produces a `✖️ always false`
+result for the regex assertion through the full verification pipeline.
+Expected output (when Python + z3 available):
+  servicelib_Storage_Storage_put_item_assert(0)_9: ✔️ always true if reached (Required parameter 'Bucket' is missing)
+  servicelib_Storage_Storage_put_item_assert(0)_9: ✔️ always true if reached (Required parameter 'Key' is missing)
+  servicelib_Storage_Storage_put_item_assert(0)_9: ✔️ always true if reached (Required parameter 'Data' is missing)
+  servicelib_Storage_Storage_put_item_assert(0)_9: ✔️ always true if reached (Bucket must not be empty)
+  servicelib_Storage_Storage_put_item_assert(0)_9: ✖️ always false if reached (Bucket must match ^[a-z0-9-]+$)
+  servicelib_Storage_Storage_put_item_assert(0)_9: ✔️ always true if reached (Key must not be empty)
+-/
+
+#eval withPython fun _pythonCmd => do
+  IO.FS.withTempDir fun tmpDir => do
+    setupFixture _pythonCmd tmpDir
+    let result ← runAnalyzeAndVerify tmpDir
+      "test_precondition_violation.py"
+    match result with
+    | .error msg => throw <| IO.userError s!"Pipeline failed: {msg}"
+    | .ok vcResults =>
+      let mut foundAlwaysFalse := false
+      for r in vcResults do
+        if r.obligation.label.startsWith "servicelib_Storage_" then
+          let msg := r.obligation.metadata.findSome? fun elem =>
+            match elem.fld, elem.value with
+            | Imperative.MetaData.message, .msg s => some s
+            | _, _ => none
+          let msgStr := msg.map (s!" ({·})") |>.getD ""
+          let line := s!"{r.obligation.label}: {r.formatOutcome}{msgStr}"
+          IO.println line
+          if (line.splitOn "✖️").length != 1 then
+            foundAlwaysFalse := true
+      if !foundAlwaysFalse then
+        throw <| IO.userError "Expected ✖️ always false for regex violation"
+
+/-! ## Precondition with alias test
+
+Verifies that calling `put_item(Bucket="", ...)` through the alias resolution
+path produces a `✖️ always false` result for the "Bucket must not be empty"
+assertion. This exercises the full pipeline with type alias resolution.
+-/
+
+#eval withPython fun _pythonCmd => do
+  IO.FS.withTempDir fun tmpDir => do
+    setupFixture _pythonCmd tmpDir
+    let result ← runAnalyzeAndVerify tmpDir
+      "test_precondition_with_alias.py"
+    match result with
+    | .error msg => throw <| IO.userError s!"Pipeline failed: {msg}"
+    | .ok vcResults =>
+      let mut foundAlwaysFalse := false
+      for r in vcResults do
+        if r.obligation.label.startsWith "servicelib_Storage_" then
+          let msg := r.obligation.metadata.findSome? fun elem =>
+            match elem.fld, elem.value with
+            | Imperative.MetaData.message, .msg s => some s
+            | _, _ => none
+          let msgStr := msg.map (s!" ({·})") |>.getD ""
+          let line := s!"{r.obligation.label}: {r.formatOutcome}{msgStr}"
+          IO.println line
+          if (line.splitOn "✖️").length != 1 then
+            foundAlwaysFalse := true
+      if !foundAlwaysFalse then
+        throw <| IO.userError
+          "Expected ✖️ always false for empty bucket violation"
 
 end Strata.Python.AnalyzeLaurelTest

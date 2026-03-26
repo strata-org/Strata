@@ -38,6 +38,8 @@ axiom (forall x: int :: square(x) == x * x);
 
 procedure opaque_reveal_hide_seed(x: int) returns ()
 {
+  // Current direction: if we support this family at all, start with
+  // minimal `opaque` + local `reveal` semantics and defer `hide` / `closed`.
   // TODO(feature:opaque-reveal): treat `square` as opaque by default.
   // TODO(feature:hide): let a proof step reveal and then re-hide the body.
   // TODO(feature:closed): keep the body hidden across module boundaries.

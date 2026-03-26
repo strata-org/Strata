@@ -11,7 +11,7 @@ jobs:
       contents: read
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
       - name: Install cvc5
         shell: bash
         run: |
@@ -46,7 +46,7 @@ jobs:
               chmod +x "${ARCHIVE_NAME}/bin/z3"
               echo "$GITHUB_WORKSPACE/${ARCHIVE_NAME}/bin/" >> $GITHUB_PATH
       - name: Prepare ccache
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           save-always: true
           path: .ccache
@@ -74,7 +74,7 @@ jobs:
           ccache -s
           echo "$GITHUB_WORKSPACE/cbmc-src/build/bin/" >> $GITHUB_PATH
       - name: Restore lake cache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v5
         with:
           path: .lake
           key: lake-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}-${{ hashFiles('lake-manifest.json') }}-${{ hashFiles('**/*.st') }}-${{ github.sha }}
@@ -85,18 +85,22 @@ jobs:
         with:
           use-github-cache: false
       - name: Save lake cache
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v5
         with:
           path: .lake
           key: lake-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}-${{ hashFiles('lake-manifest.json') }}-${{ hashFiles('**/*.st') }}-${{ github.sha }}
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: '3.14'
       - name: Run legacy CBMC test (C_Simp)
         shell: bash
         run: |
-          export CBMC_DIR="$(dirname $(which cbmc))/"
-          ./Strata/Backends/CBMC/run_strata_cbmc.sh Strata/Backends/CBMC/tests/simpleTest.csimp.st
+          lake exe StrataToCBMC Strata/Backends/CBMC/tests/simpleTest.csimp.st > symtab.json
+          symtab2gb symtab.json --out full.goto
+          goto-instrument --enforce-contract simpleTest full.goto full_checking.goto
+          OUTPUT=$(cbmc full_checking.goto --function simpleTest --trace)
+          echo "$OUTPUT"
+          [[ "$OUTPUT" == *"VERIFICATION SUCCESSFUL"* ]]
       - name: Run Python CBMC pipeline tests
         shell: bash
         run: |

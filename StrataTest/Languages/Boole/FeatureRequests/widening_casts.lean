@@ -22,10 +22,15 @@ program Boole;
 
 // Target shape: explicit widening/coercion pressure in a quantified formula,
 // not only at function/procedure call sites.
+//
+// This likely needs a centralized type-directed coercion pass rather than
+// additional local patching in expression lowering.
 
 type BvVec := Map int bv32;
 
 function bv32_to_int_u(x: bv32) : int;
+
+axiom (forall x: bv32 :: 0 <= bv32_to_int_u(x));
 
 procedure widening_cast_seed(v: BvVec, n: int) returns ()
 spec {
@@ -42,4 +47,6 @@ spec {
 
 example : Strata.smtVCsCorrect wideningCastsSeed := by
   gen_smt_vcs
-  all_goals (try grind)
+  all_goals
+    intro Map inst n bv32_to_int_u select v hn hNonneg i hi
+    exact hNonneg (select v i)
