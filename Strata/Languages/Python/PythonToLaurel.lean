@@ -304,10 +304,6 @@ def DictStrAny_empty:= mkStmtExprMd (StmtExpr.StaticCall "DictStrAny_empty" [])
 
 def DictStrAny_mk (kv: List (String × StmtExprMd)) := DictStrAny_mk_aux kv DictStrAny_empty
 
-/-- Generate `DictStrAny_get(dict, key)` to extract a value from a dictionary. -/
-def DictStrAny_get_expr (dict : StmtExprMd) (key : String) : StmtExprMd :=
-  mkStmtExprMd (.StaticCall "DictStrAny_get" [dict, mkStmtExprMd (.LiteralString key)])
-
 /-- Extract a value from a dictionary for a function parameter.
     For required params, generates `DictStrAny_get(dict, key)` (with precondition).
     For optional params, generates `DictStrAny_get_or_none(dict, key)` (returns `None` if absent). -/
@@ -823,7 +819,8 @@ partial def translateCall (ctx : TranslationContext)
     | .Name  _ _ _ => return mkCall funcName
     | .Attribute _ val _attr _ =>
         let _target_trans ← translateExpr ctx val
-        if opt_firstarg.isSome then return mkStmtExprMd (.Hole)
+        if opt_firstarg.isSome then
+          return mkStmtExprMd (.Hole)
         else return mkCall funcName
     | _ => throw (.unsupportedConstruct "Invalid call construct" (toString (repr f)))
   else
