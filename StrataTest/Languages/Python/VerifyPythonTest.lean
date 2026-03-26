@@ -1,0 +1,104 @@
+/-
+  Copyright Strata Contributors
+
+  SPDX-License-Identifier: Apache-2.0 OR MIT
+-/
+
+import StrataTest.Languages.Python.TestExamples
+import StrataTest.Util.TestDiagnostics
+import Strata.DDM.Parser
+
+/-! ## Test: Inline Python verification via processPythonFile
+
+Verifies that `processPythonFile` correctly runs the full
+Python → Laurel → Core → SMT pipeline and produces diagnostics.
+-/
+
+namespace Strata.Python.VerifyPythonTest
+
+open StrataTest.Util
+open Strata.Python (processPythonFile withPython)
+open Strata.Parser (stringInputContext)
+
+-- Passing assertions produce no diagnostics.
+#guard_msgs in
+#eval withPython (warnOnSkip := false) fun pythonCmd => do
+  let program :=
+"def main() -> None:
+    x: int = 5
+    y: int = 10
+    assert x == 5
+    assert y == 10
+"
+  let diags ← processPythonFile pythonCmd (stringInputContext "test.py" program)
+  if diags.size ≠ 0 then
+    throw <| .userError s!"Expected 0 diagnostics, got {diags.size}"
+
+-- Failing assertion produces a diagnostic with the expected message.
+#guard_msgs in
+#eval withPython (warnOnSkip := false) fun pythonCmd => do
+  let program :=
+"def main() -> None:
+    x: int = 5
+    assert x == 6
+"
+  let diags ← processPythonFile pythonCmd (stringInputContext "test.py" program)
+  unless diags.any (·.message == "assertion does not hold") do
+    throw <| .userError s!"Expected 'assertion does not hold', got: {diags.map (·.message)}"
+
+-- Mix of passing and failing assertions: only failing ones produce diagnostics.
+#guard_msgs in
+#eval withPython (warnOnSkip := false) fun pythonCmd => do
+  let program :=
+"def main() -> None:
+    x: int = 5
+    assert x == 5
+    assert x == 6
+    assert x == 7
+"
+  let diags ← processPythonFile pythonCmd (stringInputContext "test.py" program)
+  -- x == 6 and x == 7 should fail; x == 5 should pass
+  if diags.size ≠ 2 then
+    throw <| .userError s!"Expected 2 diagnostics, got {diags.size}: {diags.map (·.message)}"
+
+-- Diagnostic line numbers point to the correct assertion.
+#guard_msgs in
+#eval withPython (warnOnSkip := false) fun pythonCmd => do
+  let program :=
+"def main() -> None:
+    x: int = 5
+    assert x == 5
+    assert x == 6
+"
+  let diags ← processPythonFile pythonCmd (stringInputContext "test.py" program)
+  match diags.find? (·.message == "assertion does not hold") with
+  | some d =>
+    -- "assert x == 6" is on line 4
+    if d.start.line ≠ 4 then
+      throw <| .userError s!"Expected diagnostic on line 4, got line {d.start.line}"
+  | none =>
+    throw <| .userError s!"Expected a failing diagnostic"
+
+-- Annotated-style test using testInputWithOffset and # comment expectations.
+-- testInputWithOffset prints on success; we validate silently here instead.
+#guard_msgs in
+#eval withPython (warnOnSkip := false) fun pythonCmd => do
+  let program :=
+"def main() -> None:
+    x: int = 5
+    assert x == 5
+    assert x == 6
+#   ^^^^^^^^^^^^^ error: assertion does not hold
+"
+  let inputContext := stringInputContext "AnnotatedPython" program
+  let expectations := parseDiagnosticExpectations program
+  let expectedErrors := expectations.filter (fun e => e.level == "error")
+  let diagnostics ← processPythonFile pythonCmd inputContext
+  for exp in expectedErrors do
+    unless diagnostics.any (fun d => matchesDiagnostic d exp) do
+      throw <| .userError s!"Unmatched expectation: line {exp.line}, {exp.message}"
+  for d in diagnostics do
+    unless expectedErrors.any (fun exp => matchesDiagnostic d exp) do
+      throw <| .userError s!"Unexpected diagnostic: line {d.start.line}, {d.message}"
+
+end Strata.Python.VerifyPythonTest
