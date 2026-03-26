@@ -125,7 +125,7 @@ private meta def runAnalyzeAndVerify
     { Core.VerifyOptions.default with
       stopOnFirstError := false, verbose := .quiet, solver := "z3",
       checkMode := .bugFinding, checkLevel := .full }
-  match ← Strata.verifyCore coreProgram options
+  match ← Core.verifyProgram coreProgram options
       (moreFns := Strata.Python.ReFactory) |>.toBaseIO with
   | .ok results => return .ok results
   | .error msg => return .error (toString msg)
