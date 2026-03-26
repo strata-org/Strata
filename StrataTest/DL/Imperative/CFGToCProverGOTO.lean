@@ -72,6 +72,7 @@ instance : Imperative.HasIntOrder LExprTP where
 
 instance : Imperative.HasNot LExprTP where
   not e := .app md (.op md ⟨"Bool.Not", ()⟩ none) e
+  boolTy := .tcons "bool" []
 
 -------------------------------------------------------------------------------
 
@@ -79,9 +80,9 @@ instance : Imperative.HasNot LExprTP where
 
 private def seqCmds : List (Imperative.Stmt LExprTP (Imperative.Cmd LExprTP)) :=
   [.cmd (.init (Lambda.Identifier.mk "x" ()) mty[bv32]
-    (some (.const { underlying := (), type := mty[bv32] } (.bitvecConst 32 0))) {}),
+    (.det (.const { underlying := (), type := mty[bv32] } (.bitvecConst 32 0))) {}),
    .cmd (.set (Lambda.Identifier.mk "x" ())
-    (.const { underlying := (), type := mty[bv32] } (.bitvecConst 32 42)) {})]
+    (.det (.const { underlying := (), type := mty[bv32] } (.bitvecConst 32 42))) {})]
 
 /--
 info: ok: #[LOCATION 0,
@@ -104,13 +105,13 @@ info: ok: #[LOCATION 0,
 
 private def iteCmds : List (Imperative.Stmt LExprTP (Imperative.Cmd LExprTP)) :=
   [.cmd (.init (Lambda.Identifier.mk "x" ()) mty[bv32]
-    (some (.const { underlying := (), type := mty[bv32] } (.bitvecConst 32 0))) {}),
-   .ite
-     (.const { underlying := (), type := mty[bool] } (.boolConst true))
+    (.det (.const { underlying := (), type := mty[bv32] } (.bitvecConst 32 0))) {}),
+   .ite (.det
+     (.const { underlying := (), type := mty[bool] } (.boolConst true)))
      [.cmd (.set (Lambda.Identifier.mk "x" ())
-       (.const { underlying := (), type := mty[bv32] } (.bitvecConst 32 10)) {})]
+       (.det (.const { underlying := (), type := mty[bv32] } (.bitvecConst 32 10))) {})]
      [.cmd (.set (Lambda.Identifier.mk "x" ())
-       (.const { underlying := (), type := mty[bv32] } (.bitvecConst 32 20)) {})]
+       (.det (.const { underlying := (), type := mty[bv32] } (.bitvecConst 32 20))) {})]
      {}]
 
 /--
@@ -160,14 +161,14 @@ private def addBV32 (op1 op2 : Lambda.LExprT TestParams.mono) : Lambda.LExprT Te
 
 private def loopCmds : List (Imperative.Stmt LExprTP (Imperative.Cmd LExprTP)) :=
   [.cmd (.init (Lambda.Identifier.mk "i" ()) mty[bv32]
-    (some (.const { underlying := (), type := mty[bv32] } (.bitvecConst 32 0))) {}),
-   .loop
-     (.const { underlying := (), type := mty[bool] } (.boolConst true))
+    (.det (.const { underlying := (), type := mty[bv32] } (.bitvecConst 32 0))) {}),
+   .loop (.det
+     (.const { underlying := (), type := mty[bool] } (.boolConst true)))
      none
      []
-     [.cmd (.set (Lambda.Identifier.mk "i" ()) (addBV32
+     [.cmd (.set (Lambda.Identifier.mk "i" ()) (.det (addBV32
        (.fvar { underlying := (), type := mty[bv32] } (Lambda.Identifier.mk "i" ()) (some mty[bv32]))
-       (.const { underlying := (), type := mty[bv32] } (.bitvecConst 32 1))) {})]
+       (.const { underlying := (), type := mty[bv32] } (.bitvecConst 32 1)))) {})]
      {}]
 
 /--
@@ -243,8 +244,8 @@ info: ok: #[LOCATION 0, ASSUME, ASSERT, GOTO 5 [((not(true : bool)) : bool)], GO
 
 private def havocCmds : List (Imperative.Stmt LExprTP (Imperative.Cmd LExprTP)) :=
   [.cmd (.init (Lambda.Identifier.mk "x" ()) mty[bv32]
-    (some (.const { underlying := (), type := mty[bv32] } (.bitvecConst 32 0))) {}),
-   .cmd (.havoc (Lambda.Identifier.mk "x" ()) {})]
+    (.det (.const { underlying := (), type := mty[bv32] } (.bitvecConst 32 0))) {}),
+   .cmd (.set (Lambda.Identifier.mk "x" ()) .nondet {})]
 
 /--
 info: ok: #[LOCATION 0,
