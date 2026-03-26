@@ -314,16 +314,18 @@ private def prependPrelude (coreFromLaurel : Core.Program) : Core.Program :=
   { decls := filteredPrelude ++ coreOnly ++ userDecls }
 
 /-- Split procedure names in a Core program into prelude names
-    (before `FIRST_END_MARKER`) and user names (after it). -/
+    (before `FIRST_END_MARKER`) and user names (after it).
+    If `FIRST_END_MARKER` is absent, nothing is considered prelude. -/
 public def splitProcNames (prog : Core.Program)
     : Std.HashSet String × List String :=
-  let (preludeDecls, rest) := prog.decls.span (fun d => toString d.name != "FIRST_END_MARKER")
+  let (before, rest) := prog.decls.span (fun d => toString d.name != "FIRST_END_MARKER")
+  let (preludeDecls, userDecls) := match rest with
+    | _ :: tl => (before, tl)  -- marker found: before is prelude, after is user
+    | [] => ([], before)       -- no marker: everything is user
   let preludeNames := preludeDecls.foldl (init := ({} : Std.HashSet String)) fun s d =>
     match d.getProc? with
     | some p => s.insert (Core.CoreIdent.toPretty p.header.name)
     | none => s
-  -- rest starts with FIRST_END_MARKER (or is empty); skip it
-  let userDecls := match rest with | _ :: tl => tl | [] => []
   let userProcNames := userDecls.filterMap fun d =>
     d.getProc?.map (Core.CoreIdent.toPretty ·.header.name)
   (preludeNames, userProcNames)
