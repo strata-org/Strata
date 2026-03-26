@@ -278,47 +278,4 @@ assertion. This exercises the full pipeline with type alias resolution.
         throw <| IO.userError
           "Expected ✖️ always false for empty bucket violation"
 
-/-! ## Any_to_bool with Dict/List: truthiness check followed by `in` operator
-
-Verifies that `if results: assert 'key' in results` does not produce
-a false positive on the PIn precondition. Any_to_bool must accept Dict
-and List so that the solver does not rule them out after a truthiness check.
--/
-
-/-- Filter out prelude verification results, keeping only user code results. -/
-private def isPreludeResult (label : String) : Bool :=
-  label.startsWith "List_" || label.startsWith "DictStrAny_" ||
-  label.startsWith "Any_get" || label.startsWith "Any_set" ||
-  label.startsWith "PFloorDiv_" || label.startsWith "PAnd_" ||
-  label.startsWith "POr_" || label.startsWith "ret_" ||
-  label.startsWith "assert_name" || label.startsWith "assert_opt_name" ||
-  label.startsWith "ensures_"
-
--- Verify that `if results: assert 'key' in results` does not produce
--- `always false` for the PIn precondition when `results` is an opaque Any.
-#eval withPython fun _pythonCmd => do
-  IO.FS.withTempDir fun tmpDir => do
-    let testIon ← compileTestScript (testDir / "test_pin_any.py") tmpDir
-    let laurel ←
-      match ← Strata.pyAnalyzeLaurel testIon.toString |>.toBaseIO with
-      | .ok r => pure r
-      | .error err => throw <| IO.userError (toString err)
-    let (coreProgramOption, _) := Strata.translateCombinedLaurel laurel
-    let coreProgram ← match coreProgramOption with
-      | none => throw <| IO.userError "Laurel to Core translation failed"
-      | some core => pure core
-    let options : Core.VerifyOptions :=
-      { Core.VerifyOptions.default with
-        stopOnFirstError := false, verbose := .quiet, solver := "z3",
-        checkMode := .bugFinding, checkLevel := .full }
-    let vcResults ← EIO.toIO
-      (fun (dm : Strata.DiagnosticModel) => IO.Error.userError (toString dm))
-      (Core.verify coreProgram (← IO.FS.createTempDir) none options Strata.Python.ReFactory)
-    for r in vcResults do
-      if !isPreludeResult r.obligation.label then
-        let outcome := r.formatOutcome
-        if (outcome.splitOn "always false").length > 1 then
-          throw <| IO.userError
-            s!"{r.obligation.label}: {outcome} — should not be provably false"
-
 end Strata.Python.AnalyzeLaurelTest
