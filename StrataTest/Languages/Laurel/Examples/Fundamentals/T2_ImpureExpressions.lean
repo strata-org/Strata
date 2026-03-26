@@ -97,6 +97,12 @@ procedure imperativeCallInConditionalExpression(b: bool) {
     assert result == 0
   }
 };
+
+procedure nesting() {
+  var x: int := 2;
+  var y: int := { x := 1; x } + { x := x + 10; x };
+  assert y == 1 + 11
+};
 "
 
 #guard_msgs (error, drop all) in
