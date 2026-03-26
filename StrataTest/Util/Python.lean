@@ -219,5 +219,9 @@ def withPython (action : System.FilePath → IO Unit) (warnOnSkip : Bool := true
     return ()
   action pythonCmd
 
+/-- Check if `needle` is a substring of `haystack`. -/
+def containsSubstr (haystack needle : String) : Bool :=
+  (haystack.splitOn needle).length != 1
+
 end Strata.Python
 end

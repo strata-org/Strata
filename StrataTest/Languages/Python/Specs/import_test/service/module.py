@@ -1,0 +1,3 @@
+class ServiceClass:
+    def run(self, x: int) -> str:
+        ...
