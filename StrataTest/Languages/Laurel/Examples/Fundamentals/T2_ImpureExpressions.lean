@@ -98,10 +98,21 @@ procedure imperativeCallInConditionalExpression(b: bool) {
   }
 };
 
+function add(x: int, y: int): int {
+  x + y
+};
 procedure repeatedBlockExpressions() {
   var x: int := 2;
   var y: int := { x := 1; x } + { x := x + 10; x };
-  assert y == 1 + 11
+  var z: int := add({ x := 1; x }, { x := x + 10; x });
+  assert y == 1 + 11;
+  assert z == 1 + 11
+};
+
+procedure addProc(a: int, b: int): int { return a + b };
+procedure addProcCaller(): int {
+  var x: int := 0;
+  return addProc({x := 1; x}, {x := x + 10; x})
 };
 "
 

@@ -107,6 +107,29 @@ private def freshCondVar : LiftM Identifier := do
 private def addPrepend (stmt : StmtExprMd) : LiftM Unit :=
   modify fun s => { s with prependedStmts := stmt :: s.prependedStmts }
 
+/--
+From a list of statements (in expression position), prepend all `LocalVariable` declarations
+to the surrounding context and drop all other non-last statements. Returns a list containing
+only the last statement (the block's expression value), or empty if the input is empty.
+-/
+private def onlyKeepLocalDeclarationsAndLast (stmts : List StmtExprMd) : LiftM (List StmtExprMd) := do
+  match stmts with
+  | [] => return []
+  | _ =>
+    let last := stmts.getLast!
+    for s in stmts.dropLast do
+      match s.val with
+      | .LocalVariable .. =>
+          -- This addPrepend is a hack to work around Core not having let expressions
+          -- Otherwise we could keep them in the block
+          addPrepend s
+      | .Assert _ =>
+          -- Hack to work around Core not supporting assert expressions
+          -- Otherwise we could keep them in the block
+          addPrepend s
+      | _ => pure ()
+    return [last]
+
 private def takePrepends : LiftM (List StmtExprMd) := do
   let stmts := (← get).prependedStmts
   modify fun s => { s with prependedStmts := [] }
@@ -237,10 +260,12 @@ def transformExpr (expr : StmtExprMd) : LiftM StmtExprMd := do
       -- Imperative call in expression position: lift it like an assignment
       -- Order matters: assign must be prepended first (it's newest-first),
       -- so that when reversed the var declaration comes before the call.
+      let allArgPrepends ← takePrepends
       let callResultVar ← freshCondVar
       let callResultType ← computeType expr
       addPrepend (⟨.Assign [bare (.Identifier callResultVar)] seqCall, md⟩)
       addPrepend (bare (.LocalVariable callResultVar callResultType none))
+      allArgPrepends.reverse.forM addPrepend
       return bare (.Identifier callResultVar)
 
   | .IfThenElse cond thenBranch elseBranch =>
@@ -291,9 +316,8 @@ def transformExpr (expr : StmtExprMd) : LiftM StmtExprMd := do
 
   | .Block stmts labelOption =>
       let newStmts := (← stmts.reverse.mapM transformExpr).reverse
-      match newStmts.getLast? with
-      | none => return bare (.Block [] labelOption)
-      | some last => return last
+
+      return ⟨ .Block (← onlyKeepLocalDeclarationsAndLast newStmts) labelOption, md ⟩
 
   | .LocalVariable name ty initializer =>
       -- If the substitution map has an entry for this variable, it was
