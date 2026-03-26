@@ -132,8 +132,9 @@ private def onlyKeepSideEffectStmtsAndLast (stmts : List StmtExprMd) : LiftM (Li
 
       /-
       Any other impure StmtExpr, like .Assign, .Exit or .Return,
-      should already have been processed by translateExpr.
-      TODO: currently .Exit or .Return is not processed, this is a bug
+      should already have been processed by translateExpr,
+      so we can assume this StmtExpr is pure and can be dropped.
+      TODO: currently .Exit and .Return are not processed by translateExpr, this is a bug
       -/
       | _ => pure []
     )
