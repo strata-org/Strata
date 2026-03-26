@@ -16,7 +16,14 @@ public import Strata.DDM.Integration.Lean.OfAstM
 import Strata.DDM.Ion
 
 public section
-namespace Strata.Python.Specs
+
+namespace Strata.Python
+
+/-- Converts a Python identifier to an annotated string for DDM serialization. -/
+private def PythonIdent.toDDM (d : PythonIdent) : Ann String SourceRange :=
+  ⟨.none, toString d⟩
+
+namespace Specs
 namespace DDM
 
 #dialect
@@ -175,17 +182,13 @@ abbrev Signature := Command
 
 end DDM
 
-/-- Converts a Python identifier to an annotated string for DDM serialization. -/
-private def PythonIdent.toDDM (d : PythonIdent) : Ann String SourceRange :=
-  ⟨.none, toString d⟩
-
 /-- Converts a Lean `Int` to the DDM representation which separates natural and negative cases. -/
 def toDDMInt {α} (ann : α) (i : Int) : DDM.Int α :=
   match i with
   | .ofNat n => .natInt ann ⟨ann, n⟩
   | .negSucc n => .negInt ann ⟨ann, (n+1)⟩
 
-def DDM.Int.ofDDM : DDM.Int α → _root_.Int
+def DDM.Int.ofDDM {α} : DDM.Int α → _root_.Int
 | .natInt _ ⟨_, n⟩ => .ofNat n
 | .negInt _ ⟨_, 0⟩ => 0
 | .negInt _ ⟨_, n+1⟩ => .negSucc n
