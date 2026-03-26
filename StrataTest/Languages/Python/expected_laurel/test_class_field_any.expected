@@ -1,5 +1,7 @@
 
 ==== Verification Results ====
+assert_assert(113)_calls_Any_to_bool_0: ✅ pass (at line 6, col 0)
+assert(113): ❓ unknown (at line 6, col 0)
 
-DETAIL: 0 passed, 0 failed, 0 inconclusive
-RESULT: Analysis success
+DETAIL: 1 passed, 0 failed, 1 inconclusive
+RESULT: Inconclusive
