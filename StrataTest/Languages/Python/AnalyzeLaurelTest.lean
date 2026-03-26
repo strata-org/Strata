@@ -306,7 +306,7 @@ private def isPreludeResult (label : String) : Bool :=
       for r in vcResults do
         if !isPreludeResult r.obligation.label then
           let outcome := r.formatOutcome
-          if "always false".isInfixOf outcome then
+          if (outcome.splitOn "always false").length > 1 then
             throw <| IO.userError
               s!"{r.obligation.label}: {outcome} — should not be provably false"
 
