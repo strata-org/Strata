@@ -21,18 +21,11 @@ PFloorDiv_body_calls_Int.SafeDiv_2: ✅ pass (in prelude file)
 PFloorDiv_body_calls_Int.SafeDiv_3: ✅ pass (in prelude file)
 PAnd_body_calls_Any_to_bool_0: ✅ pass (in prelude file)
 POr_body_calls_Any_to_bool_0: ✅ pass (in prelude file)
-ret_type: ✅ pass (in prelude file)
-ret_type: ✅ pass (in prelude file)
-ret_pos: ✅ pass (in prelude file)
-assert_name_is_foo: ✅ pass (in prelude file)
-assert_opt_name_none_or_str: ✅ pass (in prelude file)
-assert_opt_name_none_or_bar: ✅ pass (in prelude file)
-ensures_maybe_except_none: ✅ pass (in prelude file)
-(Origin_datetime_date_Requires)d_type: ✅ pass (in prelude file)
-(Origin_timedelta_Requires)days_type: ✅ pass (in prelude file)
-(Origin_timedelta_Requires)hours_type: ✅ pass (in prelude file)
-(Origin_timedelta_Requires)days_pos: ✅ pass (in prelude file)
-(Origin_timedelta_Requires)hours_pos: ✅ pass (in prelude file)
+callElimAssert_d_type_12: ✅ pass
+callElimAssert_days_type_4: ✅ pass
+callElimAssert_hours_type_5: ✅ pass
+callElimAssert_days_pos_6: ✅ pass
+callElimAssert_hours_pos_7: ✅ pass
 assert_assert(554)_calls_Any_to_bool_0: ✅ pass (at line 21, col 0)
 assert(554): ✅ pass (at line 21, col 0)
 assert_assert(673)_calls_Any_to_bool_0: ✅ pass (at line 25, col 0)
@@ -42,5 +35,5 @@ assert(758): ✅ pass (at line 27, col 0)
 assert_assert(859)_calls_Any_to_bool_0: ✅ pass (at line 30, col 0)
 assert(859): ✅ pass (at line 30, col 0)
 
-DETAIL: 41 passed, 0 failed, 0 inconclusive
+DETAIL: 34 passed, 0 failed, 0 inconclusive
 RESULT: Analysis success
