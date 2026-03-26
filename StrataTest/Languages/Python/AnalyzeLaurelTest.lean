@@ -254,7 +254,7 @@ Expected output (when Python + z3 available):
         if r.obligation.label.startsWith "Storage_" then
           let msg := r.obligation.metadata.findSome? fun elem =>
             match elem.fld, elem.value with
-            | .label "message", .msg s => some s
+            | Imperative.MetaData.message, .msg s => some s
             | _, _ => none
           let msgStr := msg.map (s!" ({·})") |>.getD ""
           let line := s!"{r.obligation.label}: {r.formatOutcome}{msgStr}"
@@ -284,7 +284,7 @@ assertion. This exercises the full pipeline with type alias resolution.
         if r.obligation.label.startsWith "Storage_" then
           let msg := r.obligation.metadata.findSome? fun elem =>
             match elem.fld, elem.value with
-            | .label "message", .msg s => some s
+            | Imperative.MetaData.message, .msg s => some s
             | _, _ => none
           let msgStr := msg.map (s!" ({·})") |>.getD ""
           let line := s!"{r.obligation.label}: {r.formatOutcome}{msgStr}"
