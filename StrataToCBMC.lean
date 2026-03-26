@@ -47,7 +47,7 @@ def main (args : List String) : IO Unit := do
         else if file.endsWith ".core.st" then
           let core_prog := (Core.getProgram pgm inputCtx).fst
           match core_prog.decls.head! with
-            | .proc f => match Core.testSymbols f with
+            | .proc f _ => match Core.testSymbols f with
               | .ok s =>
                 let wrapped ← wrapOutput s (moduleName := baseName)
                 IO.println wrapped

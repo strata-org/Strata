@@ -74,9 +74,9 @@ def eval (E : Env) : List (Program × Env) :=
             xdecls := declsE.xdecls ++ [decl] }
       go rest declsE
 
-    | .proc proc _ =>
+    | .proc proc md =>
       let (p, E) := Procedure.eval declsE.env proc
-      let declsE := { declsE with xdecls := declsE.xdecls ++ [.proc p], env := E }
+      let declsE := { declsE with xdecls := declsE.xdecls ++ [.proc p md], env := E }
       go rest declsE
 
     | .func func _ =>

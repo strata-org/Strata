@@ -363,6 +363,77 @@ def pyAnalyzeCommand : Command where
           | none => Map.empty
         Core.Sarif.writeSarifOutput .deductive files vcResults (filePath ++ ".sarif")
 
+/-! ### pyAnalyzeLaurel result helpers
+
+All output uses two structured lines on stdout:
+- `RESULT: <category>` — machine-readable category, always the last line.
+- `DETAIL: <detail>`   — human-readable context (error message or VC counts).
+
+Exit codes: 1 = user python error, 2 = internal error, 3 = failures found, 4 = known limitation.
+A successful run exits 0 with `RESULT: Analysis success` or `RESULT: Inconclusive`. -/
+
+/-- Determines which VC results count as successes and which count as failures
+    for the purposes of the `pyAnalyzeLaurel` summary and exit code.
+    Implementation-error results are partitioned out first; the classifier then
+    partitions the rest into success / failure / inconclusive.
+    Narrowing `isFailure` (e.g. to only `alwaysFalseAndReachable`) automatically
+    widens inconclusive.
+    Future: may be extended with `isWarning` for non-fatal diagnostic categories. -/
+structure ResultClassifier where
+  isSuccess : Core.VCResult → Bool := (·.isSuccess)
+  isFailure : Core.VCResult → Bool := (·.isFailure)
+
+private def printPyAnalyzeResult (category : String) (detail : String) : IO Unit := do
+  IO.println s!"DETAIL: {detail}"
+  IO.println s!"RESULT: {category}"
+
+private def exitPyAnalyzeUserError {α} (message : String) : IO α := do
+  printPyAnalyzeResult "User python error" message
+  IO.Process.exit 1
+
+private def exitPyAnalyzeInternalError {α} (message : String) : IO α := do
+  printPyAnalyzeResult "Internal error" message
+  IO.Process.exit 2
+
+private def exitPyAnalyzeFailuresFound {α} (detail : String) : IO α := do
+  printPyAnalyzeResult "Failures found" detail
+  IO.Process.exit 3
+
+private def exitPyAnalyzeKnownLimitation {α} (message : String) : IO α := do
+  printPyAnalyzeResult "Known limitation" message
+  IO.Process.exit 4
+
+/-- Print the final RESULT/DETAIL lines based on solver outcomes.
+    Always called on successful pipeline completion (as opposed to the
+    exit helpers above, which are called on early pipeline failure).
+    Classification uses successive partitioning: implementation errors are
+    removed first, then the classifier partitions the rest into
+    success / failure / inconclusive (guaranteeing disjointness).
+    Unreachable count is reported as supplementary info. -/
+private def printPyAnalyzeSummary (vcResults : Array Core.VCResult)
+    (classifier : ResultClassifier := {}) : IO Unit := do
+  -- 1. Partition out implementation errors (broken results, not classifiable).
+  let (implError, classifiable) :=
+    vcResults.partition (fun r => r.isImplementationError || r.hasSMTError)
+  -- 2. Successive partitioning via the classifier: success → failure → inconclusive.
+  let (success, rest)          := classifiable.partition classifier.isSuccess
+  let (failure, inconclusive)  := rest.partition classifier.isFailure
+  -- 3. Unreachable is informational (not a separate partition).
+  let nUnreachable  := vcResults.filter (·.isUnreachable) |>.size
+  let nImplError    := implError.size
+  let nSuccess      := success.size
+  let nFailure      := failure.size
+  let nInconclusive := inconclusive.size
+  let unreachableStr := if nUnreachable > 0 then s!", {nUnreachable} unreachable" else ""
+  let implErrorStr   := if nImplError > 0   then s!", {nImplError} implementation errors" else ""
+  let counts := s!"{nSuccess} passed, {nFailure} failed, {nInconclusive} inconclusive{unreachableStr}{implErrorStr}"
+  if nImplError > 0 then
+    exitPyAnalyzeInternalError s!"An unexpected result was produced. {counts}"
+  else if nFailure > 0 then
+    exitPyAnalyzeFailuresFound counts
+  else
+    printPyAnalyzeResult (if nInconclusive > 0 then "Inconclusive" else "Analysis success") counts
+
 def pyAnalyzeLaurelCommand : Command where
   name := "pyAnalyzeLaurel"
   args := [ "file" ]
@@ -403,8 +474,11 @@ def pyAnalyzeLaurelCommand : Command where
             let pos := fm.toPosition range.start
             s!" at line {pos.line}, col {pos.column}"
           | none => ""
-        exitUserCodeError s!"{msg}{location}"
-      | .error (.internal msg) => exitInternalError msg
+        exitPyAnalyzeUserError s!"{msg}{location}"
+      | .error (.knownLimitation msg) =>
+        exitPyAnalyzeKnownLimitation msg
+      | .error (.internal msg) =>
+        exitPyAnalyzeInternalError msg
 
     if verbose then
       IO.println "\n==== Laurel Program ===="
@@ -414,7 +488,7 @@ def pyAnalyzeLaurelCommand : Command where
     let coreProgram ←
       match coreProgramOption with
       | none =>
-        exitInternalError s!"Laurel to Core translation failed: {laurelTranslateErrors}"
+        exitPyAnalyzeInternalError s!"Laurel to Core translation failed: {laurelTranslateErrors}"
       | some core => pure core
 
     if verbose then
@@ -436,7 +510,7 @@ def pyAnalyzeLaurelCommand : Command where
               (Core.ProcedureInlining.inlineCallCmd
                 (doInline := λ name _ => name ≠ "__main__" && !preludeNames.contains name))
               coreProgram .emp with
-        | ⟨.error e, _⟩ => exitInternalError s!"Inlining failed: {e}"
+        | ⟨.error e, _⟩ => exitPyAnalyzeInternalError s!"Inlining failed: {e}"
         | ⟨.ok (_, inlined), _⟩ => do
           if verbose then
             IO.println "\n==== Core Program (after inlining) ===="
@@ -449,8 +523,8 @@ def pyAnalyzeLaurelCommand : Command where
     let checkLevel ← parseCheckLevel pflags
     let baseOptions : VerifyOptions :=
       { VerifyOptions.default with
-        stopOnFirstError := false, verbose := .quiet, solver := "z3",
-        removeIrrelevantAxioms := .Off,
+        stopOnFirstError := false, verbose := .quiet, solver := Core.defaultSolver,
+        removeIrrelevantAxioms := .Precise,
         checkMode := checkMode, checkLevel := checkLevel }
     let options : VerifyOptions := match pflags.getString "vc-directory" with
       | .some dir => { baseOptions with vcDirectory := some (dir : System.FilePath) }
@@ -459,7 +533,15 @@ def pyAnalyzeLaurelCommand : Command where
       match ← Core.verifyProgram coreProgram options
                 (moreFns := Strata.Python.ReFactory) |>.toBaseIO with
       | .ok r => pure r
-      | .error msg => exitInternalError msg
+      | .error msg => exitPyAnalyzeInternalError msg
+
+    let classifier : ResultClassifier :=
+      match checkMode with
+      | .bugFinding | .bugFindingAssumingCompleteSpec =>
+        { isFailure := fun r => match r.outcome with
+            | .ok o => o.alwaysFalseAndReachable
+            | _     => false }
+      | _ => {}
 
     -- Print results
     if !laurelTranslateErrors.isEmpty then
@@ -479,18 +561,18 @@ def pyAnalyzeLaurelCommand : Command where
             | some (_, fm) =>
               match fr.file with
               | .file "" =>
-                if vcResult.isFailure then
+                if classifier.isFailure vcResult then
                   (s!"Assertion failed in prelude file: ", "")
                 else
                   ("", s!" (in prelude file)")
               | .file path =>
                 let pos := fm.toPosition fr.range.start
-                if vcResult.isFailure then
+                if classifier.isFailure vcResult then
                   (s!"Assertion failed at line {pos.line}, col {pos.column}: ", "")
                 else
                   ("", s!" (at line {pos.line}, col {pos.column})")
             | none =>
-              if vcResult.isFailure then
+              if classifier.isFailure vcResult then
                 (s!"Assertion failed: ", "")
               else
                 ("", "")
@@ -505,6 +587,7 @@ def pyAnalyzeLaurelCommand : Command where
         | some (pyPath, fm) => Map.empty.insert (Strata.Uri.file pyPath) fm
         | none => Map.empty
       Core.Sarif.writeSarifOutput checkMode files vcResults (filePath ++ ".sarif")
+    printPyAnalyzeSummary vcResults classifier
 
 private def deriveBaseName (file : String) : String :=
   let name := System.FilePath.fileName file |>.getD file
