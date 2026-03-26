@@ -21,13 +21,6 @@ PFloorDiv_body_calls_Int.SafeDiv_2: ✅ pass (in prelude file)
 PFloorDiv_body_calls_Int.SafeDiv_3: ✅ pass (in prelude file)
 PAnd_body_calls_Any_to_bool_0: ✅ pass (in prelude file)
 POr_body_calls_Any_to_bool_0: ✅ pass (in prelude file)
-ret_type: ✅ pass (in prelude file)
-ret_type: ✅ pass (in prelude file)
-ret_pos: ✅ pass (in prelude file)
-assert_name_is_foo: ✅ pass (in prelude file)
-assert_opt_name_none_or_str: ✅ pass (in prelude file)
-assert_opt_name_none_or_bar: ✅ pass (in prelude file)
-ensures_maybe_except_none: ✅ pass (in prelude file)
 assert_assert(73)_calls_PAnd_0: ✅ pass (at line 5, col 4)
 assert_assert(73)_calls_Any_to_bool_1: ✅ pass (at line 5, col 4)
 assert(73): ✅ pass (at line 5, col 4)
@@ -57,5 +50,5 @@ assert_assert(825)_calls_Any_to_bool_0: ✅ pass (at line 37, col 4)
 assert(825): ✅ pass (at line 37, col 4)
 ite_cond_calls_Any_to_bool_0: ✅ pass (at line 39, col 0)
 
-DETAIL: 56 passed, 0 failed, 0 inconclusive
+DETAIL: 49 passed, 0 failed, 0 inconclusive
 RESULT: Analysis success

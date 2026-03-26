@@ -107,13 +107,9 @@ private meta def runAnalyzeAndVerify
   let coreProgram ← match coreProgramOption with
     | none => return .error "Laurel to Core translation failed"
     | some core => pure core
-  -- Inline all non-main procedures
+  -- Split prelude / user procedure names at FIRST_END_MARKER
+  let (preludeNames, userProcNames) := Strata.splitProcNames coreProgram
   -- Inline all non-main, non-prelude procedures
-  let mut preludeNames : Std.HashSet String := {}
-  for d in coreProgram.decls do
-    if toString d.name == "FIRST_END_MARKER" then break
-    if let some p := d.getProc? then
-      preludeNames := preludeNames.insert (Core.CoreIdent.toPretty p.header.name)
   let coreProgram ← match Core.Transform.runProgram (targetProcList := .none)
         (Core.ProcedureInlining.inlineCallCmd
           (doInline := λ name _ => name ≠ "__main__" && !preludeNames.contains name))
@@ -125,8 +121,9 @@ private meta def runAnalyzeAndVerify
     { Core.VerifyOptions.default with
       stopOnFirstError := false, verbose := .quiet, solver := "z3",
       checkMode := .bugFinding, checkLevel := .full }
-  match ← Strata.verifyCore coreProgram options
-      (moreFns := Strata.Python.ReFactory) |>.toBaseIO with
+  match ← Core.verifyProgram coreProgram options
+      (moreFns := Strata.Python.ReFactory)
+      (proceduresToVerify := some userProcNames) |>.toBaseIO with
   | .ok results => return .ok results
   | .error msg => return .error (toString msg)
 

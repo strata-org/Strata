@@ -21,22 +21,15 @@ PFloorDiv_body_calls_Int.SafeDiv_2: ✅ pass (in prelude file)
 PFloorDiv_body_calls_Int.SafeDiv_3: ✅ pass (in prelude file)
 PAnd_body_calls_Any_to_bool_0: ✅ pass (in prelude file)
 POr_body_calls_Any_to_bool_0: ✅ pass (in prelude file)
-ret_type: ✅ pass (in prelude file)
-ret_type: ✅ pass (in prelude file)
-ret_pos: ✅ pass (in prelude file)
-assert_name_is_foo: ✅ pass (in prelude file)
-assert_opt_name_none_or_str: ✅ pass (in prelude file)
-assert_opt_name_none_or_bar: ✅ pass (in prelude file)
-ensures_maybe_except_none: ✅ pass (in prelude file)
-Assertion failed in prelude file: (Origin_test_helper_procedure_Requires)req_name_is_foo: ❌ fail
-(Origin_test_helper_procedure_Requires)req_opt_name_none_or_str: ✅ pass (in prelude file)
-(Origin_test_helper_procedure_Requires)req_opt_name_none_or_bar: ✅ pass (in prelude file)
-(Origin_test_helper_procedure_Requires)req_name_is_foo: ✅ pass (in prelude file)
-(Origin_test_helper_procedure_Requires)req_opt_name_none_or_str: ✅ pass (in prelude file)
-(Origin_test_helper_procedure_Requires)req_opt_name_none_or_bar: ✅ pass (in prelude file)
-(Origin_test_helper_procedure_Requires)req_name_is_foo: ✅ pass (in prelude file)
-(Origin_test_helper_procedure_Requires)req_opt_name_none_or_str: ✅ pass (in prelude file)
-(Origin_test_helper_procedure_Requires)req_opt_name_none_or_bar: ✅ pass (in prelude file)
+Assertion failed at line 9, col 4: callElimAssert_req_name_is_foo_22: ❌ fail
+callElimAssert_req_opt_name_none_or_str_23: ✅ pass (at line 9, col 4)
+callElimAssert_req_opt_name_none_or_bar_24: ✅ pass (at line 9, col 4)
+callElimAssert_req_name_is_foo_13: ✅ pass (at line 12, col 4)
+callElimAssert_req_opt_name_none_or_str_14: ✅ pass (at line 12, col 4)
+callElimAssert_req_opt_name_none_or_bar_15: ✅ pass (at line 12, col 4)
+callElimAssert_req_name_is_foo_4: ✅ pass (at line 15, col 4)
+callElimAssert_req_opt_name_none_or_str_5: ✅ pass (at line 15, col 4)
+callElimAssert_req_opt_name_none_or_bar_6: ✅ pass (at line 15, col 4)
 
-DETAIL: 36 passed, 1 failed, 0 inconclusive
+DETAIL: 29 passed, 1 failed, 0 inconclusive
 RESULT: Failures found
