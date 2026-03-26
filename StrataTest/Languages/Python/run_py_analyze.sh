@@ -1,13 +1,14 @@
 #!/bin/bash
 
 # Usage: ./run_py_analyze.sh [laurel] [--update] [--filter <pattern>]
-# Run without arguments for pyAnalyze, with "laurel" for pyAnalyzeLaurel
+# Runs pyAnalyzeLaurel on all test_*.py files and compares output to expected.
 # With --update, overwrite existing expected files with actual output
 # With --filter <pattern>, only run tests whose name contains <pattern>
+# Note: pyAnalyze (non-Laurel) is deprecated; laurel mode is the default.
 
 failed=0
 update=0
-mode="core"
+mode="laurel"
 filter=""
 
 while [ $# -gt 0 ]; do
