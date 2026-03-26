@@ -1,0 +1,26 @@
+{
+  "body": "This PR adds comprehensive support for recursive functions in Strata Core with a well-designed implementation. The changes are structured logically across the DDM layer (adding `@[scopeSelf]` metadata), the Lambda dialect (axiom generation), and the Core language (grammar, translation, SMT encoding). The test coverage is excellent, including positive tests, error cases, and a complex example (BinaryTreeSize). The documentation clearly explains the new `@[scopeSelf]` attribute and its purpose.\n\nThe implementation correctly handles the key challenges: bringing the function name into scope for recursive calls, generating per-constructor axioms for SMT reasoning, and properly rejecting unsupported cases (polymorphic recursion, missing decreases clauses). The ITE evaluation change to always reduce both branches is a sensible improvement that enables better partial evaluation.\n\nI have a few minor suggestions for clarity and potential improvements, but overall this is high-quality work that's ready to merge after addressing the comments.",
+  "event": "COMMENT",
+  "comments": [
+    {
+      "path": "Strata/DL/Lambda/RecursiveAxioms.lean",
+      "line": 60,
+      "body": "The index arithmetic is subtle. Consider naming intermediate results to make the calculation clearer:\n\n```lean\nlet numFields := c.args.length\nlet numOtherParams := formals.length - 1\nlet totalBvs := numFields + numOtherParams\nlet dtTy : LMonoTy := .tcons dt.name []\nlet constrTy := c.args.foldr (fun (_, argTy) acc => .arrow argTy acc) dtTy\nlet constrApp := c.args.foldlIdx (fun acc i _ =>\n  .app m acc (.bvar m (numFields - 1 - i))\n) (.op m c.name (.some constrTy) : LExpr T.mono)\nlet otherParamIdx (idx : Nat) : Nat := if idx < recIdx then idx else idx - 1\nlet formalExpr (idx : Nat) : LExpr T.mono :=\n  if idx == recIdx then constrApp\n  else \n    let paramPos := otherParamIdx idx\n    .bvar m (totalBvs - 1 - paramPos)\n```\n\nKey changes: introduce `numOtherParams` (all params except recursive one), rename `otherIdx` to `otherParamIdx`, extract `paramPos` intermediate variable in `formalExpr`."
+    },
+    {
+      "path": "Strata/DL/Lambda/RecursiveAxioms.lean",
+      "line": 82,
+      "body": "The error message when PE doesn't reduce is helpful, but it could be more actionable. Consider adding what the user should check:\n\n```lean\n.error f!\"Recursive function {func.name}: PE did not reduce axiom for \\\n         constructor {c.name}. Ensure the function is in the factory with inlineIfConstr \\\n         and that the function body can be partially evaluated when the recursive parameter \\\n         is a constructor.\"\n```"
+    },
+    {
+      "path": "Strata/Languages/Core/Env.lean",
+      "line": 209,
+      "body": "The error message for polymorphic recursive functions could explain why this limitation exists:\n\n```suggestion\n    .error (.fromFormat f!\"Polymorphic recursive functions are not yet supported for SMT verification: '{func.name}'. SMT solvers require monomorphic axioms.\")\n```"
+    },
+    {
+      "path": "StrataTest/Languages/Core/RecursiveFunctionTests.lean",
+      "line": 1,
+      "body": "Excellent test coverage! The tests progress nicely from simple ground assertions to symbolic reasoning to complex examples. Well done."
+    }
+  ]
+}

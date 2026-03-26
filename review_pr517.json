@@ -1,0 +1,11 @@
+{
+  "body": "This PR delivers a comprehensive fix for anchor handling bugs in Python regex translation and adds a robust differential testing framework. The implementation is well-documented with clear explanations of the anchor semantics and case-splitting logic. The test corpus is thorough with 347 cases covering edge cases systematically. The typo fix, complement fix (intersecting with re.allchar()), and all anchor-splitting logic are sound. CI passes on all checks.\n\nOne improvement opportunity: The false,true and false,false concat cases have nearly identical anchor-splitting logic that could be extracted into a helper function to reduce duplication.",
+  "event": "COMMENT",
+  "comments": [
+    {
+      "path": "Strata/Languages/Python/Regex/ReToCore.lean",
+      "line": 247,
+      "body": "The `false, true` case (lines 247-255) and `false, false` case (lines 264-272) have nearly identical anchor-splitting logic. Both check `atStart && r2.containsAnchorStart && r1.hasNonAnchorContent` and produce the same union structure:\n\n```lean\nlet r1b_eps := mkApp () (.op () reInterFunc.name none) [r1b, Core.emptyRegex]\nlet r2b_start := toCore r2 atStart atEnd\nlet r2b_mid := toCore r2 false atEnd\nmkApp () (.op () reUnionFunc.name none)\n  [mkApp () (.op () reConcatFunc.name none) [r1b_eps, r2b_start],\n   mkApp () (.op () reConcatFunc.name none) [r1b, r2b_mid]]\n```\n\nConsider extracting this into a helper function that takes the pre-computed `r1b` and returns the union expression. This would reduce duplication and make the anchor-splitting pattern more explicit."
+    }
+  ]
+}

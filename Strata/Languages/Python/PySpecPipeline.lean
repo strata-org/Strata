@@ -313,6 +313,23 @@ private def prependPrelude (coreFromLaurel : Core.Program) : Core.Program :=
     fun d => !coreOnlyNames.contains (toString d.name)
   { decls := filteredPrelude ++ coreOnly ++ userDecls }
 
+/-- Split procedure names in a Core program into prelude names
+    (before `FIRST_END_MARKER`) and user names (after it).
+    If `FIRST_END_MARKER` is absent, nothing is considered prelude. -/
+public def splitProcNames (prog : Core.Program)
+    : Std.HashSet String × List String :=
+  let (before, rest) := prog.decls.span (fun d => toString d.name != "FIRST_END_MARKER")
+  let (preludeDecls, userDecls) := match rest with
+    | _ :: tl => (before, tl)  -- marker found: before is prelude, after is user
+    | [] => ([], before)       -- no marker: everything is user
+  let preludeNames := preludeDecls.foldl (init := ({} : Std.HashSet String)) fun s d =>
+    match d.getProc? with
+    | some p => s.insert (Core.CoreIdent.toPretty p.header.name)
+    | none => s
+  let userProcNames := userDecls.filterMap fun d =>
+    d.getProc?.map (Core.CoreIdent.toPretty ·.header.name)
+  (preludeNames, userProcNames)
+
 /-- Translate a combined Laurel program to Core and prepend the full
     runtime prelude.  Resolution errors are suppressed because PySpec
     Laurel procedures reference names defined in the Core prelude
@@ -324,6 +341,13 @@ public def translateCombinedLaurel (combined : Laurel.Program)
     : (Option Core.Program × List DiagnosticModel) :=
   let (coreOption, errors) := Laurel.translate { emitResolutionErrors := false } combined
   (coreOption.map prependPrelude, errors)
+
+/-- Like `translateCombinedLaurel` but also returns the lowered Laurel program
+    (after all Laurel-to-Laurel passes, before translation to Core). -/
+public def translateCombinedLaurelWithLowered (combined : Laurel.Program)
+    : (Option Core.Program × List DiagnosticModel × Laurel.Program) :=
+  let (coreOption, errors, lowered) := Laurel.translateWithLaurel { emitResolutionErrors := false } combined
+  (coreOption.map prependPrelude, errors, lowered)
 
 /-- Errors from the pyAnalyzeLaurel pipeline. -/
 public inductive PipelineError where

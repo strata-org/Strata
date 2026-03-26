@@ -6,7 +6,6 @@
 
 -- Executable with utilities for working with Strata files.
 import Strata.DDM.Integration.Java.Gen
-import Strata.Languages.Core.Options
 import Strata.Languages.Core.SarifOutput
 import Strata.Languages.Laurel.Grammar.ConcreteToAbstractTreeTranslator
 import Strata.Languages.Laurel.LaurelToCoreTranslator
@@ -18,7 +17,6 @@ import Strata.Languages.Python.Specs.IdentifyOverloads
 import Strata.Languages.Python.Specs.ToLaurel
 import Strata.Languages.Laurel.LaurelFormat
 import Strata.Languages.Laurel.Laurel
-import Strata.Transform.ProcedureInlining
 import Strata.Languages.Python.CorePrelude
 import Strata.Languages.Python.PythonRuntimeLaurelPart
 import Strata.Languages.Python.PythonLaurelCorePrelude
@@ -303,12 +301,9 @@ def pyAnalyzeCommand : Command where
     let newPgm : Core.Program := { decls := preludePgm.decls ++ bpgm.decls }
     if verbose then
       IO.print newPgm
-    match Core.Transform.runProgram (targetProcList := .none)
-          (Core.ProcedureInlining.inlineCallCmd
-            (doInline := λ name _ => name ≠ "main"))
-          newPgm .emp with
-    | ⟨.error e, _⟩ => panic! e
-    | ⟨.ok (_changed, newPgm), _⟩ =>
+    match (Core.inlineProcedures newPgm ⟨ .some (λ name _ => name ≠ "main") ⟩) with
+    | .error e => panic! e
+    | .ok newPgm =>
       if verbose then
         IO.println "Inlined: "
         IO.print newPgm
@@ -444,6 +439,13 @@ private def printPyAnalyzeSummary (vcResults : Array Core.VCResult)
   else
     printPyAnalyzeResult (if nInconclusive > 0 then "Inconclusive" else "Analysis success") counts
 
+private def deriveBaseName (file : String) : String :=
+  let name := System.FilePath.fileName file |>.getD file
+  let suffixes := [".python.st.ion", ".py.ion", ".st.ion", ".st"]
+  match suffixes.find? (name.endsWith ·) with
+  | some sfx => (name.dropEnd sfx.length).toString
+  | none     => name
+
 def pyAnalyzeLaurelCommand : Command where
   name := "pyAnalyzeLaurel"
   args := [ "file" ]
@@ -461,6 +463,9 @@ def pyAnalyzeLaurelCommand : Command where
             { name := "sarif", help := "Write results as SARIF to <file>.sarif." },
             { name := "vc-directory",
               help := "Store VCs in SMT-Lib format in <dir>.",
+              takesArg := .arg "dir" },
+            { name := "keep-all-files",
+              help := "Store intermediate Laurel and Core programs in <dir>.",
               takesArg := .arg "dir" }]
   help := "Verify a Python Ion program via the Laurel pipeline. Translates Python to Laurel to Core, then runs SMT verification."
   callback := fun v pflags => do
@@ -468,6 +473,10 @@ def pyAnalyzeLaurelCommand : Command where
     let outputSarif := pflags.getBool "sarif"
     let filePath := v[0]
     let pySourceOpt ← tryReadPythonSource filePath
+    let keepDir := pflags.getString "keep-all-files"
+    let baseName := deriveBaseName filePath
+    if let some dir := keepDir then
+      IO.FS.createDirAll dir
 
     let dispatchModules := pflags.getRepeated "dispatch"
     let pyspecModules := pflags.getRepeated "pyspec"
@@ -499,7 +508,17 @@ def pyAnalyzeLaurelCommand : Command where
       IO.println "\n==== Laurel Program ===="
       IO.println f!"{combinedLaurel}"
 
-    let (coreProgramOption, laurelTranslateErrors) := Strata.translateCombinedLaurel combinedLaurel
+    if let some dir := keepDir then
+      let path := s!"{dir}/{baseName}.laurel"
+      IO.FS.writeFile path (toString (Std.Format.pretty f!"{combinedLaurel}") ++ "\n")
+
+    let (coreProgramOption, laurelTranslateErrors, loweredLaurel) :=
+      Strata.translateCombinedLaurelWithLowered combinedLaurel
+
+    if let some dir := keepDir then
+      let path := s!"{dir}/{baseName}.lowered.laurel"
+      IO.FS.writeFile path (toString (Std.Format.pretty f!"{loweredLaurel}") ++ "\n")
+
     let coreProgram ←
       match coreProgramOption with
       | none =>
@@ -510,17 +529,18 @@ def pyAnalyzeLaurelCommand : Command where
       IO.println "\n==== Core Program ===="
       IO.print coreProgram
 
+    -- Split prelude / user procedure names at FIRST_END_MARKER
+    let (preludeNames, userProcNames) := Strata.splitProcNames coreProgram
+
+    if let some dir := keepDir then
+      let path := s!"{dir}/{baseName}.core"
+      IO.FS.writeFile path (toString coreProgram)
+
     -- Inline pyspec procedures so their precondition assertions are checked
     -- at call sites with concrete arguments.
     let pyspecFiles := pflags.getRepeated "pyspec"
     let coreProgram ←
       if pyspecFiles.size > 0 then
-        -- Collect prelude procedure names to avoid inlining them
-        let mut preludeNames : Std.HashSet String := {}
-        for d in coreProgram.decls do
-          if toString d.name == "FIRST_END_MARKER" then break
-          if let some p := d.getProc? then
-            preludeNames := preludeNames.insert (Core.CoreIdent.toPretty p.header.name)
         match Core.Transform.runProgram (targetProcList := .none)
               (Core.ProcedureInlining.inlineCallCmd
                 (doInline := λ name _ => name ≠ "__main__" && !preludeNames.contains name))
@@ -530,6 +550,9 @@ def pyAnalyzeLaurelCommand : Command where
           if verbose then
             IO.println "\n==== Core Program (after inlining) ===="
             IO.print inlined
+          if let some dir := keepDir then
+            let path := s!"{dir}/{baseName}.inlined.core"
+            IO.FS.writeFile path (toString inlined)
           pure inlined
       else pure coreProgram
 
@@ -543,10 +566,13 @@ def pyAnalyzeLaurelCommand : Command where
         checkMode := checkMode, checkLevel := checkLevel }
     let options : VerifyOptions := match pflags.getString "vc-directory" with
       | .some dir => { baseOptions with vcDirectory := some (dir : System.FilePath) }
-      | .none => baseOptions
+      | .none => match keepDir with
+        | some dir => { baseOptions with vcDirectory := some (s!"{dir}/{baseName}" : System.FilePath) }
+        | none => baseOptions
     let vcResults ←
-      match ← Strata.verifyCore coreProgram options
-                (moreFns := Strata.Python.ReFactory) |>.toBaseIO with
+      match ← Core.verifyProgram coreProgram options
+                (moreFns := Strata.Python.ReFactory)
+                (proceduresToVerify := some userProcNames) |>.toBaseIO with
       | .ok r => pure r
       | .error msg => exitPyAnalyzeInternalError msg
 
@@ -603,14 +629,6 @@ def pyAnalyzeLaurelCommand : Command where
         | none => Map.empty
       Core.Sarif.writeSarifOutput checkMode files vcResults (filePath ++ ".sarif")
     printPyAnalyzeSummary vcResults classifier
-
-private def deriveBaseName (file : String) : String :=
-  let name := System.FilePath.fileName file |>.getD file
-  if name.endsWith ".python.st.ion" then (name.dropEnd 14).toString
-  else if name.endsWith ".py.ion" then (name.dropEnd 7).toString
-  else if name.endsWith ".st.ion" then (name.dropEnd 7).toString
-  else if name.endsWith ".st" then (name.dropEnd 3).toString
-  else name
 
 def pyAnalyzeToGotoCommand : Command where
   name := "pyAnalyzeToGoto"

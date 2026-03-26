@@ -5,25 +5,15 @@
 -/
 module
 
-import Strata.DDM.Elab
-import Strata.DDM.Ion
-import Strata.DDM.Util.ByteArray
 public import Strata.Util.IO
-public import Std.Data.HashSet.Basic
 
-import Strata.DDM.Integration.Java.Gen
 public import Strata.Transform.CoreTransform
+import Strata.Transform.CallElim
 import Strata.Transform.ProcedureInlining
 
-public import Strata.Languages.Core.Verifier
-public import Strata.Languages.Core.Program
 public import Strata.Languages.Core.Options
-
-import Strata.Languages.Laurel.Grammar.LaurelGrammar
-import Strata.Languages.Laurel.Grammar.ConcreteToAbstractTreeTranslator
-public import Strata.Languages.Laurel.Laurel
+public import Strata.Languages.Core.Verifier
 import Strata.Languages.Laurel.LaurelToCoreTranslator
-
 public import Strata.Languages.Python.PySpecPipeline
 import Strata.Languages.Python.Specs
 import Strata.Languages.Python.Specs.DDM
@@ -37,13 +27,6 @@ possible. It is intended for use cases that are essentially equivalent to more
 fine-grained or more structured equivalents of what the `strata` CLI can
 currently do.
 
-**Note:** Some definitions are opaque for the moment, so that we can discuss the
-structure. Most can be implemented straightforwardly by calling existing code.
-Those that can't are noted explicitly.
-**Note:** This is a proposed API that is only partially implemented. Functions
-that have been implemented are marked `def`. Proposed but unimplemented functions
-are declared using `opaque` to define the intended API surface; these should not
-be invoked.
 It involves several key types:
 
 * `Strata.Dialect`: The formal description of a Strata dialect. Used only to
@@ -60,6 +43,11 @@ It involves several key types:
 
 * `Core.VCResults`: The results of attempting to prove each verification condition
   that arises from deductive verification of a Core program.
+
+**Note:** Several functions in this API are currently unimplemented due to
+functionality that remains to be implemented in the DDM. These functions are
+declared using `noncomputable opaque` to define the intended API surface and
+should not be invoked yet.
 -/
 
 namespace Strata
@@ -139,7 +127,12 @@ Translate a program in the generic AST for Strata into the dialect-specific AST
 for Core. This can fail with an error message if the input is not a
 well-structured instance of the Core dialect.
 -/
-noncomputable opaque genericToCore : Strata.Program → Except String Core.Program
+def genericToCore (p : Strata.Program) : Except String Core.Program :=
+  let (program, errors) := Core.getProgram p
+  if errors.isEmpty then
+    .ok program
+  else
+    .error s!"Core DDM translation errors:\n{String.intercalate "\n" errors.toList}"
 
 /--
 Translate a program in the dialect-specific AST for Laurel into the generic Strata
@@ -150,9 +143,12 @@ noncomputable opaque laurelToGeneric : Laurel.Program → Strata.Program
 /--
 Translate a program in the generic AST for Strata into the dialect-specific AST
 for Laurel. This can fail with an error message if the input is not a
-well-structured instance of the Core dialect.
+well-structured instance of the Laurel dialect.
+
+TODO: possibly add an input context argument
 -/
-noncomputable opaque genericToLaurel : Strata.Program → Except String Laurel.Program
+def genericToLaurel (p : Strata.Program) : Except String Laurel.Program :=
+  Laurel.TransM.run .none (Laurel.parseProgram p)
 
 /-! ### Transformation between dialects -/
 
@@ -162,31 +158,52 @@ dialect into the dialect-specific AST for the Core dialect. This can fail with
 an error message if the input program contains constructs that are not yet
 supported.
 -/
-noncomputable opaque laurelToCore : Laurel.Program → Except String Core.Program
+def laurelToCore (p : Laurel.Program) : Except String Core.Program :=
+  let (coreOpt, diags) := Laurel.translate { emitResolutionErrors := true } p
+  match coreOpt with
+  | some core => .ok core
+  | none => .error s!"Laurel to Core translation failed: {diags.map (·.message)}"
 
 /-! ### Transformation of Core programs -/
 
 /--
 Options to control the behavior of inlining procedure calls in a Core program.
+The `doInline` predicate decides, for each call site, whether to inline.
+When `none`, all calls are inlined.
 -/
-noncomputable opaque Core.InlineTransformOptions : Type
+structure Core.InlineTransformOptions where
+  doInline : Option (String → Core.Transform.CachedAnalyses → Bool) := none
 
 /--
 Transform a Core program to inline some or all procedure calls.
 -/
-noncomputable opaque Core.inlineProcedures : Core.Program → Core.InlineTransformOptions → Core.Program
+def Core.inlineProcedures (p : Core.Program) (opts : Core.InlineTransformOptions)
+    : Except String Core.Program :=
+  let pred := opts.doInline.getD (fun _ _ => true)
+  Core.Transform.run p (fun prog => do
+    let (_, prog) ← Core.Transform.runProgram (coreInlineCallCmd (doInline := pred)) prog
+    return prog)
 
 /--
 Transform a Core program to replace each loop with assertions and assumptions about
 its invariants.
 -/
-noncomputable opaque Core.loopElimWithContract : Core.Program → Core.Program
+def Core.loopElimUsingContract (p : Core.Program) : Core.Program :=
+  let newDecls := p.decls.map fun d => match d with
+    | .proc proc md =>
+      let newBody := (StateT.run (Core.Block.removeLoopsM proc.body) 0).fst
+      .proc { proc with body := newBody } md
+    | other => other
+  { decls := newDecls }
 
 /--
 Transform a Core program to replace each procedure call with assertions and
 assumptions about its contract.
 -/
-noncomputable opaque Core.callElimWithContract : Core.Program → Core.Program
+def Core.callElimUsingContract (p : Core.Program) : Except String Core.Program :=
+  Core.Transform.run p (fun prog => do
+    let (_, prog) ← Core.Transform.runProgram coreCallElimCmd prog
+    return prog)
 
 /-! ### Analysis of Core programs -/
 
@@ -194,7 +211,19 @@ noncomputable opaque Core.callElimWithContract : Core.Program → Core.Program
 Do deductive verification of a Core program, including any external solver
 invocation that is necessary.
 -/
-noncomputable opaque Core.verify : Core.Program → Core.VerifyOptions → IO Core.VCResults
+def Core.verifyProgram
+    (program : Core.Program)
+    (options : Core.VerifyOptions)
+    (moreFns : @Lambda.Factory Core.CoreLParams := Lambda.Factory.default)
+    (proceduresToVerify : Option (List String) := none)
+    : EIO String Core.VCResults := do
+  let runVerification (tempDir : System.FilePath) : IO Core.VCResults :=
+    EIO.toIO (IO.Error.userError ∘ toString)
+      (Core.verify program tempDir proceduresToVerify options moreFns)
+  let ioAction := match options.vcDirectory with
+    | .some vcDir => IO.FS.createDirAll vcDir *> runVerification vcDir
+    | .none => IO.FS.withTempDir runVerification
+  IO.toEIO (fun e => s!"{e}") ioAction
 
 /-- Controls how translation warnings are reported. -/
 inductive WarningOutput where
@@ -366,28 +395,5 @@ def pyTranslateLaurel
   match coreOption with
   | none => throw s!"Laurel to Core translation failed: {laurelTranslateErrors}"
   | some core => pure (core, laurelTranslateErrors)
-
-/-! ### Deductive verification of Core programs -/
-
-/-- Run deductive verification on a Core program.
-    Creates a temporary directory for solver interaction,
-    runs the Core verifier, and returns verification-condition results. -/
-def verifyCore (program : Core.Program)
-    (options : Core.VerifyOptions)
-    (moreFns : @Lambda.Factory Core.CoreLParams := Lambda.Factory.default)
-    : EIO String Core.VCResults := do
-  let runVerification (tempDir : System.FilePath) : IO Core.VCResults :=
-    EIO.toIO (IO.Error.userError ∘ toString)
-      (_root_.Core.verify (proceduresToVerify := none) program tempDir options moreFns)
-  let result ← match options.vcDirectory with
-    | .some vcDir =>
-      match ← (IO.FS.createDirAll vcDir *> runVerification vcDir) |>.toBaseIO with
-      | .ok r => pure r
-      | .error e => throw s!"{e}"
-    | .none =>
-      match ← (IO.FS.withTempDir runVerification) |>.toBaseIO with
-      | .ok r => pure r
-      | .error e => throw s!"{e}"
-  return result
 
 end -- public section

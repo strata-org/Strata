@@ -1,0 +1,29 @@
+# PR 499 Review Checklist
+
+- [x] docs/verso/DDMDoc.lean
+- [x] Strata/DDM/AST.lean
+- [x] Strata/DDM/BuiltinDialects/StrataDDL.lean
+- [x] Strata/DDM/Elab/Core.lean
+- [x] Strata/DDM/Elab/SyntaxElab.lean
+- [x] Strata/DDM/Format.lean
+- [x] Strata/DL/Lambda/Factory.lean
+- [x] Strata/DL/Lambda/LExprEval.lean
+- [x] Strata/DL/Lambda/RecursiveAxioms.lean
+- [x] Strata/DL/Lambda/Semantics.lean
+- [x] Strata/DL/SMT/DDMTransform/Translate.lean
+- [x] Strata/DL/Util/Func.lean
+- [x] Strata/DL/Util/List.lean
+- [x] Strata/Languages/Core/DDMTransform/Grammar.lean
+- [x] Strata/Languages/Core/DDMTransform/Translate.lean
+- [x] Strata/Languages/Core/Env.lean
+- [x] Strata/Languages/Core/ProgramType.lean
+- [x] Strata/Languages/Core/SMTEncoder.lean
+- [x] Strata/Languages/Core/StatementType.lean
+- [x] Strata/Languages/Core/StatementWF.lean
+- [x] StrataTest/DL/Lambda/RecursiveAxiomsTests.lean
+- [x] StrataTest/Languages/Core/Examples/BinaryTreeSize.lean
+- [x] StrataTest/Languages/Core/Examples/RecursiveFunctionDDMTest.lean
+- [x] StrataTest/Languages/Core/RecursiveFunctionErrorTest.lean
+- [x] StrataTest/Languages/Core/RecursiveFunctionTests.lean
+- [x] StrataTest/Languages/Core/SMTEncoderDatatypeTest.lean
+- [x] StrataTest/Languages/Core/SMTEncoderTests.lean
