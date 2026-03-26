@@ -21,7 +21,7 @@ fewer.
 
 namespace Strata.Python.Specs.IdentifyOverloadsTest
 
-open Strata (readDispatchOverloads pySpecs)
+open Strata (readDispatchOverloads pySpecsDir pySpecOutputPath)
 open Strata.Python.Specs.IdentifyOverloads (resolveOverloads)
 open Strata.Python (OverloadTable)
 
@@ -63,15 +63,15 @@ private meta def buildOverloadTable
   IO.FS.withTempFile fun _handle dialectFile => do
     IO.FS.writeBinFile dialectFile Python.Python.toIon
     -- Compile servicelib dispatch file to pyspec Ion
-    let pyFile := testDir / "servicelib.py"
-    let some stem := pyFile.fileStem
-      | throw <| .userError s!"No stem for {pyFile}"
-    let ionPath := outDir / s!"{stem}.pyspec.st.ion"
-    match ← pySpecs pyFile outDir dialectFile
+    let pyFile := testDir / "servicelib" / "__init__.py"
+    match ← pySpecsDir testDir outDir dialectFile
+        (modules := #["servicelib"])
         (warningOutput := .none) |>.toBaseIO with
     | .ok () => pure ()
     | .error msg =>
-      throw <| .userError s!"pySpecs failed for {pyFile}: {msg}"
+      throw <| .userError s!"pySpecsDir failed for {pyFile}: {msg}"
+    let some ionPath := pySpecOutputPath testDir outDir pyFile
+      | throw <| .userError s!"Cannot derive output path for {pyFile}"
     match ← readDispatchOverloads #[ionPath.toString] |>.toBaseIO with
     | .ok tbl => return tbl
     | .error msg =>
@@ -103,19 +103,19 @@ private structure TestCase where
 private meta def testCases : List TestCase := [
   -- Single service at top level
   { file := "test_single_service.py"
-    expected := ["Storage"] },
+    expected := ["servicelib.Storage"] },
   -- Multiple services
   { file := "test_multi_service.py"
-    expected := ["Storage", "Messaging"] },
+    expected := ["servicelib.Storage", "servicelib.Messaging"] },
   -- Dispatch inside a class method
   { file := "test_class_dispatch.py"
-    expected := ["Storage"] },
+    expected := ["servicelib.Storage"] },
   -- Dispatch in both branches of an if/else
   { file := "test_dispatch_in_conditional.py"
-    expected := ["Storage", "Messaging"] },
+    expected := ["servicelib.Storage", "servicelib.Messaging"] },
   -- Dispatch inside a try block
   { file := "test_dispatch_in_try.py"
-    expected := ["Storage"] },
+    expected := ["servicelib.Storage"] },
   -- No dispatch calls at all
   { file := "test_no_dispatch.py"
     expected := [] },
