@@ -793,7 +793,7 @@ def translateFunctions (a : Array (Python.stmt SourceRange)) (translation_ctx: T
         spec := default,
         body := varDecls ++ [.block "end" ((ArrPyStmtToCore translation_ctx body.val).fst) .empty]
       }
-      some (.proc proc)
+      some (.proc proc .empty)
     | _ => none)
 
 def pyTyStrToLMonoTy (ty_str: String) : Lambda.LMonoTy :=
@@ -846,7 +846,8 @@ def PyFuncDefToCore (s: Python.stmt SourceRange) (translation_ctx: TranslationCo
   match s with
   | .FunctionDef _ name args body _ ret _ _ =>
     let args := unpackPyArguments args
-    ([.proc (pythonFuncToCore name.val args body.val ret.val default translation_ctx)], {name := name.val, args, ret := s!"{repr ret}"})
+    ([.proc (pythonFuncToCore name.val args body.val ret.val default translation_ctx) .empty],
+     {name := name.val, args, ret := s!"{repr ret}"})
   | _ => panic! s!"Expected function def: {repr s}"
 
 def PyClassDefToCore (s: Python.stmt SourceRange) (translation_ctx: TranslationContext) : List Core.Decl × PythonClassDecl :=
@@ -860,7 +861,8 @@ def PyClassDefToCore (s: Python.stmt SourceRange) (translation_ctx: TranslationC
       let args := unpackPyArguments f.snd.fst
       let body := f.snd.snd.fst.val
       let ret := f.snd.snd.snd.val
-      .proc (pythonFuncToCore (c_name.val++"_"++name) args body ret default translation_ctx)), {name := c_name.val})
+      .proc (pythonFuncToCore (c_name.val++"_"++name) args body ret default translation_ctx) .empty),
+      {name := c_name.val})
   | _ => panic! s!"Expected function def: {repr s}"
 
 def pythonToCore (signatures : Python.Signatures) (insideMod : Array (Python.stmt SourceRange)) (prelude : Core.Program) (filePath : String := ""): Core.Program :=
@@ -877,7 +879,7 @@ def pythonToCore (signatures : Python.Signatures) (insideMod : Array (Python.stm
   | .ClassDef _ _ _ _ _ _ _ => false
   | _ => true)
 
-  let globals := [(.var "__name__" (.forAll [] mty[string]) (some (.strConst () "__main__")))]
+  let globals := [(.var "__name__" (.forAll [] mty[string]) (some (.strConst () "__main__")) .empty)]
 
   let rec helper {α : Type} (f : Python.stmt SourceRange → TranslationContext → List Core.Decl × α)
                (update : TranslationContext → α → TranslationContext)
@@ -898,13 +900,15 @@ def pythonToCore (signatures : Python.Signatures) (insideMod : Array (Python.stm
   let class_defs := class_defs_and_infos.fst
   let class_infos := class_defs_and_infos.snd
 
-  let class_ty_decls := class_infos.class_infos.map (λ info => .type (.con {name := info.name, params := []}))
+  let class_ty_decls := class_infos.class_infos.map (λ info =>
+    .type (.con {name := info.name, params := []}) .empty)
 
   let func_defs_and_infos := helper PyFuncDefToCore (fun acc info => {acc with func_infos := info :: acc.func_infos}) class_infos func_defs.toList
   let func_defs := func_defs_and_infos.fst
   let func_infos := func_defs_and_infos.snd
 
-  {decls := globals ++ class_ty_decls ++ func_defs ++ class_defs ++ [.proc (pythonFuncToCore "__main__" [] non_func_blocks none default func_infos)]}
+  {decls := globals ++ class_ty_decls ++ func_defs ++ class_defs ++
+    [.proc (pythonFuncToCore "__main__" [] non_func_blocks none default func_infos) .empty]}
 
 end -- public section
 end Strata
