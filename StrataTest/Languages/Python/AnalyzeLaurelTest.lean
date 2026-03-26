@@ -299,15 +299,26 @@ private def isPreludeResult (label : String) : Bool :=
 -- `always false` for the PIn precondition when `results` is an opaque Any.
 #eval withPython fun _pythonCmd => do
   IO.FS.withTempDir fun tmpDir => do
-    let result ← runAnalyzeAndVerify tmpDir "test_pin_any.py"
-    match result with
-    | .error msg => throw <| IO.userError s!"Pipeline failed: {msg}"
-    | .ok vcResults =>
-      for r in vcResults do
-        if !isPreludeResult r.obligation.label then
-          let outcome := r.formatOutcome
-          if (outcome.splitOn "always false").length > 1 then
-            throw <| IO.userError
-              s!"{r.obligation.label}: {outcome} — should not be provably false"
+    let testIon ← compileTestScript (testDir / "test_pin_any.py") tmpDir
+    let laurel ←
+      match ← Strata.pyAnalyzeLaurel testIon.toString |>.toBaseIO with
+      | .ok r => pure r
+      | .error err => throw <| IO.userError (toString err)
+    let (coreProgramOption, _) := Strata.translateCombinedLaurel laurel
+    let coreProgram ← match coreProgramOption with
+      | none => throw <| IO.userError "Laurel to Core translation failed"
+      | some core => pure core
+    let options : Core.VerifyOptions :=
+      { Core.VerifyOptions.default with
+        stopOnFirstError := false, verbose := .quiet, solver := "z3",
+        checkMode := .bugFinding, checkLevel := .full }
+    let vcResults ← Core.verify (proceduresToVerify := none) coreProgram
+      (← IO.FS.createTempDir) options Strata.Python.ReFactory
+    for r in vcResults do
+      if !isPreludeResult r.obligation.label then
+        let outcome := r.formatOutcome
+        if (outcome.splitOn "always false").length > 1 then
+          throw <| IO.userError
+            s!"{r.obligation.label}: {outcome} — should not be provably false"
 
 end Strata.Python.AnalyzeLaurelTest
