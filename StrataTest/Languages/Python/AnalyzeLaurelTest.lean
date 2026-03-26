@@ -312,8 +312,9 @@ private def isPreludeResult (label : String) : Bool :=
       { Core.VerifyOptions.default with
         stopOnFirstError := false, verbose := .quiet, solver := "z3",
         checkMode := .bugFinding, checkLevel := .full }
-    let vcResults ← Core.verify (proceduresToVerify := none) coreProgram
-      (← IO.FS.createTempDir) options Strata.Python.ReFactory
+    let vcResults ← EIO.toIO
+      (fun (dm : Strata.DiagnosticModel) => IO.Error.userError (toString dm))
+      (Core.verify coreProgram (← IO.FS.createTempDir) none options Strata.Python.ReFactory)
     for r in vcResults do
       if !isPreludeResult r.obligation.label then
         let outcome := r.formatOutcome
