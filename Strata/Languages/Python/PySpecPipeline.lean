@@ -290,6 +290,21 @@ private def prependPrelude (coreFromLaurel : Core.Program) : Core.Program :=
     fun d => !coreOnlyNames.contains (toString d.name)
   { decls := filteredPrelude ++ coreOnly ++ userDecls }
 
+/-- Split procedure names in a Core program into prelude names
+    (before `FIRST_END_MARKER`) and user names (after it). -/
+public def splitProcNames (prog : Core.Program)
+    : Std.HashSet String × List String :=
+  let (preludeDecls, rest) := prog.decls.span (fun d => toString d.name != "FIRST_END_MARKER")
+  let preludeNames := preludeDecls.foldl (init := ({} : Std.HashSet String)) fun s d =>
+    match d.getProc? with
+    | some p => s.insert (Core.CoreIdent.toPretty p.header.name)
+    | none => s
+  -- rest starts with FIRST_END_MARKER (or is empty); skip it
+  let userDecls := match rest with | _ :: tl => tl | [] => []
+  let userProcNames := userDecls.filterMap fun d =>
+    d.getProc?.map (Core.CoreIdent.toPretty ·.header.name)
+  (preludeNames, userProcNames)
+
 /-- Translate a combined Laurel program to Core and prepend the full
     runtime prelude.  Resolution errors are suppressed because PySpec
     Laurel procedures reference names defined in the Core prelude

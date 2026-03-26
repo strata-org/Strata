@@ -500,17 +500,14 @@ def pyAnalyzeLaurelCommand : Command where
       IO.println "\n==== Core Program ===="
       IO.print coreProgram
 
+    -- Split prelude / user procedure names at FIRST_END_MARKER
+    let (preludeNames, userProcNames) := Strata.splitProcNames coreProgram
+
     -- Inline pyspec procedures so their precondition assertions are checked
     -- at call sites with concrete arguments.
     let pyspecFiles := pflags.getRepeated "pyspec"
     let coreProgram ←
       if pyspecFiles.size > 0 then
-        -- Collect prelude procedure names to avoid inlining them
-        let mut preludeNames : Std.HashSet String := {}
-        for d in coreProgram.decls do
-          if toString d.name == "FIRST_END_MARKER" then break
-          if let some p := d.getProc? then
-            preludeNames := preludeNames.insert (Core.CoreIdent.toPretty p.header.name)
         match Core.Transform.runProgram (targetProcList := .none)
               (Core.ProcedureInlining.inlineCallCmd
                 (doInline := λ name _ => name ≠ "__main__" && !preludeNames.contains name))
@@ -523,16 +520,6 @@ def pyAnalyzeLaurelCommand : Command where
           pure inlined
       else pure coreProgram
 
-    -- Collect user procedure names (those after FIRST_END_MARKER) for selective verification
-    let mut userProcNames : List String := []
-    let mut pastMarker := false
-    for d in coreProgram.decls do
-      if toString d.name == "FIRST_END_MARKER" then
-        pastMarker := true
-      else if pastMarker then
-        if let some p := d.getProc? then
-          userProcNames := userProcNames ++ [Core.CoreIdent.toPretty p.header.name]
-
     -- Verify using Core verifier
     let checkMode ← parseCheckMode pflags
     let checkLevel ← parseCheckLevel pflags
@@ -544,26 +531,12 @@ def pyAnalyzeLaurelCommand : Command where
     let options : VerifyOptions := match pflags.getString "vc-directory" with
       | .some dir => { baseOptions with vcDirectory := some (dir : System.FilePath) }
       | .none => baseOptions
-    let allVcResults ←
+    let vcResults ←
       match ← Strata.verifyCore coreProgram options
                 (moreFns := Strata.Python.ReFactory)
                 (proceduresToVerify := some userProcNames) |>.toBaseIO with
       | .ok r => pure r
       | .error msg => exitPyAnalyzeInternalError msg
-    -- Filter out prelude VCs (those with empty file path in metadata).
-    -- Even though we only request verification of user procedures,
-    -- PrecondElim generates WF-checking procedures for prelude functions
-    -- called transitively by user code (e.g. List_get, PFloorDiv).
-    -- Those WF procedures carry prelude metadata and must be excluded.
-    let mut vcResults : Array Core.VCResult := #[]
-    for vcResult in allVcResults do
-      let isPrelude := match Imperative.getFileRange vcResult.obligation.metadata with
-        | some fr => match fr.file with
-          | .file "" => true
-          | _ => false
-        | none => false
-      if !isPrelude then
-        vcResults := vcResults.push vcResult
 
     let classifier : ResultClassifier :=
       match checkMode with

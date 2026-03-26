@@ -122,28 +122,15 @@ private meta def runAnalyzeAndVerify (dispatchIon : System.FilePath)
   let coreProgram ← match coreProgramOption with
     | none => return .error "Laurel to Core translation failed"
     | some core => pure core
-  -- Inline all non-main procedures
+  -- Split prelude / user procedure names at FIRST_END_MARKER
+  let (preludeNames, userProcNames) := Strata.splitProcNames coreProgram
   -- Inline all non-main, non-prelude procedures
-  let mut preludeNames : Std.HashSet String := {}
-  for d in coreProgram.decls do
-    if toString d.name == "FIRST_END_MARKER" then break
-    if let some p := d.getProc? then
-      preludeNames := preludeNames.insert (Core.CoreIdent.toPretty p.header.name)
   let coreProgram ← match Core.Transform.runProgram (targetProcList := .none)
         (Core.ProcedureInlining.inlineCallCmd
           (doInline := λ name _ => name ≠ "__main__" && !preludeNames.contains name))
         coreProgram .emp with
     | ⟨.error e, _⟩ => return .error s!"Inlining failed: {e}"
     | ⟨.ok (_, inlined), _⟩ => pure inlined
-  -- Collect user procedure names (those after FIRST_END_MARKER)
-  let mut userProcNames : List String := []
-  let mut pastMarker := false
-  for d in coreProgram.decls do
-    if toString d.name == "FIRST_END_MARKER" then
-      pastMarker := true
-    else if pastMarker then
-      if let some p := d.getProc? then
-        userProcNames := userProcNames ++ [Core.CoreIdent.toPretty p.header.name]
   -- Verify
   let options : Core.VerifyOptions :=
     { Core.VerifyOptions.default with
