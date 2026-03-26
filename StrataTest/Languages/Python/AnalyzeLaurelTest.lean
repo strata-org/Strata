@@ -311,12 +311,8 @@ private def isPreludeResult (label : String) : Bool :=
   label.startsWith "assert_name" || label.startsWith "assert_opt_name" ||
   label.startsWith "ensures_"
 
-/-- info: ite_cond_calls_Any_to_bool_0: ❓ unknown
-assert_assert(259)_calls_PIn_0: ❓ unknown
-assert_assert(259)_calls_Any_to_bool_1: ✔️ always true if reached
-assert(259): ❓ unknown
--/
-#guard_msgs in
+/-- Verify that `if results: assert 'key' in results` does not produce
+    `✖️ always false` for the PIn precondition when `results` is an opaque Any. -/
 #eval withPython fun _pythonCmd => do
   IO.FS.withTempDir fun tmpDir => do
     let (dispatchIon, _) ← setupFixture _pythonCmd tmpDir
@@ -327,6 +323,9 @@ assert(259): ❓ unknown
     | .ok vcResults =>
       for r in vcResults do
         if !isPreludeResult r.obligation.label then
-          IO.println s!"{r.obligation.label}: {r.formatOutcome}"
+          let outcome := r.formatOutcome
+          if "always false".isInfixOf outcome then
+            throw <| IO.userError
+              s!"{r.obligation.label}: {outcome} — should not be provably false"
 
 end Strata.Python.AnalyzeLaurelTest
