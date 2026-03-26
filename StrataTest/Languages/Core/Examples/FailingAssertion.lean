@@ -65,6 +65,8 @@ $__a1[0] == 1
 Result: Obligation: assert_0
 Property: assert
 Result: ❌ fail
+Model:
+($__a1, |@(Map Int Int)_0|)
 
 
 [DEBUG] Evaluated program:
@@ -84,6 +86,8 @@ info:
 Obligation: assert_0
 Property: assert
 Result: ❌ fail
+Model:
+($__a1, |@(Map Int Int)_0|)
 -/
 #guard_msgs in
 #eval verify failing
