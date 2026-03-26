@@ -112,7 +112,7 @@ From a list of statements (in expression position), prepend all `LocalVariable` 
 to the surrounding context and drop all other non-last statements. Returns a list containing
 only the last statement (the block's expression value), or empty if the input is empty.
 -/
-private def onlyKeepLocalDeclarationsAndLast (stmts : List StmtExprMd) : LiftM (List StmtExprMd) := do
+private def onlyKeepUsefulExpressionsAndLast (stmts : List StmtExprMd) : LiftM (List StmtExprMd) := do
   match stmts with
   | [] => return []
   | _ =>
@@ -316,8 +316,7 @@ def transformExpr (expr : StmtExprMd) : LiftM StmtExprMd := do
 
   | .Block stmts labelOption =>
       let newStmts := (← stmts.reverse.mapM transformExpr).reverse
-
-      return ⟨ .Block (← onlyKeepLocalDeclarationsAndLast newStmts) labelOption, md ⟩
+      return ⟨ .Block (← onlyKeepUsefulExpressionsAndLast newStmts) labelOption, md ⟩
 
   | .LocalVariable name ty initializer =>
       -- If the substitution map has an entry for this variable, it was
