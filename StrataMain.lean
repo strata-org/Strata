@@ -377,6 +377,17 @@ All output uses two structured lines on stdout:
 Exit codes: 1 = user python error, 2 = internal error, 3 = failures found, 4 = known limitation.
 A successful run exits 0 with `RESULT: Analysis success` or `RESULT: Inconclusive`. -/
 
+/-- Determines which VC results count as successes and which count as failures
+    for the purposes of the `pyAnalyzeLaurel` summary and exit code.
+    Implementation-error results are partitioned out first; the classifier then
+    partitions the rest into success / failure / inconclusive.
+    Narrowing `isFailure` (e.g. to only `alwaysFalseAndReachable`) automatically
+    widens inconclusive.
+    Future: may be extended with `isWarning` for non-fatal diagnostic categories. -/
+structure ResultClassifier where
+  isSuccess : Core.VCResult → Bool := (·.isSuccess)
+  isFailure : Core.VCResult → Bool := (·.isFailure)
+
 private def printPyAnalyzeResult (category : String) (detail : String) : IO Unit := do
   IO.println s!"DETAIL: {detail}"
   IO.println s!"RESULT: {category}"
@@ -399,31 +410,25 @@ private def exitPyAnalyzeKnownLimitation {α} (message : String) : IO α := do
 
 /-- Print the final RESULT/DETAIL lines based on solver outcomes.
     Always called on successful pipeline completion (as opposed to the
-    exit helpers above, which are called on early pipeline failure). -/
-private def printPyAnalyzeSummary (vcResults : Array Core.VCResult) : IO Unit := do
-  let nSuccess      := vcResults.filter (·.isSuccess)             |>.size
-  let nFailure      := vcResults.filter (·.isFailure)             |>.size
-  -- Inconclusive covers two cases:
-  --  · (unknown, unknown)  — isUnknown: both checks inconclusive
-  --  · (sat,     unknown)  — satisfiableValidityUnknown: validity unknown
-  let nInconclusive := vcResults.filter (fun r => r.isUnknown ||
-      match r.outcome with
-      | .ok o => o.satisfiableValidityUnknown
-      | _     => false)                                            |>.size
-  -- Unreachable: (unsat, unsat) — dead code path
-  let nUnreachable  := vcResults.filter (·.isUnreachable)         |>.size
-  -- Implementation errors cover two cases:
-  --  · outer Except is .error  — isImplementationError
-  --  · either SMT property is .err (solver error on a specific check)
-  let nImplError    := vcResults.filter (fun r => r.isImplementationError ||
-      match r.outcome with
-      | .ok o => match o.satisfiabilityProperty, o.validityProperty with
-                 | .err _, _ | _, .err _ => true
-                 | _,      _             => false
-      | _     => false)                                            |>.size
-  if nSuccess + nFailure + nInconclusive + nUnreachable + nImplError != vcResults.size then
-    exitPyAnalyzeInternalError s!"Unaccounted VC results: \
-      {nSuccess} + {nFailure} + {nInconclusive} + {nUnreachable} + {nImplError} ≠ {vcResults.size}"
+    exit helpers above, which are called on early pipeline failure).
+    Classification uses successive partitioning: implementation errors are
+    removed first, then the classifier partitions the rest into
+    success / failure / inconclusive (guaranteeing disjointness).
+    Unreachable count is reported as supplementary info. -/
+private def printPyAnalyzeSummary (vcResults : Array Core.VCResult)
+    (classifier : ResultClassifier := {}) : IO Unit := do
+  -- 1. Partition out implementation errors (broken results, not classifiable).
+  let (implError, classifiable) :=
+    vcResults.partition (fun r => r.isImplementationError || r.hasSMTError)
+  -- 2. Successive partitioning via the classifier: success → failure → inconclusive.
+  let (success, rest)          := classifiable.partition classifier.isSuccess
+  let (failure, inconclusive)  := rest.partition classifier.isFailure
+  -- 3. Unreachable is informational (not a separate partition).
+  let nUnreachable  := vcResults.filter (·.isUnreachable) |>.size
+  let nImplError    := implError.size
+  let nSuccess      := success.size
+  let nFailure      := failure.size
+  let nInconclusive := inconclusive.size
   let unreachableStr := if nUnreachable > 0 then s!", {nUnreachable} unreachable" else ""
   let implErrorStr   := if nImplError > 0   then s!", {nImplError} implementation errors" else ""
   let counts := s!"{nSuccess} passed, {nFailure} failed, {nInconclusive} inconclusive{unreachableStr}{implErrorStr}"
@@ -535,6 +540,14 @@ def pyAnalyzeLaurelCommand : Command where
       | .ok r => pure r
       | .error msg => exitPyAnalyzeInternalError msg
 
+    let classifier : ResultClassifier :=
+      match checkMode with
+      | .bugFinding | .bugFindingAssumingCompleteSpec =>
+        { isFailure := fun r => match r.outcome with
+            | .ok o => o.alwaysFalseAndReachable
+            | _     => false }
+      | _ => {}
+
     -- Print results
     if !laurelTranslateErrors.isEmpty then
       IO.println "\n==== Errors ===="
@@ -553,18 +566,18 @@ def pyAnalyzeLaurelCommand : Command where
             | some (_, fm) =>
               match fr.file with
               | .file "" =>
-                if vcResult.isFailure then
+                if classifier.isFailure vcResult then
                   (s!"Assertion failed in prelude file: ", "")
                 else
                   ("", s!" (in prelude file)")
               | .file path =>
                 let pos := fm.toPosition fr.range.start
-                if vcResult.isFailure then
+                if classifier.isFailure vcResult then
                   (s!"Assertion failed at line {pos.line}, col {pos.column}: ", "")
                 else
                   ("", s!" (at line {pos.line}, col {pos.column})")
             | none =>
-              if vcResult.isFailure then
+              if classifier.isFailure vcResult then
                 (s!"Assertion failed: ", "")
               else
                 ("", "")
@@ -579,7 +592,7 @@ def pyAnalyzeLaurelCommand : Command where
         | some (pyPath, fm) => Map.empty.insert (Strata.Uri.file pyPath) fm
         | none => Map.empty
       Core.Sarif.writeSarifOutput checkMode files vcResults (filePath ++ ".sarif")
-    printPyAnalyzeSummary vcResults
+    printPyAnalyzeSummary vcResults classifier
 
 private def deriveBaseName (file : String) : String :=
   let name := System.FilePath.fileName file |>.getD file
