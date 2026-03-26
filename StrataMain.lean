@@ -212,16 +212,19 @@ def readPythonStrata (strataPath : String) : IO (Array (Strata.Python.stmt Sourc
 
 def pySpecsCommand : Command where
   name := "pySpecs"
-  args := [ "python_path", "strata_path" ]
+  args := [ "source_dir", "output_dir" ]
   flags := [
     { name := "quiet", help := "Suppress default logging." },
     { name := "log", help := "Enable logging for an event type.",
       takesArg := .repeat "event" },
     { name := "skip",
       help := "Skip a top-level definition (module.name). Overloads are kept.",
-      takesArg := .repeat "name" }
+      takesArg := .repeat "name" },
+    { name := "module",
+      help := "Translate only the named module (dot-separated). May be repeated.",
+      takesArg := .repeat "module" }
   ]
-  help := "Translate a Python specification (.py) file into Strata DDM Ion format. Creates the output directory if needed. (Experimental)"
+  help := "Translate Python specification files in a directory into Strata DDM Ion format. If --module is given, translates only those modules; otherwise translates all .py files. Creates subdirectories as needed. (Experimental)"
   callback := fun v pflags => do
     let quiet := pflags.getBool "quiet"
     let mut events : Std.HashSet String := {}
@@ -230,13 +233,15 @@ def pySpecsCommand : Command where
     for e in pflags.getRepeated "log" do
       events := events.insert e
     let skipNames := pflags.getRepeated "skip"
+    let modules := pflags.getRepeated "module"
     let warningOutput : Strata.WarningOutput :=
       if quiet then .none else .detail
     -- Serialize embedded dialect for Python subprocess
     IO.FS.withTempFile fun _handle dialectFile => do
       IO.FS.writeBinFile dialectFile Strata.Python.Python.toIon
-      let r ← Strata.pySpecs (events := events)
+      let r ← Strata.pySpecsDir (events := events)
                 (skipNames := skipNames)
+                (modules := modules)
                 (warningOutput := warningOutput)
                 v[0] v[1] dialectFile |>.toBaseIO
       match r with
@@ -443,18 +448,20 @@ def pyAnalyzeLaurelCommand : Command where
   name := "pyAnalyzeLaurel"
   args := [ "file" ]
   flags := [{ name := "verbose", help := "Enable verbose output." },
-            { name := "pyspec",
-              help := "Add PySpec-derived Laurel declarations.",
-              takesArg := .repeat "ion_file" },
+            checkModeFlag, checkLevelFlag,
+            { name := "spec-dir",
+              help := "Directory containing compiled PySpec Ion files.",
+              takesArg := .arg "dir" },
             { name := "dispatch",
-              help := "Extract overload dispatch table from a \
-                PySpec Ion file (no Laurel translation).",
-              takesArg := .repeat "ion_file" },
+              help := "Dispatch module name (e.g., servicelib).",
+              takesArg := .repeat "module" },
+            { name := "pyspec",
+              help := "PySpec module name (e.g., servicelib.Storage).",
+              takesArg := .repeat "module" },
             { name := "sarif", help := "Write results as SARIF to <file>.sarif." },
             { name := "vc-directory",
               help := "Store VCs in SMT-Lib format in <dir>.",
-              takesArg := .arg "dir" },
-            checkModeFlag, checkLevelFlag]
+              takesArg := .arg "dir" }]
   help := "Verify a Python Ion program via the Laurel pipeline. Translates Python to Laurel to Core, then runs SMT verification."
   callback := fun v pflags => do
     let verbose := pflags.getBool "verbose"
@@ -462,15 +469,18 @@ def pyAnalyzeLaurelCommand : Command where
     let filePath := v[0]
     let pySourceOpt ← tryReadPythonSource filePath
 
-    let dispatchFiles := pflags.getRepeated "dispatch"
-    let pyspecFiles := pflags.getRepeated "pyspec"
+    let dispatchModules := pflags.getRepeated "dispatch"
+    let pyspecModules := pflags.getRepeated "pyspec"
+    let specDir := pflags.getString "spec-dir" |>.getD "."
+    unless ← System.FilePath.isDir specDir do
+      exitFailure s!"spec-dir '{specDir}' does not exist or is not a directory"
     let sourcePath := pySourceOpt.map (·.1)
     -- Build FileMap for source position resolution.
     let mfm : Option (String × Lean.FileMap) := match pySourceOpt with
       | some (pyPath, srcText) => some (pyPath, .ofString srcText)
       | none => none
     let combinedLaurel ←
-      match ← Strata.pyAnalyzeLaurel filePath dispatchFiles pyspecFiles sourcePath |>.toBaseIO with
+      match ← Strata.pyAnalyzeLaurel filePath dispatchModules pyspecModules sourcePath (specDir := specDir) |>.toBaseIO with
       | .ok r => pure r
       | .error (.userCode range msg) =>
         let location := if range.isNone then "" else
@@ -662,18 +672,23 @@ def pyTranslateLaurelCommand : Command where
   name := "pyTranslateLaurel"
   args := [ "file" ]
   flags := [{ name := "pyspec",
-              help := "Add PySpec-derived Laurel declarations.",
-              takesArg := .repeat "ion_file" },
+              help := "PySpec module name (e.g., servicelib.Storage).",
+              takesArg := .repeat "module" },
             { name := "dispatch",
-              help := "Extract overload dispatch table from a \
-                PySpec Ion file (no Laurel translation).",
-              takesArg := .repeat "ion_file" }]
+              help := "Dispatch module name (e.g., servicelib).",
+              takesArg := .repeat "module" },
+            { name := "spec-dir",
+              help := "Directory containing compiled PySpec Ion files.",
+              takesArg := .arg "dir" }]
   help := "Translate a Strata Python Ion file through Laurel to Strata Core. Write results to stdout."
   callback := fun v pflags => do
-    let dispatchFiles := pflags.getRepeated "dispatch"
-    let pyspecFiles := pflags.getRepeated "pyspec"
+    let dispatchModules := pflags.getRepeated "dispatch"
+    let pyspecModules := pflags.getRepeated "pyspec"
+    let specDir := pflags.getString "spec-dir" |>.getD "."
+    unless ← System.FilePath.isDir specDir do
+      exitFailure s!"spec-dir '{specDir}' does not exist or is not a directory"
     let coreProgram ←
-      match ← Strata.pyTranslateLaurel v[0] dispatchFiles pyspecFiles |>.toBaseIO with
+      match ← Strata.pyTranslateLaurel v[0] dispatchModules pyspecModules (specDir := specDir) |>.toBaseIO with
       | .ok r => pure r
       | .error msg => exitFailure msg
     IO.print coreProgram
@@ -682,19 +697,24 @@ def pyAnalyzeLaurelToGotoCommand : Command where
   name := "pyAnalyzeLaurelToGoto"
   args := [ "file" ]
   flags := [{ name := "pyspec",
-              help := "Add PySpec-derived Laurel declarations.",
-              takesArg := .repeat "ion_file" },
+              help := "PySpec module name (e.g., servicelib.Storage).",
+              takesArg := .repeat "module" },
             { name := "dispatch",
-              help := "Extract overload dispatch table from a \
-                PySpec Ion file (no Laurel translation).",
-              takesArg := .repeat "ion_file" }]
+              help := "Dispatch module name (e.g., servicelib).",
+              takesArg := .repeat "module" },
+            { name := "spec-dir",
+              help := "Directory containing compiled PySpec Ion files.",
+              takesArg := .arg "dir" }]
   help := "Translate a Strata Python Ion file through Laurel to CProver GOTO JSON files."
   callback := fun v pflags => do
     let filePath := v[0]
-    let dispatchFiles := pflags.getRepeated "dispatch"
-    let pyspecFiles := pflags.getRepeated "pyspec"
+    let dispatchModules := pflags.getRepeated "dispatch"
+    let pyspecModules := pflags.getRepeated "pyspec"
+    let specDir := pflags.getString "spec-dir" |>.getD "."
+    unless ← System.FilePath.isDir specDir do
+      exitFailure s!"spec-dir '{specDir}' does not exist or is not a directory"
     let (coreProgram, laurelTranslateErrors) ←
-      match ← Strata.pyTranslateLaurel filePath dispatchFiles pyspecFiles |>.toBaseIO with
+      match ← Strata.pyTranslateLaurel filePath dispatchModules pyspecModules (specDir := specDir) |>.toBaseIO with
       | .ok r => pure r
       | .error msg => exitFailure msg
     let sourceText := (← tryReadPythonSource filePath).map (·.2)

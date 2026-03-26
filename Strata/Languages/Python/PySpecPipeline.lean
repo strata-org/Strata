@@ -87,25 +87,25 @@ private def mergeOverloads (old new : OverloadTable) : OverloadTable :=
     o.alter name fun s => some <| s.getD {} |>.union n
 
 
+
 /-- Read PySpec Ion files and collect their Laurel declarations and overload
     tables into a single combined result. Each Ion file is parsed and translated
     to Laurel via `signaturesToLaurel`. The resulting procedures and types are
     accumulated into one `Laurel.Program`, and overload dispatch entries are
-    merged into a single table. -/
-public def buildPySpecLaurel (pyspecPaths : Array String)
+    merged into a single table.
+
+    Each entry is a `(modulePrefix, ionPath)` pair. The `modulePrefix` is used
+    to namespace all generated Laurel names (e.g., `"servicelib_Storage"` for
+    module `servicelib.Storage`). -/
+public def buildPySpecLaurel (pyspecEntries : Array (String × String))
     (overloads : OverloadTable) : EIO String PySpecLaurelResult := do
   let mut combinedProcedures : Array (Laurel.Procedure × String) := #[]
   let mut combinedTypes : Array (Laurel.TypeDefinition × String) := #[]
   let mut allOverloads := overloads
   let mut funcSigs : List Python.PythonFunctionDecl := []
   let mut allTypeAliases : Std.HashMap String String := {}
-  for ionPath in pyspecPaths do
+  for (modulePrefix, ionPath) in pyspecEntries do
     let ionFile : System.FilePath := ionPath
-    let some mod := ionFile.fileStem
-      | throw s!"No stem {ionFile}"
-    let .ok parsedMod := Python.Specs.ModuleName.ofString mod
-      | throw s!"Invalid module {mod}"
-    let modulePrefix := parsedMod.components[0]'parsedMod.componentsSizePos
     let sigs ←
       match ← Python.Specs.readDDM ionFile |>.toBaseIO with
       | .ok t => pure t
@@ -180,42 +180,65 @@ public def readDispatchOverloads
           fun acc k v => acc.insert k v)
   return tbl
 
+/-- Resolve a module name to a `(modulePrefix, ionPath)` pair for
+    `buildPySpecLaurel`.  Returns `none` if the pyspec file is not found. -/
+private def resolveModuleEntry (modName : String) (specDir : System.FilePath)
+    : EIO String (Option (String × String)) := do
+  match Python.Specs.ModuleName.ofString modName with
+  | .error _ =>
+    let _ ← IO.eprintln
+      s!"warning: invalid module name '{modName}', skipping" |>.toBaseIO
+    return none
+  | .ok mod =>
+    match ← mod.specIonPath specDir with
+    | some specPath =>
+      let pfx := "_".intercalate mod.components.toList
+      return some (pfx, specPath.toString)
+    | none => return none
+
 /-- Build dispatch overload table, auto-resolve pyspec files
     from the program AST, and return combined Laurel declarations
     and overload table.
 
-    Auto-resolved pyspec files that are missing on disk are
-    skipped with a warning.  Explicitly provided `pyspecPaths`
-    still produce a hard error when unreadable. -/
+    `dispatchModules` and `pyspecModules` are dotted module names
+    (e.g., `"servicelib"`, `"servicelib.Storage"`) resolved against
+    `specDir`.  Auto-resolved pyspec files that are missing on disk
+    are skipped with a warning. -/
 public def resolveAndBuildLaurelPrelude
-    (dispatchPaths : Array String)
-    (pyspecPaths : Array String)
+    (dispatchModules : Array String)
+    (pyspecModules : Array String)
     (stmts : Array (Python.stmt SourceRange))
+    (specDir : System.FilePath := ".")
     : EIO String PySpecLaurelResult := do
+  -- Resolve dispatch module names to Ion paths
+  let mut dispatchPaths : Array String := #[]
+  for modName in dispatchModules do
+    match ← resolveModuleEntry modName specDir with
+    | some (_, path) => dispatchPaths := dispatchPaths.push path
+    | none => throw s!"Dispatch module '{modName}' not found in {specDir}"
   let dispatchOverloads ← readDispatchOverloads dispatchPaths
   let resolveState :=
     Python.Specs.IdentifyOverloads.resolveOverloads dispatchOverloads stmts
   for w in resolveState.warnings do
     let _ ← IO.eprintln s!"warning: {w}" |>.toBaseIO
-  let mut autoSpecPaths : Array String := #[]
-  if h : dispatchPaths.size > 0 then
-    let firstDispatch : System.FilePath := dispatchPaths[0]
-    let dispatchDir := firstDispatch.parent.getD "."
+  -- Auto-resolve pyspec modules from overload table
+  let mut autoSpecEntries : Array (String × String) := #[]
+  if dispatchModules.size > 0 then
     let resolvedMods := resolveState.modules.toArray.qsort (· < ·)
     for modName in resolvedMods do
-      match Python.Specs.ModuleName.ofString modName with
-      | .error _ =>
+      match ← resolveModuleEntry modName specDir with
+      | some entry => autoSpecEntries := autoSpecEntries.push entry
+      | none =>
         let _ ← IO.eprintln
-          s!"warning: invalid module name '{modName}', skipping" |>.toBaseIO
-      | .ok mod =>
-        let specPath : System.FilePath := dispatchDir / mod.strataFileName
-        if ← specPath.pathExists then
-          autoSpecPaths := autoSpecPaths.push specPath.toString
-        else
-          let _ ← IO.eprintln
-            s!"warning: auto-resolved pyspec not found: {specPath}" |>.toBaseIO
-  let allSpecPaths := autoSpecPaths ++ pyspecPaths
-  buildPySpecLaurel allSpecPaths dispatchOverloads
+          s!"warning: auto-resolved pyspec not found for module '{modName}'" |>.toBaseIO
+  -- Resolve explicit pyspec module names
+  let mut explicitEntries : Array (String × String) := #[]
+  for modName in pyspecModules do
+    match ← resolveModuleEntry modName specDir with
+    | some entry => explicitEntries := explicitEntries.push entry
+    | none => throw s!"PySpec module '{modName}' not found in {specDir}"
+  let allSpecEntries := autoSpecEntries ++ explicitEntries
+  buildPySpecLaurel allSpecEntries dispatchOverloads
 
 /-! ### Pipeline Steps -/
 
@@ -323,14 +346,18 @@ public instance : ToString PipelineError where
     Returns the combined Laurel program ready for
     `translateCombinedLaurel`.
 
+    `dispatchModules` and `pyspecModules` are dotted module names
+    resolved against `specDir`.
+
     The optional `sourcePath` overrides the file path embedded in
     Laurel metadata (useful when the Ion file was generated from a
     `.py` source and you want line numbers to refer to the original). -/
 public def pyAnalyzeLaurel
     (pythonIonPath : String)
-    (dispatchPaths : Array String := #[])
-    (pyspecPaths : Array String := #[])
+    (dispatchModules : Array String := #[])
+    (pyspecModules : Array String := #[])
     (sourcePath : Option String := none)
+    (specDir : System.FilePath := ".")
     : EIO PipelineError Laurel.Program := do
   let stmts ←
     match ← Python.readPythonStrata pythonIonPath |>.toBaseIO with
@@ -338,7 +365,7 @@ public def pyAnalyzeLaurel
     | .error msg => throw (.internal msg)
 
   let result ←
-    match ← resolveAndBuildLaurelPrelude dispatchPaths pyspecPaths stmts |>.toBaseIO with
+    match ← resolveAndBuildLaurelPrelude dispatchModules pyspecModules stmts specDir |>.toBaseIO with
     | .ok r => pure r
     | .error msg => throw (.internal msg)
   let preludeInfo := buildPreludeInfo result
