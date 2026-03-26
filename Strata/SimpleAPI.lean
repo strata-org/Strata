@@ -304,10 +304,11 @@ def pyTranslateLaurel
 def verifyCore (program : Core.Program)
     (options : Core.VerifyOptions)
     (moreFns : @Lambda.Factory Core.CoreLParams := Lambda.Factory.default)
+    (proceduresToVerify : Option (List String) := none)
     : EIO String Core.VCResults := do
   let runVerification (tempDir : System.FilePath) : IO Core.VCResults :=
     EIO.toIO (IO.Error.userError ∘ toString)
-      (_root_.Core.verify (proceduresToVerify := none) program tempDir options moreFns)
+      (_root_.Core.verify (proceduresToVerify := proceduresToVerify) program tempDir options moreFns)
   let result ← match options.vcDirectory with
     | .some vcDir =>
       match ← (IO.FS.createDirAll vcDir *> runVerification vcDir) |>.toBaseIO with

@@ -135,13 +135,23 @@ private meta def runAnalyzeAndVerify (dispatchIon : System.FilePath)
         coreProgram .emp with
     | ⟨.error e, _⟩ => return .error s!"Inlining failed: {e}"
     | ⟨.ok (_, inlined), _⟩ => pure inlined
+  -- Collect user procedure names (those after FIRST_END_MARKER)
+  let mut userProcNames : List String := []
+  let mut pastMarker := false
+  for d in coreProgram.decls do
+    if toString d.name == "FIRST_END_MARKER" then
+      pastMarker := true
+    else if pastMarker then
+      if let some p := d.getProc? then
+        userProcNames := userProcNames ++ [Core.CoreIdent.toPretty p.header.name]
   -- Verify
   let options : Core.VerifyOptions :=
     { Core.VerifyOptions.default with
       stopOnFirstError := false, verbose := .quiet, solver := "z3",
       checkMode := .bugFinding, checkLevel := .full }
   match ← Strata.verifyCore coreProgram options
-      (moreFns := Strata.Python.ReFactory) |>.toBaseIO with
+      (moreFns := Strata.Python.ReFactory)
+      (proceduresToVerify := some userProcNames) |>.toBaseIO with
   | .ok results => return .ok results
   | .error msg => return .error (toString msg)
 

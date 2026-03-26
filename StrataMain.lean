@@ -518,6 +518,16 @@ def pyAnalyzeLaurelCommand : Command where
           pure inlined
       else pure coreProgram
 
+    -- Collect user procedure names (those after FIRST_END_MARKER) for selective verification
+    let mut userProcNames : List String := []
+    let mut pastMarker := false
+    for d in coreProgram.decls do
+      if toString d.name == "FIRST_END_MARKER" then
+        pastMarker := true
+      else if pastMarker then
+        if let some p := d.getProc? then
+          userProcNames := userProcNames ++ [Core.CoreIdent.toPretty p.header.name]
+
     -- Verify using Core verifier
     let checkMode ← parseCheckMode pflags
     let checkLevel ← parseCheckLevel pflags
@@ -529,11 +539,22 @@ def pyAnalyzeLaurelCommand : Command where
     let options : VerifyOptions := match pflags.getString "vc-directory" with
       | .some dir => { baseOptions with vcDirectory := some (dir : System.FilePath) }
       | .none => baseOptions
-    let vcResults ←
+    let allVcResults ←
       match ← Strata.verifyCore coreProgram options
-                (moreFns := Strata.Python.ReFactory) |>.toBaseIO with
+                (moreFns := Strata.Python.ReFactory)
+                (proceduresToVerify := some userProcNames) |>.toBaseIO with
       | .ok r => pure r
       | .error msg => exitPyAnalyzeInternalError msg
+    -- Filter out prelude VCs (those with empty file path in metadata)
+    let mut vcResults : Array Core.VCResult := #[]
+    for vcResult in allVcResults do
+      let isPrelude := match Imperative.getFileRange vcResult.obligation.metadata with
+        | some fr => match fr.file with
+          | .file "" => true
+          | _ => false
+        | none => false
+      if !isPrelude then
+        vcResults := vcResults.push vcResult
 
     -- Print results
     if !laurelTranslateErrors.isEmpty then
