@@ -325,6 +325,13 @@ public def translateCombinedLaurel (combined : Laurel.Program)
   let (coreOption, errors) := Laurel.translate { emitResolutionErrors := false } combined
   (coreOption.map prependPrelude, errors)
 
+/-- Like `translateCombinedLaurel` but also returns the lowered Laurel program
+    (after all Laurel-to-Laurel passes, before translation to Core). -/
+public def translateCombinedLaurelWithLowered (combined : Laurel.Program)
+    : (Option Core.Program × List DiagnosticModel × Laurel.Program) :=
+  let (coreOption, errors, lowered) := Laurel.translateWithLaurel { emitResolutionErrors := false } combined
+  (coreOption.map prependPrelude, errors, lowered)
+
 /-- Errors from the pyAnalyzeLaurel pipeline. -/
 public inductive PipelineError where
   /-- The Python source contains invalid code (bad method name, wrong arguments, etc.). -/
