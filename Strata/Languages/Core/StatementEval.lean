@@ -474,15 +474,21 @@ def evalAuxGo (steps : Nat) (old_var_subst : SubstMap) (Ewn : EnvWithNext) (ss :
           | .ite cond then_ss else_ss md =>
             let orig_stk := Ewn.stk
             let Ewn := { Ewn with stk := orig_stk.push [] }
-            let cond' := Ewn.env.exprEval cond
+            match cond with
+            | .nondet =>
+              -- Non-deterministic condition: process both branches
+              processIteBranchesNondet steps' old_var_subst
+                Ewn then_ss else_ss md orig_stk
+            | .det c =>
+            let cond' := Ewn.env.exprEval c
             match cond' with
             | .true _ | .false _ =>
               let (ss_live, ss_dead) :=
                 if cond'.isTrue then (then_ss, else_ss) else (else_ss, then_ss)
-              let deadDeferred := collectDeadBranchDeferred ss_dead cond Ewn.env.pathConditions
+              let deadDeferred := collectDeadBranchDeferred ss_dead c Ewn.env.pathConditions
               let Ewns :=
                 (go' Ewn ss_live .none).map fun (ewn : EnvWithNext) =>
-                  { ewn with stk := orig_stk.appendToTop [.ite cond' ewn.stk.top [] md] }
+                  { ewn with stk := orig_stk.appendToTop [.ite (.det cond') ewn.stk.top [] md] }
               -- Prepend dead-branch obligations to the first result only.
               -- Pre-ITE obligations flow through the live branch naturally;
               -- processIteBranches keeps them in the first (true-path) result,
@@ -495,7 +501,7 @@ def evalAuxGo (steps : Nat) (old_var_subst : SubstMap) (Ewn : EnvWithNext) (ss :
             | _ =>
               -- Process both branches.
               processIteBranches steps' old_var_subst
-                Ewn cond cond' then_ss else_ss md orig_stk
+                Ewn c cond' then_ss else_ss md orig_stk
 
           | .loop _ _ _ _ _ =>
             panic! "Cannot evaluate `loop` statement. \
@@ -564,22 +570,73 @@ def processIteBranches (steps : Nat) (old_var_subst : SubstMap) (Ewn : EnvWithNe
   -- with no exit label, we can merge both states into one.
   | [{ stk := stk_t, env := E_t, exitLabel := .none}],
     [{ stk := stk_f, env := E_f, exitLabel := .none}] =>
-    let s' := Imperative.Stmt.ite cond' stk_t.top stk_f.top md
+    let s' := Imperative.Stmt.ite (.det cond') stk_t.top stk_f.top md
     [EnvWithNext.mk (Env.merge cond' E_t E_f).popScope
                     .none
                     (orig_stk.appendToTop [s'])]
   | _, _ =>
     let Ewns_t := Ewns_t.map
                       (fun (ewn : EnvWithNext) =>
-                        let s' := Imperative.Stmt.ite (LExpr.true ()) ewn.stk.top [] md
+                        let s' := Imperative.Stmt.ite (.det (LExpr.true ())) ewn.stk.top [] md
                         { ewn with env := ewn.env.popScope,
                                    stk := orig_stk.appendToTop [s']})
     let Ewns_f := Ewns_f.map
                       (fun (ewn : EnvWithNext) =>
-                        let s' := Imperative.Stmt.ite (LExpr.false ()) [] ewn.stk.top md
+                        let s' := Imperative.Stmt.ite (.det (LExpr.false ())) [] ewn.stk.top md
                         { ewn with env := ewn.env.popScope,
                                    stk := orig_stk.appendToTop [s']})
   Ewns_t ++ Ewns_f
+  termination_by (steps, Imperative.Block.sizeOf then_ss + Imperative.Block.sizeOf else_ss)
+
+def processIteBranchesNondet (steps : Nat) (old_var_subst : SubstMap) (Ewn : EnvWithNext)
+    (then_ss else_ss : Statements)
+    (md : Imperative.MetaData Expression) (orig_stk : StmtsStack) : List EnvWithNext :=
+  -- Introduce a fresh boolean variable for the non-deterministic condition
+  let freshName : CoreIdent := ⟨s!"$__nondet_cond_{Ewn.env.pathConditions.length}", ()⟩
+  let freshVar : Expression.Expr := .fvar () freshName none
+  let Ewn := { Ewn with env := Ewn.env.pushEmptyScope }
+  have : 1 <= Imperative.Block.sizeOf then_ss := by
+   unfold Imperative.Block.sizeOf; split <;> omega
+  have : 1 <= Imperative.Block.sizeOf else_ss := by
+   unfold Imperative.Block.sizeOf; split <;> omega
+  have : Imperative.Block.sizeOf then_ss < Imperative.Block.sizeOf then_ss +
+                                          Imperative.Block.sizeOf else_ss := by
+    omega
+  have : Imperative.Block.sizeOf else_ss < Imperative.Block.sizeOf then_ss +
+                                          Imperative.Block.sizeOf else_ss := by
+   omega
+  let label_true := toString (f!"<label_nondet_ite_true: {freshName}>")
+  let label_false := toString (f!"<label_nondet_ite_false: !{freshName}>")
+  let path_conds_true := Ewn.env.pathConditions.push [(label_true, freshVar)]
+  let path_conds_false := Ewn.env.pathConditions.push
+                            [(label_false, (.ite () freshVar (LExpr.false ()) (LExpr.true ())))]
+  let Ewns_t := evalAuxGo steps old_var_subst
+                  {Ewn with env := {Ewn.env with pathConditions := path_conds_true}}
+                  then_ss .none
+  let Ewns_f := evalAuxGo steps old_var_subst
+                  {Ewn with env := {Ewn.env with pathConditions := path_conds_false,
+                                                 deferred := #[]}}
+                  else_ss .none
+  match Ewns_t, Ewns_f with
+  | [{ stk := stk_t, env := E_t, exitLabel := .none}],
+    [{ stk := stk_f, env := E_f, exitLabel := .none}] =>
+    let initStmt := Statement.init freshName (.forAll [] (.tcons "bool" [])) .nondet md
+    let s' := Imperative.Stmt.ite (.det freshVar) stk_t.top stk_f.top md
+    [EnvWithNext.mk (Env.merge freshVar E_t E_f).popScope
+                    .none
+                    (orig_stk.appendToTop [initStmt, s'])]
+  | _, _ =>
+    let Ewns_t := Ewns_t.map
+                      (fun (ewn : EnvWithNext) =>
+                        let s' := Imperative.Stmt.ite (.det (LExpr.true ())) ewn.stk.top [] md
+                        { ewn with env := ewn.env.popScope,
+                                   stk := orig_stk.appendToTop [s']})
+    let Ewns_f := Ewns_f.map
+                      (fun (ewn : EnvWithNext) =>
+                        let s' := Imperative.Stmt.ite (.det (LExpr.false ())) [] ewn.stk.top md
+                        { ewn with env := ewn.env.popScope,
+                                   stk := orig_stk.appendToTop [s']})
+    Ewns_t ++ Ewns_f
   termination_by (steps, Imperative.Block.sizeOf then_ss + Imperative.Block.sizeOf else_ss)
 end
 

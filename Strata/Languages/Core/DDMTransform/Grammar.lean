@@ -133,6 +133,7 @@ fn re_none () : regex => "re.none" "(" ")";
 
 fn btrue : bool => "true";
 fn bfalse : bool => "false";
+fn bstar : bool => "*";
 fn equiv (a : bool, b : bool) : bool => @[prec(4)] a " <==> " b;
 fn implies (a : bool, b : bool) : bool => @[prec(5), rightassoc] a " ==> " b;
 fn and (a : bool, b : bool) : bool => @[prec(10), leftassoc] a " && " b;

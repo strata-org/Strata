@@ -282,14 +282,14 @@ inductive EvalCmd [HasFvar P] [HasBool P] [HasNot P] :
     InitState P σ x v σ' →
     WellFormedSemanticEvalVar δ →
     ---
-    EvalCmd δ σ (.init x _ (some e) _) σ'
+    EvalCmd δ σ (.init x _ (.det e) _) σ'
 
   /-- Initialize `x` with an unconstrained value (havoc semantics). -/
   | eval_init_unconstrained :
     InitState P σ x v σ' →
     WellFormedSemanticEvalVar δ →
     ---
-    EvalCmd δ σ (.init x _ none _) σ'
+    EvalCmd δ σ (.init x _ .nondet _) σ'
 
   /-- If `e` evaluates to a value `v`, assign `x` according to `UpdateState`. -/
   | eval_set :
@@ -297,14 +297,14 @@ inductive EvalCmd [HasFvar P] [HasBool P] [HasNot P] :
     UpdateState P σ x v σ' →
     WellFormedSemanticEvalVar δ →
     ----
-    EvalCmd δ σ (.set x e _) σ'
+    EvalCmd δ σ (.set x (.det e) _) σ'
 
   /-- Assign `x` an arbitrary value `v` according to `UpdateState`. -/
-  | eval_havoc :
+  | eval_set_nondet :
     UpdateState P σ x v σ' →
     WellFormedSemanticEvalVar δ →
     ----
-    EvalCmd δ σ (.havoc x _) σ'
+    EvalCmd δ σ (.set x .nondet _) σ'
 
   /-- If `e` evaluates to true in `σ`, evaluate to the same `σ`. This semantics
   does not have a concept of an erroneous execution. -/

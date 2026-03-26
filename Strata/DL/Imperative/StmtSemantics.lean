@@ -56,14 +56,24 @@ inductive EvalStmt (P : PureExpr) (Cmd : Type) (EvalCmd : EvalCmdParam P Cmd)
     WellFormedSemanticEvalBool δ →
     EvalBlock P Cmd EvalCmd extendEval δ σ t σ' δ' →
     ----
-    EvalStmt P Cmd EvalCmd extendEval δ σ (.ite c t e md) σ' δ'
+    EvalStmt P Cmd EvalCmd extendEval δ σ (.ite (.det c) t e md) σ' δ'
 
   | ite_false_sem :
     δ σ c = .some HasBool.ff →
     WellFormedSemanticEvalBool δ →
     EvalBlock P Cmd EvalCmd extendEval δ σ e σ' δ' →
     ----
-    EvalStmt P Cmd EvalCmd extendEval δ σ (.ite c t e md) σ' δ'
+    EvalStmt P Cmd EvalCmd extendEval δ σ (.ite (.det c) t e md) σ' δ'
+
+  | ite_nondet_true_sem :
+    EvalBlock P Cmd EvalCmd extendEval δ σ t σ' δ' →
+    ----
+    EvalStmt P Cmd EvalCmd extendEval δ σ (.ite .nondet t e md) σ' δ'
+
+  | ite_nondet_false_sem :
+    EvalBlock P Cmd EvalCmd extendEval δ σ e σ' δ' →
+    ----
+    EvalStmt P Cmd EvalCmd extendEval δ σ (.ite .nondet t e md) σ' δ'
 
   | funcDecl_sem [HasSubstFvar P] [HasVarsPure P P.Expr] :
     EvalStmt P Cmd EvalCmd extendEval δ σ (.funcDecl decl md) σ
@@ -152,6 +162,10 @@ theorem EvalStmtDefMonotone
     | ite_true_sem Hsome Hwf Heval =>
       apply EvalBlockDefMonotone <;> assumption
     | ite_false_sem Hsome Hwf Heval =>
+      apply EvalBlockDefMonotone <;> assumption
+    | ite_nondet_true_sem Heval =>
+      apply EvalBlockDefMonotone <;> assumption
+    | ite_nondet_false_sem Heval =>
       apply EvalBlockDefMonotone <;> assumption
   | .exit _ _ => cases Heval
   | .loop _ _ _ _ _ => cases Heval

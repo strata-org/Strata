@@ -145,7 +145,7 @@ theorem semantic_eval_eq_of_eval_cmd_set_unrelated_var
   [HasFvar P] [HasVal P] [HasBool P] [HasNot P]:
   WellFormedSemanticEvalExprCongr δ →
   ¬ v ∈ HasVarsPure.getVars e →
-  EvalCmd P δ σ (Cmd.set v e' md) σ' →
+  EvalCmd P δ σ (Cmd.set v (.det e') md) σ' →
   δ σ e = δ σ' e := by
   intro Hwf Hnin Heval
   unfold WellFormedSemanticEvalExprCongr at Hwf
@@ -169,10 +169,10 @@ theorem eval_cmd_set_comm'
   ¬ x1 = x2 →
   δ σ v1 = δ σ2 v1 →
   δ σ v2 = δ σ1 v2 →
-  EvalCmd P δ σ (Cmd.set x1 v1 md1) σ1 →
-  EvalCmd P δ σ1 (Cmd.set x2 v2 md2) σ' →
-  EvalCmd P δ σ (Cmd.set x2 v2 md2') σ2 →
-  EvalCmd P δ σ2 (Cmd.set x1 v1 md1') σ'' →
+  EvalCmd P δ σ (Cmd.set x1 (.det v1) md1) σ1 →
+  EvalCmd P δ σ1 (Cmd.set x2 (.det v2) md2) σ' →
+  EvalCmd P δ σ (Cmd.set x2 (.det v2) md2') σ2 →
+  EvalCmd P δ σ2 (Cmd.set x1 (.det v1) md1') σ'' →
   σ' = σ'' := by
   intro Hneq Heq1 Heq2 Hs1 Hs2 Hs3 Hs4
   cases Hs1 with | eval_set _ Hu1 _ =>
@@ -189,10 +189,10 @@ theorem eval_cmd_set_comm
   ¬ x1 = x2 →
   ¬ x1 ∈ HasVarsPure.getVars v2 →
   ¬ x2 ∈ HasVarsPure.getVars v1 →
-  EvalCmd P δ σ (Cmd.set x1 v1 md1) σ1 →
-  EvalCmd P δ σ1 (Cmd.set x2 v2 md2) σ' →
-  EvalCmd P δ σ (Cmd.set x2 v2 md2') σ2 →
-  EvalCmd P δ σ2 (Cmd.set x1 v1 md1') σ'' →
+  EvalCmd P δ σ (Cmd.set x1 (.det v1) md1) σ1 →
+  EvalCmd P δ σ1 (Cmd.set x2 (.det v2) md2) σ' →
+  EvalCmd P δ σ (Cmd.set x2 (.det v2) md2') σ2 →
+  EvalCmd P δ σ2 (Cmd.set x1 (.det v1) md1') σ'' →
   σ' = σ'' := by
   intro Hwf Hneq Hnin1 Hnin2 Hs1 Hs2 Hs3 Hs4
   have Heval2:= semantic_eval_eq_of_eval_cmd_set_unrelated_var Hwf Hnin1 Hs1
@@ -206,10 +206,10 @@ theorem eval_stmt_set_comm
   ¬ x1 = x2 →
   ¬ x1 ∈ HasVarsPure.getVars v2 →
   ¬ x2 ∈ HasVarsPure.getVars v1 →
-  EvalStmt P (Cmd P) (EvalCmd P) evalFun δ σ (.cmd (Cmd.set x1 v1 md1)) σ1 δ1 →
-  EvalStmt P (Cmd P) (EvalCmd P) evalFun δ σ1 (.cmd (Cmd.set x2 v2 md2)) σ' δ2 →
-  EvalStmt P (Cmd P) (EvalCmd P) evalFun δ σ (.cmd (Cmd.set x2 v2 md2')) σ2 δ3 →
-  EvalStmt P (Cmd P) (EvalCmd P) evalFun δ σ2 (.cmd (Cmd.set x1 v1 md1')) σ'' δ4 →
+  EvalStmt P (Cmd P) (EvalCmd P) evalFun δ σ (.cmd (Cmd.set x1 (.det v1) md1)) σ1 δ1 →
+  EvalStmt P (Cmd P) (EvalCmd P) evalFun δ σ1 (.cmd (Cmd.set x2 (.det v2) md2)) σ' δ2 →
+  EvalStmt P (Cmd P) (EvalCmd P) evalFun δ σ (.cmd (Cmd.set x2 (.det v2) md2')) σ2 δ3 →
+  EvalStmt P (Cmd P) (EvalCmd P) evalFun δ σ2 (.cmd (Cmd.set x1 (.det v1) md1')) σ'' δ4 →
   σ' = σ'' := by
   intro Hwf Hneq Hnin1 Hnin2 Hs1 Hs2 Hs3 Hs4
   cases Hs1; cases Hs2; cases Hs3; cases Hs4
@@ -223,8 +223,8 @@ theorem eval_stmts_set_comm
   ¬ x1 = x2 →
   ¬ x1 ∈ HasVarsPure.getVars v2 →
   ¬ x2 ∈ HasVarsPure.getVars v1 →
-  EvalBlock P (Cmd P) (EvalCmd P) evalFun δ σ [(.cmd (Cmd.set x1 v1 md1)), (.cmd (Cmd.set x2 v2 md2))] σ' δ' →
-  EvalBlock P (Cmd P) (EvalCmd P) evalFun δ σ [(.cmd (Cmd.set x2 v2 md2')), (.cmd (Cmd.set x1 v1 md1'))] σ'' δ'' →
+  EvalBlock P (Cmd P) (EvalCmd P) evalFun δ σ [(.cmd (Cmd.set x1 (.det v1) md1)), (.cmd (Cmd.set x2 (.det v2) md2))] σ' δ' →
+  EvalBlock P (Cmd P) (EvalCmd P) evalFun δ σ [(.cmd (Cmd.set x2 (.det v2) md2')), (.cmd (Cmd.set x1 (.det v1) md1'))] σ'' δ'' →
   σ' = σ'' := by
   intro Hwf Hneq Hnin1 Hnin2 Heval1 Heval2
   -- Decompose first evaluation: [set x1 v1, set x2 v2]

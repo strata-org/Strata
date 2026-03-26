@@ -329,7 +329,7 @@ private def exprAsUnusedInit (expr : StmtExprMd) (md : Imperative.MetaData Core.
   let ident : Core.CoreIdent := ⟨s!"$unused_{id}", ()⟩
   let tyVarName := s!"$__ty_unused_{id}"
   let coreType := LTy.forAll [tyVarName] (.ftvar tyVarName)
-  return [Core.Statement.init ident coreType (some coreExpr) md]
+  return [Core.Statement.init ident coreType (.det coreExpr) md]
 
 /--
 Translate Laurel StmtExpr to Core Statements using the `TranslateM` monad.
@@ -363,27 +363,27 @@ def translateStmt (outputParams : List Parameter) (stmt : StmtExprMd)
           if model.isFunction callee then
             -- Translate as expression (function application)
             let coreExpr ← translateExpr (⟨ .StaticCall callee args, callMd ⟩)
-            return [Core.Statement.init ident coreType (some coreExpr) md]
+            return [Core.Statement.init ident coreType (.det coreExpr) md]
           else
             -- Translate as: var name; call name := callee(args)
             let coreArgs ← args.mapM (fun a => translateExpr a)
             let defaultExpr := defaultExprForType model ty
-            let initStmt := Core.Statement.init ident coreType (some defaultExpr) md
+            let initStmt := Core.Statement.init ident coreType (.det defaultExpr) md
             let callStmt := Core.Statement.call [ident] callee.text coreArgs md
             return [initStmt, callStmt]
       | some (⟨ .InstanceCall .., _⟩) =>
           -- Instance method call as initializer: var name := target.method(args)
           -- Havoc the result since instance methods may be on unmodeled types
-          let initStmt := Core.Statement.init ident coreType none md
+          let initStmt := Core.Statement.init ident coreType .nondet md
           return [initStmt]
       | some (⟨ .Hole _ _, _⟩) =>
           -- Hole initializer: treat as havoc (init without value)
-          return [Core.Statement.init ident coreType none md]
+          return [Core.Statement.init ident coreType .nondet md]
       | some initExpr =>
           let coreExpr ← translateExpr initExpr
-          return [Core.Statement.init ident coreType (some coreExpr) md]
+          return [Core.Statement.init ident coreType (.det coreExpr) md]
       | none =>
-          return [Core.Statement.init ident coreType none md]
+          return [Core.Statement.init ident coreType .nondet md]
   | .Assign targets value =>
       match targets with
       | [⟨ .Identifier targetId, _ ⟩] =>
@@ -432,7 +432,7 @@ def translateStmt (outputParams : List Parameter) (stmt : StmtExprMd)
       let belse ← match elseBranch with
                   | some e => translateStmt outputParams e
                   | none => pure []
-      return [Imperative.Stmt.ite bcond bthen belse .empty]
+      return [Imperative.Stmt.ite (.det bcond) bthen belse .empty]
   | .StaticCall callee args =>
       -- Check if this is a function or procedure
       if model.isFunction callee then
@@ -461,7 +461,7 @@ def translateStmt (outputParams : List Parameter) (stmt : StmtExprMd)
       let invExprs ← invariants.mapM (translateExpr)
       let decreasingExprCore ← decreasesExpr.mapM (translateExpr)
       let bodyStmts ← translateStmt outputParams body
-      return [Imperative.Stmt.loop condExpr decreasingExprCore invExprs bodyStmts md]
+      return [Imperative.Stmt.loop (.det condExpr) decreasingExprCore invExprs bodyStmts md]
   | .Exit target =>
       return [Imperative.Stmt.exit (some target) md]
   | _ =>

@@ -82,7 +82,7 @@ inductive StepStmt
     WellFormedSemanticEvalBool δ →
     ----
     StepStmt P EvalCmd extendEval
-      (.stmt (.ite c tss ess _) σ δ)
+      (.stmt (.ite (.det c) tss ess _) σ δ)
       (.stmts tss σ δ)
 
   /-- If the condition of an `ite` statement evaluates to false, step to the else
@@ -92,7 +92,19 @@ inductive StepStmt
     WellFormedSemanticEvalBool δ →
     ----
     StepStmt P EvalCmd extendEval
-      (.stmt (.ite c tss ess _) σ δ)
+      (.stmt (.ite (.det c) tss ess _) σ δ)
+      (.stmts ess σ δ)
+
+  /-- Non-deterministic ite: step to the then branch. -/
+  | step_ite_nondet_true :
+    StepStmt P EvalCmd extendEval
+      (.stmt (.ite .nondet tss ess _) σ δ)
+      (.stmts tss σ δ)
+
+  /-- Non-deterministic ite: step to the else branch. -/
+  | step_ite_nondet_false :
+    StepStmt P EvalCmd extendEval
+      (.stmt (.ite .nondet tss ess _) σ δ)
       (.stmts ess σ δ)
 
   /-- If a loop guard is true, execute the body and then loop again. -/
@@ -101,8 +113,8 @@ inductive StepStmt
     WellFormedSemanticEvalBool δ →
     ----
     StepStmt P EvalCmd extendEval
-      (.stmt (.loop g m inv body md) σ δ)
-      (.stmts (body ++ [.loop g m inv body md]) σ δ)
+      (.stmt (.loop (.det g) m inv body md) σ δ)
+      (.stmts (body ++ [.loop (.det g) m inv body md]) σ δ)
 
   /-- If a loop guard is false, terminate the loop. -/
   | step_loop_exit :
@@ -110,7 +122,19 @@ inductive StepStmt
     WellFormedSemanticEvalBool δ →
     ----
     StepStmt P EvalCmd extendEval
-      (.stmt (.loop g m inv body _) σ δ)
+      (.stmt (.loop (.det g) m inv body _) σ δ)
+      (.terminal σ δ)
+
+  /-- Non-deterministic loop: enter the body. -/
+  | step_loop_nondet_enter :
+    StepStmt P EvalCmd extendEval
+      (.stmt (.loop .nondet m inv body md) σ δ)
+      (.stmts (body ++ [.loop .nondet m inv body md]) σ δ)
+
+  /-- Non-deterministic loop: exit the loop. -/
+  | step_loop_nondet_exit :
+    StepStmt P EvalCmd extendEval
+      (.stmt (.loop .nondet m inv body _) σ δ)
       (.terminal σ δ)
 
   /-- An exit statement produces an exiting configuration. -/

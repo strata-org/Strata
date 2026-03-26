@@ -334,11 +334,11 @@ def outOfScopeVarProg : Program := { decls := [
                   postconditions := [] },
               body := [
                 Statement.set "y" eb[((~Bool.Or x) x)] .empty,
-                .ite eb[(x == #true)]
-                  [Statement.init "q" t[int] (some eb[#0]) .empty,
+                .ite (.det eb[(x == #true)])
+                  [Statement.init "q" t[int] (.det eb[#0]) .empty,
                            Statement.set "q" eb[#1] .empty,
                            Statement.set "y" eb[#true] .empty]
-                  [Statement.init "q" t[int] (some eb[#0]) .empty,
+                  [Statement.init "q" t[int] (.det eb[#0]) .empty,
                            Statement.set "q" eb[#2] .empty,
                            Statement.set "y" eb[#true] .empty]
                   .empty,
@@ -379,7 +379,7 @@ def polyFuncProg : Program := { decls := [
                     postconditions := [] },
           body := [
             -- var m : Map int bool;
-            Statement.init "m" (.forAll [] (.tcons "Map" [.tcons "int" [], .tcons "bool" []])) none .empty,
+            Statement.init "m" (.forAll [] (.tcons "Map" [.tcons "int" [], .tcons "bool" []])) Imperative.ExprOrNondet.nondet .empty,
             -- m := makePair(identity(42), identity(true));
             Statement.set "m" eb[((~makePair (~identity #42)) (~identity #true))] .empty
           ]
