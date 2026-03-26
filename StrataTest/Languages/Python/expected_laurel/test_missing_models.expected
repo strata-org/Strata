@@ -7,6 +7,7 @@ List_slice_body_calls_List_drop_0: ✅ pass (in prelude file)
 List_slice_body_calls_List_take_1: ✅ pass (in prelude file)
 List_set_body_calls_List_set_0: ✅ pass (in prelude file)
 DictStrAny_get_body_calls_DictStrAny_get_0: ✅ pass (in prelude file)
+DictStrAny_get_or_none_body_calls_DictStrAny_get_0: ✅ pass (in prelude file)
 Any_get_body_calls_DictStrAny_get_0: ✅ pass (in prelude file)
 Any_get_body_calls_List_get_1: ✅ pass (in prelude file)
 Any_get_body_calls_List_slice_2: ✅ pass (in prelude file)
@@ -31,5 +32,5 @@ callElimAssert_req_name_is_foo_4: ✅ pass (at line 15, col 4)
 callElimAssert_req_opt_name_none_or_str_5: ✅ pass (at line 15, col 4)
 callElimAssert_req_opt_name_none_or_bar_6: ✅ pass (at line 15, col 4)
 
-DETAIL: 29 passed, 1 failed, 0 inconclusive
+DETAIL: 30 passed, 1 failed, 0 inconclusive
 RESULT: Failures found

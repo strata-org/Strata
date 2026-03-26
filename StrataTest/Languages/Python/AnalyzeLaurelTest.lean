@@ -143,6 +143,8 @@ private meta def testCases : List (String × Expected) := [
   .mk "test_list_str.py" .success,
   .mk "test_nested_try.py" .success,
   .mk "test_try_scope.py" .success,
+  .mk "test_dict_expand.py" .success,
+  .mk "test_dict_expand_optional.py" .success,
   -- Negative tests
   .mk "test_invalid_service.py" $
     .fail "User code error: 'connect' called with unknown string \"invalid\"; known services: #[messaging, storage]",
