@@ -379,10 +379,11 @@ A successful run exits 0 with `RESULT: Analysis success` or `RESULT: Inconclusiv
 
 /-- Determines which VC results count as successes and which count as failures
     for the purposes of the `pyAnalyzeLaurel` summary and exit code.
-    Unreachable and implementation-error results are always handled separately
-    and are not affected by this classifier.
-    `nInconclusive` is computed as the remainder, so narrowing `isFailure`
-    (e.g. to only `alwaysFalseAndReachable`) automatically widens inconclusive. -/
+    Implementation-error results are partitioned out first; the classifier then
+    partitions the rest into success / failure / inconclusive.
+    Narrowing `isFailure` (e.g. to only `alwaysFalseAndReachable`) automatically
+    widens inconclusive.
+    Future: may be extended with `isWarning` for non-fatal diagnostic categories. -/
 structure ResultClassifier where
   isSuccess : Core.VCResult → Bool := (·.isSuccess)
   isFailure : Core.VCResult → Bool := (·.isFailure)
@@ -409,26 +410,25 @@ private def exitPyAnalyzeKnownLimitation {α} (message : String) : IO α := do
 
 /-- Print the final RESULT/DETAIL lines based on solver outcomes.
     Always called on successful pipeline completion (as opposed to the
-    exit helpers above, which are called on early pipeline failure). -/
+    exit helpers above, which are called on early pipeline failure).
+    Classification uses successive partitioning: implementation errors are
+    removed first, then the classifier partitions the rest into
+    success / failure / inconclusive (guaranteeing disjointness).
+    Unreachable count is reported as supplementary info. -/
 private def printPyAnalyzeSummary (vcResults : Array Core.VCResult)
     (classifier : ResultClassifier := {}) : IO Unit := do
-  let nSuccess     := vcResults.filter classifier.isSuccess              |>.size
-  let nFailure     := vcResults.filter classifier.isFailure              |>.size
-  -- Unreachable: (unsat, unsat) — dead code path
-  let nUnreachable := vcResults.filter (·.isUnreachable)                 |>.size
-  -- Implementation errors cover two cases:
-  --  · outer Except is .error  — isImplementationError
-  --  · either SMT property is .err (solver error on a specific check)
-  let nImplError   := vcResults.filter (fun r => r.isImplementationError ||
-                                                 r.hasSMTError)          |>.size
-  -- Inconclusive is the remainder: everything not classified above.
-  -- This means narrowing `isFailure` in the classifier automatically widens
-  -- inconclusive without requiring changes here.
-  let nInconclusive := vcResults.size - nSuccess - nFailure
-                                      - nUnreachable - nImplError
-  if nSuccess + nFailure + nInconclusive + nUnreachable + nImplError != vcResults.size then
-    exitPyAnalyzeInternalError s!"Overlapping VC result predicates: \
-      {nSuccess} + {nFailure} + {nInconclusive} + {nUnreachable} + {nImplError} ≠ {vcResults.size}"
+  -- 1. Partition out implementation errors (broken results, not classifiable).
+  let (implError, classifiable) :=
+    vcResults.partition (fun r => r.isImplementationError || r.hasSMTError)
+  -- 2. Successive partitioning via the classifier: success → failure → inconclusive.
+  let (success, rest)          := classifiable.partition classifier.isSuccess
+  let (failure, inconclusive)  := rest.partition classifier.isFailure
+  -- 3. Unreachable is informational (not a separate partition).
+  let nUnreachable  := vcResults.filter (·.isUnreachable) |>.size
+  let nImplError    := implError.size
+  let nSuccess      := success.size
+  let nFailure      := failure.size
+  let nInconclusive := inconclusive.size
   let unreachableStr := if nUnreachable > 0 then s!", {nUnreachable} unreachable" else ""
   let implErrorStr   := if nImplError > 0   then s!", {nImplError} implementation errors" else ""
   let counts := s!"{nSuccess} passed, {nFailure} failed, {nInconclusive} inconclusive{unreachableStr}{implErrorStr}"
