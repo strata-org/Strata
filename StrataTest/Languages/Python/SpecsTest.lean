@@ -12,6 +12,9 @@ meta import StrataTest.Util.Python
 
 namespace Strata.Python.Specs
 
+private meta def testDir : System.FilePath :=
+  "StrataTest/Languages/Python/Specs"
+
 meta def expectedPySpec :=
 #strata
 program PythonSpecs;
@@ -211,14 +214,14 @@ class "ClassWithInit" {
 meta def testCase : IO Unit := withPython (warnOnSkip := false) fun pythonCmd => do
   IO.FS.withTempFile fun _handle dialectFile => do
     IO.FS.writeBinFile dialectFile Strata.Python.Python.toIon
-    let pythonFile : System.FilePath := "StrataTest/Languages/Python/Specs/main.py"
     IO.FS.withTempDir fun strataDir => do
       let r ←
         translateFile
           (pythonCmd := toString pythonCmd)
           (dialectFile := dialectFile)
           (strataDir := strataDir)
-          (pythonFile := pythonFile)
+          (pythonFile := testDir / "main.py")
+          (searchPath := testDir)
           |>.toBaseIO
       match r with
       | .ok (sigs, warnings) =>
@@ -245,22 +248,18 @@ meta def testCase : IO Unit := withPython (warnOnSkip := false) fun pythonCmd =>
 #guard_msgs in
 #eval testCase
 
-/-- Check if `needle` is a substring of `haystack`. -/
-meta def containsSubstr (haystack needle : String) : Bool :=
-  (haystack.splitOn needle).length != 1
-
 /-- Test that unsupported patterns emit appropriate warnings. -/
 meta def warningTestCase : IO Unit := withPython (warnOnSkip := false) fun pythonCmd => do
   IO.FS.withTempFile fun _handle dialectFile => do
     IO.FS.writeBinFile dialectFile Strata.Python.Python.toIon
-    let pythonFile : System.FilePath := "StrataTest/Languages/Python/Specs/warnings.py"
     IO.FS.withTempDir fun strataDir => do
       let r ←
         translateFile
           (pythonCmd := toString pythonCmd)
           (dialectFile := dialectFile)
           (strataDir := strataDir)
-          (pythonFile := pythonFile)
+          (pythonFile := testDir / "warnings.py")
+          (searchPath := testDir)
           |>.toBaseIO
       match r with
       | .ok (sigs, warnings) =>
