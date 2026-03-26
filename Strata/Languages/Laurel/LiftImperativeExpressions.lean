@@ -262,7 +262,6 @@ def transformExpr (expr : StmtExprMd) : LiftM StmtExprMd := do
 
   | .StaticCall callee args =>
     let model := (← get).model
-    let afterPrepends ← takePrepends
     let seqArgs ← args.reverse.mapM transformExpr
     let seqCall := ⟨.StaticCall callee seqArgs.reverse, md⟩
     if model.isFunction callee then
@@ -273,9 +272,10 @@ def transformExpr (expr : StmtExprMd) : LiftM StmtExprMd := do
       let callResultVar ← freshCondVar
       let callResultType ← computeType expr
       let liftedCall := [
-        bare (.LocalVariable callResultVar callResultType none),
-        ⟨.Assign [bare (.Identifier callResultVar)] seqCall, md⟩]
-      modify fun s => { s with prependedStmts := allArgPrepends ++ liftedCall ++ afterPrepends}
+        ⟨ (.LocalVariable callResultVar callResultType none), md ⟩,
+        ⟨.Assign [bare (.Identifier callResultVar)] seqCall, md⟩
+      ]
+      modify fun s => { s with prependedStmts := s.prependedStmts ++ liftedCall}
       return bare (.Identifier callResultVar)
 
   | .IfThenElse cond thenBranch elseBranch =>
