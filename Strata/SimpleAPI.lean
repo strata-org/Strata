@@ -130,7 +130,7 @@ def genericToCore (p : Strata.Program) : Except String Core.Program :=
   if errors.isEmpty then
     .ok program
   else
-    .error s!"Core DDM translation errors: {errors.toList}"
+    .error s!"Core DDM translation errors:\n{String.intercalate "\n" errors.toList}"
 
 /--
 Translate a program in the dialect-specific AST for Laurel into the generic Strata
@@ -178,11 +178,9 @@ Transform a Core program to inline some or all procedure calls.
 def Core.inlineProcedures (p : Core.Program) (opts : Core.InlineTransformOptions)
     : Except String Core.Program :=
   let pred := opts.doInline.getD (fun _ _ => true)
-  match Core.Transform.run p (fun prog => do
+  Core.Transform.run p (fun prog => do
     let (_, prog) ← Core.Transform.runProgram (coreInlineCallCmd (doInline := pred)) prog
-    return prog) with
-  | .ok prog => .ok prog
-  | .error e => .error e
+    return prog)
 
 /--
 Transform a Core program to replace each loop with assertions and assumptions about
@@ -201,11 +199,9 @@ Transform a Core program to replace each procedure call with assertions and
 assumptions about its contract.
 -/
 def Core.callElimUsingContract (p : Core.Program) : Except String Core.Program :=
-  match Core.Transform.run p (fun prog => do
+  Core.Transform.run p (fun prog => do
     let (_, prog) ← Core.Transform.runProgram coreCallElimCmd prog
-    return prog) with
-  | .ok prog => .ok prog
-  | .error e => .error e
+    return prog)
 
 /-! ### Analysis of Core programs -/
 
@@ -221,15 +217,10 @@ def Core.verifyProgram
   let runVerification (tempDir : System.FilePath) : IO Core.VCResults :=
     EIO.toIO (IO.Error.userError ∘ toString)
       (Core.verify program tempDir .none options moreFns)
-  match options.vcDirectory with
-    | .some vcDir =>
-      match ← (IO.FS.createDirAll vcDir *> runVerification vcDir) |>.toBaseIO with
-      | .ok r => pure r
-      | .error e => throw s!"{e}"
-    | .none =>
-      match ← (IO.FS.withTempDir runVerification) |>.toBaseIO with
-      | .ok r => pure r
-      | .error e => throw s!"{e}"
+  let ioAction := match options.vcDirectory with
+    | .some vcDir => IO.FS.createDirAll vcDir *> runVerification vcDir
+    | .none => IO.FS.withTempDir runVerification
+  IO.toEIO (fun e => s!"{e}") ioAction
 
 /-- Controls how translation warnings are reported. -/
 inductive WarningOutput where
