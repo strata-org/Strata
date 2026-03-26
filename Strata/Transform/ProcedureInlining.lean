@@ -249,3 +249,7 @@ end -- public section
 
 end ProcedureInlining
 end Core
+
+-- NB: workaround for the fact that Core is both a module and a dialect.
+public abbrev coreInlineCallCmd (doInline : String → Core.Transform.CachedAnalyses → Bool := fun _ _ => true) :=
+  Core.ProcedureInlining.inlineCallCmd (doInline := doInline)

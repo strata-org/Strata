@@ -6,7 +6,6 @@
 
 -- Executable with utilities for working with Strata files.
 import Strata.DDM.Integration.Java.Gen
-import Strata.Languages.Core.Options
 import Strata.Languages.Core.SarifOutput
 import Strata.Languages.Laurel.Grammar.ConcreteToAbstractTreeTranslator
 import Strata.Languages.Laurel.LaurelToCoreTranslator
@@ -18,7 +17,6 @@ import Strata.Languages.Python.Specs.IdentifyOverloads
 import Strata.Languages.Python.Specs.ToLaurel
 import Strata.Languages.Laurel.LaurelFormat
 import Strata.Languages.Laurel.Laurel
-import Strata.Transform.ProcedureInlining
 import Strata.Languages.Python.CorePrelude
 import Strata.Languages.Python.PythonRuntimeLaurelPart
 import Strata.Languages.Python.PythonLaurelCorePrelude
@@ -303,12 +301,9 @@ def pyAnalyzeCommand : Command where
     let newPgm : Core.Program := { decls := preludePgm.decls ++ bpgm.decls }
     if verbose then
       IO.print newPgm
-    match Core.Transform.runProgram (targetProcList := .none)
-          (Core.ProcedureInlining.inlineCallCmd
-            (doInline := λ name _ => name ≠ "main"))
-          newPgm .emp with
-    | ⟨.error e, _⟩ => panic! e
-    | ⟨.ok (_changed, newPgm), _⟩ =>
+    match (Core.inlineProcedures newPgm ⟨ .some (λ name _ => name ≠ "main") ⟩) with
+    | .error e => panic! e
+    | .ok newPgm =>
       if verbose then
         IO.println "Inlined: "
         IO.print newPgm
@@ -578,7 +573,7 @@ def pyAnalyzeLaurelCommand : Command where
         | some dir => { baseOptions with vcDirectory := some (s!"{dir}/{baseName}" : System.FilePath) }
         | none => baseOptions
     let vcResults ←
-      match ← Strata.verifyCore coreProgram options
+      match ← Core.verifyProgram coreProgram options
                 (moreFns := Strata.Python.ReFactory) |>.toBaseIO with
       | .ok r => pure r
       | .error msg => exitPyAnalyzeInternalError msg
