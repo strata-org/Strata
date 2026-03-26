@@ -20,11 +20,10 @@ open Imperative
 def NondetTest1 : Stmt Expression (Cmd Expression) :=
   .ite (.det Core.true) [.cmd $ .set "x" .nondet .empty ] [.cmd $ .set "y" .nondet .empty ] .empty
 
-def NondetTest1Ans : NondetStmt Expression (Cmd Expression) :=
-  .choice
-    (.seq (.cmd (.assume "true_cond" Core.true .empty)) (.seq (.cmd $ .set "x" .nondet .empty) (.assume "skip" Imperative.HasBool.tt .empty)))
-    (.seq (.cmd (.assume "false_cond" Core.false .empty)) (.seq (.cmd $ .set "y" .nondet .empty) (.assume "skip" Imperative.HasBool.tt .empty)))
-
+def NondetTest1Ans : Option (NondetStmt Expression (Cmd Expression)) :=
+  .some (.choice
+    (.seq (.cmd (.assume "true_cond" Core.true .empty)) (.seq (.cmd $ .set "x" .nondet .empty) (.assert "$__skip" Imperative.HasBool.tt .empty)))
+    (.seq (.cmd (.assume "false_cond" Core.false .empty)) (.seq (.cmd $ .set "y" .nondet .empty) (.assert "$__skip" Imperative.HasBool.tt .empty))))
 
 -- #eval toString $ Std.format (StmtToNondetStmt NondetTest1)
 -- #eval toString $ Std.format NondetTest1Ans

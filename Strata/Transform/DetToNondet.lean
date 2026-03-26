@@ -10,45 +10,54 @@ public import Strata.DL.Imperative.Stmt
 public import Strata.DL.Imperative.NondetStmt
 public import Strata.Languages.Core.StatementType
 
-/-! # Deterministic-to-Nondeterministic Transformation -/
+/-! # Deterministic-to-Nondeterministic Transformation
+
+Returns `none` if the input contains `.exit`, `.funcDecl`, or `.typeDecl`
+statements, which have no nondeterministic counterpart. -/
 
 public section
 
 open Imperative
 mutual
 
-/-- Deterministic-to-nondeterministic transformation for a single
-(deterministic) statement -/
+/-- Deterministic-to-nondeterministic transformation for a single statement.
+    Returns `none` for unsupported constructs. -/
 def StmtToNondetStmt {P : PureExpr} [Imperative.HasBool P] [HasNot P]
   (st : Imperative.Stmt P (Cmd P)) :
-  Imperative.NondetStmt P (Cmd P) :=
+  Option (Imperative.NondetStmt P (Cmd P)) :=
   match st with
-  | .cmd    cmd => .cmd cmd
-  | .block  _ bss _ => BlockToNondetStmt bss
-  | .ite    cond tss ess md =>
+  | .cmd cmd => some (.cmd cmd)
+  | .block _ bss _ => BlockToNondetStmt bss
+  | .ite cond tss ess md => do
+    let t ← BlockToNondetStmt tss
+    let e ← BlockToNondetStmt ess
     match cond with
     | .det c =>
-      .choice
-        (.seq (.assume "true_cond" c md) (BlockToNondetStmt tss))
-        (.seq ((.assume "false_cond" (Imperative.HasNot.not c) md)) (BlockToNondetStmt ess))
+      return .choice
+        (.seq (.assume "true_cond" c md) t)
+        (.seq (.assume "false_cond" (Imperative.HasNot.not c) md) e)
     | .nondet =>
-      .choice (BlockToNondetStmt tss) (BlockToNondetStmt ess)
-  | .loop   guard _measure _inv bss md =>
+      return .choice t e
+  | .loop guard _measure _inv bss md => do
+    let b ← BlockToNondetStmt bss
     match guard with
-    | .det g => .loop (.seq (.assume "guard" g md) (BlockToNondetStmt bss))
-    | .nondet => .loop (BlockToNondetStmt bss)
-  | .typeDecl _ md => (.assume "skip" Imperative.HasBool.tt md)
-  | .exit _ md => (.assume "skip" Imperative.HasBool.tt md)
-  | .funcDecl _ md => (.assume "skip" Imperative.HasBool.tt md)
+    | .det g => return .loop (.seq (.assume "guard" g md) b)
+    | .nondet => return .loop b
+  | .typeDecl _ _ => none
+  | .exit _ _ => none
+  | .funcDecl _ _ => none
 
-/-- Deterministic-to-nondeterministic transformation for multiple
-(deterministic) statements -/
+/-- Deterministic-to-nondeterministic transformation for a block.
+    Returns `none` if any statement is unsupported. -/
 def BlockToNondetStmt {P : Imperative.PureExpr} [Imperative.HasBool P] [HasNot P]
   (ss : Imperative.Block P (Cmd P)) :
-  Imperative.NondetStmt P (Cmd P) :=
+  Option (Imperative.NondetStmt P (Cmd P)) :=
   match ss with
-  | [] => (.assume "skip" Imperative.HasBool.tt .empty)
-  | s :: ss => .seq (StmtToNondetStmt s) (BlockToNondetStmt ss)
+  | [] => some (.assert "$__skip" Imperative.HasBool.tt .empty)
+  | s :: ss => do
+    let s' ← StmtToNondetStmt s
+    let rest ← BlockToNondetStmt ss
+    return .seq s' rest
 end
 
 end

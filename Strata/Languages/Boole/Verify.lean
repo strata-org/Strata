@@ -228,6 +228,15 @@ def toCoreTypedBin (m : SourceRange) (ty : Boole.Type) (op : String) (a b : Core
   let iop : Core.Expression.Expr := .op () ⟨s!"Int.{op}", ()⟩ none
   return mkCoreApp iop [a, b]
 
+private def oldifyExpr : Core.Expression.Expr → Core.Expression.Expr
+  | .fvar m ident ty =>
+      let ident' := if Core.CoreIdent.isOldIdent ident then ident else Core.CoreIdent.mkOld ident.name
+      .fvar m ident' ty
+  | .app m f a => .app m (oldifyExpr f) (oldifyExpr a)
+  | .eq m a b => .eq m (oldifyExpr a) (oldifyExpr b)
+  | .ite m c t f => .ite m (oldifyExpr c) (oldifyExpr t) (oldifyExpr f)
+  | e => e
+
 mutual
 
 def toCoreQuant
@@ -306,9 +315,7 @@ def toCoreExpr (e : Boole.Expr) : TranslateM Core.Expression.Expr := do
   | .div_expr m ty a b => toCoreTypedBin m ty "Div" (← toCoreExpr a) (← toCoreExpr b)
   | .mod_expr m ty a b => toCoreTypedBin m ty "Mod" (← toCoreExpr a) (← toCoreExpr b)
   | .old _ _ a =>
-      match (← toCoreExpr a) with
-      | .fvar m ident ty => return .fvar m (Core.CoreIdent.mkOld ident.name) ty
-      | other => throw (.fromMessage s!"old: expected an identifier, got {other}")
+      return oldifyExpr (← toCoreExpr a)
   | _ => throw (.fromMessage s!"Unsupported expression: {repr e}")
 
 end

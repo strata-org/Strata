@@ -100,6 +100,13 @@ def encodeCore (ctx : Core.SMT.Context) (prelude : SolverM Unit)
       Solver.assert (← encodeTerm False (Factory.not obligationTerm) |>.run estate).1
       let _ ← Solver.checkSat ids
 
+  -- Emit the "message" metadata field at the very end (once per obligation).
+  match md.findElem Imperative.MetaData.message with
+  | some elem =>
+    let msg := toString (Std.format elem.value) |>.replace "\\" "\\\\" |>.replace "\"" "\\\""
+    Solver.setInfo "final-message" s!"\"{msg}\""
+  | none => pure ()
+
   return (ids, estate)
 
 end -- public section

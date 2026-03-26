@@ -52,6 +52,7 @@ instance : Imperative.ToGoto LExprTP where
 instance : Imperative.HasBool LExprTP where
   tt := .const { underlying := (), type := mty[bool] } (.boolConst true)
   ff := .const { underlying := (), type := mty[bool] } (.boolConst false)
+  tt_is_not_ff := by simp
 
 instance : Imperative.HasIdent LExprTP where
   ident s := ⟨s, ()⟩
