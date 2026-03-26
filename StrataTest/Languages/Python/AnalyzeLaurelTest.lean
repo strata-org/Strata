@@ -295,12 +295,21 @@ assertion. This exercises the full pipeline with type alias resolution.
         throw <| IO.userError
           "Expected ✖️ always false for empty bucket violation"
 
-/-! ## Any_to_bool with Dict/List test
+/-! ## Any_to_bool with Dict/List: truthiness check followed by `in` operator
 
-Before the fix, `if results: assert 'key' in results` produced
-`✖️ always false` for PIn because Any_to_bool excluded Dict/List.
-With the fix, the assertion is no longer provably false.
+Verifies that `if results: assert 'key' in results` does not produce
+a false positive on the PIn precondition. Any_to_bool must accept Dict
+and List so that the solver does not rule them out after a truthiness check.
 -/
+
+/-- Filter out prelude verification results, keeping only user code results. -/
+private def isPreludeResult (label : String) : Bool :=
+  label.startsWith "List_" || label.startsWith "DictStrAny_" ||
+  label.startsWith "Any_get" || label.startsWith "Any_set" ||
+  label.startsWith "PFloorDiv_" || label.startsWith "PAnd_" ||
+  label.startsWith "POr_" || label.startsWith "ret_" ||
+  label.startsWith "assert_name" || label.startsWith "assert_opt_name" ||
+  label.startsWith "ensures_"
 
 /-- info: ite_cond_calls_Any_to_bool_0: ❓ unknown
 assert_assert(66)_calls_PIn_0: ❓ unknown
@@ -317,18 +326,7 @@ assert(66): ❓ unknown
     | .error msg => throw <| IO.userError s!"Pipeline failed: {msg}"
     | .ok vcResults =>
       for r in vcResults do
-        -- Skip prelude results
-        if !(r.obligation.label.startsWith "List_" ||
-             r.obligation.label.startsWith "DictStrAny_" ||
-             r.obligation.label.startsWith "Any_get" ||
-             r.obligation.label.startsWith "Any_set" ||
-             r.obligation.label.startsWith "PFloorDiv_" ||
-             r.obligation.label.startsWith "PAnd_" ||
-             r.obligation.label.startsWith "POr_" ||
-             r.obligation.label.startsWith "ret_" ||
-             r.obligation.label.startsWith "assert_name" ||
-             r.obligation.label.startsWith "assert_opt_name" ||
-             r.obligation.label.startsWith "ensures_") then
+        if !isPreludeResult r.obligation.label then
           IO.println s!"{r.obligation.label}: {r.formatOutcome}"
 
 end Strata.Python.AnalyzeLaurelTest
