@@ -6,7 +6,7 @@
 module
 
 meta import Strata.SimpleAPI
-meta import Strata.Languages.Python.PySpecPipeline
+meta import Strata.SimpleAPI.Python
 meta import Strata.Transform.ProcedureInlining
 meta import Strata.Languages.Python.PyFactory
 meta import StrataTest.Util.Python

@@ -6,7 +6,7 @@
 
 import StrataTest.Util.TestDiagnostics
 import StrataTest.Util.Python
-import Strata.Languages.Python.PySpecPipeline
+import Strata.SimpleAPI.Python
 import Strata.Languages.Python.PyFactory
 import Strata.Languages.Laurel.LaurelToCoreTranslator
 

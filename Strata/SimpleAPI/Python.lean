@@ -5,8 +5,13 @@
 -/
 module
 
+public import Strata.Languages.Core.Program
+public import Strata.Languages.Laurel.Laurel
+public import Strata.Languages.Python.OverloadTable
+public import Strata.Languages.Python.PythonDialect
+
 import Strata.Languages.Laurel.LaurelToCoreTranslator
-public import Strata.Languages.Python.PythonToLaurel
+import Strata.Languages.Python.PythonToLaurel
 import Strata.Languages.Python.ReadPython
 import Strata.Languages.Python.PythonLaurelCorePrelude
 import Strata.Languages.Python.PythonRuntimeLaurelPart
@@ -30,7 +35,7 @@ open Python (OverloadTable)
 /-! ### Types -/
 
 /-- Result of reading PySpec files: combined Laurel declarations and overload table. -/
-public structure PySpecLaurelResult where
+structure PySpecLaurelResult where
   laurelProgram : Laurel.Program
   overloads : OverloadTable
   functionSignatures : List Python.PythonFunctionDecl := []
@@ -97,7 +102,7 @@ private def mergeOverloads (old new : OverloadTable) : OverloadTable :=
     Each entry is a `(modulePrefix, ionPath)` pair. The `modulePrefix` is used
     to namespace all generated Laurel names (e.g., `"servicelib_Storage"` for
     module `servicelib.Storage`). -/
-public def buildPySpecLaurel (pyspecEntries : Array (String × String))
+def buildPySpecLaurel (pyspecEntries : Array (String × String))
     (overloads : OverloadTable) : EIO String PySpecLaurelResult := do
   let mut combinedProcedures : Array (Laurel.Procedure × String) := #[]
   let mut combinedTypes : Array (Laurel.TypeDefinition × String) := #[]
@@ -204,7 +209,7 @@ private def resolveModuleEntry (modName : String) (specDir : System.FilePath)
     (e.g., `"servicelib"`, `"servicelib.Storage"`) resolved against
     `specDir`.  Auto-resolved pyspec files that are missing on disk
     are skipped with a warning. -/
-public def resolveAndBuildLaurelPrelude
+def resolveAndBuildLaurelPrelude
     (dispatchModules : Array String)
     (pyspecModules : Array String)
     (stmts : Array (Python.stmt SourceRange))
@@ -244,7 +249,7 @@ public def resolveAndBuildLaurelPrelude
 
 /-- Build PreludeInfo by merging the base Core prelude with PySpec
     Laurel-level declarations and extracted function signatures. -/
-public def buildPreludeInfo (result : PySpecLaurelResult) : Python.PreludeInfo :=
+def buildPreludeInfo (result : PySpecLaurelResult) : Python.PreludeInfo :=
   let baseInfo := Python.PreludeInfo.ofCoreProgram { decls := Python.coreOnlyFromRuntimeCorePart }
   let merged := baseInfo.merge
     (Python.PreludeInfo.ofLaurelProgram result.laurelProgram)
@@ -286,7 +291,7 @@ public def buildPreludeInfo (result : PySpecLaurelResult) : Python.PreludeInfo :
 /-- Combine PySpec and user Laurel programs into a single program,
     prepending External stubs so the Laurel `resolve` pass can see
     prelude names (e.g. `print`, `from_string`). -/
-public def combinePySpecLaurel (info : Python.PreludeInfo)
+def combinePySpecLaurel (info : Python.PreludeInfo)
     (pySpec user : Laurel.Program) : Laurel.Program :=
   let stubs := Python.preludeStubs info
   let pySpecNames : Std.HashSet String := pySpec.staticProcedures.foldl (init := {})
@@ -387,5 +392,180 @@ public def pyAnalyzeLaurel
     | .ok result => pure result
 
   return combinePySpecLaurel preludeInfo result.laurelProgram laurelProgram
+
+/-! ### Warning and Discovery Helpers -/
+
+open Strata.Python.Specs (ModuleName)
+
+/-- Controls how translation warnings are reported. -/
+public inductive WarningOutput where
+  /-- Suppress all warning output. -/
+  | none
+  /-- Print only a count summary (e.g., "3 warning(s)"). -/
+  | summary
+  /-- Print each warning followed by a count summary. -/
+  | detail
+deriving Inhabited, BEq
+
+/-- Recursively discover all Python modules under a directory.
+    Returns `(moduleName, filePath)` pairs. The `components` array
+    accumulates directory names as we recurse, forming the dotted
+    module name prefix. -/
+private partial def discoverModules (sourceDir : System.FilePath)
+    : IO (Array (ModuleName × System.FilePath)) := do
+  let rec go (dir : System.FilePath) (components : Array String)
+      : IO (Array (ModuleName × System.FilePath)) := do
+    let mut acc := #[]
+    let entries ← dir.readDir
+    for entry in entries do
+      if ← entry.path.isDir then
+        acc := acc ++ (← go entry.path (components.push entry.fileName))
+      else if entry.fileName.endsWith ".py" then
+        let parts :=
+          if entry.fileName == "__init__.py" then
+            components
+          else
+            components.push (entry.fileName.takeWhile (· != '.') |>.toString)
+        if parts.isEmpty then continue
+        let dotted := ".".intercalate parts.toList
+        match ModuleName.ofString dotted with
+        | .ok mod => acc := acc.push (mod, entry.path)
+        | .error msg =>
+          let _ ← IO.eprintln s!"warning: skipping {entry.path}: {msg}" |>.toBaseIO
+    return acc
+  go sourceDir #[]
+
+/-- Derive the output path for a Python file by mirroring the source directory
+    structure and replacing `.py` with `.pyspec.st.ion`. -/
+public def pySpecOutputPath (sourceDir strataDir pythonFile : System.FilePath)
+    : Option System.FilePath :=
+  let sourceDirStr := sourceDir.toString
+  let srcPrefix := if sourceDirStr.endsWith "/" then sourceDirStr else sourceDirStr ++ "/"
+  let fileStr := pythonFile.toString
+  let relStr := (fileStr.dropPrefix srcPrefix).toString
+  if relStr == fileStr then
+    none  -- pythonFile not under sourceDir
+  else
+    let outName := if relStr.endsWith ".py"
+      then (relStr.take (relStr.length - 3)).toString ++ ".pyspec.st.ion"
+      else relStr ++ ".pyspec.st.ion"
+    some (strataDir / outName)
+
+/-- Translate all (or selected) Python modules in a directory to PySpec Ion format.
+    If `modules` is empty, discovers and translates all `.py` files under `sourceDir`.
+    If `modules` is non-empty, translates only the named modules.  -/
+public def pySpecsDir (sourceDir strataDir dialectFile : System.FilePath)
+    (modules : Array String := #[])
+    (events : Std.HashSet String := {})
+    (skipNames : Array String := #[])
+    (warningOutput : WarningOutput := .detail)
+    : EIO String Unit := do
+  -- Create output dir
+  match ← IO.FS.createDirAll strataDir |>.toBaseIO with
+  | .ok () => pure ()
+  | .error e => throw s!"Could not create {strataDir}: {e}"
+
+  -- Build skip identifiers
+  let skipIdents := skipNames.foldl (init := {}) fun acc s =>
+    match Python.PythonIdent.ofString s with
+    | some id => acc.insert id
+    | none => acc  -- Unqualified skip names can't be resolved without a module context
+
+  -- Determine which modules to process
+  let modulesToProcess : Array (ModuleName × System.FilePath) ←
+    if modules.isEmpty then
+      match ← discoverModules sourceDir |>.toBaseIO with
+      | .ok r => pure r
+      | .error e => throw s!"Could not discover modules: {e}"
+    else
+      let mut result := #[]
+      for m in modules do
+        let mod ← match ModuleName.ofString m with
+          | .ok r => pure r
+          | .error e => throw s!"Invalid module name '{m}': {e}"
+        let (path, _) ←
+          match ← ModuleName.findInPath mod sourceDir |>.toBaseIO with
+          | .ok r => pure r
+          | .error e => throw s!"Module '{m}' not found in {sourceDir}: {e}"
+        result := result.push (mod, path)
+      pure result
+
+  -- Translate each module
+  let mut failures : Array (String × String) := #[]
+  for (mod, pythonFile) in modulesToProcess do
+    -- Derive output path
+    let some outPath := pySpecOutputPath sourceDir strataDir pythonFile
+      | do failures := failures.push (toString mod, s!"Could not derive output path for {pythonFile}")
+           continue
+
+    let .ok pythonMd ← pythonFile.metadata |>.toBaseIO
+      | do failures := failures.push (toString mod, s!"Could not find {pythonFile}")
+           continue
+
+    -- Timestamp check: skip if output is newer than source
+    if ← Python.Specs.isNewer outPath pythonMd then
+      Python.Specs.baseLogEvent events "import" s!"Skipping {mod} (up to date)"
+      continue
+
+    -- Ensure output subdirectory exists
+    if let some parent := outPath.parent then
+      match ← IO.FS.createDirAll parent |>.toBaseIO with
+      | .ok () => pure ()
+      | .error e =>
+        failures := failures.push (toString mod, s!"Could not create directory: {e}")
+        continue
+
+    -- Translate
+    Python.Specs.baseLogEvent events "import" s!"Translating {mod}"
+    match ← Strata.Python.Specs.translateFile
+        dialectFile strataDir pythonFile sourceDir
+        (events := events) (skipNames := skipIdents)
+        (moduleName := mod) |>.toBaseIO with
+    | .error msg =>
+      Python.Specs.baseLogEvent events "import" s!"Failed {mod}: {msg}"
+      failures := failures.push (toString mod, msg)
+    | .ok (sigs, warnings) =>
+      -- Write output
+      match ← Strata.Python.Specs.writeDDM outPath sigs |>.toBaseIO with
+      | .ok () => pure ()
+      | .error e =>
+        failures := failures.push (toString mod, s!"Could not write {outPath}: {e}")
+        continue
+      -- Report warnings per module
+      if warnings.size > 0 then
+        match warningOutput with
+        | .none => pure ()
+        | .summary =>
+          let _ ← IO.eprintln s!"{toString mod}: {warnings.size} warning(s)" |>.toBaseIO
+        | .detail =>
+          for w in warnings do
+            let _ ← IO.eprintln s!"{toString mod}: warning: {w}" |>.toBaseIO
+
+  -- Report failures
+  if failures.size > 0 then
+    let mut msg := s!"{failures.size} module(s) failed to translate:\n"
+    for (modName, err) in failures do
+      msg := msg ++ s!"  {modName}: {err}\n"
+    throw msg
+
+/-! ### Python-to-Core via Laurel pipeline -/
+
+/-- Translate a Python Ion file all the way to Core.  Composes
+    `pyAnalyzeLaurel` (Python → combined Laurel) and
+    `translateCombinedLaurel` (Laurel → Core with prelude). -/
+public def pyTranslateLaurel
+    (pythonIonPath : String)
+    (dispatchModules : Array String := #[])
+    (pyspecModules : Array String := #[])
+    (specDir : System.FilePath := ".")
+    : EIO String (Core.Program × List DiagnosticModel) := do
+  let laurel ←
+    match ← pyAnalyzeLaurel pythonIonPath dispatchModules pyspecModules (specDir := specDir) |>.toBaseIO with
+    | .ok r => pure r
+    | .error err => throw (toString err)
+  let (coreOption, laurelTranslateErrors) := translateCombinedLaurel laurel
+  match coreOption with
+  | none => throw s!"Laurel to Core translation failed: {laurelTranslateErrors}"
+  | some core => pure (core, laurelTranslateErrors)
 
 end Strata

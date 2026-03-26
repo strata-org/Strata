@@ -10,7 +10,7 @@ import Strata.Languages.Core.SarifOutput
 import Strata.Languages.Laurel.Grammar.ConcreteToAbstractTreeTranslator
 import Strata.Languages.Laurel.LaurelToCoreTranslator
 import Strata.Languages.Python.Python
-import Strata.Languages.Python.PySpecPipeline
+import Strata.SimpleAPI.Python
 import Strata.Languages.Python.Specs
 import Strata.Languages.Python.Specs.DDM
 import Strata.Languages.Python.Specs.IdentifyOverloads

@@ -6,7 +6,7 @@
 module
 
 meta import Strata.SimpleAPI
-meta import Strata.Languages.Python.PySpecPipeline
+meta import Strata.SimpleAPI.Python
 meta import Strata.Languages.Python.ReadPython
 meta import Strata.Languages.Python.PythonToCore
 meta import Strata.Languages.Python.Specs.IdentifyOverloads
