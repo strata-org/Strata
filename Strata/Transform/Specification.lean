@@ -54,7 +54,7 @@ Both predicates are *bilingual*: they relate two (possibly different) `Lang P`
 values, so they can express cross-language transformations such as
 deterministic-to-nondeterministic.
 
-It is proven that both specifications imply `AssertValid`:
+It is proven that both specifications imply `AssertValid` of the input program:
 - `Sound` does so directly by definition (`sound_assertValid`, `sound_allAsserts`).
 - `Overapproximates` does so via Hoare triples: `overapproximates_triple` shows
   that overapproximation preserves `Hoare.Triple`, which is equivalent to
@@ -233,7 +233,7 @@ theorem seq_cons {s : Stmt P CmdT} {ss : List (Stmt P CmdT)}
   have hwfb_preserved : ∀ ρ₁, StepStmtStar P evalCmd extendEval (.stmt s ρ₀) (.terminal ρ₁) →
       WellFormedSemanticEvalBool ρ₁.eval := by
     intro ρ₁ hterm
-    have := smallStep_noFuncDecl_preserves_eval P evalCmd extendEval s ρ₀ ρ₁ hnofd hterm
+    have this := smallStep_noFuncDecl_preserves_eval P evalCmd extendEval s ρ₀ ρ₁ hnofd hterm
     rw [this]; exact hwfb
   match hdone with
   | .inl hterm =>
@@ -320,6 +320,8 @@ theorem ite {c : P.Expr} {tss ess : List (Stmt P CmdT)} {md : MetaData P}
   | step _ _ _ h1 r1 => cases h1 with
     | step_ite_true hc _ => exact ht ρ₀ ρ' ⟨hpre, hc⟩ hwfb hf₀ (.inl r1)
     | step_ite_false hc _ => exact he ρ₀ ρ' ⟨hpre, hc⟩ hwfb hf₀ (.inl r1)
+
+/- TODO: the WHILE rule -/
 
 end ImperativeRules
 
@@ -456,12 +458,12 @@ theorem assertValid_implies_hoareTriple
         (.stmts [st, assert_stmt] ρ₀) (.seq (.stmt st ρ₀) [assert_stmt]) :=
       .step _ _ _ StepStmt.step_stmts_cons (.refl _)
     have h3 := seq_inner_star P' (EvalCmd P') extendEval _ _ [assert_stmt] hstar_st
-    have h_inner := reflTrans_trans (h1 := reflTrans_trans (h1 := h1) (h2 := h2)) (h2 := h3)
+    have h_inner := ReflTrans_Transitive _ _ _ _ (ReflTrans_Transitive _ _ _ _ h1 h2) h3
     have h_block := block_inner_star P' (EvalCmd P') extendEval _ _ block_label h_inner
     have h_start : StepStmtStar P' (EvalCmd P') extendEval
         (.stmt (.block block_label body block_md) ρ₀) (.block block_label (.stmts body ρ₀)) :=
       .step _ _ _ StepStmt.step_block (.refl _)
-    have h_full := reflTrans_trans (h1 := h_start) (h2 := h_block)
+    have h_full := ReflTrans_Transitive _ _ _ _ h_start h_block
     have h_result := hvalid a ρ₀ _ h_full hat
     simp only [Config.getEval, Config.getStore] at h_result ⊢
     exact h_result
@@ -476,12 +478,12 @@ theorem assertValid_implies_hoareTriple
   have h3 : StepStmtStar P' (EvalCmd P') extendEval
       (.stmts [assert_stmt] ρ') (.seq (.stmt assert_stmt ρ') []) :=
     .step _ _ _ StepStmt.step_stmts_cons (.refl _)
-  have h_inner := reflTrans_trans (h1 := reflTrans_trans (h1 := h1) (h2 := h2)) (h2 := h3)
+  have h_inner := ReflTrans_Transitive _ _ _ _ (ReflTrans_Transitive _ _ _ _ h1 h2) h3
   have h_block := block_inner_star P' (EvalCmd P') extendEval _ _ block_label h_inner
   have h_start : StepStmtStar P' (EvalCmd P') extendEval
       (.stmt (.block block_label body block_md) ρ₀) (.block block_label (.stmts body ρ₀)) :=
     .step _ _ _ StepStmt.step_block (.refl _)
-  have h_full := reflTrans_trans (h1 := h_start) (h2 := h_block)
+  have h_full := ReflTrans_Transitive _ _ _ _ h_start h_block
   have h_at : isAtAssert P' (.block block_label (.seq (.stmt assert_stmt ρ') [])) ⟨post_label, post_expr⟩ := by
     simp [isAtAssert, assert_stmt]
   have h_result := hvalid ⟨post_label, post_expr⟩ ρ₀ _ h_full h_at
@@ -661,7 +663,7 @@ private theorem overapproximates_stmts_aux
         | step_stmts_cons =>
           have ⟨ρ₁, hterm_s, hterm_rest⟩ := seq_reaches_terminal P evalCmd extendEval hrest_exec
           have ⟨hwfb₁, hwfv₁⟩ := eval_preserved ρ₁ hterm_s
-          exact reflTrans_trans
+          exact ReflTrans_Transitive _ _ _ _
             (stmts_cons_step P evalCmd extendEval s' rest' ρ₀ ρ₁
               ((hsem s s' hs ρ₀ ρ₁ hwfb hwfv).1 hterm_s))
             ((ih hnofd_rest rest' hrm ρ₁ ρ' hwfb₁ hwfv₁).1 hterm_rest)
@@ -672,12 +674,12 @@ private theorem overapproximates_stmts_aux
           match seq_reaches_exiting P evalCmd extendEval hrest_exec with
           | .inl hexit_s =>
             exact .step _ _ _ .step_stmts_cons
-              (reflTrans_trans (seq_inner_star P evalCmd extendEval _ _ rest'
+              (ReflTrans_Transitive _ _ _ _ (seq_inner_star P evalCmd extendEval _ _ rest'
                 ((hsem s s' hs ρ₀ ρ' hwfb hwfv).2 lbl hexit_s))
                 (.step _ _ _ .step_seq_exit (.refl _)))
           | .inr ⟨ρ₁, hterm_s, hexit_rest⟩ =>
             have ⟨hwfb₁, hwfv₁⟩ := eval_preserved ρ₁ hterm_s
-            exact reflTrans_trans
+            exact ReflTrans_Transitive _ _ _ _
               (stmts_cons_step P evalCmd extendEval s' rest' ρ₀ ρ₁
                 ((hsem s s' hs ρ₀ ρ₁ hwfb hwfv).1 hterm_s))
               ((ih hnofd_rest rest' hrm ρ₁ ρ' hwfb₁ hwfv₁).2 lbl hexit_rest)

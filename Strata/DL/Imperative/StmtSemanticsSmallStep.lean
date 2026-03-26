@@ -394,16 +394,6 @@ The proof proceeds in two parts:
 2. The main theorem (`stmts_cons_step`) composing the pieces.
 -/
 
-/-- Transitivity of `ReflTrans`: if `r* x y` and `r* y z` then `r* x z`.
-    This is a local helper that avoids the opaque `Transitive` wrapper
-    from `Relations.lean` (which becomes opaque across module boundaries). -/
-theorem reflTrans_trans {r : Relation A}
-    {x y z : A} (h1 : ReflTrans r x y) (h2 : ReflTrans r y z) :
-    ReflTrans r x z := by
-  induction h1 with
-  | refl => exact h2
-  | step _ mid _ hstep _ ih => exact .step _ mid _ hstep (ih h2)
-
 /-- Helper: if the inner config of a `.seq` takes multiple steps, the
     enclosing `.seq` takes the same number of steps.
     Proved by induction on the multi-step derivation. -/
@@ -455,7 +445,7 @@ theorem stmts_cons_step
   --         via step_seq_done, then chain with h2 by induction
   suffices h3 : StepStmtStar P EvalCmd extendEval
       (.seq (.terminal ρ') ss) (.stmts ss ρ') from
-    reflTrans_trans h2 h3
+    ReflTrans_Transitive _ _ _ _ h2 h3
   exact .step _ _ _ .step_seq_done (.refl _)
 
 /-! ## Inversion lemmas for seq and block execution -/
@@ -576,6 +566,16 @@ theorem block_reaches_exiting
       | refl => exact ⟨_, .refl _⟩
       | step _ _ _ h _ => cases h
 
+/-- Try every non-recursive `StepStmt` constructor, using `‹_›` (term-level
+    assumption) to fill arguments so that no hypothesis names are needed. -/
+local macro "apply_step" : tactic => `(tactic| first
+  | exact .step_cmd ‹_›        | exact .step_ite_true ‹_› ‹_›
+  | exact .step_ite_false ‹_› ‹_› | exact .step_loop_enter ‹_› ‹_›
+  | exact .step_loop_exit ‹_› ‹_› | exact .step_block
+  | exact .step_exit            | exact .step_funcDecl
+  | exact .step_typeDecl        | exact .step_stmts_nil
+  | exact .step_stmts_cons)
+
 /-! ## Store/eval simulation and hasFailure irrelevance -/
 
 /-- Two configs agree on store/eval (may differ on hasFailure). -/
@@ -596,58 +596,14 @@ private def step_simulation
     (heq : ConfigSE P c₁ c₂) :
     ∃ c₂', StepStmt P EvalCmd extendEval c₂ c₂' ∧ ConfigSE P c₁' c₂' := by
   cases hstep with
-  | step_cmd hcmd =>
-    cases c₂ with
-    | stmt _ ρ₂ => obtain ⟨rfl, hs, he⟩ := heq; exact ⟨_, .step_cmd (hs ▸ he ▸ hcmd), rfl, he⟩
-    | _ => exact nomatch heq
-  | step_block =>
-    cases c₂ with
-    | stmt _ ρ₂ => obtain ⟨rfl, hs, he⟩ := heq; exact ⟨_, .step_block, rfl, rfl, hs, he⟩
-    | _ => exact nomatch heq
-  | step_ite_true hc hw =>
-    cases c₂ with
-    | stmt _ ρ₂ =>
-      have h := heq.1; subst h; exact ⟨_, .step_ite_true (heq.2.2 ▸ heq.2.1 ▸ hc) (heq.2.2 ▸ hw),
-        ⟨rfl, heq.2.1, heq.2.2⟩⟩
-    | _ => exact nomatch heq
-  | step_ite_false hc hw =>
-    cases c₂ with
-    | stmt _ ρ₂ =>
-      have h := heq.1; subst h; exact ⟨_, .step_ite_false (heq.2.2 ▸ heq.2.1 ▸ hc) (heq.2.2 ▸ hw),
-        ⟨rfl, heq.2.1, heq.2.2⟩⟩
-    | _ => exact nomatch heq
-  | step_loop_enter hc hw =>
-    cases c₂ with
-    | stmt _ ρ₂ =>
-      have h := heq.1; subst h; exact ⟨_, .step_loop_enter (heq.2.2 ▸ heq.2.1 ▸ hc) (heq.2.2 ▸ hw),
-        ⟨rfl, heq.2.1, heq.2.2⟩⟩
-    | _ => exact nomatch heq
-  | step_loop_exit hc hw =>
-    cases c₂ with
-    | stmt _ ρ₂ =>
-      have h := heq.1; subst h; exact ⟨_, .step_loop_exit (heq.2.2 ▸ heq.2.1 ▸ hc) (heq.2.2 ▸ hw),
-        ⟨heq.2.1, heq.2.2⟩⟩
-    | _ => exact nomatch heq
-  | step_exit =>
-    cases c₂ with
-    | stmt _ ρ₂ => obtain ⟨rfl, hs, he⟩ := heq; exact ⟨_, .step_exit, rfl, hs, he⟩
-    | _ => exact nomatch heq
-  | step_funcDecl =>
-    cases c₂ with
-    | stmt _ ρ₂ => obtain ⟨rfl, hs, he⟩ := heq; exact ⟨_, .step_funcDecl, hs, by simp [he, hs]⟩
-    | _ => exact nomatch heq
-  | step_typeDecl =>
-    cases c₂ with
-    | stmt _ ρ₂ => obtain ⟨rfl, hs, he⟩ := heq; exact ⟨_, .step_typeDecl, hs, he⟩
-    | _ => exact nomatch heq
-  | step_stmts_nil =>
-    cases c₂ with
-    | stmts _ ρ₂ => obtain ⟨rfl, hs, he⟩ := heq; exact ⟨_, .step_stmts_nil, hs, he⟩
-    | _ => exact nomatch heq
-  | step_stmts_cons =>
-    cases c₂ with
-    | stmts _ ρ₂ => obtain ⟨rfl, hs, he⟩ := heq; exact ⟨_, .step_stmts_cons, rfl, rfl, hs, he⟩
-    | _ => exact nomatch heq
+  -- Non-recursive cases where c₁ is `.stmt` or `.stmts`: exactly one c₂
+  -- constructor is valid, and the output ConfigSE follows by `simp_all`.
+  | step_cmd _ | step_block | step_ite_true _ _ | step_ite_false _ _
+  | step_loop_enter _ _ | step_loop_exit _ _
+  | step_exit | step_funcDecl | step_typeDecl | step_stmts_nil | step_stmts_cons =>
+    cases c₂ <;> try contradiction
+    obtain ⟨rfl, hs, he⟩ := heq; rename_i ρ₂; cases ρ₂; subst hs; subst he
+    exact ⟨_, by apply_step, by simp_all [ConfigSE]⟩
   | step_seq_inner h =>
     cases c₂ with
     | seq i₂ _ =>

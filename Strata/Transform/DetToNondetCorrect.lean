@@ -70,8 +70,8 @@ theorem nondet_seq_terminal
     (h1 : StepNondetStar P (EvalCmd P) (.stmt s1 ρ) (.terminal ρ₁))
     (h2 : StepNondetStar P (EvalCmd P) (.stmt s2 ρ₁) (.terminal ρ')) :
     StepNondetStar P (EvalCmd P) (.stmt (.seq s1 s2) ρ) (.terminal ρ') :=
-  .step _ _ _ .step_seq (reflTrans_trans
-    (reflTrans_trans (nondet_seq_inner_star _ _ s2 h1)
+  .step _ _ _ .step_seq (ReflTrans_Transitive _ _ _ _
+    (ReflTrans_Transitive _ _ _ _ (nondet_seq_inner_star _ _ s2 h1)
       (.step _ _ _ .step_seq_done (.refl _))) h2)
 
 omit [HasFvar P] [HasVal P][HasBool P] [HasNot P] in
@@ -272,7 +272,7 @@ private theorem stmtsT_append_terminal
     have ⟨ρ₁, h_s', h_rest, hlen₁⟩ := stmtsT_cons_terminal extendEval hstar
     have ⟨ρ₂, h_rest', h_s, hlen₂⟩ := ih ρ₁ h_rest hcov.2
     exact ⟨ρ₂,
-      reflTrans_trans
+      ReflTrans_Transitive _ _ _ _
         (stmts_cons_step P (EvalCmd P) extendEval s' rest' ρ₀ ρ₁ (reflTransT_to_prop h_s'))
         h_rest',
       h_s, by omega⟩
@@ -321,7 +321,7 @@ private noncomputable def loop_sim
       nondet_seq_terminal _ b ρ₀ ρ₀ ρ₁ h_assume nondet_body
     let nondet_loop := loop_sim extendEval g m inv body md b sim_body hcov hnofd_body ρ₁ ρ' hwfv₁ hloop_stmtT
     .step _ _ _ .step_loop_step
-      (reflTrans_trans
+      (ReflTrans_Transitive _ _ _ _
         (nondet_seq_inner_star _ _
           (.loop (.seq (.cmd (.assume "guard" g md)) b)) h_iter)
         (.step _ _ _ .step_seq_done nondet_loop))

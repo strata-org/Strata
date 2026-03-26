@@ -10,7 +10,7 @@ section Relation
 
 @[expose] def Relation (A: Type) := A → A → Prop
 def Reflexive (r: Relation A) : Prop := ∀ x, r x x
-def Transitive (r: Relation A) : Prop := ∀ x y z, r x y → r y z → r x z
+abbrev Transitive (r: Relation A) : Prop := ∀ x y z, r x y → r y z → r x z
 
 inductive ReflTrans {A: Type} (r: Relation A) : Relation A where
   | refl : ∀ x, ReflTrans r x x
