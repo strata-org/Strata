@@ -65,6 +65,29 @@ instance : DecidableRel (fun a b : VerboseMode => a ≤ b) :=
 /-- Default SMT solver to use -/
 def defaultSolver : String := "cvc5"
 
+/--
+Control how aggressively irrelevant axioms are pruned from proof obligations.
+
+Axiom removal is **sound for assert obligations**: removing axioms can only
+weaken the proof context, so a valid goal remains valid and an invalid goal
+cannot become falsely provable. However, valid goals may become **unprovable**
+(the solver returns `unknown` instead of `pass`).
+
+Axiom removal is **unsound for cover obligations**: removing axioms weakens
+path conditions, potentially making unreachable paths appear satisfiable
+and producing spurious "covered" results. Cover obligations always skip
+axiom pruning regardless of this setting.
+
+Future improvement: trigger-based pruning could make relevance analysis
+more precise by using quantifier triggers to determine which functions
+can actually instantiate an axiom (see Boogie PR #427).
+-/
+inductive IrrelevantAxiomsMode where
+  | Off        -- No axiom pruning (default)
+  | Aggressive -- Only consequent Q functions used for relevance
+  | Precise    -- Both antecedent P and consequent Q functions used
+  deriving Repr, DecidableEq, Inhabited
+
 /-- Check level: how much information to gather and display -/
 inductive CheckLevel where
   | minimal         -- One check, simple messages (pass/fail/unknown)
@@ -91,7 +114,7 @@ structure VerifyOptions where
   typeCheckOnly : Bool
   checkOnly : Bool
   stopOnFirstError : Bool
-  removeIrrelevantAxioms : Bool
+  removeIrrelevantAxioms : IrrelevantAxiomsMode
   /-- Use SMT-LIB Array theory instead of axiomatized maps -/
   useArrayTheory : Bool
   /-- Solver time limit in seconds -/
@@ -115,7 +138,7 @@ def VerifyOptions.default : VerifyOptions := {
   typeCheckOnly := false,
   checkOnly := false,
   stopOnFirstError := false,
-  removeIrrelevantAxioms := false,
+  removeIrrelevantAxioms := .Off,
   useArrayTheory := false,
   solverTimeout := 10,
   outputSarif := false,

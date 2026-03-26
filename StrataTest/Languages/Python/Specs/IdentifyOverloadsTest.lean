@@ -7,6 +7,7 @@ module
 
 meta import Strata.SimpleAPI
 meta import Strata.Languages.Python.PySpecPipeline
+meta import Strata.Languages.Python.ReadPython
 meta import Strata.Languages.Python.PythonToCore
 meta import Strata.Languages.Python.Specs.IdentifyOverloads
 meta import StrataTest.Util.Python
@@ -20,7 +21,7 @@ fewer.
 
 namespace Strata.Python.Specs.IdentifyOverloadsTest
 
-open Strata (readDispatchOverloads readPythonIonModule unwrapModule pySpecs)
+open Strata (readDispatchOverloads pySpecs)
 open Strata.Python.Specs.IdentifyOverloads (resolveOverloads)
 open Strata.Python (OverloadTable)
 
@@ -79,10 +80,11 @@ private meta def buildOverloadTable
 /-- Parse a user Python Ion file into statements. -/
 private meta def parseStmts (ionPath : System.FilePath)
     : IO (Array (Python.stmt SourceRange)) := do
-  match ← readPythonIonModule ionPath.toString |>.toBaseIO with
-  | .ok cmd => return unwrapModule cmd
+  match ← Strata.Python.readPythonStrata ionPath.toString |>.toBaseIO with
+  | .ok stmts =>
+    return stmts
   | .error msg =>
-    throw <| .userError s!"readPythonIonModule failed: {msg}"
+    throw <| .userError s!"readPythonStrata failed: {msg}"
 
 /-- Run resolveOverloads on a test file and return the module set. -/
 private meta def resolveFile

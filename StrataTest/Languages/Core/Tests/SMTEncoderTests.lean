@@ -285,6 +285,31 @@ end ArrayTheory
     | unreachable!
   return (ctx.sorts, ctx.sorts.all (fun s => s.name ∉ ["int", "bool", "Array"]))
 
+/-! ## Test that get-value ids exclude non-nullary UFs -/
+
+-- encodeCore should only include nullary UFs (constants) in the ids passed to
+-- get-value. Non-nullary UFs like `f(x : Int) : Int` cannot be queried via
+-- get-value in some SMT solvers.
+/-- info: (["c"], true) -/
+#guard_msgs in
+#eval show IO _ from do
+  -- Non-nullary UF: f(x : Int) : Int — should be excluded from ids
+  let uf_f := UF.mk "f" [TermVar.mk "x" TermType.int] TermType.int
+  -- Nullary UF: c : Int — should be included in ids
+  let uf_c := UF.mk "c" [] TermType.int
+  let ctx : SMT.Context := { SMT.Context.default with ufs := #[uf_f, uf_c] }
+  let obligationTerm := Term.prim (.bool true)
+  let md : Imperative.MetaData Core.Expression := #[]
+  let b ← IO.mkRef { : IO.FS.Stream.Buffer }
+  let solver ← Strata.SMT.Solver.bufferWriter b
+  let ((ids, _estate), _) ←
+    Strata.SMT.SolverM.run solver
+      (Strata.SMT.Encoder.encodeCore ctx (pure ()) [] obligationTerm md
+        (satisfiabilityCheck := false) (validityCheck := true))
+  -- ids should contain "c" but not "f"
+  let hasF := ids.any (· == "f")
+  return (ids, !hasF)
+
 end Core
 
 /-! ## End-to-End Test with Complete Program -/
