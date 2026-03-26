@@ -295,8 +295,8 @@ private def isPreludeResult (label : String) : Bool :=
   label.startsWith "assert_name" || label.startsWith "assert_opt_name" ||
   label.startsWith "ensures_"
 
-/-- Verify that `if results: assert 'key' in results` does not produce
-    `✖️ always false` for the PIn precondition when `results` is an opaque Any. -/
+-- Verify that `if results: assert 'key' in results` does not produce
+-- `always false` for the PIn precondition when `results` is an opaque Any.
 #eval withPython fun _pythonCmd => do
   IO.FS.withTempDir fun tmpDir => do
     let (dispatchIon, _) ← setupFixture _pythonCmd tmpDir
