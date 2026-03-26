@@ -268,7 +268,6 @@ def transformExpr (expr : StmtExprMd) : LiftM StmtExprMd := do
       return seqCall
     else
       -- Imperative call in expression position: lift it like an assignment
-      let allArgPrepends ← takePrepends
       let callResultVar ← freshCondVar
       let callResultType ← computeType expr
       let liftedCall := [
