@@ -21,17 +21,10 @@ PFloorDiv_body_calls_Int.SafeDiv_2: ✅ pass (in prelude file)
 PFloorDiv_body_calls_Int.SafeDiv_3: ✅ pass (in prelude file)
 PAnd_body_calls_Any_to_bool_0: ✅ pass (in prelude file)
 POr_body_calls_Any_to_bool_0: ✅ pass (in prelude file)
-ret_type: ✅ pass (in prelude file)
-ret_type: ✅ pass (in prelude file)
-ret_pos: ✅ pass (in prelude file)
-assert_name_is_foo: ✅ pass (in prelude file)
-assert_opt_name_none_or_str: ✅ pass (in prelude file)
-assert_opt_name_none_or_bar: ✅ pass (in prelude file)
-ensures_maybe_except_none: ✅ pass (in prelude file)
 assert_assert(129)_calls_Any_to_bool_0: ✅ pass (at line 7, col 4)
 assert(129): ✅ pass (at line 7, col 4)
 assert_assert(358)_calls_Any_to_bool_0: ✅ pass (at line 17, col 4)
 Assertion failed at line 17, col 4: assert(358): ❌ fail
 
-DETAIL: 31 passed, 1 failed, 0 inconclusive
+DETAIL: 24 passed, 1 failed, 0 inconclusive
 RESULT: Failures found
