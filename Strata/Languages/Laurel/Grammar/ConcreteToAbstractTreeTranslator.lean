@@ -42,7 +42,7 @@ private def SourceRange.toMetaData (uri : Uri) (sr : SourceRange) : Imperative.M
 def getArgMetaData (arg : Arg) : TransM (Imperative.MetaData Core.Expression) := do
   return match (← get).uri with
   | some uri => SourceRange.toMetaData uri arg.ann
-  | none => default
+  | none => #[⟨Imperative.MetaData.fileRange, .fileRange FileRange.unknown⟩]
 
 def checkOp (op : Strata.Operation) (name : QualifiedIdent) (argc : Nat) :
   TransM Unit := do
@@ -81,7 +81,6 @@ instance : Inhabited Parameter where
 
 def mkHighTypeMd (t : HighType) (md : MetaData) : HighTypeMd := ⟨t, md⟩
 def mkStmtExprMd (e : StmtExpr) (md : MetaData) : StmtExprMd := ⟨e, md⟩
-def mkStmtExprMdEmpty (e : StmtExpr) : StmtExprMd := ⟨e, #[]⟩
 
 partial def translateHighType (arg : Arg) : TransM HighTypeMd := do
   let md ← getArgMetaData arg

@@ -43,6 +43,9 @@ open Lambda (LMonoTy LTy LExpr)
 
 public section
 
+private def mdWithUnknownLoc : Imperative.MetaData Core.Expression :=
+  #[⟨Imperative.MetaData.fileRange, .fileRange FileRange.unknown⟩]
+
 /-
 Translate Laurel HighType to Core Type
 -/
@@ -433,7 +436,7 @@ def translateStmt (outputParams : List Parameter) (stmt : StmtExprMd)
       let belse ← match elseBranch with
                   | some e => translateStmt outputParams e
                   | none => pure []
-      return [Imperative.Stmt.ite bcond bthen belse .empty]
+      return [Imperative.Stmt.ite bcond bthen belse md]
   | .StaticCall callee args =>
       -- Check if this is a function or procedure
       if model.isFunction callee then
@@ -523,9 +526,9 @@ def translateProcedure (proc : Procedure) : TranslateM Core.Procedure := do
     match proc.body with
     | .Transparent bodyExpr => translateStmt proc.outputs bodyExpr
     | .Opaque _postconds (some impl) _ => translateStmt proc.outputs impl
-    | _ => pure [Core.Statement.assume "no_body" (.const () (.boolConst false)) .empty]
+    | _ => pure [Core.Statement.assume "no_body" (.const () (.boolConst false)) mdWithUnknownLoc]
   -- Wrap body in a labeled block so early returns (exit) work correctly.
-  let body : List Core.Statement := [.block "$body" bodyStmts .empty]
+  let body : List Core.Statement := [.block "$body" bodyStmts mdWithUnknownLoc]
   let spec : Core.Procedure.Spec := { modifies, preconditions, postconditions }
   return { header, spec, body }
 
@@ -594,7 +597,7 @@ def translateInvokeOnAxiom (proc : Procedure) (trigger : StmtExprMd)
   -- Wrap in ∀ from outermost (first param) to innermost (last param).
   -- The trigger is placed on the innermost quantifier.
   let quantified := buildQuants model proc.inputs bodyExpr triggerExpr
-  return some (.ax { name := s!"invokeOn_{proc.name.text}", e := quantified })
+  return some (.ax { name := s!"invokeOn_{proc.name.text}", e := quantified } proc.md)
 where
   /-- Build `∀ p1 ... pn :: { trigger } body`. The trigger is on the innermost quantifier. -/
   buildQuants (model : SemanticModel) (params : List Parameter)
@@ -659,7 +662,7 @@ def translateProcedureToFunction (options: LaurelTranslateOptions) (isRecursive:
     isRecursive := isRecursive
     attr := attr
   }
-  return .func f
+  return .func f proc.md
 
 /--
 Translate a Laurel DatatypeDefinition to an `LDatatype Unit`.
@@ -748,7 +751,7 @@ def translate (options: LaurelTranslateOptions) (program : Program): TranslateRe
       | _ => none
     let ldatatypes := laurelDatatypes.map (translateDatatypeDefinition model)
     let groups := groupDatatypes laurelDatatypes ldatatypes
-    return groups.map fun group => Core.Decl.type (.data group)
+    return groups.map fun group => Core.Decl.type (.data group) mdWithUnknownLoc
 
   translateLaurelToCore (options: LaurelTranslateOptions) (program : Program): TranslateM Core.Program := do
     let model := (← get).model
@@ -812,9 +815,9 @@ def translate (options: LaurelTranslateOptions) (program : Program): TranslateRe
         if isRecursive then
           -- Wrap all recursive functions (single self-recursive or mutual) in recFuncBlock.
           let coreFuncs := funcs.filterMap (fun d => match d with
-            | .func f => some f
+            | .func f _ => some f
             | _ => none)
-          return [Core.Decl.recFuncBlock coreFuncs]
+          return [Core.Decl.recFuncBlock coreFuncs mdWithUnknownLoc]
         else
           return funcs
       else
@@ -849,7 +852,7 @@ def translate (options: LaurelTranslateOptions) (program : Program): TranslateRe
         inputs := []
         output := coreTy
         body := body
-      }
+      } mdWithUnknownLoc
 
     -- Translate Laurel datatype definitions to Core declarations.
     let groupedDatatypeDecls ← translateTypes program model

@@ -34,6 +34,8 @@ public structure PySpecLaurelResult where
   laurelProgram : Laurel.Program
   overloads : OverloadTable
   functionSignatures : List Python.PythonFunctionDecl := []
+  /-- Maps unprefixed class names to prefixed names for type resolution. -/
+  typeAliases : Std.HashMap String String := {}
 
 /-! ### Private Helpers -/
 
@@ -96,6 +98,7 @@ public def buildPySpecLaurel (pyspecPaths : Array String)
   let mut combinedTypes : Array (Laurel.TypeDefinition × String) := #[]
   let mut allOverloads := overloads
   let mut funcSigs : List Python.PythonFunctionDecl := []
+  let mut allTypeAliases : Std.HashMap String String := {}
   for ionPath in pyspecPaths do
     let ionFile : System.FilePath := ionPath
     let some mod := ionFile.fileStem
@@ -107,7 +110,7 @@ public def buildPySpecLaurel (pyspecPaths : Array String)
       match ← Python.Specs.readDDM ionFile |>.toBaseIO with
       | .ok t => pure t
       | .error msg => throw s!"Could not read {ionFile}: {msg}"
-    let { program, errors, overloads } :=
+    let { program, errors, overloads, typeAliases } :=
       Python.Specs.ToLaurel.signaturesToLaurel ionPath sigs modulePrefix
     if errors.size > 0 then
       let _ ← IO.eprintln
@@ -115,6 +118,7 @@ public def buildPySpecLaurel (pyspecPaths : Array String)
       for err in errors do
         let _ ← IO.eprintln s!"  {err.file}: {err.message}" |>.toBaseIO
     allOverloads := mergeOverloads allOverloads overloads
+    allTypeAliases := typeAliases.fold (init := allTypeAliases) fun m k v => m.insert k v
     match extractFunctionSignatures sigs modulePrefix with
     | .ok fs => funcSigs := funcSigs ++ fs
     | .error msg => throw msg
@@ -149,7 +153,7 @@ public def buildPySpecLaurel (pyspecPaths : Array String)
     constants := []
   }
   return { laurelProgram := combinedLaurel, overloads := allOverloads
-           functionSignatures := funcSigs }
+           functionSignatures := funcSigs, typeAliases := allTypeAliases }
 
 /-- Read dispatch Ion files and merge their overload tables. -/
 public def readDispatchOverloads
@@ -221,9 +225,40 @@ public def buildPreludeInfo (result : PySpecLaurelResult) : Python.PreludeInfo :
   let baseInfo := Python.PreludeInfo.ofCoreProgram { decls := Python.coreOnlyFromRuntimeCorePart }
   let merged := baseInfo.merge
     (Python.PreludeInfo.ofLaurelProgram result.laurelProgram)
+  -- Build importedSymbols from merged info + type aliases
+  -- Register composite types under their Laurel names
+  let symbols : Std.HashMap String Python.ImportedSymbol :=
+    merged.compositeTypes.fold (init := {}) fun m name =>
+      m.insert name (.compositeType name)
+  -- Register procedures under their Laurel names
+  let symbols := merged.procedures.fold (init := symbols) fun m name sig =>
+    let inlinable := merged.inlinableProcedures.contains name
+    m.insert name (.procedure name sig inlinable)
+  -- Register functions under their Laurel names
+  let symbols := merged.functions.foldl (init := symbols) fun m name =>
+    m.insert name (.function name)
+  -- Add unprefixed aliases from typeAliases
+  let symbols := result.typeAliases.fold (init := symbols)
+    fun syms unprefixed prefixed =>
+      -- Composite type alias: Storage → dispatch_test_Storage_Storage
+      let syms := if merged.compositeTypes.contains prefixed then
+        syms.insert unprefixed (.compositeType prefixed) else syms
+      -- Procedure aliases: Storage_put_item → ...
+      let syms := merged.procedures.fold (init := syms) fun s name sig =>
+        if name.startsWith (prefixed ++ "_") then
+          let unprefixedName := unprefixed ++ name.drop prefixed.length
+          let inlinable := merged.inlinableProcedures.contains name
+          s.insert unprefixedName (.procedure name sig inlinable)
+        else s
+      -- Function aliases
+      merged.functions.foldl (init := syms) fun s name =>
+        if name.startsWith (prefixed ++ "_") then
+          s.insert (unprefixed ++ name.drop prefixed.length) (.function name)
+        else s
   { merged with
     functionSignatures :=
-      result.functionSignatures ++ merged.functionSignatures }
+      result.functionSignatures ++ merged.functionSignatures
+    importedSymbols := symbols }
 
 /-- Combine PySpec and user Laurel programs into a single program,
     prepending External stubs so the Laurel `resolve` pass can see
@@ -254,15 +289,19 @@ public def translateCombinedLaurel (combined : Laurel.Program)
   let (coreOption, errors) := Laurel.translate { inlineFunctionsWhenPossible := true } combined
   (coreOption.map appendCorePartOfRuntime, errors)
 
-/-- Errors from the pyAnalyzeLaurel pipeline, distinguishing user code
-    errors (detected bugs in Python source) from internal tool errors. -/
+/-- Errors from the pyAnalyzeLaurel pipeline. -/
 public inductive PipelineError where
+  /-- The Python source contains invalid code (bad method name, wrong arguments, etc.). -/
   | userCode (range : SourceRange := .none) (msg : String)
+  /-- The pipeline encountered a Python construct it intentionally does not yet support. -/
+  | knownLimitation (msg : String)
+  /-- An unexpected failure — likely a bug in the tool itself. -/
   | internal (msg : String)
 
 public instance : ToString PipelineError where
   toString
     | .userCode _ msg => s!"User code error: {msg}"
+    | .knownLimitation msg => s!"Known limitation: {msg}"
     | .internal msg => msg
 
 /-- Run the pyAnalyzeLaurel pipeline: read a Python Ion program,
@@ -295,6 +334,8 @@ public def pyAnalyzeLaurel
   let (laurelProgram, _ctx) ←
     match Python.pythonToLaurel' preludeInfo stmts none metadataPath result.overloads with
     | .error (.userPythonError range msg) => throw (.userCode range msg)
+    | .error (.unsupportedConstruct msg ast) =>
+        throw (.knownLimitation s!"Unsupported construct: {msg}\nAST: {ast}")
     | .error e => throw (.internal s!"Python to Laurel translation failed: {e}")
     | .ok result => pure result
 

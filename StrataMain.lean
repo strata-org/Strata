@@ -368,6 +368,72 @@ def pyAnalyzeCommand : Command where
           | none => Map.empty
         Core.Sarif.writeSarifOutput .deductive files vcResults (filePath ++ ".sarif")
 
+/-! ### pyAnalyzeLaurel result helpers
+
+All output uses two structured lines on stdout:
+- `RESULT: <category>` — machine-readable category, always the last line.
+- `DETAIL: <detail>`   — human-readable context (error message or VC counts).
+
+Exit codes: 1 = user python error, 2 = internal error, 3 = failures found, 4 = known limitation.
+A successful run exits 0 with `RESULT: Analysis success` or `RESULT: Inconclusive`. -/
+
+private def printPyAnalyzeResult (category : String) (detail : String) : IO Unit := do
+  IO.println s!"DETAIL: {detail}"
+  IO.println s!"RESULT: {category}"
+
+private def exitPyAnalyzeUserError {α} (message : String) : IO α := do
+  printPyAnalyzeResult "User python error" message
+  IO.Process.exit 1
+
+private def exitPyAnalyzeInternalError {α} (message : String) : IO α := do
+  printPyAnalyzeResult "Internal error" message
+  IO.Process.exit 2
+
+private def exitPyAnalyzeFailuresFound {α} (detail : String) : IO α := do
+  printPyAnalyzeResult "Failures found" detail
+  IO.Process.exit 3
+
+private def exitPyAnalyzeKnownLimitation {α} (message : String) : IO α := do
+  printPyAnalyzeResult "Known limitation" message
+  IO.Process.exit 4
+
+/-- Print the final RESULT/DETAIL lines based on solver outcomes.
+    Always called on successful pipeline completion (as opposed to the
+    exit helpers above, which are called on early pipeline failure). -/
+private def printPyAnalyzeSummary (vcResults : Array Core.VCResult) : IO Unit := do
+  let nSuccess      := vcResults.filter (·.isSuccess)             |>.size
+  let nFailure      := vcResults.filter (·.isFailure)             |>.size
+  -- Inconclusive covers two cases:
+  --  · (unknown, unknown)  — isUnknown: both checks inconclusive
+  --  · (sat,     unknown)  — satisfiableValidityUnknown: validity unknown
+  let nInconclusive := vcResults.filter (fun r => r.isUnknown ||
+      match r.outcome with
+      | .ok o => o.satisfiableValidityUnknown
+      | _     => false)                                            |>.size
+  -- Unreachable: (unsat, unsat) — dead code path
+  let nUnreachable  := vcResults.filter (·.isUnreachable)         |>.size
+  -- Implementation errors cover two cases:
+  --  · outer Except is .error  — isImplementationError
+  --  · either SMT property is .err (solver error on a specific check)
+  let nImplError    := vcResults.filter (fun r => r.isImplementationError ||
+      match r.outcome with
+      | .ok o => match o.satisfiabilityProperty, o.validityProperty with
+                 | .err _, _ | _, .err _ => true
+                 | _,      _             => false
+      | _     => false)                                            |>.size
+  if nSuccess + nFailure + nInconclusive + nUnreachable + nImplError != vcResults.size then
+    exitPyAnalyzeInternalError s!"Unaccounted VC results: \
+      {nSuccess} + {nFailure} + {nInconclusive} + {nUnreachable} + {nImplError} ≠ {vcResults.size}"
+  let unreachableStr := if nUnreachable > 0 then s!", {nUnreachable} unreachable" else ""
+  let implErrorStr   := if nImplError > 0   then s!", {nImplError} implementation errors" else ""
+  let counts := s!"{nSuccess} passed, {nFailure} failed, {nInconclusive} inconclusive{unreachableStr}{implErrorStr}"
+  if nImplError > 0 then
+    exitPyAnalyzeInternalError s!"An unexpected result was produced. {counts}"
+  else if nFailure > 0 then
+    exitPyAnalyzeFailuresFound counts
+  else
+    printPyAnalyzeResult (if nInconclusive > 0 then "Inconclusive" else "Analysis success") counts
+
 def pyAnalyzeLaurelCommand : Command where
   name := "pyAnalyzeLaurel"
   args := [ "file" ]
@@ -408,8 +474,11 @@ def pyAnalyzeLaurelCommand : Command where
             let pos := fm.toPosition range.start
             s!" at line {pos.line}, col {pos.column}"
           | none => ""
-        exitUserCodeError s!"{msg}{location}"
-      | .error (.internal msg) => exitInternalError msg
+        exitPyAnalyzeUserError s!"{msg}{location}"
+      | .error (.knownLimitation msg) =>
+        exitPyAnalyzeKnownLimitation msg
+      | .error (.internal msg) =>
+        exitPyAnalyzeInternalError msg
 
     if verbose then
       IO.println "\n==== Laurel Program ===="
@@ -419,20 +488,43 @@ def pyAnalyzeLaurelCommand : Command where
     let coreProgram ←
       match coreProgramOption with
       | none =>
-        exitInternalError s!"Laurel to Core translation failed: {laurelTranslateErrors}"
+        exitPyAnalyzeInternalError s!"Laurel to Core translation failed: {laurelTranslateErrors}"
       | some core => pure core
 
     if verbose then
       IO.println "\n==== Core Program ===="
       IO.print coreProgram
 
+    -- Inline pyspec procedures so their precondition assertions are checked
+    -- at call sites with concrete arguments.
+    let pyspecFiles := pflags.getRepeated "pyspec"
+    let coreProgram ←
+      if pyspecFiles.size > 0 then
+        -- Collect prelude procedure names to avoid inlining them
+        let mut preludeNames : Std.HashSet String := {}
+        for d in coreProgram.decls do
+          if toString d.name == "FIRST_END_MARKER" then break
+          if let some p := d.getProc? then
+            preludeNames := preludeNames.insert (Core.CoreIdent.toPretty p.header.name)
+        match Core.Transform.runProgram (targetProcList := .none)
+              (Core.ProcedureInlining.inlineCallCmd
+                (doInline := λ name _ => name ≠ "__main__" && !preludeNames.contains name))
+              coreProgram .emp with
+        | ⟨.error e, _⟩ => exitPyAnalyzeInternalError s!"Inlining failed: {e}"
+        | ⟨.ok (_, inlined), _⟩ => do
+          if verbose then
+            IO.println "\n==== Core Program (after inlining) ===="
+            IO.print inlined
+          pure inlined
+      else pure coreProgram
+
     -- Verify using Core verifier
     let checkMode ← parseCheckMode pflags
     let checkLevel ← parseCheckLevel pflags
     let baseOptions : VerifyOptions :=
       { VerifyOptions.default with
-        stopOnFirstError := false, verbose := .quiet, solver := "z3",
-        removeIrrelevantAxioms := .Off,
+        stopOnFirstError := false, verbose := .quiet, solver := Core.defaultSolver,
+        removeIrrelevantAxioms := .Precise,
         checkMode := checkMode, checkLevel := checkLevel }
     let options : VerifyOptions := match pflags.getString "vc-directory" with
       | .some dir => { baseOptions with vcDirectory := some (dir : System.FilePath) }
@@ -441,7 +533,7 @@ def pyAnalyzeLaurelCommand : Command where
       match ← Strata.verifyCore coreProgram options
                 (moreFns := Strata.Python.ReFactory) |>.toBaseIO with
       | .ok r => pure r
-      | .error msg => exitInternalError msg
+      | .error msg => exitPyAnalyzeInternalError msg
 
     -- Print results
     if !laurelTranslateErrors.isEmpty then
@@ -489,6 +581,7 @@ def pyAnalyzeLaurelCommand : Command where
         | some (pyPath, fm) => Map.empty.insert (Strata.Uri.file pyPath) fm
         | none => Map.empty
       Core.Sarif.writeSarifOutput checkMode files vcResults (filePath ++ ".sarif")
+    printPyAnalyzeSummary vcResults
 
 private def deriveBaseName (file : String) : String :=
   let name := System.FilePath.fileName file |>.getD file

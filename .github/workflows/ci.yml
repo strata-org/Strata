@@ -209,6 +209,34 @@ jobs:
         auto-config: false
         build: true
         build-args: "strata:exe"
+    - name: Install cvc5
+      shell: bash
+      run: |
+            ARCH=$(uname -m)
+            if [ "$ARCH" = "x86_64" ]; then
+              ARCH_NAME="x86_64"
+            elif [ "$ARCH" = "aarch64" ] || [ "$ARCH" = "arm64" ]; then
+              ARCH_NAME="arm64"
+            else
+              echo "Unsupported architecture: $ARCH"
+              exit 1
+            fi
+            wget https://github.com/cvc5/cvc5/releases/download/cvc5-1.2.1/cvc5-Linux-${ARCH_NAME}-static.zip
+            unzip cvc5-Linux-${ARCH_NAME}-static.zip
+            chmod +x cvc5-Linux-${ARCH_NAME}-static/bin/cvc5
+            sudo cp cvc5-Linux-${ARCH_NAME}-static/bin/cvc5 /usr/local/bin/
+    - name: Install z3
+      shell: bash
+      run: |
+            pip install z3-solver
+            Z3_PATH=$(python -c "import z3; import os; print(os.path.join(os.path.dirname(z3.__file__), 'lib', 'z3'))")
+            sudo cp "$Z3_PATH" /usr/local/bin/z3 || true
+            # Fallback: install from GitHub release
+            if ! command -v z3 &> /dev/null; then
+              wget https://github.com/Z3Prover/z3/releases/download/z3-4.13.4/z3-4.13.4-x64-glibc-2.35.zip
+              unzip z3-4.13.4-x64-glibc-2.35.zip
+              sudo cp z3-4.13.4-x64-glibc-2.35/bin/z3 /usr/local/bin/
+            fi
     - name: Run PySpec and dispatch tests
       run: PYTHON=python PYTHON_TEST=1 lake build StrataTest.Languages.Python.SpecsTest StrataTest.Languages.Python.AnalyzeLaurelTest StrataTest.Languages.Python.Specs.IdentifyOverloadsTest
     - name: Run test script
