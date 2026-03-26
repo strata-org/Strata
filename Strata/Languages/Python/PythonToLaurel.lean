@@ -804,18 +804,9 @@ partial def translateCall (ctx : TranslationContext)
     | .Name range _ _ => range
     | _ => .none
   let funcDecl := ctx.functionSignatures.find? fun x => x.name == funcName
-  -- When ** is used at the call site and we have a known function signature,
-  -- expand the dictionary into individual arguments using DictStrAny_get
-  if isVarKwargs kwords && funcDecl.isSome then
-    let funcDecl := funcDecl.get!
-    let trans_posArgs ← args.mapM (translateExpr ctx)
-    let trans_dict ← translateVarKwargs ctx kwords
-    let remainingParams := funcDecl.args.drop args.length
-    let trans_dictArgs := remainingParams.map fun (argName, _, dflt) =>
-      DictStrAny_get_param trans_dict argName dflt.isSome
-    let allArgs := trans_posArgs ++ trans_dictArgs
-    let kwargsArg := if funcDecl.hasKwargs then [trans_dict] else []
-    let mkCall (name : String) := mkStmtExprMd (StmtExpr.StaticCall name (allArgs ++ kwargsArg))
+  -- Emit the final call, handling Name vs Attribute dispatch and transparent procedures.
+  let emitCall (callArgs : List StmtExprMd) : Except TranslationError StmtExprMd := do
+    let mkCall (name : String) := mkStmtExprMd (StmtExpr.StaticCall name callArgs)
     match f with
     | .Name  _ _ _ => return mkCall funcName
     | .Attribute _ val _attr _ =>
@@ -827,6 +818,18 @@ partial def translateCall (ctx : TranslationContext)
             return mkStmtExprMd (.Hole)
         else return mkCall funcName
     | _ => throw (.unsupportedConstruct "Invalid call construct" (toString (repr f)))
+  -- When ** is used at the call site and we have a known function signature,
+  -- expand the dictionary into individual arguments using DictStrAny_get
+  if isVarKwargs kwords && funcDecl.isSome then
+    let funcDecl := funcDecl.get!
+    let trans_posArgs ← args.mapM (translateExpr ctx)
+    let trans_dict ← translateVarKwargs ctx kwords
+    let remainingParams := funcDecl.args.drop args.length
+    let trans_dictArgs := remainingParams.map fun (argName, _, dflt) =>
+      DictStrAny_get_param trans_dict argName dflt.isSome
+    let allArgs := trans_posArgs ++ trans_dictArgs
+    let kwargsArg := if funcDecl.hasKwargs then [trans_dict] else []
+    emitCall (allArgs ++ kwargsArg)
   else
   let (args, kwords, funcdecl_hasKwargs) ←
     combinePositionalAndKeywordArgs args kwords funcDecl methodName callRange
@@ -836,20 +839,7 @@ partial def translateCall (ctx : TranslationContext)
     if kwords.length == 0 then
       if funcdecl_hasKwargs then [DictStrAny_empty] else []
     else [trans_kwords]
-  match f with
-  | .Name  _ _ _ =>  return mkStmtExprMd (StmtExpr.StaticCall funcName (trans_args ++ trans_kwords_exprs))
-  | .Attribute _ val _attr _ =>
-      let _target_trans ← translateExpr ctx val
-      if opt_firstarg.isSome then
-        -- Emit StaticCall only for procedures with transparent bodies
-        -- (e.g. pyspec with precondition assertions). Opaque procedures stay as Hole.
-        if let some (ImportedSymbol.procedure _ _ true) := ctx.importedSymbols[funcName]? then
-          return mkStmtExprMd (StmtExpr.StaticCall funcName (trans_args ++ trans_kwords_exprs))
-        else
-          return mkStmtExprMd (.Hole)
-      else
-        return mkStmtExprMd (StmtExpr.StaticCall funcName (trans_args ++ trans_kwords_exprs))
-  | _ =>  throw (.unsupportedConstruct "Invalid call construct" (toString (repr f)))
+  emitCall (trans_args ++ trans_kwords_exprs)
 
 
 end
