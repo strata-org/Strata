@@ -7,6 +7,7 @@ List_slice_body_calls_List_drop_0: ✅ pass (in prelude file)
 List_slice_body_calls_List_take_1: ✅ pass (in prelude file)
 List_set_body_calls_List_set_0: ✅ pass (in prelude file)
 DictStrAny_get_body_calls_DictStrAny_get_0: ✅ pass (in prelude file)
+DictStrAny_get_or_none_body_calls_DictStrAny_get_0: ✅ pass (in prelude file)
 Any_get_body_calls_DictStrAny_get_0: ✅ pass (in prelude file)
 Any_get_body_calls_List_get_1: ✅ pass (in prelude file)
 Any_get_body_calls_List_slice_2: ✅ pass (in prelude file)
@@ -28,5 +29,5 @@ Assertion failed at line 25, col 8: assert(500): ❌ fail
 assert_assert(666)_calls_Any_to_bool_0: ✅ pass (at line 32, col 8)
 assert(666): ❓ unknown (at line 32, col 8)
 
-DETAIL: 24 passed, 2 failed, 1 inconclusive
+DETAIL: 25 passed, 2 failed, 1 inconclusive
 RESULT: Failures found

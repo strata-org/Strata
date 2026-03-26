@@ -61,6 +61,10 @@ Obligation: DictStrAny_get_body_calls_DictStrAny_get_0
 Property: assert
 Result: ✅ pass
 
+Obligation: DictStrAny_get_or_none_body_calls_DictStrAny_get_0
+Property: assert
+Result: ✅ pass
+
 Obligation: Any_get_body_calls_DictStrAny_get_0
 Property: assert
 Result: ✅ pass
