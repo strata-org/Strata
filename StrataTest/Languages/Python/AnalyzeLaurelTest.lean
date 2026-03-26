@@ -312,16 +312,16 @@ private def isPreludeResult (label : String) : Bool :=
   label.startsWith "ensures_"
 
 /-- info: ite_cond_calls_Any_to_bool_0: ❓ unknown
-assert_assert(66)_calls_PIn_0: ❓ unknown
-assert_assert(66)_calls_Any_to_bool_1: ✔️ always true if reached
-assert(66): ❓ unknown
+assert_assert(259)_calls_PIn_0: ❓ unknown
+assert_assert(259)_calls_Any_to_bool_1: ✔️ always true if reached
+assert(259): ❓ unknown
 -/
 #guard_msgs in
 #eval withPython fun _pythonCmd => do
   IO.FS.withTempDir fun tmpDir => do
-    let (dispatchIon, pyspecPaths) ← setupFixture _pythonCmd tmpDir
+    let (dispatchIon, _) ← setupFixture _pythonCmd tmpDir
     let result ← runAnalyzeAndVerify dispatchIon tmpDir
-      "test_pin_any.py" pyspecPaths
+      "test_pin_any.py"
     match result with
     | .error msg => throw <| IO.userError s!"Pipeline failed: {msg}"
     | .ok vcResults =>
