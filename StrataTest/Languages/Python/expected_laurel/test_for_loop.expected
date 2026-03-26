@@ -33,9 +33,5 @@ assert(611): ✅ pass (at line 25, col 4)
 assert_assert(611)_calls_Any_to_bool_0: ✅ pass (at line 25, col 4)
 Assertion failed at line 25, col 4: assert(611): ❌ fail
 
-<<<<<<< HEAD
-DETAIL: 27 passed, 2 failed, 2 inconclusive
-=======
-DETAIL: 28 passed, 3 failed, 1 inconclusive
->>>>>>> main
+DETAIL: 28 passed, 2 failed, 2 inconclusive
 RESULT: Failures found

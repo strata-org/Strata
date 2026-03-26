@@ -42,5 +42,5 @@ loop_guard_end_calls_Any_to_bool_0: ✅ pass (at line 22, col 4)
 assert_assert(589)_calls_Any_to_bool_0: ✅ pass (at line 27, col 4)
 assert(589): ❓ unknown (at line 27, col 4)
 
-DETAIL: 37 passed, 0 failed, 3 inconclusive
+DETAIL: 38 passed, 0 failed, 3 inconclusive
 RESULT: Inconclusive

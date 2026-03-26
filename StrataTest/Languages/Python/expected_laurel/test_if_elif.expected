@@ -35,9 +35,5 @@ assert_assert(444)_calls_Any_to_bool_0: ✅ pass (at line 22, col 4)
 assert(444): ❓ unknown (at line 22, col 4)
 ite_cond_calls_Any_to_bool_0: ✅ pass (at line 24, col 0)
 
-<<<<<<< HEAD
-DETAIL: 27 passed, 1 failed, 5 inconclusive
-=======
-DETAIL: 28 passed, 2 failed, 4 inconclusive
->>>>>>> main
+DETAIL: 28 passed, 1 failed, 5 inconclusive
 RESULT: Failures found
