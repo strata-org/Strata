@@ -115,7 +115,28 @@ def loop_elimination_statement(s : C_Simp.Statement) : Core.Statement :=
         .assume s!"invariant_{i}" (translate_expr inv) {}
 
       .ite (.det (translate_expr guard_expr)) ([first_iter_facts, arbitrary_iter_facts, havocd, not_guard] ++ invariant_assumes) [] {}
-    | _, _, _ => panic! "Loop elimination require measure and invariant"
+    | .nondet, _, _ =>
+      let assigned_vars := (Imperative.Block.modifiedVars body).map (λ s => ⟨s.name, ()⟩)
+      let havocd : Core.Statement := .block "loop havoc" (assigned_vars.map (λ n => Core.Statement.havoc n {})) {}
+      let entry_invariants : List Core.Statement := invList.mapIdx fun i inv =>
+        .assert s!"entry_invariant_{i}" (translate_expr inv) {}
+      let entry_invariant_assumes : List Core.Statement := invList.mapIdx fun i inv =>
+        .assume s!"assume_entry_invariant_{i}" (translate_expr inv) {}
+      let first_iter_facts : Core.Statement := .block "first_iter_asserts" (entry_invariants ++ entry_invariant_assumes) {}
+      let inv_assumes : List Core.Statement := invList.mapIdx fun i inv =>
+        .assume s!"assume_invariant_{i}" (translate_expr inv) {}
+      let arbitrary_iter_assumes := .block "arbitrary_iter_assumes" inv_assumes {}
+      let maintain_invariants : List Core.Statement := invList.mapIdx fun i inv =>
+        .assert s!"arbitrary_iter_maintain_invariant_{i}" (translate_expr inv) {}
+      let body_statements : List Core.Statement := body.map translate_stmt
+      let arbitrary_iter_facts : Core.Statement := .block "arbitrary iter facts"
+        ([havocd, arbitrary_iter_assumes] ++ body_statements ++ maintain_invariants) {}
+      let invariant_assumes : List Core.Statement := invList.mapIdx fun i inv =>
+        .assume s!"invariant_{i}" (translate_expr inv) {}
+      let exit_state_assumes := [havocd] ++ invariant_assumes
+      let loop_passive := .ite .nondet (arbitrary_iter_facts :: exit_state_assumes) [] {}
+      .block "loop" [first_iter_facts, loop_passive] {}
+    | .det _, _, _ => panic! "Loop elimination requires measure for deterministic guard"
   | _ => translate_stmt s
 
 -- C_Simp functions are Strata Core procedures
