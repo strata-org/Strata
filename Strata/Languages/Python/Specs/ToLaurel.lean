@@ -249,7 +249,7 @@ def specTypeToLaurelType (ty : SpecType) : ToLaurelM HighTypeMd := do
 
 /-! ## SpecExpr to Laurel Translation -/
 
-/-- Wrap a StmtExpr with metadata (empty by default). -/
+/-- Wrap a StmtExpr with metadata. -/
 private def mkStmt (e : StmtExpr) (md : Imperative.MetaData Core.Expression) : StmtExprMd :=
   { val := e, md := md }
 
