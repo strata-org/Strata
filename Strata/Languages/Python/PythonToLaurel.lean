@@ -247,6 +247,8 @@ def translateType (ctx : TranslationContext) (typeStr : String) : Except Transla
           .ok (mkCoreType PyLauType.Any)
 
 def AnyTy := mkCoreType PyLauType.Any
+def compositeToStringName (typeName : String) : String := "$composite_to_string_" ++ typeName
+def compositeToStringAnyName (typeName : String) : String := "$composite_to_string_any_" ++ typeName
 def strToAny (s: String) := mkStmtExprMd (.StaticCall "from_string" [mkStmtExprMd (StmtExpr.LiteralString s)])
 def intToAny (i: Int) := mkStmtExprMd (.StaticCall "from_int" [mkStmtExprMd (StmtExpr.LiteralInt i)])
 def boolToAny (b: Bool) := mkStmtExprMd (.StaticCall "from_bool" [mkStmtExprMd (StmtExpr.LiteralBool b)])
@@ -817,7 +819,7 @@ partial def translateCall (ctx : TranslationContext)
             | .ok argType =>
               if argType != PyLauType.Any && (ctx.importedSymbols[argType]?.any fun s =>
                 match s with | .compositeType _ => true | _ => false) then
-                "$composite_to_string_any_" ++ argType
+                compositeToStringAnyName argType
               else funcName
             | .error _ => funcName
           else funcName
@@ -1826,7 +1828,7 @@ def pythonToLaurel' (info : PreludeInfo)
   let compositeToStringFns : List Procedure := compositeTypes.flatMap fun ct =>
     let selfParam : Parameter := { name := "self", type := mkHighTypeMd (.UserDefined ct.name.text) }
     let toStr : Procedure :=
-      { name := { text := "$composite_to_string_" ++ ct.name.text }
+      { name := { text := compositeToStringName ct.name.text }
         inputs := [selfParam]
         outputs := [{ name := "result", type := mkHighTypeMd .TString }]
         preconditions := []
@@ -1836,7 +1838,7 @@ def pythonToLaurel' (info : PreludeInfo)
         md := default
         isFunctional := false }
     let toStrAny : Procedure :=
-      { name := { text := "$composite_to_string_any_" ++ ct.name.text }
+      { name := { text := compositeToStringAnyName ct.name.text }
         inputs := [selfParam]
         outputs := [{ name := "result", type := AnyTy }]
         preconditions := []
