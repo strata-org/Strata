@@ -35,7 +35,7 @@ assert(544): ❓ unknown (at line 26, col 4)
 (Origin_test_helper_procedure_Requires)req_name_is_foo: ✅ pass (in prelude file)
 (Origin_test_helper_procedure_Requires)req_opt_name_none_or_str: ✅ pass (in prelude file)
 (Origin_test_helper_procedure_Requires)req_opt_name_none_or_bar: ✅ pass (in prelude file)
-ite_cond_calls_Any_to_bool_0: ✅ pass
+ite_cond_calls_Any_to_bool_0: ✅ pass (at line 30, col 0)
 
 DETAIL: 34 passed, 1 failed, 1 inconclusive
 RESULT: Failures found
