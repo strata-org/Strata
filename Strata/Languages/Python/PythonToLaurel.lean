@@ -334,7 +334,7 @@ def resolveDispatch (ctx : TranslationContext)
         if ident.pythonModule.isEmpty then
           ident.name
         else
-          ident.pythonModule ++ "_" ++ ident.name
+          ident.pythonModule.replace "." "_" ++ "_" ++ ident.name
       return some className
     | _ => return none
 
@@ -814,7 +814,7 @@ partial def translateCall (ctx : TranslationContext)
           | .ok argType =>
             if argType != PyLauType.Any && (ctx.importedSymbols[argType]?.any fun s =>
               match s with | .compositeType _ => true | _ => false) then
-              s!"composite_to_string_{argType}"
+              "$composite_to_string_any_" ++ argType
             else funcName
           | .error _ => funcName
         else funcName
@@ -1108,7 +1108,7 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
     let bodyDecls := collectDeclaredNamesAndTypes body.val.toList
 
     let errorVarDecls: List (String × String) := (handlers.val.toList.filterMap (λ h => match h with
-          | .ExceptHandler _ _ errname _ => errname.val)).map (λ h => (h.val, "Any"))
+          | .ExceptHandler _ _ errname _ => errname.val)).map (λ h => (h.val, "PythonError"))
 
     let handlerDecls := handlers.val.toList.flatMap fun h => match h with
       | .ExceptHandler _ _ _ hBody => collectDeclaredNamesAndTypes hBody.val.toList
@@ -1124,17 +1124,10 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
     let mut handlerStmts : List StmtExprMd := []
     for handler in handlers.val do
       match handler with
-      | .ExceptHandler _ _ errname handlerBody =>
-        -- Assign exception variable from maybe_except: e := exception(maybe_except)
-        let errAssign := match errname.val with
-          | some name =>
-            let wrapError := mkStmtExprMd (StmtExpr.StaticCall "exception"
-              [mkStmtExprMd (StmtExpr.Identifier "maybe_except")])
-            [mkStmtExprMd (StmtExpr.Assign [mkStmtExprMd (StmtExpr.Identifier name.val)] wrapError)]
-          | none => []
+      | .ExceptHandler _ _ _ handlerBody =>
         let (hCtx, hStmts) ← translateStmtList hoistedCtx handlerBody.val.toList
         handlerCtx := hCtx
-        handlerStmts := handlerStmts ++ errAssign ++ hStmts
+        handlerStmts := handlerStmts ++ hStmts
 
     -- Insert exception checks after each statement in try body
     let bodyStmtsWithChecks := bodyStmts.flatMap fun stmt =>
@@ -1804,20 +1797,33 @@ def pythonToLaurel' (info : PreludeInfo)
     isFunctional := false
   }
 
-  -- Generate composite_to_string_<type> functions for each composite type.
-  -- These take a composite, so heap parameterization will add a Heap parameter,
-  -- ensuring the verifier does not assume referential transparency across heap mutations.
-  let compositeToStringFns : List Procedure := compositeTypes.map fun ct =>
+  -- Generate $composite_to_string_<type> and $composite_to_string_any_<type>
+  -- for each composite type. These take a composite, so heap parameterization
+  -- will add a Heap parameter, ensuring the verifier does not assume referential
+  -- transparency across heap mutations.
+  let compositeToStringFns : List Procedure := compositeTypes.flatMap fun ct =>
     let selfParam : Parameter := { name := "self", type := mkHighTypeMd (.UserDefined ct.name.text) }
-    { name := { text := s!"composite_to_string_{ct.name.text}" },
-      inputs := [selfParam],
-      outputs := [{ name := "result", type := mkHighTypeMd .TString }],
-      preconditions := [],
-      determinism := .deterministic none,
-      decreases := none,
-      body := .External,
-      md := default,
-      isFunctional := true }
+    let toStr : Procedure :=
+      { name := { text := "$composite_to_string_" ++ ct.name.text }
+        inputs := [selfParam]
+        outputs := [{ name := "result", type := mkHighTypeMd .TString }]
+        preconditions := []
+        determinism := .deterministic none
+        decreases := none
+        body := .Opaque [] none []
+        md := default
+        isFunctional := false }
+    let toStrAny : Procedure :=
+      { name := { text := "$composite_to_string_any_" ++ ct.name.text }
+        inputs := [selfParam]
+        outputs := [{ name := "result", type := AnyTy }]
+        preconditions := []
+        determinism := .deterministic none
+        decreases := none
+        body := .Opaque [] none []
+        md := default
+        isFunctional := false }
+    [toStr, toStrAny]
 
   let program : Laurel.Program := {
     staticProcedures := (procedures.push mainProc |>.toList) ++ compositeToStringFns
