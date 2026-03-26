@@ -441,11 +441,10 @@ private def printPyAnalyzeSummary (vcResults : Array Core.VCResult)
 
 private def deriveBaseName (file : String) : String :=
   let name := System.FilePath.fileName file |>.getD file
-  if name.endsWith ".python.st.ion" then (name.dropEnd 14).toString
-  else if name.endsWith ".py.ion" then (name.dropEnd 7).toString
-  else if name.endsWith ".st.ion" then (name.dropEnd 7).toString
-  else if name.endsWith ".st" then (name.dropEnd 3).toString
-  else name
+  let suffixes := [".python.st.ion", ".py.ion", ".st.ion", ".st"]
+  match suffixes.find? (name.endsWith ·) with
+  | some sfx => (name.dropEnd sfx.length).toString
+  | none     => name
 
 def pyAnalyzeLaurelCommand : Command where
   name := "pyAnalyzeLaurel"

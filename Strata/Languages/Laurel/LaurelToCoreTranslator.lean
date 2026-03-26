@@ -630,12 +630,11 @@ def translateWithLaurel (options: LaurelTranslateOptions) (program : Program): T
   let (program, model) := (result.program, result.model)
 
     let initState : TranslateState := {model := model }
-  let loweredLaurel := program
   let (coreProgramOption, translateState) := runTranslateM initState (translateLaurelToCore program)
   let resolutionErrors: List DiagnosticModel := if options.emitResolutionErrors then result.errors.toList else []
   let allDiagnostics := resolutionErrors ++ diamondErrors ++ modifiesDiags ++ constrainedTypeDiags ++ translateState.diagnostics
   let coreProgramOption := if translateState.coreProgramHasSuperfluousErrors then none else coreProgramOption
-  (coreProgramOption, allDiagnostics, loweredLaurel)
+  (coreProgramOption, allDiagnostics, program)
   where
 
   /--
