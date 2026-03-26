@@ -38,10 +38,5 @@ loop_guard_end_calls_Any_to_bool_0: ✅ pass (at line 22, col 4)
 Assertion failed at line 24, col 4: assert_assert(531)_calls_Any_to_bool_0: ❓ unknown
 Assertion failed at line 24, col 4: assert(531): ❓ unknown
 
-<<<<<<< HEAD
-DETAIL: 36 passed, 0 failed, 8 inconclusive
+DETAIL: 29 passed, 0 failed, 8 inconclusive
 RESULT: Inconclusive
-=======
-DETAIL: 29 passed, 2 failed, 6 inconclusive
-RESULT: Failures found
->>>>>>> main
