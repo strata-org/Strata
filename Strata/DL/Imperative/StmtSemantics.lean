@@ -74,6 +74,22 @@ inductive EvalStmt (P : PureExpr) (Cmd : Type) (EvalCmd : EvalCmdParam P Cmd)
 
   -- (TODO): Define semantics of `exit`.
 
+  /-- Loop: guard is false, skip. Measure and invariants are specification-only. -/
+  | loop_false_sem :
+    δ σ g = .some HasBool.ff →
+    WellFormedSemanticEvalBool δ →
+    ----
+    EvalStmt P Cmd EvalCmd extendEval δ σ (.loop g meas invs body md) σ δ
+
+  /-- Loop: guard is true, execute body, then loop again. -/
+  | loop_true_sem :
+    δ σ g = .some HasBool.tt →
+    WellFormedSemanticEvalBool δ →
+    EvalBlock P Cmd EvalCmd extendEval δ σ body σ' δ' →
+    EvalStmt P Cmd EvalCmd extendEval δ' σ' (.loop g meas invs body md) σ'' δ'' →
+    ----
+    EvalStmt P Cmd EvalCmd extendEval δ σ (.loop g meas invs body md) σ'' δ''
+
 inductive EvalBlock (P : PureExpr) (Cmd : Type) (EvalCmd : EvalCmdParam P Cmd)
   (extendEval : ExtendEval P)
   [DecidableEq P.Ident]
@@ -136,47 +152,36 @@ mutual
 theorem EvalStmtDefMonotone
   [DecidableEq P.Ident]
   [HasVal P] [HasFvar P] [HasBool P] [HasBoolVal P] [HasNot P]
+  [HasSubstFvar P] [HasVarsPure P P.Expr]
   :
   isDefined σ v →
   EvalStmt P (Cmd P) (EvalCmd P) extendEval δ σ s σ' δ' →
   isDefined σ' v := by
   intros Hdef Heval
-  match s with
-  | .cmd c =>
-    cases Heval; next Hwf Hup =>
-    exact EvalCmdDefMonotone Hdef Hup
-  | .block l bss  _ =>
-    cases Heval; next Hwf Hup =>
-    apply EvalBlockDefMonotone <;> assumption
-  | .ite c tss bss _ => cases Heval with
-    | ite_true_sem Hsome Hwf Heval =>
-      apply EvalBlockDefMonotone <;> assumption
-    | ite_false_sem Hsome Hwf Heval =>
-      apply EvalBlockDefMonotone <;> assumption
-  | .exit _ _ => cases Heval
-  | .loop _ _ _ _ _ => cases Heval
-  | .funcDecl _ _ => cases Heval; assumption
-  | .typeDecl _ _ => cases Heval; assumption
+  match Heval with
+  | .cmd_sem Hcmd _ => exact EvalCmdDefMonotone Hdef Hcmd
+  | .block_sem Hblock => exact EvalBlockDefMonotone Hdef Hblock
+  | .ite_true_sem _ _ Hblock => exact EvalBlockDefMonotone Hdef Hblock
+  | .ite_false_sem _ _ Hblock => exact EvalBlockDefMonotone Hdef Hblock
+  | .funcDecl_sem => exact Hdef
+  | .typeDecl_sem => exact Hdef
+  | .loop_false_sem _ _ => exact Hdef
+  | .loop_true_sem _ _ Hbody Hloop =>
+    exact EvalStmtDefMonotone (EvalBlockDefMonotone Hdef Hbody) Hloop
 
 theorem EvalBlockDefMonotone
   [DecidableEq P.Ident]
   [HasVal P] [HasFvar P] [HasBool P] [HasBoolVal P] [HasNot P]
+  [HasSubstFvar P] [HasVarsPure P P.Expr]
   :
   isDefined σ v →
   EvalBlock P (Cmd P) (EvalCmd P) extendEval δ σ ss σ' δ' →
   isDefined σ' v := by
   intros Hdef Heval
-  cases ss with
-  | nil =>
-    have Heq := EvalBlockEmpty Heval
-    simp [← Heq.1]
-    assumption
-  | cons h t =>
-    cases Heval <;> try assumption
-    next σ1 δ1 Heval1 Heval2 =>
-    apply EvalBlockDefMonotone (σ:=σ1) (δ:=δ1)
-    apply EvalStmtDefMonotone <;> assumption
-    assumption
+  match Heval with
+  | .stmts_none_sem => exact Hdef
+  | .stmts_some_sem Heval1 Heval2 =>
+    exact EvalBlockDefMonotone (EvalStmtDefMonotone Hdef Heval1) Heval2
 end
 
 end -- public section

@@ -2067,6 +2067,9 @@ theorem EvalStmtRefinesContract
   | .ite_false_sem Hcond Hwf Heval => .ite_false_sem Hcond Hwf (EvalBlockRefinesContract Heval)
   | .funcDecl_sem => .funcDecl_sem
   | .typeDecl_sem => .typeDecl_sem
+  | .loop_false_sem Hcond Hwf => .loop_false_sem Hcond Hwf
+  | .loop_true_sem Hcond Hwf Hbody Hloop =>
+    .loop_true_sem Hcond Hwf (EvalBlockRefinesContract Hbody) (EvalStmtRefinesContract Hloop)
 
 /-- Proof that `EvalBlock` with concrete semantics refines contract semantics,
     by structural recursion on the derivation. -/
