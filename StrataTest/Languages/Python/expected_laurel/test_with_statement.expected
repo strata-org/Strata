@@ -29,5 +29,5 @@ Assertion failed at line 25, col 8: assert(500): ❌ fail
 assert_assert(666)_calls_Any_to_bool_0: ✅ pass (at line 32, col 8)
 assert(666): ❓ unknown (at line 32, col 8)
 
-DETAIL: 32 passed, 2 failed, 1 inconclusive
+DETAIL: 25 passed, 2 failed, 1 inconclusive
 RESULT: Failures found

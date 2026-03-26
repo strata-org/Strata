@@ -34,5 +34,5 @@ assert_assert(571)_calls_Any_to_bool_0: ✅ pass (at line 24, col 4)
 Assertion failed at line 24, col 4: assert(571): ❌ fail
 ite_cond_calls_Any_to_bool_0: ✅ pass (at line 26, col 0)
 
-DETAIL: 35 passed, 3 failed, 2 inconclusive
+DETAIL: 28 passed, 3 failed, 2 inconclusive
 RESULT: Failures found

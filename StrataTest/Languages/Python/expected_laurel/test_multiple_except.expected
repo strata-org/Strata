@@ -29,5 +29,5 @@ Assertion failed at line 21, col 4: assert(471): ❌ fail
 assert_assert(693)_calls_Any_to_bool_0: ✅ pass (at line 31, col 4)
 assert(693): ✅ pass (at line 31, col 4)
 
-DETAIL: 33 passed, 2 failed, 0 inconclusive
+DETAIL: 26 passed, 2 failed, 0 inconclusive
 RESULT: Failures found

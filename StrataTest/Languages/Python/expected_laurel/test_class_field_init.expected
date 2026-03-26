@@ -24,5 +24,5 @@ PAnd_body_calls_Any_to_bool_0: ✅ pass (in prelude file)
 POr_body_calls_Any_to_bool_0: ✅ pass (in prelude file)
 ite_cond_calls_Any_to_bool_0: ✅ pass (at line 13, col 0)
 
-DETAIL: 30 passed, 0 failed, 0 inconclusive
+DETAIL: 23 passed, 0 failed, 0 inconclusive
 RESULT: Analysis success

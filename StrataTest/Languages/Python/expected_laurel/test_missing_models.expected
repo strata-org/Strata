@@ -32,5 +32,5 @@ callElimAssert_req_name_is_foo_4: ✅ pass (at line 15, col 4)
 callElimAssert_req_opt_name_none_or_str_5: ✅ pass (at line 15, col 4)
 callElimAssert_req_opt_name_none_or_bar_6: ✅ pass (at line 15, col 4)
 
-DETAIL: 37 passed, 1 failed, 0 inconclusive
+DETAIL: 30 passed, 1 failed, 0 inconclusive
 RESULT: Failures found

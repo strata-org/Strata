@@ -26,5 +26,5 @@ set_result_calls_Any_to_bool_0: ✅ pass
 assert_assert(56)_calls_Any_to_bool_0: ✅ pass (at line 3, col 0)
 assert(56): ✅ pass (at line 3, col 0)
 
-DETAIL: 32 passed, 0 failed, 0 inconclusive
+DETAIL: 25 passed, 0 failed, 0 inconclusive
 RESULT: Analysis success
