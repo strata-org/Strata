@@ -544,26 +544,12 @@ def pyAnalyzeLaurelCommand : Command where
     let options : VerifyOptions := match pflags.getString "vc-directory" with
       | .some dir => { baseOptions with vcDirectory := some (dir : System.FilePath) }
       | .none => baseOptions
-    let allVcResults ←
+    let vcResults ←
       match ← Strata.verifyCore coreProgram options
                 (moreFns := Strata.Python.ReFactory)
                 (proceduresToVerify := some userProcNames) |>.toBaseIO with
       | .ok r => pure r
       | .error msg => exitPyAnalyzeInternalError msg
-    -- Filter out prelude VCs (those with empty file path in metadata).
-    -- Even though we only request verification of user procedures,
-    -- PrecondElim generates WF-checking procedures for prelude functions
-    -- called transitively by user code (e.g. List_get, PFloorDiv).
-    -- Those WF procedures carry prelude metadata and must be excluded.
-    let mut vcResults : Array Core.VCResult := #[]
-    for vcResult in allVcResults do
-      let isPrelude := match Imperative.getFileRange vcResult.obligation.metadata with
-        | some fr => match fr.file with
-          | .file "" => true
-          | _ => false
-        | none => false
-      if !isPrelude then
-        vcResults := vcResults.push vcResult
 
     let classifier : ResultClassifier :=
       match checkMode with
