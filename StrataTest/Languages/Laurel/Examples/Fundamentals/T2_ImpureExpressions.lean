@@ -98,9 +98,11 @@ procedure imperativeCallInConditionalExpression(b: bool) {
   }
 };
 
-function add(x: int, y: int): int {
+function add(x: int, y: int): int
+{
   x + y
 };
+
 procedure repeatedBlockExpressions() {
   var x: int := 2;
   var y: int := { x := 1; x } + { x := x + 10; x };
@@ -109,10 +111,21 @@ procedure repeatedBlockExpressions() {
   assert z == 1 + 11
 };
 
-procedure addProc(a: int, b: int): int { return a + b };
+procedure addProc(a: int, b: int) returns (r: int)
+  ensures r == a + b {
+  return a + b
+};
+
 procedure addProcCaller(): int {
   var x: int := 0;
-  return addProc({x := 1; x}, {x := x + 10; x})
+  var y: int := addProc({x := 1; x}, {x := x + 10; x});
+  assert y == 11
+
+  // The next statement is not translated correctly.
+  // I think it's a bug in the handling of StaticCall
+  // Where a reference is substituted when it should not be
+  // var z: int := addProc({x := 1; x}, {x := x + 10; x}) + (x := 3);
+  // assert z == 14
 };
 "
 

@@ -104,7 +104,7 @@ private def freshCondVar : LiftM Identifier := do
   modify fun s => { s with condCounter := n + 1 }
   return s!"$c_{n}"
 
-private def addPrepend (stmt : StmtExprMd) : LiftM Unit :=
+private def prepend (stmt : StmtExprMd) : LiftM Unit :=
   modify fun s => { s with prependedStmts := stmt :: s.prependedStmts }
 
 private def onlyKeepSideEffectStmtsAndLast (stmts : List StmtExprMd) : LiftM (List StmtExprMd) := do
@@ -117,17 +117,17 @@ private def onlyKeepSideEffectStmtsAndLast (stmts : List StmtExprMd) : LiftM (Li
       | .LocalVariable .. => do
           -- This addPrepend is a hack to work around Core not having let expressions
           -- Otherwise we could keep them in the block
-          addPrepend s
+          prepend s
           pure []
       | .Assert _ => do
           -- Hack to work around Core not supporting assert expressions
           -- Otherwise we could keep them in the block
-          addPrepend s
+          prepend s
           pure []
       | .Assume _ => do
           -- Hack to work around Core not supporting assume expressions
           -- Otherwise we could keep them in the block
-          addPrepend s
+          prepend s
           pure []
 
       /-
@@ -204,7 +204,7 @@ and updates substitutions. The value should already be transformed by the caller
 private def liftAssignExpr (targets : List StmtExprMd) (seqValue : StmtExprMd)
     (md : Imperative.MetaData Core.Expression) : LiftM Unit := do
   -- Prepend the assignment itself
-  addPrepend (⟨.Assign targets seqValue, md⟩)
+  prepend (⟨.Assign targets seqValue, md⟩)
   -- Create a before-snapshot for each target and update substitutions
   for target in targets do
     match target.val with
@@ -212,7 +212,7 @@ private def liftAssignExpr (targets : List StmtExprMd) (seqValue : StmtExprMd)
         let snapshotName ← freshTempFor varName
         let varType ← computeType target
         -- Snapshot goes before the assignment (cons pushes to front)
-        addPrepend (⟨.LocalVariable snapshotName varType (some (⟨.Identifier varName, md⟩)), md⟩)
+        prepend (⟨.LocalVariable snapshotName varType (some (⟨.Identifier varName, md⟩)), md⟩)
         setSubst varName snapshotName
     | _ => pure ()
 
@@ -233,7 +233,7 @@ def transformExpr (expr : StmtExprMd) : LiftM StmtExprMd := do
   | .Hole false (some holeType) =>
       -- Nondeterministic typed hole: lift to a fresh variable with no initializer (havoc)
       let holeVar ← freshCondVar
-      addPrepend (bare (.LocalVariable holeVar holeType none))
+      prepend (bare (.LocalVariable holeVar holeType none))
       return bare (.Identifier holeVar)
 
   | .Assign targets value =>
@@ -262,20 +262,20 @@ def transformExpr (expr : StmtExprMd) : LiftM StmtExprMd := do
 
   | .StaticCall callee args =>
     let model := (← get).model
+    let afterPrepends ← takePrepends
     let seqArgs ← args.reverse.mapM transformExpr
     let seqCall := ⟨.StaticCall callee seqArgs.reverse, md⟩
     if model.isFunction callee then
       return seqCall
     else
       -- Imperative call in expression position: lift it like an assignment
-      -- Order matters: assign must be prepended first (it's newest-first),
-      -- so that when reversed the var declaration comes before the call.
       let allArgPrepends ← takePrepends
       let callResultVar ← freshCondVar
       let callResultType ← computeType expr
-      addPrepend (⟨.Assign [bare (.Identifier callResultVar)] seqCall, md⟩)
-      addPrepend (bare (.LocalVariable callResultVar callResultType none))
-      allArgPrepends.reverse.forM addPrepend
+      let liftedCall := [
+        bare (.LocalVariable callResultVar callResultType none),
+        ⟨.Assign [bare (.Identifier callResultVar)] seqCall, md⟩]
+      modify fun s => { s with prependedStmts := allArgPrepends ++ liftedCall ++ afterPrepends}
       return bare (.Identifier callResultVar)
 
   | .IfThenElse cond thenBranch elseBranch =>
@@ -312,8 +312,8 @@ def transformExpr (expr : StmtExprMd) : LiftM StmtExprMd := do
         let condType ← computeType thenBranch
         -- IfThenElse added first (cons puts it deeper), then declaration (cons puts it on top)
         -- Output order: declaration, then if-then-else
-        addPrepend (⟨.IfThenElse seqCond thenBlock seqElse, md⟩)
-        addPrepend (bare (.LocalVariable condVar condType none))
+        prepend (⟨.IfThenElse seqCond thenBlock seqElse, md⟩)
+        prepend (bare (.LocalVariable condVar condType none))
         return bare (.Identifier condVar)
       else
         -- No assignments in branches — recurse normally
@@ -337,9 +337,9 @@ def transformExpr (expr : StmtExprMd) : LiftM StmtExprMd := do
         match initializer with
         | some initExpr =>
             let seqInit ← transformExpr initExpr
-            addPrepend (⟨.LocalVariable name ty (some seqInit), expr.md⟩)
+            prepend (⟨.LocalVariable name ty (some seqInit), expr.md⟩)
         | none =>
-            addPrepend (⟨.LocalVariable name ty none, expr.md⟩)
+            prepend (⟨.LocalVariable name ty none, expr.md⟩)
         return ⟨.Identifier (← getSubst name), expr.md⟩
       else
         return expr
