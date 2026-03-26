@@ -279,7 +279,11 @@ private theorem stmtsT_append_terminal
 
 /-! ## Loop simulation -/
 
-private noncomputable def loop_sim
+/-- Prove that adding the loop guard 'g' as an extra assume statement 'assume g'
+    in the beginning of loop body does not reduce the set of possible final
+    states. Note that hstarT assumption is using the deterministic
+    Imperative.Stmt whereas the conclusion is using NondetStmt. -/
+private def loop_sim
     (extendEval : ExtendEval P)
     (g : P.Expr) (m : Option P.Expr) (inv : List P.Expr)
     (body : List (Stmt P (Cmd P))) (md : MetaData P)
