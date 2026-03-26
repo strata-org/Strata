@@ -444,6 +444,13 @@ private def printPyAnalyzeSummary (vcResults : Array Core.VCResult)
   else
     printPyAnalyzeResult (if nInconclusive > 0 then "Inconclusive" else "Analysis success") counts
 
+private def deriveBaseName (file : String) : String :=
+  let name := System.FilePath.fileName file |>.getD file
+  let suffixes := [".python.st.ion", ".py.ion", ".st.ion", ".st"]
+  match suffixes.find? (name.endsWith ·) with
+  | some sfx => (name.dropEnd sfx.length).toString
+  | none     => name
+
 def pyAnalyzeLaurelCommand : Command where
   name := "pyAnalyzeLaurel"
   args := [ "file" ]
@@ -461,6 +468,9 @@ def pyAnalyzeLaurelCommand : Command where
             { name := "sarif", help := "Write results as SARIF to <file>.sarif." },
             { name := "vc-directory",
               help := "Store VCs in SMT-Lib format in <dir>.",
+              takesArg := .arg "dir" },
+            { name := "keep-all-files",
+              help := "Store intermediate Laurel and Core programs in <dir>.",
               takesArg := .arg "dir" }]
   help := "Verify a Python Ion program via the Laurel pipeline. Translates Python to Laurel to Core, then runs SMT verification."
   callback := fun v pflags => do
@@ -468,6 +478,10 @@ def pyAnalyzeLaurelCommand : Command where
     let outputSarif := pflags.getBool "sarif"
     let filePath := v[0]
     let pySourceOpt ← tryReadPythonSource filePath
+    let keepDir := pflags.getString "keep-all-files"
+    let baseName := deriveBaseName filePath
+    if let some dir := keepDir then
+      IO.FS.createDirAll dir
 
     let dispatchModules := pflags.getRepeated "dispatch"
     let pyspecModules := pflags.getRepeated "pyspec"
@@ -499,7 +513,17 @@ def pyAnalyzeLaurelCommand : Command where
       IO.println "\n==== Laurel Program ===="
       IO.println f!"{combinedLaurel}"
 
-    let (coreProgramOption, laurelTranslateErrors) := Strata.translateCombinedLaurel combinedLaurel
+    if let some dir := keepDir then
+      let path := s!"{dir}/{baseName}.laurel"
+      IO.FS.writeFile path (toString (Std.Format.pretty f!"{combinedLaurel}") ++ "\n")
+
+    let (coreProgramOption, laurelTranslateErrors, loweredLaurel) :=
+      Strata.translateCombinedLaurelWithLowered combinedLaurel
+
+    if let some dir := keepDir then
+      let path := s!"{dir}/{baseName}.lowered.laurel"
+      IO.FS.writeFile path (toString (Std.Format.pretty f!"{loweredLaurel}") ++ "\n")
+
     let coreProgram ←
       match coreProgramOption with
       | none =>
@@ -509,6 +533,10 @@ def pyAnalyzeLaurelCommand : Command where
     if verbose then
       IO.println "\n==== Core Program ===="
       IO.print coreProgram
+
+    if let some dir := keepDir then
+      let path := s!"{dir}/{baseName}.core"
+      IO.FS.writeFile path (toString coreProgram)
 
     -- Inline pyspec procedures so their precondition assertions are checked
     -- at call sites with concrete arguments.
@@ -530,6 +558,9 @@ def pyAnalyzeLaurelCommand : Command where
           if verbose then
             IO.println "\n==== Core Program (after inlining) ===="
             IO.print inlined
+          if let some dir := keepDir then
+            let path := s!"{dir}/{baseName}.inlined.core"
+            IO.FS.writeFile path (toString inlined)
           pure inlined
       else pure coreProgram
 
@@ -543,7 +574,9 @@ def pyAnalyzeLaurelCommand : Command where
         checkMode := checkMode, checkLevel := checkLevel }
     let options : VerifyOptions := match pflags.getString "vc-directory" with
       | .some dir => { baseOptions with vcDirectory := some (dir : System.FilePath) }
-      | .none => baseOptions
+      | .none => match keepDir with
+        | some dir => { baseOptions with vcDirectory := some (s!"{dir}/{baseName}" : System.FilePath) }
+        | none => baseOptions
     let vcResults ←
       match ← Strata.verifyCore coreProgram options
                 (moreFns := Strata.Python.ReFactory) |>.toBaseIO with
@@ -603,14 +636,6 @@ def pyAnalyzeLaurelCommand : Command where
         | none => Map.empty
       Core.Sarif.writeSarifOutput checkMode files vcResults (filePath ++ ".sarif")
     printPyAnalyzeSummary vcResults classifier
-
-private def deriveBaseName (file : String) : String :=
-  let name := System.FilePath.fileName file |>.getD file
-  if name.endsWith ".python.st.ion" then (name.dropEnd 14).toString
-  else if name.endsWith ".py.ion" then (name.dropEnd 7).toString
-  else if name.endsWith ".st.ion" then (name.dropEnd 7).toString
-  else if name.endsWith ".st" then (name.dropEnd 3).toString
-  else name
 
 def pyAnalyzeToGotoCommand : Command where
   name := "pyAnalyzeToGoto"
