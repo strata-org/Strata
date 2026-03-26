@@ -22,8 +22,8 @@ def NondetTest1 : Stmt Expression (Cmd Expression) :=
 
 def NondetTest1Ans : Option (NondetStmt Expression (Cmd Expression)) :=
   .some (.choice
-    (.seq (.cmd (.assume "true_cond" Core.true .empty)) (.seq (.cmd $ .havoc "x" .empty) (.assert "skip" Imperative.HasBool.tt .empty)))
-    (.seq (.cmd (.assume "false_cond" Core.false .empty)) (.seq (.cmd $ .havoc "y" .empty) (.assert "skip" Imperative.HasBool.tt .empty))))
+    (.seq (.cmd (.assume "true_cond" Core.true .empty)) (.seq (.cmd $ .havoc "x" .empty) (.assert "$__skip" Imperative.HasBool.tt .empty)))
+    (.seq (.cmd (.assume "false_cond" Core.false .empty)) (.seq (.cmd $ .havoc "y" .empty) (.assert "$__skip" Imperative.HasBool.tt .empty))))
 
 -- #eval toString $ Std.format (StmtToNondetStmt NondetTest1)
 -- #eval toString $ Std.format NondetTest1Ans

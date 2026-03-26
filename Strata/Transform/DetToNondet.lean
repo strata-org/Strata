@@ -47,7 +47,7 @@ def BlockToNondetStmt {P : Imperative.PureExpr} [Imperative.HasBool P] [HasNot P
   (ss : Imperative.Block P (Cmd P)) :
   Option (Imperative.NondetStmt P (Cmd P)) :=
   match ss with
-  | [] => some (.assert "skip" Imperative.HasBool.tt .empty)
+  | [] => some (.assert "$__skip" Imperative.HasBool.tt .empty)
   | s :: ss => do
     let s' ← StmtToNondetStmt s
     let rest ← BlockToNondetStmt ss
