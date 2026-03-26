@@ -334,7 +334,7 @@ def resolveDispatch (ctx : TranslationContext)
         if ident.pythonModule.isEmpty then
           ident.name
         else
-          ident.pythonModule ++ "_" ++ ident.name
+          ident.pythonModule.replace "." "_" ++ "_" ++ ident.name
       return some className
     | _ => return none
 
