@@ -807,12 +807,11 @@ partial def translateCall (ctx : TranslationContext)
   match f with
   | .Name  _ _ _ =>  return mkStmtExprMd (StmtExpr.StaticCall funcName (trans_args ++ trans_kwords_exprs))
   | .Attribute _ val _attr _ =>
-      let _target_trans ← translateExpr ctx val
+      let target_trans ← translateExpr ctx val
       if opt_firstarg.isSome then
-        -- Emit StaticCall only for procedures with transparent bodies
-        -- (e.g. pyspec with precondition assertions). Opaque procedures stay as Hole.
-        if let some (ImportedSymbol.procedure _ _ true) := ctx.importedSymbols[funcName]? then
-          return mkStmtExprMd (StmtExpr.StaticCall funcName (trans_args ++ trans_kwords_exprs))
+        -- Method call: prepend self (the target object) as first argument
+        if let some (ImportedSymbol.procedure _ _ _) := ctx.importedSymbols[funcName]? then
+          return mkStmtExprMd (StmtExpr.StaticCall funcName (target_trans :: trans_args ++ trans_kwords_exprs))
         else
           return mkStmtExprMd (.Hole)
       else

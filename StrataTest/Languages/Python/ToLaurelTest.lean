@@ -249,7 +249,7 @@ info: Union type (None | foo.Bar) not yet supported
 info: type MyClass
 type MyAlias
 procedure my_func(x:TCore(Any), y:TCore(Any)) returns(result:TCore(Any))
-procedure MyClass_get_value() returns(result:TCore(Any))
+procedure MyClass_get_value(self:UserDefined(Composite)) returns(result:TCore(Any))
 -/
 #guard_msgs in
 #eval runTest #[
@@ -359,7 +359,7 @@ private def runDispatchTest (sigs : Array Signature) : IO Unit := do
 -- and a regular function.
 /--
 info: type SvcClient
-procedure SvcClient_do_thing(x:TCore(Any)) returns(result:TCore(Any))
+procedure SvcClient_do_thing(self:UserDefined(Composite), x:TCore(Any)) returns(result:TCore(Any))
 procedure helper() returns(result:TCore(Any))
 dispatch create_client:
   "svc_a" -> mod.client.SvcClient
