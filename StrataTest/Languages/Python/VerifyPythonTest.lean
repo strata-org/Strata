@@ -101,4 +101,19 @@ open Strata.Parser (stringInputContext)
     unless expectedErrors.any (fun exp => matchesDiagnostic d exp) do
       throw <| .userError s!"Unexpected diagnostic: line {d.start.line}, {d.message}"
 
+-- Multiple `with` blocks reusing the same variable name should not crash.
+-- Previously, the `as` variable leaked out of the with-block scope, causing
+-- a "Cannot havoc undeclared variable" error on the second with-block.
+#guard_msgs in
+#eval withPython (warnOnSkip := false) fun pythonCmd => do
+  let program :=
+"def main(path1: str, path2: str) -> None:
+    with open(path1, 'w') as f:
+        f.write('hello')
+    with open(path2, 'w') as f:
+        f.write('world')
+"
+  let _diags ← processPythonFile pythonCmd (stringInputContext "test.py" program)
+  pure ()
+
 end Strata.Python.VerifyPythonTest
