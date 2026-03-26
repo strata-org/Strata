@@ -805,7 +805,20 @@ partial def translateCall (ctx : TranslationContext)
       if funcdecl_hasKwargs then [DictStrAny_empty] else []
     else [trans_kwords]
   match f with
-  | .Name  _ _ _ =>  return mkStmtExprMd (StmtExpr.StaticCall funcName (trans_args ++ trans_kwords_exprs))
+  | .Name  _ _ _ =>
+      -- If calling str() on a composite-typed variable, use composite_to_string_<type>
+      -- so that heap parameterization adds the heap dependency.
+      let funcName' :=
+        if funcName == "to_string_any" && args.length == 1 then
+          match inferExprType ctx args[0]! with
+          | .ok argType =>
+            if argType != PyLauType.Any && (ctx.importedSymbols[argType]?.any fun s =>
+              match s with | .compositeType _ => true | _ => false) then
+              s!"composite_to_string_{argType}"
+            else funcName
+          | .error _ => funcName
+        else funcName
+      return mkStmtExprMd (StmtExpr.StaticCall funcName' (trans_args ++ trans_kwords_exprs))
   | .Attribute _ val _attr _ =>
       let _target_trans ← translateExpr ctx val
       if opt_firstarg.isSome then
@@ -1095,7 +1108,7 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
     let bodyDecls := collectDeclaredNamesAndTypes body.val.toList
 
     let errorVarDecls: List (String × String) := (handlers.val.toList.filterMap (λ h => match h with
-          | .ExceptHandler _ _ errname _ => errname.val)).map (λ h => (h.val, "PythonError"))
+          | .ExceptHandler _ _ errname _ => errname.val)).map (λ h => (h.val, "Any"))
 
     let handlerDecls := handlers.val.toList.flatMap fun h => match h with
       | .ExceptHandler _ _ _ hBody => collectDeclaredNamesAndTypes hBody.val.toList
@@ -1111,10 +1124,17 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
     let mut handlerStmts : List StmtExprMd := []
     for handler in handlers.val do
       match handler with
-      | .ExceptHandler _ _ _ handlerBody =>
+      | .ExceptHandler _ _ errname handlerBody =>
+        -- Assign exception variable from maybe_except: e := exception(maybe_except)
+        let errAssign := match errname.val with
+          | some name =>
+            let wrapError := mkStmtExprMd (StmtExpr.StaticCall "exception"
+              [mkStmtExprMd (StmtExpr.Identifier "maybe_except")])
+            [mkStmtExprMd (StmtExpr.Assign [mkStmtExprMd (StmtExpr.Identifier name.val)] wrapError)]
+          | none => []
         let (hCtx, hStmts) ← translateStmtList hoistedCtx handlerBody.val.toList
         handlerCtx := hCtx
-        handlerStmts := handlerStmts ++ hStmts
+        handlerStmts := handlerStmts ++ errAssign ++ hStmts
 
     -- Insert exception checks after each statement in try body
     let bodyStmtsWithChecks := bodyStmts.flatMap fun stmt =>
@@ -1784,8 +1804,23 @@ def pythonToLaurel' (info : PreludeInfo)
     isFunctional := false
   }
 
+  -- Generate composite_to_string_<type> functions for each composite type.
+  -- These take a composite, so heap parameterization will add a Heap parameter,
+  -- ensuring the verifier does not assume referential transparency across heap mutations.
+  let compositeToStringFns : List Procedure := compositeTypes.map fun ct =>
+    let selfParam : Parameter := { name := "self", type := mkHighTypeMd (.UserDefined ct.name.text) }
+    { name := { text := s!"composite_to_string_{ct.name.text}" },
+      inputs := [selfParam],
+      outputs := [{ name := "result", type := mkHighTypeMd .TString }],
+      preconditions := [],
+      determinism := .deterministic none,
+      decreases := none,
+      body := .External,
+      md := default,
+      isFunctional := true }
+
   let program : Laurel.Program := {
-    staticProcedures := procedures.push mainProc |>.toList
+    staticProcedures := (procedures.push mainProc |>.toList) ++ compositeToStringFns
     staticFields := []
     types := compositeTypes.map TypeDefinition.Composite
     constants := []
