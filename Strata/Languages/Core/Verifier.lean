@@ -264,6 +264,14 @@ def unknown (o : VCOutcome) : Bool :=
   | .unknown, .unknown => true
   | _, _ => false
 
+/-- True when either SMT property is `.err` (solver returned an error on
+    a specific check, as opposed to the outer `VCResult.outcome` being
+    `.error` due to an encoding failure). -/
+def hasSMTError (o : VCOutcome) : Bool :=
+  match o.satisfiabilityProperty, o.validityProperty with
+  | .err _, _ | _, .err _ => true
+  | _,      _             => false
+
 -- Derived predicates (cross-cutting properties)
 
 def isPass (o : VCOutcome) : Bool :=
@@ -505,6 +513,13 @@ def VCResult.isNotSuccess (vcResult : Core.VCResult) :=
 def VCResult.isUnreachable (vr : VCResult) : Bool :=
   match vr.outcome with
   | .ok o => o.unreachable
+  | .error _ => false
+
+/-- True when either SMT property inside a successful outcome is `.err`.
+    Complements `isImplementationError`, which covers the outer `.error` case. -/
+def VCResult.hasSMTError (vr : VCResult) : Bool :=
+  match vr.outcome with
+  | .ok o => o.hasSMTError
   | .error _ => false
 
 @[expose] abbrev VCResults := Array VCResult
