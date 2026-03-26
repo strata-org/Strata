@@ -1,26 +1,26 @@
 
 ==== Verification Results ====
-List_get_body_calls_List_get_0: ✅ pass
-List_take_body_calls_List_take_0: ✅ pass
-List_drop_body_calls_List_drop_0: ✅ pass
-List_slice_body_calls_List_drop_0: ✅ pass
-List_slice_body_calls_List_take_1: ✅ pass
-List_set_body_calls_List_set_0: ✅ pass
-DictStrAny_get_body_calls_DictStrAny_get_0: ✅ pass
-Any_get_body_calls_DictStrAny_get_0: ✅ pass
-Any_get_body_calls_List_get_1: ✅ pass
-Any_get_body_calls_List_slice_2: ✅ pass
-Any_get_body_calls_List_drop_3: ✅ pass
-Any_get!_body_calls_DictStrAny_get_0: ✅ pass
-Any_get!_body_calls_List_get_1: ✅ pass
-Any_set_body_calls_List_set_0: ✅ pass
-Any_set!_body_calls_List_set_0: ✅ pass
-PFloorDiv_body_calls_Int.SafeDiv_0: ✅ pass
-PFloorDiv_body_calls_Int.SafeDiv_1: ✅ pass
-PFloorDiv_body_calls_Int.SafeDiv_2: ✅ pass
-PFloorDiv_body_calls_Int.SafeDiv_3: ✅ pass
-PAnd_body_calls_Any_to_bool_0: ✅ pass
-POr_body_calls_Any_to_bool_0: ✅ pass
+List_get_body_calls_List_get_0: ✅ pass (in prelude file)
+List_take_body_calls_List_take_0: ✅ pass (in prelude file)
+List_drop_body_calls_List_drop_0: ✅ pass (in prelude file)
+List_slice_body_calls_List_drop_0: ✅ pass (in prelude file)
+List_slice_body_calls_List_take_1: ✅ pass (in prelude file)
+List_set_body_calls_List_set_0: ✅ pass (in prelude file)
+DictStrAny_get_body_calls_DictStrAny_get_0: ✅ pass (in prelude file)
+Any_get_body_calls_DictStrAny_get_0: ✅ pass (in prelude file)
+Any_get_body_calls_List_get_1: ✅ pass (in prelude file)
+Any_get_body_calls_List_slice_2: ✅ pass (in prelude file)
+Any_get_body_calls_List_drop_3: ✅ pass (in prelude file)
+Any_get!_body_calls_DictStrAny_get_0: ✅ pass (in prelude file)
+Any_get!_body_calls_List_get_1: ✅ pass (in prelude file)
+Any_set_body_calls_List_set_0: ✅ pass (in prelude file)
+Any_set!_body_calls_List_set_0: ✅ pass (in prelude file)
+PFloorDiv_body_calls_Int.SafeDiv_0: ✅ pass (in prelude file)
+PFloorDiv_body_calls_Int.SafeDiv_1: ✅ pass (in prelude file)
+PFloorDiv_body_calls_Int.SafeDiv_2: ✅ pass (in prelude file)
+PFloorDiv_body_calls_Int.SafeDiv_3: ✅ pass (in prelude file)
+PAnd_body_calls_Any_to_bool_0: ✅ pass (in prelude file)
+POr_body_calls_Any_to_bool_0: ✅ pass (in prelude file)
 ret_type: ✅ pass (in prelude file)
 ret_type: ✅ pass (in prelude file)
 ret_pos: ✅ pass (in prelude file)
@@ -28,4 +28,7 @@ assert_name_is_foo: ✅ pass (in prelude file)
 assert_opt_name_none_or_str: ✅ pass (in prelude file)
 assert_opt_name_none_or_bar: ✅ pass (in prelude file)
 ensures_maybe_except_none: ✅ pass (in prelude file)
-ite_cond_calls_Any_to_bool_0: ✅ pass
+ite_cond_calls_Any_to_bool_0: ✅ pass (at line 13, col 0)
+
+DETAIL: 29 passed, 0 failed, 0 inconclusive
+RESULT: Analysis success
