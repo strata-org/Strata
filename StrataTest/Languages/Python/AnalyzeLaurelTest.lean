@@ -295,4 +295,40 @@ assertion. This exercises the full pipeline with type alias resolution.
         throw <| IO.userError
           "Expected ✖️ always false for empty bucket violation"
 
+/-! ## Any_to_bool with Dict/List test
+
+Before the fix, `if results: assert 'key' in results` produced
+`✖️ always false` for PIn because Any_to_bool excluded Dict/List.
+With the fix, the assertion is no longer provably false.
+-/
+
+/-- info: ite_cond_calls_Any_to_bool_0: ❓ unknown
+assert_assert(66)_calls_PIn_0: ❓ unknown
+assert_assert(66)_calls_Any_to_bool_1: ✔️ always true if reached
+assert(66): ❓ unknown
+-/
+#guard_msgs in
+#eval withPython fun _pythonCmd => do
+  IO.FS.withTempDir fun tmpDir => do
+    let (dispatchIon, pyspecPaths) ← setupFixture _pythonCmd tmpDir
+    let result ← runAnalyzeAndVerify dispatchIon tmpDir
+      "test_pin_any.py" pyspecPaths
+    match result with
+    | .error msg => throw <| IO.userError s!"Pipeline failed: {msg}"
+    | .ok vcResults =>
+      for r in vcResults do
+        -- Skip prelude results
+        if !(r.obligation.label.startsWith "List_" ||
+             r.obligation.label.startsWith "DictStrAny_" ||
+             r.obligation.label.startsWith "Any_get" ||
+             r.obligation.label.startsWith "Any_set" ||
+             r.obligation.label.startsWith "PFloorDiv_" ||
+             r.obligation.label.startsWith "PAnd_" ||
+             r.obligation.label.startsWith "POr_" ||
+             r.obligation.label.startsWith "ret_" ||
+             r.obligation.label.startsWith "assert_name" ||
+             r.obligation.label.startsWith "assert_opt_name" ||
+             r.obligation.label.startsWith "ensures_") then
+          IO.println s!"{r.obligation.label}: {r.formatOutcome}"
+
 end Strata.Python.AnalyzeLaurelTest
