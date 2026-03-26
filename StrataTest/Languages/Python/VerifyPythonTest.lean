@@ -102,9 +102,6 @@ open Strata.Parser (stringInputContext)
       throw <| .userError s!"Unexpected diagnostic: line {d.start.line}, {d.message}"
 
 -- Multiple `with` blocks reusing the same variable name should not crash.
--- The `as` variable was declared inside the Block but its name was tracked
--- in the outer context, so the second with-block emitted a havoc for a
--- variable that didn't exist at the outer Core scope.
 #guard_msgs in
 #eval withPython (warnOnSkip := false) fun pythonCmd => do
   let program :=
