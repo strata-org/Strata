@@ -258,15 +258,9 @@ def Statement.subst (S : Subst) (s : Statement) : Statement :=
   | .block label bss md =>
     .block label (go S bss []) md
   | .ite cond tss ess md =>
-    let cond' := match cond with
-      | .det e => ExprOrNondet.det (e.applySubst S)
-      | .nondet => .nondet
-    .ite cond' (go S tss []) (go S ess []) md
+    .ite (cond.map (LExpr.applySubst · S)) (go S tss []) (go S ess []) md
   | .loop guard m i bss md =>
-    let guard' := match guard with
-      | .det e => ExprOrNondet.det (e.applySubst S)
-      | .nondet => .nondet
-    .loop guard' (substOptionExpr S m) (i.map (·.applySubst S)) (go S bss []) md
+    .loop (guard.map (LExpr.applySubst · S)) (substOptionExpr S m) (i.map (·.applySubst S)) (go S bss []) md
   | .exit _ _ => s
   | .funcDecl decl md =>
     let decl' := { decl with

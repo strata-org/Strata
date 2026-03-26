@@ -154,7 +154,9 @@ def Stmt.removeLoopsM
     pure (.block s!"loop_{loop_num}" [first_iter_facts, loop_passive] {})
     | .nondet =>
     -- Non-deterministic loop: havoc assigned vars, then non-deterministically
-    -- enter the body or exit
+    -- enter the body or exit. The measure is ignored because termination of a
+    -- nondet loop cannot be proved via a decreasing measure (the iteration count
+    -- is arbitrary). If breaks are present, termination may still hold.
     let body_statements ← Block.removeLoopsM bss
     let entry_invariants := invariants.mapIdx fun i inv =>
       Stmt.cmd (HasPassiveCmds.assert s!"entry_invariant_{loop_num}_{i}" inv md)

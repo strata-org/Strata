@@ -53,15 +53,9 @@ def translate_stmt (s: Imperative.Stmt C_Simp.Expression C_Simp.Command) : Core.
   | .cmd c => .cmd (translate_cmd c)
   | .block l b _md => .block l (b.map translate_stmt) {}
   | .ite cond thenb elseb _md =>
-    let cond' := match cond with
-      | .det e => Imperative.ExprOrNondet.det (translate_expr e)
-      | .nondet => .nondet
-    .ite cond' (thenb.map translate_stmt) (elseb.map translate_stmt) {}
+    .ite (cond.map translate_expr) (thenb.map translate_stmt) (elseb.map translate_stmt) {}
   | .loop guard measure invariant body _md =>
-    let guard' := match guard with
-      | .det e => Imperative.ExprOrNondet.det (translate_expr e)
-      | .nondet => .nondet
-    .loop guard' (translate_opt_expr measure) (invariant.map translate_expr) (body.map translate_stmt) {}
+    .loop (guard.map translate_expr) (translate_opt_expr measure) (invariant.map translate_expr) (body.map translate_stmt) {}
   | .funcDecl _ _ => panic! "C_Simp does not support function declarations"
   | .typeDecl _ _ => panic! "C_Simp does not support type declarations"
   | .exit label _md => .exit label {}

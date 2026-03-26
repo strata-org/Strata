@@ -1142,6 +1142,12 @@ def translateOptionReachCheck (arg : Arg) : TransM Bool := do
     return true
   | none => return false
 
+/-- Check if an argument is the nondet star (`*`) expression. -/
+private def isBstarArg (a : Arg) : Bool :=
+  match a with
+  | .expr (ExprF.fn _ ⟨_, "bstar"⟩) => true
+  | _ => false
+
 mutual
 partial def translateFnPreconds (p : Program) (name : Core.CoreIdent) (bindings : TransBindings) (arg : Arg) :
   TransM (List (Strata.DL.Util.FuncPrecondition Core.Expression.Expr Core.Expression.ExprMetadata)) := do
@@ -1208,10 +1214,7 @@ partial def translateStmt (p : Program) (bindings : TransBindings) (arg : Arg) :
     let (fss, elseBindings) ← translateElse p { bindings with gen := thenBindings.gen } fa
     let md ← getOpMetaData op
     -- Check if condition is the nondet star expression
-    let isNondet := match ca with
-      | .expr (ExprF.fn _ ⟨_, "bstar"⟩) => true
-      | _ => false
-    let cond : Imperative.ExprOrNondet Core.Expression ← if isNondet then
+    let cond : Imperative.ExprOrNondet Core.Expression ← if isBstarArg ca then
       pure .nondet
     else
       pure (.det (← translateExpr p bindings ca))
@@ -1222,10 +1225,7 @@ partial def translateStmt (p : Program) (bindings : TransBindings) (arg : Arg) :
     let (bodyss, bindings) ← translateBlock p bindings ba
     let md ← getOpMetaData op
     -- Check if guard is the nondet star expression
-    let isNondet := match ca with
-      | .expr (ExprF.fn _ ⟨_, "bstar"⟩) => true
-      | _ => false
-    let guard : Imperative.ExprOrNondet Core.Expression ← if isNondet then
+    let guard : Imperative.ExprOrNondet Core.Expression ← if isBstarArg ca then
       pure .nondet
     else
       pure (.det (← translateExpr p bindings ca))
