@@ -98,7 +98,7 @@ procedure imperativeCallInConditionalExpression(b: bool) {
   }
 };
 
-procedure nesting() {
+procedure repeatedBlockExpressions() {
   var x: int := 2;
   var y: int := { x := 1; x } + { x := x + 10; x };
   assert y == 1 + 11
