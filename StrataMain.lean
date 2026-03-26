@@ -529,6 +529,9 @@ def pyAnalyzeLaurelCommand : Command where
       IO.println "\n==== Core Program ===="
       IO.print coreProgram
 
+    -- Split prelude / user procedure names at FIRST_END_MARKER
+    let (preludeNames, userProcNames) := Strata.splitProcNames coreProgram
+
     if let some dir := keepDir then
       let path := s!"{dir}/{baseName}.core"
       IO.FS.writeFile path (toString coreProgram)
@@ -538,12 +541,6 @@ def pyAnalyzeLaurelCommand : Command where
     let pyspecFiles := pflags.getRepeated "pyspec"
     let coreProgram ←
       if pyspecFiles.size > 0 then
-        -- Collect prelude procedure names to avoid inlining them
-        let mut preludeNames : Std.HashSet String := {}
-        for d in coreProgram.decls do
-          if toString d.name == "FIRST_END_MARKER" then break
-          if let some p := d.getProc? then
-            preludeNames := preludeNames.insert (Core.CoreIdent.toPretty p.header.name)
         match Core.Transform.runProgram (targetProcList := .none)
               (Core.ProcedureInlining.inlineCallCmd
                 (doInline := λ name _ => name ≠ "__main__" && !preludeNames.contains name))
@@ -574,7 +571,8 @@ def pyAnalyzeLaurelCommand : Command where
         | none => baseOptions
     let vcResults ←
       match ← Core.verifyProgram coreProgram options
-                (moreFns := Strata.Python.ReFactory) |>.toBaseIO with
+                (moreFns := Strata.Python.ReFactory)
+                (proceduresToVerify := some userProcNames) |>.toBaseIO with
       | .ok r => pure r
       | .error msg => exitPyAnalyzeInternalError msg
 

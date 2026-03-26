@@ -21,6 +21,7 @@ PFloorDiv_body_calls_Int.SafeDiv_2: ✅ pass (in prelude file)
 PFloorDiv_body_calls_Int.SafeDiv_3: ✅ pass (in prelude file)
 PAnd_body_calls_Any_to_bool_0: ✅ pass (in prelude file)
 POr_body_calls_Any_to_bool_0: ✅ pass (in prelude file)
+<<<<<<< HEAD
 ret_type: ✅ pass (in prelude file)
 ret_type: ✅ pass (in prelude file)
 ret_pos: ✅ pass (in prelude file)
@@ -29,6 +30,9 @@ assert_opt_name_none_or_str: ✅ pass (in prelude file)
 assert_opt_name_none_or_bar: ✅ pass (in prelude file)
 ensures_maybe_except_none: ✅ pass (in prelude file)
 Assertion failed at line 2, col 4: ite_cond_calls_Any_to_bool_0: ❓ unknown
+=======
+Assertion failed at line 2, col 4: ite_cond_calls_Any_to_bool_0: ❌ fail
+>>>>>>> main
 ite_cond_calls_Any_to_bool_0: ✅ pass (at line 4, col 4)
 Assertion failed at line 6, col 4: ite_cond_calls_Any_to_bool_0: ❓ unknown
 assert_assert(225)_calls_Any_to_bool_0: ✅ pass (at line 13, col 4)
@@ -41,5 +45,10 @@ assert_assert(444)_calls_Any_to_bool_0: ✅ pass (at line 22, col 4)
 assert(444): ❓ unknown (at line 22, col 4)
 ite_cond_calls_Any_to_bool_0: ✅ pass (at line 24, col 0)
 
+<<<<<<< HEAD
 DETAIL: 34 passed, 0 failed, 6 inconclusive
 RESULT: Inconclusive
+=======
+DETAIL: 27 passed, 2 failed, 4 inconclusive
+RESULT: Failures found
+>>>>>>> main
