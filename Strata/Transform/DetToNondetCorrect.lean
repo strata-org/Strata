@@ -44,9 +44,6 @@ abbrev Lang.nondet : Lang P where
   CfgT := NondetConfig P (Cmd P)
   star := StepNondetStar P (EvalCmd P)
   stmtCfg := .stmt
-  stmtsCfg := fun ss ρ => match ss with
-    | [] => .terminal ρ
-    | s :: _ => .stmt (ss.foldl (init := s) fun acc s' => .seq acc s') ρ
   terminalCfg := .terminal
   exitingCfg := fun _ ρ => .terminal ρ
   isAtAssert := isAtNondetAssert
@@ -201,20 +198,6 @@ where
       have ⟨s', r', hs, hr, _⟩ := block_transform_some s rest ns ht
       simp [Block.noFuncDecl]
       exact ⟨stmtToNondet_some_noFuncDecl s s' hs, blockHelper rest r' hr⟩
-
-/-! ## Block exitsCovered from successful transform (empty labels) -/
-
- omit [HasFvar P] [HasVal P] [HasBoolVal P] in
-private theorem blockToNondet_some_exitsCovered_nil
-    (bss : List (Stmt P (Cmd P))) (ns : NondetStmt P (Cmd P))
-    (ht : BlockToNondetStmt bss = some ns) :
-    Stmt.exitsCoveredByBlocks.Block.exitsCoveredByBlocks (P := P) (CmdT := Cmd P) [] bss := by
-  match bss with
-  | [] => simp [Stmt.exitsCoveredByBlocks.Block.exitsCoveredByBlocks]
-  | s :: rest =>
-    have ⟨s', r', hs, hr, _⟩ := block_transform_some s rest ns ht
-    simp [Stmt.exitsCoveredByBlocks.Block.exitsCoveredByBlocks]
-    exact ⟨stmtToNondet_some_exitsCovered [] s s' hs, blockToNondet_some_exitsCovered_nil rest r' hr⟩
 
 /-! ## ReflTransT decomposition helpers -/
 
@@ -399,7 +382,7 @@ private theorem simulation
               exact ih.2 bss ns this ht ρ₀ ρ' hwfb hwfv hterm
             | .inr ⟨lbl, hexit⟩ =>
               exact absurd hexit (block_exitsCoveredByBlocks_noEscape P (EvalCmd P) extendEval bss
-                (blockToNondet_some_exitsCovered_nil bss ns ht) ρ₀ lbl ρ')
+                (stmtToNondet_some_exitsCovered.blockHelper [] bss ns ht) ρ₀ lbl ρ')
 
       | .ite cond tss ess md =>
         have ⟨t, e, ht_tss, ht_ess, hns⟩ := ite_transform_some cond tss ess md ns ht
@@ -446,7 +429,7 @@ private theorem simulation
             StepStmtStar P (EvalCmd P) extendEval (.stmts body ρ₀) (.terminal ρ') →
             StepNondetStar P (EvalCmd P) (.stmt b ρ₀) (.terminal ρ') :=
           fun ρ₀ ρ' hwfb' hwfv' h => ih.2 body b hsz_body hb ρ₀ ρ' hwfb' hwfv' h
-        have hcov := blockToNondet_some_exitsCovered_nil body b hb
+        have hcov := stmtToNondet_some_exitsCovered.blockHelper [] body b hb
         have hnofd_body : Block.noFuncDecl body = true :=
           stmtToNondet_some_noFuncDecl.blockHelper body b hb
         exact loop_sim extendEval g m' inv body md b sim_body hcov hnofd_body ρ₀ ρ' hwfv

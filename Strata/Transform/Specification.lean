@@ -81,8 +81,6 @@ structure Lang (P : PureExpr) [HasFvar P] [HasBool P] [HasNot P] where
   star : CfgT → CfgT → Prop
   /-- Embed a single statement and env into a config. -/
   stmtCfg : StmtT → Env P → CfgT
-  /-- Embed a statement list and env into a config. -/
-  stmtsCfg : List StmtT → Env P → CfgT
   /-- Terminal configuration. -/
   terminalCfg : Env P → CfgT
   /-- Exiting configuration. -/
@@ -100,7 +98,7 @@ abbrev Lang.imperative (P : PureExpr) [HasFvar P] [HasBool P] [HasNot P]
     (CmdT : Type) (evalCmd : EvalCmdParam P CmdT) (extendEval : ExtendEval P)
     (isAtAssert : Config P CmdT → AssertId P → Prop) : Lang P :=
   ⟨Stmt P CmdT, Config P CmdT, StepStmtStar P evalCmd extendEval,
-   .stmt, .stmts, .terminal, .exiting, isAtAssert, Config.getEval, Config.getStore⟩
+   .stmt, .terminal, .exiting, isAtAssert, Config.getEval, Config.getStore⟩
 
 /-- The standard `Lang` for `Cmd P` / `EvalCmd P` / `isAtAssert`. -/
 abbrev Lang.standard (P : PureExpr) [HasFvar P] [HasBool P] [HasNot P]
@@ -147,18 +145,6 @@ def Triple
     L.star (L.stmtCfg s ρ₀) (L.terminalCfg ρ') →
     Post ρ' ∧ ρ'.hasFailure = false
 
-/-- Partial-correctness Hoare triple for a block body.
-    The output configuration is allowed to be still in an exiting mode
-    (see Config.exiting) because the outer block can catch the exit. -/
-def TripleBlock
-    (Pre : Env P → Prop) (ss : List L.StmtT) (Post : Env P → Prop) : Prop :=
-  ∀ (ρ₀ ρ' : Env P),
-    Pre ρ₀ → WellFormedSemanticEvalBool ρ₀.eval → ρ₀.hasFailure = false →
-    (L.star (L.stmtsCfg ss ρ₀) (L.terminalCfg ρ') ∨
-     ∃ lbl, L.star (L.stmtsCfg ss ρ₀) (L.exitingCfg lbl ρ')) →
-    Post ρ' ∧ ρ'.hasFailure = false
-
-
 /-! ## Parametric Hoare rules -/
 
 omit [HasVal P] in
@@ -186,10 +172,22 @@ section ImperativeRules
 variable {CmdT : Type} (evalCmd : EvalCmdParam P CmdT) (extendEval : ExtendEval P)
 variable (isAtAssertFn : Config P CmdT → AssertId P → Prop)
 
- omit [HasVal P] in
+/-- Partial-correctness Hoare triple for a block body.
+    The output configuration is allowed to be still in an exiting mode
+    (see Config.exiting) because the outer block can catch the exit. -/
+def TripleBlock
+    {CmdT : Type} (evalCmd : EvalCmdParam P CmdT) (extendEval : ExtendEval P)
+    (Pre : Env P → Prop) (ss : List (Stmt P CmdT)) (Post : Env P → Prop) : Prop :=
+  ∀ (ρ₀ ρ' : Env P),
+    Pre ρ₀ → WellFormedSemanticEvalBool ρ₀.eval → ρ₀.hasFailure = false →
+    (StepStmtStar P evalCmd extendEval (.stmts ss ρ₀) (.terminal ρ') ∨
+     ∃ lbl, StepStmtStar P evalCmd extendEval (.stmts ss ρ₀) (.exiting lbl ρ')) →
+    Post ρ' ∧ ρ'.hasFailure = false
+
+ omit [HasFvar P] [HasVal P] in
 /-- Empty statement list is skip. -/
 theorem skip_block (Pre : Env P → Prop) :
-    TripleBlock (Lang.imperative P CmdT evalCmd extendEval isAtAssertFn) Pre [] Pre := by
+    TripleBlock evalCmd extendEval Pre [] Pre := by
   intro ρ₀ ρ' hpre _ hf₀ hstar
   match hstar with
   | .inl hterm =>
@@ -225,10 +223,10 @@ omit [HasVal P] in
 theorem seq_cons {s : Stmt P CmdT} {ss : List (Stmt P CmdT)}
     {Pre Mid Post : Env P → Prop}
     (h₁ : Triple (Lang.imperative P CmdT evalCmd extendEval isAtAssertFn) Pre s Mid)
-    (h₂ : TripleBlock (Lang.imperative P CmdT evalCmd extendEval isAtAssertFn) Mid ss Post)
+    (h₂ : TripleBlock evalCmd extendEval Mid ss Post)
     (hnofd : Stmt.noFuncDecl s = true)
     (hnoesc : Stmt.exitsCoveredByBlocks [] s) :
-    TripleBlock (Lang.imperative P CmdT evalCmd extendEval isAtAssertFn) Pre (s :: ss) Post := by
+    TripleBlock evalCmd extendEval Pre (s :: ss) Post := by
   intro ρ₀ ρ' hpre hwfb hf₀ hdone
   have hwfb_preserved : ∀ ρ₁, StepStmtStar P evalCmd extendEval (.stmt s ρ₀) (.terminal ρ₁) →
       WellFormedSemanticEvalBool ρ₁.eval := by
@@ -259,7 +257,7 @@ omit [HasVal P] in
 /-- Lift a `TripleBlock` to a `Triple` by wrapping in a block. -/
 theorem TripleBlock.toTriple {ss : List (Stmt P CmdT)} {l : String} {md : MetaData P}
     {Pre Post : Env P → Prop}
-    (h : TripleBlock (Lang.imperative P CmdT evalCmd extendEval isAtAssertFn) Pre ss Post) :
+    (h : TripleBlock evalCmd extendEval Pre ss Post) :
     Triple (Lang.imperative P CmdT evalCmd extendEval isAtAssertFn) Pre (.block l ss md) Post := by
   intro ρ₀ ρ' hpre hwfb hf₀ hstar
   cases hstar with
@@ -275,7 +273,7 @@ theorem Triple.toTripleBlock {s : Stmt P CmdT}
     {Pre Post : Env P → Prop}
     (h : Triple (Lang.imperative P CmdT evalCmd extendEval isAtAssertFn) Pre s Post)
     (hnoesc : Stmt.exitsCoveredByBlocks [] s) :
-    TripleBlock (Lang.imperative P CmdT evalCmd extendEval isAtAssertFn) Pre [s] Post := by
+    TripleBlock evalCmd extendEval Pre [s] Post := by
   intro ρ₀ ρ' hpre hwfb hf₀ hdone
   match hdone with
   | .inl hterm =>
@@ -306,14 +304,14 @@ omit [HasVal P] in
 /-- Empty block is skip. -/
 theorem skip (l : String) (md : MetaData P) (Pre : Env P → Prop) :
     Triple (Lang.imperative P CmdT evalCmd extendEval isAtAssertFn) Pre (.block l [] md) Pre :=
-  (skip_block evalCmd extendEval isAtAssertFn Pre).toTriple
+  TripleBlock.toTriple evalCmd extendEval isAtAssertFn (skip_block evalCmd extendEval Pre)
 
 omit [HasVal P] in
 /-- If-then-else rule. -/
 theorem ite {c : P.Expr} {tss ess : List (Stmt P CmdT)} {md : MetaData P}
     {Pre Post : Env P → Prop}
-    (ht : TripleBlock (Lang.imperative P CmdT evalCmd extendEval isAtAssertFn) (fun ρ => Pre ρ ∧ ρ.eval ρ.store c = some HasBool.tt) tss Post)
-    (he : TripleBlock (Lang.imperative P CmdT evalCmd extendEval isAtAssertFn) (fun ρ => Pre ρ ∧ ρ.eval ρ.store c = some HasBool.ff) ess Post) :
+    (ht : TripleBlock evalCmd extendEval (fun ρ => Pre ρ ∧ ρ.eval ρ.store c = some HasBool.tt) tss Post)
+    (he : TripleBlock evalCmd extendEval (fun ρ => Pre ρ ∧ ρ.eval ρ.store c = some HasBool.ff) ess Post) :
     Triple (Lang.imperative P CmdT evalCmd extendEval isAtAssertFn) Pre (.ite c tss ess md) Post := by
   intro ρ₀ ρ' hpre hwfb hf₀ hstar
   cases hstar with
@@ -604,7 +602,6 @@ abbrev Lang.imperativeBlock : Lang P where
   CfgT := Config P CmdT
   star := StepStmtStar P evalCmd extendEval
   stmtCfg := .stmts
-  stmtsCfg := fun sss ρ => .stmts sss.flatten ρ
   terminalCfg := .terminal
   exitingCfg := .exiting
   isAtAssert := isAtAssertFn
