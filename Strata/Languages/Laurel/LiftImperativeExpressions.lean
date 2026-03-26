@@ -107,28 +107,37 @@ private def freshCondVar : LiftM Identifier := do
 private def addPrepend (stmt : StmtExprMd) : LiftM Unit :=
   modify fun s => { s with prependedStmts := stmt :: s.prependedStmts }
 
-/--
-From a list of statements (in expression position), prepend all `LocalVariable` declarations
-to the surrounding context and drop all other non-last statements. Returns a list containing
-only the last statement (the block's expression value), or empty if the input is empty.
--/
-private def onlyKeepUsefulExpressionsAndLast (stmts : List StmtExprMd) : LiftM (List StmtExprMd) := do
+private def onlyKeepSideEffectStmtsAndLast (stmts : List StmtExprMd) : LiftM (List StmtExprMd) := do
   match stmts with
   | [] => return []
   | _ =>
     let last := stmts.getLast!
-    for s in stmts.dropLast do
+    let nonLast ← stmts.dropLast.flatMapM (fun s =>
       match s.val with
-      | .LocalVariable .. =>
+      | .LocalVariable .. => do
           -- This addPrepend is a hack to work around Core not having let expressions
           -- Otherwise we could keep them in the block
           addPrepend s
-      | .Assert _ =>
+          pure []
+      | .Assert _ => do
           -- Hack to work around Core not supporting assert expressions
           -- Otherwise we could keep them in the block
           addPrepend s
-      | _ => pure ()
-    return [last]
+          pure []
+      | .Assume _ => do
+          -- Hack to work around Core not supporting assume expressions
+          -- Otherwise we could keep them in the block
+          addPrepend s
+          pure []
+
+      /-
+      Any other impure StmtExpr, like .Assign, .Exit or .Return,
+      should already have been processed by translateExpr.
+      TODO: currently .Exit or .Return is not processed, this is a bug
+      -/
+      | _ => pure []
+    )
+    return nonLast ++ [last]
 
 private def takePrepends : LiftM (List StmtExprMd) := do
   let stmts := (← get).prependedStmts
@@ -316,7 +325,7 @@ def transformExpr (expr : StmtExprMd) : LiftM StmtExprMd := do
 
   | .Block stmts labelOption =>
       let newStmts := (← stmts.reverse.mapM transformExpr).reverse
-      return ⟨ .Block (← onlyKeepUsefulExpressionsAndLast newStmts) labelOption, md ⟩
+      return ⟨ .Block (← onlyKeepSideEffectStmtsAndLast newStmts) labelOption, md ⟩
 
   | .LocalVariable name ty initializer =>
       -- If the substitution map has an entry for this variable, it was
