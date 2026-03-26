@@ -550,7 +550,11 @@ def pyAnalyzeLaurelCommand : Command where
                 (proceduresToVerify := some userProcNames) |>.toBaseIO with
       | .ok r => pure r
       | .error msg => exitPyAnalyzeInternalError msg
-    -- Filter out prelude VCs (those with empty file path in metadata)
+    -- Filter out prelude VCs (those with empty file path in metadata).
+    -- Even though we only request verification of user procedures,
+    -- PrecondElim generates WF-checking procedures for prelude functions
+    -- called transitively by user code (e.g. List_get, PFloorDiv).
+    -- Those WF procedures carry prelude metadata and must be excluded.
     let mut vcResults : Array Core.VCResult := #[]
     for vcResult in allVcResults do
       let isPrelude := match Imperative.getFileRange vcResult.obligation.metadata with
