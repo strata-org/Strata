@@ -305,11 +305,12 @@ def DictStrAny_empty:= mkStmtExprMd (StmtExpr.StaticCall "DictStrAny_empty" [])
 def DictStrAny_mk (kv: List (String × StmtExprMd)) := DictStrAny_mk_aux kv DictStrAny_empty
 
 /-- Extract a value from a dictionary for a function parameter.
-    For required params, generates `DictStrAny_get(dict, key)` (with precondition).
-    For optional params, generates `DictStrAny_get_or_none(dict, key)` (returns `None` if absent). -/
+    For required params, generates `Any_get(dict, from_string(key))` (with precondition).
+    For optional params, generates `Any_get_or_none(dict, from_string(key))` (returns `None` if absent).
+    Both operate on `Any`-typed dictionaries. -/
 def DictStrAny_get_param (dict : StmtExprMd) (key : String) (isOptional : Bool) : StmtExprMd :=
-  let func := if isOptional then "DictStrAny_get_or_none" else "DictStrAny_get"
-  mkStmtExprMd (.StaticCall func [dict, mkStmtExprMd (.LiteralString key)])
+  let func := if isOptional then "Any_get_or_none" else "Any_get"
+  mkStmtExprMd (.StaticCall func [dict, strToAny key])
 
 /-- Look up a function call in the overload dispatch table.
     Extracts the bare function name from the call target, then
@@ -820,7 +821,10 @@ partial def translateCall (ctx : TranslationContext)
     | .Attribute _ val _attr _ =>
         let _target_trans ← translateExpr ctx val
         if opt_firstarg.isSome then
-          return mkStmtExprMd (.Hole)
+          if let some (ImportedSymbol.procedure _ _ true) := ctx.importedSymbols[funcName]? then
+            return mkCall funcName
+          else
+            return mkStmtExprMd (.Hole)
         else return mkCall funcName
     | _ => throw (.unsupportedConstruct "Invalid call construct" (toString (repr f)))
   else

@@ -399,6 +399,12 @@ inline function DictStrAny_get_or_none (d : DictStrAny, key: string) : Any
   else from_none()
 }
 
+inline function Any_get_or_none (dict: Any, key: Any) : Any
+  requires Any..isfrom_Dict(dict) && Any..isfrom_string(key);
+{
+  DictStrAny_get_or_none(Any..as_Dict!(dict), Any..as_string!(key))
+}
+
 rec function DictStrAny_insert (@[cases] d : DictStrAny, key: string, val: Any) : DictStrAny
 {
   if DictStrAny..isDictStrAny_empty(d) then DictStrAny_cons(key, val, DictStrAny_empty())
