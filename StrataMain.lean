@@ -645,8 +645,7 @@ def pyAnalyzeLaurelCommand : Command where
             | .ok o => o.alwaysFalseAndReachable
             | _     => false }
       | _ => {}
-    -- Print results (non-incremental only; incremental prints per-procedure above)
-    if !incremental then do
+    -- Print results
     IO.println "\n==== Verification Results ===="
     let mut s := ""
     for vcResult in vcResults do
