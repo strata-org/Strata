@@ -29,9 +29,6 @@ program Boole;
 // This file keeps the native-`nat` pressure explicit: abstract `nat`, explicit
 // coercions, and an obligation that should become trivial once `nat` is modeled
 // natively instead of via uninterpreted functions.
-//
-// Current status: the abstraction works as a placeholder, but it pushes the
-// burden of `nat`/`int` movement into explicit coercion functions.
 
 type nat;
 

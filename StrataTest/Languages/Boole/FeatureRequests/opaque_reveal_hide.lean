@@ -31,9 +31,6 @@ program Boole;
 
 // Target shape once these proof-visibility controls exist directly in Boole:
 //
-// Current status: the seed sidesteps visibility control entirely by making the
-// body available as an axiom.
-//
 // opaque function square(x: int) : int { x * x }
 //
 // procedure opaque_reveal_hide_seed(x: int) returns ()
@@ -49,7 +46,7 @@ axiom (∀ x: int . square(x) == x * x);
 
 procedure opaque_reveal_hide_seed(x: int) returns ()
 {
-  // Current triage: this proof-visibility family is lower priority than
+  // This proof-visibility family is lower priority than
   // Rust-facing language support. If we revisit it, start with minimal
   // `opaque` + local `reveal` semantics and defer `hide` / `closed`.
   // TODO(feature:opaque-reveal): treat `square` as opaque by default if we

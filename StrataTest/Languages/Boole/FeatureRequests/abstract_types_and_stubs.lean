@@ -31,9 +31,8 @@ program Boole;
 // Target shape: model/library coverage that still matters after pruning older
 // sequence/pervasive scaffolding from translation output.
 //
-// Core has `Sequence`, but the Boole frontend still rejects Boole `Sequence`
-// types, so this seed stays with abstract stubs for now rather than pretending
-// the end-to-end Boole path already works there.
+// The Boole frontend still rejects Boole `Sequence` types, so this seed keeps
+// abstract stubs for now.
 
 type Thread;
 type Cell;

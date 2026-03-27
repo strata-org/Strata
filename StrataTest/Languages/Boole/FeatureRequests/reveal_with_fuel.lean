@@ -26,9 +26,6 @@ program Boole;
 
 // Target shape once recursive reveal support works end-to-end:
 //
-// Current status: `pow2` is left uninterpreted here, so the seed records the
-// shape of the request rather than exercising real bounded unfolding.
-//
 // rec function pow2(n: int) : int
 // {
 //   if n == 0 then 1 else 2 * pow2(n - 1)

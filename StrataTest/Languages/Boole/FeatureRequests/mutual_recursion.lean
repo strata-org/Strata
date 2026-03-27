@@ -26,9 +26,6 @@ program Boole;
 
 // Target shape once forward references are accepted:
 //
-// Current status: this seed avoids the forward-reference problem by replacing
-// the recursive siblings with stubs plus an axiom.
-//
 // rec function even(n: int) : bool
 // {
 //   if n == 0 then true else odd(n - 1)

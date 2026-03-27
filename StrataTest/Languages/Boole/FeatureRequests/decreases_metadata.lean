@@ -26,12 +26,6 @@ private def decreasesMetadataSeed : Strata.Program :=
 #strata
 program Boole;
 
-// Loop-level `decreases` is now available and should lower to Core's loop
-// measure field.
-//
-// The remaining gap is function/procedure/spec-function `decreases`, including
-// recursive examples that decrease over builtins such as `int`.
-//
 // Target shape for the remaining gap:
 //
 // function dec_to_zero(n: int) : int
@@ -80,7 +74,7 @@ Obligation: arbitrary_iter_maintain_invariant_0_1
 Property: assert
 Result: ✅ pass
 
-Obligation: loop_measure_seed_ensures_1_1418
+Obligation: loop_measure_seed_ensures_1_1174
 Property: assert
 Result: ✅ pass-/
 #guard_msgs in

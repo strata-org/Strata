@@ -27,9 +27,6 @@ program Boole;
 
 // Target shape: inline lambdas / closures / higher-order values, not only a
 // first-order uninterpreted-function encoding.
-//
-// Current status: this seed uses a first-order stand-in (`FnIntInt` plus
-// `apply`) so the verification pipeline stays in a fragment it already handles.
 
 type FnIntInt;
 
@@ -40,13 +37,12 @@ spec {
   ensures y == apply(f, x);
 }
 {
-  // TODO(feature:lambda): allow inline lambdas/closures, not only first-order encodings.
   y := apply(f, x);
 };
 #end
 
 /-- info:
-Obligation: higher_order_seed_ensures_0_1105
+Obligation: higher_order_seed_ensures_0_947
 Property: assert
 Result: ✅ pass-/
 #guard_msgs in

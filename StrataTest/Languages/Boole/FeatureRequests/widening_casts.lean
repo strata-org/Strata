@@ -28,14 +28,6 @@ program Boole;
 
 // Target shape: explicit widening/coercion pressure in a quantified formula,
 // not only at function/procedure call sites.
-//
-// Current status: the example is phrased in a way the current pipeline accepts,
-// but it still stands in for a more general type-directed coercion pass.
-//
-// This likely needs a centralized type-directed coercion pass rather than
-// additional local patching in expression lowering. Verus also tends to encode
-// `nat` and fixed-width arithmetic through integers plus clipping, so the
-// coercion story should line up with the broader `nat`/`int` boundary work.
 
 type BvVec := Map int bv32;
 

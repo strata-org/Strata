@@ -27,12 +27,6 @@ program Boole;
 
 // Target shape: these `fits_u32` conditions stand in for the dropped
 // `HasType(U32, e)` overflow checks that should survive translation.
-//
-// Current status: the overflow intent can be expressed, but only via manual
-// helper predicates rather than preserved source-level checks.
-//
-// This is currently lower priority because `HasType` is Verus-specific rather
-// than a core Boole feature, and we may choose not to model it directly.
 
 function fits_u32(i: int) : bool;
 
@@ -53,15 +47,15 @@ spec {
 #end
 
 /-- info:
-Obligation: assert_6_1475
+Obligation: assert_6_1175
 Property: assert
 Result: ✅ pass
 
-Obligation: overflow_guard_seed_ensures_4_1412
+Obligation: overflow_guard_seed_ensures_4_1112
 Property: assert
 Result: ✅ pass
 
-Obligation: overflow_guard_seed_ensures_5_1434
+Obligation: overflow_guard_seed_ensures_5_1134
 Property: assert
 Result: ✅ pass-/
 #guard_msgs in

@@ -4,16 +4,11 @@ import Strata.MetaVerifier
 namespace Strata
 
 /-
-Exploratory Boole benchmark rather than a direct one-gap seed from
-`differential_status.md`.
+Feature-request seed for imported math/power/summation support in richer
+functional specifications.
 
-Purpose:
-- keep a compact algorithmic example that pressures `for ... downto`
-- record the explicit request for imported math/power/summation support in
-  functional specifications
-- current status: the program type-checks, but the interesting full polynomial
-  correctness spec is still intentionally left out
-- request: reusable math/power/summation definitions for richer specifications
+Current status: the program type-checks, but the interesting full polynomial
+correctness spec is still intentionally left out.
 -/
 
 -- CLRS: Horner's rule for polynomial evaluation

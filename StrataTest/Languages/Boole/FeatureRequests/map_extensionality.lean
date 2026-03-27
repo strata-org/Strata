@@ -23,19 +23,8 @@ private def mapExtensionalitySeed : Strata.Program :=
 #strata
 program Boole;
 
-// Implemented shape for direct `Map` types.
-//
-// We added a dedicated Boole surface operator `=~=`, but the semantics still
-// follow the preferred translation-time expansion:
-//
-//   a =~= b
-//
-// lowers to a quantified equality over indices:
-//
-//   ∀ i: int . a[i] == b[i]
-//
-// This keeps the source cleaner without introducing a separate primitive SMT
-// notion of extensional equality.
+// Implemented shape for direct `Map` types: `a =~= b` lowers to
+// `∀ i: int . a[i] == b[i]`.
 //
 // spec {
 //   requires ∀ i: int . a[i] == b[i];

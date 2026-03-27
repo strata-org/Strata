@@ -22,12 +22,6 @@ program Boole;
 
 // Target shape once Boole has native return support.
 //
-// This is active work because Core `exit` only exits a labeled block; it does
-// not return all the way from the enclosing function/procedure.
-//
-// Current status: we can spell the result by assigning the output variable, but
-// that is not the same as preserving source-level `return`.
-//
 // Preferred implementation strategy: wrap the procedure body in a synthetic
 // labeled block and lower `return` to output assignments plus `exit` from that
 // block.
@@ -60,7 +54,7 @@ spec {
 #end
 
 /-- info:
-Obligation: abs_seed_ensures_0_1229
+Obligation: abs_seed_ensures_0_937
 Property: assert
 Result: ✅ pass-/
 #guard_msgs in
