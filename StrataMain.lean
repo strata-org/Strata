@@ -6,7 +6,11 @@
 
 -- Executable with utilities for working with Strata files.
 import Strata.DDM.Integration.Java.Gen
+import Strata.Languages.Core.Verifier
 import Strata.Languages.Core.SarifOutput
+import Strata.Languages.C_Simp.Verify
+import Strata.Languages.B3.Verifier.Program
+import Strata.Util.IO
 import Strata.Languages.Laurel.Grammar.ConcreteToAbstractTreeTranslator
 import Strata.Languages.Laurel.LaurelToCoreTranslator
 import Strata.Languages.Python.Python
@@ -1103,9 +1107,130 @@ structure CommandGroup where
   commands : List Command
   commonFlags : List Flag := []
 
+def verifyCommand : Command where
+  name := "verify"
+  args := [ "file" ]
+  flags := [
+    { name := "verbose", help := "Print extra information during analysis." },
+    { name := "check", help := "Process up until SMT generation, but don't solve." },
+    { name := "type-check", help := "Exit after semantic dialect's type inference/checking." },
+    { name := "parse-only", help := "Exit after DDM parsing and type checking." },
+    { name := "stop-on-first-error", help := "Exit after the first verification error." },
+    { name := "unique-bound-names", help := "Use globally unique names for quantifier-bound variables." },
+    { name := "sarif", help := "Output results in SARIF format to <file>.sarif." },
+    { name := "output-format", help := "Output format (only 'sarif' supported).", takesArg := .arg "format" },
+    { name := "vc-directory", help := "Store VCs in SMT-Lib format in <dir>.", takesArg := .arg "dir" },
+    { name := "procedures", help := "Verify only the specified procedures (comma-separated).", takesArg := .arg "procs" },
+    { name := "solver", help := s!"SMT solver executable to use (default: {Core.defaultSolver}).", takesArg := .arg "name" },
+    { name := "solver-timeout", help := "Solver timeout in seconds.", takesArg := .arg "seconds" },
+    checkModeFlag, checkLevelFlag ]
+  help := "Verify a Strata program file (.core.st, .csimp.st, or .b3.st)."
+  callback := fun v pflags => do
+    let file := v[0]
+    let verbose := pflags.getBool "verbose"
+    let checkOnly := pflags.getBool "check"
+    let typeCheckOnly := pflags.getBool "type-check"
+    let parseOnly := pflags.getBool "parse-only"
+    let stopOnFirstError := pflags.getBool "stop-on-first-error"
+    let uniqueBoundNames := pflags.getBool "unique-bound-names"
+    let outputSarif := pflags.getBool "sarif" || pflags.getString "output-format" == some "sarif"
+    let checkMode ← parseCheckMode pflags
+    let checkLevel ← parseCheckLevel pflags
+    let solverTimeout ← match pflags.getString "solver-timeout" with
+      | .none => pure VerifyOptions.default.solverTimeout
+      | .some s => match s.toNat? with
+        | .some n => pure n
+        | .none => exitCmdFailure "verify" s!"Invalid number of seconds: {s}"
+    let proceduresToVerify := pflags.getString "procedures" |>.map (·.splitToList (· == ','))
+    let opts : VerifyOptions :=
+      { VerifyOptions.default with
+        verbose := if verbose then .normal else .quiet,
+        checkOnly, typeCheckOnly, parseOnly, stopOnFirstError, uniqueBoundNames,
+        outputSarif, checkMode, checkLevel, solverTimeout,
+        vcDirectory := pflags.getString "vc-directory",
+        solver := pflags.getString "solver" |>.getD Core.defaultSolver }
+    let text ← Strata.Util.readInputSource file
+    let inputCtx := Lean.Parser.mkInputContext text (Strata.Util.displayName file)
+    let dctx := Elab.LoadedDialects.builtin
+    let dctx := dctx.addDialect! Core
+    let dctx := dctx.addDialect! C_Simp
+    let dctx := dctx.addDialect! B3CST
+    let leanEnv ← Lean.mkEmptyEnvironment 0
+    match Strata.Elab.elabProgram dctx leanEnv inputCtx with
+    | .ok pgm =>
+      println! s!"Successfully parsed."
+      if opts.parseOnly then return
+      if opts.typeCheckOnly then
+        let ans := if file.endsWith ".csimp.st" then
+                     C_Simp.typeCheck pgm opts
+                   else
+                     typeCheck inputCtx pgm opts
+        match ans with
+        | .error e =>
+          println! f!"{e.formatRange (some inputCtx.fileMap) true} {e.message}"
+          IO.Process.exit 1
+        | .ok _ =>
+          println! f!"Program typechecked."
+          return
+      -- Full verification
+      let vcResults ← try
+        if file.endsWith ".csimp.st" then
+          C_Simp.verify pgm opts
+        else if file.endsWith ".b3.st" || file.endsWith ".b3cst.st" then
+          let ast ← match B3.Verifier.programToB3AST pgm with
+            | Except.error msg => throw (IO.userError s!"Failed to convert to B3 AST: {msg}")
+            | Except.ok ast => pure ast
+          let solver ← B3.Verifier.createInteractiveSolver opts.solver
+          let reports ← B3.Verifier.programToSMT ast solver
+          for report in reports do
+            IO.println s!"\nProcedure: {report.procedureName}"
+            for (result, _) in report.results do
+              let marker := if result.result.isError then "✗" else "✓"
+              let desc := match result.result with
+                | .error .counterexample => "counterexample found"
+                | .error .unknown => "unknown"
+                | .error .refuted => "refuted"
+                | .success .verified => "verified"
+                | .success .reachable => "reachable"
+                | .success .reachabilityUnknown => "reachability unknown"
+              IO.println s!"  {marker} {desc}"
+          pure #[]
+        else
+          verify pgm inputCtx proceduresToVerify opts
+      catch e =>
+        println! f!"{e}"
+        IO.Process.exit 1
+      if opts.outputSarif then
+        if file.endsWith ".csimp.st" then
+          println! "SARIF output is not supported for C_Simp files (.csimp.st) because location metadata is not preserved during translation to Core."
+        else
+          let uri := Strata.Uri.file file
+          let files := Map.empty.insert uri inputCtx.fileMap
+          Core.Sarif.writeSarifOutput opts.checkMode files vcResults (file ++ ".sarif")
+      for vcResult in vcResults do
+        let posStr := Imperative.MetaData.formatFileRangeD vcResult.obligation.metadata (some inputCtx.fileMap)
+        println! f!"{posStr} [{vcResult.obligation.label}]: \
+                      {vcResult.formatOutcome}"
+      let success := vcResults.all Core.VCResult.isSuccess
+      if success && !opts.checkOnly then
+        println! f!"All {vcResults.size} goals passed."
+      else if success && opts.checkOnly then
+        println! f!"Skipping verification."
+      else
+        let provedGoalCount := (vcResults.filter Core.VCResult.isSuccess).size
+        let failedGoalCount := (vcResults.filter Core.VCResult.isNotSuccess).size
+        println! f!"Finished with {provedGoalCount} goals passed, {failedGoalCount} failed."
+        IO.Process.exit 1
+    | .error errors =>
+      for e in errors do
+        let msg ← e.toString
+        println! s!"Error: {msg}"
+      println! f!"Finished with {errors.size} errors."
+      IO.Process.exit 1
+
 def commandGroups : List CommandGroup := [
   { name := "Core"
-    commands := [checkCommand, toIonCommand, printCommand, diffCommand]
+    commands := [verifyCommand, checkCommand, toIonCommand, printCommand, diffCommand]
     commonFlags := [includeFlag] },
   { name := "Code Generation"
     commands := [javaGenCommand] },
@@ -1185,20 +1310,35 @@ private def parseArgs (cmdName : String)
   match cmdArgs with
   | arg :: cmdArgs =>
     if arg.startsWith "--" then
-      let flagName := (arg.drop 2).toString
+      let raw := (arg.drop 2).toString
+      -- Support --flag=value syntax by splitting on first '='
+      let (flagName, inlineValue) ← match raw.splitOn "=" with
+        | name :: value :: rest =>
+          if !rest.isEmpty then
+            exitCmdFailure cmdName s!"Invalid option format: {arg}. Values must not contain '='."
+          pure (name, some value)
+        | _ => pure (raw, none)
       match flagMap[flagName]? with
       | some flag =>
         match flag.takesArg with
         | .none =>
           parseArgs cmdName flagMap acc (pflags.insertFlag flagName Option.none) cmdArgs
         | .arg _ =>
-          let value :: cmdArgs := cmdArgs
-            | exitCmdFailure cmdName s!"Expected value after {arg}."
-          parseArgs cmdName flagMap acc (pflags.insertFlag flagName (some value)) cmdArgs
+          match inlineValue with
+          | some value =>
+            parseArgs cmdName flagMap acc (pflags.insertFlag flagName (some value)) cmdArgs
+          | none =>
+            let value :: cmdArgs := cmdArgs
+              | exitCmdFailure cmdName s!"Expected value after {arg}."
+            parseArgs cmdName flagMap acc (pflags.insertFlag flagName (some value)) cmdArgs
         | .repeat _ =>
-          let value :: cmdArgs := cmdArgs
-            | exitCmdFailure cmdName s!"Expected value after {arg}."
-          parseArgs cmdName flagMap acc (pflags.insertRepeated flagName value) cmdArgs
+          match inlineValue with
+          | some value =>
+            parseArgs cmdName flagMap acc (pflags.insertRepeated flagName value) cmdArgs
+          | none =>
+            let value :: cmdArgs := cmdArgs
+              | exitCmdFailure cmdName s!"Expected value after {arg}."
+            parseArgs cmdName flagMap acc (pflags.insertRepeated flagName value) cmdArgs
       | none =>
         exitCmdFailure cmdName s!"Unknown option {arg}."
     else
