@@ -678,13 +678,13 @@ def pyAnalyzeLaurelCommand : Command where
         s := s ++ s!"{locationPrefix}{vcResult.obligation.label}: \
                       {outcomeStr}{locationSuffix}\n"
       IO.println s
-    -- Output in SARIF format if requested
-    if outputSarif then
-      let files := match mfm with
-        | some (pyPath, fm) => Map.empty.insert (Strata.Uri.file pyPath) fm
-        | none => Map.empty
-      Core.Sarif.writeSarifOutput checkMode files vcResults (filePath ++ ".sarif")
-    printPyAnalyzeSummary vcResults classifier
+      -- Output in SARIF format if requested
+      if outputSarif then
+        let files := match mfm with
+          | some (pyPath, fm) => Map.empty.insert (Strata.Uri.file pyPath) fm
+          | none => Map.empty
+        Core.Sarif.writeSarifOutput checkMode files vcResults (filePath ++ ".sarif")
+      printPyAnalyzeSummary vcResults classifier
 
 def pyAnalyzeToGotoCommand : Command where
   name := "pyAnalyzeToGoto"
