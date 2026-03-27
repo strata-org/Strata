@@ -512,13 +512,37 @@ partial def translateExpr (ctx : TranslationContext) (e : Python.expr SourceRang
       | _ => throw (.unsupportedConstruct s!"Unary operator not yet supported: {repr op}" (toString (repr e)))
     return mkStmtExprMd (StmtExpr.StaticCall preludeOpnames [operandExpr])
 
-  -- JoinedStr (f-strings) - return first part until we have string concat
+  -- FormattedValue (f-string interpolation {expr}) - convert to string-typed Any
+  | .FormattedValue _ value _ _ =>
+    let ty ← inferExprType ctx value
+    let inner ← translateExpr ctx value
+    let asAny ← if isCompositeType ctx ty then
+        let fields := (ctx.classFieldHighType[ty]?.getD {}).toList
+        let dict ← fields.foldlM (fun acc (fname, fty) =>
+          return mkStmtExprMd (.StaticCall "DictStrAny_cons"
+            [mkStmtExprMd (.LiteralString fname),
+             ← wrapFieldInAny fty (mkStmtExprMd (.FieldSelect inner fname)), acc]))
+          (mkStmtExprMd (.StaticCall "DictStrAny_empty" []))
+        pure <| mkStmtExprMd (.StaticCall "from_ClassInstance"
+          [mkStmtExprMd (.LiteralString ty), dict])
+      else pure inner
+    return mkStmtExprMd (.StaticCall "to_string_any" [asAny])
+
+  -- JoinedStr (f-strings) - concatenate string parts via str.concat
   | .JoinedStr _ values =>
     if values.val.isEmpty then
-      return mkStmtExprMd (StmtExpr.LiteralString "")
+      return strToAny ""
     else
-      let first ← translateExpr ctx values.val[0]!
-      return first
+      let parts ← values.val.toList.mapM (translateExpr ctx ·)
+      let unwrap (e : StmtExprMd) := mkStmtExprMd (.StaticCall "Any..as_string!" [e])
+      let concat := parts.foldl (fun acc part =>
+        mkStmtExprMd (.PrimitiveOp .StrConcat [acc, unwrap part]))
+        (mkStmtExprMd (.LiteralString ""))
+      return mkStmtExprMd (.StaticCall "from_string" [concat])
+
+  -- Interpolation / TemplateStr (Python 3.14+ t-strings) - not yet supported
+  | .Interpolation .. => return mkStmtExprMd .Hole
+  | .TemplateStr .. => return mkStmtExprMd .Hole
 
   | .IfExp _ cond thenb elseb =>
     let condExpr ← translateExpr ctx cond
@@ -656,8 +680,10 @@ partial def inferExprType (ctx : TranslationContext) (e: Python.expr SourceRange
   -- Unary operations
   | .UnaryOp _ _ _ => return PyLauType.Any
 
-  -- JoinedStr (f-strings) - return first part until we have string concat
-  | .JoinedStr _ _ => return PyLauType.Any
+  -- JoinedStr (f-strings) produce strings
+  | .JoinedStr _ _ => return PyLauType.Str
+  -- FormattedValue produces string-typed Any
+  | .FormattedValue _ _ _ _ => return PyLauType.Str
 
   | .Call _ f args _ => getFunctionReturnType ctx f args.val
 
