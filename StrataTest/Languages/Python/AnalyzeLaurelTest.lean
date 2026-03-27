@@ -29,13 +29,14 @@ private meta def testDir : System.FilePath :=
 /-- Compile a Python source file to a `.python.st.ion` Ion file.
     Returns the path to the generated Ion file. -/
 private meta def compilePython
+    (pythonCmd : System.FilePath)
     (dialectFile : System.FilePath) (pyFile : System.FilePath)
     (outDir : System.FilePath) : IO System.FilePath := do
   let some stem := pyFile.fileStem
     | throw <| .userError s!"No stem for {pyFile}"
   let ionPath := outDir / s!"{stem}.python.st.ion"
   let spawnArgs : IO.Process.SpawnArgs := {
-    cmd := "python"
+    cmd := toString pythonCmd
     args := #["-m", "strata.gen", "py_to_strata",
               "--dialect", dialectFile.toString,
               pyFile.toString, ionPath.toString]
@@ -55,29 +56,32 @@ private meta def compilePython
 
 /-- Set up the test fixture: compile all servicelib modules and return the
     spec directory.  The dispatch and pyspec modules are resolved by name. -/
-private meta def setupFixture (_pythonCmd : System.FilePath)
+private meta def setupFixture (pythonCmd : System.FilePath)
     (outDir : System.FilePath) : IO Unit := do
   IO.FS.withTempFile fun _handle dialectFile => do
     IO.FS.writeBinFile dialectFile Python.Python.toIon
     -- Compile all servicelib modules (dispatch + individual services)
     match ← pySpecsDir testDir outDir dialectFile
         (modules := #["servicelib", "servicelib.Storage", "servicelib.Messaging"])
-        (warningOutput := .none) |>.toBaseIO with
+        (warningOutput := .none)
+        (pythonCmd := toString pythonCmd) |>.toBaseIO with
     | .ok () => pure ()
     | .error msg => throw <| IO.userError s!"pySpecsDir failed: {msg}"
 
 /-- Compile a test Python file to Ion format. -/
-private meta def compileTestScript (pyFile : System.FilePath)
+private meta def compileTestScript (pythonCmd : System.FilePath)
+    (pyFile : System.FilePath)
     (outDir : System.FilePath) : IO System.FilePath := do
   IO.FS.withTempFile fun _handle dialectFile => do
     IO.FS.writeBinFile dialectFile Python.Python.toIon
-    compilePython dialectFile pyFile outDir
+    compilePython pythonCmd dialectFile pyFile outDir
 
 /-- Run pyAnalyzeLaurel on a test script within the shared fixture. -/
 private meta def runAnalyze
+    (pythonCmd : System.FilePath)
     (tmpDir : System.FilePath) (scriptName : String)
     : IO (Except String Core.Program) := do
-  let testIon ← compileTestScript (testDir / scriptName) tmpDir
+  let testIon ← compileTestScript pythonCmd (testDir / scriptName) tmpDir
   let laurel ←
     match ← Strata.pyAnalyzeLaurel testIon.toString
         (dispatchModules := #["servicelib"])
@@ -94,9 +98,10 @@ private meta def runAnalyze
 
 /-- Run pyAnalyzeLaurel with inlining and verification, returning the formatted results. -/
 private meta def runAnalyzeAndVerify
+    (pythonCmd : System.FilePath)
     (tmpDir : System.FilePath) (scriptName : String)
     : IO (Except String (Array Core.VCResult)) := do
-  let testIon ← compileTestScript (testDir / scriptName) tmpDir
+  let testIon ← compileTestScript pythonCmd (testDir / scriptName) tmpDir
   let laurel ←
     match ← Strata.pyAnalyzeLaurel testIon.toString
         (dispatchModules := #["servicelib"])
@@ -186,9 +191,9 @@ private meta def testCases : List (String × Expected) := [
 ]
 
 /-- Run a single test case and return an error message on failure, or `none` on success. -/
-private meta def runTestCase (tmpDir : System.FilePath)
+private meta def runTestCase (pythonCmd : System.FilePath) (tmpDir : System.FilePath)
     (scriptName : String) (expected : Expected) : IO (Option String) := do
-  let result ← runAnalyze tmpDir scriptName
+  let result ← runAnalyze pythonCmd tmpDir scriptName
   match expected, result with
   | .success, .ok _ => return none
   | .success, .error msg =>
@@ -204,9 +209,9 @@ private meta def runTestCase (tmpDir : System.FilePath)
     if msg.startsWith pfx then return none
     else return some s!"{scriptName}: Expected error starting with:\n  {pfx}\nGot:\n  {msg}"
 
-#eval withPython fun _pythonCmd => do
+#eval withPython fun pythonCmd => do
   IO.FS.withTempDir fun tmpDir => do
-    setupFixture _pythonCmd tmpDir
+    setupFixture pythonCmd tmpDir
     -- Launch all tests concurrently, checking for duplicate filenames
     let mut seen : Std.HashSet String := {}
     let mut tasks : Array (String × Task (Except IO.Error (Option String))) := #[]
@@ -214,16 +219,16 @@ private meta def runTestCase (tmpDir : System.FilePath)
       if scriptName ∈ seen then
         throw <| IO.userError s!"Duplicate test filename: {scriptName}"
       seen := seen.insert scriptName
-      let task ← IO.asTask (runTestCase tmpDir scriptName expected)
+      let task ← IO.asTask (runTestCase pythonCmd tmpDir scriptName expected)
       tasks := tasks.push (scriptName, task)
     -- Composite/Any kind mismatch tests
     -- composite_as_any auto-resolves Storage via connect(); any_as_composite needs explicit pyspec
-    let task ← IO.asTask (runTestCase tmpDir
+    let task ← IO.asTask (runTestCase pythonCmd tmpDir
       "test_class_composite_as_any.py"
       (.failPrefix "Known limitation: Unsupported construct: Coercion from user-defined class"))
     tasks := tasks.push ("test_class_composite_as_any.py", task)
     let task ← IO.asTask do
-      let testIon ← compileTestScript (testDir / "test_class_any_as_composite.py") tmpDir
+      let testIon ← compileTestScript pythonCmd (testDir / "test_class_any_as_composite.py") tmpDir
       let laurel ←
         match ← Strata.pyAnalyzeLaurel testIon.toString
             (dispatchModules := #["servicelib"])
@@ -261,10 +266,10 @@ Expected output (when Python + z3 available):
   servicelib_Storage_Storage_put_item_assert(0)_9: ✔️ always true if reached (Key must not be empty)
 -/
 
-#eval withPython fun _pythonCmd => do
+#eval withPython fun pythonCmd => do
   IO.FS.withTempDir fun tmpDir => do
-    setupFixture _pythonCmd tmpDir
-    let result ← runAnalyzeAndVerify tmpDir
+    setupFixture pythonCmd tmpDir
+    let result ← runAnalyzeAndVerify pythonCmd tmpDir
       "test_precondition_violation.py"
     match result with
     | .error msg => throw <| IO.userError s!"Pipeline failed: {msg}"
@@ -285,10 +290,10 @@ path produces a `✖️ always false` result for the "Bucket must not be empty"
 assertion. This exercises the full pipeline with type alias resolution.
 -/
 
-#eval withPython fun _pythonCmd => do
+#eval withPython fun pythonCmd => do
   IO.FS.withTempDir fun tmpDir => do
-    setupFixture _pythonCmd tmpDir
-    let result ← runAnalyzeAndVerify tmpDir
+    setupFixture pythonCmd tmpDir
+    let result ← runAnalyzeAndVerify pythonCmd tmpDir
       "test_precondition_with_alias.py"
     match result with
     | .error msg => throw <| IO.userError s!"Pipeline failed: {msg}"

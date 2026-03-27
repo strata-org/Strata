@@ -30,6 +30,7 @@ private meta def testDir : System.FilePath :=
 
 /-- Compile a Python source file to Ion and return the path. -/
 private meta def compilePython
+    (pythonCmd : System.FilePath)
     (pyFile : System.FilePath) (outDir : System.FilePath)
     : IO System.FilePath := do
   IO.FS.withTempFile fun _handle dialectFile => do
@@ -38,7 +39,7 @@ private meta def compilePython
       | throw <| .userError s!"No stem for {pyFile}"
     let ionPath := outDir / s!"{stem}.python.st.ion"
     let spawnArgs : IO.Process.SpawnArgs := {
-      cmd := "python"
+      cmd := toString pythonCmd
       args := #["-m", "strata.gen", "py_to_strata",
                 "--dialect", dialectFile.toString,
                 pyFile.toString, ionPath.toString]
@@ -59,6 +60,7 @@ private meta def compilePython
 
 /-- Compile the dispatch pyspec and return the overload table. -/
 private meta def buildOverloadTable
+    (pythonCmd : System.FilePath)
     (outDir : System.FilePath) : IO OverloadTable := do
   IO.FS.withTempFile fun _handle dialectFile => do
     IO.FS.writeBinFile dialectFile Python.Python.toIon
@@ -66,7 +68,8 @@ private meta def buildOverloadTable
     let pyFile := testDir / "servicelib" / "__init__.py"
     match ← pySpecsDir testDir outDir dialectFile
         (modules := #["servicelib"])
-        (warningOutput := .none) |>.toBaseIO with
+        (warningOutput := .none)
+        (pythonCmd := toString pythonCmd) |>.toBaseIO with
     | .ok () => pure ()
     | .error msg =>
       throw <| .userError s!"pySpecsDir failed for {pyFile}: {msg}"
@@ -88,10 +91,11 @@ private meta def parseStmts (ionPath : System.FilePath)
 
 /-- Run resolveOverloads on a test file and return the module set. -/
 private meta def resolveFile
+    (pythonCmd : System.FilePath)
     (tbl : OverloadTable) (pyFile : System.FilePath)
     (outDir : System.FilePath)
     : IO (Std.HashSet String) := do
-  let ionPath ← compilePython pyFile outDir
+  let ionPath ← compilePython pythonCmd pyFile outDir
   let stmts ← parseStmts ionPath
   return (resolveOverloads tbl stmts).modules
 
@@ -126,9 +130,10 @@ private meta def testCases : List TestCase := [
 
 /-- Run a single test case and return an error message on failure. -/
 private meta def runTestCase
+    (pythonCmd : System.FilePath)
     (tbl : OverloadTable) (outDir : System.FilePath)
     (tc : TestCase) : IO (Option String) := do
-  let modules ← resolveFile tbl (testDir / tc.file) outDir
+  let modules ← resolveFile pythonCmd tbl (testDir / tc.file) outDir
   let expected : Std.HashSet String :=
     tc.expected.foldl (init := {}) fun s m => s.insert m
   if modules == expected then return none
@@ -137,9 +142,9 @@ private meta def runTestCase
   return some
     s!"{tc.file}: expected modules {exp}, got {got}"
 
-#eval withPython fun _pythonCmd => do
+#eval withPython fun pythonCmd => do
   IO.FS.withTempDir fun tmpDir => do
-    let tbl ← buildOverloadTable tmpDir
+    let tbl ← buildOverloadTable pythonCmd tmpDir
     -- Launch all tests concurrently
     let mut seen : Std.HashSet String := {}
     let mut tasks : Array (String × Task (Except IO.Error (Option String))) := #[]
@@ -147,7 +152,7 @@ private meta def runTestCase
       if tc.file ∈ seen then
         throw <| IO.userError s!"Duplicate test filename: {tc.file}"
       seen := seen.insert tc.file
-      let task ← IO.asTask (runTestCase tbl tmpDir tc)
+      let task ← IO.asTask (runTestCase pythonCmd tbl tmpDir tc)
       tasks := tasks.push (tc.file, task)
     -- Collect results
     let mut errors : Array String := #[]
