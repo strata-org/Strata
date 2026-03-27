@@ -449,9 +449,9 @@ def funcDeclToLaurel (procName : String) (func : FunctionDecl)
   let inputs ← allArgs.mapM argToParameter
   let retType ← specTypeToLaurelType func.returnType
   let outputs : List Parameter :=
-    match retType.val with
-    | .TVoid => []
-    | _ => [{ name := "result", type := retType }]
+    [{ name := "result", type := match retType.val with
+      | .TVoid => mkCore "Any"
+      | _ => retType }]
   if func.postconditions.size > 0 then
     reportError func.loc "Postconditions not yet supported"
   -- When preconditions exist, use TCore "Any" for all parameters and outputs
@@ -466,13 +466,7 @@ def funcDeclToLaurel (procName : String) (func : FunctionDecl)
           if a.default.isNone then some a.name else none)
       pure (anyInputs, anyOutputs, body)
     else
-      -- Opaque methods: add an Any return value so callers can assign
-      -- the result (the pyspec may declare NoneType even when the method
-      -- returns a response object).
-      let opaqueOutputs := if outputs.isEmpty && isMethod
-        then [{ name := "result", type := mkCore "Any" : Parameter }]
-        else outputs
-      pure (inputs, opaqueOutputs, Body.Opaque [] none [])
+      pure (inputs, outputs, Body.Opaque [] none [])
   return {
     name := procName
     inputs := inputs.toList
@@ -506,7 +500,7 @@ def classDefToLaurel (cls : ClassDef) : ToLaurelM Unit := do
     instanceProcedures := []
   })
   for method in cls.methods do
-    let proc ← funcDeclToLaurel (prefixedName ++ "_" ++ method.name) method (isMethod := true)
+    let proc ← funcDeclToLaurel (prefixedName ++ "@" ++ method.name) method (isMethod := true)
     pushProcedure proc
 
 /-- Convert a type definition to a Laurel composite type placeholder. -/

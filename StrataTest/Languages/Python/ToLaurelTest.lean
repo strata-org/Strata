@@ -249,7 +249,7 @@ info: Union type (None | foo.Bar) not yet supported in Laurel
 info: type MyClass
 type MyAlias
 procedure my_func(x:TInt, y:TString) returns(result:TBool)
-procedure MyClass_get_value() returns(result:TString)
+procedure MyClass@get_value() returns(result:TString)
 -/
 #guard_msgs in
 #eval runTest #[
@@ -277,8 +277,8 @@ procedure MyClass_get_value() returns(result:TString)
 /-! ## NoneType and void return -/
 
 /--
-info: procedure returns_none()
-procedure takes_none(x:TVoid)
+info: procedure returns_none() returns(result:TCore(Any))
+procedure takes_none(x:TVoid) returns(result:TCore(Any))
 -/
 #guard_msgs in
 #eval runTest #[
@@ -359,7 +359,7 @@ private def runDispatchTest (sigs : Array Signature) : IO Unit := do
 -- and a regular function.
 /--
 info: type SvcClient
-procedure SvcClient_do_thing(x:TString) returns(result:TInt)
+procedure SvcClient@do_thing(x:TString) returns(result:TInt)
 procedure helper() returns(result:TBool)
 dispatch create_client:
   "svc_a" -> mod.client.SvcClient

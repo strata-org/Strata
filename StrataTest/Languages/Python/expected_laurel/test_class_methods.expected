@@ -22,6 +22,7 @@ PFloorDiv_body_calls_Int.SafeDiv_2: ✅ pass (in prelude file)
 PFloorDiv_body_calls_Int.SafeDiv_3: ✅ pass (in prelude file)
 PAnd_body_calls_Any_to_bool_0: ✅ pass (in prelude file)
 POr_body_calls_Any_to_bool_0: ✅ pass (in prelude file)
+callElimAssert_requires_14: ✅ pass
 assert_assert(445)_calls_Any_to_bool_0: ✅ pass (at line 21, col 4)
 assert(445): ❓ unknown (at line 21, col 4)
 assert_assert(539)_calls_Any_to_bool_0: ✅ pass (at line 24, col 4)
@@ -33,5 +34,5 @@ callElimAssert_req_opt_name_none_or_str_5: ✅ pass (at line 30, col 4)
 callElimAssert_req_opt_name_none_or_bar_6: ✅ pass (at line 30, col 4)
 ite_cond_calls_Any_to_bool_0: ✅ pass (at line 32, col 0)
 
-DETAIL: 29 passed, 2 failed, 1 inconclusive
+DETAIL: 30 passed, 2 failed, 1 inconclusive
 RESULT: Failures found
