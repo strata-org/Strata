@@ -763,10 +763,21 @@ def verify (program : Program)
         let prog ← FilterProcedures.run prog procs
         let (_changed,prog) ← CallElim.callElim' prog
         let procsSet := Std.HashSet.ofList procs
-        let prog := { prog with decls := prog.decls.filter fun d =>
+        -- Strip preconditions from non-target functions so PrecondElim
+        -- does not generate WF-checking procedures for them.
+        let prog := { prog with decls := prog.decls.filterMap fun d =>
           match d with
-          | .proc p _ => p.header.noFilter || procsSet.contains (CoreIdent.toPretty p.header.name)
-          | _ => true }
+          | .proc p md =>
+            if procsSet.contains (CoreIdent.toPretty p.header.name) then some (.proc p md)
+            else none
+          | .func f md =>
+            if procsSet.contains f.name.name then some d
+            else some (.func { f with preconditions := [] } md)
+          | .recFuncBlock fs md =>
+            some (.recFuncBlock (fs.map fun f =>
+              if procsSet.contains f.name.name then f
+              else { f with preconditions := [] }) md)
+          | _ => some d }
         let prog ← runPrecondElim prog
         return prog
       let res := Transform.run program passes

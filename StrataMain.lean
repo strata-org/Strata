@@ -590,42 +590,34 @@ def pyAnalyzeLaurelCommand : Command where
             | _     => false }
       | _ => {}
 
-    -- Filter out prelude-originated results (precondition checks at call
-    -- sites whose metadata still points to the prelude file).  Prelude
-    -- correctness is checked once by the dedicated PreludeVerifyTest.
-    let isPreludeResult (vcResult : Core.VCResult) : Bool :=
-      match Imperative.getFileRange vcResult.obligation.metadata with
-      | some fr => match fr.file with | .file "" => true | _ => false
-      | none => false
-    let (preludeResults, userResults) := vcResults.partition isPreludeResult
-
-    -- Prelude failures are still fatal — report them prominently.
-    let preludeFailures := preludeResults.filter classifier.isFailure
-    if preludeFailures.size > 0 then
-      IO.println "\n==== Prelude Failures ===="
-      for r in preludeFailures do
-        IO.println s!"Assertion failed in prelude: {r.obligation.label}: {r.formatOutcome}"
-
     -- Print results
     if !laurelTranslateErrors.isEmpty then
       IO.println "\n==== Errors ===="
       for err in laurelTranslateErrors do
         IO.println err
 
+    -- Print results
     IO.println "\n==== Verification Results ===="
     let mut s := ""
-    for vcResult in userResults do
+    for vcResult in vcResults do
       let (locationPrefix, locationSuffix) := match Imperative.getFileRange vcResult.obligation.metadata with
         | some fr =>
           if fr.range.isNone then ("", "")
           else
             match mfm with
             | some (_, fm) =>
-              let pos := fm.toPosition fr.range.start
-              if classifier.isFailure vcResult then
-                (s!"Assertion failed at line {pos.line}, col {pos.column}: ", "")
-              else
-                ("", s!" (at line {pos.line}, col {pos.column})")
+              match fr.file with
+              | .file "" =>
+                if classifier.isFailure vcResult then
+                  (s!"Assertion failed in prelude file: ", "")
+                else
+                  ("", s!" (in prelude file)")
+              | .file path =>
+                let pos := fm.toPosition fr.range.start
+                if classifier.isFailure vcResult then
+                  (s!"Assertion failed at line {pos.line}, col {pos.column}: ", "")
+                else
+                  ("", s!" (at line {pos.line}, col {pos.column})")
             | none =>
               if classifier.isFailure vcResult then
                 (s!"Assertion failed: ", "")
@@ -642,7 +634,7 @@ def pyAnalyzeLaurelCommand : Command where
         | some (pyPath, fm) => Map.empty.insert (Strata.Uri.file pyPath) fm
         | none => Map.empty
       Core.Sarif.writeSarifOutput checkMode files vcResults (filePath ++ ".sarif")
-    printPyAnalyzeSummary userResults classifier
+    printPyAnalyzeSummary vcResults classifier
 
 def pyAnalyzeToGotoCommand : Command where
   name := "pyAnalyzeToGoto"
