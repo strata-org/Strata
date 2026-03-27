@@ -24,7 +24,7 @@ PAnd_body_calls_Any_to_bool_0: ✅ pass (in prelude file)
 POr_body_calls_Any_to_bool_0: ✅ pass (in prelude file)
 Assertion failed at line 2, col 4: ite_cond_calls_Any_to_bool_0: ❌ fail
 ite_cond_calls_Any_to_bool_0: ✅ pass (at line 4, col 4)
-Assertion failed at line 6, col 4: ite_cond_calls_Any_to_bool_0: ❌ fail
+ite_cond_calls_Any_to_bool_0: ❓ unknown (at line 6, col 4)
 assert_assert(225)_calls_Any_to_bool_0: ✅ pass (at line 13, col 4)
 assert(225): ❓ unknown (at line 13, col 4)
 assert_assert(302)_calls_Any_to_bool_0: ✅ pass (at line 16, col 4)
@@ -35,5 +35,5 @@ assert_assert(444)_calls_Any_to_bool_0: ✅ pass (at line 22, col 4)
 assert(444): ❓ unknown (at line 22, col 4)
 ite_cond_calls_Any_to_bool_0: ✅ pass (at line 24, col 0)
 
-DETAIL: 28 passed, 2 failed, 4 inconclusive
+DETAIL: 28 passed, 1 failed, 5 inconclusive
 RESULT: Failures found
