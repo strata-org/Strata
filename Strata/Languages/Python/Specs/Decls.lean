@@ -392,6 +392,10 @@ structure ClassDef where
   classVars : Array ClassVariable := #[]
   subclasses : Array ClassDef := #[]
   methods : Array FunctionDecl
+  /-- When true, the spec is assumed to list every method the class exposes.
+      Calls to unlisted methods are flagged as "Unknown method".
+      Defaults to false. -/
+  exhaustive : Bool := false
 deriving Inhabited
 
 structure TypeDef where
