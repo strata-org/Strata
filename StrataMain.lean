@@ -609,6 +609,8 @@ def pyAnalyzeLaurelCommand : Command where
     let checkMode ← parseCheckMode pflags
     let checkLevel ← parseCheckLevel pflags
     let uniqueBoundNames := pflags.getBool "unique-bound-names"
+    -- Split prelude / user procedure names at FIRST_END_MARKER
+    let (preludeNames, userProcNames) := Strata.splitProcNames coreProgram
     let vcResults ←
       if incremental then
         verifyIncremental coreProgram.decls pySourceOpt
@@ -624,7 +626,8 @@ def pyAnalyzeLaurelCommand : Command where
           | .none => baseOptions
         let vcResults ←
           match ← Core.verifyProgram coreProgram options
-                    (moreFns := Strata.Python.ReFactory) |>.toBaseIO with
+                    (moreFns := Strata.Python.ReFactory)
+                    (proceduresToVerify := some userProcNames) |>.toBaseIO with
           | .ok r => pure r
           | .error msg => exitInternalError msg
         pure vcResults
