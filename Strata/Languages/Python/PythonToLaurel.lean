@@ -846,7 +846,9 @@ partial def translateCall (ctx : TranslationContext)
     | .Attribute range _ _ _ => range
     | .Name range _ _ => range
     | _ => .none
-  let funcDecl := ctx.functionSignatures.find? fun x => x.name == funcName
+  let funcDecl := ctx.functionSignatures.find? fun x => (x.name == funcName || x.name == funcName ++ "@__init__")
+  if funcDecl.isNone && kwords.length > 0 then
+    throwUserError f.ann s!"Undeclared function '{funcName}' called with keyword args"
   -- Emit the final call, handling Name vs Attribute dispatch and transparent procedures.
   let emitCall (callArgs : List StmtExprMd) : Except TranslationError StmtExprMd := do
     let mkCall (name : String) := mkStmtExprMd (StmtExpr.StaticCall name callArgs)
@@ -1553,7 +1555,11 @@ def translateMethod (ctx : TranslationContext) (className : String)
           match arg with
           | .mk_arg _ paramName _paramAnnotation _ =>
             inputs := inputs ++ [{name := paramName.val, type := AnyTy}]
-
+    match args with
+      | .mk_arguments _ _ _ _ _ _ kwargs _ =>
+          if kwargs.val.isSome then
+            let paramType := mkCoreType PyLauType.DictStrAny
+            inputs:= inputs ++ [{ name := "kwargs", type := paramType }]
     -- Translate return type
     -- All methods return Any (void methods return Any via from_none)
     let outputs : List Parameter := [{name := "LaurelResult", type := AnyTy}]
@@ -1571,7 +1577,7 @@ def translateMethod (ctx : TranslationContext) (className : String)
     -- non-self input parameter to "$in_<name>" and prepend a local variable
     -- declaration  var <name> := $in_<name>  so the body works with a
     -- freely-modifiable local copy.
-    let nonSelfParams := inputs.filter (fun p => p.name.text != "self")
+    let nonSelfParams := inputs.filter (fun p => p.name.text != "self" && p.name.text != "kwargs")
     let renamedInputs := inputs.map fun p =>
       if p.name.text == "self" then p
       else { p with name := mkId ("$in_" ++ p.name.text) }
@@ -1616,7 +1622,7 @@ def extractFieldsFromInit (ctx : TranslationContext) (initBody : Array (Python.s
 
 /-- Translate a Python class to a Laurel CompositeType -/
 def translateClass (ctx : TranslationContext) (classStmt : Python.stmt SourceRange)
-    : Except TranslationError (CompositeType × Array Procedure) := do
+    : Except TranslationError (CompositeType × Array Procedure × List PythonFunctionDecl) := do
   match classStmt with
   | .ClassDef _ className _bases _ ⟨_, body⟩ _ _ =>
     let className := className.val
@@ -1657,7 +1663,7 @@ def translateClass (ctx : TranslationContext) (classStmt : Python.stmt SourceRan
       extending := []  -- No inheritance support for now
       fields := fields
       instanceProcedures := [] -- Laurel does not yet support instance procedures, so treat them as if they were static
-    }, instanceProcedures)
+    }, instanceProcedures, classFunDecls)
   | _ => throw (.internalError "Expected ClassDef")
 
 def getFunctions (decls: List Core.Decl) : List String :=
@@ -1836,6 +1842,7 @@ def pythonToLaurel' (info : PreludeInfo)
   let mut compositeTypes : Array TypeDefinition := #[.Composite pyErrorTy]
   compositeTypeNames := compositeTypeNames.insert "PythonError"
   let mut classFieldHighType : Std.HashMap String (Std.HashMap String HighType) := {}
+  let mut allClassFuncDecls : List PythonFunctionDecl := []
   for stmt in body do
     match stmt with
     | .ClassDef _ _ _ _ _ _ _ =>
@@ -1844,12 +1851,14 @@ def pythonToLaurel' (info : PreludeInfo)
         (init := info.importedSymbols) fun m name =>
           m.insert name (ImportedSymbol.compositeType name)
       let initCtx : TranslationContext := {
+        functionSignatures := info.functionSignatures
         preludeTypes := info.types,
         importedSymbols := localSymbols,
         classFieldHighType := classFieldHighType,
         filePath := filePath
       }
-      let (composite, instanceProcedures) ← translateClass initCtx stmt
+      let (composite, instanceProcedures, classFuncDecls) ← translateClass initCtx stmt
+      allClassFuncDecls := allClassFuncDecls ++ classFuncDecls
       procedures := procedures ++ instanceProcedures
       compositeTypes := compositeTypes.push <| .Composite composite
       compositeTypeNames := compositeTypeNames.insert composite.name.text
@@ -1868,7 +1877,7 @@ def pythonToLaurel' (info : PreludeInfo)
   | _ =>
   {
     currentClassName := none,
-    functionSignatures := info.functionSignatures
+    functionSignatures := info.functionSignatures ++ allClassFuncDecls
     preludeTypes := info.types,
     userFunctions := userFunctions,
     classFieldHighType := classFieldHighType,
