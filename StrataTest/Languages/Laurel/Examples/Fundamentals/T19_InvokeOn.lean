@@ -20,6 +20,11 @@ procedure PAndQ(x: int)
   invokeOn P(x)
   ensures P(x) && Q(x);
 
+function assertP(x: int): int requires P(x);
+function needsPAndQsInvoke(): int {
+  assertP(3)
+};
+
 // The axiom fires because P(x) appears in the goal.
 procedure fireAxiomUsingPattern(x: int) {
   assert P(x)
