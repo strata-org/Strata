@@ -80,7 +80,50 @@ def AssertValidInProcedure
 
     2. Postcondition: When the verification statement terminates from a `ProcEnvWF`
        initial environment with `hasFailure = false`, every non-free
-       postcondition holds and `hasFailure` stays `false`. -/
+       postcondition holds and `hasFailure` stays `false`.
+
+    Note that this is partial correctness: if the program has
+    an infinite loop, the postcondition considered to be satisfied. Since total
+    correctness is a conjunction of partial correctness and termination, having
+    partial correctness-only definition here is useful.
+
+    A possibly more succinct style of ProcedureCorrect is using Hoare triple
+    (`Hoare.Triple` in Specification.lean). Since `Hoare.Triple` also uses
+    partial correctness, this seems natural. However, there is a very subtle
+    issue due to the fact that programs can also have `assert`s in the middle
+    of procedures, which leads `Hoare.Triple` to too weak notion to use for us.
+
+    For example, let's consider this program:
+
+    ```
+    procedure P()
+    spec { ensures false; }
+    { while true {};
+    };
+    ```
+
+    Since the program iterates indefinitely, the postcondition is considered
+    met in our partial correctness definition; hence the contract is true.
+    This is OK.
+
+    However, if we slightly extend the body of P to include `assert false`:
+
+    ```
+    procedure P()
+    spec { ensures false; }
+    { assert false; // -- A
+      while true {};
+    };
+    ```
+
+    We know that the assert A does not hold. However, if we use `Hoare.Triple` which
+    inspects asserts and postconditions *only if the code terminates*,
+    we end up accepting this procedure P as 'correct'.
+
+    Therefore, we define ProcedureCorrect as a conjunction of
+    (1) explicit inspection of validity of asserts in the the body, and
+    (2) a predicate stating that the postcondition holds.
+-/
 def ProcedureCorrect (proc : Procedure) (p : Program) (verifyStmt : Statement) : Prop :=
   (∀ a, AssertValidInProcedure π φ proc verifyStmt a) ∧
   (WF.WFProcedureProp p proc →

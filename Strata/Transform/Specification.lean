@@ -167,7 +167,11 @@ namespace Hoare
     Note that for this reason `hoareTriple_implies_assertValid` therefore relates
     `Triple` only to the *postcondition* assertion in a `PredicatedStmt`,
     not to assertions inside the body, whereas `allAssertsValid_implies_hoareTriple`
-    relates all asserts in the `PreicatedStmt` to `Triple`. -/
+    relates all asserts in the `PredicatedStmt` to `Triple`.
+
+    TODO: We will want to define Triple for total correctness. It will be useful
+    when proving preservation of termination after program transformation.
+-/
 def Triple
     (Pre : Env P → Prop) (s : L.StmtT) (Post : Env P → Prop) : Prop :=
   ∀ (ρ₀ ρ' : Env P),
