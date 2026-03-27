@@ -35,27 +35,9 @@ assert_name_is_foo: ✅ pass (in prelude file)
 assert_opt_name_none_or_str: ✅ pass (in prelude file)
 assert_opt_name_none_or_bar: ✅ pass (in prelude file)
 ensures_maybe_except_none: ✅ pass (in prelude file)
-callElimAssert_requires_0_13: ✅ pass (at line 12, col 4)
-callElimAssert_requires_1_14: ✅ pass (at line 12, col 4)
-callElimAssert_requires_2_15: ✅ pass (at line 12, col 4)
-callElimAssert_requires_0_4: ✅ pass (at line 15, col 4)
-callElimAssert_requires_1_5: ✅ pass (at line 15, col 4)
-callElimAssert_requires_2_6: ✅ pass (at line 15, col 4)
-callElimAssert_requires_0_13: ✅ pass (at line 12, col 4)
-callElimAssert_requires_1_14: ✅ pass (at line 12, col 4)
-callElimAssert_requires_2_15: ✅ pass (at line 12, col 4)
-callElimAssert_requires_0_4: ✅ pass (at line 15, col 4)
-callElimAssert_requires_1_5: ✅ pass (at line 15, col 4)
-callElimAssert_requires_2_6: ✅ pass (at line 15, col 4)
 Assertion failed at line 9, col 4: callElimAssert_requires_0_22: ❌ fail
 callElimAssert_requires_1_23: ✅ pass (at line 9, col 4)
 callElimAssert_requires_2_24: ✅ pass (at line 9, col 4)
-callElimAssert_requires_0_13: ✅ pass (at line 12, col 4)
-callElimAssert_requires_1_14: ✅ pass (at line 12, col 4)
-callElimAssert_requires_2_15: ✅ pass (at line 12, col 4)
-callElimAssert_requires_0_4: ✅ pass (at line 15, col 4)
-callElimAssert_requires_1_5: ✅ pass (at line 15, col 4)
-callElimAssert_requires_2_6: ✅ pass (at line 15, col 4)
 
-DETAIL: 55 passed, 1 failed, 0 inconclusive
+DETAIL: 37 passed, 1 failed, 0 inconclusive
 RESULT: Failures found
