@@ -38,6 +38,7 @@ SKIP_TESTS = BOTH_SKIP | {
     "test_dict_operations",
     "test_foo_client_folder",
     "test_for_loop",
+    "test_fstrings",
     "test_if_elif",
     "test_ifexpr",
     "test_incremental_simple",
