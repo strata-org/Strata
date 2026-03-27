@@ -762,7 +762,15 @@ def verify (program : Program)
       let passes := fun prog => do
         let prog ← FilterProcedures.run prog procs
         let (_changed,prog) ← CallElim.callElim' prog
-        let prog ← FilterProcedures.run prog procs
+        -- After call elimination, contracts are inlined so non-target
+        -- procedure bodies are no longer needed.  Drop every procedure
+        -- not in the target list so PrecondElim only generates VCs for
+        -- the procedures we were asked to verify.
+        let procsSet := Std.HashSet.ofList procs
+        let prog := { prog with decls := prog.decls.filter fun d =>
+          match d with
+          | .proc p _ => p.header.noFilter || procsSet.contains (CoreIdent.toPretty p.header.name)
+          | _ => true }
         let prog ← runPrecondElim prog
         return prog
       let res := Transform.run program passes
