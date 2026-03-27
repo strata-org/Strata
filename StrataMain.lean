@@ -645,38 +645,39 @@ def pyAnalyzeLaurelCommand : Command where
             | .ok o => o.alwaysFalseAndReachable
             | _     => false }
       | _ => {}
-    -- Print results
-    IO.println "\n==== Verification Results ===="
-    let mut s := ""
-    for vcResult in vcResults do
-      let (locationPrefix, locationSuffix) := match Imperative.getFileRange vcResult.obligation.metadata with
-        | some fr =>
-          if fr.range.isNone then ("", "")
-          else
-            match mfm with
-            | some (_, fm) =>
-              match fr.file with
-              | .file "" =>
+    -- Print results (non-incremental only; incremental prints per-procedure above)
+    if !incremental then do
+      IO.println "\n==== Verification Results ===="
+      let mut s := ""
+      for vcResult in vcResults do
+        let (locationPrefix, locationSuffix) := match Imperative.getFileRange vcResult.obligation.metadata with
+          | some fr =>
+            if fr.range.isNone then ("", "")
+            else
+              match mfm with
+              | some (_, fm) =>
+                match fr.file with
+                | .file "" =>
+                  if classifier.isFailure vcResult then
+                    (s!"Assertion failed in prelude file: ", "")
+                  else
+                    ("", s!" (in prelude file)")
+                | .file path =>
+                  let pos := fm.toPosition fr.range.start
+                  if classifier.isFailure vcResult then
+                    (s!"Assertion failed at line {pos.line}, col {pos.column}: ", "")
+                  else
+                    ("", s!" (at line {pos.line}, col {pos.column})")
+              | none =>
                 if classifier.isFailure vcResult then
-                  (s!"Assertion failed in prelude file: ", "")
+                  (s!"Assertion failed: ", "")
                 else
-                  ("", s!" (in prelude file)")
-              | .file path =>
-                let pos := fm.toPosition fr.range.start
-                if classifier.isFailure vcResult then
-                  (s!"Assertion failed at line {pos.line}, col {pos.column}: ", "")
-                else
-                  ("", s!" (at line {pos.line}, col {pos.column})")
-            | none =>
-              if classifier.isFailure vcResult then
-                (s!"Assertion failed: ", "")
-              else
-                ("", "")
-        | none => ("", "")
-      let outcomeStr := vcResult.formatOutcome
-      s := s ++ s!"{locationPrefix}{vcResult.obligation.label}: \
-                    {outcomeStr}{locationSuffix}\n"
-    IO.println s
+                  ("", "")
+          | none => ("", "")
+        let outcomeStr := vcResult.formatOutcome
+        s := s ++ s!"{locationPrefix}{vcResult.obligation.label}: \
+                      {outcomeStr}{locationSuffix}\n"
+      IO.println s
     -- Output in SARIF format if requested
     if outputSarif then
       let files := match mfm with
