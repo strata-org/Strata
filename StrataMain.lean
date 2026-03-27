@@ -6,7 +6,11 @@
 
 -- Executable with utilities for working with Strata files.
 import Strata.DDM.Integration.Java.Gen
+import Strata.Languages.Core.Verifier
 import Strata.Languages.Core.SarifOutput
+import Strata.Languages.C_Simp.Verify
+import Strata.Languages.B3.Verifier.Program
+import Strata.Util.IO
 import Strata.Languages.Laurel.Grammar.ConcreteToAbstractTreeTranslator
 import Strata.Languages.Laurel.LaurelToCoreTranslator
 import Strata.Languages.Python.Python
@@ -29,20 +33,53 @@ open Strata
 
 open Core (VerifyOptions VerboseMode VerificationMode CheckLevel)
 
+/-! ## Exit codes
+
+All `strata` subcommands use a common exit code scheme:
+
+| Code | Category           | Meaning                                                   |
+|------|--------------------|-----------------------------------------------------------|
+| 0    | Success            | Analysis passed, inconclusive, or `--no-solve` completed.  |
+| 1    | User error         | Bad input: invalid arguments, malformed source, etc.      |
+| 2    | Failures found     | Analysis completed and found failures.                    |
+| 3    | Internal error     | Tool bug, unexpected solver result, or translation crash. |
+| 4    | Known limitation   | Intentionally unsupported language construct.             |
+
+Codes 1–2 are **user-actionable** (fix the input or the code under analysis).
+Codes 3–4 are **tool-side** (report as a bug or wait for support). -/
+
+namespace ExitCode
+  def userError        : UInt8 := 1
+  def failuresFound    : UInt8 := 2
+  def internalError    : UInt8 := 3
+  def knownLimitation  : UInt8 := 4
+end ExitCode
+
 def exitFailure {α} (message : String) (hint : String := "strata --help") : IO α := do
   IO.eprintln s!"Exception: {message}\n\nRun {hint} for additional help."
-  IO.Process.exit 1
+  IO.Process.exit ExitCode.userError
 
-/-- Exit with code 1 for user code errors (detected bugs in the Python source). -/
-def exitUserCodeError {α} (message : String) : IO α := do
+/-- Exit with code 1 for user errors (bad input, malformed source, etc.). -/
+def exitUserError {α} (message : String) : IO α := do
   IO.eprintln s!"❌ {message}"
-  IO.Process.exit 1
+  IO.Process.exit ExitCode.userError
 
-/-- Exit with code 2 for internal errors (tool limitations or crashes). -/
+/-- Exit with code 2 for analysis failures found. -/
+def exitFailuresFound {α} (message : String) : IO α := do
+  IO.eprintln s!"Failures found: {message}"
+  IO.Process.exit ExitCode.failuresFound
+
+/-- Exit with code 3 for internal errors (tool limitations or crashes). -/
 def exitInternalError {α} (message : String) : IO α := do
   IO.eprintln s!"Exception: {message}"
-  IO.Process.exit 2
+  IO.Process.exit ExitCode.internalError
 
+/-- Exit with code 4 for known limitations (unsupported constructs). -/
+def exitKnownLimitation {α} (message : String) : IO α := do
+  IO.eprintln s!"Known limitation: {message}"
+  IO.Process.exit ExitCode.knownLimitation
+
+/-- Like `exitFailure` but tailors the help hint to a specific subcommand. -/
 def exitCmdFailure {α} (cmdName : String) (message : String) : IO α :=
   exitFailure message (hint := s!"strata {cmdName} --help")
 
@@ -176,7 +213,7 @@ def printCommand : Command where
     | .dialect d =>
       let ld ← searchPath.getLoaded
       let .isTrue mem := inferInstanceAs (Decidable (d.name ∈ ld.dialects))
-        | exitFailure "Internal error reading file."
+        | exitInternalError "Internal error reading file."
       IO.print <| ld.dialects.format d.name mem
     | .program pgm =>
       IO.print <| toString pgm
@@ -307,7 +344,7 @@ def pyAnalyzeCommand : Command where
     if verbose then
       IO.print newPgm
     match (Core.inlineProcedures newPgm ⟨ .some (λ name _ => name ≠ "main") ⟩) with
-    | .error e => panic! e
+    | .error e => exitInternalError e
     | .ok newPgm =>
       if verbose then
         IO.println "Inlined: "
@@ -378,11 +415,11 @@ def pyAnalyzeCommand : Command where
 
 /-! ### pyAnalyzeLaurel result helpers
 
-All output uses two structured lines on stdout:
+The `pyAnalyzeLaurel` command emits two structured lines on stdout:
 - `RESULT: <category>` — machine-readable category, always the last line.
 - `DETAIL: <detail>`   — human-readable context (error message or VC counts).
 
-Exit codes: 1 = user python error, 2 = internal error, 3 = failures found, 4 = known limitation.
+Exit codes follow the common scheme (see `ExitCode` above).
 A successful run exits 0 with `RESULT: Analysis success` or `RESULT: Inconclusive`. -/
 
 /-- Determines which VC results count as successes and which count as failures
@@ -401,20 +438,20 @@ private def printPyAnalyzeResult (category : String) (detail : String) : IO Unit
   IO.println s!"RESULT: {category}"
 
 private def exitPyAnalyzeUserError {α} (message : String) : IO α := do
-  printPyAnalyzeResult "User python error" message
-  IO.Process.exit 1
-
-private def exitPyAnalyzeInternalError {α} (message : String) : IO α := do
-  printPyAnalyzeResult "Internal error" message
-  IO.Process.exit 2
+  printPyAnalyzeResult "User error" message
+  IO.Process.exit ExitCode.userError
 
 private def exitPyAnalyzeFailuresFound {α} (detail : String) : IO α := do
   printPyAnalyzeResult "Failures found" detail
-  IO.Process.exit 3
+  IO.Process.exit ExitCode.failuresFound
+
+private def exitPyAnalyzeInternalError {α} (message : String) : IO α := do
+  printPyAnalyzeResult "Internal error" message
+  IO.Process.exit ExitCode.internalError
 
 private def exitPyAnalyzeKnownLimitation {α} (message : String) : IO α := do
   printPyAnalyzeResult "Known limitation" message
-  IO.Process.exit 4
+  IO.Process.exit ExitCode.knownLimitation
 
 /-- Print the final RESULT/DETAIL lines based on solver outcomes.
     Always called on successful pipeline completion (as opposed to the
@@ -458,6 +495,7 @@ def pyAnalyzeLaurelCommand : Command where
   name := "pyAnalyzeLaurel"
   args := [ "file" ]
   flags := [{ name := "verbose", help := "Enable verbose output." },
+            { name := "no-solve", help := "Generate SMT-Lib files but do not invoke the solver." },
             checkModeFlag, checkLevelFlag,
             { name := "spec-dir",
               help := "Directory containing compiled PySpec Ion files.",
@@ -550,12 +588,10 @@ def pyAnalyzeLaurelCommand : Command where
     let pyspecFiles := pflags.getRepeated "pyspec"
     let coreProgram ←
       if pyspecFiles.size > 0 then
-        match Core.Transform.runProgram (targetProcList := .none)
-              (Core.ProcedureInlining.inlineCallCmd
-                (doInline := λ name _ => name ≠ "__main__" && !preludeNames.contains name))
-              coreProgram .emp with
-        | ⟨.error e, _⟩ => exitPyAnalyzeInternalError s!"Inlining failed: {e}"
-        | ⟨.ok (_, inlined), _⟩ => do
+        match Core.inlineProcedures coreProgram
+              ⟨.some (fun name _ => name ≠ "__main__" && !preludeNames.contains name)⟩ with
+        | .error e => exitPyAnalyzeInternalError s!"Inlining failed: {e}"
+        | .ok inlined => do
           if verbose then
             IO.println "\n==== Core Program (after inlining) ===="
             IO.print inlined
@@ -568,12 +604,20 @@ def pyAnalyzeLaurelCommand : Command where
     -- Verify using Core verifier
     let checkMode ← parseCheckMode pflags
     let checkLevel ← parseCheckLevel pflags
+    let noSolve := pflags.getBool "no-solve"
+    if noSolve && (pflags.getString "vc-directory").isNone && keepDir.isNone then
+      exitCmdFailure "pyAnalyzeLaurel"
+        "--no-solve requires --vc-directory or \
+         --keep-all-files to specify where SMT \
+         files are stored."
     let uniqueBoundNames := pflags.getBool "unique-bound-names"
     let baseOptions : VerifyOptions :=
       { VerifyOptions.default with
         stopOnFirstError := false, verbose := .quiet, solver := Core.defaultSolver,
         removeIrrelevantAxioms := .Precise,
         checkMode := checkMode, checkLevel := checkLevel,
+        skipSolver := noSolve,
+        alwaysGenerateSMT := noSolve,
         uniqueBoundNames := uniqueBoundNames }
     let options : VerifyOptions := match pflags.getString "vc-directory" with
       | .some dir => { baseOptions with vcDirectory := some (dir : System.FilePath) }
@@ -656,26 +700,23 @@ def pyAnalyzeToGotoCommand : Command where
     let bpgm := Strata.pythonToCore Strata.Python.coreSignatures stmts preludePgm sourcePathForMetadata
     let sourceText := pySourceOpt.map (·.2)
     let newPgm : Core.Program := { decls := preludePgm.decls ++ bpgm.decls }
-    match Core.Transform.runProgram (targetProcList := .none)
-          (Core.ProcedureInlining.inlineCallCmd
-            (doInline := λ name _ => name ≠ "main"))
-          newPgm .emp with
-    | ⟨.error e, _⟩ => panic! e
-    | ⟨.ok (_changed, newPgm), _⟩ =>
+    match Core.inlineProcedures newPgm ⟨.some (fun name _ => name ≠ "main")⟩ with
+    | .error e => exitInternalError e
+    | .ok newPgm =>
       -- Type-check the full program (registers Python types like ExceptOrNone)
       let Ctx := { Lambda.LContext.default with functions := Strata.Python.PythonFactory, knownTypes := Core.KnownTypes }
       let Env := Lambda.TEnv.default
       let (tcPgm, _) ← match Core.Program.typeCheck Ctx Env newPgm with
         | .ok r => pure r
-        | .error e => panic! s!"{e.format none}"
+        | .error e => exitInternalError s!"{e.format none}"
       -- Find the main procedure
       let some mainDecl := tcPgm.decls.find? fun d =>
           match d with
           | .proc p _ => Core.CoreIdent.toPretty p.header.name == "main"
           | _ => false
-        | panic! "No main procedure found"
+        | exitInternalError "No main procedure found"
       let some p := mainDecl.getProc?
-        | panic! "main is not a procedure"
+        | exitInternalError "main is not a procedure"
       -- Translate procedure to GOTO (mirrors CoreToGOTO.transformToGoto post-typecheck logic)
       let baseName := deriveBaseName filePath
       let procName := Core.CoreIdent.toPretty p.header.name
@@ -684,11 +725,11 @@ def pyAnalyzeToGotoCommand : Command where
         | .distinct name es _ => some (name, es) | _ => none
       match procedureToGotoCtx Env p sourceText (axioms := axioms) (distincts := distincts)
             (varTypes := tcPgm.getVarTy?) with
-      | .error e => panic! s!"{e}"
+      | .error e => exitInternalError s!"{e}"
       | .ok (ctx, liftedFuncs) =>
         let extraSyms ← match collectExtraSymbols tcPgm with
           | .ok s => pure (Lean.toJson s)
-          | .error e => panic! s!"{e}"
+          | .error e => exitInternalError s!"{e}"
         let (symtab, goto) ← emitProcWithLifted Env procName ctx liftedFuncs extraSyms
               (moduleName := baseName)
         let symTabFile := s!"{baseName}.symtab.json"
@@ -945,7 +986,7 @@ def laurelAnalyzeToGotoCommand : Command where
         let Env := Lambda.TEnv.default
         let (tcPgm, _) ← match Core.Program.typeCheck Ctx Env coreProgram with
           | .ok r => pure r
-          | .error e => panic! s!"{e.format none}"
+          | .error e => exitInternalError s!"{e.format none}"
         let procs := tcPgm.decls.filterMap fun d => d.getProc?
         let funcs := tcPgm.decls.filterMap fun d =>
           match d.getFunc? with
@@ -955,11 +996,11 @@ def laurelAnalyzeToGotoCommand : Command where
               && name != "Int.DivT" && name != "Int.ModT"
             then some f else none
           | none => none
-        if procs.isEmpty && funcs.isEmpty then panic! "No procedures or functions found"
+        if procs.isEmpty && funcs.isEmpty then exitInternalError "No procedures or functions found"
         let baseName := deriveBaseName path.toString
         let typeSyms ← match collectExtraSymbols tcPgm with
           | .ok s => pure s
-          | .error e => panic! s!"{e}"
+          | .error e => exitInternalError s!"{e}"
         let typeSymsJson := Lean.toJson typeSyms
         let sourceText := some content
         let axioms := tcPgm.decls.filterMap fun d => d.getAxiom?
@@ -972,7 +1013,7 @@ def laurelAnalyzeToGotoCommand : Command where
           let procName := Core.CoreIdent.toPretty p.header.name
           match procedureToGotoCtx Env p (sourceText := sourceText) (axioms := axioms) (distincts := distincts)
                 (varTypes := tcPgm.getVarTy?) with
-          | .error e => panic! s!"{e}"
+          | .error e => exitInternalError s!"{e}"
           | .ok (ctx, liftedFuncs) =>
             allLiftedFuncs := allLiftedFuncs ++ liftedFuncs
             let json ← IO.ofExcept (CoreToGOTO.CProverGOTO.Context.toJson procName ctx)
@@ -988,7 +1029,7 @@ def laurelAnalyzeToGotoCommand : Command where
         for f in funcs ++ allLiftedFuncs do
           let funcName := Core.CoreIdent.toPretty f.name
           match functionToGotoCtx Env f with
-          | .error e => panic! s!"{e}"
+          | .error e => exitInternalError s!"{e}"
           | .ok ctx =>
             let json ← IO.ofExcept (CoreToGOTO.CProverGOTO.Context.toJson funcName ctx)
             match json.symtab with
@@ -1103,9 +1144,130 @@ structure CommandGroup where
   commands : List Command
   commonFlags : List Flag := []
 
+def verifyCommand : Command where
+  name := "verify"
+  args := [ "file" ]
+  flags := [
+    { name := "verbose", help := "Print extra information during analysis." },
+    { name := "check", help := "Process up until SMT generation, but don't solve." },
+    { name := "type-check", help := "Exit after semantic dialect's type inference/checking." },
+    { name := "parse-only", help := "Exit after DDM parsing and type checking." },
+    { name := "stop-on-first-error", help := "Exit after the first verification error." },
+    { name := "unique-bound-names", help := "Use globally unique names for quantifier-bound variables." },
+    { name := "sarif", help := "Output results in SARIF format to <file>.sarif." },
+    { name := "output-format", help := "Output format (only 'sarif' supported).", takesArg := .arg "format" },
+    { name := "vc-directory", help := "Store VCs in SMT-Lib format in <dir>.", takesArg := .arg "dir" },
+    { name := "procedures", help := "Verify only the specified procedures (comma-separated).", takesArg := .arg "procs" },
+    { name := "solver", help := s!"SMT solver executable to use (default: {Core.defaultSolver}).", takesArg := .arg "name" },
+    { name := "solver-timeout", help := "Solver timeout in seconds.", takesArg := .arg "seconds" },
+    checkModeFlag, checkLevelFlag ]
+  help := "Verify a Strata program file (.core.st, .csimp.st, or .b3.st)."
+  callback := fun v pflags => do
+    let file := v[0]
+    let verbose := pflags.getBool "verbose"
+    let checkOnly := pflags.getBool "check"
+    let typeCheckOnly := pflags.getBool "type-check"
+    let parseOnly := pflags.getBool "parse-only"
+    let stopOnFirstError := pflags.getBool "stop-on-first-error"
+    let uniqueBoundNames := pflags.getBool "unique-bound-names"
+    let outputSarif := pflags.getBool "sarif" || pflags.getString "output-format" == some "sarif"
+    let checkMode ← parseCheckMode pflags
+    let checkLevel ← parseCheckLevel pflags
+    let solverTimeout ← match pflags.getString "solver-timeout" with
+      | .none => pure VerifyOptions.default.solverTimeout
+      | .some s => match s.toNat? with
+        | .some n => pure n
+        | .none => exitCmdFailure "verify" s!"Invalid number of seconds: {s}"
+    let proceduresToVerify := pflags.getString "procedures" |>.map (·.splitToList (· == ','))
+    let opts : VerifyOptions :=
+      { VerifyOptions.default with
+        verbose := if verbose then .normal else .quiet,
+        checkOnly, typeCheckOnly, parseOnly, stopOnFirstError, uniqueBoundNames,
+        outputSarif, checkMode, checkLevel, solverTimeout,
+        vcDirectory := pflags.getString "vc-directory",
+        solver := pflags.getString "solver" |>.getD Core.defaultSolver }
+    let text ← Strata.Util.readInputSource file
+    let inputCtx := Lean.Parser.mkInputContext text (Strata.Util.displayName file)
+    let dctx := Elab.LoadedDialects.builtin
+    let dctx := dctx.addDialect! Core
+    let dctx := dctx.addDialect! C_Simp
+    let dctx := dctx.addDialect! B3CST
+    let leanEnv ← Lean.mkEmptyEnvironment 0
+    match Strata.Elab.elabProgram dctx leanEnv inputCtx with
+    | .ok pgm =>
+      println! s!"Successfully parsed."
+      if opts.parseOnly then return
+      if opts.typeCheckOnly then
+        let ans := if file.endsWith ".csimp.st" then
+                     C_Simp.typeCheck pgm opts
+                   else
+                     typeCheck inputCtx pgm opts
+        match ans with
+        | .error e =>
+          println! f!"{e.formatRange (some inputCtx.fileMap) true} {e.message}"
+          IO.Process.exit 1
+        | .ok _ =>
+          println! f!"Program typechecked."
+          return
+      -- Full verification
+      let vcResults ← try
+        if file.endsWith ".csimp.st" then
+          C_Simp.verify pgm opts
+        else if file.endsWith ".b3.st" || file.endsWith ".b3cst.st" then
+          let ast ← match B3.Verifier.programToB3AST pgm with
+            | Except.error msg => throw (IO.userError s!"Failed to convert to B3 AST: {msg}")
+            | Except.ok ast => pure ast
+          let solver ← B3.Verifier.createInteractiveSolver opts.solver
+          let reports ← B3.Verifier.programToSMT ast solver
+          for report in reports do
+            IO.println s!"\nProcedure: {report.procedureName}"
+            for (result, _) in report.results do
+              let marker := if result.result.isError then "✗" else "✓"
+              let desc := match result.result with
+                | .error .counterexample => "counterexample found"
+                | .error .unknown => "unknown"
+                | .error .refuted => "refuted"
+                | .success .verified => "verified"
+                | .success .reachable => "reachable"
+                | .success .reachabilityUnknown => "reachability unknown"
+              IO.println s!"  {marker} {desc}"
+          pure #[]
+        else
+          verify pgm inputCtx proceduresToVerify opts
+      catch e =>
+        println! f!"{e}"
+        IO.Process.exit 1
+      if opts.outputSarif then
+        if file.endsWith ".csimp.st" then
+          println! "SARIF output is not supported for C_Simp files (.csimp.st) because location metadata is not preserved during translation to Core."
+        else
+          let uri := Strata.Uri.file file
+          let files := Map.empty.insert uri inputCtx.fileMap
+          Core.Sarif.writeSarifOutput opts.checkMode files vcResults (file ++ ".sarif")
+      for vcResult in vcResults do
+        let posStr := Imperative.MetaData.formatFileRangeD vcResult.obligation.metadata (some inputCtx.fileMap)
+        println! f!"{posStr} [{vcResult.obligation.label}]: \
+                      {vcResult.formatOutcome}"
+      let success := vcResults.all Core.VCResult.isSuccess
+      if success && !opts.checkOnly then
+        println! f!"All {vcResults.size} goals passed."
+      else if success && opts.checkOnly then
+        println! f!"Skipping verification."
+      else
+        let provedGoalCount := (vcResults.filter Core.VCResult.isSuccess).size
+        let failedGoalCount := (vcResults.filter Core.VCResult.isNotSuccess).size
+        println! f!"Finished with {provedGoalCount} goals passed, {failedGoalCount} failed."
+        IO.Process.exit 1
+    | .error errors =>
+      for e in errors do
+        let msg ← e.toString
+        println! s!"Error: {msg}"
+      println! f!"Finished with {errors.size} errors."
+      IO.Process.exit 1
+
 def commandGroups : List CommandGroup := [
   { name := "Core"
-    commands := [checkCommand, toIonCommand, printCommand, diffCommand]
+    commands := [verifyCommand, checkCommand, toIonCommand, printCommand, diffCommand]
     commonFlags := [includeFlag] },
   { name := "Code Generation"
     commands := [javaGenCommand] },
@@ -1185,20 +1347,35 @@ private def parseArgs (cmdName : String)
   match cmdArgs with
   | arg :: cmdArgs =>
     if arg.startsWith "--" then
-      let flagName := (arg.drop 2).toString
+      let raw := (arg.drop 2).toString
+      -- Support --flag=value syntax by splitting on first '='
+      let (flagName, inlineValue) ← match raw.splitOn "=" with
+        | name :: value :: rest =>
+          if !rest.isEmpty then
+            exitCmdFailure cmdName s!"Invalid option format: {arg}. Values must not contain '='."
+          pure (name, some value)
+        | _ => pure (raw, none)
       match flagMap[flagName]? with
       | some flag =>
         match flag.takesArg with
         | .none =>
           parseArgs cmdName flagMap acc (pflags.insertFlag flagName Option.none) cmdArgs
         | .arg _ =>
-          let value :: cmdArgs := cmdArgs
-            | exitCmdFailure cmdName s!"Expected value after {arg}."
-          parseArgs cmdName flagMap acc (pflags.insertFlag flagName (some value)) cmdArgs
+          match inlineValue with
+          | some value =>
+            parseArgs cmdName flagMap acc (pflags.insertFlag flagName (some value)) cmdArgs
+          | none =>
+            let value :: cmdArgs := cmdArgs
+              | exitCmdFailure cmdName s!"Expected value after {arg}."
+            parseArgs cmdName flagMap acc (pflags.insertFlag flagName (some value)) cmdArgs
         | .repeat _ =>
-          let value :: cmdArgs := cmdArgs
-            | exitCmdFailure cmdName s!"Expected value after {arg}."
-          parseArgs cmdName flagMap acc (pflags.insertRepeated flagName value) cmdArgs
+          match inlineValue with
+          | some value =>
+            parseArgs cmdName flagMap acc (pflags.insertRepeated flagName value) cmdArgs
+          | none =>
+            let value :: cmdArgs := cmdArgs
+              | exitCmdFailure cmdName s!"Expected value after {arg}."
+            parseArgs cmdName flagMap acc (pflags.insertRepeated flagName value) cmdArgs
       | none =>
         exitCmdFailure cmdName s!"Unknown option {arg}."
     else
