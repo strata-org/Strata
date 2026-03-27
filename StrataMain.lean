@@ -638,7 +638,13 @@ def pyAnalyzeLaurelCommand : Command where
       for err in laurelTranslateErrors do
         IO.println err
 
-    let classifier : ResultClassifier := {}
+    let classifier : ResultClassifier :=
+      match checkMode with
+      | .bugFinding | .bugFindingAssumingCompleteSpec =>
+        { isFailure := fun r => match r.outcome with
+            | .ok o => o.alwaysFalseAndReachable
+            | _     => false }
+      | _ => {}
     -- Print results (non-incremental only; incremental prints per-procedure above)
     if !incremental then do
     IO.println "\n==== Verification Results ===="
