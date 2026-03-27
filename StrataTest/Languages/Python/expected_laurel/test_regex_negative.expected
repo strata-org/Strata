@@ -1,5 +1,224 @@
-DETAIL: stderr:
-solver stdout: (error "Regular expression terms are not supported in theory combination")
 
+==== Verification Results ====
+postcondition: ✅ pass (in prelude file)
+List_get_body_calls_List_get_0: ✅ pass
+List_take_body_calls_List_take_0: ✅ pass
+List_take_len_post_postcondition_calls_List_take_0: ✅ pass (in prelude file)
+postcondition: ✅ pass (in prelude file)
+List_drop_body_calls_List_drop_0: ✅ pass
+List_drop_len_post_postcondition_calls_List_drop_0: ✅ pass (in prelude file)
+postcondition: ✅ pass (in prelude file)
+List_slice_body_calls_List_drop_0: ✅ pass (in prelude file)
+List_slice_body_calls_List_take_1: ✅ pass (in prelude file)
+List_set_body_calls_List_set_0: ✅ pass
+DictStrAny_get_body_calls_DictStrAny_get_0: ✅ pass
+DictStrAny_get_or_none_body_calls_DictStrAny_get_0: ✅ pass (in prelude file)
+Any_get_body_calls_DictStrAny_get_0: ✅ pass (in prelude file)
+Any_get_body_calls_List_get_1: ✅ pass (in prelude file)
+Any_get_body_calls_List_slice_2: ✅ pass (in prelude file)
+Any_get_body_calls_List_drop_3: ✅ pass (in prelude file)
+Any_get!_body_calls_DictStrAny_get_0: ✅ pass (in prelude file)
+Any_get!_body_calls_List_get_1: ✅ pass (in prelude file)
+Any_set_body_calls_List_set_0: ✅ pass (in prelude file)
+Any_set!_body_calls_List_set_0: ✅ pass (in prelude file)
+PFloorDiv_body_calls_Int.SafeDiv_0: ✅ pass (in prelude file)
+PFloorDiv_body_calls_Int.SafeDiv_1: ✅ pass (in prelude file)
+PFloorDiv_body_calls_Int.SafeDiv_2: ✅ pass (in prelude file)
+PFloorDiv_body_calls_Int.SafeDiv_3: ✅ pass (in prelude file)
+PAnd_body_calls_Any_to_bool_0: ✅ pass (in prelude file)
+POr_body_calls_Any_to_bool_0: ✅ pass (in prelude file)
+postcondition: ✅ pass (in prelude file)
+ret_type: ✅ pass (in prelude file)
+ret_type: ✅ pass (in prelude file)
+ret_pos: ✅ pass (in prelude file)
+assert_name_is_foo: ✅ pass (in prelude file)
+assert_opt_name_none_or_str: ✅ pass (in prelude file)
+assert_opt_name_none_or_bar: ✅ pass (in prelude file)
+ensures_maybe_except_none: ✅ pass (in prelude file)
+set_m_calls_re_fullmatch_0: ✅ pass
+assert_assert(272)_calls_Any_to_bool_0: ✅ pass (at line 10, col 4)
+assert(272): ❓ unknown (at line 10, col 4)
+set_m_calls_re_fullmatch_0: ✅ pass
+assert_assert(365)_calls_Any_to_bool_0: ✅ pass (at line 13, col 4)
+assert(365): ❓ unknown (at line 13, col 4)
+set_m_calls_re_fullmatch_0: ✅ pass
+assert_assert(465)_calls_Any_to_bool_0: ✅ pass (at line 16, col 4)
+assert(465): ❓ unknown (at line 16, col 4)
+set_m_calls_re_fullmatch_0: ✅ pass
+assert_assert(603)_calls_Any_to_bool_0: ✅ pass (at line 20, col 4)
+assert(603): ❓ unknown (at line 20, col 4)
+set_m_calls_re_search_0: ✅ pass
+assert_assert(702)_calls_Any_to_bool_0: ✅ pass (at line 23, col 4)
+assert(702): ❓ unknown (at line 23, col 4)
+set_m_calls_re_search_0: ✅ pass
+assert_assert(797)_calls_Any_to_bool_0: ✅ pass (at line 26, col 4)
+assert(797): ❓ unknown (at line 26, col 4)
+set_m_calls_re_match_0: ✅ pass
+assert_assert(888)_calls_Any_to_bool_0: ✅ pass (at line 29, col 4)
+assert(888): ❓ unknown (at line 29, col 4)
+set_p_calls_re_compile_0: ✅ pass
+set_m_calls_re_search_0: ✅ pass
+assert_assert(1038)_calls_Any_to_bool_0: ✅ pass (at line 34, col 4)
+assert(1038): ❓ unknown (at line 34, col 4)
+set_m_calls_re_match_0: ✅ pass
+assert_assert(1133)_calls_Any_to_bool_0: ✅ pass (at line 37, col 4)
+assert(1133): ❓ unknown (at line 37, col 4)
+set_m_calls_re_fullmatch_0: ✅ pass
+assert_assert(1495)_calls_Any_to_bool_0: ✅ pass (at line 47, col 4)
+assert(1495): ✅ pass (at line 47, col 4)
+set_m_calls_re_fullmatch_0: ✅ pass
+assert_assert(1667)_calls_Any_to_bool_0: ✅ pass (at line 54, col 4)
+assert(1667): ✅ pass (at line 54, col 4)
+set_m_calls_re_fullmatch_0: ✅ pass
+assert_assert(1846)_calls_Any_to_bool_0: ✅ pass (at line 61, col 4)
+assert(1846): ✅ pass (at line 61, col 4)
+set_m_calls_re_search_0: ✅ pass
+assert_assert(2015)_calls_Any_to_bool_0: ✅ pass (at line 68, col 4)
+assert(2015): ✅ pass (at line 68, col 4)
+set_m_calls_re_match_0: ✅ pass
+assert_assert(2193)_calls_Any_to_bool_0: ✅ pass (at line 75, col 4)
+assert(2193): ✅ pass (at line 75, col 4)
+assert_assert(2193)_calls_Any_to_bool_0: ✅ pass (at line 75, col 4)
+assert(2193): ✅ pass (at line 75, col 4)
+assert_assert(2015)_calls_Any_to_bool_0: ✅ pass (at line 68, col 4)
+assert(2015): ✅ pass (at line 68, col 4)
+set_m_calls_re_match_0: ✅ pass
+assert_assert(2193)_calls_Any_to_bool_0: ✅ pass (at line 75, col 4)
+assert(2193): ✅ pass (at line 75, col 4)
+assert_assert(2193)_calls_Any_to_bool_0: ✅ pass (at line 75, col 4)
+assert(2193): ✅ pass (at line 75, col 4)
+assert_assert(1846)_calls_Any_to_bool_0: ✅ pass (at line 61, col 4)
+assert(1846): ✅ pass (at line 61, col 4)
+set_m_calls_re_search_0: ✅ pass
+assert_assert(2015)_calls_Any_to_bool_0: ✅ pass (at line 68, col 4)
+assert(2015): ✅ pass (at line 68, col 4)
+set_m_calls_re_match_0: ✅ pass
+assert_assert(2193)_calls_Any_to_bool_0: ✅ pass (at line 75, col 4)
+assert(2193): ✅ pass (at line 75, col 4)
+assert_assert(2193)_calls_Any_to_bool_0: ✅ pass (at line 75, col 4)
+assert(2193): ✅ pass (at line 75, col 4)
+assert_assert(2015)_calls_Any_to_bool_0: ✅ pass (at line 68, col 4)
+assert(2015): ✅ pass (at line 68, col 4)
+set_m_calls_re_match_0: ✅ pass
+assert_assert(2193)_calls_Any_to_bool_0: ✅ pass (at line 75, col 4)
+assert(2193): ✅ pass (at line 75, col 4)
+assert_assert(2193)_calls_Any_to_bool_0: ✅ pass (at line 75, col 4)
+assert(2193): ✅ pass (at line 75, col 4)
+assert_assert(1667)_calls_Any_to_bool_0: ✅ pass (at line 54, col 4)
+assert(1667): ✅ pass (at line 54, col 4)
+set_m_calls_re_fullmatch_0: ✅ pass
+assert_assert(1846)_calls_Any_to_bool_0: ✅ pass (at line 61, col 4)
+assert(1846): ✅ pass (at line 61, col 4)
+set_m_calls_re_search_0: ✅ pass
+assert_assert(2015)_calls_Any_to_bool_0: ✅ pass (at line 68, col 4)
+assert(2015): ✅ pass (at line 68, col 4)
+set_m_calls_re_match_0: ✅ pass
+assert_assert(2193)_calls_Any_to_bool_0: ✅ pass (at line 75, col 4)
+assert(2193): ✅ pass (at line 75, col 4)
+assert_assert(2193)_calls_Any_to_bool_0: ✅ pass (at line 75, col 4)
+assert(2193): ✅ pass (at line 75, col 4)
+assert_assert(2015)_calls_Any_to_bool_0: ✅ pass (at line 68, col 4)
+assert(2015): ✅ pass (at line 68, col 4)
+set_m_calls_re_match_0: ✅ pass
+assert_assert(2193)_calls_Any_to_bool_0: ✅ pass (at line 75, col 4)
+assert(2193): ✅ pass (at line 75, col 4)
+assert_assert(2193)_calls_Any_to_bool_0: ✅ pass (at line 75, col 4)
+assert(2193): ✅ pass (at line 75, col 4)
+assert_assert(1846)_calls_Any_to_bool_0: ✅ pass (at line 61, col 4)
+assert(1846): ✅ pass (at line 61, col 4)
+set_m_calls_re_search_0: ✅ pass
+assert_assert(2015)_calls_Any_to_bool_0: ✅ pass (at line 68, col 4)
+assert(2015): ✅ pass (at line 68, col 4)
+set_m_calls_re_match_0: ✅ pass
+assert_assert(2193)_calls_Any_to_bool_0: ✅ pass (at line 75, col 4)
+assert(2193): ✅ pass (at line 75, col 4)
+assert_assert(2193)_calls_Any_to_bool_0: ✅ pass (at line 75, col 4)
+assert(2193): ✅ pass (at line 75, col 4)
+assert_assert(2015)_calls_Any_to_bool_0: ✅ pass (at line 68, col 4)
+assert(2015): ✅ pass (at line 68, col 4)
+set_m_calls_re_match_0: ✅ pass
+assert_assert(2193)_calls_Any_to_bool_0: ✅ pass (at line 75, col 4)
+assert(2193): ✅ pass (at line 75, col 4)
+assert_assert(2193)_calls_Any_to_bool_0: ✅ pass (at line 75, col 4)
+assert(2193): ✅ pass (at line 75, col 4)
+assert_assert(1495)_calls_Any_to_bool_0: ✅ pass (at line 47, col 4)
+Assertion failed at line 47, col 4: assert(1495): ❌ fail
+set_m_calls_re_fullmatch_0: ✅ pass
+assert_assert(1667)_calls_Any_to_bool_0: ✅ pass (at line 54, col 4)
+assert(1667): ✅ pass (at line 54, col 4)
+set_m_calls_re_fullmatch_0: ✅ pass
+assert_assert(1846)_calls_Any_to_bool_0: ✅ pass (at line 61, col 4)
+assert(1846): ✅ pass (at line 61, col 4)
+set_m_calls_re_search_0: ✅ pass
+assert_assert(2015)_calls_Any_to_bool_0: ✅ pass (at line 68, col 4)
+assert(2015): ✅ pass (at line 68, col 4)
+set_m_calls_re_match_0: ✅ pass
+assert_assert(2193)_calls_Any_to_bool_0: ✅ pass (at line 75, col 4)
+assert(2193): ✅ pass (at line 75, col 4)
+assert_assert(2193)_calls_Any_to_bool_0: ✅ pass (at line 75, col 4)
+assert(2193): ✅ pass (at line 75, col 4)
+assert_assert(2015)_calls_Any_to_bool_0: ✅ pass (at line 68, col 4)
+assert(2015): ✅ pass (at line 68, col 4)
+set_m_calls_re_match_0: ✅ pass
+assert_assert(2193)_calls_Any_to_bool_0: ✅ pass (at line 75, col 4)
+assert(2193): ✅ pass (at line 75, col 4)
+assert_assert(2193)_calls_Any_to_bool_0: ✅ pass (at line 75, col 4)
+assert(2193): ✅ pass (at line 75, col 4)
+assert_assert(1846)_calls_Any_to_bool_0: ✅ pass (at line 61, col 4)
+assert(1846): ✅ pass (at line 61, col 4)
+set_m_calls_re_search_0: ✅ pass
+assert_assert(2015)_calls_Any_to_bool_0: ✅ pass (at line 68, col 4)
+assert(2015): ✅ pass (at line 68, col 4)
+set_m_calls_re_match_0: ✅ pass
+assert_assert(2193)_calls_Any_to_bool_0: ✅ pass (at line 75, col 4)
+assert(2193): ✅ pass (at line 75, col 4)
+assert_assert(2193)_calls_Any_to_bool_0: ✅ pass (at line 75, col 4)
+assert(2193): ✅ pass (at line 75, col 4)
+assert_assert(2015)_calls_Any_to_bool_0: ✅ pass (at line 68, col 4)
+assert(2015): ✅ pass (at line 68, col 4)
+set_m_calls_re_match_0: ✅ pass
+assert_assert(2193)_calls_Any_to_bool_0: ✅ pass (at line 75, col 4)
+assert(2193): ✅ pass (at line 75, col 4)
+assert_assert(2193)_calls_Any_to_bool_0: ✅ pass (at line 75, col 4)
+assert(2193): ✅ pass (at line 75, col 4)
+assert_assert(1667)_calls_Any_to_bool_0: ✅ pass (at line 54, col 4)
+Assertion failed at line 54, col 4: assert(1667): ❌ fail
+set_m_calls_re_fullmatch_0: ✅ pass
+assert_assert(1846)_calls_Any_to_bool_0: ✅ pass (at line 61, col 4)
+assert(1846): ✅ pass (at line 61, col 4)
+set_m_calls_re_search_0: ✅ pass
+assert_assert(2015)_calls_Any_to_bool_0: ✅ pass (at line 68, col 4)
+assert(2015): ✅ pass (at line 68, col 4)
+set_m_calls_re_match_0: ✅ pass
+assert_assert(2193)_calls_Any_to_bool_0: ✅ pass (at line 75, col 4)
+assert(2193): ✅ pass (at line 75, col 4)
+assert_assert(2193)_calls_Any_to_bool_0: ✅ pass (at line 75, col 4)
+assert(2193): ✅ pass (at line 75, col 4)
+assert_assert(2015)_calls_Any_to_bool_0: ✅ pass (at line 68, col 4)
+assert(2015): ✅ pass (at line 68, col 4)
+set_m_calls_re_match_0: ✅ pass
+assert_assert(2193)_calls_Any_to_bool_0: ✅ pass (at line 75, col 4)
+assert(2193): ✅ pass (at line 75, col 4)
+assert_assert(2193)_calls_Any_to_bool_0: ✅ pass (at line 75, col 4)
+assert(2193): ✅ pass (at line 75, col 4)
+assert_assert(1846)_calls_Any_to_bool_0: ✅ pass (at line 61, col 4)
+Assertion failed at line 61, col 4: assert(1846): ❌ fail
+set_m_calls_re_search_0: ✅ pass
+assert_assert(2015)_calls_Any_to_bool_0: ✅ pass (at line 68, col 4)
+assert(2015): ✅ pass (at line 68, col 4)
+set_m_calls_re_match_0: ✅ pass
+assert_assert(2193)_calls_Any_to_bool_0: ✅ pass (at line 75, col 4)
+assert(2193): ✅ pass (at line 75, col 4)
+assert_assert(2193)_calls_Any_to_bool_0: ✅ pass (at line 75, col 4)
+assert(2193): ✅ pass (at line 75, col 4)
+assert_assert(2015)_calls_Any_to_bool_0: ✅ pass (at line 68, col 4)
+Assertion failed at line 68, col 4: assert(2015): ❌ fail
+set_m_calls_re_match_0: ✅ pass
+assert_assert(2193)_calls_Any_to_bool_0: ✅ pass (at line 75, col 4)
+assert(2193): ✅ pass (at line 75, col 4)
+assert_assert(2193)_calls_Any_to_bool_0: ✅ pass (at line 75, col 4)
+Assertion failed at line 75, col 4: assert(2193): ❌ fail
+ite_cond_calls_Any_to_bool_0: ✅ pass (at line 77, col 0)
 
-RESULT: Internal error
+DETAIL: 205 passed, 5 failed, 9 inconclusive
+RESULT: Failures found
