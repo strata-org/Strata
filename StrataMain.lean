@@ -615,7 +615,8 @@ def pyAnalyzeLaurelCommand : Command where
           | .some dir => { baseOptions with vcDirectory := some (dir : System.FilePath) }
           | .none => baseOptions
         let vcResults ←
-          match ← Core.verifyProgram coreProgram options |>.toBaseIO with
+          match ← Core.verifyProgram coreProgram options
+                    (moreFns := Strata.Python.ReFactory) |>.toBaseIO with
           | .ok r => pure r
           | .error msg => exitInternalError msg
         pure vcResults
