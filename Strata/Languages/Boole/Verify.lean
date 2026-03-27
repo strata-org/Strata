@@ -695,7 +695,7 @@ def toCoreDecls (cmd : BooleDDM.Command SourceRange) : TranslateM (List Core.Dec
     let (id, ty) ← toCoreBind b
     let i := (← get).globalVarCounter
     modify fun s => { s with globalVarCounter := i + 1 }
-    return [.var id ty (some (.fvar Strata.SourceRange.none (mkIdent s!"init_{id.name}_{i}") none))]
+    return [.var id ty (some (.fvar Strata.SourceRange.none (mkIdent s!"init_{id.name}_{i}") none)) .empty]
   | .command_axiom m ⟨_, l?⟩ e =>
     return [.ax { name := ← defaultLabel m "axiom" l?, e := ← toCoreExpr e } .empty]
   | .command_distinct m ⟨_, l?⟩ ⟨_, es⟩ =>

@@ -274,11 +274,7 @@ partial def toSMTTerm (E : Env) (bvs : BoundVars) (e : LExpr CoreLParams.mono) (
     -- Generate base name using global counter to ensure uniqueness across terms.
     -- The `$__` prefix is reserved for internal use and cannot appear in user
     -- identifiers (see `Strata.DL.Lambda.LState.EvalConfig.varPrefix`).
-    let (baseName, startSuffix) :=
-      if name.isEmpty then
-        (s!"$__bv{ctx.bvCounter}", 1)
-      else
-        Encoder.breakDisambiguatedName name
+    let (baseName, startSuffix) := (s!"$__bv{ctx.bvCounter}", 1)
     let ctx := { ctx with bvCounter := ctx.bvCounter + 1 }
     -- Check for clashes with existing bvars, fvars in ctx, and fvars in body
     let isUsed := fun candidate =>

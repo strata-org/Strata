@@ -22,8 +22,9 @@ PFloorDiv_body_calls_Int.SafeDiv_2: ✅ pass (in prelude file)
 PFloorDiv_body_calls_Int.SafeDiv_3: ✅ pass (in prelude file)
 PAnd_body_calls_Any_to_bool_0: ✅ pass (in prelude file)
 POr_body_calls_Any_to_bool_0: ✅ pass (in prelude file)
+callElimAssert_requires_10: ✅ pass
 assert_assert(285)_calls_Any_to_bool_0: ✅ pass (at line 14, col 4)
 Assertion failed at line 14, col 4: assert(285): ❌ fail
 
-DETAIL: 23 passed, 1 failed, 0 inconclusive
+DETAIL: 24 passed, 1 failed, 0 inconclusive
 RESULT: Failures found

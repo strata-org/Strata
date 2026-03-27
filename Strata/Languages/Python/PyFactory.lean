@@ -74,7 +74,7 @@ private def mkModeCompileFunc (name : String) (mode : MatchMode) :
       output := mty[regex],
       concreteEval := some
         (fun _ args => match args with
-          | [LExpr.strConst Strata.SourceRange.none s] =>
+          | [LExpr.strConst _ s] =>
             let (expr, maybe_err) := pythonRegexToCore s mode
             match maybe_err with
             | none => .some expr
@@ -96,7 +96,7 @@ def rePatternErrorFunc : LFunc Core.CoreLParams :=
       output := mty[Error],
       concreteEval := some
         (fun _ args => match args with
-          | [LExpr.strConst Strata.SourceRange.none s] =>
+          | [LExpr.strConst _ s] =>
             let (_, maybe_err) := pythonRegexToCore s .fullmatch -- mode irrelevant: errors come from parseTop before mode-specific compilation
             match maybe_err with
             | none =>

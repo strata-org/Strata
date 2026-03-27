@@ -103,7 +103,7 @@ procedure test() {
 
 /--
 info: (declare-fun f (Int) Int)
-(assert (forall ((x Int)) (=> (> x 0) (> (f x) 0))))
+(assert (forall (($__bv0 Int)) (=> (> $__bv0 0) (> (f $__bv0) 0))))
 (push 1)
 (check-sat-assuming ((=> (> 5 0) (> (f 5) 0))))
 (check-sat-assuming ((not (=> (> 5 0) (> (f 5) 0)))))
@@ -122,8 +122,8 @@ procedure test() {
 info: (define-fun f ((x Int)) Bool (= (+ x 1) 6))
 (declare-fun g (Int Int) Bool)
 (push 1)
-(check-sat-assuming ((and (and (and (and (and (and (and (and (and (and (and (and (and (and (and (and (and (and true (not false)) (< 2 3)) (<= 2 2)) (> 4 3)) (>= 4 4)) (= (+ 1 2) 4)) (= (- 5 2) 3)) (= (* 3 4) 12)) (= (div 10 2) 5)) (= (mod 7 3) 1)) (= (- 5) (- 0 5))) (=> true true)) (or false true)) true) (f 5)) (g 1 2)) (forall ((y Int)) (or (f y) (not (f y))))) (forall ((y Int)) (or (> y 0) (<= y 0))))))
-(check-sat-assuming ((not (and (and (and (and (and (and (and (and (and (and (and (and (and (and (and (and (and (and true (not false)) (< 2 3)) (<= 2 2)) (> 4 3)) (>= 4 4)) (= (+ 1 2) 4)) (= (- 5 2) 3)) (= (* 3 4) 12)) (= (div 10 2) 5)) (= (mod 7 3) 1)) (= (- 5) (- 0 5))) (=> true true)) (or false true)) true) (f 5)) (g 1 2)) (forall ((y Int)) (or (f y) (not (f y))))) (forall ((y Int)) (or (> y 0) (<= y 0)))))))
+(check-sat-assuming ((and (and (and (and (and (and (and (and (and (and (and (and (and (and (and (and (and (and true (not false)) (< 2 3)) (<= 2 2)) (> 4 3)) (>= 4 4)) (= (+ 1 2) 4)) (= (- 5 2) 3)) (= (* 3 4) 12)) (= (div 10 2) 5)) (= (mod 7 3) 1)) (= (- 5) (- 0 5))) (=> true true)) (or false true)) true) (f 5)) (g 1 2)) (forall (($__bv1 Int)) (or (f $__bv1) (not (f $__bv1))))) (forall (($__bv0 Int)) (or (> $__bv0 0) (<= $__bv0 0))))))
+(check-sat-assuming ((not (and (and (and (and (and (and (and (and (and (and (and (and (and (and (and (and (and (and true (not false)) (< 2 3)) (<= 2 2)) (> 4 3)) (>= 4 4)) (= (+ 1 2) 4)) (= (- 5 2) 3)) (= (* 3 4) 12)) (= (div 10 2) 5)) (= (mod 7 3) 1)) (= (- 5) (- 0 5))) (=> true true)) (or false true)) true) (f 5)) (g 1 2)) (forall (($__bv1 Int)) (or (f $__bv1) (not (f $__bv1))))) (forall (($__bv0 Int)) (or (> $__bv0 0) (<= $__bv0 0)))))))
 (pop 1)
 -/
 #guard_msgs in
@@ -161,8 +161,8 @@ procedure test_all_expressions() {
 /--
 info: (declare-fun f (Int) Bool)
 (push 1)
-(check-sat-assuming ((forall ((y Int)) (> y 0))))
-(check-sat-assuming ((not (forall ((y Int)) (> y 0)))))
+(check-sat-assuming ((forall (($__bv0 Int)) (> $__bv0 0))))
+(check-sat-assuming ((not (forall (($__bv0 Int)) (> $__bv0 0)))))
 (pop 1)
 -/
 #guard_msgs in
