@@ -1512,7 +1512,6 @@ def translateMethod (ctx : TranslationContext) (className : String)
     let outputs : List Parameter := [{name := "LaurelResult", type := AnyTy}]
 
     -- Translate method body with class context
-    -- Translate method body with class context
     -- Add method parameters to variableTypes so that hoisting (e.g. in
     -- try/except) does not re-declare them as local variables.
     let paramTypes : List (String × String) := inputs.map (fun p => (p.name.text, PyLauType.Any))
