@@ -36,12 +36,16 @@ SKIP_TESTS = BOTH_SKIP | {
     "test_class_with_methods",
     "test_default_params",
     "test_dict_operations",
+    "test_foo_client_folder",
     "test_for_loop",
     "test_if_elif",
     "test_ifexpr",
+    "test_incremental_simple",
+    "test_invalid_client_type",
     "test_list",
     "test_list_slice",
     "test_loops",
+    "test_method_param_reassign",
     "test_module_level",
     "test_multi_function",
     "test_multiple_except",
@@ -53,9 +57,11 @@ SKIP_TESTS = BOTH_SKIP | {
     "test_subscription",
     "test_try_except",
     "test_try_except_scoping",
+    "test_unsupported_config",
     "test_variable_reassign",
     "test_while_loop",
     "test_with_statement",
+    "test_with_void_enter",
 }
 SKIP_TESTS_LAUREL = BOTH_SKIP
 
