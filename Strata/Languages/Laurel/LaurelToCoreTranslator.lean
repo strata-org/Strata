@@ -789,9 +789,9 @@ def translateWithLaurel (options: LaurelTranslateOptions) (program : Program): T
     let groups := groupDatatypes laurelDatatypes ldatatypes
     return groups.map fun group => Core.Decl.type (.data group) mdWithUnknownLoc
 
-  translateLaurelToCore (options: LaurelTranslateOptions) (program : Program): TranslateM Core.Program := do
-    let model := (← get).model
-
+  -- Compute the SCCs of the call graph over non-external procedures, returning each SCC as a
+  -- list of procedures paired with a flag indicating whether the SCC is recursive.
+  computeSccDecls (program : Program) : TranslateM (List (List Procedure × Bool)) := do
     -- External procedures are completely ignored (not translated to Core).
     let nonExternal := program.staticProcedures.filter (fun p => !p.body.isExternal)
 
@@ -831,15 +831,19 @@ def translateWithLaurel (options: LaurelTranslateOptions) (program : Program): T
     -- (a node appears after all nodes that have paths to it).
     let sccs := Strata.OutGraph.tarjan graph
 
-    let sccDecls: List (List Procedure × Bool) ← sccs.toList.mapM fun scc => do
+    sccs.toList.mapM fun scc => do
       let procs := scc.toList.filterMap fun idx =>
         nonExternalArr[idx.val]?
-
       let isRecursive := procs.length > 1 ||
         (match scc.toList.head? with
           | some node => (graph.nodesOut node).contains node
           | none => false)
       return (procs, isRecursive)
+
+  translateLaurelToCore (options: LaurelTranslateOptions) (program : Program): TranslateM Core.Program := do
+    let model := (← get).model
+
+    let sccDecls ← computeSccDecls program
 
     let orderedDecls ← sccDecls.flatMapM (fun (procs, isRecursive) => do
       -- For each SCC, determine if it is purely functional or contains procedures.
