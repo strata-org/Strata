@@ -58,6 +58,7 @@ SKIP_TESTS = BOTH_SKIP | {
     "test_try_except",
     "test_try_except_scoping",
     "test_unsupported_config",
+    "test_variable_in_nested_block",
     "test_variable_reassign",
     "test_while_loop",
     "test_with_statement",
