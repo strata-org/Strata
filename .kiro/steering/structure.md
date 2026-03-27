@@ -180,7 +180,7 @@ Program-to-program translations for simplification and verification. Each has op
 **Main module:** `Strata.lean`
 
 **Executables:**
-- `StrataVerify` - Main verifier (deprecated, use `strata verify`)
+- `strata` - Main CLI (includes `verify`, `check`, `toIon`, `print`, etc.)
 - `StrataCoreToGoto` - Strata Core to GOTO translation
 - `StrataToCBMC` - CBMC backend
 
