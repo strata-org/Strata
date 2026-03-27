@@ -1185,6 +1185,7 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
   -- With statement: with EXPR as VAR: BODY
   -- Desugars to: mgr = EXPR; VAR = mgr.__enter__(); BODY; mgr.__exit__()
   | .With _ items body _ => do
+    let mut declStmts : List StmtExprMd := []
     let mut setupStmts : List StmtExprMd := []
     let mut cleanupStmts : List StmtExprMd := []
     let mut currentCtx := ctx
@@ -1203,19 +1204,22 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
         | some varExpr =>
           let varName := pyExprToString varExpr
           if varName ∈ currentCtx.variableTypes.unzip.fst then
-            let assignStmt := mkStmtExprMd (StmtExpr.Assign
-              [mkStmtExprMd (StmtExpr.Identifier varName)] enterCall)
-            setupStmts := setupStmts ++ [mgrDecl, assignStmt]
+            -- Variable already declared — just reassign inside the block
+            declStmts := declStmts ++ [mgrDecl]
+            setupStmts := setupStmts ++ [mkStmtExprMd (StmtExpr.Assign
+              [mkStmtExprMd (StmtExpr.Identifier varName)] enterCall)]
           else
+            -- New variable — declare outside the block so it's visible after
             let varDecl := mkStmtExprMd (StmtExpr.LocalVariable varName AnyTy (some enterCall))
             currentCtx := {currentCtx with variableTypes := currentCtx.variableTypes ++ [(varName, PyLauType.Any)]}
-            setupStmts := setupStmts ++ [mgrDecl, varDecl]
+            declStmts := declStmts ++ [mgrDecl, varDecl]
         | none =>
-          setupStmts := setupStmts ++ [mgrDecl, enterCall]
+          declStmts := declStmts ++ [mgrDecl]
+          setupStmts := setupStmts ++ [enterCall]
         cleanupStmts := cleanupStmts ++ [mkStmtExprMd (StmtExpr.InstanceCall mgrRef "__exit__" [])]
-    let (bodyCtx, bodyStmts) ← translateStmtList currentCtx body.val.toList
+    let (_bodyCtx, bodyStmts) ← translateStmtList currentCtx body.val.toList
     let block := mkStmtExprMdWithLoc (StmtExpr.Block (setupStmts ++ bodyStmts ++ cleanupStmts) none) md
-    return (bodyCtx, [block])
+    return (currentCtx, declStmts ++ [block])
 
   -- For loop: for target in iter: body (target may be any assignment target)
   -- Abstract: execute body once with havoc'd target, then havoc all modified variables
