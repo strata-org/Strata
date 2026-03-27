@@ -19,4 +19,4 @@ py_assertion: ✅ pass (at line 25, col 0)
 
 py_assertion: ✅ pass (at line 27, col 0)
 
-Assertion failed at line 30, col 0: py_assertion: ❌ fail
+py_assertion: ✅ pass (at line 30, col 0)

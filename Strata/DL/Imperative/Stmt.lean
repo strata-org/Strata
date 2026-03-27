@@ -135,7 +135,7 @@ This is useful when converting to non-deterministic statements which don't have 
 
 mutual
 /-- Returns true if the statement contains no function declarations. -/
-def Stmt.noFuncDecl (s : Stmt P C) : Bool :=
+@[expose] def Stmt.noFuncDecl (s : Stmt P C) : Bool :=
   match s with
   | .cmd _ => true
   | .block _ bss _ => Block.noFuncDecl bss
@@ -147,7 +147,7 @@ def Stmt.noFuncDecl (s : Stmt P C) : Bool :=
   termination_by (Stmt.sizeOf s)
 
 /-- Returns true if the block contains no function declarations. -/
-def Block.noFuncDecl (ss : Block P C) : Bool :=
+@[expose] def Block.noFuncDecl (ss : Block P C) : Bool :=
   match ss with
   | [] => true
   | s :: srest => Stmt.noFuncDecl s && Block.noFuncDecl srest

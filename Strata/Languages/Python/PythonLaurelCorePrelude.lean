@@ -34,6 +34,7 @@ private def pythonRuntimeCorePartDDM :=
 #strata
 program Core;
 
+
 // =====================================================================
 // Forward declarations of types defined in PythonRuntimeLaurelPart.
 // These are needed so the DDM parser can resolve references in axioms
@@ -48,7 +49,8 @@ datatype Error () {
   AssertionError (Assertion_msg : string),
   UnimplementedError (Unimplement_msg : string),
   UndefinedError (Undefined_msg : string),
-  IndexError (IndexError_msg : string)
+  IndexError (IndexError_msg : string),
+  RePatternError (Re_msg : string)
 };
 
 // /////////////////////////////////////////////////////////////////////////////////////
@@ -65,6 +67,11 @@ datatype Error () {
 // In this prelude, we model datetime as a single int and assume
 // that the conversion from a string constant is handled by the translator.
 
+datatype OptionInt {
+  Some (unwrap: int),
+  None ()
+}
+
 datatype Any () {
   from_none (),
   from_bool (as_bool : bool),
@@ -75,6 +82,7 @@ datatype Any () {
   from_Dict (as_Dict: DictStrAny),
   from_ListAny (as_ListAny : ListAny),
   from_ClassInstance (classname : string, instance_attributes: DictStrAny),
+  from_Slice(start: int, stop: OptionInt),
   exception (get_error: Error)
 }
 
@@ -93,11 +101,101 @@ datatype DictStrAny () {
   DictStrAny_cons (key: string, val: Any, tail: DictStrAny)
 };
 
+// Forward declarations: needed so the inline functions after CoreOnlyDelimiter
+// can reference these during DDM parsing.  The Laurel→Core translator may
+// produce empty-signature stubs for these; prependPrelude deduplicates them.
+function re_fullmatch_str(pattern : string) : regex;
+function re_match_str(pattern : string) : regex;
+function re_search_str(pattern : string) : regex;
+function re_pattern_error(pattern : string) : Error;
+
 type CoreOnlyDelimiter;
 
 // =====================================================================
 // Core-only declarations (not expressed in Laurel)
 // =====================================================================
+
+// /////////////////////////////////////////////////////////////////////////////////////
+// Regex support
+//
+// Python signatures:
+//   re.compile(pattern: str) -> re.Pattern
+//   re.match(pattern: str | re.Pattern, string: str) -> re.Match | None
+//   re.search(pattern: str | re.Pattern, string: str) -> re.Match | None
+//   re.fullmatch(pattern: str | re.Pattern, string: str) -> re.Match | None
+//
+// Architecture:
+//
+// re.compile is a semantic no-op — it returns the pattern string unchanged.
+// The mode-specific factory functions re_fullmatch_str, re_match_str,
+// re_search_str each compile a pattern string to a regex with the correct
+// MatchMode (via pythonRegexToCore), so anchors (^/$) are handled properly.
+// Their concreteEval fires when the pattern is a string literal.
+//
+// The _bool helpers call the mode-specific factories, so there is a single
+// source of truth for mode-specific compilation.
+//
+// On match, we return a from_ClassInstance wrapping a concrete re_Match
+// with pos=0 and endpos=str.len(s), which is sound for the module-level
+// API (no pos/endpos parameters).
+// /////////////////////////////////////////////////////////////////////////////////////
+
+// Mode-specific factory functions are declared via ReFactory (with concreteEval
+// for literal pattern expansion), not in this prelude, to avoid duplicate
+// definitions.
+
+inline function re_fullmatch_bool(pattern : string, s : string) : bool {
+  str.in.re(s, re_fullmatch_str(pattern))
+}
+inline function re_match_bool(pattern : string, s : string) : bool {
+  str.in.re(s, re_match_str(pattern))
+}
+inline function re_search_bool(pattern : string, s : string) : bool {
+  str.in.re(s, re_search_str(pattern))
+}
+
+inline function mk_re_Match(s : string) : Any {
+  from_ClassInstance("re_Match",
+    DictStrAny_cons("re_match_string", from_string(s),
+      DictStrAny_cons("re_match_pos", from_int(0),
+        DictStrAny_cons("re_match_endpos", from_int(str.len(s)),
+          DictStrAny_empty()))))
+}
+
+// re.compile is a no-op: returns the pattern string unchanged.
+inline function re_compile(pattern : Any) : Any
+  requires Any..isfrom_string(pattern);
+{
+  pattern
+}
+
+inline function re_fullmatch(pattern : Any, s : Any) : Any
+  requires Any..isfrom_string(pattern) && Any..isfrom_string(s);
+{
+  if Error..isRePatternError(re_pattern_error(Any..as_string!(pattern)))
+  then exception(re_pattern_error(Any..as_string!(pattern)))
+  else if re_fullmatch_bool(Any..as_string!(pattern), Any..as_string!(s))
+       then mk_re_Match(Any..as_string!(s))
+       else from_none()
+}
+inline function re_match(pattern : Any, s : Any) : Any
+  requires Any..isfrom_string(pattern) && Any..isfrom_string(s);
+{
+  if Error..isRePatternError(re_pattern_error(Any..as_string!(pattern)))
+  then exception(re_pattern_error(Any..as_string!(pattern)))
+  else if re_match_bool(Any..as_string!(pattern), Any..as_string!(s))
+       then mk_re_Match(Any..as_string!(s))
+       else from_none()
+}
+inline function re_search(pattern : Any, s : Any) : Any
+  requires Any..isfrom_string(pattern) && Any..isfrom_string(s);
+{
+  if Error..isRePatternError(re_pattern_error(Any..as_string!(pattern)))
+  then exception(re_pattern_error(Any..as_string!(pattern)))
+  else if re_search_bool(Any..as_string!(pattern), Any..as_string!(s))
+       then mk_re_Match(Any..as_string!(s))
+       else from_none()
+}
 
 // /////////////////////////////////////////////////////////////////////////////////////
 //Functions that we provide to Python user
@@ -179,12 +277,14 @@ inline function isError (e: Error) : bool {
 // /////////////////////////////////////////////////////////////////////////////////////
 
 inline function Any_to_bool (v: Any) : bool
-  requires (Any..isfrom_bool(v) || Any..isfrom_none(v) || Any..isfrom_string(v) || Any..isfrom_int(v));
+  requires (Any..isfrom_bool(v) || Any..isfrom_none(v) || Any..isfrom_string(v) || Any..isfrom_int(v) || Any..isfrom_Dict(v) || Any..isfrom_ListAny(v));
 {
   if (Any..isfrom_bool(v)) then Any..as_bool!(v) else
   if (Any..isfrom_none(v)) then false else
   if (Any..isfrom_string(v)) then !(Any..as_string!(v) == "") else
   if (Any..isfrom_int(v)) then !(Any..as_int!(v) == 0) else
+  if (Any..isfrom_Dict(v)) then !(Any..as_Dict!(v) == DictStrAny_empty) else
+  if (Any..isfrom_ListAny(v)) then !(Any..as_ListAny!(v) == ListAny_nil) else
   false
   //WILL BE ADDED
 }
@@ -196,20 +296,20 @@ inline function Any_to_bool (v: Any) : bool
 rec function List_len (@[cases] l : ListAny) : int
 {
   if ListAny..isListAny_nil(l) then 0 else 1 + List_len(ListAny..tail!(l))
-}
+};
 
 axiom [List_len_pos]: forall l : ListAny :: List_len(l) >= 0;
 
 rec function List_contains (@[cases] l : ListAny, x: Any) : bool
 {
   if ListAny..isListAny_nil(l) then false else (ListAny..head!(l) == x) || List_contains(ListAny..tail!(l), x)
-}
+};
 
 rec function List_extend (@[cases] l1 : ListAny, l2: ListAny) : ListAny
 {
   if ListAny..isListAny_nil(l1) then l2
   else ListAny_cons(ListAny..head!(l1), List_extend(ListAny..tail!(l1), l2))
-}
+};
 
 rec function List_get (@[cases] l : ListAny, i : int) : Any
   requires i >= 0 && i < List_len(l);
@@ -217,7 +317,7 @@ rec function List_get (@[cases] l : ListAny, i : int) : Any
   if ListAny..isListAny_nil(l) then from_none()
   else if  i == 0 then ListAny..head!(l)
   else List_get(ListAny..tail!(l), i - 1)
-}
+};
 
 rec function List_take (@[cases] l : ListAny, i: int) : ListAny
   requires i >= 0 && i <= List_len(l);
@@ -225,7 +325,7 @@ rec function List_take (@[cases] l : ListAny, i: int) : ListAny
   if ListAny..isListAny_nil(l) then ListAny_nil()
   else if  i == 0 then ListAny_nil()
   else ListAny_cons(ListAny..head!(l), List_take(ListAny..tail!(l), i - 1))
-}
+};
 
 axiom [List_take_len]: forall l : ListAny, i: int :: {List_len(List_take(l,i))}
   (i >= 0 && i <= List_len(l)) ==> List_len(List_take(l,i)) == i;
@@ -236,7 +336,7 @@ rec function List_drop (@[cases] l : ListAny, i: int) : ListAny
   if ListAny..isListAny_nil(l) then ListAny_nil()
   else if  i == 0 then l
   else List_drop(ListAny..tail!(l), i - 1)
-}
+};
 
 axiom [List_drop_len]: forall l : ListAny, i: int :: {List_len(List_drop(l,i))}
   (i >= 0 && i <= List_len(l)) ==> List_len(List_drop(l,i)) == List_len(l) - i;
@@ -253,7 +353,7 @@ rec function List_set (@[cases] l : ListAny, i : int, v: Any) : ListAny
   if ListAny..isListAny_nil(l) then ListAny_nil()
   else if  i == 0 then ListAny_cons(v, ListAny..tail!(l))
   else ListAny_cons(ListAny..head!(l), List_set(ListAny..tail!(l), i - 1, v))
-}
+};
 
 rec function List_map (@[cases] l : ListAny, f: Any -> Any) : ListAny
 {
@@ -261,7 +361,7 @@ rec function List_map (@[cases] l : ListAny, f: Any -> Any) : ListAny
     ListAny_nil()
   else
     ListAny_cons(f(ListAny..head!(l)), List_map(ListAny..tail!(l), f))
-}
+};
 
 rec function List_filter (@[cases] l : ListAny, f: Any -> bool) : ListAny
 {
@@ -271,7 +371,7 @@ rec function List_filter (@[cases] l : ListAny, f: Any -> bool) : ListAny
     ListAny_cons(ListAny..head!(l), List_filter(ListAny..tail!(l), f))
   else
     List_filter(ListAny..tail!(l), f)
-}
+};
 
 //Require recursive function on int
 function List_repeat (l: ListAny, n: int): ListAny;
@@ -285,7 +385,7 @@ rec function DictStrAny_contains (@[cases] d : DictStrAny, key: string) : bool
 {
   if DictStrAny..isDictStrAny_empty(d) then false
   else (DictStrAny..key!(d) == key) || DictStrAny_contains(DictStrAny..tail!(d), key)
-}
+};
 
 rec function DictStrAny_get (@[cases] d : DictStrAny, key: string) : Any
   requires DictStrAny_contains(d, key);
@@ -293,6 +393,18 @@ rec function DictStrAny_get (@[cases] d : DictStrAny, key: string) : Any
   if  DictStrAny..isDictStrAny_empty(d) then from_none()
   else if DictStrAny..key!(d) == key then DictStrAny..val!(d)
   else DictStrAny_get(DictStrAny..tail!(d), key)
+};
+
+inline function DictStrAny_get_or_none (d : DictStrAny, key: string) : Any
+{
+  if DictStrAny_contains(d, key) then DictStrAny_get(d, key)
+  else from_none()
+}
+
+inline function Any_get_or_none (dict: Any, key: Any) : Any
+  requires Any..isfrom_Dict(dict) && Any..isfrom_string(key);
+{
+  DictStrAny_get_or_none(Any..as_Dict!(dict), Any..as_string!(key))
 }
 
 rec function DictStrAny_insert (@[cases] d : DictStrAny, key: string, val: Any) : DictStrAny
@@ -300,16 +412,23 @@ rec function DictStrAny_insert (@[cases] d : DictStrAny, key: string, val: Any) 
   if DictStrAny..isDictStrAny_empty(d) then DictStrAny_cons(key, val, DictStrAny_empty())
   else if DictStrAny..key!(d) == key then DictStrAny_cons(key, val, DictStrAny..tail!(d))
   else DictStrAny_cons(DictStrAny..key!(d), DictStrAny..val!(d), DictStrAny_insert(DictStrAny..tail!(d), key, val))
-}
+};
 
 inline function Any_get (dictOrList: Any, index: Any): Any
   requires  (Any..isfrom_Dict(dictOrList) && Any..isfrom_string(index) && DictStrAny_contains(Any..as_Dict!(dictOrList), Any..as_string!(index))) ||
-            (Any..isfrom_ListAny(dictOrList) && Any..isfrom_int(index) && Any..as_int!(index) >= 0 && Any..as_int!(index) < List_len(Any..as_ListAny!(dictOrList)));
+            (Any..isfrom_ListAny(dictOrList) && Any..isfrom_int(index) && Any..as_int!(index) >= 0 && Any..as_int!(index) < List_len(Any..as_ListAny!(dictOrList)))||
+            (Any..isfrom_ListAny(dictOrList) && Any..isfrom_Slice(index) && Any..start!(index) >= 0 && Any..start!(index) < List_len(Any..as_ListAny!(dictOrList)) &&
+                ((OptionInt..isSome(Any..stop!(index))) &&  OptionInt..unwrap!(Any..stop!(index)) >= 0 && OptionInt..unwrap!(Any..stop!(index)) <= List_len(Any..as_ListAny!(dictOrList)) && Any..start!(index) <= OptionInt..unwrap!(Any..stop!(index))
+                  || (OptionInt..isNone(Any..stop!(index)))));
 {
   if Any..isfrom_Dict(dictOrList) then
     DictStrAny_get(Any..as_Dict!(dictOrList), Any..as_string!(index))
-  else
+  else if Any..isfrom_ListAny(dictOrList) && Any..isfrom_int(index) then
     List_get(Any..as_ListAny!(dictOrList), Any..as_int!(index))
+  else if Any..isfrom_ListAny(dictOrList) && Any..isfrom_Slice(index) && OptionInt..isSome(Any..stop!(index)) then
+    from_ListAny(List_slice(Any..as_ListAny!(dictOrList), Any..start!(index), OptionInt..unwrap!(Any..stop!(index))))
+  else
+    from_ListAny(List_drop(Any..as_ListAny!(dictOrList), Any..start!(index)))
 }
 
 inline function Any_get! (dictOrList: Any, index: Any): Any
@@ -357,7 +476,7 @@ rec function Any_sets (dictOrList: Any, @[cases] indices: ListAny, val: Any): An
   else if ListAny..isListAny_nil(ListAny..tail!(indices)) then Any_set!(dictOrList, ListAny..head!(indices), val)
   else Any_set!(dictOrList, ListAny..head!(indices),
     Any_sets(Any_get!(dictOrList, ListAny..head!(indices)), ListAny..tail!(indices), val))
-}
+};
 
 inline function PIn (v: Any, dictOrList: Any) : Any
   requires (Any..isfrom_Dict(dictOrList) && Any..isfrom_string(v)) || Any..isfrom_ListAny(dictOrList);
@@ -790,7 +909,7 @@ spec {
   ret := from_datetime(d);
 };
 
-procedure timedelta(days: Any, hours: Any) returns (delta : Any, maybe_except: Error)
+procedure timedelta_func (days: Any, hours: Any) returns (delta : Any, maybe_except: Error)
 spec{
   requires [days_type]: Any..isfrom_none(days) || Any..isfrom_int(days);
   requires [hours_type]: Any..isfrom_none(hours) || Any..isfrom_int(hours);

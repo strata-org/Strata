@@ -59,7 +59,7 @@ private def fmtHighType : HighType → String
   | .Pure _ => "Pure"
   | .Intersection _ => "Intersection"
   | .TCore s => s!"TCore({s})"
-  | .Top => "Top"
+  | HighType.Unknown => "Unknown"
 
 private def fmtParam (p : Parameter) : String :=
   s!"{p.name}:{fmtHighType p.type.val}"
@@ -78,8 +78,8 @@ private def fmtTypeDef : TypeDefinition → String
   | .Datatype ty => s!"datatype {ty.name}"
 
 /-- Run signaturesToLaurel and print formatted output. Asserts no errors. -/
-private def runTest (sigs : Array Signature) : IO Unit := do
-  let result := signaturesToLaurel "<test>" sigs
+private def runTest (sigs : Array Signature) (modulePrefix : String := "") : IO Unit := do
+  let result := signaturesToLaurel "<test>" sigs modulePrefix
   assert! result.errors.size = 0
   for td in result.program.types do
     IO.println (fmtTypeDef td)
@@ -87,8 +87,8 @@ private def runTest (sigs : Array Signature) : IO Unit := do
     IO.println (fmtProc proc)
 
 /-- Run signaturesToLaurel expecting errors. Print error messages. -/
-private def runTestErrors (sigs : Array Signature) : IO Unit := do
-  let result := signaturesToLaurel "<test>" sigs
+private def runTestErrors (sigs : Array Signature) (modulePrefix : String := "") : IO Unit := do
+  let result := signaturesToLaurel "<test>" sigs modulePrefix
   assert! result.errors.size > 0
   for err in result.errors do
     IO.println err.message
@@ -249,7 +249,7 @@ info: Union type (None | foo.Bar) not yet supported in Laurel
 info: type MyClass
 type MyAlias
 procedure my_func(x:TInt, y:TString) returns(result:TBool)
-procedure MyClass_get_value() returns(result:TString)
+procedure MyClass@get_value() returns(result:TString)
 -/
 #guard_msgs in
 #eval runTest #[
@@ -277,8 +277,8 @@ procedure MyClass_get_value() returns(result:TString)
 /-! ## NoneType and void return -/
 
 /--
-info: procedure returns_none()
-procedure takes_none(x:TVoid)
+info: procedure returns_none() returns(result:TCore(Any))
+procedure takes_none(x:TVoid) returns(result:TCore(Any))
 -/
 #guard_msgs in
 #eval runTest #[
@@ -323,8 +323,8 @@ private def mkOverload (name : String) (returnType : SpecType)
 
 /-- Run signaturesToLaurel and print the full result: Laurel output,
     dispatch table, and method registry. Sorts by key for stable output. -/
-private def runFullTest (sigs : Array Signature) : IO Unit := do
-  let result := signaturesToLaurel "<test>" sigs
+private def runFullTest (sigs : Array Signature) (modulePrefix : String := "") : IO Unit := do
+  let result := signaturesToLaurel "<test>" sigs modulePrefix
   if result.errors.size > 0 then
     IO.println s!"errors: {result.errors.size}"
     for err in result.errors do
@@ -359,7 +359,7 @@ private def runDispatchTest (sigs : Array Signature) : IO Unit := do
 -- and a regular function.
 /--
 info: type SvcClient
-procedure SvcClient_do_thing(x:TString) returns(result:TInt)
+procedure SvcClient@do_thing(x:TString) returns(result:TInt)
 procedure helper() returns(result:TBool)
 dispatch create_client:
   "svc_a" -> mod.client.SvcClient

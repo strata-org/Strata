@@ -74,9 +74,9 @@ def eval (E : Env) : List (Program × Env) :=
             xdecls := declsE.xdecls ++ [decl] }
       go rest declsE
 
-    | .proc proc _ =>
+    | .proc proc md =>
       let (p, E) := Procedure.eval declsE.env proc
-      let declsE := { declsE with xdecls := declsE.xdecls ++ [.proc p], env := E }
+      let declsE := { declsE with xdecls := declsE.xdecls ++ [.proc p md], env := E }
       go rest declsE
 
     | .func func _ =>
@@ -85,8 +85,19 @@ def eval (E : Env) : List (Program × Env) :=
       | .ok new_env =>
         let declsE := { declsE with env := new_env,
                                     xdecls := declsE.xdecls ++ [decl] }
-
       go rest declsE
+
+    | .recFuncBlock funcs _ =>
+      match validateCasesTypes funcs declsE.env.datatypes with
+      | .error e => [(declsE.xdecls, { declsE.env with error := some (Imperative.EvalError.Misc f!"{e}")})]
+      | .ok () =>
+      let result := funcs.foldlM (fun env func => env.addFactoryFunc func) declsE.env
+      match result with
+      | .error e => [(declsE.xdecls, { declsE.env with error := some (Imperative.EvalError.Misc f!"{e}")})]
+      | .ok new_env =>
+        let declsE := { declsE with env := new_env,
+                                    xdecls := declsE.xdecls ++ [decl] }
+        go rest declsE
 
 
 --------------------------------------------------------------------

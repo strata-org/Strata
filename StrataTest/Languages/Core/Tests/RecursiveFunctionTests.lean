@@ -29,7 +29,7 @@ datatype IntList { Nil(), Cons(hd: int, tl: IntList) };
 rec function listLen (@[cases] xs : IntList) : int
 {
   if IntList..isNil(xs) then 0 else 1 + listLen(IntList..tl(xs))
-}
+};
 
 procedure TestListLen() returns ()
 spec {
@@ -115,7 +115,7 @@ datatype IntList { Nil(), Cons(hd: int, tl: IntList) };
 rec function listLen (@[cases] xs : IntList) : int
 {
   if IntList..isNil(xs) then 0 else 1 + listLen(IntList..tl(xs))
-}
+};
 
 procedure TestNilCase(xs : IntList) returns ()
 spec {
@@ -228,7 +228,7 @@ rec function contains (key : int, @[cases] xs : IntList) : bool
   if IntList..isNil(xs) then false
   else if IntList..hd(xs) == key then true
   else contains(key, IntList..tl(xs))
-}
+};
 
 procedure TestContains() returns ()
 spec {
@@ -289,7 +289,7 @@ datatype IntList { Nil(), Cons(hd: int, tl: IntList) };
 rec function listLen (@[cases] xs : IntList) : int
 {
   if IntList..isNil(xs) then 0 else 1 + listLen(IntList..tl(xs))
-}
+};
 
 procedure listLenImp(xs : IntList) returns (r : int)
 spec {
@@ -429,7 +429,7 @@ datatype IntList { Nil(), Cons(hd: int, tl: IntList) };
 rec function listLen (@[cases] xs : IntList) : int
 {
   if IntList..isNil(xs) then 0 else 1 + listLen(IntList..tl(xs))
-}
+};
 
 rec function nth (@[cases] xs : IntList, n : int) : int
   requires IntList..isCons(xs);
@@ -438,7 +438,7 @@ rec function nth (@[cases] xs : IntList, n : int) : int
 {
   if n == 0 then IntList..hd(xs)
   else nth(IntList..tl(xs), n - 1)
-}
+};
 
 procedure TestNth() returns ()
 spec {

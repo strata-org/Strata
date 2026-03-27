@@ -16,6 +16,7 @@ public section
 -------------------------------------------------------------------------------
 
 open Lambda.LExpr
+open Lambda.LTy.Syntax
 open Core
 
 /--
@@ -105,39 +106,48 @@ private def RegexAST.hasNonAnchorContent (r : RegexAST) : Bool :=
     | .complement _ => true
     | _             => false)
 
+-- Type annotations for regex ops.  concreteEval runs after the type-checker,
+-- so expressions it produces must already carry annotations for the SMT encoder.
+private def reTy  := mty[regex]
+private def s2r   := mty[string → regex]
+private def r2r   := mty[regex → regex]
+private def rr2r  := mty[regex → (regex → regex)]
+private def ss2r  := mty[string → (string → regex)]
+private def rii2r := mty[regex → (int → (int → regex))]
+
 /--
 Empty regex pattern; matches an empty string.
 -/
-private def Core.emptyRegex : Core.Expression.Expr :=
-  mkApp () (.op () strToRegexFunc.name none) [strConst () ""]
+private def Core.emptyRegex : Expression.Expr :=
+  mkApp () (.op () strToRegexFunc.name (some s2r)) [strConst () ""]
 
 /--
 Unmatchable regex pattern.
 -/
-private def Core.unmatchableRegex : Core.Expression.Expr :=
-  mkApp () (.op () reNoneFunc.name none) []
+private def Core.unmatchableRegex : Expression.Expr :=
+  mkApp () (.op () reNoneFunc.name (some reTy)) []
 
 -- Core regex expression builders.
-private abbrev mkReFromStr (s : String) : Core.Expression.Expr :=
-  mkApp () (.op () strToRegexFunc.name none) [strConst () s]
-private abbrev mkReRange   (c1 c2 : Char) : Core.Expression.Expr :=
-  mkApp () (.op () reRangeFunc.name none) [strConst () (toString c1), strConst () (toString c2)]
-private abbrev mkReAllChar : Core.Expression.Expr :=
-  .op () reAllCharFunc.name none
-private abbrev mkReComp    (r : Core.Expression.Expr) : Core.Expression.Expr :=
-  mkApp () (.op () reCompFunc.name none) [r]
-private abbrev mkReUnion   (a b : Core.Expression.Expr) : Core.Expression.Expr :=
-  mkApp () (.op () reUnionFunc.name none) [a, b]
-private abbrev mkReConcat  (a b : Core.Expression.Expr) : Core.Expression.Expr :=
-  mkApp () (.op () reConcatFunc.name none) [a, b]
-private abbrev mkReInter   (a b : Core.Expression.Expr) : Core.Expression.Expr :=
-  mkApp () (.op () reInterFunc.name none) [a, b]
-private abbrev mkReStar    (r   : Core.Expression.Expr) : Core.Expression.Expr :=
-  mkApp () (.op () reStarFunc.name none) [r]
-private abbrev mkRePlus    (r   : Core.Expression.Expr) : Core.Expression.Expr :=
-  mkApp () (.op () rePlusFunc.name none) [r]
-private abbrev mkReLoop    (r   : Core.Expression.Expr) (lo hi : Nat) : Core.Expression.Expr :=
-  mkApp () (.op () reLoopFunc.name none) [r, intConst () lo, intConst () hi]
+private abbrev mkReFromStr (s : String) : Expression.Expr :=
+  mkApp () (.op () strToRegexFunc.name (some s2r)) [strConst () s]
+private abbrev mkReRange   (c1 c2 : Char) : Expression.Expr :=
+  mkApp () (.op () reRangeFunc.name (some ss2r)) [strConst () (toString c1), strConst () (toString c2)]
+private abbrev mkReAllChar : Expression.Expr :=
+  .op () reAllCharFunc.name (some reTy)
+private abbrev mkReComp    (r : Expression.Expr) : Expression.Expr :=
+  mkApp () (.op () reCompFunc.name (some r2r)) [r]
+private abbrev mkReUnion   (a b : Expression.Expr) : Expression.Expr :=
+  mkApp () (.op () reUnionFunc.name (some rr2r)) [a, b]
+private abbrev mkReConcat  (a b : Expression.Expr) : Expression.Expr :=
+  mkApp () (.op () reConcatFunc.name (some rr2r)) [a, b]
+private abbrev mkReInter   (a b : Expression.Expr) : Expression.Expr :=
+  mkApp () (.op () reInterFunc.name (some rr2r)) [a, b]
+private abbrev mkReStar    (r   : Expression.Expr) : Expression.Expr :=
+  mkApp () (.op () reStarFunc.name (some r2r)) [r]
+private abbrev mkRePlus    (r   : Expression.Expr) : Expression.Expr :=
+  mkApp () (.op () rePlusFunc.name (some r2r)) [r]
+private abbrev mkReLoop    (r   : Expression.Expr) (lo hi : Nat) : Expression.Expr :=
+  mkApp () (.op () reLoopFunc.name (some rii2r)) [r, intConst () lo, intConst () hi]
 
 /--
 Shared body for `star` and `loop {0, m}` (m ≥ 2):
@@ -303,7 +313,7 @@ private def RegexAST.toCore (r : RegexAST) (atStart atEnd : Bool) :
 def pythonRegexToCore (pyRegex : String) (mode : MatchMode := .fullmatch) :
     Core.Expression.Expr × Option ParseError :=
   match parseTop pyRegex with
-  | .error err => (mkApp () (.op () reAllFunc.name none) [], some err)
+  | .error err => (mkApp () (.op () reAllFunc.name (some reTy)) [], some err)
   | .ok ast =>
     -- `dotStar`: passed with `atStart=false`, `atEnd=false` since `anychar`
     -- ignores both.

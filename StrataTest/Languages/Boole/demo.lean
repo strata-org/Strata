@@ -40,4 +40,10 @@ theorem loopSimple_smtVCsCorrect : smtVCsCorrect loopSimple := by
   gen_smt_vcs
   all_goals (try grind)
 
+/-- info: 'loopSimple_smtVCsCorrect' depends on axioms: [propext,
+ Classical.choice,
+ Lean.ofReduceBool,
+ Lean.trustCompiler,
+ Quot.sound]-/
+#guard_msgs in
 #print axioms loopSimple_smtVCsCorrect
