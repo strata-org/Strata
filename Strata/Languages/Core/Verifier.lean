@@ -181,6 +181,7 @@ def dischargeObligation
     filename
     solverFlags (options.verbose > .normal)
     satisfiabilityCheck validityCheck
+    (skipSolver := options.skipSolver)
 
 end -- public section
 end Core.SMT
@@ -687,7 +688,7 @@ def verifySingleEnv (pE : Program × Env) (options : VerifyOptions)
           | .bugFinding, .minimalVerbose, .cover => (true, false)  -- Same checks as minimal
       let (obligation, peSatResult?, peValResult?) ← preprocessObligation obligation p options satisfiabilityCheck validityCheck axiomCache
       -- If PE resolved both checks, we're done, unless we always want to generate SMT queries
-      if not options.alwaysRunSMT then
+      if not options.alwaysGenerateSMT then
         if let (some peSat, some peVal) := (peSatResult?, peValResult?) then
           let outcome := VCOutcome.mk peSat peVal
           let result : VCResult := { obligation, outcome := .ok outcome, verbose := options.verbose,
