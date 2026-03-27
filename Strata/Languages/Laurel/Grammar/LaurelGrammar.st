@@ -171,14 +171,17 @@ op procedure (name : Ident, parameters: CommaSepBy Parameter,
   body : Option Body) : Procedure =>
   "procedure " name "(" parameters ")" returnType returnParameters requires ensures modifies body ";";
 
-op function (name : Ident, parameters: CommaSepBy Parameter,
+category OpaqueModifier;
+op opaqueModifier: OpaqueModifier => "opaque";
+
+op function (opaque: Option OpaqueModifier, name : Ident, parameters: CommaSepBy Parameter,
   returnType: Option ReturnType,
   returnParameters: Option ReturnParameters,
   requires: Seq RequiresClause,
   ensures: Seq EnsuresClause,
   modifies: Seq ModifiesClause,
   body : Option Body) : Procedure =>
-  "function " name "(" parameters ")" returnType returnParameters requires ensures modifies body ";";
+  opaque "function " name "(" parameters ")" returnType returnParameters requires ensures modifies body ";";
 
 op composite (name: Ident, extending: Option Extends, fields: Seq Field, procedures: Seq Procedure): Composite => "composite " name extending "{" fields procedures "}";
 

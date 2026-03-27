@@ -123,15 +123,14 @@ procedure uninitNotWitness() {
 //^^^^^^^^^^^^^ error: assertion does not hold
 };
 
-// Function with valid constrained return — constraint not checked (not yet supported)
+// Function with valid constrained return — check procedure verifies body
 function goodFunc(): nat { 3 };
-//       ^^^^^^^^ error: constrained return types on functions are not yet supported
 
-// Function with invalid constrained return — constraint not checked (not yet supported)
+// Function with invalid constrained return — check procedure catches violation
 function badFunc(): nat { -1 };
-//       ^^^^^^^ error: constrained return types on functions are not yet supported
+//       ^^^^^^^ error: assertion does not hold
 
-// Caller of constrained function — body is inlined, caller sees actual value
+// Caller of constrained function — body is transparent
 procedure callerGood() {
   var x: int := goodFunc();
   assert x >= 0
@@ -165,6 +164,73 @@ constrained haslarger = x: int where (exists(y: int) => y > x) witness 0
 procedure captureTest(y: haslarger) {
   assert false
 //^^^^^^^^^^^^ error: assertion does not hold
+};
+
+// Opaque function with constrained return — caller gets assume via postcondition
+function opaqueNatFunc(): nat;
+procedure callerOfOpaqueFunc() {
+  var x: int := opaqueNatFunc();
+  assert x >= 0
+};
+
+// Function call inside assert — lifted out, postcondition assumed
+procedure assertCallPosition() {
+  assert opaqueNatFunc() >= 0
+};
+
+// Function call inside if condition — lifted out, postcondition assumed
+procedure ifCondPosition() {
+  var b: bool := opaqueNatFunc() >= 0;
+  if (b) {
+    assert b
+  }
+};
+
+// Nested function call — inner call lifted, postcondition assumed
+function idFunc(x: int): int { x };
+procedure nestedCallPosition() {
+  var y: int := idFunc(opaqueNatFunc());
+  assert y >= 0
+};
+
+// Multiple postcond calls in one expression — both lifted
+procedure multiCallPosition() {
+  var x: int := opaqueNatFunc() + opaqueNatFunc();
+  assert x >= 0
+};
+
+// Function with precondition and constrained return — check inherits requires
+function guardedFunc(x: int): nat
+  requires x >= 0
+{ x };
+
+// Invalid constrained return with precondition — check catches violation
+function badGuardedFunc(x: int): nat
+//       ^^^^^^^^^^^^^^ error: assertion does not hold
+  requires x > -10
+{ x };
+
+// Combined constrained return + explicit ensures — both must be preserved
+// Uses opaque to ensure caller relies on postconditions, not body inlining
+opaque function combinedPostconds(x: int): nat
+  requires x >= 0
+  ensures result <= x
+{ x };
+procedure callerOfCombined() {
+  var y: int := combinedPostconds(5);
+  assert y >= 0;
+  assert y <= 5
+};
+
+// Call in while condition — postcondition needed to prove post-loop assertion
+procedure whileCondPosition() {
+  var i: int := -5;
+  while (i < opaqueNatFunc())
+  {
+    i := i + 1
+  };
+  // After loop: i >= opaqueNatFunc() >= 0 (from postcondition), so i >= 0
+  assert i >= 0
 };
 "
 

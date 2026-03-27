@@ -409,7 +409,7 @@ def buildSpecBody (preconditions : Array Assertion)
       let assertStmt ← mkStmtWithLoc (.Assert (mkStmt .Hole md)) default msg
       stmts := assertStmt :: stmts
   let body := mkStmt (.Block stmts.reverse none) fileMd
-  return .Transparent body
+  return .Transparent body []
 
 /-! ## Declaration Translation -/
 

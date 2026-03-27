@@ -14,8 +14,6 @@ A Laurel-to-Laurel pass that eliminates constrained types by:
 1. Generating a constraint function per constrained type (e.g. `nat$constraint(x: int): bool`)
 2. Adding `requires constraintFunc(param)` for constrained-typed inputs
 3. Adding `ensures constraintFunc(result)` for constrained-typed outputs
-   - Skipped for `isFunctional` procedures since the Laurel translator does not yet support
-     function postconditions. Constrained return types on functions are not checked.
 4. Inserting `assert constraintFunc(var)` for local variable init and reassignment
 5. Assuming the constraint for uninitialized constrained-typed variables (havoc + assume)
 6. Adding a synthetic witness-validation procedure per constrained type
@@ -74,7 +72,7 @@ def mkConstraintFunc (ptMap : ConstrainedTypeMap) (ct : ConstrainedType) : Proce
   { name := mkId s!"{ct.name.text}$constraint"
     inputs := [{ name := ct.valueName, type := { baseType with md := #[] } }]
     outputs := [{ name := mkId "result", type := ⟨.TBool, #[]⟩ }]
-    body := .Transparent ⟨.Block [bodyExpr] none, #[]⟩
+    body := .Transparent ⟨.Block [bodyExpr] none, #[]⟩ []
     isFunctional := true
     determinism := .deterministic none
     decreases := none
@@ -190,19 +188,19 @@ decreasing_by
 def elimProc (ptMap : ConstrainedTypeMap) (proc : Procedure) : Procedure :=
   let inputRequires := proc.inputs.filterMap fun p =>
     constraintCallFor ptMap p.type.val p.name p.type.md
-  let outputEnsures := if proc.isFunctional then [] else proc.outputs.filterMap fun p =>
+  let outputEnsures := proc.outputs.filterMap fun p =>
     (constraintCallFor ptMap p.type.val p.name p.type.md).map
       fun c => ⟨c.val, p.type.md⟩
   let initVars : PredVarMap := proc.inputs.foldl (init := {}) fun s p =>
     if isConstrainedType ptMap p.type.val then s.insert p.name.text p.type.val else s
   let body' := match proc.body with
-  | .Transparent bodyExpr =>
+  | .Transparent bodyExpr existingPosts =>
     let (stmts, _) := (elimStmt ptMap bodyExpr).run initVars
     let body := wrap stmts bodyExpr.md
-    if outputEnsures.isEmpty then .Transparent body
-    else
-      let retBody := if proc.isFunctional then ⟨.Return (some body), bodyExpr.md⟩ else body
-      .Opaque outputEnsures (some retBody) []
+    let allPosts := existingPosts ++ outputEnsures
+    if allPosts.isEmpty then .Transparent body []
+    else if proc.isFunctional then .Transparent body allPosts
+    else .Opaque allPosts (some body) []
   | .Opaque postconds impl modif =>
     let impl' := impl.map fun b => wrap ((elimStmt ptMap b).run initVars).1 b.md
     .Opaque (postconds ++ outputEnsures) impl' modif
@@ -210,7 +208,7 @@ def elimProc (ptMap : ConstrainedTypeMap) (proc : Procedure) : Procedure :=
   | .External => .External
   let resolve := resolveExpr ptMap
   let resolveBody : Body → Body := fun body => match body with
-    | .Transparent b => .Transparent (resolve b)
+    | .Transparent b posts => .Transparent (resolve b) (posts.map resolve)
     | .Opaque ps impl modif => .Opaque (ps.map resolve) (impl.map resolve) (modif.map resolve)
     | .Abstract ps => .Abstract (ps.map resolve)
     | .External => .External
@@ -230,7 +228,7 @@ private def mkWitnessProc (ptMap : ConstrainedTypeMap) (ct : ConstrainedType) : 
   { name := mkId s!"$witness_{ct.name.text}"
     inputs := []
     outputs := []
-    body := .Transparent ⟨.Block [witnessInit, assert] none, md⟩
+    body := .Transparent ⟨.Block [witnessInit, assert] none, md⟩ []
     preconditions := []
     isFunctional := false
     determinism := .deterministic none
@@ -244,14 +242,10 @@ public def constrainedTypeElim (_model : SemanticModel) (program : Program) : Pr
     | .Constrained ct => some (mkConstraintFunc ptMap ct) | _ => none
   let witnessProcedures := program.types.filterMap fun
     | .Constrained ct => some (mkWitnessProc ptMap ct) | _ => none
-  let funcDiags := program.staticProcedures.foldl (init := []) fun acc proc =>
-    if proc.isFunctional && proc.outputs.any (fun p => isConstrainedType ptMap p.type.val) then
-      acc.cons (proc.md.toDiagnostic "constrained return types on functions are not yet supported")
-    else acc
   ({ program with
     staticProcedures := constraintFuncs ++ program.staticProcedures.map (elimProc ptMap)
                         ++ witnessProcedures
     types := program.types.filter fun | .Constrained _ => false | _ => true },
-   funcDiags)
+   [])
 
 end Strata.Laurel
