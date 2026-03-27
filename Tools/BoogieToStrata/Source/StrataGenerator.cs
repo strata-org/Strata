@@ -1222,6 +1222,25 @@ public class StrataGenerator : ReadOnlyVisitor {
                 InsertRegion(existing.children, newRegion, bigBlocks);
                 return;
             }
+            if (newRegion.start < existing.start && newRegion.end >= existing.end) {
+                // newRegion fully contains existing: reparent existing as child
+                // Also absorb any subsequent siblings that fall inside newRegion
+                newRegion.children.Add(existing);
+                siblings[i] = newRegion;
+                while (i + 1 < siblings.Count && siblings[i + 1].start <= newRegion.end) {
+                    var next = siblings[i + 1];
+                    if (next.end <= newRegion.end) {
+                        newRegion.children.Add(next);
+                    } else {
+                        throw new StrataConversionException(bigBlocks[next.start].tok,
+                            $"Irreducible control-flow: overlapping loop regions " +
+                            $"between labels '{string.Join(", ", newRegion.labels)}' and " +
+                            $"'{string.Join(", ", next.labels)}'");
+                    }
+                    siblings.RemoveAt(i + 1);
+                }
+                return;
+            }
             if (newRegion.start >= existing.start && newRegion.start <= existing.end) {
                 // Overlapping but not nested: irreducible
                 throw new StrataConversionException(bigBlocks[newRegion.start].tok,
