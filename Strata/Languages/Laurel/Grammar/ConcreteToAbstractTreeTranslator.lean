@@ -77,7 +77,7 @@ def translateBool (arg : Arg) : TransM Bool := do
   | x => TransM.error s!"translateBool expects expression or operation, got {repr x}"
 
 instance : Inhabited Parameter where
-  default := { name := "" , type := ⟨.TVoid, #[]⟩ }
+  default := { name := "" , type := ⟨.Unknown, #[]⟩ }
 
 def mkHighTypeMd (t : HighType) (md : MetaData) : HighTypeMd := ⟨t, md⟩
 def mkStmtExprMd (e : StmtExpr) (md : MetaData) : StmtExprMd := ⟨e, md⟩
