@@ -36,7 +36,7 @@ def importEvent : EventType := "import"
 Log message for event type if enabled in the given event set.
 Output format: `[event]: message`
 -/
-def baseLogEvent (events : Std.HashSet EventType)
+public def baseLogEvent (events : Std.HashSet EventType)
     (event : EventType) (message : String) : BaseIO Unit := do
   if event ∈ events then
     let _ ← IO.eprintln s!"[{event}]: {message}" |>.toBaseIO
@@ -83,12 +83,12 @@ def ofStringAux (mod : String) (a : Array String) (start cur : mod.Pos) : Except
 public def ofString (mod : String) : Except String ModuleName :=
   ofStringAux mod #[] mod.startPos mod.startPos
 
-instance : ToString ModuleName where
+public instance : ToString ModuleName where
   toString m :=
     let p : m.components.size > 0 := m.componentsSizePos
-    m.components.foldl (init := m.components[0]) (start := 1) fun s c => s!"{s}.{c}"
+    m.components.foldl (init := m.components[0]) (start := 1) (s!"{.}.{.}")
 
-def foldlDirs {α} (mod : ModuleName) (init : α) (f : α → String → α) : α :=
+public def foldlDirs {α} (mod : ModuleName) (init : α) (f : α → String → α) : α :=
   mod.components.foldl (init := init) (stop := mod.components.size - 1) f
 
 def foldlMDirs {α m} [Monad m] (mod : ModuleName) (init : α) (f : α → String → m α) : m α := do
@@ -98,27 +98,86 @@ def fileRoot (mod : ModuleName) : String :=
   let p := mod.componentsSizePos
   mod.components.back
 
-def findInPath (mod : ModuleName) (searchPath : System.FilePath) : EIO String System.FilePath := do
+/--
+Locate the Python source file for a module within `searchPath`.
+Navigates subdirectories for intermediate components, then looks for
+`{leaf}.py`. Falls back to `{leaf}/__init__.py` for packages.
+Returns `(filePath, modulePrefix)` where `modulePrefix` is the array
+of package components for resolving relative imports. For `__init__.py`
+packages this is all components; for regular files it is all but the last.
+-/
+public def findInPath (mod : ModuleName) (searchPath : System.FilePath)
+    : EIO String (System.FilePath × Array String) := do
   let findComponent path comp := do
         let newPath := path / comp
         if !(← newPath.isDir) then
           throw s!"Directory {newPath} not found"
         return newPath
-  let searchPath ← mod.foldlMDirs (init := searchPath) findComponent
-  let file := searchPath / s!"{mod.fileRoot}.py"
-  match ← file.metadata |>.toBaseIO with
-  | .error err =>
-    throw s!"{file} not found: {err}"
-  | .ok md =>
+  let dir ← mod.foldlMDirs (init := searchPath) findComponent
+  let file := dir / s!"{mod.fileRoot}.py"
+  if let .ok md ← file.metadata |>.toBaseIO then
     if md.type != .file then
       throw s!"{file} is not a regular file."
-    pure file
-
-def strataDir (mod : ModuleName) (root : System.FilePath) : System.FilePath :=
-  mod.foldlDirs (init := root) fun d c => d / c
+    let modulePrefix := mod.components.toSubarray (stop := mod.components.size - 1) |>.toArray
+    return (file, modulePrefix)
+  -- Fall back to __init__.py for packages (directories)
+  let pkgDir := dir / mod.fileRoot
+  let initFile := pkgDir / "__init__.py"
+  if let .ok md ← initFile.metadata |>.toBaseIO then
+    if md.type != .file then
+      throw s!"{initFile} is not a regular file."
+    return (initFile, mod.components)
+  -- Fail both
+  throw s!"{file} not found (also no {initFile})."
 
 /-- Generates the output filename for a module's spec file. -/
 public def strataFileName (mod : ModuleName) : String := s!"{mod.fileRoot}.pyspec.st.ion"
+
+/-- Resolve a module name to a PySpec Ion file path under `specDir`.
+    Tries the canonical path first (`specDir/servicelib/Storage.pyspec.st.ion`),
+    then falls back to `__init__` layout (`specDir/servicelib/__init__.pyspec.st.ion`)
+    for package modules. Returns `none` if neither exists. -/
+public def specIonPath (mod : ModuleName) (specDir : System.FilePath)
+    : BaseIO (Option System.FilePath) := do
+  let canonical := mod.foldlDirs (init := specDir) (· / ·) / mod.strataFileName
+  if ← canonical.pathExists then return some canonical
+  -- Fall back to __init__ layout for package modules
+  let initPath := mod.foldlDirs (init := specDir) (· / ·) / mod.fileRoot / "__init__.pyspec.st.ion"
+  if ← initPath.pathExists then return some initPath
+  return none
+
+/-- Derive a ModuleName and its search root from a Python source file path.
+    For regular files, the root is the parent directory.
+    For package init files (`__init__.py`), the module name is the parent
+    directory name and the root is the grandparent.
+    In both cases, `findInPath mod root` resolves back to the original file. -/
+public def ofFile (pythonFile : System.FilePath)
+    : Except String (ModuleName × System.FilePath) := do
+  let (stem, root) :=
+    if pythonFile.fileName == some "__init__.py" then
+      (pythonFile.parent >>= (·.fileName), pythonFile.parent >>= (·.parent))
+    else
+      (pythonFile.fileStem, pythonFile.parent)
+  let some s := stem | .error s!"Cannot derive module name from {pythonFile}"
+  let some r := root | .error s!"Cannot derive search root from {pythonFile}"
+  if s.contains '.' then
+    .error s!"File stem '{s}' contains '.'; expected a simple module name (from {pythonFile})"
+  pure (← ofString s, r)
+
+-- Unit tests for ofFile
+private def testOfFile (path expectedMod expectedRoot : String) : Bool :=
+  match ofFile path with
+  | .ok (mod, root) => toString mod == expectedMod && root.toString == expectedRoot
+  | .error _ => false
+
+#guard testOfFile "path/to/module.py" "module" "path/to"
+#guard testOfFile "path/to/service/__init__.py" "service" "path/to"
+#guard testOfFile "./module.py" "module" "."
+-- Bare filenames without a directory context are rejected
+#guard match ofFile "module.py" with | .error _ => true | .ok _ => false
+#guard match ofFile "__init__.py" with | .error _ => true | .ok _ => false
+-- Dotted file stems are rejected (would be silently split by ofString)
+#guard match ofFile "path/to/foo.bar.py" with | .error _ => true | .ok _ => false
 
 end ModuleName
 
@@ -201,8 +260,8 @@ inductive ClassRef where
 | unresolved (range : SourceRange)
 | resolved
 
-/-- Callback that takes a module name and provides filepath to module  -/
-abbrev ModuleReader := ModuleName → EIO String System.FilePath
+/-- Maps file paths to their FileMap for error location reporting. -/
+public abbrev FileMaps := Std.HashMap System.FilePath Lean.FileMap
 
 structure PySpecContext where
   /-- Events to log -/
@@ -217,11 +276,34 @@ structure PySpecContext where
   pythonFile : System.FilePath
   /-- Path to write Strata files to. -/
   strataDir : System.FilePath
-  /-- Callback that takes a module name and provides filepath to module  -/
-  moduleReader : ModuleReader
+  /-- Root directory for module resolution. Stays constant across nested imports. -/
+  baseSearchPath : System.FilePath
+  /-- Package prefix components for resolving relative imports to absolute names.
+      For `__init__.py` modules, this is all components (e.g., `#["boto3"]`).
+      For regular modules, this is all but the last (e.g., `#["boto3"]` for `boto3.client`).
+      Empty for top-level modules with no package. -/
+  currentModulePrefix : Array String
+  /-- Ref to file map registry for source-location error reporting. -/
+  fileMapsRef : IO.Ref FileMaps
   /-- Python module name for the current file (e.g., "boto3.dynamodb").
       Used as `pythonModule` for locally-defined classes. -/
-  currentModule : String
+  currentModule : ModuleName
+
+/-- Resolve a module name to a file path, registering the file's FileMap
+    for source-location error reporting.  Returns `(filePath, modulePrefix)`
+    where `modulePrefix` is the package prefix for resolving relative imports. -/
+def PySpecContext.readModule (ctx : PySpecContext) (mod : ModuleName)
+    : EIO String (System.FilePath × Array String) := do
+  let (pythonPath, modulePrefix) ← mod.findInPath ctx.baseSearchPath
+  baseLogEvent ctx.eventSet "findFile"
+    s!"Found {mod} as {pythonPath}"
+  match ← IO.FS.readFile pythonPath |>.toBaseIO with
+  | .ok contents =>
+    let fm := Lean.FileMap.ofString contents
+    ctx.fileMapsRef.modify fun m => m.insert pythonPath fm
+    pure (pythonPath, modulePrefix)
+  | .error msg =>
+    throw s!"Could not read file {pythonPath}: {msg}"
 
 def preludeAtoms : List (String × PythonIdent) := [
   ("bool", .builtinsBool),
@@ -236,8 +318,8 @@ def preludeAtoms : List (String × PythonIdent) := [
 
 structure PySpecState where
   typeSigs : TypeSignature := preludeSig
-  errors : Array SpecError := #[]
-  warnings : Array SpecError := #[]
+  errors : Array SpecError
+  warnings : Array SpecError
   /--
   This maps global identifiers to their value.
   -/
@@ -266,8 +348,8 @@ private def hasOverloadDecorator
 /-- Should we skip the given top-level name? -/
 def shouldSkip (name : String) : PySpecM Bool := do
   let ctx ← read
-  let mod := ctx.pythonFile.fileStem.getD ""
-  return ctx.skipNames.contains { pythonModule := mod, name }
+  let nameIdent := { pythonModule := toString ctx.currentModule, name }
+  return nameIdent ∈ ctx.skipNames
 
 def specErrorAt (file : System.FilePath) (loc : SourceRange) (message : String) : PySpecM Unit := do
   let e : SpecError := { file, loc, message }
@@ -549,6 +631,11 @@ def pySpecValue (expr : expr SourceRange) : PySpecM SpecValue := do
   | .Name _ ident (.Load _) =>
     let some v := ←getNameValue? ident.val
       | specError expr.ann s!"Unknown identifier {ident.val}."; return default
+    pure v
+  | .Attribute _ (.Name _ ⟨_, modName⟩ (.Load _)) ⟨_, attrName⟩ (.Load _) =>
+    let qualName := s!"{modName}.{attrName}"
+    let some v := ←getNameValue? qualName
+      | specError expr.ann s!"Unknown identifier {qualName}."; return default
     pure v
   | .Subscript _ (.Name paramLoc ⟨_, paramType⟩ (.Load _)) subscriptArgs _ =>
     let (success, sargs) ← runChecked <| pySpecValue subscriptArgs
@@ -1229,7 +1316,7 @@ private def resolveBaseClasses (bases : Array (expr SourceRange))
           | some (.ident pyIdent _) =>
             result := result.push pyIdent
           | some (.pyClass clsName _) =>
-            let mod := (← read).currentModule
+            let mod := toString (← read).currentModule
             result := result.push { pythonModule := mod, name := clsName }
           | _ =>
             specError base.ann s!"Unknown base class '{name}'"
@@ -1321,14 +1408,6 @@ partial def pySpecClassBody (loc : SourceRange) (className : String)
     methods := methods
   }
 
-def checkLevel (loc : SourceRange) (level : Option (int SourceRange)) : PySpecM Unit := do
-  match level with
-  | some lvl =>
-    if lvl.value ≠ 0 then
-      specError loc s!"Local import {lvl.value} not supported."
-  | none =>
-    specError loc s!"Missing import level."
-
 def translateImportFrom (mod : String) (types : Std.HashMap String SpecValue)
       (names : Array (alias SourceRange)) : PySpecM Unit := do
   -- Check if module is a builtin (in prelude) - if so, don't generate extern declarations
@@ -1357,29 +1436,60 @@ def getModifiedTime (f : System.FilePath) : IO IO.FS.SystemTime := do
 /--
 Create a value map for module from signatures.
 -/
-def signatureValueMap (mod : String) (sigs : Array Signature) :
-  Std.HashMap String SpecValue :=
+def signatureValueMap (mod : ModuleName) (sigs : Array Signature) : Std.HashMap String SpecValue :=
+  let modName := toString mod
   let addType (m : Std.HashMap String SpecValue) (sig : Signature) :=
         match sig with
         | .classDef d =>
           let pyIdent : PythonIdent := {
-            pythonModule := mod
+            pythonModule := modName
             name := d.name
           }
           m.insert d.name (.typeValue (.ident d.loc pyIdent))
         | .typeDef d =>
           let pyIdent : PythonIdent := {
-            pythonModule := mod
+            pythonModule := modName
             name := d.name
           }
           m.insert d.name (.typeValue (.ident d.loc pyIdent))
-        | .functionDecl .. | .externTypeDecl .. => m
+        | .externTypeDecl name source =>
+          m.insert name (.typeValue (.ident default source))
+        | .functionDecl .. => m
   sigs.foldl (init := {}) addType
 
 def checkOverloadBody (stmt : stmt SourceRange) : PySpecM Unit := do
   match stmt with
   | .Expr _ (.Constant _ (.ConEllipsis _) _) => pure ()
   | _ => specError stmt.ann s!"Expected ellipsis"
+
+
+public def isNewer (path : System.FilePath) (existing : IO.FS.Metadata) : BaseIO Bool := do
+  match ← path.metadata |>.toBaseIO with
+    | .ok strataMetadata =>
+      pure <| strataMetadata.modified > existing.modified
+    | .error _ =>
+      pure false
+
+/-- Resolve a possibly-relative module name to an absolute one.
+    For level-N relative imports, drops (N-1) components from the current
+    module prefix and prepends the remainder.  E.g. `from ..X import Y`
+    (level 2) in package `a.b.c` resolves to `a.b.X`. -/
+def resolveRelativeModuleName (loc : SourceRange) (relName : String) (level : Int)
+    : PySpecM String := do
+  if level == 0 then return relName
+  let pfx := (←read).currentModulePrefix
+  if pfx.isEmpty then
+    specError loc
+      "Cannot use a relative import from a top-level module with no package"
+    return relName
+  let drop := level.toNat - 1
+  if drop >= pfx.size then
+    specError loc <|
+      s!"Relative import (level {level}) goes beyond the top-level package; " ++
+      s!"the current module is only {pfx.size} package level(s) deep"
+    return relName
+  let base := pfx.toSubarray (stop := pfx.size - drop) |>.toArray
+  return ".".intercalate (base.push relName).toList
 
 mutual
 
@@ -1388,39 +1498,31 @@ Resolves a Python module by name, returning a map of exported identifiers to
 their spec values. Loads either from cached PySpec files or by parsing the
 Python source if not in cache.
 -/
-partial def resolveModule (loc : SourceRange) (modName : String) :
+partial def resolveModule (loc : SourceRange) (mod : ModuleName) :
     PySpecM (Std.HashMap String SpecValue) := do
-  let mod ←
-        match ModuleName.ofString modName with
-        | .ok r => pure r
-        | .error msg =>
-          specError loc msg
-          return default
-  let moduleReader := (←read).moduleReader
-  let pythonFile ←
-        match ← moduleReader mod |>.toBaseIO with
+  let (pythonFile, childPrefix) ←
+        match ← (←read).readModule mod |>.toBaseIO with
         | .ok r =>
           pure r
         | .error msg =>
           specError loc msg
           return default
-  let strataDir := mod.strataDir (←read).strataDir
+  -- Build the output directory for cached .pyspec.st.ion files by mirroring
+  -- the module's directory components under the root strata output directory.
+  -- E.g., module "service.module" with root "out/" → "out/service/".
+  let strataDir := mod.foldlDirs (init := (←read).strataDir) (· / ·)
   let strataFile := strataDir / mod.strataFileName
 
   let .ok pythonMetadata ← pythonFile.metadata |>.toBaseIO
     | specError loc s!"Could not get file mod time."; return default
 
-  -- Check if strataFile is newer than pythonSource
-  let useStrata : Bool :=
-        match ← strataFile.metadata |>.toBaseIO with
-        | .ok strataMetadata => strataMetadata.modified > pythonMetadata.modified
-        | .error _ => false
+  let useStrata : Bool ← isNewer strataFile pythonMetadata
     -- If Strata is newer use it.
   if useStrata then
     match ← readDDM strataFile |>.toBaseIO with
     | .ok sigs =>
-      logEvent importEvent s!"Imported {modName} from PySpec file"
-      return signatureValueMap modName sigs
+      logEvent importEvent s!"Imported {mod} from PySpec file"
+      return signatureValueMap mod sigs
     | .error msg =>
       specError loc s!"Could not load Strata file: {msg}"
       return default
@@ -1435,19 +1537,24 @@ partial def resolveModule (loc : SourceRange) (modName : String) :
     | .error msg =>
       specError loc msg
       return default
-  let errors := (←get).errors
-  let warnings := (←get).warnings
-  let errorCount := errors.size
-  modify fun s => { s with errors := #[], warnings := #[] }
-  let ctx := { (←read) with pythonFile := pythonFile, currentModule := modName }
-  let initState : PySpecState := { errors, warnings }
+  let errorCount := (←get).errors.size
+  let warningCount := (←get).warnings.size
+  let ctx := { (←read) with
+    pythonFile := pythonFile
+    currentModule := mod
+    currentModulePrefix := childPrefix }
+  -- This does state shuffling to ensure warnings and errors maintain
+  -- a reference count of 1 (for destructive updates).
+  let s := ←get
+  set { s with errors := #[], warnings := #[] }
+  let initState : PySpecState := { errors := s.errors, warnings := s.warnings }
   let (sigs, t) ← translateModuleAux commands |>.run ctx |>.run initState
-  let newWarnings := t.warnings.size - warnings.size
+  let newWarnings := t.warnings.size - warningCount
   modify fun s => { s with errors := t.errors, warnings := t.warnings }
   if t.errors.size > errorCount then
     return default
   let warnMsg := if newWarnings > 0 then s!" ({newWarnings} warning(s))" else ""
-  logEvent importEvent s!"Imported {modName}{warnMsg}"
+  logEvent importEvent s!"Imported {mod}{warnMsg}"
 
   if let .error msg ← IO.FS.createDirAll strataDir |>.toBaseIO then
     specError loc s!"Could not create directory {strataDir}:  {msg}"
@@ -1457,18 +1564,90 @@ partial def resolveModule (loc : SourceRange) (modName : String) :
     specError loc s!"Could not write file {strataFile}:  {msg}"
     return default
 
-  return signatureValueMap (toString mod) sigs
+  return signatureValueMap mod sigs
 
-partial def resolveModuleCached (loc : SourceRange) (modName : String)
+partial def resolveModuleCached (loc : SourceRange) (mod : ModuleName)
     : PySpecM (Option (Std.HashMap String SpecValue)) := do
-  match (←get).typeSigs.rank[modName]? with
+  let key := toString mod
+  match (←get).typeSigs.rank[key]? with
   | some types =>
     return types
   | none =>
-    let (success, r) ← runChecked <| resolveModule loc modName
+    let (success, r) ← runChecked <| resolveModule loc mod
     let r := if success then some r else none
-    modify fun s => { s with typeSigs := s.typeSigs.insert modName r }
+    modify fun s => { s with typeSigs := s.typeSigs.insert key r }
     return r
+
+/-- Parse a module name string and resolve it, returning `none` on
+    parse or resolution failure. -/
+partial def parseAndResolveModule (loc : SourceRange) (modName : String)
+    : PySpecM (Option (Std.HashMap String SpecValue)) := do
+  match ModuleName.ofString modName with
+  | .ok mod => resolveModuleCached loc mod
+  | .error msg =>
+    specError loc msg
+    return none
+
+/-- Resolve a module and register its exports under `"{asname}.{name}"`.
+    If resolution fails, register `asname` as an opaque extern type. -/
+partial def resolveAndRegisterModule (loc : SourceRange)
+    (mod asname : String) : PySpecM Unit := do
+  if let some types ← parseAndResolveModule loc mod then
+    for (name, tpv) in types do
+      setNameValue s!"{asname}.{name}" tpv
+  else
+    let source : PythonIdent := { pythonModule := mod, name := asname }
+    let tpv : SpecValue := .typeValue (.ident loc source)
+    setNameValue asname tpv
+    pushSignature (.externTypeDecl asname source)
+
+/-- Handle a bare `import module` statement by resolving the module and
+    registering its exported names under the qualified `module.name` pattern. -/
+partial def translateImport (loc : SourceRange)
+    (names : Array (alias SourceRange)) : PySpecM Unit := do
+  for a in names do
+    let mod := a.name
+    let asname := a.asname.getD mod
+    resolveAndRegisterModule loc mod asname
+
+/-- Handle a `from [..] module import name` statement. Supports absolute
+    imports (level 0) and multi-level relative imports (level ≥ 1).
+    `pyModule` is the module string (already unwrapped from the annotation).
+    `level` is the raw import level from the AST. -/
+partial def translateImportFromStmt (loc : SourceRange)
+    (pyModule : Option (Ann String SourceRange))
+    (names : Array (alias SourceRange))
+    (level : Option (int SourceRange)) : PySpecM Unit := do
+
+  let lvl := match level with
+    | some lvlE => lvlE.value
+    | none => 0
+
+  match pyModule with
+  | some ⟨_, relMod⟩ =>
+    -- from X import Y  (level 0) or  from .X import Y  (level 1)
+    let mod ← resolveRelativeModuleName loc relMod lvl
+    if let some types ← parseAndResolveModule loc mod then
+      translateImportFrom mod types names
+    else
+      -- Module resolution failed; register imported names as opaque extern
+      -- types so that downstream references don't produce unknown-identifier
+      -- errors.
+      for a in names do
+        let name := a.name
+        let asname := a.asname.getD name
+        let source : PythonIdent := { pythonModule := mod, name := name }
+        let tpv : SpecValue := .typeValue (.ident loc source)
+        setNameValue asname tpv
+        pushSignature (.externTypeDecl asname source)
+  | none =>
+    -- from . import X — resolve each name as a sibling module and register
+    -- its exports under the qualified "name.export" pattern.
+    for a in names do
+      let relMod := a.name
+      let asname := a.asname.getD relMod
+      let mod ← resolveRelativeModuleName loc relMod lvl
+      resolveAndRegisterModule loc mod asname
 
 partial def translate (body : Array (stmt Strata.SourceRange)) : PySpecM Unit := do
   for stmt in body do
@@ -1519,26 +1698,9 @@ partial def translate (body : Array (stmt Strata.SourceRange)) : PySpecM Unit :=
       let d ← pySpecFunctionArgs (className := none) loc funName args body decorators returns
       pushSignature (.functionDecl d)
     | .Import loc names =>
-      specError loc s!"Import of {repr names} not supported."
+      translateImport loc names.val
     | .ImportFrom loc ⟨_, pyModule⟩ ⟨_, names⟩ ⟨_, level⟩ =>
-      let (success, ()) ← runChecked <| checkLevel loc level
-      if not success then
-        continue
-      let some ⟨_, mod⟩ := pyModule
-        | specError loc s!"Local imports not supported"; continue
-      if let some types ← resolveModuleCached loc mod then
-        translateImportFrom mod types names
-      else
-        -- Module resolution failed; register imported names as opaque extern
-        -- types so that downstream references don't produce unknown-identifier
-        -- errors.
-        for a in names do
-          let name := a.name
-          let asname := a.asname.getD name
-          let source : PythonIdent := { pythonModule := mod, name := name }
-          let tpv : SpecValue := .typeValue (.ident loc source)
-          setNameValue asname tpv
-          pushSignature (.externTypeDecl asname source)
+      translateImportFromStmt loc pyModule names level
     | .ClassDef loc ⟨_classNameLoc, className⟩ bases keywords stmts decorators typeParams =>
       if ←shouldSkip className then
         logEvent "skip" s!"Skipping class {className}"
@@ -1572,8 +1734,6 @@ partial def translateModuleAux (body : Array (Strata.Python.stmt Strata.SourceRa
 
 end
 
-/-- Maps file paths to their FileMap for error location reporting. -/
-public abbrev FileMaps := Std.HashMap System.FilePath Lean.FileMap
 
 
 /-- Translates Python AST statements to PySpec signatures with dependency resolution. -/
@@ -1581,10 +1741,11 @@ def translateModule
     (dialectFile searchPath strataDir pythonFile : System.FilePath)
     (fileMap : Lean.FileMap)
     (body : Array (Strata.Python.stmt Strata.SourceRange))
-    (currentModule : String)
+    (currentModule : ModuleName)
     (pythonCmd : String := "python")
     (events : Std.HashSet EventType := {})
-    (skipNames : Std.HashSet PythonIdent := {}) :
+    (skipNames : Std.HashSet PythonIdent := {})
+    (currentModulePrefix : Array String := #[]) :
     BaseIO (FileMaps × Array Signature × Array SpecError × Array SpecError) := do
   let fmm : FileMaps := {}
   let fmm := fmm.insert pythonFile fileMap
@@ -1594,39 +1755,37 @@ def translateModule
     skipNames := skipNames
     pythonCmd := pythonCmd
     dialectFile := dialectFile.toString
-    moduleReader := fun (mod : ModuleName) => do
-      let pythonPath ← mod.findInPath searchPath
-      baseLogEvent events "findFile" s!"Found {mod} as {pythonPath} in {searchPath}"
-      match ← IO.FS.readFile pythonPath |>.toBaseIO with
-      | .ok contents =>
-        let fm := Lean.FileMap.ofString contents
-        fileMapsRef.modify fun m => m.insert pythonPath fm
-        pure pythonPath
-      | .error msg =>
-        throw s!"Could not read file {pythonPath}: {msg}"
+    baseSearchPath := searchPath
+    currentModulePrefix := currentModulePrefix
+    fileMapsRef := fileMapsRef
     strataDir := strataDir
     pythonFile := pythonFile
     currentModule := currentModule
   }
-  let (res, s) ← translateModuleAux body |>.run ctx |>.run {}
+  let (res, s) ← translateModuleAux body |>.run ctx |>.run { warnings := #[], errors := #[] }
   let fmm ← fileMapsRef.get
   pure (fmm, res, s.errors, s.warnings)
 
 /-- Translates a Python source file to PySpec signatures. Main entry point for translation. -/
 public def translateFile
-    (dialectFile strataDir pythonFile : System.FilePath)
+    (dialectFile strataDir pythonFile searchPath : System.FilePath)
     (pythonCmd : String := "python")
-    (searchPath : Option System.FilePath := none)
     (events : Std.HashSet EventType := {})
-    (skipNames : Std.HashSet PythonIdent := {}) :
-    EIO String (Array Signature × Array String) := do
-  let searchPath ←
-      match searchPath with
-      | some p => pure p
-      | none =>
-        match pythonFile.parent with
-        | some p => pure p
-        | none => throw s!"{pythonFile} directory unknown"
+    (skipNames : Std.HashSet PythonIdent := {})
+    (moduleName : Option ModuleName := none)
+    : EIO String (Array Signature × Array String) := do
+  let currentModule ← match moduleName with
+    | some m => pure m
+    | none =>
+      let (mod, _) ← match ModuleName.ofFile pythonFile with
+        | .ok r => pure r
+        | .error e => throw e
+      pure mod
+  let mod := currentModule
+  -- Compute the package prefix for relative import resolution.
+  let modulePrefix :=
+    if pythonFile.fileName == some "__init__.py" then mod.components
+    else mod.components.toSubarray (stop := mod.components.size - 1) |>.toArray
   let contents ←
         match ← IO.FS.readFile pythonFile |>.toBaseIO with
         | .ok b => pure b
@@ -1642,7 +1801,6 @@ public def translateFile
       dialectFile pythonFile |>.toBaseIO with
     | .ok r => pure r
     | .error msg => throw msg
-  let currentModule := pythonFile.fileStem.getD pythonFile.toString
   let (fmm, sigs, errors, warnings) ←
       translateModule
         (pythonCmd := pythonCmd)
@@ -1650,6 +1808,7 @@ public def translateFile
         (skipNames := skipNames)
         (dialectFile := dialectFile)
         (searchPath := searchPath)
+        (currentModulePrefix := modulePrefix)
         (strataDir := strataDir)
         (pythonFile := pythonFile)
         (.ofString contents)
