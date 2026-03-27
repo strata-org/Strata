@@ -219,8 +219,9 @@ implementation), opaque (with a postcondition and optional implementation),
 or abstract (requiring overriding in extending types).
 -/
 inductive Body where
-  /-- A transparent body whose implementation is visible to callers. -/
-  | Transparent (body : WithMetadata StmtExpr)
+  /-- A transparent body whose implementation is visible to callers.
+      Postconditions, if present, are checked against the body but do not hide it from callers. -/
+  | Transparent (body : WithMetadata StmtExpr) (postconditions : List (WithMetadata StmtExpr))
   /-- An opaque body with a postcondition, optional implementation, and modifies clause. Without an implementation the postcondition is assumed. -/
   | Opaque
       (postconditions : List (WithMetadata StmtExpr))
@@ -376,7 +377,7 @@ def Body.isExternal : Body → Bool
   | _ => false
 
 def Body.isTransparent : Body → Bool
-  | .Transparent _ => true
+  | .Transparent _ _ => true
   | _ => false
 
 def HighTypeMd.isBool (t : HighTypeMd) : Bool := t.val.isBool

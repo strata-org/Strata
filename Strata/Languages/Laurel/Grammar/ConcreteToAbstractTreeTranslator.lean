@@ -146,7 +146,7 @@ instance : Inhabited Procedure where
     determinism := .deterministic none
     decreases := none
     isFunctional := false
-    body := .Transparent ⟨.LiteralBool true, #[]⟩
+    body := .Transparent ⟨.LiteralBool true, #[]⟩ []
     md := .empty
   }
 
@@ -424,11 +424,22 @@ def parseProcedure (arg : Arg) : TransM Procedure := do
   let .op op := arg
     | TransM.error s!"parseProcedure expects operation"
 
-  match op.name, op.args with
-  | q`Laurel.procedure, #[nameArg, paramArg, returnTypeArg, returnParamsArg,
-      requiresArg, ensuresArg, modifiesArg, bodyArg]
-  | q`Laurel.function, #[nameArg, paramArg, returnTypeArg, returnParamsArg,
-      requiresArg, ensuresArg, modifiesArg, bodyArg] =>
+  let (isFunction, isOpaque, nameArg, paramArg, returnTypeArg, returnParamsArg,
+       requiresArg, ensuresArg, modifiesArg, bodyArg) ← match op.name, op.args with
+    | q`Laurel.procedure, #[nameArg, paramArg, returnTypeArg, returnParamsArg,
+        requiresArg, ensuresArg, modifiesArg, bodyArg] =>
+      pure (false, false, nameArg, paramArg, returnTypeArg, returnParamsArg,
+            requiresArg, ensuresArg, modifiesArg, bodyArg)
+    | q`Laurel.function, #[opaqueArg, nameArg, paramArg, returnTypeArg, returnParamsArg,
+        requiresArg, ensuresArg, modifiesArg, bodyArg] =>
+      let isOpaque := match opaqueArg with | .option _ (some _) => true | _ => false
+      pure (true, isOpaque, nameArg, paramArg, returnTypeArg, returnParamsArg,
+            requiresArg, ensuresArg, modifiesArg, bodyArg)
+    | q`Laurel.procedure, args
+    | q`Laurel.function, args =>
+      TransM.error s!"parseProcedure expects correct number of arguments, got {args.size}"
+    | _, _ =>
+      TransM.error s!"parseProcedure expects procedure or function, got {repr op.name}"
     let name ← translateIdent nameArg
     let nameMd ← getArgMetaData nameArg
     let parameters ← translateParameters paramArg
@@ -439,7 +450,7 @@ def parseProcedure (arg : Arg) : TransM Procedure := do
         | q`Laurel.returnType, #[typeArg] =>
           let retType ← translateHighType typeArg
           pure [{ name := "result", type := retType : Parameter }]
-        | _, _ => TransM.error s!"Expected optionalReturnType operation, got {repr returnTypeOp.name}"
+        | _, _ => TransM.error s!"Expected returnType operation, got {repr returnTypeOp.name}"
       | .option _ none =>
         -- No return type, check returnParamsArg instead
         match returnParamsArg with
@@ -448,7 +459,7 @@ def parseProcedure (arg : Arg) : TransM Procedure := do
           | _, _ => TransM.error s!"Expected returnParameters operation, got {repr returnOp.name}"
         | .option _ none => pure []
         | _ => TransM.error s!"Expected returnParameters operation, got {repr returnParamsArg}"
-      | _ => TransM.error s!"Expected optionalReturnType operation, got {repr returnTypeArg}"
+      | _ => TransM.error s!"Expected returnType operation, got {repr returnTypeArg}"
     -- Parse preconditions (requires clauses - zero or more)
     let preconditions ← translateRequiresClauses requiresArg
     -- Parse postconditions (ensures clauses - zero or more)
@@ -471,9 +482,12 @@ def parseProcedure (arg : Arg) : TransM Procedure := do
     -- Determine procedure body kind
     let procBody :=
       if isExternal then Body.External
+      else if isFunction && !isOpaque then match body with
+        | some b => Body.Transparent b postconditions
+        | none => Body.Opaque postconditions none modifies
       else match postconditions, body with
       | _ :: _, bodyOpt => Body.Opaque postconditions bodyOpt modifies
-      | [], some b => Body.Transparent b
+      | [], some b => Body.Transparent b []
       | [], none => Body.Opaque [] none modifies
     return {
       name := name
@@ -482,15 +496,10 @@ def parseProcedure (arg : Arg) : TransM Procedure := do
       preconditions := preconditions
       determinism := .deterministic none
       decreases := none
-      isFunctional := op.name == q`Laurel.function
+      isFunctional := isFunction
       body := procBody
       md := nameMd
     }
-  | q`Laurel.procedure, args
-  | q`Laurel.function, args =>
-    TransM.error s!"parseProcedure expects 8 arguments, got {args.size}"
-  | _, _ =>
-    TransM.error s!"parseProcedure expects procedure or function, got {repr op.name}"
 
 def parseField (arg : Arg) : TransM Field := do
   let .op op := arg

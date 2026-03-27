@@ -408,9 +408,10 @@ def resolveParameter (param : Parameter) : ResolveM Parameter := do
 /-- Resolve a procedure body. -/
 def resolveBody (body : Body) : ResolveM Body := do
   match body with
-  | .Transparent b =>
+  | .Transparent b posts =>
     let b' ← resolveStmtExpr b
-    return .Transparent b'
+    let posts' ← posts.mapM resolveStmtExpr
+    return .Transparent b' posts'
   | .Opaque posts impl mods =>
     let posts' ← posts.mapM resolveStmtExpr
     let impl' ← impl.mapM resolveStmtExpr
@@ -621,7 +622,9 @@ private def collectStmtExpr (map : Std.HashMap Nat AstNode) (expr : StmtExprMd)
 private def collectBody (map : Std.HashMap Nat AstNode) (body : Body)
     : Std.HashMap Nat AstNode :=
   match body with
-  | .Transparent b => collectStmtExpr map b
+  | .Transparent b posts =>
+    let map := collectStmtExpr map b
+    posts.foldl collectStmtExpr map
   | .Opaque posts impl mods =>
     let map := posts.foldl collectStmtExpr map
     let map := match impl with | some i => collectStmtExpr map i | none => map

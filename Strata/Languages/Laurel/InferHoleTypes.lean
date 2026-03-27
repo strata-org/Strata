@@ -154,7 +154,7 @@ private def inferProcedure (proc : Procedure) : InferHoleM Procedure := do
     | _ => defaultHoleType
   modify fun s => { s with currentOutputType := outputType }
   match proc.body with
-  | .Transparent bodyExpr => return { proc with body := .Transparent (← inferStmt bodyExpr) }
+  | .Transparent bodyExpr posts => return { proc with body := .Transparent (← inferStmt bodyExpr) posts }
   | .Opaque postconds (some impl) modif =>
       return { proc with body := .Opaque postconds (some (← inferStmt impl)) modif }
   | _ => return proc
