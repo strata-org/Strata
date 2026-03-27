@@ -1,20 +1,23 @@
 #!/bin/bash
 
-# Usage: ./run_py_analyze.sh [laurel] [--update] [--filter <pattern>]
+# Usage: ./run_py_analyze.sh [laurel] [--update] [--filter <pattern>] [--vc-directory <dir>]
 # Runs pyAnalyzeLaurel on all test_*.py files and compares output to expected.
 # With --update, overwrite existing expected files with actual output
 # With --filter <pattern>, only run tests whose name contains <pattern>
+# With --vc-directory <dir>, store VCs in SMT-Lib format in <dir>
 # Note: pyAnalyze (non-Laurel) is deprecated; laurel mode is the default.
 
 failed=0
 update=0
 mode="laurel"
 filter=""
+vc_directory=""
 
 while [ $# -gt 0 ]; do
     case "$1" in
         --update) update=1 ;;
         --filter) filter="$2"; shift ;;
+        --vc-directory) vc_directory="$2"; shift ;;
         *) mode="$1" ;;
     esac
     shift
@@ -60,7 +63,9 @@ for test_file in tests/test_*.py; do
 
             # Check for per-file strata arguments (e.g. # strata-args: --check-mode bugFinding)
             extra_args=$(grep '^# strata-args:' "$test_file" | sed 's/^# strata-args://' | head -1)
-            output=$(cd ../../.. && ./.lake/build/bin/strata $command $extra_args "StrataTest/Languages/Python/${ion_file}")
+            vc_flag=""
+            [ -n "$vc_directory" ] && vc_flag="--vc-directory $vc_directory"
+            output=$(cd ../../.. && ./.lake/build/bin/strata $command $extra_args $vc_flag "StrataTest/Languages/Python/${ion_file}")
 
             if [ $update -eq 1 ]; then
                 echo "$output" > "$expected_file"
