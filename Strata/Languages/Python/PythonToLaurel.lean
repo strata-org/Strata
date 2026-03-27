@@ -457,9 +457,7 @@ partial def translateExpr (ctx : TranslationContext) (e : Python.expr SourceRang
 
   -- Binary operations
   | .BinOp _ left op right => do
-    -- Constant-fold Pow for integer literals (ideally this would be in
-    -- Core's concreteEval, but prelude functions can't have factory
-    -- concreteEval without causing duplicate-name errors)
+    -- Constant-fold Pow for integer literals
     match op with
     | .Pow _ =>
       match left, right with
