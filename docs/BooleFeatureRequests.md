@@ -1,6 +1,6 @@
 # Boole Feature Request Inventory
 
-This document tracks the curated Boole feature-gap seeds kept under
+This document tracks the selected Boole feature-request seeds kept under
 [`StrataTest/Languages/Boole/FeatureRequests`](../StrataTest/Languages/Boole/FeatureRequests).
 
 ## Current priorities
@@ -43,7 +43,7 @@ This document tracks the curated Boole feature-gap seeds kept under
      now uses the textbook nested `for` structure directly, so it has been moved
      into the main working Boole examples.
 
-## Semantic fidelity requests
+## Semantic preservation requests
 
 1. Generic `opaque` / `reveal`: Lower priority for now. If we revisit this family, preserve reveals for generic spec functions instead of dropping them.
 2. `hide`: Lower priority for now. Emit a real hiding boundary so a revealed body does not stay globally visible.
