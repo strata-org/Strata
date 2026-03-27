@@ -13,7 +13,9 @@ namespace Core
 open Lambda
 open Strata.SMT
 
-/-- info: "(define-fun $__t.0 () Bool (forall ((n Int)) (exists ((m Int)) (= n m))))\n" -/
+/--
+info: "(define-fun $__t.0 () Bool (forall ((n Int)) (exists ((m Int)) (= n m))))\n"
+-/
 #guard_msgs in
 #eval toSMTTermString
   (.quant () .all "n" (.some .int) (LExpr.noTrigger ())
@@ -74,7 +76,7 @@ info: "; f\n(declare-fun f (Int Int) Int)\n; x\n(declare-const x Int)\n(define-f
 #eval toSMTTermString
    (.quant () .all "m" (.some .int) (.bvar () 0) (.quant () .all "n" (.some .int) (.app () (.app () (.op () "f" (.some (.arrow .int (.arrow .int .int)))) (.bvar () 0)) (.bvar () 1))
    (.eq () (.app () (.app () (.op () "f" (.some (.arrow .int (.arrow .int .int)))) (.bvar () 0)) (.bvar () 1)) (.fvar () "x" (.some .int)))))
-   (ctx := SMT.Context.mk #[] #[UF.mk "f" ((TermVar.mk "m" TermType.int) ::(TermVar.mk "n" TermType.int) :: []) TermType.int] #[] #[] [] #[] {} [] 0)
+   (ctx := SMT.Context.mk #[] #[UF.mk "f" ((TermVar.mk "m" TermType.int) ::(TermVar.mk "n" TermType.int) :: []) TermType.int] #[] #[] [] #[] {} [] 0 false)
    (E := {Env.init with exprEnv := {
     Env.init.exprEnv with
       config := { Env.init.exprEnv.config with
@@ -92,7 +94,7 @@ info: "; f\n(declare-fun f (Int Int) Int)\n; x\n(declare-const x Int)\n(define-f
 #eval toSMTTermString
    (.quant () .all "m" (.some .int) (.bvar () 0) (.quant () .all "n" (.some .int) (.bvar () 0)
    (.eq () (.app () (.app () (.op () "f" (.some (.arrow .int (.arrow .int .int)))) (.bvar () 0)) (.bvar () 1)) (.fvar () "x" (.some .int)))))
-   (ctx := SMT.Context.mk #[] #[UF.mk "f" ((TermVar.mk "m" TermType.int) ::(TermVar.mk "n" TermType.int) :: []) TermType.int] #[] #[] [] #[] {} [] 0)
+   (ctx := SMT.Context.mk #[] #[UF.mk "f" ((TermVar.mk "m" TermType.int) ::(TermVar.mk "n" TermType.int) :: []) TermType.int] #[] #[] [] #[] {} [] 0 false)
    (E := {Env.init with exprEnv := {
     Env.init.exprEnv with
       config := { Env.init.exprEnv.config with
@@ -180,7 +182,7 @@ info: "; m\n(declare-const m (Array Int Int))\n(define-fun $__t.0 () (Array Int 
       }
    }})
 
--- Test empty string falls back to generated names
+-- Test that all bound variables get globally unique generated names
 /-- info: "(define-fun $__t.0 () Bool (forall (($__bv0 Int)) (exists (($__bv1 Int)) (= $__bv0 $__bv1))))\n" -/
 #guard_msgs in
 #eval toSMTTermString
@@ -188,18 +190,20 @@ info: "; m\n(declare-const m (Array Int Int))\n(define-fun $__t.0 () (Array Int 
    (.quant () .exist "" (.some .int) (LExpr.noTrigger ())
    (.eq () (.bvar () 1) (.bvar () 0))))
 
--- Test name clash between two nested quantifiers with same name
--- Expected: Inner x should be disambiguated to x@1
-/-- info: "(define-fun $__t.0 () Bool (forall ((x Int)) (exists ((x@1 Int)) (= x x@1))))\n" -/
+-- Test nested quantifiers with same user name get disambiguated human-readable names
+/--
+info: "(define-fun $__t.0 () Bool (forall ((x Int)) (exists ((x@1 Int)) (= x x@1))))\n"
+-/
 #guard_msgs in
 #eval toSMTTermString
   (.quant () .all "x" (.some .int) (LExpr.noTrigger ())
    (.quant () .exist "x" (.some .int) (LExpr.noTrigger ())
    (.eq () (.bvar () 1) (.bvar () 0))))
 
--- Test x, x, x@1 scenario: nested quantifiers both named "x", then bvar named "x@1"
--- Expected: outer x stays x, inner x becomes x@1, bvar "x@1" becomes x@2
-/-- info: "(define-fun $__t.0 () Bool (forall ((x Int) (x@1 Int) (x@2 Int)) (= x@2 x)))\n" -/
+-- Test triply nested quantifiers all get distinct disambiguated human-readable names
+/--
+info: "(define-fun $__t.0 () Bool (forall ((x Int) (x@1 Int) (x@2 Int)) (= x@2 x)))\n"
+-/
 #guard_msgs in
 #eval toSMTTermString
   (.quant () .all "x" (.some .int) (LExpr.noTrigger ())
@@ -208,15 +212,16 @@ info: "; m\n(declare-const m (Array Int Int))\n(define-fun $__t.0 () (Array Int 
      (.eq () (.bvar () 0) (.bvar () 2)))))
 
 
-/-- info: "; x\n(declare-const x Int)\n(define-fun $__t.0 () Bool (forall ((x@1 Int)) (= x@1 x)))\n" -/
+/--
+info: "; x\n(declare-const x Int)\n(define-fun $__t.0 () Bool (forall ((x@1 Int)) (= x@1 x)))\n"
+-/
 #guard_msgs in
 #eval toSMTTermString
   (.quant () .all "x" (.some .int) (LExpr.noTrigger ())
    (.eq () (.bvar () 0) (.fvar () "x" (.some .int))))
 
 -- Test that bound variable names are globally unique across multiple terms.
--- Two independent forall terms encoded via toSMTTerms should get distinct $__bv names.
--- Before the fix, both terms would use $__bv0; now they get $__bv0 and $__bv1.
+-- Two independent forall terms with empty names encoded via toSMTTerms should get distinct $__bv names.
 #guard
   match toSMTTerms Env.init [
     -- Term 1: ∀ x:Int. x = x

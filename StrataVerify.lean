@@ -25,6 +25,7 @@ def parseOptions (args : List String) : Except Std.Format (VerifyOptions × Stri
       | opts, "--type-check" :: rest, procs => go {opts with typeCheckOnly := true} rest procs
       | opts, "--parse-only" :: rest, procs => go {opts with parseOnly := true} rest procs
       | opts, "--stop-on-first-error" :: rest, procs => go {opts with stopOnFirstError := true} rest procs
+      | opts, "--unique-bound-names" :: rest, procs => go {opts with uniqueBoundNames := true} rest procs
       | opts, "--sarif" :: rest, procs => go {opts with outputSarif := true} rest procs
       | opts, "--output-format=sarif" :: rest, procs => go {opts with outputSarif := true} rest procs
       | opts, "--vc-directory" :: dir :: rest, procs =>
@@ -61,6 +62,7 @@ def usageMessage : Std.Format :=
   --type-check                Exit after semantic dialect's type inference/checking.{Std.Format.line}  \
   --parse-only                Exit after DDM parsing and type checking.{Std.Format.line}  \
   --stop-on-first-error       Exit after the first verification error.{Std.Format.line}  \
+  --unique-bound-names        Use globally unique names for quantifier-bound variables.{Std.Format.line}  \
   --procedures <proc1,proc2>  Verify only the specified procedures (comma-separated).{Std.Format.line}  \
   --sarif                     Output results in SARIF format to <file>.sarif{Std.Format.line}  \
   --output-format=sarif       Output results in SARIF format to <file>.sarif{Std.Format.line}  \
