@@ -854,7 +854,8 @@ partial def translateCall (ctx : TranslationContext)
     | .Attribute range _ _ _ => range
     | .Name range _ _ => range
     | _ => .none
-  let funcDecl := ctx.functionSignatures.find? fun x => x.name == funcName
+  let funcDecl := (ctx.functionSignatures.find? fun x => x.name == funcName)
+    <|> (ctx.functionSignatures.find? fun x => x.name == funcName ++ "@__init__")
   -- Emit the final call, handling Name vs Attribute dispatch and transparent procedures.
   let emitCall (callArgs : List StmtExprMd) : Except TranslationError StmtExprMd := do
     let mkCall (name : String) := mkStmtExprMd (StmtExpr.StaticCall name callArgs)
@@ -1718,11 +1719,14 @@ def PreludeInfo.ofLaurelProgram (prog : Laurel.Program) : PreludeInfo where
         m.insert p.name.text { inputs := ins, outputs := outs }
   functionSignatures :=
     prog.staticProcedures.filterMap fun p =>
-      if p.body.isExternal then none
+      if p.isFunctional then none
       else
-        let noDefault : Option (Python.expr SourceRange) := none
+        let noneDefault : Option (Python.expr SourceRange) :=
+          some (.Constant default (.ConNone default) default)
         let args := p.inputs.map fun param =>
-          (param.name.text, getHighTypeName param.type.val, noDefault)
+          let tyName := getHighTypeName param.type.val
+          let dflt := if tyName.endsWith "OrNone" then noneDefault else none
+          (param.name.text, tyName, dflt)
         let ret := p.outputs.head?.map fun param => getHighTypeName param.type.val
         some { name := p.name.text, args := args, hasKwargs := false, ret := ret }
   functions :=
@@ -1788,6 +1792,7 @@ def pythonToLaurel' (info : PreludeInfo)
   let mut compositeTypes : Array TypeDefinition := #[.Composite pyErrorTy]
   let mut compositeTypeNames := info.compositeTypes.insert "PythonError"
   let mut classFieldHighType : Std.HashMap String (Std.HashMap String HighType) := {}
+  let mut classFuncDecls : List PythonFunctionDecl := []
   for stmt in body do
     match stmt with
     | .ClassDef _ _ _ _ _ _ _ =>
@@ -1799,7 +1804,8 @@ def pythonToLaurel' (info : PreludeInfo)
         preludeTypes := info.types,
         importedSymbols := localSymbols,
         classFieldHighType := classFieldHighType,
-        filePath := filePath
+        filePath := filePath,
+        functionSignatures := info.functionSignatures
       }
       let (composite, instanceProcedures) ← translateClass initCtx stmt
       procedures := procedures ++ instanceProcedures
@@ -1808,6 +1814,15 @@ def pythonToLaurel' (info : PreludeInfo)
       -- Collect field types for Any coercions in field accesses
       let fieldMap := composite.fields.foldl (fun m f => m.insert f.name.text f.type.val) (classFieldHighType[composite.name.text]?.getD {})
       classFieldHighType := classFieldHighType.insert composite.name.text fieldMap
+      -- Collect class method signatures so default args are available at call sites
+      let classCtx : TranslationContext := { initCtx with currentClassName := some composite.name.text }
+      match stmt with
+      | .ClassDef _ _ _ _ ⟨_, classBody⟩ _ _ =>
+        for methodStmt in classBody do
+          if let .FunctionDef .. := methodStmt then
+            let funcDecl ← pyFuncDefToPythonFunctionDecl classCtx methodStmt
+            classFuncDecls := classFuncDecls ++ [funcDecl]
+      | _ => pure ()
     | _ => pure ()
 
   -- Merge user-defined class names into importedSymbols
@@ -1820,7 +1835,7 @@ def pythonToLaurel' (info : PreludeInfo)
   | _ =>
   {
     currentClassName := none,
-    functionSignatures := info.functionSignatures
+    functionSignatures := info.functionSignatures ++ classFuncDecls
     preludeTypes := info.types,
     userFunctions := userFunctions,
     classFieldHighType := classFieldHighType,
