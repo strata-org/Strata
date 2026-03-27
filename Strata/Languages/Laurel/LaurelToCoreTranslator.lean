@@ -831,22 +831,22 @@ def translateWithLaurel (options: LaurelTranslateOptions) (program : Program): T
     -- (a node appears after all nodes that have paths to it).
     let sccs := Strata.OutGraph.tarjan graph
 
-    -- For each SCC, determine if it is purely functional or contains procedures.
-    -- Procedures can't call functions (only functions can call functions), so an SCC
-    -- either contains only functional procedures or only non-functional procedures.
-    let sccDecls ← sccs.toList.mapM fun scc => do
+    let sccDecls: List (List Procedure × Bool) ← sccs.toList.mapM fun scc => do
       let procs := scc.toList.filterMap fun idx =>
         nonExternalArr[idx.val]?
+
+      let isRecursive := procs.length > 1 ||
+        (match scc.toList.head? with
+          | some node => (graph.nodesOut node).contains node
+          | none => false)
+      return (procs, isRecursive)
+
+    let orderedDecls ← sccDecls.flatMapM (fun (procs, isRecursive) => do
+      -- For each SCC, determine if it is purely functional or contains procedures.
+      -- Procedures can't call functions (only functions can call functions), so an SCC
+      -- either contains only functional procedures or only non-functional procedures.
       let isFuncSCC := procs.all (·.isFunctional)
       if isFuncSCC then
-        -- Translate all as Core functions.
-        -- An SCC is recursive if it has >1 member, or if the single node has a self-edge.
-        let isRecursive := procs.length > 1 ||
-          (match scc.toList.head? with
-           | some node => (graph.nodesOut node).contains node
-           | none => false)
-
-        -- A single-element SCC → .func (or .recFuncBlock if recursive); multi-element SCC → .recFuncBlock.
         let funcs ← procs.mapM (translateProcedureToFunction options isRecursive)
         if isRecursive then
           -- Wrap all recursive functions (single self-recursive or mutual) in recFuncBlock.
@@ -857,8 +857,6 @@ def translateWithLaurel (options: LaurelTranslateOptions) (program : Program): T
         else
           return funcs
       else
-        -- Non-functional SCC: emit invokeOn axiom (if any) after each procedure,
-        -- so the axiom is not in scope when the procedure's VCs are checked.
         procs.flatMapM fun proc => do
           let axiomDecls : List Core.Decl ← match proc.invokeOn with
             | none => pure []
@@ -867,8 +865,7 @@ def translateWithLaurel (options: LaurelTranslateOptions) (program : Program): T
               pure axDecl?.toList
           let procDecl ← translateProcedure proc
           return [Core.Decl.proc procDecl .empty] ++ axiomDecls
-
-    let orderedDecls := sccDecls.flatten
+    )
 
     -- Translate Laurel constants to Core function declarations (0-ary functions)
     let constantDecls ← program.constants.mapM fun c => do
