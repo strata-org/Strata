@@ -80,8 +80,14 @@ def eval (E : Env) : List (Program × Env) :=
       go rest declsE
 
     | .func func _ =>
+      -- Skip bodyless functions that already exist in the factory
+      -- (the factory version may have concreteEval for constant folding)
       match declsE.env.addFactoryFunc func with
-      | .error e => [(declsE.xdecls, { declsE.env with error := some (Imperative.EvalError.Misc f!"{e}")})]
+      | .error e =>
+        if func.body.isNone then
+          go rest declsE
+        else
+          [(declsE.xdecls, { declsE.env with error := some (Imperative.EvalError.Misc f!"{e}")})]
       | .ok new_env =>
         let declsE := { declsE with env := new_env,
                                     xdecls := declsE.xdecls ++ [decl] }
