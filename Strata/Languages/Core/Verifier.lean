@@ -767,7 +767,8 @@ def verify (program : Program)
         -- PrecondElim has already inserted call-site precondition
         -- checks into user procedure bodies and generated WF
         -- procedures for prelude functions; we discard the latter.
-        let procsSet := Std.HashSet.ofList procs
+        let procsSet := Std.HashSet.ofList
+          (procs ++ procs.map PrecondElim.wfProcName)
         let prog := { prog with decls := prog.decls.filter fun d =>
           match d with
           | .proc p _ => procsSet.contains (CoreIdent.toPretty p.header.name)
