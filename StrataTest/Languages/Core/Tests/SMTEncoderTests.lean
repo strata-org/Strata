@@ -14,7 +14,7 @@ open Lambda
 open Strata.SMT
 
 /--
-info: "(define-fun $__t.0 () Bool (forall (($__bv0 Int)) (exists (($__bv1 Int)) (= $__bv0 $__bv1))))\n"
+info: "(define-fun $__t.0 () Bool (forall ((n Int)) (exists ((m Int)) (= n m))))\n"
 -/
 #guard_msgs in
 #eval toSMTTermString
@@ -23,7 +23,7 @@ info: "(define-fun $__t.0 () Bool (forall (($__bv0 Int)) (exists (($__bv1 Int)) 
    (.eq () (.bvar () 1) (.bvar () 0))))
 
 /--
-info: "; x\n(declare-const x Int)\n(define-fun $__t.0 () Bool (exists (($__bv0 Int)) (= $__bv0 x)))\n"
+info: "; x\n(declare-const x Int)\n(define-fun $__t.0 () Bool (exists ((i Int)) (= i x)))\n"
 -/
 #guard_msgs in
 #eval toSMTTermString
@@ -31,7 +31,7 @@ info: "; x\n(declare-const x Int)\n(define-fun $__t.0 () Bool (exists (($__bv0 I
    (.eq () (.bvar () 0) (.fvar () "x" (.some .int))))
 
 /--
-info: "; f\n(declare-fun f (Int) Int)\n; x\n(declare-const x Int)\n(define-fun $__t.0 () Bool (exists (($__bv0 Int)) (! (= $__bv0 x) :pattern ((f $__bv0)))))\n"
+info: "; f\n(declare-fun f (Int) Int)\n; x\n(declare-const x Int)\n(define-fun $__t.0 () Bool (exists ((i Int)) (! (= i x) :pattern ((f i)))))\n"
 -/
 #guard_msgs in
 #eval toSMTTermString
@@ -40,7 +40,7 @@ info: "; f\n(declare-fun f (Int) Int)\n; x\n(declare-const x Int)\n(define-fun $
 
 
 /--
-info: "; f\n(declare-fun f (Int) Int)\n; x\n(declare-const x Int)\n(define-fun $__t.0 () Bool (exists (($__bv0 Int)) (! (= (f $__bv0) x) :pattern ((f $__bv0)))))\n"
+info: "; f\n(declare-fun f (Int) Int)\n; x\n(declare-const x Int)\n(define-fun $__t.0 () Bool (exists ((i Int)) (! (= (f i) x) :pattern ((f i)))))\n"
 -/
 #guard_msgs in
 #eval toSMTTermString
@@ -54,7 +54,7 @@ info: "; f\n(declare-fun f (Int) Int)\n; x\n(declare-const x Int)\n(define-fun $
    (.eq () (.app () (.fvar () "f" (.some (.arrow .int .int))) (.bvar () 0)) (.fvar () "x" (.some .int))))
 
 /--
-info: "; f\n(declare-const f (arrow Int Int))\n; f\n(declare-fun f@1 (Int) Int)\n; x\n(declare-const x Int)\n(define-fun $__t.0 () Bool (exists (($__bv0 Int)) (! (= (f@1 $__bv0) x) :pattern (f))))\n"
+info: "; f\n(declare-const f (arrow Int Int))\n; f\n(declare-fun f@1 (Int) Int)\n; x\n(declare-const x Int)\n(define-fun $__t.0 () Bool (exists ((i Int)) (! (= (f@1 i) x) :pattern (f))))\n"
 -/
 #guard_msgs in
 #eval toSMTTermString
@@ -70,13 +70,13 @@ info: "; f\n(declare-const f (arrow Int Int))\n; f\n(declare-fun f@1 (Int) Int)\
    }})
 
 /--
-info: "; f\n(declare-fun f (Int Int) Int)\n; x\n(declare-const x Int)\n(define-fun $__t.0 () Bool (forall (($__bv0 Int) ($__bv1 Int)) (! (= (f $__bv1 $__bv0) x) :pattern ((f $__bv1 $__bv0)))))\n"
+info: "; f\n(declare-fun f (Int Int) Int)\n; x\n(declare-const x Int)\n(define-fun $__t.0 () Bool (forall ((m Int) (n Int)) (! (= (f n m) x) :pattern ((f n m)))))\n"
 -/
 #guard_msgs in
 #eval toSMTTermString
    (.quant () .all "m" (.some .int) (.bvar () 0) (.quant () .all "n" (.some .int) (.app () (.app () (.op () "f" (.some (.arrow .int (.arrow .int .int)))) (.bvar () 0)) (.bvar () 1))
    (.eq () (.app () (.app () (.op () "f" (.some (.arrow .int (.arrow .int .int)))) (.bvar () 0)) (.bvar () 1)) (.fvar () "x" (.some .int)))))
-   (ctx := SMT.Context.mk #[] #[UF.mk "f" ((TermVar.mk "m" TermType.int) ::(TermVar.mk "n" TermType.int) :: []) TermType.int] #[] #[] [] #[] {} [] 0)
+   (ctx := SMT.Context.mk #[] #[UF.mk "f" ((TermVar.mk "m" TermType.int) ::(TermVar.mk "n" TermType.int) :: []) TermType.int] #[] #[] [] #[] {} [] 0 false)
    (E := {Env.init with exprEnv := {
     Env.init.exprEnv with
       config := { Env.init.exprEnv.config with
@@ -88,13 +88,13 @@ info: "; f\n(declare-fun f (Int Int) Int)\n; x\n(declare-const x Int)\n(define-f
 
 
 /--
-info: "; f\n(declare-fun f (Int Int) Int)\n; x\n(declare-const x Int)\n(define-fun $__t.0 () Bool (forall (($__bv0 Int) ($__bv1 Int)) (= (f $__bv1 $__bv0) x)))\n"
+info: "; f\n(declare-fun f (Int Int) Int)\n; x\n(declare-const x Int)\n(define-fun $__t.0 () Bool (forall ((m Int) (n Int)) (= (f n m) x)))\n"
 -/
 #guard_msgs in -- No valid trigger
 #eval toSMTTermString
    (.quant () .all "m" (.some .int) (.bvar () 0) (.quant () .all "n" (.some .int) (.bvar () 0)
    (.eq () (.app () (.app () (.op () "f" (.some (.arrow .int (.arrow .int .int)))) (.bvar () 0)) (.bvar () 1)) (.fvar () "x" (.some .int)))))
-   (ctx := SMT.Context.mk #[] #[UF.mk "f" ((TermVar.mk "m" TermType.int) ::(TermVar.mk "n" TermType.int) :: []) TermType.int] #[] #[] [] #[] {} [] 0)
+   (ctx := SMT.Context.mk #[] #[UF.mk "f" ((TermVar.mk "m" TermType.int) ::(TermVar.mk "n" TermType.int) :: []) TermType.int] #[] #[] [] #[] {} [] 0 false)
    (E := {Env.init with exprEnv := {
     Env.init.exprEnv with
       config := { Env.init.exprEnv.config with
@@ -190,9 +190,9 @@ info: "; m\n(declare-const m (Array Int Int))\n(define-fun $__t.0 () (Array Int 
    (.quant () .exist "" (.some .int) (LExpr.noTrigger ())
    (.eq () (.bvar () 1) (.bvar () 0))))
 
--- Test nested quantifiers with same user name both get unique $__bv names
+-- Test nested quantifiers with same user name get disambiguated human-readable names
 /--
-info: "(define-fun $__t.0 () Bool (forall (($__bv0 Int)) (exists (($__bv1 Int)) (= $__bv0 $__bv1))))\n"
+info: "(define-fun $__t.0 () Bool (forall ((x Int)) (exists ((x@1 Int)) (= x x@1))))\n"
 -/
 #guard_msgs in
 #eval toSMTTermString
@@ -200,9 +200,9 @@ info: "(define-fun $__t.0 () Bool (forall (($__bv0 Int)) (exists (($__bv1 Int)) 
    (.quant () .exist "x" (.some .int) (LExpr.noTrigger ())
    (.eq () (.bvar () 1) (.bvar () 0))))
 
--- Test triply nested quantifiers all get distinct $__bv names regardless of user names
+-- Test triply nested quantifiers all get distinct disambiguated human-readable names
 /--
-info: "(define-fun $__t.0 () Bool (forall (($__bv0 Int) ($__bv1 Int) ($__bv2 Int)) (= $__bv2 $__bv0)))\n"
+info: "(define-fun $__t.0 () Bool (forall ((x Int) (x@1 Int) (x@2 Int)) (= x@2 x)))\n"
 -/
 #guard_msgs in
 #eval toSMTTermString
@@ -213,7 +213,7 @@ info: "(define-fun $__t.0 () Bool (forall (($__bv0 Int) ($__bv1 Int) ($__bv2 Int
 
 
 /--
-info: "; x\n(declare-const x Int)\n(define-fun $__t.0 () Bool (forall (($__bv0 Int)) (= $__bv0 x)))\n"
+info: "; x\n(declare-const x Int)\n(define-fun $__t.0 () Bool (forall ((x@1 Int)) (= x@1 x)))\n"
 -/
 #guard_msgs in
 #eval toSMTTermString
@@ -221,8 +221,7 @@ info: "; x\n(declare-const x Int)\n(define-fun $__t.0 () Bool (forall (($__bv0 I
    (.eq () (.bvar () 0) (.fvar () "x" (.some .int))))
 
 -- Test that bound variable names are globally unique across multiple terms.
--- Two independent forall terms encoded via toSMTTerms should get distinct $__bv names.
--- Before the fix, both terms would use $__bv0; now they get $__bv0 and $__bv1.
+-- Two independent forall terms with empty names encoded via toSMTTerms should get distinct $__bv names.
 #guard
   match toSMTTerms Env.init [
     -- Term 1: ∀ x:Int. x = x
