@@ -115,6 +115,25 @@ def loop_elimination_statement(s : C_Simp.Statement) : Core.Statement :=
         .assume s!"invariant_{i}" (translate_expr inv) {}
 
       .ite (.det (translate_expr guard_expr)) ([first_iter_facts, arbitrary_iter_facts, havocd, not_guard] ++ invariant_assumes) [] {}
+    | .det guard_expr, .none, _ =>
+      let assigned_vars := (Imperative.Block.modifiedVars body).map (λ s => ⟨s.name, ()⟩)
+      let havocd : Core.Statement := .block "loop havoc" (assigned_vars.map (λ n => Core.Statement.havoc n {})) {}
+      let entry_invariants : List Core.Statement := invList.mapIdx fun i inv =>
+        .assert s!"entry_invariant_{i}" (translate_expr inv) {}
+      let first_iter_facts : Core.Statement := .block "first_iter_asserts" entry_invariants {}
+      let inv_assumes : List Core.Statement := invList.mapIdx fun i inv =>
+        Core.Statement.assume s!"assume_invariant_{i}" (translate_expr inv) {}
+      let arbitrary_iter_assumes := .block "arbitrary_iter_assumes"
+        ([Core.Statement.assume "assume_guard" (translate_expr guard_expr) {}] ++ inv_assumes) {}
+      let maintain_invariants : List Core.Statement := invList.mapIdx fun i inv =>
+        .assert s!"arbitrary_iter_maintain_invariant_{i}" (translate_expr inv) {}
+      let body_statements : List Core.Statement := body.map translate_stmt
+      let arbitrary_iter_facts : Core.Statement := .block "arbitrary iter facts"
+        ([havocd, arbitrary_iter_assumes] ++ body_statements ++ maintain_invariants) {}
+      let not_guard : Core.Statement := .assume "not_guard" (.app () (.op () "Bool.Not" none) (translate_expr guard_expr)) {}
+      let invariant_assumes : List Core.Statement := invList.mapIdx fun i inv =>
+        .assume s!"invariant_{i}" (translate_expr inv) {}
+      .ite (.det (translate_expr guard_expr)) ([first_iter_facts, arbitrary_iter_facts, havocd, not_guard] ++ invariant_assumes) [] {}
     | .nondet, _, _ =>
       let assigned_vars := (Imperative.Block.modifiedVars body).map (λ s => ⟨s.name, ()⟩)
       let havocd : Core.Statement := .block "loop havoc" (assigned_vars.map (λ n => Core.Statement.havoc n {})) {}
@@ -136,7 +155,6 @@ def loop_elimination_statement(s : C_Simp.Statement) : Core.Statement :=
       let exit_state_assumes := [havocd] ++ invariant_assumes
       let loop_passive := .ite .nondet (arbitrary_iter_facts :: exit_state_assumes) [] {}
       .block "loop" [first_iter_facts, loop_passive] {}
-    | .det _, _, _ => panic! "Loop elimination requires measure for deterministic guard"
   | _ => translate_stmt s
 
 -- C_Simp functions are Strata Core procedures
