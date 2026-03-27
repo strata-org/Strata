@@ -283,11 +283,13 @@ def pyAnalyzeCommand : Command where
   name := "pyAnalyze"
   args := [ "file" ]
   flags := [{ name := "verbose", help := "Enable verbose output." },
-            { name := "sarif", help := "Write results as SARIF to <file>.sarif." }]
+            { name := "sarif", help := "Write results as SARIF to <file>.sarif." },
+            { name := "unique-bound-names", help := "Use globally unique names for quantifier-bound variables." }]
   help := "Verify a Python Ion program. Translates to Core, inlines procedures, and runs SMT verification."
   callback := fun v pflags => do
     let verbose := pflags.getBool "verbose"
     let outputSarif := pflags.getBool "sarif"
+    let uniqueBoundNames := pflags.getBool "unique-bound-names"
     let filePath := v[0]
     let stmts ← readPythonStrata filePath
     -- Try to read the Python source for line number conversion
@@ -314,7 +316,8 @@ def pyAnalyzeCommand : Command where
                 stopOnFirstError := false,
                 verbose := verboseMode,
                 removeIrrelevantAxioms := .Precise,
-                solver := solverName }
+                solver := solverName,
+                uniqueBoundNames := uniqueBoundNames }
       let runVerification tempDir :=
           EIO.toIO
             (fun f => IO.Error.userError (toString f))
@@ -464,6 +467,7 @@ def pyAnalyzeLaurelCommand : Command where
             { name := "vc-directory",
               help := "Store VCs in SMT-Lib format in <dir>.",
               takesArg := .arg "dir" },
+            { name := "unique-bound-names", help := "Use globally unique names for quantifier-bound variables." },
             { name := "keep-all-files",
               help := "Store intermediate Laurel and Core programs in <dir>.",
               takesArg := .arg "dir" }]
@@ -559,11 +563,13 @@ def pyAnalyzeLaurelCommand : Command where
     -- Verify using Core verifier
     let checkMode ← parseCheckMode pflags
     let checkLevel ← parseCheckLevel pflags
+    let uniqueBoundNames := pflags.getBool "unique-bound-names"
     let baseOptions : VerifyOptions :=
       { VerifyOptions.default with
         stopOnFirstError := false, verbose := .quiet, solver := Core.defaultSolver,
         removeIrrelevantAxioms := .Precise,
-        checkMode := checkMode, checkLevel := checkLevel }
+        checkMode := checkMode, checkLevel := checkLevel,
+        uniqueBoundNames := uniqueBoundNames }
     let options : VerifyOptions := match pflags.getString "vc-directory" with
       | .some dir => { baseOptions with vcDirectory := some (dir : System.FilePath) }
       | .none => match keepDir with
