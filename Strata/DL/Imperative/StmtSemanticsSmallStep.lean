@@ -131,28 +131,6 @@ def Config.noFuncDecl : Config P CmdT → Prop
   | .block _ inner => Config.noFuncDecl inner
   | .seq inner ss => Config.noFuncDecl inner ∧ Block.noFuncDecl ss = true
 
-/-! ## Well-paired exits
-
-`exitsCoveredByBlocks labels s` holds when every `exit` statement in `s` is caught
-by an enclosing `block` — either within `s` itself or with a label in
-`labels` (representing blocks that enclose `s` externally).
-
-When `s.exitsCoveredByBlocks []`, execution of `s` can never produce `.exiting`. -/
-
-@[expose] def Stmt.exitsCoveredByBlocks : List String → Stmt P CmdT → Prop
-  | _, .cmd _ => True
-  | labels, .block l ss _ => Block.exitsCoveredByBlocks (l :: labels) ss
-  | labels, .ite _ tss ess _ => Block.exitsCoveredByBlocks labels tss ∧ Block.exitsCoveredByBlocks labels ess
-  | labels, .loop _ _ _ body _ => Block.exitsCoveredByBlocks labels body
-  | labels, .exit none _ => labels.length > 0
-  | labels, .exit (some l) _ => l ∈ labels
-  | _, .funcDecl _ _ => True
-  | _, .typeDecl _ _ => True
-where
-  Block.exitsCoveredByBlocks : List String → List (Stmt P CmdT) → Prop
-    | _, [] => True
-    | labels, s :: ss => Stmt.exitsCoveredByBlocks labels s ∧ Block.exitsCoveredByBlocks labels ss
-
 /-- Extend `exitsCoveredByBlocks` to configurations. -/
 @[expose] def Config.exitsCoveredByBlocks : List String → Config P CmdT → Prop
   | labels, .stmt s _ => s.exitsCoveredByBlocks labels
@@ -566,6 +544,58 @@ theorem block_reaches_exiting
       | refl => exact ⟨_, .refl _⟩
       | step _ _ _ h _ => cases h
 
+/-! ## Trace construction helpers -/
+
+/-- Entering a block: a single step from `.stmt (.block l body md) ρ`
+    to `.block l (.stmts body ρ)`. -/
+theorem step_block_enter (l : String) (body : List (Stmt P CmdT))
+    (md : MetaData P) (ρ : Env P) :
+    StepStmtStar P EvalCmd extendEval
+      (.stmt (.block l body md) ρ) (.block l (.stmts body ρ)) :=
+  .step _ _ _ .step_block (.refl _)
+
+/-- If a prefix of a statement list terminates, the full list steps
+    to the suffix starting from the terminal environment. -/
+theorem stmts_prefix_terminal_append
+    (pfx sfx : List (Stmt P CmdT)) (ρ ρ' : Env P)
+    (h : StepStmtStar P EvalCmd extendEval (.stmts pfx ρ) (.terminal ρ')) :
+    StepStmtStar P EvalCmd extendEval (.stmts (pfx ++ sfx) ρ) (.stmts sfx ρ') := by
+  induction pfx generalizing ρ with
+  | nil =>
+    cases h with
+    | step _ _ _ h_step h_rest => cases h_step with
+      | step_stmts_nil => cases h_rest with
+        | refl => exact .refl _
+        | step _ _ _ h _ => exact nomatch h
+  | cons s rest ih =>
+    cases h with
+    | step _ _ _ h_step h_rest => cases h_step with
+      | step_stmts_cons =>
+        have ⟨ρ₁, h_s, h_r⟩ := seq_reaches_terminal P EvalCmd extendEval h_rest
+        exact ReflTrans_Transitive _ _ _ _
+          (stmts_cons_step P EvalCmd extendEval s (rest ++ sfx) ρ ρ₁ h_s) (ih ρ₁ h_r)
+
+/-- Decompose a terminating execution of `ss₁ ++ ss₂` into a terminating
+    execution of `ss₁` followed by a terminating execution of `ss₂`. -/
+theorem stmts_append_terminates
+    (ss₁ ss₂ : List (Stmt P CmdT)) (ρ ρ' : Env P)
+    (h : StepStmtStar P EvalCmd extendEval (.stmts (ss₁ ++ ss₂) ρ) (.terminal ρ')) :
+    ∃ ρ₁, StepStmtStar P EvalCmd extendEval (.stmts ss₁ ρ) (.terminal ρ₁) ∧
+           StepStmtStar P EvalCmd extendEval (.stmts ss₂ ρ₁) (.terminal ρ') := by
+  induction ss₁ generalizing ρ with
+  | nil =>
+    exact ⟨ρ, .step _ _ _ .step_stmts_nil (.refl _), h⟩
+  | cons s rest ih =>
+    cases h with
+    | step _ _ _ hstep hrest => cases hstep with
+      | step_stmts_cons =>
+        have ⟨ρ_mid, h_s, h_rest_ss₂⟩ :=
+          seq_reaches_terminal P EvalCmd extendEval hrest
+        have ⟨ρ₁, h_rest, h_ss₂⟩ := ih ρ_mid h_rest_ss₂
+        exact ⟨ρ₁, ReflTrans_Transitive _ _ _ _
+          (stmts_cons_step P EvalCmd extendEval
+            s rest ρ ρ_mid h_s) h_rest, h_ss₂⟩
+
 /-- Try every non-recursive `StepStmt` constructor, using `‹_›` (term-level
     assumption) to fill arguments so that no hypothesis names are needed. -/
 local macro "apply_step" : tactic => `(tactic| first
@@ -698,16 +728,6 @@ theorem smallStep_hasFailure_irrel
     exact ⟨c₂', .step _ _ _ hstep₂ hstar₂, heq_final⟩
 
 /-! ## Well-paired exits: preservation and no-escape -/
-
-omit [HasBool P] [HasNot P] in
-private theorem block_exitsCoveredByBlocks_append
-    (labels : List String) (ss₁ ss₂ : List (Stmt P CmdT))
-    (h₁ : Stmt.exitsCoveredByBlocks.Block.exitsCoveredByBlocks labels ss₁)
-    (h₂ : Stmt.exitsCoveredByBlocks.Block.exitsCoveredByBlocks labels ss₂) :
-    Stmt.exitsCoveredByBlocks.Block.exitsCoveredByBlocks labels (ss₁ ++ ss₂) := by
-  induction ss₁ with
-  | nil => exact h₂
-  | cons s ss ih => exact ⟨h₁.1, ih h₁.2⟩
 
 /-- A single step preserves `Config.exitsCoveredByBlocks`. -/
 private theorem step_preserves_exitsCoveredByBlocks
@@ -908,6 +928,15 @@ theorem smallStep_noFuncDecl_preserves_eval_block
   | step _ mid _ hstep _ ih =>
     have ⟨heq, hnofd_mid⟩ := step_preserves_eval_noFuncDecl P EvalCmd extendEval _ _ hstep hnofd_c
     rw [ih hnofd_mid, heq]
+
+/-- Alias for `smallStep_noFuncDecl_preserves_eval_block`, matching the
+    `Block.noFuncDecl` naming convention. -/
+theorem block_noFuncDecl_preserves_eval
+    (ss : List (Stmt P CmdT)) (ρ ρ' : Env P)
+    (hnofd : Block.noFuncDecl ss = true)
+    (hterm : StepStmtStar P EvalCmd extendEval (.stmts ss ρ) (.terminal ρ')) :
+    ρ'.eval = ρ.eval :=
+  smallStep_noFuncDecl_preserves_eval_block P EvalCmd extendEval ss ρ ρ' hnofd hterm
 
 end -- section
 

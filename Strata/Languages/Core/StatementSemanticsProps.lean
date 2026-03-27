@@ -23,6 +23,7 @@ import all Strata.Languages.Core.StatementSemantics
 import all Strata.DL.Imperative.Cmd
 import all Strata.DL.Imperative.Stmt
 import Strata.Util.Tactics
+public import Strata.Languages.Core.WF
 
 public section
 
@@ -2109,6 +2110,166 @@ theorem EvalExpressionIsDefined :
   case eq m e₁ e₂ ih₁ ih₂ =>
     have ⟨h₁, h₂⟩ := Hwfc.definedness.eqdef σ m e₁ e₂ Hsome
     grind
+
+/-! ## Well-formed evaluator extension -/
+
+variable (π : String → Option Procedure)
+variable (φ : CoreEval → PureFunc Expression → CoreEval)
+
+theorem core_step_preserves_wfBool
+    (h_wf_ext : WFEvalExtension φ)
+    (c₁ c₂ : CoreConfig)
+    (hwf : WellFormedSemanticEvalBool c₁.getEnv.eval)
+    (hstep : CoreStep π φ c₁ c₂) :
+    WellFormedSemanticEvalBool c₂.getEnv.eval := by
+  induction hstep with
+  | step_cmd hcmd =>
+    cases hcmd with
+    | cmd_sem _ => simp [Config.getEnv]; exact hwf
+    | @call_sem _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ =>
+        simp only [Config.getEnv]; exact hwf
+  | step_block => simp [Config.getEnv]; exact hwf
+  | step_ite_true _ _ => exact hwf
+  | step_ite_false _ _ => exact hwf
+  | step_loop_enter _ _ => exact hwf
+  | step_loop_exit _ _ => exact hwf
+  | step_exit => exact hwf
+  | step_funcDecl => simp [Config.getEnv]; exact h_wf_ext.preserves_wfBool _ _ _ hwf
+  | step_typeDecl => exact hwf
+  | step_stmts_nil => exact hwf
+  | step_stmts_cons => exact hwf
+  | step_seq_inner _ ih => exact ih hwf
+  | step_seq_done => exact hwf
+  | step_seq_exit => exact hwf
+  | step_block_body _ ih => exact ih hwf
+  | step_block_done => exact hwf
+  | step_block_exit_none => exact hwf
+  | step_block_exit_match _ => exact hwf
+  | step_block_exit_mismatch _ => exact hwf
+
+theorem core_wfBool_preserved
+    (h_wf_ext : WFEvalExtension φ)
+    (c₁ c₂ : CoreConfig)
+    (hwf₀ : WellFormedSemanticEvalBool c₁.getEnv.eval)
+    (hstar : CoreStepStar π φ c₁ c₂) :
+    WellFormedSemanticEvalBool c₂.getEnv.eval := by
+  induction hstar with
+  | refl => exact hwf₀
+  | step _ _ _ hstep _ ih =>
+    exact ih (core_step_preserves_wfBool π φ h_wf_ext _ _ hwf₀ hstep)
+
+/-! ## Assert-only blocks preserve store -/
+
+theorem stmts_allAssert_preserves_store
+    (ss : List Statement) (ρ ρ' : Env Expression)
+    (h_all : ∀ s ∈ ss, ∃ l e md, s = Statement.assert l e md)
+    (hterm : CoreStepStar π φ (.stmts ss ρ) (.terminal ρ')) :
+    ρ'.store = ρ.store := by
+  induction ss generalizing ρ with
+  | nil =>
+    cases hterm with
+    | step _ _ _ h_step h_rest => cases h_step with
+      | step_stmts_nil => cases h_rest with
+        | refl => rfl
+        | step _ _ _ h _ => exact nomatch h
+  | cons s rest ih =>
+    have ⟨l, e, md, h_eq⟩ := h_all s (.head _)
+    subst h_eq
+    cases hterm with
+    | step _ _ _ h_step h_rest => cases h_step with
+      | step_stmts_cons =>
+        have ⟨ρ₁, h_s, h_r⟩ :=
+          seq_reaches_terminal Expression (EvalCommand π φ) (EvalPureFunc φ) h_rest
+        have h_store₁ : ρ₁.store = ρ.store := by
+          suffices ∀ (c₁ c₂ : CoreConfig),
+              CoreStepStar π φ c₁ c₂ →
+              c₁ = .stmt (Statement.assert l e md) ρ →
+              c₂ = .terminal ρ₁ →
+              ρ₁.store = ρ.store by
+            exact this _ _ h_s rfl rfl
+          intro c₁ c₂ hstar heq₁ heq₂
+          subst heq₁
+          cases hstar with
+          | refl => exact nomatch heq₂
+          | step _ _ _ hstep hrest₂ =>
+            cases hstep with
+            | step_cmd hcmd =>
+              cases hcmd with
+              | cmd_sem heval =>
+                cases heval with
+                | eval_assert_pass =>
+                  cases hrest₂ with
+                  | refl => simp at heq₂ ⊢; exact heq₂ ▸ rfl
+                  | step _ _ _ h _ => exact nomatch h
+                | eval_assert_fail =>
+                  cases hrest₂ with
+                  | refl => simp at heq₂ ⊢; exact heq₂ ▸ rfl
+                  | step _ _ _ h _ => exact nomatch h
+        exact (ih ρ₁ (fun s' hs' => h_all s' (.tail _ hs')) h_r).trans h_store₁
+
+/-! ## hasFailure preservation (Core-specific) -/
+
+theorem core_step_preserves_noFailure
+    (c₁ c₂ : CoreConfig)
+    (hv : ∀ (a : AssertId Expression) (cfg : CoreConfig),
+      CoreStepStar π φ c₁ cfg →
+      coreIsAtAssert cfg a →
+      cfg.getEval cfg.getStore a.expr = some HasBool.tt)
+    (hnf : c₁.getEnv.hasFailure = Bool.false)
+    (hstep : CoreStep π φ c₁ c₂) :
+    c₂.getEnv.hasFailure = Bool.false := by
+  induction hstep with
+  | step_cmd hcmd =>
+    cases hcmd with
+    | cmd_sem heval =>
+      cases heval with
+      | eval_assert_fail hff _ =>
+        have htt := hv ⟨_, _⟩ _ (.refl _) ⟨rfl, rfl⟩
+        simp only [Config.getEval, Config.getStore] at htt
+        rw [hff] at htt; exact absurd (Option.some.inj htt) HasBool.tt_is_not_ff.symm
+      | _ => simp_all [Config.getEnv]
+    | @call_sem _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ =>
+        simp only [Config.getEnv, Bool.or_false]; exact hnf
+  | step_block => simp [Config.getEnv]; exact hnf
+  | step_ite_true _ _ => exact hnf
+  | step_ite_false _ _ => exact hnf
+  | step_loop_enter _ _ => exact hnf
+  | step_loop_exit _ _ => exact hnf
+  | step_exit => exact hnf
+  | step_funcDecl => simp [Config.getEnv]; exact hnf
+  | step_typeDecl => exact hnf
+  | step_stmts_nil => exact hnf
+  | step_stmts_cons => exact hnf
+  | step_seq_inner h ih =>
+    exact ih
+      (fun a cfg hr hat => hv a (.seq cfg _)
+        (seq_inner_star Expression (EvalCommand π φ) (EvalPureFunc φ) _ _ _ hr) hat) hnf
+  | step_seq_done => exact hnf
+  | step_seq_exit => exact hnf
+  | step_block_body h ih =>
+    exact ih
+      (fun a cfg hr hat => hv a (.block _ cfg)
+        (block_inner_star Expression (EvalCommand π φ) (EvalPureFunc φ) _ _ _ hr) hat) hnf
+  | step_block_done => exact hnf
+  | step_block_exit_none => exact hnf
+  | step_block_exit_match _ => exact hnf
+  | step_block_exit_mismatch _ => exact hnf
+
+theorem core_noFailure_preserved
+    (c₁ c₂ : CoreConfig)
+    (hvalid : ∀ (a : AssertId Expression) (cfg : CoreConfig),
+      CoreStepStar π φ c₁ cfg →
+      coreIsAtAssert cfg a →
+      cfg.getEval cfg.getStore a.expr = some HasBool.tt)
+    (hf₀ : c₁.getEnv.hasFailure = Bool.false)
+    (hstar : CoreStepStar π φ c₁ c₂) :
+    c₂.getEnv.hasFailure = Bool.false := by
+  induction hstar with
+  | refl => exact hf₀
+  | step _ mid _ hstep _ ih =>
+    exact ih
+      (fun a cfg h hat => hvalid a _ (.step _ _ _ hstep h) hat)
+      (core_step_preserves_noFailure π φ _ _ hvalid hf₀ hstep)
 
 end Core
 

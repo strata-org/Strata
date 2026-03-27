@@ -152,6 +152,8 @@ structure WFProcedureProp (p : Program) (d : Procedure) : Prop where
   outputsNodup : (ListMap.keys d.header.outputs).Nodup
   modNodup : d.spec.modifies.Nodup
   wfspec : WFSpecProp p d.spec d
+  -- There is no exit statement that cannot be caught by any block in the procedure.
+  bodyExitsCovered : Stmt.exitsCoveredByBlocks.Block.exitsCoveredByBlocks [] d.body
 structure WFFunctionProp (p : Program) (f : Function) : Prop where
 
 structure WFRecFuncBlockProp (p : Program) (fs : List Function) : Prop where

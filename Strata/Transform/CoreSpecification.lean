@@ -4,53 +4,27 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 import Strata.Languages.Core.StatementSemantics
+import Strata.Languages.Core.StatementSemanticsProps
 import Strata.Transform.Specification
+import Strata.Languages.Core.WF
 
 /-! # Core-Level Specification
 
 Bridges Core procedures to the generic Imperative specification framework
-(`AssertValid`, `AllAssertsValid`, `Hoare.Triple`, `PredicatedStmt`).
+(`AssertValidWhen`, `AllAssertsValidWhen`).
 
 ## Overview
 
-- **`coreIsAtAssert`** — assert detection for Core configs
 - **`Lang.core`** — the `Lang Expression` bundle for Core small-step semantics
-- **`withOldBindings`** — augments an environment with pre-state snapshots
-- **`AssertValidInProcedure`** — body-assert validity under preconditions
-- **`ProcedureCorrect`** — partial-correctness contract for a procedure
-
-## Old-variable handling
-
-`withOldBindings` augments the store of an environment `ρ₀` by mapping
-`CoreIdent.mkOld g.name` to `ρ₀.store g` for each `g ∈ modifies`.
-The body runs from this augmented environment, so postcondition expressions
-can reference `old g` directly in the terminal store.
-
-This is a *semantic* specification: it describes what the old-variable setup
-means, not how it is implemented.  The implementation
-(`ProcBodyVerify.procToVerifyStmt` emitting `set old_g := g`) is verified
-separately to match this spec.
+- **`ProcEnvWF`** — well-formedness condition on the initial verification env
+- **`ProcedurePre`** / **`procStartEnv`** — procedure preconditions and starting env
+- **`AssertValidInProcedure`** — `AssertValidWhen` on the verification statement
+- **`ProcedureCorrect`** — assert validity + postconditions + hasFailure on termination
 -/
 
 namespace Core.Specification
 
 open Core Imperative
-
-/-! ## Assert detection for Core configs -/
-
-/-- Assert detection for Core configurations.
-
-    Core commands have type `Command = CmdExt Expression`, so an assert
-    command appears as `.cmd (CmdExt.cmd (Cmd.assert l e md))`.
-    Call commands (`.cmd (CmdExt.call ...)`) never trigger assert detection. -/
-def coreIsAtAssert : CoreConfig → Imperative.AssertId Expression → Prop
-  | .stmt (.cmd (.cmd (.assert label expr _))) _, aid =>
-    aid.label = label ∧ aid.expr = expr
-  | .stmts ((.cmd (.cmd (.assert label expr _))) :: _) _, aid =>
-    aid.label = label ∧ aid.expr = expr
-  | .block _ inner, aid => coreIsAtAssert inner aid
-  | .seq inner _, aid => coreIsAtAssert inner aid
-  | _, _ => False
 
 /-! ## Core `Lang` bundle -/
 
@@ -62,20 +36,21 @@ def Lang.core
   Imperative.Specification.Lang.imperative
     Expression Command (EvalCommand π φ) (EvalPureFunc φ) coreIsAtAssert
 
-/-! ## Old-variable environment augmentation -/
+/-! ## Well-formed procedure environment -/
 
-/-- Augment an environment with old-variable bindings for the modifies clause.
+/-- Identifiers initialised by the verification prefix of `procToVerifyStmt`:
+    input parameters, output parameters -/
+def procVerifyInitIdents (proc : Procedure) : List Expression.Ident :=
+  proc.header.inputs.keys ++ proc.header.outputs.keys
 
-    For each `g ∈ modifies`, the store is extended so that
-    `(withOldBindings modifies ρ).store (CoreIdent.mkOld g.name) = ρ.store g`.
-    All other store lookups (including `g` itself) are unchanged.
-    The evaluator and `hasFailure` flag are preserved. -/
-def withOldBindings
-    (modifies : List Expression.Ident) (ρ : Env Expression) : Env Expression :=
-  { ρ with store := fun id =>
-      match modifies.find? (fun g => CoreIdent.mkOld g.name == id) with
-      | some g => ρ.store g
-      | none   => ρ.store id }
+/-- A well-formed initial environment for procedure verification.
+    The evaluator is well-formed for both variable lookups and boolean
+    operations, and every identifier that the verification prefix will
+    `init` is already defined (`some _`) in the store. -/
+structure ProcEnvWF (proc : Procedure) (ρ : Env Expression) : Prop where
+  wfVar : WellFormedSemanticEvalVar ρ.eval
+  wfBool : WellFormedSemanticEvalBool ρ.eval
+  storeDefined : ∀ id ∈ procVerifyInitIdents proc, (ρ.store id).isSome
 
 /-! ## Procedure correctness -/
 
@@ -96,59 +71,35 @@ def ProcedurePre (proc : Procedure) (ρ₀ : Env Expression) : Prop :=
 abbrev procStartEnv (proc : Procedure) (ρ₀ : Env Expression) : Env Expression :=
   withOldBindings proc.spec.modifies ρ₀
 
-/-- A specific assertion is valid in a procedure body.
+/-- A specific assertion is valid in a procedure's verification statement
+    for initial environments satisfying `ProcEnvWF`.
 
-    For all initial environments satisfying `ProcedurePre`, the body runs
-    from `procStartEnv` (augmented with old-variable bindings).  Whenever
-    execution reaches a configuration at assert `a`, the assert expression
-    evaluates to `true`.
-
-    This is a restricted form of `AssertValid`.  The implementation
-    (`ProcBodyVerify`) emits `set` and `assume` commands that realise
-    this restriction; proving its soundness connects `AssertValid` of the
-    implementation to this specification. -/
+    This is `AssertValidWhen` applied to `Lang.core` with precondition
+    `ProcEnvWF`.  All internal assertions (body asserts and postcondition
+    asserts) are covered because they are all embedded in `verifyStmt`
+    by `procToVerifyStmt`. -/
 def AssertValidInProcedure
-    (proc : Procedure) (a : Imperative.AssertId Expression) : Prop :=
-  ∀ (ρ₀ : Env Expression) (cfg : CoreConfig),
-    ProcedurePre proc ρ₀ →
-    CoreStepStar π φ (.stmts proc.body (procStartEnv proc ρ₀)) cfg →
-    coreIsAtAssert cfg a →
-    cfg.getEval cfg.getStore a.expr = some HasBool.tt
+    (proc : Procedure) (verifyStmt : Statement)
+    (a : Imperative.AssertId Expression) : Prop :=
+  Imperative.Specification.AssertValidWhen (Lang.core π φ) (ProcEnvWF proc) verifyStmt a
 
-/-- A procedure is correct (partial-correctness).
+/-- A procedure is correct with respect to its verification statement.
 
-    For all initial environments satisfying `ProcedurePre`:
+    1. Every reachable assert evaluates to `true` (`AllAssertsValidWhen`).
 
-    1. Every body-internal assert is valid (`AssertValidInProcedure`).
-
-    2. If the body terminates at `ρ'`, every non-free postcondition holds.
-       The terminal store contains both post-state values and `old_g`
-       snapshots from the pre-state (set by `procStartEnv`).
-
-    3. On termination, `hasFailure = false`. -/
-def ProcedureCorrect (proc : Procedure) : Prop :=
-  -- All body asserts pass
-  (∀ a, AssertValidInProcedure π φ proc a) ∧
-  -- Postconditions hold on termination
-  (∀ (ρ₀ ρ' : Env Expression),
-    ProcedurePre proc ρ₀ →
-    CoreStepStar π φ (.stmts proc.body (procStartEnv proc ρ₀)) (.terminal ρ') →
+    2. When the verification statement terminates from a `ProcEnvWF`
+       initial environment with `hasFailure = false`, every non-free
+       postcondition holds and `hasFailure` stays `false`. -/
+def ProcedureCorrect (proc : Procedure) (p : Program) (verifyStmt : Statement) : Prop :=
+  (∀ a, AssertValidInProcedure π φ proc verifyStmt a) ∧
+  (WF.WFProcedureProp p proc →
+   ∀ (ρ₀ ρ' : Env Expression),
+    ProcEnvWF proc ρ₀ → ρ₀.hasFailure = Bool.false →
+    CoreStepStar π φ (.stmt verifyStmt ρ₀) (.terminal ρ') →
     (∀ (label : CoreLabel) (check : Procedure.Check),
       (label, check) ∈ proc.spec.postconditions.toList →
       check.attr = Procedure.CheckAttr.Default →
       ρ'.eval ρ'.store check.expr = some HasBool.tt) ∧
     ρ'.hasFailure = Bool.false)
-
-/-! ## Statement-level definitions (for `Sound` compatibility) -/
-
-/-- Validity of a specific assertion in a Core statement.
-    This is `AssertValid` of `Lang.core`, specialised to Core. -/
-def AssertValidInStmt
-    (stmt : Statement) (a : Imperative.AssertId Expression) : Prop :=
-  Imperative.Specification.AssertValid (Lang.core π φ) stmt a
-
-/-- All asserts in a Core statement are valid. -/
-def StmtCorrect (stmt : Statement) : Prop :=
-  Imperative.Specification.AllAssertsValid (Lang.core π φ) stmt
 
 end Core.Specification
