@@ -1142,11 +1142,15 @@ def translateOptionReachCheck (arg : Arg) : TransM Bool := do
     return true
   | none => return false
 
-/-- Check if an argument is the nondet star (`*`) expression. -/
-private def isBstarArg (a : Arg) : Bool :=
-  match a with
-  | .expr (ExprF.fn _ ⟨_, "bstar"⟩) => true
-  | _ => false
+/-- Translate a CondBool argument to ExprOrNondet. -/
+private def translateCondBool (p : Program) (bindings : TransBindings) (a : Arg) :
+    TransM (Imperative.ExprOrNondet Core.Expression) := do
+  let .op op := a
+    | TransM.error s!"translateCondBool expected op {repr a}"
+  match op.name, op.args with
+  | q`Core.condNondet, #[] => pure .nondet
+  | q`Core.condDet, #[ca] => pure (.det (← translateExpr p bindings ca))
+  | _, _ => TransM.error s!"translateCondBool: unexpected {repr op.name}"
 
 mutual
 partial def translateFnPreconds (p : Program) (name : Core.CoreIdent) (bindings : TransBindings) (arg : Arg) :
@@ -1213,22 +1217,14 @@ partial def translateStmt (p : Program) (bindings : TransBindings) (arg : Arg) :
     let (tss, thenBindings) ← translateBlock p bindings ta
     let (fss, elseBindings) ← translateElse p { bindings with gen := thenBindings.gen } fa
     let md ← getOpMetaData op
-    -- Check if condition is the nondet star expression
-    let cond : Imperative.ExprOrNondet Core.Expression ← if isBstarArg ca then
-      pure .nondet
-    else
-      pure (.det (← translateExpr p bindings ca))
+    let cond ← translateCondBool p bindings ca
     return ([.ite cond tss fss md], { bindings with gen := elseBindings.gen })
   | q`Core.while_statement, #[ca, ma, ia, ba] =>
     let measure ← translateMeasure p bindings ma
     let invs ← translateInvariants p bindings ia
     let (bodyss, bindings) ← translateBlock p bindings ba
     let md ← getOpMetaData op
-    -- Check if guard is the nondet star expression
-    let guard : Imperative.ExprOrNondet Core.Expression ← if isBstarArg ca then
-      pure .nondet
-    else
-      pure (.det (← translateExpr p bindings ca))
+    let guard ← translateCondBool p bindings ca
     return ([.loop guard measure invs bodyss md], bindings)
   | q`Core.call_statement, #[lsa, fa, esa] =>
     let ls  ← translateCommaSep (translateIdent Core.CoreIdent) lsa

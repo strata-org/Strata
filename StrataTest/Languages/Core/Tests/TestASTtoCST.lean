@@ -509,7 +509,7 @@ program Core;
 procedure TestNondetIf() returns ()
 {
   var x : int := 0;
-  if (*) {
+  if * {
     x := 1;
   } else {
     x := 2;
@@ -520,7 +520,7 @@ procedure TestNondetIf() returns ()
 procedure TestNondetWhile() returns ()
 {
   var x : int := 0;
-  while (*)
+  while *
     invariant x >= 0
   {
     x := x + 1;
@@ -533,7 +533,7 @@ procedure TestNondetWhile() returns ()
 info: procedure TestNondetIf () returns ()
 {
   var x : int := 0;
-  if (*) {
+  if * {
     x := 1;
     } else {
     x := 2;
@@ -543,7 +543,7 @@ info: procedure TestNondetIf () returns ()
 procedure TestNondetWhile () returns ()
 {
   var x : int := 0;
-  while (*)
+  while *
   invariant x >= 0
   {
     x := x + 1;

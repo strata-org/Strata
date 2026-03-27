@@ -413,11 +413,17 @@ def toCoreStmt (s : BooleDDM.Statement SourceRange) : TranslateM Core.Statement 
     let elseb ← withBVars [] <| match e with
       | .else0 _ => pure []
       | .else1 _ b => toCoreBlock b
-    return .ite (.det (← toCoreExpr c)) thenb elseb (← toCoreMetaData m)
+    let cond ← match c with
+      | .condDet _ expr => pure (.det (← toCoreExpr expr))
+      | .condNondet _ => pure .nondet
+    return .ite cond thenb elseb (← toCoreMetaData m)
   | .havoc_statement m ⟨_, n⟩ =>
     return Core.Statement.havoc (mkIdent n) (← toCoreMetaData m)
   | .while_statement m g _ invs b =>
-    return .loop (.det (← toCoreExpr g)) none (← toCoreInvariants invs) (← withBVars [] (toCoreBlock b)) (← toCoreMetaData m)
+    let guard ← match g with
+      | .condDet _ expr => pure (.det (← toCoreExpr expr))
+      | .condNondet _ => pure .nondet
+    return .loop guard none (← toCoreInvariants invs) (← withBVars [] (toCoreBlock b)) (← toCoreMetaData m)
   | .call_statement m ⟨_, lhs⟩ ⟨_, n⟩ ⟨_, args⟩ =>
     return Core.Statement.call (lhs.toList.map (mkIdent ·.val)) n (← args.toList.mapM toCoreExpr) (← toCoreMetaData m)
   | .call_unit_statement m ⟨_, n⟩ ⟨_, args⟩ =>

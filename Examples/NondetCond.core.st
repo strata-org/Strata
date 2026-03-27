@@ -5,7 +5,7 @@ procedure nondet_if()
 {
   var x : int;
   x := 0;
-  if (*) {
+  if * {
     x := 1;
   } else {
     x := 2;

@@ -857,9 +857,9 @@ partial def stmtToCST {M} [Inhabited M] (s : Core.Statement)
     match cond with
     | .det e =>
       let condCST ← lexprToExpr e 0
-      pure (.if_statement default condCST thenCST elseCST)
+      pure (.if_statement default (.condDet default condCST) thenCST elseCST)
     | .nondet =>
-      pure (.if_statement default (.bstar default) thenCST elseCST)
+      pure (.if_statement default (.condNondet default) thenCST elseCST)
   | .loop guard measure invariant body _md => do
     let measureCST ← measureToCST measure
     let invs ← invariantsToCST invariant
@@ -867,9 +867,9 @@ partial def stmtToCST {M} [Inhabited M] (s : Core.Statement)
     match guard with
     | .det e =>
       let guardCST ← lexprToExpr e 0
-      pure (.while_statement default guardCST measureCST invs bodyCST)
+      pure (.while_statement default (.condDet default guardCST) measureCST invs bodyCST)
     | .nondet =>
-      pure (.while_statement default (.bstar default) measureCST invs bodyCST)
+      pure (.while_statement default (.condNondet default) measureCST invs bodyCST)
   | .exit label _md => do
     match label with
     | some l =>
