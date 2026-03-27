@@ -32,6 +32,11 @@ public class FieldTypeCollector : ReadOnlyVisitor {
 }
 
 public class StrataGenerator : ReadOnlyVisitor {
+    /// <summary>
+    /// Synthetic label representing procedure exit. Used as a goto target for
+    /// return statements and excluded from back-edge detection.
+    /// </summary>
+    private const string ExitLabel = "_exit";
     private readonly Stack<string> _breakLabels = new();
     /// <summary>
     /// Set of block labels that are valid exit targets at the current nesting level.
@@ -858,7 +863,7 @@ public class StrataGenerator : ReadOnlyVisitor {
                     targets.Add(target.Label);
                 }
             } else if (getTransferCmd(item) is ReturnCmd) {
-                targets.Add("_exit");
+                targets.Add(ExitLabel);
             }
         }
         return targets;
@@ -876,7 +881,7 @@ public class StrataGenerator : ReadOnlyVisitor {
                     targets.Add(target.Label);
                 }
             } else if (bb.tc is ReturnCmd) {
-                targets.Add("_exit");
+                targets.Add(ExitLabel);
             }
             if (bb.ec is IfCmd ifCmd) {
                 CollectNestedGotoTargets(ifCmd.Thn.BigBlocks, targets);
@@ -943,7 +948,7 @@ public class StrataGenerator : ReadOnlyVisitor {
     }
 
     public override ReturnCmd VisitReturnCmd(ReturnCmd node) {
-        IndentLine("exit _exit;");
+        IndentLine($"exit {ExitLabel};");
         return node;
     }
 
@@ -1154,7 +1159,7 @@ public class StrataGenerator : ReadOnlyVisitor {
 
     /// <summary>
     /// Detect back-edge targets: labels where a goto source is at or after the target index.
-    /// The synthetic "_exit" label (procedure exit) is excluded since it represents
+    /// The synthetic ExitLabel label (procedure exit) is excluded since it represents
     /// procedure return, not a loop target.
     /// Returns a dictionary mapping back-edge target label to the loop end index (inclusive).
     /// </summary>
@@ -1163,7 +1168,7 @@ public class StrataGenerator : ReadOnlyVisitor {
         Dictionary<string, int> maxSourceForTarget) {
         var backEdges = new Dictionary<string, int>();
         foreach (var (label, maxSource) in maxSourceForTarget) {
-            if (label == "_exit") continue;
+            if (label == ExitLabel) continue;
             if (labelToIndex.TryGetValue(label, out var targetIdx) && maxSource >= targetIdx) {
                 backEdges[label] = maxSource;
             }
@@ -1255,8 +1260,8 @@ public class StrataGenerator : ReadOnlyVisitor {
                 labelToIndex[bigBlocks[i].LabelName] = i;
             }
         }
-        if (!labelToIndex.ContainsKey("_exit")) {
-            labelToIndex["_exit"] = bigBlocks.Count;
+        if (!labelToIndex.ContainsKey(ExitLabel)) {
+            labelToIndex[ExitLabel] = bigBlocks.Count;
         }
 
         var maxSourceForTarget = ComputeMaxSourceForTarget(bigBlocks);
@@ -1791,7 +1796,7 @@ public class StrataGenerator : ReadOnlyVisitor {
             for (var i = 0; i < blocks.Count; i++) {
                 labelToIndex[blocks[i].Label] = i;
             }
-            labelToIndex["_exit"] = blocks.Count;
+            labelToIndex[ExitLabel] = blocks.Count;
 
             EmitWithExitWrappers(gotoTargets, labelToIndex, blocks.Count, i => {
                 VisitBlock(blocks[i]);
