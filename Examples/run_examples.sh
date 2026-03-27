@@ -8,7 +8,7 @@ for test_file in *.st; do
         expected_file="expected/${base_name}.expected"
         if [ -f "$expected_file" ]; then
 
-            output=$(cd .. && lake exe StrataVerify --vc-directory vcs "Examples/${test_file}")
+            output=$(cd .. && lake exe strata verify --vc-directory vcs "Examples/${test_file}")
 
             if ! echo "$output" | diff -q "$expected_file" - > /dev/null; then
                 echo "ERROR: Analysis output for $base_name does not match expected result"
