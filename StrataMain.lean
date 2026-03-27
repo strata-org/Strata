@@ -535,6 +535,7 @@ def pyAnalyzeLaurelCommand : Command where
 
     -- Split prelude / user procedure names at FIRST_END_MARKER
     let (preludeNames, userProcNames) := Strata.splitProcNames coreProgram
+    IO.eprintln s!"DEBUG splitProcNames: prelude={preludeNames.size} user={userProcNames.length} userNames={userProcNames}"
 
     if let some dir := keepDir then
       let path := s!"{dir}/{baseName}.core"
