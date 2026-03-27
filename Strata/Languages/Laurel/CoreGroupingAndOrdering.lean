@@ -120,15 +120,22 @@ partial def collectStaticCallNames (expr : StmtExpr) : List String :=
 /--
 Build the procedure call graph, run Tarjan's SCC algorithm, and return each SCC
 as a list of procedures paired with a flag indicating whether the SCC is recursive.
+Results are in reverse topological order: dependencies before dependents.
 
-Non-functional procedures should be placed as early as possible:
-right after their dependencies, before any functional procedures they do not depend on.
+Procedures with an `invokeOn` trigger are placed as early as possible — before
+unrelated procedures without one — by sorting them first before building the graph.
+Tarjan then naturally assigns them lower indices, causing them to appear earlier in
+the output.
 
 External procedures are excluded.
 -/
 public def computeSccDecls (program : Program) : List (List Procedure × Bool) :=
   -- External procedures are completely ignored (not translated to Core).
-  let nonExternal := program.staticProcedures.filter (fun p => !p.body.isExternal)
+  -- Sort so procedures with invokeOn come first; Tarjan will then place them
+  -- earlier in the topological order relative to unrelated procedures without invokeOn.
+  let nonExternal : List Procedure :=
+    (program.staticProcedures.filter (fun p => !p.body.isExternal))
+    |>.mergeSort (fun a b => a.invokeOn.isSome && b.invokeOn.isNone)
 
   -- Build a call-graph over all non-external procedures.
   -- An edge proc → callee means proc's body/contracts contain a StaticCall to callee.
