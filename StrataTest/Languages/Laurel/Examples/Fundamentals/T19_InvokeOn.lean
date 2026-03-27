@@ -16,12 +16,16 @@ def program := r#"
 function P(x: int): bool;
 function Q(x: int): bool;
 
+function assertP(x: int): int requires P(x);
+function needsPAndQsInvoke1(): int {
+  assertP(3)
+};
+
 procedure PAndQ(x: int)
   invokeOn P(x)
   ensures P(x) && Q(x);
 
-function assertP(x: int): int requires P(x);
-function needsPAndQsInvoke(): int {
+function needsPAndQsInvoke2(): int {
   assertP(3)
 };
 

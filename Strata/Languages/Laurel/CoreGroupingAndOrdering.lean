@@ -1,0 +1,179 @@
+/-
+  Copyright Strata Contributors
+
+  SPDX-License-Identifier: Apache-2.0 OR MIT
+-/
+
+module
+public import Strata.Languages.Laurel.Laurel
+import Strata.DL.Lambda.LExpr
+import Strata.DDM.Util.Graph.Tarjan
+
+/-!
+## Grouping and Ordering for Core Translation
+
+Utilities for computing the grouping and topological ordering of Laurel
+declarations before they are emitted as Strata Core declarations.
+
+- `groupDatatypes` — groups mutually recursive datatypes into a single `.data`
+  declaration using Tarjan's SCC algorithm.
+- `computeSccDecls` — builds the procedure call graph, runs Tarjan's SCC
+  algorithm, and returns each SCC as a list of procedures paired with a flag
+  indicating whether the SCC is recursive. The result is in reverse topological
+  order (dependencies before dependents), which is the order required by Core.
+-/
+
+namespace Strata.Laurel
+
+open Lambda (LMonoTy LExpr)
+
+/-- Collect all `UserDefined` type names referenced in a `HighType`, including nested ones. -/
+def collectTypeRefs : HighTypeMd → List String
+  | ⟨.UserDefined name, _⟩ => [name.text]
+  | ⟨.TSet elem, _⟩ => collectTypeRefs elem
+  | ⟨.TMap k v, _⟩ => collectTypeRefs k ++ collectTypeRefs v
+  | ⟨.TTypedField vt, _⟩ => collectTypeRefs vt
+  | ⟨.Applied base args, _⟩ =>
+      collectTypeRefs base ++ args.flatMap collectTypeRefs
+  | ⟨.Pure base, _⟩ => collectTypeRefs base
+  | ⟨.Intersection ts, _⟩ => ts.flatMap collectTypeRefs
+  | ⟨.TCore name, _⟩ => [name]
+  | _ => []
+
+/-- Get all datatype names that a `DatatypeDefinition` references in its constructor args. -/
+def datatypeRefs (dt : DatatypeDefinition) : List String :=
+  dt.constructors.flatMap fun c => c.args.flatMap fun p => collectTypeRefs p.type
+
+/--
+Group `LDatatype Unit` values by strongly connected components of their direct type references.
+Datatypes in the same SCC (mutually recursive) share a single `.data` declaration.
+Non-recursive datatypes each get their own singleton `.data` declaration.
+The returned groups are in topological order: leaves (no dependencies) first, roots last.
+-/
+public def groupDatatypes (dts : List DatatypeDefinition)
+    (ldts : List (Lambda.LDatatype Unit)) : List (List (Lambda.LDatatype Unit)) :=
+  let n := dts.length
+  if n = 0 then [] else
+  let nameToIdx : Std.HashMap String Nat :=
+    dts.foldlIdx (fun m i dt => m.insert dt.name.text i) {}
+  -- dt[i] references dt[j] means i depends on j (j must be declared first).
+  -- tarjan guarantees: if there's a path A→B, B appears after A in the output.
+  -- So we add edge j→i (j has a path to i), ensuring i (the dependent) appears after j (the dependency).
+  let edges : List (Nat × Nat) :=
+    dts.foldlIdx (fun acc i dt =>
+      (datatypeRefs dt).filterMap nameToIdx.get? |>.foldl (fun acc j => (j, i) :: acc) acc) []
+  let g := OutGraph.ofEdges! n edges
+  let ldtMap : Std.HashMap String (Lambda.LDatatype Unit) :=
+    ldts.foldl (fun m ldt => m.insert ldt.name ldt) {}
+  let dtsArr := dts.toArray
+  OutGraph.tarjan g |>.toList.filterMap fun comp =>
+    let members := comp.toList.filterMap fun idx =>
+      dtsArr[idx]? |>.bind fun dt => ldtMap.get? dt.name.text
+    if members.isEmpty then none else some members
+
+end Strata.Laurel
+
+namespace Strata.Laurel
+
+/--
+Collect all `StaticCall` callee names referenced anywhere in a `StmtExpr`.
+Used to build the call graph for SCC-based procedure ordering.
+-/
+partial def collectStaticCallNames (expr : StmtExpr) : List String :=
+  match expr with
+  | .StaticCall callee args =>
+      callee.text :: args.flatMap (fun a => collectStaticCallNames a.val)
+  | .PrimitiveOp _ args => args.flatMap (fun a => collectStaticCallNames a.val)
+  | .IfThenElse cond t e =>
+      collectStaticCallNames cond.val ++
+      collectStaticCallNames t.val ++
+      (e.toList.flatMap (fun x => collectStaticCallNames x.val))
+  | .Block stmts _ => stmts.flatMap (fun s => collectStaticCallNames s.val)
+  | .Assign targets v =>
+      targets.flatMap (fun t => collectStaticCallNames t.val) ++
+      collectStaticCallNames v.val
+  | .LocalVariable _ _ init => init.toList.flatMap (fun i => collectStaticCallNames i.val)
+  | .Return v => v.toList.flatMap (fun x => collectStaticCallNames x.val)
+  | .While cond invs dec body =>
+      collectStaticCallNames cond.val ++
+      invs.flatMap (fun i => collectStaticCallNames i.val) ++
+      dec.toList.flatMap (fun d => collectStaticCallNames d.val) ++
+      collectStaticCallNames body.val
+  | .Forall _ trig body =>
+      trig.toList.flatMap (fun t => collectStaticCallNames t.val) ++
+      collectStaticCallNames body.val
+  | .Exists _ trig body =>
+      trig.toList.flatMap (fun t => collectStaticCallNames t.val) ++
+      collectStaticCallNames body.val
+  | .FieldSelect t _ => collectStaticCallNames t.val
+  | .PureFieldUpdate t _ v => collectStaticCallNames t.val ++ collectStaticCallNames v.val
+  | .InstanceCall t _ args =>
+      collectStaticCallNames t.val ++ args.flatMap (fun a => collectStaticCallNames a.val)
+  | .Old v | .Fresh v | .Assert v | .Assume v => collectStaticCallNames v.val
+  | .ProveBy v p => collectStaticCallNames v.val ++ collectStaticCallNames p.val
+  | .ReferenceEquals l r => collectStaticCallNames l.val ++ collectStaticCallNames r.val
+  | .AsType t _ | .IsType t _ => collectStaticCallNames t.val
+  | .ContractOf _ f => collectStaticCallNames f.val
+  | .Assigned v => collectStaticCallNames v.val
+  | _ => []
+
+/--
+Build the procedure call graph, run Tarjan's SCC algorithm, and return each SCC
+as a list of procedures paired with a flag indicating whether the SCC is recursive.
+
+Non-functional procedures should be placed as early as possible:
+right after their dependencies, before any functional procedures they do not depend on.
+
+External procedures are excluded.
+-/
+public def computeSccDecls (program : Program) : List (List Procedure × Bool) :=
+  -- External procedures are completely ignored (not translated to Core).
+  let nonExternal := program.staticProcedures.filter (fun p => !p.body.isExternal)
+
+  -- Build a call-graph over all non-external procedures.
+  -- An edge proc → callee means proc's body/contracts contain a StaticCall to callee.
+  let nonExternalArr : Array Procedure := nonExternal.toArray
+  let nameToIdx : Std.HashMap String Nat :=
+    nonExternalArr.foldl (fun (acc : Std.HashMap String Nat × Nat) proc =>
+      (acc.1.insert proc.name.text acc.2, acc.2 + 1)) ({}, 0) |>.1
+
+  -- Collect all callee names from a procedure's body and contracts.
+  let procCallees (proc : Procedure) : List String :=
+    let bodyExprs : List StmtExpr := match proc.body with
+      | .Transparent b => [b.val]
+      | .Opaque postconds (some impl) _ => postconds.map (·.val) ++ [impl.val]
+      | .Opaque postconds none _ => postconds.map (·.val)
+      | _ => []
+    let contractExprs : List StmtExpr :=
+      proc.preconditions.map (·.val) ++
+      proc.invokeOn.toList.map (·.val)
+    (bodyExprs ++ contractExprs).flatMap collectStaticCallNames
+
+  -- Build the OutGraph for Tarjan.
+  let n := nonExternalArr.size
+  let graph : Strata.OutGraph n :=
+    nonExternalArr.foldl (fun (acc : Strata.OutGraph n × Nat) proc =>
+      let callerIdx := acc.2
+      let g := acc.1
+      let callees := procCallees proc
+      let g' := callees.foldl (fun g callee =>
+        match nameToIdx.get? callee with
+        | some calleeIdx => g.addEdge! calleeIdx callerIdx
+        | none => g) g
+      (g', callerIdx + 1)) (Strata.OutGraph.empty n, 0) |>.1
+
+  -- Run Tarjan's SCC algorithm. Results are in reverse topological order
+  -- (a node appears after all nodes that have paths to it).
+  let sccs := Strata.OutGraph.tarjan graph
+
+  sccs.toList.filterMap fun scc =>
+    let procs := scc.toList.filterMap fun idx =>
+      nonExternalArr[idx.val]?
+    if procs.isEmpty then none else
+    let isRecursive := procs.length > 1 ||
+      (match scc.toList.head? with
+        | some node => (graph.nodesOut node).contains node
+        | none => false)
+    some (procs, isRecursive)
+
+end Strata.Laurel
