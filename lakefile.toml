@@ -1,6 +1,6 @@
 name = "Strata"
 version = "0.1.0"
-defaultTargets = ["Strata", "strata", "StrataMain", "StrataToCBMC", "StrataCoreToGoto"]
+defaultTargets = ["Strata", "strata", "StrataMain", "StrataToCBMC"]
 testDriver = "StrataTest"
 
 [[require]]
@@ -25,9 +25,6 @@ globs = ["StrataTest.+"]
 
 [[lean_exe]]
 name = "StrataToCBMC"
-
-[[lean_exe]]
-name = "StrataCoreToGoto"
 
 [[lean_exe]]
 name = "DiffTestCore"

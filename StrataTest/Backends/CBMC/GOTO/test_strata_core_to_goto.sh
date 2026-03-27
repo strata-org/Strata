@@ -1,5 +1,5 @@
 #!/bin/bash
-# Test: StrataCoreToGoto translates multi-procedure programs with contracts.
+# Test: strata coreToGoto translates multi-procedure programs with contracts.
 #
 # Exercises:
 # 1. Multi-procedure translation (two procedures)
@@ -11,7 +11,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../../../.." && pwd)"
-STRATA_CORE_TO_GOTO="$PROJECT_ROOT/.lake/build/bin/StrataCoreToGoto"
+STRATA="$PROJECT_ROOT/.lake/build/bin/strata"
 PYTHON=${PYTHON:-python3}
 
 WORK=$(mktemp -d)
@@ -21,7 +21,7 @@ INPUT="$SCRIPT_DIR/test_multi_proc.core.st"
 
 # Test 1: Multi-procedure translation succeeds
 echo "Test 1: Multi-procedure translation"
-"$STRATA_CORE_TO_GOTO" --output-dir "$WORK" "$INPUT" 2>&1 | grep -q "Translated 2 procedures"
+"$STRATA" coreToGoto --output-dir "$WORK" "$INPUT" 2>&1 | grep -q "Translated 2 procedures"
 echo "  OK: translated 2 procedures"
 
 # Test 2: Both procedures in symbol table
@@ -73,4 +73,4 @@ for fn in data['functions']:
         break
 "
 
-echo "PASS: all StrataCoreToGoto tests passed"
+echo "PASS: all strata coreToGoto tests passed"
