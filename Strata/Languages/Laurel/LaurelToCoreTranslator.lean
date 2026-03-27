@@ -360,33 +360,45 @@ def translateStmt (outputParams : List Parameter) (stmt : StmtExprMd)
       let coreMonoType := translateType model ty
       let coreType := LTy.forAll [] coreMonoType
       let ident := ⟨id.text, ()⟩
+      -- When a local variable has the same name as an output parameter, the
+      -- variable already exists in Core.  Emit `set`/`havoc` instead of `init`
+      -- to avoid shadowing the output parameter (see issue #567).
+      let isOutputParam := outputParams.any (fun p => p.name.text == id.text)
+      let intro (e : Option Core.Expression.Expr) : List Core.Statement :=
+        if isOutputParam then
+          match e with
+          | some v => [Core.Statement.set ident v md]
+          | none   => [Core.Statement.havoc ident md]
+        else
+          [Core.Statement.init ident coreType e md]
       match initializer with
       | some (⟨ .StaticCall callee args, callMd⟩) =>
           -- Check if this is a function or a procedure call
           if model.isFunction callee then
             -- Translate as expression (function application)
             let coreExpr ← translateExpr (⟨ .StaticCall callee args, callMd ⟩)
-            return [Core.Statement.init ident coreType (some coreExpr) md]
+            return intro (some coreExpr)
           else
-            -- Translate as: var name; call name := callee(args)
+            -- Procedure call: call name := callee(args)
             let coreArgs ← args.mapM (fun a => translateExpr a)
-            let defaultExpr := defaultExprForType model ty
-            let initStmt := Core.Statement.init ident coreType (some defaultExpr) md
             let callStmt := Core.Statement.call [ident] callee.text coreArgs md
-            return [initStmt, callStmt]
+            if isOutputParam then
+              return [callStmt]
+            else
+              let defaultExpr := defaultExprForType model ty
+              return [Core.Statement.init ident coreType (some defaultExpr) md, callStmt]
       | some (⟨ .InstanceCall .., _⟩) =>
           -- Instance method call as initializer: var name := target.method(args)
           -- Havoc the result since instance methods may be on unmodeled types
-          let initStmt := Core.Statement.init ident coreType none md
-          return [initStmt]
+          return intro none
       | some (⟨ .Hole _ _, _⟩) =>
           -- Hole initializer: treat as havoc (init without value)
-          return [Core.Statement.init ident coreType none md]
+          return intro none
       | some initExpr =>
           let coreExpr ← translateExpr initExpr
-          return [Core.Statement.init ident coreType (some coreExpr) md]
+          return intro (some coreExpr)
       | none =>
-          return [Core.Statement.init ident coreType none md]
+          return intro none
   | .Assign targets value =>
       match targets with
       | [⟨ .Identifier targetId, _ ⟩] =>
