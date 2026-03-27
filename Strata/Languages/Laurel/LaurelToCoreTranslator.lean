@@ -29,7 +29,6 @@ import Strata.DL.Lambda.LExpr
 import Strata.Languages.Laurel.LaurelFormat
 import Strata.Languages.Laurel.ConstrainedTypeElim
 import Strata.Util.Tactics
-import Strata.DDM.Util.Graph.Tarjan
 
 open Core (VCResult VCResults VerifyOptions)
 open Core (intAddOp intSubOp intMulOp intSafeDivOp intSafeModOp intSafeDivTOp intSafeModTOp intNegOp intLtOp intLeOp intGtOp intGeOp boolAndOp boolOrOp boolNotOp boolImpliesOp strConcatOp)

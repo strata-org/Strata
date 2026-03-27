@@ -37,10 +37,6 @@ Obligation: postcondition
 Property: assert
 Result: ✅ pass
 
-Obligation: List_get_body_calls_List_get_0
-Property: assert
-Result: ✅ pass
-
 Obligation: List_take_body_calls_List_take_0
 Property: assert
 Result: ✅ pass
@@ -62,6 +58,14 @@ Property: assert
 Result: ✅ pass
 
 Obligation: postcondition
+Property: assert
+Result: ✅ pass
+
+Obligation: postcondition
+Property: assert
+Result: ✅ pass
+
+Obligation: List_get_body_calls_List_get_0
 Property: assert
 Result: ✅ pass
 
@@ -138,10 +142,6 @@ Property: assert
 Result: ✅ pass
 
 Obligation: POr_body_calls_Any_to_bool_0
-Property: assert
-Result: ✅ pass
-
-Obligation: postcondition
 Property: assert
 Result: ✅ pass
 
