@@ -88,8 +88,8 @@ jobs:
         with:
           path: .lake
           key: lake-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}-${{ hashFiles('lake-manifest.json') }}-${{ hashFiles('**/*.st') }}-${{ github.sha }}
-      - name: Build and run StrataVerify
-        run: lake exe StrataVerify Examples/SimpleProc.core.st
+      - name: Build and run strata verify
+        run: lake exe strata verify Examples/SimpleProc.core.st
       - name: Build BoogieToStrata
         run: dotnet build -warnaserror ${SOLUTION}
       - name: Test BoogieToStrata

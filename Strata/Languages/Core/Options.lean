@@ -109,31 +109,52 @@ def CheckLevel.options : String :=
   "'minimal' (simple messages), 'minimalVerbose' (detailed messages, one check), or 'full' (both checks, all outcomes)"
 
 structure VerifyOptions where
+  -- Pipeline stopping points
+  /-- How much diagnostic output to emit. -/
   verbose : VerboseMode
+  /-- Exit after DDM parsing and type checking (no semantic analysis). -/
   parseOnly : Bool
+  /-- Exit after the semantic dialect's type inference/checking. -/
   typeCheckOnly : Bool
+  /-- Stop after type-checking; do not generate VCs or invoke the solver. -/
   checkOnly : Bool
-  stopOnFirstError : Bool
-  removeIrrelevantAxioms : IrrelevantAxiomsMode
-  /-- Use SMT-LIB Array theory instead of axiomatized maps -/
-  useArrayTheory : Bool
-  /-- Solver time limit in seconds -/
-  solverTimeout : Nat
-  /-- Output results in SARIF format -/
-  outputSarif : Bool
-  /-- SMT solver executable to use -/
+  /-- Write SMT-Lib files but do not invoke the solver.
+      Requires `vcDirectory` to be set so the files are preserved. -/
+  skipSolver : Bool
+  -- Solver configuration
+  /-- SMT solver executable to use. -/
   solver : String
-  /-- Directory to store VCs -/
+  /-- Solver time limit in seconds. -/
+  solverTimeout : Nat
+  /-- Directory to store generated SMT-Lib (`.smt2`) files. -/
   vcDirectory : Option System.FilePath
-  /-- Check mode: deductive (prove correctness) or bugFinding (find bugs) -/
-  checkMode : VerificationMode
-  /-- Check amount: minimal (only necessary checks) or full (both checks for better messages) -/
-  checkLevel : CheckLevel
-  /-- Always run SMT solver, even if the verification condition is trivial. -/
-  alwaysRunSMT : Bool
-  /-- Use globally unique `$__bv{N}` names for quantifier-bound variables
-      instead of human-readable names derived from user-provided names. -/
+  /-- Always generate SMT-Lib files, even if the verification
+      condition is trivial (i.e. resolved by partial evaluation
+      without needing the solver). -/
+  alwaysGenerateSMT : Bool
+  -- Encoding options
+  /-- Use globally unique `$__bv{N}` names for quantifier-bound
+      variables instead of human-readable names derived from
+      user-provided names. -/
   uniqueBoundNames : Bool
+  /-- Use SMT-LIB Array theory instead of axiomatized maps. -/
+  useArrayTheory : Bool
+  -- Verification behavior
+  /-- Exit after the first verification error instead of
+      continuing. -/
+  stopOnFirstError : Bool
+  /-- How aggressively to prune irrelevant axioms from proof
+      obligations. See `IrrelevantAxiomsMode` for details. -/
+  removeIrrelevantAxioms : IrrelevantAxiomsMode
+  /-- Verification mode: deductive (prove correctness) or
+      bugFinding (find bugs). -/
+  checkMode : VerificationMode
+  /-- How many checks to run per VC and how detailed the
+      messages should be. -/
+  checkLevel : CheckLevel
+  -- Output
+  /-- Output results in SARIF format. -/
+  outputSarif : Bool
 
 def VerifyOptions.default : VerifyOptions := {
   verbose := .normal,
@@ -149,8 +170,9 @@ def VerifyOptions.default : VerifyOptions := {
   vcDirectory := .none
   checkMode := .deductive
   checkLevel := .minimal
-  alwaysRunSMT := false
+  alwaysGenerateSMT := false
   uniqueBoundNames := false
+  skipSolver := false
 }
 
 instance : Inhabited VerifyOptions where
