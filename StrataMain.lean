@@ -1307,9 +1307,12 @@ private def parseArgs (cmdName : String)
     if arg.startsWith "--" then
       let raw := (arg.drop 2).toString
       -- Support --flag=value syntax by splitting on first '='
-      let (flagName, inlineValue) := match raw.splitOn "=" with
-        | [name, value] => (name, some value)
-        | _ => (raw, none)
+      let (flagName, inlineValue) ← match raw.splitOn "=" with
+        | name :: value :: rest =>
+          if !rest.isEmpty then
+            exitCmdFailure cmdName s!"Invalid option format: {arg}. Values must not contain '='."
+          pure (name, some value)
+        | _ => pure (raw, none)
       match flagMap[flagName]? with
       | some flag =>
         match flag.takesArg with
