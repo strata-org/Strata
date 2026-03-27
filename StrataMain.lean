@@ -283,7 +283,10 @@ def pyAnalyzeCommand : Command where
   name := "pyAnalyze"
   args := [ "file" ]
   flags := [{ name := "verbose", help := "Enable verbose output." },
-            { name := "sarif", help := "Write results as SARIF to <file>.sarif." }]
+            { name := "sarif", help := "Write results as SARIF to <file>.sarif." },
+            { name := "vc-directory",
+              help := "Store VCs in SMT-Lib format in <dir>.",
+              takesArg := .arg "dir" }]
   help := "Verify a Python Ion program. Translates to Core, inlines procedures, and runs SMT verification."
   callback := fun v pflags => do
     let verbose := pflags.getBool "verbose"
@@ -309,12 +312,14 @@ def pyAnalyzeCommand : Command where
         IO.print newPgm
       let solverName : String := "Strata/Languages/Python/z3_parallel.py"
       let verboseMode := VerboseMode.ofBool verbose
+      let vcDir : Option System.FilePath := pflags.getString "vc-directory" |>.map (⟨·⟩)
       let options :=
               { VerifyOptions.default with
                 stopOnFirstError := false,
                 verbose := verboseMode,
                 removeIrrelevantAxioms := .Precise,
-                solver := solverName }
+                solver := solverName,
+                vcDirectory := vcDir }
       let runVerification tempDir :=
           EIO.toIO
             (fun f => IO.Error.userError (toString f))

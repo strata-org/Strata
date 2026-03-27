@@ -1,19 +1,22 @@
 #!/bin/bash
 
-# Usage: ./run_py_analyze.sh [laurel] [--update] [--filter <pattern>]
+# Usage: ./run_py_analyze.sh [laurel] [--update] [--filter <pattern>] [--vc-directory <dir>]
 # Run without arguments for pyAnalyze, with "laurel" for pyAnalyzeLaurel
 # With --update, overwrite existing expected files with actual output
 # With --filter <pattern>, only run tests whose name contains <pattern>
+# With --vc-directory <dir>, store VCs in SMT-Lib format in <dir>
 
 failed=0
 update=0
 mode="core"
 filter=""
+vc_directory=""
 
 while [ $# -gt 0 ]; do
     case "$1" in
         --update) update=1 ;;
         --filter) filter="$2"; shift ;;
+        --vc-directory) vc_directory="$2"; shift ;;
         *) mode="$1" ;;
     esac
     shift
@@ -57,7 +60,9 @@ for test_file in tests/test_*.py; do
         if [ -f "$expected_file" ]; then
             (cd ../../../Tools/Python && python3 -m strata.gen py_to_strata --dialect "dialects/Python.dialect.st.ion" "../../StrataTest/Languages/Python/$test_file" "../../StrataTest/Languages/Python/$ion_file")
 
-            output=$(cd ../../.. && ./.lake/build/bin/strata $command "StrataTest/Languages/Python/${ion_file}")
+            vc_flag=""
+            [ -n "$vc_directory" ] && vc_flag="--vc-directory $vc_directory"
+            output=$(cd ../../.. && ./.lake/build/bin/strata $command $vc_flag "StrataTest/Languages/Python/${ion_file}")
 
             if [ $update -eq 1 ]; then
                 echo "$output" > "$expected_file"
