@@ -630,7 +630,8 @@ def pyAnalyzeLaurelCommand : Command where
                 ("", "")
         | none => ("", "")
       let outcomeStr := vcResult.formatOutcome
-      s := s ++ s!"{locationPrefix}{vcResult.obligation.label}: \
+      let vcLabel := vcResult.obligation.metadata.getPropertySummary.getD vcResult.obligation.label
+      s := s ++ s!"{locationPrefix}{vcLabel}: \
                     {outcomeStr}{locationSuffix}\n"
     IO.println s
     -- Output in SARIF format if requested

@@ -32,7 +32,8 @@ Assertion failed at line 28, col 4: assert(654): ❌ fail
 callElimAssert_req_name_is_foo_4: ✅ pass (at line 30, col 4)
 callElimAssert_req_opt_name_none_or_str_5: ✅ pass (at line 30, col 4)
 callElimAssert_req_opt_name_none_or_bar_6: ✅ pass (at line 30, col 4)
+Assertion failed at line 17, col 0: postcondition: ❌ fail
 ite_cond_calls_Any_to_bool_0: ✅ pass (at line 32, col 0)
 
-DETAIL: 30 passed, 2 failed, 1 inconclusive
+DETAIL: 30 passed, 3 failed, 1 inconclusive
 RESULT: Failures found

@@ -22,9 +22,11 @@ PFloorDiv_body_calls_Int.SafeDiv_2: ✅ pass (in prelude file)
 PFloorDiv_body_calls_Int.SafeDiv_3: ✅ pass (in prelude file)
 PAnd_body_calls_Any_to_bool_0: ✅ pass (in prelude file)
 POr_body_calls_Any_to_bool_0: ✅ pass (in prelude file)
-callElimAssert_requires_10: ✅ pass
+callElimAssert_requires_11: ✅ pass
 assert_assert(285)_calls_Any_to_bool_0: ✅ pass (at line 14, col 4)
 Assertion failed at line 14, col 4: assert(285): ❌ fail
+Assertion failed at line 11, col 0: postcondition: ❌ fail
+(process_buffer ensures) Return type constraint: ❓ unknown
 
-DETAIL: 24 passed, 1 failed, 0 inconclusive
+DETAIL: 24 passed, 2 failed, 1 inconclusive
 RESULT: Failures found

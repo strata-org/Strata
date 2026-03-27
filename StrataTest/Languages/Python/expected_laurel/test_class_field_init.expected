@@ -23,7 +23,8 @@ PFloorDiv_body_calls_Int.SafeDiv_3: ✅ pass (in prelude file)
 PAnd_body_calls_Any_to_bool_0: ✅ pass (in prelude file)
 POr_body_calls_Any_to_bool_0: ✅ pass (in prelude file)
 callElimAssert_requires_7: ✅ pass
+Assertion failed at line 9, col 0: postcondition: ❌ fail
 ite_cond_calls_Any_to_bool_0: ✅ pass (at line 13, col 0)
 
-DETAIL: 24 passed, 0 failed, 0 inconclusive
-RESULT: Analysis success
+DETAIL: 24 passed, 1 failed, 0 inconclusive
+RESULT: Failures found
