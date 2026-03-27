@@ -36,20 +36,16 @@ def Lang.core
   Imperative.Specification.Lang.imperative
     Expression Command (EvalCommand π φ) (EvalPureFunc φ) coreIsAtAssert
 
-/-! ## Well-formed procedure environment -/
+/-! ## Well-formed program state at the entry of procedure -/
 
-/-- Identifiers initialised by the verification prefix of `procToVerifyStmt`:
-    input parameters, output parameters -/
 def procVerifyInitIdents (proc : Procedure) : List Expression.Ident :=
   proc.header.inputs.keys ++ proc.header.outputs.keys
 
-/-- A well-formed initial environment for procedure verification.
-    The evaluator is well-formed for both variable lookups and boolean
-    operations, and every identifier that the verification prefix will
-    `init` is already defined (`some _`) in the store. -/
+/-- A well-formed initial environment for procedure verification. -/
 structure ProcEnvWF (proc : Procedure) (ρ : Env Expression) : Prop where
   wfVar : WellFormedSemanticEvalVar ρ.eval
   wfBool : WellFormedSemanticEvalBool ρ.eval
+  -- The register file contains all input and output arguments of the procedure.
   storeDefined : ∀ id ∈ procVerifyInitIdents proc, (ρ.store id).isSome
 
 /-! ## Procedure correctness -/
@@ -57,8 +53,7 @@ structure ProcEnvWF (proc : Procedure) (ρ : Env Expression) : Prop where
 variable (π : String → Option Procedure)
 variable (φ : CoreEval → PureFunc Expression → CoreEval)
 
-/-- The precondition for a procedure: all preconditions hold,
-    the evaluator is well-formed, and no prior failure. -/
+/-- A program state that passed precondition of procedure. -/
 def ProcedurePre (proc : Procedure) (ρ₀ : Env Expression) : Prop :=
   (∀ (label : CoreLabel) (check : Procedure.Check),
     (label, check) ∈ proc.spec.preconditions.toList →
@@ -71,13 +66,8 @@ def ProcedurePre (proc : Procedure) (ρ₀ : Env Expression) : Prop :=
 abbrev procStartEnv (proc : Procedure) (ρ₀ : Env Expression) : Env Expression :=
   withOldBindings proc.spec.modifies ρ₀
 
-/-- A specific assertion is valid in a procedure's verification statement
-    for initial environments satisfying `ProcEnvWF`.
-
-    This is `AssertValidWhen` applied to `Lang.core` with precondition
-    `ProcEnvWF`.  All internal assertions (body asserts and postcondition
-    asserts) are covered because they are all embedded in `verifyStmt`
-    by `procToVerifyStmt`. -/
+/-- A specific assertion `a` in procedure `proc` is valid
+    for initial program states satisfying the preconditions (`ProcEnvWF`). -/
 def AssertValidInProcedure
     (proc : Procedure) (verifyStmt : Statement)
     (a : Imperative.AssertId Expression) : Prop :=
@@ -85,9 +75,10 @@ def AssertValidInProcedure
 
 /-- A procedure is correct with respect to its verification statement.
 
-    1. Every reachable assert evaluates to `true` (`AllAssertsValidWhen`).
+    1. Every reachable assert in the procedure evaluates to `true`
+       (`AllAssertsValidWhen`);
 
-    2. When the verification statement terminates from a `ProcEnvWF`
+    2. Postcondition: When the verification statement terminates from a `ProcEnvWF`
        initial environment with `hasFailure = false`, every non-free
        postcondition holds and `hasFailure` stays `false`. -/
 def ProcedureCorrect (proc : Procedure) (p : Program) (verifyStmt : Statement) : Prop :=
