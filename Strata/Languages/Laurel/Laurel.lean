@@ -375,6 +375,10 @@ def Body.isExternal : Body → Bool
   | .External => true
   | _ => false
 
+def Body.isTransparent : Body → Bool
+  | .Transparent _ => true
+  | _ => false
+
 def HighTypeMd.isBool (t : HighTypeMd) : Bool := t.val.isBool
 
 /--

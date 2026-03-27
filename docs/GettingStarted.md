@@ -281,7 +281,7 @@ Result: verified
 ```
 
 To invoke the verifier from the command-line, you can also add support
-for `ArithPrograms` in [`StrataVerify`](../StrataVerify.lean).
+for `ArithPrograms` in the `verify` subcommand of [`StrataMain`](../StrataMain.lean).
 
 ## Next Steps
 

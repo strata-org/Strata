@@ -102,9 +102,8 @@ datatype DictStrAny () {
 };
 
 // Forward declarations: needed so the inline functions after CoreOnlyDelimiter
-// can reference these during DDM parsing.  Filtered out at merge (precede the
-// sentinel).  The real definitions with concreteEval are supplied by ReFactory
-// at verification time.
+// can reference these during DDM parsing.  The Laurel→Core translator may
+// produce empty-signature stubs for these; prependPrelude deduplicates them.
 function re_fullmatch_str(pattern : string) : regex;
 function re_match_str(pattern : string) : regex;
 function re_search_str(pattern : string) : regex;
@@ -278,12 +277,14 @@ inline function isError (e: Error) : bool {
 // /////////////////////////////////////////////////////////////////////////////////////
 
 inline function Any_to_bool (v: Any) : bool
-  requires (Any..isfrom_bool(v) || Any..isfrom_none(v) || Any..isfrom_string(v) || Any..isfrom_int(v));
+  requires (Any..isfrom_bool(v) || Any..isfrom_none(v) || Any..isfrom_string(v) || Any..isfrom_int(v) || Any..isfrom_Dict(v) || Any..isfrom_ListAny(v));
 {
   if (Any..isfrom_bool(v)) then Any..as_bool!(v) else
   if (Any..isfrom_none(v)) then false else
   if (Any..isfrom_string(v)) then !(Any..as_string!(v) == "") else
   if (Any..isfrom_int(v)) then !(Any..as_int!(v) == 0) else
+  if (Any..isfrom_Dict(v)) then !(Any..as_Dict!(v) == DictStrAny_empty) else
+  if (Any..isfrom_ListAny(v)) then !(Any..as_ListAny!(v) == ListAny_nil) else
   false
   //WILL BE ADDED
 }
@@ -393,6 +394,18 @@ rec function DictStrAny_get (@[cases] d : DictStrAny, key: string) : Any
   else if DictStrAny..key!(d) == key then DictStrAny..val!(d)
   else DictStrAny_get(DictStrAny..tail!(d), key)
 };
+
+inline function DictStrAny_get_or_none (d : DictStrAny, key: string) : Any
+{
+  if DictStrAny_contains(d, key) then DictStrAny_get(d, key)
+  else from_none()
+}
+
+inline function Any_get_or_none (dict: Any, key: Any) : Any
+  requires Any..isfrom_Dict(dict) && Any..isfrom_string(key);
+{
+  DictStrAny_get_or_none(Any..as_Dict!(dict), Any..as_string!(key))
+}
 
 rec function DictStrAny_insert (@[cases] d : DictStrAny, key: string, val: Any) : DictStrAny
 {
@@ -896,7 +909,7 @@ spec {
   ret := from_datetime(d);
 };
 
-procedure timedelta(days: Any, hours: Any) returns (delta : Any, maybe_except: Error)
+procedure timedelta_func (days: Any, hours: Any) returns (delta : Any, maybe_except: Error)
 spec{
   requires [days_type]: Any..isfrom_none(days) || Any..isfrom_int(days);
   requires [hours_type]: Any..isfrom_none(hours) || Any..isfrom_int(hours);
