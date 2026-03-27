@@ -1311,8 +1311,13 @@ public class StrataGenerator : ReadOnlyVisitor {
             }
         }
 
-        // Determine which forward targets have closeAt within each loop region.
-        // These need to be emitted inside the while body, not outside.
+        // Determine which forward targets have closeAt within each top-level loop
+        // region. These need to be emitted inside the while body, not outside.
+        // Note: this only classifies targets against top-level regions. Targets
+        // that fall inside nested (child/grandchild) loop regions are assigned to
+        // the outermost containing region here, then delegated down through
+        // EmitLoopRegion's recursive calls — each level filters and passes
+        // targets to its children.
         var innerTargets = new Dictionary<int, HashSet<string>>(); // regionIndex -> labels
         // Collect all child (nested) back-edge labels — these must be handled
         // inside their parent loop region, not as outer wrappers.
