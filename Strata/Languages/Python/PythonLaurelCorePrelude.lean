@@ -108,6 +108,13 @@ function re_fullmatch_str(pattern : string) : regex;
 function re_match_str(pattern : string) : regex;
 function re_search_str(pattern : string) : regex;
 function re_pattern_error(pattern : string) : Error;
+// The _bool variants are also factory functions (not inlined here) so that
+// unsupported patterns leave an uninterpreted Bool UF rather than an
+// uninterpreted RegLan UF.  An uninterpreted Bool UF produces `unknown`
+// gracefully; an uninterpreted RegLan UF causes cvc5 theory-combination errors.
+function re_fullmatch_bool(pattern : string, s : string) : bool;
+function re_match_bool(pattern : string, s : string) : bool;
+function re_search_bool(pattern : string, s : string) : bool;
 
 type CoreOnlyDelimiter;
 
@@ -140,19 +147,10 @@ type CoreOnlyDelimiter;
 // API (no pos/endpos parameters).
 // /////////////////////////////////////////////////////////////////////////////////////
 
-// Mode-specific factory functions are declared via ReFactory (with concreteEval
-// for literal pattern expansion), not in this prelude, to avoid duplicate
-// definitions.
-
-inline function re_fullmatch_bool(pattern : string, s : string) : bool {
-  str.in.re(s, re_fullmatch_str(pattern))
-}
-inline function re_match_bool(pattern : string, s : string) : bool {
-  str.in.re(s, re_match_str(pattern))
-}
-inline function re_search_bool(pattern : string, s : string) : bool {
-  str.in.re(s, re_search_str(pattern))
-}
+// Mode-specific factory functions (re_fullmatch_bool, re_match_bool,
+// re_search_bool) are declared via ReFactory (with concreteEval for literal
+// pattern expansion), not as inlines here, to avoid duplicate definitions and
+// to prevent uninterpreted RegLan UFs from reaching the SMT solver.
 
 inline function mk_re_Match(s : string) : Any {
   from_ClassInstance("re_Match",

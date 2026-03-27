@@ -101,6 +101,24 @@ def parseCharClass (s : String) (pos : String.Pos.Raw) : Except ParseError (Rege
   -- Process each element in the character class.
   while !i.atEnd s && i.get? s != some ']' do
     let some c1 := i.get? s | throw (.patternError "Invalid character in class" s i)
+    -- Handle backslash escape sequences inside the character class.
+    if c1 == '\\' then
+      let iEsc := i.next s
+      if iEsc.atEnd s then throw (.patternError "Incomplete escape sequence in character class" s i)
+      let some escapedChar := iEsc.get? s | throw (.patternError "Invalid escape position in character class" s iEsc)
+      match escapedChar with
+      | 'A' | 'b' | 'B' | 'd' | 'D' | 's' | 'S' | 'w' | 'W' | 'z' | 'Z' =>
+        throw (.unimplemented s!"Special sequence \\{escapedChar} in character class is not supported" s i)
+      | 'a' | 'f' | 'n' | 'N' | 'r' | 't' | 'u' | 'U' | 'v' | 'x' =>
+        throw (.unimplemented s!"Escape sequence \\{escapedChar} in character class is not supported" s i)
+      | c =>
+        if c.isDigit then
+          throw (.unimplemented s!"Backreference \\{c} in character class is not supported" s i)
+        else
+          let r := RegexAST.char escapedChar
+          result := some (match result with | none => r | some prev => RegexAST.union prev r)
+          i := iEsc.next s
+      continue
     let i1 := i.next s
     -- Check for range pattern: c1-c2.
     if !i1.atEnd s && i1.get? s == some '-' then

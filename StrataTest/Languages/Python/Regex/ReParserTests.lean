@@ -56,6 +56,40 @@ info: Except.error (Strata.Python.ParseError.patternError "Expected '[' at start
 #guard_msgs in
 #eval parseCharClass "a" ⟨0⟩
 
+-- Escape sequences inside character classes
+/-- info: Except.ok (Strata.Python.RegexAST.char '.', { byteIdx := 4 }) -/
+#guard_msgs in
+#eval parseCharClass "[\\.] " ⟨0⟩  -- trailing space so string is valid; byteIdx 4 = past ']'
+
+/-- info: Except.ok (Strata.Python.RegexAST.char '-', { byteIdx := 4 }) -/
+#guard_msgs in
+#eval parseCharClass "[\\-] " ⟨0⟩  -- trailing space so string is valid; byteIdx 4 = past ']'
+
+/--
+info: Except.ok (Strata.Python.RegexAST.union (Strata.Python.RegexAST.char '.') (Strata.Python.RegexAST.char '-'),
+ { byteIdx := 6 })
+-/
+#guard_msgs in
+#eval parseCharClass "[\\.\\-]" ⟨0⟩
+
+/--
+info: Except.error (Strata.Python.ParseError.unimplemented
+  "Special sequence \\d in character class is not supported"
+  "[\\d]"
+  { byteIdx := 1 })
+-/
+#guard_msgs in
+#eval parseCharClass "[\\d]" ⟨0⟩
+
+/--
+info: Except.error (Strata.Python.ParseError.unimplemented
+  "Escape sequence \\n in character class is not supported"
+  "[\\n]"
+  { byteIdx := 1 })
+-/
+#guard_msgs in
+#eval parseCharClass "[\\n]" ⟨0⟩
+
 end parseCharClass
 
 section Test.parseBounds
