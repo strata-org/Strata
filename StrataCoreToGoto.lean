@@ -46,6 +46,11 @@ def deriveBaseName (file : String) : String :=
   else if name.endsWith ".st" then (name.dropEnd 3).toString
   else name
 
+/-- Sanitize a program name to prevent path traversal in output filenames. -/
+def sanitizeProgramName (name : String) : Option String :=
+  let s := name.replace "/" "" |>.replace "\\" "" |>.replace ".." ""
+  if s.isEmpty then none else some s
+
 def main (args : List String) : IO UInt32 := do
   match parseOptions args with
   | .ok (opts, file) =>
@@ -54,7 +59,9 @@ def main (args : List String) : IO UInt32 := do
       IO.println f!"{usageMessage}"
       return 1
     let baseName := deriveBaseName file
-    let programName := opts.programName.getD baseName
+    let programName ← match sanitizeProgramName (opts.programName.getD baseName) with
+      | some n => pure n
+      | none => IO.println "Error: invalid program name"; return 1
     let dir := System.FilePath.mk opts.outputDir
     IO.FS.createDirAll dir
 
@@ -71,8 +78,6 @@ def main (args : List String) : IO UInt32 := do
       return 1
     | .ok pgm =>
       -- Type check (translates DDM Program → Core.Program)
-      let Ctx := { Lambda.LContext.default with
-        functions := Core.Factory, knownTypes := Core.KnownTypes }
       let Env := Lambda.TEnv.default
       let tcPgm ← match Strata.typeCheck inputCtx pgm with
         | .ok p => pure p
@@ -125,8 +130,9 @@ def main (args : List String) : IO UInt32 := do
       let gotoDtInfo := collectGotoDatatypeInfo tcPgm
 
       -- Translate each procedure and function to GOTO
-      let mut symtabPairs : List (String × Lean.Json) := []
+      let mut symtabPairs : Array (String × Lean.Json) := #[]
       let mut gotoFns : Array Lean.Json := #[]
+      let mut errors : Nat := 0
       -- Seed type environment with global variable types
       let globalVarEntries : Map Core.Expression.Ident Core.Expression.Ty :=
         tcPgm.decls.filterMap fun d =>
@@ -142,14 +148,14 @@ def main (args : List String) : IO UInt32 := do
         let procName := Core.CoreIdent.toPretty p.header.name
         match procedureToGotoCtx Env p (axioms := axioms) (distincts := distincts)
               (varTypes := tcPgm.getVarTy?) with
-        | .error e => IO.println s!"Warning: skipping procedure {procName}: {e}"
+        | .error e => IO.println s!"Error: skipping procedure {procName}: {e}"; errors := errors + 1
         | .ok (ctx, liftedFuncs) =>
           allLiftedFuncs := allLiftedFuncs ++ liftedFuncs
           let ctx := rewriteDatatypeExprsInCtx gotoDtInfo ctx
           let ctx ← lowerAddressOfInCtx ctx
           let json ← IO.ofExcept (CoreToGOTO.CProverGOTO.Context.toJson procName ctx)
           match json.symtab with
-          | .obj m => symtabPairs := symtabPairs ++ m.toList
+          | .obj m => symtabPairs := symtabPairs ++ m.toList.toArray
           | _ => pure ()
           match json.goto with
           | .obj m =>
@@ -161,11 +167,11 @@ def main (args : List String) : IO UInt32 := do
       for f in funcs ++ allLiftedFuncs do
         let funcName := Core.CoreIdent.toPretty f.name
         match functionToGotoCtx Env f with
-        | .error e => IO.println s!"Warning: skipping function {funcName}: {e}"
+        | .error e => IO.println s!"Error: skipping function {funcName}: {e}"; errors := errors + 1
         | .ok ctx =>
           let json ← IO.ofExcept (CoreToGOTO.CProverGOTO.Context.toJson funcName ctx)
           match json.symtab with
-          | .obj m => symtabPairs := symtabPairs ++ m.toList
+          | .obj m => symtabPairs := symtabPairs ++ m.toList.toArray
           | _ => pure ()
           match json.goto with
           | .obj m =>
@@ -174,26 +180,27 @@ def main (args : List String) : IO UInt32 := do
             | _ => pure ()
           | _ => pure ()
 
+      if errors > 0 then
+        IO.println s!"Error: {errors} procedure/function translation(s) failed"
+        return 1
+
       -- Add type symbols
       match Lean.toJson typeSyms with
-      | .obj m => symtabPairs := symtabPairs ++ m.toList
+      | .obj m => symtabPairs := symtabPairs ++ m.toList.toArray
       | _ => pure ()
 
-      -- Deduplicate symbol table
-      let mut seen : Std.HashSet String := {}
-      let mut dedupPairs : List (String × Lean.Json) := []
+      -- Deduplicate symbol table (later entries override earlier ones so that
+      -- collectExtraSymbols globals/datatypes take precedence)
+      let mut symtabMap : Std.HashMap String Lean.Json := {}
       for (k, v) in symtabPairs do
-        if !seen.contains k then
-          seen := seen.insert k
-          dedupPairs := dedupPairs ++ [(k, v)]
+        symtabMap := symtabMap.insert k v
 
-      -- Add CBMC default symbols
+      -- Add CBMC default symbols only if not already present
       for (k, v) in CProverGOTO.defaultSymbols (moduleName := programName) do
-        if !seen.contains k then
-          seen := seen.insert k
-          dedupPairs := dedupPairs ++ [(k, Lean.toJson v)]
+        if !symtabMap.contains k then
+          symtabMap := symtabMap.insert k (Lean.toJson v)
 
-      let symtab := Lean.Json.mkObj [("symbolTable", Lean.Json.mkObj dedupPairs)]
+      let symtab := Lean.Json.mkObj [("symbolTable", Lean.Json.mkObj symtabMap.toList)]
       let goto := Lean.Json.mkObj [("functions", Lean.Json.arr gotoFns)]
 
       let symTabFile := dir / s!"{programName}.symtab.json"

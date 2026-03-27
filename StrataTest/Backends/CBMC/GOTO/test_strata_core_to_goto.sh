@@ -7,7 +7,7 @@
 # 3. Contract annotations on procedures
 # 4. Assertions in GOTO output
 
-set -eo pipefail
+set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../../../.." && pwd)"
@@ -34,13 +34,14 @@ assert 'checker' in st, 'checker not in symtab'
 print('  OK: helper and checker in symbol table')
 "
 
-# Test 3: Global variable in symbol table
+# Test 3: Global variable in symbol table with correct attributes
 "$PYTHON" -c "
 import json
 with open('$WORK/test_multi_proc.symtab.json') as f:
     st = json.load(f)['symbolTable']
 assert 'g' in st, 'global variable g not in symtab'
-print('  OK: global variable g in symbol table')
+assert st['g'].get('isStaticLifetime') is True, 'global variable g does not have static lifetime'
+print('  OK: global variable g with static lifetime in symbol table')
 "
 
 # Test 4: Contract annotations present
