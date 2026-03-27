@@ -317,24 +317,19 @@ public def splitProcNames (prog : Core.Program)
     d.getProc?.map (Core.CoreIdent.toPretty ·.header.name)
   (preludeNames, userProcNames)
 
-/-- Translate a combined Laurel program to Core and prepend the full
-    runtime prelude.  Resolution errors are suppressed because PySpec
-    Laurel procedures reference names defined in the Core prelude
-    (`from_none`, `from_string`, `NoError`, etc.) which the Laurel
-    resolver cannot see — they are merged after translation. Once the
-    Python Core prelude is ported to Laurel, this suppression can be
-    removed. -/
-public def translateCombinedLaurel (combined : Laurel.Program)
-    : (Option Core.Program × List DiagnosticModel) :=
-  let (coreOption, errors) := Laurel.translate { inlineFunctionsWhenPossible := true } combined
-  (coreOption.map appendCorePartOfRuntime, errors)
-
 /-- Like `translateCombinedLaurel` but also returns the lowered Laurel program
     (after all Laurel-to-Laurel passes, before translation to Core). -/
 public def translateCombinedLaurelWithLowered (combined : Laurel.Program)
     : (Option Core.Program × List DiagnosticModel × Laurel.Program) :=
-  let (coreOption, errors, lowered) := Laurel.translateWithLaurel { emitResolutionErrors := false } combined
+  let (coreOption, errors, lowered) := Laurel.translateWithLaurel { inlineFunctionsWhenPossible := true } combined
   (coreOption.map appendCorePartOfRuntime, errors, lowered)
+
+/-- Translate a combined Laurel program to Core and prepend the full
+    runtime prelude. -/
+public def translateCombinedLaurel (combined : Laurel.Program)
+    : (Option Core.Program × List DiagnosticModel) :=
+  let (coreOption, errors, _) := translateCombinedLaurelWithLowered combined
+  (coreOption, errors)
 
 /-- Errors from the pyAnalyzeLaurel pipeline. -/
 public inductive PipelineError where
