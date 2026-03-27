@@ -1512,15 +1512,34 @@ def translateMethod (ctx : TranslationContext) (className : String)
     let outputs : List Parameter := [{name := "LaurelResult", type := AnyTy}]
 
     -- Translate method body with class context
-    let ctxWithClass := {ctx with currentClassName := some className}
+    -- Add method parameters to variableTypes so that hoisting (e.g. in
+    -- try/except) does not re-declare them as local variables.
+    let paramTypes : List (String × String) := inputs.map (fun p => (p.name.text, PyLauType.Any))
+    let ctxWithClass := {ctx with currentClassName := some className,
+                                  variableTypes := paramTypes}
     let (_, bodyStmts) ← translateStmtList ctxWithClass body.val.toList
     let bodyStmts := prependExceptHandlingHelper bodyStmts
+    -- In Python, parameters are mutable local variables.  In Core, input
+    -- parameters cannot be modified.  To bridge this gap we rename each
+    -- non-self input parameter to "$in_<name>" and prepend a local variable
+    -- declaration  var <name> := $in_<name>  so the body works with a
+    -- freely-modifiable local copy.
+    let nonSelfParams := inputs.filter (fun p => p.name.text != "self")
+    let renamedInputs := inputs.map fun p =>
+      if p.name.text == "self" then p
+      else { p with name := mkId ("$in_" ++ p.name.text) }
+    let paramCopies := nonSelfParams.map fun p =>
+      let origName := p.name.text
+      let renamedName := "$in_" ++ origName
+      mkStmtExprMd (StmtExpr.LocalVariable origName AnyTy
+        (some (mkStmtExprMd (StmtExpr.Identifier renamedName))))
+    let bodyStmts := paramCopies ++ bodyStmts
     let bodyBlock := mkStmtExprMd (StmtExpr.Block bodyStmts none)
 
     let md := sourceRangeToMetaData ctx.filePath methodStmt.ann
     return {
       name := className ++ "@" ++ methodName
-      inputs := inputs
+      inputs := renamedInputs
       outputs := outputs
       preconditions := [mkStmtExprMd (StmtExpr.LiteralBool true)]
       determinism := .nondeterministic
