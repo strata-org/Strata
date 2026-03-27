@@ -57,40 +57,23 @@ This document tracks the curated Boole feature-gap seeds kept under
 
 ## Type/model requests
 
-10. Native `nat` support
-    Stop modeling `nat` as a purely abstract type with uninterpreted coercions.
-11. Missing model types
-    Add or standardize support for model types such as `Cell`, `Atomic`, `Thread`, `Rwlock`, `Unit`, and `Arithmetic_overflow`.
-12. On-demand stdlib/pervasive stubs
-    Re-evaluate how much Boole/Strata still needs here. Core has `Sequence`
-    support, so older `Seq_len`/`Seq_get` style stubs are less compelling, but
-    the Boole frontend does not yet lower Boole `Sequence` types end to end.
-    Some pervasive stubs may also no longer be necessary after pruning
-    translation output.
-13. Generic/category typing cleanup
-    Reduce `nat`/`int`/bitvector width mismatches and generic type-shape mismatches in the type-checker.
+10. Native `nat` support: Stop modeling `nat` as a purely abstract type with uninterpreted coercions.
+11. Missing model types: Add or standardize support for model types such as `Cell`, `Atomic`, `Thread`, `Rwlock`, `Unit`, and `Arithmetic_overflow`.
+12. On-demand stdlib/pervasive stubs: Re-evaluate how much Boole/Strata still needs here. Core has `Sequence` support, so older `Seq_len`/`Seq_get` style stubs are less compelling, but the Boole frontend does not yet lower Boole `Sequence` types end to end. Some pervasive stubs may also no longer be necessary after pruning translation output.
+13. Generic/category typing cleanup: Reduce `nat`/`int`/bitvector width mismatches and generic type-shape mismatches in the type-checker.
 
 ## Expressiveness requests
 
-14. Higher-order / lambda support
-    Replace `Unsupported.lambda` placeholders with a real encoding for lambdas/closures.
-15. `choose`
-    Translate Hilbert-epsilon-style `choose` without erasing the predicate.
-16. Mutual recursion / forward references
-    Allow a function body to refer to a mutually recursive sibling before both are fully elaborated.
-17. Trait-spec symbol resolution
-    Preserve trait-spec symbols across module boundaries.
+14. Higher-order / lambda support: Replace `Unsupported.lambda` placeholders with a real encoding for lambdas/closures.
+15. `choose`: Translate Hilbert-epsilon-style `choose` without erasing the predicate.
+16. Mutual recursion / forward references: Allow a function body to refer to a mutually recursive sibling before both are fully elaborated.
+17. Trait-spec symbol resolution: Preserve trait-spec symbols across module boundaries.
 
 ## Robustness requests
 
-18. Datatype constructor/selector verification robustness
-    Improve solver/type-checker handling for richer datatype VCs that are already
-    emitted faithfully. The small selector/constructor seed passes today; the
-    remaining issue is larger datatype examples whose generated VCs still fail.
-19. Complex recursive type shapes
-    Support more nested recursive datatype shapes during type-checking.
-20. Non-Boole SST artifacts
-    Decide whether `RevealString` / `Air`-style statements need first-class treatment or an explicit erase/lower policy.
+18. Datatype constructor/selector verification robustness: Improve solver/type-checker handling for richer datatype VCs that are already emitted faithfully. The small selector/constructor seed passes today; the remaining issue is larger datatype examples whose generated VCs still fail.
+19. Complex recursive type shapes: Support more nested recursive datatype shapes during type-checking.
+20. Non-Boole SST artifacts: Decide whether `RevealString` / `Air`-style statements need first-class treatment or an explicit erase/lower policy.
 
 ## Boole seed examples
 
