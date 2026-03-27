@@ -160,10 +160,12 @@ def mkStmtExprMd (expr : StmtExpr) : StmtExprMd :=
 def mkStmtExprMdWithLoc (expr : StmtExpr) (md : Imperative.MetaData Core.Expression) : StmtExprMd :=
   { val := expr, md := md }
 
-/-- Build a StaticCall for an instance method: ClassName_methodName(self, args...) -/
+/-- Build a StaticCall for an instance method: ClassName@methodName(self, args...).
+    For Any-typed receivers (no model available), returns a Hole instead. -/
 def mkInstanceMethodCall (className : String) (methodName : String)
     (self : StmtExprMd) (args : List StmtExprMd) : StmtExprMd :=
-  mkStmtExprMd (StmtExpr.StaticCall (className ++ "@" ++ methodName) (self :: args))
+  if className == "Any" then mkStmtExprMd .Hole
+  else mkStmtExprMd (StmtExpr.StaticCall (className ++ "@" ++ methodName) (self :: args))
 
 /-- Extract string representation from Python expression (for type annotations) -/
 partial def pyExprToString (e : Python.expr SourceRange) : String :=
@@ -1218,6 +1220,7 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
         let mgrRef := mkStmtExprMd (StmtExpr.Identifier mgrName)
         currentCtx := {currentCtx with variableTypes := currentCtx.variableTypes ++ [(mgrName, mgrTy)]}
         let enterCall := mkInstanceMethodCall mgrTy "__enter__" mgrRef []
+        let exitCall := mkInstanceMethodCall mgrTy "__exit__" mgrRef []
         match optVars.val with
         | some varExpr =>
           let varName := pyExprToString varExpr
@@ -1234,7 +1237,7 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
         | none =>
           declStmts := declStmts ++ [mgrDecl]
           setupStmts := setupStmts ++ [enterCall]
-        cleanupStmts := cleanupStmts ++ [mkInstanceMethodCall mgrTy "__exit__" mgrRef []]
+        cleanupStmts := cleanupStmts ++ [exitCall]
     let (_bodyCtx, bodyStmts) ← translateStmtList currentCtx body.val.toList
     let block := mkStmtExprMdWithLoc (StmtExpr.Block (setupStmts ++ bodyStmts ++ cleanupStmts) none) md
     return (currentCtx, declStmts ++ [block])
