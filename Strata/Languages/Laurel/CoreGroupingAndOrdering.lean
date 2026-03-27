@@ -79,43 +79,60 @@ namespace Strata.Laurel
 Collect all `StaticCall` callee names referenced anywhere in a `StmtExpr`.
 Used to build the call graph for SCC-based procedure ordering.
 -/
-partial def collectStaticCallNames (expr : StmtExpr) : List String :=
+def collectStaticCallNames (expr : StmtExprMd) : List String :=
   match expr with
+  | WithMetadata.mk val _ =>
+  match val with
   | .StaticCall callee args =>
-      callee.text :: args.flatMap (fun a => collectStaticCallNames a.val)
-  | .PrimitiveOp _ args => args.flatMap (fun a => collectStaticCallNames a.val)
+      callee.text :: args.flatMap (fun a => collectStaticCallNames a)
+  | .PrimitiveOp _ args => args.flatMap (fun a => collectStaticCallNames a)
   | .IfThenElse cond t e =>
-      collectStaticCallNames cond.val ++
-      collectStaticCallNames t.val ++
-      (e.toList.flatMap (fun x => collectStaticCallNames x.val))
-  | .Block stmts _ => stmts.flatMap (fun s => collectStaticCallNames s.val)
+      collectStaticCallNames cond ++
+      collectStaticCallNames t ++
+      match e with
+      | some eelse => collectStaticCallNames eelse
+      | none => []
+  | .Block stmts _ => stmts.flatMap (fun s => collectStaticCallNames s)
   | .Assign targets v =>
-      targets.flatMap (fun t => collectStaticCallNames t.val) ++
-      collectStaticCallNames v.val
-  | .LocalVariable _ _ init => init.toList.flatMap (fun i => collectStaticCallNames i.val)
-  | .Return v => v.toList.flatMap (fun x => collectStaticCallNames x.val)
+      targets.flatMap (fun t => collectStaticCallNames t) ++
+      collectStaticCallNames v
+  | .LocalVariable _ _ initOption =>
+      match initOption with
+      | some init => collectStaticCallNames init
+      | none => []
+  | .Return v =>
+      match v with
+      | some x => collectStaticCallNames x
+      | none => []
   | .While cond invs dec body =>
-      collectStaticCallNames cond.val ++
-      invs.flatMap (fun i => collectStaticCallNames i.val) ++
-      dec.toList.flatMap (fun d => collectStaticCallNames d.val) ++
-      collectStaticCallNames body.val
+      collectStaticCallNames cond ++
+      invs.flatMap (fun i => collectStaticCallNames i) ++
+      (match dec with
+      | some d => collectStaticCallNames d
+      | none => []) ++
+      collectStaticCallNames body
   | .Forall _ trig body =>
-      trig.toList.flatMap (fun t => collectStaticCallNames t.val) ++
-      collectStaticCallNames body.val
+      (match trig with
+      | some t => collectStaticCallNames t
+      | none => []) ++
+      collectStaticCallNames body
   | .Exists _ trig body =>
-      trig.toList.flatMap (fun t => collectStaticCallNames t.val) ++
-      collectStaticCallNames body.val
-  | .FieldSelect t _ => collectStaticCallNames t.val
-  | .PureFieldUpdate t _ v => collectStaticCallNames t.val ++ collectStaticCallNames v.val
+      (match trig with
+      | some t => collectStaticCallNames t
+      | none => []) ++
+      collectStaticCallNames body
+  | .FieldSelect t _ => collectStaticCallNames t
+  | .PureFieldUpdate t _ v => collectStaticCallNames t ++ collectStaticCallNames v
   | .InstanceCall t _ args =>
-      collectStaticCallNames t.val ++ args.flatMap (fun a => collectStaticCallNames a.val)
-  | .Old v | .Fresh v | .Assert v | .Assume v => collectStaticCallNames v.val
-  | .ProveBy v p => collectStaticCallNames v.val ++ collectStaticCallNames p.val
-  | .ReferenceEquals l r => collectStaticCallNames l.val ++ collectStaticCallNames r.val
-  | .AsType t _ | .IsType t _ => collectStaticCallNames t.val
-  | .ContractOf _ f => collectStaticCallNames f.val
-  | .Assigned v => collectStaticCallNames v.val
+      collectStaticCallNames t ++ args.flatMap (fun a => collectStaticCallNames a)
+  | .Old v | .Fresh v | .Assert v | .Assume v => collectStaticCallNames v
+  | .ProveBy v p => collectStaticCallNames v ++ collectStaticCallNames p
+  | .ReferenceEquals l r => collectStaticCallNames l ++ collectStaticCallNames r
+  | .AsType t _ | .IsType t _ => collectStaticCallNames t
+  | .ContractOf _ f => collectStaticCallNames f
+  | .Assigned v => collectStaticCallNames v
   | _ => []
+termination_by sizeOf expr
 
 /--
 Build the procedure call graph, run Tarjan's SCC algorithm, and return each SCC
@@ -147,14 +164,14 @@ public def computeSccDecls (program : Program) : List (List Procedure × Bool) :
 
   -- Collect all callee names from a procedure's body and contracts.
   let procCallees (proc : Procedure) : List String :=
-    let bodyExprs : List StmtExpr := match proc.body with
-      | .Transparent b => [b.val]
-      | .Opaque postconds (some impl) _ => postconds.map (·.val) ++ [impl.val]
-      | .Opaque postconds none _ => postconds.map (·.val)
+    let bodyExprs : List StmtExprMd := match proc.body with
+      | .Transparent b => [b]
+      | .Opaque postconds (some impl) _ => postconds ++ [impl]
+      | .Opaque postconds none _ => postconds
       | _ => []
-    let contractExprs : List StmtExpr :=
-      proc.preconditions.map (·.val) ++
-      proc.invokeOn.toList.map (·.val)
+    let contractExprs : List StmtExprMd :=
+      proc.preconditions ++
+      proc.invokeOn.toList
     (bodyExprs ++ contractExprs).flatMap collectStaticCallNames
 
   -- Build the OutGraph for Tarjan.
