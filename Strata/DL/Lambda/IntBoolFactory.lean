@@ -146,7 +146,8 @@ def unaryOp (n : T.Identifier)
     [hIn : LambdaLeanType inTy InValTy] [hOut : LambdaLeanType outTy OutValTy]
     (op : InValTy → OutValTy)
     (hInTy : inTy.freeVars = [] := by decide)
-    (hOutTy : outTy.freeVars = [] := by decide) : WFLFunc T :=
+    (hOutTy : outTy.freeVars = [] := by decide)
+    (axioms : List (LExpr T.mono) := []) : WFLFunc T :=
   let mkConst := LambdaLeanType.mkConst (ValTy := OutValTy) T
   let cevalInTy := LambdaLeanType.cevalTy (ValTy := InValTy) T
   ⟨{ name := n,
@@ -156,7 +157,8 @@ def unaryOp (n : T.Identifier)
        | [x] => match cevalInTy x with
          | some a => .some (mkConst md (op a))
          | _ => .none
-       | _ => none) }, {
+       | _ => none),
+     axioms := axioms }, {
     arg_nodup := by simp
     body_freevars := by intro b hb; simp at hb
     concreteEval_argmatch := by

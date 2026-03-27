@@ -639,6 +639,8 @@ def translateFn (ty? : Option LMonoTy) (q : QualifiedIdent) : TransM Core.Expres
   | _, q`Core.str_len      => return Core.strLengthOp
   | _, q`Core.str_concat   => return Core.strConcatOp
   | _, q`Core.str_substr   => return Core.strSubstrOp
+  | _, q`Core.str_tolower  => return Core.strToLowerOp
+  | _, q`Core.str_toupper  => return Core.strToUpperOp
   | _, q`Core.str_toregex  => return Core.strToRegexOp
   | _, q`Core.str_inregex  => return Core.strInRegexOp
   | _, q`Core.re_all       => return Core.reAllOp
@@ -806,6 +808,8 @@ partial def translateExpr (p : Program) (bindings : TransBindings) (arg : Arg) :
     | q`Core.bvextract_15_0_64
     | q`Core.bvextract_31_0_64
     | q`Core.str_len
+    | q`Core.str_tolower
+    | q`Core.str_toupper
     | q`Core.str_toregex
     | q`Core.re_star
     | q`Core.re_plus
