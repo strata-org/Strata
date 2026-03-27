@@ -47,14 +47,14 @@ Note: constants are 0-ary functions.
 inductive Decl where
   /-- Global variable declaration. The optional RHS is not currently used in verification
       but could serve as a starting value for future execution-based analyses. -/
-  | var (name : Expression.Ident) (ty : Expression.Ty) (e : Option Expression.Expr) (md : MetaData Core.Expression := .empty)
-  | type (t : TypeDecl) (md : MetaData Core.Expression := .empty)
-  | ax   (a : Axiom) (md : MetaData Core.Expression := .empty)
+  | var (name : Expression.Ident) (ty : Expression.Ty) (e : Option Expression.Expr) (md : MetaData Core.Expression)
+  | type (t : TypeDecl) (md : MetaData Core.Expression)
+  | ax   (a : Axiom) (md : MetaData Core.Expression)
   -- The following is temporary, until we have lists and can encode `distinct` in Lambda.
-  | distinct (name : Expression.Ident) (es : List Expression.Expr) (md : MetaData Core.Expression := .empty)
-  | proc (d : Procedure) (md : MetaData Core.Expression := .empty)
-  | func (f : Function) (md : MetaData Core.Expression := .empty)
-  | recFuncBlock (fs : List Function) (md : MetaData Core.Expression := .empty)
+  | distinct (name : Expression.Ident) (es : List Expression.Expr) (md : MetaData Core.Expression)
+  | proc (d : Procedure) (md : MetaData Core.Expression)
+  | func (f : Function) (md : MetaData Core.Expression)
+  | recFuncBlock (fs : List Function) (md : MetaData Core.Expression)
   deriving Inhabited
 
 def Decl.metadata (d : Decl) : MetaData Expression :=
@@ -153,13 +153,13 @@ def Decl.eraseTypes (d : Decl) : Decl :=
 /-- Remove all metadata from a declaration. -/
 def Decl.stripMetaData (d : Decl) : Decl :=
   match d with
-  | .var name ty e _ => .var name ty e
-  | .type t _ => .type t
-  | .ax a _ => .ax a
-  | .distinct n es _ => .distinct n es
-  | .proc p _ => .proc p.stripMetaData
-  | .func f _ => .func f
-  | .recFuncBlock fs _ => .recFuncBlock fs
+  | .var name ty e _ => .var name ty e .empty
+  | .type t _ => .type t .empty
+  | .ax a _ => .ax a .empty
+  | .distinct n es _ => .distinct n es .empty
+  | .proc p _ => .proc p.stripMetaData .empty
+  | .func f _ => .func f .empty
+  | .recFuncBlock fs _ => .recFuncBlock fs .empty
 
 -- Metadata not included.
 instance : ToFormat Decl where

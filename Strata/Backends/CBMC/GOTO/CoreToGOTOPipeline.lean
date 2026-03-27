@@ -162,7 +162,8 @@ private partial def coreStmtsToGoto
                 .Integer
             CProverGOTO.Expr.symbol name ty
           | [] => CProverGOTO.Expr.symbol "" .Empty
-        let calleeExpr := CProverGOTO.Expr.symbol procName .Empty
+        let calleeExpr := CProverGOTO.Expr.symbol procName
+          (CProverGOTO.Ty.mkCode (argExprs.map (·.type)) lhsExpr.type)
         let callCode := CProverGOTO.Code.functionCall lhsExpr calleeExpr argExprs
         let inst : CProverGOTO.Instruction :=
           { type := .FUNCTION_CALL, code := callCode, locationNum := trans.nextLoc }

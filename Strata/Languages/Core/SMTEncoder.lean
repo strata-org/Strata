@@ -45,6 +45,9 @@ structure SMT.Context where
   datatypeFuns : Map String (Op.DatatypeFuncs × LConstr CoreLParams.IDMeta) := Map.empty
   /-- Global counter for generating unique bound variable names across all terms. -/
   bvCounter : Nat := 0
+  /-- When true, always use `$__bv{N}` names for bound variables instead of
+      human-readable names derived from user-provided names. -/
+  uniqueBoundNames : Bool := false
 deriving Repr, Inhabited
 
 def SMT.Context.default : SMT.Context := {}
@@ -275,7 +278,7 @@ partial def toSMTTerm (E : Env) (bvs : BoundVars) (e : LExpr CoreLParams.mono) (
     -- The `$__` prefix is reserved for internal use and cannot appear in user
     -- identifiers (see `Strata.DL.Lambda.LState.EvalConfig.varPrefix`).
     let (baseName, startSuffix) :=
-      if name.isEmpty then
+      if ctx.uniqueBoundNames || name.isEmpty then
         (s!"$__bv{ctx.bvCounter}", 1)
       else
         Encoder.breakDisambiguatedName name

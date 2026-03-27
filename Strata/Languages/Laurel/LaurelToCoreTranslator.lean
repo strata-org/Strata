@@ -42,6 +42,9 @@ open Lambda (LMonoTy LTy LExpr)
 
 public section
 
+private def mdWithUnknownLoc : Imperative.MetaData Core.Expression :=
+  #[⟨Imperative.MetaData.fileRange, .fileRange FileRange.unknown⟩]
+
 /-
 Translate Laurel HighType to Core Type
 -/
@@ -398,7 +401,21 @@ def translateStmt (outputParams : List Parameter) (stmt : StmtExprMd)
               else
                 -- Procedure calls need to be translated as call statements
                 let coreArgs ← args.mapM (fun a => translateExpr a)
-                return [Core.Statement.call [ident] callee.text coreArgs md]
+                -- Synthesize throwaway LHS variables for any outputs beyond the
+                -- assigned target (e.g. void-returns-Any adds an extra output).
+                let outputs := match model.get callee with
+                  | .staticProcedure proc => proc.outputs
+                  | .instanceProcedure _ proc => proc.outputs
+                  | _ => []
+                let mut inits : List Core.Statement := []
+                let mut lhs : List Core.CoreIdent := [ident]
+                for out in outputs.drop 1 do
+                  let id ← freshId
+                  let unusedIdent : Core.CoreIdent := ⟨s!"$unused_{id}", ()⟩
+                  let coreType := LTy.forAll [] (translateType model out.type)
+                  inits := inits ++ [Core.Statement.init unusedIdent coreType none md]
+                  lhs := lhs ++ [unusedIdent]
+                return inits ++ [Core.Statement.call lhs callee.text coreArgs md]
           | .InstanceCall .. =>
               -- Instance method call: havoc the target variable
               return [Core.Statement.havoc ident md]
@@ -432,7 +449,7 @@ def translateStmt (outputParams : List Parameter) (stmt : StmtExprMd)
       let belse ← match elseBranch with
                   | some e => translateStmt outputParams e
                   | none => pure []
-      return [Imperative.Stmt.ite bcond bthen belse .empty]
+      return [Imperative.Stmt.ite bcond bthen belse md]
   | .StaticCall callee args =>
       -- Check if this is a function or procedure
       if model.isFunction callee then
@@ -440,7 +457,21 @@ def translateStmt (outputParams : List Parameter) (stmt : StmtExprMd)
         exprAsUnusedInit stmt md
       else
         let coreArgs ← args.mapM (fun a => translateExpr a)
-        return [Core.Statement.call [] callee.text coreArgs md]
+        -- Synthesize throwaway LHS variables so Core arity checking
+        -- passes (lhs.length == outputs.length).
+        let outputs := match model.get callee with
+          | .staticProcedure proc => proc.outputs
+          | .instanceProcedure _ proc => proc.outputs
+          | _ => []
+        let mut inits : List Core.Statement := []
+        let mut lhs : List Core.CoreIdent := []
+        for out in outputs do
+          let id ← freshId
+          let ident : Core.CoreIdent := ⟨s!"$unused_{id}", ()⟩
+          let coreType := LTy.forAll [] (translateType model out.type)
+          inits := inits ++ [Core.Statement.init ident coreType none md]
+          lhs := lhs ++ [ident]
+        return inits ++ [Core.Statement.call lhs callee.text coreArgs md]
   | .InstanceCall .. =>
       -- Instance method call as statement: no return value, treated as no-op
       return ([])
@@ -522,9 +553,9 @@ def translateProcedure (proc : Procedure) : TranslateM Core.Procedure := do
     match proc.body with
     | .Transparent bodyExpr => translateStmt proc.outputs bodyExpr
     | .Opaque _postconds (some impl) _ => translateStmt proc.outputs impl
-    | _ => pure [Core.Statement.assume "no_body" (.const () (.boolConst false)) .empty]
+    | _ => pure [Core.Statement.assume "no_body" (.const () (.boolConst false)) mdWithUnknownLoc]
   -- Wrap body in a labeled block so early returns (exit) work correctly.
-  let body : List Core.Statement := [.block "$body" bodyStmts .empty]
+  let body : List Core.Statement := [.block "$body" bodyStmts mdWithUnknownLoc]
   let spec : Core.Procedure.Spec := { modifies, preconditions, postconditions }
   return { header, spec, body }
 
@@ -556,7 +587,7 @@ def translateProcedureToFunction (proc : Procedure) : TranslateM Core.Decl := do
     output := outputTy
     body := body
     preconditions := preconditions
-  }
+  } proc.md
 
 /--
 Translate a Laurel DatatypeDefinition to an `LDatatype Unit`.
@@ -582,10 +613,15 @@ structure LaurelTranslateOptions where
   emitResolutionErrors : Bool := true
 
 abbrev TranslateResult := (Option Core.Program) × (List DiagnosticModel)
+
+/-- Like `translate` but also returns the lowered Laurel program (after all
+    Laurel-to-Laurel passes, before the final translation to Core). -/
+abbrev TranslateResultWithLaurel := (Option Core.Program) × (List DiagnosticModel) × Program
+
 /--
-Translate Laurel Program to Core Program
+Translate Laurel Program to Core Program, also returning the lowered Laurel program.
 -/
-def translate (options: LaurelTranslateOptions) (program : Program): TranslateResult :=
+def translateWithLaurel (options: LaurelTranslateOptions) (program : Program): TranslateResultWithLaurel :=
   let program := { program with
     staticProcedures := coreDefinitionsForLaurel.staticProcedures ++ program.staticProcedures
   }
@@ -626,7 +662,7 @@ def translate (options: LaurelTranslateOptions) (program : Program): TranslateRe
   let resolutionErrors: List DiagnosticModel := if options.emitResolutionErrors then result.errors.toList else []
   let allDiagnostics := resolutionErrors ++ diamondErrors ++ modifiesDiags ++ constrainedTypeDiags ++ translateState.diagnostics
   let coreProgramOption := if translateState.coreProgramHasSuperfluousErrors then none else coreProgramOption
-  (coreProgramOption, allDiagnostics)
+  (coreProgramOption, allDiagnostics, program)
   where
 
   /--
@@ -648,7 +684,7 @@ def translate (options: LaurelTranslateOptions) (program : Program): TranslateRe
       | _ => none
     let ldatatypes := laurelDatatypes.map (translateDatatypeDefinition model)
     let groups := groupDatatypes laurelDatatypes ldatatypes
-    return groups.map fun group => Core.Decl.type (.data group)
+    return groups.map fun group => Core.Decl.type (.data group) mdWithUnknownLoc
 
   translateLaurelToCore (program : Program): TranslateM Core.Program := do
     let model := (← get).model
@@ -672,13 +708,13 @@ def translate (options: LaurelTranslateOptions) (program : Program): TranslateRe
         inputs := []
         output := coreTy
         body := body
-      }
+      } mdWithUnknownLoc
 
     -- Collect ALL errors from both functions, procedures, and resolution before deciding whether to fail
     -- let allErrors :=pureErrors ++ procDiags ++ constantsState.diagnostics
     -- if !allErrors.isEmpty then
     --   .error allErrors.toArray
-    let procDecls := procedures.map (fun p => Core.Decl.proc p .empty)
+    let procDecls := procedures.map (fun p => Core.Decl.proc p mdWithUnknownLoc)
 
     -- Translate Laurel datatype definitions to Core declarations.
     let groupedDatatypeDecls ← translateTypes program model
@@ -691,6 +727,13 @@ def translate (options: LaurelTranslateOptions) (program : Program): TranslateRe
     -- dbg_trace "================================="
     pure program
 
+
+/--
+Translate Laurel Program to Core Program
+-/
+def translate (options: LaurelTranslateOptions) (program : Program): TranslateResult :=
+  let (core, diags, _) := translateWithLaurel options program
+  (core, diags)
 
 /--
 Verify a Laurel program using an SMT solver
