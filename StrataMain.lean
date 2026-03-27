@@ -26,7 +26,9 @@ import Strata.Languages.Python.PythonRuntimeLaurelPart
 import Strata.Languages.Python.PythonLaurelCorePrelude
 import Strata.Backends.CBMC.CollectSymbols
 import Strata.Backends.CBMC.GOTO.CoreToGOTOPipeline
+import Strata.Backends.CBMC.GOTO.DefaultSymbols
 
+import Strata.Transform.CallElim
 import Strata.SimpleAPI
 
 open Strata
@@ -486,7 +488,7 @@ private def printPyAnalyzeSummary (vcResults : Array Core.VCResult)
 
 private def deriveBaseName (file : String) : String :=
   let name := System.FilePath.fileName file |>.getD file
-  let suffixes := [".python.st.ion", ".py.ion", ".st.ion", ".st"]
+  let suffixes := [".python.st.ion", ".py.ion", ".core.st", ".st.ion", ".st"]
   match suffixes.find? (name.endsWith ·) with
   | some sfx => (name.dropEnd sfx.length).toString
   | none     => name
@@ -1265,9 +1267,164 @@ def verifyCommand : Command where
       println! f!"Finished with {errors.size} errors."
       IO.Process.exit 1
 
+/-- Sanitize a program name to prevent path traversal in output filenames. -/
+private def sanitizeProgramName (name : String) : Option String :=
+  let s := name.replace "/" "" |>.replace "\\" "" |>.replace ".." ""
+  if s.isEmpty then none else some s
+
+def coreToGotoCommand : Command where
+  name := "coreToGoto"
+  args := [ "file" ]
+  flags := [
+    { name := "output-dir", help := "Directory for output files (default: current directory).",
+      takesArg := .arg "dir" },
+    { name := "program-name", help := "Program name for GOTO output (default: derived from filename).",
+      takesArg := .arg "name" },
+    { name := "no-call-elim", help := "Skip call elimination (keep raw calls for external DFCC)." } ]
+  help := "Translate a Strata Core program (.core.st) to CProver GOTO JSON files."
+  callback := fun v pflags => do
+    let file := v[0]
+    unless file.endsWith ".core.st" do
+      exitCmdFailure "coreToGoto" "expected a .core.st file"
+    let baseName := deriveBaseName file
+    let programName ← match sanitizeProgramName (pflags.getString "program-name" |>.getD baseName) with
+      | some n => pure n
+      | none => exitCmdFailure "coreToGoto" "invalid program name"
+    let dir := System.FilePath.mk (pflags.getString "output-dir" |>.getD ".")
+    IO.FS.createDirAll dir
+    let callElim := !pflags.getBool "no-call-elim"
+
+    let text ← Strata.Util.readInputSource file
+    let inputCtx := Lean.Parser.mkInputContext text (Strata.Util.displayName file)
+    let dctx := Elab.LoadedDialects.builtin |>.addDialect! Core
+    let leanEnv ← Lean.mkEmptyEnvironment 0
+    match Strata.Elab.elabProgram dctx leanEnv inputCtx with
+    | .error errors =>
+      for e in errors do IO.println s!"Error: {← e.toString}"
+      exitUserError "parsing failed"
+    | .ok pgm =>
+      let Env := Lambda.TEnv.default
+      let tcPgm ← match Strata.typeCheck inputCtx pgm with
+        | .ok p => pure p
+        | .error e => exitUserError s!"Type check error: {e.message}"
+      IO.println "[Strata.Core] Type Checking Succeeded!"
+
+      let tcPgm ← if callElim then
+        match Core.Transform.run tcPgm (fun p => do
+              let (_, p) ← Core.CallElim.callElim' p; return p) with
+        | .ok p => pure p
+        | .error e => exitInternalError s!"Call elimination error: {e}"
+      else pure tcPgm
+
+      let tcPgm ← match Core.typeCheck .default tcPgm with
+        | .ok p => pure p
+        | .error e => exitInternalError s!"Re-type-check error: {e}"
+
+      let tcPgm := inlineFuncDefsInProgram tcPgm
+      let tcPgm := inlineRecFuncDefsInProgram tcPgm
+      let tcPgm := partialEvalDatatypesInProgram tcPgm
+
+      let procs := tcPgm.decls.filterMap fun d => d.getProc?
+      let funcs := tcPgm.decls.filterMap fun d =>
+        match d.getFunc? with
+        | some f =>
+          let name := Core.CoreIdent.toPretty f.name
+          if f.body.isSome && f.typeArgs.isEmpty
+            && name != "Int.DivT" && name != "Int.ModT"
+          then some f else none
+        | none => none
+
+      if procs.isEmpty && funcs.isEmpty then
+        exitUserError "No procedures or functions found"
+
+      let axioms := tcPgm.decls.filterMap fun d => d.getAxiom?
+      let dtAxioms := generateDatatypeAxioms tcPgm
+      let recAxioms := generateRecFuncAxioms tcPgm (unrollDepth := 0)
+      let axioms := axioms ++ dtAxioms ++ recAxioms
+      let distincts := tcPgm.decls.filterMap fun d => match d with
+        | .distinct name es _ => some (name, es) | _ => none
+      let typeSyms ← match collectExtraSymbols tcPgm with
+        | .ok s => pure s
+        | .error e => exitInternalError s!"Error collecting symbols: {e}"
+      let gotoDtInfo := collectGotoDatatypeInfo tcPgm
+
+      let mut symtabPairs : Array (String × Lean.Json) := #[]
+      let mut gotoFns : Array Lean.Json := #[]
+      let mut errors : Nat := 0
+      let globalVarEntries : Map Core.Expression.Ident Core.Expression.Ty :=
+        tcPgm.decls.filterMap fun d =>
+          match d with
+          | .var name ty _ _ => some (name, ty)
+          | _ => none
+      let Env := Lambda.TEnv.addInNewestContext
+        (T := ⟨Core.ExpressionMetadata, Unit⟩) Env globalVarEntries
+
+      let mut allLiftedFuncs : List Core.Function := []
+
+      for p in procs do
+        let procName := Core.CoreIdent.toPretty p.header.name
+        match procedureToGotoCtx Env p (axioms := axioms) (distincts := distincts)
+              (varTypes := tcPgm.getVarTy?) with
+        | .error e => IO.println s!"Error: skipping procedure {procName}: {e}"; errors := errors + 1
+        | .ok (ctx, liftedFuncs) =>
+          allLiftedFuncs := allLiftedFuncs ++ liftedFuncs
+          let ctx := rewriteDatatypeExprsInCtx gotoDtInfo ctx
+          let ctx ← lowerAddressOfInCtx ctx
+          let json ← IO.ofExcept (CoreToGOTO.CProverGOTO.Context.toJson procName ctx)
+          match json.symtab with
+          | .obj m => symtabPairs := symtabPairs ++ m.toList.toArray
+          | _ => pure ()
+          match json.goto with
+          | .obj m =>
+            match m.toList.find? (·.1 == "functions") with
+            | some (_, .arr fns) => gotoFns := gotoFns ++ fns
+            | _ => pure ()
+          | _ => pure ()
+
+      for f in funcs ++ allLiftedFuncs do
+        let funcName := Core.CoreIdent.toPretty f.name
+        match functionToGotoCtx Env f with
+        | .error e => IO.println s!"Error: skipping function {funcName}: {e}"; errors := errors + 1
+        | .ok ctx =>
+          let json ← IO.ofExcept (CoreToGOTO.CProverGOTO.Context.toJson funcName ctx)
+          match json.symtab with
+          | .obj m => symtabPairs := symtabPairs ++ m.toList.toArray
+          | _ => pure ()
+          match json.goto with
+          | .obj m =>
+            match m.toList.find? (·.1 == "functions") with
+            | some (_, .arr fns) => gotoFns := gotoFns ++ fns
+            | _ => pure ()
+          | _ => pure ()
+
+      if errors > 0 then
+        exitInternalError s!"{errors} procedure/function translation(s) failed"
+
+      match Lean.toJson typeSyms with
+      | .obj m => symtabPairs := symtabPairs ++ m.toList.toArray
+      | _ => pure ()
+
+      let mut symtabMap : Std.HashMap String Lean.Json := {}
+      for (k, v) in symtabPairs do
+        symtabMap := symtabMap.insert k v
+
+      for (k, v) in CProverGOTO.defaultSymbols (moduleName := programName) do
+        if !symtabMap.contains k then
+          symtabMap := symtabMap.insert k (Lean.toJson v)
+
+      let symtab := Lean.Json.mkObj [("symbolTable", Lean.Json.mkObj symtabMap.toList)]
+      let goto := Lean.Json.mkObj [("functions", Lean.Json.arr gotoFns)]
+
+      let symTabFile := dir / s!"{programName}.symtab.json"
+      let gotoFile := dir / s!"{programName}.goto.json"
+      IO.FS.writeFile symTabFile symtab.pretty
+      IO.FS.writeFile gotoFile goto.pretty
+      IO.println s!"Translated {procs.length} procedures and {funcs.length} functions"
+      IO.println s!"Written {symTabFile} and {gotoFile}"
+
 def commandGroups : List CommandGroup := [
   { name := "Core"
-    commands := [verifyCommand, checkCommand, toIonCommand, printCommand, diffCommand]
+    commands := [verifyCommand, coreToGotoCommand, checkCommand, toIonCommand, printCommand, diffCommand]
     commonFlags := [includeFlag] },
   { name := "Code Generation"
     commands := [javaGenCommand] },
