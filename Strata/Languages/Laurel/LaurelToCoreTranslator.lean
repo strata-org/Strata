@@ -661,6 +661,9 @@ def translateProcedureToFunction (options: LaurelTranslateOptions) (isRecursive:
   -- For recursive functions, infer the @[cases] parameter index: the first input
   -- whose type is a user-defined datatype (has constructors). This is the argument
   -- the partial evaluator will case-split on to unfold the recursion.
+  -- TODO: Use the decreases of the function to determine where to put @[cases]
+  -- First step should be to only support a decreases clause that is exactly one datatype parameter
+  -- Since that's what Core supports
   let casesIdx : Option Nat :=
     if !isRecursive then none
     else proc.inputs.findIdx? fun p =>
@@ -865,14 +868,6 @@ def translateWithLaurel (options: LaurelTranslateOptions) (program : Program): T
           let procDecl ← translateProcedure proc
           return [Core.Decl.proc procDecl .empty] ++ axiomDecls
 
-    -- Topological sort: tarjan already gives reverse-topological order (dependencies first).
-    -- We additionally want procedure SCCs to come before function SCCs at the same level,
-    -- so that invokeOn axioms (which reference functions) are placed after the functions
-    -- they depend on. Since tarjan output is already dependency-first, we just stable-sort
-    -- to move procedure-containing SCCs before function-only SCCs within the same position.
-    -- The tarjan output is already correct topological order; we emit it as-is since
-    -- procedure SCCs naturally depend on function SCCs (functions are called by procedures),
-    -- so functions will already appear before procedures in the tarjan output.
     let orderedDecls := sccDecls.flatten
 
     -- Translate Laurel constants to Core function declarations (0-ary functions)
