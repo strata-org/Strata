@@ -8,6 +8,7 @@ module
 public import Strata.DL.Lambda.LExpr
 public import Strata.DL.Lambda.LExprWF
 public import Strata.DL.Imperative.StmtSemantics
+public import Strata.DL.Imperative.StmtSemanticsSmallStep
 public import Strata.Languages.Core.CoreGen
 public import Strata.Languages.Core.Procedure
 
@@ -313,6 +314,27 @@ inductive EvalCommand (π : String → Option Procedure) (φ : CoreEval → Pure
 @[expose] abbrev EvalStatements (π : String → Option Procedure) (φ : CoreEval → PureFunc Expression → CoreEval) :
     Imperative.Env Expression → List Statement → Imperative.Env Expression → Prop :=
   Imperative.EvalBlock Expression Command (EvalCommand π φ) (EvalPureFunc φ)
+
+
+/-! ### Core small-step abbreviations for Statement -/
+
+/-- Core-level small-step configuration. -/
+@[expose] abbrev CoreConfig := Imperative.Config Expression Command
+
+/-- Core-level single-step relation. -/
+@[expose] abbrev CoreStep
+    (π : String → Option Procedure)
+    (φ : CoreEval → PureFunc Expression → CoreEval) :=
+  Imperative.StepStmt Expression (EvalCommand π φ) (EvalPureFunc φ)
+
+/-- Core-level multi-step (reflexive-transitive closure) relation. -/
+@[expose] abbrev CoreStepStar
+    (π : String → Option Procedure)
+    (φ : CoreEval → PureFunc Expression → CoreEval) :=
+  Imperative.StepStmtStar Expression (EvalCommand π φ) (EvalPureFunc φ)
+
+
+---------------------------------------------------------------------
 
 inductive EvalCommandContract : (String → Option Procedure)  → CoreEval →
   CoreStore → Command → CoreStore → Bool → Prop where

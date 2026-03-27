@@ -35,7 +35,8 @@ This module provides two equivalent formulations:
    `ρ'.hasFailure = false` captures that all asserts passed.
 
 The two are shown equivalent by `hoareTriple_implies_assertValid` and
-`assertValid_implies_hoareTriple`.
+`allAssertValid_implies_hoareTriple`. Their precise relation is slightly
+subtle, and `Hoare.Triple`'s doc string has more info.
 
 ## Two ways to specify transformation soundness
 
@@ -137,7 +138,16 @@ configurations that the enclosing block may catch. Structural rules like
 
 namespace Hoare
 
-/-- Partial-correctness Hoare triple. -/
+/-- Partial-correctness Hoare triple.
+
+    `AllAssertsValid` is strictly stronger than `Triple`.
+    For example, `{True} (assert false; loop_forever) {anything}` triple holds
+    vacuously whereas `AllAssertsValid` does not hold due to the first `assert`.
+
+    Note that for this reason `hoareTriple_implies_assertValid` therefore relates
+    `Triple` only to the *postcondition* assertion in a `PredicatedStmt`,
+    not to assertions inside the body, whereas `allAssertsValid_implies_hoareTriple`
+    relates all asserts in the `PreicatedStmt` to `Triple`. -/
 def Triple
     (Pre : Env P → Prop) (s : L.StmtT) (Post : Env P → Prop) : Prop :=
   ∀ (ρ₀ ρ' : Env P),
@@ -167,7 +177,7 @@ theorem consequence
 
 /-! ## Structural Hoare rules (Imperative-specific) -/
 
-section ImperativeRules
+section StmtRules
 
 variable {CmdT : Type} (evalCmd : EvalCmdParam P CmdT) (extendEval : ExtendEval P)
 variable (isAtAssertFn : Config P CmdT → AssertId P → Prop)
@@ -321,7 +331,7 @@ theorem ite {c : P.Expr} {tss ess : List (Stmt P CmdT)} {md : MetaData P}
 
 /- TODO: the WHILE rule -/
 
-end ImperativeRules
+end StmtRules
 
 
 /-! ## Connection between HoareTriple and AssertValid (standard Lang) -/
@@ -425,7 +435,7 @@ theorem hoareTriple_implies_assertValid
 
 
 /-- **Direction 2**: Assert validity for `PredicatedStmt` implies Hoare triple. -/
-theorem assertValid_implies_hoareTriple
+theorem allAssertsValid_implies_hoareTriple
     (pre_label : String) (pre_expr : P'.Expr) (pre_md : MetaData P')
     (st : Stmt P' (Cmd P'))
     (post_label : String) (post_expr : P'.Expr) (post_md : MetaData P')
