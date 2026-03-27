@@ -78,6 +78,12 @@ def run(test_file: str, *, laurel: bool) -> bool:
     if base_name in skip:
         print(f"Skipping: {base_name}")
         return True
+    # For non-laurel mode, skip tests without a non-laurel expected file
+    if not laurel:
+        expected_non_laurel = REPO_ROOT / "StrataTest/Languages/Python/expected_non_laurel" / f"{base_name}.expected"
+        if not expected_non_laurel.exists():
+            print(f"Skipping: {base_name} (no non-laurel expected file)")
+            return True
 
     ion_rel = f"StrataTest/Languages/Python/tests/{base_name}.python.st.ion"
     ion_abs = REPO_ROOT / ion_rel
