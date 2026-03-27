@@ -457,7 +457,9 @@ partial def translateExpr (ctx : TranslationContext) (e : Python.expr SourceRang
 
   -- Binary operations
   | .BinOp _ left op right => do
-    -- Constant-fold Pow for integer literals
+    -- Constant-fold Pow for integer literals (ideally this would be in
+    -- Core's concreteEval, but prelude functions can't have factory
+    -- concreteEval without causing duplicate-name errors)
     match op with
     | .Pow _ =>
       match left, right with
@@ -465,7 +467,7 @@ partial def translateExpr (ctx : TranslationContext) (e : Python.expr SourceRang
         return intToAny (b.val ^ e.val)
       | .Constant _ (.ConNeg _ b) _, .Constant _ (.ConPos _ e) _ =>
         return intToAny ((-b.val) ^ e.val)
-      | _, _ => pure ()  -- fall through to general case
+      | _, _ => pure ()
     | _ => pure ()
     let leftExpr ← translateExpr ctx left
     let rightExpr ← translateExpr ctx right
