@@ -21,7 +21,7 @@ public import Strata.Languages.Laurel.TypeHierarchy
 public import Strata.Languages.Laurel.LaurelTypes
 public import Strata.Languages.Laurel.ModifiesClauses
 public import Strata.Languages.Laurel.CoreDefinitionsForLaurel
-import Strata.Languages.Laurel.DatatypeGrouping
+import Strata.Languages.Laurel.CoreGroupingAndOrdering
 import Strata.DDM.Util.DecimalRat
 import Strata.DL.Imperative.Stmt
 import Strata.DL.Imperative.MetaData
@@ -560,48 +560,6 @@ def translateProcedure (proc : Procedure) : TranslateM Core.Procedure := do
   let spec : Core.Procedure.Spec := { modifies, preconditions, postconditions }
   return { header, spec, body }
 
-/--
-Collect all `StaticCall` callee names referenced anywhere in a `StmtExpr`.
-Used to determine which functions an invokeOn axiom depends on.
--/
-partial def collectStaticCallNames (expr : StmtExpr) : List String :=
-  match expr with
-  | .StaticCall callee args =>
-      callee.text :: args.flatMap (fun a => collectStaticCallNames a.val)
-  | .PrimitiveOp _ args => args.flatMap (fun a => collectStaticCallNames a.val)
-  | .IfThenElse cond t e =>
-      collectStaticCallNames cond.val ++
-      collectStaticCallNames t.val ++
-      (e.toList.flatMap (fun x => collectStaticCallNames x.val))
-  | .Block stmts _ => stmts.flatMap (fun s => collectStaticCallNames s.val)
-  | .Assign targets v =>
-      targets.flatMap (fun t => collectStaticCallNames t.val) ++
-      collectStaticCallNames v.val
-  | .LocalVariable _ _ init => init.toList.flatMap (fun i => collectStaticCallNames i.val)
-  | .Return v => v.toList.flatMap (fun x => collectStaticCallNames x.val)
-  | .While cond invs dec body =>
-      collectStaticCallNames cond.val ++
-      invs.flatMap (fun i => collectStaticCallNames i.val) ++
-      dec.toList.flatMap (fun d => collectStaticCallNames d.val) ++
-      collectStaticCallNames body.val
-  | .Forall _ trig body =>
-      trig.toList.flatMap (fun t => collectStaticCallNames t.val) ++
-      collectStaticCallNames body.val
-  | .Exists _ trig body =>
-      trig.toList.flatMap (fun t => collectStaticCallNames t.val) ++
-      collectStaticCallNames body.val
-  | .FieldSelect t _ => collectStaticCallNames t.val
-  | .PureFieldUpdate t _ v => collectStaticCallNames t.val ++ collectStaticCallNames v.val
-  | .InstanceCall t _ args =>
-      collectStaticCallNames t.val ++ args.flatMap (fun a => collectStaticCallNames a.val)
-  | .Old v | .Fresh v | .Assert v | .Assume v => collectStaticCallNames v.val
-  | .ProveBy v p => collectStaticCallNames v.val ++ collectStaticCallNames p.val
-  | .ReferenceEquals l r => collectStaticCallNames l.val ++ collectStaticCallNames r.val
-  | .AsType t _ | .IsType t _ => collectStaticCallNames t.val
-  | .ContractOf _ f => collectStaticCallNames f.val
-  | .Assigned v => collectStaticCallNames v.val
-  | _ => []
-
 def translateInvokeOnAxiom (proc : Procedure) (trigger : StmtExprMd)
     : TranslateM (Option Core.Decl) := do
   let model := (← get).model
@@ -789,61 +747,10 @@ def translateWithLaurel (options: LaurelTranslateOptions) (program : Program): T
     let groups := groupDatatypes laurelDatatypes ldatatypes
     return groups.map fun group => Core.Decl.type (.data group) mdWithUnknownLoc
 
-  -- Compute the SCCs of the call graph over non-external procedures, returning each SCC as a
-  -- list of procedures paired with a flag indicating whether the SCC is recursive.
-  computeSccDecls (program : Program) : TranslateM (List (List Procedure × Bool)) := do
-    -- External procedures are completely ignored (not translated to Core).
-    let nonExternal := program.staticProcedures.filter (fun p => !p.body.isExternal)
-
-    -- Build a call-graph over all non-external procedures.
-    -- An edge proc → callee means proc's body/contracts contain a StaticCall to callee.
-    let nonExternalArr : Array Procedure := nonExternal.toArray
-    let nameToIdx : Std.HashMap String Nat :=
-      nonExternalArr.foldl (fun (acc : Std.HashMap String Nat × Nat) proc =>
-        (acc.1.insert proc.name.text acc.2, acc.2 + 1)) ({}, 0) |>.1
-
-    -- Collect all callee names from a procedure's body and contracts.
-    let procCallees (proc : Procedure) : List String :=
-      let bodyExprs : List StmtExpr := match proc.body with
-        | .Transparent b => [b.val]
-        | .Opaque postconds (some impl) _ => postconds.map (·.val) ++ [impl.val]
-        | .Opaque postconds none _ => postconds.map (·.val)
-        | _ => []
-      let contractExprs : List StmtExpr :=
-        proc.preconditions.map (·.val) ++
-        proc.invokeOn.toList.map (·.val)
-      (bodyExprs ++ contractExprs).flatMap collectStaticCallNames
-
-    -- Build the OutGraph for Tarjan.
-    let n := nonExternalArr.size
-    let graph : Strata.OutGraph n :=
-      nonExternalArr.foldl (fun (acc : Strata.OutGraph n × Nat) proc =>
-        let callerIdx := acc.2
-        let g := acc.1
-        let callees := procCallees proc
-        let g' := callees.foldl (fun g callee =>
-          match nameToIdx.get? callee with
-          | some calleeIdx => g.addEdge! calleeIdx callerIdx
-          | none => g) g
-        (g', callerIdx + 1)) (Strata.OutGraph.empty n, 0) |>.1
-
-    -- Run Tarjan's SCC algorithm. Results are in reverse topological order
-    -- (a node appears after all nodes that have paths to it).
-    let sccs := Strata.OutGraph.tarjan graph
-
-    sccs.toList.mapM fun scc => do
-      let procs := scc.toList.filterMap fun idx =>
-        nonExternalArr[idx.val]?
-      let isRecursive := procs.length > 1 ||
-        (match scc.toList.head? with
-          | some node => (graph.nodesOut node).contains node
-          | none => false)
-      return (procs, isRecursive)
-
   translateLaurelToCore (options: LaurelTranslateOptions) (program : Program): TranslateM Core.Program := do
     let model := (← get).model
 
-    let sccDecls ← computeSccDecls program
+    let sccDecls := computeSccDecls program
 
     let orderedDecls ← sccDecls.flatMapM (fun (procs, isRecursive) => do
       -- For each SCC, determine if it is purely functional or contains procedures.
