@@ -266,18 +266,21 @@ private partial def discoverModules (sourceDir : System.FilePath)
 /-- Derive the output path for a Python file by mirroring the source directory
     structure and replacing `.py` with `.pyspec.st.ion`. -/
 def pySpecOutputPath (sourceDir strataDir pythonFile : System.FilePath)
-    : Option System.FilePath :=
+    : Option System.FilePath := Id.run do
   let sourceDirStr := sourceDir.toString
-  let srcPrefix := if sourceDirStr.endsWith "/" then sourceDirStr else sourceDirStr ++ "/"
   let fileStr := pythonFile.toString
-  let relStr := (fileStr.dropPrefix srcPrefix).toString
-  if relStr == fileStr then
-    none  -- pythonFile not under sourceDir
-  else
-    let outName := if relStr.endsWith ".py"
-      then (relStr.take (relStr.length - 3)).toString ++ ".pyspec.st.ion"
-      else relStr ++ ".pyspec.st.ion"
-    some (strataDir / outName)
+
+  let some relStr := fileStr.dropPrefix? sourceDirStr
+    | return none
+  if !relStr.startsWith "/" then
+    return none
+  let relStr := relStr.drop 1
+  if relStr.startsWith "/" then
+    return none -- Should never occur
+  if !relStr.endsWith ".py" then
+    return none
+  let relStr := relStr.dropEnd 3
+  some <| strataDir / ⟨relStr.toString ++ ".pyspec.st.ion"⟩
 
 /-- Translate all (or selected) Python modules in a directory to PySpec Ion format.
     If `modules` is empty, discovers and translates all `.py` files under `sourceDir`.
@@ -323,12 +326,10 @@ def pySpecsDir (sourceDir strataDir dialectFile : System.FilePath)
   for (mod, pythonFile) in modulesToProcess do
     -- Derive output path
     let some outPath := pySpecOutputPath sourceDir strataDir pythonFile
-      | do failures := failures.push (toString mod, s!"Could not derive output path for {pythonFile}")
-           continue
+      | throw s!"Internal error: Could not derive output path for {pythonFile}"
 
     let .ok pythonMd ← pythonFile.metadata |>.toBaseIO
-      | do failures := failures.push (toString mod, s!"Could not find {pythonFile}")
-           continue
+      | throw s!"Internal error: Could not find {pythonFile}"
 
     -- Timestamp check: skip if output is newer than source
     if ← Python.Specs.isNewer outPath pythonMd then
@@ -336,12 +337,10 @@ def pySpecsDir (sourceDir strataDir dialectFile : System.FilePath)
       continue
 
     -- Ensure output subdirectory exists
-    if let some parent := outPath.parent then
-      match ← IO.FS.createDirAll parent |>.toBaseIO with
-      | .ok () => pure ()
-      | .error e =>
-        failures := failures.push (toString mod, s!"Could not create directory: {e}")
-        continue
+    let some parent := outPath.parent
+      | throw s!"Internal error: Could not discover parent directory"
+    if let .error e ← IO.FS.createDirAll parent |>.toBaseIO then
+      throw s!"Internal error: Could not create directory {parent}: {e}"
 
     -- Translate
     Python.Specs.baseLogEvent events "import" s!"Translating {mod}"
