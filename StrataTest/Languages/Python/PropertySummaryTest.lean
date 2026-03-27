@@ -4,10 +4,9 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-module
-
-meta import Strata.SimpleAPI
-meta import StrataTest.Util.Python
+import StrataTest.Util.Python
+import Strata.SimpleAPI
+import Strata.Languages.Python.PyFactory
 
 /-! ## Test: Python assert messages propagate as property summaries
 
@@ -17,25 +16,17 @@ property summary in the Core verification results.
 
 namespace Strata.Python.PropertySummaryTest
 
-open Strata (pyTranslateLaurel verifyCore)
-
-private meta def testPy : String :=
-"def main(x: int) -> None:
-    assert x == x, \"reflexivity\"
-    assert x + 0 == x, \"additive identity\"
-"
+open Strata (pyTranslateLaurel)
 
 /-- Compile a Python string to Ion, translate to Core, verify, and return
     the property summaries from the VCResults. -/
-private meta def getPropertySummaries (pythonCmd : System.FilePath) : IO (Array String) := do
+private def getPropertySummaries (pythonCmd : System.FilePath) (source : String)
+    : IO (Array String) := do
   IO.FS.withTempDir fun tmpDir => do
-    -- Write Python source
     let pyFile := tmpDir / "test.py"
-    IO.FS.writeFile pyFile testPy
-    -- Write dialect file
+    IO.FS.writeFile pyFile source
     let dialectFile := tmpDir / "dialect.ion"
     IO.FS.writeBinFile dialectFile Python.Python.toIon
-    -- Compile to Ion
     let ionFile := tmpDir / "test.python.st.ion"
     let child ← IO.Process.spawn {
       cmd := pythonCmd.toString
@@ -43,30 +34,29 @@ private meta def getPropertySummaries (pythonCmd : System.FilePath) : IO (Array 
                 "--dialect", dialectFile.toString,
                 pyFile.toString, ionFile.toString]
       inheritEnv := true
-      stdin := .null, stdout := .piped, stderr := .piped
+      stdin := .null, stdout := .null, stderr := .piped
     }
     let stderr ← child.stderr.readToEnd
     let exitCode ← child.wait
     if exitCode ≠ 0 then
-      throw <| .userError s!"py_to_strata failed: {stderr}"
-    -- Translate to Core
+      throw <| .userError s!"py_to_strata failed (exit code {exitCode}): {stderr}"
     let (core, _diags) ← match ← pyTranslateLaurel ionFile.toString |>.toBaseIO with
       | .ok r => pure r
       | .error msg => throw <| .userError s!"pyTranslateLaurel failed: {msg}"
-    -- Verify
-    let results ← match ← verifyCore core Core.VerifyOptions.quiet |>.toBaseIO with
+    let results ← match ← Core.verifyProgram core Core.VerifyOptions.quiet
+        (moreFns := Strata.Python.ReFactory) |>.toBaseIO with
       | .ok r => pure r
       | .error msg => throw <| .userError s!"verifyCore failed: {msg}"
-    -- Extract property summaries
     return results.filterMap fun vcr =>
       vcr.obligation.metadata.getPropertySummary
 
-#eval withPython fun pythonCmd => do
+#guard_msgs in
+#eval withPython (warnOnSkip := false) fun pythonCmd => do
   let summaries ← getPropertySummaries pythonCmd
+    "def main(x: int) -> None:\n    assert x == x, \"reflexivity\"\n    assert x + 0 == x, \"additive identity\"\n"
   let expected := #["reflexivity", "additive identity"]
   for msg in expected do
     unless summaries.any (· == msg) do
       throw <| .userError s!"FAIL: \"{msg}\" not found in summaries: {summaries}"
-  IO.println "PASS: Python assert messages propagate as property summaries"
 
 end Strata.Python.PropertySummaryTest
