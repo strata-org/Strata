@@ -45,39 +45,15 @@ This document tracks the curated Boole feature-gap seeds kept under
 
 ## Semantic fidelity requests
 
-1. Generic `opaque` / `reveal`
-   Lower priority for now. If we revisit this family, preserve reveals for
-   generic spec functions instead of dropping them.
-2. `hide`
-   Lower priority for now. Emit a real hiding boundary so a revealed body does
-   not stay globally visible.
-3. `reveal_with_fuel`
-   Lower priority for now. Preserve the requested fuel amount instead of
-   lowering it to an unrestricted reveal.
-4. `closed` visibility
-   Lower priority for now. Keep closed spec-function bodies hidden across module
-   boundaries.
-5. Early return
-   Support `return expr` as a real statement instead of comment-only lowering.
-   Current Core `exit` only exits blocks, so this needs function-level return
-   semantics in Boole lowering.
-6. Overflow guards
-   Lower priority for now. Preserve `HasType`-style arithmetic overflow checks
-   in the translated program if we decide Verus-specific guards are worth
-   modeling directly.
-7. Extensional equality
-   Distinguish extensional equality from ordinary `==`, especially for
-   maps/collections, preferably by translating it directly to quantifiers.
-   Status: implemented for direct `Map` types via Boole `=~=` syntax lowered to
-   `∀` over indices.
-8. Widening casts outside call sites
-   Insert or preserve cast/coercion structure in comparisons, quantifiers, and
-   other expressions with a centralized type-directed coercion pass.
-9. `decreases` metadata
-   Keep loop/procedure/spec-function decreases information in a form the downstream pipeline can use.
-   Status: loop-level `decreases` is supported in the CST/Core path; the
-   remaining gap is function/procedure/spec-function `decreases`, especially
-   for recursive definitions over builtins such as `int`.
+1. Generic `opaque` / `reveal`: Lower priority for now. If we revisit this family, preserve reveals for generic spec functions instead of dropping them.
+2. `hide`: Lower priority for now. Emit a real hiding boundary so a revealed body does not stay globally visible.
+3. `reveal_with_fuel`: Lower priority for now. Preserve the requested fuel amount instead of lowering it to an unrestricted reveal.
+4. `closed` visibility: Lower priority for now. Keep closed spec-function bodies hidden across module boundaries.
+5. Early return: Support `return expr` as a real statement instead of comment-only lowering. Current Core `exit` only exits blocks, so this needs function-level return semantics in Boole lowering.
+6. Overflow guards: Lower priority for now. Preserve `HasType`-style arithmetic overflow checks in the translated program if we decide Verus-specific guards are worth modeling directly.
+7. Extensional equality: Distinguish extensional equality from ordinary `==`, especially for maps/collections, preferably by translating it directly to quantifiers. Status: implemented for direct `Map` types via Boole `=~=` syntax lowered to `∀` over indices.
+8. Widening casts outside call sites: Insert or preserve cast/coercion structure in comparisons, quantifiers, and other expressions with a centralized type-directed coercion pass.
+9. `decreases` metadata: Keep loop/procedure/spec-function decreases information in a form the downstream pipeline can use. Status: loop-level `decreases` is supported in the CST/Core path; the remaining gap is function/procedure/spec-function `decreases`, especially for recursive definitions over builtins such as `int`.
 
 ## Type/model requests
 
