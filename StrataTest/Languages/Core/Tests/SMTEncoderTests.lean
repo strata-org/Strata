@@ -13,7 +13,9 @@ namespace Core
 open Lambda
 open Strata.SMT
 
-/-- info: "(define-fun $__t.0 () Bool (forall ((n Int)) (exists ((m Int)) (= n m))))\n" -/
+/--
+info: "(define-fun $__t.0 () Bool (forall (($__bv0 Int)) (exists (($__bv1 Int)) (= $__bv0 $__bv1))))\n"
+-/
 #guard_msgs in
 #eval toSMTTermString
   (.quant () .all "n" (.some .int) (LExpr.noTrigger ())
@@ -21,7 +23,7 @@ open Strata.SMT
    (.eq () (.bvar () 1) (.bvar () 0))))
 
 /--
-info: "; x\n(declare-const x Int)\n(define-fun $__t.0 () Bool (exists ((i Int)) (= i x)))\n"
+info: "; x\n(declare-const x Int)\n(define-fun $__t.0 () Bool (exists (($__bv0 Int)) (= $__bv0 x)))\n"
 -/
 #guard_msgs in
 #eval toSMTTermString
@@ -29,7 +31,7 @@ info: "; x\n(declare-const x Int)\n(define-fun $__t.0 () Bool (exists ((i Int)) 
    (.eq () (.bvar () 0) (.fvar () "x" (.some .int))))
 
 /--
-info: "; f\n(declare-fun f (Int) Int)\n; x\n(declare-const x Int)\n(define-fun $__t.0 () Bool (exists ((i Int)) (! (= i x) :pattern ((f i)))))\n"
+info: "; f\n(declare-fun f (Int) Int)\n; x\n(declare-const x Int)\n(define-fun $__t.0 () Bool (exists (($__bv0 Int)) (! (= $__bv0 x) :pattern ((f $__bv0)))))\n"
 -/
 #guard_msgs in
 #eval toSMTTermString
@@ -38,7 +40,7 @@ info: "; f\n(declare-fun f (Int) Int)\n; x\n(declare-const x Int)\n(define-fun $
 
 
 /--
-info: "; f\n(declare-fun f (Int) Int)\n; x\n(declare-const x Int)\n(define-fun $__t.0 () Bool (exists ((i Int)) (! (= (f i) x) :pattern ((f i)))))\n"
+info: "; f\n(declare-fun f (Int) Int)\n; x\n(declare-const x Int)\n(define-fun $__t.0 () Bool (exists (($__bv0 Int)) (! (= (f $__bv0) x) :pattern ((f $__bv0)))))\n"
 -/
 #guard_msgs in
 #eval toSMTTermString
@@ -52,7 +54,7 @@ info: "; f\n(declare-fun f (Int) Int)\n; x\n(declare-const x Int)\n(define-fun $
    (.eq () (.app () (.fvar () "f" (.some (.arrow .int .int))) (.bvar () 0)) (.fvar () "x" (.some .int))))
 
 /--
-info: "; f\n(declare-const f (arrow Int Int))\n; f\n(declare-fun f@1 (Int) Int)\n; x\n(declare-const x Int)\n(define-fun $__t.0 () Bool (exists ((i Int)) (! (= (f@1 i) x) :pattern (f))))\n"
+info: "; f\n(declare-const f (arrow Int Int))\n; f\n(declare-fun f@1 (Int) Int)\n; x\n(declare-const x Int)\n(define-fun $__t.0 () Bool (exists (($__bv0 Int)) (! (= (f@1 $__bv0) x) :pattern (f))))\n"
 -/
 #guard_msgs in
 #eval toSMTTermString
@@ -68,7 +70,7 @@ info: "; f\n(declare-const f (arrow Int Int))\n; f\n(declare-fun f@1 (Int) Int)\
    }})
 
 /--
-info: "; f\n(declare-fun f (Int Int) Int)\n; x\n(declare-const x Int)\n(define-fun $__t.0 () Bool (forall ((m Int) (n Int)) (! (= (f n m) x) :pattern ((f n m)))))\n"
+info: "; f\n(declare-fun f (Int Int) Int)\n; x\n(declare-const x Int)\n(define-fun $__t.0 () Bool (forall (($__bv0 Int) ($__bv1 Int)) (! (= (f $__bv1 $__bv0) x) :pattern ((f $__bv1 $__bv0)))))\n"
 -/
 #guard_msgs in
 #eval toSMTTermString
@@ -86,7 +88,7 @@ info: "; f\n(declare-fun f (Int Int) Int)\n; x\n(declare-const x Int)\n(define-f
 
 
 /--
-info: "; f\n(declare-fun f (Int Int) Int)\n; x\n(declare-const x Int)\n(define-fun $__t.0 () Bool (forall ((m Int) (n Int)) (= (f n m) x)))\n"
+info: "; f\n(declare-fun f (Int Int) Int)\n; x\n(declare-const x Int)\n(define-fun $__t.0 () Bool (forall (($__bv0 Int) ($__bv1 Int)) (= (f $__bv1 $__bv0) x)))\n"
 -/
 #guard_msgs in -- No valid trigger
 #eval toSMTTermString
@@ -180,7 +182,7 @@ info: "; m\n(declare-const m (Array Int Int))\n(define-fun $__t.0 () (Array Int 
       }
    }})
 
--- Test empty string falls back to generated names
+-- Test that all bound variables get globally unique generated names
 /-- info: "(define-fun $__t.0 () Bool (forall (($__bv0 Int)) (exists (($__bv1 Int)) (= $__bv0 $__bv1))))\n" -/
 #guard_msgs in
 #eval toSMTTermString
@@ -188,18 +190,20 @@ info: "; m\n(declare-const m (Array Int Int))\n(define-fun $__t.0 () (Array Int 
    (.quant () .exist "" (.some .int) (LExpr.noTrigger ())
    (.eq () (.bvar () 1) (.bvar () 0))))
 
--- Test name clash between two nested quantifiers with same name
--- Expected: Inner x should be disambiguated to x@1
-/-- info: "(define-fun $__t.0 () Bool (forall ((x Int)) (exists ((x@1 Int)) (= x x@1))))\n" -/
+-- Test nested quantifiers with same user name both get unique $__bv names
+/--
+info: "(define-fun $__t.0 () Bool (forall (($__bv0 Int)) (exists (($__bv1 Int)) (= $__bv0 $__bv1))))\n"
+-/
 #guard_msgs in
 #eval toSMTTermString
   (.quant () .all "x" (.some .int) (LExpr.noTrigger ())
    (.quant () .exist "x" (.some .int) (LExpr.noTrigger ())
    (.eq () (.bvar () 1) (.bvar () 0))))
 
--- Test x, x, x@1 scenario: nested quantifiers both named "x", then bvar named "x@1"
--- Expected: outer x stays x, inner x becomes x@1, bvar "x@1" becomes x@2
-/-- info: "(define-fun $__t.0 () Bool (forall ((x Int) (x@1 Int) (x@2 Int)) (= x@2 x)))\n" -/
+-- Test triply nested quantifiers all get distinct $__bv names regardless of user names
+/--
+info: "(define-fun $__t.0 () Bool (forall (($__bv0 Int) ($__bv1 Int) ($__bv2 Int)) (= $__bv2 $__bv0)))\n"
+-/
 #guard_msgs in
 #eval toSMTTermString
   (.quant () .all "x" (.some .int) (LExpr.noTrigger ())
@@ -208,7 +212,9 @@ info: "; m\n(declare-const m (Array Int Int))\n(define-fun $__t.0 () (Array Int 
      (.eq () (.bvar () 0) (.bvar () 2)))))
 
 
-/-- info: "; x\n(declare-const x Int)\n(define-fun $__t.0 () Bool (forall ((x@1 Int)) (= x@1 x)))\n" -/
+/--
+info: "; x\n(declare-const x Int)\n(define-fun $__t.0 () Bool (forall (($__bv0 Int)) (= $__bv0 x)))\n"
+-/
 #guard_msgs in
 #eval toSMTTermString
   (.quant () .all "x" (.some .int) (LExpr.noTrigger ())
@@ -284,6 +290,31 @@ end ArrayTheory
   let (.ok (_, ctx)) := LMonoTy.toSMTType Env.init (.tcons "Map" [.tcons "int" [], .tcons "int" []]) ctx (useArrayTheory := true)
     | unreachable!
   return (ctx.sorts, ctx.sorts.all (fun s => s.name ∉ ["int", "bool", "Array"]))
+
+/-! ## Test that get-value ids exclude non-nullary UFs -/
+
+-- encodeCore should only include nullary UFs (constants) in the ids passed to
+-- get-value. Non-nullary UFs like `f(x : Int) : Int` cannot be queried via
+-- get-value in some SMT solvers.
+/-- info: (["c"], true) -/
+#guard_msgs in
+#eval show IO _ from do
+  -- Non-nullary UF: f(x : Int) : Int — should be excluded from ids
+  let uf_f := UF.mk "f" [TermVar.mk "x" TermType.int] TermType.int
+  -- Nullary UF: c : Int — should be included in ids
+  let uf_c := UF.mk "c" [] TermType.int
+  let ctx : SMT.Context := { SMT.Context.default with ufs := #[uf_f, uf_c] }
+  let obligationTerm := Term.prim (.bool true)
+  let md : Imperative.MetaData Core.Expression := #[]
+  let b ← IO.mkRef { : IO.FS.Stream.Buffer }
+  let solver ← Strata.SMT.Solver.bufferWriter b
+  let ((ids, _estate), _) ←
+    Strata.SMT.SolverM.run solver
+      (Strata.SMT.Encoder.encodeCore ctx (pure ()) [] obligationTerm md
+        (satisfiabilityCheck := false) (validityCheck := true))
+  -- ids should contain "c" but not "f"
+  let hasF := ids.any (· == "f")
+  return (ids, !hasF)
 
 end Core
 
