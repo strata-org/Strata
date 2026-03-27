@@ -16,6 +16,7 @@ public section
 -------------------------------------------------------------------------------
 
 open Lambda.LExpr
+open Lambda.LTy.Syntax
 open Core
 
 /--
@@ -104,6 +105,15 @@ private def RegexAST.hasNonAnchorContent (r : RegexAST) : Bool :=
     -- a complement class always matches one character
     | .complement _ => true
     | _             => false)
+
+-- Type annotations for regex ops.  concreteEval runs after the type-checker,
+-- so expressions it produces must already carry annotations for the SMT encoder.
+private def reTy  := mty[regex]
+private def s2r   := mty[string → regex]
+private def r2r   := mty[regex → regex]
+private def rr2r  := mty[regex → (regex → regex)]
+private def ss2r  := mty[string → (string → regex)]
+private def rii2r := mty[regex → (int → (int → regex))]
 
 /--
 Empty regex pattern; matches an empty string.

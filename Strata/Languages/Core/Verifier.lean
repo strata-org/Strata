@@ -16,6 +16,7 @@ public import Strata.DDM.AST
 import Strata.Transform.CallElim
 import Strata.Transform.FilterProcedures
 import Strata.Transform.PrecondElim
+public import Strata.Transform.IrrelevantAxioms
 
 ---------------------------------------------------------------------
 
@@ -63,7 +64,8 @@ def encodeCore (ctx : Core.SMT.Context) (prelude : SolverM Unit)
   -- Encode the obligation term Q (not negated)
   let (obligationId, estate) ← (encodeTerm False obligationTerm) |>.run estate
 
-  let ids := estate.ufs.values
+  let ids := estate.ufs.toList.filterMap fun (uf, id) =>
+    if uf.args.isEmpty then some id else none
 
   -- Choose encoding strategy: use check-sat-assuming only when doing both checks
   let bothChecks := satisfiabilityCheck && validityCheck
@@ -97,6 +99,13 @@ def encodeCore (ctx : Core.SMT.Context) (prelude : SolverM Unit)
         (message := ("unsat-message", s!"\"Property is always true\""))
       Solver.assert (← encodeTerm False (Factory.not obligationTerm) |>.run estate).1
       let _ ← Solver.checkSat ids
+
+  -- Emit the "message" metadata field at the very end (once per obligation).
+  match md.findElem Imperative.MetaData.message with
+  | some elem =>
+    let msg := toString (Std.format elem.value) |>.replace "\\" "\\\\" |>.replace "\"" "\\\""
+    Solver.setInfo "final-message" s!"\"{msg}\""
+  | none => pure ()
 
   return (ids, estate)
 
@@ -261,6 +270,14 @@ def unknown (o : VCOutcome) : Bool :=
   match o.satisfiabilityProperty, o.validityProperty with
   | .unknown, .unknown => true
   | _, _ => false
+
+/-- True when either SMT property is `.err` (solver returned an error on
+    a specific check, as opposed to the outer `VCResult.outcome` being
+    `.error` due to an encoding failure). -/
+def hasSMTError (o : VCOutcome) : Bool :=
+  match o.satisfiabilityProperty, o.validityProperty with
+  | .err _, _ | _, .err _ => true
+  | _,      _             => false
 
 -- Derived predicates (cross-cutting properties)
 
@@ -562,6 +579,13 @@ def VCResult.isUnreachable (vr : VCResult) : Bool :=
   | .ok o => o.unreachable
   | .error _ => false
 
+/-- True when either SMT property inside a successful outcome is `.err`.
+    Complements `isImplementationError`, which covers the outer `.error` case. -/
+def VCResult.hasSMTError (vr : VCResult) : Bool :=
+  match vr.outcome with
+  | .ok o => o.hasSMTError
+  | .error _ => false
+
 @[expose] abbrev VCResults := Array VCResult
 
 def VCResults.format (rs : VCResults) : Format :=
@@ -581,6 +605,7 @@ Each result is `some r` if PE can determine it, `none` if the solver is needed.
 -/
 def preprocessObligation (obligation : ProofObligation Expression) (p : Program)
     (options : VerifyOptions) (satisfiabilityCheck validityCheck : Bool)
+    (axiomCache : Option IrrelevantAxioms.Cache := .none)
     : EIO DiagnosticModel (ProofObligation Expression × Option SMT.Result × Option SMT.Result) := do
   -- PE can determine satisfiability if the obligation is literally false (unsat)
   let peSatResult : Option SMT.Result :=
@@ -601,17 +626,38 @@ def preprocessObligation (obligation : ProofObligation Expression) (p : Program)
       dbg_trace f!"\n\nObligation {obligation.label}: failed!\
                    \n\nResult obtained during partial evaluation.\
                    {if options.verbose >= .normal then prog else ""}"
-  -- Apply axiom pruning if needed
-  let obligation ← if options.removeIrrelevantAxioms
-      && (peSatResult.isNone || peValResult.isNone) then do
-      let cg := Program.toFunctionCG p
-      let fns := obligation.obligation.getOps.map CoreIdent.toPretty
-      let relevant_fns := (fns ++ (CallGraph.getAllCalleesClosure cg fns)).dedup
-      let irrelevant_axs := Program.getIrrelevantAxioms p relevant_fns
-      let new_assumptions := Imperative.PathConditions.removeByNames obligation.assumptions irrelevant_axs
-      pure { obligation with assumptions := new_assumptions }
-    else
-      pure obligation
+  -- Apply axiom pruning if needed.
+  -- Axiom removal is unsound for cover obligations (removing axioms weakens
+  -- path conditions, potentially making unreachable paths appear satisfiable).
+  let obligation ←
+    match options.removeIrrelevantAxioms, axiomCache, obligation.property with
+    | .Off, _, _ | _, .none, _ | _, _, .cover => pure obligation
+    | mode, .some cache, _ => -- All property types except `.cover`.
+      if peSatResult.isSome && peValResult.isSome then pure obligation
+      else do
+        let consequentFns := obligation.obligation.getOps.map CoreIdent.toPretty
+        let relevantFns :=
+          match mode with
+          | .Aggressive => consequentFns
+          | .Precise =>
+            -- Extract functions from non-axiom path conditions only. Axioms
+            -- are excluded because including them would seed the relevant-function
+            -- set with every function they mention, causing those axioms to be
+            -- found trivially relevant and never removed.
+            let axiomNames : List String := p.decls.filterMap (fun decl =>
+              match decl with | .ax a _ => some a.name | _ => none)
+            let antecedentFns :=
+              (obligation.assumptions.flatten : List (String × Expression.Expr)).flatMap
+                (fun (label, e) =>
+                  if axiomNames.contains label then []
+                  else (Lambda.LExpr.getOps e).map CoreIdent.toPretty)
+            (consequentFns ++ antecedentFns).dedup
+          | .Off => consequentFns  -- unreachable; handled above
+        let irrelevantAxioms :=
+          IrrelevantAxioms.getIrrelevantAxioms p cache relevantFns
+        let newAssumptions :=
+          Imperative.PathConditions.removeByNames obligation.assumptions irrelevantAxioms
+        pure { obligation with assumptions := newAssumptions }
   return (obligation, peSatResult, peValResult)
 
 /--
@@ -667,7 +713,8 @@ def getObligationResult (assumptionTerms : List Term) (obligationTerm : Term)
     return result
 
 def verifySingleEnv (pE : Program × Env) (options : VerifyOptions)
-    (counter : IO.Ref Nat) (tempDir : System.FilePath) :
+    (counter : IO.Ref Nat) (tempDir : System.FilePath)
+    (axiomCache : Option IrrelevantAxioms.Cache := .none) :
     EIO DiagnosticModel VCResults := do
   let (p, E) := pE
   match E.error with
@@ -695,7 +742,7 @@ def verifySingleEnv (pE : Program × Env) (options : VerifyOptions)
           | .bugFinding, .minimalVerbose, .assert | .bugFinding, .minimalVerbose, .divisionByZero => (true, false) -- Same checks as minimal
           | .bugFinding, .minimal, .cover => (true, false)  -- Cover uses satisfiability
           | .bugFinding, .minimalVerbose, .cover => (true, false)  -- Same checks as minimal
-      let (obligation, peSatResult?, peValResult?) ← preprocessObligation obligation p options satisfiabilityCheck validityCheck
+      let (obligation, peSatResult?, peValResult?) ← preprocessObligation obligation p options satisfiabilityCheck validityCheck axiomCache
       -- If PE resolved both checks, we're done, unless we always want to generate SMT queries
       if not options.alwaysRunSMT then
         if let (some peSat, some peVal) := (peSatResult?, peValResult?) then
@@ -779,6 +826,11 @@ def verify (program : Program)
       match res with
       | .ok prog => .ok prog
       | .error e => .error (DiagnosticModel.fromFormat f!"❌ Transform Error. {e}")
+  -- Build the axiom relevance cache once (post-transform, so declarations are
+  -- stable). The cache is reused across all verification environments and goals.
+  let axiomCache? : Option IrrelevantAxioms.Cache :=
+    if options.removeIrrelevantAxioms == .Off then .none
+    else .some (IrrelevantAxioms.Cache.build finalProgram)
   match Core.typeCheckAndPartialEval options finalProgram moreFns with
   | .error err =>
     .error { err with message := s!"❌ Type checking error.\n{err.message}" }
@@ -787,7 +839,7 @@ def verify (program : Program)
     let VCss ← if options.checkOnly then
                  pure []
                else
-                 (List.mapM (fun pE => verifySingleEnv pE options counter tempDir) pEs)
+                 (List.mapM (fun pE => verifySingleEnv pE options counter tempDir axiomCache?) pEs)
     .ok VCss.toArray.flatten
 
 end -- public section
