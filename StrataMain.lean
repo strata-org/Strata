@@ -491,7 +491,7 @@ def pyAnalyzeLaurelCommand : Command where
   name := "pyAnalyzeLaurel"
   args := [ "file" ]
   flags := [{ name := "verbose", help := "Enable verbose output." },
-            { name := "check-only", help := "Generate SMT-Lib files but do not invoke the solver." },
+            { name := "no-solve", help := "Generate SMT-Lib files but do not invoke the solver." },
             checkModeFlag, checkLevelFlag,
             { name := "spec-dir",
               help := "Directory containing compiled PySpec Ion files.",
@@ -600,14 +600,20 @@ def pyAnalyzeLaurelCommand : Command where
     -- Verify using Core verifier
     let checkMode ← parseCheckMode pflags
     let checkLevel ← parseCheckLevel pflags
-    let checkOnly := pflags.getBool "check-only"
+    let noSolve := pflags.getBool "no-solve"
+    if noSolve && (pflags.getString "vc-directory").isNone && keepDir.isNone then
+      exitCmdFailure "pyAnalyzeLaurel"
+        "--no-solve requires --vc-directory or \
+         --keep-all-files to specify where SMT \
+         files are stored."
     let uniqueBoundNames := pflags.getBool "unique-bound-names"
     let baseOptions : VerifyOptions :=
       { VerifyOptions.default with
         stopOnFirstError := false, verbose := .quiet, solver := Core.defaultSolver,
         removeIrrelevantAxioms := .Precise,
         checkMode := checkMode, checkLevel := checkLevel,
-        checkOnly := checkOnly,
+        skipSolver := noSolve,
+        alwaysGenerateSMT := noSolve,
         uniqueBoundNames := uniqueBoundNames }
     let options : VerifyOptions := match pflags.getString "vc-directory" with
       | .some dir => { baseOptions with vcDirectory := some (dir : System.FilePath) }
