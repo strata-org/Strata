@@ -394,7 +394,7 @@ structure ClassDef where
   methods : Array FunctionDecl
   /-- When true, the spec is assumed to list every method the class exposes.
       Calls to unlisted methods are flagged as "Unknown method".
-      Defaults to false. -/
+      Set via `@exhaustive` decorator on the pyspec class body. -/
   exhaustive : Bool := false
 deriving Inhabited
 
