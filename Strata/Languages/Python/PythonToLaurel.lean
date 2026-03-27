@@ -525,7 +525,7 @@ partial def translateExpr (ctx : TranslationContext) (e : Python.expr SourceRang
   | .FormattedValue _ value _ _ =>
     let ty ← inferExprType ctx value
     let inner ← translateExpr ctx value
-    let asAny ← if ty ∈ ctx.compositeTypeNames then
+    let asAny ← if isCompositeType ctx ty then
         let fields := (ctx.classFieldHighType[ty]?.getD {}).toList
         let dict ← fields.foldlM (fun acc (fname, fty) =>
           return mkStmtExprMd (.StaticCall "DictStrAny_cons"
