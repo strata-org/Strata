@@ -101,4 +101,33 @@ open Strata.Parser (stringInputContext)
     unless expectedErrors.any (fun exp => matchesDiagnostic d exp) do
       throw <| .userError s!"Unexpected diagnostic: line {d.start.line}, {d.message}"
 
+-- Multiple `with` blocks reusing the same variable name should not crash.
+#guard_msgs in
+#eval withPython (warnOnSkip := false) fun pythonCmd => do
+  let program :=
+"def main(path1: str, path2: str) -> None:
+    with open(path1, 'w') as f:
+        f.write('hello')
+    with open(path2, 'w') as f:
+        f.write('world')
+"
+  let _diags ← processPythonFile pythonCmd (stringInputContext "test.py" program)
+  pure ()
+
+-- Try/except with str(e) on PythonError should not produce type checking errors.
+#guard_msgs in
+#eval withPython (warnOnSkip := false) fun pythonCmd => do
+  let program :=
+"def handle_error() -> bool:
+    try:
+        x: int = 1
+    except Exception as e:
+        if 'key' in str(e):
+            return True
+    return False
+"
+  let diags ← processPythonFile pythonCmd (stringInputContext "test_try_except.py" program)
+  if diags.size ≠ 0 then
+    throw <| .userError s!"Expected 0 diagnostics, got {diags.size}"
+
 end Strata.Python.VerifyPythonTest

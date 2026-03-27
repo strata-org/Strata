@@ -75,7 +75,7 @@ private def extractFunctionSignatures (sigs : Array Python.Specs.Signature)
         if method.args.args.size == 0 then
           throw s!"Method '{cls.name}.{method.name}' has no arguments (expected 'self' as first parameter)"
         let posArgs := method.args.args.extract 1 method.args.args.size  -- strip self
-        let decl ← funcDeclToFunctionDecl (clsName ++ "_" ++ method.name) { method.args with args := posArgs }
+        let decl ← funcDeclToFunctionDecl (clsName ++ "@" ++ method.name) { method.args with args := posArgs }
         result := result ++ [decl]
     | _ => pure ()
   return result
@@ -266,16 +266,16 @@ public def buildPreludeInfo (result : PySpecLaurelResult) : Python.PreludeInfo :
       -- Composite type alias: Storage → dispatch_test_Storage_Storage
       let syms := if merged.compositeTypes.contains prefixed then
         syms.insert unprefixed (.compositeType prefixed) else syms
-      -- Procedure aliases: Storage_put_item → ...
+      -- Procedure aliases: Storage@put_item → ...
       let syms := merged.procedures.fold (init := syms) fun s name sig =>
-        if name.startsWith (prefixed ++ "_") then
+        if name.startsWith (prefixed ++ "@") then
           let unprefixedName := unprefixed ++ name.drop prefixed.length
           let inlinable := merged.inlinableProcedures.contains name
           s.insert unprefixedName (.procedure name sig inlinable)
         else s
       -- Function aliases
       merged.functions.foldl (init := syms) fun s name =>
-        if name.startsWith (prefixed ++ "_") then
+        if name.startsWith (prefixed ++ "@") then
           s.insert (unprefixed ++ name.drop prefixed.length) (.function name)
         else s
   { merged with
