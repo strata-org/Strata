@@ -909,7 +909,7 @@ spec {
   ret := from_datetime(d);
 };
 
-procedure timedelta(days: Any, hours: Any) returns (delta : Any, maybe_except: Error)
+procedure timedelta_func (days: Any, hours: Any) returns (delta : Any, maybe_except: Error)
 spec{
   requires [days_type]: Any..isfrom_none(days) || Any..isfrom_int(days);
   requires [hours_type]: Any..isfrom_none(hours) || Any..isfrom_int(hours);
