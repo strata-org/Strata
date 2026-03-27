@@ -401,7 +401,21 @@ def translateStmt (outputParams : List Parameter) (stmt : StmtExprMd)
               else
                 -- Procedure calls need to be translated as call statements
                 let coreArgs ← args.mapM (fun a => translateExpr a)
-                return [Core.Statement.call [ident] callee.text coreArgs md]
+                -- Synthesize throwaway LHS variables for any outputs beyond the
+                -- assigned target (e.g. void-returns-Any adds an extra output).
+                let outputs := match model.get callee with
+                  | .staticProcedure proc => proc.outputs
+                  | .instanceProcedure _ proc => proc.outputs
+                  | _ => []
+                let mut inits : List Core.Statement := []
+                let mut lhs : List Core.CoreIdent := [ident]
+                for out in outputs.drop 1 do
+                  let id ← freshId
+                  let unusedIdent : Core.CoreIdent := ⟨s!"$unused_{id}", ()⟩
+                  let coreType := LTy.forAll [] (translateType model out.type)
+                  inits := inits ++ [Core.Statement.init unusedIdent coreType none md]
+                  lhs := lhs ++ [unusedIdent]
+                return inits ++ [Core.Statement.call lhs callee.text coreArgs md]
           | .InstanceCall .. =>
               -- Instance method call: havoc the target variable
               return [Core.Statement.havoc ident md]
@@ -443,7 +457,21 @@ def translateStmt (outputParams : List Parameter) (stmt : StmtExprMd)
         exprAsUnusedInit stmt md
       else
         let coreArgs ← args.mapM (fun a => translateExpr a)
-        return [Core.Statement.call [] callee.text coreArgs md]
+        -- Synthesize throwaway LHS variables so Core arity checking
+        -- passes (lhs.length == outputs.length).
+        let outputs := match model.get callee with
+          | .staticProcedure proc => proc.outputs
+          | .instanceProcedure _ proc => proc.outputs
+          | _ => []
+        let mut inits : List Core.Statement := []
+        let mut lhs : List Core.CoreIdent := []
+        for out in outputs do
+          let id ← freshId
+          let ident : Core.CoreIdent := ⟨s!"$unused_{id}", ()⟩
+          let coreType := LTy.forAll [] (translateType model out.type)
+          inits := inits ++ [Core.Statement.init ident coreType none md]
+          lhs := lhs ++ [ident]
+        return inits ++ [Core.Statement.call lhs callee.text coreArgs md]
   | .InstanceCall .. =>
       -- Instance method call as statement: no return value, treated as no-op
       return ([])
@@ -585,10 +613,15 @@ structure LaurelTranslateOptions where
   emitResolutionErrors : Bool := true
 
 abbrev TranslateResult := (Option Core.Program) × (List DiagnosticModel)
+
+/-- Like `translate` but also returns the lowered Laurel program (after all
+    Laurel-to-Laurel passes, before the final translation to Core). -/
+abbrev TranslateResultWithLaurel := (Option Core.Program) × (List DiagnosticModel) × Program
+
 /--
-Translate Laurel Program to Core Program
+Translate Laurel Program to Core Program, also returning the lowered Laurel program.
 -/
-def translate (options: LaurelTranslateOptions) (program : Program): TranslateResult :=
+def translateWithLaurel (options: LaurelTranslateOptions) (program : Program): TranslateResultWithLaurel :=
   let program := { program with
     staticProcedures := coreDefinitionsForLaurel.staticProcedures ++ program.staticProcedures
   }
@@ -629,7 +662,7 @@ def translate (options: LaurelTranslateOptions) (program : Program): TranslateRe
   let resolutionErrors: List DiagnosticModel := if options.emitResolutionErrors then result.errors.toList else []
   let allDiagnostics := resolutionErrors ++ diamondErrors ++ modifiesDiags ++ constrainedTypeDiags ++ translateState.diagnostics
   let coreProgramOption := if translateState.coreProgramHasSuperfluousErrors then none else coreProgramOption
-  (coreProgramOption, allDiagnostics)
+  (coreProgramOption, allDiagnostics, program)
   where
 
   /--
@@ -694,6 +727,13 @@ def translate (options: LaurelTranslateOptions) (program : Program): TranslateRe
     -- dbg_trace "================================="
     pure program
 
+
+/--
+Translate Laurel Program to Core Program
+-/
+def translate (options: LaurelTranslateOptions) (program : Program): TranslateResult :=
+  let (core, diags, _) := translateWithLaurel options program
+  (core, diags)
 
 /--
 Verify a Laurel program using an SMT solver
