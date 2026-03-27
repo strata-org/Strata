@@ -39,7 +39,7 @@ All `strata` subcommands use a common exit code scheme:
 
 | Code | Category           | Meaning                                                   |
 |------|--------------------|-----------------------------------------------------------|
-| 0    | Success            | Analysis passed, inconclusive, or `--check` completed.    |
+| 0    | Success            | Analysis passed, inconclusive, or `--no-solve` completed.  |
 | 1    | User error         | Bad input: invalid arguments, malformed source, etc.      |
 | 2    | Failures found     | Analysis completed and found failures.                    |
 | 3    | Internal error     | Tool bug, unexpected solver result, or translation crash. |
