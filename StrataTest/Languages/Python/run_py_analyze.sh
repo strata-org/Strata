@@ -9,6 +9,7 @@ failed=0
 incremental=false
 mode="core"
 filter=""
+vc_directory=""
 
 # Parse flags
 while [[ $# -gt 0 ]]; do
@@ -76,7 +77,9 @@ for test_file in tests/test_*.py; do
 
             # Check for per-file strata arguments (e.g. # strata-args: --check-mode bugFinding)
             extra_args=$(grep '^# strata-args:' "$test_file" | sed 's/^# strata-args://' | head -1)
-            output=$(cd ../../.. && ./.lake/build/bin/strata $command $extra_args "StrataTest/Languages/Python/${ion_file}")
+            vc_flag=""
+            [ -n "$vc_directory" ] && vc_flag="--vc-directory $vc_directory"
+            output=$(cd ../../.. && ./.lake/build/bin/strata $command $extra_args $vc_flag "StrataTest/Languages/Python/${ion_file}")
 
             if [ $update -eq 1 ]; then
                 echo "$output" > "$expected_file"
