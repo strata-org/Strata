@@ -11,8 +11,12 @@ open Strata
 /-
 Near-upstream anchors from `differential_status.md`:
 - `verus-examples:trigger_loops` (`choose_example`, `quantifier_example`)
+- Verus link:
+  `trigger_loops`: https://github.com/verus-lang/verus/blob/main/examples/trigger_loops.rs
 - Gap: `choose` operator not faithfully translated
-- Intended encoding: `havoc z; assume (exists z' :: g(z')) ==> g(z);`
+- Intended encoding: `havoc z; assume (∃ z' . g(z')) ==> g(z);`
+- Current status: this seed verifies using a manual `havoc` + `assume` stand-in
+- Remaining gap: direct `choose` surface syntax and faithful lowering
 -/
 
 private def chooseOperatorSeed : Strata.Program :=
@@ -23,28 +27,34 @@ function good(z: int, x: int) : bool;
 
 // Target shape once Boole has direct `choose` syntax:
 //
+// Current status: the seed uses a manual witness-style stand-in instead of a
+// real `choose`.
+//
 // procedure choose_seed(x: int) returns (w: int)
 // spec {
-//   requires exists z: int :: good(z, x);
+//   requires ∃ z: int . good(z, x);
 //   ensures good(w, x);
 // }
 // {
-//   w := choose z: int :: good(z, x);
+//   w := choose z: int . good(z, x);
 // };
 
 procedure choose_seed(x: int) returns (w: int)
 spec {
-  requires exists z: int :: good(z, x);
+  requires ∃ z: int . good(z, x);
   ensures good(w, x);
 }
 {
   havoc w;
-  // TODO(feature:choose): allow `w := choose z: int :: good(z, x);`.
+  // TODO(feature:choose): allow `w := choose z: int . good(z, x);`.
+  // This stand-in captures the proof obligation shape, but not the intended
+  // source-level construct.
   assume good(w, x);
 };
 #end
 
-/-- info: Obligation: choose_seed_ensures_1_833
+/-- info:
+Obligation: choose_seed_ensures_1_1176
 Property: assert
 Result: ✅ pass-/
 #guard_msgs in
