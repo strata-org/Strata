@@ -134,6 +134,9 @@ structure VerifyOptions where
   incremental : Bool
   /-- Always run SMT solver, even if the verification condition is trivial. -/
   alwaysRunSMT : Bool
+  /-- Use globally unique `$__bv{N}` names for quantifier-bound variables
+      instead of human-readable names derived from user-provided names. -/
+  uniqueBoundNames : Bool
 
 def VerifyOptions.default : VerifyOptions := {
   verbose := .normal,
@@ -151,6 +154,7 @@ def VerifyOptions.default : VerifyOptions := {
   checkLevel := .minimal
   incremental := false
   alwaysRunSMT := false
+  uniqueBoundNames := false
 }
 
 instance : Inhabited VerifyOptions where
