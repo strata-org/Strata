@@ -7,6 +7,17 @@ internal class StrataConversionException(IToken tok, string s) : Exception {
     public string Msg { get; } = $"{tok.filename}({tok.line},{tok.col}): {s}";
 }
 
+internal class LoopRegion(int start, int end, List<string> labels) {
+    public int start = start;
+    public int end = end;
+    public List<string> labels = labels;
+    public List<LoopRegion> children = [];
+
+    public void Deconstruct(out int s, out int e, out List<string> l) {
+        s = start; e = end; l = labels;
+    }
+}
+
 public class FieldTypeCollector : ReadOnlyVisitor {
     private readonly HashSet<Type> _usedTypes = [];
 
@@ -1160,6 +1171,73 @@ public class StrataGenerator : ReadOnlyVisitor {
         return backEdges;
     }
 
+    /// <summary>
+    /// Build a list of (possibly nested) loop regions from back-edge information.
+    /// Regions with the same start are merged. A region properly contained inside
+    /// another becomes a child. Truly overlapping regions (different starts, neither
+    /// containing the other) are rejected as irreducible control flow.
+    /// </summary>
+    private static List<LoopRegion> BuildLoopRegions(
+        Dictionary<string, int> backEdges,
+        Dictionary<string, int> labelToIndex,
+        IList<BigBlock> bigBlocks) {
+        // Sort by start index so we process outer loops before inner ones
+        var sorted = backEdges
+            .OrderBy(kv => labelToIndex[kv.Key])
+            .ThenByDescending(kv => kv.Value) // wider regions first for same start
+            .ToList();
+
+        var topLevel = new List<LoopRegion>();
+
+        foreach (var (label, loopEnd) in sorted) {
+            var loopStart = labelToIndex[label];
+            InsertRegion(topLevel, new LoopRegion(loopStart, loopEnd, [label]),
+                         bigBlocks);
+        }
+
+        return topLevel;
+    }
+
+    /// <summary>
+    /// Insert a new loop region into a list, handling merging, nesting, and
+    /// rejecting irreducible overlap.
+    /// </summary>
+    private static void InsertRegion(List<LoopRegion> siblings, LoopRegion newRegion,
+                                     IList<BigBlock> bigBlocks) {
+        for (var i = 0; i < siblings.Count; i++) {
+            var existing = siblings[i];
+            if (newRegion.start == existing.start) {
+                // Same start: merge
+                existing.labels.AddRange(newRegion.labels);
+                existing.end = Math.Max(existing.end, newRegion.end);
+                return;
+            }
+            if (newRegion.start > existing.start && newRegion.end <= existing.end) {
+                // Properly nested inside existing: recurse into children
+                InsertRegion(existing.children, newRegion, bigBlocks);
+                return;
+            }
+            if (newRegion.start >= existing.start && newRegion.start <= existing.end) {
+                // Overlapping but not nested: irreducible
+                throw new StrataConversionException(bigBlocks[newRegion.start].tok,
+                    $"Irreducible control-flow: overlapping loop regions " +
+                    $"between labels '{string.Join(", ", existing.labels)}' and " +
+                    $"'{string.Join(", ", newRegion.labels)}'");
+            }
+        }
+        siblings.Add(newRegion);
+    }
+
+    /// <summary>
+    /// Recursively collect all back-edge labels from child (nested) loop regions.
+    /// </summary>
+    private static void CollectChildBackEdgeLabels(LoopRegion region, HashSet<string> result) {
+        foreach (var child in region.children) {
+            foreach (var l in child.labels) result.Add(l);
+            CollectChildBackEdgeLabels(child, result);
+        }
+    }
+
     private void EmitStmtList(StmtList stmtList) {
         var bigBlocks = stmtList.BigBlocks;
         // Collect goto targets from direct children AND nested structures
@@ -1195,24 +1273,9 @@ public class StrataGenerator : ReadOnlyVisitor {
 
         // Compute loop regions: each back-edge target defines a loop from
         // targetIdx to loopEnd (inclusive). Merge overlapping regions with
-        // the same start; reject overlapping regions with different starts
-        // (irreducible control flow that can't be encoded as structured loops).
-        var loopRegions = new List<(int start, int end, List<string> labels)>();
-        foreach (var (label, loopEnd) in backEdges.OrderBy(kv => labelToIndex[kv.Key])) {
-            var loopStart = labelToIndex[label];
-            if (loopRegions.Count > 0 && loopStart <= loopRegions[^1].end) {
-                var last = loopRegions[^1];
-                if (loopStart != last.start) {
-                    throw new StrataConversionException(bigBlocks[loopStart].tok,
-                        $"Irreducible control-flow: overlapping loop regions " +
-                        $"between labels '{string.Join(", ", last.labels)}' and '{label}'");
-                }
-                last.labels.Add(label);
-                loopRegions[^1] = (last.start, Math.Max(last.end, loopEnd), last.labels);
-            } else {
-                loopRegions.Add((loopStart, loopEnd, new List<string> { label }));
-            }
-        }
+        // the same start; nest properly contained regions; reject truly
+        // overlapping regions with different starts (irreducible control flow).
+        var loopRegions = BuildLoopRegions(backEdges, labelToIndex, bigBlocks);
 
         // Build forward-only closeAt: back-edge targets close at their target index
         // (for the outer wrapper that forward gotos use to reach the loop).
@@ -1227,8 +1290,14 @@ public class StrataGenerator : ReadOnlyVisitor {
         // Determine which forward targets have closeAt within each loop region.
         // These need to be emitted inside the while body, not outside.
         var innerTargets = new Dictionary<int, HashSet<string>>(); // regionIndex -> labels
+        // Collect all child (nested) back-edge labels — these must be handled
+        // inside their parent loop region, not as outer wrappers.
+        var childBackEdgeLabels = new HashSet<string>();
+        foreach (var region in loopRegions) {
+            CollectChildBackEdgeLabels(region, childBackEdgeLabels);
+        }
         foreach (var t in gotoTargets) {
-            if (backEdges.ContainsKey(t)) continue; // back-edge targets handled separately
+            if (backEdges.ContainsKey(t) && !childBackEdgeLabels.Contains(t)) continue;
             if (!forwardCloseAt.TryGetValue(t, out var closeAt)) continue;
             for (var r = 0; r < loopRegions.Count; r++) {
                 var (start, end, _) = loopRegions[r];
@@ -1269,8 +1338,7 @@ public class StrataGenerator : ReadOnlyVisitor {
             // Check if this index starts a loop region
             var regionIdx = loopRegions.FindIndex(r => r.start == i);
             if (regionIdx >= 0) {
-                var (start, end, backEdgeLabels) = loopRegions[regionIdx];
-                EmitLoopRegion(bigBlocks, start, end, backEdgeLabels,
+                EmitLoopRegion(bigBlocks, loopRegions[regionIdx],
                     labelToIndex, innerTargets.GetValueOrDefault(regionIdx));
             } else {
                 EmitBigBlock(bigBlocks[i]);
@@ -1282,12 +1350,15 @@ public class StrataGenerator : ReadOnlyVisitor {
     /// Emit a loop region as a while(*) block. The back-edge target label wraps
     /// the entire loop body so that `exit label` acts as "continue".
     /// Forward targets within the loop body use inner wrappers.
+    /// Nested child loop regions are emitted recursively.
     /// </summary>
     private void EmitLoopRegion(
-        IList<BigBlock> bigBlocks, int start, int end,
-        List<string> backEdgeLabels,
+        IList<BigBlock> bigBlocks,
+        LoopRegion region,
         Dictionary<string, int> labelToIndex,
         HashSet<string>? innerTargetLabels) {
+        var start = region.start;
+        var end = region.end;
         var loopCount = end - start + 1;
 
         IndentLine("while (true)");
@@ -1296,29 +1367,75 @@ public class StrataGenerator : ReadOnlyVisitor {
 
         // The back-edge target labels wrap the entire loop body.
         // `exit <label>` from inside = exits wrapper = falls to end of while body = re-iterates.
-        foreach (var label in backEdgeLabels.OrderByDescending(l => labelToIndex[l])) {
+        foreach (var label in region.labels.OrderByDescending(l => labelToIndex[l])) {
             IndentLine($"{Name(label)}: {{");
             IncIndent();
             _enclosingLabels.Add(label);
         }
 
-        // Build inner wrappers for forward targets within the loop body
+        // Collect child back-edge labels: these need forward wrappers inside
+        // this loop body (closing at the child's start) so that forward gotos
+        // reach the child loop. The child's while(true) then re-opens the same
+        // label as its continue wrapper. Since the forward wrapper closes before
+        // the while opens, there is no shadowing.
+        var childBackEdgeLabels = new HashSet<string>();
+        foreach (var child in region.children) {
+            foreach (var cl in child.labels) childBackEdgeLabels.Add(cl);
+        }
+
         var innerCloseAt = new Dictionary<string, int>();
+        // Add child back-edge labels as forward wrappers closing at child start
+        foreach (var child in region.children) {
+            foreach (var cl in child.labels) {
+                innerCloseAt[cl] = child.start - start;
+            }
+        }
         if (innerTargetLabels != null) {
             foreach (var t in innerTargetLabels) {
+                if (childBackEdgeLabels.Contains(t)) continue;
+                // Skip targets that fall inside a child region
+                if (region.children.Any(c => {
+                    var closeAt = labelToIndex[t];
+                    return closeAt > c.start && closeAt <= c.end;
+                })) continue;
                 // closeAt is relative to the loop body start
                 innerCloseAt[t] = labelToIndex[t] - start;
             }
         }
-        var innerTargets = innerTargetLabels ?? new HashSet<string>();
+        var innerTargets = new HashSet<string>(innerCloseAt.Keys);
 
+        var emittedCount = 0;
         EmitWithExitWrappers(innerTargets, innerCloseAt, loopCount, i => {
-            if (i > 0) { WriteLine(); }
-            EmitBigBlock(bigBlocks[start + i]);
+            var absIdx = start + i;
+            // Skip indices inside a child loop region (emitted by recursive call)
+            if (region.children.Any(c => absIdx > c.start && absIdx <= c.end)) return;
+
+            if (emittedCount > 0) { WriteLine(); }
+            emittedCount++;
+
+            // Check if this index starts a child loop region
+            var child = region.children.Find(c => c.start == absIdx);
+            if (child != null) {
+                // Collect forward targets that fall inside this child
+                HashSet<string>? childInnerTargets = null;
+                if (innerTargetLabels != null) {
+                    foreach (var t in innerTargetLabels) {
+                        var closeAt = labelToIndex[t];
+                        if (closeAt > child.start && closeAt <= child.end &&
+                            !child.labels.Contains(t)) {
+                            childInnerTargets ??= [];
+                            childInnerTargets.Add(t);
+                        }
+                    }
+                }
+                EmitLoopRegion(bigBlocks, child, labelToIndex, childInnerTargets);
+            } else {
+                EmitBigBlock(bigBlocks[absIdx]);
+            }
         });
 
         // Close back-edge target wrappers
-        foreach (var label in backEdgeLabels.OrderBy(l => labelToIndex[l])) {
+        foreach (var label in region.labels.OrderBy(l => labelToIndex[l])) {
             _enclosingLabels.Remove(label);
             DecIndent();
             IndentLine("}");
