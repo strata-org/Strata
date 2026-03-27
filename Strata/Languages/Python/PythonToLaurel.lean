@@ -1512,7 +1512,11 @@ def translateMethod (ctx : TranslationContext) (className : String)
     let outputs : List Parameter := [{name := "LaurelResult", type := AnyTy}]
 
     -- Translate method body with class context
-    let ctxWithClass := {ctx with currentClassName := some className}
+    -- Add method parameters to variableTypes so that hoisting (e.g. in
+    -- try/except) does not re-declare them as local variables.
+    let paramTypes : List (String × String) := inputs.map (fun p => (p.name.text, PyLauType.Any))
+    let ctxWithClass := {ctx with currentClassName := some className,
+                                  variableTypes := paramTypes}
     let (_, bodyStmts) ← translateStmtList ctxWithClass body.val.toList
     let bodyStmts := prependExceptHandlingHelper bodyStmts
     let bodyBlock := mkStmtExprMd (StmtExpr.Block bodyStmts none)
