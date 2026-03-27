@@ -30,7 +30,7 @@ import Strata.Languages.Laurel.LaurelToCoreTranslator
 import Strata.Transform.CallElimCorrect
 import Strata.Transform.CoreSpecification
 import Strata.Transform.DetToNondetCorrect
-import Strata.Transform.ProcBodyVerify
+import Strata.Transform.ProcBodyVerifyCorrect
 import Strata.Transform.Specification
 
 /- Backends -/

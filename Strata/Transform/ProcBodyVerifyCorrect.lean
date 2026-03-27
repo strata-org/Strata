@@ -123,7 +123,7 @@ private theorem ensuresToAsserts_mem_is_assert
 private theorem ensuresToAsserts_ecb (labels : List String)
     (pcs : ListMap CoreLabel Procedure.Check) :
     Stmt.exitsCoveredByBlocks.Block.exitsCoveredByBlocks labels (ensuresToAsserts pcs) := by
-  apply all_cmd_exitsCoveredByBlocks Expression
+  apply all_cmd_exitsCoveredByBlocks
   intro s hs
   have ⟨l, e, md, heq⟩ := ensuresToAsserts_mem_is_assert hs
   exact ⟨CmdExt.cmd (Cmd.assert l e md), heq⟩
@@ -132,24 +132,22 @@ private theorem ensuresToAsserts_ecb (labels : List String)
 
 /-- If all asserts are valid in the verification statement produced by
     `procToVerifyStmt` (for initial environments satisfying `ProcEnvWF`),
-    then `ProcedureCorrect` holds for the procedure.
-
-    Hypotheses:
-    - `h_correct`: all asserts in `verifyStmt` are valid for `ProcEnvWF`
-    - `h_wf_ext`: the evaluator extension `φ` is well-formed (`WFEvalExtension`)
-
-    Part 2 (postconditions + hasFailure) additionally requires
-    `WFProcedureProp`, from which exit coverage is derived via
-    `bodyExitsCovered`. -/
+    then `ProcedureCorrect` holds for the procedure. -/
 theorem procBodyVerify_procedureCorrect
     (π : String → Option Procedure) (φ : CoreEval → PureFunc Expression → CoreEval)
     (proc : Procedure) (p : Program) (st : CoreTransformState)
     (verifyStmt : Statement) (st' : CoreTransformState)
+    -- `h_transform`: procToVerifyStmt returned successfully.
     (h_transform : (procToVerifyStmt proc p).run st = (Except.ok verifyStmt, st'))
+    -- `h_correct`: all asserts in `verifyStmt` are valid, given the
+    -- well-formed initial states (e.g., all input arguments appear in the registerd file)
     (h_correct : Specification.AllAssertsValidWhen
       (Core.Specification.Lang.core π φ) (Core.Specification.ProcEnvWF proc) verifyStmt)
+    -- `h_wf_ext`: the evaluator extension `φ` is well-formed
     (h_wf_ext : Core.WFEvalExtension φ) :
+    -- Conclusion: ProcedureCorrect holds.
     Core.Specification.ProcedureCorrect π φ proc p verifyStmt := by
+
   obtain ⟨prefixStmts, h_eq, h_prefix_cmd⟩ :=
     procToVerifyStmt_structure proc p st st' verifyStmt h_transform
   let verifyLabel := s!"verify_{proc.header.name.name}"
@@ -183,13 +181,13 @@ theorem procBodyVerify_procedureCorrect
         -- Block.ecb [] proc.body → Block.ecb [bodyLabel] proc.body (weakening)
         have h_body_ecb' : Stmt.exitsCoveredByBlocks.Block.exitsCoveredByBlocks
             [bodyLabel] proc.body :=
-          (exitsCoveredByBlocks_weaken Expression (labels₁ := []) (labels₂ := [bodyLabel]) (fun _ h => nomatch h)).2 proc.body h_body_ecb
+          (exitsCoveredByBlocks_weaken (labels₁ := []) (labels₂ := [bodyLabel]) (fun _ h => nomatch h)).2 proc.body h_body_ecb
         -- Build Block.ecb [] allStmts from parts
         have h_prefix_ecb : Stmt.exitsCoveredByBlocks.Block.exitsCoveredByBlocks [] prefixStmts :=
-          all_cmd_exitsCoveredByBlocks Expression [] prefixStmts h_prefix_cmd
+          all_cmd_exitsCoveredByBlocks [] prefixStmts h_prefix_cmd
         have h_ecb : Stmt.exitsCoveredByBlocks.Block.exitsCoveredByBlocks []
             (prefixStmts ++ [Stmt.block bodyLabel proc.body #[]] ++ postAsserts) :=
-          block_exitsCoveredByBlocks_append Expression [] _ _ (block_exitsCoveredByBlocks_append Expression [] _ _ h_prefix_ecb
+          block_exitsCoveredByBlocks_append [] _ _ (block_exitsCoveredByBlocks_append [] _ _ h_prefix_ecb
             ⟨h_body_ecb', True.intro⟩) (ensuresToAsserts_ecb [] proc.spec.postconditions)
         match block_reaches_terminal Expression (EvalCommand π φ) (EvalPureFunc φ) hrest with
         | .inl h_stmts_term =>
