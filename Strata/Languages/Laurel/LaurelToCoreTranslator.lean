@@ -413,7 +413,7 @@ def translateStmt (outputParams : List Parameter) (stmt : StmtExprMd)
                   let id ← freshId
                   let unusedIdent : Core.CoreIdent := ⟨s!"$unused_{id}", ()⟩
                   let coreType := LTy.forAll [] (translateType model out.type)
-                  inits := inits ++ [Core.Statement.init unusedIdent coreType none md]
+                  inits := inits ++ [Core.Statement.init unusedIdent coreType .nondet md]
                   lhs := lhs ++ [unusedIdent]
                 return inits ++ [Core.Statement.call lhs callee.text coreArgs md]
           | .InstanceCall .. =>
@@ -469,7 +469,7 @@ def translateStmt (outputParams : List Parameter) (stmt : StmtExprMd)
           let id ← freshId
           let ident : Core.CoreIdent := ⟨s!"$unused_{id}", ()⟩
           let coreType := LTy.forAll [] (translateType model out.type)
-          inits := inits ++ [Core.Statement.init ident coreType none md]
+          inits := inits ++ [Core.Statement.init ident coreType .nondet md]
           lhs := lhs ++ [ident]
         return inits ++ [Core.Statement.call lhs callee.text coreArgs md]
   | .InstanceCall .. =>
