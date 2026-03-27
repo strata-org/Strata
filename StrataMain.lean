@@ -1113,6 +1113,7 @@ def verifyCommand : Command where
     { name := "stop-on-first-error", help := "Exit after the first verification error." },
     { name := "unique-bound-names", help := "Use globally unique names for quantifier-bound variables." },
     { name := "sarif", help := "Output results in SARIF format to <file>.sarif." },
+    { name := "output-format", help := "Output format (only 'sarif' supported).", takesArg := .arg "format" },
     { name := "vc-directory", help := "Store VCs in SMT-Lib format in <dir>.", takesArg := .arg "dir" },
     { name := "procedures", help := "Verify only the specified procedures (comma-separated).", takesArg := .arg "procs" },
     { name := "solver", help := s!"SMT solver executable to use (default: {Core.defaultSolver}).", takesArg := .arg "name" },
@@ -1127,7 +1128,7 @@ def verifyCommand : Command where
     let parseOnly := pflags.getBool "parse-only"
     let stopOnFirstError := pflags.getBool "stop-on-first-error"
     let uniqueBoundNames := pflags.getBool "unique-bound-names"
-    let outputSarif := pflags.getBool "sarif"
+    let outputSarif := pflags.getBool "sarif" || pflags.getString "output-format" == some "sarif"
     let checkMode ← parseCheckMode pflags
     let checkLevel ← parseCheckLevel pflags
     let solverTimeout ← match pflags.getString "solver-timeout" with
@@ -1304,20 +1305,32 @@ private def parseArgs (cmdName : String)
   match cmdArgs with
   | arg :: cmdArgs =>
     if arg.startsWith "--" then
-      let flagName := (arg.drop 2).toString
+      let raw := (arg.drop 2).toString
+      -- Support --flag=value syntax by splitting on first '='
+      let (flagName, inlineValue) := match raw.splitOn "=" with
+        | [name, value] => (name, some value)
+        | _ => (raw, none)
       match flagMap[flagName]? with
       | some flag =>
         match flag.takesArg with
         | .none =>
           parseArgs cmdName flagMap acc (pflags.insertFlag flagName Option.none) cmdArgs
         | .arg _ =>
-          let value :: cmdArgs := cmdArgs
-            | exitCmdFailure cmdName s!"Expected value after {arg}."
-          parseArgs cmdName flagMap acc (pflags.insertFlag flagName (some value)) cmdArgs
+          match inlineValue with
+          | some value =>
+            parseArgs cmdName flagMap acc (pflags.insertFlag flagName (some value)) cmdArgs
+          | none =>
+            let value :: cmdArgs := cmdArgs
+              | exitCmdFailure cmdName s!"Expected value after {arg}."
+            parseArgs cmdName flagMap acc (pflags.insertFlag flagName (some value)) cmdArgs
         | .repeat _ =>
-          let value :: cmdArgs := cmdArgs
-            | exitCmdFailure cmdName s!"Expected value after {arg}."
-          parseArgs cmdName flagMap acc (pflags.insertRepeated flagName value) cmdArgs
+          match inlineValue with
+          | some value =>
+            parseArgs cmdName flagMap acc (pflags.insertRepeated flagName value) cmdArgs
+          | none =>
+            let value :: cmdArgs := cmdArgs
+              | exitCmdFailure cmdName s!"Expected value after {arg}."
+            parseArgs cmdName flagMap acc (pflags.insertRepeated flagName value) cmdArgs
       | none =>
         exitCmdFailure cmdName s!"Unknown option {arg}."
     else
