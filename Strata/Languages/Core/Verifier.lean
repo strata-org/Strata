@@ -64,8 +64,14 @@ def encodeCore (ctx : Core.SMT.Context) (prelude : SolverM Unit)
   -- Encode the obligation term Q (not negated)
   let (obligationId, estate) ← (encodeTerm False obligationTerm) |>.run estate
 
+  -- Only request get-value for nullary UFs with primitive output types.
+  -- cvc5 fatally aborts ("cannot get domain elements") when get-value targets
+  -- an uninterpreted sort after unsat.  Restricting to primitive types avoids
+  -- this and still preserves model info for the most useful variables.
+  -- TODO: this is conservative - cvc5 handles datatypes fine after unsat,
+  -- so we could also include constr types that don't involve uninterpreted sorts.
   let ids := estate.ufs.toList.filterMap fun (uf, id) =>
-    if uf.args.isEmpty then some id else none
+    if uf.args.isEmpty && uf.out.isPrimType then some id else none
 
   -- Choose encoding strategy: use check-sat-assuming only when doing both checks
   let bothChecks := satisfiabilityCheck && validityCheck
