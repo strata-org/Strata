@@ -104,7 +104,7 @@ partial def translateHighType (arg : Arg) : TransM HighTypeMd := do
     | q`Laurel.compositeType, #[nameArg] =>
       let name ← translateIdent nameArg
       return mkHighTypeMd (.UserDefined name) md
-    | _, _ => TransM.error s!"translateHighType expects intType, boolType, arrayType or compositeType, got {repr op.name}"
+    | _, _ => TransM.error s!"translateHighType: unsupported type operator {repr op.name}"
   | _ => TransM.error s!"translateHighType expects operation"
 
 def translateNat (arg : Arg) : TransM Nat := do
