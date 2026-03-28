@@ -919,7 +919,7 @@ procedure datetime_now() returns (ret: Any)
   ret := from_datetime(d)
 };
 
-procedure timedelta(days: Any, hours: Any) returns (delta : Any, maybe_except: Error)
+procedure timedelta_func(days: Any, hours: Any) returns (delta : Any, maybe_except: Error)
   requires Any..isfrom_none(days) || Any..isfrom_int(days) summary "(Origin_timedelta_Requires)"
   requires Any..isfrom_none(hours) || Any..isfrom_int(hours) summary "(Origin_timedelta_Requires)hours_type"
   requires Any..isfrom_int(days) ==> Any..as_int!(days)>=0 summary "(Origin_timedelta_Requires)days_pos"

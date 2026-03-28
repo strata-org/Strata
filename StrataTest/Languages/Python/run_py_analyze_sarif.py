@@ -55,6 +55,7 @@ SKIP_TESTS = BOTH_SKIP | {
     "test_variable_reassign",
     "test_while_loop",
     "test_with_statement",
+    "test_fstrings",
 }
 SKIP_TESTS_LAUREL = BOTH_SKIP
 

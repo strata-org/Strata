@@ -71,10 +71,6 @@ public def groupDatatypes (dts : List DatatypeDefinition)
       dtsArr[idx]? |>.bind fun dt => ldtMap.get? dt.name.text
     if members.isEmpty then none else some members
 
-end Strata.Laurel
-
-namespace Strata.Laurel
-
 /--
 Collect all `StaticCall` callee names referenced anywhere in a `StmtExpr`.
 Used to build the call graph for SCC-based procedure ordering.
