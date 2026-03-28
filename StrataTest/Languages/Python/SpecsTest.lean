@@ -76,6 +76,7 @@ class "MainClass" {
   fields: []
   classVars: []
   subclasses: []
+  exhaustive: false
   function "main_method"{
     args: [
       self : class(MainClass) [default: ]
@@ -180,6 +181,7 @@ class "InnerHelper" {
   fields: []
   classVars: []
   subclasses: []
+  exhaustive: false
 }
 class "ClassWithInit" {
   bases: []
@@ -193,6 +195,7 @@ class "ClassWithInit" {
       fields: []
       classVars: []
       subclasses: []
+      exhaustive: false
       function "do_work"{
         args: [
           self : class(_InnerHelper) [default: ]
@@ -208,6 +211,7 @@ class "ClassWithInit" {
       }
     }
   ]
+  exhaustive: false
 }
 #end
 
