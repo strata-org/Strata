@@ -106,6 +106,10 @@ jobs:
         run: |
           pip install ./Tools/Python
           ./StrataTest/Languages/Python/run_py_cbmc_tests.sh
+      - name: Run property summary tests
+        shell: bash
+        run: |
+          ./StrataTest/Backends/CBMC/GOTO/test_property_summary_e2e.sh
       - name: Run Laurel CBMC pipeline tests
         shell: bash
         run: |
