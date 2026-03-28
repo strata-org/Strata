@@ -110,7 +110,7 @@ The design was consolidated into a reference manual (`docs/PythonSSA.md`) coveri
 - Scope limitations explicitly documented
 - Pretty-print notation for output format
 
-### Phase 5: Test-Driven Implementation (planned)
+### Phase 5: Test-Driven Development
 
 The implementation plan follows spec-first, test-driven development:
 1. Write example Python files exercising each feature in isolation
@@ -120,6 +120,30 @@ The implementation plan follows spec-first, test-driven development:
 
 The corpus files are deliberately held out from the test suite to serve as an
 independent validation that the scoping analysis was correct.
+
+**Test suite (completed):** 23 positive test files (t01-t23) covering all in-scope
+features, plus 8 negative test files (n01-n08) for graceful degradation of
+unsupported constructs (async, comprehensions, generators, lambda, walrus).
+
+**Design decisions surfaced by test writing:** Writing expected SSA output forced
+9 major design questions to be resolved before implementation:
+- Strict vs. relaxed block arguments (Q1) — revealed by t14_bool_short
+- Exception value representation (Q4) — `%exc` had no valid IR form
+- Variable liveness (Q5) — tension between "strict" and "conservative"
+- Method calls (Q7) — two-step attr+call vs. combined instruction
+- Builtin resolution (Q8/Q9) — `@print` forced prelude design
+
+**Expected output drift:** The 23 expected files were written before design
+decisions were finalized. A batch update step (Step 6) addresses this. Future
+process improvement: write expected output in two passes (draft + finalize).
+
+### Phase 6: Design Review and Finalization (completed 2026-03-28)
+
+All 11 design questions (Q1-Q9 + post-compact A-F) resolved. Key late additions:
+- `assert_` as dedicated instruction (for verification goals)
+- `decorators` field on Func (metadata, path to future support)
+- `callQualified` demoted from IR instruction to pretty-print sugar
+- Implementation steps renumbered into 4 clear phases (13 steps total)
 
 ## Tools Built
 

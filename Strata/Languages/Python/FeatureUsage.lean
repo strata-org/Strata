@@ -26,15 +26,21 @@ open Strata.Python (stmt expr constant operator unaryop boolop cmpop
 
 /-- Accumulated feature counts and warnings. -/
 public structure FeatureState where
-  stmtCounts     : Std.HashMap String Nat := {}
-  exprCounts     : Std.HashMap String Nat := {}
-  constantCounts : Std.HashMap String Nat := {}
-  operatorCounts : Std.HashMap String Nat := {}
-  unaryopCounts  : Std.HashMap String Nat := {}
-  boolopCounts   : Std.HashMap String Nat := {}
-  cmpopCounts    : Std.HashMap String Nat := {}
-  patternCounts  : Std.HashMap String Nat := {}
-  warnings       : Array String := #[]
+  stmtCounts      : Std.HashMap String Nat := {}
+  exprCounts      : Std.HashMap String Nat := {}
+  constantCounts  : Std.HashMap String Nat := {}
+  operatorCounts  : Std.HashMap String Nat := {}
+  unaryopCounts   : Std.HashMap String Nat := {}
+  boolopCounts    : Std.HashMap String Nat := {}
+  cmpopCounts     : Std.HashMap String Nat := {}
+  patternCounts   : Std.HashMap String Nat := {}
+  unresolvedNames : Std.HashMap String Nat := {}
+  decoratorNames  : Std.HashMap String Nat := {}
+  /-- Constructs that the SSA translator would degrade on. -/
+  ssaUnsupported  : Std.HashMap String Nat := {}
+  warnings        : Array String := #[]
+  /-- Stack of defined-name sets. Top = current scope. -/
+  scopeStack      : Array (Std.HashSet String) := #[{}]
 
 abbrev FeatureM := StateM FeatureState
 
@@ -46,17 +52,145 @@ private def bump (get : FeatureState → Std.HashMap String Nat)
     let m := get s
     set s (m.insert key (m.getD key 0 + 1))
 
-private def bumpStmt     := bump (·.stmtCounts)     (fun s m => { s with stmtCounts     := m })
-private def bumpExpr     := bump (·.exprCounts)     (fun s m => { s with exprCounts     := m })
-private def bumpConstant := bump (·.constantCounts) (fun s m => { s with constantCounts := m })
-private def bumpOperator := bump (·.operatorCounts) (fun s m => { s with operatorCounts := m })
-private def bumpUnaryop  := bump (·.unaryopCounts)  (fun s m => { s with unaryopCounts  := m })
-private def bumpBoolop   := bump (·.boolopCounts)   (fun s m => { s with boolopCounts   := m })
-private def bumpCmpop    := bump (·.cmpopCounts)    (fun s m => { s with cmpopCounts    := m })
-private def bumpPattern  := bump (·.patternCounts)  (fun s m => { s with patternCounts  := m })
+private def bumpStmt       := bump (·.stmtCounts)      (fun s m => { s with stmtCounts      := m })
+private def bumpExpr       := bump (·.exprCounts)      (fun s m => { s with exprCounts      := m })
+private def bumpConstant   := bump (·.constantCounts)  (fun s m => { s with constantCounts  := m })
+private def bumpOperator   := bump (·.operatorCounts)  (fun s m => { s with operatorCounts  := m })
+private def bumpUnaryop    := bump (·.unaryopCounts)   (fun s m => { s with unaryopCounts   := m })
+private def bumpBoolop     := bump (·.boolopCounts)    (fun s m => { s with boolopCounts    := m })
+private def bumpCmpop      := bump (·.cmpopCounts)     (fun s m => { s with cmpopCounts     := m })
+private def bumpPattern    := bump (·.patternCounts)   (fun s m => { s with patternCounts   := m })
+private def bumpUnresolved := bump (·.unresolvedNames) (fun s m => { s with unresolvedNames := m })
+private def bumpDecorator  := bump (·.decoratorNames)  (fun s m => { s with decoratorNames  := m })
+private def bumpSSAUnsup  := bump (·.ssaUnsupported)  (fun s m => { s with ssaUnsupported  := m })
+
+/-- Bump an expression counter AND flag it as SSA-unsupported. -/
+private def bumpUnsupExpr (name : String) : FeatureM Unit := do
+  bumpExpr name; bumpSSAUnsup name
+
+/-- Bump a statement counter AND flag it as SSA-unsupported. -/
+private def bumpUnsupStmt (name : String) : FeatureM Unit := do
+  bumpStmt name; bumpSSAUnsup name
 
 private def warn (msg : String) : FeatureM Unit :=
   modify fun s => { s with warnings := s.warnings.push msg }
+
+/-! ## Scope tracking for unresolved name analysis -/
+
+/-- Add a name to the current (top-of-stack) scope. -/
+private def defineName (name : String) : FeatureM Unit :=
+  modify fun s =>
+    let stack := s.scopeStack
+    if h : stack.size > 0 then
+      let top := stack[stack.size - 1]
+      { s with scopeStack := stack.set (stack.size - 1) (top.insert name) }
+    else s
+
+/-- Check if a name is defined in any scope on the stack. -/
+private def isNameDefined (name : String) : FeatureM Bool := do
+  let s ← get
+  return s.scopeStack.any (·.contains name)
+
+/-- Push a new scope (entering a function/class body). -/
+private def pushScope : FeatureM Unit :=
+  modify fun s => { s with scopeStack := s.scopeStack.push {} }
+
+/-- Pop the current scope (leaving a function/class body). -/
+private def popScope : FeatureM Unit :=
+  modify fun s => { s with scopeStack := s.scopeStack.pop }
+
+/-- Extract a human-readable name from a decorator expression. -/
+private def decoratorName (d : expr SourceRange) : Option String :=
+  match d with
+  | .Name _ ⟨_, name⟩ _ => some name
+  | .Attribute _ _ ⟨_, attr⟩ _ => some attr
+  | .Call _ f _ _ =>
+    match f with
+    | .Name _ ⟨_, name⟩ _ => some name
+    | .Attribute _ _ ⟨_, attr⟩ _ => some attr
+    | _ => none
+  | _ => none
+
+/-- Record all decorators in a decorator list. -/
+private def visitDecorators (decorators : Array (expr SourceRange)) : FeatureM Unit :=
+  for d in decorators do
+    match decoratorName d with
+    | some name => bumpDecorator name
+    | none => warn s!"Unrecognized decorator expression"
+
+/-- Extract names from a target expression (handles Name, Tuple, List unpacking). -/
+private def extractNames (e : expr SourceRange) : Array String :=
+  match e with
+  | .Name _ ⟨_, name⟩ _ => #[name]
+  | .Tuple _ ⟨_, elts⟩ _ => elts.flatMap extractNames
+  | .List _ ⟨_, elts⟩ _ => elts.flatMap extractNames
+  | _ => #[]
+
+/-- Extract a single name from a Name expression. -/
+private def extractName (e : expr SourceRange) : Option String :=
+  match e with
+  | .Name _ ⟨_, name⟩ _ => some name
+  | _ => none
+
+/-- Extract parameter names from an arguments node and define them in current scope. -/
+private def defineParams (args : arguments SourceRange) : FeatureM Unit :=
+  match args with
+  | .mk_arguments _ posonlyargs posargs vararg kwonlyargs _ kwarg _ => do
+    -- positional-only args
+    for a in posonlyargs.val do
+      match a with
+      | .mk_arg _ ⟨_, name⟩ _ _ => defineName name
+    -- regular positional args
+    for a in posargs.val do
+      match a with
+      | .mk_arg _ ⟨_, name⟩ _ _ => defineName name
+    -- *args
+    match vararg.val with
+    | some (.mk_arg _ ⟨_, name⟩ _ _) => defineName name
+    | none => pure ()
+    -- keyword-only args
+    for a in kwonlyargs.val do
+      match a with
+      | .mk_arg _ ⟨_, name⟩ _ _ => defineName name
+    -- **kwargs
+    match kwarg.val with
+    | some (.mk_arg _ ⟨_, name⟩ _ _) => defineName name
+    | none => pure ()
+
+/-- Pre-collect all names defined in a statement list (shallow — does not
+    recurse into function/class bodies). Used to handle forward references
+    within a scope (e.g., function called before its def). -/
+partial def preCollectDefined (stmts : Array (stmt SourceRange)) : FeatureM Unit :=
+  for s in stmts do
+    match s with
+    | .FunctionDef _ ⟨_, name⟩ _ _ _ _ _ _ => defineName name
+    | .AsyncFunctionDef _ ⟨_, name⟩ _ _ _ _ _ _ => defineName name
+    | .ClassDef _ ⟨_, name⟩ _ _ _ _ _ => defineName name
+    | .Assign _ ⟨_, targets⟩ _ _ =>
+      for t in targets do
+        (extractNames t).forM defineName
+    | .AnnAssign _ target _ _ _ =>
+      (extractNames target).forM defineName
+    | .AugAssign _ target _ _ =>
+      (extractNames target).forM defineName
+    | .For _ target _ _ _ _ =>
+      (extractNames target).forM defineName
+    | .AsyncFor _ target _ _ _ _ =>
+      (extractNames target).forM defineName
+    | .Import _ ⟨_, aliases⟩ =>
+      for a in aliases do
+        defineName (a.asname.getD a.name)
+    | .ImportFrom _ _ ⟨_, aliases⟩ _ =>
+      for a in aliases do
+        defineName (a.asname.getD a.name)
+    | .With _ ⟨_, items⟩ _ _ =>
+      for item in items do
+        match item with
+        | .mk_withitem _ _ ⟨_, optVars⟩ =>
+          match optVars with
+          | some e => (extractNames e).forM defineName
+          | none => pure ()
+    | _ => pure ()
 
 /-! ## Leaf visitors -/
 
@@ -123,7 +257,7 @@ partial def visitExpr (e : expr SourceRange) : FeatureM Unit := do
     visitBoolOp op
     values.forM visitExpr
   | .NamedExpr _ target value =>
-    bumpExpr "NamedExpr"
+    bumpUnsupExpr "NamedExpr"
     visitExpr target
     visitExpr value
   | .BinOp _ left op right =>
@@ -136,7 +270,7 @@ partial def visitExpr (e : expr SourceRange) : FeatureM Unit := do
     visitUnaryOp op
     visitExpr operand
   | .Lambda _ _ body =>
-    bumpExpr "Lambda"
+    bumpUnsupExpr "Lambda"
     visitExpr body
   | .IfExp _ test body orelse =>
     bumpExpr "IfExp"
@@ -154,30 +288,38 @@ partial def visitExpr (e : expr SourceRange) : FeatureM Unit := do
     bumpExpr "Set"
     elts.forM visitExpr
   | .ListComp _ elt ⟨_, gens⟩ =>
-    bumpExpr "ListComp"
-    visitExpr elt
+    bumpUnsupExpr "ListComp"
+    pushScope
     gens.forM visitComprehension
+    visitExpr elt
+    popScope
   | .SetComp _ elt ⟨_, gens⟩ =>
-    bumpExpr "SetComp"
-    visitExpr elt
+    bumpUnsupExpr "SetComp"
+    pushScope
     gens.forM visitComprehension
+    visitExpr elt
+    popScope
   | .DictComp _ key value ⟨_, gens⟩ =>
-    bumpExpr "DictComp"
+    bumpUnsupExpr "DictComp"
+    pushScope
+    gens.forM visitComprehension
     visitExpr key
     visitExpr value
-    gens.forM visitComprehension
+    popScope
   | .GeneratorExp _ elt ⟨_, gens⟩ =>
-    bumpExpr "GeneratorExp"
-    visitExpr elt
+    bumpUnsupExpr "GeneratorExp"
+    pushScope
     gens.forM visitComprehension
+    visitExpr elt
+    popScope
   | .Await _ value =>
-    bumpExpr "Await"
+    bumpUnsupExpr "Await"
     visitExpr value
   | .Yield _ ⟨_, value⟩ =>
-    bumpExpr "Yield"
+    bumpUnsupExpr "Yield"
     value.forM visitExpr
   | .YieldFrom _ value =>
-    bumpExpr "YieldFrom"
+    bumpUnsupExpr "YieldFrom"
     visitExpr value
   | .Compare _ left ⟨_, ops⟩ ⟨_, comparators⟩ =>
     bumpExpr "Compare"
@@ -216,7 +358,12 @@ partial def visitExpr (e : expr SourceRange) : FeatureM Unit := do
   | .Starred _ value _ =>
     bumpExpr "Starred"
     visitExpr value
-  | .Name .. =>
+  | .Name _ ⟨_, name⟩ (.Load _) =>
+    bumpExpr "Name"
+    let defined ← isNameDefined name
+    if !defined then
+      bumpUnresolved name
+  | .Name _ ⟨_, _⟩ _ =>
     bumpExpr "Name"
   | .List _ ⟨_, elts⟩ _ =>
     bumpExpr "List"
@@ -233,6 +380,10 @@ where
   visitComprehension (g : comprehension SourceRange) : FeatureM Unit := do
     match g with
     | .mk_comprehension _ target iter ⟨_, ifs⟩ _ =>
+      -- Define the comprehension variable in current scope
+      match extractName target with
+      | some name => defineName name
+      | none => pure ()
       visitExpr target
       visitExpr iter
       ifs.forM visitExpr
@@ -257,7 +408,7 @@ partial def visitPattern (p : pattern SourceRange) : FeatureM Unit := do
     bumpPattern "MatchMapping"
     keys.forM visitExpr
     pats.forM visitPattern
-  | .MatchClass _ cls ⟨_, pats⟩ ⟨_, kwAttrs⟩ ⟨_, kwPats⟩ =>
+  | .MatchClass _ cls ⟨_, pats⟩ ⟨_, _kwAttrs⟩ ⟨_, kwPats⟩ =>
     bumpPattern "MatchClass"
     visitExpr cls
     pats.forM visitPattern
@@ -275,15 +426,33 @@ partial def visitPattern (p : pattern SourceRange) : FeatureM Unit := do
 
 partial def visitStmt (s : stmt SourceRange) : FeatureM Unit := do
   match s with
-  | .FunctionDef _ _ _ ⟨_, body⟩ _ _ _ _ =>
+  | .FunctionDef _ ⟨_, name⟩ args ⟨_, body⟩ ⟨_, decorators⟩ _ _ _ =>
     bumpStmt "FunctionDef"
+    defineName name
+    visitDecorators decorators
+    -- Enter new scope with params, pre-collect body definitions
+    pushScope
+    defineParams args
+    preCollectDefined body
     body.forM visitStmt
-  | .AsyncFunctionDef _ _ _ ⟨_, body⟩ _ _ _ _ =>
-    bumpStmt "AsyncFunctionDef"
+    popScope
+  | .AsyncFunctionDef _ ⟨_, name⟩ args ⟨_, body⟩ ⟨_, decorators⟩ _ _ _ =>
+    bumpUnsupStmt "AsyncFunctionDef"
+    defineName name
+    visitDecorators decorators
+    pushScope
+    defineParams args
+    preCollectDefined body
     body.forM visitStmt
-  | .ClassDef _ _ _ _ ⟨_, body⟩ _ _ =>
+    popScope
+  | .ClassDef _ ⟨_, name⟩ _ _ ⟨_, body⟩ ⟨_, decorators⟩ _ =>
     bumpStmt "ClassDef"
+    defineName name
+    visitDecorators decorators
+    pushScope
+    preCollectDefined body
     body.forM visitStmt
+    popScope
   | .Return _ ⟨_, value⟩ =>
     bumpStmt "Return"
     value.forM visitExpr
@@ -292,25 +461,31 @@ partial def visitStmt (s : stmt SourceRange) : FeatureM Unit := do
     targets.forM visitExpr
   | .Assign _ ⟨_, targets⟩ value _ =>
     bumpStmt "Assign"
+    for t in targets do
+      (extractNames t).forM defineName
     targets.forM visitExpr
     visitExpr value
   | .AugAssign _ target op value =>
     bumpStmt "AugAssign"
+    (extractNames target).forM defineName
     visitExpr target
     visitOperator op
     visitExpr value
   | .AnnAssign _ target _ ⟨_, value⟩ _ =>
     bumpStmt "AnnAssign"
+    (extractNames target).forM defineName
     visitExpr target
     value.forM visitExpr
   | .For _ target iter ⟨_, body⟩ ⟨_, orelse⟩ _ =>
     bumpStmt "For"
+    (extractNames target).forM defineName
     visitExpr target
     visitExpr iter
     body.forM visitStmt
     orelse.forM visitStmt
   | .AsyncFor _ target iter ⟨_, body⟩ ⟨_, orelse⟩ _ =>
-    bumpStmt "AsyncFor"
+    bumpUnsupStmt "AsyncFor"
+    (extractNames target).forM defineName
     visitExpr target
     visitExpr iter
     body.forM visitStmt
@@ -331,15 +506,23 @@ partial def visitStmt (s : stmt SourceRange) : FeatureM Unit := do
       match item with
       | .mk_withitem _ ctxExpr ⟨_, optVars⟩ =>
         visitExpr ctxExpr
-        optVars.forM visitExpr
+        match optVars with
+        | some e =>
+          (extractNames e).forM defineName
+          visitExpr e
+        | none => pure ()
     body.forM visitStmt
   | .AsyncWith _ ⟨_, items⟩ ⟨_, body⟩ _ =>
-    bumpStmt "AsyncWith"
+    bumpUnsupStmt "AsyncWith"
     for item in items do
       match item with
       | .mk_withitem _ ctxExpr ⟨_, optVars⟩ =>
         visitExpr ctxExpr
-        optVars.forM visitExpr
+        match optVars with
+        | some e =>
+          (extractNames e).forM defineName
+          visitExpr e
+        | none => pure ()
     body.forM visitStmt
   | .Raise _ ⟨_, exc⟩ ⟨_, cause⟩ =>
     bumpStmt "Raise"
@@ -350,8 +533,12 @@ partial def visitStmt (s : stmt SourceRange) : FeatureM Unit := do
     body.forM visitStmt
     for h in handlers do
       match h with
-      | .ExceptHandler _ ⟨_, exType⟩ _ ⟨_, hBody⟩ =>
+      | .ExceptHandler _ ⟨_, exType⟩ errname ⟨_, hBody⟩ =>
         exType.forM visitExpr
+        -- Define the handler variable (e.g., `as e`)
+        match errname.val with
+        | some ⟨_, name⟩ => defineName name
+        | none => pure ()
         hBody.forM visitStmt
     orelse.forM visitStmt
     finalbody.forM visitStmt
@@ -360,8 +547,11 @@ partial def visitStmt (s : stmt SourceRange) : FeatureM Unit := do
     body.forM visitStmt
     for h in handlers do
       match h with
-      | .ExceptHandler _ ⟨_, exType⟩ _ ⟨_, hBody⟩ =>
+      | .ExceptHandler _ ⟨_, exType⟩ errname ⟨_, hBody⟩ =>
         exType.forM visitExpr
+        match errname.val with
+        | some ⟨_, name⟩ => defineName name
+        | none => pure ()
         hBody.forM visitStmt
     orelse.forM visitStmt
     finalbody.forM visitStmt
@@ -369,10 +559,14 @@ partial def visitStmt (s : stmt SourceRange) : FeatureM Unit := do
     bumpStmt "Assert"
     visitExpr test
     msg.forM visitExpr
-  | .Import .. =>
+  | .Import _ ⟨_, aliases⟩ =>
     bumpStmt "Import"
-  | .ImportFrom .. =>
+    for a in aliases do
+      defineName (a.asname.getD a.name)
+  | .ImportFrom _ _ ⟨_, aliases⟩ _ =>
     bumpStmt "ImportFrom"
+    for a in aliases do
+      defineName (a.asname.getD a.name)
   | .Global .. =>
     bumpStmt "Global"
   | .Nonlocal .. =>
@@ -403,7 +597,11 @@ partial def visitStmt (s : stmt SourceRange) : FeatureM Unit := do
 
 /-- Run the feature analysis over an array of top-level statements. -/
 public def analyzeFeatures (stmts : Array (stmt SourceRange)) : FeatureState :=
-  (stmts.forM visitStmt |>.run {}).2
+  let action : FeatureM Unit := do
+    -- Pre-collect module-level names so forward references resolve
+    preCollectDefined stmts
+    stmts.forM visitStmt
+  (action |>.run {}).2
 
 /-- Format a HashMap as sorted lines of "  Name: Count". -/
 private def formatCounts (m : Std.HashMap String Nat) : String :=
@@ -421,7 +619,10 @@ public def formatReport (s : FeatureState) : String :=
     ("UnaryOp Features", s.unaryopCounts),
     ("BoolOp Features", s.boolopCounts),
     ("CmpOp Features", s.cmpopCounts),
-    ("Pattern Features", s.patternCounts)
+    ("Pattern Features", s.patternCounts),
+    ("Unresolved Names", s.unresolvedNames),
+    ("Decorator Names", s.decoratorNames),
+    ("SSA Unsupported Constructs", s.ssaUnsupported)
   ]
   let body := sections.foldl (init := "") fun acc (title, counts) =>
     if counts.isEmpty then acc
