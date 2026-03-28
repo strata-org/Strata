@@ -56,6 +56,16 @@ info: Except.error (Strata.Python.ParseError.patternError "Expected '[' at start
 #guard_msgs in
 #eval parseCharClass "a" ⟨0⟩
 
+-- Incomplete escape sequences
+/--
+info: Except.error (Strata.Python.ParseError.patternError
+  "Incomplete escape sequence in character class"
+  "[a\\"
+  { byteIdx := 2 })
+-/
+#guard_msgs in
+#eval parseCharClass "[a\\" ⟨0⟩
+
 -- Escape sequences inside character classes
 /-- info: Except.ok (Strata.Python.RegexAST.char '.', { byteIdx := 4 }) -/
 #guard_msgs in
@@ -216,6 +226,13 @@ info: Except.ok (Strata.Python.RegexAST.concat
 -/
 #guard_msgs in
 #eval parseTop "^[a-z0-9][a-z0-9.-]{1,10}$"
+
+-- Incomplete escape sequence at top level
+/--
+info: Except.error (Strata.Python.ParseError.patternError "Incomplete escape sequence" "\\" { byteIdx := 0 })
+-/
+#guard_msgs in
+#eval parseTop "\\"
 
 -- Test escape sequences (need \\ in Lean strings to get single \)
 /--
