@@ -1,0 +1,68 @@
+module "t25_tuple_unpack":
+
+func process_pairs(items: list) -> none:
+  bb0(%0:items):
+    %1:_iter = callQualified builtins.iter [positional(%0)]
+    branch bb1(%1)
+  bb1(%2:_iter) [except: bb3]:
+    %3:_next = callQualified builtins.next [positional(%2)]
+    branch bb2(%2, %3)
+  bb2(%4:_iter, %5:_tuple):
+    %6:k = getItem %5 (intLit 0)
+    %7:v = getItem %5 (intLit 1)
+    callQualified builtins.print [positional(%6), positional(%7)]
+    branch bb1(%4)
+  bb3(%8:_iter, %9:_exc):
+    -- StopIteration caught
+    branch bb4()
+  bb4():
+    ret
+
+func use_enumerate(names: list) -> none:
+  bb0(%0:names):
+    %1:_enum = callQualified builtins.enumerate [positional(%0)]
+    %2:_iter = callQualified builtins.iter [positional(%1)]
+    branch bb1(%2)
+  bb1(%3:_iter) [except: bb3]:
+    %4:_next = callQualified builtins.next [positional(%3)]
+    branch bb2(%3, %4)
+  bb2(%5:_iter, %6:_tuple):
+    %7:i = getItem %6 (intLit 0)
+    %8:name = getItem %6 (intLit 1)
+    callQualified builtins.print [positional(%7), positional(%8)]
+    branch bb1(%5)
+  bb3(%9:_iter, %10:_exc):
+    branch bb4()
+  bb4():
+    ret
+
+func dict_iteration(d: dict) -> none:
+  bb0(%0:d):
+    %1:_items = call attr(%0, "items") []
+    %2:_iter = callQualified builtins.iter [positional(%1)]
+    branch bb1(%2)
+  bb1(%3:_iter) [except: bb3]:
+    %4:_next = callQualified builtins.next [positional(%3)]
+    branch bb2(%3, %4)
+  bb2(%5:_iter, %6:_tuple):
+    %7:key = getItem %6 (intLit 0)
+    %8:value = getItem %6 (intLit 1)
+    callQualified builtins.print [positional(%7), positional(%8)]
+    branch bb1(%5)
+  bb3(%9:_iter, %10:_exc):
+    branch bb4()
+  bb4():
+    ret
+
+func tuple_assign() -> none:
+  bb0():
+    %0:_tuple = mkTuple [intLit 1, intLit 2]
+    %1:a = getItem %0 (intLit 0)
+    %2:b = getItem %0 (intLit 1)
+    %3 = binOp add %1 %2
+    %4:_tuple2 = mkTuple [%1, %2, %3]
+    %5:x = getItem %4 (intLit 0)
+    %6:y = getItem %4 (intLit 1)
+    %7:z = getItem %4 (intLit 2)
+    callQualified builtins.print [positional(%5), positional(%6), positional(%7)]
+    ret

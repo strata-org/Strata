@@ -10,8 +10,7 @@ existing Python DDM AST infrastructure.
 
 Analyzes a `.python.st.ion` file and prints constructor usage statistics,
 grouped by syntactic category (statements, expressions, constants, operators,
-etc.). Used for corpus-driven scope analysis — understanding which Python
-features the target files actually use before designing the IR.
+etc.). Includes unresolved name analysis for identifying builtins.
 
 ```
 strata pyFeatures path/to/file.python.st.ion
@@ -26,19 +25,27 @@ stdout. Covers 46/52 corpus files (everything except comprehensions).
 
 ### Lean sources
 
-| File | Description |
-|------|-------------|
-| `Strata/Languages/Python/FeatureUsage.lean` | AST traversal that tallies every Python constructor encountered |
-| `Strata/Languages/Python/SSA.lean` | *(planned)* SSA IR data types (PyType, Block, Func, Module) |
-| `Strata/Languages/Python/SSAFormat.lean` | *(planned)* Pretty-printer for SSA IR |
-| `Strata/Languages/Python/PythonToSSA.lean` | *(planned)* Translation from Python DDM AST to SSA IR |
+| File | Status | Description |
+|------|--------|-------------|
+| `Strata/Languages/Python/FeatureUsage.lean` | Done | AST traversal: constructor tallying + unresolved name analysis |
+| `Strata/Languages/Python/SSA.lean` | Done | SSA IR data types (PyType, SSAVal, Block, Func, Module, QualifiedName, prelude) |
+| `Strata/Languages/Python/SSAFormat.lean` | Done | Pretty-printer with sugar (callQualified, call attr(), inline literals) |
+| `Strata/Languages/Python/PythonToSSA.lean` | Planned | Translation from Python DDM AST to SSA IR |
+| `Strata/Languages/Python/SSACheck.lean` | Planned | Well-formedness checker for SSA invariants |
 
 ### Documentation
 
 | File | Description |
 |------|-------------|
-| `docs/PythonSSA.md` | Reference manual for the PythonSSA IR — data types, desugaring rules, well-formedness invariants, pretty-print notation |
-| `experiment_report.md` | Methodology report describing the data-driven, AI-assisted design process |
+| [`docs/PythonSSA.md`](docs/PythonSSA.md) | Reference manual — data types, desugaring rules, well-formedness invariants, pretty-print notation |
+| [`experiment_report.md`](experiment_report.md) | Methodology — corpus analysis, AI-assisted design process, test-driven development |
+
+### Tests
+
+| Directory | Description |
+|-----------|-------------|
+| `StrataTest/Languages/Python/SSA/tests/` | 25 Python test files (t01–t25) + 8 negative tests (n01–n08) |
+| `StrataTest/Languages/Python/SSA/expected/` | Hand-crafted expected SSA output for all test files |
 
 ### Analysis scripts
 
@@ -52,4 +59,14 @@ stdout. Covers 46/52 corpus files (everything except comprehensions).
 The IR uses **block arguments** (Crucible/SWIFT style) instead of phi nodes,
 with **per-instruction exception precision** via `exceptArgs` and an
 **`undef`/`isDefined` pattern** for tracking variable initialization across
-control flow paths. See `docs/PythonSSA.md` for the full specification.
+control flow paths. Key design choices:
+
+- **Strict block-argument model**: no cross-block value references; all data
+  flow is explicit through block parameters
+- **Qualified name resolution**: imports and builtins resolved during
+  translation via `QualifiedName` (e.g., `builtins.len`, `os.path.join`)
+- **Graceful degradation**: unsupported constructs (comprehensions, lambda,
+  etc.) produce `unsupported` instructions instead of crashing
+- **`assert_` as first-class**: preserves programmer intent for verification
+
+See [`docs/PythonSSA.md`](docs/PythonSSA.md) for the full specification.

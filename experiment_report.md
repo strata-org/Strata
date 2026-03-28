@@ -145,6 +145,55 @@ All 11 design questions (Q1-Q9 + post-compact A-F) resolved. Key late additions:
 - `callQualified` demoted from IR instruction to pretty-print sugar
 - Implementation steps renumbered into 4 clear phases (13 steps total)
 
+### Phase 7: Corpus Analysis and IR Hardening (completed 2026-03-28)
+
+Extended `pyFeatures` with scope-aware unresolved name detection to identify which
+builtins the corpus actually uses, informing prelude design.
+
+**Scope tracking.** Added a scope stack (`Array (Std.HashSet String)`) to
+`FeatureState` with `pushScope`/`popScope` for functions and comprehensions.
+Variables are defined via assignments, function params, import bindings, for-loop
+targets, with-statement targets, and except handler names. Unresolved names are
+any `Name` in `Load` context not found in any enclosing scope.
+
+**Iterative refinement.** Initial analysis showed 19 false positives:
+- 7 comprehension variables (tag, col, model, etc.) — fixed by adding scope
+  tracking around comprehension bodies
+- 12 tuple-unpacking targets (i, variant, provider_models, etc.) — fixed by
+  adding `extractNames` to recursively handle `Tuple`/`List` for-loop targets
+
+After fixes: zero false positives. The 18 genuine unresolved names mapped to
+exactly 14 builtin functions + 3 exception types + `__name__`.
+
+**SSA unsupported audit.** Added `ssaUnsupported` tracking to flag all constructs
+outside SSA scope. Confirmed 6/52 files (all comprehension-heavy) as the only
+files with unsupported constructs, validating the 46/52 coverage target.
+
+**Tuple unpacking discovery.** Analysis revealed 14/52 files (27%) use tuple
+unpacking in for loops — a significant pattern not covered by existing tests.
+Added t25_tuple_unpack.py with expected output and a desugaring rule.
+
+### Phase 8: Expected Output Batch Update (completed 2026-03-28)
+
+Updated all 23 existing expected output files to match the finalized IR. Used
+7 parallel agents to handle independent files concurrently, followed by manual
+review and correction of two files with duplicate `qualifiedRef` instructions.
+
+**Changes applied across 15 files:**
+- Function-wide unique SSA IDs (renumbered from block-local to monotonic per-function)
+- `copy` instruction removal (5 files) — aliases handled by binding environment
+- `call @builtin(...)` → `callQualified builtins.name [...]` (6 files)
+- `@ExceptionType` → `qualifiedRef builtins.Type` + `-- where` comment (5 files)
+- `%exc.0` handler params → regular numbered `_exc` params (7 files)
+- `%exc` → `exc` in exceptArgs (7 files)
+
+**Late refinement: QualifiedName type.** During review, introduced `QualifiedName`
+(= `SSAModuleName × String`) to replace loose `(module, name)` string pairs.
+Pretty-prints with dot notation (`builtins.len`, `os.path.join`). `SSAModuleName`
+is a non-empty `Array String`, parallel to existing `Specs.ModuleName`. Prelude
+table uses `Std.HashMap String QualifiedName` to allow aliases (e.g., `None` →
+`builtins.NoneType`). Updated all expected files and reference manual.
+
 ## Tools Built
 
 | Tool | Purpose |

@@ -25,7 +25,7 @@ control flow reasoning.
 **In scope** (46/52 corpus files covered):
 - Assignments: `Assign`, `AnnAssign`, `AugAssign`
 - Control flow: `If`, `While`, `For`, `Break`, `Continue`, `Return`
-- Functions: `FunctionDef`, `Call` (positional + keyword args)
+- Functions: `FunctionDef`, `Call` (positional, keyword, `*args`, `**kwargs`)
 - Exception handling: `Try`/`except`/`finally`, `Raise`
 - Context managers: `With`
 - Classes: `ClassDef` (methods, `__init__`, class-level assignments)
@@ -42,7 +42,7 @@ control flow reasoning.
 - Advanced: `Lambda`, `Yield`, `YieldFrom`, `NamedExpr` (walrus)
 - Rare: `Global`, `Nonlocal`, `Delete`, `Match`, `TypeAlias`, `TryStar`
 - Dynamic: `eval`, `exec`, dynamic attribute manipulation
-- Starred expressions: `*args` unpacking in assignments
+- Starred expressions: `*args` unpacking in assignment targets (NOT call-site `*args`/`**kwargs`, which ARE supported)
 
 ---
 
@@ -118,9 +118,8 @@ LiteralValue ::= intVal(Int) | strVal(String) | boolVal(Bool)
 
 ### SSAVal
 
-An SSA value reference. IDs are unique within a block — instructions in different
-blocks may reuse the same ID. Use `(BlockId, SSAVal)` for a function-unique reference
-(no two blocks in the same function share the same `(BlockId, SSAVal)` pair).
+An SSA value reference. IDs are unique within a function — a monotonic counter
+assigns each new value a fresh ID across all blocks.
 
 ```
 SSAVal ::= %<id>            -- e.g., %0, %1, %2
@@ -137,7 +136,8 @@ unique within a function, making traces easier to follow.
 SSAName ::= <base>.<suffix>  -- e.g., x.0, x.1, iter.0, _tmp.3
 ```
 
-Each block carries an `Array SSAName` mapping `SSAVal.id` to its name.
+Each function carries an `Array SSAName` mapping `SSAVal.id` to its name
+(function-wide, since SSAVal IDs are unique per function).
 
 ### BlockId
 
@@ -146,6 +146,20 @@ A block label. IDs are unique within a function.
 ```
 BlockId ::= bb<id>           -- e.g., bb0, bb1, bb2
 ```
+
+### QualifiedName
+
+A reference to a named object in a specific module. Used by `qualifiedRef` to
+reference builtins, exception types, imported functions, etc.
+
+```
+SSAModuleName ::= <parts[0]>.<parts[1]>...   -- non-empty Array String
+QualifiedName ::= <module>.<name>             -- e.g., builtins.len, os.path.join
+```
+
+`SSAModuleName` is a non-empty `Array String` (parallel to `Specs.ModuleName`
+but kept separate). The dot notation is unambiguous since `.` is not valid in
+Python identifiers — the last dot-separated component is always the `name`.
 
 ### undef
 
@@ -231,16 +245,23 @@ Non-raising instructions have no `exceptArgs`.
 |-------------|----------|-------------|
 | `undef(name)` | Undef marker | "Variable `name` not assigned on this path" (see undef section) |
 | `isDefined(val)` | Bool | Tests whether `val` is defined (not undef) |
-| `copy(src)` | Copy of `src` | SSA rename at merge points |
 
-### Calls (potentially raising)
+### Calls and References (potentially raising)
 
 | Instruction | Produces | Description |
 |-------------|----------|-------------|
 | `call(func, args)` | Return value | Call an SSA value as a function |
-| `callQualified(module, method, args)` | Return value | Call a fully qualified function (e.g., `boto3.client`) |
+| `qualifiedRef(qn)` | Value | Reference a module-level object (type, class, builtin) as a value. `qn` is a `QualifiedName`. |
 | `attr(obj, name)` | Attribute value | `obj.name` (getattr) |
 | `setAttr(obj, name, val)` | Updated obj | `obj.name = val` (setattr) |
+
+`qualifiedRef` produces a value-level reference to any qualified name — for
+passing types to `isinstance`, storing functions in variables, etc. Combined
+with `call`, it replaces the need for a separate `callQualified` instruction.
+The pretty-printer emits `callQualified <qn> [args]` as sugar when
+a `qualifiedRef` is used exactly once as the target of an immediately following
+`call`. `QualifiedName` pretty-prints with dot notation: `builtins.len`,
+`os.path.join`, `boto3.client`.
 
 `CallArg` covers all Python call-site argument forms:
 
@@ -280,6 +301,16 @@ for faithful short-circuit semantics.
 |-------------|----------|-------------|
 | `fmtValue(val)` | String | Call `__format__` on val (can raise) |
 | `strConcat(parts)` | String | Pure string concatenation |
+
+### Assertions (potentially raising)
+
+| Instruction | Produces | Description |
+|-------------|----------|-------------|
+| `assert_(cond, msg)` | Unit | Assert `cond` is true; raises `AssertionError` with optional `msg` if false. `msg` is `Option SSAVal`. |
+
+`assert` is a first-class instruction (not desugared to `condBranch + raise`)
+to preserve the programmer's intent for verification tools. Inside a try block,
+`assert_` needs `exceptArgs` like any raising instruction.
 
 ### Graceful Degradation (never raises)
 
@@ -323,7 +354,6 @@ block <BlockId>(<params...>) [except: <handler>]:
 - **`id`**: Unique label within the function.
 - **`params`**: Block parameters (Crucible/SWIFT style, replaces phi nodes). Each
   incoming branch passes values that bind to these parameters.
-- **`names`**: `Array SSAName` mapping each `SSAVal.id` to its human-readable name.
 - **`instrs`**: Sequence of `NamedInstr`. May contain multiple raising instructions.
 - **`term`**: The terminator.
 - **`termSr`**: Source range for the terminator.
@@ -385,10 +415,37 @@ func <name>(<params...>) -> <retType>:
 
 - **`name`**: Function name (`@module_init`, `@ClassName_init`, `ClassName.method`,
   or bare function name).
-- **`params`**: Function parameters (same as entry block parameters).
+- **`params`**: Function parameters as `FuncParam` (see below). Same values as
+  entry block parameters.
 - **`retType`**: Optional return type annotation.
 - **`blocks`**: Array of blocks. The first block is the entry point.
+- **`names`**: `Array SSAName` mapping `SSAVal.id` to human-readable names
+  (function-wide, since IDs are unique per function).
+- **`decorators`**: `Array String` of decorator names (e.g., `["staticmethod"]`).
+  Stored as metadata; decorator semantics are not modeled.
 - **`sr`**: Source range of the function definition.
+
+### FuncParam
+
+Function parameters carry more information than block parameters:
+
+```
+FuncParam ::= {
+  val     : SSAVal,
+  name    : String,
+  type    : Option PyType,
+  default : Option SSAVal,    -- None if no default value
+  kind    : ParamKind         -- positional, posOnly, kwOnly, varPositional, varKeyword
+}
+
+ParamKind ::= positional | posOnly | kwOnly | varPositional | varKeyword
+```
+
+- `positional`: `def f(x)` — regular positional argument
+- `posOnly`: `def f(x, /)` — positional-only (before `/`)
+- `kwOnly`: `def f(*, x)` — keyword-only (after `*`)
+- `varPositional`: `def f(*args)` — collects extra positional args
+- `varKeyword`: `def f(**kwargs)` — collects extra keyword args
 
 ---
 
@@ -407,7 +464,8 @@ attached to the resulting `NamedInstr`.
 x = y = expr
 ```
 
-Multiple assignment targets: evaluate `expr` once, then `copy` for each target.
+Multiple assignment targets: evaluate `expr` once, then bind each target name
+to the same SSAVal in the translator's binding environment (no instruction emitted).
 
 ### Augmented Assignment (`AugAssign`)
 
@@ -524,6 +582,48 @@ block bb_after_loop():
 
 `break` → `branch bb_after_loop(...)`, `continue` → `branch bb_loop_header(%iter)`
 
+### Tuple Unpacking in For Loops
+
+```python
+for i, x in enumerate(items):
+    body(i, x)
+```
+
+The for-loop target is a `Tuple` — desugar by indexing into the next value:
+
+```
+block bb_loop_header(%0:iter) [except: bb_loop_end]:
+  %1:next = call @next(%0)
+  branch bb_loop_body(%0, %1)
+
+block bb_loop_body(%0:iter, %1:_tuple):
+  %2:i = getItem %1 (intLit 0)
+  %3:x = getItem %1 (intLit 1)
+  -- body using %2 as i, %3 as x
+  branch bb_loop_header(%0)
+```
+
+This pattern also applies to `for k, v in dict.items()` and similar. Nested
+tuple unpacking (`for (a, b), c in ...`) recurses: unpack outer tuple first,
+then unpack inner elements.
+
+### Assert
+
+```python
+assert cond, "message"
+```
+
+```
+block bb_assert():
+  %0:cond = <translate cond>
+  %1:msg = strLit "message"
+  %2 = assert_ %0 (some %1)        -- raises AssertionError if %0 is false
+  ...
+```
+
+`assert_` is a first-class instruction (not desugared to `condBranch + raise`)
+to preserve programmer intent for verification.
+
 ### Try/Except (Instruction-Level Precision)
 
 ```python
@@ -542,25 +642,26 @@ specifying what the handler receives at that point. Earlier instructions pass
 
 ```
 block bb_try() [except: bb_handler]:
-  %0 = call @do_something()  [exceptArgs: undef("x"), undef("y"), %exc]
-  %1:x = call @f()           [exceptArgs: undef("x"), undef("y"), %exc]
-  %2:y = call @g()           [exceptArgs: %1,         undef("y"), %exc]
+  %0 = call @do_something()  [exceptArgs: exc, undef("x"), undef("y")]
+  %1:x = call @f()           [exceptArgs: exc, undef("x"), undef("y")]
+  %2:y = call @g()           [exceptArgs: exc, %1,         undef("y")]
   branch bb_after_try(%1, %2)
 
-block bb_handler(%0:x, %1:y, %exc):
-  -- %0:x is undef if do_something() or f() raised
-  -- %0:x is f()'s result if g() raised
-  -- %1:y is always undef (g() never completed successfully)
+block bb_handler(%0:exc, %1:x, %2:y):
+  -- %1:x is undef if do_something() or f() raised
+  -- %1:x is f()'s result if g() raised
+  -- %2:y is always undef (g() never completed successfully)
   -- Type check: isinstance(exc, SomeError)
-  %2 = call @isinstance(%exc, positional(@SomeError))
-  condBranch %2 bb_handle(%exc) bb_reraise(%exc)
+  %3 = callQualified builtins.isinstance [positional(%0), positional(%4)]
+  -- where %4 = qualifiedRef builtins.SomeError
+  condBranch %3 bb_handle(%0) bb_reraise(%0)
 
-block bb_handle(%exc):
-  call @handle(%exc)
+block bb_handle(%0:exc):
+  call @handle(positional(%0))
   branch bb_after_try_join(...)
 
-block bb_reraise(%exc):
-  raise %exc                -- propagates to outer handler or caller
+block bb_reraise(%0:exc):
+  raise %0                  -- propagates to outer handler or caller
 ```
 
 ### Try/Finally (undef/isDefined Pattern)
@@ -733,8 +834,8 @@ binding environment that maps local names to qualified identifiers.
 import boto3
 from boto3 import client
 
-x = client('s3')           # → callQualified "boto3" "client" [positional(strLit "s3")]
-y = boto3.client('iam')    # → callQualified "boto3" "client" [positional(strLit "iam")]
+x = client('s3')           # → callQualified boto3.client [positional(strLit "s3")]
+y = boto3.client('iam')    # → callQualified boto3.client [positional(strLit "iam")]
 ```
 
 ### Classes
@@ -776,9 +877,12 @@ raise ValueError("bad input")
 ```
 
 ```
-%0 = callQualified "builtins" "ValueError" [positional(strLit "bad input")]
-raise %0
+%0 = qualifiedRef builtins.ValueError
+%1 = call %0 [positional(strLit "bad input")]
+raise %1
 ```
+
+Pretty-printed as: `%1 = callQualified builtins.ValueError [positional(strLit "bad input")]`
 
 Bare `raise` inside an except handler re-raises the handler's exception parameter:
 
@@ -857,8 +961,37 @@ exactly once (as a call argument, operator operand, etc.):
 %0:result.0 = call @add(positional(intLit 1), positional(intLit 2))
 ```
 
-Only pure literals are eligible — no `undef`, `call`, `copy`, or other
-instructions with side effects or references.
+Only pure literals are eligible — no `undef`, `call`, or other instructions
+with side effects or references.
+
+### Method Call Sugar
+
+`call attr(obj, "method")(args)` is pretty-print sugar for a two-instruction
+sequence where `attr` is used exactly once as the target of the immediately
+following `call`:
+
+```
+-- IR representation:
+%0 = attr %obj "method"
+%1 = call %0 [positional(%arg)]
+
+-- Sugar:
+%1 = call attr(%obj, "method") [positional(%arg)]
+```
+
+### Qualified Call Sugar
+
+`callQualified <qn> [args]` is pretty-print sugar for `qualifiedRef`
+followed by `call` when the ref is used exactly once:
+
+```
+-- IR representation:
+%0 = qualifiedRef builtins.print
+%1 = call %0 [positional(%msg)]
+
+-- Sugar:
+%1 = callQualified builtins.print [positional(%msg)]
+```
 
 ### Textual Format
 
@@ -881,10 +1014,10 @@ module "get_iam_role_arn":
 
 func @module_init():                                   @ 1:1-9:42
   bb0():                                               @ 1:1-1:13
-    %0:boto3 = callQualified "boto3" "import" []       @ 1:1-1:13
+    %0:boto3 = callQualified boto3.import []            @ 1:1-1:13
     branch bb1(%0)                                     @ 1:1
   bb1(%0:boto3):                                       @ 2:1-2:38
-    %0:iam = callQualified "boto3" "client" [positional(strLit "iam")]  @ 2:14-2:38
+    %0:iam = callQualified boto3.client [positional(strLit "iam")]  @ 2:14-2:38
     branch bb2(%0)                                     @ 2:1
   ...
 ```

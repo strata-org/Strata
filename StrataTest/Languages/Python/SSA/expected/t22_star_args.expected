@@ -2,37 +2,37 @@ module "t22_star_args":
 
 func log_all(prefix.0: str, args.0):
   bb0(%0:prefix.0 : str, %1:args.0):
-    %2:_iter.0 = call @iter(positional(%1))
+    %2:_iter.0 = callQualified builtins.iter [positional(%1)]
     branch bb1(%0, %2)
 
-  bb1(%0:prefix.0, %1:_iter.0) [except: bb3]:
-    %2:item.0 = call @next(positional(%1))  [exceptArgs: %0, %1]
-    branch bb2(%0, %1, %2)
+  bb1(%3:prefix.0, %4:_iter.0) [except: bb3]:
+    %5:item.0 = callQualified builtins.next [positional(%4)]  [exceptArgs: %3, %4]
+    branch bb2(%3, %4, %5)
 
-  bb2(%0:prefix.0, %1:_iter.0, %2:item.0):
-    %3 = call @print(positional(%0), positional(%2))
-    branch bb1(%0, %1)
+  bb2(%6:prefix.0, %7:_iter.0, %8:item.0):
+    %9 = callQualified builtins.print [positional(%6), positional(%8)]
+    branch bb1(%6, %7)
 
-  bb3(%0:prefix.0, %1:_iter.0):
+  bb3(%10:prefix.0, %11:_iter.0):
     ret
 
 func create_config(kwargs.0):
   bb0(%0:kwargs.0):
     %1:config.0 = mkDict [] []
-    %2:_iter.0 = call @iter(positional(%0))
+    %2:_iter.0 = callQualified builtins.iter [positional(%0)]
     branch bb1(%1, %2, %0)
 
-  bb1(%0:config.0, %1:_iter.0, %2:kwargs.0) [except: bb3]:
-    %3:key.0 = call @next(positional(%1))  [exceptArgs: %0, %1, %2]
-    branch bb2(%0, %1, %2, %3)
+  bb1(%3:config.0, %4:_iter.0, %5:kwargs.0) [except: bb3]:
+    %6:key.0 = callQualified builtins.next [positional(%4)]  [exceptArgs: %3, %4, %5]
+    branch bb2(%3, %4, %5, %6)
 
-  bb2(%0:config.0, %1:_iter.0, %2:kwargs.0, %3:key.0):
-    %4:_tmp.0 = getItem %2 %3
-    setItem %0 %3 %4
-    branch bb1(%0, %1, %2)
+  bb2(%7:config.0, %8:_iter.0, %9:kwargs.0, %10:key.0):
+    %11:_tmp.0 = getItem %9 %10
+    setItem %7 %10 %11
+    branch bb1(%7, %8, %9)
 
-  bb3(%0:config.0, %1:_iter.0, %2:kwargs.0):
-    ret %0
+  bb3(%12:config.0, %13:_iter.0, %14:kwargs.0):
+    ret %12
 
 func flexible(first.0: int, args.0, kwargs.0):
   bb0(%0:first.0 : int, %1:args.0, %2:kwargs.0):

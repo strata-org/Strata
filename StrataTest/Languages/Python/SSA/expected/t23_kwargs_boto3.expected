@@ -25,7 +25,7 @@ func @module_init():
   bb0():
     -- import boto3 → binding environment
     -- iam = boto3.client("iam")
-    %0:iam.0 = callQualified "boto3" "client" [positional(strLit "iam")]
+    %0:iam.0 = callQualified boto3.client [positional(strLit "iam")]
     -- iam.get_role(RoleName="my-role")
     %1 = call attr(%0, "get_role")(keyword("RoleName", strLit "my-role"))
     ret
