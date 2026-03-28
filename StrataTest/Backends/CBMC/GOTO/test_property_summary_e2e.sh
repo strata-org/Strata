@@ -8,14 +8,12 @@ set -eo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../../../.." && pwd)"
-STRATA="$PROJECT_ROOT/.lake/build/bin/strata"
-CBMC=${CBMC:-cbmc}
-SYMTAB2GB=${SYMTAB2GB:-symtab2gb}
+LAUREL_TO_CBMC="$PROJECT_ROOT/StrataTest/Languages/Laurel/laurel_to_cbmc.sh"
 
 WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT
 
-# Step 1: Create Laurel program with property summaries
+# Create Laurel program with property summaries
 cat > "$WORK/test.lr.st" << 'LAUREL'
 procedure main() {
     var x: int := 5;
@@ -25,79 +23,21 @@ procedure main() {
 };
 LAUREL
 
-# Step 2: Translate to GOTO
-cd "$WORK"
-"$STRATA" laurelAnalyzeToGoto test.lr.st 2>&1 | grep -q "Written"
+# Run the full pipeline (strata → symtab2gb → goto-cc → goto-instrument → cbmc)
+cbmc_out=$("$LAUREL_TO_CBMC" "$WORK/test.lr.st" 2>&1 || true)
 
-# Step 3: Verify GOTO JSON contains property summaries
-python3 -c "
-import json, sys
-with open('test.lr.goto.json') as f:
-    data = json.load(f)
-summaries = []
-for fn in data['functions']:
-    for inst in fn['instructions']:
-        if inst.get('instructionId') == 'ASSERT':
-            summaries.append(inst.get('sourceLocation', {}).get('comment', ''))
-assert 'addition equals eight' in summaries, f'Missing summary in GOTO JSON: {summaries}'
-assert 'difference equals two' in summaries, f'Missing summary in GOTO JSON: {summaries}'
-print('GOTO JSON: property summaries present')
-"
+# Verify CBMC output contains property summaries
+for summary in "addition equals eight" "difference equals two"; do
+  if echo "$cbmc_out" | grep -q "$summary"; then
+    echo "CBMC output: '$summary' found"
+  else
+    echo "FAIL: '$summary' not in CBMC output"
+    echo "$cbmc_out"
+    exit 1
+  fi
+done
 
-# Step 4: Wrap symtab and add CBMC default symbols
-python3 -c "
-import json
-with open('test.lr.symtab.json') as f:
-    data = json.load(f)
-# Add minimal __CPROVER_initialize symbol required by CBMC
-data['__CPROVER_initialize'] = {
-    'baseName': '__CPROVER_initialize',
-    'mode': 'C',
-    'module': '',
-    'name': '__CPROVER_initialize',
-    'prettyName': '__CPROVER_initialize',
-    'type': {'id': 'code', 'namedSub': {'parameters': {'sub': []}, 'return_type': {'id': 'empty'}}},
-    'value': {'id': 'nil'}
-}
-data['__CPROVER_rounding_mode'] = {
-    'baseName': '__CPROVER_rounding_mode',
-    'isLvalue': True,
-    'isStaticLifetime': True,
-    'isStateVar': True,
-    'mode': 'C',
-    'module': '',
-    'name': '__CPROVER_rounding_mode',
-    'prettyName': '__CPROVER_rounding_mode',
-    'type': {'id': 'signedbv', 'namedSub': {'width': {'id': '32'}}},
-    'value': {'id': 'nil'}
-}
-with open('wrapped.symtab.json', 'w') as f:
-    json.dump({'symbolTable': data}, f)
-"
-
-# Step 5: Convert to GOTO binary and run CBMC
-"$SYMTAB2GB" wrapped.symtab.json --goto-functions test.lr.goto.json --out test.gb 2>/dev/null
-
-cbmc_out=$("$CBMC" test.gb --z3 --no-pointer-check --function main 2>&1 || true)
-
-# Step 6: Verify CBMC output contains property summaries
-if echo "$cbmc_out" | grep -q "addition equals eight"; then
-  echo "CBMC output: 'addition equals eight' found"
-else
-  echo "FAIL: 'addition equals eight' not in CBMC output"
-  echo "$cbmc_out"
-  exit 1
-fi
-
-if echo "$cbmc_out" | grep -q "difference equals two"; then
-  echo "CBMC output: 'difference equals two' found"
-else
-  echo "FAIL: 'difference equals two' not in CBMC output"
-  echo "$cbmc_out"
-  exit 1
-fi
-
-# Step 7: Verify CBMC says SUCCESSFUL
+# Verify CBMC says SUCCESSFUL
 if echo "$cbmc_out" | grep -q "VERIFICATION SUCCESSFUL"; then
   echo "CBMC: VERIFICATION SUCCESSFUL"
 else
