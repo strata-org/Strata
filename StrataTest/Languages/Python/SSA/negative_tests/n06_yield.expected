@@ -1,0 +1,17 @@
+module "n06_yield":
+
+-- WARNING: unsupported Yield in function 'count_up' at 5:8-5:15 (stub generated)
+
+func count_up(n.0: int):
+  bb0(%0:n.0 : int):
+    unreachable
+
+func normal_func(x.0: int) -> int:
+  bb0(%0:x.0 : int):
+    %1:_tmp.0 = intLit 2
+    %2:_tmp.1 = binOp mult %0 %1
+    ret %2
+
+func @module_init():
+  bb0():
+    ret

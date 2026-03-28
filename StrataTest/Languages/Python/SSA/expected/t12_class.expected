@@ -1,0 +1,26 @@
+module "t12_class":
+
+func @Point_init():
+  bb0():
+    %0:dimensions.0 : int = intLit 2
+    ret
+
+func Point.__init__(self.0: Point, x.0: int, y.0: int):
+  bb0(%0:self.0, %1:x.0 : int, %2:y.0 : int):
+    setAttr %0 "x" %1
+    setAttr %0 "y" %2
+    ret
+
+func Point.distance(self.0: Point) -> int:
+  bb0(%0:self.0):
+    %1:_tmp.0 = attr %0 "x"
+    %2:_tmp.1 = attr %0 "y"
+    %3:_tmp.2 = binOp add %1 %2
+    ret %3
+
+func @module_init():
+  bb0():
+    %0 = call @Point_init()
+    %1:p.0 = call @Point(positional(intLit 3), positional(intLit 4))
+    %2:d.0 = call attr(%1, "distance")()
+    ret

@@ -1,0 +1,39 @@
+module "t19_attribute":
+
+func Config.__init__(self.0: Config):
+  bb0(%0:self.0):
+    %1:_tmp.0 = boolLit false
+    setAttr %0 "debug" %1
+    %2:_tmp.1 = intLit 0
+    setAttr %0 "level" %2
+    ret
+
+func Inner.__init__(self.0: Inner):
+  bb0(%0:self.0):
+    %1:_tmp.0 = intLit 42
+    setAttr %0 "value" %1
+    ret
+
+func Outer.__init__(self.0: Outer):
+  bb0(%0:self.0):
+    %1:_tmp.0 = call @Inner()
+    setAttr %0 "inner" %1
+    ret
+
+func @module_init():
+  bb0():
+    %0:c.0 = call @Config()
+    -- flag = c.debug
+    %1:flag.0 = attr %0 "debug"
+    -- c.debug = True
+    %2:_tmp.0 = boolLit true
+    setAttr %0 "debug" %2
+    -- c.level = 5
+    %3:_tmp.1 = intLit 5
+    setAttr %0 "level" %3
+    -- o = Outer()
+    %4:o.0 = call @Outer()
+    -- v = o.inner.value
+    %5:_tmp.2 = attr %4 "inner"
+    %6:v.0 = attr %5 "value"
+    ret

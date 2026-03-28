@@ -1,0 +1,69 @@
+module "t07_try_except":
+
+func risky():
+  bb0():
+    %0:_tmp.0 = callQualified "builtins" "ValueError" [positional(strLit "bad")]
+    raise %0
+
+func @module_init():
+  -- Basic try/except: try x = risky() except x = 0
+  bb0() [except: bb1]:
+    %0:x.0 = call @risky()  [exceptArgs: undef("x"), %exc]
+    branch bb2(%0)
+
+  -- except handler
+  bb1(%0:x.1, %exc.0):
+    %1:x.2 = intLit 0
+    branch bb2(%1)
+
+  -- after first try/except
+  bb2(%0:x.3):
+    branch bb3()
+
+  -- Second try: a = risky(); b = risky()
+  bb3() [except: bb4]:
+    %0:a.0 = call @risky()  [exceptArgs: undef("a"), undef("b"), %exc]
+    %1:b.0 = call @risky()  [exceptArgs: %0, undef("b"), %exc]
+    branch bb5(%0, %1)
+
+  -- bare except handler
+  bb4(%0:a.1, %1:b.1, %exc.0):
+    -- pass (no-op)
+    branch bb5(%0, %1)
+
+  -- after second try/except
+  bb5(%0:a.2, %1:b.2):
+    branch bb6()
+
+  -- Third try: c = risky() with multiple except clauses
+  bb6() [except: bb7]:
+    %0:c.0 = call @risky()  [exceptArgs: undef("c"), %exc]
+    branch bb10(%0)
+
+  -- handler: dispatch on exception type
+  bb7(%0:c.1, %exc.0):
+    %1:_tmp.0 = callQualified "builtins" "isinstance" [positional(%exc.0), positional(@ValueError)]
+    condBranch %1 bb8(%exc.0) bb9(%0, %exc.0)
+
+  -- except ValueError
+  bb8(%exc.0):
+    %0:c.2 = intLit -1
+    branch bb10(%0)
+
+  -- check TypeError
+  bb9(%0:c.1, %exc.0):
+    %1:_tmp.1 = callQualified "builtins" "isinstance" [positional(%exc.0), positional(@TypeError)]
+    condBranch %1 bb11(%exc.0) bb12(%exc.0)
+
+  -- except TypeError
+  bb11(%exc.0):
+    %0:c.3 = intLit -2
+    branch bb10(%0)
+
+  -- no matching handler: re-raise
+  bb12(%exc.0):
+    raise %exc.0
+
+  -- after third try/except
+  bb10(%0:c.4):
+    ret

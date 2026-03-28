@@ -1,0 +1,28 @@
+module "t20_raise":
+
+func fail_hard():
+  bb0():
+    %0:_tmp.0 = callQualified "builtins" "ValueError" [positional(strLit "bad input")]
+    raise %0
+
+func reraise_example():
+  bb0() [except: bb1]:
+    %0 = call @fail_hard()  [exceptArgs: %exc]
+    ret
+
+  -- except ValueError: bare raise
+  bb1(%exc.0):
+    %0:_tmp.0 = callQualified "builtins" "isinstance" [positional(%exc.0), positional(@ValueError)]
+    condBranch %0 bb2(%exc.0) bb3(%exc.0)
+
+  bb2(%exc.0):
+    raise %exc.0
+
+  -- no match: re-raise anyway
+  bb3(%exc.0):
+    raise %exc.0
+
+func raise_with_msg(msg.0: str):
+  bb0(%0:msg.0 : str):
+    %1:_tmp.0 = callQualified "builtins" "RuntimeError" [positional(%0)]
+    raise %1

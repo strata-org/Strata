@@ -1,0 +1,76 @@
+module "t11_with":
+
+func MyCtx.__enter__(self.0: MyCtx):
+  bb0(%0:self.0):
+    ret %0
+
+func MyCtx.__exit__(self.0: MyCtx, exc_type.0, exc_val.0, exc_tb.0):
+  bb0(%0:self.0, %1:exc_type.0, %2:exc_val.0, %3:exc_tb.0):
+    %4:_tmp.0 = boolLit false
+    ret %4
+
+func risky():
+  bb0():
+    %0:_tmp.0 = callQualified "builtins" "ValueError" [positional(strLit "fail")]
+    raise %0
+
+func @module_init():
+  -- First with: with MyCtx() as ctx: x = 1
+  bb0():
+    %0:_mgr.0 = call @MyCtx()
+    %1:ctx.0 = call attr(%0, "__enter__")()
+    branch bb1(%0, %1)
+
+  -- with body
+  bb1(%0:_mgr.0, %1:ctx.0) [except: bb2]:
+    %2:x.0 = intLit 1
+    branch bb3(%0)
+
+  -- with exception path: __exit__(exc_type, exc_val, exc_tb)
+  bb2(%0:_mgr.0, %1:ctx.0, %exc.0):
+    %2:_suppress.0 = call attr(%0, "__exit__")(%exc.0, %exc.0, %exc.0)
+    condBranch %2 bb4() bb5(%exc.0)
+
+  -- with normal exit: __exit__(None, None, None)
+  bb3(%0:_mgr.0):
+    %1:_tmp.1 = noneLit
+    %2 = call attr(%0, "__exit__")(%1, %1, %1)
+    branch bb4()
+
+  -- after first with
+  bb4():
+    branch bb6()
+
+  -- re-raise (suppression returned False)
+  bb5(%exc.0):
+    raise %exc.0
+
+  -- Second with: with MyCtx() as ctx: risky()
+  bb6():
+    %0:_mgr.1 = call @MyCtx()
+    %1:ctx.1 = call attr(%0, "__enter__")()
+    branch bb7(%0, %1)
+
+  -- with body: risky()
+  bb7(%0:_mgr.1, %1:ctx.1) [except: bb8]:
+    %2 = call @risky()  [exceptArgs: %0, %1, %exc]
+    branch bb9(%0)
+
+  -- with exception path
+  bb8(%0:_mgr.1, %1:ctx.1, %exc.0):
+    %2:_suppress.1 = call attr(%0, "__exit__")(%exc.0, %exc.0, %exc.0)
+    condBranch %2 bb10() bb11(%exc.0)
+
+  -- with normal exit
+  bb9(%0:_mgr.1):
+    %1:_tmp.2 = noneLit
+    %2 = call attr(%0, "__exit__")(%1, %1, %1)
+    branch bb10()
+
+  -- after second with
+  bb10():
+    ret
+
+  -- re-raise
+  bb11(%exc.0):
+    raise %exc.0

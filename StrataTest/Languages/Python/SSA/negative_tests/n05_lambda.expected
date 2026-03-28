@@ -1,0 +1,9 @@
+module "n05_lambda":
+
+-- WARNING: unsupported Lambda at 4:5-4:22 (replaced with unsupported instruction)
+
+func @module_init():
+  bb0():
+    %0:f.0 = unsupported "Lambda"
+    %1:result.0 = call %0(positional(intLit 1), positional(intLit 2))
+    ret

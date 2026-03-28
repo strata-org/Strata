@@ -1,0 +1,61 @@
+module "t03_if_else":
+
+func @module_init():
+  -- Entry: cond = True
+  bb0():
+    %0:cond.0 : bool = boolLit true
+    condBranch %0 bb1(%0) bb2(%0)
+
+  -- Then: x = 1
+  bb1(%0:cond.0):
+    %1:x.0 = intLit 1
+    branch bb3(%0, %1)
+
+  -- Else: x = 2
+  bb2(%0:cond.0):
+    %1:x.1 = intLit 2
+    branch bb3(%0, %1)
+
+  -- Join: use_x = x, then second if
+  bb3(%0:cond.0, %1:x.2):
+    %2:use_x.0 = copy %1
+    condBranch %0 bb4(%0) bb5(%0)
+
+  -- Then: y = 10
+  bb4(%0:cond.0):
+    %1:y.0 = intLit 10
+    branch bb6(%0, %1)
+
+  -- Implicit else: y is undef
+  bb5(%0:cond.0):
+    %1:y.1 = undef("y")
+    branch bb6(%0, %1)
+
+  -- Join: use_y = y (possibly undef), then elif chain
+  bb6(%0:cond.0, %1:y.2):
+    %2:use_y.0 = copy %1
+    condBranch %0 bb7() bb8(%0)
+
+  -- Then: z = "a"
+  bb7():
+    %0:z.0 = strLit "a"
+    branch bb11(%0)
+
+  -- Elif: evaluate not cond
+  bb8(%0:cond.0):
+    %1:_tmp.0 = unaryOp not %0
+    condBranch %1 bb9() bb10()
+
+  -- Elif body: z = "b"
+  bb9():
+    %0:z.1 = strLit "b"
+    branch bb11(%0)
+
+  -- Else: z = "c"
+  bb10():
+    %0:z.2 = strLit "c"
+    branch bb11(%0)
+
+  -- Join after elif chain
+  bb11(%0:z.3):
+    ret

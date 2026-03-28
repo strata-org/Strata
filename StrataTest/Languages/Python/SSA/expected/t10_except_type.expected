@@ -1,0 +1,74 @@
+module "t10_except_type":
+
+func risky() -> int:
+  bb0():
+    %0:_tmp.0 = callQualified "builtins" "ValueError" [positional(strLit "bad input")]
+    raise %0
+
+func @module_init():
+  -- First try: except ValueError as e
+  bb0() [except: bb1]:
+    %0:result.0 = call @risky()  [exceptArgs: undef("result"), %exc]
+    branch bb3(%0)
+
+  -- handler: isinstance check
+  bb1(%0:result.1, %exc.0):
+    %1:_tmp.0 = callQualified "builtins" "isinstance" [positional(%exc.0), positional(@ValueError)]
+    condBranch %1 bb2(%exc.0) bb4(%exc.0)
+
+  -- except ValueError as e: result = -1, msg = str(e)
+  bb2(%0:e.0):
+    %1:result.2 = intLit -1
+    %2:msg.0 = call @str(positional(%0))
+    branch bb3(%1)
+
+  -- after first try
+  bb3(%0:result.3):
+    branch bb5()
+
+  -- re-raise (type didn't match)
+  bb4(%exc.0):
+    raise %exc.0
+
+  -- Second try: multiple typed except
+  bb5() [except: bb6]:
+    %0:value.0 = call @risky()  [exceptArgs: undef("value"), %exc]
+    branch bb10(%0)
+
+  -- handler dispatch: ValueError?
+  bb6(%0:value.1, %exc.0):
+    %1:_tmp.1 = callQualified "builtins" "isinstance" [positional(%exc.0), positional(@ValueError)]
+    condBranch %1 bb7(%exc.0) bb8(%0, %exc.0)
+
+  -- except ValueError
+  bb7(%0:e.0):
+    %1:value.2 = intLit 0
+    branch bb10(%1)
+
+  -- KeyError?
+  bb8(%0:value.1, %exc.0):
+    %1:_tmp.2 = callQualified "builtins" "isinstance" [positional(%exc.0), positional(@KeyError)]
+    condBranch %1 bb9(%exc.0) bb11(%0, %exc.0)
+
+  -- except KeyError
+  bb9(%0:e.0):
+    %1:value.3 = intLit -1
+    branch bb10(%1)
+
+  -- after second try
+  bb10(%0:value.4):
+    ret
+
+  -- Exception?
+  bb11(%0:value.1, %exc.0):
+    %1:_tmp.3 = callQualified "builtins" "isinstance" [positional(%exc.0), positional(@Exception)]
+    condBranch %1 bb12(%exc.0) bb13(%exc.0)
+
+  -- except Exception
+  bb12(%0:e.0):
+    %1:value.5 = intLit -2
+    branch bb10(%1)
+
+  -- no match: re-raise
+  bb13(%exc.0):
+    raise %exc.0

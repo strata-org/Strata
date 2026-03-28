@@ -1,0 +1,65 @@
+module "t22_star_args":
+
+func log_all(prefix.0: str, args.0):
+  bb0(%0:prefix.0 : str, %1:args.0):
+    %2:_iter.0 = call @iter(positional(%1))
+    branch bb1(%0, %2)
+
+  bb1(%0:prefix.0, %1:_iter.0) [except: bb3]:
+    %2:item.0 = call @next(positional(%1))  [exceptArgs: %0, %1]
+    branch bb2(%0, %1, %2)
+
+  bb2(%0:prefix.0, %1:_iter.0, %2:item.0):
+    %3 = call @print(positional(%0), positional(%2))
+    branch bb1(%0, %1)
+
+  bb3(%0:prefix.0, %1:_iter.0):
+    ret
+
+func create_config(kwargs.0):
+  bb0(%0:kwargs.0):
+    %1:config.0 = mkDict [] []
+    %2:_iter.0 = call @iter(positional(%0))
+    branch bb1(%1, %2, %0)
+
+  bb1(%0:config.0, %1:_iter.0, %2:kwargs.0) [except: bb3]:
+    %3:key.0 = call @next(positional(%1))  [exceptArgs: %0, %1, %2]
+    branch bb2(%0, %1, %2, %3)
+
+  bb2(%0:config.0, %1:_iter.0, %2:kwargs.0, %3:key.0):
+    %4:_tmp.0 = getItem %2 %3
+    setItem %0 %3 %4
+    branch bb1(%0, %1, %2)
+
+  bb3(%0:config.0, %1:_iter.0, %2:kwargs.0):
+    ret %0
+
+func flexible(first.0: int, args.0, kwargs.0):
+  bb0(%0:first.0 : int, %1:args.0, %2:kwargs.0):
+    ret %0
+
+func @module_init():
+  bb0():
+    %0:_tmp.0 = intLit 1
+    %1:_tmp.1 = intLit 2
+    %2:_tmp.2 = intLit 3
+    %3:items.0 = mkList [%0, %1, %2]
+    -- log_all("value:", *items)
+    %4 = call @log_all(positional(strLit "value:"), starArgs(%3))
+    -- params = {"Bucket": "my-bucket", "Key": "my-key"}
+    %5:_tmp.3 = strLit "Bucket"
+    %6:_tmp.4 = strLit "my-bucket"
+    %7:_tmp.5 = strLit "Key"
+    %8:_tmp.6 = strLit "my-key"
+    %9:params.0 = mkDict [%5, %7] [%6, %8]
+    -- create_config(**params)
+    %10 = call @create_config(starKwargs(%9))
+    -- flexible(1, *extra_args, **extra_kwargs)
+    %11:_tmp.7 = intLit 10
+    %12:_tmp.8 = intLit 20
+    %13:extra_args.0 = mkList [%11, %12]
+    %14:_tmp.9 = strLit "debug"
+    %15:_tmp.10 = boolLit true
+    %16:extra_kwargs.0 = mkDict [%14] [%15]
+    %17 = call @flexible(positional(intLit 1), starArgs(%13), starKwargs(%16))
+    ret

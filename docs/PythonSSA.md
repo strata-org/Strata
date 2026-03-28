@@ -129,7 +129,9 @@ SSAVal ::= %<id>            -- e.g., %0, %1, %2
 ### SSAName
 
 Human-readable name for debugging output. The base is the source-level variable name
-(if any) and the suffix distinguishes SSA versions.
+(if any) and the suffix distinguishes SSA versions. **Suffixes are numbered
+per-function** — `x.0` in bb0, `x.1` in bb3, `x.2` in bb5 — so each suffix is
+unique within a function, making traces easier to follow.
 
 ```
 SSAName ::= <base>.<suffix>  -- e.g., x.0, x.1, iter.0, _tmp.3
@@ -180,24 +182,37 @@ point — if it raises, control jumps to the block's exception handler; if it su
 execution continues to the next instruction or terminator. A single block may contain
 multiple raising instructions.
 
-Each raising instruction carries an `exceptArgs` field — the list of SSA values to
-pass to the handler block if that specific instruction raises. This provides
+Each raising instruction carries an `exceptArgs` field — an array of `ExceptArgVal`
+to pass to the handler block if that specific instruction raises. This provides
 **instruction-level precision**: the handler knows exactly which variables were
 defined at the point of exception, without requiring block splitting.
 
+`ExceptArgVal` is either an SSA value (for state variables) or the special `exc`
+placeholder (for the exception object itself):
+
+```
+ExceptArgVal ::=
+  | val(SSAVal)     -- a state variable or undef
+  | exc             -- placeholder: "the exception from this raise"
+```
+
+The `exc` placeholder is explicit — it appears at a specific position in
+`exceptArgs`, mapping directly to a handler block parameter. It can be omitted
+if the handler doesn't need the exception object (e.g., bare `except: pass`).
+
 ```
 block bb1(%x) [except: bb_handler]:
-  %0 = call @f()          [exceptArgs: undef("y"), %exc]
-  %1 = call @g(%0)        [exceptArgs: %0, %exc]
+  %0 = call @f()          [exceptArgs: exc, undef("y")]
+  %1 = call @g(%0)        [exceptArgs: exc, %0]
   branch bb2(%0, %1)
 
-block bb_handler(%y, %exc):
+block bb_handler(%exc, %y):
   ...
 ```
 
-If `@f()` raises, the handler receives `(undef("y"), exc)`. If `@g()` raises, the
-handler receives `(%0, exc)` where `%0` is `f()`'s result. Non-raising instructions
-have no `exceptArgs`.
+If `@f()` raises, the handler receives `(exception, undef("y"))`. If `@g()`
+raises, the handler receives `(exception, %0)` where `%0` is `f()`'s result.
+Non-raising instructions have no `exceptArgs`.
 
 ### Constants (never raise)
 
@@ -227,7 +242,15 @@ have no `exceptArgs`.
 | `attr(obj, name)` | Attribute value | `obj.name` (getattr) |
 | `setAttr(obj, name, val)` | Updated obj | `obj.name = val` (setattr) |
 
-`CallArg` is either `positional(val)` or `keyword(name, val)`.
+`CallArg` covers all Python call-site argument forms:
+
+```
+CallArg ::=
+  | positional(val)           -- f(x)
+  | keyword(name, val)        -- f(key=x)
+  | starArgs(val)             -- f(*args)
+  | starKwargs(val)           -- f(**kwargs)
+```
 
 ### Operators (potentially raising)
 
@@ -257,6 +280,17 @@ for faithful short-circuit semantics.
 |-------------|----------|-------------|
 | `fmtValue(val)` | String | Call `__format__` on val (can raise) |
 | `strConcat(parts)` | String | Pure string concatenation |
+
+### Graceful Degradation (never raises)
+
+| Instruction | Produces | Description |
+|-------------|----------|-------------|
+| `unsupported(name)` | Opaque value | Placeholder for an unsupported construct (e.g., `"ListComp"`, `"Lambda"`). Produces an opaque value so downstream code can still be translated. Emitted with a WARNING diagnostic. |
+
+For unsupported **functions** (async, generators with yield), the translator
+emits a stub with the correct name and signature but an `unreachable` terminator
+as the body. For unsupported **expressions**, the translator emits an
+`unsupported` instruction in place of the expression.
 
 ---
 
@@ -311,11 +345,12 @@ Fields:
 - **`type`**: Optional type annotation from the source.
 - **`instr`**: The instruction.
 - **`sr`**: Source range.
-- **`exceptArgs`**: `Option (Array SSAVal)` — present for raising instructions.
+- **`exceptArgs`**: `Option (Array ExceptArgVal)` — present for raising instructions.
   Contains the values to pass to the block's exception handler if this instruction
-  raises. `none` for non-raising instructions.
+  raises. Each element is either `val(SSAVal)` (a state variable or undef) or `exc`
+  (the exception object placeholder). `none` for non-raising instructions.
 
-Example: `%1:x : int = call @f(%0)  [exceptArgs: undef("y"), %exc]  @ 5:3-5:10`
+Example: `%1:x : int = call @f(%0)  [exceptArgs: exc, undef("y")]  @ 5:3-5:10`
 
 ### Exception Handler Contract
 
@@ -323,12 +358,17 @@ When a block with `except = some(handler)` has a raising instruction with
 `exceptArgs = some(args)`:
 
 1. If the instruction raises, control transfers to the handler block with `args`
-   as the block arguments.
+   as the block arguments. The `exc` placeholder is replaced with the actual
+   exception object.
 2. Each raising instruction independently specifies its `exceptArgs` — this is how
    the handler knows which variables were defined at the point of the specific raise.
 3. The handler block has a fixed parameter list. All raising instructions in the
    block must pass the same number of arguments (matching the handler's parameter
    count), using `undef` for variables not yet assigned at that point.
+4. At most one `exc` placeholder per `exceptArgs` array. `exc` is present iff the
+   handler has a parameter for the exception. If the handler doesn't need the
+   exception (bare `except: pass`), `exc` is omitted and `exceptArgs` contains
+   only state values.
 
 **Well-formedness**: Every instruction with `exceptArgs = some _` must be in a block
 with `except = some _`. The `exceptArgs` array length must match the handler block's
@@ -775,8 +815,8 @@ Only operators observed in the target corpus are included.
 
 2. **exceptArgs consistency**: Every instruction with `exceptArgs = some(args)` must
    be in a block with `except = some(target)`. The length of `args` must match the
-   handler block's parameter count. Instructions with `exceptArgs = none` are
-   non-raising.
+   handler block's parameter count. Each element is `val(SSAVal)` or `exc`. At most
+   one `exc` per array. Instructions with `exceptArgs = none` are non-raising.
 
 3. **Block parameter consistency**: All branches to a block must pass the same number
    of arguments, matching the block's parameter count.
@@ -785,7 +825,8 @@ Only operators observed in the target corpus are included.
    raising instructions in the block must have `exceptArgs` arrays of the same
    length, matching the handler's parameter count. Each `exceptArgs` array reflects
    the state at that instruction's point of execution, using `undef` for variables
-   not yet assigned.
+   not yet assigned. The `exc` placeholder appears iff the handler expects an
+   exception parameter.
 
 5. **Entry block**: The first block in a function is the entry point. Its parameters
    are the function parameters.
@@ -795,6 +836,31 @@ Only operators observed in the target corpus are included.
 ---
 
 ## Pretty-Print Notation
+
+### Literal Sugar
+
+For readability, literal instructions (`intLit`, `floatLit`, `strLit`, `boolLit`,
+`noneLit`, `bytesLit`) may be inlined wherever an SSAVal is expected in the
+pretty-print output. The IR data structures always use materialized SSAVal
+references; the sugar is purely a formatting concern.
+
+The pretty-printer inlines a literal when the materialized instruction is used
+exactly once (as a call argument, operator operand, etc.):
+
+```
+-- Materialized (IR representation):
+%0:_tmp.0 = intLit 1
+%1:_tmp.1 = intLit 2
+%2:result.0 = call @add(positional(%0), positional(%1))
+
+-- Sugar (pretty-print output):
+%0:result.0 = call @add(positional(intLit 1), positional(intLit 2))
+```
+
+Only pure literals are eligible — no `undef`, `call`, `copy`, or other
+instructions with side effects or references.
+
+### Textual Format
 
 The standard textual format for PythonSSA output:
 

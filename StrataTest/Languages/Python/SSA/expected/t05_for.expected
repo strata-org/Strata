@@ -1,0 +1,80 @@
+module "t05_for":
+
+func @module_init():
+  -- items = [1, 2, 3]
+  bb0():
+    %0:_tmp.0 = intLit 1
+    %1:_tmp.1 = intLit 2
+    %2:_tmp.2 = intLit 3
+    %3:items.0 = mkList [%0, %1, %2]
+    %4:total.0 : int = intLit 0
+    %5:_tmp.3 = call @iter(positional(%3))
+    branch bb1(%5, %4)
+
+  -- First for: loop header (call next, StopIteration ends loop)
+  bb1(%0:_iter.0, %1:total.0) [except: bb3]:
+    %2:x.0 = call @next(positional(%0))  [exceptArgs: %0, %1]
+    branch bb2(%0, %1, %2)
+
+  -- First for: body (total += x)
+  bb2(%0:_iter.0, %1:total.0, %2:x.0):
+    %3:total.1 = binOp add %1 %2
+    branch bb1(%0, %3)
+
+  -- First for: StopIteration caught
+  bb3(%0:_iter.0, %1:total.0):
+    -- Second for: for x in items (reuse items from outer scope)
+    -- Need items again; it was defined in bb0. Thread it.
+    branch bb4()
+
+  -- Setup second for: iter(items)
+  bb4():
+    %0:_tmp.4 = call @iter(positional(%3))
+    branch bb5(%0)
+
+  -- Second for: loop header
+  bb5(%0:_iter.1) [except: bb8]:
+    %1:x.1 = call @next(positional(%0))  [exceptArgs: %0]
+    branch bb6(%0, %1)
+
+  -- Second for: body (if x == 2: break)
+  bb6(%0:_iter.1, %1:x.1):
+    %2:_tmp.5 = intLit 2
+    %3:_tmp.6 = compareOp eq %1 %2
+    condBranch %3 bb7() bb5(%0)
+
+  -- break
+  bb7():
+    branch bb8()
+
+  -- After second for
+  bb8():
+    %0:even_sum.0 : int = intLit 0
+    %1:_tmp.7 = call @iter(positional(%3))
+    branch bb9(%1, %0)
+
+  -- Third for: loop header
+  bb9(%0:_iter.2, %1:even_sum.0) [except: bb13]:
+    %2:x.2 = call @next(positional(%0))  [exceptArgs: %0, %1]
+    branch bb10(%0, %1, %2)
+
+  -- Third for: body (if x % 2 != 0: continue, else even_sum += x)
+  bb10(%0:_iter.2, %1:even_sum.0, %2:x.2):
+    %3:_tmp.8 = intLit 2
+    %4:_tmp.9 = binOp mod %2 %3
+    %5:_tmp.10 = intLit 0
+    %6:_tmp.11 = compareOp notEq %4 %5
+    condBranch %6 bb11(%0, %1) bb12(%0, %1, %2)
+
+  -- continue
+  bb11(%0:_iter.2, %1:even_sum.0):
+    branch bb9(%0, %1)
+
+  -- even_sum += x
+  bb12(%0:_iter.2, %1:even_sum.0, %2:x.2):
+    %3:even_sum.1 = binOp add %1 %2
+    branch bb9(%0, %3)
+
+  -- After third for
+  bb13(%0:_iter.2, %1:even_sum.0):
+    ret

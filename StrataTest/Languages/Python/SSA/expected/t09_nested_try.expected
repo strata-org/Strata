@@ -1,0 +1,79 @@
+module "t09_nested_try":
+
+func inner_risky():
+  bb0():
+    %0:_tmp.0 = callQualified "builtins" "ValueError" [positional(strLit "inner")]
+    raise %0
+
+func outer_risky():
+  bb0():
+    %0:_tmp.0 = callQualified "builtins" "TypeError" [positional(strLit "outer")]
+    raise %0
+
+func @module_init():
+  -- Outer try
+  bb0() [except: bb5]:
+    -- Inner try
+    branch bb1()
+
+  bb1() [except: bb2]:
+    %0:x.0 = call @inner_risky()  [exceptArgs: %exc]
+    branch bb4(%0)
+
+  -- Inner except ValueError: bare raise (re-raise to outer)
+  bb2(%exc.0):
+    %0:_tmp.0 = callQualified "builtins" "isinstance" [positional(%exc.0), positional(@ValueError)]
+    condBranch %0 bb3(%exc.0) bb6(%exc.0)
+
+  -- re-raise
+  bb3(%exc.0) [except: bb5]:
+    raise %exc.0
+
+  -- after inner try (normal path)
+  bb4(%0:x.0):
+    branch bb7()
+
+  -- outer except handler: y = 0
+  bb5(%exc.0):
+    %0:y.0 = intLit 0
+    branch bb7()
+
+  -- inner except: type didn't match, re-raise
+  bb6(%exc.0):
+    raise %exc.0
+
+  -- after first nested try
+  bb7():
+    branch bb8()
+
+  -- Second pattern: inner try inside outer except
+  bb8() [except: bb9]:
+    %0 = call @outer_risky()  [exceptArgs: %exc]
+    branch bb13()
+
+  -- outer except TypeError
+  bb9(%exc.0):
+    %0:_tmp.1 = callQualified "builtins" "isinstance" [positional(%exc.0), positional(@TypeError)]
+    condBranch %0 bb10(%exc.0) bb14(%exc.0)
+
+  -- except body: inner try
+  bb10(%exc.0) [except: bb11]:
+    %0 = call @inner_risky()  [exceptArgs: %exc]
+    branch bb13()
+
+  -- inner except ValueError: pass
+  bb11(%exc.0):
+    %0:_tmp.2 = callQualified "builtins" "isinstance" [positional(%exc.0), positional(@ValueError)]
+    condBranch %0 bb12() bb14(%exc.0)
+
+  -- pass
+  bb12():
+    branch bb13()
+
+  -- after all
+  bb13():
+    ret
+
+  -- unmatched exception: re-raise
+  bb14(%exc.0):
+    raise %exc.0

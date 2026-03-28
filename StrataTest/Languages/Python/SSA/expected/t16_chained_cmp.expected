@@ -1,0 +1,74 @@
+module "t16_chained_cmp":
+
+func @module_init():
+  bb0():
+    %0:x.0 : int = intLit 5
+    %1:y.0 : int = intLit 10
+    %2:z.0 : int = intLit 15
+    -- r1 = x < y < z  →  (x < y) and (y < z), y evaluated once
+    %3:_tmp.0 = compareOp lt %0 %1
+    condBranch %3 bb1(%0, %1, %2) bb2(%0, %1, %2, %3)
+
+  -- first cmp true: evaluate second cmp
+  bb1(%0:x.0, %1:y.0, %2:z.0):
+    %3:_tmp.1 = compareOp lt %1 %2
+    branch bb3(%0, %1, %2, %3)
+
+  -- first cmp false: short-circuit
+  bb2(%0:x.0, %1:y.0, %2:z.0, %3:_tmp.0):
+    branch bb3(%0, %1, %2, %3)
+
+  -- join: r1 = result
+  bb3(%0:x.0, %1:y.0, %2:z.0, %3:_tmp.2):
+    %4:r1.0 = copy %3
+    -- r2 = 0 < x < y < z  →  (0 < x) and (x < y) and (y < z)
+    %5:_tmp.3 = intLit 0
+    %6:_tmp.4 = compareOp lt %5 %0
+    condBranch %6 bb4(%0, %1, %2) bb5(%0, %1, %2, %6)
+
+  bb4(%0:x.0, %1:y.0, %2:z.0):
+    %3:_tmp.5 = compareOp lt %0 %1
+    condBranch %3 bb6(%0, %1, %2) bb7(%0, %1, %2, %3)
+
+  bb5(%0:x.0, %1:y.0, %2:z.0, %3:_tmp.4):
+    branch bb8(%0, %1, %2, %3)
+
+  bb6(%0:x.0, %1:y.0, %2:z.0):
+    %3:_tmp.6 = compareOp lt %1 %2
+    branch bb8(%0, %1, %2, %3)
+
+  bb7(%0:x.0, %1:y.0, %2:z.0, %3:_tmp.5):
+    branch bb8(%0, %1, %2, %3)
+
+  -- join: r2 = result
+  bb8(%0:x.0, %1:y.0, %2:z.0, %3:_tmp.7):
+    %4:r2.0 = copy %3
+    -- r3 = x <= y < z
+    %5:_tmp.8 = compareOp ltE %0 %1
+    condBranch %5 bb9(%0, %1, %2) bb10(%0, %1, %2, %5)
+
+  bb9(%0:x.0, %1:y.0, %2:z.0):
+    %3:_tmp.9 = compareOp lt %1 %2
+    branch bb11(%0, %1, %2, %3)
+
+  bb10(%0:x.0, %1:y.0, %2:z.0, %3:_tmp.8):
+    branch bb11(%0, %1, %2, %3)
+
+  -- join: r3 = result
+  bb11(%0:x.0, %1:y.0, %2:z.0, %3:_tmp.10):
+    %4:r3.0 = copy %3
+    -- r4 = x < y >= z
+    %5:_tmp.11 = compareOp lt %0 %1
+    condBranch %5 bb12(%1, %2) bb13(%5)
+
+  bb12(%0:y.0, %1:z.0):
+    %2:_tmp.12 = compareOp gtE %0 %1
+    branch bb14(%2)
+
+  bb13(%0:_tmp.11):
+    branch bb14(%0)
+
+  -- join: r4 = result
+  bb14(%0:_tmp.13):
+    %1:r4.0 = copy %0
+    ret

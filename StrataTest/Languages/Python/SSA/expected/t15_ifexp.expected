@@ -1,0 +1,57 @@
+module "t15_ifexp":
+
+func @module_init():
+  bb0():
+    %0:cond.0 : bool = boolLit true
+    -- x = 1 if cond else 2
+    condBranch %0 bb1(%0) bb2(%0)
+
+  bb1(%0:cond.0):
+    %1:_tmp.0 = intLit 1
+    branch bb3(%0, %1)
+
+  bb2(%0:cond.0):
+    %1:_tmp.1 = intLit 2
+    branch bb3(%0, %1)
+
+  bb3(%0:cond.0, %1:_tmp.2):
+    %2:x.0 = copy %1
+    -- y = "a" if cond else ("b" if not cond else "c")
+    condBranch %0 bb4(%0) bb5(%0)
+
+  bb4(%0:cond.0):
+    %1:_tmp.3 = strLit "a"
+    branch bb8(%0, %1)
+
+  -- inner IfExp: "b" if not cond else "c"
+  bb5(%0:cond.0):
+    %1:_tmp.4 = unaryOp not %0
+    condBranch %1 bb6() bb7()
+
+  bb6():
+    %0:_tmp.5 = strLit "b"
+    branch bb8_inner(%0)
+
+  bb7():
+    %0:_tmp.6 = strLit "c"
+    branch bb8_inner(%0)
+
+  bb8_inner(%0:_tmp.7):
+    branch bb8(%0, %0)
+
+  bb8(%0:cond.0, %1:_tmp.8):
+    %2:y.0 = copy %1
+    -- z: int = 10 if cond else 20
+    condBranch %0 bb9() bb10()
+
+  bb9():
+    %0:_tmp.9 = intLit 10
+    branch bb11(%0)
+
+  bb10():
+    %0:_tmp.10 = intLit 20
+    branch bb11(%0)
+
+  bb11(%0:_tmp.11):
+    %1:z.0 : int = copy %0
+    ret

@@ -1,0 +1,86 @@
+module "t14_bool_short":
+
+func @module_init():
+  bb0():
+    %0:a.0 : bool = boolLit true
+    %1:b.0 : bool = boolLit false
+    -- a and b: short-circuit on false
+    condBranch %0 bb1(%0, %1) bb2(%0, %1, %0)
+
+  -- a truthy: result is b
+  bb1(%0:a.0, %1:b.0):
+    branch bb3(%0, %1, %1)
+
+  -- a falsy: result is a (short-circuit)
+  bb2(%0:a.0, %1:b.0, %2:_tmp.0):
+    branch bb3(%0, %1, %2)
+
+  -- r1 = result, then a or b
+  bb3(%0:a.0, %1:b.0, %2:_tmp.1):
+    %3:r1.0 = copy %2
+    condBranch %0 bb4(%0, %1, %0) bb5(%0, %1)
+
+  -- a truthy: result is a (short-circuit)
+  bb4(%0:a.0, %1:b.0, %2:_tmp.2):
+    branch bb6(%0, %1, %2)
+
+  -- a falsy: result is b
+  bb5(%0:a.0, %1:b.0):
+    branch bb6(%0, %1, %1)
+
+  -- r2 = result, then (a and b) or a
+  bb6(%0:a.0, %1:b.0, %2:_tmp.3):
+    %3:r2.0 = copy %2
+    -- evaluate a and b first
+    condBranch %0 bb7(%0, %1) bb8(%0, %1, %0)
+
+  -- a truthy: inner result is b
+  bb7(%0:a.0, %1:b.0):
+    branch bb9(%0, %1)
+
+  -- a falsy: inner result is a
+  bb8(%0:a.0, %1:b.0, %2:_tmp.4):
+    branch bb9(%0, %2)
+
+  -- (a and b) result, now: result or a
+  bb9(%0:a.0, %1:_tmp.5):
+    condBranch %1 bb10(%1) bb11(%0)
+
+  -- result truthy: final is result
+  bb10(%0:_tmp.5):
+    branch bb12(%0)
+
+  -- result falsy: final is a
+  bb11(%0:a.0):
+    branch bb12(%0)
+
+  -- r3 = result
+  bb12(%0:_tmp.6):
+    %1:r3.0 = copy %0
+    -- 0 or 42
+    %2:_tmp.7 = intLit 0
+    condBranch %2 bb13(%2) bb14()
+
+  bb13(%0:_tmp.7):
+    branch bb15(%0)
+
+  bb14():
+    %0:_tmp.8 = intLit 42
+    branch bb15(%0)
+
+  bb15(%0:_tmp.9):
+    %1:x.0 = copy %0
+    -- "hello" and "world"
+    %2:_tmp.10 = strLit "hello"
+    condBranch %2 bb16() bb17(%2)
+
+  bb16():
+    %0:_tmp.11 = strLit "world"
+    branch bb18(%0)
+
+  bb17(%0:_tmp.10):
+    branch bb18(%0)
+
+  bb18(%0:_tmp.12):
+    %1:y.0 = copy %0
+    ret
