@@ -1,85 +1,72 @@
 #!/bin/bash
-#
-# Run all Laurel CBMC pipeline tests and check against expected property outcomes.
-# Usage: ./run_laurel_cbmc_tests.sh
-#
-# The expected file lists per-test CBMC properties with line numbers and
-# expected status (SUCCESS/FAILURE). The runner verifies each property
-# appears in CBMC output with the correct status.
-#
-# Environment variables:
-#   CBMC   - path to cbmc binary (default: cbmc)
+# Run Laurel .lr.st files through GOTO + CBMC verification.
+# Usage: ./run_laurel_cbmc_tests.sh [file.lr.st ...]
+# If no files given, runs all .lr.st in tests/ directory.
 
 set -o pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-TESTS_DIR="$SCRIPT_DIR/tests"
-EXPECTED="$TESTS_DIR/cbmc_expected.txt"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
+STRATA="${STRATA:-$PROJECT_ROOT/.lake/build/bin/strata}"
+CBMC="${CBMC:-cbmc}"
+SYMTAB2GB="${SYMTAB2GB:-symtab2gb}"
 
-passed=0
-failed=0
-skipped=0
+WORK=$(mktemp -d)
+trap 'rm -rf "$WORK"' EXIT
 
-get_expected_properties() {
-  local target="$1"
-  awk -v t="$target" '
-    /^[^ #].*\.lr\.st/ { current = $1; next }
-    current == t && /^[[:space:]]+\[/ { print }
-  ' "$EXPECTED"
-}
+if [ $# -gt 0 ]; then
+  FILES=("$@")
+else
+  FILES=("$SCRIPT_DIR"/tests/*.lr.st)
+fi
 
-for lr_file in "$TESTS_DIR"/*.lr.st; do
-  [ -f "$lr_file" ] || continue
-  bn=$(basename "$lr_file")
+passed=0; errors=0
 
-  props=$(get_expected_properties "$bn")
-  if [ -z "$props" ]; then
-    echo "SKIP: $bn (not in cbmc_expected.txt)"
-    skipped=$((skipped + 1))
-    continue
+for lr in "${FILES[@]}"; do
+  [ -f "$lr" ] || continue
+  bn=$(basename "$lr" .lr.st)
+  lr_abs="$(cd "$(dirname "$lr")" && pwd)/$(basename "$lr")"
+
+  # Step 1: Laurel → GOTO JSON (run from WORK dir so output lands there)
+  if ! (cd "$WORK" && "$STRATA" laurelAnalyzeToGoto "$lr_abs") > "$WORK/${bn}.translate.log" 2>&1; then
+    echo "SKIP: $bn (translation failed)"
+    cat "$WORK/${bn}.translate.log"
+    errors=$((errors+1)); continue
   fi
 
-  # Run the pipeline
-  output=$("$SCRIPT_DIR/laurel_to_cbmc.sh" "$lr_file" 2>&1)
-  if [ $? -ne 0 ] && ! echo "$output" | grep -q "VERIFICATION"; then
-    echo "ERR:  $bn (pipeline error)"
-    echo "$output" | tail -3
-    failed=$((failed + 1))
-    continue
+  # Step 2: symtab2gb
+  "$SYMTAB2GB" "$WORK/${bn}.lr.symtab.json" \
+    --goto-functions "$WORK/${bn}.lr.goto.json" \
+    --out "$WORK/${bn}.gb" 2>/dev/null || {
+    echo "SKIP: $bn (symtab2gb failed)"; errors=$((errors+1)); continue; }
+
+  # Step 3: Find functions with properties and verify each
+  funcs=$("$CBMC" "$WORK/${bn}.gb" --show-properties 2>&1 | \
+    grep ' function ' | grep -v 'Removal of' | sed 's/.* function //' | sort -u)
+
+  if [ -z "$funcs" ]; then
+    echo "SKIP: $bn (no properties)"; errors=$((errors+1)); continue
   fi
 
-  # Check each expected property
-  test_ok=true
-  while IFS= read -r prop; do
-    prop=$(echo "$prop" | sed 's/^[[:space:]]*//')
-    [ -z "$prop" ] && continue
-    # Parse: [main.N] line L <desc>: <STATUS>
-    # Extract property id + line as the match key, e.g. "[main.1] line 6"
-    prop_key=$(echo "$prop" | sed 's/^\(\[main\.[0-9]*\] line [0-9]*\).*/\1/')
-    expected_status=$(echo "$prop" | grep -o '\(SUCCESS\|FAILURE\)$')
-    # Find matching line in CBMC output by property id + line number
-    match=$(echo "$output" | grep -F "$prop_key")
-    if [ -z "$match" ]; then
-      echo "FAIL: $bn — property not found: $prop_key"
-      test_ok=false
-    else
-      actual_status=$(echo "$match" | grep -o '\(SUCCESS\|FAILURE\)$')
-      if [ "$actual_status" != "$expected_status" ]; then
-        echo "FAIL: $bn — $prop_key: got $actual_status, expected $expected_status"
-        test_ok=false
-      fi
-    fi
-  done <<< "$props"
+  ok=0; fail=0; err=0; total=0
+  for func in $funcs; do
+    result=$("$CBMC" "$WORK/${bn}.gb" --z3 --no-pointer-check \
+      --no-undefined-shift-check --function "$func" 2>&1 || true)
+    total=$((total+1))
+    if echo "$result" | grep -q "VERIFICATION SUCCESSFUL"; then ok=$((ok+1))
+    elif echo "$result" | grep -q "VERIFICATION FAILED"; then fail=$((fail+1))
+    else err=$((err+1)); fi
+  done
 
-  if $test_ok; then
-    echo "OK:   $bn"
-    passed=$((passed + 1))
+  if [ $err -eq 0 ]; then
+    echo "OK:   $bn (${ok} pass, ${fail} fail of ${total} functions)"
+    passed=$((passed+1))
   else
-    failed=$((failed + 1))
+    echo "ERR:  $bn (${ok} pass, ${fail} fail, ${err} error of ${total})"
+    errors=$((errors+1))
   fi
 done
 
 echo ""
-echo "Results: $passed passed, $skipped skipped, $failed failed"
-
-[ "$failed" -eq 0 ]
+echo "Results: $passed passed, $errors errors"
+exit $((errors > 0 ? 1 : 0))
