@@ -126,18 +126,6 @@ inductive Op.BV : Type where
   | zero_extend : Nat → Op.BV
 deriving Repr, DecidableEq, Inhabited, Hashable
 
-/-- SMT-LIB floating-point operations (IEEE 754). -/
-inductive Op.FP : Type where
-  | fp_add    -- (fp.add RoundingMode Float Float) → Float
-  | fp_sub    -- (fp.sub RoundingMode Float Float) → Float
-  | fp_mul    -- (fp.mul RoundingMode Float Float) → Float
-  | fp_div    -- (fp.div RoundingMode Float Float) → Float
-  | fp_neg    -- (fp.neg Float) → Float
-  | fp_isInfinite  -- (fp.isInfinite Float) → Bool
-  | fp_isNaN       -- (fp.isNaN Float) → Bool
-  | fp_isZero      -- (fp.isZero Float) → Bool
-deriving Repr, DecidableEq, Inhabited, Hashable
-
 inductive Op.Strings : Type where
   ---------- SMTLib theory of unicode strings and regular expressions (`Strings`) ----------
   -- Strings
@@ -193,8 +181,6 @@ inductive Op : Type where
   | num : Op.Num → Op
   -- SMTLib theory of finite bitvectors (`BV`)
   | bv : Op.BV → Op
-  -- SMTLib theory of floating-point arithmetic (`FP`)
-  | fp : Op.FP → Op
   -- SMTLib theory of unicode strings and regular expressions (`Strings`)
   | str : Op.Strings → Op
   -- SMTLib theory of arrays (`ArraysEx`)
@@ -264,20 +250,13 @@ elab "#genOpAbbrevs" : command => do
       let abbrevCmd ← `(command| abbrev $(mkIdent name) := Op.arr $(mkIdent ctor))
       abbrevs := abbrevs.push (name, abbrevCmd)
 
-  if let some (.inductInfo fpInfo) := env.find? `Strata.SMT.Op.FP then
-    for ctor in fpInfo.ctors do
-      let ctorName := ctor.toString.splitToList (· == '.') |>.getLast!
-      let name := Lean.Name.mkStr2 "Op" ctorName
-      let abbrevCmd ← `(command| abbrev $(mkIdent name) := Op.fp $(mkIdent ctor))
-      abbrevs := abbrevs.push (name, abbrevCmd)
-
   for a in abbrevs do
     elabCommand a.snd
   logInfo s!"Generated abbrevs: {abbrevs.map (fun a => a.fst)}"
 
 
 /--
-info: Generated abbrevs: #[Op.not, Op.and, Op.or, Op.eq, Op.ite, Op.implies, Op.distinct, Op.uf, Op.neg, Op.sub, Op.add, Op.mul, Op.div, Op.rdiv, Op.mod, Op.abs, Op.le, Op.lt, Op.ge, Op.gt, Op.bvneg, Op.bvadd, Op.bvsub, Op.bvmul, Op.bvnot, Op.bvand, Op.bvor, Op.bvxor, Op.bvshl, Op.bvlshr, Op.bvashr, Op.bvslt, Op.bvsle, Op.bvult, Op.bvsge, Op.bvsgt, Op.bvule, Op.bvugt, Op.bvuge, Op.bvudiv, Op.bvurem, Op.bvsdiv, Op.bvsrem, Op.bvnego, Op.bvsaddo, Op.bvssubo, Op.bvsmulo, Op.bvconcat, Op.zero_extend, Op.str_length, Op.str_concat, Op.str_lt, Op.str_le, Op.str_at, Op.str_substr, Op.str_prefixof, Op.str_suffixof, Op.str_contains, Op.str_indexof, Op.str_replace, Op.str_replace_all, Op.str_to_re, Op.str_in_re, Op.re_none, Op.re_all, Op.re_allchar, Op.re_concat, Op.re_union, Op.re_inter, Op.re_star, Op.str_replace_re, Op.str_replace_re_all, Op.re_comp, Op.re_diff, Op.re_plus, Op.re_opt, Op.re_range, Op.re_loop, Op.re_index, Op.select, Op.store, Op.fp_add, Op.fp_sub, Op.fp_mul, Op.fp_div, Op.fp_neg, Op.fp_isInfinite, Op.fp_isNaN, Op.fp_isZero]
+info: Generated abbrevs: #[Op.not, Op.and, Op.or, Op.eq, Op.ite, Op.implies, Op.distinct, Op.uf, Op.neg, Op.sub, Op.add, Op.mul, Op.div, Op.rdiv, Op.mod, Op.abs, Op.le, Op.lt, Op.ge, Op.gt, Op.bvneg, Op.bvadd, Op.bvsub, Op.bvmul, Op.bvnot, Op.bvand, Op.bvor, Op.bvxor, Op.bvshl, Op.bvlshr, Op.bvashr, Op.bvslt, Op.bvsle, Op.bvult, Op.bvsge, Op.bvsgt, Op.bvule, Op.bvugt, Op.bvuge, Op.bvudiv, Op.bvurem, Op.bvsdiv, Op.bvsrem, Op.bvnego, Op.bvsaddo, Op.bvssubo, Op.bvsmulo, Op.bvconcat, Op.zero_extend, Op.str_length, Op.str_concat, Op.str_lt, Op.str_le, Op.str_at, Op.str_substr, Op.str_prefixof, Op.str_suffixof, Op.str_contains, Op.str_indexof, Op.str_replace, Op.str_replace_all, Op.str_to_re, Op.str_in_re, Op.re_none, Op.re_all, Op.re_allchar, Op.re_concat, Op.re_union, Op.re_inter, Op.re_star, Op.str_replace_re, Op.str_replace_re_all, Op.re_comp, Op.re_diff, Op.re_plus, Op.re_opt, Op.re_range, Op.re_loop, Op.re_index, Op.select, Op.store]
 -/
 #guard_msgs in
 #genOpAbbrevs
@@ -368,14 +347,6 @@ def Op.mkName : Op → String
   | .re_loop _ _   => "re.loop"
   | .select        => "select"
   | .store         => "store"
-  | .fp_add        => "fp.add"
-  | .fp_sub        => "fp.sub"
-  | .fp_mul        => "fp.mul"
-  | .fp_div        => "fp.div"
-  | .fp_neg        => "fp.neg"
-  | .fp_isInfinite => "fp.isInfinite"
-  | .fp_isNaN      => "fp.isNaN"
-  | .fp_isZero     => "fp.isZero"
 
 def Op.LT : Op → Op → Bool
   | .uf f₁, .uf f₂                    => f₁ < f₂

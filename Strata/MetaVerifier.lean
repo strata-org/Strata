@@ -187,7 +187,6 @@ deriving instance ToExpr for Op.BV
 deriving instance ToExpr for Op.Strings
 deriving instance ToExpr for Op.DatatypeFuncs
 deriving instance ToExpr for Op.Arrays
-deriving instance ToExpr for Op.FP
 deriving instance ToExpr for Op
 deriving instance ToExpr for QuantifierKind
 deriving instance ToExpr for SMT.Term

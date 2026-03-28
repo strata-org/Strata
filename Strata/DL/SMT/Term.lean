@@ -39,8 +39,6 @@ inductive TermPrim : Type where
   | real   : Decimal → TermPrim
   | bitvec : ∀ {n}, BitVec n → TermPrim
   | string : String → TermPrim
-  /-- IEEE 754 rounding mode: RoundNearestTiesToEven -/
-  | rne    : TermPrim
 deriving instance Repr, Inhabited, DecidableEq for TermPrim
 
 def TermPrim.mkName : TermPrim → String
@@ -49,7 +47,6 @@ def TermPrim.mkName : TermPrim → String
   | .real _   => "real"
   | .bitvec _ => "bitvec"
   | .string _ => "string"
-  | .rne      => "RNE"
 
 def TermPrim.lt : TermPrim → TermPrim → Bool
   | .bool b₁, .bool b₂         => b₁ < b₂
@@ -176,7 +173,6 @@ abbrev Term.int  (i : Int) : Term := .prim (.int i)
 abbrev Term.real  (r : Decimal) : Term := .prim (.real r)
 abbrev Term.bitvec {n : Nat} (bv : BitVec n) : Term := .prim (.bitvec bv)
 abbrev Term.string (s : String) : Term := .prim (.string s)
-abbrev Term.rne : Term := .prim .rne
 
 def TermPrim.typeOf : TermPrim → TermType
   | .bool _           => .bool
@@ -184,7 +180,6 @@ def TermPrim.typeOf : TermPrim → TermType
   | .real _           => .real
   | .bitvec b         => .bitvec b.width
   | .string _         => .string
-  | .rne              => .constr "RoundingMode" []
 
 def Term.typeOf : Term → TermType
   | .prim l       => l.typeOf

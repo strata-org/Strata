@@ -33,7 +33,6 @@ import Strata.Util.Tactics
 open Core (VCResult VCResults VerifyOptions)
 open Core (intAddOp intSubOp intMulOp intSafeDivOp intSafeModOp intSafeDivTOp intSafeModTOp intNegOp intLtOp intLeOp intGtOp intGeOp boolAndOp boolOrOp boolNotOp boolImpliesOp strConcatOp)
 open Core (realAddOp realSubOp realMulOp realDivOp realNegOp realLtOp realLeOp realGtOp realGeOp)
-open Core (float64AddOp float64SubOp float64MulOp float64DivOp float64SafeAddOp float64SafeSubOp float64SafeMulOp float64SafeDivOp float64NegOp)
 
 namespace Strata.Laurel
 
@@ -65,7 +64,6 @@ def translateType (model : SemanticModel) (ty : HighTypeMd) : LMonoTy :=
     | some (.datatypeDefinition dt) => .tcons dt.name.text []
     | _ => .tcons "Composite" [] -- fallback for unresolved refs
   | .TCore s => .tcons s []
-  | .TFloat64 => LMonoTy.float64
   | .TReal => LMonoTy.real
   | .Unknown => .tcons "Any" [] -- TODO, abort execution since there is no valid Core type to translate Unknown to
   | _ => .tcons "NotSupportedYet" [] -- TODO, abort execution since there is no valid Core type to translate Unknown to
@@ -173,9 +171,7 @@ def translateExpr (expr : StmtExprMd)
       let re ← translateExpr e boundVars isPureContext
       let isReal := match (computeExprType model e).val with
         | .TReal => true | _ => false
-      let isFloat64 := match (computeExprType model e).val with
-        | .TFloat64 => true | _ => false
-      return .app () (if isFloat64 then float64NegOp else if isReal then realNegOp else intNegOp) re
+      return .app () (if isReal then realNegOp else intNegOp) re
     | _ =>
       throwExprDiagnostic $ md.toDiagnostic s!"translateExpr: Invalid unary op: {repr op}" DiagnosticType.StrataBug
   | .PrimitiveOp op [e1, e2] =>
@@ -186,9 +182,6 @@ def translateExpr (expr : StmtExprMd)
     let isReal := match (computeExprType model e1).val, (computeExprType model e2).val with
       | .TReal, _ | _, .TReal => true
       | _, _ => false
-    let isFloat64 := match (computeExprType model e1).val, (computeExprType model e2).val with
-      | .TFloat64, _ | _, .TFloat64 => true
-      | _, _ => false
     match op with
     | .Eq => return .eq () re1 re2
     | .Neq => return .app () boolNotOp (.eq () re1 re2)
@@ -197,10 +190,10 @@ def translateExpr (expr : StmtExprMd)
     | .AndThen => return .ite () re1 re2 (.boolConst () false)
     | .OrElse => return .ite () re1 (.boolConst () true) re2
     | .Implies => return .ite () re1 re2 (.boolConst () true)
-    | .Add => return binOp (if isFloat64 then (if s.overflowChecks.float64 then float64SafeAddOp else float64AddOp) else if isReal then realAddOp else intAddOp)
-    | .Sub => return binOp (if isFloat64 then (if s.overflowChecks.float64 then float64SafeSubOp else float64SubOp) else if isReal then realSubOp else intSubOp)
-    | .Mul => return binOp (if isFloat64 then (if s.overflowChecks.float64 then float64SafeMulOp else float64MulOp) else if isReal then realMulOp else intMulOp)
-    | .Div => return binOp (if isFloat64 then (if s.overflowChecks.float64 then float64SafeDivOp else float64DivOp) else if isReal then realDivOp else intSafeDivOp)
+    | .Add => return binOp (if isReal then realAddOp else intAddOp)
+    | .Sub => return binOp (if isReal then realSubOp else intSubOp)
+    | .Mul => return binOp (if isReal then realMulOp else intMulOp)
+    | .Div => return binOp (if isReal then realDivOp else intSafeDivOp)
     | .Mod => return binOp intSafeModOp
     | .DivT => return binOp intSafeDivTOp
     | .ModT => return binOp intSafeModTOp

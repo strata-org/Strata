@@ -144,7 +144,6 @@ def denotePrimSort (sctx : SortContext) (pty : TermPrimType) : Option (SortDenot
   | .string => return fun _ => String
   | .regex => none
   | .trigger => none
-  | .float64 => none  -- No Lean denotation for IEEE 754 floats
 
 /--
 Interpret an SMT `TermType` as a Lean `Type`, when supported.

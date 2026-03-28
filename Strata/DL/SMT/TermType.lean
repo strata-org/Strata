@@ -24,8 +24,6 @@ inductive TermPrimType where
   /-- `regex`: regular expressions in the theory of unicode strings -/
   | regex
   | trigger
-  /-- IEEE 754 double-precision floating point (Float64) -/
-  | float64
 deriving instance Repr, Inhabited, DecidableEq for TermPrimType
 
 def TermPrimType.mkName : TermPrimType → String
@@ -36,7 +34,6 @@ def TermPrimType.mkName : TermPrimType → String
   | .string   => "string"
   | .regex   =>  "regex"
   | .trigger  => "trigger"
-  | .float64  => "float64"
 
 def TermPrimType.lt : TermPrimType → TermPrimType → Bool
   | .bitvec n₁, .bitvec n₂     => n₁ < n₂
@@ -178,7 +175,6 @@ abbrev TermType.bitvec (n : Nat) : TermType := .prim (.bitvec n)
 abbrev TermType.string : TermType := .prim .string
 abbrev TermType.regex : TermType := .prim .regex
 abbrev TermType.trigger : TermType := .prim .trigger
-abbrev TermType.float64 : TermType := .prim .float64
 
 def TermType.isPrimType : TermType → Bool
   | .prim _ => true

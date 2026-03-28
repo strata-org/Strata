@@ -40,7 +40,6 @@ def KnownLTys : LTys :=
    t[string],
    t[regex],
    t[real],
-   t[float64],
    t[Triggers],
    t[TriggerGroup],
    -- Note: t[bv<n>] elaborates to (.forAll [] .tcons "bitvec" <n>).
@@ -304,104 +303,6 @@ def realGtFunc : WFLFunc CoreLParams :=
   binaryFuncUneval "Real.Gt" mty[real] mty[real] mty[bool]
 def realGeFunc : WFLFunc CoreLParams :=
   binaryFuncUneval "Real.Ge" mty[real] mty[real] mty[bool]
-
-/- Float64 Arithmetic Operations (IEEE 754 double-precision) -/
-
-def float64AddFunc : WFLFunc CoreLParams :=
-  binaryFuncUneval "Float64.Add" mty[float64] mty[float64] mty[float64]
-def float64SubFunc : WFLFunc CoreLParams :=
-  binaryFuncUneval "Float64.Sub" mty[float64] mty[float64] mty[float64]
-def float64MulFunc : WFLFunc CoreLParams :=
-  binaryFuncUneval "Float64.Mul" mty[float64] mty[float64] mty[float64]
-def float64DivFunc : WFLFunc CoreLParams :=
-  binaryFuncUneval "Float64.Div" mty[float64] mty[float64] mty[float64]
-def float64NegFunc : WFLFunc CoreLParams :=
-  unaryFuncUneval "Float64.Neg" mty[float64] mty[float64]
-
-/- Float64 Predicates -/
-
-def float64IsInfiniteFunc : WFLFunc CoreLParams :=
-  unaryFuncUneval "Float64.IsInfinite" mty[float64] mty[bool]
-def float64IsNaNFunc : WFLFunc CoreLParams :=
-  unaryFuncUneval "Float64.IsNaN" mty[float64] mty[bool]
-
-/- Float64 Overflow Predicates -/
-
-def float64AddOverflowFunc : WFLFunc CoreLParams :=
-  binaryFuncUneval "Float64.AddOverflow" mty[float64] mty[float64] mty[bool]
-def float64SubOverflowFunc : WFLFunc CoreLParams :=
-  binaryFuncUneval "Float64.SubOverflow" mty[float64] mty[float64] mty[bool]
-def float64MulOverflowFunc : WFLFunc CoreLParams :=
-  binaryFuncUneval "Float64.MulOverflow" mty[float64] mty[float64] mty[bool]
-def float64DivOverflowFunc : WFLFunc CoreLParams :=
-  binaryFuncUneval "Float64.DivOverflow" mty[float64] mty[float64] mty[bool]
-
-/- Float64 Safe Arithmetic (overflow = result becomes ±infinity from finite inputs)
-   Each safe op carries a precondition: ¬ Float64.*Overflow(x, y) -/
-
-private def mkFloat64OverflowPrecond (overflowFunc : WFLFunc CoreLParams)
-    : Strata.DL.Util.FuncPrecondition (LExpr CoreLParams.mono) CoreLParams.Metadata :=
-  let notE := (boolNotFunc (T := CoreLParams)).func.opExpr
-  ⟨.app default notE
-    (.app default (.app default overflowFunc.opExpr
-      (.fvar default "x" (some .float64)))
-      (.fvar default "y" (some .float64))), default⟩
-
-def float64SafeAddFunc : WFLFunc CoreLParams :=
-  ⟨{ name := "Float64.SafeAdd", inputs := [("x", .float64), ("y", .float64)], output := .float64,
-     preconditions := [mkFloat64OverflowPrecond float64AddOverflowFunc] }, {
-    arg_nodup := by simp
-    body_freevars := by intro b hb; simp at hb
-    concreteEval_argmatch := by intro fn _ _ _ hfn; simp at hfn
-    body_or_concreteEval := by simp
-    typeArgs_nodup := by simp
-    inputs_typevars_in_typeArgs := by intro ty hty; simp [ListMap.values] at hty; rcases hty with rfl | rfl <;> decide
-    output_typevars_in_typeArgs := by decide
-    precond_freevars := by intro p hp; simp [mkFloat64OverflowPrecond] at hp; subst hp; native_decide
-    typeArgs_no_gen_prefix := by simp
-  }⟩
-
-def float64SafeSubFunc : WFLFunc CoreLParams :=
-  ⟨{ name := "Float64.SafeSub", inputs := [("x", .float64), ("y", .float64)], output := .float64,
-     preconditions := [mkFloat64OverflowPrecond float64SubOverflowFunc] }, {
-    arg_nodup := by simp
-    body_freevars := by intro b hb; simp at hb
-    concreteEval_argmatch := by intro fn _ _ _ hfn; simp at hfn
-    body_or_concreteEval := by simp
-    typeArgs_nodup := by simp
-    inputs_typevars_in_typeArgs := by intro ty hty; simp [ListMap.values] at hty; rcases hty with rfl | rfl <;> decide
-    output_typevars_in_typeArgs := by decide
-    precond_freevars := by intro p hp; simp [mkFloat64OverflowPrecond] at hp; subst hp; native_decide
-    typeArgs_no_gen_prefix := by simp
-  }⟩
-
-def float64SafeMulFunc : WFLFunc CoreLParams :=
-  ⟨{ name := "Float64.SafeMul", inputs := [("x", .float64), ("y", .float64)], output := .float64,
-     preconditions := [mkFloat64OverflowPrecond float64MulOverflowFunc] }, {
-    arg_nodup := by simp
-    body_freevars := by intro b hb; simp at hb
-    concreteEval_argmatch := by intro fn _ _ _ hfn; simp at hfn
-    body_or_concreteEval := by simp
-    typeArgs_nodup := by simp
-    inputs_typevars_in_typeArgs := by intro ty hty; simp [ListMap.values] at hty; rcases hty with rfl | rfl <;> decide
-    output_typevars_in_typeArgs := by decide
-    precond_freevars := by intro p hp; simp [mkFloat64OverflowPrecond] at hp; subst hp; native_decide
-    typeArgs_no_gen_prefix := by simp
-  }⟩
-
-def float64SafeDivFunc : WFLFunc CoreLParams :=
-  ⟨{ name := "Float64.SafeDiv", inputs := [("x", .float64), ("y", .float64)], output := .float64,
-     preconditions := [mkFloat64OverflowPrecond float64DivOverflowFunc] }, {
-    arg_nodup := by simp
-    body_freevars := by intro b hb; simp at hb
-    concreteEval_argmatch := by intro fn _ _ _ hfn; simp at hfn
-    body_or_concreteEval := by simp
-    typeArgs_nodup := by simp
-    inputs_typevars_in_typeArgs := by intro ty hty; simp [ListMap.values] at hty; rcases hty with rfl | rfl <;> decide
-    output_typevars_in_typeArgs := by decide
-    precond_freevars := by intro p hp; simp [mkFloat64OverflowPrecond] at hp; subst hp; native_decide
-    typeArgs_no_gen_prefix := by simp
-  }⟩
 
 /- String Operations -/
 def strLengthFunc : WFLFunc CoreLParams :=
@@ -906,22 +807,6 @@ def WFFactory : Lambda.WFLFactory CoreLParams :=
   realGtFunc,
   realGeFunc,
 
-  float64AddFunc,
-  float64SubFunc,
-  float64MulFunc,
-  float64DivFunc,
-  float64NegFunc,
-  float64IsInfiniteFunc,
-  float64IsNaNFunc,
-  float64AddOverflowFunc,
-  float64SubOverflowFunc,
-  float64MulOverflowFunc,
-  float64DivOverflowFunc,
-  float64SafeAddFunc,
-  float64SafeSubFunc,
-  float64SafeMulFunc,
-  float64SafeDivFunc,
-
   boolAndFunc (T := CoreLParams),
   boolOrFunc (T := CoreLParams),
   boolImpliesFunc (T := CoreLParams),
@@ -1073,21 +958,6 @@ def realLeOp : Expression.Expr := realLeFunc.opExpr
 def realGtOp : Expression.Expr := realGtFunc.opExpr
 def realGeOp : Expression.Expr := realGeFunc.opExpr
 
-def float64AddOp : Expression.Expr := float64AddFunc.opExpr
-def float64SubOp : Expression.Expr := float64SubFunc.opExpr
-def float64MulOp : Expression.Expr := float64MulFunc.opExpr
-def float64DivOp : Expression.Expr := float64DivFunc.opExpr
-def float64NegOp : Expression.Expr := float64NegFunc.opExpr
-def float64IsInfiniteOp : Expression.Expr := float64IsInfiniteFunc.opExpr
-def float64IsNaNOp : Expression.Expr := float64IsNaNFunc.opExpr
-def float64AddOverflowOp : Expression.Expr := float64AddOverflowFunc.opExpr
-def float64SubOverflowOp : Expression.Expr := float64SubOverflowFunc.opExpr
-def float64MulOverflowOp : Expression.Expr := float64MulOverflowFunc.opExpr
-def float64DivOverflowOp : Expression.Expr := float64DivOverflowFunc.opExpr
-def float64SafeAddOp : Expression.Expr := float64SafeAddFunc.opExpr
-def float64SafeSubOp : Expression.Expr := float64SafeSubFunc.opExpr
-def float64SafeMulOp : Expression.Expr := float64SafeMulFunc.opExpr
-def float64SafeDivOp : Expression.Expr := float64SafeDivFunc.opExpr
 def boolAndOp : Expression.Expr := (@boolAndFunc CoreLParams _).opExpr
 def boolOrOp : Expression.Expr := (@boolOrFunc CoreLParams _).opExpr
 def boolImpliesOp : Expression.Expr := (@boolImpliesFunc CoreLParams _).opExpr

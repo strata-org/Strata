@@ -130,29 +130,6 @@ info: ok: [(type Foo (a : Type, b : Type);
   func Real.Le :  ((x : real) (y : real)) → bool;
   func Real.Gt :  ((x : real) (y : real)) → bool;
   func Real.Ge :  ((x : real) (y : real)) → bool;
-  func Float64.Add :  ((x : float64) (y : float64)) → float64;
-  func Float64.Sub :  ((x : float64) (y : float64)) → float64;
-  func Float64.Mul :  ((x : float64) (y : float64)) → float64;
-  func Float64.Div :  ((x : float64) (y : float64)) → float64;
-  func Float64.Neg :  ((x : float64)) → float64;
-  func Float64.IsInfinite :  ((x : float64)) → bool;
-  func Float64.IsNaN :  ((x : float64)) → bool;
-  func Float64.AddOverflow :  ((x : float64) (y : float64)) → bool;
-  func Float64.SubOverflow :  ((x : float64) (y : float64)) → bool;
-  func Float64.MulOverflow :  ((x : float64) (y : float64)) → bool;
-  func Float64.DivOverflow :  ((x : float64) (y : float64)) → bool;
-  func Float64.SafeAdd :  ((x : float64) (y : float64)) → float64
-    requires ((~Bool.Not : (arrow bool bool))
-   ((~Float64.AddOverflow : (arrow float64 (arrow float64 bool))) (x : float64) (y : float64)));
-  func Float64.SafeSub :  ((x : float64) (y : float64)) → float64
-    requires ((~Bool.Not : (arrow bool bool))
-   ((~Float64.SubOverflow : (arrow float64 (arrow float64 bool))) (x : float64) (y : float64)));
-  func Float64.SafeMul :  ((x : float64) (y : float64)) → float64
-    requires ((~Bool.Not : (arrow bool bool))
-   ((~Float64.MulOverflow : (arrow float64 (arrow float64 bool))) (x : float64) (y : float64)));
-  func Float64.SafeDiv :  ((x : float64) (y : float64)) → float64
-    requires ((~Bool.Not : (arrow bool bool))
-   ((~Float64.DivOverflow : (arrow float64 (arrow float64 bool))) (x : float64) (y : float64)));
   func Bool.And :  ((x : bool) (y : bool)) → bool;
   func Bool.Or :  ((x : bool) (y : bool)) → bool;
   func Bool.Implies :  ((x : bool) (y : bool)) → bool;

@@ -79,10 +79,6 @@ def LMonoTy.bv64 : LMonoTy :=
 def LMonoTy.string : LMonoTy :=
   .tcons "string" []
 
-@[expose, match_pattern]
-def LMonoTy.float64 : LMonoTy :=
-  .tcons "float64" []
-
 def LMonoTy.arrow (t1 t2 : LMonoTy) : LMonoTy :=
   .tcons "arrow" [t1, t2]
 

@@ -101,7 +101,6 @@ private def lMonoTyToTermType (ty : LMonoTy) : TermType :=
   | .tcons "bool" [] => .bool
   | .tcons "int" [] => .int
   | .tcons "real" [] => .real
-  | .tcons "float64" [] => .float64
   | .tcons "string" [] => .string
   | .tcons "regex" [] => .regex
   | .tcons name args => .constr name (args.map lMonoTyToTermType)
@@ -525,45 +524,6 @@ partial def toSMTOp (E : Env) (fn : CoreIdent) (fnty : LMonoTy) (ctx : SMT.Conte
     | "Real.Gt"      => .ok (.app Op.gt,         .bool,   ctx)
     | "Real.Ge"      => .ok (.app Op.ge,         .bool,   ctx)
 
-    -- Float64 arithmetic: encoded as SMT-LIB FP operations with RNE rounding
-    | "Float64.Add" | "Float64.SafeAdd" =>
-      let fpApp := fun (args : List Term) (_retTy : TermType) =>
-        Term.app Op.fp_add (Term.rne :: args) .float64
-      .ok (fpApp, .float64, ctx)
-    | "Float64.Sub" | "Float64.SafeSub" =>
-      let fpApp := fun (args : List Term) (_retTy : TermType) =>
-        Term.app Op.fp_sub (Term.rne :: args) .float64
-      .ok (fpApp, .float64, ctx)
-    | "Float64.Mul" | "Float64.SafeMul" =>
-      let fpApp := fun (args : List Term) (_retTy : TermType) =>
-        Term.app Op.fp_mul (Term.rne :: args) .float64
-      .ok (fpApp, .float64, ctx)
-    | "Float64.Div" | "Float64.SafeDiv" =>
-      let fpApp := fun (args : List Term) (_retTy : TermType) =>
-        Term.app Op.fp_div (Term.rne :: args) .float64
-      .ok (fpApp, .float64, ctx)
-    | "Float64.Neg"         => .ok (.app Op.fp_neg,        .float64, ctx)
-    | "Float64.IsInfinite"  => .ok (.app Op.fp_isInfinite, .bool,    ctx)
-    | "Float64.IsNaN"       => .ok (.app Op.fp_isNaN,      .bool,    ctx)
-    -- Float64 overflow predicates: overflow iff finite inputs produce infinite result
-    | "Float64.AddOverflow" | "Float64.SubOverflow"
-    | "Float64.MulOverflow" | "Float64.DivOverflow" =>
-      let fpOp := match name with
-        | "Float64.AddOverflow" => Op.fp_add
-        | "Float64.SubOverflow" => Op.fp_sub
-        | "Float64.MulOverflow" => Op.fp_mul
-        | _ => Op.fp_div
-      let overflowApp := fun (args : List Term) (_retTy : TermType) =>
-        match args with
-        | [x, y] =>
-          let result := Term.app fpOp (Term.rne :: [x, y]) .float64
-          let xFinite := Term.app Op.not [Term.app Op.fp_isInfinite [x] .bool] .bool
-          let yFinite := Term.app Op.not [Term.app Op.fp_isInfinite [y] .bool] .bool
-          let resultInf := Term.app Op.fp_isInfinite [result] .bool
-          Term.app Op.and [xFinite, Term.app Op.and [yFinite, resultInf] .bool] .bool
-        | _ => Term.app Op.and [] .bool
-      .ok (overflowApp, .bool, ctx)
-
     | "Bv1.Neg"     => .ok (.app Op.bvneg,      .bitvec 1, ctx)
     | "Bv1.Add"     => .ok (.app Op.bvadd,      .bitvec 1, ctx)
     | "Bv1.Sub"     => .ok (.app Op.bvsub,      .bitvec 1, ctx)
@@ -891,7 +851,6 @@ def smtTermToLExpr (t : Strata.SMT.Term)
   | .prim (.real d)       => .realConst () d.toRat
   | .prim (.bitvec b)     => .bitvecConst () _ b
   | .prim (.string s)     => .strConst () s
-  | .prim .rne            => .op () ⟨"RNE", ()⟩ none
   | .var v                =>
     -- Zero-arg constructors arrive as plain variables from the SMT solver.
     -- Mark them with `.op` so the formatter can emit `Name()`.

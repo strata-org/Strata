@@ -72,10 +72,3 @@ example := Core.bv32SafeUAddOp
 example := Core.bv32SafeUSubOp
 example := Core.bv32SafeUMulOp
 example := Core.bv32SafeUNegOp
-
--- Verify Float64 operations exist in factory
-example := Core.float64AddOp
-example := Core.float64SafeAddOp
-example := Core.float64SafeDivOp
-example := Core.float64IsInfiniteOp
-example := Core.float64IsNaNOp
