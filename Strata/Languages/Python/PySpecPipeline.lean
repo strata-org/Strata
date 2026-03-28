@@ -36,6 +36,8 @@ public structure PySpecLaurelResult where
   functionSignatures : List Python.PythonFunctionDecl := []
   /-- Maps unprefixed class names to prefixed names for type resolution. -/
   typeAliases : Std.HashMap String String := {}
+  /-- Classes whose spec is considered exhaustive (lists all methods). -/
+  exhaustiveClasses : Std.HashSet String := {}
 
 /-! ### Private Helpers -/
 
@@ -104,13 +106,14 @@ public def buildPySpecLaurel (pyspecEntries : Array (String × String))
   let mut allOverloads := overloads
   let mut funcSigs : List Python.PythonFunctionDecl := []
   let mut allTypeAliases : Std.HashMap String String := {}
+  let mut allExhaustiveClasses : Std.HashSet String := {}
   for (modulePrefix, ionPath) in pyspecEntries do
     let ionFile : System.FilePath := ionPath
     let sigs ←
       match ← Python.Specs.readDDM ionFile |>.toBaseIO with
       | .ok t => pure t
       | .error msg => throw s!"Could not read {ionFile}: {msg}"
-    let { program, errors, overloads, typeAliases } :=
+    let { program, errors, overloads, typeAliases, exhaustiveClasses } :=
       Python.Specs.ToLaurel.signaturesToLaurel ionPath sigs modulePrefix
     if errors.size > 0 then
       let _ ← IO.eprintln
@@ -119,6 +122,7 @@ public def buildPySpecLaurel (pyspecEntries : Array (String × String))
         let _ ← IO.eprintln s!"  {err.file}: {err.message}" |>.toBaseIO
     allOverloads := mergeOverloads allOverloads overloads
     allTypeAliases := typeAliases.fold (init := allTypeAliases) fun m k v => m.insert k v
+    allExhaustiveClasses := exhaustiveClasses.fold (init := allExhaustiveClasses) fun s name => s.insert name
     match extractFunctionSignatures sigs modulePrefix with
     | .ok fs => funcSigs := funcSigs ++ fs
     | .error msg => throw msg
@@ -153,7 +157,8 @@ public def buildPySpecLaurel (pyspecEntries : Array (String × String))
     constants := []
   }
   return { laurelProgram := combinedLaurel, overloads := allOverloads
-           functionSignatures := funcSigs, typeAliases := allTypeAliases }
+           functionSignatures := funcSigs, typeAliases := allTypeAliases
+           exhaustiveClasses := allExhaustiveClasses }
 
 /-- Read dispatch Ion files and merge their overload tables. -/
 public def readDispatchOverloads
@@ -278,10 +283,15 @@ public def buildPreludeInfo (result : PySpecLaurelResult) : Python.PreludeInfo :
         if name.startsWith (prefixed ++ "@") then
           s.insert (unprefixed ++ name.drop prefixed.length) (.function name)
         else s
+  -- Add unprefixed aliases to exhaustiveClasses
+  let exhaustive := result.typeAliases.fold (init := result.exhaustiveClasses)
+    fun s unprefixed prefixed =>
+      if result.exhaustiveClasses.contains prefixed then s.insert unprefixed else s
   { merged with
     functionSignatures :=
       result.functionSignatures ++ merged.functionSignatures
-    importedSymbols := symbols }
+    importedSymbols := symbols
+    exhaustiveClasses := exhaustive }
 
 /-- Combine PySpec and user Laurel programs into a single program,
     prepending External stubs so the Laurel `resolve` pass can see
