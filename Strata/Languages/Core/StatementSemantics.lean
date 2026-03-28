@@ -8,6 +8,7 @@ module
 public import Strata.DL.Lambda.LExpr
 public import Strata.DL.Lambda.LExprWF
 public import Strata.DL.Imperative.StmtSemantics
+public import Strata.DL.Imperative.StmtSemanticsSmallStep
 public import Strata.Languages.Core.CoreGen
 public import Strata.Languages.Core.Procedure
 
@@ -313,6 +314,69 @@ inductive EvalCommand (π : String → Option Procedure) (φ : CoreEval → Pure
 @[expose] abbrev EvalStatements (π : String → Option Procedure) (φ : CoreEval → PureFunc Expression → CoreEval) :
     Imperative.Env Expression → List Statement → Imperative.Env Expression → Prop :=
   Imperative.EvalBlock Expression Command (EvalCommand π φ) (EvalPureFunc φ)
+
+
+/-! ### Core small-step abbreviations for Statement -/
+
+/-- Core-level small-step configuration. -/
+@[expose] abbrev CoreConfig := Imperative.Config Expression Command
+
+/-- Core-level single-step relation. -/
+@[expose] abbrev CoreStep
+    (π : String → Option Procedure)
+    (φ : CoreEval → PureFunc Expression → CoreEval) :=
+  Imperative.StepStmt Expression (EvalCommand π φ) (EvalPureFunc φ)
+
+/-- Core-level multi-step (reflexive-transitive closure) relation. -/
+@[expose] abbrev CoreStepStar
+    (π : String → Option Procedure)
+    (φ : CoreEval → PureFunc Expression → CoreEval) :=
+  Imperative.StepStmtStar Expression (EvalCommand π φ) (EvalPureFunc φ)
+
+/-! ## Old-variable environment augmentation -/
+
+/-- Augment an environment with old-variable bindings for the modifies clause.
+
+    For each `g ∈ modifies`, the store is extended so that
+    `(withOldBindings modifies ρ).store (CoreIdent.mkOld g.name) = ρ.store g`.
+    All other store lookups (including `g` itself) are unchanged.
+    The evaluator and `hasFailure` flag are preserved. -/
+def withOldBindings
+    (modifies : List Expression.Ident) (ρ : Env Expression) : Env Expression :=
+  { ρ with store := fun id =>
+      match modifies.find? (fun g => CoreIdent.mkOld g.name == id) with
+      | some g => ρ.store g
+      | none   => ρ.store id }
+
+/-! ## Assert detection -/
+
+/-- Assert detection for Core configurations.
+
+    Core commands have type `Command = CmdExt Expression`, so an assert
+    command appears as `.cmd (CmdExt.cmd (Cmd.assert l e md))`.
+    Call commands (`.cmd (CmdExt.call ...)`) never trigger assert detection. -/
+def coreIsAtAssert : CoreConfig → Imperative.AssertId Expression → Prop
+  | .stmt (.cmd (.cmd (.assert label expr _))) _, aid =>
+    aid.label = label ∧ aid.expr = expr
+  | .stmts ((.cmd (.cmd (.assert label expr _))) :: _) _, aid =>
+    aid.label = label ∧ aid.expr = expr
+  | .block _ inner, aid => coreIsAtAssert inner aid
+  | .seq inner _, aid => coreIsAtAssert inner aid
+  | _, _ => False
+
+/-! ## Well-formed evaluator extension -/
+
+/-- A well-formed evaluator extension preserves `WellFormedSemanticEvalBool`
+    through `funcDecl` steps.  This is the only step that modifies the
+    evaluator; all other small-step rules leave it unchanged.
+
+    Concrete instantiations of `φ` (e.g., lookup-table extensions) should
+    prove this once at the instantiation site. -/
+structure WFEvalExtension (φ : CoreEval → Imperative.PureFunc Expression → CoreEval) : Prop where
+  preserves_wfBool : ∀ δ σ decl, Imperative.WellFormedSemanticEvalBool δ →
+    Imperative.WellFormedSemanticEvalBool (EvalPureFunc φ δ σ decl)
+
+---------------------------------------------------------------------
 
 inductive EvalCommandContract : (String → Option Procedure)  → CoreEval →
   CoreStore → Command → CoreStore → Bool → Prop where
