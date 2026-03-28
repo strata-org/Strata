@@ -65,12 +65,6 @@ The double parse is defensible because `pythonRegexToCore` is fast enough -- it
 runs at translation time, not solver time, and keeps the factory functions
 orthogonal.
 
-### Note on `re_*_str` functions
-
-`re_fullmatch_str`, `re_match_str`, `re_search_str` (RegLan-valued) are no
-longer called by the matching path now that `re_*_bool` are factory functions.
-They are retained in `ReFactory` for completeness and in case they are directly
-referenced by other code.
 -/
 
 open Core
@@ -79,29 +73,6 @@ open Lambda LTy.Syntax LExpr.SyntaxMono
 -- Mode-specific regex compilation.  Each function compiles a Python regex
 -- string with the correct MatchMode so that anchors (^/$) are handled
 -- properly.
-private def mkModeCompileFunc (name : String) (mode : MatchMode) :
-    LFunc Core.CoreLParams :=
-    { name := name,
-      typeArgs := [],
-      inputs := [("pattern", mty[string])],
-      output := mty[regex],
-      concreteEval := some
-        (fun _ args => match args with
-          | [LExpr.strConst () s] =>
-            let (expr, maybe_err) := pythonRegexToCore s mode
-            match maybe_err with
-            | none => .some expr
-            | some _ => .none
-          | _ => .none)
-      }
-
-def reFullmatchStrFunc : LFunc Core.CoreLParams :=
-  mkModeCompileFunc "re_fullmatch_str" .fullmatch
-def reMatchStrFunc     : LFunc Core.CoreLParams :=
-  mkModeCompileFunc "re_match_str"     .match
-def reSearchStrFunc    : LFunc Core.CoreLParams :=
-  mkModeCompileFunc "re_search_str"    .search
-
 -- Bool-valued factory.  See architecture comment above.
 private def mkModeBoolFunc (name : String) (mode : MatchMode) :
     LFunc Core.CoreLParams :=
@@ -151,9 +122,6 @@ def ReFactory : @Factory Core.CoreLParams :=
       reFullmatchBoolFunc,
       reMatchBoolFunc,
       reSearchBoolFunc,
-      reFullmatchStrFunc,
-      reMatchStrFunc,
-      reSearchStrFunc,
       rePatternErrorFunc
     ]
 
