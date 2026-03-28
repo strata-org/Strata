@@ -961,7 +961,7 @@ def main() -> int:
     if not bugs and not investigations:
         print("\n✅  All cases either agree or are known gaps.")
 
-    return 1 if bugs else 0
+    return 1 if bugs or investigations else 0
 
 
 if __name__ == "__main__":
