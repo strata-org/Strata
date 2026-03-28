@@ -24,7 +24,7 @@ def outcomeToLevel (mode : VerificationMode) (property : Imperative.PropertyType
   match mode, property, outcome.satisfiabilityProperty, outcome.validityProperty with
   -- Cover satisfied (sat on P∧Q): always pass
   | _, .cover, .sat _, _ => .none
-  -- Unreachable (both unsat): warning for assert/divisionByZero, error for cover
+  -- Unreachable (both unsat): warning for assert/divisionByZero/arithmeticOverflow, error for cover
   | _, p, .unsat, .unsat => if p.passWhenUnreachable then .warning else .error
   -- Pass: validity proven (unsat on P∧¬Q)
   | _, _, _, .unsat => .none
@@ -84,6 +84,7 @@ def extractLocation (files : Map Strata.Uri Lean.FileMap) (md : Imperative.MetaD
 /-- Convert PropertyType to a property classification string for SARIF output -/
 def propertyTypeToClassification : Imperative.PropertyType → String
   | .divisionByZero => "division-by-zero"
+  | .arithmeticOverflow => "arithmetic-overflow"
   | .cover => "cover"
   | .assert => "assert"
 

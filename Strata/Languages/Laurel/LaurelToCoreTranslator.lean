@@ -87,6 +87,8 @@ structure TranslateState where
   nextId : Nat := 1
   /-- Constants known to the program (field constants, etc.) -/
   model : SemanticModel
+  /-- Overflow check configuration -/
+  overflowChecks : Core.OverflowChecks := {}
   /-- Do not process the produces Core program, since it has superfluous errors -/
   coreProgramHasSuperfluousErrors: Bool := false
 
@@ -611,6 +613,7 @@ def translateDatatypeDefinition (model : SemanticModel) (dt : DatatypeDefinition
 
 structure LaurelTranslateOptions where
   emitResolutionErrors : Bool := true
+  overflowChecks : Core.OverflowChecks := {}
 
 abbrev TranslateResult := (Option Core.Program) × (List DiagnosticModel)
 
@@ -657,7 +660,7 @@ def translateWithLaurel (options: LaurelTranslateOptions) (program : Program): T
   let result := resolve program (some model)
   let (program, model) := (result.program, result.model)
 
-    let initState : TranslateState := {model := model }
+    let initState : TranslateState := {model := model, overflowChecks := options.overflowChecks }
   let (coreProgramOption, translateState) := runTranslateM initState (translateLaurelToCore program)
   let resolutionErrors: List DiagnosticModel := if options.emitResolutionErrors then result.errors.toList else []
   let allDiagnostics := resolutionErrors ++ diamondErrors ++ modifiesDiags ++ constrainedTypeDiags ++ translateState.diagnostics
