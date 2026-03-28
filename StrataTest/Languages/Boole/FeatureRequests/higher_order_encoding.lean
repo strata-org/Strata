@@ -12,7 +12,13 @@ open Strata
 Near-upstream anchors from `differential_status.md`:
 - `verus-examples:fun_ext`
 - `verus-examples:trait_for_fn`
+- Verus links:
+  `fun_ext`: https://github.com/verus-lang/verus/blob/main/examples/fun_ext.rs
+  `trait_for_fn`: https://github.com/verus-lang/verus/blob/main/examples/trait_for_fn.rs
 - Gap: higher-order / lambda support
+- Current status: the seed verifies with a first-order uninterpreted `apply`
+  encoding
+- Remaining gap: direct lambdas/closures/higher-order values
 -/
 
 private def higherOrderSeed : Strata.Program :=
@@ -31,12 +37,12 @@ spec {
   ensures y == apply(f, x);
 }
 {
-  // TODO(feature:lambda): allow inline lambdas/closures, not only first-order encodings.
   y := apply(f, x);
 };
 #end
 
-/-- info: Obligation: higher_order_seed_ensures_0_615
+/-- info:
+Obligation: higher_order_seed_ensures_0_947
 Property: assert
 Result: ✅ pass-/
 #guard_msgs in
