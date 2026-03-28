@@ -194,6 +194,41 @@ is a non-empty `Array String`, parallel to existing `Specs.ModuleName`. Prelude
 table uses `Std.HashMap String QualifiedName` to allow aliases (e.g., `None` →
 `builtins.NoneType`). Updated all expected files and reference manual.
 
+### Phase 9: Lean IR Implementation (completed 2026-03-28)
+
+Implemented the SSA IR data types and pretty-printer in Lean 4.27.
+
+**SSA.lean (293 lines).** All IR types as Lean inductive/structure definitions:
+`SSAModuleName`, `QualifiedName`, `PyType`, `SSAVal`, `BlockId`, `SSAName`,
+`CallArg`, `BinOpKind`, `UnaryOpKind`, `CmpOpKind`, `Instruction`, `Terminator`,
+`ExceptArgVal`, `ExceptTarget`, `BlockParam`, `NamedInstr`, `Block`, `ParamKind`,
+`FuncParam`, `Func`, `Module`, plus `pythonPrelude` as a `Std.HashMap`.
+
+Key implementation decisions:
+- `public section` required for all types — Lean 4.27 module system defaults to
+  protected visibility, which blocks field notation and constructor patterns in
+  consuming modules.
+- `PyType` cannot derive `Repr` (recursive through `Array`/`OrderedMap`). Types
+  containing `Option PyType` use `deriving Inhabited` only.
+- `OrderedMap` uses `Std.HashMap A Nat` for O(1) keyed lookup into `Array B`.
+
+**SSAFormat.lean (350 lines).** Pretty-printer implementing three sugar rules:
+1. `callQualified` — when `qualifiedRef` is used once as a call target
+2. `call attr()` — when `attr` is used once as a call target
+3. Inline literals — when a literal instruction is used exactly once
+
+Performance design: precomputed `BlockCtx` structure built once per block,
+replacing O(n) `Array.find?` scans with O(1) `HashMap`/`HashSet` lookups:
+- `defMap : Std.HashMap Nat NamedInstr` — val ID → defining instruction
+- `callTargets : Std.HashSet Nat` — val IDs used as `func` in `.call`
+- `useCount` helper with documented soundness argument for the `getD 0` default
+
+**Lean 4.27 module system.** The main obstacle was visibility. Without `public
+section`, types defined in SSA.lean were inaccessible for field projection
+(`.id`, `.instr`) and constructor matching (`.add`, `.intLit`) in SSAFormat.lean.
+The fix was straightforward once identified: `public section` in SSA.lean,
+`public` only on `fmtFunc`/`fmtModule` in SSAFormat.lean.
+
 ## Tools Built
 
 | Tool | Purpose |
