@@ -27,6 +27,7 @@ import Strata.Languages.Python.PythonLaurelCorePrelude
 import Strata.Backends.CBMC.CollectSymbols
 import Strata.Backends.CBMC.GOTO.CoreToGOTOPipeline
 
+import Strata.Languages.Python.FeatureUsage
 import Strata.SimpleAPI
 
 open Strata
@@ -293,6 +294,15 @@ def pyTranslateCommand : Command where
     let bpgm := Strata.pythonToCore Strata.Python.coreSignatures stmts preludePgm
     let newPgm : Core.Program := { decls := preludePgm.decls ++ bpgm.decls }
     IO.print newPgm
+
+def pyFeaturesCommand : Command where
+  name := "pyFeatures"
+  args := [ "file" ]
+  help := "Analyze a Python Ion program and print feature usage statistics."
+  callback := fun v _ => do
+    let stmts ← readPythonStrata v[0]
+    let result := Strata.Python.FeatureUsage.analyzeFeatures stmts
+    IO.print (Strata.Python.FeatureUsage.formatReport result)
 
 /-- Derive Python source file path from Ion file path.
     E.g., "tests/test_foo.python.st.ion" -> "tests/test_foo.py" -/
@@ -1278,7 +1288,8 @@ def commandGroups : List CommandGroup := [
                  pyAnalyzeLaurelToGotoCommand,
                  pyAnalyzeToGotoCommand,
                  pyTranslateCommand,
-                 pyTranslateLaurelCommand] },
+                 pyTranslateLaurelCommand,
+                 pyFeaturesCommand] },
   { name := "Laurel"
     commands := [laurelAnalyzeCommand, laurelAnalyzeBinaryCommand,
                  laurelAnalyzeToGotoCommand, laurelParseCommand,
