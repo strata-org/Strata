@@ -100,11 +100,13 @@ def Stmt.removeLoopsM
   match s with
   | .loop guard measure invariants bss md => do
     let loop_num ← StateT.modifyGet (fun x => (x, x + 1))
-    let neg_guard : P.Expr := HasNot.not guard
     let assigned_vars := Block.modifiedVars bss
     -- All of the replaced statements reuse the metadata md.
     let havocd : Stmt P C :=
       .block s!"loop_havoc_{loop_num}" (assigned_vars.map (λ n => Stmt.cmd (HasHavoc.havoc n md))) {}
+    match guard with
+    | .det g =>
+    let neg_guard : P.Expr := HasNot.not g
     let entry_invariants := invariants.mapIdx fun i inv =>
       Stmt.cmd (HasPassiveCmds.assert s!"entry_invariant_{loop_num}_{i}" inv md)
     let entry_invariant_assumes := invariants.mapIdx fun i inv =>
@@ -114,7 +116,7 @@ def Stmt.removeLoopsM
     let inv_assumes := invariants.mapIdx fun i inv =>
       Stmt.cmd (HasPassiveCmds.assume s!"assume_invariant_{loop_num}_{i}" inv md)
     let arbitrary_iter_assumes := .block s!"arbitrary_iter_assumes_{loop_num}"
-      ([Stmt.cmd (HasPassiveCmds.assume s!"assume_guard_{loop_num}" guard md)] ++ inv_assumes)
+      ([Stmt.cmd (HasPassiveCmds.assume s!"assume_guard_{loop_num}" g md)] ++ inv_assumes)
       md
     let maintain_invariants := invariants.mapIdx fun i inv =>
       Stmt.cmd (HasPassiveCmds.assert s!"arbitrary_iter_maintain_invariant_{loop_num}_{i}" inv md)
@@ -130,7 +132,7 @@ def Stmt.removeLoopsM
         -- Variables with `$__` prefix are internal variables.
         let m_old_ident    := HasIdent.ident s!"$__loop_measure_{loop_num}"
         let m_old_expr     := HasFvar.mkFvar m_old_ident
-        let init_m_old     := Stmt.cmd (HasInit.init m_old_ident HasIntOrder.intTy none md)
+        let init_m_old     := Stmt.cmd (HasInit.init m_old_ident HasIntOrder.intTy .nondet md)
         let assume_m_old   := Stmt.cmd (HasPassiveCmds.assume
           s!"assume_measure_{loop_num}" (HasIntOrder.eq m_old_expr m) md)
         let assert_lb      := Stmt.cmd (HasPassiveCmds.assert
@@ -148,7 +150,32 @@ def Stmt.removeLoopsM
       Stmt.cmd (HasPassiveCmds.assume s!"invariant_{loop_num}_{i}" inv md)
     let exit_state_assumes := [havocd, not_guard] ++ invariant_assumes
     let loop_passive :=
-      .ite guard (arbitrary_iter_facts :: exit_state_assumes) [] {}
+      .ite (.det g) (arbitrary_iter_facts :: exit_state_assumes) [] {}
+    pure (.block s!"loop_{loop_num}" [first_iter_facts, loop_passive] {})
+    | .nondet =>
+    -- Non-deterministic loop: havoc assigned vars, then non-deterministically
+    -- enter the body or exit. The measure is ignored because termination of a
+    -- nondet loop cannot be proved via a decreasing measure (the iteration count
+    -- is arbitrary). If breaks are present, termination may still hold.
+    let body_statements ← Block.removeLoopsM bss
+    let entry_invariants := invariants.mapIdx fun i inv =>
+      Stmt.cmd (HasPassiveCmds.assert s!"entry_invariant_{loop_num}_{i}" inv md)
+    let entry_invariant_assumes := invariants.mapIdx fun i inv =>
+      Stmt.cmd (HasPassiveCmds.assume s!"assume_entry_invariant_{loop_num}_{i}" inv md)
+    let first_iter_facts :=
+      .block s!"first_iter_asserts_{loop_num}" (entry_invariants ++ entry_invariant_assumes) {}
+    let inv_assumes := invariants.mapIdx fun i inv =>
+      Stmt.cmd (HasPassiveCmds.assume s!"assume_invariant_{loop_num}_{i}" inv md)
+    let arbitrary_iter_assumes := .block s!"arbitrary_iter_assumes_{loop_num}" inv_assumes md
+    let maintain_invariants := invariants.mapIdx fun i inv =>
+      Stmt.cmd (HasPassiveCmds.assert s!"arbitrary_iter_maintain_invariant_{loop_num}_{i}" inv md)
+    let arbitrary_iter_facts := .block s!"arbitrary_iter_facts_{loop_num}"
+      ([havocd, arbitrary_iter_assumes] ++ body_statements ++ maintain_invariants) {}
+    let invariant_assumes := invariants.mapIdx fun i inv =>
+      Stmt.cmd (HasPassiveCmds.assume s!"invariant_{loop_num}_{i}" inv md)
+    let exit_state_assumes := [havocd] ++ invariant_assumes
+    let loop_passive :=
+      .ite .nondet (arbitrary_iter_facts :: exit_state_assumes) [] {}
     pure (.block s!"loop_{loop_num}" [first_iter_facts, loop_passive] {})
   | .ite c tss ess md => do
     let tss ← Block.removeLoopsM tss

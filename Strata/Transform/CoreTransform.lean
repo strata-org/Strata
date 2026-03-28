@@ -223,7 +223,7 @@ def createInit (trip : (Expression.Ident × Expression.Ty) × Expression.Expr)
     (md:Imperative.MetaData Expression)
   : Statement :=
   match trip with
-  | ((v', ty), e) => Statement.init v' ty (some e) md
+  | ((v', ty), e) => Statement.init v' ty (.det e) md
 
 def createInits (trips : List ((Expression.Ident × Expression.Ty) × Expression.Expr))
     (md: (Imperative.MetaData Expression))
@@ -237,7 +237,7 @@ def createInitVar (trip : (Expression.Ident × Expression.Ty) × Expression.Iden
     (md:Imperative.MetaData Expression)
   : Statement :=
   match trip with
-  | ((v', ty), v) => Statement.init v' ty (some (Lambda.LExpr.fvar () v none)) md
+  | ((v', ty), v) => Statement.init v' ty (.det (Lambda.LExpr.fvar () v none)) md
 
 def createInitVars (trips : List ((Expression.Ident × Expression.Ty) × Expression.Ident))
     (md : (Imperative.MetaData Expression))

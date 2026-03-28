@@ -51,6 +51,7 @@ class HasBool (P : PureExpr) where
 
 class HasNot (P : PureExpr) extends HasBool P where
   not : P.Expr → P.Expr
+  boolTy : P.Ty
 
 class HasAnd (P : PureExpr) extends HasBool P where
   and : P.Expr → P.Expr → P.Expr
