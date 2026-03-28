@@ -94,6 +94,8 @@ structure TranslationContext where
   filePath : String := ""
   /-- Maps Python-visible names to their structured symbol info. -/
   importedSymbols : Std.HashMap String ImportedSymbol := {}
+  /-- Classes whose spec is considered exhaustive (lists all methods). -/
+  exhaustiveClasses : Std.HashSet String := {}
   /-- Track current class during method translation -/
   currentClassName : Option String := none
   loopBreakLabel : Option String := none
@@ -366,6 +368,11 @@ def resolveDispatch (ctx : TranslationContext)
 /-- Check if a function has a model (is in prelude or user-defined) -/
 def hasModel (ctx : TranslationContext) (funcName : String) : Bool :=
   funcName ∈ ctx.importedSymbols || funcName ∈ ctx.userFunctions
+
+/-- Check if a type's spec is exhaustive, meaning unmodeled method
+    calls should be reported as errors. -/
+def isExhaustiveType (ctx : TranslationContext) (typeName : String) : Bool :=
+  ctx.exhaustiveClasses.contains typeName
 
 def ListAny_mk (es: List StmtExprMd) : StmtExprMd := match es with
   | [] => mkStmtExprMd (.StaticCall "ListAny_nil" [])
@@ -833,10 +840,14 @@ partial def translateCall (ctx : TranslationContext)
   let (funcName, opt_firstarg, unknowtype) ←  refineFunctionCallExpr ctx f
   if !hasModel ctx funcName then
     if opt_firstarg.isSome && !unknowtype then
-      let (methodName, range) := match f with
-        | .Attribute range _ attr _ => (attr.val, range)
-        | _ => (funcName, .none)
-      throwUserError range s!"Unknown method '{methodName}'"
+      -- Only report "Unknown method" when the receiver type has an
+      -- exhaustive spec, meaning unmodeled methods are genuine errors.
+      let typePrefix := funcName.splitOn "@" |>.head!
+      if isExhaustiveType ctx typePrefix then
+        let (methodName, range) := match f with
+          | .Attribute range _ attr _ => (attr.val, range)
+          | _ => (funcName, .none)
+        throwUserError range s!"Unknown method '{methodName}'"
     return mkStmtExprMd .Hole
   -- Step 3: translate the resolved call
   let methodName := match f with
@@ -1709,6 +1720,9 @@ structure PreludeInfo where
   /-- Maps Python-visible names to their structured symbol info.
       Includes both canonical Laurel names and unprefixed aliases. -/
   importedSymbols : Std.HashMap String ImportedSymbol := {}
+  /-- Classes whose spec is considered exhaustive (lists all methods).
+      Only these classes trigger "Unknown method" errors for unmodeled calls. -/
+  exhaustiveClasses : Std.HashSet String := {}
 
 /-- Extract `PreludeInfo` from a `Core.Program`. -/
 def PreludeInfo.ofCoreProgram (prelude : Core.Program) : PreludeInfo where
@@ -1836,6 +1850,7 @@ def pythonToLaurel' (info : PreludeInfo)
   let mut compositeTypes : Array TypeDefinition := #[.Composite pyErrorTy]
   compositeTypeNames := compositeTypeNames.insert "PythonError"
   let mut classFieldHighType : Std.HashMap String (Std.HashMap String HighType) := {}
+  let mut exhaustiveClasses := info.exhaustiveClasses
   for stmt in body do
     match stmt with
     | .ClassDef _ _ _ _ _ _ _ =>
@@ -1853,6 +1868,8 @@ def pythonToLaurel' (info : PreludeInfo)
       procedures := procedures ++ instanceProcedures
       compositeTypes := compositeTypes.push <| .Composite composite
       compositeTypeNames := compositeTypeNames.insert composite.name.text
+      -- User-defined classes are exhaustive: all methods are visible
+      exhaustiveClasses := exhaustiveClasses.insert composite.name.text
       -- Collect field types for Any coercions in field accesses
       let fieldMap := composite.fields.foldl (fun m f => m.insert f.name.text f.type.val) (classFieldHighType[composite.name.text]?.getD {})
       classFieldHighType := classFieldHighType.insert composite.name.text fieldMap
@@ -1874,6 +1891,7 @@ def pythonToLaurel' (info : PreludeInfo)
     classFieldHighType := classFieldHighType,
     overloadTable := overloadTable,
     importedSymbols := importedSymbols,
+    exhaustiveClasses := exhaustiveClasses,
     filePath := filePath
   }
 
