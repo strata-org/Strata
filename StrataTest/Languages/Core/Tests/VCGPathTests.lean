@@ -102,11 +102,11 @@ procedure p() returns () {
 
 /--
 info:
-Obligation: dead_else
+Obligation: live_then
 Property: assert
 Result: ✅ pass
 
-Obligation: live_then
+Obligation: dead_else
 Property: assert
 Result: ✅ pass
 -/
@@ -180,6 +180,10 @@ procedure p() returns () {
 /--
 info:
 Obligation: dead_then
+Property: assert
+Result: ✅ pass
+
+Obligation: post
 Property: assert
 Result: ✅ pass
 
@@ -260,10 +264,6 @@ procedure p(x : bool) returns () {
 
 /--
 info:
-Obligation: dead_else
-Property: assert
-Result: ✅ pass
-
 Obligation: pre
 Property: assert
 Result: ✅ pass
@@ -277,6 +277,14 @@ Property: assert
 Result: ✅ pass
 
 Obligation: else_path
+Property: assert
+Result: ✅ pass
+
+Obligation: post
+Property: assert
+Result: ✅ pass
+
+Obligation: dead_else
 Property: assert
 Result: ✅ pass
 
@@ -311,6 +319,10 @@ procedure q(x : bool) returns () {
 /--
 info:
 Obligation: dead_then
+Property: assert
+Result: ✅ pass
+
+Obligation: post
 Property: assert
 Result: ✅ pass
 

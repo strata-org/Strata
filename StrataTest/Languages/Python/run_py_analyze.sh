@@ -1,24 +1,29 @@
 #!/bin/bash
 
-# Usage: ./run_py_analyze.sh [laurel] [--update] [--filter <pattern>] [--vc-directory <dir>]
-# Runs pyAnalyzeLaurel on all test_*.py files and compares output to expected.
-# With --update, overwrite existing expected files with actual output
-# With --filter <pattern>, only run tests whose name contains <pattern>
-# With --vc-directory <dir>, store VCs in SMT-Lib format in <dir>
-# Note: pyAnalyze (non-Laurel) is deprecated; laurel mode is the default.
+# Usage: ./run_py_analyze.sh [--incremental] [laurel]
+# Run without arguments for pyAnalyze
+# --incremental: Use pyAnalyzeLaurel --incremental
+# laurel: Use pyAnalyzeLaurel
 
 failed=0
-update=0
-mode="laurel"
+incremental=false
+mode="core"
 filter=""
 vc_directory=""
 
-while [ $# -gt 0 ]; do
-    case "$1" in
-        --update) update=1 ;;
-        --filter) filter="$2"; shift ;;
-        --vc-directory) vc_directory="$2"; shift ;;
-        *) mode="$1" ;;
+# Parse flags
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --incremental)
+            incremental=true
+            ;;
+        laurel)
+            mode="laurel"
+            ;;
+        *)
+            echo "Unknown argument: $1"
+            exit 1
+            ;;
     esac
     shift
 done
@@ -27,10 +32,19 @@ if [ "$mode" = "laurel" ]; then
     command="pyAnalyzeLaurel"
     expected_dir="expected_laurel"
     skip_tests=""
+    if [ "$incremental" = true ]; then
+        command="$command --incremental"
+        expected_dir="expected_incremental"
+        skip_tests=""
+    fi
 else
     command="pyAnalyze"
     expected_dir="expected_non_laurel"
     skip_tests=""
+    if [ "$incremental" = true ]; then
+        echo "Error: --incremental requires laurel mode"
+        exit 1
+    fi
 fi
 
 (cd ../../.. && lake exe strata --help > /dev/null)

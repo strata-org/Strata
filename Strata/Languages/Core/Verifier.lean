@@ -432,6 +432,43 @@ def LExprModel.format (cex : LExprModel) : Format :=
 instance : ToFormat LExprModel where
   format := LExprModel.format
 
+/-- Verification result for diagnosis -/
+inductive DiagnosisResultType
+  | refuted
+  | counterexample
+  | unknown
+  deriving Repr, Inhabited
+
+/-- Context for a diagnosed failure -/
+structure DiagnosisContext where
+  pathCondition : List Expression.Expr := []
+  deriving Inhabited
+
+/-- Report for a diagnosed failure -/
+structure DiagnosisReport where
+  result : Except DiagnosisResultType Unit
+  context : DiagnosisContext
+  deriving Inhabited
+
+/-- Result of diagnosing a single sub-expression -/
+structure DiagnosedFailure where
+  expression : Expression.Expr
+  isRefuted : Bool
+  report : DiagnosisReport
+  deriving Inhabited
+
+/-- Full diagnosis result -/
+structure DiagnosisResult where
+  diagnosedFailures : List DiagnosedFailure
+  statePathCondition : List Expression.Expr := []
+  deriving Inhabited
+
+/-- Diagnosis information for verification failures -/
+structure DiagnosisInfo where
+  isRefuted : Bool := false
+  diagnosedFailures : List DiagnosedFailure := []
+  statePathCondition : List Expression.Expr := []
+
 /--
 A collection of all information relevant to a verification condition's
 analysis.
@@ -443,9 +480,29 @@ structure VCResult where
   verbose : VerboseMode := .normal
   checkLevel : CheckLevel := .minimal
   checkMode : VerificationMode := .deductive
+  diagnosis : Option DiagnosisInfo := .none
   /-- model with values converted from `SMT.Term` to Core `LExpr`.
       The contents must be consistent with the outcome, if the outcome was a failure. -/
   lexprModel : LExprModel := []
+
+/-- Simplified verification report for display and API use -/
+structure VerificationReport where
+  label : String
+  outcome : Except String VCOutcome
+  diagnosis : Option DiagnosisInfo := none
+  obligation : Option (Imperative.ProofObligation Expression) := none
+
+/-- Procedure-level verification report grouping multiple checks -/
+structure ProcedureReport where
+  procedureName : String
+  results : List VerificationReport
+
+/-- Convert VCResult to VerificationReport -/
+def vcResultToVerificationReport (vcResult : VCResult) : VerificationReport :=
+  { label := vcResult.obligation.label
+    outcome := vcResult.outcome
+    diagnosis := vcResult.diagnosis
+    obligation := some vcResult.obligation }
 
 /-- Mask outcome properties that were not requested.
     When PE (partial evaluation) resolves a check that wasn't requested by the

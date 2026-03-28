@@ -21,7 +21,7 @@ import all Strata.DL.Lambda.FactoryWF
 ---------------------------------------------------------------------
 
 namespace Core
-open Lambda LTy.Syntax LExpr.SyntaxMono
+open Lambda LTy.Syntax LExpr.SyntaxMono Core.Syntax
 
 public section
 
@@ -229,7 +229,7 @@ def mapConstFunc : WFLFunc CoreLParams :=
     [("d", mty[%v])]
     (mapTy mty[%k] mty[%v])
     (axioms := [
-      esM[∀ (%v): -- %1 d
+      eb[∀ (%v): -- %1 d
           (∀ (%k): -- %0 kk
             {(((~select : (Map %k %v) → %k → %v)
                 ((~const : %v → (Map %k %v)) %1)) %0)}
@@ -249,7 +249,7 @@ def mapUpdateFunc : WFLFunc CoreLParams :=
     (mapTy mty[%k] mty[%v])
     (axioms := [
       -- updateSelect: forall m: Map k v, kk: k, vv: v :: m[kk := vv][kk] == vv
-      esM[∀(Map %k %v):
+      eb[∀(Map %k %v):
           (∀ (%k):
             (∀ (%v):{
               (((~select : (Map %k %v) → %k → %v)
@@ -257,7 +257,7 @@ def mapUpdateFunc : WFLFunc CoreLParams :=
               (((~select : (Map %k %v) → %k → %v)
                 ((((~update : (Map %k %v) → %k → %v → (Map %k %v)) %2) %1) %0)) %1) == %0))],
       -- updatePreserve: forall m: Map k v, okk: k, kk: k, vv: v :: okk != kk ==> m[kk := vv][okk] == m[okk]
-      esM[∀ (Map %k %v): -- %3 m
+      eb[∀ (Map %k %v): -- %3 m
           (∀ (%k): -- %2 okk
             (∀ (%k): -- %1 kk
               (∀ (%v): -- %0 vv
@@ -281,7 +281,7 @@ def seqLengthFunc : WFLFunc CoreLParams :=
     [("s", seqTy mty[%a])] mty[int]
     (axioms := [
       -- length(s) >= 0
-      esM[∀ (Sequence %a): -- %0 s
+      eb[∀ (Sequence %a): -- %0 s
         {((~Sequence.length : (Sequence %a) → int) %0)}
         (((~Int.Ge : int → int → bool)
           ((~Sequence.length : (Sequence %a) → int) %0))
@@ -296,7 +296,7 @@ def seqEmptyFunc : WFLFunc CoreLParams :=
   polyUneval "Sequence.empty" ["a"] [] (seqTy mty[%a])
     (axioms := [
       -- length(empty()) == 0
-      esM[((~Sequence.length : (Sequence %a) → int)
+      eb[((~Sequence.length : (Sequence %a) → int)
             (~Sequence.empty : (Sequence %a))) == #0]
     ])
 
@@ -307,7 +307,7 @@ def seqAppendFunc : WFLFunc CoreLParams :=
     (seqTy mty[%a])
     (axioms := [
       -- length(append(s0, s1)) == length(s0) + length(s1)
-      esM[∀ (Sequence %a): -- %1 s0
+      eb[∀ (Sequence %a): -- %1 s0
           (∀ (Sequence %a): -- %0 s1
             {((~Sequence.length : (Sequence %a) → int)
               (((~Sequence.append : (Sequence %a) → (Sequence %a) → (Sequence %a)) %1) %0))}
@@ -319,7 +319,7 @@ def seqAppendFunc : WFLFunc CoreLParams :=
               ((~Sequence.length : (Sequence %a) → int) %0)))],
       -- select(append(s0, s1), n):
       --   0 <= n < length(s0) ==> select(append(s0,s1), n) == select(s0, n)
-      esM[∀ (Sequence %a): -- %2 s0
+      eb[∀ (Sequence %a): -- %2 s0
           (∀ (Sequence %a): -- %1 s1
             (∀ (int): -- %0 n
               {(((~Sequence.select : (Sequence %a) → int → %a)
@@ -336,7 +336,7 @@ def seqAppendFunc : WFLFunc CoreLParams :=
       -- select(append(s0, s1), n):
       --   n >= length(s0) && n < length(s0) + length(s1)
       --     ==> select(append(s0,s1), n) == select(s1, n - length(s0))
-      esM[∀ (Sequence %a): -- %2 s0
+      eb[∀ (Sequence %a): -- %2 s0
           (∀ (Sequence %a): -- %1 s1
             (∀ (int): -- %0 n
               {(((~Sequence.select : (Sequence %a) → int → %a)
@@ -369,7 +369,7 @@ def seqBuildFunc : WFLFunc CoreLParams :=
     (seqTy mty[%a])
     (axioms := [
       -- length(build(s, v)) == 1 + length(s)
-      esM[∀ (Sequence %a): -- %1 s
+      eb[∀ (Sequence %a): -- %1 s
           (∀ (%a): -- %0 v
             {((~Sequence.length : (Sequence %a) → int)
               (((~Sequence.build : (Sequence %a) → %a → (Sequence %a)) %1) %0))}
@@ -381,7 +381,7 @@ def seqBuildFunc : WFLFunc CoreLParams :=
               ((~Sequence.length : (Sequence %a) → int) %1)))],
       -- select(build(s, v), i):
       --   i == length(s) ==> select(build(s,v), i) == v
-      esM[∀ (Sequence %a): -- %2 s
+      eb[∀ (Sequence %a): -- %2 s
           (∀ (%a): -- %1 v
             (∀ (int): -- %0 i
               {(((~Sequence.select : (Sequence %a) → int → %a)
@@ -394,7 +394,7 @@ def seqBuildFunc : WFLFunc CoreLParams :=
               else #true))],
       -- select(build(s, v), i):
       --   0 <= i < length(s) ==> select(build(s,v), i) == select(s, i)
-      esM[∀ (Sequence %a): -- %2 s
+      eb[∀ (Sequence %a): -- %2 s
           (∀ (%a): -- %1 v
             (∀ (int): -- %0 i
               {(((~Sequence.select : (Sequence %a) → int → %a)
@@ -419,7 +419,7 @@ def seqUpdateFunc : WFLFunc CoreLParams :=
     (seqTy mty[%a])
     (axioms := [
       -- length(update(s, i, v)) == length(s)
-      esM[∀ (Sequence %a): -- %2 s
+      eb[∀ (Sequence %a): -- %2 s
           (∀ (int): -- %1 i
             (∀ (%a): -- %0 v
               {((~Sequence.length : (Sequence %a) → int)
@@ -429,7 +429,7 @@ def seqUpdateFunc : WFLFunc CoreLParams :=
               ==
               ((~Sequence.length : (Sequence %a) → int) %2)))],
       -- 0 <= i < length(s) ==> select(update(s, i, v), i) == v  (same index)
-      esM[∀ (Sequence %a): -- %2 s
+      eb[∀ (Sequence %a): -- %2 s
           (∀ (int): -- %1 i
             (∀ (%a): -- %0 v
               {(((~Sequence.select : (Sequence %a) → int → %a)
@@ -444,7 +444,7 @@ def seqUpdateFunc : WFLFunc CoreLParams :=
                 == %0
               else #true))],
       -- 0 <= n < length(s) && n != i ==> select(update(s, i, v), n) == select(s, n)
-      esM[∀ (Sequence %a): -- %3 s
+      eb[∀ (Sequence %a): -- %3 s
           (∀ (int): -- %2 i
             (∀ (%a): -- %1 v
               (∀ (int): -- %0 n
@@ -471,7 +471,7 @@ def seqContainsFunc : WFLFunc CoreLParams :=
     [("s", seqTy mty[%a]), ("v", mty[%a])] mty[bool]
     (axioms := [
       -- contains(s, v) <==> exists i :: 0 <= i < length(s) && select(s, i) == v
-      esM[∀ (Sequence %a): -- %1 s
+      eb[∀ (Sequence %a): -- %1 s
           (∀ (%a): -- %0 v
             {(((~Sequence.contains : (Sequence %a) → %a → bool) %1) %0)}
             (((~Sequence.contains : (Sequence %a) → %a → bool) %1) %0)
@@ -492,7 +492,7 @@ def seqTakeFunc : WFLFunc CoreLParams :=
     (seqTy mty[%a])
     (axioms := [
       -- 0 <= n <= length(s) ==> length(take(s, n)) == n
-      esM[∀ (Sequence %a): -- %1 s
+      eb[∀ (Sequence %a): -- %1 s
           (∀ (int): -- %0 n
             {((~Sequence.length : (Sequence %a) → int)
               (((~Sequence.take : (Sequence %a) → int → (Sequence %a)) %1) %0))}
@@ -506,7 +506,7 @@ def seqTakeFunc : WFLFunc CoreLParams :=
               == %0
             else #true)],
       -- select(take(s, n), j) == select(s, j)  (when 0 <= j < n)
-      esM[∀ (Sequence %a): -- %2 s
+      eb[∀ (Sequence %a): -- %2 s
           (∀ (int): -- %1 n
             (∀ (int): -- %0 j
               {(((~Sequence.select : (Sequence %a) → int → %a)
@@ -530,7 +530,7 @@ def seqDropFunc : WFLFunc CoreLParams :=
     (seqTy mty[%a])
     (axioms := [
       -- 0 <= n <= length(s) ==> length(drop(s, n)) == length(s) - n
-      esM[∀ (Sequence %a): -- %1 s
+      eb[∀ (Sequence %a): -- %1 s
           (∀ (int): -- %0 n
             {((~Sequence.length : (Sequence %a) → int)
               (((~Sequence.drop : (Sequence %a) → int → (Sequence %a)) %1) %0))}
@@ -547,7 +547,7 @@ def seqDropFunc : WFLFunc CoreLParams :=
                 %0)
             else #true)],
       -- 0 <= j < length(s) - n ==> select(drop(s, n), j) == select(s, j + n)
-      esM[∀ (Sequence %a): -- %2 s
+      eb[∀ (Sequence %a): -- %2 s
           (∀ (int): -- %1 n
             (∀ (int): -- %0 j
               {(((~Sequence.select : (Sequence %a) → int → %a)
@@ -731,7 +731,7 @@ end -- public meta section
 public section
 
 instance : Inhabited CoreLParams.Metadata where
-  default := ()
+  default := Strata.SourceRange.none
 
 DefBVOpFuncExprs [1, 8, 16, 32, 64]
 
@@ -755,7 +755,7 @@ def emptyTriggerGroupOp : Expression.Expr := emptyTriggerGroupFunc.opExpr
 def addTriggerOp : Expression.Expr := addTriggerFunc.opExpr
 
 instance : Inhabited (⟨ExpressionMetadata, CoreIdent⟩: LExprParams).Metadata where
-  default := ()
+  default := Strata.SourceRange.none
 
 def intAddOp : Expression.Expr := (@intAddFunc CoreLParams _).opExpr
 def intSubOp : Expression.Expr := (@intSubFunc CoreLParams _).opExpr
@@ -817,11 +817,11 @@ def seqTakeOp : Expression.Expr := seqTakeFunc.opExpr
 def seqDropOp : Expression.Expr := seqDropFunc.opExpr
 
 def mkTriggerGroup (ts : List Expression.Expr) : Expression.Expr :=
-  ts.foldl (fun g t => .app () (.app () addTriggerOp t) g) emptyTriggerGroupOp
+  ts.foldl (fun g t => .app Strata.SourceRange.none (.app Strata.SourceRange.none addTriggerOp t) g) emptyTriggerGroupOp
 
 def mkTriggerExpr (ts : List (List Expression.Expr)) : Expression.Expr :=
   let groups := ts.map mkTriggerGroup
-  groups.foldl (fun gs g => .app () (.app () addTriggerGroupOp g) gs) emptyTriggersOp
+  groups.foldl (fun gs g => .app Strata.SourceRange.none (.app Strata.SourceRange.none addTriggerGroupOp g) gs) emptyTriggersOp
 
 /--
 Get all the built-in functions supported by Strata Core.

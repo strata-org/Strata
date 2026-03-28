@@ -28,6 +28,11 @@ import Strata.Backends.CBMC.CollectSymbols
 import Strata.Backends.CBMC.GOTO.CoreToGOTOPipeline
 
 import Strata.SimpleAPI
+import Strata.Languages.Core.DDMTransform.ASTtoCST
+import Strata.Languages.Core.CoreSMT.Verifier
+import Strata.Languages.Core.CoreSMT.State
+import Strata.Languages.Core.CoreSMT.RemoveUnusedVars
+import Strata.DL.SMT.SolverInterface
 
 open Strata
 
@@ -491,6 +496,80 @@ private def deriveBaseName (file : String) : String :=
   | some sfx => (name.dropEnd sfx.length).toString
   | none     => name
 
+/-- Convert a CoreSMTResult to a Core.VCResult -/
+private def coreSMTResultToVCResult (r : Strata.Core.CoreSMT.CoreSMTResult) : Core.VCResult :=
+  match r.error with
+  | some msg => { obligation := r.obligation, outcome := .error msg }
+  | none =>
+    let toResult (d : Strata.SMT.Decision) : Imperative.SMT.Result Core.Expression.Ident := match d with
+      | .sat => .sat []
+      | .unsat => .unsat
+      | .unknown => .unknown
+    let satResult := toResult r.satResult
+    let valResult := toResult r.valResult
+    let vcOutcome : Core.VCOutcome := {
+      satisfiabilityProperty := satResult
+      validityProperty := valResult
+    }
+    let diagnosis := r.diagnosisInfo.map fun d =>
+      { isRefuted := d.isRefuted,
+        statePathCondition := d.statePathCondition : Core.DiagnosisInfo }
+    { obligation := r.obligation, outcome := .ok vcOutcome, diagnosis }
+
+/-- Verify a Core program using the incremental CoreSMT engine. -/
+private def verifyIncremental
+    (programDecls : List Core.Decl)
+    (pySourceOpt : Option (String × String)) : IO (Array Core.VCResult) := do
+  let solver ← Strata.B3.Verifier.createInteractiveSolver Core.defaultSolver
+  let solverInterface ← Strata.SMT.mkSolverInterfaceFromSolver solver
+  let state := Strata.Core.CoreSMT.CoreSMTState.init solverInterface { accumulateErrors := true }
+  let procs := programDecls.filterMap fun d => match d with
+    | .proc p _ =>
+      if p.header.inputs.isEmpty && p.header.outputs.isEmpty then
+        let cleaned := Strata.Core.CoreSMT.removeUnusedVarsStmts p.body
+        some (p.header.name.name, Imperative.Stmt.block p.header.name.name cleaned .empty)
+      else none
+    | _ => none
+  let mut allResults : Array Core.VCResult := #[]
+  let mut state := state
+  let mut smtCtx := Core.SMT.Context.default
+  for (procName, block) in procs do
+    IO.println s!"procedure {procName}:"
+    let (state', smtCtx', smtResults) ← Strata.Core.CoreSMT.verify state Core.Env.init [block] smtCtx
+    state := state'
+    smtCtx := smtCtx'
+    let results := smtResults.map coreSMTResultToVCResult
+    for r in results do
+      let marker := match r.outcome with
+        | .ok o => if o.isPass then "✅ pass" else if o.isAlwaysFalse then "❌ fail" else "❓ unknown"
+        | .error e => s!"🚨 {e}"
+      let suffix := match Imperative.getFileRange r.obligation.metadata with
+        | some fr =>
+          if fr.range.isNone then ""
+          else match pySourceOpt with
+            | some (pyPath, srcText) =>
+              match fr.file with
+              | .file path =>
+                if path == pyPath then
+                  let pos := (Lean.FileMap.ofString srcText).toPosition (fr.range).start
+                  s!" (line {pos.line}, col {pos.column})"
+                else s!" (byte {(fr.range).start})"
+            | none => s!" (byte {(fr.range).start})"
+        | none => ""
+      IO.println s!"  {r.obligation.label}: {marker}{suffix}"
+      if let some diag := r.diagnosis then
+        for failure in diag.diagnosedFailures do
+          let failureKind := if failure.isRefuted then "it is impossible that" else "could not prove"
+          let exprStr := (Strata.Core.formatExprs [failure.expression]).pretty
+          IO.println s!"    └─ {failureKind} {exprStr}"
+          let assumptions := failure.report.context.pathCondition
+          if !assumptions.isEmpty then
+            IO.println s!"       under the assumptions"
+            for assumption in assumptions do
+              IO.println s!"         {(Strata.Core.formatExprs [assumption]).pretty}"
+    allResults := allResults ++ results.toArray
+  return allResults
+
 def pyAnalyzeLaurelCommand : Command where
   name := "pyAnalyzeLaurel"
   args := [ "file" ]
@@ -510,6 +589,7 @@ def pyAnalyzeLaurelCommand : Command where
             { name := "vc-directory",
               help := "Store VCs in SMT-Lib format in <dir>.",
               takesArg := .arg "dir" },
+            { name := "incremental", help := "Use the incremental (in-memory) CoreSMT verification engine." },
             { name := "unique-bound-names", help := "Use globally unique names for quantifier-bound variables." },
             { name := "keep-all-files",
               help := "Store intermediate Laurel and Core programs in <dir>.",
@@ -611,6 +691,7 @@ def pyAnalyzeLaurelCommand : Command where
          --keep-all-files to specify where SMT \
          files are stored."
     let uniqueBoundNames := pflags.getBool "unique-bound-names"
+    let incremental := pflags.getBool "incremental"
     let baseOptions : VerifyOptions :=
       { VerifyOptions.default with
         stopOnFirstError := false, verbose := .quiet, solver := Core.defaultSolver,
@@ -625,11 +706,22 @@ def pyAnalyzeLaurelCommand : Command where
         | some dir => { baseOptions with vcDirectory := some (s!"{dir}/{baseName}" : System.FilePath) }
         | none => baseOptions
     let vcResults ←
-      match ← Core.verifyProgram coreProgram options
-                (moreFns := Strata.Python.ReFactory)
-                (proceduresToVerify := some userProcNames) |>.toBaseIO with
-      | .ok r => pure r
-      | .error msg => exitPyAnalyzeInternalError msg
+      if incremental then
+        verifyIncremental coreProgram.decls pySourceOpt
+      else do
+        let vcResults ←
+          match ← Core.verifyProgram coreProgram options
+                    (moreFns := Strata.Python.ReFactory)
+                    (proceduresToVerify := some userProcNames) |>.toBaseIO with
+          | .ok r => pure r
+          | .error msg => exitInternalError msg
+        pure vcResults
+
+    -- Print results
+    if !laurelTranslateErrors.isEmpty then
+      IO.println "\n==== Errors ===="
+      for err in laurelTranslateErrors do
+        IO.println err
 
     let classifier : ResultClassifier :=
       match checkMode with
@@ -638,52 +730,46 @@ def pyAnalyzeLaurelCommand : Command where
             | .ok o => o.alwaysFalseAndReachable
             | _     => false }
       | _ => {}
-
-    -- Print results
-    if !laurelTranslateErrors.isEmpty then
-      IO.println "\n==== Errors ===="
-      for err in laurelTranslateErrors do
-        IO.println err
-
-    -- Print results
-    IO.println "\n==== Verification Results ===="
-    let mut s := ""
-    for vcResult in vcResults do
-      let (locationPrefix, locationSuffix) := match Imperative.getFileRange vcResult.obligation.metadata with
-        | some fr =>
-          if fr.range.isNone then ("", "")
-          else
-            match mfm with
-            | some (_, fm) =>
-              match fr.file with
-              | .file "" =>
+    -- Print results (non-incremental only; incremental prints per-procedure above)
+    if !incremental then do
+      IO.println "\n==== Verification Results ===="
+      let mut s := ""
+      for vcResult in vcResults do
+        let (locationPrefix, locationSuffix) := match Imperative.getFileRange vcResult.obligation.metadata with
+          | some fr =>
+            if fr.range.isNone then ("", "")
+            else
+              match mfm with
+              | some (_, fm) =>
+                match fr.file with
+                | .file "" =>
+                  if classifier.isFailure vcResult then
+                    (s!"Assertion failed in prelude file: ", "")
+                  else
+                    ("", s!" (in prelude file)")
+                | .file path =>
+                  let pos := fm.toPosition fr.range.start
+                  if classifier.isFailure vcResult then
+                    (s!"Assertion failed at line {pos.line}, col {pos.column}: ", "")
+                  else
+                    ("", s!" (at line {pos.line}, col {pos.column})")
+              | none =>
                 if classifier.isFailure vcResult then
-                  (s!"Assertion failed in prelude file: ", "")
+                  (s!"Assertion failed: ", "")
                 else
-                  ("", s!" (in prelude file)")
-              | .file path =>
-                let pos := fm.toPosition fr.range.start
-                if classifier.isFailure vcResult then
-                  (s!"Assertion failed at line {pos.line}, col {pos.column}: ", "")
-                else
-                  ("", s!" (at line {pos.line}, col {pos.column})")
-            | none =>
-              if classifier.isFailure vcResult then
-                (s!"Assertion failed: ", "")
-              else
-                ("", "")
-        | none => ("", "")
-      let outcomeStr := vcResult.formatOutcome
-      s := s ++ s!"{locationPrefix}{vcResult.obligation.label}: \
-                    {outcomeStr}{locationSuffix}\n"
-    IO.println s
-    -- Output in SARIF format if requested
-    if outputSarif then
-      let files := match mfm with
-        | some (pyPath, fm) => Map.empty.insert (Strata.Uri.file pyPath) fm
-        | none => Map.empty
-      Core.Sarif.writeSarifOutput checkMode files vcResults (filePath ++ ".sarif")
-    printPyAnalyzeSummary vcResults classifier
+                  ("", "")
+          | none => ("", "")
+        let outcomeStr := vcResult.formatOutcome
+        s := s ++ s!"{locationPrefix}{vcResult.obligation.label}: \
+                      {outcomeStr}{locationSuffix}\n"
+      IO.println s
+      -- Output in SARIF format if requested
+      if outputSarif then
+        let files := match mfm with
+          | some (pyPath, fm) => Map.empty.insert (Strata.Uri.file pyPath) fm
+          | none => Map.empty
+        Core.Sarif.writeSarifOutput checkMode files vcResults (filePath ++ ".sarif")
+      printPyAnalyzeSummary vcResults classifier
 
 def pyAnalyzeToGotoCommand : Command where
   name := "pyAnalyzeToGoto"
@@ -1160,6 +1246,7 @@ def verifyCommand : Command where
     { name := "procedures", help := "Verify only the specified procedures (comma-separated).", takesArg := .arg "procs" },
     { name := "solver", help := s!"SMT solver executable to use (default: {Core.defaultSolver}).", takesArg := .arg "name" },
     { name := "solver-timeout", help := "Solver timeout in seconds.", takesArg := .arg "seconds" },
+    { name := "incremental", help := "Use the incremental (in-memory) CoreSMT verification engine." },
     checkModeFlag, checkLevelFlag ]
   help := "Verify a Strata program file (.core.st, .csimp.st, or .b3.st)."
   callback := fun v pflags => do
@@ -1171,6 +1258,7 @@ def verifyCommand : Command where
     let stopOnFirstError := pflags.getBool "stop-on-first-error"
     let uniqueBoundNames := pflags.getBool "unique-bound-names"
     let outputSarif := pflags.getBool "sarif" || pflags.getString "output-format" == some "sarif"
+    let incremental := pflags.getBool "incremental"
     let checkMode ← parseCheckMode pflags
     let checkLevel ← parseCheckLevel pflags
     let solverTimeout ← match pflags.getString "solver-timeout" with
@@ -1232,6 +1320,22 @@ def verifyCommand : Command where
                 | .success .reachabilityUnknown => "reachability unknown"
               IO.println s!"  {marker} {desc}"
           pure #[]
+        else if incremental then
+          let (coreProgram, errors) := Core.getProgram pgm inputCtx
+          if !errors.isEmpty then throw (IO.userError s!"DDM Transform Error: {repr errors}")
+          let solver ← Strata.B3.Verifier.createInteractiveSolver opts.solver
+          let solverInterface ← Strata.SMT.mkSolverInterfaceFromSolver solver
+          let config : Core.CoreSMT.CoreSMTConfig := { accumulateErrors := true }
+          let state := Core.CoreSMT.CoreSMTState.init solverInterface config
+          let stmts := coreProgram.decls.filterMap fun d => match d with
+            | .proc p _ =>
+              if p.header.inputs.isEmpty && p.header.outputs.isEmpty then
+                some (Imperative.Stmt.block p.header.name.name
+                  (Core.CoreSMT.removeUnusedVarsStmts p.body) .empty)
+              else none
+            | _ => none
+          let (_, _, smtResults) ← Core.CoreSMT.verify state Core.Env.init stmts
+          pure (smtResults.map coreSMTResultToVCResult).toArray
         else
           verify pgm inputCtx proceduresToVerify opts
       catch e =>
