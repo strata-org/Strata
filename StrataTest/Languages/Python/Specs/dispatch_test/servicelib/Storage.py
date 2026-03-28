@@ -22,6 +22,7 @@ ListItemsRequest = TypedDict('ListItemsRequest', {
     'NextToken': NotRequired[str],
 })
 
+@exhaustive
 class Storage:
     def put_item(self, **kwargs: Unpack[PutItemRequest]) -> None:
         assert len(kwargs["Bucket"]) >= 1, "Bucket must not be empty"
