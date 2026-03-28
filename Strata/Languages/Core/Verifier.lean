@@ -64,7 +64,8 @@ def encodeCore (ctx : Core.SMT.Context) (prelude : SolverM Unit)
   -- Encode the obligation term Q (not negated)
   let (obligationId, estate) ← (encodeTerm False obligationTerm) |>.run estate
 
-  let ids := estate.ufs.values
+  let ids := estate.ufs.toList.filterMap fun (uf, id) =>
+    if uf.args.isEmpty then some id else none
 
   -- Choose encoding strategy: use check-sat-assuming only when doing both checks
   let bothChecks := satisfiabilityCheck && validityCheck
@@ -98,6 +99,13 @@ def encodeCore (ctx : Core.SMT.Context) (prelude : SolverM Unit)
         (message := ("unsat-message", s!"\"Property is always true\""))
       Solver.assert (← encodeTerm False (Factory.not obligationTerm) |>.run estate).1
       let _ ← Solver.checkSat ids
+
+  -- Emit the "message" metadata field at the very end (once per obligation).
+  match md.findElem Imperative.MetaData.message with
+  | some elem =>
+    let msg := toString (Std.format elem.value) |>.replace "\\" "\\\\" |>.replace "\"" "\\\""
+    Solver.setInfo "final-message" s!"\"{msg}\""
+  | none => pure ()
 
   return (ids, estate)
 
@@ -173,6 +181,7 @@ def dischargeObligation
     filename
     solverFlags (options.verbose > .normal)
     satisfiabilityCheck validityCheck
+    (skipSolver := options.skipSolver)
 
 end -- public section
 end Core.SMT
@@ -262,6 +271,14 @@ def unknown (o : VCOutcome) : Bool :=
   match o.satisfiabilityProperty, o.validityProperty with
   | .unknown, .unknown => true
   | _, _ => false
+
+/-- True when either SMT property is `.err` (solver returned an error on
+    a specific check, as opposed to the outer `VCResult.outcome` being
+    `.error` due to an encoding failure). -/
+def hasSMTError (o : VCOutcome) : Bool :=
+  match o.satisfiabilityProperty, o.validityProperty with
+  | .err _, _ | _, .err _ => true
+  | _,      _             => false
 
 -- Derived predicates (cross-cutting properties)
 
@@ -506,6 +523,13 @@ def VCResult.isUnreachable (vr : VCResult) : Bool :=
   | .ok o => o.unreachable
   | .error _ => false
 
+/-- True when either SMT property inside a successful outcome is `.err`.
+    Complements `isImplementationError`, which covers the outer `.error` case. -/
+def VCResult.hasSMTError (vr : VCResult) : Bool :=
+  match vr.outcome with
+  | .ok o => o.hasSMTError
+  | .error _ => false
+
 @[expose] abbrev VCResults := Array VCResult
 
 def VCResults.format (rs : VCResults) : Format :=
@@ -664,7 +688,7 @@ def verifySingleEnv (pE : Program × Env) (options : VerifyOptions)
           | .bugFinding, .minimalVerbose, .cover => (true, false)  -- Same checks as minimal
       let (obligation, peSatResult?, peValResult?) ← preprocessObligation obligation p options satisfiabilityCheck validityCheck axiomCache
       -- If PE resolved both checks, we're done, unless we always want to generate SMT queries
-      if not options.alwaysRunSMT then
+      if not options.alwaysGenerateSMT then
         if let (some peSat, some peVal) := (peSatResult?, peValResult?) then
           let outcome := VCOutcome.mk peSat peVal
           let result : VCResult := { obligation, outcome := .ok outcome, verbose := options.verbose,
@@ -679,7 +703,7 @@ def verifySingleEnv (pE : Program × Env) (options : VerifyOptions)
       -- Need the solver for at least one check
       let needSatCheck := satisfiabilityCheck && peSatResult?.isNone
       let needValCheck := validityCheck && peValResult?.isNone
-      let maybeTerms := ProofObligation.toSMTTerms E obligation SMT.Context.default options.useArrayTheory
+      let maybeTerms := ProofObligation.toSMTTerms E obligation { SMT.Context.default with uniqueBoundNames := options.uniqueBoundNames } options.useArrayTheory
       match maybeTerms with
       | .error err =>
         let err := f!"SMT Encoding Error! " ++ err
