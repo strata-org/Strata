@@ -28,6 +28,9 @@ import Strata.Backends.CBMC.CollectSymbols
 import Strata.Backends.CBMC.GOTO.CoreToGOTOPipeline
 
 import Strata.Languages.Python.FeatureUsage
+import Strata.Languages.Python.Blockify
+import Strata.Languages.Python.PythonToSSA
+import Strata.Languages.Python.SSAFormat
 import Strata.SimpleAPI
 
 open Strata
@@ -303,6 +306,27 @@ def pyFeaturesCommand : Command where
     let stmts ← readPythonStrata v[0]
     let result := Strata.Python.FeatureUsage.analyzeFeatures stmts
     IO.print (Strata.Python.FeatureUsage.formatReport result)
+
+def pyBlockifyCommand : Command where
+  name := "pyBlockify"
+  args := [ "file" ]
+  help := "Run Phase 1 (block layout) on a Python Ion program and print summary."
+  callback := fun v _ => do
+    let stmts ← readPythonStrata v[0]
+    let results := Strata.Python.Blockify.blockifyModule stmts
+    for r in results do
+      IO.println s!"func {r.name}: {r.totalBlocks} blocks, {r.allVars.size} vars"
+      for w in r.warnings do
+        IO.println s!"  warning: {w}"
+
+def pyToSSACommand : Command where
+  name := "pyToSSA"
+  args := [ "file" ]
+  help := "Translate a Python Ion program to SSA IR and print it."
+  callback := fun v _ => do
+    let stmts ← readPythonStrata v[0]
+    let mod := Strata.Python.PythonToSSA.translateModule "module" stmts
+    IO.print (Strata.Python.SSAFormat.fmtModule mod)
 
 /-- Derive Python source file path from Ion file path.
     E.g., "tests/test_foo.python.st.ion" -> "tests/test_foo.py" -/
@@ -1289,7 +1313,9 @@ def commandGroups : List CommandGroup := [
                  pyAnalyzeToGotoCommand,
                  pyTranslateCommand,
                  pyTranslateLaurelCommand,
-                 pyFeaturesCommand] },
+                 pyFeaturesCommand,
+                 pyBlockifyCommand,
+                 pyToSSACommand] },
   { name := "Laurel"
     commands := [laurelAnalyzeCommand, laurelAnalyzeBinaryCommand,
                  laurelAnalyzeToGotoCommand, laurelParseCommand,

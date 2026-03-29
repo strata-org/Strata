@@ -229,11 +229,63 @@ section`, types defined in SSA.lean were inaccessible for field projection
 The fix was straightforward once identified: `public section` in SSA.lean,
 `public` only on `fmtFunc`/`fmtModule` in SSAFormat.lean.
 
+### Phase 10: Two-Phase Translator Architecture (completed 2026-03-29)
+
+Designed and implemented a two-phase translation pipeline.
+
+**Architecture decision.** The human proposed replacing the initially planned flat
+`PreBlock` graph with a tree structure (`BlockTree`). This was a significant
+simplification: the tree preserves statement nesting while pre-allocating all
+block IDs, eliminating the need for explicit successor edges, graph traversal,
+and visited sets. Phase 2 uses structural recursion over the tree.
+
+**Phase 1: Blockify.lean (~540 lines).** Recursive descent over `Array stmt`
+producing `Array BlockTree`:
+- `BlockTree` and `ExceptHandlerTree` as `mutual` inductives
+- Six constructors: `stmts` (simple statement slice), `ifStmt`, `forLoop`,
+  `whileLoop`, `tryExcept`, `withStmt`
+- `Subarray` for zero-copy statement slicing
+- `exprBlockStart`/`exprBlockCount` on compound constructors for BoolOp/IfExp
+- Minimal state: `nextBlockId : Nat`, `allVars : Std.HashSet String`, `warnings`
+- Validated on 52/52 corpus files with zero warnings
+
+**Phase 2: PythonToSSA.lean (~800 lines).** DFS over `BlockTree` emitting SSA:
+- `SSAM := ReaderT SSAConfig (StateM SSAState)` — pure monad (no IO)
+- Expression block counter moved from `IO.Ref` to `SSAState` fields, keeping
+  the entire translation pure. Human caught the IO.Ref anti-pattern and directed
+  the fix.
+- Binding environment: `Std.HashMap String Binding` where `Binding` is either
+  `.local SSAVal` or `.qualified QualifiedName`
+- Conservative join-point params: all `allVars` become block params (dead param
+  elimination deferred)
+- Covers all expression types (constants, operators, calls, subscripts, f-strings)
+  and most statement types. Stubs for try/except, with, BoolOp/IfExp short-circuit.
+
+**Test automation: SSATest.lean.** Following the `AnalyzeLaurelTest.lean` pattern:
+compile `.py` → Ion via `strata.gen`, run `translateModule` + `fmtModule`, compare
+against hand-written `.expected` files. All 33 tests (25 positive, 8 negative) run
+concurrently via `IO.asTask`. Currently 0/33 passing — expected, as the translator
+is a first pass with known gaps.
+
+**Commands wired up.** `strata pyBlockify <file>` for Phase 1 summary,
+`strata pyToSSA <file>` for full SSA output. Spot-checked on 3 corpus files —
+translator runs without crashes, produces readable SSA with correct sugar
+(`callQualified`, `call attr()`, inline literals).
+
+**Lean 4.27 visibility surprise.** Non-public import of a module does not expose
+its `mutual` inductive constructors for dot-notation matching in the importing
+module, even within the same file. The fix required `public section` around the
+mutual inductives in Blockify.lean and making the import public. This was
+counter-intuitive — the human expected non-public import to give full internal
+access while only restricting re-export.
+
 ## Tools Built
 
 | Tool | Purpose |
 |------|---------|
 | `strata pyFeatures` | Lean subcommand: AST feature frequency analysis |
+| `strata pyBlockify` | Lean subcommand: Phase 1 block layout summary |
+| `strata pyToSSA` | Lean subcommand: full Python → SSA translation |
 | `tally_features.py` | Python script: aggregate counts across files |
 | `coverage_check.py` | Python script: compute file coverage for feature subsets |
 
@@ -258,3 +310,28 @@ making aesthetic/philosophical choices (precision over simplicity, single-sorted
 **Incremental commitment.** The design evolved over multiple rounds rather than being
 specified upfront. Each decision was made with full context from prior decisions,
 allowing later insights (like `undef`) to simplify earlier designs (like trampolines).
+
+**Human architectural interventions improve AI code.** The human proposed the
+BlockTree architecture as a replacement for the AI's initial flat PreBlock design.
+The tree structure was a strict improvement: simpler state, no graph traversal,
+structural recursion. Similarly, the human caught the `IO.Ref` usage inside a
+pure `StateM` monad and directed it to be replaced with state fields — a cleaner
+Lean design that eliminated an unnecessary IO dependency. These interventions
+suggest that the human's role shifts from writing code to reviewing architectural
+choices, where domain expertise (Lean idioms, SSA compiler design) has high leverage.
+
+**Test-driven development with expected output files works well for IR design.**
+Writing expected SSA output by hand before implementing the translator forced
+design decisions to be resolved early (naming conventions, block parameter
+strategy, sugar rules). The expected output files serve as both a specification
+and a regression suite. The TDD harness (`SSATest.lean`) provides immediate
+feedback on every `lake build` — each failing test shows the first differing line,
+making it easy to prioritize fixes.
+
+**Lean 4.27 module visibility is a recurring friction point.** Multiple issues
+arose from Lean's `module` keyword and visibility defaults: types needing
+`public section`, mutual inductives requiring explicit export, non-public imports
+not exposing constructors for pattern matching. Each issue was straightforward
+once diagnosed, but diagnosis required understanding Lean-specific semantics that
+the AI could not predict from first principles. The human's Lean expertise was
+essential for resolving these quickly.
