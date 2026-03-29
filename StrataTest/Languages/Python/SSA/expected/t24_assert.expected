@@ -1,21 +1,22 @@
 module "t24_assert":
 
-func validate(x: int) -> none:
-  bb0(%0:x):
-    %1 = compareOp gt %0 (intLit 0)
-    %2 = assert_ %1 (some (strLit "x must be positive"))
-    %3 = callQualified builtins.isinstance [positional(%0), positional(%4)]
-    -- where %4 = qualifiedRef builtins.int
-    %5 = assert_ %3 none
-    %6:result = binOp mult %0 (intLit 2)
-    ret %6
+func validate(x: int):
+  bb0():
+    %2:_tmp.1 = compareOp gt %0 intLit 0
+    %4:_tmp.3 = assert_ %2 (some strLit "x must be positive")
+    %6:int.0 = qualifiedRef builtins.int
+    %7:_tmp.4 = callQualified builtins.isinstance [positional(%0), positional(%6)]
+      -- where %6 = qualifiedRef builtins.int
+    %8:_tmp.5 = assert_ %7 none
+    %10:result.0 : int = binOp mult %0 intLit 2
+    ret %10
 
-func check_bounds(lo: int, hi: int) -> none:
-  bb0(%0:lo, %1:hi):
-    %2 = compareOp lt %0 %1
-    %3 = assert_ %2 none
-    %4 = compareOp gtE %0 (intLit 0)
-    %5 = fmtValue %0
-    %6 = strConcat [strLit "lo must be non-negative, got ", %5]
-    %7 = assert_ %4 (some %6)
+func check_bounds(lo: int, hi: int):
+  bb0():
+    %2:_tmp.0 = compareOp lt %0 %1
+    %3:_tmp.1 = assert_ %2 none
+    %5:_tmp.3 = compareOp gtE %0 intLit 0
+    %7:_tmp.5 = fmtValue %0
+    %8:_tmp.6 = strConcat [strLit "lo must be non-negative, got ", %7]
+    %9:_tmp.7 = assert_ %5 (some %8)
     ret

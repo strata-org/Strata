@@ -1,12 +1,9 @@
 module "n03_dictcomp":
+-- WARNING: unsupported DictComp at 5:4-5:29
 
--- WARNING: unsupported DictComp at 5:5-5:30 (replaced with unsupported instruction)
 
 func @module_init():
   bb0():
-    %0:_tmp.0 = strLit "a"
-    %1:_tmp.1 = strLit "b"
-    %2:_tmp.2 = strLit "c"
-    %3:keys.0 = mkList [%0, %1, %2]
+    %3:keys.0 = mkList [strLit "a", strLit "b", strLit "c"]
     %4:d.0 = unsupported "DictComp"
     ret

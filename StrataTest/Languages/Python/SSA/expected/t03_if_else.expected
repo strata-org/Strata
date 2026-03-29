@@ -1,59 +1,42 @@
 module "t03_if_else":
 
 func @module_init():
-  -- Entry: cond = True
   bb0():
     %0:cond.0 : bool = boolLit true
-    condBranch %0 bb1(%0) bb2(%0)
-
-  -- Then: x = 1
-  bb1(%1:cond.0):
-    %2:x.0 = intLit 1
-    branch bb3(%1, %2)
-
-  -- Else: x = 2
-  bb2(%3:cond.0):
-    %4:x.1 = intLit 2
-    branch bb3(%3, %4)
-
-  -- Join: use_x = x, then second if
-  bb3(%5:cond.0, %6:x.2):
-    condBranch %5 bb4(%5) bb5(%5)
-
-  -- Then: y = 10
-  bb4(%7:cond.0):
-    %8:y.0 = intLit 10
-    branch bb6(%7, %8)
-
-  -- Implicit else: y is undef
-  bb5(%9:cond.0):
-    %10:y.1 = undef("y")
-    branch bb6(%9, %10)
-
-  -- Join: use_y = y (possibly undef), then elif chain
-  bb6(%11:cond.0, %12:y.2):
-    condBranch %11 bb7() bb8(%11)
-
-  -- Then: z = "a"
-  bb7():
-    %13:z.0 = strLit "a"
-    branch bb11(%13)
-
-  -- Elif: evaluate not cond
-  bb8(%14:cond.0):
-    %15:_tmp.0 = unaryOp not %14
-    condBranch %15 bb9() bb10()
-
-  -- Elif body: z = "b"
-  bb9():
-    %16:z.1 = strLit "b"
-    branch bb11(%16)
-
-  -- Else: z = "c"
-  bb10():
-    %17:z.2 = strLit "c"
-    branch bb11(%17)
-
-  -- Join after elif chain
-  bb11(%18:z.3):
+    %1:z.0 = undef("z")
+    %2:y.0 = undef("y")
+    %3:use_y.0 = undef("use_y")
+    %4:use_x.0 = undef("use_x")
+    %5:x.0 = undef("x")
+    condBranch %0 bb1(%1, %2, %3, %4, %5, %0) bb2(%1, %2, %3, %4, %5, %0)
+  bb1(%6:z.1, %7:y.1, %8:use_y.1, %9:use_x.1, %10:x.1, %11:cond.1):
+    %12:x.2 = intLit 1
+    branch bb3(%6, %7, %8, %9, %12, %11)
+  bb2(%13:z.2, %14:y.2, %15:use_y.2, %16:use_x.2, %17:x.3, %18:cond.2):
+    %19:x.4 = intLit 2
+    branch bb3(%13, %14, %15, %16, %19, %18)
+  bb3(%20:z.3, %21:y.3, %22:use_y.3, %23:use_x.3, %24:x.5, %25:cond.3):
+    condBranch %25 bb4(%20, %21, %22, %24, %24, %25) bb5(%20, %21, %22, %24, %24, %25)
+  bb4(%26:z.4, %27:y.4, %28:use_y.4, %29:use_x.4, %30:x.6, %31:cond.4):
+    %32:y.5 = intLit 10
+    branch bb6(%26, %32, %28, %29, %30, %31)
+  bb5(%33:z.5, %34:y.6, %35:use_y.5, %36:use_x.5, %37:x.7, %38:cond.5):
+    branch bb6(%33, %34, %35, %36, %37, %38)
+  bb6(%39:z.6, %40:y.7, %41:use_y.6, %42:use_x.6, %43:x.8, %44:cond.6):
+    condBranch %44 bb7(%39, %40, %40, %42, %43, %44) bb8(%39, %40, %40, %42, %43, %44)
+  bb7(%45:z.7, %46:y.8, %47:use_y.7, %48:use_x.7, %49:x.9, %50:cond.7):
+    %51:z.8 = strLit "a"
+    branch bb9(%51, %46, %47, %48, %49, %50)
+  bb8(%52:z.9, %53:y.9, %54:use_y.8, %55:use_x.8, %56:x.10, %57:cond.8):
+    %58:_tmp.5 = unaryOp not %57
+    condBranch %58 bb10(%52, %53, %54, %55, %56, %57) bb11(%52, %53, %54, %55, %56, %57)
+  bb10(%59:z.10, %60:y.10, %61:use_y.9, %62:use_x.9, %63:x.11, %64:cond.9):
+    %65:z.11 = strLit "b"
+    branch bb12(%65, %60, %61, %62, %63, %64)
+  bb11(%66:z.12, %67:y.11, %68:use_y.10, %69:use_x.10, %70:x.12, %71:cond.10):
+    %72:z.13 = strLit "c"
+    branch bb12(%72, %67, %68, %69, %70, %71)
+  bb12(%73:z.14, %74:y.12, %75:use_y.11, %76:use_x.11, %77:x.13, %78:cond.11):
+    branch bb9(%73, %74, %75, %76, %77, %78)
+  bb9(%79:z.15, %80:y.13, %81:use_y.12, %82:use_x.12, %83:x.14, %84:cond.12):
     ret

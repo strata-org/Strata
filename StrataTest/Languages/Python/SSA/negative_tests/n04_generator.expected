@@ -1,13 +1,10 @@
 module "n04_generator":
+-- WARNING: unsupported GeneratorExp at 5:11-5:32
 
--- WARNING: unsupported GeneratorExp at 4:13-4:34 (replaced with unsupported instruction)
 
 func @module_init():
   bb0():
-    %0:_tmp.0 = intLit 1
-    %1:_tmp.1 = intLit 2
-    %2:_tmp.2 = intLit 3
-    %3:nums.0 = mkList [%0, %1, %2]
-    %4:_tmp.3 = unsupported "GeneratorExp"
-    %5:total.0 = call @sum(positional(%4))
+    %3:nums.0 = mkList [intLit 1, intLit 2, intLit 3]
+    %5:_tmp.4 = unsupported "GeneratorExp"
+    %6:total.0 = callQualified builtins.sum [positional(%5)]
     ret

@@ -2,70 +2,45 @@ module "t07_try_except":
 
 func risky():
   bb0():
-    %0:_tmp.0 = callQualified builtins.ValueError [positional(strLit "bad")]
-    raise %0
+    %2:_tmp.1 = callQualified builtins.ValueError [positional(strLit "bad")]
+    raise %2
 
 func @module_init():
-  -- Basic try/except: try x = risky() except x = 0
-  bb0() [except: bb1]:
-    %0:x.0 = call @risky()  [exceptArgs: undef("x"), exc]
-    branch bb2(%0)
-
-  -- except handler
-  bb1(%1:x.1, %2:_exc):
-    %3:x.2 = intLit 0
-    branch bb2(%3)
-
-  -- after first try/except
-  bb2(%4:x.3):
-    branch bb3()
-
-  -- Second try: a = risky(); b = risky()
-  bb3() [except: bb4]:
-    %5:a.0 = call @risky()  [exceptArgs: undef("a"), undef("b"), exc]
-    %6:b.0 = call @risky()  [exceptArgs: %5, undef("b"), exc]
-    branch bb5(%5, %6)
-
-  -- bare except handler
-  bb4(%7:a.1, %8:b.1, %9:_exc):
-    -- pass (no-op)
-    branch bb5(%7, %8)
-
-  -- after second try/except
-  bb5(%10:a.2, %11:b.2):
-    branch bb6()
-
-  -- Third try: c = risky() with multiple except clauses
-  bb6() [except: bb7]:
-    %12:c.0 = call @risky()  [exceptArgs: undef("c"), exc]
-    branch bb10(%12)
-
-  -- handler: dispatch on exception type
-  bb7(%13:c.1, %14:_exc):
-    %15:_tmp.0 = callQualified builtins.isinstance [positional(%14), positional(%16)]
-      -- where %16 = qualifiedRef builtins.ValueError
-    condBranch %15 bb8(%14) bb9(%13, %14)
-
-  -- except ValueError
-  bb8(%17:_exc):
-    %18:c.2 = intLit -1
-    branch bb10(%18)
-
-  -- check TypeError
-  bb9(%19:c.1, %20:_exc):
-    %21:_tmp.1 = callQualified builtins.isinstance [positional(%20), positional(%22)]
-      -- where %22 = qualifiedRef builtins.TypeError
-    condBranch %21 bb11(%20) bb12(%20)
-
-  -- except TypeError
-  bb11(%23:_exc):
-    %24:c.3 = intLit -2
-    branch bb10(%24)
-
-  -- no matching handler: re-raise
-  bb12(%25:_exc):
-    raise %25
-
-  -- after third try/except
-  bb10(%26:c.4):
+  bb0():
+    %1:x.0 = callQualified t07_try_except.risky []
+    %2:c.0 = undef("c")
+    %3:a.0 = undef("a")
+    %4:b.0 = undef("b")
+    branch bb2(%2, %3, %1, %4)
+  bb1(%5:c.1, %6:a.1, %7:x.1, %8:b.1, %9:_exc.0):
+    %10:x.2 = intLit 0
+    branch bb2(%5, %6, %10, %8)
+  bb2(%11:c.2, %12:a.2, %13:x.3, %14:b.2):
+    %16:a.3 = callQualified t07_try_except.risky []
+    %18:b.3 = callQualified t07_try_except.risky []
+    branch bb4(%11, %16, %13, %18)
+  bb3(%19:c.3, %20:a.4, %21:x.4, %22:b.4, %23:_exc.1):
+    branch bb4(%19, %20, %21, %22)
+  bb4(%24:c.4, %25:a.5, %26:x.5, %27:b.5):
+    %29:c.5 = callQualified t07_try_except.risky []
+    branch bb9(%29, %25, %26, %27)
+  bb5(%30:c.6, %31:a.6, %32:x.6, %33:b.6, %34:_exc.2):
+    %35:ValueError.0 = qualifiedRef builtins.ValueError
+    %37:_tmp.6 = callQualified builtins.isinstance [positional(%34), positional(%35)]
+      -- where %35 = qualifiedRef builtins.ValueError
+    condBranch %37 bb6(%30, %31, %32, %33, %34) bb7(%30, %31, %32, %33, %34)
+  bb6(%38:c.7, %39:a.7, %40:x.7, %41:b.7, %42:_exc.3):
+    %44:c.8 = unaryOp uSub intLit 1
+    branch bb9(%44, %39, %40, %41)
+  bb7(%45:c.9, %46:a.8, %47:x.8, %48:b.8, %49:_exc.4):
+    %50:TypeError.0 = qualifiedRef builtins.TypeError
+    %52:_tmp.10 = callQualified builtins.isinstance [positional(%49), positional(%50)]
+      -- where %50 = qualifiedRef builtins.TypeError
+    condBranch %52 bb8(%45, %46, %47, %48, %49) bb10(%45, %46, %47, %48, %49)
+  bb8(%53:c.10, %54:a.9, %55:x.9, %56:b.9, %57:_exc.5):
+    %59:c.11 = unaryOp uSub intLit 2
+    branch bb9(%59, %54, %55, %56)
+  bb10(%60:c.12, %61:a.10, %62:x.10, %63:b.10, %64:_exc.6):
+    raise %64
+  bb9(%65:c.13, %66:a.11, %67:x.11, %68:b.11):
     ret

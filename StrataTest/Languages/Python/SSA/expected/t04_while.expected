@@ -1,77 +1,52 @@
 module "t04_while":
 
 func @module_init():
-  -- First while: i < 10, i += 1
   bb0():
     %0:i.0 : int = intLit 0
-    branch bb1(%0)
-
-  bb1(%1:i.0):
-    %2:_tmp.0 = intLit 10
-    %3:_tmp.1 = compareOp lt %1 %2
-    condBranch %3 bb2(%1) bb3()
-
-  bb2(%4:i.0):
-    %5:_tmp.2 = intLit 1
-    %6:i.1 = binOp add %4 %5
-    branch bb1(%6)
-
-  -- Second while: while True with break
-  bb3():
-    %7:j.0 : int = intLit 0
-    branch bb4(%7)
-
-  bb4(%8:j.0):
-    %9:_tmp.3 = boolLit true
-    condBranch %9 bb5(%8) bb7()
-
-  -- while body: if j > 5 break else j += 1
-  bb5(%10:j.0):
-    %11:_tmp.4 = intLit 5
-    %12:_tmp.5 = compareOp gt %10 %11
-    condBranch %12 bb6() bb8(%10)
-
-  -- break
-  bb6():
-    branch bb7()
-
-  -- after second while
-  bb7():
-    %13:k.0 : int = intLit 0
-    %14:total.0 : int = intLit 0
-    branch bb9(%13, %14)
-
-  -- j += 1, loop back
-  bb8(%15:j.0):
-    %16:_tmp.6 = intLit 1
-    %17:j.1 = binOp add %15 %16
-    branch bb4(%17)
-
-  -- Third while header: k < 10
-  bb9(%18:k.0, %19:total.0):
-    %20:_tmp.7 = intLit 10
-    %21:_tmp.8 = compareOp lt %18 %20
-    condBranch %21 bb10(%18, %19) bb13()
-
-  -- Third while body: k += 1, if k % 2 == 0 continue else total += k
-  bb10(%22:k.0, %23:total.0):
-    %24:_tmp.9 = intLit 1
-    %25:k.1 = binOp add %22 %24
-    %26:_tmp.10 = intLit 2
-    %27:_tmp.11 = binOp mod %25 %26
-    %28:_tmp.12 = intLit 0
-    %29:_tmp.13 = compareOp eq %27 %28
-    condBranch %29 bb11(%25, %23) bb12(%25, %23)
-
-  -- continue
-  bb11(%30:k.1, %31:total.0):
-    branch bb9(%30, %31)
-
-  -- total += k
-  bb12(%32:k.1, %33:total.0):
-    %34:total.1 = binOp add %33 %32
-    branch bb9(%32, %34)
-
-  -- after third while
-  bb13():
+    %1:k.0 = undef("k")
+    %2:total.0 = undef("total")
+    %3:j.0 = undef("j")
+    branch bb1(%1, %2, %0, %3)
+  bb1(%4:k.1, %5:total.1, %6:i.1, %7:j.1):
+    %9:_tmp.2 = compareOp lt %6 intLit 10
+    condBranch %9 bb2(%4, %5, %6, %7) bb3(%4, %5, %6, %7)
+  bb2(%10:k.2, %11:total.2, %12:i.2, %13:j.2):
+    %15:i.3 = binOp add %12 intLit 1
+    branch bb1(%10, %11, %15, %13)
+  bb3(%16:k.3, %17:total.3, %18:i.4, %19:j.3):
+    %20:j.4 : int = intLit 0
+    branch bb4(%16, %17, %18, %20)
+  bb4(%21:k.4, %22:total.4, %23:i.5, %24:j.5):
+    %25:_tmp.5 = boolLit true
+    condBranch %25 bb5(%21, %22, %23, %24) bb6(%21, %22, %23, %24)
+  bb5(%26:k.5, %27:total.5, %28:i.6, %29:j.6):
+    %31:_tmp.7 = compareOp gt %29 intLit 5
+    condBranch %31 bb7(%26, %27, %28, %29) bb8(%26, %27, %28, %29)
+  bb7(%32:k.6, %33:total.6, %34:i.7, %35:j.7):
+    branch bb6(%32, %33, %34, %35)
+  bb8(%36:k.7, %37:total.7, %38:i.8, %39:j.8):
+    branch bb9(%36, %37, %38, %39)
+  bb9(%40:k.8, %41:total.8, %42:i.9, %43:j.9):
+    %45:j.10 = binOp add %43 intLit 1
+    branch bb4(%40, %41, %42, %45)
+  bb6(%46:k.9, %47:total.9, %48:i.10, %49:j.11):
+    %50:k.10 : int = intLit 0
+    %51:total.10 : int = intLit 0
+    branch bb10(%50, %51, %48, %49)
+  bb10(%52:k.11, %53:total.11, %54:i.11, %55:j.12):
+    %57:_tmp.12 = compareOp lt %52 intLit 10
+    condBranch %57 bb11(%52, %53, %54, %55) bb12(%52, %53, %54, %55)
+  bb11(%58:k.12, %59:total.12, %60:i.12, %61:j.13):
+    %63:k.13 = binOp add %58 intLit 1
+    %65:_tmp.15 = binOp mod %63 intLit 2
+    %67:_tmp.17 = compareOp eq %65 intLit 0
+    condBranch %67 bb13(%63, %59, %60, %61) bb14(%63, %59, %60, %61)
+  bb13(%68:k.14, %69:total.13, %70:i.13, %71:j.14):
+    branch bb10(%68, %69, %70, %71)
+  bb14(%72:k.15, %73:total.14, %74:i.14, %75:j.15):
+    branch bb15(%72, %73, %74, %75)
+  bb15(%76:k.16, %77:total.15, %78:i.15, %79:j.16):
+    %80:total.16 = binOp add %77 %76
+    branch bb10(%76, %80, %78, %79)
+  bb12(%81:k.17, %82:total.17, %83:i.16, %84:j.17):
     ret

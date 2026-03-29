@@ -85,7 +85,9 @@ partial def countExprBlocks (e : expr SourceRange) : Nat :=
   | .UnaryOp _ _ operand =>
     countExprBlocks operand
   | .Compare _ left _ ⟨_, comparators⟩ =>
-    countExprBlocks left + comparators.foldl (init := 0) fun acc c => acc + countExprBlocks c
+    -- Chained comparisons (a < b < c) need short-circuit blocks: n blocks for n comparators
+    let chainBlocks := if comparators.size > 1 then comparators.size else 0
+    chainBlocks + countExprBlocks left + comparators.foldl (init := 0) fun acc c => acc + countExprBlocks c
   | .Call _ f ⟨_, args⟩ ⟨_, kwargs⟩ =>
     countExprBlocks f
     + args.foldl (init := 0) fun acc a => acc + countExprBlocks a
@@ -191,36 +193,48 @@ inductive BlockTree where
             (exprBlockStart : BlockTreeId) (exprBlockCount : Nat)
             (sr : SourceRange)
 
-  /-- While loop. Allocates: testBlock, endBlock. -/
+  /-- While loop. Allocates: testBlock, bodyBlock, endBlock. -/
   | whileLoop (test : expr SourceRange)
               (body : Array BlockTree) (orelse : Array BlockTree)
-              (testBlock : BlockTreeId) (endBlock : BlockTreeId)
+              (testBlock : BlockTreeId) (bodyBlock : BlockTreeId)
+              (endBlock : BlockTreeId)
               (exprBlockStart : BlockTreeId) (exprBlockCount : Nat)
               (sr : SourceRange)
 
   /-- Try/except/else/finally. Allocates: one block per handler + joinBlock
-      + optional finallyBlock. -/
+      + optional finallyBlock + optional reraiseBlock. The reraiseBlock is
+      allocated when the last handler is typed (has a type filter), so that
+      exceptions not matching any handler are re-raised. -/
   | tryExcept (body : Array BlockTree)
               (handlers : Array ExceptHandlerTree)
               (orelse : Array BlockTree) (finally_ : Array BlockTree)
               (joinBlock : BlockTreeId) (finallyBlock : Option BlockTreeId)
+              (reraiseBlock : Option BlockTreeId)
               (exprBlockStart : BlockTreeId) (exprBlockCount : Nat)
               (sr : SourceRange)
 
-  /-- With statement. Allocates: enterBlock, excExitBlock, normalExitBlock. -/
+  /-- With statement. Allocates: enterBlock, excExitBlock, reraiseBlock, normalExitBlock.
+      The excExitBlock calls `__exit__` and checks the return value.
+      If truthy → normalExitBlock (suppress exception).
+      If falsy → reraiseBlock (re-raise exception). -/
   | withStmt (ctxExpr : expr SourceRange) (asName : Option String)
              (body : Array BlockTree)
              (enterBlock : BlockTreeId) (excExitBlock : BlockTreeId)
-             (normalExitBlock : BlockTreeId)
+             (reraiseBlock : BlockTreeId) (normalExitBlock : BlockTreeId)
              (exprBlockStart : BlockTreeId) (exprBlockCount : Nat)
              (sr : SourceRange)
 
-/-- Exception handler in a try/except tree node. -/
+/-- Exception handler in a try/except tree node.
+    For typed handlers (`typeExpr` is `some`), `bodyBlockId` is a separate
+    block for the handler body (after the isinstance dispatch check).
+    For bare handlers, `bodyBlockId` is `none` — the body runs directly
+    in the dispatch block. -/
 public inductive ExceptHandlerTree where
   | mk (typeExpr : Option (expr SourceRange))
        (name : Option String)
        (body : Array BlockTree)
        (blockId : BlockTreeId)
+       (bodyBlockId : Option BlockTreeId)
        (sr : SourceRange)
 
 end
@@ -230,7 +244,58 @@ instance : Inhabited BlockTree where
   default := .stmts (#[].toSubarray) 0 0
 
 instance : Inhabited ExceptHandlerTree where
-  default := .mk none none #[] 0 SourceRange.none
+  default := .mk none none #[] 0 none SourceRange.none
+
+/-! ### Repr instances for debugging -/
+
+mutual
+private partial def reprBlockTree : BlockTree → String
+  | .stmts slice ebs ebc =>
+    s!"stmts({slice.size} stmts, exprBlocks={ebs}+{ebc})"
+  | .ifStmt _ body orelse thenB elseB joinB ebs ebc _ =>
+    let bodyStr := ", ".intercalate (body.toList.map reprBlockTree)
+    let elseStr := ", ".intercalate (orelse.toList.map reprBlockTree)
+    s!"ifStmt(then=bb{thenB}, else=bb{elseB}, join=bb{joinB}, exprBlocks={ebs}+{ebc}, body=[{bodyStr}], orelse=[{elseStr}])"
+  | .forLoop _ _ body orelse initB headerB endB ebs ebc _ =>
+    let bodyStr := ", ".intercalate (body.toList.map reprBlockTree)
+    let elseStr := ", ".intercalate (orelse.toList.map reprBlockTree)
+    s!"forLoop(init=bb{initB}, header=bb{headerB}, end=bb{endB}, exprBlocks={ebs}+{ebc}, body=[{bodyStr}], orelse=[{elseStr}])"
+  | .whileLoop _ body orelse testB bodyB endB ebs ebc _ =>
+    let bodyStr := ", ".intercalate (body.toList.map reprBlockTree)
+    let elseStr := ", ".intercalate (orelse.toList.map reprBlockTree)
+    s!"whileLoop(test=bb{testB}, body=bb{bodyB}, end=bb{endB}, exprBlocks={ebs}+{ebc}, body=[{bodyStr}], orelse=[{elseStr}])"
+  | .tryExcept body handlers orelse finally_ joinB finallyB reraiseB ebs ebc _ =>
+    let bodyStr := ", ".intercalate (body.toList.map reprBlockTree)
+    let hStr := ", ".intercalate (handlers.toList.map reprExceptHandler)
+    let elseStr := ", ".intercalate (orelse.toList.map reprBlockTree)
+    let finStr := ", ".intercalate (finally_.toList.map reprBlockTree)
+    let fbStr := match finallyB with | some b => s!"bb{b}" | none => "none"
+    let rbStr := match reraiseB with | some b => s!"bb{b}" | none => "none"
+    s!"tryExcept(join=bb{joinB}, finally={fbStr}, reraise={rbStr}, exprBlocks={ebs}+{ebc}, body=[{bodyStr}], handlers=[{hStr}], orelse=[{elseStr}], finally_=[{finStr}])"
+  | .withStmt _ asName body enterB excExitB reraiseB normalExitB ebs ebc _ =>
+    let bodyStr := ", ".intercalate (body.toList.map reprBlockTree)
+    let asStr := match asName with | some n => s!"\"{n}\"" | none => "none"
+    s!"withStmt(as={asStr}, enter=bb{enterB}, excExit=bb{excExitB}, reraise=bb{reraiseB}, normalExit=bb{normalExitB}, exprBlocks={ebs}+{ebc}, body=[{bodyStr}])"
+
+private partial def reprExceptHandler : ExceptHandlerTree → String
+  | .mk _ name body blockId bodyBlockId _ =>
+    let bodyStr := ", ".intercalate (body.toList.map reprBlockTree)
+    let nameStr := match name with | some n => s!"\"{n}\"" | none => "none"
+    let bbStr := match bodyBlockId with | some b => s!", bodyBb=bb{b}" | none => ""
+    s!"handler(name={nameStr}, bb{blockId}{bbStr}, body=[{bodyStr}])"
+end
+
+instance : Repr BlockTree where
+  reprPrec bt _ := reprBlockTree bt
+
+instance : Repr ExceptHandlerTree where
+  reprPrec eh _ := reprExceptHandler eh
+
+instance : ToString BlockTree where
+  toString := reprBlockTree
+
+instance : ToString ExceptHandlerTree where
+  toString := reprExceptHandler
 
 /-- Result of blockifying a single function/method/module-init.
     Phase 2 consumes this to produce an SSA `Func`. -/
@@ -254,6 +319,8 @@ public structure BlockifyResult where
   /-- Source range of the function definition (`def`/`class` statement).
       Phase 2 uses this for `Func.sr`. For `@module_init`, this is `SourceRange.none`. -/
   sr          : SourceRange
+  /-- Whether this function is async (unsupported — Phase 2 emits a warning). -/
+  isAsync     : Bool := false
 deriving Inhabited
 
 /-! ## Blockify State and Monad -/
@@ -397,21 +464,28 @@ where
 
     | .While _ test ⟨_, body⟩ ⟨_, orelse⟩ =>
       let testBlock ← freshBlockId
+      let bodyBlock ← freshBlockId
       let endBlock ← freshBlockId
       let exprCount := countExprBlocks test
       let exprStart ← allocBlockIds exprCount
       let bodyTree ← blockifyStmts body
       let orelseTree ← blockifyStmts orelse
-      return .whileLoop test bodyTree orelseTree testBlock endBlock
+      return .whileLoop test bodyTree orelseTree testBlock bodyBlock endBlock
         exprStart exprCount sr
 
     | .Try _ ⟨_, body⟩ ⟨_, handlers⟩ ⟨_, orelse⟩ ⟨_, finalbody⟩ =>
       let mut handlerTrees : Array ExceptHandlerTree := #[]
       let mut handlerExprCount : Nat := 0
+      let mut lastHandlerIsTyped := false
       for h in handlers do
         match h with
         | .ExceptHandler handlerSr ⟨_, exType⟩ errname ⟨_, hBody⟩ =>
           let hBlockId ← freshBlockId
+          -- For typed handlers, allocate a separate body block for isinstance dispatch
+          let hBodyBlockId ← match exType with
+            | some _ => some <$> freshBlockId
+            | none => pure none
+          lastHandlerIsTyped := exType.isSome
           match errname.val with
           | some ⟨_, name⟩ => defineVar name
           | none => pure ()
@@ -421,16 +495,18 @@ where
           handlerExprCount := handlerExprCount +
             (match exType with | some e => countExprBlocks e | none => 0)
           let hBodyTree ← blockifyStmts hBody
-          handlerTrees := handlerTrees.push (.mk exType handlerName hBodyTree hBlockId handlerSr)
+          handlerTrees := handlerTrees.push (.mk exType handlerName hBodyTree hBlockId hBodyBlockId handlerSr)
       let joinBlock ← freshBlockId
       let finallyBlock ← if finalbody.isEmpty then pure none
         else some <$> freshBlockId
+      -- Allocate reraise block if last handler is typed (unmatched exceptions re-raise)
+      let reraiseBlock ← if lastHandlerIsTyped then some <$> freshBlockId else pure none
       let exprStart ← allocBlockIds handlerExprCount
       let bodyTree ← blockifyStmts body
       let orelseTree ← blockifyStmts orelse
       let finallyTree ← blockifyStmts finalbody
       return .tryExcept bodyTree handlerTrees orelseTree finallyTree
-        joinBlock finallyBlock exprStart handlerExprCount sr
+        joinBlock finallyBlock reraiseBlock exprStart handlerExprCount sr
 
     | .With _ ⟨_, items⟩ ⟨_, body⟩ _ =>
       if h : items.size > 0 then
@@ -445,6 +521,7 @@ where
             | _ => none
           let enterBlock ← freshBlockId
           let excExitBlock ← freshBlockId
+          let reraiseBlock ← freshBlockId
           let normalExitBlock ← freshBlockId
           let exprCount := countExprBlocks ctxExpr
           let exprStart ← allocBlockIds exprCount
@@ -452,7 +529,7 @@ where
             warn "Multi-item with statement — only first item decomposed in v1"
           let innerBody ← blockifyStmts body
           return .withStmt ctxExpr asName innerBody
-            enterBlock excExitBlock normalExitBlock exprStart exprCount sr
+            enterBlock excExitBlock reraiseBlock normalExitBlock exprStart exprCount sr
       else
         warn "Empty with statement"
         return .stmts (#[].toSubarray) 0 0
@@ -509,7 +586,8 @@ def blockifyFunc (name : String)
     for (pname, _) in params do
       defineVar (paramVarName pname)
     blockifyStmts body
-  let (bodyTree, finalState) := action.run {}
+  -- Reserve bb0 for the entry block; compound statements allocate from bb1+
+  let (bodyTree, finalState) := action.run { nextBlockId := 1 }
   { name, params, body := bodyTree,
     allVars := finalState.allVars,
     totalBlocks := finalState.nextBlockId,
@@ -526,6 +604,9 @@ public partial def blockifyModule
     | .FunctionDef sr ⟨_, name⟩ args ⟨_, body⟩ _ _ _ _ =>
       let params := extractParams args
       results := results.push (blockifyFunc name params body sr)
+    | .AsyncFunctionDef sr ⟨_, name⟩ args ⟨_, body⟩ _ _ _ _ =>
+      let params := extractParams args
+      results := results.push { blockifyFunc name params body sr with isAsync := true }
     | .ClassDef sr ⟨_, className⟩ _ _ ⟨_, classBody⟩ _ _ =>
       -- Each method becomes a top-level function with mangled name
       for cs in classBody do
@@ -543,7 +624,7 @@ public partial def blockifyModule
     | _ => pure ()
   -- Module-level code (everything that's not a function/class def)
   let moduleStmts := stmts.filter fun s =>
-    match s with | .FunctionDef .. | .ClassDef .. => false | _ => true
+    match s with | .FunctionDef .. | .AsyncFunctionDef .. | .ClassDef .. => false | _ => true
   if !moduleStmts.isEmpty then
     results := results.push (blockifyFunc "@module_init" #[] moduleStmts SourceRange.none)
   return results

@@ -20,7 +20,7 @@ Compile Python test files to Ion, run `translateModule`, format with
 namespace Strata.Python.SSATest
 
 open Strata.Python.PythonToSSA (translateModule)
-open Strata.Python.SSAFormat (fmtModule)
+open Strata.Python.SSAFormat (fmtModule fmtWarnings)
 open Strata.Python (withPython)
 
 private meta def testDir : System.FilePath :=
@@ -62,14 +62,27 @@ private meta def compilePython
   return ionPath
 
 /-- Read Python strata from Ion file and run translateModule. -/
-private meta def runTranslate (ionPath : System.FilePath) (moduleName : String)
-    : IO String := do
+private meta def runTranslate (ionPath : System.FilePath) (pyFile : System.FilePath)
+    (moduleName : String) : IO String := do
   let bytes ← Strata.Util.readBinInputSource ionPath.toString
   let stmts ← match Strata.Python.readPythonStrataBytes ionPath.toString bytes with
     | .ok stmts => pure stmts
     | .error msg => throw <| .userError s!"Failed to read Ion: {msg}"
-  let mod := translateModule moduleName stmts
-  return fmtModule mod
+  let result := translateModule moduleName stmts
+  let fileMap ← do
+    try
+      let content ← IO.FS.readFile pyFile
+      pure (some (Lean.FileMap.ofString content))
+    catch _ => pure none
+  let warnStr := fmtWarnings result.warnings fileMap
+  let modStr := fmtModule result.module
+  -- Insert warnings after the module header line
+  let lines := modStr.splitOn "\n"
+  match lines with
+  | hdr :: rest =>
+    let warningBlock := if warnStr.isEmpty then "" else "\n" ++ warnStr
+    return hdr ++ warningBlock ++ "\n" ++ "\n".intercalate rest
+  | [] => return warnStr ++ modStr
 
 /-- Run a single test: compile, translate, compare against expected. -/
 private meta def runTestCase
@@ -80,11 +93,13 @@ private meta def runTestCase
     (testName : String)
     : IO (Option String) := do
   let ionPath ← compilePython pythonCmd pyFile tmpDir
-  let actual ← runTranslate ionPath testName
+  let actual ← runTranslate ionPath pyFile testName
   let expected ← IO.FS.readFile expectedFile
   if actual.trimAscii.toString == expected.trimAscii.toString then
     return none
   else
+    -- Dump actual output for updating expected files
+    IO.FS.writeFile s!"/tmp/ssa_test_actual/{testName}.actual" actual
     -- Find first differing line for a useful error message
     let actualLines := actual.trimAscii.toString.splitOn "\n"
     let expectedLines := expected.trimAscii.toString.splitOn "\n"
