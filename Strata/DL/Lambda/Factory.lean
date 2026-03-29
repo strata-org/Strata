@@ -257,6 +257,34 @@ theorem Factory.callOfLFunc_smaller {T} {F : @Factory T.base} {e : LExpr T} {op 
     intros op_eq args_eq F_eq
     subst op args F'; exact (getLFuncCall_smaller Hfunc)
 
+/-- If `getFactoryLFunc` returns a function, it's a member of the factory. -/
+theorem getFactoryLFunc_mem
+    {T : LExprParams} (F : @Factory T) (name : String) (func : LFunc T)
+    (h : F.getFactoryLFunc name = some func) : func ∈ F := by
+  simp only [Factory.getFactoryLFunc] at h
+  have h2 : F.toList.find? (fun fn => fn.name.name == name) = some func := by
+    rw [Array.find?_toList]; exact h
+  exact Array.mem_def.mpr (List.mem_of_find?_eq_some h2)
+
+/-- If `callOfLFunc` returns a triple, the function is a member of the factory. -/
+theorem callOfLFunc_func_mem
+    {T : LExprParams} (F : @Factory T) (e : LExpr T.mono)
+    (op : LExpr T.mono) (args : List (LExpr T.mono)) (func : LFunc T)
+    (aPA : Bool)
+    (h : F.callOfLFunc e (allowPartialApp := aPA) = some (op, args, func)) :
+    func ∈ F := by
+  simp only [Factory.callOfLFunc] at h
+  cases h_lfc : getLFuncCall e with | mk op' args' =>
+  simp only [h_lfc] at h
+  cases op' <;> simp at h
+  rename_i m_op name_op ty_op
+  cases h_gf : F.getFactoryLFunc name_op.name with
+  | none => simp [h_gf] at h
+  | some func' =>
+    simp only [h_gf] at h
+    cases aPA <;> simp at h <;> split at h <;> simp at h
+    all_goals (obtain ⟨_, _, rfl⟩ := h; exact getFactoryLFunc_mem F _ _ h_gf)
+
 end -- public section
 end Lambda
 

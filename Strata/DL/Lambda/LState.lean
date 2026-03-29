@@ -160,9 +160,133 @@ instance : ToFormat (T.Identifier × LState T) where
 Substitute `.fvar`s in `e` by looking up their values in `σ`.
 The replacement expressions must be closed (no dangling bvars).
 -/
-def LExpr.substFvarsFromState (σ : (LState T)) (e : (LExpr T.mono)) : (LExpr T.mono) :=
+@[expose] def LExpr.substFvarsFromState (σ : (LState T)) (e : (LExpr T.mono)) : (LExpr T.mono) :=
   let sm := σ.state.toSingleMap.map (fun (x, (_, v)) => (x, v))
   Lambda.LExpr.substFvars e sm
+
+/-- `substFvarsFromState` preserves `eraseMetadata` equality. -/
+theorem LExpr.substFvarsFromState_eraseMetadata_congr
+    {T : LExprParams} [DecidableEq T.IDMeta]
+    (σ : LState T) (e₁ e₂ : LExpr T.mono)
+    (h : e₁.eraseMetadata = e₂.eraseMetadata) :
+    (LExpr.substFvarsFromState σ e₁).eraseMetadata =
+    (LExpr.substFvarsFromState σ e₂).eraseMetadata := by
+  simp only [LExpr.substFvarsFromState]
+  exact LExpr.substFvars_eraseMetadata_congr e₁ e₂ _ h
+
+---------------------------------------------------------------------
+-- Helper lemmas for substFvarsFromState
+
+theorem LExpr.substFvarsFromState_const
+    {T : LExprParams} [DecidableEq T.IDMeta]
+    (σ : LState T) (m : T.Metadata) (c : LConst) :
+    LExpr.substFvarsFromState σ (LExpr.const m c) = LExpr.const m c := by
+  simp [LExpr.substFvarsFromState, LExpr.substFvars_const']
+
+theorem LExpr.substFvarsFromState_op
+    {T : LExprParams} [DecidableEq T.IDMeta]
+    (σ : LState T) (m : T.Metadata) (n : Identifier T.IDMeta)
+    (t : Option T.mono.TypeType) :
+    LExpr.substFvarsFromState σ (LExpr.op m n t) = LExpr.op m n t := by
+  simp [LExpr.substFvarsFromState, LExpr.substFvars_op']
+
+theorem LExpr.substFvarsFromState_bvar
+    {T : LExprParams} [DecidableEq T.IDMeta]
+    (σ : LState T) (m : T.Metadata) (i : Nat) :
+    LExpr.substFvarsFromState σ (LExpr.bvar m i) = LExpr.bvar m i := by
+  simp [LExpr.substFvarsFromState, LExpr.substFvars_bvar]
+
+/-- If `x` is not found in any scope, `substFvarsFromState` on `.fvar x` is
+the identity. -/
+theorem LExpr.substFvarsFromState_fvar_none
+    {T : LExprParams} [DecidableEq T.IDMeta]
+    (σ : LState T) (m_meta : T.Metadata) (x : T.Identifier)
+    (ty : Option LMonoTy) (h : Maps.find? σ.state x = none) :
+    LExpr.substFvarsFromState σ (.fvar m_meta x ty) = .fvar m_meta x ty := by
+  simp only [LExpr.substFvarsFromState]
+  have h_tsm := Maps.find?_none_toSingleMap σ.state x h
+  -- Map.find? on projected list preserves none
+  have h_find_none : ∀ (tsm : Map T.Identifier (Option LMonoTy × LExpr T.mono)),
+      Map.find? tsm x = none →
+      Map.find? (tsm.map (fun (x, (_, v)) => (x, v))) x = none := by
+    intro tsm htsm; induction tsm with
+    | nil => rfl
+    | cons p rest ih =>
+      obtain ⟨k, ⟨_, _⟩⟩ := p; simp only [Map.find?] at htsm
+      by_cases hk : k = x
+      · rw [if_pos hk] at htsm; exact absurd htsm (by simp)
+      · rw [if_neg hk] at htsm; simp only [List.map, Map.find?, if_neg hk]; exact ih htsm
+  exact LExpr.substFvars_fvar_none m_meta x ty _ (h_find_none _ h_tsm)
+
+set_option checkBinderAnnotations false in
+/-- If `Maps.find? σ.state x = some (ty_val, v)` and `v` is closed, then
+    `substFvarsFromState σ (.fvar m x ty) = v`. -/
+theorem LExpr.substFvarsFromState_fvar_some
+    {T : LExprParams} [DecidableEq T.IDMeta]
+    (σ : LState T) (m_meta : T.Metadata) (x : T.Identifier)
+    (ty : Option LMonoTy) (ty_val : Option LMonoTy) (v : LExpr T.mono)
+    (h_find : Maps.find? σ.state x = some (ty_val, v))
+    (h_closed : LExpr.freeVars v = []) :
+    LExpr.substFvarsFromState σ (.fvar m_meta x ty) = v := by
+  simp only [LExpr.substFvarsFromState]
+  suffices h_map_find :
+      Map.find? (σ.state.toSingleMap.map (fun (x, (_, v)) => (x, v))) x = some v by
+    exact LExpr.substFvars_fvar_find m_meta x ty _ v h_map_find h_closed
+  have h_map_find_snd : ∀ (tsm : Map T.Identifier (Option LMonoTy × LExpr T.mono)),
+      Map.find? tsm x = some (ty_val, v) →
+      Map.find? (tsm.map (fun (k, (_, w)) => (k, w))) x = some v := by
+    intro tsm h_tsm
+    induction tsm with
+    | nil => simp [Map.find?] at h_tsm
+    | cons p rest ih =>
+      obtain ⟨k, ⟨ty', val⟩⟩ := p
+      simp only [Map.find?] at h_tsm
+      by_cases hk : k = x
+      · rw [if_pos hk] at h_tsm
+        obtain ⟨_, rfl⟩ := h_tsm
+        simp only [List.map, Map.find?, if_pos hk]
+      · rw [if_neg hk] at h_tsm
+        simp only [List.map, Map.find?, if_neg hk]
+        exact ih h_tsm
+  have h_maps_to_map : ∀ (st : Maps T.Identifier (Option LMonoTy × LExpr T.mono)),
+      Maps.find? st x = some (ty_val, v) →
+      Map.find? st.toSingleMap x = some (ty_val, v) := by
+    intro st h_st
+    induction st with
+    | nil => simp [Maps.find?] at h_st
+    | cons m rest ih =>
+      simp only [Maps.find?] at h_st
+      simp only [Maps.toSingleMap]
+      cases hm : Map.find? m x with
+      | some w =>
+        rw [hm] at h_st; cases h_st
+        clear ih
+        induction m with
+        | nil => simp [Map.find?] at hm
+        | cons p pm ih_m =>
+          obtain ⟨k, kv⟩ := p
+          simp only [Map.find?] at hm
+          by_cases hk : k = x
+          · rw [if_pos hk] at hm; cases hm
+            simp [List.flatten, Map.find?, hk]
+          · rw [if_neg hk] at hm
+            simp [List.flatten, Map.find?, hk]
+            exact ih_m hm
+      | none =>
+        rw [hm] at h_st
+        have ih_rest := ih h_st
+        clear ih
+        induction m with
+        | nil => exact ih_rest
+        | cons p pm ih_m =>
+          obtain ⟨k, kv⟩ := p
+          simp only [Map.find?] at hm
+          by_cases hk : k = x
+          · rw [if_pos hk] at hm; exact absurd hm (by simp)
+          · rw [if_neg hk] at hm
+            simp [List.flatten, Map.find?, hk]
+            exact ih_m hm
+  exact h_map_find_snd _ (h_maps_to_map _ h_find)
 
 ---------------------------------------------------------------------
 

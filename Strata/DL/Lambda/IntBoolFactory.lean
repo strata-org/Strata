@@ -41,22 +41,80 @@ automatically.
 class LambdaLeanType (ty : outParam LMonoTy) (ValTy : Type) where
   mkConst : ∀(T : LExprParams), T.Metadata → ValTy → LExpr T.mono
   cevalTy : ∀(T : LExprParams), LExpr T.mono → Option ValTy
+  /-- `cevalTy` is metadata-insensitive: expressions with the same
+      `eraseMetadata` yield the same result. -/
+  cevalTy_eraseMetadata :
+    ∀ (T : LExprParams) (e1 e2 : LExpr T.mono),
+      LExpr.eraseMetadata e1 = LExpr.eraseMetadata e2 →
+      cevalTy T e1 = cevalTy T e2
+  /-- `mkConst` after `eraseMetadata` is independent of the metadata argument. -/
+  mkConst_eraseMetadata :
+    ∀ (T : LExprParams) (md1 md2 : T.Metadata) (v : ValTy),
+      LExpr.eraseMetadata (mkConst T md1 v) = LExpr.eraseMetadata (mkConst T md2 v)
+
+private theorem cevalTy_of_eraseMetadata_eq
+    {T : LExprParams}
+    (f : LExpr T.mono → Option V)
+    (hf_const : ∀ (m1 m2 : T.Metadata) (c : LConst), f (.const m1 c) = f (.const m2 c))
+    (hf_non_const : ∀ e, (∀ m c, e ≠ .const m c) → f e = none)
+    (e1 e2 : LExpr T.mono)
+    (h : LExpr.eraseMetadata e1 = LExpr.eraseMetadata e2) :
+    f e1 = f e2 := by
+  cases e1 <;> cases e2 <;>
+    simp_all [LExpr.eraseMetadata, LExpr.replaceMetadata]
+  next m1 _ m2 _ => exact hf_const m1 m2 _
 
 instance : LambdaLeanType .int Int where
   mkConst T := @intConst T.mono
   cevalTy _ := LExpr.denoteInt
+  cevalTy_eraseMetadata := by
+    intro T e1 e2 h
+    exact cevalTy_of_eraseMetadata_eq LExpr.denoteInt
+      (by intro m1 m2 c; cases c <;> simp [LExpr.denoteInt])
+      (by intro e he; cases e <;> simp_all [LExpr.denoteInt])
+      e1 e2 h
+  mkConst_eraseMetadata := by
+    intro T md1 md2 v
+    simp [LExpr.eraseMetadata, LExpr.replaceMetadata]
 
 instance : LambdaLeanType .bool Bool where
   mkConst T := @boolConst T.mono
   cevalTy _ := LExpr.denoteBool
+  cevalTy_eraseMetadata := by
+    intro T e1 e2 h
+    exact cevalTy_of_eraseMetadata_eq LExpr.denoteBool
+      (by intro m1 m2 c; cases c <;> simp [LExpr.denoteBool])
+      (by intro e he; cases e <;> simp_all [LExpr.denoteBool])
+      e1 e2 h
+  mkConst_eraseMetadata := by
+    intro T md1 md2 v
+    simp [LExpr.eraseMetadata, LExpr.replaceMetadata]
 
 instance : LambdaLeanType .string String where
   mkConst T := @LExpr.strConst T.mono
   cevalTy _ := LExpr.denoteString
+  cevalTy_eraseMetadata := by
+    intro T e1 e2 h
+    exact cevalTy_of_eraseMetadata_eq LExpr.denoteString
+      (by intro m1 m2 c; cases c <;> simp [LExpr.denoteString])
+      (by intro e he; cases e <;> simp_all [LExpr.denoteString])
+      e1 e2 h
+  mkConst_eraseMetadata := by
+    intro T md1 md2 v
+    simp [LExpr.eraseMetadata, LExpr.replaceMetadata]
 
 instance (n : Nat) : LambdaLeanType (.bitvec n) (BitVec n) where
   mkConst _ m v := LExpr.bitvecConst m n v
   cevalTy _ := LExpr.denoteBitVec n
+  cevalTy_eraseMetadata := by
+    intro T e1 e2 h
+    exact cevalTy_of_eraseMetadata_eq (LExpr.denoteBitVec n)
+      (by intro m1 m2 c; cases c <;> simp [LExpr.denoteBitVec])
+      (by intro e he; cases e <;> simp_all [LExpr.denoteBitVec])
+      e1 e2 h
+  mkConst_eraseMetadata := by
+    intro T md1 md2 v
+    simp [LExpr.eraseMetadata, LExpr.replaceMetadata]
 
 /-! ### Uneval combinators (no concrete evaluation)
 
@@ -82,6 +140,7 @@ def polyUneval (n : T.Identifier) (typeArgs : List String)
     body_freevars := by intro b hb; simp at hb
     concreteEval_argmatch := by intro fn _ _ _ hfn; simp at hfn
     body_or_concreteEval := by simp
+    constr_no_eval := by simp
     typeArgs_nodup := h_ta_nodup
     inputs_typevars_in_typeArgs := h_inputs
     output_typevars_in_typeArgs := h_output
@@ -172,6 +231,27 @@ def unaryOp (n : T.Identifier)
     output_typevars_in_typeArgs := by simp [hOutTy]
     precond_freevars := by intro p hp; simp at hp
     typeArgs_no_gen_prefix := by simp
+    constr_no_eval := by simp
+    concreteEval_eraseMetadata := by
+      intro ceval h md1 md2 args1 args2 res1 hmap heval
+      simp at h; subst h
+      match args1, heval with
+      | [x1], heval =>
+        have hlen : args2.length = 1 := by
+          have := congrArg List.length hmap; simp at this; omega
+        match args2, hlen with
+        | [x2], _ =>
+        simp [List.map] at hmap
+        have hceq := hIn.cevalTy_eraseMetadata T x1 x2 hmap
+        simp only [] at heval ⊢
+        match hc1 : cevalInTy x1 with
+        | none => simp [hc1] at heval
+        | some a =>
+          have hc2 : cevalInTy x2 = some a := by
+            change LambdaLeanType.cevalTy T x2 = some a; rw [← hceq]; exact hc1
+          simp only [hc2]
+          simp only [hc1, Option.some.injEq] at heval; subst heval
+          exact ⟨mkConst md2 (op a), rfl, hOut.mkConst_eraseMetadata T md1 md2 (op a)⟩
   }⟩
 
 /-! #### Binary -/
@@ -222,6 +302,36 @@ def binaryOp (n : T.Identifier)
     output_typevars_in_typeArgs := by simp [hOutTy]
     precond_freevars := h_precond
     typeArgs_no_gen_prefix := by simp
+    constr_no_eval := by simp
+    concreteEval_eraseMetadata := by
+      intro ceval h md1 md2 args1 args2 res1 hmap heval
+      simp at h; subst h
+      match args1, heval with
+      | [x1, y1], heval =>
+        have hlen : args2.length = 2 := by
+          have := congrArg List.length hmap; simp at this; omega
+        match args2, hlen with
+        | [x2, y2], _ =>
+          simp [List.map] at hmap
+          obtain ⟨hxeq, hyeq⟩ := hmap
+          have hcx := hIn.cevalTy_eraseMetadata T x1 x2 hxeq
+          have hcy := hIn.cevalTy_eraseMetadata T y1 y2 hyeq
+          simp only [] at heval ⊢
+          match hcx1 : cevalInTy x1, hcy1 : cevalInTy y1 with
+          | none, _ => simp [hcx1] at heval
+          | some _, none => simp [hcy1] at heval
+          | some a, some b =>
+            have hcx2 : cevalInTy x2 = some a := by
+              change LambdaLeanType.cevalTy T x2 = some a; rw [← hcx]; exact hcx1
+            have hcy2 : cevalInTy y2 = some b := by
+              change LambdaLeanType.cevalTy T y2 = some b; rw [← hcy]; exact hcy1
+            simp only [hcx2, hcy2]
+            simp only [hcx1, hcy1] at heval
+            split at heval
+            · rename_i hg
+              simp only [Option.some.injEq] at heval; subst heval
+              exact ⟨mkConst md2 (op a b), by simp [hg], hOut.mkConst_eraseMetadata T md1 md2 (op a b)⟩
+            · simp at heval
   }⟩
 
 /-! ### Integer Arithmetic Operations -/
