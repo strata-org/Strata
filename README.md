@@ -42,7 +42,7 @@ Unit tests are run with `#guard_msgs` commands. No output means the tests passed
 To build executable files only and omit proof checks that might take a long time, use
 
 ```bash
-lake build strata:exe strata StrataToCBMC StrataCoreToGoto
+lake build strata:exe strata StrataToCBMC
 ```
 
 ## Running Analyses on Existing Strata Programs

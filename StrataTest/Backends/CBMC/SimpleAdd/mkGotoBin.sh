@@ -6,7 +6,7 @@ rm -f *.gb
 
 echo "Writing out JSON files from a Strata Core program SimpleAdd"
 pushd ../../../../
-lake exe StrataCoreToGoto --output-dir StrataTest/Backends/CBMC/SimpleAdd StrataTest/Backends/CBMC/SimpleAdd/simpleAdd.core.st
+lake exe strata coreToGoto --output-dir StrataTest/Backends/CBMC/SimpleAdd StrataTest/Backends/CBMC/SimpleAdd/simpleAdd.core.st
 popd
 
 # The symtab.json now includes CBMC default symbols directly.
