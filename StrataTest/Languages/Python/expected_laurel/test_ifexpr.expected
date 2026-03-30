@@ -1,5 +1,5 @@
-✅ pass
-test_ifexpr.py(3, 0): ✅ pass
-test_ifexpr.py(3, 0): ✅ pass
+✅ pass - set_result_calls_Any_to_bool_0
+test_ifexpr.py(3, 0): ✅ pass - assert_assert(56)_calls_Any_to_bool_0
+test_ifexpr.py(3, 0): ✅ pass - assert(56)
 DETAIL: 3 passed, 0 failed, 0 inconclusive
 RESULT: Analysis success

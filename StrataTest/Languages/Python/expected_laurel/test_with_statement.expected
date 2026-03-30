@@ -1,20 +1,20 @@
-✅ pass
-✅ pass
-✅ pass
-test_with_statement.py(19, 4): ✅ pass
-test_with_statement.py(19, 4): ❌ fail
-✅ pass
-✅ pass
-test_with_statement.py(25, 8): ✅ pass
-test_with_statement.py(25, 8): ❌ fail
-✅ pass
-✅ pass
-✅ pass
-✅ pass
-✅ pass
-test_with_statement.py(32, 8): ✅ pass
-test_with_statement.py(32, 8): ❓ unknown
-✅ pass
-✅ pass
+✅ pass - callElimAssert_requires_9
+✅ pass - callElimAssert_requires_5
+✅ pass - callElimAssert_requires_2
+test_with_statement.py(19, 4): ✅ pass - assert_assert(368)_calls_Any_to_bool_0
+test_with_statement.py(19, 4): ❌ fail - assert(368)
+✅ pass - callElimAssert_requires_19
+✅ pass - callElimAssert_requires_15
+test_with_statement.py(25, 8): ✅ pass - assert_assert(500)_calls_Any_to_bool_0
+test_with_statement.py(25, 8): ❌ fail - assert(500)
+✅ pass - callElimAssert_requires_12
+✅ pass - callElimAssert_requires_39
+✅ pass - callElimAssert_requires_35
+✅ pass - callElimAssert_requires_31
+✅ pass - callElimAssert_requires_28
+test_with_statement.py(32, 8): ✅ pass - assert_assert(666)_calls_Any_to_bool_0
+test_with_statement.py(32, 8): ❓ unknown - assert(666)
+✅ pass - callElimAssert_requires_25
+✅ pass - callElimAssert_requires_22
 DETAIL: 15 passed, 2 failed, 1 inconclusive
 RESULT: Failures found
