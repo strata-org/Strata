@@ -591,6 +591,7 @@ Returns the lowered program.
 abbrev LowerResult := (ResolutionResult) × (List DiagnosticModel)
 
 def lowerLaurelToLaurel (program : Program) : LowerResult :=
+
   let program := { program with
     staticProcedures := coreDefinitionsForLaurel.staticProcedures ++ program.staticProcedures
   }
@@ -623,23 +624,25 @@ def lowerLaurelToLaurel (program : Program) : LowerResult :=
   let (program, constrainedTypeDiags) := constrainedTypeElim model program
   (resolve program (some model) , diamondErrors ++ modifiesDiags ++ constrainedTypeDiags)
 
-abbrev TranslateResult := (Option Core.Program) × (List DiagnosticModel)
-/--
-Translate Laurel Program to Core Program
--/
-def translate (options: LaurelTranslateOptions) (program : Program): TranslateResult :=
+
+
+
+
+/-- Like `translate` but also returns the lowered Laurel program (after all
+    Laurel-to-Laurel passes, before the final translation to Core). -/
+abbrev TranslateResultWithLaurel := (Option Core.Program) × (List DiagnosticModel) × Program
+def translateWithLaurel (options: LaurelTranslateOptions) (program : Program): TranslateResultWithLaurel :=
   let (result, lowerErrors) := lowerLaurelToLaurel program
 
   let (program, model) := (result.program, result.model)
 
-    let initState : TranslateState := {model := model }
+  let initState : TranslateState := {model := model }
   let (coreProgramOption, translateState) := runTranslateM initState (translateLaurelToCore program)
   let resolutionErrors: List DiagnosticModel := if options.emitResolutionErrors then result.errors.toList else []
   let allDiagnostics := resolutionErrors ++ lowerErrors ++ translateState.diagnostics
   let coreProgramOption := if translateState.coreProgramHasSuperfluousErrors then none else coreProgramOption
-  (coreProgramOption, allDiagnostics)
+  (coreProgramOption, allDiagnostics, program)
   where
-
   /--
   Translate Laurel datatype definitions to Core declarations.
   Datatypes are grouped by mutual references (SCC) so mutually recursive
@@ -702,6 +705,17 @@ def translate (options: LaurelTranslateOptions) (program : Program): TranslateRe
     -- dbg_trace "================================="
     pure program
 
+
+
+
+/--
+Translate Laurel Program to Core Program
+-/
+abbrev TranslateResult := (Option Core.Program) × (List DiagnosticModel)
+
+def translate (options: LaurelTranslateOptions) (program : Program): TranslateResult :=
+  let (core, diags, _) := translateWithLaurel options program
+  (core, diags)
 
 /--
 Verify a Laurel program using an SMT solver
