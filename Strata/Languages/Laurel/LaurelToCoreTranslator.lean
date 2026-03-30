@@ -652,9 +652,6 @@ def lowerLaurelToLaurel (program : Program) : LowerResult :=
   (resolve program (some model) , diamondErrors ++ modifiesDiags ++ constrainedTypeDiags)
 
 
-
-
-
 /-- Like `translate` but also returns the lowered Laurel program (after all
     Laurel-to-Laurel passes, before the final translation to Core). -/
 abbrev TranslateResultWithLaurel := (Option Core.Program) × (List DiagnosticModel) × Program
