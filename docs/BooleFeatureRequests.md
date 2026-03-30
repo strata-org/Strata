@@ -26,11 +26,18 @@ This document tracks the selected Boole feature-request seeds kept under
    - Lowering strategy: keep the Boole syntax for readability, but expand it
      during translation to a quantified formula over map indices:
      `∀ i : k . a[i] == b[i]`
-   - This follows the preferred direction from the backlog: use a cleaner Boole
-     form while still giving the core pipeline the explicit quantified semantics.
    - Current limitation: this first implementation handles direct `Map k v` types.
      It does not yet normalize named type synonyms such as `type IntMap := Map int int`,
      and it does not yet extend to sequences or higher-order/function extensionality.
+   - Problem: this hardcodes a quantified encoding too early in Boole lowering.
+     We want to preserve extensional equality as a semantic notion and avoid
+     making SMT-level encoding decisions before the Lean level.
+   - Proposed direction: keep `=~=` as Boole syntax, lower it to a Core-level
+     extensional-equality notion, and defer the final encoding choice to the
+     SMT/backend boundary.
+   - Suggested Core shape: add typed Core operators such as `Map.ExtEq` first,
+     then extend the same pattern to other extensional structures such as
+     sequences later.
 2. Nested `for`-loop lowering
    - Direct nested `for ... to` loops now lower cleanly through Boole to Core.
    - Two fixes were needed:
@@ -64,7 +71,7 @@ This document tracks the selected Boole feature-request seeds kept under
 
 ## Expressiveness requests
 
-14. Higher-order / lambda support: Replace `Unsupported.lambda` placeholders with a real encoding for lambdas/closures.
+14. Higher-order / lambda / closure support: Replace `Unsupported.lambda` placeholders with a real encoding for lambdas/closures.
 15. `choose`: Translate Hilbert-epsilon-style `choose` without erasing the predicate.
 16. Mutual recursion / forward references: Allow a function body to refer to a mutually recursive sibling before both are fully elaborated.
 17. Trait-spec symbol resolution: Preserve trait-spec symbols across module boundaries.
@@ -91,7 +98,8 @@ These are the curated one-gap Boole seeds.
 | [`early_return.lean`](../StrataTest/Languages/Boole/FeatureRequests/early_return.lean) | Early return | Verus SST `return` translation gap from `differential_status.md` | Active |
 | [`widening_casts.lean`](../StrataTest/Languages/Boole/FeatureRequests/widening_casts.lean) | Widening casts in quantifiers/comparisons | Verus `guide/integers`, `quantifiers`, `statements` | Active |
 | [`choose_operator.lean`](../StrataTest/Languages/Boole/FeatureRequests/choose_operator.lean) | `choose` | Verus `trigger_loops` (`choose_example`, `quantifier_example`) | Active |
-| [`higher_order_encoding.lean`](../StrataTest/Languages/Boole/FeatureRequests/higher_order_encoding.lean) | Higher-order / lambda | Verus `fun_ext`, `trait_for_fn` | Active |
+| [`higher_order_encoding.lean`](../StrataTest/Languages/Boole/FeatureRequests/higher_order_encoding.lean) | Higher-order values via first-order `apply` encoding | Verus `fun_ext`, `trait_for_fn` | Active |
+| [`lambda_closure.lean`](../StrataTest/Languages/Boole/FeatureRequests/lambda_closure.lean) | Direct lambda / closure syntax | Local reduced Rust/Verus-style lambda example | Active |
 | [`mutual_recursion.lean`](../StrataTest/Languages/Boole/FeatureRequests/mutual_recursion.lean) | Mutual recursion / forward references | Verus `guide/recursion`; VLIR `mutual_recursion`, `recursion` | Active |
 | [`decreases_metadata.lean`](../StrataTest/Languages/Boole/FeatureRequests/decreases_metadata.lean) | `decreases` preservation | Verus `proposal-rw2022`, `rw2022_script`, `recursion`; VLIR `LoopSimpleWithSpec` | Loop-level supported; function/procedure-level still active |
 | [`horner_poly_eval.lean`](../StrataTest/Languages/Boole/FeatureRequests/horner_poly_eval.lean) | Reusable math/power/summation support for richer functional specs | CLRS Horner’s rule, Exercise 2.3 | Type-checks; full math spec still open |
