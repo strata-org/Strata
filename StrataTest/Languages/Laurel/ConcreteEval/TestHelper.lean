@@ -67,7 +67,11 @@ def mkProgram (procs : List Procedure) : Program :=
 
 /-! ## Outcome Helper -/
 
-def getOutcome (r : Option (Outcome × LaurelStore × LaurelHeap)) : Option Outcome :=
-  r.map (·.1)
+def getOutcome (r : InterpResult) : Option LaurelValue :=
+  match r with
+    | .success value _ _ => some value
+    | .returned (some value) _ _ => some value
+    | .returned none _ _ => none
+    | _ => none
 
 end Strata.Laurel.ConcreteEval.TestHelper

@@ -30,7 +30,7 @@ info: returned: 0
 composite Point { var x: int }
 procedure main() { var p: Point := new Point; return 0 };
 "
-  IO.println (toString (runProgram prog))
+  IO.println (toString (interpProgram prog))
 
 /-! ## Test 2: Field write and read -/
 
@@ -43,7 +43,7 @@ info: returned: 42
 composite Point { var x: int }
 procedure main() { var p: Point := new Point; p#x := 42; return p#x };
 "
-  IO.println (toString (runProgram prog))
+  IO.println (toString (interpProgram prog))
 
 /-! ## Test 3: Multiple fields -/
 
@@ -59,7 +59,7 @@ procedure main() {
   return p#x + p#y
 };
 "
-  IO.println (toString (runProgram prog))
+  IO.println (toString (interpProgram prog))
 
 /-! ## Test 4: Multiple objects on heap — no cross-contamination -/
 
@@ -76,7 +76,7 @@ procedure main() {
   return a#v + b#v
 };
 "
-  IO.println (toString (runProgram prog))
+  IO.println (toString (interpProgram prog))
 
 /-! ## Test 5: Instance method call — programmatic AST
 
@@ -114,7 +114,7 @@ Composite `Counter` with field `n` and method `get(this: Counter) { return this#
     types := [counterType]
     constants := []
   }
-  getOutcome (evalProgram prog) = some (.ret (some (.vInt 7)))
+  getOutcome (interpProgram prog) = some (.vInt 7)
 
 /-! ## Test 6: Instance method modifying fields — programmatic AST
 
@@ -157,7 +157,7 @@ Call `inc` twice, expect `n` = 2.
     types := [counterType]
     constants := []
   }
-  getOutcome (evalProgram prog) = some (.ret (some (.vInt 2)))
+  getOutcome (interpProgram prog) = some (.vInt 2)
 
 /-! ## Test 7: Static fields (global variables) — programmatic AST -/
 
@@ -172,7 +172,7 @@ Call `inc` twice, expect `n` = 2.
     types := []
     constants := []
   }
-  getOutcome (evalProgram prog) = some (.ret (some (.vInt 10)))
+  getOutcome (interpProgram prog) = some (.vInt 10)
 
 /-! ## Test 8: Field access on unallocated address → stuck — programmatic AST
 

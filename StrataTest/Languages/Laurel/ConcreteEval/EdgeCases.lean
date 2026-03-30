@@ -29,7 +29,7 @@ info: error: no 'main' procedure found
   let prog ← parseLaurel r"
 procedure notMain() { return 1 };
 "
-  IO.println (toString (runProgram prog))
+  IO.println (toString (interpProgram prog))
 
 /-! ## Test 2: Main with opaque body → noBody (programmatic AST) -/
 
@@ -45,7 +45,7 @@ info: error: 'main' has no body
     body := .Opaque [] none [], md := emd
   }
   let prog := mkProgram [proc]
-  IO.println (toString (runProgram prog))
+  IO.println (toString (interpProgram prog))
 
 /-! ## Test 3: Division by zero → stuck -/
 
@@ -57,7 +57,7 @@ info: error: fuel exhausted
   let prog ← parseLaurel r"
 procedure main() { return 1 / 0 };
 "
-  IO.println (toString (runProgram prog))
+  IO.println (toString (interpProgram prog))
 
 /-! ## Test 4: Uninitialized variable read → stuck (programmatic AST)
 
@@ -67,7 +67,9 @@ Read a variable not in the store. The Identifier case returns none.
 #guard
   let body := StmtExpr.Return (some (mk (.Identifier "ghost")))
   let prog := mkProgram [mkProc "main" [] body]
-  (evalProgram prog).isNone
+  match interpProgram prog with
+    | .fuelExhausted => true -- TODO: should be another error code
+    | _ => false
 
 /-! ## Test 5: Field access on non-ref → stuck (programmatic AST)
 
@@ -78,11 +80,13 @@ pattern match fails.
 #guard
   let body := StmtExpr.Return (some (mk (.FieldSelect (mk (.LiteralInt 5)) "x")))
   let prog := mkProgram [mkProc "main" [] body]
-  (evalProgram prog).isNone
+  match interpProgram prog with
+    | .fuelExhausted => true -- TODO: should be another error code
+    | _ => false
 
 /-! ## Test 6: Empty main body
 
-An empty block evaluates to `(.normal .vVoid)`, which `runProgram` maps
+An empty block evaluates to `(.normal .vVoid)`, which `interpProgram` maps
 to `.success void`. The procedure does not return, so the outcome is
 `success` (not `returned`).
 -/
@@ -95,7 +99,7 @@ info: success: void
   let prog ← parseLaurel r"
 procedure main() { };
 "
-  IO.println (toString (runProgram prog))
+  IO.println (toString (interpProgram prog))
 
 /-! ## Test 7: Procedure calling nonexistent procedure → stuck -/
 
@@ -107,7 +111,7 @@ info: error: fuel exhausted
   let prog ← parseLaurel r"
 procedure main() { return ghost() };
 "
-  IO.println (toString (runProgram prog))
+  IO.println (toString (interpProgram prog))
 
 /-! ## Test 8: Deeply nested blocks -/
 
@@ -121,6 +125,6 @@ procedure main() {
   if (true) { if (true) { if (true) { return 42 } } }
 };
 "
-  IO.println (toString (runProgram prog))
+  IO.println (toString (interpProgram prog))
 
 end Strata.Laurel.ConcreteEval.EdgeCasesTest

@@ -30,7 +30,7 @@ procedure main() {
   if (true) { return 1 } else { return 2 }
 };
 "
-  IO.println (toString (runProgram prog))
+  IO.println (toString (interpProgram prog))
 
 /-! ## Test 2: If-then-else, false branch -/
 
@@ -44,7 +44,7 @@ procedure main() {
   if (false) { return 1 } else { return 2 }
 };
 "
-  IO.println (toString (runProgram prog))
+  IO.println (toString (interpProgram prog))
 
 /-! ## Test 3: If-then without else (true) — returns result of then branch -/
 
@@ -59,7 +59,7 @@ procedure main() {
   return 0
 };
 "
-  IO.println (toString (runProgram prog))
+  IO.println (toString (interpProgram prog))
 
 /-! ## Test 4: If-then without else (false) — falls through -/
 
@@ -75,7 +75,7 @@ procedure main() {
   return x
 };
 "
-  IO.println (toString (runProgram prog))
+  IO.println (toString (interpProgram prog))
 
 /-! ## Test 5: Nested if-then-else -/
 
@@ -92,7 +92,7 @@ procedure main() {
   } else { return 1 }
 };
 "
-  IO.println (toString (runProgram prog))
+  IO.println (toString (interpProgram prog))
 
 /-! ## Test 6: While loop — zero iterations -/
 
@@ -108,7 +108,7 @@ procedure main() {
   return x
 };
 "
-  IO.println (toString (runProgram prog))
+  IO.println (toString (interpProgram prog))
 
 /-! ## Test 7: While loop — single iteration -/
 
@@ -125,7 +125,7 @@ procedure main() {
   return x
 };
 "
-  IO.println (toString (runProgram prog))
+  IO.println (toString (interpProgram prog))
 
 /-! ## Test 8: While loop with early return -/
 
@@ -144,7 +144,7 @@ procedure main() {
   return -1
 };
 "
-  IO.println (toString (runProgram prog))
+  IO.println (toString (interpProgram prog))
 
 /-! ## Test 9: Return from nested blocks propagates -/
 
@@ -164,7 +164,7 @@ procedure main() {
   return 0
 };
 "
-  IO.println (toString (runProgram prog))
+  IO.println (toString (interpProgram prog))
 
 /-! ## Test 10: Nested while loops
 
@@ -195,7 +195,7 @@ procedure main() {
   return sum
 };
 "
-  IO.println (toString (runProgram prog))
+  IO.println (toString (interpProgram prog))
 
 /-! ## Test 11: Fuel exhaustion on infinite loop
 
@@ -215,13 +215,13 @@ procedure main() {
   return 0
 };
 "
-  IO.println (toString (runProgram prog))
+  IO.println (toString (interpProgram prog))
 
 /-! ## Test 12: Variable re-declaration inside loop body
 
 Declaring a variable inside a loop body causes `initStore` to reject the
 re-declaration on the second iteration (the variable is already bound).
-`evalProgram` returns `none`, which `runProgram` maps to `.fuelExhausted`.
+`interpProgram` returns `none`, which `interpProgram` maps to `.fuelExhausted`.
 This is a known limitation — not true fuel exhaustion.
 -/
 
@@ -236,7 +236,7 @@ procedure main() {
   return 0
 };
 "
-  IO.println (toString (runProgram prog))
+  IO.println (toString (interpProgram prog))
 
 /-! ## Test 13: Labeled block exit (break)
 
@@ -272,6 +272,6 @@ info: returned: 5
   let body := StmtExpr.Block [varX, labeledBlock, ret] none
   let proc := mkProc "main" [] body
   let prog := mkProgram [proc]
-  IO.println (toString (runProgram prog))
+  IO.println (toString (interpProgram prog))
 
 end Strata.Laurel.ConcreteEval.ControlFlowTest

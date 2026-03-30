@@ -29,7 +29,7 @@ info: returned: 5
 procedure inc(x: int) { x := x + 1; return x };
 procedure main() { var a: int := 5; var b: int := inc(a); return a };
 "
-  IO.println (toString (runProgram prog))
+  IO.println (toString (interpProgram prog))
 
 /-! ## Test 2: Shared heap — field mutation through passed ref is visible -/
 
@@ -45,7 +45,7 @@ procedure main() {
   var p: Point := new Point; p#x := 1; setX(p, 42); return p#x
 };
 "
-  IO.println (toString (runProgram prog))
+  IO.println (toString (interpProgram prog))
 
 /-! ## Test 3: Parameter reassignment — callee rebinding does not affect caller -/
 
@@ -61,7 +61,7 @@ procedure main() {
   var p: Point := new Point; p#x := 1; replace(p); return p#x
 };
 "
-  IO.println (toString (runProgram prog))
+  IO.println (toString (interpProgram prog))
 
 /-! ## Test 4: Simple return value from callee -/
 
@@ -74,7 +74,7 @@ info: returned: 42
 procedure double(x: int) { return x * 2 };
 procedure main() { return double(21) };
 "
-  IO.println (toString (runProgram prog))
+  IO.println (toString (interpProgram prog))
 
 /-! ## Test 5: Nested procedure calls -/
 
@@ -88,7 +88,7 @@ procedure add(a: int, b: int) { return a + b };
 procedure mul(a: int, b: int) { return a * b };
 procedure main() { return add(mul(2, 3), mul(4, 5)) };
 "
-  IO.println (toString (runProgram prog))
+  IO.println (toString (interpProgram prog))
 
 /-! ## Test 6: Procedure modifying heap, caller reads updated heap -/
 
@@ -106,13 +106,13 @@ procedure main() {
   return c#n
 };
 "
-  IO.println (toString (runProgram prog))
+  IO.println (toString (interpProgram prog))
 
 /-! ## Test 7: Callee cannot see caller's locals -/
 
 -- Note: "fuel exhausted" is reported because `readX()` looks up `x` in an
 -- empty store (bindParams creates a fresh store for a zero-parameter procedure),
--- causing the evaluator to get stuck (returns `none`). `runProgram` maps any
+-- causing the evaluator to get stuck (returns `none`). `interpProgram` maps any
 -- `none` to `.fuelExhausted`, so stuck states and true fuel exhaustion are
 -- indistinguishable in the output.
 /--
@@ -124,7 +124,7 @@ info: error: fuel exhausted
 procedure readX() { return x };
 procedure main() { var x: int := 42; return readX() };
 "
-  IO.println (toString (runProgram prog))
+  IO.println (toString (interpProgram prog))
 
 /-! ## Test 8: Procedure with no return — returns void -/
 
@@ -137,6 +137,6 @@ info: returned: 0
 procedure noop() { var x: int := 1 };
 procedure main() { noop(); return 0 };
 "
-  IO.println (toString (runProgram prog))
+  IO.println (toString (interpProgram prog))
 
 end Strata.Laurel.ConcreteEval.ProceduresTest

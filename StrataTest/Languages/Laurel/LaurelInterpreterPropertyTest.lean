@@ -255,44 +255,44 @@ def litStrStable (s : String) : Bool :=
 #eval Testable.check (cfg := { numInst := 300, quiet := true })
   (∀ s : String, litStrStable s)
 
-/-! ## 4. evalPrimOp Totality on Well-Typed Inputs -/
+/-! ## 4. interpPrimop Totality on Well-Typed Inputs -/
 
 /-- Arithmetic ops on ints return some (except div/mod by zero). -/
 def arithTotalProp (a b : Int) : Bool :=
-  (evalPrimOp .Add [.vInt a, .vInt b]).isSome &&
-  (evalPrimOp .Sub [.vInt a, .vInt b]).isSome &&
-  (evalPrimOp .Mul [.vInt a, .vInt b]).isSome &&
-  (b == 0 || (evalPrimOp .Div [.vInt a, .vInt b]).isSome) &&
-  (b == 0 || (evalPrimOp .Mod [.vInt a, .vInt b]).isSome) &&
-  (b == 0 || (evalPrimOp .DivT [.vInt a, .vInt b]).isSome) &&
-  (b == 0 || (evalPrimOp .ModT [.vInt a, .vInt b]).isSome) &&
-  (evalPrimOp .Neg [.vInt a]).isSome
+  (interpPrimop .Add [.vInt a, .vInt b]).isSome &&
+  (interpPrimop .Sub [.vInt a, .vInt b]).isSome &&
+  (interpPrimop .Mul [.vInt a, .vInt b]).isSome &&
+  (b == 0 || (interpPrimop .Div [.vInt a, .vInt b]).isSome) &&
+  (b == 0 || (interpPrimop .Mod [.vInt a, .vInt b]).isSome) &&
+  (b == 0 || (interpPrimop .DivT [.vInt a, .vInt b]).isSome) &&
+  (b == 0 || (interpPrimop .ModT [.vInt a, .vInt b]).isSome) &&
+  (interpPrimop .Neg [.vInt a]).isSome
 
 /-- Boolean ops on bools return some (Implies is short-circuit, handled in interpStmt). -/
 def boolTotalProp (a b : Bool) : Bool :=
-  (evalPrimOp .And [.vBool a, .vBool b]).isSome &&
-  (evalPrimOp .Or [.vBool a, .vBool b]).isSome &&
-  (evalPrimOp .Not [.vBool a]).isSome
+  (interpPrimop .And [.vBool a, .vBool b]).isSome &&
+  (interpPrimop .Or [.vBool a, .vBool b]).isSome &&
+  (interpPrimop .Not [.vBool a]).isSome
 
 /-- Comparison ops on ints return some. -/
 def cmpTotalProp (a b : Int) : Bool :=
-  (evalPrimOp .Lt [.vInt a, .vInt b]).isSome &&
-  (evalPrimOp .Leq [.vInt a, .vInt b]).isSome &&
-  (evalPrimOp .Gt [.vInt a, .vInt b]).isSome &&
-  (evalPrimOp .Geq [.vInt a, .vInt b]).isSome
+  (interpPrimop .Lt [.vInt a, .vInt b]).isSome &&
+  (interpPrimop .Leq [.vInt a, .vInt b]).isSome &&
+  (interpPrimop .Gt [.vInt a, .vInt b]).isSome &&
+  (interpPrimop .Geq [.vInt a, .vInt b]).isSome
 
 /-- Equality ops on same-typed values return some. -/
 def eqTotalProp (a b : Int) (c d : Bool) (s t : String) : Bool :=
-  (evalPrimOp .Eq [.vInt a, .vInt b]).isSome &&
-  (evalPrimOp .Neq [.vInt a, .vInt b]).isSome &&
-  (evalPrimOp .Eq [.vBool c, .vBool d]).isSome &&
-  (evalPrimOp .Neq [.vBool c, .vBool d]).isSome &&
-  (evalPrimOp .Eq [.vString s, .vString t]).isSome &&
-  (evalPrimOp .Neq [.vString s, .vString t]).isSome
+  (interpPrimop .Eq [.vInt a, .vInt b]).isSome &&
+  (interpPrimop .Neq [.vInt a, .vInt b]).isSome &&
+  (interpPrimop .Eq [.vBool c, .vBool d]).isSome &&
+  (interpPrimop .Neq [.vBool c, .vBool d]).isSome &&
+  (interpPrimop .Eq [.vString s, .vString t]).isSome &&
+  (interpPrimop .Neq [.vString s, .vString t]).isSome
 
 /-- String concat on strings returns some. -/
 def strConcatTotalProp (a b : String) : Bool :=
-  (evalPrimOp .StrConcat [.vString a, .vString b]).isSome
+  (interpPrimop .StrConcat [.vString a, .vString b]).isSome
 
 #eval Testable.check (cfg := { numInst := 300, quiet := true })
   (∀ a b : Int, arithTotalProp a b)
@@ -309,7 +309,7 @@ def strConcatTotalProp (a b : String) : Bool :=
 #eval Testable.check (cfg := { numInst := 300, quiet := true })
   (∀ a b : String, strConcatTotalProp a b)
 
-/-! ## 5. evalPrimOp Type Preservation -/
+/-! ## 5. interpPrimop Type Preservation -/
 
 def isVInt : LaurelValue → Bool
   | .vInt _ => true
@@ -326,36 +326,36 @@ def isVString : LaurelValue → Bool
 /-- Arithmetic ops on ints return int. -/
 def arithTypePresProp (a b : Int) : Bool :=
   let chk := fun r => match r with | some v => isVInt v | none => true
-  chk (evalPrimOp .Add [.vInt a, .vInt b]) &&
-  chk (evalPrimOp .Sub [.vInt a, .vInt b]) &&
-  chk (evalPrimOp .Mul [.vInt a, .vInt b]) &&
-  chk (evalPrimOp .Neg [.vInt a]) &&
-  chk (evalPrimOp .Div [.vInt a, .vInt b]) &&
-  chk (evalPrimOp .Mod [.vInt a, .vInt b]) &&
-  chk (evalPrimOp .DivT [.vInt a, .vInt b]) &&
-  chk (evalPrimOp .ModT [.vInt a, .vInt b])
+  chk (interpPrimop .Add [.vInt a, .vInt b]) &&
+  chk (interpPrimop .Sub [.vInt a, .vInt b]) &&
+  chk (interpPrimop .Mul [.vInt a, .vInt b]) &&
+  chk (interpPrimop .Neg [.vInt a]) &&
+  chk (interpPrimop .Div [.vInt a, .vInt b]) &&
+  chk (interpPrimop .Mod [.vInt a, .vInt b]) &&
+  chk (interpPrimop .DivT [.vInt a, .vInt b]) &&
+  chk (interpPrimop .ModT [.vInt a, .vInt b])
 
 /-- Boolean ops on bools return bool. -/
 def boolTypePresProp (a b : Bool) : Bool :=
   let chk := fun r => match r with | some v => isVBool v | none => true
-  chk (evalPrimOp .And [.vBool a, .vBool b]) &&
-  chk (evalPrimOp .Or [.vBool a, .vBool b]) &&
-  chk (evalPrimOp .Not [.vBool a]) &&
-  chk (evalPrimOp .Implies [.vBool a, .vBool b])
+  chk (interpPrimop .And [.vBool a, .vBool b]) &&
+  chk (interpPrimop .Or [.vBool a, .vBool b]) &&
+  chk (interpPrimop .Not [.vBool a]) &&
+  chk (interpPrimop .Implies [.vBool a, .vBool b])
 
 /-- Comparison ops return bool. -/
 def cmpTypePresProp (a b : Int) : Bool :=
   let chk := fun r => match r with | some v => isVBool v | none => true
-  chk (evalPrimOp .Lt [.vInt a, .vInt b]) &&
-  chk (evalPrimOp .Leq [.vInt a, .vInt b]) &&
-  chk (evalPrimOp .Gt [.vInt a, .vInt b]) &&
-  chk (evalPrimOp .Geq [.vInt a, .vInt b]) &&
-  chk (evalPrimOp .Eq [.vInt a, .vInt b]) &&
-  chk (evalPrimOp .Neq [.vInt a, .vInt b])
+  chk (interpPrimop .Lt [.vInt a, .vInt b]) &&
+  chk (interpPrimop .Leq [.vInt a, .vInt b]) &&
+  chk (interpPrimop .Gt [.vInt a, .vInt b]) &&
+  chk (interpPrimop .Geq [.vInt a, .vInt b]) &&
+  chk (interpPrimop .Eq [.vInt a, .vInt b]) &&
+  chk (interpPrimop .Neq [.vInt a, .vInt b])
 
 /-- String concat returns string. -/
 def strConcatTypePresProp (a b : String) : Bool :=
-  match evalPrimOp .StrConcat [.vString a, .vString b] with
+  match interpPrimop .StrConcat [.vString a, .vString b] with
   | some v => isVString v
   | none => true
 

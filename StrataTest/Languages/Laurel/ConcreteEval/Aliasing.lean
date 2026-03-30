@@ -34,7 +34,7 @@ procedure main() {
   return p#x
 };
 "
-  IO.println (toString (runProgram prog))
+  IO.println (toString (interpProgram prog))
 
 /-! ## Test 2: Aliasing through procedure call — pass same object twice -/
 
@@ -54,7 +54,7 @@ procedure main() {
   return b#v
 };
 "
-  IO.println (toString (runProgram prog))
+  IO.println (toString (interpProgram prog))
 
 /-! ## Test 3: Distinct objects are independent -/
 
@@ -72,7 +72,7 @@ procedure main() {
   return q#x
 };
 "
-  IO.println (toString (runProgram prog))
+  IO.println (toString (interpProgram prog))
 
 /-! ## Test 4: Alias survives procedure call -/
 
@@ -91,7 +91,7 @@ procedure main() {
   return b#v
 };
 "
-  IO.println (toString (runProgram prog))
+  IO.println (toString (interpProgram prog))
 
 /-! ## Test 5: ReferenceEquals — programmatic AST test -/
 
@@ -114,7 +114,7 @@ procedure main() {
     types := [pointType]
     constants := []
   }
-  getOutcome (evalProgram prog) = some (.ret (some (.vBool true)))
+  getOutcome (interpProgram prog) = some (.vBool true)
 
 -- 5b: Different refs → false
 #guard
@@ -135,6 +135,6 @@ procedure main() {
     types := [pointType]
     constants := []
   }
-  getOutcome (evalProgram prog) = some (.ret (some (.vBool false)))
+  getOutcome (interpProgram prog) = some (.vBool false)
 
 end Strata.Laurel.ConcreteEval.AliasingTest

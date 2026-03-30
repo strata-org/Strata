@@ -9,7 +9,7 @@ import StrataTest.Languages.Laurel.ConcreteEval.TestHelper
 /-!
 # Tests for Laurel Concrete Program Evaluator
 
-Tests that `evalProgram` and `runProgram` correctly wire up `interpStmt`
+Tests that `evalProgram` and `interpProgram` correctly wire up `interpStmt`
 for whole `Laurel.Program` values.
 
 Tests 1–8 use the Laurel parser to build programs from source strings.
@@ -33,7 +33,7 @@ info: returned: 42
   let prog ← parseLaurel r"
 procedure main() { return 42 };
 "
-  IO.println (toString (runProgram prog))
+  IO.println (toString (interpProgram prog))
 
 /-! ## Test 2: Local variables and arithmetic -/
 
@@ -49,7 +49,7 @@ procedure main() {
   return x + y
 };
 "
-  IO.println (toString (runProgram prog))
+  IO.println (toString (interpProgram prog))
 
 /-! ## Test 3: Static procedure call -/
 
@@ -62,7 +62,7 @@ info: returned: 30
 procedure add(a: int, b: int) { return a + b };
 procedure main() { return add(10, 20) };
 "
-  IO.println (toString (runProgram prog))
+  IO.println (toString (interpProgram prog))
 
 /-! ## Test 4: While loop — sum 1..10 -/
 
@@ -82,7 +82,7 @@ procedure main() {
   return sum
 };
 "
-  IO.println (toString (runProgram prog))
+  IO.println (toString (interpProgram prog))
 
 /-! ## Test 5: If-then-else (abs function) -/
 
@@ -97,7 +97,7 @@ procedure abs(x: int) {
 };
 procedure main() { return abs(-5) };
 "
-  IO.println (toString (runProgram prog))
+  IO.println (toString (interpProgram prog))
 
 
 /-! ## Test 5b: Lazy And -/
@@ -115,7 +115,7 @@ procedure lazyAnd(x: int) {
 };
 procedure main() { return lazyAnd(5) };
 "
-  IO.println (toString (runProgram prog))
+  IO.println (toString (interpProgram prog))
 
 
 /--
@@ -131,7 +131,7 @@ procedure lazyAnd(x: int) {
 };
 procedure main() { return lazyAnd(5) };
 "
-  IO.println (toString (runProgram prog))
+  IO.println (toString (interpProgram prog))
 
 /-! ## Test 5c: Lazy Or -/
 
@@ -148,7 +148,7 @@ procedure lazyOr(x: int) {
 };
 procedure main() { return lazyOr(5) };
 "
-  IO.println (toString (runProgram prog))
+  IO.println (toString (interpProgram prog))
 
 
 /-! ## Test 6: Recursive procedure (factorial) -/
@@ -164,7 +164,7 @@ procedure fact(n: int) {
 };
 procedure main() { return fact(5) };
 "
-  IO.println (toString (runProgram prog))
+  IO.println (toString (interpProgram prog))
 
 /-! ## Test 7: No main procedure -/
 
@@ -176,7 +176,7 @@ info: error: no 'main' procedure found
   let prog ← parseLaurel r"
 procedure notMain() { return 1 };
 "
-  IO.println (toString (runProgram prog))
+  IO.println (toString (interpProgram prog))
 
 /-! ## Test 8: OO features — composite type with field access -/
 
@@ -197,7 +197,7 @@ procedure main() {
   return p#x + p#y
 };
 "
-  IO.println (toString (runProgram prog))
+  IO.println (toString (interpProgram prog))
 
 /-! ## Programmatic AST Tests
 
@@ -206,19 +206,19 @@ opaque procedures, instance methods, static fields) that cannot be expressed
 in Laurel concrete syntax. They use programmatic AST construction.
 -/
 
-/-! ## Test 9: runProgram success classification -/
+/-! ## Test 9: interpProgram success classification -/
 
 #guard
   let prog := mkProgram [mkProc "main" [] (.LiteralInt 42)]
-  match runProgram prog with
+  match interpProgram prog with
   | .success (.vInt 42) _ _ => true
   | _ => false
 
-/-! ## Test 10: runProgram returned classification -/
+/-! ## Test 10: interpProgram returned classification -/
 
 #guard
   let prog := mkProgram [mkProc "main" [] (.Return (some (mk (.LiteralInt 99))))]
-  match runProgram prog with
+  match interpProgram prog with
   | .returned (some (.vInt 99)) _ _ => true
   | _ => false
 
@@ -237,7 +237,7 @@ in Laurel concrete syntax. They use programmatic AST construction.
     md := emd
   }
   let prog := mkProgram [mainProc]
-  match runProgram prog with
+  match interpProgram prog with
   | .noBody => true
   | _ => false
 
@@ -273,7 +273,7 @@ in Laurel concrete syntax. They use programmatic AST construction.
     types := [pointType]
     constants := []
   }
-  getOutcome (evalProgram prog) = some (.ret (some (.vInt 7)))
+  getOutcome (interpProgram prog) = some (.vInt 7)
 
 /-! ## Test 13: Static fields initialized to vVoid -/
 
@@ -288,6 +288,6 @@ in Laurel concrete syntax. They use programmatic AST construction.
     types := []
     constants := []
   }
-  getOutcome (evalProgram prog) = some (.ret (some (.vInt 10)))
+  getOutcome (interpProgram prog) = some (.vInt 10)
 
 end Strata.Laurel.ConcreteEvalTest

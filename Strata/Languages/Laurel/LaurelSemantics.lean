@@ -45,6 +45,15 @@ inductive LaurelValue where
   | vRef    : Nat → LaurelValue
   deriving Repr, BEq, Inhabited, DecidableEq
 
+instance : ToString LaurelValue where
+  toString
+    | .vInt i => toString i
+    | .vBool b => toString b
+    | .vString s => s!"\"{s}\""
+    | .vVoid => "void"
+    | .vRef n => s!"ref({n})"
+
+
 /-! ## Store and Heap -/
 
 /-- Variable store keyed by `String` (the `.text` of an `Identifier`).
@@ -113,11 +122,11 @@ def catchExit : Option String → Outcome → Outcome
   | some l, .exit l' => if l == l' then .normal .vVoid else .exit l'
   | _, o => o
 
-def evalPrimOp (op : Operation) (args : List LaurelValue) : Option LaurelValue :=
+def interpPrimop (op : Operation) (args : List LaurelValue) : Option LaurelValue :=
   match op, args with
   -- `And`/`Or` are eager boolean operators: both operands are fully evaluated.
   -- `AndThen`/`OrElse`/`Implies` are short-circuit operators handled in `interpStmt`
-  -- (they return `none` here because evalPrimOp only handles eager evaluation).
+  -- (they return `none` here because interpPrimop only handles eager evaluation).
   | .And,     [.vBool a, .vBool b] => some (.vBool (a && b))
   | .Or,      [.vBool a, .vBool b] => some (.vBool (a || b))
   | .Not,     [.vBool a]           => some (.vBool (!a))

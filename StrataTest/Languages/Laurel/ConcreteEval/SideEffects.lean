@@ -41,7 +41,7 @@ procedure main() {
   return add({x := 1; x}, {x := x + 10; x})
 };
 "
-  IO.println (toString (runProgram prog))
+  IO.println (toString (interpProgram prog))
 
 /-! ## Test 2: Assignment in argument position
 
@@ -61,7 +61,7 @@ procedure main() {
   return a + b
 };
 "
-  IO.println (toString (runProgram prog))
+  IO.println (toString (interpProgram prog))
 
 /-! ## Test 3: Block expression as argument
 
@@ -79,7 +79,7 @@ procedure main() {
   return id({var t: int := 10; t + 5})
 };
 "
-  IO.println (toString (runProgram prog))
+  IO.println (toString (interpProgram prog))
 
 /-! ## Test 4: Side effects in if condition
 
@@ -98,7 +98,7 @@ procedure main() {
   if ({x := 1; x == 1}) { return x + 10 } else { return x }
 };
 "
-  IO.println (toString (runProgram prog))
+  IO.println (toString (interpProgram prog))
 
 /-! ## Test 5: Side effects persist across loop iterations
 
@@ -125,7 +125,7 @@ procedure main() {
   return x
 };
 "
-  IO.println (toString (runProgram prog))
+  IO.println (toString (interpProgram prog))
 
 /-! ## Test 6: Multiple side effects across nested calls
 
@@ -145,6 +145,6 @@ procedure main() {
   return add(add({x := x * 2; x}, {x := x + 3; x}), x)
 };
 "
-  IO.println (toString (runProgram prog))
+  IO.println (toString (interpProgram prog))
 
 end Strata.Laurel.ConcreteEval.SideEffectsTest

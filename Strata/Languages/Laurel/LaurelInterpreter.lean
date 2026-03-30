@@ -131,7 +131,7 @@ def interpStmt (δ : LaurelEval) (π : ProcEnv) (fuel : Nat)
     | .PrimitiveOp op args =>
       match interpArgs δ π fuel heap store args with
       | some (vals, store', h') =>
-        match evalPrimOp op vals with
+        match interpPrimop op vals with
         | some result => some (.normal result, store', h')
         | none => none
       | none => none
@@ -416,5 +416,103 @@ def interpArgs (δ : LaurelEval) (π : ProcEnv) (fuel : Nat)
         | none => none
       | _ => none
 end
+
+/-! ## Program-Level Interpreter -/
+
+/-- Build a `ProcEnv` from a list of procedures. Earlier entries shadow later ones. -/
+def listToProcEnv (procs : List Procedure) : ProcEnv :=
+  fun name => procs.find? (fun p => p.name == name)
+
+/-- Build a `ProcEnv` from a `Program`, including static procedures and
+    instance procedures keyed as `"TypeName.methodName"`. -/
+def buildProcEnv (prog : Program) : ProcEnv :=
+  let statics := prog.staticProcedures
+  let instanceProcs := prog.types.foldl (fun acc td =>
+    match td with
+    | .Composite ct =>
+      ct.instanceProcedures.map (fun p =>
+        { p with name := mkId (ct.name.text ++ "." ++ p.name.text) }) ++ acc
+    | _ => acc) []
+  listToProcEnv (instanceProcs ++ statics)
+
+/-- Build an initial store from static fields, all initialized to `vVoid`. -/
+def buildInitialStore (prog : Program) : LaurelStore :=
+  let fields := prog.staticFields
+  fields.foldl (fun σ f => fun x => if x == f.name.text then some .vVoid else σ x)
+    (fun _ => none)
+
+/-- A `LaurelEval` that handles identifiers and literals.
+    Specification constructs return `none`. -/
+def defaultEval : LaurelEval := fun σ e =>
+  match e with
+  | .Identifier name => σ name.text
+  | .LiteralInt i => some (.vInt i)
+  | .LiteralBool b => some (.vBool b)
+  | .LiteralString s => some (.vString s)
+  | _ => none
+
+/-- The interpreter environment for a Laurel program: procedure environment,
+    initial store, and initial heap. -/
+structure ProgramEnv where
+  /-- Procedure environment mapping names to procedure definitions. -/
+  π : ProcEnv
+  /-- Initial variable store (from static fields). -/
+  σ₀ : LaurelStore
+  /-- Initial heap (empty). -/
+  h₀ : LaurelHeap
+
+/-- Construct the semantic environment for a Laurel program.
+    Builds the `ProcEnv` from static and instance procedures,
+    the initial store from static fields, and sets the heap to empty. -/
+def buildProgramSemantics (prog : Program) : ProgramEnv :=
+  { π := buildProcEnv prog
+    σ₀ := buildInitialStore prog
+    h₀ := fun _ => none }
+
+
+/-! ## User-Friendly Result Type -/
+
+inductive InterpResult where
+  | success (value : LaurelValue) (store : LaurelStore) (heap : LaurelHeap)
+  | returned (value : Option LaurelValue) (store : LaurelStore) (heap : LaurelHeap)
+  | noMain
+  | noBody
+  | stuck (msg : String)
+  | fuelExhausted
+  deriving Inhabited
+
+
+instance : ToString InterpResult where
+  toString
+    | .success v _ _ => s!"success: {v}"
+    | .returned (some v) _ _ => s!"returned: {v}"
+    | .returned none _ _ => "returned: void"
+    | .noMain => "error: no 'main' procedure found"
+    | .noBody => "error: 'main' has no body"
+    | .stuck msg => s!"stuck: {msg}"
+    | .fuelExhausted => "error: fuel exhausted"
+
+/-- Evaluate a `Procedure` with name `procName` from a `Program`.
+    Returns `none` if there is no procedure with this name. -/
+def interpProcedureByName (procName : String) (prog : Program) (fuel : Nat := 10000)
+    : InterpResult :=
+  let sem := buildProgramSemantics prog
+  match prog.staticProcedures.find? (fun p => p.name.text == procName) with
+  | none => .noMain
+  | some mainProc =>
+    match getBody mainProc with
+    | none => .noBody
+    | some body =>
+      match interpStmt defaultEval sem.π fuel sem.h₀ sem.σ₀ body.val with
+      | some (.normal v, st, hp) => .success v st hp
+      | some (.ret rv, st, hp) => .returned rv st hp
+      | some (.exit label, _, _) => .stuck s!"uncaught exit '{label}'"
+      | none => .fuelExhausted
+
+/-! ## Utilities -/
+
+/-- Run a program starting from "main". -/
+def interpProgram (prog : Program) (fuel : Nat := 10000) : InterpResult :=
+  interpProcedureByName "main" prog fuel
 
 end Strata.Laurel

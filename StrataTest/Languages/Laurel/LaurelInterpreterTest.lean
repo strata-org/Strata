@@ -261,17 +261,17 @@ def checkPure (r : Option (Outcome × LaurelStore × LaurelHeap))
 -- catchExit passes through non-matching exit
 #guard catchExit (some "L") (.exit "M") = .exit "M"
 
--- evalPrimOp: integer addition
-#guard evalPrimOp .Add [.vInt 3, .vInt 4] = some (.vInt 7)
+-- interpPrimop: integer addition
+#guard interpPrimop .Add [.vInt 3, .vInt 4] = some (.vInt 7)
 
--- evalPrimOp: boolean negation
-#guard evalPrimOp .Not [.vBool false] = some (.vBool true)
+-- interpPrimop: boolean negation
+#guard interpPrimop .Not [.vBool false] = some (.vBool true)
 
--- evalPrimOp: division by zero returns none
-#guard evalPrimOp .Div [.vInt 5, .vInt 0] = none
+-- interpPrimop: division by zero returns none
+#guard interpPrimop .Div [.vInt 5, .vInt 0] = none
 
--- evalPrimOp: type mismatch returns none
-#guard evalPrimOp .Add [.vBool true, .vInt 1] = none
+-- interpPrimop: type mismatch returns none
+#guard interpPrimop .Add [.vBool true, .vInt 1] = none
 
 -- Empty block is void
 #guard getOutcome (interpBlock trivialEval emptyProc 10 emptyHeap emptyStore [])

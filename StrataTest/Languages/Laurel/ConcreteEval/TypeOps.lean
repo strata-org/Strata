@@ -35,7 +35,7 @@ Allocate a Point object, check `IsType target "Point"`.
     staticProcedures := [mkProc "main" [] body]
     staticFields := [], types := [pointType], constants := []
   }
-  getOutcome (evalProgram prog) = some (.ret (some (.vBool true)))
+  getOutcome (interpProgram prog) = some (.vBool true)
 
 /-! ## Test 2: IsType — wrong type → false
 
@@ -54,7 +54,7 @@ Allocate a Point object, check `IsType target "Box"`.
     staticProcedures := [mkProc "main" [] body]
     staticFields := [], types := [pointType], constants := []
   }
-  getOutcome (evalProgram prog) = some (.ret (some (.vBool false)))
+  getOutcome (interpProgram prog) = some (.vBool false)
 
 /-! ## Test 3: AsType — identity cast
 
@@ -74,7 +74,7 @@ Allocate a Point object, check `IsType target "Box"`.
     staticFields := [], types := [pointType], constants := []
   }
   -- AsType returns the value unchanged; the ref address is 0 (first allocation)
-  getOutcome (evalProgram prog) = some (.ret (some (.vRef 0)))
+  getOutcome (interpProgram prog) = some (.vRef 0)
 
 /-! ## Test 4: ReferenceEquals — same object → true, different objects → false -/
 
@@ -92,7 +92,7 @@ Allocate a Point object, check `IsType target "Box"`.
     staticProcedures := [mkProc "main" [] body]
     staticFields := [], types := [pointType], constants := []
   }
-  getOutcome (evalProgram prog) = some (.ret (some (.vBool true)))
+  getOutcome (interpProgram prog) = some (.vBool true)
 
 -- different refs: a === b → false
 #guard
@@ -108,6 +108,6 @@ Allocate a Point object, check `IsType target "Box"`.
     staticProcedures := [mkProc "main" [] body]
     staticFields := [], types := [pointType], constants := []
   }
-  getOutcome (evalProgram prog) = some (.ret (some (.vBool false)))
+  getOutcome (interpProgram prog) = some (.vBool false)
 
 end Strata.Laurel.ConcreteEval.TypeOpsTest

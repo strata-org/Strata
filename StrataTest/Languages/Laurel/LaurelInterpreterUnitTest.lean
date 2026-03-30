@@ -9,7 +9,7 @@ import Strata.Languages.Laurel.LaurelInterpreter
 /-!
 # Comprehensive Unit Tests for Laurel Interpreter
 
-Covers gaps in `LaurelInterpreterTest.lean`: every `evalPrimOp` case,
+Covers gaps in `LaurelInterpreterTest.lean`: every `interpPrimop` case,
 edge cases for `interpStmt` constructs, and stuck/error states.
 -/
 
@@ -49,136 +49,136 @@ def getOutcomeAndVar (r : Option (Outcome × LaurelStore × LaurelHeap))
     (name : Identifier) : Option (Outcome × Option LaurelValue) :=
   r.map (fun (o, σ, _) => (o, σ name.text))
 
-/-! ## evalPrimOp: Arithmetic -/
+/-! ## interpPrimop: Arithmetic -/
 
 -- Sub
-#guard evalPrimOp .Sub [.vInt 10, .vInt 3] = some (.vInt 7)
-#guard evalPrimOp .Sub [.vInt 0, .vInt 5] = some (.vInt (-5))
+#guard interpPrimop .Sub [.vInt 10, .vInt 3] = some (.vInt 7)
+#guard interpPrimop .Sub [.vInt 0, .vInt 5] = some (.vInt (-5))
 
 -- Mul
-#guard evalPrimOp .Mul [.vInt 4, .vInt 5] = some (.vInt 20)
-#guard evalPrimOp .Mul [.vInt 0, .vInt 99] = some (.vInt 0)
+#guard interpPrimop .Mul [.vInt 4, .vInt 5] = some (.vInt 20)
+#guard interpPrimop .Mul [.vInt 0, .vInt 99] = some (.vInt 0)
 
 -- Div (non-zero)
-#guard evalPrimOp .Div [.vInt 10, .vInt 3] = some (.vInt 3)
-#guard evalPrimOp .Div [.vInt (-7), .vInt 2] = some (.vInt (-4))
+#guard interpPrimop .Div [.vInt 10, .vInt 3] = some (.vInt 3)
+#guard interpPrimop .Div [.vInt (-7), .vInt 2] = some (.vInt (-4))
 
 -- Mod (non-zero)
-#guard evalPrimOp .Mod [.vInt 10, .vInt 3] = some (.vInt 1)
-#guard evalPrimOp .Mod [.vInt (-7), .vInt 2] = some (.vInt 1)
+#guard interpPrimop .Mod [.vInt 10, .vInt 3] = some (.vInt 1)
+#guard interpPrimop .Mod [.vInt (-7), .vInt 2] = some (.vInt 1)
 
 -- Neg
-#guard evalPrimOp .Neg [.vInt 5] = some (.vInt (-5))
-#guard evalPrimOp .Neg [.vInt (-3)] = some (.vInt 3)
-#guard evalPrimOp .Neg [.vInt 0] = some (.vInt 0)
+#guard interpPrimop .Neg [.vInt 5] = some (.vInt (-5))
+#guard interpPrimop .Neg [.vInt (-3)] = some (.vInt 3)
+#guard interpPrimop .Neg [.vInt 0] = some (.vInt 0)
 
-/-! ## evalPrimOp: Division by zero -/
+/-! ## interpPrimop: Division by zero -/
 
-#guard evalPrimOp .Div [.vInt 5, .vInt 0] = none
-#guard evalPrimOp .Mod [.vInt 5, .vInt 0] = none
-#guard evalPrimOp .DivT [.vInt 5, .vInt 0] = none
-#guard evalPrimOp .ModT [.vInt 5, .vInt 0] = none
+#guard interpPrimop .Div [.vInt 5, .vInt 0] = none
+#guard interpPrimop .Mod [.vInt 5, .vInt 0] = none
+#guard interpPrimop .DivT [.vInt 5, .vInt 0] = none
+#guard interpPrimop .ModT [.vInt 5, .vInt 0] = none
 
-/-! ## evalPrimOp: Truncation division and modulus -/
+/-! ## interpPrimop: Truncation division and modulus -/
 
 -- DivT (truncation toward zero)
-#guard evalPrimOp .DivT [.vInt 7, .vInt 2] = some (.vInt 3)
-#guard evalPrimOp .DivT [.vInt (-7), .vInt 2] = some (.vInt (-3))
-#guard evalPrimOp .DivT [.vInt 7, .vInt (-2)] = some (.vInt (-3))
-#guard evalPrimOp .DivT [.vInt (-7), .vInt (-2)] = some (.vInt 3)
+#guard interpPrimop .DivT [.vInt 7, .vInt 2] = some (.vInt 3)
+#guard interpPrimop .DivT [.vInt (-7), .vInt 2] = some (.vInt (-3))
+#guard interpPrimop .DivT [.vInt 7, .vInt (-2)] = some (.vInt (-3))
+#guard interpPrimop .DivT [.vInt (-7), .vInt (-2)] = some (.vInt 3)
 
 -- ModT (truncation modulus)
-#guard evalPrimOp .ModT [.vInt 7, .vInt 2] = some (.vInt 1)
-#guard evalPrimOp .ModT [.vInt (-7), .vInt 2] = some (.vInt (-1))
-#guard evalPrimOp .ModT [.vInt 7, .vInt (-2)] = some (.vInt 1)
-#guard evalPrimOp .ModT [.vInt (-7), .vInt (-2)] = some (.vInt (-1))
+#guard interpPrimop .ModT [.vInt 7, .vInt 2] = some (.vInt 1)
+#guard interpPrimop .ModT [.vInt (-7), .vInt 2] = some (.vInt (-1))
+#guard interpPrimop .ModT [.vInt 7, .vInt (-2)] = some (.vInt 1)
+#guard interpPrimop .ModT [.vInt (-7), .vInt (-2)] = some (.vInt (-1))
 
--- Short-circuit ops return none in evalPrimOp (handled in interpStmt)
-#guard evalPrimOp .AndThen [.vBool true, .vBool false] = none
-#guard evalPrimOp .OrElse [.vBool false, .vBool true] = none
-#guard evalPrimOp .Implies [.vBool false, .vBool true] = none
+-- Short-circuit ops return none in interpPrimop (handled in interpStmt)
+#guard interpPrimop .AndThen [.vBool true, .vBool false] = none
+#guard interpPrimop .OrElse [.vBool false, .vBool true] = none
+#guard interpPrimop .Implies [.vBool false, .vBool true] = none
 
-/-! ## evalPrimOp: Comparison -/
+/-! ## interpPrimop: Comparison -/
 
 -- Neq (int)
-#guard evalPrimOp .Neq [.vInt 1, .vInt 2] = some (.vBool true)
-#guard evalPrimOp .Neq [.vInt 3, .vInt 3] = some (.vBool false)
+#guard interpPrimop .Neq [.vInt 1, .vInt 2] = some (.vBool true)
+#guard interpPrimop .Neq [.vInt 3, .vInt 3] = some (.vBool false)
 
 -- Leq
-#guard evalPrimOp .Leq [.vInt 3, .vInt 5] = some (.vBool true)
-#guard evalPrimOp .Leq [.vInt 5, .vInt 5] = some (.vBool true)
-#guard evalPrimOp .Leq [.vInt 6, .vInt 5] = some (.vBool false)
+#guard interpPrimop .Leq [.vInt 3, .vInt 5] = some (.vBool true)
+#guard interpPrimop .Leq [.vInt 5, .vInt 5] = some (.vBool true)
+#guard interpPrimop .Leq [.vInt 6, .vInt 5] = some (.vBool false)
 
 -- Gt
-#guard evalPrimOp .Gt [.vInt 5, .vInt 3] = some (.vBool true)
-#guard evalPrimOp .Gt [.vInt 3, .vInt 3] = some (.vBool false)
+#guard interpPrimop .Gt [.vInt 5, .vInt 3] = some (.vBool true)
+#guard interpPrimop .Gt [.vInt 3, .vInt 3] = some (.vBool false)
 
 -- Geq
-#guard evalPrimOp .Geq [.vInt 5, .vInt 3] = some (.vBool true)
-#guard evalPrimOp .Geq [.vInt 3, .vInt 3] = some (.vBool true)
-#guard evalPrimOp .Geq [.vInt 2, .vInt 3] = some (.vBool false)
+#guard interpPrimop .Geq [.vInt 5, .vInt 3] = some (.vBool true)
+#guard interpPrimop .Geq [.vInt 3, .vInt 3] = some (.vBool true)
+#guard interpPrimop .Geq [.vInt 2, .vInt 3] = some (.vBool false)
 
-/-! ## evalPrimOp: Boolean -/
+/-! ## interpPrimop: Boolean -/
 
 -- Or
-#guard evalPrimOp .Or [.vBool false, .vBool false] = some (.vBool false)
-#guard evalPrimOp .Or [.vBool true, .vBool false] = some (.vBool true)
-#guard evalPrimOp .Or [.vBool false, .vBool true] = some (.vBool true)
+#guard interpPrimop .Or [.vBool false, .vBool false] = some (.vBool false)
+#guard interpPrimop .Or [.vBool true, .vBool false] = some (.vBool true)
+#guard interpPrimop .Or [.vBool false, .vBool true] = some (.vBool true)
 
--- Implies (handled in interpStmt as short-circuit; evalPrimOp returns none)
-#guard evalPrimOp .Implies [.vBool true, .vBool false] = none
-#guard evalPrimOp .Implies [.vBool false, .vBool false] = none
-#guard evalPrimOp .Implies [.vBool true, .vBool true] = none
+-- Implies (handled in interpStmt as short-circuit; interpPrimop returns none)
+#guard interpPrimop .Implies [.vBool true, .vBool false] = none
+#guard interpPrimop .Implies [.vBool false, .vBool false] = none
+#guard interpPrimop .Implies [.vBool true, .vBool true] = none
 
-/-! ## evalPrimOp: String -/
+/-! ## interpPrimop: String -/
 
 -- Eq on strings
-#guard evalPrimOp .Eq [.vString "abc", .vString "abc"] = some (.vBool true)
-#guard evalPrimOp .Eq [.vString "abc", .vString "def"] = some (.vBool false)
+#guard interpPrimop .Eq [.vString "abc", .vString "abc"] = some (.vBool true)
+#guard interpPrimop .Eq [.vString "abc", .vString "def"] = some (.vBool false)
 
 -- Neq on strings
-#guard evalPrimOp .Neq [.vString "a", .vString "b"] = some (.vBool true)
-#guard evalPrimOp .Neq [.vString "a", .vString "a"] = some (.vBool false)
+#guard interpPrimop .Neq [.vString "a", .vString "b"] = some (.vBool true)
+#guard interpPrimop .Neq [.vString "a", .vString "a"] = some (.vBool false)
 
-/-! ## evalPrimOp: Ref -/
+/-! ## interpPrimop: Ref -/
 
 -- Eq on refs
-#guard evalPrimOp .Eq [.vRef 0, .vRef 0] = some (.vBool true)
-#guard evalPrimOp .Eq [.vRef 0, .vRef 1] = some (.vBool false)
+#guard interpPrimop .Eq [.vRef 0, .vRef 0] = some (.vBool true)
+#guard interpPrimop .Eq [.vRef 0, .vRef 1] = some (.vBool false)
 
 -- Neq on refs
-#guard evalPrimOp .Neq [.vRef 0, .vRef 1] = some (.vBool true)
-#guard evalPrimOp .Neq [.vRef 0, .vRef 0] = some (.vBool false)
+#guard interpPrimop .Neq [.vRef 0, .vRef 1] = some (.vBool true)
+#guard interpPrimop .Neq [.vRef 0, .vRef 0] = some (.vBool false)
 
-/-! ## evalPrimOp: Bool Eq/Neq -/
+/-! ## interpPrimop: Bool Eq/Neq -/
 
-#guard evalPrimOp .Eq [.vBool true, .vBool true] = some (.vBool true)
-#guard evalPrimOp .Eq [.vBool true, .vBool false] = some (.vBool false)
-#guard evalPrimOp .Neq [.vBool true, .vBool false] = some (.vBool true)
-#guard evalPrimOp .Neq [.vBool true, .vBool true] = some (.vBool false)
+#guard interpPrimop .Eq [.vBool true, .vBool true] = some (.vBool true)
+#guard interpPrimop .Eq [.vBool true, .vBool false] = some (.vBool false)
+#guard interpPrimop .Neq [.vBool true, .vBool false] = some (.vBool true)
+#guard interpPrimop .Neq [.vBool true, .vBool true] = some (.vBool false)
 
-/-! ## evalPrimOp: Type mismatch → none -/
+/-! ## interpPrimop: Type mismatch → none -/
 
-#guard evalPrimOp .Add [.vBool true, .vInt 1] = none
-#guard evalPrimOp .Add [.vInt 1, .vBool true] = none
-#guard evalPrimOp .And [.vInt 1, .vInt 2] = none
-#guard evalPrimOp .Or [.vInt 1, .vInt 2] = none
-#guard evalPrimOp .Not [.vInt 1] = none
-#guard evalPrimOp .Lt [.vBool true, .vBool false] = none
-#guard evalPrimOp .Sub [.vString "a", .vString "b"] = none
-#guard evalPrimOp .Neg [.vBool true] = none
-#guard evalPrimOp .Implies [.vInt 1, .vInt 2] = none
-#guard evalPrimOp .StrConcat [.vInt 1, .vInt 2] = none
+#guard interpPrimop .Add [.vBool true, .vInt 1] = none
+#guard interpPrimop .Add [.vInt 1, .vBool true] = none
+#guard interpPrimop .And [.vInt 1, .vInt 2] = none
+#guard interpPrimop .Or [.vInt 1, .vInt 2] = none
+#guard interpPrimop .Not [.vInt 1] = none
+#guard interpPrimop .Lt [.vBool true, .vBool false] = none
+#guard interpPrimop .Sub [.vString "a", .vString "b"] = none
+#guard interpPrimop .Neg [.vBool true] = none
+#guard interpPrimop .Implies [.vInt 1, .vInt 2] = none
+#guard interpPrimop .StrConcat [.vInt 1, .vInt 2] = none
 
-/-! ## evalPrimOp: Wrong arity → none -/
+/-! ## interpPrimop: Wrong arity → none -/
 
-#guard evalPrimOp .Add [.vInt 1] = none
-#guard evalPrimOp .Add [.vInt 1, .vInt 2, .vInt 3] = none
-#guard evalPrimOp .Not [.vBool true, .vBool false] = none
-#guard evalPrimOp .Not [] = none
-#guard evalPrimOp .Neg [] = none
-#guard evalPrimOp .Eq [.vInt 1] = none
-#guard evalPrimOp .And [.vBool true] = none
+#guard interpPrimop .Add [.vInt 1] = none
+#guard interpPrimop .Add [.vInt 1, .vInt 2, .vInt 3] = none
+#guard interpPrimop .Not [.vBool true, .vBool false] = none
+#guard interpPrimop .Not [] = none
+#guard interpPrimop .Neg [] = none
+#guard interpPrimop .Eq [.vInt 1] = none
+#guard interpPrimop .And [.vBool true] = none
 
 /-! ## interpStmt: LiteralDecimal → none -/
 

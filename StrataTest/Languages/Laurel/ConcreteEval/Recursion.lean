@@ -31,7 +31,7 @@ procedure fact(n: int) {
 };
 procedure main() { return fact(5) };
 "
-  IO.println (toString (runProgram prog))
+  IO.println (toString (interpProgram prog))
 
 /-! ## Test 2: Mutual recursion — even/odd -/
 
@@ -49,7 +49,7 @@ procedure isOdd(n: int) {
 };
 procedure main() { if (isEven(4)) { return 1 } else { return 0 } };
 "
-  IO.println (toString (runProgram prog))
+  IO.println (toString (interpProgram prog))
 
 /-! ## Test 3: Deep recursion — fuel exhaustion
 
@@ -67,7 +67,7 @@ procedure deep(n: int) {
 };
 procedure main() { return deep(100000) };
 "
-  IO.println (toString (runProgram prog))
+  IO.println (toString (interpProgram prog))
 
 /-! ## Test 4: Recursion with heap effects
 
@@ -91,7 +91,7 @@ procedure main() {
   return b#v
 };
 "
-  IO.println (toString (runProgram prog))
+  IO.println (toString (interpProgram prog))
 
 /-! ## Test 5: Fibonacci -/
 
@@ -107,6 +107,6 @@ procedure fib(n: int) {
 };
 procedure main() { return fib(10) };
 "
-  IO.println (toString (runProgram prog))
+  IO.println (toString (interpProgram prog))
 
 end Strata.Laurel.ConcreteEval.RecursionTest

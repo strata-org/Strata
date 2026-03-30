@@ -612,6 +612,9 @@ def lowerLaurelToLaurel (program : Program) : LowerResult :=
   let program := eliminateHoles program
   let program := desugarShortCircuit model program
   let program := liftExpressionAssignments model program
+  -- dbg_trace "=== Program after liftExpressionAssigments ==="
+  -- dbg_trace (toString (Std.Format.pretty (Std.ToFormat.format program)))
+  -- dbg_trace "================================="
   let program := eliminateReturnsInExpressionTransform program
   let result := resolve program (some model)
   let (program, model) := (result.program, result.model)

@@ -27,7 +27,7 @@ info: returned: 1
   let prog ← parseLaurel r"
 procedure main() { assert true; return 1 };
 "
-  IO.println (toString (runProgram prog))
+  IO.println (toString (interpProgram prog))
 
 /-! ## Test 2: Assert false → stuck -/
 
@@ -39,7 +39,7 @@ info: error: fuel exhausted
   let prog ← parseLaurel r"
 procedure main() { assert false; return 1 };
 "
-  IO.println (toString (runProgram prog))
+  IO.println (toString (interpProgram prog))
 
 /-! ## Test 3: Assume true → succeeds -/
 
@@ -51,7 +51,7 @@ info: returned: 1
   let prog ← parseLaurel r"
 procedure main() { assume true; return 1 };
 "
-  IO.println (toString (runProgram prog))
+  IO.println (toString (interpProgram prog))
 
 /-! ## Test 4: Assume false → stuck -/
 
@@ -63,7 +63,7 @@ info: error: fuel exhausted
   let prog ← parseLaurel r"
 procedure main() { assume false; return 1 };
 "
-  IO.println (toString (runProgram prog))
+  IO.println (toString (interpProgram prog))
 
 /-! ## Test 5: Assert purity — side effects in condition discarded
 
@@ -84,13 +84,13 @@ procedure main() {
   return x
 };
 "
-  IO.println (toString (runProgram prog))
+  IO.println (toString (interpProgram prog))
 
 /-! ## Test 6: ProveBy — semantics of value, proof ignored (programmatic AST) -/
 
 #guard
   let body := StmtExpr.Return (some (mk (.ProveBy (mk (.LiteralInt 42)) (mk (.LiteralBool true)))))
   let prog := mkProgram [mkProc "main" [] body]
-  getOutcome (evalProgram prog) = some (.ret (some (.vInt 42)))
+  getOutcome (interpProgram prog) = some (.vInt 42)
 
 end Strata.Laurel.ConcreteEval.VerificationTest

@@ -28,7 +28,7 @@ info: returned: 42
   let prog ← parseLaurel r"
 procedure main() { return 42 };
 "
-  IO.println (toString (runProgram prog))
+  IO.println (toString (interpProgram prog))
 
 /-! ## Test 2: Integer literal (negative) -/
 
@@ -40,7 +40,7 @@ info: returned: -7
   let prog ← parseLaurel r"
 procedure main() { return -7 };
 "
-  IO.println (toString (runProgram prog))
+  IO.println (toString (interpProgram prog))
 
 /-! ## Test 3: Integer literal (zero) -/
 
@@ -52,7 +52,7 @@ info: returned: 0
   let prog ← parseLaurel r"
 procedure main() { return 0 };
 "
-  IO.println (toString (runProgram prog))
+  IO.println (toString (interpProgram prog))
 
 /-! ## Test 4: Boolean true -/
 
@@ -66,7 +66,7 @@ procedure main() {
   if (true) { return 1 } else { return 0 }
 };
 "
-  IO.println (toString (runProgram prog))
+  IO.println (toString (interpProgram prog))
 
 /-! ## Test 5: Boolean false -/
 
@@ -80,7 +80,7 @@ procedure main() {
   if (false) { return 1 } else { return 0 }
 };
 "
-  IO.println (toString (runProgram prog))
+  IO.println (toString (interpProgram prog))
 
 /-! ## Test 6: String literal — equality -/
 
@@ -94,7 +94,7 @@ procedure main() {
   if ("hello" == "hello") { return 1 } else { return 0 }
 };
 "#
-  IO.println (toString (runProgram prog))
+  IO.println (toString (interpProgram prog))
 
 /-! ## Test 7: Empty string — equality -/
 
@@ -108,7 +108,7 @@ procedure main() {
   if ("" == "") { return 1 } else { return 0 }
 };
 "#
-  IO.println (toString (runProgram prog))
+  IO.println (toString (interpProgram prog))
 
 /-! ## Test 8: Void — procedure with no return value -/
 
@@ -121,6 +121,6 @@ info: returned: 0
 procedure noop() { var x: int := 1 };
 procedure main() { noop(); return 0 };
 "
-  IO.println (toString (runProgram prog))
+  IO.println (toString (interpProgram prog))
 
 end Strata.Laurel.ConcreteEval.PrimitivesTest

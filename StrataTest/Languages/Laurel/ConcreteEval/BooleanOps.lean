@@ -15,7 +15,7 @@ in the unevaluated branch.
 
 All tests use `parseLaurel`. The interpreter (`interpStmt`)
 evaluates `AndThen`/`OrElse`/`Implies` with proper short-circuit semantics,
-while `And`/`Or` are evaluated eagerly via `evalPrimOp`.
+while `And`/`Or` are evaluated eagerly via `interpPrimOp`.
 -/
 
 namespace Strata.Laurel.ConcreteEval.BooleanOpsTest
@@ -41,7 +41,7 @@ procedure main() {
   if (a && b && c && d) { return 1 } else { return 0 }
 };
 "
-  IO.println (toString (runProgram prog))
+  IO.println (toString (interpProgram prog))
 
 /-! ### Test 2: Eq and Neq on integers -/
 
@@ -55,7 +55,7 @@ procedure main() {
   if (5 == 5 && 5 != 6) { return 1 } else { return 0 }
 };
 "
-  IO.println (toString (runProgram prog))
+  IO.println (toString (interpProgram prog))
 
 /-! ### Test 3: Eq and Neq on booleans -/
 
@@ -69,7 +69,7 @@ procedure main() {
   if (true == true && true != false) { return 1 } else { return 0 }
 };
 "
-  IO.println (toString (runProgram prog))
+  IO.println (toString (interpProgram prog))
 
 /-! ### Test 4: Eq and Neq on strings -/
 
@@ -83,7 +83,7 @@ procedure main() {
   if ("abc" == "abc" && "abc" != "def") { return 1 } else { return 0 }
 };
 "#
-  IO.println (toString (runProgram prog))
+  IO.println (toString (interpProgram prog))
 
 /-! ### Test 5: Not operator -/
 
@@ -97,7 +97,7 @@ procedure main() {
   if (!false && !(!true)) { return 1 } else { return 0 }
 };
 "
-  IO.println (toString (runProgram prog))
+  IO.println (toString (interpProgram prog))
 
 /-! ### Test 6: String concatenation -/
 
@@ -111,7 +111,7 @@ procedure main() {
   if ("ab" ++ "cd" == "abcd") { return 1 } else { return 0 }
 };
 "#
-  IO.println (toString (runProgram prog))
+  IO.println (toString (interpProgram prog))
 
 /-! ## Short-Circuit And -/
 
@@ -129,7 +129,7 @@ procedure main() {
   return x
 };
 "
-  IO.println (toString (runProgram prog))
+  IO.println (toString (interpProgram prog))
 
 /-! ### Test 8: true && <side-effect> — RHS IS evaluated -/
 
@@ -145,7 +145,7 @@ procedure main() {
   return x
 };
 "
-  IO.println (toString (runProgram prog))
+  IO.println (toString (interpProgram prog))
 
 /-! ### Test 9: Nested short-circuit And -/
 
@@ -161,7 +161,7 @@ procedure main() {
   return x
 };
 "
-  IO.println (toString (runProgram prog))
+  IO.println (toString (interpProgram prog))
 
 /-! ## Short-Circuit Or -/
 
@@ -179,7 +179,7 @@ procedure main() {
   return x
 };
 "
-  IO.println (toString (runProgram prog))
+  IO.println (toString (interpProgram prog))
 
 /-! ### Test 11: false || <side-effect> — RHS IS evaluated -/
 
@@ -195,7 +195,7 @@ procedure main() {
   return x
 };
 "
-  IO.println (toString (runProgram prog))
+  IO.println (toString (interpProgram prog))
 
 /-! ### Test 12: Nested short-circuit Or -/
 
@@ -211,7 +211,7 @@ procedure main() {
   return x
 };
 "
-  IO.println (toString (runProgram prog))
+  IO.println (toString (interpProgram prog))
 
 /-! ## Short-Circuit Implies -/
 
@@ -229,7 +229,7 @@ procedure main() {
   return x
 };
 "
-  IO.println (toString (runProgram prog))
+  IO.println (toString (interpProgram prog))
 
 /-! ### Test 14: true ==> <side-effect> — RHS IS evaluated -/
 
@@ -245,7 +245,7 @@ procedure main() {
   return x
 };
 "
-  IO.println (toString (runProgram prog))
+  IO.println (toString (interpProgram prog))
 
 /-! ## Combined -/
 
@@ -263,6 +263,6 @@ procedure main() {
   return x
 };
 "
-  IO.println (toString (runProgram prog))
+  IO.println (toString (interpProgram prog))
 
 end Strata.Laurel.ConcreteEval.BooleanOpsTest
