@@ -413,12 +413,51 @@ self-review before running tests, restructured the block ordering so the normal
 exit block is the continuation point, and the exception exit block branches
 via `raise` to propagate the exception.
 
+### Phase 14: Performance and Dead Code Cleanup (completed 2026-03-30)
+
+Systematic performance review and dead code elimination.
+
+**Performance optimizations (PythonToSSA.lean):**
+- **Fwd parallel arrays.** Replaced `Fwd = Array (String × SSAVal)` with a struct
+  of two parallel arrays (`names : Array String`, `vals : Array SSAVal`). This
+  makes `zipFwd` O(1) (just replace the vals array) and `fwdVals` O(1) (return
+  vals directly), eliminating ~25 O(n) zip/unzip allocations per function.
+- **valInstrIdx HashMap.** `setValType` previously scanned the entire instruction
+  array O(n) to find the target instruction. Added `valInstrIdx : Std.HashMap Nat Nat`
+  mapping val ID → instruction index, populated by `emitInstr`. Now O(1) per call.
+- **Merged errors into warnings.** The SSAState had separate `errors` and `warnings`
+  fields with identical handling. Consolidated into a single `warnings` array;
+  `ssaError` now calls `ssaWarn` and emits an `unsupported` instruction.
+
+**Demand analysis fixes (Blockify.lean):**
+- **AnnAssign target leak.** `freeVarsStmt` for `AnnAssign` included the target
+  name as a free variable (e.g., `z: int = 10` incorrectly demanded `z`). Fixed
+  by extracting `addTargetReads` which handles each target pattern (Name, Attribute,
+  Subscript, Tuple) correctly — Name produces no reads, Attribute/Subscript read
+  their object/key.
+- **Accumulator-passing pattern.** Replaced `freeVarsStmt`/`freeVarsExpr` (which
+  returned new `HashSet`s, requiring callers to union) with `addFreeVarsStmt`/
+  `addFreeVarsExpr` taking an accumulator set. Eliminated intermediate allocations
+  at all ~20 call sites. `freeVarsExpr` removed as dead code.
+
+**Dead code removal:**
+- Removed `pyBlockify` CLI command from StrataMain (blockify tree output no longer
+  needed — PythonToSSA traverses the raw AST directly).
+- This made `blockifyModule` unreachable, which in turn made the entire blockify
+  machinery dead: `BlockTree`, `ExceptHandlerTree`, `BlockifyResult`, `BlockifyState`,
+  `BlockifyM`, `blockifyStmts`, `blockifyFunc`, `extractParams`, `paramVarName`,
+  `collectModuleGlobals`, `countSliceExprBlocks`, `isTerminatorStmt`, `BlockTreeId`,
+  plus all repr/ToString/Inhabited instances. Removed 533 lines.
+- Made remaining internal-only symbols private: `extractNames`, `addFreeVarsExpr`,
+  `addFreeVarsStmt`, `defsStmt`.
+- Blockify.lean reduced from ~1100 to ~570 lines. Public API is now:
+  `isSimpleStmt`, `countExprBlocks`, `DemandVars`, `demandAnalysis`.
+
 ## Tools Built
 
 | Tool | Purpose |
 |------|---------|
 | `strata pyFeatures` | Lean subcommand: AST feature frequency analysis |
-| `strata pyBlockify` | Lean subcommand: Phase 1 block layout summary |
 | `strata pyToSSA` | Lean subcommand: full Python → SSA translation |
 | `tally_features.py` | Python script: aggregate counts across files |
 | `coverage_check.py` | Python script: compute file coverage for feature subsets |

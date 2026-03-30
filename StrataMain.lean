@@ -28,7 +28,6 @@ import Strata.Backends.CBMC.CollectSymbols
 import Strata.Backends.CBMC.GOTO.CoreToGOTOPipeline
 
 import Strata.Languages.Python.FeatureUsage
-import Strata.Languages.Python.Blockify
 import Strata.Languages.Python.PythonToSSA
 import Strata.Languages.Python.SSAFormat
 import Strata.SimpleAPI
@@ -306,21 +305,6 @@ def pyFeaturesCommand : Command where
     let stmts ← readPythonStrata v[0]
     let result := Strata.Python.FeatureUsage.analyzeFeatures stmts
     IO.print (Strata.Python.FeatureUsage.formatReport result)
-
-def pyBlockifyCommand : Command where
-  name := "pyBlockify"
-  args := [ "file" ]
-  help := "Run Phase 1 (block layout) on a Python Ion program and print summary."
-  callback := fun v _ => do
-    let stmts ← readPythonStrata v[0]
-    let results := Strata.Python.Blockify.blockifyModule stmts
-    for r in results do
-      IO.println s!"func {r.name}: {r.totalBlocks} blocks, {r.allVars.size} vars"
-      IO.println s!"  allVars: {r.allVars.toArray}"
-      for node in r.body do
-        IO.println s!"  body: {node}"
-      for w in r.warnings do
-        IO.println s!"  warning: {w}"
 
 def pyToSSACommand : Command where
   name := "pyToSSA"
@@ -1335,7 +1319,6 @@ def commandGroups : List CommandGroup := [
                  pyTranslateCommand,
                  pyTranslateLaurelCommand,
                  pyFeaturesCommand,
-                 pyBlockifyCommand,
                  pyToSSACommand] },
   { name := "Laurel"
     commands := [laurelAnalyzeCommand, laurelAnalyzeBinaryCommand,

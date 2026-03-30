@@ -499,6 +499,11 @@ partial def translateExpr (e : expr SourceRange) (fwd : Fwd)
           fwd' := zipFwd fwd' fwdVals'
           callArgs := callArgs.push (.starArgs av)
           -- Push argVal if remaining args create blocks
+          -- FIXME: Can you audit what the effect would be of just always pushing to fwd'?
+          -- I am wondering if remaining is false if it is ok for it to just grow here.
+          -- it seems like it could always be reset back to original size.
+          -- The goal is to remove calls to exprCreatesBlocks (including indirects) as that
+          -- is O(size(exprs)).
           if remaining then
             let aName ← valName av
             fwd' := fwd'.push aName av
