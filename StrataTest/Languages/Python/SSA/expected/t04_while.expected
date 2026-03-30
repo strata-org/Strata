@@ -18,32 +18,32 @@ func @module_init():
     condBranch %9 bb5(%8) bb6()
   bb5(%10:j.2):
     %12:_tmp.7 = compareOp gt %10 intLit 5
-    condBranch %12 bb7(%10) bb8(%10)
-  bb6(%13:j.3):
+    condBranch %12 bb7() bb8(%10)
+  bb6():
     branch bb6()
-  bb7(%14:j.4):
-    branch bb9(%14)
-  bb8(%15:j.5):
-    %17:j.6 = binOp add %15 intLit 1
-    branch bb4(%17)
+  bb7(%13:j.3):
+    branch bb9(%13)
+  bb8(%14:j.4):
+    %16:j.5 = binOp add %14 intLit 1
+    branch bb4(%16)
   bb9():
-    %18:k.0 : int = intLit 0
-    %19:total.0 : int = intLit 0
-    branch bb10(%18, %19)
-  bb10(%20:k.1, %21:total.1):
-    %23:_tmp.12 = compareOp lt %20 intLit 10
-    condBranch %23 bb11(%20, %21) bb12()
-  bb11(%24:k.2, %25:total.2):
-    %27:k.3 = binOp add %24 intLit 1
-    %29:_tmp.15 = binOp mod %27 intLit 2
-    %31:_tmp.17 = compareOp eq %29 intLit 0
-    condBranch %31 bb13(%27, %25) bb14(%27, %25)
-  bb12(%32:k.4, %33:total.3):
-    branch bb10(%32, %33)
-  bb13(%34:k.5, %35:total.4):
-    branch bb15(%34, %35)
-  bb14(%36:k.6, %37:total.5):
-    %38:total.6 = binOp add %37 %36
-    branch bb10(%36, %38)
+    %17:k.0 : int = intLit 0
+    %18:total.0 : int = intLit 0
+    branch bb10(%17, %18)
+  bb10(%19:k.1, %20:total.1):
+    %22:_tmp.12 = compareOp lt %19 intLit 10
+    condBranch %22 bb11(%19, %20) bb12()
+  bb11(%23:k.2, %24:total.2):
+    %26:k.3 = binOp add %23 intLit 1
+    %28:_tmp.15 = binOp mod %26 intLit 2
+    %30:_tmp.17 = compareOp eq %28 intLit 0
+    condBranch %30 bb13() bb14(%26, %24)
+  bb12():
+    branch bb10(%26, %24)
+  bb13(%31:k.4, %32:total.3):
+    branch bb15(%31, %32)
+  bb14(%33:k.5, %34:total.4):
+    %35:total.5 = binOp add %34 %33
+    branch bb10(%33, %35)
   bb15():
     ret

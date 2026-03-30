@@ -724,45 +724,45 @@ public partial def freeVarsExpr (e : expr SourceRange) : Std.HashSet String :=
     lo ∪ (hi ∪ st)
   | _ => {}
 
-/-- Variables read by an assignment target — free vars minus defined names.
-    For `self.x = v`, returns `{self}` (reads self, defines nothing at top level).
-    For `z = v`, returns `{}` (defines z, reads nothing). -/
-private def targetReads (target : expr SourceRange) : Std.HashSet String :=
+/-- Add variables read by an assignment target to a set.
+    For `self.x = v`, adds `self` (reads self, defines nothing at top level).
+    For `z = v`, adds nothing (defines z, reads nothing). -/
+private def addTargetReads (acc : Std.HashSet String)
+    (target : expr SourceRange) : Std.HashSet String :=
   let fv := freeVarsExpr target
   let defs := (extractNames target).foldl (init := ({}:Std.HashSet String)) fun a n => a.insert n
-  fv \ defs
+  acc ∪ (fv \ defs)
 
-/-- Free variables referenced in a statement's expressions (not sub-bodies). -/
-public partial def freeVarsStmt (s : stmt SourceRange) : Std.HashSet String :=
+/-- Add free variables from a statement's expressions into an existing set. -/
+public partial def addFreeVarsStmt (acc : Std.HashSet String)
+    (s : stmt SourceRange) : Std.HashSet String :=
   match s with
   | .Assign _ ⟨_, targets⟩ value _ =>
-    let tv := targets.foldl (init := ({}:Std.HashSet String)) fun acc t =>
-      acc ∪ (targetReads t)
-    tv ∪ (freeVarsExpr value)
+    let acc := targets.foldl (init := acc) fun acc t => addTargetReads acc t
+    acc ∪ (freeVarsExpr value)
   | .AnnAssign _ target _ ⟨_, value⟩ _ =>
-    let uses := targetReads target
+    let acc := addTargetReads acc target
     match value with
-    | some v => uses ∪ (freeVarsExpr v)
-    | none => uses
+    | some v => acc ∪ (freeVarsExpr v)
+    | none => acc
   | .AugAssign _ target _ value =>
-    (freeVarsExpr target) ∪ (freeVarsExpr value)
-  | .Expr _ value => freeVarsExpr value
+    acc ∪ (freeVarsExpr target) ∪ (freeVarsExpr value)
+  | .Expr _ value => acc ∪ (freeVarsExpr value)
   | .Return _ ⟨_, value⟩ =>
-    match value with | some v => freeVarsExpr v | none => {}
+    match value with | some v => acc ∪ (freeVarsExpr v) | none => acc
   | .Raise _ ⟨_, exc⟩ ⟨_, cause⟩ =>
-    let e := match exc with | some e => freeVarsExpr e | none => {}
-    let c := match cause with | some e => freeVarsExpr e | none => {}
-    e ∪ c
+    let acc := match exc with | some e => acc ∪ (freeVarsExpr e) | none => acc
+    match cause with | some e => acc ∪ (freeVarsExpr e) | none => acc
   | .Assert _ test ⟨_, msg⟩ =>
-    let t := freeVarsExpr test
-    match msg with | some m => t ∪ (freeVarsExpr m) | none => t
+    let acc := acc ∪ (freeVarsExpr test)
+    match msg with | some m => acc ∪ (freeVarsExpr m) | none => acc
   | .Delete _ ⟨_, targets⟩ =>
-    targets.foldl (init := {}) fun acc t => acc ∪ (freeVarsExpr t)
-  | .If _ test _ _ => freeVarsExpr test
-  | .For _ _ iter _ _ _ => freeVarsExpr iter
-  | .While _ test _ _ => freeVarsExpr test
+    targets.foldl (init := acc) fun acc t => acc ∪ (freeVarsExpr t)
+  | .If _ test _ _ => acc ∪ (freeVarsExpr test)
+  | .For _ _ iter _ _ _ => acc ∪ (freeVarsExpr iter)
+  | .While _ test _ _ => acc ∪ (freeVarsExpr test)
   | .With _ ⟨_, items⟩ _ _ =>
-    items.foldl (init := {}) fun acc item =>
+    items.foldl (init := acc) fun acc item =>
       match item with | .mk_withitem _ e _ => acc ∪ (freeVarsExpr e)
   | .Import .. | .ImportFrom .. | .Pass .. | .Break .. | .Continue .. | .Global ..
   | .Nonlocal .. => {}
@@ -942,7 +942,7 @@ where
           -- Expression blocks within this statement
           da := backwardStmtExprBlocks s live da
           -- Update liveness: remove defs, add uses
-          live := (live \ defsStmt s) ∪ freeVarsStmt s
+          live := addFreeVarsStmt (live \ defsStmt s) s
         else
           let (liveBefore, da') := backwardCompound s live da
           live := liveBefore
