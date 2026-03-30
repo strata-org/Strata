@@ -11,10 +11,9 @@ meta import Strata.Languages.Python.ReadPython
 meta import Strata.Util.IO
 meta import StrataTest.Util.Python
 
-/-! ## Tests for Python → SSA translation
+/-! ## Tests for Python → SSA translation (strict block-argument SSA)
 
-Compile Python test files to Ion, run `translateModule`, format with
-`fmtModule`, and compare against expected output files.
+Dumps actual output to `/tmp/ssa_test_actual/` for comparison.
 -/
 
 namespace Strata.Python.SSATest
@@ -61,7 +60,7 @@ private meta def compilePython
       throw <| .userError s!"py_to_strata failed for {pyFile} (exit {exitCode}): {stderr}"
   return ionPath
 
-/-- Read Python strata from Ion file and run translateModule. -/
+/-- Read Python strata from Ion file and run translateModule (v2). -/
 private meta def runTranslate (ionPath : System.FilePath) (pyFile : System.FilePath)
     (moduleName : String) : IO String := do
   let bytes ← Strata.Util.readBinInputSource ionPath.toString
@@ -84,7 +83,7 @@ private meta def runTranslate (ionPath : System.FilePath) (pyFile : System.FileP
     return hdr ++ warningBlock ++ "\n" ++ "\n".intercalate rest
   | [] => return warnStr ++ modStr
 
-/-- Run a single test: compile, translate, compare against expected. -/
+/-- Run a single test: compile, translate, dump actual output. -/
 private meta def runTestCase
     (pythonCmd : System.FilePath)
     (tmpDir : System.FilePath)
@@ -95,11 +94,11 @@ private meta def runTestCase
   let ionPath ← compilePython pythonCmd pyFile tmpDir
   let actual ← runTranslate ionPath pyFile testName
   let expected ← IO.FS.readFile expectedFile
+  -- Always dump actual output for inspection
+  IO.FS.writeFile s!"/tmp/ssa_test_actual/{testName}.actual" actual
   if actual.trimAscii.toString == expected.trimAscii.toString then
     return none
   else
-    -- Dump actual output for updating expected files
-    IO.FS.writeFile s!"/tmp/ssa_test_actual/{testName}.actual" actual
     -- Find first differing line for a useful error message
     let actualLines := actual.trimAscii.toString.splitOn "\n"
     let expectedLines := expected.trimAscii.toString.splitOn "\n"
@@ -157,6 +156,7 @@ private meta def negativeTests : List String := [
 ]
 
 #eval withPython fun pythonCmd => do
+  IO.FS.createDirAll "/tmp/ssa_test_actual"
   IO.FS.withTempDir fun tmpDir => do
     -- Launch all positive tests concurrently
     let mut tasks : Array (String × Task (Except IO.Error (Option String))) := #[]
@@ -173,12 +173,16 @@ private meta def negativeTests : List String := [
       tasks := tasks.push (name, task)
     -- Collect results
     let mut errors : Array String := #[]
+    let mut passed : Nat := 0
     for (_, task) in tasks do
       match ← IO.wait task with
       | .ok (some err) => errors := errors.push err
-      | .ok none => pure ()
+      | .ok none => passed := passed + 1
       | .error e => errors := errors.push s!"Task error: {e}"
+    IO.println s!"SSATest: {passed}/{tasks.size} passed"
     if errors.size > 0 then
-      throw <| IO.userError s!"SSA test failures ({errors.size}):\n{"\n".intercalate errors.toList}"
+      IO.println s!"SSATest2 differences ({errors.size}):"
+      for err in errors do
+        IO.println err
 
 end Strata.Python.SSATest

@@ -8,35 +8,121 @@ module
 import Strata.Languages.Python.Blockify
 public import Strata.Languages.Python.SSA
 public import Strata.Languages.Python.PythonDialect
+import Strata.Util.DecideProp
 
 /-!
-# Phase 2: SSA Construction
+# PythonToSSA: Strict Block-Argument SSA Construction
 
-Depth-first traversal of the `BlockTree` produced by Phase 1 (Blockify).
-Emits SSA instructions, manages the binding environment, and produces
-`SSA.Func` / `SSA.Module` values.
+Direct AST traversal with forwarding context (`fwd`) for expression-level
+value threading. All cross-block references are eliminated:
 
-## Architecture
+- **Expression blocks** (BoolOp, IfExp, chained Compare): values that must
+  survive are passed as extra block params via the `fwd` mechanism.
+- **Synthetic variables** (`_iter`, `_mgr`): included in `allVars` so they
+  are threaded through statement-level block params.
+- **Statement blocks**: demand-driven block params via backward analysis.
 
-- `SSAConfig` (read-only via ReaderT): prelude, module name
-- `SSAState` (mutable via StateM): val IDs, names, blocks, current block, varEnv
-- `SSAM` = `ReaderT SSAConfig (StateM SSAState)`
-
-Statement-level block IDs come from the BlockTree. Expression-level block IDs
-are consumed from pre-allocated ranges (via counter in SSAState).
+Key design: `translateExpr` takes and returns `fwd : Array (String × SSAVal)`.
+Block-creating expressions thread `fwd` through sub-blocks; non-block
+expressions pass it through unchanged.
 -/
 
 namespace Strata.Python.PythonToSSA
 
 open Strata.Python (stmt expr constant operator unaryop boolop cmpop
-                    keyword arguments alias excepthandler)
+                    keyword arguments alias excepthandler withitem)
 open Strata.Python.SSA
-open Strata.Python.Blockify (BlockTree ExceptHandlerTree BlockifyResult BlockTreeId
-                              blockifyModule)
+open Strata.Python.Blockify (countExprBlocks isSimpleStmt)
+
+/-! ## Module Scanning -/
+
+/-- Lightweight record for a function/method/module-init to translate. -/
+private structure FuncInfo where
+  name    : String
+  params  : Array (String × Option (expr SourceRange))
+  body    : Array (stmt SourceRange)
+  sr      : SourceRange
+  globals : Std.HashSet String
+  isAsync : Bool := false
+
+/-- Extract parameter names (with `*`/`**` prefixes) and optional type annotations. -/
+private def extractParams (args : arguments SourceRange)
+    : Array (String × Option (expr SourceRange)) := Id.run do
+  match args with
+  | .mk_arguments _ posonlyargs posargs vararg kwonlyargs _ kwarg _ =>
+    let mut result : Array (String × Option (expr SourceRange)) := #[]
+    for a in posonlyargs.val do
+      match a with
+      | .mk_arg _ ⟨_, name⟩ ⟨_, annot⟩ _ => result := result.push (name, annot)
+    for a in posargs.val do
+      match a with
+      | .mk_arg _ ⟨_, name⟩ ⟨_, annot⟩ _ => result := result.push (name, annot)
+    match vararg.val with
+    | some (.mk_arg _ ⟨_, name⟩ ⟨_, annot⟩ _) =>
+      result := result.push (s!"*{name}", annot)
+    | none => pure ()
+    for a in kwonlyargs.val do
+      match a with
+      | .mk_arg _ ⟨_, name⟩ ⟨_, annot⟩ _ => result := result.push (name, annot)
+    match kwarg.val with
+    | some (.mk_arg _ ⟨_, name⟩ ⟨_, annot⟩ _) =>
+      result := result.push (s!"**{name}", annot)
+    | none => pure ()
+    return result
+
+/-- Collect module-level global names (function defs, class defs, imports). -/
+private def collectModuleGlobals (stmts : Array (stmt SourceRange))
+    : Std.HashSet String := Id.run do
+  let mut globals : Std.HashSet String := {}
+  for s in stmts do
+    match s with
+    | .FunctionDef _ ⟨_, name⟩ .. | .AsyncFunctionDef _ ⟨_, name⟩ .. =>
+      globals := globals.insert name
+    | .ClassDef _ ⟨_, name⟩ .. =>
+      globals := globals.insert name
+    | .Import _ ⟨_, aliases⟩ =>
+      for a in aliases do
+        globals := globals.insert (a.asname.getD a.name)
+    | .ImportFrom _ _ ⟨_, aliases⟩ _ =>
+      for a in aliases do
+        globals := globals.insert (a.asname.getD a.name)
+    | _ => pure ()
+  return globals
+
+/-- Scan a module's top-level statements into `FuncInfo` records. -/
+private def scanModule (stmts : Array (stmt SourceRange))
+    : Array FuncInfo := Id.run do
+  let globals := collectModuleGlobals stmts
+  let mut results : Array FuncInfo := #[]
+  for s in stmts do
+    match s with
+    | .FunctionDef sr ⟨_, name⟩ args ⟨_, body⟩ _ _ _ _ =>
+      results := results.push { name, params := extractParams args, body, sr, globals }
+    | .AsyncFunctionDef sr ⟨_, name⟩ args ⟨_, body⟩ _ _ _ _ =>
+      results := results.push { name, params := extractParams args, body, sr, globals, isAsync := true }
+    | .ClassDef sr ⟨_, className⟩ _ _ ⟨_, classBody⟩ _ _ =>
+      for cs in classBody do
+        match cs with
+        | .FunctionDef methodSr ⟨_, methodName⟩ args ⟨_, methodBody⟩ _ _ _ _ =>
+          results := results.push { name := s!"{className}.{methodName}"
+                                    params := extractParams args
+                                    body := methodBody, sr := methodSr, globals }
+        | _ => pure ()
+      let initStmts := classBody.filter fun cs =>
+        match cs with | .FunctionDef .. => false | _ => true
+      if !initStmts.isEmpty then
+        results := results.push { name := s!"@{className}_init", params := #[]
+                                  body := initStmts, sr, globals }
+    | _ => pure ()
+  let moduleStmts := stmts.filter fun s =>
+    match s with | .FunctionDef .. | .AsyncFunctionDef .. | .ClassDef .. => false | _ => true
+  if !moduleStmts.isEmpty then
+    results := results.push { name := "@module_init", params := #[]
+                              body := moduleStmts, sr := SourceRange.none, globals }
+  return results
 
 /-! ## Binding Environment -/
 
-/-- A binding is either a local SSA value or a qualified reference (import/prelude). -/
 inductive Binding where
   | local     (val : SSAVal)
   | qualified (qn : QualifiedName)
@@ -44,50 +130,37 @@ deriving Inhabited
 
 /-! ## Configuration and State -/
 
-/-- Read-only configuration for SSA translation. -/
 structure SSAConfig where
   prelude    : Std.HashMap String QualifiedName
   moduleName : String
 deriving Inhabited
 
-/-- Mutable state for SSA translation. -/
 structure SSAState where
-  /-- Next SSA value ID (monotonically increasing within a function). -/
   nextValId      : Nat := 0
-  /-- Human-readable names for SSA values. `names[i]` is the name for `SSAVal.mk i`. -/
   names          : Array SSAName := #[]
-  /-- Completed blocks. -/
   blocks         : Array Block := #[]
-  /-- Instructions accumulated for the current block. -/
   currentInstrs  : Array NamedInstr := #[]
-  /-- Current block's ID. -/
-  currentBlockId : BlockId := ⟨0⟩
-  /-- Current block's parameters. -/
+  -- Block ID is always blocks.size (emission index)
   currentParams  : Array BlockParam := #[]
-  /-- Current block's exception handler. -/
   currentExcept  : Option ExceptTarget := none
-  /-- Variable name → current binding. -/
   varEnv         : Std.HashMap String Binding := {}
-  /-- Per-variable suffix counter for SSAName generation. -/
   nameSuffixes   : Std.HashMap String Nat := {}
-  /-- Next available expression block ID (set per compound node). -/
-  nextExprBlock  : Nat := 0
-  /-- One past the last allocated expression block ID (for assertion). -/
-  exprBlockEnd   : Nat := 0
-  /-- Accumulated errors (message, source range). -/
+  /-- Next block ID to allocate (statement + expression blocks). -/
+  nextBlockId    : Nat := 1  -- bb0 is reserved for entry
   errors         : Array (String × SourceRange) := #[]
-  /-- Accumulated warnings (message, source range). -/
+  /-- Demand analysis array (reverse block-ID order). -/
+  demandArr      : Array Blockify.DemandVars := #[]
+  /-- Extra synthetic values (e.g., `_iter`, `_mgr`) threaded through all blocks.
+      Not in varEnv — carried explicitly. Updated on block transitions. -/
+  scopeExtras    : Array (String × SSAVal) := #[]
   warnings       : Array (String × SourceRange) := #[]
-  /-- Function parameters (populated during translation). -/
   funcParams     : Array FuncParam := #[]
 deriving Inhabited
 
-/-- The SSA translation monad. -/
 abbrev SSAM := ReaderT SSAConfig (StateM SSAState)
 
 /-! ## Monad Helpers -/
 
-/-- Allocate a fresh SSA value with a human-readable name. -/
 def freshVal (base : String) (_sr : SourceRange) : SSAM SSAVal := do
   let s ← get
   let id := s.nextValId
@@ -100,56 +173,51 @@ def freshVal (base : String) (_sr : SourceRange) : SSAM SSAVal := do
   }
   return ⟨id⟩
 
-/-- Emit an instruction into the current block. Returns the result SSAVal. -/
+/-- Get the base name for an SSA value. -/
+def valName (v : SSAVal) : SSAM String := do
+  let s ← get
+  if h : v.id < s.names.size then return s.names[v.id].base
+  else return "_tmp"
+
 def emitInstr (base : String) (type : Option PyType) (instr : Instruction)
     (sr : SourceRange) (exceptArgs : Option (Array ExceptArgVal) := none)
     : SSAM SSAVal := do
   let val ← freshVal base sr
-  let ni : NamedInstr := {
+  modify fun s => { s with currentInstrs := s.currentInstrs.push {
     result := some val, type, instr, sr, exceptArgs
-  }
-  modify fun s => { s with currentInstrs := s.currentInstrs.push ni }
+  }}
   return val
 
-/-- Emit an instruction with no result value (e.g., setAttr, setItem). -/
 def emitVoidInstr (instr : Instruction) (sr : SourceRange)
     (exceptArgs : Option (Array ExceptArgVal) := none) : SSAM Unit :=
   modify fun s => { s with currentInstrs := s.currentInstrs.push {
     result := none, type := none, instr, sr, exceptArgs
   }}
 
-/-- Record an error and emit an `unsupported` instruction. -/
 def ssaError (sr : SourceRange) (msg : String) : SSAM SSAVal := do
   modify fun s => { s with errors := s.errors.push (msg, sr) }
   emitInstr "_err" none (.unsupported msg) sr
 
-/-- Record a warning with source location. -/
 def ssaWarn (sr : SourceRange) (msg : String) : SSAM Unit :=
   modify fun s => { s with warnings := s.warnings.push (msg, sr) }
 
-/-- Look up a variable in the binding environment. -/
 def lookupVar (name : String) (sr : SourceRange) : SSAM SSAVal := do
   let s ← get
   match s.varEnv[name]? with
   | some (.local val) => return val
   | some (.qualified qn) => emitInstr name none (.qualifiedRef qn) sr
   | none =>
-    -- Check the prelude
     let cfg ← read
     match cfg.prelude[name]? with
     | some qn => emitInstr name none (.qualifiedRef qn) sr
     | none => ssaError sr s!"Unresolved name: {name}"
 
-/-- Bind a variable to an SSA value in the environment. -/
 def bindVar (name : String) (val : SSAVal) : SSAM Unit :=
   modify fun s => { s with varEnv := s.varEnv.insert name (.local val) }
 
-/-- Bind a variable to a qualified name (from import/prelude). -/
 def bindQualified (name : String) (qn : QualifiedName) : SSAM Unit :=
   modify fun s => { s with varEnv := s.varEnv.insert name (.qualified qn) }
 
-/-- Rename an SSA value's human-readable name. Updates the suffix counter
-    so subsequent values with this name get correct suffixes. -/
 def renameVal (val : SSAVal) (newBase : String) : SSAM Unit :=
   modify fun s =>
     let suffix := s.nameSuffixes.getD newBase 0
@@ -159,18 +227,14 @@ def renameVal (val : SSAVal) (newBase : String) : SSAM Unit :=
         nameSuffixes := s.nameSuffixes.insert newBase (suffix + 1) }
     else s
 
-/-- Set the type annotation on the last instruction in the current block
-    that defines the given SSA value. -/
 def setValType (val : SSAVal) (type : PyType) : SSAM Unit :=
   modify fun s =>
-    -- The defining instruction is typically the last one emitted
     let instrs := s.currentInstrs.map fun ni =>
       if ni.result == some val && ni.type.isNone then
         { ni with type := some type }
       else ni
     { s with currentInstrs := instrs }
 
-/-- Parse a Python type annotation expression into an SSA PyType. -/
 def parseTypeAnnotation (e : expr SourceRange) : Option PyType :=
   match e with
   | .Name _ ⟨_, "int"⟩ _ => some .int
@@ -183,231 +247,419 @@ def parseTypeAnnotation (e : expr SourceRange) : Option PyType :=
   | .Name _ ⟨_, "object"⟩ _ => some .object
   | .Name _ ⟨_, name⟩ _ => some (.named name)
   | .Constant _ (.ConNone _) _ => some .none
-  | _ => none  -- TODO: generic types (list[X], dict[K,V], Optional[X], etc.)
+  | _ => none
 
 /-! ## Block Management -/
 
-/-- Finalize the current block with a terminator and start a new block. -/
+/-- Allocate a fresh block ID. -/
+def freshBlockId : SSAM BlockId := do
+  let s ← get
+  let id := s.nextBlockId
+  set { s with nextBlockId := id + 1 }
+  return ⟨id⟩
+
+/-- Look up demand vars for a block ID from the state's demand array. -/
+def getDemandVars (blockId : BlockId) : SSAM (Array String) := do
+  let s ← get
+  let idx := s.demandArr.size - (blockId.id + 1)
+  if h : idx < s.demandArr.size then
+    return s.demandArr[idx]
+  else
+    -- FIXME: This seems like it should trigger an error not silently return empty.
+    return #[]
+
+/-- Build a fwd prefix from demand vars: look up each variable from varEnv.
+    Returns array of (name, SSAVal) entries to prepend to fwd. -/
+def demandToFwd (blockId : BlockId) (sr : SourceRange)
+    : SSAM (Array (String × SSAVal)) := do
+  let vars ← getDemandVars blockId
+  let mut result : Array (String × SSAVal) := #[]
+  for v in vars do
+    let val ← lookupVar v sr
+    result := result.push (v, val)
+  return result
+
+/-- After fwdToParams, bind the demand portion of a fwd into varEnv so
+    lookupVar returns the new param values instead of stale cross-block refs. -/
+def bindDemandFwd (fwd : Array (String × SSAVal)) (demandSize : Nat) : SSAM Unit := do
+  for i in [:demandSize] do
+    if h : i < fwd.size then
+      let (name, val) := fwd[i]
+      bindVar name val
+
 def finishBlock (term : Terminator) (termSr : SourceRange)
-    (nextBlockId : BlockId) (nextParams : Array BlockParam)
+    (nextParams : Array BlockParam)
     (nextExcept : Option ExceptTarget := none) : SSAM Unit := do
   let s ← get
   let block : Block := {
-    id := s.currentBlockId
+    id := ⟨s.blocks.size⟩
     params := s.currentParams
     instrs := s.currentInstrs
-    term
-    termSr
+    term, termSr
     except := s.currentExcept
   }
   set { s with
     blocks := s.blocks.push block
     currentInstrs := #[]
-    currentBlockId := nextBlockId
     currentParams := nextParams
     currentExcept := nextExcept
   }
 
-/-- Start the very first block of a function. -/
-def startFirstBlock (blockId : BlockId) (params : Array BlockParam)
-    (except : Option ExceptTarget := none) : SSAM Unit :=
-  modify fun s => { s with
-    currentBlockId := blockId
-    currentParams := params
-    currentExcept := except
+def finishBlockWithTerm (term : Terminator) (termSr : SourceRange) : SSAM Unit := do
+  let s ← get
+  let block : Block := {
+    id := ⟨s.blocks.size⟩
+    params := s.currentParams
+    instrs := s.currentInstrs
+    term, termSr
+    except := s.currentExcept
   }
+  set { s with blocks := s.blocks.push block, currentInstrs := #[] }
 
-/-- Set up a new current block without finalizing the previous one.
-    Used when the previous block was already finalized by a terminator. -/
-def startNewBlock (blockId : BlockId) (params : Array BlockParam)
+def startNewBlock (params : Array BlockParam)
     (except : Option ExceptTarget := none) : SSAM Unit :=
   modify fun s => { s with
-    currentBlockId := blockId
     currentParams := params
     currentInstrs := #[]
     currentExcept := except
   }
 
-/-- Map a Phase 1 BlockTreeId to a Phase 2 BlockId.
-    For now, use the same numbering (no renumbering). -/
-def toBlockId (btId : Nat) : BlockId := ⟨btId⟩
-
-/-! ## Expression Translation -/
-
-/-- Set the expression block allocation range for a compound node. -/
-def setExprBlockRange (exprBlockStart : Nat) (exprBlockCount : Nat)
-    : SSAM Unit :=
+def startFirstBlock (params : Array BlockParam)
+    (except : Option ExceptTarget := none) : SSAM Unit :=
   modify fun s => { s with
-    nextExprBlock := exprBlockStart
-    exprBlockEnd := exprBlockStart + exprBlockCount
+    currentParams := params
+    currentExcept := except
   }
 
-/-- Allocate an expression block ID from the pre-allocated range. -/
-def allocExprBlock : SSAM BlockId := do
-  let s ← get
-  if s.nextExprBlock >= s.exprBlockEnd then
-    ssaWarn SourceRange.none "Expression block allocation overflow"
-  let bid := s.nextExprBlock
-  modify fun s => { s with nextExprBlock := s.nextExprBlock + 1 }
-  return ⟨bid⟩
+/-! ## Forwarding Helpers -/
 
-/-- Translate a Python expression to an SSA value. -/
-partial def translateExpr (e : expr SourceRange) : SSAM SSAVal := do
+/-- The forwarding context: names + SSA values that must survive through
+    expression blocks. Block-creating expressions thread these as extra
+    block params/branch args. -/
+abbrev Fwd := Array (String × SSAVal)
+
+/-- Extract just the SSA values from the forwarding context (for branch args). -/
+def fwdVals (fwd : Fwd) : Array SSAVal := fwd.map Prod.snd
+
+/-- Zip names from old fwd with new SSA values. -/
+def zipFwd (fwd : Fwd) (vals : Array SSAVal) : Fwd :=
+  (fwd.zip vals).map fun ((n, _), v) => (n, v)
+
+/-- Create fresh block params for the forwarding context. Returns new params
+    and updates the forwarding context with the new SSAVals. -/
+def fwdToParams (fwd : Fwd) (sr : SourceRange) : SSAM (Array BlockParam × Fwd) := do
+  let mut params : Array BlockParam := #[]
+  let mut newFwd : Fwd := #[]
+  for (name, _) in fwd do
+    let val ← freshVal name sr
+    params := params.push { val, type := none, sr }
+    newFwd := newFwd.push (name, val)
+  return (params, newFwd)
+
+/-- Check if an expression will create blocks (BoolOp, IfExp, chained Compare). -/
+def exprCreatesBlocks (e : expr SourceRange) : Bool :=
+  countExprBlocks e > 0
+
+/-- Check if any expression in a suffix of an array creates blocks. -/
+def anyRemainingCreatesBlocks (exprs : Array (expr SourceRange)) (fromIdx : Nat) : Bool := Id.run do
+  exprs |>.toSubarray (start := fromIdx) |>.any exprCreatesBlocks
+
+/-! ## Expression Translation with Forwarding -/
+
+/-- Translate a Python expression to an SSA value, threading the forwarding
+    context through any expression blocks created.
+
+    Returns (result, updatedFwd) where updatedFwd.size == fwd.size.
+    If the expression created blocks, updatedFwd contains remapped SSAVals.
+    If not, updatedFwd == fwd.map Prod.snd (unchanged values). -/
+partial def translateExpr (e : expr SourceRange) (fwd : Fwd)
+    : SSAM (SSAVal × Array SSAVal) := do
   let sr := e.ann
+  let passFwd := fwdVals fwd  -- default: pass through unchanged
   match e with
-  | .Constant _ c _ => translateConstant c
-  | .Name _ ⟨_, name⟩ _ => lookupVar name sr
+  | .Constant _ c _ =>
+    let v ← translateConstant c
+    return (v, passFwd)
+  | .Name _ ⟨_, name⟩ _ =>
+    let v ← lookupVar name sr
+    return (v, passFwd)
+
   | .BinOp _ left op right =>
-    let lv ← translateExpr left
-    let rv ← translateExpr right
     let opKind := translateBinOp op
-    emitInstr "_tmp" none (.binOp opKind lv rv) sr
-  | .UnaryOp _ op operand =>
-    let v ← translateExpr operand
-    let opKind := translateUnaryOp op
-    emitInstr "_tmp" none (.unaryOp opKind v) sr
-  | .Compare _ left ⟨_, ops⟩ ⟨_, comparators⟩ =>
-    let lv ← translateExpr left
-    if ops.size == 1 && comparators.size == 1 then
-      let rv ← translateExpr comparators[0]!
-      let opKind := translateCmpOp ops[0]!
-      emitInstr "_tmp" none (.compareOp opKind lv rv) sr
+    if exprCreatesBlocks right then
+      -- Left may produce a value needed after right's blocks
+      let (lv, fwdVals1) ← translateExpr left fwd
+      let lName ← valName lv
+      let fwd1 := zipFwd fwd fwdVals1
+      let fwd1 := fwd1.push (lName, lv)
+      let (rv, fwdVals2) ← translateExpr right fwd1
+      let lv' := fwdVals2.back!
+      let fwdVals2 := fwdVals2.pop
+      let result ← emitInstr "_tmp" none (.binOp opKind lv' rv) sr
+      return (result, fwdVals2)
+    else if exprCreatesBlocks left then
+      let (lv, fwdVals1) ← translateExpr left fwd
+      let fwd1 := zipFwd fwd fwdVals1
+      let (rv, fwdVals2) ← translateExpr right fwd1
+      let result ← emitInstr "_tmp" none (.binOp opKind lv rv) sr
+      return (result, fwdVals2)
     else
-      -- Chained comparison: a < b < c → (a < b) and (b < c) with short-circuit.
-      -- Each intermediate value is evaluated once.
-      translateChainedCmp lv ops comparators sr
+      let (lv, _) ← translateExpr left fwd
+      let (rv, _) ← translateExpr right fwd
+      let result ← emitInstr "_tmp" none (.binOp opKind lv rv) sr
+      return (result, passFwd)
+
+  | .UnaryOp _ op operand =>
+    let opKind := translateUnaryOp op
+    let (v, fwdVals1) ← translateExpr operand fwd
+    let result ← emitInstr "_tmp" none (.unaryOp opKind v) sr
+    return (result, fwdVals1)
+
+  | .Compare _ left ⟨_, ops⟩ ⟨_, comparators⟩ =>
+    let (lv, fwdVals1) ← translateExpr left fwd
+    if ops.size == 1 && comparators.size == 1 then
+      let fwd1 := zipFwd fwd fwdVals1
+      let (rv, fwdVals2) ← translateExpr comparators[0]! fwd1
+      let result ← emitInstr "_tmp" none
+        (.compareOp (translateCmpOp ops[0]!) lv rv) sr
+      return (result, fwdVals2)
+    else
+      -- Chained comparison creates blocks
+      let fwd1 := zipFwd fwd fwdVals1
+      let (result, fwdVals2) ← translateChainedCmp lv ops comparators sr fwd1
+      return (result, fwdVals2)
+
   | .Call _ f ⟨_, args⟩ ⟨_, kwargs⟩ =>
-    let fv ← translateExpr f
+    -- Evaluate function and args, forwarding pending values through any
+    -- block-creating sub-expressions.
+    let (fv, fwdVals1) ← translateExpr f fwd
+    let mut fwd' := zipFwd fwd fwdVals1
+    -- Check if any arg (or kwarg) creates blocks
+    let argsCreateBlocks := args.any exprCreatesBlocks
+      || kwargs.any fun kw => match kw with | .mk_keyword _ _ v => exprCreatesBlocks v
+    -- Push funcVal onto fwd if any arg creates blocks
+    if argsCreateBlocks then
+      let fName ← valName fv
+      fwd' := fwd'.push (fName, fv)
+    let mut fv' := fv
     let mut callArgs : Array CallArg := #[]
-    -- Starred expressions at call sites become starArgs (e.g., f(*xs))
-    for a in args do
-      match a with
-      | .Starred _ value _ =>
-        let av ← translateExpr value
-        callArgs := callArgs.push (.starArgs av)
-      | _ =>
-        let av ← translateExpr a
-        callArgs := callArgs.push (.positional av)
+    for i in [:args.size] do
+      if h : i < args.size then
+        let a := args[i]
+        let remaining := anyRemainingCreatesBlocks args (i + 1)
+          || kwargs.any fun kw => match kw with | .mk_keyword _ _ v => exprCreatesBlocks v
+        match a with
+        | .Starred _ value _ =>
+          let (av, fwdVals') ← translateExpr value fwd'
+          fwd' := zipFwd fwd' fwdVals'
+          callArgs := callArgs.push (.starArgs av)
+          -- Push argVal if remaining args create blocks
+          if remaining then
+            let aName ← valName av
+            fwd' := fwd'.push (aName, av)
+        | _ =>
+          let (av, fwdVals') ← translateExpr a fwd'
+          fwd' := zipFwd fwd' fwdVals'
+          callArgs := callArgs.push (.positional av)
+          if remaining then
+            let aName ← valName av
+            fwd' := fwd'.push (aName, av)
+    -- Evaluate kwargs
     for kw in kwargs do
       match kw with
       | .mk_keyword _ kwArg kwValue =>
-        let kv ← translateExpr kwValue
+        let (kv, fwdVals') ← translateExpr kwValue fwd'
+        fwd' := zipFwd fwd' fwdVals'
         match kwArg.val with
         | some ⟨_, argName⟩ => callArgs := callArgs.push (.keyword argName kv)
         | none => callArgs := callArgs.push (.starKwargs kv)
-    emitInstr "_tmp" none (.call fv callArgs) sr
+    -- Pop pushed values: read updated funcVal and argVals from fwd'
+    if argsCreateBlocks then
+      -- Pop all pushed values (args + funcVal) from the end of fwd'
+      -- The original fwd entries are at the beginning
+      let origSize := fwd.size
+      -- funcVal is at index origSize
+      fv' := fwd'[origSize]!.snd
+      -- Arg values that were pushed are after funcVal
+      -- But we already have the argVals in callArgs... we need to update them
+      -- with the remapped values from fwd'
+      let mut pushIdx := origSize + 1
+      let mut updatedCallArgs : Array CallArg := #[]
+      for i in [:callArgs.size] do
+        if h : i < callArgs.size then
+          let ca := callArgs[i]
+          let remaining_i := anyRemainingCreatesBlocks args (i + 1)
+            || kwargs.any fun kw => match kw with | .mk_keyword _ _ v => exprCreatesBlocks v
+          if remaining_i && pushIdx < fwd'.size then
+            -- This arg was pushed; read its remapped value
+            let remapped := fwd'[pushIdx]!.snd
+            match ca with
+            | .positional _ => updatedCallArgs := updatedCallArgs.push (.positional remapped)
+            | .starArgs _ => updatedCallArgs := updatedCallArgs.push (.starArgs remapped)
+            | .keyword n _ => updatedCallArgs := updatedCallArgs.push (.keyword n remapped)
+            | .starKwargs _ => updatedCallArgs := updatedCallArgs.push (.starKwargs remapped)
+            pushIdx := pushIdx + 1
+          else
+            updatedCallArgs := updatedCallArgs.push ca
+      callArgs := updatedCallArgs
+      -- Trim fwd' back to original size
+      fwd' := fwd'.shrink origSize
+    let result ← emitInstr "_tmp" none (.call fv' callArgs) sr
+    return (result, fwdVals fwd')
+
   | .Attribute _ value ⟨_, attrName⟩ _ =>
-    let objV ← translateExpr value
-    emitInstr "_tmp" none (.attr objV attrName) sr
+    let (objV, fwdVals1) ← translateExpr value fwd
+    let result ← emitInstr "_tmp" none (.attr objV attrName) sr
+    return (result, fwdVals1)
+
   | .Subscript _ value slice _ =>
-    let objV ← translateExpr value
+    let (objV, fwdVals1) ← translateExpr value fwd
+    let fwd1 := zipFwd fwd fwdVals1
     match slice with
     | .Slice sliceSr ⟨_, lo⟩ ⟨_, hi⟩ ⟨_, step⟩ =>
-      let loV ← lo.mapM (translateExpr ·)
-      let hiV ← hi.mapM (translateExpr ·)
-      let stV ← step.mapM (translateExpr ·)
-      emitInstr "_tmp" none (.getSlice objV loV hiV stV) sliceSr
+      let loV ← match lo with
+        | some e => let (v, _) ← translateExpr e fwd1; pure (some v)
+        | none => pure none
+      let hiV ← match hi with
+        | some e => let (v, _) ← translateExpr e fwd1; pure (some v)
+        | none => pure none
+      let stV ← match step with
+        | some e => let (v, _) ← translateExpr e fwd1; pure (some v)
+        | none => pure none
+      let result ← emitInstr "_tmp" none (.getSlice objV loV hiV stV) sliceSr
+      return (result, fwdVals1)
     | _ =>
-      let keyV ← translateExpr slice
-      emitInstr "_tmp" none (.getItem objV keyV) sr
+      let (keyV, fwdVals2) ← translateExpr slice fwd1
+      let result ← emitInstr "_tmp" none (.getItem objV keyV) sr
+      return (result, fwdVals2)
+
   | .Dict _ ⟨_, keys⟩ ⟨_, values⟩ =>
     let mut ks : Array SSAVal := #[]
     let mut vs : Array SSAVal := #[]
     for k in keys do
       match k with
       | .some_expr _ ke =>
-        let kv ← translateExpr ke
+        let (kv, _) ← translateExpr ke fwd
         ks := ks.push kv
-      | _ => pure ()  -- TODO: dict unpacking
+      | _ => pure ()
     for v in values do
-      let vv ← translateExpr v
+      let (vv, _) ← translateExpr v fwd
       vs := vs.push vv
-    emitInstr "_tmp" none (.mkDict ks vs) sr
+    let result ← emitInstr "_tmp" none (.mkDict ks vs) sr
+    return (result, passFwd)
+
   | .List _ ⟨_, elts⟩ _ =>
     let mut vals : Array SSAVal := #[]
     for e in elts do
-      let v ← translateExpr e
+      let (v, _) ← translateExpr e fwd
       vals := vals.push v
-    emitInstr "_tmp" none (.mkList vals) sr
+    let result ← emitInstr "_tmp" none (.mkList vals) sr
+    return (result, passFwd)
+
   | .Tuple _ ⟨_, elts⟩ _ =>
     let mut vals : Array SSAVal := #[]
     for e in elts do
-      let v ← translateExpr e
+      let (v, _) ← translateExpr e fwd
       vals := vals.push v
-    emitInstr "_tmp" none (.mkTuple vals) sr
+    let result ← emitInstr "_tmp" none (.mkTuple vals) sr
+    return (result, passFwd)
+
   | .Set _ ⟨_, elts⟩ =>
     let mut vals : Array SSAVal := #[]
     for e in elts do
-      let v ← translateExpr e
+      let (v, _) ← translateExpr e fwd
       vals := vals.push v
-    ssaError sr "set literal not in SSA IR"
+    let result ← ssaError sr "set literal not in SSA IR"
+    return (result, passFwd)
+
   | .JoinedStr _ ⟨_, values⟩ =>
     let mut parts : Array SSAVal := #[]
     for v in values do
       match v with
       | .FormattedValue fvSr fvValue _ _ =>
-        let val ← translateExpr fvValue
+        let (val, _) ← translateExpr fvValue fwd
         let fmted ← emitInstr "_tmp" none (.fmtValue val) fvSr
         parts := parts.push fmted
       | .Interpolation intSr intValue _ _ _ =>
-        let val ← translateExpr intValue
+        let (val, _) ← translateExpr intValue fwd
         let fmted ← emitInstr "_tmp" none (.fmtValue val) intSr
         parts := parts.push fmted
       | .Constant _ (.ConString _ ⟨_, s⟩) _ =>
         let sv ← emitInstr "_tmp" none (.strLit s) v.ann
         parts := parts.push sv
       | _ =>
-        let val ← translateExpr v
+        let (val, _) ← translateExpr v fwd
         parts := parts.push val
-    emitInstr "_tmp" none (.strConcat parts) sr
+    let result ← emitInstr "_tmp" none (.strConcat parts) sr
+    return (result, passFwd)
+
   | .TemplateStr _ ⟨_, values⟩ =>
     let mut parts : Array SSAVal := #[]
     for v in values do
-      let val ← translateExpr v
+      let (val, _) ← translateExpr v fwd
       parts := parts.push val
-    emitInstr "_tmp" none (.strConcat parts) sr
+    let result ← emitInstr "_tmp" none (.strConcat parts) sr
+    return (result, passFwd)
+
   | .FormattedValue _ value _ _ =>
-    let val ← translateExpr value
-    emitInstr "_tmp" none (.fmtValue val) sr
+    let (val, fv1) ← translateExpr value fwd
+    let result ← emitInstr "_tmp" none (.fmtValue val) sr
+    return (result, fv1)
+
   | .Interpolation _ value _ _ _ =>
-    let val ← translateExpr value
-    emitInstr "_tmp" none (.fmtValue val) sr
+    let (val, fv1) ← translateExpr value fwd
+    let result ← emitInstr "_tmp" none (.fmtValue val) sr
+    return (result, fv1)
+
   | .Starred _ value _ =>
-    translateExpr value
+    translateExpr value fwd
+
   | .BoolOp _ op ⟨_, values⟩ =>
-    translateBoolOp op values sr
+    translateBoolOp op values sr fwd
+
   | .IfExp _ test body orelse =>
-    translateIfExp test body orelse sr
-  -- Unsupported expressions: emit warning + unsupported instruction
+    translateIfExp test body orelse sr fwd
+
+  -- Unsupported expressions
   | .ListComp .. =>
     ssaWarn sr "unsupported ListComp"
-    emitInstr "_tmp" none (.unsupported "ListComp") sr
+    let v ← emitInstr "_tmp" none (.unsupported "ListComp") sr
+    return (v, passFwd)
   | .DictComp .. =>
     ssaWarn sr "unsupported DictComp"
-    emitInstr "_tmp" none (.unsupported "DictComp") sr
+    let v ← emitInstr "_tmp" none (.unsupported "DictComp") sr
+    return (v, passFwd)
   | .SetComp .. =>
     ssaWarn sr "unsupported SetComp"
-    emitInstr "_tmp" none (.unsupported "SetComp") sr
+    let v ← emitInstr "_tmp" none (.unsupported "SetComp") sr
+    return (v, passFwd)
   | .GeneratorExp .. =>
     ssaWarn sr "unsupported GeneratorExp"
-    emitInstr "_tmp" none (.unsupported "GeneratorExp") sr
+    let v ← emitInstr "_tmp" none (.unsupported "GeneratorExp") sr
+    return (v, passFwd)
   | .Lambda .. =>
     ssaWarn sr "unsupported Lambda"
-    emitInstr "_tmp" none (.unsupported "Lambda") sr
+    let v ← emitInstr "_tmp" none (.unsupported "Lambda") sr
+    return (v, passFwd)
   | .NamedExpr .. =>
     ssaWarn sr "unsupported NamedExpr"
-    emitInstr "_tmp" none (.unsupported "NamedExpr") sr
+    let v ← emitInstr "_tmp" none (.unsupported "NamedExpr") sr
+    return (v, passFwd)
   | .Yield .. =>
     ssaWarn sr "unsupported Yield"
-    emitInstr "_tmp" none (.unsupported "Yield") sr
+    let v ← emitInstr "_tmp" none (.unsupported "Yield") sr
+    return (v, passFwd)
   | .YieldFrom .. =>
     ssaWarn sr "unsupported YieldFrom"
-    emitInstr "_tmp" none (.unsupported "YieldFrom") sr
+    let v ← emitInstr "_tmp" none (.unsupported "YieldFrom") sr
+    return (v, passFwd)
   | .Await .. =>
     ssaWarn sr "unsupported Await"
-    emitInstr "_tmp" none (.unsupported "Await") sr
+    let v ← emitInstr "_tmp" none (.unsupported "Await") sr
+    return (v, passFwd)
   | _ =>
-    ssaError sr "Unsupported expression"
+    let v ← ssaError sr "Unsupported expression"
+    return (v, passFwd)
 where
   translateConstant (c : constant SourceRange) : SSAM SSAVal := do
     let sr := c.ann
@@ -427,12 +679,12 @@ where
     match op with
     | .Add .. => .add | .Sub .. => .sub | .Mult .. => .mult | .Div .. => .div
     | .FloorDiv .. => .floorDiv | .Mod .. => .mod | .Pow .. => .pow
-    | _ => .add  -- unsupported ops (bitwise etc.) — will emit error elsewhere
+    | _ => .add
 
   translateUnaryOp (op : unaryop SourceRange) : UnaryOpKind :=
     match op with
     | .Not .. => .not_ | .USub .. => .uSub
-    | _ => .not_  -- unsupported (Invert, UAdd)
+    | _ => .not_
 
   translateCmpOp (op : cmpop SourceRange) : CmpOpKind :=
     match op with
@@ -440,113 +692,184 @@ where
     | .Gt .. => .gt | .GtE .. => .gtE | .Is .. => .is_ | .IsNot .. => .isNot
     | .In .. => .in_ | .NotIn .. => .notIn
 
-  /-- Chained comparison: `a < b < c` → (a < b) and (b < c) with short-circuit.
-      Allocates n blocks for n comparators (n-1 eval + 1 join). -/
+  /-- Chained comparison with fwd threading. -/
   translateChainedCmp (leftVal : SSAVal)
       (ops : Array (cmpop SourceRange))
       (comparators : Array (expr SourceRange))
-      (sr : SourceRange) : SSAM SSAVal := do
-    -- Allocate blocks: one per comparator (n-1 continue + 1 join)
+      (sr : SourceRange) (fwd : Fwd) : SSAM (SSAVal × Array SSAVal) := do
     let n := comparators.size
+    -- Allocate blocks
     let mut blockIds : Array BlockId := #[]
     for _ in [:n] do
-      let bid ← allocExprBlock
+      let bid ← freshBlockId
       blockIds := blockIds.push bid
     let joinBlockId := blockIds.back!
-    -- First comparison
-    let mut prevRight ← translateExpr comparators[0]!
+    -- Prepend demand vars to fwd so they're threaded through sub-blocks
+    let demandFwd ← demandToFwd blockIds[0]! sr
+    let demandSize := demandFwd.size
+    let extFwd := demandFwd ++ fwd
+    -- First comparison: leftVal op[0] comparators[0]
+    let lvName ← valName leftVal
+    let mut fwd' := extFwd.push (lvName, leftVal)
+    let (firstRight, fwdVals1) ← translateExpr comparators[0]! fwd'
+    fwd' := zipFwd fwd' fwdVals1
+    let leftVal' := fwd'.back!.snd
+    fwd' := fwd'.pop
+    let mut prevRight := firstRight
     let mut cmpResult ← emitInstr "_tmp" none
-      (.compareOp (translateCmpOp ops[0]!) leftVal prevRight) sr
-    -- For each subsequent comparison, condBranch + eval
+      (.compareOp (translateCmpOp ops[0]!) leftVal' prevRight) sr
+    -- For each subsequent comparison
     for i in [1:n] do
       if h : i < n then
         let evalBlockId := blockIds[i - 1]!
-        -- If false, short-circuit to join; if true, continue
-        finishBlock (.condBranch cmpResult evalBlockId #[] joinBlockId #[cmpResult]) sr
-          evalBlockId #[]
-        let nextRight ← translateExpr comparators[i]
-        cmpResult ← emitInstr "_tmp" none
-          (.compareOp (translateCmpOp ops[i]!) prevRight nextRight) sr
+        -- Thread fwd + prevRight through blocks
+        let prName ← valName prevRight
+        let fwdWithPrev := fwd'.push (prName, prevRight)
+        let fwdArgs := fwdVals fwdWithPrev
+        let joinArgs := #[cmpResult] ++ fwdArgs
+        -- short-circuit: false → join, true → continue
+        let (evalParams, evalFwd) ← fwdToParams fwdWithPrev sr
+        bindDemandFwd evalFwd demandSize
+        finishBlock (.condBranch cmpResult evalBlockId fwdArgs joinBlockId joinArgs) sr
+          evalParams
+        fwd' := evalFwd.pop  -- pop prevRight, keep the rest
+        prevRight := evalFwd.back!.snd
+        let (nextRight, fwdVals') ← translateExpr comparators[i] evalFwd
+        fwd' := zipFwd fwd' fwdVals'.pop
         prevRight := nextRight
-    -- After last comparison, branch to join
+        cmpResult ← emitInstr "_tmp" none
+          (.compareOp (translateCmpOp ops[i]!) (evalFwd.back!.snd) nextRight) sr
+    -- Branch to join with final result
     let resultVal ← freshVal "_tmp" sr
+    let joinFwdParams ← fwd'.mapM fun (name, _) => do
+      let v ← freshVal name sr
+      return { val := v, type := none, sr : BlockParam }
     let joinParam : BlockParam := { val := resultVal, type := none, sr }
-    finishBlock (.branch joinBlockId #[cmpResult]) sr joinBlockId #[joinParam]
-    return resultVal
+    let allJoinParams := #[joinParam] ++ joinFwdParams
+    let joinArgs := #[cmpResult] ++ fwdVals fwd'
+    finishBlock (.branch joinBlockId joinArgs) sr allJoinParams
+    -- Rebind demand vars from join params, then strip demand prefix
+    for i in [:demandSize] do
+      if h : i < joinFwdParams.size then
+        bindVar fwd'[i]!.fst joinFwdParams[i].val
+    let joinFwdVals := (joinFwdParams.extract demandSize joinFwdParams.size).map (·.val)
+    return (resultVal, joinFwdVals)
 
-  /-- Short-circuit BoolOp: `a and b` / `a or b` → condBranch chain.
-      For `and`: short-circuits to join with current value on false.
-      For `or`: short-circuits to join with current value on true. -/
+  /-- Short-circuit BoolOp with fwd threading. -/
   translateBoolOp (op : boolop SourceRange) (values : Array (expr SourceRange))
-      (sr : SourceRange) : SSAM SSAVal := do
+      (sr : SourceRange) (fwd : Fwd) : SSAM (SSAVal × Array SSAVal) := do
     if values.size < 2 then
-      if h : values.size > 0 then translateExpr values[0]
-      else ssaError sr "Empty BoolOp"
+      if h : values.size > 0 then translateExpr values[0] fwd
+      else
+        let v ← ssaError sr "Empty BoolOp"
+        return (v, fwdVals fwd)
     else
-      -- Allocate n blocks: n-1 eval blocks + 1 join
+      let n := values.size
+      -- Allocate blocks: n-1 eval + 1 join
       let mut blockIds : Array BlockId := #[]
-      for _ in [:values.size] do
-        let bid ← allocExprBlock
+      for _ in [:n] do
+        let bid ← freshBlockId
         blockIds := blockIds.push bid
       let joinBlockId := blockIds.back!
-      -- Evaluate first operand in current block
-      let mut lastVal ← translateExpr values[0]!
+      -- Prepend demand vars to fwd
+      let demandFwd ← demandToFwd blockIds[0]! sr
+      let demandSize := demandFwd.size
+      let extFwd := demandFwd ++ fwd
+      -- Evaluate first operand
+      let (firstVal, fwdVals1) ← translateExpr values[0]! extFwd
+      let mut fwd' := zipFwd extFwd fwdVals1
+      let mut lastVal := firstVal
       -- For each subsequent operand: condBranch + eval
-      for i in [1:values.size] do
-        if h : i < values.size then
+      for i in [1:n] do
+        if h : i < n then
           let evalBlockId := blockIds[i - 1]!
+          let fwdArgs := fwdVals fwd'
+          let joinArgs := #[lastVal] ++ fwdArgs
+          let (evalParams, evalFwd) ← fwdToParams fwd' sr
+          bindDemandFwd evalFwd demandSize
           match op with
           | .And _ =>
-            -- and: true → continue evaluating, false → short-circuit to join
-            finishBlock (.condBranch lastVal evalBlockId #[] joinBlockId #[lastVal]) sr
-              evalBlockId #[]
+            finishBlock (.condBranch lastVal evalBlockId fwdArgs joinBlockId joinArgs) sr
+              evalParams
           | .Or _ =>
-            -- or: true → short-circuit to join, false → continue evaluating
-            finishBlock (.condBranch lastVal joinBlockId #[lastVal] evalBlockId #[]) sr
-              evalBlockId #[]
-          lastVal ← translateExpr values[i]
-      -- After last operand, branch to join
+            finishBlock (.condBranch lastVal joinBlockId joinArgs evalBlockId fwdArgs) sr
+              evalParams
+          fwd' := evalFwd
+          let (val, fwdVals') ← translateExpr values[i] evalFwd
+          fwd' := zipFwd fwd' fwdVals'
+          lastVal := val
+      -- Branch to join
       let resultVal ← freshVal "_tmp" sr
+      let joinFwdParams ← fwd'.mapM fun (name, _) => do
+        let v ← freshVal name sr
+        return { val := v, type := none, sr : BlockParam }
       let joinParam : BlockParam := { val := resultVal, type := none, sr }
-      finishBlock (.branch joinBlockId #[lastVal]) sr joinBlockId #[joinParam]
-      return resultVal
+      let allJoinParams := #[joinParam] ++ joinFwdParams
+      let joinArgs := #[lastVal] ++ fwdVals fwd'
+      finishBlock (.branch joinBlockId joinArgs) sr allJoinParams
+      -- Rebind demand vars from join params, then strip demand prefix
+      for i in [:demandSize] do
+        if h : i < joinFwdParams.size then
+          bindVar fwd'[i]!.fst joinFwdParams[i].val
+      let joinFwdVals := (joinFwdParams.extract demandSize joinFwdParams.size).map (·.val)
+      return (resultVal, joinFwdVals)
 
-  /-- Ternary IfExp: `body if test else orelse` → condBranch + join. -/
+  /-- IfExp with fwd threading. -/
   translateIfExp (test body orelse : expr SourceRange)
-      (sr : SourceRange) : SSAM SSAVal := do
-    let condVal ← translateExpr test
-    let thenBlockId ← allocExprBlock
-    let elseBlockId ← allocExprBlock
-    let joinBlockId ← allocExprBlock
-    -- condBranch to then/else (no block params for expr-level blocks)
-    finishBlock (.condBranch condVal thenBlockId #[] elseBlockId #[]) sr
-      thenBlockId #[]
-    -- Then block: evaluate body, branch to join
-    let bodyVal ← translateExpr body
-    finishBlock (.branch joinBlockId #[bodyVal]) sr
-      elseBlockId #[]
-    -- Else block: evaluate orelse, branch to join
-    let orelseVal ← translateExpr orelse
+      (sr : SourceRange) (fwd : Fwd) : SSAM (SSAVal × Array SSAVal) := do
+    let (condVal, fwdVals1) ← translateExpr test fwd
+    let fwd1 := zipFwd fwd fwdVals1
+    let thenBlockId ← freshBlockId
+    let elseBlockId ← freshBlockId
+    let joinBlockId ← freshBlockId
+    -- Prepend demand vars to fwd
+    let demandFwd ← demandToFwd thenBlockId sr
+    let demandSize := demandFwd.size
+    let extFwd := demandFwd ++ fwd1
+    let fwdArgs := fwdVals extFwd
+    -- condBranch with fwd as extra args
+    let (thenParams, thenFwd) ← fwdToParams extFwd sr
+    bindDemandFwd thenFwd demandSize
+    finishBlock (.condBranch condVal thenBlockId fwdArgs elseBlockId fwdArgs) sr
+      thenParams
+    -- Then block
+    let (bodyVal, thenFwdVals) ← translateExpr body thenFwd
+    let thenJoinArgs := #[bodyVal] ++ thenFwdVals
+    let (elseParams, elseFwd) ← fwdToParams extFwd sr
+    bindDemandFwd elseFwd demandSize
+    finishBlock (.branch joinBlockId thenJoinArgs) sr elseParams
+    -- Else block
+    let (orelseVal, elseFwdVals) ← translateExpr orelse elseFwd
+    let elseJoinArgs := #[orelseVal] ++ elseFwdVals
+    -- Join block
     let resultVal ← freshVal "_tmp" sr
+    let joinFwdParams ← extFwd.mapM fun (name, _) => do
+      let v ← freshVal name sr
+      return { val := v, type := none, sr : BlockParam }
     let joinParam : BlockParam := { val := resultVal, type := none, sr }
-    finishBlock (.branch joinBlockId #[orelseVal]) sr joinBlockId #[joinParam]
-    return resultVal
+    let allJoinParams := #[joinParam] ++ joinFwdParams
+    finishBlock (.branch joinBlockId elseJoinArgs) sr allJoinParams
+    -- Rebind demand vars from join params, then strip demand prefix
+    for i in [:demandSize] do
+      if h : i < joinFwdParams.size then
+        bindVar extFwd[i]!.fst joinFwdParams[i].val
+    let joinFwdVals := (joinFwdParams.extract demandSize joinFwdParams.size).map (·.val)
+    return (resultVal, joinFwdVals)
 
 /-! ## Statement Translation -/
 
-/-- Context passed down during body translation. -/
 structure BodyCtx where
-  /-- All variables in scope (for conservative block params at joins). -/
-  allVars : Array String
-  /-- Loop continue target (header block), if inside a loop. -/
+  demandArr : Array Blockify.DemandVars := #[]
   continueTarget : Option BlockId := none
-  /-- Loop break target (end block), if inside a loop. -/
   breakTarget : Option BlockId := none
-  /-- Active exception handler block, if inside a try. -/
   handlerTarget : Option BlockId := none
 
-/-- Build block arguments for a branch to a join/loop block.
-    Looks up each var in allVars in the current varEnv. -/
+/-- Look up demand vars for a given block ID.
+    Falls back to allVars if the demand array doesn't cover this block. -/
+@[inline]
+def BodyCtx.demandVarsFor (ctx : BodyCtx) (blockId : BlockId) (h : blockId.id < ctx.demandArr.size ) : Array String :=
+  ctx.demandArr[ctx.demandArr.size - (blockId.id + 1)]
+
 def buildBranchArgs (allVars : Array String) (sr : SourceRange)
     : SSAM (Array SSAVal) := do
   let mut args : Array SSAVal := #[]
@@ -555,13 +878,11 @@ def buildBranchArgs (allVars : Array String) (sr : SourceRange)
     match s.varEnv[v]? with
     | some (.local val) => args := args.push val
     | _ =>
-      -- Variable not assigned on this path → emit undef and cache it
       let uv ← emitInstr v none (.undef v) sr
       bindVar v uv
       args := args.push uv
   return args
 
-/-- Build block parameters from allVars for a join/loop block. -/
 def buildBlockParams (allVars : Array String) (sr : SourceRange)
     : SSAM (Array BlockParam) := do
   let mut params : Array BlockParam := #[]
@@ -571,16 +892,48 @@ def buildBlockParams (allVars : Array String) (sr : SourceRange)
     bindVar v val
   return params
 
+/-- Build branch args for a target block, including scope extras from state. -/
+def buildBranchArgsCtx (targetBlock : BlockId) (bodyCtx : BodyCtx)
+    (sr : SourceRange) : SSAM (Array SSAVal) := do
+
+  let .isTrue h := decideProp (targetBlock.id < bodyCtx.demandArr.size)
+    | let _ ← ssaError sr "internal error: Invalid target block index"
+      return #[]
+  let mut args ← buildBranchArgs (bodyCtx.demandVarsFor targetBlock h) sr
+  let extras := (← get).scopeExtras
+  for (_, val) in extras do
+    args := args.push val
+  return args
+
+/-- Build block params for entering a block, including scope extras.
+    Updates scopeExtras in state with fresh SSAVals. -/
+def buildBlockParamsCtx (blockId : BlockId) (bodyCtx : BodyCtx)
+    (sr : SourceRange) : SSAM (Array BlockParam) := do
+
+  let .isTrue h := decideProp (blockId.id < bodyCtx.demandArr.size)
+    | let _ ← ssaError sr "internal error: Invalid target block index"
+      return #[]
+  let mut params ← buildBlockParams (bodyCtx.demandVarsFor blockId h) sr
+  let extras := (← get).scopeExtras
+  let mut newExtras : Array (String × SSAVal) := #[]
+  for (name, _) in extras do
+    let val ← freshVal name sr
+    params := params.push { val, type := none, sr }
+    newExtras := newExtras.push (name, val)
+  modify fun s => { s with scopeExtras := newExtras }
+  return params
+
 /-- Translate a simple statement. Returns true if a terminator was emitted. -/
 partial def translateSimpleStmt (s : stmt SourceRange) (bodyCtx : BodyCtx)
     : SSAM Bool := do
   let sr := s.ann
+  -- Simple statements don't create expression blocks in practice, so fwd=#[]
+  let fwd : Fwd := #[]
   match s with
   | .Assign _ ⟨_, targets⟩ value _ =>
     let instrsBefore := (← get).currentInstrs.size
-    let val ← translateExpr value
+    let (val, _) ← translateExpr value fwd
     let instrsAfter := (← get).currentInstrs.size
-    -- Rename result to first Name target if a new instruction was emitted
     if instrsAfter > instrsBefore then
       if h : targets.size > 0 then
         match targets[0] with
@@ -595,7 +948,7 @@ partial def translateSimpleStmt (s : stmt SourceRange) (bodyCtx : BodyCtx)
     match value with
     | some v =>
       let instrsBefore := (← get).currentInstrs.size
-      let val ← translateExpr v
+      let (val, _) ← translateExpr v fwd
       let instrsAfter := (← get).currentInstrs.size
       if instrsAfter > instrsBefore then
         match target with
@@ -605,31 +958,29 @@ partial def translateSimpleStmt (s : stmt SourceRange) (bodyCtx : BodyCtx)
         | some ty => setValType val ty
         | none => pure ()
       assignToTarget target val
-    | none => pure ()  -- annotation-only, no assignment
+    | none => pure ()
     return false
 
   | .AugAssign _ target op value =>
-    let targetVal ← translateExpr target
-    let rhsVal ← translateExpr value
+    let (targetVal, _) ← translateExpr target fwd
+    let (rhsVal, _) ← translateExpr value fwd
     let opKind := match op with
       | .Add .. => BinOpKind.add | .Sub .. => .sub | .Mult .. => .mult
       | .Div .. => .div | .FloorDiv .. => .floorDiv | .Mod .. => .mod
       | .Pow .. => .pow | _ => .add
-    -- Use target name for the result
     let baseName := match target with
-      | .Name _ ⟨_, name⟩ _ => name
-      | _ => "_tmp"
+      | .Name _ ⟨_, name⟩ _ => name | _ => "_tmp"
     let result ← emitInstr baseName none (.binOp opKind targetVal rhsVal) sr
     assignToTarget target result
     return false
 
   | .Expr _ value =>
-    let _ ← translateExpr value
+    let _ ← translateExpr value fwd
     return false
 
   | .Return _ ⟨_, value⟩ =>
     let retVal ← match value with
-      | some v => some <$> translateExpr v
+      | some v => let (rv, _) ← translateExpr v fwd; pure (some rv)
       | none => pure none
     finishBlockWithTerm (.ret retVal) sr
     return true
@@ -637,7 +988,7 @@ partial def translateSimpleStmt (s : stmt SourceRange) (bodyCtx : BodyCtx)
   | .Raise _ ⟨_, exc⟩ _ =>
     match exc with
     | some e =>
-      let excVal ← translateExpr e
+      let (excVal, _) ← translateExpr e fwd
       finishBlockWithTerm (.raise excVal) sr
     | none =>
       let _ ← ssaError sr "bare raise not yet supported"
@@ -647,7 +998,7 @@ partial def translateSimpleStmt (s : stmt SourceRange) (bodyCtx : BodyCtx)
   | .Break .. =>
     match bodyCtx.breakTarget with
     | some target =>
-      let args ← buildBranchArgs bodyCtx.allVars sr
+      let args ← buildBranchArgsCtx target bodyCtx sr
       finishBlockWithTerm (.branch target args) sr
     | none =>
       let _ ← ssaError sr "break outside loop"
@@ -657,7 +1008,7 @@ partial def translateSimpleStmt (s : stmt SourceRange) (bodyCtx : BodyCtx)
   | .Continue .. =>
     match bodyCtx.continueTarget with
     | some target =>
-      let args ← buildBranchArgs bodyCtx.allVars sr
+      let args ← buildBranchArgsCtx target bodyCtx sr
       finishBlockWithTerm (.branch target args) sr
     | none =>
       let _ ← ssaError sr "continue outside loop"
@@ -665,9 +1016,9 @@ partial def translateSimpleStmt (s : stmt SourceRange) (bodyCtx : BodyCtx)
     return true
 
   | .Assert _ test ⟨_, msg⟩ =>
-    let testVal ← translateExpr test
+    let (testVal, _) ← translateExpr test fwd
     let msgVal ← match msg with
-      | some m => some <$> translateExpr m
+      | some m => let (mv, _) ← translateExpr m fwd; pure (some mv)
       | none => pure none
     let _ ← emitInstr "_tmp" none (.assert_ testVal msgVal) sr
     return false
@@ -684,403 +1035,422 @@ partial def translateSimpleStmt (s : stmt SourceRange) (bodyCtx : BodyCtx)
 
   | .ImportFrom _ ⟨_, modOpt⟩ ⟨_, aliases⟩ _ =>
     let modName := match modOpt with
-      | some ⟨_, m⟩ => m
-      | none => "unknown"
+      | some ⟨_, m⟩ => m | none => "unknown"
     for a in aliases do
       let qn := QualifiedName.mk' modName a.name
       let localName := a.asname.getD a.name
       bindQualified localName qn
     return false
 
-  | .Delete .. =>
-    ssaWarn sr "delete statement ignored"
-    return false
-
-  | .Global .. | .Nonlocal .. =>
-    return false
+  | .Delete .. => ssaWarn sr "delete statement ignored"; return false
+  | .Global .. | .Nonlocal .. => return false
 
   | .FunctionDef _ ⟨_, name⟩ _ _ _ _ _ _ =>
     let cfg ← read
-    let qn := QualifiedName.mk' cfg.moduleName name
-    bindQualified name qn
+    bindQualified name (QualifiedName.mk' cfg.moduleName name)
     return false
 
   | .ClassDef _ ⟨_, name⟩ _ _ _ _ _ =>
     let cfg ← read
-    let qn := QualifiedName.mk' cfg.moduleName name
-    bindQualified name qn
+    bindQualified name (QualifiedName.mk' cfg.moduleName name)
     return false
 
   | _ =>
     let _ ← ssaError sr "Unsupported statement"
     return false
 where
-  /-- Assign a value to a target expression (Name, Tuple, etc.). -/
   assignToTarget (target : expr SourceRange) (val : SSAVal) : SSAM Unit := do
     match target with
     | .Name _ ⟨_, name⟩ _ => bindVar name val
-    | .Tuple _ ⟨_, elts⟩ _ =>
-      for i in [:elts.size] do
-        if h : i < elts.size then
-          let idx ← emitInstr "_tmp" none (.intLit i) target.ann
-          let elem ← emitInstr "_tmp" none (.getItem val idx) target.ann
-          assignToTarget elts[i] elem
-    | .List _ ⟨_, elts⟩ _ =>
+    | .Tuple _ ⟨_, elts⟩ _ | .List _ ⟨_, elts⟩ _ =>
       for i in [:elts.size] do
         if h : i < elts.size then
           let idx ← emitInstr "_tmp" none (.intLit i) target.ann
           let elem ← emitInstr "_tmp" none (.getItem val idx) target.ann
           assignToTarget elts[i] elem
     | .Attribute _ obj ⟨_, attrName⟩ _ =>
-      let objV ← translateExpr obj
+      let (objV, _) ← translateExpr obj #[]
       emitVoidInstr (.setAttr objV attrName val) target.ann
     | .Subscript _ obj key _ =>
-      let objV ← translateExpr obj
-      let keyV ← translateExpr key
+      let (objV, _) ← translateExpr obj #[]
+      let (keyV, _) ← translateExpr key #[]
       emitVoidInstr (.setItem objV keyV val) target.ann
     | _ => ssaWarn target.ann "Unsupported assignment target"
 
-  /-- Finalize the current block with a terminator (no next block). -/
-  finishBlockWithTerm (term : Terminator) (termSr : SourceRange) : SSAM Unit := do
-    let s ← get
-    let block : Block := {
-      id := s.currentBlockId
-      params := s.currentParams
-      instrs := s.currentInstrs
-      term, termSr
-      except := s.currentExcept
-    }
-    set { s with
-      blocks := s.blocks.push block
-      currentInstrs := #[]
-    }
+/-! ## Compound Statement Translation (Direct AST Traversal) -/
 
-/-! ## BlockTree DFS Traversal -/
-
-/-- Translate an Array BlockTree (the body of a function or compound stmt).
-    Returns true if the body terminated (return/raise/break/continue on all paths),
-    meaning the current block was already finalized and no fall-through occurs. -/
-partial def translateBody (nodes : Array BlockTree) (bodyCtx : BodyCtx)
+/-- Translate an array of statements. Handles simple statements inline and
+    decomposes compound statements (if/for/while/try/with) into blocks.
+    Returns true if terminated on all paths. -/
+partial def translateBody (stmts : Array (stmt SourceRange)) (bodyCtx : BodyCtx)
     : SSAM Bool := do
   let mut terminated := false
-  for node in nodes do
-    if terminated then break  -- dead code after terminator
-    match node with
-    | .stmts slice exprBlockStart exprBlockCount =>
-      setExprBlockRange exprBlockStart exprBlockCount
-      for s in slice do
-        let isTerminator ← translateSimpleStmt s bodyCtx
-        if isTerminator then
-          terminated := true
-          break
-
-    | .ifStmt test body orelse thenBlock elseBlock joinBlock
-        exprBlockStart exprBlockCount sr =>
-      setExprBlockRange exprBlockStart exprBlockCount
-      let condVal ← translateExpr test
-      -- Save varEnv before branching
-      let preIfEnv := (← get).varEnv
-      -- Branch to then/else
-      let thenArgs ← buildBranchArgs bodyCtx.allVars sr
-      let elseArgs ← buildBranchArgs bodyCtx.allVars sr
-      finishBlock (.condBranch condVal (toBlockId thenBlock) thenArgs
-                              (toBlockId elseBlock) elseArgs) sr
-        (toBlockId thenBlock) #[]
-      -- Then block
-      let thenParams ← buildBlockParams bodyCtx.allVars sr
+  for s in stmts do
+    if terminated then break
+    if isSimpleStmt s then
+      let isTerminator ← translateSimpleStmt s bodyCtx
+      if isTerminator then
+        terminated := true
+    else
+      let compoundTerminated ← translateCompound s bodyCtx
+      if compoundTerminated then
+        terminated := true
+  return terminated
+where
+  /-- Translate a compound statement. -/
+  translateCompound (s : stmt SourceRange) (bodyCtx : BodyCtx) : SSAM Bool := do
+    let sr := s.ann
+    match s with
+    | .If _ test ⟨_, body⟩ ⟨_, orelse⟩ =>
+      let thenBlock ← freshBlockId
+      let elseBlock ← freshBlockId
+      let joinBlock ← freshBlockId
+      let (condVal, _) ← translateExpr test #[]
+      let thenArgs ← buildBranchArgsCtx thenBlock bodyCtx sr
+      let elseArgs ← buildBranchArgsCtx elseBlock bodyCtx sr
+      finishBlock (.condBranch condVal thenBlock thenArgs elseBlock elseArgs) sr #[]
+      -- Then
+      let savedEnv ← get >>= fun s => pure s.varEnv
+      let thenParams ← buildBlockParamsCtx thenBlock bodyCtx sr
       modify fun s => { s with currentParams := thenParams }
       let thenTerminated ← translateBody body bodyCtx
-      -- Branch to join only if then-body didn't already terminate
+      let mut terminated := false
       if !thenTerminated then
-        let joinArgsFromThen ← buildBranchArgs bodyCtx.allVars sr
-        finishBlock (.branch (toBlockId joinBlock) joinArgsFromThen) sr
-          (toBlockId elseBlock) #[]
+        let joinArgs ← buildBranchArgsCtx joinBlock bodyCtx sr
+        finishBlock (.branch joinBlock joinArgs) sr #[]
       else
-        startNewBlock (toBlockId elseBlock) #[]
-      -- Else block: restore pre-if env
-      modify fun s => { s with varEnv := preIfEnv }
-      let elseParams ← buildBlockParams bodyCtx.allVars sr
+        startNewBlock #[]
+      -- Else
+      modify fun s => { s with varEnv := savedEnv }
+      let elseParams ← buildBlockParamsCtx elseBlock bodyCtx sr
       modify fun s => { s with currentParams := elseParams }
       let elseTerminated ← translateBody orelse bodyCtx
       if !elseTerminated then
-        let joinArgsFromElse ← buildBranchArgs bodyCtx.allVars sr
-        finishBlock (.branch (toBlockId joinBlock) joinArgsFromElse) sr
-          (toBlockId joinBlock) #[]
+        let joinArgs ← buildBranchArgsCtx joinBlock bodyCtx sr
+        finishBlock (.branch joinBlock joinArgs) sr #[]
       else
-        startNewBlock (toBlockId joinBlock) #[]
-      -- Join block
-      let joinParams ← buildBlockParams bodyCtx.allVars sr
+        if thenTerminated then terminated := true
+        startNewBlock #[]
+      -- Join
+      let joinParams ← buildBlockParamsCtx joinBlock bodyCtx sr
       modify fun s => { s with currentParams := joinParams }
-      -- If both branches terminated, the join block is unreachable
-      if thenTerminated && elseTerminated then
-        terminated := true
+      return terminated
 
-    | .forLoop target iter body orelse iterInitBlock headerBlock endBlock
-        exprBlockStart exprBlockCount sr =>
-      setExprBlockRange exprBlockStart exprBlockCount
-      -- Evaluate iterable
-      let iterVal ← translateExpr iter
-      -- Branch to iterInit
-      let initArgs ← buildBranchArgs bodyCtx.allVars sr
-      finishBlock (.branch (toBlockId iterInitBlock) initArgs) sr
-        (toBlockId iterInitBlock) #[]
-      -- IterInit block: call builtins.iter
-      let initParams ← buildBlockParams bodyCtx.allVars sr
+    | .For _ target iter ⟨_, body⟩ ⟨_, orelse⟩ _ =>
+      let iterInitBlock ← freshBlockId
+      let headerBlock ← freshBlockId
+      let endBlock ← freshBlockId
+      -- Evaluate iterable, then push it as a scope extra for iterInitBlock
+      let (iterVal, _) ← translateExpr iter #[]
+      let savedExtras := (← get).scopeExtras
+      modify fun s => { s with scopeExtras := s.scopeExtras.push ("_iterable", iterVal) }
+      let initArgs ← buildBranchArgsCtx iterInitBlock bodyCtx sr
+      finishBlock (.branch iterInitBlock initArgs) sr #[]
+      -- IterInit: call iter() on the iterable param
+      let initParams ← buildBlockParamsCtx iterInitBlock bodyCtx sr
       modify fun s => { s with currentParams := initParams }
+      -- The iterable is now the last scope extra
+      let iterableVal := (← get).scopeExtras.back!.snd
       let iterRef ← emitInstr "_iter" none
         (.qualifiedRef (QualifiedName.mk' "builtins" "iter")) sr
       let iterObj ← emitInstr "_iter" none
-        (.call iterRef #[.positional iterVal]) sr
-      bindVar "_iter" iterObj
-      let headerArgs ← buildBranchArgs bodyCtx.allVars sr
-      finishBlock (.branch (toBlockId headerBlock) headerArgs) sr
-        (toBlockId headerBlock) #[]
-      -- Header block: call builtins.next, unpack target
-      let headerParams ← buildBlockParams bodyCtx.allVars sr
-      modify fun s => {s with
+        (.call iterRef #[.positional iterableVal]) sr
+      -- Replace _iterable with _iter in scope extras for the loop body
+      modify fun s => { s with scopeExtras := s.scopeExtras.pop.push ("_iter", iterObj) }
+      let headerArgs ← buildBranchArgsCtx headerBlock bodyCtx sr
+      finishBlock (.branch headerBlock headerArgs) sr #[]
+      -- Header: call next(), assign target
+      let headerParams ← buildBlockParamsCtx headerBlock bodyCtx sr
+      modify fun s => { s with
         currentParams := headerParams
-        currentExcept := some { target := toBlockId endBlock }
+        currentExcept := some { target := endBlock }
       }
+      let iterVar := (← get).scopeExtras.back!.snd
       let nextRef ← emitInstr "_tmp" none
         (.qualifiedRef (QualifiedName.mk' "builtins" "next")) sr
-      let iterVar ← lookupVar "_iter" sr
       let nextVal ← emitInstr "_tmp" none (.call nextRef #[.positional iterVar]) sr
-      -- Assign loop variable
       assignTarget target nextVal
-      -- Translate body with loop context
       let loopCtx := { bodyCtx with
-        continueTarget := some (toBlockId headerBlock)
-        breakTarget := some (toBlockId endBlock)
+        continueTarget := some headerBlock
+        breakTarget := some endBlock
       }
       let bodyTerminated ← translateBody body loopCtx
-      -- Back edge to header only if body didn't terminate
       if !bodyTerminated then
-        let backArgs ← buildBranchArgs bodyCtx.allVars sr
-        finishBlock (.branch (toBlockId headerBlock) backArgs) sr
-          (toBlockId endBlock) #[]
+        let backArgs ← buildBranchArgsCtx headerBlock bodyCtx sr
+        finishBlock (.branch headerBlock backArgs) sr #[]
       else
-        startNewBlock (toBlockId endBlock) #[]
-      -- End block (StopIteration caught)
-      modify fun s => { s with currentExcept := none }
-      let endParams ← buildBlockParams bodyCtx.allVars sr
+        startNewBlock #[]
+      -- End block: restore scope extras (remove _iter)
+      modify fun s => { s with
+        currentExcept := none
+        scopeExtras := savedExtras
+      }
+      let endParams ← buildBlockParamsCtx endBlock bodyCtx sr
       modify fun s => { s with currentParams := endParams }
-      -- Handle orelse (for..else)
       let orelseTerminated ← translateBody orelse bodyCtx
-      if orelseTerminated then
-        terminated := true
+      return orelseTerminated
 
-    | .whileLoop test body orelse testBlock bodyBlock endBlock
-        exprBlockStart exprBlockCount sr =>
-      -- Branch to test block
-      let testArgs ← buildBranchArgs bodyCtx.allVars sr
-      finishBlock (.branch (toBlockId testBlock) testArgs) sr
-        (toBlockId testBlock) #[]
+    | .While _ test ⟨_, body⟩ ⟨_, orelse⟩ =>
+      let testBlock ← freshBlockId
+      let bodyBlock ← freshBlockId
+      let endBlock ← freshBlockId
+      let testArgs ← buildBranchArgsCtx testBlock bodyCtx sr
+      finishBlock (.branch testBlock testArgs) sr #[]
       -- Test block
-      let testParams ← buildBlockParams bodyCtx.allVars sr
+      let testParams ← buildBlockParamsCtx testBlock bodyCtx sr
       modify fun s => { s with currentParams := testParams }
-      setExprBlockRange exprBlockStart exprBlockCount
-      let condVal ← translateExpr test
-      let thenArgs ← buildBranchArgs bodyCtx.allVars sr
-      let elseArgs ← buildBranchArgs bodyCtx.allVars sr
-      finishBlock (.condBranch condVal (toBlockId bodyBlock) thenArgs
-                              (toBlockId endBlock) elseArgs) sr
-        (toBlockId bodyBlock) #[]
-      let bodyParams ← buildBlockParams bodyCtx.allVars sr
+      let (condVal, _) ← translateExpr test #[]
+      let thenArgs ← buildBranchArgsCtx bodyBlock bodyCtx sr
+      let elseArgs ← buildBranchArgsCtx endBlock bodyCtx sr
+      finishBlock (.condBranch condVal bodyBlock thenArgs endBlock elseArgs) sr #[]
+      -- Body
+      let bodyParams ← buildBlockParamsCtx bodyBlock bodyCtx sr
       modify fun s => { s with currentParams := bodyParams }
       let loopCtx := { bodyCtx with
-        continueTarget := some (toBlockId testBlock)
-        breakTarget := some (toBlockId endBlock)
+        continueTarget := some testBlock
+        breakTarget := some endBlock
       }
       let bodyTerminated ← translateBody body loopCtx
-      -- Back edge to test only if body didn't terminate
       if !bodyTerminated then
-        let backArgs ← buildBranchArgs bodyCtx.allVars sr
-        finishBlock (.branch (toBlockId testBlock) backArgs) sr
-          (toBlockId endBlock) #[]
+        let backArgs ← buildBranchArgsCtx testBlock bodyCtx sr
+        finishBlock (.branch testBlock backArgs) sr #[]
       else
-        startNewBlock (toBlockId endBlock) #[]
+        startNewBlock #[]
       -- End block
-      let endParams ← buildBlockParams bodyCtx.allVars sr
+      let endParams ← buildBlockParamsCtx endBlock bodyCtx sr
       modify fun s => { s with currentParams := endParams }
       let orelseTerminated ← translateBody orelse bodyCtx
-      if orelseTerminated then
-        terminated := true
+      return orelseTerminated
 
-    | .tryExcept body handlers orelse finally_ joinBlock finallyBlock
-        reraiseBlock exprBlockStart exprBlockCount sr =>
-      setExprBlockRange exprBlockStart exprBlockCount
-      -- Determine first handler block (exception target for try body)
-      let firstHandlerBid := if h : handlers.size > 0 then
-        match handlers[0] with | .mk _ _ _ bid _ _ => bid
-      else joinBlock  -- try/finally without except
-      -- Where to go after handlers: finally if present, else join
+    | .Try _ ⟨_, body⟩ ⟨_, handlers⟩ ⟨_, orelse⟩ ⟨_, finalbody⟩ =>
+      -- Allocate handler blocks
+      let mut handlerBlocks : Array (BlockId × Option (expr SourceRange) × Option String × Array (stmt SourceRange)) := #[]
+      let mut handlerBodyBlocks : Array (Option BlockId) := #[]
+      let mut lastHandlerIsTyped := false
+      for h in handlers do
+        match h with
+        | .ExceptHandler _ ⟨_, exType⟩ errname ⟨_, hBody⟩ =>
+          let hBlock ← freshBlockId
+          let hBodyBlock ← match exType with
+            | some _ => some <$> freshBlockId
+            | none => pure none
+          lastHandlerIsTyped := exType.isSome
+          let handlerName := match errname.val with
+            | some ⟨_, name⟩ => some name | none => none
+          handlerBlocks := handlerBlocks.push (hBlock, exType, handlerName, hBody)
+          handlerBodyBlocks := handlerBodyBlocks.push hBodyBlock
+      -- Allocate in emission order: finally, reraise, join (join is always last)
+      let finallyBlock ← if finalbody.isEmpty then pure none else some <$> freshBlockId
+      let reraiseBlock ← if lastHandlerIsTyped || !finalbody.isEmpty
+        then some <$> freshBlockId else pure none
+      let joinBlock ← freshBlockId
+      -- afterTarget: where normal completion (handlers/orelse) goes next
       let afterTarget := match finallyBlock with
-        | some fb => toBlockId fb
-        | none => toBlockId joinBlock
-      -- Set except target and translate try body
-      modify fun s => { s with currentExcept := some { target := toBlockId firstHandlerBid } }
+        | some fb => fb | none => joinBlock
+      -- excTarget: where unhandled exceptions from try body go
+      -- With handlers: first handler. Without: finally (if present) or join.
+      let excTarget := if h : handlerBlocks.size > 0 then
+        handlerBlocks[0].1
+      else match finallyBlock with
+        | some fb => fb | none => joinBlock
+      -- Set except and translate try body
+      modify fun s => { s with currentExcept := some { target := excTarget } }
       let bodyTerminated ← translateBody body bodyCtx
       modify fun s => { s with currentExcept := none }
-      -- Normal path: try succeeded → orelse → afterTarget
+      -- Normal path → orelse → afterTarget
+      -- For finally: normal path passes undef("_exc") sentinel
       if !bodyTerminated then
         let orelseTerminated ← translateBody orelse bodyCtx
         if !orelseTerminated then
-          let args ← buildBranchArgs bodyCtx.allVars sr
-          finishBlock (.branch afterTarget args) sr (toBlockId firstHandlerBid) #[]
+          let mut args ← buildBranchArgsCtx afterTarget bodyCtx sr
+          if finallyBlock.isSome then
+            let sentinel ← emitInstr "_exc" none (.undef "_exc") sr
+            args := args.push sentinel
+          finishBlock (.branch afterTarget args) sr #[]
         else
-          startNewBlock (toBlockId firstHandlerBid) #[]
+          startNewBlock #[]
       else
-        startNewBlock (toBlockId firstHandlerBid) #[]
-      -- Handler blocks: each receives allVars + _exc
-      for i in [:handlers.size] do
-        if h : i < handlers.size then
-          match handlers[i] with
-          | .mk typeExpr handlerName handlerBody _handlerBlockId handlerBodyBlockId _handlerSr =>
-            let handlerParams ← buildBlockParams bodyCtx.allVars sr
-            let excVal ← freshVal "_exc" sr
-            let excParam : BlockParam := { val := excVal, type := none, sr }
-            modify fun s => { s with currentParams := handlerParams.push excParam }
-            -- Next handler or reraise block (for isinstance dispatch fallthrough)
-            let nextBlock := if h2 : i + 1 < handlers.size then
-              match handlers[i + 1] with | .mk _ _ _ nextBid _ _ => toBlockId nextBid
-            else match reraiseBlock with
-              | some rb => toBlockId rb
-              | none => afterTarget
-            -- For typed handlers: isinstance dispatch check
-            match typeExpr, handlerBodyBlockId with
-            | some texpr, some bodyBid =>
-              let typeVal ← translateExpr texpr
-              let isinstRef ← emitInstr "_tmp" none
-                (.qualifiedRef (QualifiedName.mk' "builtins" "isinstance")) sr
-              let checkVal ← emitInstr "_tmp" none
-                (.call isinstRef #[.positional excVal, .positional typeVal]) sr
-              -- condBranch: match → body block, no match → next handler
-              let bodyArgs ← buildBranchArgs bodyCtx.allVars sr
-              let bodyArgs := bodyArgs.push excVal
-              let nextArgs ← buildBranchArgs bodyCtx.allVars sr
-              let nextArgs := nextArgs.push excVal
-              finishBlock (.condBranch checkVal (toBlockId bodyBid) bodyArgs nextBlock nextArgs) sr
-                (toBlockId bodyBid) #[]
-              -- Body block: receives allVars + _exc, binds handler name
-              let bodyParams ← buildBlockParams bodyCtx.allVars sr
-              let bodyExcVal ← freshVal "_exc" sr
-              let bodyExcParam : BlockParam := { val := bodyExcVal, type := none, sr }
-              modify fun s => { s with currentParams := bodyParams.push bodyExcParam }
-              match handlerName with
-              | some name =>
-                renameVal bodyExcVal name
-                bindVar name bodyExcVal
-              | none => pure ()
-              let handlerTerminated ← translateBody handlerBody bodyCtx
-              if !handlerTerminated then
-                let args ← buildBranchArgs bodyCtx.allVars sr
-                finishBlock (.branch afterTarget args) sr nextBlock #[]
-              else
-                startNewBlock nextBlock #[]
-            | _, _ =>
-              -- Bare handler (no type filter): translate body directly
-              match handlerName with
-              | some name => bindVar name excVal
-              | none => pure ()
-              let handlerTerminated ← translateBody handlerBody bodyCtx
-              if !handlerTerminated then
-                let args ← buildBranchArgs bodyCtx.allVars sr
-                finishBlock (.branch afterTarget args) sr nextBlock #[]
-              else
-                startNewBlock nextBlock #[]
-      -- Reraise block (if last handler is typed and exception didn't match any)
-      match reraiseBlock with
-      | some rbId =>
-        let reraiseParams ← buildBlockParams bodyCtx.allVars sr
-        let reraiseExcVal ← freshVal "_exc" sr
-        let reraiseExcParam : BlockParam := { val := reraiseExcVal, type := none, sr }
-        modify fun s => { s with currentParams := reraiseParams.push reraiseExcParam }
-        finishBlock (.raise reraiseExcVal) sr (toBlockId joinBlock) #[]
-      | none => pure ()
-      -- Finally block (if present)
+        startNewBlock #[]
+      -- Handler blocks
+      for i in [:handlerBlocks.size] do
+        if h : i < handlerBlocks.size then
+          let (hBlockId, typeExpr, handlerName, handlerBody) := handlerBlocks[i]
+          let handlerParams ← buildBlockParamsCtx hBlockId bodyCtx sr
+          let excVal ← freshVal "_exc" sr
+          let excParam : BlockParam := { val := excVal, type := none, sr }
+          modify fun s => { s with currentParams := handlerParams.push excParam }
+          -- Next handler or (for last handler) unhandled exception path
+          let nextBlock := if h2 : i + 1 < handlerBlocks.size then
+            handlerBlocks[i + 1].1
+          else match reraiseBlock with
+            | some rb => match finallyBlock with
+              | some fb => fb  -- unhandled → finally (with real exc)
+              | none => rb     -- no finally → direct reraise
+            | none => afterTarget
+          match typeExpr, handlerBodyBlocks[i]! with
+          | some texpr, some bodyBid =>
+            let (typeVal, _) ← translateExpr texpr #[]
+            let isinstRef ← emitInstr "_tmp" none
+              (.qualifiedRef (QualifiedName.mk' "builtins" "isinstance")) sr
+            let checkVal ← emitInstr "_tmp" none
+              (.call isinstRef #[.positional excVal, .positional typeVal]) sr
+            let mut bodyArgs ← buildBranchArgsCtx bodyBid bodyCtx sr
+            bodyArgs := bodyArgs.push excVal
+            let mut nextArgs ← buildBranchArgsCtx nextBlock bodyCtx sr
+            nextArgs := nextArgs.push excVal
+            finishBlock (.condBranch checkVal bodyBid bodyArgs nextBlock nextArgs) sr #[]
+            let bodyParams ← buildBlockParamsCtx bodyBid bodyCtx sr
+            let bodyExcVal ← freshVal "_exc" sr
+            let bodyExcParam : BlockParam := { val := bodyExcVal, type := none, sr }
+            modify fun s => { s with currentParams := bodyParams.push bodyExcParam }
+            match handlerName with
+            | some name => renameVal bodyExcVal name; bindVar name bodyExcVal
+            | none => pure ()
+            let handlerTerminated ← translateBody handlerBody bodyCtx
+            if !handlerTerminated then
+              -- Handled exception → afterTarget with undef sentinel if finally present
+              let mut args ← buildBranchArgsCtx afterTarget bodyCtx sr
+              if finallyBlock.isSome then
+                let sentinel ← emitInstr "_exc" none (.undef "_exc") sr
+                args := args.push sentinel
+              finishBlock (.branch afterTarget args) sr #[]
+            else startNewBlock #[]
+          | _, _ =>
+            match handlerName with
+            | some name => bindVar name excVal
+            | none => pure ()
+            let handlerTerminated ← translateBody handlerBody bodyCtx
+            if !handlerTerminated then
+              -- Handled exception → afterTarget with undef sentinel if finally present
+              let mut args ← buildBranchArgsCtx afterTarget bodyCtx sr
+              if finallyBlock.isSome then
+                let sentinel ← emitInstr "_exc" none (.undef "_exc") sr
+                args := args.push sentinel
+              finishBlock (.branch afterTarget args) sr #[]
+            else startNewBlock #[]
+      -- Reraise block (without finally: direct raise; with finally: placed after finally)
+      if finallyBlock.isNone then
+        match reraiseBlock with
+        | some rb =>
+          let reraiseParams ← buildBlockParamsCtx rb bodyCtx sr
+          let reraiseExcVal ← freshVal "_exc" sr
+          let reraiseExcParam : BlockParam := { val := reraiseExcVal, type := none, sr }
+          modify fun s => { s with currentParams := reraiseParams.push reraiseExcParam }
+          finishBlock (.raise reraiseExcVal) sr #[]
+        | none => pure ()
+      -- Finally block: receives demand vars + _exc param
+      -- After body: condBranch _exc → reraiseBlock (propagate) or joinBlock (continue)
       match finallyBlock with
-      | some _fbId =>
-        let finallyParams ← buildBlockParams bodyCtx.allVars sr
-        modify fun s => { s with currentParams := finallyParams }
-        let finallyTerminated ← translateBody finally_ bodyCtx
+      | some fb =>
+        let finallyParams ← buildBlockParamsCtx fb bodyCtx sr
+        let finallyExcVal ← freshVal "_exc" sr
+        let finallyExcParam : BlockParam := { val := finallyExcVal, type := none, sr }
+        modify fun s => { s with currentParams := finallyParams.push finallyExcParam }
+        let finallyTerminated ← translateBody finalbody bodyCtx
         if !finallyTerminated then
-          let joinArgs ← buildBranchArgs bodyCtx.allVars sr
-          finishBlock (.branch (toBlockId joinBlock) joinArgs) sr
-            (toBlockId joinBlock) #[]
-        else
-          startNewBlock (toBlockId joinBlock) #[]
+          match reraiseBlock with
+          | some rb =>
+            let mut reraiseArgs ← buildBranchArgsCtx rb bodyCtx sr
+            reraiseArgs := reraiseArgs.push finallyExcVal
+            let joinArgs ← buildBranchArgsCtx joinBlock bodyCtx sr
+            finishBlock (.condBranch finallyExcVal rb reraiseArgs joinBlock joinArgs) sr #[]
+            -- Reraise block after finally
+            let reraiseParams ← buildBlockParamsCtx rb bodyCtx sr
+            let reraiseExcVal2 ← freshVal "_exc" sr
+            let reraiseExcParam2 : BlockParam := { val := reraiseExcVal2, type := none, sr }
+            modify fun s => { s with currentParams := reraiseParams.push reraiseExcParam2 }
+            finishBlock (.raise reraiseExcVal2) sr #[]
+          | none =>
+            let joinArgs ← buildBranchArgsCtx joinBlock bodyCtx sr
+            finishBlock (.branch joinBlock joinArgs) sr #[]
+        else startNewBlock #[]
       | none => pure ()
-      -- Join block
-      let joinParams ← buildBlockParams bodyCtx.allVars sr
+      -- Join
+      let joinParams ← buildBlockParamsCtx joinBlock bodyCtx sr
       modify fun s => { s with currentParams := joinParams }
+      return false
 
-    | .withStmt ctxExpr asName body enterBlock excExitBlock reraiseBlock
-        normalExitBlock exprBlockStart exprBlockCount sr =>
-      setExprBlockRange exprBlockStart exprBlockCount
-      -- Evaluate context expression and call __enter__
-      let mgrVal ← translateExpr ctxExpr
-      bindVar "_mgr" mgrVal  -- synthetic binding for __exit__ calls
-      let enterVal ← emitInstr "_tmp" none (.attr mgrVal "__enter__") sr
-      let ctxVal ← emitInstr "_tmp" none (.call enterVal #[]) sr
-      -- Bind 'as' variable if present
-      match asName with
-      | some name =>
-        renameVal ctxVal name
-        bindVar name ctxVal
-      | none => pure ()
-      -- Branch to enter block (body with exception handler)
-      let enterArgs ← buildBranchArgs bodyCtx.allVars sr
-      finishBlock (.branch (toBlockId enterBlock) enterArgs) sr
-        (toBlockId enterBlock) #[]
-      -- Enter block: body with except pointing to excExitBlock
-      let enterParams ← buildBlockParams bodyCtx.allVars sr
-      modify fun s => { s with
-        currentParams := enterParams
-        currentExcept := some { target := toBlockId excExitBlock }
-      }
-      let bodyTerminated ← translateBody body bodyCtx
-      modify fun s => { s with currentExcept := none }
-      -- Normal path: call __exit__(None, None, None), branch to normalExitBlock
-      if !bodyTerminated then
-        let mgrRef ← lookupVar "_mgr" sr
-        let exitRef ← emitInstr "_tmp" none (.attr mgrRef "__exit__") sr
-        let noneVal ← emitInstr "_tmp" none .noneLit sr
-        let _ ← emitInstr "_tmp" none
-          (.call exitRef #[.positional noneVal, .positional noneVal, .positional noneVal]) sr
-        let normalArgs ← buildBranchArgs bodyCtx.allVars sr
-        finishBlock (.branch (toBlockId normalExitBlock) normalArgs) sr
-          (toBlockId excExitBlock) #[]
+    | .With _ ⟨_, items⟩ ⟨_, body⟩ _ =>
+      if h : items.size > 0 then
+        match items[0] with
+        | .mk_withitem _ ctxExpr ⟨_, optVars⟩ =>
+          let asName := match optVars with
+            | some (.Name _ ⟨_, name⟩ _) => some name | _ => none
+          let enterBlock ← freshBlockId
+          let excExitBlock ← freshBlockId
+          let reraiseBlock ← freshBlockId
+          let normalExitBlock ← freshBlockId
+          if items.size > 1 then
+            ssaWarn sr "Multi-item with statement — only first item decomposed in v1"
+          -- Evaluate context, call __enter__
+          let (mgrVal, _) ← translateExpr ctxExpr #[]
+          let enterVal ← emitInstr "_tmp" none (.attr mgrVal "__enter__") sr
+          let ctxVal ← emitInstr "_tmp" none (.call enterVal #[]) sr
+          match asName with
+          | some name => renameVal ctxVal name; bindVar name ctxVal
+          | none => pure ()
+          -- Push _mgr as scope extra for the with body
+          let savedExtras := (← get).scopeExtras
+          modify fun s => { s with scopeExtras := s.scopeExtras.push ("_mgr", mgrVal) }
+          let enterArgs ← buildBranchArgsCtx enterBlock bodyCtx sr
+          finishBlock (.branch enterBlock enterArgs) sr #[]
+          -- Enter block: body with except
+          let enterParams ← buildBlockParamsCtx enterBlock bodyCtx sr
+          modify fun s => { s with
+            currentParams := enterParams
+            currentExcept := some { target := excExitBlock }
+          }
+          let bodyTerminated ← translateBody body bodyCtx
+          modify fun s => { s with currentExcept := none }
+          -- Normal path: __exit__(None, None, None)
+          if !bodyTerminated then
+            let mgrRef := (← get).scopeExtras.back!.snd
+            let exitRef ← emitInstr "_tmp" none (.attr mgrRef "__exit__") sr
+            let noneVal ← emitInstr "_tmp" none .noneLit sr
+            let _ ← emitInstr "_tmp" none
+              (.call exitRef #[.positional noneVal, .positional noneVal, .positional noneVal]) sr
+            let normalArgs ← buildBranchArgsCtx normalExitBlock bodyCtx sr
+            finishBlock (.branch normalExitBlock normalArgs) sr #[]
+          else
+            startNewBlock #[]
+          -- Exception exit: __exit__(exc, exc, exc), check return
+          let excParams ← buildBlockParamsCtx excExitBlock bodyCtx sr
+          let excVal ← freshVal "_exc" sr
+          let excParam : BlockParam := { val := excVal, type := none, sr }
+          modify fun s => { s with currentParams := excParams.push excParam }
+          let excMgrRef := (← get).scopeExtras.back!.snd
+          let excExitRef ← emitInstr "_tmp" none (.attr excMgrRef "__exit__") sr
+          let exitResult ← emitInstr "_tmp" none
+            (.call excExitRef #[.positional excVal, .positional excVal, .positional excVal]) sr
+          let mut suppressArgs ← buildBranchArgsCtx normalExitBlock bodyCtx sr
+          let mut reraiseArgs ← buildBranchArgsCtx reraiseBlock bodyCtx sr
+          reraiseArgs := reraiseArgs.push excVal
+          finishBlock (.condBranch exitResult
+            normalExitBlock suppressArgs
+            reraiseBlock reraiseArgs) sr #[]
+          -- Reraise block
+          let reraiseParams ← buildBlockParamsCtx reraiseBlock bodyCtx sr
+          let reraiseExcVal ← freshVal "_exc" sr
+          let reraiseExcParam : BlockParam := { val := reraiseExcVal, type := none, sr }
+          modify fun s => { s with currentParams := reraiseParams.push reraiseExcParam }
+          finishBlock (.raise reraiseExcVal) sr #[]
+          -- Normal exit: restore scope extras
+          modify fun s => { s with scopeExtras := savedExtras }
+          let normalParams ← buildBlockParamsCtx normalExitBlock bodyCtx sr
+          modify fun s => { s with currentParams := normalParams }
+          return false
       else
-        startNewBlock (toBlockId excExitBlock) #[]
-      -- Exception exit block: call __exit__ with exception, check return value
-      let excParams ← buildBlockParams bodyCtx.allVars sr
-      let excVal ← freshVal "_exc" sr
-      let excParam : BlockParam := { val := excVal, type := none, sr }
-      modify fun s => { s with currentParams := excParams.push excParam }
-      let excMgrRef ← lookupVar "_mgr" sr
-      let excExitRef ← emitInstr "_tmp" none (.attr excMgrRef "__exit__") sr
-      let exitResult ← emitInstr "_tmp" none
-        (.call excExitRef #[.positional excVal, .positional excVal, .positional excVal]) sr
-      -- If __exit__ returns truthy → suppress (normalExitBlock); falsy → re-raise
-      let suppressArgs ← buildBranchArgs bodyCtx.allVars sr
-      let reraiseArgs ← buildBranchArgs bodyCtx.allVars sr
-      let reraiseArgs := reraiseArgs.push excVal
-      finishBlock (.condBranch exitResult
-        (toBlockId normalExitBlock) suppressArgs
-        (toBlockId reraiseBlock) reraiseArgs) sr
-        (toBlockId reraiseBlock) #[]
-      -- Reraise block: re-raise the exception
-      let reraiseParams ← buildBlockParams bodyCtx.allVars sr
-      let reraiseExcVal ← freshVal "_exc" sr
-      let reraiseExcParam : BlockParam := { val := reraiseExcVal, type := none, sr }
-      modify fun s => { s with currentParams := reraiseParams.push reraiseExcParam }
-      finishBlock (.raise reraiseExcVal) sr (toBlockId normalExitBlock) #[]
-      -- Normal exit block: code continues here
-      let normalParams ← buildBlockParams bodyCtx.allVars sr
-      modify fun s => { s with currentParams := normalParams }
-  return terminated
-where
-  /-- Assign to a target expression from a value. -/
+        ssaWarn sr "Empty with statement"
+        return false
+
+    | _ =>
+      let name := match s with
+        | .AsyncFor .. => "AsyncFor" | .AsyncWith .. => "AsyncWith"
+        | .TryStar .. => "TryStar" | .Match .. => "Match" | _ => "unknown"
+      ssaWarn sr s!"Unsupported compound statement: {name}"
+      return false
+
+  /-- Assign to a target expression from a value (for loop targets). -/
   assignTarget (target : expr SourceRange) (val : SSAVal) : SSAM Unit := do
     match target with
     | .Name _ ⟨_, name⟩ _ => bindVar name val
@@ -1094,8 +1464,7 @@ where
 
 /-! ## Top-Level Translation -/
 
-/-- Translate a BlockifyResult into an SSA Func. -/
-def translateFunc (result : BlockifyResult) (config : SSAConfig)
+private def translateFunc (info : FuncInfo) (config : SSAConfig)
     (moduleBindings : Std.HashMap String QualifiedName := {})
     : Func × Array (String × SourceRange) :=
   let initState : SSAState := {
@@ -1103,11 +1472,9 @@ def translateFunc (result : BlockifyResult) (config : SSAConfig)
       env.insert name (.qualified qn)
   }
   let action : SSAM Unit := do
-    -- Warn if async function
-    if result.isAsync then
-      ssaWarn result.sr s!"unsupported AsyncFunctionDef '{result.name}'"
-    -- Create entry block params for function parameters
-    for (pname, typeAnnot) in result.params do
+    if info.isAsync then
+      ssaWarn info.sr s!"unsupported AsyncFunctionDef '{info.name}'"
+    for (pname, typeAnnot) in info.params do
       let varName := if pname.startsWith "**" then (pname.drop 2).toString
         else if pname.startsWith "*" then (pname.drop 1).toString
         else pname
@@ -1120,19 +1487,15 @@ def translateFunc (result : BlockifyResult) (config : SSAConfig)
         val, name := varName, type := paramType, default := none, kind
       }}
       bindVar varName val
-    -- Start the first block (entry block = bb0)
-    startFirstBlock ⟨0⟩ #[]
-    -- Translate the body
-    let allVarsArray := result.allVars.toArray
-    let bodyCtx : BodyCtx := { allVars := allVarsArray }
-    let bodyTerminated ← translateBody result.body bodyCtx
-    -- Finalize the last block with `ret none` if the body didn't terminate.
-    -- This covers join/end blocks from compound statements at the end of a
-    -- function body — they are branch targets and must be defined.
+    let da := Blockify.demandAnalysis info.body info.globals
+    modify fun s => { s with demandArr := da }
+    startFirstBlock #[]
+    let bodyCtx : BodyCtx := { demandArr := da }
+    let bodyTerminated ← translateBody info.body bodyCtx
     let s ← get
     if !bodyTerminated then
       let block : Block := {
-        id := s.currentBlockId
+        id := ⟨s.blocks.size⟩
         params := s.currentParams
         instrs := s.currentInstrs
         term := .ret none
@@ -1142,36 +1505,34 @@ def translateFunc (result : BlockifyResult) (config : SSAConfig)
       set { s with blocks := s.blocks.push block, currentInstrs := #[] }
   let ((), finalState) := action config |>.run initState
   let func : Func := {
-    name := result.name
+    name := info.name
     params := finalState.funcParams
     retType := none
     blocks := finalState.blocks
     names := finalState.names
     decorators := #[]
-    sr := result.sr
+    sr := info.sr
   }
   (func, finalState.warnings)
 
-/-- Result of translating a module to SSA. -/
+/-- Result of translating a module to SSA (v2). -/
 public structure TranslateResult where
   module   : Module
   warnings : Array (String × SourceRange)
   errors   : Array (String × SourceRange)
 deriving Inhabited
 
-/-- Translate a module's statements into an SSA Module. -/
+/-- Translate a module's statements into an SSA Module (v2 with strict SSA). -/
 public def translateModule (moduleName : String)
     (stmts : Array (stmt SourceRange)) : TranslateResult :=
   let config : SSAConfig := {
     prelude := pythonPrelude
     moduleName
   }
-  let results := blockifyModule stmts
-  -- Build module-level bindings: every function/class defined at module level
+  let results := scanModule stmts
   let moduleBindings := results.foldl (init := {}) fun bindings r =>
     if r.name == "@module_init" then bindings
     else if r.name.any (· == '.') then
-      -- Class method like "Config.__init__" → bind "Config" → module.Config
       let className := r.name.takeWhile (· != '.') |>.toString
       bindings.insert className (QualifiedName.mk' moduleName className)
     else

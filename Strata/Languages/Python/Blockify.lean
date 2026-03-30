@@ -319,7 +319,7 @@ public structure BlockifyResult where
   /-- Source range of the function definition (`def`/`class` statement).
       Phase 2 uses this for `Func.sr`. For `@module_init`, this is `SourceRange.none`. -/
   sr          : SourceRange
-  /-- The raw statements (pre-blockification). Used by PythonToSSA2 which
+  /-- The raw statements (pre-blockification). Used by PythonToSSA which
       traverses the AST directly instead of using the BlockTree. -/
   rawBody     : Array (stmt SourceRange) := #[]
   /-- Names resolved via qualified lookup (module-level functions, classes,
