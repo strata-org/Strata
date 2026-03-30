@@ -619,7 +619,6 @@ Returns the lowered program.
 abbrev LowerResult := (ResolutionResult) × (List DiagnosticModel)
 
 def lowerLaurelToLaurel (program : Program) : LowerResult :=
-
   let program := { program with
     staticProcedures := coreDefinitionsForLaurel.staticProcedures ++ program.staticProcedures
   }

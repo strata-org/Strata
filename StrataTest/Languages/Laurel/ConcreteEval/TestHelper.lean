@@ -9,13 +9,8 @@ import Strata.DDM.BuiltinDialects.Init
 import Strata.Languages.Laurel.Grammar.LaurelGrammar
 import Strata.Languages.Laurel.Grammar.ConcreteToAbstractTreeTranslator
 import Strata.Languages.Laurel.Resolution
-<<<<<<< HEAD
 import Strata.Languages.Laurel.LaurelToCoreTranslator
 import Strata.Languages.Laurel.LaurelInterpreter
-=======
-import Strata.Languages.Laurel.LaurelConcreteEval
-import Strata.Languages.Laurel.LaurelToCoreTranslator
->>>>>>> b0e5746a (feat(test): Add transform preservation tests for Laurel ConcreteEval)
 
 /-!
 # Shared Test Helpers for Laurel ConcreteEval Tests
