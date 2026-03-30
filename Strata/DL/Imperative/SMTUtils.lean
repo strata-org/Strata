@@ -276,7 +276,8 @@ def dischargeObligation {P : PureExpr} [ToFormat P.Ident] [BEq P.Ident]
   (vars : List P.TypedIdent)
   (smtsolver filename : String)
   (solver_options : Array String) (printFilename : Bool)
-  (satisfiabilityCheck validityCheck : Bool) :
+  (satisfiabilityCheck validityCheck : Bool)
+  (skipSolver : Bool := false) :
   IO (Except Format (Result P.Ident × Result P.Ident × Strata.SMT.EncoderState)) := do
   let handle ← IO.FS.Handle.mk filename IO.FS.Mode.write
   let solver ← Strata.SMT.Solver.fileWriter handle
@@ -285,6 +286,9 @@ def dischargeObligation {P : PureExpr} [ToFormat P.Ident] [BEq P.Ident]
   let ((_ids, estate), _solverState) ← encodeSMT.run solver
 
   if printFilename then IO.println s!"Wrote problem to {filename}."
+
+  if skipSolver then
+    return .ok (.unknown, .unknown, estate)
 
   let solver_output ← runSolver smtsolver (#[filename] ++ solver_options)
   match ← solverResult typedVarToSMTFn vars solver_output estate smtsolver satisfiabilityCheck validityCheck with
