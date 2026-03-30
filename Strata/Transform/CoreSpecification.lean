@@ -17,7 +17,6 @@ Bridges Core procedures to the generic Imperative specification framework
 
 - **`Lang.core`** — the `Lang Expression` bundle for Core small-step semantics
 - **`ProcEnvWF`** — well-formedness condition on the initial verification env
-- **`ProcedurePre`** / **`procStartEnv`** — procedure preconditions and starting env
 - **`AssertValidInProcedure`** — `AssertValidWhen` on the verification statement
 - **`ProcedureCorrect`** — assert validity + postconditions + hasFailure on termination
 -/
@@ -52,19 +51,6 @@ structure ProcEnvWF (proc : Procedure) (ρ : Env Expression) : Prop where
 
 variable (π : String → Option Procedure)
 variable (φ : CoreEval → PureFunc Expression → CoreEval)
-
-/-- A program state that passed precondition of procedure. -/
-def ProcedurePre (proc : Procedure) (ρ₀ : Env Expression) : Prop :=
-  (∀ (label : CoreLabel) (check : Procedure.Check),
-    (label, check) ∈ proc.spec.preconditions.toList →
-    ρ₀.eval ρ₀.store check.expr = some HasBool.tt) ∧
-  WellFormedSemanticEvalBool ρ₀.eval ∧
-  ρ₀.hasFailure = Bool.false
-
-/-- The augmented starting environment for body execution:
-    `ρ₀` with old-variable bindings added. -/
-abbrev procStartEnv (proc : Procedure) (ρ₀ : Env Expression) : Env Expression :=
-  withOldBindings proc.spec.modifies ρ₀
 
 /-- A specific assertion `a` in procedure `proc` is valid
     for initial program states satisfying the preconditions (`ProcEnvWF`). -/
@@ -125,7 +111,9 @@ def AssertValidInProcedure
     (2) a predicate stating that the postcondition holds.
 -/
 def ProcedureCorrect (proc : Procedure) (p : Program) (verifyStmt : Statement) : Prop :=
+  -- (1) The asserts in the body of proc are valid
   (∀ a, AssertValidInProcedure π φ proc verifyStmt a) ∧
+  -- (2) The postcondition is valid.
   (WF.WFProcedureProp p proc →
    ∀ (ρ₀ ρ' : Env Expression),
     ProcEnvWF proc ρ₀ → ρ₀.hasFailure = Bool.false →
