@@ -278,6 +278,22 @@ def tryReadPythonSource (ionPath : String) : IO (Option (String × String)) := d
     catch _ =>
       return none
 
+/-- Format a related position string from metadata, if present. -/
+def formatRelatedPosition (md : Imperative.MetaData Core.Expression)
+    (mfm : Option (String × Lean.FileMap)) : String :=
+  match Imperative.getRelatedFileRange md with
+  | none => ""
+  | some fr =>
+    if fr.range.isNone then "" else
+    match mfm with
+    | some (_, fm) =>
+      match fr.file with
+      | .file "" => s!"\n  Related location: in prelude file"
+      | .file _ =>
+        let pos := fm.toPosition fr.range.start
+        s!"\n  Related location: line {pos.line}, col {pos.column}"
+    | none => ""
+
 def pyAnalyzeCommand : Command where
   name := "pyAnalyze"
   args := [ "file" ]
@@ -362,8 +378,9 @@ def pyAnalyzeCommand : Command where
                   ("", s!" (at byte offset)")
           | none => ("", "")
         let outcomeStr := vcResult.formatOutcome
+        let relatedStr := formatRelatedPosition vcResult.obligation.metadata mfm
         s := s ++ s!"\n{locationPrefix}{vcResult.obligation.label}: \
-                      {outcomeStr}{locationSuffix}\n"
+                      {outcomeStr}{locationSuffix}{relatedStr}\n"
       IO.println s
       -- Output in SARIF format if requested
       if outputSarif then
@@ -485,8 +502,9 @@ def pyAnalyzeLaurelCommand : Command where
                 ("", "")
         | none => ("", "")
       let outcomeStr := vcResult.formatOutcome
+      let relatedStr := formatRelatedPosition vcResult.obligation.metadata mfm
       s := s ++ s!"{locationPrefix}{vcResult.obligation.label}: \
-                    {outcomeStr}{locationSuffix}\n"
+                    {outcomeStr}{locationSuffix}{relatedStr}\n"
     IO.println s
     -- Output in SARIF format if requested
     if outputSarif then

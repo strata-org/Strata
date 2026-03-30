@@ -247,6 +247,29 @@ def MetaData.formatFileRangeD {P : PureExpr} [BEq P.Ident] (md : MetaData P) (fi
   | some fr => fr.format fileMap includeEnd?
   | none => f!""
 
+/-- Metadata field for a related file range (e.g., the original assertion location
+    when the primary file range points to the call site after inlining). -/
+def MetaData.relatedFileRange : MetaDataElem.Field P := .label "relatedFileRange"
+
+/-- Get the related file range from metadata, if present. -/
+def getRelatedFileRange {P : PureExpr} [BEq P.Ident] (md: MetaData P) : Option FileRange := do
+  let elem ← md.findElem Imperative.MetaData.relatedFileRange
+  match elem.value with
+    | .fileRange fr => some fr
+    | _ => none
+
+/-- Replace the primary file range with a new one, moving the old one to relatedFileRange. -/
+def MetaData.setCallSiteFileRange {P : PureExpr} [BEq P.Ident]
+    (md : MetaData P) (callSiteRange : MetaData P) : MetaData P :=
+  match getFileRange callSiteRange, getFileRange md with
+  | some csRange, some origRange =>
+    let md := md.eraseElem MetaData.fileRange
+    let md := md.pushElem MetaData.fileRange (.fileRange csRange)
+    md.pushElem MetaData.relatedFileRange (.fileRange origRange)
+  | some csRange, none =>
+    md.pushElem MetaData.fileRange (.fileRange csRange)
+  | none, _ => md
+
 /-- Metadata field for property type classification (e.g., "divisionByZero"). -/
 def MetaData.propertyType : MetaDataElem.Field P := .label "propertyType"
 

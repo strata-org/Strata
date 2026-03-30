@@ -87,9 +87,24 @@ def propertyTypeToClassification : Imperative.PropertyType → String
   | .cover => "cover"
   | .assert => "assert"
 
+/-- Extract related location information from metadata (e.g., original assertion location). -/
+def extractRelatedLocation (files : Map Strata.Uri Lean.FileMap) (md : Imperative.MetaData Expression) : Option Strata.Sarif.RelatedLocation := do
+  let fr ← Imperative.getRelatedFileRange md
+  let fileMap ← files.find? fr.file
+  let startPos := fileMap.toPosition fr.range.start
+  let uri := match fr.file with | .file path => path
+  let physLoc : Strata.Sarif.PhysicalLocation := {
+    artifactLocation := { uri },
+    region := { startLine := startPos.line, startColumn := startPos.column }
+  }
+  pure { id := 1, physicalLocation := physLoc, message := { text := "original assertion location" } }
+
 /-- Convert a VCResult to a SARIF Result -/
 def vcResultToSarifResult (mode : VerificationMode) (files : Map Strata.Uri Lean.FileMap) (vcr : VCResult) : Strata.Sarif.Result :=
   let ruleId := vcr.obligation.label
+  let relatedLocations := match extractRelatedLocation files vcr.obligation.metadata with
+    | some rl => #[rl]
+    | none => #[]
   match vcr.outcome with
   | .error msg =>
     let level := .error
@@ -98,7 +113,7 @@ def vcResultToSarifResult (mode : VerificationMode) (files : Map Strata.Uri Lean
     let locations := match extractLocation files vcr.obligation.metadata with
       | some loc => #[locationToSarif loc]
       | none => #[]
-    { ruleId, level, message, locations }
+    { ruleId, level, message, locations, relatedLocations }
   | .ok outcome =>
     let level := outcomeToLevel mode vcr.obligation.property outcome
     let messageText := outcomeToMessage outcome
@@ -106,7 +121,7 @@ def vcResultToSarifResult (mode : VerificationMode) (files : Map Strata.Uri Lean
     let locations := match extractLocation files vcr.obligation.metadata with
       | some loc => #[locationToSarif loc]
       | none => #[]
-    { ruleId, level, message, locations }
+    { ruleId, level, message, locations, relatedLocations }
 
 /-- Convert VCResults to a SARIF document -/
 def vcResultsToSarif (mode : VerificationMode) (files : Map Strata.Uri Lean.FileMap) (vcResults : VCResults) : Strata.Sarif.SarifDocument :=
