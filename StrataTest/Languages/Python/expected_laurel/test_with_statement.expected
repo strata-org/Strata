@@ -1,23 +1,23 @@
 
 ==== Verification Results ====
-callElimAssert_requires_12: ✅ pass
-callElimAssert_requires_6: ✅ pass
+callElimAssert_requires_9: ✅ pass
+callElimAssert_requires_5: ✅ pass
 callElimAssert_requires_2: ✅ pass
 assert_assert(368)_calls_Any_to_bool_0: ✅ pass (at line 19, col 4)
 Assertion failed at line 19, col 4: assert(368): ❌ fail
-callElimAssert_requires_25: ✅ pass
 callElimAssert_requires_19: ✅ pass
+callElimAssert_requires_15: ✅ pass
 assert_assert(500)_calls_Any_to_bool_0: ✅ pass (at line 25, col 8)
 Assertion failed at line 25, col 8: assert(500): ❌ fail
-callElimAssert_requires_15: ✅ pass
-callElimAssert_requires_51: ✅ pass
-callElimAssert_requires_45: ✅ pass
+callElimAssert_requires_12: ✅ pass
 callElimAssert_requires_39: ✅ pass
 callElimAssert_requires_35: ✅ pass
-assert_assert(666)_calls_Any_to_bool_0: ✅ pass (at line 32, col 8)
-assert(666): ❓ unknown (at line 32, col 8)
 callElimAssert_requires_31: ✅ pass
 callElimAssert_requires_28: ✅ pass
+assert_assert(666)_calls_Any_to_bool_0: ✅ pass (at line 32, col 8)
+assert(666): ❓ unknown (at line 32, col 8)
+callElimAssert_requires_25: ✅ pass
+callElimAssert_requires_22: ✅ pass
 
 DETAIL: 15 passed, 2 failed, 1 inconclusive
 RESULT: Failures found
