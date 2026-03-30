@@ -88,23 +88,25 @@ def propertyTypeToClassification : Imperative.PropertyType → String
   | .assert => "assert"
 
 /-- Extract related location information from metadata (e.g., original assertion location). -/
-def extractRelatedLocation (files : Map Strata.Uri Lean.FileMap) (md : Imperative.MetaData Expression) : Option Strata.Sarif.RelatedLocation := do
-  let fr ← Imperative.getRelatedFileRange md
-  let fileMap ← files.find? fr.file
-  let startPos := fileMap.toPosition fr.range.start
-  let uri := match fr.file with | .file path => path
-  let physLoc : Strata.Sarif.PhysicalLocation := {
-    artifactLocation := { uri },
-    region := { startLine := startPos.line, startColumn := startPos.column }
-  }
-  pure { id := 1, physicalLocation := physLoc, message := { text := "original assertion location" } }
+def extractRelatedLocations (files : Map Strata.Uri Lean.FileMap) (md : Imperative.MetaData Expression) : Array Strata.Sarif.RelatedLocation :=
+  let ranges := Imperative.getRelatedFileRanges md
+  ranges.foldl (init := (#[], 1)) (fun (acc, idx) fr =>
+    match files.find? fr.file with
+    | none => (acc, idx)
+    | some fileMap =>
+      let startPos := fileMap.toPosition fr.range.start
+      let uri := match fr.file with | .file path => path
+      let physLoc : Strata.Sarif.PhysicalLocation := {
+        artifactLocation := { uri },
+        region := { startLine := startPos.line, startColumn := startPos.column }
+      }
+      (acc.push { id := idx, physicalLocation := physLoc, message := { text := "original assertion location" } }, idx + 1)
+  ) |>.1
 
 /-- Convert a VCResult to a SARIF Result -/
 def vcResultToSarifResult (mode : VerificationMode) (files : Map Strata.Uri Lean.FileMap) (vcr : VCResult) : Strata.Sarif.Result :=
   let ruleId := vcr.obligation.label
-  let relatedLocations := match extractRelatedLocation files vcr.obligation.metadata with
-    | some rl => #[rl]
-    | none => #[]
+  let relatedLocations := extractRelatedLocations files vcr.obligation.metadata
   match vcr.outcome with
   | .error msg =>
     let level := .error

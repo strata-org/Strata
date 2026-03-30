@@ -316,21 +316,22 @@ def tryReadPythonSource (ionPath : String) : IO (Option (String × String)) := d
     catch _ =>
       return none
 
-/-- Format a related position string from metadata, if present. -/
-def formatRelatedPosition (md : Imperative.MetaData Core.Expression)
+/-- Format related position strings from metadata, if present. -/
+def formatRelatedPositions (md : Imperative.MetaData Core.Expression)
     (mfm : Option (String × Lean.FileMap)) : String :=
-  match Imperative.getRelatedFileRange md with
+  let ranges := Imperative.getRelatedFileRanges md
+  if ranges.isEmpty then "" else
+  match mfm with
   | none => ""
-  | some fr =>
-    if fr.range.isNone then "" else
-    match mfm with
-    | some (_, fm) =>
+  | some (_, fm) =>
+    let lines := ranges.filterMap fun fr =>
+      if fr.range.isNone then none else
       match fr.file with
-      | .file "" => s!"\n  Related location: in prelude file"
+      | .file "" => some "\n  Related location: in prelude file"
       | .file _ =>
         let pos := fm.toPosition fr.range.start
-        s!"\n  Related location: line {pos.line}, col {pos.column}"
-    | none => ""
+        some s!"\n  Related location: line {pos.line}, col {pos.column}"
+    String.join lines.toList
 
 def pyAnalyzeCommand : Command where
   name := "pyAnalyze"
@@ -419,7 +420,7 @@ def pyAnalyzeCommand : Command where
                   ("", s!" (at byte offset)")
           | none => ("", "")
         let outcomeStr := vcResult.formatOutcome
-        let relatedStr := formatRelatedPosition vcResult.obligation.metadata mfm
+        let relatedStr := formatRelatedPositions vcResult.obligation.metadata mfm
         s := s ++ s!"\n{locationPrefix}{vcResult.obligation.label}: \
                       {outcomeStr}{locationSuffix}{relatedStr}\n"
       IO.println s
@@ -691,7 +692,7 @@ def pyAnalyzeLaurelCommand : Command where
                 ("", "")
         | none => ("", "")
       let outcomeStr := vcResult.formatOutcome
-      let relatedStr := formatRelatedPosition vcResult.obligation.metadata mfm
+      let relatedStr := formatRelatedPositions vcResult.obligation.metadata mfm
       s := s ++ s!"{locationPrefix}{vcResult.obligation.label}: \
                     {outcomeStr}{locationSuffix}{relatedStr}\n"
     IO.println s

@@ -254,21 +254,32 @@ def MetaData.formatFileRangeD {P : PureExpr} [BEq P.Ident] (md : MetaData P) (fi
     when the primary file range points to the call site after inlining). -/
 def MetaData.relatedFileRange : MetaDataElem.Field P := .label "relatedFileRange"
 
-/-- Get the related file range from metadata, if present. -/
-def getRelatedFileRange {P : PureExpr} [BEq P.Ident] (md: MetaData P) : Option FileRange := do
-  let elem ← md.findElem Imperative.MetaData.relatedFileRange
-  match elem.value with
-    | .fileRange fr => some fr
-    | _ => none
+/-- Get all related file ranges from metadata, in order. -/
+def getRelatedFileRanges {P : PureExpr} [BEq P.Ident] (md: MetaData P) : Array FileRange :=
+  md.filterMap fun elem =>
+    if elem.fld == Imperative.MetaData.relatedFileRange then
+      match elem.value with
+      | .fileRange fr => some fr
+      | _ => none
+    else none
 
-/-- Replace the primary file range with a new one, moving the old one to relatedFileRange. -/
+/-- Remove all metadata elements with the given field. -/
+def MetaData.eraseAllElems {P : PureExpr} [BEq P.Ident]
+    (md : MetaData P) (fld : MetaDataElem.Field P) : MetaData P :=
+  md.filter (fun e => !(e.fld == fld))
+
+/-- Replace the primary file range with a new one, shifting existing related
+    file ranges and prepending the old primary range. -/
 def MetaData.setCallSiteFileRange {P : PureExpr} [BEq P.Ident]
     (md : MetaData P) (callSiteRange : MetaData P) : MetaData P :=
   match getFileRange callSiteRange, getFileRange md with
   | some csRange, some origRange =>
+    let existingRelated := getRelatedFileRanges md
     let md := md.eraseElem MetaData.fileRange
+    let md := md.eraseAllElems MetaData.relatedFileRange
     let md := md.pushElem MetaData.fileRange (.fileRange csRange)
-    md.pushElem MetaData.relatedFileRange (.fileRange origRange)
+    let md := md.pushElem MetaData.relatedFileRange (.fileRange origRange)
+    existingRelated.foldl (fun md fr => md.pushElem MetaData.relatedFileRange (.fileRange fr)) md
   | some csRange, none =>
     md.pushElem MetaData.fileRange (.fileRange csRange)
   | none, _ => md
