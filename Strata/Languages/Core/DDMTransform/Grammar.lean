@@ -17,6 +17,9 @@ namespace Strata
 ---------------------------------------------------------------------
 ---------------------------------------------------------------------
 
+-- Sequence operations increase the grammar size enough to require a higher recursion limit.
+set_option maxRecDepth 10000
+
 /- DDM support for parsing and pretty-printing Strata Core -/
 
 #dialect
@@ -40,6 +43,7 @@ type bv16;
 type bv32;
 type bv64;
 type Map (dom : Type, range : Type);
+type Sequence (elem : Type);
 
 category TypeVar;
 @[declareTVar(name)]
@@ -90,6 +94,24 @@ fn old (tp : Type, v : tp) : tp => "old " v;
 fn map_get (K : Type, V : Type, m : Map K V, k : K) : V => m "[" k "]";
 fn map_set (K : Type, V : Type, m : Map K V, k : K, v : V) : Map K V =>
   m "[" k ":=" v "]";
+
+// TODO: seq_empty is not yet supported in the grammar because the DDM parser
+// cannot currently handle 0-ary polymorphic functions (no arguments to infer
+// the type parameter from). The Factory definition exists for programmatic use.
+fn seq_length (A : Type, s : Sequence A) : int => "Sequence.length" "(" s ")";
+fn seq_select (A : Type, s : Sequence A, i : int) : A => "Sequence.select" "(" s ", " i ")";
+fn seq_append (A : Type, s1 : Sequence A, s2 : Sequence A) : Sequence A =>
+  "Sequence.append" "(" s1 ", " s2 ")";
+fn seq_build (A : Type, s : Sequence A, v : A) : Sequence A =>
+  "Sequence.build" "(" s ", " v ")";
+fn seq_update (A : Type, s : Sequence A, i : int, v : A) : Sequence A =>
+  "Sequence.update" "(" s ", " i ", " v ")";
+fn seq_contains (A : Type, s : Sequence A, v : A) : bool =>
+  "Sequence.contains" "(" s ", " v ")";
+fn seq_take (A : Type, s : Sequence A, n : int) : Sequence A =>
+  "Sequence.take" "(" s ", " n ")";
+fn seq_drop (A : Type, s : Sequence A, n : int) : Sequence A =>
+  "Sequence.drop" "(" s ", " n ")";
 
 // FIXME: Define polymorphic length and concat functions?
 fn str_len (a : string) : int => "str.len" "(" a  ")";
@@ -302,6 +324,8 @@ op command_fndecl (name : Ident,
 category Inline;
 op inline () : Inline => "inline";
 
+// Note: when editing command_fndef, consider whether recfn_decl needs
+// matching edits.
 @[declareFn(name, b, r)]
 op command_fndef (name : Ident,
                   typeArgs : Option TypeArgs,
@@ -315,14 +339,22 @@ op command_fndef (name : Ident,
                   inline? : Option Inline) : Command =>
   inline? "function " name typeArgs b " : " r indent(2, preconds) " {\n  " indent(2, c) "\n}\n";
 
+// Recursive (and mutually recursive) function declarations.
+// A single recursive function is a 1-element block, just like datatypes.
+category RecFnDecl;
+
 @[declareFn(name, b, r)]
-op command_recfndef (name : Ident,
-                     typeArgs : Option TypeArgs,
-                     @[scope(typeArgs)] b : Bindings,
-                     @[scope(typeArgs)] r : Type,
-                     @[scope(b)] preconds : Seq SpecElt,
-                     @[scopeSelf(name, b, r)] c : r) : Command =>
-  "rec " "function " name typeArgs b " : " r indent(2, preconds) "\n{\n  " indent(2, c) "\n}\n";
+op recfn_decl (name : Ident,
+               typeArgs : Option TypeArgs,
+               @[scope(typeArgs)] b : Bindings,
+               @[scope(typeArgs)] r : Type,
+               @[scope(b)] preconds : Seq SpecElt,
+               @[scope(b)] c : r) : RecFnDecl =>
+  "function " name typeArgs b " : " r indent(2, preconds) "\n{\n  " indent(2, c) "\n}";
+
+@[scope(recfns), preRegisterFunctions(recfns)]
+op command_recfndefs (recfns : NewlineSepBy RecFnDecl) : Command =>
+  "rec " recfns ";\n";
 
 // Function declaration statement
 @[declareFn(name, b, r)]

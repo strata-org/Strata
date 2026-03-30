@@ -128,4 +128,7 @@ def callElim' (p : Program) : CoreTransformM (Bool × Program) :=
 end CallElim
 end Core
 
+-- NB: workaround for the fact that Core is both a module and a dialect.
+def coreCallElimCmd := Core.CallElim.callElimCmd
+
 end -- public section

@@ -1,0 +1,31 @@
+
+==== Verification Results ====
+List_get_body_calls_List_get_0: ✔️ always true if reached (in prelude file)
+List_take_body_calls_List_take_0: ✔️ always true if reached (in prelude file)
+List_drop_body_calls_List_drop_0: ✔️ always true if reached (in prelude file)
+List_slice_body_calls_List_drop_0: ✔️ always true if reached (in prelude file)
+List_slice_body_calls_List_take_1: ✔️ always true if reached (in prelude file)
+List_set_body_calls_List_set_0: ✔️ always true if reached (in prelude file)
+DictStrAny_get_body_calls_DictStrAny_get_0: ✔️ always true if reached (in prelude file)
+DictStrAny_get_or_none_body_calls_DictStrAny_get_0: ✔️ always true if reached (in prelude file)
+Any_get_body_calls_DictStrAny_get_0: ✔️ always true if reached (in prelude file)
+Any_get_body_calls_List_get_1: ✔️ always true if reached (in prelude file)
+Any_get_body_calls_List_slice_2: ✔️ always true if reached (in prelude file)
+Any_get_body_calls_List_drop_3: ✔️ always true if reached (in prelude file)
+Any_get!_body_calls_DictStrAny_get_0: ✔️ always true if reached (in prelude file)
+Any_get!_body_calls_List_get_1: ✔️ always true if reached (in prelude file)
+Any_set_body_calls_List_set_0: ✔️ always true if reached (in prelude file)
+Any_set!_body_calls_List_set_0: ✔️ always true if reached (in prelude file)
+PFloorDiv_body_calls_Int.SafeDiv_0: ✅ always true and is reachable from declaration entry (in prelude file)
+PFloorDiv_body_calls_Int.SafeDiv_1: ✅ always true and is reachable from declaration entry (in prelude file)
+PFloorDiv_body_calls_Int.SafeDiv_2: ✅ always true and is reachable from declaration entry (in prelude file)
+PFloorDiv_body_calls_Int.SafeDiv_3: ✅ always true and is reachable from declaration entry (in prelude file)
+PAnd_body_calls_Any_to_bool_0: ✅ always true and is reachable from declaration entry (in prelude file)
+POr_body_calls_Any_to_bool_0: ✅ always true and is reachable from declaration entry (in prelude file)
+ite_cond_calls_Any_to_bool_0: 🔶 can be both true and false and is reachable from declaration entry (at line 3, col 4)
+assert_assert(124)_calls_PIn_0: ❓ unknown (at line 4, col 8)
+assert_assert(124)_calls_Any_to_bool_1: ✔️ always true if reached (at line 4, col 8)
+assert(124): ❓ unknown (at line 4, col 8)
+
+DETAIL: 23 passed, 0 failed, 3 inconclusive
+RESULT: Inconclusive
