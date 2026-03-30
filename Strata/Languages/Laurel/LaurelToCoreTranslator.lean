@@ -185,9 +185,9 @@ def translateExpr (expr : StmtExprMd)
     | .Neq => return .app Strata.SourceRange.none boolNotOp (.eq Strata.SourceRange.none re1 re2)
     | .And => return binOp boolAndOp
     | .Or => return binOp boolOrOp
-    | .AndThen => return .ite Strata.SourceRange.none re1 re2 (.boolConst Strata.SourceRange.none false)
-    | .OrElse => return .ite Strata.SourceRange.none re1 (.boolConst Strata.SourceRange.none true) re2
-    | .Implies => return .ite Strata.SourceRange.none re1 re2 (.boolConst Strata.SourceRange.none true)
+    | .AndThen => return binOp boolAndOp
+    | .OrElse => return binOp boolOrOp
+    | .Implies => return binOp boolImpliesOp
     | .Add => return binOp (if isReal then realAddOp else intAddOp)
     | .Sub => return binOp (if isReal then realSubOp else intSubOp)
     | .Mul => return binOp (if isReal then realMulOp else intMulOp)
@@ -269,7 +269,7 @@ def translateExpr (expr : StmtExprMd)
       disallowed md "local variables in functions are not YET supported"
       -- This doesn't work because of a limitation in Core.
       -- let coreMonoType := translateType ty
-      -- return .app Strata.SourceRange.none (.abs Strata.SourceRange.none (some coreMonoType) bodyExpr) valueExpr
+      -- return .app Strata.SourceRange.none (.abs () (some coreMonoType) bodyExpr) valueExpr
   | .Block (⟨ .LocalVariable name ty none, md⟩ :: rest) label =>
     disallowed md "local variables in functions must have initializers"
   | .Block (⟨ .IfThenElse cond thenBranch (some elseBranch), md⟩ :: rest) label =>
@@ -575,9 +575,9 @@ def translateInvokeOnAxiom (proc : Procedure) (trigger : StmtExprMd)
   -- Translate postconditions and trigger with the full bound-var context
   let postcondExprs ← postconds.mapM (fun pc => translateExpr pc boundVars (isPureContext := true))
   let bodyExpr : Core.Expression.Expr := match postcondExprs with
-    | [] => .const () (.boolConst true)
+    | [] => .const Strata.SourceRange.none (.boolConst true)
     | [e] => e
-    | e :: rest => rest.foldl (fun acc x => LExpr.mkApp () boolAndOp [acc, x]) e
+    | e :: rest => rest.foldl (fun acc x => LExpr.mkApp Strata.SourceRange.none boolAndOp [acc, x]) e
   let triggerExpr ← translateExpr trigger boundVars (isPureContext := true)
   -- Wrap in ∀ from outermost (first param) to innermost (last param).
   -- The trigger is placed on the innermost quantifier.
@@ -591,9 +591,9 @@ where
     match params with
     | [] => body
     | [p] =>
-      LExpr.allTr () p.name.text (some (translateType model p.type)) trigger body
+      LExpr.allTr Strata.SourceRange.none p.name.text (some (translateType model p.type)) trigger body
     | p :: rest =>
-      LExpr.all () p.name.text (some (translateType model p.type))
+      LExpr.all Strata.SourceRange.none p.name.text (some (translateType model p.type))
         (buildQuants model rest body trigger)
 
 structure LaurelTranslateOptions where
