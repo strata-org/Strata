@@ -1,2 +1,19 @@
+test_variable_reassign.py(4, 4): ✅ pass
+test_variable_reassign.py(4, 4): ✅ pass
+test_variable_reassign.py(6, 4): ✅ pass
+test_variable_reassign.py(6, 4): ✅ pass
+test_variable_reassign.py(8, 4): ✅ pass
+test_variable_reassign.py(8, 4): ✅ pass
+test_variable_reassign.py(13, 4): ✅ pass
+test_variable_reassign.py(13, 4): ✅ pass
+test_variable_reassign.py(16, 4): ✅ pass
+test_variable_reassign.py(16, 4): ❓ unknown
+test_variable_reassign.py(21, 4): ✅ pass
+test_variable_reassign.py(25, 4): ✅ pass
+test_variable_reassign.py(25, 4): ✅ pass
+test_variable_reassign.py(28, 4): ✅ pass
+test_variable_reassign.py(32, 4): ✅ pass
+test_variable_reassign.py(32, 4): ✅ pass
+test_variable_reassign.py(34, 0): ✅ pass
 DETAIL: 16 passed, 0 failed, 1 inconclusive
 RESULT: Inconclusive

@@ -1,2 +1,13 @@
+✅ pass
+test_class_methods.py(21, 4): ✅ pass
+test_class_methods.py(21, 4): ❓ unknown
+test_class_methods.py(24, 4): ✅ pass
+test_class_methods.py(24, 4): ❌ fail
+test_class_methods.py(28, 4): ✅ pass
+test_class_methods.py(28, 4): ❌ fail
+test_class_methods.py(30, 4): ✅ pass
+test_class_methods.py(30, 4): ✅ pass
+test_class_methods.py(30, 4): ✅ pass
+test_class_methods.py(32, 0): ✅ pass
 DETAIL: 8 passed, 2 failed, 1 inconclusive
 RESULT: Failures found

@@ -1,2 +1,14 @@
+test_if_elif.py(2, 4): ❌ fail
+test_if_elif.py(4, 4): ✅ pass
+test_if_elif.py(6, 4): ❓ unknown
+test_if_elif.py(13, 4): ✅ pass
+test_if_elif.py(13, 4): ❓ unknown
+test_if_elif.py(16, 4): ✅ pass
+test_if_elif.py(16, 4): ❓ unknown
+test_if_elif.py(19, 4): ✅ pass
+test_if_elif.py(19, 4): ❓ unknown
+test_if_elif.py(22, 4): ✅ pass
+test_if_elif.py(22, 4): ❓ unknown
+test_if_elif.py(24, 0): ✅ pass
 DETAIL: 6 passed, 1 failed, 5 inconclusive
 RESULT: Failures found

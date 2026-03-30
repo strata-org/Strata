@@ -1,2 +1,76 @@
+✅ pass
+test_regex_negative.py(10, 4): ✅ pass
+test_regex_negative.py(10, 4): ❓ unknown
+✅ pass
+test_regex_negative.py(13, 4): ✅ pass
+test_regex_negative.py(13, 4): ❓ unknown
+✅ pass
+test_regex_negative.py(16, 4): ✅ pass
+test_regex_negative.py(16, 4): ❓ unknown
+✅ pass
+test_regex_negative.py(20, 4): ✅ pass
+test_regex_negative.py(20, 4): ❓ unknown
+✅ pass
+test_regex_negative.py(23, 4): ✅ pass
+test_regex_negative.py(23, 4): ❓ unknown
+✅ pass
+test_regex_negative.py(26, 4): ✅ pass
+test_regex_negative.py(26, 4): ❓ unknown
+✅ pass
+test_regex_negative.py(29, 4): ✅ pass
+test_regex_negative.py(29, 4): ❓ unknown
+✅ pass
+✅ pass
+test_regex_negative.py(34, 4): ✅ pass
+test_regex_negative.py(34, 4): ❓ unknown
+✅ pass
+test_regex_negative.py(37, 4): ✅ pass
+test_regex_negative.py(37, 4): ❓ unknown
+✅ pass
+test_regex_negative.py(47, 4): ✅ pass
+test_regex_negative.py(47, 4): ❌ fail
+✅ pass
+test_regex_negative.py(54, 4): ✅ pass
+test_regex_negative.py(54, 4): ❌ fail
+✅ pass
+test_regex_negative.py(61, 4): ✅ pass
+test_regex_negative.py(61, 4): ❌ fail
+✅ pass
+test_regex_negative.py(68, 4): ✅ pass
+test_regex_negative.py(68, 4): ❌ fail
+✅ pass
+test_regex_negative.py(75, 4): ✅ pass
+test_regex_negative.py(75, 4): ❌ fail
+✅ pass
+test_regex_negative.py(84, 4): ✅ pass
+test_regex_negative.py(84, 4): ❓ unknown
+✅ pass
+test_regex_negative.py(87, 4): ✅ pass
+test_regex_negative.py(87, 4): ❓ unknown
+✅ pass
+test_regex_negative.py(90, 4): ✅ pass
+test_regex_negative.py(90, 4): ❓ unknown
+✅ pass
+test_regex_negative.py(93, 4): ✅ pass
+test_regex_negative.py(93, 4): ❓ unknown
+✅ pass
+test_regex_negative.py(97, 4): ✅ pass
+test_regex_negative.py(97, 4): ❓ unknown
+✅ pass
+test_regex_negative.py(100, 4): ✅ pass
+test_regex_negative.py(100, 4): ❓ unknown
+✅ pass
+test_regex_negative.py(104, 4): ✅ pass
+test_regex_negative.py(104, 4): ❓ unknown
+✅ pass
+test_regex_negative.py(107, 4): ✅ pass
+test_regex_negative.py(107, 4): ❓ unknown
+✅ pass
+test_regex_negative.py(111, 4): ✅ pass
+test_regex_negative.py(111, 4): ❓ unknown
+✅ pass
+test_regex_negative.py(114, 4): ✅ pass
+test_regex_negative.py(114, 4): ❓ unknown
+test_regex_negative.py(116, 0): ✅ pass
 DETAIL: 50 passed, 5 failed, 19 inconclusive
 RESULT: Failures found

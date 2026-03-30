@@ -1,2 +1,15 @@
+test_precondition_verification.py(8, 4): ✅ pass
+test_precondition_verification.py(8, 4): ✅ pass
+test_precondition_verification.py(8, 4): ✅ pass
+test_precondition_verification.py(11, 4): ✅ pass
+test_precondition_verification.py(11, 4): ✅ pass
+test_precondition_verification.py(11, 4): ✅ pass
+test_precondition_verification.py(14, 4): ❌ fail
+test_precondition_verification.py(14, 4): ✅ pass
+test_precondition_verification.py(14, 4): ✅ pass
+test_precondition_verification.py(17, 4): ✅ pass
+test_precondition_verification.py(17, 4): ✅ pass
+test_precondition_verification.py(17, 4): ❌ fail
+test_precondition_verification.py(19, 0): ✅ pass
 DETAIL: 11 passed, 2 failed, 0 inconclusive
 RESULT: Failures found

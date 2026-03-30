@@ -1,2 +1,6 @@
+test_function_def_calls.py(6, 4): ❓ unknown
+test_function_def_calls.py(6, 4): ✅ pass
+test_function_def_calls.py(6, 4): ✅ pass
+test_function_def_calls.py(11, 0): ✅ pass
 DETAIL: 3 passed, 0 failed, 1 inconclusive
 RESULT: Inconclusive

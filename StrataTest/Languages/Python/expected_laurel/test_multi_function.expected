@@ -1,2 +1,14 @@
+test_multi_function.py(9, 4): ❌ fail
+test_multi_function.py(9, 4): ✅ pass
+test_multi_function.py(11, 4): ❓ unknown
+test_multi_function.py(11, 4): ✅ pass
+test_multi_function.py(18, 4): ❓ unknown
+❓ unknown
+test_multi_function.py(24, 4): ✅ pass
+test_multi_function.py(24, 4): ❌ fail
+test_multi_function.py(26, 4): ✅ pass
+test_multi_function.py(26, 4): ✅ pass
+test_multi_function.py(26, 4): ✅ pass
+test_multi_function.py(28, 0): ✅ pass
 DETAIL: 7 passed, 2 failed, 3 inconclusive
 RESULT: Failures found

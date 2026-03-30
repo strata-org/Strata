@@ -1,2 +1,21 @@
+test_while_loop.py(4, 4): ✅ pass
+test_while_loop.py(4, 4): ✅ pass
+test_while_loop.py(7, 4): ✅ pass
+test_while_loop.py(7, 4): ❓ unknown
+test_while_loop.py(12, 4): ✅ pass
+test_while_loop.py(14, 8): ✅ pass
+test_while_loop.py(16, 4): ✅ pass
+test_while_loop.py(16, 4): ✅ pass
+test_while_loop.py(12, 4): ✅ pass
+test_while_loop.py(16, 4): ✅ pass
+test_while_loop.py(16, 4): ✅ pass
+test_while_loop.py(22, 4): ✅ pass
+test_while_loop.py(24, 8): ✅ pass
+test_while_loop.py(22, 4): ✅ pass
+test_while_loop.py(27, 4): ✅ pass
+test_while_loop.py(27, 4): ❓ unknown
+test_while_loop.py(22, 4): ✅ pass
+test_while_loop.py(27, 4): ✅ pass
+test_while_loop.py(27, 4): ❓ unknown
 DETAIL: 16 passed, 0 failed, 3 inconclusive
 RESULT: Inconclusive

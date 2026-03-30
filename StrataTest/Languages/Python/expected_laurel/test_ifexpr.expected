@@ -1,2 +1,5 @@
+✅ pass
+test_ifexpr.py(3, 0): ✅ pass
+test_ifexpr.py(3, 0): ✅ pass
 DETAIL: 3 passed, 0 failed, 0 inconclusive
 RESULT: Analysis success

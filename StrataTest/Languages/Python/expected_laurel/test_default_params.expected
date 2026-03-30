@@ -1,2 +1,13 @@
+test_default_params.py(8, 4): ❌ fail
+test_default_params.py(8, 4): ✅ pass
+test_default_params.py(15, 4): ✅ pass
+test_default_params.py(15, 4): ❓ unknown
+test_default_params.py(18, 4): ✅ pass
+test_default_params.py(18, 4): ❓ unknown
+test_default_params.py(21, 4): ✅ pass
+test_default_params.py(21, 4): ❌ fail
+test_default_params.py(24, 4): ✅ pass
+test_default_params.py(24, 4): ❌ fail
+test_default_params.py(26, 0): ✅ pass
 DETAIL: 6 passed, 3 failed, 2 inconclusive
 RESULT: Failures found

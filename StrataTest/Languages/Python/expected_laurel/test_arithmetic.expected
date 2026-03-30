@@ -1,2 +1,14 @@
+test_arithmetic.py(7, 4): ✅ pass
+test_arithmetic.py(7, 4): ✅ pass
+test_arithmetic.py(12, 4): ✅ pass
+test_arithmetic.py(12, 4): ✅ pass
+test_arithmetic.py(16, 4): ✅ pass
+test_arithmetic.py(16, 4): ✅ pass
+test_arithmetic.py(20, 4): ✅ pass
+test_arithmetic.py(20, 4): ✅ pass
+✅ pass
+test_arithmetic.py(24, 4): ✅ pass
+test_arithmetic.py(24, 4): ✅ pass
+test_arithmetic.py(26, 0): ✅ pass
 DETAIL: 12 passed, 0 failed, 0 inconclusive
 RESULT: Analysis success

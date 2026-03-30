@@ -1,2 +1,11 @@
+test_return_types.py(20, 4): ✅ pass
+test_return_types.py(20, 4): ❌ fail
+test_return_types.py(23, 4): ✅ pass
+test_return_types.py(23, 4): ❓ unknown
+test_return_types.py(26, 4): ✅ pass
+test_return_types.py(26, 4): ❌ fail
+test_return_types.py(29, 4): ✅ pass
+test_return_types.py(29, 4): ❌ fail
+test_return_types.py(31, 0): ✅ pass
 DETAIL: 5 passed, 3 failed, 1 inconclusive
 RESULT: Failures found

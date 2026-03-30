@@ -1,2 +1,5 @@
+✅ pass
+test_class_field_use.py(14, 4): ✅ pass
+test_class_field_use.py(14, 4): ❌ fail
 DETAIL: 2 passed, 1 failed, 0 inconclusive
 RESULT: Failures found

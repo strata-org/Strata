@@ -1,2 +1,18 @@
+test_loops.py(6, 4): ✅ pass
+test_loops.py(6, 4): ✅ pass
+❓ unknown
+❓ unknown
+test_loops.py(12, 4): ✅ pass
+test_loops.py(12, 4): ✅ pass
+❓ unknown
+❓ unknown
+❓ unknown
+❓ unknown
+test_loops.py(18, 4): ✅ pass
+test_loops.py(18, 4): ✅ pass
+test_loops.py(22, 4): ✅ pass
+test_loops.py(22, 4): ✅ pass
+test_loops.py(24, 4): ❓ unknown
+test_loops.py(24, 4): ❓ unknown
 DETAIL: 8 passed, 0 failed, 8 inconclusive
 RESULT: Inconclusive

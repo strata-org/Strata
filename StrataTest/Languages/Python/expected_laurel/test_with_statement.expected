@@ -1,2 +1,20 @@
+✅ pass
+✅ pass
+✅ pass
+test_with_statement.py(19, 4): ✅ pass
+test_with_statement.py(19, 4): ❌ fail
+✅ pass
+✅ pass
+test_with_statement.py(25, 8): ✅ pass
+test_with_statement.py(25, 8): ❌ fail
+✅ pass
+✅ pass
+✅ pass
+✅ pass
+✅ pass
+test_with_statement.py(32, 8): ✅ pass
+test_with_statement.py(32, 8): ❓ unknown
+✅ pass
+✅ pass
 DETAIL: 15 passed, 2 failed, 1 inconclusive
 RESULT: Failures found

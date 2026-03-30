@@ -1,2 +1,9 @@
+test_nested_calls.py(10, 4): ✅ pass
+test_nested_calls.py(10, 4): ❌ fail
+test_nested_calls.py(14, 4): ✅ pass
+test_nested_calls.py(14, 4): ❌ fail
+test_nested_calls.py(18, 4): ✅ pass
+test_nested_calls.py(18, 4): ❌ fail
+test_nested_calls.py(20, 0): ✅ pass
 DETAIL: 4 passed, 3 failed, 0 inconclusive
 RESULT: Failures found

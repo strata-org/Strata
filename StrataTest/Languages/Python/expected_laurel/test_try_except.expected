@@ -1,2 +1,6 @@
+test_try_except.py(7, 4): ✅ pass
+test_try_except.py(7, 4): ✅ pass
+test_try_except.py(17, 4): ✅ pass
+test_try_except.py(17, 4): ❌ fail
 DETAIL: 3 passed, 1 failed, 0 inconclusive
 RESULT: Failures found
