@@ -57,7 +57,7 @@ private def funcDeclToFunctionDecl (name : String) (args : Python.Specs.ArgDecls
   let kwargsArgs ← Python.Specs.ToLaurel.expandKwargsArgs args.kwargs
   let allArgs := args.args ++ args.kwonly ++ kwargsArgs
   pure { name, args := allArgs.toList.map specArgToFuncDeclArg,
-         hasKwargs := false, ret := none }
+         kwargsName := none, ret := none }
 
 /-- Extract PythonFunctionDecl entries from pyspec signatures.
     Handles both top-level functions and class methods.
