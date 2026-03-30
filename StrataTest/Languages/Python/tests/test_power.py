@@ -13,5 +13,9 @@ def main():
     w: int = False ** 3
     assert w == 0, "False ** 3 should be 0"
 
+    # Negative exponent returns a float (uninterpreted via float_pow)
+    r: float = 2 ** -1
+    assert r > 0, "2 ** -1 should be positive"
+
 if __name__ == "__main__":
     main()
