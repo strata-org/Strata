@@ -70,9 +70,6 @@ orthogonal.
 open Core
 open Lambda LTy.Syntax LExpr.SyntaxMono
 
--- Mode-specific regex compilation.  Each function compiles a Python regex
--- string with the correct MatchMode so that anchors (^/$) are handled
--- properly.
 -- Bool-valued factory.  See architecture comment above.
 private def mkModeBoolFunc (name : String) (mode : MatchMode) :
     LFunc Core.CoreLParams :=

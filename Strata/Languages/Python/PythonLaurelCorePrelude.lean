@@ -101,12 +101,8 @@ datatype DictStrAny () {
   DictStrAny_cons (key: string, val: Any, tail: DictStrAny)
 };
 
-// Forward declarations: needed so the inline functions after CoreOnlyDelimiter
-// can reference these during DDM parsing.  The Laurel→Core translator may
-// produce empty-signature stubs for these; prependPrelude deduplicates them.
-function re_fullmatch_str(pattern : string) : regex;
-function re_match_str(pattern : string) : regex;
-function re_search_str(pattern : string) : regex;
+// Forward declaration for re_pattern_error: needed so the inline functions
+// after CoreOnlyDelimiter can reference it during DDM parsing.
 function re_pattern_error(pattern : string) : Error;
 // The _bool variants are also factory functions (not inlined here) so that
 // unsupported patterns leave an uninterpreted Bool UF rather than an
@@ -134,13 +130,13 @@ type CoreOnlyDelimiter;
 // Architecture:
 //
 // re.compile is a semantic no-op — it returns the pattern string unchanged.
-// The mode-specific factory functions re_fullmatch_str, re_match_str,
-// re_search_str each compile a pattern string to a regex with the correct
-// MatchMode (via pythonRegexToCore), so anchors (^/$) are handled properly.
-// Their concreteEval fires when the pattern is a string literal.
-//
-// The _bool helpers call the mode-specific factories, so there is a single
-// source of truth for mode-specific compilation.
+// The mode-specific factory functions re_fullmatch_bool, re_match_bool,
+// re_search_bool each compile a pattern+string pair to a Bool via
+// pythonRegexToCore, so anchors (^/$) are handled correctly per mode.
+// Their concreteEval fires when the pattern is a string literal; on
+// unsupported patterns it returns .none, leaving an uninterpreted Bool UF
+// (which produces `unknown` gracefully rather than a cvc5 theory-combination
+// error).
 //
 // On match, we return a from_ClassInstance wrapping a concrete re_Match
 // with pos=0 and endpos=str.len(s), which is sound for the module-level
