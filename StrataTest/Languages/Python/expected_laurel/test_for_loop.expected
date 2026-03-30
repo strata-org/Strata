@@ -1,18 +1,5 @@
 
 ==== Verification Results ====
-postcondition: ✅ pass (in prelude file)
-List_take_len_post_postcondition_calls_List_take_0: ✅ pass (in prelude file)
-postcondition: ✅ pass (in prelude file)
-List_drop_len_post_postcondition_calls_List_drop_0: ✅ pass (in prelude file)
-postcondition: ✅ pass (in prelude file)
-postcondition: ✅ pass (in prelude file)
-ret_type: ✅ pass (in prelude file)
-ret_type: ✅ pass (in prelude file)
-ret_pos: ✅ pass (in prelude file)
-assert_name_is_foo: ✅ pass (in prelude file)
-assert_opt_name_none_or_str: ✅ pass (in prelude file)
-assert_opt_name_none_or_bar: ✅ pass (in prelude file)
-ensures_maybe_except_none: ✅ pass (in prelude file)
 assert_assert(129)_calls_Any_to_bool_0: ✅ pass (at line 6, col 4)
 assert(129): ❓ unknown (at line 6, col 4)
 Assertion failed at line 13, col 8: ite_cond_calls_Any_to_bool_0: ❌ fail
@@ -24,5 +11,5 @@ assert(611): ✅ pass (at line 25, col 4)
 assert_assert(611)_calls_Any_to_bool_0: ✅ pass (at line 25, col 4)
 Assertion failed at line 25, col 4: assert(611): ❌ fail
 
-DETAIL: 19 passed, 2 failed, 2 inconclusive
+DETAIL: 6 passed, 2 failed, 2 inconclusive
 RESULT: Failures found

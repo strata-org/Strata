@@ -774,7 +774,7 @@ def translateWithLaurel (options: LaurelTranslateOptions) (program : Program): T
               let axDecl? ← translateInvokeOnAxiom proc trigger
               pure axDecl?.toList
           let procDecl ← translateProcedure proc
-          return [Core.Decl.proc procDecl .empty] ++ axiomDecls
+          return [Core.Decl.proc procDecl proc.md] ++ axiomDecls
     )
 
     -- Translate Laurel constants to Core function declarations (0-ary functions)

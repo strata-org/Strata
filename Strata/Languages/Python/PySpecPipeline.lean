@@ -311,14 +311,14 @@ private def appendCorePartOfRuntime (coreFromLaurel : Core.Program) : Core.Progr
   { decls := coreFromLaurel.decls ++ Python.coreOnlyFromRuntimeCorePart  }
 
 /-- Split procedure names in a Core program into prelude names
-    (before `FIRST_END_MARKER`) and user names (after it).
-    If `FIRST_END_MARKER` is absent, nothing is considered prelude. -/
+    (no file range or empty file) and user names (all others). -/
 public def splitProcNames (prog : Core.Program)
     : Std.HashSet String × List String :=
-  let (before, rest) := prog.decls.span (fun d => toString d.name != "FIRST_END_MARKER")
-  let (preludeDecls, userDecls) := match rest with
-    | _ :: tl => (before, tl)  -- marker found: before is prelude, after is user
-    | [] => ([], before)       -- no marker: everything is user
+  let isPrelude := fun d =>
+    match Imperative.getFileRange (P := Core.Expression) d.metadata with
+    | none => true
+    | some fr => fr.file == .file ""
+  let (preludeDecls, userDecls) := prog.decls.partition isPrelude
   let preludeNames := preludeDecls.foldl (init := ({} : Std.HashSet String)) fun s d =>
     match d.getProc? with
     | some p => s.insert (Core.CoreIdent.toPretty p.header.name)

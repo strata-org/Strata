@@ -1,23 +1,10 @@
 
 ==== Verification Results ====
-postcondition: ✅ pass (in prelude file)
-List_take_len_post_postcondition_calls_List_take_0: ✅ pass (in prelude file)
-postcondition: ✅ pass (in prelude file)
-List_drop_len_post_postcondition_calls_List_drop_0: ✅ pass (in prelude file)
-postcondition: ✅ pass (in prelude file)
-postcondition: ✅ pass (in prelude file)
-ret_type: ✅ pass (in prelude file)
-ret_type: ✅ pass (in prelude file)
-ret_pos: ✅ pass (in prelude file)
-assert_name_is_foo: ✅ pass (in prelude file)
-assert_opt_name_none_or_str: ✅ pass (in prelude file)
-assert_opt_name_none_or_bar: ✅ pass (in prelude file)
-ensures_maybe_except_none: ✅ pass (in prelude file)
 init_calls_Any_get_0: ❓ unknown (at line 8, col 4)
 init_calls_Any_get_1: ❓ unknown (at line 8, col 4)
 Assertion failed at line 9, col 4: callElimAssert_requires_0_22: ❌ fail
 callElimAssert_requires_1_23: ✅ pass (at line 9, col 4)
 callElimAssert_requires_2_24: ✅ pass (at line 9, col 4)
 
-DETAIL: 15 passed, 1 failed, 2 inconclusive
+DETAIL: 2 passed, 1 failed, 2 inconclusive
 RESULT: Failures found

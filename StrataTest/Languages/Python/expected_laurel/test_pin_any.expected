@@ -1,22 +1,9 @@
 
 ==== Verification Results ====
-postcondition: ✅ pass (❗path unreachable) (in prelude file)
-List_take_len_post_postcondition_calls_List_take_0: ✔️ always true if reached (in prelude file)
-postcondition: ✅ pass (❗path unreachable) (in prelude file)
-List_drop_len_post_postcondition_calls_List_drop_0: ✔️ always true if reached (in prelude file)
-postcondition: ✅ pass (❗path unreachable) (in prelude file)
-postcondition: ✅ pass (❗path unreachable) (in prelude file)
-ret_type: ✅ always true and is reachable from declaration entry (in prelude file)
-ret_type: ✅ always true and is reachable from declaration entry (in prelude file)
-ret_pos: ✅ always true and is reachable from declaration entry (in prelude file)
-assert_name_is_foo: ✔️ always true if reached (in prelude file)
-assert_opt_name_none_or_str: ✔️ always true if reached (in prelude file)
-assert_opt_name_none_or_bar: ✔️ always true if reached (in prelude file)
-ensures_maybe_except_none: ✔️ always true if reached (in prelude file)
 ite_cond_calls_Any_to_bool_0: 🔶 can be both true and false and is reachable from declaration entry (at line 3, col 4)
 assert_assert(124)_calls_PIn_0: ❓ unknown (at line 4, col 8)
 assert_assert(124)_calls_Any_to_bool_1: ✔️ always true if reached (at line 4, col 8)
 assert(124): ❓ unknown (at line 4, col 8)
 
-DETAIL: 14 passed, 0 failed, 3 inconclusive, 4 unreachable
+DETAIL: 1 passed, 0 failed, 3 inconclusive
 RESULT: Inconclusive
