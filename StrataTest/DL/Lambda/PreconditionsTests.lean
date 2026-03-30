@@ -188,4 +188,10 @@ info: [WFObligation(safeDiv, ((~Bool.Implies : (arrow bool (arrow bool bool))) #
 #eval collectWFObligations factoryWithImplies
   esM[((~Bool.And #false) ((~Int.Gt ((~safeDiv a) #0)) #0))]
 
+-- Test for bvars: forall y :: let x := safeDiv(a, y) in safeDiv(b, x) > 0
+/-- info: [WFObligation(safeDiv, (∀ (bvar:int) (~!= %0 #0)), ()), WFObligation(safeDiv, (∀ (bvar:int) ((λ (bvar:int) (~!= %0 #0)) (~safeDiv a %0))), ())]-/
+#guard_msgs in
+#eval collectWFObligations factoryWithImplies
+  esM[∀ (int):{#true} ((λ (int): ((~Int.Gt ((~safeDiv b) %0)) #0)) ((~safeDiv a) %0))]
+
 end Lambda
