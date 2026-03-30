@@ -32,14 +32,15 @@ private meta def fileExists (path : System.FilePath) : IO Bool := do
 -- Test: full directory scan produces expected output files
 -- ============================================================
 
-private meta def testFullDirectory : IO Unit := withPython (warnOnSkip := false) fun _pythonCmd => do
+private meta def testFullDirectory : IO Unit := withPython (warnOnSkip := false) fun pythonCmd => do
   IO.FS.withTempFile fun _handle dialectFile => do
     IO.FS.writeBinFile dialectFile Strata.Python.Python.toIon
     IO.FS.withTempDir fun outDir => do
       -- broken.py has a duplicate class, so pySpecsDir will report a failure.
       -- But continue-on-error means the good modules should still be translated.
       let _r ← pySpecsDir testDir outDir dialectFile
-        (warningOutput := .none) |>.toBaseIO
+        (warningOutput := .none)
+        (pythonCmd := toString pythonCmd) |>.toBaseIO
 
       -- Check expected output files exist (all except broken)
       let expectedFiles := #[
@@ -63,13 +64,14 @@ private meta def testFullDirectory : IO Unit := withPython (warnOnSkip := false)
 -- Test: --module flag filters to specific modules
 -- ============================================================
 
-private meta def testModuleFilter : IO Unit := withPython (warnOnSkip := false) fun _pythonCmd => do
+private meta def testModuleFilter : IO Unit := withPython (warnOnSkip := false) fun pythonCmd => do
   IO.FS.withTempFile fun _handle dialectFile => do
     IO.FS.writeBinFile dialectFile Strata.Python.Python.toIon
     IO.FS.withTempDir fun outDir => do
       let r ← pySpecsDir testDir outDir dialectFile
         (modules := #["standalone"])
-        (warningOutput := .none) |>.toBaseIO
+        (warningOutput := .none)
+        (pythonCmd := toString pythonCmd) |>.toBaseIO
       match r with
       | .error msg => throw <| IO.userError s!"pySpecsDir --module failed: {msg}"
       | .ok () => pure ()
@@ -85,13 +87,14 @@ private meta def testModuleFilter : IO Unit := withPython (warnOnSkip := false) 
 -- Test: --module with package name resolves __init__.py
 -- ============================================================
 
-private meta def testModulePackage : IO Unit := withPython (warnOnSkip := false) fun _pythonCmd => do
+private meta def testModulePackage : IO Unit := withPython (warnOnSkip := false) fun pythonCmd => do
   IO.FS.withTempFile fun _handle dialectFile => do
     IO.FS.writeBinFile dialectFile Strata.Python.Python.toIon
     IO.FS.withTempDir fun outDir => do
       let r ← pySpecsDir testDir outDir dialectFile
         (modules := #["testpkg"])
-        (warningOutput := .none) |>.toBaseIO
+        (warningOutput := .none)
+        (pythonCmd := toString pythonCmd) |>.toBaseIO
       match r with
       | .error msg => throw <| IO.userError s!"pySpecsDir --module testpkg failed: {msg}"
       | .ok () => pure ()
@@ -104,13 +107,14 @@ private meta def testModulePackage : IO Unit := withPython (warnOnSkip := false)
 -- correctly (from . import helper in a non-__init__ file)
 -- ============================================================
 
-private meta def testSubdirRelativeImport : IO Unit := withPython (warnOnSkip := false) fun _pythonCmd => do
+private meta def testSubdirRelativeImport : IO Unit := withPython (warnOnSkip := false) fun pythonCmd => do
   IO.FS.withTempFile fun _handle dialectFile => do
     IO.FS.writeBinFile dialectFile Strata.Python.Python.toIon
     IO.FS.withTempDir fun outDir => do
       let r ← pySpecsDir testDir outDir dialectFile
         (modules := #["testpkg.consumer"])
-        (warningOutput := .none) |>.toBaseIO
+        (warningOutput := .none)
+        (pythonCmd := toString pythonCmd) |>.toBaseIO
       match r with
       | .error msg => throw <| IO.userError s!"pySpecsDir --module testpkg.consumer failed: {msg}"
       | .ok () => pure ()
@@ -122,14 +126,15 @@ private meta def testSubdirRelativeImport : IO Unit := withPython (warnOnSkip :=
 -- Test: incremental - second run skips up-to-date files
 -- ============================================================
 
-private meta def testIncremental : IO Unit := withPython (warnOnSkip := false) fun _pythonCmd => do
+private meta def testIncremental : IO Unit := withPython (warnOnSkip := false) fun pythonCmd => do
   IO.FS.withTempFile fun _handle dialectFile => do
     IO.FS.writeBinFile dialectFile Strata.Python.Python.toIon
     IO.FS.withTempDir fun outDir => do
       -- First run
       match ← pySpecsDir testDir outDir dialectFile
         (modules := #["standalone"])
-        (warningOutput := .none) |>.toBaseIO with
+        (warningOutput := .none)
+        (pythonCmd := toString pythonCmd) |>.toBaseIO with
       | .error msg => throw <| IO.userError s!"First run failed: {msg}"
       | .ok () => pure ()
 
@@ -144,7 +149,8 @@ private meta def testIncremental : IO Unit := withPython (warnOnSkip := false) f
       -- Second run — should skip since output is newer
       match ← pySpecsDir testDir outDir dialectFile
         (modules := #["standalone"])
-        (warningOutput := .none) |>.toBaseIO with
+        (warningOutput := .none)
+        (pythonCmd := toString pythonCmd) |>.toBaseIO with
       | .error msg => throw <| IO.userError s!"Second run failed: {msg}"
       | .ok () => pure ()
 
@@ -160,14 +166,15 @@ private meta def testIncremental : IO Unit := withPython (warnOnSkip := false) f
 -- Test: error in one module doesn't prevent others
 -- ============================================================
 
-private meta def testContinueOnError : IO Unit := withPython (warnOnSkip := false) fun _pythonCmd => do
+private meta def testContinueOnError : IO Unit := withPython (warnOnSkip := false) fun pythonCmd => do
   IO.FS.withTempFile fun _handle dialectFile => do
     IO.FS.writeBinFile dialectFile Strata.Python.Python.toIon
     IO.FS.withTempDir fun outDir => do
       -- Translate both standalone (good) and broken (has duplicate class)
       let r ← pySpecsDir testDir outDir dialectFile
         (modules := #["standalone", "testpkg.broken"])
-        (warningOutput := .none) |>.toBaseIO
+        (warningOutput := .none)
+        (pythonCmd := toString pythonCmd) |>.toBaseIO
       -- Should fail (because broken module has an error)
       match r with
       | .ok () =>
