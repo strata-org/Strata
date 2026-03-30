@@ -1,10 +1,34 @@
 
 ==== Verification Results ====
+Assertion failed at line 12, col 4: callElimAssert_requires_0_13: ❌ fail
+callElimAssert_requires_1_14: ✅ pass (at line 12, col 4)
+callElimAssert_requires_2_15: ✅ pass (at line 12, col 4)
+Assertion failed at line 15, col 4: callElimAssert_requires_0_4: ❌ fail
+callElimAssert_requires_1_5: ✅ pass (at line 15, col 4)
+callElimAssert_requires_2_6: ✅ pass (at line 15, col 4)
+Assertion failed at line 12, col 4: callElimAssert_requires_0_13: ❌ fail
+callElimAssert_requires_1_14: ✅ pass (at line 12, col 4)
+callElimAssert_requires_2_15: ✅ pass (at line 12, col 4)
+Assertion failed at line 15, col 4: callElimAssert_requires_0_4: ❌ fail
+callElimAssert_requires_1_5: ✅ pass (at line 15, col 4)
+callElimAssert_requires_2_6: ✅ pass (at line 15, col 4)
 init_calls_Any_get_0: ❓ unknown (at line 8, col 4)
 init_calls_Any_get_1: ❓ unknown (at line 8, col 4)
+callElimAssert_requires_0_13: ✅ pass (at line 12, col 4)
+callElimAssert_requires_1_14: ✅ pass (at line 12, col 4)
+callElimAssert_requires_2_15: ✅ pass (at line 12, col 4)
+callElimAssert_requires_0_4: ✅ pass (at line 15, col 4)
+callElimAssert_requires_1_5: ✅ pass (at line 15, col 4)
+callElimAssert_requires_2_6: ✅ pass (at line 15, col 4)
 Assertion failed at line 9, col 4: callElimAssert_requires_0_22: ❌ fail
 callElimAssert_requires_1_23: ✅ pass (at line 9, col 4)
 callElimAssert_requires_2_24: ✅ pass (at line 9, col 4)
+callElimAssert_requires_0_13: ✅ pass (at line 12, col 4)
+callElimAssert_requires_1_14: ✅ pass (at line 12, col 4)
+callElimAssert_requires_2_15: ✅ pass (at line 12, col 4)
+callElimAssert_requires_0_4: ✅ pass (at line 15, col 4)
+callElimAssert_requires_1_5: ✅ pass (at line 15, col 4)
+callElimAssert_requires_2_6: ✅ pass (at line 15, col 4)
 
-DETAIL: 2 passed, 1 failed, 2 inconclusive
+DETAIL: 22 passed, 5 failed, 2 inconclusive
 RESULT: Failures found

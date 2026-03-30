@@ -950,13 +950,20 @@ partial def translateAssign  (ctx : TranslationContext)
       stmts := stmts ++ eltStmts
     return (curCtx, stmts)
   let rhs_trans ←  translateExpr ctx rhs
+  -- When an unmodeled call produces a Hole, also havoc maybe_except since
+  -- the call is a black box that could throw any exception.
+  let rhsIsCall := match rhs with | .Call _ _ _ _ => true | _ => false
   if let .Hole := rhs_trans.val then
   {
+    let exceptHavoc :=
+      if rhsIsCall then
+        [mkStmtExprMdWithLoc (StmtExpr.Assign [maybeExceptVar] (mkStmtExprMd (.Hole false none))) md]
+      else []
     match lhs with
     | .Name _ n _ =>
       if n.val ∈ ctx.variableTypes.unzip.1 then
         let targetExpr := mkStmtExprMd (StmtExpr.Identifier n.val)
-        return (ctx, [mkStmtExprMd (StmtExpr.Assign [targetExpr] rhs_trans)])
+        return (ctx, [mkStmtExprMd (StmtExpr.Assign [targetExpr] rhs_trans)] ++ exceptHavoc)
       else
         -- Use type annotation if it matches a known composite type
         let annType := annotation.map (fun a => pyExprToString a) |>.getD "Any"
@@ -968,8 +975,8 @@ partial def translateAssign  (ctx : TranslationContext)
           | _ => pure (AnyTy, "Any")
         let initStmt := mkStmtExprMd (StmtExpr.LocalVariable n.val varTy (mkStmtExprMd .Hole))
         let newctx := {ctx with variableTypes:=(n.val, trackType)::ctx.variableTypes}
-        return (newctx, [initStmt])
-    | _ => return (ctx, [mkStmtExprMd .Hole])
+        return (newctx, [initStmt] ++ exceptHavoc)
+    | _ => return (ctx, [mkStmtExprMd .Hole] ++ exceptHavoc)
   }
   let mut newctx := ctx
   match lhs with
@@ -1200,6 +1207,12 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
     let expr ← translateExpr ctx value
     let expr := { expr with md := md }
 
+    -- When a call has no model (translates to Hole), also havoc maybe_except
+    -- since an unmodeled call is a black box that could throw any exception.
+    let holeExceptHavoc :=
+      if let .Call _ _ _ _ := value then
+        [mkStmtExprMdWithLoc (StmtExpr.Assign [maybeExceptVar] (mkStmtExprMd (.Hole false none))) md]
+      else []
     match expr.val with
     | .StaticCall fnname _ =>
         match ctx.functionSignatures.find? (λ funsig => funsig.name == fnname) with
@@ -1211,6 +1224,7 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
             else
               return (ctx, [expr])
         | _ => return (ctx, [expr])
+    | .Hole => return (ctx, [expr] ++ holeExceptHavoc)
     | _ => return (ctx, [expr])
 
   | .Import _ _ | .ImportFrom _ _ _ _ |.Pass _ => return (ctx, [mkStmtExprMd .Hole])
@@ -1944,7 +1958,7 @@ def pythonToLaurel' (info : PreludeInfo)
         determinism := .deterministic none
         decreases := none
         body := .Opaque [] none []
-        md := default
+        md := md
         isFunctional := false }
     procedures := procedures.push
       { name := { text := compositeToStringAnyName ct.name.text }
@@ -1954,7 +1968,7 @@ def pythonToLaurel' (info : PreludeInfo)
         determinism := .deterministic none
         decreases := none
         body := .Opaque [] none []
-        md := default
+        md := md
         isFunctional := false }
 
   let program : Laurel.Program := {
