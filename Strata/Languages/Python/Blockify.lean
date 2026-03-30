@@ -725,13 +725,18 @@ public partial def freeVarsExpr (e : expr SourceRange) : Std.HashSet String :=
   | _ => {}
 
 /-- Add variables read by an assignment target to a set.
-    For `self.x = v`, adds `self` (reads self, defines nothing at top level).
-    For `z = v`, adds nothing (defines z, reads nothing). -/
+    `Name` targets are definitions (skipped). `Attribute`/`Subscript` targets
+    read their object/key. `Tuple`/`List` targets recurse into elements. -/
 private def addTargetReads (acc : Std.HashSet String)
     (target : expr SourceRange) : Std.HashSet String :=
-  let fv := freeVarsExpr target
-  let defs := (extractNames target).foldl (init := ({}:Std.HashSet String)) fun a n => a.insert n
-  acc ∪ (fv \ defs)
+  match target with
+  | .Name .. => acc  -- simple assignment, no reads
+  | .Attribute _ obj _ _ => acc ∪ (freeVarsExpr obj)
+  | .Subscript _ obj key _ => acc ∪ (freeVarsExpr obj) ∪ (freeVarsExpr key)
+  | .Starred _ value _ => addTargetReads acc value
+  | .Tuple _ ⟨_, elts⟩ _ | .List _ ⟨_, elts⟩ _ =>
+    elts.foldl (init := acc) fun acc e => addTargetReads acc e
+  | _ => acc
 
 /-- Add free variables from a statement's expressions into an existing set. -/
 public partial def addFreeVarsStmt (acc : Std.HashSet String)
