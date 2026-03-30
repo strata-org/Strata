@@ -112,10 +112,10 @@ where
       | .quant md _ name ty trigger body =>
         (go F body implications (shiftLetObs letObs)).map fun ob =>
           { ob with obligation := .quant md .all name ty trigger ob.obligation }
-      /- If we are on the RHS of an implication, add assumption
-        E.g. y > 0 ==> x / y = 1 should produce
-        y > 0 ==> y != 0 -/
       | .app md (.app _ (.op _ opName _) lhs) rhs =>
+        /- p ==> e: preconditions in e can assume p
+           E.g. y > 0 ==> x / y > 0 should produce
+           y > 0 ==> y != 0 -/
         if opName == (@boolImpliesFunc T).name then
           let lhsObs := go F lhs implications letObs
           let rhsObs := go F rhs ((md, lhs) :: implications) letObs
