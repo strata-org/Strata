@@ -123,6 +123,9 @@ C are already well-typed.
         .ok (Decl.proc proc' md, C, Env)
 
       | .func func md => try
+        if func.isRecursive then
+          .error (DiagnosticModel.withRange fileRange <|
+            f!"Decl.func does not allow recursive functions. Use recFuncBlock instead: '{func.name}'")
         let Env := Env.pushEmptySubstScope
         let (func', Env) ← Function.typeCheck C Env func |>.mapError (fun e => DiagnosticModel.withRange fileRange e)
         let C := C.addFactoryFunction func'

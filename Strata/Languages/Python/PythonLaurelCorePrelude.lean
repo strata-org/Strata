@@ -100,12 +100,6 @@ datatype DictStrAny () {
   DictStrAny_cons (key: string, val: Any, tail: DictStrAny)
 };
 
-function List_len (l : ListAny) : int;
-function List_take (l : ListAny, i: int) : ListAny;
-function List_drop (l : ListAny, i: int) : ListAny;
-function datetime_strptime(dtstring: Any, format: Any) : Any;
-function to_string_any(a: Any) : Any;
-
 type CoreOnlyDelimiter;
 
 // =====================================================================

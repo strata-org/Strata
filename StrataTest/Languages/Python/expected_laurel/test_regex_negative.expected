@@ -43,7 +43,37 @@ Assertion failed at line 68, col 4: assert(2015): ❌ fail
 set_m_calls_re_match_0: ✅ pass
 assert_assert(2193)_calls_Any_to_bool_0: ✅ pass (at line 75, col 4)
 Assertion failed at line 75, col 4: assert(2193): ❌ fail
-ite_cond_calls_Any_to_bool_0: ✅ pass (at line 77, col 0)
+set_m_calls_re_search_0: ✅ pass
+assert_assert(2681)_calls_Any_to_bool_0: ✅ pass (at line 84, col 4)
+assert(2681): ❓ unknown (at line 84, col 4)
+set_m_calls_re_fullmatch_0: ✅ pass
+assert_assert(2805)_calls_Any_to_bool_0: ✅ pass (at line 87, col 4)
+assert(2805): ❓ unknown (at line 87, col 4)
+set_m_calls_re_fullmatch_0: ✅ pass
+assert_assert(2918)_calls_Any_to_bool_0: ✅ pass (at line 90, col 4)
+assert(2918): ❓ unknown (at line 90, col 4)
+set_m_calls_re_search_0: ✅ pass
+assert_assert(3027)_calls_Any_to_bool_0: ✅ pass (at line 93, col 4)
+assert(3027): ❓ unknown (at line 93, col 4)
+set_m_calls_re_fullmatch_0: ✅ pass
+assert_assert(3187)_calls_Any_to_bool_0: ✅ pass (at line 97, col 4)
+assert(3187): ❓ unknown (at line 97, col 4)
+set_m_calls_re_fullmatch_0: ✅ pass
+assert_assert(3309)_calls_Any_to_bool_0: ✅ pass (at line 100, col 4)
+assert(3309): ❓ unknown (at line 100, col 4)
+set_m_calls_re_search_0: ✅ pass
+assert_assert(3492)_calls_Any_to_bool_0: ✅ pass (at line 104, col 4)
+assert(3492): ❓ unknown (at line 104, col 4)
+set_m_calls_re_fullmatch_0: ✅ pass
+assert_assert(3597)_calls_Any_to_bool_0: ✅ pass (at line 107, col 4)
+assert(3597): ❓ unknown (at line 107, col 4)
+set_m_calls_re_search_0: ✅ pass
+assert_assert(3759)_calls_Any_to_bool_0: ✅ pass (at line 111, col 4)
+assert(3759): ❓ unknown (at line 111, col 4)
+set_m_calls_re_search_0: ✅ pass
+assert_assert(3866)_calls_Any_to_bool_0: ✅ pass (at line 114, col 4)
+assert(3866): ❓ unknown (at line 114, col 4)
+ite_cond_calls_Any_to_bool_0: ✅ pass (at line 116, col 0)
 
-DETAIL: 30 passed, 5 failed, 9 inconclusive
+DETAIL: 50 passed, 5 failed, 19 inconclusive
 RESULT: Failures found
