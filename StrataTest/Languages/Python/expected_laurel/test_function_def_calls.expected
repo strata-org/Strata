@@ -1,8 +1,8 @@
 
 ==== Verification Results ====
-callElimAssert_req_name_is_foo_4: ❓ unknown (at line 6, col 4)
-callElimAssert_req_opt_name_none_or_str_5: ✅ pass (at line 6, col 4)
-callElimAssert_req_opt_name_none_or_bar_6: ✅ pass (at line 6, col 4)
+callElimAssert_requires_0_4: ❓ unknown (at line 6, col 4)
+callElimAssert_requires_1_5: ✅ pass (at line 6, col 4)
+callElimAssert_requires_2_6: ✅ pass (at line 6, col 4)
 ite_cond_calls_Any_to_bool_0: ✅ pass (at line 11, col 0)
 
 DETAIL: 3 passed, 0 failed, 1 inconclusive
