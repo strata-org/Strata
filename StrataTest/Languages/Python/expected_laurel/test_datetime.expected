@@ -1,10 +1,10 @@
 
 ==== Verification Results ====
-callElimAssert_d_type_12: ✅ pass
-callElimAssert_days_type_4: ✅ pass
-callElimAssert_hours_type_5: ✅ pass
-callElimAssert_days_pos_6: ✅ pass
-callElimAssert_hours_pos_7: ✅ pass
+callElimAssert_requires_12: ✅ pass
+callElimAssert_requires_0_4: ✅ pass
+callElimAssert_requires_1_5: ✅ pass
+callElimAssert_requires_2_6: ✅ pass
+callElimAssert_requires_3_7: ✅ pass
 assert_assert(554)_calls_Any_to_bool_0: ✅ pass (at line 21, col 0)
 assert(554): ✅ pass (at line 21, col 0)
 assert_assert(673)_calls_Any_to_bool_0: ✅ pass (at line 25, col 0)
