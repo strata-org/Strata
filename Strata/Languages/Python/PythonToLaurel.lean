@@ -986,23 +986,23 @@ partial def translateAssign  (ctx : TranslationContext)
               let selfRef := mkStmtExprMd (StmtExpr.Identifier n.val)
               let initStmt := mkInstanceMethodCall laurelName "__init__" selfRef args
               if n.val ∈ ctx.variableTypes.unzip.1 then
-                let assignStmt := mkStmtExprMd (StmtExpr.Assign [targetExpr] newExpr)
+                let assignStmt := mkStmtExprMdWithLoc (StmtExpr.Assign [targetExpr] newExpr) md
                 [assignStmt, initStmt]
               else
-                let newStmt := mkStmtExprMd (StmtExpr.LocalVariable n.val varType (some newExpr))
+                let newStmt := mkStmtExprMdWithLoc (StmtExpr.LocalVariable n.val varType (some newExpr)) md
                 [newStmt, initStmt]
             else if withException ctx fnname.text then
-              [mkStmtExprMd (StmtExpr.Assign [targetExpr, maybeExceptVar] rhs_trans)]
+              [mkStmtExprMdWithLoc (StmtExpr.Assign [targetExpr, maybeExceptVar] rhs_trans) md]
             else
-                [mkStmtExprMd (StmtExpr.Assign [targetExpr] rhs_trans)]
+                [mkStmtExprMdWithLoc (StmtExpr.Assign [targetExpr] rhs_trans) md]
         | .New className =>
             if n.val ∈ ctx.variableTypes.unzip.1 then
-              [mkStmtExprMd (StmtExpr.Assign [targetExpr] rhs_trans)]
+              [mkStmtExprMdWithLoc (StmtExpr.Assign [targetExpr] rhs_trans) md]
             else
               let varType := mkHighTypeMd (.UserDefined className)
-              let newStmt := mkStmtExprMd (StmtExpr.LocalVariable n.val varType (some rhs_trans))
+              let newStmt := mkStmtExprMdWithLoc (StmtExpr.LocalVariable n.val varType (some rhs_trans)) md
               [newStmt]
-        | _ => [mkStmtExprMd (StmtExpr.Assign [targetExpr] rhs_trans)]
+        | _ => [mkStmtExprMdWithLoc (StmtExpr.Assign [targetExpr] rhs_trans) md]
         newctx := match rhs_trans.val with
         | .StaticCall fnname _ =>
             if let some (ImportedSymbol.compositeType laurelName) := ctx.importedSymbols[fnname.text]? then
@@ -1031,7 +1031,7 @@ partial def translateAssign  (ctx : TranslationContext)
             let target ← translateExpr ctx target
             let slices ← slices.mapM (translateExpr ctx)
             let anySetsExpr := ⟨ StmtExpr.StaticCall "Any_sets" [ListAny_mk slices, target, rhs_trans] , md ⟩
-            let assignStmts := [mkStmtExprMd (StmtExpr.Assign [target] anySetsExpr)]
+            let assignStmts := [mkStmtExprMdWithLoc (StmtExpr.Assign [target] anySetsExpr) md]
             return (ctx,assignStmts)
         | _ =>  throw (.internalError "Invalid Subscript Expr")
     | .Attribute _ obj attr _ =>

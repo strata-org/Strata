@@ -6,7 +6,7 @@ test_arithmetic.py(16, 4): ✅ pass - assert_assert(345)_calls_Any_to_bool_0
 test_arithmetic.py(16, 4): ✅ pass - assert(345)
 test_arithmetic.py(20, 4): ✅ pass - assert_assert(458)_calls_Any_to_bool_0
 test_arithmetic.py(20, 4): ✅ pass - assert(458)
-✅ pass - set_quot_calls_PFloorDiv_0
+test_arithmetic.py(23, 4): ✅ pass - set_quot_calls_PFloorDiv_0
 test_arithmetic.py(24, 4): ✅ pass - assert_assert(567)_calls_Any_to_bool_0
 test_arithmetic.py(24, 4): ✅ pass - assert(567)
 test_arithmetic.py(26, 0): ✅ pass - ite_cond_calls_Any_to_bool_0
