@@ -1661,6 +1661,7 @@ def translateClass (ctx : TranslationContext) (classStmt : Python.stmt SourceRan
     for stmt in body do
       if let .FunctionDef .. := stmt then
         let proc ← translateMethod ctx className stmt
+        -- TODO stop replacing the body of instance proceduces with an empty one
         instanceProcedures := instanceProcedures.push { proc with body := .Opaque [] .none [] }
 
     return ({
