@@ -131,13 +131,23 @@ def intPowFunc : LFunc Core.CoreLParams :=
           | _ => .none)
       }
 
+-- Float exponentiation (uninterpreted). Used for negative integer exponents
+-- where Python returns a float (e.g. 2 ** -3 = 0.125).
+def floatPowFunc : LFunc Core.CoreLParams :=
+    { name := "float_pow",
+      typeArgs := [],
+      inputs := [("base", mty[real]), ("exp", mty[real])],
+      output := mty[real]
+      }
+
 def ReFactory : @Factory Core.CoreLParams :=
     #[
       reFullmatchBoolFunc,
       reMatchBoolFunc,
       reSearchBoolFunc,
       rePatternErrorFunc,
-      intPowFunc
+      intPowFunc,
+      floatPowFunc
     ]
 
 /-- Core.Factory extended with regex factory functions. -/

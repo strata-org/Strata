@@ -112,6 +112,7 @@ function re_fullmatch_bool(pattern : string, s : string) : bool;
 function re_match_bool(pattern : string, s : string) : bool;
 function re_search_bool(pattern : string, s : string) : bool;
 function int_pow(base : int, exp : int) : int;
+function float_pow(base : real, exp : real) : real;
 
 type CoreOnlyDelimiter;
 
@@ -853,9 +854,11 @@ inline function PPow (v1: Any, v2: Any) : Any
 {
   if Any..isexception(v1) then v1 else if Any..isexception(v2) then v2
   else if (Any..isfrom_int(v1) && Any..isfrom_int(v2)) then
-    from_int(int_pow(Any..as_int!(v1), Any..as_int!(v2)))
+    if Any..as_int!(v2) >= 0 then from_int(int_pow(Any..as_int!(v1), Any..as_int!(v2)))
+    else from_float(float_pow(int_to_real(Any..as_int!(v1)), int_to_real(Any..as_int!(v2))))
   else if (Any..isfrom_bool(v1) && Any..isfrom_int(v2)) then
-    from_int(int_pow(bool_to_int(Any..as_bool!(v1)), Any..as_int!(v2)))
+    if Any..as_int!(v2) >= 0 then from_int(int_pow(bool_to_int(Any..as_bool!(v1)), Any..as_int!(v2)))
+    else from_float(float_pow(bool_to_real(Any..as_bool!(v1)), int_to_real(Any..as_int!(v2))))
   else if (Any..isfrom_int(v1) && Any..isfrom_bool(v2)) then
     from_int(int_pow(Any..as_int!(v1), bool_to_int(Any..as_bool!(v2))))
   else
