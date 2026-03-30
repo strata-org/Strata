@@ -1,4 +1,6 @@
 module "t20_raise":
+-- WARNING: bare raise not yet supported at 12:8-12:13
+
 
 func fail_hard():
   bb0():

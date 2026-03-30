@@ -140,6 +140,8 @@ structure SSAState where
   names          : Array SSAName := #[]
   blocks         : Array Block := #[]
   currentInstrs  : Array NamedInstr := #[]
+  /-- Maps SSAVal.id → index in currentInstrs for O(1) type updates. -/
+  valInstrIdx    : Std.HashMap Nat Nat := {}
   -- Block ID is always blocks.size (emission index)
   currentParams  : Array BlockParam := #[]
   currentExcept  : Option ExceptTarget := none
@@ -147,7 +149,6 @@ structure SSAState where
   nameSuffixes   : Std.HashMap String Nat := {}
   /-- Next block ID to allocate (statement + expression blocks). -/
   nextBlockId    : Nat := 1  -- bb0 is reserved for entry
-  errors         : Array (String × SourceRange) := #[]
   /-- Demand analysis array (reverse block-ID order). -/
   demandArr      : Array Blockify.DemandVars := #[]
   /-- Extra synthetic values (e.g., `_iter`, `_mgr`) threaded through all blocks.
@@ -183,8 +184,10 @@ def emitInstr (base : String) (type : Option PyType) (instr : Instruction)
     (sr : SourceRange) (exceptArgs : Option (Array ExceptArgVal) := none)
     : SSAM SSAVal := do
   let val ← freshVal base sr
-  modify fun s => { s with currentInstrs := s.currentInstrs.push {
-    result := some val, type, instr, sr, exceptArgs
+  modify fun s => { s with
+    valInstrIdx := s.valInstrIdx.insert val.id s.currentInstrs.size
+    currentInstrs := s.currentInstrs.push {
+      result := some val, type, instr, sr, exceptArgs
   }}
   return val
 
@@ -194,12 +197,12 @@ def emitVoidInstr (instr : Instruction) (sr : SourceRange)
     result := none, type := none, instr, sr, exceptArgs
   }}
 
-def ssaError (sr : SourceRange) (msg : String) : SSAM SSAVal := do
-  modify fun s => { s with errors := s.errors.push (msg, sr) }
-  emitInstr "_err" none (.unsupported msg) sr
-
 def ssaWarn (sr : SourceRange) (msg : String) : SSAM Unit :=
   modify fun s => { s with warnings := s.warnings.push (msg, sr) }
+
+def ssaError (sr : SourceRange) (msg : String) : SSAM SSAVal := do
+  ssaWarn sr msg
+  emitInstr "_err" none (.unsupported msg) sr
 
 def lookupVar (name : String) (sr : SourceRange) : SSAM SSAVal := do
   let s ← get
@@ -227,13 +230,19 @@ def renameVal (val : SSAVal) (newBase : String) : SSAM Unit :=
         nameSuffixes := s.nameSuffixes.insert newBase (suffix + 1) }
     else s
 
+-- FIXME: This seems like is hiding bugs potentially.  Issue warning with internal error
+-- if invariants are broken.
 def setValType (val : SSAVal) (type : PyType) : SSAM Unit :=
   modify fun s =>
-    let instrs := s.currentInstrs.map fun ni =>
-      if ni.result == some val && ni.type.isNone then
-        { ni with type := some type }
-      else ni
-    { s with currentInstrs := instrs }
+    match s.valInstrIdx[val.id]? with
+    | some idx =>
+      if h : idx < s.currentInstrs.size then
+        let ni := s.currentInstrs[idx]
+        if ni.type.isNone then
+          { s with currentInstrs := s.currentInstrs.set idx { ni with type := some type } }
+        else s
+      else s
+    | none => s
 
 def parseTypeAnnotation (e : expr SourceRange) : Option PyType :=
   match e with
@@ -268,24 +277,82 @@ def getDemandVars (blockId : BlockId) : SSAM (Array String) := do
     -- FIXME: This seems like it should trigger an error not silently return empty.
     return #[]
 
-/-- Build a fwd prefix from demand vars: look up each variable from varEnv.
-    Returns array of (name, SSAVal) entries to prepend to fwd. -/
-def demandToFwd (blockId : BlockId) (sr : SourceRange)
-    : SSAM (Array (String × SSAVal)) := do
-  let vars ← getDemandVars blockId
-  let mut result : Array (String × SSAVal) := #[]
-  for v in vars do
-    let val ← lookupVar v sr
-    result := result.push (v, val)
-  return result
+/-! ## Forwarding Context -/
+
+/-- The forwarding context: names + SSA values that must survive through
+    expression blocks. Block-creating expressions thread these as extra
+    block params/branch args. Stored as parallel arrays for O(1) zip/extract. -/
+structure Fwd where
+  names : Array String
+  vals  : Array SSAVal
+deriving Inhabited
+
+instance : EmptyCollection Fwd := ⟨{ names := #[], vals := #[] }⟩
+
+def Fwd.size (fwd : Fwd) : Nat := fwd.vals.size
+
+/-- Extract just the SSA values from the forwarding context (for branch args). -/
+def fwdVals (fwd : Fwd) : Array SSAVal := fwd.vals
+
+/-- Zip names from old fwd with new SSA values. O(1) — reuses names array. -/
+def zipFwd (fwd : Fwd) (vals : Array SSAVal) : Fwd :=
+  { fwd with vals }
+
+/-- Push a new name/value pair onto the forwarding context. -/
+def Fwd.push (fwd : Fwd) (name : String) (val : SSAVal) : Fwd :=
+  { names := fwd.names.push name, vals := fwd.vals.push val }
+
+/-- Pop the last entry from the forwarding context. -/
+def Fwd.pop (fwd : Fwd) : Fwd :=
+  { names := fwd.names.pop, vals := fwd.vals.pop }
+
+/-- Shrink forwarding context to the first `n` entries. -/
+def Fwd.shrink (fwd : Fwd) (n : Nat) : Fwd :=
+  { names := fwd.names.shrink n, vals := fwd.vals.shrink n }
+
+/-- Get the value at index `i`. -/
+def Fwd.val! (fwd : Fwd) (i : Nat) : SSAVal := fwd.vals[i]!
+
+/-- Get the name at index `i`. -/
+def Fwd.name! (fwd : Fwd) (i : Nat) : String := fwd.names[i]!
+
+/-- Get the value of the last entry. -/
+def Fwd.backVal! (fwd : Fwd) : SSAVal := fwd.vals.back!
+
+/-- Append two forwarding contexts. -/
+def Fwd.append (fwd1 fwd2 : Fwd) : Fwd :=
+  { names := fwd1.names ++ fwd2.names, vals := fwd1.vals ++ fwd2.vals }
+
+instance : HAppend Fwd Fwd Fwd := ⟨Fwd.append⟩
+
+/-- Create fresh block params for the forwarding context. Returns new params
+    and updates the forwarding context with the new SSAVals. -/
+def fwdToParams (fwd : Fwd) (sr : SourceRange) : SSAM (Array BlockParam × Fwd) := do
+  let mut newVals : Array SSAVal := #[]
+  let mut params : Array BlockParam := #[]
+  for name in fwd.names do
+    let val ← freshVal name sr
+    params := params.push { val, type := none, sr }
+    newVals := newVals.push val
+  return (params, ⟨fwd.names, newVals⟩)
 
 /-- After fwdToParams, bind the demand portion of a fwd into varEnv so
     lookupVar returns the new param values instead of stale cross-block refs. -/
-def bindDemandFwd (fwd : Array (String × SSAVal)) (demandSize : Nat) : SSAM Unit := do
+def bindDemandFwd (fwd : Fwd) (demandSize : Nat) : SSAM Unit := do
   for i in [:demandSize] do
-    if h : i < fwd.size then
-      let (name, val) := fwd[i]
-      bindVar name val
+    if i < demandSize then
+      bindVar (fwd.name! i) (fwd.val! i)
+
+/-- Build a fwd prefix from demand vars: look up each variable from varEnv.
+    Returns a Fwd to prepend to the caller's fwd. -/
+def demandToFwd (blockId : BlockId) (sr : SourceRange)
+    : SSAM Fwd := do
+  let vars ← getDemandVars blockId
+  let mut vals : Array SSAVal := #[]
+  for v in vars do
+    let val ← lookupVar v sr
+    vals := vals.push val
+  return ⟨vars, vals⟩
 
 def finishBlock (term : Terminator) (termSr : SourceRange)
     (nextParams : Array BlockParam)
@@ -301,6 +368,7 @@ def finishBlock (term : Terminator) (termSr : SourceRange)
   set { s with
     blocks := s.blocks.push block
     currentInstrs := #[]
+    valInstrIdx := {}
     currentParams := nextParams
     currentExcept := nextExcept
   }
@@ -314,13 +382,14 @@ def finishBlockWithTerm (term : Terminator) (termSr : SourceRange) : SSAM Unit :
     term, termSr
     except := s.currentExcept
   }
-  set { s with blocks := s.blocks.push block, currentInstrs := #[] }
+  set { s with blocks := s.blocks.push block, currentInstrs := #[], valInstrIdx := {} }
 
 def startNewBlock (params : Array BlockParam)
     (except : Option ExceptTarget := none) : SSAM Unit :=
   modify fun s => { s with
     currentParams := params
     currentInstrs := #[]
+    valInstrIdx := {}
     currentExcept := except
   }
 
@@ -332,29 +401,6 @@ def startFirstBlock (params : Array BlockParam)
   }
 
 /-! ## Forwarding Helpers -/
-
-/-- The forwarding context: names + SSA values that must survive through
-    expression blocks. Block-creating expressions thread these as extra
-    block params/branch args. -/
-abbrev Fwd := Array (String × SSAVal)
-
-/-- Extract just the SSA values from the forwarding context (for branch args). -/
-def fwdVals (fwd : Fwd) : Array SSAVal := fwd.map Prod.snd
-
-/-- Zip names from old fwd with new SSA values. -/
-def zipFwd (fwd : Fwd) (vals : Array SSAVal) : Fwd :=
-  (fwd.zip vals).map fun ((n, _), v) => (n, v)
-
-/-- Create fresh block params for the forwarding context. Returns new params
-    and updates the forwarding context with the new SSAVals. -/
-def fwdToParams (fwd : Fwd) (sr : SourceRange) : SSAM (Array BlockParam × Fwd) := do
-  let mut params : Array BlockParam := #[]
-  let mut newFwd : Fwd := #[]
-  for (name, _) in fwd do
-    let val ← freshVal name sr
-    params := params.push { val, type := none, sr }
-    newFwd := newFwd.push (name, val)
-  return (params, newFwd)
 
 /-- Check if an expression will create blocks (BoolOp, IfExp, chained Compare). -/
 def exprCreatesBlocks (e : expr SourceRange) : Bool :=
@@ -390,8 +436,7 @@ partial def translateExpr (e : expr SourceRange) (fwd : Fwd)
       -- Left may produce a value needed after right's blocks
       let (lv, fwdVals1) ← translateExpr left fwd
       let lName ← valName lv
-      let fwd1 := zipFwd fwd fwdVals1
-      let fwd1 := fwd1.push (lName, lv)
+      let fwd1 := (zipFwd fwd fwdVals1).push lName lv
       let (rv, fwdVals2) ← translateExpr right fwd1
       let lv' := fwdVals2.back!
       let fwdVals2 := fwdVals2.pop
@@ -440,7 +485,7 @@ partial def translateExpr (e : expr SourceRange) (fwd : Fwd)
     -- Push funcVal onto fwd if any arg creates blocks
     if argsCreateBlocks then
       let fName ← valName fv
-      fwd' := fwd'.push (fName, fv)
+      fwd' := fwd'.push fName fv
     let mut fv' := fv
     let mut callArgs : Array CallArg := #[]
     for i in [:args.size] do
@@ -456,14 +501,14 @@ partial def translateExpr (e : expr SourceRange) (fwd : Fwd)
           -- Push argVal if remaining args create blocks
           if remaining then
             let aName ← valName av
-            fwd' := fwd'.push (aName, av)
+            fwd' := fwd'.push aName av
         | _ =>
           let (av, fwdVals') ← translateExpr a fwd'
           fwd' := zipFwd fwd' fwdVals'
           callArgs := callArgs.push (.positional av)
           if remaining then
             let aName ← valName av
-            fwd' := fwd'.push (aName, av)
+            fwd' := fwd'.push aName av
     -- Evaluate kwargs
     for kw in kwargs do
       match kw with
@@ -479,7 +524,7 @@ partial def translateExpr (e : expr SourceRange) (fwd : Fwd)
       -- The original fwd entries are at the beginning
       let origSize := fwd.size
       -- funcVal is at index origSize
-      fv' := fwd'[origSize]!.snd
+      fv' := fwd'.val! origSize
       -- Arg values that were pushed are after funcVal
       -- But we already have the argVals in callArgs... we need to update them
       -- with the remapped values from fwd'
@@ -492,7 +537,7 @@ partial def translateExpr (e : expr SourceRange) (fwd : Fwd)
             || kwargs.any fun kw => match kw with | .mk_keyword _ _ v => exprCreatesBlocks v
           if remaining_i && pushIdx < fwd'.size then
             -- This arg was pushed; read its remapped value
-            let remapped := fwd'[pushIdx]!.snd
+            let remapped := fwd'.val! pushIdx
             match ca with
             | .positional _ => updatedCallArgs := updatedCallArgs.push (.positional remapped)
             | .starArgs _ => updatedCallArgs := updatedCallArgs.push (.starArgs remapped)
@@ -710,10 +755,10 @@ where
     let extFwd := demandFwd ++ fwd
     -- First comparison: leftVal op[0] comparators[0]
     let lvName ← valName leftVal
-    let mut fwd' := extFwd.push (lvName, leftVal)
+    let mut fwd' := extFwd.push lvName leftVal
     let (firstRight, fwdVals1) ← translateExpr comparators[0]! fwd'
     fwd' := zipFwd fwd' fwdVals1
-    let leftVal' := fwd'.back!.snd
+    let leftVal' := fwd'.backVal!
     fwd' := fwd'.pop
     let mut prevRight := firstRight
     let mut cmpResult ← emitInstr "_tmp" none
@@ -724,7 +769,7 @@ where
         let evalBlockId := blockIds[i - 1]!
         -- Thread fwd + prevRight through blocks
         let prName ← valName prevRight
-        let fwdWithPrev := fwd'.push (prName, prevRight)
+        let fwdWithPrev := fwd'.push prName prevRight
         let fwdArgs := fwdVals fwdWithPrev
         let joinArgs := #[cmpResult] ++ fwdArgs
         -- short-circuit: false → join, true → continue
@@ -733,17 +778,18 @@ where
         finishBlock (.condBranch cmpResult evalBlockId fwdArgs joinBlockId joinArgs) sr
           evalParams
         fwd' := evalFwd.pop  -- pop prevRight, keep the rest
-        prevRight := evalFwd.back!.snd
+        prevRight := evalFwd.backVal!
         let (nextRight, fwdVals') ← translateExpr comparators[i] evalFwd
         fwd' := zipFwd fwd' fwdVals'.pop
         prevRight := nextRight
         cmpResult ← emitInstr "_tmp" none
-          (.compareOp (translateCmpOp ops[i]!) (evalFwd.back!.snd) nextRight) sr
+          (.compareOp (translateCmpOp ops[i]!) evalFwd.backVal! nextRight) sr
     -- Branch to join with final result
     let resultVal ← freshVal "_tmp" sr
-    let joinFwdParams ← fwd'.mapM fun (name, _) => do
+    let mut joinFwdParams : Array BlockParam := #[]
+    for name in fwd'.names do
       let v ← freshVal name sr
-      return { val := v, type := none, sr : BlockParam }
+      joinFwdParams := joinFwdParams.push { val := v, type := none, sr }
     let joinParam : BlockParam := { val := resultVal, type := none, sr }
     let allJoinParams := #[joinParam] ++ joinFwdParams
     let joinArgs := #[cmpResult] ++ fwdVals fwd'
@@ -751,7 +797,7 @@ where
     -- Rebind demand vars from join params, then strip demand prefix
     for i in [:demandSize] do
       if h : i < joinFwdParams.size then
-        bindVar fwd'[i]!.fst joinFwdParams[i].val
+        bindVar (fwd'.name! i) joinFwdParams[i].val
     let joinFwdVals := (joinFwdParams.extract demandSize joinFwdParams.size).map (·.val)
     return (resultVal, joinFwdVals)
 
@@ -800,9 +846,10 @@ where
           lastVal := val
       -- Branch to join
       let resultVal ← freshVal "_tmp" sr
-      let joinFwdParams ← fwd'.mapM fun (name, _) => do
+      let mut joinFwdParams : Array BlockParam := #[]
+      for name in fwd'.names do
         let v ← freshVal name sr
-        return { val := v, type := none, sr : BlockParam }
+        joinFwdParams := joinFwdParams.push { val := v, type := none, sr }
       let joinParam : BlockParam := { val := resultVal, type := none, sr }
       let allJoinParams := #[joinParam] ++ joinFwdParams
       let joinArgs := #[lastVal] ++ fwdVals fwd'
@@ -810,7 +857,7 @@ where
       -- Rebind demand vars from join params, then strip demand prefix
       for i in [:demandSize] do
         if h : i < joinFwdParams.size then
-          bindVar fwd'[i]!.fst joinFwdParams[i].val
+          bindVar (fwd'.name! i) joinFwdParams[i].val
       let joinFwdVals := (joinFwdParams.extract demandSize joinFwdParams.size).map (·.val)
       return (resultVal, joinFwdVals)
 
@@ -843,16 +890,17 @@ where
     let elseJoinArgs := #[orelseVal] ++ elseFwdVals
     -- Join block
     let resultVal ← freshVal "_tmp" sr
-    let joinFwdParams ← extFwd.mapM fun (name, _) => do
+    let mut joinFwdParams : Array BlockParam := #[]
+    for name in extFwd.names do
       let v ← freshVal name sr
-      return { val := v, type := none, sr : BlockParam }
+      joinFwdParams := joinFwdParams.push { val := v, type := none, sr }
     let joinParam : BlockParam := { val := resultVal, type := none, sr }
     let allJoinParams := #[joinParam] ++ joinFwdParams
     finishBlock (.branch joinBlockId elseJoinArgs) sr allJoinParams
     -- Rebind demand vars from join params, then strip demand prefix
     for i in [:demandSize] do
       if h : i < joinFwdParams.size then
-        bindVar extFwd[i]!.fst joinFwdParams[i].val
+        bindVar (extFwd.name! i) joinFwdParams[i].val
     let joinFwdVals := (joinFwdParams.extract demandSize joinFwdParams.size).map (·.val)
     return (resultVal, joinFwdVals)
 
@@ -928,7 +976,7 @@ partial def translateSimpleStmt (s : stmt SourceRange) (bodyCtx : BodyCtx)
     : SSAM Bool := do
   let sr := s.ann
   -- Simple statements don't create expression blocks in practice, so fwd=#[]
-  let fwd : Fwd := #[]
+  let fwd : Fwd := ∅
   match s with
   | .Assign _ ⟨_, targets⟩ value _ =>
     let instrsBefore := (← get).currentInstrs.size
@@ -1069,11 +1117,11 @@ where
           let elem ← emitInstr "_tmp" none (.getItem val idx) target.ann
           assignToTarget elts[i] elem
     | .Attribute _ obj ⟨_, attrName⟩ _ =>
-      let (objV, _) ← translateExpr obj #[]
+      let (objV, _) ← translateExpr obj ∅
       emitVoidInstr (.setAttr objV attrName val) target.ann
     | .Subscript _ obj key _ =>
-      let (objV, _) ← translateExpr obj #[]
-      let (keyV, _) ← translateExpr key #[]
+      let (objV, _) ← translateExpr obj ∅
+      let (keyV, _) ← translateExpr key ∅
       emitVoidInstr (.setItem objV keyV val) target.ann
     | _ => ssaWarn target.ann "Unsupported assignment target"
 
@@ -1105,7 +1153,7 @@ where
       let thenBlock ← freshBlockId
       let elseBlock ← freshBlockId
       let joinBlock ← freshBlockId
-      let (condVal, _) ← translateExpr test #[]
+      let (condVal, _) ← translateExpr test ∅
       let thenArgs ← buildBranchArgsCtx thenBlock bodyCtx sr
       let elseArgs ← buildBranchArgsCtx elseBlock bodyCtx sr
       finishBlock (.condBranch condVal thenBlock thenArgs elseBlock elseArgs) sr #[]
@@ -1141,7 +1189,7 @@ where
       let headerBlock ← freshBlockId
       let endBlock ← freshBlockId
       -- Evaluate iterable, then push it as a scope extra for iterInitBlock
-      let (iterVal, _) ← translateExpr iter #[]
+      let (iterVal, _) ← translateExpr iter ∅
       let savedExtras := (← get).scopeExtras
       modify fun s => { s with scopeExtras := s.scopeExtras.push ("_iterable", iterVal) }
       let initArgs ← buildBranchArgsCtx iterInitBlock bodyCtx sr
@@ -1199,7 +1247,7 @@ where
       -- Test block
       let testParams ← buildBlockParamsCtx testBlock bodyCtx sr
       modify fun s => { s with currentParams := testParams }
-      let (condVal, _) ← translateExpr test #[]
+      let (condVal, _) ← translateExpr test ∅
       let thenArgs ← buildBranchArgsCtx bodyBlock bodyCtx sr
       let elseArgs ← buildBranchArgsCtx endBlock bodyCtx sr
       finishBlock (.condBranch condVal bodyBlock thenArgs endBlock elseArgs) sr #[]
@@ -1289,7 +1337,7 @@ where
             | none => afterTarget
           match typeExpr, handlerBodyBlocks[i]! with
           | some texpr, some bodyBid =>
-            let (typeVal, _) ← translateExpr texpr #[]
+            let (typeVal, _) ← translateExpr texpr ∅
             let isinstRef ← emitInstr "_tmp" none
               (.qualifiedRef (QualifiedName.mk' "builtins" "isinstance")) sr
             let checkVal ← emitInstr "_tmp" none
@@ -1383,7 +1431,7 @@ where
           if items.size > 1 then
             ssaWarn sr "Multi-item with statement — only first item decomposed in v1"
           -- Evaluate context, call __enter__
-          let (mgrVal, _) ← translateExpr ctxExpr #[]
+          let (mgrVal, _) ← translateExpr ctxExpr ∅
           let enterVal ← emitInstr "_tmp" none (.attr mgrVal "__enter__") sr
           let ctxVal ← emitInstr "_tmp" none (.call enterVal #[]) sr
           match asName with
@@ -1515,11 +1563,10 @@ private def translateFunc (info : FuncInfo) (config : SSAConfig)
   }
   (func, finalState.warnings)
 
-/-- Result of translating a module to SSA (v2). -/
+/-- Result of translating a module to SSA. -/
 public structure TranslateResult where
   module   : Module
   warnings : Array (String × SourceRange)
-  errors   : Array (String × SourceRange)
 deriving Inhabited
 
 /-- Translate a module's statements into an SSA Module (v2 with strict SSA). -/
@@ -1540,6 +1587,6 @@ public def translateModule (moduleName : String)
   let translated := results.map (translateFunc · config moduleBindings)
   let funcs := translated.map (·.1)
   let warnings := translated.foldl (init := #[]) fun acc (_, ws) => acc ++ ws
-  { module := { name := moduleName, funcs }, warnings, errors := #[] }
+  { module := { name := moduleName, funcs }, warnings }
 
 end Strata.Python.PythonToSSA

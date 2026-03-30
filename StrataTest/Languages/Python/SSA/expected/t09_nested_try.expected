@@ -1,4 +1,6 @@
 module "t09_nested_try":
+-- WARNING: bare raise not yet supported at 14:8-14:13
+
 
 func inner_risky():
   bb0():

@@ -1,4 +1,6 @@
 module "t15_ifexp":
+-- WARNING: Unresolved name: z at 6:4-6:20
+
 
 func @module_init():
   bb0():
