@@ -1,27 +1,5 @@
 
 ==== Verification Results ====
-List_get_body_calls_List_get_0: ✅ pass (in prelude file)
-List_take_body_calls_List_take_0: ✅ pass (in prelude file)
-List_drop_body_calls_List_drop_0: ✅ pass (in prelude file)
-List_slice_body_calls_List_drop_0: ✅ pass (in prelude file)
-List_slice_body_calls_List_take_1: ✅ pass (in prelude file)
-List_set_body_calls_List_set_0: ✅ pass (in prelude file)
-DictStrAny_get_body_calls_DictStrAny_get_0: ✅ pass (in prelude file)
-DictStrAny_get_or_none_body_calls_DictStrAny_get_0: ✅ pass (in prelude file)
-Any_get_body_calls_DictStrAny_get_0: ✅ pass (in prelude file)
-Any_get_body_calls_List_get_1: ✅ pass (in prelude file)
-Any_get_body_calls_List_slice_2: ✅ pass (in prelude file)
-Any_get_body_calls_List_drop_3: ✅ pass (in prelude file)
-Any_get!_body_calls_DictStrAny_get_0: ✅ pass (in prelude file)
-Any_get!_body_calls_List_get_1: ✅ pass (in prelude file)
-Any_set_body_calls_List_set_0: ✅ pass (in prelude file)
-Any_set!_body_calls_List_set_0: ✅ pass (in prelude file)
-PFloorDiv_body_calls_Int.SafeDiv_0: ✅ pass (in prelude file)
-PFloorDiv_body_calls_Int.SafeDiv_1: ✅ pass (in prelude file)
-PFloorDiv_body_calls_Int.SafeDiv_2: ✅ pass (in prelude file)
-PFloorDiv_body_calls_Int.SafeDiv_3: ✅ pass (in prelude file)
-PAnd_body_calls_Any_to_bool_0: ✅ pass (in prelude file)
-POr_body_calls_Any_to_bool_0: ✅ pass (in prelude file)
 init_calls_Any_get_0: ❓ unknown (at line 8, col 4)
 init_calls_Any_get_1: ❓ unknown (at line 8, col 4)
 Assertion failed at line 9, col 4: callElimAssert_req_name_is_foo_22: ❌ fail
@@ -34,5 +12,5 @@ callElimAssert_req_name_is_foo_4: ✅ pass (at line 15, col 4)
 callElimAssert_req_opt_name_none_or_str_5: ✅ pass (at line 15, col 4)
 callElimAssert_req_opt_name_none_or_bar_6: ✅ pass (at line 15, col 4)
 
-DETAIL: 30 passed, 1 failed, 2 inconclusive
+DETAIL: 8 passed, 1 failed, 2 inconclusive
 RESULT: Failures found
