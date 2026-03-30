@@ -649,6 +649,8 @@ def pyAnalyzeLaurelCommand : Command where
     IO.println "\n==== Verification Results ===="
     let mut s := ""
     for vcResult in vcResults do
+      let propertySummaryOption := vcResult.obligation.metadata.getPropertySummary
+      let propertyDescription := propertySummaryOption.getD vcResult.obligation.label
       let (locationPrefix, locationSuffix) := match Imperative.getFileRange vcResult.obligation.metadata with
         | some fr =>
           if fr.range.isNone then ("", "")
@@ -674,7 +676,7 @@ def pyAnalyzeLaurelCommand : Command where
                 ("", "")
         | none => ("", "")
       let outcomeStr := vcResult.formatOutcome
-      s := s ++ s!"{locationPrefix}{vcResult.obligation.label}: \
+      s := s ++ s!"{locationPrefix}{propertyDescription}: \
                     {outcomeStr}{locationSuffix}\n"
     IO.println s
     -- Output in SARIF format if requested

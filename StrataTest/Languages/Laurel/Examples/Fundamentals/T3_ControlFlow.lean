@@ -14,8 +14,8 @@ namespace Strata.Laurel
 
 def program := r"
 function returnAtEnd(x: int) returns (r: int) {
-  if (x > 0) {
-    if (x == 1) {
+  if x > 0 then {
+    if x == 1 then {
       return 1
     } else {
       return 2
@@ -26,12 +26,12 @@ function returnAtEnd(x: int) returns (r: int) {
 };
 
 function elseWithCall(): int {
-  if (true) 3 else returnAtEnd(3)
+  if true then 3 else returnAtEnd(3)
 };
 
 function guardInFunction(x: int) returns (r: int) {
-  if (x > 0) {
-    if (x == 1) {
+  if x > 0 then {
+    if x == 1 then {
       return 1
     } else {
       return 2
@@ -54,9 +54,9 @@ procedure testFunctions() {
 procedure guards(a: int) returns (r: int)
 {
   var b: int := a + 2;
-  if (b > 2) {
+  if b > 2 then {
       var c: int := b + 3;
-      if (c > 3) {
+      if c > 3 then {
           return c + 4
       };
       var d: int := c + 5;
@@ -73,12 +73,12 @@ procedure dag(a: int) returns (r: int)
 {
   var b: int;
 
-  if (a > 0) {
+  if a > 0 then {
     b := 1
   };
-  assert if (a > 0) { b == 1 } else { true };
-  assert if (a > 0) { b == 2 } else { true };
-//^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
+  assert if a > 0 then { b == 1 } else { true };
+  assert if a > 0 then { b == 2 } else { true };
+//^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
   return b
 };
 "
