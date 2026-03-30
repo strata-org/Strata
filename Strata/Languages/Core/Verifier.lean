@@ -328,7 +328,8 @@ def label (o : VCOutcome) (property : Imperative.PropertyType)
   -- Simplified labels for minimal check level
   else if checkLevel == .minimal then
     match property, checkMode with
-    | .assert, .deductive | .divisionByZero, .deductive =>
+    | .assert, .deductive | .divisionByZero, .deductive
+    | .arithmeticOverflow, .deductive =>
       -- Validity check only: unsat=pass, sat=fail, unknown=unknown
       match o.validityProperty with
       | .unsat => "pass"
@@ -336,7 +337,8 @@ def label (o : VCOutcome) (property : Imperative.PropertyType)
       | .unknown => "unknown"
       | .err _ => "unknown"
     | .assert, .bugFinding | .assert, .bugFindingAssumingCompleteSpec
-    | .divisionByZero, .bugFinding | .divisionByZero, .bugFindingAssumingCompleteSpec =>
+    | .divisionByZero, .bugFinding | .divisionByZero, .bugFindingAssumingCompleteSpec
+    | .arithmeticOverflow, .bugFinding | .arithmeticOverflow, .bugFindingAssumingCompleteSpec =>
       -- Satisfiability check only: sat=satisfiable, unsat=fail, unknown=unknown
       match o.satisfiabilityProperty with
       | .sat _ => "satisfiable"
@@ -371,7 +373,8 @@ def emoji (o : VCOutcome) (property : Imperative.PropertyType)
   -- Simplified emojis for minimal check level
   else if checkLevel == .minimal then
     match property, checkMode with
-    | .assert, .deductive | .divisionByZero, .deductive =>
+    | .assert, .deductive | .divisionByZero, .deductive
+    | .arithmeticOverflow, .deductive =>
       -- Validity check only: unsat=✅, sat=❌, unknown=❓
       match o.validityProperty with
       | .unsat => "✅"
@@ -379,7 +382,8 @@ def emoji (o : VCOutcome) (property : Imperative.PropertyType)
       | .unknown => "❓"
       | .err _ => "❓"
     | .assert, .bugFinding | .assert, .bugFindingAssumingCompleteSpec
-    | .divisionByZero, .bugFinding | .divisionByZero, .bugFindingAssumingCompleteSpec =>
+    | .divisionByZero, .bugFinding | .divisionByZero, .bugFindingAssumingCompleteSpec
+    | .arithmeticOverflow, .bugFinding | .arithmeticOverflow, .bugFindingAssumingCompleteSpec =>
       -- Satisfiability check only: sat=❓ (satisfiable), unsat=❌, unknown=❓
       match o.satisfiabilityProperty with
       | .sat _ => "❓"  -- Different meaning: satisfiable but don't know if always true
@@ -678,12 +682,16 @@ def verifySingleEnv (pE : Program × Env) (options : VerifyOptions)
           match options.checkMode, options.checkLevel, obligation.property with
           | _, .full, _ => (true, true)  -- Full: both checks
           | .bugFindingAssumingCompleteSpec, _, _ => (true, true)  -- This mode requires both checks
-          | .deductive, .minimal, .assert | .deductive, .minimal, .divisionByZero => (false, true)  -- Deductive needs validity
-          | .deductive, .minimalVerbose, .assert | .deductive, .minimalVerbose, .divisionByZero => (false, true)  -- Same checks as minimal
+          | .deductive, .minimal, .assert | .deductive, .minimal, .divisionByZero
+          | .deductive, .minimal, .arithmeticOverflow => (false, true)  -- Deductive needs validity
+          | .deductive, .minimalVerbose, .assert | .deductive, .minimalVerbose, .divisionByZero
+          | .deductive, .minimalVerbose, .arithmeticOverflow => (false, true)  -- Same checks as minimal
           | .deductive, .minimal, .cover => (true, false)   -- Cover uses satisfiability
           | .deductive, .minimalVerbose, .cover => (true, false)   -- Same checks as minimal
-          | .bugFinding, .minimal, .assert | .bugFinding, .minimal, .divisionByZero => (true, false) -- Bug finding needs satisfiability
-          | .bugFinding, .minimalVerbose, .assert | .bugFinding, .minimalVerbose, .divisionByZero => (true, false) -- Same checks as minimal
+          | .bugFinding, .minimal, .assert | .bugFinding, .minimal, .divisionByZero
+          | .bugFinding, .minimal, .arithmeticOverflow => (true, false) -- Bug finding needs satisfiability
+          | .bugFinding, .minimalVerbose, .assert | .bugFinding, .minimalVerbose, .divisionByZero
+          | .bugFinding, .minimalVerbose, .arithmeticOverflow => (true, false) -- Same checks as minimal
           | .bugFinding, .minimal, .cover => (true, false)  -- Cover uses satisfiability
           | .bugFinding, .minimalVerbose, .cover => (true, false)  -- Same checks as minimal
       let (obligation, peSatResult?, peValResult?) ← preprocessObligation obligation p options satisfiabilityCheck validityCheck axiomCache

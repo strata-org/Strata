@@ -1160,7 +1160,8 @@ def verifyCommand : Command where
     { name := "procedures", help := "Verify only the specified procedures (comma-separated).", takesArg := .arg "procs" },
     { name := "solver", help := s!"SMT solver executable to use (default: {Core.defaultSolver}).", takesArg := .arg "name" },
     { name := "solver-timeout", help := "Solver timeout in seconds.", takesArg := .arg "seconds" },
-    checkModeFlag, checkLevelFlag ]
+    checkModeFlag, checkLevelFlag,
+    { name := "overflow-checks", help := "Comma-separated overflow checks to enable (signed,unsigned,float64,all,none).", takesArg := .arg "checks" } ]
   help := "Verify a Strata program file (.core.st, .csimp.st, or .b3.st)."
   callback := fun v pflags => do
     let file := v[0]
@@ -1179,11 +1180,21 @@ def verifyCommand : Command where
         | .some n => pure n
         | .none => exitCmdFailure "verify" s!"Invalid number of seconds: {s}"
     let proceduresToVerify := pflags.getString "procedures" |>.map (·.splitToList (· == ','))
+    let overflowChecks := match pflags.getString "overflow-checks" with
+      | .none => Core.OverflowChecks.mk true false false
+      | .some s => s.splitOn "," |>.foldl (fun acc c =>
+          match c.trimAscii.toString with
+          | "signed"   => { acc with signedBV := true }
+          | "unsigned" => { acc with unsignedBV := true }
+          | "float64"  => { acc with float64 := true }
+          | "none"     => { signedBV := false, unsignedBV := false, float64 := false }
+          | "all"      => { signedBV := true, unsignedBV := true, float64 := true }
+          | _          => acc) {}
     let opts : VerifyOptions :=
       { VerifyOptions.default with
         verbose := if verbose then .normal else .quiet,
         checkOnly, typeCheckOnly, parseOnly, stopOnFirstError, uniqueBoundNames,
-        outputSarif, checkMode, checkLevel, solverTimeout,
+        outputSarif, checkMode, checkLevel, solverTimeout, overflowChecks,
         vcDirectory := pflags.getString "vc-directory",
         solver := pflags.getString "solver" |>.getD Core.defaultSolver }
     let text ← Strata.Util.readInputSource file
