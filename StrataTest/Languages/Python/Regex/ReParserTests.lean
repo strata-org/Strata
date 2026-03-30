@@ -82,6 +82,21 @@ info: Except.ok (Strata.Python.RegexAST.union (Strata.Python.RegexAST.char '.') 
 #guard_msgs in
 #eval parseCharClass "[\\.\\-]" ⟨0⟩
 
+-- Escape as range start: [\.-z] = range from '.' to 'z'
+/-- info: Except.ok (Strata.Python.RegexAST.range '.' 'z', { byteIdx := 6 }) -/
+#guard_msgs in
+#eval parseCharClass "[\\.-z]" ⟨0⟩
+
+-- Escape as range start with invalid bounds: [\.-,] errors (. > ,)
+/--
+info: Except.error (Strata.Python.ParseError.patternError
+  "Invalid character range [.-,]: start character '.' is greater than end character ','"
+  "[\\.-,]"
+  { byteIdx := 1 })
+-/
+#guard_msgs in
+#eval parseCharClass "[\\.-,]" ⟨0⟩
+
 /--
 info: Except.error (Strata.Python.ParseError.unimplemented
   "Special sequence \\d in character class is not supported"

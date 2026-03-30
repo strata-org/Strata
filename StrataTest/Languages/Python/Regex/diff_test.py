@@ -705,6 +705,13 @@ CORPUS = [
     (r"a\\b",    "xa\\by", "search"),     # match
     (r"a\\b",    "xaby",   "search"),     # noMatch
 
+    # Escaped metacharacter as range start: [\.-z] = range from '.' to 'z'
+    (r"[\.-z]+",  "abc",   "fullmatch"),  # match — a,b,c all in range .-z
+    (r"[\.-z]+",  "ABC",   "fullmatch"),  # noMatch — A,B,C below '.'
+    (r"[\.-z]+",  "-",     "fullmatch"),  # noMatch — '-' (ASCII 45) below '.' (46)
+    (r"[\.-z]+",  ".",     "fullmatch"),  # match — '.' is start of range
+    (r"[\.-z]+",  "abc",   "search"),     # match
+
     # Mixed: colon and escaped metacharacters together
     (r"\w+:\d+\.\d+", "foo:3.14",   "fullmatch"),  # match
     (r"\w+:\d+\.\d+", "foo:3x14",   "fullmatch"),  # noMatch — x not a dot

@@ -130,6 +130,19 @@ def parseCharClass (s : String) (pos : String.Pos.Raw) : Except ParseError (Rege
     -- Handle backslash escape sequences inside the character class.
     if c1 == '\\' then
       let (r, iNext) ← parseEscape s i " in character class"
+      -- Check for range pattern: \x-c2 (escape result as range start).
+      -- parseEscape only succeeds with a .char node.
+      if let .char escapedChar := r then
+        if !iNext.atEnd s && iNext.get? s == some '-' then
+          let iAfterDash := iNext.next s
+          if !iAfterDash.atEnd s && iAfterDash.get? s != some ']' then
+            let some c2 := iAfterDash.get? s | throw (.patternError "Invalid character in range" s iAfterDash)
+            if escapedChar > c2 then
+              throw (.patternError s!"Invalid character range [{escapedChar}-{c2}]: \
+                                      start character '{escapedChar}' is greater than end character '{c2}'" s i)
+            result := some (match result with | none => .range escapedChar c2 | some prev => .union prev (.range escapedChar c2))
+            i := iAfterDash.next s
+            continue
       result := some (match result with | none => r | some prev => RegexAST.union prev r)
       i := iNext
       continue
