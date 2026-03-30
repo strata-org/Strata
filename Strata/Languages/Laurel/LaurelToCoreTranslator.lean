@@ -53,6 +53,7 @@ def translateType (model : SemanticModel) (ty : HighTypeMd) : LMonoTy :=
   | .TInt => LMonoTy.int
   | .TBool => LMonoTy.bool
   | .TString => LMonoTy.string
+  | .TBv n => LMonoTy.bitvec n
   | .TVoid => LMonoTy.bool -- Using bool as placeholder for void
   | .THeap => .tcons "Heap" []
   | .TTypedField _ => .tcons "Field" []
