@@ -77,7 +77,7 @@ def translateBool (arg : Arg) : TransM Bool := do
   | x => TransM.error s!"translateBool expects expression or operation, got {repr x}"
 
 instance : Inhabited Parameter where
-  default := { name := "" , type := ⟨.TVoid, #[]⟩ }
+  default := { name := "" , type := ⟨.Unknown, #[]⟩ }
 
 def mkHighTypeMd (t : HighType) (md : MetaData) : HighTypeMd := ⟨t, md⟩
 def mkStmtExprMd (e : StmtExpr) (md : MetaData) : StmtExprMd := ⟨e, md⟩
@@ -146,6 +146,7 @@ instance : Inhabited Procedure where
     determinism := .deterministic none
     decreases := none
     isFunctional := false
+    invokeOn := none
     body := .Transparent ⟨.LiteralBool true, #[]⟩
     md := .empty
   }
@@ -426,9 +427,9 @@ def parseProcedure (arg : Arg) : TransM Procedure := do
 
   match op.name, op.args with
   | q`Laurel.procedure, #[nameArg, paramArg, returnTypeArg, returnParamsArg,
-      requiresArg, ensuresArg, modifiesArg, bodyArg]
+      requiresArg, invokeOnArg, ensuresArg, modifiesArg, bodyArg]
   | q`Laurel.function, #[nameArg, paramArg, returnTypeArg, returnParamsArg,
-      requiresArg, ensuresArg, modifiesArg, bodyArg] =>
+      requiresArg, invokeOnArg, ensuresArg, modifiesArg, bodyArg] =>
     let name ← translateIdent nameArg
     let nameMd ← getArgMetaData nameArg
     let parameters ← translateParameters paramArg
@@ -451,6 +452,14 @@ def parseProcedure (arg : Arg) : TransM Procedure := do
       | _ => TransM.error s!"Expected optionalReturnType operation, got {repr returnTypeArg}"
     -- Parse preconditions (requires clauses - zero or more)
     let preconditions ← translateRequiresClauses requiresArg
+    -- Parse optional invokeOn clause
+    let invokeOn ← match invokeOnArg with
+      | .option _ (some (.op invokeOnOp)) => match invokeOnOp.name, invokeOnOp.args with
+        | q`Laurel.invokeOnClause, #[triggerExprArg] =>
+          translateStmtExpr triggerExprArg >>= (pure ∘ some)
+        | _, _ => TransM.error s!"Expected invokeOnClause operation, got {repr invokeOnOp.name}"
+      | .option _ none => pure none
+      | _ => pure none
     -- Parse postconditions (ensures clauses - zero or more)
     let postconditions ← translateEnsuresClauses ensuresArg
     -- Parse modifies clauses (zero or more)
@@ -483,12 +492,13 @@ def parseProcedure (arg : Arg) : TransM Procedure := do
       determinism := .deterministic none
       decreases := none
       isFunctional := op.name == q`Laurel.function
+      invokeOn := invokeOn
       body := procBody
       md := nameMd
     }
   | q`Laurel.procedure, args
   | q`Laurel.function, args =>
-    TransM.error s!"parseProcedure expects 8 arguments, got {args.size}"
+    TransM.error s!"parseProcedure expects 9 arguments, got {args.size}"
   | _, _ =>
     TransM.error s!"parseProcedure expects procedure or function, got {repr op.name}"
 

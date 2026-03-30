@@ -239,8 +239,8 @@ private meta def runTestCase (pythonCmd : System.FilePath) (tmpDir : System.File
       match Strata.translateCombinedLaurel laurel with
       | (some core, []) =>
         match Core.typeCheck Core.VerifyOptions.quiet core (moreFns := Strata.Python.ReFactory) with
-        | .error _ => return none  -- Expected: Core type checking fails
-        | .ok _ => return some "test_class_any_as_composite.py: expected Core type checking to fail"
+        | .error errors => return some s!"test_class_any_as_composite.py: {errors}"
+        | .ok _ => return none
       | (_, errors) => return some s!"test_class_any_as_composite.py: Laurel to Core failed: {errors}"
     tasks := tasks.push ("test_class_any_as_composite.py", task)
     -- Collect results

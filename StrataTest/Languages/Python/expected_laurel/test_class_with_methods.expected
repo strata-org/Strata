@@ -1,13 +1,13 @@
 
 ==== Verification Results ====
-callElimAssert_requires_13: ✅ pass
+callElimAssert_requires_11: ✅ pass
 assert_assert(459)_calls_Any_to_bool_0: ✅ pass (at line 23, col 4)
 Assertion failed at line 23, col 4: assert(459): ❌ fail
 assert_assert(544)_calls_Any_to_bool_0: ✅ pass (at line 26, col 4)
 assert(544): ❓ unknown (at line 26, col 4)
-callElimAssert_req_name_is_foo_4: ✅ pass (at line 28, col 4)
-callElimAssert_req_opt_name_none_or_str_5: ✅ pass (at line 28, col 4)
-callElimAssert_req_opt_name_none_or_bar_6: ✅ pass (at line 28, col 4)
+callElimAssert_requires_0_4: ✅ pass (at line 28, col 4)
+callElimAssert_requires_1_5: ✅ pass (at line 28, col 4)
+callElimAssert_requires_2_6: ✅ pass (at line 28, col 4)
 ite_cond_calls_Any_to_bool_0: ✅ pass (at line 30, col 0)
 
 DETAIL: 7 passed, 1 failed, 1 inconclusive

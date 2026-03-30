@@ -57,7 +57,7 @@ private def funcDeclToFunctionDecl (name : String) (args : Python.Specs.ArgDecls
   let kwargsArgs ← Python.Specs.ToLaurel.expandKwargsArgs args.kwargs
   let allArgs := args.args ++ args.kwonly ++ kwargsArgs
   pure { name, args := allArgs.toList.map specArgToFuncDeclArg,
-         hasKwargs := false, ret := none }
+         kwargsName := none, ret := none }
 
 /-- Extract PythonFunctionDecl entries from pyspec signatures.
     Handles both top-level functions and class methods.
@@ -296,42 +296,29 @@ public def buildPreludeInfo (result : PySpecLaurelResult) : Python.PreludeInfo :
 /-- Combine PySpec and user Laurel programs into a single program,
     prepending External stubs so the Laurel `resolve` pass can see
     prelude names (e.g. `print`, `from_string`). -/
-public def combinePySpecLaurel (info : Python.PreludeInfo)
+public def combinePySpecLaurel
     (pySpec user : Laurel.Program) : Laurel.Program :=
-  let stubs := Python.preludeStubs info
-  let pySpecNames : Std.HashSet String := pySpec.staticProcedures.foldl (init := {})
-    fun s p => if !p.body.isExternal then s.insert p.name.text else s
-  let filteredStubs := stubs.filter fun p => !pySpecNames.contains p.name.text
-  { staticProcedures := filteredStubs ++ pySpec.staticProcedures ++ user.staticProcedures
+  { staticProcedures := pySpec.staticProcedures ++ user.staticProcedures
     staticFields := pySpec.staticFields ++ user.staticFields
     types := pySpec.types ++ user.types
     constants := pySpec.constants ++ user.constants
   }
 
-/-- Prepend the full Python runtime Core prelude (datatype definitions,
+/-- Append the Core part of the Python runtime (datatype definitions,
     procedure bodies, etc.) to the Core program produced by Laurel
     translation. -/
-private def prependPrelude (coreFromLaurel : Core.Program) : Core.Program :=
-  let (preludeDecls, userDecls) := coreFromLaurel.decls.span (fun d => toString d.name != "FIRST_END_MARKER")
-  -- The Core-only prelude has proper signatures for functions that the
-  -- Laurel→Core translator may have produced as empty-signature stubs.
-  -- Filter stubs from preludeDecls when a proper declaration exists.
-  let coreOnly := Python.coreOnlyFromRuntimeCorePart
-  let coreOnlyNames : Std.HashSet String := coreOnly.foldl (init := {})
-    fun s d => s.insert (toString d.name)
-  let filteredPrelude := preludeDecls.filter
-    fun d => !coreOnlyNames.contains (toString d.name)
-  { decls := filteredPrelude ++ coreOnly ++ userDecls }
+private def appendCorePartOfRuntime (coreFromLaurel : Core.Program) : Core.Program :=
+  { decls := coreFromLaurel.decls ++ Python.coreOnlyFromRuntimeCorePart  }
 
 /-- Split procedure names in a Core program into prelude names
-    (before `FIRST_END_MARKER`) and user names (after it).
-    If `FIRST_END_MARKER` is absent, nothing is considered prelude. -/
+    (no file range or empty file) and user names (all others). -/
 public def splitProcNames (prog : Core.Program)
     : Std.HashSet String × List String :=
-  let (before, rest) := prog.decls.span (fun d => toString d.name != "FIRST_END_MARKER")
-  let (preludeDecls, userDecls) := match rest with
-    | _ :: tl => (before, tl)  -- marker found: before is prelude, after is user
-    | [] => ([], before)       -- no marker: everything is user
+  let isPrelude := fun d =>
+    match Imperative.getFileRange (P := Core.Expression) d.metadata with
+    | none => true
+    | some fr => fr.file == .file ""
+  let (preludeDecls, userDecls) := prog.decls.partition isPrelude
   let preludeNames := preludeDecls.foldl (init := ({} : Std.HashSet String)) fun s d =>
     match d.getProc? with
     | some p => s.insert (Core.CoreIdent.toPretty p.header.name)
@@ -340,24 +327,19 @@ public def splitProcNames (prog : Core.Program)
     d.getProc?.map (Core.CoreIdent.toPretty ·.header.name)
   (preludeNames, userProcNames)
 
-/-- Translate a combined Laurel program to Core and prepend the full
-    runtime prelude.  Resolution errors are suppressed because PySpec
-    Laurel procedures reference names defined in the Core prelude
-    (`from_none`, `from_string`, `NoError`, etc.) which the Laurel
-    resolver cannot see — they are merged after translation. Once the
-    Python Core prelude is ported to Laurel, this suppression can be
-    removed. -/
-public def translateCombinedLaurel (combined : Laurel.Program)
-    : (Option Core.Program × List DiagnosticModel) :=
-  let (coreOption, errors) := Laurel.translate { emitResolutionErrors := false } combined
-  (coreOption.map prependPrelude, errors)
-
 /-- Like `translateCombinedLaurel` but also returns the lowered Laurel program
     (after all Laurel-to-Laurel passes, before translation to Core). -/
 public def translateCombinedLaurelWithLowered (combined : Laurel.Program)
     : (Option Core.Program × List DiagnosticModel × Laurel.Program) :=
-  let (coreOption, errors, lowered) := Laurel.translateWithLaurel { emitResolutionErrors := false } combined
-  (coreOption.map prependPrelude, errors, lowered)
+  let (coreOption, errors, lowered) := Laurel.translateWithLaurel { inlineFunctionsWhenPossible := true } combined
+  (coreOption.map appendCorePartOfRuntime, errors, lowered)
+
+/-- Translate a combined Laurel program to Core and prepend the full
+    runtime prelude. -/
+public def translateCombinedLaurel (combined : Laurel.Program)
+    : (Option Core.Program × List DiagnosticModel) :=
+  let (coreOption, errors, _) := translateCombinedLaurelWithLowered combined
+  (coreOption, errors)
 
 /-- Errors from the pyAnalyzeLaurel pipeline. -/
 public inductive PipelineError where
@@ -413,6 +395,6 @@ public def pyAnalyzeLaurel
     | .error e => throw (.internal s!"Python to Laurel translation failed: {e}")
     | .ok result => pure result
 
-  return combinePySpecLaurel preludeInfo result.laurelProgram laurelProgram
+  return combinePySpecLaurel result.laurelProgram laurelProgram
 
 end Strata
