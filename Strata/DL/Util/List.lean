@@ -29,6 +29,23 @@ def dedup {α : Type} [DecidableEq α] : List α → List α
     if a ∈ as then as else a :: as
 
 /--
+Tail-recursive worker for `dedup`. Walks the input left-to-right,
+skipping elements that still appear later, and collects kept elements
+in reverse order.
+-/
+private def dedupTR.go {α : Type} [DecidableEq α] :
+    List α → List α → List α
+  | [], acc => acc.reverse
+  | a :: as, acc =>
+    if a ∈ as then dedupTR.go as acc else dedupTR.go as (a :: acc)
+
+/--
+Tail-recursive implementation of `dedup`.
+-/
+private def dedupTR {α : Type} [DecidableEq α] (l : List α) : List α :=
+  dedupTR.go l []
+
+/--
 A deduplicated list satisfies `Nodup`.
 -/
 theorem nodup_dedup {α : Type} [DecidableEq α] (l : List α) :
@@ -109,6 +126,29 @@ theorem mem_of_dedup {α : Type} [DecidableEq α]
   apply Iff.intro
   exact fun h => mem_of_mem_dedup l a h
   exact fun h => mem_dedup_of_mem l a h
+
+private theorem dedupTR.go_eq {α : Type} [DecidableEq α]
+    (l acc : List α) :
+    dedupTR.go l acc = acc.reverse ++ l.dedup := by
+  induction l generalizing acc with
+  | nil => simp [dedupTR.go, dedup]
+  | cons a as ih =>
+    simp only [dedupTR.go, dedup]
+    by_cases h : a ∈ as
+    · have h' : a ∈ as.dedup := mem_of_mem_dedup as a h
+      simp [h, h', ih]
+    · have h' : a ∉ as.dedup := by
+        intro hc; exact h (mem_dedup_of_mem as a hc)
+      simp [h, h', ih]
+
+/--
+`dedupTR` is equivalent to `dedup`.
+-/
+private theorem dedupTR_eq_dedup {α : Type} [DecidableEq α]
+    (l : List α) : dedupTR l = l.dedup := by
+  simp [dedupTR, dedupTR.go_eq]
+
+attribute [implemented_by dedupTR] List.dedup
 
 theorem length_dedup_cons_of_mem {α : Type} [DecidableEq α] (a : α) (l : List α)
   (h : a ∈ l) : (a :: l).dedup.length = l.dedup.length := by
