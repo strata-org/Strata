@@ -455,19 +455,6 @@ partial def translateExpr (ctx : TranslationContext) (e : Python.expr SourceRang
 
   -- Binary operations
   | .BinOp _ left op right => do
-    -- Constant-fold Pow for integer literals at translation time.
-    -- Unlike regex functions (which use the `regex` type and are naturally
-    -- filtered from Core), int_pow uses `int` and would conflict with a
-    -- factory function of the same name.
-    match op with
-    | .Pow _ =>
-      match left, right with
-      | .Constant _ (.ConPos _ b) _, .Constant _ (.ConPos _ e) _ =>
-        return intToAny (b.val ^ e.val)
-      | .Constant _ (.ConNeg _ b) _, .Constant _ (.ConPos _ e) _ =>
-        return intToAny ((-b.val) ^ e.val)
-      | _, _ => pure ()
-    | _ => pure ()
     let leftExpr ← translateExpr ctx left
     let rightExpr ← translateExpr ctx right
     let preludeOpnames ← match op with

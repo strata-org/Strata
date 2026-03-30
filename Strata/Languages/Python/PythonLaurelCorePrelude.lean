@@ -108,6 +108,7 @@ function re_fullmatch_str(pattern : string) : regex;
 function re_match_str(pattern : string) : regex;
 function re_search_str(pattern : string) : regex;
 function re_pattern_error(pattern : string) : Error;
+function int_pow(base : int, exp : int) : int;
 
 type CoreOnlyDelimiter;
 
@@ -852,9 +853,19 @@ inline function POr (v1: Any, v2: Any) : Any
 // /////////////////////////////////////////////////////////////////////////////////////
 // Modelling of other Python operations
 // /////////////////////////////////////////////////////////////////////////////////////
+// int_pow is provided by the factory (PyFactory.lean) with concreteEval.
+// Forward-declared before CoreOnlyDelimiter so the DDM parser can resolve it.
 inline function PPow (v1: Any, v2: Any) : Any
 {
-  exception(UnimplementedError ("Pow operator is not supported"))
+  if Any..isexception(v1) then v1 else if Any..isexception(v2) then v2
+  else if (Any..isfrom_int(v1) && Any..isfrom_int(v2)) then
+    from_int(int_pow(Any..as_int!(v1), Any..as_int!(v2)))
+  else if (Any..isfrom_bool(v1) && Any..isfrom_int(v2)) then
+    from_int(int_pow(bool_to_int(Any..as_bool!(v1)), Any..as_int!(v2)))
+  else if (Any..isfrom_int(v1) && Any..isfrom_bool(v2)) then
+    from_int(int_pow(Any..as_int!(v1), bool_to_int(Any..as_bool!(v2))))
+  else
+    exception(UndefinedError ("Operand Type is not defined"))
 }
 
 inline function PMod (v1: Any, v2: Any) : Any

@@ -109,12 +109,30 @@ def rePatternErrorFunc : LFunc Core.CoreLParams :=
           | _ => .none)
       }
 
+-- Integer exponentiation with constant folding via concreteEval.
+-- Forward-declared before CoreOnlyDelimiter in PythonLaurelCorePrelude so
+-- PPow can reference it. The factory provides the concreteEval implementation.
+def intPowFunc : LFunc Core.CoreLParams :=
+    { name := "int_pow",
+      typeArgs := [],
+      inputs := [("base", mty[int]), ("exp", mty[int])],
+      output := mty[int],
+      concreteEval := some
+        (fun md args => match args with
+          | [b, e] => match LExpr.denoteInt b, LExpr.denoteInt e with
+            | some bv, some ev =>
+              if ev ≥ 0 then .some (LExpr.intConst md (bv ^ ev.toNat)) else .none
+            | _, _ => .none
+          | _ => .none)
+      }
+
 def ReFactory : @Factory Core.CoreLParams :=
     #[
       reFullmatchStrFunc,
       reMatchStrFunc,
       reSearchStrFunc,
-      rePatternErrorFunc
+      rePatternErrorFunc,
+      intPowFunc
     ]
 
 /-- Core.Factory extended with regex factory functions. -/
