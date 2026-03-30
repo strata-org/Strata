@@ -439,5 +439,21 @@ end
 
 ---------------------------------------------------------------------
 
+/-- A `Decl.func` with `isRecursive := true` should be rejected.
+    `Decl.func` is for non-recursive functions only; recursive functions
+    must use `Decl.recFuncBlock`. -/
+def recursiveFuncDeclProg : Program := { decls := [
+  .func { name := "bad", isRecursive := true, inputs := [("x", .int)], output := .int } .empty
+]}
+
+/--
+info: error: Decl.func does not allow recursive functions. Use recFuncBlock instead: 'bad'
+-/
+#guard_msgs in
+#eval do let ans ← typeCheckAndPartialEval .default recursiveFuncDeclProg
+         return (format ans)
+
+---------------------------------------------------------------------
+
 end Tests
 end Core
