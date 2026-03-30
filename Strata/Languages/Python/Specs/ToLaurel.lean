@@ -469,6 +469,7 @@ def funcDeclToLaurel (procName : String) (func : FunctionDecl)
       pure (anyInputs, anyOutputs, body)
     else
       pure (inputs, outputs, Body.Opaque [] none [])
+  let md ← mkMdWithFileRange func.loc
   return {
     name := procName
     inputs := inputs.toList
@@ -478,7 +479,7 @@ def funcDeclToLaurel (procName : String) (func : FunctionDecl)
     decreases := none
     isFunctional := false
     body := body
-    md := .empty
+    md := md
   }
 
 /-- Convert a class definition to Laurel types and procedures. -/

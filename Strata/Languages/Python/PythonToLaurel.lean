@@ -1028,7 +1028,7 @@ partial def translateAssign  (ctx : TranslationContext)
         | target :: slices =>
             let target ← translateExpr ctx target
             let slices ← slices.mapM (translateExpr ctx)
-            let anySetsExpr := mkStmtExprMd (StmtExpr.StaticCall "Any_sets" [target, ListAny_mk slices, rhs_trans])
+            let anySetsExpr := ⟨ StmtExpr.StaticCall "Any_sets" [ListAny_mk slices, target, rhs_trans] , md ⟩
             let assignStmts := [mkStmtExprMd (StmtExpr.Assign [target] anySetsExpr)]
             return (ctx,assignStmts)
         | _ =>  throw (.internalError "Invalid Subscript Expr")
@@ -1661,7 +1661,8 @@ def translateClass (ctx : TranslationContext) (classStmt : Python.stmt SourceRan
     for stmt in body do
       if let .FunctionDef .. := stmt then
         let proc ← translateMethod ctx className stmt
-        instanceProcedures := instanceProcedures.push proc
+        -- TODO stop replacing the body of instance proceduces with an empty one
+        instanceProcedures := instanceProcedures.push { proc with body := .Opaque [] .none [] }
 
     return ({
       name := className
@@ -1774,9 +1775,9 @@ def PreludeInfo.ofLaurelProgram (prog : Laurel.Program) : PreludeInfo where
     prog.staticProcedures.filterMap fun p =>
       if p.body.isExternal then none
       else
-        let noDefault : Option (Python.expr SourceRange) := none
+        let noneexpr : Python.expr SourceRange := .Constant default (.ConNone default) default
         let args := p.inputs.map fun param =>
-          (param.name.text, getHighTypeName param.type.val, noDefault)
+          (param.name.text, getHighTypeName param.type.val, some noneexpr)
         let ret := p.outputs.head?.map fun param => getHighTypeName param.type.val
         some { name := p.name.text, args := args, hasKwargs := false, ret := ret }
   functions :=
@@ -1965,21 +1966,6 @@ def pythonToLaurel' (info : PreludeInfo)
 
   return (program, ctx)
 
-/-- Generate External procedure stubs for prelude names so the Laurel
-    `resolve` pass can see them. -/
-def preludeStubs (info : PreludeInfo) : List Laurel.Procedure :=
-  let functionStubs := info.functions.map fun funcname =>
-    { name := { text := funcname }, inputs := [], outputs := [],
-      preconditions := [], determinism := .deterministic none,
-      decreases := none, body := .External, md := default,
-      isFunctional := true }
-  let procedureStubs := info.procedureNames.map fun funcname =>
-    { name := { text := funcname }, inputs := [], outputs := [],
-      preconditions := [], determinism := .deterministic none,
-      decreases := none, body := .External, md := default,
-      isFunctional := false }
-  functionStubs ++ procedureStubs
-
 /-- Translate Python module to Laurel Program.
     Delegates to `pythonToLaurel'` after extracting prelude info,
     then prepends External stubs so the Laurel resolve pass can
@@ -1991,11 +1977,7 @@ def pythonToLaurel (prelude: Core.Program)
     (overloadTable : OverloadTable := {})
     : Except TranslationError (Laurel.Program × TranslationContext) := do
   let info := PreludeInfo.ofCoreProgram prelude
-  let (program, ctx) ← pythonToLaurel' info pyCommands prev_ctx filePath overloadTable
-  let stubs := preludeStubs info
-  return ({ program with
-    staticProcedures := stubs ++ program.staticProcedures }, ctx)
-
+  pythonToLaurel' info pyCommands prev_ctx filePath overloadTable
 
 end -- public section
 end Strata.Python
