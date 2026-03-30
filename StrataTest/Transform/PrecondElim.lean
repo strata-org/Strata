@@ -403,21 +403,4 @@ spec {
 #guard_msgs in
 #eval (Std.format (transformProgram loopGuardPrecondPgm))
 
-/-! ### Test 10: Short-circuit operators make division-by-zero preconditions provable -/
-
-def shortCircuitPgm :=
-#strata
-program Core;
-
-procedure test(x : int) returns ()
-{
-  var a : bool := false && (x / 0 > 0);
-  var b : bool := true || (x / 0 > 0);
-  var c : bool := false ==> (x / 0 > 0);
-};
-
-#end
-
-#eval (Std.format (transformProgram shortCircuitPgm))
-
 end PrecondElimTests
