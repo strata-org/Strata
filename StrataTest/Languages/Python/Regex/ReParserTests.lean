@@ -56,6 +56,65 @@ info: Except.error (Strata.Python.ParseError.patternError "Expected '[' at start
 #guard_msgs in
 #eval parseCharClass "a" ⟨0⟩
 
+-- Incomplete escape sequences
+/--
+info: Except.error (Strata.Python.ParseError.patternError
+  "Incomplete escape sequence in character class"
+  "[a\\"
+  { byteIdx := 2 })
+-/
+#guard_msgs in
+#eval parseCharClass "[a\\" ⟨0⟩
+
+-- Escape sequences inside character classes
+/-- info: Except.ok (Strata.Python.RegexAST.char '.', { byteIdx := 4 }) -/
+#guard_msgs in
+#eval parseCharClass "[\\.] " ⟨0⟩  -- trailing space so string is valid; byteIdx 4 = past ']'
+
+/-- info: Except.ok (Strata.Python.RegexAST.char '-', { byteIdx := 4 }) -/
+#guard_msgs in
+#eval parseCharClass "[\\-] " ⟨0⟩  -- trailing space so string is valid; byteIdx 4 = past ']'
+
+/--
+info: Except.ok (Strata.Python.RegexAST.union (Strata.Python.RegexAST.char '.') (Strata.Python.RegexAST.char '-'),
+ { byteIdx := 6 })
+-/
+#guard_msgs in
+#eval parseCharClass "[\\.\\-]" ⟨0⟩
+
+-- Escape as range start: [\.-z] = range from '.' to 'z'
+/-- info: Except.ok (Strata.Python.RegexAST.range '.' 'z', { byteIdx := 6 }) -/
+#guard_msgs in
+#eval parseCharClass "[\\.-z]" ⟨0⟩
+
+-- Escape as range start with invalid bounds: [\.-,] errors (. > ,)
+/--
+info: Except.error (Strata.Python.ParseError.patternError
+  "Invalid character range [.-,]: start character '.' is greater than end character ','"
+  "[\\.-,]"
+  { byteIdx := 1 })
+-/
+#guard_msgs in
+#eval parseCharClass "[\\.-,]" ⟨0⟩
+
+/--
+info: Except.error (Strata.Python.ParseError.unimplemented
+  "Special sequence \\d in character class is not supported"
+  "[\\d]"
+  { byteIdx := 1 })
+-/
+#guard_msgs in
+#eval parseCharClass "[\\d]" ⟨0⟩
+
+/--
+info: Except.error (Strata.Python.ParseError.unimplemented
+  "Escape sequence \\n in character class is not supported"
+  "[\\n]"
+  { byteIdx := 1 })
+-/
+#guard_msgs in
+#eval parseCharClass "[\\n]" ⟨0⟩
+
 end parseCharClass
 
 section Test.parseBounds
@@ -182,6 +241,13 @@ info: Except.ok (Strata.Python.RegexAST.concat
 -/
 #guard_msgs in
 #eval parseTop "^[a-z0-9][a-z0-9.-]{1,10}$"
+
+-- Incomplete escape sequence at top level
+/--
+info: Except.error (Strata.Python.ParseError.patternError "Incomplete escape sequence" "\\" { byteIdx := 0 })
+-/
+#guard_msgs in
+#eval parseTop "\\"
 
 -- Test escape sequences (need \\ in Lean strings to get single \)
 /--

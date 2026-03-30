@@ -152,7 +152,8 @@ op mkClassDecl(name : Str, bases : Seq Str,
     fields : Seq ClassFieldDecl,
     classVars : Seq ClassVarDecl,
     subclasses : Seq ClassDecl,
-    methods : Seq FunDecl) : ClassDecl =>
+    methods : Seq FunDecl,
+    exhaustive : Bool) : ClassDecl =>
   "class " name " {\n"
   indent(2,
     "bases" ": " "[" bases "]\n"
@@ -165,6 +166,7 @@ op mkClassDecl(name : Str, bases : Seq Str,
     "subclasses" ": " "[\n"
     indent(2, subclasses)
     "]\n"
+    "exhaustive" ": " exhaustive "\n"
     methods)
   "}\n";
 
@@ -304,6 +306,7 @@ private partial def ClassDef.toDDMDecl (d : ClassDef) : DDM.ClassDecl SourceRang
     ⟨.none, d.classVars.map (·.toDDM)⟩
     ⟨.none, d.subclasses.map (·.toDDMDecl)⟩
     ⟨.none, d.methods.map (·.toDDM)⟩
+    ⟨.none, d.exhaustive⟩
 
 private def Signature.toDDM (sig : Signature) : DDM.Signature SourceRange :=
   match sig with
@@ -427,7 +430,7 @@ private def DDM.FunDecl.fromDDM (d : DDM.FunDecl SourceRange) : Specs.FunctionDe
 
 private def DDM.ClassDecl.fromDDM (d : DDM.ClassDecl SourceRange) : Specs.ClassDef :=
   let .mkClassDecl ann ⟨_, name⟩ ⟨_, bases⟩ ⟨_, fields⟩
-    ⟨_, classVars⟩ ⟨_, subclasses⟩ ⟨_, methods⟩ := d
+    ⟨_, classVars⟩ ⟨_, subclasses⟩ ⟨_, methods⟩ ⟨_, exhaustive⟩ := d
   {
     loc := ann
     name := name
@@ -441,6 +444,7 @@ private def DDM.ClassDecl.fromDDM (d : DDM.ClassDecl SourceRange) : Specs.ClassD
       { name := n, value := v : ClassVariable }
     subclasses := subclasses.map (·.fromDDM)
     methods := methods.map (·.fromDDM)
+    exhaustive := exhaustive
   }
 
 private def DDM.Command.fromDDM (cmd : DDM.Command SourceRange) : Specs.Signature :=
