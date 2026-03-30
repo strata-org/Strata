@@ -9,8 +9,8 @@ import Strata.DDM.BuiltinDialects.Init
 import Strata.Languages.Laurel.Grammar.LaurelGrammar
 import Strata.Languages.Laurel.Grammar.ConcreteToAbstractTreeTranslator
 import Strata.Languages.Laurel.Resolution
-import Strata.Languages.Laurel.LaurelConcreteEval
 import Strata.Languages.Laurel.LaurelToCoreTranslator
+import Strata.Languages.Laurel.LaurelInterpreter
 
 /-!
 # Shared Test Helpers for Laurel ConcreteEval Tests
