@@ -82,7 +82,7 @@ private def mkModeBoolFunc (name : String) (mode : MatchMode) :
           | [LExpr.strConst () pattern, sExpr] =>
             let (regexExpr, maybe_err) := pythonRegexToCore pattern mode
             match maybe_err with
-            | none => .some (LExpr.mkApp () (.op () "Str.InRegEx" (some mty[bool])) [sExpr, regexExpr])
+            | none => .some (LExpr.mkApp () (.op () "Str.InRegEx" (some mty[string → (regex → bool)])) [sExpr, regexExpr])
             | some _ => .none
           | _ => .none)
       }
