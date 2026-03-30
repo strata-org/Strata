@@ -715,8 +715,8 @@ def verify (program : Program)
       let passes := fun prog => do
         let prog ← FilterProcedures.run prog procs
         let (_changed,prog) ← CallElim.callElim' prog
-        let prog ← FilterProcedures.run prog procs
         let prog ← runPrecondElim prog
+        let prog ← FilterProcedures.run prog procs
         return prog
       let res := Transform.run program passes
       match res with

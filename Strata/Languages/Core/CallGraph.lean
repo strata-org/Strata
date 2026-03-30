@@ -64,6 +64,10 @@ def CallGraph.decrementEdge (cg : CallGraph) (caller : String) (callee : String)
     callers := new_callers
   }
 
+/-- Add a node with no callees to the call graph. -/
+def CallGraph.addLeafNode (cg : CallGraph) (name : String) : CallGraph :=
+  { cg with callees := cg.callees.insert name {} }
+
 /-- Compute transitive closure of callees; the result does not contain `name`. -/
 partial def CallGraph.getCalleesClosure (cg : CallGraph) (name : String) : List String :=
   let rec go (visited : List String) (toVisit : List String) : List String :=
