@@ -862,7 +862,7 @@ inline function PPow (v1: Any, v2: Any) : Any
   else if (Any..isfrom_int(v1) && Any..isfrom_bool(v2)) then
     from_int(int_pow(Any..as_int!(v1), bool_to_int(Any..as_bool!(v2))))
   else
-    exception(UndefinedError ("Operand Type is not defined"))
+    exception(UnimplementedError("Pow is not defined on these input types"))
 }
 
 inline function PMod (v1: Any, v2: Any) : Any
