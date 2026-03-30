@@ -382,7 +382,7 @@ partial def specExprToLaurel (e : SpecExpr) (md : Imperative.MetaData Core.Expre
 private def formatAssertionMessage (msg : Array MessagePart) : String :=
   let parts := msg.map fun
     | .str s => s
-    | .expr _ => "<expr>"
+    | .expr e => toString e
   String.join parts.toList
 
 /-- Build a procedure body that asserts preconditions.
