@@ -2,15 +2,9 @@
 ==== Verification Results ====
 init_calls_Any_get_0: ❓ unknown (at line 8, col 4)
 init_calls_Any_get_1: ❓ unknown (at line 8, col 4)
-Assertion failed at line 9, col 4: callElimAssert_req_name_is_foo_22: ❌ fail
-callElimAssert_req_opt_name_none_or_str_23: ✅ pass (at line 9, col 4)
-callElimAssert_req_opt_name_none_or_bar_24: ✅ pass (at line 9, col 4)
-callElimAssert_req_name_is_foo_13: ✅ pass (at line 12, col 4)
-callElimAssert_req_opt_name_none_or_str_14: ✅ pass (at line 12, col 4)
-callElimAssert_req_opt_name_none_or_bar_15: ✅ pass (at line 12, col 4)
-callElimAssert_req_name_is_foo_4: ✅ pass (at line 15, col 4)
-callElimAssert_req_opt_name_none_or_str_5: ✅ pass (at line 15, col 4)
-callElimAssert_req_opt_name_none_or_bar_6: ✅ pass (at line 15, col 4)
+Assertion failed at line 9, col 4: callElimAssert_requires_0_22: ❌ fail
+callElimAssert_requires_1_23: ✅ pass (at line 9, col 4)
+callElimAssert_requires_2_24: ✅ pass (at line 9, col 4)
 
-DETAIL: 8 passed, 1 failed, 2 inconclusive
+DETAIL: 2 passed, 1 failed, 2 inconclusive
 RESULT: Failures found
