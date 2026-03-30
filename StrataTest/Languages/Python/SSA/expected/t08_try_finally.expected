@@ -11,19 +11,25 @@ func cleanup():
 func @module_init():
   bb0():
     %1:_tmp.0 = callQualified t08_try_finally.work []
-    %2:x.0 = undef("x")
-    branch bb2(%2)
-  bb1(%3:x.1):
+    %2:_exc.0 = undef("_exc")
+    branch bb1(%2)
+  bb1(%3:_exc.1):
     %5:_tmp.1 = callQualified t08_try_finally.cleanup []
-    branch bb1(%3)
-  bb1(%6:x.2):
-    %7:x.3 = intLit 1
-    branch bb5(%7)
-  bb3(%8:x.4, %9:_exc.0):
-    %10:x.5 = intLit 0
-    branch bb5(%10)
-  bb5(%11:x.6):
-    %13:_tmp.4 = callQualified t08_try_finally.cleanup []
-    branch bb4(%11)
-  bb4(%14:x.7):
+    condBranch %3 bb2(%3) bb3()
+  bb2(%6:_exc.2):
+    raise %6
+  bb3():
+    %7:x.0 = intLit 1
+    %8:_exc.3 = undef("_exc")
+    branch bb5(%8)
+  bb4(%9:_exc.4):
+    %10:x.1 = intLit 0
+    %11:_exc.5 = undef("_exc")
+    branch bb5(%11)
+  bb5(%12:_exc.6):
+    %14:_tmp.4 = callQualified t08_try_finally.cleanup []
+    condBranch %12 bb6(%12) bb7()
+  bb6(%15:_exc.7):
+    raise %15
+  bb7():
     ret

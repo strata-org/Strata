@@ -18,31 +18,30 @@ func @module_init():
   bb0():
     %1:_tmp.0 = callQualified t11_with.MyCtx []
     %3:ctx.0 = call attr(%1, "__enter__")()
-    %4:x.0 = undef("x")
-    branch bb1(%3, %4)
-  bb1(%5:ctx.1, %6:x.1):
-    %7:x.2 = intLit 1
-    %9:_tmp.5 = noneLit
-    %10:_tmp.6 = call attr(%1, "__exit__")(positional(%9), positional(%9), positional(%9))
-    branch bb4(%5, %7)
-  bb2(%11:ctx.2, %12:x.3, %13:_exc.0):
-    %15:_tmp.8 = call attr(%1, "__exit__")(positional(%13), positional(%13), positional(%13))
-    condBranch %15 bb4(%11, %12) bb3(%11, %12, %13)
-  bb3(%16:ctx.3, %17:x.4, %18:_exc.1):
-    raise %18
-  bb4(%19:ctx.4, %20:x.5):
-    %22:_tmp.9 = callQualified t11_with.MyCtx []
-    %24:ctx.5 = call attr(%22, "__enter__")()
-    branch bb5(%24, %20)
-  bb5(%25:ctx.6, %26:x.6):
-    %28:_tmp.12 = callQualified t11_with.risky []
-    %30:_tmp.14 = noneLit
-    %31:_tmp.15 = call attr(%22, "__exit__")(positional(%30), positional(%30), positional(%30))
-    branch bb8(%25, %26)
-  bb6(%32:ctx.7, %33:x.7, %34:_exc.2):
-    %36:_tmp.17 = call attr(%22, "__exit__")(positional(%34), positional(%34), positional(%34))
-    condBranch %36 bb8(%32, %33) bb7(%32, %33, %34)
-  bb7(%37:ctx.8, %38:x.8, %39:_exc.3):
-    raise %39
-  bb8(%40:ctx.9, %41:x.9):
+    branch bb1(%1)
+  bb1(%4:_mgr.0):
+    %5:x.0 = intLit 1
+    %7:_tmp.5 = noneLit
+    %8:_tmp.6 = call attr(%4, "__exit__")(positional(%7), positional(%7), positional(%7))
+    branch bb4(%4)
+  bb2(%9:_mgr.1, %10:_exc.0):
+    %12:_tmp.8 = call attr(%9, "__exit__")(positional(%10), positional(%10), positional(%10))
+    condBranch %12 bb4(%9) bb3(%9, %10)
+  bb3(%13:_mgr.2, %14:_exc.1):
+    raise %14
+  bb4():
+    %16:_tmp.9 = callQualified t11_with.MyCtx []
+    %18:ctx.1 = call attr(%16, "__enter__")()
+    branch bb5(%16)
+  bb5(%19:_mgr.3):
+    %21:_tmp.12 = callQualified t11_with.risky []
+    %23:_tmp.14 = noneLit
+    %24:_tmp.15 = call attr(%19, "__exit__")(positional(%23), positional(%23), positional(%23))
+    branch bb8(%19)
+  bb6(%25:_mgr.4, %26:_exc.2):
+    %28:_tmp.17 = call attr(%25, "__exit__")(positional(%26), positional(%26), positional(%26))
+    condBranch %28 bb8(%25) bb7(%25, %26)
+  bb7(%29:_mgr.5, %30:_exc.3):
+    raise %30
+  bb8():
     ret

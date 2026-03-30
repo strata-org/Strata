@@ -4,32 +4,32 @@ func @module_init():
   bb0():
     %0:a.0 : bool = boolLit true
     %1:b.0 : bool = boolLit false
-    condBranch %0 bb1() bb2(%0)
-  bb1():
-    branch bb2(%1)
-  bb2(%2:_tmp.2):
-    condBranch %0 bb4(%0) bb3()
-  bb3():
-    branch bb4(%1)
-  bb4(%3:_tmp.3):
-    condBranch %0 bb7() bb8(%0)
-  bb7():
-    branch bb8(%1)
-  bb8(%4:_tmp.4):
-    condBranch %4 bb6(%4) bb5()
-  bb5():
-    branch bb6(%0)
-  bb6(%5:_tmp.5):
-    %6:_tmp.6 = intLit 0
-    condBranch %6 bb10(%6) bb9()
+    condBranch %0 bb1(%0, %1) bb2(%0, %0, %1)
+  bb1(%2:a.1, %3:b.1):
+    branch bb2(%3, %2, %3)
+  bb2(%4:_tmp.2, %5:a.2, %6:b.2):
+    condBranch %5 bb4(%5, %5, %6) bb3(%5, %6)
+  bb3(%7:a.3, %8:b.3):
+    branch bb4(%8, %7, %8)
+  bb4(%9:_tmp.3, %10:a.4, %11:b.4):
+    condBranch %10 bb7(%11, %10) bb8(%10, %11, %10)
+  bb5(%12:b.5, %13:a.5):
+    branch bb8(%12, %12, %13)
+  bb6(%14:_tmp.4, %15:b.6, %16:a.6):
+    condBranch %14 bb6(%14, %16) bb5(%16)
+  bb7(%17:a.7):
+    branch bb6(%17, %17)
+  bb8(%18:_tmp.5, %19:a.8):
+    %20:_tmp.6 = intLit 0
+    condBranch %20 bb10(%20) bb9()
   bb9():
-    %7:_tmp.7 = intLit 42
-    branch bb10(%7)
-  bb10(%8:_tmp.8):
-    %9:_tmp.9 = strLit "hello"
-    condBranch %9 bb11() bb12(%9)
+    %21:_tmp.7 = intLit 42
+    branch bb10(%21)
+  bb10(%22:_tmp.8):
+    %23:_tmp.9 = strLit "hello"
+    condBranch %23 bb11() bb12(%23)
   bb11():
-    %10:_tmp.10 = strLit "world"
-    branch bb12(%10)
-  bb12(%11:_tmp.11):
+    %24:_tmp.10 = strLit "world"
+    branch bb12(%24)
+  bb12(%25:_tmp.11):
     ret

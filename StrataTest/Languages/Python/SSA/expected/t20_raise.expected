@@ -8,18 +8,18 @@ func fail_hard():
 func reraise_example():
   bb0():
     %1:_tmp.0 = callQualified t20_raise.fail_hard []
-    branch bb3()
+    branch bb4()
   bb1(%2:_exc.0):
     %3:ValueError.0 = qualifiedRef builtins.ValueError
     %5:_tmp.2 = callQualified builtins.isinstance [positional(%2), positional(%3)]
       -- where %3 = qualifiedRef builtins.ValueError
-    condBranch %5 bb2(%2) bb4(%2)
+    condBranch %5 bb2(%2) bb3(%2)
   bb2(%6:_exc.1):
     %7:_err.0 = unsupported "bare raise not yet supported"
     unreachable
-  bb4(%8:_exc.2):
+  bb3(%8:_exc.2):
     raise %8
-  bb3():
+  bb4():
     ret
 
 func raise_with_msg(msg: str):

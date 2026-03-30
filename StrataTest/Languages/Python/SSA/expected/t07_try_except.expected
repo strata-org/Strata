@@ -8,39 +8,36 @@ func risky():
 func @module_init():
   bb0():
     %1:x.0 = callQualified t07_try_except.risky []
-    %2:c.0 = undef("c")
-    %3:a.0 = undef("a")
-    %4:b.0 = undef("b")
-    branch bb2(%2, %3, %1, %4)
-  bb1(%5:c.1, %6:a.1, %7:x.1, %8:b.1, %9:_exc.0):
-    %10:x.2 = intLit 0
-    branch bb2(%5, %6, %10, %8)
-  bb2(%11:c.2, %12:a.2, %13:x.3, %14:b.2):
-    %16:a.3 = callQualified t07_try_except.risky []
-    %18:b.3 = callQualified t07_try_except.risky []
-    branch bb4(%11, %16, %13, %18)
-  bb3(%19:c.3, %20:a.4, %21:x.4, %22:b.4, %23:_exc.1):
-    branch bb4(%19, %20, %21, %22)
-  bb4(%24:c.4, %25:a.5, %26:x.5, %27:b.5):
-    %29:c.5 = callQualified t07_try_except.risky []
-    branch bb9(%29, %25, %26, %27)
-  bb5(%30:c.6, %31:a.6, %32:x.6, %33:b.6, %34:_exc.2):
-    %35:ValueError.0 = qualifiedRef builtins.ValueError
-    %37:_tmp.6 = callQualified builtins.isinstance [positional(%34), positional(%35)]
-      -- where %35 = qualifiedRef builtins.ValueError
-    condBranch %37 bb6(%30, %31, %32, %33, %34) bb7(%30, %31, %32, %33, %34)
-  bb6(%38:c.7, %39:a.7, %40:x.7, %41:b.7, %42:_exc.3):
-    %44:c.8 = unaryOp uSub intLit 1
-    branch bb9(%44, %39, %40, %41)
-  bb7(%45:c.9, %46:a.8, %47:x.8, %48:b.8, %49:_exc.4):
-    %50:TypeError.0 = qualifiedRef builtins.TypeError
-    %52:_tmp.10 = callQualified builtins.isinstance [positional(%49), positional(%50)]
-      -- where %50 = qualifiedRef builtins.TypeError
-    condBranch %52 bb8(%45, %46, %47, %48, %49) bb10(%45, %46, %47, %48, %49)
-  bb8(%53:c.10, %54:a.9, %55:x.9, %56:b.9, %57:_exc.5):
-    %59:c.11 = unaryOp uSub intLit 2
-    branch bb9(%59, %54, %55, %56)
-  bb10(%60:c.12, %61:a.10, %62:x.10, %63:b.10, %64:_exc.6):
-    raise %64
-  bb9(%65:c.13, %66:a.11, %67:x.11, %68:b.11):
+    branch bb2()
+  bb1(%2:_exc.0):
+    %3:x.1 = intLit 0
+    branch bb2()
+  bb2():
+    %5:a.0 = callQualified t07_try_except.risky []
+    %7:b.0 = callQualified t07_try_except.risky []
+    branch bb4()
+  bb3(%8:_exc.1):
+    branch bb4()
+  bb4():
+    %10:c.0 = callQualified t07_try_except.risky []
+    branch bb10()
+  bb5(%11:_exc.2):
+    %12:ValueError.0 = qualifiedRef builtins.ValueError
+    %14:_tmp.6 = callQualified builtins.isinstance [positional(%11), positional(%12)]
+      -- where %12 = qualifiedRef builtins.ValueError
+    condBranch %14 bb6(%11) bb7(%11)
+  bb6(%15:_exc.3):
+    %17:c.1 = unaryOp uSub intLit 1
+    branch bb10()
+  bb7(%18:_exc.4):
+    %19:TypeError.0 = qualifiedRef builtins.TypeError
+    %21:_tmp.10 = callQualified builtins.isinstance [positional(%18), positional(%19)]
+      -- where %19 = qualifiedRef builtins.TypeError
+    condBranch %21 bb8(%18) bb9(%18)
+  bb8(%22:_exc.5):
+    %24:c.2 = unaryOp uSub intLit 2
+    branch bb10()
+  bb9(%25:_exc.6):
+    raise %25
+  bb10():
     ret
