@@ -425,7 +425,7 @@ function Any_get_or_none (dict: Any, key: Any) : Any
   DictStrAny_get_or_none(Any..as_Dict!(dict), Any..as_string!(key))
 };
 
-function DictStrAny_insert (/* */ d : DictStrAny, key: string, val: Any) : DictStrAny
+function DictStrAny_insert (d : DictStrAny, key: string, val: Any) : DictStrAny
 {
   if DictStrAny..isDictStrAny_empty(d) then DictStrAny_cons(key, val, DictStrAny_empty())
   else if DictStrAny..key!(d) == key then DictStrAny_cons(key, val, DictStrAny..tail!(d))
