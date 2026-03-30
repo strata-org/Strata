@@ -724,20 +724,26 @@ public partial def freeVarsExpr (e : expr SourceRange) : Std.HashSet String :=
     lo ∪ (hi ∪ st)
   | _ => {}
 
+/-- Variables read by an assignment target — free vars minus defined names.
+    For `self.x = v`, returns `{self}` (reads self, defines nothing at top level).
+    For `z = v`, returns `{}` (defines z, reads nothing). -/
+private def targetReads (target : expr SourceRange) : Std.HashSet String :=
+  let fv := freeVarsExpr target
+  let defs := (extractNames target).foldl (init := ({}:Std.HashSet String)) fun a n => a.insert n
+  fv \ defs
+
 /-- Free variables referenced in a statement's expressions (not sub-bodies). -/
 public partial def freeVarsStmt (s : stmt SourceRange) : Std.HashSet String :=
   match s with
   | .Assign _ ⟨_, targets⟩ value _ =>
-    -- Include free vars from targets (subscript/attribute targets read variables)
     let tv := targets.foldl (init := ({}:Std.HashSet String)) fun acc t =>
-      acc ∪ (freeVarsExpr t)
-    -- But subtract names that are being defined (simple Name targets)
-    let defs := targets.foldl (init := ({}:Std.HashSet String)) fun acc t =>
-      (extractNames t).foldl (init := acc) fun a n => a.insert n
-    (tv \ defs) ∪ (freeVarsExpr value)
+      acc ∪ (targetReads t)
+    tv ∪ (freeVarsExpr value)
   | .AnnAssign _ target _ ⟨_, value⟩ _ =>
-    let tv := freeVarsExpr target  -- target might have subscript etc.
-    match value with | some v => tv ∪ (freeVarsExpr v) | none => tv
+    let uses := targetReads target
+    match value with
+    | some v => uses ∪ (freeVarsExpr v)
+    | none => uses
   | .AugAssign _ target _ value =>
     (freeVarsExpr target) ∪ (freeVarsExpr value)
   | .Expr _ value => freeVarsExpr value
