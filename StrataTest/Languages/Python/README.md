@@ -151,11 +151,11 @@ lake exe strata pyAnalyzeLaurel --verbose \
 ### Output
 
 Verification results are printed by default (suppressed in SARIF mode).
-Each line shows the source location and outcome:
+Each line shows the source location, outcome, and assertion name:
 
 ```
-test_arithmetic.py(7, 4): ✅ pass
-test_arithmetic.py(14, 4): ❌ fail
+test_arithmetic.py(7, 4): ✅ pass - assert(102)
+test_arithmetic.py(14, 4): ❌ fail - assert(200)
 ```
 
 ## Diagnostic Commands

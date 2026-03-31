@@ -9,6 +9,7 @@ public import Strata.Languages.Laurel.Laurel
 import Strata.Languages.Python.OverloadTable
 public import Strata.Languages.Python.Specs.Decls
 public import Strata.Languages.Python.Specs.Error
+import Strata.Languages.Python.Specs.DDM
 import Strata.Util.DecideProp
 
 /-!

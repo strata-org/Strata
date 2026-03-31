@@ -351,29 +351,6 @@ inductive SpecExpr where
 | forallDict (dict : SpecExpr) (keyVar : String) (valVar : String) (body : SpecExpr)
 deriving Inhabited
 
-partial def SpecExpr.toString : SpecExpr → String
-  | .placeholder => "_"
-  | .var name => name
-  | .getIndex subject field => s!"{subject.toString}[{field}]"
-  | .isInstanceOf subject typeName => s!"isinstance({subject.toString}, {typeName})"
-  | .len subject => s!"len({subject.toString})"
-  | .intLit value => s!"{value}"
-  | .intGe subject bound => s!"{subject.toString} >= {bound.toString}"
-  | .intLe subject bound => s!"{subject.toString} <= {bound.toString}"
-  | .floatLit value => value
-  | .floatGe subject bound => s!"{subject.toString} >= {bound.toString}"
-  | .floatLe subject bound => s!"{subject.toString} <= {bound.toString}"
-  | .enumMember subject values => s!"{subject.toString} in {values.toList}"
-  | .regexMatch subject pattern => s!"regex_match({subject.toString}, {repr pattern})"
-  | .containsKey container key => s!"\"{key}\" in {container.toString}"
-  | .implies condition body => s!"({condition.toString} => {body.toString})"
-  | .not e => s!"not {e.toString}"
-  | .forallList list varName body => s!"forall {varName} in {list.toString}: {body.toString}"
-  | .forallDict dict keyVar valVar body =>
-    s!"forall {keyVar}, {valVar} in {dict.toString}.items(): {body.toString}"
-
-instance : ToString SpecExpr := ⟨SpecExpr.toString⟩
-
 inductive MessagePart where
 | str (s : String)
 | expr (e : SpecExpr)
