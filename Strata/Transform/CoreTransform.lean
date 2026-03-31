@@ -244,7 +244,7 @@ def createInitVars (trips : List ((Expression.Ident × Expression.Ty) × Express
   : List Statement :=
   trips.map (createInitVar · md)
 
-/-- turns a list of preconditions into assumes with substitution -/
+/-- turns a list of preconditions into asserts with substitution -/
 def createAsserts
     (conds : ListMap CoreLabel Procedure.Check)
     (subst : Map Expression.Ident Expression.Expr)
@@ -252,7 +252,8 @@ def createAsserts
     : CoreTransformM (List Statement)
     := conds.mapM (fun (l, check) => do
           let newLabel ← genIdent l (fun s => s!"callElimAssert_{s}")
-          return Statement.assert newLabel.toPretty (Lambda.LExpr.substFvars check.expr subst) md)
+          -- Non-lifting: the replacement expressions must be closed (no dangling bvars).
+          return Statement.assert newLabel.toPretty (Lambda.LExpr.substMultiFvars check.expr subst) md)
 
 /-- turns a list of preconditions into assumes with substitution -/
 def createAssumes
@@ -263,7 +264,8 @@ def createAssumes
     :=
     conds.mapM (fun (l, check) => do
       let newLabel ← genIdent l (fun s => s!"callElimAssume_{s}")
-      return Statement.assume newLabel.toPretty (Lambda.LExpr.substFvars check.expr subst) md)
+      -- Non-lifting: the replacement expressions must be closed (no dangling bvars).
+      return Statement.assume newLabel.toPretty (Lambda.LExpr.substMultiFvars check.expr subst) md)
 
 /--
 Generate the substitution pairs needed for the body of the procedure

@@ -51,7 +51,7 @@ def substitutePrecondition
     (actuals : List (LExpr T.mono))
     : LExpr T.mono :=
   let substitution := formals.zip actuals |>.map fun ((name, _), actual) => (name, actual)
-  LExpr.substFvars precond substitution
+  LExpr.substMultiFvarsLifting precond substitution
 
 /--
 Collect all WF obligations from an expression by traversing it and finding

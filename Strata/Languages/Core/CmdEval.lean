@@ -49,6 +49,8 @@ def lookup (E : Env) (v : Expression.Ident) : Option Expression.TypedExpr :=
 def preprocess (E : Env) (c : Cmd Expression) (e : Expression.Expr) : Expression.Expr × Env :=
   -- Substitute "old g" variables with their pre-state values.
   -- substMap contains only "old g" → pre-state value entries (set by ProcedureEval).
+  -- Iterated substitution is safe here: the keys are "old g" identifiers (prefixed
+  -- with "old "), which cannot appear as free variables in any replacement value.
   let e := if E.substMap.isEmpty then e else Lambda.LExpr.substFvars e E.substMap
   match c with
   | .init _ _ eOpt _ =>
