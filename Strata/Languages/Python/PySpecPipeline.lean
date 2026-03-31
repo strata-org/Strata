@@ -15,6 +15,7 @@ import Strata.Languages.Python.Specs.DDM
 import Strata.Languages.Python.Specs.IdentifyOverloads
 import Strata.Languages.Python.Specs.ToLaurel
 import Strata.Util.DecideProp
+import Strata.Util.Profile
 
 /-! ## PySpec Pipeline
 
@@ -100,7 +101,7 @@ private def mergeOverloads (old new : OverloadTable) : OverloadTable :=
     to namespace all generated Laurel names (e.g., `"servicelib_Storage"` for
     module `servicelib.Storage`). -/
 public def buildPySpecLaurel (pyspecEntries : Array (String × String))
-    (overloads : OverloadTable) : EIO String PySpecLaurelResult := do
+    (overloads : OverloadTable) (quiet : Bool := false) : EIO String PySpecLaurelResult := do
   let mut combinedProcedures : Array (Laurel.Procedure × String) := #[]
   let mut combinedTypes : Array (Laurel.TypeDefinition × String) := #[]
   let mut allOverloads := overloads
@@ -115,7 +116,7 @@ public def buildPySpecLaurel (pyspecEntries : Array (String × String))
       | .error msg => throw s!"Could not read {ionFile}: {msg}"
     let { program, errors, overloads, typeAliases, exhaustiveClasses } :=
       Python.Specs.ToLaurel.signaturesToLaurel ionPath sigs modulePrefix
-    if errors.size > 0 then
+    if errors.size > 0 && !quiet then
       let _ ← IO.eprintln
         s!"{errors.size} PySpec translation warning(s) for {ionPath}:" |>.toBaseIO
       for err in errors do
@@ -163,6 +164,7 @@ public def buildPySpecLaurel (pyspecEntries : Array (String × String))
 /-- Read dispatch Ion files and merge their overload tables. -/
 public def readDispatchOverloads
     (dispatchPaths : Array String)
+    (quiet : Bool := false)
     : EIO String OverloadTable := do
   let mut tbl : OverloadTable := {}
   for dispatchPath in dispatchPaths do
@@ -173,7 +175,7 @@ public def readDispatchOverloads
       | .error msg => throw s!"Could not read dispatch file {ionFile}: {msg}"
     let (overloads, errors) :=
       Python.Specs.ToLaurel.extractOverloads dispatchPath sigs
-    if errors.size > 0 then
+    if errors.size > 0 && !quiet then
       let _ ← IO.eprintln
         s!"{errors.size} dispatch warning(s) for {ionFile}:" |>.toBaseIO
       for err in errors do
@@ -188,11 +190,13 @@ public def readDispatchOverloads
 /-- Resolve a module name to a `(modulePrefix, ionPath)` pair for
     `buildPySpecLaurel`.  Returns `none` if the pyspec file is not found. -/
 private def resolveModuleEntry (modName : String) (specDir : System.FilePath)
+    (quiet : Bool := false)
     : EIO String (Option (String × String)) := do
   match Python.Specs.ModuleName.ofString modName with
   | .error _ =>
-    let _ ← IO.eprintln
-      s!"warning: invalid module name '{modName}', skipping" |>.toBaseIO
+    if !quiet then
+      let _ ← IO.eprintln
+        s!"warning: invalid module name '{modName}', skipping" |>.toBaseIO
     return none
   | .ok mod =>
     match ← mod.specIonPath specDir with
@@ -214,36 +218,39 @@ public def resolveAndBuildLaurelPrelude
     (pyspecModules : Array String)
     (stmts : Array (Python.stmt SourceRange))
     (specDir : System.FilePath := ".")
+    (quiet : Bool := false)
     : EIO String PySpecLaurelResult := do
   -- Resolve dispatch module names to Ion paths
   let mut dispatchPaths : Array String := #[]
   for modName in dispatchModules do
-    match ← resolveModuleEntry modName specDir with
+    match ← resolveModuleEntry modName specDir (quiet := quiet) with
     | some (_, path) => dispatchPaths := dispatchPaths.push path
     | none => throw s!"Dispatch module '{modName}' not found in {specDir}"
-  let dispatchOverloads ← readDispatchOverloads dispatchPaths
+  let dispatchOverloads ← readDispatchOverloads dispatchPaths (quiet := quiet)
   let resolveState :=
     Python.Specs.IdentifyOverloads.resolveOverloads dispatchOverloads stmts
-  for w in resolveState.warnings do
-    let _ ← IO.eprintln s!"warning: {w}" |>.toBaseIO
+  if !quiet then
+    for w in resolveState.warnings do
+      let _ ← IO.eprintln s!"warning: {w}" |>.toBaseIO
   -- Auto-resolve pyspec modules from overload table
   let mut autoSpecEntries : Array (String × String) := #[]
   if dispatchModules.size > 0 then
     let resolvedMods := resolveState.modules.toArray.qsort (· < ·)
     for modName in resolvedMods do
-      match ← resolveModuleEntry modName specDir with
+      match ← resolveModuleEntry modName specDir (quiet := quiet) with
       | some entry => autoSpecEntries := autoSpecEntries.push entry
       | none =>
-        let _ ← IO.eprintln
-          s!"warning: auto-resolved pyspec not found for module '{modName}'" |>.toBaseIO
+        if !quiet then
+          let _ ← IO.eprintln
+            s!"warning: auto-resolved pyspec not found for module '{modName}'" |>.toBaseIO
   -- Resolve explicit pyspec module names
   let mut explicitEntries : Array (String × String) := #[]
   for modName in pyspecModules do
-    match ← resolveModuleEntry modName specDir with
+    match ← resolveModuleEntry modName specDir (quiet := quiet) with
     | some entry => explicitEntries := explicitEntries.push entry
     | none => throw s!"PySpec module '{modName}' not found in {specDir}"
   let allSpecEntries := autoSpecEntries ++ explicitEntries
-  buildPySpecLaurel allSpecEntries dispatchOverloads
+  buildPySpecLaurel allSpecEntries dispatchOverloads (quiet := quiet)
 
 /-! ### Pipeline Steps -/
 
@@ -374,20 +381,22 @@ public def pyAnalyzeLaurel
     (pyspecModules : Array String := #[])
     (sourcePath : Option String := none)
     (specDir : System.FilePath := ".")
+    (profile : Bool := false)
+    (quiet : Bool := false)
     : EIO PipelineError Laurel.Program := do
-  let stmts ←
+  let stmts ← profileStep profile "Read Python Ion" do
     match ← Python.readPythonStrata pythonIonPath |>.toBaseIO with
     | .ok r => pure r
     | .error msg => throw (.internal msg)
 
-  let result ←
-    match ← resolveAndBuildLaurelPrelude dispatchModules pyspecModules stmts specDir |>.toBaseIO with
+  let result ← profileStep profile "Resolve and build Laurel prelude" do
+    match ← resolveAndBuildLaurelPrelude dispatchModules pyspecModules stmts specDir (quiet := quiet) |>.toBaseIO with
     | .ok r => pure r
     | .error msg => throw (.internal msg)
   let preludeInfo := buildPreludeInfo result
 
   let metadataPath := sourcePath.getD pythonIonPath
-  let (laurelProgram, _ctx) ←
+  let (laurelProgram, _ctx) ← profileStep profile "Translate Python to Laurel" do
     match Python.pythonToLaurel' preludeInfo stmts none metadataPath result.overloads with
     | .error (.userPythonError range msg) => throw (.userCode range msg)
     | .error (.unsupportedConstruct msg ast) =>
@@ -395,6 +404,7 @@ public def pyAnalyzeLaurel
     | .error e => throw (.internal s!"Python to Laurel translation failed: {e}")
     | .ok result => pure result
 
-  return combinePySpecLaurel result.laurelProgram laurelProgram
+  profileStep profile "Combine PySpec and user Laurel" do
+    return combinePySpecLaurel result.laurelProgram laurelProgram
 
 end Strata
