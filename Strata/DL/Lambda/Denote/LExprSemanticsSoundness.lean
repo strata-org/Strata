@@ -124,8 +124,18 @@ theorem callOfLFunc_denote
       let fullSort := LSort.mkArrow (LMonoTy.substTyVars vt τ) inputSorts
       LExpr.denote tcInterp opInterp fvarVal vt .nil e τ h =
         SortDenote.applyArgs tcInterp (opInterp fn.name fullSort)
-          (denoteArgs tcInterp opInterp fvarVal vt h_args) := by
+          (denoteArgs tcInterp opInterp fvarVal vt args (List.map Prod.snd fn.inputs) h_args) := by
   sorry
+
+theorem zip_map_fst_eq {α β: Type} (l1: List α) (l2: List β) :
+  List.length l1 = List.length l2 →
+  (l1.zip l2).map Prod.fst = l1 := by
+  induction l1 generalizing l2 <;> cases l2 <;> simp_all
+
+theorem zip_map_snd_eq{α β: Type} (l1: List α) (l2: List β) :
+  List.length l1 = List.length l2 →
+  (l1.zip l2).map Prod.snd = l2 := by
+  induction l1 generalizing l2 <;> cases l2 <;> simp_all
 
 
 /-! ### Main theorem -/
@@ -269,35 +279,57 @@ theorem Step.denote_preserved
     subst h_tau
     have hfn_in : fn ∈ F := Factory.callOfLFunc_mem hcall
     have h_body_ty : LExpr.HasTypeA [] fnbody fn.output := hFwt fn hfn_in fnbody hbody
-    have h_map_eq : (List.map Prod.snd fn.inputs).map (LMonoTy.substTyVars vt) =
-        (fn.inputs.map (fun (id, ty) => (id, LMonoTy.substTyVars vt ty))).map Prod.snd := by
-      simp [List.map_map, Function.comp]
-    -- Transport denoteArgs to the InterpConsistentBody index
-    let args' : HList (SortDenote tcInterp)
-        ((fn.inputs.map (fun (id, ty) => (id, LMonoTy.substTyVars vt ty))).map Prod.snd) :=
-      HList.cast h_map_eq (denoteArgs tcInterp opInterp fvarVal vt h_args)
-    have h_consistent := hF.1 fn hfn_in fnbody hbody vt fvarVal h_body_ty args'
+    -- Set up casts and lemmas for substFvars_denote
+    -- have h_map_eq : (List.map Prod.snd fn.inputs).map (LMonoTy.substTyVars vt) =
+    --     (fn.inputs.map (fun (id, ty) => (id, LMonoTy.substTyVars vt ty))).map Prod.snd := by
+    --   simp [List.map_map, Function.comp]
+    -- Get Hlist of args
+    -- let args' : HList (SortDenote tcInterp)
+    -- -- Transport denoteArgs to the InterpConsistentBody index
+    -- let args' : HList (SortDenote tcInterp)
+    --     ((fn.inputs.map (fun (id, ty) => (id, LMonoTy.substTyVars vt ty))).map Prod.snd) :=
+    --   HList.cast h_map_eq (denoteArgs tcInterp opInterp fvarVal vt args (List.map Prod.snd fn.inputs) h_args)
+    -- have h_consistent := hF.1 fn hfn_in fnbody hbody vt fvarVal h_body_ty args'
     have h_arity : args.length = fn.inputs.length := by
       have := h_args.length_eq; simp at this; exact this
-    have h_keys : (fn.inputs.keys.zip args).map Prod.fst =
-        (fn.inputs.map (fun (id, ty) => (id, LMonoTy.substTyVars vt ty))).map Prod.fst := by
-      rw [ListMap.keys_eq_map_fst,
-          List.map_fst_zip (l₁ := fn.inputs.map Prod.fst) (l₂ := args) (by simp; omega),
-          List.map_map]; rfl
-    have h_len : (fn.inputs.keys.zip args).length =
-        (fn.inputs.map (fun (id, ty) => (id, LMonoTy.substTyVars vt ty))).length := by
-      simp [ListMap.keys_eq_map_fst, List.length_zip, h_arity]
-    have h_subst := substFvars_denote tcInterp opInterp fvarVal vt
-        (sortBindings := fn.inputs.map (fun (id, ty) => (id, LMonoTy.substTyVars vt ty)))
-        h_body_ty h₂ args' h_keys h_len
-    rw [h_denote_e, ← h_subst]
-    -- Goal: applyArgs (opInterp fn.name (mkArrow ret xs)) (denoteArgs h_args)
-    --     = denote (withArgs ...) fnbody
-    -- h_consistent: applyArgs (opInterp fn.name (mkArrow ret ys)) args' = same RHS
-    -- Use applyArgs_cast_eq to rewrite LHS, replacing (denoteArgs h_args) with args'
-    rw [SortDenote.applyArgs_cast_eq tcInterp h_map_eq (opInterp fn.name)
-        (denoteArgs tcInterp opInterp fvarVal vt h_args)]
-    exact h_consistent
+    have hlen: args.length = fn.inputs.keys.length := by
+      rw[ListMap.keys_eq_map_fst]; grind
+    have h_fst : (fn.inputs.keys.zip args).map Prod.fst = fn.inputs.keys :=
+      by rw[zip_map_fst_eq] ; symm; assumption
+    -- have h_fst' : (fn.inputs.map (fun (id, ty) => (id, LMonoTy.substTyVars vt ty))).map Prod.fst = fn.inputs.keys := by grind
+    let srts : List LSort :=  (List.map (Lambda.LMonoTy.substTyVars vt) (List.map Prod.snd fn.inputs))
+    have hcast : (List.map (Lambda.LMonoTy.substTyVars vt) (List.map Prod.snd fn.inputs)) = (List.map Prod.snd (fn.inputs.keys.zip srts)) := by
+      unfold srts; rw[zip_map_snd_eq]
+      rw[List.map_map, ListMap.keys_eq_map_fst]; grind
+    let args' := HList.cast hcast (denoteArgs tcInterp opInterp fvarVal vt args (List.map Prod.snd fn.inputs) h_args)
+    have hall: Lambda.List.Forall₂ (LExpr.HasTypeA []) (List.map Prod.snd (fn.inputs.keys.zip args)) (List.map Prod.snd fn.inputs) := by
+      have h: (List.map Prod.snd (fn.inputs.keys.zip args)) = args := by
+        rw[zip_map_snd_eq]; grind
+      rw[h]
+      exact h_args
+    have hfst_eq : List.map Prod.fst (fn.inputs.keys.zip args) = List.map Prod.fst (fn.inputs.keys.zip srts) := by
+      rw[zip_map_fst_eq, zip_map_fst_eq] <;> grind
+    rw[@substFvars_denote _ tcInterp opInterp fvarVal vt _ _ _ (fn.inputs.keys.zip args) (fn.inputs.keys.zip srts)
+    h_body_ty h₂ args' hfst_eq (by grind) (List.map Prod.snd fn.inputs) (by grind) (by grind) hall]
+    . -- Prove denotation equivalence via well-formedness of interp (use hF)
+      rw [h_denote_e]
+      have h_consistent := hF.1 fn hfn_in fnbody hbody vt fvarVal h_body_ty
+      have h_bindings_eq : fn.inputs.map (fun x => match x with | (id, ty) => (id, LMonoTy.substTyVars vt ty)) =
+          fn.inputs.keys.zip srts := by
+        unfold srts; rw[ListMap.keys_eq_map_fst]
+        induction fn.inputs with
+        | nil => simp
+        | cons hd tl ih => simp [ih]
+      rw [h_bindings_eq] at h_consistent
+      have h_inst := h_consistent args'
+      rw [← h_inst]
+      exact SortDenote.applyArgs_cast_eq tcInterp hcast (opInterp fn.name)
+        (denoteArgs tcInterp opInterp fvarVal vt args (List.map Prod.snd fn.inputs) h_args)
+    . -- Prove hlist eq - probably need result about element-by-element eq
+      have hsnd : List.map Prod.snd (fn.inputs.keys.zip args) = args := by
+        rw[zip_map_snd_eq]; grind
+      unfold args'
+      simp only [hsnd]
   | eval_fn e callee e' args fn denotefn hcall heval hresult =>
     have h_tau := callOfLFunc_output_type hFwt hcall h₁; subst h_tau
     obtain ⟨h_args, h_denote_e⟩ := callOfLFunc_denote tcInterp opInterp fvarVal vt hcall h₁

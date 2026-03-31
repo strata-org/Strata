@@ -247,9 +247,15 @@ theorem substFvars_denote [DecidableEq T.IDMeta]
     (h_args : HList (SortDenote tcInterp) (sortBindings.map Prod.snd))
     (h_keys : bindings.map Prod.fst = sortBindings.map Prod.fst)
     (h_len : bindings.length = sortBindings.length)
-    : LExpr.denote tcInterp opInterp
+    {tys : List LMonoTy}
+    (h_tys_len : tys.length = bindings.length)
+    (h_sorts : sortBindings.map Prod.snd = tys.map (LMonoTy.substTyVars vt))
+    (h_wt : List.Forall₂ (LExpr.HasTypeA []) (bindings.map Prod.snd) tys)
+    (h_denotes : h_args = HList.cast h_sorts.symm
+        (denoteArgs tcInterp opInterp fvarVal vt (bindings.map Prod.snd) tys h_wt))
+    : LExpr.denote tcInterp opInterp fvarVal vt .nil
+        (LExpr.substFvars body bindings) τ h_subst =
+      LExpr.denote tcInterp opInterp
         (fvarVal.withArgs sortBindings h_args)
-        vt .nil body τ h_body =
-      LExpr.denote tcInterp opInterp fvarVal vt .nil
-        (LExpr.substFvars body bindings) τ h_subst := by
+        vt .nil body τ h_body := by
   sorry
