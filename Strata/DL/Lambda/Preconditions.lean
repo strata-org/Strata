@@ -64,6 +64,17 @@ For each call to a function with preconditions:
 2. Substitute actual arguments for formal parameters
 3. Create a WFObligation with the call-site metadata
 4. Wrap in enclosing quantifiers and implications
+
+The evaluation semantics of functions with preconditions are only defined
+if the precondition holds e.g. for `f(x) requires P(x) = b(x)`, we have that
+`.app f y --> b(y)` only when `P(y)` holds. Otherwise, evaluation is stuck.
+
+`collectWFObligations e` creates a set of proof obligations such that, if
+all generated obligations are valid, then the evaluation of `e` is not stuck
+due to an invalid precondition:
+for any function call `f` inside `e` with preconditions, either the precondition
+of `f` is valid at the call site or there is an evaluation sequence that does
+not use the `.app` rule on `f`.
 -/
 def collectWFObligations [Coe String (T.Identifier)]  [Inhabited T.Metadata] (F : Factory T) (e : LExpr T.mono) : List (WFObligation T) :=
   go F e [] {}
@@ -74,7 +85,8 @@ where
     implications.foldr (fun (md, lhs) acc =>
       .app md (.app md (@boolImpliesFunc T).opExpr lhs) acc) ob
 
-  /-- Shift all keys in the let-obligations map up by 1 (for entering a binder) -/
+  /-- Shift all keys in the let-obligations map up by 1 (for entering a binder).
+      The keys of `m` are De Bruijn indices. -/
   shiftLetObs (m : Std.HashMap Nat (List (WFObligation T))) : Std.HashMap Nat (List (WFObligation T)) :=
     m.fold (fun acc k v => acc.insert (k + 1) v) {}
 
