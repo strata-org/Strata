@@ -309,7 +309,7 @@ theorem Step.denote_preserved
       exact h_args
     have hfst_eq : List.map Prod.fst (fn.inputs.keys.zip args) = List.map Prod.fst (fn.inputs.keys.zip srts) := by
       rw[zip_map_fst_eq, zip_map_fst_eq] <;> grind
-    rw[@substFvars_denote _ tcInterp opInterp fvarVal vt _ _ _ (fn.inputs.keys.zip args) (fn.inputs.keys.zip srts)
+    rw[@substMultiFvarsLifting_denote _ tcInterp opInterp fvarVal vt _ _ _ (fn.inputs.keys.zip args) (fn.inputs.keys.zip srts)
     h_body_ty h₂ args' hfst_eq (by grind) (List.map Prod.snd fn.inputs) (by grind) (by grind) hall]
     . -- Prove denotation equivalence via well-formedness of interp (use hF)
       rw [h_denote_e]

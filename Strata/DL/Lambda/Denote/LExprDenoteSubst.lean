@@ -238,12 +238,12 @@ theorem subst_denote
   exact substK_denote (Δ₁ := []) _ _ _ _ _ h_body h_v h_subst h_lc
 
 /-- Free-variable substitution commutes with denotation. -/
-theorem substFvars_denote [DecidableEq T.IDMeta]
+theorem substMultiFvarsLifting_denote [DecidableEq T.IDMeta]
     {body : LExpr T.mono} {τ : LMonoTy}
     {bindings : List (T.Identifier × LExpr T.mono)}
     {sortBindings : List (Identifier T.IDMeta × LSort)}
     (h_body : LExpr.HasTypeA [] body τ)
-    (h_subst : LExpr.HasTypeA [] (LExpr.substFvars body bindings) τ)
+    (h_subst : LExpr.HasTypeA [] (LExpr.substMultiFvarsLifting body bindings) τ)
     (h_args : HList (SortDenote tcInterp) (sortBindings.map Prod.snd))
     (h_keys : bindings.map Prod.fst = sortBindings.map Prod.fst)
     (h_len : bindings.length = sortBindings.length)
@@ -254,7 +254,7 @@ theorem substFvars_denote [DecidableEq T.IDMeta]
     (h_denotes : h_args = HList.cast h_sorts.symm
         (denoteArgs tcInterp opInterp fvarVal vt (bindings.map Prod.snd) tys h_wt))
     : LExpr.denote tcInterp opInterp fvarVal vt .nil
-        (LExpr.substFvars body bindings) τ h_subst =
+        (LExpr.substMultiFvarsLifting body bindings) τ h_subst =
       LExpr.denote tcInterp opInterp
         (fvarVal.withArgs sortBindings h_args)
         vt .nil body τ h_body := by
