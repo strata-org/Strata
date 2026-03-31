@@ -195,6 +195,34 @@ open Strata
 
 public section
 
+/-- Describes whether a pipeline phase preserves models or requires validation. -/
+inductive ModelValidation where
+  /-- The phase preserves models — sat results are sound. -/
+  | modelPreserving
+  /-- The phase may introduce spurious models. The function returns true
+      when the model is valid. -/
+  | modelToValidate (validate : Imperative.SMT.CounterEx Expression.Ident → Bool)
+
+/-- A phase in the verification pipeline, recording its name and
+    whether its models need validation. -/
+structure AbstractedPhase where
+  name : String
+  modelValidation : ModelValidation := .modelPreserving
+
+/-- True when any phase requires model validation. -/
+def AbstractedPhase.needsValidation (phases : List AbstractedPhase) : Bool :=
+  phases.any fun p => match p.modelValidation with
+    | .modelToValidate _ => true
+    | .modelPreserving => false
+
+/-- Validate a model against all phases. Returns true only if every
+    `modelToValidate` phase accepts the model. -/
+def AbstractedPhase.validateModel (phases : List AbstractedPhase)
+    (model : Imperative.SMT.CounterEx Expression.Ident) : Bool :=
+  phases.all fun p => match p.modelValidation with
+    | .modelPreserving => true
+    | .modelToValidate f => f model
+
 /-- Alias for solver log entries. Each entry records a single SMT result. -/
 abbrev SolverPhaseLog := SMT.Result
 
@@ -613,13 +641,23 @@ def Program.hasOverApproximation (p : Program) : Bool :=
     | .recFuncBlock fs _ => fs.any fun f => !f.isConstr && f.body.isNone
     | _ => false
 
-/-- Convert an unvalidated SMT sat result to unknown (preserving the model).
-    SMT sat does not guarantee the property is truly satisfiable because
-    uninterpreted functions may admit spurious models. -/
-private def SMT.Result.satToUnknown (r : SMT.Result) : SMT.Result :=
+/-- Convert an unvalidated SMT sat result to unknown (preserving the model)
+    when any pipeline phase cannot validate the model. -/
+def SMT.Result.adjustForPhases (r : SMT.Result)
+    (phases : List AbstractedPhase) : SMT.Result :=
   match r with
-  | .sat m => .unknown m
+  | .sat m => if AbstractedPhase.validateModel phases m then .sat m else .unknown m
   | other => other
+
+/-- Build the list of abstracted phases for a program. When the program
+    has over-approximations, the phase uses a TODO validator that always
+    rejects the model. -/
+def Program.abstractedPhases (p : Program) : List AbstractedPhase :=
+  if p.hasOverApproximation then
+    [{ name := "VerificationPipeline",
+       modelValidation := .modelToValidate (fun _ => /- TODO -/ false) }]
+  else
+    [{ name := "VerificationPipeline" }]
 
 /--
 Invoke a backend engine and get the analysis result for a
@@ -630,7 +668,7 @@ def getObligationResult (assumptionTerms : List Term) (obligationTerm : Term)
     (obligation : ProofObligation Expression) (p : Program)
     (options : VerifyOptions) (counter : IO.Ref Nat)
     (tempDir : System.FilePath) (satisfiabilityCheck validityCheck : Bool)
-    (hasOverApprox : Bool)
+    (phases : List AbstractedPhase)
     : EIO DiagnosticModel VCResult := do
   let prog := f!"\n\n[DEBUG] Evaluated program:\n{Core.formatProgram p}"
   let counterVal ← counter.get
@@ -662,9 +700,9 @@ def getObligationResult (assumptionTerms : List Term) (obligationTerm : Term)
     let smtLog : List SolverPhaseLog :=
       (if satisfiabilityCheck then [satResult] else []) ++
       (if validityCheck then [validityResult] else [])
-    -- Convert unvalidated sat results to unknown when over-approximations exist
-    let adjSat := if hasOverApprox then satResult.satToUnknown else satResult
-    let adjVal := if hasOverApprox then validityResult.satToUnknown else validityResult
+    -- Convert unvalidated sat results to unknown when phases require validation
+    let adjSat := satResult.adjustForPhases phases
+    let adjVal := validityResult.adjustForPhases phases
     let rawOutcome : VCOutcome := {
       satisfiabilityProperty := adjSat,
       validityProperty := adjVal,
@@ -726,9 +764,9 @@ def verifySingleEnv (pE : Program × Env) (options : VerifyOptions)
       -- If PE resolved both checks, we're done, unless we always want to generate SMT queries
       if not options.alwaysGenerateSMT then
         if let (some peSat, some peVal) := (peSatResult?, peValResult?) then
-          let hasOverApprox := p.hasOverApproximation
-          let adjSat := if hasOverApprox then peSat.satToUnknown else peSat
-          let adjVal := if hasOverApprox then peVal.satToUnknown else peVal
+          let phases := p.abstractedPhases
+          let adjSat := peSat.adjustForPhases phases
+          let adjVal := peVal.adjustForPhases phases
           let peLog : List SolverPhaseLog :=
             (if satisfiabilityCheck then [peSat] else []) ++
             (if validityCheck then [peVal] else [])
@@ -770,7 +808,7 @@ def verifySingleEnv (pE : Program × Env) (options : VerifyOptions)
       | .ok (assumptionTerms, obligationTerm, ctx) =>
         let t4 ← IO.monoNanosNow
         let result ← getObligationResult assumptionTerms obligationTerm ctx obligation p options
-                      counter tempDir needSatCheck needValCheck p.hasOverApproximation
+                      counter tempDir needSatCheck needValCheck p.abstractedPhases
         let t5 ← IO.monoNanosNow
         solverNs := solverNs + (t5 - t4)
         -- Merge PE results with solver results

@@ -182,4 +182,51 @@ info: === Outcome Table (assert) ===
   printOutcomeRow (Imperative.SMT.Result.unknown (Ident := Core.Expression.Ident)) .unsat
   printOutcomeRow (Imperative.SMT.Result.unknown (Ident := Core.Expression.Ident)) (Imperative.SMT.Result.unknown (Ident := Core.Expression.Ident))
 
+/-! ### AbstractedPhase and ModelValidation tests -/
+
+private def preservingPhase : AbstractedPhase :=
+  { name := "VerificationPipeline" }
+
+private def rejectingPhase : AbstractedPhase :=
+  { name := "VerificationPipeline",
+    modelValidation := .modelToValidate (fun _ => false) }
+
+private def acceptingPhase : AbstractedPhase :=
+  { name := "VerificationPipeline",
+    modelValidation := .modelToValidate (fun _ => true) }
+
+private def satResult : Result := .sat []
+private def unsatResult : Result := .unsat
+private def unknownResult : Result := Imperative.SMT.Result.unknown (Ident := Core.Expression.Ident)
+
+/-- info: false -/
+#guard_msgs in #eval AbstractedPhase.needsValidation [preservingPhase]
+
+/-- info: true -/
+#guard_msgs in #eval AbstractedPhase.needsValidation [rejectingPhase]
+
+/-- info: true -/
+#guard_msgs in #eval AbstractedPhase.needsValidation [preservingPhase, rejectingPhase]
+
+-- adjustForPhases: sat stays sat with ModelPreserving
+#guard satResult.adjustForPhases [preservingPhase] == satResult
+
+-- adjustForPhases: sat becomes unknown with rejecting validator
+#guard satResult.adjustForPhases [rejectingPhase] == unknownResult
+
+-- adjustForPhases: sat stays sat with accepting validator
+#guard satResult.adjustForPhases [acceptingPhase] == satResult
+
+-- adjustForPhases: sat becomes unknown when any phase rejects
+#guard satResult.adjustForPhases [preservingPhase, rejectingPhase] == unknownResult
+
+-- adjustForPhases: unsat is unchanged regardless of phases
+#guard unsatResult.adjustForPhases [rejectingPhase] == unsatResult
+
+-- adjustForPhases: unknown is unchanged regardless of phases
+#guard unknownResult.adjustForPhases [rejectingPhase] == unknownResult
+
+-- adjustForPhases: empty phases list preserves sat
+#guard satResult.adjustForPhases [] == satResult
+
 end Core
