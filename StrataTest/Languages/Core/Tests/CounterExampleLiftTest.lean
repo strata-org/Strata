@@ -37,7 +37,7 @@ procedure P() returns () {
 info:
 Obligation: must_be_42
 Property: assert
-Result: ❌ fail
+Result: ❓ unknown
 Model:
 ($__x1, 0)
 -/
@@ -45,7 +45,7 @@ Model:
 #eval verify intCexPgm (options := .models)
 
 -- The counterexample value is an intConst
-/-- info: failures=1 all_int=true -/
+/-- info: failures=0 all_int=true -/
 #guard_msgs in
 #eval do
   let results ← verify intCexPgm (options := .models)
@@ -75,7 +75,7 @@ procedure P() returns () {
 info:
 Obligation: must_be_true
 Property: assert
-Result: ❌ fail
+Result: ❓ unknown
 Model:
 ($__b1, false)
 -/
@@ -101,7 +101,7 @@ procedure P() returns () {
 info:
 Obligation: must_be_cons
 Property: assert
-Result: ❌ fail
+Result: ❓ unknown
 Model:
 ($__xs1, Nil)
 -/
@@ -127,7 +127,7 @@ procedure P() returns () {
 info:
 Obligation: must_be_cons
 Property: assert
-Result: ❌ fail
+Result: ❓ unknown
 Model:
 ($__xs1, Cons(0, Nil))
 -/
@@ -153,7 +153,7 @@ procedure P() returns () {
 info:
 Obligation: must_be_left
 Property: assert
-Result: ❌ fail
+Result: ❓ unknown
 Model:
 ($__e1, Right(true))
 -/
@@ -182,7 +182,7 @@ spec {
 info:
 Obligation: bad
 Property: assert
-Result: ❌ fail
+Result: ❓ unknown
 Model:
 ($__x0, 0)
 -/

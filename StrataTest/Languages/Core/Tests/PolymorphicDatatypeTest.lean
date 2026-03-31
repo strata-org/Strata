@@ -522,7 +522,7 @@ Result: ✅ pass
 
 Obligation: test
 Property: assert
-Result: ❌ fail
+Result: ❓ unknown
 
 Obligation: Test_ensures_0
 Property: assert

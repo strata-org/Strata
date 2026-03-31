@@ -138,10 +138,10 @@ Sat:unknown|Val:unknown ❓ unknown, Unknown (solver timeout or incomplete), SAR
 
 /-! ### bugFindingAssumingCompleteSpec mode: (sat, sat) is error -/
 
-#guard outcomeToLevel .bugFindingAssumingCompleteSpec .assert (VCOutcome.mk (.sat []) (.sat [])) = Strata.Sarif.Level.error
-#guard outcomeToLevel .bugFinding .assert (VCOutcome.mk (.sat []) (.sat [])) = Strata.Sarif.Level.note
-#guard outcomeToLevel .bugFindingAssumingCompleteSpec .assert (VCOutcome.mk (.sat []) .unsat) = Strata.Sarif.Level.none
-#guard outcomeToLevel .bugFindingAssumingCompleteSpec .assert (VCOutcome.mk .unknown (.sat [])) = Strata.Sarif.Level.error
+#guard outcomeToLevel .bugFindingAssumingCompleteSpec .assert (mkOutcome (.sat []) (.sat [])) = Strata.Sarif.Level.error
+#guard outcomeToLevel .bugFinding .assert (mkOutcome (.sat []) (.sat [])) = Strata.Sarif.Level.note
+#guard outcomeToLevel .bugFindingAssumingCompleteSpec .assert (mkOutcome (.sat []) .unsat) = Strata.Sarif.Level.none
+#guard outcomeToLevel .bugFindingAssumingCompleteSpec .assert (mkOutcome .unknown (.sat [])) = Strata.Sarif.Level.error
 
 /-! ### Outcome table verification -/
 

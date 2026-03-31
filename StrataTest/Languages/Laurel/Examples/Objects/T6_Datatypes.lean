@@ -49,7 +49,7 @@ procedure unsafeDestructor() {
   var nil: IntList := Nil();
   var noError: int := IntList..head!(nil);
   var error: int := IntList..head(nil)
-//^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
+//^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion could not be proved
 };
 
 // Datatype in function
@@ -69,7 +69,7 @@ procedure testFunction() {
 procedure testFailing() {
   var xs: IntList := Nil();
   assert IntList..isCons(xs)
-//^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
+//^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion could not be proved
 };
 
 // Mutually recursive datatypes: even/odd-length lists

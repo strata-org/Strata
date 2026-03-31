@@ -44,11 +44,11 @@ function guardInFunction(x: int) returns (r: int) {
 procedure testFunctions() {
   assert returnAtEnd(1) == 1;
   assert returnAtEnd(1) == 2;
-//^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
+//^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion could not be proved
 
   assert guardInFunction(1) == 1;
   assert guardInFunction(1) == 2
-//^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
+//^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion could not be proved
 };
 
 procedure guards(a: int) returns (r: int)
@@ -65,7 +65,7 @@ procedure guards(a: int) returns (r: int)
   var e: int := b + 1;
   assert e <= 3;
   assert e < 3;
-//^^^^^^^^^^^^ error: assertion does not hold
+//^^^^^^^^^^^^ error: assertion could not be proved
   return e
 };
 
@@ -78,7 +78,7 @@ procedure dag(a: int) returns (r: int)
   };
   assert if (a > 0) { b == 1 } else { true };
   assert if (a > 0) { b == 2 } else { true };
-//^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
+//^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion could not be proved
   return b
 };
 "

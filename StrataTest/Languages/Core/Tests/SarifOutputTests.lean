@@ -67,31 +67,34 @@ def makeVCResult (label : String) (outcome : VCOutcome)
 
 /-! ## Level Conversion Tests -/
 
+private def mkO (sat val : Result) : VCOutcome :=
+  { satisfiabilityProperty := sat, validityProperty := val }
+
 -- Test that pass (verified) maps to "none" level
-#guard outcomeToLevel .deductive .assert (VCOutcome.mk (.sat []) .unsat) = Level.none
+#guard outcomeToLevel .deductive .assert (mkO (.sat []) .unsat) = Level.none
 
 -- Test that fail maps to "error" level
-#guard outcomeToLevel .deductive .assert (VCOutcome.mk .unsat (.sat [])) = Level.error
+#guard outcomeToLevel .deductive .assert (mkO .unsat (.sat [])) = Level.error
 
 -- Test that unknown maps to "error" level in deductive mode
-#guard outcomeToLevel .deductive .assert (VCOutcome.mk .unknown .unknown) = Level.error
+#guard outcomeToLevel .deductive .assert (mkO .unknown .unknown) = Level.error
 
 -- Test that unreachable assert maps to "warning" level
-#guard outcomeToLevel .deductive .assert (VCOutcome.mk .unsat .unsat) = Level.warning
+#guard outcomeToLevel .deductive .assert (mkO .unsat .unsat) = Level.warning
 
 /-! ## Message Generation Tests -/
 
 -- Test pass message
-#guard outcomeToMessage (VCOutcome.mk (.sat []) .unsat) = "Always true and reachable"
+#guard outcomeToMessage (mkO (.sat []) .unsat) = "Always true and reachable"
 
 -- Test fail message without counterexample
-#guard outcomeToMessage (VCOutcome.mk .unsat (.sat [])) = "Always false and reachable"
+#guard outcomeToMessage (mkO .unsat (.sat [])) = "Always false and reachable"
 
 -- Test unknown message
-#guard outcomeToMessage (VCOutcome.mk .unknown .unknown) = "Unknown (solver timeout or incomplete)"
+#guard outcomeToMessage (mkO .unknown .unknown) = "Unknown (solver timeout or incomplete)"
 
 -- Test unreachable message
-#guard outcomeToMessage (VCOutcome.mk .unsat .unsat) = "Unreachable: path condition is contradictory"
+#guard outcomeToMessage (mkO .unsat .unsat) = "Unreachable: path condition is contradictory"
 
 /-! ## Location Extraction Tests -/
 
@@ -123,7 +126,7 @@ def makeVCResult (label : String) (outcome : VCOutcome)
 #guard
   let md := makeMetadata "/test/file.st" 10 5
   let files := makeFilesMap "/test/file.st"
-  let vcr := makeVCResult "test_obligation" (VCOutcome.mk (.sat []) .unsat) md
+  let vcr := makeVCResult "test_obligation" (mkO (.sat []) .unsat) md
   let sarifResult := vcResultToSarifResult .deductive files vcr
   sarifResult.ruleId = "test_obligation" &&
   sarifResult.level = Level.none &&
@@ -139,7 +142,7 @@ def makeVCResult (label : String) (outcome : VCOutcome)
 #guard
   let md := makeMetadata "/test/file.st" 20 10
   let files := makeFilesMap "/test/file.st"
-  let vcr := makeVCResult "failed_obligation" (VCOutcome.mk .unsat (.sat [])) md
+  let vcr := makeVCResult "failed_obligation" (mkO .unsat (.sat [])) md
   let sarifResult := vcResultToSarifResult .deductive files vcr
   sarifResult.ruleId = "failed_obligation" &&
   sarifResult.level = Level.error &&
@@ -155,7 +158,7 @@ def makeVCResult (label : String) (outcome : VCOutcome)
 -- Test converting an unknown VCResult
 #guard
   let files := makeFilesMap "/test/file.st"
-  let vcr := makeVCResult "unknown_obligation" (VCOutcome.mk .unknown .unknown)
+  let vcr := makeVCResult "unknown_obligation" (mkO .unknown .unknown)
   let sarifResult := vcResultToSarifResult .deductive files vcr
   sarifResult.ruleId = "unknown_obligation" &&
   sarifResult.level = Level.error &&
@@ -164,7 +167,7 @@ def makeVCResult (label : String) (outcome : VCOutcome)
 -- Test converting an error VCResult
 #guard
   let files := makeFilesMap "/test/file.st"
-  let vcr := makeVCResult "error_obligation" (VCOutcome.mk .unknown .unknown)
+  let vcr := makeVCResult "error_obligation" (mkO .unknown .unknown)
   let sarifResult := vcResultToSarifResult .deductive files vcr
   sarifResult.ruleId = "error_obligation" &&
   sarifResult.level = Level.error &&
@@ -191,9 +194,9 @@ def makeVCResult (label : String) (outcome : VCOutcome)
   let files2 := makeFilesMap "/test/file2.st"
   let files := files1.union files2
   let vcResults : VCResults := #[
-    makeVCResult "obligation1" (VCOutcome.mk (.sat []) .unsat) md1,
-    makeVCResult "obligation2" (VCOutcome.mk .unsat (.sat [])) md2,
-    makeVCResult "obligation3" (VCOutcome.mk .unknown .unknown)
+    makeVCResult "obligation1" (mkO (.sat []) .unsat) md1,
+    makeVCResult "obligation2" (mkO .unsat (.sat [])) md2,
+    makeVCResult "obligation3" (mkO .unknown .unknown)
   ]
   let sarif := vcResultsToSarif .deductive files vcResults
   sarif.version = "2.1.0" &&
@@ -225,7 +228,7 @@ def makeVCResult (label : String) (outcome : VCOutcome)
   let md := makeMetadata "/test/example.st" 15 7
   let files := makeFilesMap "/test/example.st"
   let vcResults : VCResults := #[
-    makeVCResult "test_assertion" (VCOutcome.mk (.sat []) .unsat) md
+    makeVCResult "test_assertion" (mkO (.sat []) .unsat) md
   ]
   let sarif := vcResultsToSarif .deductive files vcResults
   let jsonStr := Strata.Sarif.toJsonString sarif
@@ -237,7 +240,7 @@ def makeVCResult (label : String) (outcome : VCOutcome)
 #guard
   let files := makeFilesMap "/test/file.st"
   let vcResults : VCResults := #[
-    makeVCResult "simple_test" (VCOutcome.mk (.sat []) .unsat)
+    makeVCResult "simple_test" (mkO (.sat []) .unsat)
   ]
   let sarif := vcResultsToSarif .deductive files vcResults
   let prettyJson := Strata.Sarif.toPrettyJsonString sarif
@@ -253,7 +256,7 @@ def makeVCResult (label : String) (outcome : VCOutcome)
     [({ name := "x", metadata := () }, .intConst () 42)]
   let md := makeMetadata "/test/cex.st" 25 3
   let files := makeFilesMap "/test/cex.st"
-  let vcr := makeVCResult "cex_obligation" (VCOutcome.mk .unsat (.sat cex)) md lexprCex
+  let vcr := makeVCResult "cex_obligation" (mkO .unsat (.sat cex)) md lexprCex
   let sarifResult := vcResultToSarifResult .deductive files vcr
   sarifResult.level = Level.error &&
   (sarifResult.message.text.splitOn "counterexample").length > 1 &&
@@ -280,7 +283,7 @@ def makeVCResult (label : String) (outcome : VCOutcome)
 #eval
   let md := makeMetadata "/test/pass.st" 10 5
   let files := makeFilesMap "/test/pass.st"
-  let vcResults : VCResults := #[makeVCResult "test_pass" (VCOutcome.mk (.sat []) .unsat) md]
+  let vcResults : VCResults := #[makeVCResult "test_pass" (mkO (.sat []) .unsat) md]
   let sarif := vcResultsToSarif .deductive files vcResults
   Strata.Sarif.toJsonString sarif
 
@@ -289,7 +292,7 @@ def makeVCResult (label : String) (outcome : VCOutcome)
 #eval
   let md := makeMetadata "/test/fail.st" 20 15
   let files := makeFilesMap "/test/fail.st"
-  let vcResults : VCResults := #[makeVCResult "test_fail" (VCOutcome.mk .unsat (.sat [])) md]
+  let vcResults : VCResults := #[makeVCResult "test_fail" (mkO .unsat (.sat [])) md]
   let sarif := vcResultsToSarif .deductive files vcResults
   Strata.Sarif.toJsonString sarif
 
@@ -297,7 +300,7 @@ def makeVCResult (label : String) (outcome : VCOutcome)
 #guard_msgs in
 #eval
   let files := makeFilesMap "/test/file.st"
-  let vcResults : VCResults := #[makeVCResult "test_unknown" (VCOutcome.mk .unknown .unknown)]
+  let vcResults : VCResults := #[makeVCResult "test_unknown" (mkO .unknown .unknown)]
   let sarif := vcResultsToSarif .deductive files vcResults
   Strata.Sarif.toJsonString sarif
 
@@ -305,7 +308,7 @@ def makeVCResult (label : String) (outcome : VCOutcome)
 #guard_msgs in
 #eval
   let files := makeFilesMap "/test/file.st"
-  let vcResults : VCResults := #[makeVCResult "test_error" (VCOutcome.mk .unknown .unknown)]
+  let vcResults : VCResults := #[makeVCResult "test_error" (mkO .unknown .unknown)]
   let sarif := vcResultsToSarif .deductive files vcResults
   Strata.Sarif.toJsonString sarif
 
@@ -316,9 +319,9 @@ def makeVCResult (label : String) (outcome : VCOutcome)
   let md2 := makeMetadata "/test/multi.st" 10 1
   let files := makeFilesMap "/test/multi.st"
   let vcResults : VCResults := #[
-    makeVCResult "obligation1" (VCOutcome.mk (.sat []) .unsat) md1,
-    makeVCResult "obligation2" (VCOutcome.mk .unsat (.sat [])) md2,
-    makeVCResult "obligation3" (VCOutcome.mk .unknown .unknown)
+    makeVCResult "obligation1" (mkO (.sat []) .unsat) md1,
+    makeVCResult "obligation2" (mkO .unsat (.sat [])) md2,
+    makeVCResult "obligation3" (mkO .unknown .unknown)
   ]
   let sarif := vcResultsToSarif .deductive files vcResults
   Strata.Sarif.toJsonString sarif

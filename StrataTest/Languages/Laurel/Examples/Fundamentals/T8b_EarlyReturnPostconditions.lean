@@ -24,7 +24,7 @@ procedure earlyReturnCorrect(x: int) returns (r: int)
 
 procedure earlyReturnBuggy(x: int) returns (r: int)
   ensures r >= 0
-//        ^^^^^^ error: assertion does not hold
+//        ^^^^^^ error: assertion could not be proved
 {
   if (x < 0) {
     return x

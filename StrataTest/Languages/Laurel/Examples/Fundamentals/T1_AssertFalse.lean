@@ -16,9 +16,9 @@ def program := r"
 procedure foo() {
     assert true;
     assert false;
-//  ^^^^^^^^^^^^ error: assertion does not hold
+//  ^^^^^^^^^^^^ error: assertion could not be proved
     assert false
-//  ^^^^^^^^^^^^ error: assertion does not hold
+//  ^^^^^^^^^^^^ error: assertion could not be proved
 };
 
 procedure bar() {

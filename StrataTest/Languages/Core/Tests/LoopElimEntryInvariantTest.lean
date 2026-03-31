@@ -54,7 +54,7 @@ false
 
 Result: Obligation: entry_invariant_0_0
 Property: assert
-Result: ❌ always false and is reachable from declaration entry
+Result: ✖️ always false if reached
 
 
 [DEBUG] Evaluated program:
@@ -81,7 +81,7 @@ Result: ✅ pass (❗path unreachable)
 
 Obligation: entry_invariant_0_0
 Property: assert
-Result: ❌ always false and is reachable from declaration entry
+Result: ✖️ always false if reached
 -/
 #guard_msgs in
 #eval verify falseInvariantNeverExecuted

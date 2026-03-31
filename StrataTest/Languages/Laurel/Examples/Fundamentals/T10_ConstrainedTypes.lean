@@ -28,7 +28,7 @@ procedure outputValid(): nat {
 
 // Output constraint — invalid return fails
 procedure outputInvalid(): nat {
-//                         ^^^ error: assertion does not hold
+//                         ^^^ error: assertion could not be proved
   return -1
 };
 
@@ -48,19 +48,19 @@ procedure assignValid() {
 // Assignment to constrained-typed variable — invalid
 procedure assignInvalid() {
   var y: nat := -1
-//^^^^^^^^^^^^^^^^ error: assertion does not hold
+//^^^^^^^^^^^^^^^^ error: assertion could not be proved
 };
 
 // Reassignment to constrained-typed variable — invalid
 procedure reassignInvalid() {
   var y: nat := 5;
   y := -1
-//^^^^^^^ error: assertion does not hold
+//^^^^^^^ error: assertion could not be proved
 };
 
 // Argument to constrained-typed parameter — valid
 procedure takesNat(n: nat) returns (r: int) { return n };
-//                    ^^^ error: assertion does not hold
+//                    ^^^ error: assertion could not be proved
 procedure argValid() returns (r: int) {
   var x: int := takesNat(3);
   return x
@@ -101,7 +101,7 @@ procedure constrainedInExpr() {
 
 // Invalid witness — witness -1 does not satisfy x > 0
 constrained bad = x: int where x > 0 witness -1
-//                                           ^^ error: assertion does not hold
+//                                           ^^ error: assertion could not be proved
 
 // Uninitialized constrained variable — havoc + assume constraint
 procedure uninitNat() {
@@ -120,7 +120,7 @@ procedure uninitPosnat() {
 procedure uninitNotWitness() {
   var y: posnat;
   assert y == 1
-//^^^^^^^^^^^^^ error: assertion does not hold
+//^^^^^^^^^^^^^ error: assertion could not be proved
 };
 
 // Function with valid constrained return — constraint not checked (not yet supported)
@@ -164,7 +164,7 @@ procedure forallPosnat() {
 constrained haslarger = x: int where (exists(y: int) => y > x) witness 0
 procedure captureTest(y: haslarger) {
   assert false
-//^^^^^^^^^^^^ error: assertion does not hold
+//^^^^^^^^^^^^ error: assertion could not be proved
 };
 "
 

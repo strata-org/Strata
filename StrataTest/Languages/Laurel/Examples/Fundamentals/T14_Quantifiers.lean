@@ -31,7 +31,7 @@ function P(x: int): int;
 function Q(): int;
 procedure triggers() {
   assert forall(i: int) { P(i) } => P(i) == i + 1;
-//^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
+//^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion could not be proved
   assert forall(i: int) => true;
 
   assume forall(i: int) { P(i) } => P(i) == i + 1 && Q() == 0;

@@ -55,7 +55,7 @@ procedure testDecimalAssertFails() {
     var a: real := 1.5;
     var b: real := 2.5;
     assert a == b
-//  ^^^^^^^^^^^^^ error: assertion does not hold
+//  ^^^^^^^^^^^^^ error: assertion could not be proved
 };
 "
 

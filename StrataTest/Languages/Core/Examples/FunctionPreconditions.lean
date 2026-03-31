@@ -258,7 +258,7 @@ false
 
 Result: Obligation: badDiv_body_calls_Int.SafeDiv_0
 Property: division by zero check
-Result: ❌ fail
+Result: ❓ unknown
 
 
 [DEBUG] Evaluated program:
@@ -274,7 +274,7 @@ function badDiv (x : int) : int {
 info:
 Obligation: badDiv_body_calls_Int.SafeDiv_0
 Property: division by zero check
-Result: ❌ fail
+Result: ❓ unknown
 -/
 #guard_msgs in
 #eval verify funcCallsFuncFailPgm

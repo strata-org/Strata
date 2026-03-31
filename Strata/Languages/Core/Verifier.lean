@@ -185,6 +185,13 @@ open Strata
 
 public section
 
+/-- A log entry recording the solver's raw result for a verification phase. -/
+structure SolverPhaseLog where
+  phase : String
+  satisfiabilityResult : SMT.Result
+  validityResult : SMT.Result
+  deriving Repr
+
 /--
 Analysis outcome of a verification condition based on two SMT queries:
   - satisfiabilityProperty: result of checking P ∧ Q  (is the property satisfiable given the path condition?)
@@ -209,6 +216,9 @@ Unreachable covers display as ❌ (error) instead of ⛔ (warning).
 structure VCOutcome where
   satisfiabilityProperty : SMT.Result
   validityProperty : SMT.Result
+  /-- Ordered log of solver results per verification phase, preserving the
+      raw solver output before any soundness adjustments (e.g. sat→unknown). -/
+  solverLog : List SolverPhaseLog := []
   deriving Repr
 
 instance : Inhabited VCOutcome where
@@ -240,27 +250,27 @@ def unreachable (o : VCOutcome) : Bool :=
 
 def satisfiableValidityUnknown (o : VCOutcome) : Bool :=
   match o.satisfiabilityProperty, o.validityProperty with
-  | .sat _, .unknown => true
+  | .sat _, .unknown _ => true
   | _, _ => false
 
 def alwaysFalseReachabilityUnknown (o : VCOutcome) : Bool :=
   match o.satisfiabilityProperty, o.validityProperty with
-  | .unsat, .unknown => true
+  | .unsat, .unknown _ => true
   | _, _ => false
 
 def canBeFalseAndIsReachable (o : VCOutcome) : Bool :=
   match o.satisfiabilityProperty, o.validityProperty with
-  | .unknown, .sat _ => true
+  | .unknown _, .sat _ => true
   | _, _ => false
 
 def passReachabilityUnknown (o : VCOutcome) : Bool :=
   match o.satisfiabilityProperty, o.validityProperty with
-  | .unknown, .unsat => true
+  | .unknown _, .unsat => true
   | _, _ => false
 
 def unknown (o : VCOutcome) : Bool :=
   match o.satisfiabilityProperty, o.validityProperty with
-  | .unknown, .unknown => true
+  | .unknown _, .unknown _ => true
   | _, _ => false
 
 -- Derived predicates (cross-cutting properties)
@@ -316,7 +326,7 @@ def label (o : VCOutcome) (property : Imperative.PropertyType)
       match o.validityProperty with
       | .unsat => "pass"
       | .sat _ => "fail"
-      | .unknown => "unknown"
+      | .unknown _ => "unknown"
       | .err _ => "unknown"
     | .assert, .bugFinding | .assert, .bugFindingAssumingCompleteSpec
     | .divisionByZero, .bugFinding | .divisionByZero, .bugFindingAssumingCompleteSpec =>
@@ -324,14 +334,14 @@ def label (o : VCOutcome) (property : Imperative.PropertyType)
       match o.satisfiabilityProperty with
       | .sat _ => "satisfiable"
       | .unsat => "fail"
-      | .unknown => "unknown"
+      | .unknown _ => "unknown"
       | .err _ => "unknown"
     | .cover, _ =>
       -- Satisfiability check only: sat=pass, unsat=fail, unknown=unknown
       match o.satisfiabilityProperty with
       | .sat _ => "pass"
       | .unsat => "fail"
-      | .unknown => "unknown"
+      | .unknown _ => "unknown"
       | .err _ => "unknown"
   -- MinimalVerbose and Full: detailed labels with unreachable indicator
   else
@@ -359,7 +369,7 @@ def emoji (o : VCOutcome) (property : Imperative.PropertyType)
       match o.validityProperty with
       | .unsat => "✅"
       | .sat _ => "❌"
-      | .unknown => "❓"
+      | .unknown _ => "❓"
       | .err _ => "❓"
     | .assert, .bugFinding | .assert, .bugFindingAssumingCompleteSpec
     | .divisionByZero, .bugFinding | .divisionByZero, .bugFindingAssumingCompleteSpec =>
@@ -367,14 +377,14 @@ def emoji (o : VCOutcome) (property : Imperative.PropertyType)
       match o.satisfiabilityProperty with
       | .sat _ => "❓"  -- Different meaning: satisfiable but don't know if always true
       | .unsat => "❌"
-      | .unknown => "❓"
+      | .unknown _ => "❓"
       | .err _ => "❓"
     | .cover, _ =>
       -- Satisfiability check only: sat=✅, unsat=❌, unknown=❓
       match o.satisfiabilityProperty with
       | .sat _ => "✅"
       | .unsat => "❌"
-      | .unknown => "❓"
+      | .unknown _ => "❓"
       | .err _ => "❓"
   -- MinimalVerbose and Full: detailed emojis
   else
@@ -438,20 +448,13 @@ structure VCResult where
     also determined satisfiability, we mask it to `.unknown`. -/
 def maskOutcome (outcome : VCOutcome) (satisfiabilityCheck validityCheck : Bool) : VCOutcome :=
   if satisfiabilityCheck && validityCheck then
-    -- Both checks requested: return outcome as-is
     outcome
   else if validityCheck && !satisfiabilityCheck then
-    -- Only validity requested: mask satisfiability to unknown
-    { satisfiabilityProperty := .unknown,
-      validityProperty := outcome.validityProperty }
+    { outcome with satisfiabilityProperty := .unknown }
   else if satisfiabilityCheck && !validityCheck then
-    -- Only satisfiability requested: mask validity
-    { satisfiabilityProperty := outcome.satisfiabilityProperty,
-      validityProperty := .unknown }
+    { outcome with validityProperty := .unknown }
   else
-    -- No checks requested (shouldn't happen): return unknown
-    { satisfiabilityProperty := .unknown,
-      validityProperty := .unknown }
+    { outcome with satisfiabilityProperty := .unknown, validityProperty := .unknown }
 
 instance : ToFormat VCResult where
   format r :=
@@ -594,9 +597,26 @@ def getObligationResult (assumptionTerms : List Term) (obligationTerm : Term)
                  {if options.verbose >= .normal then prog else ""}"
     .error <| DiagnosticModel.fromFormat e
   | .ok (satResult, validityResult, estate) =>
-    -- Mask SMT results based on requested checks
-    let outcome := maskOutcome (VCOutcome.mk satResult validityResult) satisfiabilityCheck validityCheck
-    -- Extract counterexample model from sat results
+    -- Log the raw solver results before soundness adjustments
+    let smtLog : SolverPhaseLog := {
+      phase := "SMT",
+      satisfiabilityResult := satResult,
+      validityResult := validityResult }
+    -- Convert unvalidated sat results to unknown (with model) for soundness:
+    -- SMT sat does not guarantee the property is truly satisfiable because
+    -- uninterpreted functions may admit spurious models.
+    let adjustedSat := match satResult with
+      | .sat m => SMT.Result.unknown m
+      | other => other
+    let adjustedVal := match validityResult with
+      | .sat m => SMT.Result.unknown m
+      | other => other
+    let rawOutcome : VCOutcome := {
+      satisfiabilityProperty := adjustedSat,
+      validityProperty := adjustedVal,
+      solverLog := [smtLog] }
+    let outcome := maskOutcome rawOutcome satisfiabilityCheck validityCheck
+    -- Extract counterexample model from sat results (using raw solver results)
     let cex := match satResult, validityResult with
       | .sat m, _ => convertCounterEx m (SMT.Context.getConstructorNames ctx)
       | _, .sat m => convertCounterEx m (SMT.Context.getConstructorNames ctx)
@@ -642,7 +662,10 @@ def verifySingleEnv (pE : Program × Env) (options : VerifyOptions)
       let (obligation, peSatResult?, peValResult?) ← preprocessObligation obligation p options satisfiabilityCheck validityCheck
       -- If PE resolved both checks, we're done
       if let (some peSat, some peVal) := (peSatResult?, peValResult?) then
-        let outcome := VCOutcome.mk peSat peVal
+        let outcome : VCOutcome := {
+          satisfiabilityProperty := peSat,
+          validityProperty := peVal,
+          solverLog := [{ phase := "PE", satisfiabilityResult := peSat, validityResult := peVal }] }
         let result : VCResult := { obligation, outcome := .ok outcome, verbose := options.verbose,
                                     checkLevel := options.checkLevel, checkMode := options.checkMode, lexprModel := [] }
         results := results.push result
@@ -678,7 +701,9 @@ def verifySingleEnv (pE : Program × Env) (options : VerifyOptions)
           | .ok solverOutcome =>
             let satResult := peSatResult?.getD solverOutcome.satisfiabilityProperty
             let valResult := peValResult?.getD solverOutcome.validityProperty
-            { result with outcome := .ok (VCOutcome.mk satResult valResult) }
+            { result with outcome := .ok { solverOutcome with
+                satisfiabilityProperty := satResult,
+                validityProperty := valResult } }
           | .error _ => result
         results := results.push result
         if result.isNotSuccess then

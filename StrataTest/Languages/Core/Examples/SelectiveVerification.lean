@@ -60,11 +60,11 @@ spec {
 info:
 Obligation: callElimAssert_n_positive_6
 Property: assert
-Result: ❌ fail
+Result: ❓ unknown
 
 Obligation: callElimAssert_n_positive_2
 Property: assert
-Result: ❌ fail
+Result: ❓ unknown
 
 Obligation: output_property
 Property: assert
@@ -85,11 +85,11 @@ Result: ✅ pass
 
 Obligation: (Origin_Helper_Requires)n_positive
 Property: assert
-Result: ❌ fail
+Result: ❓ unknown
 
 Obligation: (Origin_Helper_Requires)n_positive
 Property: assert
-Result: ❌ fail
+Result: ❓ unknown
 
 Obligation: output_property
 Property: assert
