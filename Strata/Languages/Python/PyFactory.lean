@@ -114,12 +114,41 @@ def rePatternErrorFunc : LFunc Core.CoreLParams :=
           | _ => .none)
       }
 
+-- Integer exponentiation with constant folding via concreteEval.
+-- Forward-declared before CoreOnlyDelimiter in PythonLaurelCorePrelude so
+-- PPow can reference it. The factory provides the concreteEval implementation.
+def intPowFunc : LFunc Core.CoreLParams :=
+    { name := "int_pow",
+      typeArgs := [],
+      inputs := [("base", mty[int]), ("exp", mty[int])],
+      output := mty[int],
+      concreteEval := some
+        (fun md args => match args with
+          | [b, e] => match LExpr.denoteInt b, LExpr.denoteInt e with
+            | some bv, some ev =>
+              if ev ≥ 0 then .some (LExpr.intConst md (bv ^ ev.toNat)) else .none
+            | _, _ => .none
+          | _ => .none)
+      }
+
+-- Float exponentiation (uninterpreted). Used for negative integer exponents
+-- where Python returns a float (e.g. 2 ** -3 = 0.125).
+-- This function should NOT be mapped to any real-based power functions in solvers, since float power is imprecise.
+def floatPowFunc : LFunc Core.CoreLParams :=
+    { name := "float_pow",
+      typeArgs := [],
+      inputs := [("base", mty[real]), ("exp", mty[real])],
+      output := mty[real]
+      }
+
 def ReFactory : @Factory Core.CoreLParams :=
     #[
       reFullmatchBoolFunc,
       reMatchBoolFunc,
       reSearchBoolFunc,
-      rePatternErrorFunc
+      rePatternErrorFunc,
+      intPowFunc,
+      floatPowFunc
     ]
 
 /-- Core.Factory extended with regex factory functions. -/
