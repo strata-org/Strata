@@ -87,8 +87,8 @@ class HasSubstFvar (P : PureExpr) where
   /-- Substitute a single free variable with an expression -/
   substFvar : P.Expr → P.Ident → P.Expr → P.Expr
   /-- Simultaneously substitute multiple free variables with expressions.
-      Unlike iterated single substitution, this replaces all variables in a
-      single pass, avoiding capture between substitutions. -/
+      Replaces all variables in a single pass, avoiding capture between
+      substitutions. -/
   substMultiFvars : P.Expr → List (P.Ident × P.Expr) → P.Expr
 
 /-- Substitute multiple free variables with expressions (iterated, NOT simultaneous).

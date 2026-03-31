@@ -370,10 +370,8 @@ def substFvars [BEq T.IDMeta] (e : LExpr ⟨T, GenericTy⟩) (sm : Map T.Identif
   List.foldl (fun e (var, s) => substFvar e var s) e sm
 
 /--
-Simultaneous substitution of multiple free variables. Unlike `substFvars`
-(which applies substitutions sequentially via `foldl`, allowing earlier
-substitutions to introduce variables captured by later ones), this function
-replaces all variables in a single pass.
+Simultaneous substitution of multiple free variables. Replaces all variables
+in a single pass, avoiding variable capture between substitutions.
 
 Does NOT lift de Bruijn indices when going under binders. Safe only when all
 replacement expressions contain no bvars.
@@ -395,9 +393,8 @@ where
 
 /--
 Simultaneous substitution of multiple free variables with bvar-safe lifting.
-Unlike `substFvarsLifting` (which applies substitutions sequentially via
-`foldl`), this function replaces all variables in a single pass, avoiding
-variable capture between substitutions.
+Replaces all variables in a single pass, avoiding variable capture between
+substitutions.
 
 Properly lifts de Bruijn indices in replacement expressions when going under
 binders. Use this when replacement expressions may contain bvars.
