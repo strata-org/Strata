@@ -97,7 +97,7 @@ end
 
 def analyzeProc (proc : Procedure) : AnalysisResult :=
   let bodyResult := match proc.body with
-    | .Transparent b => (collectExprMd b).run {} |>.2
+    | .Transparent b _ => (collectExprMd b).run {} |>.2
     | .Opaque postconds impl modif =>
         -- A non-empty modifies clause implies the procedure reads and writes the heap;
         -- no need to inspect the body further in that case.
@@ -409,11 +409,11 @@ def heapTransformProcedure (model: SemanticModel) (proc : Procedure) : Transform
 
     let bodyValueIsUsed := !proc.outputs.isEmpty
     let body' ← match proc.body with
-      | .Transparent bodyExpr =>
-          -- First assign $heap_in to $heap, then transform body using $heap
+      | .Transparent bodyExpr posts =>
+           -- First assign $heap_in to $heap, then transform body using $heap
           let assignHeap := mkMd (.Assign [mkMd (.Identifier heapName)] (mkMd (.Identifier heapInName)))
           let bodyExpr' ← heapTransformExpr heapName model bodyExpr bodyValueIsUsed
-          pure (.Transparent (mkMd (.Block [assignHeap, bodyExpr'] none)))
+          pure (.Transparent (mkMd (.Block [assignHeap, bodyExpr'] none)) posts)
       | .Opaque postconds impl modif =>
           -- Postconditions use $heap (the output state)
           let postconds' ← postconds.mapM (heapTransformExpr heapName model ·)
@@ -444,9 +444,9 @@ def heapTransformProcedure (model: SemanticModel) (proc : Procedure) : Transform
     let preconditions' ← proc.preconditions.mapM (heapTransformExpr heapName model)
 
     let body' ← match proc.body with
-      | .Transparent bodyExpr =>
+      | .Transparent bodyExpr posts =>
           let bodyExpr' ← heapTransformExpr heapName model bodyExpr
-          pure (.Transparent bodyExpr')
+          pure (.Transparent bodyExpr' posts)
       | .Opaque postconds impl modif =>
           let postconds' ← postconds.mapM (heapTransformExpr heapName model ·)
           let impl' ← impl.mapM (heapTransformExpr heapName model ·)

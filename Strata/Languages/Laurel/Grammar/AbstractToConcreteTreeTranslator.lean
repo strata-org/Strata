@@ -191,6 +191,11 @@ private def modifiesClauseToArg (modifies : List StmtExprMd) : Arg :=
 
 private def procedureToOp (proc : Procedure) : Strata.Operation :=
   let opName := if proc.isFunctional then "function" else "procedure"
+  let opaqueArg : Option Arg :=
+    if proc.isFunctional then
+      let isOpaque := match proc.body with | .Opaque _ _ _ | .Abstract _ => true | _ => false
+      some (optionArg (if isOpaque then some (laurelOp "opaqueModifier") else none))
+    else none
   let params := proc.inputs.map parameterToArg |>.toArray
   let returnTypeArg : Arg :=
     match proc.outputs with
@@ -212,8 +217,9 @@ private def procedureToOp (proc : Procedure) : Strata.Operation :=
   let invokeOnArg := optionArg (proc.invokeOn.map fun e =>
     laurelOp "invokeOnClause" #[stmtExprToArg e])
   let (ensuresArgs, modifiesArgs, bodyArg) := match proc.body with
-    | .Transparent body =>
-      (#[], #[], optionArg (some (laurelOp "body" #[stmtExprToArg body])))
+    | .Transparent body posts =>
+      let ens := posts.map ensuresClauseToArg |>.toArray
+      (ens, #[], optionArg (some (laurelOp "body" #[stmtExprToArg body])))
     | .Opaque postconds impl modifies =>
       let ens := postconds.map ensuresClauseToArg |>.toArray
       let mods := if modifies.isEmpty then #[] else #[modifiesClauseToArg modifies]
@@ -226,7 +232,7 @@ private def procedureToOp (proc : Procedure) : Strata.Operation :=
       (#[], #[], optionArg (some (laurelOp "externalBody")))
   { ann := sr
     name := { dialect := "Laurel", name := opName }
-    args := #[
+    args := (match opaqueArg with | some a => #[a] | none => #[]) ++ #[
       ident proc.name.text,
       commaSep params,
       returnTypeArg,

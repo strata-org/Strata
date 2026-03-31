@@ -50,7 +50,7 @@ procedure test(n: int)
   requires nat$constraint(n)
   ensures nat$constraint(r)
 { assert r >= 0; var y: int := n; assert nat$constraint(y); return y };
-procedure $witness_nat()
+procedure nat$witness()
 { var $witness: int := 0; assert nat$constraint($witness) };
 -/
 #guard_msgs in
@@ -78,7 +78,7 @@ info: function pos$constraint(v: int): bool
 { v > 0 };
 procedure test(b: bool)
 { if b then { var x: int := 1; assert pos$constraint(x) }; { var x: int := -5; x := -10 } };
-procedure $witness_pos()
+procedure pos$witness()
 { var $witness: int := 1; assert pos$constraint($witness) };
 -/
 #guard_msgs in
@@ -102,7 +102,7 @@ info: function posint$constraint(x: int): bool
 { x > 0 };
 procedure f()
 { var x: int; assume posint$constraint(x); assert x == 1 };
-procedure $witness_posint()
+procedure posint$witness()
 { var $witness: int := 1; assert posint$constraint($witness) };
 -/
 #guard_msgs in

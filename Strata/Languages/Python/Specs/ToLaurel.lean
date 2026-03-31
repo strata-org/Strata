@@ -475,7 +475,7 @@ def buildSpecBody (preconditions : Array Assertion)
       stmts := assertStmt :: stmts
     idx := idx + 1
   let body := mkStmt (.Block stmts.reverse none) fileMd
-  return .Transparent body
+  return .Transparent body []
 
 /-! ## Declaration Translation -/
 

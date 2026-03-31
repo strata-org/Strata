@@ -124,7 +124,7 @@ end
 private def elimProcedure (proc : Procedure) : ElimHoleM Procedure := do
   modify fun s => { s with currentInputs := proc.inputs }
   match proc.body with
-  | .Transparent bodyExpr => return { proc with body := .Transparent (← elimStmt bodyExpr) }
+  | .Transparent bodyExpr posts => return { proc with body := .Transparent (← elimStmt bodyExpr) posts }
   | .Opaque postconds (some impl) modif =>
       return { proc with body := .Opaque postconds (some (← elimStmt impl)) modif }
   | _ => return proc
