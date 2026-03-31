@@ -133,6 +133,7 @@ def intPowFunc : LFunc Core.CoreLParams :=
 
 -- Float exponentiation (uninterpreted). Used for negative integer exponents
 -- where Python returns a float (e.g. 2 ** -3 = 0.125).
+-- This function should NOT be mapped to any real-based power functions in solvers, since float power is imprecise.
 def floatPowFunc : LFunc Core.CoreLParams :=
     { name := "float_pow",
       typeArgs := [],
