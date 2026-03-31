@@ -49,8 +49,7 @@ private def callConditions (proc : Procedure)
   let names := List.map
                (fun k => s!"(Origin_{proc.header.name.name}_{condType}){k}")
                conditions.keys
-  -- Use simultaneous substitution to avoid variable capture between formals/actuals.
-  -- Non-lifting: the replacement expressions must be closed (no dangling bvars).
+  -- The replacement expressions must be closed (no dangling bvars).
   let sm := subst.map (fun (x, v) => (x.fst, v))
   let exprs := List.map
                 (fun p =>
@@ -362,9 +361,7 @@ not be substituted with values from the enclosing scope.
 def captureFreevars (env : Env) (paramNames : List CoreIdent) (e : Expression.Expr) : Expression.Expr :=
   let freeVars := Lambda.LExpr.freeVars e
   let freeVarsToCapture := freeVars.filter (fun fv => fv.fst ∉ paramNames)
-  -- Use simultaneous substitution to avoid values for one variable being
-  -- further substituted by a later variable's mapping.
-  -- Non-lifting: the replacement expressions must be closed (no dangling bvars).
+  -- The replacement expressions must be closed (no dangling bvars).
   let sm := freeVarsToCapture.filterMap (fun fv =>
     match env.exprEnv.state.find? fv.fst with
     | some (_, val) => some (fv.fst, val)

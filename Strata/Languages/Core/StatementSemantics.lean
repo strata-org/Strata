@@ -235,9 +235,7 @@ def closureCapture
   let allFreeVars := (bodyFreeVars ++ axiomFreeVars).eraseDups
   -- Build substitutions from the store
   let substs := buildSubstitutions σ allFreeVars
-  -- Use simultaneous substitution to avoid values for one variable being
-  -- further substituted by a later variable's mapping.
-  -- Non-lifting: the replacement expressions must be closed (no dangling bvars).
+  -- The replacement expressions must be closed (no dangling bvars).
   { decl with
     body := decl.body.map (fun b => HasSubstFvar.substMultiFvars b substs)
     axioms := decl.axioms.map (fun ax => HasSubstFvar.substMultiFvars ax substs) }
