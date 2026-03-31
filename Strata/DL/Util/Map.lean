@@ -91,7 +91,7 @@ def Map.erase [DecidableEq α] (m : Map α β) (a' : α) : Map α β :=
   | [] => []
   | (a, b) :: m => if a = a' then erase m a' else (a, b) :: erase m a'
 
-def Map.isEmpty (m : Map α β) : Bool :=
+@[expose] def Map.isEmpty (m : Map α β) : Bool :=
   match m with
   | [] => true
   | _ => false

@@ -21,6 +21,16 @@ maps index `i` to `a`. -/
   | .cons x _, 0, h => by simp at h; subst h; exact x
   | .cons _ xs, n + 1, h => by simp at h; exact xs.get n h
 
+@[simp] theorem HList.get_cons_zero {α : Type} {f : α → Type} {a : α} {as : List α}
+    (x : f a) (xs : HList f as) (h : (a :: as)[0]? = some a)
+    : HList.get (.cons x xs) 0 h = x := by
+  simp [HList.get]
+
+@[simp] theorem HList.get_cons_succ {α : Type} {f : α → Type} {a b : α} {as : List α}
+    (x : f a) (xs : HList f as) (n : Nat) (h : (a :: as)[n + 1]? = some b)
+    : HList.get (.cons x xs) (n + 1) h = xs.get n (by simpa using h) := by
+  simp [HList.get]
+
 /-- Cast an `HList` along a proof that the index lists are equal. -/
 @[expose] def HList.cast {α : Type} {f : α → Type} {xs ys : List α}
     (h : xs = ys) (hlist : HList f xs) : HList f ys :=

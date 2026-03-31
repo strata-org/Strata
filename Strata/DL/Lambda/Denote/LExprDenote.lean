@@ -1057,14 +1057,15 @@ def LFunc.InterpConsistentBody [DecidableEq T.IDMeta]
 
 /-- Denote a list of well-typed expressions into an `HList` of semantic values. -/
 noncomputable def denoteArgs
-    (fvarVal : FreeVarVal T tcInterp) (vt : TyVarVal) :
+    (fvarVal : FreeVarVal T tcInterp) (vt : TyVarVal)
+    {Δ : List LMonoTy} (bvarVal : BVarVal tcInterp vt Δ) :
     (argExprs : List (LExpr T.mono)) → (tys : List LMonoTy)  →
-      List.Forall₂ (LExpr.HasTypeA []) argExprs tys →
+      List.Forall₂ (LExpr.HasTypeA Δ) argExprs tys →
       HList (SortDenote tcInterp) (tys.map (LMonoTy.substTyVars vt))
   | [], [], _ => .nil
   | e :: es, ty :: tys, h =>
-    .cons (LExpr.denote tcInterp opInterp fvarVal vt .nil e ty h.head)
-          (denoteArgs fvarVal vt es tys h.tail)
+    .cons (LExpr.denote tcInterp opInterp fvarVal vt bvarVal e ty h.head)
+          (denoteArgs fvarVal vt bvarVal es tys h.tail)
 
 /-- An `opInterp` is consistent with an `LFunc` whose definition is given by
 a `concreteEval` function: whenever `ceval md argExprs = some resultExpr` and
@@ -1086,7 +1087,7 @@ def LFunc.InterpConsistentEval [DecidableEq T.IDMeta]
     (h_result : LExpr.HasTypeA [] resultExpr f.output),
   LExpr.denote tcInterp opInterp fvarVal vt .nil resultExpr f.output h_result =
     SortDenote.applyArgs tcInterp (opInterp f.name fullSort)
-      (denoteArgs tcInterp opInterp fvarVal vt argExprs inputTys h_args)
+      (denoteArgs tcInterp opInterp fvarVal vt .nil argExprs inputTys h_args)
 
 /-- A factory is well-typed when every function body type-checks at the
 function's declared output type. -/

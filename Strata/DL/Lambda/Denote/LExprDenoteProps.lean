@@ -178,6 +178,221 @@ theorem denote_irrel_of_lcAt
       LExpr.denote tcInterp opInterp fvarVal vt bv₂ e τ h₂ := by
   exact denote_suffix_irrel (Δ₁ := []) _ _ _ _ h_lc h₁ h₂ HList.nil bv₁ bv₂
 
+/-! ### Collecting ops and bvar indices from an expression -/
+
+/-- The set of operation names (with type annotations) used in an expression. -/
+def LExpr.usedOps : LExpr ⟨T, TyTy⟩ → List (Identifier T.IDMeta × Option TyTy)
+  | .op _ o ty => [(o, ty)]
+  | .const _ _ | .bvar _ _ | .fvar _ _ _ => []
+  | .abs _ _ _ e => usedOps e
+  | .quant _ _ _ _ tr e => usedOps tr ++ usedOps e
+  | .app _ fn arg => usedOps fn ++ usedOps arg
+  | .ite _ c t e => usedOps c ++ usedOps t ++ usedOps e
+  | .eq _ e1 e2 => usedOps e1 ++ usedOps e2
+
+/-- The set of *outer* bound variable indices referenced by an expression.
+Under each binder, index 0 (the locally-bound variable) is dropped and
+all other indices are decremented by 1. -/
+def LExpr.usedBvars : LExpr ⟨T, TyTy⟩ → List Nat
+  | .bvar _ i => [i]
+  | .const _ _ | .op _ _ _ | .fvar _ _ _ => []
+  | .abs _ _ _ e => usedBvars e |>.filterMap (fun i => if i = 0 then none else some (i - 1))
+  | .quant _ _ _ _ tr e =>
+    let shift := fun i => if i = 0 then none else some (i - 1)
+    (usedBvars tr |>.filterMap shift) ++ (usedBvars e |>.filterMap shift)
+  | .app _ fn arg => usedBvars fn ++ usedBvars arg
+  | .ite _ c t e => usedBvars c ++ usedBvars t ++ usedBvars e
+  | .eq _ e1 e2 => usedBvars e1 ++ usedBvars e2
+
+private theorem bvar_ext_cons
+    {bvarVal₁ bvarVal₂ : BVarVal tcInterp vt Δ}
+    {bvars : List Nat}
+    (x : TyDenote tcInterp vt a)
+    (h_bvar : ∀ i (τ' : LMonoTy) (h₁ : Δ[i]? = some τ') (h₂ : Δ[i]? = some τ'),
+        i ∈ bvars.filterMap (fun i => if i = 0 then none else some (i - 1)) →
+        bvarVal₁.get i h₁ = bvarVal₂.get i h₂)
+    : ∀ i (τ' : LMonoTy) (h₁ : (a :: Δ)[i]? = some τ') (h₂ : (a :: Δ)[i]? = some τ'),
+        i ∈ bvars → HList.get (.cons x bvarVal₁) i h₁ = HList.get (.cons x bvarVal₂) i h₂ := by
+  intro i τ' hi₁ hi₂ hb
+  cases i with
+  | zero =>
+    have : τ' = a := by simpa using hi₁.symm
+    subst this
+    rw [HList.get_cons_zero, HList.get_cons_zero]
+  | succ j =>
+    rw [HList.get_cons_succ, HList.get_cons_succ]
+    exact h_bvar j τ' (by simpa using hi₁) (by simpa using hi₂)
+      (List.mem_filterMap.mpr ⟨j + 1, hb, by simp⟩)
+
+/-! ### Extensionality for denote -/
+
+/-- If two interpretations agree on all free variables, operations, and bound
+variables that appear in an expression, then `denote` produces the same
+result. -/
+theorem denote_ext
+    {e : LExpr T.mono} {τ : LMonoTy}
+    {Δ : List LMonoTy}
+    {opInterp₁ opInterp₂ : OpInterp T tcInterp}
+    {fvarVal₁ fvarVal₂ : FreeVarVal T tcInterp}
+    {bvarVal₁ bvarVal₂ : BVarVal tcInterp vt Δ}
+    (h_op : ∀ o ty, (o, some ty) ∈ e.usedOps → opInterp₁ o (LMonoTy.substTyVars vt ty) = opInterp₂ o (LMonoTy.substTyVars vt ty))
+    (h_fvar : ∀ name ty, (name, some ty) ∈ e.freeVars → fvarVal₁ name (LMonoTy.substTyVars vt ty) = fvarVal₂ name (LMonoTy.substTyVars vt ty))
+    (h_bvar : ∀ i (τ' : LMonoTy) (h₁ : Δ[i]? = some τ') (h₂ : Δ[i]? = some τ'), i ∈ e.usedBvars → bvarVal₁.get i h₁ = bvarVal₂.get i h₂)
+    (h₁ : LExpr.HasTypeA Δ e τ)
+    (h₂ : LExpr.HasTypeA Δ e τ)
+    : LExpr.denote tcInterp opInterp₁ fvarVal₁ vt bvarVal₁ e τ h₁ =
+      LExpr.denote tcInterp opInterp₂ fvarVal₂ vt bvarVal₂ e τ h₂ := by
+  induction e generalizing Δ τ bvarVal₁ bvarVal₂ with
+  | const => rfl
+  | op _ _ ty =>
+    cases ty with
+    | none => exact absurd (LExpr.HasTypeA_to_typeCheck h₁) (by simp [LExpr.typeCheck])
+    | some ty =>
+      simp [LExpr.denote]
+      rw[h_op _ _ (List.Mem.head _)]
+  | fvar _ _ ty =>
+    cases ty with
+    | none => exact absurd (LExpr.HasTypeA_to_typeCheck h₁) (by simp [LExpr.typeCheck])
+    | some ty =>
+      simp [LExpr.denote]
+      rw[h_fvar _ _ (List.Mem.head _)]
+  | bvar m i =>
+    rw [denote_bvar _ _ _ _ bvarVal₁ h₁, denote_bvar _ _ _ _ bvarVal₂ h₂]
+    exact h_bvar i _ (HasTypeA.bvar_inv h₁) (HasTypeA.bvar_inv h₂) (List.Mem.head _)
+  | app _ fn arg ih_fn ih_arg =>
+    have ⟨aty, h_fn₁, h_arg₁⟩ := HasTypeA.app_inv h₁
+    have ⟨aty', h_fn₂, h_arg₂⟩ := HasTypeA.app_inv h₂
+    have h_aty : aty = aty' := by
+      have h_tc₁ := LExpr.HasTypeA_to_typeCheck h_fn₁
+      have h_tc₂ := LExpr.HasTypeA_to_typeCheck h_fn₂
+      rw [h_tc₁] at h_tc₂; cases h_tc₂; rfl
+    subst h_aty
+    rw [denote_app _ h_fn₁ h_arg₁ h₁, denote_app _ h_fn₂ h_arg₂ h₂]
+    rw [ih_fn
+        (fun o ty ho => h_op o ty (List.mem_append_left _ ho))
+        (fun n ty hf => h_fvar n ty (List.mem_append_left _ hf))
+        (fun i τ' hi₁ hi₂ hb => h_bvar i τ' hi₁ hi₂ (List.mem_append_left _ hb))
+        h_fn₁ h_fn₂,
+      ih_arg
+        (fun o ty ho => h_op o ty (List.mem_append_right _ ho))
+        (fun n ty hf => h_fvar n ty (List.mem_append_right _ hf))
+        (fun i τ' hi₁ hi₂ hb => h_bvar i τ' hi₁ hi₂ (List.mem_append_right _ hb))
+        h_arg₁ h_arg₂]
+  | ite _ c t e ih_c ih_t ih_e =>
+    have ⟨h_c₁, h_t₁, h_e₁⟩ := HasTypeA.ite_inv h₁
+    have ⟨h_c₂, h_t₂, h_e₂⟩ := HasTypeA.ite_inv h₂
+    rw [denote_ite _ h_c₁ h_t₁ h_e₁, denote_ite _ h_c₂ h_t₂ h_e₂]
+    rw [ih_c (fun o ty ho => h_op o ty (List.mem_append_left _ (List.mem_append_left _ ho)))
+            (fun n ty hf => h_fvar n ty (List.mem_append_left _ (List.mem_append_left _ hf)))
+            (fun i τ' hi₁ hi₂ hb => h_bvar i τ' hi₁ hi₂ (List.mem_append_left _ (List.mem_append_left _ hb)))
+            h_c₁ h_c₂,
+        ih_t (fun o ty ho => h_op o ty (List.mem_append_left _ (List.mem_append_right _ ho)))
+            (fun n ty hf => h_fvar n ty (List.mem_append_left _ (List.mem_append_right _ hf)))
+            (fun i τ' hi₁ hi₂ hb => h_bvar i τ' hi₁ hi₂ (List.mem_append_left _ (List.mem_append_right _ hb)))
+            h_t₁ h_t₂,
+        ih_e (fun o ty ho => h_op o ty (List.mem_append_right _ ho))
+            (fun n ty hf => h_fvar n ty (List.mem_append_right _ hf))
+            (fun i τ' hi₁ hi₂ hb => h_bvar i τ' hi₁ hi₂ (List.mem_append_right _ hb))
+            h_e₁ h_e₂]
+  | eq _ e1 e2 ih1 ih2 =>
+    have ⟨ty', h_bool₁, h_1₁, h_2₁⟩ := HasTypeA.eq_inv h₁
+    have ⟨ty'', h_bool₂, h_1₂, h_2₂⟩ := HasTypeA.eq_inv h₂
+    subst h_bool₁; cases h_bool₂
+    have h_ty : ty' = ty'' := by
+      have h_tc₁ := LExpr.HasTypeA_to_typeCheck h_1₁
+      have h_tc₂ := LExpr.HasTypeA_to_typeCheck h_1₂
+      rw [h_tc₁] at h_tc₂; exact Option.some.inj h_tc₂
+    subst h_ty
+    by_cases heq : LExpr.denote tcInterp opInterp₁ fvarVal₁ vt bvarVal₁ e1 ty' h_1₁ =
+        LExpr.denote tcInterp opInterp₁ fvarVal₁ vt bvarVal₁ e2 ty' h_2₁
+    · rw [denote_eq_true _ h_1₁ h_2₁ h₁ heq, denote_eq_true _ h_1₂ h_2₂ h₂
+            (by rw [← ih1 (fun o ty ho => h_op o ty (List.mem_append_left _ ho))
+                        (fun n ty hf => h_fvar n ty (List.mem_append_left _ hf))
+                        (fun i τ' hi₁ hi₂ hb => h_bvar i τ' hi₁ hi₂ (List.mem_append_left _ hb)) h_1₁ h_1₂,
+                    ← ih2 (fun o ty ho => h_op o ty (List.mem_append_right _ ho))
+                        (fun n ty hf => h_fvar n ty (List.mem_append_right _ hf))
+                        (fun i τ' hi₁ hi₂ hb => h_bvar i τ' hi₁ hi₂ (List.mem_append_right _ hb)) h_2₁ h_2₂]; exact heq)]
+    · rw [denote_eq_false _ h_1₁ h_2₁ h₁ heq, denote_eq_false _ h_1₂ h_2₂ h₂
+            (by rw [← ih1 (fun o ty ho => h_op o ty (List.mem_append_left _ ho))
+                        (fun n ty hf => h_fvar n ty (List.mem_append_left _ hf))
+                        (fun i τ' hi₁ hi₂ hb => h_bvar i τ' hi₁ hi₂ (List.mem_append_left _ hb)) h_1₁ h_1₂,
+                    ← ih2 (fun o ty ho => h_op o ty (List.mem_append_right _ ho))
+                        (fun n ty hf => h_fvar n ty (List.mem_append_right _ hf))
+                        (fun i τ' hi₁ hi₂ hb => h_bvar i τ' hi₁ hi₂ (List.mem_append_right _ hb)) h_2₁ h_2₂]; exact heq)]
+  | abs _ _ ty body ih_body =>
+    cases ty with
+    | none => exact absurd (LExpr.HasTypeA_to_typeCheck h₁) (by simp [LExpr.typeCheck])
+    | some aty =>
+      have ⟨_, h_eq₁, h_body₁⟩ := HasTypeA.abs_inv h₁
+      have ⟨_, h_eq₂, h_body₂⟩ := HasTypeA.abs_inv h₂
+      subst h_eq₁; cases h_eq₂
+      rw [denote_abs _ h_body₁ h₁, denote_abs _ h_body₂ h₂]
+      funext x
+      apply ih_body
+      · -- h_op: usedOps (abs ...) = usedOps body
+        exact fun o ty ho => h_op o ty ho
+      · -- h_fvar: freeVars (abs ...) = freeVars body
+        exact fun n ty hf => h_fvar n ty hf
+      · -- h_bvar: for i ∈ usedBvars body, (.cons x bv₁).get i = (.cons x bv₂).get i
+        exact bvar_ext_cons tcInterp vt x (fun i τ' hi₁ hi₂ hb => h_bvar i τ' hi₁ hi₂ hb)
+  | quant _ qk _ ty tr body ih_tr ih_body =>
+    cases ty with
+    | none => exact absurd (LExpr.HasTypeA_to_typeCheck h₁) (by simp [LExpr.typeCheck])
+    | some qty =>
+      have ⟨_, h_τ₁, h_tr₁, h_body₁⟩ := HasTypeA.quant_inv h₁
+      have ⟨_, h_τ₂, h_tr₂, h_body₂⟩ := HasTypeA.quant_inv h₂
+      subst h_τ₁; cases h_τ₂
+      cases qk with
+      | all =>
+        by_cases hall : ∀ x : TyDenote tcInterp vt qty,
+            (LExpr.denote tcInterp opInterp₁ fvarVal₁ vt (.cons x bvarVal₁) body .bool h_body₁ : Bool) = true
+        · rw [denote_quant_all_true _ h_body₁ h₁ hall]
+          symm; apply denote_quant_all_true _ h_body₂ h₂; intro x
+          rw [← ih_body
+            (fun o ty ho => h_op o ty (List.mem_append_right _ ho))
+            (fun n ty hf => h_fvar n ty (List.mem_append_right _ hf))
+            (bvar_ext_cons tcInterp vt x (fun i τ' hi₁ hi₂ hb =>
+              h_bvar i τ' hi₁ hi₂ (List.mem_append_right _ hb)))
+            h_body₁ h_body₂]
+          exact hall x
+        · have ⟨w, hw⟩ := Classical.not_forall.mp hall
+          have hwf : (LExpr.denote tcInterp opInterp₁ fvarVal₁ vt (.cons w bvarVal₁) body .bool h_body₁ : Bool) = false :=
+            Bool.eq_false_iff.mpr hw
+          rw [denote_quant_all_false _ h_body₁ h₁ w hwf]
+          symm; apply denote_quant_all_false _ h_body₂ h₂ w
+          rw [← ih_body
+            (fun o ty ho => h_op o ty (List.mem_append_right _ ho))
+            (fun n ty hf => h_fvar n ty (List.mem_append_right _ hf))
+            (bvar_ext_cons tcInterp vt w (fun i τ' hi₁ hi₂ hb =>
+              h_bvar i τ' hi₁ hi₂ (List.mem_append_right _ hb)))
+            h_body₁ h_body₂]
+          exact hwf
+      | exist =>
+        by_cases hexist : ∃ x : TyDenote tcInterp vt qty,
+            (LExpr.denote tcInterp opInterp₁ fvarVal₁ vt (.cons x bvarVal₁) body .bool h_body₁ : Bool) = true
+        · obtain ⟨w, hw⟩ := hexist
+          rw [denote_quant_exist_true _ h_body₁ h₁ w hw]
+          symm; apply denote_quant_exist_true _ h_body₂ h₂ w
+          rw [← ih_body
+            (fun o ty ho => h_op o ty (List.mem_append_right _ ho))
+            (fun n ty hf => h_fvar n ty (List.mem_append_right _ hf))
+            (bvar_ext_cons tcInterp vt w (fun i τ' hi₁ hi₂ hb =>
+              h_bvar i τ' hi₁ hi₂ (List.mem_append_right _ hb)))
+            h_body₁ h_body₂]
+          exact hw
+        · have hexist_f : ∀ x : TyDenote tcInterp vt qty,
+              (LExpr.denote tcInterp opInterp₁ fvarVal₁ vt (.cons x bvarVal₁) body .bool h_body₁ : Bool) = false :=
+            fun x => Bool.eq_false_iff.mpr (fun h => hexist ⟨x, h⟩)
+          rw [denote_quant_exist_false _ h_body₁ h₁ hexist_f]
+          symm; apply denote_quant_exist_false _ h_body₂ h₂; intro x
+          rw [← ih_body
+            (fun o ty ho => h_op o ty (List.mem_append_right _ ho))
+            (fun n ty hf => h_fvar n ty (List.mem_append_right _ hf))
+            (bvar_ext_cons tcInterp vt x (fun i τ' hi₁ hi₂ hb =>
+              h_bvar i τ' hi₁ hi₂ (List.mem_append_right _ hb)))
+            h_body₁ h_body₂]
+          exact hexist_f x
+
 /-! ### Metadata Doesn't Affect Typing or Denotations -/
 
 -- Easier to prove by computation than via HasTypeA directly

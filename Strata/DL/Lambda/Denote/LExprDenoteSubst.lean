@@ -237,25 +237,111 @@ theorem subst_denote
         (.cons (LExpr.denote tcInterp opInterp fvarVal vt .nil v aty h_v) .nil) body τ h_body := by
   exact substK_denote (Δ₁ := []) _ _ _ _ _ h_body h_v h_subst h_lc
 
-/-- Free-variable substitution commutes with denotation. -/
-theorem substMultiFvarsLifting_denote [DecidableEq T.IDMeta]
-    {body : LExpr T.mono} {τ : LMonoTy}
+/-! ### liftBVars and denotation -/
+
+/-- Lifting bound variable indices preserves denotation: inserting a block
+`Δ_insert` into the middle of the bvar context (between `Δ₁` and `Δ_outer`)
+and shifting bvar indices accordingly doesn't change the denotation. -/
+theorem liftBVars_denote
+    {e : LExpr T.mono} {τ : LMonoTy}
+    {Δ₁ Δ_insert Δ_outer : List LMonoTy}
+    (h_orig : LExpr.HasTypeA (Δ₁ ++ Δ_outer) e τ)
+    (h_lifted : LExpr.HasTypeA (Δ₁ ++ (Δ_insert ++ Δ_outer)) (LExpr.liftBVars Δ_insert.length e Δ₁.length) τ)
+    (bv₁ : BVarVal tcInterp vt Δ₁)
+    (bv_insert : BVarVal tcInterp vt Δ_insert)
+    (bv_outer : BVarVal tcInterp vt Δ_outer)
+    : LExpr.denote tcInterp opInterp fvarVal vt (HList.append bv₁ (HList.append bv_insert bv_outer))
+        (LExpr.liftBVars Δ_insert.length e Δ₁.length) τ h_lifted =
+      LExpr.denote tcInterp opInterp fvarVal vt (HList.append bv₁ bv_outer) e τ h_orig := by
+  sorry
+
+/-! ### withArgs lemmas -/
+
+/-- If `name` is not in the keys of `sortBindings`, then `withArgs` falls
+through to the original `fvarVal`. -/
+theorem IdentInterp.withArgs_not_mem [DecidableEq T.IDMeta]
+    {sortBindings : List (Identifier T.IDMeta × LSort)}
+    {h_args : HList (SortDenote tcInterp) (sortBindings.map Prod.snd)}
+    (h_not_mem : name ∉ sortBindings.map Prod.fst)
+    : (fvarVal.withArgs sortBindings h_args) name s = fvarVal name s := by
+  sorry
+
+/-! ### Free-variable substitution commutes with denotation -/
+
+/-- Inner lemma: `go` at depth `|Δ_body|` commutes with denotation. -/
+private theorem substMultiFvarsLifting_go_denote [DecidableEq T.IDMeta]
     {bindings : List (T.Identifier × LExpr T.mono)}
     {sortBindings : List (Identifier T.IDMeta × LSort)}
-    (h_body : LExpr.HasTypeA [] body τ)
-    (h_subst : LExpr.HasTypeA [] (LExpr.substMultiFvarsLifting body bindings) τ)
+    {Δ_outer : List LMonoTy}
+    (bvarVal_outer : BVarVal tcInterp vt Δ_outer)
     (h_args : HList (SortDenote tcInterp) (sortBindings.map Prod.snd))
     (h_keys : bindings.map Prod.fst = sortBindings.map Prod.fst)
     (h_len : bindings.length = sortBindings.length)
     {tys : List LMonoTy}
     (h_tys_len : tys.length = bindings.length)
     (h_sorts : sortBindings.map Prod.snd = tys.map (LMonoTy.substTyVars vt))
-    (h_wt : List.Forall₂ (LExpr.HasTypeA []) (bindings.map Prod.snd) tys)
+    (h_wt : List.Forall₂ (LExpr.HasTypeA Δ_outer) (bindings.map Prod.snd) tys)
     (h_denotes : h_args = HList.cast h_sorts.symm
-        (denoteArgs tcInterp opInterp fvarVal vt (bindings.map Prod.snd) tys h_wt))
-    : LExpr.denote tcInterp opInterp fvarVal vt .nil
+        (denoteArgs tcInterp opInterp fvarVal vt bvarVal_outer (bindings.map Prod.snd) tys h_wt))
+    {body : LExpr T.mono} {τ : LMonoTy}
+    {Δ_body : List LMonoTy}
+    (bvarVal_body : BVarVal tcInterp vt Δ_body)
+    (h_body : LExpr.HasTypeA (Δ_body ++ Δ_outer) body τ)
+    (h_subst : LExpr.HasTypeA (Δ_body ++ Δ_outer)
+        (LExpr.substMultiFvarsLifting.go bindings body Δ_body.length) τ)
+    : LExpr.denote tcInterp opInterp fvarVal vt
+        (HList.append bvarVal_body bvarVal_outer)
+        (LExpr.substMultiFvarsLifting.go bindings body Δ_body.length) τ h_subst =
+      LExpr.denote tcInterp opInterp
+        (fvarVal.withArgs sortBindings h_args)
+        vt (HList.append bvarVal_body bvarVal_outer) body τ h_body := by
+  sorry
+
+/-- Free-variable substitution commutes with denotation (generalized to
+arbitrary bound-variable context for replacements). -/
+theorem substMultiFvarsLifting_denote [DecidableEq T.IDMeta]
+    {body : LExpr T.mono} {τ : LMonoTy}
+    {bindings : List (T.Identifier × LExpr T.mono)}
+    {sortBindings : List (Identifier T.IDMeta × LSort)}
+    {Δ_outer : List LMonoTy}
+    (bvarVal_outer : BVarVal tcInterp vt Δ_outer)
+    (h_body : LExpr.HasTypeA Δ_outer body τ)
+    (h_subst : LExpr.HasTypeA Δ_outer (LExpr.substMultiFvarsLifting body bindings) τ)
+    (h_args : HList (SortDenote tcInterp) (sortBindings.map Prod.snd))
+    (h_keys : bindings.map Prod.fst = sortBindings.map Prod.fst)
+    (h_len : bindings.length = sortBindings.length)
+    {tys : List LMonoTy}
+    (h_tys_len : tys.length = bindings.length)
+    (h_sorts : sortBindings.map Prod.snd = tys.map (LMonoTy.substTyVars vt))
+    (h_wt : List.Forall₂ (LExpr.HasTypeA Δ_outer) (bindings.map Prod.snd) tys)
+    (h_denotes : h_args = HList.cast h_sorts.symm
+        (denoteArgs tcInterp opInterp fvarVal vt bvarVal_outer (bindings.map Prod.snd) tys h_wt))
+    : LExpr.denote tcInterp opInterp fvarVal vt bvarVal_outer
         (LExpr.substMultiFvarsLifting body bindings) τ h_subst =
       LExpr.denote tcInterp opInterp
         (fvarVal.withArgs sortBindings h_args)
-        vt .nil body τ h_body := by
-  sorry
+        vt bvarVal_outer body τ h_body := by
+  unfold LExpr.substMultiFvarsLifting at h_subst ⊢
+  split
+  · -- bindings.isEmpty = true → bindings = [], sortBindings = []
+    rename_i h_empty
+    have h_bindings_nil : bindings = [] := by
+      cases bindings with
+      | nil => rfl
+      | cons => simp [Map.isEmpty] at h_empty
+    have h_sort_nil : sortBindings = [] := by
+      have : sortBindings.length = 0 := by rw [← h_len, h_bindings_nil]; simp
+      exact List.eq_nil_of_length_eq_zero this
+    subst h_bindings_nil h_sort_nil
+    cases h_args
+    exact denote_ext tcInterp vt
+      (by intros; rfl) (by intro n ty _; rfl) (by intros; rfl)
+      _ h_body
+  · -- bindings.isEmpty = false → apply go_denote with Δ_body = [], bvarVal_body = .nil
+    rename_i h_not_empty
+    simp [h_not_empty] at h_subst
+    have := substMultiFvarsLifting_go_denote (tcInterp := tcInterp) (opInterp := opInterp)
+      (fvarVal := fvarVal) (vt := vt)
+      bvarVal_outer h_args h_keys h_len h_tys_len h_sorts h_wt h_denotes
+      (Δ_body := []) .nil h_body (by simp [h_subst])
+    simpa using this

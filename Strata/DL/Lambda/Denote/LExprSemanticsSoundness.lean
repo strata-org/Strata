@@ -124,7 +124,7 @@ theorem callOfLFunc_denote
       let fullSort := LSort.mkArrow (LMonoTy.substTyVars vt τ) inputSorts
       LExpr.denote tcInterp opInterp fvarVal vt .nil e τ h =
         SortDenote.applyArgs tcInterp (opInterp fn.name fullSort)
-          (denoteArgs tcInterp opInterp fvarVal vt args (List.map Prod.snd fn.inputs) h_args) := by
+          (denoteArgs tcInterp opInterp fvarVal vt .nil args (List.map Prod.snd fn.inputs) h_args) := by
   sorry
 
 theorem zip_map_fst_eq {α β: Type} (l1: List α) (l2: List β) :
@@ -301,7 +301,7 @@ theorem Step.denote_preserved
     have hcast : (List.map (Lambda.LMonoTy.substTyVars vt) (List.map Prod.snd fn.inputs)) = (List.map Prod.snd (fn.inputs.keys.zip srts)) := by
       unfold srts; rw[zip_map_snd_eq]
       rw[List.map_map, ListMap.keys_eq_map_fst]; grind
-    let args' := HList.cast hcast (denoteArgs tcInterp opInterp fvarVal vt args (List.map Prod.snd fn.inputs) h_args)
+    let args' := HList.cast hcast (denoteArgs tcInterp opInterp fvarVal vt .nil args (List.map Prod.snd fn.inputs) h_args)
     have hall: Lambda.List.Forall₂ (LExpr.HasTypeA []) (List.map Prod.snd (fn.inputs.keys.zip args)) (List.map Prod.snd fn.inputs) := by
       have h: (List.map Prod.snd (fn.inputs.keys.zip args)) = args := by
         rw[zip_map_snd_eq]; grind
@@ -309,7 +309,7 @@ theorem Step.denote_preserved
       exact h_args
     have hfst_eq : List.map Prod.fst (fn.inputs.keys.zip args) = List.map Prod.fst (fn.inputs.keys.zip srts) := by
       rw[zip_map_fst_eq, zip_map_fst_eq] <;> grind
-    rw[@substMultiFvarsLifting_denote _ tcInterp opInterp fvarVal vt _ _ _ (fn.inputs.keys.zip args) (fn.inputs.keys.zip srts)
+    rw[@substMultiFvarsLifting_denote _ tcInterp opInterp fvarVal vt _ _ _ (fn.inputs.keys.zip args) (fn.inputs.keys.zip srts) _ .nil
     h_body_ty h₂ args' hfst_eq (by grind) (List.map Prod.snd fn.inputs) (by grind) (by grind) hall]
     . -- Prove denotation equivalence via well-formedness of interp (use hF)
       rw [h_denote_e]
@@ -324,7 +324,7 @@ theorem Step.denote_preserved
       have h_inst := h_consistent args'
       rw [← h_inst]
       exact SortDenote.applyArgs_cast_eq tcInterp hcast (opInterp fn.name)
-        (denoteArgs tcInterp opInterp fvarVal vt args (List.map Prod.snd fn.inputs) h_args)
+        (denoteArgs tcInterp opInterp fvarVal vt .nil args (List.map Prod.snd fn.inputs) h_args)
     . -- Prove hlist eq - probably need result about element-by-element eq
       have hsnd : List.map Prod.snd (fn.inputs.keys.zip args) = args := by
         rw[zip_map_snd_eq]; grind
