@@ -545,6 +545,13 @@ def pyAnalyzeLaurelCommand : Command where
             let pos := fm.toPosition range.start
             s!" at line {pos.line}, col {pos.column}"
           | none => ""
+        -- Emit structured set-info metadata before DETAIL/RESULT lines.
+        let filePath' := sourcePath.getD filePath
+        IO.println s!"(set-info :file {Strata.escapeSMTStringLit filePath'})"
+        unless range.isNone do
+          IO.println s!"(set-info :start {range.start})"
+          IO.println s!"(set-info :stop {range.stop})"
+        IO.println s!"(set-info :error-message {Strata.escapeSMTStringLit msg})"
         exitPyAnalyzeUserError s!"{msg}{location}"
       | .error (.knownLimitation msg) =>
         exitPyAnalyzeKnownLimitation msg
