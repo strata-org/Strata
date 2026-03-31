@@ -22,17 +22,17 @@ func @module_init():
     condBranch %15 bb7() bb8(%15)
   bb7():
     %17:z.0 = strLit "a"
-    branch bb9()
+    branch bb12()
   bb8(%18:cond.7):
     %19:_tmp.5 = unaryOp not %18
-    condBranch %19 bb10() bb11()
+    condBranch %19 bb9() bb10()
   bb9():
     %20:z.1 = strLit "b"
-    branch bb12()
+    branch bb11()
   bb10():
     %21:z.2 = strLit "c"
-    branch bb12()
+    branch bb11()
   bb11():
-    branch bb9()
+    branch bb12()
   bb12():
     ret

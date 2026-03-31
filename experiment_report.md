@@ -453,6 +453,55 @@ Systematic performance review and dead code elimination.
 - Blockify.lean reduced from ~1100 to ~570 lines. Public API is now:
   `isSimpleStmt`, `countExprBlocks`, `DemandVars`, `demandAnalysis`.
 
+### Phase 15: Strict Block-Argument SSA (completed 2026-03-30)
+
+Replaced the relaxed expression-block model (Phase 12's deliberate relaxation)
+with fully strict block-argument SSA where no value crosses a block boundary
+without being passed as an explicit block parameter.
+
+**Forwarding context (`fwd`).** `translateExpr` takes and returns
+`fwd : Fwd` — a struct of parallel arrays (names + SSAVals) representing
+values that must survive through expression blocks. Block-creating
+expressions (BoolOp, IfExp, chained Compare) thread `fwd` as extra block
+params/branch args. Non-block-creating expressions pass `fwd` through
+unchanged. The mechanism composes: nested expression blocks (e.g.,
+`(a and b) if cond else c`) correctly thread outer values through inner blocks.
+
+**Demand-driven block params.** Statement-level blocks (if/for/while/try/with)
+use demand analysis (`Blockify.demandAnalysis`) to compute exactly which
+variables each block needs as parameters, replacing the conservative `allVars`
+approach. Combined with `fwd`, this eliminates all cross-block references.
+
+**Synthetic variable threading.** `_iter` (for-loop iterator) and `_mgr`
+(with-statement context manager) are threaded via `scopeExtras` — an array
+of (name, SSAVal) pairs appended to every block transition. Break/continue
+handle scope extras correctly via `breakExtrasCount`/`continueExtrasCount`
+on `BodyCtx`, with temporary trimming to match the target block's expected
+extras count.
+
+### Phase 16: Summary-Based Demand Analysis and Block ID Fix (completed 2026-03-31)
+
+Two improvements to the analysis infrastructure.
+
+**Summary-based demand analysis (`demandAnalysis2`).** Replaced the
+double-traversal backward pass with a two-stage approach: (1) a single
+forward AST walk collects per-block summaries (defs, reads, successors),
+(2) an iterative fixpoint solver computes liveIn sets. This eliminates
+the O(depth × body_size) cost of nested loops in the backward pass, where
+each outer loop re-traverses inner loop bodies. The fixpoint solver handles
+cycles naturally — loops converge in 2–3 iterations.
+
+**Block ID remap.** Fixed a fundamental bug where terminator block references
+(freshBlockId allocation order) diverged from block emission order. The
+divergence occurs when inner blocks (e.g., if sub-blocks within a for body)
+are emitted between pre-allocated outer blocks (e.g., endBlock allocated
+early but emitted last). The fix records `blockIdMap[currentBlockId] =
+blocks.size` at each `finishBlock` call, then applies a single remap pass
+over all terminators and except targets at the end of `translateFunc`. This
+replaced an earlier attempt to predict emission order during block setup
+(`buildBlockParamsCtx`), which failed when expression blocks within a body
+shifted emission positions.
+
 ## Tools Built
 
 | Tool | Purpose |
@@ -528,8 +577,8 @@ throughout the debugging phase.
 **Expression-level blocks reveal architectural tensions.** Implementing BoolOp
 and IfExp short-circuit exposed a tension in the strict block-argument SSA model:
 expression blocks need access to values from enclosing blocks, but threading all
-variables through every ternary produces impractical output. The pragmatic
-decision — expression blocks don't thread allVars — is a deliberate relaxation
-that keeps output readable while maintaining the important invariant (variable
-versioning at control-flow joins). This trade-off was not anticipated during IR
-design and emerged only during implementation.
+variables through every ternary produces impractical output. The initial pragmatic
+decision — expression blocks don't thread allVars — was a deliberate relaxation.
+This was later resolved in Phase 15 with the `fwd` context, which threads only
+the values that are actually needed through expression blocks (demand-driven, not
+all variables). The `fwd` mechanism achieves strict SSA without impractical output.
