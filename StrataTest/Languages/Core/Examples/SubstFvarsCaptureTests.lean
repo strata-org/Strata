@@ -84,7 +84,7 @@ namespace Core
 open Lambda
 
 private def precond : LExpr CoreLParams.mono :=
-  .eq () (.fvar Strata.SourceRange.none ⟨"x", ()⟩ (some .int)) (.fvar Strata.SourceRange.none ⟨"y", ()⟩ (some .int))
+  .eq Strata.SourceRange.none (.fvar Strata.SourceRange.none ⟨"x", ()⟩ (some .int)) (.fvar Strata.SourceRange.none ⟨"y", ()⟩ (some .int))
 
 private def formals : List (Identifier Unit × LMonoTy) :=
   [(⟨"x", ()⟩, .int), (⟨"y", ()⟩, .int)]
