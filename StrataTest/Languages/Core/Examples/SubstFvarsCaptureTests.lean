@@ -8,9 +8,9 @@ import Strata.Languages.Core.Verifier
 
 /-! # Simultaneous substitution tests (Issue 653)
 
-Tests verifying that simultaneous substitution (`substMultiFvars` /
-`substMultiFvarsLifting`) avoids variable capture that occurrs with the
-iterated `substFvars`.
+Tests verifying that simultaneous substitution (`substFvars` /
+`substFvarsLifting`) avoids variable capture that occurs with the
+iterated `substFvar`.
 -/
 
 ---------------------------------------------------------------------

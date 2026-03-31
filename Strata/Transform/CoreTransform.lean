@@ -253,7 +253,7 @@ def createAsserts
     := conds.mapM (fun (l, check) => do
           let newLabel ← genIdent l (fun s => s!"callElimAssert_{s}")
           -- Non-lifting: the replacement expressions must be closed (no dangling bvars).
-          return Statement.assert newLabel.toPretty (Lambda.LExpr.substMultiFvars check.expr subst) md)
+          return Statement.assert newLabel.toPretty (Lambda.LExpr.substFvars check.expr subst) md)
 
 /-- turns a list of preconditions into assumes with substitution -/
 def createAssumes
@@ -265,7 +265,7 @@ def createAssumes
     conds.mapM (fun (l, check) => do
       let newLabel ← genIdent l (fun s => s!"callElimAssume_{s}")
       -- Non-lifting: the replacement expressions must be closed (no dangling bvars).
-      return Statement.assume newLabel.toPretty (Lambda.LExpr.substMultiFvars check.expr subst) md)
+      return Statement.assume newLabel.toPretty (Lambda.LExpr.substFvars check.expr subst) md)
 
 /--
 Generate the substitution pairs needed for the body of the procedure

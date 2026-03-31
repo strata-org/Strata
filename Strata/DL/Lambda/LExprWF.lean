@@ -352,20 +352,20 @@ in a single pass, avoiding variable capture between substitutions.
 Does NOT lift de Bruijn indices when going under binders. Safe only when all
 replacement expressions contain no bvars.
 -/
-def substMultiFvars [BEq T.IDMeta] (e : LExpr ⟨T, GenericTy⟩) (sm : Map T.Identifier (LExpr ⟨T, GenericTy⟩))
+def substFvars [BEq T.IDMeta] (e : LExpr ⟨T, GenericTy⟩) (sm : Map T.Identifier (LExpr ⟨T, GenericTy⟩))
   : LExpr ⟨T, GenericTy⟩ :=
-  if sm.isEmpty then e else substMultiFvarsAux e sm
+  if sm.isEmpty then e else substFvarsAux e sm
 where
-  substMultiFvarsAux (e : LExpr ⟨T, GenericTy⟩) (sm : Map T.Identifier (LExpr ⟨T, GenericTy⟩))
+  substFvarsAux (e : LExpr ⟨T, GenericTy⟩) (sm : Map T.Identifier (LExpr ⟨T, GenericTy⟩))
     : LExpr ⟨T, GenericTy⟩ :=
     match e with
     | .const _ _ => e | .bvar _ _ => e | .op _ _ _ => e
     | .fvar _ name _ => match sm.find? name with | some to => to | none => e
-    | .abs m name ty e' => .abs m name ty (substMultiFvarsAux e' sm)
-    | .quant m qk name ty tr' e' => .quant m qk name ty (substMultiFvarsAux tr' sm) (substMultiFvarsAux e' sm)
-    | .app m fn e' => .app m (substMultiFvarsAux fn sm) (substMultiFvarsAux e' sm)
-    | .ite m c t e' => .ite m (substMultiFvarsAux c sm) (substMultiFvarsAux t sm) (substMultiFvarsAux e' sm)
-    | .eq m e1 e2 => .eq m (substMultiFvarsAux e1 sm) (substMultiFvarsAux e2 sm)
+    | .abs m name ty e' => .abs m name ty (substFvarsAux e' sm)
+    | .quant m qk name ty tr' e' => .quant m qk name ty (substFvarsAux tr' sm) (substFvarsAux e' sm)
+    | .app m fn e' => .app m (substFvarsAux fn sm) (substFvarsAux e' sm)
+    | .ite m c t e' => .ite m (substFvarsAux c sm) (substFvarsAux t sm) (substFvarsAux e' sm)
+    | .eq m e1 e2 => .eq m (substFvarsAux e1 sm) (substFvarsAux e2 sm)
 
 /--
 Simultaneous substitution of multiple free variables with bvar-safe lifting.
@@ -375,7 +375,7 @@ substitutions.
 Properly lifts de Bruijn indices in replacement expressions when going under
 binders. Use this when replacement expressions may contain bvars.
 -/
-def substMultiFvarsLifting [BEq T.IDMeta] (e : LExpr ⟨T, GenericTy⟩) (sm : Map T.Identifier (LExpr ⟨T, GenericTy⟩))
+def substFvarsLifting [BEq T.IDMeta] (e : LExpr ⟨T, GenericTy⟩) (sm : Map T.Identifier (LExpr ⟨T, GenericTy⟩))
   : LExpr ⟨T, GenericTy⟩ :=
   if sm.isEmpty then e else go e 0
 where
