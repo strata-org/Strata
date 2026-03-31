@@ -195,11 +195,8 @@ open Strata
 
 public section
 
-/-- A log entry recording a single solver result for a verification phase. -/
-structure SolverPhaseLog where
-  phase : String
-  result : SMT.Result
-  deriving Repr
+/-- Alias for solver log entries. Each entry records a single SMT result. -/
+abbrev SolverPhaseLog := SMT.Result
 
 /--
 Analysis outcome of a verification condition based on two SMT queries:
@@ -663,8 +660,8 @@ def getObligationResult (assumptionTerms : List Term) (obligationTerm : Term)
   | .ok (satResult, validityResult, estate) =>
     -- Log the raw solver results before soundness adjustments
     let smtLog : List SolverPhaseLog :=
-      (if satisfiabilityCheck then [{ phase := "SMT", result := satResult }] else []) ++
-      (if validityCheck then [{ phase := "SMT", result := validityResult }] else [])
+      (if satisfiabilityCheck then [satResult] else []) ++
+      (if validityCheck then [validityResult] else [])
     -- Convert unvalidated sat results to unknown when over-approximations exist
     let adjSat := if hasOverApprox then satResult.satToUnknown else satResult
     let adjVal := if hasOverApprox then validityResult.satToUnknown else validityResult
@@ -733,8 +730,8 @@ def verifySingleEnv (pE : Program × Env) (options : VerifyOptions)
           let adjSat := if hasOverApprox then peSat.satToUnknown else peSat
           let adjVal := if hasOverApprox then peVal.satToUnknown else peVal
           let peLog : List SolverPhaseLog :=
-            (if satisfiabilityCheck then [{ phase := "PE", result := peSat }] else []) ++
-            (if validityCheck then [{ phase := "PE", result := peVal }] else [])
+            (if satisfiabilityCheck then [peSat] else []) ++
+            (if validityCheck then [peVal] else [])
           let outcome : VCOutcome := {
             satisfiabilityProperty := adjSat,
             validityProperty := adjVal,
