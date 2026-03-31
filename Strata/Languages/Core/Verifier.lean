@@ -670,9 +670,9 @@ def verifySingleEnv (pE : Program × Env) (options : VerifyOptions)
               [DEBUG] Evaluated program: {Core.formatProgram p}\n\n"
   | _ =>
     let mut results := (#[] : VCResults)
-    let mut preprocessMs : Nat := 0
-    let mut smtEncodeMs : Nat := 0
-    let mut solverMs : Nat := 0
+    let mut preprocessNs : Nat := 0
+    let mut smtEncodeNs : Nat := 0
+    let mut solverNs : Nat := 0
     let mut peResolvedCount : Nat := 0
     for obligation in E.deferred do
       -- Determine which checks to perform based on metadata or check mode/amount
@@ -692,10 +692,10 @@ def verifySingleEnv (pE : Program × Env) (options : VerifyOptions)
           | .bugFinding, .minimalVerbose, .assert | .bugFinding, .minimalVerbose, .divisionByZero => (true, false) -- Same checks as minimal
           | .bugFinding, .minimal, .cover => (true, false)  -- Cover uses satisfiability
           | .bugFinding, .minimalVerbose, .cover => (true, false)  -- Same checks as minimal
-      let t0 ← (IO.monoNanosNow : BaseIO Nat)
+      let t0 ← IO.monoNanosNow
       let (obligation, peSatResult?, peValResult?) ← preprocessObligation obligation p options satisfiabilityCheck validityCheck axiomCache
-      let t1 ← (IO.monoNanosNow : BaseIO Nat)
-      preprocessMs := preprocessMs + (t1 - t0) / 1000000
+      let t1 ← IO.monoNanosNow
+      preprocessNs := preprocessNs + (t1 - t0)
       -- If PE resolved both checks, we're done, unless we always want to generate SMT queries
       if not options.alwaysGenerateSMT then
         if let (some peSat, some peVal) := (peSatResult?, peValResult?) then
@@ -713,10 +713,10 @@ def verifySingleEnv (pE : Program × Env) (options : VerifyOptions)
       -- Need the solver for at least one check
       let needSatCheck := satisfiabilityCheck && peSatResult?.isNone
       let needValCheck := validityCheck && peValResult?.isNone
-      let t2 ← (IO.monoNanosNow : BaseIO Nat)
+      let t2 ← IO.monoNanosNow
       let maybeTerms := ProofObligation.toSMTTerms E obligation { SMT.Context.default with uniqueBoundNames := options.uniqueBoundNames } options.useArrayTheory
-      let t3 ← (IO.monoNanosNow : BaseIO Nat)
-      smtEncodeMs := smtEncodeMs + (t3 - t2) / 1000000
+      let t3 ← IO.monoNanosNow
+      smtEncodeNs := smtEncodeNs + (t3 - t2)
       match maybeTerms with
       | .error err =>
         let err := f!"SMT Encoding Error! " ++ err
@@ -732,11 +732,11 @@ def verifySingleEnv (pE : Program × Env) (options : VerifyOptions)
         results := results.push result
         if options.stopOnFirstError then break
       | .ok (assumptionTerms, obligationTerm, ctx) =>
-        let t4 ← (IO.monoNanosNow : BaseIO Nat)
+        let t4 ← IO.monoNanosNow
         let result ← getObligationResult assumptionTerms obligationTerm ctx obligation p options
                       counter tempDir needSatCheck needValCheck
-        let t5 ← (IO.monoNanosNow : BaseIO Nat)
-        solverMs := solverMs + (t5 - t4) / 1000000
+        let t5 ← IO.monoNanosNow
+        solverNs := solverNs + (t5 - t4)
         -- Merge PE results with solver results
         let result := match result.outcome with
           | .ok solverOutcome =>
@@ -751,10 +751,10 @@ def verifySingleEnv (pE : Program × Env) (options : VerifyOptions)
             dbg_trace f!"\n\nResult: {result}\n{prog}"
           if options.stopOnFirstError then break
     if profile then
-      let _ ← (IO.println s!"[profile]     Preprocess obligations: {preprocessMs}ms" |>.toBaseIO : BaseIO _)
-      let _ ← (IO.println s!"[profile]     SMT encoding: {smtEncodeMs}ms" |>.toBaseIO : BaseIO _)
-      let _ ← (IO.println s!"[profile]     Solver/file writing: {solverMs}ms" |>.toBaseIO : BaseIO _)
-      let _ ← (IO.println s!"[profile]     Obligations: {E.deferred.size} total, {peResolvedCount} resolved by PE" |>.toBaseIO : BaseIO _)
+      let _ ← (IO.println s!"[profile]     Preprocess obligations: {nsToMs preprocessNs}ms" |>.toBaseIO)
+      let _ ← (IO.println s!"[profile]     SMT encoding: {nsToMs smtEncodeNs}ms" |>.toBaseIO)
+      let _ ← (IO.println s!"[profile]     Solver/file writing: {nsToMs solverNs}ms" |>.toBaseIO)
+      let _ ← (IO.println s!"[profile]     Obligations: {E.deferred.size} total, {peResolvedCount} resolved by PE" |>.toBaseIO)
     return results
 
 /-- Run the Strata Core verification pipeline on a program: transform,
