@@ -5,6 +5,7 @@
 -/
 module
 
+import Strata.Languages.Laurel.FilterPrelude
 import Strata.Languages.Laurel.LaurelToCoreTranslator
 public import Strata.Languages.Python.PythonToLaurel
 import Strata.Languages.Python.ReadPython
@@ -413,7 +414,10 @@ public def pyAnalyzeLaurel
     | .error e => throw (.internal s!"Python to Laurel translation failed: {e}")
     | .ok result => pure result
 
+  let filteredPrelude ← profileStep profile "Filter prelude" do
+    return Laurel.filterPrelude result.laurelProgram laurelProgram
+
   profileStep profile "Combine PySpec and user Laurel" do
-    return combinePySpecLaurel result.laurelProgram laurelProgram
+    return combinePySpecLaurel filteredPrelude laurelProgram
 
 end Strata
