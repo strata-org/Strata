@@ -865,9 +865,29 @@ function POr (v1: Any, v2: Any) : Any
 // /////////////////////////////////////////////////////////////////////////////////////
 // Modelling of other Python operations, currrently unsupported
 // /////////////////////////////////////////////////////////////////////////////////////
+// int_pow and float_pow are provided by the factory (PyFactory.lean) with concreteEval.
+// Declared here as external so PPow can reference them; they are filtered
+// during Laurel-to-Core translation and the factory provides the Core versions.
+function int_pow (base: int, exp: int) : int
+  external;
+function float_pow (base: real, exp: real) : real
+  external;
+
 function PPow (v1: Any, v2: Any) : Any
 {
-  exception(UnimplementedError ("Pow operator is not supported"))
+  if Any..isexception(v1) then v1 else if Any..isexception(v2) then v2
+  else if (Any..isfrom_int(v1) && Any..isfrom_int(v2) && Any..as_int!(v2) >= 0) then
+    from_int(int_pow(Any..as_int!(v1), Any..as_int!(v2)))
+  else if (Any..isfrom_int(v1) && Any..isfrom_int(v2)) then
+    from_float(float_pow(int_to_real(Any..as_int!(v1)), int_to_real(Any..as_int!(v2))))
+  else if (Any..isfrom_bool(v1) && Any..isfrom_int(v2) && Any..as_int!(v2) >= 0) then
+    from_int(int_pow(bool_to_int(Any..as_bool!(v1)), Any..as_int!(v2)))
+  else if (Any..isfrom_bool(v1) && Any..isfrom_int(v2)) then
+    from_float(float_pow(bool_to_real(Any..as_bool!(v1)), int_to_real(Any..as_int!(v2))))
+  else if (Any..isfrom_int(v1) && Any..isfrom_bool(v2)) then
+    from_int(int_pow(Any..as_int!(v1), bool_to_int(Any..as_bool!(v2))))
+  else
+    exception(UnimplementedError("Pow is not defined on these input types"))
 };
 
 function PMod (v1: Any, v2: Any) : Any
