@@ -695,7 +695,15 @@ def verifyToVcResults (program : Program)
       EIO.toIO (fun f => IO.Error.userError (toString f))
           (Core.verify coreProgram tempDir .none options)
     let ioResult ← match options.vcDirectory with
-      | .none => IO.FS.withTempDir runner
+      | .none =>
+        -- Use a temp dir that we clean up manually, tolerating cleanup failures.
+        -- On Windows, z3 may exit with a non-zero code (e.g., from get-value after
+        -- unsat), and the OS may not release the SMT file handle immediately,
+        -- causing IO.FS.withTempDir's cleanup to fail.
+        let tempDir ← IO.FS.createTempDir
+        let result ← runner tempDir
+        try IO.FS.removeDirAll tempDir catch _ => pure ()
+        pure result
       | .some p => IO.FS.createDirAll ⟨p.toString⟩; runner ⟨p.toString⟩
     return (some ioResult, translateDiags)
   | none => return (none, translateDiags)
