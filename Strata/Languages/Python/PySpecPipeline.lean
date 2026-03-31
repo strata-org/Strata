@@ -317,15 +317,24 @@ public def combinePySpecLaurel
 private def appendCorePartOfRuntime (coreFromLaurel : Core.Program) : Core.Program :=
   { decls := coreFromLaurel.decls ++ Python.coreOnlyFromRuntimeCorePart  }
 
-/-- Split procedure names in a Core program into prelude names
-    (no file range or empty file) and user names (all others). -/
+/-- Split procedure names in a Core program into prelude names and user names.
+    A declaration is considered a user declaration only if its file range
+    matches one of the `userSourcePaths`.  When `userSourcePaths` is empty the
+    legacy heuristic is used (no file range or empty file ⇒ prelude). -/
 public def splitProcNames (prog : Core.Program)
+    (userSourcePaths : List String := [])
     : Std.HashSet String × List String :=
-  let isPrelude := fun d =>
+  let isUser := fun d =>
     match Imperative.getFileRange (P := Core.Expression) d.metadata with
-    | none => true
-    | some fr => fr.file == .file ""
-  let (preludeDecls, userDecls) := prog.decls.partition isPrelude
+    | none => false
+    | some fr =>
+      if userSourcePaths.isEmpty then
+        -- Legacy heuristic: anything with a non-empty file is "user".
+        fr.file != .file ""
+      else
+        -- Positive match: only files the caller says are user sources.
+        userSourcePaths.any (fr.file == .file ·)
+  let (userDecls, preludeDecls) := prog.decls.partition isUser
   let preludeNames := preludeDecls.foldl (init := ({} : Std.HashSet String)) fun s d =>
     match d.getProc? with
     | some p => s.insert (Core.CoreIdent.toPretty p.header.name)
