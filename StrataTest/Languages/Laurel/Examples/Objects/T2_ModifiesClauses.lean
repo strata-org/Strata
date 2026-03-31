@@ -27,23 +27,25 @@ composite Container {
   var value: int
 }
 
-procedure modifyContainerOpaque(c: Container)
+procedure modifyContainerOpaque(c: Container) returns (b: bool)
   ensures true // makes this procedure opaque. Maybe we should use explicit syntax
   modifies c
 {
-  c#value := c#value + 1
+  c#value := c#value + 1;
+  true
 };
 
-procedure modifyContainerTransparant(c: Container)
+procedure modifyContainerTransparant(c: Container) returns (i: int)
 {
-  c#value := c#value + 1
+  c#value := c#value + 1;
+  7
 };
 
 procedure caller() {
   var c: Container := new Container;
   var d: Container := new Container;
   var x: int := d#value;
-  modifyContainerOpaque(c);
+  var b: bool := modifyContainerOpaque(c);
   assert x == d#value // pass
 };
 
@@ -53,7 +55,7 @@ procedure caller() {
 //   ensures true
 //   modifies c
 //{
-//    modifyContainerTransparant(c);
+//    var i: int := modifyContainerTransparant(c);
 //}
 
 procedure modifyContainerWithoutPermission1(c: Container, d: Container)
@@ -61,7 +63,7 @@ procedure modifyContainerWithoutPermission1(c: Container, d: Container)
 // the above error is because the body does not satisfy the empty modifies clause. error needs to be improved
    ensures true
 {
-    modifyContainerTransparant(c)
+    var i: int := modifyContainerTransparant(c)
 };
 
 procedure modifyContainerWithoutPermission2(c: Container, d: Container)
@@ -79,7 +81,7 @@ procedure modifyContainerWithoutPermission3(c: Container, d: Container)
   ensures true
   modifies d
 {
-    modifyContainerTransparant(c)
+    var i: int := modifyContainerTransparant(c)
 };
 
 procedure multipleModifiesClauses(c: Container, d: Container, e: Container)

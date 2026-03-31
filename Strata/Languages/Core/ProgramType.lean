@@ -75,36 +75,36 @@ C are already well-typed.
       | .var x ty val md =>
         let (s', Env) ← Statement.typeCheck C Env program .none [Statement.init x ty val md]
         match s' with
-        | [Statement.init x' ty' val' _] => .ok (Decl.var x' ty' val', C, Env)
+        | [Statement.init x' ty' val' _] => .ok (Decl.var x' ty' val' md, C, Env)
         | _ => .error <| DiagnosticModel.withRange fileRange f!"Implementation error! \
                          Statement typeChecker returned the following: \
                          {Format.line}\
                          {s'}{Format.line}
                          Declaration: {decl}"
 
-      | .type td _ => try
+      | .type td md => try
           match td with
           | .con tc =>
             let C ← C.addKnownTypeWithError { name := tc.name, metadata := tc.numargs } (DiagnosticModel.withRange fileRange f!"This type declaration's name is reserved!\n\
                       {td}\n\
                       KnownTypes' names:\n\
                       {C.knownTypes.keywords}")
-            .ok (Decl.type td, C, Env)
+            .ok (Decl.type td md, C, Env)
           | .syn ts =>
             let Env ← TEnv.addTypeAlias { typeArgs := ts.typeArgs, name := ts.name, type := ts.type } C Env
                |>.mapError (fun e => DiagnosticModel.withRange fileRange e)
-            .ok (.type td, C, Env)
+            .ok (.type td md, C, Env)
           | .data block =>
             let (block, Env) ← MutualDatatype.resolveAliases block Env |>.mapError (fun e => DiagnosticModel.withRange fileRange e)
             let C ← C.addMutualBlock block
-            .ok (.type (.data block), C, Env)
+            .ok (.type (.data block) md, C, Env)
           catch e =>
             .error (e.withRangeIfUnknown fileRange)
 
-      | .ax a _ => try
+      | .ax a md => try
         let (ae, Env) ← LExpr.resolve C Env a.e |>.mapError (fun e => DiagnosticModel.withRange fileRange e)
         match ae.toLMonoTy with
-        | .bool => .ok (Decl.ax { a with e := ae.unresolved }, C, Env)
+        | .bool => .ok (Decl.ax { a with e := ae.unresolved } md, C, Env)
         | _ => .error <| DiagnosticModel.withRange fileRange f!"Axiom {a.name} has non-boolean type."
           catch e =>
             .error (e.withRangeIfUnknown fileRange)
@@ -120,26 +120,46 @@ C are already well-typed.
         let Env := Env.pushEmptySubstScope
         let (proc', Env) ← Procedure.typeCheck C Env program proc md
         let Env := Env.popSubstScope
-        .ok (Decl.proc proc', C, Env)
+        .ok (Decl.proc proc' md, C, Env)
 
-      | .func func _ => try
-        let Env := Env.pushEmptySubstScope
-        -- Recursive functions must not have the inline attribute.
-        if func.isRecursive && func.attr.any (· == .inline) then
+      | .func func md => try
+        if func.isRecursive then
           .error (DiagnosticModel.withRange fileRange <|
-            f!"recursive function '{func.name}' cannot be marked inline")
-        -- For recursive functions, temporarily add a signature-only stub to the
-        -- context so that recursive calls in the body can reference the
-        -- function itself. Only the name and signature matter; the body is
-        -- precisely what is being type-checked.
-        let C' := if func.isRecursive then
-          C.addFactoryFunction { name := func.name, typeArgs := func.typeArgs,
-                                 inputs := func.inputs, output := func.output }
-        else C
-        let (func', Env) ← Function.typeCheck C' Env func |>.mapError (fun e => DiagnosticModel.withRange fileRange e)
+            f!"Decl.func does not allow recursive functions. Use recFuncBlock instead: '{func.name}'")
+        let Env := Env.pushEmptySubstScope
+        let (func', Env) ← Function.typeCheck C Env func |>.mapError (fun e => DiagnosticModel.withRange fileRange e)
         let C := C.addFactoryFunction func'
         let Env := Env.popSubstScope
-        .ok (Decl.func func', C, Env)
+        .ok (Decl.func func' md, C, Env)
+          catch e =>
+            .error (e.withRangeIfUnknown fileRange)
+
+      | .recFuncBlock funcs md => try
+        let Env := Env.pushEmptySubstScope
+        -- Validate: non-empty
+        if funcs.isEmpty then
+          .error (DiagnosticModel.withRange fileRange <|
+            f!"recursive function block must contain at least one function")
+        -- Validate: no inline functions in the block
+        let _ ← funcs.foldlM (fun _ func => do
+          if func.attr.any (· == .inline) then
+            .error (DiagnosticModel.withRange fileRange <|
+              f!"recursive function '{func.name}' cannot be marked inline")
+          else pure ()) ()
+        -- Phase 1: Add ALL function signatures as stubs so mutual calls resolve.
+        -- Note: duplicate function names have already been checked by addListWithError above.
+        let C' := funcs.foldl (fun C func =>
+          C.addFactoryFunction { name := func.name, typeArgs := func.typeArgs,
+                                 inputs := func.inputs, output := func.output }) C
+        -- Phase 2: Type-check each function body against C'
+        let (funcs', Env) ← funcs.foldlM (fun (acc, Env) func => do
+          let (func', Env) ← Function.typeCheck C' Env func
+            |>.mapError (fun e => DiagnosticModel.withRange fileRange e)
+          pure (acc ++ [func'], Env)) ([], Env)
+        -- Phase 3: Add all type-checked functions to the real context
+        let C := funcs'.foldl (fun C func => C.addFactoryFunction func) C
+        let Env := Env.popSubstScope
+        .ok (Decl.recFuncBlock funcs' md, C, Env)
           catch e =>
             .error (e.withRangeIfUnknown fileRange)
 

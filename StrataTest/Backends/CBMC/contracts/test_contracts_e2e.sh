@@ -40,7 +40,7 @@ run_test() {
 }
 
 # build_goto <basename> <lr.st content>
-#   Runs the full pipeline: strata → process_json → symtab2gb → goto-cc
+#   Runs the full pipeline: strata → symtab2gb → goto-cc
 #   Produces $WORK_DIR/<basename>.gb and $WORK_DIR/<basename>_cc.gb
 build_goto() {
   local bn="$1" src="$2"
@@ -49,13 +49,8 @@ build_goto() {
   run_test "$bn: strata laurelAnalyzeToGoto" \
     bash -c "ulimit -t 30; cd '$WORK_DIR' && '$STRATA' laurelAnalyzeToGoto '$WORK_DIR/$bn.lr.st'"
 
-  run_test "$bn: process_json.py combine" \
-    bash -c "ulimit -t 10; python3 '$PROJECT_ROOT/Strata/Backends/CBMC/resources/process_json.py' combine \
-      '$PROJECT_ROOT/Strata/Backends/CBMC/resources/defaults.json' \
-      '$WORK_DIR/$bn.lr.symtab.json' > '$WORK_DIR/$bn.full-symtab.json'"
-
   run_test "$bn: symtab2gb" \
-    bash -c "ulimit -t 10; symtab2gb '$WORK_DIR/$bn.full-symtab.json' \
+    bash -c "ulimit -t 10; symtab2gb '$WORK_DIR/$bn.lr.symtab.json' \
       --goto-functions '$WORK_DIR/$bn.lr.goto.json' \
       --out '$WORK_DIR/$bn.gb'"
 
