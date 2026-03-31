@@ -6,6 +6,7 @@
 module
 
 meta import Strata.Languages.Python.PythonToSSA
+meta import Strata.Languages.Python.SSACheck
 meta import Strata.Languages.Python.SSAFormat
 meta import Strata.Languages.Python.ReadPython
 meta import Strata.Util.IO
@@ -19,6 +20,7 @@ Dumps actual output to `/tmp/ssa_test_actual/` for comparison.
 namespace Strata.Python.SSATest
 
 open Strata.Python.PythonToSSA (translateModule)
+open Strata.Python.SSACheck (checkModule)
 open Strata.Python.SSAFormat (fmtModule fmtWarnings)
 open Strata.Python (withPython)
 
@@ -68,6 +70,10 @@ private meta def runTranslate (ionPath : System.FilePath) (pyFile : System.FileP
     | .ok stmts => pure stmts
     | .error msg => throw <| .userError s!"Failed to read Ion: {msg}"
   let result := translateModule moduleName stmts
+  -- Well-formedness check
+  let wfErrors := checkModule result.module
+  if wfErrors.size > 0 then
+    throw <| .userError s!"SSA well-formedness errors:\n{"\n".intercalate wfErrors.toList}"
   let fileMap ← do
     try
       let content ← IO.FS.readFile pyFile
@@ -147,7 +153,8 @@ private meta def positiveTests : List String := [
   "t22_star_args",
   "t23_kwargs_boto3",
   "t24_assert",
-  "t25_tuple_unpack"
+  "t25_tuple_unpack",
+  "t26_with_as_use"
 ]
 
 private meta def negativeTests : List String := [

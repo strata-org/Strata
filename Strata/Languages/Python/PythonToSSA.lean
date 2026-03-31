@@ -731,12 +731,15 @@ where
     let demandSize := demandFwd.size
     let extFwd := demandFwd ++ fwd
     -- First comparison: leftVal op[0] comparators[0]
+    -- Push leftVal onto fwd to protect it across expression blocks, then
+    -- recover the (possibly remapped) value by index after translation.
     let lvName ← valName leftVal
+    let baseSize := extFwd.size
     let mut fwd' := extFwd.push lvName leftVal
     let (firstRight, fwdVals1) ← translateExpr comparators[0]! fwd'
     fwd' := zipFwd fwd' fwdVals1
-    let leftVal' := fwd'.backVal!
-    fwd' := fwd'.pop
+    let leftVal' := fwd'.val! baseSize
+    fwd' := fwd'.shrink baseSize
     let mut prevRight := firstRight
     let mut cmpResult ← emitInstr "_tmp" none
       (.compareOp (translateCmpOp ops[0]!) leftVal' prevRight) sr
@@ -746,17 +749,18 @@ where
         let evalBlockId := blockIds[i - 1]!
         -- Thread fwd + prevRight through blocks
         let prName ← valName prevRight
+        let fwdBaseSize := fwd'.size
         let fwdWithPrev := fwd'.push prName prevRight
         let fwdArgs := fwdVals fwdWithPrev
-        let joinArgs := #[cmpResult] ++ fwdArgs
+        let joinArgs := #[cmpResult] ++ fwdVals fwd'
         -- short-circuit: false → join, true → continue
         let (evalParams, evalFwd) ← fwdToParams fwdWithPrev sr
         bindDemandFwd evalFwd demandSize
         finishBlock (.condBranch cmpResult evalBlockId fwdArgs joinBlockId joinArgs) sr
           evalParams
         modify fun s => { s with currentBlockId := evalBlockId }
-        fwd' := evalFwd.pop  -- pop prevRight, keep the rest
-        prevRight := evalFwd.backVal!
+        prevRight := evalFwd.val! fwdBaseSize
+        fwd' := evalFwd.shrink fwdBaseSize
         let (nextRight, fwdVals') ← translateExpr comparators[i] evalFwd
         fwd' := zipFwd fwd' fwdVals'.pop
         prevRight := nextRight
@@ -1458,7 +1462,11 @@ where
             let noneVal ← emitInstr "_tmp" none .noneLit sr
             let _ ← emitInstr "_tmp" none
               (.call exitRef #[.positional noneVal, .positional noneVal, .positional noneVal]) sr
+            -- Restore scopeExtras before branching to normalExitBlock (outside with scope)
+            let withExtras := (← get).scopeExtras
+            modify fun s => { s with scopeExtras := savedExtras }
             let normalArgs ← buildBranchArgsCtx normalExitBlock bodyCtx sr
+            modify fun s => { s with scopeExtras := withExtras }
             finishBlock (.branch normalExitBlock normalArgs) sr #[]
           else
             startNewBlock #[]
@@ -1471,7 +1479,11 @@ where
           let excExitRef ← emitInstr "_tmp" none (.attr excMgrRef "__exit__") sr
           let exitResult ← emitInstr "_tmp" none
             (.call excExitRef #[.positional excVal, .positional excVal, .positional excVal]) sr
+          -- Build suppressArgs with savedExtras (normalExitBlock is outside with scope)
+          let withExtras2 := (← get).scopeExtras
+          modify fun s => { s with scopeExtras := savedExtras }
           let mut suppressArgs ← buildBranchArgsCtx normalExitBlock bodyCtx sr
+          modify fun s => { s with scopeExtras := withExtras2 }
           let mut reraiseArgs ← buildBranchArgsCtx reraiseBlock bodyCtx sr
           reraiseArgs := reraiseArgs.push excVal
           finishBlock (.condBranch exitResult
