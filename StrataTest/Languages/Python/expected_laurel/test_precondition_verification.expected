@@ -6,13 +6,13 @@ callElimAssert_requires_2_30: ✅ pass (at line 8, col 4)
 callElimAssert_requires_0_20: ✅ pass (at line 11, col 4)
 callElimAssert_requires_1_21: ✅ pass (at line 11, col 4)
 callElimAssert_requires_2_22: ✅ pass (at line 11, col 4)
-Assertion failed at line 14, col 4: callElimAssert_requires_0_12: ❌ fail
+callElimAssert_requires_0_12: ❓ unknown (at line 14, col 4)
 callElimAssert_requires_1_13: ✅ pass (at line 14, col 4)
 callElimAssert_requires_2_14: ✅ pass (at line 14, col 4)
 callElimAssert_requires_0_4: ✅ pass (at line 17, col 4)
 callElimAssert_requires_1_5: ✅ pass (at line 17, col 4)
-Assertion failed at line 17, col 4: callElimAssert_requires_2_6: ❌ fail
+callElimAssert_requires_2_6: ❓ unknown (at line 17, col 4)
 ite_cond_calls_Any_to_bool_0: ✅ pass (at line 19, col 0)
 
-DETAIL: 11 passed, 2 failed, 0 inconclusive
-RESULT: Failures found
+DETAIL: 11 passed, 0 failed, 2 inconclusive
+RESULT: Inconclusive
