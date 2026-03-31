@@ -41,7 +41,7 @@ false
 
 Result: Obligation: bitvec64_test
 Property: assert
-Result: ❓ unknown
+Result: ❌ fail
 
 
 [DEBUG] Evaluated program:
@@ -59,7 +59,7 @@ Result: ✅ pass
 
 Obligation: bitvec64_test
 Property: assert
-Result: ❓ unknown
+Result: ❌ fail
 -/
 #guard_msgs in
 #eval verify pgm

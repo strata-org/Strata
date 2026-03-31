@@ -47,7 +47,7 @@ Result: ✅ pass
 
 Obligation: reachable_cover
 Property: cover
-Result: ❓ unknown
+Result: ✅ pass
 
 Obligation: unsatisfiable_cover
 Property: cover
@@ -87,7 +87,7 @@ Result: ❌ fail
 
 Obligation: ctest2
 Property: cover
-Result: ❓ unknown
+Result: ✅ pass
 
 Obligation: atest2
 Property: assert
@@ -172,15 +172,15 @@ Result: ❌ fail (❗path unreachable)
 
 Obligation: reach_assert_pass
 Property: assert
-Result: ✔️ always true if reached
+Result: ✅ always true and is reachable from declaration entry
 
 Obligation: reach_cover_pass
 Property: cover
-Result: ❓ unknown
+Result: ✅ satisfiable and reachable from declaration entry
 
 Obligation: reach_cover_fail
 Property: cover
-Result: ✖️ always false if reached
+Result: ❌ always false and is reachable from declaration entry
 -/
 #guard_msgs in
 #eval verify reachCheckMixedPgm (options := {Core.VerifyOptions.quiet with checkLevel := .full})
@@ -332,7 +332,7 @@ Result: ✔️ always true if reached
 
 Obligation: test_fail
 Property: assert
-Result: ❓ unknown
+Result: ➖ can be false and is reachable from declaration entry
 -/
 #guard_msgs in
 #eval verify minimalVerbosePgm (options := {Core.VerifyOptions.quiet with checkLevel := .minimalVerbose})
@@ -342,7 +342,7 @@ Result: ❓ unknown
 info:
 Obligation: test_pass
 Property: assert
-Result: ❓ unknown
+Result: ➕ can be true and is reachable from declaration entry
 
 Obligation: test_fail
 Property: assert

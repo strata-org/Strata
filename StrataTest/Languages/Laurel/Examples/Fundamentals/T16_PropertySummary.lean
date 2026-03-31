@@ -15,11 +15,11 @@ namespace Strata.Laurel
 def program := r#"
 procedure divide(x: int, y: int) returns (result: int)
   requires y != 0 summary "divisor is non-zero"
-//         ^^^^^^ error: divisor is non-zero could not be proved
+//         ^^^^^^ error: divisor is non-zero does not hold
 // Diagnostic is at the wrong location due to a Core bug.
 {
   assert y == 0 summary "divisor is zero";
-//^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: divisor is zero could not be proved
+//^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: divisor is zero does not hold
   return x
 };
 

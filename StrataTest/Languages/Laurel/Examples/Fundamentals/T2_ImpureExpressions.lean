@@ -18,7 +18,7 @@ procedure nestedImpureStatements() {
   var x: int := y;
   var z: int := y := y + 1;
   assert x == y;
-//^^^^^^^^^^^^^ error: assertion could not be proved
+//^^^^^^^^^^^^^ error: assertion does not hold
   assert z == y
 };
 
@@ -44,7 +44,7 @@ procedure anotherConditionAssignmentInExpression(c: bool) {
   var b: bool := c;
   var z: bool := (if b then { b := false } else (b := true)) || b;
   assert z
-//^^^^^^^^ error: assertion could not be proved
+//^^^^^^^^ error: assertion does not hold
 };
 
 procedure blockWithTwoAssignmentsInExpression() {
@@ -63,7 +63,7 @@ procedure nestedImpureStatementsAndOpaque()
   var x: int := y;
   var z: int := y := y + 1;
   assert x == y;
-//^^^^^^^^^^^^^ error: assertion could not be proved
+//^^^^^^^^^^^^^ error: assertion does not hold
   assert z == y
 };
 

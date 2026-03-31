@@ -15,13 +15,13 @@ namespace Strata.Laurel
 def program := r"
 procedure hasRequires(x: int) returns (r: int)
   requires x > 2
-//         ^^^^^ error: assertion could not be proved
+//         ^^^^^ error: assertion does not hold
 // Core does not seem to report precondition errors correctly.
 // This should occur at the call site and with a different message
 {
   assert x > 0;
   assert x > 3;
-//^^^^^^^^^^^^ error: assertion could not be proved
+//^^^^^^^^^^^^ error: assertion does not hold
   x + 1
 };
 
@@ -38,7 +38,7 @@ function aFunctionWithPrecondition(x: int): int
 
 procedure aFunctionWithPreconditionCaller() {
   var x: int := aFunctionWithPrecondition(0)
-//^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion could not be proved
+//^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
 // Error ranges are too wide because Core does not use expression locations
 };
 
@@ -53,7 +53,7 @@ procedure multipleRequires(x: int, y: int) returns (r: int)
 // procedure multipleRequiresCaller() {
 //  var a: int := multipleRequires(1, 2);
 //  var b: int := multipleRequires(-1, 2);
-// error: assertion could not be proved
+// error: assertion does not hold
 // };
 
 function funcMultipleRequires(x: int, y: int): int
@@ -66,7 +66,7 @@ function funcMultipleRequires(x: int, y: int): int
 procedure funcMultipleRequiresCaller() {
   var a: int := funcMultipleRequires(1, 2);
   var b: int := funcMultipleRequires(1, -1)
-//^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion could not be proved
+//^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
 };
 "
 

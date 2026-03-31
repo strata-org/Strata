@@ -52,7 +52,7 @@ spec {
 info:
 Obligation: assert_0
 Property: assert
-Result: ❓ unknown
+Result: ❌ fail
 -/
 #guard_msgs in
 #eval verify failing (options := .quiet)
@@ -78,15 +78,15 @@ spec {
 info:
 Obligation: assert_0
 Property: assert
-Result: ❓ unknown
+Result: ❌ fail
 
 Obligation: assert_1
 Property: assert
-Result: ❓ unknown
+Result: ❌ fail
 
 Obligation: assert_2
 Property: assert
-Result: ❓ unknown
+Result: ❌ fail
 -/
 #guard_msgs in
 #eval verify failingThrice (options := .quiet)

@@ -226,7 +226,7 @@ Result: ✅ pass
 
 Obligation: bad_shift
 Property: assert
-Result: ❓ unknown
+Result: ❌ fail
 -/
 #guard_msgs in
 #eval verify bvMoreOpsPgm (options := .quiet)

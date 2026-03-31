@@ -66,7 +66,7 @@ spec { ensures r > 0; }
 info:
 Obligation: wrong_ensures_0
 Property: assert
-Result: ❓ unknown
+Result: ❌ fail
 
 Obligation: wrong_ensures_0
 Property: assert

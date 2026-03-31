@@ -195,11 +195,10 @@ open Strata
 
 public section
 
-/-- A log entry recording the solver's raw result for a verification phase. -/
+/-- A log entry recording a single solver result for a verification phase. -/
 structure SolverPhaseLog where
   phase : String
-  satisfiabilityResult : SMT.Result
-  validityResult : SMT.Result
+  result : SMT.Result
   deriving Repr
 
 /--
@@ -608,6 +607,15 @@ def preprocessObligation (obligation : ProofObligation Expression) (p : Program)
         pure { obligation with assumptions := newAssumptions }
   return (obligation, peSatResult, peValResult)
 
+/-- True when the program contains at least one non-constructor function
+    without an SMT body, meaning the SMT encoding uses uninterpreted
+    functions and sat results may be spurious. -/
+def Program.hasOverApproximation (p : Program) : Bool :=
+  p.decls.any fun
+    | .func f _ => !f.isConstr && f.body.isNone
+    | .recFuncBlock fs _ => fs.any fun f => !f.isConstr && f.body.isNone
+    | _ => false
+
 /-- Convert an unvalidated SMT sat result to unknown (preserving the model).
     SMT sat does not guarantee the property is truly satisfiable because
     uninterpreted functions may admit spurious models. -/
@@ -625,6 +633,7 @@ def getObligationResult (assumptionTerms : List Term) (obligationTerm : Term)
     (obligation : ProofObligation Expression) (p : Program)
     (options : VerifyOptions) (counter : IO.Ref Nat)
     (tempDir : System.FilePath) (satisfiabilityCheck validityCheck : Bool)
+    (hasOverApprox : Bool)
     : EIO DiagnosticModel VCResult := do
   let prog := f!"\n\n[DEBUG] Evaluated program:\n{Core.formatProgram p}"
   let counterVal ← counter.get
@@ -653,15 +662,16 @@ def getObligationResult (assumptionTerms : List Term) (obligationTerm : Term)
     .error <| DiagnosticModel.fromFormat e
   | .ok (satResult, validityResult, estate) =>
     -- Log the raw solver results before soundness adjustments
-    let smtLog : SolverPhaseLog := {
-      phase := "SMT",
-      satisfiabilityResult := satResult,
-      validityResult := validityResult }
-    -- Convert unvalidated sat results to unknown (with model) for soundness
+    let smtLog : List SolverPhaseLog :=
+      (if satisfiabilityCheck then [{ phase := "SMT", result := satResult }] else []) ++
+      (if validityCheck then [{ phase := "SMT", result := validityResult }] else [])
+    -- Convert unvalidated sat results to unknown when over-approximations exist
+    let adjSat := if hasOverApprox then satResult.satToUnknown else satResult
+    let adjVal := if hasOverApprox then validityResult.satToUnknown else validityResult
     let rawOutcome : VCOutcome := {
-      satisfiabilityProperty := satResult.satToUnknown,
-      validityProperty := validityResult.satToUnknown,
-      solverLog := [smtLog] }
+      satisfiabilityProperty := adjSat,
+      validityProperty := adjVal,
+      solverLog := smtLog }
     let outcome := maskOutcome rawOutcome satisfiabilityCheck validityCheck
     -- Extract counterexample model from sat results (using raw solver results)
     let cex := match satResult, validityResult with
@@ -719,10 +729,16 @@ def verifySingleEnv (pE : Program × Env) (options : VerifyOptions)
       -- If PE resolved both checks, we're done, unless we always want to generate SMT queries
       if not options.alwaysGenerateSMT then
         if let (some peSat, some peVal) := (peSatResult?, peValResult?) then
+          let hasOverApprox := p.hasOverApproximation
+          let adjSat := if hasOverApprox then peSat.satToUnknown else peSat
+          let adjVal := if hasOverApprox then peVal.satToUnknown else peVal
+          let peLog : List SolverPhaseLog :=
+            (if satisfiabilityCheck then [{ phase := "PE", result := peSat }] else []) ++
+            (if validityCheck then [{ phase := "PE", result := peVal }] else [])
           let outcome : VCOutcome := {
-            satisfiabilityProperty := peSat,
-            validityProperty := peVal,
-            solverLog := [{ phase := "PE", satisfiabilityResult := peSat, validityResult := peVal }] }
+            satisfiabilityProperty := adjSat,
+            validityProperty := adjVal,
+            solverLog := peLog }
           let result : VCResult := { obligation, outcome := .ok outcome, verbose := options.verbose,
                                       checkLevel := options.checkLevel, checkMode := options.checkMode, lexprModel := [] }
           results := results.push result
@@ -757,7 +773,7 @@ def verifySingleEnv (pE : Program × Env) (options : VerifyOptions)
       | .ok (assumptionTerms, obligationTerm, ctx) =>
         let t4 ← IO.monoNanosNow
         let result ← getObligationResult assumptionTerms obligationTerm ctx obligation p options
-                      counter tempDir needSatCheck needValCheck
+                      counter tempDir needSatCheck needValCheck p.hasOverApproximation
         let t5 ← IO.monoNanosNow
         solverNs := solverNs + (t5 - t4)
         -- Merge PE results with solver results
