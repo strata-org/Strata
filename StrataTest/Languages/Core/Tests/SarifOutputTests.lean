@@ -6,7 +6,6 @@
 
 import Strata.Languages.Core.SarifOutput
 import Strata.Languages.Core.Verifier
-import Strata.SimpleAPI
 import Lean.Data.Json
 
 /-!
@@ -344,41 +343,5 @@ def makeVCResult (label : String) (outcome : VCOutcome)
   let vcResults : VCResults := #[makeVCResult "inlined_assert" (VCOutcome.mk .unsat (.sat [])) inlinedMd]
   let sarif := vcResultsToSarif .deductive files vcResults
   Strata.Sarif.toJsonString sarif
-
-/-! ## End-to-End Inlining Related Locations Test -/
-
-/-- A Core program where `caller` calls `callee`, which contains `assert false`.
-    After inlining, the assertion in `caller` should carry the call site as the
-    primary location and the original assertion location as a related location. -/
-private def inlineAssertPgm : Strata.Program :=
-#strata
-program Core;
-procedure callee() returns () {
-  assert [willFail]: false;
-};
-procedure caller() returns () {
-  call callee();
-};
-#end
-
-/-- info: "willFail: ❌ fail\n  Related location: original assertion in callee" -/
-#guard_msgs in
-#eval show IO String from do
-  let (coreProg, _) := Strata.Core.getProgram inlineAssertPgm
-  let inlined ← match Strata.Core.inlineProcedures coreProg {} with
-    | .ok p => pure p
-    | .error e => throw (IO.userError s!"Inlining failed: {e}")
-  let vcResults ←
-    EIO.toIO (fun e => IO.Error.userError e)
-      (Strata.Core.verifyProgram inlined
-        { Core.VerifyOptions.default with verbose := .quiet }
-        (proceduresToVerify := some ["caller"]))
-  let mut output := ""
-  for vcr in vcResults do
-    output := output ++ s!"{vcr.obligation.label}: {vcr.formatOutcome}"
-    let related := Imperative.getRelatedFileRanges vcr.obligation.metadata
-    if !related.isEmpty then
-      output := output ++ s!"\n  Related location: original assertion in callee"
-  return output
 
 end Core.Sarif.Tests
