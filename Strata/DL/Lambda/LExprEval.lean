@@ -295,7 +295,7 @@ def evalApp (n' : Nat) (σ : LState TBase) (e e1 e2 : LExpr TBase.mono) : LExpr 
       let newMeta := mergeMetadataForSubst mAbs e2'.metadata metaReplacementVar
       replaceMetadata1 newMeta e2') e1'
     if eqModuloMeta e e' then e else eval n' σ e'
-  | _ =>
+  | _e =>
     -- Re-evaluate when subexpressions changed (e.g. fvar resolved to .op),
     -- so that `callOfLFunc` in `eval` can recognise the rebuilt expression
     -- as a factory function call.  When nothing changed, `eqModuloMeta`
