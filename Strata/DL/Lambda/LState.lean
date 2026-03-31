@@ -158,10 +158,11 @@ instance : ToFormat (T.Identifier × LState T) where
 
 /--
 Substitute `.fvar`s in `e` by looking up their values in `σ`.
+The replacement expressions must be closed (no dangling bvars).
 -/
 def LExpr.substFvarsFromState (σ : (LState T)) (e : (LExpr T.mono)) : (LExpr T.mono) :=
   let sm := σ.state.toSingleMap.map (fun (x, (_, v)) => (x, v))
-  Lambda.LExpr.substFvars e sm
+  Lambda.LExpr.substMultiFvars e sm
 
 ---------------------------------------------------------------------
 

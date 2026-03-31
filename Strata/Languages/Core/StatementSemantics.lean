@@ -36,6 +36,7 @@ instance : HasFvar Core.Expression where
 
 instance : HasSubstFvar Core.Expression where
   substFvar := Lambda.LExpr.substFvar
+  substMultiFvars := Lambda.LExpr.substMultiFvars
 
 instance : HasIntOrder Core.Expression where
   eq    e1 e2 := .eq () e1 e2
@@ -234,10 +235,10 @@ def closureCapture
   let allFreeVars := (bodyFreeVars ++ axiomFreeVars).eraseDups
   -- Build substitutions from the store
   let substs := buildSubstitutions σ allFreeVars
-  -- Apply substitutions to body and axioms
+  -- The replacement expressions must be closed (no dangling bvars).
   { decl with
-    body := decl.body.map (fun b => HasSubstFvar.substFvars b substs)
-    axioms := decl.axioms.map (fun ax => HasSubstFvar.substFvars ax substs) }
+    body := decl.body.map (fun b => HasSubstFvar.substMultiFvars b substs)
+    axioms := decl.axioms.map (fun ax => HasSubstFvar.substMultiFvars ax substs) }
 
 /--
 Extend the evaluator with a new function definition by capturing the closure.
