@@ -27,7 +27,7 @@ info: returned: 1
 #eval! do
   let prog ← parseLaurel r"
 procedure main() {
-  if (true) { return 1 } else { return 2 }
+  if (true) then { return 1 } else { return 2 }
 };
 "
   IO.println (toString (interpProgram prog))
@@ -41,7 +41,7 @@ info: returned: 2
 #eval! do
   let prog ← parseLaurel r"
 procedure main() {
-  if (false) { return 1 } else { return 2 }
+  if (false) then { return 1 } else { return 2 }
 };
 "
   IO.println (toString (interpProgram prog))
@@ -55,7 +55,7 @@ info: returned: 1
 #eval! do
   let prog ← parseLaurel r"
 procedure main() {
-  if (true) { return 1 };
+  if (true) then { return 1 };
   return 0
 };
 "
@@ -71,7 +71,7 @@ info: returned: 0
   let prog ← parseLaurel r"
 procedure main() {
   var x: int := 0;
-  if (false) { x := 1 };
+  if (false) then { x := 1 };
   return x
 };
 "
@@ -87,8 +87,8 @@ info: returned: 2
   let prog ← parseLaurel r"
 procedure main() {
   var x: int := 15;
-  if (x > 10) {
-    if (x > 20) { return 3 } else { return 2 }
+  if (x > 10) then {
+    if (x > 20) then { return 3 } else { return 2 }
   } else { return 1 }
 };
 "
@@ -138,7 +138,7 @@ info: returned: 5
 procedure main() {
   var i: int := 0;
   while (i < 100) {
-    if (i == 5) { return i };
+    if (i == 5) then { return i };
     i := i + 1
   };
   return -1
@@ -156,8 +156,8 @@ info: returned: 42
   let prog ← parseLaurel r"
 procedure main() {
   var x: int := 0;
-  if (true) {
-    if (true) {
+  if (true) then {
+    if (true) then {
       return 42
     }
   };

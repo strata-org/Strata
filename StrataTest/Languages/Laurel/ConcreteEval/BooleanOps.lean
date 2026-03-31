@@ -38,7 +38,7 @@ procedure main() {
   var b: bool := 2 <= 2;
   var c: bool := 3 > 2;
   var d: bool := 2 >= 2;
-  if (a && b && c && d) { return 1 } else { return 0 }
+  if (a && b && c && d) then { return 1 } else { return 0 }
 };
 "
   IO.println (toString (interpProgram prog))
@@ -52,7 +52,7 @@ info: returned: 1
 #eval! do
   let prog ← parseLaurel r"
 procedure main() {
-  if (5 == 5 && 5 != 6) { return 1 } else { return 0 }
+  if (5 == 5 && 5 != 6) then { return 1 } else { return 0 }
 };
 "
   IO.println (toString (interpProgram prog))
@@ -66,7 +66,7 @@ info: returned: 1
 #eval! do
   let prog ← parseLaurel r"
 procedure main() {
-  if (true == true && true != false) { return 1 } else { return 0 }
+  if (true == true && true != false) then { return 1 } else { return 0 }
 };
 "
   IO.println (toString (interpProgram prog))
@@ -80,7 +80,7 @@ info: returned: 1
 #eval! do
   let prog ← parseLaurel r#"
 procedure main() {
-  if ("abc" == "abc" && "abc" != "def") { return 1 } else { return 0 }
+  if ("abc" == "abc" && "abc" != "def") then { return 1 } else { return 0 }
 };
 "#
   IO.println (toString (interpProgram prog))
@@ -94,7 +94,7 @@ info: returned: 1
 #eval! do
   let prog ← parseLaurel r"
 procedure main() {
-  if (!false && !(!true)) { return 1 } else { return 0 }
+  if (!false && !(!true)) then { return 1 } else { return 0 }
 };
 "
   IO.println (toString (interpProgram prog))
@@ -108,7 +108,7 @@ info: returned: 1
 #eval! do
   let prog ← parseLaurel r#"
 procedure main() {
-  if ("ab" ++ "cd" == "abcd") { return 1 } else { return 0 }
+  if ("ab" ++ "cd" == "abcd") then { return 1 } else { return 0 }
 };
 "#
   IO.println (toString (interpProgram prog))

@@ -27,7 +27,7 @@ info: returned: 120
 #eval! do
   let prog ← parseLaurel r"
 procedure fact(n: int) {
-  if (n <= 1) { return 1 } else { return n * fact(n - 1) }
+  if (n <= 1) then { return 1 } else { return n * fact(n - 1) }
 };
 procedure main() { return fact(5) };
 "
@@ -42,12 +42,12 @@ info: returned: 1
 #eval! do
   let prog ← parseLaurel r"
 procedure isEven(n: int) {
-  if (n == 0) { return true } else { return isOdd(n - 1) }
+  if (n == 0) then { return true } else { return isOdd(n - 1) }
 };
 procedure isOdd(n: int) {
-  if (n == 0) { return false } else { return isEven(n - 1) }
+  if (n == 0) then { return false } else { return isEven(n - 1) }
 };
-procedure main() { if (isEven(4)) { return 1 } else { return 0 } };
+procedure main() { if (isEven(4)) then { return 1 } else { return 0 } };
 "
   IO.println (toString (interpProgram prog))
 
@@ -63,7 +63,7 @@ info: error: fuel exhausted
 #eval! do
   let prog ← parseLaurel r"
 procedure deep(n: int) {
-  if (n == 0) { return 0 } else { return deep(n - 1) }
+  if (n == 0) then { return 0 } else { return deep(n - 1) }
 };
 procedure main() { return deep(100000) };
 "
@@ -82,7 +82,7 @@ info: returned: 15
   let prog ← parseLaurel r"
 composite Box { var v: int }
 procedure fill(b: Box, n: int) {
-  if (n <= 0) { return 0 }
+  if (n <= 0) then { return 0 }
   else { b#v := b#v + n; return fill(b, n - 1) }
 };
 procedure main() {
@@ -102,7 +102,7 @@ info: returned: 55
 #eval! do
   let prog ← parseLaurel r"
 procedure fib(n: int) {
-  if (n <= 1) { return n }
+  if (n <= 1) then { return n }
   else { return fib(n - 1) + fib(n - 2) }
 };
 procedure main() { return fib(10) };

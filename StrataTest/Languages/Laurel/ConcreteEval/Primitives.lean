@@ -63,7 +63,7 @@ info: returned: 1
 #eval! do
   let prog ← parseLaurel r"
 procedure main() {
-  if (true) { return 1 } else { return 0 }
+  if (true) then { return 1 } else { return 0 }
 };
 "
   IO.println (toString (interpProgram prog))
@@ -77,7 +77,7 @@ info: returned: 0
 #eval! do
   let prog ← parseLaurel r"
 procedure main() {
-  if (false) { return 1 } else { return 0 }
+  if (false) then { return 1 } else { return 0 }
 };
 "
   IO.println (toString (interpProgram prog))
@@ -91,7 +91,7 @@ info: returned: 1
 #eval! do
   let prog ← parseLaurel r#"
 procedure main() {
-  if ("hello" == "hello") { return 1 } else { return 0 }
+  if ("hello" == "hello") then { return 1 } else { return 0 }
 };
 "#
   IO.println (toString (interpProgram prog))
@@ -105,7 +105,7 @@ info: returned: 1
 #eval! do
   let prog ← parseLaurel r#"
 procedure main() {
-  if ("" == "") { return 1 } else { return 0 }
+  if ("" == "") then { return 1 } else { return 0 }
 };
 "#
   IO.println (toString (interpProgram prog))

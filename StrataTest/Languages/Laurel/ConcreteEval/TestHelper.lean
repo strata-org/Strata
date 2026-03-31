@@ -47,7 +47,7 @@ def parseLaurelTransformed (input : String) : IO Laurel.Program := do
   match Laurel.TransM.run uri (Laurel.parseProgram strataProgram) with
   | .error e => throw (IO.userError s!"Translation errors: {e}")
   | .ok program =>
-      let (result, _) := lowerLaurelToLaurel program
+      let (result, _) := lowerLaurelToLaurel { emitResolutionErrors := false } program
       return result.program
 
 /-! ## Programmatic AST Helpers -/

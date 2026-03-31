@@ -95,7 +95,7 @@ info: returned: 11
   let prog ← parseLaurel r"
 procedure main() {
   var x: int := 0;
-  if ({x := 1; x == 1}) { return x + 10 } else { return x }
+  if ({x := 1; x == 1}) then { return x + 10 } else { return x }
 };
 "
   IO.println (toString (interpProgram prog))

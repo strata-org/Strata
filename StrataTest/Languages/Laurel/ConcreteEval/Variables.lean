@@ -76,7 +76,7 @@ info: returned: 3
   let prog ← parseLaurel r"
 procedure main() {
   var x: int := 1;
-  if (true) { var y: int := 2; x := x + y };
+  if (true) then { var y: int := 2; x := x + y };
   return x
 };
 "

@@ -122,7 +122,7 @@ info: returned: 42
 #eval! do
   let prog ← parseLaurel r"
 procedure main() {
-  if (true) { if (true) { if (true) { return 42 } } }
+  if (true) then { if (true) then { if (true) then { return 42 } } }
 };
 "
   IO.println (toString (interpProgram prog))
