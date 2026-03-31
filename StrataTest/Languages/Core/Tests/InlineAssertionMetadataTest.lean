@@ -30,7 +30,7 @@ procedure caller() returns () {
 };
 #end
 
-/-- info: "willFail: ❌ fail\n  Call site offset: 622, Original assertion offset: 559 (delta: 63)" -/
+/-- info: "willFail: ❌ fail\n Assertion is 63 characters after the related location" -/
 #guard_msgs in
 #eval show IO String from do
   let (coreProg, _) := Strata.Core.getProgram inlineAssertPgm
@@ -50,7 +50,7 @@ procedure caller() returns () {
       let related := Imperative.getRelatedFileRanges vcr.obligation.metadata
       for r in related do
         let delta := primary.range.start.byteIdx - r.range.start.byteIdx
-        output := output ++ s!"\n  Call site offset: {primary.range.start.byteIdx}, Original assertion offset: {r.range.start.byteIdx} (delta: {delta})"
+        output := output ++ s!"\n Assertion is {delta} characters after the related location"
     | none => pure ()
   return output
 
