@@ -5,8 +5,8 @@
 -/
 module
 
-public import Strata.Languages.Python.SSA
 import Lean.Data.Position
+public import Strata.Languages.Python.SSA.IR
 
 /-!
 # PythonSSA Pretty-Printer

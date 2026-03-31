@@ -5,9 +5,9 @@
 -/
 module
 
-meta import Strata.Languages.Python.PythonToSSA
-meta import Strata.Languages.Python.SSACheck
-meta import Strata.Languages.Python.SSAFormat
+meta import Strata.Languages.Python.SSA.Translate
+meta import Strata.Languages.Python.SSA.Check
+meta import Strata.Languages.Python.SSA.Format
 meta import Strata.Languages.Python.ReadPython
 meta import Strata.Util.IO
 meta import StrataTest.Util.Python

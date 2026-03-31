@@ -5,8 +5,8 @@
 -/
 module
 
-public import Strata.Languages.Python.PythonDialect
 public import Strata.DDM.Util.SourceRange
+public import Strata.Languages.Python.PythonDialect
 
 /-!
 # Statement Classification and Demand Analysis for PythonSSA

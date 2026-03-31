@@ -28,8 +28,8 @@ import Strata.Backends.CBMC.CollectSymbols
 import Strata.Backends.CBMC.GOTO.CoreToGOTOPipeline
 
 import Strata.Languages.Python.FeatureUsage
-import Strata.Languages.Python.PythonToSSA
-import Strata.Languages.Python.SSAFormat
+import Strata.Languages.Python.SSA.Translate
+import Strata.Languages.Python.SSA.Format
 import Strata.SimpleAPI
 
 open Strata

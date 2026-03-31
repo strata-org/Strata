@@ -5,9 +5,9 @@
 -/
 module
 
-import Strata.Languages.Python.Blockify
-public import Strata.Languages.Python.SSA
 public import Strata.Languages.Python.PythonDialect
+import Strata.Languages.Python.SSA.Blockify
+public import Strata.Languages.Python.SSA.IR
 import Strata.Util.DecideProp
 
 /-!

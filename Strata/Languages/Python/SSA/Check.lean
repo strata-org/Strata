@@ -5,7 +5,7 @@
 -/
 module
 
-public import Strata.Languages.Python.SSA
+public import Strata.Languages.Python.SSA.IR
 
 /-!
 # SSA Well-Formedness Checker
