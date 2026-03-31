@@ -155,6 +155,8 @@ structure VerifyOptions where
   -- Output
   /-- Output results in SARIF format. -/
   outputSarif : Bool
+  /-- Print elapsed time for each verification sub-step. -/
+  profile : Bool
 
 def VerifyOptions.default : VerifyOptions := {
   verbose := .normal,
@@ -173,6 +175,7 @@ def VerifyOptions.default : VerifyOptions := {
   alwaysGenerateSMT := false
   uniqueBoundNames := false
   skipSolver := false
+  profile := false
 }
 
 instance : Inhabited VerifyOptions where
