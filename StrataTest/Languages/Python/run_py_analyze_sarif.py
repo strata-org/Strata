@@ -56,6 +56,7 @@ SKIP_TESTS = BOTH_SKIP | {
     "test_while_loop",
     "test_with_statement",
     "test_fstrings",
+    "test_user_error_metadata", # No SARIF output because does not run SMT analysis
 }
 SKIP_TESTS_LAUREL = BOTH_SKIP
 
