@@ -43,8 +43,7 @@ private def expr : LExpr TP.mono := mkAdd (mkFv "x") (mkFv "y")
 
 private def result := LExpr.substFvarsFromState testState expr
 
--- Correct: (y + 1) + 0
--- Fixed: simultaneous substitution preserves y inside x's value.
+-- Iterated [x→(y+1)][y→0]: `(0+1) + 0`. Correct: `(y+1) + 0`.
 /-- info: ((~Int.Add : (arrow int (arrow int int))) ((~Int.Add : (arrow int (arrow int int))) (y : int) #1) #0) -/
 #guard_msgs in
 #eval format result

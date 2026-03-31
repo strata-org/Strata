@@ -9,8 +9,8 @@ import Strata.Languages.Core.Verifier
 /-! # Simultaneous substitution tests (Issue 653)
 
 Tests verifying that simultaneous substitution (`substMultiFvars` /
-`substMultiFvarsLifting`) avoids variable capture that occurred with the
-old iterated `substFvars`.
+`substMultiFvarsLifting`) avoids variable capture that occurrs with the
+iterated `substFvars`.
 -/
 
 ---------------------------------------------------------------------
@@ -32,6 +32,7 @@ procedure TestFoo() returns ()
 
 #end
 
+-- foo(y, 2): iterated [x↦$__y0][$__y0↦2] produces 2+2=4 (pass). Correct: y+2≠4 (fail).
 /--
 info:
 Obligation: fooEq
@@ -64,6 +65,7 @@ procedure Test() returns ()
 
 #end
 
+-- P(y,0): iterated [x↦$__y3][$__y3↦0] on `x==$__y3` produces 0==0 (pass). Correct: y==0 (fail).
 /--
 info:
 Obligation: (Origin_P_Requires)P_requires_0
@@ -90,6 +92,7 @@ private def formals : List (Identifier Unit × LMonoTy) :=
 private def actuals : List (LExpr CoreLParams.mono) :=
   [.fvar () ⟨"y", ()⟩ (some .int), .intConst () 0]
 
+-- f(y,0): iterated [x↦y][y↦0] on `x==y` produces `0==0`. Correct: `y==0`.
 /-- info: y == 0 -/
 #guard_msgs in
 #eval Std.ToFormat.format (substitutePrecondition precond formals actuals)
@@ -107,6 +110,8 @@ private def actualsBvar : List (LExpr CoreLParams.mono) := [.bvar () 0]
 
 -- bvar!1 refers to an outer binder not present in this subexpression
 -- (collectWFObligations wraps it in a quantifier).
+-- Iterated (no lifting): `forall z :: bvar 0 > bvar 0` (x captured by z).
+-- Correct (with lifting): `forall z :: bvar 1 > bvar 0` (bvar 1 = outer y).
 /--
 info: forall __q0 : int :: bvar!1 > __q0
 -- Errors: Unsupported construct in lexprToExpr: bvar index out of bounds: 1
@@ -138,7 +143,7 @@ private def testEnv : Env :=
   e
 
 -- body: x + y, store: x → y+1, y → 0
--- Correct: (y+1) + 0  (y in x's value preserved)
+-- Iterated [x→(y+1)][y→0]: `(0+1) + 0`. Correct: `(y+1) + 0`.
 /-- info: y + 1 + 0 -/
 #guard_msgs in
 #eval Std.ToFormat.format (captureFreevars testEnv [] (mkAdd (mkFv "x") (mkFv "y")))
