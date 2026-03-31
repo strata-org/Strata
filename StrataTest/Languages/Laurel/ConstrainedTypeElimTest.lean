@@ -52,7 +52,7 @@ procedure test(n: int) returns ⏎
 requires nat$constraint(n)
 deterministic
  ensures nat$constraint(r) := { assert r >= 0; var y: int := n; assert nat$constraint(y); return y }
-procedure $witness_nat() returns ⏎
+procedure nat$witness() returns ⏎
 ()
 deterministic
 { var $witness: int := 0; assert nat$constraint($witness) }
@@ -86,7 +86,7 @@ procedure test(b: bool) returns ⏎
 ()
 deterministic
 { if b then { var x: int := 1; assert pos$constraint(x) }; { var x: int := -5; x := -10 } }
-procedure $witness_pos() returns ⏎
+procedure pos$witness() returns ⏎
 ()
 deterministic
 { var $witness: int := 1; assert pos$constraint($witness) }
@@ -116,7 +116,7 @@ procedure f() returns ⏎
 ()
 deterministic
 { var x: int; assume posint$constraint(x); assert x == 1 }
-procedure $witness_posint() returns ⏎
+procedure posint$witness() returns ⏎
 ()
 deterministic
 { var $witness: int := 1; assert posint$constraint($witness) }

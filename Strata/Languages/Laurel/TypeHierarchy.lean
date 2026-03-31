@@ -167,7 +167,7 @@ Returns an array of DiagnosticModel errors.
 def validateDiamondFieldAccesses (model: SemanticModel) (program : Program) : List DiagnosticModel :=
   let errors := program.staticProcedures.foldl (fun acc proc =>
     let bodyErrors := match proc.body with
-      | .Transparent bodyExpr => validateDiamondFieldAccessesForStmtExpr model bodyExpr
+      | .Transparent bodyExpr _ => validateDiamondFieldAccessesForStmtExpr model bodyExpr
       | .Opaque postconds impl _ =>
         let postErrors := postconds.foldl (fun acc2 pc => acc2 ++ validateDiamondFieldAccessesForStmtExpr model pc) []
         let implErrors := match impl with
@@ -282,7 +282,7 @@ def rewriteTypeHierarchyExpr (exprMd : StmtExprMd) : THM StmtExprMd :=
 def rewriteTypeHierarchyProcedure (proc : Procedure) : THM Procedure := do
   let preconditions' ← proc.preconditions.mapM rewriteTypeHierarchyExpr
   let body' ← match proc.body with
-    | .Transparent b => pure (.Transparent (← rewriteTypeHierarchyExpr b))
+    | .Transparent b posts => pure (.Transparent (← rewriteTypeHierarchyExpr b) (← posts.mapM rewriteTypeHierarchyExpr))
     | .Opaque postconds impl modif =>
         let postconds' ← postconds.mapM rewriteTypeHierarchyExpr
         let impl' ← match impl with

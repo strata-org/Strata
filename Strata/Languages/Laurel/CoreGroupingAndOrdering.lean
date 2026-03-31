@@ -161,7 +161,7 @@ public def computeSccDecls (program : Program) : List (List Procedure × Bool) :
   -- Collect all callee names from a procedure's body and contracts.
   let procCallees (proc : Procedure) : List String :=
     let bodyExprs : List StmtExprMd := match proc.body with
-      | .Transparent b => [b]
+      | .Transparent b _ => [b]
       | .Opaque postconds (some impl) _ => postconds ++ [impl]
       | .Opaque postconds none _ => postconds
       | _ => []
