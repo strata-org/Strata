@@ -5,6 +5,14 @@ This directory contains a Python package for strata along with a module
 
 It can be installed by running `pip install .` from this directory.
 
+For full documentation, see:
+
+- The **DDM Manual** (source: `docs/verso/DDMDoc.lean`, build with
+  `docs/verso/generate.sh`) — covers DDM concepts and the `strata.base` Python
+  API for working with dialects, programs, and AST types.
+- [PythonDialect.md](PythonDialect.md) — covers the auto-generated Python
+  dialect, the `strata.gen` CLI commands, and the `strata.pythonast` parser API.
+
 ## Python versions
 
 The Python dialect may only be generated in CPython 3.13 or later, and
