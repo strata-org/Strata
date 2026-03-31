@@ -426,8 +426,8 @@ example: stuck test15 := by
 
 def test16 := TestCase.mk
   testState
-  esM[((λ %0) ((~Int.Add #20) #30))]
-  esM[(#50)]
+  esM[((~Int.Add x) (~Int.Neg #30))]
+  esM[((~Int.Add x) #-30)]
 
 /-- info: true -/
 #guard_msgs in
@@ -439,14 +439,13 @@ example: steps_well test16 := by
   · inhabited_metadata
   · apply Step.eval_fn <;> try discharge_isCanonicalValue
     · inhabited_metadata
-  take_step; reduce_beta
   take_refl
 
 
 def test17 := TestCase.mk
   testState
-  esM[((~Int.Div #300) ((~Int.Add #2) #1))]
-  esM[(#100)]
+  esM[((λ %0) ((~Int.Add #20) #30))]
+  esM[(#50)]
 
 /-- info: true -/
 #guard_msgs in
@@ -458,16 +457,14 @@ example: steps_well test17 := by
   · inhabited_metadata
   · apply Step.eval_fn <;> try discharge_isCanonicalValue
     · inhabited_metadata
-  take_step; apply Step.eval_fn <;> try discharge_isCanonicalValue
-  · simp; rfl
-  · inhabited_metadata
+  take_step; reduce_beta
   take_refl
 
 
 def test18 := TestCase.mk
   testState
-  esM[((~Int.Add #3) (~Int.Neg #3))]
-  esM[(#0)]
+  esM[((~Int.Div #300) ((~Int.Add #2) #1))]
+  esM[(#100)]
 
 /-- info: true -/
 #guard_msgs in
@@ -475,6 +472,27 @@ def test18 := TestCase.mk
 
 example: steps_well test18 := by
   unfold steps_well Scopes.toEnv test18
+  take_step; apply Step.reduce_2
+  · inhabited_metadata
+  · apply Step.eval_fn <;> try discharge_isCanonicalValue
+    · inhabited_metadata
+  take_step; apply Step.eval_fn <;> try discharge_isCanonicalValue
+  · simp; rfl
+  · inhabited_metadata
+  take_refl
+
+
+def test19 := TestCase.mk
+  testState
+  esM[((~Int.Add #3) (~Int.Neg #3))]
+  esM[(#0)]
+
+/-- info: true -/
+#guard_msgs in
+#eval check test19
+
+example: steps_well test19 := by
+  unfold steps_well Scopes.toEnv test19
   take_step
   · apply Step.reduce_2
     · inhabited_metadata
@@ -486,17 +504,17 @@ example: steps_well test18 := by
   take_refl
 
 
-def test19 := TestCase.mk
+def test20 := TestCase.mk
   testState
   esM[((~Int.Add (~Int.Neg #3)) #3)]
   esM[(#0)]
 
 /-- info: true -/
 #guard_msgs in
-#eval check test19
+#eval check test20
 
-example: steps_well test19 := by
-  unfold steps_well Scopes.toEnv test19
+example: steps_well test20 := by
+  unfold steps_well Scopes.toEnv test20
   take_step; apply Step.reduce_1
   · inhabited_metadata
   · apply Step.reduce_2
@@ -508,17 +526,17 @@ example: steps_well test19 := by
   take_refl
 
 
-def test20 := TestCase.mk
+def test21 := TestCase.mk
   testState
   esM[((~Int.Div #300) ((~Int.Add #3) (~Int.Neg #3)))]
   esM[((~Int.Div #300) #0)]
 
 /-- info: true -/
 #guard_msgs in
-#eval check test20
+#eval check test21
 
-example: steps_well test20 := by
-  unfold steps_well Scopes.toEnv test20
+example: steps_well test21 := by
+  unfold steps_well Scopes.toEnv test21
   take_step; apply Step.reduce_2
   · inhabited_metadata
   · apply Step.reduce_2
@@ -532,52 +550,112 @@ example: steps_well test20 := by
   take_refl
 
 
-def test21 := TestCase.mk
+def test22 := TestCase.mk
   testState
   esM[((~Int.Div x) ((~Int.Add #2) #1))]
   esM[((~Int.Div x) #3)]
 
 /-- info: true -/
 #guard_msgs in
-#eval check test21
+#eval check test22
 
--- TODO: steps_well proof of test21
+example: steps_well test22 := by
+  unfold steps_well Scopes.toEnv test22
+  take_step; apply Step.reduce_2
+  · inhabited_metadata
+  · apply Step.eval_fn <;> try discharge_isCanonicalValue
+    · inhabited_metadata
+  take_refl
 
 
-def test22 := TestCase.mk
+def test23 := TestCase.mk
   testState
   esM[((~Int.Le ((~Int.Div #300) ((~Int.Add #2) #1))) x)]
   esM[((~Int.Le #100) x)]
 
 /-- info: true -/
 #guard_msgs in
-#eval check test22
+#eval check test23
 
--- TODO: steps_well proof of test22
+example: steps_well test23 := by
+  unfold steps_well Scopes.toEnv test23
+  take_step; apply Step.reduce_1
+  · inhabited_metadata
+  · apply Step.reduce_2
+    · inhabited_metadata
+    · apply Step.reduce_2
+      · inhabited_metadata
+      · apply Step.eval_fn <;> try discharge_isCanonicalValue
+        · inhabited_metadata
+  take_step; apply Step.reduce_1
+  · inhabited_metadata
+  · apply Step.reduce_2
+    · inhabited_metadata
+    · apply Step.eval_fn <;> try discharge_isCanonicalValue
+      · simp; rfl
+      · inhabited_metadata
+  take_refl
 
 
-def test23 := TestCase.mk
+def test24 := TestCase.mk
   testState
   esM[((~Int.Le ((~Int.Div #300) ((~Int.Add #2) y))) x)]
   esM[((~Int.Le ((~Int.Div #300) ((~Int.Add #2) y))) x)]
 
 /-- info: true -/
 #guard_msgs in
-#eval check test23
+#eval check test24
 
--- TODO: stuck proof of test23
+-- Small step stucks because 'Int.Le' is not in the test factory and 'y' is unresolvable.
+example: stuck test24 := by
+  intros e H
+  cases H <;> try contradiction
+  case reduce_1 =>
+    rename_i _ h
+    cases h <;> try contradiction
+    case reduce_2 =>
+      rename_i _ h
+      cases h <;> try contradiction
+      case reduce_2 =>
+        rename_i _ h
+        cases h <;> try contradiction
+        case expand_fn =>
+          rename_i a a2 a3
+          cases a2; contradiction
+        case eval_fn =>
+          rename_i a a2 a3 he
+          cases a3
+          cases a2; unfold denoteInt at he; contradiction
+      case expand_fn =>
+        rename_i a a2 a3
+        cases a2; contradiction
+      case eval_fn =>
+        rename_i a a2 a3 he
+        cases a3
+        cases a2; unfold denoteInt at he; contradiction
 
 
-def test24 := TestCase.mk
+def test25 := TestCase.mk
   testState
   esM[((~Int.Div x) x)]
   esM[((~Int.Div x) x) ]
 
 /-- info: true -/
 #guard_msgs in
-#eval check test24
+#eval check test25
 
--- TODO: stuck proof of test24
+-- Small step stucks because 'x' is unresolvable.
+example: stuck test25 := by
+  intros e H
+  cases H <;> try contradiction
+  case expand_fn =>
+    rename_i a a2 a3
+    cases a2
+    contradiction
+  case eval_fn =>
+    rename_i a a2 a3 he
+    cases a3
+    cases a2; unfold denoteInt at he; contradiction
 
 
 end EvalTest

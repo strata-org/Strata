@@ -38,7 +38,7 @@ require knowing the eventual match mode, which is not available.
 ### Factory functions
 
 Each call to `re.fullmatch(pattern, s)` (and similarly `re.match`/`re.search`)
-causes `pythonRegexToCore` to be called twice via `concreteEval`:
+causes `pythonRegexToCore` to be called (at most) twice via `concreteEval`:
 
 1. **`re_pattern_error(pattern)`** — Parses the pattern and returns
    `NoError()` on success or `RePatternError(msg)` for a genuinely malformed
@@ -48,46 +48,51 @@ causes `pythonRegexToCore` to be called twice via `concreteEval`:
    and returns `exception(err)` for pattern errors, modeling Python's
    `re.error`.
 
-2. **`re_fullmatch_str(pattern)`** (or `re_match_str`/`re_search_str`) —
-   Compiles the pattern with the correct `MatchMode`.  Returns the compiled
-   regex on success, or `.none` on error (leaving the function uninterpreted).
-   Since pattern errors are already caught by `re_pattern_error`, the `.none`
-   case here only fires for unimplemented features, producing `unknown` VCs —
-   a sound over-approximation.
+2. **`re_fullmatch_bool(pattern, s)`** (or `re_match_bool`/`re_search_bool`) —
+   Compiles the pattern with the correct `MatchMode` and returns
+   `Str.InRegEx(s, compiled_regex)` on success, or `.none` on failure (leaving
+   the function uninterpreted as a `Bool` UF).  Since pattern errors are already
+   caught by `re_pattern_error`, the `.none` case here only fires for
+   unimplemented features (e.g. `\S`, `\d`), producing `unknown` VCs — a sound
+   over-approximation.
+
+   Critically, an uninterpreted `Bool` UF does not cause SMT theory-combination
+   errors.  The previous design used `re_*_str` (returning `RegLan`) as the
+   uninterpreted fallback, but cvc5 rejects uninterpreted `RegLan` UFs with
+   "Regular expression terms are not supported in theory combination".
 
 The double parse is defensible because `pythonRegexToCore` is fast enough -- it
 runs at translation time, not solver time, and keeps the factory functions
 orthogonal.
+
 -/
 
 open Core
 open Lambda LTy.Syntax LExpr.SyntaxMono
 
--- Mode-specific regex compilation.  Each function compiles a Python regex
--- string with the correct MatchMode so that anchors (^/$) are handled
--- properly.
-private def mkModeCompileFunc (name : String) (mode : MatchMode) :
+-- Bool-valued factory.  See architecture comment above.
+private def mkModeBoolFunc (name : String) (mode : MatchMode) :
     LFunc Core.CoreLParams :=
     { name := name,
       typeArgs := [],
-      inputs := [("pattern", mty[string])],
-      output := mty[regex],
+      inputs := [("pattern", mty[string]), ("s", mty[string])],
+      output := mty[bool],
       concreteEval := some
         (fun _ args => match args with
-          | [LExpr.strConst () s] =>
-            let (expr, maybe_err) := pythonRegexToCore s mode
+          | [LExpr.strConst () pattern, sExpr] =>
+            let (regexExpr, maybe_err) := pythonRegexToCore pattern mode
             match maybe_err with
-            | none => .some expr
+            | none => .some (LExpr.mkApp () (.op () "Str.InRegEx" (some mty[string → (regex → bool)])) [sExpr, regexExpr])
             | some _ => .none
           | _ => .none)
       }
 
-def reFullmatchStrFunc : LFunc Core.CoreLParams :=
-  mkModeCompileFunc "re_fullmatch_str" .fullmatch
-def reMatchStrFunc     : LFunc Core.CoreLParams :=
-  mkModeCompileFunc "re_match_str"     .match
-def reSearchStrFunc    : LFunc Core.CoreLParams :=
-  mkModeCompileFunc "re_search_str"    .search
+def reFullmatchBoolFunc : LFunc Core.CoreLParams :=
+  mkModeBoolFunc "re_fullmatch_bool" .fullmatch
+def reMatchBoolFunc     : LFunc Core.CoreLParams :=
+  mkModeBoolFunc "re_match_bool"     .match
+def reSearchBoolFunc    : LFunc Core.CoreLParams :=
+  mkModeBoolFunc "re_search_bool"    .search
 
 def rePatternErrorFunc : LFunc Core.CoreLParams :=
     { name := "re_pattern_error",
@@ -111,9 +116,9 @@ def rePatternErrorFunc : LFunc Core.CoreLParams :=
 
 def ReFactory : @Factory Core.CoreLParams :=
     #[
-      reFullmatchStrFunc,
-      reMatchStrFunc,
-      reSearchStrFunc,
+      reFullmatchBoolFunc,
+      reMatchBoolFunc,
+      reSearchBoolFunc,
       rePatternErrorFunc
     ]
 

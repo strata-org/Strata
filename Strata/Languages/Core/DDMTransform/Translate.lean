@@ -184,13 +184,13 @@ instance : Inhabited (List Core.Statement × TransBindings) where
   default := ([], {})
 
 instance : Inhabited Core.Decl where
-  default := .var "badguy" (.forAll [] (.tcons "bool" [])) none
+  default := .var "badguy" (.forAll [] (.tcons "bool" [])) none .empty
 
 instance : Inhabited (Core.Procedure.CheckAttr) where
   default := .Default
 
 instance : Inhabited (Core.Decl × TransBindings) where
-  default := (.var "badguy" (.forAll [] (.tcons "bool" [])) none, {})
+  default := (.var "badguy" (.forAll [] (.tcons "bool" [])) none .empty, {})
 
 instance : Inhabited (Core.Decls × TransBindings) where
   default := ([], {})
@@ -1652,7 +1652,7 @@ partial def translateRecFuncBlock (p : Program) (bindings : TransBindings) (op :
       let placeholder : Core.Function := {
         name := fname, typeArgs := [], inputs := sig, output := ret,
         body := none, isRecursive := true }
-      let placeholderDecl := Core.Decl.recFuncBlock [placeholder]
+      let placeholderDecl := Core.Decl.recFuncBlock [placeholder] .empty
       bindingsWithPlaceholders := { bindingsWithPlaceholders with
         freeVars := bindingsWithPlaceholders.freeVars.push placeholderDecl }
 
@@ -1763,7 +1763,7 @@ def filterDatatypeDecls (ldatatype : LDatatype Unit) (funcDecls : List Core.Decl
     acc ++ (c.args.map fun (fieldName, _) => ldatatype.name ++ ".." ++ fieldName.name ++ "!")) []
 
   let filterByNames (names : List String) := funcDecls.filter fun decl =>
-    match decl with | .func f => names.contains f.name.name | _ => false
+    match decl with | .func f _ => names.contains f.name.name | _ => false
 
   (filterByNames constructorNames, filterByNames testerNames,
    filterByNames fieldAccessorNames, filterByNames unsafeFieldAccessorNames)
@@ -1788,7 +1788,7 @@ def genDatatypeFactory (ldatatypes : List (LDatatype Unit)) :
   let factory ← match genBlockFactory ldatatypes (T := Core.CoreLParams) with
     | .ok f => pure f
     | .error e => TransM.error s!"Failed to generate datatype factory: {e}"
-  return factory.toList.map fun func => Core.Decl.func func
+  return factory.toList.map fun func => Core.Decl.func func .empty
 
 ---------------------------------------------------------------------
 
@@ -1825,7 +1825,7 @@ def translateDatatypes (p : Program) (bindings : TransBindings) (op : Operation)
         | .type t _ => t.names.contains datatypeName
         | _ => false
 
-      let placeholderDecl := Core.Decl.type (.data [mkPlaceholderLDatatype datatypeName typeArgs])
+      let placeholderDecl := Core.Decl.type (.data [mkPlaceholderLDatatype datatypeName typeArgs]) .empty
       match existingIdx with
       | some i =>
         datatypeInfos := datatypeInfos.push (datatypeName, typeArgs, i)

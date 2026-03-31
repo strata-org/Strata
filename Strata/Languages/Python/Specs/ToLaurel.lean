@@ -47,6 +47,10 @@ structure ToLaurelState where
   procedures : Array Procedure := #[]
   types : Array TypeDefinition := #[]
   overloads : OverloadTable := {}
+  /-- Maps unprefixed class names to prefixed names for type resolution. -/
+  typeAliases : Std.HashMap String String := {}
+  /-- Classes whose spec is considered exhaustive (lists all methods). -/
+  exhaustiveClasses : Std.HashSet String := {}
 
 /-- Monad for PySpec to Laurel translation. -/
 abbrev ToLaurelM := ReaderT ToLaurelContext (StateM ToLaurelState)
@@ -245,6 +249,170 @@ def specTypeToLaurelType (ty : SpecType) : ToLaurelM HighTypeMd := do
     | .stringLiteral _ => return mkTy .TString
     | .typedDict _ _ _ => return mkCore "DictStrAny"
 
+/-! ## SpecExpr to Laurel Translation -/
+
+/-- Wrap a StmtExpr with metadata. -/
+private def mkStmt (e : StmtExpr) (md : Imperative.MetaData Core.Expression) : StmtExprMd :=
+  { val := e, md := md }
+
+/-- Create file-level metadata from the current pyspec filepath.
+    Uses a default (zero) source range; callers with a specific location
+    should use `mkMdWithFileRange` instead. -/
+private def mkFileMd : ToLaurelM (Imperative.MetaData Core.Expression) := do
+  let ctx ← read
+  let fr : FileRange := { file := .file ctx.filepath.toString, range := default }
+  return #[⟨Imperative.MetaData.fileRange, .fileRange fr⟩]
+
+/-- Create metadata with a file range from the current pyspec file. -/
+private def mkMdWithFileRange (loc : SourceRange) (msg : String := "")
+    : ToLaurelM (Imperative.MetaData Core.Expression) := do
+  let ctx ← read
+  let fr : FileRange := { file := .file ctx.filepath.toString, range := loc }
+  let mut md : Imperative.MetaData Core.Expression := #[⟨Imperative.MetaData.fileRange, .fileRange fr⟩]
+  if !msg.isEmpty then
+    md := md.push ⟨Imperative.MetaData.message, .msg msg⟩
+  return md
+
+/-- Wrap a StmtExpr with metadata containing a file range and optional message. -/
+private def mkStmtWithLoc (e : StmtExpr) (loc : SourceRange) (msg : String := "")
+    : ToLaurelM StmtExprMd := do
+  let md ← mkMdWithFileRange loc msg
+  return { val := e, md := md }
+
+/-- Translate a SpecExpr to a Laurel StmtExpr.
+    All values are assumed to be Any-typed (the Python prelude's universal type).
+    Returns `none` for unsupported expressions (placeholders).
+    Uses Core prelude function names (Any_len, DictStrAny_contains, etc.)
+    which are resolved after the Core prelude is prepended. -/
+partial def specExprToLaurel (e : SpecExpr) (md : Imperative.MetaData Core.Expression)
+  : ToLaurelM (Option StmtExprMd) :=
+  match e with
+  | .placeholder => do
+    reportError default "Placeholder expression not translatable"
+    return none
+  | .var name => return some (mkStmt (.Identifier (mkId name)) md)
+  | .intLit v => return some (mkStmt (.StaticCall (mkId "from_int")
+      [mkStmt (.LiteralInt v) md]) md)
+  | .floatLit _ => do
+    reportError default "Float literals not yet supported in preconditions"
+    return none
+  | .getIndex subject field =>
+    match subject with
+    | .var "kwargs" => return some (mkStmt (.Identifier (mkId field)) md)
+    | _ => do
+      let s? ← specExprToLaurel subject md
+      return s?.map fun s => mkStmt (.FieldSelect s (mkId field)) md
+  | .isInstanceOf _ typeName => do
+    reportError default s!"isinstance check for '{typeName}' not yet supported in preconditions"
+    return none
+  | .len subject => do
+    -- len(x) where x is Any: Str.Length(Any..as_string!(x)) wrapped as from_int
+    let s? ← specExprToLaurel subject md
+    return s?.map fun s =>
+      let unwrapped := mkStmt (.StaticCall (mkId "Any..as_string!") [s]) md
+      mkStmt (.StaticCall (mkId "from_int")
+        [mkStmt (.StaticCall (mkId "Str.Length") [unwrapped]) md]) md
+  | .intGe subject bound => do
+    let s? ← specExprToLaurel subject md; let b? ← specExprToLaurel bound md
+    return do
+      let s ← s?; let b ← b?
+      some (mkStmt (.PrimitiveOp .Geq
+        [mkStmt (.StaticCall (mkId "Any..as_int!") [s]) md,
+         mkStmt (.StaticCall (mkId "Any..as_int!") [b]) md]) md)
+  | .intLe subject bound => do
+    let s? ← specExprToLaurel subject md; let b? ← specExprToLaurel bound md
+    return do
+      let s ← s?; let b ← b?
+      some (mkStmt (.PrimitiveOp .Leq
+        [mkStmt (.StaticCall (mkId "Any..as_int!") [s]) md,
+         mkStmt (.StaticCall (mkId "Any..as_int!") [b]) md]) md)
+  | .floatGe subject bound => do
+    let s? ← specExprToLaurel subject md; let b? ← specExprToLaurel bound md
+    return do
+      let s ← s?; let b ← b?
+      let sF := mkStmt (.StaticCall (mkId "Any..as_float!") [s]) md
+      let bF := mkStmt (.StaticCall (mkId "Any..as_float!") [b]) md
+      some (mkStmt (.PrimitiveOp .Geq [sF, bF]) md)
+  | .floatLe subject bound => do
+    let s? ← specExprToLaurel subject md; let b? ← specExprToLaurel bound md
+    return do
+      let s ← s?; let b ← b?
+      let sF := mkStmt (.StaticCall (mkId "Any..as_float!") [s]) md
+      let bF := mkStmt (.StaticCall (mkId "Any..as_float!") [b]) md
+      some (mkStmt (.PrimitiveOp .Leq [sF, bF]) md)
+  | .not inner => do
+    let i? ← specExprToLaurel inner md
+    return i?.map fun i => mkStmt (.PrimitiveOp .Not [i]) md
+  | .implies cond body => do
+    let c? ← specExprToLaurel cond md; let b? ← specExprToLaurel body md
+    return do let c ← c?; let b ← b?; some (mkStmt (.PrimitiveOp .Implies [c, b]) md)
+  | .enumMember subject values => do
+    let s? ← specExprToLaurel subject md
+    return s?.map fun s =>
+      let sStr := mkStmt (.StaticCall (mkId "Any..as_string!") [s]) md
+      let eqs := values.toList.map fun v =>
+        mkStmt (.PrimitiveOp .Eq [sStr, mkStmt (.LiteralString v) md]) md
+      eqs.foldl (init := mkStmt (.LiteralBool false) md) fun acc eq =>
+        mkStmt (.PrimitiveOp .Or [acc, eq]) md
+  | .containsKey container key => do
+    match container with
+    | .var "kwargs" =>
+      -- containsKey(kwargs, "key") → parameter was provided (not None)
+      return some (mkStmt (.PrimitiveOp .Not
+        [mkStmt (.StaticCall (mkId "Any..isfrom_none") [mkStmt (.Identifier (mkId key)) md]) md])
+        md)
+    | _ =>
+      let c? ← specExprToLaurel container md
+      return c?.map fun c =>
+        let unwrapped := mkStmt (.StaticCall (mkId "Any..as_Dict!") [c]) md
+        mkStmt (.StaticCall (mkId "DictStrAny_contains")
+          [unwrapped, mkStmt (.LiteralString key) md]) md
+  | .regexMatch subject pattern => do
+    let s? ← specExprToLaurel subject md
+    return s?.map fun s =>
+      let sStr := mkStmt (.StaticCall (mkId "Any..as_string!") [s]) md
+      mkStmt (.StaticCall (mkId "re_search_bool") [mkStmt (.LiteralString pattern) md, sStr]) md
+  | .forallList _ _ _ => do
+    reportError default "forallList quantifier not yet supported in preconditions"
+    return none
+  | .forallDict _ _ _ _ => do
+    reportError default "forallDict quantifier not yet supported in preconditions"
+    return none
+
+private def formatAssertionMessage (msg : Array MessagePart) : String :=
+  let parts := msg.map fun
+    | .str s => s
+    | .expr _ => "<expr>"
+  String.join parts.toList
+
+/-- Build a procedure body that asserts preconditions.
+    Outputs are already initialized non-deterministically. -/
+def buildSpecBody (preconditions : Array Assertion)
+    (md : Imperative.MetaData Core.Expression)
+    (requiredParams : Array String := #[])
+    : ToLaurelM Body := do
+  let fileMd ← mkFileMd
+  let mut stmts : List StmtExprMd := []
+  -- Assert that required parameters are provided (not None)
+  for param in requiredParams do
+    let cond := mkStmt (.PrimitiveOp .Not
+      [mkStmt (.StaticCall (mkId "Any..isfrom_none")
+        [mkStmt (.Identifier (mkId param)) md]) md]) md
+    let assertStmt ← mkStmtWithLoc (.Assert cond) default s!"Required parameter '{param}' is missing"
+    stmts := assertStmt :: stmts
+  for assertion in preconditions do
+    let msg := formatAssertionMessage assertion.message
+    match ← specExprToLaurel assertion.formula md with
+    | some condExpr =>
+      let assertStmt ← mkStmtWithLoc (.Assert condExpr) default msg
+      stmts := assertStmt :: stmts
+    | none =>
+      reportError default s!"Untranslatable precondition (emitting nondeterministic assert): {msg}"
+      let assertStmt ← mkStmtWithLoc (.Assert (mkStmt .Hole md)) default msg
+      stmts := assertStmt :: stmts
+  let body := mkStmt (.Block stmts.reverse none) fileMd
+  return .Transparent body
+
 /-! ## Declaration Translation -/
 
 /-- Convert an Arg to a Laurel Parameter. -/
@@ -283,11 +451,25 @@ def funcDeclToLaurel (procName : String) (func : FunctionDecl)
   let inputs ← allArgs.mapM argToParameter
   let retType ← specTypeToLaurelType func.returnType
   let outputs : List Parameter :=
-    match retType.val with
-    | .TVoid => []
-    | _ => [{ name := "result", type := retType }]
-  if func.preconditions.size > 0 || func.postconditions.size > 0 then
-    reportError func.loc "Preconditions/postconditions not yet supported"
+    [{ name := "result", type := match retType.val with
+      | .TVoid => mkCore "Any"
+      | _ => retType }]
+  if func.postconditions.size > 0 then
+    reportError func.loc "Postconditions not yet supported"
+  -- When preconditions exist, use TCore "Any" for all parameters and outputs
+  -- to match the Python→Laurel pipeline's Any-wrapping convention.
+  let (inputs, outputs, body) ←
+    if func.preconditions.size > 0 then do
+      let anyTy : HighTypeMd := mkCore "Any"
+      let anyInputs := inputs.map fun p => { p with type := anyTy }
+      let anyOutputs := outputs.map fun p => { p with type := anyTy }
+      let body ← buildSpecBody func.preconditions .empty
+        (requiredParams := allArgs.filterMap fun a =>
+          if a.default.isNone then some a.name else none)
+      pure (anyInputs, anyOutputs, body)
+    else
+      pure (inputs, outputs, Body.Opaque [] none [])
+  let md ← mkMdWithFileRange func.loc
   return {
     name := procName
     inputs := inputs.toList
@@ -296,13 +478,18 @@ def funcDeclToLaurel (procName : String) (func : FunctionDecl)
     determinism := .nondeterministic
     decreases := none
     isFunctional := false
-    body := .Opaque [] none []
-    md := .empty
+    body := body
+    md := md
   }
 
 /-- Convert a class definition to Laurel types and procedures. -/
 def classDefToLaurel (cls : ClassDef) : ToLaurelM Unit := do
   let prefixedName ← prefixName cls.name
+  -- Register alias from unprefixed to prefixed name for type resolution
+  if prefixedName != cls.name then
+    modify fun s => { s with typeAliases := s.typeAliases.insert cls.name prefixedName }
+  if cls.exhaustive then
+    modify fun s => { s with exhaustiveClasses := s.exhaustiveClasses.insert prefixedName }
   let laurelFields ← cls.fields.toList.mapM fun f => do
     let ty ← specTypeToLaurelType f.type
     pure { name := f.name, isMutable := true, type := ty : Laurel.Field }
@@ -318,7 +505,7 @@ def classDefToLaurel (cls : ClassDef) : ToLaurelM Unit := do
     instanceProcedures := []
   })
   for method in cls.methods do
-    let proc ← funcDeclToLaurel (prefixedName ++ "_" ++ method.name) method (isMethod := true)
+    let proc ← funcDeclToLaurel (prefixedName ++ "@" ++ method.name) method (isMethod := true)
     pushProcedure proc
 
 /-- Convert a type definition to a Laurel composite type placeholder. -/
@@ -400,11 +587,15 @@ public structure TranslationResult where
   program : Laurel.Program
   errors : Array SpecError
   overloads : OverloadTable
+  /-- Maps unprefixed class names to prefixed names for type resolution. -/
+  typeAliases : Std.HashMap String String := {}
+  /-- Classes whose spec is considered exhaustive (lists all methods). -/
+  exhaustiveClasses : Std.HashSet String := {}
 
 /-- Run the translation and return a Laurel Program, dispatch table,
     and any errors. -/
 public def signaturesToLaurel (filepath : System.FilePath) (sigs : Array Signature)
-    (modulePrefix : String := "")
+    (modulePrefix : String)
     : TranslationResult :=
   let ctx : ToLaurelContext := { filepath, modulePrefix }
   let ((), state) := (sigs.forM signatureToLaurel).run ctx |>.run {}
@@ -416,7 +607,9 @@ public def signaturesToLaurel (filepath : System.FilePath) (sigs : Array Signatu
   }
   { program := pgm
     errors := state.errors
-    overloads := state.overloads }
+    overloads := state.overloads
+    typeAliases := state.typeAliases
+    exhaustiveClasses := state.exhaustiveClasses }
 
 /-- Extract only the overload dispatch table from PySpec signatures.
     Processes `@overload` function declarations, ignoring classDef,

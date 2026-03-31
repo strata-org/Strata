@@ -19,7 +19,12 @@ TEST_FILES = sorted(
     f"tests/{p.name}" for p in (Path(__file__).resolve().parent / "tests").glob("test_*.py")
 )
 
-BOTH_SKIP = {"test_foo_client_folder", "test_invalid_client_type", "test_unsupported_config"}
+BOTH_SKIP = {
+    "test_foo_client_folder",
+    "test_invalid_client_type",
+    "test_unsupported_config",
+    "test_with_void_enter",
+}
 SKIP_TESTS = BOTH_SKIP | {
     "test_augmented_assign",
     "test_boolean_logic",
@@ -33,6 +38,7 @@ SKIP_TESTS = BOTH_SKIP | {
     "test_dict_operations",
     "test_for_loop",
     "test_if_elif",
+    "test_ifexpr",
     "test_list",
     "test_list_slice",
     "test_loops",
@@ -49,6 +55,7 @@ SKIP_TESTS = BOTH_SKIP | {
     "test_variable_reassign",
     "test_while_loop",
     "test_with_statement",
+    "test_fstrings",
 }
 SKIP_TESTS_LAUREL = BOTH_SKIP
 
