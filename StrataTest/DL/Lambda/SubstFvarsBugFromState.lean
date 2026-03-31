@@ -7,16 +7,7 @@
 import Strata.DL.Lambda.LExprEval
 import Strata.DL.Lambda.IntBoolFactory
 
-/-! # Iterated substFvar bug in substFvarsFromState (LState)
-
-`substFvarsFromState` uses iterated `substFvars`. If the state maps
-`x → y + 1` and `y → 0`, substituting into an expression containing both
-`x` and `y` will incorrectly replace `y` inside `x`'s value.
-
-Expression: `x + y`
-Correct simultaneous result: `(y + 1) + 0`
-Iterated `[x→(y+1)][y→0]`: `(0 + 1) + 0`
--/
+/-! # Iterated substFvar bug in substFvarsFromState (LState) -/
 
 namespace Lambda
 

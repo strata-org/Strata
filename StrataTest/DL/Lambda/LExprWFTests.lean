@@ -94,12 +94,12 @@ def qa (e : MonoExpr) : MonoExpr := .quant () .all "" .none (bv 0) e
 /-! ### substFvarsLifting tests -/
 
 -- Multiple substitutions under abs: both lifted by 1
-#guard substFvarsLifting
+#guard substMultiFvarsLifting
     (lam (ap (fv "x") (fv "y")))
     [("x", bv 0), ("y", bv 1)]
     == lam (ap (bv 1) (bv 2))
 
 -- Empty substitution is identity
-#guard substFvarsLifting (fv "x") [] == fv "x"
+#guard substMultiFvarsLifting (fv "x") [] == fv "x"
 
 end Lambda.LExpr.WFTests

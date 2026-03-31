@@ -91,11 +91,6 @@ class HasSubstFvar (P : PureExpr) where
       substitutions. -/
   substMultiFvars : P.Expr → List (P.Ident × P.Expr) → P.Expr
 
-/-- Substitute multiple free variables with expressions (iterated, NOT simultaneous).
-    Prefer `substMultiFvars` to avoid variable capture between substitutions. -/
-def HasSubstFvar.substFvars [HasSubstFvar P] (e : P.Expr) (substs : List (P.Ident × P.Expr)) : P.Expr :=
-  substs.foldl (fun e (id, val) => HasSubstFvar.substFvar e id val) e
-
 /--
 A function declaration for use with `PureExpr` - instantiation of `Func` for
 any expression system that implements the `PureExpr` interface.
