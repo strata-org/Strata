@@ -299,9 +299,12 @@ elab "#testCompile" : command => do
   let dir : System.FilePath := "/tmp/strata-java-test"
   writeJavaFiles dir "com.test" files
 
-  -- Find ion-java jar for compilation
-  let jarPath := "StrataTest/DDM/Integration/Java/testdata/ion-java-1.11.9.jar"
-  let hasJar ← System.FilePath.pathExists jarPath
+  -- ion-java is required for compilation (Node.java imports IonSexp)
+  let jarPath := "StrataTest/DDM/Integration/Java/testdata/ion-java-1.11.11.jar"
+  if !(← System.FilePath.pathExists jarPath) then
+    Lean.logError s!"Test 12 failed: ion-java jar not found at {jarPath}"
+    IO.FS.removeDirAll dir
+    return
 
   let fileNames := #["SourceRange.java", "Node.java", "IonSerializer.java", files.builders.1]
                    ++ files.categories.map Prod.fst
@@ -311,7 +314,7 @@ elab "#testCompile" : command => do
 
   let result ← IO.Process.output {
     cmd := "javac"
-    args := if hasJar then #["-cp", jarPath] ++ filePaths else filePaths
+    args := #["-cp", jarPath] ++ filePaths
   }
 
   IO.FS.removeDirAll dir
