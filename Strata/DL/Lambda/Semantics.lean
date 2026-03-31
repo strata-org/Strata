@@ -144,7 +144,7 @@ result. Note that this rule does not enforce an evaluation order. -/
   ∀ (e callee fnbody new_body:LExpr Tbase.mono) args fn,
     F.callOfLFunc e = .some (callee,args,fn) →
     fn.body = .some fnbody →
-    new_body = LExpr.substFvars fnbody (fn.inputs.keys.zip args) →
+    new_body = LExpr.substFvarsLifting fnbody (fn.inputs.keys.zip args) →
     Step F rf e new_body
 
 /-- Evaluate a built-in function when a concrete evaluation function is
