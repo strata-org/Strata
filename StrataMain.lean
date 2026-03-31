@@ -575,6 +575,8 @@ def pyAnalyzeLaurelCommand : Command where
   args := [ "file" ]
   flags := [{ name := "verbose", help := "Enable verbose output." },
             { name := "no-solve", help := "Generate SMT-Lib files but do not invoke the solver." },
+            { name := "profile", help := "Print elapsed time for each pipeline step." },
+            { name := "quiet", help := "Suppress warnings on stderr." },
             checkModeFlag, checkLevelFlag,
             { name := "spec-dir",
               help := "Directory containing compiled PySpec Ion files.",
@@ -597,6 +599,8 @@ def pyAnalyzeLaurelCommand : Command where
   help := "Verify a Python Ion program via the Laurel pipeline. Translates Python to Laurel to Core, then runs SMT verification."
   callback := fun v pflags => do
     let verbose := pflags.getBool "verbose"
+    let profile := pflags.getBool "profile"
+    let quiet := pflags.getBool "quiet"
     let outputSarif := pflags.getBool "sarif"
     let filePath := v[0]
     let pySourceOpt ← tryReadPythonSource filePath
@@ -616,7 +620,9 @@ def pyAnalyzeLaurelCommand : Command where
       | some (pyPath, srcText) => some (pyPath, .ofString srcText)
       | none => none
     let combinedLaurel ←
-      match ← Strata.pyAnalyzeLaurel filePath dispatchModules pyspecModules sourcePath (specDir := specDir) |>.toBaseIO with
+      match ← Strata.pyAnalyzeLaurel filePath dispatchModules pyspecModules sourcePath
+                (specDir := specDir) (profile := profile)
+                (quiet := quiet) |>.toBaseIO with
       | .ok r => pure r
       | .error (.userCode range msg) =>
         let location := if range.isNone then "" else
@@ -639,8 +645,9 @@ def pyAnalyzeLaurelCommand : Command where
       let path := s!"{dir}/{baseName}.laurel"
       IO.FS.writeFile path (toString (Std.Format.pretty f!"{combinedLaurel}") ++ "\n")
 
-    let (coreProgramOption, laurelTranslateErrors, loweredLaurel) :=
-      Strata.translateCombinedLaurelWithLowered combinedLaurel
+    let (coreProgramOption, laurelTranslateErrors, loweredLaurel) ←
+      profileStep profile "Laurel to Core translation" do
+        pure (Strata.translateCombinedLaurelWithLowered combinedLaurel)
 
     if let some dir := keepDir then
       let path := s!"{dir}/{baseName}.lowered.laurel"
@@ -666,7 +673,7 @@ def pyAnalyzeLaurelCommand : Command where
     -- Inline pyspec procedures so their precondition assertions are checked
     -- at call sites with concrete arguments.
     let pyspecFiles := pflags.getRepeated "pyspec"
-    let coreProgram ←
+    let coreProgram ← profileStep profile "Inline PySpec procedures" do
       if pyspecFiles.size > 0 then
         match Core.inlineProcedures coreProgram
               ⟨.some (fun name _ => name ≠ "__main__" && !preludeNames.contains name)⟩ with
@@ -699,7 +706,8 @@ def pyAnalyzeLaurelCommand : Command where
         checkMode := checkMode, checkLevel := checkLevel,
         skipSolver := noSolve,
         alwaysGenerateSMT := noSolve,
-        uniqueBoundNames := uniqueBoundNames }
+        uniqueBoundNames := uniqueBoundNames,
+        profile := profile }
     let options : VerifyOptions := match pflags.getString "vc-directory" with
       | .some dir => { baseOptions with vcDirectory := some (dir : System.FilePath) }
       | .none => match keepDir with
