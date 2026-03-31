@@ -561,6 +561,14 @@ def preprocessObligation (obligation : ProofObligation Expression) (p : Program)
       pure obligation
   return (obligation, peSatResult, peValResult)
 
+/-- Convert an unvalidated SMT sat result to unknown (preserving the model).
+    SMT sat does not guarantee the property is truly satisfiable because
+    uninterpreted functions may admit spurious models. -/
+private def SMT.Result.satToUnknown (r : SMT.Result) : SMT.Result :=
+  match r with
+  | .sat m => .unknown m
+  | other => other
+
 /--
 Invoke a backend engine and get the analysis result for a
 given proof obligation.
@@ -602,18 +610,10 @@ def getObligationResult (assumptionTerms : List Term) (obligationTerm : Term)
       phase := "SMT",
       satisfiabilityResult := satResult,
       validityResult := validityResult }
-    -- Convert unvalidated sat results to unknown (with model) for soundness:
-    -- SMT sat does not guarantee the property is truly satisfiable because
-    -- uninterpreted functions may admit spurious models.
-    let adjustedSat := match satResult with
-      | .sat m => SMT.Result.unknown m
-      | other => other
-    let adjustedVal := match validityResult with
-      | .sat m => SMT.Result.unknown m
-      | other => other
+    -- Convert unvalidated sat results to unknown (with model) for soundness
     let rawOutcome : VCOutcome := {
-      satisfiabilityProperty := adjustedSat,
-      validityProperty := adjustedVal,
+      satisfiabilityProperty := satResult.satToUnknown,
+      validityProperty := validityResult.satToUnknown,
       solverLog := [smtLog] }
     let outcome := maskOutcome rawOutcome satisfiabilityCheck validityCheck
     -- Extract counterexample model from sat results (using raw solver results)
