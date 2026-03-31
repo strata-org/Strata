@@ -112,6 +112,7 @@ private def actualsBvar : List (LExpr CoreLParams.mono) := [.bvar () 0]
 -- (collectWFObligations wraps it in a quantifier).
 -- Iterated (no lifting): `forall z :: bvar 0 > bvar 0` (x captured by z).
 -- Correct (with lifting): `forall z :: bvar 1 > bvar 0` (bvar 1 = outer y).
+-- The "out of bounds" error is expected: bvar!1 is only in-bounds when the iterated version incorrectly captures it.
 /--
 info: forall __q0 : int :: bvar!1 > __q0
 -- Errors: Unsupported construct in lexprToExpr: bvar index out of bounds: 1

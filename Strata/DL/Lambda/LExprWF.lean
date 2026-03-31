@@ -345,10 +345,26 @@ where
     | .ite m c t f => .ite m (go c depth) (go t depth) (go f depth)
     | .eq m e1 e2 => .eq m (go e1 depth) (go e2 depth)
 
+/--
+Iterated substitution of multiple free variables with lifting (sequential `foldl`).
+**Warning:** This is NOT simultaneous substitution — earlier substitutions can
+introduce variables that are then captured by later ones. Only use when you can
+guarantee that the replacement expressions do not contain fvars appearing later
+in the substitution list. Prefer `substMultiFvarsLifting` for safe simultaneous
+substitution.
+-/
 def substFvarsLifting [BEq T.IDMeta] (e : LExpr ⟨T, GenericTy⟩) (sm : Map T.Identifier (LExpr ⟨T, GenericTy⟩))
   : LExpr ⟨T, GenericTy⟩ :=
   List.foldl (fun e (var, s) => substFvarLifting e var s) e sm
 
+/--
+Iterated substitution of multiple free variables (sequential `foldl`).
+**Warning:** This is NOT simultaneous substitution — earlier substitutions can
+introduce variables that are then captured by later ones. Only use when you can
+guarantee that the replacement expressions do not contain fvars appearing later
+in the substitution list, and that the replacement expressions contain no bvars.
+Prefer `substMultiFvars` for safe simultaneous substitution.
+-/
 def substFvars [BEq T.IDMeta] (e : LExpr ⟨T, GenericTy⟩) (sm : Map T.Identifier (LExpr ⟨T, GenericTy⟩))
   : LExpr ⟨T, GenericTy⟩ :=
   List.foldl (fun e (var, s) => substFvar e var s) e sm
@@ -364,14 +380,18 @@ replacement expressions contain no bvars.
 -/
 def substMultiFvars [BEq T.IDMeta] (e : LExpr ⟨T, GenericTy⟩) (sm : Map T.Identifier (LExpr ⟨T, GenericTy⟩))
   : LExpr ⟨T, GenericTy⟩ :=
-  match e with
-  | .const _ _ => e | .bvar _ _ => e | .op _ _ _ => e
-  | .fvar _ name _ => match sm.find? name with | some to => to | none => e
-  | .abs m name ty e' => .abs m name ty (substMultiFvars e' sm)
-  | .quant m qk name ty tr' e' => .quant m qk name ty (substMultiFvars tr' sm) (substMultiFvars e' sm)
-  | .app m fn e' => .app m (substMultiFvars fn sm) (substMultiFvars e' sm)
-  | .ite m c t e' => .ite m (substMultiFvars c sm) (substMultiFvars t sm) (substMultiFvars e' sm)
-  | .eq m e1 e2 => .eq m (substMultiFvars e1 sm) (substMultiFvars e2 sm)
+  if sm.isEmpty then e else substMultiFvarsAux e sm
+where
+  substMultiFvarsAux (e : LExpr ⟨T, GenericTy⟩) (sm : Map T.Identifier (LExpr ⟨T, GenericTy⟩))
+    : LExpr ⟨T, GenericTy⟩ :=
+    match e with
+    | .const _ _ => e | .bvar _ _ => e | .op _ _ _ => e
+    | .fvar _ name _ => match sm.find? name with | some to => to | none => e
+    | .abs m name ty e' => .abs m name ty (substMultiFvarsAux e' sm)
+    | .quant m qk name ty tr' e' => .quant m qk name ty (substMultiFvarsAux tr' sm) (substMultiFvarsAux e' sm)
+    | .app m fn e' => .app m (substMultiFvarsAux fn sm) (substMultiFvarsAux e' sm)
+    | .ite m c t e' => .ite m (substMultiFvarsAux c sm) (substMultiFvarsAux t sm) (substMultiFvarsAux e' sm)
+    | .eq m e1 e2 => .eq m (substMultiFvarsAux e1 sm) (substMultiFvarsAux e2 sm)
 
 /--
 Simultaneous substitution of multiple free variables with bvar-safe lifting.
@@ -384,7 +404,7 @@ binders. Use this when replacement expressions may contain bvars.
 -/
 def substMultiFvarsLifting [BEq T.IDMeta] (e : LExpr ⟨T, GenericTy⟩) (sm : Map T.Identifier (LExpr ⟨T, GenericTy⟩))
   : LExpr ⟨T, GenericTy⟩ :=
-  go e 0
+  if sm.isEmpty then e else go e 0
 where
   go (e : LExpr ⟨T, GenericTy⟩) (depth : Nat) : LExpr ⟨T, GenericTy⟩ :=
     match e with
