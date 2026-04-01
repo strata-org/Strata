@@ -100,6 +100,10 @@ private def renameAllLocalNames (c:Procedure)
   let label_map := label_map_id.map (fun (id1,id2) => (id1.name, id2.name))
 
   -- Do substitution
+  -- Iterated substitution is safe here: each replacement is a fresh `.fvar` generated
+  -- by genOldToFreshIdMappings (counter-based), so a fresh new_id cannot collide with
+  -- a later old_id. The iteration is intentionally sequential because each step also
+  -- renames LHS variables and labels.
   let new_body := List.map (fun (s0:Statement) =>
     var_map.foldl (fun (s:Statement) (old_id,new_id) =>
         let s := Statement.substFvar s old_id (.fvar () new_id .none)
