@@ -28,6 +28,7 @@ import Strata.Backends.CBMC.CollectSymbols
 import Strata.Backends.CBMC.GOTO.CoreToGOTOPipeline
 
 import Strata.SimpleAPI
+import Strata.Util.Profile
 
 open Strata
 
@@ -316,6 +317,23 @@ def tryReadPythonSource (ionPath : String) : IO (Option (String × String)) := d
     catch _ =>
       return none
 
+/-- Format related position strings from metadata, if present. -/
+def formatRelatedPositions (md : Imperative.MetaData Core.Expression)
+    (mfm : Option (String × Lean.FileMap)) : String :=
+  let ranges := Imperative.getRelatedFileRanges md
+  if ranges.isEmpty then "" else
+  match mfm with
+  | none => ""
+  | some (_, fm) =>
+    let lines := ranges.filterMap fun fr =>
+      if fr.range.isNone then none else
+      match fr.file with
+      | .file "" => some "\n  Related location: in prelude file"
+      | .file _ =>
+        let pos := fm.toPosition fr.range.start
+        some s!"\n  Related location: line {pos.line}, col {pos.column}"
+    String.join lines.toList
+
 def pyAnalyzeCommand : Command where
   name := "pyAnalyze"
   args := [ "file" ]
@@ -403,8 +421,9 @@ def pyAnalyzeCommand : Command where
                   ("", s!" (at byte offset)")
           | none => ("", "")
         let outcomeStr := vcResult.formatOutcome
+        let relatedStr := formatRelatedPositions vcResult.obligation.metadata mfm
         s := s ++ s!"\n{locationPrefix}{vcResult.obligation.label}: \
-                      {outcomeStr}{locationSuffix}\n"
+                      {outcomeStr}{locationSuffix}{relatedStr}\n"
       IO.println s
       -- Output in SARIF format if requested
       if outputSarif then
@@ -496,6 +515,8 @@ def pyAnalyzeLaurelCommand : Command where
   args := [ "file" ]
   flags := [{ name := "verbose", help := "Enable verbose output." },
             { name := "no-solve", help := "Generate SMT-Lib files but do not invoke the solver." },
+            { name := "profile", help := "Print elapsed time for each pipeline step." },
+            { name := "quiet", help := "Suppress warnings on stderr." },
             checkModeFlag, checkLevelFlag,
             { name := "spec-dir",
               help := "Directory containing compiled PySpec Ion files.",
@@ -517,6 +538,8 @@ def pyAnalyzeLaurelCommand : Command where
   help := "Verify a Python Ion program via the Laurel pipeline. Translates Python to Laurel to Core, then runs SMT verification."
   callback := fun v pflags => do
     let verbose := pflags.getBool "verbose"
+    let profile := pflags.getBool "profile"
+    let quiet := pflags.getBool "quiet"
     let outputSarif := pflags.getBool "sarif"
     let filePath := v[0]
     let pySourceOpt ← tryReadPythonSource filePath
@@ -536,7 +559,9 @@ def pyAnalyzeLaurelCommand : Command where
       | some (pyPath, srcText) => some (pyPath, .ofString srcText)
       | none => none
     let combinedLaurel ←
-      match ← Strata.pyAnalyzeLaurel filePath dispatchModules pyspecModules sourcePath (specDir := specDir) |>.toBaseIO with
+      match ← Strata.pyAnalyzeLaurel filePath dispatchModules pyspecModules sourcePath
+                (specDir := specDir) (profile := profile)
+                (quiet := quiet) |>.toBaseIO with
       | .ok r => pure r
       | .error (.userCode range msg) =>
         let location := if range.isNone then "" else
@@ -545,6 +570,19 @@ def pyAnalyzeLaurelCommand : Command where
             let pos := fm.toPosition range.start
             s!" at line {pos.line}, col {pos.column}"
           | none => ""
+        -- Emit structured set-info metadata before DETAIL/RESULT lines.
+        -- Also write the set-info metadata to user_errors.txt.
+        let filePath' := sourcePath.getD filePath
+        let mut lines := #[
+          s!"(set-info :file {Strata.escapeSMTStringLit filePath'})"
+        ]
+        unless range.isNone do
+          lines := lines.push s!"(set-info :start {range.start})"
+          lines := lines.push s!"(set-info :stop {range.stop})"
+        lines := lines.push s!"(set-info :error-message {Strata.escapeSMTStringLit msg})"
+        for line in lines do
+          IO.println line
+        IO.FS.writeFile "user_errors.txt" (String.intercalate "\n" lines.toList ++ "\n")
         exitPyAnalyzeUserError s!"{msg}{location}"
       | .error (.knownLimitation msg) =>
         exitPyAnalyzeKnownLimitation msg
@@ -559,8 +597,9 @@ def pyAnalyzeLaurelCommand : Command where
       let path := s!"{dir}/{baseName}.laurel"
       IO.FS.writeFile path (toString (Std.Format.pretty f!"{combinedLaurel}") ++ "\n")
 
-    let (coreProgramOption, laurelTranslateErrors, loweredLaurel) :=
-      Strata.translateCombinedLaurelWithLowered combinedLaurel
+    let (coreProgramOption, laurelTranslateErrors, loweredLaurel) ←
+      profileStep profile "Laurel to Core translation" do
+        pure (Strata.translateCombinedLaurelWithLowered combinedLaurel)
 
     if let some dir := keepDir then
       let path := s!"{dir}/{baseName}.lowered.laurel"
@@ -586,7 +625,7 @@ def pyAnalyzeLaurelCommand : Command where
     -- Inline pyspec procedures so their precondition assertions are checked
     -- at call sites with concrete arguments.
     let pyspecFiles := pflags.getRepeated "pyspec"
-    let coreProgram ←
+    let coreProgram ← profileStep profile "Inline PySpec procedures" do
       if pyspecFiles.size > 0 then
         match Core.inlineProcedures coreProgram
               ⟨.some (fun name _ => name ≠ "__main__" && !preludeNames.contains name)⟩ with
@@ -618,13 +657,14 @@ def pyAnalyzeLaurelCommand : Command where
         checkMode := checkMode, checkLevel := checkLevel,
         skipSolver := noSolve,
         alwaysGenerateSMT := noSolve,
-        uniqueBoundNames := uniqueBoundNames }
+        uniqueBoundNames := uniqueBoundNames,
+        profile := profile }
     let options : VerifyOptions := match pflags.getString "vc-directory" with
       | .some dir => { baseOptions with vcDirectory := some (dir : System.FilePath) }
       | .none => match keepDir with
         | some dir => { baseOptions with vcDirectory := some (s!"{dir}/{baseName}" : System.FilePath) }
         | none => baseOptions
-    let vcResults ←
+    let vcResults ← profileStep profile "SMT verification" do
       match ← Core.verifyProgram coreProgram options
                 (moreFns := Strata.Python.ReFactory)
                 (proceduresToVerify := some userProcNames) |>.toBaseIO with
@@ -676,8 +716,9 @@ def pyAnalyzeLaurelCommand : Command where
                 ("", "")
         | none => ("", "")
       let outcomeStr := vcResult.formatOutcome
+      let relatedStr := formatRelatedPositions vcResult.obligation.metadata mfm
       s := s ++ s!"{locationPrefix}{propertyDescription}: \
-                    {outcomeStr}{locationSuffix}\n"
+                    {outcomeStr}{locationSuffix}{relatedStr}\n"
     IO.println s
     -- Output in SARIF format if requested
     if outputSarif then
