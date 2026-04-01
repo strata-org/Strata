@@ -22,6 +22,9 @@ open LabelGen
 def oldVarPrefix (id : String) : String := s!"old_{id}"
 def tmpVarPrefix (id : String) : String := s!"tmp_{id}"
 
+/-- Label prefix for call-elimination assume statements. -/
+def callElimAssumePrefix : String := "callElimAssume_"
+
 def createHavoc (ident : Expression.Ident)
     (md : Imperative.MetaData Expression)
   : Statement := Statement.havoc ident md
@@ -263,7 +266,7 @@ def createAssumes
     : CoreTransformM (List Statement)
     :=
     conds.mapM (fun (l, check) => do
-      let newLabel ← genIdent l (fun s => s!"callElimAssume_{s}")
+      let newLabel ← genIdent l (fun s => s!"{callElimAssumePrefix}{s}")
       -- Non-lifting: the replacement expressions must be closed (no dangling bvars).
       return Statement.assume newLabel.toPretty (Lambda.LExpr.substFvars check.expr subst) md)
 

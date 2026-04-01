@@ -12,6 +12,11 @@ open Imperative Lambda
 
 public section
 
+/-- Label prefix for loop-elimination invariant assumptions. -/
+def loopElimInvariantPrefix : String := "assume_invariant_"
+/-- Label prefix for loop-elimination guard assumptions. -/
+def loopElimGuardPrefix : String := "assume_guard_"
+
 /-! ## Loop elimination
 
 This transformation converts a loop into an acyclic passive statement suitable
@@ -112,9 +117,9 @@ def Stmt.removeLoopsM
     let first_iter_facts :=
       .block s!"first_iter_asserts_{loop_num}" (entry_invariants ++ entry_invariant_assumes) {}
     let inv_assumes := invariants.mapIdx fun i inv =>
-      Stmt.cmd (HasPassiveCmds.assume s!"assume_invariant_{loop_num}_{i}" inv md)
+      Stmt.cmd (HasPassiveCmds.assume s!"{loopElimInvariantPrefix}{loop_num}_{i}" inv md)
     let arbitrary_iter_assumes := .block s!"arbitrary_iter_assumes_{loop_num}"
-      ([Stmt.cmd (HasPassiveCmds.assume s!"assume_guard_{loop_num}" guard md)] ++ inv_assumes)
+      ([Stmt.cmd (HasPassiveCmds.assume s!"{loopElimGuardPrefix}{loop_num}" guard md)] ++ inv_assumes)
       md
     let maintain_invariants := invariants.mapIdx fun i inv =>
       Stmt.cmd (HasPassiveCmds.assert s!"arbitrary_iter_maintain_invariant_{loop_num}_{i}" inv md)

@@ -647,28 +647,31 @@ private def obligationHasLabelPrefix (obligation : ProofObligation Expression)
     pc.any fun (label, _) => label.startsWith pfx
 
 /-- Call-elimination phase: if the obligation's path includes labels from
-    call elimination (callElimAssume_), the callee body was replaced by its
-    contract, which is an over-approximation. -/
+    call elimination, the callee body was replaced by its contract, which
+    is an over-approximation. Uses `Transform.callElimAssumePrefix` as the
+    single source of truth for the label prefix. -/
 def callElimPhase : AbstractedPhase where
   getValidation obligation :=
-    if obligationHasLabelPrefix obligation "callElimAssume_" then
+    if obligationHasLabelPrefix obligation Transform.callElimAssumePrefix then
       .modelToValidate (fun _ => /- TODO -/ false)
     else .modelPreserving
 
 /-- Loop-elimination phase: if the obligation's path includes labels from
-    loop elimination (assume_invariant_, assume_guard_), the loop was
-    replaced by an invariant-based encoding, which is an
-    over-approximation. -/
+    loop elimination, the loop was replaced by an invariant-based encoding,
+    which is an over-approximation. Uses `loopElimInvariantPrefix` and
+    `loopElimGuardPrefix` as the single source of truth for the label
+    prefixes. -/
 def loopElimPhase : AbstractedPhase where
   getValidation obligation :=
-    if obligationHasLabelPrefix obligation "assume_invariant_"
-       || obligationHasLabelPrefix obligation "assume_guard_" then
+    if obligationHasLabelPrefix obligation loopElimInvariantPrefix
+       || obligationHasLabelPrefix obligation loopElimGuardPrefix then
       .modelToValidate (fun _ => /- TODO -/ false)
     else .modelPreserving
 
-/-- Build the list of Core pipeline phases. Each phase checks per-obligation
-    whether the assertion is in the path of something abstracted. -/
-def Program.abstractedPhases (_p : Program) : List AbstractedPhase :=
+/-- The list of Core pipeline phases. Each phase checks per-obligation
+    whether the assertion is in the path of something abstracted.
+    This list must stay in sync with the transforms applied in `verify`. -/
+def coreAbstractedPhases : List AbstractedPhase :=
   [callElimPhase, loopElimPhase]
 
 /-- Build the solver log from raw results and phase validation logs. -/
@@ -794,7 +797,7 @@ def verifySingleEnv (pE : Program × Env) (options : VerifyOptions)
       -- If PE resolved both checks, we're done, unless we always want to generate SMT queries
       if not options.alwaysGenerateSMT then
         if let (some peSat, some peVal) := (peSatResult?, peValResult?) then
-          let phases := externalPhases ++ p.abstractedPhases
+          let phases := externalPhases ++ coreAbstractedPhases
           let (adjPeSat, satPhaseLog) := peSat.adjustForPhases phases obligation
           let (adjPeVal, valPhaseLog) := peVal.adjustForPhases phases obligation
           let peLog := buildSolverLog peSat peVal
@@ -837,7 +840,7 @@ def verifySingleEnv (pE : Program × Env) (options : VerifyOptions)
       | .ok (assumptionTerms, obligationTerm, ctx) =>
         let t4 ← IO.monoNanosNow
         let result ← getObligationResult assumptionTerms obligationTerm ctx obligation p options
-                      counter tempDir needSatCheck needValCheck (externalPhases ++ p.abstractedPhases)
+                      counter tempDir needSatCheck needValCheck (externalPhases ++ coreAbstractedPhases)
         let t5 ← IO.monoNanosNow
         solverNs := solverNs + (t5 - t4)
         -- Merge PE results with solver results
