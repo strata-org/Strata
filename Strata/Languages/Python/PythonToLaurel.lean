@@ -570,7 +570,21 @@ partial def translateExpr (ctx : TranslationContext) (e : Python.expr SourceRang
     let index ←  match slice with
       | .Slice _ start stop step => translateSlice ctx start.val stop.val step.val
       | _ => translateExpr ctx slice
-    return mkStmtExprMd (.StaticCall "Any_get" [dictOrList, index])
+    -- Emit bounds check for negative integer indices (e.g., xs[-1])
+    let boundsAssert := match slice with
+      | .Constant _ (.ConNeg _ n) _ =>
+        -- xs[-n] requires len(xs) >= n
+        let lenExpr := mkStmtExprMd (.StaticCall "Any_len" [dictOrList])
+        let nExpr := intToAny n.val
+        let cond := mkStmtExprMd (.PrimitiveOp .Geq
+          [mkStmtExprMd (.StaticCall "Any..as_int!" [lenExpr]),
+           mkStmtExprMd (.StaticCall "Any..as_int!" [nExpr])])
+        some (mkStmtExprMd (.Assert cond))
+      | _ => none
+    let access := mkStmtExprMd (.StaticCall "Any_get" [dictOrList, index])
+    match boundsAssert with
+    | some assert => return mkStmtExprMd (.Block [assert, access] none)
+    | none => return access
 
   -- Attribute access: obj.attr or obj.method
   | .Attribute _ obj attr _ => do

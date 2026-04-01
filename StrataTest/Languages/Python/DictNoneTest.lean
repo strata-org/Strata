@@ -73,7 +73,7 @@ def main() -> None:
     throw <| .userError s!"Expected ≥1 diagnostic for dict-unpacking None-for-int, got 0"
 
 -- Test 5: Negative list indexing on potentially empty list.
--- xs[-1] should emit a bounds check.
+-- xs[-1] emits a bounds check: assert len(xs) >= 1.
 #guard_msgs (drop info) in
 #eval withPython (warnOnSkip := false) fun pythonCmd => do
   let program :=
@@ -83,7 +83,7 @@ def main() -> None:
 "
   let diags ← processPythonFile pythonCmd (stringInputContext "test.py" program)
   if diags.size == 0 then
-    IO.eprintln "DictNoneTest.5: negative indexing not yet checked (expected ≥1 once fixed)"
+    throw <| .userError s!"Expected ≥1 diagnostic for negative indexing on empty list, got 0"
 
 -- Test 6: len() on a class instance without __len__.
 #guard_msgs (drop info) in
