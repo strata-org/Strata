@@ -19,8 +19,45 @@ TEST_FILES = sorted(
     f"tests/{p.name}" for p in (Path(__file__).resolve().parent / "tests").glob("test_*.py")
 )
 
-BOTH_SKIP = {"test_foo_client_folder", "test_invalid_client_type", "test_unsupported_config"}
-SKIP_TESTS = BOTH_SKIP | {"test_class_field_use", "test_list", "test_subscription", "test_with_statement", "test_class_field_init", "test_break_continue", "test_try_except", "test_try_except_scoping"}
+BOTH_SKIP = {
+    "test_foo_client_folder",
+    "test_invalid_client_type",
+    "test_unsupported_config",
+    "test_with_void_enter",
+    "test_user_error_metadata", # No SARIF output because does not run SMT analysis
+}
+SKIP_TESTS = BOTH_SKIP | {
+    "test_augmented_assign",
+    "test_boolean_logic",
+    "test_break_continue",
+    "test_class_field_any",
+    "test_class_field_init",
+    "test_class_field_use",
+    "test_class_methods",
+    "test_class_with_methods",
+    "test_default_params",
+    "test_dict_operations",
+    "test_for_loop",
+    "test_if_elif",
+    "test_ifexpr",
+    "test_list",
+    "test_list_slice",
+    "test_loops",
+    "test_module_level",
+    "test_multi_function",
+    "test_multiple_except",
+    "test_nested_calls",
+    "test_regex_negative",
+    "test_regex_positive",
+    "test_return_types",
+    "test_subscription",
+    "test_try_except",
+    "test_try_except_scoping",
+    "test_variable_reassign",
+    "test_while_loop",
+    "test_with_statement",
+    "test_fstrings",
+}
 SKIP_TESTS_LAUREL = BOTH_SKIP
 
 

@@ -1,0 +1,9 @@
+
+==== Verification Results ====
+ite_cond_calls_Any_to_bool_0: ✅ pass (at line 2, col 0)
+ite_cond_calls_Any_to_bool_0: ✅ pass (at line 3, col 4)
+assert_assert(91)_calls_Any_to_bool_0: ✅ pass (at line 8, col 0)
+assert(91): ✅ pass (at line 8, col 0)
+
+DETAIL: 4 passed, 0 failed, 0 inconclusive
+RESULT: Analysis success

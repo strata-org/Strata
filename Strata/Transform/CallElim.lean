@@ -79,6 +79,7 @@ def callElimCmd (cmd: Command)
             | _ => none
         let oldSubst := createOldVarsSubst oldTrips ++ unmodifiedOldSubst
 
+        -- Non-lifting substitution is safe here: values are fresh variables
         let postconditions : List Expression.Expr := proc.spec.postconditions.values.map
           (fun c => Lambda.LExpr.substFvars c.expr oldSubst)
 
@@ -127,5 +128,8 @@ def callElim' (p : Program) : CoreTransformM (Bool × Program) :=
 
 end CallElim
 end Core
+
+-- NB: workaround for the fact that Core is both a module and a dialect.
+def coreCallElimCmd := Core.CallElim.callElimCmd
 
 end -- public section

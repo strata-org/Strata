@@ -237,16 +237,16 @@ private def mkWitnessProc (ptMap : ConstrainedTypeMap) (ct : ConstrainedType) : 
     decreases := none
     md := md }
 
-public def constrainedTypeElim (_model : SemanticModel) (program : Program) : Program × Array DiagnosticModel :=
+public def constrainedTypeElim (_model : SemanticModel) (program : Program) : Program × List DiagnosticModel :=
   let ptMap := buildConstrainedTypeMap program.types
-  if ptMap.isEmpty then (program, #[]) else
+  if ptMap.isEmpty then (program, []) else
   let constraintFuncs := program.types.filterMap fun
     | .Constrained ct => some (mkConstraintFunc ptMap ct) | _ => none
   let witnessProcedures := program.types.filterMap fun
     | .Constrained ct => some (mkWitnessProc ptMap ct) | _ => none
-  let funcDiags := program.staticProcedures.foldl (init := #[]) fun acc proc =>
+  let funcDiags := program.staticProcedures.foldl (init := []) fun acc proc =>
     if proc.isFunctional && proc.outputs.any (fun p => isConstrainedType ptMap p.type.val) then
-      acc.push (proc.md.toDiagnostic "constrained return types on functions are not yet supported")
+      acc.cons (proc.md.toDiagnostic "constrained return types on functions are not yet supported")
     else acc
   ({ program with
     staticProcedures := constraintFuncs ++ program.staticProcedures.map (elimProc ptMap)

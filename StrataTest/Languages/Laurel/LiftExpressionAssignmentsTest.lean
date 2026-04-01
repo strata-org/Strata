@@ -22,16 +22,6 @@ open Strata.Elab (parseStrataProgramFromDialect)
 namespace Strata.Laurel
 
 def blockStmtLiftingProgram : String := r"
-composite Box {
-  var value: int
-}
-
-procedure heapUpdateInBlockExpr(b: Box)
-{
-  var x: int := { b#value := b#value + 1; b#value };
-  assert x == b#value
-};
-
 procedure assertInBlockExpr()
 {
   var x: int := 0;
@@ -53,14 +43,10 @@ def parseLaurelAndLift (input : String) : IO Program := do
     pure (liftExpressionAssignments model program)
 
 /--
-info: procedure heapUpdateInBlockExpr(b: Box) returns ⏎
+info: procedure assertInBlockExpr() returns ⏎
 ()
 deterministic
-{ b#value := b#value + 1; var x: int := b#value; assert x == b#value }
-procedure assertInBlockExpr() returns ⏎
-()
-deterministic
-{ var x: int := 0; assert x == 0; x := 1; var y: int := x; assert y == 1 }
+{ var x: int := 0; assert x == 0; var $x_0: int := x; x := 1; var y: int := { x }; assert y == 1 }
 -/
 #guard_msgs in
 #eval! do

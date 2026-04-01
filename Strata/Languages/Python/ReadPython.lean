@@ -11,7 +11,7 @@ public import Strata.Languages.Python.PythonDialect
 public section
 namespace Strata.Python
 
-private def readPythonStrataBytes (strataPath : String) (bytes : ByteArray) : Except String (Array (Strata.Python.stmt Strata.SourceRange)) := do
+def readPythonStrataBytes (strataPath : String) (bytes : ByteArray) : Except String (Array (Strata.Python.stmt Strata.SourceRange)) := do
   if ! Ion.isIonFile bytes then
     throw <| s!"{strataPath} is not an Ion file."
   match Strata.Program.fromIon Strata.Python.Python_map Strata.Python.Python.name bytes with
@@ -23,9 +23,9 @@ private def readPythonStrataBytes (strataPath : String) (bytes : ByteArray) : Ex
       | .ok r => pure r
     let isTrue p := inferInstanceAs (Decidable (pyCmds.size = 1))
       | throw s!"Error reading {strataPath}: Expected Python module"
-    let .Module _ stmts _ := pyCmds[0]
+    let .Module _ ⟨_, stmts⟩ _ := pyCmds[0]
       | throw s!"Error reading {strataPath}: Expected Python module"
-    pure stmts.val
+    pure stmts
   | .error msg =>
     throw s!"Error reading {strataPath}: {msg}"
 
@@ -105,16 +105,16 @@ private def runPyToStrata (pythonCmd : String) (extraPythonArgs : Array String)
     let msg := stderr.splitOn.foldl (init := msg) fun msg ln => s!"{msg}  {ln}\n"
     throw <| msg
 
-/-- Reads a Strata temp file and parses it into Python AST statements. -/
-private def readParseStrataFile (strataFile : System.FilePath)
-    : EIO String (Array (Strata.Python.stmt Strata.SourceRange)) := do
+/-- Reads a pre-compiled Strata file (Ion format) containing Python AST statements. -/
+def readPythonStrata (strataPath : String) : EIO String (Array (Strata.Python.stmt Strata.SourceRange)) := do
   let bytes ←
-        match ← IO.FS.readBinFile strataFile |>.toBaseIO with
-        | .ok b => pure b
-        | .error msg =>
-          throw <| s!"Error reading Strata temp file {strataFile}: {msg}"
-  match readPythonStrataBytes strataFile.toString bytes with
-  | .ok stmts => pure stmts
+    match ← IO.FS.readBinFile strataPath |>.toBaseIO with
+    | .ok b =>
+      pure b
+    | .error msg =>
+      throw <| s!"Error reading {strataPath}: {msg}"
+  match readPythonStrataBytes strataPath bytes with
+  | .ok r => pure r
   | .error msg => throw msg
 
 /--
@@ -138,23 +138,12 @@ def pythonToStrata (dialectFile pythonFile : System.FilePath)
     runWithOptions options s!"parsing {pythonFile}"
       (runPyToStrata pythonCmd options.extraPythonArgs
         dialectFile pythonFile strataFile)
-    runWithOptions options s!"reading {pythonFile}" (readParseStrataFile strataFile)
+    runWithOptions options s!"reading {pythonFile}" (readPythonStrata strataFile.toString)
   finally
     match ← IO.FS.removeFile strataFile |>.toBaseIO with
     | .ok () => pure ()
     | .error msg => throw s!"Internal: Error deleting temp file {strataFile}: {msg}"
 
-/-- Reads a pre-compiled Strata file (Ion format) containing Python AST statements. -/
-def readPythonStrata (strataPath : String) : EIO String (Array (Strata.Python.stmt Strata.SourceRange)) := do
-  let bytes ←
-    match ← IO.FS.readBinFile strataPath |>.toBaseIO with
-    | .ok b =>
-      pure b
-    | .error msg =>
-      throw <| s!"Error reading {strataPath}: {msg}"
-  match readPythonStrataBytes strataPath bytes with
-  | .ok r => pure r
-  | .error msg => throw msg
 
 end Strata.Python
 end

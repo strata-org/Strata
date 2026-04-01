@@ -6,32 +6,12 @@
 module
 public import Std.Data.HashMap.Basic
 public import Strata.DDM.Util.SourceRange
+public import Strata.Languages.Python.OverloadTable
 
 public section
-namespace Strata.Python.Specs
-
-/--
-A fully-qualified Python identifier consisting of a module path and a name.
-For example, `typing.List` has module "typing" and name "List".
--/
-structure PythonIdent where
-  pythonModule : String
-  name : String
-  deriving DecidableEq, Hashable, Inhabited, Ord, Repr
+namespace Strata.Python
 
 namespace PythonIdent
-
-protected def ofString (s : String) : Option PythonIdent :=
-  match s.revFind? '.' with
-  | none => none
-  | some idx =>
-    some {
-      pythonModule := s.extract s.startPos idx
-      name := s.extract idx.next! s.endPos
-    }
-
-instance : ToString PythonIdent where
-  toString i := s!"{i.pythonModule}.{i.name}"
 
 def builtinsBool := mk "builtins" "bool"
 def builtinsBytearray := mk "builtins" "bytearray"
@@ -60,6 +40,8 @@ def typingUnpack := mk "typing" "Unpack"
 def reCompile := mk "re" "compile"
 
 end PythonIdent
+
+namespace Specs
 
 /--
 Represents Python generic types from the `typing` module that require special
@@ -410,6 +392,10 @@ structure ClassDef where
   classVars : Array ClassVariable := #[]
   subclasses : Array ClassDef := #[]
   methods : Array FunctionDecl
+  /-- When true, the spec is assumed to list every method the class exposes.
+      Calls to unlisted methods are flagged as "Unknown method".
+      Set via `@exhaustive` decorator on the pyspec class body. -/
+  exhaustive : Bool := false
 deriving Inhabited
 
 structure TypeDef where
@@ -426,4 +412,4 @@ inductive Signature where
   deriving Inhabited
 
 end Strata.Python.Specs
-end
+end -- public section
