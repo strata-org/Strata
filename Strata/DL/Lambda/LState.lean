@@ -162,7 +162,7 @@ The replacement expressions must be closed (no dangling bvars).
 -/
 def LExpr.substFvarsFromState (σ : (LState T)) (e : (LExpr T.mono)) : (LExpr T.mono) :=
   let sm := σ.state.toSingleMap.map (fun (x, (_, v)) => (x, v))
-  Lambda.LExpr.substMultiFvars e sm
+  Lambda.LExpr.substFvars e sm
 
 ---------------------------------------------------------------------
 

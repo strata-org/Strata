@@ -53,7 +53,7 @@ private def callConditions (proc : Procedure)
   let sm := subst.map (fun (x, v) => (x.fst, v))
   let exprs := List.map
                 (fun p =>
-                  { p with expr := LExpr.substMultiFvars p.expr sm })
+                  { p with expr := LExpr.substFvars p.expr sm })
                 conditions.values
   List.zip names exprs
 
@@ -366,7 +366,7 @@ def captureFreevars (env : Env) (paramNames : List CoreIdent) (e : Expression.Ex
     match env.exprEnv.state.find? fv.fst with
     | some (_, val) => some (fv.fst, val)
     | none => none)
-  Lambda.LExpr.substMultiFvars e sm
+  Lambda.LExpr.substFvars e sm
 
 @[expose]
 abbrev StmtsStack := List Statements

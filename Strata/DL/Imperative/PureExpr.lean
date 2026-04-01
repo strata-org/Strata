@@ -89,7 +89,7 @@ class HasSubstFvar (P : PureExpr) where
   /-- Simultaneously substitute multiple free variables with expressions.
       Replaces all variables in a single pass, avoiding capture between
       substitutions. -/
-  substMultiFvars : P.Expr → List (P.Ident × P.Expr) → P.Expr
+  substFvars : P.Expr → List (P.Ident × P.Expr) → P.Expr
 
 /--
 A function declaration for use with `PureExpr` - instantiation of `Func` for

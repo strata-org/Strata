@@ -281,16 +281,6 @@ theorem Step.denote_preserved
     have h_body_ty : LExpr.HasTypeA [] fnbody fn.output := (hFwt fn hfn_in fnbody hbody).1
     have h_body_annot := (hFwt fn hfn_in fnbody hbody).2
     -- Set up casts and lemmas for substFvars_denote
-    -- have h_map_eq : (List.map Prod.snd fn.inputs).map (LMonoTy.substTyVars vt) =
-    --     (fn.inputs.map (fun (id, ty) => (id, LMonoTy.substTyVars vt ty))).map Prod.snd := by
-    --   simp [List.map_map, Function.comp]
-    -- Get Hlist of args
-    -- let args' : HList (SortDenote tcInterp)
-    -- -- Transport denoteArgs to the InterpConsistentBody index
-    -- let args' : HList (SortDenote tcInterp)
-    --     ((fn.inputs.map (fun (id, ty) => (id, LMonoTy.substTyVars vt ty))).map Prod.snd) :=
-    --   HList.cast h_map_eq (denoteArgs tcInterp opInterp fvarVal vt args (List.map Prod.snd fn.inputs) h_args)
-    -- have h_consistent := hF.1 fn hfn_in fnbody hbody vt fvarVal h_body_ty args'
     have h_arity : args.length = fn.inputs.length := by
       have := h_args.length_eq; simp at this; exact this
     have hlen: args.length = fn.inputs.keys.length := by
@@ -317,7 +307,7 @@ theorem Step.denote_preserved
         | nil => simp
         | cons hd tl ih => simp [ih]
       rw [this]; exact h_body_annot
-    rw[@substMultiFvarsLifting_denote _ tcInterp opInterp fvarVal vt _ _ _ (fn.inputs.keys.zip args) (fn.inputs.keys.zip srts) _ .nil
+    rw[@substFvarsLifting_denote _ tcInterp opInterp fvarVal vt _ _ _ (fn.inputs.keys.zip args) (fn.inputs.keys.zip srts) _ .nil
     h_body_ty h₂ args' hfst_eq (by grind) (List.map Prod.snd fn.inputs) (by grind) (by grind) hall _ h_annot_go]
     . -- Prove denotation equivalence via well-formedness of interp (use hF)
       rw [h_denote_e]

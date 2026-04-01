@@ -79,10 +79,9 @@ def callElimCmd (cmd: Command)
             | _ => none
         let oldSubst := createOldVarsSubst oldTrips ++ unmodifiedOldSubst
 
-        -- Iterated substitution is safe here: keys are "old g" identifiers (prefixed
-        -- with "old "), and values are fresh variables that cannot contain "old g" names.
+        -- Non-lifting substitution is safe here: values are fresh variables
         let postconditions : List Expression.Expr := proc.spec.postconditions.values.map
-          (fun c => Lambda.LExpr.substMultiFvars c.expr oldSubst)
+          (fun c => Lambda.LExpr.substFvars c.expr oldSubst)
 
         -- generate havoc for return variables, modified variables
         let havoc_ret := createHavocs lhs md

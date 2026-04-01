@@ -621,9 +621,9 @@ partial def toSMTOp (E : Env) (fn : CoreIdent) (fnty : LMonoTy) (ctx : SMT.Conte
           | none => .ok (ctx.addUF uf, !ctx.ufs.contains uf)
           | some body =>
             -- Substitute the formals in the function body with appropriate
-            -- `.bvar`s. Use substMultiFvarsLifting to properly lift indices under binders.
+            -- `.bvar`s. Use substFvarsLifting to properly lift indices under binders.
             let bvars := (List.range formals.length).map (fun i => LExpr.bvar () i)
-            let body := LExpr.substMultiFvarsLifting body (formals.zip bvars)
+            let body := LExpr.substFvarsLifting body (formals.zip bvars)
             let (term, ctx) ← toSMTTerm E bvs body ctx
             .ok (ctx.addIF uf term,  !ctx.ifs.contains ({ uf := uf, body := term }))
         -- For recursive functions, generate per-constructor axioms

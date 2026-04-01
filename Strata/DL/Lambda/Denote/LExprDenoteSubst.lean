@@ -564,14 +564,14 @@ private theorem go_typeCheck [DecidableEq T.IDMeta]
     (h_wt : List.Forall₂ (LExpr.HasTypeA Δ_outer) (bindings.map Prod.snd) tys)
     {e : LExpr T.mono} {Δ_body : List LMonoTy}
     (h_annot : fvars_annotated_by (bindings.map Prod.fst |>.zip tys) e)
-    : LExpr.typeCheck (Δ_body ++ Δ_outer) (LExpr.substMultiFvarsLifting.go bindings e Δ_body.length)
+    : LExpr.typeCheck (Δ_body ++ Δ_outer) (LExpr.substFvarsLifting.go bindings e Δ_body.length)
       = LExpr.typeCheck (Δ_body ++ Δ_outer) e := by
   induction e generalizing Δ_body with
-  | const => simp [LExpr.substMultiFvarsLifting.go, LExpr.typeCheck]
-  | op => simp [LExpr.substMultiFvarsLifting.go]
-  | bvar => simp [LExpr.substMultiFvarsLifting.go, LExpr.typeCheck]
+  | const => simp [LExpr.substFvarsLifting.go, LExpr.typeCheck]
+  | op => simp [LExpr.substFvarsLifting.go]
+  | bvar => simp [LExpr.substFvarsLifting.go, LExpr.typeCheck]
   | fvar m name ty =>
-    simp only [LExpr.substMultiFvarsLifting.go]
+    simp only [LExpr.substFvarsLifting.go]
     cases ty with
     | none =>
       simp[Lambda.fvars_annotated_by] at h_annot
@@ -595,10 +595,10 @@ private theorem go_typeCheck [DecidableEq T.IDMeta]
         subst hty_eq
         exact (LExpr.HasTypeA_iff_typeCheck _ _ _).mp (h_wt.get? i hsnd htys)
   | app m fn arg ih_fn ih_arg =>
-    simp [LExpr.substMultiFvarsLifting.go, LExpr.typeCheck]
+    simp [LExpr.substFvarsLifting.go, LExpr.typeCheck]
     rw [ih_fn h_annot.1, ih_arg h_annot.2]
   | abs m name ty body ih =>
-    simp [LExpr.substMultiFvarsLifting.go]
+    simp [LExpr.substFvarsLifting.go]
     cases ty with
     | none => rfl
     | some aty =>
@@ -609,13 +609,13 @@ private theorem go_typeCheck [DecidableEq T.IDMeta]
       rw [this]
       rw [ih (Δ_body := aty :: Δ_body) h_annot]
   | ite m c t e ih_c ih_t ih_e =>
-    simp [LExpr.substMultiFvarsLifting.go, LExpr.typeCheck]
+    simp [LExpr.substFvarsLifting.go, LExpr.typeCheck]
     rw [ih_c h_annot.1, ih_t h_annot.2.1, ih_e h_annot.2.2]
   | eq m e1 e2 ih1 ih2 =>
-    simp [LExpr.substMultiFvarsLifting.go, LExpr.typeCheck]
+    simp [LExpr.substFvarsLifting.go, LExpr.typeCheck]
     rw [ih1 h_annot.1, ih2 h_annot.2]
   | quant m qk name ty tr body ih_tr ih_body =>
-    simp [LExpr.substMultiFvarsLifting.go]
+    simp [LExpr.substFvarsLifting.go]
     cases ty with
     | none => rfl
     | some qty =>
@@ -631,7 +631,7 @@ private theorem go_typeCheck [DecidableEq T.IDMeta]
 set_option pp.proofs true
 
 /-- Inner lemma: `go` at depth `|Δ_body|` commutes with denotation. -/
-private theorem substMultiFvarsLifting_go_denote [DecidableEq T.IDMeta]
+private theorem substFvarsLifting_go_denote [DecidableEq T.IDMeta]
     {bindings : List (T.Identifier × LExpr T.mono)}
     {sortBindings : List (Identifier T.IDMeta × LSort)}
     {Δ_outer : List LMonoTy}
@@ -650,29 +650,29 @@ private theorem substMultiFvarsLifting_go_denote [DecidableEq T.IDMeta]
     (h_body : LExpr.HasTypeA (Δ_body ++ Δ_outer) body τ)
     (h_annot : fvars_annotated_by (bindings.map Prod.fst |>.zip tys) body)
     (h_subst : LExpr.HasTypeA (Δ_body ++ Δ_outer)
-        (LExpr.substMultiFvarsLifting.go bindings body Δ_body.length) τ)
+        (LExpr.substFvarsLifting.go bindings body Δ_body.length) τ)
     : LExpr.denote tcInterp opInterp fvarVal vt
         (HList.append bvarVal_body bvarVal_outer)
-        (LExpr.substMultiFvarsLifting.go bindings body Δ_body.length) τ h_subst =
+        (LExpr.substFvarsLifting.go bindings body Δ_body.length) τ h_subst =
       LExpr.denote tcInterp opInterp
         (fvarVal.withArgs sortBindings h_args)
         vt (HList.append bvarVal_body bvarVal_outer) body τ h_body := by
   induction body generalizing Δ_body τ with
   | const m c =>
-    simp [LExpr.substMultiFvarsLifting.go, LExpr.denote] at h_subst ⊢
+    simp [LExpr.substFvarsLifting.go, LExpr.denote] at h_subst ⊢
   | op m o ty =>
-    simp [LExpr.substMultiFvarsLifting.go] at h_subst ⊢
+    simp [LExpr.substFvarsLifting.go] at h_subst ⊢
     cases ty with
     | none => exact absurd (LExpr.HasTypeA_to_typeCheck h_body) (by simp [LExpr.typeCheck])
     | some ty => rfl
   | bvar m i =>
-    simp [LExpr.substMultiFvarsLifting.go] at h_subst ⊢
+    simp [LExpr.substFvarsLifting.go] at h_subst ⊢
     rw [denote_bvar _ _ _ _ _ h_subst, denote_bvar _ _ _ _ _ h_body]
   | fvar m name ty =>
     cases ty with
     | none => exact absurd (LExpr.HasTypeA_to_typeCheck h_body) (by simp [LExpr.typeCheck])
     | some ty =>
-      simp only [LExpr.substMultiFvarsLifting.go] at h_subst ⊢
+      simp only [LExpr.substFvarsLifting.go] at h_subst ⊢
       -- Lean does not let us generalize directly, use tactic
       generalize_lhs_last_arg
       rename_i heq;
@@ -742,7 +742,7 @@ private theorem substMultiFvarsLifting_go_denote [DecidableEq T.IDMeta]
         rw [h_keys] at h_not_mem
         exact (IdentInterp.withArgs_not_mem _ fvarVal h_args h_not_mem).symm
   | app m fn arg ih_fn ih_arg =>
-    simp only [LExpr.substMultiFvarsLifting.go] at h_subst ⊢
+    simp only [LExpr.substFvarsLifting.go] at h_subst ⊢
     let ⟨aty_s, h_fn_s, h_arg_s⟩ := HasTypeA.app_inv h_subst
     let ⟨aty_b, h_fn_b, h_arg_b⟩ := HasTypeA.app_inv h_body
     have h_aty : aty_s = aty_b := by
@@ -758,7 +758,7 @@ private theorem substMultiFvarsLifting_go_denote [DecidableEq T.IDMeta]
     cases ty with
     | none => exact absurd (LExpr.HasTypeA_to_typeCheck h_body) (by simp [LExpr.typeCheck])
     | some aty =>
-      simp only [LExpr.substMultiFvarsLifting.go] at h_subst ⊢
+      simp only [LExpr.substFvarsLifting.go] at h_subst ⊢
       let ⟨rty_b, h_eq_b, h_body_b⟩ := HasTypeA.abs_inv h_body
       let ⟨rty_s, h_eq_s, h_body_s⟩ := HasTypeA.abs_inv h_subst
       subst h_eq_b; cases h_eq_s
@@ -766,7 +766,7 @@ private theorem substMultiFvarsLifting_go_denote [DecidableEq T.IDMeta]
       funext x
       exact ih (.cons x bvarVal_body) h_body_b h_annot h_body_s
   | ite m c t e ih_c ih_t ih_e =>
-    simp only [LExpr.substMultiFvarsLifting.go] at h_subst ⊢
+    simp only [LExpr.substFvarsLifting.go] at h_subst ⊢
     let ⟨h_c_b, h_t_b, h_e_b⟩ := HasTypeA.ite_inv h_body
     let ⟨h_c_s, h_t_s, h_e_s⟩ := HasTypeA.ite_inv h_subst
     rw [denote_ite _ h_c_s h_t_s h_e_s h_subst,
@@ -775,7 +775,7 @@ private theorem substMultiFvarsLifting_go_denote [DecidableEq T.IDMeta]
         ih_t bvarVal_body h_t_b h_annot.2.1 h_t_s,
         ih_e bvarVal_body h_e_b h_annot.2.2 h_e_s]
   | eq m e1 e2 ih1 ih2 =>
-    simp only [LExpr.substMultiFvarsLifting.go] at h_subst ⊢
+    simp only [LExpr.substFvarsLifting.go] at h_subst ⊢
     let ⟨ty_b, h_τ_b, h_1_b, h_2_b⟩ := HasTypeA.eq_inv h_body
     let ⟨ty_s, h_τ_s, h_1_s, h_2_s⟩ := HasTypeA.eq_inv h_subst
     subst h_τ_b
@@ -787,10 +787,10 @@ private theorem substMultiFvarsLifting_go_denote [DecidableEq T.IDMeta]
     subst h_ty
     by_cases heq : LExpr.denote tcInterp opInterp fvarVal vt
         (HList.append bvarVal_body bvarVal_outer)
-        (LExpr.substMultiFvarsLifting.go bindings e1 Δ_body.length) ty_s h_1_s =
+        (LExpr.substFvarsLifting.go bindings e1 Δ_body.length) ty_s h_1_s =
       LExpr.denote tcInterp opInterp fvarVal vt
         (HList.append bvarVal_body bvarVal_outer)
-        (LExpr.substMultiFvarsLifting.go bindings e2 Δ_body.length) ty_s h_2_s
+        (LExpr.substFvarsLifting.go bindings e2 Δ_body.length) ty_s h_2_s
     · rw [denote_eq_true _ h_1_s h_2_s h_subst heq,
           denote_eq_true _ h_1_b h_2_b h_body
             (by rw [← ih1 bvarVal_body h_1_b h_annot.1 h_1_s,
@@ -803,14 +803,14 @@ private theorem substMultiFvarsLifting_go_denote [DecidableEq T.IDMeta]
     cases qty with
     | none => exact absurd (LExpr.HasTypeA_to_typeCheck h_body) (by simp [LExpr.typeCheck])
     | some qty' =>
-      simp only [LExpr.substMultiFvarsLifting.go] at h_subst ⊢
+      simp only [LExpr.substFvarsLifting.go] at h_subst ⊢
       let ⟨_, h_τ_b, h_tr_b, h_body_b⟩ := HasTypeA.quant_inv h_body
       let ⟨_, h_τ_s, h_tr_s, h_body_s⟩ := HasTypeA.quant_inv h_subst
       subst h_τ_b
       have h_ih_body : ∀ x : TyDenote tcInterp vt qty',
           LExpr.denote tcInterp opInterp fvarVal vt
             (.cons x (HList.append bvarVal_body bvarVal_outer))
-            (LExpr.substMultiFvarsLifting.go bindings sub_body (Δ_body.length + 1)) .bool h_body_s =
+            (LExpr.substFvarsLifting.go bindings sub_body (Δ_body.length + 1)) .bool h_body_s =
           LExpr.denote tcInterp opInterp (fvarVal.withArgs sortBindings h_args) vt
             (.cons x (HList.append bvarVal_body bvarVal_outer)) sub_body .bool h_body_b := by
         intro x
@@ -822,13 +822,13 @@ private theorem substMultiFvarsLifting_go_denote [DecidableEq T.IDMeta]
       | all =>
         by_cases hall : ∀ x : TyDenote tcInterp vt qty',
             (LExpr.denote tcInterp opInterp fvarVal vt (.cons x (HList.append bvarVal_body bvarVal_outer))
-              (LExpr.substMultiFvarsLifting.go bindings sub_body (Δ_body.length + 1)) .bool h_body_s : Bool) = true
+              (LExpr.substFvarsLifting.go bindings sub_body (Δ_body.length + 1)) .bool h_body_s : Bool) = true
         · rw [denote_quant_all_true _ h_body_s h_subst hall]
           symm; apply denote_quant_all_true; intros x
           rw [← h_ih_body]; exact (hall x)
         · have ⟨w, hw⟩ := Classical.not_forall.mp hall
           have hwf : (LExpr.denote tcInterp opInterp fvarVal vt (.cons w (HList.append bvarVal_body bvarVal_outer))
-              (LExpr.substMultiFvarsLifting.go bindings sub_body (Δ_body.length + 1)) .bool h_body_s : Bool) = false :=
+              (LExpr.substFvarsLifting.go bindings sub_body (Δ_body.length + 1)) .bool h_body_s : Bool) = false :=
             Bool.eq_false_iff.mpr hw
           rw [denote_quant_all_false _ h_body_s h_subst w hwf]
           symm; apply denote_quant_all_false _ h_body_b h_body w
@@ -836,14 +836,14 @@ private theorem substMultiFvarsLifting_go_denote [DecidableEq T.IDMeta]
       | exist =>
         by_cases hexist : ∃ x : TyDenote tcInterp vt qty',
             (LExpr.denote tcInterp opInterp fvarVal vt (.cons x (HList.append bvarVal_body bvarVal_outer))
-              (LExpr.substMultiFvarsLifting.go bindings sub_body (Δ_body.length + 1)) .bool h_body_s : Bool) = true
+              (LExpr.substFvarsLifting.go bindings sub_body (Δ_body.length + 1)) .bool h_body_s : Bool) = true
         · obtain ⟨w, hw⟩ := hexist
           rw [denote_quant_exist_true _ h_body_s h_subst w hw]
           symm; apply denote_quant_exist_true _ h_body_b h_body w
           rw [← h_ih_body]; exact hw
         · have hexist_f : ∀ x : TyDenote tcInterp vt qty',
               (LExpr.denote tcInterp opInterp fvarVal vt (.cons x (HList.append bvarVal_body bvarVal_outer))
-                (LExpr.substMultiFvarsLifting.go bindings sub_body (Δ_body.length + 1)) .bool h_body_s : Bool) = false :=
+                (LExpr.substFvarsLifting.go bindings sub_body (Δ_body.length + 1)) .bool h_body_s : Bool) = false :=
             fun x => Bool.eq_false_iff.mpr (fun h => hexist ⟨x, h⟩)
           rw [denote_quant_exist_false _ h_body_s h_subst hexist_f]
           symm; apply denote_quant_exist_false _ h_body_b h_body; intros x
@@ -851,14 +851,14 @@ private theorem substMultiFvarsLifting_go_denote [DecidableEq T.IDMeta]
 
 /-- Free-variable substitution commutes with denotation (generalized to
 arbitrary bound-variable context for replacements). -/
-theorem substMultiFvarsLifting_denote [DecidableEq T.IDMeta]
+theorem substFvarsLifting_denote [DecidableEq T.IDMeta]
     {body : LExpr T.mono} {τ : LMonoTy}
     {bindings : List (T.Identifier × LExpr T.mono)}
     {sortBindings : List (Identifier T.IDMeta × LSort)}
     {Δ_outer : List LMonoTy}
     (bvarVal_outer : BVarVal tcInterp vt Δ_outer)
     (h_body : LExpr.HasTypeA Δ_outer body τ)
-    (h_subst : LExpr.HasTypeA Δ_outer (LExpr.substMultiFvarsLifting body bindings) τ)
+    (h_subst : LExpr.HasTypeA Δ_outer (LExpr.substFvarsLifting body bindings) τ)
     (h_args : HList (SortDenote tcInterp) (sortBindings.map Prod.snd))
     (h_keys : bindings.map Prod.fst = sortBindings.map Prod.fst)
     (h_len : bindings.length = sortBindings.length)
@@ -870,11 +870,11 @@ theorem substMultiFvarsLifting_denote [DecidableEq T.IDMeta]
         (denoteArgs tcInterp opInterp fvarVal vt bvarVal_outer (bindings.map Prod.snd) tys h_wt))
     (h_annot : fvars_annotated_by (bindings.map Prod.fst |>.zip tys) body)
     : LExpr.denote tcInterp opInterp fvarVal vt bvarVal_outer
-        (LExpr.substMultiFvarsLifting body bindings) τ h_subst =
+        (LExpr.substFvarsLifting body bindings) τ h_subst =
       LExpr.denote tcInterp opInterp
         (fvarVal.withArgs sortBindings h_args)
         vt bvarVal_outer body τ h_body := by
-  unfold LExpr.substMultiFvarsLifting at h_subst ⊢
+  unfold LExpr.substFvarsLifting at h_subst ⊢
   split
   · -- bindings.isEmpty = true → bindings = [], sortBindings = []
     rename_i h_empty
@@ -893,7 +893,7 @@ theorem substMultiFvarsLifting_denote [DecidableEq T.IDMeta]
   · -- bindings.isEmpty = false → apply go_denote with Δ_body = [], bvarVal_body = .nil
     rename_i h_not_empty
     simp [h_not_empty] at h_subst
-    have := substMultiFvarsLifting_go_denote (tcInterp := tcInterp) (opInterp := opInterp)
+    have := substFvarsLifting_go_denote (tcInterp := tcInterp) (opInterp := opInterp)
       (fvarVal := fvarVal) (vt := vt)
       bvarVal_outer h_args h_keys h_tys_len h_sorts h_wt h_denotes
       (Δ_body := []) .nil h_body h_annot (by simp [h_subst])
