@@ -253,6 +253,17 @@ private partial def collectProgramRefs (prog : Laurel.Program) : CollectState :=
     transitively needed by the user program. -/
 public partial def filterPrelude (prelude user : Laurel.Program)
     : Except String Laurel.Program := do
+  -- Guard: filterPrelude does not yet track dependencies through static fields
+  -- or constants.  Error early if either program contains them so a silent
+  -- under-filtering cannot occur.
+  unless prelude.staticFields.isEmpty do
+    throw "FilterPrelude: prelude contains static fields, which are not yet supported"
+  unless prelude.constants.isEmpty do
+    throw "FilterPrelude: prelude contains constants, which are not yet supported"
+  unless user.staticFields.isEmpty do
+    throw "FilterPrelude: user program contains static fields, which are not yet supported"
+  unless user.constants.isEmpty do
+    throw "FilterPrelude: user program contains constants, which are not yet supported"
   let refs := collectProgramRefs user
   let depMap ← buildDependencyMap prelude
   let seeds := refs.allNames.fold (init := []) fun acc s => s :: acc
