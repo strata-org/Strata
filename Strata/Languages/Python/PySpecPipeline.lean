@@ -415,7 +415,9 @@ public def pyAnalyzeLaurel
     | .ok result => pure result
 
   let filteredPrelude ← profileStep profile "Filter prelude" do
-    return Laurel.filterPrelude result.laurelProgram laurelProgram
+    match Laurel.filterPrelude result.laurelProgram laurelProgram with
+    | .ok prog => pure prog
+    | .error msg => throw (.internal msg)
 
   profileStep profile "Combine PySpec and user Laurel" do
     return combinePySpecLaurel filteredPrelude laurelProgram

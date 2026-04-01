@@ -33,7 +33,7 @@ For datatypes, we also create alias entries so that constructor, tester,
 and destructor names resolve back to the parent type:
 
 - Constructor `c` of datatype `D`: key `c.name` → deps of `D` ∪ {`D`}
-- Tester: key `"is" ++ c.name` → deps of `D` ∪ {`D`}
+- Tester: key `"D..is" ++ c.name` → deps of `D` ∪ {`D`}
 - Destructor: key `"D..field"` → deps of `D` ∪ {`D`}
 - Bang destructor: key `"D..field!"` → deps of `D` ∪ {`D`}
 
@@ -141,6 +141,9 @@ private partial def collectProcDeps (proc : Procedure) : CollectM Unit := do
   proc.preconditions.forM collectExprNames
   match proc.decreases with | some d => collectExprNames d | none => pure ()
   match proc.invokeOn with | some t => collectExprNames t | none => pure ()
+  match proc.determinism with
+  | .deterministic mreads => mreads.mapM collectExprNames
+  | .nondeterministic => pure ()
   collectBodyNames proc.body
 
 /-- Collect all names referenced by a type definition. -/
@@ -173,34 +176,54 @@ private partial def collectInvokeOnTargets (expr : StmtExprMd) : List String :=
     callee.text :: args.flatMap collectInvokeOnTargets
   | _ => []
 
+/-- Monad for building the dependency map with duplicate-name detection. -/
+private abbrev DepM := StateT (Std.HashMap String (Std.HashSet String)) (Except String)
+
+/-- Insert a new binding, failing if the name is already bound. -/
+private def insertNew (key : String) (deps : Std.HashSet String) (context : String)
+    : DepM Unit := do
+  let m ← get
+  if m.contains key then
+    throw s!"FilterPrelude.buildDependencyMap: duplicate name '{key}' ({context})"
+  set (m.insert key deps)
+
 /-- Build a dependency map: declaration name → set of names it references.
     For datatypes, also maps constructor, destructor, and tester names
     to the same dependencies (plus the parent type).
     For procedures with `invokeOn`, adds reverse dependencies so that
-    needing the invoked function also pulls in the axiom procedure. -/
+    needing the invoked function also pulls in the axiom procedure.
+    Returns `Except.error` if two declarations bind the same name. -/
 private partial def buildDependencyMap (prog : Laurel.Program)
-    : Std.HashMap String (Std.HashSet String) := Id.run do
-  let mut m : Std.HashMap String (Std.HashSet String) := {}
-  for proc in prog.staticProcedures do
-    m := m.insert proc.name.text (runCollect (collectProcDeps proc)).allNames
-  for td in prog.types do
-    let name := td.name.text
-    let deps := (runCollect (collectTypeDefDeps td)).allNames
-    m := m.insert name deps
-    if let .Datatype dt := td then
-      for c in dt.constructors do
-        m := m.insert c.name.text (deps.insert name)
-        m := m.insert ("is" ++ c.name.text) (deps.insert name)
-        for a in c.args do
-          m := m.insert (name ++ ".." ++ a.name.text) (deps.insert name)
-          m := m.insert (name ++ ".." ++ a.name.text ++ "!") (deps.insert name)
-  -- Reverse invokeOn dependencies: if proc P has `invokeOn f(...)`,
-  -- then needing f should also pull in P.
-  for proc in prog.staticProcedures do
-    if let some invokeExpr := proc.invokeOn then
-      for target in collectInvokeOnTargets invokeExpr do
-        let existing := m[target]?.getD {}
-        m := m.insert target (existing.insert proc.name.text)
+    : Except String (Std.HashMap String (Std.HashSet String)) := do
+  let action : DepM Unit := do
+    for proc in prog.staticProcedures do
+      insertNew proc.name.text (runCollect (collectProcDeps proc)).allNames
+        s!"procedure '{proc.name.text}'"
+    for td in prog.types do
+      let name := td.name.text
+      let deps := (runCollect (collectTypeDefDeps td)).allNames
+      insertNew name deps s!"type '{name}'"
+      if let .Datatype dt := td then
+        for c in dt.constructors do
+          insertNew c.name.text (deps.insert name)
+            s!"constructor '{c.name.text}' of datatype '{name}'"
+          insertNew (dt.testerName c) (deps.insert name)
+            s!"tester '{dt.testerName c}' of datatype '{name}'"
+          for a in c.args do
+            insertNew (dt.destructorName a) (deps.insert name)
+              s!"destructor '{dt.destructorName a}'"
+            insertNew (dt.unsafeDestructorName a) (deps.insert name)
+              s!"destructor '{dt.unsafeDestructorName a}'"
+    -- Reverse invokeOn dependencies: if proc P has `invokeOn f(...)`,
+    -- then needing f should also pull in P.
+    -- These augment existing entries, so we merge rather than insertNew.
+    for proc in prog.staticProcedures do
+      if let some invokeExpr := proc.invokeOn then
+        for target in collectInvokeOnTargets invokeExpr do
+          let m ← get
+          let existing := m[target]?.getD {}
+          set (m.insert target (existing.insert proc.name.text))
+  let ((), m) ← action.run {}
   return m
 
 /-- Compute names reachable from seeds via the dependency map (BFS). -/
@@ -228,12 +251,13 @@ private partial def collectProgramRefs (prog : Laurel.Program) : CollectState :=
 
 /-- Filter a prelude Laurel program to only include declarations
     transitively needed by the user program. -/
-public partial def filterPrelude (prelude user : Laurel.Program) : Laurel.Program :=
+public partial def filterPrelude (prelude user : Laurel.Program)
+    : Except String Laurel.Program := do
   let refs := collectProgramRefs user
-  let depMap := buildDependencyMap prelude
+  let depMap ← buildDependencyMap prelude
   let seeds := refs.allNames.fold (init := []) fun acc s => s :: acc
   let needed := reachableNamesAux depMap seeds {}
-  { prelude with
+  return { prelude with
     staticProcedures := prelude.staticProcedures.filter fun p =>
       needed.contains p.name.text
     types := prelude.types.filter fun td =>
