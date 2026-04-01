@@ -53,7 +53,7 @@ info: Annotated expression:
 ((~Int.Div : (arrow int (arrow int int))) ((~Int.Add : (arrow int (arrow int int))) #2 #1))
 
 ---
-info: (λ ((~Int.Div : (arrow int (arrow int int))) #3 %0))
+info: ((~Int.Div : (arrow int (arrow int int))) #3)
 -/
 #guard_msgs in
 #eval format $ typeCheckAndPartialEval TypeFactory.default  (IntBoolFactory : @Factory TestParams)
