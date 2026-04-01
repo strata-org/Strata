@@ -77,7 +77,8 @@ private partial def collectHighTypeNames (ty : HighTypeMd) : CollectM Unit := do
     collectHighTypeNames base; args.forM collectHighTypeNames
   | .Pure base => collectHighTypeNames base
   | .Intersection types => types.forM collectHighTypeNames
-  | _ => pure ()
+  | .TVoid | .TBool | .TInt | .TFloat64 | .TReal | .TString | .THeap
+  | .Unknown => pure ()
 
 /-- Collect all referenced names (procedure calls, type references) from a StmtExpr tree. -/
 private partial def collectExprNames (expr : StmtExprMd) : CollectM Unit := do
@@ -121,7 +122,8 @@ private partial def collectExprNames (expr : StmtExprMd) : CollectM Unit := do
   | .ContractOf _ func => collectExprNames func
   | .ReferenceEquals lhs rhs => collectExprNames lhs; collectExprNames rhs
   | .Hole _ ty => match ty with | some t => collectHighTypeNames t | none => pure ()
-  | _ => pure ()
+  | .Exit _ | .LiteralInt _ | .LiteralBool _ | .LiteralString _ | .LiteralDecimal _
+  | .Identifier _ | .This | .Abstract | .All => pure ()
 
 /-- Collect names from a procedure body. -/
 private partial def collectBodyNames (body : Body) : CollectM Unit := do
