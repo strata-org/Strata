@@ -1707,13 +1707,18 @@ partial def translate (body : Array (stmt Strata.SourceRange)) : PySpecM Unit :=
         continue
       assert! _classNameLoc.isNone
       assert! keywords.val.size = 0
-      assert! decorators.val.size = 0
+      let isExhaustive := decorators.val.any fun d =>
+        match d with
+        | .Name _ ⟨_, "exhaustive"⟩ _ => true
+        | _ => false
+      assert! decorators.val.size = 0 || (decorators.val.size = 1 && isExhaustive)
       assert! typeParams.val.size = 0
       let baseIdents ← resolveBaseClasses bases.val
       let (success, _) ← runChecked <| recordTypeDef loc className
       -- Add the class to nameMap so it can be used in forward references
       setNameValue className (.typeValue (.pyClass loc className #[]))
       let d ← pySpecClassBody loc className baseIdents stmts.val
+      let d := { d with exhaustive := isExhaustive }
       if success then
         pushSignature (.classDef d)
     | _ => specError stmt.ann s!"Unknown statement {stmt}"
