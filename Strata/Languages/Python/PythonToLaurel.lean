@@ -991,7 +991,24 @@ partial def translateCall (ctx : TranslationContext)
     if kwords.length == 0 then
       if funcdecl_hasKwargs then [DictStrAny_empty] else []
     else [trans_kwords]
-  emitCall (trans_args ++ trans_kwords_exprs)
+  -- Emit type assertions for named arguments against declared parameter types.
+  -- Only for non-varKwargs calls (varKwargs have their own assertions).
+  let mut namedArgAsserts : List StmtExprMd := []
+  if !isVarKwargs kwords then
+    if let some fd := funcDecl then
+      for (arg, (_, argType, _)) in trans_args.zip fd.args do
+        let tester? := match argType with
+          | "int" | "integer" => some "Any..isfrom_int"
+          | "str" | "string" => some "Any..isfrom_string"
+          | "bool" | "boolean" => some "Any..isfrom_bool"
+          | "float" | "real" => some "Any..isfrom_float"
+          | _ => none
+        if let some testerName := tester? then
+          let cond := mkStmtExprMd (.StaticCall testerName [arg])
+          namedArgAsserts := namedArgAsserts ++ [mkStmtExprMd (.Assert cond)]
+  let call ← emitCall (trans_args ++ trans_kwords_exprs)
+  if namedArgAsserts.isEmpty then return call
+  else return mkStmtExprMd (.Block (namedArgAsserts ++ [call]) none)
 
 
 end

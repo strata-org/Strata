@@ -121,4 +121,42 @@ def main() -> None:
       throw <| .userError "Expected error for misspelled kwarg, got success"
   | .error _ => pure ()  -- Expected: translation error for unknown kwarg
 
+-- Test 6: Placeholder for exhaustive type checking.
+-- PySpec-defined service types flag unknown methods; user-defined classes
+-- with known methods also flag unknown methods (since their method set
+-- is known from the class definition).
+#guard_msgs (drop info) in
+#eval withPython (warnOnSkip := false) fun pythonCmd => do
+  let program :=
+"class Svc:
+    name: str
+    def __init__(self) -> None:
+        self.name = \"x\"
+    def do_thing(self) -> None:
+        pass
+
+def main() -> None:
+    s: Svc = Svc()
+    s.do_thing()
+"
+  let diags ← processPythonFile pythonCmd (stringInputContext "test.py" program)
+  if diags.size ≠ 0 then
+    throw <| .userError s!"Expected 0 diagnostics for valid method call, got {diags.size}"
+
+-- Test 7: Passing a dict where a string is expected via named argument.
+-- f(source={"Bucket": "x"}) where source: str should be flagged.
+#guard_msgs (drop info) in
+#eval withPython (warnOnSkip := false) fun pythonCmd => do
+  let program :=
+"def f(source: str) -> None:
+    pass
+
+def main() -> None:
+    d: dict[str, str] = {\"Bucket\": \"x\", \"Key\": \"y\"}
+    f(source=d)
+"
+  let diags ← processPythonFile pythonCmd (stringInputContext "test.py" program)
+  if diags.size == 0 then
+    throw <| .userError s!"Expected ≥1 diagnostic for dict-as-string, got 0"
+
 end Strata.Python.DictNoneTest
