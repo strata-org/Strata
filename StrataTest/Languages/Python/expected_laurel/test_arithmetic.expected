@@ -1,17 +1,14 @@
-
-==== Verification Results ====
-assert_assert(102)_calls_Any_to_bool_0: ✅ pass (at line 7, col 4)
-assert(102): ✅ pass (at line 7, col 4)
-assert_assert(226)_calls_Any_to_bool_0: ✅ pass (at line 12, col 4)
-assert(226): ✅ pass (at line 12, col 4)
-assert_assert(345)_calls_Any_to_bool_0: ✅ pass (at line 16, col 4)
-assert(345): ✅ pass (at line 16, col 4)
-assert_assert(458)_calls_Any_to_bool_0: ✅ pass (at line 20, col 4)
-assert(458): ✅ pass (at line 20, col 4)
-set_quot_calls_PFloorDiv_0: ✅ pass
-assert_assert(567)_calls_Any_to_bool_0: ✅ pass (at line 24, col 4)
-assert(567): ✅ pass (at line 24, col 4)
-ite_cond_calls_Any_to_bool_0: ✅ pass (at line 26, col 0)
-
+test_arithmetic.py(7, 4): ✅ pass - assert_assert(102)_calls_Any_to_bool_0
+test_arithmetic.py(7, 4): ✅ pass - assert(102)
+test_arithmetic.py(12, 4): ✅ pass - assert_assert(226)_calls_Any_to_bool_0
+test_arithmetic.py(12, 4): ✅ pass - assert(226)
+test_arithmetic.py(16, 4): ✅ pass - assert_assert(345)_calls_Any_to_bool_0
+test_arithmetic.py(16, 4): ✅ pass - assert(345)
+test_arithmetic.py(20, 4): ✅ pass - assert_assert(458)_calls_Any_to_bool_0
+test_arithmetic.py(20, 4): ✅ pass - assert(458)
+test_arithmetic.py(23, 4): ✅ pass - set_quot_calls_PFloorDiv_0
+test_arithmetic.py(24, 4): ✅ pass - assert_assert(567)_calls_Any_to_bool_0
+test_arithmetic.py(24, 4): ✅ pass - assert(567)
+test_arithmetic.py(26, 0): ✅ pass - ite_cond_calls_Any_to_bool_0
 DETAIL: 12 passed, 0 failed, 0 inconclusive
 RESULT: Analysis success
