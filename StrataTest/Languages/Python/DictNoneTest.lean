@@ -86,6 +86,7 @@ def main() -> None:
     throw <| .userError s!"Expected ≥1 diagnostic for negative indexing on empty list, got 0"
 
 -- Test 6: len() on a class instance without __len__.
+-- This should be rejected as a user error.
 #guard_msgs (drop info) in
 #eval withPython (warnOnSkip := false) fun pythonCmd => do
   let program :=
@@ -100,6 +101,6 @@ def main() -> None:
 "
   let diags ← processPythonFile pythonCmd (stringInputContext "test.py" program)
   if diags.size == 0 then
-    IO.eprintln "DictNoneTest.6: len() on non-iterable not yet checked (expected ≥1 once fixed)"
+    throw <| .userError s!"Expected ≥1 diagnostic for len() on non-iterable, got 0"
 
 end Strata.Python.DictNoneTest
