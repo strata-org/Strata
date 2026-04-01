@@ -103,7 +103,9 @@ structure Result where
   level : Level
   message : Message
   locations : Array SarifLocation := #[]
-  /-- Related locations (e.g., original assertion location when inlined) -/
+  /-- Related locations (e.g., original assertion location when inlined).
+      Order follows the call stack: the innermost (most deeply inlined) location
+      comes first. Each element's `id` field is 1-indexed and matches its position. -/
   relatedLocations : Array RelatedLocation := #[]
   /-- Tool-specific properties (SARIF property bag) -/
   properties : PropertyBag := {}
