@@ -7,6 +7,7 @@ module
 
 public import Strata.DL.Lambda.LExpr
 public import Strata.DL.Lambda.LExprWF
+public import Strata.DL.Imperative.StmtSemanticsSmallStep
 public import Strata.DL.Imperative.StmtSemantics
 public import Strata.Languages.Core.CoreGen
 public import Strata.Languages.Core.Procedure
@@ -309,11 +310,11 @@ inductive EvalCommand (π : String → Option Procedure) (φ : CoreEval → Pure
 
 @[expose] abbrev EvalStatement (π : String → Option Procedure) (φ : CoreEval → PureFunc Expression → CoreEval) :
     Imperative.Env Expression → Statement → Imperative.Env Expression → Prop :=
-  Imperative.EvalStmt Expression Command (EvalCommand π φ) (EvalPureFunc φ)
+  Imperative.EvalStmtSmall Expression (EvalCommand π φ) (EvalPureFunc φ)
 
 @[expose] abbrev EvalStatements (π : String → Option Procedure) (φ : CoreEval → PureFunc Expression → CoreEval) :
     Imperative.Env Expression → List Statement → Imperative.Env Expression → Prop :=
-  Imperative.EvalBlock Expression Command (EvalCommand π φ) (EvalPureFunc φ)
+  Imperative.EvalStmtsSmall Expression (EvalCommand π φ) (EvalPureFunc φ)
 
 inductive EvalCommandContract : (String → Option Procedure)  → CoreEval →
   CoreStore → Command → CoreStore → Bool → Prop where
@@ -358,11 +359,11 @@ inductive EvalCommandContract : (String → Option Procedure)  → CoreEval →
 
 @[expose] abbrev EvalStatementContract (π : String → Option Procedure) (φ : CoreEval → PureFunc Expression → CoreEval) :
     Imperative.Env Expression → Statement → Imperative.Env Expression → Prop :=
-  Imperative.EvalStmt Expression Command (EvalCommandContract π) (EvalPureFunc φ)
+  Imperative.EvalStmtSmall Expression (EvalCommandContract π) (EvalPureFunc φ)
 
 @[expose] abbrev EvalStatementsContract (π : String → Option Procedure) (φ : CoreEval → PureFunc Expression → CoreEval) :
     Imperative.Env Expression → List Statement → Imperative.Env Expression → Prop :=
-  Imperative.EvalBlock Expression Command (EvalCommandContract π) (EvalPureFunc φ)
+  Imperative.EvalStmtsSmall Expression (EvalCommandContract π) (EvalPureFunc φ)
 
 end Core
 

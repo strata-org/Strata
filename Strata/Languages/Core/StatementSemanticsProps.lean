@@ -7,8 +7,8 @@ module
 
 public import Strata.DL.Imperative.CmdSemantics
 import all Strata.DL.Imperative.CmdSemantics
-public import Strata.DL.Imperative.StmtSemantics
-import all Strata.DL.Imperative.StmtSemantics
+public import Strata.DL.Imperative.StmtSemanticsSmallStep
+import all Strata.DL.Imperative.StmtSemanticsSmallStep
 public import Strata.DL.Imperative.HasVars
 import all Strata.DL.Imperative.HasVars
 public import Strata.DL.Util.Nodup
@@ -61,11 +61,17 @@ theorem EvalBlockEmpty' {P : PureExpr} {Cmd : Type} {EvalCmd : EvalCmdParam P Cm
 
 theorem EvalStatementsEmpty :
   EvalStatements π φ ρ [] ρ' → ρ = ρ' := by
-  intros H; cases H <;> simp
+  intro H
+  unfold EvalStatements EvalStmtsSmall at H
+  match H with
+  | .step _ _ _ .step_stmts_nil (.refl _) => rfl
 
 theorem EvalStatementsContractEmpty :
   EvalStatementsContract π φ ρ [] ρ' → ρ = ρ' := by
-  intros H; cases H <;> simp
+  intro H
+  unfold EvalStatementsContract EvalStmtsSmall at H
+  match H with
+  | .step _ _ _ .step_stmts_nil (.refl _) => rfl
 
 theorem UpdateStateNotDefMonotone
   {P : PureExpr} {σ σ' : SemanticStore P}
@@ -1329,57 +1335,84 @@ theorem EvalStatementsContractApp' {φ : CoreEval → PureFunc Expression → Co
   ∃ ρ',
     EvalStatementsContract π φ ρ ss₁ ρ' ∧
     EvalStatementsContract π φ ρ' ss₂ ρ'' := by
-  intros Heval
-  induction ss₁ generalizing ρ <;> simp_all
-  case nil =>
-    exists ρ <;> simp_all
-    exact EvalBlock.stmts_none_sem
-  case cons h t ih =>
-    cases Heval with
-    | stmts_some_sem Hh Ht =>
-    next ρ' =>
-    specialize ih Ht
-    cases ih with
-    | intro ρ'' Heval =>
-    exists ρ''
-    simp_all
-    exact EvalBlock.stmts_some_sem Hh Heval.1
+  intro Heval
+  induction ss₁ generalizing ρ with
+  | nil =>
+    simp at Heval
+    exact ⟨ρ, evalStmtsSmallNil Expression (EvalCommandContract π) (EvalPureFunc φ) ρ, Heval⟩
+  | cons s ss₁ ih =>
+    simp [List.cons_append] at Heval
+    unfold EvalStatementsContract EvalStmtsSmall at Heval
+    match Heval with
+    | .step _ _ _ .step_stmts_cons hrest =>
+      have ⟨ρ₁, hterm_s, htail⟩ :=
+        seq_reaches_terminal Expression (EvalCommandContract π) (EvalPureFunc φ) hrest
+      have ⟨ρ', Hss₁, Hss₂⟩ := ih htail
+      have Hcons : EvalStmtsSmall Expression (EvalCommandContract π) (EvalPureFunc φ) ρ (s :: ss₁) ρ' := by
+        unfold EvalStmtsSmall
+        apply ReflTrans.step _ _ _ .step_stmts_cons
+        exact ReflTrans_Transitive _ _ _ _
+          (seq_inner_star Expression (EvalCommandContract π) (EvalPureFunc φ) _ _ ss₁ hterm_s)
+          (.step _ _ _ .step_seq_done
+            (show StepStmtStar Expression (EvalCommandContract π) (EvalPureFunc φ)
+              (.stmts ss₁ ρ₁) (.terminal ρ') from Hss₁))
+      exact ⟨ρ', Hcons, Hss₂⟩
 
 theorem EvalStatementsContractApp {φ : CoreEval → PureFunc Expression → CoreEval} :
   EvalStatementsContract π φ ρ ss₁ ρ' →
   EvalStatementsContract π φ ρ' ss₂ ρ'' →
   EvalStatementsContract π φ ρ (ss₁ ++ ss₂) ρ'' := by
-  intros Heval1 Heval2
-  induction ss₁ generalizing ρ ρ' <;> simp_all
-  case nil =>
-    have Heq := EvalBlockEmpty Heval1
-    simp [Heq]
-    assumption
-  case cons h t ih =>
-    cases Heval1 with
-    | stmts_some_sem Heval Heval' =>
-    next ρ₁ =>
-    constructor
-    . exact Heval
-    . exact ih Heval' Heval2
+  intro Heval1 Heval2
+  induction ss₁ generalizing ρ ρ' with
+  | nil =>
+    simp
+    have Heq := EvalStatementsContractEmpty Heval1
+    rw [Heq]; exact Heval2
+  | cons s ss₁ ih =>
+    simp [List.cons_append]
+    -- Peel off s from Heval1
+    unfold EvalStatementsContract EvalStmtsSmall at Heval1
+    match Heval1 with
+    | .step _ _ _ .step_stmts_cons hrest =>
+      have ⟨ρ₁, hterm_s, htail⟩ :=
+        seq_reaches_terminal Expression (EvalCommandContract π) (EvalPureFunc φ) hrest
+      -- hterm_s : .stmt s ρ →* .terminal ρ₁
+      -- htail : .stmts ss₁ ρ₁ →* .terminal ρ'
+      -- IH: EvalStmtsSmall ρ₁ ss₁ ρ' → EvalStmtsSmall ρ' ss₂ ρ'' → EvalStmtsSmall ρ₁ (ss₁ ++ ss₂) ρ''
+      have Hconcat := ih htail Heval2
+      -- Hconcat : EvalStmtsSmall ρ₁ (ss₁ ++ ss₂) ρ''
+      -- Build: .stmts (s :: (ss₁ ++ ss₂)) ρ →* .terminal ρ''
+      show EvalStmtsSmall Expression (EvalCommandContract π) (EvalPureFunc φ) ρ (s :: (ss₁ ++ ss₂)) ρ''
+      unfold EvalStmtsSmall
+      apply ReflTrans.step _ _ _ .step_stmts_cons
+      exact ReflTrans_Transitive _ _ _ _
+        (seq_inner_star Expression (EvalCommandContract π) (EvalPureFunc φ) _ _ (ss₁ ++ ss₂) hterm_s)
+        (.step _ _ _ .step_seq_done Hconcat)
 
 theorem EvalStatementsApp {φ : CoreEval → PureFunc Expression → CoreEval} :
   EvalStatements π φ ρ ss₁ ρ' →
   EvalStatements π φ ρ' ss₂ ρ'' →
   EvalStatements π φ ρ (ss₁ ++ ss₂) ρ'' := by
-  intros Heval1 Heval2
+  intro Heval1 Heval2
   induction ss₁ generalizing ρ ρ' with
   | nil =>
-    have Heq := EvalBlockEmpty Heval1
-    simp [Heq]
-    assumption
-  | cons h t ih =>
-    cases Heval1 with
-    | stmts_some_sem Heval Heval' =>
-    next ρ₁ =>
-    constructor
-    . exact Heval
-    . exact ih Heval' Heval2
+    simp
+    have Heq := EvalStatementsEmpty Heval1
+    rw [Heq]; exact Heval2
+  | cons s ss₁ ih =>
+    simp [List.cons_append]
+    unfold EvalStatements EvalStmtsSmall at Heval1
+    match Heval1 with
+    | .step _ _ _ .step_stmts_cons hrest =>
+      have ⟨ρ₁, hterm_s, htail⟩ :=
+        seq_reaches_terminal Expression (EvalCommand π φ) (EvalPureFunc φ) hrest
+      have Hconcat := ih htail Heval2
+      show EvalStmtsSmall Expression (EvalCommand π φ) (EvalPureFunc φ) ρ (s :: (ss₁ ++ ss₂)) ρ''
+      unfold EvalStmtsSmall
+      apply ReflTrans.step _ _ _ .step_stmts_cons
+      exact ReflTrans_Transitive _ _ _ _
+        (seq_inner_star Expression (EvalCommand π φ) (EvalPureFunc φ) _ _ (ss₁ ++ ss₂) hterm_s)
+        (.step _ _ _ .step_seq_done Hconcat)
 
 theorem HavocVarsApp :
   HavocVars σ vs₁ σ' →
@@ -2020,7 +2053,7 @@ theorem InvStoresExceptInvStores :
   exact List.Disjoint.symm Hdis
   assumption
 
-/--
+/-
 NOTE:
   In order to prove this refinement theorem, we need to reason about the
   assymmetry between the two semantics regarding the temporary variables
