@@ -794,6 +794,7 @@ partial def combinePositionalAndKeywordArgs
     (funcDecl: Option PythonFunctionDecl)
     (displayName : String := "")
     (callRange : SourceRange)
+    (userFunctions : List String := [])
       : Except TranslationError ((List (Python.expr SourceRange)) × (List (Python.keyword SourceRange)) × Bool):= do
   match funcDecl with
   | some funcDecl =>
@@ -805,8 +806,11 @@ partial def combinePositionalAndKeywordArgs
       throwUserError callRange
         s!"'{name}' called with unknown keyword arguments: {extraNames}"
     let kwords := pyKwordsToHashMap kwords
-    -- Drop extra positional args beyond the signature (e.g., timezone arg
-    -- in datetime.now(timezone.utc) when the prelude models 0 params).
+    -- For user-defined functions, extra positional args are a real arity error.
+    -- For prelude/external functions, silently drop unmodeled trailing args.
+    if posArgs.length > funcDecl.args.length && funcDecl.name ∈ userFunctions then
+      throwUserError callRange
+        s!"'{name}' called with too many positional arguments: expected at most {funcDecl.args.length}, got {posArgs.length}"
     let posArgs := posArgs.take funcDecl.args.length
     let unprovidedPosArgs := funcDecl.args.drop posArgs.length
     --every unprovided positional args must have a default value in the function signature or be provided in the kwargs
@@ -904,7 +908,7 @@ partial def translateCall (ctx : TranslationContext)
     emitCall (allArgs ++ kwargsArg)
   else
   let (args, kwords, funcdecl_hasKwargs) ←
-    combinePositionalAndKeywordArgs args kwords funcDecl methodName callRange
+    combinePositionalAndKeywordArgs args kwords funcDecl methodName callRange ctx.userFunctions
   let trans_args ← args.mapM (translateExpr ctx)
   let trans_kwords ← translateKwargs ctx kwords
   let trans_kwords_exprs :=
