@@ -126,7 +126,7 @@ private partial def collectExprNames (expr : StmtExprMd) : CollectM Unit := do
   | .Identifier _ | .This | .Abstract | .All => pure ()
 
 /-- Collect names from a procedure body. -/
-private partial def collectBodyNames (body : Body) : CollectM Unit := do
+private def collectBodyNames (body : Body) : CollectM Unit := do
   match body with
   | .Transparent expr => collectExprNames expr
   | .Opaque posts impl modifies =>
@@ -137,7 +137,7 @@ private partial def collectBodyNames (body : Body) : CollectM Unit := do
   | .External => pure ()
 
 /-- Collect all names referenced by a procedure (signature + body). -/
-private partial def collectProcDeps (proc : Procedure) : CollectM Unit := do
+private def collectProcDeps (proc : Procedure) : CollectM Unit := do
   proc.inputs.forM  fun p => collectHighTypeNames p.type
   proc.outputs.forM fun p => collectHighTypeNames p.type
   proc.preconditions.forM collectExprNames
@@ -149,7 +149,7 @@ private partial def collectProcDeps (proc : Procedure) : CollectM Unit := do
   collectBodyNames proc.body
 
 /-- Collect all names referenced by a type definition. -/
-private partial def collectTypeDefDeps (td : TypeDefinition) : CollectM Unit := do
+private def collectTypeDefDeps (td : TypeDefinition) : CollectM Unit := do
   match td with
   | .Composite ct =>
     ct.fields.forM fun f => collectHighTypeNames f.type
@@ -203,7 +203,7 @@ private def insertNew (key : String) (deps : Std.HashSet String) (context : Stri
     For procedures with `invokeOn`, adds reverse dependencies so that
     needing the invoked function also pulls in the axiom procedure.
     Returns `Except.error` if two declarations bind the same name. -/
-private partial def buildDependencyMap (prog : Laurel.Program)
+private def buildDependencyMap (prog : Laurel.Program)
     : Except String (Std.HashMap String (Std.HashSet String)) := do
   let action : DepM Unit := do
     for proc in prog.staticProcedures do
@@ -255,14 +255,14 @@ private partial def reachableNamesAux
       | none => reachableNamesAux depMap rest visited
 
 /-- Collect all names referenced by a user Laurel program. -/
-private partial def collectProgramRefs (prog : Laurel.Program) : CollectState :=
+private def collectProgramRefs (prog : Laurel.Program) : CollectState :=
   runCollect do
     prog.staticProcedures.forM collectProcDeps
     prog.types.forM collectTypeDefDeps
 
 /-- Filter a prelude Laurel program to only include declarations
     transitively needed by the user program. -/
-public partial def filterPrelude (prelude user : Laurel.Program)
+public def filterPrelude (prelude user : Laurel.Program)
     : Except String Laurel.Program := do
   -- Guard: filterPrelude does not yet track dependencies through static fields
   -- or constants.  Error early if either program contains them so a silent
