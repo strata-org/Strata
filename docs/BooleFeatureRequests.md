@@ -32,12 +32,6 @@ This document tracks the selected Boole feature-request seeds kept under
    - Problem: this hardcodes a quantified encoding too early in Boole lowering.
      We want to preserve extensional equality as a semantic notion and avoid
      making SMT-level encoding decisions before the Lean level.
-   - Proposed direction: keep `=~=` as Boole syntax, lower it to a Core-level
-     extensional-equality notion, and defer the final encoding choice to the
-     SMT/backend boundary.
-   - Suggested Core shape: add typed Core operators such as `Map.ExtEq` first,
-     then extend the same pattern to other extensional structures such as
-     sequences later.
 2. Nested `for`-loop lowering
    - Direct nested `for ... to` loops now lower cleanly through Boole to Core.
    - Two fixes were needed:
