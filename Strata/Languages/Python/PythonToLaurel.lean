@@ -718,7 +718,11 @@ The following function return a tuple (translated function name, first argument,
 -/
 
 /-- Coerce an expression to Any if its inferred type is a Composite class.
-    Composite values are wrapped via from_ClassInstance with their fields. -/
+    Composite values are wrapped via from_ClassInstance with their fields.
+    TODO: `translated` is used in multiple FieldSelect nodes without binding
+    to a temporary — same pattern as f-string interpolation (FormattedValue).
+    TODO: nested composites (UserDefined fields) are not yet handled
+    recursively; wrapFieldInAny will error on them. -/
 partial def coerceToAny (ctx : TranslationContext) (expr : Python.expr SourceRange)
     (translated : StmtExprMd) : Except TranslationError StmtExprMd := do
   let ty ← inferExprType ctx expr
