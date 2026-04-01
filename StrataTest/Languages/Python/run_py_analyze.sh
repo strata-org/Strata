@@ -77,6 +77,27 @@ for test_file in tests/test_*.py; do
             else
                 echo "Test passed: " $base_name
             fi
+
+            # Check user_errors.txt if a .user_errors.expected file exists
+            user_errors_expected="${expected_dir}/${base_name}.user_errors.expected"
+            user_errors_file="../../../user_errors.txt"
+            if [ $update -eq 1 ] && [ -f "$user_errors_file" ]; then
+                cp "$user_errors_file" "$user_errors_expected"
+                echo "Updated: $user_errors_expected"
+                rm -f "$user_errors_file"
+            elif [ -f "$user_errors_expected" ]; then
+                if [ ! -f "$user_errors_file" ]; then
+                    echo "ERROR: user_errors.txt not generated for $base_name"
+                    failed=1
+                elif ! diff -q "$user_errors_expected" "$user_errors_file" > /dev/null; then
+                    echo "ERROR: user_errors.txt content for $base_name does not match expected"
+                    diff "$user_errors_expected" "$user_errors_file"
+                    failed=1
+                else
+                    echo "Test passed:  ${base_name} (user_errors.txt)"
+                fi
+            fi
+            rm -f "$user_errors_file"
         fi
     fi
 done
