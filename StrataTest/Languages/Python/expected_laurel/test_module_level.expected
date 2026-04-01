@@ -1,20 +1,17 @@
-
-==== Verification Results ====
-assert_assert(115)_calls_Any_get_0: ✅ pass (at line 9, col 0)
-assert_assert(115)_calls_Any_to_bool_1: ✅ pass (at line 9, col 0)
-assert(115): ✅ pass (at line 9, col 0)
-assert_assert(145)_calls_Any_get_0: ✅ pass (at line 10, col 0)
-assert_assert(145)_calls_Any_to_bool_1: ✅ pass (at line 10, col 0)
-assert(145): ✅ pass (at line 10, col 0)
-assert_assert(201)_calls_Any_get_0: ✅ pass (at line 13, col 0)
-assert_assert(201)_calls_Any_to_bool_1: ✅ pass (at line 13, col 0)
-assert(201): ✅ pass (at line 13, col 0)
-assert_assert(236)_calls_PIn_0: ✅ pass (at line 14, col 0)
-assert_assert(236)_calls_Any_to_bool_1: ✅ pass (at line 14, col 0)
-assert(236): ✅ pass (at line 14, col 0)
-assert_assert(258)_calls_PNotIn_0: ✅ pass (at line 15, col 0)
-assert_assert(258)_calls_Any_to_bool_1: ✅ pass (at line 15, col 0)
-assert(258): ✅ pass (at line 15, col 0)
-
+test_module_level.py(9, 0): ✅ pass - assert_assert(115)_calls_Any_get_0
+test_module_level.py(9, 0): ✅ pass - assert_assert(115)_calls_Any_to_bool_1
+test_module_level.py(9, 0): ✅ pass - assert(115)
+test_module_level.py(10, 0): ✅ pass - assert_assert(145)_calls_Any_get_0
+test_module_level.py(10, 0): ✅ pass - assert_assert(145)_calls_Any_to_bool_1
+test_module_level.py(10, 0): ✅ pass - assert(145)
+test_module_level.py(13, 0): ✅ pass - assert_assert(201)_calls_Any_get_0
+test_module_level.py(13, 0): ✅ pass - assert_assert(201)_calls_Any_to_bool_1
+test_module_level.py(13, 0): ✅ pass - assert(201)
+test_module_level.py(14, 0): ✅ pass - assert_assert(236)_calls_PIn_0
+test_module_level.py(14, 0): ✅ pass - assert_assert(236)_calls_Any_to_bool_1
+test_module_level.py(14, 0): ✅ pass - assert(236)
+test_module_level.py(15, 0): ✅ pass - assert_assert(258)_calls_PNotIn_0
+test_module_level.py(15, 0): ✅ pass - assert_assert(258)_calls_Any_to_bool_1
+test_module_level.py(15, 0): ✅ pass - assert(258)
 DETAIL: 15 passed, 0 failed, 0 inconclusive
 RESULT: Analysis success

@@ -90,14 +90,14 @@ private partial def collectExprNames (expr : StmtExprMd) : CollectM Unit := do
     addProcName callee.text; collectExprNames target; args.forM collectExprNames
   | .IfThenElse cond thenB elseB =>
     collectExprNames cond; collectExprNames thenB
-    match elseB with | some e => collectExprNames e | none => pure ()
+    elseB.forM collectExprNames
   | .Block stmts _ => stmts.forM collectExprNames
   | .LocalVariable _ ty init =>
     collectHighTypeNames ty
-    match init with | some e => collectExprNames e | none => pure ()
+    init.forM collectExprNames
   | .While cond invs dec body =>
     collectExprNames cond; invs.forM collectExprNames
-    match dec with | some d => collectExprNames d | none => pure ()
+    dec.forM collectExprNames
     collectExprNames body
   | .Assign targets value =>
     collectExprNames value; targets.forM collectExprNames
@@ -109,19 +109,19 @@ private partial def collectExprNames (expr : StmtExprMd) : CollectM Unit := do
   | .IsType target ty => collectExprNames target; collectHighTypeNames ty
   | .Forall param trigger body =>
     collectHighTypeNames param.type
-    match trigger with | some t => collectExprNames t | none => pure ()
+    trigger.forM collectExprNames
     collectExprNames body
   | .Exists param trigger body =>
     collectHighTypeNames param.type
-    match trigger with | some t => collectExprNames t | none => pure ()
+    trigger.forM collectExprNames
     collectExprNames body
   | .Assert cond | .Assume cond => collectExprNames cond
-  | .Return val => match val with | some v => collectExprNames v | none => pure ()
+  | .Return val => val.forM collectExprNames
   | .Old val | .Fresh val | .Assigned val => collectExprNames val
   | .ProveBy val proof => collectExprNames val; collectExprNames proof
   | .ContractOf _ func => collectExprNames func
   | .ReferenceEquals lhs rhs => collectExprNames lhs; collectExprNames rhs
-  | .Hole _ ty => match ty with | some t => collectHighTypeNames t | none => pure ()
+  | .Hole _ ty => ty.forM collectHighTypeNames
   | .Exit _ | .LiteralInt _ | .LiteralBool _ | .LiteralString _ | .LiteralDecimal _
   | .Identifier _ | .This | .Abstract | .All => pure ()
 
@@ -131,7 +131,7 @@ private partial def collectBodyNames (body : Body) : CollectM Unit := do
   | .Transparent expr => collectExprNames expr
   | .Opaque posts impl modifies =>
     posts.forM collectExprNames
-    match impl with | some i => collectExprNames i | none => pure ()
+    impl.forM collectExprNames
     modifies.forM collectExprNames
   | .Abstract posts => posts.forM collectExprNames
   | .External => pure ()
@@ -141,8 +141,8 @@ private partial def collectProcDeps (proc : Procedure) : CollectM Unit := do
   proc.inputs.forM  fun p => collectHighTypeNames p.type
   proc.outputs.forM fun p => collectHighTypeNames p.type
   proc.preconditions.forM collectExprNames
-  match proc.decreases with | some d => collectExprNames d | none => pure ()
-  match proc.invokeOn with | some t => collectExprNames t | none => pure ()
+  proc.decreases.forM collectExprNames
+  proc.invokeOn.forM collectExprNames
   match proc.determinism with
   | .deterministic mreads => mreads.mapM collectExprNames
   | .nondeterministic => pure ()

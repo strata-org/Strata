@@ -1,0 +1,4 @@
+(set-info :file "/local/home/joehx/features/StrataInternal/kiro_tests_annotated/test_bedrock_guardrails.py")
+(set-info :start 352)
+(set-info :stop 376)
+(set-info :error-message "'create_guardrail' called with missing required arguments: [blockedInputMessaging, blockedOutputsMessaging]")
