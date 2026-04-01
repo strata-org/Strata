@@ -900,7 +900,28 @@ partial def translateCall (ctx : TranslationContext)
       DictStrAny_get_param trans_dict argName dflt.isSome
     let allArgs := trans_posArgs ++ trans_dictArgs
     let kwargsArg := if funcDecl.kwargsName.isSome then [trans_dict] else []
-    emitCall (allArgs ++ kwargsArg)
+    -- Emit type assertions: if a key is present in the dict, its value
+    -- must match the declared parameter type. This catches {"key": None}
+    -- where the parameter type is str/int/bool/float.
+    let mut typeAsserts : List StmtExprMd := []
+    for (argName, argType, _) in remainingParams do
+      let tester? := match argType with
+        | "int" => some "Any..isfrom_int"
+        | "str" => some "Any..isfrom_string"
+        | "bool" => some "Any..isfrom_bool"
+        | "float" => some "Any..isfrom_float"
+        | _ => none
+      if let some testerName := tester? then
+        let dictExpr := mkStmtExprMd (.StaticCall "Any..as_Dict!" [trans_dict])
+        let keyPresent := mkStmtExprMd (.StaticCall "DictStrAny_contains"
+          [dictExpr, mkStmtExprMd (.LiteralString argName)])
+        let val := DictStrAny_get_param trans_dict argName true
+        let isCorrectType := mkStmtExprMd (.StaticCall testerName [val])
+        let cond := mkStmtExprMd (.PrimitiveOp .Implies [keyPresent, isCorrectType])
+        typeAsserts := typeAsserts ++ [mkStmtExprMd (.Assert cond)]
+    let call ← emitCall (allArgs ++ kwargsArg)
+    if typeAsserts.isEmpty then return call
+    else return mkStmtExprMd (.Block (typeAsserts ++ [call]) none)
   else
   let (args, kwords, funcdecl_hasKwargs) ←
     combinePositionalAndKeywordArgs args kwords funcDecl methodName callRange
