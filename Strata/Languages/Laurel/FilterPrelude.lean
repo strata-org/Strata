@@ -171,12 +171,43 @@ private def runCollect (action : CollectM Unit) : CollectState :=
 private def CollectState.allNames (s : CollectState) : Std.HashSet String :=
   s.typeNames.fold (init := s.procNames) fun acc n => acc.insert n
 
-/-- Collect StaticCall targets from an expression (top-level only). -/
+/-- Collect StaticCall targets from an invokeOn expression.
+    In practice these are simple `StaticCall` trees like `f(g(x))`. -/
 private partial def collectInvokeOnTargets (expr : StmtExprMd) : List String :=
   match expr.val with
   | .StaticCall callee args =>
     callee.text :: args.flatMap collectInvokeOnTargets
-  | _ => []
+  | .InstanceCall target callee args =>
+    callee.text :: (collectInvokeOnTargets target ++ args.flatMap collectInvokeOnTargets)
+  | .New ref => [ref.text]
+  | .IfThenElse cond thenB elseB =>
+    collectInvokeOnTargets cond ++ collectInvokeOnTargets thenB ++
+    (elseB.map collectInvokeOnTargets |>.getD [])
+  | .Block stmts _ => stmts.flatMap collectInvokeOnTargets
+  | .LocalVariable _ _ init => init.map collectInvokeOnTargets |>.getD []
+  | .While cond invs dec body =>
+    collectInvokeOnTargets cond ++ invs.flatMap collectInvokeOnTargets ++
+    (dec.map collectInvokeOnTargets |>.getD []) ++ collectInvokeOnTargets body
+  | .Assign targets value =>
+    collectInvokeOnTargets value ++ targets.flatMap collectInvokeOnTargets
+  | .FieldSelect target _ => collectInvokeOnTargets target
+  | .PureFieldUpdate target _ newVal =>
+    collectInvokeOnTargets target ++ collectInvokeOnTargets newVal
+  | .PrimitiveOp _ args => args.flatMap collectInvokeOnTargets
+  | .AsType target _ => collectInvokeOnTargets target
+  | .IsType target _ => collectInvokeOnTargets target
+  | .Forall _ trigger body =>
+    (trigger.map collectInvokeOnTargets |>.getD []) ++ collectInvokeOnTargets body
+  | .Exists _ trigger body =>
+    (trigger.map collectInvokeOnTargets |>.getD []) ++ collectInvokeOnTargets body
+  | .Assert cond | .Assume cond => collectInvokeOnTargets cond
+  | .Return val => val.map collectInvokeOnTargets |>.getD []
+  | .Old val | .Fresh val | .Assigned val => collectInvokeOnTargets val
+  | .ProveBy val proof => collectInvokeOnTargets val ++ collectInvokeOnTargets proof
+  | .ContractOf _ func => collectInvokeOnTargets func
+  | .ReferenceEquals lhs rhs => collectInvokeOnTargets lhs ++ collectInvokeOnTargets rhs
+  | .Hole _ _ | .Exit _ | .LiteralInt _ | .LiteralBool _ | .LiteralString _
+  | .LiteralDecimal _ | .Identifier _ | .This | .Abstract | .All => []
 
 /-- Monad for building the dependency map with duplicate-name detection. -/
 private abbrev DepM := StateT (Std.HashMap String (Std.HashSet String)) (Except String)
