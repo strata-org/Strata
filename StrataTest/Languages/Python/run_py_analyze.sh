@@ -1,29 +1,27 @@
 #!/bin/bash
 
-# Usage: ./run_py_analyze.sh [--incremental] [laurel]
-# Run without arguments for pyAnalyze
-# --incremental: Use pyAnalyzeLaurel --incremental
-# laurel: Use pyAnalyzeLaurel
+# Usage: ./run_py_analyze.sh [laurel] [--incremental] [--update] [--filter <pattern>] [--vc-directory <dir>]
+# Runs pyAnalyzeLaurel on all test_*.py files and compares output to expected.
+# With --incremental, use pyAnalyzeLaurel --incremental
+# With --update, overwrite existing expected files with actual output
+# With --filter <pattern>, only run tests whose name contains <pattern>
+# With --vc-directory <dir>, store VCs in SMT-Lib format in <dir>
+# Note: pyAnalyze (non-Laurel) is deprecated; laurel mode is the default.
 
 failed=0
+update=0
 incremental=false
-mode="core"
+mode="laurel"
 filter=""
 vc_directory=""
 
-# Parse flags
-while [[ $# -gt 0 ]]; do
-    case $1 in
-        --incremental)
-            incremental=true
-            ;;
-        laurel)
-            mode="laurel"
-            ;;
-        *)
-            echo "Unknown argument: $1"
-            exit 1
-            ;;
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --update) update=1 ;;
+        --incremental) incremental=true ;;
+        --filter) filter="$2"; shift ;;
+        --vc-directory) vc_directory="$2"; shift ;;
+        *) mode="$1" ;;
     esac
     shift
 done
