@@ -46,8 +46,8 @@ def computeExprType (model : SemanticModel) (expr : StmtExprMd) : HighTypeMd :=
     | .datatypeConstructor t _ => ⟨ .UserDefined t, md, ⟩
     | .parameter p => p.type
     | .staticProcedure proc => match proc.outputs with
-      | [singleOutput] => singleOutput.type
-      | _ => { val := .TVoid, md := default }
+      | firstOutput :: _ => firstOutput.type
+      | [] => { val := .TVoid, md := default }
     | .unresolved => { val := HighType.Unknown, md := default }
     | astNode =>
       dbg_trace s!"BUG: static call to {callee} not to a procedure but to a {repr astNode}"
