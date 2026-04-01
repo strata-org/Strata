@@ -834,6 +834,17 @@ partial def combinePositionalAndKeywordArgs
         | .mk_keyword _ name _ => name.val.map (·.val)
       throwUserError callRange
         s!"'{name}' called with unknown keyword arguments: {extraNames}"
+    -- When kwargs are accepted, validate that named keyword args match
+    -- known parameter or kwargs field names.
+    if funcDecl.kwargsName.isSome && kwordArgs.length > 0 then
+      let knownNames := funcDecl.args.map (·.1)
+      let extraNames := kwordArgs.filterMap fun kw => match kw with
+        | .mk_keyword _ kwName _ => do
+          let n ← kwName.val.map (·.val)
+          if n ∈ knownNames then none else some n
+      if extraNames.length > 0 then
+        throwUserError callRange
+          s!"'{name}' called with unknown keyword arguments: {extraNames}"
     let kwords := pyKwordsToHashMap kwords
     let unprovidedPosArgs := funcDecl.args.drop posArgs.length
     --every unprovided positional args must have a default value in the function signature or be provided in the kwargs

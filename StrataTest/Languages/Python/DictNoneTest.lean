@@ -103,4 +103,22 @@ def main() -> None:
   if diags.size == 0 then
     throw <| .userError s!"Expected ≥1 diagnostic for len() on non-iterable, got 0"
 
+-- Test 5: Calling a function with a misspelled keyword argument name.
+-- The function signature has "name" but the call uses "nme".
+-- This is caught as a user error during translation.
+#guard_msgs in
+#eval withPython (warnOnSkip := false) fun pythonCmd => do
+  let program :=
+"def f(name: str) -> None:
+    pass
+
+def main() -> None:
+    f(nme=\"hello\")
+"
+  match ← processPythonFile pythonCmd (stringInputContext "test.py" program) |>.toBaseIO with
+  | .ok diags =>
+    if diags.size == 0 then
+      throw <| .userError "Expected error for misspelled kwarg, got success"
+  | .error _ => pure ()  -- Expected: translation error for unknown kwarg
+
 end Strata.Python.DictNoneTest
