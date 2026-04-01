@@ -12,10 +12,6 @@ internal class LoopRegion(int start, int end, List<string> labels) {
     public int end = end;
     public List<string> labels = labels;
     public List<LoopRegion> children = [];
-
-    public void Deconstruct(out int s, out int e, out List<string> l) {
-        s = start; e = end; l = labels;
-    }
 }
 
 public class FieldTypeCollector : ReadOnlyVisitor {
@@ -1265,7 +1261,7 @@ public class StrataGenerator : ReadOnlyVisitor {
     private void EmitStmtList(StmtList stmtList) {
         var bigBlocks = stmtList.BigBlocks;
         // Collect goto targets from direct children AND nested structures
-        var gotoTargets = CollectGotoTargets(bigBlocks, bb => bb.tc);
+        var gotoTargets = new HashSet<string>();
         CollectNestedGotoTargets(bigBlocks, gotoTargets);
 
         if (gotoTargets.Count == 0) {
@@ -1329,8 +1325,7 @@ public class StrataGenerator : ReadOnlyVisitor {
             if (backEdges.ContainsKey(t) && !childBackEdgeLabels.Contains(t)) continue;
             if (!forwardCloseAt.TryGetValue(t, out var closeAt)) continue;
             for (var r = 0; r < loopRegions.Count; r++) {
-                var (start, end, _) = loopRegions[r];
-                if (closeAt > start && closeAt <= end) {
+                if (closeAt > loopRegions[r].start && closeAt <= loopRegions[r].end) {
                     if (!innerTargets.ContainsKey(r)) {
                         innerTargets[r] = new HashSet<string>();
                     }
