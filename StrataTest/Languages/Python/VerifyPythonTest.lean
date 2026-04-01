@@ -130,4 +130,21 @@ open Strata.Parser (stringInputContext)
   if diags.size ≠ 0 then
     throw <| .userError s!"Expected 0 diagnostics, got {diags.size}"
 
+-- Extra positional args beyond prelude signature are silently dropped
+-- (e.g., datetime.now(timezone.utc) when the prelude models 0 params).
+#guard_msgs in
+#eval withPython (warnOnSkip := false) fun pythonCmd => do
+  let program :=
+"from datetime import datetime, timezone, timedelta
+
+def main() -> None:
+    now: datetime = datetime.now(timezone.utc)
+    delta: timedelta = timedelta(days=7)
+    start: datetime = now - delta
+    assert start <= now
+"
+  let diags ← processPythonFile pythonCmd (stringInputContext "test.py" program)
+  if diags.size ≠ 0 then
+    throw <| .userError s!"Expected 0 diagnostics, got {diags.size}: {diags.map (·.message)}"
+
 end Strata.Python.VerifyPythonTest
