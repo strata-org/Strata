@@ -30,6 +30,16 @@ theorem List.Forall₂.length_eq {R : α → β → Prop} {as : List α} {bs : L
   | nil => rfl
   | cons _ _ ih => simp [ih]
 
+theorem List.Forall₂.get? {R : α → β → Prop} {as : List α} {bs : List β}
+    (h : Forall₂ R as bs) (i : Nat) (ha : as[i]? = some a) (hb : bs[i]? = some b)
+    : R a b := by
+  induction h generalizing i with
+  | nil => simp at ha
+  | cons h_head _ ih =>
+    cases i with
+    | zero => simp at ha hb; cases ha; cases hb; exact h_head
+    | succ n => simp at ha hb; exact ih n ha hb
+
 /-! ### Sorts and Type Denotation -/
 
 /-- A sort is a ground monomorphic type — an `LMonoTy` with no free type
@@ -812,6 +822,30 @@ These lemmas expose the structure of `denote` for each expression form,
 proved via `Denotes` to avoid dependent-type casts from the `_inv` lemmas. -/
 
 /-- Unfolding lemma for `denote` of a bound variable. -/
+theorem denote_op
+    {T : LExprParams}
+    (tcInterp : TyConstrInterp)
+    (opInterp : OpInterp T tcInterp)
+    (fvarVal : FreeVarVal T tcInterp)
+    (vt : TyVarVal)
+    {m : T.mono.base.Metadata} {o : T.Identifier} {ty : LMonoTy} {τ : LMonoTy} {Δ : List LMonoTy}
+    (bvarVal : BVarVal tcInterp vt Δ)
+    (h : LExpr.HasTypeA Δ (.op m o (some ty)) τ)
+    : LExpr.denote tcInterp opInterp fvarVal vt bvarVal (.op m o (some ty)) τ h =
+      HasTypeA.op_inv h ▸ opInterp o (ty.substTyVars vt) := by rfl
+
+theorem denote_fvar
+    {T : LExprParams}
+    (tcInterp : TyConstrInterp)
+    (opInterp : OpInterp T tcInterp)
+    (fvarVal : FreeVarVal T tcInterp)
+    (vt : TyVarVal)
+    {m : T.mono.base.Metadata} {name : T.Identifier} {ty : LMonoTy} {τ : LMonoTy} {Δ : List LMonoTy}
+    (bvarVal : BVarVal tcInterp vt Δ)
+    (h : LExpr.HasTypeA Δ (.fvar m name (some ty)) τ)
+    : LExpr.denote tcInterp opInterp fvarVal vt bvarVal (.fvar m name (some ty)) τ h =
+      HasTypeA.fvar_inv h ▸ fvarVal name (ty.substTyVars vt) := by rfl
+
 theorem denote_bvar
     {T : LExprParams}
     (tcInterp : TyConstrInterp)
@@ -1089,10 +1123,28 @@ def LFunc.InterpConsistentEval [DecidableEq T.IDMeta]
     SortDenote.applyArgs tcInterp (opInterp f.name fullSort)
       (denoteArgs tcInterp opInterp fvarVal vt .nil argExprs inputTys h_args)
 
+/-- Every fvar in `e` whose name is in `tyMap` is annotated with the
+corresponding type. -/
+def fvars_annotated_by [DecidableEq T.IDMeta]
+    (tyMap : Map T.Identifier LMonoTy) : LExpr T.mono → Prop
+  | .fvar _ name (some ty) =>
+    ∀ ty', Map.find? tyMap name = some ty' → ty = ty'
+  | .fvar _ _ none => False
+  | .const _ _ => True
+  | .bvar _ _ => True
+  | .op _ _ _ => True
+  | .app _ fn arg => fvars_annotated_by tyMap fn ∧ fvars_annotated_by tyMap arg
+  | .abs _ _ _ body => fvars_annotated_by tyMap body
+  | .ite _ c t e => fvars_annotated_by tyMap c ∧ fvars_annotated_by tyMap t ∧ fvars_annotated_by tyMap e
+  | .eq _ e1 e2 => fvars_annotated_by tyMap e1 ∧ fvars_annotated_by tyMap e2
+  | .quant _ _ _ _ tr body => fvars_annotated_by tyMap tr ∧ fvars_annotated_by tyMap body
+
 /-- A factory is well-typed when every function body type-checks at the
 function's declared output type. -/
-def Factory.WellTyped (F : @Factory T) : Prop :=
-  ∀ f ∈ F, ∀ body, f.body = some body → LExpr.HasTypeA [] body f.output
+def Factory.WellTyped [DecidableEq T.IDMeta] (F : @Factory T) : Prop :=
+  ∀ f ∈ F, ∀ body, f.body = some body →
+    LExpr.HasTypeA [] body f.output ∧
+    fvars_annotated_by f.inputs body
 
 /-- A factory is consistent with an `opInterp` when every function with a body
 is `InterpConsistentBody` and every function with a `concreteEval` is

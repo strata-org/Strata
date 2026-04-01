@@ -278,7 +278,8 @@ theorem Step.denote_preserved
     have h_tau : τ = fn.output := callOfLFunc_output_type hFwt hcall h₁
     subst h_tau
     have hfn_in : fn ∈ F := Factory.callOfLFunc_mem hcall
-    have h_body_ty : LExpr.HasTypeA [] fnbody fn.output := hFwt fn hfn_in fnbody hbody
+    have h_body_ty : LExpr.HasTypeA [] fnbody fn.output := (hFwt fn hfn_in fnbody hbody).1
+    have h_body_annot := (hFwt fn hfn_in fnbody hbody).2
     -- Set up casts and lemmas for substFvars_denote
     -- have h_map_eq : (List.map Prod.snd fn.inputs).map (LMonoTy.substTyVars vt) =
     --     (fn.inputs.map (fun (id, ty) => (id, LMonoTy.substTyVars vt ty))).map Prod.snd := by
@@ -309,8 +310,15 @@ theorem Step.denote_preserved
       exact h_args
     have hfst_eq : List.map Prod.fst (fn.inputs.keys.zip args) = List.map Prod.fst (fn.inputs.keys.zip srts) := by
       rw[zip_map_fst_eq, zip_map_fst_eq] <;> grind
+    have h_annot_go : fvars_annotated_by ((List.map Prod.fst (fn.inputs.keys.zip args)).zip (List.map Prod.snd fn.inputs)) fnbody := by
+      have : (List.map Prod.fst (fn.inputs.keys.zip args)).zip (List.map Prod.snd fn.inputs) = fn.inputs := by
+        rw [h_fst, ListMap.keys_eq_map_fst]
+        induction fn.inputs with
+        | nil => simp
+        | cons hd tl ih => simp [ih]
+      rw [this]; exact h_body_annot
     rw[@substMultiFvarsLifting_denote _ tcInterp opInterp fvarVal vt _ _ _ (fn.inputs.keys.zip args) (fn.inputs.keys.zip srts) _ .nil
-    h_body_ty h₂ args' hfst_eq (by grind) (List.map Prod.snd fn.inputs) (by grind) (by grind) hall]
+    h_body_ty h₂ args' hfst_eq (by grind) (List.map Prod.snd fn.inputs) (by grind) (by grind) hall _ h_annot_go]
     . -- Prove denotation equivalence via well-formedness of interp (use hF)
       rw [h_denote_e]
       have h_consistent := hF.1 fn hfn_in fnbody hbody vt fvarVal h_body_ty

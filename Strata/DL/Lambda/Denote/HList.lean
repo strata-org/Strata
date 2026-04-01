@@ -44,6 +44,12 @@ maps index `i` to `a`. -/
     : HList.cast h₂ (HList.cast h₁ hlist) = HList.cast (h₁.trans h₂) hlist := by
   subst h₁; subst h₂; rfl
 
+/-- `HList.get` commutes with `HList.cast`. -/
+theorem HList.get_cast {α : Type} {f : α → Type} {xs ys : List α} {a : α}
+    (h : xs = ys) (hl : HList f xs) (i : Nat) (hx : xs[i]? = some a) (hy : ys[i]? = some a)
+    : (HList.cast h hl).get i hy = hl.get i hx := by
+  subst h; rfl
+
 /-- Append two HLists. -/
 @[expose] def HList.append {α : Type} {f : α → Type} {xs ys : List α}
     : HList f xs → HList f ys → HList f (xs ++ ys)
@@ -68,5 +74,20 @@ theorem HList.get_append_cons_self {f : α → Type} {xs : List α} {a : α} {ys
     (h : (xs ++ a :: ys)[xs.length]? = some a)
     : HList.get (HList.append hxs (.cons v hys)) xs.length h = v := by
   induction hxs with
-  | nil => simp [HList.append, HList.get]
-  | cons x xs' ih => simp [HList.append, HList.get] at *; exact ih trivial
+  | nil => simp [HList.append]
+  | cons x xs' ih => simp [HList.append] at *; exact ih trivial
+
+/-- Get from an appended HList at index ≥ |xs| returns the same as get from ys. -/
+theorem HList.get_append_right {f : α → Type} {xs ys : List α} {a : α}
+    (hxs : HList f xs) (hys : HList f ys)
+    (i : Nat) (h : (xs ++ ys)[i]? = some a) (h' : ys[i - xs.length]? = some a)
+    (h_ge : i ≥ xs.length)
+    : HList.get (HList.append hxs hys) i h = HList.get hys (i - xs.length) h' := by
+  induction hxs generalizing i with
+  | nil => simp [HList.append]
+  | cons x xs' ih =>
+    cases i with
+    | zero => simp at h_ge
+    | succ n =>
+      simp [HList.append]
+      exact ih n (by simpa using h) (by simpa using h') (by grind)

@@ -104,6 +104,11 @@ def Map.keys (m : Map α β) : List α :=
   | [] => []
   | (a, _) :: m => a :: keys m
 
+theorem Map.keys_eq_map_fst (m : Map α β) : m.keys = m.map Prod.fst := by
+  induction m with
+  | nil => rfl
+  | cons p m ih => cases p; simp [Map.keys, ih]
+
 def Map.values (m : Map α β) : List β :=
   match m with
   | [] => []
@@ -232,6 +237,54 @@ theorem Map.findNone_eq_notmem_mapfst {m: Map α β} [DecidableEq α]: ¬ a ∈ 
   split <;> simp_all
   split at H <;> simp_all
   rw [Eq.comm]; assumption
+
+/-- If `Map.find?` returns `some e`, there is an index `i` where the key
+lives and no earlier entry has the same key. -/
+theorem Map.find?_index [DecidableEq α] {m : Map α β} {a : α} {b : β}
+    (h : Map.find? m a = some b)
+    : ∃ (i : Nat), (m.map Prod.fst)[i]? = some a
+        ∧ (m.map Prod.snd)[i]? = some b
+        ∧ ∀ j < i, (m.map Prod.fst)[j]? ≠ some a := by
+  induction m with
+  | nil => simp [Map.find?] at h
+  | cons p rest ih =>
+    simp only [Map.find?] at h
+    split at h
+    · rename_i heq
+      cases h
+      exact ⟨0, by simp [heq], by simp, fun j hj => by omega⟩
+    · rename_i hne
+      obtain ⟨i, hk, hv, hfirst⟩ := ih h
+      refine ⟨i + 1, by simpa using hk, by simpa using hv, fun j hj => ?_⟩
+      cases j with
+      | zero => simp; exact hne
+      | succ n => simpa using hfirst n (by omega)
+/-- If `find?` succeeds on `m` at key `a`, and `cs` has the same length as `m`,
+then `find?` on `m.map fst |>.zip cs` also succeeds, and the values come from
+the same index. -/
+theorem Map.find?_zip [DecidableEq α] {m : Map α β} {a : α} {b : β}
+    {cs : List γ}
+    (h : Map.find? m a = some b) (hlen : cs.length = m.length)
+    : ∃ (c : γ) (i : Nat), Map.find? ((m.map Prod.fst).zip cs) a = some c
+           ∧ (m.map Prod.snd)[i]? = some b
+           ∧ cs[i]? = some c := by
+  induction m generalizing cs with
+  | nil => simp [Map.find?] at h
+  | cons p rest ih =>
+    obtain ⟨k, v⟩ := p
+    cases cs with
+    | nil => simp at hlen
+    | cons c cs' =>
+      simp only [Map.find?] at h
+      have hlen' : cs'.length = rest.length := by simpa using hlen
+      split at h <;> rename_i heq
+      · cases h
+        refine ⟨c, 0, ?_, by simp, by simp⟩
+        simp [Map.find?, heq]
+      · obtain ⟨c', i, hfind, hsnd, hcs⟩ := ih h hlen'
+        refine ⟨c', i + 1, ?_, by simpa using hsnd, by simpa using hcs⟩
+        simp [Map.find?, heq, hfind]
+
 /-- `Map.erase` on a key not in the map is identity. -/
 theorem Map.erase_of_find?_none [DecidableEq α]
     (m : Map α β) (x : α) (h : Map.find? m x = none) :
