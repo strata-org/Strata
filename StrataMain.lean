@@ -10,6 +10,10 @@ import Strata.Languages.Core.Verifier
 import Strata.Languages.Core.SarifOutput
 import Strata.Languages.C_Simp.Verify
 import Strata.Languages.B3.Verifier.Program
+import Strata.Languages.Core.CoreSMT.Verifier
+import Strata.Languages.Core.CoreSMT.State
+import Strata.Languages.Core.CoreSMT.RemoveUnusedVars
+import Strata.DL.SMT.SolverInterface
 import Strata.Util.IO
 import Strata.Languages.Laurel.Grammar.ConcreteToAbstractTreeTranslator
 import Strata.Languages.Laurel.LaurelToCoreTranslator
@@ -28,11 +32,7 @@ import Strata.Backends.CBMC.CollectSymbols
 import Strata.Backends.CBMC.GOTO.CoreToGOTOPipeline
 
 import Strata.SimpleAPI
-import Strata.Languages.Core.DDMTransform.ASTtoCST
-import Strata.Languages.Core.CoreSMT.Verifier
-import Strata.Languages.Core.CoreSMT.State
-import Strata.Languages.Core.CoreSMT.RemoveUnusedVars
-import Strata.DL.SMT.SolverInterface
+import Strata.Util.Profile
 
 open Strata
 
@@ -507,13 +507,6 @@ private def printPyAnalyzeSummary (vcResults : Array Core.VCResult)
   else
     printPyAnalyzeResult (if nInconclusive > 0 then "Inconclusive" else "Analysis success") counts
 
-private def deriveBaseName (file : String) : String :=
-  let name := System.FilePath.fileName file |>.getD file
-  let suffixes := [".python.st.ion", ".py.ion", ".st.ion", ".st"]
-  match suffixes.find? (name.endsWith ·) with
-  | some sfx => (name.dropEnd sfx.length).toString
-  | none     => name
-
 /-- Convert a CoreSMTResult to a Core.VCResult -/
 private def coreSMTResultToVCResult (r : Strata.Core.CoreSMT.CoreSMTResult) : Core.VCResult :=
   match r.error with
@@ -540,8 +533,9 @@ private def verifyIncremental
     (pySourceOpt : Option (String × String)) : IO (Array Core.VCResult) := do
   let solver ← Strata.B3.Verifier.createInteractiveSolver Core.defaultSolver
   let solverInterface ← Strata.SMT.mkSolverInterfaceFromSolver solver
-  let state := Strata.Core.CoreSMT.CoreSMTState.init solverInterface { accumulateErrors := true }
-  let procs := programDecls.filterMap fun d => match d with
+  let config : Core.CoreSMT.CoreSMTConfig := { accumulateErrors := true }
+  let state := Core.CoreSMT.CoreSMTState.init solverInterface config
+  let stmts := programDecls.filterMap fun d => match d with
     | .proc p _ =>
       if p.header.inputs.isEmpty && p.header.outputs.isEmpty then
         let cleaned := Strata.Core.CoreSMT.removeUnusedVarsStmts p.body
@@ -549,44 +543,36 @@ private def verifyIncremental
       else none
     | _ => none
   let mut allResults : Array Core.VCResult := #[]
-  let mut state := state
-  let mut smtCtx := Core.SMT.Context.default
-  for (procName, block) in procs do
+  for (procName, stmt) in stmts do
     IO.println s!"procedure {procName}:"
-    let (state', smtCtx', smtResults) ← Strata.Core.CoreSMT.verify state Core.Env.init [block] smtCtx
-    state := state'
-    smtCtx := smtCtx'
-    let results := smtResults.map coreSMTResultToVCResult
-    for r in results do
-      let marker := match r.outcome with
-        | .ok o => if o.isPass then "✅ pass" else if o.isAlwaysFalse then "❌ fail" else "❓ unknown"
-        | .error e => s!"🚨 {e}"
-      let suffix := match Imperative.getFileRange r.obligation.metadata with
-        | some fr =>
-          if fr.range.isNone then ""
-          else match pySourceOpt with
-            | some (pyPath, srcText) =>
+    let (_, _, smtResults) ← Core.CoreSMT.verify state Core.Env.init [stmt]
+    let vcResults := smtResults.map coreSMTResultToVCResult
+    for r in vcResults do
+      let outcomeStr := r.formatOutcome
+      IO.println s!"  {r.obligation.label}: {outcomeStr}"
+    allResults := allResults ++ vcResults.toArray
+    match pySourceOpt with
+    | some (pyPath, srcText) =>
+      let fm : Lean.FileMap := .ofString srcText
+      for r in vcResults do
+        if r.isFailure then
+          if let some fr := Imperative.getFileRange r.obligation.metadata then
+            if !fr.range.isNone then
               match fr.file with
               | .file path =>
                 if path == pyPath then
-                  let pos := (Lean.FileMap.ofString srcText).toPosition (fr.range).start
-                  s!" (line {pos.line}, col {pos.column})"
-                else s!" (byte {(fr.range).start})"
-            | none => s!" (byte {(fr.range).start})"
-        | none => ""
-      IO.println s!"  {r.obligation.label}: {marker}{suffix}"
-      if let some diag := r.diagnosis then
-        for failure in diag.diagnosedFailures do
-          let failureKind := if failure.isRefuted then "it is impossible that" else "could not prove"
-          let exprStr := (Strata.Core.formatExprs [failure.expression]).pretty
-          IO.println s!"    └─ {failureKind} {exprStr}"
-          let assumptions := failure.report.context.pathCondition
-          if !assumptions.isEmpty then
-            IO.println s!"       under the assumptions"
-            for assumption in assumptions do
-              IO.println s!"         {(Strata.Core.formatExprs [assumption]).pretty}"
-    allResults := allResults ++ results.toArray
+                  let pos := fm.toPosition fr.range.start
+                  IO.println s!"  (at line {pos.line}, col {pos.column})"
+              | _ => pure ()
+    | none => pure ()
   return allResults
+
+private def deriveBaseName (file : String) : String :=
+  let name := System.FilePath.fileName file |>.getD file
+  let suffixes := [".python.st.ion", ".py.ion", ".st.ion", ".st"]
+  match suffixes.find? (name.endsWith ·) with
+  | some sfx => (name.dropEnd sfx.length).toString
+  | none     => name
 
 def pyAnalyzeLaurelCommand : Command where
   name := "pyAnalyzeLaurel"
@@ -609,8 +595,8 @@ def pyAnalyzeLaurelCommand : Command where
             { name := "vc-directory",
               help := "Store VCs in SMT-Lib format in <dir>.",
               takesArg := .arg "dir" },
-            { name := "incremental", help := "Use the incremental (in-memory) CoreSMT verification engine." },
             { name := "unique-bound-names", help := "Use globally unique names for quantifier-bound variables." },
+            { name := "incremental", help := "Use the incremental (in-memory) CoreSMT verification engine." },
             { name := "keep-all-files",
               help := "Store intermediate Laurel and Core programs in <dir>.",
               takesArg := .arg "dir" }]
@@ -747,20 +733,13 @@ def pyAnalyzeLaurelCommand : Command where
     let vcResults ←
       if incremental then
         verifyIncremental coreProgram.decls pySourceOpt
-      else do
-        let vcResults ←
+      else
+        profileStep profile "SMT verification" do
           match ← Core.verifyProgram coreProgram options
                     (moreFns := Strata.Python.ReFactory)
                     (proceduresToVerify := some userProcNames) |>.toBaseIO with
           | .ok r => pure r
-          | .error msg => exitInternalError msg
-        pure vcResults
-
-    -- Print results
-    if !laurelTranslateErrors.isEmpty then
-      IO.println "\n==== Errors ===="
-      for err in laurelTranslateErrors do
-        IO.println err
+          | .error msg => exitPyAnalyzeInternalError msg
 
     let classifier : ResultClassifier :=
       match checkMode with
@@ -769,11 +748,20 @@ def pyAnalyzeLaurelCommand : Command where
             | .ok o => o.alwaysFalseAndReachable
             | _     => false }
       | _ => {}
+
+    -- Print results
+    if !laurelTranslateErrors.isEmpty then
+      IO.println "\n==== Errors ===="
+      for err in laurelTranslateErrors do
+        IO.println err
+
     -- Print results (non-incremental only; incremental prints per-procedure above)
     if !incremental then do
       IO.println "\n==== Verification Results ===="
       let mut s := ""
       for vcResult in vcResults do
+        let propertySummaryOption := vcResult.obligation.metadata.getPropertySummary
+        let propertyDescription := propertySummaryOption.getD vcResult.obligation.label
         let (locationPrefix, locationSuffix) := match Imperative.getFileRange vcResult.obligation.metadata with
           | some fr =>
             if fr.range.isNone then ("", "")
@@ -799,8 +787,9 @@ def pyAnalyzeLaurelCommand : Command where
                   ("", "")
           | none => ("", "")
         let outcomeStr := vcResult.formatOutcome
-        s := s ++ s!"{locationPrefix}{vcResult.obligation.label}: \
-                      {outcomeStr}{locationSuffix}\n"
+        let relatedStr := formatRelatedPositions vcResult.obligation.metadata mfm
+        s := s ++ s!"{locationPrefix}{propertyDescription}: \
+                      {outcomeStr}{locationSuffix}{relatedStr}\n"
       IO.println s
       -- Output in SARIF format if requested
       if outputSarif then
