@@ -794,13 +794,14 @@ def verifySingleEnv (pE : Program × Env) (options : VerifyOptions)
       -- If PE resolved both checks, we're done, unless we always want to generate SMT queries
       if not options.alwaysGenerateSMT then
         if let (some peSat, some peVal) := (peSatResult?, peValResult?) then
-          -- PE results are sound by construction (syntactic evaluation),
-          -- so no phase adjustment is needed.
+          let phases := externalPhases ++ p.abstractedPhases
+          let (adjPeSat, satPhaseLog) := peSat.adjustForPhases phases obligation
+          let (adjPeVal, valPhaseLog) := peVal.adjustForPhases phases obligation
           let peLog := buildSolverLog peSat peVal
-            satisfiabilityCheck validityCheck [] []
+            satisfiabilityCheck validityCheck satPhaseLog valPhaseLog
           let outcome : VCOutcome := {
-            satisfiabilityProperty := peSat,
-            validityProperty := peVal,
+            satisfiabilityProperty := adjPeSat,
+            validityProperty := adjPeVal,
             solverLog := peLog }
           let result : VCResult := { obligation, outcome := .ok outcome, verbose := options.verbose,
                                       checkLevel := options.checkLevel, checkMode := options.checkMode, lexprModel := [] }
