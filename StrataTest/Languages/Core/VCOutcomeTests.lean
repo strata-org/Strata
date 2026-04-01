@@ -209,24 +209,31 @@ private def unknownResult : Result := Imperative.SMT.Result.unknown (Ident := Co
 #guard_msgs in #eval AbstractedPhase.needsValidation [preservingPhase, rejectingPhase]
 
 -- adjustForPhases: sat stays sat with ModelPreserving
-#guard satResult.adjustForPhases [preservingPhase] == satResult
+#guard (satResult.adjustForPhases [preservingPhase]).1 == satResult
+#guard (satResult.adjustForPhases [preservingPhase]).2 == [satResult]
 
 -- adjustForPhases: sat becomes unknown with rejecting validator
-#guard satResult.adjustForPhases [rejectingPhase] == unknownResult
+#guard (satResult.adjustForPhases [rejectingPhase]).1 == unknownResult
+#guard (satResult.adjustForPhases [rejectingPhase]).2 == [unknownResult]
 
 -- adjustForPhases: sat stays sat with accepting validator
-#guard satResult.adjustForPhases [acceptingPhase] == satResult
+#guard (satResult.adjustForPhases [acceptingPhase]).1 == satResult
+#guard (satResult.adjustForPhases [acceptingPhase]).2 == [satResult]
 
 -- adjustForPhases: sat becomes unknown when any phase rejects
-#guard satResult.adjustForPhases [preservingPhase, rejectingPhase] == unknownResult
+#guard (satResult.adjustForPhases [preservingPhase, rejectingPhase]).1 == unknownResult
+#guard (satResult.adjustForPhases [preservingPhase, rejectingPhase]).2 == [unknownResult, unknownResult]
 
 -- adjustForPhases: unsat is unchanged regardless of phases
-#guard unsatResult.adjustForPhases [rejectingPhase] == unsatResult
+#guard (unsatResult.adjustForPhases [rejectingPhase]).1 == unsatResult
+#guard (unsatResult.adjustForPhases [rejectingPhase]).2 == []
 
 -- adjustForPhases: unknown is unchanged regardless of phases
-#guard unknownResult.adjustForPhases [rejectingPhase] == unknownResult
+#guard (unknownResult.adjustForPhases [rejectingPhase]).1 == unknownResult
+#guard (unknownResult.adjustForPhases [rejectingPhase]).2 == []
 
 -- adjustForPhases: empty phases list preserves sat
-#guard satResult.adjustForPhases [] == satResult
+#guard (satResult.adjustForPhases []).1 == satResult
+#guard (satResult.adjustForPhases []).2 == []
 
 end Core

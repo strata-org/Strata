@@ -217,12 +217,19 @@ def AbstractedPhase.needsValidation (phases : List AbstractedPhase) : Bool :=
 
 /-- Validate a model against all phases. Phases are recorded top-down,
     so we reverse them to validate from the last (innermost) phase first.
-    Returns true only if every `modelToValidate` phase accepts the model. -/
+    Returns the adjusted result and a log of intermediate results per phase,
+    ordered outermost-first (deepest phase closest to SMT at the end). -/
 def AbstractedPhase.validateModel (phases : List AbstractedPhase)
-    (model : Imperative.SMT.CounterEx Expression.Ident) : Bool :=
-  phases.reverse.all fun p => match p.modelValidation with
-    | .modelPreserving => true
-    | .modelToValidate f => f model
+    (result : SMT.Result)
+    : SMT.Result × List SMT.Result :=
+  -- Process phases innermost-first; accumulate log entries in reverse
+  let (finalResult, revLog) := phases.reverse.foldl (init := (result, [])) fun (r, log) p =>
+    let r' := match r, p.modelValidation with
+      | .sat m, .modelToValidate f => if f m then .sat m else .unknown m
+      | _, _ => r
+    (r', r' :: log)
+  -- Reverse log so outermost is first, deepest is last
+  (finalResult, revLog.reverse)
 
 /-- Alias for solver log entries. Each entry records a single SMT result. -/
 abbrev SolverPhaseLog := SMT.Result
@@ -643,12 +650,13 @@ def Program.hasOverApproximation (p : Program) : Bool :=
     | _ => false
 
 /-- Convert an unvalidated SMT sat result to unknown (preserving the model)
-    when any pipeline phase cannot validate the model. -/
+    when any pipeline phase cannot validate the model. Returns the adjusted
+    result and a log of intermediate results per phase. -/
 def SMT.Result.adjustForPhases (r : SMT.Result)
-    (phases : List AbstractedPhase) : SMT.Result :=
+    (phases : List AbstractedPhase) : SMT.Result × List SolverPhaseLog :=
   match r with
-  | .sat m => if AbstractedPhase.validateModel phases m then .sat m else .unknown m
-  | other => other
+  | .sat _ => AbstractedPhase.validateModel phases r
+  | other => (other, [])
 
 /-- Build the list of abstracted phases for a program. When the program
     has over-approximations, the phase uses a TODO validator that always
@@ -697,13 +705,14 @@ def getObligationResult (assumptionTerms : List Term) (obligationTerm : Term)
                  {if options.verbose >= .normal then prog else ""}"
     .error <| DiagnosticModel.fromFormat e
   | .ok (satResult, validityResult, estate) =>
-    -- Log the raw solver results before soundness adjustments
+    -- Convert unvalidated sat results to unknown when phases require validation
+    let (adjSat, satPhaseLog) := satResult.adjustForPhases phases
+    let (adjVal, valPhaseLog) := validityResult.adjustForPhases phases
+    -- Build solver log: raw solver results followed by phase validation logs
     let smtLog : List SolverPhaseLog :=
       (if satisfiabilityCheck then [satResult] else []) ++
-      (if validityCheck then [validityResult] else [])
-    -- Convert unvalidated sat results to unknown when phases require validation
-    let adjSat := satResult.adjustForPhases phases
-    let adjVal := validityResult.adjustForPhases phases
+      (if validityCheck then [validityResult] else []) ++
+      satPhaseLog ++ valPhaseLog
     let rawOutcome : VCOutcome := {
       satisfiabilityProperty := adjSat,
       validityProperty := adjVal,
@@ -766,11 +775,12 @@ def verifySingleEnv (pE : Program × Env) (options : VerifyOptions)
       if not options.alwaysGenerateSMT then
         if let (some peSat, some peVal) := (peSatResult?, peValResult?) then
           let phases := p.abstractedPhases
-          let adjSat := peSat.adjustForPhases phases
-          let adjVal := peVal.adjustForPhases phases
+          let (adjSat, satPhaseLog) := peSat.adjustForPhases phases
+          let (adjVal, valPhaseLog) := peVal.adjustForPhases phases
           let peLog : List SolverPhaseLog :=
             (if satisfiabilityCheck then [peSat] else []) ++
-            (if validityCheck then [peVal] else [])
+            (if validityCheck then [peVal] else []) ++
+            satPhaseLog ++ valPhaseLog
           let outcome : VCOutcome := {
             satisfiabilityProperty := adjSat,
             validityProperty := adjVal,
