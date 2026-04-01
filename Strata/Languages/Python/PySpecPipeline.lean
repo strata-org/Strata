@@ -14,6 +14,7 @@ import Strata.Languages.Python.Specs
 import Strata.Languages.Python.Specs.DDM
 import Strata.Languages.Python.Specs.IdentifyOverloads
 import Strata.Languages.Python.Specs.ToLaurel
+import Strata.Transform.ProcedureInlining
 import Strata.Util.DecideProp
 import Strata.Util.Profile
 
@@ -350,6 +351,18 @@ public def translateCombinedLaurel (combined : Laurel.Program)
     : (Option Core.Program × List DiagnosticModel) :=
   let (coreOption, errors, _) := translateCombinedLaurelWithLowered combined
   (coreOption, errors)
+
+/-- Inline pyspec procedures in a Core program. Each call to a procedure
+    whose name is in `pyspecNames` is replaced by its body. -/
+public def inlinePySpecProcedures (core : Core.Program)
+    (pyspecNames : Std.HashSet String) : Except String Core.Program :=
+  if pyspecNames.isEmpty then .ok core
+  else match Core.Transform.runProgram (targetProcList := .none)
+        (coreInlineCallCmd
+          (doInline := fun name _ => pyspecNames.contains name))
+        core .emp with
+  | ⟨.ok (_, inlined), _⟩ => .ok inlined
+  | ⟨.error e, _⟩ => .error e
 
 /-- Errors from the pyAnalyzeLaurel pipeline. -/
 public inductive PipelineError where

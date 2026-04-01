@@ -115,12 +115,9 @@ private meta def runAnalyzeAndVerify
   -- Split prelude / user procedure names at FIRST_END_MARKER
   let (_preludeNames, userProcNames) := Strata.splitProcNames coreProgram
   -- Inline pyspec procedures at call sites
-  let coreProgram ← match Core.Transform.runProgram (targetProcList := .none)
-        (Core.ProcedureInlining.inlineCallCmd
-          (doInline := λ name _ => result.pyspecProcedureNames.contains name))
-        coreProgram .emp with
-    | ⟨.error e, _⟩ => return .error s!"Inlining failed: {e}"
-    | ⟨.ok (_, inlined), _⟩ => pure inlined
+  let coreProgram ← match Strata.inlinePySpecProcedures coreProgram result.pyspecProcedureNames with
+    | .error e => return .error s!"Inlining failed: {e}"
+    | .ok inlined => pure inlined
   -- Verify
   let options : Core.VerifyOptions :=
     { Core.VerifyOptions.default with

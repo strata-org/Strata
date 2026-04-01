@@ -596,19 +596,16 @@ def pyAnalyzeLaurelCommand : Command where
     -- Inline pyspec procedures so their precondition assertions are checked
     -- at call sites with concrete arguments.
     let coreProgram ← profileStep profile "Inline PySpec procedures" do
-      if !pyspecProcNames.isEmpty then
-        match Core.inlineProcedures coreProgram
-              ⟨.some (fun name _ => pyspecProcNames.contains name)⟩ with
-        | .error e => exitPyAnalyzeInternalError s!"Inlining failed: {e}"
-        | .ok inlined => do
-          if verbose then
-            IO.println "\n==== Core Program (after inlining) ===="
-            IO.print inlined
-          if let some dir := keepDir then
-            let path := s!"{dir}/{baseName}.inlined.core"
-            IO.FS.writeFile path (toString inlined)
-          pure inlined
-      else pure coreProgram
+      match Strata.inlinePySpecProcedures coreProgram pyspecProcNames with
+      | .error e => exitPyAnalyzeInternalError s!"Inlining failed: {e}"
+      | .ok inlined => do
+        if verbose then
+          IO.println "\n==== Core Program (after inlining) ===="
+          IO.print inlined
+        if let some dir := keepDir then
+          let path := s!"{dir}/{baseName}.inlined.core"
+          IO.FS.writeFile path (toString inlined)
+        pure inlined
 
     -- Verify using Core verifier
     let checkMode ← parseCheckMode pflags
