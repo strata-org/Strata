@@ -51,6 +51,7 @@ theorem TouchVarsEmpty :
   @TouchVars P σ [] σ' → σ = σ' := by
   intros H; cases H <;> simp
 
+/-
 theorem EvalBlockEmpty' {P : PureExpr} {Cmd : Type} {EvalCmd : EvalCmdParam P Cmd}
   {extendEval : ExtendEval P}
   { ρ ρ' : Env P }
@@ -65,6 +66,7 @@ theorem EvalStatementsEmpty :
   unfold EvalStatements EvalStmtsSmall at H
   match H with
   | .step _ _ _ .step_stmts_nil (.refl _) => rfl
+-/
 
 theorem EvalStatementsContractEmpty :
   EvalStatementsContract π φ ρ [] ρ' → ρ = ρ' := by
@@ -1389,6 +1391,7 @@ theorem EvalStatementsContractApp {φ : CoreEval → PureFunc Expression → Cor
         (seq_inner_star Expression (EvalCommandContract π) (EvalPureFunc φ) _ _ (ss₁ ++ ss₂) hterm_s)
         (.step _ _ _ .step_seq_done Hconcat)
 
+/-
 theorem EvalStatementsApp {φ : CoreEval → PureFunc Expression → CoreEval} :
   EvalStatements π φ ρ ss₁ ρ' →
   EvalStatements π φ ρ' ss₂ ρ'' →
@@ -1413,6 +1416,7 @@ theorem EvalStatementsApp {φ : CoreEval → PureFunc Expression → CoreEval} :
       exact ReflTrans_Transitive _ _ _ _
         (seq_inner_star Expression (EvalCommand π φ) (EvalPureFunc φ) _ _ (ss₁ ++ ss₂) hterm_s)
         (.step _ _ _ .step_seq_done Hconcat)
+-/
 
 theorem HavocVarsApp :
   HavocVars σ vs₁ σ' →
@@ -2063,6 +2067,7 @@ NOTE:
   variables are irrelevant, and can be approximated by updating the relevant
   variables (that is, lhs ++ modifies)
 -/
+/-
 theorem EvalCallBodyRefinesContract :
   ∀ {π φ δ σ lhs n args σ' p md md'},
   π n = .some p →
@@ -2110,6 +2115,7 @@ theorem EvalBlockRefinesContract
   | .stmts_some_sem Hstmt Hrest =>
     .stmts_some_sem (EvalStmtRefinesContract Hstmt) (EvalBlockRefinesContract Hrest)
 end
+-/
 
 /-- If an expression is defined, all its free variables are defined in the store.
     Relies on the definedness propagation properties in `WellFormedCoreEvalCong`

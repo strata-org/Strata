@@ -364,14 +364,14 @@ abbrev StepStmtStar :
   ReflTrans (StepStmt P EvalCmd extendEval)
 
 /-- A statement evaluates successfully if it steps to a terminal configuration. -/
-def EvalStmtSmall
+abbrev EvalStmtSmall
     (ρ : Env P) (s : Stmt P CmdT)
     (ρ' : Env P) : Prop :=
   StepStmtStar P EvalCmd extendEval (.stmt s ρ) (.terminal ρ')
 
 /-- A list of statements evaluates successfully if it steps to a terminal
     configuration. -/
-def EvalStmtsSmall
+abbrev EvalStmtsSmall
     (ρ : Env P) (ss : List (Stmt P CmdT))
     (ρ' : Env P) : Prop :=
   StepStmtStar P EvalCmd extendEval (.stmts ss ρ) (.terminal ρ')
