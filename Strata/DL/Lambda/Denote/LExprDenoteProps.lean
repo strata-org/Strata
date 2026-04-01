@@ -14,7 +14,7 @@ namespace Lambda
 
 variable {T : LExprParams}
 variable (tcInterp : TyConstrInterp)
-variable (opInterp : OpInterp T tcInterp)
+variable (opInterp : OpInterp tcInterp)
 variable (fvarVal : FreeVarVal T tcInterp)
 variable (vt : TyVarVal)
 
@@ -232,10 +232,10 @@ result. -/
 theorem denote_ext
     {e : LExpr T.mono} {τ : LMonoTy}
     {Δ : List LMonoTy}
-    {opInterp₁ opInterp₂ : OpInterp T tcInterp}
+    {opInterp₁ opInterp₂ : OpInterp tcInterp}
     {fvarVal₁ fvarVal₂ : FreeVarVal T tcInterp}
     {bvarVal₁ bvarVal₂ : BVarVal tcInterp vt Δ}
-    (h_op : ∀ o ty, (o, some ty) ∈ e.usedOps → opInterp₁ o (LMonoTy.substTyVars vt ty) = opInterp₂ o (LMonoTy.substTyVars vt ty))
+    (h_op : ∀ o ty, (o, some ty) ∈ e.usedOps → opInterp₁ o.name (LMonoTy.substTyVars vt ty) = opInterp₂ o.name (LMonoTy.substTyVars vt ty))
     (h_fvar : ∀ name ty, (name, some ty) ∈ e.freeVars → fvarVal₁ name (LMonoTy.substTyVars vt ty) = fvarVal₂ name (LMonoTy.substTyVars vt ty))
     (h_bvar : ∀ i (τ' : LMonoTy) (h₁ : Δ[i]? = some τ') (h₂ : Δ[i]? = some τ'), i ∈ e.usedBvars → bvarVal₁.get i h₁ = bvarVal₂.get i h₂)
     (h₁ : LExpr.HasTypeA Δ e τ)
@@ -418,7 +418,7 @@ theorem replaceMetadata_HasTypeA {e: LExpr T.mono}
 theorem denote_replaceMetadata
     {T : LExprParams} [Inhabited T.mono.base.IDMeta]
     (tcInterp : TyConstrInterp)
-    (opInterp : OpInterp T tcInterp)
+    (opInterp : OpInterp tcInterp)
     (fvarVal : FreeVarVal T tcInterp)
     (vt : TyVarVal)
     {Δ : List LMonoTy}
@@ -426,7 +426,7 @@ theorem denote_replaceMetadata
     {e₁ : LExpr T.mono} {τ : LMonoTy} (f : T.Metadata → NewMetadata)
     (h₁ : LExpr.HasTypeA Δ e₁ τ):
     let T' : LExprParams := ⟨NewMetadata, T.IDMeta⟩
-    let opInterp' : OpInterp T' tcInterp := opInterp
+    let opInterp' : OpInterp tcInterp := opInterp
     let fvarVal' : FreeVarVal T' tcInterp := fvarVal
     LExpr.denote tcInterp opInterp fvarVal vt bvarVal e₁ τ h₁ =
     LExpr.denote tcInterp opInterp' fvarVal' vt bvarVal (LExpr.replaceMetadata e₁ f) τ (replaceMetadata_HasTypeA f h₁) := by

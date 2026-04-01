@@ -11,12 +11,13 @@ import all Strata.DL.Lambda.Semantics
 import Strata.DL.Lambda.Denote.HList
 import all Strata.DL.Lambda.Denote.LExprDenoteProps
 import all Strata.DL.Lambda.Denote.LExprDenoteSubst
+import all Strata.DL.Lambda.Denote.CallOfLFuncDenote
 
 namespace Lambda
 
 variable {T : LExprParams}
 variable (tcInterp : TyConstrInterp)
-variable (opInterp : OpInterp T tcInterp)
+variable (opInterp : OpInterp tcInterp)
 variable (fvarVal : FreeVarVal T tcInterp)
 variable (vt : TyVarVal)
 
@@ -98,35 +99,6 @@ theorem eql_false_implies_denote_ne
       LExpr.denote tcInterp opInterp fvarVal vt .nil e₂ τ h₂ := by
   sorry
 
-/-- If `callOfLFunc F e = some (callee, args, fn)` and `e : τ` and `F` is
-well-typed, then `τ = fn.output`. -/
-theorem callOfLFunc_output_type
-    {F : @Factory T}
-    {e : LExpr T.mono} {τ : LMonoTy}
-    {callee : LExpr T.mono} {args : List (LExpr T.mono)} {fn : LFunc T}
-    (hFwt : Factory.WellTyped F)
-    (hcall : Factory.callOfLFunc F e = some (callee, args, fn))
-    (h : LExpr.HasTypeA [] e τ)
-    : τ = fn.output := by
-  sorry
-
-/-- If `callOfLFunc F e = some (callee, args, fn)` and `e` is well-typed, then
-the denotation of `e` equals `opInterp fn.name` applied to the denotations of
-`args`. -/
-theorem callOfLFunc_denote
-    {F : @Factory T}
-    {e : LExpr T.mono} {τ : LMonoTy}
-    {callee : LExpr T.mono} {args : List (LExpr T.mono)} {fn : LFunc T}
-    (hcall : Factory.callOfLFunc F e = some (callee, args, fn))
-    (h : LExpr.HasTypeA [] e τ)
-    : ∃ (h_args : List.Forall₂ (LExpr.HasTypeA []) args (List.map Prod.snd fn.inputs)),
-      let inputSorts := (List.map Prod.snd fn.inputs).map (LMonoTy.substTyVars vt)
-      let fullSort := LSort.mkArrow (LMonoTy.substTyVars vt τ) inputSorts
-      LExpr.denote tcInterp opInterp fvarVal vt .nil e τ h =
-        SortDenote.applyArgs tcInterp (opInterp fn.name fullSort)
-          (denoteArgs tcInterp opInterp fvarVal vt .nil args (List.map Prod.snd fn.inputs) h_args) := by
-  sorry
-
 theorem zip_map_fst_eq {α β: Type} (l1: List α) (l2: List β) :
   List.length l1 = List.length l2 →
   (l1.zip l2).map Prod.fst = l1 := by
@@ -152,6 +124,7 @@ theorem Step.denote_preserved
     (hF : Factory.InterpConsistent tcInterp opInterp F)
     (hFwt : Factory.WellTyped F)
     (hEnv : Env.InterpConsistent tcInterp opInterp env fvarVal)
+    (hOps : OpsConsistent F e₁)
     : LExpr.denote tcInterp opInterp fvarVal vt .nil e₁ τ h₁ =
       LExpr.denote tcInterp opInterp fvarVal vt .nil e₂ τ h₂ := by
   induction hstep generalizing τ with
@@ -179,7 +152,7 @@ theorem Step.denote_preserved
         rw [denote_app .nil h_fn h_arg,
             denote_app .nil h_fn' h_arg']
         congr 1
-        rw[ih h_arg h_arg']
+        rw[ih h_arg h_arg' hOps.2]
   | reduce_1 e1 e1' e2 hstep' ih =>
     cases h₁ with
     | app h_fn h_arg =>
@@ -190,7 +163,7 @@ theorem Step.denote_preserved
         rw [denote_app .nil h_fn h_arg,
             denote_app .nil h_fn' h_arg']
         congr 1
-        rw[ih h_fn h_fn']
+        rw[ih h_fn h_fn' hOps.1]
   | ite_reduce_then ethen eelse =>
     cases h₁ with
     | ite h_c h_t h_e =>
@@ -212,7 +185,7 @@ theorem Step.denote_preserved
       | ite h_c' h_t' h_e' =>
         rw [denote_ite .nil h_c h_t h_e,
             denote_ite .nil h_c' h_t' h_e']
-        rw [ih h_c h_c']
+        rw [ih h_c h_c' hOps.1]
   | ite_reduce_then_branch econd ethen ethen' eelse hstep' ih =>
     cases h₁ with
     | ite h_c h_t h_e =>
@@ -220,7 +193,7 @@ theorem Step.denote_preserved
       | ite h_c' h_t' h_e' =>
         rw [denote_ite .nil h_c h_t h_e,
             denote_ite .nil h_c' h_t' h_e']
-        rw [ih h_t h_t']
+        rw [ih h_t h_t' hOps.2.1]
   | ite_reduce_else_branch econd ethen eelse eelse' hstep' ih =>
     cases h₁ with
     | ite h_c h_t h_e =>
@@ -228,7 +201,7 @@ theorem Step.denote_preserved
       | ite h_c' h_t' h_e' =>
         rw [denote_ite .nil h_c h_t h_e,
             denote_ite .nil h_c' h_t' h_e']
-        rw [ih h_e h_e']
+        rw [ih h_e h_e' hOps.2.2]
   | eq_reduce_true e1 e2 heql =>
     cases h₁ with
     | eq h_1 h_2 =>
@@ -248,7 +221,7 @@ theorem Step.denote_preserved
       cases h₂ with
       | eq h_1' h_2' =>
         have hty := HasTypeA_unique h_2 h_2'; subst hty
-        have ih_eq := ih h_1 h_1'
+        have ih_eq := ih h_1 h_1' hOps.1
         by_cases heq : LExpr.denote tcInterp opInterp fvarVal vt .nil e1 _ h_1 =
             LExpr.denote tcInterp opInterp fvarVal vt .nil e2 _ h_2
         · rw [denote_eq_true .nil h_1 h_2 _ heq,
@@ -263,7 +236,7 @@ theorem Step.denote_preserved
       cases h₂ with
       | eq h_1' h_2' =>
         have hty := HasTypeA_unique h_1 h_1'; subst hty
-        have ih_eq := ih h_2 h_2'
+        have ih_eq := ih h_2 h_2' hOps.2
         by_cases heq : LExpr.denote tcInterp opInterp fvarVal vt .nil v1 _ h_1 =
             LExpr.denote tcInterp opInterp fvarVal vt .nil e2 _ h_2
         · rw [denote_eq_true .nil h_1 h_2 _ heq,
@@ -273,69 +246,9 @@ theorem Step.denote_preserved
               denote_eq_false .nil h_1' h_2' _
                 (by rw [← ih_eq]; exact heq)]
   | expand_fn e callee fnbody new_body args fn hcall hbody heq =>
-    subst heq
-    obtain ⟨h_args, h_denote_e⟩ := callOfLFunc_denote tcInterp opInterp fvarVal vt hcall h₁
-    have h_tau : τ = fn.output := callOfLFunc_output_type hFwt hcall h₁
-    subst h_tau
-    have hfn_in : fn ∈ F := Factory.callOfLFunc_mem hcall
-    have h_body_ty : LExpr.HasTypeA [] fnbody fn.output := (hFwt fn hfn_in fnbody hbody).1
-    have h_body_annot := (hFwt fn hfn_in fnbody hbody).2
-    -- Set up casts and lemmas for substFvars_denote
-    have h_arity : args.length = fn.inputs.length := by
-      have := h_args.length_eq; simp at this; exact this
-    have hlen: args.length = fn.inputs.keys.length := by
-      rw[ListMap.keys_eq_map_fst]; grind
-    have h_fst : (fn.inputs.keys.zip args).map Prod.fst = fn.inputs.keys :=
-      by rw[zip_map_fst_eq] ; symm; assumption
-    -- have h_fst' : (fn.inputs.map (fun (id, ty) => (id, LMonoTy.substTyVars vt ty))).map Prod.fst = fn.inputs.keys := by grind
-    let srts : List LSort :=  (List.map (Lambda.LMonoTy.substTyVars vt) (List.map Prod.snd fn.inputs))
-    have hcast : (List.map (Lambda.LMonoTy.substTyVars vt) (List.map Prod.snd fn.inputs)) = (List.map Prod.snd (fn.inputs.keys.zip srts)) := by
-      unfold srts; rw[zip_map_snd_eq]
-      rw[List.map_map, ListMap.keys_eq_map_fst]; grind
-    let args' := HList.cast hcast (denoteArgs tcInterp opInterp fvarVal vt .nil args (List.map Prod.snd fn.inputs) h_args)
-    have hall: Lambda.List.Forall₂ (LExpr.HasTypeA []) (List.map Prod.snd (fn.inputs.keys.zip args)) (List.map Prod.snd fn.inputs) := by
-      have h: (List.map Prod.snd (fn.inputs.keys.zip args)) = args := by
-        rw[zip_map_snd_eq]; grind
-      rw[h]
-      exact h_args
-    have hfst_eq : List.map Prod.fst (fn.inputs.keys.zip args) = List.map Prod.fst (fn.inputs.keys.zip srts) := by
-      rw[zip_map_fst_eq, zip_map_fst_eq] <;> grind
-    have h_annot_go : fvars_annotated_by ((List.map Prod.fst (fn.inputs.keys.zip args)).zip (List.map Prod.snd fn.inputs)) fnbody := by
-      have : (List.map Prod.fst (fn.inputs.keys.zip args)).zip (List.map Prod.snd fn.inputs) = fn.inputs := by
-        rw [h_fst, ListMap.keys_eq_map_fst]
-        induction fn.inputs with
-        | nil => simp
-        | cons hd tl ih => simp [ih]
-      rw [this]; exact h_body_annot
-    rw[@substFvarsLifting_denote _ tcInterp opInterp fvarVal vt _ _ _ (fn.inputs.keys.zip args) (fn.inputs.keys.zip srts) _ .nil
-    h_body_ty h₂ args' hfst_eq (by grind) (List.map Prod.snd fn.inputs) (by grind) (by grind) hall _ h_annot_go]
-    . -- Prove denotation equivalence via well-formedness of interp (use hF)
-      rw [h_denote_e]
-      have h_consistent := hF.1 fn hfn_in fnbody hbody vt fvarVal h_body_ty
-      have h_bindings_eq : fn.inputs.map (fun x => match x with | (id, ty) => (id, LMonoTy.substTyVars vt ty)) =
-          fn.inputs.keys.zip srts := by
-        unfold srts; rw[ListMap.keys_eq_map_fst]
-        induction fn.inputs with
-        | nil => simp
-        | cons hd tl ih => simp [ih]
-      rw [h_bindings_eq] at h_consistent
-      have h_inst := h_consistent args'
-      rw [← h_inst]
-      exact SortDenote.applyArgs_cast_eq tcInterp hcast (opInterp fn.name)
-        (denoteArgs tcInterp opInterp fvarVal vt .nil args (List.map Prod.snd fn.inputs) h_args)
-    . -- Prove hlist eq - probably need result about element-by-element eq
-      have hsnd : List.map Prod.snd (fn.inputs.keys.zip args) = args := by
-        rw[zip_map_snd_eq]; grind
-      unfold args'
-      simp only [hsnd]
+    sorry
   | eval_fn e callee e' args fn denotefn hcall heval hresult =>
-    have h_tau := callOfLFunc_output_type hFwt hcall h₁; subst h_tau
-    obtain ⟨h_args, h_denote_e⟩ := callOfLFunc_denote tcInterp opInterp fvarVal vt hcall h₁
-    have hfn_in : fn ∈ F := Factory.callOfLFunc_mem hcall
-    rename_i m
-    have h_consistent := hF.2 fn hfn_in denotefn heval vt fvarVal m args e'
-        hresult.symm h_args h₂
-    rw [h_denote_e, ← h_consistent]
+    sorry
 
 /-- A single step preserves well-typedness. -/
 theorem Step.type_preserved

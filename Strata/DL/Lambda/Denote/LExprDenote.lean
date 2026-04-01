@@ -171,8 +171,13 @@ def IdentInterp (T : LExprParams)
     (tcInterp : TyConstrInterp) :=
   Identifier T.IDMeta → (s : LSort) → SortDenote tcInterp s
 
-/-- Operator interpretation: gives meaning to each named operation. -/
-abbrev OpInterp := IdentInterp
+/-- Operator interpretation: gives meaning to each named operation.
+Takes the string name (not the full identifier with metadata) so that
+the semantics is independent of metadata.
+Need because Factory lookup only depends on the name -/
+def OpInterp
+    (tcInterp : TyConstrInterp) :=
+  String → (s : LSort) → SortDenote tcInterp s
 /-- Free-variable valuation: maps each free variable to its value. -/
 abbrev FreeVarVal := IdentInterp
 
@@ -395,7 +400,7 @@ cleanly separates interpretations (fixed for a theory) from valuations
 noncomputable def LExpr.denote
     {T : LExprParams}
     (tcInterp : TyConstrInterp)
-    (opInterp : OpInterp T tcInterp)
+    (opInterp : OpInterp tcInterp)
     (fvarVal : FreeVarVal T tcInterp)
     (vt : TyVarVal)
     {Δ : List LMonoTy}
@@ -407,7 +412,7 @@ noncomputable def LExpr.denote
   | .const _ c =>
     HasTypeA.const_inv h ▸ denoteConst tcInterp vt c
   | .op _ o (some ty) =>
-    HasTypeA.op_inv h ▸ opInterp o (ty.substTyVars vt)
+    HasTypeA.op_inv h ▸ opInterp o.name (ty.substTyVars vt)
   | .op _ _ none => absurd (HasTypeA_to_typeCheck h) (by simp [typeCheck])
   | .fvar _ x (some ty) =>
     HasTypeA.fvar_inv h ▸ fvarVal x (ty.substTyVars vt)
@@ -461,7 +466,7 @@ well-typed expression `e` (of type `τ` in context `Δ`) denotes the value `v`. 
 inductive Denotes
     {T : LExprParams}
     (tcInterp : TyConstrInterp)
-    (opInterp : OpInterp T tcInterp)
+    (opInterp : OpInterp tcInterp)
     (fvarVal : FreeVarVal T tcInterp)
     (vt : TyVarVal)
     : {Δ : List LMonoTy} → (bvarVal : BVarVal tcInterp vt Δ) →
@@ -470,7 +475,7 @@ inductive Denotes
   | const : ∀ {Δ} (bvarVal : BVarVal tcInterp vt Δ) {m c h},
       Denotes tcInterp opInterp fvarVal vt bvarVal (.const m c) c.ty h (denoteConst tcInterp vt c)
   | op : ∀ {Δ} (bvarVal : BVarVal tcInterp vt Δ) {m o ty h},
-      Denotes tcInterp opInterp fvarVal vt bvarVal (.op m o (some ty)) ty h (opInterp o (ty.substTyVars vt))
+      Denotes tcInterp opInterp fvarVal vt bvarVal (.op m o (some ty)) ty h (opInterp o.name (ty.substTyVars vt))
   | fvar : ∀ {Δ} (bvarVal : BVarVal tcInterp vt Δ) {m x ty h},
       Denotes tcInterp opInterp fvarVal vt bvarVal (.fvar m x (some ty)) ty h (fvarVal x (ty.substTyVars vt))
   | bvar : ∀ {Δ} (bvarVal : BVarVal tcInterp vt Δ) {m i τ} {h_lookup : Δ[i]? = some τ} {h},
@@ -546,7 +551,7 @@ local macro "typecheck_split" h1a:ident h1b:ident h2:ident h3:ident heq:ident
 theorem denote_Denotes
     {T : LExprParams}
     (tcInterp : TyConstrInterp)
-    (opInterp : OpInterp T tcInterp)
+    (opInterp : OpInterp tcInterp)
     (fvarVal : FreeVarVal T tcInterp)
     (vt : TyVarVal)
     {Δ : List LMonoTy}
@@ -696,7 +701,7 @@ theorem denote_Denotes
 theorem Denotes_denote
     {T : LExprParams}
     {tcInterp : TyConstrInterp}
-    {opInterp : OpInterp T tcInterp}
+    {opInterp : OpInterp tcInterp}
     {fvarVal : FreeVarVal T tcInterp}
     {vt : TyVarVal}
     {Δ : List LMonoTy}
@@ -825,19 +830,19 @@ proved via `Denotes` to avoid dependent-type casts from the `_inv` lemmas. -/
 theorem denote_op
     {T : LExprParams}
     (tcInterp : TyConstrInterp)
-    (opInterp : OpInterp T tcInterp)
+    (opInterp : OpInterp tcInterp)
     (fvarVal : FreeVarVal T tcInterp)
     (vt : TyVarVal)
     {m : T.mono.base.Metadata} {o : T.Identifier} {ty : LMonoTy} {τ : LMonoTy} {Δ : List LMonoTy}
     (bvarVal : BVarVal tcInterp vt Δ)
     (h : LExpr.HasTypeA Δ (.op m o (some ty)) τ)
     : LExpr.denote tcInterp opInterp fvarVal vt bvarVal (.op m o (some ty)) τ h =
-      HasTypeA.op_inv h ▸ opInterp o (ty.substTyVars vt) := by rfl
+      HasTypeA.op_inv h ▸ opInterp o.name (ty.substTyVars vt) := by rfl
 
 theorem denote_fvar
     {T : LExprParams}
     (tcInterp : TyConstrInterp)
-    (opInterp : OpInterp T tcInterp)
+    (opInterp : OpInterp tcInterp)
     (fvarVal : FreeVarVal T tcInterp)
     (vt : TyVarVal)
     {m : T.mono.base.Metadata} {name : T.Identifier} {ty : LMonoTy} {τ : LMonoTy} {Δ : List LMonoTy}
@@ -849,7 +854,7 @@ theorem denote_fvar
 theorem denote_bvar
     {T : LExprParams}
     (tcInterp : TyConstrInterp)
-    (opInterp : OpInterp T tcInterp)
+    (opInterp : OpInterp tcInterp)
     (fvarVal : FreeVarVal T tcInterp)
     (vt : TyVarVal)
     {m : T.mono.base.Metadata} {i : Nat} {τ : LMonoTy} {Δ : List LMonoTy}
@@ -862,7 +867,7 @@ theorem denote_bvar
 theorem denote_app
     {T : LExprParams}
     {tcInterp : TyConstrInterp}
-    {opInterp : OpInterp T tcInterp}
+    {opInterp : OpInterp tcInterp}
     {fvarVal : FreeVarVal T tcInterp}
     {vt : TyVarVal}
     {m : T.Metadata} {fn arg : LExpr T.mono} {aty τ : LMonoTy} {Δ : List LMonoTy}
@@ -882,7 +887,7 @@ theorem denote_app
 theorem denote_abs
     {T : LExprParams}
     {tcInterp : TyConstrInterp}
-    {opInterp : OpInterp T tcInterp}
+    {opInterp : OpInterp tcInterp}
     {fvarVal : FreeVarVal T tcInterp}
     {vt : TyVarVal}
     {m : T.Metadata} {name : String} {body : LExpr T.mono} {aty rty : LMonoTy} {Δ : List LMonoTy}
@@ -902,7 +907,7 @@ theorem denote_abs
 theorem denote_eq_true
     {T : LExprParams}
     {tcInterp : TyConstrInterp}
-    {opInterp : OpInterp T tcInterp}
+    {opInterp : OpInterp tcInterp}
     {fvarVal : FreeVarVal T tcInterp}
     {vt : TyVarVal}
     {m : T.Metadata} {e1 e2 : LExpr T.mono} {ty' : LMonoTy} {Δ : List LMonoTy}
@@ -922,7 +927,7 @@ theorem denote_eq_true
 theorem denote_eq_false
     {T : LExprParams}
     {tcInterp : TyConstrInterp}
-    {opInterp : OpInterp T tcInterp}
+    {opInterp : OpInterp tcInterp}
     {fvarVal : FreeVarVal T tcInterp}
     {vt : TyVarVal}
     {m : T.Metadata} {e1 e2 : LExpr T.mono} {ty' : LMonoTy} {Δ : List LMonoTy}
@@ -941,7 +946,7 @@ theorem denote_eq_false
 theorem denote_ite
     {T : LExprParams}
     {tcInterp : TyConstrInterp}
-    {opInterp : OpInterp T tcInterp}
+    {opInterp : OpInterp tcInterp}
     {fvarVal : FreeVarVal T tcInterp}
     {vt : TyVarVal}
     {m : T.Metadata} {c t e : LExpr T.mono} {τ : LMonoTy} {Δ : List LMonoTy}
@@ -974,7 +979,7 @@ theorem denote_ite
 theorem denote_quant_all_true
     {T : LExprParams}
     {tcInterp : TyConstrInterp}
-    {opInterp : OpInterp T tcInterp}
+    {opInterp : OpInterp tcInterp}
     {fvarVal : FreeVarVal T tcInterp}
     {vt : TyVarVal}
     {m : T.Metadata} {name : String} {tr body : LExpr T.mono} {qty : LMonoTy} {Δ : List LMonoTy}
@@ -993,7 +998,7 @@ theorem denote_quant_all_true
 theorem denote_quant_all_false
     {T : LExprParams}
     {tcInterp : TyConstrInterp}
-    {opInterp : OpInterp T tcInterp}
+    {opInterp : OpInterp tcInterp}
     {fvarVal : FreeVarVal T tcInterp}
     {vt : TyVarVal}
     {m : T.Metadata} {name : String} {tr body : LExpr T.mono} {qty : LMonoTy} {Δ : List LMonoTy}
@@ -1012,7 +1017,7 @@ theorem denote_quant_all_false
 theorem denote_quant_exist_true
     {T : LExprParams}
     {tcInterp : TyConstrInterp}
-    {opInterp : OpInterp T tcInterp}
+    {opInterp : OpInterp tcInterp}
     {fvarVal : FreeVarVal T tcInterp}
     {vt : TyVarVal}
     {m : T.Metadata} {name : String} {tr body : LExpr T.mono} {qty : LMonoTy} {Δ : List LMonoTy}
@@ -1031,7 +1036,7 @@ theorem denote_quant_exist_true
 theorem denote_quant_exist_false
     {T : LExprParams}
     {tcInterp : TyConstrInterp}
-    {opInterp : OpInterp T tcInterp}
+    {opInterp : OpInterp tcInterp}
     {fvarVal : FreeVarVal T tcInterp}
     {vt : TyVarVal}
     {m : T.Metadata} {name : String} {tr body : LExpr T.mono} {qty : LMonoTy} {Δ : List LMonoTy}
@@ -1057,7 +1062,7 @@ section FactoryConsistent
 
 variable {T : LExprParams}
 variable (tcInterp : TyConstrInterp)
-variable (opInterp : OpInterp T tcInterp)
+variable (opInterp : OpInterp tcInterp)
 
 /-- Apply a curried `SortDenote` value of iterated-arrow sort to an `HList`
 of argument values. -/
@@ -1084,7 +1089,7 @@ def LFunc.InterpConsistentBody [DecidableEq T.IDMeta]
   let fullSort := LSort.mkArrow outputSort inputSorts
   ∀ (h_body : LExpr.HasTypeA [] body f.output)
     (args : HList (SortDenote tcInterp) inputSorts),
-    SortDenote.applyArgs tcInterp (opInterp f.name fullSort) args =
+    SortDenote.applyArgs tcInterp (opInterp f.name.name fullSort) args =
     LExpr.denote tcInterp opInterp
       (fvarVal.withArgs bindings args)
       vt .nil body f.output h_body
@@ -1120,7 +1125,7 @@ def LFunc.InterpConsistentEval [DecidableEq T.IDMeta]
   ∀ (h_args : List.Forall₂ (LExpr.HasTypeA []) argExprs inputTys)
     (h_result : LExpr.HasTypeA [] resultExpr f.output),
   LExpr.denote tcInterp opInterp fvarVal vt .nil resultExpr f.output h_result =
-    SortDenote.applyArgs tcInterp (opInterp f.name fullSort)
+    SortDenote.applyArgs tcInterp (opInterp f.name.name fullSort)
       (denoteArgs tcInterp opInterp fvarVal vt .nil argExprs inputTys h_args)
 
 /-- Every fvar in `e` whose name is in `tyMap` is annotated with the
@@ -1161,7 +1166,7 @@ section EnvConsistent
 
 variable {T : LExprParams}
 variable (tcInterp : TyConstrInterp)
-variable (opInterp : OpInterp T tcInterp)
+variable (opInterp : OpInterp tcInterp)
 
 /-- A free-variable valuation `fvarVal` is consistent with an environment `env`
 when every binding `env x = some e` that is well-typed at `ty` denotes to the

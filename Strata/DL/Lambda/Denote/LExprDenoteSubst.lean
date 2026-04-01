@@ -28,7 +28,7 @@ elab "generalize_lhs_last_arg" : tactic => do
 
 variable {T : LExprParams}
 variable (tcInterp : TyConstrInterp)
-variable (opInterp : OpInterp T tcInterp)
+variable (opInterp : OpInterp tcInterp)
 variable (fvarVal : FreeVarVal T tcInterp)
 variable (vt : TyVarVal)
 
