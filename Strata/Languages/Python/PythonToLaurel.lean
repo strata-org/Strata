@@ -879,7 +879,14 @@ partial def translateCall (ctx : TranslationContext)
   -- Emit the final call, handling Name vs Attribute dispatch and transparent procedures.
   let callMd := sourceRangeToMetaData ctx.filePath callRange
   let emitCall (callArgs : List StmtExprMd) : Except TranslationError StmtExprMd := do
-    let mkCall (name : String) := mkStmtExprMdWithLoc (StmtExpr.StaticCall name callArgs) callMd
+    let mkCall (name : String) := mkStmtExprMd (StmtExpr.StaticCall name callArgs) callMd
+    -- Check for len() on Composite types (class instances without __len__)
+    if funcName == "Any_len_to_Any" && args.length == 1 then
+      match inferExprType ctx args[0]! with
+      | .ok argType =>
+        if isCompositeType ctx argType then
+          throwUserError f.ann s!"len() is not supported on '{argType}' (no __len__ method)"
+      | .error _ => pure ()
     match f with
     | .Name  _ _ _ =>
         -- If calling str() on a composite-typed variable, use $composite_to_string_any_<type>
