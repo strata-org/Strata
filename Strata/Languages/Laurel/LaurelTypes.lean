@@ -41,7 +41,7 @@ def computeExprType (model : SemanticModel) (expr : StmtExprMd) : HighTypeMd :=
   | .FieldSelect _ fieldName => (model.get fieldName).getType
   -- Pure field update returns the same type as the target
   | .PureFieldUpdate target _ _ => computeExprType model target
-  -- Calls — we don't track return types here, so fall back to TVoid
+  -- Calls — return the declared output type when available, fall back to TVoid otherwise
   | .StaticCall callee _ => match model.get callee with
     | .datatypeConstructor t _ => ⟨ .UserDefined t, md, ⟩
     | .parameter p => p.type
