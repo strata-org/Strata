@@ -462,7 +462,14 @@ private def exitPyAnalyzeKnownLimitation {α} (message : String) : IO α := do
     success / failure / inconclusive (guaranteeing disjointness).
     Unreachable count is reported as supplementary info. -/
 private def printPyAnalyzeSummary (vcResults : Array Core.VCResult)
-    (classifier : ResultClassifier := {}) : IO Unit := do
+    (checkMode : VerificationMode := .deductive) : IO Unit := do
+  let classifier : ResultClassifier :=
+    match checkMode with
+    | .bugFinding | .bugFindingAssumingCompleteSpec =>
+      { isFailure := fun r => match r.outcome with
+          | .ok o => o.alwaysFalseAndReachable
+          | _     => false }
+    | _ => {}
   -- 1. Partition out implementation errors (broken results, not classifiable).
   let (implError, classifiable) :=
     vcResults.partition (fun r => r.isImplementationError || r.hasSMTError)
@@ -640,14 +647,6 @@ def pyAnalyzeLaurelCommand : Command where
       | .ok r => pure r
       | .error msg => exitPyAnalyzeInternalError msg
 
-    let classifier : ResultClassifier :=
-      match checkMode with
-      | .bugFinding | .bugFindingAssumingCompleteSpec =>
-        { isFailure := fun r => match r.outcome with
-            | .ok o => o.alwaysFalseAndReachable
-            | _     => false }
-      | _ => {}
-
     -- Print translation errors (always on stderr)
     if !laurelTranslateErrors.isEmpty then
       IO.eprintln "\n==== Errors ===="
@@ -668,10 +667,8 @@ def pyAnalyzeLaurelCommand : Command where
           | some msg => s!" - {msg}"
           | none => s!" - {vcResult.obligation.label}"
         let outcomeStr := vcResult.formatOutcome
-        if !location.isEmpty then
-          s := s ++ s!"{location}: {outcomeStr}{messageSuffix}\n"
-        else
-          s := s ++ s!"{outcomeStr}{messageSuffix}\n"
+        let loc := if !location.isEmpty then s!"{location}: " else "unknown location: "
+        s := s ++ s!"{loc}{outcomeStr}{messageSuffix}\n"
       IO.print s
     -- Output in SARIF format if requested
     if outputSarif then
@@ -679,7 +676,7 @@ def pyAnalyzeLaurelCommand : Command where
         | some (pyPath, fm) => Map.empty.insert (Strata.Uri.file pyPath) fm
         | none => Map.empty
       Core.Sarif.writeSarifOutput checkMode files vcResults (filePath ++ ".sarif")
-    printPyAnalyzeSummary vcResults classifier
+    printPyAnalyzeSummary vcResults checkMode
 
 def pyAnalyzeToGotoCommand : Command where
   name := "pyAnalyzeToGoto"

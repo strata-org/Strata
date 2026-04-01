@@ -1,4 +1,4 @@
-✅ pass - callElimAssert_requires_11
+unknown location: ✅ pass - callElimAssert_requires_11
 test_class_with_methods.py(23, 4): ✅ pass - assert_assert(459)_calls_Any_to_bool_0
 test_class_with_methods.py(23, 4): ❌ fail - assert(459)
 test_class_with_methods.py(26, 4): ✅ pass - assert_assert(544)_calls_Any_to_bool_0
