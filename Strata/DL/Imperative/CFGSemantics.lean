@@ -6,7 +6,7 @@
 import Strata.DL.Imperative.BasicBlock
 import Strata.DL.Imperative.Cmd
 import Strata.DL.Imperative.CmdSemantics
-import Strata.DL.Imperative.StmtSemantics
+import Strata.DL.Imperative.StmtSemanticsSmallStep
 import Strata.DL.Util.Relations
 
 ---------------------------------------------------------------------
@@ -37,7 +37,7 @@ state. A configuration consists of either:
 - The next block to execute
 - An indication that the program that has finished executing
 -/
-inductive Config (l : Type) (P : PureExpr): Type where
+inductive CFGConfig (l : Type) (P : PureExpr): Type where
   /-- The label to execute next. -/
   | cont : l → SemanticStore P → Config l P
   /-- A terminal configuration, indicating that execution has finished. -/
@@ -54,7 +54,7 @@ inductive EvalDetBlock
   (EvalCmd : EvalCmdParam P CmdT)
   (extendEval : ExtendEval P)
   [HasNot P] :
-  SemanticStore P → DetBlock l CmdT P → Config l P → Prop where
+  SemanticStore P → DetBlock l CmdT P → CFGConfig l P → Prop where
 
   | step_goto_true :
     EvalCmds P EvalCmd δ σ cs σ' →
@@ -88,7 +88,7 @@ inductive EvalNondetBlock
   (EvalCmd : EvalCmdParam P CmdT)
   (extendEval : ExtendEval P)
   [HasNot P] :
-  SemanticStore P → NondetBlock l CmdT P → Config l P → Prop where
+  SemanticStore P → NondetBlock l CmdT P → CFGConfig l P → Prop where
 
   | step_goto_none :
     EvalCmds P EvalCmd δ σ cs σ' →
@@ -109,8 +109,8 @@ inductive StepCFG
   {Blk l CmdT : Type}
   [BEq l]
   (P : PureExpr)
-  (EvalBlock : SemanticStore P → Blk → Config l P → Prop) :
-  CFG l Blk → Config l P → Config l P → Prop where
+  (EvalBlock : SemanticStore P → Blk → CFGConfig l P → Prop) :
+  CFG l Blk → CFGConfig l P → CFGConfig l P → Prop where
   | eval_next :
     List.lookup t cfg.blocks = .some b →
     EvalBlock σ b config →
@@ -124,7 +124,7 @@ def StepCFGStar
   {Blk l CmdT : Type}
   [BEq l]
   (P : PureExpr)
-  (EvalBlock : SemanticStore P → Blk → Config l P → Prop)
+  (EvalBlock : SemanticStore P → Blk → CFGConfig l P → Prop)
   (cfg : CFG l Blk) :
-  Config l P → Config l P → Prop :=
+  CFGConfig l P → CFGConfig l P → Prop :=
   ReflTrans (@StepCFG Blk l CmdT _ P EvalBlock cfg)
