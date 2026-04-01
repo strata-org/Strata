@@ -254,7 +254,21 @@ private def testBuiltIn : @Factory TestParams :=
       inputs := [("x", mty[int]), ("y", mty[int])],
       output := mty[int],
       body := some esM[((~Int.Add x) y)]
-    }]
+    },
+
+    { name := "Int.Add3",
+      inputs := [("x", mty[int]), ("y", mty[int]), ("z", mty[int])],
+      output := mty[int],
+      concreteEval := some (fun _e args => match args with
+                        | [e1, e2, e3] =>
+                          let e1i := LExpr.denoteInt e1
+                          let e2i := LExpr.denoteInt e2
+                          let e3i := LExpr.denoteInt e3
+                          match e1i, e2i, e3i with
+                          | some x, some y, some z =>
+                            .some (.intConst e1.metadata (x + y + z))
+                          | _, _, _ => .none
+                        | _ => .none) }]
 
 private def testState : LState TestParams :=
   let ans := LState.addFactory LState.init testBuiltIn
@@ -656,6 +670,34 @@ example: stuck test25 := by
     rename_i a a2 a3 he
     cases a3
     cases a2; unfold denoteInt at he; contradiction
+
+
+-- Ternary function applied through a state variable.
+
+private def testStateFV : LState TestParams :=
+  { testState with state := [[("f", (none, esM[~Int.Add3]))]] }
+
+def test_ternary_fv := TestCase.mk
+  testStateFV
+  esM[((((f : int → int → int → int) #10) #20) #30)]
+  esM[#60]
+
+/-- info: true -/
+#guard_msgs in
+#eval check test_ternary_fv
+
+example: steps_well test_ternary_fv := by
+  unfold steps_well Scopes.toEnv test_ternary_fv testStateFV
+  take_step; apply Step.reduce_1
+  · inhabited_metadata
+  · apply Step.reduce_1
+    · inhabited_metadata
+    · apply Step.reduce_1
+      · inhabited_metadata
+      · apply Step.expand_fvar; rfl
+  take_step; apply Step.eval_fn <;> try rfl
+  · inhabited_metadata
+  take_refl
 
 
 end EvalTest
