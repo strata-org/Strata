@@ -684,48 +684,22 @@ def pyAnalyzeLaurelCommand : Command where
       for err in laurelTranslateErrors do
         IO.eprintln err
 
-    let classifier : ResultClassifier :=
-      match checkMode with
-      | .bugFinding | .bugFindingAssumingCompleteSpec =>
-        { isFailure := fun r => match r.outcome with
-            | .ok o => o.alwaysFalseAndReachable
-            | _     => false }
-      | _ => {}
-
     -- Print per-VC results by default, unless SARIF mode is used
     if !outputSarif then
       let mut s := ""
       for vcResult in vcResults do
-        let propertySummaryOption := vcResult.obligation.metadata.getPropertySummary
-        let propertyDescription := propertySummaryOption.getD vcResult.obligation.label
-        let (locationPrefix, locationSuffix) := match Imperative.getFileRange vcResult.obligation.metadata with
+        let fileMap := mfm.map (·.2)
+        let location := match Imperative.getFileRange vcResult.obligation.metadata with
           | some fr =>
-            if fr.range.isNone then ("", "")
-            else
-              match mfm with
-              | some (_, fm) =>
-                match fr.file with
-                | .file "" =>
-                  if classifier.isFailure vcResult then
-                    (s!"Assertion failed in prelude file: ", "")
-                  else
-                    ("", s!" (in prelude file)")
-                | .file path =>
-                  let pos := fm.toPosition fr.range.start
-                  if classifier.isFailure vcResult then
-                    (s!"Assertion failed at line {pos.line}, col {pos.column}: ", "")
-                  else
-                    ("", s!" (at line {pos.line}, col {pos.column})")
-              | none =>
-                if classifier.isFailure vcResult then
-                  (s!"Assertion failed: ", "")
-                else
-                  ("", "")
-          | none => ("", "")
+            if fr.range.isNone then ""
+            else s!"{fr.format fileMap (includeEnd? := false)}"
+          | none => ""
+        let messageSuffix := match vcResult.obligation.metadata.getPropertySummary with
+          | some msg => s!" - {msg}"
+          | none => s!" - {vcResult.obligation.label}"
         let outcomeStr := vcResult.formatOutcome
-        let relatedStr := formatRelatedPositions vcResult.obligation.metadata mfm
-        s := s ++ s!"{locationPrefix}{propertyDescription}: \
-                      {outcomeStr}{locationSuffix}{relatedStr}\n"
+        let loc := if !location.isEmpty then s!"{location}: " else "unknown location: "
+        s := s ++ s!"{loc}{outcomeStr}{messageSuffix}\n"
       IO.print s
     -- Output in SARIF format if requested
     if outputSarif then
