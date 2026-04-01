@@ -1139,7 +1139,7 @@ def verifyCommand : Command where
         match ans with
         | .error e =>
           println! f!"{e.formatRange (some inputCtx.fileMap) true} {e.message}"
-          IO.Process.exit 1
+          IO.Process.exit ExitCode.userError
         | .ok _ =>
           println! f!"Program typechecked."
           return
@@ -1170,7 +1170,7 @@ def verifyCommand : Command where
           verify pgm inputCtx proceduresToVerify opts
       catch e =>
         println! f!"{e}"
-        IO.Process.exit 1
+        IO.Process.exit ExitCode.internalError
       if opts.outputSarif then
         if file.endsWith ".csimp.st" then
           println! "SARIF output is not supported for C_Simp files (.csimp.st) because location metadata is not preserved during translation to Core."
@@ -1191,13 +1191,13 @@ def verifyCommand : Command where
         let provedGoalCount := (vcResults.filter Core.VCResult.isSuccess).size
         let failedGoalCount := (vcResults.filter Core.VCResult.isNotSuccess).size
         println! f!"Finished with {provedGoalCount} goals passed, {failedGoalCount} failed."
-        IO.Process.exit 1
+        IO.Process.exit ExitCode.failuresFound
     | .error errors =>
       for e in errors do
         let msg ← e.toString
         println! s!"Error: {msg}"
       println! f!"Finished with {errors.size} errors."
-      IO.Process.exit 1
+      IO.Process.exit ExitCode.userError
 
 def commandGroups : List CommandGroup := [
   { name := "Core"
