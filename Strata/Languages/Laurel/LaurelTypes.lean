@@ -102,6 +102,14 @@ def computeExprType (model : SemanticModel) (expr : StmtExprMd) : HighTypeMd :=
   | .All => default -- TODO: implement
   | .Hole _ typeOption => typeOption.getD  ⟨ HighType.Unknown, md ⟩
 
+/-- Returns `true` when the given `HighType` is heap-relevant (composite or set
+of composite), i.e. the kind of type that appears in modifies clauses and
+triggers heap parameterization. -/
+def isHeapRelevantType : HighType → Bool
+  | .UserDefined _ => true
+  | .TSet _ => true
+  | _ => false
+
 end Strata.Laurel
 
 end

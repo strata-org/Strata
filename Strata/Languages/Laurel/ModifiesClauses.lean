@@ -56,7 +56,9 @@ since the frame condition only applies to heap objects.
 def extractModifiesEntries (model: SemanticModel)
     (modifiesExprs : List StmtExprMd) : List ModifiesEntry :=
   modifiesExprs.filterMap fun expr =>
-    match (computeExprType model expr).val with
+    let ty := (computeExprType model expr).val
+    if !isHeapRelevantType ty then none
+    else match ty with
     | .TSet _ => some (.set expr)
     | .UserDefined _ => some (.single expr)
     | _ => none
