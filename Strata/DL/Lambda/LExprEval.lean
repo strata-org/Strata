@@ -238,7 +238,7 @@ def eval (n : Nat) (σ : LState TBase) (e : (LExpr TBase.mono))
           -- Inline a function only if it has a body.
           let body := lfunc.body.get (by simp_all)
           let input_map := lfunc.inputs.keys.zip args
-          let new_e := substFvars body input_map
+          let new_e := substFvarsLifting body input_map
           eval n' σ new_e
         else
           let new_e := @mkApp TBase.mono e.metadata op_expr args

@@ -1,6 +1,6 @@
 
 ==== Verification Results ====
-callElimAssert_requires_10: ✅ pass
+callElimAssert_requires_7: ✅ pass
 assert_assert(285)_calls_Any_to_bool_0: ✅ pass (at line 14, col 4)
 Assertion failed at line 14, col 4: assert(285): ❌ fail
 
