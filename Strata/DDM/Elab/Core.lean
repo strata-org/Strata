@@ -965,7 +965,12 @@ partial def inferType (tctx : TypingContext) (e : Expr) : ElabM TypeExpr := do
   | .fvar _ idx =>
     match tctx.globalContext.kindOf! idx with
     | .expr tp =>
-      return resultType! tctx tp a.val.size
+      if tp.hasTVar then
+        -- Resolve tvars by matching parameter types against inferred arg types.
+        let tp ← resolveFVarTVars tctx tp a.val
+        return resultType! tctx tp a.val.size
+      else
+        return resultType! tctx tp a.val.size
     | .type _ _ => panic! "Expected expression instead of type."
   | .fn _ ident => do
     let dm := (← read).dialects
@@ -988,6 +993,54 @@ partial def inferType (tctx : TypingContext) (e : Expr) : ElabM TypeExpr := do
            panic! s!"Cannot instantiate type {repr tp} with args {repr a}"
     return resultType! tctx tp (a.val.size - fnArgCount)
   | .app _ f a => panic! "Invalid app in result of Expr.hnf"
+where
+  /-- Resolve tvars in a polymorphic fvar type by matching parameter types
+      against the inferred types of the actual arguments.  Returns the
+      (possibly partially) substituted type. -/
+  resolveFVarTVars (tctx : TypingContext) (tp : TypeExpr) (args : Array Arg)
+      : ElabM TypeExpr := do
+    -- Peel arrows to get parameter types and result type.
+    let mut subst : Array (String × TypeExpr) := #[]
+    let mut paramTp := tp
+    let mut nPeeled := 0
+    for arg in args do
+      match paramTp with
+      | .arrow _ pty rest =>
+        match arg with
+        | .expr e =>
+          let inferredType ← inferType tctx e
+          -- flattenTypeApp stores fvar/ident args in reverse order, but
+          -- accessor types from templates use forward (declaration) order.
+          -- Reverse the top-level inferred fvar args to match the pattern.
+          let inferredType := match inferredType with
+            | .fvar loc i args => .fvar loc i args.reverse
+            | t => t
+          match pty.matchTVars inferredType subst with
+          | some s => subst := s
+          | none => pure ()  -- structural mismatch; skip gracefully
+        | _ => pure ()  -- non-expr arg (type, op, etc.); skip
+        paramTp := rest
+        nPeeled := nPeeled + 1
+      | _ => break  -- no more arrows to peel
+    -- Only substitute if all tvars in the result type are resolved.
+    -- Partial resolution (e.g., constructors where some tvars don't appear
+    -- in any parameter) can cause downstream type mismatches.
+    if subst.isEmpty then
+      return tp
+    else
+      let resolvedResult := paramTp.substTVars subst
+      if resolvedResult.hasTVar then
+        -- Some tvars remain unresolved; leave the type unchanged to
+        -- preserve the existing tvar pass-through behavior.
+        return tp
+      else
+        -- All tvars resolved; rebuild with the concrete result type.
+        return rebuildArrows tp nPeeled resolvedResult
+  rebuildArrows (tp : TypeExpr) (skip : Nat) (result : TypeExpr) : TypeExpr :=
+    if skip == 0 then result
+    else match tp with
+    | .arrow ann a r => .arrow ann a (rebuildArrows r (skip - 1) result)
+    | _ => result
 
 /--
 Given a tree from operations with category `Init.TypeExpr`, build a tree with the type or category
