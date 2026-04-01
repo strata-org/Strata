@@ -5,5 +5,5 @@ BooleanQuantification.core.st(38, 4) [assert_2]: ✅ pass
 BooleanQuantification.core.st(39, 4) [assert_3]: ❓ unknown
 BooleanQuantification.core.st(47, 4) [assert_4]: ✅ pass
 BooleanQuantification.core.st(48, 4) [assert_5]: ✅ pass
-BooleanQuantification.core.st(49, 4) [assert_6]: ❓ unknown
+BooleanQuantification.core.st(49, 4) [assert_6]: ❌ fail
 Finished with 5 goals passed, 2 failed.
