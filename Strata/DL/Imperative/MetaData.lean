@@ -251,10 +251,14 @@ def MetaData.formatFileRangeD {P : PureExpr} [BEq P.Ident] (md : MetaData P) (fi
   | none => f!""
 
 /-- Metadata field for a related file range (e.g., the original assertion location
-    when the primary file range points to the call site after inlining). -/
+    when the primary file range points to the call site after inlining).
+    There can be multiple `relatedFileRange` fields in a single metadata due to
+    multiple levels of inlining. -/
 def MetaData.relatedFileRange : MetaDataElem.Field P := .label "relatedFileRange"
 
-/-- Get all related file ranges from metadata, in order. -/
+/-- Get all related file ranges from metadata, in order.
+    The returned array's order is determined by the call stack: the innermost
+    (most deeply inlined) call comes first. -/
 def getRelatedFileRanges {P : PureExpr} [BEq P.Ident] (md: MetaData P) : Array FileRange :=
   md.filterMap fun elem =>
     if elem.fld == Imperative.MetaData.relatedFileRange then
