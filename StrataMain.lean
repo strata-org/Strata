@@ -624,8 +624,11 @@ def pyAnalyzeLaurelCommand : Command where
       IO.println "\n==== Core Program ===="
       IO.print coreProgram
 
-    -- Split prelude / user procedure names at FIRST_END_MARKER
-    let (_preludeNames, userProcNames) := Strata.splitProcNames coreProgram
+    -- Split prelude / user procedure names.
+    -- Only procedures whose file range matches the user source are targets.
+    let userSourcePath := sourcePath.getD filePath
+    let (_preludeNames, userProcNames) :=
+      Strata.splitProcNames coreProgram [userSourcePath]
 
     if let some dir := keepDir then
       let path := s!"{dir}/{baseName}.core"
