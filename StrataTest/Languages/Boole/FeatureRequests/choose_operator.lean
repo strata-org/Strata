@@ -44,7 +44,11 @@ spec {
 };
 #end
 
-#eval Strata.Boole.verify "cvc5" chooseOperatorSeed
+/-- info: Obligation: choose_seed_ensures_1_833
+Property: assert
+Result: ✅ pass-/
+#guard_msgs in
+#eval Strata.Boole.verify "cvc5" chooseOperatorSeed (options :=.quiet)
 
 example : Strata.smtVCsCorrect chooseOperatorSeed := by
   gen_smt_vcs

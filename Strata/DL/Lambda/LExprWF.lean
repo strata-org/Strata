@@ -345,13 +345,49 @@ where
     | .ite m c t f => .ite m (go c depth) (go t depth) (go f depth)
     | .eq m e1 e2 => .eq m (go e1 depth) (go e2 depth)
 
-def substFvarsLifting [BEq T.IDMeta] (e : LExpr ⟨T, GenericTy⟩) (sm : Map T.Identifier (LExpr ⟨T, GenericTy⟩))
-  : LExpr ⟨T, GenericTy⟩ :=
-  List.foldl (fun e (var, s) => substFvarLifting e var s) e sm
+/--
+Simultaneous substitution of multiple free variables. Replaces all variables
+in a single pass, avoiding variable capture between substitutions.
 
+Does NOT lift de Bruijn indices when going under binders. Safe only when all
+replacement expressions contain no bvars.
+-/
 def substFvars [BEq T.IDMeta] (e : LExpr ⟨T, GenericTy⟩) (sm : Map T.Identifier (LExpr ⟨T, GenericTy⟩))
   : LExpr ⟨T, GenericTy⟩ :=
-  List.foldl (fun e (var, s) => substFvar e var s) e sm
+  if sm.isEmpty then e else substFvarsAux e sm
+where
+  substFvarsAux (e : LExpr ⟨T, GenericTy⟩) (sm : Map T.Identifier (LExpr ⟨T, GenericTy⟩))
+    : LExpr ⟨T, GenericTy⟩ :=
+    match e with
+    | .const _ _ => e | .bvar _ _ => e | .op _ _ _ => e
+    | .fvar _ name _ => match sm.find? name with | some to => to | none => e
+    | .abs m name ty e' => .abs m name ty (substFvarsAux e' sm)
+    | .quant m qk name ty tr' e' => .quant m qk name ty (substFvarsAux tr' sm) (substFvarsAux e' sm)
+    | .app m fn e' => .app m (substFvarsAux fn sm) (substFvarsAux e' sm)
+    | .ite m c t e' => .ite m (substFvarsAux c sm) (substFvarsAux t sm) (substFvarsAux e' sm)
+    | .eq m e1 e2 => .eq m (substFvarsAux e1 sm) (substFvarsAux e2 sm)
+
+/--
+Simultaneous substitution of multiple free variables with bvar-safe lifting.
+Replaces all variables in a single pass, avoiding variable capture between
+substitutions.
+
+Properly lifts de Bruijn indices in replacement expressions when going under
+binders. Use this when replacement expressions may contain bvars.
+-/
+def substFvarsLifting [BEq T.IDMeta] (e : LExpr ⟨T, GenericTy⟩) (sm : Map T.Identifier (LExpr ⟨T, GenericTy⟩))
+  : LExpr ⟨T, GenericTy⟩ :=
+  if sm.isEmpty then e else go e 0
+where
+  go (e : LExpr ⟨T, GenericTy⟩) (depth : Nat) : LExpr ⟨T, GenericTy⟩ :=
+    match e with
+    | .const _ _ => e | .bvar _ _ => e | .op _ _ _ => e
+    | .fvar _ name _ => match sm.find? name with | some to => liftBVars depth to | none => e
+    | .abs m name ty e' => .abs m name ty (go e' (depth + 1))
+    | .quant m qk name ty tr' e' => .quant m qk name ty (go tr' (depth + 1)) (go e' (depth + 1))
+    | .app m fn e' => .app m (go fn depth) (go e' depth)
+    | .ite m c t f => .ite m (go c depth) (go t depth) (go f depth)
+    | .eq m e1 e2 => .eq m (go e1 depth) (go e2 depth)
 
 ---------------------------------------------------------------------
 

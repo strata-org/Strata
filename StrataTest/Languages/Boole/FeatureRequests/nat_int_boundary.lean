@@ -42,6 +42,7 @@ spec {
 };
 #end
 
+#guard_msgs (drop info) in
 #eval Strata.Boole.verify "cvc5" natIntBoundarySeed
 
 example : Strata.smtVCsCorrect natIntBoundarySeed := by

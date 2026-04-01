@@ -31,11 +31,11 @@ The encoding pipeline has two layers:
 2. **Encoder layer** (`EncoderM`): Sits on top of `SolverM` and manages
    A-normal form decomposition purely in the `Term` domain:
    - **Term → abbreviated Term cache** (`terms`): Maps each `Term` to its
-     abbreviated `Term.var` reference (e.g., a variable named `t0`, `t1`).
+     abbreviated `Term.var` reference (e.g., a variable named `$__t.0`, `$__t.1`).
      Large terms are broken into small `define-fun` definitions with short
      names, and the Solver handles all `Term → String` conversion.
    - **UF → abbreviated name cache** (`ufs`): Maps uninterpreted functions to
-     their abbreviated identifiers (e.g., `f0`, `f1`).
+     their abbreviated identifiers (e.g., `$__f.0`, `$__f.1`).
 
 The Encoder works purely with `Term` values. The `SolverM` layer handles all
 string conversion and caching when emitting commands.
@@ -72,10 +72,10 @@ open Solver
 public section
 
 structure EncoderState where
-  /-- Maps a `Term` to its abbreviated `Term` (a `Term.var` with name like `t0`).
+  /-- Maps a `Term` to its abbreviated `Term` (a `Term.var` with name like `$__t.0`).
       This is a cache after converting terms to A-Normal Form. -/
   terms : Std.HashMap Term Term
-  /-- Maps a `UF` to its abbreviated SMT identifier (e.g., `f0`, `f1`). -/
+  /-- Maps a `UF` to its abbreviated SMT identifier (e.g., `$__f.0`, `$__f.1`). -/
   ufs   : Std.HashMap UF String
 
 def EncoderState.init : EncoderState where
@@ -94,10 +94,25 @@ def smtReservedKeywords : List String :=
   -- SMT-LIB reserved words from the DDM parser
   let parserKeywords := _root_.Strata.reservedKeywords.map (·.2)
   -- Additional keywords not in the parser list
-  parserKeywords ++ ["select", "store", "and", "or", "not", "ite",
-   "true", "false", "Int", "Bool", "Real", "Array", "BitVec",
-   -- Theory function symbols that cvc5 disallows shadowing
-   "abs", "mod", "div", "to_real", "to_int", "is_int"]
+  parserKeywords ++
+   ["true", "false", "Int", "Bool", "Real", "Array", "BitVec",
+   -- Symbols from SMT. Note: this must be synchronized with Strata's internal SMT solver which has a denylist of
+   -- names of variables/UFs/sorts.
+   -- Core theory symbols
+   "abs", "and", "distinct", "/", "=", ">", ">=", "ite", "=>",
+   "div", "is_int", "<", "<=", "-", "mod", "*", "not", "or", "+",
+   "to_int", "to_real", "xor",
+   -- String theory symbols
+   "str.at", "str.++", "str.contains", "str.from_code", "str.from_int",
+   "str.in_re", "str.indexof", "str.is_digit", "str.<=", "str.len",
+   "str.<", "str.prefixof", "str.replace", "str.substr", "str.suffixof",
+   "str.to_code", "str.to_int", "str.to_re",
+   -- Regex theory symbols
+   "re.*", "re.+", "re.opt", "re.++", "re.union", "re.inter", "re.diff",
+   "re.comp", "re.loop", "re.^", "re.range", "re.none", "re.all",
+   "re.allchar",
+   -- Array theory symbols
+   "select", "store"]
 
 /-- Generate a disambiguated name by appending @suffix -/
 def disambiguateName (baseName : String) (suffix : Nat) : String :=
@@ -133,8 +148,12 @@ def findUniqueName (baseName : String) (startSuffix : Nat) (isUsed : String → 
     omega
   loop (if startSuffix == 1 then baseName else disambiguateName baseName (startSuffix - 1)) startSuffix limit
 
-def termId (n : Nat)                    : String := s!"t{n}"
-def ufId (n : Nat)                      : String := s!"f{n}"
+/-- The `$__` prefix is reserved for internal use and cannot appear in user
+    identifiers (see `Strata.DL.Lambda.LState.EvalConfig.varPrefix`).
+    The `.` after `t`/`f` prevents collision with Lambda-generated names
+    like `$__t0` (variable `t`, index 0). -/
+def termId (n : Nat)                    : String := s!"$__t.{n}"
+def ufId (n : Nat)                      : String := s!"$__f.{n}"
 
 def termNum : EncoderM Nat := do return (← get).terms.size
 def ufNum   : EncoderM Nat := do return (← get).ufs.size
@@ -325,11 +344,8 @@ Then you can run any `SolverM` action `act` with `act |>.run solver`, where
 `solver` is a `Solver` instance you can construct using functions in
 Solver.lean.
 
-Note that `encode` itself first resets the solver in order to define datatypes
-etc.
 -/
 def encode (ts : List Term) : SolverM Unit := do
-  Solver.reset
   Solver.setLogic "ALL"
   Solver.declareDatatype "Option" ["X"]
     [⟨"none", []⟩, ⟨"some", [("val", .constr "X" [])]⟩]

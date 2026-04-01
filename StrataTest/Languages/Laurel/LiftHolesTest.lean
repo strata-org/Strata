@@ -133,7 +133,7 @@ deterministic
 -/
 #guard_msgs in
 #eval! parseElimAndPrint r"
-procedure test() { if (<?>) { assert true } };
+procedure test() { if <?> then { assert true } };
 "
 
 -- Hole in then-branch of if-then-else inside typed local variable → int.
@@ -149,7 +149,7 @@ deterministic
 -/
 #guard_msgs in
 #eval! parseElimAndPrint r"
-procedure test() { var x: int := if (true) <?> else 0 };
+procedure test() { var x: int := if true then <?> else 0 };
 "
 
 -- Hole as while-loop condition → bool.
@@ -290,7 +290,7 @@ deterministic
 -/
 #guard_msgs in
 #eval! parseElimAndPrint r"
-procedure test() { if (1 + <?> > 0) { assert true } };
+procedure test() { if 1 + <?> > 0 then { assert true } };
 "
 
 -- Hole in Implies inside while invariant → bool.
