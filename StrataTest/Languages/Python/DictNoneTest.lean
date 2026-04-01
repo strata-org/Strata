@@ -159,4 +159,26 @@ def main() -> None:
   if diags.size == 0 then
     throw <| .userError s!"Expected ≥1 diagnostic for dict-as-string, got 0"
 
+-- Test 8: Bug inside a class method body is detected.
+-- The method calls f(nme="x") where f expects "name", not "nme".
+#guard_msgs in
+#eval withPython (warnOnSkip := false) fun pythonCmd => do
+  let program :=
+"def f(name: str) -> None:
+    pass
+
+class Svc:
+    def __init__(self) -> None:
+        pass
+    def do_thing(self) -> None:
+        f(nme=\"hello\")
+
+def main() -> None:
+    s: Svc = Svc()
+    s.do_thing()
+"
+  match ← processPythonFile pythonCmd (stringInputContext "test.py" program) |>.toBaseIO with
+  | .ok _ => throw <| .userError "Expected error for misspelled kwarg in method body"
+  | .error _ => pure ()  -- Expected: translation error for unknown kwarg
+
 end Strata.Python.DictNoneTest

@@ -427,12 +427,20 @@ def translateStmt (outputParams : List Parameter) (stmt : StmtExprMd)
           -- Example use is heap-modifying procedure calls: (result, heap) := f(heap, args)
           match value.val with
           | .StaticCall callee args =>
-              let coreArgs ← args.mapM (fun a => translateExpr a)
-              let lhsIdents := targets.filterMap fun t =>
-                match t.val with
-                | .Identifier name => some (⟨name.text, ()⟩)
-                | _ => none
-              return [Core.Statement.call lhsIdents callee.text coreArgs value.md]
+              if model.isFunction callee then
+                let coreExpr ← translateExpr value
+                let setStmts := targets.filterMap fun t =>
+                  match t.val with
+                  | .Identifier name => some (Core.Statement.set ⟨name.text, ()⟩ coreExpr md)
+                  | _ => none
+                return setStmts
+              else
+                let coreArgs ← args.mapM (fun a => translateExpr a)
+                let lhsIdents := targets.filterMap fun t =>
+                  match t.val with
+                  | .Identifier name => some (⟨name.text, ()⟩)
+                  | _ => none
+                return [Core.Statement.call lhsIdents callee.text coreArgs value.md]
           | .InstanceCall .. =>
               -- Instance method call: havoc all target variables
               let havocStmts := targets.filterMap fun t =>

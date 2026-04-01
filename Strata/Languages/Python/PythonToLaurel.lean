@@ -1817,8 +1817,7 @@ def translateClass (ctx : TranslationContext) (classStmt : Python.stmt SourceRan
     for stmt in body do
       if let .FunctionDef .. := stmt then
         let proc ← translateMethod ctx className stmt
-        -- TODO stop replacing the body of instance proceduces with an empty one
-        instanceProcedures := instanceProcedures.push { proc with body := .Opaque [] .none [] }
+        instanceProcedures := instanceProcedures.push proc
 
     return ({
       name := className
@@ -2003,6 +2002,14 @@ def pythonToLaurel' (info : PreludeInfo)
   let mut compositeTypeNames := info.compositeTypes.union overloadCompositeType
 
   -- FIRST PASS: Collect all class definitions and field type info
+  -- Pre-collect top-level function signatures so class method bodies can
+  -- reference them (the actual bodies are translated in the second pass).
+  let mut topLevelFuncDecls : List PythonFunctionDecl := []
+  for stmt in body do
+    if let .FunctionDef .. := stmt then
+      let funcDecl ← pyFuncDefToPythonFunctionDecl
+        { functionSignatures := info.functionSignatures, filePath := filePath } stmt
+      topLevelFuncDecls := topLevelFuncDecls ++ [funcDecl]
   let mut procedures : Array Procedure := #[]
   let mut compositeTypes : Array TypeDefinition := #[.Composite pyErrorTy]
   compositeTypeNames := compositeTypeNames.insert "PythonError"
@@ -2017,9 +2024,10 @@ def pythonToLaurel' (info : PreludeInfo)
         (init := info.importedSymbols) fun m name =>
           m.insert name (ImportedSymbol.compositeType name)
       let initCtx : TranslationContext := {
-        functionSignatures := info.functionSignatures
+        functionSignatures := info.functionSignatures ++ topLevelFuncDecls
         preludeTypes := info.types,
         importedSymbols := localSymbols,
+        userFunctions := userFunctions,
         classFieldHighType := classFieldHighType,
         filePath := filePath
       }
