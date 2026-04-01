@@ -24,6 +24,7 @@ BOTH_SKIP = {
     "test_invalid_client_type",
     "test_unsupported_config",
     "test_with_void_enter",
+    "test_user_error_metadata", # No SARIF output because does not run SMT analysis
 }
 SKIP_TESTS = BOTH_SKIP | {
     "test_augmented_assign",
