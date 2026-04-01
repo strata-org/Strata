@@ -1,9 +1,6 @@
-
-==== Verification Results ====
-ite_cond_calls_Any_to_bool_0: 🔶 can be both true and false and is reachable from declaration entry (at line 3, col 4)
-assert_assert(124)_calls_PIn_0: ❓ unknown (at line 4, col 8)
-assert_assert(124)_calls_Any_to_bool_1: ✔️ always true if reached (at line 4, col 8)
-assert(124): ❓ unknown (at line 4, col 8)
-
+test_pin_any.py(3, 4): 🔶 can be both true and false and is reachable from declaration entry - ite_cond_calls_Any_to_bool_0
+test_pin_any.py(4, 8): ❓ unknown - assert_assert(124)_calls_PIn_0
+test_pin_any.py(4, 8): ✔️ always true if reached - assert_assert(124)_calls_Any_to_bool_1
+test_pin_any.py(4, 8): ❓ unknown - assert(124)
 DETAIL: 1 passed, 0 failed, 3 inconclusive
 RESULT: Inconclusive
