@@ -343,7 +343,7 @@ def makeVCResult (label : String) (outcome : VCOutcome)
   let callSiteMd := makeMetadataAt "/test/caller.st" 13
   let inlinedMd := origMd.setCallSiteFileRange callSiteMd
   let files := makeFilesMap "/test/caller.st"
-  let vcResults : VCResults := #[makeVCResult "inlined_assert" (VCOutcome.mk .unsat (.sat [])) inlinedMd]
+  let vcResults : VCResults := #[makeVCResult "inlined_assert" (mkOutcome .unsat (.sat [])) inlinedMd]
   let sarif := vcResultsToSarif .deductive files vcResults
   Strata.Sarif.toJsonString sarif
 
