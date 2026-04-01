@@ -159,6 +159,6 @@ def Core.Sarif.writeSarifOutput
   let sarifJson := Strata.Sarif.toPrettyJsonString sarifDoc
   try
     IO.FS.writeFile outputPath sarifJson
-    IO.println s!"SARIF output written to {outputPath}"
+    IO.eprintln s!"SARIF output written to {outputPath}"
   catch e =>
     IO.eprintln s!"Error writing SARIF output to {outputPath}: {e.toString}"

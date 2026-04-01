@@ -484,7 +484,14 @@ private def exitPyAnalyzeKnownLimitation {α} (message : String) : IO α := do
     success / failure / inconclusive (guaranteeing disjointness).
     Unreachable count is reported as supplementary info. -/
 private def printPyAnalyzeSummary (vcResults : Array Core.VCResult)
-    (classifier : ResultClassifier := {}) : IO Unit := do
+    (checkMode : VerificationMode := .deductive) : IO Unit := do
+  let classifier : ResultClassifier :=
+    match checkMode with
+    | .bugFinding | .bugFindingAssumingCompleteSpec =>
+      { isFailure := fun r => match r.outcome with
+          | .ok o => o.alwaysFalseAndReachable
+          | _     => false }
+    | _ => {}
   -- 1. Partition out implementation errors (broken results, not classifiable).
   let (implError, classifiable) :=
     vcResults.partition (fun r => r.isImplementationError || r.hasSMTError)
@@ -739,19 +746,11 @@ def pyAnalyzeLaurelCommand : Command where
           | .ok r => pure r
           | .error msg => exitPyAnalyzeInternalError msg
 
-    let classifier : ResultClassifier :=
-      match checkMode with
-      | .bugFinding | .bugFindingAssumingCompleteSpec =>
-        { isFailure := fun r => match r.outcome with
-            | .ok o => o.alwaysFalseAndReachable
-            | _     => false }
-      | _ => {}
-
-    -- Print results
+    -- Print translation errors (always on stderr)
     if !laurelTranslateErrors.isEmpty then
-      IO.println "\n==== Errors ===="
+      IO.eprintln "\n==== Errors ===="
       for err in laurelTranslateErrors do
-        IO.println err
+        IO.eprintln err
 
     -- Print results (non-incremental only; incremental prints per-procedure above)
     if !incremental then do
