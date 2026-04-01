@@ -215,11 +215,12 @@ def AbstractedPhase.needsValidation (phases : List AbstractedPhase) : Bool :=
     | .modelToValidate _ => true
     | .modelPreserving => false
 
-/-- Validate a model against all phases. Returns true only if every
-    `modelToValidate` phase accepts the model. -/
+/-- Validate a model against all phases. Phases are recorded top-down,
+    so we reverse them to validate from the last (innermost) phase first.
+    Returns true only if every `modelToValidate` phase accepts the model. -/
 def AbstractedPhase.validateModel (phases : List AbstractedPhase)
     (model : Imperative.SMT.CounterEx Expression.Ident) : Bool :=
-  phases.all fun p => match p.modelValidation with
+  phases.reverse.all fun p => match p.modelValidation with
     | .modelPreserving => true
     | .modelToValidate f => f model
 
