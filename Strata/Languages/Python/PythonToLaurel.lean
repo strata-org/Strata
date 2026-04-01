@@ -805,6 +805,9 @@ partial def combinePositionalAndKeywordArgs
       throwUserError callRange
         s!"'{name}' called with unknown keyword arguments: {extraNames}"
     let kwords := pyKwordsToHashMap kwords
+    -- Drop extra positional args beyond the signature (e.g., timezone arg
+    -- in datetime.now(timezone.utc) when the prelude models 0 params).
+    let posArgs := posArgs.take funcDecl.args.length
     let unprovidedPosArgs := funcDecl.args.drop posArgs.length
     --every unprovided positional args must have a default value in the function signature or be provided in the kwargs
     let missingArgs := unprovidedPosArgs.filter fun (name, _, d) =>
