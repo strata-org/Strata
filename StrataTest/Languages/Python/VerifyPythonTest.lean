@@ -130,4 +130,21 @@ open Strata.Parser (stringInputContext)
   if diags.size ≠ 0 then
     throw <| .userError s!"Expected 0 diagnostics, got {diags.size}"
 
+-- Multi-output procedures (e.g., timedelta_func) should return the first
+-- output type, not TVoid, so datetime arithmetic type-checks correctly.
+#guard_msgs in
+#eval withPython (warnOnSkip := false) fun pythonCmd => do
+  let program :=
+"from datetime import datetime, timedelta
+
+def main() -> None:
+    now: datetime = datetime.now()
+    delta: timedelta = timedelta(days=7)
+    start: datetime = now - delta
+    assert start <= now
+"
+  let diags ← processPythonFile pythonCmd (stringInputContext "test.py" program)
+  if diags.size ≠ 0 then
+    throw <| .userError s!"Expected 0 diagnostics, got {diags.size}: {diags.map (·.message)}"
+
 end Strata.Python.VerifyPythonTest
