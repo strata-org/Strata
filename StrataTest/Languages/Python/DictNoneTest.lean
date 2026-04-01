@@ -39,10 +39,8 @@ open Strata.Parser (stringInputContext)
 
 -- Test 2: Assigning None to an int variable and asserting a concrete value.
 -- The assertion `x == 5` correctly fails because x is None, not 5.
--- This demonstrates that None values DO flow through the pipeline and
--- can be detected by assertions that depend on the value.
 /--
-info: DictNoneTest.2: got 1 diagnostics — correctly detected None ≠ 5
+info: DictNoneTest.2: got 2 diagnostics — correctly detected None ≠ 5
 -/
 #guard_msgs in
 #eval withPython (warnOnSkip := false) fun pythonCmd => do
@@ -58,10 +56,10 @@ info: DictNoneTest.2: got 1 diagnostics — correctly detected None ≠ 5
     throw <| .userError s!"Expected ≥1 diagnostic for None-as-int, got 0"
 
 -- Test 3: Assigning None to an int variable WITHOUT a value-dependent assertion.
--- The type annotation `x: int = None` is not enforced — None flows through.
--- This is the gap: there's no automatic type check at the assignment site.
+-- The type assertion emitted by the translator catches this: `x: int = None`
+-- generates `assert Any..isfrom_int(x)` which fails because x is from_none.
 /--
-info: DictNoneTest.3: got 0 diagnostics — None-for-int NOT detected without value assertion
+info: DictNoneTest.3: got 1 diagnostics — type assertion caught None-for-int
 -/
 #guard_msgs in
 #eval withPython (warnOnSkip := false) fun pythonCmd => do
@@ -72,6 +70,9 @@ info: DictNoneTest.3: got 0 diagnostics — None-for-int NOT detected without va
     assert y == 10
 "
   let diags ← processPythonFile pythonCmd (stringInputContext "test.py" program)
-  IO.eprintln s!"DictNoneTest.3: got {diags.size} diagnostics — None-for-int NOT detected without value assertion"
+  if diags.size ≥ 1 then
+    IO.eprintln s!"DictNoneTest.3: got {diags.size} diagnostics — type assertion caught None-for-int"
+  else
+    throw <| .userError s!"Expected ≥1 diagnostic for None-for-int, got 0"
 
 end Strata.Python.DictNoneTest
