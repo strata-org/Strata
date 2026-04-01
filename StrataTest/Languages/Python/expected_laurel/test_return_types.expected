@@ -1,14 +1,11 @@
-
-==== Verification Results ====
-assert_assert(304)_calls_Any_to_bool_0: ✅ pass (at line 20, col 4)
-Assertion failed at line 20, col 4: assert(304): ❌ fail
-assert_assert(387)_calls_Any_to_bool_0: ✅ pass (at line 23, col 4)
-assert(387): ❓ unknown (at line 23, col 4)
-assert_assert(474)_calls_Any_to_bool_0: ✅ pass (at line 26, col 4)
-Assertion failed at line 26, col 4: assert(474): ❌ fail
-assert_assert(558)_calls_Any_to_bool_0: ✅ pass (at line 29, col 4)
-Assertion failed at line 29, col 4: assert(558): ❌ fail
-ite_cond_calls_Any_to_bool_0: ✅ pass (at line 31, col 0)
-
+test_return_types.py(20, 4): ✅ pass - assert_assert(304)_calls_Any_to_bool_0
+test_return_types.py(20, 4): ❌ fail - assert(304)
+test_return_types.py(23, 4): ✅ pass - assert_assert(387)_calls_Any_to_bool_0
+test_return_types.py(23, 4): ❓ unknown - assert(387)
+test_return_types.py(26, 4): ✅ pass - assert_assert(474)_calls_Any_to_bool_0
+test_return_types.py(26, 4): ❌ fail - assert(474)
+test_return_types.py(29, 4): ✅ pass - assert_assert(558)_calls_Any_to_bool_0
+test_return_types.py(29, 4): ❌ fail - assert(558)
+test_return_types.py(31, 0): ✅ pass - ite_cond_calls_Any_to_bool_0
 DETAIL: 5 passed, 3 failed, 1 inconclusive
 RESULT: Failures found

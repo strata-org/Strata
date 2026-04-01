@@ -480,7 +480,14 @@ private def exitPyAnalyzeKnownLimitation {α} (message : String) : IO α := do
     success / failure / inconclusive (guaranteeing disjointness).
     Unreachable count is reported as supplementary info. -/
 private def printPyAnalyzeSummary (vcResults : Array Core.VCResult)
-    (classifier : ResultClassifier := {}) : IO Unit := do
+    (checkMode : VerificationMode := .deductive) : IO Unit := do
+  let classifier : ResultClassifier :=
+    match checkMode with
+    | .bugFinding | .bugFindingAssumingCompleteSpec =>
+      { isFailure := fun r => match r.outcome with
+          | .ok o => o.alwaysFalseAndReachable
+          | _     => false }
+    | _ => {}
   -- 1. Partition out implementation errors (broken results, not classifiable).
   let (implError, classifiable) :=
     vcResults.partition (fun r => r.isImplementationError || r.hasSMTError)
@@ -671,62 +678,36 @@ def pyAnalyzeLaurelCommand : Command where
       | .ok r => pure r
       | .error msg => exitPyAnalyzeInternalError msg
 
-    let classifier : ResultClassifier :=
-      match checkMode with
-      | .bugFinding | .bugFindingAssumingCompleteSpec =>
-        { isFailure := fun r => match r.outcome with
-            | .ok o => o.alwaysFalseAndReachable
-            | _     => false }
-      | _ => {}
-
-    -- Print results
+    -- Print translation errors (always on stderr)
     if !laurelTranslateErrors.isEmpty then
-      IO.println "\n==== Errors ===="
+      IO.eprintln "\n==== Errors ===="
       for err in laurelTranslateErrors do
-        IO.println err
+        IO.eprintln err
 
-    -- Print results
-    IO.println "\n==== Verification Results ===="
-    let mut s := ""
-    for vcResult in vcResults do
-      let propertySummaryOption := vcResult.obligation.metadata.getPropertySummary
-      let propertyDescription := propertySummaryOption.getD vcResult.obligation.label
-      let (locationPrefix, locationSuffix) := match Imperative.getFileRange vcResult.obligation.metadata with
-        | some fr =>
-          if fr.range.isNone then ("", "")
-          else
-            match mfm with
-            | some (_, fm) =>
-              match fr.file with
-              | .file "" =>
-                if classifier.isFailure vcResult then
-                  (s!"Assertion failed in prelude file: ", "")
-                else
-                  ("", s!" (in prelude file)")
-              | .file path =>
-                let pos := fm.toPosition fr.range.start
-                if classifier.isFailure vcResult then
-                  (s!"Assertion failed at line {pos.line}, col {pos.column}: ", "")
-                else
-                  ("", s!" (at line {pos.line}, col {pos.column})")
-            | none =>
-              if classifier.isFailure vcResult then
-                (s!"Assertion failed: ", "")
-              else
-                ("", "")
-        | none => ("", "")
-      let outcomeStr := vcResult.formatOutcome
-      let relatedStr := formatRelatedPositions vcResult.obligation.metadata mfm
-      s := s ++ s!"{locationPrefix}{propertyDescription}: \
-                    {outcomeStr}{locationSuffix}{relatedStr}\n"
-    IO.println s
+    -- Print per-VC results by default, unless SARIF mode is used
+    if !outputSarif then
+      let mut s := ""
+      for vcResult in vcResults do
+        let fileMap := mfm.map (·.2)
+        let location := match Imperative.getFileRange vcResult.obligation.metadata with
+          | some fr =>
+            if fr.range.isNone then ""
+            else s!"{fr.format fileMap (includeEnd? := false)}"
+          | none => ""
+        let messageSuffix := match vcResult.obligation.metadata.getPropertySummary with
+          | some msg => s!" - {msg}"
+          | none => s!" - {vcResult.obligation.label}"
+        let outcomeStr := vcResult.formatOutcome
+        let loc := if !location.isEmpty then s!"{location}: " else "unknown location: "
+        s := s ++ s!"{loc}{outcomeStr}{messageSuffix}\n"
+      IO.print s
     -- Output in SARIF format if requested
     if outputSarif then
       let files := match mfm with
         | some (pyPath, fm) => Map.empty.insert (Strata.Uri.file pyPath) fm
         | none => Map.empty
       Core.Sarif.writeSarifOutput checkMode files vcResults (filePath ++ ".sarif")
-    printPyAnalyzeSummary vcResults classifier
+    printPyAnalyzeSummary vcResults checkMode
 
 def pyAnalyzeToGotoCommand : Command where
   name := "pyAnalyzeToGoto"

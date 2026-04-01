@@ -1,26 +1,23 @@
-
-==== Verification Results ====
-ite_cond_calls_Any_to_bool_0: ✅ pass (at line 6, col 4)
-assert_assert(154)_calls_Any_to_bool_0: ✅ pass (at line 11, col 4)
-assert(154): ✅ pass (at line 11, col 4)
-ite_cond_calls_Any_to_bool_0: ✅ pass (at line 17, col 4)
-ite_cond_calls_Any_to_bool_0: ✅ pass (at line 18, col 8)
-assert_assert(416)_calls_Any_to_bool_0: ✅ pass (at line 25, col 4)
-assert(416): ✅ pass (at line 25, col 4)
-ite_cond_calls_Any_to_bool_0: ✅ pass (at line 31, col 4)
-assert_assert(609)_calls_Any_to_bool_0: ✅ pass (at line 36, col 4)
-assert(609): ✅ pass (at line 36, col 4)
-ite_cond_calls_Any_to_bool_0: ✅ pass (at line 42, col 4)
-ite_cond_calls_Any_to_bool_0: ✅ pass (at line 43, col 8)
-assert_assert(857)_calls_Any_to_bool_0: ✅ pass (at line 50, col 4)
-assert(857): ✅ pass (at line 50, col 4)
-ite_cond_calls_Any_to_bool_0: ✅ pass (at line 56, col 4)
-assert_assert(1048)_calls_Any_to_bool_0: ✅ pass (at line 61, col 4)
-assert(1048): ✅ pass (at line 61, col 4)
-ite_cond_calls_Any_to_bool_0: ✅ pass (at line 67, col 4)
-assert_assert(1224)_calls_Any_to_bool_0: ✅ pass (at line 72, col 4)
-assert(1224): ✅ pass (at line 72, col 4)
-ite_cond_calls_Any_to_bool_0: ✅ pass (at line 74, col 0)
-
+test_control_flow.py(6, 4): ✅ pass - ite_cond_calls_Any_to_bool_0
+test_control_flow.py(11, 4): ✅ pass - assert_assert(154)_calls_Any_to_bool_0
+test_control_flow.py(11, 4): ✅ pass - assert(154)
+test_control_flow.py(17, 4): ✅ pass - ite_cond_calls_Any_to_bool_0
+test_control_flow.py(18, 8): ✅ pass - ite_cond_calls_Any_to_bool_0
+test_control_flow.py(25, 4): ✅ pass - assert_assert(416)_calls_Any_to_bool_0
+test_control_flow.py(25, 4): ✅ pass - assert(416)
+test_control_flow.py(31, 4): ✅ pass - ite_cond_calls_Any_to_bool_0
+test_control_flow.py(36, 4): ✅ pass - assert_assert(609)_calls_Any_to_bool_0
+test_control_flow.py(36, 4): ✅ pass - assert(609)
+test_control_flow.py(42, 4): ✅ pass - ite_cond_calls_Any_to_bool_0
+test_control_flow.py(43, 8): ✅ pass - ite_cond_calls_Any_to_bool_0
+test_control_flow.py(50, 4): ✅ pass - assert_assert(857)_calls_Any_to_bool_0
+test_control_flow.py(50, 4): ✅ pass - assert(857)
+test_control_flow.py(56, 4): ✅ pass - ite_cond_calls_Any_to_bool_0
+test_control_flow.py(61, 4): ✅ pass - assert_assert(1048)_calls_Any_to_bool_0
+test_control_flow.py(61, 4): ✅ pass - assert(1048)
+test_control_flow.py(67, 4): ✅ pass - ite_cond_calls_Any_to_bool_0
+test_control_flow.py(72, 4): ✅ pass - assert_assert(1224)_calls_Any_to_bool_0
+test_control_flow.py(72, 4): ✅ pass - assert(1224)
+test_control_flow.py(74, 0): ✅ pass - ite_cond_calls_Any_to_bool_0
 DETAIL: 21 passed, 0 failed, 0 inconclusive
 RESULT: Analysis success
