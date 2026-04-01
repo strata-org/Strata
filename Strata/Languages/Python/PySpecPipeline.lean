@@ -300,12 +300,10 @@ public def buildPreludeInfo (result : PySpecLaurelResult) : Python.PreludeInfo :
         if name.startsWith (prefixed ++ "@") then
           s.insert (unprefixed ++ name.drop prefixed.length) (.function name)
         else s
-  -- Add unprefixed aliases to exhaustiveClasses.
-  -- All PySpec composite types are exhaustive (their method set is complete).
+  -- Add unprefixed aliases to exhaustiveClasses
   let exhaustive := result.typeAliases.fold (init := result.exhaustiveClasses)
     fun s unprefixed prefixed =>
-      if result.exhaustiveClasses.contains prefixed ||
-         merged.compositeTypes.contains prefixed then s.insert unprefixed else s
+      if result.exhaustiveClasses.contains prefixed then s.insert unprefixed else s
   { merged with
     functionSignatures :=
       result.functionSignatures ++ merged.functionSignatures

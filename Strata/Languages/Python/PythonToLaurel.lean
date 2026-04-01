@@ -834,17 +834,6 @@ partial def combinePositionalAndKeywordArgs
         | .mk_keyword _ name _ => name.val.map (·.val)
       throwUserError callRange
         s!"'{name}' called with unknown keyword arguments: {extraNames}"
-    -- When kwargs are accepted, validate that named keyword args match
-    -- known parameter or kwargs field names.
-    if funcDecl.kwargsName.isSome && kwordArgs.length > 0 then
-      let knownNames := funcDecl.args.map (·.1)
-      let extraNames := kwordArgs.filterMap fun kw => match kw with
-        | .mk_keyword _ kwName _ => do
-          let n ← kwName.val.map (·.val)
-          if n ∈ knownNames then none else some n
-      if extraNames.length > 0 then
-        throwUserError callRange
-          s!"'{name}' called with unknown keyword arguments: {extraNames}"
     let kwords := pyKwordsToHashMap kwords
     let unprovidedPosArgs := funcDecl.args.drop posArgs.length
     --every unprovided positional args must have a default value in the function signature or be provided in the kwargs
@@ -992,11 +981,13 @@ partial def translateCall (ctx : TranslationContext)
       if funcdecl_hasKwargs then [DictStrAny_empty] else []
     else [trans_kwords]
   -- Emit type assertions for named arguments against declared parameter types.
-  -- Only for non-varKwargs calls (varKwargs have their own assertions).
+  -- Only when the argument is a dict/list literal passed where a scalar is expected.
+  -- Skip varKwargs (have their own assertions) and constructor calls (use New).
   let mut namedArgAsserts : List StmtExprMd := []
-  if !isVarKwargs kwords then
+  if !isVarKwargs kwords && !isCompositeType ctx funcName then
     if let some fd := funcDecl then
-      for (arg, (_, argType, _)) in trans_args.zip fd.args do
+      let pairs := trans_args.zip (fd.args.zip args)
+      for (targ, ((_, argType, _), srcExpr)) in pairs do
         let tester? := match argType with
           | "int" | "integer" => some "Any..isfrom_int"
           | "str" | "string" => some "Any..isfrom_string"
@@ -1004,8 +995,18 @@ partial def translateCall (ctx : TranslationContext)
           | "float" | "real" => some "Any..isfrom_float"
           | _ => none
         if let some testerName := tester? then
-          let cond := mkStmtExprMd (.StaticCall testerName [arg])
-          namedArgAsserts := namedArgAsserts ++ [mkStmtExprMd (.Assert cond)]
+          -- Check if the source expression is a dict/list literal or a variable
+          -- with a known dict/list annotation.
+          let isDictOrList : Bool := match srcExpr with
+            | .Dict .. | .List .. => true
+            | .Name _ n _ =>
+              match ctx.variableTypes.find? (·.1 == n.val) with
+              | some (_, ty) => ty.startsWith "dict" || ty.startsWith "list"
+              | none => false
+            | _ => false
+          if isDictOrList then
+            let cond := mkStmtExprMd (.StaticCall testerName [targ])
+            namedArgAsserts := namedArgAsserts ++ [mkStmtExprMd (.Assert cond)]
   let call ← emitCall (trans_args ++ trans_kwords_exprs)
   if namedArgAsserts.isEmpty then return call
   else return mkStmtExprMd (.Block (namedArgAsserts ++ [call]) none)
@@ -1238,7 +1239,9 @@ def createVarDeclStmtsAndCtx (ctx : TranslationContext) (newDecls : List (String
       pure $ mkStmtExprMd (StmtExpr.LocalVariable (name : String) ty (some (mkStmtExprMd .Hole)))
   let hoistedCtx := { ctx with variableTypes := ctx.variableTypes ++
       (newDecls.map fun (n, ty) =>
-        if isCompositeType ctx ty then (n, ty) else (n, PyLauType.Any)) }
+        if isCompositeType ctx ty then (n, ty)
+        else if ty.startsWith "dict" || ty.startsWith "list" then (n, ty)
+        else (n, PyLauType.Any)) }
   return (hoistedDecls, hoistedCtx)
 
 mutual
