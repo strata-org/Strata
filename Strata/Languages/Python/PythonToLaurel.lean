@@ -1472,7 +1472,7 @@ def translateFunction (ctx : TranslationContext) (sourceRange: SourceRange) (fun
       preconditions := []
       determinism := .deterministic none -- TODO: need to set reads
       decreases := none
-      body := Body.Transparent bodyBlock
+      body := Body.Transparent bodyBlock []
       md := sourceRangeToMetaData ctx.filePath sourceRange
       isFunctional := false
     }
@@ -1615,7 +1615,7 @@ def translateMethod (ctx : TranslationContext) (className : String)
       determinism := .nondeterministic
       isFunctional := false
       decreases := none
-      body := .Transparent bodyBlock
+      body := .Transparent bodyBlock []
       md := md
     }
   | _ => throw (.internalError "Expected FunctionDef for method")
@@ -1940,7 +1940,7 @@ def pythonToLaurel' (info : PreludeInfo)
     preconditions := [],
     determinism := .deterministic none,
     decreases := none,
-    body := .Transparent bodyBlock
+    body := .Transparent bodyBlock []
     md := md
     isFunctional := false
   }

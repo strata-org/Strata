@@ -169,7 +169,10 @@ def formatStmtExprWithMsg (s : StmtExprMd) : Format :=
   | some msg => " propertySummary \"" ++ msg ++ "\""
 
 def formatBody : Body → Format
-  | .Transparent body => formatStmtExpr body
+  | .Transparent body posts =>
+    let bodyFmt := formatStmtExpr body
+    let postsFmt := posts.map (fun p => Format.line ++ " ensures " ++ formatStmtExpr p)
+    bodyFmt ++ Format.join postsFmt
   | .Opaque postconds impl modif =>
       (if modif.isEmpty then Format.nil
        else " modifies " ++ Format.joinSep (modif.map formatStmtExpr) ", ") ++

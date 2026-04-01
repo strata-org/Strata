@@ -28,6 +28,7 @@ import Strata.DL.Imperative.MetaData
 import Strata.DL.Lambda.LExpr
 import Strata.Languages.Laurel.LaurelFormat
 import Strata.Languages.Laurel.ConstrainedTypeElim
+import Strata.Languages.Laurel.FunctionPostcondElim
 import Strata.Util.Tactics
 
 open Core (VCResult VCResults VerifyOptions)
@@ -551,7 +552,7 @@ def translateProcedure (proc : Procedure) : TranslateM Core.Procedure := do
   let modifies : List Core.Expression.Ident := []
   let bodyStmts : List Core.Statement ←
     match proc.body with
-    | .Transparent bodyExpr => translateStmt proc.outputs bodyExpr
+    | .Transparent bodyExpr _ => translateStmt proc.outputs bodyExpr
     | .Opaque _postconds (some impl) _ => translateStmt proc.outputs impl
     | _ => pure [Core.Statement.assume "no_body" (.const () (.boolConst false)) mdWithUnknownLoc]
   -- Wrap body in a labeled block so early returns (exit) work correctly.
@@ -635,10 +636,11 @@ def translateProcedureToFunction (options: LaurelTranslateOptions) (isRecursive:
     | none => if options.inlineFunctionsWhenPossible then #[.inline] else #[]
 
   let body ← match proc.body with
-    | .Transparent bodyExpr => some <$> translateExpr bodyExpr [] (isPureContext := true)
-    | .Opaque _ (some bodyExpr) _ =>
-      emitDiagnostic (proc.md.toDiagnostic "functions with postconditions are not yet supported")
-      some <$> translateExpr bodyExpr [] (isPureContext := true)
+    | .Transparent bodyExpr _ => some <$> translateExpr bodyExpr [] (isPureContext := true)
+    | .Opaque _ (some _) _ =>
+      -- Opaque function: postconditions already handled by FunctionPostcondElim;
+      -- body hidden from callers (checked by $check_ procedure)
+      pure none
     | _ => pure none
   let f : Core.Function := {
     name := ⟨proc.name.text, ()⟩
@@ -718,9 +720,13 @@ def translateWithLaurel (options: LaurelTranslateOptions) (program : Program): T
   let result := resolve program (some model)
   let (program, model) := (result.program, result.model)
 
+  let (program, funcPostcondDiags) := functionPostcondElim model program
+  let result := resolve program (some model)
+  let (program, model) := (result.program, result.model)
+
   let initState : TranslateState := {model := model }
   let (coreProgramOption, translateState) := runTranslateM initState (translateLaurelToCore options program)
-  let allDiagnostics := resolutionErrors ++ diamondErrors ++ modifiesDiags ++ constrainedTypeDiags ++ translateState.diagnostics
+  let allDiagnostics := resolutionErrors ++ diamondErrors ++ modifiesDiags ++ constrainedTypeDiags ++ funcPostcondDiags ++ translateState.diagnostics
   let coreProgramOption := if translateState.coreProgramHasSuperfluousErrors then none else coreProgramOption
   (coreProgramOption, allDiagnostics, program)
   where
