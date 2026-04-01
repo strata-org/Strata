@@ -418,8 +418,17 @@ def handleUnaryOps {M} [Inhabited M] (name : String) (arg : CoreDDM.Expr M)
   | "Bv64.Extract_15_0" => pure (.bvextract_15_0_64 default arg)
   | "Bv64.Extract_31_0" => pure (.bvextract_31_0_64 default arg)
   | _ => do
-    ToCSTM.logError "handleUnaryOps" "unary op" name
-    pure (.not default arg)
+    -- Try to register as a free variable (handles Core built-in functions
+    -- like "const" that aren't declared in the DDM program).
+    modify (·.addGlobalFreeVars #[name])
+    let ctx ← get
+    match ctx.freeVarIndex? name with
+    | some idx =>
+      let fnExpr := CoreDDM.Expr.fvar default idx
+      pure (.app default fnExpr arg)
+    | none =>
+      ToCSTM.logError "handleUnaryOps" "unary op" name
+      pure (.not default arg)
 
 /-- Map from bitvector binary operation base names to DDM Expr constructors -/
 def bvBinaryOpMap {M} [Inhabited M] :
@@ -582,6 +591,8 @@ def lopToExpr {M} [Inhabited M]
     pure <| args.foldl (fun acc arg => .app default acc arg) fnExpr
   | none =>
     -- Either a built-in or an invalid operation.
+    -- For unknown names (e.g. Core built-in functions like "const"),
+    -- register as a free variable and emit a function application.
     match args with
     | [] => handleZeroaryOps name
     | [arg] => handleUnaryOps name arg

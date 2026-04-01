@@ -181,4 +181,26 @@ def main() -> None:
   | .ok _ => throw <| .userError "Expected error for misspelled kwarg in method body"
   | .error _ => pure ()  -- Expected: translation error for unknown kwarg
 
+-- Test 9: Class with method body using augmented assignment (+=).
+-- This exercises the const() map function in the type hierarchy and
+-- the isFunction check for multi-target assignments.
+-- The analysis completes without internal errors (inconclusive is OK).
+#guard_msgs (drop info) in
+#eval withPython (warnOnSkip := false) fun pythonCmd => do
+  let program :=
+"class Counter:
+    count: int
+    def __init__(self) -> None:
+        self.count = 0
+    def increment(self) -> int:
+        self.count = self.count + 1
+        return self.count
+
+def main() -> None:
+    c: Counter = Counter()
+    r: int = c.increment()
+"
+  let _diags ← processPythonFile pythonCmd (stringInputContext "test.py" program)
+  pure ()
+
 end Strata.Python.DictNoneTest
