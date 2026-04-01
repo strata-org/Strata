@@ -1,20 +1,17 @@
-
-==== Verification Results ====
-assert_assert(421)_calls_Any_get_0: ✅ pass (at line 16, col 0)
-assert_assert(421)_calls_Any_get_1: ✅ pass (at line 16, col 0)
-assert_assert(421)_calls_Any_get_2: ✅ pass (at line 16, col 0)
-assert_assert(421)_calls_Any_get_3: ✅ pass (at line 16, col 0)
-assert_assert(421)_calls_Any_to_bool_4: ✅ pass (at line 16, col 0)
-assert(421): ✅ pass (at line 16, col 0)
-assert_assert(489)_calls_Any_get_0: ✅ pass (at line 18, col 0)
-assert_assert(489)_calls_Any_get_1: ✅ pass (at line 18, col 0)
-assert_assert(489)_calls_Any_get_2: ✅ pass (at line 18, col 0)
-assert_assert(489)_calls_PIn_3: ✅ pass (at line 18, col 0)
-assert_assert(489)_calls_Any_to_bool_4: ✅ pass (at line 18, col 0)
-assert(489): ✅ pass (at line 18, col 0)
-assert_assert(554)_calls_PIn_0: ✅ pass (at line 20, col 0)
-assert_assert(554)_calls_Any_to_bool_1: ✅ pass (at line 20, col 0)
-assert(554): ✅ pass (at line 20, col 0)
-
+test_subscription.py(16, 0): ✅ pass - assert_assert(421)_calls_Any_get_0
+test_subscription.py(16, 0): ✅ pass - assert_assert(421)_calls_Any_get_1
+test_subscription.py(16, 0): ✅ pass - assert_assert(421)_calls_Any_get_2
+test_subscription.py(16, 0): ✅ pass - assert_assert(421)_calls_Any_get_3
+test_subscription.py(16, 0): ✅ pass - assert_assert(421)_calls_Any_to_bool_4
+test_subscription.py(16, 0): ✅ pass - assert(421)
+test_subscription.py(18, 0): ✅ pass - assert_assert(489)_calls_Any_get_0
+test_subscription.py(18, 0): ✅ pass - assert_assert(489)_calls_Any_get_1
+test_subscription.py(18, 0): ✅ pass - assert_assert(489)_calls_Any_get_2
+test_subscription.py(18, 0): ✅ pass - assert_assert(489)_calls_PIn_3
+test_subscription.py(18, 0): ✅ pass - assert_assert(489)_calls_Any_to_bool_4
+test_subscription.py(18, 0): ✅ pass - assert(489)
+test_subscription.py(20, 0): ✅ pass - assert_assert(554)_calls_PIn_0
+test_subscription.py(20, 0): ✅ pass - assert_assert(554)_calls_Any_to_bool_1
+test_subscription.py(20, 0): ✅ pass - assert(554)
 DETAIL: 15 passed, 0 failed, 0 inconclusive
 RESULT: Analysis success

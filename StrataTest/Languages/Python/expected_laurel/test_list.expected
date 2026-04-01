@@ -1,18 +1,15 @@
-
-==== Verification Results ====
-assert_assert(32)_calls_PIn_0: ✅ pass (at line 3, col 0)
-assert_assert(32)_calls_Any_to_bool_1: ✅ pass (at line 3, col 0)
-assert(32): ✅ pass (at line 3, col 0)
-set_n_calls_Any_get_0: ✅ pass
-assert_assert(71)_calls_Any_to_bool_0: ✅ pass (at line 7, col 0)
-assert(71): ✅ pass (at line 7, col 0)
-assert_assert(152)_calls_Any_get_0: ✅ pass (at line 13, col 0)
-assert_assert(152)_calls_Any_to_bool_1: ✅ pass (at line 13, col 0)
-assert(152): ✅ pass (at line 13, col 0)
-assert_assert(200)_calls_Any_get_0: ✅ pass (at line 17, col 0)
-assert_assert(200)_calls_Any_get_1: ✅ pass (at line 17, col 0)
-assert_assert(200)_calls_Any_to_bool_2: ✅ pass (at line 17, col 0)
-assert(200): ✅ pass (at line 17, col 0)
-
+test_list.py(3, 0): ✅ pass - assert_assert(32)_calls_PIn_0
+test_list.py(3, 0): ✅ pass - assert_assert(32)_calls_Any_to_bool_1
+test_list.py(3, 0): ✅ pass - assert(32)
+test_list.py(5, 0): ✅ pass - set_n_calls_Any_get_0
+test_list.py(7, 0): ✅ pass - assert_assert(71)_calls_Any_to_bool_0
+test_list.py(7, 0): ✅ pass - assert(71)
+test_list.py(13, 0): ✅ pass - assert_assert(152)_calls_Any_get_0
+test_list.py(13, 0): ✅ pass - assert_assert(152)_calls_Any_to_bool_1
+test_list.py(13, 0): ✅ pass - assert(152)
+test_list.py(17, 0): ✅ pass - assert_assert(200)_calls_Any_get_0
+test_list.py(17, 0): ✅ pass - assert_assert(200)_calls_Any_get_1
+test_list.py(17, 0): ✅ pass - assert_assert(200)_calls_Any_to_bool_2
+test_list.py(17, 0): ✅ pass - assert(200)
 DETAIL: 13 passed, 0 failed, 0 inconclusive
 RESULT: Analysis success

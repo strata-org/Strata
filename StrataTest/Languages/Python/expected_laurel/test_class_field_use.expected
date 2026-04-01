@@ -1,8 +1,5 @@
-
-==== Verification Results ====
-callElimAssert_requires_7: ✅ pass
-assert_assert(285)_calls_Any_to_bool_0: ✅ pass (at line 14, col 4)
-Assertion failed at line 14, col 4: assert(285): ❌ fail
-
+test_class_field_use.py(12, 4): ✅ pass - callElimAssert_requires_7
+test_class_field_use.py(14, 4): ✅ pass - assert_assert(285)_calls_Any_to_bool_0
+test_class_field_use.py(14, 4): ❌ fail - assert(285)
 DETAIL: 2 passed, 1 failed, 0 inconclusive
 RESULT: Failures found

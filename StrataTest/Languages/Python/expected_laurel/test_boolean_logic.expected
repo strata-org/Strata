@@ -1,33 +1,30 @@
-
-==== Verification Results ====
-assert_assert(73)_calls_PAnd_0: ✅ pass (at line 5, col 4)
-assert_assert(73)_calls_Any_to_bool_1: ✅ pass (at line 5, col 4)
-assert(73): ✅ pass (at line 5, col 4)
-assert_assert(124)_calls_PAnd_0: ✅ pass (at line 6, col 4)
-assert_assert(124)_calls_Any_to_bool_1: ✅ pass (at line 6, col 4)
-assert(124): ✅ pass (at line 6, col 4)
-assert_assert(201)_calls_POr_0: ✅ pass (at line 9, col 4)
-assert_assert(201)_calls_Any_to_bool_1: ✅ pass (at line 9, col 4)
-assert(201): ✅ pass (at line 9, col 4)
-assert_assert(251)_calls_POr_0: ✅ pass (at line 10, col 4)
-assert_assert(251)_calls_Any_to_bool_1: ✅ pass (at line 10, col 4)
-assert(251): ✅ pass (at line 10, col 4)
-assert_assert(320)_calls_Any_to_bool_0: ✅ pass (at line 13, col 4)
-assert(320): ✅ pass (at line 13, col 4)
-assert_assert(365)_calls_Any_to_bool_0: ✅ pass (at line 14, col 4)
-assert(365): ✅ pass (at line 14, col 4)
-ite_cond_calls_PAnd_0: ✅ pass (at line 21, col 4)
-ite_cond_calls_Any_to_bool_1: ✅ pass (at line 21, col 4)
-assert_assert(570)_calls_Any_to_bool_0: ✅ pass (at line 25, col 4)
-assert(570): ✅ pass (at line 25, col 4)
-ite_cond_calls_POr_0: ✅ pass (at line 27, col 4)
-ite_cond_calls_Any_to_bool_1: ✅ pass (at line 27, col 4)
-assert_assert(700)_calls_Any_to_bool_0: ✅ pass (at line 31, col 4)
-assert(700): ✅ pass (at line 31, col 4)
-ite_cond_calls_Any_to_bool_0: ✅ pass (at line 33, col 4)
-assert_assert(825)_calls_Any_to_bool_0: ✅ pass (at line 37, col 4)
-assert(825): ✅ pass (at line 37, col 4)
-ite_cond_calls_Any_to_bool_0: ✅ pass (at line 39, col 0)
-
+test_boolean_logic.py(5, 4): ✅ pass - assert_assert(73)_calls_PAnd_0
+test_boolean_logic.py(5, 4): ✅ pass - assert_assert(73)_calls_Any_to_bool_1
+test_boolean_logic.py(5, 4): ✅ pass - assert(73)
+test_boolean_logic.py(6, 4): ✅ pass - assert_assert(124)_calls_PAnd_0
+test_boolean_logic.py(6, 4): ✅ pass - assert_assert(124)_calls_Any_to_bool_1
+test_boolean_logic.py(6, 4): ✅ pass - assert(124)
+test_boolean_logic.py(9, 4): ✅ pass - assert_assert(201)_calls_POr_0
+test_boolean_logic.py(9, 4): ✅ pass - assert_assert(201)_calls_Any_to_bool_1
+test_boolean_logic.py(9, 4): ✅ pass - assert(201)
+test_boolean_logic.py(10, 4): ✅ pass - assert_assert(251)_calls_POr_0
+test_boolean_logic.py(10, 4): ✅ pass - assert_assert(251)_calls_Any_to_bool_1
+test_boolean_logic.py(10, 4): ✅ pass - assert(251)
+test_boolean_logic.py(13, 4): ✅ pass - assert_assert(320)_calls_Any_to_bool_0
+test_boolean_logic.py(13, 4): ✅ pass - assert(320)
+test_boolean_logic.py(14, 4): ✅ pass - assert_assert(365)_calls_Any_to_bool_0
+test_boolean_logic.py(14, 4): ✅ pass - assert(365)
+test_boolean_logic.py(21, 4): ✅ pass - ite_cond_calls_PAnd_0
+test_boolean_logic.py(21, 4): ✅ pass - ite_cond_calls_Any_to_bool_1
+test_boolean_logic.py(25, 4): ✅ pass - assert_assert(570)_calls_Any_to_bool_0
+test_boolean_logic.py(25, 4): ✅ pass - assert(570)
+test_boolean_logic.py(27, 4): ✅ pass - ite_cond_calls_POr_0
+test_boolean_logic.py(27, 4): ✅ pass - ite_cond_calls_Any_to_bool_1
+test_boolean_logic.py(31, 4): ✅ pass - assert_assert(700)_calls_Any_to_bool_0
+test_boolean_logic.py(31, 4): ✅ pass - assert(700)
+test_boolean_logic.py(33, 4): ✅ pass - ite_cond_calls_Any_to_bool_0
+test_boolean_logic.py(37, 4): ✅ pass - assert_assert(825)_calls_Any_to_bool_0
+test_boolean_logic.py(37, 4): ✅ pass - assert(825)
+test_boolean_logic.py(39, 0): ✅ pass - ite_cond_calls_Any_to_bool_0
 DETAIL: 28 passed, 0 failed, 0 inconclusive
 RESULT: Analysis success
