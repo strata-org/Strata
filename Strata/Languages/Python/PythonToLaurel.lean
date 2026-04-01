@@ -107,6 +107,9 @@ structure TranslationContext where
   exhaustiveClasses : Std.HashSet String := {}
   /-- Track current class during method translation -/
   currentClassName : Option String := none
+  /-- Dispatch-detected field types: ClassName → FieldName → CompositeTypeName.
+      Used only by refineFunctionCallExpr for self.field.method() dispatch. -/
+  dispatchFieldTypes : Std.HashMap String (Std.HashMap String String) := {}
   loopBreakLabel : Option String := none
   loopContinueLabel : Option String := none
 deriving Inhabited
@@ -762,7 +765,37 @@ partial def refineFunctionCallExpr (ctx : TranslationContext) (func: Python.expr
           return (pyExprToString func, none, false)
         else
         if callerTy == PyLauType.Any then
-          return ("AnyTyInstance" ++ "@" ++ callname, some v, true)
+          -- Check if this is self.field where the field was initialized via
+          -- dispatch (e.g. self.client = boto3.client('s3')).
+          let dispatchTy : Option String := match v with
+            | .Attribute _ (.Name _ selfName _) fieldAttr _ =>
+              if selfName.val == "self" then
+                match ctx.currentClassName with
+                | some cn => ctx.dispatchFieldTypes[cn]?.bind (·[fieldAttr.val]?)
+                | none => none
+              else none
+            | _ => none
+          match dispatchTy with
+          | some ty =>
+            let resolvedTy :=
+              match ctx.importedSymbols[ty]? with
+              | some (ImportedSymbol.compositeType laurelName) => laurelName
+              | _ => ty
+            let unprefixedTy := ctx.importedSymbols.fold (init := Option.none) fun found k v =>
+              match found, v with
+              | some _, _ => found
+              | none, .compositeType laurelName =>
+                if laurelName == ty && k != ty then some k else none
+              | _, _ => none
+            let candidates := [
+              ty ++ "@" ++ callname,
+              resolvedTy ++ "@" ++ callname] ++
+              (match unprefixedTy with | some u => [u ++ "@" ++ callname] | none => [])
+            let funcName := candidates.find? (ctx.importedSymbols.contains ·)
+              |>.getD (resolvedTy ++ "@" ++ callname)
+            return (funcName, some v, false)
+          | none =>
+            return ("AnyTyInstance" ++ "@" ++ callname, some v, true)
         else
           let resolvedTy :=
             match ctx.importedSymbols[callerTy]? with
@@ -1792,7 +1825,23 @@ def translateClass (ctx : TranslationContext) (classStmt : Python.stmt SourceRan
 
     -- Populate field type maps so method bodies can wrap field accesses in Any coercions
     let classFields := fields.foldl (fun m f => m.insert f.name.text f.type.val) (ctx.classFieldHighType[className]?.getD {})
-    let ctx := {ctx with classFieldHighType := ctx.classFieldHighType.insert className classFields}
+    -- Detect dispatch calls in __init__ (e.g. self.client = boto3.client('s3'))
+    -- and record the resolved composite type for method dispatch only.
+    let mut dispatchFields : Std.HashMap String String := {}
+    for stmt in body do
+      if let .FunctionDef _ name _ initBody _ _ _ _ := stmt then
+        if name.val == "__init__" then
+          for s in initBody.val do
+            if let .Assign _ targets value _ := s then
+              if let some target := targets.val[0]? then
+                if let .Attribute _ (.Name _ selfName _) attr _ := target then
+                  if selfName.val == "self" then
+                    if let .Call _ f callArgs _ := value then
+                      if let some cn ← resolveDispatch ctx f callArgs.val then
+                        dispatchFields := dispatchFields.insert attr.val cn
+    let ctx := {ctx with
+      classFieldHighType := ctx.classFieldHighType.insert className classFields
+      dispatchFieldTypes := ctx.dispatchFieldTypes.insert className dispatchFields}
 
     -- Translate each method
     let mut instanceProcedures : Array Procedure := #[]

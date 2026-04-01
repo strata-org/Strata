@@ -206,4 +206,25 @@ def create_service() -> Any:
   if diags.size ≠ 0 then
     throw <| .userError s!"Expected 0 diagnostics, got {diags.size}"
 
+-- Class with field initialized via constructor call.
+-- Verifies that dispatch detection in __init__ doesn't break
+-- normal class translation.
+#guard_msgs in
+#eval withPython (warnOnSkip := false) fun pythonCmd => do
+  let program :=
+"class Wrapper:
+    name: str
+    def __init__(self, name: str) -> None:
+        self.name = name
+    def greet(self) -> str:
+        return self.name
+
+def main() -> None:
+    w: Wrapper = Wrapper(\"test\")
+    r: str = w.greet()
+"
+  let diags ← processPythonFile pythonCmd (stringInputContext "test.py" program)
+  if diags.size ≠ 0 then
+    throw <| .userError s!"Expected 0 diagnostics, got {diags.size}"
+
 end Strata.Python.VerifyPythonTest
