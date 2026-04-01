@@ -540,7 +540,7 @@ def pyAnalyzeLaurelCommand : Command where
     let mfm : Option (String × Lean.FileMap) := match pySourceOpt with
       | some (pyPath, srcText) => some (pyPath, .ofString srcText)
       | none => none
-    let combinedLaurel ←
+    let analyzeResult ←
       match ← Strata.pyAnalyzeLaurel filePath dispatchModules pyspecModules sourcePath
                 (specDir := specDir) (profile := profile)
                 (quiet := quiet) |>.toBaseIO with
@@ -557,6 +557,8 @@ def pyAnalyzeLaurelCommand : Command where
         exitPyAnalyzeKnownLimitation msg
       | .error (.internal msg) =>
         exitPyAnalyzeInternalError msg
+    let combinedLaurel := analyzeResult.laurelProgram
+    let pyspecProcNames := analyzeResult.pyspecProcedureNames
 
     if verbose then
       IO.println "\n==== Laurel Program ===="
@@ -593,11 +595,10 @@ def pyAnalyzeLaurelCommand : Command where
 
     -- Inline pyspec procedures so their precondition assertions are checked
     -- at call sites with concrete arguments.
-    let pyspecFiles := pflags.getRepeated "pyspec"
     let coreProgram ← profileStep profile "Inline PySpec procedures" do
-      if pyspecFiles.size > 0 then
+      if !pyspecProcNames.isEmpty then
         match Core.inlineProcedures coreProgram
-              ⟨.some (fun name _ => name ≠ "__main__" && !preludeNames.contains name)⟩ with
+              ⟨.some (fun name _ => pyspecProcNames.contains name)⟩ with
         | .error e => exitPyAnalyzeInternalError s!"Inlining failed: {e}"
         | .ok inlined => do
           if verbose then

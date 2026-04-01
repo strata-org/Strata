@@ -39,6 +39,8 @@ public structure PySpecLaurelResult where
   typeAliases : Std.HashMap String String := {}
   /-- Classes whose spec is considered exhaustive (lists all methods). -/
   exhaustiveClasses : Std.HashSet String := {}
+  /-- Procedure names originating from PySpec files, to be inlined at call sites. -/
+  pyspecProcedureNames : Std.HashSet String := {}
 
 /-! ### Private Helpers -/
 
@@ -159,7 +161,8 @@ public def buildPySpecLaurel (pyspecEntries : Array (String × String))
   }
   return { laurelProgram := combinedLaurel, overloads := allOverloads
            functionSignatures := funcSigs, typeAliases := allTypeAliases
-           exhaustiveClasses := allExhaustiveClasses }
+           exhaustiveClasses := allExhaustiveClasses
+           pyspecProcedureNames := seenProcs.fold (init := {}) fun s name _ => s.insert name }
 
 /-- Read dispatch Ion files and merge their overload tables. -/
 public def readDispatchOverloads
@@ -363,11 +366,18 @@ public instance : ToString PipelineError where
     | .knownLimitation msg => s!"Known limitation: {msg}"
     | .internal msg => msg
 
+/-- Result of the `pyAnalyzeLaurel` pipeline. -/
+public structure PyAnalyzeResult where
+  /-- Combined Laurel program ready for `translateCombinedLaurel`. -/
+  laurelProgram : Laurel.Program
+  /-- Procedure names originating from PySpec files, to be inlined at call sites. -/
+  pyspecProcedureNames : Std.HashSet String
+
 /-- Run the pyAnalyzeLaurel pipeline: read a Python Ion program,
     resolve overloads from dispatch files, load PySpec declarations,
     translate Python to Laurel, and combine with PySpec Laurel.
-    Returns the combined Laurel program ready for
-    `translateCombinedLaurel`.
+    Returns the combined Laurel program and the set of pyspec procedure
+    names (for automatic inlining).
 
     `dispatchModules` and `pyspecModules` are dotted module names
     resolved against `specDir`.
@@ -383,7 +393,7 @@ public def pyAnalyzeLaurel
     (specDir : System.FilePath := ".")
     (profile : Bool := false)
     (quiet : Bool := false)
-    : EIO PipelineError Laurel.Program := do
+    : EIO PipelineError PyAnalyzeResult := do
   let stmts ← profileStep profile "Read Python Ion" do
     match ← Python.readPythonStrata pythonIonPath |>.toBaseIO with
     | .ok r => pure r
@@ -405,6 +415,7 @@ public def pyAnalyzeLaurel
     | .ok result => pure result
 
   profileStep profile "Combine PySpec and user Laurel" do
-    return combinePySpecLaurel result.laurelProgram laurelProgram
+    return { laurelProgram := combinePySpecLaurel result.laurelProgram laurelProgram
+             pyspecProcedureNames := result.pyspecProcedureNames }
 
 end Strata

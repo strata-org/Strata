@@ -82,13 +82,13 @@ private meta def runAnalyze
     (tmpDir : System.FilePath) (scriptName : String)
     : IO (Except String Core.Program) := do
   let testIon ← compileTestScript pythonCmd (testDir / scriptName) tmpDir
-  let laurel ←
+  let result ←
     match ← Strata.pyAnalyzeLaurel testIon.toString
         (dispatchModules := #["servicelib"])
         (specDir := tmpDir) |>.toBaseIO with
     | .ok r => pure r
     | .error err => return .error (toString err)
-  match Strata.translateCombinedLaurel laurel with
+  match Strata.translateCombinedLaurel result.laurelProgram with
   | (some core, []) =>
     -- Also run Core type checking to catch semantic errors (e.g. Heap vs Any)
     match Core.typeCheck Core.VerifyOptions.quiet core (moreFns := Strata.Python.ReFactory) with
@@ -102,22 +102,22 @@ private meta def runAnalyzeAndVerify
     (tmpDir : System.FilePath) (scriptName : String)
     : IO (Except String (Array Core.VCResult)) := do
   let testIon ← compileTestScript pythonCmd (testDir / scriptName) tmpDir
-  let laurel ←
+  let result ←
     match ← Strata.pyAnalyzeLaurel testIon.toString
         (dispatchModules := #["servicelib"])
         (specDir := tmpDir) |>.toBaseIO with
     | .ok r => pure r
     | .error err => return .error (toString err)
-  let (coreProgramOption, _) := Strata.translateCombinedLaurel laurel
+  let (coreProgramOption, _) := Strata.translateCombinedLaurel result.laurelProgram
   let coreProgram ← match coreProgramOption with
     | none => return .error "Laurel to Core translation failed"
     | some core => pure core
   -- Split prelude / user procedure names at FIRST_END_MARKER
-  let (preludeNames, userProcNames) := Strata.splitProcNames coreProgram
-  -- Inline all non-main, non-prelude procedures
+  let (_preludeNames, userProcNames) := Strata.splitProcNames coreProgram
+  -- Inline pyspec procedures at call sites
   let coreProgram ← match Core.Transform.runProgram (targetProcList := .none)
         (Core.ProcedureInlining.inlineCallCmd
-          (doInline := λ name _ => name ≠ "__main__" && !preludeNames.contains name))
+          (doInline := λ name _ => result.pyspecProcedureNames.contains name))
         coreProgram .emp with
     | ⟨.error e, _⟩ => return .error s!"Inlining failed: {e}"
     | ⟨.ok (_, inlined), _⟩ => pure inlined
@@ -229,14 +229,14 @@ private meta def runTestCase (pythonCmd : System.FilePath) (tmpDir : System.File
     tasks := tasks.push ("test_class_composite_as_any.py", task)
     let task ← IO.asTask do
       let testIon ← compileTestScript pythonCmd (testDir / "test_class_any_as_composite.py") tmpDir
-      let laurel ←
+      let result ←
         match ← Strata.pyAnalyzeLaurel testIon.toString
             (dispatchModules := #["servicelib"])
             (pyspecModules := #["servicelib.Storage"])
             (specDir := tmpDir) |>.toBaseIO with
         | .ok r => pure r
         | .error err => return some s!"test_class_any_as_composite.py: {err}"
-      match Strata.translateCombinedLaurel laurel with
+      match Strata.translateCombinedLaurel result.laurelProgram with
       | (some core, []) =>
         match Core.typeCheck Core.VerifyOptions.quiet core (moreFns := Strata.Python.ReFactory) with
         | .error errors => return some s!"test_class_any_as_composite.py: {errors}"

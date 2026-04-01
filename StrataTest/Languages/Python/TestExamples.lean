@@ -49,14 +49,14 @@ def processPythonFile (pythonCmd : System.FilePath) (input : InputContext)
       throw <| .userError s!"py_to_strata failed (exit code {exitCode}): {stderr}"
 
     -- Translate Python Ion → Laurel
-    let laurel ←
+    let result ←
       match ← pyAnalyzeLaurel ionFile.toString
           (sourcePath := some pyFile.toString) |>.toBaseIO with
       | .ok r => pure r
       | .error err => throw <| .userError s!"pyAnalyzeLaurel failed: {err}"
 
     -- Translate Laurel → Core (using Python-specific translateCombinedLaurel)
-    let (coreOpt, translateDiags) := translateCombinedLaurel laurel
+    let (coreOpt, translateDiags) := translateCombinedLaurel result.laurelProgram
 
     let uri := Uri.file pyFile.toString
     let files := Map.insert Map.empty uri input.fileMap

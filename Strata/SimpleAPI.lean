@@ -387,11 +387,11 @@ def pyTranslateLaurel
     (pyspecModules : Array String := #[])
     (specDir : System.FilePath := ".")
     : EIO String (Core.Program × List DiagnosticModel) := do
-  let laurel ←
+  let result ←
     match ← pyAnalyzeLaurel pythonIonPath dispatchModules pyspecModules (specDir := specDir) |>.toBaseIO with
     | .ok r => pure r
     | .error err => throw (toString err)
-  let (coreOption, laurelTranslateErrors) := translateCombinedLaurel laurel
+  let (coreOption, laurelTranslateErrors) := translateCombinedLaurel result.laurelProgram
   match coreOption with
   | none => throw s!"Laurel to Core translation failed: {laurelTranslateErrors}"
   | some core => pure (core, laurelTranslateErrors)
