@@ -13,7 +13,7 @@ namespace Python
 
 /--
 Python prelude declarations expressed in Laurel grammar.
-Converted from PythonRuntimeCorePart.lean (Core dialect) to Laurel dialect.
+Converted from PythonLaurelCorePrelude.lean (Core dialect) to Laurel dialect.
 
 Core-specific constructs that Laurel does not support:
 - `inline` keyword: noted in comments
