@@ -1,10 +1,7 @@
-
-==== Verification Results ====
-assert_assert(114)_calls_Any_to_bool_0: ✅ pass (at line 6, col 4)
-assert(114): ✅ pass (at line 6, col 4)
-assert_assert(264)_calls_Any_to_bool_0: ✅ pass (at line 11, col 4)
-assert(264): ✅ pass (at line 11, col 4)
-ite_cond_calls_Any_to_bool_0: ✅ pass (at line 13, col 0)
-
+test_strings.py(6, 4): ✅ pass - assert_assert(114)_calls_Any_to_bool_0
+test_strings.py(6, 4): ✅ pass - assert(114)
+test_strings.py(11, 4): ✅ pass - assert_assert(264)_calls_Any_to_bool_0
+test_strings.py(11, 4): ✅ pass - assert(264)
+test_strings.py(13, 0): ✅ pass - ite_cond_calls_Any_to_bool_0
 DETAIL: 5 passed, 0 failed, 0 inconclusive
 RESULT: Analysis success
