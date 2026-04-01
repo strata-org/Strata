@@ -394,6 +394,9 @@ def pyTranslateLaurel
   let (coreOption, laurelTranslateErrors) := translateCombinedLaurel result.laurelProgram
   match coreOption with
   | none => throw s!"Laurel to Core translation failed: {laurelTranslateErrors}"
-  | some core => pure (core, laurelTranslateErrors)
+  | some core =>
+    match inlinePySpecProcedures core result.pyspecProcedureNames with
+    | .error e => throw s!"PySpec inlining failed: {e}"
+    | .ok inlined => pure (inlined, laurelTranslateErrors)
 
 end -- public section

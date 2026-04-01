@@ -163,6 +163,7 @@ public def buildPySpecLaurel (pyspecEntries : Array (String × String))
   return { laurelProgram := combinedLaurel, overloads := allOverloads
            functionSignatures := funcSigs, typeAliases := allTypeAliases
            exhaustiveClasses := allExhaustiveClasses
+           -- Extract procedure names as a set for targeted inlining
            pyspecProcedureNames := seenProcs.fold (init := {}) fun s name _ => s.insert name }
 
 /-- Read dispatch Ion files and merge their overload tables. -/
