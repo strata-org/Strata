@@ -558,8 +558,7 @@ private def verifyIncremental
       let outcomeStr := r.formatOutcome
       IO.println s!"  {r.obligation.label}: {outcomeStr}"
     allResults := allResults ++ vcResults.toArray
-    match pySourceOpt with
-    | some (pyPath, srcText) =>
+    if let some (pyPath, srcText) := pySourceOpt then
       let fm : Lean.FileMap := .ofString srcText
       for r in vcResults do
         if r.isFailure then
@@ -569,7 +568,6 @@ private def verifyIncremental
               if path == pyPath then
                 let pos := fm.toPosition fr.range.start
                 IO.println s!"  (at line {pos.line}, col {pos.column})"
-    | none => pure ()
   return allResults
 
 private def deriveBaseName (file : String) : String :=
@@ -752,49 +750,31 @@ def pyAnalyzeLaurelCommand : Command where
       for err in laurelTranslateErrors do
         IO.eprintln err
 
-    -- Print results (non-incremental only; incremental prints per-procedure above)
+    -- Print per-VC results (non-incremental only; incremental prints per-procedure above)
     if !incremental then do
-      IO.println "\n==== Verification Results ===="
-      let mut s := ""
-      for vcResult in vcResults do
-        let propertySummaryOption := vcResult.obligation.metadata.getPropertySummary
-        let propertyDescription := propertySummaryOption.getD vcResult.obligation.label
-        let (locationPrefix, locationSuffix) := match Imperative.getFileRange vcResult.obligation.metadata with
-          | some fr =>
-            if fr.range.isNone then ("", "")
-            else
-              match mfm with
-              | some (_, fm) =>
-                match fr.file with
-                | .file "" =>
-                  if classifier.isFailure vcResult then
-                    (s!"Assertion failed in prelude file: ", "")
-                  else
-                    ("", s!" (in prelude file)")
-                | .file path =>
-                  let pos := fm.toPosition fr.range.start
-                  if classifier.isFailure vcResult then
-                    (s!"Assertion failed at line {pos.line}, col {pos.column}: ", "")
-                  else
-                    ("", s!" (at line {pos.line}, col {pos.column})")
-              | none =>
-                if classifier.isFailure vcResult then
-                  (s!"Assertion failed: ", "")
-                else
-                  ("", "")
-          | none => ("", "")
-        let outcomeStr := vcResult.formatOutcome
-        let relatedStr := formatRelatedPositions vcResult.obligation.metadata mfm
-        s := s ++ s!"{locationPrefix}{propertyDescription}: \
-                      {outcomeStr}{locationSuffix}{relatedStr}\n"
-      IO.println s
+      if !outputSarif then
+        let mut s := ""
+        for vcResult in vcResults do
+          let fileMap := mfm.map (·.2)
+          let location := match Imperative.getFileRange vcResult.obligation.metadata with
+            | some fr =>
+              if fr.range.isNone then ""
+              else s!"{fr.format fileMap (includeEnd? := false)}"
+            | none => ""
+          let messageSuffix := match vcResult.obligation.metadata.getPropertySummary with
+            | some msg => s!" - {msg}"
+            | none => s!" - {vcResult.obligation.label}"
+          let outcomeStr := vcResult.formatOutcome
+          let loc := if !location.isEmpty then s!"{location}: " else "unknown location: "
+          s := s ++ s!"{loc}{outcomeStr}{messageSuffix}\n"
+        IO.print s
       -- Output in SARIF format if requested
       if outputSarif then
         let files := match mfm with
           | some (pyPath, fm) => Map.empty.insert (Strata.Uri.file pyPath) fm
           | none => Map.empty
         Core.Sarif.writeSarifOutput checkMode files vcResults (filePath ++ ".sarif")
-      printPyAnalyzeSummary vcResults classifier
+      printPyAnalyzeSummary vcResults checkMode
 
 def pyAnalyzeToGotoCommand : Command where
   name := "pyAnalyzeToGoto"
