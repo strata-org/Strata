@@ -203,17 +203,10 @@ inductive ModelValidation where
       when the model is valid. -/
   | modelToValidate (validate : Imperative.SMT.CounterEx Expression.Ident → Bool)
 
-/-- A phase in the verification pipeline, recording its name and
-    whether its models need validation. -/
+/-- A phase in the verification pipeline, recording whether its models
+    need validation. -/
 structure AbstractedPhase where
-  name : String
   modelValidation : ModelValidation := .modelPreserving
-
-/-- True when any phase requires model validation. -/
-def AbstractedPhase.needsValidation (phases : List AbstractedPhase) : Bool :=
-  phases.any fun p => match p.modelValidation with
-    | .modelToValidate _ => true
-    | .modelPreserving => false
 
 /-- Validate a model against all phases. Phases are recorded top-down,
     so we reverse them to validate from the last (innermost) phase first.
@@ -259,7 +252,8 @@ structure VCOutcome where
   satisfiabilityProperty : SMT.Result
   validityProperty : SMT.Result
   /-- Ordered log of solver results per verification phase, preserving the
-      raw solver output before any soundness adjustments (e.g. sat→unknown). -/
+      raw solver output before any soundness adjustments (e.g. sat→unknown).
+      Consumed by future diagnostic and traceability tooling. -/
   solverLog : List SolverPhaseLog := []
   deriving Repr
 
@@ -649,6 +643,14 @@ def Program.hasOverApproximation (p : Program) : Bool :=
     | .recFuncBlock fs _ => fs.any fun f => !f.isConstr && f.body.isNone
     | _ => false
 
+/-- Build the solver log from raw results and phase validation logs. -/
+private def buildSolverLog (satResult valResult : SMT.Result)
+    (satisfiabilityCheck validityCheck : Bool)
+    (satPhaseLog valPhaseLog : List SolverPhaseLog) : List SolverPhaseLog :=
+  (if satisfiabilityCheck then [satResult] else []) ++
+  (if validityCheck then [valResult] else []) ++
+  satPhaseLog ++ valPhaseLog
+
 /-- Convert an unvalidated SMT sat result to unknown (preserving the model)
     when any pipeline phase cannot validate the model. Returns the adjusted
     result and a log of intermediate results per phase. -/
@@ -663,10 +665,9 @@ def SMT.Result.adjustForPhases (r : SMT.Result)
     rejects the model. -/
 def Program.abstractedPhases (p : Program) : List AbstractedPhase :=
   if p.hasOverApproximation then
-    [{ name := "VerificationPipeline",
-       modelValidation := .modelToValidate (fun _ => /- TODO -/ false) }]
+    [{ modelValidation := .modelToValidate (fun _ => /- TODO -/ false) }]
   else
-    [{ name := "VerificationPipeline" }]
+    [{}]
 
 /--
 Invoke a backend engine and get the analysis result for a
@@ -709,10 +710,8 @@ def getObligationResult (assumptionTerms : List Term) (obligationTerm : Term)
     let (adjSat, satPhaseLog) := satResult.adjustForPhases phases
     let (adjVal, valPhaseLog) := validityResult.adjustForPhases phases
     -- Build solver log: raw solver results followed by phase validation logs
-    let smtLog : List SolverPhaseLog :=
-      (if satisfiabilityCheck then [satResult] else []) ++
-      (if validityCheck then [validityResult] else []) ++
-      satPhaseLog ++ valPhaseLog
+    let smtLog := buildSolverLog satResult validityResult
+      satisfiabilityCheck validityCheck satPhaseLog valPhaseLog
     let rawOutcome : VCOutcome := {
       satisfiabilityProperty := adjSat,
       validityProperty := adjVal,
@@ -774,16 +773,13 @@ def verifySingleEnv (pE : Program × Env) (options : VerifyOptions)
       -- If PE resolved both checks, we're done, unless we always want to generate SMT queries
       if not options.alwaysGenerateSMT then
         if let (some peSat, some peVal) := (peSatResult?, peValResult?) then
-          let phases := p.abstractedPhases
-          let (adjSat, satPhaseLog) := peSat.adjustForPhases phases
-          let (adjVal, valPhaseLog) := peVal.adjustForPhases phases
-          let peLog : List SolverPhaseLog :=
-            (if satisfiabilityCheck then [peSat] else []) ++
-            (if validityCheck then [peVal] else []) ++
-            satPhaseLog ++ valPhaseLog
+          -- PE results are sound by construction (syntactic evaluation),
+          -- so no phase adjustment is needed.
+          let peLog := buildSolverLog peSat peVal
+            satisfiabilityCheck validityCheck [] []
           let outcome : VCOutcome := {
-            satisfiabilityProperty := adjSat,
-            validityProperty := adjVal,
+            satisfiabilityProperty := peSat,
+            validityProperty := peVal,
             solverLog := peLog }
           let result : VCResult := { obligation, outcome := .ok outcome, verbose := options.verbose,
                                       checkLevel := options.checkLevel, checkMode := options.checkMode, lexprModel := [] }

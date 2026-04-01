@@ -185,28 +185,31 @@ info: === Outcome Table (assert) ===
 /-! ### AbstractedPhase and ModelValidation tests -/
 
 private def preservingPhase : AbstractedPhase :=
-  { name := "VerificationPipeline" }
+  {}
 
 private def rejectingPhase : AbstractedPhase :=
-  { name := "VerificationPipeline",
-    modelValidation := .modelToValidate (fun _ => false) }
+  { modelValidation := .modelToValidate (fun _ => false) }
 
 private def acceptingPhase : AbstractedPhase :=
-  { name := "VerificationPipeline",
-    modelValidation := .modelToValidate (fun _ => true) }
+  { modelValidation := .modelToValidate (fun _ => true) }
+
+private def needsValidation (phases : List AbstractedPhase) : Bool :=
+  phases.any fun p => match p.modelValidation with
+    | .modelToValidate _ => true
+    | .modelPreserving => false
 
 private def satResult : Result := .sat []
 private def unsatResult : Result := .unsat
 private def unknownResult : Result := Imperative.SMT.Result.unknown (Ident := Core.Expression.Ident)
 
 /-- info: false -/
-#guard_msgs in #eval AbstractedPhase.needsValidation [preservingPhase]
+#guard_msgs in #eval needsValidation [preservingPhase]
 
 /-- info: true -/
-#guard_msgs in #eval AbstractedPhase.needsValidation [rejectingPhase]
+#guard_msgs in #eval needsValidation [rejectingPhase]
 
 /-- info: true -/
-#guard_msgs in #eval AbstractedPhase.needsValidation [preservingPhase, rejectingPhase]
+#guard_msgs in #eval needsValidation [preservingPhase, rejectingPhase]
 
 -- adjustForPhases: sat stays sat with ModelPreserving
 #guard (satResult.adjustForPhases [preservingPhase]).1 == satResult
