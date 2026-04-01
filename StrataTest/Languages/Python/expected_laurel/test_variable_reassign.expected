@@ -1,22 +1,19 @@
-
-==== Verification Results ====
-assert_assert(59)_calls_Any_to_bool_0: ✅ pass (at line 4, col 4)
-assert(59): ✅ pass (at line 4, col 4)
-assert_assert(104)_calls_Any_to_bool_0: ✅ pass (at line 6, col 4)
-assert(104): ✅ pass (at line 6, col 4)
-assert_assert(158)_calls_Any_to_bool_0: ✅ pass (at line 8, col 4)
-assert(158): ✅ pass (at line 8, col 4)
-loop_guard_calls_Any_to_bool_0: ✅ pass (at line 13, col 4)
-loop_guard_end_calls_Any_to_bool_0: ✅ pass (at line 13, col 4)
-assert_assert(318)_calls_Any_to_bool_0: ✅ pass (at line 16, col 4)
-assert(318): ❓ unknown (at line 16, col 4)
-ite_cond_calls_Any_to_bool_0: ✅ pass (at line 21, col 4)
-assert_assert(496)_calls_Any_to_bool_0: ✅ pass (at line 25, col 4)
-assert(496): ✅ pass (at line 25, col 4)
-ite_cond_calls_Any_to_bool_0: ✅ pass (at line 28, col 4)
-assert_assert(612)_calls_Any_to_bool_0: ✅ pass (at line 32, col 4)
-assert(612): ✅ pass (at line 32, col 4)
-ite_cond_calls_Any_to_bool_0: ✅ pass (at line 34, col 0)
-
+test_variable_reassign.py(4, 4): ✅ pass - assert_assert(59)_calls_Any_to_bool_0
+test_variable_reassign.py(4, 4): ✅ pass - assert(59)
+test_variable_reassign.py(6, 4): ✅ pass - assert_assert(104)_calls_Any_to_bool_0
+test_variable_reassign.py(6, 4): ✅ pass - assert(104)
+test_variable_reassign.py(8, 4): ✅ pass - assert_assert(158)_calls_Any_to_bool_0
+test_variable_reassign.py(8, 4): ✅ pass - assert(158)
+test_variable_reassign.py(13, 4): ✅ pass - loop_guard_calls_Any_to_bool_0
+test_variable_reassign.py(13, 4): ✅ pass - loop_guard_end_calls_Any_to_bool_0
+test_variable_reassign.py(16, 4): ✅ pass - assert_assert(318)_calls_Any_to_bool_0
+test_variable_reassign.py(16, 4): ❓ unknown - assert(318)
+test_variable_reassign.py(21, 4): ✅ pass - ite_cond_calls_Any_to_bool_0
+test_variable_reassign.py(25, 4): ✅ pass - assert_assert(496)_calls_Any_to_bool_0
+test_variable_reassign.py(25, 4): ✅ pass - assert(496)
+test_variable_reassign.py(28, 4): ✅ pass - ite_cond_calls_Any_to_bool_0
+test_variable_reassign.py(32, 4): ✅ pass - assert_assert(612)_calls_Any_to_bool_0
+test_variable_reassign.py(32, 4): ✅ pass - assert(612)
+test_variable_reassign.py(34, 0): ✅ pass - ite_cond_calls_Any_to_bool_0
 DETAIL: 16 passed, 0 failed, 1 inconclusive
 RESULT: Inconclusive

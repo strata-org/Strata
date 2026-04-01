@@ -60,9 +60,9 @@ def FileRange.format (fr : FileRange) (fileMap : Option Lean.FileMap) (includeEn
     let endPos := fm.toPosition fr.range.stop
     if includeEnd? then
       if startPos.line == endPos.line then
-        f!"{baseName}({startPos.line},({startPos.column}-{endPos.column}))"
+        f!"{baseName}({startPos.line}, ({startPos.column}-{endPos.column}))"
       else
-        f!"{baseName}(({startPos.line},{startPos.column})-({endPos.line},{endPos.column}))"
+        f!"{baseName}(({startPos.line}, {startPos.column})-({endPos.line}, {endPos.column}))"
     else
       f!"{baseName}({startPos.line}, {startPos.column})"
   | none =>

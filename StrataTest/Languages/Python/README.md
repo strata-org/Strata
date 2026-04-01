@@ -150,14 +150,12 @@ lake exe strata pyAnalyzeLaurel --verbose \
 
 ### Output
 
-Verification results include assertion labels and pass/fail status. When the
-corresponding `.py` source file is adjacent to the `.python.st.ion` file,
-results include line and column numbers:
+Verification results are printed by default (suppressed in SARIF mode).
+Each line shows the source location, outcome, and assertion name:
 
 ```
-==== Verification Results ====
-Assertion failed at line 12, col 4: assert_result_positive: fail
-check_return_type: pass (at line 15, col 8)
+test_arithmetic.py(7, 4): ✅ pass - assert(102)
+test_arithmetic.py(14, 4): ❌ fail - assert(200)
 ```
 
 ## Diagnostic Commands
