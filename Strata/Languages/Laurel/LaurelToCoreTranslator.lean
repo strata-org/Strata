@@ -822,8 +822,7 @@ def verifyToVcResults (program : Program)
     let options := { options with removeIrrelevantAxioms := .Precise }
     let runner tempDir :=
       EIO.toIO (fun f => IO.Error.userError (toString f))
-          (Core.verify coreProgram tempDir .none options
-            (externalPhases := [Strata.frontEndPhase]))
+          (Core.verify coreProgram tempDir .none options)
     let ioResult ← match options.vcDirectory with
       | .none => IO.FS.withTempDir runner
       | .some p => IO.FS.createDirAll ⟨p.toString⟩; runner ⟨p.toString⟩

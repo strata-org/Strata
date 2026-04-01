@@ -63,7 +63,7 @@ a[1]
 
 Result: Obligation: a_one_true
 Property: assert
-Result: ❓ unknown
+Result: ❌ fail
 
 
 [DEBUG] Evaluated program:
@@ -83,7 +83,7 @@ Result: ✅ pass
 
 Obligation: a_one_true
 Property: assert
-Result: ❓ unknown
+Result: ❌ fail
 -/
 #guard_msgs in
 #eval verify mapPgm

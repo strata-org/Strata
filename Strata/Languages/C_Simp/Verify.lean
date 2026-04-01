@@ -148,8 +148,7 @@ def C_Simp.verify (p : Strata.Program)
   IO Core.VCResults := do
   let program := C_Simp.get_program p
   let runner tempDir := EIO.toIO (fun f => IO.Error.userError (toString f))
-    (Core.verify (to_core program) tempDir .none options
-      (externalPhases := [Strata.frontEndPhase]))
+    (Core.verify (to_core program) tempDir .none options)
   match tempDir with
   | .none =>
     IO.FS.withTempDir runner
