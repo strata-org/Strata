@@ -203,21 +203,26 @@ inductive ModelValidation where
       when the model is valid. -/
   | modelToValidate (validate : Imperative.SMT.CounterEx Expression.Ident → Bool)
 
-/-- A phase in the verification pipeline, recording whether its models
-    need validation. -/
+/-- A phase in the verification pipeline. Each phase determines per-obligation
+    whether its models need validation, based on whether the obligation is
+    in the path of something abstracted by this phase. -/
 structure AbstractedPhase where
-  modelValidation : ModelValidation := .modelPreserving
+  /-- Given an obligation, determine the model validation for this phase. -/
+  getValidation : ProofObligation Expression → ModelValidation := fun _ => .modelPreserving
 
-/-- Validate a model against all phases. Phases are recorded top-down,
-    so we reverse them to validate from the last (innermost) phase first.
-    Returns the adjusted result and a log of intermediate results per phase,
-    ordered outermost-first (deepest phase closest to SMT at the end). -/
+/-- Validate a model against all phases for a given obligation. Phases are
+    recorded top-down, so we reverse them to validate from the last
+    (innermost) phase first. Returns the adjusted result and a log of
+    intermediate results per phase, ordered outermost-first (deepest phase
+    closest to SMT at the end). -/
 def AbstractedPhase.validateModel (phases : List AbstractedPhase)
     (result : SMT.Result)
+    (obligation : ProofObligation Expression)
     : SMT.Result × List SMT.Result :=
   -- Process phases innermost-first; accumulate log entries in reverse
   let (finalResult, revLog) := phases.reverse.foldl (init := (result, [])) fun (r, log) p =>
-    let r' := match r, p.modelValidation with
+    let validation := p.getValidation obligation
+    let r' := match r, validation with
       | .sat m, .modelToValidate f => if f m then .sat m else .unknown m
       | _, _ => r
     (r', r' :: log)
@@ -634,14 +639,37 @@ def preprocessObligation (obligation : ProofObligation Expression) (p : Program)
         pure { obligation with assumptions := newAssumptions }
   return (obligation, peSatResult, peValResult)
 
-/-- True when the program contains at least one non-constructor function
-    without an SMT body, meaning the SMT encoding uses uninterpreted
-    functions and sat results may be spurious. -/
-def Program.hasOverApproximation (p : Program) : Bool :=
-  p.decls.any fun
-    | .func f _ => !f.isConstr && f.body.isNone
-    | .recFuncBlock fs _ => fs.any fun f => !f.isConstr && f.body.isNone
-    | _ => false
+/-- True when any label in the obligation's path conditions starts with the
+    given string, indicating the obligation went through that transform. -/
+private def obligationHasLabelPrefix (obligation : ProofObligation Expression)
+    (pfx : String) : Bool :=
+  obligation.assumptions.any fun pc =>
+    pc.any fun (label, _) => label.startsWith pfx
+
+/-- Call-elimination phase: if the obligation's path includes labels from
+    call elimination (callElimAssume_), the callee body was replaced by its
+    contract, which is an over-approximation. -/
+def callElimPhase : AbstractedPhase where
+  getValidation obligation :=
+    if obligationHasLabelPrefix obligation "callElimAssume_" then
+      .modelToValidate (fun _ => /- TODO -/ false)
+    else .modelPreserving
+
+/-- Loop-elimination phase: if the obligation's path includes labels from
+    loop elimination (assume_invariant_, assume_guard_), the loop was
+    replaced by an invariant-based encoding, which is an
+    over-approximation. -/
+def loopElimPhase : AbstractedPhase where
+  getValidation obligation :=
+    if obligationHasLabelPrefix obligation "assume_invariant_"
+       || obligationHasLabelPrefix obligation "assume_guard_" then
+      .modelToValidate (fun _ => /- TODO -/ false)
+    else .modelPreserving
+
+/-- Build the list of Core pipeline phases. Each phase checks per-obligation
+    whether the assertion is in the path of something abstracted. -/
+def Program.abstractedPhases (_p : Program) : List AbstractedPhase :=
+  [callElimPhase, loopElimPhase]
 
 /-- Build the solver log from raw results and phase validation logs. -/
 private def buildSolverLog (satResult valResult : SMT.Result)
@@ -655,19 +683,11 @@ private def buildSolverLog (satResult valResult : SMT.Result)
     when any pipeline phase cannot validate the model. Returns the adjusted
     result and a log of intermediate results per phase. -/
 def SMT.Result.adjustForPhases (r : SMT.Result)
-    (phases : List AbstractedPhase) : SMT.Result × List SolverPhaseLog :=
+    (phases : List AbstractedPhase)
+    (obligation : ProofObligation Expression) : SMT.Result × List SolverPhaseLog :=
   match r with
-  | .sat _ => AbstractedPhase.validateModel phases r
+  | .sat _ => AbstractedPhase.validateModel phases r obligation
   | other => (other, [])
-
-/-- Build the list of abstracted phases for a program. When the program
-    has over-approximations, the phase uses a TODO validator that always
-    rejects the model. -/
-def Program.abstractedPhases (p : Program) : List AbstractedPhase :=
-  if p.hasOverApproximation then
-    [{ modelValidation := .modelToValidate (fun _ => /- TODO -/ false) }]
-  else
-    [{}]
 
 /--
 Invoke a backend engine and get the analysis result for a
@@ -707,8 +727,8 @@ def getObligationResult (assumptionTerms : List Term) (obligationTerm : Term)
     .error <| DiagnosticModel.fromFormat e
   | .ok (satResult, validityResult, estate) =>
     -- Convert unvalidated sat results to unknown when phases require validation
-    let (adjSat, satPhaseLog) := satResult.adjustForPhases phases
-    let (adjVal, valPhaseLog) := validityResult.adjustForPhases phases
+    let (adjSat, satPhaseLog) := satResult.adjustForPhases phases obligation
+    let (adjVal, valPhaseLog) := validityResult.adjustForPhases phases obligation
     -- Build solver log: raw solver results followed by phase validation logs
     let smtLog := buildSolverLog satResult validityResult
       satisfiabilityCheck validityCheck satPhaseLog valPhaseLog
@@ -733,7 +753,8 @@ def getObligationResult (assumptionTerms : List Term) (obligationTerm : Term)
 
 def verifySingleEnv (pE : Program × Env) (options : VerifyOptions)
     (counter : IO.Ref Nat) (tempDir : System.FilePath)
-    (axiomCache : Option IrrelevantAxioms.Cache := .none) :
+    (axiomCache : Option IrrelevantAxioms.Cache := .none)
+    (externalPhases : List AbstractedPhase := []) :
     EIO DiagnosticModel VCResults := do
   let (p, E) := pE
   let profile := options.profile
@@ -815,7 +836,7 @@ def verifySingleEnv (pE : Program × Env) (options : VerifyOptions)
       | .ok (assumptionTerms, obligationTerm, ctx) =>
         let t4 ← IO.monoNanosNow
         let result ← getObligationResult assumptionTerms obligationTerm ctx obligation p options
-                      counter tempDir needSatCheck needValCheck p.abstractedPhases
+                      counter tempDir needSatCheck needValCheck (externalPhases ++ p.abstractedPhases)
         let t5 ← IO.monoNanosNow
         solverNs := solverNs + (t5 - t4)
         -- Merge PE results with solver results
@@ -849,6 +870,7 @@ def verify (program : Program)
     (proceduresToVerify : Option (List String) := none)
     (options : VerifyOptions := VerifyOptions.default)
     (moreFns : @Lambda.Factory CoreLParams := Lambda.Factory.default)
+    (externalPhases : List AbstractedPhase := [])
     : EIO DiagnosticModel VCResults := do
   let profile := options.profile
   let finalProgram ← profileStep profile "  Program transformations" do
@@ -904,7 +926,7 @@ def verify (program : Program)
     if options.checkOnly then
       pure []
     else
-      (List.mapM (fun pE => verifySingleEnv pE options counter tempDir axiomCache?) pEs)
+      (List.mapM (fun pE => verifySingleEnv pE options counter tempDir axiomCache? externalPhases) pEs)
   .ok VCss.toArray.flatten
 
 end -- public section
@@ -933,18 +955,27 @@ def Core.getProgram
   (ictx : InputContext := Inhabited.default) : Core.Program × Array String :=
   TransM.run ictx (translateProgram p)
 
+/-- Front-end phase: any translation from a source language to Core may
+    introduce over-approximations. Until front-ends can validate models or
+    determine that an assertion is unaffected, all sat results are converted
+    to unknown. -/
+def frontEndPhase : Core.AbstractedPhase where
+  getValidation _ := .modelToValidate (fun _ => /- TODO -/ false)
+
 def verify
     (env : Program)
     (ictx : InputContext := Inhabited.default)
     (proceduresToVerify : Option (List String) := none)
     (options : Core.VerifyOptions := Core.VerifyOptions.default)
     (moreFns : @Lambda.Factory Core.CoreLParams := Lambda.Factory.default)
+    (externalPhases : List Core.AbstractedPhase := [])
     : IO Core.VCResults := do
   let (program, errors) := Core.getProgram env ictx
   if errors.isEmpty then
     let runner tempDir :=
       EIO.toIO (fun dm => IO.Error.userError (toString (dm.format (some ictx.fileMap))))
-                  (Core.verify program tempDir proceduresToVerify options moreFns)
+                  (Core.verify program tempDir proceduresToVerify options moreFns
+                    (externalPhases := externalPhases))
     match options.vcDirectory with
     | .none =>
       IO.FS.withTempDir runner

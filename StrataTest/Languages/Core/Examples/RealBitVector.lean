@@ -70,7 +70,7 @@ x + y >= 4.0
 
 Result: Obligation: real_add_ge_bad
 Property: assert
-Result: ❓ unknown
+Result: ❌ fail
 
 
 [DEBUG] Evaluated program:
@@ -92,7 +92,7 @@ Result: ✅ pass
 
 Obligation: real_add_ge_bad
 Property: assert
-Result: ❓ unknown
+Result: ❌ fail
 -/
 #guard_msgs in
 #eval verify realPgm

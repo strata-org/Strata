@@ -188,13 +188,14 @@ private def preservingPhase : AbstractedPhase :=
   {}
 
 private def rejectingPhase : AbstractedPhase :=
-  { modelValidation := .modelToValidate (fun _ => false) }
+  { getValidation := fun _ => .modelToValidate (fun _ => false) }
 
 private def acceptingPhase : AbstractedPhase :=
-  { modelValidation := .modelToValidate (fun _ => true) }
+  { getValidation := fun _ => .modelToValidate (fun _ => true) }
 
-private def needsValidation (phases : List AbstractedPhase) : Bool :=
-  phases.any fun p => match p.modelValidation with
+private def needsValidation (phases : List AbstractedPhase)
+    (obligation : Imperative.ProofObligation Core.Expression) : Bool :=
+  phases.any fun p => match p.getValidation obligation with
     | .modelToValidate _ => true
     | .modelPreserving => false
 
@@ -202,41 +203,90 @@ private def satResult : Result := .sat []
 private def unsatResult : Result := .unsat
 private def unknownResult : Result := Imperative.SMT.Result.unknown (Ident := Core.Expression.Ident)
 
+/-- A dummy obligation for testing phase validation. -/
+private def dummyObligation : Imperative.ProofObligation Core.Expression :=
+  { label := "test", property := .assert, assumptions := [], obligation := .true (), metadata := {} }
+
 /-- info: false -/
-#guard_msgs in #eval needsValidation [preservingPhase]
+#guard_msgs in #eval needsValidation [preservingPhase] dummyObligation
 
 /-- info: true -/
-#guard_msgs in #eval needsValidation [rejectingPhase]
+#guard_msgs in #eval needsValidation [rejectingPhase] dummyObligation
 
 /-- info: true -/
-#guard_msgs in #eval needsValidation [preservingPhase, rejectingPhase]
+#guard_msgs in #eval needsValidation [preservingPhase, rejectingPhase] dummyObligation
 
 -- adjustForPhases: sat stays sat with ModelPreserving
-#guard (satResult.adjustForPhases [preservingPhase]).1 == satResult
-#guard (satResult.adjustForPhases [preservingPhase]).2 == [satResult]
+#guard (satResult.adjustForPhases [preservingPhase] dummyObligation).1 == satResult
+#guard (satResult.adjustForPhases [preservingPhase] dummyObligation).2 == [satResult]
 
 -- adjustForPhases: sat becomes unknown with rejecting validator
-#guard (satResult.adjustForPhases [rejectingPhase]).1 == unknownResult
-#guard (satResult.adjustForPhases [rejectingPhase]).2 == [unknownResult]
+#guard (satResult.adjustForPhases [rejectingPhase] dummyObligation).1 == unknownResult
+#guard (satResult.adjustForPhases [rejectingPhase] dummyObligation).2 == [unknownResult]
 
 -- adjustForPhases: sat stays sat with accepting validator
-#guard (satResult.adjustForPhases [acceptingPhase]).1 == satResult
-#guard (satResult.adjustForPhases [acceptingPhase]).2 == [satResult]
+#guard (satResult.adjustForPhases [acceptingPhase] dummyObligation).1 == satResult
+#guard (satResult.adjustForPhases [acceptingPhase] dummyObligation).2 == [satResult]
 
 -- adjustForPhases: sat becomes unknown when any phase rejects
-#guard (satResult.adjustForPhases [preservingPhase, rejectingPhase]).1 == unknownResult
-#guard (satResult.adjustForPhases [preservingPhase, rejectingPhase]).2 == [unknownResult, unknownResult]
+#guard (satResult.adjustForPhases [preservingPhase, rejectingPhase] dummyObligation).1 == unknownResult
+#guard (satResult.adjustForPhases [preservingPhase, rejectingPhase] dummyObligation).2 == [unknownResult, unknownResult]
 
 -- adjustForPhases: unsat is unchanged regardless of phases
-#guard (unsatResult.adjustForPhases [rejectingPhase]).1 == unsatResult
-#guard (unsatResult.adjustForPhases [rejectingPhase]).2 == []
+#guard (unsatResult.adjustForPhases [rejectingPhase] dummyObligation).1 == unsatResult
+#guard (unsatResult.adjustForPhases [rejectingPhase] dummyObligation).2 == []
 
 -- adjustForPhases: unknown is unchanged regardless of phases
-#guard (unknownResult.adjustForPhases [rejectingPhase]).1 == unknownResult
-#guard (unknownResult.adjustForPhases [rejectingPhase]).2 == []
+#guard (unknownResult.adjustForPhases [rejectingPhase] dummyObligation).1 == unknownResult
+#guard (unknownResult.adjustForPhases [rejectingPhase] dummyObligation).2 == []
 
 -- adjustForPhases: empty phases list preserves sat
-#guard (satResult.adjustForPhases []).1 == satResult
-#guard (satResult.adjustForPhases []).2 == []
+#guard (satResult.adjustForPhases [] dummyObligation).1 == satResult
+#guard (satResult.adjustForPhases [] dummyObligation).2 == []
+
+/-! ### Per-obligation phase validation tests -/
+
+/-- Obligation with call-elimination labels in path conditions. -/
+private def callElimObligation : Imperative.ProofObligation Core.Expression :=
+  { label := "test_callElim", property := .assert,
+    assumptions := [[("callElimAssume_post", .true ())]],
+    obligation := .true (), metadata := {} }
+
+/-- Obligation with loop-elimination labels in path conditions. -/
+private def loopElimObligation : Imperative.ProofObligation Core.Expression :=
+  { label := "test_loopElim", property := .assert,
+    assumptions := [[("assume_invariant_0_0", .true ()), ("assume_guard_0", .true ())]],
+    obligation := .true (), metadata := {} }
+
+/-- Obligation with no abstraction labels — models are sound. -/
+private def cleanObligation : Imperative.ProofObligation Core.Expression :=
+  { label := "test_clean", property := .assert,
+    assumptions := [[("precond_x_positive", .true ())]],
+    obligation := .true (), metadata := {} }
+
+-- callElimPhase: rejects sat when obligation has call-elim labels
+#guard (satResult.adjustForPhases [callElimPhase] callElimObligation).1 == unknownResult
+
+-- callElimPhase: preserves sat when obligation has no call-elim labels
+#guard (satResult.adjustForPhases [callElimPhase] cleanObligation).1 == satResult
+
+-- loopElimPhase: rejects sat when obligation has loop-elim labels
+#guard (satResult.adjustForPhases [loopElimPhase] loopElimObligation).1 == unknownResult
+
+-- loopElimPhase: preserves sat when obligation has no loop-elim labels
+#guard (satResult.adjustForPhases [loopElimPhase] cleanObligation).1 == satResult
+
+-- Combined Core phases: clean obligation preserves sat
+#guard (satResult.adjustForPhases [callElimPhase, loopElimPhase] cleanObligation).1 == satResult
+
+-- Combined Core phases: call-elim obligation becomes unknown
+#guard (satResult.adjustForPhases [callElimPhase, loopElimPhase] callElimObligation).1 == unknownResult
+
+-- frontEndPhase: always rejects sat regardless of obligation
+#guard (satResult.adjustForPhases [Strata.frontEndPhase] cleanObligation).1 == unknownResult
+#guard (satResult.adjustForPhases [Strata.frontEndPhase] callElimObligation).1 == unknownResult
+
+-- frontEndPhase: unsat is unchanged
+#guard (unsatResult.adjustForPhases [Strata.frontEndPhase] cleanObligation).1 == unsatResult
 
 end Core

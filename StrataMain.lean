@@ -365,7 +365,8 @@ def pyAnalyzeCommand : Command where
           EIO.toIO
             (fun f => IO.Error.userError (toString f))
             (Core.verify newPgm tempDir .none options
-                                      (moreFns := Strata.Python.ReFactory))
+                                      (moreFns := Strata.Python.ReFactory)
+                                      (externalPhases := [Strata.frontEndPhase]))
       let vcResults ← match options.vcDirectory with
                       | .none => IO.FS.withTempDir runVerification
                       | .some tempDir => runVerification tempDir
@@ -636,7 +637,8 @@ def pyAnalyzeLaurelCommand : Command where
     let vcResults ← profileStep profile "SMT verification" do
       match ← Core.verifyProgram coreProgram options
                 (moreFns := Strata.Python.ReFactory)
-                (proceduresToVerify := some userProcNames) |>.toBaseIO with
+                (proceduresToVerify := some userProcNames)
+                (externalPhases := [Strata.frontEndPhase]) |>.toBaseIO with
       | .ok r => pure r
       | .error msg => exitPyAnalyzeInternalError msg
 

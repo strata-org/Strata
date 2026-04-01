@@ -761,7 +761,8 @@ def verify
     | .ok cp =>
       let runner tempPath :=
         EIO.toIO (fun dm => IO.Error.userError (toString (dm.format (some ictx.fileMap))))
-          (Core.verify cp tempPath proceduresToVerify options)
+          (Core.verify cp tempPath proceduresToVerify options
+            (externalPhases := [Strata.frontEndPhase]))
       match tempDir with
       | .none =>
         IO.FS.withTempDir runner
