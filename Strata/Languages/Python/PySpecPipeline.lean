@@ -49,7 +49,16 @@ private def specDefaultToExpr : Python.Specs.SpecDefault → Python.expr SourceR
 
 /-- Convert a pyspec Arg to a PythonFunctionDecl arg tuple. -/
 private def specArgToFuncDeclArg (arg : Python.Specs.Arg): Python.PyArgInfo :=
-  {name:= arg.name, md:= default, tys:= ["Any"], default:= arg.default.map specDefaultToExpr}
+  -- Extract the simple type name from the SpecType for type assertions.
+  let typeName := arg.type.atoms.findSome? fun a => match a with
+    | .ident nm _ =>
+      if nm == ⟨"builtins", "str"⟩ then some "string"
+      else if nm == ⟨"builtins", "int"⟩ then some "integer"
+      else if nm == ⟨"builtins", "bool"⟩ then some "boolean"
+      else if nm == ⟨"builtins", "float"⟩ then some "real"
+      else none
+    | _ => none
+  {name := arg.name, md := default, tys := [typeName.getD "Any"], default := arg.default.map specDefaultToExpr}
 
 /-- Build a PythonFunctionDecl from a PySpec FunctionDecl or class method,
     expanding `**kwargs` TypedDict fields into individual parameters. -/
