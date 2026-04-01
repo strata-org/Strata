@@ -480,7 +480,14 @@ private def exitPyAnalyzeKnownLimitation {α} (message : String) : IO α := do
     success / failure / inconclusive (guaranteeing disjointness).
     Unreachable count is reported as supplementary info. -/
 private def printPyAnalyzeSummary (vcResults : Array Core.VCResult)
-    (classifier : ResultClassifier := {}) : IO Unit := do
+    (checkMode : VerificationMode := .deductive) : IO Unit := do
+  let classifier : ResultClassifier :=
+    match checkMode with
+    | .bugFinding | .bugFindingAssumingCompleteSpec =>
+      { isFailure := fun r => match r.outcome with
+          | .ok o => o.alwaysFalseAndReachable
+          | _     => false }
+    | _ => {}
   -- 1. Partition out implementation errors (broken results, not classifiable).
   let (implError, classifiable) :=
     vcResults.partition (fun r => r.isImplementationError || r.hasSMTError)
@@ -726,7 +733,7 @@ def pyAnalyzeLaurelCommand : Command where
         | some (pyPath, fm) => Map.empty.insert (Strata.Uri.file pyPath) fm
         | none => Map.empty
       Core.Sarif.writeSarifOutput checkMode files vcResults (filePath ++ ".sarif")
-    printPyAnalyzeSummary vcResults classifier
+    printPyAnalyzeSummary vcResults checkMode
 
 def pyAnalyzeToGotoCommand : Command where
   name := "pyAnalyzeToGoto"
