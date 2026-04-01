@@ -558,10 +558,10 @@ private def verifyIncremental
         if r.isFailure then
           if let some fr := Imperative.getFileRange r.obligation.metadata then
             if !fr.range.isNone then
-              if let .file path := fr.file then
-                if path == pyPath then
-                  let pos := fm.toPosition fr.range.start
-                  IO.println s!"  (at line {pos.line}, col {pos.column})"
+              let .file path := fr.file
+              if path == pyPath then
+                let pos := fm.toPosition fr.range.start
+                IO.println s!"  (at line {pos.line}, col {pos.column})"
     | none => pure ()
   return allResults
 
