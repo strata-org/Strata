@@ -264,23 +264,23 @@ private def cleanObligation : Imperative.ProofObligation Core.Expression :=
     assumptions := [[("precond_x_positive", .true ())]],
     obligation := .true (), metadata := {} }
 
--- callElimPhase: rejects sat when obligation has call-elim labels
-#guard (satResult.adjustForPhases [callElimPhase] callElimObligation).1 == unknownResult
+-- callElimPipelinePhase: rejects sat when obligation has call-elim labels
+#guard (satResult.adjustForPhases [callElimPipelinePhase.phase] callElimObligation).1 == unknownResult
 
--- callElimPhase: preserves sat when obligation has no call-elim labels
-#guard (satResult.adjustForPhases [callElimPhase] cleanObligation).1 == satResult
+-- callElimPipelinePhase: preserves sat when obligation has no call-elim labels
+#guard (satResult.adjustForPhases [callElimPipelinePhase.phase] cleanObligation).1 == satResult
 
--- loopElimPhase: rejects sat when obligation has loop-elim labels
-#guard (satResult.adjustForPhases [loopElimPhase] loopElimObligation).1 == unknownResult
+-- loopElimPipelinePhase: rejects sat when obligation has loop-elim labels
+#guard (satResult.adjustForPhases [loopElimPipelinePhase.phase] loopElimObligation).1 == unknownResult
 
--- loopElimPhase: preserves sat when obligation has no loop-elim labels
-#guard (satResult.adjustForPhases [loopElimPhase] cleanObligation).1 == satResult
+-- loopElimPipelinePhase: preserves sat when obligation has no loop-elim labels
+#guard (satResult.adjustForPhases [loopElimPipelinePhase.phase] cleanObligation).1 == satResult
 
 -- Combined Core phases: clean obligation preserves sat
-#guard (satResult.adjustForPhases [callElimPhase, loopElimPhase] cleanObligation).1 == satResult
+#guard (satResult.adjustForPhases [callElimPipelinePhase.phase, loopElimPipelinePhase.phase] cleanObligation).1 == satResult
 
 -- Combined Core phases: call-elim obligation becomes unknown
-#guard (satResult.adjustForPhases [callElimPhase, loopElimPhase] callElimObligation).1 == unknownResult
+#guard (satResult.adjustForPhases [callElimPipelinePhase.phase, loopElimPipelinePhase.phase] callElimObligation).1 == unknownResult
 
 -- frontEndPhase: always rejects sat regardless of obligation
 #guard (satResult.adjustForPhases [Strata.frontEndPhase] cleanObligation).1 == unknownResult
