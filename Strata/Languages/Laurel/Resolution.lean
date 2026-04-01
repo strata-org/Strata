@@ -516,12 +516,12 @@ def resolveTypeDefinition (td : TypeDefinition) : ResolveM TypeDefinition := do
     let dtName' ← defineName dt.name (.datatypeDefinition dt)
     let ctors' ← dt.constructors.mapM fun ctor => do
       let ctorName' ← defineName ctor.name (.datatypeConstructor dt.name ctor)
-      _ ← defineName ctor.name (.datatypeConstructor dt.name ctor) (some s!"{dt.name}..is{ctor.name}")
+      _ ← defineName ctor.name (.datatypeConstructor dt.name ctor) (some (dt.testerName ctor))
       let args' ← ctor.args.mapM fun (p: Parameter) => do
         let ty' ← resolveHighType p.type
-        let destructorId ← defineName p.name (.parameter p) (some $ dt.name.text ++ ".." ++ p.name.text)
+        let destructorId ← defineName p.name (.parameter p) (some (dt.destructorName p))
         -- unsafeDestructorId
-        _ ← defineName p.name (.parameter p) (some $ dt.name.text ++ ".." ++ p.name.text ++ "!")
+        _ ← defineName p.name (.parameter p) (some (dt.unsafeDestructorName p))
         return ⟨ destructorId, ty' ⟩
       return { name := ctorName', args := args' : DatatypeConstructor }
     return .Datatype { name := dtName', typeArgs := dt.typeArgs, constructors := ctors' }
@@ -731,7 +731,7 @@ private def preRegisterTopLevel (program : Program) : ResolveM Unit := do
       for ctor in dt.constructors do
         let _ ← defineName ctor.name (.datatypeConstructor dt.name ctor)
         for p in ctor.args do
-          let _ ← defineName p.name placeholderNode (some $ dt.name.text ++ ".." ++ p.name.text)
+          let _ ← defineName p.name placeholderNode (some (dt.destructorName p))
   -- Pre-register constants
   for c in program.constants do
     let _ ← defineName c.name (.constant c)
