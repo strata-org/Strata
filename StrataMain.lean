@@ -317,6 +317,23 @@ def tryReadPythonSource (ionPath : String) : IO (Option (String × String)) := d
     catch _ =>
       return none
 
+/-- Format related position strings from metadata, if present. -/
+def formatRelatedPositions (md : Imperative.MetaData Core.Expression)
+    (mfm : Option (String × Lean.FileMap)) : String :=
+  let ranges := Imperative.getRelatedFileRanges md
+  if ranges.isEmpty then "" else
+  match mfm with
+  | none => ""
+  | some (_, fm) =>
+    let lines := ranges.filterMap fun fr =>
+      if fr.range.isNone then none else
+      match fr.file with
+      | .file "" => some "\n  Related location: in prelude file"
+      | .file _ =>
+        let pos := fm.toPosition fr.range.start
+        some s!"\n  Related location: line {pos.line}, col {pos.column}"
+    String.join lines.toList
+
 def pyAnalyzeCommand : Command where
   name := "pyAnalyze"
   args := [ "file" ]
@@ -404,8 +421,9 @@ def pyAnalyzeCommand : Command where
                   ("", s!" (at byte offset)")
           | none => ("", "")
         let outcomeStr := vcResult.formatOutcome
+        let relatedStr := formatRelatedPositions vcResult.obligation.metadata mfm
         s := s ++ s!"\n{locationPrefix}{vcResult.obligation.label}: \
-                      {outcomeStr}{locationSuffix}\n"
+                      {outcomeStr}{locationSuffix}{relatedStr}\n"
       IO.println s
       -- Output in SARIF format if requested
       if outputSarif then
@@ -552,6 +570,19 @@ def pyAnalyzeLaurelCommand : Command where
             let pos := fm.toPosition range.start
             s!" at line {pos.line}, col {pos.column}"
           | none => ""
+        -- Emit structured set-info metadata before DETAIL/RESULT lines.
+        -- Also write the set-info metadata to user_errors.txt.
+        let filePath' := sourcePath.getD filePath
+        let mut lines := #[
+          s!"(set-info :file {Strata.escapeSMTStringLit filePath'})"
+        ]
+        unless range.isNone do
+          lines := lines.push s!"(set-info :start {range.start})"
+          lines := lines.push s!"(set-info :stop {range.stop})"
+        lines := lines.push s!"(set-info :error-message {Strata.escapeSMTStringLit msg})"
+        for line in lines do
+          IO.println line
+        IO.FS.writeFile "user_errors.txt" (String.intercalate "\n" lines.toList ++ "\n")
         exitPyAnalyzeUserError s!"{msg}{location}"
       | .error (.knownLimitation msg) =>
         exitPyAnalyzeKnownLimitation msg
@@ -685,8 +716,9 @@ def pyAnalyzeLaurelCommand : Command where
                 ("", "")
         | none => ("", "")
       let outcomeStr := vcResult.formatOutcome
+      let relatedStr := formatRelatedPositions vcResult.obligation.metadata mfm
       s := s ++ s!"{locationPrefix}{propertyDescription}: \
-                    {outcomeStr}{locationSuffix}\n"
+                    {outcomeStr}{locationSuffix}{relatedStr}\n"
     IO.println s
     -- Output in SARIF format if requested
     if outputSarif then
