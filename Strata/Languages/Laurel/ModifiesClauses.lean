@@ -50,13 +50,16 @@ inductive ModifiesEntry where
 /--
 Extract modifies entries from the list of modifies StmtExprs, using the type
 environment and type definitions to distinguish Composite from Set Composite.
+Non-composite types (e.g., global variables of primitive type) are filtered out
+since the frame condition only applies to heap objects.
 -/
 def extractModifiesEntries (model: SemanticModel)
     (modifiesExprs : List StmtExprMd) : List ModifiesEntry :=
-  modifiesExprs.map fun expr =>
+  modifiesExprs.filterMap fun expr =>
     match (computeExprType model expr).val with
-    | .TSet _ => .set expr
-    | _ => .single expr
+    | .TSet _ => some (.set expr)
+    | .UserDefined _ => some (.single expr)
+    | _ => none
 /--
 Build the "obj is not modified" condition for a single modifies entry as a Laurel StmtExpr.
 - For a single Composite `e`: `$obj != e`

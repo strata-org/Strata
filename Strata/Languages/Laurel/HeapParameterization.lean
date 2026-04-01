@@ -463,6 +463,22 @@ def heapParameterization (model: SemanticModel) (program : Program) : Program :=
   let program := { program with
     types := program.types
     staticProcedures := program.staticProcedures }
+  -- Filter out non-composite modifies entries so that global variables
+  -- of primitive type do not incorrectly trigger heap parameterization.
+  let isCompositeModifies (model : SemanticModel) (expr : StmtExprMd) : Bool :=
+    match (computeExprType model expr).val with
+    | .UserDefined _ => true
+    | .TSet _ => true
+    | _ => false
+  let filterBodyModifies (body : Body) : Body :=
+    match body with
+    | .Opaque posts impl mods =>
+      .Opaque posts impl (mods.filter (isCompositeModifies model))
+    | other => other
+  let filterProcModifies (proc : Procedure) : Procedure :=
+    { proc with body := filterBodyModifies proc.body }
+  let program := { program with
+    staticProcedures := program.staticProcedures.map filterProcModifies }
   -- Collect instance procedures from composite types for heap analysis
   let instanceProcs := program.types.foldl (fun acc td =>
     match td with
