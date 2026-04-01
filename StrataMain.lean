@@ -321,6 +321,23 @@ def tryReadPythonSource (ionPath : String) : IO (Option (String × String)) := d
     catch _ =>
       return none
 
+/-- Format related position strings from metadata, if present. -/
+def formatRelatedPositions (md : Imperative.MetaData Core.Expression)
+    (mfm : Option (String × Lean.FileMap)) : String :=
+  let ranges := Imperative.getRelatedFileRanges md
+  if ranges.isEmpty then "" else
+  match mfm with
+  | none => ""
+  | some (_, fm) =>
+    let lines := ranges.filterMap fun fr =>
+      if fr.range.isNone then none else
+      match fr.file with
+      | .file "" => some "\n  Related location: in prelude file"
+      | .file _ =>
+        let pos := fm.toPosition fr.range.start
+        some s!"\n  Related location: line {pos.line}, col {pos.column}"
+    String.join lines.toList
+
 def pyAnalyzeCommand : Command where
   name := "pyAnalyze"
   args := [ "file" ]
@@ -408,8 +425,9 @@ def pyAnalyzeCommand : Command where
                   ("", s!" (at byte offset)")
           | none => ("", "")
         let outcomeStr := vcResult.formatOutcome
+        let relatedStr := formatRelatedPositions vcResult.obligation.metadata mfm
         s := s ++ s!"\n{locationPrefix}{vcResult.obligation.label}: \
-                      {outcomeStr}{locationSuffix}\n"
+                      {outcomeStr}{locationSuffix}{relatedStr}\n"
       IO.println s
       -- Output in SARIF format if requested
       if outputSarif then

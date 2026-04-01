@@ -156,6 +156,35 @@ def updateCallGraph (cg:CallGraph) (f: String) (g: String):
   let cg_final ← cg_new.decrementEdge f g
   return cg_final
 
+/-! ### Update assertion metadata with call site information -/
+
+-- Update assertions and assumes in inlined body to carry the call site metadata
+-- as the primary file range, moving the original assertion's file range to
+-- relatedFileRange.
+mutual
+def Block.setCallSiteMetadata (b : Block) (callMd : Imperative.MetaData Expression)
+    : Block :=
+  b.map (fun s => Statement.setCallSiteMetadata s callMd)
+
+def Statement.setCallSiteMetadata (s : Statement) (callMd : Imperative.MetaData Expression)
+    : Statement :=
+  match s with
+  | .cmd (.cmd (.assert lbl e md)) =>
+    .assert lbl e (md.setCallSiteFileRange callMd)
+  | .cmd (.cmd (.assume lbl e md)) =>
+    .assume lbl e (md.setCallSiteFileRange callMd)
+  | .cmd (.cmd (.cover lbl e md)) =>
+    .cover lbl e (md.setCallSiteFileRange callMd)
+  | .block lbl b md =>
+    .block lbl (Block.setCallSiteMetadata b callMd) md
+  | .ite cond thenb elseb md =>
+    .ite cond (Block.setCallSiteMetadata thenb callMd)
+              (Block.setCallSiteMetadata elseb callMd) md
+  | .loop g measure inv body md =>
+    .loop g measure inv (Block.setCallSiteMetadata body callMd) md
+  | _ => s
+end
+
 /-
 Procedure Inlining.
 
@@ -230,8 +259,9 @@ def inlineCallCmd
             outs_lhs_and_sig
 
         let stmts:List (Imperative.Stmt Core.Expression Core.Command)
-          := inputInits ++ outputInits ++ outputHavocs ++ proc.body ++
-             outputSetStmts
+          := inputInits ++ outputInits ++ outputHavocs
+             ++ Block.setCallSiteMetadata proc.body md
+             ++ outputSetStmts
 
         -- Update CallGraph if available
         let σ ← get
