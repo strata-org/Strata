@@ -67,7 +67,7 @@ deterministic
 def scopeProgram : String := r"
 constrained pos = v: int where v > 0 witness 1
 procedure test(b: bool) {
-  if (b) {
+  if b then {
     var x: pos := 1
   };
   {

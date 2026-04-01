@@ -189,6 +189,10 @@ structure Procedure : Type where
   isFunctional : Bool
   /-- The procedure body: transparent, opaque, or abstract. -/
   body : Body
+  /-- Optional trigger for auto-invocation. When present, the translator also emits an axiom
+      whose body is the ensures clause universally quantified over the procedure's inputs,
+      with this expression as the SMT trigger. -/
+  invokeOn : Option (WithMetadata StmtExpr) := none
   /-- Source-level metadata (locations, annotations). -/
   md : MetaData
 
