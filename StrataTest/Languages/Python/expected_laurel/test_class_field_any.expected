@@ -2,7 +2,7 @@
 ==== Verification Results ====
 callElimAssert_requires_3: ✅ pass
 assert_assert(113)_calls_Any_to_bool_0: ✅ pass (at line 6, col 0)
-assert(113): ❓ unknown (at line 6, col 0)
+Assertion failed at line 6, col 0: assert(113): ❌ fail
 
-DETAIL: 2 passed, 0 failed, 1 inconclusive
-RESULT: Inconclusive
+DETAIL: 2 passed, 1 failed, 0 inconclusive
+RESULT: Failures found
