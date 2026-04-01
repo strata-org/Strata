@@ -241,7 +241,7 @@ private def SpecDefault.toDDM : Specs.SpecDefault → DDM.SpecDefault SourceRang
 private def Arg.toDDM (d : Arg) : DDM.ArgDecl SourceRange :=
   .mkArgDecl .none ⟨.none, d.name⟩ d.type.toDDM ⟨.none, d.default.map (·.toDDM)⟩
 
-private def SpecExpr.toDDM (e : SpecExpr) : DDM.SpecExprDecl SourceRange :=
+protected def SpecExpr.toDDM (e : SpecExpr) : DDM.SpecExprDecl SourceRange :=
   match e with
   | .placeholder => .placeholderExpr .none
   | .var name => .varExpr .none ⟨.none, name⟩
@@ -268,6 +268,15 @@ private def SpecExpr.toDDM (e : SpecExpr) : DDM.SpecExprDecl SourceRange :=
     .forallListExpr .none list.toDDM ⟨.none, varName⟩ body.toDDM
   | .forallDict dict keyVar valVar body =>
     .forallDictExpr .none dict.toDDM ⟨.none, keyVar⟩ ⟨.none, valVar⟩ body.toDDM
+
+def specExprFormatContext : FormatContext :=
+  .ofDialects DDM.PythonSpecs_map
+
+def specExprFormatState : FormatState where
+  openDialects := DDM.PythonSpecs_map.toList.foldl (init := {}) fun s d => s.insert d.name
+
+instance : ToString SpecExpr where
+  toString e := (mformat (SpecExpr.toDDM e).toAst specExprFormatContext specExprFormatState).format.pretty
 
 private def MessagePart.toDDM (p : MessagePart) : DDM.MessagePart SourceRange :=
   match p with
