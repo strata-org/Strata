@@ -1,8 +1,5 @@
-
-==== Verification Results ====
-loop_guard_calls_Any_to_bool_0: ✅ pass (at line 3, col 4)
-loop_guard_calls_Any_to_bool_0: ✅ pass (at line 8, col 4)
-loop_guard_end_calls_Any_to_bool_0: ✅ pass (at line 8, col 4)
-
+test_break_continue.py(3, 4): ✅ pass - loop_guard_calls_Any_to_bool_0
+test_break_continue.py(8, 4): ✅ pass - loop_guard_calls_Any_to_bool_0
+test_break_continue.py(8, 4): ✅ pass - loop_guard_end_calls_Any_to_bool_0
 DETAIL: 3 passed, 0 failed, 0 inconclusive
 RESULT: Analysis success

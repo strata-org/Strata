@@ -1,17 +1,14 @@
-
-==== Verification Results ====
-Assertion failed at line 2, col 4: ite_cond_calls_Any_to_bool_0: ❌ fail
-ite_cond_calls_Any_to_bool_0: ✅ pass (at line 4, col 4)
-ite_cond_calls_Any_to_bool_0: ❓ unknown (at line 6, col 4)
-assert_assert(225)_calls_Any_to_bool_0: ✅ pass (at line 13, col 4)
-assert(225): ❓ unknown (at line 13, col 4)
-assert_assert(302)_calls_Any_to_bool_0: ✅ pass (at line 16, col 4)
-assert(302): ❓ unknown (at line 16, col 4)
-assert_assert(371)_calls_Any_to_bool_0: ✅ pass (at line 19, col 4)
-assert(371): ❓ unknown (at line 19, col 4)
-assert_assert(444)_calls_Any_to_bool_0: ✅ pass (at line 22, col 4)
-assert(444): ❓ unknown (at line 22, col 4)
-ite_cond_calls_Any_to_bool_0: ✅ pass (at line 24, col 0)
-
+test_if_elif.py(2, 4): ❌ fail - ite_cond_calls_Any_to_bool_0
+test_if_elif.py(4, 4): ✅ pass - ite_cond_calls_Any_to_bool_0
+test_if_elif.py(6, 4): ❓ unknown - ite_cond_calls_Any_to_bool_0
+test_if_elif.py(13, 4): ✅ pass - assert_assert(225)_calls_Any_to_bool_0
+test_if_elif.py(13, 4): ❓ unknown - assert(225)
+test_if_elif.py(16, 4): ✅ pass - assert_assert(302)_calls_Any_to_bool_0
+test_if_elif.py(16, 4): ❓ unknown - assert(302)
+test_if_elif.py(19, 4): ✅ pass - assert_assert(371)_calls_Any_to_bool_0
+test_if_elif.py(19, 4): ❓ unknown - assert(371)
+test_if_elif.py(22, 4): ✅ pass - assert_assert(444)_calls_Any_to_bool_0
+test_if_elif.py(22, 4): ❓ unknown - assert(444)
+test_if_elif.py(24, 0): ✅ pass - ite_cond_calls_Any_to_bool_0
 DETAIL: 6 passed, 1 failed, 5 inconclusive
 RESULT: Failures found

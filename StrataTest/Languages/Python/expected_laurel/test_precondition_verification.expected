@@ -1,18 +1,15 @@
-
-==== Verification Results ====
-callElimAssert_requires_0_28: ✅ pass (at line 8, col 4)
-callElimAssert_requires_1_29: ✅ pass (at line 8, col 4)
-callElimAssert_requires_2_30: ✅ pass (at line 8, col 4)
-callElimAssert_requires_0_20: ✅ pass (at line 11, col 4)
-callElimAssert_requires_1_21: ✅ pass (at line 11, col 4)
-callElimAssert_requires_2_22: ✅ pass (at line 11, col 4)
-Assertion failed at line 14, col 4: callElimAssert_requires_0_12: ❌ fail
-callElimAssert_requires_1_13: ✅ pass (at line 14, col 4)
-callElimAssert_requires_2_14: ✅ pass (at line 14, col 4)
-callElimAssert_requires_0_4: ✅ pass (at line 17, col 4)
-callElimAssert_requires_1_5: ✅ pass (at line 17, col 4)
-Assertion failed at line 17, col 4: callElimAssert_requires_2_6: ❌ fail
-ite_cond_calls_Any_to_bool_0: ✅ pass (at line 19, col 0)
-
+test_precondition_verification.py(8, 4): ✅ pass - callElimAssert_requires_0_28
+test_precondition_verification.py(8, 4): ✅ pass - callElimAssert_requires_1_29
+test_precondition_verification.py(8, 4): ✅ pass - callElimAssert_requires_2_30
+test_precondition_verification.py(11, 4): ✅ pass - callElimAssert_requires_0_20
+test_precondition_verification.py(11, 4): ✅ pass - callElimAssert_requires_1_21
+test_precondition_verification.py(11, 4): ✅ pass - callElimAssert_requires_2_22
+test_precondition_verification.py(14, 4): ❌ fail - callElimAssert_requires_0_12
+test_precondition_verification.py(14, 4): ✅ pass - callElimAssert_requires_1_13
+test_precondition_verification.py(14, 4): ✅ pass - callElimAssert_requires_2_14
+test_precondition_verification.py(17, 4): ✅ pass - callElimAssert_requires_0_4
+test_precondition_verification.py(17, 4): ✅ pass - callElimAssert_requires_1_5
+test_precondition_verification.py(17, 4): ❌ fail - callElimAssert_requires_2_6
+test_precondition_verification.py(19, 0): ✅ pass - ite_cond_calls_Any_to_bool_0
 DETAIL: 11 passed, 2 failed, 0 inconclusive
 RESULT: Failures found

@@ -1,17 +1,14 @@
-
-==== Verification Results ====
-Assertion failed at line 9, col 4: ite_cond_calls_PNotIn_0: ❌ fail
-ite_cond_calls_Any_to_bool_1: ✅ pass (at line 9, col 4)
-ite_cond_calls_PNotIn_0: ❓ unknown (at line 11, col 4)
-ite_cond_calls_Any_to_bool_1: ✅ pass (at line 11, col 4)
-ite_cond_calls_Any_to_bool_0: ❓ unknown (at line 18, col 4)
-set_LaurelResult_calls_Any_get_0: ❓ unknown
-assert_assert(651)_calls_Any_to_bool_0: ✅ pass (at line 24, col 4)
-Assertion failed at line 24, col 4: assert(651): ❌ fail
-callElimAssert_requires_0_9: ✅ pass (at line 26, col 4)
-callElimAssert_requires_1_10: ✅ pass (at line 26, col 4)
-callElimAssert_requires_2_11: ✅ pass (at line 26, col 4)
-ite_cond_calls_Any_to_bool_0: ✅ pass (at line 28, col 0)
-
+test_multi_function.py(9, 4): ❌ fail - ite_cond_calls_PNotIn_0
+test_multi_function.py(9, 4): ✅ pass - ite_cond_calls_Any_to_bool_1
+test_multi_function.py(11, 4): ❓ unknown - ite_cond_calls_PNotIn_0
+test_multi_function.py(11, 4): ✅ pass - ite_cond_calls_Any_to_bool_1
+test_multi_function.py(18, 4): ❓ unknown - ite_cond_calls_Any_to_bool_0
+unknown location: ❓ unknown - set_LaurelResult_calls_Any_get_0
+test_multi_function.py(24, 4): ✅ pass - assert_assert(651)_calls_Any_to_bool_0
+test_multi_function.py(24, 4): ❌ fail - assert(651)
+test_multi_function.py(26, 4): ✅ pass - callElimAssert_requires_0_9
+test_multi_function.py(26, 4): ✅ pass - callElimAssert_requires_1_10
+test_multi_function.py(26, 4): ✅ pass - callElimAssert_requires_2_11
+test_multi_function.py(28, 0): ✅ pass - ite_cond_calls_Any_to_bool_0
 DETAIL: 7 passed, 2 failed, 3 inconclusive
 RESULT: Failures found
