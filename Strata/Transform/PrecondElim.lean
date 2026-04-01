@@ -338,7 +338,12 @@ where
         let funcDecl := Decl.recFuncBlock funcs' md
         let hasPreconds := funcs.any (!·.preconditions.isEmpty)
         let (changed, rest') ← transformDecls rest
-        let wfDecls := funcs.filterMap (mkFuncWFProc F' · md)
+        let wfDecls ← funcs.filterMapM fun func => do
+          match mkFuncWFProc F' func md with
+          | some wfDecl => do
+            addWFProcToCallGraph (wfProcName (CoreIdent.toPretty func.name))
+            return some wfDecl
+          | none => return none
         if !wfDecls.isEmpty then return (true, funcDecl :: wfDecls ++ rest')
         else return (changed || hasPreconds, funcDecl :: rest')
       | .type (.data block) _ => do
