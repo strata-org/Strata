@@ -193,7 +193,7 @@ private abbrev DepM := StateT (Std.HashMap String (Std.HashSet String)) (Except 
 private def insertNew (key : String) (deps : Std.HashSet String) (context : String)
     : DepM Unit := do
   let m ← get
-  if m.contains key then
+  if key ∈ m then
     throw s!"FilterPrelude.buildDependencyMap: duplicate name '{key}' ({context})"
   set (m.insert key deps)
 
@@ -229,10 +229,10 @@ private partial def buildDependencyMap (prog : Laurel.Program)
     -- These augment existing entries, so we merge rather than insertNew.
     for proc in prog.staticProcedures do
       if let some invokeExpr := proc.invokeOn then
-        for target in ← collectInvokeOnTargets invokeExpr do
-          let m ← get
-          let existing := m[target]?.getD {}
-          set (m.insert target (existing.insert proc.name.text))
+        let targets ← collectInvokeOnTargets invokeExpr
+        modify fun m =>
+          targets.foldl (init := m) fun m target =>
+            m.alter target fun me => me.getD {} |>.insert proc.name.text
   let ((), m) ← action.run {}
   return m
 
@@ -243,13 +243,14 @@ private partial def reachableNamesAux
   match worklist with
   | [] => visited
   | name :: rest =>
-    if visited.contains name then reachableNamesAux depMap rest visited
+    if name ∈ visited then
+      reachableNamesAux depMap rest visited
     else
       let visited := visited.insert name
       match depMap[name]? with
       | some deps =>
         let newWork := deps.fold (init := rest) fun acc dep =>
-          if visited.contains dep then acc else dep :: acc
+          if dep ∈ visited then acc else dep :: acc
         reachableNamesAux depMap newWork visited
       | none => reachableNamesAux depMap rest visited
 
@@ -279,9 +280,8 @@ public partial def filterPrelude (prelude user : Laurel.Program)
   let seeds := refs.allNames.fold (init := []) fun acc s => s :: acc
   let needed := reachableNamesAux depMap seeds {}
   return { prelude with
-    staticProcedures := prelude.staticProcedures.filter fun p =>
-      needed.contains p.name.text
-    types := prelude.types.filter fun td =>
-      needed.contains td.name.text }
+    staticProcedures := prelude.staticProcedures.filter fun p => p.name.text ∈ needed
+    types := prelude.types.filter fun td => td.name.text ∈ needed
+  }
 
 end Strata.Laurel
