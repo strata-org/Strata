@@ -261,21 +261,27 @@ theorem Factory.callOfLFunc_smaller {T} {F : @Factory T.base} {e : LExpr T} {op 
 
 /--
 Apply type substitution `S` to all type annotations in an `LExpr`.
+This is only for user-defined types, not metadata-stored resolved types.
+If e is an LExprT whose metadata contains type information, use applySubstT.
 -/
-def LExpr.applyTySubst {T : LExprParams} (e : LExpr T.mono) (S : Subst) : LExpr T.mono :=
-  if S.hasEmptyScopes then e else go e
-where
-  go (e : LExpr T.mono) : LExpr T.mono :=
-    match e with
-    | .const m c => .const m c
-    | .op m o uty => .op m o (uty.map (LMonoTy.subst S))
-    | .bvar m b => .bvar m b
-    | .fvar m x uty => .fvar m x (uty.map (LMonoTy.subst S))
-    | .app m e1 e2 => .app m (go e1) (go e2)
-    | .abs m name uty e => .abs m name (uty.map (LMonoTy.subst S)) (go e)
-    | .quant m qk name argTy tr e => .quant m qk name (argTy.map (LMonoTy.subst S)) (go tr) (go e)
-    | .ite m c t f => .ite m (go c) (go t) (go f)
-    | .eq m e1 e2 => .eq m (go e1) (go e2)
+def LExpr.applySubst {T : LExprParams} (e : LExpr T.mono) (S : Subst) : LExpr T.mono :=
+  if S.hasEmptyScopes then e else replaceUserProvidedType e (LMonoTy.subst S)
+
+/--
+Best-effort type extraction from an `LExpr` without a typing context.
+Returns `none` when the type cannot be determined syntactically.
+-/
+def LExpr.typeOf {T : LExprParams} : LExpr T.mono → Option LMonoTy
+  | .const _ c              => some c.ty
+  | .op _ _ ty              => ty
+  | .bvar _ _               => none
+  | .fvar _ _ ty            => ty
+  | .abs _ _ (some argTy) e => e.typeOf.map (.arrow argTy ·)
+  | .abs _ _ none _         => none
+  | .quant _ _ _ _ _ _      => some .bool
+  | .app _ fn _             => fn.typeOf.bind (fun | .arrow _ ret => some ret | _ => none)
+  | .ite _ _ t _            => t.typeOf
+  | .eq _ _ _               => some .bool
 
 /--
 Derive a type substitution by unifying the instantiated operator type against the
@@ -296,9 +302,10 @@ def LFunc.computeTypeSubst {T : LExprParams} (fn : LFunc T) (callee : LExpr T.mo
         [(instTy, genericTy)]
       | _ => []
     -- Also unify argument types against formal parameter types
-    let argTys := args.filterMap (fun e => match e with
-      | .fvar _ _ ty => ty | .op _ _ ty => ty | .const _ c => some c.ty | _ => none)
-    let argConstraints := argTys.zip fn.inputs.values
+    -- Note that the best-effort mechanism is OK: on typechecked terms,
+    -- everything will have been found by the `opConstraints` anyway
+    let argConstraints := (args.zip fn.inputs.values).filterMap
+      (fun (arg, formal) => arg.typeOf.map (·, formal))
     let allConstraints := opConstraints ++ argConstraints
     if allConstraints.isEmpty then none
     else match Constraints.unify allConstraints SubstInfo.empty with

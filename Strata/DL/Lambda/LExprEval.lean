@@ -226,7 +226,7 @@ def eval (n : Nat) (σ : LState TBase) (e : (LExpr TBase.mono))
           -- Apply type substitution to instantiate polymorphic type variables.
           match LFunc.computeTypeSubst lfunc op_expr args with
           | some tySubst =>
-            let body := body.applyTySubst tySubst
+            let body := body.applySubst tySubst
             let input_map := lfunc.inputs.keys.zip args
             let new_e := substFvarsLifting body input_map
             eval n' σ new_e
