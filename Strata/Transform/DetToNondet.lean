@@ -31,12 +31,18 @@ def StmtToNondetStmt {P : PureExpr} [Imperative.HasBool P] [HasNot P]
   | .ite cond tss ess md => do
     let t ← BlockToNondetStmt tss
     let e ← BlockToNondetStmt ess
-    return .choice
-      (.seq (.assume "true_cond" cond md) t)
-      (.seq (.assume "false_cond" (Imperative.HasNot.not cond) md) e)
+    match cond with
+    | .det c =>
+      return .choice
+        (.seq (.assume "true_cond" c md) t)
+        (.seq (.assume "false_cond" (Imperative.HasNot.not c) md) e)
+    | .nondet =>
+      return .choice t e
   | .loop guard _measure _inv bss md => do
     let b ← BlockToNondetStmt bss
-    return .loop (.seq (.assume "guard" guard md) b)
+    match guard with
+    | .det g => return .loop (.seq (.assume "guard" g md) b)
+    | .nondet => return .loop b
   | .typeDecl _ _ => none
   | .exit _ _ => none
   | .funcDecl _ _ => none
