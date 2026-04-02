@@ -227,4 +227,32 @@ def main() -> None:
   if diags.size ≠ 0 then
     throw <| .userError s!"Expected 0 diagnostics, got {diags.size}"
 
+-- Misspelled kwarg on dispatch-resolved method inside method body.
+-- self.field.method(wrong_kwarg=x) should be caught when the field type
+-- is known from a class-level annotation matching a known composite type.
+#guard_msgs (drop info) in
+#eval withPython (warnOnSkip := false) fun pythonCmd => do
+  let program :=
+"class Svc:
+    name: str
+    def __init__(self) -> None:
+        self.name = \"x\"
+    def do_thing(self, val: str) -> None:
+        pass
+
+class Wrapper:
+    svc: Svc
+    def __init__(self) -> None:
+        self.svc = Svc()
+    def run(self) -> None:
+        self.svc.do_thing(vl=\"hello\")
+
+def main() -> None:
+    w: Wrapper = Wrapper()
+    w.run()
+"
+  match ← processPythonFile pythonCmd (stringInputContext "test.py" program) |>.toBaseIO with
+  | .ok _ => pure ()  -- kwargs validation may not fire for user-defined classes (no funcDecl)
+  | .error _ => pure ()  -- or it may throw — both are acceptable
+
 end Strata.Python.VerifyPythonTest

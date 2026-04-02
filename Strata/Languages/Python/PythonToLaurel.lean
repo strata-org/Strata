@@ -606,10 +606,11 @@ partial def translateExpr (ctx : TranslationContext) (e : Python.expr SourceRang
           attr.val)
         let className := ctx.currentClassName.get!
         match tryLookupFieldHighType ctx className attr.val with
-        | some (.UserDefined name) =>
-          throw (.unsupportedConstruct
-            s!"Coercion from user-defined class '{name.text}' to Any is not yet supported"
-            name.text)
+        | some (.UserDefined _) =>
+          -- Composite-typed field (e.g. service client): return Hole.
+          -- Method dispatch on self.field.method() is handled by
+          -- refineFunctionCallExpr via dispatchFieldTypes.
+          return mkStmtExprMd .Hole
         | _ =>
           return fieldExpr
       else
@@ -904,8 +905,11 @@ partial def translateCall (ctx : TranslationContext)
                           (kwords : List (Python.keyword SourceRange))
     : Except TranslationError StmtExprMd := do
   -- Step 1: factory dispatch (e.g., boto3.client('iam'))
-  if let some className ← resolveDispatch ctx f args.toArray then
-    return mkStmtExprMd (.New className)
+  -- Skip inside method bodies: dispatch-initialized fields are tracked
+  -- separately via dispatchFieldTypes to avoid composite coercion issues.
+  if ctx.currentClassName.isNone then
+    if let some className ← resolveDispatch ctx f args.toArray then
+      return mkStmtExprMd (.New className)
   -- Step 2: method call on typed variable (e.g., iam.get_role())
   --   Resolve to ClassName_method(obj, args)
 
@@ -2051,6 +2055,7 @@ def pythonToLaurel' (info : PreludeInfo)
         functionSignatures := info.functionSignatures
         preludeTypes := info.types,
         importedSymbols := localSymbols,
+        overloadTable := overloadTable,
         classFieldHighType := classFieldHighType,
         filePath := filePath
       }
