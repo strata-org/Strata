@@ -674,14 +674,13 @@ def translateDatatypeDefinition (model : SemanticModel) (dt : DatatypeDefinition
 
 abbrev TranslateResult := (Option Core.Program) × (List DiagnosticModel)
 
-/-- Like `translate` but also returns the lowered Laurel program (after all
-    Laurel-to-Laurel passes, before the final translation to Core). -/
-abbrev TranslateResultWithLaurel := (Option Core.Program) × (List DiagnosticModel) × Program
-
 /--
-Translate Laurel Program to Core Program, also returning the lowered Laurel program.
+Apply the full Laurel→Laurel lowering pipeline (all passes before the Laurel→Core translation).
+Returns the lowered program.
 -/
-def translateWithLaurel (options: LaurelTranslateOptions) (program : Program): TranslateResultWithLaurel :=
+abbrev LowerResult := (ResolutionResult) × (List DiagnosticModel)
+
+def lowerLaurelToLaurel (options: LaurelTranslateOptions) (program : Program) : LowerResult :=
   let program := { program with
     staticProcedures := coreDefinitionsForLaurel.staticProcedures ++ program.staticProcedures
   }
@@ -697,7 +696,6 @@ def translateWithLaurel (options: LaurelTranslateOptions) (program : Program): T
   let program := heapParameterization model program
   let result := resolve program (some model)
   let (program, model) := (result.program, result.model)
-
   let program := typeHierarchyTransform model program
   let result := resolve program (some model)
   let (program, model) := (result.program, result.model)
@@ -710,21 +708,31 @@ def translateWithLaurel (options: LaurelTranslateOptions) (program : Program): T
   let program := eliminateHoles program
   let program := desugarShortCircuit model program
   let program := liftExpressionAssignments model program
+  -- dbg_trace "=== Program after liftExpressionAssigments ==="
+  -- dbg_trace (toString (Std.Format.pretty (Std.ToFormat.format program)))
+  -- dbg_trace "================================="
   let program := eliminateReturnsInExpressionTransform program
   let result := resolve program (some model)
   let (program, model) := (result.program, result.model)
-
   let (program, constrainedTypeDiags) := constrainedTypeElim model program
-  let result := resolve program (some model)
+  (resolve program (some model) , resolutionErrors ++ diamondErrors ++ modifiesDiags ++ constrainedTypeDiags)
+
+
+/-- Like `translate` but also returns the lowered Laurel program (after all
+    Laurel-to-Laurel passes, before the final translation to Core). -/
+abbrev TranslateResultWithLaurel := (Option Core.Program) × (List DiagnosticModel) × Program
+
+def translateWithLaurel (options: LaurelTranslateOptions) (program : Program): TranslateResultWithLaurel :=
+  let (result, lowerErrors) := lowerLaurelToLaurel options program
+
   let (program, model) := (result.program, result.model)
 
   let initState : TranslateState := {model := model }
   let (coreProgramOption, translateState) := runTranslateM initState (translateLaurelToCore options program)
-  let allDiagnostics := resolutionErrors ++ diamondErrors ++ modifiesDiags ++ constrainedTypeDiags ++ translateState.diagnostics
+  let allDiagnostics :=  lowerErrors ++ translateState.diagnostics
   let coreProgramOption := if translateState.coreProgramHasSuperfluousErrors then none else coreProgramOption
   (coreProgramOption, allDiagnostics, program)
   where
-
   /--
   Translate Laurel datatype definitions to Core declarations.
   Datatypes are grouped by mutual references (SCC) so mutually recursive
@@ -801,9 +809,12 @@ def translateWithLaurel (options: LaurelTranslateOptions) (program : Program): T
     pure program
 
 
+
+
 /--
 Translate Laurel Program to Core Program
 -/
+
 def translate (options: LaurelTranslateOptions) (program : Program): TranslateResult :=
   let (core, diags, _) := translateWithLaurel options program
   (core, diags)

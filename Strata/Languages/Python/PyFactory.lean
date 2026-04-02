@@ -64,7 +64,6 @@ causes `pythonRegexToCore` to be called (at most) twice via `concreteEval`:
 The double parse is defensible because `pythonRegexToCore` is fast enough -- it
 runs at translation time, not solver time, and keeps the factory functions
 orthogonal.
-
 -/
 
 open Core
