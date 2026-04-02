@@ -287,17 +287,6 @@ inductive EvalCommand (π : String → Option Procedure) (φ : CoreEval → Pure
     ----
     EvalCommand π φ δ σ (CmdExt.cmd c) σ' f
 
-  /-
-  NOTE: If π is NOT the first implicit variable below, Lean complains as
-  follows; wish this error message actually mentioned which local variable was
-  the problematic one.
-
-  invalid nested inductive datatype 'Imperative.EvalBlock', nested inductive
-  datatypes parameters cannot contain local variables.
-
-  Here's a Zulip thread that can shed some light on this error message:
-  https://leanprover-community.github.io/archive/stream/270676-lean4/topic/nested.20inductive.20datatypes.20parameters.20cannot.20contain.20local.20v.html
-  -/
   | call_sem {δ σ₀ σ args vals oVals σA σAO n p modvals lhs σ' ρ' md} :
     π n = .some p →
     EvalExpressions (P:=Expression) δ σ args vals →

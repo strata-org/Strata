@@ -103,6 +103,10 @@ inductive EvalNondetBlock
     EvalNondetBlock P EvalCmd extendEval
       σ ⟨ cs, .goto ls _ ⟩ (.cont lt σ' failed)
 
+/--
+Monotonically update the `failure` flag in a `CFGConfig`. It will be set to
+`true` if the provided Boolean is `true`.
+-/
 def updateFailure : CFGConfig l P → Bool → CFGConfig l P
 | .cont t σ failed, failed' => .cont t σ (failed || failed')
 | .terminal σ failed, failed' => .terminal σ (failed || failed')
