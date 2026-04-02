@@ -255,6 +255,9 @@ def EvalPureFunc (φ : CoreEval → PureFunc Expression → CoreEval) : Imperati
     let capturedDecl := closureCapture σ decl
     φ δ capturedDecl
 
+/-- Core-level small-step configuration. -/
+@[expose] abbrev CoreConfig := Imperative.Config Expression Command
+
 /-!
 ### Mutual inductive: `EvalCommand` and `CoreStepStar`
 
@@ -271,10 +274,11 @@ mutual
 
 /-- Reflexive-transitive closure of `StepStmt` for the Core language,
     defined mutually with `EvalCommand` to satisfy strict positivity. -/
-inductive CoreStepStar (π : String → Option Procedure) (φ : CoreEval → PureFunc Expression → CoreEval) :
-    Imperative.Config Expression Command → Imperative.Config Expression Command → Prop where
-  | refl :
-    CoreStepStar π φ c c
+inductive CoreStepStar
+    (π : String → Option Procedure)
+    (φ : CoreEval → PureFunc Expression → CoreEval) :
+    CoreConfig → CoreConfig → Prop where
+  | refl : CoreStepStar π φ c c
   | step :
     Imperative.StepStmt Expression (EvalCommand π φ) (EvalPureFunc φ) c₁ c₂ →
     CoreStepStar π φ c₂ c₃ →
@@ -326,28 +330,11 @@ inductive EvalCommand (π : String → Option Procedure) (φ : CoreEval → Pure
 
 end
 
-/-- `CoreStepStar` implies the generic `StepStmtStar` (i.e. `ReflTrans`). -/
-theorem CoreStepStar_to_StepStmtStar
-    {π : String → Option Procedure}
-    {φ : CoreEval → PureFunc Expression → CoreEval}
-    {c c' : Imperative.Config Expression Command}
-    (h : CoreStepStar π φ c c') :
-    Imperative.StepStmtStar Expression (EvalCommand π φ) (EvalPureFunc φ) c c' :=
-  match h with
-  | .refl => .refl _
-  | .step hstep hrest => .step _ _ _ hstep (CoreStepStar_to_StepStmtStar hrest)
-
-/-- The generic `StepStmtStar` implies `CoreStepStar`. -/
-theorem StepStmtStar_to_CoreStepStar
-    {π : String → Option Procedure}
-    {φ : CoreEval → PureFunc Expression → CoreEval}
-    {c c' : Imperative.Config Expression Command} :
-    Imperative.StepStmtStar Expression (EvalCommand π φ) (EvalPureFunc φ) c c' →
-    CoreStepStar π φ c c' := by
-  intro H
-  induction H with
-  | refl => exact .refl
-  | step _ _ _ hstep _ ih => exact .step hstep ih
+/-- Core-level single-step relation. -/
+@[expose] abbrev CoreStep
+    (π : String → Option Procedure)
+    (φ : CoreEval → PureFunc Expression → CoreEval) :=
+  Imperative.StepStmt Expression (EvalCommand π φ) (EvalPureFunc φ)
 
 @[expose] abbrev EvalStatement (π : String → Option Procedure) (φ : CoreEval → PureFunc Expression → CoreEval) :
     Imperative.Env Expression → Statement → Imperative.Env Expression → Prop :=
@@ -357,23 +344,6 @@ theorem StepStmtStar_to_CoreStepStar
     Imperative.Env Expression → List Statement → Imperative.Env Expression → Prop :=
   Imperative.EvalStmtsSmall Expression (EvalCommand π φ) (EvalPureFunc φ)
 
-
-/-! ### Core small-step abbreviations for Statement -/
-
-/-- Core-level small-step configuration. -/
-@[expose] abbrev CoreConfig := Imperative.Config Expression Command
-
-/-- Core-level single-step relation. -/
-@[expose] abbrev CoreStep
-    (π : String → Option Procedure)
-    (φ : CoreEval → PureFunc Expression → CoreEval) :=
-  Imperative.StepStmt Expression (EvalCommand π φ) (EvalPureFunc φ)
-
-/-- Core-level multi-step (reflexive-transitive closure) relation. -/
-@[expose] abbrev CoreStepStar
-    (π : String → Option Procedure)
-    (φ : CoreEval → PureFunc Expression → CoreEval) :=
-  Imperative.StepStmtStar Expression (EvalCommand π φ) (EvalPureFunc φ)
 
 /-! ## Old-variable environment augmentation -/
 

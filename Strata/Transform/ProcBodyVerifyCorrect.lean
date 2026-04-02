@@ -162,7 +162,7 @@ theorem procBodyVerify_procedureCorrect
         CoreStepStar π φ (.stmt verifyStmt ρ₀) cfg →
         Core.coreIsAtAssert cfg a →
         cfg.getEval cfg.getStore a.expr = some HasBool.tt :=
-      fun a cfg h hat => h_correct a ρ₀ cfg h_wf h hat
+      fun a cfg h hat => h_correct a ρ₀ cfg h_wf (CoreStepStar_to_StepStmtStar h) hat
     -- hasFailure = false (needed early for postconditions proof)
     have h_nf' : ρ'.hasFailure = Bool.false :=
       Core.core_noFailure_preserved π φ _ _ h_valid h_nf h_term
@@ -174,7 +174,7 @@ theorem procBodyVerify_procedureCorrect
     -- (exits ruled out by exitsCoveredByBlocks + block_exitsCoveredByBlocks_noEscape)
     rw [h_eq] at h_term
     cases h_term with
-    | step _ _ _ hstep hrest => cases hstep with
+    | step hstep hrest => cases hstep with
       | step_block =>
         -- Derive exit coverage from WFProcedureProp.bodyExitsCovered
         have h_body_ecb := h_wf_proc.bodyExitsCovered
@@ -189,10 +189,10 @@ theorem procBodyVerify_procedureCorrect
             (prefixStmts ++ [Stmt.block bodyLabel proc.body #[]] ++ postAsserts) :=
           block_exitsCoveredByBlocks_append [] _ _ (block_exitsCoveredByBlocks_append [] _ _ h_prefix_ecb
             ⟨h_body_ecb', True.intro⟩) (ensuresToAsserts_ecb [] proc.spec.postconditions)
-        match block_reaches_terminal Expression (EvalCommand π φ) (EvalPureFunc φ) hrest with
+        match block_reaches_terminal Expression (EvalCommand π φ) (EvalPureFunc φ) (CoreStepStar_to_StepStmtStar hrest) with
         | .inl h_stmts_term =>
           -- Decompose: prefix | [bodyBlock] ++ postAsserts
-          have h_stmts_term' : CoreStepStar π φ
+          have h_stmts_term' : StepStmtStar Expression (EvalCommand π φ) (EvalPureFunc φ)
               (.stmts (prefixStmts ++ ([Stmt.block bodyLabel proc.body #[]] ++ postAsserts)) ρ₀)
               (.terminal ρ') := by
             rw [List.append_assoc] at h_stmts_term; exact h_stmts_term
@@ -206,8 +206,8 @@ theorem procBodyVerify_procedureCorrect
               have ⟨ρ₂, h_body_trace, h_post_trace⟩ :=
                 seq_reaches_terminal Expression (EvalCommand π φ) (EvalPureFunc φ) hrest2
               -- Build trace: (.stmt verifyStmt ρ₀) →* (.block verifyLabel (.stmts postAsserts ρ₂))
-              have h_to_post : CoreStepStar π φ (.stmt verifyStmt ρ₀)
-                  (.block verifyLabel (.stmts postAsserts ρ₂)) := by
+              have h_to_post : StepStmtStar Expression (EvalCommand π φ) (EvalPureFunc φ)
+                  (.stmt verifyStmt ρ₀) (.block verifyLabel (.stmts postAsserts ρ₂)) := by
                 rw [h_eq]
                 exact ReflTrans_Transitive _ _ _ _
                   (step_block_enter Expression (EvalCommand π φ) (EvalPureFunc φ) verifyLabel _ #[] ρ₀)
@@ -237,14 +237,15 @@ theorem procBodyVerify_procedureCorrect
                 have ⟨l, e, md, heq⟩ := ensuresToAsserts_mem_is_assert hs
                 subst heq; simp [Stmt.noFuncDecl]
               -- Extract stmts trace for postAsserts
-              have h_post_stmts : CoreStepStar π φ (.stmts postAsserts ρ₂) (.terminal ρ') := by
+              have h_post_stmts : StepStmtStar Expression (EvalCommand π φ) (EvalPureFunc φ)
+                  (.stmts postAsserts ρ₂) (.terminal ρ') := by
                 simp only [List.append] at h_post_trace; exact h_post_trace
               -- Derive eval and store preservation through postAsserts
               have h_eval_post : ρ'.eval = ρ₂.eval :=
                 block_noFuncDecl_preserves_eval Expression (EvalCommand π φ) (EvalPureFunc φ) postAsserts ρ₂ ρ' h_nofd_post h_post_stmts
               have h_store_post : ρ'.store = ρ₂.store :=
                 Core.stmts_allAssert_preserves_store π φ postAsserts ρ₂ ρ'
-                  (fun s hs => ensuresToAsserts_mem_is_assert hs) h_post_stmts
+                  (fun s hs => ensuresToAsserts_mem_is_assert hs) (StepStmtStar_to_CoreStepStar h_post_stmts)
               -- Derive WellFormedSemanticEvalBool at ρ₂ using wfBool preservation
               have h_wfb₂ : WellFormedSemanticEvalBool ρ₂.eval := by
                 rw [← h_eval_post]; exact h_wfb_term
@@ -255,8 +256,8 @@ theorem procBodyVerify_procedureCorrect
                 suffices h_sfx :
                     ∀ (sfx : List Statement),
                       (∀ s ∈ sfx, ∃ l e md, s = Statement.assert l e md) →
-                      CoreStepStar π φ (.stmt verifyStmt ρ₀)
-                        (.block verifyLabel (.stmts sfx ρ₂)) →
+                      StepStmtStar Expression (EvalCommand π φ) (EvalPureFunc φ)
+                        (.stmt verifyStmt ρ₀) (.block verifyLabel (.stmts sfx ρ₂)) →
                       ∀ s ∈ sfx, ∀ l e md,
                         s = Statement.assert l e md →
                         ρ₂.eval ρ₂.store e = some HasBool.tt by
@@ -273,16 +274,16 @@ theorem procBodyVerify_procedureCorrect
                       (.block verifyLabel (.stmts (Statement.assert lh eh mdh :: tl) ρ₂))
                       ⟨lh, eh⟩ := by
                     simp only [Core.coreIsAtAssert]; exact ⟨trivial, trivial⟩
-                  have h_head_eval := h_valid ⟨lh, eh⟩ _ h_trace h_at_head
+                  have h_head_eval := h_valid ⟨lh, eh⟩ _ (StepStmtStar_to_CoreStepStar h_trace) h_at_head
                   simp only [Config.getEval, Config.getStore] at h_head_eval
                   cases h_mem with
                   | head _ =>
                     injection h_s_eq with h1; injection h1 with h2
                     injection h2 with _ h3; subst h3; exact h_head_eval
                   | tail _ h_in_tl =>
-                    have h_assert_step : CoreStepStar π φ
+                    have h_assert_step : StepStmtStar Expression (EvalCommand π φ) (EvalPureFunc φ)
                         (.stmt (Statement.assert lh eh mdh) ρ₂) (.terminal ρ₂) := by
-                      have h1 : CoreStepStar π φ
+                      have h1 : StepStmtStar Expression (EvalCommand π φ) (EvalPureFunc φ)
                           (.stmt (Statement.assert lh eh mdh) ρ₂)
                           (.terminal ⟨ρ₂.store, ρ₂.eval, ρ₂.hasFailure || false⟩) :=
                         .step _ _ _

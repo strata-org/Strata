@@ -2175,6 +2175,101 @@ theorem EvalExpressionIsDefined :
     have ⟨h₁, h₂⟩ := Hwfc.definedness.eqdef σ m e₁ e₂ Hsome
     grind
 
+/-! ## Properties of CoreStep and CoreStepStar. -/
+
+/-- `CoreStepStar` implies the generic `StepStmtStar` (i.e. `ReflTrans`). -/
+theorem CoreStepStar_to_StepStmtStar
+    {π : String → Option Procedure}
+    {φ : CoreEval → PureFunc Expression → CoreEval}
+    {c c' : Imperative.Config Expression Command}
+    (h : CoreStepStar π φ c c') :
+    Imperative.StepStmtStar Expression (EvalCommand π φ) (EvalPureFunc φ) c c' :=
+  match h with
+  | .refl => .refl _
+  | .step hstep hrest => .step _ _ _ hstep (CoreStepStar_to_StepStmtStar hrest)
+
+/-- The generic `StepStmtStar` implies `CoreStepStar`. -/
+theorem StepStmtStar_to_CoreStepStar
+    {π : String → Option Procedure}
+    {φ : CoreEval → PureFunc Expression → CoreEval}
+    {c c' : Imperative.Config Expression Command} :
+    Imperative.StepStmtStar Expression (EvalCommand π φ) (EvalPureFunc φ) c c' →
+    CoreStepStar π φ c c' := by
+  intro H
+  induction H with
+  | refl => exact .refl
+  | step _ _ _ hstep _ ih => exact .step hstep ih
+
+/-- Manual induction principle for `CoreStepStar` (the `induction` tactic does
+    not support mutual inductives). -/
+theorem CoreStepStar_rec
+    {π : String → Option Procedure}
+    {φ : CoreEval → PureFunc Expression → CoreEval}
+    {motive : CoreConfig → CoreConfig → Prop}
+    (h_refl : ∀ c, motive c c)
+    (h_step : ∀ c₁ c₂ c₃, CoreStep π φ c₁ c₂ →
+      CoreStepStar π φ c₂ c₃ → motive c₂ c₃ → motive c₁ c₃)
+    {c₁ c₂ : CoreConfig}
+    (h : CoreStepStar π φ c₁ c₂) : motive c₁ c₂ := by
+  suffices ∀ c₁ c₂,
+      Imperative.StepStmtStar Expression (EvalCommand π φ) (EvalPureFunc φ) c₁ c₂ →
+      motive c₁ c₂ by
+    exact this _ _ (CoreStepStar_to_StepStmtStar h)
+  intro c₁ c₂ h'
+  induction h' with
+  | refl => exact h_refl _
+  | step _ _ _ hstep hrest ih =>
+    exact h_step _ _ _ hstep (StepStmtStar_to_CoreStepStar hrest) ih
+
+/-- `CoreStepStar` is transitive. -/
+theorem CoreStepStar_trans
+    {π : String → Option Procedure}
+    {φ : CoreEval → PureFunc Expression → CoreEval}
+    {c₁ c₂ c₃ : CoreConfig}
+    (h₁ : CoreStepStar π φ c₁ c₂)
+    (h₂ : CoreStepStar π φ c₂ c₃) :
+    CoreStepStar π φ c₁ c₃ :=
+  StepStmtStar_to_CoreStepStar
+    (ReflTrans_Transitive _ _ _ _
+      (CoreStepStar_to_StepStmtStar h₁)
+      (CoreStepStar_to_StepStmtStar h₂))
+
+/-- Lift `seq_inner_star` from `StepStmtStar` to `CoreStepStar`. -/
+theorem core_seq_inner_star
+    {π : String → Option Procedure}
+    {φ : CoreEval → PureFunc Expression → CoreEval}
+    (inner inner' : CoreConfig) (ss : List Statement)
+    (h : CoreStepStar π φ inner inner') :
+    CoreStepStar π φ (.seq inner ss) (.seq inner' ss) :=
+  StepStmtStar_to_CoreStepStar
+    (seq_inner_star Expression (EvalCommand π φ) (EvalPureFunc φ) inner inner' ss
+      (CoreStepStar_to_StepStmtStar h))
+
+/-- Lift `block_inner_star` from `StepStmtStar` to `CoreStepStar`. -/
+theorem core_block_inner_star
+    {π : String → Option Procedure}
+    {φ : CoreEval → PureFunc Expression → CoreEval}
+    (inner inner' : CoreConfig) (label : String)
+    (h : CoreStepStar π φ inner inner') :
+    CoreStepStar π φ (.block label inner) (.block label inner') :=
+  StepStmtStar_to_CoreStepStar
+    (block_inner_star Expression (EvalCommand π φ) (EvalPureFunc φ) inner inner' label
+      (CoreStepStar_to_StepStmtStar h))
+
+/-- Lift `seq_reaches_terminal` from `StepStmtStar` to `CoreStepStar`. -/
+theorem core_seq_reaches_terminal
+    {π : String → Option Procedure}
+    {φ : CoreEval → PureFunc Expression → CoreEval}
+    {inner : CoreConfig} {ss : List Statement} {ρ' : Env Expression}
+    (hstar : CoreStepStar π φ (.seq inner ss) (.terminal ρ')) :
+    ∃ ρ₁, CoreStepStar π φ inner (.terminal ρ₁) ∧
+      CoreStepStar π φ (.stmts ss ρ₁) (.terminal ρ') := by
+  have h := seq_reaches_terminal Expression (EvalCommand π φ) (EvalPureFunc φ)
+    (CoreStepStar_to_StepStmtStar hstar)
+  obtain ⟨ρ₁, h₁, h₂⟩ := h
+  exact ⟨ρ₁, StepStmtStar_to_CoreStepStar h₁, StepStmtStar_to_CoreStepStar h₂⟩
+
+
 /-! ## Well-formed evaluator extension -/
 
 variable (π : String → Option Procedure)
@@ -2221,7 +2316,12 @@ theorem core_wfBool_preserved
     (hwf₀ : WellFormedSemanticEvalBool c₁.getEnv.eval)
     (hstar : CoreStepStar π φ c₁ c₂) :
     WellFormedSemanticEvalBool c₂.getEnv.eval := by
-  induction hstar with
+  suffices ∀ c₁ c₂, WellFormedSemanticEvalBool c₁.getEnv.eval →
+      Imperative.StepStmtStar Expression (EvalCommand π φ) (EvalPureFunc φ) c₁ c₂ →
+      WellFormedSemanticEvalBool c₂.getEnv.eval from
+    this c₁ c₂ hwf₀ (CoreStepStar_to_StepStmtStar hstar)
+  intro c₁ c₂ hwf₀ h
+  induction h with
   | refl => exact hwf₀
   | step _ _ _ hstep _ ih =>
     exact ih (core_step_preserves_wfBool π φ h_wf_ext _ _ hwf₀ hstep)
@@ -2236,18 +2336,17 @@ theorem stmts_allAssert_preserves_store
   induction ss generalizing ρ with
   | nil =>
     cases hterm with
-    | step _ _ _ h_step h_rest => cases h_step with
+    | step h_step h_rest => cases h_step with
       | step_stmts_nil => cases h_rest with
         | refl => rfl
-        | step _ _ _ h _ => exact nomatch h
+        | step h _ => exact nomatch h
   | cons s rest ih =>
     have ⟨l, e, md, h_eq⟩ := h_all s (.head _)
     subst h_eq
     cases hterm with
-    | step _ _ _ h_step h_rest => cases h_step with
+    | step h_step h_rest => cases h_step with
       | step_stmts_cons =>
-        have ⟨ρ₁, h_s, h_r⟩ :=
-          seq_reaches_terminal Expression (EvalCommand π φ) (EvalPureFunc φ) h_rest
+        have ⟨ρ₁, h_s, h_r⟩ := core_seq_reaches_terminal h_rest
         have h_store₁ : ρ₁.store = ρ.store := by
           suffices ∀ (c₁ c₂ : CoreConfig),
               CoreStepStar π φ c₁ c₂ →
@@ -2259,7 +2358,7 @@ theorem stmts_allAssert_preserves_store
           subst heq₁
           cases hstar with
           | refl => exact nomatch heq₂
-          | step _ _ _ hstep hrest₂ =>
+          | step hstep hrest₂ =>
             cases hstep with
             | step_cmd hcmd =>
               cases hcmd with
@@ -2268,11 +2367,11 @@ theorem stmts_allAssert_preserves_store
                 | eval_assert_pass =>
                   cases hrest₂ with
                   | refl => simp at heq₂ ⊢; exact heq₂ ▸ rfl
-                  | step _ _ _ h _ => exact nomatch h
+                  | step h _ => exact nomatch h
                 | eval_assert_fail =>
                   cases hrest₂ with
                   | refl => simp at heq₂ ⊢; exact heq₂ ▸ rfl
-                  | step _ _ _ h _ => exact nomatch h
+                  | step h _ => exact nomatch h
         exact (ih ρ₁ (fun s' hs' => h_all s' (.tail _ hs')) h_r).trans h_store₁
 
 /-! ## hasFailure preservation (Core-specific) -/
@@ -2292,7 +2391,7 @@ theorem core_step_preserves_noFailure
     | cmd_sem heval =>
       cases heval with
       | eval_assert_fail hff _ =>
-        have htt := hv ⟨_, _⟩ _ (.refl _) ⟨rfl, rfl⟩
+        have htt := hv ⟨_, _⟩ _ .refl ⟨rfl, rfl⟩
         simp only [Config.getEval, Config.getStore] at htt
         rw [hff] at htt; exact absurd (Option.some.inj htt) HasBool.tt_is_not_ff.symm
       | _ => simp_all [Config.getEnv]
@@ -2315,13 +2414,13 @@ theorem core_step_preserves_noFailure
   | step_seq_inner h ih =>
     exact ih
       (fun a cfg hr hat => hv a (.seq cfg _)
-        (seq_inner_star Expression (EvalCommand π φ) (EvalPureFunc φ) _ _ _ hr) hat) hnf
+        (core_seq_inner_star _ _ _ hr) hat) hnf
   | step_seq_done => exact hnf
   | step_seq_exit => exact hnf
   | step_block_body h ih =>
     exact ih
       (fun a cfg hr hat => hv a (.block _ cfg)
-        (block_inner_star Expression (EvalCommand π φ) (EvalPureFunc φ) _ _ _ hr) hat) hnf
+        (core_block_inner_star _ _ _ hr) hat) hnf
   | step_block_done => exact hnf
   | step_block_exit_none => exact hnf
   | step_block_exit_match _ => exact hnf
@@ -2336,12 +2435,24 @@ theorem core_noFailure_preserved
     (hf₀ : c₁.getEnv.hasFailure = Bool.false)
     (hstar : CoreStepStar π φ c₁ c₂) :
     c₂.getEnv.hasFailure = Bool.false := by
-  induction hstar with
+  suffices ∀ c₁ c₂,
+      (∀ (a : AssertId Expression) (cfg : CoreConfig),
+        CoreStepStar π φ c₁ cfg →
+        coreIsAtAssert cfg a →
+        cfg.getEval cfg.getStore a.expr = some HasBool.tt) →
+      c₁.getEnv.hasFailure = Bool.false →
+      Imperative.StepStmtStar Expression (EvalCommand π φ) (EvalPureFunc φ) c₁ c₂ →
+      c₂.getEnv.hasFailure = Bool.false from
+    this c₁ c₂ hvalid hf₀ (CoreStepStar_to_StepStmtStar hstar)
+  intro c₁ c₂ hvalid hf₀ h
+  induction h with
   | refl => exact hf₀
-  | step _ mid _ hstep _ ih =>
+  | step _ mid _ hstep hrest ih =>
     exact ih
-      (fun a cfg h hat => hvalid a _ (.step _ _ _ hstep h) hat)
-      (core_step_preserves_noFailure π φ _ _ hvalid hf₀ hstep)
+      (fun a cfg h hat => hvalid a _ (.step hstep h) hat)
+      (core_step_preserves_noFailure π φ _ _
+        (fun a cfg hcs hat => hvalid a _ hcs hat)
+        hf₀ hstep)
 
 end Core
 
