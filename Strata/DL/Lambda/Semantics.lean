@@ -144,7 +144,7 @@ result. Note that this rule does not enforce an evaluation order. -/
   ∀ (e callee fnbody new_body:LExpr Tbase.mono) args fn tySubst,
     F.callOfLFunc e = .some (callee,args,fn) →
     fn.body = .some fnbody →
-    LFunc.computeTypeSubst fn callee = .some tySubst →
+    LFunc.computeTypeSubst fn callee args = .some tySubst →
     new_body = LExpr.substFvarsLifting (fnbody.applyTySubst tySubst) (fn.inputs.keys.zip args) →
     Step F rf e new_body
 

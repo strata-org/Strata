@@ -224,7 +224,7 @@ def eval (n : Nat) (σ : LState TBase) (e : (LExpr TBase.mono))
           -- Inline a function only if it has a body.
           let body := lfunc.body.get (by simp_all)
           -- Apply type substitution to instantiate polymorphic type variables.
-          match LFunc.computeTypeSubst lfunc op_expr with
+          match LFunc.computeTypeSubst lfunc op_expr args with
           | some tySubst =>
             let body := body.applyTySubst tySubst
             let input_map := lfunc.inputs.keys.zip args

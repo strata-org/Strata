@@ -285,16 +285,25 @@ instantiate type variables.
 Returns `some Subst.empty` when `fn.typeArgs` is empty (monomorphic — no-op).
 Returns `none` if the type substitution cannot be derived.
 -/
-def LFunc.computeTypeSubst {T : LExprParams} (fn : LFunc T) (callee : LExpr T.mono) : Option Subst :=
+def LFunc.computeTypeSubst {T : LExprParams} (fn : LFunc T) (callee : LExpr T.mono)
+    (args : List (LExpr T.mono)) : Option Subst :=
   if fn.typeArgs.isEmpty then some Subst.empty
   else
-    match callee with
-    | .op _ _ (some instTy) =>
-      let genericTy := LMonoTy.mkArrow' fn.output (fn.inputs.values.reverse)
-      match Constraints.unify [(instTy, genericTy)] SubstInfo.empty with
+    -- Try the instantiated type on the .op node first
+    let opConstraints := match callee with
+      | .op _ _ (some instTy) =>
+        let genericTy := LMonoTy.mkArrow' fn.output (fn.inputs.values.reverse)
+        [(instTy, genericTy)]
+      | _ => []
+    -- Also unify argument types against formal parameter types
+    let argTys := args.filterMap (fun e => match e with
+      | .fvar _ _ ty => ty | .op _ _ ty => ty | .const _ c => some c.ty | _ => none)
+    let argConstraints := argTys.zip fn.inputs.values
+    let allConstraints := opConstraints ++ argConstraints
+    if allConstraints.isEmpty then none
+    else match Constraints.unify allConstraints SubstInfo.empty with
       | .ok substInfo => some substInfo.subst
       | .error _ => none
-    | _ => none
 
 end -- public section
 end Lambda
