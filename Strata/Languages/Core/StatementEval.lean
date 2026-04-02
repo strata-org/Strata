@@ -474,47 +474,37 @@ def evalAuxGo (steps : Nat) (old_var_subst : SubstMap) (Ewn : EnvWithNext) (ss :
           | .ite cond then_ss else_ss md =>
             let orig_stk := Ewn.stk
             let Ewn := { Ewn with stk := orig_stk.push [] }
-            let cond' := Ewn.env.exprEval cond
+            match cond with
+            | .nondet =>
+              -- Desugar: if (*) { t } else { e } → var c := *; if(c) { t } else { e }
+              let freshName : CoreIdent := ⟨s!"$__nondet_cond_{Ewn.env.pathConditions.length}", ()⟩
+              let freshVar : Expression.Expr := .fvar Strata.SourceRange.none freshName none
+              let initStmt := Statement.init freshName (.forAll [] (.tcons "bool" [])) .nondet md
+              let iteStmt := Imperative.Stmt.ite (.det freshVar) then_ss else_ss md
+              go' { Ewn with stk := orig_stk } [initStmt, iteStmt] optExit
+            | .det c =>
+            let cond' := Ewn.env.exprEval c
             match cond' with
             | .true _ | .false _ =>
-              let (ss_t, ss_f) := if cond'.isTrue then (then_ss, else_ss) else (else_ss, then_ss)
-              let Ewns_f :=
-                -- Check if `ss_f` contains covers and asserts whose
-                -- verification status needs to be reported.
-                -- All covers in `ss_f` will fail (unreachable). For now, we
-                -- don't distinguish between unreachable and unsatisfiable
-                -- covers.
-                -- All asserts in `ss_f` will succeed (unsatisfiable path
-                -- conditions).
-                if Statements.containsCovers ss_f || Statements.containsAsserts ss_f then
-                  let ss_f_covers := Statements.collectCovers ss_f
-                  let ss_f_asserts := Statements.collectAsserts ss_f
-                  let deadLabel := toString (f!"<dead_branch: {cond.eraseTypes}>")
-                  let deadPathConds := Ewn.env.pathConditions.push [(deadLabel, LExpr.false Strata.SourceRange.none)]
-                  let deferred := createUnreachableCoverObligations deadPathConds ss_f_covers
-                  let deferred := deferred ++ createUnreachableAssertObligations deadPathConds ss_f_asserts
-                  -- No need to retain older deferred obligations in a dead branch.
-                  [{ Ewn with env.deferred := deferred }]
-                else
-                  []
-              let Ewns_t :=
-                -- Process `ss_t`.
-                let Ewns := go' Ewn ss_t .none
-                let Ewns := Ewns.map
-                                (fun (ewn : EnvWithNext) =>
-                                     let ss' := ewn.stk.top
-                                     let s' := Imperative.Stmt.ite cond' ss' [] md
-                                     { ewn with stk := orig_stk.appendToTop [s']})
-                Ewns
-              -- Keep the environment order corresponding to program order.
-              if cond'.isTrue then
-                Ewns_t ++ Ewns_f
-              else
-                Ewns_f ++ Ewns_t
+              let (ss_live, ss_dead) :=
+                if cond'.isTrue then (then_ss, else_ss) else (else_ss, then_ss)
+              let deadDeferred := collectDeadBranchDeferred ss_dead c Ewn.env.pathConditions
+              let Ewns :=
+                (go' Ewn ss_live .none).map fun (ewn : EnvWithNext) =>
+                  { ewn with stk := orig_stk.appendToTop [.ite (.det cond') ewn.stk.top [] md] }
+              -- Prepend dead-branch obligations to the first result only.
+              -- Pre-ITE obligations flow through the live branch naturally;
+              -- processIteBranches keeps them in the first (true-path) result,
+              -- so mergeResults won't duplicate them.
+              match Ewns with
+              | [] => []
+              | first :: rest =>
+                { first with env.deferred :=
+                    deadDeferred ++ first.env.deferred } :: rest
             | _ =>
               -- Process both branches.
               processIteBranches steps' old_var_subst
-                Ewn cond cond' then_ss else_ss md orig_stk
+                Ewn c cond' then_ss else_ss md orig_stk
 
           | .loop _ _ _ _ _ =>
             panic! "Cannot evaluate `loop` statement. \
@@ -583,23 +573,24 @@ def processIteBranches (steps : Nat) (old_var_subst : SubstMap) (Ewn : EnvWithNe
   -- with no exit label, we can merge both states into one.
   | [{ stk := stk_t, env := E_t, exitLabel := .none}],
     [{ stk := stk_f, env := E_f, exitLabel := .none}] =>
-    let s' := Imperative.Stmt.ite cond' stk_t.top stk_f.top md
+    let s' := Imperative.Stmt.ite (.det cond') stk_t.top stk_f.top md
     [EnvWithNext.mk (Env.merge cond' E_t E_f).popScope
                     .none
                     (orig_stk.appendToTop [s'])]
   | _, _ =>
     let Ewns_t := Ewns_t.map
                       (fun (ewn : EnvWithNext) =>
-                        let s' := Imperative.Stmt.ite (LExpr.true Strata.SourceRange.none) ewn.stk.top [] md
+                        let s' := Imperative.Stmt.ite (.det (LExpr.true Strata.SourceRange.none)) ewn.stk.top [] md
                         { ewn with env := ewn.env.popScope,
                                    stk := orig_stk.appendToTop [s']})
     let Ewns_f := Ewns_f.map
                       (fun (ewn : EnvWithNext) =>
-                        let s' := Imperative.Stmt.ite (LExpr.false Strata.SourceRange.none) [] ewn.stk.top md
+                        let s' := Imperative.Stmt.ite (.det (LExpr.false Strata.SourceRange.none)) [] ewn.stk.top md
                         { ewn with env := ewn.env.popScope,
                                    stk := orig_stk.appendToTop [s']})
   Ewns_t ++ Ewns_f
   termination_by (steps, Imperative.Block.sizeOf then_ss + Imperative.Block.sizeOf else_ss)
+
 end
 
 def evalAux (E : Env) (old_var_subst : SubstMap) (ss : Statements) (optExit : Option (Option String)) :

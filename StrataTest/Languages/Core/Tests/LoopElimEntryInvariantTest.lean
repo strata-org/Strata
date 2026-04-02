@@ -64,6 +64,12 @@ procedure zeroIter () returns (s : int)
   n := 0;
   s := 0;
   loop_0: {
+    first_iter_asserts_0: {
+      assert [entry_invariant_0_0]: false;
+      assume [assume_entry_invariant_0_0]: false;
+      }
+    if (false) {
+      }
     }
   };
 

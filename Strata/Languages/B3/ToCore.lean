@@ -219,10 +219,10 @@ partial def convertStmt (ctx : ConvContext) : B3AST.Statement SourceRange → St
     match init.val with
     | some initExpr =>
       let initResult := convertExpr ctx initExpr
-      { value := [Core.Statement.init (⟨name.val, ()⟩) coreTy (some initResult.value) .empty],
+      { value := [Core.Statement.init (⟨name.val, ()⟩) coreTy (.det initResult.value) .empty],
         errors := initResult.errors }
     | none =>
-      .ok [Core.Statement.init (⟨name.val, ()⟩) coreTy none .empty]
+      .ok [Core.Statement.init (⟨name.val, ()⟩) coreTy .nondet .empty]
   | .assign _ lhs rhs, _ =>
     let rhsResult := convertExpr ctx rhs
     match ctx.vars[lhs.val]? with
@@ -237,14 +237,14 @@ partial def convertStmt (ctx : ConvContext) : B3AST.Statement SourceRange → St
     let elseResult := match elseBranch.val with
       | some s => convertStmt ctx s procName
       | none => .ok []
-    { value := [Imperative.Stmt.ite condResult.value thenResult.value elseResult.value .empty],
+    { value := [Imperative.Stmt.ite (.det condResult.value) thenResult.value elseResult.value .empty],
       errors := condResult.errors ++ thenResult.errors ++ elseResult.errors }
   | .loop sr invariants body, procName =>
     let guard : Core.Expression.Expr := .boolConst sr true
     let invResults := invariants.val.toList.map (convertExpr ctx)
     let invExprs := invResults.map (·.value)
     let bodyResult := convertStmt ctx body procName
-    { value := [Imperative.Stmt.loop guard none invExprs bodyResult.value .empty],
+    { value := [Imperative.Stmt.loop (.det guard) none invExprs bodyResult.value .empty],
       errors := invResults.flatMap (·.errors) ++ bodyResult.errors }
   | .choose _ branches, procName =>
     let results := branches.val.toList.map (convertStmt ctx · procName)

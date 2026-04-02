@@ -35,10 +35,10 @@ def collectCmdUsedVarNames : Core.Command → List String
   | .cmd (.assume _ e _) => collectExprVarNames e
   | .cmd (.assert _ e _) => collectExprVarNames e
   | .cmd (.cover _ e _) => collectExprVarNames e
-  | .cmd (.init _ _ (some e) _) => collectExprVarNames e
-  | .cmd (.init _ _ none _) => []
-  | .cmd (.havoc _ _) => []
-  | .cmd (.set _ e _) => collectExprVarNames e
+  | .cmd (.init _ _ (.det e) _) => collectExprVarNames e
+  | .cmd (.init _ _ .nondet _) => []
+  | .cmd (.set _ (.det e) _) => collectExprVarNames e
+  | .cmd (.set _ .nondet _) => []
   | .call _ _ args _ => args.flatMap collectExprVarNames
 
 mutual
@@ -52,9 +52,11 @@ partial def collectStmtUsedVarNames : Core.Statement → List String
     | none => []
   | .typeDecl _ _ => []
   | .ite cond thenB elseB _ =>
-    collectExprVarNames cond ++ collectStmtsUsedVarNames thenB ++ collectStmtsUsedVarNames elseB
+    (match cond with | .det e => collectExprVarNames e | .nondet => []) ++
+    collectStmtsUsedVarNames thenB ++ collectStmtsUsedVarNames elseB
   | .loop guard _ _ body _ =>
-    collectExprVarNames guard ++ collectStmtsUsedVarNames body
+    (match guard with | .det e => collectExprVarNames e | .nondet => []) ++
+    collectStmtsUsedVarNames body
   | .exit _ _ => []
 
 /-- Collect all variable names referenced in a list of statements. -/

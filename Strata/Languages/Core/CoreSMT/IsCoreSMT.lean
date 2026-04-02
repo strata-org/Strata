@@ -65,10 +65,10 @@ def checkCoreSMTCmd : Core.Command → Except String Unit
   | .cmd (.init _ ty eOpt _)   => do
       isCoreSMTTy ty
       match eOpt with
-      | some e => checkCoreSMTExpr e
-      | none => .ok ()
-  | .cmd (.havoc _ _)          => .error "havoc is not in the CoreSMT subset"
-  | .cmd (.set _ _ _)          => .error "assignment (set) is not in the CoreSMT subset"
+      | .det e => checkCoreSMTExpr e
+      | .nondet => .ok ()
+  | .cmd (.set _ .nondet _)    => .ok ()  -- havoc (nondet set) is ok
+  | .cmd (.set _ (.det _) _)   => .error "assignment (set) is not in the CoreSMT subset"
   | .call _ _ _ _              => .error "procedure call is not in the CoreSMT subset"
 
 /-- Boolean version for backward compatibility -/

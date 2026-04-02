@@ -151,7 +151,7 @@ partial def processStatement (state : CoreSMTState) (E : Core.Env)
       let state := state.addAssumption expr
       return (state, smtCtx, [])
 
-  | Core.Statement.init name ty (some expr) _ =>
+  | Core.Statement.init name ty (.det expr) _ =>
     match translateExpr E expr smtCtx with
     | .error msg =>
       let obligation : Imperative.ProofObligation Core.Expression := {
@@ -175,7 +175,7 @@ partial def processStatement (state : CoreSMTState) (E : Core.Env)
         let state := state.addAssumption eqExpr
         return (state, smtCtx, [])
 
-  | Core.Statement.init name ty none _ =>
+  | Core.Statement.init name ty .nondet _ =>
     match translateType E ty smtCtx with
     | .error msg =>
       -- Use a dummy expression for error reporting

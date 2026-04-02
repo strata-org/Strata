@@ -99,7 +99,7 @@ def cmdToJson (e : Core.Command) (loc: SourceLoc) : Except String Json :=
       ])
     | .set ("ret") _ _ =>
       returnStmt loc.functionName
-    | .set name expr _ => do
+    | .set name (.det expr) _ => do
       let exprLoc : SourceLoc := { functionName := loc.functionName, lineNum := "6" }
       return (mkCodeBlock "expression" "6" loc.functionName #[
         mkSideEffect "assign" "6" loc.functionName mkIntType #[
@@ -165,7 +165,7 @@ def cmdToJson (e : Core.Command) (loc: SourceLoc) : Except String Json :=
     | .cover _ _ md =>
        throw s!"{Imperative.MetaData.formatFileRangeD md}\
                   cover unimplemented"
-    | .havoc _ md =>
+    | .set _ .nondet md =>
        throw s!"{Imperative.MetaData.formatFileRangeD md}\
                   havoc unimplemented"
 
@@ -188,7 +188,7 @@ def stmtToJson {P : Imperative.PureExpr} (I : Lambda.LExprParams) [IdentToStr (L
   (e : Imperative.Stmt P Command) (loc: SourceLoc) : Except String Json :=
   match e with
   | .cmd cmd => cmdToJson cmd loc
-  | .ite cond thenb elseb _ => do
+  | .ite (.det cond) thenb elseb _ => do
     let converted_cond : Lambda.LExpr I.mono := @HasLExpr.expr_eq P (I:=I) _ ▸ cond
     return Json.mkObj [
       ("id", "code"),
