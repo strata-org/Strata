@@ -2135,6 +2135,10 @@ theorem core_step_preserves_wfBool
   | step_ite_false _ _ => exact hwf
   | step_loop_enter _ _ => exact hwf
   | step_loop_exit _ _ => exact hwf
+  | step_ite_nondet_true => exact hwf
+  | step_ite_nondet_false => exact hwf
+  | step_loop_nondet_enter => exact hwf
+  | step_loop_nondet_exit => exact hwf
   | step_exit => exact hwf
   | step_funcDecl => simp [Config.getEnv]; exact h_wf_ext.preserves_wfBool _ _ _ hwf
   | step_typeDecl => exact hwf
@@ -2237,6 +2241,10 @@ theorem core_step_preserves_noFailure
   | step_ite_false _ _ => exact hnf
   | step_loop_enter _ _ => exact hnf
   | step_loop_exit _ _ => exact hnf
+  | step_ite_nondet_true => exact hnf
+  | step_ite_nondet_false => exact hnf
+  | step_loop_nondet_enter => exact hnf
+  | step_loop_nondet_exit => exact hnf
   | step_exit => exact hnf
   | step_funcDecl => simp [Config.getEnv]; exact hnf
   | step_typeDecl => exact hnf

@@ -70,18 +70,18 @@ def procToVerifyStmt (proc : Procedure) (p : Program) : CoreTransformM Statement
 
   -- Initialize input parameters
   let inputInits := proc.header.inputs.toList.map fun (id, ty) =>
-    Statement.init id (Lambda.LTy.forAll [] ty) none #[]
+    Statement.init id (Lambda.LTy.forAll [] ty) .nondet #[]
 
   -- Initialize output parameters
   let outputInits := proc.header.outputs.toList.map fun (id, ty) =>
-    Statement.init id (Lambda.LTy.forAll [] ty) none #[]
+    Statement.init id (Lambda.LTy.forAll [] ty) .nondet #[]
 
   -- Initialize modified globals: old_g (no RHS), then g := old_g
   let modifiesInits ← proc.spec.modifies.mapM fun g => do
     let oldG := CoreIdent.mkOld g.name
     let gTy ← getIdentTy! p g
-    return [ Statement.init oldG gTy none #[],
-             Statement.init g gTy (some (.fvar () oldG none)) #[] ]
+    return [ Statement.init oldG gTy .nondet #[],
+             Statement.init g gTy (.det (Lambda.LExpr.fvar () oldG none)) #[] ]
   let modifiesInits := modifiesInits.flatten
 
   -- Convert preconditions to assumes
