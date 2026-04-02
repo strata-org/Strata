@@ -11,8 +11,10 @@ developers to customize additional features to their needs.
 This README will help you get started with using and extending
 Strata. Also see the [Architecture](docs/Architecture.md) document
 that introduces some terminology and describes Strata's components,
-and a [Getting Started](docs/GettingStarted.md) guide that describes
-how to create a new dialect and analysis using existing features.
+a [Getting Started](docs/GettingStarted.md) guide that describes
+how to create a new dialect and analysis using existing features,
+and [Verification Modes](docs/VerificationModes.md) for details on
+the deductive and bug-finding verification modes.
 
 **N.B.: Strata is under active development, and there may be breaking
 changes!**
