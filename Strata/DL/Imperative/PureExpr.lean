@@ -48,6 +48,7 @@ class HasBool (P : PureExpr) where
   tt : P.Expr
   ff : P.Expr
   tt_is_not_ff: tt ≠ ff
+  boolTy : P.Ty
 
 class HasNot (P : PureExpr) extends HasBool P where
   not : P.Expr → P.Expr
