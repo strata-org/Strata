@@ -91,10 +91,12 @@ def test1 := TestCase.mk
 #guard_msgs in
 #eval (check test1)
 
--- Small step stucks because abstraction is a value.
-example: stuck test1 := by
-  intros e H
-  contradiction
+-- Small step reduces the free variable `m` under the binder via abs_subst_fvar.
+example: steps_well test1 := by
+  unfold steps_well Scopes.toEnv test1
+  apply ReflTrans.step (y := esM[λ (if (%0 == #1) then #10 else (_minit %0))])
+  · exact Step.abs_subst_fvar (Tbase := TestParams) (m' := ()) _ ⟨"m", ()⟩ _ (by decide) (by decide)
+  apply ReflTrans.refl
 
 
 def test2 := TestCase.mk
