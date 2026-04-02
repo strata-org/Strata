@@ -826,6 +826,19 @@ theorem Denotes_denote
 These lemmas expose the structure of `denote` for each expression form,
 proved via `Denotes` to avoid dependent-type casts from the `_inv` lemmas. -/
 
+/-- Unfolding lemma for `denote` of a constant. -/
+theorem denote_const
+    {T : LExprParams}
+    (tcInterp : TyConstrInterp)
+    (opInterp : OpInterp tcInterp)
+    (fvarVal : FreeVarVal T tcInterp)
+    (vt : TyVarVal)
+    {m : T.mono.base.Metadata} {c : LConst} {τ : LMonoTy} {Δ : List LMonoTy}
+    (bvarVal : BVarVal tcInterp vt Δ)
+    (h : LExpr.HasTypeA Δ (.const m c) τ)
+    : LExpr.denote tcInterp opInterp fvarVal vt bvarVal (.const m c) τ h =
+      HasTypeA.const_inv h ▸ denoteConst tcInterp vt c := by rfl
+
 /-- Unfolding lemma for `denote` of a bound variable. -/
 theorem denote_op
     {T : LExprParams}

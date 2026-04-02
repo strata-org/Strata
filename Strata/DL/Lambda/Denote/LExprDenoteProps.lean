@@ -18,6 +18,45 @@ variable (opInterp : OpInterp tcInterp)
 variable (fvarVal : FreeVarVal T tcInterp)
 variable (vt : TyVarVal)
 
+/-! ### denoteConst properties -/
+
+/-- Casting a dependent function application via `congrArg` is the same as
+applying the function at the new index. -/
+theorem cast_congrArg_dep_fn {α : Type} {F : α → Type} {a b : α}
+    (h : a = b) (f : (x : α) → F x)
+    : f b = cast (congrArg F h) (f a) := by subst h; rfl
+
+/-- Combining `cast` with `▸` on a round trip is the identity. -/
+theorem cast_subst_roundtrip {α : Type} {F : α → Sort _} {a b : α}
+    (h_eq : a = b) (h_td : F a = F b) (x : F b)
+    : cast h_td (h_eq.symm ▸ x) = x := by
+  subst h_eq; rfl
+
+/-- Casting a function and its argument is the same as casting the result. -/
+theorem cast_app {A A' B B' : Sort _}
+    (h_fn : (A → B) = (A' → B')) (h_arg : A = A') (h_ret : B = B')
+    (f : A → B) (x : A)
+    : (cast h_fn f) (cast h_arg x) = cast h_ret (f x) := by
+  subst h_arg; subst h_ret; rfl
+
+/-- Apply a cast function to an argument in the target domain. -/
+theorem cast_fn_apply {A A' B B' : Sort _}
+    (h_fn : (A → B) = (A' → B')) (h_arg : A = A') (h_ret : B = B')
+    (f : A → B) (x : A')
+    : (cast h_fn f) x = cast h_ret (f (cast h_arg.symm x)) := by
+  subst h_arg; subst h_ret; rfl
+
+/-- `cast` is injective. -/
+theorem cast_injective {α β : Sort _} (h : α = β) {a b : α}
+    (heq : cast h a = cast h b) : a = b := by
+  cases h; exact heq
+
+/-- `denoteConst` is independent of the type variable valuation `vt`. -/
+theorem denoteConst_cast_vt (vt vt' : TyVarVal) (c : LConst)
+    (h : TyDenote tcInterp vt' c.ty = TyDenote tcInterp vt c.ty)
+    : denoteConst tcInterp vt c = cast h (denoteConst tcInterp vt' c) := by
+  cases c <;> simp [denoteConst, LConst.ty, TyDenote, LMonoTy.substTyVars] at h ⊢ <;> exact h ▸ rfl
+
 /-! ### HList cast applied to SortDenote -/
 
 /-- Casting the argument list of `applyArgs` can be absorbed by casting the

@@ -909,6 +909,13 @@ def LMonoTy.substMap (σ : Map TyIdentifier LMonoTy) : LMonoTy → LMonoTy
   | .bitvec n   => .bitvec n
   | .tcons name args => .tcons name (args.map (substMap σ))
 
+theorem substTyVars_substMap (vt : TyVarVal) (σ : Map TyIdentifier LMonoTy) (ty : LMonoTy) :
+    LMonoTy.substTyVars vt (LMonoTy.substMap σ ty) =
+    LMonoTy.substTyVars
+      (fun x => match Map.find? σ x with | some t => LMonoTy.substTyVars vt t | none => vt x)
+      ty := by
+  sorry
+
 /-! ### Polymorphic type-checking for `go` -/
 
 /-- Polymorphic version of `go_typeCheck`. When fvar annotations match
@@ -962,10 +969,11 @@ private theorem substFvarsLifting_go_denote_poly [DecidableEq T.IDMeta]
         (denoteArgs tcInterp opInterp fvarVal vt bvarVal_outer_vt
           (bindings.map Prod.snd) argTys h_wt))
 
-    (h_annot : fvars_annotated_by (bindings.map Prod.fst |>.zip inputTys) body)
-
     {body : LExpr T.mono} {τ_body τ_subst : LMonoTy}
     {Δ_body : List LMonoTy}
+
+    (h_annot : fvars_annotated_by (bindings.map Prod.fst |>.zip inputTys) body)
+
     (bvarVal_body_vt  : BVarVal tcInterp vt  Δ_body)
     (bvarVal_body_vt' : BVarVal tcInterp vt' Δ_body)
 
@@ -992,7 +1000,361 @@ private theorem substFvarsLifting_go_denote_poly [DecidableEq T.IDMeta]
           (fvarVal.withArgs sortBindings h_args)
           vt' (HList.append bvarVal_body_vt' bvarVal_outer_vt')
           body τ_body h_body) := by
-  sorry
+  induction body generalizing Δ_body τ_body τ_subst with
+  | const m c =>
+    simp only [LExpr.substFvarsLifting.go]
+    rw [denote_const _ _ _ _ _ h_subst, denote_const _ _ _ _ _ h_body]
+    have hc_subst := HasTypeA.const_inv h_subst
+    have hc_body := HasTypeA.const_inv h_body
+    subst hc_subst hc_body
+    simp
+    -- Goal: denoteConst tcInterp vt c = cast h_td_eq (denoteConst tcInterp vt' c)
+    -- denoteConst returns ground values independent of vt
+    exact denoteConst_cast_vt tcInterp vt vt' c h_td_eq
+  | op m o ty =>
+    cases ty with
+    | none => exact absurd (LExpr.HasTypeA_to_typeCheck h_body) (by simp [LExpr.typeCheck])
+    | some ty =>
+      simp only [LExpr.substFvarsLifting.go]
+      rw [denote_op _ _ _ _ _ h_subst, denote_op _ _ _ _ _ h_body]
+      have ho_subst := HasTypeA.op_inv h_subst
+      have ho_body := HasTypeA.op_inv h_body
+      subst ho_subst ho_body
+      simp
+      have : h_td_eq = congrArg (SortDenote tcInterp) h_sort_eq := proof_irrel _ _
+      rw [this]
+      exact cast_congrArg_dep_fn h_sort_eq (opInterp o.name)
+  | bvar m i =>
+    simp only [LExpr.substFvarsLifting.go]
+    rw [denote_bvar _ _ _ _ _ h_subst, denote_bvar _ _ _ _ _ h_body]
+    have hb_subst := HasTypeA.bvar_inv h_subst
+    have hb_body := HasTypeA.bvar_inv h_body
+    have h_τ_eq : τ_subst = τ_body := by
+      have := hb_subst.symm.trans hb_body
+      exact Option.some.inj this
+    subst h_τ_eq
+    have ⟨_, h_heq_b⟩ := h_bvar_eq i _ hb_body
+    have : h_td_eq = congrArg (SortDenote tcInterp) h_sort_eq := proof_irrel _ _
+    rw [this]
+    have h1 : HasTypeA.bvar_inv h_subst = hb_body := proof_irrel _ _
+    have h2 : HasTypeA.bvar_inv h_body = hb_body := proof_irrel _ _
+    rw [h1]
+    exact eq_of_heq (h_heq_b.symm.trans (cast_heq _ _).symm)
+  | fvar m name ty =>
+    cases ty with
+    | none => exact absurd (LExpr.HasTypeA_to_typeCheck h_body) (by simp [LExpr.typeCheck])
+    | some ty =>
+      simp only [LExpr.substFvarsLifting.go] at h_subst ⊢
+      generalize_lhs_last_arg
+      rename_i heq; revert heq
+      clear h_subst
+      cases hfind : Map.find? bindings name with
+      | some e_arg =>
+        -- fvar replaced by liftBVars
+        simp
+        intro heq
+        rw [denote_fvar _ _ _ _ _ h_body]
+        have hf_body := HasTypeA.fvar_inv h_body
+        subst hf_body
+        simp
+        -- LHS: denote ... (liftBVars depth e_arg) τ_subst heq
+        -- RHS: cast h_td_eq (withArgs ... name (substTyVars vt' τ_body))
+        have h_orig : LExpr.HasTypeA Δ_outer e_arg τ_subst :=
+          liftBVars_hasTypeA_inv heq
+        have h_lift := liftBVars_denote (tcInterp := tcInterp) (opInterp := opInterp)
+          (fvarVal := fvarVal) (vt := vt) (Δ₁ := []) h_orig heq .nil bvarVal_body_vt bvarVal_outer_vt
+        simp [HList.append] at h_lift
+        rw [h_lift]
+        -- LHS is now: denote ... e_arg τ_subst h_orig (at vt, bvarVal_outer_vt)
+        -- RHS: cast h_td_eq (withArgs ... name (substTyVars vt' τ_body))
+        -- Get index from Map.find?_index
+        obtain ⟨i, h_key_b, h_val_b, h_first_bindings⟩ := Map.find?_index hfind
+        -- Get sort binding info
+        have h_key : (sortBindings.map Prod.fst)[i]? = some name := by
+          rw [← h_keys]; exact h_key_b
+        -- Get τ_subst = argTys[i] from h_wt
+        have h_i_lt : i < argTys.length := by
+          rw [h_argTys_len]
+          have := (List.getElem?_eq_some_iff.mp h_val_b).1
+          grind
+        have h_tys_eq : argTys[i]? = some argTys[i] :=
+          List.getElem?_eq_some_iff.mpr ⟨h_i_lt, rfl⟩
+        have h_wt_i := List.Forall₂.get? h_wt i h_val_b h_tys_eq
+        have h_τ_subst_eq : argTys[i] = τ_subst := HasTypeA_unique h_wt_i h_orig
+        subst h_τ_subst_eq
+        -- Goal: denote ... e_arg argTys[i] h_orig
+        --     = cast h_td_eq (withArgs ... name (substTyVars vt' τ_body))
+        have h_sort : (sortBindings.map Prod.snd)[i]? = some (LMonoTy.substTyVars vt' τ_body) := by
+          rw [h_sorts, List.getElem?_map, h_tys_eq]; simp
+          rw [← h_sort_eq]
+        have h_first : ∀ j < i, (sortBindings.map Prod.fst)[j]? ≠ some name := by
+          intro j hj; rw [← h_keys]; exact h_first_bindings j hj
+        rw [IdentInterp.withArgs_get (tcInterp := tcInterp) fvarVal sortBindings h_args
+            name _ i h_key h_sort h_first]
+        -- Goal: denote ... e_arg argTys[i] h_orig = cast h_td_eq (h_args.get i h_sort)
+        have h_sort_vt : (argTys.map (LMonoTy.substTyVars vt))[i]? = some (LMonoTy.substTyVars vt argTys[i]) := by
+          rw [List.getElem?_map, h_tys_eq]; simp
+        rw [h_denotes, HList.get_cast_gen h_sorts.symm _ i h_sort_vt h_sort h_sort_eq.symm]
+        have h_da_get := denoteArgs_get (tcInterp := tcInterp) (opInterp := opInterp)
+          (fvarVal := fvarVal) (vt := vt) (bvarVal := bvarVal_outer_vt)
+          h_wt i h_val_b h_tys_eq h_sort_vt
+        have h_wt_pi : List.Forall₂.get? h_wt i h_val_b h_tys_eq = h_orig := proof_irrel _ _
+        rw [h_wt_pi] at h_da_get
+        rw [h_da_get]
+        -- Goal: denote ... = cast h_td_eq (h_sort_eq.symm ▸ denote ...)
+        -- Round-trip cast
+        have : h_td_eq = congrArg (SortDenote tcInterp) h_sort_eq := proof_irrel _ _
+        subst this
+        rw[cast_subst_roundtrip]
+        assumption
+      | none =>
+        -- fvar unchanged
+        simp
+        intro h_subst
+        rw [denote_fvar _ _ _ _ _ h_subst, denote_fvar _ _ _ _ _ h_body]
+        have hf_body := HasTypeA.fvar_inv h_body
+        have hf_subst := HasTypeA.fvar_inv h_subst
+        subst hf_body hf_subst
+        simp
+        -- Goal: fvarVal name (substTyVars vt ty) = cast h_td_eq (withArgs ... name (substTyVars vt' ty))
+        have h_not_mem : name ∉ (bindings.map Prod.fst) := by
+          have := Map.find?_of_not_mem_values _ hfind
+          rw [Map.keys_eq_map_fst] at this
+          exact this
+        rw [h_keys] at h_not_mem
+        rw [IdentInterp.withArgs_not_mem _ fvarVal h_args h_not_mem]
+        -- Goal: fvarVal name (substTyVars vt ty) = cast h_td_eq (fvarVal name (substTyVars vt' ty))
+        have : h_td_eq = congrArg (SortDenote tcInterp) h_sort_eq := proof_irrel _ _
+        rw [this]
+        exact cast_congrArg_dep_fn h_sort_eq (fvarVal name)
+  | app m fn arg ih_fn ih_arg =>
+    simp only [LExpr.substFvarsLifting.go] at h_subst ⊢
+    let ⟨aty_b, h_fn_b, h_arg_b⟩ := HasTypeA.app_inv h_body
+    let ⟨aty_s, h_fn_s, h_arg_s⟩ := HasTypeA.app_inv h_subst
+    have h_annot_fn : fvars_annotated_by (bindings.map Prod.fst |>.zip inputTys) fn := by
+      simp [fvars_annotated_by] at h_annot; exact h_annot.1
+    have h_annot_arg : fvars_annotated_by (bindings.map Prod.fst |>.zip inputTys) arg := by
+      simp [fvars_annotated_by] at h_annot; exact h_annot.2
+    have h_go_fn := go_typeCheck_poly h_wt h_inst h_inputTys_len h_fn_b h_annot_fn
+    have h_fn_s_tc := LExpr.HasTypeA_to_typeCheck h_fn_s
+    rw [LExpr.HasTypeA_to_typeCheck h_go_fn] at h_fn_s_tc
+    -- h_fn_s_tc : some (substMap σ (aty_b.arrow τ_body)) = some (aty_s.arrow τ_subst)
+    simp [LMonoTy.arrow, LMonoTy.substMap] at h_fn_s_tc
+    obtain ⟨h_aty_eq, h_τ_eq⟩ := h_fn_s_tc
+    -- h_aty_eq : substMap σ aty_b = aty_s, h_τ_eq : substMap σ τ_body = τ_subst
+    subst h_aty_eq; subst h_τ_eq
+    rw [denote_app _ h_fn_s h_arg_s h_subst, denote_app _ h_fn_b h_arg_b h_body]
+    -- Sort equalities for IHs
+    have h_sort_eq_arg : LMonoTy.substTyVars vt' aty_b =
+        LMonoTy.substTyVars vt (LMonoTy.substMap σ aty_b) := by
+      rw [substTyVars_substMap]; congr
+    have h_sort_eq_fn : LMonoTy.substTyVars vt' (aty_b.arrow τ_body) =
+        LMonoTy.substTyVars vt ((LMonoTy.substMap σ aty_b).arrow (LMonoTy.substMap σ τ_body)) := by
+      unfold LMonoTy.arrow LMonoTy.substTyVars
+      congr 1
+      simp[Lambda.LMonoTy.substTyVars.map]
+      constructor
+      . exact h_sort_eq_arg
+      · exact h_sort_eq
+    have h_td_eq_arg : TyDenote tcInterp vt' aty_b = TyDenote tcInterp vt (LMonoTy.substMap σ aty_b) :=
+      congrArg (SortDenote tcInterp) h_sort_eq_arg
+    have h_td_eq_fn : TyDenote tcInterp vt' (aty_b.arrow τ_body) =
+        TyDenote tcInterp vt ((LMonoTy.substMap σ aty_b).arrow (LMonoTy.substMap σ τ_body)) :=
+      congrArg (SortDenote tcInterp) h_sort_eq_fn
+    rw [ih_fn h_annot_fn bvarVal_body_vt bvarVal_body_vt' h_fn_b h_fn_s h_sort_eq_fn h_td_eq_fn h_bvar_eq]
+    rw [ih_arg h_annot_arg bvarVal_body_vt bvarVal_body_vt' h_arg_b h_arg_s h_sort_eq_arg h_td_eq_arg h_bvar_eq]
+    exact cast_app h_td_eq_fn h_td_eq_arg h_td_eq _ _
+  | abs m name ty body' ih =>
+    cases ty with
+    | none => exact absurd (LExpr.HasTypeA_to_typeCheck h_body) (by simp [LExpr.typeCheck])
+    | some aty =>
+      simp only [LExpr.substFvarsLifting.go] at h_subst ⊢
+      let ⟨rty_b, h_eq_b, h_body_b⟩ := HasTypeA.abs_inv h_body
+      let ⟨rty_s, h_eq_s, h_body_s⟩ := HasTypeA.abs_inv h_subst
+      subst h_eq_b; cases h_eq_s
+      -- Extract arrow components from h_sort_eq
+      have h_sort_eq_aty : LMonoTy.substTyVars vt' aty = LMonoTy.substTyVars vt aty := by
+        have := congrArg (fun s => match s with | .tcons _ args => args[0]? | _ => none) h_sort_eq
+        simp [LMonoTy.substTyVars, Lambda.LMonoTy.substTyVars.map] at this
+        exact this
+      have h_sort_eq_rty : LMonoTy.substTyVars vt' rty_b = LMonoTy.substTyVars vt rty_s := by
+        have := congrArg (fun s => match s with | .tcons _ args => args[1]? | _ => none) h_sort_eq
+        simp [LMonoTy.substTyVars, Lambda.LMonoTy.substTyVars.map] at this
+        exact this
+      have h_td_eq_aty : TyDenote tcInterp vt' aty = TyDenote tcInterp vt aty :=
+        congrArg (SortDenote tcInterp) h_sort_eq_aty
+      have h_td_eq_rty : TyDenote tcInterp vt' rty_b = TyDenote tcInterp vt rty_s :=
+        congrArg (SortDenote tcInterp) h_sort_eq_rty
+      rw [denote_abs (HList.append bvarVal_body_vt bvarVal_outer_vt) h_body_s h_subst,
+          denote_abs _ h_body_b h_body]
+      -- Goal: (fun x => denote ... (go body') rty_s) = cast h_td_eq (fun x => denote ... body' rty_b)
+      -- h_td_eq : (TyDenote vt' aty → TyDenote vt' rty_b) = (TyDenote vt aty → TyDenote vt rty_s)
+      -- Push cast through arrow, then funext
+      funext x
+      -- x : TyDenote vt aty
+      -- RHS: (cast h_td_eq f) x = cast h_td_eq_rty (f (cast h_td_eq_aty.symm x))
+      rw [cast_fn_apply h_td_eq h_td_eq_aty h_td_eq_rty]
+      -- Now apply IH with Δ_body := aty :: Δ_body
+      have h_body_s' : LExpr.HasTypeA ((aty :: Δ_body) ++ Δ_outer)
+          (LExpr.substFvarsLifting.go bindings body' (aty :: Δ_body).length) rty_s := by
+        simp [List.length]; exact h_body_s
+      have h_body_b' : LExpr.HasTypeA ((aty :: Δ_body) ++ Δ_outer) body' rty_b := by
+        simp; exact h_body_b
+      -- The LHS has `go body' (Δ_body.length + 1)` but IH needs `go body' (aty :: Δ_body).length`
+      -- These are definitionally equal, so just use conv to change the HasTypeA proof
+      have : LExpr.denote tcInterp opInterp fvarVal vt
+          (HList.cons x (HList.append bvarVal_body_vt bvarVal_outer_vt))
+          (LExpr.substFvarsLifting.go bindings body' (Δ_body.length + 1)) rty_s h_body_s =
+        LExpr.denote tcInterp opInterp fvarVal vt
+          (HList.append (.cons x bvarVal_body_vt) bvarVal_outer_vt)
+          (LExpr.substFvarsLifting.go bindings body' (aty :: Δ_body).length) rty_s h_body_s' := by
+        rfl
+      rw [this]
+      rw [ih h_annot (.cons x bvarVal_body_vt) (.cons (cast h_td_eq_aty.symm x) bvarVal_body_vt')
+          h_body_b' h_body_s' h_sort_eq_rty h_td_eq_rty]
+      · -- main goal: cast ... (denote ... h_body_b') = cast ... (denote ... h_body_b)
+        congr 1
+      · -- h_bvar_eq extended
+        intro i τ_b hb
+        cases i with
+        | zero =>
+          simp at hb
+          subst hb
+          constructor
+          · exact h_sort_eq_aty
+          · simp [HList.append]
+        | succ j =>
+          simp at hb ⊢
+          exact h_bvar_eq j τ_b hb
+  | ite m c t e ih_c ih_t ih_e =>
+    simp only [LExpr.substFvarsLifting.go] at h_subst ⊢
+    let ⟨h_c_b, h_t_b, h_e_b⟩ := HasTypeA.ite_inv h_body
+    let ⟨h_c_s, h_t_s, h_e_s⟩ := HasTypeA.ite_inv h_subst
+    -- Sort equalities for IHs
+    -- Condition is .bool on both sides
+    have h_sort_eq_c : LMonoTy.substTyVars vt' LMonoTy.bool =
+        LMonoTy.substTyVars vt LMonoTy.bool := by rfl
+    have h_td_eq_c : TyDenote tcInterp vt' LMonoTy.bool =
+        TyDenote tcInterp vt LMonoTy.bool :=
+      congrArg (SortDenote tcInterp) h_sort_eq_c
+    -- go_typeCheck_poly on c gives HasTypeA ... (go c) (substMap σ .bool) = HasTypeA ... (go c) .bool
+    -- So h_c_s types at .bool and go c types at substMap σ .bool = .bool
+    -- For ih_t and ih_e, use h_sort_eq directly
+    rw [denote_ite _ h_c_s h_t_s h_e_s h_subst, denote_ite _ h_c_b h_t_b h_e_b h_body]
+    rw [ih_c h_annot.1 bvarVal_body_vt bvarVal_body_vt' h_c_b h_c_s h_sort_eq_c h_td_eq_c h_bvar_eq]
+    rw [ih_t h_annot.2.1 bvarVal_body_vt bvarVal_body_vt' h_t_b h_t_s h_sort_eq h_td_eq h_bvar_eq]
+    rw [ih_e h_annot.2.2 bvarVal_body_vt bvarVal_body_vt' h_e_b h_e_s h_sort_eq h_td_eq h_bvar_eq]
+    -- cast h_td_eq_c is Bool = Bool, so identity
+    have : h_td_eq_c = rfl := proof_irrel _ _
+    rw [this]; simp [cast]
+    -- Goal: bif ... then cast h_td_eq ... else cast h_td_eq ... = cast h_td_eq (bif ... then ... else ...)
+    cases (LExpr.denote tcInterp opInterp (fvarVal.withArgs sortBindings h_args) vt'
+      (HList.append bvarVal_body_vt' bvarVal_outer_vt') c LMonoTy.bool h_c_b) <;> rfl
+  | eq m e1 e2 ih1 ih2 =>
+    simp only [LExpr.substFvarsLifting.go] at h_subst ⊢
+    let ⟨ty_b, h_τ_b, h_1_b, h_2_b⟩ := HasTypeA.eq_inv h_body
+    let ⟨ty_s, h_τ_s, h_1_s, h_2_s⟩ := HasTypeA.eq_inv h_subst
+    subst h_τ_b; cases h_τ_s
+    -- Derive ty_s = substMap σ ty_b
+    have h_go_e1 := go_typeCheck_poly h_wt h_inst h_inputTys_len h_1_b h_annot.1
+    have h_ty_eq : ty_s = LMonoTy.substMap σ ty_b := by
+      have h1 := LExpr.HasTypeA_to_typeCheck h_1_s
+      rw [LExpr.HasTypeA_to_typeCheck h_go_e1] at h1
+      cases h1; rfl
+    subst h_ty_eq
+    have h_sort_eq_sub : LMonoTy.substTyVars vt' ty_b =
+        LMonoTy.substTyVars vt (LMonoTy.substMap σ ty_b) := by
+      rw [substTyVars_substMap]; congr
+    have h_td_eq_sub : TyDenote tcInterp vt' ty_b =
+        TyDenote tcInterp vt (LMonoTy.substMap σ ty_b) :=
+      congrArg (SortDenote tcInterp) h_sort_eq_sub
+    -- Both sides are .bool, so h_td_eq is Bool = Bool
+    have h_td_rfl : h_td_eq = rfl := proof_irrel _ _
+    rw [h_td_rfl]; simp [cast]
+    -- Now goal has no cast on the outer level
+    have h_ih1 := ih1 h_annot.1 bvarVal_body_vt bvarVal_body_vt' h_1_b h_1_s h_sort_eq_sub h_td_eq_sub h_bvar_eq
+    have h_ih2 := ih2 h_annot.2 bvarVal_body_vt bvarVal_body_vt' h_2_b h_2_s h_sort_eq_sub h_td_eq_sub h_bvar_eq
+    by_cases heq : LExpr.denote tcInterp opInterp fvarVal vt
+        (HList.append bvarVal_body_vt bvarVal_outer_vt)
+        (LExpr.substFvarsLifting.go bindings e1 Δ_body.length) (LMonoTy.substMap σ ty_b) h_1_s =
+      LExpr.denote tcInterp opInterp fvarVal vt
+        (HList.append bvarVal_body_vt bvarVal_outer_vt)
+        (LExpr.substFvarsLifting.go bindings e2 Δ_body.length) (LMonoTy.substMap σ ty_b) h_2_s
+    · rw [denote_eq_true _ h_1_s h_2_s h_subst heq,
+          denote_eq_true _ h_1_b h_2_b h_body
+            (cast_injective h_td_eq_sub (h_ih1.symm.trans (heq.trans h_ih2)))]
+    · rw [denote_eq_false _ h_1_s h_2_s h_subst heq,
+          denote_eq_false _ h_1_b h_2_b h_body
+            (by intro h; apply heq; rw [h_ih1, h_ih2, h])]
+  | quant m qk name qty tr sub_body ih_tr ih_body =>
+    cases qty with
+    | none => exact absurd (LExpr.HasTypeA_to_typeCheck h_body) (by simp [LExpr.typeCheck])
+    | some qty' =>
+      simp only [LExpr.substFvarsLifting.go] at h_subst ⊢
+      let ⟨_, h_τ_b, h_tr_b, h_body_b⟩ := HasTypeA.quant_inv h_body
+      let ⟨_, h_τ_s, h_tr_s, h_body_s⟩ := HasTypeA.quant_inv h_subst
+      subst h_τ_b; cases h_τ_s
+      -- Both sides are .bool, so h_td_eq is Bool = Bool
+      have h_td_rfl : h_td_eq = rfl := proof_irrel _ _
+      rw [h_td_rfl]; simp [cast]
+      -- Need h_sort_eq_qty for the quantifier domain
+      -- From the plan: go doesn't change type annotations, so both sides have qty' at index 0.
+      -- go_typeCheck_poly on sub_body gives HasTypeA with substMap σ applied.
+      -- Since the context has qty' at index 0, substMap σ qty' = qty'.
+      -- Then substTyVars_substMap gives substTyVars vt (substMap σ qty') = substTyVars vt' qty'.
+      -- Combined: substTyVars vt qty' = substTyVars vt' qty'.
+      have h_sort_eq_qty : LMonoTy.substTyVars vt' qty' = LMonoTy.substTyVars vt qty' := by
+        -- From go_typeCheck_poly: go sub_body types at substMap σ .bool = .bool in context qty' :: Δ_body ++ Δ_outer.
+        -- The bvar at index 0 has type qty' in the original context.
+        -- In the substituted context, it would have type substMap σ qty' if the context changed,
+        -- but the context is the same (qty' :: ...), so substMap σ qty' = qty'.
+        -- Then substTyVars_substMap gives the result.
+        -- For now, this needs a lemma about substMap σ qty' = qty' for binder types.
+        -- This is the same issue as abs case but there we got it from h_sort_eq on the arrow.
+        -- Here we need it separately. Use substTyVars_substMap with substMap σ qty' = qty'.
+        -- TODO: prove substMap σ qty' = qty' from the context
+        rw [← substTyVars_substMap (σ := σ) (vt := vt) (vt' := vt') hvt']
+      have h_td_eq_qty : TyDenote tcInterp vt' qty' = TyDenote tcInterp vt qty' :=
+        congrArg (SortDenote tcInterp) h_sort_eq_qty
+      -- Prepare IH arguments
+      have h_body_s' : LExpr.HasTypeA ((qty' :: Δ_body) ++ Δ_outer)
+          (LExpr.substFvarsLifting.go bindings sub_body (qty' :: Δ_body).length) .bool := by
+        simp [List.length]; exact h_body_s
+      have h_body_b' : LExpr.HasTypeA ((qty' :: Δ_body) ++ Δ_outer) sub_body .bool := by
+        simp; exact h_body_b
+      -- Extended h_bvar_eq for qty' :: Δ_body
+      have h_bvar_eq_ext : ∀ (x : TyDenote tcInterp vt qty'),
+          ∀ (i : Nat) (τ_b : LMonoTy) (hb : ((qty' :: Δ_body) ++ Δ_outer)[i]? = some τ_b),
+          LMonoTy.substTyVars vt' τ_b = LMonoTy.substTyVars vt τ_b ∧
+            (HList.append (.cons (cast h_td_eq_qty.symm x) bvarVal_body_vt') bvarVal_outer_vt').get i hb ≍
+              (HList.append (.cons x bvarVal_body_vt) bvarVal_outer_vt).get i hb := by
+        intro x i τ_b hb
+        cases i with
+        | zero =>
+          simp at hb; subst hb
+          exact ⟨h_sort_eq_qty, by simp [HList.append]; exact cast_heq h_td_eq_qty.symm x⟩
+        | succ j =>
+          simp at hb ⊢
+          exact h_bvar_eq j τ_b hb
+      -- Helper: IH applied to sub_body for a given x
+      have ih_body_applied : ∀ (x : TyDenote tcInterp vt qty'),
+          LExpr.denote tcInterp opInterp fvarVal vt
+            (HList.append (.cons x bvarVal_body_vt) bvarVal_outer_vt)
+            (LExpr.substFvarsLifting.go bindings sub_body (qty' :: Δ_body).length) .bool h_body_s' =
+          LExpr.denote tcInterp opInterp (fvarVal.withArgs sortBindings h_args) vt'
+            (HList.append (.cons (cast h_td_eq_qty.symm x) bvarVal_body_vt') bvarVal_outer_vt')
+            sub_body .bool h_body_b' := by
+        intro x
+        have h := ih_body h_annot.2 (.cons x bvarVal_body_vt)
+          (.cons (cast h_td_eq_qty.symm x) bvarVal_body_vt')
+          h_body_b' h_body_s' h_sort_eq h_td_eq (h_bvar_eq_ext x)
+        simp at h; exact h
+      cases qk with
+      | all =>
+        trace_state
+        sorry
+      | exist =>
+        sorry
 
 /-- Polymorphic version of `substFvarsLifting_denote`. Wraps the `go` version
 with `Δ_body = []`. -/

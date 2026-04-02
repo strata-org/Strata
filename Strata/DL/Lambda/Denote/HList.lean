@@ -45,10 +45,16 @@ maps index `i` to `a`. -/
   subst h₁; subst h₂; rfl
 
 /-- `HList.get` commutes with `HList.cast`. -/
+theorem HList.get_cast_gen {α : Type} {f : α → Type} {xs ys : List α} {a b : α}
+    (h : xs = ys) (hl : HList f xs) (i : Nat) (hx : xs[i]? = some a) (hy : ys[i]? = some b)
+    (hab : a = b)
+    : (HList.cast h hl).get i hy = hab ▸ hl.get i hx := by
+  subst h; subst hab; rfl
+
 theorem HList.get_cast {α : Type} {f : α → Type} {xs ys : List α} {a : α}
     (h : xs = ys) (hl : HList f xs) (i : Nat) (hx : xs[i]? = some a) (hy : ys[i]? = some a)
     : (HList.cast h hl).get i hy = hl.get i hx := by
-  subst h; rfl
+  exact get_cast_gen h hl i hx hy rfl
 
 /-- Append two HLists. -/
 @[expose] def HList.append {α : Type} {f : α → Type} {xs ys : List α}
