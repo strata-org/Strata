@@ -41,6 +41,9 @@ type Lst (elem : Type);
 fn lst_select (A : Type, s : Lst A, i : Inte) : A =>
   "Lst.sel" "(" s ", " i ")";
 
+fn coerce (A : Type, B : Type, x : A, y : Lst B) : B =>
+  "coerce" "(" x ", " y ")";
+
 category Binding;
 @[declare(name, tp)]
 op mkBinding (name : Ident, tp : TypeP) : Binding =>
@@ -213,3 +216,30 @@ procedure Test () returns ()
 -/
 #guard_msgs in
 #eval IO.println polyFnOnlyPgm
+
+---------------------------------------------------------------------
+-- Test 4: User-defined fn with uncovered result tvar.
+-- `coerce` has result type B, but B only appears in param `y : Lst B`.
+-- Passing an Inte for `y` causes matchTVars to fail on that param,
+-- leaving B unresolved.  The type mismatch is caught by unifyTypes
+-- before the bare tvar can trigger a panic in instTypeM.
+---------------------------------------------------------------------
+
+/--
+error: Encountered Inte expression when Lst bvar!1 expected.
+-/
+#guard_msgs in
+def uncoveredTVarPgm :=
+#strata
+program TestTVarInfer;
+
+datatype Maybe (a : Type) { Nothing(), Just(val: a) };
+
+const n: Inte;
+
+procedure Test () returns ()
+{
+  assert [t1]: Lst.sel(coerce(n, n), 0) == 0;
+};
+#end
+
