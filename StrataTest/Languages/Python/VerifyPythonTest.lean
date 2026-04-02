@@ -17,7 +17,7 @@ Python → Laurel → Core → SMT pipeline and produces diagnostics.
 namespace Strata.Python.VerifyPythonTest
 
 open StrataTest.Util
-open Strata.Python (processPythonFile withPython)
+open Strata.Python (processPythonFile withPython containsSubstr)
 open Strata.Parser (stringInputContext)
 
 -- Passing assertions produce no diagnostics.
@@ -146,5 +146,23 @@ def main() -> None:
   let diags ← processPythonFile pythonCmd (stringInputContext "test.py" program)
   if diags.size ≠ 0 then
     throw <| .userError s!"Expected 0 diagnostics, got {diags.size}: {diags.map (·.message)}"
+
+-- Calling a user-defined function with too many positional args should error.
+#guard_msgs in
+#eval withPython (warnOnSkip := false) fun pythonCmd => do
+  let program :=
+"def greet(name: str) -> str:
+    return name
+
+def main() -> None:
+    x: str = greet(\"alice\", \"extra\")
+"
+  try
+    let _ ← processPythonFile pythonCmd (stringInputContext "test.py" program)
+    throw <| IO.userError "Expected pipeline error for too many positional arguments"
+  catch e =>
+    let msg := toString e
+    unless Strata.Python.containsSubstr msg "too many positional arguments" do
+      throw <| IO.userError s!"Expected 'too many positional arguments' error, got: {msg}"
 
 end Strata.Python.VerifyPythonTest
