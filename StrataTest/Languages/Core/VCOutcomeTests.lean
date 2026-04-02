@@ -236,9 +236,17 @@ private def dummyObligation : Imperative.ProofObligation Core.Expression :=
 #guard (unsatResult.adjustForPhases [rejectingPhase] dummyObligation).1 == unsatResult
 #guard (unsatResult.adjustForPhases [rejectingPhase] dummyObligation).2 == []
 
--- adjustForPhases: unknown is unchanged regardless of phases
+-- adjustForPhases: unknown stays unknown with rejecting validator, but produces log
 #guard (unknownResult.adjustForPhases [rejectingPhase] dummyObligation).1 == unknownResult
-#guard (unknownResult.adjustForPhases [rejectingPhase] dummyObligation).2 == []
+#guard (unknownResult.adjustForPhases [rejectingPhase] dummyObligation).2 == [unknownResult]
+
+-- adjustForPhases: unknown promoted to sat with accepting validator
+#guard (unknownResult.adjustForPhases [acceptingPhase] dummyObligation).1 == satResult
+#guard (unknownResult.adjustForPhases [acceptingPhase] dummyObligation).2 == [satResult]
+
+-- adjustForPhases: unknown stays unknown with preserving phase (no validator)
+#guard (unknownResult.adjustForPhases [preservingPhase] dummyObligation).1 == unknownResult
+#guard (unknownResult.adjustForPhases [preservingPhase] dummyObligation).2 == [unknownResult]
 
 -- adjustForPhases: empty phases list preserves sat
 #guard (satResult.adjustForPhases [] dummyObligation).1 == satResult

@@ -216,11 +216,12 @@ structure AbstractedPhase where
     intermediate results per phase, ordered outermost-first (deepest phase
     closest to SMT at the end).
 
-    Note: validation is cascading — once a phase converts `.sat m` to
-    `.unknown m`, all subsequent phases see `.unknown m` and pass it
-    through unchanged. Log entries after the first rejection therefore
-    reflect the propagated `.unknown`, not each phase's independent
-    decision. -/
+    Each phase independently validates the model when it has a validator.
+    A phase with `modelToValidate` can demote `.sat m` to `.unknown m`
+    (when the model fails validation) or promote `.unknown m` back to
+    `.sat m` (when the model passes validation against the pre-phase
+    semantics). This means phases are not cascading — each validating
+    phase makes its own decision based on the model. -/
 def AbstractedPhase.validateModel (phases : List AbstractedPhase)
     (result : SMT.Result)
     (obligation : ProofObligation Expression)
@@ -230,6 +231,7 @@ def AbstractedPhase.validateModel (phases : List AbstractedPhase)
     let validation := p.getValidation obligation
     let r' := match r, validation with
       | .sat m, .modelToValidate f => if f m then .sat m else .unknown m
+      | .unknown m, .modelToValidate f => if f m then .sat m else .unknown m
       | _, _ => r
     (r', r' :: log)
   -- Reverse log so outermost is first, deepest is last
@@ -762,14 +764,16 @@ private def buildSolverLog (satResult valResult : SMT.Result)
   (if validityCheck then [valResult] else []) ++
   satPhaseLog ++ valPhaseLog
 
-/-- Convert an unvalidated SMT sat result to unknown (preserving the model)
-    when any pipeline phase cannot validate the model. Returns the adjusted
-    result and a log of intermediate results per phase. -/
+/-- Adjust an SMT result through pipeline phase validation. A `.sat` result
+    may be demoted to `.unknown` if a phase cannot validate the model, and
+    an `.unknown` result may be promoted back to `.sat` if a phase can
+    validate the model. Returns the adjusted result and a log of
+    intermediate results per phase. -/
 def SMT.Result.adjustForPhases (r : SMT.Result)
     (phases : List AbstractedPhase)
     (obligation : ProofObligation Expression) : SMT.Result × List SolverPhaseLog :=
   match r with
-  | .sat _ => AbstractedPhase.validateModel phases r obligation
+  | .sat _ | .unknown _ => AbstractedPhase.validateModel phases r obligation
   | other => (other, [])
 
 /--
