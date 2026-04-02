@@ -466,12 +466,22 @@ def heapTransformProcedure (model: SemanticModel) (proc : Procedure) : Transform
     -- This procedure doesn't read or write the heap - no changes needed
     return proc
 
-def heapParameterization (model: SemanticModel) (program : Program) : Program :=
+def heapParameterization (model: SemanticModel) (program : Program) : Program × List DiagnosticModel :=
   let program := { program with
     types := program.types
     staticProcedures := program.staticProcedures }
-  -- Filter out non-composite modifies entries so that global variables
-  -- of primitive type do not incorrectly trigger heap parameterization.
+  -- Collect diagnostics for non-composite modifies entries and filter them out
+  -- so that global variables of primitive type do not incorrectly trigger heap
+  -- parameterization.
+  let collectBodyDiags (body : Body) : List DiagnosticModel :=
+    match body with
+    | .Opaque _ _ mods => mods.filterMap fun e =>
+        let ty := (computeExprType model e).val
+        if isHeapRelevantType ty then none
+        else some (e.md.toDiagnostic s!"modifies clause entry has non-composite type '{formatHighTypeVal ty}' and will be ignored")
+    | _ => []
+  let collectProcDiags (proc : Procedure) : List DiagnosticModel :=
+    collectBodyDiags proc.body
   let filterBodyModifies (body : Body) : Body :=
     match body with
     | .Opaque posts impl mods =>
@@ -479,6 +489,13 @@ def heapParameterization (model: SemanticModel) (program : Program) : Program :=
     | other => other
   let filterProcModifies (proc : Procedure) : Procedure :=
     { proc with body := filterBodyModifies proc.body }
+  -- Collect diagnostics from all procedures before filtering
+  let staticDiags := program.staticProcedures.flatMap collectProcDiags
+  let instanceDiags := program.types.foldl (fun acc td =>
+    match td with
+    | .Composite ct => acc ++ ct.instanceProcedures.flatMap collectProcDiags
+    | _ => acc) ([] : List DiagnosticModel)
+  let diags := staticDiags ++ instanceDiags
   let program := { program with
     staticProcedures := program.staticProcedures.map filterProcModifies }
   -- Collect instance procedures from composite types for heap analysis,
@@ -511,9 +528,9 @@ def heapParameterization (model: SemanticModel) (program : Program) : Program :=
   -- Generate Box datatype from all constructors used during transformation
   let boxDatatype : TypeDefinition :=
     .Datatype { name := "Box", typeArgs := [], constructors := state2.usedBoxConstructors }
-  { program with
+  ({ program with
     staticProcedures := heapConstants.staticProcedures ++ procs',
-    types := fieldDatatype :: boxDatatype :: heapConstants.types ++ types' }
+    types := fieldDatatype :: boxDatatype :: heapConstants.types ++ types' }, diags)
 
 end Strata.Laurel
 

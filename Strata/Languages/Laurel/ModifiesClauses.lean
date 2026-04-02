@@ -48,6 +48,16 @@ inductive ModifiesEntry where
   | set (expr : StmtExprMd)          -- a Set Composite expression
 
 /--
+Classify a heap-relevant type into a `ModifiesEntry`, or `none` for
+non-heap-relevant types. This is the single source of truth for which types
+produce modifies entries and how they are classified.
+-/
+def classifyModifiesType (expr : StmtExprMd) : HighType → Option ModifiesEntry
+  | .UserDefined _ => some (.single expr)
+  | .TSet _ => some (.set expr)
+  | _ => none
+
+/--
 Extract modifies entries from the list of modifies StmtExprs, using the type
 environment and type definitions to distinguish Composite from Set Composite.
 Non-composite types (e.g., global variables of primitive type) are filtered out
@@ -56,12 +66,7 @@ since the frame condition only applies to heap objects.
 def extractModifiesEntries (model: SemanticModel)
     (modifiesExprs : List StmtExprMd) : List ModifiesEntry :=
   modifiesExprs.filterMap fun expr =>
-    let ty := (computeExprType model expr).val
-    if !isHeapRelevantType ty then none
-    else match ty with
-    | .TSet _ => some (.set expr)
-    | .UserDefined _ => some (.single expr)
-    | _ => none
+    classifyModifiesType expr (computeExprType model expr).val
 /--
 Build the "obj is not modified" condition for a single modifies entry as a Laurel StmtExpr.
 - For a single Composite `e`: `$obj != e`

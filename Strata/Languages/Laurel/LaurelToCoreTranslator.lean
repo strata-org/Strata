@@ -694,7 +694,7 @@ def translateWithLaurel (options: LaurelTranslateOptions) (program : Program): T
   let (program, model) := (result.program, result.model)
   let diamondErrors := validateDiamondFieldAccesses model program
 
-  let program := heapParameterization model program
+  let (program, heapParamDiags) := heapParameterization model program
   let result := resolve program (some model)
   let (program, model) := (result.program, result.model)
 
@@ -720,7 +720,7 @@ def translateWithLaurel (options: LaurelTranslateOptions) (program : Program): T
 
   let initState : TranslateState := {model := model }
   let (coreProgramOption, translateState) := runTranslateM initState (translateLaurelToCore options program)
-  let allDiagnostics := resolutionErrors ++ diamondErrors ++ modifiesDiags ++ constrainedTypeDiags ++ translateState.diagnostics
+  let allDiagnostics := resolutionErrors ++ diamondErrors ++ heapParamDiags ++ modifiesDiags ++ constrainedTypeDiags ++ translateState.diagnostics
   let coreProgramOption := if translateState.coreProgramHasSuperfluousErrors then none else coreProgramOption
   (coreProgramOption, allDiagnostics, program)
   where
