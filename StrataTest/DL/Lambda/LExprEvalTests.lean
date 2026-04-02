@@ -424,8 +424,9 @@ example: stuck test15 := by
   case reduce_2 =>
     rename_i a
     cases a <;> try contradiction
-    · rename_i a a2 _
-      cases a2; cases a
+    case expand_fn =>
+      rename_i hbody _ hcall _
+      cases hcall; cases hbody
     · rename_i a a2 a3 he2
       cases a3
       cases a2; unfold denoteInt at he2; contradiction
@@ -699,6 +700,37 @@ example: steps_well test_ternary_fv := by
   · inhabited_metadata
   take_refl
 
+
+/-! ### Polymorphic function inlining: type substitution
+
+When a polymorphic function is inlined via `expand_fn`, type variables in the
+body are substituted with their concrete instantiations derived from the
+operator's type annotation at the call site.
+-/
+
+-- polyEq<a>(x : a, y : a) : bool := ∀ (z : a), z == z
+private def polyFactory : @Factory TestParams :=
+  #[{ name := "polyEq",
+      typeArgs := ["a"],
+      attr := #[.inline],
+      inputs := [("x", mty[%a]), ("y", mty[%a])],
+      output := mty[bool],
+      body := some esM[∀ (%a): (%0 == %0)] }]
+
+private def polyState : LState TestParams :=
+  match LState.addFactory LState.init polyFactory with
+  | .error e => panic s!"{e}"
+  | .ok ok => ok
+
+-- polyEq<bool>(#true, #false): type substitution maps %a to bool in the body
+def test_poly_tysubst := TestCase.mk
+  polyState
+  esM[(((~polyEq : bool → bool → bool) #true) #false)]
+  esM[∀ (bool): (%0 == %0)]
+
+/-- info: true -/
+#guard_msgs in
+#eval check test_poly_tysubst
 
 end EvalTest
 ---------------------------------------------------------------------

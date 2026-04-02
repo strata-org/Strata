@@ -9,6 +9,8 @@ public import Strata.DL.Lambda.LExprWF
 import all Strata.DL.Lambda.LExprWF
 import all Strata.DL.Lambda.LExpr
 public import Strata.DL.Lambda.LTy
+public import Strata.DL.Lambda.LTyUnify
+import all Strata.DL.Lambda.LTyUnify
 public import Strata.DDM.AST
 public import Strata.DDM.Util.Array
 public import Strata.DL.Util.Func
@@ -256,6 +258,43 @@ theorem Factory.callOfLFunc_smaller {T} {F : @Factory T.base} {e : LExpr T} {op 
   · cases (Nat.ble args.length (List.length F'.inputs)) <;> simp
     intros op_eq args_eq F_eq
     subst op args F'; exact (getLFuncCall_smaller Hfunc)
+
+/--
+Apply type substitution `S` to all type annotations in an `LExpr`.
+-/
+def LExpr.applyTySubst {T : LExprParams} (e : LExpr T.mono) (S : Subst) : LExpr T.mono :=
+  if S.hasEmptyScopes then e else go e
+where
+  go (e : LExpr T.mono) : LExpr T.mono :=
+    match e with
+    | .const m c => .const m c
+    | .op m o uty => .op m o (uty.map (LMonoTy.subst S))
+    | .bvar m b => .bvar m b
+    | .fvar m x uty => .fvar m x (uty.map (LMonoTy.subst S))
+    | .app m e1 e2 => .app m (go e1) (go e2)
+    | .abs m name uty e => .abs m name (uty.map (LMonoTy.subst S)) (go e)
+    | .quant m qk name argTy tr e => .quant m qk name (argTy.map (LMonoTy.subst S)) (go tr) (go e)
+    | .ite m c t f => .ite m (go c) (go t) (go f)
+    | .eq m e1 e2 => .eq m (go e1) (go e2)
+
+/--
+Derive a type substitution by unifying the instantiated operator type against the
+function's generic type. Used when inlining a polymorphic function body to
+instantiate type variables.
+
+Returns `some Subst.empty` when `fn.typeArgs` is empty (monomorphic — no-op).
+Returns `none` if the type substitution cannot be derived.
+-/
+def LFunc.computeTypeSubst {T : LExprParams} (fn : LFunc T) (callee : LExpr T.mono) : Option Subst :=
+  if fn.typeArgs.isEmpty then some Subst.empty
+  else
+    match callee with
+    | .op _ _ (some instTy) =>
+      let genericTy := LMonoTy.mkArrow' fn.output (fn.inputs.values.reverse)
+      match Constraints.unify [(instTy, genericTy)] SubstInfo.empty with
+      | .ok substInfo => some substInfo.subst
+      | .error _ => none
+    | _ => none
 
 end -- public section
 end Lambda
