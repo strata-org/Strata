@@ -185,13 +185,13 @@ info: === Outcome Table (assert) ===
 /-! ### AbstractedPhase and ModelValidation tests -/
 
 private def preservingPhase : AbstractedPhase :=
-  {}
+  { name := "Preserving" }
 
 private def rejectingPhase : AbstractedPhase :=
-  { getValidation := fun _ => .modelToValidate (fun _ => false) }
+  { name := "Rejecting", getValidation := fun _ => .modelToValidate (fun _ => false) }
 
 private def acceptingPhase : AbstractedPhase :=
-  { getValidation := fun _ => .modelToValidate (fun _ => true) }
+  { name := "Accepting", getValidation := fun _ => .modelToValidate (fun _ => true) }
 
 private def needsValidation (phases : List AbstractedPhase)
     (obligation : Imperative.ProofObligation Core.Expression) : Bool :=
@@ -218,19 +218,20 @@ private def dummyObligation : Imperative.ProofObligation Core.Expression :=
 
 -- adjustForPhases: sat stays sat with ModelPreserving
 #guard (satResult.adjustForPhases [preservingPhase] dummyObligation).1 == satResult
-#guard (satResult.adjustForPhases [preservingPhase] dummyObligation).2 == [satResult]
+#guard (satResult.adjustForPhases [preservingPhase] dummyObligation).2 == [{ phase := "Preserving", result := satResult }]
 
 -- adjustForPhases: sat becomes unknown with rejecting validator
 #guard (satResult.adjustForPhases [rejectingPhase] dummyObligation).1 == unknownResult
-#guard (satResult.adjustForPhases [rejectingPhase] dummyObligation).2 == [unknownResult]
+#guard (satResult.adjustForPhases [rejectingPhase] dummyObligation).2 == [{ phase := "Rejecting", result := unknownResult }]
 
 -- adjustForPhases: sat stays sat with accepting validator
 #guard (satResult.adjustForPhases [acceptingPhase] dummyObligation).1 == satResult
-#guard (satResult.adjustForPhases [acceptingPhase] dummyObligation).2 == [satResult]
+#guard (satResult.adjustForPhases [acceptingPhase] dummyObligation).2 == [{ phase := "Accepting", result := satResult }]
 
 -- adjustForPhases: sat becomes unknown when any phase rejects
 #guard (satResult.adjustForPhases [preservingPhase, rejectingPhase] dummyObligation).1 == unknownResult
-#guard (satResult.adjustForPhases [preservingPhase, rejectingPhase] dummyObligation).2 == [unknownResult, unknownResult]
+#guard (satResult.adjustForPhases [preservingPhase, rejectingPhase] dummyObligation).2 ==
+  [{ phase := "Rejecting", result := unknownResult }, { phase := "Preserving", result := unknownResult }]
 
 -- adjustForPhases: unsat is unchanged regardless of phases
 #guard (unsatResult.adjustForPhases [rejectingPhase] dummyObligation).1 == unsatResult
@@ -238,15 +239,15 @@ private def dummyObligation : Imperative.ProofObligation Core.Expression :=
 
 -- adjustForPhases: unknown stays unknown with rejecting validator, but produces log
 #guard (unknownResult.adjustForPhases [rejectingPhase] dummyObligation).1 == unknownResult
-#guard (unknownResult.adjustForPhases [rejectingPhase] dummyObligation).2 == [unknownResult]
+#guard (unknownResult.adjustForPhases [rejectingPhase] dummyObligation).2 == [{ phase := "Rejecting", result := unknownResult }]
 
 -- adjustForPhases: unknown promoted to sat with accepting validator
 #guard (unknownResult.adjustForPhases [acceptingPhase] dummyObligation).1 == satResult
-#guard (unknownResult.adjustForPhases [acceptingPhase] dummyObligation).2 == [satResult]
+#guard (unknownResult.adjustForPhases [acceptingPhase] dummyObligation).2 == [{ phase := "Accepting", result := satResult }]
 
 -- adjustForPhases: unknown stays unknown with preserving phase (no validator)
 #guard (unknownResult.adjustForPhases [preservingPhase] dummyObligation).1 == unknownResult
-#guard (unknownResult.adjustForPhases [preservingPhase] dummyObligation).2 == [unknownResult]
+#guard (unknownResult.adjustForPhases [preservingPhase] dummyObligation).2 == [{ phase := "Preserving", result := unknownResult }]
 
 -- adjustForPhases: empty phases list preserves sat
 #guard (satResult.adjustForPhases [] dummyObligation).1 == satResult

@@ -194,6 +194,7 @@ def Stmt.removeLoops
     which is an over-approximation. -/
 def loopElimPipelinePhase : PipelinePhase where
   transform p := pure (false, p)
+  phase.name := "LoopElim"
   phase.getValidation obligation :=
     if obligationHasLabelPrefix obligation loopElimInvariantPrefix
        || obligationHasLabelPrefix obligation loopElimGuardPrefix then

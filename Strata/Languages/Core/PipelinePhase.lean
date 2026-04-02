@@ -33,6 +33,8 @@ inductive ModelValidation where
     whether its models need validation, based on whether the obligation is
     in the path of something abstracted by this phase. -/
 structure AbstractedPhase where
+  /-- Human-readable name identifying this phase in solver logs. -/
+  name : String
   /-- Given an obligation, determine the model validation for this phase. -/
   getValidation : ProofObligation Expression → ModelValidation := fun _ => .modelPreserving
 
@@ -54,9 +56,10 @@ structure PipelinePhase where
 
 /-- A model-preserving pipeline phase: the transform is applied but it
     cannot introduce spurious models (e.g. it only removes information). -/
-def modelPreservingPipelinePhase
+def modelPreservingPipelinePhase (name : String)
     (t : Program → Transform.CoreTransformM (Bool × Program)) : PipelinePhase where
   transform := t
+  phase.name := name
   phase.getValidation _ := .modelPreserving
 
 end -- public section
