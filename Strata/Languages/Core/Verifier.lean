@@ -214,7 +214,13 @@ structure AbstractedPhase where
     recorded top-down, so we reverse them to validate from the last
     (innermost) phase first. Returns the adjusted result and a log of
     intermediate results per phase, ordered outermost-first (deepest phase
-    closest to SMT at the end). -/
+    closest to SMT at the end).
+
+    Note: validation is cascading — once a phase converts `.sat m` to
+    `.unknown m`, all subsequent phases see `.unknown m` and pass it
+    through unchanged. Log entries after the first rejection therefore
+    reflect the propagated `.unknown`, not each phase's independent
+    decision. -/
 def AbstractedPhase.validateModel (phases : List AbstractedPhase)
     (result : SMT.Result)
     (obligation : ProofObligation Expression)
@@ -256,9 +262,10 @@ Unreachable covers display as ❌ (error) instead of ⛔ (warning).
 structure VCOutcome where
   satisfiabilityProperty : SMT.Result
   validityProperty : SMT.Result
-  /-- Ordered log of solver results per verification phase, preserving the
-      raw solver output before any soundness adjustments (e.g. sat→unknown).
-      Consumed by future diagnostic and traceability tooling. -/
+  /-- Ordered log of solver results: the raw solver results followed by
+      per-phase adjusted results (e.g. sat→unknown when a phase cannot
+      validate the model). Consumed by future diagnostic and traceability
+      tooling. -/
   solverLog : List SolverPhaseLog := []
   deriving Repr
 
