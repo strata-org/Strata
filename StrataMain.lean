@@ -28,6 +28,7 @@ import Strata.Backends.CBMC.CollectSymbols
 import Strata.Backends.CBMC.GOTO.CoreToGOTOPipeline
 
 import Strata.SimpleAPI
+import Strata.Util.Profile
 
 open Strata
 
@@ -316,6 +317,23 @@ def tryReadPythonSource (ionPath : String) : IO (Option (String × String)) := d
     catch _ =>
       return none
 
+/-- Format related position strings from metadata, if present. -/
+def formatRelatedPositions (md : Imperative.MetaData Core.Expression)
+    (mfm : Option (String × Lean.FileMap)) : String :=
+  let ranges := Imperative.getRelatedFileRanges md
+  if ranges.isEmpty then "" else
+  match mfm with
+  | none => ""
+  | some (_, fm) =>
+    let lines := ranges.filterMap fun fr =>
+      if fr.range.isNone then none else
+      match fr.file with
+      | .file "" => some "\n  Related location: in prelude file"
+      | .file _ =>
+        let pos := fm.toPosition fr.range.start
+        some s!"\n  Related location: line {pos.line}, col {pos.column}"
+    String.join lines.toList
+
 def pyAnalyzeCommand : Command where
   name := "pyAnalyze"
   args := [ "file" ]
@@ -403,8 +421,9 @@ def pyAnalyzeCommand : Command where
                   ("", s!" (at byte offset)")
           | none => ("", "")
         let outcomeStr := vcResult.formatOutcome
+        let relatedStr := formatRelatedPositions vcResult.obligation.metadata mfm
         s := s ++ s!"\n{locationPrefix}{vcResult.obligation.label}: \
-                      {outcomeStr}{locationSuffix}\n"
+                      {outcomeStr}{locationSuffix}{relatedStr}\n"
       IO.println s
       -- Output in SARIF format if requested
       if outputSarif then
@@ -461,7 +480,14 @@ private def exitPyAnalyzeKnownLimitation {α} (message : String) : IO α := do
     success / failure / inconclusive (guaranteeing disjointness).
     Unreachable count is reported as supplementary info. -/
 private def printPyAnalyzeSummary (vcResults : Array Core.VCResult)
-    (classifier : ResultClassifier := {}) : IO Unit := do
+    (checkMode : VerificationMode := .deductive) : IO Unit := do
+  let classifier : ResultClassifier :=
+    match checkMode with
+    | .bugFinding | .bugFindingAssumingCompleteSpec =>
+      { isFailure := fun r => match r.outcome with
+          | .ok o => o.alwaysFalseAndReachable
+          | _     => false }
+    | _ => {}
   -- 1. Partition out implementation errors (broken results, not classifiable).
   let (implError, classifiable) :=
     vcResults.partition (fun r => r.isImplementationError || r.hasSMTError)
@@ -496,6 +522,8 @@ def pyAnalyzeLaurelCommand : Command where
   args := [ "file" ]
   flags := [{ name := "verbose", help := "Enable verbose output." },
             { name := "no-solve", help := "Generate SMT-Lib files but do not invoke the solver." },
+            { name := "profile", help := "Print elapsed time for each pipeline step." },
+            { name := "quiet", help := "Suppress warnings on stderr." },
             checkModeFlag, checkLevelFlag,
             { name := "spec-dir",
               help := "Directory containing compiled PySpec Ion files.",
@@ -517,6 +545,8 @@ def pyAnalyzeLaurelCommand : Command where
   help := "Verify a Python Ion program via the Laurel pipeline. Translates Python to Laurel to Core, then runs SMT verification."
   callback := fun v pflags => do
     let verbose := pflags.getBool "verbose"
+    let profile := pflags.getBool "profile"
+    let quiet := pflags.getBool "quiet"
     let outputSarif := pflags.getBool "sarif"
     let filePath := v[0]
     let pySourceOpt ← tryReadPythonSource filePath
@@ -536,7 +566,9 @@ def pyAnalyzeLaurelCommand : Command where
       | some (pyPath, srcText) => some (pyPath, .ofString srcText)
       | none => none
     let combinedLaurel ←
-      match ← Strata.pyAnalyzeLaurel filePath dispatchModules pyspecModules sourcePath (specDir := specDir) |>.toBaseIO with
+      match ← Strata.pyAnalyzeLaurel filePath dispatchModules pyspecModules sourcePath
+                (specDir := specDir) (profile := profile)
+                (quiet := quiet) |>.toBaseIO with
       | .ok r => pure r
       | .error (.userCode range msg) =>
         let location := if range.isNone then "" else
@@ -545,6 +577,19 @@ def pyAnalyzeLaurelCommand : Command where
             let pos := fm.toPosition range.start
             s!" at line {pos.line}, col {pos.column}"
           | none => ""
+        -- Emit structured set-info metadata before DETAIL/RESULT lines.
+        -- Also write the set-info metadata to user_errors.txt.
+        let filePath' := sourcePath.getD filePath
+        let mut lines := #[
+          s!"(set-info :file {Strata.escapeSMTStringLit filePath'})"
+        ]
+        unless range.isNone do
+          lines := lines.push s!"(set-info :start {range.start})"
+          lines := lines.push s!"(set-info :stop {range.stop})"
+        lines := lines.push s!"(set-info :error-message {Strata.escapeSMTStringLit msg})"
+        for line in lines do
+          IO.println line
+        IO.FS.writeFile "user_errors.txt" (String.intercalate "\n" lines.toList ++ "\n")
         exitPyAnalyzeUserError s!"{msg}{location}"
       | .error (.knownLimitation msg) =>
         exitPyAnalyzeKnownLimitation msg
@@ -559,8 +604,9 @@ def pyAnalyzeLaurelCommand : Command where
       let path := s!"{dir}/{baseName}.laurel"
       IO.FS.writeFile path (toString (Std.Format.pretty f!"{combinedLaurel}") ++ "\n")
 
-    let (coreProgramOption, laurelTranslateErrors, loweredLaurel) :=
-      Strata.translateCombinedLaurelWithLowered combinedLaurel
+    let (coreProgramOption, laurelTranslateErrors, loweredLaurel) ←
+      profileStep profile "Laurel to Core translation" do
+        pure (Strata.translateCombinedLaurelWithLowered combinedLaurel)
 
     if let some dir := keepDir then
       let path := s!"{dir}/{baseName}.lowered.laurel"
@@ -576,8 +622,11 @@ def pyAnalyzeLaurelCommand : Command where
       IO.println "\n==== Core Program ===="
       IO.print coreProgram
 
-    -- Split prelude / user procedure names at FIRST_END_MARKER
-    let (preludeNames, userProcNames) := Strata.splitProcNames coreProgram
+    -- Split prelude / user procedure names.
+    -- Only procedures whose file range matches the user source are targets.
+    let userSourcePath := sourcePath.getD filePath
+    let (preludeNames, userProcNames) :=
+      Strata.splitProcNames coreProgram [userSourcePath]
 
     if let some dir := keepDir then
       let path := s!"{dir}/{baseName}.core"
@@ -586,7 +635,7 @@ def pyAnalyzeLaurelCommand : Command where
     -- Inline pyspec procedures so their precondition assertions are checked
     -- at call sites with concrete arguments.
     let pyspecFiles := pflags.getRepeated "pyspec"
-    let coreProgram ←
+    let coreProgram ← profileStep profile "Inline PySpec procedures" do
       if pyspecFiles.size > 0 then
         match Core.inlineProcedures coreProgram
               ⟨.some (fun name _ => name ≠ "__main__" && !preludeNames.contains name)⟩ with
@@ -618,74 +667,50 @@ def pyAnalyzeLaurelCommand : Command where
         checkMode := checkMode, checkLevel := checkLevel,
         skipSolver := noSolve,
         alwaysGenerateSMT := noSolve,
-        uniqueBoundNames := uniqueBoundNames }
+        uniqueBoundNames := uniqueBoundNames,
+        profile := profile }
     let options : VerifyOptions := match pflags.getString "vc-directory" with
       | .some dir => { baseOptions with vcDirectory := some (dir : System.FilePath) }
       | .none => match keepDir with
         | some dir => { baseOptions with vcDirectory := some (s!"{dir}/{baseName}" : System.FilePath) }
         | none => baseOptions
-    let vcResults ←
+    let vcResults ← profileStep profile "SMT verification" do
       match ← Core.verifyProgram coreProgram options
                 (moreFns := Strata.Python.ReFactory)
                 (proceduresToVerify := some userProcNames) |>.toBaseIO with
       | .ok r => pure r
       | .error msg => exitPyAnalyzeInternalError msg
 
-    let classifier : ResultClassifier :=
-      match checkMode with
-      | .bugFinding | .bugFindingAssumingCompleteSpec =>
-        { isFailure := fun r => match r.outcome with
-            | .ok o => o.alwaysFalseAndReachable
-            | _     => false }
-      | _ => {}
-
-    -- Print results
+    -- Print translation errors (always on stderr)
     if !laurelTranslateErrors.isEmpty then
-      IO.println "\n==== Errors ===="
+      IO.eprintln "\n==== Errors ===="
       for err in laurelTranslateErrors do
-        IO.println err
+        IO.eprintln err
 
-    -- Print results
-    IO.println "\n==== Verification Results ===="
-    let mut s := ""
-    for vcResult in vcResults do
-      let propertySummaryOption := vcResult.obligation.metadata.getPropertySummary
-      let propertyDescription := propertySummaryOption.getD vcResult.obligation.label
-      let (locationPrefix, locationSuffix) := match Imperative.getFileRange vcResult.obligation.metadata with
-        | some fr =>
-          if fr.range.isNone then ("", "")
-          else
-            match mfm with
-            | some (_, fm) =>
-              match fr.file with
-              | .file "" =>
-                if classifier.isFailure vcResult then
-                  (s!"Assertion failed in prelude file: ", "")
-                else
-                  ("", s!" (in prelude file)")
-              | .file path =>
-                let pos := fm.toPosition fr.range.start
-                if classifier.isFailure vcResult then
-                  (s!"Assertion failed at line {pos.line}, col {pos.column}: ", "")
-                else
-                  ("", s!" (at line {pos.line}, col {pos.column})")
-            | none =>
-              if classifier.isFailure vcResult then
-                (s!"Assertion failed: ", "")
-              else
-                ("", "")
-        | none => ("", "")
-      let outcomeStr := vcResult.formatOutcome
-      s := s ++ s!"{locationPrefix}{propertyDescription}: \
-                    {outcomeStr}{locationSuffix}\n"
-    IO.println s
+    -- Print per-VC results by default, unless SARIF mode is used
+    if !outputSarif then
+      let mut s := ""
+      for vcResult in vcResults do
+        let fileMap := mfm.map (·.2)
+        let location := match Imperative.getFileRange vcResult.obligation.metadata with
+          | some fr =>
+            if fr.range.isNone then ""
+            else s!"{fr.format fileMap (includeEnd? := false)}"
+          | none => ""
+        let messageSuffix := match vcResult.obligation.metadata.getPropertySummary with
+          | some msg => s!" - {msg}"
+          | none => s!" - {vcResult.obligation.label}"
+        let outcomeStr := vcResult.formatOutcome
+        let loc := if !location.isEmpty then s!"{location}: " else "unknown location: "
+        s := s ++ s!"{loc}{outcomeStr}{messageSuffix}\n"
+      IO.print s
     -- Output in SARIF format if requested
     if outputSarif then
       let files := match mfm with
         | some (pyPath, fm) => Map.empty.insert (Strata.Uri.file pyPath) fm
         | none => Map.empty
       Core.Sarif.writeSarifOutput checkMode files vcResults (filePath ++ ".sarif")
-    printPyAnalyzeSummary vcResults classifier
+    printPyAnalyzeSummary vcResults checkMode
 
 def pyAnalyzeToGotoCommand : Command where
   name := "pyAnalyzeToGoto"

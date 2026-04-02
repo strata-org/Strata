@@ -37,6 +37,7 @@ instance : HasFvar Core.Expression where
 
 instance : HasSubstFvar Core.Expression where
   substFvar := Lambda.LExpr.substFvar
+  substFvars := Lambda.LExpr.substFvars
 
 instance : HasIntOrder Core.Expression where
   eq    e1 e2 := .eq () e1 e2
@@ -56,6 +57,7 @@ instance : HasBool Core.Expression where
   tt := Core.true
   ff := Core.false
   tt_is_not_ff := by unfold Core.true Core.false; unfold Lambda.LExpr.boolConst; simp
+  boolTy := .forAll [] (.tcons "bool" [])
 
 instance : HasNot Core.Expression where
   not
@@ -235,7 +237,7 @@ def closureCapture
   let allFreeVars := (bodyFreeVars ++ axiomFreeVars).eraseDups
   -- Build substitutions from the store
   let substs := buildSubstitutions σ allFreeVars
-  -- Apply substitutions to body and axioms
+  -- The replacement expressions must be closed (no dangling bvars).
   { decl with
     body := decl.body.map (fun b => HasSubstFvar.substFvars b substs)
     axioms := decl.axioms.map (fun ax => HasSubstFvar.substFvars ax substs) }

@@ -797,12 +797,12 @@ partial def stmtToCST {M} [Inhabited M] (s : Core.Statement)
     let nameAnn : Ann String M := ⟨default, name.toPretty⟩
     let tyCST ← lTyToCoreType ty
     let result ← match expr with
-    | none => do
+    | Imperative.ExprOrNondet.nondet => do
       let bind := Bind.bind_mk default nameAnn
                   ⟨default, none⟩ tyCST
       let dl := DeclList.declAtom default bind
       pure (.varStatement default dl)
-    | some e =>
+    | Imperative.ExprOrNondet.det e =>
       let exprCST ← lexprToExpr e 0
       pure (.initStatement default tyCST nameAnn exprCST)
     -- Push the newly declared variable to the *end of the bound variables
@@ -852,16 +852,24 @@ partial def stmtToCST {M} [Inhabited M] (s : Core.Statement)
     let blockCST ← blockToCST stmts
     pure (.block_statement default labelAnn blockCST)
   | .ite cond thenb elseb _md => do
-    let condCST ← lexprToExpr cond 0
     let thenCST ← blockToCST thenb
     let elseCST ← elseToCST elseb
-    pure (.if_statement default condCST thenCST elseCST)
+    match cond with
+    | .det e =>
+      let condCST ← lexprToExpr e 0
+      pure (.if_statement default (.condDet default condCST) thenCST elseCST)
+    | .nondet =>
+      pure (.if_statement default (.condNondet default) thenCST elseCST)
   | .loop guard measure invariant body _md => do
-    let guardCST ← lexprToExpr guard 0
     let measureCST ← measureToCST measure
     let invs ← invariantsToCST invariant
     let bodyCST ← blockToCST body
-    pure (.while_statement default guardCST measureCST invs bodyCST)
+    match guard with
+    | .det e =>
+      let guardCST ← lexprToExpr e 0
+      pure (.while_statement default (.condDet default guardCST) measureCST invs bodyCST)
+    | .nondet =>
+      pure (.while_statement default (.condNondet default) measureCST invs bodyCST)
   | .exit label _md => do
     match label with
     | some l =>
@@ -1081,7 +1089,7 @@ def distinctToCST {M} [Inhabited M] (name : CoreIdent) (es : List (Lambda.LExpr 
 
 /-- Convert a variable declaration to CST -/
 def varToCST {M} [Inhabited M]
-    (name : CoreIdent) (ty : Lambda.LTy) (_e : Option (Lambda.LExpr CoreLParams.mono))
+    (name : CoreIdent) (ty : Lambda.LTy) (_e : Imperative.ExprOrNondet Expression)
     (_md : Imperative.MetaData Expression) : ToCSTM M (Command M) := do
   -- Register name as free variable
   modify (·.addGlobalFreeVars #[name.toPretty])

@@ -178,20 +178,6 @@ instance [ToFormat T.TypeType]: ToFormat (Except Strata.DiagnosticModel (LExpr T
               | .error err => f!"{err.message}"
 
 /--
-Embed `core` in an abstraction whose depth is `arity`. Used to implement
-eta-expansion.
-
-E.g., `mkAbsOfArity 2 core` will give `λxλy ((core y) x)`.
--/
-def mkAbsOfArity (arity : Nat) (core : LExpr T) : (LExpr T) :=
-  go 0 arity core
-  where go (bvarcount arity : Nat) (core : LExpr T) : (LExpr T) :=
-  match arity with
-  | 0 => core
-  | n + 1 =>
-    go (bvarcount + 1) n (.abs core.metadata "" .none (.app core.metadata core (.bvar core.metadata bvarcount)))
-
-/--
 A metadata merger. It will be invoked 'subst s e' is invoked, to create a new
 metadata.
 -/
@@ -238,7 +224,7 @@ def eval (n : Nat) (σ : LState TBase) (e : (LExpr TBase.mono))
           -- Inline a function only if it has a body.
           let body := lfunc.body.get (by simp_all)
           let input_map := lfunc.inputs.keys.zip args
-          let new_e := substFvars body input_map
+          let new_e := substFvarsLifting body input_map
           eval n' σ new_e
         else
           let new_e := @mkApp TBase.mono e.metadata op_expr args
@@ -309,16 +295,13 @@ def evalApp (n' : Nat) (σ : LState TBase) (e e1 e2 : LExpr TBase.mono) : LExpr 
       let newMeta := mergeMetadataForSubst mAbs e2'.metadata metaReplacementVar
       replaceMetadata1 newMeta e2') e1'
     if eqModuloMeta e e' then e else eval n' σ e'
-  | .op m fn _ =>
-    match σ.config.factory.getFactoryLFunc fn.name with
-    | none => LExpr.app m e1' e2'
-    | some lfunc =>
-      let e' := LExpr.app m e1' e2'
-      -- In `e'`, we have already supplied one input to `fn`.
-      -- Note that we can't have 0-arity Factory functions at this point.
-      let e'' := @mkAbsOfArity TBase.mono (lfunc.inputs.length - 1) (e' : LExpr TBase.mono)
-      eval n' σ e''
-  | _ => .app e.metadata e1' e2'
+  | _e =>
+    -- Re-evaluate when subexpressions changed (e.g. fvar resolved to .op),
+    -- so that `callOfLFunc` in `eval` can recognise the rebuilt expression
+    -- as a factory function call.  When nothing changed, `eqModuloMeta`
+    -- short-circuits and we return immediately.
+    let e' := .app e.metadata e1' e2'
+    if eqModuloMeta e e' then e else eval n' σ e'
 end
 
 instance : Traceable EvalProvenance Unit where

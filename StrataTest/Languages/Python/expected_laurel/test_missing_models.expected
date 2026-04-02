@@ -1,10 +1,7 @@
-
-==== Verification Results ====
-init_calls_Any_get_0: ❓ unknown (at line 8, col 4)
-init_calls_Any_get_1: ❓ unknown (at line 8, col 4)
-Assertion failed at line 9, col 4: callElimAssert_requires_0_22: ❌ fail
-callElimAssert_requires_1_23: ✅ pass (at line 9, col 4)
-callElimAssert_requires_2_24: ✅ pass (at line 9, col 4)
-
+test_missing_models.py(8, 4): ❓ unknown - init_calls_Any_get_0
+test_missing_models.py(8, 4): ❓ unknown - init_calls_Any_get_1
+test_missing_models.py(9, 4): ❌ fail - callElimAssert_requires_0_22
+test_missing_models.py(9, 4): ✅ pass - callElimAssert_requires_1_23
+test_missing_models.py(9, 4): ✅ pass - callElimAssert_requires_2_24
 DETAIL: 2 passed, 1 failed, 2 inconclusive
 RESULT: Failures found
