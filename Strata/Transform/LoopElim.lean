@@ -187,10 +187,6 @@ def Stmt.removeLoops
   (s : Stmt P C) : Stmt P C :=
   (StateT.run (removeLoopsM s) 0).fst
 
-end -- public section
-
-public section
-
 /-- Loop-elimination pipeline phase: the transform is applied during
     evaluation (not as a program-to-program pass), so the transform here
     is the identity. If the obligation's path includes labels from loop

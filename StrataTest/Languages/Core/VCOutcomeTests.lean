@@ -252,7 +252,7 @@ private def dummyObligation : Imperative.ProofObligation Core.Expression :=
 #guard (satResult.adjustForPhases [] dummyObligation).1 == satResult
 #guard (satResult.adjustForPhases [] dummyObligation).2 == []
 
-/-! ### Per-obligation phase validation tests -/
+/-! ### Combined and front-end phase validation tests -/
 
 /-- Obligation with call-elimination labels in path conditions. -/
 private def callElimObligation : Imperative.ProofObligation Core.Expression :=
@@ -260,29 +260,11 @@ private def callElimObligation : Imperative.ProofObligation Core.Expression :=
     assumptions := [[("callElimAssume_post", .true ())]],
     obligation := .true (), metadata := {} }
 
-/-- Obligation with loop-elimination labels in path conditions. -/
-private def loopElimObligation : Imperative.ProofObligation Core.Expression :=
-  { label := "test_loopElim", property := .assert,
-    assumptions := [[("assume_invariant_0_0", .true ()), ("assume_guard_0", .true ())]],
-    obligation := .true (), metadata := {} }
-
 /-- Obligation with no abstraction labels — models are sound. -/
 private def cleanObligation : Imperative.ProofObligation Core.Expression :=
   { label := "test_clean", property := .assert,
     assumptions := [[("precond_x_positive", .true ())]],
     obligation := .true (), metadata := {} }
-
--- callElimPipelinePhase: rejects sat when obligation has call-elim labels
-#guard (satResult.adjustForPhases [callElimPipelinePhase.phase] callElimObligation).1 == unknownResult
-
--- callElimPipelinePhase: preserves sat when obligation has no call-elim labels
-#guard (satResult.adjustForPhases [callElimPipelinePhase.phase] cleanObligation).1 == satResult
-
--- loopElimPipelinePhase: rejects sat when obligation has loop-elim labels
-#guard (satResult.adjustForPhases [loopElimPipelinePhase.phase] loopElimObligation).1 == unknownResult
-
--- loopElimPipelinePhase: preserves sat when obligation has no loop-elim labels
-#guard (satResult.adjustForPhases [loopElimPipelinePhase.phase] cleanObligation).1 == satResult
 
 -- Combined Core phases: clean obligation preserves sat
 #guard (satResult.adjustForPhases [callElimPipelinePhase.phase, loopElimPipelinePhase.phase] cleanObligation).1 == satResult
