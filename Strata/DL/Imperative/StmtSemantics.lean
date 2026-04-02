@@ -78,14 +78,24 @@ inductive EvalStmt (P : PureExpr) (Cmd : Type) (EvalCmd : EvalCmdParam P Cmd)
     WellFormedSemanticEvalBool ρ.eval →
     EvalBlock P Cmd EvalCmd extendEval ρ t ρ' →
     ----
-    EvalStmt P Cmd EvalCmd extendEval ρ (.ite c t e md) ρ'
+    EvalStmt P Cmd EvalCmd extendEval ρ (.ite (.det c) t e md) ρ'
 
   | ite_false_sem :
     ρ.eval ρ.store c = .some HasBool.ff →
     WellFormedSemanticEvalBool ρ.eval →
     EvalBlock P Cmd EvalCmd extendEval ρ e ρ' →
     ----
-    EvalStmt P Cmd EvalCmd extendEval ρ (.ite c t e md) ρ'
+    EvalStmt P Cmd EvalCmd extendEval ρ (.ite (.det c) t e md) ρ'
+
+  | ite_nondet_true_sem :
+    EvalBlock P Cmd EvalCmd extendEval ρ t ρ' →
+    ----
+    EvalStmt P Cmd EvalCmd extendEval ρ (.ite .nondet t e md) ρ'
+
+  | ite_nondet_false_sem :
+    EvalBlock P Cmd EvalCmd extendEval ρ e ρ' →
+    ----
+    EvalStmt P Cmd EvalCmd extendEval ρ (.ite .nondet t e md) ρ'
 
   | funcDecl_sem [HasSubstFvar P] [HasVarsPure P P.Expr] :
     EvalStmt P Cmd EvalCmd extendEval
@@ -151,7 +161,7 @@ theorem EvalCmdDefMonotone [HasFvar P] [HasBool P] [HasNot P] :
   | eval_init _ hinit _ => exact InitStateDefMonotone Hdef hinit
   | eval_init_unconstrained hinit _ => exact InitStateDefMonotone Hdef hinit
   | eval_set _ hup _ => exact UpdateStateDefMonotone Hdef hup
-  | eval_havoc hup _ => exact UpdateStateDefMonotone Hdef hup
+  | eval_set_nondet hup _ => exact UpdateStateDefMonotone Hdef hup
   | eval_assert_pass _ _ => exact Hdef
   | eval_assert_fail _ _ => exact Hdef
   | eval_assume _ _ => exact Hdef
@@ -187,6 +197,10 @@ theorem EvalStmtDefMonotone
   | ite_true_sem _ _ Hblock =>
     exact EvalBlockDefMonotone Hdef Hblock
   | ite_false_sem _ _ Hblock =>
+    exact EvalBlockDefMonotone Hdef Hblock
+  | ite_nondet_true_sem Hblock =>
+    exact EvalBlockDefMonotone Hdef Hblock
+  | ite_nondet_false_sem Hblock =>
     exact EvalBlockDefMonotone Hdef Hblock
   | funcDecl_sem => simp; exact Hdef
   | typeDecl_sem => exact Hdef

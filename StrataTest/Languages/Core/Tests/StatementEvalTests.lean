@@ -47,7 +47,7 @@ Proof Obligation:
 #true
 -/
 #guard_msgs in
-#eval (evalOne ∅ ∅ [.init "x" t[int] (some eb[#0]) .empty,
+#eval (evalOne ∅ ∅ [.init "x" t[int] (.det eb[#0]) .empty,
                     .set "x" eb[#18] .empty,
                     .assert "x_eq_18" eb[x == #18] .empty]) |>.snd |> format
 
@@ -87,7 +87,7 @@ Proof Obligation:
 #eval (evalOne
   ((Env.init (empty_factory := true)).pushScope [("y", (mty[int], eb[_yinit]))])
   ∅
-  [.init "x" t[int] (some eb[#0]) .empty,
+  [.init "x" t[int] (.det eb[#0]) .empty,
   .set "x" eb[y] .empty,
   .assert "x_eq_12" eb[x == #12] .empty]) |>.snd |> format
 
@@ -122,7 +122,7 @@ Deferred Proof Obligations:
 -- though because `x` can't appear in its own initialization expression.
 #eval evalOne ∅ ∅
        [
-       .init "x" t[bool] (some eb[x == #true]) .empty
+       .init "x" t[bool] (.det eb[x == #true]) .empty
        ] |>.snd |> format
 
 /--
@@ -178,8 +178,8 @@ Proof Obligation:
   ((Env.init (empty_factory := true)).pushScope
     [("minit", (mty[int → int], eb[(_minit : int → int)]))])
   ∅
-  [.init "m" t[int → int] (some eb[minit]) .empty,
-  .init "m0" t[int] (some eb[(m #0)]) .empty,
+  [.init "m" t[int → int] (.det eb[minit]) .empty,
+  .init "m0" t[int] (.det eb[(m #0)]) .empty,
   .set "m" eb[λ (if (%0 == #1) then #10 else ((m : int → int) %0))] .empty,
   .set "m" eb[λ (if (%0 == #2) then #20 else ((m : int → int) %0))] .empty,
   .assert "m_5_eq_50" eb[(m #5) == #50] .empty,
@@ -239,7 +239,7 @@ Proof Obligation:
 #eval (evalOne
   ((Env.init (empty_factory := true)).pushScope [("minit", (none, eb[_minit]))])
   ∅
-  [.init "m" t[int → int] (some eb[minit]) .empty,
+  [.init "m" t[int → int] (.det eb[minit]) .empty,
   .set "m" eb[λ (if (%0 == #1) then #10 else (m %0))] .empty,
   .set "m" eb[λ (if (%0 == #2) then #20 else (m %0))] .empty,
   .assert "m_5_eq_50" eb[(m #5) == #50] .empty,
@@ -252,14 +252,14 @@ Proof Obligation:
 
 private def prog1 : Statements :=
  [
- .init "x" t[int] (some eb[#0]) .empty,
- .init "y" t[int] (some eb[#6]) .empty,
+ .init "x" t[int] (.det eb[#0]) .empty,
+ .init "y" t[int] (.det eb[#6]) .empty,
  .block "label_0"
 
-   [Statement.init "z" t[bool] (some eb[zinit]) .empty,
+   [Statement.init "z" t[bool] (.det eb[zinit]) .empty,
     Statement.assume "z_false" eb[z == #false] .empty,
 
-   .ite eb[z == #false]
+   .ite (.det eb[z == #false])
      [Statement.set "x" eb[y] .empty]
      -- The "trivial" assertion, though unreachable, is still verified away by the
      -- PE because the conclusion of the proof obligation evaluates to `true`.
@@ -333,7 +333,7 @@ Proof Obligation:
 
 
 private def prog2 : Statements := [
-  .init "x" t[int] (some eb[#0]) .empty,
+  .init "x" t[int] (.det eb[#0]) .empty,
   .set "x" eb[#1] .empty,
   .havoc "x" .empty,
   .assert "x_eq_1" eb[x == #1] .empty, -- error
@@ -405,7 +405,7 @@ def testFuncDecl : List Statement :=
   }
   [
     .funcDecl doubleFunc .empty,
-    .init "y" t[int] (some eb[(~double #5)]) .empty,
+    .init "y" t[int] (.det eb[(~double #5)]) .empty,
     .assert "y_eq_10" eb[y == #10] .empty
   ]
 
@@ -461,10 +461,10 @@ def testFuncDeclSymbolic : List Statement :=
     axioms := []
   }
   [
-    .init "n" t[int] (some eb[#10]) .empty,  -- Initialize n to 10
+    .init "n" t[int] (.det eb[#10]) .empty,  -- Initialize n to 10
     .funcDecl addNFunc .empty,  -- Function captures n = 10 at declaration time
     .set "n" eb[#20] .empty,  -- Mutate n to 20
-    .init "result" t[int] (some eb[(~addN #5)]) .empty,  -- Call function
+    .init "result" t[int] (.det eb[(~addN #5)]) .empty,  -- Call function
     .assert "result_eq_15" eb[result == #15] .empty  -- Result is 5 + 10 = 15 (uses captured value)
   ]
 
@@ -531,10 +531,10 @@ def testPolymorphicFuncDecl : List Statement :=
   [
     .funcDecl chooseFunc .empty,
     -- Use with int type (curried application)
-    .init "intResult" t[int] (some eb[(((~choose #true) #1) #2)]) .empty,
+    .init "intResult" t[int] (.det eb[(((~choose #true) #1) #2)]) .empty,
     .assert "intResult_eq_1" eb[intResult == #1] .empty,
     -- Use with bool type (curried application)
-    .init "boolResult" t[bool] (some eb[(((~choose #false) #true) #false)]) .empty,
+    .init "boolResult" t[bool] (.det eb[(((~choose #false) #true) #false)]) .empty,
     .assert "boolResult_eq_false" eb[boolResult == #false] .empty
   ]
 
@@ -580,6 +580,51 @@ Proof Obligation:
 -/
 #guard_msgs in
 #eval (evalOne ∅ ∅ testPolymorphicFuncDecl) |>.snd |> format
+
+-- Test nondet if: partial evaluator introduces a fresh boolean and splits paths
+/--
+info: Error:
+none
+Subst Map:
+
+Expression Env:
+State:
+[(x : int) → (if ($__$__nondet_cond_00 : bool) then #1 else #2)
+($__nondet_cond_0 : bool) → ($__$__nondet_cond_00 : bool)]
+
+Evaluation Config:
+Eval Depth: 200
+Variable Prefix: $__
+Variable gen count: 1
+Factory Functions:
+
+
+
+Datatypes:
+
+Path Conditions:
+(<label_ite_cond_true: $__nondet_cond_0>, (if $__$__nondet_cond_00 then $__$__nondet_cond_00 else #true))
+(<label_ite_cond_false: !$__nondet_cond_0>, (if (if ($__$__nondet_cond_00 : bool) then #false else #true) then (if ($__$__nondet_cond_00 : bool) then #false else #true) else #true))
+
+
+Warnings:
+[]
+Deferred Proof Obligations:
+Label: x_pos
+Property: assert
+Assumptions:
+(<label_ite_cond_true: $__nondet_cond_0>, (if $__$__nondet_cond_00 then $__$__nondet_cond_00 else #true))
+(<label_ite_cond_false: !$__nondet_cond_0>, (if (if ($__$__nondet_cond_00 : bool) then #false else #true) then (if ($__$__nondet_cond_00 : bool) then #false else #true) else #true))
+Proof Obligation:
+((if ($__$__nondet_cond_00 : bool) then #1 else #2) == #1)
+-/
+#guard_msgs in
+#eval (evalOne ∅ ∅ [.init "x" t[int] (.det eb[#0]) .empty,
+                    .ite .nondet
+                      [Statement.set "x" eb[#1] .empty]
+                      [Statement.set "x" eb[#2] .empty]
+                      .empty,
+                    .assert "x_pos" eb[(x == #1)] .empty]) |>.snd |> format
 
 end Tests
 ---------------------------------------------------------------------
