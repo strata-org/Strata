@@ -907,16 +907,16 @@ def laurelAnalyzeCommand : Command where
   callback := fun v _ => do
     let laurelProgram ← Strata.readLaurelTextFile v[0]
     let (vcResultsOption, errors) ← Strata.Laurel.verifyProgram laurelProgram { VerifyOptions.default with solver := "z3" }
-      if !errors.isEmpty then
-        IO.println s!"==== ERRORS ===="
-      for err in errors do
-        IO.println s!"{err.message}"
-      match vcResultsOption with
-      | none => return
-      | some vcResults =>
-        IO.println s!"==== RESULTS ===="
-        for vc in vcResults do
-          IO.println s!"{vc.obligation.label}: {match vc.outcome with | .ok o => repr o | .error e => e}"
+    if !errors.isEmpty then
+      IO.println s!"==== ERRORS ===="
+    for err in errors do
+      IO.println s!"{err.message}"
+    match vcResultsOption with
+    | none => return
+    | some vcResults =>
+      IO.println s!"==== RESULTS ===="
+      for vc in vcResults do
+        IO.println s!"{vc.obligation.label}: {match vc.outcome with | .ok o => repr o | .error e => e}"
 
 def laurelAnalyzeToGotoCommand : Command where
   name := "laurelAnalyzeToGoto"
@@ -925,7 +925,7 @@ def laurelAnalyzeToGotoCommand : Command where
   callback := fun v _ => do
     let path : System.FilePath := v[0]
     let content ← IO.FS.readFile path
-    let laurelProgram ← Strata.readLaurelTextFile path
+    let laurelProgram ← Strata.parseLaurelText path content
     match Strata.Laurel.translate {} laurelProgram with
       | (none, diags) => exitFailure s!"Core translation errors: {diags.map (·.message)}"
       | (some coreProgram, errors) =>

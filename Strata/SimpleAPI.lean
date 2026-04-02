@@ -121,9 +121,8 @@ Read a Laurel source file in textual format and parse it into
 a `Laurel.Program`. Handles dialect loading, parsing, and
 AST translation in one step.
 -/
-def readLaurelTextFile (path : System.FilePath)
+def parseLaurelText (path : System.FilePath) (content : String)
     : IO Laurel.Program := do
-  let content ← IO.FS.readFile path
   let input := Strata.Parser.stringInputContext path content
   let dialects :=
     Strata.Elab.LoadedDialects.ofDialects!
@@ -137,6 +136,11 @@ def readLaurelTextFile (path : System.FilePath)
   | .ok program => pure program
   | .error errors =>
     throw (IO.userError s!"Laurel translation errors: {errors}")
+
+def readLaurelTextFile (path : System.FilePath)
+    : IO Laurel.Program := do
+  let content ← IO.FS.readFile path
+  parseLaurelText path content
 
 /--
 Deserialize Laurel Ion bytes (possibly containing multiple files)
@@ -274,7 +278,7 @@ def Core.callElimUsingContract (p : Core.Program) : Except String Core.Program :
 /-! ### Analysis of Core programs -/
 
 /--
-Analyze a Core program, including any external solver invocation
+Verify a Core program, including any external solver invocation
 that is necessary.
 -/
 def Core.verifyProgram
