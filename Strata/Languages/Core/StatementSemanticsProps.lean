@@ -7,8 +7,8 @@ module
 
 public import Strata.DL.Imperative.CmdSemantics
 import all Strata.DL.Imperative.CmdSemantics
-public import Strata.DL.Imperative.StmtSemantics
-import all Strata.DL.Imperative.StmtSemantics
+public import Strata.DL.Imperative.StmtSemanticsSmallStep
+import all Strata.DL.Imperative.StmtSemanticsSmallStep
 public import Strata.DL.Imperative.HasVars
 import all Strata.DL.Imperative.HasVars
 public import Strata.DL.Util.Nodup
@@ -54,18 +54,25 @@ theorem TouchVarsEmpty :
 theorem EvalBlockEmpty' {P : PureExpr} {Cmd : Type} {EvalCmd : EvalCmdParam P Cmd}
   {extendEval : ExtendEval P}
   { ρ ρ' : Env P }
-  [DecidableEq P.Ident]
-  [HasVarsImp P (List (Stmt P Cmd))] [HasVarsImp P Cmd] [HasFvar P] [HasVal P] [HasBool P] [HasNot P] :
-  EvalBlock P Cmd EvalCmd extendEval ρ ([]: (List (Stmt P Cmd))) ρ' → ρ = ρ' := by
-  intros H; cases H <;> simp
+  [HasBool P] [HasNot P] :
+  EvalStmtsSmall P EvalCmd extendEval ρ ([]: (List (Stmt P Cmd))) ρ' → ρ = ρ' := by
+  intro H
+  match H with
+  | .step _ _ _ .step_stmts_nil (.refl _) => rfl
 
 theorem EvalStatementsEmpty :
   EvalStatements π φ ρ [] ρ' → ρ = ρ' := by
-  intros H; cases H <;> simp
+  intro H
+  unfold EvalStatements EvalStmtsSmall at H
+  match H with
+  | .step _ _ _ .step_stmts_nil (.refl _) => rfl
 
 theorem EvalStatementsContractEmpty :
   EvalStatementsContract π φ ρ [] ρ' → ρ = ρ' := by
-  intros H; cases H <;> simp
+  intro H
+  unfold EvalStatementsContract EvalStmtsSmall at H
+  match H with
+  | .step _ _ _ .step_stmts_nil (.refl _) => rfl
 
 theorem UpdateStateNotDefMonotone
   {P : PureExpr} {σ σ' : SemanticStore P}
@@ -1329,57 +1336,84 @@ theorem EvalStatementsContractApp' {φ : CoreEval → PureFunc Expression → Co
   ∃ ρ',
     EvalStatementsContract π φ ρ ss₁ ρ' ∧
     EvalStatementsContract π φ ρ' ss₂ ρ'' := by
-  intros Heval
-  induction ss₁ generalizing ρ <;> simp_all
-  case nil =>
-    exists ρ <;> simp_all
-    exact EvalBlock.stmts_none_sem
-  case cons h t ih =>
-    cases Heval with
-    | stmts_some_sem Hh Ht =>
-    next ρ' =>
-    specialize ih Ht
-    cases ih with
-    | intro ρ'' Heval =>
-    exists ρ''
-    simp_all
-    exact EvalBlock.stmts_some_sem Hh Heval.1
+  intro Heval
+  induction ss₁ generalizing ρ with
+  | nil =>
+    simp at Heval
+    exact ⟨ρ, evalStmtsSmallNil Expression (EvalCommandContract π) (EvalPureFunc φ) ρ, Heval⟩
+  | cons s ss₁ ih =>
+    simp [List.cons_append] at Heval
+    unfold EvalStatementsContract EvalStmtsSmall at Heval
+    match Heval with
+    | .step _ _ _ .step_stmts_cons hrest =>
+      have ⟨ρ₁, hterm_s, htail⟩ :=
+        seq_reaches_terminal Expression (EvalCommandContract π) (EvalPureFunc φ) hrest
+      have ⟨ρ', Hss₁, Hss₂⟩ := ih htail
+      have Hcons : EvalStmtsSmall Expression (EvalCommandContract π) (EvalPureFunc φ) ρ (s :: ss₁) ρ' := by
+        unfold EvalStmtsSmall
+        apply ReflTrans.step _ _ _ .step_stmts_cons
+        exact ReflTrans_Transitive _ _ _ _
+          (seq_inner_star Expression (EvalCommandContract π) (EvalPureFunc φ) _ _ ss₁ hterm_s)
+          (.step _ _ _ .step_seq_done
+            (show StepStmtStar Expression (EvalCommandContract π) (EvalPureFunc φ)
+              (.stmts ss₁ ρ₁) (.terminal ρ') from Hss₁))
+      exact ⟨ρ', Hcons, Hss₂⟩
 
 theorem EvalStatementsContractApp {φ : CoreEval → PureFunc Expression → CoreEval} :
   EvalStatementsContract π φ ρ ss₁ ρ' →
   EvalStatementsContract π φ ρ' ss₂ ρ'' →
   EvalStatementsContract π φ ρ (ss₁ ++ ss₂) ρ'' := by
-  intros Heval1 Heval2
-  induction ss₁ generalizing ρ ρ' <;> simp_all
-  case nil =>
-    have Heq := EvalBlockEmpty Heval1
-    simp [Heq]
-    assumption
-  case cons h t ih =>
-    cases Heval1 with
-    | stmts_some_sem Heval Heval' =>
-    next ρ₁ =>
-    constructor
-    . exact Heval
-    . exact ih Heval' Heval2
+  intro Heval1 Heval2
+  induction ss₁ generalizing ρ ρ' with
+  | nil =>
+    simp
+    have Heq := EvalStatementsContractEmpty Heval1
+    rw [Heq]; exact Heval2
+  | cons s ss₁ ih =>
+    simp [List.cons_append]
+    -- Peel off s from Heval1
+    unfold EvalStatementsContract EvalStmtsSmall at Heval1
+    match Heval1 with
+    | .step _ _ _ .step_stmts_cons hrest =>
+      have ⟨ρ₁, hterm_s, htail⟩ :=
+        seq_reaches_terminal Expression (EvalCommandContract π) (EvalPureFunc φ) hrest
+      -- hterm_s : .stmt s ρ →* .terminal ρ₁
+      -- htail : .stmts ss₁ ρ₁ →* .terminal ρ'
+      -- IH: EvalStmtsSmall ρ₁ ss₁ ρ' → EvalStmtsSmall ρ' ss₂ ρ'' → EvalStmtsSmall ρ₁ (ss₁ ++ ss₂) ρ''
+      have Hconcat := ih htail Heval2
+      -- Hconcat : EvalStmtsSmall ρ₁ (ss₁ ++ ss₂) ρ''
+      -- Build: .stmts (s :: (ss₁ ++ ss₂)) ρ →* .terminal ρ''
+      show EvalStmtsSmall Expression (EvalCommandContract π) (EvalPureFunc φ) ρ (s :: (ss₁ ++ ss₂)) ρ''
+      unfold EvalStmtsSmall
+      apply ReflTrans.step _ _ _ .step_stmts_cons
+      exact ReflTrans_Transitive _ _ _ _
+        (seq_inner_star Expression (EvalCommandContract π) (EvalPureFunc φ) _ _ (ss₁ ++ ss₂) hterm_s)
+        (.step _ _ _ .step_seq_done Hconcat)
 
 theorem EvalStatementsApp {φ : CoreEval → PureFunc Expression → CoreEval} :
   EvalStatements π φ ρ ss₁ ρ' →
   EvalStatements π φ ρ' ss₂ ρ'' →
   EvalStatements π φ ρ (ss₁ ++ ss₂) ρ'' := by
-  intros Heval1 Heval2
+  intro Heval1 Heval2
   induction ss₁ generalizing ρ ρ' with
   | nil =>
-    have Heq := EvalBlockEmpty Heval1
-    simp [Heq]
-    assumption
-  | cons h t ih =>
-    cases Heval1 with
-    | stmts_some_sem Heval Heval' =>
-    next ρ₁ =>
-    constructor
-    . exact Heval
-    . exact ih Heval' Heval2
+    simp
+    have Heq := EvalStatementsEmpty Heval1
+    rw [Heq]; exact Heval2
+  | cons s ss₁ ih =>
+    simp [List.cons_append]
+    unfold EvalStatements EvalStmtsSmall at Heval1
+    match Heval1 with
+    | .step _ _ _ .step_stmts_cons hrest =>
+      have ⟨ρ₁, hterm_s, htail⟩ :=
+        seq_reaches_terminal Expression (EvalCommand π φ) (EvalPureFunc φ) hrest
+      have Hconcat := ih htail Heval2
+      show EvalStmtsSmall Expression (EvalCommand π φ) (EvalPureFunc φ) ρ (s :: (ss₁ ++ ss₂)) ρ''
+      unfold EvalStmtsSmall
+      apply ReflTrans.step _ _ _ .step_stmts_cons
+      exact ReflTrans_Transitive _ _ _ _
+        (seq_inner_star Expression (EvalCommand π φ) (EvalPureFunc φ) _ _ (ss₁ ++ ss₂) hterm_s)
+        (.step _ _ _ .step_seq_done Hconcat)
 
 theorem HavocVarsApp :
   HavocVars σ vs₁ σ' →
@@ -2020,7 +2054,7 @@ theorem InvStoresExceptInvStores :
   exact List.Disjoint.symm Hdis
   assumption
 
-/--
+/-
 NOTE:
   In order to prove this refinement theorem, we need to reason about the
   assymmetry between the two semantics regarding the temporary variables
@@ -2053,32 +2087,60 @@ EvalCommandContract π δ σ c σ' f := by
     sorry
     constructor <;> assumption
 
-mutual
-/-- Proof that `EvalStmt` with concrete semantics refines contract semantics,
-    by structural recursion on the derivation. -/
-theorem EvalStmtRefinesContract
-  (H : EvalStmt Expression Command (EvalCommand π φ) (EvalPureFunc φ) ρ s ρ') :
-  EvalStmt Expression Command (EvalCommandContract π) (EvalPureFunc φ) ρ s ρ' :=
-  match H with
-  | .cmd_sem Heval Hdef => .cmd_sem (EvalCommandRefinesContract Heval) Hdef
-  | .block_sem Heval => .block_sem (EvalBlockRefinesContract Heval)
-  | .ite_true_sem Hcond Hwf Heval => .ite_true_sem Hcond Hwf (EvalBlockRefinesContract Heval)
-  | .ite_false_sem Hcond Hwf Heval => .ite_false_sem Hcond Hwf (EvalBlockRefinesContract Heval)
-  | .ite_nondet_true_sem Heval => .ite_nondet_true_sem (EvalBlockRefinesContract Heval)
-  | .ite_nondet_false_sem Heval => .ite_nondet_false_sem (EvalBlockRefinesContract Heval)
-  | .funcDecl_sem => .funcDecl_sem
-  | .typeDecl_sem => .typeDecl_sem
+/-- A single `StepStmt` with `EvalCommand` can be simulated by a single
+    `StepStmt` with `EvalCommandContract`. -/
+private theorem StepStmt_refines_contract
+    {c₁ c₂ : Imperative.Config Expression Command} :
+    Imperative.StepStmt Expression (EvalCommand π φ) (EvalPureFunc φ) c₁ c₂ →
+    Imperative.StepStmt Expression (EvalCommandContract π) (EvalPureFunc φ) c₁ c₂ := by
+  intro H
+  induction H with
+  | step_cmd hcmd => exact .step_cmd (EvalCommandRefinesContract hcmd)
+  | step_seq_inner _ ih => exact .step_seq_inner ih
+  | step_block_body _ ih => exact .step_block_body ih
+  | step_block => exact .step_block
+  | step_ite_true h1 h2 => exact .step_ite_true h1 h2
+  | step_ite_false h1 h2 => exact .step_ite_false h1 h2
+  | step_ite_nondet_true => exact .step_ite_nondet_true
+  | step_ite_nondet_false => exact .step_ite_nondet_false
+  | step_loop_enter h1 h2 => exact .step_loop_enter h1 h2
+  | step_loop_exit h1 h2 => exact .step_loop_exit h1 h2
+  | step_loop_nondet_enter => exact .step_loop_nondet_enter
+  | step_loop_nondet_exit => exact .step_loop_nondet_exit
+  | step_exit => exact .step_exit
+  | step_funcDecl => exact .step_funcDecl
+  | step_typeDecl => exact .step_typeDecl
+  | step_stmts_nil => exact .step_stmts_nil
+  | step_stmts_cons => exact .step_stmts_cons
+  | step_seq_done => exact .step_seq_done
+  | step_seq_exit => exact .step_seq_exit
+  | step_block_done => exact .step_block_done
+  | step_block_exit_none => exact .step_block_exit_none
+  | step_block_exit_match h => exact .step_block_exit_match h
+  | step_block_exit_mismatch h => exact .step_block_exit_mismatch h
 
-/-- Proof that `EvalBlock` with concrete semantics refines contract semantics,
-    by structural recursion on the derivation. -/
-theorem EvalBlockRefinesContract
-  (H : EvalBlock Expression Command (EvalCommand π φ) (EvalPureFunc φ) ρ ss ρ') :
-  EvalBlock Expression Command (EvalCommandContract π) (EvalPureFunc φ) ρ ss ρ' :=
-  match H with
-  | .stmts_none_sem => .stmts_none_sem
-  | .stmts_some_sem Hstmt Hrest =>
-    .stmts_some_sem (EvalStmtRefinesContract Hstmt) (EvalBlockRefinesContract Hrest)
-end
+/-- Small-step execution with `EvalCommand` refines `EvalCommandContract`. -/
+theorem StepStmtStar_refines_contract
+    {c₁ c₂ : Imperative.Config Expression Command} :
+    Imperative.StepStmtStar Expression (EvalCommand π φ) (EvalPureFunc φ) c₁ c₂ →
+    Imperative.StepStmtStar Expression (EvalCommandContract π) (EvalPureFunc φ) c₁ c₂ := by
+  intro H
+  induction H with
+  | refl => exact .refl _
+  | step _ _ _ hstep _ ih =>
+    exact .step _ _ _ (StepStmt_refines_contract hstep) ih
+
+/-- `EvalStatements` with concrete semantics refines contract semantics. -/
+theorem EvalStatementsRefinesContract :
+    EvalStatements π φ ρ ss ρ' →
+    EvalStatementsContract π φ ρ ss ρ' :=
+  StepStmtStar_refines_contract
+
+/-- `EvalStatement` with concrete semantics refines contract semantics. -/
+theorem EvalStatementRefinesContract :
+    EvalStatement π φ ρ s ρ' →
+    EvalStatementContract π φ ρ s ρ' :=
+  StepStmtStar_refines_contract
 
 /-- If an expression is defined, all its free variables are defined in the store.
     Relies on the definedness propagation properties in `WellFormedCoreEvalCong`
