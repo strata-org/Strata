@@ -201,7 +201,7 @@ private def needsValidation (phases : List AbstractedPhase)
 
 private def satResult : Result := .sat []
 private def unsatResult : Result := .unsat
-private def unknownResult : Result := Imperative.SMT.Result.unknown (Ident := Core.Expression.Ident)
+private def unknownResult : Result := .unknown (some [])
 
 /-- A dummy obligation for testing phase validation. -/
 private def dummyObligation : Imperative.ProofObligation Core.Expression :=

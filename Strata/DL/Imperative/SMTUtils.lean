@@ -50,7 +50,7 @@ inductive Result (Ident : Type) where
   -- Also see Strata.SMT.Decision.
   | sat (cex : CounterEx Ident)
   | unsat
-  | unknown (model : CounterEx Ident := [])
+  | unknown (candidateModel : Option (CounterEx Ident) := none)
   | err (msg : String)
   deriving DecidableEq, Repr
 
@@ -66,9 +66,12 @@ def Result.formatWithVerbose {Ident} [ToFormat Ident]
     else f!"sat\nModel: {m}"
   | .unsat => f!"unsat"
   | .unknown m =>
-    if (not verbose) || m.isEmpty then
-      f!"unknown"
-    else f!"unknown\nModel: {m}"
+    match m with
+    | some model =>
+      if (not verbose) || model.isEmpty then
+        f!"unknown"
+      else f!"unknown\nCandidate model: {model}"
+    | none => f!"unknown"
   | .err msg => f!"err {msg}"
 
 instance {Ident} [ToFormat Ident]: ToFormat (Result Ident) where

@@ -202,8 +202,8 @@ public section
     closest to SMT at the end).
 
     Each phase independently validates the model when it has a validator.
-    A phase with `modelToValidate` can demote `.sat m` to `.unknown m`
-    (when the model fails validation) or promote `.unknown m` back to
+    A phase with `modelToValidate` can demote `.sat m` to `.unknown (some m)`
+    (when the model fails validation) or promote `.unknown (some m)` back to
     `.sat m` (when the model passes validation against the pre-phase
     semantics). This means phases are not cascading — each validating
     phase makes its own decision based on the model. -/
@@ -215,8 +215,8 @@ def AbstractedPhase.validateModel (phases : List AbstractedPhase)
   let (finalResult, revLog) := phases.reverse.foldl (init := (result, [])) fun (r, log) p =>
     let validation := p.getValidation obligation
     let r' := match r, validation with
-      | .sat m, .modelToValidate f => if f m then .sat m else .unknown m
-      | .unknown m, .modelToValidate f => if f m then .sat m else .unknown m
+      | .sat m, .modelToValidate f => if f m then .sat m else .unknown (some m)
+      | .unknown (some m), .modelToValidate f => if f m then .sat m else .unknown (some m)
       | _, _ => r
     (r', r' :: log)
   -- Reverse log so outermost is first, deepest is last
