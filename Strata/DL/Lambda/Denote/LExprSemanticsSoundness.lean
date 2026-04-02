@@ -109,6 +109,9 @@ theorem zip_map_snd_eq{α β: Type} (l1: List α) (l2: List β) :
   (l1.zip l2).map Prod.snd = l2 := by
   induction l1 generalizing l2 <;> cases l2 <;> simp_all
 
+theorem zip_map_fst_snd_eq {α β : Type} (l : List (α × β)) :
+    (l.map Prod.fst).zip (l.map Prod.snd) = l := by
+  induction l <;> simp_all
 
 /-! ### Main theorem -/
 
@@ -246,7 +249,147 @@ theorem Step.denote_preserved
               denote_eq_false .nil h_1' h_2' _
                 (by rw [← ih_eq]; exact heq)]
   | expand_fn e callee fnbody new_body args fn hcall hbody heq =>
-    sorry
+    -- Step 1: Decompose the call via callOfLFunc_denote
+    obtain ⟨argTys, ty_op, m, name, h_args, hty_op, h_callee_eq, h_denote_e⟩ :=
+      callOfLFunc_denote tcInterp opInterp fvarVal vt hcall h₁
+    -- Step 2: Get σ from OpsConsistent
+    have h_ops_callee := OpsConsistent_callOfLFunc_callee hOps hcall
+    rw [h_callee_eq] at h_ops_callee
+    simp only [OpsConsistent] at h_ops_callee
+    -- Connect getFactoryLFunc to fn
+    have h_getF : F.getFactoryLFunc name.name = some fn := by
+      obtain ⟨m', name', ty', hcallee', hgetF'⟩ := callOfLFunc_getFactoryLFunc hcall
+      rw [h_callee_eq] at hcallee'
+      cases hcallee'
+      exact hgetF'
+    rw [h_getF] at h_ops_callee
+    obtain ⟨σ, h_ty_op_eq⟩ := h_ops_callee
+    -- Step 3: Decompose ty_op = substMap σ (mkArrow' fn.output inputTys)
+    --   into τ = substMap σ fn.output and argTys = inputTys.map (substMap σ)
+    have h_inputTys := fn.inputs.map Prod.snd
+    have h_substMap_arrow := substMap_mkArrow' σ fn.output (fn.inputs.map Prod.snd)
+    rw [h_substMap_arrow] at h_ty_op_eq
+    rw [hty_op] at h_ty_op_eq
+    -- h_ty_op_eq : τ.mkArrow' argTys = (substMap σ fn.output).mkArrow' (map (substMap σ) inputTys)
+    -- mkArrow'_injective needs h_len for the first list
+    have h_len : argTys.length = (List.map (LMonoTy.substMap σ) (List.map Prod.snd fn.inputs)).length := by
+      simp; exact h_args.length_eq.symm.trans (callOfLFunc_arity hcall)
+    have h_inj := mkArrow'_injective h_len h_ty_op_eq
+    have h_τ_eq : τ = LMonoTy.substMap σ fn.output := h_inj.1
+    have h_argTys_eq : argTys = (fn.inputs.map Prod.snd).map (LMonoTy.substMap σ) := h_inj.2
+    -- Step 4: Define vt'
+    let vt' : TyVarVal := fun x => match σ.find? x with
+      | some t => LMonoTy.substTyVars vt t | none => vt x
+    -- Step 7: Get body typing and InterpConsistentBody from factory consistency
+    have h_fn_mem : fn ∈ F := callOfLFunc_mem hcall
+    have h_body_wt := (hFwt fn h_fn_mem fnbody hbody).1
+    have h_annot := (hFwt fn h_fn_mem fnbody hbody).2
+    have h_icb := hF.1 fn h_fn_mem fnbody hbody
+    -- Instantiate InterpConsistentBody at vt' and fvarVal
+    let bindings_vt' := fn.inputs.map (fun (id, ty) => (id, LMonoTy.substTyVars vt' ty))
+    let inputSorts_vt' := bindings_vt'.map Prod.snd
+    let fullSort_vt' := LSort.mkArrow (LMonoTy.substTyVars vt' fn.output) inputSorts_vt'
+    -- Step 5: Connect opInterp calls
+    -- We need: fn.name.name = name.name
+    have h_fn_name : fn.name.name = name.name :=
+      getFactoryLFunc_name h_getF
+    -- We need: substTyVars vt ty_op = fullSort_vt'
+    have h_sort_connect : LMonoTy.substTyVars vt ty_op = fullSort_vt' := by
+      rw [hty_op]
+      rw [substTyVars_mkArrow']
+      congr 1
+      · rw [h_τ_eq]; exact (substTyVars_substMap vt σ fn.output)
+      · rw [h_argTys_eq]; simp [List.map_map, inputSorts_vt', bindings_vt']
+        congr 1; intro a b _
+        show LMonoTy.substTyVars vt (LMonoTy.substMap σ b) = LMonoTy.substTyVars vt' b
+        change LMonoTy.substTyVars vt (LMonoTy.substMap σ b) =
+          LMonoTy.substTyVars (fun x => match σ.find? x with | some t => LMonoTy.substTyVars vt t | none => vt x) b
+        exact substTyVars_substMap vt σ b
+    -- Instantiate InterpConsistentBody at vt', fvarVal, h_body_wt
+    have h_icb_inst := h_icb vt' fvarVal h_body_wt
+    -- Step 6: argTys.map (substTyVars vt) = inputSorts_vt'
+    have h_sorts_eq : argTys.map (LMonoTy.substTyVars vt) = inputSorts_vt' := by
+      simp [inputSorts_vt', bindings_vt', h_argTys_eq, List.map_map]
+      congr 1; intro a b _
+      show LMonoTy.substTyVars vt (LMonoTy.substMap σ b) = LMonoTy.substTyVars vt' b
+      change LMonoTy.substTyVars vt (LMonoTy.substMap σ b) =
+        LMonoTy.substTyVars (fun x => match σ.find? x with | some t => LMonoTy.substTyVars vt t | none => vt x) b
+      exact substTyVars_substMap vt σ b
+    -- Cast denoteArgs to the right sort list
+    let da := denoteArgs tcInterp opInterp fvarVal vt .nil args argTys h_args
+    have h_da_cast : HList.cast h_sorts_eq da = (HList.cast h_sorts_eq da) := rfl
+    -- Instantiate h_icb_inst with the cast args
+    have h_icb_applied := h_icb_inst (HList.cast h_sorts_eq da)
+    -- The RHS of h_icb_applied lives in TyDenote tcInterp vt' fn.output
+    -- but we need TyDenote tcInterp vt τ. These are equal by substTyVars_substMap + h_τ_eq.
+    have h_sort_eq_vt : LMonoTy.substTyVars vt' fn.output = LMonoTy.substTyVars vt τ := by
+      rw [h_τ_eq]; exact (substTyVars_substMap vt σ fn.output).symm
+    have h_td_eq : TyDenote tcInterp vt' fn.output = TyDenote tcInterp vt τ :=
+      congrArg (SortDenote tcInterp) h_sort_eq_vt
+    -- Step 8: The whole chain from denote e to denote (withArgs ...) vt' fnbody
+    have h_chain : LExpr.denote tcInterp opInterp fvarVal vt .nil e τ h₁ =
+        cast h_td_eq (LExpr.denote tcInterp opInterp
+          (fvarVal.withArgs bindings_vt' (HList.cast h_sorts_eq da))
+          vt' .nil fnbody fn.output h_body_wt) := by
+      rw [h_denote_e]
+      rw [← h_icb_applied, h_fn_name]
+      subst hty_op
+      have h := applyArgs_cast_eq
+        (substTyVars_mkArrow' vt τ argTys) h_sort_connect
+        h_sorts_eq h_sort_eq_vt.symm
+        (opInterp name.name (LMonoTy.substTyVars vt (τ.mkArrow' argTys))) da
+      grind
+    -- Step 9: Use substFvarsLifting_denote_poly to connect
+    subst heq
+    have h_keys_eq : (fn.inputs.keys.zip args).map Prod.fst = bindings_vt'.map Prod.fst := by
+      rw[zip_map_fst_eq]
+      . simp[bindings_vt', List.map_map]
+        rw[ListMap.keys_eq_map_fst]
+        rfl
+      · rw[ListMap.keys_eq_map_fst]
+        simp [callOfLFunc_arity hcall]
+    have h_arity := callOfLFunc_arity hcall
+    have h_zip_snd : (fn.inputs.keys.zip args).map Prod.snd = args :=
+      zip_map_snd_eq fn.inputs.keys args (by rw [ListMap.keys_eq_map_fst]; simp [h_arity])
+    have h_wt_zip : List.Forall₂ (LExpr.HasTypeA []) ((fn.inputs.keys.zip args).map Prod.snd) argTys :=
+      h_zip_snd.symm ▸ h_args
+    have h_argTys_len : argTys.length = (fn.inputs.keys.zip args).length := by
+      simp [List.length_zip, ListMap.keys_eq_map_fst, h_arity]
+      exact h_args.length_eq.symm.trans h_arity
+    have h_inputTys_len : (fn.inputs.map Prod.snd).length = (fn.inputs.keys.zip args).length := by
+      simp [List.length_zip, ListMap.keys_eq_map_fst, h_arity]
+    have h_denotes_eq : da = denoteArgs tcInterp opInterp fvarVal vt .nil ((fn.inputs.keys.zip args).map Prod.snd) argTys h_wt_zip := by
+      simp [h_zip_snd]; rfl
+    have h_denotes_eq' : HList.cast h_sorts_eq da = HList.cast h_sorts_eq
+        (denoteArgs tcInterp opInterp fvarVal vt .nil
+          ((fn.inputs.keys.zip args).map Prod.snd) argTys h_wt_zip) := by
+      congr 1
+    have h_annot_zip : fvars_annotated_by
+        ((fn.inputs.keys.zip args).map Prod.fst |>.zip (fn.inputs.map Prod.snd)) fnbody := by
+      have : (fn.inputs.keys.zip args).map Prod.fst = fn.inputs.keys :=
+        zip_map_fst_eq fn.inputs.keys args (by rw [ListMap.keys_eq_map_fst]; simp [h_arity])
+      rw [this, ListMap.keys_eq_map_fst, zip_map_fst_snd_eq]
+      exact h_annot
+    have h_bvar_eq_nil : ∀ i (τ_b : LMonoTy) (hb : ([] : List LMonoTy)[i]? = some τ_b),
+        LMonoTy.substTyVars vt' τ_b = LMonoTy.substTyVars vt τ_b ∧
+        HEq ((HList.nil : BVarVal tcInterp vt' []).get i hb)
+             ((HList.nil : BVarVal tcInterp vt []).get i hb) := by
+      intro i τ_b hb; simp at hb
+    -- Step 10: Combine h_chain with substFvarsLifting_denote_poly
+    rw [h_chain]
+    exact (substFvarsLifting_denote_poly
+      (σ := σ) (hvt' := rfl)
+      (bvarVal_outer_vt := .nil) (bvarVal_outer_vt' := .nil)
+      (h_body := h_body_wt) (h_subst := h₂)
+      (h_args := HList.cast h_sorts_eq da)
+      (h_keys := h_keys_eq)
+      (h_argTys_len := h_argTys_len) (h_inputTys_len := h_inputTys_len)
+      (h_inst := h_argTys_eq) (h_sorts := h_sorts_eq.symm)
+      (h_wt := h_wt_zip)
+      (h_denotes := h_denotes_eq')
+      (h_annot := h_annot_zip)
+      (h_sort_eq := h_sort_eq_vt) (h_td_eq := h_td_eq)
+      (h_bvar_eq := h_bvar_eq_nil)).symm
   | eval_fn e callee e' args fn denotefn hcall heval hresult =>
     sorry
 

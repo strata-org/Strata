@@ -161,6 +161,7 @@ instance : Membership (LFunc T) (@Factory T) where
 def Factory.getFunctionNames (F : @Factory T) : Array T.Identifier :=
   F.map (fun f => f.name)
 
+@[expose]
 def Factory.getFactoryLFunc (F : @Factory T) (name : String) : Option (LFunc T) :=
   F.find? (fun fn => fn.name.name == name)
 
@@ -201,7 +202,7 @@ def getConcreteLFuncCall (e : LExpr ⟨T, GenericTy⟩) : LExpr ⟨T, GenericTy�
 If `e` is a call of a factory function, get the operator (`.op`), a list
 of all the actuals, and the `(LFunc IDMeta)`.
 -/
-def Factory.callOfLFunc {GenericTy} (F : @Factory T) (e : LExpr ⟨T, GenericTy⟩)
+@[expose] def Factory.callOfLFunc {GenericTy} (F : @Factory T) (e : LExpr ⟨T, GenericTy⟩)
     (allowPartialApp := false)
     : Option (LExpr ⟨T, GenericTy⟩ × List (LExpr ⟨T, GenericTy⟩) × LFunc T) :=
   let (op, args) := getLFuncCall e

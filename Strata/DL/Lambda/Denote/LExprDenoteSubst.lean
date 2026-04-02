@@ -898,3 +898,141 @@ theorem substFvarsLifting_denote [DecidableEq T.IDMeta]
       bvarVal_outer h_args h_keys h_tys_len h_sorts h_wt h_denotes
       (Δ_body := []) .nil h_body h_annot (by simp [h_subst])
     simpa using this
+
+/-! ### `LMonoTy.substMap` — clean type-variable substitution for proofs -/
+
+/-- Apply a simple type-variable substitution (a `Map`) to a monomorphic type.
+Unlike `LMonoTy.subst` (which uses multi-scope `Subst` with `hasEmptyScopes`
+guard), this is clean for equational reasoning. -/
+def LMonoTy.substMap (σ : Map TyIdentifier LMonoTy) : LMonoTy → LMonoTy
+  | .ftvar x    => (σ.find? x).getD (.ftvar x)
+  | .bitvec n   => .bitvec n
+  | .tcons name args => .tcons name (args.map (substMap σ))
+
+/-! ### Polymorphic type-checking for `go` -/
+
+/-- Polymorphic version of `go_typeCheck`. When fvar annotations match
+`inputTys` and the args are typed at `argTys = inputTys.map (substMap σ)`,
+then `go` transforms the type by `substMap σ`. -/
+private theorem go_typeCheck_poly [DecidableEq T.IDMeta]
+    {σ : Map TyIdentifier LMonoTy}
+    {bindings : List (T.Identifier × LExpr T.mono)}
+    {Δ_outer : List LMonoTy}
+    {argTys inputTys : List LMonoTy}
+    (h_wt : List.Forall₂ (LExpr.HasTypeA Δ_outer) (bindings.map Prod.snd) argTys)
+    (h_inst : argTys = inputTys.map (LMonoTy.substMap σ))
+    (h_inputTys_len : inputTys.length = bindings.length)
+    {e : LExpr T.mono} {Δ_body : List LMonoTy} {τ : LMonoTy}
+    (h_body : LExpr.HasTypeA (Δ_body ++ Δ_outer) e τ)
+    (h_annot : fvars_annotated_by (bindings.map Prod.fst |>.zip inputTys) e)
+    : LExpr.HasTypeA (Δ_body ++ Δ_outer)
+        (LExpr.substFvarsLifting.go bindings e Δ_body.length) (LMonoTy.substMap σ τ) := by
+  sorry
+
+/-! ### Polymorphic free-variable substitution commutes with denotation -/
+
+/-- Inner lemma: polymorphic version of `substFvarsLifting_go_denote`.
+The body is evaluated at `vt'` with type `τ_body`, and the substituted body
+at `vt` with type `τ_subst`, where the semantic sorts agree via
+`substTyVars_substMap`. A cast by `h_sort_eq` reconciles the result types. -/
+private theorem substFvarsLifting_go_denote_poly [DecidableEq T.IDMeta]
+    {σ : Map TyIdentifier LMonoTy}
+    {vt : TyVarVal}
+    {vt' : TyVarVal}
+    (hvt' : vt' = fun x => match σ.find? x with
+      | some t => LMonoTy.substTyVars vt t | none => vt x)
+
+    {bindings : List (T.Identifier × LExpr T.mono)}
+    {sortBindings : List (Identifier T.IDMeta × LSort)}
+    {Δ_outer : List LMonoTy}
+
+    (bvarVal_outer_vt  : BVarVal tcInterp vt  Δ_outer)
+    (bvarVal_outer_vt' : BVarVal tcInterp vt' Δ_outer)
+
+    (h_args : HList (SortDenote tcInterp) (sortBindings.map Prod.snd))
+    (h_keys : bindings.map Prod.fst = sortBindings.map Prod.fst)
+
+    {argTys inputTys : List LMonoTy}
+    (h_argTys_len : argTys.length = bindings.length)
+    (h_inputTys_len : inputTys.length = bindings.length)
+    (h_inst : argTys = inputTys.map (LMonoTy.substMap σ))
+    (h_sorts : sortBindings.map Prod.snd = argTys.map (LMonoTy.substTyVars vt))
+    (h_wt : List.Forall₂ (LExpr.HasTypeA Δ_outer) (bindings.map Prod.snd) argTys)
+    (h_denotes : h_args = HList.cast h_sorts.symm
+        (denoteArgs tcInterp opInterp fvarVal vt bvarVal_outer_vt
+          (bindings.map Prod.snd) argTys h_wt))
+
+    (h_annot : fvars_annotated_by (bindings.map Prod.fst |>.zip inputTys) body)
+
+    {body : LExpr T.mono} {τ_body τ_subst : LMonoTy}
+    {Δ_body : List LMonoTy}
+    (bvarVal_body_vt  : BVarVal tcInterp vt  Δ_body)
+    (bvarVal_body_vt' : BVarVal tcInterp vt' Δ_body)
+
+    (h_body  : LExpr.HasTypeA (Δ_body ++ Δ_outer) body τ_body)
+    (h_subst : LExpr.HasTypeA (Δ_body ++ Δ_outer)
+        (LExpr.substFvarsLifting.go bindings body Δ_body.length) τ_subst)
+
+    (h_sort_eq : LMonoTy.substTyVars vt' τ_body = LMonoTy.substTyVars vt τ_subst)
+
+    (h_td_eq : TyDenote tcInterp vt' τ_body = TyDenote tcInterp vt τ_subst)
+
+    (h_bvar_eq : ∀ i (τ_b : LMonoTy)
+        (hb : (Δ_body ++ Δ_outer)[i]? = some τ_b),
+        LMonoTy.substTyVars vt' τ_b = LMonoTy.substTyVars vt τ_b ∧
+        HEq ((bvarVal_body_vt'.append bvarVal_outer_vt').get i hb)
+             ((bvarVal_body_vt.append bvarVal_outer_vt).get i hb))
+
+    : LExpr.denote tcInterp opInterp fvarVal vt
+          (HList.append bvarVal_body_vt bvarVal_outer_vt)
+          (LExpr.substFvarsLifting.go bindings body Δ_body.length)
+          τ_subst h_subst
+      = cast h_td_eq
+        (LExpr.denote tcInterp opInterp
+          (fvarVal.withArgs sortBindings h_args)
+          vt' (HList.append bvarVal_body_vt' bvarVal_outer_vt')
+          body τ_body h_body) := by
+  sorry
+
+/-- Polymorphic version of `substFvarsLifting_denote`. Wraps the `go` version
+with `Δ_body = []`. -/
+theorem substFvarsLifting_denote_poly [DecidableEq T.IDMeta]
+    {σ : Map TyIdentifier LMonoTy}
+    {vt : TyVarVal}
+    {vt' : TyVarVal}
+    (hvt' : vt' = fun x => match σ.find? x with
+      | some t => LMonoTy.substTyVars vt t | none => vt x)
+
+    {body : LExpr T.mono} {τ_body τ_subst : LMonoTy}
+    {bindings : List (T.Identifier × LExpr T.mono)}
+    {sortBindings : List (Identifier T.IDMeta × LSort)}
+    {Δ_outer : List LMonoTy}
+    (bvarVal_outer_vt  : BVarVal tcInterp vt  Δ_outer)
+    (bvarVal_outer_vt' : BVarVal tcInterp vt' Δ_outer)
+    (h_body  : LExpr.HasTypeA Δ_outer body τ_body)
+    (h_subst : LExpr.HasTypeA Δ_outer (LExpr.substFvarsLifting body bindings) τ_subst)
+    (h_args : HList (SortDenote tcInterp) (sortBindings.map Prod.snd))
+    (h_keys : bindings.map Prod.fst = sortBindings.map Prod.fst)
+    {argTys inputTys : List LMonoTy}
+    (h_argTys_len : argTys.length = bindings.length)
+    (h_inputTys_len : inputTys.length = bindings.length)
+    (h_inst : argTys = inputTys.map (LMonoTy.substMap σ))
+    (h_sorts : sortBindings.map Prod.snd = argTys.map (LMonoTy.substTyVars vt))
+    (h_wt : List.Forall₂ (LExpr.HasTypeA Δ_outer) (bindings.map Prod.snd) argTys)
+    (h_denotes : h_args = HList.cast h_sorts.symm
+        (denoteArgs tcInterp opInterp fvarVal vt bvarVal_outer_vt
+          (bindings.map Prod.snd) argTys h_wt))
+    (h_annot : fvars_annotated_by (bindings.map Prod.fst |>.zip inputTys) body)
+    (h_sort_eq : LMonoTy.substTyVars vt' τ_body = LMonoTy.substTyVars vt τ_subst)
+    (h_td_eq : TyDenote tcInterp vt' τ_body = TyDenote tcInterp vt τ_subst)
+    (h_bvar_eq : ∀ i (τ_b : LMonoTy)
+        (hb : Δ_outer[i]? = some τ_b),
+        LMonoTy.substTyVars vt' τ_b = LMonoTy.substTyVars vt τ_b ∧
+        HEq (bvarVal_outer_vt'.get i hb) (bvarVal_outer_vt.get i hb))
+    : LExpr.denote tcInterp opInterp fvarVal vt bvarVal_outer_vt
+          (LExpr.substFvarsLifting body bindings) τ_subst h_subst
+      = cast h_td_eq
+        (LExpr.denote tcInterp opInterp
+          (fvarVal.withArgs sortBindings h_args)
+          vt' bvarVal_outer_vt' body τ_body h_body) := by
+  sorry

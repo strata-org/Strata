@@ -6,18 +6,25 @@
 module
 
 import all Strata.DL.Lambda.Denote.LExprDenote
+import all Strata.DL.Lambda.Denote.LExprDenoteSubst
 
 namespace Lambda
 
-/-! ## `LMonoTy.substMap` — clean type-variable substitution for proofs -/
-
-/-- Apply a simple type-variable substitution (a `Map`) to a monomorphic type.
-Unlike `LMonoTy.subst` (which uses multi-scope `Subst` with `hasEmptyScopes`
-guard), this is clean for equational reasoning. -/
-def LMonoTy.substMap (σ : Map TyIdentifier LMonoTy) : LMonoTy → LMonoTy
-  | .ftvar x    => (σ.find? x).getD (.ftvar x)
-  | .bitvec n   => .bitvec n
-  | .tcons name args => .tcons name (args.map (substMap σ))
+/-- When a sort `s` decomposes as `mkArrow ret args` and as `mkArrow ret' args'`
+with `args = args'`, then `applyArgs` agrees up to a cast on the return type. -/
+theorem applyArgs_cast_eq
+    {s : LSort} {ret ret' : LSort} {args args' : List LSort}
+    (h₁ : s = LSort.mkArrow ret args)
+    (h₂ : s = LSort.mkArrow ret' args')
+    (h_args : args = args')
+    (h_ret : ret = ret')
+    -- (h_ret : SortDenote tcInterp ret = SortDenote tcInterp ret')
+    (v : SortDenote tcInterp s)
+    (da : HList (SortDenote tcInterp) args)
+    : SortDenote.applyArgs tcInterp (cast (congrArg (SortDenote tcInterp) h₁) v) da
+      = cast (congrArg (SortDenote tcInterp) h_ret.symm)
+          (SortDenote.applyArgs tcInterp (cast (congrArg (SortDenote tcInterp) h₂) v) (HList.cast h_args da)) := by
+  subst_vars; rfl
 
 /-! ## `OpsConsistent` — every `.op` annotation is a valid instantiation -/
 
@@ -142,7 +149,63 @@ theorem callOfLFunc_denote
             (denoteArgs tcInterp opInterp fvarVal vt .nil args argTys h_args) := by
   sorry
 
-/-! ## `substMap` inversion through `mkArrow'` -/
+/-! ## `substMap` / `mkArrow'` structural lemmas -/
+
+/-- `substMap` distributes over `mkArrow'`. -/
+theorem substMap_mkArrow' (σ : Map TyIdentifier LMonoTy) (ret : LMonoTy) (ins : List LMonoTy) :
+    LMonoTy.substMap σ (LMonoTy.mkArrow' ret ins) =
+    LMonoTy.mkArrow' (LMonoTy.substMap σ ret) (ins.map (LMonoTy.substMap σ)) := by
+  sorry
+
+/-- `mkArrow'` is injective when the argument lists have equal length. -/
+theorem mkArrow'_injective {ret₁ ret₂ : LMonoTy} {ins₁ ins₂ : List LMonoTy}
+    (h_len : ins₁.length = ins₂.length)
+    (h : LMonoTy.mkArrow' ret₁ ins₁ = LMonoTy.mkArrow' ret₂ ins₂)
+    : ret₁ = ret₂ ∧ ins₁ = ins₂ := by
+  sorry
+
+/-- If `getFactoryLFunc` finds a function, its name matches the query. -/
+theorem getFactoryLFunc_name {F : @Factory T} {s : String} {fn : LFunc T}
+    (h : Factory.getFactoryLFunc F s = some fn) : fn.name.name = s := by
+  sorry
+
+/-- `callOfLFunc` ensures the number of args equals the number of inputs. -/
+theorem callOfLFunc_arity
+    {F : @Factory T} {e callee : LExpr T.mono} {args : List (LExpr T.mono)} {fn : LFunc T}
+    (hcall : Factory.callOfLFunc F e = some (callee, args, fn))
+    : args.length = fn.inputs.length := by
+  simp [Factory.callOfLFunc] at hcall
+  split at hcall <;> simp_all
+  split at hcall <;> try contradiction
+  split at hcall <;> try contradiction
+  cases hcall
+  grind
+
+/-- `callOfLFunc` ensures `fn ∈ F`. -/
+theorem callOfLFunc_mem
+    {F : @Factory T} {e callee : LExpr T.mono} {args : List (LExpr T.mono)} {fn : LFunc T}
+    (hcall : Factory.callOfLFunc F e = some (callee, args, fn))
+    : fn ∈ F := by
+  simp [Factory.callOfLFunc] at hcall
+  split at hcall <;> simp_all
+  split at hcall <;> try contradiction
+  split at hcall <;> try contradiction
+  cases hcall
+  rename_i hget hlen
+  unfold Factory.getFactoryLFunc at hget
+  grind
+
+/-- The callee of `callOfLFunc` is an `.op` whose name resolves to `fn` via `getFactoryLFunc`. -/
+theorem callOfLFunc_getFactoryLFunc
+    {F : @Factory T} {e callee : LExpr T.mono} {args : List (LExpr T.mono)} {fn : LFunc T}
+    (hcall : Factory.callOfLFunc F e = some (callee, args, fn))
+    : ∃ m name ty, callee = .op m name ty ∧ F.getFactoryLFunc name.name = some fn := by
+  simp [Factory.callOfLFunc] at hcall
+  split at hcall <;> simp_all
+  split at hcall <;> try contradiction
+  split at hcall <;> try contradiction
+  cases hcall
+  grind
 
 /-- `OpsConsistent` propagates to the callee of a `callOfLFunc` decomposition. -/
 theorem OpsConsistent_callOfLFunc_callee
