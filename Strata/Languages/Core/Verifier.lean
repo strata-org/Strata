@@ -741,7 +741,11 @@ def keepSetFilterPipelinePhase (procs : List String) : PipelinePhase :=
     When `procs` and `factory` are provided (targeted verification), the
     pipeline includes filtering and precondition-elimination phases.
     All filter phases are model-preserving since they only remove
-    information without introducing over-approximations. -/
+    information without introducing over-approximations.
+
+    `loopElimPipelinePhase` is placed last because loop elimination happens
+    during evaluation (not as a program-to-program pass), making it the
+    closest phase to SMT. -/
 def corePipelinePhases (procs : Option (List String) := none)
     (factory : Option (@Lambda.Factory CoreLParams) := none) : List PipelinePhase :=
   let filterPhases := match procs with
@@ -753,7 +757,7 @@ def corePipelinePhases (procs : Option (List String) := none)
   let keepSetPhase := match procs with
     | some ps => [keepSetFilterPipelinePhase ps]
     | none => []
-  filterPhases ++ [callElimPipelinePhase, loopElimPipelinePhase] ++ precondPhase ++ keepSetPhase
+  filterPhases ++ [callElimPipelinePhase] ++ precondPhase ++ keepSetPhase ++ [loopElimPipelinePhase]
 
 /-- The abstracted phases derived from the Core pipeline phases. -/
 def coreAbstractedPhases (procs : Option (List String) := none)
