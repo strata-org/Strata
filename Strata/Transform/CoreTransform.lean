@@ -253,7 +253,10 @@ def createAsserts
     := conds.mapM (fun (l, check) => do
           let newLabel ← genIdent l (fun s => s!"callElimAssert_{s}")
           -- Non-lifting: the replacement expressions must be closed (no dangling bvars).
-          return Statement.assert newLabel.toPretty (Lambda.LExpr.substFvars check.expr subst) md)
+          -- Use the call site as the primary file range, preserving the requires
+          -- clause location as a related file range for richer diagnostics.
+          let assertMd := check.md.setCallSiteFileRange md
+          return Statement.assert newLabel.toPretty (Lambda.LExpr.substFvars check.expr subst) assertMd)
 
 /-- turns a list of preconditions into assumes with substitution -/
 def createAssumes
