@@ -53,6 +53,7 @@ instance : Imperative.HasBool LExprTP where
   tt := .const { underlying := (), type := mty[bool] } (.boolConst true)
   ff := .const { underlying := (), type := mty[bool] } (.boolConst false)
   tt_is_not_ff := by simp
+  boolTy := .tcons "bool" []
 
 instance : Imperative.HasIdent LExprTP where
   ident s := ⟨s, ()⟩
@@ -73,7 +74,6 @@ instance : Imperative.HasIntOrder LExprTP where
 
 instance : Imperative.HasNot LExprTP where
   not e := .app md (.op md ⟨"Bool.Not", ()⟩ none) e
-  boolTy := .tcons "bool" []
 
 -------------------------------------------------------------------------------
 

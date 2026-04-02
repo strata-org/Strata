@@ -56,13 +56,13 @@ instance : HasBool Core.Expression where
   tt := Core.true
   ff := Core.false
   tt_is_not_ff := by unfold Core.true Core.false; unfold Lambda.LExpr.boolConst; simp
+  boolTy := .forAll [] (.tcons "bool" [])
 
 instance : HasNot Core.Expression where
   not
   | Core.true => Core.false
   | Core.false => Core.true
   | e => Lambda.LExpr.app () (Lambda.boolNotFunc (T:=CoreLParams)).opExpr e
-  boolTy := .forAll [] (.tcons "bool" [])
 
 @[expose] abbrev CoreEval := SemanticEval Expression
 @[expose] abbrev CoreStore := SemanticStore Expression

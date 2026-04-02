@@ -1142,7 +1142,7 @@ def translateOptionReachCheck (arg : Arg) : TransM Bool := do
     return true
   | none => return false
 
-/-- Translate a CondBool argument to ExprOrNondet. -/
+/-- Translate an ExprOrNondet argument to ExprOrNondet. -/
 private def translateCondBool (p : Program) (bindings : TransBindings) (a : Arg) :
     TransM (Imperative.ExprOrNondet Core.Expression) := do
   let .op op := a

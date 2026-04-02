@@ -78,16 +78,10 @@ private partial def unwrapCmdExt
   | .ite c t e md => do
     let t' ← t.mapM (unwrapCmdExt rn)
     let e' ← e.mapM (unwrapCmdExt rn)
-    let c' := match c with
-      | .det expr => Imperative.ExprOrNondet.det (renameExpr rn expr)
-      | .nondet => .nondet
-    .ok (.ite c' t' e' md)
+    .ok (.ite (c.map (renameExpr rn)) t' e' md)
   | .loop g m i body md => do
     let body' ← body.mapM (unwrapCmdExt rn)
-    let g' := match g with
-      | .det expr => Imperative.ExprOrNondet.det (renameExpr rn expr)
-      | .nondet => .nondet
-    .ok (.loop g' (m.map (renameExpr rn)) (i.map (renameExpr rn)) body' md)
+    .ok (.loop (g.map (renameExpr rn)) (m.map (renameExpr rn)) (i.map (renameExpr rn)) body' md)
   | .exit l md => .ok (.exit l md)
   | .funcDecl _d _md =>
     .error f!"[unwrapCmdExt] Unexpected funcDecl; should have been lifted by collectFuncDecls."

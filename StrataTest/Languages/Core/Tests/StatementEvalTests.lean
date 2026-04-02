@@ -589,12 +589,13 @@ Subst Map:
 
 Expression Env:
 State:
-[(x : int) → (if $__nondet_cond_0 then #1 else #2)]
+[(x : int) → (if ($__$__nondet_cond_00 : bool) then #1 else #2)
+($__nondet_cond_0 : bool) → ($__$__nondet_cond_00 : bool)]
 
 Evaluation Config:
 Eval Depth: 200
 Variable Prefix: $__
-Variable gen count: 0
+Variable gen count: 1
 Factory Functions:
 
 
@@ -602,8 +603,8 @@ Factory Functions:
 Datatypes:
 
 Path Conditions:
-(<label_nondet_ite_true: $__nondet_cond_0>, (if $__nondet_cond_0 then $__nondet_cond_0 else #true))
-(<label_nondet_ite_false: !$__nondet_cond_0>, (if (if $__nondet_cond_0 then #false else #true) then (if $__nondet_cond_0 then #false else #true) else #true))
+(<label_ite_cond_true: $__nondet_cond_0>, (if $__$__nondet_cond_00 then $__$__nondet_cond_00 else #true))
+(<label_ite_cond_false: !$__nondet_cond_0>, (if (if ($__$__nondet_cond_00 : bool) then #false else #true) then (if ($__$__nondet_cond_00 : bool) then #false else #true) else #true))
 
 
 Warnings:
@@ -612,10 +613,10 @@ Deferred Proof Obligations:
 Label: x_pos
 Property: assert
 Assumptions:
-(<label_nondet_ite_true: $__nondet_cond_0>, (if $__nondet_cond_0 then $__nondet_cond_0 else #true))
-(<label_nondet_ite_false: !$__nondet_cond_0>, (if (if $__nondet_cond_0 then #false else #true) then (if $__nondet_cond_0 then #false else #true) else #true))
+(<label_ite_cond_true: $__nondet_cond_0>, (if $__$__nondet_cond_00 then $__$__nondet_cond_00 else #true))
+(<label_ite_cond_false: !$__nondet_cond_0>, (if (if ($__$__nondet_cond_00 : bool) then #false else #true) then (if ($__$__nondet_cond_00 : bool) then #false else #true) else #true))
 Proof Obligation:
-((if $__nondet_cond_0 then #1 else #2) == #1)
+((if ($__$__nondet_cond_00 : bool) then #1 else #2) == #1)
 -/
 #guard_msgs in
 #eval (evalOne ∅ ∅ [.init "x" t[int] (.det eb[#0]) .empty,

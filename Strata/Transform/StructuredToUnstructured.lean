@@ -83,17 +83,16 @@ match ss with
   let (tl, tbs) ← stmtsToBlocks kNext tss exitConts []
   let (fl, fbs) ← stmtsToBlocks kNext fss exitConts []
   -- For nondet conditions, introduce a fresh boolean variable
-  match c with
-  | .det e =>
-    let (accumEntry, accumBlocks) ← flushCmds "ite$" accum (.some (.condGoto e tl fl)) l
-    pure (accumEntry, accumBlocks ++ tbs ++ fbs ++ bsNext)
-  | .nondet => do
-    let freshName ← StringGenState.gen "$__nondet_ite$"
-    let ident := HasIdent.ident (P := P) freshName
-    let initCmd := HasInit.init ident HasNot.boolTy .nondet MetaData.empty
-    let (accumEntry, accumBlocks) ← flushCmds "ite$" (accum ++ [initCmd])
-      (.some (.condGoto (HasFvar.mkFvar ident) tl fl)) l
-    pure (accumEntry, accumBlocks ++ tbs ++ fbs ++ bsNext)
+  let (condExpr, extraCmds) ← match c with
+    | .det e => pure (e, [])
+    | .nondet => do
+      let freshName ← StringGenState.gen "$__nondet_ite$"
+      let ident := HasIdent.ident (P := P) freshName
+      let initCmd := HasInit.init ident HasBool.boolTy .nondet MetaData.empty
+      pure (HasFvar.mkFvar ident, [initCmd])
+  let (accumEntry, accumBlocks) ← flushCmds "ite$" (accum ++ extraCmds)
+    (.some (.condGoto condExpr tl fl)) l
+  pure (accumEntry, accumBlocks ++ tbs ++ fbs ++ bsNext)
 | .loop c m is bss _md :: rest => do
   -- Process rest first
   let (kNext, bsNext) ← stmtsToBlocks k rest exitConts []
@@ -133,7 +132,7 @@ match ss with
   | .nondet => do
     let freshName ← StringGenState.gen "$__nondet_loop$"
     let ident := HasIdent.ident (P := P) freshName
-    let initCmd := HasInit.init ident HasNot.boolTy .nondet MetaData.empty
+    let initCmd := HasInit.init ident HasBool.boolTy .nondet MetaData.empty
     let b := (lentry, { cmds := [initCmd] ++ invCmds ++ measureCmds,
                         transfer := .condGoto (HasFvar.mkFvar ident) bl kNext })
     let (accumEntry, accumBlocks) ← flushCmds "before_loop$" accum .none lentry
