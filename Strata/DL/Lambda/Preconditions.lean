@@ -32,7 +32,8 @@ structure WFObligation (T : LExprParams) where
   callSiteMetadata : T.Metadata
   /-- Metadata from the precondition definition -/
   precondMetadata : T.Metadata
-  /-- Whether this obligation was propagated from a let-bound argument -/
+  /-- Internal bookkeeping: whether this obligation was propagated from a let-bound argument.
+      Always `false` in the list returned by `collectWFObligations` (reset on output). -/
   fromLetArg : Bool := false
 
 instance [ToFormat T.Metadata] [ToFormat T.IDMeta] : ToFormat (WFObligation T) where
@@ -161,6 +162,8 @@ where
            `safeDiv(c, x)` generates `x != 0` which references `x`.
        -/
       | .app md (.abs amd name ty body) arg =>
+        -- Fresh context (no implications/letObs): arg obligations are collected
+        -- independently and re-emitted at usage sites with local assumptions.
         let argObs := collectWFObligations F arg
         let letObs' := (shiftLetObs letObs).insert 0 argObs
         let bodyObs := go F body implications letObs'
