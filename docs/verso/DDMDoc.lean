@@ -1107,7 +1107,7 @@ The `Dialect` class is the primary entry point for defining a new dialect in
 Python.  A dialect collects syntactic category and operator declarations and
 can be serialized to Ion format.
 
-```python
+```
 from strata.base import Dialect, ArgDecl
 
 # Create a new dialect and import Init (for builtin categories).
@@ -1121,7 +1121,7 @@ Syntactic categories are added with `add_syncat`.  The returned `SynCatDecl`
 can be called to produce a `SyntaxCat` reference, which is used when declaring
 operators.
 
-```python
+```
 expr = d.add_syncat("Expr")
 stmt = d.add_syncat("Stmt")
 
@@ -1131,7 +1131,7 @@ expr()   # => SyntaxCat with name MyDialect.Expr
 
 Parametric categories take argument names:
 
-```python
+```
 pair = d.add_syncat("Pair", ("a", "b"))
 pair(expr(), stmt())  # => SyntaxCat(MyDialect.Pair, (MyDialect.Expr, MyDialect.Stmt))
 ```
@@ -1143,7 +1143,7 @@ zero or more `ArgDecl` values, and the result `SyntaxCat` (passed as the
 last positional argument).  An optional `syntax` parameter provides a
 syntax definition for pretty-printing.
 
-```python
+```
 from strata.base import SyntaxArg
 
 # An operator with no arguments.
@@ -1165,7 +1165,7 @@ values (see [Building Programs](#python_programs)).
 
 Dialects can be serialized to Amazon Ion format and read back:
 
-```python
+```
 import amazon.ion.simpleion as ion
 
 # Write
@@ -1207,7 +1207,7 @@ in the Python package.
 These are `SynCatDecl` objects.  Call them with no arguments (or with arguments
 for parametric categories) to get a `SyntaxCat` reference:
 
-```python
+```
 from strata.base import Init
 
 Init.Expr()                # => SyntaxCat for Init.Expr
@@ -1240,7 +1240,7 @@ An `OpDecl` represents an operator declaration.  It is created by
 
 Calling an `OpDecl` with the appropriate arguments constructs an `Operation`:
 
-```python
+```
 assign_op = d.assign   # OpDecl added earlier
 op = assign_op(Ident("x"), some_expr, ann=SourceRange(0, 10))
 ```
@@ -1256,7 +1256,7 @@ An `ArgDecl` describes a single argument to an operator.  It has three fields:
 When constructing an `ArgDecl`, the `kind` parameter also accepts a `SynCatDecl`
 with no parameters, which is automatically converted to a `SyntaxCat`:
 
-```python
+```
 ArgDecl("x", Init.Expr())     # kind is a SyntaxCat
 ArgDecl("x", Init.Expr)       # SynCatDecl — automatically converted to SyntaxCat
 ```
@@ -1274,7 +1274,7 @@ is also stored as an attribute on the dialect object.  This means that after
 calling `d.add_op("lit", ...)`, the `OpDecl` is accessible as `d.lit` and can
 be called directly to construct operations.
 
-```python
+```
 from strata.base import ArgDecl, Dialect, Init, Program, NumLit
 
 d = Dialect("MyDialect")
@@ -1297,7 +1297,7 @@ p.add(cmd)
 
 Programs are serialized with `to_ion()`:
 
-```python
+```
 import amazon.ion.simpleion as ion
 
 with open("output.st.ion", "wb") as f:
@@ -1324,7 +1324,7 @@ three fields:
 
 `OperationArgs` supports access by name or by position:
 
-```python
+```
 op.args["var"]   # Access by argument name
 op.args[0]       # Access by position
 len(op.args)     # Number of arguments
@@ -1398,7 +1398,7 @@ metadata).  The relevant types are:
 
 Metadata is passed as a list of `MetadataAttr` when constructing declarations:
 
-```python
+```
 from strata.base import MetadataAttr, MetadataCat, QualifiedIdent
 
 scope_meta = MetadataAttr(QualifiedIdent("Init", "scope"), [MetadataCat(0)])
