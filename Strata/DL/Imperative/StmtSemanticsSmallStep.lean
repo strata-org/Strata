@@ -205,7 +205,7 @@ inductive StepStmt
     WellFormedSemanticEvalBool ρ.eval →
     ----
     StepStmt EvalCmd extendEval
-      (.stmt (.ite c tss ess _) ρ)
+      (.stmt (.ite (.det c) tss ess _) ρ)
       (.stmts tss ρ)
 
   /-- If the condition of an `ite` statement evaluates to false, step to the
@@ -215,7 +215,19 @@ inductive StepStmt
     WellFormedSemanticEvalBool ρ.eval →
     ----
     StepStmt EvalCmd extendEval
-      (.stmt (.ite c tss ess _) ρ)
+      (.stmt (.ite (.det c) tss ess _) ρ)
+      (.stmts ess ρ)
+
+  /-- Non-deterministic ite: step to the then branch. -/
+  | step_ite_nondet_true :
+    StepStmt EvalCmd extendEval
+      (.stmt (.ite .nondet tss ess _) ρ)
+      (.stmts tss ρ)
+
+  /-- Non-deterministic ite: step to the else branch. -/
+  | step_ite_nondet_false :
+    StepStmt EvalCmd extendEval
+      (.stmt (.ite .nondet tss ess _) ρ)
       (.stmts ess ρ)
 
   /-- If a loop guard is true, execute the body (followed by the loop again). -/
@@ -224,8 +236,8 @@ inductive StepStmt
     WellFormedSemanticEvalBool ρ.eval →
     ----
     StepStmt EvalCmd extendEval
-      (.stmt (.loop g m inv body md) ρ)
-      (.stmts (body ++ [.loop g m inv body md]) ρ)
+      (.stmt (.loop (.det g) m inv body md) ρ)
+      (.stmts (body ++ [.loop (.det g) m inv body md]) ρ)
 
   /-- If a loop guard is false, terminate the loop. -/
   | step_loop_exit :
@@ -233,7 +245,19 @@ inductive StepStmt
     WellFormedSemanticEvalBool ρ.eval →
     ----
     StepStmt EvalCmd extendEval
-      (.stmt (.loop g m inv body _) ρ)
+      (.stmt (.loop (.det g) m inv body _) ρ)
+      (.terminal ρ)
+
+  /-- Non-deterministic loop: enter the body. -/
+  | step_loop_nondet_enter :
+    StepStmt EvalCmd extendEval
+      (.stmt (.loop .nondet m inv body md) ρ)
+      (.stmts (body ++ [.loop .nondet m inv body md]) ρ)
+
+  /-- Non-deterministic loop: exit the loop. -/
+  | step_loop_nondet_exit :
+    StepStmt EvalCmd extendEval
+      (.stmt (.loop .nondet m inv body _) ρ)
       (.terminal ρ)
 
   /-- An exit statement produces an exiting configuration. -/
@@ -604,6 +628,22 @@ private def step_simulation
     cases c₂ <;> try contradiction
     obtain ⟨rfl, hs, he⟩ := heq; rename_i ρ₂; cases ρ₂; subst hs; subst he
     exact ⟨_, by apply_step, by simp_all [ConfigSE]⟩
+  | step_ite_nondet_true =>
+    cases c₂ <;> try contradiction
+    obtain ⟨rfl, hs, he⟩ := heq; rename_i ρ₂; cases ρ₂; simp at hs he; subst hs; subst he
+    exact ⟨_, .step_ite_nondet_true, by simp [ConfigSE]⟩
+  | step_ite_nondet_false =>
+    cases c₂ <;> try contradiction
+    obtain ⟨rfl, hs, he⟩ := heq; rename_i ρ₂; cases ρ₂; simp at hs he; subst hs; subst he
+    exact ⟨_, .step_ite_nondet_false, by simp [ConfigSE]⟩
+  | step_loop_nondet_enter =>
+    cases c₂ <;> try contradiction
+    obtain ⟨rfl, hs, he⟩ := heq; rename_i ρ₂; cases ρ₂; simp at hs he; subst hs; subst he
+    exact ⟨_, .step_loop_nondet_enter, by simp [ConfigSE]⟩
+  | step_loop_nondet_exit =>
+    cases c₂ <;> try contradiction
+    obtain ⟨rfl, hs, he⟩ := heq; rename_i ρ₂; cases ρ₂; simp at hs he; subst hs; subst he
+    exact ⟨_, .step_loop_nondet_exit, by simp [ConfigSE]⟩
   | step_seq_inner h =>
     cases c₂ with
     | seq i₂ _ =>
@@ -727,11 +767,18 @@ private theorem step_preserves_exitsCoveredByBlocks
   | step_block => intro _ hwp; exact hwp
   | step_ite_true => intro _ hwp; exact hwp.1
   | step_ite_false => intro _ hwp; exact hwp.2
+  | step_ite_nondet_true => intro _ hwp; exact hwp.1
+  | step_ite_nondet_false => intro _ hwp; exact hwp.2
   | step_loop_enter _ _ =>
     intro labels hwp
     simp only [Config.exitsCoveredByBlocks, Stmt.exitsCoveredByBlocks] at hwp ⊢
     exact block_exitsCoveredByBlocks_append (P := P) (CmdT := CmdT) labels _ _ hwp ⟨hwp, True.intro⟩
   | step_loop_exit => intro _ _; trivial
+  | step_loop_nondet_enter =>
+    intro labels hwp
+    simp only [Config.exitsCoveredByBlocks, Stmt.exitsCoveredByBlocks] at hwp ⊢
+    exact block_exitsCoveredByBlocks_append (P := P) (CmdT := CmdT) labels _ _ hwp ⟨hwp, True.intro⟩
+  | step_loop_nondet_exit => intro _ _; trivial
   | step_exit =>
     intro labels hwp
     -- hwp is about .stmt (.exit lbl md) but goal is about .exiting lbl
@@ -831,6 +878,14 @@ private theorem step_preserves_eval_noFuncDecl
     intro hnofd
     simp only [Config.noFuncDecl, Stmt.noFuncDecl, Bool.and_eq_true] at hnofd
     exact ⟨rfl, hnofd.2⟩
+  | step_ite_nondet_true =>
+    intro hnofd
+    simp only [Config.noFuncDecl, Stmt.noFuncDecl, Bool.and_eq_true] at hnofd
+    exact ⟨rfl, hnofd.1⟩
+  | step_ite_nondet_false =>
+    intro hnofd
+    simp only [Config.noFuncDecl, Stmt.noFuncDecl, Bool.and_eq_true] at hnofd
+    exact ⟨rfl, hnofd.2⟩
   | step_loop_enter =>
     intro hnofd
     refine ⟨rfl, ?_⟩
@@ -849,6 +904,23 @@ private theorem step_preserves_eval_noFuncDecl
         · simp_all [Block.noFuncDecl]
     exact h_append _ _ hnofd (by simp [Block.noFuncDecl, Stmt.noFuncDecl, hnofd])
   | step_loop_exit => intro _; exact ⟨rfl, trivial⟩
+  | step_loop_nondet_enter =>
+    intro hnofd
+    refine ⟨rfl, ?_⟩
+    simp only [Config.noFuncDecl, Stmt.noFuncDecl] at hnofd ⊢
+    have h_append : ∀ (ss₁ ss₂ : List (Stmt P CmdT)),
+        Block.noFuncDecl ss₁ = true → Block.noFuncDecl ss₂ = true →
+        Block.noFuncDecl (ss₁ ++ ss₂) = true := by
+      intro ss₁; induction ss₁ with
+      | nil => intro _ _ h; exact h
+      | cons s ss ih =>
+        intro ss₂ h₁ h₂
+        simp only [Block.noFuncDecl] at h₁ ⊢
+        cases hs : Stmt.noFuncDecl s
+        · simp [hs] at h₁
+        · simp_all [Block.noFuncDecl]
+    exact h_append _ _ hnofd (by simp [Block.noFuncDecl, Stmt.noFuncDecl, hnofd])
+  | step_loop_nondet_exit => intro _; exact ⟨rfl, trivial⟩
   | step_exit => intro _; exact ⟨rfl, trivial⟩
   | step_funcDecl =>
     intro hnofd; simp [Config.noFuncDecl, Stmt.noFuncDecl] at hnofd
@@ -950,7 +1022,7 @@ private theorem noMatchingAssert_not_isAtAssert
     simp [Config.noMatchingAssert, Stmt.noMatchingAssert] at hno
     simp [isAtAssert]; exact fun h _ => hno (h ▸ rfl)
   | .stmt (.cmd (.init ..)) _ | .stmt (.cmd (.set ..)) _
-  | .stmt (.cmd (.havoc ..)) _ | .stmt (.cmd (.assume ..)) _
+  | .stmt (.cmd (.assume ..)) _
   | .stmt (.cmd (.cover ..)) _
   | .stmt (.block ..) _ | .stmt (.ite ..) _ | .stmt (.loop ..) _
   | .stmt (.exit ..) _ | .stmt (.funcDecl ..) _ | .stmt (.typeDecl ..) _ =>
@@ -960,7 +1032,7 @@ private theorem noMatchingAssert_not_isAtAssert
     simp [Config.noMatchingAssert, Stmt.noMatchingAssert.Stmts.noMatchingAssert, Stmt.noMatchingAssert] at hno
     simp [isAtAssert]; exact fun h _ => hno.1 (h ▸ rfl)
   | .stmts ((.cmd (.init ..)) :: _) _ | .stmts ((.cmd (.set ..)) :: _) _
-  | .stmts ((.cmd (.havoc ..)) :: _) _ | .stmts ((.cmd (.assume ..)) :: _) _
+  | .stmts ((.cmd (.assume ..)) :: _) _
   | .stmts ((.cmd (.cover ..)) :: _) _
   | .stmts ((.block ..) :: _) _ | .stmts ((.ite ..) :: _) _
   | .stmts ((.loop ..) :: _) _ | .stmts ((.exit ..) :: _) _
@@ -993,12 +1065,20 @@ private def step_preserves_noMatchingAssert
   | step_block => exact hno
   | step_ite_true => exact hno.1
   | step_ite_false => exact hno.2
+  | step_ite_nondet_true => exact hno.1
+  | step_ite_nondet_false => exact hno.2
   | step_loop_enter =>
     simp only [Config.noMatchingAssert, Stmt.noMatchingAssert] at hno ⊢
     apply stmts_noMatchingAssert_append
     exact hno
     exact ⟨hno, True.intro⟩
   | step_loop_exit => trivial
+  | step_loop_nondet_enter =>
+    simp only [Config.noMatchingAssert, Stmt.noMatchingAssert] at hno ⊢
+    apply stmts_noMatchingAssert_append
+    exact hno
+    exact ⟨hno, True.intro⟩
+  | step_loop_nondet_exit => trivial
   | step_exit => trivial
   | step_funcDecl => trivial
   | step_typeDecl => trivial
@@ -1158,8 +1238,12 @@ private theorem step_preserves_noFailure
   | step_block => simp [Config.getEnv]; exact hnf
   | step_ite_true _ _ => exact hnf
   | step_ite_false _ _ => exact hnf
+  | step_ite_nondet_true => exact hnf
+  | step_ite_nondet_false => exact hnf
   | step_loop_enter _ _ => exact hnf
   | step_loop_exit _ _ => exact hnf
+  | step_loop_nondet_enter => exact hnf
+  | step_loop_nondet_exit => exact hnf
   | step_exit => exact hnf
   | step_funcDecl => simp [Config.getEnv]; exact hnf
   | step_typeDecl => exact hnf

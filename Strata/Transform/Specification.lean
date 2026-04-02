@@ -312,7 +312,7 @@ theorem ite {c : P.Expr} {tss ess : List (Stmt P CmdT)} {md : MetaData P}
     {Pre Post : Env P → Prop}
     (ht : TripleBlock evalCmd extendEval (fun ρ => Pre ρ ∧ ρ.eval ρ.store c = some HasBool.tt) tss Post)
     (he : TripleBlock evalCmd extendEval (fun ρ => Pre ρ ∧ ρ.eval ρ.store c = some HasBool.ff) ess Post) :
-    Triple (Lang.imperative P CmdT evalCmd extendEval isAtAssertFn) Pre (.ite c tss ess md) Post := by
+    Triple (Lang.imperative P CmdT evalCmd extendEval isAtAssertFn) Pre (.ite (.det c) tss ess md) Post := by
   intro ρ₀ ρ' hpre hwfb hf₀ hstar
   cases hstar with
   | step _ _ _ h1 r1 => cases h1 with
@@ -390,7 +390,7 @@ theorem hoareTriple_implies_assertValid
                   have h := hno_match ρ₁ (.stmt (.cmd (.assert l e md')) ρ₁) (.refl _)
                   simp [isAtAssert] at h h_at
                   exact h h_at.1 h_at.2
-                | .cmd (.init ..) | .cmd (.set ..) | .cmd (.havoc ..) | .cmd (.assume ..)
+                | .cmd (.init ..) | .cmd (.set ..) | .cmd (.assume ..)
                 | .cmd (.cover ..) | .block .. | .ite .. | .loop .. | .exit .. | .funcDecl ..
                 | .typeDecl .. =>
                   simp [isAtAssert] at h_at
