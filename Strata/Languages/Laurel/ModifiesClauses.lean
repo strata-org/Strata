@@ -49,13 +49,14 @@ inductive ModifiesEntry where
 
 /--
 Classify a heap-relevant type into a `ModifiesEntry`, or `none` for
-non-heap-relevant types. This is the single source of truth for which types
-produce modifies entries and how they are classified.
+non-heap-relevant types. Delegates to `classifyModifiesHighType` for the
+type classification.
 -/
-def classifyModifiesType (expr : StmtExprMd) : HighType → Option ModifiesEntry
-  | .UserDefined _ => some (.single expr)
-  | .TSet _ => some (.set expr)
-  | _ => none
+def classifyModifiesType (expr : StmtExprMd) (ty : HighType) : Option ModifiesEntry :=
+  match classifyModifiesHighType ty with
+  | some .composite    => some (.single expr)
+  | some .compositeSet => some (.set expr)
+  | none               => none
 
 /--
 Extract modifies entries from the list of modifies StmtExprs, using the type
