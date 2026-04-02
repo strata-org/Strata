@@ -165,9 +165,10 @@ def mkStmtExprMdWithLoc (expr : StmtExpr) (md : Imperative.MetaData Core.Express
 /-- Build a StaticCall for an instance method: ClassName@methodName(self, args...).
     For Any-typed receivers (no model available), returns a Hole instead. -/
 def mkInstanceMethodCall (className : String) (methodName : String)
-    (self : StmtExprMd) (args : List StmtExprMd) : StmtExprMd :=
-  if className == "Any" then mkStmtExprMd .Hole
-  else mkStmtExprMd (StmtExpr.StaticCall (className ++ "@" ++ methodName) (self :: args))
+    (self : StmtExprMd) (args : List StmtExprMd)
+    (md : Imperative.MetaData Core.Expression := defaultMetadata) : StmtExprMd :=
+  if className == "Any" then mkStmtExprMdWithLoc .Hole md
+  else mkStmtExprMdWithLoc (StmtExpr.StaticCall (className ++ "@" ++ methodName) (self :: args)) md
 
 /-- Extract string representation from Python expression (for type annotations) -/
 partial def pyExprToString (e : Python.expr SourceRange) : String :=
@@ -862,8 +863,9 @@ partial def translateCall (ctx : TranslationContext)
   if funcDecl.isNone && kwords.length > 0 then
     throwUserError f.ann s!"Undeclared function '{funcName}' called with keyword args"
   -- Emit the final call, handling Name vs Attribute dispatch and transparent procedures.
+  let callMd := sourceRangeToMetaData ctx.filePath callRange
   let emitCall (callArgs : List StmtExprMd) : Except TranslationError StmtExprMd := do
-    let mkCall (name : String) := mkStmtExprMd (StmtExpr.StaticCall name callArgs)
+    let mkCall (name : String) := mkStmtExprMdWithLoc (StmtExpr.StaticCall name callArgs) callMd
     match f with
     | .Name  _ _ _ =>
         -- If calling str() on a composite-typed variable, use $composite_to_string_any_<type>
@@ -884,7 +886,7 @@ partial def translateCall (ctx : TranslationContext)
           if let some (ImportedSymbol.procedure _ _ true) := ctx.importedSymbols[funcName]? then
             return mkCall funcName
           else
-            return mkStmtExprMd (.Hole)
+            return mkStmtExprMdWithLoc (.Hole) callMd
         else return mkCall funcName
     | _ => throw (.unsupportedConstruct "Invalid call construct" (toString (repr f)))
   -- When ** is used at the call site and we have a known function signature,
@@ -985,25 +987,25 @@ partial def translateAssign  (ctx : TranslationContext)
               let newExpr := mkStmtExprMd (StmtExpr.New resolvedId)
               let varType := mkHighTypeMd (.UserDefined resolvedId)
               let selfRef := mkStmtExprMd (StmtExpr.Identifier n.val)
-              let initStmt := mkInstanceMethodCall laurelName "__init__" selfRef args
+              let initStmt := mkInstanceMethodCall laurelName "__init__" selfRef args md
               if n.val ∈ ctx.variableTypes.unzip.1 then
-                let assignStmt := mkStmtExprMd (StmtExpr.Assign [targetExpr] newExpr)
+                let assignStmt := mkStmtExprMdWithLoc (StmtExpr.Assign [targetExpr] newExpr) md
                 [assignStmt, initStmt]
               else
-                let newStmt := mkStmtExprMd (StmtExpr.LocalVariable n.val varType (some newExpr))
+                let newStmt := mkStmtExprMdWithLoc (StmtExpr.LocalVariable n.val varType (some newExpr)) md
                 [newStmt, initStmt]
             else if withException ctx fnname.text then
-              [mkStmtExprMd (StmtExpr.Assign [targetExpr, maybeExceptVar] rhs_trans)]
+              [mkStmtExprMdWithLoc (StmtExpr.Assign [targetExpr, maybeExceptVar] rhs_trans) md]
             else
-                [mkStmtExprMd (StmtExpr.Assign [targetExpr] rhs_trans)]
+                [mkStmtExprMdWithLoc (StmtExpr.Assign [targetExpr] rhs_trans) md]
         | .New className =>
             if n.val ∈ ctx.variableTypes.unzip.1 then
-              [mkStmtExprMd (StmtExpr.Assign [targetExpr] rhs_trans)]
+              [mkStmtExprMdWithLoc (StmtExpr.Assign [targetExpr] rhs_trans) md]
             else
               let varType := mkHighTypeMd (.UserDefined className)
-              let newStmt := mkStmtExprMd (StmtExpr.LocalVariable n.val varType (some rhs_trans))
+              let newStmt := mkStmtExprMdWithLoc (StmtExpr.LocalVariable n.val varType (some rhs_trans)) md
               [newStmt]
-        | _ => [mkStmtExprMd (StmtExpr.Assign [targetExpr] rhs_trans)]
+        | _ => [mkStmtExprMdWithLoc (StmtExpr.Assign [targetExpr] rhs_trans) md]
         newctx := match rhs_trans.val with
         | .StaticCall fnname _ =>
             if let some (ImportedSymbol.compositeType laurelName) := ctx.importedSymbols[fnname.text]? then
@@ -1032,7 +1034,7 @@ partial def translateAssign  (ctx : TranslationContext)
             let target ← translateExpr ctx target
             let slices ← slices.mapM (translateExpr ctx)
             let anySetsExpr := ⟨ StmtExpr.StaticCall "Any_sets" [ListAny_mk slices, target, rhs_trans] , md ⟩
-            let assignStmts := [mkStmtExprMd (StmtExpr.Assign [target] anySetsExpr)]
+            let assignStmts := [mkStmtExprMdWithLoc (StmtExpr.Assign [target] anySetsExpr) md]
             return (ctx,assignStmts)
         | _ =>  throw (.internalError "Invalid Subscript Expr")
     | .Attribute _ obj attr _ =>
@@ -1276,8 +1278,8 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
         let mgrDecl := mkStmtExprMd (StmtExpr.LocalVariable mgrName mgrLauTy (some mgrExpr))
         let mgrRef := mkStmtExprMd (StmtExpr.Identifier mgrName)
         currentCtx := {currentCtx with variableTypes := currentCtx.variableTypes ++ [(mgrName, mgrTy)]}
-        let enterCall := mkInstanceMethodCall mgrTy "__enter__" mgrRef []
-        let exitCall := mkInstanceMethodCall mgrTy "__exit__" mgrRef []
+        let enterCall := mkInstanceMethodCall mgrTy "__enter__" mgrRef [] md
+        let exitCall := mkInstanceMethodCall mgrTy "__exit__" mgrRef [] md
         match optVars.val with
         | some varExpr =>
           let varName := pyExprToString varExpr

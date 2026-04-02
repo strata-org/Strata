@@ -1,11 +1,8 @@
-
-==== Verification Results ====
-assert_assert(81)_calls_Any_to_bool_0: ✅ pass (at line 5, col 4)
-assert(81): ✅ pass (at line 5, col 4)
-assert_assert(124)_calls_Any_to_bool_0: ✅ pass (at line 7, col 4)
-assert(124): ✅ pass (at line 7, col 4)
-assert_assert(167)_calls_Any_to_bool_0: ✅ pass (at line 9, col 4)
-assert(167): ✅ pass (at line 9, col 4)
-
+test_augmented_assign.py(5, 4): ✅ pass - assert_assert(81)_calls_Any_to_bool_0
+test_augmented_assign.py(5, 4): ✅ pass - assert(81)
+test_augmented_assign.py(7, 4): ✅ pass - assert_assert(124)_calls_Any_to_bool_0
+test_augmented_assign.py(7, 4): ✅ pass - assert(124)
+test_augmented_assign.py(9, 4): ✅ pass - assert_assert(167)_calls_Any_to_bool_0
+test_augmented_assign.py(9, 4): ✅ pass - assert(167)
 DETAIL: 6 passed, 0 failed, 0 inconclusive
 RESULT: Analysis success

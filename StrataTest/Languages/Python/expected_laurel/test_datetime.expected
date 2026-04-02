@@ -1,18 +1,15 @@
-
-==== Verification Results ====
-callElimAssert_requires_12: ✅ pass
-callElimAssert_requires_0_4: ✅ pass
-callElimAssert_requires_1_5: ✅ pass
-callElimAssert_requires_2_6: ✅ pass
-callElimAssert_requires_3_7: ✅ pass
-assert_assert(554)_calls_Any_to_bool_0: ✅ pass (at line 21, col 0)
-assert(554): ✅ pass (at line 21, col 0)
-assert_assert(673)_calls_Any_to_bool_0: ✅ pass (at line 25, col 0)
-assert(673): ✅ pass (at line 25, col 0)
-assert_assert(758)_calls_Any_to_bool_0: ✅ pass (at line 27, col 0)
-assert(758): ✅ pass (at line 27, col 0)
-assert_assert(859)_calls_Any_to_bool_0: ✅ pass (at line 30, col 0)
-assert(859): ✅ pass (at line 30, col 0)
-
+test_datetime.py(13, 0): ✅ pass - callElimAssert_requires_12
+test_datetime.py(14, 0): ✅ pass - callElimAssert_requires_0_4
+test_datetime.py(14, 0): ✅ pass - callElimAssert_requires_1_5
+test_datetime.py(14, 0): ✅ pass - callElimAssert_requires_2_6
+test_datetime.py(14, 0): ✅ pass - callElimAssert_requires_3_7
+test_datetime.py(21, 0): ✅ pass - assert_assert(554)_calls_Any_to_bool_0
+test_datetime.py(21, 0): ✅ pass - assert(554)
+test_datetime.py(25, 0): ✅ pass - assert_assert(673)_calls_Any_to_bool_0
+test_datetime.py(25, 0): ✅ pass - assert(673)
+test_datetime.py(27, 0): ✅ pass - assert_assert(758)_calls_Any_to_bool_0
+test_datetime.py(27, 0): ✅ pass - assert(758)
+test_datetime.py(30, 0): ✅ pass - assert_assert(859)_calls_Any_to_bool_0
+test_datetime.py(30, 0): ✅ pass - assert(859)
 DETAIL: 13 passed, 0 failed, 0 inconclusive
 RESULT: Analysis success
