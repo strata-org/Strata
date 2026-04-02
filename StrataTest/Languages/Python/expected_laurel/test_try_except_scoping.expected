@@ -1,11 +1,8 @@
-
-==== Verification Results ====
-assert_assert(355)_calls_Any_to_bool_0: ✅ pass (at line 15, col 4)
-assert(355): ✅ pass (at line 15, col 4)
-assert_assert(638)_calls_Any_to_bool_0: ✅ pass (at line 24, col 4)
-assert(638): ✅ pass (at line 24, col 4)
-assert_assert(952)_calls_Any_to_bool_0: ✅ pass (at line 35, col 4)
-assert(952): ✅ pass (at line 35, col 4)
-
+test_try_except_scoping.py(15, 4): ✅ pass - assert_assert(355)_calls_Any_to_bool_0
+test_try_except_scoping.py(15, 4): ✅ pass - assert(355)
+test_try_except_scoping.py(24, 4): ✅ pass - assert_assert(638)_calls_Any_to_bool_0
+test_try_except_scoping.py(24, 4): ✅ pass - assert(638)
+test_try_except_scoping.py(35, 4): ✅ pass - assert_assert(952)_calls_Any_to_bool_0
+test_try_except_scoping.py(35, 4): ✅ pass - assert(952)
 DETAIL: 6 passed, 0 failed, 0 inconclusive
 RESULT: Analysis success
