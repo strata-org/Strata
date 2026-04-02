@@ -57,11 +57,11 @@ def preprocess (E : Env) (c : Cmd Expression) (e : Expression.Expr) : Expression
     -- command.
     -- See `CmdType.lean` for details.
     match eOpt with
-    | some _ =>
+    | .det _ =>
       let freeVars := e.freeVars
       let E' := E.insertFreeVarsInOldestScope freeVars
       (e, E')
-    | none => (e, E)
+    | .nondet => (e, E)
   | _ => (e, E)
 
 def genFreeVar (E : Env) (x : Expression.Ident) (ty : Expression.Ty) : Expression.Expr × Env :=

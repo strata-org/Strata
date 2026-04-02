@@ -29,7 +29,7 @@ private def xEq1 : E := .eq () x int1
 
 -- 1. cmd: init
 /-- info: init (x : int) := #0 -/
-#guard_msgs in #eval! format (Statement.init "x" intTy int0 .empty : S)
+#guard_msgs in #eval! format (Statement.init "x" intTy (.det int0) .empty : S)
 
 -- 2. cmd: set
 /-- info: x := #42 -/
@@ -72,7 +72,7 @@ info: myBlock :
 #eval! format (Stmt.block "myBlock" ([Statement.set "x" int1 .empty,
                                       Statement.assert "check" xEq1 .empty] : Ss) .empty : S)
 
-def p := (Stmt.ite xEq0
+def p := (Stmt.ite (.det xEq0)
                 ([Statement.set "y" int1 .empty] : Ss)
                 ([Statement.set "y" int2 .empty] : Ss)
                 .empty : S)
@@ -114,7 +114,7 @@ else {
 info: if #true {}
 else {}
 -/
-#guard_msgs in #eval! format (Stmt.ite tt ([] : Ss) ([] : Ss) .empty : S)
+#guard_msgs in #eval! format (Stmt.ite (.det tt) ([] : Ss) ([] : Ss) .empty : S)
 
 -- 12. loop: no measure, no invariant
 /--
@@ -127,7 +127,7 @@ info: while
 }
 -/
 #guard_msgs in
-#eval! format (Stmt.loop xEq0 none []
+#eval! format (Stmt.loop (.det xEq0) none []
                 ([Statement.set "x" int1 .empty] : Ss) .empty : S)
 
 -- 13. loop: with measure and invariant
@@ -141,7 +141,7 @@ info: while
 }
 -/
 #guard_msgs in
-#eval! format (Stmt.loop xEq0 (some x) [tt]
+#eval! format (Stmt.loop (.det xEq0) (some x) [tt]
                 ([Statement.set "x" int1 .empty] : Ss) .empty : S)
 
 -- 14. exit with label
