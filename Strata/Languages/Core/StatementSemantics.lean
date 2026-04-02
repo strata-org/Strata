@@ -8,7 +8,6 @@ module
 public import Strata.DL.Lambda.LExpr
 public import Strata.DL.Lambda.LExprWF
 public import Strata.DL.Imperative.StmtSemanticsSmallStep
-public import Strata.DL.Imperative.StmtSemantics
 public import Strata.Languages.Core.CoreGen
 public import Strata.Languages.Core.Procedure
 
@@ -325,6 +324,7 @@ inductive EvalCommand (π : String → Option Procedure) (φ : CoreEval → Pure
     CoreStepStar π φ
       (.stmts p.body ⟨σAO, δ, false⟩)
       (.terminal ρ') →
+    -- Postconditions, if any, must be satisfied for execution to continue.
     (∀ post, (Procedure.Spec.getCheckExprs p.spec.postconditions).contains post →
       isDefinedOver (HasVarsPure.getVars) σAO post ∧
       δ ρ'.store post = .some HasBool.tt) →
