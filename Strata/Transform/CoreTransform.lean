@@ -268,6 +268,8 @@ def createAssumes
     conds.mapM (fun (l, check) => do
       let newLabel ← genIdent l (fun s => s!"callElimAssume_{s}")
       -- Non-lifting: the replacement expressions must be closed (no dangling bvars).
+      -- Use the call site as the primary file range, preserving the ensures
+      -- clause location as a related file range for richer diagnostics.
       let assumeMd := check.md.setCallSiteFileRange md
       return Statement.assume newLabel.toPretty (Lambda.LExpr.substFvars check.expr subst) assumeMd)
 
