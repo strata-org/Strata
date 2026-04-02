@@ -254,7 +254,7 @@ Unreachable covers display as ❌ (error) instead of ⛔ (warning).
   ✅     always true and is reachable                   sat      unsat    yes        pass       pass        pass                 Property always true, reachable from declaration entry
   ❌     always false and is reachable                  unsat    sat      yes        error      error       error                Property always false, reachable from declaration entry
   🔶     can be both true and false and is reachable    sat      sat      yes        error      note        error                Reachable, solver found models for both the property and its negation
-  ⛔     unreachable                                    unsat    unsat    no         warning    warning     warning              Dead code, path unreachable
+  ⛔     unreachable                                    unsat    unsat    no         warning    error       error                Dead code, path unreachable
   ➕     can be true and is reachable                   sat      unknown  yes        error      note        note                 Property can be true and is reachable, unknown if always true
   ✖️     always false if reached                        unsat    unknown  unknown    error      error       error                Property always false if reached, unknown if reachable
   ➖     can be false and is reachable                  unknown  sat      yes        error      note        error                Property can be false and is reachable, unknown if always false
@@ -374,8 +374,10 @@ def label (o : VCOutcome) (property : Imperative.PropertyType)
     (checkLevel : CheckLevel) (checkMode : VerificationMode) : String :=
   -- Unreachable is detected when both checks ran (via fullCheck annotation or full level)
   if o.unreachable then
-    if property.passWhenUnreachable then "pass (❗path unreachable)"
-    else "fail (❗path unreachable)"
+    match checkMode with
+    | .deductive => if property.passWhenUnreachable then "pass (❗path unreachable)"
+                    else "fail (❗path unreachable)"
+    | _ => "fail (❗path unreachable)"
   -- Simplified labels for minimal check level
   else if checkLevel == .minimal then
     match property, checkMode with
@@ -418,7 +420,9 @@ def emoji (o : VCOutcome) (property : Imperative.PropertyType)
     (checkLevel : CheckLevel) (checkMode : VerificationMode) : String :=
   -- Unreachable is detected when both checks ran
   if o.unreachable then
-    if property.passWhenUnreachable then "✅" else "❌"
+    match checkMode with
+    | .deductive => if property.passWhenUnreachable then "✅" else "❌"
+    | _ => "❌"
   -- Simplified emojis for minimal check level
   else if checkLevel == .minimal then
     match property, checkMode with

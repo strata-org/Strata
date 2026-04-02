@@ -96,7 +96,7 @@ Sat:sat|Val:sat 🔶 can be both true and false and is reachable from declaratio
 
 /--
 info:  isPass isAlwaysTrue
-Sat:unsat|Val:unsat ✅ pass (❗path unreachable), Unreachable: path condition is contradictory, SARIF: Deductive level: warning, BugFinding level: warning
+Sat:unsat|Val:unsat ✅ pass (❗path unreachable), Unreachable: path condition is contradictory, SARIF: Deductive level: warning, BugFinding level: error
 -/
 #guard_msgs in
 #eval testOutcome (mkOutcome .unsat .unsat) .unreachable
@@ -162,7 +162,7 @@ info: === Outcome Table (assert) ===
 ✅ always true and is reachable from declaration entry | Deductive: none | BugFinding: none | BugFinding+Complete: none | Cover: ✅ satisfiable and reachable from declaration entry
 ❌ always false and is reachable from declaration entry | Deductive: error | BugFinding: error | BugFinding+Complete: error
 🔶 can be both true and false and is reachable from declaration entry | Deductive: error | BugFinding: note | BugFinding+Complete: error | Cover: ✅ satisfiable and reachable from declaration entry
-✅ pass (❗path unreachable) | Deductive: warning | BugFinding: warning | BugFinding+Complete: warning | Cover: ❌ fail (❗path unreachable)
+✅ pass (❗path unreachable) | Deductive: warning | BugFinding: error | BugFinding+Complete: error | Cover: ❌ fail (❗path unreachable)
 ➕ can be true and is reachable from declaration entry | Deductive: error | BugFinding: note | BugFinding+Complete: note | Cover: ✅ satisfiable and reachable from declaration entry
 ✖️ always false if reached | Deductive: error | BugFinding: error | BugFinding+Complete: error
 ➖ can be false and is reachable from declaration entry | Deductive: error | BugFinding: note | BugFinding+Complete: error

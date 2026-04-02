@@ -24,8 +24,9 @@ def outcomeToLevel (mode : VerificationMode) (property : Imperative.PropertyType
   match mode, property, outcome.satisfiabilityProperty, outcome.validityProperty with
   -- Cover satisfied (sat on P∧Q): always pass
   | _, .cover, .sat _, _ => .none
-  -- Unreachable (both unsat): warning for assert/divisionByZero, error for cover
-  | _, p, .unsat, .unsat => if p.passWhenUnreachable then .warning else .error
+  -- Unreachable (both unsat): deductive=warning for assert/divisionByZero, error for cover and bugFinding modes
+  | .deductive, p, .unsat, .unsat => if p.passWhenUnreachable then .warning else .error
+  | _, _, .unsat, .unsat => .error
   -- Pass: validity proven (unsat on P∧¬Q)
   | _, _, _, .unsat => .none
   -- Always false (sat unsat): error in all modes
