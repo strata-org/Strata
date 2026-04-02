@@ -843,7 +843,7 @@ theorem EvalStatementsContractHavocVars :
     apply EvalStmtRefinesContract
     apply Imperative.EvalStmt.cmd_sem
     apply EvalCommand.cmd_sem
-    apply Imperative.EvalCmd.eval_havoc <;> try assumption
+    apply Imperative.EvalCmd.eval_set_nondet <;> try assumption
     . simp [Imperative.isDefinedOver, Command.modifiedVars,Imperative.Cmd.modifiedVars,
             Imperative.HasVarsImp.modifiedVars]
       simp [Imperative.isDefined] at Hdef ⊢

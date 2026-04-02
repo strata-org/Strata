@@ -502,4 +502,58 @@ function listSize (@[cases] xs : RoseList) : int
 
 -------------------------------------------------------------------------------
 
+private def nondetCondPgm : Program :=
+#strata
+program Core;
+
+procedure TestNondetIf() returns ()
+{
+  var x : int := 0;
+  if * {
+    x := 1;
+  } else {
+    x := 2;
+  }
+  assert [x_pos]: x >= 0;
+};
+
+procedure TestNondetWhile() returns ()
+{
+  var x : int := 0;
+  while *
+    invariant x >= 0
+  {
+    x := x + 1;
+  }
+  assert [x_pos]: x >= 0;
+};
+#end
+
+/--
+info: procedure TestNondetIf () returns ()
+{
+  var x : int := 0;
+  if * {
+    x := 1;
+    } else {
+    x := 2;
+    }
+  assert [x_pos]: x >= 0;
+  };
+procedure TestNondetWhile () returns ()
+{
+  var x : int := 0;
+  while *
+  invariant x >= 0
+  {
+    x := x + 1;
+    }
+  assert [x_pos]: x >= 0;
+  };
+-/
+#guard_msgs in
+#eval ASTtoCST nondetCondPgm
+
+-------------------------------------------------------------------------------
+
 end Strata.Test
