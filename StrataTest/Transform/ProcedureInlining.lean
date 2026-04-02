@@ -126,7 +126,11 @@ def alphaEquivStatement (s1 s2: Core.Statement) (map:IdMap)
     alphaEquivBlock b1 b2 map
 
   | .ite cond1 thenb1 elseb1 _, .ite cond2 thenb2 elseb2 _ => do
-    if alphaEquivExprs cond1 cond2 map then
+    let condsMatch := match cond1, cond2 with
+      | .det e1, .det e2 => alphaEquivExprs e1 e2 map
+      | .nondet, .nondet => true
+      | _, _ => false
+    if condsMatch then
       let map' <- alphaEquivBlock thenb1 thenb2 map
       let map'' <- alphaEquivBlock elseb1 elseb2 map'
       return map''
@@ -134,7 +138,11 @@ def alphaEquivStatement (s1 s2: Core.Statement) (map:IdMap)
       .error "if conditions do not match"
 
   | .loop g1 m1 i1 b1 _, .loop g2 m2 i2 b2 _ =>
-    if ¬ alphaEquivExprs g1 g2 map then
+    let guardsMatch := match g1, g2 with
+      | .det e1, .det e2 => alphaEquivExprs e1 e2 map
+      | .nondet, .nondet => true
+      | _, _ => false
+    if !guardsMatch then
       .error "guard does not match"
     else if ¬ (← alphaEquivExprsOpt m1 m2 map) then
       .error "measure does not match"
@@ -170,7 +178,7 @@ def alphaEquivStatement (s1 s2: Core.Statement) (map:IdMap)
       -- The updateVars below must be the only place that updates the
       -- variable name mapping.
       IdMap.updateVars map [(n1.name,n2.name)]
-    | .cmd (.set n1 e1 _), .cmd (.set n2 e2 _) =>
+    | .cmd (.set n1 (.det e1) _), .cmd (.set n2 (.det e2) _) =>
       if ¬ alphaEquivExprs e1 e2 map then
         mk_err f!"RHS of sets do not match \
         \n(subst of e1: {repr (substExpr e1 map.vars.fst false)})\n(e2: {repr e2})
@@ -179,9 +187,9 @@ def alphaEquivStatement (s1 s2: Core.Statement) (map:IdMap)
         mk_err "LHS of sets do not match"
       else
         return map
-    | .cmd (.havoc n1 _), .cmd (.havoc n2 _) =>
+    | .cmd (.set n1 .nondet _), .cmd (.set n2 .nondet _) =>
       if ¬ alphaEquivIdents n1 n2 map then
-        mk_err "LHS of havocs do not match"
+        mk_err "LHS of sets do not match"
       else
         return map
     | .cmd (.assert _ e1 _), .cmd (.assert _ e2 _) =>

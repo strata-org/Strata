@@ -1738,7 +1738,7 @@ theorem EvalCmdTouch
     constructor
   case eval_set δ σ x v σ' σ₀ e Hsm Hup Hwf =>
     exact TouchVars.update_some Hup TouchVars.none
-  case eval_havoc x v σ' σ₀ e Hsm Hup Hwf =>
+  case eval_set_nondet x v σ' σ₀ e Hsm Hup Hwf =>
     exact TouchVars.update_some Hup TouchVars.none
   case eval_assert_pass => exact TouchVars.none
   case eval_assert_fail => exact TouchVars.none
@@ -2064,6 +2064,8 @@ theorem EvalStmtRefinesContract
   | .block_sem Heval => .block_sem (EvalBlockRefinesContract Heval)
   | .ite_true_sem Hcond Hwf Heval => .ite_true_sem Hcond Hwf (EvalBlockRefinesContract Heval)
   | .ite_false_sem Hcond Hwf Heval => .ite_false_sem Hcond Hwf (EvalBlockRefinesContract Heval)
+  | .ite_nondet_true_sem Heval => .ite_nondet_true_sem (EvalBlockRefinesContract Heval)
+  | .ite_nondet_false_sem Heval => .ite_nondet_false_sem (EvalBlockRefinesContract Heval)
   | .funcDecl_sem => .funcDecl_sem
   | .typeDecl_sem => .typeDecl_sem
 

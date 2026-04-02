@@ -49,7 +49,7 @@ instance : HasPassiveCmds Expression Command where
   assume l e md := .cmd (.assume l e md)
 
 instance : HasHavoc Expression Command where
-  havoc x md := .cmd (.havoc x md)
+  havoc x md := .cmd (.set x .nondet md)
 
 instance : HasInit Expression Command where
   init x ty e md := .cmd (.init x ty e md)
@@ -71,16 +71,16 @@ abbrev Statement := Imperative.Stmt Core.Expression Core.Command
 abbrev Statements := List Statement
 
 @[expose, match_pattern]
-abbrev Statement.init (name : Expression.Ident) (ty : Expression.Ty) (expr : Option Expression.Expr)
+abbrev Statement.init (name : Expression.Ident) (ty : Expression.Ty) (expr : ExprOrNondet Expression)
     (md : MetaData Expression) :=
   @Stmt.cmd Expression Command (CmdExt.cmd (Cmd.init name ty expr md))
 @[expose, match_pattern]
 abbrev Statement.set (name : Expression.Ident) (expr : Expression.Expr)
     (md : MetaData Expression) :=
-  @Stmt.cmd Expression Command (CmdExt.cmd (Cmd.set name expr md))
+  @Stmt.cmd Expression Command (CmdExt.cmd (Cmd.set name (.det expr) md))
 @[expose, match_pattern]
 abbrev Statement.havoc (name : Expression.Ident) (md : MetaData Expression) :=
-  @Stmt.cmd Expression Command (CmdExt.cmd (Cmd.havoc name md))
+  @Stmt.cmd Expression Command (CmdExt.cmd (Cmd.set name .nondet md))
 @[expose, match_pattern]
 abbrev Statement.assert (label : String) (b : Expression.Expr) (md : MetaData Expression) :=
   @Stmt.cmd Expression Command (CmdExt.cmd (Cmd.assert label b md))
@@ -110,8 +110,7 @@ def Command.eraseTypes (c : Command) : Command :=
   | .cmd c =>
     match c with
     | .init name ty e md => .cmd $ .init name ty (e.map Lambda.LExpr.eraseTypes) md
-    | .set name e md => .cmd $ .set name e.eraseTypes md
-    | .havoc name md => .cmd $ .havoc name md
+    | .set name e md => .cmd $ .set name (e.map Lambda.LExpr.eraseTypes) md
     | .assert label b md => .cmd $ .assert label b.eraseTypes md
     | .assume label b md => .cmd $ .assume label b.eraseTypes md
     | .cover label b md => .cmd $ .cover label b.eraseTypes md
@@ -335,8 +334,8 @@ def Statement.substFvar (s : Core.Statement)
       (fr:Expression.Ident)
       (to:Expression.Expr) : Statement :=
   match s with
-  | .init lhs ty rhs metadata =>
-    .init lhs ty (rhs.map (Lambda.LExpr.substFvar · fr to)) metadata
+  | .init lhs ty e metadata =>
+    .init lhs ty (e.map (Lambda.LExpr.substFvar · fr to)) metadata
   | .set lhs rhs metadata =>
     .set lhs (Lambda.LExpr.substFvar rhs fr to) metadata
   | .havoc _ _ => s
@@ -352,10 +351,10 @@ def Statement.substFvar (s : Core.Statement)
   | .block lbl b metadata =>
     .block lbl (Block.substFvar b fr to) metadata
   | .ite cond thenb elseb metadata =>
-    .ite (Lambda.LExpr.substFvar cond fr to) (Block.substFvar thenb fr to)
+    .ite (cond.map (Lambda.LExpr.substFvar · fr to)) (Block.substFvar thenb fr to)
           (Block.substFvar elseb fr to) metadata
   | .loop guard measure invariant body metadata =>
-    .loop (Lambda.LExpr.substFvar guard fr to)
+    .loop (guard.map (Lambda.LExpr.substFvar · fr to))
           (Option.map (Lambda.LExpr.substFvar · fr to) measure)
           (invariant.map (Lambda.LExpr.substFvar · fr to))
           (Block.substFvar body fr to)
