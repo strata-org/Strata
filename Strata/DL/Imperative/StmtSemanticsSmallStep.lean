@@ -7,7 +7,6 @@ module
 
 public import Strata.DL.Imperative.CmdSemantics
 public import Strata.DL.Imperative.Stmt
-public import Strata.DL.Imperative.StmtSemantics
 public import Strata.DL.Util.Relations
 
 ---------------------------------------------------------------------
@@ -15,6 +14,26 @@ public import Strata.DL.Util.Relations
 namespace Imperative
 
 public section
+
+/-! ## Execution Environment
+
+An `Env` bundles the store, expression evaluator, and a cumulative failure
+flag into a single record.  The `hasFailure` flag is OR-ed with the
+per-command failure flag returned by `EvalCmdParam` at each `cmd_sem`,
+so it monotonically accumulates assertion failures along an execution path.
+-/
+
+/-- Execution environment: store, evaluator, and cumulative failure flag. -/
+structure Env (P : PureExpr) where
+  /-- The current variable store. -/
+  store : SemanticStore P
+  /-- The current expression evaluator. -/
+  eval  : SemanticEval P
+  /-- Cumulative failure flag — `true` once any command has signalled failure. -/
+  hasFailure : Bool := false
+
+/-- Type of a function that extends the semantic evaluator with a new function definition. -/
+@[expose] abbrev ExtendEval (P : PureExpr) := SemanticEval P → SemanticStore P → PureFunc P → SemanticEval P
 
 /-! ## Small-Step Operational Semantics for Statements
 
@@ -369,14 +388,14 @@ abbrev StepStmtStar :
   ReflTrans (StepStmt P EvalCmd extendEval)
 
 /-- A statement evaluates successfully if it steps to a terminal configuration. -/
-def EvalStmtSmall
+abbrev EvalStmtSmall
     (ρ : Env P) (s : Stmt P CmdT)
     (ρ' : Env P) : Prop :=
   StepStmtStar P EvalCmd extendEval (.stmt s ρ) (.terminal ρ')
 
 /-- A list of statements evaluates successfully if it steps to a terminal
     configuration. -/
-def EvalStmtsSmall
+abbrev EvalStmtsSmall
     (ρ : Env P) (ss : List (Stmt P CmdT))
     (ρ' : Env P) : Prop :=
   StepStmtStar P EvalCmd extendEval (.stmts ss ρ) (.terminal ρ')
