@@ -125,11 +125,11 @@ private def collectGlobalSymbols (pgm : Core.Program) :
       let gty ← Lambda.LMonoTy.toGotoType ty.toMonoTypeUnsafe
       let tyJson := CProverGOTO.tyToJson gty
       let valueJson ← match e with
-        | some expr =>
+        | .det expr =>
           let gotoExpr ← Lambda.LExpr.toGotoExprCtx
             (TBase := ⟨Core.ExpressionMetadata, Unit⟩) [] expr
           (CProverGOTO.exprToJson gotoExpr).mapError (fun e => f!"{e}")
-        | none => pure (Lean.Json.mkObj [("id", "nil")])
+        | .nondet => pure (Lean.Json.mkObj [("id", "nil")])
       syms := syms ++ [(gname, {
         baseName := gname
         isLvalue := true
