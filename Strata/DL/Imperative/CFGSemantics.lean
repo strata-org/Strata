@@ -23,25 +23,27 @@ inductive EvalCmds
   {CmdT : Type}
   (P : PureExpr)
   (EvalCmd : EvalCmdParam P CmdT) :
-  SemanticEval P → SemanticStore P → List CmdT → SemanticStore P → Prop where
+  SemanticEval P → SemanticStore P → List CmdT → SemanticStore P → Bool → Prop where
   | eval_cmds_none :
-    EvalCmds P EvalCmd δ σ [] σ
+    EvalCmds P EvalCmd δ σ [] σ false
   | eval_cmds_some :
-    EvalCmd δ σ c σ' →
-    EvalCmds P EvalCmd δ σ' cs σ'' →
-    EvalCmds P EvalCmd δ σ (c :: cs) σ''
+    EvalCmd δ σ c σ' failed →
+    EvalCmds P EvalCmd δ σ' cs σ'' failed' →
+    EvalCmds P EvalCmd δ σ (c :: cs) σ'' (failed || failed')
 
 /--
 Configuration for small-step semantics, representing the current execution
-state. A configuration consists of either:
+state. A configuration consists of a store and a failure indication flag paired
+with either:
+
 - The next block to execute
 - An indication that the program that has finished executing
 -/
 inductive CFGConfig (l : Type) (P : PureExpr): Type where
   /-- The label to execute next. -/
-  | cont : l → SemanticStore P → Config l P
+  | cont : l → SemanticStore P → Bool → CFGConfig l P
   /-- A terminal configuration, indicating that execution has finished. -/
-  | terminal : SemanticStore P → Config l P
+  | terminal : SemanticStore P → Bool → CFGConfig l P
 
 /-- Small-step operational semantics for deterministic basic blocks. Each case
 first evaluates the commands in the block. A block ending in `.condGoto` results
@@ -57,23 +59,23 @@ inductive EvalDetBlock
   SemanticStore P → DetBlock l CmdT P → CFGConfig l P → Prop where
 
   | step_goto_true :
-    EvalCmds P EvalCmd δ σ cs σ' →
+    EvalCmds P EvalCmd δ σ cs σ' failed →
     δ σ c = .some HasBool.tt →
     WellFormedSemanticEvalBool δ →
     EvalDetBlock P EvalCmd extendEval
-      σ ⟨ cs, .condGoto c t e _ ⟩ (.cont t σ')
+      σ ⟨ cs, .condGoto c t e _ ⟩ (.cont t σ' failed)
 
   | step_goto_false :
-    EvalCmds P EvalCmd δ σ cs σ' →
+    EvalCmds P EvalCmd δ σ cs σ' failed →
     δ σ c = .some HasBool.ff →
     WellFormedSemanticEvalBool δ →
     EvalDetBlock P EvalCmd extendEval
-      σ ⟨ cs, .condGoto c t e _ ⟩ (.cont e σ')
+      σ ⟨ cs, .condGoto c t e _ ⟩ (.cont e σ' failed)
 
   | step_terminal :
-    EvalCmds P EvalCmd δ σ cs σ' →
+    EvalCmds P EvalCmd δ σ cs σ' failed →
     EvalDetBlock P EvalCmd extendEval
-      σ ⟨ cs, .finish _ ⟩ (.terminal σ')
+      σ ⟨ cs, .finish _ ⟩ (.terminal σ' failed)
 
 /--
 Small-step operational semantics for non-deterministic basic blocks. Each case
@@ -91,15 +93,19 @@ inductive EvalNondetBlock
   SemanticStore P → NondetBlock l CmdT P → CFGConfig l P → Prop where
 
   | step_goto_none :
-    EvalCmds P EvalCmd δ σ cs σ' →
+    EvalCmds P EvalCmd δ σ cs σ' failed →
     EvalNondetBlock P EvalCmd extendEval
-      σ ⟨ cs, .goto [] _ ⟩ (.terminal σ')
+      σ ⟨ cs, .goto [] _ ⟩ (.terminal σ' failed)
 
   | step_goto_some :
-    EvalCmds P EvalCmd δ σ cs σ' →
+    EvalCmds P EvalCmd δ σ cs σ' failed →
     lt ∈ ls →
     EvalNondetBlock P EvalCmd extendEval
-      σ ⟨ cs, .goto ls _ ⟩ (.cont lt σ')
+      σ ⟨ cs, .goto ls _ ⟩ (.cont lt σ' failed)
+
+def updateFailure : CFGConfig l P → Bool → CFGConfig l P
+| .cont t σ failed, failed' => .cont t σ (failed || failed')
+| .terminal σ failed, failed' => .terminal σ (failed || failed')
 
 /--
 Operational semantics to step between two configurations of a control-flow
@@ -114,7 +120,7 @@ inductive StepCFG
   | eval_next :
     List.lookup t cfg.blocks = .some b →
     EvalBlock σ b config →
-    StepCFG P EvalBlock cfg (.cont t σ) config
+    StepCFG P EvalBlock cfg (.cont t σ failed) (updateFailure config failed)
 
 /--
 Operational semantics to evaluate an arbitrary number of blocks in a
