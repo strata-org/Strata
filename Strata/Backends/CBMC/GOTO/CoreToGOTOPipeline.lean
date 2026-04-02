@@ -61,8 +61,7 @@ private def renameCmd
     (rn : Std.HashMap String String)
     : Imperative.Cmd Core.Expression → Imperative.Cmd Core.Expression
   | .init name ty e md => .init (renameIdent rn name) ty (e.map (renameExpr rn)) md
-  | .set name e md => .set (renameIdent rn name) (renameExpr rn e) md
-  | .havoc name md => .havoc (renameIdent rn name) md
+  | .set name e md => .set (renameIdent rn name) (e.map (renameExpr rn)) md
   | .assert l e md => .assert l (renameExpr rn e) md
   | .assume l e md => .assume l (renameExpr rn e) md
   | .cover l e md => .cover l (renameExpr rn e) md
@@ -79,10 +78,10 @@ private partial def unwrapCmdExt
   | .ite c t e md => do
     let t' ← t.mapM (unwrapCmdExt rn)
     let e' ← e.mapM (unwrapCmdExt rn)
-    .ok (.ite (renameExpr rn c) t' e' md)
+    .ok (.ite (c.map (renameExpr rn)) t' e' md)
   | .loop g m i body md => do
     let body' ← body.mapM (unwrapCmdExt rn)
-    .ok (.loop (renameExpr rn g) (m.map (renameExpr rn)) (i.map (renameExpr rn)) body' md)
+    .ok (.loop (g.map (renameExpr rn)) (m.map (renameExpr rn)) (i.map (renameExpr rn)) body' md)
   | .exit l md => .ok (.exit l md)
   | .funcDecl _d _md =>
     .error f!"[unwrapCmdExt] Unexpected funcDecl; should have been lifted by collectFuncDecls."
@@ -187,7 +186,9 @@ private partial def coreStmtsToGoto
       | .ite cond thenb elseb md =>
         if hasCallStmt thenb || hasCallStmt elseb then
           let srcLoc := Imperative.metadataToSourceLoc md pname trans.sourceText
-          let cond_expr ← toExpr (renameExpr rn cond)
+          let cond_expr ← match cond with
+            | .det e => toExpr (renameExpr rn e)
+            | .nondet => pure { id := .side_effect .Nondet, type := .Boolean, operands := [] : CProverGOTO.Expr }
           let (trans, goto_else_idx) :=
             Imperative.emitCondGoto (CProverGOTO.Expr.not cond_expr) srcLoc trans
           let trans ← coreStmtsToGoto Env pname rn thenb trans
@@ -207,7 +208,9 @@ private partial def coreStmtsToGoto
           let srcLoc := Imperative.metadataToSourceLoc md pname trans.sourceText
           let loop_head := trans.nextLoc
           let trans := Imperative.emitLabel s!"loop_{loop_head}" srcLoc trans
-          let guard_expr ← toExpr (renameExpr rn guard)
+          let guard_expr ← match guard with
+            | .det e => toExpr (renameExpr rn e)
+            | .nondet => pure { id := .side_effect .Nondet, type := .Boolean, operands := [] : CProverGOTO.Expr }
           let (trans, goto_end_idx) :=
             Imperative.emitCondGoto (CProverGOTO.Expr.not guard_expr) srcLoc trans
           let trans ← coreStmtsToGoto Env pname rn body trans
