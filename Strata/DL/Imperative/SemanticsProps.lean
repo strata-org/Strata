@@ -287,11 +287,15 @@ theorem assert_elim
                 apply ReflTrans.step _ _ _ .step_stmts_nil
                 simp_all [Bool.or_false]; exact .refl _
               | eval_assert_fail h2 _ =>
-                simp at h2; exact absurd (h1.symm.trans h2) (by exact fun h => HasBool.tt_is_not_ff (Option.some.inj h))
+                simp at h2
+                exact absurd (h1.symm.trans h2)
+                  (by exact fun h => HasBool.tt_is_not_ff (Option.some.inj h))
             | eval_assert_fail h1 _ =>
               cases hcmd2 with
               | eval_assert_pass h2 _ =>
-                simp at h2; exact absurd (h2.symm.trans h1) (by exact fun h => HasBool.tt_is_not_ff (Option.some.inj h))
+                simp at h2
+                exact absurd (h2.symm.trans h1)
+                  (by exact fun h => HasBool.tt_is_not_ff (Option.some.inj h))
               | eval_assert_fail _ _ =>
                 apply ReflTrans.step _ _ _ .step_stmts_cons
                 apply ReflTrans.step _ _ _ (.step_seq_inner (.step_cmd (EvalCmd.eval_assert_fail h1 Hwf)))
@@ -444,7 +448,8 @@ theorem eval_stmts_set_comm
   ρ'.store = ρ''.store := by
   intro Hwf Hneq Hnin1 Hnin2 Heval1 Heval2
   -- Extract the four EvalCmd's from the two list executions
-  -- Each list [cmd1, cmd2] decomposes via stmts_cons → seq → cmd1 terminal → stmts [cmd2] → seq → cmd2 terminal → stmts [] → terminal
+  -- Each list [cmd1, cmd2] decomposes via:
+  -- stmts_cons → seq → cmd1 terminal → stmts [cmd2] → seq → cmd2 terminal → stmts [] → terminal
   have extract := fun (s1 s2 : Stmt P (Cmd P)) (ρ₀ ρ_final : Env P)
       (h : EvalStmtsSmall P (EvalCmd P) evalFun ρ₀ [s1, s2] ρ_final) =>
     show ∃ ρ_mid, EvalStmtSmall P (EvalCmd P) evalFun ρ₀ s1 ρ_mid ∧
