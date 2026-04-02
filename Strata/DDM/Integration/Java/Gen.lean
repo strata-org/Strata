@@ -346,13 +346,13 @@ def assignAllNames (d : Dialect) : NameAssignments :=
 
   -- Assign stub names (referenced types not in this dialect's categories)
   let stubInit : Std.HashMap QualifiedIdent String × Std.HashSet String := ({}, used)
-  let (stubNames, _used) := refs.toArray.foldl (init := stubInit) fun (map, used) ref =>
+  let (stubNames, used) := refs.toArray.foldl (init := stubInit) fun (map, used) ref =>
     if categoryNames.contains ref then (map, used)
     else
       let (name, newUsed) := assignName used ref
       (map.insert ref name, newUsed)
 
-  let (buildersName, _) := disambiguate (escapeJavaName (toPascalCase d.name)) _used
+  let (buildersName, _) := disambiguate (escapeJavaName (toPascalCase d.name)) used
 
   { categories := categoryNames, operators := operatorNames, stubs := stubNames, builders := buildersName }
 

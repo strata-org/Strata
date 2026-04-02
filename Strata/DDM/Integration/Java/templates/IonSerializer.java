@@ -38,45 +38,19 @@ public class IonSerializer {
         return sexp;
     }
 
-    public IonValue serializeIdent(java.lang.String s) {
+    private IonSexp newTagged(String symbol, IonValue value) {
         IonSexp sexp = ion.newEmptySexp();
-        sexp.add(ion.newSymbol("ident"));
+        sexp.add(ion.newSymbol(symbol));
         sexp.add(ion.newNull());
-        sexp.add(ion.newString(s));
+        sexp.add(value);
         return sexp;
     }
 
-    public IonValue serializeStrlit(java.lang.String s) {
-        IonSexp sexp = ion.newEmptySexp();
-        sexp.add(ion.newSymbol("strlit"));
-        sexp.add(ion.newNull());
-        sexp.add(ion.newString(s));
-        return sexp;
-    }
-
-    public IonValue serializeNum(java.math.BigInteger n) {
-        IonSexp sexp = ion.newEmptySexp();
-        sexp.add(ion.newSymbol("num"));
-        sexp.add(ion.newNull());
-        sexp.add(ion.newInt(n));
-        return sexp;
-    }
-
-    public IonValue serializeDecimal(java.math.BigDecimal d) {
-        IonSexp sexp = ion.newEmptySexp();
-        sexp.add(ion.newSymbol("decimal"));
-        sexp.add(ion.newNull());
-        sexp.add(ion.newDecimal(d));
-        return sexp;
-    }
-
-    public IonValue serializeBytes(byte[] bytes) {
-        IonSexp sexp = ion.newEmptySexp();
-        sexp.add(ion.newSymbol("bytes"));
-        sexp.add(ion.newNull());
-        sexp.add(ion.newBlob(bytes));
-        return sexp;
-    }
+    public IonValue serializeIdent(java.lang.String s) { return newTagged("ident", ion.newString(s)); }
+    public IonValue serializeStrlit(java.lang.String s) { return newTagged("strlit", ion.newString(s)); }
+    public IonValue serializeNum(java.math.BigInteger n) { return newTagged("num", ion.newInt(n)); }
+    public IonValue serializeDecimal(java.math.BigDecimal d) { return newTagged("decimal", ion.newDecimal(d)); }
+    public IonValue serializeBytes(byte[] bytes) { return newTagged("bytes", ion.newBlob(bytes)); }
 
     public IonValue serializeBool(boolean b) {
         IonSexp inner = ion.newEmptySexp();

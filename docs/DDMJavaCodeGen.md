@@ -182,7 +182,7 @@ public sealed interface Parameter extends Node permits Parameter.Of {
 ```
 
 When a **multi-operator category** has an operator whose name matches the
-category name, the record gets a `_` suffix:
+category name (compared case-insensitively), the record gets a `_` suffix:
 
 ```java
 public sealed interface Procedure extends Node permits Procedure.Procedure_, Procedure.Function {
