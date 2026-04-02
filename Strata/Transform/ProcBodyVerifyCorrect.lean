@@ -140,7 +140,7 @@ theorem procBodyVerify_procedureCorrect
     -- `h_transform`: procToVerifyStmt returned successfully.
     (h_transform : (procToVerifyStmt proc p).run st = (Except.ok verifyStmt, st'))
     -- `h_correct`: all asserts in `verifyStmt` are valid, given the
-    -- well-formed initial states (e.g., all input arguments appear in the registerd file)
+    -- well-formed initial states
     (h_correct : Specification.AllAssertsValidWhen
       (Core.Specification.Lang.core π φ) (Core.Specification.ProcEnvWF proc) verifyStmt)
     -- `h_wf_ext`: the evaluator extension `φ` is well-formed

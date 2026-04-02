@@ -37,15 +37,10 @@ def Lang.core
 
 /-! ## Well-formed program state at the entry of procedure -/
 
-def procVerifyInitIdents (proc : Procedure) : List Expression.Ident :=
-  proc.header.inputs.keys ++ proc.header.outputs.keys
-
 /-- A well-formed initial environment for procedure verification. -/
 structure ProcEnvWF (proc : Procedure) (ρ : Env Expression) : Prop where
   wfVar : WellFormedSemanticEvalVar ρ.eval
   wfBool : WellFormedSemanticEvalBool ρ.eval
-  -- The register file contains all input and output arguments of the procedure.
-  storeDefined : ∀ id ∈ procVerifyInitIdents proc, (ρ.store id).isSome
 
 /-! ## Procedure correctness -/
 
