@@ -6,6 +6,7 @@
 module
 
 public import Strata.DL.Imperative.Stmt
+public import Strata.Languages.Core.PipelinePhase
 
 namespace Core
 open Imperative Lambda
@@ -185,6 +186,23 @@ def Stmt.removeLoops
   [HasIdent P] [HasFvar P] [HasIntOrder P]
   (s : Stmt P C) : Stmt P C :=
   (StateT.run (removeLoopsM s) 0).fst
+
+end -- public section
+
+public section
+
+/-- Loop-elimination pipeline phase: the transform is applied during
+    evaluation (not as a program-to-program pass), so the transform here
+    is the identity. If the obligation's path includes labels from loop
+    elimination, the loop was replaced by an invariant-based encoding,
+    which is an over-approximation. -/
+def loopElimPipelinePhase : PipelinePhase where
+  transform p := pure (false, p)
+  phase.getValidation obligation :=
+    if obligationHasLabelPrefix obligation loopElimInvariantPrefix
+       || obligationHasLabelPrefix obligation loopElimGuardPrefix then
+      .modelToValidate (fun _ => /- TODO -/ false)
+    else .modelPreserving
 
 end -- public section
 

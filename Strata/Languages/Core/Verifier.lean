@@ -195,21 +195,6 @@ open Strata
 
 public section
 
-/-- Describes whether a pipeline phase preserves models or requires validation. -/
-inductive ModelValidation where
-  /-- The phase preserves models — sat results are sound. -/
-  | modelPreserving
-  /-- The phase may introduce spurious models. The function returns true
-      when the model is valid. -/
-  | modelToValidate (validate : Imperative.SMT.CounterEx Expression.Ident → Bool)
-
-/-- A phase in the verification pipeline. Each phase determines per-obligation
-    whether its models need validation, based on whether the obligation is
-    in the path of something abstracted by this phase. -/
-structure AbstractedPhase where
-  /-- Given an obligation, determine the model validation for this phase. -/
-  getValidation : ProofObligation Expression → ModelValidation := fun _ => .modelPreserving
-
 /-- Validate a model against all phases for a given obligation. Phases are
     recorded top-down, so we reverse them to validate from the last
     (innermost) phase first. Returns the adjusted result and a log of
@@ -651,57 +636,6 @@ def preprocessObligation (obligation : ProofObligation Expression) (p : Program)
           Imperative.PathConditions.removeByNames obligation.assumptions irrelevantAxioms
         pure { obligation with assumptions := newAssumptions }
   return (obligation, peSatResult, peValResult)
-
-/-- True when any label in the obligation's path conditions starts with the
-    given string, indicating the obligation went through that transform. -/
-private def obligationHasLabelPrefix (obligation : ProofObligation Expression)
-    (pfx : String) : Bool :=
-  obligation.assumptions.any fun pc =>
-    pc.any fun (label, _) => label.startsWith pfx
-
-/-- A verification pipeline phase that pairs a program transformation with
-    its model validation. This coupling ensures that adding a new transform
-    also requires specifying its soundness annotation, and vice versa. -/
-structure PipelinePhase where
-  /-- The program-to-program transformation. -/
-  transform : Program → Transform.CoreTransformM (Bool × Program)
-  /-- The model validation for this phase. -/
-  phase : AbstractedPhase
-
-/-- Call-elimination pipeline phase: the transform replaces procedure calls
-    with assert/havoc/assume sequences. If the obligation's path includes
-    labels from call elimination, the callee body was replaced by its
-    contract, which is an over-approximation. Uses
-    `Transform.callElimAssumePrefix` as the single source of truth for the
-    label prefix. -/
-def callElimPipelinePhase : PipelinePhase where
-  transform := CallElim.callElim'
-  phase.getValidation obligation :=
-    if obligationHasLabelPrefix obligation Transform.callElimAssumePrefix then
-      .modelToValidate (fun _ => /- TODO -/ false)
-    else .modelPreserving
-
-/-- Loop-elimination pipeline phase: the transform is applied during
-    evaluation (not as a program-to-program pass), so the transform here
-    is the identity. If the obligation's path includes labels from loop
-    elimination, the loop was replaced by an invariant-based encoding,
-    which is an over-approximation. Uses `loopElimInvariantPrefix` and
-    `loopElimGuardPrefix` as the single source of truth for the label
-    prefixes. -/
-def loopElimPipelinePhase : PipelinePhase where
-  transform p := pure (false, p)
-  phase.getValidation obligation :=
-    if obligationHasLabelPrefix obligation loopElimInvariantPrefix
-       || obligationHasLabelPrefix obligation loopElimGuardPrefix then
-      .modelToValidate (fun _ => /- TODO -/ false)
-    else .modelPreserving
-
-/-- A model-preserving pipeline phase: the transform is applied but it
-    cannot introduce spurious models (e.g. it only removes information). -/
-def modelPreservingPipelinePhase
-    (t : Program → Transform.CoreTransformM (Bool × Program)) : PipelinePhase where
-  transform := t
-  phase.getValidation _ := .modelPreserving
 
 /-- FilterProcedures pipeline phase: restricts the program to the target
     procedures and their transitive callees. Model-preserving because it

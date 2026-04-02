@@ -22,9 +22,6 @@ open LabelGen
 def oldVarPrefix (id : String) : String := s!"old_{id}"
 def tmpVarPrefix (id : String) : String := s!"tmp_{id}"
 
-/-- Label prefix for call-elimination assume statements. -/
-def callElimAssumePrefix : String := "callElimAssume_"
-
 def createHavoc (ident : Expression.Ident)
     (md : Imperative.MetaData Expression)
   : Statement := Statement.havoc ident md
@@ -252,9 +249,10 @@ def createAsserts
     (conds : ListMap CoreLabel Procedure.Check)
     (subst : Map Expression.Ident Expression.Expr)
     (md : (Imperative.MetaData Expression))
+    (labelPrefix : String := "assert_")
     : CoreTransformM (List Statement)
     := conds.mapM (fun (l, check) => do
-          let newLabel ← genIdent l (fun s => s!"callElimAssert_{s}")
+          let newLabel ← genIdent l (fun s => s!"{labelPrefix}{s}")
           -- Non-lifting: the replacement expressions must be closed (no dangling bvars).
           return Statement.assert newLabel.toPretty (Lambda.LExpr.substFvars check.expr subst) md)
 
@@ -263,10 +261,11 @@ def createAssumes
     (conds : ListMap CoreLabel Procedure.Check)
     (subst : Map Expression.Ident Expression.Expr)
     (md : (Imperative.MetaData Expression))
+    (labelPrefix : String := "assume_")
     : CoreTransformM (List Statement)
     :=
     conds.mapM (fun (l, check) => do
-      let newLabel ← genIdent l (fun s => s!"{callElimAssumePrefix}{s}")
+      let newLabel ← genIdent l (fun s => s!"{labelPrefix}{s}")
       -- Non-lifting: the replacement expressions must be closed (no dangling bvars).
       return Statement.assume newLabel.toPretty (Lambda.LExpr.substFvars check.expr subst) md)
 

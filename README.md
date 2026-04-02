@@ -11,10 +11,8 @@ developers to customize additional features to their needs.
 This README will help you get started with using and extending
 Strata. Also see the [Architecture](docs/Architecture.md) document
 that introduces some terminology and describes Strata's components,
-a [Getting Started](docs/GettingStarted.md) guide that describes
-how to create a new dialect and analysis using existing features,
-and [Verification Modes](docs/VerificationModes.md) for details on
-the deductive and bug-finding verification modes.
+and a [Getting Started](docs/GettingStarted.md) guide that describes
+how to create a new dialect and analysis using existing features.
 
 **N.B.: Strata is under active development, and there may be breaking
 changes!**
@@ -73,6 +71,10 @@ printed out in Strata's internal format (more accurately, in the
 internal format of the dialects used to implement the language under
 analysis). These VCs are then encoded into SMT, and counterexamples,
 if any, report models for the variables present in the problem.
+
+See [Verification Modes](docs/VerificationModes.md) for details on
+the `--check-mode` flag and the deductive and bug-finding verification
+modes.
 
 ## Troubleshooter
 
