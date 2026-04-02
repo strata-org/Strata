@@ -47,7 +47,7 @@ Note: constants are 0-ary functions.
 inductive Decl where
   /-- Global variable declaration. The optional RHS is not currently used in verification
       but could serve as a starting value for future execution-based analyses. -/
-  | var (name : Expression.Ident) (ty : Expression.Ty) (e : Option Expression.Expr) (md : MetaData Core.Expression)
+  | var (name : Expression.Ident) (ty : Expression.Ty) (e : Imperative.ExprOrNondet Core.Expression) (md : MetaData Core.Expression)
   | type (t : TypeDecl) (md : MetaData Core.Expression)
   | ax   (a : Axiom) (md : MetaData Core.Expression)
   -- The following is temporary, until we have lists and can encode `distinct` in Lambda.
@@ -99,13 +99,13 @@ def Decl.name (d : Decl) : Expression.Ident :=
   | _ => [d.name]
 
 def Decl.getVar? (d : Decl) :
-  Option (Expression.Ident × Expression.Ty × Option Expression.Expr) :=
+  Option (Expression.Ident × Expression.Ty × Imperative.ExprOrNondet Expression) :=
   match d with
   | .var name ty e _ => some (name, ty, e)
   | _ => none
 
 def Decl.getVar (d : Decl) (H: d.kind = .var):
-  Expression.Ident × Expression.Ty × Option Expression.Expr :=
+  Expression.Ident × Expression.Ty × Imperative.ExprOrNondet Expression :=
   match d with | .var name ty e _ => (name, ty, e)
 
 def Decl.getTypeDecl? (d : Decl) : Option TypeDecl :=
@@ -164,8 +164,8 @@ def Decl.stripMetaData (d : Decl) : Decl :=
 -- Metadata not included.
 instance : ToFormat Decl where
   format d := match d with
-    | .var name ty (some e) _md => f!"var ({name} : {ty}) := {e}"
-    | .var name ty none _md => f!"var ({name} : {ty})"
+    | .var name ty (.det e) _md => f!"var ({name} : {ty}) := {e}"
+    | .var name ty .nondet _md => f!"var ({name} : {ty})"
     | .type t _md => f!"{t}"
     | .ax a _md  => f!"{a}"
     | .distinct l es _md  => f!"distinct [{l}] {es}"
@@ -228,7 +228,7 @@ theorem Program.find?_kind : ∀ {p : Program}, (p.find? k x) = some d → d.kin
     apply ih (by rfl)
 
 def Program.getVar? (P: Program) (x : Expression.Ident)
-  : Option (Expression.Ident × Expression.Ty × Option Expression.Expr) := do
+  : Option (Expression.Ident × Expression.Ty × Imperative.ExprOrNondet Expression) := do
   let decl ← P.find? .var x
   let var ← decl.getVar?
   return var
@@ -245,8 +245,9 @@ def Program.getAxiom? (P: Program) (n : Expression.Ident) : Option Axiom := do
 
 def Program.getInit? (P: Program) (x : Expression.Ident) : Option Expression.Expr := do
   let var ← P.getVar? x
-  let init ← var.snd.snd
-  return init
+  match var.snd.snd with
+  | .det e => return e
+  | .nondet => none
 
 @[expose]
 def Program.getNames (P: Program) : List Expression.Ident :=
@@ -284,9 +285,10 @@ def Program.getVarTy? (P: Program) (x : Expression.Ident) : Option Expression.Ty
   | some decl => some $ (decl.getVar $ Program.find?_kind H).2.1
 
 def Program.getVarInit? (P: Program) (x : Expression.Ident) : Option Expression.Expr := do
-  match H: (P.find? .var x) with
-  | none => none
-  | some decl => (decl.getVar $ Program.find?_kind H).2.2
+  let var ← P.getVar? x
+  match var.snd.snd with
+  | .det e => return e
+  | .nondet => none
 
 theorem Program.findproc_some : (P.find? .proc x).isSome = (Procedure.find? P x).isSome := by
   simp [Procedure.find?, Option.isSome, Program.find?]
@@ -339,7 +341,7 @@ def Program.Function.find (P: Program) (x : Expression.Ident) (H : (P.find? .fun
   (P.find .func x H).getFunc (find_kind P)
 
 def Program.getVar (P: Program) (x : Expression.Ident) (H : (P.find? .var x).isSome = true)
-  : Expression.Ident × Expression.Ty × Option Expression.Expr :=
+  : Expression.Ident × Expression.Ty × Imperative.ExprOrNondet Expression :=
   (P.find .var x H).getVar (find_kind P)
 
 def Program.getVarTy (P: Program) (x : Expression.Ident) (H : (P.find? .var x).isSome = true)
@@ -347,7 +349,7 @@ def Program.getVarTy (P: Program) (x : Expression.Ident) (H : (P.find? .var x).i
   ((P.find .var x H).getVar (find_kind P)).2.1
 
 def Program.getVarInit (P: Program) (x : Expression.Ident) (H : (P.find? .var x).isSome = true)
-  : Option Expression.Expr :=
+  : Imperative.ExprOrNondet Expression :=
   ((P.find .var x H).getVar (find_kind P)).2.2
 def Program.Procedure.findP? (P : Program) (x : Expression.Ident)
   : Option (Procedure ×' (find? P x).isSome = true) :=
