@@ -117,8 +117,12 @@ private theorem step_hasFailure_monotone
   | step_block => simp [Config.getEnv]; exact hf
   | step_ite_true _ _ => exact hf
   | step_ite_false _ _ => exact hf
+  | step_ite_nondet_true => exact hf
+  | step_ite_nondet_false => exact hf
   | step_loop_enter _ _ => exact hf
   | step_loop_exit _ _ => exact hf
+  | step_loop_nondet_enter => exact hf
+  | step_loop_nondet_exit => exact hf
   | step_exit => exact hf
   | step_funcDecl => simp [Config.getEnv]; exact hf
   | step_typeDecl => exact hf
@@ -360,7 +364,7 @@ theorem semantic_eval_eq_of_eval_cmd_set_unrelated_var
   [HasFvar P] [HasVal P] [HasBool P] [HasNot P]:
   WellFormedSemanticEvalExprCongr δ →
   ¬ v ∈ HasVarsPure.getVars e →
-  EvalCmd P δ σ (Cmd.set v e' md) σ' f →
+  EvalCmd P δ σ (Cmd.set v (.det e') md) σ' f →
   δ σ e = δ σ' e := by
   intro Hwf Hnin Heval
   unfold WellFormedSemanticEvalExprCongr at Hwf
@@ -384,10 +388,10 @@ theorem eval_cmd_set_comm'
   ¬ x1 = x2 →
   δ σ v1 = δ σ2 v1 →
   δ σ v2 = δ σ1 v2 →
-  EvalCmd P δ σ (Cmd.set x1 v1 md1) σ1 f1 →
-  EvalCmd P δ σ1 (Cmd.set x2 v2 md2) σ' f2 →
-  EvalCmd P δ σ (Cmd.set x2 v2 md2') σ2 f3 →
-  EvalCmd P δ σ2 (Cmd.set x1 v1 md1') σ'' f4 →
+  EvalCmd P δ σ (Cmd.set x1 (.det v1) md1) σ1 f1 →
+  EvalCmd P δ σ1 (Cmd.set x2 (.det v2) md2) σ' f2 →
+  EvalCmd P δ σ (Cmd.set x2 (.det v2) md2') σ2 f3 →
+  EvalCmd P δ σ2 (Cmd.set x1 (.det v1) md1') σ'' f4 →
   σ' = σ'' := by
   intro Hneq Heq1 Heq2 Hs1 Hs2 Hs3 Hs4
   cases Hs1 with | eval_set _ Hu1 _ =>
@@ -404,10 +408,10 @@ theorem eval_cmd_set_comm
   ¬ x1 = x2 →
   ¬ x1 ∈ HasVarsPure.getVars v2 →
   ¬ x2 ∈ HasVarsPure.getVars v1 →
-  EvalCmd P δ σ (Cmd.set x1 v1 md1) σ1 f1 →
-  EvalCmd P δ σ1 (Cmd.set x2 v2 md2) σ' f2 →
-  EvalCmd P δ σ (Cmd.set x2 v2 md2') σ2 f3 →
-  EvalCmd P δ σ2 (Cmd.set x1 v1 md1') σ'' f4 →
+  EvalCmd P δ σ (Cmd.set x1 (.det v1) md1) σ1 f1 →
+  EvalCmd P δ σ1 (Cmd.set x2 (.det v2) md2) σ' f2 →
+  EvalCmd P δ σ (Cmd.set x2 (.det v2) md2') σ2 f3 →
+  EvalCmd P δ σ2 (Cmd.set x1 (.det v1) md1') σ'' f4 →
   σ' = σ'' := by
   intro Hwf Hneq Hnin1 Hnin2 Hs1 Hs2 Hs3 Hs4
   have Heval2:= semantic_eval_eq_of_eval_cmd_set_unrelated_var Hwf Hnin1 Hs1
@@ -421,10 +425,10 @@ theorem eval_stmt_set_comm
   ¬ x1 = x2 →
   ¬ x1 ∈ HasVarsPure.getVars v2 →
   ¬ x2 ∈ HasVarsPure.getVars v1 →
-  EvalStmtSmall P (EvalCmd P) evalFun ρ (.cmd (Cmd.set x1 v1 md1)) ρ1 →
-  EvalStmtSmall P (EvalCmd P) evalFun ρ1 (.cmd (Cmd.set x2 v2 md2)) ρ' →
-  EvalStmtSmall P (EvalCmd P) evalFun ρ (.cmd (Cmd.set x2 v2 md2')) ρ2 →
-  EvalStmtSmall P (EvalCmd P) evalFun ρ2 (.cmd (Cmd.set x1 v1 md1')) ρ'' →
+  EvalStmtSmall P (EvalCmd P) evalFun ρ (.cmd (Cmd.set x1 (.det v1) md1)) ρ1 →
+  EvalStmtSmall P (EvalCmd P) evalFun ρ1 (.cmd (Cmd.set x2 (.det v2) md2)) ρ' →
+  EvalStmtSmall P (EvalCmd P) evalFun ρ (.cmd (Cmd.set x2 (.det v2) md2')) ρ2 →
+  EvalStmtSmall P (EvalCmd P) evalFun ρ2 (.cmd (Cmd.set x1 (.det v1) md1')) ρ'' →
   ρ'.store = ρ''.store := by
   intro Hwf Hneq Hnin1 Hnin2 Hs1 Hs2 Hs3 Hs4
   unfold EvalStmtSmall at Hs1 Hs2 Hs3 Hs4
@@ -443,8 +447,8 @@ theorem eval_stmts_set_comm
   ¬ x1 = x2 →
   ¬ x1 ∈ HasVarsPure.getVars v2 →
   ¬ x2 ∈ HasVarsPure.getVars v1 →
-  EvalStmtsSmall P (EvalCmd P) evalFun ρ [(.cmd (Cmd.set x1 v1 md1)), (.cmd (Cmd.set x2 v2 md2))] ρ' →
-  EvalStmtsSmall P (EvalCmd P) evalFun ρ [(.cmd (Cmd.set x2 v2 md2')), (.cmd (Cmd.set x1 v1 md1'))] ρ'' →
+  EvalStmtsSmall P (EvalCmd P) evalFun ρ [(.cmd (Cmd.set x1 (.det v1) md1)), (.cmd (Cmd.set x2 (.det v2) md2))] ρ' →
+  EvalStmtsSmall P (EvalCmd P) evalFun ρ [(.cmd (Cmd.set x2 (.det v2) md2')), (.cmd (Cmd.set x1 (.det v1) md1'))] ρ'' →
   ρ'.store = ρ''.store := by
   intro Hwf Hneq Hnin1 Hnin2 Heval1 Heval2
   -- Extract the four EvalCmd's from the two list executions

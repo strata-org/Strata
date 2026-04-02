@@ -1772,7 +1772,7 @@ theorem EvalCmdTouch
     constructor
   case eval_set δ σ x v σ' σ₀ e Hsm Hup Hwf =>
     exact TouchVars.update_some Hup TouchVars.none
-  case eval_havoc x v σ' σ₀ e Hsm Hup Hwf =>
+  case eval_set_nondet x v σ' σ₀ e Hsm Hup Hwf =>
     exact TouchVars.update_some Hup TouchVars.none
   case eval_assert_pass => exact TouchVars.none
   case eval_assert_fail => exact TouchVars.none
@@ -2101,8 +2101,12 @@ private theorem StepStmt_refines_contract
   | step_block => exact .step_block
   | step_ite_true h1 h2 => exact .step_ite_true h1 h2
   | step_ite_false h1 h2 => exact .step_ite_false h1 h2
+  | step_ite_nondet_true => exact .step_ite_nondet_true
+  | step_ite_nondet_false => exact .step_ite_nondet_false
   | step_loop_enter h1 h2 => exact .step_loop_enter h1 h2
   | step_loop_exit h1 h2 => exact .step_loop_exit h1 h2
+  | step_loop_nondet_enter => exact .step_loop_nondet_enter
+  | step_loop_nondet_exit => exact .step_loop_nondet_exit
   | step_exit => exact .step_exit
   | step_funcDecl => exact .step_funcDecl
   | step_typeDecl => exact .step_typeDecl

@@ -230,7 +230,11 @@ op assert (reachCheck? : Option ReachCheck, label : Option Label, c : bool) : St
   reachCheck?:0 "assert " label c ";\n";
 op cover (reachCheck? : Option ReachCheck, label : Option Label, c : bool) : Statement =>
   reachCheck?:0 "cover " label c ";\n";
-op if_statement (c : bool, t : Block, f : Else) : Statement => "if " "(" c ") " t:0 f:0 "\n";
+category ExprOrNondet;
+op condDet (c : bool) : ExprOrNondet => "(" c ")";
+op condNondet : ExprOrNondet => "*";
+
+op if_statement (c : ExprOrNondet, t : Block, f : Else) : Statement => "if " c:0 " " t:0 f:0 "\n";
 op else0 () : Else =>;
 op else1 (f : Block) : Else => " else " f:0;
 op havoc_statement (v : Ident) : Statement => "havoc " v ";\n";
@@ -246,8 +250,8 @@ op consInvariants(e : Expr, is : Invariants) : Invariants =>
 category Measure;
 op measure_mk (e : Expr) : Measure => "decreases " e "\n";
 
-op while_statement (c : bool, m : Option Measure, is : Invariants, body : Block) : Statement =>
-  "while " "(" c ")\n" m:0 is body "\n";
+op while_statement (c : ExprOrNondet, m : Option Measure, is : Invariants, body : Block) : Statement =>
+  "while " c:0 "\n" m:0 is body "\n";
 
 op call_statement (vs : CommaSepBy Ident, f : Ident, expr : CommaSepBy Expr) : Statement =>
    "call " vs " := " f "(" expr ")" ";\n";
