@@ -9,6 +9,7 @@ public import Strata.Languages.Laurel.Laurel
 import Strata.Languages.Python.OverloadTable
 public import Strata.Languages.Python.Specs.Decls
 public import Strata.Languages.Python.Specs.Error
+import Strata.Languages.Python.Specs.DDM
 import Strata.Util.DecideProp
 
 /-!
@@ -49,6 +50,8 @@ structure ToLaurelState where
   overloads : OverloadTable := {}
   /-- Maps unprefixed class names to prefixed names for type resolution. -/
   typeAliases : Std.HashMap String String := {}
+  /-- Classes whose spec is considered exhaustive (lists all methods). -/
+  exhaustiveClasses : Std.HashSet String := {}
 
 /-- Monad for PySpec to Laurel translation. -/
 abbrev ToLaurelM := ReaderT ToLaurelContext (StateM ToLaurelState)
@@ -380,7 +383,7 @@ partial def specExprToLaurel (e : SpecExpr) (md : Imperative.MetaData Core.Expre
 private def formatAssertionMessage (msg : Array MessagePart) : String :=
   let parts := msg.map fun
     | .str s => s
-    | .expr _ => "<expr>"
+    | .expr e => toString e
   String.join parts.toList
 
 /-- Build a procedure body that asserts preconditions.
@@ -467,6 +470,7 @@ def funcDeclToLaurel (procName : String) (func : FunctionDecl)
       pure (anyInputs, anyOutputs, body)
     else
       pure (inputs, outputs, Body.Opaque [] none [])
+  let md ← mkMdWithFileRange func.loc
   return {
     name := procName
     inputs := inputs.toList
@@ -476,7 +480,7 @@ def funcDeclToLaurel (procName : String) (func : FunctionDecl)
     decreases := none
     isFunctional := false
     body := body
-    md := .empty
+    md := md
   }
 
 /-- Convert a class definition to Laurel types and procedures. -/
@@ -485,6 +489,8 @@ def classDefToLaurel (cls : ClassDef) : ToLaurelM Unit := do
   -- Register alias from unprefixed to prefixed name for type resolution
   if prefixedName != cls.name then
     modify fun s => { s with typeAliases := s.typeAliases.insert cls.name prefixedName }
+  if cls.exhaustive then
+    modify fun s => { s with exhaustiveClasses := s.exhaustiveClasses.insert prefixedName }
   let laurelFields ← cls.fields.toList.mapM fun f => do
     let ty ← specTypeToLaurelType f.type
     pure { name := f.name, isMutable := true, type := ty : Laurel.Field }
@@ -584,6 +590,8 @@ public structure TranslationResult where
   overloads : OverloadTable
   /-- Maps unprefixed class names to prefixed names for type resolution. -/
   typeAliases : Std.HashMap String String := {}
+  /-- Classes whose spec is considered exhaustive (lists all methods). -/
+  exhaustiveClasses : Std.HashSet String := {}
 
 /-- Run the translation and return a Laurel Program, dispatch table,
     and any errors. -/
@@ -601,7 +609,8 @@ public def signaturesToLaurel (filepath : System.FilePath) (sigs : Array Signatu
   { program := pgm
     errors := state.errors
     overloads := state.overloads
-    typeAliases := state.typeAliases }
+    typeAliases := state.typeAliases
+    exhaustiveClasses := state.exhaustiveClasses }
 
 /-- Extract only the overload dispatch table from PySpec signatures.
     Processes `@overload` function declarations, ignoring classDef,

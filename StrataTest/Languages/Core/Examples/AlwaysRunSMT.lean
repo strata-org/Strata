@@ -10,7 +10,7 @@ import Strata.Languages.Core.Verifier
 namespace Strata
 
 /-- A program with a trivially true assertion that PE resolves without the solver. -/
-def alwaysRunSMTPgm :=
+def alwaysGenerateSMTPgm :=
 #strata
 program Core;
 procedure Test(x : int) returns (y : int)
@@ -28,8 +28,8 @@ def runAndCheckForSMTFiles : IO Unit := do
   if ← vcDir.pathExists then
     IO.FS.removeDirAll vcDir
   IO.FS.createDirAll vcDir
-  let _ ← verify alwaysRunSMTPgm (options := { Core.VerifyOptions.default with
-    alwaysRunSMT := true,
+  let _ ← verify alwaysGenerateSMTPgm (options := { Core.VerifyOptions.default with
+    alwaysGenerateSMT := true,
     vcDirectory := vcDir})
   -- Check that vcDir has exactly one `.smt2` file in it
   let entries ← vcDir.readDir
@@ -38,7 +38,7 @@ def runAndCheckForSMTFiles : IO Unit := do
   -- Clean up
   IO.FS.removeDirAll vcDir
 
--- With alwaysRunSMT, an `.smt2` file is always created even for a trivial VC.
+-- With alwaysGenerateSMT, an `.smt2` file is created even for a trivial VC.
 /--
 info: [Strata.Core] Type checking succeeded.
 

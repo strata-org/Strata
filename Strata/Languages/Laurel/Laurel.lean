@@ -189,6 +189,10 @@ structure Procedure : Type where
   isFunctional : Bool
   /-- The procedure body: transparent, opaque, or abstract. -/
   body : Body
+  /-- Optional trigger for auto-invocation. When present, the translator also emits an axiom
+      whose body is the ensures clause universally quantified over the procedure's inputs,
+      with this expression as the SMT trigger. -/
+  invokeOn : Option (WithMetadata StmtExpr) := none
   /-- Source-level metadata (locations, annotations). -/
   md : MetaData
 
@@ -445,6 +449,19 @@ structure DatatypeDefinition where
   name : Identifier
   typeArgs : List Identifier
   constructors : List DatatypeConstructor
+
+/-- Canonical resolution name for the tester of constructor `ctor` in this datatype.
+    Matches the override name used by `Resolution.resolveTypeDefinition`. -/
+def DatatypeDefinition.testerName (dt : DatatypeDefinition) (ctor : DatatypeConstructor) : String :=
+  s!"{dt.name}..is{ctor.name}"
+
+/-- Canonical resolution name for the destructor of field `field` in this datatype. -/
+def DatatypeDefinition.destructorName (dt : DatatypeDefinition) (field : Parameter) : String :=
+  s!"{dt.name.text}..{field.name.text}"
+
+/-- Canonical resolution name for the unsafe (bang) destructor of field `field`. -/
+def DatatypeDefinition.unsafeDestructorName (dt : DatatypeDefinition) (field : Parameter) : String :=
+  s!"{dt.name.text}..{field.name.text}!"
 
 /--
 A user-defined type, either a composite type, a constrained type, or an algebraic datatype.
