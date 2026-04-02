@@ -91,6 +91,8 @@ theorem EvalStmt_hasFailure_monotone
   | block_sem Hblock => exact EvalBlock_hasFailure_monotone Hblock Hf
   | ite_true_sem _ _ Hblock => exact EvalBlock_hasFailure_monotone Hblock Hf
   | ite_false_sem _ _ Hblock => exact EvalBlock_hasFailure_monotone Hblock Hf
+  | ite_nondet_true_sem Hblock => exact EvalBlock_hasFailure_monotone Hblock Hf
+  | ite_nondet_false_sem Hblock => exact EvalBlock_hasFailure_monotone Hblock Hf
   | funcDecl_sem => simp [Hf]
   | typeDecl_sem => exact Hf
 
@@ -136,6 +138,12 @@ theorem EvalStmt_hasFailure_irrel
   | ite_false_sem Hcond Hwf Hblock =>
     have ⟨ρ₂', Hblock₂, Hs, He⟩ := EvalBlock_hasFailure_irrel Hblock ρ₂ Hstore Heval_eq
     exact ⟨ρ₂', EvalStmt.ite_false_sem (Heval_eq ▸ Hstore ▸ Hcond) (Heval_eq ▸ Hwf) Hblock₂, Hs, He⟩
+  | ite_nondet_true_sem Hblock =>
+    have ⟨ρ₂', Hblock₂, Hs, He⟩ := EvalBlock_hasFailure_irrel Hblock ρ₂ Hstore Heval_eq
+    exact ⟨ρ₂', EvalStmt.ite_nondet_true_sem Hblock₂, Hs, He⟩
+  | ite_nondet_false_sem Hblock =>
+    have ⟨ρ₂', Hblock₂, Hs, He⟩ := EvalBlock_hasFailure_irrel Hblock ρ₂ Hstore Heval_eq
+    exact ⟨ρ₂', EvalStmt.ite_nondet_false_sem Hblock₂, Hs, He⟩
   | funcDecl_sem =>
     refine ⟨{ ρ₂ with eval := extendEval ρ₂.eval ρ₂.store _ }, EvalStmt.funcDecl_sem, ?_, ?_⟩
     · simp [Hstore]
@@ -298,7 +306,7 @@ theorem semantic_eval_eq_of_eval_cmd_set_unrelated_var
   [HasFvar P] [HasVal P] [HasBool P] [HasNot P]:
   WellFormedSemanticEvalExprCongr δ →
   ¬ v ∈ HasVarsPure.getVars e →
-  EvalCmd P δ σ (Cmd.set v e' md) σ' f →
+  EvalCmd P δ σ (Cmd.set v (.det e') md) σ' f →
   δ σ e = δ σ' e := by
   intro Hwf Hnin Heval
   unfold WellFormedSemanticEvalExprCongr at Hwf
@@ -322,10 +330,10 @@ theorem eval_cmd_set_comm'
   ¬ x1 = x2 →
   δ σ v1 = δ σ2 v1 →
   δ σ v2 = δ σ1 v2 →
-  EvalCmd P δ σ (Cmd.set x1 v1 md1) σ1 f1 →
-  EvalCmd P δ σ1 (Cmd.set x2 v2 md2) σ' f2 →
-  EvalCmd P δ σ (Cmd.set x2 v2 md2') σ2 f3 →
-  EvalCmd P δ σ2 (Cmd.set x1 v1 md1') σ'' f4 →
+  EvalCmd P δ σ (Cmd.set x1 (.det v1) md1) σ1 f1 →
+  EvalCmd P δ σ1 (Cmd.set x2 (.det v2) md2) σ' f2 →
+  EvalCmd P δ σ (Cmd.set x2 (.det v2) md2') σ2 f3 →
+  EvalCmd P δ σ2 (Cmd.set x1 (.det v1) md1') σ'' f4 →
   σ' = σ'' := by
   intro Hneq Heq1 Heq2 Hs1 Hs2 Hs3 Hs4
   cases Hs1 with | eval_set _ Hu1 _ =>
@@ -342,10 +350,10 @@ theorem eval_cmd_set_comm
   ¬ x1 = x2 →
   ¬ x1 ∈ HasVarsPure.getVars v2 →
   ¬ x2 ∈ HasVarsPure.getVars v1 →
-  EvalCmd P δ σ (Cmd.set x1 v1 md1) σ1 f1 →
-  EvalCmd P δ σ1 (Cmd.set x2 v2 md2) σ' f2 →
-  EvalCmd P δ σ (Cmd.set x2 v2 md2') σ2 f3 →
-  EvalCmd P δ σ2 (Cmd.set x1 v1 md1') σ'' f4 →
+  EvalCmd P δ σ (Cmd.set x1 (.det v1) md1) σ1 f1 →
+  EvalCmd P δ σ1 (Cmd.set x2 (.det v2) md2) σ' f2 →
+  EvalCmd P δ σ (Cmd.set x2 (.det v2) md2') σ2 f3 →
+  EvalCmd P δ σ2 (Cmd.set x1 (.det v1) md1') σ'' f4 →
   σ' = σ'' := by
   intro Hwf Hneq Hnin1 Hnin2 Hs1 Hs2 Hs3 Hs4
   have Heval2:= semantic_eval_eq_of_eval_cmd_set_unrelated_var Hwf Hnin1 Hs1
@@ -359,10 +367,10 @@ theorem eval_stmt_set_comm
   ¬ x1 = x2 →
   ¬ x1 ∈ HasVarsPure.getVars v2 →
   ¬ x2 ∈ HasVarsPure.getVars v1 →
-  EvalStmt P (Cmd P) (EvalCmd P) evalFun ρ (.cmd (Cmd.set x1 v1 md1)) ρ1 →
-  EvalStmt P (Cmd P) (EvalCmd P) evalFun ρ1 (.cmd (Cmd.set x2 v2 md2)) ρ' →
-  EvalStmt P (Cmd P) (EvalCmd P) evalFun ρ (.cmd (Cmd.set x2 v2 md2')) ρ2 →
-  EvalStmt P (Cmd P) (EvalCmd P) evalFun ρ2 (.cmd (Cmd.set x1 v1 md1')) ρ'' →
+  EvalStmt P (Cmd P) (EvalCmd P) evalFun ρ (.cmd (Cmd.set x1 (.det v1) md1)) ρ1 →
+  EvalStmt P (Cmd P) (EvalCmd P) evalFun ρ1 (.cmd (Cmd.set x2 (.det v2) md2)) ρ' →
+  EvalStmt P (Cmd P) (EvalCmd P) evalFun ρ (.cmd (Cmd.set x2 (.det v2) md2')) ρ2 →
+  EvalStmt P (Cmd P) (EvalCmd P) evalFun ρ2 (.cmd (Cmd.set x1 (.det v1) md1')) ρ'' →
   ρ'.store = ρ''.store := by
   intro Hwf Hneq Hnin1 Hnin2 Hs1 Hs2 Hs3 Hs4
   cases Hs1 with | cmd_sem Hc1 _ =>
@@ -379,8 +387,8 @@ theorem eval_stmts_set_comm
   ¬ x1 = x2 →
   ¬ x1 ∈ HasVarsPure.getVars v2 →
   ¬ x2 ∈ HasVarsPure.getVars v1 →
-  EvalBlock P (Cmd P) (EvalCmd P) evalFun ρ [(.cmd (Cmd.set x1 v1 md1)), (.cmd (Cmd.set x2 v2 md2))] ρ' →
-  EvalBlock P (Cmd P) (EvalCmd P) evalFun ρ [(.cmd (Cmd.set x2 v2 md2')), (.cmd (Cmd.set x1 v1 md1'))] ρ'' →
+  EvalBlock P (Cmd P) (EvalCmd P) evalFun ρ [(.cmd (Cmd.set x1 (.det v1) md1)), (.cmd (Cmd.set x2 (.det v2) md2))] ρ' →
+  EvalBlock P (Cmd P) (EvalCmd P) evalFun ρ [(.cmd (Cmd.set x2 (.det v2) md2')), (.cmd (Cmd.set x1 (.det v1) md1'))] ρ'' →
   ρ'.store = ρ''.store := by
   intro Hwf Hneq Hnin1 Hnin2 Heval1 Heval2
   -- Decompose first evaluation: [set x1 v1, set x2 v2]
