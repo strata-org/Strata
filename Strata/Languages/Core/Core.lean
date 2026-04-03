@@ -37,7 +37,7 @@ public section
 -/
 
 def typeCheck (options : VerifyOptions) (program : Program)
-    (moreFns : @Lambda.Factory CoreLParams := Lambda.Factory.default) :
+    (moreFns : Lambda.Factory CoreLParams := Lambda.Factory.default) :
     Except DiagnosticModel Program := do
   let T := Lambda.TEnv.default
   let factory ← Core.Factory.addFactory moreFns
@@ -70,7 +70,7 @@ def formatProofObligations (obs : Array (Imperative.ProofObligation Expression))
   Std.Format.joinSep (obs.toList.map formatProofObligation) "\n"
 
 def typeCheckAndPartialEval (options : VerifyOptions) (program : Program)
-    (moreFns : @Lambda.Factory CoreLParams := Lambda.Factory.default) :
+    (moreFns : Lambda.Factory CoreLParams := Lambda.Factory.default) :
     Except DiagnosticModel (List (Program × Env)) := do
   let factory ← Core.Factory.addFactory moreFns
   let program ← typeCheck options program moreFns
