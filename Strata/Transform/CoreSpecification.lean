@@ -37,11 +37,11 @@ def Lang.core
 
 /-! ## Well-formed program state at the entry of procedure -/
 
+-- Note: outputs are included because the body refers to the output variables.
 def procVerifyInitIdents (proc : Procedure) : List Expression.Ident :=
   ListMap.keys proc.header.inputs ++
   ListMap.keys proc.header.outputs ++
-  proc.spec.modifies ++
-  proc.spec.modifies.map (fun g => CoreIdent.mkOld g.name)
+  proc.spec.modifies
 
 /-- A well-formed initial environment for executing the procedure body.
     This captures the state after inputs, outputs, modified globals (with
@@ -56,8 +56,6 @@ structure ProcEnvWF (proc : Procedure) (ρ : Env Expression) : Prop where
     (label, check) ∈ proc.spec.preconditions.toList →
     ρ.eval ρ.store check.expr = some HasBool.tt
   noFailure : ρ.hasFailure = Bool.false
-  initIdentsNodup : (procVerifyInitIdents proc).Nodup
-  modifiesNeOld : ∀ g ∈ proc.spec.modifies, g ≠ CoreIdent.mkOld g.name
 
 /-! ## Procedure correctness -/
 
@@ -69,10 +67,8 @@ variable (φ : CoreEval → PureFunc Expression → CoreEval)
 def AssertValidInProcedure
     (proc : Procedure)
     (a : Imperative.AssertId Expression) : Prop :=
-  ∀ (ρ₀ : Env Expression), ProcEnvWF proc ρ₀ →
-    ∀ cfg, CoreStepStar π φ (.stmts proc.body ρ₀) cfg →
-      coreIsAtAssert cfg a →
-      cfg.getEval cfg.getStore a.expr = some HasBool.tt
+  Imperative.Specification.AssertValidWhen (Specification.Lang.core π φ)
+    (ProcEnvWF proc) (Stmt.block "" proc.body #[]) a
 
 /-- A procedure is correct with respect to its specification.
 
@@ -83,10 +79,16 @@ def AssertValidInProcedure
        initial environment, every non-free postcondition holds and
        `hasFailure` stays `false`.
 
-    Note that this is partial correctness: if the program has
-    an infinite loop, the postcondition considered to be satisfied. Since total
-    correctness is a conjunction of partial correctness and termination, having
-    partial correctness-only definition here is useful.
+    Note: The `modifies` clause (frame condition) is not included here.
+    Representing it purely as assertions in the verification output is
+    difficult, and the semantics of `modifies` are under discussion for
+    possible removal. If needed in the future, a frame condition can be
+    added as a third field.
+
+    This is partial correctness: if the program has an infinite loop, the
+    postcondition is considered to be satisfied. Since total correctness is
+    a conjunction of partial correctness and termination, having partial
+    correctness-only definition here is useful.
 
     A possibly more succinct style of ProcedureCorrect is using Hoare triple
     (`Hoare.Triple` in Specification.lean). Since `Hoare.Triple` also uses
@@ -121,22 +123,23 @@ def AssertValidInProcedure
     inspects asserts and postconditions *only if the code terminates*,
     we end up accepting this procedure P as 'correct'.
 
-    Therefore, we define ProcedureCorrect as a conjunction of
-    (1) explicit inspection of validity of asserts in the the body, and
-    (2) a predicate stating that the postcondition holds.
+    Therefore, we define ProcedureCorrect as a structure with two fields:
+    (1) assert validity in the body, and
+    (2) postcondition validity on termination.
 -/
-def ProcedureCorrect (proc : Procedure) (p : Program) : Prop :=
-  -- (1) The asserts in the body of proc are valid
-  (∀ a, AssertValidInProcedure π φ proc a) ∧
-  -- (2) The postcondition is valid.
-  (WF.WFProcedureProp p proc →
-   ∀ (ρ₀ ρ' : Env Expression),
-    ProcEnvWF proc ρ₀ →
-    CoreStepStar π φ (.stmts proc.body ρ₀) (.terminal ρ') →
-    (∀ (label : CoreLabel) (check : Procedure.Check),
-      (label, check) ∈ proc.spec.postconditions.toList →
-      check.attr = Procedure.CheckAttr.Default →
-      ρ'.eval ρ'.store check.expr = some HasBool.tt) ∧
-    ρ'.hasFailure = Bool.false)
+structure ProcedureCorrect (proc : Procedure) (p : Program) : Prop where
+  /-- (1) The asserts in the body of proc are valid. -/
+  assertsValid : ∀ a, AssertValidInProcedure π φ proc a
+  /-- (2) The postconditions hold on termination. -/
+  postconditionsValid :
+    WF.WFProcedureProp p proc →
+    ∀ (ρ₀ ρ' : Env Expression),
+      ProcEnvWF proc ρ₀ →
+      CoreStepStar π φ (.stmts proc.body ρ₀) (.terminal ρ') →
+      (∀ (label : CoreLabel) (check : Procedure.Check),
+        (label, check) ∈ proc.spec.postconditions.toList →
+        check.attr = Procedure.CheckAttr.Default →
+        ρ'.eval ρ'.store check.expr = some HasBool.tt) ∧
+      ρ'.hasFailure = Bool.false
 
 end Core.Specification

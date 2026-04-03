@@ -7,6 +7,8 @@
 import Strata.Transform.ProcBodyVerify
 import Strata.Transform.CoreSpecification
 import Strata.Languages.Core.WF
+import Strata.DL.Util.ListMap
+import Strata.DL.Util.List
 
 /-! # Procedure Body Verification Correctness Proof -/
 
@@ -189,14 +191,6 @@ private theorem prefixInitEnv_noninit_list (stmts : List Statement)
     have hrest := ih (fun s' hs' => h s' (List.mem_cons_of_mem s hs'))
     simp [prefixInitEnv, hs, hrest]
 
-private theorem stmtInitVar_assume (label : CoreLabel) (e : Expression.Expr)
-    (md : Imperative.MetaData Expression) :
-    stmtInitVar (Statement.assume label e md) = none := rfl
-
-private theorem stmtInitVar_init (x : Expression.Ident) (ty : Expression.Ty)
-    (expr : Imperative.ExprOrNondet Expression) (md : Imperative.MetaData Expression) :
-    stmtInitVar (Statement.init x ty expr md) = some x := rfl
-
 /-- PrefixStepsOK for a list of assume statements, given preconditions hold. -/
 private theorem PrefixStepsOK_assumes
     (π : String → Option Procedure) (φ : CoreEval → PureFunc Expression → CoreEval)
@@ -258,33 +252,6 @@ private theorem PrefixStepsOK_nondet_init_cons
     exact EvalCommand.cmd_sem (EvalCmd.eval_init_unconstrained
       (InitState.init h_none hv (fun y hne => by
         exact (prefixInitEnv_store_other _ _ _ y x rfl hne).symm))
-      h_wfVar)
-
-/-- For a det init statement `init g := fvar oldG`, if the store conditions hold. -/
-private theorem PrefixStepsOK_det_init_cons
-    (π : String → Option Procedure) (φ : CoreEval → PureFunc Expression → CoreEval)
-    (g : Expression.Ident) (ty : Expression.Ty)
-    (oldG : Expression.Ident) (rest : List Statement)
-    (ρ : Imperative.Env Expression)
-    (h_wfVar : WellFormedSemanticEvalVar ρ.eval)
-    (h_rest : PrefixStepsOK π φ rest ρ)
-    (h_some_g : ((prefixInitEnv rest ρ).store g).isSome)
-    (h_old_eq : (prefixInitEnv (Statement.init g ty (.det (Lambda.LExpr.fvar () oldG none)) #[] :: rest) ρ).store oldG = (prefixInitEnv rest ρ).store g) :
-    PrefixStepsOK π φ (Statement.init g ty (.det (Lambda.LExpr.fvar () oldG none)) #[] :: rest) ρ := by
-  constructor
-  · exact h_rest
-  · refine ⟨_, rfl, (prefixInitEnv rest ρ).store, ?_, rfl⟩
-    have h_none : (prefixInitEnv (Statement.init g ty (.det (Lambda.LExpr.fvar () oldG none)) #[] :: rest) ρ).store g = none :=
-      prefixInitEnv_store_init _ _ _ _ rfl
-    rw [Option.isSome_iff_exists] at h_some_g
-    obtain ⟨v, hv⟩ := h_some_g
-    have h_eval_fvar : ρ.eval (prefixInitEnv (Statement.init g ty (.det (Lambda.LExpr.fvar () oldG none)) #[] :: rest) ρ).store (Lambda.LExpr.fvar () oldG none) = some v := by
-      have h_getFvar : HasFvar.getFvar (Lambda.LExpr.fvar () oldG none : Expression.Expr) = some oldG := by
-        simp [HasFvar.getFvar]
-      rw [h_wfVar _ _ _ h_getFvar, h_old_eq, hv]
-    exact EvalCommand.cmd_sem (EvalCmd.eval_init h_eval_fvar
-      (InitState.init h_none hv (fun y hne => by
-        exact (prefixInitEnv_store_other _ _ _ y g rfl hne).symm))
       h_wfVar)
 
 /-- PrefixStepsOK for a list of nondet init statements from a map. -/
@@ -385,44 +352,56 @@ private theorem prefixInitEnv_store_defined_of_not_init
   rw [prefixInitEnv_store_not_init stmts ρ x h_not_init]
   exact h_def
 
-/-- If `stmts` only inits variables from `inits`, and `x ∉ inits`, then
-    `prefixInitEnv stmts ρ` agrees with `ρ` on `x`. -/
-private theorem prefixInitEnv_store_defined_of_disjoint
-    (stmts : List Statement) (ρ : Imperative.Env Expression) (x : Expression.Ident)
-    (inits : List Expression.Ident)
-    (h_inits : ∀ s ∈ stmts, ∀ y, stmtInitVar s = some y → y ∈ inits)
-    (h_not_in : x ∉ inits)
-    (h_def : (ρ.store x).isSome) :
-    ((prefixInitEnv stmts ρ).store x).isSome := by
-  apply prefixInitEnv_store_defined_of_not_init
-  · intro s hs heq
-    have := h_inits s hs x heq
-    exact h_not_in this
-  · exact h_def
 
 
 
 -- No standalone modifiesInits_initVars needed; we use h_modifies_init_vars from the outer scope.
 
-private theorem listMap_keys_eq_map_fst {α β : Type} (m : ListMap α β) :
-    m.keys = m.toList.map Prod.fst := by
-  induction m with
-  | nil => rfl
-  | cons h t ih => simp [ListMap.keys, ListMap.toList, ih]
+-- Aliases for lemmas moved to DL/Util
+private abbrev listMap_keys_eq_map_fst := @ListMap.keys_eq_map_fst
+private abbrev nodup_map_injOn := @List.nodup_map_injOn
 
-private theorem nodup_map_injOn {α β : Type} [DecidableEq β] {f : α → β} {l : List α}
-    (hnd : (l.map f).Nodup) {a b : α} (ha : a ∈ l) (hb : b ∈ l) (hab : f a = f b) : a = b := by
-  induction l with
-  | nil => exact nomatch ha
-  | cons x xs ih =>
-    rw [List.map_cons, List.nodup_cons] at hnd
-    cases ha with
-    | head => cases hb with
-      | head => rfl
-      | tail _ hb => exact absurd (hab ▸ List.mem_map.mpr ⟨_, hb, rfl⟩) hnd.1
-    | tail _ ha => cases hb with
-      | head => exact absurd (hab.symm ▸ List.mem_map.mpr ⟨_, ha, rfl⟩) hnd.1
-      | tail _ hb => exact ih hnd.2 ha hb
+/-- If `.block l inner →* cfg` and `inner` never reaches `.exiting`,
+    then `cfg` is either `.block l inner'` (with `inner →* inner'`)
+    or `.terminal ρ'`. When `coreIsAtAssert cfg a`, only the first case applies. -/
+private theorem block_star_extract_inner
+    (π : String → Option Procedure) (φ : CoreEval → PureFunc Expression → CoreEval)
+    {l : String} {inner cfg : CoreConfig}
+    (h_star : StepStmtStar Expression (EvalCommand π φ) (EvalPureFunc φ) (.block l inner) cfg)
+    (h_no_exit : ∀ lbl ρ', ¬ StepStmtStar Expression (EvalCommand π φ) (EvalPureFunc φ)
+        inner (.exiting lbl ρ'))
+    (h_not_terminal : ∀ ρ', cfg ≠ .terminal ρ')
+    (h_not_exiting : ∀ lbl ρ', cfg ≠ .exiting lbl ρ') :
+    ∃ inner', cfg = .block l inner' ∧
+      StepStmtStar Expression (EvalCommand π φ) (EvalPureFunc φ) inner inner' := by
+  suffices ∀ c₁ c₂,
+      StepStmtStar Expression (EvalCommand π φ) (EvalPureFunc φ) c₁ c₂ →
+      ∀ inner₀, c₁ = .block l inner₀ →
+      (∀ lbl ρ', ¬ StepStmtStar Expression (EvalCommand π φ) (EvalPureFunc φ)
+          inner₀ (.exiting lbl ρ')) →
+      (∀ ρ', c₂ ≠ .terminal ρ') → (∀ lbl ρ', c₂ ≠ .exiting lbl ρ') →
+      ∃ inner', c₂ = .block l inner' ∧
+        StepStmtStar Expression (EvalCommand π φ) (EvalPureFunc φ) inner₀ inner' from
+    this _ _ h_star _ rfl h_no_exit h_not_terminal h_not_exiting
+  intro c₁ c₂ h_star
+  induction h_star with
+  | refl => intro inner₀ heq _ _ _; subst heq; exact ⟨inner₀, rfl, .refl _⟩
+  | step _ mid _ hstep hrest ih =>
+    intro inner₀ heq h_ne h_nt h_nx; subst heq
+    cases hstep with
+    | step_block_body h_inner_step =>
+      have h_ne' : ∀ lbl ρ', ¬ StepStmtStar Expression (EvalCommand π φ) (EvalPureFunc φ)
+          _ (.exiting lbl ρ') :=
+        fun lbl ρ' h => h_ne lbl ρ' (.step _ _ _ h_inner_step h)
+      obtain ⟨inner', rfl, h_inner_star⟩ := ih _ rfl h_ne' h_nt h_nx
+      exact ⟨inner', rfl, .step _ _ _ h_inner_step h_inner_star⟩
+    | step_block_done =>
+      cases hrest with
+      | refl => exact absurd rfl (h_nt _)
+      | step _ _ _ h _ => exact nomatch h
+    | step_block_exit_none => exact absurd (.refl _) (h_ne _ _)
+    | step_block_exit_match => exact absurd (.refl _) (h_ne _ _)
+    | step_block_exit_mismatch => exact absurd (.refl _) (h_ne _ _)
 
 /-! ## Verification Statement Structure -/
 
@@ -436,7 +415,8 @@ theorem procToVerifyStmt_structure
     (verifyStmt : Statement)
     (h : (procToVerifyStmt proc p).run st = (Except.ok verifyStmt, st'))
     (π : String → Option Procedure)
-    (φ : CoreEval → PureFunc Expression → CoreEval) :
+    (φ : CoreEval → PureFunc Expression → CoreEval)
+    (h_wf_proc : WF.WFProcedureProp p proc) :
     ∃ (prefixStmts : List Statement),
       verifyStmt = Stmt.block s!"verify_{proc.header.name.name}"
         (prefixStmts ++ [Stmt.block s!"body_{proc.header.name.name}" proc.body #[]] ++
@@ -663,20 +643,13 @@ theorem procToVerifyStmt_structure
             ∀ s ∈ modifiesInits.flatten, stmtInitVar s ≠ some x := by
           intro x hx s hs hsx
           have hmod := h_modifies_init_vars s hs x hsx
-          have h_nodup := h_wf.initIdentsNodup
-          -- procVerifyInitIdents = keys inputs ++ keys outputs ++ modifies ++ map mkOld modifies
-          -- and this list is nodup
-          rw [Specification.procVerifyInitIdents] at h_nodup
-          -- nodup of (((keys inputs ++ keys outputs) ++ modifies) ++ map mkOld modifies)
-          have h_outer := List.nodup_append.mp h_nodup
-          have h_inner := List.nodup_append.mp h_outer.1
           rcases hmod with hmod | hmod
-          · -- x ∈ modifies, x ∈ keys inputs ++ keys outputs
-            exact absurd rfl (h_inner.2.2 x hx x hmod)
-          · -- x ∈ map mkOld modifies, x ∈ (keys inputs ++ keys outputs) ++ modifies
+          · -- x ∈ modifies, x ∈ keys inputs ++ keys outputs: contradicts ioModDisjoint
+            exact absurd hmod (h_wf_proc.ioModDisjoint hx)
+          · -- x ∈ map mkOld modifies, x ∈ keys inputs ++ keys outputs: contradicts modOldDisjoint
             have hx' : x ∈ (ListMap.keys proc.header.inputs ++ ListMap.keys proc.header.outputs) ++ proc.spec.modifies :=
               List.mem_append_left _ hx
-            exact absurd rfl (h_outer.2.2 x hx' x hmod)
+            exact absurd hmod (h_wf_proc.modOldDisjoint hx')
 
         constructor
         · -- PrefixStepsOK for modifiesInits.flatten ρ₀
@@ -696,10 +669,7 @@ theorem procToVerifyStmt_structure
                 PrefixStepsOK π φ mInits.flatten ρ₀ ∧
                 (∀ s ∈ mInits.flatten, ∀ x, stmtInitVar s = some x →
                   x ∈ gs ∨ x ∈ gs.map (fun (g : Expression.Ident) => CoreIdent.mkOld g.name)) by
-            have h_mod_nd : proc.spec.modifies.Nodup := by
-              have h_nd := h_wf.initIdentsNodup
-              rw [Specification.procVerifyInitIdents] at h_nd
-              exact (List.nodup_append.mp (List.nodup_append.mp h_nd).1).2.1
+            have h_mod_nd : proc.spec.modifies.Nodup := h_wf_proc.modNodup
             exact (h_joint _ _ _ _ heq (fun g hg => hg) h_mod_nd).1
           intro gs
           induction gs with
@@ -738,9 +708,6 @@ theorem procToVerifyStmt_structure
                           (List.nodup_cons.mp h_nd_gs).2
                         -- Nodup facts
                         have h_g_not_rest : g ∉ rest := (List.nodup_cons.mp h_nd_gs).1
-                        -- Disjointness: modifies ∩ map mkOld modifies = ∅
-                        have h_nd_vi := h_wf.initIdentsNodup
-                        rw [Specification.procVerifyInitIdents] at h_nd_vi
                         -- Helper: g ∈ modifies
                         have h_g_mod : g ∈ proc.spec.modifies := h_sub_gs g List.mem_cons_self
                         -- Helper: rest.map mkOld ⊆ proc.spec.modifies.map mkOld
@@ -755,29 +722,62 @@ theorem procToVerifyStmt_structure
                           intro s' hs' heq_s
                           rcases h_ih.2 s' hs' g heq_s with hg | hg
                           · exact h_g_not_rest hg
-                          · -- g ∈ rest.map mkOld ⊆ map mkOld modifies, but g ∈ modifies too
+                          · -- g ∈ rest.map mkOld ⊆ map mkOld modifies, but g ∈ modifies too: contradicts modOldDisjoint
                             have hg_in_old : g ∈ proc.spec.modifies.map (fun (g : Expression.Ident) => CoreIdent.mkOld g.name) :=
                               h_rest_map_sub g hg
                             have hg_io_mod : g ∈ (ListMap.keys proc.header.inputs ++ ListMap.keys proc.header.outputs) ++ proc.spec.modifies :=
                               List.mem_append_right _ h_g_mod
-                            exact absurd rfl ((List.nodup_append.mp h_nd_vi).2.2 g hg_io_mod g hg_in_old)
+                            exact absurd hg_in_old (h_wf_proc.modOldDisjoint hg_io_mod)
                         -- oldG not init'd in restInits.flatten
                         have h_oldG_not_in_rest_inits : ∀ s ∈ restInits.flatten, stmtInitVar s ≠ some (CoreIdent.mkOld g.name) := by
                           intro s' hs' heq_s
                           rcases h_ih.2 s' hs' (CoreIdent.mkOld g.name) heq_s with hg | hg
-                          · -- mkOld g.name ∈ rest ⊆ modifies, but also in map mkOld modifies
-                            have h1 : CoreIdent.mkOld g.name ∈ proc.spec.modifies :=
+                          · -- mkOld g.name ∈ rest ⊆ modifies: contradicts ne_mkOld
+                            have h_mkOld_in_mod : CoreIdent.mkOld g.name ∈ proc.spec.modifies :=
                               h_sub_gs _ (List.mem_cons_of_mem _ hg)
-                            have h2 : CoreIdent.mkOld g.name ∈ proc.spec.modifies.map (fun (g : Expression.Ident) => CoreIdent.mkOld g.name) :=
+                            -- But g ∈ modifies, so g and mkOld g.name are both in modifies
+                            -- This contradicts modOldDisjoint
+                            have h_g_in_io_mod : g ∈ (ListMap.keys proc.header.inputs ++ ListMap.keys proc.header.outputs) ++ proc.spec.modifies :=
+                              List.mem_append_right _ h_g_mod
+                            have h_mkOld_in_map : CoreIdent.mkOld g.name ∈ proc.spec.modifies.map (fun g' => CoreIdent.mkOld g'.name) :=
                               List.mem_map.mpr ⟨g, h_g_mod, rfl⟩
-                            have h_io_mod : CoreIdent.mkOld g.name ∈ (ListMap.keys proc.header.inputs ++ ListMap.keys proc.header.outputs) ++ proc.spec.modifies :=
-                              List.mem_append_right _ h1
-                            exact absurd rfl ((List.nodup_append.mp h_nd_vi).2.2 _ h_io_mod _ h2)
+                            -- But mkOld g.name ∈ modifies contradicts ne_mkOld if we identify mkOld g.name with some element of modifies
+                            -- Actually, the contradiction is: mkOld g.name ∈ modifies but also g ∈ modifies and g ≠ mkOld g.name
+                            -- Since modifies is nodup, if mkOld g.name ∈ modifies then mkOld g.name is one of the elements
+                            -- But modifies doesn't contain any mkOld by construction (it's user-defined globals)
+                            -- Actually, let's use: mkOld g.name ∈ rest ⊆ modifies, but ne_mkOld says g ≠ mkOld g.name
+                            -- And if mkOld g.name were in modifies, then for some h ∈ modifies, mkOld g.name = h
+                            -- But then h = mkOld g.name, so h has the mkOld form, contradicting that modifies doesn't contain mkOld forms
+                            -- This is getting complex. Let me use modOldDisjoint directly:
+                            -- mkOld g.name ∈ rest ⊆ modifies means mkOld g.name ∈ modifies
+                            -- But mkOld g.name = mkOld g.name ∈ map mkOld modifies (since g ∈ modifies)
+                            -- So mkOld g.name is in both modifies and map mkOld modifies
+                            -- But modifies and map mkOld modifies should be disjoint by... wait, that's not directly in the WF conditions
+                            -- Let me use ne_mkOld differently: for any x ∈ modifies, x ≠ mkOld x.name
+                            -- So if mkOld g.name ∈ rest ⊆ modifies, then mkOld g.name ≠ mkOld (mkOld g.name).name
+                            -- But that's not a contradiction.
+                            -- Actually, the key insight: modifies is a list of user-defined global identifiers
+                            -- mkOld produces identifiers with "old_" prefix
+                            -- So modifies never contains mkOld forms
+                            -- This is enforced by WF conditions: any x ∈ modifies satisfies x ≠ mkOld y.name for any y
+                            -- But we don't have that directly. Let me use a different approach:
+                            -- mkOld g.name ∈ rest ⊆ modifies. But rest ⊆ modifies (by h_sub_gs).
+                            -- And we have h_g_mod : g ∈ modifies.
+                            -- The WF condition is: modifies.map mkOld is disjoint from modifies.
+                            -- So mkOld g.name (which is in map mkOld modifies since g ∈ modifies) cannot be in modifies.
+                            -- But mkOld g.name ∈ rest ⊆ modifies. Contradiction!
+                            -- Wait, I need to show rest ⊆ modifies more carefully.
+                            -- h_sub_gs : ∀ g' ∈ (g :: rest), g' ∈ proc.spec.modifies
+                            -- So ∀ g' ∈ rest, g' ∈ modifies. So rest ⊆ modifies.
+                            have h_mkOld_in_map_mod : CoreIdent.mkOld g.name ∈ proc.spec.modifies.map (fun g' => CoreIdent.mkOld g'.name) :=
+                              List.mem_map.mpr ⟨g, h_g_mod, rfl⟩
+                            have h_io_mod_app : CoreIdent.mkOld g.name ∈ (ListMap.keys proc.header.inputs ++ ListMap.keys proc.header.outputs) ++ proc.spec.modifies :=
+                              List.mem_append_right _ h_mkOld_in_mod
+                            exact absurd h_mkOld_in_map_mod (h_wf_proc.modOldDisjoint h_io_mod_app)
                           · -- mkOld g.name ∈ rest.map mkOld
                             -- Use nodup_map_injOn: Nodup (map mkOld modifies) → injective on modifies
-                            have h_nd_mkold : (proc.spec.modifies.map (fun (g' : Expression.Ident) => CoreIdent.mkOld g'.name)).Nodup := by
-                              have h_nd := (List.nodup_append.mp h_nd_vi)
-                              exact h_nd.2.1
+                            have h_nd_mkold : (proc.spec.modifies.map (fun (g' : Expression.Ident) => CoreIdent.mkOld g'.name)).Nodup :=
+                              h_wf_proc.modOldNodup
                             simp only [List.mem_map] at hg
                             obtain ⟨g', hg'_mem, hg'_eq⟩ := hg
                             have : g = g' := nodup_map_injOn h_nd_mkold
@@ -793,11 +793,7 @@ theorem procToVerifyStmt_structure
                         -- g and oldG defined in ρ₀
                         have h_g_in_vi : g ∈ Specification.procVerifyInitIdents proc := by
                           unfold Specification.procVerifyInitIdents
-                          simp only [List.mem_append]; left; right; exact h_g_mod
-                        have h_oldG_in_vi : CoreIdent.mkOld g.name ∈ Specification.procVerifyInitIdents proc := by
-                          unfold Specification.procVerifyInitIdents
-                          simp only [List.mem_append]; right
-                          exact List.mem_map.mpr ⟨g, h_g_mod, rfl⟩
+                          simp only [List.mem_append]; right; exact h_g_mod
                         -- PrefixStepsOK for the pair
                         have h_wfVar' : WellFormedSemanticEvalVar (prefixInitEnv restInits.flatten ρ₀).eval := by
                           rw [prefixInitEnv_eval]; exact h_wf.wfVar
@@ -805,9 +801,12 @@ theorem procToVerifyStmt_structure
                           (prefixInitEnv restInits.flatten ρ₀)
                           h_wfVar'
                           (by rw [h_g_store]; exact h_wf.storeDefined g h_g_in_vi)
-                          (by rw [h_oldG_store]; exact h_wf.storeDefined _ h_oldG_in_vi)
+                          (by rw [h_oldG_store]
+                              have : (ρ₀.store (CoreIdent.mkOld g.name)).isSome := by
+                                rw [← h_wf.oldMatchesCurrent g h_g_mod]; exact h_wf.storeDefined g h_g_in_vi
+                              exact this)
                           (by rw [h_g_store, h_oldG_store]; exact h_wf.oldMatchesCurrent g h_g_mod)
-                          (h_wf.modifiesNeOld g h_g_mod)
+                          (@CoreIdent.ne_mkOld g)
                         -- Flatten as pair ++ rest
                         simp only [List.flatten_cons]
                         rw [PrefixStepsOK_append]
@@ -853,18 +852,14 @@ theorem procToVerifyStmt_structure
                 have hid_vi : id ∈ Specification.procVerifyInitIdents proc := by
                   unfold Specification.procVerifyInitIdents
                   simp only [List.mem_append]
-                  left; left; right; exact hid_keys
+                  left; right; exact hid_keys
                 exact h_wf.storeDefined id hid_vi
               · intro s hs heq_s
                 have hid_io : id ∈ ListMap.keys proc.header.inputs ++ ListMap.keys proc.header.outputs :=
                   List.mem_append_right _ (by rw [listMap_keys_eq_map_fst]; exact hid)
                 exact h_io_not_in_modifies id hid_io s hs heq_s
             · -- nodup of output ids
-              have h_nodup := h_wf.initIdentsNodup
-              rw [Specification.procVerifyInitIdents] at h_nodup
-              have h_io_nd := (List.nodup_append.mp (List.nodup_append.mp h_nodup).1).1
-              have h_o_nd := (List.nodup_append.mp h_io_nd).2.1
-              rw [← listMap_keys_eq_map_fst]; exact h_o_nd
+              rw [← listMap_keys_eq_map_fst]; exact h_wf_proc.outputsNodup
           · -- inputInits at prefixInitEnv outputInits (prefixInitEnv modifiesInits.flatten ρ₀)
             have h_outenv := prefixInitEnv_eval
               (List.map (fun x => Statement.init x.1 (Lambda.LTy.forAll [] x.2) .nondet #[])
@@ -886,7 +881,7 @@ theorem procToVerifyStmt_structure
                   have hid_vi : id ∈ Specification.procVerifyInitIdents proc := by
                     unfold Specification.procVerifyInitIdents
                     simp only [List.mem_append]
-                    left; left; left; exact hid_keys
+                    left; left; exact hid_keys
                   exact h_wf.storeDefined id hid_vi
                 · intro s hs heq_s
                   have hid_io : id ∈ ListMap.keys proc.header.inputs ++ ListMap.keys proc.header.outputs :=
@@ -898,21 +893,13 @@ theorem procToVerifyStmt_structure
                 obtain ⟨⟨oid, oty⟩, hmem, rfl⟩ := hs
                 simp [stmtInitVar] at heq_s
                 -- heq_s : oid = id
-                have h_nodup := h_wf.initIdentsNodup
-                rw [Specification.procVerifyInitIdents] at h_nodup
-                have h_io_nd := (List.nodup_append.mp (List.nodup_append.mp h_nodup).1).1
-                have h_disj_io := (List.nodup_append.mp h_io_nd).2.2
                 have hid_in : id ∈ ListMap.keys proc.header.inputs := by
                   rw [listMap_keys_eq_map_fst]; exact hid
                 have oid_in : id ∈ ListMap.keys proc.header.outputs := by
                   rw [listMap_keys_eq_map_fst]; exact heq_s ▸ List.mem_map_of_mem (f := Prod.fst) hmem
-                exact absurd rfl (h_disj_io id hid_in id oid_in)
+                exact absurd oid_in (h_wf_proc.ioDisjoint hid_in)
             · -- nodup of input ids
-              have h_nodup := h_wf.initIdentsNodup
-              rw [Specification.procVerifyInitIdents] at h_nodup
-              have h_io_nd := (List.nodup_append.mp (List.nodup_append.mp h_nodup).1).1
-              have h_i_nd := (List.nodup_append.mp h_io_nd).1
-              rw [← listMap_keys_eq_map_fst]; exact h_i_nd
+              rw [← listMap_keys_eq_map_fst]; exact h_wf_proc.inputsNodup
     | error e => dsimp at h; exact absurd (Prod.mk.inj h).1 (by intro h; cases h)
 
 /-! ## Postcondition Assert Helpers -/
@@ -926,14 +913,6 @@ private theorem ensuresToAsserts_mem_is_assert
   split at h_eq
   · simp at h_eq
   · simp at h_eq; exact ⟨label, check.expr, check.md, h_eq.symm⟩
-
-private theorem ensuresToAsserts_ecb (labels : List String)
-    (pcs : ListMap CoreLabel Procedure.Check) :
-    Stmt.exitsCoveredByBlocks.Block.exitsCoveredByBlocks labels (ensuresToAsserts pcs) := by
-  apply all_cmd_exitsCoveredByBlocks
-  intro s hs
-  have ⟨l, e, md, heq⟩ := ensuresToAsserts_mem_is_assert hs
-  exact ⟨CmdExt.cmd (Cmd.assert l e md), heq⟩
 
 /-! ## Main Theorem -/
 
@@ -950,12 +929,14 @@ theorem procBodyVerify_procedureCorrect
     (h_correct : Specification.AllAssertsValidWhen
       (Core.Specification.Lang.core π φ) (fun _ => True) verifyStmt)
     -- `h_wf_ext`: the evaluator extension `φ` is well-formed
-    (h_wf_ext : Core.WFEvalExtension φ) :
+    (h_wf_ext : Core.WFEvalExtension φ)
+    -- `h_wf_proc`: the procedure is well-formed
+    (h_wf_proc : WF.WFProcedureProp p proc) :
     -- Conclusion: ProcedureCorrect holds.
     Core.Specification.ProcedureCorrect π φ proc p := by
 
   obtain ⟨prefixStmts, h_eq, h_prefix_cmd, h_prefix_trace⟩ :=
-    procToVerifyStmt_structure proc p st st' verifyStmt h_transform π φ
+    procToVerifyStmt_structure proc p st st' verifyStmt h_transform π φ h_wf_proc
   let verifyLabel := s!"verify_{proc.header.name.name}"
   let bodyLabel := s!"body_{proc.header.name.name}"
   let postAsserts := ensuresToAsserts proc.spec.postconditions
@@ -1019,21 +1000,46 @@ theorem procBodyVerify_procedureCorrect
     intro a ρ_init cfg h_star h_assert
     exact h_correct a ρ_init cfg trivial h_star h_assert
 
-  constructor
+  refine ⟨?_, ?_⟩
 
   · ----- Part 1: All asserts in proc.body are valid -----
     intro a
-    unfold Specification.AssertValidInProcedure
-    intro ρ₀ h_wf cfg h_body h_assert
-    -- Embed body trace into verifyStmt trace
-    obtain ⟨ρ_init, h_verify_trace⟩ := h_embed_body ρ₀ h_wf cfg h_body
-    -- Apply h_correct to the wrapped config
+    unfold Specification.AssertValidInProcedure Specification.AssertValidWhen
+    simp only [Specification.Lang.core, Specification.Lang.imperative]
+    intro ρ₀ cfg (h_wf : Specification.ProcEnvWF proc ρ₀)
+      (h_body : StepStmtStar Expression (EvalCommand π φ) (EvalPureFunc φ)
+        (.stmt (Stmt.block "" proc.body #[]) ρ₀) cfg)
+      (h_assert : coreIsAtAssert cfg a)
+    -- Extract first step: .stmt (block "" body #[]) ρ₀ → .block "" (.stmts body ρ₀)
+    have h_block_star : StepStmtStar Expression (EvalCommand π φ) (EvalPureFunc φ)
+        (.block "" (.stmts proc.body ρ₀)) cfg := by
+      cases h_body with
+      | refl => simp [coreIsAtAssert] at h_assert
+      | step _ _ _ hstep hrest => cases hstep; exact hrest
+    -- Body never exits (from WFProcedureProp.bodyExitsCovered)
+    have h_no_exit : ∀ lbl ρ', ¬ StepStmtStar Expression (EvalCommand π φ) (EvalPureFunc φ)
+        (.stmts proc.body ρ₀) (.exiting lbl ρ') :=
+      block_exitsCoveredByBlocks_noEscape Expression (EvalCommand π φ) (EvalPureFunc φ)
+        proc.body h_wf_proc.bodyExitsCovered ρ₀
+    -- cfg is not terminal or exiting (has an assert)
+    have h_nt : ∀ ρ', cfg ≠ .terminal ρ' := by
+      intro ρ' heq; subst heq; simp [coreIsAtAssert] at h_assert
+    have h_nx : ∀ lbl ρ', cfg ≠ .exiting lbl ρ' := by
+      intro lbl ρ' heq; subst heq; simp [coreIsAtAssert] at h_assert
+    -- Extract inner: cfg = .block "" inner where .stmts body ρ₀ →* inner
+    obtain ⟨inner, rfl, h_inner_star⟩ :=
+      block_star_extract_inner π φ h_block_star h_no_exit h_nt h_nx
+    -- coreIsAtAssert and getEval/getStore are transparent through block ""
+    have h_assert_inner : coreIsAtAssert inner a := by
+      simpa [coreIsAtAssert] using h_assert
+    -- Convert to CoreStepStar and embed into verifyStmt
+    have h_inner_core := StepStmtStar_to_CoreStepStar h_inner_star
+    obtain ⟨ρ_init, h_verify_trace⟩ := h_embed_body ρ₀ h_wf inner h_inner_core
     have h_valid := h_correct' a ρ_init
-      (.block verifyLabel (.seq (.block bodyLabel cfg) postAsserts))
-      h_verify_trace (h_wrapped_assert cfg a h_assert)
-    -- Transfer through wrapping
+      (.block verifyLabel (.seq (.block bodyLabel inner) postAsserts))
+      h_verify_trace (h_wrapped_assert inner a h_assert_inner)
     rw [h_wrapped_eval, h_wrapped_store] at h_valid
-    exact h_valid
+    simpa [Config.getEval, Config.getStore] using h_valid
 
   · ----- Part 2: Postconditions + hasFailure on termination -----
     intro h_wf_proc ρ₀ ρ' h_wf h_term
