@@ -26,15 +26,14 @@ namespace Strata
 
 namespace TypeExprF
 
-/-
-This applies global context to instantiate types and variables.
-
-Free type alias variables bound to alias
--/
+/-- Substitute bound type variables in `d` using `bindings`.
+`bindings` is indexed directly by de Bruijn index: `bindings[i]`
+replaces `bvar i`.  Out-of-range indices are shifted down by
+`bindings.size`. -/
 protected def instType {α} (d : TypeExprF α) (bindings : Array (TypeExprF α)) : TypeExprF α := Id.run <|
   d.instTypeM fun n idx =>
     if p : idx < bindings.size then
-      pure <| bindings[bindings.size - (idx+1)]
+      pure <| bindings[idx]
     else
       .bvar n (idx - bindings.size)
 
@@ -200,7 +199,7 @@ def resolveTypeBinding (tctx : TypingContext) (loc : SourceRange) (name : String
             | logErrorMF c.info.loc mf!"Expected type"
           tpArgs := tpArgs.push cinfo.typeExpr
           children := children.push c
-        let tp :=  .fvar loc fidx tpArgs
+        let tp :=  .fvar loc fidx tpArgs.reverse  -- flattenTypeApp returns reverse order
         let info : TypeInfo := { inputCtx := tctx, loc := loc, typeExpr := tp, isInferred := false }
         return .node (.ofTypeInfo info) children
       else if let some a := args[params.size]? then
@@ -297,7 +296,7 @@ def translateTypeIdent (elabInfo : ElabInfo) (qualIdentInfo : Tree) (args : Arra
   | .type decl =>
     checkArgSize loc ident decl.argNames.size args
     let tpArgs ← args.mapM fun a => return (← asTypeInfo a).typeExpr
-    let tp := .ident loc ident tpArgs
+    let tp := .ident loc ident tpArgs.reverse  -- flattenTypeApp returns reverse order
     let info : TypeInfo := { toElabInfo := elabInfo, typeExpr := tp, isInferred := false }
     return .node (.ofTypeInfo info) args
   | .syncat decl =>
@@ -562,9 +561,9 @@ Example: the type expression `Map Inte (Lst Boole)`, parsed as
 
 is flattened to `(Map, #[TypeApp(Lst, Boole), Inte])`.
 
-The reversed order aligns with de Bruijn indexing used by `instType`:
-bvar 0 maps to the last declared type parameter, which corresponds to
-the first element of the result array.
+The reversed order is an artifact of left-to-right peeling of `TypeApp`
+nodes.  Callers that store args in `.fvar`/`.ident` type nodes must
+reverse the array to forward (declaration) order.
 -/
 def flattenTypeApp (arg : Tree) (args : Array Tree) : Tree × Array Tree :=
   match arg with
@@ -701,7 +700,7 @@ def translateTypeExpr (tree : Tree) : ElabM TypeExpr := do
       checkArgSize opInfo.loc qname decl.argNames.size args
       let args ← args.attach.mapM fun ⟨a, _⟩ =>
         translateTypeExpr a
-      return .ident opInfo.loc qname args
+      return .ident opInfo.loc qname args.reverse  -- flattenTypeApp returns reverse order
     | _ =>
       logError ident.info.loc s!"Expected type"; pure default
   | q`Init.TypeArrow => do
@@ -760,7 +759,7 @@ def translateBindingKind (tree : Tree) : ElabM BindingKind := do
     -- First check if the type is in the GlobalContext (for user-defined types like datatypes)
     if let .name name := tpId then
       if let some binding := tctx.lookupVar name then
-        let tpArgs ← args.mapM translateTypeExpr
+        let tpArgs ← args.reverse.mapM translateTypeExpr  -- flattenTypeApp returns reverse order
         match binding with
         | .fvar fidx k =>
           match k with
@@ -799,7 +798,7 @@ def translateBindingKind (tree : Tree) : ElabM BindingKind := do
     match decl with
     | .type decl =>
       checkArgSize opInfo.loc name decl.argNames.size args
-      let args ← args.mapM translateTypeExpr
+      let args ← args.reverse.mapM translateTypeExpr  -- flattenTypeApp returns reverse order
       return .expr (.ident opInfo.loc name args)
     | .syncat decl =>
       checkArgSize opInfo.loc name decl.argNames.size args
@@ -1024,14 +1023,6 @@ where
         match arg with
         | .expr e =>
           let argType ← inferType tctx e
-          -- fvar/ident args are stored in de Bruijn (reverse) order by
-          -- flattenTypeApp, but accessor type patterns from
-          -- mkDatatypeTypeRef use forward (declaration) order.
-          -- Reverse the top-level args to align with the pattern.
-          let argType := match argType with
-            | .fvar loc i args => .fvar loc i args.reverse
-            | .ident loc n args => .ident loc n args.reverse
-            | t => t
           match pty.matchTVars argType subst with
           | some s => subst := s
           | none => pure ()  -- structural mismatch; skip gracefully

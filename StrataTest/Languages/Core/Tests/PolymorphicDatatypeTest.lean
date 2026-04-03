@@ -541,8 +541,6 @@ end Strata.PolymorphicDatatypeTest
 namespace Strata.InferTypePanicTest
 
 -- Verify that the program does not panic during type inference (issue #650).
--- The tvar resolution fix (PR #734) also resolves the type inference
--- failure here, so this program now elaborates without errors.
 #guard_msgs in
 def issue650Pgm : Program :=
 #strata

@@ -270,7 +270,7 @@ info: program TestTVarInfer;
 datatype Pair (a : Type, b : Type) {
   (MkPair(fst : a, snd : b))
 };
-const p:Pair (Lst Inte) Inte;
+const p:Pair Inte (Lst Inte);
 procedure Test () returns ()
 {
   assert [t1]: Lst.sel(Pair..snd(p), 0) == 0;
