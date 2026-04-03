@@ -14,9 +14,13 @@ import Strata.Transform.ProcedureInlining
 public import Strata.Languages.Core.Options
 public import Strata.Languages.Core.Verifier
 import Strata.Languages.Laurel.LaurelToCoreTranslator
+import Strata.Languages.Laurel.Grammar.ConcreteToAbstractTreeTranslator
 public import Strata.Languages.Python.PySpecPipeline
 import Strata.Languages.Python.Specs
 import Strata.Languages.Python.Specs.DDM
+import Strata.Languages.Python.CorePrelude
+import Strata.Languages.Python.PythonToCore
+import Strata.Languages.Python.ReadPython
 
 /-! ## Simple Strata API
 
@@ -111,6 +115,72 @@ writing directly to a file.
 -/
 def writeStrataIon : Strata.Program → ByteArray
 | pgm => pgm.toIon
+
+/--
+Read a Laurel source file in textual format and parse it into
+a `Laurel.Program`. Handles dialect loading, parsing, and
+AST translation in one step.
+-/
+def parseLaurelText (path : System.FilePath) (content : String)
+    : IO Laurel.Program := do
+  let input := Strata.Parser.stringInputContext path content
+  let dialects :=
+    Strata.Elab.LoadedDialects.ofDialects!
+      #[Strata.initDialect, Strata.Laurel.Laurel]
+  let strataProgram ←
+    Strata.Elab.parseStrataProgramFromDialect
+      dialects Strata.Laurel.Laurel.name input
+  let uri := Strata.Uri.file path.toString
+  match Strata.Laurel.TransM.run uri
+      (Strata.Laurel.parseProgram strataProgram) with
+  | .ok program => pure program
+  | .error errors =>
+    throw (IO.userError s!"Laurel translation errors: {errors}")
+
+def readLaurelTextFile (path : System.FilePath)
+    : IO Laurel.Program := do
+  let content ← IO.FS.readFile path
+  parseLaurelText path content
+
+/--
+Deserialize Laurel Ion bytes (possibly containing multiple files)
+into a list of `StrataFile`s. Useful for per-file operations like
+printing.
+-/
+def readLaurelIonFiles (bytes : ByteArray)
+    : IO (List Strata.StrataFile) := do
+  match Strata.Program.filesFromIon Strata.Laurel.Laurel_map bytes with
+  | .ok files => pure files
+  | .error msg => throw (IO.userError msg)
+
+/--
+Deserialize Laurel Ion bytes and parse all files into a single
+combined `Laurel.Program`.
+-/
+def readLaurelIonProgram (bytes : ByteArray)
+    : IO Laurel.Program := do
+  let files ← readLaurelIonFiles bytes
+  let mut combined : Laurel.Program := {
+    staticProcedures := []
+    staticFields := []
+    types := []
+  }
+  for file in files do
+    match Strata.Laurel.TransM.run
+        (Strata.Uri.file file.filePath)
+        (Strata.Laurel.parseProgram file.program) with
+    | .ok pgm =>
+      combined := {
+        staticProcedures :=
+          combined.staticProcedures ++ pgm.staticProcedures
+        staticFields :=
+          combined.staticFields ++ pgm.staticFields
+        types := combined.types ++ pgm.types
+      }
+    | .error errors =>
+      throw (IO.userError
+        s!"Translation errors in {file.filePath}: {errors}")
+  pure combined
 
 /-! ### Transformation between generic and dialect-specific representation -/
 
@@ -208,8 +278,8 @@ def Core.callElimUsingContract (p : Core.Program) : Except String Core.Program :
 /-! ### Analysis of Core programs -/
 
 /--
-Do deductive verification of a Core program, including any external solver
-invocation that is necessary.
+Verify a Core program, including any external solver invocation
+that is necessary.
 -/
 def Core.verifyProgram
     (program : Core.Program)
@@ -224,6 +294,55 @@ def Core.verifyProgram
     | .some vcDir => IO.FS.createDirAll vcDir *> runVerification vcDir
     | .none => IO.FS.withTempDir runVerification
   IO.toEIO (fun e => s!"{e}") ioAction
+
+/-! ### Analysis of Laurel programs -/
+
+/--
+Analyze a Laurel program by translating to Core and running
+verification. Returns VC results (if translation succeeded)
+and any translation diagnostics.
+-/
+def Laurel.verifyProgram
+    (program : Laurel.Program)
+    (options : Core.VerifyOptions := .default)
+    : IO (Option Core.VCResults × List DiagnosticModel) :=
+  Strata.Laurel.verifyToVcResults program options
+
+/--
+Analyze a Laurel program and return structured diagnostic models
+(combining translation errors and verification results).
+-/
+def Laurel.analyzeToDiagnosticModels
+    (program : Laurel.Program)
+    (options : Core.VerifyOptions := .default)
+    : IO (Array DiagnosticModel) :=
+  Strata.Laurel.verifyToDiagnosticModels program options
+
+/-! ### Python direct-to-Core pipeline -/
+
+/--
+Read Python statements from a Strata Ion file.
+-/
+def readPythonIon (path : String)
+    : IO (Array (Strata.Python.stmt SourceRange)) := do
+  let bytes ← Strata.Util.readBinInputSource path
+  match Strata.Python.readPythonStrataBytes path bytes with
+  | .ok stmts => pure stmts
+  | .error msg => throw (IO.userError msg)
+
+/--
+Translate a Python Ion file directly to a Core program (bypassing
+Laurel). Includes the standard Python Core prelude. An optional
+`filePath` can be provided for source location metadata.
+-/
+def pythonDirectToCore (pythonIonPath : String)
+    (filePath : String := "")
+    : IO Core.Program := do
+  let stmts ← readPythonIon pythonIonPath
+  let preludePgm := Strata.Python.Core.prelude
+  let bpgm := Strata.pythonToCore
+    Strata.Python.coreSignatures stmts preludePgm filePath
+  pure { decls := preludePgm.decls ++ bpgm.decls }
 
 /-- Controls how translation warnings are reported. -/
 inductive WarningOutput where
