@@ -889,6 +889,45 @@ theorem block_exitsCoveredByBlocks_noEscape
   | step _ _ _ hstep _ ih =>
     exact ih (step_preserves_exitsCoveredByBlocks P EvalCmd extendEval [] _ _ hstep hwp_c)
 
+/-- If `.block l inner →* cfg`, the inner config never reaches `.exiting`,
+    and `cfg` is neither terminal nor exiting, then `cfg = .block l inner'`
+    for some `inner'` with `inner →* inner'`. -/
+theorem block_star_extract_inner
+    {l : String} {inner cfg : Config P CmdT}
+    (h_star : StepStmtStar P EvalCmd extendEval (.block l inner) cfg)
+    (h_no_exit : ∀ lbl ρ', ¬ StepStmtStar P EvalCmd extendEval
+        inner (.exiting lbl ρ'))
+    (h_not_terminal : ∀ ρ', cfg ≠ .terminal ρ')
+    (h_not_exiting : ∀ lbl ρ', cfg ≠ .exiting lbl ρ') :
+    ∃ inner', cfg = .block l inner' ∧
+      StepStmtStar P EvalCmd extendEval inner inner' := by
+  suffices ∀ c₁ c₂,
+      StepStmtStar P EvalCmd extendEval c₁ c₂ →
+      ∀ inner₀, c₁ = .block l inner₀ →
+      (∀ lbl ρ', ¬ StepStmtStar P EvalCmd extendEval inner₀ (.exiting lbl ρ')) →
+      (∀ ρ', c₂ ≠ .terminal ρ') → (∀ lbl ρ', c₂ ≠ .exiting lbl ρ') →
+      ∃ inner', c₂ = .block l inner' ∧
+        StepStmtStar P EvalCmd extendEval inner₀ inner' from
+    this _ _ h_star _ rfl h_no_exit h_not_terminal h_not_exiting
+  intro c₁ c₂ h_star
+  induction h_star with
+  | refl => intro inner₀ heq _ _ _; subst heq; exact ⟨inner₀, rfl, .refl _⟩
+  | step _ mid _ hstep hrest ih =>
+    intro inner₀ heq h_ne h_nt h_nx; subst heq
+    cases hstep with
+    | step_block_body h_inner_step =>
+      have h_ne' : ∀ lbl ρ', ¬ StepStmtStar P EvalCmd extendEval _ (.exiting lbl ρ') :=
+        fun lbl ρ' h => h_ne lbl ρ' (.step _ _ _ h_inner_step h)
+      obtain ⟨inner', rfl, h_inner_star⟩ := ih _ rfl h_ne' h_nt h_nx
+      exact ⟨inner', rfl, .step _ _ _ h_inner_step h_inner_star⟩
+    | step_block_done =>
+      cases hrest with
+      | refl => exact absurd rfl (h_nt _)
+      | step _ _ _ h _ => exact nomatch h
+    | step_block_exit_none => exact absurd (.refl _) (h_ne _ _)
+    | step_block_exit_match => exact absurd (.refl _) (h_ne _ _)
+    | step_block_exit_mismatch => exact absurd (.refl _) (h_ne _ _)
+
 /-! ## noFuncDecl preserves eval (small-step) -/
 
 /-- A single step preserves eval when noFuncDecl holds.
