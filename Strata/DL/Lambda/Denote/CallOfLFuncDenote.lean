@@ -56,21 +56,43 @@ def OpsConsistent (F : @Factory T) : LExpr T.mono → Prop := fun e =>
 theorem substTyVars_mkArrow' (vt : TyVarVal) (ret : LMonoTy) (ins : List LMonoTy) :
     LMonoTy.substTyVars vt (LMonoTy.mkArrow' ret ins) =
     LSort.mkArrow (LMonoTy.substTyVars vt ret) (ins.map (LMonoTy.substTyVars vt)) := by
-  sorry
+  induction ins with
+  | nil => simp [LMonoTy.mkArrow'_nil, LSort.mkArrow]
+  | cons x xs ih =>
+    rw [LMonoTy.mkArrow'_cons]
+    simp only [LMonoTy.substTyVars, LMonoTy.substTyVars.map]
+    rw [ih]
+    rfl
 
 theorem substTyVars_subst (vt : TyVarVal) (S : Subst) (ty : LMonoTy) :
     LMonoTy.substTyVars vt (LMonoTy.subst S ty) =
     LMonoTy.substTyVars
       (fun x => match S.find? x with | some t => LMonoTy.substTyVars vt t | none => vt x)
       ty := by
-  sorry
+  induction ty with
+  | ftvar x =>
+    rw [LMonoTy.subst_unfold]
+    simp only [LMonoTy.substTyVars]
+    split <;> rename_i heq <;>
+    -- For some reason, Lean does not unify theses
+    split <;> rename_i heq1 <;> rw[heq] at heq1 <;> try grind
+    simp[LMonoTy.substTyVars]
+  | bitvec n =>
+    rw [LMonoTy.subst_unfold]
+    simp only [LMonoTy.substTyVars]
+  | tcons name args ih =>
+    rw [LMonoTy.subst_unfold]
+    simp only [LMonoTy.substTyVars]
+    congr 1
+    induction args with
+    | nil => rfl
+    | cons a as iha =>
+      simp only [List.map, LMonoTy.substTyVars.map]
+      congr 1
+      · exact ih a (List.Mem.head _)
+      · exact iha (fun t ht => ih t (List.Mem.tail _ ht))
 
 /-! ## `getLFuncCall` typing and denotation -/
-
-/-- Helper: `mkArrow' τ (xs ++ ys) = mkArrow' (mkArrow' τ ys) xs` -/
-theorem mkArrow'_append (τ : LMonoTy) (xs ys : List LMonoTy) :
-    LMonoTy.mkArrow' τ (xs ++ ys) = LMonoTy.mkArrow' (LMonoTy.mkArrow' τ ys) xs := by
-  sorry
 
 private theorem getLFuncCall_go_spec
     {T : LExprParams}
@@ -82,7 +104,18 @@ private theorem getLFuncCall_go_spec
       ∃ opArgTys,
         List.Forall₂ (LExpr.HasTypeA []) allArgs opArgTys ∧
         LExpr.HasTypeA [] op (LMonoTy.mkArrow' τ opArgTys) := by
-  sorry
+  fun_induction getLFuncCall.go e acc generalizing τ accTys
+  · -- case 1: .app _ (.app _ e' arg1) arg2 → go e' ([arg1, arg2] ++ acc)
+    rename_i ih
+    have ⟨aty2, h_inner, h_arg2⟩ := HasTypeA.app_inv h_e
+    have ⟨aty1, h_e', h_arg1⟩ := HasTypeA.app_inv h_inner
+    rw [← LMonoTy.mkArrow'_cons, ← LMonoTy.mkArrow'_cons] at h_e'
+    exact ih h_e' (.cons h_arg1 (.cons h_arg2 h_acc))
+  · -- case 2: .app _ (.op m fn fnty) arg1 → (.op m fn fnty, [arg1] ++ acc)
+    have ⟨aty, h_fn, h_arg⟩ := HasTypeA.app_inv h_e
+    exact ⟨aty :: accTys, .cons h_arg h_acc, LMonoTy.mkArrow'_cons .. ▸ h_fn⟩
+  · -- case 3: other → (e, acc)
+    exact ⟨accTys, h_acc, h_e⟩
 
 theorem getLFuncCall_spec
     {T : LExprParams}
@@ -92,7 +125,8 @@ theorem getLFuncCall_spec
       ∃ argTys,
         List.Forall₂ (LExpr.HasTypeA []) args argTys ∧
         LExpr.HasTypeA [] op (LMonoTy.mkArrow' τ argTys) := by
-  sorry
+  have h' : LExpr.HasTypeA [] e (LMonoTy.mkArrow' τ []) := by rw [LMonoTy.mkArrow'_nil]; exact h
+  exact getLFuncCall_go_spec h' .nil
 
 /-! ## `callOfLFunc` output type and denotation -/
 
@@ -102,6 +136,167 @@ variable (opInterp : OpInterp tcInterp)
 variable (fvarVal : FreeVarVal T tcInterp)
 variable (vt : TyVarVal)
 
+private theorem applyArgs_cons {ret : LSort} {s : LSort} {ss : List LSort}
+    (f : SortDenote tcInterp (LSort.mkArrow ret (s :: ss)))
+    (x : SortDenote tcInterp s) (xs : HList (SortDenote tcInterp) ss)
+    : SortDenote.applyArgs tcInterp f (.cons x xs) = SortDenote.applyArgs tcInterp (f x) xs := by
+  rfl
+
+private theorem denoteArgs_cons
+    {Δ : List LMonoTy} (bv : BVarVal tcInterp vt Δ)
+    {e : LExpr T.mono} {es : List (LExpr T.mono)}
+    {ty : LMonoTy} {tys : List LMonoTy}
+    (h : List.Forall₂ (LExpr.HasTypeA Δ) (e :: es) (ty :: tys))
+    : denoteArgs tcInterp opInterp fvarVal vt bv (e :: es) (ty :: tys) h =
+      .cons (LExpr.denote tcInterp opInterp fvarVal vt bv e ty h.head)
+            (denoteArgs tcInterp opInterp fvarVal vt bv es tys h.tail) := by
+  rfl
+
+/-- Key cast-composition lemma for denote_app_chain_go case 1.
+    Peeling two args off a cast-wrapped function: casting to arrow form, applying
+    two args, then casting result to mkArrow form = casting directly to full
+    mkArrow form and applying two args via applyArgs. -/
+private theorem applyArgs_cast_peel_two
+    {s : LSort} {s1 s2 r : LSort} {ss : List LSort}
+    (f : SortDenote tcInterp s)
+    (h_arrow : s = .tcons "arrow" [s1, .tcons "arrow" [s2, r]])
+    (h_small : r = LSort.mkArrow ret ss)
+    (h_full : s = LSort.mkArrow ret (s1 :: s2 :: ss))
+    (x : SortDenote tcInterp s1)
+    (y : SortDenote tcInterp s2)
+    (rest : HList (SortDenote tcInterp) ss)
+    : SortDenote.applyArgs tcInterp
+        (cast (congrArg (SortDenote tcInterp) h_small) ((cast (congrArg (SortDenote tcInterp) h_arrow) f) x y))
+        rest =
+      SortDenote.applyArgs tcInterp
+        (cast (congrArg (SortDenote tcInterp) h_full) f)
+        (.cons x (.cons y rest)) := by
+  subst h_arrow; subst h_small
+  simp only [cast_eq] at *
+  cases h_full
+  rfl
+
+/-- One-arg version of applyArgs_cast_peel_two, for case 2. -/
+private theorem applyArgs_cast_peel_one
+    {s : LSort} {s1 r : LSort} {ss : List LSort}
+    (f : SortDenote tcInterp s)
+    (h_arrow : s = .tcons "arrow" [s1, r])
+    (h_small : r = LSort.mkArrow ret ss)
+    (h_full : s = LSort.mkArrow ret (s1 :: ss))
+    (x : SortDenote tcInterp s1)
+    (rest : HList (SortDenote tcInterp) ss)
+    : SortDenote.applyArgs tcInterp
+        (cast (congrArg (SortDenote tcInterp) h_small) ((cast (congrArg (SortDenote tcInterp) h_arrow) f) x))
+        rest =
+      SortDenote.applyArgs tcInterp
+        (cast (congrArg (SortDenote tcInterp) h_full) f)
+        (.cons x rest) := by
+  subst h_arrow; subst h_small
+  simp only [cast_eq] at *
+  cases h_full
+  rfl
+
+
+/-- `denote` is invariant under changing the type index by an equality proof. -/
+private theorem denote_cast_ty {Δ : List LMonoTy} {e : LExpr T.mono} {τ₁ τ₂ : LMonoTy}
+    (h_eq : τ₁ = τ₂) (h₁ : LExpr.HasTypeA Δ e τ₁) (h₂ : LExpr.HasTypeA Δ e τ₂)
+    (bv : BVarVal tcInterp vt Δ)
+    : LExpr.denote tcInterp opInterp fvarVal vt bv e τ₁ h₁ =
+      cast (congrArg (TyDenote tcInterp vt) h_eq.symm)
+        (LExpr.denote tcInterp opInterp fvarVal vt bv e τ₂ h₂) := by
+  subst h_eq; rfl
+
+private theorem denote_app_chain_go
+    {e : LExpr T.mono} {τ : LMonoTy}
+    {acc : List (LExpr T.mono)} {accTys : List LMonoTy}
+    (h_e : LExpr.HasTypeA [] e (LMonoTy.mkArrow' τ accTys))
+    (h_acc : List.Forall₂ (LExpr.HasTypeA []) acc accTys)
+    {op : LExpr T.mono} {allArgs : List (LExpr T.mono)}
+    (h_go : getLFuncCall.go e acc = (op, allArgs))
+    {opArgTys : List LMonoTy}
+    (h_op : LExpr.HasTypeA [] op (LMonoTy.mkArrow' τ opArgTys))
+    (h_allArgs : List.Forall₂ (LExpr.HasTypeA []) allArgs opArgTys)
+    : SortDenote.applyArgs tcInterp
+        (cast (congrArg (SortDenote tcInterp) (substTyVars_mkArrow' vt τ accTys))
+          (LExpr.denote tcInterp opInterp fvarVal vt .nil e (LMonoTy.mkArrow' τ accTys) h_e))
+        (denoteArgs tcInterp opInterp fvarVal vt .nil acc accTys h_acc) =
+      SortDenote.applyArgs tcInterp
+        (cast (congrArg (SortDenote tcInterp) (substTyVars_mkArrow' vt τ opArgTys))
+          (LExpr.denote tcInterp opInterp fvarVal vt .nil op (LMonoTy.mkArrow' τ opArgTys) h_op))
+        (denoteArgs tcInterp opInterp fvarVal vt .nil allArgs opArgTys h_allArgs) := by
+  fun_induction getLFuncCall.go e acc generalizing τ accTys opArgTys
+  · -- case 1: .app _ (.app _ e' arg1) arg2 → go e' ([arg1, arg2] ++ acc)
+    rename_i acc0 m1 m2 e' arg1 arg2 ih
+    -- Step 1: app_inv twice
+    have ⟨aty2, h_inner, h_arg2⟩ := HasTypeA.app_inv h_e
+    have ⟨aty1, h_e'_orig, h_arg1⟩ := HasTypeA.app_inv h_inner
+    -- Step 2: mkArrow'_cons twice
+    have h_e' := h_e'_orig
+    rw [← LMonoTy.mkArrow'_cons, ← LMonoTy.mkArrow'_cons] at h_e'
+    -- Step 3: build extended Forall₂
+    have h_acc' : List.Forall₂ (LExpr.HasTypeA []) ([arg1, arg2] ++ acc0) (aty1 :: aty2 :: accTys) :=
+      .cons h_arg1 (.cons h_arg2 h_acc)
+    -- Step 4: apply IH, reduce to showing LHS = LHS-of-IH
+    rw [← ih h_e' h_acc' h_go h_op h_allArgs]
+    -- Step 5: denote_app twice
+    rw [denote_app .nil h_inner h_arg2, denote_app .nil h_e'_orig h_arg1]
+    -- Step 6: denote_cast_ty to relate denote e' at arrow type vs mkArrow' type
+    have h_ty_eq : LMonoTy.mkArrow' τ (aty1 :: aty2 :: accTys) =
+        LMonoTy.arrow aty1 (LMonoTy.arrow aty2 (LMonoTy.mkArrow' τ accTys)) := by
+      rw [LMonoTy.mkArrow'_cons, LMonoTy.mkArrow'_cons]
+    rw [denote_cast_ty (tcInterp := tcInterp) (opInterp := opInterp) (fvarVal := fvarVal) (vt := vt)
+        h_ty_eq.symm h_e'_orig h_e' .nil]
+    -- Step 7: simplify [arg1, arg2] ++ acc0 to arg1 :: arg2 :: acc0, then denoteArgs_cons twice
+    simp only [List.cons_append, List.nil_append] at h_acc' ⊢
+    rw [denoteArgs_cons (tcInterp := tcInterp) (opInterp := opInterp) (fvarVal := fvarVal) (vt := vt) .nil h_acc']
+    rw [denoteArgs_cons (tcInterp := tcInterp) (opInterp := opInterp) (fvarVal := fvarVal) (vt := vt) .nil h_acc'.tail]
+    -- Step 10: applyArgs_cast_peel_two
+    have h_arrow : LMonoTy.substTyVars vt (LMonoTy.mkArrow' τ (aty1 :: aty2 :: accTys)) =
+        .tcons "arrow" [LMonoTy.substTyVars vt aty1,
+          .tcons "arrow" [LMonoTy.substTyVars vt aty2, LMonoTy.substTyVars vt (LMonoTy.mkArrow' τ accTys)]] := by
+      rw [LMonoTy.mkArrow'_cons, LMonoTy.mkArrow'_cons]; rfl
+    exact applyArgs_cast_peel_two tcInterp _
+      h_arrow (substTyVars_mkArrow' vt τ accTys) (substTyVars_mkArrow' vt τ (aty1 :: aty2 :: accTys)) _ _ _
+  · -- case 2: .app _ (.op m fn fnty) arg1 → (.op m fn fnty, [arg1] ++ acc)
+    rename_i acc0 m1 m2 fn fnty arg1
+    cases h_go
+    -- app_inv
+    have ⟨aty1, h_op_orig, h_arg1⟩ := HasTypeA.app_inv h_e
+    -- mkArrow'_cons to get h_op at mkArrow' form
+    have h_op' := h_op_orig
+    rw [← LMonoTy.mkArrow'_cons] at h_op'
+    -- Unify opArgTys with aty1 :: accTys
+    have h_unique := HasTypeA_unique h_op' h_op
+    have hlen : (aty1 :: accTys).length = opArgTys.length := by
+      simp only [List.cons_append, List.nil_append] at h_allArgs
+      have := (List.Forall₂.cons h_arg1 h_acc).length_eq; have := h_allArgs.length_eq; omega
+    have ⟨_, h_tys⟩ := LMonoTy.mkArrow'_injective hlen h_unique
+    subst h_tys
+    -- denote_app
+    rw [denote_app .nil h_op_orig h_arg1]
+    -- denote_cast_ty
+    have h_ty_eq : LMonoTy.mkArrow' τ (aty1 :: accTys) =
+        LMonoTy.arrow aty1 (LMonoTy.mkArrow' τ accTys) := by
+      rw [LMonoTy.mkArrow'_cons]
+    rw [denote_cast_ty (tcInterp := tcInterp) (opInterp := opInterp) (fvarVal := fvarVal) (vt := vt)
+        h_ty_eq.symm h_op_orig h_op' .nil]
+    -- denoteArgs_cons on RHS
+    simp only [List.cons_append, List.nil_append] at h_allArgs ⊢
+    rw [denoteArgs_cons (tcInterp := tcInterp) (opInterp := opInterp) (fvarVal := fvarVal) (vt := vt) .nil h_allArgs]
+    -- applyArgs_cast_peel_one
+    have h_arrow : LMonoTy.substTyVars vt (LMonoTy.mkArrow' τ (aty1 :: accTys)) =
+        .tcons "arrow" [LMonoTy.substTyVars vt aty1, LMonoTy.substTyVars vt (LMonoTy.mkArrow' τ accTys)] := by
+      rw [LMonoTy.mkArrow'_cons]; rfl
+    exact applyArgs_cast_peel_one tcInterp _
+      h_arrow (substTyVars_mkArrow' vt τ accTys) (substTyVars_mkArrow' vt τ (aty1 :: accTys)) _ _
+  · -- case 3: other → (e, acc)
+    cases h_go
+    have h_eq := HasTypeA_unique h_e h_op
+    have hlen : accTys.length = opArgTys.length := by
+      have := h_acc.length_eq; have := h_allArgs.length_eq; omega
+    have ⟨_, h_tys⟩ := LMonoTy.mkArrow'_injective hlen h_eq
+    subst h_tys; rfl
+
 private theorem denote_app_chain
     {e : LExpr T.mono} {τ : LMonoTy}
     {op : LExpr T.mono} {args : List (LExpr T.mono)}
@@ -110,69 +305,31 @@ private theorem denote_app_chain
     (h_chain : getLFuncCall e = (op, args))
     (h_op : LExpr.HasTypeA [] op (LMonoTy.mkArrow' τ argTys))
     (h_args : List.Forall₂ (LExpr.HasTypeA []) args argTys)
-    : let inputSorts := argTys.map (LMonoTy.substTyVars vt)
-      let h_eq := substTyVars_mkArrow' vt τ argTys
+    : let h_eq := substTyVars_mkArrow' vt τ argTys
       LExpr.denote tcInterp opInterp fvarVal vt .nil e τ h_e =
       SortDenote.applyArgs tcInterp
         (h_eq ▸ LExpr.denote tcInterp opInterp fvarVal vt .nil op (LMonoTy.mkArrow' τ argTys) h_op)
         (denoteArgs tcInterp opInterp fvarVal vt .nil args argTys h_args) := by
-  sorry
-
-theorem callOfLFunc_output_type
-    {F : @Factory T}
-    {e : LExpr T.mono} {τ : LMonoTy}
-    {callee : LExpr T.mono} {args : List (LExpr T.mono)} {fn : LFunc T}
-    (hcall : Factory.callOfLFunc F e = some (callee, args, fn))
-    (h : LExpr.HasTypeA [] e τ)
-    : ∃ argTys ty_op m name,
-        callee = .op m name (some ty_op) ∧
-        List.Forall₂ (LExpr.HasTypeA []) args argTys ∧
-        ty_op = LMonoTy.mkArrow' τ argTys ∧
-        args.length = fn.inputs.length := by
-  sorry
-
-/-- The denotation of a factory function call equals `opInterp` applied to the
-denotations of the arguments. The `name` here is the identifier from the `.op`
-node (not `fn.name`), matching what `denote_op` produces. -/
-theorem callOfLFunc_denote
-    {F : @Factory T}
-    {e : LExpr T.mono} {τ : LMonoTy}
-    {callee : LExpr T.mono} {args : List (LExpr T.mono)} {fn : LFunc T}
-    (hcall : Factory.callOfLFunc F e = some (callee, args, fn))
-    (h : LExpr.HasTypeA [] e τ)
-    : ∃ (argTys : List LMonoTy) (ty_op : LMonoTy) (m : T.mono.base.Metadata)
-        (name : Identifier T.IDMeta)
-        (h_args : List.Forall₂ (LExpr.HasTypeA []) args argTys)
-        (hty_op: ty_op = LMonoTy.mkArrow' τ argTys),
-        callee = .op m name (some ty_op) ∧
-        let h_eq : LMonoTy.substTyVars vt ty_op =
-              LSort.mkArrow (LMonoTy.substTyVars vt τ) (argTys.map (LMonoTy.substTyVars vt)) :=
-            hty_op ▸ substTyVars_mkArrow' vt τ argTys
-        LExpr.denote tcInterp opInterp fvarVal vt .nil e τ h =
-          SortDenote.applyArgs tcInterp
-            (h_eq ▸ opInterp name.name (LMonoTy.substTyVars vt ty_op))
-            (denoteArgs tcInterp opInterp fvarVal vt .nil args argTys h_args) := by
-  sorry
+  have h_e' : LExpr.HasTypeA [] e (LMonoTy.mkArrow' τ []) := by
+    rw [LMonoTy.mkArrow'_nil]; exact h_e
+  have h_go := denote_app_chain_go tcInterp opInterp fvarVal vt h_e' .nil h_chain h_op h_args
+  simp only [SortDenote.applyArgs, denoteArgs] at h_go
+  -- Connect denote e τ h_e to denote e (mkArrow' τ []) h_e'
+  have h_nil := LMonoTy.mkArrow'_nil τ  -- mkArrow' τ [] = τ
+  have h_eq_e : LExpr.denote tcInterp opInterp fvarVal vt .nil e τ h_e =
+      cast (congrArg (TyDenote tcInterp vt) h_nil)
+        (LExpr.denote tcInterp opInterp fvarVal vt .nil e (LMonoTy.mkArrow' τ []) h_e') := by grind
+  rw [h_eq_e, h_go]
+  grind
 
 /-! ## `subst` / `mkArrow'` structural lemmas -/
-
-/-- `subst` distributes over `mkArrow'`. -/
-theorem subst_mkArrow' (S : Subst) (ret : LMonoTy) (ins : List LMonoTy) :
-    LMonoTy.subst S (LMonoTy.mkArrow' ret ins) =
-    LMonoTy.mkArrow' (LMonoTy.subst S ret) (ins.map (LMonoTy.subst S)) := by
-  sorry
-
-/-- `mkArrow'` is injective when the argument lists have equal length. -/
-theorem mkArrow'_injective {ret₁ ret₂ : LMonoTy} {ins₁ ins₂ : List LMonoTy}
-    (h_len : ins₁.length = ins₂.length)
-    (h : LMonoTy.mkArrow' ret₁ ins₁ = LMonoTy.mkArrow' ret₂ ins₂)
-    : ret₁ = ret₂ ∧ ins₁ = ins₂ := by
-  sorry
 
 /-- If `getFactoryLFunc` finds a function, its name matches the query. -/
 theorem getFactoryLFunc_name {F : @Factory T} {s : String} {fn : LFunc T}
     (h : Factory.getFactoryLFunc F s = some fn) : fn.name.name = s := by
-  sorry
+  simp [Factory.getFactoryLFunc] at h
+  have := Array.find?_some h
+  grind
 
 /-- `callOfLFunc` ensures the number of args equals the number of inputs. -/
 theorem callOfLFunc_arity
@@ -212,14 +369,6 @@ theorem callOfLFunc_getFactoryLFunc
   cases hcall
   grind
 
--- /-- `OpsConsistent` propagates to the callee of a `callOfLFunc` decomposition. -/
--- theorem OpsConsistent_callOfLFunc_callee
---     {F : @Factory T} {e callee : LExpr T.mono} {args : List (LExpr T.mono)} {fn : LFunc T}
---     (hOps : OpsConsistent F e)
---     (hcall : Factory.callOfLFunc F e = some (callee, args, fn))
---     : OpsConsistent F callee := by
---   sorry
-
 /-- Extract the top-level `callOfLFunc` consistency from `OpsConsistent`. -/
 theorem OpsConsistent_callOfLFunc
     {F : @Factory T} {e callee : LExpr T.mono} {args : List (LExpr T.mono)} {fn : LFunc T}
@@ -229,14 +378,102 @@ theorem OpsConsistent_callOfLFunc
         LFunc.computeTypeSubst fn callee args = some tySubst ∧
         ∀ m name ty_op, callee = .op m name (some ty_op) →
           ty_op = (LMonoTy.mkArrow' fn.output (fn.inputs.map Prod.snd)).subst tySubst := by
-  sorry
+  unfold OpsConsistent at hOps
+  have ⟨h1, _⟩ := hOps
+  simp [hcall] at h1
+  split at h1
+  · next h_tySubst =>
+    split at h1
+    · next m name ty_op =>
+      exact ⟨_, h_tySubst, fun _ _ _ h => by cases h; exact h1⟩
+    · exact absurd h1 id
+  · exact absurd h1 id
+
+/-! ## `callOfLFunc` output type and denotation -/
+
+/-- `callOfLFunc` returns the same `(callee, args)` as `getLFuncCall`. -/
+private theorem callOfLFunc_getLFuncCall
+    {F : @Factory T} {e callee : LExpr T.mono} {args : List (LExpr T.mono)} {fn : LFunc T}
+    (hcall : Factory.callOfLFunc F e = some (callee, args, fn))
+    : getLFuncCall e = (callee, args) := by
+  simp [Factory.callOfLFunc] at hcall
+  split at hcall <;> simp_all
+  split at hcall <;> try contradiction
+  split at hcall <;> try contradiction
+  cases hcall; grind
+
+theorem callOfLFunc_output_type
+    {F : @Factory T}
+    {e : LExpr T.mono} {τ : LMonoTy}
+    {callee : LExpr T.mono} {args : List (LExpr T.mono)} {fn : LFunc T}
+    (hcall : Factory.callOfLFunc F e = some (callee, args, fn))
+    (h : LExpr.HasTypeA [] e τ)
+    : ∃ argTys ty_op m name,
+        callee = .op m name (some ty_op) ∧
+        List.Forall₂ (LExpr.HasTypeA []) args argTys ∧
+        ty_op = LMonoTy.mkArrow' τ argTys ∧
+        args.length = fn.inputs.length := by
+  obtain ⟨m, name, ty, h_callee, h_get⟩ := callOfLFunc_getFactoryLFunc hcall
+  have h_chain := callOfLFunc_getLFuncCall hcall
+  have h_spec := getLFuncCall_spec h
+  rw [h_chain] at h_spec
+  obtain ⟨argTys, h_args, h_op⟩ := h_spec
+  subst h_callee
+  -- ty must be `some ty_op` since HasTypeA for .op requires it
+  cases ty with
+  | none => exact absurd h_op (by intro h; cases h)
+  | some ty_op =>
+    have h_inv := HasTypeA.op_inv h_op
+    exact ⟨argTys, ty_op, m, name, rfl, h_args, h_inv.symm, callOfLFunc_arity hcall⟩
+
+/-- The denotation of a factory function call equals `opInterp` applied to the
+denotations of the arguments. The `name` here is the identifier from the `.op`
+node (not `fn.name`), matching what `denote_op` produces. -/
+theorem callOfLFunc_denote
+    {F : @Factory T}
+    {e : LExpr T.mono} {τ : LMonoTy}
+    {callee : LExpr T.mono} {args : List (LExpr T.mono)} {fn : LFunc T}
+    (hcall : Factory.callOfLFunc F e = some (callee, args, fn))
+    (h : LExpr.HasTypeA [] e τ)
+    : ∃ (argTys : List LMonoTy) (ty_op : LMonoTy) (m : T.mono.base.Metadata)
+        (name : Identifier T.IDMeta)
+        (h_args : List.Forall₂ (LExpr.HasTypeA []) args argTys)
+        (hty_op: ty_op = LMonoTy.mkArrow' τ argTys),
+        callee = .op m name (some ty_op) ∧
+        let h_eq : LMonoTy.substTyVars vt ty_op =
+              LSort.mkArrow (LMonoTy.substTyVars vt τ) (argTys.map (LMonoTy.substTyVars vt)) :=
+            hty_op ▸ substTyVars_mkArrow' vt τ argTys
+        LExpr.denote tcInterp opInterp fvarVal vt .nil e τ h =
+          SortDenote.applyArgs tcInterp
+            (h_eq ▸ opInterp name.name (LMonoTy.substTyVars vt ty_op))
+            (denoteArgs tcInterp opInterp fvarVal vt .nil args argTys h_args) := by
+  -- Step 1: get typing info
+  obtain ⟨argTys, ty_op, m, name, h_callee, h_args, hty_op, _⟩ := callOfLFunc_output_type hcall h
+  -- Step 2: get the chain equation
+  have h_chain := callOfLFunc_getLFuncCall hcall
+  -- Step 3: get typing of op from getLFuncCall_spec
+  have h_spec := getLFuncCall_spec h
+  rw [h_chain] at h_spec
+  obtain ⟨argTys', h_args', h_op⟩ := h_spec
+  -- argTys' = argTys (both come from the same getLFuncCall)
+  -- h_op : HasTypeA [] callee (mkArrow' τ argTys')
+  -- We know callee = .op m name (some ty_op) and ty_op = mkArrow' τ argTys
+  subst h_callee
+  have h_inv := HasTypeA.op_inv h_op  -- mkArrow' τ argTys' = ty_op
+  rw [hty_op] at h_inv
+  have hlen: argTys'.length = argTys.length := by
+    have := h_args'.length_eq; have := h_args.length_eq; omega
+  have ⟨_, h_argTys_eq⟩ := LMonoTy.mkArrow'_injective hlen h_inv
+  subst h_argTys_eq
+  -- Step 4: apply denote_app_chain
+  have h_denote := denote_app_chain tcInterp opInterp fvarVal vt h h_chain h_op h_args'
+  -- Step 5: rewrite denote of .op using denote_op
+  have h_dop := denote_op tcInterp opInterp fvarVal vt .nil h_op
+  refine ⟨argTys', ty_op, m, name, h_args, hty_op, rfl, ?_⟩
+  rw [h_denote, h_dop]
+  grind
 
 /-! ## `applySubst` lemmas -/
-
-/-- If all scopes in `S` are empty, then `S.find?` returns `none` for any key. -/
-theorem Subst.find?_hasEmptyScopes (h : Subst.hasEmptyScopes S) (x : TyIdentifier) :
-    Maps.find? S x = none := by
-  sorry
 
 private theorem LConst.subst_ty (S : Subst) (c : LConst) : LMonoTy.subst S c.ty = c.ty := by
   cases c <;> simp [LConst.ty, LMonoTy.int, LMonoTy.real, LMonoTy.string, LMonoTy.bool] <;> try rw [LMonoTy.subst_tcons, LMonoTys.subst_nil]<;> rfl
@@ -287,16 +524,38 @@ theorem applySubst_fvars_annotated [DecidableEq T.IDMeta] {S : Subst}
     {e : LExpr T.mono} {tyMap : Map T.Identifier LMonoTy}
     (h : fvars_annotated_by tyMap e)
     : fvars_annotated_by (tyMap.map (fun (k, v) => (k, LMonoTy.subst S v))) (e.applySubst S) := by
-  sorry
+  rw [LExpr.applySubst_eq_replaceUserProvidedType]
+  induction e with
+  | fvar m name uty =>
+    cases uty with
+    | none => exact absurd h id
+    | some ty =>
+      simp only [LExpr.replaceUserProvidedType, Option.map, fvars_annotated_by] at *
+      intro ty' h_find
+      -- tyMap.map (fun x => (x.fst, subst S x.snd)) = tyMap.fmap (subst S)
+      have : List.map (fun x => (x.fst, LMonoTy.subst S x.snd)) tyMap = Map.fmap (LMonoTy.subst S) tyMap := rfl
+      rw [this] at h_find
+      rw [Map.find?_fmap] at h_find
+      cases h_orig : Map.find? tyMap name with
+      | none => simp [h_orig] at h_find
+      | some v => simp [h_orig] at h_find; rw [← h_find, h v h_orig]
+  | const | bvar | op => trivial
+  | app _ fn arg ih_fn ih_arg =>
+    simp only [LExpr.replaceUserProvidedType, fvars_annotated_by] at *
+    exact ⟨ih_fn h.1, ih_arg h.2⟩
+  | abs _ _ _ body ih =>
+    simp only [LExpr.replaceUserProvidedType, fvars_annotated_by] at *
+    exact ih h
+  | ite _ c t f ih_c ih_t ih_f =>
+    simp only [LExpr.replaceUserProvidedType, fvars_annotated_by] at *
+    exact ⟨ih_c h.1, ih_t h.2.1, ih_f h.2.2⟩
+  | eq _ e1 e2 ih1 ih2 =>
+    simp only [LExpr.replaceUserProvidedType, fvars_annotated_by] at *
+    exact ⟨ih1 h.1, ih2 h.2⟩
+  | quant _ _ _ _ tr body ih_tr ih_body =>
+    simp only [LExpr.replaceUserProvidedType, fvars_annotated_by] at *
+    exact ⟨ih_tr h.1, ih_body h.2⟩
 
-/-- `denote` is invariant under changing the type index by an equality proof. -/
-private theorem denote_cast_ty {Δ : List LMonoTy} {e : LExpr T.mono} {τ₁ τ₂ : LMonoTy}
-    (h_eq : τ₁ = τ₂) (h₁ : LExpr.HasTypeA Δ e τ₁) (h₂ : LExpr.HasTypeA Δ e τ₂)
-    (bv : BVarVal tcInterp vt Δ)
-    : LExpr.denote tcInterp opInterp fvarVal vt bv e τ₁ h₁ =
-      cast (congrArg (TyDenote tcInterp vt) h_eq.symm)
-        (LExpr.denote tcInterp opInterp fvarVal vt bv e τ₂ h₂) := by
-  subst h_eq; rfl
 /-- Extend `h_bvar_compat` when pushing a new bound variable onto the context.
 Used in the `abs` and `quant` cases of `denote_applySubst_gen`. -/
 private theorem bvar_compat_cons

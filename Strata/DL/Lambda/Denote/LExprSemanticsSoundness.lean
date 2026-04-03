@@ -264,7 +264,7 @@ theorem Step.denote_preserved
     rw [hty_op] at h_ty_op_val
     have h_len : argTys.length = ((fn.inputs.map Prod.snd).map (LMonoTy.subst tySubst')).length := by
       simp; exact h_args.length_eq.symm.trans (callOfLFunc_arity hcall)
-    have ⟨h_τ_eq, h_argTys_eq⟩ := mkArrow'_injective h_len h_ty_op_val
+    have ⟨h_τ_eq, h_argTys_eq⟩ := LMonoTy.mkArrow'_injective h_len h_ty_op_val
     -- Step 4: Define vt'
     let vt' : TyVarVal := fun x => match tySubst'.find? x with
       | some t => LMonoTy.substTyVars vt t | none => vt x

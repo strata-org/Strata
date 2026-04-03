@@ -98,6 +98,36 @@ def LMonoTy.mkArrow' (mty : LMonoTy) (mtys : LMonoTys) : LMonoTy :=
   | [] => mty
   | m :: mrest => .arrow m (LMonoTy.mkArrow' mty mrest)
 
+@[simp] theorem LMonoTy.mkArrow'_nil (τ : LMonoTy) : LMonoTy.mkArrow' τ [] = τ := by
+  simp [LMonoTy.mkArrow']
+
+@[simp] theorem LMonoTy.mkArrow'_cons (τ m : LMonoTy) (ms : LMonoTys) :
+    LMonoTy.mkArrow' τ (m :: ms) = .arrow m (LMonoTy.mkArrow' τ ms) := by
+  simp [LMonoTy.mkArrow']
+
+theorem LMonoTy.mkArrow'_append (τ : LMonoTy) (xs ys : List LMonoTy) :
+    LMonoTy.mkArrow' τ (xs ++ ys) = LMonoTy.mkArrow' (LMonoTy.mkArrow' τ ys) xs := by
+  induction xs with
+  | nil => rfl
+  | cons x xs' ih => simp [LMonoTy.mkArrow', ih]
+
+theorem LMonoTy.mkArrow'_injective {ret₁ ret₂ : LMonoTy} {ins₁ ins₂ : List LMonoTy}
+    (h_len : ins₁.length = ins₂.length)
+    (h : LMonoTy.mkArrow' ret₁ ins₁ = LMonoTy.mkArrow' ret₂ ins₂)
+    : ret₁ = ret₂ ∧ ins₁ = ins₂ := by
+  induction ins₁ generalizing ins₂ with
+  | nil =>
+    cases ins₂ with
+    | nil => simp [mkArrow'] at h; exact ⟨h, rfl⟩
+    | cons => simp at h_len
+  | cons x xs ih =>
+    cases ins₂ with
+    | nil => simp at h_len
+    | cons y ys =>
+      simp [mkArrow', LMonoTy.arrow] at h h_len
+      have ⟨h_ret, h_tl⟩ := ih h_len h.2
+      exact ⟨h_ret, by rw [h.1, h_tl]⟩
+
 mutual
 def LMonoTy.destructArrow (mty : LMonoTy) : LMonoTys :=
   match mty with

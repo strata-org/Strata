@@ -118,7 +118,7 @@ def Map.values (m : Map α β) : List β :=
 def Map.disjointp [DecidableEq α] (m1 m2 : Map α β) : Prop :=
   ∀ k, (m1.find? k) = none ∨ (m2.find? k = none)
 
-def Map.fmap (f: β → γ) (m: Map α β) : Map α γ :=
+@[expose] def Map.fmap (f: β → γ) (m: Map α β) : Map α γ :=
   List.map (fun (x, y) => (x, f y)) m
 
 ---------------------------------------------------------------------
@@ -157,6 +157,16 @@ theorem Map.find?_of_not_mem_values [DecidableEq α] (S : Map α β)
   split at h1 <;> simp_all
   rename_i h; exact fun a => h (id (Eq.symm a))
   done
+
+theorem Map.find?_fmap [DecidableEq α] (m : Map α β) (f : β → γ) (k : α) :
+    Map.find? (m.fmap f) k = (Map.find? m k).map f := by
+  induction m with
+  | nil => simp [Map.find?, Map.fmap]
+  | cons head tail ih =>
+    simp only [Map.fmap, List.map, Map.find?]
+    split
+    · simp_all
+    · exact ih
 
 @[simp]
 theorem Map.keys.length :

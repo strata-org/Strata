@@ -252,6 +252,66 @@ theorem Subst.isEmpty_implies_keys_empty (h : Subst.hasEmptyScopes S) :
   split at h <;> simp_all [Map.keys]
   done
 
+theorem Subst.hasEmptyScopes_false_of_find
+    (S : Subst) (a : TyIdentifier) (t : LMonoTy)
+    (h : Maps.find? S a = some t) : Subst.hasEmptyScopes S = false := by
+  cases h_eq : Subst.hasEmptyScopes S with
+  | false => rfl
+  | true => exact absurd (Subst.isEmpty_implies_keys_empty h_eq ▸ Maps.find?_mem_keys S h)
+                         (by simp_all)
+
+theorem Subst.find?_none_of_hasEmptyScopes (h : Subst.hasEmptyScopes S) (x : TyIdentifier) : Maps.find? S x = none := by
+  match h_find : Maps.find? S x with
+  | some t => exact absurd h (by rw [Subst.hasEmptyScopes_false_of_find S x t h_find]; decide)
+  | none => rfl
+
+theorem LMonoTy.subst_unfold (S : Subst) (ty : LMonoTy) :
+    LMonoTy.subst S ty = match ty with
+      | .ftvar x => match S.find? x with | some sty => sty | none => .ftvar x
+      | .bitvec n => .bitvec n
+      | .tcons name args => .tcons name (args.map (LMonoTy.subst S)) := by
+  conv => lhs; unfold LMonoTy.subst
+  split <;> rename_i h
+  · cases ty with
+    | ftvar x => simp [Subst.find?_none_of_hasEmptyScopes h]
+    | bitvec => rfl
+    | tcons name args =>
+      simp
+      induction args with
+      | nil => rfl
+      | cons a as ih =>
+        simp; constructor
+        . simp [LMonoTy.subst_emptyS h]
+        . assumption
+  · induction ty with
+    | ftvar x => rfl
+    | bitvec => simp
+    | tcons name args =>
+      -- rw [LMonoTy.subst_tcons]
+      simp
+      congr 1
+      rw [LMonoTys.subst_eq_substLogic]
+      induction args with
+      | nil =>
+        unfold LMonoTys.substLogic
+        split <;> grind
+      | cons a as ih =>
+        unfold LMonoTys.substLogic
+        split <;> try contradiction
+        simp; grind
+
+/-- `subst` distributes over `mkArrow'`. -/
+theorem subst_mkArrow' (S : Subst) (ret : LMonoTy) (ins : List LMonoTy) :
+    LMonoTy.subst S (LMonoTy.mkArrow' ret ins) =
+    LMonoTy.mkArrow' (LMonoTy.subst S ret) (ins.map (LMonoTy.subst S)) := by
+  induction ins with
+  | nil => rfl
+  | cons t ts ih =>
+    simp only [LMonoTy.mkArrow'_cons, List.map]
+    rw [LMonoTy.subst_unfold]
+    simp only [LMonoTy.arrow, List.map]
+    rw [ih]
+
 /--
 No key (i.e., type identifier) in a well-formed substitution `S` can appear as a
 free variable in a substituted type (i.e., in `LMonoTy.subst S ty`).
@@ -1375,15 +1435,6 @@ def Constraints.unify (constraints : Constraints) (S : SubstInfo) :
     Except UnifyError SubstInfo := do
     let relS ← Constraints.unifyCore constraints S
     .ok relS.newS
-
-
-theorem Subst.hasEmptyScopes_false_of_find
-    (S : Subst) (a : TyIdentifier) (t : LMonoTy)
-    (h : Maps.find? S a = some t) : Subst.hasEmptyScopes S = false := by
-  cases h_eq : Subst.hasEmptyScopes S with
-  | false => rfl
-  | true => exact absurd (Subst.isEmpty_implies_keys_empty h_eq ▸ Maps.find?_mem_keys S h)
-                         (by simp_all)
 
 /-- A key in a well-formed substitution does not appear in its own image. -/
 theorem SubstWF.not_mem_freeVars_of_find (S : Subst) (a : TyIdentifier) (t : LMonoTy)
