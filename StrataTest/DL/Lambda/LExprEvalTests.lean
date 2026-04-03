@@ -732,6 +732,32 @@ def test_poly_tysubst := TestCase.mk
 #guard_msgs in
 #eval check test_poly_tysubst
 
+-- polyPair<a, b>(x : a, y : b) : bool := ∀ (z : a), ∀ (w : b), z == w
+-- Tests that type substitution with distinct type parameters maps correctly:
+-- %a → int and %b → bool (not swapped).
+private def polyPairFactory : @Factory TestParams :=
+  #[{ name := "polyPair",
+      typeArgs := ["a", "b"],
+      attr := #[.inline],
+      inputs := [("x", mty[%a]), ("y", mty[%b])],
+      output := mty[bool],
+      body := some esM[∀ (%a): ∀ (%b): (%1 == %0)] }]
+
+private def polyPairState : LState TestParams :=
+  match LState.addFactory LState.init polyPairFactory with
+  | .error e => panic s!"{e}"
+  | .ok ok => ok
+
+-- polyPair<int, bool>(#42, #true): %a maps to int, %b maps to bool
+def test_poly_tysubst_distinct := TestCase.mk
+  polyPairState
+  esM[(((~polyPair : int → bool → bool) #42) #true)]
+  esM[∀ (int): ∀ (bool): (%1 == %0)]
+
+/-- info: true -/
+#guard_msgs in
+#eval check test_poly_tysubst_distinct
+
 end EvalTest
 ---------------------------------------------------------------------
 end LExpr

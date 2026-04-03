@@ -298,7 +298,7 @@ def LFunc.computeTypeSubst {T : LExprParams} (fn : LFunc T) (callee : LExpr T.mo
     -- Try the instantiated type on the .op node first
     let opConstraints := match callee with
       | .op _ _ (some instTy) =>
-        let genericTy := LMonoTy.mkArrow' fn.output (fn.inputs.values.reverse)
+        let genericTy := LMonoTy.mkArrow' fn.output fn.inputs.values
         [(instTy, genericTy)]
       | _ => []
     -- Also unify argument types against formal parameter types
