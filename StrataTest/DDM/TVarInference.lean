@@ -243,3 +243,135 @@ procedure Test () returns ()
 };
 #end
 
+---------------------------------------------------------------------
+-- Test 5: Multi-parameter datatype — confirms args.reverse handles
+-- 2+ type params correctly.  Pair..snd(p) should resolve tvar "b"
+-- to Lst Inte (not Inte), so lst_select's A = Lst Inte works.
+---------------------------------------------------------------------
+
+def multiParamPgm :=
+#strata
+program TestTVarInfer;
+
+datatype Pair (a : Type, b : Type) {
+  MkPair(fst: a, snd: b)
+};
+
+const p: Pair Inte (Lst Inte);
+
+procedure Test () returns ()
+{
+  assert [t1]: Lst.sel(Pair..snd(p), 0) == 0;
+};
+#end
+
+/--
+info: program TestTVarInfer;
+datatype Pair (a : Type, b : Type) {
+  (MkPair(fst : a, snd : b))
+};
+const p:Pair (Lst Inte) Inte;
+procedure Test () returns ()
+{
+  assert [t1]: Lst.sel(Pair..snd(p), 0) == 0;
+};
+-/
+#guard_msgs in
+#eval IO.println multiParamPgm
+
+---------------------------------------------------------------------
+-- Test 6: Chained accessors — Maybe..val(Maybe..val(m)) where
+-- m : Maybe (Maybe Inte).  Exercises tvar resolution on an arg
+-- whose type is itself the result of tvar resolution.
+---------------------------------------------------------------------
+
+def chainedAccessorPgm :=
+#strata
+program TestTVarInfer;
+
+datatype Maybe (a : Type) { Nothing(), Just(val: a) };
+
+const m: Maybe (Maybe Inte);
+
+procedure Test () returns ()
+{
+  assert [t1]: Maybe..val(Maybe..val(m)) == 0;
+};
+#end
+
+/--
+info: program TestTVarInfer;
+datatype Maybe (a : Type) {(
+  (Nothing())),
+  (Just(val : a))
+};
+const m:Maybe (Maybe Inte);
+procedure Test () returns ()
+{
+  assert [t1]: Maybe..val(Maybe..val(m)) == 0;
+};
+-/
+#guard_msgs in
+#eval IO.println chainedAccessorPgm
+
+---------------------------------------------------------------------
+-- Test 7: Nested parameterized field type — Wrapper(a) with field
+-- inner : Lst a.  Exercises substTVars inside an ident type
+-- constructor (Lst(tvar "a") → Lst Inte).
+---------------------------------------------------------------------
+
+def nestedFieldTypePgm :=
+#strata
+program TestTVarInfer;
+
+datatype Wrapper (a : Type) {
+  MkWrapper(inner: Lst a)
+};
+
+const w: Wrapper Inte;
+
+procedure Test () returns ()
+{
+  assert [t1]: Lst.sel(Wrapper..inner(w), 0) == 0;
+};
+#end
+
+/--
+info: program TestTVarInfer;
+datatype Wrapper (a : Type) {
+  (MkWrapper(inner : (Lst a)))
+};
+const w:Wrapper Inte;
+procedure Test () returns ()
+{
+  assert [t1]: Lst.sel(Wrapper..inner(w), 0) == 0;
+};
+-/
+#guard_msgs in
+#eval IO.println nestedFieldTypePgm
+
+---------------------------------------------------------------------
+-- Test 8: Multi-param, wrong field — Pair..fst(p) returns Inte,
+-- not Lst Inte, so feeding into lst_select should fail.
+---------------------------------------------------------------------
+
+/--
+error: Encountered Inte expression when Lst bvar!0 expected.
+-/
+#guard_msgs in
+def multiParamWrongFieldPgm :=
+#strata
+program TestTVarInfer;
+
+datatype Pair (a : Type, b : Type) {
+  MkPair(fst: a, snd: b)
+};
+
+const p: Pair Inte (Lst Inte);
+
+procedure Test () returns ()
+{
+  assert [t1]: Lst.sel(Pair..fst(p), 0) == 0;
+};
+#end
+

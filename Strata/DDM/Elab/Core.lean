@@ -551,7 +551,20 @@ def elabArgIndex {α} {n}
   | some idx => collectNewBindingsM initialScope trees[idx.toLevel] f
 
 /--
-Parse TypeApp and TypeParen expressions to get Init.TypeExpr into head-format form.
+Flatten a chain of left-associated `Init.TypeApp` nodes into a head
+and an array of type arguments in **reverse** (right-to-left) order.
+
+`Init.TypeParen` nodes are stripped during flattening.
+
+Example: the type expression `Map Inte (Lst Boole)`, parsed as
+
+    TypeApp(TypeApp(Map, Inte), TypeParen(TypeApp(Lst, Boole)))
+
+is flattened to `(Map, #[TypeApp(Lst, Boole), Inte])`.
+
+The reversed order aligns with de Bruijn indexing used by `instType`:
+bvar 0 maps to the last declared type parameter, which corresponds to
+the first element of the result array.
 -/
 def flattenTypeApp (arg : Tree) (args : Array Tree) : Tree × Array Tree :=
   match arg with
@@ -967,8 +980,8 @@ partial def inferType (tctx : TypingContext) (e : Expr) : ElabM TypeExpr := do
     | .expr tp =>
       if tp.hasTVar then
         -- Resolve tvars by matching parameter types against inferred arg types.
-        let tp ← resolveFVarTVars tctx tp a.val
-        return resultType! tctx tp a.val.size
+        let (resolvedTp, nPeeled) ← resolveFVarTVars tctx tp a.val
+        return resultType! tctx resolvedTp (a.val.size - nPeeled)
       else
         return resultType! tctx tp a.val.size
     | .type _ _ => panic! "Expected expression instead of type."
@@ -996,9 +1009,10 @@ partial def inferType (tctx : TypingContext) (e : Expr) : ElabM TypeExpr := do
 where
   /-- Resolve tvars in a polymorphic fvar type by matching parameter types
       against the inferred types of the actual arguments.  Returns the
-      (possibly partially) substituted type. -/
+      resolved result type (after peeling matched arrows) and the number
+      of arrows consumed, so the caller can adjust its arg count. -/
   resolveFVarTVars (tctx : TypingContext) (tp : TypeExpr) (args : Array Arg)
-      : ElabM TypeExpr := do
+      : ElabM (TypeExpr × Nat) := do
     -- Peel arrows to get parameter types and result type.
     let mut subst : Array (String × TypeExpr) := #[]
     let mut paramTp := tp
@@ -1009,11 +1023,13 @@ where
         match arg with
         | .expr e =>
           let inferredType ← inferType tctx e
-          -- flattenTypeApp stores fvar/ident args in reverse order, but
-          -- accessor types from templates use forward (declaration) order.
-          -- Reverse the top-level inferred fvar args to match the pattern.
+          -- fvar/ident args are stored in de Bruijn (reverse) order by
+          -- flattenTypeApp, but accessor type patterns from
+          -- mkDatatypeTypeRef use forward (declaration) order.
+          -- Reverse the top-level args to align with the pattern.
           let inferredType := match inferredType with
             | .fvar loc i args => .fvar loc i args.reverse
+            | .ident loc n args => .ident loc n args.reverse
             | t => t
           match pty.matchTVars inferredType subst with
           | some s => subst := s
@@ -1026,21 +1042,15 @@ where
     -- Partial resolution (e.g., constructors where some tvars don't appear
     -- in any parameter) can cause downstream type mismatches.
     if subst.isEmpty then
-      return tp
+      return (tp, 0)
     else
       let resolvedResult := paramTp.substTVars subst
       if resolvedResult.hasTVar then
         -- Some tvars remain unresolved; leave the type unchanged to
         -- preserve the existing tvar pass-through behavior.
-        return tp
+        return (tp, 0)
       else
-        -- All tvars resolved; rebuild with the concrete result type.
-        return rebuildArrows tp nPeeled resolvedResult
-  rebuildArrows (tp : TypeExpr) (skip : Nat) (result : TypeExpr) : TypeExpr :=
-    if skip == 0 then result
-    else match tp with
-    | .arrow ann a r => .arrow ann a (rebuildArrows r (skip - 1) result)
-    | _ => result
+        return (resolvedResult, nPeeled)
 
 /--
 Given a tree from operations with category `Init.TypeExpr`, build a tree with the type or category
