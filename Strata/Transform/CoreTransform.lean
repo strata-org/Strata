@@ -249,9 +249,10 @@ def createAsserts
     (conds : ListMap CoreLabel Procedure.Check)
     (subst : Map Expression.Ident Expression.Expr)
     (md : (Imperative.MetaData Expression))
+    (labelPrefix : String := "assert_")
     : CoreTransformM (List Statement)
     := conds.mapM (fun (l, check) => do
-          let newLabel ← genIdent l (fun s => s!"callElimAssert_{s}")
+          let newLabel ← genIdent l (fun s => s!"{labelPrefix}{s}")
           -- Non-lifting: the replacement expressions must be closed (no dangling bvars).
           -- Use the call site as the primary file range, preserving the requires
           -- clause location as a related file range for richer diagnostics.
@@ -263,10 +264,11 @@ def createAssumes
     (conds : ListMap CoreLabel Procedure.Check)
     (subst : Map Expression.Ident Expression.Expr)
     (md : (Imperative.MetaData Expression))
+    (labelPrefix : String := "assume_")
     : CoreTransformM (List Statement)
     :=
     conds.mapM (fun (l, check) => do
-      let newLabel ← genIdent l (fun s => s!"callElimAssume_{s}")
+      let newLabel ← genIdent l (fun s => s!"{labelPrefix}{s}")
       -- Non-lifting: the replacement expressions must be closed (no dangling bvars).
       -- Use the call site as the primary file range, preserving the ensures
       -- clause location as a related file range for richer diagnostics.

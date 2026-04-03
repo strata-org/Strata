@@ -13,6 +13,7 @@ import Strata.Languages.Core.ProgramWF
 import Strata.Languages.Core.StatementSemantics
 import Strata.Transform.CoreTransform
 import Strata.Transform.CallElim
+import Strata.Languages.Core.Verifier
 
 
 open Core
@@ -251,3 +252,31 @@ info: true
 #eval tests.all (λ (test, ans) ↦ (toString (callElim test).eraseTypes) == (toString ans.eraseTypes))
 
 end CallElimExamples
+
+/-! ## Call-elimination pipeline phase obligation tests -/
+section CallElimPhaseTests
+open Strata.SMT
+open Core.SMT (Result)
+
+private def satResult : Result := .sat []
+private def unknownResult : Result := .unknown (some [])
+
+/-- Obligation with call-elimination labels in path conditions. -/
+private def callElimObligation : Imperative.ProofObligation Core.Expression :=
+  { label := "test_callElim", property := .assert,
+    assumptions := [[("callElimAssume_post", .true ())]],
+    obligation := .true (), metadata := {} }
+
+/-- Obligation with no abstraction labels — models are sound. -/
+private def cleanObligation : Imperative.ProofObligation Core.Expression :=
+  { label := "test_clean", property := .assert,
+    assumptions := [[("precond_x_positive", .true ())]],
+    obligation := .true (), metadata := {} }
+
+-- callElimPipelinePhase: rejects sat when obligation has call-elim labels
+#guard (satResult.adjustForPhases [callElimPipelinePhase.phase] callElimObligation).1 == unknownResult
+
+-- callElimPipelinePhase: preserves sat when obligation has no call-elim labels
+#guard (satResult.adjustForPhases [callElimPipelinePhase.phase] cleanObligation).1 == satResult
+
+end CallElimPhaseTests
