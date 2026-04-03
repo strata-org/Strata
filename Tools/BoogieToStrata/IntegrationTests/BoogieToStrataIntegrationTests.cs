@@ -143,7 +143,7 @@ public class BoogieToStrataIntegrationTests(ITestOutputHelper output) {
             Console.WriteLine("Checking expected output");
             Assert.Equal(expectString, stdout);
             if (expectString.Contains("failed")) {
-                expectedExitCode = 1;
+                expectedExitCode = 2; // ExitCode.failuresFound (see StrataMain.lean)
             }
         }
         Assert.Equal(expectedExitCode, proc.ExitCode);
