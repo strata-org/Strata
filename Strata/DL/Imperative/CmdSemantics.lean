@@ -292,14 +292,14 @@ inductive EvalCmd [HasFvar P] [HasBool P] [HasNot P] :
     InitState P σ x v σ' →
     WellFormedSemanticEvalVar δ →
     ---
-    EvalCmd δ σ (.init x _ (some e) _) σ' false
+    EvalCmd δ σ (.init x _ (.det e) _) σ' false
 
   /-- Initialize `x` with an unconstrained value (havoc semantics). -/
   | eval_init_unconstrained :
     InitState P σ x v σ' →
     WellFormedSemanticEvalVar δ →
     ---
-    EvalCmd δ σ (.init x _ none _) σ' false
+    EvalCmd δ σ (.init x _ .nondet _) σ' false
 
   /-- If `e` evaluates to a value `v`, assign `x` according to `UpdateState`. -/
   | eval_set :
@@ -307,14 +307,14 @@ inductive EvalCmd [HasFvar P] [HasBool P] [HasNot P] :
     UpdateState P σ x v σ' →
     WellFormedSemanticEvalVar δ →
     ----
-    EvalCmd δ σ (.set x e _) σ' false
+    EvalCmd δ σ (.set x (.det e) _) σ' false
 
   /-- Assign `x` an arbitrary value `v` according to `UpdateState`. -/
-  | eval_havoc :
+  | eval_set_nondet :
     UpdateState P σ x v σ' →
     WellFormedSemanticEvalVar δ →
     ----
-    EvalCmd δ σ (.havoc x _) σ' false
+    EvalCmd δ σ (.set x .nondet _) σ' false
 
   /-- Assert passes: `e` evaluates to true, no failure. The store is unchanged. -/
   | eval_assert_pass :

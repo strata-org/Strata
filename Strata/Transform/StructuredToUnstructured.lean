@@ -6,6 +6,7 @@
 
 import Strata.DL.Imperative.PureExpr
 import Strata.DL.Imperative.BasicBlock
+import Strata.DL.Imperative.CFGSemantics
 import Strata.DL.Imperative.Cmd
 import Strata.DL.Imperative.Stmt
 import Strata.DL.Lambda.LExpr
@@ -82,8 +83,16 @@ match ss with
   let l ← StringGenState.gen "ite"
   let (tl, tbs) ← stmtsToBlocks kNext tss exitConts []
   let (fl, fbs) ← stmtsToBlocks kNext fss exitConts []
-  -- Flush accumulated commands
-  let (accumEntry, accumBlocks) ← flushCmds "ite$" accum (.some (.condGoto c tl fl)) l
+  -- For nondet conditions, introduce a fresh boolean variable
+  let (condExpr, extraCmds) ← match c with
+    | .det e => pure (e, [])
+    | .nondet => do
+      let freshName ← StringGenState.gen "$__nondet_ite$"
+      let ident := HasIdent.ident (P := P) freshName
+      let initCmd := HasInit.init ident HasBool.boolTy .nondet MetaData.empty
+      pure (HasFvar.mkFvar ident, [initCmd])
+  let (accumEntry, accumBlocks) ← flushCmds "ite$" (accum ++ extraCmds)
+    (.some (.condGoto condExpr tl fl)) l
   pure (accumEntry, accumBlocks ++ tbs ++ fbs ++ bsNext)
 | .loop c m is bss _md :: rest => do
   -- Process rest first
@@ -99,7 +108,7 @@ match ss with
       let mLabel ← StringGenState.gen "loop_measure$"
       let mIdent := HasIdent.ident mLabel
       let mOldExpr := HasFvar.mkFvar mIdent
-      let initCmd  := HasInit.init mIdent HasIntOrder.intTy none MetaData.empty
+      let initCmd  := HasInit.init mIdent HasIntOrder.intTy .nondet MetaData.empty
       let assumeCmd := HasPassiveCmds.assume s!"assume_{mLabel}"
                          (HasIntOrder.eq mOldExpr mExpr) MetaData.empty
       let lbCmd    := HasPassiveCmds.assert s!"measure_lb_{mLabel}"
@@ -115,10 +124,20 @@ match ss with
     is.mapM (fun i => do
       let invLabel ← StringGenState.gen "inv$"
       pure (HasPassiveCmds.assert invLabel i MetaData.empty))
-  let b := (lentry, { cmds := invCmds ++ measureCmds, transfer := .condGoto c bl kNext })
-  -- Flush accumulated commands
-  let (accumEntry, accumBlocks) ← flushCmds "before_loop$" accum .none lentry
-  pure (accumEntry, accumBlocks ++ [b] ++ bbs ++ decreaseBlocks ++ bsNext)
+  -- For nondet guards, introduce a fresh boolean variable
+  match c with
+  | .det e =>
+    let b := (lentry, { cmds := invCmds ++ measureCmds, transfer := .condGoto e bl kNext })
+    let (accumEntry, accumBlocks) ← flushCmds "before_loop$" accum .none lentry
+    pure (accumEntry, accumBlocks ++ [b] ++ bbs ++ decreaseBlocks ++ bsNext)
+  | .nondet => do
+    let freshName ← StringGenState.gen "$__nondet_loop$"
+    let ident := HasIdent.ident (P := P) freshName
+    let initCmd := HasInit.init ident HasBool.boolTy .nondet MetaData.empty
+    let b := (lentry, { cmds := [initCmd] ++ invCmds ++ measureCmds,
+                        transfer := .condGoto (HasFvar.mkFvar ident) bl kNext })
+    let (accumEntry, accumBlocks) ← flushCmds "before_loop$" accum .none lentry
+    pure (accumEntry, accumBlocks ++ [b] ++ bbs ++ decreaseBlocks ++ bsNext)
 | .exit l? _md :: _ => do
   -- Find the continuation of the block labeled `l`, or the most recently-added
   -- block if `l` is `.none`.

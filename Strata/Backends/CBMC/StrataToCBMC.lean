@@ -224,7 +224,7 @@ def cmdToJson (e : Strata.C_Simp.Command) (loc: SourceLoc) : Except String Json 
       ]
     ])
   | .set ("return") _ _ => returnStmt loc.functionName
-  | .set name expr _ =>
+  | .set name (.det expr) _ =>
     let exprLoc : SourceLoc := { functionName := loc.functionName, lineNum := "6" }
     return (mkCodeBlock "expression" "6" loc.functionName (config := cfg) #[
       mkSideEffect "assign" "6" loc.functionName (mkIntType cfg) (config := cfg) #[
@@ -287,7 +287,7 @@ def cmdToJson (e : Strata.C_Simp.Command) (loc: SourceLoc) : Except String Json 
         ]
       ]
     ])
-  | .havoc _ _ | .cover _ _ _ => throw "cmdToJson: Unimplemented"
+  | .set _ .nondet _ | .cover _ _ _ => throw "cmdToJson: Unimplemented"
 
 mutual
 def blockToJson (b: Imperative.Block Strata.C_Simp.Expression Strata.C_Simp.Command) (loc: SourceLoc) : Except String Json := do
@@ -307,7 +307,7 @@ def blockToJson (b: Imperative.Block Strata.C_Simp.Expression Strata.C_Simp.Comm
  def stmtToJson (e : Strata.C_Simp.Statement) (loc: SourceLoc) : Except String Json :=
   match e with
   | .cmd cmd => cmdToJson cmd loc
-  | .ite cond thenb elseb _ => do
+  | .ite (.det cond) thenb elseb _ => do
     return Json.mkObj [
       ("id", "code"),
       ("namedSub", Json.mkObj [
