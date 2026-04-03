@@ -224,7 +224,7 @@ procedure h() returns () spec {
 
 def translate (t : Strata.Program) : Core.Program := (TransM.run Inhabited.default (translateProgram t)).fst
 
-def env := (Lambda.LContext.default.addFactoryFunctions Core.Factory)
+def env : Lambda.LContext CoreLParams := .default (functions := Core.Factory)
 
 def translateWF (t : Strata.Program) : WF.WFProgram :=
   let p := translate t

@@ -136,7 +136,7 @@ private def mkRandConst (ty:LMonoTy): IO (Option (LExpr CoreLParams.mono))
     return .none
 
 def checkFactoryOps (verbose:Bool): IO Unit := do
-  let arr:Array (LFunc CoreLParams) := Core.Factory
+  let arr:Array (LFunc CoreLParams) := Core.Factory.toArray
   let print (f:Format): IO Unit :=
     if verbose then IO.println f
     else return ()

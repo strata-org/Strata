@@ -388,7 +388,7 @@ partial def toSMTOp (E : Env) (fn : CoreIdent) (fnty : LMonoTy) (ctx : SMT.Conte
     .ok (adtApp, smt_outty, ctx)
   | none =>
     -- Not a constructor, tester, or destructor
-    match E.factory.getFactoryLFunc fn.name with
+    match E.factory[fn.name]? with
     | none => .error f!"Cannot find function {fn} in Strata Core's Factory!"
     | some func =>
       match func.name.name with

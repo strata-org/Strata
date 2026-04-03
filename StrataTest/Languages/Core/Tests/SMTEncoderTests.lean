@@ -81,7 +81,7 @@ info: "; f\n(declare-fun f (Int Int) Int)\n; x\n(declare-const x Int)\n(define-f
     Env.init.exprEnv with
       config := { Env.init.exprEnv.config with
         factory :=
-          Env.init.exprEnv.config.factory.push $
+          Env.init.exprEnv.config.factory.pushIfNew $
           LFunc.mk "f" [] false false [("m", LMonoTy.int), ("n", LMonoTy.int)] LMonoTy.int .none #[] .none [] []
       }
    }})
@@ -99,7 +99,7 @@ info: "; f\n(declare-fun f (Int Int) Int)\n; x\n(declare-const x Int)\n(define-f
     Env.init.exprEnv with
       config := { Env.init.exprEnv.config with
         factory :=
-          Env.init.exprEnv.config.factory.push $
+          Env.init.exprEnv.config.factory.pushIfNew $
           LFunc.mk "f" [] false false [("m", LMonoTy.int), ("n", LMonoTy.int)] LMonoTy.int .none #[] .none [] []
       }
    }})
@@ -176,7 +176,7 @@ info: "; m\n(declare-const m (Array Int Int))\n(define-fun $__t.0 () (Array Int 
     Env.init.exprEnv with
       config := { Env.init.exprEnv.config with
         factory :=
-          Core.Factory.push $
+          Core.Factory.pushIfNew $
           LFunc.mk (⟨"getFirst", ()⟩) [] false false
             [(⟨"m", ()⟩, mapTy .int .int)] .int .none #[] .none [] []
       }

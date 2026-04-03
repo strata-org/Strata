@@ -141,7 +141,7 @@ def floatPowFunc : LFunc Core.CoreLParams :=
       output := mty[real]
       }
 
-def ReFactory : @Factory Core.CoreLParams :=
+def ReFactory : Factory Core.CoreLParams := .ofArray
     #[
       reFullmatchBoolFunc,
       reMatchBoolFunc,
@@ -153,7 +153,7 @@ def ReFactory : @Factory Core.CoreLParams :=
 
 /-- Core.Factory extended with regex factory functions. -/
 def PythonFactory : @Lambda.Factory Core.CoreLParams :=
-    Core.Factory.append ReFactory
+    Core.Factory.append ReFactory.toArray
 
 end -- public section
 
