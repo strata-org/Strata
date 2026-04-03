@@ -90,10 +90,6 @@ def prefixName (name : String) : ToLaurelM String := do
 private def mkTy (ty : HighType) : HighTypeMd :=
   { val := ty, md := default }
 
-/-- Create a TCore wrapped type with default metadata. -/
-private def mkCore (s : String) : HighTypeMd :=
-  { val := .TCore s, md := default }
-
 /-- Create a UserDefined type referencing a Laurel prelude type by name. -/
 private def mkUserDefined (s : String) : HighTypeMd :=
   { val := .UserDefined (mkId s), md := default }
@@ -164,12 +160,12 @@ def formatUnionType (atoms : Array SpecAtomType) : String :=
 /--
 Detect if a SpecType is a Union[None, T] pattern and return the appropriate Laurel type.
 Handles:
-- Union[None, str] → TCore "StrOrNone"
-- Union[None, int] → TCore "IntOrNone"
-- Union[None, bool] → TCore "BoolOrNone"
-- Union[None, Literal["A"], ...] → TCore "StrOrNone"
-- Union[None, Literal[1], ...] → TCore "IntOrNone"
-- Union[None, TypedDict] → TCore "DictStrAny"
+- Union[None, str] → UserDefined "StrOrNone"
+- Union[None, int] → UserDefined "IntOrNone"
+- Union[None, bool] → UserDefined "BoolOrNone"
+- Union[None, Literal["A"], ...] → UserDefined "StrOrNone"
+- Union[None, Literal[1], ...] → UserDefined "IntOrNone"
+- Union[None, TypedDict] → UserDefined "DictStrAny"
 - Union[None, float/List/Dict/Any/bytes] → TString (unsupported, pending CorePrelude)
 -/
 def detectOptionalType (ty : SpecType) : ToLaurelM (Option HighTypeMd) := do
@@ -222,7 +218,7 @@ def detectOptionalType (ty : SpecType) : ToLaurelM (Option HighTypeMd) := do
 /-- Known PythonIdent → Laurel type mappings for single-atom ident types.
     - `bytes`/`bytearray` → TString (closest string-like approximation)
     - `complex` → TReal (no complex type in SMT; real is the closest numeric type)
-    - `Exception` → Core "Error" (matches CorePrelude's Error datatype)
+    - `Exception` → UserDefined "Error" (matches CorePrelude's Error datatype)
     - `typing.Any` → UserDefined "Any" (datatype in Laurel prelude) -/
 private def knownIdentTypes : Std.HashMap PythonIdent HighTypeMd :=
   .ofList [

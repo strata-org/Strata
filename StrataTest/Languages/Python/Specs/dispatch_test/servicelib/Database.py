@@ -10,9 +10,8 @@ class DatabaseError(Exception):
 
 class Database:
     # Nested exception container — mimics boto3 service client pattern.
-    # The pyspec compiler emits _Exceptions as a subclass in the Ion file,
-    # but ToLaurel does not translate subclasses, so the field type
-    # "servicelib_Database__Exceptions" is undefined after translation.
+    # Exercises the nested-subclass translation path in classDefToLaurel,
+    # which recursively emits subclass types like servicelib_Database__Exceptions.
     class _Exceptions:
         DatabaseError = DatabaseError
 
