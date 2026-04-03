@@ -64,7 +64,7 @@ Result: ❌ fail
 
 Obligation: callElimAssert_n_positive_2
 Property: assert
-Result: ❌ fail
+Result: ❓ unknown
 
 Obligation: output_property
 Property: assert

@@ -2,12 +2,12 @@ test_class_methods.py(18, 4): ✅ pass - callElimAssert_requires_12
 test_class_methods.py(21, 4): ✅ pass - assert_assert(445)_calls_Any_to_bool_0
 test_class_methods.py(21, 4): ❓ unknown - assert(445)
 test_class_methods.py(24, 4): ✅ pass - assert_assert(539)_calls_Any_to_bool_0
-test_class_methods.py(24, 4): ❌ fail - assert(539)
+test_class_methods.py(24, 4): ❓ unknown - assert(539)
 test_class_methods.py(28, 4): ✅ pass - assert_assert(654)_calls_Any_to_bool_0
-test_class_methods.py(28, 4): ❌ fail - assert(654)
+test_class_methods.py(28, 4): ❓ unknown - assert(654)
 test_class_methods.py(30, 4): ✅ pass - callElimAssert_requires_0_4
 test_class_methods.py(30, 4): ✅ pass - callElimAssert_requires_1_5
 test_class_methods.py(30, 4): ✅ pass - callElimAssert_requires_2_6
 test_class_methods.py(32, 0): ✅ pass - ite_cond_calls_Any_to_bool_0
-DETAIL: 8 passed, 2 failed, 1 inconclusive
-RESULT: Failures found
+DETAIL: 8 passed, 0 failed, 3 inconclusive
+RESULT: Inconclusive

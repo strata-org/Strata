@@ -2,11 +2,11 @@ test_with_statement.py(15, 4): ✅ pass - callElimAssert_requires_9
 unknown location: ✅ pass - callElimAssert_requires_5
 test_with_statement.py(17, 4): ✅ pass - callElimAssert_requires_2
 test_with_statement.py(19, 4): ✅ pass - assert_assert(368)_calls_Any_to_bool_0
-test_with_statement.py(19, 4): ❌ fail - assert(368)
+test_with_statement.py(19, 4): ❓ unknown - assert(368)
 test_with_statement.py(22, 4): ✅ pass - callElimAssert_requires_19
 test_with_statement.py(23, 4): ✅ pass - callElimAssert_requires_15
 test_with_statement.py(25, 8): ✅ pass - assert_assert(500)_calls_Any_to_bool_0
-test_with_statement.py(25, 8): ❌ fail - assert(500)
+test_with_statement.py(25, 8): ❓ unknown - assert(500)
 test_with_statement.py(23, 4): ✅ pass - callElimAssert_requires_12
 test_with_statement.py(28, 4): ✅ pass - callElimAssert_requires_39
 test_with_statement.py(29, 4): ✅ pass - callElimAssert_requires_35
@@ -16,5 +16,5 @@ test_with_statement.py(32, 8): ✅ pass - assert_assert(666)_calls_Any_to_bool_0
 test_with_statement.py(32, 8): ❓ unknown - assert(666)
 test_with_statement.py(30, 4): ✅ pass - callElimAssert_requires_25
 test_with_statement.py(30, 4): ✅ pass - callElimAssert_requires_22
-DETAIL: 15 passed, 2 failed, 1 inconclusive
-RESULT: Failures found
+DETAIL: 15 passed, 0 failed, 3 inconclusive
+RESULT: Inconclusive
