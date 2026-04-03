@@ -102,6 +102,25 @@ def computeExprType (model : SemanticModel) (expr : StmtExprMd) : HighTypeMd :=
   | .All => default -- TODO: implement
   | .Hole _ typeOption => typeOption.getD  ⟨ HighType.Unknown, md ⟩
 
+/-- Classification of a heap-relevant modifies type. -/
+inductive ModifiesTypeKind where
+  | composite    -- a single Composite reference (UserDefined)
+  | compositeSet -- a Set of Composite references (TSet)
+
+/-- Classify a type as heap-relevant for modifies clauses, or `none` for
+non-heap-relevant types. Single source of truth for which types participate
+in modifies clauses and heap parameterization. -/
+def classifyModifiesHighType : HighType → Option ModifiesTypeKind
+  | .UserDefined _ => some .composite
+  | .TSet _        => some .compositeSet
+  | _              => none
+
+/-- Returns `true` when the given `HighType` is heap-relevant (composite or set
+of composite), i.e. the kind of type that appears in modifies clauses and
+triggers heap parameterization. -/
+def isHeapRelevantType (ty : HighType) : Bool :=
+  (classifyModifiesHighType ty).isSome
+
 end Strata.Laurel
 
 end

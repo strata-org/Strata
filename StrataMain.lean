@@ -11,19 +11,12 @@ import Strata.Languages.Core.SarifOutput
 import Strata.Languages.C_Simp.Verify
 import Strata.Languages.B3.Verifier.Program
 import Strata.Util.IO
-import Strata.Languages.Laurel.Grammar.ConcreteToAbstractTreeTranslator
 import Strata.Languages.Laurel.LaurelToCoreTranslator
 import Strata.Languages.Python.Python
-import Strata.Languages.Python.PySpecPipeline
-import Strata.Languages.Python.Specs
-import Strata.Languages.Python.Specs.DDM
 import Strata.Languages.Python.Specs.IdentifyOverloads
 import Strata.Languages.Python.Specs.ToLaurel
 import Strata.Languages.Laurel.LaurelFormat
 import Strata.Languages.Laurel.Laurel
-import Strata.Languages.Python.CorePrelude
-import Strata.Languages.Python.PythonRuntimeLaurelPart
-import Strata.Languages.Python.PythonLaurelCorePrelude
 import Strata.Backends.CBMC.CollectSymbols
 import Strata.Backends.CBMC.GOTO.CoreToGOTOPipeline
 
@@ -240,12 +233,6 @@ def diffCommand : Command where
     | _, _ =>
       exitFailure "Cannot compare dialect def with another dialect/program."
 
-def readPythonStrata (strataPath : String) : IO (Array (Strata.Python.stmt SourceRange)) := do
-  let bytes ← Strata.Util.readBinInputSource strataPath
-  match Strata.Python.readPythonStrataBytes strataPath bytes with
-  | .ok stmts => pure stmts
-  | .error msg => exitFailure msg
-
 def pySpecsCommand : Command where
   name := "pySpecs"
   args := [ "source_dir", "output_dir" ]
@@ -289,10 +276,7 @@ def pyTranslateCommand : Command where
   args := [ "file" ]
   help := "Translate a Python Ion program to Core and print the result to stdout."
   callback := fun v _ => do
-    let stmts ← readPythonStrata v[0]
-    let preludePgm := Strata.Python.Core.prelude
-    let bpgm := Strata.pythonToCore Strata.Python.coreSignatures stmts preludePgm
-    let newPgm : Core.Program := { decls := preludePgm.decls ++ bpgm.decls }
+    let newPgm ← Strata.pythonDirectToCore v[0]
     IO.print newPgm
 
 /-- Derive Python source file path from Ion file path.
@@ -349,16 +333,12 @@ def pyAnalyzeCommand : Command where
     let outputSarif := pflags.getBool "sarif"
     let uniqueBoundNames := pflags.getBool "unique-bound-names"
     let filePath := v[0]
-    let stmts ← readPythonStrata filePath
     -- Try to read the Python source for line number conversion
     let pySourceOpt ← tryReadPythonSource filePath
-    let preludePgm := Strata.Python.Core.prelude
-    -- Use the Python source path if available, otherwise fall back to Ion path
     let sourcePathForMetadata := match pySourceOpt with
       | some (pyPath, _) => pyPath
       | none => filePath
-    let bpgm := Strata.pythonToCore Strata.Python.coreSignatures stmts preludePgm sourcePathForMetadata
-    let newPgm : Core.Program := { decls := preludePgm.decls ++ bpgm.decls }
+    let newPgm ← Strata.pythonDirectToCore filePath sourcePathForMetadata
     if verbose then
       IO.print newPgm
     match (Core.inlineProcedures newPgm ⟨ .some (λ name _ => name ≠ "main") ⟩) with
@@ -378,14 +358,12 @@ def pyAnalyzeCommand : Command where
                 solver := solverName,
                 uniqueBoundNames := uniqueBoundNames,
                 vcDirectory := vcDir }
-      let runVerification tempDir :=
-          EIO.toIO
-            (fun f => IO.Error.userError (toString f))
-            (Core.verify newPgm tempDir .none options
-                                      (moreFns := Strata.Python.ReFactory))
-      let vcResults ← match options.vcDirectory with
-                      | .none => IO.FS.withTempDir runVerification
-                      | .some tempDir => runVerification tempDir
+      let vcResults ←
+        match ← Core.verifyProgram newPgm options
+                  (moreFns := Strata.Python.ReFactory)
+                  (externalPhases := [Strata.frontEndPhase]) |>.toBaseIO with
+        | .ok r => pure r
+        | .error msg => exitInternalError msg
       let mfm : Option (String × Lean.FileMap) := match pySourceOpt with
         | some (pyPath, srcText) => some (pyPath, .ofString srcText)
         | none => none
@@ -480,7 +458,14 @@ private def exitPyAnalyzeKnownLimitation {α} (message : String) : IO α := do
     success / failure / inconclusive (guaranteeing disjointness).
     Unreachable count is reported as supplementary info. -/
 private def printPyAnalyzeSummary (vcResults : Array Core.VCResult)
-    (classifier : ResultClassifier := {}) : IO Unit := do
+    (checkMode : VerificationMode := .deductive) : IO Unit := do
+  let classifier : ResultClassifier :=
+    match checkMode with
+    | .bugFinding | .bugFindingAssumingCompleteSpec =>
+      { isFailure := fun r => match r.outcome with
+          | .ok o => o.alwaysFalseAndReachable
+          | _     => false }
+    | _ => {}
   -- 1. Partition out implementation errors (broken results, not classifiable).
   let (implError, classifiable) :=
     vcResults.partition (fun r => r.isImplementationError || r.hasSMTError)
@@ -615,8 +600,11 @@ def pyAnalyzeLaurelCommand : Command where
       IO.println "\n==== Core Program ===="
       IO.print coreProgram
 
-    -- Split prelude / user procedure names at FIRST_END_MARKER
-    let (preludeNames, userProcNames) := Strata.splitProcNames coreProgram
+    -- Split prelude / user procedure names.
+    -- Only procedures whose file range matches the user source are targets.
+    let userSourcePath := sourcePath.getD filePath
+    let (preludeNames, userProcNames) :=
+      Strata.splitProcNames coreProgram [userSourcePath]
 
     if let some dir := keepDir then
       let path := s!"{dir}/{baseName}.core"
@@ -667,66 +655,41 @@ def pyAnalyzeLaurelCommand : Command where
     let vcResults ← profileStep profile "SMT verification" do
       match ← Core.verifyProgram coreProgram options
                 (moreFns := Strata.Python.ReFactory)
-                (proceduresToVerify := some userProcNames) |>.toBaseIO with
+                (proceduresToVerify := some userProcNames)
+                (externalPhases := [Strata.frontEndPhase]) |>.toBaseIO with
       | .ok r => pure r
       | .error msg => exitPyAnalyzeInternalError msg
 
-    let classifier : ResultClassifier :=
-      match checkMode with
-      | .bugFinding | .bugFindingAssumingCompleteSpec =>
-        { isFailure := fun r => match r.outcome with
-            | .ok o => o.alwaysFalseAndReachable
-            | _     => false }
-      | _ => {}
-
-    -- Print results
+    -- Print translation errors (always on stderr)
     if !laurelTranslateErrors.isEmpty then
-      IO.println "\n==== Errors ===="
+      IO.eprintln "\n==== Errors ===="
       for err in laurelTranslateErrors do
-        IO.println err
+        IO.eprintln err
 
-    -- Print results
-    IO.println "\n==== Verification Results ===="
-    let mut s := ""
-    for vcResult in vcResults do
-      let propertySummaryOption := vcResult.obligation.metadata.getPropertySummary
-      let propertyDescription := propertySummaryOption.getD vcResult.obligation.label
-      let (locationPrefix, locationSuffix) := match Imperative.getFileRange vcResult.obligation.metadata with
-        | some fr =>
-          if fr.range.isNone then ("", "")
-          else
-            match mfm with
-            | some (_, fm) =>
-              match fr.file with
-              | .file "" =>
-                if classifier.isFailure vcResult then
-                  (s!"Assertion failed in prelude file: ", "")
-                else
-                  ("", s!" (in prelude file)")
-              | .file path =>
-                let pos := fm.toPosition fr.range.start
-                if classifier.isFailure vcResult then
-                  (s!"Assertion failed at line {pos.line}, col {pos.column}: ", "")
-                else
-                  ("", s!" (at line {pos.line}, col {pos.column})")
-            | none =>
-              if classifier.isFailure vcResult then
-                (s!"Assertion failed: ", "")
-              else
-                ("", "")
-        | none => ("", "")
-      let outcomeStr := vcResult.formatOutcome
-      let relatedStr := formatRelatedPositions vcResult.obligation.metadata mfm
-      s := s ++ s!"{locationPrefix}{propertyDescription}: \
-                    {outcomeStr}{locationSuffix}{relatedStr}\n"
-    IO.println s
+    -- Print per-VC results by default, unless SARIF mode is used
+    if !outputSarif then
+      let mut s := ""
+      for vcResult in vcResults do
+        let fileMap := mfm.map (·.2)
+        let location := match Imperative.getFileRange vcResult.obligation.metadata with
+          | some fr =>
+            if fr.range.isNone then ""
+            else s!"{fr.format fileMap (includeEnd? := false)}"
+          | none => ""
+        let messageSuffix := match vcResult.obligation.metadata.getPropertySummary with
+          | some msg => s!" - {msg}"
+          | none => s!" - {vcResult.obligation.label}"
+        let outcomeStr := vcResult.formatOutcome
+        let loc := if !location.isEmpty then s!"{location}: " else "unknown location: "
+        s := s ++ s!"{loc}{outcomeStr}{messageSuffix}\n"
+      IO.print s
     -- Output in SARIF format if requested
     if outputSarif then
       let files := match mfm with
         | some (pyPath, fm) => Map.empty.insert (Strata.Uri.file pyPath) fm
         | none => Map.empty
       Core.Sarif.writeSarifOutput checkMode files vcResults (filePath ++ ".sarif")
-    printPyAnalyzeSummary vcResults classifier
+    printPyAnalyzeSummary vcResults checkMode
 
 def pyAnalyzeToGotoCommand : Command where
   name := "pyAnalyzeToGoto"
@@ -734,15 +697,12 @@ def pyAnalyzeToGotoCommand : Command where
   help := "Translate a Strata Python Ion file to CProver GOTO JSON files."
   callback := fun v _ => do
     let filePath := v[0]
-    let stmts ← readPythonStrata filePath
     let pySourceOpt ← tryReadPythonSource filePath
-    let preludePgm := Strata.Python.Core.prelude
     let sourcePathForMetadata := match pySourceOpt with
       | some (pyPath, _) => pyPath
       | none => filePath
-    let bpgm := Strata.pythonToCore Strata.Python.coreSignatures stmts preludePgm sourcePathForMetadata
     let sourceText := pySourceOpt.map (·.2)
-    let newPgm : Core.Program := { decls := preludePgm.decls ++ bpgm.decls }
+    let newPgm ← Strata.pythonDirectToCore filePath sourcePathForMetadata
     match Core.inlineProcedures newPgm ⟨.some (fun name _ => name ≠ "main")⟩ with
     | .error e => exitInternalError e
     | .ok newPgm =>
@@ -860,41 +820,14 @@ def javaGenCommand : Command where
 
 def laurelVerifyOptions : VerifyOptions := { VerifyOptions.default with solver := "z3" }
 
-def deserializeIonToLaurelFiles (bytes : ByteArray) : IO (List Strata.StrataFile) := do
-  match Strata.Program.filesFromIon Strata.Laurel.Laurel_map bytes with
-  | .ok files => pure files
-  | .error msg => exitFailure msg
-
 def laurelAnalyzeBinaryCommand : Command where
   name := "laurelAnalyzeBinary"
   args := []
   help := "Verify Laurel Ion programs read from stdin and print diagnostics. Combines multiple input files."
   callback := fun _ _ => do
-    -- Read bytes from stdin
     let stdinBytes ← (← IO.getStdin).readBinToEnd
-
-    let strataFiles ← deserializeIonToLaurelFiles stdinBytes
-
-    let mut combinedProgram : Strata.Laurel.Program := {
-      staticProcedures := []
-      staticFields := []
-      types := []
-    }
-
-    for strataFile in strataFiles do
-
-      let transResult := Strata.Laurel.TransM.run (Strata.Uri.file strataFile.filePath) (Strata.Laurel.parseProgram strataFile.program)
-      match transResult with
-      | .error transErrors => exitFailure s!"Translation errors in {strataFile.filePath}: {transErrors}"
-      | .ok laurelProgram =>
-
-        combinedProgram := {
-          staticProcedures := combinedProgram.staticProcedures ++ laurelProgram.staticProcedures
-          staticFields := combinedProgram.staticFields ++ laurelProgram.staticFields
-          types := combinedProgram.types ++ laurelProgram.types
-        }
-
-    let diagnostics ← Strata.Laurel.verifyToDiagnosticModels combinedProgram laurelVerifyOptions
+    let combinedProgram ← Strata.readLaurelIonProgram stdinBytes
+    let diagnostics ← Strata.Laurel.analyzeToDiagnosticModels combinedProgram laurelVerifyOptions
 
     IO.println s!"==== DIAGNOSTICS ===="
     for diag in diagnostics do
@@ -966,45 +899,26 @@ def laurelParseCommand : Command where
   args := [ "file" ]
   help := "Parse a Laurel source file (no verification)."
   callback := fun v _ => do
-    let path : System.FilePath := v[0]
-    let content ← IO.FS.readFile path
-    let input := Strata.Parser.stringInputContext path content
-    let dialects := Strata.Elab.LoadedDialects.ofDialects! #[Strata.initDialect, Strata.Laurel.Laurel]
-    let strataProgram ← Strata.Elab.parseStrataProgramFromDialect dialects Strata.Laurel.Laurel.name input
-
-    let uri := Strata.Uri.file path.toString
-    let transResult := Strata.Laurel.TransM.run uri (Strata.Laurel.parseProgram strataProgram)
-    match transResult with
-    | .error transErrors => exitFailure s!"Translation errors: {transErrors}"
-    | .ok _ => IO.println "Parse successful"
+    let _ ← Strata.readLaurelTextFile v[0]
+    IO.println "Parse successful"
 
 def laurelAnalyzeCommand : Command where
   name := "laurelAnalyze"
   args := [ "file" ]
   help := "Analyze a Laurel source file. Write diagnostics to stdout."
   callback := fun v _ => do
-    let path : System.FilePath := v[0]
-    let content ← IO.FS.readFile path
-    let input := Strata.Parser.stringInputContext path content
-    let dialects := Strata.Elab.LoadedDialects.ofDialects! #[Strata.initDialect, Strata.Laurel.Laurel]
-    let strataProgram ← Strata.Elab.parseStrataProgramFromDialect dialects Strata.Laurel.Laurel.name input
-
-    let uri := Strata.Uri.file path.toString
-    let transResult := Strata.Laurel.TransM.run uri (Strata.Laurel.parseProgram strataProgram)
-    match transResult with
-    | .error transErrors => exitFailure s!"Translation errors: {transErrors}"
-    | .ok laurelProgram =>
-      let (vcResultsOption, errors) ← Strata.Laurel.verifyToVcResults laurelProgram { VerifyOptions.default with solver := "z3" }
-      if !errors.isEmpty then
-        IO.println s!"==== ERRORS ===="
-      for err in errors do
-        IO.println s!"{err.message}"
-      match vcResultsOption with
-      | none => return
-      | some vcResults =>
-        IO.println s!"==== RESULTS ===="
-        for vc in vcResults do
-          IO.println s!"{vc.obligation.label}: {match vc.outcome with | .ok o => repr o | .error e => e}"
+    let laurelProgram ← Strata.readLaurelTextFile v[0]
+    let (vcResultsOption, errors) ← Strata.Laurel.verifyProgram laurelProgram { VerifyOptions.default with solver := "z3" }
+    if !errors.isEmpty then
+      IO.println s!"==== ERRORS ===="
+    for err in errors do
+      IO.println s!"{err.message}"
+    match vcResultsOption with
+    | none => return
+    | some vcResults =>
+      IO.println s!"==== RESULTS ===="
+      for vc in vcResults do
+        IO.println s!"{vc.obligation.label}: {match vc.outcome with | .ok o => repr o | .error e => e}"
 
 def laurelAnalyzeToGotoCommand : Command where
   name := "laurelAnalyzeToGoto"
@@ -1013,16 +927,8 @@ def laurelAnalyzeToGotoCommand : Command where
   callback := fun v _ => do
     let path : System.FilePath := v[0]
     let content ← IO.FS.readFile path
-    let input := Strata.Parser.stringInputContext path content
-    let dialects := Strata.Elab.LoadedDialects.ofDialects! #[Strata.initDialect, Strata.Laurel.Laurel]
-    let strataProgram ← Strata.Elab.parseStrataProgramFromDialect dialects Strata.Laurel.Laurel.name input
-
-    let uri := Strata.Uri.file path.toString
-    let transResult := Strata.Laurel.TransM.run uri (Strata.Laurel.parseProgram strataProgram)
-    match transResult with
-    | .error transErrors => exitFailure s!"Translation errors: {transErrors}"
-    | .ok laurelProgram =>
-      match Strata.Laurel.translate {} laurelProgram with
+    let laurelProgram ← Strata.parseLaurelText path content
+    match Strata.Laurel.translate {} laurelProgram with
       | (none, diags) => exitFailure s!"Core translation errors: {diags.map (·.message)}"
       | (some coreProgram, errors) =>
         let Ctx := { Lambda.LContext.default with functions := Core.Factory, knownTypes := Core.KnownTypes }
@@ -1114,7 +1020,7 @@ def laurelPrintCommand : Command where
   help := "Read Laurel Ion from stdin and print in concrete syntax to stdout."
   callback := fun _ _ => do
     let stdinBytes ← (← IO.getStdin).readBinToEnd
-    let strataFiles ← deserializeIonToLaurelFiles stdinBytes
+    let strataFiles ← Strata.readLaurelIonFiles stdinBytes
     for strataFile in strataFiles do
       IO.println s!"// File: {strataFile.filePath}"
       let p := strataFile.program
@@ -1146,18 +1052,8 @@ def laurelToCoreCommand : Command where
   args := [ "file" ]
   help := "Translate a Laurel source file to Core and print to stdout."
   callback := fun v _ => do
-    let path : System.FilePath := v[0]
-    let content ← IO.FS.readFile path
-    let input := Strata.Parser.stringInputContext path content
-    let dialects := Strata.Elab.LoadedDialects.ofDialects! #[Strata.initDialect, Strata.Laurel.Laurel]
-    let strataProgram ← Strata.Elab.parseStrataProgramFromDialect dialects Strata.Laurel.Laurel.name input
-
-    let uri := Strata.Uri.file path.toString
-    let transResult := Strata.Laurel.TransM.run uri (Strata.Laurel.parseProgram strataProgram)
-    match transResult with
-    | .error transErrors => exitFailure s!"Translation errors: {transErrors}"
-    | .ok laurelProgram =>
-      let (coreProgramOption, errors) := Strata.Laurel.translate {} laurelProgram
+    let laurelProgram ← Strata.readLaurelTextFile v[0]
+    let (coreProgramOption, errors) := Strata.Laurel.translate {} laurelProgram
       if !errors.isEmpty then
         IO.println s!"Core translation errors: {errors.map (·.message)}"
       match coreProgramOption with
@@ -1248,7 +1144,7 @@ def verifyCommand : Command where
         match ans with
         | .error e =>
           println! f!"{e.formatRange (some inputCtx.fileMap) true} {e.message}"
-          IO.Process.exit 1
+          IO.Process.exit ExitCode.userError
         | .ok _ =>
           println! f!"Program typechecked."
           return
@@ -1279,7 +1175,7 @@ def verifyCommand : Command where
           verify pgm inputCtx proceduresToVerify opts
       catch e =>
         println! f!"{e}"
-        IO.Process.exit 1
+        IO.Process.exit ExitCode.internalError
       if opts.outputSarif then
         if file.endsWith ".csimp.st" then
           println! "SARIF output is not supported for C_Simp files (.csimp.st) because location metadata is not preserved during translation to Core."
@@ -1300,13 +1196,13 @@ def verifyCommand : Command where
         let provedGoalCount := (vcResults.filter Core.VCResult.isSuccess).size
         let failedGoalCount := (vcResults.filter Core.VCResult.isNotSuccess).size
         println! f!"Finished with {provedGoalCount} goals passed, {failedGoalCount} failed."
-        IO.Process.exit 1
+        IO.Process.exit ExitCode.failuresFound
     | .error errors =>
       for e in errors do
         let msg ← e.toString
         println! s!"Error: {msg}"
       println! f!"Finished with {errors.size} errors."
-      IO.Process.exit 1
+      IO.Process.exit ExitCode.userError
 
 def commandGroups : List CommandGroup := [
   { name := "Core"

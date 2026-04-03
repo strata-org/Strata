@@ -43,8 +43,8 @@ open Strata.Parser (stringInputContext)
     assert x == 6
 "
   let diags ← processPythonFile pythonCmd (stringInputContext "test.py" program)
-  unless diags.any (·.message == "assertion does not hold") do
-    throw <| .userError s!"Expected 'assertion does not hold', got: {diags.map (·.message)}"
+  unless diags.any (·.message == "assertion could not be proved") do
+    throw <| .userError s!"Expected 'assertion could not be proved', got: {diags.map (·.message)}"
 
 -- Mix of passing and failing assertions: only failing ones produce diagnostics.
 #guard_msgs in
@@ -71,7 +71,7 @@ open Strata.Parser (stringInputContext)
     assert x == 6
 "
   let diags ← processPythonFile pythonCmd (stringInputContext "test.py" program)
-  match diags.find? (·.message == "assertion does not hold") with
+  match diags.find? (·.message == "assertion could not be proved") with
   | some d =>
     -- "assert x == 6" is on line 4
     if d.start.line ≠ 4 then
@@ -88,7 +88,7 @@ open Strata.Parser (stringInputContext)
     x: int = 5
     assert x == 5
     assert x == 6
-#   ^^^^^^^^^^^^^ error: assertion does not hold
+#   ^^^^^^^^^^^^^ error: assertion could not be proved
 "
   let inputContext := stringInputContext "AnnotatedPython" program
   let expectations := parseDiagnosticExpectations program

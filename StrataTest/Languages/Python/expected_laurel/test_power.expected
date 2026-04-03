@@ -1,16 +1,13 @@
-
-==== Verification Results ====
-assert_assert(65)_calls_Any_to_bool_0: ✅ pass (at line 4, col 4)
-assert(65): ✅ pass (at line 4, col 4)
-assert_assert(129)_calls_Any_to_bool_0: ✅ pass (at line 7, col 4)
-assert(129): ✅ pass (at line 7, col 4)
-assert_assert(234)_calls_Any_to_bool_0: ✅ pass (at line 11, col 4)
-assert(234): ✅ pass (at line 11, col 4)
-assert_assert(302)_calls_Any_to_bool_0: ✅ pass (at line 14, col 4)
-assert(302): ✅ pass (at line 14, col 4)
-assert_assert(440)_calls_Any_to_bool_0: ✅ pass (at line 18, col 4)
-Assertion failed at line 18, col 4: assert(440): ❌ fail
-ite_cond_calls_Any_to_bool_0: ✅ pass (at line 20, col 0)
-
-DETAIL: 10 passed, 1 failed, 0 inconclusive
-RESULT: Failures found
+test_power.py(4, 4): ✅ pass - assert_assert(65)_calls_Any_to_bool_0
+test_power.py(4, 4): ✅ pass - assert(65)
+test_power.py(7, 4): ✅ pass - assert_assert(129)_calls_Any_to_bool_0
+test_power.py(7, 4): ✅ pass - assert(129)
+test_power.py(11, 4): ✅ pass - assert_assert(234)_calls_Any_to_bool_0
+test_power.py(11, 4): ✅ pass - assert(234)
+test_power.py(14, 4): ✅ pass - assert_assert(302)_calls_Any_to_bool_0
+test_power.py(14, 4): ✅ pass - assert(302)
+test_power.py(18, 4): ✅ pass - assert_assert(440)_calls_Any_to_bool_0
+test_power.py(18, 4): ❓ unknown - assert(440)
+test_power.py(20, 0): ✅ pass - ite_cond_calls_Any_to_bool_0
+DETAIL: 10 passed, 0 failed, 1 inconclusive
+RESULT: Inconclusive
