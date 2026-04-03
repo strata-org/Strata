@@ -493,12 +493,12 @@ function Any_set! (dictOrList: Any, index: Any, val: Any): Any
     exception (IndexError("Index out of bound"))
 };
 
-function Any_sets (indices: ListAny, dictOrList: Any, val: Any): Any
+function Any_sets! (indices: ListAny, dictOrList: Any, val: Any): Any
 {
   if ListAny..isListAny_nil(indices) then dictOrList
   else if ListAny..isListAny_nil(ListAny..tail!(indices)) then Any_set!(dictOrList, ListAny..head!(indices), val)
   else Any_set!(dictOrList, ListAny..head!(indices),
-    Any_sets(ListAny..tail!(indices), Any_get!(dictOrList, ListAny..head!(indices)), val))
+    Any_sets!(ListAny..tail!(indices), Any_get!(dictOrList, ListAny..head!(indices)), val))
 };
 
 function PIn (v: Any, dictOrList: Any) : Any
@@ -985,9 +985,18 @@ procedure print(msg : Any) returns ();
 /--
 Parse the Laurel DDM prelude into a Laurel Program.
 -/
+
+def AnyMaybeExceptionList := ["Any_get!", "Any_set!", "Any_sets!", "PNeg", "PNot", "PAdd", "PSub", "PMul",
+   "PFloorDiv", "PLt", "PLe", "PGt", "PGe", "PPow", "PMod"]
+
 public def pythonRuntimeLaurelPart : Laurel.Program :=
   match Laurel.TransM.run (some $ .file "") (Laurel.parseProgram pythonRuntimeLaurelPartDDM) with
-  | .ok p => p
+  | .ok p =>
+    let addExceptionMd := p.staticProcedures.map (λ f =>
+      if f.name.text ∈ AnyMaybeExceptionList then
+        {f with md:= f.md.withPropertySummary "AnyMaybeExcept" }
+      else f)
+    {p with staticProcedures := addExceptionMd}
   | .error e => dbg_trace s!"SOUND BUG: Failed to parse Python runtime Laurel part: {e}"; default
 
 end Python
