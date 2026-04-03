@@ -118,14 +118,10 @@ def Core.Cmd.renameVars (frto : Map String String) (c : Imperative.Cmd Core.Expr
     let new := name_alt.getD (Core.CoreIdent.toPretty name)
     .init new ty e' (convertMetaData md)
   | .set name e md =>
-    let e' := substVarNames e frto
+    let e' := e.map (substVarNames · frto)
     let name_alt := frto.find? (Core.CoreIdent.toPretty name)
     let new := name_alt.getD (Core.CoreIdent.toPretty name)
     .set new e' (convertMetaData md)
-  | .havoc name md =>
-    let name_alt := frto.find? (Core.CoreIdent.toPretty name)
-    let new := name_alt.getD (Core.CoreIdent.toPretty name)
-    .havoc new (convertMetaData md)
   | .assume label e md =>
     let e' := substVarNames e frto
     .assume label e' (convertMetaData md)

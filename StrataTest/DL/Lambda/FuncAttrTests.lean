@@ -61,7 +61,7 @@ info: #true
 -/
 #guard_msgs in
 #eval format $
-  typeCheckAndPartialEval #[[myListTy]] #[myIsNilFunc]
+  typeCheckAndPartialEval #[[myListTy]] (.ofArray #[myIsNilFunc])
     esM[((~myIsNil #42) (~Nil : MyList))]
 
 -- Test: myIsNil(42, Cons(1, Nil)) should reduce (2nd arg is constructor)
@@ -74,7 +74,7 @@ info: #false
 -/
 #guard_msgs in
 #eval format $
-  typeCheckAndPartialEval #[[myListTy]] #[myIsNilFunc]
+  typeCheckAndPartialEval #[[myListTy]] (.ofArray #[myIsNilFunc])
     esM[((~myIsNil #42) ((~Cons #1) (~Nil : MyList)))]
 
 -- Test: myIsNil(42, xs_sym) should NOT reduce (2nd arg is not a constructor)
@@ -87,7 +87,7 @@ info: ((~myIsNil : (arrow int (arrow MyList bool))) #42 (~xs_sym : MyList))
 -/
 #guard_msgs in
 #eval format $
-  typeCheckAndPartialEval #[[myListTy]] #[myIsNilFunc, xsConst]
+  typeCheckAndPartialEval #[[myListTy]] (.ofArray #[myIsNilFunc, xsConst])
     esM[((~myIsNil #42) ~xs_sym)]
 
 end Lambda
