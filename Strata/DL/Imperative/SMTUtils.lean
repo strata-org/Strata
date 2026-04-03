@@ -36,8 +36,8 @@ private def termToString (t : Strata.SMT.Term) : String :=
   | .ok s => s
   | .error _ => repr t |>.pretty
 
-def Model.format {Ident} [ToFormat Ident] (cex : Model Ident) : Format :=
-  match cex with
+def Model.format {Ident} [ToFormat Ident] (m : Model Ident) : Format :=
+  match m with
   | [] => ""
   | [(id, v)] => f!"({id}, {termToString v})"
   | (id, v) :: rest =>
@@ -51,7 +51,7 @@ Result from an SMT solver.
 -/
 inductive Result (Ident : Type) where
   -- Also see Strata.SMT.Decision.
-  | sat (cex : Model Ident)
+  | sat (model : Model Ident)
   | unsat
   | unknown
   | err (msg : String)
@@ -318,11 +318,11 @@ instance [ToFormat (SMT.Result P.Ident)] [ToFormat (SMT.Model P.Ident)]
   : ToFormat (VCResult P) where
   format r :=
     let result_fmt := match r.result with
-      | .sat cex  =>
-        if cex.isEmpty then
+      | .sat model  =>
+        if model.isEmpty then
           f!"failed\nNo model available."
         else
-          f!"failed\nModel: {cex}"
+          f!"failed\nModel: {model}"
       | .unsat => f!"verified"
       | .unknown => f!"unknown"
       | .err msg => f!"err {msg}"

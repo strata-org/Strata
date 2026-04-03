@@ -644,7 +644,7 @@ def getObligationResult (assumptionTerms : List Term) (obligationTerm : Term)
     -- Mask SMT results based on requested checks
     let outcome := maskOutcome (VCOutcome.mk satResult validityResult) satisfiabilityCheck validityCheck
     -- Extract model from sat results
-    let cex := match satResult, validityResult with
+    let model := match satResult, validityResult with
       | .sat m, _ => convertModel m (SMT.Context.getConstructorNames ctx)
       | _, .sat m => convertModel m (SMT.Context.getConstructorNames ctx)
       | _, _ => []
@@ -654,7 +654,7 @@ def getObligationResult (assumptionTerms : List Term) (obligationTerm : Term)
                     verbose := options.verbose,
                     checkLevel := options.checkLevel,
                     checkMode := options.checkMode,
-                    lexprModel := cex }
+                    lexprModel := model }
     return result
 
 def verifySingleEnv (pE : Program × Env) (options : VerifyOptions)
