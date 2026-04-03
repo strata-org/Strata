@@ -105,14 +105,15 @@ Result: ❓ unknown
 function s () : Sequence int;
 procedure P () returns ()
 {
+  var $__dedup_0 : α := Sequence.length(Sequence.build(Sequence.build(Sequence.build(s, 10), 20), 30));
   var t : (Sequence int);
   t := Sequence.build(Sequence.build(Sequence.build(s, 10), 20), 30);
   assume [s_empty]: Sequence.length(s) == 0;
-  assert [t_length]: Sequence.length(Sequence.build(Sequence.build(Sequence.build(s, 10), 20), 30)) == 3;
+  assert [t_length]: $__dedup_0 == 3;
   assert [t_0]: Sequence.select(Sequence.build(Sequence.build(Sequence.build(s, 10), 20), 30), 0) == 10;
   assert [t_1]: Sequence.select(Sequence.build(Sequence.build(Sequence.build(s, 10), 20), 30), 1) == 20;
   assert [t_2]: Sequence.select(Sequence.build(Sequence.build(Sequence.build(s, 10), 20), 30), 2) == 30;
-  assert [t_length_wrong]: Sequence.length(Sequence.build(Sequence.build(Sequence.build(s, 10), 20), 30)) == 0;
+  assert [t_length_wrong]: $__dedup_0 == 0;
   };
 
 ---
@@ -285,27 +286,31 @@ Result: ❓ unknown
 function s () : Sequence int;
 procedure SeqOps () returns ()
 {
+  var $__dedup_0 : α := Sequence.append(Sequence.build(Sequence.build(Sequence.build(s, 10), 20), 30), Sequence.build(Sequence.build(s, 40), 50));
+  var $__dedup_1 : α := Sequence.update(Sequence.build(Sequence.build(Sequence.build(s, 10), 20), 30), 1, 99);
+  var $__dedup_2 : α := Sequence.drop(Sequence.build(Sequence.build(Sequence.build(s, 10), 20), 30), 1);
+  var $__dedup_3 : α := Sequence.take(Sequence.build(Sequence.build(Sequence.build(s, 10), 20), 30), 2);
   var t : (Sequence int);
   var u : (Sequence int);
   var v : (Sequence int);
   t := Sequence.build(Sequence.build(Sequence.build(s, 10), 20), 30);
   assume [s_empty]: Sequence.length(s) == 0;
   u := Sequence.build(Sequence.build(s, 40), 50);
-  v := Sequence.append(Sequence.build(Sequence.build(Sequence.build(s, 10), 20), 30), Sequence.build(Sequence.build(s, 40), 50));
-  assert [append_length]: Sequence.length(Sequence.append(Sequence.build(Sequence.build(Sequence.build(s, 10), 20), 30), Sequence.build(Sequence.build(s, 40), 50))) == 5;
-  assert [append_elem_0]: Sequence.select(Sequence.append(Sequence.build(Sequence.build(Sequence.build(s, 10), 20), 30), Sequence.build(Sequence.build(s, 40), 50)), 0) == 10;
-  assert [append_elem_4]: Sequence.select(Sequence.append(Sequence.build(Sequence.build(Sequence.build(s, 10), 20), 30), Sequence.build(Sequence.build(s, 40), 50)), 4) == 50;
-  u := Sequence.update(Sequence.build(Sequence.build(Sequence.build(s, 10), 20), 30), 1, 99);
-  assert [update_length]: Sequence.length(Sequence.update(Sequence.build(Sequence.build(Sequence.build(s, 10), 20), 30), 1, 99)) == 3;
-  assert [update_same]: Sequence.select(Sequence.update(Sequence.build(Sequence.build(Sequence.build(s, 10), 20), 30), 1, 99), 1) == 99;
-  assert [update_other]: Sequence.select(Sequence.update(Sequence.build(Sequence.build(Sequence.build(s, 10), 20), 30), 1, 99), 0) == 10;
+  v := $__dedup_0;
+  assert [append_length]: Sequence.length($__dedup_0) == 5;
+  assert [append_elem_0]: Sequence.select($__dedup_0, 0) == 10;
+  assert [append_elem_4]: Sequence.select($__dedup_0, 4) == 50;
+  u := $__dedup_1;
+  assert [update_length]: Sequence.length($__dedup_1) == 3;
+  assert [update_same]: Sequence.select($__dedup_1, 1) == 99;
+  assert [update_other]: Sequence.select($__dedup_1, 0) == 10;
   assert [contains_yes]: Sequence.contains(Sequence.build(Sequence.build(Sequence.build(s, 10), 20), 30), 20);
-  u := Sequence.take(Sequence.build(Sequence.build(Sequence.build(s, 10), 20), 30), 2);
-  assert [take_length]: Sequence.length(Sequence.take(Sequence.build(Sequence.build(Sequence.build(s, 10), 20), 30), 2)) == 2;
-  assert [take_elem]: Sequence.select(Sequence.take(Sequence.build(Sequence.build(Sequence.build(s, 10), 20), 30), 2), 0) == 10;
-  u := Sequence.drop(Sequence.build(Sequence.build(Sequence.build(s, 10), 20), 30), 1);
-  assert [drop_length]: Sequence.length(Sequence.drop(Sequence.build(Sequence.build(Sequence.build(s, 10), 20), 30), 1)) == 2;
-  assert [drop_elem]: Sequence.select(Sequence.drop(Sequence.build(Sequence.build(Sequence.build(s, 10), 20), 30), 1), 0) == 20;
+  u := $__dedup_3;
+  assert [take_length]: Sequence.length($__dedup_3) == 2;
+  assert [take_elem]: Sequence.select($__dedup_3, 0) == 10;
+  u := $__dedup_2;
+  assert [drop_length]: Sequence.length($__dedup_2) == 2;
+  assert [drop_elem]: Sequence.select($__dedup_2, 0) == 20;
   };
 
 ---
