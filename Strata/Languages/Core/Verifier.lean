@@ -643,10 +643,10 @@ def getObligationResult (assumptionTerms : List Term) (obligationTerm : Term)
   | .ok (satResult, validityResult, estate) =>
     -- Mask SMT results based on requested checks
     let outcome := maskOutcome (VCOutcome.mk satResult validityResult) satisfiabilityCheck validityCheck
-    -- Extract counterexample model from sat results
+    -- Extract model from sat results
     let cex := match satResult, validityResult with
-      | .sat m, _ => convertCounterEx m (SMT.Context.getConstructorNames ctx)
-      | _, .sat m => convertCounterEx m (SMT.Context.getConstructorNames ctx)
+      | .sat m, _ => convertModel m (SMT.Context.getConstructorNames ctx)
+      | _, .sat m => convertModel m (SMT.Context.getConstructorNames ctx)
       | _, _ => []
     let result := { obligation,
                     outcome := .ok outcome,

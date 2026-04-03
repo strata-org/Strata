@@ -7,16 +7,16 @@
 import Strata.Languages.Core.Verifier
 
 /-!
-# Counterexample Lifting Tests (SMT → LExpr)
+# Model Lifting Tests (SMT → LExpr)
 
-Tests that counterexamples returned by the SMT solver are correctly
+Tests that models returned by the SMT solver are correctly
 converted from `SMT.Term` to Core `LExpr` via `smtTermToLExpr` /
-`convertCounterEx`.  Each test defines a Strata Core program with a
+`convertModel`.  Each test defines a Strata Core program with a
 deliberately failing assertion, runs `verify`, and checks the
 `VCResult.lexprModel` field via `#guard_msgs` or `#eval` assertions.
 -/
 
-namespace Strata.CounterExampleLiftTest
+namespace Strata.ModelLiftTest
 open Core Lambda
 
 ---------------------------------------------------------------------
@@ -44,7 +44,7 @@ Model:
 #guard_msgs in
 #eval verify intCexPgm (options := .models)
 
--- The counterexample value is an intConst
+-- The model value is an intConst
 /-- info: failures=1 all_int=true -/
 #guard_msgs in
 #eval do
@@ -189,4 +189,4 @@ Model:
 #guard_msgs in
 #eval verify quantCexPgm (options := .models)
 
-end Strata.CounterExampleLiftTest
+end Strata.ModelLiftTest
