@@ -821,7 +821,8 @@ def verify (program : Program)
     pure (if options.removeIrrelevantAxioms == .Off then .none
           else .some (IrrelevantAxioms.Cache.build finalProgram))
   -- Eliminate loops as a separate phase before partial evaluation.
-  let finalProgram := loopElim finalProgram
+  let finalProgram ← profileStep profile "  Loop elimination" do
+    pure (loopElim finalProgram)
   let pEs ← profileStep profile "  Type check and partial eval" do
     match Core.typeCheckAndPartialEval options finalProgram moreFns with
     | .error err =>
