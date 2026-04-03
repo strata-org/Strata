@@ -213,19 +213,26 @@ protected def eqNoAnn {α β} : TypeExprF α → TypeExprF β → Bool
 | .tvar _ n1, .tvar _ n2 => n1 == n2
 | .bvar _ i, .bvar _ j => i == j
 | .ident _ n1 a1, .ident _ n2 a2 =>
-  n1 == n2 && a1.size == a2.size &&
-    (a1.attach.zip a2.attach).all fun (⟨x, _⟩, ⟨y, _⟩) => x.eqNoAnn y
+  if h : n1 = n2 ∧ a1.size = a2.size then
+    a1.size.all fun i p =>
+      TypeExprF.eqNoAnn a1[i] a2[i]
+  else
+    false
 | .fvar _ i1 a1, .fvar _ i2 a2 =>
-  i1 == i2 && a1.size == a2.size &&
-    (a1.attach.zip a2.attach).all fun (⟨x, _⟩, ⟨y, _⟩) => x.eqNoAnn y
-| .arrow _ a1 r1, .arrow _ a2 r2 => a1.eqNoAnn a2 && r1.eqNoAnn r2
+  if h : i1 = i2 ∧ a1.size = a2.size then
+    a1.size.all fun i p =>
+      TypeExprF.eqNoAnn a1[i] a2[i]
+  else
+    false
+| .arrow _ a1 r1, .arrow _ a2 r2 =>
+  a1.eqNoAnn a2 && r1.eqNoAnn r2
 | _, _ => false
 termination_by a => a
 
 /-- First-order pattern matching of a type with tvars (pattern) against a
     concrete type (target). Produces a consistent tvar substitution.
     Returns the updated substitution on success, or `none` on structural mismatch. -/
-partial def matchTVars {α}
+protected def matchTVars {α}
     (pattern target : TypeExprF α)
     (subst : Array (String × TypeExprF α))
     : Option (Array (String × TypeExprF α)) :=
@@ -237,16 +244,18 @@ partial def matchTVars {α}
   | .ident _ n1 args1 =>
     match target with
     | .ident _ n2 args2 =>
-      if n1 == n2 && args1.size == args2.size then
-        matchTVarVec args1 args2 subst
+      if h : n1 = n2 ∧ args1.size = args2.size then
+        args1.size.foldM (fun i p s =>
+          (args1[i]).matchTVars (args2[i]) s) subst
       else none
     | .tvar _ _ => some subst  -- target is tvar: can't learn, pass through
     | _ => none
   | .fvar _ idx1 args1 =>
     match target with
     | .fvar _ idx2 args2 =>
-      if idx1 == idx2 && args1.size == args2.size then
-        matchTVarVec args1 args2 subst
+      if h : idx1 = idx2 ∧ args1.size = args2.size then
+        args1.size.foldM (fun i p s =>
+          (args1[i]).matchTVars (args2[i]) s) subst
       else none
     | .tvar _ _ => some subst
     | _ => none
@@ -262,18 +271,7 @@ partial def matchTVars {α}
     | .bvar _ j => if i == j then some subst else none
     | .tvar _ _ => some subst
     | _ => none
-where
-  matchTVarVec {α}
-      (pats targets : Array (TypeExprF α))
-      (subst : Array (String × TypeExprF α))
-      : Option (Array (String × TypeExprF α)) := do
-    guard (pats.size == targets.size)
-    let mut s := subst
-    for i in [:pats.size] do
-      let some p := pats[i]? | none
-      let some t := targets[i]? | none
-      s ← p.matchTVars t s
-    pure s
+termination_by pattern
 
 end TypeExprF
 
