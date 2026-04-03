@@ -1,11 +1,11 @@
 test_class_with_methods.py(18, 4): ✅ pass - callElimAssert_requires_11
 test_class_with_methods.py(23, 4): ✅ pass - assert_assert(459)_calls_Any_to_bool_0
-test_class_with_methods.py(23, 4): ❌ fail - assert(459)
+test_class_with_methods.py(23, 4): ❓ unknown - assert(459)
 test_class_with_methods.py(26, 4): ✅ pass - assert_assert(544)_calls_Any_to_bool_0
 test_class_with_methods.py(26, 4): ❓ unknown - assert(544)
 test_class_with_methods.py(28, 4): ✅ pass - callElimAssert_requires_0_4
 test_class_with_methods.py(28, 4): ✅ pass - callElimAssert_requires_1_5
 test_class_with_methods.py(28, 4): ✅ pass - callElimAssert_requires_2_6
 test_class_with_methods.py(30, 0): ✅ pass - ite_cond_calls_Any_to_bool_0
-DETAIL: 7 passed, 1 failed, 1 inconclusive
-RESULT: Failures found
+DETAIL: 7 passed, 0 failed, 2 inconclusive
+RESULT: Inconclusive

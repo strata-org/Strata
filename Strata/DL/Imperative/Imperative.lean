@@ -14,8 +14,8 @@ public import Strata.DL.Imperative.CmdType
 public import Strata.DL.Imperative.CmdSemantics
 public import Strata.DL.Imperative.StmtSemanticsSmallStep
 
-public import Strata.DL.Imperative.NondetStmt
-public import Strata.DL.Imperative.NondetStmtSemantics
+public import Strata.DL.Imperative.KleeneStmt
+public import Strata.DL.Imperative.KleeneStmtSemantics
 
 public import Strata.DL.Imperative.SemanticsProps
 

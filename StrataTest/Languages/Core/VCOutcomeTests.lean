@@ -96,7 +96,7 @@ Sat:sat|Val:sat 🔶 can be both true and false and is reachable from declaratio
 
 /--
 info:  isPass isAlwaysTrue
-Sat:unsat|Val:unsat ✅ pass (❗path unreachable), Unreachable: path condition is contradictory, SARIF: Deductive level: warning, BugFinding level: warning
+Sat:unsat|Val:unsat ✅ pass (❗path unreachable), Unreachable: path condition is contradictory, SARIF: Deductive level: warning, BugFinding level: error
 -/
 #guard_msgs in
 #eval testOutcome (mkOutcome .unsat .unsat) .unreachable
@@ -138,10 +138,10 @@ Sat:unknown|Val:unknown ❓ unknown, Unknown (solver timeout or incomplete), SAR
 
 /-! ### bugFindingAssumingCompleteSpec mode: (sat, sat) is error -/
 
-#guard outcomeToLevel .bugFindingAssumingCompleteSpec .assert (VCOutcome.mk (.sat []) (.sat [])) = Strata.Sarif.Level.error
-#guard outcomeToLevel .bugFinding .assert (VCOutcome.mk (.sat []) (.sat [])) = Strata.Sarif.Level.note
-#guard outcomeToLevel .bugFindingAssumingCompleteSpec .assert (VCOutcome.mk (.sat []) .unsat) = Strata.Sarif.Level.none
-#guard outcomeToLevel .bugFindingAssumingCompleteSpec .assert (VCOutcome.mk .unknown (.sat [])) = Strata.Sarif.Level.error
+#guard outcomeToLevel .bugFindingAssumingCompleteSpec .assert (mkOutcome (.sat []) (.sat [])) = Strata.Sarif.Level.error
+#guard outcomeToLevel .bugFinding .assert (mkOutcome (.sat []) (.sat [])) = Strata.Sarif.Level.note
+#guard outcomeToLevel .bugFindingAssumingCompleteSpec .assert (mkOutcome (.sat []) .unsat) = Strata.Sarif.Level.none
+#guard outcomeToLevel .bugFindingAssumingCompleteSpec .assert (mkOutcome .unknown (.sat [])) = Strata.Sarif.Level.error
 
 /-! ### Outcome table verification -/
 
@@ -162,7 +162,7 @@ info: === Outcome Table (assert) ===
 ✅ always true and is reachable from declaration entry | Deductive: none | BugFinding: none | BugFinding+Complete: none | Cover: ✅ satisfiable and reachable from declaration entry
 ❌ always false and is reachable from declaration entry | Deductive: error | BugFinding: error | BugFinding+Complete: error
 🔶 can be both true and false and is reachable from declaration entry | Deductive: error | BugFinding: note | BugFinding+Complete: error | Cover: ✅ satisfiable and reachable from declaration entry
-✅ pass (❗path unreachable) | Deductive: warning | BugFinding: warning | BugFinding+Complete: warning | Cover: ❌ fail (❗path unreachable)
+✅ pass (❗path unreachable) | Deductive: warning | BugFinding: error | BugFinding+Complete: error | Cover: ❌ fail (❗path unreachable)
 ➕ can be true and is reachable from declaration entry | Deductive: error | BugFinding: note | BugFinding+Complete: note | Cover: ✅ satisfiable and reachable from declaration entry
 ✖️ always false if reached | Deductive: error | BugFinding: error | BugFinding+Complete: error
 ➖ can be false and is reachable from declaration entry | Deductive: error | BugFinding: note | BugFinding+Complete: error
@@ -181,5 +181,103 @@ info: === Outcome Table (assert) ===
   printOutcomeRow (Imperative.SMT.Result.unknown (Ident := Core.Expression.Ident)) (.sat [])
   printOutcomeRow (Imperative.SMT.Result.unknown (Ident := Core.Expression.Ident)) .unsat
   printOutcomeRow (Imperative.SMT.Result.unknown (Ident := Core.Expression.Ident)) (Imperative.SMT.Result.unknown (Ident := Core.Expression.Ident))
+
+/-! ### AbstractedPhase and ModelValidation tests -/
+
+private def preservingPhase : AbstractedPhase :=
+  { name := "Preserving" }
+
+private def rejectingPhase : AbstractedPhase :=
+  { name := "Rejecting", getValidation := fun _ => .modelToValidate (fun _ => false) }
+
+private def acceptingPhase : AbstractedPhase :=
+  { name := "Accepting", getValidation := fun _ => .modelToValidate (fun _ => true) }
+
+private def needsValidation (phases : List AbstractedPhase)
+    (obligation : Imperative.ProofObligation Core.Expression) : Bool :=
+  phases.any fun p => match p.getValidation obligation with
+    | .modelToValidate _ => true
+    | .modelPreserving => false
+
+private def satResult : Result := .sat []
+private def unsatResult : Result := .unsat
+private def unknownResult : Result := .unknown (some [])
+
+/-- A dummy obligation for testing phase validation. -/
+private def dummyObligation : Imperative.ProofObligation Core.Expression :=
+  { label := "test", property := .assert, assumptions := [], obligation := .true (), metadata := {} }
+
+/-- info: false -/
+#guard_msgs in #eval needsValidation [preservingPhase] dummyObligation
+
+/-- info: true -/
+#guard_msgs in #eval needsValidation [rejectingPhase] dummyObligation
+
+/-- info: true -/
+#guard_msgs in #eval needsValidation [preservingPhase, rejectingPhase] dummyObligation
+
+-- adjustForPhases: sat stays sat with ModelPreserving
+#guard (satResult.adjustForPhases [preservingPhase] dummyObligation).1 == satResult
+#guard (satResult.adjustForPhases [preservingPhase] dummyObligation).2 == [{ phase := "Preserving", result := satResult }]
+
+-- adjustForPhases: sat becomes unknown with rejecting validator
+#guard (satResult.adjustForPhases [rejectingPhase] dummyObligation).1 == unknownResult
+#guard (satResult.adjustForPhases [rejectingPhase] dummyObligation).2 == [{ phase := "Rejecting", result := unknownResult }]
+
+-- adjustForPhases: sat stays sat with accepting validator
+#guard (satResult.adjustForPhases [acceptingPhase] dummyObligation).1 == satResult
+#guard (satResult.adjustForPhases [acceptingPhase] dummyObligation).2 == [{ phase := "Accepting", result := satResult }]
+
+-- adjustForPhases: sat becomes unknown when any phase rejects
+#guard (satResult.adjustForPhases [preservingPhase, rejectingPhase] dummyObligation).1 == unknownResult
+#guard (satResult.adjustForPhases [preservingPhase, rejectingPhase] dummyObligation).2 ==
+  [{ phase := "Rejecting", result := unknownResult }, { phase := "Preserving", result := unknownResult }]
+
+-- adjustForPhases: unsat is unchanged regardless of phases
+#guard (unsatResult.adjustForPhases [rejectingPhase] dummyObligation).1 == unsatResult
+#guard (unsatResult.adjustForPhases [rejectingPhase] dummyObligation).2 == []
+
+-- adjustForPhases: unknown stays unknown with rejecting validator, but produces log
+#guard (unknownResult.adjustForPhases [rejectingPhase] dummyObligation).1 == unknownResult
+#guard (unknownResult.adjustForPhases [rejectingPhase] dummyObligation).2 == [{ phase := "Rejecting", result := unknownResult }]
+
+-- adjustForPhases: unknown promoted to sat with accepting validator
+#guard (unknownResult.adjustForPhases [acceptingPhase] dummyObligation).1 == satResult
+#guard (unknownResult.adjustForPhases [acceptingPhase] dummyObligation).2 == [{ phase := "Accepting", result := satResult }]
+
+-- adjustForPhases: unknown stays unknown with preserving phase (no validator)
+#guard (unknownResult.adjustForPhases [preservingPhase] dummyObligation).1 == unknownResult
+#guard (unknownResult.adjustForPhases [preservingPhase] dummyObligation).2 == [{ phase := "Preserving", result := unknownResult }]
+
+-- adjustForPhases: empty phases list preserves sat
+#guard (satResult.adjustForPhases [] dummyObligation).1 == satResult
+#guard (satResult.adjustForPhases [] dummyObligation).2 == []
+
+/-! ### Combined and front-end phase validation tests -/
+
+/-- Obligation with call-elimination labels in path conditions. -/
+private def callElimObligation : Imperative.ProofObligation Core.Expression :=
+  { label := "test_callElim", property := .assert,
+    assumptions := [[("callElimAssume_post", .true ())]],
+    obligation := .true (), metadata := {} }
+
+/-- Obligation with no abstraction labels — models are sound. -/
+private def cleanObligation : Imperative.ProofObligation Core.Expression :=
+  { label := "test_clean", property := .assert,
+    assumptions := [[("precond_x_positive", .true ())]],
+    obligation := .true (), metadata := {} }
+
+-- Combined Core phases: clean obligation preserves sat
+#guard (satResult.adjustForPhases [callElimPipelinePhase.phase, loopElimPipelinePhase.phase] cleanObligation).1 == satResult
+
+-- Combined Core phases: call-elim obligation becomes unknown
+#guard (satResult.adjustForPhases [callElimPipelinePhase.phase, loopElimPipelinePhase.phase] callElimObligation).1 == unknownResult
+
+-- frontEndPhase: always rejects sat regardless of obligation
+#guard (satResult.adjustForPhases [Strata.frontEndPhase] cleanObligation).1 == unknownResult
+#guard (satResult.adjustForPhases [Strata.frontEndPhase] callElimObligation).1 == unknownResult
+
+-- frontEndPhase: unsat is unchanged
+#guard (unsatResult.adjustForPhases [Strata.frontEndPhase] cleanObligation).1 == unsatResult
 
 end Core
