@@ -45,6 +45,10 @@ function OptString_len (o : (Option string)) : int {
 -- Test 2: Incorrect polymorphic instantiation caught by type checking
 ---------------------------------------------------------------------
 
+/--
+error: Encountered int expression when string expected.
+-/
+#guard_msgs in
 def polyUnifBadPgm : Program :=
 #strata
 program Core;
@@ -58,12 +62,5 @@ function BadFunc (o: Option(int)) : int {
 }
 
 #end
-
-/--
-info: error: (1277-1350) Impossible to unify (arrow string int) with (arrow int $__ty4).
-First mismatch: string with int.
--/
-#guard_msgs in
-#eval Core.typeCheck .quiet (TransM.run Inhabited.default (translateProgram polyUnifBadPgm)).fst
 
 end Strata.PolyUnifTest
