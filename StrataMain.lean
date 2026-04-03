@@ -1091,6 +1091,7 @@ def verifyCommand : Command where
     { name := "parse-only", help := "Exit after DDM parsing and type checking." },
     { name := "stop-on-first-error", help := "Exit after the first verification error." },
     { name := "unique-bound-names", help := "Use globally unique names for quantifier-bound variables." },
+    { name := "deduplicate", help := "Extract common subexpressions into var declarations after partial evaluation." },
     { name := "sarif", help := "Output results in SARIF format to <file>.sarif." },
     { name := "output-format", help := "Output format (only 'sarif' supported).", takesArg := .arg "format" },
     { name := "vc-directory", help := "Store VCs in SMT-Lib format in <dir>.", takesArg := .arg "dir" },
@@ -1107,6 +1108,7 @@ def verifyCommand : Command where
     let parseOnly := pflags.getBool "parse-only"
     let stopOnFirstError := pflags.getBool "stop-on-first-error"
     let uniqueBoundNames := pflags.getBool "unique-bound-names"
+    let deduplicateExprs := pflags.getBool "deduplicate"
     let outputSarif := pflags.getBool "sarif" || pflags.getString "output-format" == some "sarif"
     let checkMode ← parseCheckMode pflags
     let checkLevel ← parseCheckLevel pflags
@@ -1120,6 +1122,7 @@ def verifyCommand : Command where
       { VerifyOptions.default with
         verbose := if verbose then .normal else .quiet,
         checkOnly, typeCheckOnly, parseOnly, stopOnFirstError, uniqueBoundNames,
+        deduplicateExprs,
         outputSarif, checkMode, checkLevel, solverTimeout,
         vcDirectory := pflags.getString "vc-directory",
         solver := pflags.getString "solver" |>.getD Core.defaultSolver }
