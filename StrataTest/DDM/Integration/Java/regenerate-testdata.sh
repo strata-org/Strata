@@ -6,12 +6,12 @@ cd "$(dirname "$0")"
 STRATA_ROOT="$(cd ../../../.. && pwd)"
 TESTDATA="testdata"
 GEN_DIR="testdata/generated"
-JAR="testdata/ion-java-1.11.9.jar"
+JAR="testdata/ion-java-1.11.11.jar"
 
 # Download ion-java if needed
 if [ ! -f "$JAR" ]; then
   echo "=== Downloading ion-java ==="
-  curl -sLO --output-dir testdata "https://repo1.maven.org/maven2/com/amazon/ion/ion-java/1.11.9/ion-java-1.11.9.jar"
+  curl -sLo "$JAR" "https://github.com/amazon-ion/ion-java/releases/download/v1.11.11/ion-java-1.11.11.jar"
 fi
 
 echo "=== Generating Java classes from dialect ==="

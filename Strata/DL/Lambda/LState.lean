@@ -43,7 +43,7 @@ instance : ToFormat (EvalConfig T) where
     f!"Variable Prefix: {c.varPrefix}" ++ Format.line ++
     f!"Variable gen count: {c.gen}" ++ Format.line ++
     f!"Factory Functions:" ++ Format.line ++
-    Std.Format.joinSep c.factory.toList f!"{Format.line}"
+    Std.Format.joinSep c.factory.toArray.toList f!"{Format.line}"
 
 def EvalConfig.init : EvalConfig T :=
   { factory := @Factory.default T,
@@ -91,7 +91,7 @@ Add function `func` to the existing factory of functions in `σ`. Redefinitions
 are not allowed.
 -/
 def LState.addFactoryFunc (σ : LState T) (func : (LFunc T)) : Except DiagnosticModel (LState T) := do
-  let F ← σ.config.factory.addFactoryFunc func
+  let F ← σ.config.factory.tryPush func
   .ok { σ with config := { σ.config with factory := F }}
 
 /--

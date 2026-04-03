@@ -10,6 +10,7 @@ public import Strata.DL.Lambda.Preconditions
 public import Strata.DL.Lambda.TypeFactory
 public import Strata.Languages.Core.PipelinePhase
 import all Strata.DL.Imperative.Stmt
+import Strata.Util.DecideProp
 
 /-! # Partial Function Precondition Elimination
 
@@ -265,7 +266,10 @@ def transformStmt (s : Statement)
     let funcName := decl.name.name
     -- Add function to factory before processing its preconditions/body
     let func ← liftDiag ((Function.ofPureFunc decl).mapError DiagnosticModel.fromFormat)
-    let F' := F.push func
+
+    let .isFalse notMem := Strata.decideProp (func.name.name ∈ F)
+      | throw s!"{func.name.name} already in factory."
+    let F' := F.push func notMem
     setFactory F'
     let decl' := { decl with preconditions := [] }
     let hasPreconds := !decl.preconditions.isEmpty
@@ -316,7 +320,9 @@ where
         | none => return (changed || changed', procDecl :: rest')
       | .func func md => do
         let F ← getFactory
-        let F' := F.push func
+        let .isFalse notMem := Strata.decideProp (func.name.name ∈ F)
+          | throw s!"{func.name.name} already in factory."
+        let F' := F.push func notMem
         setFactory F'
         let func' := { func with preconditions := [] }
         let funcDecl := Decl.func func' md
@@ -327,7 +333,10 @@ where
         | none => return (changed || hasPreconds, funcDecl :: rest')
       | .recFuncBlock funcs md => do
         let F ← getFactory
-        let F' := funcs.foldl (fun F func => F.push func) F
+        let F' ← funcs.foldlM (init := F) fun F func =>  do
+          let .isFalse notMem := Strata.decideProp (func.name.name ∈ F)
+            | throw s!"{func.name.name} already in factory."
+          pure <| F.push func notMem
         setFactory F'
         let funcs' := funcs.map ({ · with preconditions := [] })
         let funcDecl := Decl.recFuncBlock funcs' md

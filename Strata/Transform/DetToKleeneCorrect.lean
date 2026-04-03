@@ -97,10 +97,10 @@ private theorem ite_transform_some_det
   simp [StmtToKleeneStmt] at ht
   match h1 : BlockToKleeneStmt tss, h2 : BlockToKleeneStmt ess with
   | some t, some e =>
-    simp [h1, h2, bind, Option.bind] at ht
+    simp [h1, h2, Option.bind] at ht
     exact ⟨t, e, rfl, rfl, ht.symm⟩
-  | some _, none => simp [h1, h2, bind, Option.bind] at ht
-  | none, _ => simp [h1, bind, Option.bind] at ht
+  | some _, none => simp [h1, h2, Option.bind] at ht
+  | none, _ => simp [h1, Option.bind] at ht
 
 omit [HasFvar P] [HasVal P] [HasBoolVal P] in
 private theorem ite_transform_some_nondet
@@ -112,10 +112,10 @@ private theorem ite_transform_some_nondet
   simp [StmtToKleeneStmt] at ht
   match h1 : BlockToKleeneStmt tss, h2 : BlockToKleeneStmt ess with
   | some t, some e =>
-    simp [h1, h2, bind, Option.bind] at ht
+    simp [h1, h2, Option.bind] at ht
     exact ⟨t, e, rfl, rfl, ht.symm⟩
-  | some _, none => simp [h1, h2, bind, Option.bind] at ht
-  | none, _ => simp [h1, bind, Option.bind] at ht
+  | some _, none => simp [h1, h2, Option.bind] at ht
+  | none, _ => simp [h1, Option.bind] at ht
 
 omit [HasFvar P] [HasVal P] [HasBoolVal P] in
 private theorem loop_transform_some_det
@@ -394,7 +394,7 @@ private def loop_sim_kleene
     .step _ _ _ .step_loop_zero (.refl _)
   | .step _ _ _ (.step_loop_nondet_exit) (.step _ _ _ h _) => nomatch h
   | .step _ _ _ (.step_loop_nondet_enter) hrest =>
-    let ⟨ρ₁, hbody, hloop_stmtT, hlen_loop⟩ :=
+    let ⟨ρ₁, hbody, hloop_stmtT, _hlen_loop⟩ :=
       stmtsT_append_terminal extendEval body (.loop .nondet m inv body md) ρ₀ ρ' hrest hcov
     let kleene_body := sim_body ρ₀ ρ₁ hwfb hwfv hbody
     have heval_eq : ρ₁.eval = ρ₀.eval :=

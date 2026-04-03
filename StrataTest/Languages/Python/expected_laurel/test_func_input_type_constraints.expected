@@ -1,0 +1,16 @@
+unknown location: ✅ pass - (Mul ensures) Return type constraint
+test_func_input_type_constraints.py(7, 4): ✅ pass - ite_cond_calls_Any_to_bool_0
+unknown location: ✅ pass - (Sum ensures) Return type constraint
+unknown location: ✅ pass - (Sum ensures) Return type constraint
+unknown location: ❓ unknown - set_LaurelResult_calls_Any_get_0
+unknown location: ❓ unknown - set_LaurelResult_calls_Any_get_1
+unknown location: ❓ unknown - (List_Dict_index ensures) Return type constraint
+test_func_input_type_constraints.py(15, 0): ✅ pass - callElimAssert_requires_0_17
+test_func_input_type_constraints.py(15, 0): ✅ pass - callElimAssert_requires_1_18
+test_func_input_type_constraints.py(16, 0): ✅ pass - callElimAssert_requires_0_11
+test_func_input_type_constraints.py(16, 0): ✅ pass - callElimAssert_requires_1_12
+test_func_input_type_constraints.py(17, 0): ✅ pass - callElimAssert_requires_0_4
+test_func_input_type_constraints.py(17, 0): ✅ pass - callElimAssert_requires_1_5
+test_func_input_type_constraints.py(17, 0): ✅ pass - callElimAssert_requires_2_6
+DETAIL: 11 passed, 0 failed, 3 inconclusive
+RESULT: Inconclusive
