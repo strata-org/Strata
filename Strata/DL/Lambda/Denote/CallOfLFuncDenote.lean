@@ -28,23 +28,28 @@ theorem applyArgs_cast_eq
 
 /-! ## `OpsConsistent` — every `.op` annotation is a valid instantiation -/
 
-/-- Every `.op` annotation in `e` is a valid instantiation of the corresponding
-factory function's polymorphic type. -/
-def OpsConsistent (F : @Factory T) : LExpr T.mono → Prop
-  | .op _ name (some ty_op) =>
-    match F.getFactoryLFunc name.name with
-    | some fn => ∃ σ : Map TyIdentifier LMonoTy,
-        ty_op = LMonoTy.substMap σ (LMonoTy.mkArrow' fn.output (fn.inputs.map Prod.snd))
-    | none => True
-  | .op _ _ none => True
-  | .const _ _ => True
-  | .bvar _ _ => True
-  | .fvar _ _ _ => True
-  | .app _ fn arg => OpsConsistent F fn ∧ OpsConsistent F arg
-  | .abs _ _ _ body => OpsConsistent F body
-  | .ite _ c t e => OpsConsistent F c ∧ OpsConsistent F t ∧ OpsConsistent F e
-  | .eq _ e1 e2 => OpsConsistent F e1 ∧ OpsConsistent F e2
-  | .quant _ _ _ _ tr body => OpsConsistent F tr ∧ OpsConsistent F body
+/-- Every call in `e` has a valid type substitution derivable by `computeTypeSubst`,
+and the `.op` annotation is consistent with that substitution applied to the
+function's generic type. -/
+def OpsConsistent (F : @Factory T) : LExpr T.mono → Prop := fun e =>
+  (match F.callOfLFunc e with
+   | some (callee, args, fn) =>
+       match LFunc.computeTypeSubst fn callee args with
+       | some tySubst =>
+           match callee with
+           | .op _ _ (some ty_op) =>
+               ty_op = (LMonoTy.mkArrow' fn.output (fn.inputs.map Prod.snd)).subst tySubst
+           | _ => False
+       | none => False
+   | none => True)
+  ∧
+  (match e with
+   | .app _ fn arg => OpsConsistent F fn ∧ OpsConsistent F arg
+   | .abs _ _ _ body => OpsConsistent F body
+   | .ite _ c t f => OpsConsistent F c ∧ OpsConsistent F t ∧ OpsConsistent F f
+   | .eq _ e1 e2 => OpsConsistent F e1 ∧ OpsConsistent F e2
+   | .quant _ _ _ _ tr body => OpsConsistent F tr ∧ OpsConsistent F body
+   | _ => True)
 
 /-! ## `substTyVars` commutation lemmas -/
 
@@ -53,10 +58,10 @@ theorem substTyVars_mkArrow' (vt : TyVarVal) (ret : LMonoTy) (ins : List LMonoTy
     LSort.mkArrow (LMonoTy.substTyVars vt ret) (ins.map (LMonoTy.substTyVars vt)) := by
   sorry
 
-theorem substTyVars_substMap (vt : TyVarVal) (σ : Map TyIdentifier LMonoTy) (ty : LMonoTy) :
-    LMonoTy.substTyVars vt (LMonoTy.substMap σ ty) =
+theorem substTyVars_subst (vt : TyVarVal) (S : Subst) (ty : LMonoTy) :
+    LMonoTy.substTyVars vt (LMonoTy.subst S ty) =
     LMonoTy.substTyVars
-      (fun x => match Map.find? σ x with | some t => LMonoTy.substTyVars vt t | none => vt x)
+      (fun x => match S.find? x with | some t => LMonoTy.substTyVars vt t | none => vt x)
       ty := by
   sorry
 
@@ -149,12 +154,12 @@ theorem callOfLFunc_denote
             (denoteArgs tcInterp opInterp fvarVal vt .nil args argTys h_args) := by
   sorry
 
-/-! ## `substMap` / `mkArrow'` structural lemmas -/
+/-! ## `subst` / `mkArrow'` structural lemmas -/
 
-/-- `substMap` distributes over `mkArrow'`. -/
-theorem substMap_mkArrow' (σ : Map TyIdentifier LMonoTy) (ret : LMonoTy) (ins : List LMonoTy) :
-    LMonoTy.substMap σ (LMonoTy.mkArrow' ret ins) =
-    LMonoTy.mkArrow' (LMonoTy.substMap σ ret) (ins.map (LMonoTy.substMap σ)) := by
+/-- `subst` distributes over `mkArrow'`. -/
+theorem subst_mkArrow' (S : Subst) (ret : LMonoTy) (ins : List LMonoTy) :
+    LMonoTy.subst S (LMonoTy.mkArrow' ret ins) =
+    LMonoTy.mkArrow' (LMonoTy.subst S ret) (ins.map (LMonoTy.subst S)) := by
   sorry
 
 /-- `mkArrow'` is injective when the argument lists have equal length. -/
@@ -207,12 +212,54 @@ theorem callOfLFunc_getFactoryLFunc
   cases hcall
   grind
 
-/-- `OpsConsistent` propagates to the callee of a `callOfLFunc` decomposition. -/
-theorem OpsConsistent_callOfLFunc_callee
+-- /-- `OpsConsistent` propagates to the callee of a `callOfLFunc` decomposition. -/
+-- theorem OpsConsistent_callOfLFunc_callee
+--     {F : @Factory T} {e callee : LExpr T.mono} {args : List (LExpr T.mono)} {fn : LFunc T}
+--     (hOps : OpsConsistent F e)
+--     (hcall : Factory.callOfLFunc F e = some (callee, args, fn))
+--     : OpsConsistent F callee := by
+--   sorry
+
+/-- Extract the top-level `callOfLFunc` consistency from `OpsConsistent`. -/
+theorem OpsConsistent_callOfLFunc
     {F : @Factory T} {e callee : LExpr T.mono} {args : List (LExpr T.mono)} {fn : LFunc T}
     (hOps : OpsConsistent F e)
     (hcall : Factory.callOfLFunc F e = some (callee, args, fn))
-    : OpsConsistent F callee := by
+    : ∃ tySubst,
+        LFunc.computeTypeSubst fn callee args = some tySubst ∧
+        ∀ m name ty_op, callee = .op m name (some ty_op) →
+          ty_op = (LMonoTy.mkArrow' fn.output (fn.inputs.map Prod.snd)).subst tySubst := by
+  sorry
+
+/-! ## `applySubst` lemmas -/
+
+/-- `applySubst` preserves typing, mapping types through `subst S`. -/
+theorem applySubst_typeCheck {S : Subst}
+    {e : LExpr T.mono} {τ : LMonoTy} {Δ : List LMonoTy}
+    (h : LExpr.HasTypeA Δ e τ)
+    : LExpr.HasTypeA (Δ.map (LMonoTy.subst S)) (e.applySubst S) (LMonoTy.subst S τ) := by
+  sorry
+
+/-- `applySubst` transforms `fvars_annotated_by` consistently. -/
+theorem applySubst_fvars_annotated [DecidableEq T.IDMeta] {S : Subst}
+    {e : LExpr T.mono} {tyMap : Map T.Identifier LMonoTy}
+    (h : fvars_annotated_by tyMap e)
+    : fvars_annotated_by (tyMap.map (fun (k, v) => (k, LMonoTy.subst S v))) (e.applySubst S) := by
+  sorry
+
+/-- Applying a type substitution to annotations is equivalent to changing the
+type variable valuation. At the call site Δ = [] so bvarVal concerns vanish. -/
+theorem denote_applySubst
+    {S : Subst} {vt vt' : TyVarVal}
+    (hvt' : vt' = fun x => match S.find? x with
+      | some t => LMonoTy.substTyVars vt t | none => vt x)
+    {e : LExpr T.mono} {τ : LMonoTy}
+    (h_body : LExpr.HasTypeA [] e τ)
+    (h_subst : LExpr.HasTypeA [] (e.applySubst S) (LMonoTy.subst S τ))
+    (h_td : TyDenote tcInterp vt (LMonoTy.subst S τ) = TyDenote tcInterp vt' τ)
+    : cast h_td
+        (LExpr.denote tcInterp opInterp fvarVal vt .nil (e.applySubst S) (LMonoTy.subst S τ) h_subst) =
+      LExpr.denote tcInterp opInterp fvarVal vt' .nil e τ h_body := by
   sorry
 
 end Lambda
