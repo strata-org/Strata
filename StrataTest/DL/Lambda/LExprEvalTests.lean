@@ -91,11 +91,13 @@ def test1 := TestCase.mk
 #guard_msgs in
 #eval (check test1)
 
--- Small step reduces the free variable `m` under the binder via abs_subst_fvar.
+-- Small step reduces the free variable `m` under the binder via abs_subst_fvars.
 example: steps_well test1 := by
   unfold steps_well Scopes.toEnv test1
   apply ReflTrans.step (y := esM[λ (if (%0 == #1) then #10 else (_minit %0))])
-  · exact Step.abs_subst_fvar (Tbase := TestParams) (m' := ()) _ ⟨"m", ()⟩ _ (by decide) (by decide)
+  · exact Step.abs_subst_fvars (Tbase := TestParams) (m' := ())
+      _ ({Lambda.LState.init with state := [[("m", (mty[int → int], esM[_minit]))]]})
+      ⟨"m", ()⟩ (by decide) (by rfl)
   apply ReflTrans.refl
 
 

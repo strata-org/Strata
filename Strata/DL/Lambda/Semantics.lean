@@ -189,46 +189,37 @@ order. -/
     .some e' = denotefn m args →
     Step F rf e e'
 
-/-- Substitute a free variable under an abstraction binder. This is analogous to
-the closure rule in lambda calculi with explicit substitutions: it substitutes
-all occurrences of a free variable in the body of an abstraction, even though the
-substitution is not represented as an explicit syntactic term.
+/-- Substitute free variables under an abstraction binder using the full state.
 
-This rule is needed because `evalCore` substitutes free variables under binders (via
-`substFvarsFromState`), and the step relation must be able to replicate that in
-order to produce an expression whose post-substitution `eraseMetadata` matches
-the eval result.
-
-Unlike a general congruence rule, this only performs free variable substitution
-(`substFvar`), not arbitrary reduction. This does not break
-`canonical_value_not_step`: `isCanonicalValue` returns `true` for an abs only
-when it is *closed* (`freeVars e = []`), so a canonical abs has no free variables
-for this rule to substitute.
+The `x ∈ freeVars body` witness ensures the step only fires when the body
+actually has free variables. This preserves `canonical_value_not_step`:
+`isCanonicalValue` returns `true` for an abs only when it is *closed*
+(`freeVars e = []`), so a canonical abs has no free variables for this rule
+to fire on.
 -/
-| abs_subst_fvar:
-  ∀ (body : LExpr Tbase.mono) (x : Tbase.Identifier) (v : LExpr Tbase.mono),
-    rf x = .some v →
+| abs_subst_fvars:
+  ∀ (body : LExpr Tbase.mono) (σ : LState Tbase) (x : Tbase.Identifier),
     x ∈ (LExpr.freeVars body).map Prod.fst →
-    Step F rf (.abs m name ty body) (.abs m' name ty (LExpr.substFvar body x v))
+    rf = Scopes.toEnv σ.state →
+    Step F rf (.abs m name ty body) (.abs m' name ty (LExpr.substFvarsFromState σ body))
 
-/-- Substitute a free variable under a quantifier binder (body). Same motivation
-as `abs_subst_fvar`. -/
-| quant_subst_fvar_body:
-  ∀ (tr body : LExpr Tbase.mono) (x : Tbase.Identifier) (v : LExpr Tbase.mono),
-    rf x = .some v →
+/-- Substitute free variables under a quantifier binder (body). Same motivation
+as `abs_subst_fvars`. -/
+| quant_subst_fvars_body:
+  ∀ (tr body : LExpr Tbase.mono) (σ : LState Tbase) (x : Tbase.Identifier),
     x ∈ (LExpr.freeVars body).map Prod.fst →
-    Step F rf (.quant m qk name ty tr body) (.quant m' qk name ty tr (LExpr.substFvar body x v))
+    rf = Scopes.toEnv σ.state →
+    Step F rf (.quant m qk name ty tr body) (.quant m' qk name ty tr (LExpr.substFvarsFromState σ body))
 
-/-- Substitute a free variable in the trigger of a quantifier. Same motivation
-as `abs_subst_fvar`. -/
-| quant_subst_fvar_trigger:
-  ∀ (tr body : LExpr Tbase.mono) (x : Tbase.Identifier) (v : LExpr Tbase.mono),
-    rf x = .some v →
+/-- Substitute free variables in the trigger of a quantifier. Same motivation
+as `abs_subst_fvars`. -/
+| quant_subst_fvars_trigger:
+  ∀ (tr body : LExpr Tbase.mono) (σ : LState Tbase) (x : Tbase.Identifier),
     x ∈ (LExpr.freeVars tr).map Prod.fst →
-    Step F rf (.quant m qk name ty tr body) (.quant m' qk name ty (LExpr.substFvar tr x v) body)
+    rf = Scopes.toEnv σ.state →
+    Step F rf (.quant m qk name ty tr body) (.quant m' qk name ty (LExpr.substFvarsFromState σ tr) body)
 
-
-omit [DecidableEq Tbase.Metadata] [DecidableEq Tbase.Identifier] in
+omit [DecidableEq Tbase.Metadata] in
 theorem step_const_stuck:
   ∀ (F:@Factory Tbase) r x e,
   ¬ Step F r (.const m x) e := by
@@ -236,13 +227,8 @@ theorem step_const_stuck:
   intro H
   contradiction
 
--- Note: step_abs_stuck and step_quant_stuck are no longer true because of
--- abs_reduce_body, quant_reduce_body, and quant_reduce_trigger rules.
--- However, canonical_value_not_step still holds: canonical abs/quant are closed,
--- so they have no free variables for abs_reduce_body to fire on.
-
+omit [DecidableEq Tbase.Metadata] in
 -- If e is stuck for Step, then ReflTrans (Step) e e' implies e = e'.
-omit [DecidableEq Tbase.Metadata] [DecidableEq Tbase.Identifier] in
 theorem ReflTrans_stuck {e e' : LExpr Tbase.mono}
     (h : ReflTrans (Step F rf) e e')
     (h_stuck : ∀ e'', ¬ Step F rf e e'') :
@@ -262,7 +248,7 @@ Multi-step execution: reflexive transitive closure of single steps.
 
 ---------------------------------------------------------------------
 
-omit [DecidableEq Tbase.Metadata] [DecidableEq Tbase.Identifier] in
+omit [DecidableEq Tbase.Metadata] in
 theorem StepStar_ite_cond (F : @Factory Tbase) (rf : Env Tbase)
     (c c' t f : LExpr Tbase.mono) (m : Tbase.Metadata)
     (h : ReflTrans (Step F rf) c c') :
@@ -274,7 +260,7 @@ theorem StepStar_ite_cond (F : @Factory Tbase) (rf : Env Tbase)
     exact ⟨m1, ReflTrans.step _ (.ite m y t f) _
       (Step.ite_reduce_cond (m' := m) x y t f hxy) h1⟩
 
-omit [DecidableEq Tbase.Metadata] [DecidableEq Tbase.Identifier] in
+omit [DecidableEq Tbase.Metadata] in
 theorem StepStar_ite_then (F : @Factory Tbase) (rf : Env Tbase)
     (c t t' f : LExpr Tbase.mono) (m : Tbase.Metadata)
     (h : ReflTrans (Step F rf) t t') :
@@ -286,7 +272,7 @@ theorem StepStar_ite_then (F : @Factory Tbase) (rf : Env Tbase)
     exact ⟨m1, ReflTrans.step _ (.ite m c y f) _
       (Step.ite_reduce_then_branch (m' := m) c x y f hxy) h1⟩
 
-omit [DecidableEq Tbase.Metadata] [DecidableEq Tbase.Identifier] in
+omit [DecidableEq Tbase.Metadata] in
 theorem StepStar_ite_else (F : @Factory Tbase) (rf : Env Tbase)
     (c t f f' : LExpr Tbase.mono) (m : Tbase.Metadata)
     (h : ReflTrans (Step F rf) f f') :
@@ -298,7 +284,7 @@ theorem StepStar_ite_else (F : @Factory Tbase) (rf : Env Tbase)
     exact ⟨m1, ReflTrans.step _ (.ite m c t y) _
       (Step.ite_reduce_else_branch (m' := m) c t x y hxy) h1⟩
 
-omit [DecidableEq Tbase.Metadata] [DecidableEq Tbase.Identifier] in
+ omit [DecidableEq Tbase.Metadata] in
 theorem StepStar_eq_lhs (F : @Factory Tbase) (rf : Env Tbase)
     (e1 e1' e2 : LExpr Tbase.mono) (m : Tbase.Metadata)
     (h : ReflTrans (Step F rf) e1 e1') :
@@ -310,7 +296,7 @@ theorem StepStar_eq_lhs (F : @Factory Tbase) (rf : Env Tbase)
     exact ⟨m1, ReflTrans.step _ (.eq m y e2) _
       (Step.eq_reduce_lhs (m' := m) x y e2 hxy) h1⟩
 
-omit [DecidableEq Tbase.Metadata] [DecidableEq Tbase.Identifier] in
+ omit [DecidableEq Tbase.Metadata] in
 theorem StepStar_eq_rhs (F : @Factory Tbase) (rf : Env Tbase)
     (e1 : LExpr Tbase.mono)
     (e2 e2' : LExpr Tbase.mono) (m : Tbase.Metadata)
@@ -323,7 +309,7 @@ theorem StepStar_eq_rhs (F : @Factory Tbase) (rf : Env Tbase)
     exact ⟨m1, ReflTrans.step _ (.eq m e1 y) _
       (Step.eq_reduce_rhs (m' := m) e1 x y hxy) h1⟩
 
-omit [DecidableEq Tbase.Metadata] [DecidableEq Tbase.Identifier] in
+ omit [DecidableEq Tbase.Metadata] in
 theorem StepStar_app_fn (F : @Factory Tbase) (rf : Env Tbase)
     (e1 e1' e2 : LExpr Tbase.mono) (m : Tbase.Metadata)
     (h : ReflTrans (Step F rf) e1 e1') :
@@ -334,7 +320,7 @@ theorem StepStar_app_fn (F : @Factory Tbase) (rf : Env Tbase)
     exact ReflTrans.step _ (.app m y e2) _
       (Step.reduce_1 (m' := m) x y e2 hxy) ih
 
-omit [DecidableEq Tbase.Metadata] [DecidableEq Tbase.Identifier] in
+omit [DecidableEq Tbase.Metadata] in
 theorem StepStar_app_arg (F : @Factory Tbase) (rf : Env Tbase)
     (e1 e2 e2' : LExpr Tbase.mono) (m : Tbase.Metadata)
     (h : ReflTrans (Step F rf) e2 e2') :
@@ -462,7 +448,7 @@ theorem substK_eraseMetadata_congr₂
 -- Metadata-preserving ite/eq congruence lemmas (the existing StepStar_ite_*
 -- return ∃ m', but we need metadata preserved for substFvar composition).
 
-omit [DecidableEq Tbase.Metadata] [DecidableEq Tbase.Identifier] in
+omit [DecidableEq Tbase.Metadata] in
 private theorem StepStar_ite_cond_pres (F : @Factory Tbase) (rf : Env Tbase)
     (c c' t f : LExpr Tbase.mono) (m : Tbase.Metadata)
     (h : ReflTrans (Step F rf) c c') :
@@ -473,7 +459,7 @@ private theorem StepStar_ite_cond_pres (F : @Factory Tbase) (rf : Env Tbase)
     exact ReflTrans.step _ (.ite m y t f) _
       (Step.ite_reduce_cond (m' := m) x y t f hxy) ih
 
-omit [DecidableEq Tbase.Metadata] [DecidableEq Tbase.Identifier] in
+omit [DecidableEq Tbase.Metadata] in
 private theorem StepStar_ite_then_pres (F : @Factory Tbase) (rf : Env Tbase)
     (c t t' f : LExpr Tbase.mono) (m : Tbase.Metadata)
     (h : ReflTrans (Step F rf) t t') :
@@ -484,7 +470,7 @@ private theorem StepStar_ite_then_pres (F : @Factory Tbase) (rf : Env Tbase)
     exact ReflTrans.step _ (.ite m c y f) _
       (Step.ite_reduce_then_branch (m' := m) c x y f hxy) ih
 
-omit [DecidableEq Tbase.Metadata] [DecidableEq Tbase.Identifier] in
+omit [DecidableEq Tbase.Metadata] in
 private theorem StepStar_ite_else_pres (F : @Factory Tbase) (rf : Env Tbase)
     (c t f f' : LExpr Tbase.mono) (m : Tbase.Metadata)
     (h : ReflTrans (Step F rf) f f') :
@@ -495,7 +481,7 @@ private theorem StepStar_ite_else_pres (F : @Factory Tbase) (rf : Env Tbase)
     exact ReflTrans.step _ (.ite m c t y) _
       (Step.ite_reduce_else_branch (m' := m) c t x y hxy) ih
 
-omit [DecidableEq Tbase.Metadata] [DecidableEq Tbase.Identifier] in
+omit [DecidableEq Tbase.Metadata] in
 private theorem StepStar_eq_lhs_pres (F : @Factory Tbase) (rf : Env Tbase)
     (e1 e1' e2 : LExpr Tbase.mono) (m : Tbase.Metadata)
     (h : ReflTrans (Step F rf) e1 e1') :
@@ -506,7 +492,7 @@ private theorem StepStar_eq_lhs_pres (F : @Factory Tbase) (rf : Env Tbase)
     exact ReflTrans.step _ (.eq m y e2) _
       (Step.eq_reduce_lhs (m' := m) x y e2 hxy) ih
 
-omit [DecidableEq Tbase.Metadata] [DecidableEq Tbase.Identifier] in
+  omit [DecidableEq Tbase.Metadata] in
 private theorem StepStar_eq_rhs_pres (F : @Factory Tbase) (rf : Env Tbase)
     (e1 e2 e2' : LExpr Tbase.mono) (m : Tbase.Metadata)
     (h : ReflTrans (Step F rf) e2 e2') :
@@ -1167,56 +1153,8 @@ private theorem isCanonicalValue_args_all
   rw [List.all_eq_true] at h_all
   exact h_all x hx
 
--- Canonical values have no free variables.
--- This is key for substFvarsFromState idempotency.
--- Placed here (after callOfLFunc helpers) so the app case proof has access to
--- isCanonicalValue_app_left and callOfLFunc_app_arg_mem.
-omit [DecidableEq Tbase.Metadata] [DecidableEq Tbase.Identifier] [DecidableEq Tbase.IDMeta] [Inhabited Tbase.IDMeta] in
-private theorem isCanonicalValue_no_freeVars
-    (F : @Factory Tbase) (e : LExpr Tbase.mono)
-    (hc : LExpr.isCanonicalValue F e = true) :
-    LExpr.freeVars e = [] := by
-  induction e with
-  | const => simp [LExpr.freeVars]
-  | op => simp [LExpr.freeVars]
-  | bvar =>
-    simp [LExpr.isCanonicalValue, Factory.callOfLFunc, getLFuncCall, getLFuncCall.go] at hc
-  | fvar =>
-    simp [LExpr.isCanonicalValue, Factory.callOfLFunc, getLFuncCall, getLFuncCall.go] at hc
-  | abs m name ty body ih =>
-    simp [LExpr.freeVars]
-    simp only [LExpr.isCanonicalValue] at hc
-    simp only [LExpr.closed, LExpr.freeVars] at hc
-    cases h : LExpr.freeVars body with
-    | nil => rfl
-    | cons _ _ => simp [h, List.isEmpty] at hc
-  | quant m qk name ty tr body ih1 ih2 =>
-    simp only [LExpr.freeVars]
-    simp only [LExpr.isCanonicalValue] at hc
-    simp only [LExpr.closed, LExpr.freeVars] at hc
-    cases h : LExpr.freeVars tr ++ LExpr.freeVars body with
-    | nil =>
-      have := List.append_eq_nil_iff.mp h
-      simp
-    | cons _ _ => simp [h, List.isEmpty] at hc
-  | app m e1 e2 ih1 ih2 =>
-    have h1 := isCanonicalValue_app_left F m e1 e2 hc
-    simp only [LExpr.isCanonicalValue] at hc
-    split at hc
-    · rename_i op args f h_call
-      simp only [Bool.and_eq_true] at hc
-      simp at hc
-      have h_mem := callOfLFunc_app_arg_mem F e1 e2 m op args f _ h_call
-      have h2 := hc.2 e2 h_mem
-      simp [LExpr.freeVars, ih1 h1, ih2 h2]
-    · simp at hc
-  | ite =>
-    simp [LExpr.isCanonicalValue, Factory.callOfLFunc, getLFuncCall, getLFuncCall.go] at hc
-  | eq =>
-    simp [LExpr.isCanonicalValue, Factory.callOfLFunc, getLFuncCall, getLFuncCall.go] at hc
-
 -- Canonical values are normal forms: no Step rule can fire on them.
-omit [DecidableEq Tbase.Metadata] [DecidableEq Tbase.Identifier] in
+omit [DecidableEq Tbase.Metadata] in
 theorem canonical_value_not_step
     (F : @Factory Tbase) (rf : Env Tbase)
     (e : LExpr Tbase.mono)
@@ -1246,7 +1184,7 @@ theorem canonical_value_not_step
     cases hstep with
     | expand_fn _ _ _ _ _ _ _ h_call => simp [Factory.callOfLFunc, getLFuncCall, getLFuncCall.go] at h_call
     | eval_fn _ _ _ _ _ _ h_call => simp [Factory.callOfLFunc, getLFuncCall, getLFuncCall.go] at h_call
-    | abs_subst_fvar _ x v _ h_fv =>
+    | abs_subst_fvars _ _ _ h_fv _ =>
       -- freeVars body = [] (from closed), so x ∉ freeVars body → contradiction
       have h_fvs : LExpr.freeVars body = [] := by
         simp [LExpr.closed, List.isEmpty_iff] at hc; exact hc
@@ -1257,10 +1195,10 @@ theorem canonical_value_not_step
     cases hstep with
     | expand_fn _ _ _ _ _ _ _ h_call => simp [Factory.callOfLFunc, getLFuncCall, getLFuncCall.go] at h_call
     | eval_fn _ _ _ _ _ _ h_call => simp [Factory.callOfLFunc, getLFuncCall, getLFuncCall.go] at h_call
-    | quant_subst_fvar_body _ _ x v _ h_fv =>
+    | quant_subst_fvars_body _ _ _ _ h_fv _ =>
       simp [LExpr.closed, LExpr.freeVars, List.isEmpty_iff] at hc
       simp [hc.2] at h_fv
-    | quant_subst_fvar_trigger _ _ x v _ h_fv =>
+    | quant_subst_fvars_trigger _ _ _ _ h_fv _ =>
       simp [LExpr.closed, LExpr.freeVars, List.isEmpty_iff] at hc
       simp [hc.1] at h_fv
   | op =>
@@ -1378,20 +1316,9 @@ private theorem eraseMetadata_quant_congr
 
 ---------------------------------------------------------------------
 
-omit [DecidableEq Tbase.Metadata] [DecidableEq Tbase.Identifier] in
-private theorem StepStar_mkApp_fn (F : @Factory Tbase) (rf : Env Tbase)
-    (fn fn' : LExpr Tbase.mono) (args : List (LExpr Tbase.mono)) (m : Tbase.Metadata)
-    (h : ReflTrans (Step F rf) fn fn') :
-    ReflTrans (Step F rf) (LExpr.mkApp m fn args) (LExpr.mkApp m fn' args) := by
-  induction args generalizing fn fn' with
-  | nil => exact h
-  | cons a rest ih =>
-    simp only [LExpr.mkApp]
-    exact ih (.app m fn a) (.app m fn' a) (StepStar_app_fn F rf fn fn' a m h)
-
 -- Step all args within the actual expression structure identified by
 -- getLFuncCall. The result e' satisfies e'.eM = mkApp () op.eM (args'.map eM).
-omit [DecidableEq Tbase.Metadata] [DecidableEq Tbase.Identifier] in
+ omit [DecidableEq Tbase.Metadata] in
 private theorem StepStar_getLFuncCall_args
     {F : @Factory Tbase} {rf : Env Tbase}
     (e : LExpr Tbase.mono) (op : LExpr Tbase.mono)
@@ -1496,8 +1423,6 @@ private theorem eval_StepStar_factory_terminal
     [Traceable LExpr.EvalProvenance Tbase.Metadata]
     (σ : LState Tbase) (e : LExpr Tbase.mono) (n : Nat)
     (_hWF : FactoryWF σ.config.factory)
-    (_hEnv : ∀ x v, Scopes.toEnv σ.state x = some v →
-              LExpr.isCanonicalValue σ.config.factory v)
     (op_expr : LExpr Tbase.mono)
     (args : List (LExpr Tbase.mono))
     (lfunc : LFunc Tbase)
@@ -1997,335 +1922,110 @@ private theorem step_to_const_via_IH
   exact ⟨_, hstep⟩
 
 ---------------------------------------------------------------------
--- Bridging lemma: simultaneous substFvars with cons = sequential substFvar then substFvars.
--- Requires v to be closed (no free variables).
-omit [DecidableEq Tbase.Metadata] [DecidableEq Tbase.Identifier] [Inhabited Tbase.IDMeta] in
-private theorem substFvars_cons_eq_substFvar
+
+-- Helper lemma: substFvars is identity on closed terms (no free variables)
+private theorem substFvars_closed_identity
+    {Tbase : LExprParams}
+    [DecidableEq Tbase.IDMeta]
     (e : LExpr Tbase.mono)
-    (x : Tbase.Identifier) (v : LExpr Tbase.mono) (rest : Map Tbase.Identifier (LExpr Tbase.mono))
-    (hv : LExpr.freeVars v = []) :
-    LExpr.substFvars e ((x, v) :: rest) = LExpr.substFvars (LExpr.substFvar e x v) rest := by
-  have substFvarsAux_closed : ∀ (e' : LExpr Tbase.mono)
-      (sm : Map Tbase.Identifier (LExpr Tbase.mono)),
-      LExpr.freeVars e' = [] → LExpr.substFvars.substFvarsAux e' sm = e' := by
-    intro e' sm h_cl
-    induction e' with
+    (sm : Map Tbase.Identifier (LExpr Tbase.mono))
+    (h_closed : LExpr.freeVars e = []) :
+    LExpr.substFvars e sm = e := by
+  simp only [LExpr.substFvars, Map.isEmpty]
+  split
+  · -- sm is empty: trivially returns e
+    rfl
+  · -- sm is nonempty, but e has no free vars
+    -- Need to show substFvarsAux e sm = e
+    induction e with
     | const => simp [LExpr.substFvars.substFvarsAux]
     | op => simp [LExpr.substFvars.substFvarsAux]
     | bvar => simp [LExpr.substFvars.substFvarsAux]
-    | fvar => simp [LExpr.freeVars] at h_cl
+    | fvar => simp [LExpr.freeVars] at h_closed
     | abs _ _ _ _ ih =>
-      simp only [LExpr.freeVars] at h_cl; simp [LExpr.substFvars.substFvarsAux, ih h_cl]
+      simp [LExpr.substFvars.substFvarsAux]
+      simp [LExpr.freeVars] at h_closed
+      exact ih h_closed
     | app _ _ _ ih1 ih2 =>
-      simp only [LExpr.freeVars, List.append_eq_nil_iff] at h_cl
-      simp [LExpr.substFvars.substFvarsAux, ih1 h_cl.1, ih2 h_cl.2]
+      simp [LExpr.substFvars.substFvarsAux]
+      simp [LExpr.freeVars, List.append_eq_nil_iff] at h_closed
+      exact ⟨ih1 h_closed.1, ih2 h_closed.2⟩
     | eq _ _ _ ih1 ih2 =>
-      simp only [LExpr.freeVars, List.append_eq_nil_iff] at h_cl
-      simp [LExpr.substFvars.substFvarsAux, ih1 h_cl.1, ih2 h_cl.2]
+      simp [LExpr.substFvars.substFvarsAux]
+      simp [LExpr.freeVars, List.append_eq_nil_iff] at h_closed
+      exact ⟨ih1 h_closed.1, ih2 h_closed.2⟩
     | quant _ _ _ _ _ _ ih1 ih2 =>
-      simp only [LExpr.freeVars, List.append_eq_nil_iff] at h_cl
-      simp [LExpr.substFvars.substFvarsAux, ih1 h_cl.1, ih2 h_cl.2]
-    | ite _ _ _ _ ih1 ih2 ih3 =>
-      simp only [LExpr.freeVars, List.append_eq_nil_iff] at h_cl
-      simp [LExpr.substFvars.substFvarsAux, ih1 h_cl.1.1, ih2 h_cl.1.2, ih3 h_cl.2]
-  simp only [LExpr.substFvars, Map.isEmpty]
-  cases rest with
+      simp [LExpr.substFvars.substFvarsAux]
+      simp [LExpr.freeVars, List.append_eq_nil_iff] at h_closed
+      exact ⟨ih1 h_closed.1, ih2 h_closed.2⟩
+    | ite _ c t e ih1 ih2 ih3 =>
+      simp [LExpr.substFvars.substFvarsAux]
+      have : LExpr.freeVars c ++ LExpr.freeVars t ++ LExpr.freeVars e = [] := h_closed
+      have h_app1 : LExpr.freeVars c ++ LExpr.freeVars t = [] ∧ LExpr.freeVars e = [] :=
+        List.append_eq_nil_iff.mp this
+      have h_c_t : LExpr.freeVars c = [] ∧ LExpr.freeVars t = [] :=
+        List.append_eq_nil_iff.mp h_app1.1
+      exact ⟨ih1 h_c_t.1, ih2 h_c_t.2, ih3 h_app1.2⟩
+
+private theorem StepStar_to_substFvarsFromState_abs
+    {Tbase : LExprParams}
+    [DecidableEq Tbase.Metadata] [DecidableEq Tbase.IDMeta]
+    [Inhabited Tbase.IDMeta] [ToFormat Tbase.Metadata] [ToFormat Tbase.IDMeta]
+    [Traceable LExpr.EvalProvenance Tbase.Metadata]
+    (σ : LState Tbase) (m : Tbase.Metadata) (name : String) (ty : Option LMonoTy)
+    (body : LExpr Tbase.mono) :
+    ReflTrans (Step σ.config.factory (Scopes.toEnv σ.state))
+      (.abs m name ty body) (LExpr.substFvarsFromState σ (.abs m name ty body)) := by
+  simp only [LExpr.substFvarsFromState, LExpr.substFvars_abs]
+  cases h_fv : (LExpr.freeVars body) with
   | nil =>
-    simp only [ite_true]
-    induction e with
-    | const => simp [LExpr.substFvars.substFvarsAux, LExpr.substFvar]
-    | op => simp [LExpr.substFvars.substFvarsAux, LExpr.substFvar]
-    | bvar => simp [LExpr.substFvars.substFvarsAux, LExpr.substFvar]
-    | fvar m y ty =>
-      simp only [LExpr.substFvars.substFvarsAux, LExpr.substFvar, Map.find?]
-      by_cases hyx : x = y
-      · subst hyx; simp
-      · have : ¬(y = x) := fun h => hyx (h.symm)
-        simp [hyx, this]
-    | abs | app | eq | quant | ite =>
-      simp only [LExpr.substFvars.substFvarsAux, LExpr.substFvar]
-      simp_all
-  | cons p rest' =>
-    simp only []
-    induction e with
-    | const => simp [LExpr.substFvars.substFvarsAux, LExpr.substFvar]
-    | op => simp [LExpr.substFvars.substFvarsAux, LExpr.substFvar]
-    | bvar => simp [LExpr.substFvars.substFvarsAux, LExpr.substFvar]
-    | fvar m y ty =>
-      simp only [LExpr.substFvars.substFvarsAux, LExpr.substFvar, Map.find?]
-      by_cases hyx : x = y
-      · subst hyx; simp only [↓reduceIte, beq_self_eq_true]
-        exact (substFvarsAux_closed v _ hv).symm
-      · have hyx' : (y == x) = false := by simp; exact fun h => hyx (h.symm)
-        simp only [LExpr.substFvars.substFvarsAux, Map.find?, hyx',
-          hyx, ↓reduceIte, Bool.false_eq_true]
-    | abs | app | eq | quant | ite =>
-      simp only [LExpr.substFvars.substFvarsAux, LExpr.substFvar]
-      simp_all
+    have : LExpr.substFvars body (σ.state.toSingleMap.map (fun (k : _ × _ × _) => (k.1, k.2.2))) = body :=
+      substFvars_closed_identity body _ h_fv
+    rw [this]; exact ReflTrans.refl _
+  | cons p ps =>
+    have h_mem : p.fst ∈ (LExpr.freeVars body).map Prod.fst := by
+      rw [h_fv]; simp [List.map]
+    exact ReflTrans.step _ _ _
+      (Step.abs_subst_fvars (m' := m) body σ p.fst h_mem rfl)
+      (ReflTrans.refl _)
 
----------------------------------------------------------------------
-
-private theorem StepStar_abs_substFvars_list
+private theorem StepStar_to_substFvarsFromState_quant
     {Tbase : LExprParams}
     [DecidableEq Tbase.Metadata] [DecidableEq Tbase.IDMeta]
     [Inhabited Tbase.IDMeta] [ToFormat Tbase.Metadata] [ToFormat Tbase.IDMeta]
     [Traceable LExpr.EvalProvenance Tbase.Metadata]
-    {F : @Factory Tbase} {rf : Env Tbase}
+    (σ : LState Tbase) (m : Tbase.Metadata) (qk : QuantifierKind)
     (name : String) (ty : Option LMonoTy)
-    (_h_rf_closed : ∀ x v, rf x = some v → LExpr.freeVars v = []) :
-    ∀ (sm : Map Tbase.Identifier (LExpr Tbase.mono))
-      (_h_sm_closed : ∀ x v, List.Mem (x, v) sm → LExpr.freeVars v = [])
-      (body : LExpr Tbase.mono) (m : Tbase.Metadata)
-      (_h_agree : ∀ x v, Map.find? sm x = some v →
-                   x ∈ (LExpr.freeVars body).map Prod.fst → rf x = some v),
-    ReflTrans (Step F rf) (.abs m name ty body)
-      (.abs m name ty (LExpr.substFvars body sm)) := by
-  intro sm h_sm_closed
-  induction sm with
-  | nil => intro _ _ _; simp [LExpr.substFvars]; exact ReflTrans.refl _
-  | cons p rest ih =>
-    intro body m h_agree
-    obtain ⟨x, v⟩ := p
-    have h_v_closed : LExpr.freeVars v = [] :=
-      h_sm_closed x v (List.Mem.head _)
-    have h_unfold : LExpr.substFvars body ((x, v) :: rest) =
-        LExpr.substFvars (LExpr.substFvar body x v) rest :=
-      substFvars_cons_eq_substFvar body x v rest h_v_closed
-    rw [h_unfold]
-    by_cases hfree : x ∈ (LExpr.freeVars body).map Prod.fst
-    · -- x is free: Map.find? gives first occ, which is (x,v) since it's head
-      have h_find_head : Map.find? ((x, v) :: rest) x = some v := by
-        show (if x = x then some v else Map.find? rest x) = some v
-        rw [if_pos rfl]
-      have h_rf : rf x = some v := h_agree x v h_find_head hfree
-      have h_step : Step F rf (.abs m name ty body) (.abs m name ty (LExpr.substFvar body x v)) :=
-        Step.abs_subst_fvar (m' := m) body x v h_rf hfree
-      exact ReflTrans.step _ _ _ h_step
-        (ih (fun x' v' hmem => h_sm_closed x' v' (List.Mem.tail _ hmem))
-          (LExpr.substFvar body x v) m
-          (fun y w h_find h_free_y => by
-            have h_ne : x ≠ y := fun heq =>
-              absurd h_free_y (heq ▸ LExpr.substFvar_eliminates_key body x v h_v_closed)
-            have h_in_orig : y ∈ (LExpr.freeVars body).map Prod.fst := by
-              exact Decidable.byContradiction fun h_not =>
-                absurd h_free_y (LExpr.substFvar_freeVars_not_mem body x v h_v_closed y h_not)
-            have h_find_full : Map.find? ((x, v) :: rest) y = some w := by
-              show (if x = y then some v else Map.find? rest y) = some w
-              rw [if_neg h_ne]; exact h_find
-            exact h_agree y w h_find_full h_in_orig))
-    · rw [LExpr.substFvar_not_freeVar body x v hfree]
-      exact ih (fun x' v' hmem => h_sm_closed x' v' (List.Mem.tail _ hmem)) body m
-        (fun y w h_find h_free_y => by
-          have h_ne : x ≠ y := fun heq => by rw [heq] at hfree; exact hfree h_free_y
-          have h_find_full : Map.find? ((x, v) :: rest) y = some w := by
-            show (if x = y then some v else Map.find? rest y) = some w
-            rw [if_neg h_ne]; exact h_find
-          exact h_agree y w h_find_full h_free_y)
-
-private theorem StepStar_quant_substFvars_list
-    {Tbase : LExprParams}
-    [DecidableEq Tbase.Metadata] [DecidableEq Tbase.IDMeta]
-    [Inhabited Tbase.IDMeta] [ToFormat Tbase.Metadata] [ToFormat Tbase.IDMeta]
-    [Traceable LExpr.EvalProvenance Tbase.Metadata]
-    {F : @Factory Tbase} {rf : Env Tbase}
-    (qk : QuantifierKind) (name : String) (ty : Option LMonoTy)
-    (_h_rf_closed : ∀ x v, rf x = some v → LExpr.freeVars v = []) :
-    ∀ (sm : Map Tbase.Identifier (LExpr Tbase.mono))
-      (_h_sm_closed : ∀ x v, List.Mem (x, v) sm → LExpr.freeVars v = [])
-      (tr body : LExpr Tbase.mono) (m : Tbase.Metadata)
-      (_h_agree_body : ∀ x v, Map.find? sm x = some v →
-                        x ∈ (LExpr.freeVars body).map Prod.fst → rf x = some v)
-      (_h_agree_tr : ∀ x v, Map.find? sm x = some v →
-                      x ∈ (LExpr.freeVars tr).map Prod.fst → rf x = some v),
-    ReflTrans (Step F rf) (.quant m qk name ty tr body)
-      (.quant m qk name ty (LExpr.substFvars tr sm) (LExpr.substFvars body sm)) := by
-  intro sm h_sm_closed
-  induction sm with
-  | nil => intro _ _ _ _ _; simp [LExpr.substFvars]; exact ReflTrans.refl _
-  | cons p rest ih =>
-    intro tr body m h_agree_body h_agree_tr
-    obtain ⟨x, v⟩ := p
-    have h_v_closed : LExpr.freeVars v = [] := h_sm_closed x v (List.Mem.head _)
-    -- Need bridging lemma: substFvars body ((x,v)::rest) = substFvars (substFvar body x v) rest
-    have h_unfold_body : LExpr.substFvars body ((x, v) :: rest) =
-        LExpr.substFvars (LExpr.substFvar body x v) rest :=
-      substFvars_cons_eq_substFvar body x v rest h_v_closed
-    have h_unfold_tr : LExpr.substFvars tr ((x, v) :: rest) =
-        LExpr.substFvars (LExpr.substFvar tr x v) rest :=
-      substFvars_cons_eq_substFvar tr x v rest h_v_closed
-    rw [h_unfold_body, h_unfold_tr]
-    have h_find_head_body : ∀ (hfree : x ∈ (LExpr.freeVars body).map Prod.fst), rf x = some v := by
-      intro hfree
-      exact h_agree_body x v (by show (if x = x then _ else _) = _; rw [if_pos rfl]) hfree
-    have h_find_head_tr : ∀ (hfree : x ∈ (LExpr.freeVars tr).map Prod.fst), rf x = some v := by
-      intro hfree
-      exact h_agree_tr x v (by show (if x = x then _ else _) = _; rw [if_pos rfl]) hfree
-    -- Step body, then trigger
-    have h_body_step : ReflTrans (Step F rf) (.quant m qk name ty tr body)
-        (.quant m qk name ty tr (LExpr.substFvar body x v)) := by
-      by_cases hfree : x ∈ (LExpr.freeVars body).map Prod.fst
-      · exact ReflTrans.step _ _ _ (Step.quant_subst_fvar_body (m' := m) tr body x v (h_find_head_body hfree) hfree) (ReflTrans.refl _)
-      · rw [LExpr.substFvar_not_freeVar body x v hfree]; exact ReflTrans.refl _
-    have h_tr_step : ReflTrans (Step F rf) (.quant m qk name ty tr (LExpr.substFvar body x v))
-        (.quant m qk name ty (LExpr.substFvar tr x v) (LExpr.substFvar body x v)) := by
-      by_cases hfree : x ∈ (LExpr.freeVars tr).map Prod.fst
-      · exact ReflTrans.step _ _ _ (Step.quant_subst_fvar_trigger (m' := m) tr (LExpr.substFvar body x v) x v (h_find_head_tr hfree) hfree) (ReflTrans.refl _)
-      · rw [LExpr.substFvar_not_freeVar tr x v hfree]; exact ReflTrans.refl _
-    -- IH on rest with substituted components
-    have h_agree_body' : ∀ y w, Map.find? rest y = some w →
-        y ∈ (LExpr.freeVars (LExpr.substFvar body x v)).map Prod.fst → rf y = some w := by
-      intro y w h_find h_free
-      have h_ne : x ≠ y := fun heq =>
-        absurd h_free (heq ▸ LExpr.substFvar_eliminates_key body x v h_v_closed)
-      have h_in_orig : y ∈ (LExpr.freeVars body).map Prod.fst :=
-        Decidable.byContradiction fun h_not =>
-          absurd h_free (LExpr.substFvar_freeVars_not_mem body x v h_v_closed y h_not)
-      exact h_agree_body y w (by show (if x = y then _ else _) = _; rw [if_neg h_ne]; exact h_find) h_in_orig
-    have h_agree_tr' : ∀ y w, Map.find? rest y = some w →
-        y ∈ (LExpr.freeVars (LExpr.substFvar tr x v)).map Prod.fst → rf y = some w := by
-      intro y w h_find h_free
-      have h_ne : x ≠ y := fun heq =>
-        absurd h_free (heq ▸ LExpr.substFvar_eliminates_key tr x v h_v_closed)
-      have h_in_orig : y ∈ (LExpr.freeVars tr).map Prod.fst :=
-        Decidable.byContradiction fun h_not =>
-          absurd h_free (LExpr.substFvar_freeVars_not_mem tr x v h_v_closed y h_not)
-      exact h_agree_tr y w (by show (if x = y then _ else _) = _; rw [if_neg h_ne]; exact h_find) h_in_orig
-    exact ReflTrans.trans (ReflTrans.trans h_body_step h_tr_step)
-      (ih (fun x' v' hmem => h_sm_closed x' v' (List.Mem.tail _ hmem))
-        (LExpr.substFvar tr x v) (LExpr.substFvar body x v) m h_agree_body' h_agree_tr')
-
-private theorem find_env_list_toEnv
-    {Tbase : LExprParams}
-    [DecidableEq Tbase.Metadata] [DecidableEq Tbase.IDMeta]
-    [Inhabited Tbase.IDMeta] [ToFormat Tbase.Metadata] [ToFormat Tbase.IDMeta]
-    [Traceable LExpr.EvalProvenance Tbase.Metadata]
-    (σ : LState Tbase) (x : Tbase.Identifier) (v : LExpr Tbase.mono)
-    (h : Map.find? (σ.state.toSingleMap.map (fun (k : _ × _ × _) => (k.1, k.2.2))) x = some v) :
-    Scopes.toEnv σ.state x = some v := by
-  -- Prove a generic helper: for any flat list, Map.find? on projection implies
-  -- Map.find? on original has .snd = v.
-  have h_proj : ∀ (l : List (Tbase.Identifier × (Option LMonoTy × LExpr Tbase.mono))),
-      Map.find? (l.map (fun (k : _ × _ × _) => (k.1, k.2.2))) x = some v →
-      ∃ ty, Map.find? l x = some (ty, v) := by
-    intro l; induction l with
-    | nil => intro h; simp [Map.find?] at h
-    | cons p rest ih =>
-      obtain ⟨k, ty, w⟩ := p
-      simp only [List.map_cons, Map.find?]
-      intro hf
-      by_cases hk : k = x
-      · rw [if_pos hk] at hf ⊢; exact ⟨ty, by cases hf; rfl⟩
-      · rw [if_neg hk] at hf ⊢; exact ih hf
-  -- Prove Map.find? on flatten ms agrees with Maps.find? ms
-  have h_flat : ∀ (ms : Maps Tbase.Identifier (Option LMonoTy × LExpr Tbase.mono))
-      (w : Option LMonoTy × LExpr Tbase.mono),
-      Map.find? (List.flatten ms) x = some w → Maps.find? ms x = some w := by
-    intro ms; induction ms with
-    | nil => intro w; simp [List.flatten, Map.find?]
-    | cons scope rest ih =>
-      intro w hf
-      simp only [List.flatten] at hf
-      simp only [Maps.find?]
-      -- hf : Map.find? (scope ++ rest.flatten) x = some w
-      -- goal : (match Map.find? scope x with | some v => some v | none => Maps.find? rest x) = some w
-      induction scope with
-      | nil => simp only [Map.find?] at hf ⊢; exact ih w hf
-      | cons p scope_rest ih_sc =>
-        obtain ⟨k, kv⟩ := p
-        have : ((k, kv) :: scope_rest).append (List.flatten rest) =
-            (k, kv) :: (scope_rest.append (List.flatten rest)) := rfl
-        rw [this] at hf
-        unfold Map.find? at hf ⊢
-        split at hf <;> split <;> simp_all
-  -- Combine
-  obtain ⟨ty, hfind⟩ := h_proj σ.state.toSingleMap h
-  have hmaps := h_flat σ.state (ty, v) (by rwa [Maps.toSingleMap] at hfind)
-  simp [Scopes.toEnv, hmaps]
-
-private theorem StepStar_to_substFvarsFromState
-    {Tbase : LExprParams}
-    [DecidableEq Tbase.Metadata] [DecidableEq Tbase.IDMeta]
-    [Inhabited Tbase.IDMeta] [ToFormat Tbase.Metadata] [ToFormat Tbase.IDMeta]
-    [Traceable LExpr.EvalProvenance Tbase.Metadata]
-    (σ : LState Tbase) (e : LExpr Tbase.mono)
-    (hEnv : ∀ x v, Scopes.toEnv σ.state x = some v →
-              LExpr.isCanonicalValue σ.config.factory v)
-    (hEnvAll : ∀ p, List.Mem p σ.state.toSingleMap →
-              LExpr.freeVars p.snd.snd = []) :
-    ReflTrans (Step σ.config.factory (Scopes.toEnv σ.state)) e (LExpr.substFvarsFromState σ e) := by
-  cases e with
-  | const m c =>
-    rw [LExpr.substFvarsFromState_const]; exact ReflTrans.refl _
-  | op m n t =>
-    rw [LExpr.substFvarsFromState_op]; exact ReflTrans.refl _
-  | bvar m i =>
-    rw [LExpr.substFvarsFromState_bvar]; exact ReflTrans.refl _
-  | fvar m x ty =>
-    cases h_find : Maps.find? σ.state x with
-    | none =>
-      rw [LExpr.substFvarsFromState_fvar_none σ m x ty h_find]; exact ReflTrans.refl _
-    | some p =>
-      have h_closed : LExpr.freeVars p.snd = [] := by
-        have h_toEnv : Scopes.toEnv σ.state x = some p.snd := by
-          simp [Scopes.toEnv, h_find]
-        exact isCanonicalValue_no_freeVars _ _ (hEnv x p.snd h_toEnv)
-      rw [LExpr.substFvarsFromState_fvar_some σ m x ty p.fst p.snd h_find h_closed]
-      have h_toEnv : Scopes.toEnv σ.state x = some p.snd := by
-        simp [Scopes.toEnv, h_find]
-      exact ReflTrans.step _ _ _ (Step.expand_fvar x p.snd h_toEnv) (ReflTrans.refl _)
-  | abs m name ty body =>
-    simp only [LExpr.substFvarsFromState, LExpr.substFvars_abs]
-    have h_rf_closed : ∀ x v, Scopes.toEnv σ.state x = some v → LExpr.freeVars v = [] :=
-      fun x v hxv => isCanonicalValue_no_freeVars _ _ (hEnv x v hxv)
-    have h_sm_closed : ∀ x v, List.Mem (x, v)
-        (σ.state.toSingleMap.map (fun (k : _ × _ × _) => (k.1, k.2.2))) → LExpr.freeVars v = [] := by
-      intro x v hmem
-      obtain ⟨⟨k, tv⟩, hmem_orig, hproj⟩ := List.mem_map.mp hmem
-      simp at hproj; obtain ⟨_, rfl⟩ := hproj
-      exact hEnvAll (k, tv) hmem_orig
-    exact StepStar_abs_substFvars_list name ty h_rf_closed
-      (σ.state.toSingleMap.map (fun (k : _ × _ × _) => (k.1, k.2.2)))
-      h_sm_closed body m
-      (fun x v hfind _ => find_env_list_toEnv σ x v hfind)
-  | quant m qk name ty tr body =>
-    simp only [LExpr.substFvarsFromState, LExpr.substFvars_quant]
-    have h_rf_closed : ∀ x v, Scopes.toEnv σ.state x = some v → LExpr.freeVars v = [] :=
-      fun x v hxv => isCanonicalValue_no_freeVars _ _ (hEnv x v hxv)
-    have h_sm_closed : ∀ x v, List.Mem (x, v)
-        (σ.state.toSingleMap.map (fun (k : _ × _ × _) => (k.1, k.2.2))) → LExpr.freeVars v = [] := by
-      intro x v hmem
-      obtain ⟨⟨k, tv⟩, hmem_orig, hproj⟩ := List.mem_map.mp hmem
-      simp at hproj; obtain ⟨_, rfl⟩ := hproj
-      exact hEnvAll (k, tv) hmem_orig
-    exact StepStar_quant_substFvars_list qk name ty h_rf_closed
-      (σ.state.toSingleMap.map (fun (k : _ × _ × _) => (k.1, k.2.2)))
-      h_sm_closed tr body m
-      (fun x v hfind _ => find_env_list_toEnv σ x v hfind)
-      (fun x v hfind _ => find_env_list_toEnv σ x v hfind)
-  | app m e1 e2 =>
-    simp only [LExpr.substFvarsFromState, LExpr.substFvars_app]
-    exact ReflTrans.trans
-      (StepStar_app_fn _ _ e1 (LExpr.substFvars e1 _) e2 m
-        (StepStar_to_substFvarsFromState σ e1 hEnv hEnvAll))
-      (StepStar_app_arg _ _ (LExpr.substFvars e1 _) e2 (LExpr.substFvars e2 _) m
-        (StepStar_to_substFvarsFromState σ e2 hEnv hEnvAll))
-  | eq m e1 e2 =>
-    simp only [LExpr.substFvarsFromState, LExpr.substFvars_eq]
-    exact ReflTrans.trans
-      (StepStar_eq_lhs_pres _ _ e1 (LExpr.substFvars e1 _) e2 m
-        (StepStar_to_substFvarsFromState σ e1 hEnv hEnvAll))
-      (StepStar_eq_rhs_pres _ _ (LExpr.substFvars e1 _) e2 (LExpr.substFvars e2 _) m
-        (StepStar_to_substFvarsFromState σ e2 hEnv hEnvAll))
-  | ite m c t f =>
-    simp only [LExpr.substFvarsFromState, LExpr.substFvars_ite]
-    exact ReflTrans.trans
-      (StepStar_ite_cond_pres _ _ c (LExpr.substFvars c _) t f m
-        (StepStar_to_substFvarsFromState σ c hEnv hEnvAll))
-      (ReflTrans.trans
-        (StepStar_ite_then_pres _ _ (LExpr.substFvars c _) t (LExpr.substFvars t _) f m
-          (StepStar_to_substFvarsFromState σ t hEnv hEnvAll))
-        (StepStar_ite_else_pres _ _ (LExpr.substFvars c _) (LExpr.substFvars t _) f (LExpr.substFvars f _) m
-          (StepStar_to_substFvarsFromState σ f hEnv hEnvAll)))
+    (tr body : LExpr Tbase.mono) :
+    ReflTrans (Step σ.config.factory (Scopes.toEnv σ.state))
+      (.quant m qk name ty tr body) (LExpr.substFvarsFromState σ (.quant m qk name ty tr body)) := by
+  simp only [LExpr.substFvarsFromState, LExpr.substFvars_quant]
+  cases h_fv_body : (LExpr.freeVars body) with
+  | nil =>
+    cases h_fv_tr : (LExpr.freeVars tr) with
+    | nil =>
+      rw [substFvars_closed_identity body _ h_fv_body, substFvars_closed_identity tr _ h_fv_tr]
+      exact ReflTrans.refl _
+    | cons p ps =>
+      rw [substFvars_closed_identity body _ h_fv_body]
+      have h_mem : p.fst ∈ (LExpr.freeVars tr).map Prod.fst := by rw [h_fv_tr]; simp [List.map]
+      exact ReflTrans.step _ _ _
+        (Step.quant_subst_fvars_trigger (m' := m) tr body σ p.fst h_mem rfl) (ReflTrans.refl _)
+  | cons p ps =>
+    cases h_fv_tr : (LExpr.freeVars tr) with
+    | nil =>
+      rw [substFvars_closed_identity tr _ h_fv_tr]
+      have h_mem : p.fst ∈ (LExpr.freeVars body).map Prod.fst := by rw [h_fv_body]; simp [List.map]
+      exact ReflTrans.step _ _ _
+        (Step.quant_subst_fvars_body (m' := m) tr body σ p.fst h_mem rfl) (ReflTrans.refl _)
+    | cons p2 ps2 =>
+      have h_mem_body : p.fst ∈ (LExpr.freeVars body).map Prod.fst := by rw [h_fv_body]; simp [List.map]
+      have h_mem_tr : p2.fst ∈ (LExpr.freeVars tr).map Prod.fst := by rw [h_fv_tr]; simp [List.map]
+      exact ReflTrans.trans
+        (ReflTrans.step _ _ _
+          (Step.quant_subst_fvars_body (m' := m) tr body σ p.fst h_mem_body rfl) (ReflTrans.refl _))
+        (ReflTrans.step _ _ _
+          (Step.quant_subst_fvars_trigger (m' := m) tr (LExpr.substFvarsFromState σ body) σ p2.fst h_mem_tr rfl) (ReflTrans.refl _))
 
 ---------------------------------------------------------------------
 
@@ -3193,8 +2893,6 @@ private theorem eval_StepStar_factory_ceval
     [Traceable LExpr.EvalProvenance Tbase.Metadata]
     (σ : LState Tbase) (e : LExpr Tbase.mono) (n : Nat)
     (hWF : FactoryWF σ.config.factory)
-    (_hEnv : ∀ x v, Scopes.toEnv σ.state x = some v →
-              LExpr.isCanonicalValue σ.config.factory v)
     (op_expr : LExpr Tbase.mono)
     (args : List (LExpr Tbase.mono))
     (lfunc : LFunc Tbase)
@@ -3293,28 +2991,11 @@ theorem eval_StepStar
     [Traceable LExpr.EvalProvenance Tbase.Metadata]
     (σ : LState Tbase) (e : LExpr Tbase.mono) (e2 : LExpr Tbase.mono) (n : Nat)
     (hWF : FactoryWF σ.config.factory)
-    (hEnvAll : ∀ p, List.Mem p σ.state.toSingleMap →
-              LExpr.isCanonicalValue σ.config.factory p.snd.snd)
     (hEval : e2 = LExpr.eval n σ e) :
     ∃ (e' : LExpr Tbase.mono),
       StepStar σ.config.factory (Scopes.toEnv σ.state) e e' ∧
       e'.eraseMetadata = e2.eraseMetadata := by
   subst hEval
-  -- Derive the first-match-canonical condition from the stronger all-canonical one
-  have hEnv : ∀ x v, Scopes.toEnv σ.state x = some v →
-      LExpr.isCanonicalValue σ.config.factory v := by
-    intro x v hxv
-    simp only [Scopes.toEnv, Option.map] at hxv
-    cases hf : Maps.find? σ.state x with
-    | none => simp [hf] at hxv
-    | some p =>
-      simp [hf] at hxv; subst hxv
-      have hmem := Maps.find?_mem_toSingleMap σ.state x p hf
-      exact hEnvAll (x, p) hmem
-  -- Derive the all-closed condition from all-canonical
-  have hEnvAllClosed : ∀ p, List.Mem p σ.state.toSingleMap →
-      LExpr.freeVars p.snd.snd = [] :=
-    fun p hmem => isCanonicalValue_no_freeVars _ _ (hEnvAll p hmem)
   unfold StepStar
   induction n generalizing e with
   | zero =>
@@ -3417,20 +3098,20 @@ theorem eval_StepStar
             split
             · -- No ceval: terminal
               rename_i h_no_ceval
-              exact eval_StepStar_factory_terminal σ e n hWF hEnv op_expr args lfunc h_call ih
+              exact eval_StepStar_factory_terminal σ e n hWF op_expr args lfunc h_call ih
             · -- ceval exists
               rename_i ceval h_ceval
               split
               · -- ceval succeeds: eval = eval n σ e'_ceval
                 rename_i e'_ceval h_ceval_succ
-                exact eval_StepStar_factory_ceval σ e n hWF hEnv
+                exact eval_StepStar_factory_ceval σ e n hWF
                   op_expr args lfunc h_call ceval h_ceval e'_ceval h_ceval_succ ih
               · -- ceval fails: terminal
                 rename_i h_ceval_fail
-                exact eval_StepStar_factory_terminal σ e n hWF hEnv op_expr args lfunc h_call ih
+                exact eval_StepStar_factory_terminal σ e n hWF op_expr args lfunc h_call ih
           · -- Symbolic args: terminal
             rename_i h_symbolic
-            exact eval_StepStar_factory_terminal σ e n hWF hEnv op_expr args lfunc h_call ih
+            exact eval_StepStar_factory_terminal σ e n hWF op_expr args lfunc h_call ih
       · -- evalCore case: case analysis on e
         rename_i h_no_call
         match e, h_not_canonical, h_no_call with
@@ -3464,11 +3145,11 @@ theorem eval_StepStar
           -- evalCore (.abs) = substFvarsFromState σ (.abs). Step abs to its subst form.
           simp only [LExpr.evalCore]
           exact ⟨LExpr.substFvarsFromState σ (.abs m name ty body),
-            StepStar_to_substFvarsFromState σ (.abs m name ty body) hEnv hEnvAllClosed, rfl⟩
+            StepStar_to_substFvarsFromState_abs σ m name ty body, rfl⟩
         | .quant m qk name ty tr body, _, _ =>
           simp only [LExpr.evalCore]
           exact ⟨LExpr.substFvarsFromState σ (.quant m qk name ty tr body),
-            StepStar_to_substFvarsFromState σ (.quant m qk name ty tr body) hEnv hEnvAllClosed, rfl⟩
+            StepStar_to_substFvarsFromState_quant σ m qk name ty tr body, rfl⟩
         | .app m e1 e2, _, _ =>
           obtain ⟨s1, hs1, hv1⟩ := ih e1
           obtain ⟨s2, hs2, hv2⟩ := ih e2
