@@ -9,8 +9,8 @@ commands.  This allows Python source files to be represented as Strata
 programs for downstream analysis.
 
 For general DDM concepts (dialects, operators, syntactic categories, the
-`Init` dialect), see the DDM Manual (source in `docs/verso/DDMDoc.lean`;
-build with `docs/verso/generate.sh`).
+`Init` dialect), see the [DDM Manual](../../docs/verso/DDMDoc.lean)
+(build HTML with `docs/verso/generate.sh`).
 
 ## Overview
 
