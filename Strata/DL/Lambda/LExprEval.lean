@@ -223,9 +223,14 @@ def eval (n : Nat) (σ : LState TBase) (e : (LExpr TBase.mono))
           constrArgAt (FuncAttr.findInlineIfConstr lfunc.attr)) then
           -- Inline a function only if it has a body.
           let body := lfunc.body.get (by simp_all)
-          let input_map := lfunc.inputs.keys.zip args
-          let new_e := substFvarsLifting body input_map
-          eval n' σ new_e
+          -- Apply type substitution to instantiate polymorphic type variables.
+          match LFunc.computeTypeSubst lfunc op_expr args with
+          | some tySubst =>
+            let body := body.applySubst tySubst
+            let input_map := lfunc.inputs.keys.zip args
+            let new_e := substFvarsLifting body input_map
+            eval n' σ new_e
+          | none => e -- cannot happen in well-typed terms
         else
           let new_e := @mkApp TBase.mono e.metadata op_expr args
             -- All arguments in the function call are concrete.
