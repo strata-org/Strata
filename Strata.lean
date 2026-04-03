@@ -27,7 +27,7 @@ import Strata.Languages.Laurel.LaurelToCoreTranslator
 
 /- Code Transforms -/
 import Strata.Transform.CallElimCorrect
-import Strata.Transform.DetToNondetCorrect
+import Strata.Transform.DetToKleeneCorrect
 
 /- Backends -/
 import Strata.Backends.CBMC.CProver

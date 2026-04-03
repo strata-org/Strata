@@ -7,24 +7,24 @@ module
 
 public import Strata.DL.Imperative.Stmt
 public import Strata.DL.Imperative.StmtSemantics
-public import Strata.DL.Imperative.NondetStmt
-public import Strata.DL.Imperative.NondetStmtSemantics
-public import Strata.Transform.DetToNondet
+public import Strata.DL.Imperative.KleeneStmt
+public import Strata.DL.Imperative.KleeneStmtSemantics
+public import Strata.Transform.DetToKleene
 import all Strata.DL.Imperative.Stmt
-import all Strata.DL.Imperative.NondetStmt
+import all Strata.DL.Imperative.KleeneStmt
 import all Strata.DL.Imperative.CmdSemantics
 import all Strata.DL.Imperative.Cmd
 import all Strata.DL.Imperative.HasVars
-import all Strata.Transform.DetToNondet
+import all Strata.Transform.DetToKleene
 
-/-! # Deterministic-to-Nondeterministic Transformation Correctness Proof
-  This file contains the main proof that the deterministic-to-nondeterministic
-  transformation is semantics preserving (see `StmtToNondetStmtCorrect` and
-  `BlockToNondetStmtCorrect`)
+/-! # Deterministic-to-Kleene Transformation Correctness Proof
+  This file contains the main proof that the deterministic-to-Kleene
+  transformation is semantics preserving (see `StmtToKleeneStmtCorrect` and
+  `BlockToKleeneStmtCorrect`)
 
   Note: The proof requires that the program contains no function declarations
   (`noFuncDecl`). This is because `funcDecl` changes the evaluator `δ`, but the
-  nondeterministic statements don't have function declarations.
+  Kleene statements don't have function declarations.
   -/
 
 public section
@@ -124,11 +124,11 @@ theorem EvalBlock_noFuncDecl_preserves_δ
     simp [Hδ₁, Hδ']
 
 /--
-  The proof implementation for `StmtToNondetStmtCorrect` and
-  `BlockToNondetStmtCorrect`.
+  The proof implementation for `StmtToKleeneStmtCorrect` and
+  `BlockToKleeneStmtCorrect`.
 
   Since the definitions involve mutual recursion, `Nat.strongRecOn` is used to
-  do induction on the size of the structure (see `StmtToNondetCorrect`). From
+  do induction on the size of the structure (see `StmtToKleeneCorrect`). From
   experience, `mutual` theorems in Lean sometimes does not work well with
   implicit arguments, and it can be hard to find the cause from the generic
   error message similar to "(kernel) application type mismatch".
@@ -136,7 +136,7 @@ theorem EvalBlock_noFuncDecl_preserves_δ
   The proof requires that the program contains no function declarations.
   When `noFuncDecl` holds, the evaluator `δ` is preserved (δ' = δ).
 -/
-theorem StmtToNondetCorrect
+theorem StmtToKleeneCorrect
   [HasVal P] [HasFvar P] [HasBool P] [HasBoolVal P] [HasNot P] [DecidableEq P.Ident]
   (extendEval : ExtendEval P) :
   WellFormedSemanticEvalBool δ →
@@ -145,12 +145,12 @@ theorem StmtToNondetCorrect
     Stmt.sizeOf st ≤ m →
     Stmt.noFuncDecl st →
     EvalStmt P (Cmd P) (EvalCmd P) extendEval δ σ st σ' δ →
-    EvalNondetStmt P (Cmd P) (EvalCmd P) δ σ (StmtToNondetStmt st) σ') ∧
+    EvalKleeneStmt P (Cmd P) (EvalCmd P) δ σ (StmtToKleeneStmt st) σ') ∧
   (∀ ss,
     Block.sizeOf ss ≤ m →
     Block.noFuncDecl ss →
     EvalBlock P (Cmd P) (EvalCmd P) extendEval δ σ ss σ' δ →
-    EvalNondetStmt P (Cmd P) (EvalCmd P) δ σ (BlockToNondetStmt ss) σ') := by
+    EvalKleeneStmt P (Cmd P) (EvalCmd P) δ σ (BlockToKleeneStmt ss) σ') := by
   intros Hwfb Hwfvl
   apply Nat.strongRecOn (motive := λ m ↦
     ∀ σ σ',
@@ -158,12 +158,12 @@ theorem StmtToNondetCorrect
       Stmt.sizeOf st ≤ m →
       Stmt.noFuncDecl st →
       EvalStmt P (Cmd P) (EvalCmd P) extendEval δ σ st σ' δ →
-      EvalNondetStmt P (Cmd P) (EvalCmd P) δ σ (StmtToNondetStmt st) σ') ∧
+      EvalKleeneStmt P (Cmd P) (EvalCmd P) δ σ (StmtToKleeneStmt st) σ') ∧
     (∀ ss,
       Block.sizeOf ss ≤ m →
       Block.noFuncDecl ss →
       EvalBlock P (Cmd P) (EvalCmd P) extendEval δ σ ss σ' δ →
-      EvalNondetStmt P (Cmd P) (EvalCmd P) δ σ (BlockToNondetStmt ss) σ')
+      EvalKleeneStmt P (Cmd P) (EvalCmd P) δ σ (BlockToKleeneStmt ss) σ')
   )
   intros n ih σ σ'
   refine ⟨?_, ?_⟩
@@ -172,7 +172,7 @@ theorem StmtToNondetCorrect
     | .cmd c =>
       cases Heval with
       | cmd_sem Hcmd Hdef =>
-        exact EvalNondetStmt.cmd_sem Hcmd Hdef
+        exact EvalKleeneStmt.cmd_sem Hcmd Hdef
     | .block _ bss _ =>
       cases Heval with
       | block_sem Heval =>
@@ -189,9 +189,9 @@ theorem StmtToNondetCorrect
         simp [Stmt.noFuncDecl] at Hno
         have Hδ : _ = δ := EvalBlock_noFuncDecl_preserves_δ extendEval tss δ _ σ σ' Hno.1 Heval
         specialize ih (Block.sizeOf tss) (by simp_all; omega)
-        refine EvalNondetStmt.choice_left_sem Hwfb ?_
-        apply EvalNondetStmt.seq_sem
-        . apply EvalNondetStmt.cmd_sem
+        refine EvalKleeneStmt.choice_left_sem Hwfb ?_
+        apply EvalKleeneStmt.seq_sem
+        . apply EvalKleeneStmt.cmd_sem
           exact EvalCmd.eval_assume Htrue Hwfb
           simp [isDefinedOver, HasVarsImp.modifiedVars, Cmd.modifiedVars, isDefined]
         . apply (ih _ _).2
@@ -202,9 +202,9 @@ theorem StmtToNondetCorrect
         simp [Stmt.noFuncDecl] at Hno
         have Hδ : _ = δ := EvalBlock_noFuncDecl_preserves_δ extendEval ess δ _ σ σ' Hno.2 Heval
         specialize ih (Block.sizeOf ess) (by simp_all; omega)
-        refine EvalNondetStmt.choice_right_sem Hwfb ?_
-        apply EvalNondetStmt.seq_sem
-        . apply EvalNondetStmt.cmd_sem
+        refine EvalKleeneStmt.choice_right_sem Hwfb ?_
+        apply EvalKleeneStmt.seq_sem
+        . apply EvalKleeneStmt.cmd_sem
           refine EvalCmd.eval_assume ?_ Hwfb
           simp [WellFormedSemanticEvalBool] at Hwfb
           exact (Hwfb σ c).2.mp Hfalse
@@ -222,8 +222,8 @@ theorem StmtToNondetCorrect
     | .typeDecl _ md =>
       cases Heval with
       | typeDecl_sem =>
-        simp [StmtToNondetStmt]
-        apply EvalNondetStmt.cmd_sem
+        simp [StmtToKleeneStmt]
+        apply EvalKleeneStmt.cmd_sem
         · apply EvalCmd.eval_assume
           · have ⟨Htt, _⟩ := HasBoolVal.bool_is_val (P := P)
             exact Hwfvl.2 HasBool.tt σ Htt
@@ -233,7 +233,7 @@ theorem StmtToNondetCorrect
     cases ss <;>
     cases Heval
     case stmts_none_sem =>
-      simp [BlockToNondetStmt]
+      simp [BlockToKleeneStmt]
       constructor
       constructor
       · simp [WellFormedSemanticEvalVal] at Hwfvl
@@ -243,7 +243,7 @@ theorem StmtToNondetCorrect
       · intros id Hin
         simp [HasVarsImp.modifiedVars, Cmd.modifiedVars] at Hin
     case stmts_some_sem h t σ'' δ₁ Heval Hevals =>
-      simp [BlockToNondetStmt]
+      simp [BlockToKleeneStmt]
       simp [Block.sizeOf] at Hsz
       simp [Block.noFuncDecl] at Hno
       have Hδ₁ : δ₁ = δ := EvalStmt_noFuncDecl_preserves_δ extendEval h δ δ₁ σ σ'' Hno.1 Heval
@@ -260,30 +260,30 @@ theorem StmtToNondetCorrect
         exact Hno.2
         exact Hevals
 
-/-- Proof that the Deterministic-to-nondeterministic transformation is correct
+/-- Proof that the deterministic-to-Kleene transformation is correct
 for a single (deterministic) statement that contains no function declarations. -/
-theorem StmtToNondetStmtCorrect
+theorem StmtToKleeneStmtCorrect
   [HasVal P] [HasFvar P] [HasBool P] [HasBoolVal P] [HasNot P] [DecidableEq P.Ident]
   (extendEval : ExtendEval P) :
   WellFormedSemanticEvalBool δ →
   WellFormedSemanticEvalVal δ →
   Stmt.noFuncDecl st →
   EvalStmt P (Cmd P) (EvalCmd P) extendEval δ σ st σ' δ →
-  EvalNondetStmt P (Cmd P) (EvalCmd P) δ σ (StmtToNondetStmt st) σ' := by
+  EvalKleeneStmt P (Cmd P) (EvalCmd P) δ σ (StmtToKleeneStmt st) σ' := by
   intros Hwfb Hwfv Hno Heval
-  exact (StmtToNondetCorrect extendEval Hwfb Hwfv (m:=st.sizeOf)).1 st (Nat.le_refl _) Hno Heval
+  exact (StmtToKleeneCorrect extendEval Hwfb Hwfv (m:=st.sizeOf)).1 st (Nat.le_refl _) Hno Heval
 
-/-- Proof that the Deterministic-to-nondeterministic transformation is correct
+/-- Proof that the deterministic-to-Kleene transformation is correct
 for multiple (deterministic) statements that contain no function declarations. -/
-theorem BlockToNondetStmtCorrect
+theorem BlockToKleeneStmtCorrect
   [HasVal P] [HasFvar P] [HasBool P] [HasBoolVal P] [HasNot P] [DecidableEq P.Ident]
   (extendEval : ExtendEval P) :
   WellFormedSemanticEvalBool δ →
   WellFormedSemanticEvalVal δ →
   Block.noFuncDecl ss →
   EvalBlock P (Cmd P) (EvalCmd P) extendEval δ σ ss σ' δ →
-  EvalNondetStmt P (Cmd P) (EvalCmd P) δ σ (BlockToNondetStmt ss) σ' := by
+  EvalKleeneStmt P (Cmd P) (EvalCmd P) δ σ (BlockToKleeneStmt ss) σ' := by
   intros Hwfb Hwfv Hno Heval
-  exact (StmtToNondetCorrect extendEval Hwfb Hwfv (m:=Block.sizeOf ss)).2 ss (Nat.le_refl _) Hno Heval
+  exact (StmtToKleeneCorrect extendEval Hwfb Hwfv (m:=Block.sizeOf ss)).2 ss (Nat.le_refl _) Hno Heval
 
 end
