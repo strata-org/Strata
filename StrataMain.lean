@@ -722,7 +722,8 @@ def pyAnalyzeLaurelCommand : Command where
         profileStep profile "SMT verification" do
           match ← Core.verifyProgram coreProgram options
                     (moreFns := Strata.Python.ReFactory)
-                    (proceduresToVerify := some userProcNames) |>.toBaseIO with
+                    (proceduresToVerify := some userProcNames)
+                    (externalPhases := [Strata.frontEndPhase]) |>.toBaseIO with
           | .ok r => pure r
           | .error msg => exitPyAnalyzeInternalError msg
 
