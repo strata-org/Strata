@@ -130,14 +130,14 @@ open Strata.Parser (stringInputContext)
   if diags.size ≠ 0 then
     throw <| .userError s!"Expected 0 diagnostics, got {diags.size}"
 
--- datetime.now(timezone.utc) should work: the prelude models the optional tz parameter.
+-- datetime.now() with optional tz parameter and timedelta arithmetic.
 #guard_msgs in
 #eval withPython (warnOnSkip := false) fun pythonCmd => do
   let program :=
-"from datetime import datetime, timezone, timedelta
+"from datetime import datetime, timedelta
 
 def main() -> None:
-    now: datetime = datetime.now(timezone.utc)
+    now: datetime = datetime.now(None)
     delta: timedelta = timedelta(days=7)
     start: datetime = now - delta
     assert start <= now
