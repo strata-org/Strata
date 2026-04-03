@@ -9,6 +9,8 @@ public import Strata.DL.Lambda.LExprWF
 import all Strata.DL.Lambda.LExprWF
 import all Strata.DL.Lambda.LExpr
 public import Strata.DL.Lambda.LTy
+public import Strata.DL.Lambda.LTyUnify
+import all Strata.DL.Lambda.LTyUnify
 public import Strata.DDM.AST
 public import Strata.DDM.Util.Array
 public import Strata.DL.Util.Func
@@ -256,6 +258,59 @@ theorem Factory.callOfLFunc_smaller {T} {F : @Factory T.base} {e : LExpr T} {op 
   · cases (Nat.ble args.length (List.length F'.inputs)) <;> simp
     intros op_eq args_eq F_eq
     subst op args F'; exact (getLFuncCall_smaller Hfunc)
+
+/--
+Apply type substitution `S` to all type annotations in an `LExpr`.
+This is only for user-defined types, not metadata-stored resolved types.
+If e is an LExprT whose metadata contains type information, use applySubstT.
+-/
+def LExpr.applySubst {T : LExprParams} (e : LExpr T.mono) (S : Subst) : LExpr T.mono :=
+  if S.hasEmptyScopes then e else replaceUserProvidedType e (LMonoTy.subst S)
+
+/--
+Best-effort type extraction from an `LExpr` without a typing context.
+Returns `none` when the type cannot be determined syntactically.
+-/
+def LExpr.typeOf {T : LExprParams} : LExpr T.mono → Option LMonoTy
+  | .const _ c              => some c.ty
+  | .op _ _ ty              => ty
+  | .bvar _ _               => none
+  | .fvar _ _ ty            => ty
+  | .abs _ _ (some argTy) e => e.typeOf.map (.arrow argTy ·)
+  | .abs _ _ none _         => none
+  | .quant _ _ _ _ _ _      => some .bool
+  | .app _ fn _             => fn.typeOf.bind (fun | .arrow _ ret => some ret | _ => none)
+  | .ite _ _ t _            => t.typeOf
+  | .eq _ _ _               => some .bool
+
+/--
+Derive a type substitution by unifying the instantiated operator type against the
+function's generic type. Used when inlining a polymorphic function body to
+instantiate type variables.
+
+Returns `some Subst.empty` when `fn.typeArgs` is empty (monomorphic — no-op).
+Returns `none` if the type substitution cannot be derived.
+-/
+def LFunc.computeTypeSubst {T : LExprParams} (fn : LFunc T) (callee : LExpr T.mono)
+    (args : List (LExpr T.mono)) : Option Subst :=
+  if fn.typeArgs.isEmpty then some Subst.empty
+  else
+    -- Try the instantiated type on the .op node first
+    let opConstraints := match callee with
+      | .op _ _ (some instTy) =>
+        let genericTy := LMonoTy.mkArrow' fn.output fn.inputs.values
+        [(instTy, genericTy)]
+      | _ => []
+    -- Also unify argument types against formal parameter types
+    -- Note that the best-effort mechanism is OK: on typechecked terms,
+    -- everything will have been found by the `opConstraints` anyway
+    let argConstraints := (args.zip fn.inputs.values).filterMap
+      (fun (arg, formal) => arg.typeOf.map (·, formal))
+    let allConstraints := opConstraints ++ argConstraints
+    if allConstraints.isEmpty then none
+    else match Constraints.unify allConstraints SubstInfo.empty with
+      | .ok substInfo => some substInfo.subst
+      | .error _ => none
 
 end -- public section
 end Lambda
