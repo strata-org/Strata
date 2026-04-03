@@ -1,5 +1,7 @@
-test_class_field_use.py(12, 4): ✅ pass - callElimAssert_requires_7
+unknown location: ❓ unknown - (process_buffer ensures) Return type constraint
+test_class_field_use.py(12, 4): ✅ pass - callElimAssert_requires_8
 test_class_field_use.py(14, 4): ✅ pass - assert_assert(285)_calls_Any_to_bool_0
 test_class_field_use.py(14, 4): ❓ unknown - assert(285)
-DETAIL: 2 passed, 0 failed, 1 inconclusive
+test_class_field_use.py(11, 0): ✅ pass - postcondition
+DETAIL: 3 passed, 0 failed, 2 inconclusive
 RESULT: Inconclusive

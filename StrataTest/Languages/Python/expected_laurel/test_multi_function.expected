@@ -1,14 +1,23 @@
-test_multi_function.py(9, 4): ❓ unknown - ite_cond_calls_PNotIn_0
+unknown location: ✅ pass - (create_config ensures) Return type constraint
+test_multi_function.py(9, 4): ✅ pass - ite_cond_calls_PNotIn_0
 test_multi_function.py(9, 4): ✅ pass - ite_cond_calls_Any_to_bool_1
-test_multi_function.py(11, 4): ❓ unknown - ite_cond_calls_PNotIn_0
+unknown location: ✅ pass - (validate_config ensures) Return type constraint
+test_multi_function.py(11, 4): ✅ pass - ite_cond_calls_PNotIn_0
 test_multi_function.py(11, 4): ✅ pass - ite_cond_calls_Any_to_bool_1
-test_multi_function.py(18, 4): ❓ unknown - ite_cond_calls_Any_to_bool_0
+unknown location: ✅ pass - (validate_config ensures) Return type constraint
+unknown location: ✅ pass - (validate_config ensures) Return type constraint
+test_multi_function.py(16, 4): ✅ pass - callElimAssert_requires_0_7
+test_multi_function.py(16, 4): ✅ pass - callElimAssert_requires_1_8
+test_multi_function.py(17, 4): ✅ pass - callElimAssert_requires_2
+test_multi_function.py(18, 4): ✅ pass - ite_cond_calls_Any_to_bool_0
 unknown location: ❓ unknown - set_LaurelResult_calls_Any_get_0
+test_multi_function.py(23, 4): ✅ pass - callElimAssert_requires_0_21
+test_multi_function.py(23, 4): ✅ pass - callElimAssert_requires_1_22
 test_multi_function.py(24, 4): ✅ pass - assert_assert(651)_calls_Any_to_bool_0
 test_multi_function.py(24, 4): ❓ unknown - assert(651)
-test_multi_function.py(26, 4): ✅ pass - callElimAssert_requires_0_9
-test_multi_function.py(26, 4): ✅ pass - callElimAssert_requires_1_10
-test_multi_function.py(26, 4): ✅ pass - callElimAssert_requires_2_11
+test_multi_function.py(26, 4): ✅ pass - callElimAssert_requires_0_14
+test_multi_function.py(26, 4): ✅ pass - callElimAssert_requires_1_15
+test_multi_function.py(26, 4): ✅ pass - callElimAssert_requires_2_16
 test_multi_function.py(28, 0): ✅ pass - ite_cond_calls_Any_to_bool_0
-DETAIL: 7 passed, 0 failed, 5 inconclusive
+DETAIL: 19 passed, 0 failed, 2 inconclusive
 RESULT: Inconclusive

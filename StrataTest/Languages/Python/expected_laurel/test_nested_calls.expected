@@ -1,9 +1,17 @@
+unknown location: ✅ pass - (double ensures) Return type constraint
+unknown location: ✅ pass - (add_one ensures) Return type constraint
+test_nested_calls.py(8, 4): ✅ pass - callElimAssert_requires_22
+test_nested_calls.py(9, 4): ✅ pass - callElimAssert_requires_18
 test_nested_calls.py(10, 4): ✅ pass - assert_assert(153)_calls_Any_to_bool_0
 test_nested_calls.py(10, 4): ❓ unknown - assert(153)
+test_nested_calls.py(12, 4): ✅ pass - callElimAssert_requires_14
+test_nested_calls.py(13, 4): ✅ pass - callElimAssert_requires_10
 test_nested_calls.py(14, 4): ✅ pass - assert_assert(254)_calls_Any_to_bool_0
 test_nested_calls.py(14, 4): ❓ unknown - assert(254)
+test_nested_calls.py(16, 4): ✅ pass - callElimAssert_requires_6
+test_nested_calls.py(17, 4): ✅ pass - callElimAssert_requires_2
 test_nested_calls.py(18, 4): ✅ pass - assert_assert(356)_calls_Any_to_bool_0
 test_nested_calls.py(18, 4): ❓ unknown - assert(356)
 test_nested_calls.py(20, 0): ✅ pass - ite_cond_calls_Any_to_bool_0
-DETAIL: 4 passed, 0 failed, 3 inconclusive
+DETAIL: 12 passed, 0 failed, 3 inconclusive
 RESULT: Inconclusive

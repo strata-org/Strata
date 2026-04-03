@@ -48,9 +48,8 @@ private def specDefaultToExpr : Python.Specs.SpecDefault → Python.expr SourceR
   | .none => .Constant default (.ConNone default) default
 
 /-- Convert a pyspec Arg to a PythonFunctionDecl arg tuple. -/
-private def specArgToFuncDeclArg (arg : Python.Specs.Arg)
-    : String × String × Option (Python.expr SourceRange) :=
-  (arg.name, "Any", arg.default.map specDefaultToExpr)
+private def specArgToFuncDeclArg (arg : Python.Specs.Arg): Python.PyArgInfo :=
+  {name:= arg.name, md:= default, tys:= ["Any"], default:= arg.default.map specDefaultToExpr}
 
 /-- Build a PythonFunctionDecl from a PySpec FunctionDecl or class method,
     expanding `**kwargs` TypedDict fields into individual parameters. -/

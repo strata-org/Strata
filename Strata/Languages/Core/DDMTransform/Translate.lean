@@ -1798,7 +1798,7 @@ def genDatatypeFactory (ldatatypes : List (LDatatype Unit)) :
   let factory ← match genBlockFactory ldatatypes (T := Core.CoreLParams) with
     | .ok f => pure f
     | .error e => TransM.error s!"Failed to generate datatype factory: {e}"
-  return factory.toList.map fun func => Core.Decl.func func .empty
+  return factory.toArray.toList.map fun func => Core.Decl.func func .empty
 
 ---------------------------------------------------------------------
 
