@@ -672,11 +672,7 @@ def keepSetFilterPipelinePhase (procs : List String) : PipelinePhase :=
     When `procs` and `factory` are provided (targeted verification), the
     pipeline includes filtering and precondition-elimination phases.
     All filter phases are model-preserving since they only remove
-    information without introducing over-approximations.
-
-    `loopElimPipelinePhase` is placed last because loop elimination
-    should run after all other program transformations, closest to
-    partial evaluation and SMT. -/
+    information without introducing over-approximations. -/
 def corePipelinePhases (procs : Option (List String) := none)
     (factory : Option (@Lambda.Factory CoreLParams) := none) : List PipelinePhase :=
   let filterPhases := match procs with
@@ -688,7 +684,10 @@ def corePipelinePhases (procs : Option (List String) := none)
   let keepSetPhase := match procs with
     | some ps => [keepSetFilterPipelinePhase ps]
     | none => []
-  filterPhases ++ [callElimPipelinePhase] ++ precondPhase ++ keepSetPhase ++ [loopElimPipelinePhase]
+  let callElimPhase := match procs with
+    | some _ => [callElimPipelinePhase]
+    | none => []
+  filterPhases ++ callElimPhase ++ precondPhase ++ keepSetPhase ++ [loopElimPipelinePhase]
 
 /-- The abstracted phases derived from the Core pipeline phases. -/
 def coreAbstractedPhases (procs : Option (List String) := none)
@@ -902,34 +901,18 @@ def verify (program : Program)
     : EIO DiagnosticModel VCResults := do
   let profile := options.profile
   let factory ← EIO.ofExcept (Core.Factory.addFactory moreFns)
-  let phases := coreAbstractedPhases (procs := proceduresToVerify) (factory := some factory)
+  let pipelinePhases := corePipelinePhases (procs := proceduresToVerify) (factory := some factory)
+  let phases := pipelinePhases.map (·.phase)
   let finalProgram ← profileStep profile "  Program transformations" do
-    match proceduresToVerify with
-    | none =>
-      let runTransforms := fun prog => do
-        let (_changed, prog) ← PrecondElim.precondElim prog factory
-        let (_changed, prog) ← loopElim' prog
-        return prog
-      match Transform.run program runTransforms with
-      | .ok prog => .ok prog
-      | .error e => .error (DiagnosticModel.fromFormat f!"❌ Transform Error. {e}")
-    | some procs =>
-       -- Verify specific procedures. All pipeline phases — including
-       -- filtering, call/loop elimination, precondition elimination, and
-       -- the final keep-set filter — are defined in `corePipelinePhases`.
-       -- Each phase pairs its transform with its model validation,
-       -- ensuring they stay in sync.
-      let pipelinePhases := corePipelinePhases (procs := some procs) (factory := some factory)
-      let passes := fun prog => do
-        let mut current := prog
-        for pp in pipelinePhases do
-          let (_changed, next) ← pp.transform current
-          current := next
-        return current
-      let res := Transform.run program passes
-      match res with
-      | .ok prog => .ok prog
-      | .error e => .error (DiagnosticModel.fromFormat f!"❌ Transform Error. {e}")
+    let passes := fun prog => do
+      let mut current := prog
+      for pp in pipelinePhases do
+        let (_changed, next) ← pp.transform current
+        current := next
+      return current
+    match Transform.run program passes with
+    | .ok prog => .ok prog
+    | .error e => .error (DiagnosticModel.fromFormat f!"❌ Transform Error. {e}")
   -- Build the axiom relevance cache once (post-transform, so declarations are
   -- stable). The cache is reused across all verification environments and goals.
   let axiomCache? ← profileStep profile "  Build axiom relevance cache" do
