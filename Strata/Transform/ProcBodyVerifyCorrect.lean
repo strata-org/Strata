@@ -671,9 +671,9 @@ theorem procToVerifyStmt_structure
                           (by rw [h_g_store]; exact h_wf.storeDefined g h_g_in_vi)
                           (by rw [h_oldG_store]
                               have : (ρ₀.store (CoreIdent.mkOld g.name)).isSome := by
-                                rw [← h_wf.oldMatchesCurrent g h_g_mod]; exact h_wf.storeDefined g h_g_in_vi
+                                rw [← h_wf.oldModifiesMatchesCurrent g h_g_mod]; exact h_wf.storeDefined g h_g_in_vi
                               exact this)
-                          (by rw [h_g_store, h_oldG_store]; exact h_wf.oldMatchesCurrent g h_g_mod)
+                          (by rw [h_g_store, h_oldG_store]; exact h_wf.oldModifiesMatchesCurrent g h_g_mod)
                           (@CoreIdent.ne_mkOld g)
                         simp only [List.flatten_cons]
                         rw [PrefixStepsOK_append]

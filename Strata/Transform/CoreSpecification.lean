@@ -37,21 +37,28 @@ def Lang.core
 
 /-! ## Well-formed program state at the entry of procedure -/
 
--- Note: outputs are included because the body refers to the output variables.
+/-- The list of variables (either local or global) that must have been declared,
+    to make execution of the body of this procedure not stuck.
+    outputs are included because the body refers to the output variables without
+    initialization.
+    This does not include the old variables. -/
 def procVerifyInitIdents (proc : Procedure) : List Expression.Ident :=
   ListMap.keys proc.header.inputs ++
   ListMap.keys proc.header.outputs ++
   proc.spec.modifies
 
 /-- A well-formed initial environment for executing the procedure body.
-    This captures the state after inputs, outputs, modified globals (with
-    their `old` snapshots) have been initialized and preconditions assumed. -/
+    This captures the state after inputs, outputs, modified globals have been
+    initialized and preconditions assumed.
+    The well-formed environment also includes old snapshots in store -/
 structure ProcEnvWF (proc : Procedure) (ρ : Env Expression) : Prop where
   wfVar  : WellFormedSemanticEvalVar ρ.eval
   wfBool : WellFormedSemanticEvalBool ρ.eval
   storeDefined : ∀ id ∈ procVerifyInitIdents proc, (ρ.store id).isSome
-  oldMatchesCurrent : ∀ g ∈ proc.spec.modifies,
+  oldModifiesMatchesCurrent : ∀ g ∈ proc.spec.modifies,
     ρ.store g = ρ.store (CoreIdent.mkOld g.name)
+  oldInputMatchesCurrent : ∀ id ∈ ListMap.keys proc.header.inputs,
+    ρ.store id = ρ.store (CoreIdent.mkOld id.name)
   preconditionsHold : ∀ (label : CoreLabel) (check : Procedure.Check),
     (label, check) ∈ proc.spec.preconditions.toList →
     ρ.eval ρ.store check.expr = some HasBool.tt
