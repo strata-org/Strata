@@ -286,10 +286,11 @@ def Core.verifyProgram
     (options : Core.VerifyOptions)
     (moreFns : @Lambda.Factory Core.CoreLParams := Lambda.Factory.default)
     (proceduresToVerify : Option (List String) := none)
+    (externalPhases : List Core.AbstractedPhase := [])
     : EIO String Core.VCResults := do
   let runVerification (tempDir : System.FilePath) : IO Core.VCResults :=
     EIO.toIO (IO.Error.userError ∘ toString)
-      (Core.verify program tempDir proceduresToVerify options moreFns)
+      (Core.verify program tempDir proceduresToVerify options moreFns externalPhases)
   let ioAction := match options.vcDirectory with
     | .some vcDir => IO.FS.createDirAll vcDir *> runVerification vcDir
     | .none => IO.FS.withTempDir runVerification

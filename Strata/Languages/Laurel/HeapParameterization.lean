@@ -470,7 +470,6 @@ def heapParameterization (model: SemanticModel) (program : Program) : Program :=
   let program := { program with
     types := program.types
     staticProcedures := program.staticProcedures }
-  -- Collect instance procedures from composite types for heap analysis
   let instanceProcs := program.types.foldl (fun acc td =>
     match td with
     | .Composite ct => acc ++ ct.instanceProcedures

@@ -28,19 +28,19 @@ test_regex_negative.py(37, 4): ✅ pass - assert_assert(1133)_calls_Any_to_bool_
 test_regex_negative.py(37, 4): ❓ unknown - assert(1133)
 test_regex_negative.py(44, 8): ✅ pass - set_m_calls_re_fullmatch_0
 test_regex_negative.py(47, 4): ✅ pass - assert_assert(1495)_calls_Any_to_bool_0
-test_regex_negative.py(47, 4): ❌ fail - assert(1495)
+test_regex_negative.py(47, 4): ❓ unknown - assert(1495)
 test_regex_negative.py(51, 8): ✅ pass - set_m_calls_re_fullmatch_0
 test_regex_negative.py(54, 4): ✅ pass - assert_assert(1667)_calls_Any_to_bool_0
-test_regex_negative.py(54, 4): ❌ fail - assert(1667)
+test_regex_negative.py(54, 4): ❓ unknown - assert(1667)
 test_regex_negative.py(58, 8): ✅ pass - set_m_calls_re_fullmatch_0
 test_regex_negative.py(61, 4): ✅ pass - assert_assert(1846)_calls_Any_to_bool_0
-test_regex_negative.py(61, 4): ❌ fail - assert(1846)
+test_regex_negative.py(61, 4): ❓ unknown - assert(1846)
 test_regex_negative.py(65, 8): ✅ pass - set_m_calls_re_search_0
 test_regex_negative.py(68, 4): ✅ pass - assert_assert(2015)_calls_Any_to_bool_0
-test_regex_negative.py(68, 4): ❌ fail - assert(2015)
+test_regex_negative.py(68, 4): ❓ unknown - assert(2015)
 test_regex_negative.py(72, 8): ✅ pass - set_m_calls_re_match_0
 test_regex_negative.py(75, 4): ✅ pass - assert_assert(2193)_calls_Any_to_bool_0
-test_regex_negative.py(75, 4): ❌ fail - assert(2193)
+test_regex_negative.py(75, 4): ❓ unknown - assert(2193)
 test_regex_negative.py(83, 4): ✅ pass - set_m_calls_re_search_0
 test_regex_negative.py(84, 4): ✅ pass - assert_assert(2681)_calls_Any_to_bool_0
 test_regex_negative.py(84, 4): ❓ unknown - assert(2681)
@@ -72,5 +72,5 @@ test_regex_negative.py(113, 4): ✅ pass - set_m_calls_re_search_0
 test_regex_negative.py(114, 4): ✅ pass - assert_assert(3866)_calls_Any_to_bool_0
 test_regex_negative.py(114, 4): ❓ unknown - assert(3866)
 test_regex_negative.py(116, 0): ✅ pass - ite_cond_calls_Any_to_bool_0
-DETAIL: 50 passed, 5 failed, 19 inconclusive
-RESULT: Failures found
+DETAIL: 50 passed, 0 failed, 24 inconclusive
+RESULT: Inconclusive

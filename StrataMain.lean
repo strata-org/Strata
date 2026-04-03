@@ -360,7 +360,8 @@ def pyAnalyzeCommand : Command where
                 vcDirectory := vcDir }
       let vcResults ←
         match ← Core.verifyProgram newPgm options
-                  (moreFns := Strata.Python.ReFactory) |>.toBaseIO with
+                  (moreFns := Strata.Python.ReFactory)
+                  (externalPhases := [Strata.frontEndPhase]) |>.toBaseIO with
         | .ok r => pure r
         | .error msg => exitInternalError msg
       let mfm : Option (String × Lean.FileMap) := match pySourceOpt with
@@ -654,7 +655,8 @@ def pyAnalyzeLaurelCommand : Command where
     let vcResults ← profileStep profile "SMT verification" do
       match ← Core.verifyProgram coreProgram options
                 (moreFns := Strata.Python.ReFactory)
-                (proceduresToVerify := some userProcNames) |>.toBaseIO with
+                (proceduresToVerify := some userProcNames)
+                (externalPhases := [Strata.frontEndPhase]) |>.toBaseIO with
       | .ok r => pure r
       | .error msg => exitPyAnalyzeInternalError msg
 
