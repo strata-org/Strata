@@ -128,7 +128,8 @@ private meta def runAnalyzeAndVerify
       checkMode := .bugFinding, checkLevel := .full }
   match ← Core.verifyProgram coreProgram options
       (moreFns := Strata.Python.ReFactory)
-      (proceduresToVerify := some userProcNames) |>.toBaseIO with
+      (proceduresToVerify := some userProcNames)
+      (externalPhases := [Strata.frontEndPhase]) |>.toBaseIO with
   | .ok results => return .ok results
   | .error msg => return .error (toString msg)
 
