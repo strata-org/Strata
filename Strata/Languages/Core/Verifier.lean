@@ -674,9 +674,9 @@ def keepSetFilterPipelinePhase (procs : List String) : PipelinePhase :=
     All filter phases are model-preserving since they only remove
     information without introducing over-approximations.
 
-    `loopElimPipelinePhase` is placed last because loop elimination happens
-    during evaluation (not as a program-to-program pass), making it the
-    closest phase to SMT. -/
+    `loopElimPipelinePhase` is placed last because loop elimination
+    should run after all other program transformations, closest to
+    partial evaluation and SMT. -/
 def corePipelinePhases (procs : Option (List String) := none)
     (factory : Option (@Lambda.Factory CoreLParams) := none) : List PipelinePhase :=
   let filterPhases := match procs with
@@ -889,14 +889,6 @@ def verifySingleEnv (pE : Program × Env) (options : VerifyOptions)
       let _ ← (IO.println s!"[profile]     Obligations: {E.deferred.size} total, {peResolvedCount} resolved by PE" |>.toBaseIO)
     return results
 
-/-- Eliminate loops in all procedures of a Core program by replacing each loop
-with assertions and assumptions about its invariants. -/
-def loopElim (p : Program) : Program :=
-  { decls := p.decls.map fun d => match d with
-    | .proc proc md =>
-      .proc { proc with body := (StateT.run (Block.removeLoopsM proc.body) 0).fst } md
-    | other => other }
-
 /-- Run the Strata Core verification pipeline on a program: transform,
 type-check, partially evaluate, and discharge proof obligations via SMT.
 All program-wide transformations that occur before any analyses
@@ -912,12 +904,13 @@ def verify (program : Program)
   let factory ← EIO.ofExcept (Core.Factory.addFactory moreFns)
   let phases := coreAbstractedPhases (procs := proceduresToVerify) (factory := some factory)
   let finalProgram ← profileStep profile "  Program transformations" do
-    let runPrecondElim := fun prog => do
-      let (_changed, prog) ← PrecondElim.precondElim prog factory
-      return prog
     match proceduresToVerify with
     | none =>
-      match Transform.run program runPrecondElim with
+      let runTransforms := fun prog => do
+        let (_changed, prog) ← PrecondElim.precondElim prog factory
+        let (_changed, prog) ← loopElim' prog
+        return prog
+      match Transform.run program runTransforms with
       | .ok prog => .ok prog
       | .error e => .error (DiagnosticModel.fromFormat f!"❌ Transform Error. {e}")
     | some procs =>
@@ -942,9 +935,6 @@ def verify (program : Program)
   let axiomCache? ← profileStep profile "  Build axiom relevance cache" do
     pure (if options.removeIrrelevantAxioms == .Off then .none
           else .some (IrrelevantAxioms.Cache.build finalProgram))
-  -- Eliminate loops as a separate phase before partial evaluation.
-  let finalProgram ← profileStep profile "  Loop elimination" do
-    pure (loopElim finalProgram)
   let pEs ← profileStep profile "  Type check and partial eval" do
     match Core.typeCheckAndPartialEval options finalProgram moreFns with
     | .error err =>

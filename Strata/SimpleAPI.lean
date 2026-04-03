@@ -9,6 +9,7 @@ public import Strata.Util.IO
 
 public import Strata.Transform.CoreTransform
 import Strata.Transform.CallElim
+import Strata.Transform.LoopElim
 import Strata.Transform.ProcedureInlining
 
 public import Strata.Languages.Core.Options

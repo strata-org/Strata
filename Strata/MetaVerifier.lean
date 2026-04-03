@@ -8,6 +8,7 @@ import Lean.Meta
 import Lean.Elab.Tactic
 
 import Strata.Languages.Core.Verifier
+import Strata.Transform.LoopElim
 import Strata.Languages.C_Simp.Verify
 import Strata.Languages.Boole.Verify
 import Strata.DL.Imperative.SMTUtils
