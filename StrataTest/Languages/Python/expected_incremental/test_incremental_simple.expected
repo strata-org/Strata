@@ -1,1 +1,4 @@
-
+procedure main:
+  non-CoreSMT: 🚨 Statement not in CoreSMT subset: type 'Lambda.LMonoTy.tcons "Any" []' is not an SMT-native type
+procedure __main__:
+  non-CoreSMT: 🚨 Statement not in CoreSMT subset: type 'Lambda.LMonoTy.tcons "Any" []' is not an SMT-native type
