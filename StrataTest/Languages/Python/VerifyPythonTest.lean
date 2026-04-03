@@ -147,6 +147,8 @@ def create_service() -> Any:
     svc: MyService = MyService(\"test\")
     return svc
 "
-  let _ ← processPythonFile pythonCmd (stringInputContext "test.py" program)
+  let diags ← processPythonFile pythonCmd (stringInputContext "test.py" program)
+  if diags.size ≠ 0 then
+    throw <| .userError s!"Expected 0 diagnostics, got {diags.size}"
 
 end Strata.Python.VerifyPythonTest
