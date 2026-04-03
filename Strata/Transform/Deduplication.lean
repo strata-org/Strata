@@ -122,27 +122,32 @@ where
     else go rest (eErased :: seen) dups
 
 /-- Replace all occurrences of `target` (compared with erased types) with
-    `replacement` in an expression. -/
+    `replacement` in an expression. Erases `target` once upfront to avoid
+    redundant traversals at each node. -/
 partial def replaceExpr (target replacement : Expression.Expr)
     (e : Expression.Expr) : Expression.Expr :=
-  if e.eraseTypes == target.eraseTypes then replacement
-  else match e with
-  | .const _ _ | .bvar _ _ | .fvar _ _ _ | .op _ _ _ => e
-  | .app m fn arg =>
-    .app m (replaceExpr target replacement fn)
-           (replaceExpr target replacement arg)
-  | .ite m c t f =>
-    .ite m (replaceExpr target replacement c)
-           (replaceExpr target replacement t)
-           (replaceExpr target replacement f)
-  | .eq m e1 e2 =>
-    .eq m (replaceExpr target replacement e1)
-          (replaceExpr target replacement e2)
-  | .abs m name ty body =>
-    .abs m name ty (replaceExpr target replacement body)
-  | .quant m k name ty tr body =>
-    .quant m k name ty (replaceExpr target replacement tr)
-                       (replaceExpr target replacement body)
+  go target.eraseTypes replacement e
+where
+  go (targetErased replacement : Expression.Expr)
+      (e : Expression.Expr) : Expression.Expr :=
+    if e.eraseTypes == targetErased then replacement
+    else match e with
+    | .const _ _ | .bvar _ _ | .fvar _ _ _ | .op _ _ _ => e
+    | .app m fn arg =>
+      .app m (go targetErased replacement fn)
+             (go targetErased replacement arg)
+    | .ite m c t f =>
+      .ite m (go targetErased replacement c)
+             (go targetErased replacement t)
+             (go targetErased replacement f)
+    | .eq m e1 e2 =>
+      .eq m (go targetErased replacement e1)
+            (go targetErased replacement e2)
+    | .abs m name ty body =>
+      .abs m name ty (go targetErased replacement body)
+    | .quant m k name ty tr body =>
+      .quant m k name ty (go targetErased replacement tr)
+                         (go targetErased replacement body)
 
 /-- Get the type annotation from an expression, if available. -/
 private def getExprType? : Expression.Expr → Option LMonoTy
@@ -168,16 +173,19 @@ private def exprSize : Expression.Expr → Nat
 
 /-- Check if `sub` is a subexpression of `e` (type-erased comparison). -/
 private partial def isSubexprOf (sub e : Expression.Expr) : Bool :=
-  if sub.eraseTypes == e.eraseTypes then true
-  else match e with
-  | .const _ _ | .bvar _ _ | .fvar _ _ _ | .op _ _ _ => false
-  | .app _ fn arg => isSubexprOf sub fn || isSubexprOf sub arg
-  | .ite _ c t f =>
-    isSubexprOf sub c || isSubexprOf sub t || isSubexprOf sub f
-  | .eq _ e1 e2 => isSubexprOf sub e1 || isSubexprOf sub e2
-  | .abs _ _ _ body => isSubexprOf sub body
-  | .quant _ _ _ _ tr body =>
-    isSubexprOf sub tr || isSubexprOf sub body
+  go sub.eraseTypes e
+where
+  go (subErased : Expression.Expr) (e : Expression.Expr) : Bool :=
+    if e.eraseTypes == subErased then true
+    else match e with
+    | .const _ _ | .bvar _ _ | .fvar _ _ _ | .op _ _ _ => false
+    | .app _ fn arg => go subErased fn || go subErased arg
+    | .ite _ c t f =>
+      go subErased c || go subErased t || go subErased f
+    | .eq _ e1 e2 => go subErased e1 || go subErased e2
+    | .abs _ _ _ body => go subErased body
+    | .quant _ _ _ _ tr body =>
+      go subErased tr || go subErased body
 
 /-- Remove entries that are subexpressions of other entries in the list. -/
 private def removeSubsumed (exprs : List Expression.Expr) : List Expression.Expr :=
@@ -206,7 +214,9 @@ private def collectFromObligation (ob : ProofObligation Expression) :
   allExprs.flatMap collectSubexprs
 
 /-- Deduplicate a single proof obligation by extracting common subexpressions
-    into fresh variable definitions added as equality assumptions. -/
+    into fresh variable definitions added as equality assumptions.
+    Not yet wired into the verification pipeline; kept as scaffolding for
+    obligation-level deduplication (issue #475). -/
 def deduplicateObligation (ob : ProofObligation Expression) (startIdx : Nat) :
     ProofObligation Expression × Nat :=
   let targets := findDeduplicationTargets (collectFromObligation ob)
@@ -249,9 +259,9 @@ where
   | .ite .nondet tss ess md =>
     .ite .nondet (mapExprsInStatements f tss) (mapExprsInStatements f ess) md
   | .loop (.det g) measure inv body md =>
-    .loop (.det (f g)) measure (inv.map f) (mapExprsInStatements f body) md
+    .loop (.det (f g)) (measure.map f) (inv.map f) (mapExprsInStatements f body) md
   | .loop .nondet measure inv body md =>
-    .loop .nondet measure (inv.map f) (mapExprsInStatements f body) md
+    .loop .nondet (measure.map f) (inv.map f) (mapExprsInStatements f body) md
   | other => other
 
 /-- Collect all user-facing expressions from a list of statements. -/
@@ -272,10 +282,11 @@ where
     collectExprsFromStatements ess
   | .ite .nondet tss ess _ =>
     collectExprsFromStatements tss ++ collectExprsFromStatements ess
-  | .loop (.det g) _ inv body _ =>
-    collectSubexprs g ++ inv.flatMap collectSubexprs ++
-    collectExprsFromStatements body
-  | .loop .nondet _ inv body _ =>
+  | .loop (.det g) measure inv body _ =>
+    collectSubexprs g ++ measure.toList.flatMap collectSubexprs ++
+    inv.flatMap collectSubexprs ++ collectExprsFromStatements body
+  | .loop .nondet measure inv body _ =>
+    measure.toList.flatMap collectSubexprs ++
     inv.flatMap collectSubexprs ++ collectExprsFromStatements body
   | _ => []
 
