@@ -460,25 +460,25 @@ end VCOutcome
 
 
 /--
-A counterexample model with values lifted to LExpr for display purposes.
-This is used for formatting counterexamples in a human-readable way
+A model with values lifted to LExpr for display purposes.
+This is used for formatting models in a human-readable way
 using Core's expression formatter and for future use as program metadata.
 -/
 @[expose] abbrev LExprModel := List (Expression.Ident × LExpr CoreLParams.mono)
 
-/-- Format a counterexample value using the Core DDM formatter.
+/-- Format a model value using the Core DDM formatter.
     Renders constructors, applications, and primitives with Core syntax
     (e.g. `Cons(0, Nil)`, `Right(true)`). -/
-private def formatCexValue (e : LExpr CoreLParams.mono) : Format :=
+private def formatModelValue (e : LExpr CoreLParams.mono) : Format :=
   Core.formatExprs [e]
 
-def LExprModel.format (cex : LExprModel) : Format :=
-  match cex with
+def LExprModel.format (model : LExprModel) : Format :=
+  match model with
   | [] => ""
-  | [(id, e)] => f!"({id}, {formatCexValue e})"
+  | [(id, e)] => f!"({id}, {formatModelValue e})"
   | (id, e) :: rest =>
-    let first := f!"({id}, {formatCexValue e}) "
-    rest.foldl (fun acc (id', e') => acc ++ f!"({id'}, {formatCexValue e'}) ") first
+    let first := f!"({id}, {formatModelValue e}) "
+    rest.foldl (fun acc (id', e') => acc ++ f!"({id'}, {formatModelValue e'}) ") first
 
 instance : ToFormat LExprModel where
   format := LExprModel.format
@@ -761,10 +761,10 @@ def getObligationResult (assumptionTerms : List Term) (obligationTerm : Term)
       validityProperty := adjVal,
       solverLog := smtLog }
     let outcome := maskOutcome rawOutcome satisfiabilityCheck validityCheck
-    -- Extract counterexample model from sat results (using raw solver results)
-    let cex := match satResult, validityResult with
-      | .sat m, _ => convertCounterEx m (SMT.Context.getConstructorNames ctx)
-      | _, .sat m => convertCounterEx m (SMT.Context.getConstructorNames ctx)
+    -- Extract model from sat results (using raw solver results)
+    let model := match satResult, validityResult with
+      | .sat m, _ => convertModel m (SMT.Context.getConstructorNames ctx)
+      | _, .sat m => convertModel m (SMT.Context.getConstructorNames ctx)
       | _, _ => []
     let result := { obligation,
                     outcome := .ok outcome,
@@ -772,7 +772,7 @@ def getObligationResult (assumptionTerms : List Term) (obligationTerm : Term)
                     verbose := options.verbose,
                     checkLevel := options.checkLevel,
                     checkMode := options.checkMode,
-                    lexprModel := cex }
+                    lexprModel := model }
     return result
 
 def verifySingleEnv (pE : Program × Env) (options : VerifyOptions)
