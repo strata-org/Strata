@@ -53,7 +53,7 @@ inductive Result (Ident : Type) where
   -- Also see Strata.SMT.Decision.
   | sat (model : Model Ident)
   | unsat
-  | unknown
+  | unknown (candidateModel : Option (Model Ident) := none)
   | err (msg : String)
   deriving DecidableEq, Repr
 
@@ -68,7 +68,13 @@ def Result.formatWithVerbose {Ident} [ToFormat Ident]
       f!"sat"
     else f!"sat\nModel: {m}"
   | .unsat => f!"unsat"
-  | .unknown => f!"unknown"
+  | .unknown m =>
+    match m with
+    | some model =>
+      if (not verbose) || model.isEmpty then
+        f!"unknown"
+      else f!"unknown\nCandidate model: {model}"
+    | none => f!"unknown"
   | .err msg => f!"err {msg}"
 
 instance {Ident} [ToFormat Ident]: ToFormat (Result Ident) where
@@ -324,7 +330,7 @@ instance [ToFormat (SMT.Result P.Ident)] [ToFormat (SMT.Model P.Ident)]
         else
           f!"failed\nModel: {model}"
       | .unsat => f!"verified"
-      | .unknown => f!"unknown"
+      | .unknown _ => f!"unknown"
       | .err msg => f!"err {msg}"
     f!"Obligation: {r.obligation.label}\n\
                  Result: {result_fmt}"
