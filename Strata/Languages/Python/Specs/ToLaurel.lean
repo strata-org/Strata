@@ -123,7 +123,7 @@ private def tyBoolOrNone  : HighTypeMd := mkUserDefined "BoolOrNone"
 mutual
 
 /-- Convert a SpecAtomType to a string for error messages. -/
-partial def atomTypeToString (a : SpecAtomType) : String :=
+def atomTypeToString (a : SpecAtomType) : String :=
   match a with
   | .ident nm args =>
     if nm == PythonIdent.noneType && args.isEmpty then "None"
@@ -139,14 +139,21 @@ partial def atomTypeToString (a : SpecAtomType) : String :=
   | .intLiteral v => s!"Literal[{v}]"
   | .stringLiteral v => s!"Literal[\"{v}\"]"
   | .typedDict _ _ _ => "TypedDict"
+termination_by sizeOf a
 
 /-- Convert a SpecType to a string for error messages. -/
-partial def specTypeToString (t : SpecType) : String :=
-  if t.atoms.size == 1 then
-    atomTypeToString t.atoms[0]!
+def specTypeToString (t : SpecType) : String :=
+  if h : t.atoms.size = 1 then
+    atomTypeToString t.atoms[0]
   else
     let strs := t.atoms.map atomTypeToString
     String.intercalate " | " strs.toList
+termination_by sizeOf t
+decreasing_by
+  · cases t
+    decreasing_tactic
+  · cases t
+    decreasing_tactic
 
 end
 
@@ -318,7 +325,7 @@ private def mkStmtWithLoc (e : StmtExpr) (loc : SourceRange) (msg : String := ""
     Returns `none` for unsupported expressions (placeholders).
     Uses Core prelude function names (Any_len, DictStrAny_contains, etc.)
     which are resolved after the Core prelude is prepended. -/
-partial def specExprToLaurel (e : SpecExpr) (md : Imperative.MetaData Core.Expression)
+def specExprToLaurel (e : SpecExpr) (md : Imperative.MetaData Core.Expression)
   : ToLaurelM (Option StmtExprMd) :=
   match e with
   | .placeholder => do
@@ -517,7 +524,7 @@ def funcDeclToLaurel (procName : String) (func : FunctionDecl)
   }
 
 /-- Convert a class definition to Laurel types and procedures. -/
-partial def classDefToLaurel (cls : ClassDef) : ToLaurelM Unit := do
+def classDefToLaurel (cls : ClassDef) : ToLaurelM Unit := do
   let prefixedName ← prefixName cls.name
   -- Register alias from unprefixed to prefixed name for type resolution
   if prefixedName != cls.name then
@@ -543,6 +550,9 @@ partial def classDefToLaurel (cls : ClassDef) : ToLaurelM Unit := do
     pushProcedure proc
   for sub in cls.subclasses do
     classDefToLaurel sub
+decreasing_by
+  · cases cls
+    decreasing_tactic
 
 /-- Convert a type definition to a Laurel composite type placeholder. -/
 def typeDefToLaurel (td : TypeDef) : ToLaurelM Unit := do
