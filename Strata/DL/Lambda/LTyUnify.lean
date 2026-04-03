@@ -238,6 +238,14 @@ theorem LMonoTy.subst_tcons (S : Subst) (name : String) (args : LMonoTys) :
   · simp [LMonoTys.subst, *]
   · rfl
 
+theorem LMonoTys.subst_nil (S : Subst) : LMonoTys.subst S [] = [] := by
+  unfold LMonoTys.subst
+  split <;> simp [LMonoTys.subst.substAux]
+
+theorem LMonoTy.subst_bitvec (S : Subst) (n : Nat) : LMonoTy.subst S (.bitvec n) = .bitvec n := by
+  unfold LMonoTy.subst
+  split <;> rfl
+
 theorem Subst.isEmpty_implies_keys_empty (h : Subst.hasEmptyScopes S) :
   (Maps.keys S) = [] := by
   induction S <;> simp_all [Maps.keys, Subst.hasEmptyScopes, Map.isEmpty]

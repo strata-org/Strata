@@ -238,12 +238,49 @@ theorem Subst.find?_hasEmptyScopes (h : Subst.hasEmptyScopes S) (x : TyIdentifie
     Maps.find? S x = none := by
   sorry
 
+private theorem LConst.subst_ty (S : Subst) (c : LConst) : LMonoTy.subst S c.ty = c.ty := by
+  cases c <;> simp [LConst.ty, LMonoTy.int, LMonoTy.real, LMonoTy.string, LMonoTy.bool] <;> try rw [LMonoTy.subst_tcons, LMonoTys.subst_nil]<;> rfl
+  apply LMonoTy.subst_bitvec
+
 /-- `applySubst` preserves typing, mapping types through `subst S`. -/
 theorem applySubst_typeCheck (S : Subst)
     {e : LExpr T.mono} {τ : LMonoTy} {Δ : List LMonoTy}
     (h : LExpr.HasTypeA Δ e τ)
     : LExpr.HasTypeA (Δ.map (LMonoTy.subst S)) (e.applySubst S) (LMonoTy.subst S τ) := by
-  sorry
+  rw [LExpr.applySubst_eq_replaceUserProvidedType]
+  induction h with
+  | const =>
+    simp only [LExpr.replaceUserProvidedType]
+    rename_i c
+    rw [LConst.subst_ty S c]; exact .const
+  | op => simp [LExpr.replaceUserProvidedType, Option.map]; exact .op
+  | fvar => simp [LExpr.replaceUserProvidedType, Option.map]; exact .fvar
+  | bvar h_lookup =>
+    simp [LExpr.replaceUserProvidedType]
+    exact .bvar (by simp [List.getElem?_map, h_lookup])
+  | abs _ ih =>
+    simp only [LExpr.replaceUserProvidedType, Option.map]
+    simp only [LMonoTy.arrow]
+    rw [LMonoTy.subst_tcons_pair]
+    exact .abs ih
+  | quant _ _ ih_tr ih_body =>
+    simp only [LExpr.replaceUserProvidedType, Option.map]
+    have h_bool := LMonoTy.subst_bool S
+    rw [h_bool]
+    exact .quant ih_tr (h_bool ▸ ih_body)
+  | app _ _ ih_fn ih_arg =>
+    simp only [LExpr.replaceUserProvidedType]
+    rename_i aty rty _ _ _ _
+    have h_arrow : LMonoTy.subst S (aty.arrow rty) = (LMonoTy.subst S aty).arrow (LMonoTy.subst S rty) := by
+      simp only [LMonoTy.arrow]; exact LMonoTy.subst_tcons_pair S "arrow" aty rty
+    exact .app (h_arrow ▸ ih_fn) ih_arg
+  | ite _ _ _ ih_c ih_t ih_e =>
+    simp only [LExpr.replaceUserProvidedType]
+    exact .ite (LMonoTy.subst_bool S ▸ ih_c) ih_t ih_e
+  | eq _ _ ih_1 ih_2 =>
+    simp only [LExpr.replaceUserProvidedType]
+    rw [LMonoTy.subst_bool]
+    exact .eq ih_1 ih_2
 
 /-- `applySubst` transforms `fvars_annotated_by` consistently. -/
 theorem applySubst_fvars_annotated [DecidableEq T.IDMeta] {S : Subst}
