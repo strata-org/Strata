@@ -157,10 +157,6 @@ structure VerifyOptions where
   outputSarif : Bool
   /-- Print elapsed time for each verification sub-step. -/
   profile : Bool
-  -- Optimization
-  /-- Apply expression deduplication to procedure bodies after partial
-      evaluation. Extracts common subexpressions into `var` declarations. -/
-  deduplicateExprs : Bool
 
 def VerifyOptions.default : VerifyOptions := {
   verbose := .normal,
@@ -180,7 +176,6 @@ def VerifyOptions.default : VerifyOptions := {
   uniqueBoundNames := false
   skipSolver := false
   profile := false
-  deduplicateExprs := false
 }
 
 instance : Inhabited VerifyOptions where
