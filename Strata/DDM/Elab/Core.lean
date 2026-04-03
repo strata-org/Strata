@@ -979,13 +979,14 @@ partial def inferType (tctx : TypingContext) (e : Expr) : ElabM TypeExpr := do
       some a.val[fnArgCount - i - 1]!
     let .ok tp := mtp
         | return panic! "Unexpected expandMacros failure."
-    let tp := Id.run <| tp.instTypeM fun _ i =>
+    let tp ← tp.instTypeM fun ann i => do
         assert! i < fnArgCount
         let lvl := fnArgCount - i - 1
         match a.val[lvl]! with
-        | .type tp => tp
-        | arg =>
-           panic! s!"Cannot instantiate type {repr tp} with args {repr a}"
+        | .type tp => pure tp
+        | _ =>
+           logError ann s!"Could not infer type parameter {i} for {ident}"
+           pure default
     return resultType! tctx tp (a.val.size - fnArgCount)
   | .app _ f a => panic! "Invalid app in result of Expr.hnf"
 
