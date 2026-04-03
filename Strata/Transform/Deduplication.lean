@@ -36,18 +36,13 @@ the result by factoring out common subexpressions.
 
 ## Design
 
-The deduplication operates at two levels:
+The pass operates at the program level: `deduplicateProgram` walks procedure
+bodies and extracts common subexpressions into `var` declarations prepended
+to the body.
 
-1. **Proof obligation level**: `deduplicateObligation` extracts common
-   subexpressions from a single proof obligation's assumptions and obligation
-   expression, introducing fresh variables as equality assumptions.
-
-2. **Program level**: `deduplicateProgram` walks procedure bodies and extracts
-   common subexpressions into `var` declarations prepended to the body.
-
-The program-level deduplication prepares for the future separation of proof
-obligation emission (issue #475), where the deduplicated program will be
-the input to a simple 1-1 SMT emitter.
+After deduplication, proof obligation extraction (issue #475) becomes a simple
+tree traversal that collects individual goals from `if * { } else { }` trees
+— no further SMT-to-SMT optimization is needed.
 -/
 
 public section
@@ -201,40 +196,6 @@ private def findDeduplicationTargets (exprs : List Expression.Expr) :
   let duplicates := findDuplicates candidates
   let duplicates := removeSubsumed duplicates
   duplicates.mergeSort (fun a b => exprSize a > exprSize b)
-
----------------------------------------------------------------------
--- Proof obligation level deduplication
----------------------------------------------------------------------
-
-/-- Collect subexpressions from all expressions in a proof obligation. -/
-private def collectFromObligation (ob : ProofObligation Expression) :
-    List Expression.Expr :=
-  let assumptionExprs := ob.assumptions.flatMap (·.map (·.snd))
-  let allExprs := assumptionExprs ++ [ob.obligation]
-  allExprs.flatMap collectSubexprs
-
-/-- Deduplicate a single proof obligation by extracting common subexpressions
-    into fresh variable definitions added as equality assumptions.
-    Not yet wired into the verification pipeline; kept as scaffolding for
-    obligation-level deduplication (issue #475). -/
-def deduplicateObligation (ob : ProofObligation Expression) (startIdx : Nat) :
-    ProofObligation Expression × Nat :=
-  let targets := findDeduplicationTargets (collectFromObligation ob)
-  let (ob', nextIdx) := targets.foldl (fun (ob, idx) dup =>
-    let freshName : CoreIdent := ⟨s!"$__dedup_{idx}", ()⟩
-    let freshTy := getExprType? dup
-    let freshVar : Expression.Expr := .fvar () freshName freshTy
-    let obligation' := replaceExpr dup freshVar ob.obligation
-    let assumptions' := ob.assumptions.map (fun pc =>
-      pc.map (fun (label, expr) => (label, replaceExpr dup freshVar expr)))
-    let defLabel := s!"$__dedup_def_{idx}"
-    let defExpr : Expression.Expr := .eq () freshVar dup
-    let assumptions'' := match assumptions' with
-      | [] => [[(defLabel, defExpr)]]
-      | outerScope :: rest => ((defLabel, defExpr) :: outerScope) :: rest
-    ({ ob with obligation := obligation', assumptions := assumptions'' }, idx + 1)
-  ) (ob, startIdx)
-  (ob', nextIdx)
 
 ---------------------------------------------------------------------
 -- Statement-level expression mapping
