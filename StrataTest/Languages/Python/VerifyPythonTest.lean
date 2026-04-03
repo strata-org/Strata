@@ -130,8 +130,8 @@ open Strata.Parser (stringInputContext)
   if diags.size ≠ 0 then
     throw <| .userError s!"Expected 0 diagnostics, got {diags.size}"
 
--- Multi-output procedures (e.g., timedelta_func) should return the first
--- output type, not TVoid, so datetime arithmetic type-checks correctly.
+-- Multi-output procedures (e.g., timedelta_func) return Unknown type
+-- (translated to Any in Core), so datetime arithmetic type-checks correctly.
 #guard_msgs in
 #eval withPython (warnOnSkip := false) fun pythonCmd => do
   let program :=
