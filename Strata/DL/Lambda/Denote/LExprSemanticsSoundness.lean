@@ -316,7 +316,7 @@ theorem Step.denote_preserved
       grind
     -- Part B: use denote_applySubst
     have h_applySubst_wt : LExpr.HasTypeA [] (fnbody.applySubst tySubst') (LMonoTy.subst tySubst' fn.output) :=
-      applySubst_typeCheck h_body_wt
+      applySubst_typeCheck tySubst' h_body_wt
     have h_td2 : TyDenote tcInterp vt (LMonoTy.subst tySubst' fn.output) = TyDenote tcInterp vt' fn.output := by
       rw [h_τ_eq] at h_td; exact h_td.symm
     have h_partB := denote_applySubst (tcInterp := tcInterp) (opInterp := opInterp)
@@ -324,13 +324,16 @@ theorem Step.denote_preserved
       (rfl : vt' = fun x => match tySubst'.find? x with
         | some t => LMonoTy.substTyVars vt t | none => vt x)
       h_body_wt h_applySubst_wt h_td2
-    -- h_partB : cast h_td2 (denote vt (applySubst tySubst' fnbody) ...) = denote vt' fnbody ...
-    -- Combine: denote e = cast h_td (denote vt' fnbody)
-    --                    = cast h_td (cast h_td2 (denote vt (applySubst tySubst' fnbody) ...))
-    --                    = denote vt (applySubst tySubst' fnbody) ...  (casts cancel)
-    -- Casts cancel: h_td ∘ h_td2 gives TyDenote vt (subst tySubst' fn.output) = TyDenote vt τ
-    -- Since τ = subst tySubst' fn.output, this is just congruence
-    rw [h_partA, ← h_partB]
+    -- h_partB : denote vt (applySubst tySubst' fnbody) ... = cast h_td2.symm (denote vt' fnbody ...)
+    -- Derive: cast h_td2 (denote vt (applySubst ...)) = denote vt' fnbody
+    have h_partB' : cast h_td2
+        (LExpr.denote tcInterp opInterp
+          (fvarVal.withArgs bindings_vt' (HList.cast h_sorts_eq da)) vt .nil
+          (fnbody.applySubst tySubst') (LMonoTy.subst tySubst' fn.output) h_applySubst_wt) =
+        LExpr.denote tcInterp opInterp
+          (fvarVal.withArgs bindings_vt' (HList.cast h_sorts_eq da)) vt' .nil fnbody fn.output h_body_wt := by
+      rw [h_partB]; simp [cast_cast, cast_eq]
+    rw [h_partA, ← h_partB']
     simp only [cast_cast]
     -- Goal: cast _ (denote (withArgs ...) vt (applySubst tySubst' fnbody) (subst tySubst' fn.output)) = denote vt new_body τ h₂
     subst h_τ_eq heq

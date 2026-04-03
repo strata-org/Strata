@@ -644,11 +644,11 @@ theorem denote_applySubst
     (h_body : LExpr.HasTypeA [] e τ)
     (h_subst : LExpr.HasTypeA [] (e.applySubst S) (LMonoTy.subst S τ))
     (h_td : TyDenote tcInterp vt (LMonoTy.subst S τ) = TyDenote tcInterp vt' τ)
-    : cast h_td
-        (LExpr.denote tcInterp opInterp fvarVal vt .nil (e.applySubst S) (LMonoTy.subst S τ) h_subst) =
-      LExpr.denote tcInterp opInterp fvarVal vt' .nil e τ h_body :=
-  denote_applySubst_gen tcInterp opInterp fvarVal hvt' h_body h_subst h_td
+    : LExpr.denote tcInterp opInterp fvarVal vt .nil (e.applySubst S) (LMonoTy.subst S τ) h_subst =
+      cast h_td.symm (LExpr.denote tcInterp opInterp fvarVal vt' .nil e τ h_body) := by
+  have := denote_applySubst_gen tcInterp opInterp fvarVal hvt' h_body h_subst h_td
     (bvarVal := .nil) (bvarVal' := .nil)
     (fun i _ hb _ => absurd hb (by simp))
+  rw [← this, cast_cast, cast_eq]
 
 end Lambda
