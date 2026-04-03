@@ -93,17 +93,17 @@ inductive AstNode where
 instance : Inhabited AstNode where
   default := AstNode.unresolved
 
-def AstNode.getType (node: AstNode): Option HighTypeMd := match node with
+def AstNode.getType (node: AstNode): HighTypeMd := match node with
  | .var _ type => type
  | .parameter p => p.type
  | .field _ f => f.type
- | .datatypeConstructor type _ => some ⟨ .UserDefined type, default ⟩
+ | .datatypeConstructor type _ => ⟨ .UserDefined type, default ⟩
  | .constant c => c.type
  | .quantifierVar _ type => type
  | .unresolved =>
     -- The Python through Laurel pipeline does not resolve yet
-    some ⟨ .UserDefined "dummyName", default ⟩
- | _ => dbg_trace s!"SOUND BUG: getType called on {repr node}"; none
+    ⟨ .UserDefined "dummyName", default ⟩
+ | _ => dbg_trace s!"SOUND BUG: getType called on {repr node}"; ⟨ HighType.Unknown, default ⟩
 
 /-! ## Resolution result -/
 
@@ -115,8 +115,8 @@ structure SemanticModel where
 
 def SemanticModel.get (model: SemanticModel) (iden: Identifier): AstNode :=
   match iden.uniqueId with
-  | some key => (model.refToDef.get? key).getD (panic! s!"could not find key {key}")
-  | none => default -- panic! s!"model.get called on identifier {iden.text} without number"
+  | some key => (model.refToDef.get? key).getD default
+  | none => default
 
 def SemanticModel.isFunction (model: SemanticModel) (id: Identifier): Bool :=
   match model.get id with
@@ -175,13 +175,13 @@ private def freshId : ResolveM Nat := do
 /-- Register a definition: assign a fresh ID to the identifier and record it in scope with its AstNode. -/
 def defineName (iden : Identifier) (node : AstNode) (overrideResolutionName: Option String := none) : ResolveM Identifier := do
   let resolutionName := overrideResolutionName.getD iden.text
-  let name' ← if iden.uniqueId == none then
-    let id ← freshId
-    pure { iden with uniqueId := some (id) }
-  else
-    pure iden
+  let (name', uniqueId) ← match iden.uniqueId with
+    | some uid => pure (iden, uid)
+    | none =>
+      let id ← freshId
+      pure ({ iden with uniqueId := some (id) }, id)
 
-  modify fun s => { s with scope := s.scope.insert resolutionName (name'.uniqueId.getD (panic "key was just inserted"), node) }
+  modify fun s => { s with scope := s.scope.insert resolutionName (uniqueId, node) }
   return name'
 
 /-- Resolve a reference: look up the name in scope and assign the definition's ID.
@@ -204,12 +204,9 @@ private def targetTypeName (target : StmtExprMd) : ResolveM (Option String) := d
   | .Identifier ref =>
     match s.scope.get? ref.text with
     | some (_, node) =>
-      match node.getType with
-      | some ty =>
-        match ty.val with
-        | .UserDefined typRef => pure (some typRef.text)
-        | _ => pure none
-      | none => pure none
+      match node.getType.val with
+      | .UserDefined typRef => pure (some typRef.text)
+      | _ => pure none
     | none => pure none
   | _ => pure none
 
@@ -442,9 +439,11 @@ def resolveProcedure (proc : Procedure) : ResolveM Procedure := do
     let det' ← resolveDeterminism proc.determinism
     let dec' ← proc.decreases.mapM resolveStmtExpr
     let body' ← resolveBody proc.body
+    let invokeOn' ← proc.invokeOn.mapM resolveStmtExpr
     return { name := procName', inputs := inputs', outputs := outputs',
              isFunctional := proc.isFunctional,
              preconditions := pres', determinism := det', decreases := dec',
+             invokeOn := invokeOn',
              body := body', md := proc.md }
 
 /-- Resolve a field: define its name under the qualified key (OwnerType.fieldName) and resolve its type. -/
@@ -466,10 +465,12 @@ def resolveInstanceProcedure (typeName : Identifier) (proc : Procedure) : Resolv
     let det' ← resolveDeterminism proc.determinism
     let dec' ← proc.decreases.mapM resolveStmtExpr
     let body' ← resolveBody proc.body
+    let invokeOn' ← proc.invokeOn.mapM resolveStmtExpr
     modify fun s => { s with instanceTypeName := savedInstType }
     return { name := procName', inputs := inputs', outputs := outputs',
              isFunctional := proc.isFunctional,
              preconditions := pres', determinism := det', decreases := dec',
+             invokeOn := invokeOn',
              body := body', md := proc.md }
 
 /-- Resolve a type definition. -/
@@ -502,20 +503,25 @@ def resolveTypeDefinition (td : TypeDefinition) : ResolveM TypeDefinition := do
   | .Constrained ct =>
     let ctName' ← defineName ct.name (.constrainedType ct)
     let base' ← resolveHighType ct.base
-    let constraint' ← resolveStmtExpr ct.constraint
-    let witness' ← resolveStmtExpr ct.witness
-    return .Constrained { name := ctName', base := base', valueName := ct.valueName,
+    -- The valueName (e.g. `x` in `constrained nat = x: int where x >= 0`) must be
+    -- in scope when resolving the constraint and witness expressions.
+    let (valueName', constraint', witness') ← withScope do
+      let valueName' ← defineName ct.valueName (.quantifierVar ct.valueName base')
+      let constraint' ← resolveStmtExpr ct.constraint
+      let witness' ← resolveStmtExpr ct.witness
+      return (valueName', constraint', witness')
+    return .Constrained { name := ctName', base := base', valueName := valueName',
                           constraint := constraint', witness := witness' }
   | .Datatype dt =>
     let dtName' ← defineName dt.name (.datatypeDefinition dt)
     let ctors' ← dt.constructors.mapM fun ctor => do
       let ctorName' ← defineName ctor.name (.datatypeConstructor dt.name ctor)
-      _ ← defineName ctor.name (.datatypeConstructor dt.name ctor) (some s!"{dt.name}..is{ctor.name}")
+      _ ← defineName ctor.name (.datatypeConstructor dt.name ctor) (some (dt.testerName ctor))
       let args' ← ctor.args.mapM fun (p: Parameter) => do
         let ty' ← resolveHighType p.type
-        let destructorId ← defineName p.name (.parameter p) (some $ dt.name.text ++ ".." ++ p.name.text)
+        let destructorId ← defineName p.name (.parameter p) (some (dt.destructorName p))
         -- unsafeDestructorId
-        _ ← defineName p.name (.parameter p) (some $ dt.name.text ++ ".." ++ p.name.text ++ "!")
+        _ ← defineName p.name (.parameter p) (some (dt.unsafeDestructorName p))
         return ⟨ destructorId, ty' ⟩
       return { name := ctorName', args := args' : DatatypeConstructor }
     return .Datatype { name := dtName', typeArgs := dt.typeArgs, constructors := ctors' }
@@ -725,7 +731,7 @@ private def preRegisterTopLevel (program : Program) : ResolveM Unit := do
       for ctor in dt.constructors do
         let _ ← defineName ctor.name (.datatypeConstructor dt.name ctor)
         for p in ctor.args do
-          let _ ← defineName p.name placeholderNode (some $ dt.name.text ++ ".." ++ p.name.text)
+          let _ ← defineName p.name placeholderNode (some (dt.destructorName p))
   -- Pre-register constants
   for c in program.constants do
     let _ ← defineName c.name (.constant c)

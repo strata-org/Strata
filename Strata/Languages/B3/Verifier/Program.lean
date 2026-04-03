@@ -176,11 +176,8 @@ Workflow:
    - If failed, automatically diagnose to find root cause
 3. Report all results with diagnosis
 
-The solver is reset at the beginning to ensure clean state.
 -/
 def programToSMT (prog : Strata.B3AST.Program SourceRange) (solver : Solver) : IO (List ProcedureReport) := do
-  -- Reset solver to clean state
-  let _ ← (Solver.reset).run solver
   let state ← buildProgramState prog solver
   let mut reportsRev := []
 

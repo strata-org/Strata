@@ -27,7 +27,7 @@ instance : Inhabited TypeDecl where
 -- Note: ToFormat CoreLParams.Identifier is now defined in Identifiers.lean
 
 inductive DeclKind : Type where
-  | var | type | ax | distinct | proc | func
+  | var | type | ax | distinct | proc | func | recFuncBlock
   deriving DecidableEq, Repr
 
 instance : ToFormat DeclKind where
@@ -38,6 +38,7 @@ instance : ToFormat DeclKind where
     | .distinct => "distinct"
     | .proc => "procedure"
     | .func => "function"
+    | .recFuncBlock => "recursive functions"
 
 /--
 A Strata Core declaration.
@@ -46,13 +47,14 @@ Note: constants are 0-ary functions.
 inductive Decl where
   /-- Global variable declaration. The optional RHS is not currently used in verification
       but could serve as a starting value for future execution-based analyses. -/
-  | var (name : Expression.Ident) (ty : Expression.Ty) (e : Option Expression.Expr) (md : MetaData Core.Expression := .empty)
-  | type (t : TypeDecl) (md : MetaData Core.Expression := .empty)
-  | ax   (a : Axiom) (md : MetaData Core.Expression := .empty)
+  | var (name : Expression.Ident) (ty : Expression.Ty) (e : Imperative.ExprOrNondet Core.Expression) (md : MetaData Core.Expression)
+  | type (t : TypeDecl) (md : MetaData Core.Expression)
+  | ax   (a : Axiom) (md : MetaData Core.Expression)
   -- The following is temporary, until we have lists and can encode `distinct` in Lambda.
-  | distinct (name : Expression.Ident) (es : List Expression.Expr) (md : MetaData Core.Expression := .empty)
-  | proc (d : Procedure) (md : MetaData Core.Expression := .empty)
-  | func (f : Function) (md : MetaData Core.Expression := .empty)
+  | distinct (name : Expression.Ident) (es : List Expression.Expr) (md : MetaData Core.Expression)
+  | proc (d : Procedure) (md : MetaData Core.Expression)
+  | func (f : Function) (md : MetaData Core.Expression)
+  | recFuncBlock (fs : List Function) (md : MetaData Core.Expression)
   deriving Inhabited
 
 def Decl.metadata (d : Decl) : MetaData Expression :=
@@ -63,6 +65,7 @@ def Decl.metadata (d : Decl) : MetaData Expression :=
   | .distinct _ _ md => md
   | .proc _ md       => md
   | .func _ md       => md
+  | .recFuncBlock _ md => md
 
 def Decl.kind (d : Decl) : DeclKind :=
   match d with
@@ -72,6 +75,7 @@ def Decl.kind (d : Decl) : DeclKind :=
   | .distinct _ _ _ => .distinct
   | .proc _ _   => .proc
   | .func _ _   => .func
+  | .recFuncBlock _ _ => .recFuncBlock
 
 def Decl.name (d : Decl) : Expression.Ident :=
   match d with
@@ -81,21 +85,27 @@ def Decl.name (d : Decl) : Expression.Ident :=
   | .distinct n _ _ => n
   | .proc p _       => p.header.name
   | .func f _       => f.name
+  -- A recFuncBlock can never be empty in a well-typed program
+  -- (see ProgramType.lean), so this case is unreachable.
+  | .recFuncBlock [] _ => ""
+  | .recFuncBlock (f :: _) _ => f.name
 
-/-- Get all names from a declaration. For mutual datatypes, returns all datatype names. -/
+/-- Get all names from a declaration. For mutual datatypes, returns all datatype names.
+    For recFuncBlock, returns all function names. -/
 @[expose] def Decl.names (d : Decl) : List Expression.Ident :=
   match d with
   | .type t _ => t.names
+  | .recFuncBlock fs _ => fs.map (·.name)
   | _ => [d.name]
 
 def Decl.getVar? (d : Decl) :
-  Option (Expression.Ident × Expression.Ty × Option Expression.Expr) :=
+  Option (Expression.Ident × Expression.Ty × Imperative.ExprOrNondet Expression) :=
   match d with
   | .var name ty e _ => some (name, ty, e)
   | _ => none
 
 def Decl.getVar (d : Decl) (H: d.kind = .var):
-  Expression.Ident × Expression.Ty × Option Expression.Expr :=
+  Expression.Ident × Expression.Ty × Imperative.ExprOrNondet Expression :=
   match d with | .var name ty e _ => (name, ty, e)
 
 def Decl.getTypeDecl? (d : Decl) : Option TypeDecl :=
@@ -127,33 +137,43 @@ def Decl.getFunc? (d : Decl) : Option Function :=
 def Decl.getFunc (d : Decl) (H: d.kind = .func): Function :=
   let .func f _ := d; f
 
+def Decl.getRecFuncBlock? (d : Decl) : Option (List Function) :=
+  match d with
+  | .recFuncBlock fs _ => some fs
+  | _ => none
+
 def Decl.eraseTypes (d : Decl) : Decl :=
   match d with
   | .ax a md     => .ax a.eraseTypes md
   | .proc p md   => .proc p.eraseTypes md
   | .func f md   => .func f.eraseTypes md
+  | .recFuncBlock fs md => .recFuncBlock (fs.map (·.eraseTypes)) md
   | .var _ _ _ _ | .type _ _ | .distinct _ _ _ => d
 
 /-- Remove all metadata from a declaration. -/
 def Decl.stripMetaData (d : Decl) : Decl :=
   match d with
-  | .var name ty e _ => .var name ty e
-  | .type t _ => .type t
-  | .ax a _ => .ax a
-  | .distinct n es _ => .distinct n es
-  | .proc p _ => .proc p.stripMetaData
-  | .func f _ => .func f
+  | .var name ty e _ => .var name ty e .empty
+  | .type t _ => .type t .empty
+  | .ax a _ => .ax a .empty
+  | .distinct n es _ => .distinct n es .empty
+  | .proc p _ => .proc p.stripMetaData .empty
+  | .func f _ => .func f .empty
+  | .recFuncBlock fs _ => .recFuncBlock fs .empty
 
 -- Metadata not included.
 instance : ToFormat Decl where
   format d := match d with
-    | .var name ty (some e) _md => f!"var ({name} : {ty}) := {e}"
-    | .var name ty none _md => f!"var ({name} : {ty})"
+    | .var name ty (.det e) _md => f!"var ({name} : {ty}) := {e}"
+    | .var name ty .nondet _md => f!"var ({name} : {ty})"
     | .type t _md => f!"{t}"
     | .ax a _md  => f!"{a}"
     | .distinct l es _md  => f!"distinct [{l}] {es}"
     | .proc p _md => f!"{p}"
     | .func f _md => f!"{f}"
+    | .recFuncBlock fs _md =>
+      let fmts := fs.map (fun f => format f)
+      f!"mutual{Format.line}{Format.joinSep fmts Format.line}{Format.line}end"
 
 def Decl.formatWithMetaData (decl : Decl) : Format :=
   f!"{decl.metadata}{decl}"
@@ -208,7 +228,7 @@ theorem Program.find?_kind : ∀ {p : Program}, (p.find? k x) = some d → d.kin
     apply ih (by rfl)
 
 def Program.getVar? (P: Program) (x : Expression.Ident)
-  : Option (Expression.Ident × Expression.Ty × Option Expression.Expr) := do
+  : Option (Expression.Ident × Expression.Ty × Imperative.ExprOrNondet Expression) := do
   let decl ← P.find? .var x
   let var ← decl.getVar?
   return var
@@ -225,8 +245,9 @@ def Program.getAxiom? (P: Program) (n : Expression.Ident) : Option Axiom := do
 
 def Program.getInit? (P: Program) (x : Expression.Ident) : Option Expression.Expr := do
   let var ← P.getVar? x
-  let init ← var.snd.snd
-  return init
+  match var.snd.snd with
+  | .det e => return e
+  | .nondet => none
 
 @[expose]
 def Program.getNames (P: Program) : List Expression.Ident :=
@@ -244,7 +265,16 @@ def Program.Procedure.find? (P : Program) (x : Expression.Ident) : Option Proced
   | some d => some $ d.getProc $ Program.find?_kind H
 
 def Program.Function.find? (P : Program) (x : Expression.Ident)
-  : Option Function := do (← P.find? .func x).getFunc?
+  : Option Function :=
+  go P.decls
+where go
+  | [] => none
+  | .func f _ :: rest => if f.name == x then some f else go rest
+  | .recFuncBlock fs _ :: rest =>
+      match fs.find? (·.name == x) with
+      | some f => some f
+      | none => go rest
+  | _ :: rest => go rest
 
 -- accessor methods based on find?
 
@@ -255,9 +285,10 @@ def Program.getVarTy? (P: Program) (x : Expression.Ident) : Option Expression.Ty
   | some decl => some $ (decl.getVar $ Program.find?_kind H).2.1
 
 def Program.getVarInit? (P: Program) (x : Expression.Ident) : Option Expression.Expr := do
-  match H: (P.find? .var x) with
-  | none => none
-  | some decl => (decl.getVar $ Program.find?_kind H).2.2
+  let var ← P.getVar? x
+  match var.snd.snd with
+  | .det e => return e
+  | .nondet => none
 
 theorem Program.findproc_some : (P.find? .proc x).isSome = (Procedure.find? P x).isSome := by
   simp [Procedure.find?, Option.isSome, Program.find?]
@@ -310,7 +341,7 @@ def Program.Function.find (P: Program) (x : Expression.Ident) (H : (P.find? .fun
   (P.find .func x H).getFunc (find_kind P)
 
 def Program.getVar (P: Program) (x : Expression.Ident) (H : (P.find? .var x).isSome = true)
-  : Expression.Ident × Expression.Ty × Option Expression.Expr :=
+  : Expression.Ident × Expression.Ty × Imperative.ExprOrNondet Expression :=
   (P.find .var x H).getVar (find_kind P)
 
 def Program.getVarTy (P: Program) (x : Expression.Ident) (H : (P.find? .var x).isSome = true)
@@ -318,7 +349,7 @@ def Program.getVarTy (P: Program) (x : Expression.Ident) (H : (P.find? .var x).i
   ((P.find .var x H).getVar (find_kind P)).2.1
 
 def Program.getVarInit (P: Program) (x : Expression.Ident) (H : (P.find? .var x).isSome = true)
-  : Option Expression.Expr :=
+  : Imperative.ExprOrNondet Expression :=
   ((P.find .var x H).getVar (find_kind P)).2.2
 def Program.Procedure.findP? (P : Program) (x : Expression.Ident)
   : Option (Procedure ×' (find? P x).isSome = true) :=

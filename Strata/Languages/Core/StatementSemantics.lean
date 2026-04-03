@@ -7,7 +7,7 @@ module
 
 public import Strata.DL.Lambda.LExpr
 public import Strata.DL.Lambda.LExprWF
-public import Strata.DL.Imperative.StmtSemantics
+public import Strata.DL.Imperative.StmtSemanticsSmallStep
 public import Strata.Languages.Core.CoreGen
 public import Strata.Languages.Core.Procedure
 
@@ -36,6 +36,7 @@ instance : HasFvar Core.Expression where
 
 instance : HasSubstFvar Core.Expression where
   substFvar := Lambda.LExpr.substFvar
+  substFvars := Lambda.LExpr.substFvars
 
 instance : HasIntOrder Core.Expression where
   eq    e1 e2 := .eq () e1 e2
@@ -54,6 +55,8 @@ def Core.false : Core.Expression.Expr := .boolConst () Bool.false
 instance : HasBool Core.Expression where
   tt := Core.true
   ff := Core.false
+  tt_is_not_ff := by unfold Core.true Core.false; unfold Lambda.LExpr.boolConst; simp
+  boolTy := .forAll [] (.tcons "bool" [])
 
 instance : HasNot Core.Expression where
   not
@@ -233,7 +236,7 @@ def closureCapture
   let allFreeVars := (bodyFreeVars ++ axiomFreeVars).eraseDups
   -- Build substitutions from the store
   let substs := buildSubstitutions σ allFreeVars
-  -- Apply substitutions to body and axioms
+  -- The replacement expressions must be closed (no dangling bvars).
   { decl with
     body := decl.body.map (fun b => HasSubstFvar.substFvars b substs)
     axioms := decl.axioms.map (fun ax => HasSubstFvar.substFvars ax substs) }
@@ -252,25 +255,40 @@ def EvalPureFunc (φ : CoreEval → PureFunc Expression → CoreEval) : Imperati
     let capturedDecl := closureCapture σ decl
     φ δ capturedDecl
 
-inductive EvalCommand (π : String → Option Procedure) (φ : CoreEval → PureFunc Expression → CoreEval) : CoreEval →
-  CoreStore → Command → CoreStore → Prop where
-  | cmd_sem {δ σ c σ'} :
-    Imperative.EvalCmd Expression δ σ c σ' →
+/-!
+### Mutual inductive: `EvalCommand` and `CoreStepStar`
+
+`CoreStepStar` is the reflexive-transitive closure of `StepStmt` specialized
+to the Core language with `EvalCommand` as the command semantics.  It is
+defined mutually with `EvalCommand` so that `call_sem` can reference it
+without violating Lean's strict positivity requirement.
+
+The generic `ReflTrans (StepStmt ...)` cannot be used here because it would
+place `EvalCommand` in a non-strictly-positive position.
+-/
+
+mutual
+
+/-- Reflexive-transitive closure of `StepStmt` for the Core language,
+    defined mutually with `EvalCommand` to satisfy strict positivity. -/
+inductive CoreStepStar (π : String → Option Procedure) (φ : CoreEval → PureFunc Expression → CoreEval) :
+    Imperative.Config Expression Command → Imperative.Config Expression Command → Prop where
+  | refl :
+    CoreStepStar π φ c c
+  | step :
+    Imperative.StepStmt Expression (EvalCommand π φ) (EvalPureFunc φ) c₁ c₂ →
+    CoreStepStar π φ c₂ c₃ →
     ----
-    EvalCommand π φ δ σ (CmdExt.cmd c) σ'
+    CoreStepStar π φ c₁ c₃
 
-  /-
-  NOTE: If π is NOT the first implicit variable below, Lean complains as
-  follows; wish this error message actually mentioned which local variable was
-  the problematic one.
+inductive EvalCommand (π : String → Option Procedure) (φ : CoreEval → PureFunc Expression → CoreEval) : CoreEval →
+  CoreStore → Command → CoreStore → Bool → Prop where
+  | cmd_sem {δ σ c σ' f} :
+    Imperative.EvalCmd (P := Expression) δ σ c σ' f →
+    ----
+    EvalCommand π φ δ σ (CmdExt.cmd c) σ' f
 
-  invalid nested inductive datatype 'Imperative.EvalBlock', nested inductive
-  datatypes parameters cannot contain local variables.
-
-  Here's a Zulip thread that can shed some light on this error message:
-  https://leanprover-community.github.io/archive/stream/270676-lean4/topic/nested.20inductive.20datatypes.20parameters.20cannot.20contain.20local.20v.html
-  -/
-  | call_sem {δ σ₀ σ args vals oVals σA σAO σR n p modvals lhs σ' δ' md} :
+  | call_sem {δ σ₀ σ args vals oVals σA σAO n p modvals lhs σ' ρ' md} :
     π n = .some p →
     EvalExpressions (P:=Expression) δ σ args vals →
     ReadValues σ lhs oVals →
@@ -293,33 +311,60 @@ inductive EvalCommand (π : String → Option Procedure) (φ : CoreEval → Pure
     (∀ pre, (Procedure.Spec.getCheckExprs p.spec.preconditions).contains pre →
       isDefinedOver (HasVarsPure.getVars) σAO pre ∧
       δ σAO pre = .some HasBool.tt) →
-    @Imperative.EvalBlock Expression Command (EvalCommand π φ) (EvalPureFunc φ) _ _ _ _ _ _ _ δ σAO p.body σR δ' →
+    CoreStepStar π φ
+      (.stmts p.body ⟨σAO, δ, false⟩)
+      (.terminal ρ') →
     -- Postconditions, if any, must be satisfied for execution to continue.
     (∀ post, (Procedure.Spec.getCheckExprs p.spec.postconditions).contains post →
       isDefinedOver (HasVarsPure.getVars) σAO post ∧
-      δ σR post = .some HasBool.tt) →
+      δ ρ'.store post = .some HasBool.tt) →
 
-    ReadValues σR (ListMap.keys (p.header.outputs) ++ p.spec.modifies) modvals →
+    ReadValues ρ'.store (ListMap.keys (p.header.outputs) ++ p.spec.modifies) modvals →
     UpdateStates σ (lhs ++ p.spec.modifies) modvals σ' →
     ----
-    EvalCommand π φ δ σ (CmdExt.call lhs n args md) σ'
+    EvalCommand π φ δ σ (CmdExt.call lhs n args md) σ' false
 
-@[expose] abbrev EvalStatement (π : String → Option Procedure) (φ : CoreEval → PureFunc Expression → CoreEval) : CoreEval →
-    CoreStore → Statement → CoreStore → CoreEval → Prop :=
-  Imperative.EvalStmt Expression Command (EvalCommand π φ) (EvalPureFunc φ)
+end
 
-@[expose] abbrev EvalStatements (π : String → Option Procedure) (φ : CoreEval → PureFunc Expression → CoreEval) : CoreEval →
-    CoreStore → List Statement → CoreStore → CoreEval → Prop :=
-  Imperative.EvalBlock Expression Command (EvalCommand π φ) (EvalPureFunc φ)
+/-- `CoreStepStar` implies the generic `StepStmtStar` (i.e. `ReflTrans`). -/
+theorem CoreStepStar_to_StepStmtStar
+    {π : String → Option Procedure}
+    {φ : CoreEval → PureFunc Expression → CoreEval}
+    {c c' : Imperative.Config Expression Command}
+    (h : CoreStepStar π φ c c') :
+    Imperative.StepStmtStar Expression (EvalCommand π φ) (EvalPureFunc φ) c c' :=
+  match h with
+  | .refl => .refl _
+  | .step hstep hrest => .step _ _ _ hstep (CoreStepStar_to_StepStmtStar hrest)
+
+/-- The generic `StepStmtStar` implies `CoreStepStar`. -/
+theorem StepStmtStar_to_CoreStepStar
+    {π : String → Option Procedure}
+    {φ : CoreEval → PureFunc Expression → CoreEval}
+    {c c' : Imperative.Config Expression Command} :
+    Imperative.StepStmtStar Expression (EvalCommand π φ) (EvalPureFunc φ) c c' →
+    CoreStepStar π φ c c' := by
+  intro H
+  induction H with
+  | refl => exact .refl
+  | step _ _ _ hstep _ ih => exact .step hstep ih
+
+@[expose] abbrev EvalStatement (π : String → Option Procedure) (φ : CoreEval → PureFunc Expression → CoreEval) :
+    Imperative.Env Expression → Statement → Imperative.Env Expression → Prop :=
+  Imperative.EvalStmtSmall Expression (EvalCommand π φ) (EvalPureFunc φ)
+
+@[expose] abbrev EvalStatements (π : String → Option Procedure) (φ : CoreEval → PureFunc Expression → CoreEval) :
+    Imperative.Env Expression → List Statement → Imperative.Env Expression → Prop :=
+  Imperative.EvalStmtsSmall Expression (EvalCommand π φ) (EvalPureFunc φ)
 
 inductive EvalCommandContract : (String → Option Procedure)  → CoreEval →
-  CoreStore → Command → CoreStore → Prop where
-  | cmd_sem {π δ σ c σ'} :
-    Imperative.EvalCmd Expression δ σ c σ' →
+  CoreStore → Command → CoreStore → Bool → Prop where
+  | cmd_sem {π δ σ c σ' f} :
+    Imperative.EvalCmd (P := Expression) δ σ c σ' f →
     ----
-    EvalCommandContract π δ σ (CmdExt.cmd c) σ'
+    EvalCommandContract π δ σ (CmdExt.cmd c) σ' f
 
-  | call_sem {π δ σ args oVals vals σA σAO σO σR n p modvals lhs σ' md} :
+  | call_sem {π δ σ σ₀ args oVals vals σA σAO σO σR n p modvals lhs σ' md} :
     π n = .some p →
     EvalExpressions (P:=Core.Expression) δ σ args vals →
     ReadValues σ lhs oVals →
@@ -351,15 +396,15 @@ inductive EvalCommandContract : (String → Option Procedure)  → CoreEval →
     ReadValues σR (ListMap.keys (p.header.outputs) ++ p.spec.modifies) modvals →
     UpdateStates σ (lhs ++ p.spec.modifies) modvals σ' →
     ----
-    EvalCommandContract π δ σ (.call lhs n args md) σ'
+    EvalCommandContract π δ σ (.call lhs n args md) σ' false
 
-@[expose] abbrev EvalStatementContract (π : String → Option Procedure) (φ : CoreEval → PureFunc Expression → CoreEval) : CoreEval →
-    CoreStore → Statement → CoreStore → CoreEval → Prop :=
-  Imperative.EvalStmt Expression Command (EvalCommandContract π) (EvalPureFunc φ)
+@[expose] abbrev EvalStatementContract (π : String → Option Procedure) (φ : CoreEval → PureFunc Expression → CoreEval) :
+    Imperative.Env Expression → Statement → Imperative.Env Expression → Prop :=
+  Imperative.EvalStmtSmall Expression (EvalCommandContract π) (EvalPureFunc φ)
 
-@[expose] abbrev EvalStatementsContract (π : String → Option Procedure) (φ : CoreEval → PureFunc Expression → CoreEval) : CoreEval →
-    CoreStore → List Statement → CoreStore → CoreEval → Prop :=
-  Imperative.EvalBlock Expression Command (EvalCommandContract π) (EvalPureFunc φ)
+@[expose] abbrev EvalStatementsContract (π : String → Option Procedure) (φ : CoreEval → PureFunc Expression → CoreEval) :
+    Imperative.Env Expression → List Statement → Imperative.Env Expression → Prop :=
+  Imperative.EvalStmtsSmall Expression (EvalCommandContract π) (EvalPureFunc φ)
 
 end Core
 

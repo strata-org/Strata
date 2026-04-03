@@ -44,11 +44,11 @@ inductive KleeneStmt (P : PureExpr) (Cmd : Type) : Type where
   deriving Inhabited
 
 abbrev KleeneStmt.init {P : PureExpr} (name : P.Ident) (ty : P.Ty) (expr : P.Expr) (md : MetaData P) :=
-  KleeneStmt.cmd (P:=P) (Cmd.init name ty expr md)
+  KleeneStmt.cmd (P:=P) (Cmd.init name ty (.det expr) md)
 abbrev KleeneStmt.set {P : PureExpr} (name : P.Ident) (expr : P.Expr) (md : MetaData P) :=
-  KleeneStmt.cmd (P:=P) (Cmd.set name expr md)
+  KleeneStmt.cmd (P:=P) (Cmd.set name (.det expr) md)
 abbrev KleeneStmt.havoc {P : PureExpr} (name : P.Ident) (md : MetaData P) :=
-  KleeneStmt.cmd (P:=P) (Cmd.havoc name md)
+  KleeneStmt.cmd (P:=P) (Cmd.set name .nondet md)
 abbrev KleeneStmt.assert {P : PureExpr} (label : String) (b : P.Expr) (md : MetaData P) :=
   KleeneStmt.cmd (P:=P) (Cmd.assert label b md)
 abbrev KleeneStmt.assume {P : PureExpr} (label : String) (b : P.Expr) (md : MetaData P) :=

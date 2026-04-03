@@ -61,8 +61,7 @@ private def renameCmd
     (rn : Std.HashMap String String)
     : Imperative.Cmd Core.Expression → Imperative.Cmd Core.Expression
   | .init name ty e md => .init (renameIdent rn name) ty (e.map (renameExpr rn)) md
-  | .set name e md => .set (renameIdent rn name) (renameExpr rn e) md
-  | .havoc name md => .havoc (renameIdent rn name) md
+  | .set name e md => .set (renameIdent rn name) (e.map (renameExpr rn)) md
   | .assert l e md => .assert l (renameExpr rn e) md
   | .assume l e md => .assume l (renameExpr rn e) md
   | .cover l e md => .cover l (renameExpr rn e) md
@@ -79,10 +78,10 @@ private partial def unwrapCmdExt
   | .ite c t e md => do
     let t' ← t.mapM (unwrapCmdExt rn)
     let e' ← e.mapM (unwrapCmdExt rn)
-    .ok (.ite (renameExpr rn c) t' e' md)
+    .ok (.ite (c.map (renameExpr rn)) t' e' md)
   | .loop g m i body md => do
     let body' ← body.mapM (unwrapCmdExt rn)
-    .ok (.loop (renameExpr rn g) (m.map (renameExpr rn)) (i.map (renameExpr rn)) body' md)
+    .ok (.loop (g.map (renameExpr rn)) (m.map (renameExpr rn)) (i.map (renameExpr rn)) body' md)
   | .exit l md => .ok (.exit l md)
   | .funcDecl _d _md =>
     .error f!"[unwrapCmdExt] Unexpected funcDecl; should have been lifted by collectFuncDecls."
@@ -162,7 +161,8 @@ private partial def coreStmtsToGoto
                 .Integer
             CProverGOTO.Expr.symbol name ty
           | [] => CProverGOTO.Expr.symbol "" .Empty
-        let calleeExpr := CProverGOTO.Expr.symbol procName .Empty
+        let calleeExpr := CProverGOTO.Expr.symbol procName
+          (CProverGOTO.Ty.mkCode (argExprs.map (·.type)) lhsExpr.type)
         let callCode := CProverGOTO.Code.functionCall lhsExpr calleeExpr argExprs
         let inst : CProverGOTO.Instruction :=
           { type := .FUNCTION_CALL, code := callCode, locationNum := trans.nextLoc }
@@ -186,7 +186,9 @@ private partial def coreStmtsToGoto
       | .ite cond thenb elseb md =>
         if hasCallStmt thenb || hasCallStmt elseb then
           let srcLoc := Imperative.metadataToSourceLoc md pname trans.sourceText
-          let cond_expr ← toExpr (renameExpr rn cond)
+          let cond_expr ← match cond with
+            | .det e => toExpr (renameExpr rn e)
+            | .nondet => pure { id := .side_effect .Nondet, type := .Boolean, operands := [] : CProverGOTO.Expr }
           let (trans, goto_else_idx) :=
             Imperative.emitCondGoto (CProverGOTO.Expr.not cond_expr) srcLoc trans
           let trans ← coreStmtsToGoto Env pname rn thenb trans
@@ -206,7 +208,9 @@ private partial def coreStmtsToGoto
           let srcLoc := Imperative.metadataToSourceLoc md pname trans.sourceText
           let loop_head := trans.nextLoc
           let trans := Imperative.emitLabel s!"loop_{loop_head}" srcLoc trans
-          let guard_expr ← toExpr (renameExpr rn guard)
+          let guard_expr ← match guard with
+            | .det e => toExpr (renameExpr rn e)
+            | .nondet => pure { id := .side_effect .Nondet, type := .Boolean, operands := [] : CProverGOTO.Expr }
           let (trans, goto_end_idx) :=
             Imperative.emitCondGoto (CProverGOTO.Expr.not guard_expr) srcLoc trans
           let trans ← coreStmtsToGoto Env pname rn body trans
@@ -400,7 +404,7 @@ symtab/goto JSON.
 -/
 def emitProcWithLifted (Env : Core.Expression.TyEnv) (procName : String)
     (ctx : CoreToGOTO.CProverGOTO.Context) (liftedFuncs : List Core.Function)
-    (extraSyms : Lean.Json)
+    (extraSyms : Lean.Json) (moduleName : String)
     : IO (Lean.Json × Lean.Json) := do
   let json ← IO.ofExcept (CoreToGOTO.CProverGOTO.Context.toJson procName ctx)
   let mut symtabObj := match json.symtab with | .obj m => m | _ => .empty
@@ -427,7 +431,8 @@ def emitProcWithLifted (Env : Core.Expression.TyEnv) (procName : String)
   | .obj m => for (k, v) in m.toList do
       symtabObj := symtabObj.insert k v
   | _ => pure ()
-  return (Lean.Json.obj symtabObj, Lean.Json.mkObj [("functions", Lean.Json.arr gotoFns)])
+  let symtab := CProverGOTO.wrapSymtab symtabObj (moduleName := moduleName)
+  return (symtab, Lean.Json.mkObj [("functions", Lean.Json.arr gotoFns)])
 
 /-! ## High-level pipeline steps
 
@@ -454,9 +459,10 @@ public def inlineCoreFixpoint (program : Core.Program)
 /-- Type-check a Core program using the standard context and factory.
     Returns the type-checked program and the resulting type environment. -/
 public def typeCheckCore (program : Core.Program)
+    (factory : @Lambda.Factory Core.CoreLParams := Core.Factory)
     : Except String (Core.Program × Core.Expression.TyEnv) := do
   let Ctx := { Lambda.LContext.default with
-    functions := Core.Factory, knownTypes := Core.KnownTypes }
+    functions := factory, knownTypes := Core.KnownTypes }
   let Env := Lambda.TEnv.default
   match Core.Program.typeCheck Ctx Env program with
   | .ok (tcPgm, Env') => return (tcPgm, Env')
@@ -493,7 +499,7 @@ public def coreToGotoFiles (tcPgm : Core.Program) (Env : Core.Expression.TyEnv)
       | .ok s => pure (Lean.toJson s)
       | .error e => throw s!"{e}"
     let (symtab, goto) ←
-      match ← emitProcWithLifted Env procName ctx liftedFuncs extraSyms |>.toBaseIO with
+      match ← emitProcWithLifted Env procName ctx liftedFuncs extraSyms (moduleName := baseName) |>.toBaseIO with
       | .ok r => pure r
       | .error e => throw s!"{e}"
     let symTabFile := s!"{baseName}.symtab.json"
@@ -513,11 +519,12 @@ public def inlineCoreToGotoFiles (program : Core.Program)
     (baseName : String)
     (sourceText : Option String := none)
     (entryPoints : List String := ["main", "__main__"])
+    (factory : @Lambda.Factory Core.CoreLParams := Core.Factory)
     : EIO String Unit := do
   let inlined ← match inlineCoreFixpoint program with
     | .ok r => pure r
     | .error msg => throw msg
-  let (tcPgm, Env) ← match typeCheckCore inlined with
+  let (tcPgm, Env) ← match typeCheckCore inlined factory with
     | .ok r => pure r
     | .error msg => throw msg
   coreToGotoFiles tcPgm Env baseName sourceText entryPoints

@@ -9,10 +9,16 @@ Strata Core supports recursive functions that recurse on algebraic datatypes
 function (UF)** together with **per-constructor axioms** equipped with
 **triggers**.
 
+Both single and mutually recursive functions are supported.
+
 ## Syntax
 
+### Single Recursive Functions
+
 Recursive functions are declared with the `rec` keyword. Exactly one parameter
-must be annotated with `@[cases]` to indicate the ADT argument being recursed on:
+must be annotated with `@[cases]` to indicate the ADT argument being recursed on.
+A single recursive function is a `rec` block containing one function, terminated
+by `;`:
 
 ```
 datatype IntList { Nil(), Cons(hd: int, tl: IntList) };
@@ -20,7 +26,7 @@ datatype IntList { Nil(), Cons(hd: int, tl: IntList) };
 rec function listLen (@[cases] xs : IntList) : int
 {
   if IntList..isNil(xs) then 0 else 1 + listLen(IntList..tl(xs))
-}
+};
 ```
 
 The `@[cases]` annotation tells the axiom generator which parameter drives the
@@ -28,13 +34,37 @@ recursion. Only one `@[cases]` parameter is allowed per function.
 
 Recursive functions cannot be marked `inline`.
 
+### Mutually Recursive Functions
+
+Mutually recursive functions are declared as multiple functions within a single
+`rec` block. The block starts with `rec`, lists each function (without `rec`
+on subsequent functions), and ends with `;`. Each function in the block must
+have its own `@[cases]` parameter. All functions in the block can call each
+other (and themselves). The functions may operate on different datatypes:
+
+```
+datatype RoseTree { Leaf(val: int), Node(children: RoseList) }
+datatype RoseList { RNil(), RCons(hd: RoseTree, tl: RoseList) };
+
+rec function treeSize (@[cases] t : RoseTree) : int
+{
+  if RoseTree..isLeaf(t) then 1 else listSize(RoseTree..children(t))
+}
+function listSize (@[cases] xs : RoseList) : int
+{
+  if RoseList..isRNil(xs) then 0 else treeSize(RoseList..hd(xs)) + listSize(RoseList..tl(xs))
+};
+```
+
 ## Verification Pipeline
 
-1. **Parsing & Elaboration (DDM):** The `rec function` syntax is parsed via
-   `command_recfndef` in the grammar. The `@[scopeSelf]` annotation on the body
-   parameter makes the function name available in its own body during
-   elaboration, enabling recursive calls. The `@[cases]` binding is translated
-   to an `inlineIfConstr` attribute recording the parameter index.
+1. **Parsing & Elaboration (DDM):** The `rec` block is parsed via
+   `command_recfndefs` in the grammar. Individual functions within the block
+   are parsed as `recfn_decl` nodes. The `@[preRegisterFunctions]` annotation
+   on the block triggers two-phase elaboration: Phase 1 extracts all function
+   signatures and registers them in the global context, Phase 2 elaborates
+   all function bodies with full mutual visibility. The `@[cases]` binding is
+   translated to an `inlineIfConstr` attribute recording the parameter index.
 
 2. **Axiom Generation (`RecursiveAxioms.lean`):** For each constructor `C` of
    the ADT at the `@[cases]` parameter, a universally quantified axiom is
@@ -50,7 +80,10 @@ Recursive functions cannot be marked `inline`.
    argument is a constructor application, matching the `inlineIfConstr`
    attribute) and reduces.
 
-3. **SMT Encoding (`SMTEncoder.lean`):** The function is declared as an
+   For mutually recursive functions, axioms are generated independently for each
+   function in the block.
+
+3. **SMT Encoding (`SMTEncoder.lean`):** Each function is declared as an
    **uninterpreted function**. The per-constructor axioms from step 2 are
    emitted as quantified SMT assertions with `:pattern` annotations.
 
@@ -85,7 +118,7 @@ so the encoder emits it as a concrete equality rather than a quantified axiom.
 - **No termination checking:** Recursive functions are accepted without verifying
   that they terminate. Unsound axioms can result from non-terminating definitions.
 - **Monomorphic SMT encoding only:** Polymorphic recursive functions are not yet
-  supported at the SMT encoding level.
-- **No mutual recursion:** Mutually recursive functions are not supported.
+  supported at the SMT encoding level. This applies to both single and mutually
+  recursive functions.
 - **Top-level only:** Recursive functions must be declared at the program level;
   recursive function statements (local declarations) are not supported.

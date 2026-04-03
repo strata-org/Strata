@@ -47,6 +47,10 @@ macro "reduce_beta": tactic => `(tactic |
 macro "inhabited_metadata": tactic => `(tactic |
     solve | (simp; apply ())
   )
+-- Solve equaliy goals
+macro "discharge_eq" : tactic => `(tactic |
+  solve | simp[eql, eqModuloMeta, LExpr.eraseMetadata,
+  LExpr.replaceMetadata, BEq.beq, LExpr.beq])
 
 private abbrev TestParams : LExprParams := ⟨Unit, Unit⟩
 
@@ -105,12 +109,12 @@ def test2 := TestCase.mk
 example: steps_well test2 := by
   unfold steps_well Scopes.toEnv test2
   take_step; apply Step.reduce_2 <;> try inhabited_metadata
-  · discharge_isCanonicalValue
   · repeat constructor
   take_step; reduce_beta
   take_step; constructor <;> try inhabited_metadata
-  · apply Step.eq_reduce <;> try discharge_isCanonicalValue
-    · inhabited_metadata
+  · apply Step.eq_reduce_false <;> try discharge_isCanonicalValue <;> try rfl
+    inhabited_metadata
+    discharge_eq
   take_step; apply Step.ite_reduce_else
   apply ReflTrans.refl
 
@@ -144,8 +148,9 @@ example: steps_well test4 := by
   unfold steps_well Scopes.toEnv test4
   take_step; reduce_beta
   take_step; apply Step.ite_reduce_cond <;> try inhabited_metadata
-  · apply Step.eq_reduce <;> try discharge_isCanonicalValue
-    · inhabited_metadata
+  · apply Step.eq_reduce_false <;> try discharge_isCanonicalValue <;> try rfl
+    inhabited_metadata
+    discharge_eq
   take_step; apply Step.ite_reduce_else
   take_step; apply Step.reduce_1; inhabited_metadata; apply Step.expand_fvar; rfl
   take_step; reduce_beta
@@ -165,8 +170,9 @@ example: steps_well test5 := by
   unfold steps_well Scopes.toEnv test5
   take_step; reduce_beta
   take_step; apply Step.ite_reduce_cond; inhabited_metadata
-  · apply Step.eq_reduce <;> try discharge_isCanonicalValue
-    · inhabited_metadata
+  · apply Step.eq_reduce_false <;> try discharge_isCanonicalValue <;> try rfl
+    inhabited_metadata
+    discharge_eq
   take_step; apply Step.ite_reduce_else
   take_step; apply Step.reduce_1; inhabited_metadata; apply Step.expand_fvar; rfl
   take_refl
@@ -248,7 +254,21 @@ private def testBuiltIn : @Factory TestParams :=
       inputs := [("x", mty[int]), ("y", mty[int])],
       output := mty[int],
       body := some esM[((~Int.Add x) y)]
-    }]
+    },
+
+    { name := "Int.Add3",
+      inputs := [("x", mty[int]), ("y", mty[int]), ("z", mty[int])],
+      output := mty[int],
+      concreteEval := some (fun _e args => match args with
+                        | [e1, e2, e3] =>
+                          let e1i := LExpr.denoteInt e1
+                          let e2i := LExpr.denoteInt e2
+                          let e3i := LExpr.denoteInt e3
+                          match e1i, e2i, e3i with
+                          | some x, some y, some z =>
+                            .some (.intConst e1.metadata (x + y + z))
+                          | _, _, _ => .none
+                        | _ => .none) }]
 
 private def testState : LState TestParams :=
   let ans := LState.addFactory LState.init testBuiltIn
@@ -338,11 +358,9 @@ example: steps_well test12 := by
   unfold steps_well Scopes.toEnv test12
   take_step; apply Step.reduce_1; inhabited_metadata; apply Step.reduce_2
   · inhabited_metadata;
-  · discharge_isCanonicalValue
   · reduce_beta
   take_step; apply Step.reduce_1; inhabited_metadata; apply Step.reduce_2;
   · inhabited_metadata;
-  · discharge_isCanonicalValue
   · apply Step.eval_fn <;> try discharge_isCanonicalValue
     · inhabited_metadata
   take_step; apply Step.reduce_1; inhabited_metadata; reduce_beta
@@ -420,7 +438,6 @@ example: stuck test15 := by
     cases a3
     cases a2; unfold denoteInt at he; contradiction
 
-
 def test16 := TestCase.mk
   testState
   esM[((~Int.Add x) (~Int.Neg #30))]
@@ -430,22 +447,13 @@ def test16 := TestCase.mk
 #guard_msgs in
 #eval check test16
 
--- test16 stucks because '~Int.Add x' isn't canonical value.
-example: stuck test16 := by
-  intros e H
-  cases H <;> try contradiction
-  case reduce_2 =>
-    rename_i a a2
-    conv at a => lhs; unfold isCanonicalValue; reduce; unfold isCanonicalValue; reduce
-    contradiction
-  case expand_fn =>
-    rename_i a a2 a3
-    cases a2
-    contradiction
-  case eval_fn =>
-    rename_i a a2 a3 he
-    cases a3
-    cases a2; unfold denoteInt at he; contradiction
+example: steps_well test16 := by
+  unfold steps_well Scopes.toEnv test16
+  take_step; apply Step.reduce_2
+  · inhabited_metadata
+  · apply Step.eval_fn <;> try discharge_isCanonicalValue
+    · inhabited_metadata
+  take_refl
 
 
 def test17 := TestCase.mk
@@ -461,7 +469,6 @@ example: steps_well test17 := by
   unfold steps_well Scopes.toEnv test17
   take_step; apply Step.reduce_2
   · inhabited_metadata
-  · discharge_isCanonicalValue
   · apply Step.eval_fn <;> try discharge_isCanonicalValue
     · inhabited_metadata
   take_step; reduce_beta
@@ -481,7 +488,6 @@ example: steps_well test18 := by
   unfold steps_well Scopes.toEnv test18
   take_step; apply Step.reduce_2
   · inhabited_metadata
-  · discharge_isCanonicalValue
   · apply Step.eval_fn <;> try discharge_isCanonicalValue
     · inhabited_metadata
   take_step; apply Step.eval_fn <;> try discharge_isCanonicalValue
@@ -504,7 +510,6 @@ example: steps_well test19 := by
   take_step
   · apply Step.reduce_2
     · inhabited_metadata
-    · discharge_isCanonicalValue
     · apply Step.eval_fn <;> try discharge_isCanonicalValue
       · inhabited_metadata
   take_step
@@ -528,7 +533,6 @@ example: steps_well test20 := by
   · inhabited_metadata
   · apply Step.reduce_2
     · inhabited_metadata
-    · discharge_isCanonicalValue
     · apply Step.eval_fn <;> try discharge_isCanonicalValue
       · inhabited_metadata
   take_step; apply Step.eval_fn <;> try discharge_isCanonicalValue
@@ -549,15 +553,12 @@ example: steps_well test21 := by
   unfold steps_well Scopes.toEnv test21
   take_step; apply Step.reduce_2
   · inhabited_metadata
-  · discharge_isCanonicalValue
   · apply Step.reduce_2
     · inhabited_metadata
-    · discharge_isCanonicalValue
     · apply Step.eval_fn <;> try discharge_isCanonicalValue
       · inhabited_metadata
   take_step; apply Step.reduce_2
   · inhabited_metadata
-  · discharge_isCanonicalValue
   · apply Step.eval_fn <;> try discharge_isCanonicalValue
     · inhabited_metadata
   take_refl
@@ -572,7 +573,13 @@ def test22 := TestCase.mk
 #guard_msgs in
 #eval check test22
 
--- TODO: steps_well proof of test22
+example: steps_well test22 := by
+  unfold steps_well Scopes.toEnv test22
+  take_step; apply Step.reduce_2
+  · inhabited_metadata
+  · apply Step.eval_fn <;> try discharge_isCanonicalValue
+    · inhabited_metadata
+  take_refl
 
 
 def test23 := TestCase.mk
@@ -584,7 +591,24 @@ def test23 := TestCase.mk
 #guard_msgs in
 #eval check test23
 
--- TODO: steps_well proof of test23
+example: steps_well test23 := by
+  unfold steps_well Scopes.toEnv test23
+  take_step; apply Step.reduce_1
+  · inhabited_metadata
+  · apply Step.reduce_2
+    · inhabited_metadata
+    · apply Step.reduce_2
+      · inhabited_metadata
+      · apply Step.eval_fn <;> try discharge_isCanonicalValue
+        · inhabited_metadata
+  take_step; apply Step.reduce_1
+  · inhabited_metadata
+  · apply Step.reduce_2
+    · inhabited_metadata
+    · apply Step.eval_fn <;> try discharge_isCanonicalValue
+      · simp; rfl
+      · inhabited_metadata
+  take_refl
 
 
 def test24 := TestCase.mk
@@ -596,7 +620,33 @@ def test24 := TestCase.mk
 #guard_msgs in
 #eval check test24
 
--- TODO: stuck proof of test24
+-- Small step stucks because 'Int.Le' is not in the test factory and 'y' is unresolvable.
+example: stuck test24 := by
+  intros e H
+  cases H <;> try contradiction
+  case reduce_1 =>
+    rename_i _ h
+    cases h <;> try contradiction
+    case reduce_2 =>
+      rename_i _ h
+      cases h <;> try contradiction
+      case reduce_2 =>
+        rename_i _ h
+        cases h <;> try contradiction
+        case expand_fn =>
+          rename_i a a2 a3
+          cases a2; contradiction
+        case eval_fn =>
+          rename_i a a2 a3 he
+          cases a3
+          cases a2; unfold denoteInt at he; contradiction
+      case expand_fn =>
+        rename_i a a2 a3
+        cases a2; contradiction
+      case eval_fn =>
+        rename_i a a2 a3 he
+        cases a3
+        cases a2; unfold denoteInt at he; contradiction
 
 
 def test25 := TestCase.mk
@@ -608,7 +658,46 @@ def test25 := TestCase.mk
 #guard_msgs in
 #eval check test25
 
--- TODO: stuck proof of test25
+-- Small step stucks because 'x' is unresolvable.
+example: stuck test25 := by
+  intros e H
+  cases H <;> try contradiction
+  case expand_fn =>
+    rename_i a a2 a3
+    cases a2
+    contradiction
+  case eval_fn =>
+    rename_i a a2 a3 he
+    cases a3
+    cases a2; unfold denoteInt at he; contradiction
+
+
+-- Ternary function applied through a state variable.
+
+private def testStateFV : LState TestParams :=
+  { testState with state := [[("f", (none, esM[~Int.Add3]))]] }
+
+def test_ternary_fv := TestCase.mk
+  testStateFV
+  esM[((((f : int → int → int → int) #10) #20) #30)]
+  esM[#60]
+
+/-- info: true -/
+#guard_msgs in
+#eval check test_ternary_fv
+
+example: steps_well test_ternary_fv := by
+  unfold steps_well Scopes.toEnv test_ternary_fv testStateFV
+  take_step; apply Step.reduce_1
+  · inhabited_metadata
+  · apply Step.reduce_1
+    · inhabited_metadata
+    · apply Step.reduce_1
+      · inhabited_metadata
+      · apply Step.expand_fvar; rfl
+  take_step; apply Step.eval_fn <;> try rfl
+  · inhabited_metadata
+  take_refl
 
 
 end EvalTest

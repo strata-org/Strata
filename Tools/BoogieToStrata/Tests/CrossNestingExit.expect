@@ -1,0 +1,8 @@
+Successfully parsed.
+CrossNestingExit.core.st(45, 6) [assert_0]: ✅ pass
+CrossNestingExit.core.st(45, 6) [assert_0]: ✅ pass
+CrossNestingExit.core.st(85, 6) [assert_1]: ❌ fail
+CrossNestingExit.core.st(85, 6) [assert_1]: ✅ pass
+CrossNestingExit.core.st(125, 6) [assert_2]: ❌ fail
+CrossNestingExit.core.st(125, 6) [assert_2]: ✅ pass
+Finished with 4 goals passed, 2 failed.

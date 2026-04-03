@@ -18,13 +18,12 @@ section KleeneExamples
 open Imperative
 
 def KleeneTest1 : Stmt Expression (Cmd Expression) :=
-  .ite (Core.true) [.cmd $ .havoc "x" .empty ] [.cmd $ .havoc "y" .empty ] .empty
+  .ite (.det Core.true) [.cmd $ .set "x" .nondet .empty ] [.cmd $ .set "y" .nondet .empty ] .empty
 
-def KleeneTest1Ans : KleeneStmt Expression (Cmd Expression) :=
-  .choice
-    (.seq (.cmd (.assume "true_cond" Core.true .empty)) (.seq (.cmd $ .havoc "x" .empty) (.assume "skip" Imperative.HasBool.tt .empty)))
-    (.seq (.cmd (.assume "false_cond" Core.false .empty)) (.seq (.cmd $ .havoc "y" .empty) (.assume "skip" Imperative.HasBool.tt .empty)))
-
+def KleeneTest1Ans : Option (KleeneStmt Expression (Cmd Expression)) :=
+  .some (.choice
+    (.seq (.cmd (.assume "true_cond" Core.true .empty)) (.seq (.cmd $ .set "x" .nondet .empty) (.assert "$__skip" Imperative.HasBool.tt .empty)))
+    (.seq (.cmd (.assume "false_cond" Core.false .empty)) (.seq (.cmd $ .set "y" .nondet .empty) (.assert "$__skip" Imperative.HasBool.tt .empty))))
 
 -- #eval toString $ Std.format (StmtToKleeneStmt KleeneTest1)
 -- #eval toString $ Std.format KleeneTest1Ans

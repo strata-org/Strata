@@ -157,13 +157,13 @@ This is a Laurel → Laurel pass that should run after heap parameterization.
 Always returns the (best-effort) transformed program together with any diagnostics,
 so that later passes can continue and report additional errors.
 -/
-def modifiesClausesTransform (model: SemanticModel) (program : Program) : Program × Array DiagnosticModel :=
+def modifiesClausesTransform (model: SemanticModel) (program : Program) : Program × List DiagnosticModel :=
   let (procs', errors) := program.staticProcedures.foldl (fun (acc, errs) proc =>
     match transformModifiesClauses model proc with
     | .ok proc' => (acc ++ [proc'], errs)
     | .error newErrs => (acc ++ [proc], errs ++ newErrs.toList)
   ) ([], [])
-  ({ program with staticProcedures := procs' }, errors.toArray)
+  ({ program with staticProcedures := procs' }, errors)
 
 end -- public section
 end Strata.Laurel

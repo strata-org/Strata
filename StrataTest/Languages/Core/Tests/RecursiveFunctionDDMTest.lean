@@ -25,7 +25,7 @@ datatype IntList { Nil(), Cons(hd: int, tl: IntList) };
 rec function listLen (@[cases] xs : IntList) : int
 {
   if IntList..isNil(xs) then 0 else 1 + listLen(IntList..tl(xs))
-}
+};
 
 #end
 
@@ -38,7 +38,7 @@ datatype IntList {(
 rec function listLen (@[cases] xs : IntList) : int
 {
   if IntList..isNil(xs) then 0 else 1 + listLen(IntList..tl(xs))
-}
+};
 -/
 #guard_msgs in
 #eval IO.println recFuncDDMPgm
@@ -58,7 +58,7 @@ datatype MyList (a : Type) { Nil(), Cons(hd: a, tl: MyList a) };
 rec function len<a>(@[cases] xs : MyList a) : int
 {
   if MyList..isNil(xs) then 0 else 1 + len(MyList..tl(xs))
-}
+};
 
 #end
 
@@ -70,9 +70,49 @@ datatype MyList (a : Type) {(
 rec function len<a> (@[cases] xs : (MyList a)) : int
 {
   if MyList..isNil(xs) then 0 else 1 + len(MyList..tl(xs))
-}
+};
 -/
 #guard_msgs in
 #eval IO.println polyRecFuncPgm
 
 end Strata.RecFuncPolyTest
+
+/-! ## Test: mutually recursive functions — DDM parsing -/
+
+namespace Strata.MutualRecFuncTest
+
+def mutualRecFuncPgm : Program :=
+#strata
+program Core;
+
+datatype MyNat { Zero(), Succ(pred: MyNat) };
+
+rec function isEven (@[cases] n : MyNat) : bool
+{
+  if MyNat..isZero(n) then true else isOdd(MyNat..pred(n))
+}
+function isOdd (@[cases] n : MyNat) : bool
+{
+  if MyNat..isZero(n) then false else isEven(MyNat..pred(n))
+};
+
+#end
+
+/-- info: program Core;
+datatype MyNat {(
+  (Zero())),
+  (Succ(pred : MyNat))
+};
+rec function isEven (@[cases] n : MyNat) : bool
+{
+  if MyNat..isZero(n) then true else isOdd(MyNat..pred(n))
+}
+function isOdd (@[cases] n : MyNat) : bool
+{
+  if MyNat..isZero(n) then false else isEven(MyNat..pred(n))
+};
+-/
+#guard_msgs in
+#eval IO.println mutualRecFuncPgm
+
+end Strata.MutualRecFuncTest

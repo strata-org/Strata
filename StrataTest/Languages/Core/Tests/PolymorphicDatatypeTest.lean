@@ -482,7 +482,7 @@ def nonDatatypeWithDatatypeArgPgm : Program :=
 #strata
 program Core;
 
-type Seq (a: Type);
+type SeqTest (a: Type);
 
 datatype Option (a : Type) { None(), Some(val: a) };
 
@@ -491,7 +491,7 @@ datatype Inner () {
 };
 
 datatype Middle () {
-  MkMiddle(items: (Seq Inner))
+  MkMiddle(items: (SeqTest Inner))
 };
 
 datatype Outer () {

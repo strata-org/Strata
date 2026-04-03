@@ -43,6 +43,8 @@ spec {
   ensures true;
 }
 {
+  // Lower priority for now: this depends on choosing a real semantics for
+  // the `opaque` / `reveal` family rather than treating reveal as unrestricted.
   // TODO(feature:reveal_with_fuel): switch `pow2` back to a recursive definition and
   // model bounded unfolding once recursive reveal support is available end-to-end.
   // TODO(feature:reveal_with_fuel): distinguish bounded unfolding from full reveal.
@@ -50,6 +52,7 @@ spec {
 };
 #end
 
+#guard_msgs (drop info) in
 #eval Strata.Boole.verify "cvc5" revealWithFuelSeed
 
 example : Strata.smtVCsCorrect revealWithFuelSeed := by

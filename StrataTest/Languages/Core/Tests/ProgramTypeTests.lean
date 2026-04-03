@@ -16,13 +16,13 @@ open Lambda.LTy.Syntax Lambda.LExpr.SyntaxMono Core.Syntax
 
 def bad_prog : Program := { decls := [
       -- type Foo a b;
-      .type (.con { name := "Foo", params := ["a", "b"]}),
+      .type (.con { name := "Foo", params := ["a", "b"]}) .empty,
       -- type FooAlias a = Foo bool bool;
-      .type (.syn { name := "FooAlias", typeArgs := ["a"], type := mty[Foo bool bool]}),
+      .type (.syn { name := "FooAlias", typeArgs := ["a"], type := mty[Foo bool bool]}) .empty,
       -- const fooAliasVal : FooAlias bool;
-      .func { name := "fooAliasVal", inputs := [], output := mty[FooAlias bool]},
+      .func { name := "fooAliasVal", inputs := [], output := mty[FooAlias bool]} .empty,
       -- const fooVal : Foo int bool;
-      .func { name := "fooVal", inputs := [], output := mty[Foo int bool]},
+      .func { name := "fooVal", inputs := [], output := mty[Foo int bool]} .empty,
       .proc { header := {name := "P",
                          typeArgs := [],
                          inputs := [],
@@ -34,7 +34,7 @@ def bad_prog : Program := { decls := [
               body := [
                 Statement.assert "test" eb[(~fooAliasVal == ~fooVal)] .empty
               ]
-      }
+      } .empty
 ]}
 
 /--
@@ -47,13 +47,13 @@ First mismatch: bool with int.
 
 def good_prog : Program := { decls := [
       -- type Foo a b;
-      .type (.con { name := "Foo", params := ["a", "b"]}),
+      .type (.con { name := "Foo", params := ["a", "b"]}) .empty,
       -- type FooAlias a = Foo int bool;
-      .type (.syn { name := "FooAlias", typeArgs := ["a"], type := mty[Foo int bool]}),
+      .type (.syn { name := "FooAlias", typeArgs := ["a"], type := mty[Foo int bool]}) .empty,
       -- const fooAliasVal : ∀α. FooAlias α;
-      .func { name := "fooAliasVal", typeArgs := ["α"], inputs := [], output := mty[FooAlias α]},
+      .func { name := "fooAliasVal", typeArgs := ["α"], inputs := [], output := mty[FooAlias α]} .empty,
       -- const fooVal : Foo int bool;
-      .func { name := "fooVal", inputs := [], output := mty[Foo int bool]},
+      .func { name := "fooVal", inputs := [], output := mty[Foo int bool]} .empty,
       .proc { header := {name := "P",
                          typeArgs := [],
                          inputs := [],
@@ -65,7 +65,7 @@ def good_prog : Program := { decls := [
               body := [
                 Statement.assert "test" eb[(~fooAliasVal == ~fooVal)] .empty
               ]
-      }
+      } .empty
 ]}
 
 /--
@@ -154,6 +154,15 @@ info: ok: [(type Foo (a : Type, b : Type);
   func const : ∀[k, v]. ((d : v)) → (Map k v);
   func select : ∀[k, v]. ((m : (Map k v)) (i : k)) → v;
   func update : ∀[k, v]. ((m : (Map k v)) (i : k) (x : v)) → (Map k v);
+  func Sequence.length : ∀[a]. ((s : (Sequence a))) → int;
+  func Sequence.empty : ∀[a]. () → (Sequence a);
+  func Sequence.append : ∀[a]. ((s1 : (Sequence a)) (s2 : (Sequence a))) → (Sequence a);
+  func Sequence.select : ∀[a]. ((s : (Sequence a)) (i : int)) → a;
+  func Sequence.build : ∀[a]. ((s : (Sequence a)) (v : a)) → (Sequence a);
+  func Sequence.update : ∀[a]. ((s : (Sequence a)) (i : int) (v : a)) → (Sequence a);
+  func Sequence.contains : ∀[a]. ((s : (Sequence a)) (v : a)) → bool;
+  func Sequence.take : ∀[a]. ((s : (Sequence a)) (n : int)) → (Sequence a);
+  func Sequence.drop : ∀[a]. ((s : (Sequence a)) (n : int)) → (Sequence a);
   func Triggers.empty :  () → Triggers;
   func Triggers.addGroup :  ((g : TriggerGroup) (t : Triggers)) → Triggers;
   func TriggerGroup.empty :  () → TriggerGroup;
@@ -325,18 +334,18 @@ def outOfScopeVarProg : Program := { decls := [
                   postconditions := [] },
               body := [
                 Statement.set "y" eb[((~Bool.Or x) x)] .empty,
-                .ite eb[(x == #true)]
-                  [Statement.init "q" t[int] (some eb[#0]) .empty,
+                .ite (.det eb[(x == #true)])
+                  [Statement.init "q" t[int] (.det eb[#0]) .empty,
                            Statement.set "q" eb[#1] .empty,
                            Statement.set "y" eb[#true] .empty]
-                  [Statement.init "q" t[int] (some eb[#0]) .empty,
+                  [Statement.init "q" t[int] (.det eb[#0]) .empty,
                            Statement.set "q" eb[#2] .empty,
                            Statement.set "y" eb[#true] .empty]
                   .empty,
                 Statement.assert "y_check" eb[y == #true] .empty,
                 Statement.assert "q_check" eb[q == #1] .empty
               ]
-      }
+      } .empty
 ]}
 
 /--
@@ -354,12 +363,12 @@ def polyFuncProg : Program := { decls := [
   .func { name := "identity",
           typeArgs := ["a"],
           inputs := [("x", .ftvar "a")],
-          output := .ftvar "a" },
+          output := .ftvar "a" } .empty,
   -- function makePair<a, b>(x : a, y : b) : Map a b;
   .func { name := "makePair",
           typeArgs := ["a", "b"],
           inputs := [("x", .ftvar "a"), ("y", .ftvar "b")],
-          output := .tcons "Map" [.ftvar "a", .ftvar "b"] },
+          output := .tcons "Map" [.ftvar "a", .ftvar "b"] } .empty,
   -- procedure Test()
   .proc { header := { name := "Test",
                       typeArgs := [],
@@ -370,11 +379,11 @@ def polyFuncProg : Program := { decls := [
                     postconditions := [] },
           body := [
             -- var m : Map int bool;
-            Statement.init "m" (.forAll [] (.tcons "Map" [.tcons "int" [], .tcons "bool" []])) none .empty,
+            Statement.init "m" (.forAll [] (.tcons "Map" [.tcons "int" [], .tcons "bool" []])) Imperative.ExprOrNondet.nondet .empty,
             -- m := makePair(identity(42), identity(true));
             Statement.set "m" eb[((~makePair (~identity #42)) (~identity #true))] .empty
           ]
-  }
+  } .empty
 ]}
 
 /--
@@ -402,7 +411,7 @@ def intIdentityFnPgm : Program := { decls := [
           inputs := [],
           output := .arrow .int .int,
           body := some eb[λ %0]
-          }
+          } .empty
 ]}
 
 -- Overriding Core's formatter since Core's DDM doesn't support lambda
@@ -427,6 +436,22 @@ info: ok: [func intID :  () → (arrow int int) := ((λ (bvar:int) %0))]
           else
             return (format "Unexpected output")
 end
+
+---------------------------------------------------------------------
+
+/-- A `Decl.func` with `isRecursive := true` should be rejected.
+    `Decl.func` is for non-recursive functions only; recursive functions
+    must use `Decl.recFuncBlock`. -/
+def recursiveFuncDeclProg : Program := { decls := [
+  .func { name := "bad", isRecursive := true, inputs := [("x", .int)], output := .int } .empty
+]}
+
+/--
+info: error: Decl.func does not allow recursive functions. Use recFuncBlock instead: 'bad'
+-/
+#guard_msgs in
+#eval do let ans ← typeCheckAndPartialEval .default recursiveFuncDeclProg
+         return (format ans)
 
 ---------------------------------------------------------------------
 

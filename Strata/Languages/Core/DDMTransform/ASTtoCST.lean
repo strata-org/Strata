@@ -201,6 +201,9 @@ def lmonoTyToCoreType {M} [Inhabited M] (ty : Lambda.LMonoTy) :
     let kty ← lmonoTyToCoreType k
     let vty ← lmonoTyToCoreType v
     pure (.Map default kty vty)
+  | .tcons "Sequence" [e] => do
+    let ety ← lmonoTyToCoreType e
+    pure (.Sequence default ety)
   | .tcons "arrow" [a, b] => do
     let aty ← lmonoTyToCoreType a
     let bty ← lmonoTyToCoreType b
@@ -371,6 +374,7 @@ def handleZeroaryOps {M} [Inhabited M] (name : String)
   | "Re.All" => pure (.re_all default)
   | "Re.AllChar" => pure (.re_allchar default)
   | "Re.None" => pure (.re_none default)
+  -- TODO: seq_empty is not yet parseable (see Grammar.lean); handle here when added.
   | _ => do
     ToCSTM.logError "lopToExpr" "0-ary op not found" name
     pure (.re_none default)
@@ -391,6 +395,8 @@ def handleUnaryOps {M} [Inhabited M] (name : String) (arg : CoreDDM.Expr M)
   | "Re.Star" => pure (.re_star default arg)
   | "Re.Plus" => pure (.re_plus default arg)
   | "Re.Comp" => pure (.re_comp default arg)
+  -- Sequences
+  | "Sequence.length" => pure (.seq_length default ty arg)
   -- Bitvectors
   | "Bv1.Not" => pure (.bvnot default (.bv1 default) arg)
   | "Bv1.Neg" => pure (.neg_expr default (.bv1 default) arg)
@@ -527,6 +533,13 @@ def handleBinaryOps {M} [Inhabited M] (name : String)
   | "Bool.Equiv" => pure (.equiv default arg1 arg2)
   -- Map operations
   | "select" => pure (.map_get default ty ty arg1 arg2)
+  -- Sequence operations
+  | "Sequence.select" => pure (.seq_select default ty arg1 arg2)
+  | "Sequence.append" => pure (.seq_append default ty arg1 arg2)
+  | "Sequence.build" => pure (.seq_build default ty arg1 arg2)
+  | "Sequence.contains" => pure (.seq_contains default ty arg1 arg2)
+  | "Sequence.take" => pure (.seq_take default ty arg1 arg2)
+  | "Sequence.drop" => pure (.seq_drop default ty arg1 arg2)
   -- String and Regex operations
   | "Str.Concat" => pure (.str_concat default arg1 arg2)
   | "Str.InRegEx" => pure (.str_inregex default arg1 arg2)
@@ -543,6 +556,8 @@ def handleTernaryOps {M} [Inhabited M] (name : String)
   match name with
   -- Maps
   | "update" => pure (.map_set default ty ty arg1 arg2 arg3)
+  -- Sequences
+  | "Sequence.update" => pure (.seq_update default ty arg1 arg2 arg3)
   -- Strings and regexes
   | "Str.Substr" => pure (.str_substr default arg1 arg2 arg3)
   | "Re.Loop" => pure (.re_loop default arg1 arg2 arg3)
@@ -782,12 +797,12 @@ partial def stmtToCST {M} [Inhabited M] (s : Core.Statement)
     let nameAnn : Ann String M := ⟨default, name.toPretty⟩
     let tyCST ← lTyToCoreType ty
     let result ← match expr with
-    | none => do
+    | Imperative.ExprOrNondet.nondet => do
       let bind := Bind.bind_mk default nameAnn
                   ⟨default, none⟩ tyCST
       let dl := DeclList.declAtom default bind
       pure (.varStatement default dl)
-    | some e =>
+    | Imperative.ExprOrNondet.det e =>
       let exprCST ← lexprToExpr e 0
       pure (.initStatement default tyCST nameAnn exprCST)
     -- Push the newly declared variable to the *end of the bound variables
@@ -837,16 +852,24 @@ partial def stmtToCST {M} [Inhabited M] (s : Core.Statement)
     let blockCST ← blockToCST stmts
     pure (.block_statement default labelAnn blockCST)
   | .ite cond thenb elseb _md => do
-    let condCST ← lexprToExpr cond 0
     let thenCST ← blockToCST thenb
     let elseCST ← elseToCST elseb
-    pure (.if_statement default condCST thenCST elseCST)
+    match cond with
+    | .det e =>
+      let condCST ← lexprToExpr e 0
+      pure (.if_statement default (.condDet default condCST) thenCST elseCST)
+    | .nondet =>
+      pure (.if_statement default (.condNondet default) thenCST elseCST)
   | .loop guard measure invariant body _md => do
-    let guardCST ← lexprToExpr guard 0
     let measureCST ← measureToCST measure
     let invs ← invariantsToCST invariant
     let bodyCST ← blockToCST body
-    pure (.while_statement default guardCST measureCST invs bodyCST)
+    match guard with
+    | .det e =>
+      let guardCST ← lexprToExpr e 0
+      pure (.while_statement default (.condDet default guardCST) measureCST invs bodyCST)
+    | .nondet =>
+      pure (.while_statement default (.condNondet default) measureCST invs bodyCST)
   | .exit label _md => do
     match label with
     | some l =>
@@ -971,6 +994,44 @@ def procToCST {M} [Inhabited M] (proc : Core.Procedure) : ToCSTM M (Command M) :
   modify ToCSTContext.popScope
   pure (.command_procedure default name typeArgs inputs outputs spec body)
 
+/-- Convert a recursive function to a RecFnDecl CST node -/
+def recFnDeclToCST {M} [Inhabited M]
+    (func : Lambda.LFunc CoreLParams)
+    (_md : Imperative.MetaData Expression) : ToCSTM M (RecFnDecl M) := do
+  modify ToCSTContext.pushScope
+  let name : Ann String M := ⟨default, func.name.name⟩
+  let typeArgs : Ann (Option (TypeArgs M)) M :=
+    if func.typeArgs.isEmpty then ⟨default, none⟩
+    else
+      let tvars := func.typeArgs.map fun tv =>
+        TypeVar.type_var default (⟨default, tv⟩ : Ann String M)
+      ⟨default, some (TypeArgs.type_args default ⟨default, tvars.toArray⟩)⟩
+  let processInput (id : CoreLParams.Identifier) (ty : Lambda.LMonoTy) (isCases : Bool) :
+          ToCSTM M (Binding M × String) := do
+    let paramName : Ann String M := ⟨default, id.name⟩
+    let paramType ← lmonoTyToCoreType ty
+    let binding := if isCases then
+      Binding.casesBinding default paramName (TypeP.expr paramType)
+    else
+      Binding.mkBinding default paramName (TypeP.expr paramType)
+    pure (binding, id.name)
+  let casesIdx := func.attr.findSome? fun
+    | .inlineIfConstr i => some i
+    | _ => none
+  let results ← func.inputs.toArray.mapIdxM fun idx (id, ty) =>
+    processInput id ty (casesIdx == some idx)
+  let bindings := results.map (·.1)
+  let paramNames := results.map (·.2)
+  let b : Bindings M := .mkBindings default ⟨default, bindings⟩
+  let r ← lmonoTyToCoreType func.output
+  modify (·.addScopedBoundVars (reverse? := false) paramNames)
+  let preconds ← precondsToSpecElts func.preconditions
+  let bodyExpr ← match func.body with
+    | some body => lexprToExpr body 0
+    | none => pure (.btrue default)  -- shouldn't happen for recursive functions
+  modify ToCSTContext.popScope
+  pure (.recfn_decl default name typeArgs b r preconds bodyExpr)
+
 /-- Convert a function declaration to CST -/
 def funcToCST {M} [Inhabited M]
     (func : Lambda.LFunc CoreLParams)
@@ -1028,7 +1089,7 @@ def distinctToCST {M} [Inhabited M] (name : CoreIdent) (es : List (Lambda.LExpr 
 
 /-- Convert a variable declaration to CST -/
 def varToCST {M} [Inhabited M]
-    (name : CoreIdent) (ty : Lambda.LTy) (_e : Option (Lambda.LExpr CoreLParams.mono))
+    (name : CoreIdent) (ty : Lambda.LTy) (_e : Imperative.ExprOrNondet Expression)
     (_md : Imperative.MetaData Expression) : ToCSTM M (Command M) := do
   -- Register name as free variable
   modify (·.addGlobalFreeVars #[name.toPretty])
@@ -1063,6 +1124,13 @@ def declToCST {M} [Inhabited M] (decl : Core.Decl) : ToCSTM M (List (Command M))
     pure [cmd]
   | .distinct name es md => do
     let cmd ← distinctToCST name es md
+    pure [cmd]
+  | .recFuncBlock funcs md => do
+    -- Register function names as free variables so self/sibling calls resolve
+    let fnNames := funcs.map (·.name.name)
+    modify (·.addGlobalFreeVars fnNames.toArray)
+    let recFnDecls ← funcs.mapM fun func => recFnDeclToCST func md
+    let cmd := Command.command_recfndefs default ⟨default, recFnDecls.toArray⟩
     pure [cmd]
 
 /-- Convert `Core.Program` to a list of CST `Commands` -/

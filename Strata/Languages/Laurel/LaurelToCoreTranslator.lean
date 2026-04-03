@@ -21,7 +21,7 @@ public import Strata.Languages.Laurel.TypeHierarchy
 public import Strata.Languages.Laurel.LaurelTypes
 public import Strata.Languages.Laurel.ModifiesClauses
 public import Strata.Languages.Laurel.CoreDefinitionsForLaurel
-import Strata.Languages.Laurel.DatatypeGrouping
+import Strata.Languages.Laurel.CoreGroupingAndOrdering
 import Strata.DDM.Util.DecimalRat
 import Strata.DL.Imperative.Stmt
 import Strata.DL.Imperative.MetaData
@@ -42,6 +42,9 @@ open Lambda (LMonoTy LTy LExpr)
 
 public section
 
+private def mdWithUnknownLoc : Imperative.MetaData Core.Expression :=
+  #[⟨Imperative.MetaData.fileRange, .fileRange FileRange.unknown⟩]
+
 /-
 Translate Laurel HighType to Core Type
 -/
@@ -56,23 +59,19 @@ def translateType (model : SemanticModel) (ty : HighTypeMd) : LMonoTy :=
   | .TSet elementType => Core.mapTy (translateType model elementType) LMonoTy.bool
   | .TMap keyType valueType => Core.mapTy (translateType model keyType) (translateType model valueType)
   | .UserDefined name =>
-    -- Composite types map to "Composite"; datatypes map to their own name
     match name.uniqueId.bind model.refToDef.get? with
     | some (.compositeType _) => .tcons "Composite" []
     | some (.datatypeDefinition dt) => .tcons dt.name.text []
     | _ => .tcons "Composite" [] -- fallback for unresolved refs
   | .TCore s => .tcons s []
-  | .TFloat64 => dbg_trace "NOT SUPPORTED YET: Float64"; .tcons "Float64IsNotSupportedYet" []
   | .TReal => LMonoTy.real
-  | .Top => .tcons "Any" []
-  | _ => panic s!"translateType: unsupported type {ToFormat.format ty}"
+  | .Unknown => .tcons "Any" [] -- TODO, abort execution since there is no valid Core type to translate Unknown to
+  | _ => .tcons "NotSupportedYet" [] -- TODO, abort execution since there is no valid Core type to translate Unknown to
 termination_by ty.val
 decreasing_by all_goals (first | (cases elementType; term_by_mem) | (cases keyType; term_by_mem) | (cases valueType; term_by_mem))
 
 def lookupType (model : SemanticModel) (name : Identifier) : LMonoTy :=
-  match (model.get name).getType with
-  | .some ty => translateType model ty
-  | none => panic s!"no type for {name}"
+  translateType model (model.get name).getType
 
 def isFieldName (fieldNames : List Identifier) (name : Identifier) : Bool :=
   fieldNames.contains name
@@ -88,17 +87,22 @@ structure TranslateState where
   nextId : Nat := 1
   /-- Constants known to the program (field constants, etc.) -/
   model : SemanticModel
+  /-- Do not process the produces Core program, since it has superfluous errors -/
+  coreProgramHasSuperfluousErrors: Bool := false
 
-/-- The translation monad: state over Id -/
-@[expose] abbrev TranslateM := StateT TranslateState Id
+/-- The translation monad: state over Except, allowing both accumulated diagnostics and hard failures -/
+@[expose] abbrev TranslateM := OptionT (StateM TranslateState)
 
-/-- Emit a diagnostic into the translation state -/
+/-- Emit a diagnostic into the translation state (soft warning, does not abort) -/
 def emitDiagnostic (d : DiagnosticModel) : TranslateM Unit :=
   modify fun s => { s with diagnostics := s.diagnostics ++ [d] }
 
-/-- Run a `TranslateM` action, returning the result and final state -/
-def runTranslateM (s : TranslateState) (m : TranslateM α) : α × TranslateState :=
+/-- Run a `TranslateM` action, returning either a hard error or the result and final state -/
+def runTranslateM (s : TranslateState) (m : TranslateM α) : (Option α × TranslateState) :=
   m s
+
+def returnNone: TranslateM α :=
+  StateT.pure none
 
 /-- Allocate a fresh unique ID. -/
 private def freshId : TranslateM Nat := do
@@ -107,13 +111,20 @@ private def freshId : TranslateM Nat := do
   set { s with nextId := id + 1 }
   return id
 
+/-- Throw a hard diagnostic error, aborting the current translation -/
+def throwExprDiagnostic (d : DiagnosticModel): TranslateM Core.Expression.Expr := do
+  emitDiagnostic d
+  modify fun s => { s with coreProgramHasSuperfluousErrors := true }
+  let id ← freshId
+  return LExpr.fvar () (⟨s!"DUMMY_VAR_{id}", ()⟩) none
+
 /--
 Translate Laurel StmtExpr to Core Expression using the `TranslateM` monad.
 Diagnostics for disallowed constructs are emitted into the monad state.
 
 `isPureContext` should be `true` when translating function bodies or contract expressions.
 In that case, disallowed constructs emit `DiagnosticModel` errors into the state.
-When `false` (inside a procedure body statement), disallowed constructs `panic!`
+When `false` (inside a procedure body statement), disallowed constructs throw a diagnostic
 because `liftImperativeExpressions` should have already removed them.
 
 `boundVars` tracks names bound by enclosing Forall/Exists quantifiers (innermost first).
@@ -125,15 +136,13 @@ def translateExpr (expr : StmtExprMd)
     : TranslateM Core.Expression.Expr := do
   let s ← get
   let model := s.model
-  -- Dummy expression used as placeholder when an error is emitted in pure context
-  let dummy := .fvar () (⟨s!"DUMMY_VAR_{← freshId}", ()⟩) none
-  -- Emit an error in pure context; panic in impure context (lifting invariant violated)
+  let md := expr.md
   let disallowed (md : MetaData) (msg : String) : TranslateM Core.Expression.Expr := do
     if isPureContext then
-      emitDiagnostic (md.toDiagnostic msg)
-      return dummy
+      throwExprDiagnostic $ md.toDiagnostic msg
     else
-      panic! s!"translateExpr: {msg} (should have been lifted): {Std.Format.pretty (Std.ToFormat.format md)}"
+      throwExprDiagnostic $ md.toDiagnostic s!"{msg} (should have been lifted)" DiagnosticType.StrataBug
+
   match h: expr.val with
   | .LiteralBool b => return .const () (.boolConst b)
   | .LiteralInt i => return .const () (.intConst i)
@@ -150,7 +159,7 @@ def translateExpr (expr : StmtExprMd)
         | .field _ f =>
             return .op () ⟨f.name.text, ()⟩ none
         | astNode =>
-            return .fvar () ⟨name.text, ()⟩ (some (translateType model $ astNode.getType.getD (panic! "LaurelToCore.translateExpr")))
+            return .fvar () ⟨name.text, ()⟩ (some (translateType model $ astNode.getType))
   | .PrimitiveOp op [e] =>
     match op with
     | .Not =>
@@ -161,7 +170,8 @@ def translateExpr (expr : StmtExprMd)
       let isReal := match (computeExprType model e).val with
         | .TReal => true | _ => false
       return .app () (if isReal then realNegOp else intNegOp) re
-    | _ => panic! s!"translateExpr: Invalid unary op: {repr op}"
+    | _ =>
+      throwExprDiagnostic $ md.toDiagnostic s!"translateExpr: Invalid unary op: {repr op}" DiagnosticType.StrataBug
   | .PrimitiveOp op [e1, e2] =>
     let re1 ← translateExpr e1 boundVars isPureContext
     let re2 ← translateExpr e2 boundVars isPureContext
@@ -175,9 +185,9 @@ def translateExpr (expr : StmtExprMd)
     | .Neq => return .app () boolNotOp (.eq () re1 re2)
     | .And => return binOp boolAndOp
     | .Or => return binOp boolOrOp
-    | .AndThen => return .ite () re1 re2 (.boolConst () false)
-    | .OrElse => return .ite () re1 (.boolConst () true) re2
-    | .Implies => return .ite () re1 re2 (.boolConst () true)
+    | .AndThen => return binOp boolAndOp
+    | .OrElse => return binOp boolOrOp
+    | .Implies => return binOp boolImpliesOp
     | .Add => return binOp (if isReal then realAddOp else intAddOp)
     | .Sub => return binOp (if isReal then realSubOp else intSubOp)
     | .Mul => return binOp (if isReal then realMulOp else intMulOp)
@@ -190,14 +200,16 @@ def translateExpr (expr : StmtExprMd)
     | .Gt => return binOp (if isReal then realGtOp else intGtOp)
     | .Geq => return binOp (if isReal then realGeOp else intGeOp)
     | .StrConcat => return binOp strConcatOp
-    | _ => panic! s!"translateExpr: Invalid binary op: {repr op}"
+    | _ =>
+        throwExprDiagnostic $ md.toDiagnostic s!"Invalid binary op: {repr op}" DiagnosticType.NotYetImplemented
   | .PrimitiveOp op args =>
-    panic! s!"translateExpr: PrimitiveOp {repr op} with {args.length} args"
+      throwExprDiagnostic $ md.toDiagnostic s!"PrimitiveOp {repr op} with {args.length} args is not supported" DiagnosticType.UserError
   | .IfThenElse cond thenBranch elseBranch =>
       let bcond ← translateExpr cond boundVars isPureContext
       let bthen ← translateExpr thenBranch boundVars isPureContext
       let belse ← match elseBranch with
-        | none => panic "if-then without else expression not yet implemented"
+        | none =>
+            throwExprDiagnostic $ md.toDiagnostic s!"if-then without else expression" DiagnosticType.NotYetImplemented
         | some e =>
             have : sizeOf e < sizeOf expr := by
               have := WithMetadata.sizeOf_val_lt expr
@@ -263,35 +275,38 @@ def translateExpr (expr : StmtExprMd)
   | .Block (⟨ .IfThenElse cond thenBranch (some elseBranch), md⟩ :: rest) label =>
     disallowed md "if-then-else only supported as the last statement in a block"
 
-  | .IsType _ _ => panic "IsType should have been lowered"
-  | .New _ => panic! s!"New should have been eliminated by typeHierarchyTransform"
+  | .IsType _ _ =>
+      throwExprDiagnostic $ md.toDiagnostic "IsType should have been lowered" DiagnosticType.StrataBug
+  | .New _ => throwExprDiagnostic $ md.toDiagnostic s!"New should have been eliminated by typeHierarchyTransform" DiagnosticType.StrataBug
   | .FieldSelect target fieldId =>
       -- Field selects should have been eliminated by heap parameterization
       -- If we see one here, it's an error in the pipeline
-      panic! s!"FieldSelect should have been eliminated by heap parameterization: {Std.ToFormat.format target}#{fieldId.text}"
-  | .Block _ _ => panic! "block expression should have been lowered in a separate pass"
-  | .LocalVariable _ _ _ => panic "local variable expression not yet implemented (should be lowered in a separate pass)"
-  | .Return _ => disallowed expr.md "return expression not yet implemented (should be lowered in a separate pass)"
+      throwExprDiagnostic $ md.toDiagnostic s!"FieldSelect should have been eliminated by heap parameterization: {Std.ToFormat.format target}#{fieldId.text}" DiagnosticType.StrataBug
+  | .Block _ _ =>
+      throwExprDiagnostic $ md.toDiagnostic "block expression should have been lowered in a separate pass" DiagnosticType.StrataBug
+  | .LocalVariable _ _ _ =>
+      throwExprDiagnostic $ md.toDiagnostic "local variable expression should be lowered in a separate pass" DiagnosticType.StrataBug
+  | .Return _ => disallowed expr.md "return expression should be lowered in a separate pass"
 
-  | .AsType target _ => panic "AsType expression not implemented"
-  | .Assigned _ => panic "assigned expression not implemented"
-  | .Old value => panic "old expression not implemented"
-  | .Fresh _ => panic "fresh expression not implemented"
-  | .Assert _ => panic "assert expression not implemented"
-  | .Assume _ => panic "assume expression not implemented"
-  | .ProveBy value _ => panic "proveBy expression not implemented"
-  | .ContractOf _ _ => panic "contractOf expression not implemented"
-  | .Abstract => panic "abstract expression not implemented"
-  | .All => panic "all expression not implemented"
-  | .InstanceCall target callee args => panic "This expression not implemented"
-  | .PureFieldUpdate _ _ _ => panic "This expression not implemented"
-  | .This => panic "This expression not implemented"
+  | .AsType target _ => throwExprDiagnostic $ md.toDiagnostic "AsType expression translation" DiagnosticType.NotYetImplemented
+  | .Assigned _ => throwExprDiagnostic $ md.toDiagnostic "assigned expression translation" DiagnosticType.NotYetImplemented
+  | .Old value => throwExprDiagnostic $ md.toDiagnostic "old expression translation" DiagnosticType.NotYetImplemented
+  | .Fresh _ => throwExprDiagnostic $ md.toDiagnostic "fresh expression translation" DiagnosticType.NotYetImplemented
+  | .Assert _ => throwExprDiagnostic $ md.toDiagnostic "assert expression translation" DiagnosticType.NotYetImplemented
+  | .Assume _ => throwExprDiagnostic $ md.toDiagnostic "assume expression translation" DiagnosticType.NotYetImplemented
+  | .ProveBy value _ => throwExprDiagnostic $ md.toDiagnostic "proveBy expression translation" DiagnosticType.NotYetImplemented
+  | .ContractOf _ _ => throwExprDiagnostic $ md.toDiagnostic "contractOf expression translation" DiagnosticType.NotYetImplemented
+  | .Abstract => throwExprDiagnostic $ md.toDiagnostic "abstract expression translation" DiagnosticType.NotYetImplemented
+  | .All => throwExprDiagnostic $ md.toDiagnostic "all expression translation" DiagnosticType.NotYetImplemented
+  | .InstanceCall target callee args => throwExprDiagnostic $ md.toDiagnostic "instance call expression translation" DiagnosticType.NotYetImplemented
+  | .PureFieldUpdate _ _ _ => throwExprDiagnostic $ md.toDiagnostic "pure field update expression translation" DiagnosticType.NotYetImplemented
+  | .This => throwExprDiagnostic $ md.toDiagnostic "this expression translation" DiagnosticType.NotYetImplemented
   termination_by expr
   decreasing_by
     all_goals (have := WithMetadata.sizeOf_val_lt expr; term_by_mem)
 
 def getNameFromMd (md : Imperative.MetaData Core.Expression): String :=
-  let fileRange := (Imperative.getFileRange md).getD (dbg_trace "SOUND BUG in getNameFromMd"; default)
+  let fileRange := (Imperative.getFileRange md).getD (dbg_trace "BUG: metadata without a filerange"; default)
   s!"({fileRange.range.start})"
 
 def defaultExprForType (model : SemanticModel) (ty : HighTypeMd) : Core.Expression.Expr :=
@@ -317,7 +332,7 @@ private def exprAsUnusedInit (expr : StmtExprMd) (md : Imperative.MetaData Core.
   let ident : Core.CoreIdent := ⟨s!"$unused_{id}", ()⟩
   let tyVarName := s!"$__ty_unused_{id}"
   let coreType := LTy.forAll [tyVarName] (.ftvar tyVarName)
-  return [Core.Statement.init ident coreType (some coreExpr) md]
+  return [Core.Statement.init ident coreType (.det coreExpr) md]
 
 /--
 Translate Laurel StmtExpr to Core Statements using the `TranslateM` monad.
@@ -351,27 +366,27 @@ def translateStmt (outputParams : List Parameter) (stmt : StmtExprMd)
           if model.isFunction callee then
             -- Translate as expression (function application)
             let coreExpr ← translateExpr (⟨ .StaticCall callee args, callMd ⟩)
-            return [Core.Statement.init ident coreType (some coreExpr) md]
+            return [Core.Statement.init ident coreType (.det coreExpr) md]
           else
             -- Translate as: var name; call name := callee(args)
             let coreArgs ← args.mapM (fun a => translateExpr a)
             let defaultExpr := defaultExprForType model ty
-            let initStmt := Core.Statement.init ident coreType (some defaultExpr) md
+            let initStmt := Core.Statement.init ident coreType (.det defaultExpr) md
             let callStmt := Core.Statement.call [ident] callee.text coreArgs md
             return [initStmt, callStmt]
       | some (⟨ .InstanceCall .., _⟩) =>
           -- Instance method call as initializer: var name := target.method(args)
           -- Havoc the result since instance methods may be on unmodeled types
-          let initStmt := Core.Statement.init ident coreType none md
+          let initStmt := Core.Statement.init ident coreType .nondet md
           return [initStmt]
       | some (⟨ .Hole _ _, _⟩) =>
           -- Hole initializer: treat as havoc (init without value)
-          return [Core.Statement.init ident coreType none md]
+          return [Core.Statement.init ident coreType .nondet md]
       | some initExpr =>
           let coreExpr ← translateExpr initExpr
-          return [Core.Statement.init ident coreType (some coreExpr) md]
+          return [Core.Statement.init ident coreType (.det coreExpr) md]
       | none =>
-          return [Core.Statement.init ident coreType none md]
+          return [Core.Statement.init ident coreType .nondet md]
   | .Assign targets value =>
       match targets with
       | [⟨ .Identifier targetId, _ ⟩] =>
@@ -386,7 +401,21 @@ def translateStmt (outputParams : List Parameter) (stmt : StmtExprMd)
               else
                 -- Procedure calls need to be translated as call statements
                 let coreArgs ← args.mapM (fun a => translateExpr a)
-                return [Core.Statement.call [ident] callee.text coreArgs md]
+                -- Synthesize throwaway LHS variables for any outputs beyond the
+                -- assigned target (e.g. void-returns-Any adds an extra output).
+                let outputs := match model.get callee with
+                  | .staticProcedure proc => proc.outputs
+                  | .instanceProcedure _ proc => proc.outputs
+                  | _ => []
+                let mut inits : List Core.Statement := []
+                let mut lhs : List Core.CoreIdent := [ident]
+                for out in outputs.drop 1 do
+                  let id ← freshId
+                  let unusedIdent : Core.CoreIdent := ⟨s!"$unused_{id}", ()⟩
+                  let coreType := LTy.forAll [] (translateType model out.type)
+                  inits := inits ++ [Core.Statement.init unusedIdent coreType .nondet md]
+                  lhs := lhs ++ [unusedIdent]
+                return inits ++ [Core.Statement.call lhs callee.text coreArgs md]
           | .InstanceCall .. =>
               -- Instance method call: havoc the target variable
               return [Core.Statement.havoc ident md]
@@ -412,14 +441,15 @@ def translateStmt (outputParams : List Parameter) (stmt : StmtExprMd)
                 | _ => none
               return (havocStmts)
           | _ =>
-              panic "Assignments with multiple target but without a RHS call should not be constructed"
+              emitDiagnostic $ md.toDiagnostic "Assignments with multiple target but without a RHS call should not be constructed"
+              returnNone
   | .IfThenElse cond thenBranch elseBranch =>
       let bcond ← translateExpr cond
       let bthen ← translateStmt outputParams thenBranch
       let belse ← match elseBranch with
                   | some e => translateStmt outputParams e
                   | none => pure []
-      return [Imperative.Stmt.ite bcond bthen belse .empty]
+      return [Imperative.Stmt.ite (.det bcond) bthen belse md]
   | .StaticCall callee args =>
       -- Check if this is a function or procedure
       if model.isFunction callee then
@@ -427,7 +457,21 @@ def translateStmt (outputParams : List Parameter) (stmt : StmtExprMd)
         exprAsUnusedInit stmt md
       else
         let coreArgs ← args.mapM (fun a => translateExpr a)
-        return [Core.Statement.call [] callee.text coreArgs md]
+        -- Synthesize throwaway LHS variables so Core arity checking
+        -- passes (lhs.length == outputs.length).
+        let outputs := match model.get callee with
+          | .staticProcedure proc => proc.outputs
+          | .instanceProcedure _ proc => proc.outputs
+          | _ => []
+        let mut inits : List Core.Statement := []
+        let mut lhs : List Core.CoreIdent := []
+        for out in outputs do
+          let id ← freshId
+          let ident : Core.CoreIdent := ⟨s!"$unused_{id}", ()⟩
+          let coreType := LTy.forAll [] (translateType model out.type)
+          inits := inits ++ [Core.Statement.init ident coreType .nondet md]
+          lhs := lhs ++ [ident]
+        return inits ++ [Core.Statement.call lhs callee.text coreArgs md]
   | .InstanceCall .. =>
       -- Instance method call as statement: no return value, treated as no-op
       return ([])
@@ -441,13 +485,14 @@ def translateStmt (outputParams : List Parameter) (stmt : StmtExprMd)
       | none, _ =>
           return [.exit (some "$body") md]
       | some _, none =>
-          panic! "Return statement with value but procedure has no output parameters"
+          emitDiagnostic $ md.toDiagnostic "Return statement with value but procedure has no output parameters"
+          return [.exit (some "$body") md]
   | .While cond invariants decreasesExpr body =>
       let condExpr ← translateExpr cond
       let invExprs ← invariants.mapM (translateExpr)
       let decreasingExprCore ← decreasesExpr.mapM (translateExpr)
       let bodyStmts ← translateStmt outputParams body
-      return [Imperative.Stmt.loop condExpr decreasingExprCore invExprs bodyStmts md]
+      return [Imperative.Stmt.loop (.det condExpr) decreasingExprCore invExprs bodyStmts md]
   | .Exit target =>
       return [Imperative.Stmt.exit (some target) md]
   | _ =>
@@ -508,80 +553,58 @@ def translateProcedure (proc : Procedure) : TranslateM Core.Procedure := do
     match proc.body with
     | .Transparent bodyExpr => translateStmt proc.outputs bodyExpr
     | .Opaque _postconds (some impl) _ => translateStmt proc.outputs impl
-    | _ => pure [Core.Statement.assume "no_body" (.const () (.boolConst false)) .empty]
+    | _ => pure [Core.Statement.assume "no_body" (.const () (.boolConst false)) mdWithUnknownLoc]
   -- Wrap body in a labeled block so early returns (exit) work correctly.
-  let body : List Core.Statement := [.block "$body" bodyStmts .empty]
+  let body : List Core.Statement := [.block "$body" bodyStmts mdWithUnknownLoc]
   let spec : Core.Procedure.Spec := { modifies, preconditions, postconditions }
   return { header, spec, body }
 
-/--
-Check if a Laurel expression is pure (contains no side effects).
-Used to determine if a procedure can be translated as a Core function.
--/
-private def isPureExpr(expr: StmtExprMd): Bool :=
-  match _h : expr.val with
-  | .LiteralBool _ => true
-  | .LiteralInt _ => true
-  | .LiteralString _ => true
-  | .LiteralDecimal _ => true
-  | .Identifier _ => true
-  | .PrimitiveOp _ args => args.attach.all (fun ⟨a, _⟩ => isPureExpr a)
-  | .IfThenElse c t none => isPureExpr c && isPureExpr t
-  | .IfThenElse c t (some e) => isPureExpr c && isPureExpr t && isPureExpr e
-  | .StaticCall _ args => args.attach.all (fun ⟨a, _⟩ => isPureExpr a)
-  | .New _ => false
-  | .ReferenceEquals e1 e2 => isPureExpr e1 && isPureExpr e2
-  | .Block [single] _ => isPureExpr single
-  | .Block _ _ => false
-  -- Statement-like
-  | .LocalVariable .. => true
-  | .While .. => false
-  | .Exit .. => false
-  | .Return .. => false
-  -- Expression-like
-  | .Assign .. => false
-  | .FieldSelect .. => true
-  | .PureFieldUpdate .. => true
-  -- Instance related
-  | .This => panic s!"isPureExpr not implemented for This"
-  | .AsType .. => panic s!"isPureExpr not supported for AsType"
-  | .IsType .. => panic s!"isPureExpr not supported for IsType"
-  | .InstanceCall .. => panic s!"isPureExpr not supported for InstanceCall"
-  -- Verification specific
-  | .Forall .. => panic s!"isPureExpr not implemented for Forall"
-  | .Exists .. => panic s!"isPureExpr not implemented for Exists"
-  | .Assigned .. => panic s!"isPureExpr not supported for AsType"
-  | .Old .. => panic s!"isPureExpr not supported for AsType"
-  | .Fresh .. => panic s!"isPureExpr not supported for AsType"
-  | .Assert .. => panic s!"isPureExpr not implemented for Assert"
-  | .Assume .. => panic s!"isPureExpr not implemented for Assume"
-  | .ProveBy .. => panic s!"isPureExpr not implemented for ProveBy"
-  | .ContractOf .. => panic s!"isPureExpr not implemented for ContractOf"
-  | .Abstract => panic s!"isPureExpr not implemented for Abstract"
-  | .All => panic s!"isPureExpr not implemented for All"
-  -- Dynamic / closures
-  | .Hole _ _ => true
-  termination_by sizeOf expr
-  decreasing_by all_goals (have := WithMetadata.sizeOf_val_lt expr; term_by_mem)
+def translateInvokeOnAxiom (proc : Procedure) (trigger : StmtExprMd)
+    : TranslateM (Option Core.Decl) := do
+  let model := (← get).model
+  let postconds := match proc.body with
+    | .Opaque postconds _ _ => postconds
+    | _ => []
+  if postconds.isEmpty then return none
+  -- All input param names become bound variables.
+  -- buildQuants nests ∀ p1, ∀ p2, ..., ∀ pn :: body, so inside body the innermost
+  -- binder (pn) is de Bruijn index 0, and the outermost (p1) is index n-1.
+  -- translateExpr uses findIdx? on boundVars, so we must list params innermost-first
+  -- (i.e. reversed) so that pn → 0, ..., p1 → n-1.
+  let boundVars := proc.inputs.reverse.map (·.name)
+  -- Translate postconditions and trigger with the full bound-var context
+  let postcondExprs ← postconds.mapM (fun pc => translateExpr pc boundVars (isPureContext := true))
+  let bodyExpr : Core.Expression.Expr := match postcondExprs with
+    | [] => .const () (.boolConst true)
+    | [e] => e
+    | e :: rest => rest.foldl (fun acc x => LExpr.mkApp () boolAndOp [acc, x]) e
+  let triggerExpr ← translateExpr trigger boundVars (isPureContext := true)
+  -- Wrap in ∀ from outermost (first param) to innermost (last param).
+  -- The trigger is placed on the innermost quantifier.
+  let quantified := buildQuants model proc.inputs bodyExpr triggerExpr
+  return some (.ax { name := s!"invokeOn_{proc.name.text}", e := quantified } proc.md)
+where
+  /-- Build `∀ p1 ... pn :: { trigger } body`. The trigger is on the innermost quantifier. -/
+  buildQuants (model : SemanticModel) (params : List Parameter)
+      (body : Core.Expression.Expr) (trigger : Core.Expression.Expr)
+      : Core.Expression.Expr :=
+    match params with
+    | [] => body
+    | [p] =>
+      LExpr.allTr () p.name.text (some (translateType model p.type)) trigger body
+    | p :: rest =>
+      LExpr.all () p.name.text (some (translateType model p.type))
+        (buildQuants model rest body trigger)
 
-/-- Check if a pure-marked procedure can actually be represented as a Core function:
-    transparent body that is a pure expression and has exactly one output. -/
-private def canBeCoreFunctionBody (proc : Procedure) : Bool :=
-  match proc.body with
-  | .Transparent bodyExpr =>
-    isPureExpr bodyExpr &&
-    proc.outputs.length == 1
-  | .Opaque _ bodyExprOption _ =>
-    (bodyExprOption.map isPureExpr).getD true &&
-    proc.outputs.length == 1
-  | .External => false
-  | _ => false
+structure LaurelTranslateOptions where
+  emitResolutionErrors : Bool := true
+  inlineFunctionsWhenPossible : Bool := false
 
 /--
 Translate a Laurel Procedure to a Core Function (when applicable) using `TranslateM`.
 Diagnostics for disallowed constructs in the function body are emitted into the monad state.
 -/
-def translateProcedureToFunction (proc : Procedure) : TranslateM Core.Decl := do
+def translateProcedureToFunction (options: LaurelTranslateOptions) (isRecursive: Bool) (proc : Procedure) : TranslateM Core.Decl := do
   let model := (← get).model
   let inputs := proc.inputs.map (translateParameterToCore model)
   let outputTy := match proc.outputs.head? with
@@ -592,20 +615,42 @@ def translateProcedureToFunction (proc : Procedure) : TranslateM Core.Decl := do
     let checkExpr ← translateExpr precondition [] true
     return { expr := checkExpr, md := () })
 
+  -- For recursive functions, infer the @[cases] parameter index: the first input
+  -- whose type is a user-defined datatype (has constructors). This is the argument
+  -- the partial evaluator will case-split on to unfold the recursion.
+  -- TODO: Use the decreases of the function to determine where to put @[cases]
+  -- First step should be to only support a decreases clause that is exactly one datatype parameter
+  -- Since that's what Core supports
+  let casesIdx : Option Nat :=
+    if !isRecursive then none
+    else proc.inputs.findIdx? fun p =>
+      match p.type.val with
+      | .UserDefined name => match model.get name with
+        | .datatypeDefinition _ => true
+        | _ => false
+      | _ => false
+  let attr : Array Strata.DL.Util.FuncAttr :=
+    match casesIdx with
+    | some i => #[.inlineIfConstr i]
+    | none => if options.inlineFunctionsWhenPossible then #[.inline] else #[]
+
   let body ← match proc.body with
     | .Transparent bodyExpr => some <$> translateExpr bodyExpr [] (isPureContext := true)
     | .Opaque _ (some bodyExpr) _ =>
       emitDiagnostic (proc.md.toDiagnostic "functions with postconditions are not yet supported")
       some <$> translateExpr bodyExpr [] (isPureContext := true)
     | _ => pure none
-  return .func {
+  let f : Core.Function := {
     name := ⟨proc.name.text, ()⟩
     typeArgs := []
     inputs := inputs
     output := outputTy
     body := body
     preconditions := preconditions
+    isRecursive := isRecursive
+    attr := attr
   }
+  return .func f proc.md
 
 /--
 Translate a Laurel DatatypeDefinition to an `LDatatype Unit`.
@@ -627,31 +672,25 @@ def translateDatatypeDefinition (model : SemanticModel) (dt : DatatypeDefinition
     constrs_ne := by simp [constrs]; grind
   }
 
-structure LaurelTranslateOptions where
-  emitResolutionErrors : Bool := true
+abbrev TranslateResult := (Option Core.Program) × (List DiagnosticModel)
+
+/-- Like `translate` but also returns the lowered Laurel program (after all
+    Laurel-to-Laurel passes, before the final translation to Core). -/
+abbrev TranslateResultWithLaurel := (Option Core.Program) × (List DiagnosticModel) × Program
 
 /--
-Try to translate a Laurel Procedure marked `isFunctional` to a Core Function.
-Returns `.error` with diagnostics if the procedure body contains disallowed constructs
-(destructive assignments, loops, or procedure calls).
+Translate Laurel Program to Core Program, also returning the lowered Laurel program.
 -/
-def tryTranslatePureToFunction (proc : Procedure) (initState : TranslateState)
-    : Except (Array DiagnosticModel) Core.Decl :=
-  let (decl, finalState) := runTranslateM initState (translateProcedureToFunction proc)
-  if finalState.diagnostics.isEmpty then
-    .ok decl
-  else
-    .error finalState.diagnostics.toArray
-
-/--
-Translate Laurel Program to Core Program
--/
-def translate (options: LaurelTranslateOptions) (program : Program): Except (Array DiagnosticModel) (Core.Program × Array DiagnosticModel) := do
+def translateWithLaurel (options: LaurelTranslateOptions) (program : Program): TranslateResultWithLaurel :=
   let program := { program with
     staticProcedures := coreDefinitionsForLaurel.staticProcedures ++ program.staticProcedures
   }
 
+  -- dbg_trace "=== Initial Laurel program ==="
+  -- dbg_trace (toString (Std.Format.pretty (Std.ToFormat.format program)))
+  -- dbg_trace "================================="
   let result := resolve program
+  let resolutionErrors: List DiagnosticModel := if options.emitResolutionErrors then result.errors.toList else []
   let (program, model) := (result.program, result.model)
   let diamondErrors := validateDiamondFieldAccesses model program
 
@@ -665,9 +704,6 @@ def translate (options: LaurelTranslateOptions) (program : Program): Except (Arr
   let (program, modifiesDiags) := modifiesClausesTransform model program
   let result := resolve program (some model)
   let (program, model) := (result.program, result.model)
-  -- dbg_trace "=== Program after heapParameterization + modifiesClausesTransform ==="
-  -- dbg_trace (toString (Std.Format.pretty (Std.ToFormat.format program)))
-  -- dbg_trace "================================="
   let result := resolve program (some model)
   let (program, model) := (result.program, result.model)
   let program := inferHoleTypes model program
@@ -682,33 +718,67 @@ def translate (options: LaurelTranslateOptions) (program : Program): Except (Arr
   let result := resolve program (some model)
   let (program, model) := (result.program, result.model)
 
-  let resolutionDiags := result.errors
-  if options.emitResolutionErrors && !resolutionDiags.isEmpty then
-    .error resolutionDiags
-  else
-    let coreProgram ← translateLaurelToCore model program
-    pure (coreProgram, diamondErrors ++ modifiesDiags ++ constrainedTypeDiags.toList)
+  let initState : TranslateState := {model := model }
+  let (coreProgramOption, translateState) := runTranslateM initState (translateLaurelToCore options program)
+  let allDiagnostics := resolutionErrors ++ diamondErrors ++ modifiesDiags ++ constrainedTypeDiags ++ translateState.diagnostics
+  let coreProgramOption := if translateState.coreProgramHasSuperfluousErrors then none else coreProgramOption
+  (coreProgramOption, allDiagnostics, program)
   where
 
-  translateLaurelToCore (model: SemanticModel) (program : Program): Except (Array DiagnosticModel) Core.Program := do
+  /--
+  Translate Laurel datatype definitions to Core declarations.
+  Datatypes are grouped by mutual references (SCC) so mutually recursive
+  datatypes share a single `.data` declaration.
+  -/
+  translateTypes (program : Program) (model : SemanticModel) : TranslateM (List Core.Decl) := do
+    -- Emit diagnostics for composite types that have instance procedures.
+    for td in program.types do
+      if let .Composite ct := td then
+        for proc in ct.instanceProcedures do
+          emitDiagnostic $ proc.md.toDiagnostic
+            s!"Instance procedure '{proc.name.text}' on composite type '{ct.name.text}' is not yet supported"
+            DiagnosticType.NotYetImplemented
+    -- Translate datatype definitions to Core declarations.
+    let laurelDatatypes := program.types.filterMap fun td => match td with
+      | .Datatype dt => some dt
+      | _ => none
+    let ldatatypes := laurelDatatypes.map (translateDatatypeDefinition model)
+    let groups := groupDatatypes laurelDatatypes ldatatypes
+    return groups.map fun group => Core.Decl.type (.data group) mdWithUnknownLoc
 
-    -- Procedures marked isFunctional are translated to Core functions; all others become Core procedures.
-    -- External procedures are completely ignored (not translated to Core).
-    let nonExternal := program.staticProcedures.filter (fun p => !p.body.isExternal)
-    let (markedPure, procProcs) := nonExternal.partition (·.isFunctional)
-    let initState : TranslateState := {model := model}
-    -- Try to translate each isFunctional procedure to a Core function, collecting errors for failures
-    let (pureErrors, pureFuncDecls) := markedPure.foldl (fun (errs, decls) p =>
-      match tryTranslatePureToFunction p initState with
-      | .error es => (errs ++ es.toList, decls)
-      | .ok d     => (errs, decls.push d)) ([], #[])
-    -- Translate procedures using the monad, collecting diagnostics from the final state
-    let (procedures, procState) := runTranslateM initState do
-      procProcs.mapM translateProcedure
-    let procDiags := procState.diagnostics
+  translateLaurelToCore (options: LaurelTranslateOptions) (program : Program): TranslateM Core.Program := do
+    let model := (← get).model
+
+    let sccDecls := computeSccDecls program
+
+    let orderedDecls ← sccDecls.flatMapM (fun (procs, isRecursive) => do
+      -- For each SCC, determine if it is purely functional or contains procedures.
+      -- Procedures can't call functions (only functions can call functions), so an SCC
+      -- either contains only functional procedures or only non-functional procedures.
+      let isFuncSCC := procs.all (·.isFunctional)
+      if isFuncSCC then
+        let funcs ← procs.mapM (translateProcedureToFunction options isRecursive)
+        if isRecursive then
+          -- Wrap all recursive functions (single self-recursive or mutual) in recFuncBlock.
+          let coreFuncs := funcs.filterMap (fun d => match d with
+            | .func f _ => some f
+            | _ => none)
+          return [Core.Decl.recFuncBlock coreFuncs mdWithUnknownLoc]
+        else
+          return funcs
+      else
+        procs.flatMapM fun proc => do
+          let axiomDecls : List Core.Decl ← match proc.invokeOn with
+            | none => pure []
+            | some trigger => do
+              let axDecl? ← translateInvokeOnAxiom proc trigger
+              pure axDecl?.toList
+          let procDecl ← translateProcedure proc
+          return [Core.Decl.proc procDecl proc.md] ++ axiomDecls
+    )
 
     -- Translate Laurel constants to Core function declarations (0-ary functions)
-    let (constantDecls, constantsState) := runTranslateM initState $ program.constants.mapM fun c => do
+    let constantDecls ← program.constants.mapM fun c => do
       let coreTy := translateType model c.type
       let body ← c.initializer.mapM (translateExpr ·)
       return Core.Decl.func {
@@ -717,29 +787,12 @@ def translate (options: LaurelTranslateOptions) (program : Program): Except (Arr
         inputs := []
         output := coreTy
         body := body
-      }
-
-    -- Collect ALL errors from both functions, procedures, and resolution before deciding whether to fail
-    let allErrors :=
-      -- Not including resolution diagnostics yet because the Python through Laurel pipeline
-      -- does not resolve yet.
-      -- resolutionDiags.toList ++
-      pureErrors ++ procDiags ++ constantsState.diagnostics
-    if !allErrors.isEmpty then
-      .error allErrors.toArray
-    let procDecls := procedures.map (fun p => Core.Decl.proc p .empty)
+      } mdWithUnknownLoc
 
     -- Translate Laurel datatype definitions to Core declarations.
-    -- Datatypes are grouped by mutual references (SCC) so mutually recursive
-    -- datatypes share a single `.data` declaration.
-    let laurelDatatypes := program.types.filterMap fun td => match td with
-      | .Datatype dt => some dt
-      | _ => none
-    let ldatatypes := laurelDatatypes.map (translateDatatypeDefinition model)
-    let groups := groupDatatypes laurelDatatypes ldatatypes
-    let groupedDatatypeDecls := groups.map fun group => Core.Decl.type (.data group)
+    let groupedDatatypeDecls ← translateTypes program model
     let program := {
-      decls := groupedDatatypeDecls ++ constantDecls ++ pureFuncDecls.toList ++ procDecls
+      decls := groupedDatatypeDecls ++ constantDecls ++ orderedDecls
     }
 
     -- dbg_trace "=== Generated Strata Core Program ==="
@@ -749,42 +802,48 @@ def translate (options: LaurelTranslateOptions) (program : Program): Except (Arr
 
 
 /--
+Translate Laurel Program to Core Program
+-/
+def translate (options: LaurelTranslateOptions) (program : Program): TranslateResult :=
+  let (core, diags, _) := translateWithLaurel options program
+  (core, diags)
+
+/--
 Verify a Laurel program using an SMT solver
 -/
 def verifyToVcResults (program : Program)
     (options : VerifyOptions := .default)
-    : IO (Except (Array DiagnosticModel) VCResults) := do
-  let (strataCoreProgram, translateDiags) ← match translate { emitResolutionErrors := true } program with
-    | .error translateErrorDiags => return .error translateErrorDiags
-    | .ok result => pure result
+    : IO (Option VCResults × List DiagnosticModel) := do
+  let (coreProgramOption, translateDiags) := translate {} program
 
-  -- Enable removeIrrelevantAxioms to avoid polluting simple assertions with heap axioms
-  let options := { options with removeIrrelevantAxioms := true }
-  let runner tempDir :=
-    EIO.toIO (fun f => IO.Error.userError (toString f))
-        (Core.verify strataCoreProgram tempDir .none options)
-  let ioResult ← match options.vcDirectory with
-    | .none => IO.FS.withTempDir runner
-    | .some p => IO.FS.createDirAll ⟨p.toString⟩; runner ⟨p.toString⟩
-  if translateDiags.isEmpty then
-    return .ok ioResult
-  else
-    return .error (translateDiags ++ ioResult.filterMap toDiagnosticModel)
-
+  match coreProgramOption with
+  | some coreProgram =>
+    -- Enable removeIrrelevantAxioms to avoid polluting simple assertions with heap axioms
+    let options := { options with removeIrrelevantAxioms := .Precise }
+    let runner tempDir :=
+      EIO.toIO (fun f => IO.Error.userError (toString f))
+          (Core.verify coreProgram tempDir .none options)
+    let ioResult ← match options.vcDirectory with
+      | .none => IO.FS.withTempDir runner
+      | .some p => IO.FS.createDirAll ⟨p.toString⟩; runner ⟨p.toString⟩
+    return (some ioResult, translateDiags)
+  | none => return (none, translateDiags)
 
 def verifyToDiagnostics (files: Map Strata.Uri Lean.FileMap) (program : Program)
     (options : VerifyOptions := .default): IO (Array Diagnostic) := do
   let results <- verifyToVcResults program options
-  match results with
-  | .error errors => return errors.map (fun dm => dm.toDiagnostic files)
-  | .ok results => return results.filterMap (fun dm => dm.toDiagnostic files)
-
+  let translationDiags := results.snd.map (fun dm => dm.toDiagnostic files)
+  let vcDiags := match results.fst with
+  | some vcResults => vcResults.toList.filterMap (fun (vcr: VCResult) => vcr.toDiagnostic files)
+  | none => []
+  return (translationDiags ++ vcDiags).toArray
 
 def verifyToDiagnosticModels (program : Program) (options : VerifyOptions := .default) : IO (Array DiagnosticModel) := do
   let results <- verifyToVcResults program options
-  match results with
-  | .error errors => return errors
-  | .ok results => return results.filterMap toDiagnosticModel
+  let vcDiags := match results.fst with
+  | none => []
+  | some vcResults => vcResults.toList.filterMap (fun (vcr: VCResult) => toDiagnosticModel vcr)
+  return (results.snd ++ vcDiags).toArray
 
 end -- public section
 end Laurel

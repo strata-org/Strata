@@ -10,7 +10,7 @@ public import Strata.DL.Util.DecidableEq
 public import Strata.Util.FileRange
 
 namespace Imperative
-open Strata (DiagnosticModel FileRange)
+open Strata
 
 public section
 
@@ -177,15 +177,18 @@ instance [Repr P.Expr] [Repr P.Ident] : Repr (MetaDataElem P) where
 
 /-! ### Common metadata fields -/
 
-def MetaData.fileRange : MetaDataElem.Field P := .label "fileRange"
-
-def MetaData.reachCheck : MetaDataElem.Field P := .label "reachCheck"
-
-def MetaData.fullCheck : MetaDataElem.Field P := .label "fullCheck"
-
-def MetaData.validityCheck : MetaDataElem.Field P := .label "validityCheck"
-
-def MetaData.satisfiabilityCheck : MetaDataElem.Field P := .label "satisfiabilityCheck"
+@[match_pattern]
+abbrev MetaData.message : MetaDataElem.Field P := .label "message"
+@[match_pattern]
+abbrev MetaData.fileRange : MetaDataElem.Field P := .label "fileRange"
+@[match_pattern]
+abbrev MetaData.reachCheck : MetaDataElem.Field P := .label "reachCheck"
+@[match_pattern]
+abbrev MetaData.fullCheck : MetaDataElem.Field P := .label "fullCheck"
+@[match_pattern]
+abbrev MetaData.validityCheck : MetaDataElem.Field P := .label "validityCheck"
+@[match_pattern]
+abbrev MetaData.satisfiabilityCheck : MetaDataElem.Field P := .label "satisfiabilityCheck"
 
 def MetaData.hasReachCheck {P : PureExpr} [BEq P.Ident] (md : MetaData P) : Bool :=
   match md.findElem MetaData.reachCheck with
@@ -230,14 +233,14 @@ def getFileRange {P : PureExpr} [BEq P.Ident] (md: MetaData P) : Option FileRang
 
 /-- Create a DiagnosticModel from metadata and a message.
     Uses the file range from metadata if available, otherwise uses a default location. -/
-def MetaData.toDiagnostic {P : PureExpr} [BEq P.Ident] (md : MetaData P) (msg : String) : DiagnosticModel :=
+def MetaData.toDiagnostic {P : PureExpr} [BEq P.Ident] (md : MetaData P) (msg : String) (type : DiagnosticType := DiagnosticType.UserError): DiagnosticModel :=
   match getFileRange md with
-  | some fr => DiagnosticModel.withRange fr msg
-  | none => DiagnosticModel.fromMessage msg
+  | some fr => DiagnosticModel.withRange fr msg type
+  | none => DiagnosticModel.fromMessage msg type
 
 /-- Create a DiagnosticModel from metadata and a Format message. -/
-def MetaData.toDiagnosticF {P : PureExpr} [BEq P.Ident] (md : MetaData P) (msg : Std.Format) : DiagnosticModel :=
-  MetaData.toDiagnostic md (toString msg)
+def MetaData.toDiagnosticF {P : PureExpr} [BEq P.Ident] (md : MetaData P) (msg : Std.Format) (type : DiagnosticType := DiagnosticType.UserError): DiagnosticModel :=
+  MetaData.toDiagnostic md (toString msg) type
 
 /-- Get the file range from metadata as a DiagnosticModel (for formatting).
     This is a compatibility function that formats the file range using byte offsets.
@@ -246,6 +249,44 @@ def MetaData.formatFileRangeD {P : PureExpr} [BEq P.Ident] (md : MetaData P) (fi
   match getFileRange md with
   | some fr => fr.format fileMap includeEnd?
   | none => f!""
+
+/-- Metadata field for a related file range (e.g., the original assertion location
+    when the primary file range points to the call site after inlining).
+    There can be multiple `relatedFileRange` fields in a single metadata due to
+    multiple levels of inlining. -/
+def MetaData.relatedFileRange : MetaDataElem.Field P := .label "relatedFileRange"
+
+/-- Get all related file ranges from metadata, in order.
+    The returned array's order is determined by the call stack: the innermost
+    (most deeply inlined) call comes first. -/
+def getRelatedFileRanges {P : PureExpr} [BEq P.Ident] (md: MetaData P) : Array FileRange :=
+  md.filterMap fun elem =>
+    if elem.fld == Imperative.MetaData.relatedFileRange then
+      match elem.value with
+      | .fileRange fr => some fr
+      | _ => none
+    else none
+
+/-- Remove all metadata elements with the given field. -/
+def MetaData.eraseAllElems {P : PureExpr} [BEq P.Ident]
+    (md : MetaData P) (fld : MetaDataElem.Field P) : MetaData P :=
+  md.filter (fun e => !(e.fld == fld))
+
+/-- Replace the primary file range with a new one, shifting existing related
+    file ranges and prepending the old primary range. -/
+def MetaData.setCallSiteFileRange {P : PureExpr} [BEq P.Ident]
+    (md : MetaData P) (callSiteRange : MetaData P) : MetaData P :=
+  match getFileRange callSiteRange, getFileRange md with
+  | some csRange, some origRange =>
+    let existingRelated := getRelatedFileRanges md
+    let md := md.eraseElem MetaData.fileRange
+    let md := md.eraseAllElems MetaData.relatedFileRange
+    let md := md.pushElem MetaData.fileRange (.fileRange csRange)
+    let md := md.pushElem MetaData.relatedFileRange (.fileRange origRange)
+    existingRelated.foldl (fun md fr => md.pushElem MetaData.relatedFileRange (.fileRange fr)) md
+  | some csRange, none =>
+    md.pushElem MetaData.fileRange (.fileRange csRange)
+  | none, _ => md
 
 /-- Metadata field for property type classification (e.g., "divisionByZero"). -/
 def MetaData.propertyType : MetaDataElem.Field P := .label "propertyType"

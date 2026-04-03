@@ -42,14 +42,14 @@ Unit tests are run with `#guard_msgs` commands. No output means the tests passed
 To build executable files only and omit proof checks that might take a long time, use
 
 ```bash
-lake build strata:exe StrataVerify StrataToCBMC StrataCoreToGoto
+lake build strata:exe strata StrataToCBMC StrataCoreToGoto
 ```
 
 ## Running Analyses on Existing Strata Programs
 
 Strata programs use the `.st` file extension, preceded by the dialect name,
 preceded by a second `.` e.g., `SimpleProc.core.st` or
-`LoopSimple.csimp.st`. Note the current `StrataVerify` executable
+`LoopSimple.csimp.st`. Note the current `strata verify` command
 relies on this file extension convention to know what dialect it's
 parsing (since the Strata IR allows a program to open multiple
 dialects).
@@ -57,7 +57,7 @@ dialects).
 Here is an example invocation that runs Strata's deductive verifier.
 
 ```bash
-lake exe StrataVerify Examples/SimpleProc.core.st
+lake exe strata verify Examples/SimpleProc.core.st
 ```
 
 This will:

@@ -66,7 +66,7 @@ private def elimExpr (expr : StmtExprMd) : ElimHoleM StmtExprMd := do
   | WithMetadata.mk val md =>
   match val with
   | .Hole true (some ty) => mkHoleCall ty
-  | .Hole true none => mkHoleCall ⟨.Top, md⟩
+  | .Hole true none => mkHoleCall ⟨.Unknown, md⟩
   | .Hole false _ => return expr
   | .PrimitiveOp op args => return ⟨.PrimitiveOp op (← args.mapM elimExpr), md⟩
   | .StaticCall callee args => return ⟨.StaticCall callee (← args.mapM elimExpr), md⟩
@@ -114,7 +114,7 @@ private def elimStmt (stmt : StmtExprMd) : ElimHoleM StmtExprMd := do
   | .StaticCall callee args => return ⟨.StaticCall callee (← args.mapM elimExpr), md⟩
   | .Return (some retExpr) => return ⟨.Return (some (← elimExpr retExpr)), md⟩
   | .Hole true (some ty) => mkHoleCall ty
-  | .Hole true none => mkHoleCall ⟨.Top, md⟩
+  | .Hole true none => mkHoleCall ⟨.Unknown, md⟩
   | .Hole false _ => return stmt -- Non-deterministic holes are kept
   | _ => return stmt
 
