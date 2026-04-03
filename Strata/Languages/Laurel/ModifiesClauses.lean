@@ -48,15 +48,26 @@ inductive ModifiesEntry where
   | set (expr : StmtExprMd)          -- a Set Composite expression
 
 /--
+Classify a heap-relevant type into a `ModifiesEntry`, or `none` for
+non-heap-relevant types. Delegates to `classifyModifiesHighType` for the
+type classification.
+-/
+def classifyModifiesType (expr : StmtExprMd) (ty : HighType) : Option ModifiesEntry :=
+  match classifyModifiesHighType ty with
+  | some .composite    => some (.single expr)
+  | some .compositeSet => some (.set expr)
+  | none               => none
+
+/--
 Extract modifies entries from the list of modifies StmtExprs, using the type
 environment and type definitions to distinguish Composite from Set Composite.
+Non-composite types (e.g., global variables of primitive type) are filtered out
+since the frame condition only applies to heap objects.
 -/
 def extractModifiesEntries (model: SemanticModel)
     (modifiesExprs : List StmtExprMd) : List ModifiesEntry :=
-  modifiesExprs.map fun expr =>
-    match (computeExprType model expr).val with
-    | .TSet _ => .set expr
-    | _ => .single expr
+  modifiesExprs.filterMap fun expr =>
+    classifyModifiesType expr (computeExprType model expr).val
 /--
 Build the "obj is not modified" condition for a single modifies entry as a Laurel StmtExpr.
 - For a single Composite `e`: `$obj != e`
@@ -149,6 +160,47 @@ def transformModifiesClauses (model: SemanticModel)
       else
         .ok proc
   | _ => .ok proc
+
+/--
+Filter non-composite modifies entries from a procedure body, collecting diagnostics
+for each filtered entry. This pre-pass ensures that global variables of primitive type
+do not incorrectly trigger heap parameterization.
+Should run before heap parameterization.
+-/
+def filterBodyNonCompositeModifies (model : SemanticModel) (body : Body)
+    : Body × List DiagnosticModel :=
+  match body with
+  | .Opaque posts impl mods =>
+    let (kept, diags) := mods.foldl (fun (acc, ds) e =>
+      let ty := (computeExprType model e).val
+      if isHeapRelevantType ty then (acc ++ [e], ds)
+      else (acc, ds ++ [e.md.toDiagnostic s!"modifies clause entry has non-composite type '{formatHighTypeVal ty}' and will be ignored"])
+    ) ([], [])
+    (.Opaque posts impl kept, diags)
+  | other => (other, [])
+
+/--
+Filter non-composite modifies entries from all procedures in a program,
+collecting diagnostics. Should run before heap parameterization so that
+the heap parameterization phase remains agnostic to modifies clauses.
+-/
+def filterNonCompositeModifies (model : SemanticModel) (program : Program)
+    : Program × List DiagnosticModel :=
+  let (staticProcs, staticDiags) := program.staticProcedures.foldl (fun (ps, ds) proc =>
+    let (body', bodyDiags) := filterBodyNonCompositeModifies model proc.body
+    (ps ++ [{ proc with body := body' }], ds ++ bodyDiags)
+  ) ([], [])
+  let (types', typeDiags) := program.types.foldl (fun (ts, ds) td =>
+    match td with
+    | .Composite ct =>
+      let (instProcs, instDiags) := ct.instanceProcedures.foldl (fun (ps, ds) proc =>
+        let (body', bodyDiags) := filterBodyNonCompositeModifies model proc.body
+        (ps ++ [{ proc with body := body' }], ds ++ bodyDiags)
+      ) ([], [])
+      (ts ++ [.Composite { ct with instanceProcedures := instProcs }], ds ++ instDiags)
+    | other => (ts ++ [other], ds)
+  ) ([], [])
+  ({ program with staticProcedures := staticProcs, types := types' }, staticDiags ++ typeDiags)
 
 /--
 Transform a Laurel program: apply modifies clause transformation to all procedures.
