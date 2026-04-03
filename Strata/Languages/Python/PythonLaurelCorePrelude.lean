@@ -49,7 +49,8 @@ datatype Error () {
   UnimplementedError (Unimplement_msg : string),
   UndefinedError (Undefined_msg : string),
   IndexError (IndexError_msg : string),
-  RePatternError (Re_msg : string)
+  RePatternError (Re_msg : string),
+  UnknownError ()
 };
 
 // /////////////////////////////////////////////////////////////////////////////////////
@@ -129,10 +130,6 @@ rec function List_filter (@[cases] l : ListAny, f: Any -> bool) : ListAny
   else
     List_filter(ListAny..tail!(l), f)
 };
-
-// /////////////////////////////////////////////////////////////////////////////////////
-// Modelling some datetime-related Python operations, for testing purpose
-// /////////////////////////////////////////////////////////////////////////////////////
 
 #end
 

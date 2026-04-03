@@ -106,11 +106,27 @@ Obligation: Any_get_body_calls_List_drop_3
 Property: assert
 Result: ✅ pass
 
-Obligation: Any_get!_body_calls_DictStrAny_get_0
+Obligation: Any_get!AnyMaybeExcept_body_calls_DictStrAny_get_0
 Property: assert
 Result: ✅ pass
 
-Obligation: Any_get!_body_calls_List_get_1
+Obligation: Any_get!AnyMaybeExcept_body_calls_List_get_1
+Property: assert
+Result: ✅ pass
+
+Obligation: Any_get!AnyMaybeExcept_body_calls_List_drop_2
+Property: assert
+Result: ✅ pass
+
+Obligation: Any_get!AnyMaybeExcept_body_calls_List_slice_3
+Property: assert
+Result: ✅ pass
+
+Obligation: Any_get_no_slice!AnyMaybeExcept_body_calls_DictStrAny_get_0
+Property: assert
+Result: ✅ pass
+
+Obligation: Any_get_no_slice!AnyMaybeExcept_body_calls_List_get_1
 Property: assert
 Result: ✅ pass
 
@@ -118,23 +134,23 @@ Obligation: Any_set_body_calls_List_set_0
 Property: assert
 Result: ✅ pass
 
-Obligation: Any_set!_body_calls_List_set_0
+Obligation: Any_set!AnyMaybeExcept_body_calls_List_set_0
 Property: assert
 Result: ✅ pass
 
-Obligation: PFloorDiv_body_calls_Int.SafeDiv_0
+Obligation: PFloorDiv!AnyMaybeExcept_body_calls_Int.SafeDiv_0
 Property: division by zero check
 Result: ✅ pass
 
-Obligation: PFloorDiv_body_calls_Int.SafeDiv_1
+Obligation: PFloorDiv!AnyMaybeExcept_body_calls_Int.SafeDiv_1
 Property: division by zero check
 Result: ✅ pass
 
-Obligation: PFloorDiv_body_calls_Int.SafeDiv_2
+Obligation: PFloorDiv!AnyMaybeExcept_body_calls_Int.SafeDiv_2
 Property: division by zero check
 Result: ✅ pass
 
-Obligation: PFloorDiv_body_calls_Int.SafeDiv_3
+Obligation: PFloorDiv!AnyMaybeExcept_body_calls_Int.SafeDiv_3
 Property: division by zero check
 Result: ✅ pass
 
@@ -158,15 +174,15 @@ Obligation: postcondition
 Property: assert
 Result: ✅ pass
 
-Obligation: assert(41763)
+Obligation: assert(43671)
 Property: assert
 Result: ✅ pass
 
-Obligation: assert(41830)
+Obligation: assert(43738)
 Property: assert
 Result: ✅ pass
 
-Obligation: assert(41938)
+Obligation: assert(43846)
 Property: assert
 Result: ✅ pass
 

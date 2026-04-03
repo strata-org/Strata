@@ -43,7 +43,8 @@ datatype Error {
   UnimplementedError (Unimplement_msg : string),
   UndefinedError (Undefined_msg : string),
   IndexError (IndexError_msg : string),
-  RePatternError (Re_msg : string)
+  RePatternError (Re_msg : string),
+  UnknownError ()
 }
 
 // /////////////////////////////////////////////////////////////////////////////////////
@@ -454,7 +455,28 @@ function Any_get (dictOrList: Any, index: Any): Any
     from_ListAny(List_drop(Any..as_ListAny!(dictOrList), Any..start!(index)))
 };
 
-function Any_get! (dictOrList: Any, index: Any): Any
+function Any_get!AnyMaybeExcept (dictOrList: Any, index: Any): Any
+{
+  if Any..isexception(dictOrList) then dictOrList
+  else if Any..isexception(index) then index
+  else if !(Any..isfrom_DictStrAny(dictOrList) && Any..isfrom_str(index)) && !(Any..isfrom_ListAny(dictOrList) && (Any..isfrom_int(index) || Any..isfrom_Slice(index))) then
+    exception (TypeError("Invalid subscription type"))
+  else if Any..isfrom_DictStrAny(dictOrList) && Any..isfrom_str(index) && DictStrAny_contains(Any..as_Dict!(dictOrList), Any..as_string!(index)) then
+    DictStrAny_get(Any..as_Dict!(dictOrList), Any..as_string!(index))
+  else if Any..isfrom_ListAny(dictOrList) && Any..isfrom_int(index) && Any..as_int!(index) >= 0 && Any..as_int!(index) < List_len(Any..as_ListAny!(dictOrList)) then
+    List_get(Any..as_ListAny!(dictOrList), Any..as_int!(index))
+  else if (Any..isfrom_ListAny(dictOrList) && Any..isfrom_Slice(index) && Any..start!(index) >= 0 && Any..start!(index) < List_len(Any..as_ListAny!(dictOrList))) then
+    if OptionInt..isOptNone(Any..stop!(index)) then
+      from_ListAny(List_drop(Any..as_ListAny!(dictOrList), Any..start!(index)))
+    else if (OptionInt..isOptSome(Any..stop!(index))) &&  OptionInt..unwrap!(Any..stop!(index)) >= 0 &&
+            OptionInt..unwrap!(Any..stop!(index)) <= List_len(Any..as_ListAny!(dictOrList)) && Any..start!(index) <= OptionInt..unwrap!(Any..stop!(index)) then
+      from_ListAny(List_slice(Any..as_ListAny!(dictOrList), Any..start!(index), OptionInt..unwrap!(Any..stop!(index))))
+    else exception (IndexError("Invalid slice index"))
+  else
+    exception (IndexError("Invalid subscription"))
+};
+
+function Any_get_no_slice!AnyMaybeExcept (dictOrList: Any, index: Any): Any
 {
   if Any..isexception(dictOrList) then dictOrList
   else if Any..isexception(index) then index
@@ -478,7 +500,7 @@ function Any_set (dictOrList: Any, index: Any, val: Any): Any
     from_ListAny(List_set(Any..as_ListAny!(dictOrList), Any..as_int!(index), val))
 };
 
-function Any_set! (dictOrList: Any, index: Any, val: Any): Any
+function Any_set!AnyMaybeExcept (dictOrList: Any, index: Any, val: Any): Any
 {
   if Any..isexception(dictOrList) then dictOrList
   else if Any..isexception(index) then index
@@ -493,12 +515,12 @@ function Any_set! (dictOrList: Any, index: Any, val: Any): Any
     exception (IndexError("Index out of bound"))
 };
 
-function Any_sets (indices: ListAny, dictOrList: Any, val: Any): Any
+function Any_sets!AnyMaybeExcept (indices: ListAny, dictOrList: Any, val: Any): Any
 {
   if ListAny..isListAny_nil(indices) then dictOrList
-  else if ListAny..isListAny_nil(ListAny..tail!(indices)) then Any_set!(dictOrList, ListAny..head!(indices), val)
-  else Any_set!(dictOrList, ListAny..head!(indices),
-    Any_sets(ListAny..tail!(indices), Any_get!(dictOrList, ListAny..head!(indices)), val))
+  else if ListAny..isListAny_nil(ListAny..tail!(indices)) then Any_set!AnyMaybeExcept(dictOrList, ListAny..head!(indices), val)
+  else Any_set!AnyMaybeExcept(dictOrList, ListAny..head!(indices),
+    Any_sets!AnyMaybeExcept(ListAny..tail!(indices), Any_get_no_slice!AnyMaybeExcept(dictOrList, ListAny..head!(indices)), val))
 };
 
 function PIn (v: Any, dictOrList: Any) : Any
@@ -561,7 +583,7 @@ function bool_to_real (b: bool) : real {if b then 1.0 else 0.0};
 // Modelling of Python unary operations
 // /////////////////////////////////////////////////////////////////////////////////////
 
-function PNeg (v: Any) : Any
+function PNeg!AnyMaybeExcept (v: Any) : Any
 {
   if Any..isexception(v) then v
   else if Any..isfrom_bool(v) then
@@ -571,10 +593,10 @@ function PNeg (v: Any) : Any
   else if Any..isfrom_float(v) then
     from_float(- Any..as_float!(v))
   else
-    exception(UndefinedError ("Operand Type is not defined"))
+    exception(TypeError ("Operand Type is not defined"))
 };
 
-function PNot (v: Any) : Any
+function PNot!AnyMaybeExcept (v: Any) : Any
 {
   if Any..isexception(v) then v
   else if Any..isfrom_bool(v) then
@@ -588,7 +610,7 @@ function PNot (v: Any) : Any
   else if Any..isfrom_ListAny(v) then
     from_bool(!(List_len(Any..as_ListAny!(v)) == 0))
   else
-    exception(UndefinedError ("Operand Type is not defined"))
+    exception(TypeError ("Operand Type is not defined"))
 };
 
 // /////////////////////////////////////////////////////////////////////////////////////
@@ -597,7 +619,7 @@ function PNot (v: Any) : Any
 
 function Str.Concat(s: string, s2: string): string external;
 
-function PAdd (v1: Any, v2: Any) : Any
+function PAdd!AnyMaybeExcept (v1: Any, v2: Any) : Any
 {
   if Any..isexception(v1) then v1 else if Any..isexception(v2) then v2
   else if Any..isfrom_bool(v1) && Any..isfrom_bool(v2) then
@@ -623,10 +645,10 @@ function PAdd (v1: Any, v2: Any) : Any
   else if Any..isfrom_datetime(v1) && Any..isfrom_int(v2) then
     from_datetime((Any..as_datetime!(v1) + Any..as_int!(v2)))
   else
-    exception(UndefinedError ("Operand Type is not defined"))
+    exception(TypeError ("Operand Type is not defined"))
 };
 
-function PSub (v1: Any, v2: Any) : Any
+function PSub!AnyMaybeExcept (v1: Any, v2: Any) : Any
 {
   if Any..isexception(v1) then v1 else if Any..isexception(v2) then v2
   else if Any..isfrom_bool(v1) && Any..isfrom_bool(v2) then
@@ -652,12 +674,12 @@ function PSub (v1: Any, v2: Any) : Any
   else if Any..isfrom_datetime(v1) && Any..isfrom_datetime(v2) then
     from_int(Any..as_datetime!(v1) - Any..as_datetime!(v2))
   else
-    exception(UndefinedError ("Operand Type is not defined"))
+    exception(TypeError ("Operand Type is not defined"))
 };
 
 function string_repeat (s: string, i: int) : string;
 
-function PMul (v1: Any, v2: Any) : Any
+function PMul!AnyMaybeExcept (v1: Any, v2: Any) : Any
 {
   if Any..isexception(v1) then v1 else if Any..isexception(v2) then v2
   else if Any..isfrom_bool(v1) && Any..isfrom_bool(v2) then
@@ -691,10 +713,10 @@ function PMul (v1: Any, v2: Any) : Any
   else if Any..isfrom_float(v1) && Any..isfrom_float(v2) then
     from_float(Any..as_float!(v1) * Any..as_float!(v2))
   else
-    exception(UndefinedError ("Operand Type is not defined"))
+    exception(TypeError ("Operand Type is not defined"))
 };
 
-function PFloorDiv (v1: Any, v2: Any) : Any
+function PFloorDiv!AnyMaybeExcept (v1: Any, v2: Any) : Any
   requires (Any..isfrom_bool(v2)==>Any..as_bool!(v2)) && (Any..isfrom_int(v2)==>Any..as_int!(v2)!=0)
 {
   if Any..isexception(v1) then v1 else if Any..isexception(v2) then v2
@@ -707,7 +729,7 @@ function PFloorDiv (v1: Any, v2: Any) : Any
   else if Any..isfrom_int(v1) && Any..isfrom_int(v2) then
     from_int(Any..as_int!(v1) / Any..as_int!(v2))
   else
-    exception(UndefinedError ("Operand Type is not defined"))
+    exception(TypeError ("Operand Type is not defined"))
 };
 
 // /////////////////////////////////////////////////////////////////////////////////////
@@ -723,7 +745,7 @@ function List_le (l1: ListAny, l2: ListAny): bool;
 function List_gt (l1: ListAny, l2: ListAny): bool;
 function List_ge (l1: ListAny, l2: ListAny): bool;
 
-function PLt (v1: Any, v2: Any) : Any
+function PLt!AnyMaybeExcept (v1: Any, v2: Any) : Any
 {
   if Any..isexception(v1) then v1 else if Any..isexception(v2) then v2
   else if Any..isfrom_bool(v1) && Any..isfrom_bool(v2) then
@@ -751,10 +773,10 @@ function PLt (v1: Any, v2: Any) : Any
   else if Any..isfrom_datetime(v1) && Any..isfrom_datetime(v2) then
     from_bool(Any..as_datetime!(v1) <Any..as_datetime!(v2))
   else
-    exception(UndefinedError ("Operand Type is not defined"))
+    exception(TypeError ("Operand Type is not defined"))
 };
 
-function PLe (v1: Any, v2: Any) : Any
+function PLe!AnyMaybeExcept (v1: Any, v2: Any) : Any
 {
   if Any..isexception(v1) then v1 else if Any..isexception(v2) then v2
   else if Any..isfrom_bool(v1) && Any..isfrom_bool(v2) then
@@ -782,10 +804,10 @@ function PLe (v1: Any, v2: Any) : Any
   else if Any..isfrom_datetime(v1) && Any..isfrom_datetime(v2) then
     from_bool(Any..as_datetime!(v1) <=Any..as_datetime!(v2))
   else
-    exception(UndefinedError ("Operand Type is not defined"))
+    exception(TypeError ("Operand Type is not defined"))
 };
 
-function PGt (v1: Any, v2: Any) : Any
+function PGt!AnyMaybeExcept (v1: Any, v2: Any) : Any
 {
   if Any..isexception(v1) then v1 else if Any..isexception(v2) then v2
   else if Any..isfrom_bool(v1) && Any..isfrom_bool(v2) then
@@ -813,10 +835,10 @@ function PGt (v1: Any, v2: Any) : Any
   else if Any..isfrom_datetime(v1) && Any..isfrom_datetime(v2) then
     from_bool(Any..as_datetime!(v1) >Any..as_datetime!(v2))
   else
-    exception(UndefinedError ("Operand Type is not defined"))
+    exception(TypeError ("Operand Type is not defined"))
 };
 
-function PGe (v1: Any, v2: Any) : Any
+function PGe!AnyMaybeExcept (v1: Any, v2: Any) : Any
 {
   if Any..isexception(v1) then v1 else if Any..isexception(v2) then v2
   else if Any..isfrom_bool(v1) && Any..isfrom_bool(v2) then
@@ -844,7 +866,7 @@ function PGe (v1: Any, v2: Any) : Any
   else if Any..isfrom_datetime(v1) && Any..isfrom_datetime(v2) then
     from_bool(Any..as_datetime!(v1) >=Any..as_datetime!(v2))
   else
-    exception(UndefinedError ("Operand Type is not defined"))
+    exception(TypeError ("Operand Type is not defined"))
 };
 
 function PEq (v: Any, v': Any) : Any {
@@ -882,7 +904,7 @@ function int_pow (base: int, exp: int) : int
 function float_pow (base: real, exp: real) : real
   external;
 
-function PPow (v1: Any, v2: Any) : Any
+function PPow!AnyMaybeExcept (v1: Any, v2: Any) : Any
 {
   if Any..isexception(v1) then v1 else if Any..isexception(v2) then v2
   else if (Any..isfrom_int(v1) && Any..isfrom_int(v2) && Any..as_int!(v2) >= 0) then
@@ -899,7 +921,7 @@ function PPow (v1: Any, v2: Any) : Any
     exception(UnimplementedError("Pow is not defined on these input types"))
 };
 
-function PMod (v1: Any, v2: Any) : Any
+function PMod!AnyMaybeExcept (v1: Any, v2: Any) : Any
 {
   exception(UnimplementedError ("Mod operator is not supported"))
 };

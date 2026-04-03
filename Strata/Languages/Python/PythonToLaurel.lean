@@ -107,6 +107,7 @@ structure TranslationContext where
   currentClassName : Option String := none
   loopBreakLabel : Option String := none
   loopContinueLabel : Option String := none
+  isInsideTryBlock : Bool := false
 deriving Inhabited
 
 /-! ## Error Handling -/
@@ -440,6 +441,7 @@ partial def translateSlice (ctx : TranslationContext) (start stop step: Option (
 /-- Translate Python expression to Laurel StmtExpr -/
 partial def translateExpr (ctx : TranslationContext) (e : Python.expr SourceRange)
     : Except TranslationError StmtExprMd := do
+  let md := sourceRangeToMetaData ctx.filePath e.toAst.ann
   match e with
   -- Integer literals
   | .Constant _ (.ConPos _ n) _ => return intToAny n.val
@@ -477,19 +479,19 @@ partial def translateExpr (ctx : TranslationContext) (e : Python.expr SourceRang
     let rightExpr ← translateExpr ctx right
     let preludeOpnames ← match op with
       -- Arithmetic
-      | .Add _ => .ok "PAdd"
-      | .Sub _ => .ok "PSub"
-      | .Mult _ => .ok "PMul"
+      | .Add _ => .ok "PAdd!AnyMaybeExcept"
+      | .Sub _ => .ok "PSub!AnyMaybeExcept"
+      | .Mult _ => .ok "PMul!AnyMaybeExcept"
       | .Div _ => return mkStmtExprMd .Hole -- Floating-point are not supported yet
-      | .FloorDiv _ => .ok "PFloorDiv"  -- Python // maps to Laurel Div
-      | .Mod _ => .ok "PMod"
-      | .Pow _ => .ok "PPow"
+      | .FloorDiv _ => .ok "PFloorDiv!AnyMaybeExcept"  -- Python // maps to Laurel Div
+      | .Mod _ => .ok "PMod!AnyMaybeExcept"
+      | .Pow _ => .ok "PPow!AnyMaybeExcept"
       | .BitAnd _ => return mkStmtExprMd .Hole --TODO: Adding BitVector subtype in Any type, then the related operations
       | .BitOr _ => return mkStmtExprMd .Hole
       | .BitXor _ => return mkStmtExprMd .Hole
       -- Unsupported for now
       | _ => throw (.unsupportedConstruct s!"Binary operator not yet supported: {repr op}" (toString (repr e)))
-    return mkStmtExprMd (StmtExpr.StaticCall preludeOpnames [leftExpr, rightExpr])
+    return mkStmtExprMdWithLoc (StmtExpr.StaticCall preludeOpnames [leftExpr, rightExpr]) md
 
   -- Comparison operations
   | .Compare _ left ops comparators => do
@@ -502,14 +504,14 @@ partial def translateExpr (ctx : TranslationContext) (e : Python.expr SourceRang
     let preludeOpnames ← match ops.val[0]! with
       | .Eq _ => .ok "PEq"
       | .NotEq _ => .ok "PNEq"
-      | .Lt _ => .ok "PLt"
-      | .LtE _ => .ok "PLe"
-      | .Gt _ => .ok "PGt"
-      | .GtE _ => .ok "PGe"
+      | .Lt _ => .ok "PLt!AnyMaybeExcept"
+      | .LtE _ => .ok "PLe!AnyMaybeExcept"
+      | .Gt _ => .ok "PGt!AnyMaybeExcept"
+      | .GtE _ => .ok "PGe!AnyMaybeExcept"
       | .In _ => .ok "PIn"
       | .NotIn _ => .ok "PNotIn"
       | _ => throw (.unsupportedConstruct s!"Comparison operator not yet supported: {repr ops.val[0]!}" (toString (repr e)))
-    return mkStmtExprMd (StmtExpr.StaticCall preludeOpnames [leftExpr, rightExpr])
+    return mkStmtExprMdWithLoc (StmtExpr.StaticCall preludeOpnames [leftExpr, rightExpr]) md
 
   -- Boolean operations
   | .BoolOp _ op values => do
@@ -527,16 +529,16 @@ partial def translateExpr (ctx : TranslationContext) (e : Python.expr SourceRang
     let mut result := exprs[0]!
     for i in [1:exprs.length] do
       result := mkStmtExprMd (StmtExpr.StaticCall preludeOpnames [result, exprs[i]!])
-    return result
+    return {result with md:= md}
 
   -- Unary operations
   | .UnaryOp _ op operand => do
     let operandExpr ← translateExpr ctx operand
     let preludeOpnames ← match op with
-      | .Not _ => .ok "PNot"
-      | .USub _ => .ok "PNeg"
+      | .Not _ => .ok "PNot!AnyMaybeExcept"
+      | .USub _ => .ok "PNeg!AnyMaybeExcept"
       | _ => throw (.unsupportedConstruct s!"Unary operator not yet supported: {repr op}" (toString (repr e)))
-    return mkStmtExprMd (StmtExpr.StaticCall preludeOpnames [operandExpr])
+    return mkStmtExprMdWithLoc (StmtExpr.StaticCall preludeOpnames [operandExpr]) md
 
   -- FormattedValue (f-string interpolation {expr}) - convert to string-typed Any
   | .FormattedValue _ value _ _ =>
@@ -574,9 +576,11 @@ partial def translateExpr (ctx : TranslationContext) (e : Python.expr SourceRang
     let condExpr ← translateExpr ctx cond
     let thenExpr ← translateExpr ctx thenb
     let elseExpr ← translateExpr ctx elseb
-    return mkStmtExprMd (StmtExpr.IfThenElse (Any_to_bool condExpr) thenExpr elseExpr)
+    return mkStmtExprMdWithLoc (StmtExpr.IfThenElse (Any_to_bool condExpr) thenExpr elseExpr) md
 
-  | .Call _ f args kwargs => translateCall ctx f args.val.toList kwargs.val.toList
+  | .Call _ f args kwargs =>
+      let result ← translateCall ctx f args.val.toList kwargs.val.toList
+      return {result with md:= md}
 
   -- Subscript access: dict['key'] or list[0]
   -- Abstract: return havoc'd value (sound for any dict/list operation)
@@ -587,7 +591,8 @@ partial def translateExpr (ctx : TranslationContext) (e : Python.expr SourceRang
     let index ←  match slice with
       | .Slice _ start stop step => translateSlice ctx start.val stop.val step.val
       | _ => translateExpr ctx slice
-    return mkStmtExprMd (.StaticCall "Any_get" [dictOrList, index])
+    let AnyGetCoreFunction := if ctx.isInsideTryBlock then "Any_get!AnyMaybeExcept" else "Any_get"
+    return mkStmtExprMdWithLoc (.StaticCall AnyGetCoreFunction [dictOrList, index]) md
 
   -- Attribute access: obj.attr or obj.method
   | .Attribute _ obj attr _ => do
@@ -1054,7 +1059,8 @@ partial def translateAssign  (ctx : TranslationContext)
         | target :: slices =>
             let target ← translateExpr ctx target
             let slices ← slices.mapM (translateExpr ctx)
-            let anySetsExpr := ⟨ StmtExpr.StaticCall "Any_sets" [ListAny_mk slices, target, rhs_trans] , md ⟩
+            let md := sourceRangeToMetaData ctx.filePath lhs.toAst.ann
+            let anySetsExpr := mkStmtExprMdWithLoc (StmtExpr.StaticCall "Any_sets!AnyMaybeExcept" [ListAny_mk slices, target, rhs_trans]) md
             let assignStmts := [mkStmtExprMdWithLoc (StmtExpr.Assign [target] anySetsExpr) md]
             return (ctx,assignStmts)
         | _ =>  throw (.internalError "Invalid Subscript Expr")
@@ -1146,7 +1152,69 @@ def createVarDeclStmtsAndCtx (ctx : TranslationContext) (newDecls : List (String
         if isCompositeType ctx ty then (n, ty) else (n, PyLauType.Any)) }
   return (hoistedDecls, hoistedCtx)
 
+def createIfStmt (condBlocks: List (StmtExprMd × StmtExprMd)) (elseBlock: Option StmtExprMd): Option StmtExprMd :=
+  match condBlocks with
+  | [] => elseBlock
+  | (cond, block)::remaining => mkStmtExprMd (.IfThenElse cond block (createIfStmt remaining elseBlock))
+
+def isMaybeExceptAnyFunc (funcName: String) : Bool := funcName.endsWith "!AnyMaybeExcept"
+
+partial def getMaybeExceptionExprs (e : StmtExprMd) : List StmtExprMd :=
+  match e.val with
+  | .StaticCall funcname args =>
+    if isMaybeExceptAnyFunc funcname.text then
+      [{e with md:= e.md.withPropertySummary $ "Check " ++ funcname.text ++ " exception"}]
+    else args.flatMap getMaybeExceptionExprs
+  | .PrimitiveOp _ args => args.flatMap getMaybeExceptionExprs
+  | .IfThenElse cond thenBranch elseBranch =>
+      ([cond, thenBranch] ++ elseBranch.toList).flatMap getMaybeExceptionExprs
+  | _ => []
+
+partial def getExceptionAssertions (maybeExceptExprs: List StmtExprMd) : List StmtExprMd :=
+  maybeExceptExprs.map (λ mbe => mkStmtExprMdWithLoc (.Assert $ mkStmtExprMd
+    (.PrimitiveOp .Not [mkStmtExprMd $ .StaticCall "Any..isexception" [mbe]])) mbe.md)
+
+partial def getExceptionAssign (maybeExceptExprs: List StmtExprMd) : List StmtExprMd :=
+  let condBlock := maybeExceptExprs.map (λ mbe =>
+    (mkStmtExprMd $ .StaticCall "Any..isexception" [mbe],
+    mkStmtExprMd $ .Assign [maybeExceptVar] (mkStmtExprMd $ .StaticCall "Any..get_error!" [mbe])))
+  (createIfStmt condBlock none).toList
+
+partial def getExceptionCatch (ctx: TranslationContext) (e : StmtExprMd): List StmtExprMd :=
+  let maybeExceptExprs := getMaybeExceptionExprs e
+  if ctx.isInsideTryBlock then getExceptionAssign maybeExceptExprs else getExceptionAssertions maybeExceptExprs
+
+def errTyToGuard (errTy: String) : StmtExprMd := match errTy with
+  | "TypeError" => mkStmtExprMd (.StaticCall "Error..isTypeError" [maybeExceptVar])
+  | "ZeroDivisionError" => mkStmtExprMd (.StaticCall "Error..isUndefinedError" [maybeExceptVar])
+  | "IndexError" => mkStmtExprMd (.StaticCall "Error..isIndexError" [maybeExceptVar])
+  | "AssertionError" => mkStmtExprMd (.StaticCall "Error..isAssertionError" [maybeExceptVar])
+  | "Exception" => mkStmtExprMd (.StaticCall "isError" [maybeExceptVar])
+  | _ => mkStmtExprMd (.StaticCall "Error..isUnknownError" [maybeExceptVar])
+
 mutual
+
+partial def exceptHandlerToBlock
+        (ctx: TranslationContext)
+        (h : Python.excepthandler SourceRange) : Except TranslationError (StmtExprMd × StmtExprMd) := do
+  match h with
+  | .ExceptHandler sr errorTy _ body =>
+    let md := sourceRangeToMetaData ctx.filePath sr
+    let errorTy:= match errorTy.val with
+      | .some errorTy => pyExprToString errorTy
+      | .none => "exception"
+    let (_, bodyStmts) ← translateStmtList ctx body.val.toList
+    return (errTyToGuard errorTy, mkStmtExprMdWithLoc (StmtExpr.Block bodyStmts none) md)
+
+partial def exceptHandlersToIfStmt
+        (md: MetaData)
+        (ctx: TranslationContext)
+        (h : List (Python.excepthandler SourceRange)) : Except TranslationError (Option StmtExprMd) := do
+  let exceptionHandler ←  h.mapM $ exceptHandlerToBlock ctx
+  let assertUnCaughtMd := md.withPropertySummary "Assert No UnCaught Exception"
+  let assertUnCaught := mkStmtExprMdWithLoc (.Assert (mkStmtExprMd (.StaticCall "Error..isNoError" [maybeExceptVar]))) assertUnCaughtMd
+  return createIfStmt exceptionHandler assertUnCaught
+
 
 partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRange)
     : Except TranslationError (TranslationContext × List StmtExprMd) := do
@@ -1157,12 +1225,19 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
     -- For now, only support single target
     if targets.val.size != 1 then
       throw (.unsupportedConstruct "Multiple assignment targets not yet supported" (toString (repr s)))
-    translateAssign ctx targets.val[0]! none value md
+    let (newctx, stmts) ← translateAssign ctx targets.val[0]! none value md
+    let rhs_exprs:= stmts.flatMap (λ s => match s.val with |.Assign _ value => [value] | _=> [])
+    let exceptionCheck := rhs_exprs.flatMap $ getExceptionCatch ctx
+    return (newctx, exceptionCheck ++ stmts)
 
   -- Annotated assignment: x: int = expr or x: ClassName = ClassName(args) or self.field: int = expr
   | .AnnAssign _ target annotation value _ => do
     match value.val with
-    | some value => translateAssign ctx target annotation value md
+    | some value =>
+        let (newctx, stmts) ← translateAssign ctx target annotation value md
+        let rhs_exprs:= stmts.flatMap (λ s => match s.val with |.Assign _ value => [value] | _=> [])
+        let exceptionCheck := rhs_exprs.flatMap $ getExceptionCatch ctx
+        return (newctx, exceptionCheck ++ stmts)
     | none =>
       -- Declaration without initializer (not allowed in pure context, but OK in procedures)
       let varType := pyExprToString annotation
@@ -1187,7 +1262,7 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
       .ok (some (mkStmtExprMd (StmtExpr.Block elseStmts none)))
     let ifStmt := mkStmtExprMdWithLoc (StmtExpr.IfThenElse (Any_to_bool condExpr) bodyBlock elseBlock) md
 
-    return (bodyCtx, [ifStmt])
+    return (bodyCtx, (getExceptionCatch ctx condExpr) ++ [ifStmt])
 
   -- While loop
   | .While _ test body _orelse => do
@@ -1200,15 +1275,16 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
     let bodyBlock := mkStmtExprMdWithLoc (StmtExpr.Block bodyStmts (some continueLabel)) md
     let whileStmt := mkStmtExprMdWithLoc (StmtExpr.While (Any_to_bool condExpr) [] none bodyBlock) md
     let whileWrapped := mkStmtExprMdWithLoc (StmtExpr.Block [whileStmt] (some breakLabel)) md
-    return (loopCtx, [whileWrapped])
+    return (loopCtx, (getExceptionCatch ctx condExpr) ++ [whileWrapped])
 
   -- Return statement: assign to the LaurelResult output parameter, then exit $body.
   | .Return _ value => do
     let stmts ← match value.val with
       | some expr => do
         let e ← translateExpr ctx expr
+        let exceptionCheck := getExceptionCatch ctx e
         let assign := mkStmtExprMd (StmtExpr.Assign [mkStmtExprMd (StmtExpr.Identifier PyLauFuncReturnVar)] e)
-        .ok [assign, mkStmtExprMd (StmtExpr.Exit "$body")]
+        .ok $ exceptionCheck ++ [assign, mkStmtExprMd (StmtExpr.Exit "$body")]
       | none => .ok [mkStmtExprMd (StmtExpr.Exit "$body")]
     return (ctx, stmts)
 
@@ -1216,7 +1292,7 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
   | .Assert _ test _msg => do
     let condExpr ← translateExpr ctx test
     let assertStmt := mkStmtExprMdWithLoc (StmtExpr.Assert (Any_to_bool condExpr)) md
-    return (ctx, [assertStmt])
+    return (ctx, (getExceptionCatch ctx condExpr) ++ [assertStmt])
 
   --Ignore comments in source code
   | .Expr _ (.Constant _ (.ConString _ _) _) => return (ctx, [])
@@ -1225,6 +1301,7 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
   | .Expr _ value => do
     let expr ← translateExpr ctx value
     let expr := { expr with md := md }
+    let exceptionCheck := getExceptionCatch ctx expr
 
     match expr.val with
     | .StaticCall fnname _ =>
@@ -1233,11 +1310,11 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
             let targets := if funsig.ret.isNone then [] else [nullcall_var]
             let targets := if withException ctx fnname.text then targets++[maybeExceptVar] else targets
             if targets.length > 0 then
-              return (ctx, [mkStmtExprMdWithLoc (StmtExpr.Assign targets expr) md])
+              return (ctx, exceptionCheck ++ [mkStmtExprMdWithLoc (StmtExpr.Assign targets expr) md])
             else
-              return (ctx, [expr])
-        | _ => return (ctx, [expr])
-    | _ => return (ctx, [expr])
+              return (ctx, exceptionCheck ++ [expr])
+        | _ => return (ctx, exceptionCheck ++ [expr])
+    | _ => return (ctx, exceptionCheck ++ [expr])
 
   | .Import _ _ | .ImportFrom _ _ _ _ |.Pass _ => return (ctx, [mkStmtExprMd .Hole])
 
@@ -1245,17 +1322,10 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
   | .Try _ body handlers _ _ => do
     let tryLabel := s!"try_end_{s.toAst.ann.start.byteIdx}"
     let catchersLabel := s!"exception_handlers_{s.toAst.ann.start.byteIdx}"
-    let (bodyCtx, bodyStmts) ← translateStmtList ctx body.val.toList
+    let (bodyCtx, bodyStmts) ← translateStmtList {ctx with isInsideTryBlock:=true} body.val.toList
 
     -- Translate exception handlers
-    let mut handlerCtx := bodyCtx
-    let mut handlerStmts : List StmtExprMd := []
-    for handler in handlers.val do
-      match handler with
-      | .ExceptHandler _ _ _ handlerBody =>
-        let (hCtx, hStmts) ← translateStmtList ctx handlerBody.val.toList
-        handlerCtx := hCtx
-        handlerStmts := handlerStmts ++ hStmts
+     let handlerStmt ←  exceptHandlersToIfStmt md ctx handlers.val.toList
 
     -- Insert exception checks after each statement in try body
     let bodyStmtsWithChecks := bodyStmts.flatMap fun stmt =>
@@ -1274,12 +1344,9 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
 
     -- try block: catchers block + handler code
     let tryBlock := mkStmtExprMdWithLoc (StmtExpr.Block
-      ([catchersBlock] ++ handlerStmts) (some tryLabel)) md
-    let mergedVars := bodyCtx.variableTypes ++
-      (handlerCtx.variableTypes.filter fun (n, _) =>
-        !bodyCtx.variableTypes.any fun (bn, _) => bn == n)
-    let finalCtx := { bodyCtx with variableTypes := mergedVars }
-    return (finalCtx, [tryBlock])
+      ([catchersBlock] ++ handlerStmt.toList) (some tryLabel)) md
+
+    return ({bodyCtx with isInsideTryBlock := ctx.isInsideTryBlock}, [tryBlock])
 
   | .Raise _ _ _ => return (ctx, [mkStmtExprMd .Hole])
 
@@ -1347,7 +1414,7 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
     let bodyStmts := assumeInStmts ++ bodyStmts
     let innerBlock := mkStmtExprMd (StmtExpr.Block bodyStmts (some continueLabel))
     let loopBlock := mkStmtExprMdWithLoc (StmtExpr.Block [innerBlock] (some breakLabel)) md
-    return (finalCtx, targetDecls ++ [loopBlock])
+    return (finalCtx, (getExceptionCatch ctx iterExpr) ++ targetDecls ++ [loopBlock])
 
   | .Break _ =>
     match ctx.loopBreakLabel with
@@ -1363,14 +1430,14 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
     let targetExpr ← translateExpr ctx target
     let valueExpr ← translateExpr ctx value
     let rhs := match op with
-      | .Add _      => mkStmtExprMd (StmtExpr.StaticCall "PAdd"      [targetExpr, valueExpr])
-      | .Sub _      => mkStmtExprMd (StmtExpr.StaticCall "PSub"      [targetExpr, valueExpr])
-      | .Mult _     => mkStmtExprMd (StmtExpr.StaticCall "PMul"      [targetExpr, valueExpr])
-      | .FloorDiv _ => mkStmtExprMd (StmtExpr.StaticCall "PFloorDiv" [targetExpr, valueExpr])
-      | .Mod _      => mkStmtExprMd (StmtExpr.StaticCall "PMod"      [targetExpr, valueExpr])
+      | .Add _      => mkStmtExprMd (StmtExpr.StaticCall "PAdd!AnyMaybeExcept"      [targetExpr, valueExpr])
+      | .Sub _      => mkStmtExprMd (StmtExpr.StaticCall "PSub!AnyMaybeExcept"      [targetExpr, valueExpr])
+      | .Mult _     => mkStmtExprMd (StmtExpr.StaticCall "PMul!AnyMaybeExcept"      [targetExpr, valueExpr])
+      | .FloorDiv _ => mkStmtExprMd (StmtExpr.StaticCall "PFloorDiv!AnyMaybeExcept" [targetExpr, valueExpr])
+      | .Mod _      => mkStmtExprMd (StmtExpr.StaticCall "PMod!AnyMaybeExcept"      [targetExpr, valueExpr])
       | _           => mkStmtExprMd .Hole
     let assignStmt := mkStmtExprMdWithLoc (StmtExpr.Assign [targetExpr] rhs) md
-    return (ctx, [assignStmt])
+    return (ctx, (getExceptionCatch ctx rhs) ++ [assignStmt])
 
   | _ => throw (.unsupportedConstruct "Statement type not yet supported" (toString (repr s)))
 

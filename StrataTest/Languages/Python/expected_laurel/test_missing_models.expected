@@ -1,7 +1,26 @@
-test_missing_models.py(8, 4): ❓ unknown - init_calls_Any_get_0
-test_missing_models.py(8, 4): ❓ unknown - init_calls_Any_get_1
+test_missing_models.py(12, 4): ❓ unknown - callElimAssert_requires_0_4
+test_missing_models.py(12, 4): ✅ pass - callElimAssert_requires_1_5
+test_missing_models.py(12, 4): ✅ pass - callElimAssert_requires_2_6
+test_missing_models.py(15, 4): ❓ unknown - callElimAssert_requires_0_13
+test_missing_models.py(15, 4): ✅ pass - callElimAssert_requires_1_14
+test_missing_models.py(15, 4): ✅ pass - callElimAssert_requires_2_15
+test_missing_models.py(6, 0): ✅ pass - Assert No UnCaught Exception
+test_missing_models.py(12, 4): ✅ pass - callElimAssert_requires_0_4
+test_missing_models.py(12, 4): ✅ pass - callElimAssert_requires_1_5
+test_missing_models.py(12, 4): ✅ pass - callElimAssert_requires_2_6
+test_missing_models.py(15, 4): ✅ pass - callElimAssert_requires_0_13
+test_missing_models.py(15, 4): ✅ pass - callElimAssert_requires_1_14
+test_missing_models.py(15, 4): ✅ pass - callElimAssert_requires_2_15
+test_missing_models.py(6, 0): ✅ pass - Assert No UnCaught Exception
 test_missing_models.py(9, 4): ❓ unknown - callElimAssert_requires_0_22
 test_missing_models.py(9, 4): ✅ pass - callElimAssert_requires_1_23
 test_missing_models.py(9, 4): ✅ pass - callElimAssert_requires_2_24
-DETAIL: 2 passed, 0 failed, 3 inconclusive
+test_missing_models.py(12, 4): ✅ pass - callElimAssert_requires_0_4
+test_missing_models.py(12, 4): ✅ pass - callElimAssert_requires_1_5
+test_missing_models.py(12, 4): ✅ pass - callElimAssert_requires_2_6
+test_missing_models.py(15, 4): ✅ pass - callElimAssert_requires_0_13
+test_missing_models.py(15, 4): ✅ pass - callElimAssert_requires_1_14
+test_missing_models.py(15, 4): ✅ pass - callElimAssert_requires_2_15
+test_missing_models.py(6, 0): ✅ pass - Assert No UnCaught Exception
+DETAIL: 21 passed, 0 failed, 3 inconclusive
 RESULT: Inconclusive
