@@ -917,6 +917,10 @@ partial def translateCall (ctx : TranslationContext)
   -- expand the dictionary into individual arguments using DictStrAny_get
   if isVarKwargs kwords && funcDecl.isSome then
     let funcDecl := funcDecl.get!
+    let name := if methodName.isEmpty then funcDecl.name else methodName
+    if args.length > funcDecl.args.length then
+      throwUserError callRange
+        s!"'{name}' called with too many positional arguments: expected at most {funcDecl.args.length}, got {args.length}"
     let trans_posArgs ← args.mapM (translateExpr ctx)
     let trans_dict ← translateVarKwargs ctx kwords
     let remainingParams := funcDecl.args.drop args.length
