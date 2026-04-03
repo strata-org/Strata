@@ -19,7 +19,7 @@ public section
 
 These statements use assumptions to encode conditional branches and guarded
 loops. This is roughly the structure used by most formalizations of [Guarded
-Comamnds](https://en.wikipedia.org/wiki/Guarded_Command_Language), and in
+Commands](https://en.wikipedia.org/wiki/Guarded_Command_Language), and in
 [Kleene Algebra with Tests](https://www.cs.cornell.edu/~kozen/Papers/kat.pdf).
 -/
 
