@@ -2,20 +2,25 @@ test_while_loop.py(4, 4): ✅ pass - loop_guard_calls_Any_to_bool_0
 test_while_loop.py(4, 4): ✅ pass - loop_guard_end_calls_Any_to_bool_0
 test_while_loop.py(7, 4): ✅ pass - assert_assert(134)_calls_Any_to_bool_0
 test_while_loop.py(7, 4): ❓ unknown - assert(134)
+unknown location: ❓ unknown - (test_while_countdown ensures) Return type constraint
 test_while_loop.py(12, 4): ✅ pass - loop_guard_calls_Any_to_bool_0
 test_while_loop.py(14, 8): ✅ pass - ite_cond_calls_Any_to_bool_0
 test_while_loop.py(16, 4): ✅ pass - assert_assert(344)_calls_Any_to_bool_0
 test_while_loop.py(16, 4): ✅ pass - assert(344)
+unknown location: ❓ unknown - (test_while_true_break ensures) Return type constraint
 test_while_loop.py(12, 4): ✅ pass - loop_guard_end_calls_Any_to_bool_0
 test_while_loop.py(16, 4): ✅ pass - assert_assert(344)_calls_Any_to_bool_0
 test_while_loop.py(16, 4): ✅ pass - assert(344)
+unknown location: ✅ pass - (test_while_true_break ensures) Return type constraint
 test_while_loop.py(22, 4): ✅ pass - loop_guard_calls_Any_to_bool_0
 test_while_loop.py(24, 8): ✅ pass - ite_cond_calls_Any_to_bool_0
 test_while_loop.py(22, 4): ✅ pass - loop_guard_end_calls_Any_to_bool_0
 test_while_loop.py(27, 4): ✅ pass - assert_assert(589)_calls_Any_to_bool_0
 test_while_loop.py(27, 4): ❓ unknown - assert(589)
+unknown location: ❓ unknown - (test_while_with_continue ensures) Return type constraint
 test_while_loop.py(22, 4): ✅ pass - loop_guard_end_calls_Any_to_bool_0
 test_while_loop.py(27, 4): ✅ pass - assert_assert(589)_calls_Any_to_bool_0
 test_while_loop.py(27, 4): ❓ unknown - assert(589)
-DETAIL: 16 passed, 0 failed, 3 inconclusive
+unknown location: ❓ unknown - (test_while_with_continue ensures) Return type constraint
+DETAIL: 17 passed, 0 failed, 7 inconclusive
 RESULT: Inconclusive

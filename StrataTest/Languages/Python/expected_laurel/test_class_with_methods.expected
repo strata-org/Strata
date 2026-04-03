@@ -6,6 +6,7 @@ test_class_with_methods.py(26, 4): ❓ unknown - assert(544)
 test_class_with_methods.py(28, 4): ✅ pass - callElimAssert_requires_0_4
 test_class_with_methods.py(28, 4): ✅ pass - callElimAssert_requires_1_5
 test_class_with_methods.py(28, 4): ✅ pass - callElimAssert_requires_2_6
+test_class_with_methods.py(17, 0): ✅ pass - postcondition
 test_class_with_methods.py(30, 0): ✅ pass - ite_cond_calls_Any_to_bool_0
-DETAIL: 7 passed, 0 failed, 2 inconclusive
+DETAIL: 8 passed, 0 failed, 2 inconclusive
 RESULT: Inconclusive
