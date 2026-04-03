@@ -1228,7 +1228,7 @@ theorem canonical_value_not_step
   | const => intro e' h; exact step_const_stuck F rf _ _ h
   | bvar =>
     intro e' hstep; cases hstep with
-    | expand_fn _ _ _ _ _ _ h_call => simp [Factory.callOfLFunc, getLFuncCall, getLFuncCall.go] at h_call
+    | expand_fn _ _ _ _ _ _ _ h_call => simp [Factory.callOfLFunc, getLFuncCall, getLFuncCall.go] at h_call
     | eval_fn _ _ _ _ _ _ h_call => simp [Factory.callOfLFunc, getLFuncCall, getLFuncCall.go] at h_call
   | fvar =>
     intro e' hstep
@@ -1244,7 +1244,7 @@ theorem canonical_value_not_step
     -- Canonical abs is closed → freeVars body = []
     simp [LExpr.isCanonicalValue] at hc
     cases hstep with
-    | expand_fn _ _ _ _ _ _ h_call => simp [Factory.callOfLFunc, getLFuncCall, getLFuncCall.go] at h_call
+    | expand_fn _ _ _ _ _ _ _ h_call => simp [Factory.callOfLFunc, getLFuncCall, getLFuncCall.go] at h_call
     | eval_fn _ _ _ _ _ _ h_call => simp [Factory.callOfLFunc, getLFuncCall, getLFuncCall.go] at h_call
     | abs_subst_fvar _ x v _ h_fv =>
       -- freeVars body = [] (from closed), so x ∉ freeVars body → contradiction
@@ -1255,7 +1255,7 @@ theorem canonical_value_not_step
     intro e' hstep
     simp [LExpr.isCanonicalValue] at hc
     cases hstep with
-    | expand_fn _ _ _ _ _ _ h_call => simp [Factory.callOfLFunc, getLFuncCall, getLFuncCall.go] at h_call
+    | expand_fn _ _ _ _ _ _ _ h_call => simp [Factory.callOfLFunc, getLFuncCall, getLFuncCall.go] at h_call
     | eval_fn _ _ _ _ _ _ h_call => simp [Factory.callOfLFunc, getLFuncCall, getLFuncCall.go] at h_call
     | quant_subst_fvar_body _ _ x v _ h_fv =>
       simp [LExpr.closed, LExpr.freeVars, List.isEmpty_iff] at hc
@@ -1267,7 +1267,7 @@ theorem canonical_value_not_step
     intro e' hstep
     simp [LExpr.isCanonicalValue] at hc
     cases hstep with
-    | expand_fn _ _ _ _ _ fn h_call h_body _ =>
+    | expand_fn _ _ _ _ _ fn _ h_call h_body _ _ =>
       split at hc
       · rename_i op_c args_c f_c h_call_partial
         simp only [Bool.and_eq_true] at hc
@@ -1309,7 +1309,7 @@ theorem canonical_value_not_step
         · exact hc
         · simp at hc
       exact ih1 h_e1_can e1' h_step_e1
-    | expand_fn _ _ _ _ _ fn h_call h_body _ =>
+    | expand_fn _ _ _ _ _ fn _ h_call h_body _ _ =>
       split at hc
       · rename_i op_c args_c f_c h_call_partial
         simp only [Bool.and_eq_true] at hc
@@ -2726,6 +2726,169 @@ private theorem evalCore_eraseMetadata_congr
 
 ---------------------------------------------------------------------
 
+-- typeOf ignores metadata: erasing metadata preserves typeOf.
+private theorem typeOf_eraseMetadata {T : LExprParams}
+    (e : LExpr T.mono) : e.eraseMetadata.typeOf = e.typeOf := by
+  induction e with
+  | const => simp [LExpr.eraseMetadata, LExpr.replaceMetadata, LExpr.typeOf]
+  | op => simp [LExpr.eraseMetadata, LExpr.replaceMetadata, LExpr.typeOf]
+  | bvar => simp [LExpr.eraseMetadata, LExpr.replaceMetadata, LExpr.typeOf]
+  | fvar => simp [LExpr.eraseMetadata, LExpr.replaceMetadata, LExpr.typeOf]
+  | abs m name ty body ih =>
+    cases ty with
+    | none => simp [LExpr.eraseMetadata, LExpr.replaceMetadata, LExpr.typeOf]
+    | some t =>
+      simp only [LExpr.eraseMetadata, LExpr.replaceMetadata, LExpr.typeOf]
+      rw [show (body.replaceMetadata fun _ => ()).typeOf = body.eraseMetadata.typeOf from rfl, ih]
+  | quant => simp [LExpr.eraseMetadata, LExpr.replaceMetadata, LExpr.typeOf]
+  | app m fn arg ih_fn _ =>
+    simp only [LExpr.eraseMetadata, LExpr.replaceMetadata, LExpr.typeOf]
+    rw [show (fn.replaceMetadata fun _ => ()).typeOf = fn.eraseMetadata.typeOf from rfl, ih_fn]
+  | ite m c t f _ ih_t _ =>
+    simp only [LExpr.eraseMetadata, LExpr.replaceMetadata, LExpr.typeOf]
+    rw [show (t.replaceMetadata fun _ => ()).typeOf = t.eraseMetadata.typeOf from rfl, ih_t]
+  | eq => simp [LExpr.eraseMetadata, LExpr.replaceMetadata, LExpr.typeOf]
+
+-- If two expressions have the same eraseMetadata, they have the same typeOf.
+private theorem typeOf_of_eraseMetadata_eq {T : LExprParams}
+    (e₁ e₂ : LExpr T.mono) (h : e₁.eraseMetadata = e₂.eraseMetadata) :
+    e₁.typeOf = e₂.typeOf := by
+  have h1 := typeOf_eraseMetadata e₁
+  have h2 := typeOf_eraseMetadata e₂
+  rw [h] at h1; rw [← h1, h2]
+
+-- computeTypeSubst is metadata-invariant: if callee and args have the same
+-- eraseMetadata, computeTypeSubst produces the same result.
+-- computeTypeSubst depends on callee only through its .op type annotation
+-- (preserved by eraseMetadata) and on args only through typeOf (also preserved).
+private theorem computeTypeSubst_eraseMetadata_congr {T : LExprParams}
+    (fn : LFunc T) (op₁ op₂ : LExpr T.mono)
+    (args₁ args₂ : List (LExpr T.mono))
+    (h_op : op₁.eraseMetadata = op₂.eraseMetadata)
+    (h_args : args₁.map LExpr.eraseMetadata = args₂.map LExpr.eraseMetadata) :
+    LFunc.computeTypeSubst fn op₁ args₁ = LFunc.computeTypeSubst fn op₂ args₂ := by
+  -- Both typeOf and the .op type annotation are metadata-invariant.
+  -- The function extracts opConstraints from callee's .op type and
+  -- argConstraints from args' typeOf values, both of which are equal.
+  -- Factor the proof through a helper lemma about constraint lists.
+  -- computeTypeSubst first checks typeArgs.isEmpty, then builds constraints
+  -- from callee and args, and unifies them.
+  -- We show the constraint lists are equal.
+  -- We show that computeTypeSubst only depends on op's typeOf and args' typeOf.
+  -- Use the eraseMetadata versions: since computeTypeSubst ignores metadata,
+  -- we can convert both calls to use erased expressions.
+  -- Step 1: Show computeTypeSubst fn e args = computeTypeSubst fn e.eraseMetadata args.map(erase)
+  -- Step 2: Since op₁.erase = op₂.erase and args₁.map erase = args₂.map erase, done.
+  -- Unfortunately, eraseMetadata changes the type parameter, so this doesn't
+  -- directly typecheck. Instead, we build the allConstraints list explicitly and
+  -- show it's the same.
+  --
+  -- The allConstraints list has two parts:
+  -- 1. opConstraints: depends on callee.typeOf
+  -- 2. argConstraints: depends on args.map typeOf
+  -- Both are metadata-invariant.
+  --
+  -- We prove by converting to a helper that builds constraints from typeOf data.
+
+  -- For the args part:
+  have h_argC : ((args₁.zip fn.inputs.values).filterMap
+      (fun (arg, formal) => arg.typeOf.map (·, formal))) =
+    ((args₂.zip fn.inputs.values).filterMap
+      (fun (arg, formal) => arg.typeOf.map (·, formal))) := by
+    -- Prove by auxiliary induction on args and formals simultaneously
+    suffices ∀ (l₁ l₂ : List (LExpr T.mono)) (vs : List LMonoTy),
+        l₁.map LExpr.eraseMetadata = l₂.map LExpr.eraseMetadata →
+        (l₁.zip vs).filterMap (fun (arg, formal) => arg.typeOf.map (·, formal)) =
+        (l₂.zip vs).filterMap (fun (arg, formal) => arg.typeOf.map (·, formal)) from
+      this args₁ args₂ fn.inputs.values h_args
+    intro l₁ l₂ vs h_eM
+    induction l₁ generalizing l₂ vs with
+    | nil =>
+      have : l₂ = [] := by cases l₂ with | nil => rfl | cons => simp at h_eM
+      subst this; rfl
+    | cons hd₁ tl₁ ih =>
+      match l₂, vs with
+      | hd₂ :: tl₂, v :: vs' =>
+        simp only [List.zip_cons_cons, List.filterMap_cons]
+        have h_hd : hd₁.eraseMetadata = hd₂.eraseMetadata := by
+          have := congrArg List.head? h_eM; simp at this; exact this
+        have h_tl : tl₁.map LExpr.eraseMetadata = tl₂.map LExpr.eraseMetadata := by
+          have := congrArg List.tail h_eM; simp at this; exact this
+        rw [typeOf_of_eraseMetadata_eq _ _ h_hd, ih tl₂ vs' h_tl]
+      | hd₂ :: tl₂, [] => simp [List.zip]
+      | [], _ => simp at h_eM
+
+  -- The allConstraints list = opConstraints ++ argConstraints.
+  -- We show the full list is equal.
+  -- Extract: for the op match, only the type annotation matters.
+  -- For `.op m name ty`, the match extracts `ty`.
+  -- eraseMetadata preserves everything except metadata `m`.
+  -- Since both ops have the same eraseMetadata, their `ty` fields are equal.
+  -- For non-`.op` nodes, both matches return [].
+
+  -- Helper: extract the type field from any expression.
+  -- For .op, this is the type annotation. For others, none.
+  -- This is NOT the same as typeOf (which computes type from structure).
+  let opTyField (e : LExpr T.mono) : Option LMonoTy :=
+    match e with | .op _ _ ty => ty | _ => none
+
+  have h_opTyField : opTyField op₁ = opTyField op₂ := by
+    simp only [opTyField]
+    cases op₁ <;> cases op₂ <;>
+      simp [LExpr.eraseMetadata, LExpr.replaceMetadata] at h_op ⊢ <;>
+      exact h_op.2
+
+  -- The opConstraints match factors through opTyField:
+  -- match e with .op _ _ (some t) => [(t,...)] | _ => []
+  -- = match opTyField e with some t => [(t,...)] | none => []
+  -- This is true by case analysis on e.
+  have h_opFactor : ∀ (e : LExpr T.mono),
+    (match e with
+      | .op _ _ (some instTy) => [(instTy, LMonoTy.mkArrow' fn.output fn.inputs.values)]
+      | _ => ([] : List (LMonoTy × LMonoTy))) =
+    (match opTyField e with
+      | some instTy => [(instTy, LMonoTy.mkArrow' fn.output fn.inputs.values)]
+      | none => []) := by
+    intro e; cases e with
+    | op m o ty => cases ty <;> simp [opTyField]
+    | _ => simp [opTyField]
+
+  -- Instead of unfolding computeTypeSubst and fighting match elaboration,
+  -- build the allConstraints explicitly and show they're equal.
+  -- This is the concat of opConstraints and argConstraints.
+  -- We rewrite computeTypeSubst in terms of opTyField and typeOf.
+  --
+  -- Define a "pure" version of computeTypeSubst that takes opTyField and
+  -- argConstraints directly.
+  let computePure (opTy : Option LMonoTy)
+      (argCs : List (LMonoTy × LMonoTy)) : Option Subst :=
+    if fn.typeArgs.isEmpty then some Subst.empty
+    else
+      let opCs := match opTy with
+        | some instTy => [(instTy, LMonoTy.mkArrow' fn.output fn.inputs.values)]
+        | none => []
+      let allCs := opCs ++ argCs
+      if allCs.isEmpty then none
+      else match Constraints.unify allCs SubstInfo.empty with
+        | .ok s => some s.subst
+        | .error _ => none
+  -- Show computeTypeSubst factors through computePure
+  have h_factor : ∀ (e : LExpr T.mono) (as : List (LExpr T.mono)),
+      LFunc.computeTypeSubst fn e as =
+      computePure (opTyField e)
+        ((as.zip fn.inputs.values).filterMap
+          (fun (arg, formal) => arg.typeOf.map (·, formal))) := by
+    intro e as
+    simp only [LFunc.computeTypeSubst, computePure, opTyField]
+    split
+    · rfl
+    · cases e with
+      | op m o ty => cases ty <;> rfl
+      | _ => rfl
+  rw [h_factor, h_factor, h_opTyField, h_argC]
+
+---------------------------------------------------------------------
+
 -- Helper for the factory-function branch of eval_eraseMetadata_invariant.
 omit [DecidableEq Tbase.Metadata] [DecidableEq Tbase.Identifier] in
 private theorem eval_factory_post_eraseMetadata_invariant
@@ -2765,9 +2928,12 @@ private theorem eval_factory_post_eraseMetadata_invariant
        | none => false
      if _h: f₁.body.isSome && (f₁.attr.contains Strata.DL.Util.FuncAttr.inline ||
          cA (Strata.DL.Util.FuncAttr.findInlineIfConstr f₁.attr)) then
-       LExpr.eval n' σ (LExpr.substFvarsLifting (f₁.body.get (by
-         have := Bool.and_eq_true_iff.mp _h; exact this.1))
-         (f₁.inputs.keys.zip args'))
+       match LFunc.computeTypeSubst f₁ op₁ args' with
+       | some tySubst =>
+         LExpr.eval n' σ (LExpr.substFvarsLifting ((f₁.body.get (by
+           have := Bool.and_eq_true_iff.mp _h; exact this.1)).applySubst tySubst)
+           (f₁.inputs.keys.zip args'))
+       | none => e₁
      else
        let new_e := @LExpr.mkApp Tbase.mono e₁.metadata op₁ args'
        if args'.all (LExpr.isCanonicalValue σ.config.factory) ||
@@ -2784,9 +2950,12 @@ private theorem eval_factory_post_eraseMetadata_invariant
        | none => false
      if _h: f₁.body.isSome && (f₁.attr.contains Strata.DL.Util.FuncAttr.inline ||
          cA (Strata.DL.Util.FuncAttr.findInlineIfConstr f₁.attr)) then
-       LExpr.eval n' σ (LExpr.substFvarsLifting (f₁.body.get (by
-         have := Bool.and_eq_true_iff.mp _h; exact this.1))
-         (f₁.inputs.keys.zip args'))
+       match LFunc.computeTypeSubst f₁ op₂ args' with
+       | some tySubst =>
+         LExpr.eval n' σ (LExpr.substFvarsLifting ((f₁.body.get (by
+           have := Bool.and_eq_true_iff.mp _h; exact this.1)).applySubst tySubst)
+           (f₁.inputs.keys.zip args'))
+       | none => e₂
      else
        let new_e := @LExpr.mkApp Tbase.mono e₂.metadata op₂ args'
        if args'.all (LExpr.isCanonicalValue σ.config.factory) ||
@@ -2832,8 +3001,20 @@ private theorem eval_factory_post_eraseMetadata_invariant
     -- Show RHS also inline
     have h_il₂ := h_il₁; rw [h_inline_cond_eq] at h_il₂
     simp only [dif_pos h_il₂]
-    apply ih
-    exact substFvarsLifting_zip_eraseMetadata_congr _ _ _ _ h_eval_args_eM
+    -- Show computeTypeSubst produces the same result on both sides
+    have h_tySubst_eq : LFunc.computeTypeSubst f₁ op₁
+        (args₁.map (fun a => LExpr.eval n' σ a)) =
+      LFunc.computeTypeSubst f₁ op₂
+        (args₂.map (fun a => LExpr.eval n' σ a)) :=
+      computeTypeSubst_eraseMetadata_congr f₁ op₁ op₂ _ _ h_op_eM h_eval_args_eM
+    rw [h_tySubst_eq]
+    -- Now both sides have the same match on computeTypeSubst
+    split
+    · -- some tySubst: both sides eval the substituted body
+      apply ih
+      exact substFvarsLifting_zip_eraseMetadata_congr _ _ _ _ h_eval_args_eM
+    · -- none: both sides return e₁/e₂
+      exact _h_eM
   · -- LHS not inline
     rename_i h_nil₁
     have h_nil₂ := h_nil₁; rw [h_inline_cond_eq] at h_nil₂
@@ -3160,54 +3341,75 @@ theorem eval_StepStar
           have h_body_some : lfunc.body.isSome = true := by
             have := Bool.and_eq_true_iff.mp h_inline; exact this.1
           obtain ⟨body, h_body_eq⟩ := Option.isSome_iff_exists.mp h_body_some
-          obtain ⟨h_get, m_op, name_op, ty_op, h_op_eq⟩ := callOfLFunc_getLFuncCall h_call
-          let stepped_args := args.map (fun a => (ih a).choose)
-          have h_stepped_len : args.length = stepped_args.length := by simp [stepped_args]
-          have h_per_step : ∀ i (hi : i < args.length),
-              ReflTrans (Step σ.config.factory (Scopes.toEnv σ.state))
-                (args.get ⟨i, hi⟩) (stepped_args.get ⟨i, h_stepped_len ▸ hi⟩) := by
-            intro i hi; simp [stepped_args]; exact (ih (args.get ⟨i, hi⟩)).choose_spec.1
-          obtain ⟨e_stepped, h_step_e, h_estepped_eM⟩ :=
-            StepStar_getLFuncCall_args e op_expr args stepped_args h_get h_stepped_len h_per_step
-          have h_ref_call : σ.config.factory.callOfLFunc (LExpr.mkApp e.metadata op_expr stepped_args) =
-              some (op_expr, stepped_args, lfunc) := by
-            apply callOfLFunc_mkApp_op σ.config.factory e.metadata op_expr args stepped_args lfunc
-              ⟨m_op, name_op, ty_op, h_op_eq⟩ _ h_stepped_len.symm
-            subst h_op_eq
-            simp only [Factory.callOfLFunc, getLFuncCall_mkApp_op] at h_call ⊢
-            simp only [h_get] at h_call
-            exact h_call
-          have h_ref_eM : e_stepped.eraseMetadata = (LExpr.mkApp e.metadata op_expr stepped_args).eraseMetadata := by
-            rw [h_estepped_eM, LExpr.eraseMetadata_mkApp]
-          obtain ⟨op', stepped_args', h_call_stepped, h_args_eM, _⟩ :=
-            callOfLFunc_some_of_eraseMetadata_eq σ.config.factory
-              (LExpr.mkApp e.metadata op_expr stepped_args) e_stepped false
-              h_ref_eM.symm op_expr stepped_args lfunc h_ref_call
-          have h_expand : Step σ.config.factory (Scopes.toEnv σ.state) e_stepped
-              (LExpr.substFvarsLifting body (lfunc.inputs.keys.zip stepped_args')) :=
-            Step.expand_fn e_stepped op' body _ stepped_args' lfunc h_call_stepped h_body_eq rfl
-          obtain ⟨e'_s, h_step_s, h_ve_s⟩ := ih (LExpr.substFvarsLifting body (lfunc.inputs.keys.zip stepped_args'))
-          refine ⟨e'_s, ReflTrans.trans h_step_e (ReflTrans.step _ _ _ h_expand h_step_s), ?_⟩
-          have h_per_eM : ∀ i (hi : i < args.length),
-              (stepped_args.get ⟨i, h_stepped_len ▸ hi⟩).eraseMetadata =
-                (LExpr.eval n σ (args.get ⟨i, hi⟩)).eraseMetadata := by
-            intro i hi; simp [stepped_args]; exact (ih (args.get ⟨i, hi⟩)).choose_spec.2
-          have h_vals_eM : stepped_args'.map LExpr.eraseMetadata =
-              (args.map (LExpr.eval n σ)).map LExpr.eraseMetadata := by
-            rw [← h_args_eM]
-            apply List.ext_getElem (by simp [stepped_args])
-            intro i hi1 hi2
-            simp only [List.getElem_map]
-            have hi_args : i < args.length := by simp [stepped_args] at hi1; exact hi1
-            exact h_per_eM i hi_args
-          have h_subst_eM : (LExpr.substFvarsLifting body (lfunc.inputs.keys.zip stepped_args')).eraseMetadata =
-              (LExpr.substFvarsLifting body (lfunc.inputs.keys.zip (args.map (LExpr.eval n σ)))).eraseMetadata :=
-            substFvarsLifting_zip_eraseMetadata_congr _ _ _ _ h_vals_eM
-          have h_body_get : lfunc.body.get (by simp [h_body_eq]) = body := by
-            simp [h_body_eq]
-          show _ = (LExpr.eval n σ _).eraseMetadata
-          rw [h_body_get, show (fun a => LExpr.eval n σ a) = LExpr.eval n σ from rfl]
-          exact h_ve_s.trans (eval_eraseMetadata_invariant σ _ _ n hWF h_subst_eM)
+          -- Split on computeTypeSubst in the eval result
+          split
+          · -- computeTypeSubst = some tySubst
+            rename_i tySubst h_tySubst
+            obtain ⟨h_get, m_op, name_op, ty_op, h_op_eq⟩ := callOfLFunc_getLFuncCall h_call
+            let stepped_args := args.map (fun a => (ih a).choose)
+            have h_stepped_len : args.length = stepped_args.length := by simp [stepped_args]
+            have h_per_step : ∀ i (hi : i < args.length),
+                ReflTrans (Step σ.config.factory (Scopes.toEnv σ.state))
+                  (args.get ⟨i, hi⟩) (stepped_args.get ⟨i, h_stepped_len ▸ hi⟩) := by
+              intro i hi; simp [stepped_args]; exact (ih (args.get ⟨i, hi⟩)).choose_spec.1
+            obtain ⟨e_stepped, h_step_e, h_estepped_eM⟩ :=
+              StepStar_getLFuncCall_args e op_expr args stepped_args h_get h_stepped_len h_per_step
+            have h_ref_call : σ.config.factory.callOfLFunc (LExpr.mkApp e.metadata op_expr stepped_args) =
+                some (op_expr, stepped_args, lfunc) := by
+              apply callOfLFunc_mkApp_op σ.config.factory e.metadata op_expr args stepped_args lfunc
+                ⟨m_op, name_op, ty_op, h_op_eq⟩ _ h_stepped_len.symm
+              subst h_op_eq
+              simp only [Factory.callOfLFunc, getLFuncCall_mkApp_op] at h_call ⊢
+              simp only [h_get] at h_call
+              exact h_call
+            have h_ref_eM : e_stepped.eraseMetadata =
+                (LExpr.mkApp e.metadata op_expr stepped_args).eraseMetadata := by
+              rw [h_estepped_eM, LExpr.eraseMetadata_mkApp]
+            obtain ⟨op', stepped_args', h_call_stepped, h_args_eM, h_op'_eM⟩ :=
+              callOfLFunc_some_of_eraseMetadata_eq σ.config.factory
+                (LExpr.mkApp e.metadata op_expr stepped_args) e_stepped false
+                h_ref_eM.symm op_expr stepped_args lfunc h_ref_call
+            -- Derive computeTypeSubst for stepped_args' via eraseMetadata-congr
+            have h_per_eM : ∀ i (hi : i < args.length),
+                (stepped_args.get ⟨i, h_stepped_len ▸ hi⟩).eraseMetadata =
+                  (LExpr.eval n σ (args.get ⟨i, hi⟩)).eraseMetadata := by
+              intro i hi; simp [stepped_args]; exact (ih (args.get ⟨i, hi⟩)).choose_spec.2
+            have h_vals_eM : stepped_args'.map LExpr.eraseMetadata =
+                (args.map (LExpr.eval n σ)).map LExpr.eraseMetadata := by
+              rw [← h_args_eM]
+              apply List.ext_getElem (by simp [stepped_args])
+              intro i hi1 hi2
+              simp only [List.getElem_map]
+              have hi_args : i < args.length := by simp [stepped_args] at hi1; exact hi1
+              exact h_per_eM i hi_args
+            have h_tySubst_stepped :
+                LFunc.computeTypeSubst lfunc op' stepped_args' = some tySubst := by
+              rw [← h_tySubst]
+              exact computeTypeSubst_eraseMetadata_congr lfunc op' op_expr _ _
+                h_op'_eM.symm h_vals_eM
+            have h_expand : Step σ.config.factory (Scopes.toEnv σ.state) e_stepped
+                (LExpr.substFvarsLifting (body.applySubst tySubst)
+                  (lfunc.inputs.keys.zip stepped_args')) :=
+              Step.expand_fn e_stepped op' body _ stepped_args' lfunc tySubst
+                h_call_stepped h_body_eq h_tySubst_stepped rfl
+            obtain ⟨e'_s, h_step_s, h_ve_s⟩ :=
+              ih (LExpr.substFvarsLifting (body.applySubst tySubst)
+                (lfunc.inputs.keys.zip stepped_args'))
+            refine ⟨e'_s, ReflTrans.trans h_step_e
+              (ReflTrans.step _ _ _ h_expand h_step_s), ?_⟩
+            have h_subst_eM :
+                (LExpr.substFvarsLifting (body.applySubst tySubst)
+                  (lfunc.inputs.keys.zip stepped_args')).eraseMetadata =
+                (LExpr.substFvarsLifting (body.applySubst tySubst)
+                  (lfunc.inputs.keys.zip (args.map (LExpr.eval n σ)))).eraseMetadata :=
+              substFvarsLifting_zip_eraseMetadata_congr _ _ _ _ h_vals_eM
+            have h_body_get : lfunc.body.get (by simp [h_body_eq]) = body := by
+              simp [h_body_eq]
+            show _ = (LExpr.eval n σ _).eraseMetadata
+            rw [h_body_get, show (fun a => LExpr.eval n σ a) = LExpr.eval n σ from rfl]
+            exact h_ve_s.trans (eval_eraseMetadata_invariant σ _ _ n hWF h_subst_eM)
+          · -- computeTypeSubst = none: eval returns e unchanged
+            exact ⟨e, ReflTrans.refl e, rfl⟩
         · -- Non-inline
           rename_i h_not_inline
           split
