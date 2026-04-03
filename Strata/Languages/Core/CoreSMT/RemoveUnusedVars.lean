@@ -68,7 +68,7 @@ end
 mutual
 /-- Remove unused init statements from a statement. -/
 partial def removeUnusedVarsStmt : Core.Statement → Core.Statement
-  | .block label stmts md => .block label (removeUnusedVarsStmts stmts) md
+  | .block _label stmts _md => .ite .nondet (removeUnusedVarsStmts stmts) [] .empty
   | .ite cond thenB elseB md =>
     .ite cond (removeUnusedVarsStmts thenB) (removeUnusedVarsStmts elseB) md
   | .loop guard measure invs body md =>
