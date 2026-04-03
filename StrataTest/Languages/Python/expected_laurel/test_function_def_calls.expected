@@ -1,6 +1,7 @@
 test_function_def_calls.py(6, 4): ❓ unknown - callElimAssert_requires_0_4
 test_function_def_calls.py(6, 4): ✅ pass - callElimAssert_requires_1_5
 test_function_def_calls.py(6, 4): ✅ pass - callElimAssert_requires_2_6
+test_function_def_calls.py(9, 4): ✅ pass - callElimAssert_requires_10
 test_function_def_calls.py(11, 0): ✅ pass - ite_cond_calls_Any_to_bool_0
-DETAIL: 3 passed, 0 failed, 1 inconclusive
+DETAIL: 4 passed, 0 failed, 1 inconclusive
 RESULT: Inconclusive
