@@ -1022,16 +1022,16 @@ where
       | .arrow _ pty rest =>
         match arg with
         | .expr e =>
-          let inferredType ← inferType tctx e
+          let argType ← inferType tctx e
           -- fvar/ident args are stored in de Bruijn (reverse) order by
           -- flattenTypeApp, but accessor type patterns from
           -- mkDatatypeTypeRef use forward (declaration) order.
           -- Reverse the top-level args to align with the pattern.
-          let inferredType := match inferredType with
+          let argType := match argType with
             | .fvar loc i args => .fvar loc i args.reverse
             | .ident loc n args => .ident loc n args.reverse
             | t => t
-          match pty.matchTVars inferredType subst with
+          match pty.matchTVars argType subst with
           | some s => subst := s
           | none => pure ()  -- structural mismatch; skip gracefully
         | _ => pure ()  -- non-expr arg (type, op, etc.); skip

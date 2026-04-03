@@ -253,8 +253,8 @@ partial def matchTVars {α}
   | .arrow _ a1 r1 =>
     match target with
     | .arrow _ a2 r2 => do
-      let subst ← a1.matchTVars a2 subst
-      r1.matchTVars r2 subst
+      let subst' ← a1.matchTVars a2 subst
+      r1.matchTVars r2 subst'
     | .tvar _ _ => some subst
     | _ => none
   | .bvar _ i =>
