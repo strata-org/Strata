@@ -10,8 +10,8 @@ import Strata.DL.Imperative.Cmd
 import Strata.DL.Imperative.CmdSemantics
 import Strata.DL.Imperative.Stmt
 import Strata.DL.Imperative.StmtSemanticsSmallStep
-import Strata.DL.Imperative.NondetStmt
-import Strata.DL.Imperative.NondetStmtSemantics
+import Strata.DL.Imperative.KleeneStmt
+import Strata.DL.Imperative.KleeneStmtSemantics
 import Strata.DL.Imperative.MetaData
 import Strata.DL.Lambda.LExpr
 import Strata.DL.Lambda.Semantics
