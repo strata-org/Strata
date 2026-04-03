@@ -259,12 +259,7 @@ Transform a Core program to replace each loop with assertions and assumptions ab
 its invariants.
 -/
 def Core.loopElimUsingContract (p : Core.Program) : Core.Program :=
-  let newDecls := p.decls.map fun d => match d with
-    | .proc proc md =>
-      let newBody := (StateT.run (Core.Block.removeLoopsM proc.body) 0).fst
-      .proc { proc with body := newBody } md
-    | other => other
-  { decls := newDecls }
+  Core.loopElim p
 
 /--
 Transform a Core program to replace each procedure call with assertions and

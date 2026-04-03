@@ -56,6 +56,7 @@ def genVCsSingleENV (pE : Program × Env) : Option coreVCs := do
   | _ => return E.deferred.toList.map (fun ob => (E, ob))
 
 def genVCs (program : Program) (options : VerifyOptions := .default) : Option coreVCs := do
+  let program := loopElim program
   match Core.typeCheckAndPartialEval options program with
   | .error _ => none
   | .ok pEs =>

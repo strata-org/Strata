@@ -16,6 +16,7 @@ public import Strata.DDM.AST
 import Strata.Transform.CallElim
 import Strata.Transform.FilterProcedures
 import Strata.Transform.PrecondElim
+import Strata.Transform.LoopElim
 public import Strata.Transform.IrrelevantAxioms
 import Strata.Util.Profile
 
@@ -757,6 +758,14 @@ def verifySingleEnv (pE : Program × Env) (options : VerifyOptions)
       let _ ← (IO.println s!"[profile]     Obligations: {E.deferred.size} total, {peResolvedCount} resolved by PE" |>.toBaseIO)
     return results
 
+/-- Eliminate loops in all procedures of a Core program by replacing each loop
+with assertions and assumptions about its invariants. -/
+def loopElim (p : Program) : Program :=
+  { decls := p.decls.map fun d => match d with
+    | .proc proc md =>
+      .proc { proc with body := (StateT.run (Block.removeLoopsM proc.body) 0).fst } md
+    | other => other }
+
 /-- Run the Strata Core verification pipeline on a program: transform,
 type-check, partially evaluate, and discharge proof obligations via SMT.
 All program-wide transformations that occur before any analyses
@@ -811,6 +820,8 @@ def verify (program : Program)
   let axiomCache? ← profileStep profile "  Build axiom relevance cache" do
     pure (if options.removeIrrelevantAxioms == .Off then .none
           else .some (IrrelevantAxioms.Cache.build finalProgram))
+  -- Eliminate loops as a separate phase before partial evaluation.
+  let finalProgram := loopElim finalProgram
   let pEs ← profileStep profile "  Type check and partial eval" do
     match Core.typeCheckAndPartialEval options finalProgram moreFns with
     | .error err =>
