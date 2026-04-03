@@ -1087,8 +1087,9 @@ and the literal and collection types (`Ident`, `NumLit`, `StrLit`, `Seq`,
 `OptionArg`, `CommaSepBy`) map to variants of `ArgF`.
 
 For documentation specific to the auto-generated Python dialect and the
-`py_to_strata` command-line tool, see the `PythonDialect.md` file in
-`Tools/Python`.
+`py_to_strata` command-line tool, see
+[PythonDialect.md](https://github.com/strata-org/Strata/blob/main/Tools/Python/PythonDialect.md)
+in the repository.
 
 ## Installation
 
