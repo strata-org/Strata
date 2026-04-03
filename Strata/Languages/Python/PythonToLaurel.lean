@@ -718,23 +718,14 @@ The following function return a tuple (translated function name, first argument,
 -/
 
 /-- Coerce an expression to Any if its inferred type is a Composite class.
-    Composite values are wrapped via from_ClassInstance with their fields.
-    TODO: `translated` is used in multiple FieldSelect nodes without binding
-    to a temporary — same pattern as f-string interpolation (FormattedValue).
-    TODO: nested composites (UserDefined fields) are not yet handled
-    recursively; wrapFieldInAny will error on them. -/
+    Composite values are replaced with a Hole (unconstrained Any value)
+    since Composite→Any coercion is not yet modeled. This limits
+    bug-finding ability but avoids type unification errors. -/
 partial def coerceToAny (ctx : TranslationContext) (expr : Python.expr SourceRange)
     (translated : StmtExprMd) : Except TranslationError StmtExprMd := do
   let ty ← inferExprType ctx expr
   if isCompositeType ctx ty then
-    let fields := (ctx.classFieldHighType[ty]?.getD {}).toList
-    let dict ← fields.foldlM (fun acc (fname, fty) =>
-      return mkStmtExprMd (.StaticCall "DictStrAny_cons"
-        [mkStmtExprMd (.LiteralString fname),
-         ← wrapFieldInAny fty (mkStmtExprMd (.FieldSelect translated fname)), acc]))
-      (mkStmtExprMd (.StaticCall "DictStrAny_empty" []))
-    pure <| mkStmtExprMd (.StaticCall "from_ClassInstance"
-      [mkStmtExprMd (.LiteralString ty), dict])
+    pure <| mkStmtExprMd (.Hole)
   else pure translated
 
 partial def refineFunctionCallExpr (ctx : TranslationContext) (func: Python.expr SourceRange) :
