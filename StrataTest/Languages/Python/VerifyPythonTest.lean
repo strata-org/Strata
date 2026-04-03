@@ -161,7 +161,7 @@ def main() -> None:
     throw <| IO.userError "Expected pipeline error for too many positional arguments"
   catch e =>
     let msg := toString e
-    unless Strata.Python.containsSubstr msg "too many positional arguments" do
+    unless containsSubstr msg "too many positional arguments" do
       throw <| IO.userError s!"Expected 'too many positional arguments' error, got: {msg}"
 
 end Strata.Python.VerifyPythonTest
