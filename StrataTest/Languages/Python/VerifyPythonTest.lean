@@ -164,4 +164,23 @@ def main() -> None:
     unless containsSubstr msg "too many positional arguments" do
       throw <| IO.userError s!"Expected 'too many positional arguments' error, got: {msg}"
 
+-- Extra positional args with **kwargs expansion should also error.
+#guard_msgs in
+#eval withPython (warnOnSkip := false) fun pythonCmd => do
+  let program :=
+"def greet(name: str) -> str:
+    return name
+
+def main() -> None:
+    d: dict = {}
+    x: str = greet(\"alice\", \"extra\", **d)
+"
+  try
+    let _ ← processPythonFile pythonCmd (stringInputContext "test.py" program)
+    throw <| IO.userError "Expected pipeline error for too many positional arguments"
+  catch e =>
+    let msg := toString e
+    unless containsSubstr msg "too many positional arguments" do
+      throw <| IO.userError s!"Expected 'too many positional arguments' error, got: {msg}"
+
 end Strata.Python.VerifyPythonTest
