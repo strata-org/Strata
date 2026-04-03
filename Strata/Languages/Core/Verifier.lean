@@ -225,6 +225,7 @@ def AbstractedPhase.validateModel (phases : List AbstractedPhase)
     let r' := match r, validation with
       | .sat m, .modelToValidate f => if f m then .sat m else .unknown (some m)
       | .unknown (some m), .modelToValidate f => if f m then .sat m else .unknown (some m)
+      -- .unknown none or .modelPreserving: pass through unchanged
       | _, _ => r
     (r', { phase := p.name, result := r' } :: log)
   -- Reverse log so outermost is first, deepest is last
@@ -507,6 +508,7 @@ def maskOutcome (outcome : VCOutcome) (satisfiabilityCheck validityCheck : Bool)
   if satisfiabilityCheck && validityCheck then
     outcome
   else if validityCheck && !satisfiabilityCheck then
+    -- Mask to .unknown none — the solverLog preserves the original result
     { outcome with satisfiabilityProperty := .unknown }
   else if satisfiabilityCheck && !validityCheck then
     { outcome with validityProperty := .unknown }
@@ -695,8 +697,8 @@ def coreAbstractedPhases (procs : Option (List String) := none)
 private def buildSolverLog (satResult valResult : SMT.Result)
     (satisfiabilityCheck validityCheck : Bool)
     (satPhaseLog valPhaseLog : List SolverPhaseLog) : List SolverPhaseLog :=
-  (if satisfiabilityCheck then [{ phase := "SMT.sat", result := satResult }] else []) ++
-  (if validityCheck then [{ phase := "SMT.val", result := valResult }] else []) ++
+  (if satisfiabilityCheck then [{ phase := "solver.sat", result := satResult }] else []) ++
+  (if validityCheck then [{ phase := "solver.val", result := valResult }] else []) ++
   satPhaseLog ++ valPhaseLog
 
 /-- Adjust an SMT result through pipeline phase validation. A `.sat` result
