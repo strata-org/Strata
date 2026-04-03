@@ -162,6 +162,47 @@ def transformModifiesClauses (model: SemanticModel)
   | _ => .ok proc
 
 /--
+Filter non-composite modifies entries from a procedure body, collecting diagnostics
+for each filtered entry. This pre-pass ensures that global variables of primitive type
+do not incorrectly trigger heap parameterization.
+Should run before heap parameterization.
+-/
+def filterBodyNonCompositeModifies (model : SemanticModel) (body : Body)
+    : Body × List DiagnosticModel :=
+  match body with
+  | .Opaque posts impl mods =>
+    let (kept, diags) := mods.foldl (fun (acc, ds) e =>
+      let ty := (computeExprType model e).val
+      if isHeapRelevantType ty then (acc ++ [e], ds)
+      else (acc, ds ++ [e.md.toDiagnostic s!"modifies clause entry has non-composite type '{formatHighTypeVal ty}' and will be ignored"])
+    ) ([], [])
+    (.Opaque posts impl kept, diags)
+  | other => (other, [])
+
+/--
+Filter non-composite modifies entries from all procedures in a program,
+collecting diagnostics. Should run before heap parameterization so that
+the heap parameterization phase remains agnostic to modifies clauses.
+-/
+def filterNonCompositeModifies (model : SemanticModel) (program : Program)
+    : Program × List DiagnosticModel :=
+  let (staticProcs, staticDiags) := program.staticProcedures.foldl (fun (ps, ds) proc =>
+    let (body', bodyDiags) := filterBodyNonCompositeModifies model proc.body
+    (ps ++ [{ proc with body := body' }], ds ++ bodyDiags)
+  ) ([], [])
+  let (types', typeDiags) := program.types.foldl (fun (ts, ds) td =>
+    match td with
+    | .Composite ct =>
+      let (instProcs, instDiags) := ct.instanceProcedures.foldl (fun (ps, ds) proc =>
+        let (body', bodyDiags) := filterBodyNonCompositeModifies model proc.body
+        (ps ++ [{ proc with body := body' }], ds ++ bodyDiags)
+      ) ([], [])
+      (ts ++ [.Composite { ct with instanceProcedures := instProcs }], ds ++ instDiags)
+    | other => (ts ++ [other], ds)
+  ) ([], [])
+  ({ program with staticProcedures := staticProcs, types := types' }, staticDiags ++ typeDiags)
+
+/--
 Transform a Laurel program: apply modifies clause transformation to all procedures.
 This is a Laurel → Laurel pass that should run after heap parameterization.
 
