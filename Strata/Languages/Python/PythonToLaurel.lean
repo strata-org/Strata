@@ -1883,7 +1883,6 @@ def pythonToLaurel' (info : PreludeInfo)
         importedSymbols := localSymbols,
         classFieldHighType := classFieldHighType,
         filePath := filePath,
-        functionSignatures := info.functionSignatures
       }
       let (composite, instanceProcedures, classFuncDecls) ← translateClass initCtx stmt
       allClassFuncDecls := allClassFuncDecls ++ classFuncDecls
@@ -1902,7 +1901,7 @@ def pythonToLaurel' (info : PreludeInfo)
         for methodStmt in classBody do
           if let .FunctionDef .. := methodStmt then
             let funcDecl ← pyFuncDefToPythonFunctionDecl classCtx methodStmt
-            classFuncDecls := classFuncDecls ++ [funcDecl]
+            allClassFuncDecls := allClassFuncDecls ++ [funcDecl]
       | _ => pure ()
     | _ => pure ()
 
