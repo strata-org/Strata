@@ -233,8 +233,13 @@ theorem OpsConsistent_callOfLFunc
 
 /-! ## `applySubst` lemmas -/
 
+/-- If all scopes in `S` are empty, then `S.find?` returns `none` for any key. -/
+theorem Subst.find?_hasEmptyScopes (h : Subst.hasEmptyScopes S) (x : TyIdentifier) :
+    Maps.find? S x = none := by
+  sorry
+
 /-- `applySubst` preserves typing, mapping types through `subst S`. -/
-theorem applySubst_typeCheck {S : Subst}
+theorem applySubst_typeCheck (S : Subst)
     {e : LExpr T.mono} {τ : LMonoTy} {Δ : List LMonoTy}
     (h : LExpr.HasTypeA Δ e τ)
     : LExpr.HasTypeA (Δ.map (LMonoTy.subst S)) (e.applySubst S) (LMonoTy.subst S τ) := by
@@ -247,8 +252,154 @@ theorem applySubst_fvars_annotated [DecidableEq T.IDMeta] {S : Subst}
     : fvars_annotated_by (tyMap.map (fun (k, v) => (k, LMonoTy.subst S v))) (e.applySubst S) := by
   sorry
 
+/-- `denote` is invariant under changing the type index by an equality proof. -/
+private theorem denote_cast_ty {Δ : List LMonoTy} {e : LExpr T.mono} {τ₁ τ₂ : LMonoTy}
+    (h_eq : τ₁ = τ₂) (h₁ : LExpr.HasTypeA Δ e τ₁) (h₂ : LExpr.HasTypeA Δ e τ₂)
+    (bv : BVarVal tcInterp vt Δ)
+    : LExpr.denote tcInterp opInterp fvarVal vt bv e τ₁ h₁ =
+      cast (congrArg (TyDenote tcInterp vt) h_eq.symm)
+        (LExpr.denote tcInterp opInterp fvarVal vt bv e τ₂ h₂) := by
+  subst h_eq; rfl
+/-- Generalized `denote_applySubst` for arbitrary bvar contexts.
+The induction for `abs` and `quant` extends the context, so we need this
+generalized form as the workhorse. -/
+private theorem denote_applySubst_gen
+    {S : Subst} {vt vt' : TyVarVal}
+    (hvt' : vt' = fun x => match S.find? x with
+      | some t => LMonoTy.substTyVars vt t | none => vt x)
+    {Δ : List LMonoTy} {e : LExpr T.mono} {τ : LMonoTy}
+    (h_body : LExpr.HasTypeA Δ e τ)
+    (h_subst : LExpr.HasTypeA (Δ.map (LMonoTy.subst S)) (e.applySubst S) (LMonoTy.subst S τ))
+    (h_td : TyDenote tcInterp vt (LMonoTy.subst S τ) = TyDenote tcInterp vt' τ)
+    {bvarVal : BVarVal tcInterp vt (Δ.map (LMonoTy.subst S))}
+    {bvarVal' : BVarVal tcInterp vt' Δ}
+    (h_bvar_compat : ∀ (i : Nat) (τ_b : LMonoTy)
+        (hb : Δ[i]? = some τ_b)
+        (hb' : (Δ.map (LMonoTy.subst S))[i]? = some (LMonoTy.subst S τ_b)),
+        cast (congrArg (SortDenote tcInterp) (hvt' ▸ substTyVars_subst vt S τ_b))
+          (bvarVal.get i hb') = bvarVal'.get i hb)
+    : cast h_td
+        (LExpr.denote tcInterp opInterp fvarVal vt bvarVal (e.applySubst S) (LMonoTy.subst S τ) h_subst) =
+      LExpr.denote tcInterp opInterp fvarVal vt' bvarVal' e τ h_body := by
+  have h_eq : e.applySubst S = LExpr.replaceUserProvidedType e (LMonoTy.subst S) :=
+    LExpr.applySubst_eq_replaceUserProvidedType e S
+  revert h_subst h_eq
+  generalize e.applySubst S = e'
+  intros h_subst h_eq
+  subst h_eq
+  -- Now the goal is in terms of replaceUserProvidedType
+  -- Induction on e, generalizing Δ, τ, bvarVal, bvarVal', h_bvar_compat, h_body, h_subst, h_td
+  revert Δ τ bvarVal bvarVal' h_bvar_compat h_body h_subst h_td
+  induction e with
+  | const m c =>
+    intro Δ τ h_body h_td bvarVal bvarVal' h_bvar_compat h_subst
+    simp only [LExpr.replaceUserProvidedType] at h_subst ⊢
+    rw [denote_const, denote_const]
+    have h_inv := HasTypeA.const_inv h_body      -- c.ty = τ
+    subst h_inv
+    have h_inv_s := HasTypeA.const_inv h_subst  -- c.ty = LMonoTy.subst S c.ty
+    -- Both ▸ are now from c.ty = c.ty (RHS) and c.ty = subst S c.ty (LHS)
+    -- Use denoteConst_cast_vt to relate denoteConst at vt vs vt'
+    rw [denoteConst_cast_vt (tcInterp := tcInterp) vt vt' c]
+    · -- Main goal: cast h_td (... ▸ cast ? (denoteConst vt' c)) = ... ▸ denoteConst vt' c
+      -- All casts compose to identity since both sides are denoteConst vt' c
+      grind
+    · -- Side goal: TyDenote vt' c.ty = TyDenote vt c.ty
+      exact (h_inv_s ▸ h_td).symm
+  | op m o uty =>
+    intro Δ τ h_body h_td bvarVal bvarVal' h_bvar_compat h_subst
+    simp only [LExpr.replaceUserProvidedType, Option.map] at h_subst ⊢
+    cases uty with
+    | none => exact absurd h_body (by intro h; cases h)
+    | some ty =>
+      rw [denote_op, denote_op]
+      have h_inv := HasTypeA.op_inv h_body      -- ty = τ
+      subst h_inv
+      -- Goal: cast h_td (⋯ ▸ opInterp o.name (substTyVars vt (subst S ty))) = ⋯ ▸ opInterp o.name (substTyVars vt' ty)
+      have h_sorts : LMonoTy.substTyVars vt (LMonoTy.subst S τ) = LMonoTy.substTyVars vt' τ :=
+        hvt' ▸ substTyVars_subst vt S τ
+      grind
+  | bvar m i =>
+    intro Δ τ h_body h_td bvarVal bvarVal' h_bvar_compat h_subst
+    simp only [LExpr.replaceUserProvidedType] at h_subst ⊢
+    rw [denote_bvar, denote_bvar]
+    have hb := HasTypeA.bvar_inv h_body   -- Δ[i]? = some τ
+    have hb' := HasTypeA.bvar_inv h_subst -- (Δ.map (subst S))[i]? = some (subst S τ)
+    have h_compat := h_bvar_compat i τ hb hb'
+    -- h_compat : cast (congrArg SortDenote (hvt' ▸ substTyVars_subst vt S τ)) (bvarVal.get i hb') = bvarVal'.get i hb
+    -- Goal: cast h_td (bvarVal.get i hb') = bvarVal'.get i hb
+    -- Both casts are on the same value with proofs of the same type equality, so they agree
+    rw [show cast h_td (bvarVal.get i (HasTypeA.bvar_inv h_subst)) =
+            cast h_td (bvarVal.get i hb') from rfl]
+    rw [show HList.get bvarVal' i (HasTypeA.bvar_inv h_body) =
+            HList.get bvarVal' i hb from rfl]
+    rw [← h_compat]
+  | fvar m x uty =>
+    intro Δ τ h_body h_td bvarVal bvarVal' h_bvar_compat h_subst
+    simp only [LExpr.replaceUserProvidedType, Option.map] at h_subst ⊢
+    cases uty with
+    | none => exact absurd h_body (by intro h; cases h)
+    | some ty =>
+      rw [denote_fvar, denote_fvar]
+      have h_inv := HasTypeA.fvar_inv h_body
+      subst h_inv
+      have h_sorts : LMonoTy.substTyVars vt (LMonoTy.subst S τ) = LMonoTy.substTyVars vt' τ :=
+        hvt' ▸ substTyVars_subst vt S τ
+      grind
+  | abs m name uty body ih =>
+    intro Δ τ h_body h_td bvarVal bvarVal' h_bvar_compat h_subst
+    sorry
+  | app m fn arg ih_fn ih_arg =>
+    intro Δ τ h_body h_td bvarVal bvarVal' h_bvar_compat h_subst
+    simp only [LExpr.replaceUserProvidedType] at h_subst ⊢
+    have ⟨aty, h_fn, h_arg⟩ := HasTypeA.app_inv h_body
+    have ⟨aty_s, h_fn_s, h_arg_s⟩ := HasTypeA.app_inv h_subst
+    rw [denote_app bvarVal h_fn_s h_arg_s, denote_app bvarVal' h_fn h_arg]
+    -- Need aty_s = subst S aty to apply IHs
+    have h_subst_arrow : LMonoTy.subst S (aty.arrow τ) = (LMonoTy.subst S aty).arrow (LMonoTy.subst S τ) :=
+      LMonoTy.subst_tcons_pair S "arrow" aty τ
+    have h_aty_s : aty_s = LMonoTy.subst S aty := by
+      have h_fn_s' := applySubst_typeCheck S h_fn
+      rw [LExpr.applySubst_eq_replaceUserProvidedType, h_subst_arrow] at h_fn_s'
+      have := HasTypeA_unique h_fn_s h_fn_s'
+      cases this; rfl
+    subst h_aty_s
+    -- TyDenote equalities from substTyVars_subst
+    have h_td_fn : TyDenote tcInterp vt ((LMonoTy.subst S aty).arrow (LMonoTy.subst S τ)) =
+                   TyDenote tcInterp vt' (aty.arrow τ) :=
+      h_subst_arrow ▸ congrArg (SortDenote tcInterp) (hvt' ▸ substTyVars_subst vt S (aty.arrow τ))
+    have h_td_arg : TyDenote tcInterp vt (LMonoTy.subst S aty) = TyDenote tcInterp vt' aty :=
+      congrArg (SortDenote tcInterp) (hvt' ▸ substTyVars_subst vt S aty)
+    rw [← cast_app h_td_fn h_td_arg h_td]
+    -- Goal: (cast h_td_fn (denote fn ((subst S aty).arrow (subst S τ)) h_fn_s))
+    --         (cast h_td_arg (denote arg (subst S aty) h_arg_s))
+    --       = (denote fn (aty.arrow τ) h_fn) (denote arg aty h_arg)
+    -- Use denote_cast_ty to convert denote fn from (subst S aty).arrow (subst S τ) to subst S (aty.arrow τ)
+    have h_fn_s' : LExpr.HasTypeA (Δ.map (LMonoTy.subst S))
+        (fn.replaceUserProvidedType (LMonoTy.subst S)) (LMonoTy.subst S (aty.arrow τ)) :=
+      h_subst_arrow ▸ h_fn_s
+    rw [denote_cast_ty (tcInterp := tcInterp) (opInterp := opInterp) (fvarVal := fvarVal) (vt := vt)
+        h_subst_arrow.symm h_fn_s h_fn_s' bvarVal]
+    -- Now the two casts on fn compose, and ih_fn / ih_arg apply
+    simp only [cast_cast]
+    -- Goal: cast _ (denote fn (subst S (aty.arrow τ)) h_fn_s') (cast h_td_arg (denote arg ...)) = ...
+    have h_td_fn' : TyDenote tcInterp vt (LMonoTy.subst S (aty.arrow τ)) = TyDenote tcInterp vt' (aty.arrow τ) :=
+      h_subst_arrow ▸ h_td_fn
+    have h_ih_fn := ih_fn h_fn h_td_fn' h_bvar_compat h_fn_s'
+    have h_ih_arg := ih_arg h_arg h_td_arg h_bvar_compat h_arg_s
+    rw [h_ih_arg, h_ih_fn]
+  | ite m c t e ih_c ih_t ih_e =>
+    intro Δ τ h_body h_td bvarVal bvarVal' h_bvar_compat h_subst
+    sorry
+  | eq m e1 e2 ih1 ih2 =>
+    intro Δ τ h_body h_td bvarVal bvarVal' h_bvar_compat h_subst
+    sorry
+  | quant m qk name argTy tr body ih_tr ih_body =>
+    intro Δ τ h_body h_td bvarVal bvarVal' h_bvar_compat h_subst
+    sorry
+
 /-- Applying a type substitution to annotations is equivalent to changing the
-type variable valuation. At the call site Δ = [] so bvarVal concerns vanish. -/
+type variable valuation. Specialization of `denote_applySubst_gen` to `Δ = []`. -/
 theorem denote_applySubst
     {S : Subst} {vt vt' : TyVarVal}
     (hvt' : vt' = fun x => match S.find? x with
@@ -259,7 +410,9 @@ theorem denote_applySubst
     (h_td : TyDenote tcInterp vt (LMonoTy.subst S τ) = TyDenote tcInterp vt' τ)
     : cast h_td
         (LExpr.denote tcInterp opInterp fvarVal vt .nil (e.applySubst S) (LMonoTy.subst S τ) h_subst) =
-      LExpr.denote tcInterp opInterp fvarVal vt' .nil e τ h_body := by
-  sorry
+      LExpr.denote tcInterp opInterp fvarVal vt' .nil e τ h_body :=
+  denote_applySubst_gen tcInterp opInterp fvarVal hvt' h_body h_subst h_td
+    (bvarVal := .nil) (bvarVal' := .nil)
+    (fun i _ hb _ => absurd hb (by simp))
 
 end Lambda

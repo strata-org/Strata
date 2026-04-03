@@ -268,6 +268,17 @@ If e is an LExprT whose metadata contains type information, use applySubstT.
 def LExpr.applySubst {T : LExprParams} (e : LExpr T.mono) (S : Subst) : LExpr T.mono :=
   if S.hasEmptyScopes then e else replaceUserProvidedType e (LMonoTy.subst S)
 
+theorem LExpr.applySubst_eq_replaceUserProvidedType {T : LExprParams}
+    (e : LExpr T.mono) (S : Subst) :
+    e.applySubst S = replaceUserProvidedType e (LMonoTy.subst S) := by
+  unfold applySubst
+  split
+  case isTrue h_empty =>
+    have h_id : LMonoTy.subst S = id := funext (fun ty => LMonoTy.subst_emptyS h_empty)
+    rw [h_id]
+    induction e <;> unfold replaceUserProvidedType <;> grind
+  case isFalse => rfl
+
 /--
 Best-effort type extraction from an `LExpr` without a typing context.
 Returns `none` when the type cannot be determined syntactically.

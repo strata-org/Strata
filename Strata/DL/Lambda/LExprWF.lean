@@ -391,10 +391,11 @@ where
 
 ---------------------------------------------------------------------
 
+
 /--
 Replace all user-provided type annotations in an `LExpr` using `f`.
 -/
-def replaceUserProvidedType {T : LExprParamsT} (e : LExpr T) (f : T.TypeType → T.TypeType) : LExpr T :=
+@[expose] def replaceUserProvidedType {T : LExprParamsT} (e : LExpr T) (f : T.TypeType → T.TypeType) : LExpr T :=
   match e with
   | .const m c => .const m c
   | .op m o uty => .op m o (uty.map f)
