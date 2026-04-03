@@ -86,6 +86,8 @@ structure TranslationContext where
   classFieldHighType: Std.HashMap String (Std.HashMap String HighType) := {}
   /-- Names of prelude types -/
   preludeTypes : Std.HashSet String := {}
+  /-- Prelude procedure signatures (for multi-output detection) -/
+  preludeProcedures : Std.HashMap String CoreProcedureSignature := {}
   /-- Overload dispatch table from PySpec: function name → overloads -/
   overloadTable : OverloadTable := {}
   /-- Behavior for unmodeled functions -/
@@ -924,7 +926,11 @@ def withException (ctx : TranslationContext) (funcname: String) : Bool :=
   | some (ImportedSymbol.function _) => false
   | some (ImportedSymbol.procedure _ sig _) =>
     sig.outputs.length > 0 && sig.outputs.getLast! == "Error"
-  | _ => false
+  | _ =>
+    -- Also check prelude procedures for multi-output with Error
+    match ctx.preludeProcedures[funcname]? with
+    | some sig => sig.outputs.length > 0 && sig.outputs.getLast! == "Error"
+    | none => false
 
 def maybeExceptVar := mkStmtExprMd (.Identifier "maybe_except")
 def nullcall_var := mkStmtExprMd (.Identifier "nullcall_ret")
@@ -1903,6 +1909,7 @@ def pythonToLaurel' (info : PreludeInfo)
     currentClassName := none,
     functionSignatures := info.functionSignatures ++ allClassFuncDecls
     preludeTypes := info.types,
+    preludeProcedures := info.procedures,
     userFunctions := userFunctions,
     classFieldHighType := classFieldHighType,
     overloadTable := overloadTable,
