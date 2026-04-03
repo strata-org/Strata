@@ -13,6 +13,7 @@ public import Strata.Languages.Core.SMTEncoder
 public import Strata.DL.Imperative.MetaData
 public import Strata.DL.Imperative.SMTUtils
 public import Strata.DDM.AST
+public import Strata.Languages.Core.PipelinePhase
 import Strata.Transform.CallElim
 import Strata.Transform.FilterProcedures
 import Strata.Transform.PrecondElim
