@@ -1,7 +1,7 @@
 test_missing_models.py(8, 4): ❓ unknown - init_calls_Any_get_0
 test_missing_models.py(8, 4): ❓ unknown - init_calls_Any_get_1
-test_missing_models.py(9, 4): ❌ fail - callElimAssert_requires_0_22
+test_missing_models.py(9, 4): ❓ unknown - callElimAssert_requires_0_22
 test_missing_models.py(9, 4): ✅ pass - callElimAssert_requires_1_23
 test_missing_models.py(9, 4): ✅ pass - callElimAssert_requires_2_24
-DETAIL: 2 passed, 1 failed, 2 inconclusive
-RESULT: Failures found
+DETAIL: 2 passed, 0 failed, 3 inconclusive
+RESULT: Inconclusive

@@ -8,6 +8,7 @@ module
 public import Strata.Transform.CoreTransform
 public import Strata.DL.Lambda.Preconditions
 public import Strata.DL.Lambda.TypeFactory
+public import Strata.Languages.Core.PipelinePhase
 import all Strata.DL.Imperative.Stmt
 
 /-! # Partial Function Precondition Elimination
@@ -79,13 +80,13 @@ Collect assertions for all expressions in a command.
 def collectCmdPrecondAsserts (F : @Lambda.Factory CoreLParams)
   (cmd : Imperative.Cmd Expression) : List Statement :=
   match cmd with
-  | .init _ _ (some e) md => collectPrecondAsserts F e "init" md
-  | .init _ _ _ _ => []
-  | .set x e md => collectPrecondAsserts F e s!"set_{x.name}" md
+  | .init _ _ (.det e) md => collectPrecondAsserts F e "init" md
+  | .init _ _ .nondet _ => []
+  | .set x (.det e) md => collectPrecondAsserts F e s!"set_{x.name}" md
+  | .set _ .nondet _ => []
   | .assert l e md => collectPrecondAsserts F e s!"assert_{l}" md
   | .assume l e md => collectPrecondAsserts F e s!"assume_{l}" md
   | .cover l e md => collectPrecondAsserts F e s!"cover_{l}" md
-  | .havoc _ _ => []
 
 /--
 Collect assertions for call arguments.
@@ -228,7 +229,9 @@ def transformStmt (s : Statement)
     setFactory savedF
     return (changed, [.block lbl b' md])
   | .ite c thenb elseb md => do
-    let condAsserts := collectPrecondAsserts F c "ite_cond" md
+    let condAsserts := match c with
+      | .det e => collectPrecondAsserts F e "ite_cond" md
+      | .nondet => []
     let savedF ← getFactory
     let (changed, thenb') ← transformStmts thenb
     setFactory savedF
@@ -244,8 +247,12 @@ def transformStmt (s : Statement)
       | none => []
       | some m => collectPrecondAsserts F m "loop_measure_end" md
     let invAsserts := invariant.flatMap (fun inv => collectPrecondAsserts F inv "loop_invariant" md)
-    let guardAsserts := collectPrecondAsserts F guard "loop_guard" md
-    let guardAssertsEnd := collectPrecondAsserts F guard "loop_guard_end" md
+    let guardAsserts := match guard with
+      | .det g => collectPrecondAsserts F g "loop_guard" md
+      | .nondet => []
+    let guardAssertsEnd := match guard with
+      | .det g => collectPrecondAsserts F g "loop_guard_end" md
+      | .nondet => []
     let savedF ← getFactory
     let (changed, body') ← transformStmts body
     setFactory savedF
@@ -267,7 +274,7 @@ def transformStmt (s : Statement)
     | some wfStmts =>
       -- Add init statements for function parameters so they're in scope
       let paramInits := decl.inputs.toList.map fun (name, ty) =>
-        Statement.init name ty none md
+        Statement.init name ty .nondet md
       return (hasPreconds, [.block s!"{funcName}{wfSuffix}" (paramInits ++ wfStmts) md, .funcDecl decl' md])
   | .typeDecl _ _ =>
     return (false, [s])  -- Type declarations pass through unchanged
@@ -341,6 +348,15 @@ where
         return (changed, d :: rest')
 
 end PrecondElim
+
+/-- PrecondElim pipeline phase: generates well-formedness checks for
+    partial-function preconditions. Model-preserving because it only adds
+    new assertions and procedures without abstracting existing ones. -/
+def precondElimPipelinePhase
+    (factory : @Lambda.Factory CoreLParams) : PipelinePhase :=
+  modelPreservingPipelinePhase "PrecondElim" fun prog => do
+    PrecondElim.precondElim prog factory
+
 end Core
 
 end -- public section

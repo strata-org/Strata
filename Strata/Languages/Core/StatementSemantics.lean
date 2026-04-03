@@ -7,7 +7,7 @@ module
 
 public import Strata.DL.Lambda.LExpr
 public import Strata.DL.Lambda.LExprWF
-public import Strata.DL.Imperative.StmtSemantics
+public import Strata.DL.Imperative.StmtSemanticsSmallStep
 public import Strata.Languages.Core.CoreGen
 public import Strata.Languages.Core.Procedure
 
@@ -56,6 +56,7 @@ instance : HasBool Core.Expression where
   tt := Core.true
   ff := Core.false
   tt_is_not_ff := by unfold Core.true Core.false; unfold Lambda.LExpr.boolConst; simp
+  boolTy := .forAll [] (.tcons "bool" [])
 
 instance : HasNot Core.Expression where
   not
@@ -254,6 +255,32 @@ def EvalPureFunc (φ : CoreEval → PureFunc Expression → CoreEval) : Imperati
     let capturedDecl := closureCapture σ decl
     φ δ capturedDecl
 
+/-!
+### Mutual inductive: `EvalCommand` and `CoreStepStar`
+
+`CoreStepStar` is the reflexive-transitive closure of `StepStmt` specialized
+to the Core language with `EvalCommand` as the command semantics.  It is
+defined mutually with `EvalCommand` so that `call_sem` can reference it
+without violating Lean's strict positivity requirement.
+
+The generic `ReflTrans (StepStmt ...)` cannot be used here because it would
+place `EvalCommand` in a non-strictly-positive position.
+-/
+
+mutual
+
+/-- Reflexive-transitive closure of `StepStmt` for the Core language,
+    defined mutually with `EvalCommand` to satisfy strict positivity. -/
+inductive CoreStepStar (π : String → Option Procedure) (φ : CoreEval → PureFunc Expression → CoreEval) :
+    Imperative.Config Expression Command → Imperative.Config Expression Command → Prop where
+  | refl :
+    CoreStepStar π φ c c
+  | step :
+    Imperative.StepStmt Expression (EvalCommand π φ) (EvalPureFunc φ) c₁ c₂ →
+    CoreStepStar π φ c₂ c₃ →
+    ----
+    CoreStepStar π φ c₁ c₃
+
 inductive EvalCommand (π : String → Option Procedure) (φ : CoreEval → PureFunc Expression → CoreEval) : CoreEval →
   CoreStore → Command → CoreStore → Bool → Prop where
   | cmd_sem {δ σ c σ' f} :
@@ -261,17 +288,6 @@ inductive EvalCommand (π : String → Option Procedure) (φ : CoreEval → Pure
     ----
     EvalCommand π φ δ σ (CmdExt.cmd c) σ' f
 
-  /-
-  NOTE: If π is NOT the first implicit variable below, Lean complains as
-  follows; wish this error message actually mentioned which local variable was
-  the problematic one.
-
-  invalid nested inductive datatype 'Imperative.EvalBlock', nested inductive
-  datatypes parameters cannot contain local variables.
-
-  Here's a Zulip thread that can shed some light on this error message:
-  https://leanprover-community.github.io/archive/stream/270676-lean4/topic/nested.20inductive.20datatypes.20parameters.20cannot.20contain.20local.20v.html
-  -/
   | call_sem {δ σ₀ σ args vals oVals σA σAO n p modvals lhs σ' ρ' md} :
     π n = .some p →
     EvalExpressions (P:=Expression) δ σ args vals →
@@ -295,8 +311,9 @@ inductive EvalCommand (π : String → Option Procedure) (φ : CoreEval → Pure
     (∀ pre, (Procedure.Spec.getCheckExprs p.spec.preconditions).contains pre →
       isDefinedOver (HasVarsPure.getVars) σAO pre ∧
       δ σAO pre = .some HasBool.tt) →
-    @Imperative.EvalBlock Expression Command (EvalCommand π φ) (EvalPureFunc φ) _ _ _ _ _ _ _
-      ⟨σAO, δ, false⟩ p.body ρ' →
+    CoreStepStar π φ
+      (.stmts p.body ⟨σAO, δ, false⟩)
+      (.terminal ρ') →
     -- Postconditions, if any, must be satisfied for execution to continue.
     (∀ post, (Procedure.Spec.getCheckExprs p.spec.postconditions).contains post →
       isDefinedOver (HasVarsPure.getVars) σAO post ∧
@@ -307,13 +324,38 @@ inductive EvalCommand (π : String → Option Procedure) (φ : CoreEval → Pure
     ----
     EvalCommand π φ δ σ (CmdExt.call lhs n args md) σ' false
 
+end
+
+/-- `CoreStepStar` implies the generic `StepStmtStar` (i.e. `ReflTrans`). -/
+theorem CoreStepStar_to_StepStmtStar
+    {π : String → Option Procedure}
+    {φ : CoreEval → PureFunc Expression → CoreEval}
+    {c c' : Imperative.Config Expression Command}
+    (h : CoreStepStar π φ c c') :
+    Imperative.StepStmtStar Expression (EvalCommand π φ) (EvalPureFunc φ) c c' :=
+  match h with
+  | .refl => .refl _
+  | .step hstep hrest => .step _ _ _ hstep (CoreStepStar_to_StepStmtStar hrest)
+
+/-- The generic `StepStmtStar` implies `CoreStepStar`. -/
+theorem StepStmtStar_to_CoreStepStar
+    {π : String → Option Procedure}
+    {φ : CoreEval → PureFunc Expression → CoreEval}
+    {c c' : Imperative.Config Expression Command} :
+    Imperative.StepStmtStar Expression (EvalCommand π φ) (EvalPureFunc φ) c c' →
+    CoreStepStar π φ c c' := by
+  intro H
+  induction H with
+  | refl => exact .refl
+  | step _ _ _ hstep _ ih => exact .step hstep ih
+
 @[expose] abbrev EvalStatement (π : String → Option Procedure) (φ : CoreEval → PureFunc Expression → CoreEval) :
     Imperative.Env Expression → Statement → Imperative.Env Expression → Prop :=
-  Imperative.EvalStmt Expression Command (EvalCommand π φ) (EvalPureFunc φ)
+  Imperative.EvalStmtSmall Expression (EvalCommand π φ) (EvalPureFunc φ)
 
 @[expose] abbrev EvalStatements (π : String → Option Procedure) (φ : CoreEval → PureFunc Expression → CoreEval) :
     Imperative.Env Expression → List Statement → Imperative.Env Expression → Prop :=
-  Imperative.EvalBlock Expression Command (EvalCommand π φ) (EvalPureFunc φ)
+  Imperative.EvalStmtsSmall Expression (EvalCommand π φ) (EvalPureFunc φ)
 
 inductive EvalCommandContract : (String → Option Procedure)  → CoreEval →
   CoreStore → Command → CoreStore → Bool → Prop where
@@ -358,11 +400,11 @@ inductive EvalCommandContract : (String → Option Procedure)  → CoreEval →
 
 @[expose] abbrev EvalStatementContract (π : String → Option Procedure) (φ : CoreEval → PureFunc Expression → CoreEval) :
     Imperative.Env Expression → Statement → Imperative.Env Expression → Prop :=
-  Imperative.EvalStmt Expression Command (EvalCommandContract π) (EvalPureFunc φ)
+  Imperative.EvalStmtSmall Expression (EvalCommandContract π) (EvalPureFunc φ)
 
 @[expose] abbrev EvalStatementsContract (π : String → Option Procedure) (φ : CoreEval → PureFunc Expression → CoreEval) :
     Imperative.Env Expression → List Statement → Imperative.Env Expression → Prop :=
-  Imperative.EvalBlock Expression Command (EvalCommandContract π) (EvalPureFunc φ)
+  Imperative.EvalStmtsSmall Expression (EvalCommandContract π) (EvalPureFunc φ)
 
 end Core
 
