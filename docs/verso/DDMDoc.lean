@@ -1144,7 +1144,7 @@ last positional argument).  An optional `syntax` parameter provides a
 syntax definition for pretty-printing.
 
 ```
-from strata.base import SyntaxArg
+from strata.base import Init, SyntaxArg
 
 # An operator with no arguments.
 d.add_op("skip", stmt(), syntax="skip;", prec=1024)
@@ -1242,7 +1242,8 @@ Calling an `OpDecl` with the appropriate arguments constructs an `Operation`:
 
 ```
 assign_op = d.assign   # OpDecl added earlier
-op = assign_op(Ident("x"), some_expr, ann=SourceRange(0, 10))
+val = d.lit(NumLit(42))
+op = assign_op(Ident("x"), val, ann=SourceRange(0, 10))
 ```
 
 ### ArgDecl
@@ -1396,16 +1397,20 @@ metadata).  The relevant types are:
 * `MetadataCat(index)` — references a category by argument index.
 * `MetadataSome(value)` — wraps an optional metadata value.
 
-Metadata is passed as a list of `MetadataAttr` when constructing declarations:
+Metadata is passed as a list of `MetadataAttr` when constructing declarations.
+The following example shows how to attach `scope` metadata to an argument,
+continuing from the dialect `d` defined in [Building Programs](#python_programs):
 
 ```
 from strata.base import MetadataAttr, MetadataCat, QualifiedIdent
 
-scope_meta = MetadataAttr(QualifiedIdent("Init", "scope"), [MetadataCat(0)])
+decl_list = d.add_syncat("DeclList")
+scope_meta = MetadataAttr(
+    QualifiedIdent("Init", "scope"), [MetadataCat(0)])
 d.add_op("block",
     ArgDecl("decls", decl_list(), metadata=[scope_meta]),
-    ArgDecl("body", stmt()),
-    stmt())
+    ArgDecl("body", expr()),
+    Init.Command())
 ```
 
 # Command Line Use
