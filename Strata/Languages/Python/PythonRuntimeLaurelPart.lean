@@ -64,18 +64,19 @@ datatype Error {
 // Laurel does not support mutual blocks, so they are declared separately.
 
 datatype OptionInt {
-  Some (unwrap: int),
-  None ()
+  OptSome (unwrap: int),
+  OptNone ()
 }
 
 datatype Any {
-  from_none (),
+  from_None (),
   from_bool (as_bool : bool),
   from_int (as_int : int),
   from_float (as_float : real),
-  from_string (as_string : string),
+  from_str (as_string : string),
   from_datetime (as_datetime : int),
-  from_Dict (as_Dict: DictStrAny),
+  from_bytes (as_bytes: string),
+  from_DictStrAny (as_Dict: DictStrAny),
   from_ListAny (as_ListAny : ListAny),
   from_ClassInstance (classname : string, instance_attributes: DictStrAny),
   from_Slice(start: int, stop: OptionInt),
@@ -105,7 +106,7 @@ datatype DictStrAny {
 //
 // The Python-through-Laurel pipeline is entirely Any-typed: all user
 // variables and function inputs/outputs are wrapped in the Any datatype.
-// Consequently, re_match/re_search/re_fullmatch return Any (from_none
+// Consequently, re_match/re_search/re_fullmatch return Any (from_None
 // or from_ClassInstance wrapping a re_Match).  If the pipeline ever
 // moves to concrete types, these should return re_Match | None directly.
 //
@@ -185,7 +186,7 @@ function Str.Length(s: string): int external;
 
 function mk_re_Match(s : string) : Any {
   from_ClassInstance("re_Match",
-    DictStrAny_cons("re_match_string", from_string(s),
+    DictStrAny_cons("re_match_string", from_str(s),
       DictStrAny_cons("re_match_pos", from_int(0),
         DictStrAny_cons("re_match_endpos", from_int(Str.Length(s)),
           DictStrAny_empty()))))
@@ -193,37 +194,37 @@ function mk_re_Match(s : string) : Any {
 
 // re.compile is a no-op: returns the pattern string unchanged.
 function re_compile(pattern : Any) : Any
-  requires Any..isfrom_string(pattern)
+  requires Any..isfrom_str(pattern)
 {
   pattern
 };
 
 function re_fullmatch(pattern : Any, s : Any) : Any
-  requires Any..isfrom_string(pattern) && Any..isfrom_string(s)
+  requires Any..isfrom_str(pattern) && Any..isfrom_str(s)
 {
   if Error..isRePatternError(re_pattern_error(Any..as_string!(pattern)))
   then exception(re_pattern_error(Any..as_string!(pattern)))
   else if re_fullmatch_bool(Any..as_string!(pattern), Any..as_string!(s))
        then mk_re_Match(Any..as_string!(s))
-       else from_none()
+       else from_None()
 };
 function re_match(pattern : Any, s : Any) : Any
-  requires Any..isfrom_string(pattern) && Any..isfrom_string(s)
+  requires Any..isfrom_str(pattern) && Any..isfrom_str(s)
 {
   if Error..isRePatternError(re_pattern_error(Any..as_string!(pattern)))
   then exception(re_pattern_error(Any..as_string!(pattern)))
   else if re_match_bool(Any..as_string!(pattern), Any..as_string!(s))
        then mk_re_Match(Any..as_string!(s))
-       else from_none()
+       else from_None()
 };
 function re_search(pattern : Any, s : Any) : Any
-  requires Any..isfrom_string(pattern) && Any..isfrom_string(s)
+  requires Any..isfrom_str(pattern) && Any..isfrom_str(s)
 {
   if Error..isRePatternError(re_pattern_error(Any..as_string!(pattern)))
   then exception(re_pattern_error(Any..as_string!(pattern)))
   else if re_search_bool(Any..as_string!(pattern), Any..as_string!(s))
        then mk_re_Match(Any..as_string!(s))
-       else from_none()
+       else from_None()
 };
 
 // /////////////////////////////////////////////////////////////////////////////////////
@@ -243,7 +244,7 @@ function isFloat (v: Any) : Any {
 };
 
 function isString (v: Any) : Any {
-  from_bool (Any..isfrom_string(v))
+  from_bool (Any..isfrom_str(v))
 };
 
 function isdatetime (v: Any) : Any {
@@ -251,7 +252,7 @@ function isdatetime (v: Any) : Any {
 };
 
 function isDict (v: Any) : Any {
-  from_bool (Any..isfrom_Dict(v))
+  from_bool (Any..isfrom_DictStrAny(v))
 };
 
 function isList (v: Any) : Any {
@@ -306,13 +307,13 @@ function isError (e: Error) : bool {
 // /////////////////////////////////////////////////////////////////////////////////////
 
 function Any_to_bool (v: Any) : bool
-  requires (Any..isfrom_bool(v) || Any..isfrom_none(v) || Any..isfrom_string(v) || Any..isfrom_int(v) || Any..isfrom_Dict(v) || Any..isfrom_ListAny(v))
+  requires (Any..isfrom_bool(v) || Any..isfrom_None(v) || Any..isfrom_str(v) || Any..isfrom_int(v) || Any..isfrom_DictStrAny(v) || Any..isfrom_ListAny(v))
 {
   if (Any..isfrom_bool(v)) then Any..as_bool!(v) else
-  if (Any..isfrom_none(v)) then false else
-  if (Any..isfrom_string(v)) then !(Any..as_string!(v) == "") else
+  if (Any..isfrom_None(v)) then false else
+  if (Any..isfrom_str(v)) then !(Any..as_string!(v) == "") else
   if (Any..isfrom_int(v)) then !(Any..as_int!(v) == 0) else
-  if (Any..isfrom_Dict(v)) then !(Any..as_Dict!(v) == DictStrAny_empty()) else
+  if (Any..isfrom_DictStrAny(v)) then !(Any..as_Dict!(v) == DictStrAny_empty()) else
   if (Any..isfrom_ListAny(v)) then !(Any..as_ListAny!(v) == ListAny_nil()) else
   false
   //WILL BE ADDED
@@ -345,7 +346,7 @@ function List_extend (l1 : ListAny, l2: ListAny) : ListAny
 function List_get (l : ListAny, i : int) : Any
   requires i >= 0 && i < List_len(l)
 {
-  if ListAny..isListAny_nil(l) then from_none()
+  if ListAny..isListAny_nil(l) then from_None()
   else if  i == 0 then ListAny..head!(l)
   else List_get(ListAny..tail!(l), i - 1)
 };
@@ -391,6 +392,14 @@ function List_set (l : ListAny, i : int, v: Any) : ListAny
 //Require recursive function on int
 function List_repeat (l: ListAny, n: int): ListAny;
 
+function ListAny_range(i: Any) : ListAny;
+
+function range (i: Any) : Any
+  requires Any..isfrom_int(i)
+{
+  from_ListAny (ListAny_range(i))
+};
+
 // /////////////////////////////////////////////////////////////////////////////////////
 // DictStrAny functions
 // /////////////////////////////////////////////////////////////////////////////////////
@@ -404,7 +413,7 @@ function DictStrAny_contains (d : DictStrAny, key: string) : bool
 function DictStrAny_get (d : DictStrAny, key: string) : Any
   requires DictStrAny_contains(d, key)
 {
-  if  DictStrAny..isDictStrAny_empty(d) then from_none()
+  if  DictStrAny..isDictStrAny_empty(d) then from_None()
   else if DictStrAny..key!(d) == key then DictStrAny..val!(d)
   else DictStrAny_get(DictStrAny..tail!(d), key)
 };
@@ -412,11 +421,11 @@ function DictStrAny_get (d : DictStrAny, key: string) : Any
 function DictStrAny_get_or_none (d : DictStrAny, key: string) : Any
 {
   if DictStrAny_contains(d, key) then DictStrAny_get(d, key)
-  else from_none()
+  else from_None()
 };
 
 function Any_get_or_none (dict: Any, key: Any) : Any
-  requires Any..isfrom_Dict(dict) && Any..isfrom_string(key)
+  requires Any..isfrom_DictStrAny(dict) && Any..isfrom_str(key)
 {
   DictStrAny_get_or_none(Any..as_Dict!(dict), Any..as_string!(key))
 };
@@ -429,17 +438,17 @@ function DictStrAny_insert (d : DictStrAny, key: string, val: Any) : DictStrAny
 };
 
 function Any_get (dictOrList: Any, index: Any): Any
-  requires  (Any..isfrom_Dict(dictOrList) && Any..isfrom_string(index) && DictStrAny_contains(Any..as_Dict!(dictOrList), Any..as_string!(index))) ||
+  requires  (Any..isfrom_DictStrAny(dictOrList) && Any..isfrom_str(index) && DictStrAny_contains(Any..as_Dict!(dictOrList), Any..as_string!(index))) ||
             (Any..isfrom_ListAny(dictOrList) && Any..isfrom_int(index) && Any..as_int!(index) >= 0 && Any..as_int!(index) < List_len(Any..as_ListAny!(dictOrList)))||
             (Any..isfrom_ListAny(dictOrList) && Any..isfrom_Slice(index) && Any..start!(index) >= 0 && Any..start!(index) < List_len(Any..as_ListAny!(dictOrList)) &&
-                ((OptionInt..isSome(Any..stop!(index))) &&  OptionInt..unwrap!(Any..stop!(index)) >= 0 && OptionInt..unwrap!(Any..stop!(index)) <= List_len(Any..as_ListAny!(dictOrList)) && Any..start!(index) <= OptionInt..unwrap!(Any..stop!(index))
-                  || (OptionInt..isNone(Any..stop!(index)))))
+                ((OptionInt..isOptSome(Any..stop!(index))) &&  OptionInt..unwrap!(Any..stop!(index)) >= 0 && OptionInt..unwrap!(Any..stop!(index)) <= List_len(Any..as_ListAny!(dictOrList)) && Any..start!(index) <= OptionInt..unwrap!(Any..stop!(index))
+                  || (OptionInt..isOptNone(Any..stop!(index)))))
 {
-  if Any..isfrom_Dict(dictOrList) then
+  if Any..isfrom_DictStrAny(dictOrList) then
     DictStrAny_get(Any..as_Dict!(dictOrList), Any..as_string!(index))
   else if Any..isfrom_ListAny(dictOrList) && Any..isfrom_int(index) then
     List_get(Any..as_ListAny!(dictOrList), Any..as_int!(index))
-  else if Any..isfrom_ListAny(dictOrList) && Any..isfrom_Slice(index) && OptionInt..isSome(Any..stop!(index)) then
+  else if Any..isfrom_ListAny(dictOrList) && Any..isfrom_Slice(index) && OptionInt..isOptSome(Any..stop!(index)) then
     from_ListAny(List_slice(Any..as_ListAny!(dictOrList), Any..start!(index), OptionInt..unwrap!(Any..stop!(index))))
   else
     from_ListAny(List_drop(Any..as_ListAny!(dictOrList), Any..start!(index)))
@@ -449,9 +458,9 @@ function Any_get! (dictOrList: Any, index: Any): Any
 {
   if Any..isexception(dictOrList) then dictOrList
   else if Any..isexception(index) then index
-  else if !(Any..isfrom_Dict(dictOrList) && Any..isfrom_string(index)) && !(Any..isfrom_ListAny(dictOrList) && Any..isfrom_int(index)) then
+  else if !(Any..isfrom_DictStrAny(dictOrList) && Any..isfrom_str(index)) && !(Any..isfrom_ListAny(dictOrList) && Any..isfrom_int(index)) then
     exception (TypeError("Invalid subscription type"))
-  else if Any..isfrom_Dict(dictOrList) && Any..isfrom_string(index) && DictStrAny_contains(Any..as_Dict!(dictOrList), Any..as_string!(index)) then
+  else if Any..isfrom_DictStrAny(dictOrList) && Any..isfrom_str(index) && DictStrAny_contains(Any..as_Dict!(dictOrList), Any..as_string!(index)) then
     DictStrAny_get(Any..as_Dict!(dictOrList), Any..as_string!(index))
   else if Any..isfrom_ListAny(dictOrList) && Any..isfrom_int(index) && Any..as_int!(index) >= 0 && Any..as_int!(index) < List_len(Any..as_ListAny!(dictOrList)) then
     List_get(Any..as_ListAny!(dictOrList), Any..as_int!(index))
@@ -460,11 +469,11 @@ function Any_get! (dictOrList: Any, index: Any): Any
 };
 
 function Any_set (dictOrList: Any, index: Any, val: Any): Any
-  requires  (Any..isfrom_Dict(dictOrList) && Any..isfrom_string(index)) ||
+  requires  (Any..isfrom_DictStrAny(dictOrList) && Any..isfrom_str(index)) ||
             (Any..isfrom_ListAny(dictOrList) && Any..isfrom_int(index) && Any..as_int!(index) >= 0 && Any..as_int!(index) < List_len(Any..as_ListAny!(dictOrList)))
 {
-  if Any..isfrom_Dict(dictOrList) then
-    from_Dict(DictStrAny_insert(Any..as_Dict!(dictOrList), Any..as_string!(index), val))
+  if Any..isfrom_DictStrAny(dictOrList) then
+    from_DictStrAny(DictStrAny_insert(Any..as_Dict!(dictOrList), Any..as_string!(index), val))
   else
     from_ListAny(List_set(Any..as_ListAny!(dictOrList), Any..as_int!(index), val))
 };
@@ -474,10 +483,10 @@ function Any_set! (dictOrList: Any, index: Any, val: Any): Any
   if Any..isexception(dictOrList) then dictOrList
   else if Any..isexception(index) then index
   else if Any..isexception(val) then val
-  else if !(Any..isfrom_Dict(dictOrList) && Any..isfrom_string(index)) && !(Any..isfrom_ListAny(dictOrList) && Any..isfrom_int(index)) then
+  else if !(Any..isfrom_DictStrAny(dictOrList) && Any..isfrom_str(index)) && !(Any..isfrom_ListAny(dictOrList) && Any..isfrom_int(index)) then
     exception (TypeError("Invalid subscription type"))
-  else if Any..isfrom_Dict(dictOrList) && Any..isfrom_string(index) then
-    from_Dict(DictStrAny_insert(Any..as_Dict!(dictOrList), Any..as_string!(index), val))
+  else if Any..isfrom_DictStrAny(dictOrList) && Any..isfrom_str(index) then
+    from_DictStrAny(DictStrAny_insert(Any..as_Dict!(dictOrList), Any..as_string!(index), val))
   else if Any..isfrom_ListAny(dictOrList) && Any..isfrom_int(index) && Any..as_int!(index) >= 0 && Any..as_int!(index) < List_len(Any..as_ListAny!(dictOrList)) then
     from_ListAny(List_set(Any..as_ListAny!(dictOrList), Any..as_int!(index), val))
   else
@@ -493,10 +502,10 @@ function Any_sets (indices: ListAny, dictOrList: Any, val: Any): Any
 };
 
 function PIn (v: Any, dictOrList: Any) : Any
-  requires (Any..isfrom_Dict(dictOrList) && Any..isfrom_string(v)) || Any..isfrom_ListAny(dictOrList)
+  requires (Any..isfrom_DictStrAny(dictOrList) && Any..isfrom_str(v)) || Any..isfrom_ListAny(dictOrList)
 {
   from_bool(
-    if Any..isfrom_Dict(dictOrList) then
+    if Any..isfrom_DictStrAny(dictOrList) then
       DictStrAny_contains(Any..as_Dict!(dictOrList), Any..as_string!(v))
     else
       List_contains(Any..as_ListAny!(dictOrList), v)
@@ -504,10 +513,10 @@ function PIn (v: Any, dictOrList: Any) : Any
 };
 
 function PNotIn ( v: Any, dictOrList: Any) : Any
-  requires (Any..isfrom_Dict(dictOrList) && Any..isfrom_string(v)) || Any..isfrom_ListAny(dictOrList)
+  requires (Any..isfrom_DictStrAny(dictOrList) && Any..isfrom_str(v)) || Any..isfrom_ListAny(dictOrList)
 {
   from_bool(
-    if Any..isfrom_Dict(dictOrList) then
+    if Any..isfrom_DictStrAny(dictOrList) then
       !DictStrAny_contains(Any..as_Dict!(dictOrList), Any..as_string!(v))
     else
       !List_contains(Any..as_ListAny!(dictOrList), v)
@@ -574,7 +583,7 @@ function PNot (v: Any) : Any
     from_bool(!(Any..as_int!(v) == 0))
   else if Any..isfrom_float(v) then
     from_bool(!(Any..as_float!(v) == 0.0))
-  else if Any..isfrom_string(v) then
+  else if Any..isfrom_str(v) then
     from_bool(!(Any..as_string!(v) == ""))
   else if Any..isfrom_ListAny(v) then
     from_bool(!(List_len(Any..as_ListAny!(v)) == 0))
@@ -607,8 +616,8 @@ function PAdd (v1: Any, v2: Any) : Any
     from_float(Any..as_float!(v1) + int_to_real(Any..as_int!(v2)) )
   else if Any..isfrom_float(v1) && Any..isfrom_float(v2) then
     from_float(Any..as_float!(v1) + Any..as_float!(v2))
-  else if Any..isfrom_string(v1) && Any..isfrom_string(v2) then
-    from_string(Str.Concat(Any..as_string!(v1),Any..as_string!(v2)))
+  else if Any..isfrom_str(v1) && Any..isfrom_str(v2) then
+    from_str(Str.Concat(Any..as_string!(v1),Any..as_string!(v2)))
   else if Any..isfrom_ListAny(v1) && Any..isfrom_ListAny(v2) then
     from_ListAny(List_extend(Any..as_ListAny!(v1),Any..as_ListAny!(v2)))
   else if Any..isfrom_datetime(v1) && Any..isfrom_int(v2) then
@@ -661,20 +670,20 @@ function PMul (v1: Any, v2: Any) : Any
     from_float(bool_to_real(Any..as_bool!(v1)) * Any..as_float!(v2))
   else if Any..isfrom_float(v1) && Any..isfrom_bool(v2) then
     from_float(Any..as_float!(v1) * bool_to_real(Any..as_bool!(v2)))
-  else if Any..isfrom_bool(v1) && Any..isfrom_string(v2) then
-    if Any..as_bool!(v1) then v2 else from_string("")
-  else if Any..isfrom_string(v1) && Any..isfrom_bool(v2) then
-    if Any..as_bool!(v2) then v1 else from_string("")
+  else if Any..isfrom_bool(v1) && Any..isfrom_str(v2) then
+    if Any..as_bool!(v1) then v2 else from_str("")
+  else if Any..isfrom_str(v1) && Any..isfrom_bool(v2) then
+    if Any..as_bool!(v2) then v1 else from_str("")
   else if Any..isfrom_int(v1) && Any..isfrom_int(v2) then
     from_int(Any..as_int!(v1) * Any..as_int!(v2))
   else if Any..isfrom_int(v1) && Any..isfrom_float(v2) then
     from_float(int_to_real(Any..as_int!(v1)) * Any..as_float!(v2))
   else if Any..isfrom_float(v1) && Any..isfrom_int(v2) then
     from_float(Any..as_float!(v1) * int_to_real(Any..as_int!(v2)) )
-  else if Any..isfrom_int(v1) && Any..isfrom_string(v2) then
-    from_string(string_repeat(Any..as_string!(v2), Any..as_int!(v1)))
-  else if Any..isfrom_string(v1) && Any..isfrom_int(v2) then
-    from_string(string_repeat(Any..as_string!(v1), Any..as_int!(v2)))
+  else if Any..isfrom_int(v1) && Any..isfrom_str(v2) then
+    from_str(string_repeat(Any..as_string!(v2), Any..as_int!(v1)))
+  else if Any..isfrom_str(v1) && Any..isfrom_int(v2) then
+    from_str(string_repeat(Any..as_string!(v1), Any..as_int!(v2)))
   else if Any..isfrom_int(v1) && Any..isfrom_ListAny(v2) then
     from_ListAny(List_repeat(Any..as_ListAny!(v2), Any..as_int!(v1)))
   else if Any..isfrom_ListAny(v1) && Any..isfrom_int(v2) then
@@ -735,7 +744,7 @@ function PLt (v1: Any, v2: Any) : Any
     from_bool(Any..as_float!(v1) < int_to_real(Any..as_int!(v2)))
   else if Any..isfrom_float(v1) && Any..isfrom_float(v2) then
     from_bool(Any..as_float!(v1) < Any..as_float!(v2))
-  else if Any..isfrom_string(v1) && Any..isfrom_string(v2) then
+  else if Any..isfrom_str(v1) && Any..isfrom_str(v2) then
     from_bool(string_lt(Any..as_string!(v1), Any..as_string!(v2)))
   else if Any..isfrom_ListAny(v1) && Any..isfrom_ListAny(v2) then
     from_bool(List_lt(Any..as_ListAny!(v1),Any..as_ListAny!(v2)))
@@ -766,7 +775,7 @@ function PLe (v1: Any, v2: Any) : Any
     from_bool(Any..as_float!(v1) <= int_to_real(Any..as_int!(v2)))
   else if Any..isfrom_float(v1) && Any..isfrom_float(v2) then
     from_bool(Any..as_float!(v1) <= Any..as_float!(v2))
-  else if Any..isfrom_string(v1) && Any..isfrom_string(v2) then
+  else if Any..isfrom_str(v1) && Any..isfrom_str(v2) then
     from_bool(string_le(Any..as_string!(v1), Any..as_string!(v2)))
   else if Any..isfrom_ListAny(v1) && Any..isfrom_ListAny(v2) then
     from_bool(List_le(Any..as_ListAny!(v1),Any..as_ListAny!(v2)))
@@ -797,7 +806,7 @@ function PGt (v1: Any, v2: Any) : Any
     from_bool(Any..as_float!(v1) > int_to_real(Any..as_int!(v2)))
   else if Any..isfrom_float(v1) && Any..isfrom_float(v2) then
     from_bool(Any..as_float!(v1) > Any..as_float!(v2))
-  else if Any..isfrom_string(v1) && Any..isfrom_string(v2) then
+  else if Any..isfrom_str(v1) && Any..isfrom_str(v2) then
     from_bool(string_gt(Any..as_string!(v1), Any..as_string!(v2)))
   else if Any..isfrom_ListAny(v1) && Any..isfrom_ListAny(v2) then
     from_bool(List_gt(Any..as_ListAny!(v1),Any..as_ListAny!(v2)))
@@ -828,7 +837,7 @@ function PGe (v1: Any, v2: Any) : Any
     from_bool(Any..as_float!(v1) >= int_to_real(Any..as_int!(v2)))
   else if Any..isfrom_float(v1) && Any..isfrom_float(v2) then
     from_bool(Any..as_float!(v1) >= Any..as_float!(v2))
-  else if Any..isfrom_string(v1) && Any..isfrom_string(v2) then
+  else if Any..isfrom_str(v1) && Any..isfrom_str(v2) then
     from_bool(string_ge(Any..as_string!(v1), Any..as_string!(v2)))
   else if Any..isfrom_ListAny(v1) && Any..isfrom_ListAny(v2) then
     from_bool(List_ge(Any..as_ListAny!(v1),Any..as_ListAny!(v2)))
@@ -851,13 +860,13 @@ function PNEq (v: Any, v': Any) : Any {
 // /////////////////////////////////////////////////////////////////////////////////////
 
 function PAnd (v1: Any, v2: Any) : Any
-  requires (Any..isfrom_bool(v1) || Any..isfrom_none(v1) || Any..isfrom_string(v1) || Any..isfrom_int(v1))
+  requires (Any..isfrom_bool(v1) || Any..isfrom_None(v1) || Any..isfrom_str(v1) || Any..isfrom_int(v1))
 {
   if ! Any_to_bool (v1) then v1 else v2
 };
 
 function POr (v1: Any, v2: Any) : Any
-  requires (Any..isfrom_bool(v1) || Any..isfrom_none(v1) || Any..isfrom_string(v1) || Any..isfrom_int(v1))
+  requires (Any..isfrom_bool(v1) || Any..isfrom_None(v1) || Any..isfrom_str(v1) || Any..isfrom_int(v1))
 {
   if Any_to_bool (v1) then v1 else v2
 };
@@ -902,14 +911,14 @@ function PMod (v1: Any, v2: Any) : Any
 function to_string(a: Any) : string;
 
 function to_string_any(a: Any) : Any {
-  from_string(to_string(a))
+  from_str(to_string(a))
 };
 
 function datetime_strptime(dtstring: Any, format: Any) : Any;
 
 procedure datetime_tostring_cancel(dt: Any)
-  invokeOn datetime_strptime(to_string_any(dt), from_string ("%Y-%m-%d"))
-  ensures datetime_strptime(to_string_any(dt), from_string ("%Y-%m-%d")) == dt;
+  invokeOn datetime_strptime(to_string_any(dt), from_str ("%Y-%m-%d"))
+  ensures datetime_strptime(to_string_any(dt), from_str ("%Y-%m-%d")) == dt;
 
 procedure datetime_date(d: Any) returns (ret: Any, error: Error)
   requires Any..isfrom_datetime(d) summary "(Origin_datetime_date_Requires)d_type"
@@ -923,7 +932,7 @@ procedure datetime_date(d: Any) returns (ret: Any, error: Error)
     error := NoError()
   }
   else {
-    ret := from_none();
+    ret := from_None();
     error := TypeError("Input must be datetime")
   }
 };
@@ -936,8 +945,8 @@ procedure datetime_now() returns (ret: Any)
 };
 
 procedure timedelta_func(days: Any, hours: Any) returns (delta : Any, maybe_except: Error)
-  requires Any..isfrom_none(days) || Any..isfrom_int(days) summary "(Origin_timedelta_Requires)"
-  requires Any..isfrom_none(hours) || Any..isfrom_int(hours) summary "(Origin_timedelta_Requires)hours_type"
+  requires Any..isfrom_None(days) || Any..isfrom_int(days) summary "(Origin_timedelta_Requires)"
+  requires Any..isfrom_None(hours) || Any..isfrom_int(hours) summary "(Origin_timedelta_Requires)hours_type"
   requires Any..isfrom_int(days) ==> Any..as_int!(days)>=0 summary "(Origin_timedelta_Requires)days_pos"
   requires Any..isfrom_int(hours) ==> Any..as_int!(hours)>=0 summary "(Origin_timedelta_Requires)hours_pos"
   ensures Any..isfrom_int(delta) && Any..as_int!(delta)>=0 summary "ret_pos"
@@ -958,14 +967,14 @@ procedure timedelta_func(days: Any, hours: Any) returns (delta : Any, maybe_exce
 // /////////////////////////////////////////////////////////////////////////////////////
 
 procedure test_helper_procedure(req_name : Any, opt_name : Any) returns (ret: Any, maybe_except: Error)
-  requires req_name == from_string("foo") summary "(Origin_test_helper_procedure_Requires)req_name_is_foo"
-  requires (Any..isfrom_none(opt_name)) || (Any..isfrom_string(opt_name)) summary "(Origin_test_helper_procedure_Requires)req_opt_name_none_or_str"
-  requires (opt_name == from_none()) || (opt_name == from_string("bar")) summary "(Origin_test_helper_procedure_Requires)req_opt_name_none_or_bar"
+  requires req_name == from_str("foo") summary "(Origin_test_helper_procedure_Requires)req_name_is_foo"
+  requires (Any..isfrom_None(opt_name)) || (Any..isfrom_str(opt_name)) summary "(Origin_test_helper_procedure_Requires)req_opt_name_none_or_str"
+  requires (opt_name == from_None()) || (opt_name == from_str("bar")) summary "(Origin_test_helper_procedure_Requires)req_opt_name_none_or_bar"
   ensures (Error..isNoError(maybe_except)) summary "ensures_maybe_except_none"
 {
-  assert req_name == from_string("foo") summary "assert_name_is_foo";
-  assert (Any..isfrom_none(opt_name)) || (Any..isfrom_string(opt_name)) summary "assert_opt_name_none_or_str";
-  assert (opt_name == from_none()) || (opt_name == from_string("bar")) summary "assert_opt_name_none_or_bar";
+  assert req_name == from_str("foo") summary "assert_name_is_foo";
+  assert (Any..isfrom_None(opt_name)) || (Any..isfrom_str(opt_name)) summary "assert_opt_name_none_or_str";
+  assert (opt_name == from_None()) || (opt_name == from_str("bar")) summary "assert_opt_name_none_or_bar";
   assume (Error..isNoError(maybe_except)) // summary "assume_maybe_except_none"
 };
 
