@@ -161,13 +161,13 @@ def primitiveSerializerMethod (qid : QualifiedIdent) : Option String :=
   | _ => .none
 
 /-- Get the serializer method reference for a SyntaxCat's inner type (used in Option/List). -/
-partial def serializerFnRef (c : SyntaxCat) : String :=
+def serializerFnRef (c : SyntaxCat) : String :=
   match primitiveSerializerMethod c.name with
   | some method => s!"$s::{method}"
   | none => "$s::serialize"
 
 /-- Generate the serialization expression for a single field. -/
-partial def serializeFieldExpr (kind : ArgDeclKind) (fieldName : String) : String :=
+def serializeFieldExpr (kind : ArgDeclKind) (fieldName : String) : String :=
   match kind with
   | .type _ => s!"$s.serialize({fieldName})"
   | .cat c =>
