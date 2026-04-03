@@ -764,16 +764,19 @@ def SMT.Context.getConstructorNames (ctx : SMT.Context) : Std.HashSet String :=
     if kind == .constructor then acc.insert name else acc
 
 /--
-Convert a counterexample map from `SMT.Term` values to `LExpr` values,
+Convert a model map from `SMT.Term` values to `LExpr` values,
 so that model values can be displayed using Core's expression formatter.
 
 `constructorNames` allows zero-argument constructors (which the SMT solver
 returns as plain variables) to be distinguished from ordinary variables (.fvar)
 -/
-def convertCounterEx (cex : Imperative.SMT.CounterEx Expression.Ident)
+def convertModel (model : Imperative.SMT.Model Expression.Ident)
     (constructorNames : Std.HashSet String := {})
     : List (Expression.Ident × LExpr CoreLParams.mono) :=
-  cex.map fun (id, t) => (id, smtTermToLExpr t constructorNames)
+  model.map fun (id, t) => (id, smtTermToLExpr t constructorNames)
+
+/-- Backward-compatible alias. -/
+@[deprecated convertModel (since := "2026-04-03")] abbrev convertCounterEx := @convertModel
 
 end -- public section
 
