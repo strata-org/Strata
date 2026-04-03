@@ -141,10 +141,11 @@ the `inline` flag). Note that it might also be possible to evaluate with
 `eval_fn`. A key correctness property is that doing so will yield the same
 result. Note that this rule does not enforce an evaluation order. -/
 | expand_fn:
-  ∀ (e callee fnbody new_body:LExpr Tbase.mono) args fn,
+  ∀ (e callee fnbody new_body:LExpr Tbase.mono) args fn tySubst,
     F.callOfLFunc e = .some (callee,args,fn) →
     fn.body = .some fnbody →
-    new_body = LExpr.substFvarsLifting fnbody (fn.inputs.keys.zip args) →
+    LFunc.computeTypeSubst fn callee args = .some tySubst →
+    new_body = LExpr.substFvarsLifting (fnbody.applySubst tySubst) (fn.inputs.keys.zip args) →
     Step F rf e new_body
 
 /-- Evaluate a built-in function when a concrete evaluation function is
