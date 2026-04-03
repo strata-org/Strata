@@ -36,7 +36,7 @@ the result by factoring out common subexpressions.
 
 ## Design
 
-The deduplication operates on two levels:
+The deduplication operates at two levels:
 
 1. **Proof obligation level**: `deduplicateObligation` extracts common
    subexpressions from a single proof obligation's assumptions and obligation
@@ -55,6 +55,10 @@ public section
 namespace Core.Deduplication
 
 open Lambda Imperative
+
+---------------------------------------------------------------------
+-- Expression analysis utilities
+---------------------------------------------------------------------
 
 /-- Check if an expression is a leaf node that should not be deduplicated. -/
 private def isTrivial (e : Expression.Expr) : Bool :=
@@ -75,12 +79,15 @@ partial def hasBVar (e : Expression.Expr) : Bool :=
   | .quant _ _ _ _ tr body => hasBVar tr || hasBVar body
 
 /-- Collect the head function and arguments of a curried application spine. -/
-private partial def uncurry (e : Expression.Expr) : Expression.Expr × List Expression.Expr :=
-  match e with
-  | .app _ fn arg =>
-    let (head, args) := uncurry fn
-    (head, args ++ [arg])
-  | other => (other, [])
+private partial def uncurry (e : Expression.Expr) :
+    Expression.Expr × List Expression.Expr :=
+  go e []
+where
+  go (e : Expression.Expr) (acc : List Expression.Expr) :
+      Expression.Expr × List Expression.Expr :=
+    match e with
+    | .app _ fn arg => go fn (arg :: acc)
+    | other => (other, acc)
 
 /-- Collect non-trivial subexpressions from an expression, suitable for
     deduplication. For function applications, collects the full (curried)
@@ -104,7 +111,8 @@ partial def collectSubexprs (e : Expression.Expr) : List Expression.Expr :=
 private def findDuplicates (exprs : List Expression.Expr) : List Expression.Expr :=
   go exprs [] []
 where
-  go : List Expression.Expr → List Expression.Expr → List Expression.Expr → List Expression.Expr
+  go : List Expression.Expr → List Expression.Expr → List Expression.Expr →
+       List Expression.Expr
   | [], _, dups => dups.reverse
   | e :: rest, seen, dups =>
     let eErased := e.eraseTypes
@@ -121,12 +129,15 @@ partial def replaceExpr (target replacement : Expression.Expr)
   else match e with
   | .const _ _ | .bvar _ _ | .fvar _ _ _ | .op _ _ _ => e
   | .app m fn arg =>
-    .app m (replaceExpr target replacement fn) (replaceExpr target replacement arg)
+    .app m (replaceExpr target replacement fn)
+           (replaceExpr target replacement arg)
   | .ite m c t f =>
-    .ite m (replaceExpr target replacement c) (replaceExpr target replacement t)
+    .ite m (replaceExpr target replacement c)
+           (replaceExpr target replacement t)
            (replaceExpr target replacement f)
   | .eq m e1 e2 =>
-    .eq m (replaceExpr target replacement e1) (replaceExpr target replacement e2)
+    .eq m (replaceExpr target replacement e1)
+          (replaceExpr target replacement e2)
   | .abs m name ty body =>
     .abs m name ty (replaceExpr target replacement body)
   | .quant m k name ty tr body =>
@@ -134,8 +145,7 @@ partial def replaceExpr (target replacement : Expression.Expr)
                        (replaceExpr target replacement body)
 
 /-- Get the type annotation from an expression, if available. -/
-private partial def getExprType? (e : Expression.Expr) : Option LMonoTy :=
-  match e with
+private def getExprType? : Expression.Expr → Option LMonoTy
   | .fvar _ _ ty => ty
   | .op _ _ ty => ty
   | .const _ c => some c.ty
@@ -162,10 +172,12 @@ private partial def isSubexprOf (sub e : Expression.Expr) : Bool :=
   else match e with
   | .const _ _ | .bvar _ _ | .fvar _ _ _ | .op _ _ _ => false
   | .app _ fn arg => isSubexprOf sub fn || isSubexprOf sub arg
-  | .ite _ c t f => isSubexprOf sub c || isSubexprOf sub t || isSubexprOf sub f
+  | .ite _ c t f =>
+    isSubexprOf sub c || isSubexprOf sub t || isSubexprOf sub f
   | .eq _ e1 e2 => isSubexprOf sub e1 || isSubexprOf sub e2
   | .abs _ _ _ body => isSubexprOf sub body
-  | .quant _ _ _ _ tr body => isSubexprOf sub tr || isSubexprOf sub body
+  | .quant _ _ _ _ tr body =>
+    isSubexprOf sub tr || isSubexprOf sub body
 
 /-- Remove entries that are subexpressions of other entries in the list. -/
 private def removeSubsumed (exprs : List Expression.Expr) : List Expression.Expr :=
@@ -173,12 +185,22 @@ private def removeSubsumed (exprs : List Expression.Expr) : List Expression.Expr
     !exprs.any (fun other =>
       exprSize other > exprSize e && isSubexprOf e other))
 
+/-- Shared pipeline: collect subexpressions, filter, find duplicates, remove
+    subsumed, and sort by size (largest first). -/
+private def findDeduplicationTargets (exprs : List Expression.Expr) :
+    List Expression.Expr :=
+  let candidates := exprs.filter (fun e => !isTrivial e && !hasBVar e)
+  let duplicates := findDuplicates candidates
+  let duplicates := removeSubsumed duplicates
+  duplicates.mergeSort (fun a b => exprSize a > exprSize b)
+
 ---------------------------------------------------------------------
 -- Proof obligation level deduplication
 ---------------------------------------------------------------------
 
 /-- Collect subexpressions from all expressions in a proof obligation. -/
-private def collectFromObligation (ob : ProofObligation Expression) : List Expression.Expr :=
+private def collectFromObligation (ob : ProofObligation Expression) :
+    List Expression.Expr :=
   let assumptionExprs := ob.assumptions.flatMap (·.map (·.snd))
   let allExprs := assumptionExprs ++ [ob.obligation]
   allExprs.flatMap collectSubexprs
@@ -187,12 +209,8 @@ private def collectFromObligation (ob : ProofObligation Expression) : List Expre
     into fresh variable definitions added as equality assumptions. -/
 def deduplicateObligation (ob : ProofObligation Expression) (startIdx : Nat) :
     ProofObligation Expression × Nat :=
-  let allSubexprs := collectFromObligation ob
-  let candidates := allSubexprs.filter (fun e => !isTrivial e && !hasBVar e)
-  let duplicates := findDuplicates candidates
-  let duplicates := removeSubsumed duplicates
-  let sorted := duplicates.mergeSort (fun a b => exprSize a > exprSize b)
-  let (ob', nextIdx) := sorted.foldl (fun (ob, idx) dup =>
+  let targets := findDeduplicationTargets (collectFromObligation ob)
+  let (ob', nextIdx) := targets.foldl (fun (ob, idx) dup =>
     let freshName : CoreIdent := ⟨s!"$__dedup_{idx}", ()⟩
     let freshTy := getExprType? dup
     let freshVar : Expression.Expr := .fvar () freshName freshTy
@@ -209,69 +227,69 @@ def deduplicateObligation (ob : ProofObligation Expression) (startIdx : Nat) :
   (ob', nextIdx)
 
 ---------------------------------------------------------------------
--- Program level deduplication
+-- Statement-level expression mapping
 ---------------------------------------------------------------------
 
-/-- Collect all expressions from a list of statements. -/
-private partial def collectFromStatements : Statements → List Expression.Expr
+/-- Apply a function to all user-facing expressions in a list of statements. -/
+private partial def mapExprsInStatements (f : Expression.Expr → Expression.Expr) :
+    Statements → Statements
   | [] => []
-  | s :: rest => collectFromStatement s ++ collectFromStatements rest
+  | s :: rest => mapExprsInStatement f s :: mapExprsInStatements f rest
 where
-  collectFromStatement : Statement → List Expression.Expr
+  mapExprsInStatement (f : Expression.Expr → Expression.Expr) : Statement → Statement
+  | .cmd (.cmd (.assert l e md)) => .cmd (.cmd (.assert l (f e) md))
+  | .cmd (.cmd (.assume l e md)) => .cmd (.cmd (.assume l (f e) md))
+  | .cmd (.cmd (.cover l e md)) => .cmd (.cmd (.cover l (f e) md))
+  | .cmd (.cmd (.init n ty (.det e) md)) => .cmd (.cmd (.init n ty (.det (f e)) md))
+  | .cmd (.cmd (.set n (.det e) md)) => .cmd (.cmd (.set n (.det (f e)) md))
+  | .cmd (.call lhs pname args md) => .cmd (.call lhs pname (args.map f) md)
+  | .block l ss md => .block l (mapExprsInStatements f ss) md
+  | .ite (.det c) tss ess md =>
+    .ite (.det (f c)) (mapExprsInStatements f tss) (mapExprsInStatements f ess) md
+  | .ite .nondet tss ess md =>
+    .ite .nondet (mapExprsInStatements f tss) (mapExprsInStatements f ess) md
+  | .loop (.det g) measure inv body md =>
+    .loop (.det (f g)) measure (inv.map f) (mapExprsInStatements f body) md
+  | .loop .nondet measure inv body md =>
+    .loop .nondet measure (inv.map f) (mapExprsInStatements f body) md
+  | other => other
+
+/-- Collect all user-facing expressions from a list of statements. -/
+private partial def collectExprsFromStatements : Statements → List Expression.Expr
+  | [] => []
+  | s :: rest => collectExprsFromStatement s ++ collectExprsFromStatements rest
+where
+  collectExprsFromStatement : Statement → List Expression.Expr
   | .cmd (.cmd (.assert _ e _)) => collectSubexprs e
   | .cmd (.cmd (.assume _ e _)) => collectSubexprs e
   | .cmd (.cmd (.cover _ e _)) => collectSubexprs e
   | .cmd (.cmd (.init _ _ (.det e) _)) => collectSubexprs e
   | .cmd (.cmd (.set _ (.det e) _)) => collectSubexprs e
   | .cmd (.call _ _ args _) => args.flatMap collectSubexprs
-  | .block _ ss _ => collectFromStatements ss
+  | .block _ ss _ => collectExprsFromStatements ss
   | .ite (.det c) tss ess _ =>
-    collectSubexprs c ++ collectFromStatements tss ++ collectFromStatements ess
+    collectSubexprs c ++ collectExprsFromStatements tss ++
+    collectExprsFromStatements ess
   | .ite .nondet tss ess _ =>
-    collectFromStatements tss ++ collectFromStatements ess
+    collectExprsFromStatements tss ++ collectExprsFromStatements ess
+  | .loop (.det g) _ inv body _ =>
+    collectSubexprs g ++ inv.flatMap collectSubexprs ++
+    collectExprsFromStatements body
+  | .loop .nondet _ inv body _ =>
+    inv.flatMap collectSubexprs ++ collectExprsFromStatements body
   | _ => []
 
-/-- Replace an expression in all statements. -/
-private partial def replaceInStatements (target replacement : Expression.Expr) :
-    Statements → Statements
-  | [] => []
-  | s :: rest => replaceInStatement target replacement s :: replaceInStatements target replacement rest
-where
-  replaceInStatement (target replacement : Expression.Expr) : Statement → Statement
-  | .cmd (.cmd (.assert l e md)) =>
-    .cmd (.cmd (.assert l (replaceExpr target replacement e) md))
-  | .cmd (.cmd (.assume l e md)) =>
-    .cmd (.cmd (.assume l (replaceExpr target replacement e) md))
-  | .cmd (.cmd (.cover l e md)) =>
-    .cmd (.cmd (.cover l (replaceExpr target replacement e) md))
-  | .cmd (.cmd (.init n ty (.det e) md)) =>
-    .cmd (.cmd (.init n ty (.det (replaceExpr target replacement e)) md))
-  | .cmd (.cmd (.set n (.det e) md)) =>
-    .cmd (.cmd (.set n (.det (replaceExpr target replacement e)) md))
-  | .cmd (.call lhs pname args md) =>
-    .cmd (.call lhs pname (args.map (replaceExpr target replacement)) md)
-  | .block l ss md =>
-    .block l (replaceInStatements target replacement ss) md
-  | .ite (.det c) tss ess md =>
-    .ite (.det (replaceExpr target replacement c))
-         (replaceInStatements target replacement tss)
-         (replaceInStatements target replacement ess) md
-  | .ite .nondet tss ess md =>
-    .ite .nondet
-         (replaceInStatements target replacement tss)
-         (replaceInStatements target replacement ess) md
-  | other => other
+---------------------------------------------------------------------
+-- Program level deduplication
+---------------------------------------------------------------------
 
 /-- Deduplicate a procedure's body by extracting common subexpressions into
     `var` declarations prepended to the body. Returns the modified body and
     the next available dedup index. -/
 def deduplicateBody (body : Statements) (startIdx : Nat) : Statements × Nat :=
-  let allSubexprs := collectFromStatements body
-  let candidates := allSubexprs.filter (fun e => !isTrivial e && !hasBVar e)
-  let duplicates := findDuplicates candidates
-  let duplicates := removeSubsumed duplicates
-  let sorted := duplicates.mergeSort (fun a b => exprSize a > exprSize b)
-  let (varDecls, body', nextIdx) := sorted.foldl (fun (decls, body, idx) dup =>
+  let targets := findDeduplicationTargets (collectExprsFromStatements body)
+  -- Build var declarations in reverse, then reverse at the end
+  let (revDecls, body', nextIdx) := targets.foldl (fun (decls, body, idx) dup =>
     let freshName : CoreIdent := ⟨s!"$__dedup_{idx}", ()⟩
     let freshTy := getExprType? dup
     let freshVar : Expression.Expr := .fvar () freshName freshTy
@@ -279,21 +297,21 @@ def deduplicateBody (body : Statements) (startIdx : Nat) : Statements × Nat :=
       | some mty => LTy.forAll [] mty
       | none => LTy.forAll ["α"] (.ftvar "α")
     let varDecl := Statement.init freshName ty (.det dup) .empty
-    let body' := replaceInStatements dup freshVar body
-    (decls ++ [varDecl], body', idx + 1)
+    let body' := mapExprsInStatements (replaceExpr dup freshVar) body
+    (varDecl :: decls, body', idx + 1)
   ) ([], body, startIdx)
-  (varDecls ++ body', nextIdx)
+  (revDecls.reverse ++ body', nextIdx)
 
 /-- Deduplicate all procedures in a program. -/
 def deduplicateProgram (p : Program) : Program :=
-  let (decls, _) := p.decls.foldl (fun (acc, idx) decl =>
+  let (revDecls, _, _) := p.decls.foldl (fun (acc, idx, _) decl =>
     match decl with
     | .proc proc md =>
       let (body', idx') := deduplicateBody proc.body idx
-      (acc ++ [.proc { proc with body := body' } md], idx')
-    | other => (acc ++ [other], idx)
-  ) ([], 0)
-  { decls }
+      (.proc { proc with body := body' } md :: acc, idx', ())
+    | other => (other :: acc, idx, ())
+  ) ([], 0, ())
+  { decls := revDecls.reverse }
 
 end Core.Deduplication
 
