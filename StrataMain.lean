@@ -364,7 +364,8 @@ def pyAnalyzeCommand : Command where
                 vcDirectory := vcDir }
       let vcResults ←
         match ← Core.verifyProgram newPgm options
-                  (moreFns := Strata.Python.ReFactory) |>.toBaseIO with
+                  (moreFns := Strata.Python.ReFactory)
+                  (externalPhases := [Strata.frontEndPhase]) |>.toBaseIO with
         | .ok r => pure r
         | .error msg => exitInternalError msg
       let mfm : Option (String × Lean.FileMap) := match pySourceOpt with

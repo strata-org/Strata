@@ -89,7 +89,7 @@ Result: ✅ pass
 
 Obligation: measure_decrease_0
 Property: assert
-Result: ❌ fail
+Result: ❓ unknown
 
 Obligation: countUp_ensures_1
 Property: assert
@@ -575,11 +575,11 @@ Result: ✅ pass
 
 Obligation: measure_lb_0
 Property: assert
-Result: ❌ fail
+Result: ❓ unknown
 
 Obligation: loop_measure_end_calls_Int.SafeDiv_0
 Property: division by zero check
-Result: ❌ fail
+Result: ❓ unknown
 
 Obligation: arbitrary_iter_maintain_invariant_0_0
 Property: assert
@@ -587,7 +587,7 @@ Result: ✅ pass
 
 Obligation: measure_decrease_0
 Property: assert
-Result: ❌ fail
+Result: ❓ unknown
 
 Obligation: countdownByDBad_ensures_1
 Property: assert
@@ -644,11 +644,11 @@ Result: ✅ pass
 
 Obligation: measure_lb_0
 Property: assert
-Result: ❌ fail
+Result: ❓ unknown
 
 Obligation: loop_measure_end_calls_Int.SafeDiv_0
 Property: division by zero check
-Result: ❌ fail
+Result: ❓ unknown
 
 Obligation: arbitrary_iter_maintain_invariant_0_0
 Property: assert
@@ -656,7 +656,7 @@ Result: ✅ pass
 
 Obligation: measure_decrease_0
 Property: assert
-Result: ❌ fail
+Result: ❓ unknown
 
 Obligation: countdownMutateD_ensures_2
 Property: assert

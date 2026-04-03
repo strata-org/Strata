@@ -1,9 +1,9 @@
 test_nested_calls.py(10, 4): ✅ pass - assert_assert(153)_calls_Any_to_bool_0
-test_nested_calls.py(10, 4): ❌ fail - assert(153)
+test_nested_calls.py(10, 4): ❓ unknown - assert(153)
 test_nested_calls.py(14, 4): ✅ pass - assert_assert(254)_calls_Any_to_bool_0
-test_nested_calls.py(14, 4): ❌ fail - assert(254)
+test_nested_calls.py(14, 4): ❓ unknown - assert(254)
 test_nested_calls.py(18, 4): ✅ pass - assert_assert(356)_calls_Any_to_bool_0
-test_nested_calls.py(18, 4): ❌ fail - assert(356)
+test_nested_calls.py(18, 4): ❓ unknown - assert(356)
 test_nested_calls.py(20, 0): ✅ pass - ite_cond_calls_Any_to_bool_0
-DETAIL: 4 passed, 3 failed, 0 inconclusive
-RESULT: Failures found
+DETAIL: 4 passed, 0 failed, 3 inconclusive
+RESULT: Inconclusive
