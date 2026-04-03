@@ -279,9 +279,19 @@ public def filterPrelude (prelude user : Laurel.Program)
   let depMap ← buildDependencyMap prelude
   let seeds := refs.allNames.fold (init := []) fun acc s => s :: acc
   let needed := reachableNamesAux depMap seeds {}
+  -- When a Composite type is needed, include all its instance methods
+  -- (staticProcedures named "TypeName@method").
+  let neededTypeNames : Std.HashSet String := prelude.types.foldl (init := {}) fun acc td =>
+    if needed.contains td.name.text then acc.insert td.name.text else acc
+  let needed := prelude.staticProcedures.foldl (init := needed) fun acc p =>
+    let name := p.name.text
+    match name.splitOn "@" with
+    | [typeName, _] => if neededTypeNames.contains typeName then acc.insert name else acc
+    | _ => acc
   return { prelude with
-    staticProcedures := prelude.staticProcedures.filter fun p => p.name.text ∈ needed
-    types := prelude.types.filter fun td => td.name.text ∈ needed
-  }
+    staticProcedures := prelude.staticProcedures.filter fun p =>
+      needed.contains p.name.text
+    types := prelude.types.filter fun td =>
+      needed.contains td.name.text }
 
 end Strata.Laurel

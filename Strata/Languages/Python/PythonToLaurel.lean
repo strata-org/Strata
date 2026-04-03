@@ -570,7 +570,21 @@ partial def translateExpr (ctx : TranslationContext) (e : Python.expr SourceRang
     let index ←  match slice with
       | .Slice _ start stop step => translateSlice ctx start.val stop.val step.val
       | _ => translateExpr ctx slice
-    return mkStmtExprMd (.StaticCall "Any_get" [dictOrList, index])
+    -- Emit bounds check for negative integer indices (e.g., xs[-1])
+    let boundsAssert := match slice with
+      | .Constant _ (.ConNeg _ n) _ =>
+        -- xs[-n] requires len(xs) >= n
+        let lenExpr := mkStmtExprMd (.StaticCall "Any_len" [dictOrList])
+        let nExpr := intToAny n.val
+        let cond := mkStmtExprMd (.PrimitiveOp .Geq
+          [mkStmtExprMd (.StaticCall "Any..as_int!" [lenExpr]),
+           mkStmtExprMd (.StaticCall "Any..as_int!" [nExpr])])
+        some (mkStmtExprMd (.Assert cond))
+      | _ => none
+    let access := mkStmtExprMd (.StaticCall "Any_get" [dictOrList, index])
+    match boundsAssert with
+    | some assert => return mkStmtExprMd (.Block [assert, access] none)
+    | none => return access
 
   -- Attribute access: obj.attr or obj.method
   | .Attribute _ obj attr _ => do
@@ -735,7 +749,22 @@ partial def refineFunctionCallExpr (ctx : TranslationContext) (func: Python.expr
             match ctx.importedSymbols[callerTy]? with
             | some (ImportedSymbol.compositeType laurelName) => laurelName
             | _ => callerTy
-          return (resolvedTy ++ "@" ++ callname, some v, false)
+          -- Find the unprefixed alias for the type. PySpec registers methods
+          -- under unprefixed names (e.g., RDS@method) but variable types use
+          -- prefixed Laurel names (e.g., boto3_RDS_RDS).
+          let unprefixedTy := ctx.importedSymbols.fold (init := Option.none) fun found k v =>
+            match found, v with
+            | some _, _ => found
+            | none, .compositeType laurelName =>
+              if laurelName == callerTy && k != callerTy then some k else none
+            | _, _ => none
+          let candidates := [
+            callerTy ++ "@" ++ callname,
+            resolvedTy ++ "@" ++ callname] ++
+            (match unprefixedTy with | some u => [u ++ "@" ++ callname] | none => [])
+          let funcName := candidates.find? (ctx.importedSymbols.contains ·)
+            |>.getD (resolvedTy ++ "@" ++ callname)
+          return (funcName, some v, false)
     | _ => throw (.internalError s!"{repr func} is not a function")
 
 --Kwargs can be a single Dict variable: func_call (**var) or a normal Kwargs (key1 = val1, key2 =val2 ...)
@@ -859,13 +888,27 @@ partial def translateCall (ctx : TranslationContext)
     | .Attribute range _ _ _ => range
     | .Name range _ _ => range
     | _ => .none
-  let funcDecl := ctx.functionSignatures.find? fun x => (x.name == funcName || x.name == funcName ++ "@__init__")
+  let funcDecl :=
+    -- Try the resolved name and the internal Laurel name (for PySpec aliases)
+    let laurelName := match ctx.importedSymbols[funcName]? with
+      | some (.procedure name _ _) => some name
+      | _ => none
+    ctx.functionSignatures.find? fun x =>
+      x.name == funcName || x.name == funcName ++ "@__init__" ||
+      (laurelName.any (· == x.name))
   if funcDecl.isNone && kwords.length > 0 then
     throwUserError f.ann s!"Undeclared function '{funcName}' called with keyword args"
   -- Emit the final call, handling Name vs Attribute dispatch and transparent procedures.
   let callMd := sourceRangeToMetaData ctx.filePath callRange
   let emitCall (callArgs : List StmtExprMd) : Except TranslationError StmtExprMd := do
-    let mkCall (name : String) := mkStmtExprMdWithLoc (StmtExpr.StaticCall name callArgs) callMd
+    let mkCall (name : String) := mkStmtExprMd (StmtExpr.StaticCall name callArgs) callMd
+    -- Check for len() on Composite types (class instances without __len__)
+    if funcName == "Any_len_to_Any" && args.length == 1 then
+      match inferExprType ctx args[0]! with
+      | .ok argType =>
+        if isCompositeType ctx argType then
+          throwUserError f.ann s!"len() is not supported on '{argType}' (no __len__ method)"
+      | .error _ => pure ()
     match f with
     | .Name  _ _ _ =>
         -- If calling str() on a composite-typed variable, use $composite_to_string_any_<type>
@@ -895,12 +938,39 @@ partial def translateCall (ctx : TranslationContext)
     let funcDecl := funcDecl.get!
     let trans_posArgs ← args.mapM (translateExpr ctx)
     let trans_dict ← translateVarKwargs ctx kwords
-    let remainingParams := funcDecl.args.drop args.length
+    let remainingParams := funcDecl.args.drop trans_posArgs.length
     let trans_dictArgs := remainingParams.map fun (argName, _, dflt) =>
       DictStrAny_get_param trans_dict argName dflt.isSome
     let allArgs := trans_posArgs ++ trans_dictArgs
     let kwargsArg := if funcDecl.kwargsName.isSome then [trans_dict] else []
-    emitCall (allArgs ++ kwargsArg)
+    -- Emit type assertions: if a key is present in the dict, its value
+    -- must match the declared parameter type. This catches {"key": None}
+    -- where the parameter type is str/int/bool/float.
+    let mut typeAsserts : List StmtExprMd := []
+    for (argName, argType, _) in remainingParams do
+      let tester? := match argType with
+        | "int" | "integer" => some "Any..isfrom_int"
+        | "str" | "string" => some "Any..isfrom_string"
+        | "bool" | "boolean" => some "Any..isfrom_bool"
+        | "float" | "real" => some "Any..isfrom_float"
+        | _ => none
+      if let some testerName := tester? then
+        let dictExpr := mkStmtExprMd (.StaticCall "Any..as_Dict!" [trans_dict])
+        let keyPresent := mkStmtExprMd (.StaticCall "DictStrAny_contains"
+          [dictExpr, mkStmtExprMd (.LiteralString argName)])
+        let val := DictStrAny_get_param trans_dict argName true
+        let isCorrectType := mkStmtExprMd (.StaticCall testerName [val])
+        let cond := mkStmtExprMd (.PrimitiveOp .Implies [keyPresent, isCorrectType])
+        typeAsserts := typeAsserts ++ [mkStmtExprMd (.Assert cond)]
+    let call ← emitCall (allArgs ++ kwargsArg)
+    if typeAsserts.isEmpty then return call
+    else
+      -- When the call is a Hole (unmodeled procedure), emit assertions
+      -- as a Block without the Hole so they're not dropped.
+      let stmts := match call.val with
+        | .Hole .. => typeAsserts
+        | _ => typeAsserts ++ [call]
+      return mkStmtExprMd (.Block stmts none)
   else
   let (args, kwords, funcdecl_hasKwargs) ←
     combinePositionalAndKeywordArgs args kwords funcDecl methodName callRange
@@ -910,7 +980,36 @@ partial def translateCall (ctx : TranslationContext)
     if kwords.length == 0 then
       if funcdecl_hasKwargs then [DictStrAny_empty] else []
     else [trans_kwords]
-  emitCall (trans_args ++ trans_kwords_exprs)
+  -- Emit type assertions for named arguments against declared parameter types.
+  -- Only when the argument is a dict/list literal passed where a scalar is expected.
+  -- Skip varKwargs (have their own assertions) and constructor calls (use New).
+  let mut namedArgAsserts : List StmtExprMd := []
+  if !isVarKwargs kwords && !isCompositeType ctx funcName then
+    if let some fd := funcDecl then
+      let pairs := trans_args.zip (fd.args.zip args)
+      for (targ, ((_, argType, _), srcExpr)) in pairs do
+        let tester? := match argType with
+          | "int" | "integer" => some "Any..isfrom_int"
+          | "str" | "string" => some "Any..isfrom_string"
+          | "bool" | "boolean" => some "Any..isfrom_bool"
+          | "float" | "real" => some "Any..isfrom_float"
+          | _ => none
+        if let some testerName := tester? then
+          -- Check if the source expression is a dict/list literal or a variable
+          -- with a known dict/list annotation.
+          let isDictOrList : Bool := match srcExpr with
+            | .Dict .. | .List .. => true
+            | .Name _ n _ =>
+              match ctx.variableTypes.find? (·.1 == n.val) with
+              | some (_, ty) => ty.startsWith "dict" || ty.startsWith "list"
+              | none => false
+            | _ => false
+          if isDictOrList then
+            let cond := mkStmtExprMd (.StaticCall testerName [targ])
+            namedArgAsserts := namedArgAsserts ++ [mkStmtExprMd (.Assert cond)]
+  let call ← emitCall (trans_args ++ trans_kwords_exprs)
+  if namedArgAsserts.isEmpty then return call
+  else return mkStmtExprMd (.Block (namedArgAsserts ++ [call]) none)
 
 
 end
@@ -1027,7 +1126,25 @@ partial def translateAssign  (ctx : TranslationContext)
                if isKnownType ctx annStr then annStr else inferType
           let initStmt := mkStmtExprMd (StmtExpr.LocalVariable n.val AnyTy AnyNone)
           newctx := {ctx with variableTypes:=(n.val, type)::ctx.variableTypes}
-          return (newctx, initStmt::assignStmts)
+          -- Emit type assertion for concrete type annotations (int, str, bool, float).
+          -- This catches bugs like `x: int = None` where None is not a valid int.
+          let typeAssert := match annotation with
+          | some ann =>
+            let annStr := pyExprToString ann
+            let tester? := match annStr with
+              | "int" => some "Any..isfrom_int"
+              | "str" => some "Any..isfrom_string"
+              | "bool" => some "Any..isfrom_bool"
+              | "float" => some "Any..isfrom_float"
+              | _ => none
+            match tester? with
+            | some testerName =>
+              let varExpr := mkStmtExprMd (StmtExpr.Identifier n.val)
+              let cond := mkStmtExprMd (StmtExpr.StaticCall testerName [varExpr])
+              [mkStmtExprMdWithLoc (StmtExpr.Assert cond) md]
+            | none => []
+          | none => []
+          return (newctx, initStmt :: assignStmts ++ typeAssert)
     | .Subscript _ _ _ _ =>
         match getSubscriptList lhs with
         | target :: slices =>
@@ -1122,7 +1239,9 @@ def createVarDeclStmtsAndCtx (ctx : TranslationContext) (newDecls : List (String
       pure $ mkStmtExprMd (StmtExpr.LocalVariable (name : String) ty (some (mkStmtExprMd .Hole)))
   let hoistedCtx := { ctx with variableTypes := ctx.variableTypes ++
       (newDecls.map fun (n, ty) =>
-        if isCompositeType ctx ty then (n, ty) else (n, PyLauType.Any)) }
+        if isCompositeType ctx ty then (n, ty)
+        else if ty.startsWith "dict" || ty.startsWith "list" then (n, ty)
+        else (n, PyLauType.Any)) }
   return (hoistedDecls, hoistedCtx)
 
 mutual
@@ -1141,7 +1260,27 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
   -- Annotated assignment: x: int = expr or x: ClassName = ClassName(args) or self.field: int = expr
   | .AnnAssign _ target annotation value _ => do
     match value.val with
-    | some value => translateAssign ctx target annotation value md
+    | some value =>
+      let (ctx, stmts) ← translateAssign ctx target annotation value md
+      -- Emit type assertion for concrete type annotations (int, str, bool, float).
+      -- This catches bugs like `x: int = None` where None is not a valid int.
+      let typeAssert := match target with
+        | .Name _ n _ =>
+          let annStr := pyExprToString annotation
+          let tester? := match annStr with
+            | "int" => some "Any..isfrom_int"
+            | "str" => some "Any..isfrom_string"
+            | "bool" => some "Any..isfrom_bool"
+            | "float" => some "Any..isfrom_float"
+            | _ => none
+          match tester? with
+          | some testerName =>
+            let varExpr := mkStmtExprMd (StmtExpr.Identifier n.val)
+            let cond := mkStmtExprMd (StmtExpr.StaticCall testerName [varExpr])
+            [mkStmtExprMdWithLoc (StmtExpr.Assert cond) md]
+          | none => []
+        | _ => []
+      return (ctx, stmts ++ typeAssert)
     | none =>
       -- Declaration without initializer (not allowed in pure context, but OK in procedures)
       let varType := pyExprToString annotation
@@ -1206,6 +1345,9 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
     let expr := { expr with md := md }
 
     match expr.val with
+    | .Block stmts _ =>
+        -- Block from kwargs expansion: emit all statements (assertions + call)
+        return (ctx, stmts)
     | .StaticCall fnname _ =>
         match ctx.functionSignatures.find? (λ funsig => funsig.name == fnname) with
         | some funsig =>
@@ -1675,8 +1817,7 @@ def translateClass (ctx : TranslationContext) (classStmt : Python.stmt SourceRan
     for stmt in body do
       if let .FunctionDef .. := stmt then
         let proc ← translateMethod ctx className stmt
-        -- TODO stop replacing the body of instance proceduces with an empty one
-        instanceProcedures := instanceProcedures.push { proc with body := .Opaque [] .none [] }
+        instanceProcedures := instanceProcedures.push proc
 
     return ({
       name := className
@@ -1861,6 +2002,14 @@ def pythonToLaurel' (info : PreludeInfo)
   let mut compositeTypeNames := info.compositeTypes.union overloadCompositeType
 
   -- FIRST PASS: Collect all class definitions and field type info
+  -- Pre-collect top-level function signatures so class method bodies can
+  -- reference them (the actual bodies are translated in the second pass).
+  let mut topLevelFuncDecls : List PythonFunctionDecl := []
+  for stmt in body do
+    if let .FunctionDef .. := stmt then
+      let funcDecl ← pyFuncDefToPythonFunctionDecl
+        { functionSignatures := info.functionSignatures, filePath := filePath } stmt
+      topLevelFuncDecls := topLevelFuncDecls ++ [funcDecl]
   let mut procedures : Array Procedure := #[]
   let mut compositeTypes : Array TypeDefinition := #[.Composite pyErrorTy]
   compositeTypeNames := compositeTypeNames.insert "PythonError"
@@ -1875,9 +2024,10 @@ def pythonToLaurel' (info : PreludeInfo)
         (init := info.importedSymbols) fun m name =>
           m.insert name (ImportedSymbol.compositeType name)
       let initCtx : TranslationContext := {
-        functionSignatures := info.functionSignatures
+        functionSignatures := info.functionSignatures ++ topLevelFuncDecls
         preludeTypes := info.types,
         importedSymbols := localSymbols,
+        userFunctions := userFunctions,
         classFieldHighType := classFieldHighType,
         filePath := filePath
       }
