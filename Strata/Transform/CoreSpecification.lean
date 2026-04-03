@@ -86,11 +86,9 @@ def AssertValidInProcedure
        initial environment, every non-free postcondition holds and
        `hasFailure` stays `false`.
 
-    Note: The `modifies` clause (frame condition) is not included here.
-    Representing it purely as assertions in the verification output is
-    difficult, and the semantics of `modifies` are under discussion for
-    possible removal. If needed in the future, a frame condition can be
-    added as a third field.
+    Note: The `modifies` clause (frame condition) is not included here because
+    removal of global variables is under discussion which will make the
+    `modifies` clause redundant.
 
     This is partial correctness: if the program has an infinite loop, the
     postcondition is considered to be satisfied. Since total correctness is
