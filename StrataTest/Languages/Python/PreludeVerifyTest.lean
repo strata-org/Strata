@@ -28,7 +28,8 @@ private def verifyPrelude : IO Core.VCResults := do
     let r ← EIO.toIO (IO.Error.userError ∘ toString)
       (Core.verify preludeProgram tempDir
         (options := .quiet)
-        (moreFns := Strata.Python.ReFactory))
+        (moreFns := Strata.Python.ReFactory)
+        (externalPhases := [Strata.frontEndPhase]))
     return r
 
 /--
@@ -157,15 +158,15 @@ Obligation: postcondition
 Property: assert
 Result: ✅ pass
 
-Obligation: assert(40418)
+Obligation: assert(41763)
 Property: assert
 Result: ✅ pass
 
-Obligation: assert(40488)
+Obligation: assert(41830)
 Property: assert
 Result: ✅ pass
 
-Obligation: assert(40599)
+Obligation: assert(41938)
 Property: assert
 Result: ✅ pass
 

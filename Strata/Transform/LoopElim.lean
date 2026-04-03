@@ -6,11 +6,17 @@
 module
 
 public import Strata.DL.Imperative.Stmt
+public import Strata.Languages.Core.PipelinePhase
 
 namespace Core
 open Imperative Lambda
 
 public section
+
+/-- Label prefix for loop-elimination invariant assumptions. -/
+def loopElimInvariantPrefix : String := "assume_invariant_"
+/-- Label prefix for loop-elimination guard assumptions. -/
+def loopElimGuardPrefix : String := "assume_guard_"
 
 /-! ## Loop elimination
 
@@ -100,11 +106,10 @@ def Stmt.removeLoopsM
   match s with
   | .loop guard measure invariants bss md => do
     let loop_num ← StateT.modifyGet (fun x => (x, x + 1))
-    let neg_guard : P.Expr := HasNot.not guard
     let assigned_vars := Block.modifiedVars bss
-    -- All of the replaced statements reuse the metadata md.
     let havocd : Stmt P C :=
       .block s!"loop_havoc_{loop_num}" (assigned_vars.map (λ n => Stmt.cmd (HasHavoc.havoc n md))) {}
+    let body_statements ← Block.removeLoopsM bss
     let entry_invariants := invariants.mapIdx fun i inv =>
       Stmt.cmd (HasPassiveCmds.assert s!"entry_invariant_{loop_num}_{i}" inv md)
     let entry_invariant_assumes := invariants.mapIdx fun i inv =>
@@ -112,41 +117,42 @@ def Stmt.removeLoopsM
     let first_iter_facts :=
       .block s!"first_iter_asserts_{loop_num}" (entry_invariants ++ entry_invariant_assumes) {}
     let inv_assumes := invariants.mapIdx fun i inv =>
-      Stmt.cmd (HasPassiveCmds.assume s!"assume_invariant_{loop_num}_{i}" inv md)
-    let arbitrary_iter_assumes := .block s!"arbitrary_iter_assumes_{loop_num}"
-      ([Stmt.cmd (HasPassiveCmds.assume s!"assume_guard_{loop_num}" guard md)] ++ inv_assumes)
-      md
+      Stmt.cmd (HasPassiveCmds.assume s!"{loopElimInvariantPrefix}{loop_num}_{i}" inv md)
     let maintain_invariants := invariants.mapIdx fun i inv =>
       Stmt.cmd (HasPassiveCmds.assert s!"arbitrary_iter_maintain_invariant_{loop_num}_{i}" inv md)
-    let body_statements ← Block.removeLoopsM bss
-    -- Termination: when a measure expression is provided, emit
-    --   VC3: assert(measure >= 0)  (well-foundedness lower bound)
-    --   VC4: assert(measure < m_old)  (strict decrease after body)
-    -- where m_old is a fresh variable pinned to the pre-body measure value.
-    let termination_stmts ←
-      match measure with
-      | none => pure ([], [])
-      | some m =>
-        -- Variables with `$__` prefix are internal variables.
-        let m_old_ident    := HasIdent.ident s!"$__loop_measure_{loop_num}"
-        let m_old_expr     := HasFvar.mkFvar m_old_ident
-        let init_m_old     := Stmt.cmd (HasInit.init m_old_ident HasIntOrder.intTy none md)
-        let assume_m_old   := Stmt.cmd (HasPassiveCmds.assume
-          s!"assume_measure_{loop_num}" (HasIntOrder.eq m_old_expr m) md)
-        let assert_lb      := Stmt.cmd (HasPassiveCmds.assert
-          s!"measure_lb_{loop_num}"
-          (HasNot.not (HasIntOrder.lt m_old_expr HasIntOrder.zero)) md)
-        let assert_decrease := Stmt.cmd (HasPassiveCmds.assert
-          s!"measure_decrease_{loop_num}" (HasIntOrder.lt m m_old_expr) md)
-        pure ([init_m_old, assume_m_old, assert_lb], [assert_decrease])
-    let (pre_termination, post_termination) := termination_stmts
+    -- Guard-specific parts: assume_guard, termination, not_guard
+    let (guard_assumes, pre_termination, post_termination, exit_guard) ← match guard with
+      | .det g => do
+        let assume_guard := [Stmt.cmd (HasPassiveCmds.assume s!"{loopElimGuardPrefix}{loop_num}" g md)]
+        let termination_stmts ←
+          match measure with
+          | none => pure ([], [])
+          | some m =>
+            let m_old_ident    := HasIdent.ident s!"$__loop_measure_{loop_num}"
+            let m_old_expr     := HasFvar.mkFvar m_old_ident
+            let init_m_old     := Stmt.cmd (HasInit.init m_old_ident HasIntOrder.intTy .nondet md)
+            let assume_m_old   := Stmt.cmd (HasPassiveCmds.assume
+              s!"assume_measure_{loop_num}" (HasIntOrder.eq m_old_expr m) md)
+            let assert_lb      := Stmt.cmd (HasPassiveCmds.assert
+              s!"measure_lb_{loop_num}"
+              (HasNot.not (HasIntOrder.lt m_old_expr HasIntOrder.zero)) md)
+            let assert_decrease := Stmt.cmd (HasPassiveCmds.assert
+              s!"measure_decrease_{loop_num}" (HasIntOrder.lt m m_old_expr) md)
+            pure ([init_m_old, assume_m_old, assert_lb], [assert_decrease])
+        let (pre, post) := termination_stmts
+        let not_guard := [Stmt.cmd (HasPassiveCmds.assume s!"not_guard_{loop_num}" (HasNot.not g) md)]
+        pure (assume_guard, pre, post, not_guard)
+      | .nondet =>
+        -- Nondet loop: no guard assume, no termination, no not_guard
+        pure ([], [], [], [])
+    let arbitrary_iter_assumes := .block s!"arbitrary_iter_assumes_{loop_num}"
+      (guard_assumes ++ inv_assumes) md
     let arbitrary_iter_facts := .block s!"arbitrary_iter_facts_{loop_num}"
       ([havocd, arbitrary_iter_assumes] ++ pre_termination ++
        body_statements ++ maintain_invariants ++ post_termination) {}
-    let not_guard := Stmt.cmd (HasPassiveCmds.assume s!"not_guard_{loop_num}" neg_guard md)
     let invariant_assumes := invariants.mapIdx fun i inv =>
       Stmt.cmd (HasPassiveCmds.assume s!"invariant_{loop_num}_{i}" inv md)
-    let exit_state_assumes := [havocd, not_guard] ++ invariant_assumes
+    let exit_state_assumes := [havocd] ++ exit_guard ++ invariant_assumes
     let loop_passive :=
       .ite guard (arbitrary_iter_facts :: exit_state_assumes) [] {}
     pure (.block s!"loop_{loop_num}" [first_iter_facts, loop_passive] {})
@@ -180,6 +186,20 @@ def Stmt.removeLoops
   [HasIdent P] [HasFvar P] [HasIntOrder P]
   (s : Stmt P C) : Stmt P C :=
   (StateT.run (removeLoopsM s) 0).fst
+
+/-- Loop-elimination pipeline phase: the transform is applied during
+    evaluation (not as a program-to-program pass), so the transform here
+    is the identity. If the obligation's path includes labels from loop
+    elimination, the loop was replaced by an invariant-based encoding,
+    which is an over-approximation. -/
+def loopElimPipelinePhase : PipelinePhase where
+  transform p := pure (false, p)
+  phase.name := "LoopElim"
+  phase.getValidation obligation :=
+    if obligationHasLabelPrefix obligation loopElimInvariantPrefix
+       || obligationHasLabelPrefix obligation loopElimGuardPrefix then
+      .modelToValidate (fun _ => /- TODO -/ false)
+    else .modelPreserving
 
 end -- public section
 

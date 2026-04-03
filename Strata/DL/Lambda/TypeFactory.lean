@@ -9,7 +9,6 @@ public import Strata.DL.Lambda.LExprWF
 public import Strata.DL.Lambda.LTy
 import all Strata.DL.Lambda.LTy
 public import Strata.DL.Lambda.Factory
-import all Strata.DL.Lambda.Factory
 public import Strata.DL.Util.List
 public import Strata.Util.Tactics
 import all Strata.Util.Tactics
@@ -795,16 +794,15 @@ def genBlockFactory {T: LExprParams} [inst: Inhabited T.Metadata] [Inhabited T.I
   let testers := block.flatMap (fun d => d.constrs.map (fun c => testerFunc block d c inst.default))
   let destrs := block.flatMap (fun d => d.constrs.flatMap (fun c => destructorFuncs d c))
   let unsafeDestrs := block.flatMap (fun d => d.constrs.flatMap (fun c => unsafeDestructorFuncs d c))
-  Factory.default.addFactory (elims ++ constrs ++ testers ++ destrs ++ unsafeDestrs).toArray
+  Factory.default.tryAddAll (elims ++ constrs ++ testers ++ destrs ++ unsafeDestrs).toArray
 
 /--
 Generates the Factory (containing all constructor and eliminator functions) for the given `TypeFactory`.
 -/
 def TypeFactory.genFactory {T: LExprParams} [inst: Inhabited T.Metadata] [Inhabited T.IDMeta] [ToFormat T.IDMeta] [BEq T.Identifier] (t: @TypeFactory T.IDMeta) : Except DiagnosticModel (@Lambda.Factory T) :=
-  t.foldlM (fun f block => do
+  t.foldlM (init := .default) fun f block => do
     let f' ← genBlockFactory block
     f.addFactory f'
-  ) Factory.default
 
 ---------------------------------------------------------------------
 

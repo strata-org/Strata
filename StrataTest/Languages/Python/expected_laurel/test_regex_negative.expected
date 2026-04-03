@@ -1,79 +1,76 @@
-
-==== Verification Results ====
-set_m_calls_re_fullmatch_0: ✅ pass
-assert_assert(272)_calls_Any_to_bool_0: ✅ pass (at line 10, col 4)
-assert(272): ❓ unknown (at line 10, col 4)
-set_m_calls_re_fullmatch_0: ✅ pass
-assert_assert(365)_calls_Any_to_bool_0: ✅ pass (at line 13, col 4)
-assert(365): ❓ unknown (at line 13, col 4)
-set_m_calls_re_fullmatch_0: ✅ pass
-assert_assert(465)_calls_Any_to_bool_0: ✅ pass (at line 16, col 4)
-assert(465): ❓ unknown (at line 16, col 4)
-set_m_calls_re_fullmatch_0: ✅ pass
-assert_assert(603)_calls_Any_to_bool_0: ✅ pass (at line 20, col 4)
-assert(603): ❓ unknown (at line 20, col 4)
-set_m_calls_re_search_0: ✅ pass
-assert_assert(702)_calls_Any_to_bool_0: ✅ pass (at line 23, col 4)
-assert(702): ❓ unknown (at line 23, col 4)
-set_m_calls_re_search_0: ✅ pass
-assert_assert(797)_calls_Any_to_bool_0: ✅ pass (at line 26, col 4)
-assert(797): ❓ unknown (at line 26, col 4)
-set_m_calls_re_match_0: ✅ pass
-assert_assert(888)_calls_Any_to_bool_0: ✅ pass (at line 29, col 4)
-assert(888): ❓ unknown (at line 29, col 4)
-set_p_calls_re_compile_0: ✅ pass
-set_m_calls_re_search_0: ✅ pass
-assert_assert(1038)_calls_Any_to_bool_0: ✅ pass (at line 34, col 4)
-assert(1038): ❓ unknown (at line 34, col 4)
-set_m_calls_re_match_0: ✅ pass
-assert_assert(1133)_calls_Any_to_bool_0: ✅ pass (at line 37, col 4)
-assert(1133): ❓ unknown (at line 37, col 4)
-set_m_calls_re_fullmatch_0: ✅ pass
-assert_assert(1495)_calls_Any_to_bool_0: ✅ pass (at line 47, col 4)
-Assertion failed at line 47, col 4: assert(1495): ❌ fail
-set_m_calls_re_fullmatch_0: ✅ pass
-assert_assert(1667)_calls_Any_to_bool_0: ✅ pass (at line 54, col 4)
-Assertion failed at line 54, col 4: assert(1667): ❌ fail
-set_m_calls_re_fullmatch_0: ✅ pass
-assert_assert(1846)_calls_Any_to_bool_0: ✅ pass (at line 61, col 4)
-Assertion failed at line 61, col 4: assert(1846): ❌ fail
-set_m_calls_re_search_0: ✅ pass
-assert_assert(2015)_calls_Any_to_bool_0: ✅ pass (at line 68, col 4)
-Assertion failed at line 68, col 4: assert(2015): ❌ fail
-set_m_calls_re_match_0: ✅ pass
-assert_assert(2193)_calls_Any_to_bool_0: ✅ pass (at line 75, col 4)
-Assertion failed at line 75, col 4: assert(2193): ❌ fail
-set_m_calls_re_search_0: ✅ pass
-assert_assert(2681)_calls_Any_to_bool_0: ✅ pass (at line 84, col 4)
-assert(2681): ❓ unknown (at line 84, col 4)
-set_m_calls_re_fullmatch_0: ✅ pass
-assert_assert(2805)_calls_Any_to_bool_0: ✅ pass (at line 87, col 4)
-assert(2805): ❓ unknown (at line 87, col 4)
-set_m_calls_re_fullmatch_0: ✅ pass
-assert_assert(2918)_calls_Any_to_bool_0: ✅ pass (at line 90, col 4)
-assert(2918): ❓ unknown (at line 90, col 4)
-set_m_calls_re_search_0: ✅ pass
-assert_assert(3027)_calls_Any_to_bool_0: ✅ pass (at line 93, col 4)
-assert(3027): ❓ unknown (at line 93, col 4)
-set_m_calls_re_fullmatch_0: ✅ pass
-assert_assert(3187)_calls_Any_to_bool_0: ✅ pass (at line 97, col 4)
-assert(3187): ❓ unknown (at line 97, col 4)
-set_m_calls_re_fullmatch_0: ✅ pass
-assert_assert(3309)_calls_Any_to_bool_0: ✅ pass (at line 100, col 4)
-assert(3309): ❓ unknown (at line 100, col 4)
-set_m_calls_re_search_0: ✅ pass
-assert_assert(3492)_calls_Any_to_bool_0: ✅ pass (at line 104, col 4)
-assert(3492): ❓ unknown (at line 104, col 4)
-set_m_calls_re_fullmatch_0: ✅ pass
-assert_assert(3597)_calls_Any_to_bool_0: ✅ pass (at line 107, col 4)
-assert(3597): ❓ unknown (at line 107, col 4)
-set_m_calls_re_search_0: ✅ pass
-assert_assert(3759)_calls_Any_to_bool_0: ✅ pass (at line 111, col 4)
-assert(3759): ❓ unknown (at line 111, col 4)
-set_m_calls_re_search_0: ✅ pass
-assert_assert(3866)_calls_Any_to_bool_0: ✅ pass (at line 114, col 4)
-assert(3866): ❓ unknown (at line 114, col 4)
-ite_cond_calls_Any_to_bool_0: ✅ pass (at line 116, col 0)
-
-DETAIL: 50 passed, 5 failed, 19 inconclusive
-RESULT: Failures found
+test_regex_negative.py(9, 4): ✅ pass - set_m_calls_re_fullmatch_0
+test_regex_negative.py(10, 4): ✅ pass - assert_assert(272)_calls_Any_to_bool_0
+test_regex_negative.py(10, 4): ❓ unknown - assert(272)
+test_regex_negative.py(12, 4): ✅ pass - set_m_calls_re_fullmatch_0
+test_regex_negative.py(13, 4): ✅ pass - assert_assert(365)_calls_Any_to_bool_0
+test_regex_negative.py(13, 4): ❓ unknown - assert(365)
+test_regex_negative.py(15, 4): ✅ pass - set_m_calls_re_fullmatch_0
+test_regex_negative.py(16, 4): ✅ pass - assert_assert(465)_calls_Any_to_bool_0
+test_regex_negative.py(16, 4): ❓ unknown - assert(465)
+test_regex_negative.py(19, 4): ✅ pass - set_m_calls_re_fullmatch_0
+test_regex_negative.py(20, 4): ✅ pass - assert_assert(603)_calls_Any_to_bool_0
+test_regex_negative.py(20, 4): ❓ unknown - assert(603)
+test_regex_negative.py(22, 4): ✅ pass - set_m_calls_re_search_0
+test_regex_negative.py(23, 4): ✅ pass - assert_assert(702)_calls_Any_to_bool_0
+test_regex_negative.py(23, 4): ❓ unknown - assert(702)
+test_regex_negative.py(25, 4): ✅ pass - set_m_calls_re_search_0
+test_regex_negative.py(26, 4): ✅ pass - assert_assert(797)_calls_Any_to_bool_0
+test_regex_negative.py(26, 4): ❓ unknown - assert(797)
+test_regex_negative.py(28, 4): ✅ pass - set_m_calls_re_match_0
+test_regex_negative.py(29, 4): ✅ pass - assert_assert(888)_calls_Any_to_bool_0
+test_regex_negative.py(29, 4): ❓ unknown - assert(888)
+test_regex_negative.py(32, 4): ✅ pass - set_p_calls_re_compile_0
+test_regex_negative.py(33, 4): ✅ pass - set_m_calls_re_search_0
+test_regex_negative.py(34, 4): ✅ pass - assert_assert(1038)_calls_Any_to_bool_0
+test_regex_negative.py(34, 4): ❓ unknown - assert(1038)
+test_regex_negative.py(36, 4): ✅ pass - set_m_calls_re_match_0
+test_regex_negative.py(37, 4): ✅ pass - assert_assert(1133)_calls_Any_to_bool_0
+test_regex_negative.py(37, 4): ❓ unknown - assert(1133)
+test_regex_negative.py(44, 8): ✅ pass - set_m_calls_re_fullmatch_0
+test_regex_negative.py(47, 4): ✅ pass - assert_assert(1495)_calls_Any_to_bool_0
+test_regex_negative.py(47, 4): ❓ unknown - assert(1495)
+test_regex_negative.py(51, 8): ✅ pass - set_m_calls_re_fullmatch_0
+test_regex_negative.py(54, 4): ✅ pass - assert_assert(1667)_calls_Any_to_bool_0
+test_regex_negative.py(54, 4): ❓ unknown - assert(1667)
+test_regex_negative.py(58, 8): ✅ pass - set_m_calls_re_fullmatch_0
+test_regex_negative.py(61, 4): ✅ pass - assert_assert(1846)_calls_Any_to_bool_0
+test_regex_negative.py(61, 4): ❓ unknown - assert(1846)
+test_regex_negative.py(65, 8): ✅ pass - set_m_calls_re_search_0
+test_regex_negative.py(68, 4): ✅ pass - assert_assert(2015)_calls_Any_to_bool_0
+test_regex_negative.py(68, 4): ❓ unknown - assert(2015)
+test_regex_negative.py(72, 8): ✅ pass - set_m_calls_re_match_0
+test_regex_negative.py(75, 4): ✅ pass - assert_assert(2193)_calls_Any_to_bool_0
+test_regex_negative.py(75, 4): ❓ unknown - assert(2193)
+test_regex_negative.py(83, 4): ✅ pass - set_m_calls_re_search_0
+test_regex_negative.py(84, 4): ✅ pass - assert_assert(2681)_calls_Any_to_bool_0
+test_regex_negative.py(84, 4): ❓ unknown - assert(2681)
+test_regex_negative.py(86, 4): ✅ pass - set_m_calls_re_fullmatch_0
+test_regex_negative.py(87, 4): ✅ pass - assert_assert(2805)_calls_Any_to_bool_0
+test_regex_negative.py(87, 4): ❓ unknown - assert(2805)
+test_regex_negative.py(89, 4): ✅ pass - set_m_calls_re_fullmatch_0
+test_regex_negative.py(90, 4): ✅ pass - assert_assert(2918)_calls_Any_to_bool_0
+test_regex_negative.py(90, 4): ❓ unknown - assert(2918)
+test_regex_negative.py(92, 4): ✅ pass - set_m_calls_re_search_0
+test_regex_negative.py(93, 4): ✅ pass - assert_assert(3027)_calls_Any_to_bool_0
+test_regex_negative.py(93, 4): ❓ unknown - assert(3027)
+test_regex_negative.py(96, 4): ✅ pass - set_m_calls_re_fullmatch_0
+test_regex_negative.py(97, 4): ✅ pass - assert_assert(3187)_calls_Any_to_bool_0
+test_regex_negative.py(97, 4): ❓ unknown - assert(3187)
+test_regex_negative.py(99, 4): ✅ pass - set_m_calls_re_fullmatch_0
+test_regex_negative.py(100, 4): ✅ pass - assert_assert(3309)_calls_Any_to_bool_0
+test_regex_negative.py(100, 4): ❓ unknown - assert(3309)
+test_regex_negative.py(103, 4): ✅ pass - set_m_calls_re_search_0
+test_regex_negative.py(104, 4): ✅ pass - assert_assert(3492)_calls_Any_to_bool_0
+test_regex_negative.py(104, 4): ❓ unknown - assert(3492)
+test_regex_negative.py(106, 4): ✅ pass - set_m_calls_re_fullmatch_0
+test_regex_negative.py(107, 4): ✅ pass - assert_assert(3597)_calls_Any_to_bool_0
+test_regex_negative.py(107, 4): ❓ unknown - assert(3597)
+test_regex_negative.py(110, 4): ✅ pass - set_m_calls_re_search_0
+test_regex_negative.py(111, 4): ✅ pass - assert_assert(3759)_calls_Any_to_bool_0
+test_regex_negative.py(111, 4): ❓ unknown - assert(3759)
+test_regex_negative.py(113, 4): ✅ pass - set_m_calls_re_search_0
+test_regex_negative.py(114, 4): ✅ pass - assert_assert(3866)_calls_Any_to_bool_0
+test_regex_negative.py(114, 4): ❓ unknown - assert(3866)
+test_regex_negative.py(116, 0): ✅ pass - ite_cond_calls_Any_to_bool_0
+DETAIL: 50 passed, 0 failed, 24 inconclusive
+RESULT: Inconclusive
