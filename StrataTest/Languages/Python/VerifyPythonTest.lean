@@ -130,8 +130,9 @@ open Strata.Parser (stringInputContext)
   if diags.size ≠ 0 then
     throw <| .userError s!"Expected 0 diagnostics, got {diags.size}"
 
--- Multi-output procedures (e.g., timedelta_func) return Unknown type
--- (translated to Any in Core), so datetime arithmetic type-checks correctly.
+-- Multi-output prelude procedures: timedelta_func returns (delta: Any, maybe_except: Error).
+-- This tests that withException detects the multi-output signature and generates
+-- a 2-target assignment, and that computeExprType returns Unknown (→ Any in Core).
 #guard_msgs in
 #eval withPython (warnOnSkip := false) fun pythonCmd => do
   let program :=

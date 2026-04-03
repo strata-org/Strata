@@ -943,15 +943,16 @@ Translate Python statements to Laurel StmtExpr nodes.
 These functions are mutually recursive.
 -/
 
+private def hasErrorOutput (sig : CoreProcedureSignature) : Bool :=
+  sig.outputs.length > 0 && sig.outputs.getLast! == "Error"
+
 def withException (ctx : TranslationContext) (funcname: String) : Bool :=
   match ctx.importedSymbols[funcname]? with
   | some (ImportedSymbol.function _) => false
-  | some (ImportedSymbol.procedure _ sig _) =>
-    sig.outputs.length > 0 && sig.outputs.getLast! == "Error"
+  | some (ImportedSymbol.procedure _ sig _) => hasErrorOutput sig
   | _ =>
-    -- Also check prelude procedures for multi-output with Error
     match ctx.preludeProcedures[funcname]? with
-    | some sig => sig.outputs.length > 0 && sig.outputs.getLast! == "Error"
+    | some sig => hasErrorOutput sig
     | none => false
 
 def freeVar (name: String) := mkStmtExprMd (.Identifier name)
