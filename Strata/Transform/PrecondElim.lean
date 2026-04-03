@@ -8,6 +8,7 @@ module
 public import Strata.Transform.CoreTransform
 public import Strata.DL.Lambda.Preconditions
 public import Strata.DL.Lambda.TypeFactory
+public import Strata.Languages.Core.PipelinePhase
 import all Strata.DL.Imperative.Stmt
 
 /-! # Partial Function Precondition Elimination
@@ -347,6 +348,15 @@ where
         return (changed, d :: rest')
 
 end PrecondElim
+
+/-- PrecondElim pipeline phase: generates well-formedness checks for
+    partial-function preconditions. Model-preserving because it only adds
+    new assertions and procedures without abstracting existing ones. -/
+def precondElimPipelinePhase
+    (factory : @Lambda.Factory CoreLParams) : PipelinePhase :=
+  modelPreservingPipelinePhase "PrecondElim" fun prog => do
+    PrecondElim.precondElim prog factory
+
 end Core
 
 end -- public section
