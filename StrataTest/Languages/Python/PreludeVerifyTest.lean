@@ -28,7 +28,8 @@ private def verifyPrelude : IO Core.VCResults := do
     let r ← EIO.toIO (IO.Error.userError ∘ toString)
       (Core.verify preludeProgram tempDir
         (options := .quiet)
-        (moreFns := Strata.Python.ReFactory))
+        (moreFns := Strata.Python.ReFactory)
+        (externalPhases := [Strata.frontEndPhase]))
     return r
 
 /--
