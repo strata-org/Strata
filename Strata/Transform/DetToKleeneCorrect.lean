@@ -394,7 +394,7 @@ private def loop_sim_kleene
     .step _ _ _ .step_loop_zero (.refl _)
   | .step _ _ _ (.step_loop_nondet_exit) (.step _ _ _ h _) => nomatch h
   | .step _ _ _ (.step_loop_nondet_enter) hrest =>
-    let ⟨ρ₁, hbody, hloop_stmtT, _⟩ :=
+    let ⟨ρ₁, hbody, hloop_stmtT, _hlen_loop⟩ :=
       stmtsT_append_terminal extendEval body (.loop .nondet m inv body md) ρ₀ ρ' hrest hcov
     let kleene_body := sim_body ρ₀ ρ₁ hwfb hwfv hbody
     have heval_eq : ρ₁.eval = ρ₀.eval :=

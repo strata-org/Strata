@@ -28,10 +28,10 @@ New Function:func Int.Add :  () → int;
 -/
 #guard_msgs in
 #eval do
-  let F ← (IntBoolFactory : @Factory TestParams).addFactoryFunc (
-    { name := "Int.Add",
+  let F ← (IntBoolFactory : Factory TestParams).tryPush {
+      name := "Int.Add",
       inputs := [],
-      output := .tcons "int" [] } : LFunc TestParams)
+      output := .tcons "int" [] }
   let ans ← typeCheckAndPartialEval TypeFactory.default F esM[((~Int.Le ((~Int.Div #300) ((~Int.Add #2) #1))) #100)]
   return format ans
 

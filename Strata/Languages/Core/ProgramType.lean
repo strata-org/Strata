@@ -24,7 +24,7 @@ namespace Factory
 
 def typeCheck (C : Expression.TyContext) (T : Expression.TyEnv)
     : Except Format Expression.TyEnv :=
-  C.functions.foldlM (fun Env func => do
+  C.functions.toArray.foldlM (fun Env func => do
     match func.body with
     | none => .ok Env
     | some body =>
