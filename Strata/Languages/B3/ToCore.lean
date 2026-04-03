@@ -210,7 +210,7 @@ partial def convertStmt (ctx : ConvContext) : B3AST.Statement SourceRange → St
     { value := [Core.Statement.cover procName exprResult.value md], errors := exprResult.errors }
   | .blockStmt _ stmts, procName =>
     let results := stmts.val.toList.map (convertStmt ctx · procName)
-    { value := [Imperative.Stmt.block "block" (results.flatMap (·.value)) .empty],
+    { value := [Imperative.Stmt.ite .nondet (results.flatMap (·.value)) [] .empty],
       errors := results.flatMap (·.errors) }
   | .varDecl _ name ty _autoinv init, _ =>
     let coreTy := match ty.val with
@@ -248,7 +248,7 @@ partial def convertStmt (ctx : ConvContext) : B3AST.Statement SourceRange → St
       errors := invResults.flatMap (·.errors) ++ bodyResult.errors }
   | .choose _ branches, procName =>
     let results := branches.val.toList.map (convertStmt ctx · procName)
-    { value := [Imperative.Stmt.block "choose" (results.flatMap (·.value)) .empty],
+    { value := results.map fun r => Imperative.Stmt.ite .nondet r.value [] .empty,
       errors := results.flatMap (·.errors) }
   | .labeledStmt _ _label stmt, procName => convertStmt ctx stmt procName
   | _, _ => .withError [] (.unsupportedFeature "unknown statement type" "statement")

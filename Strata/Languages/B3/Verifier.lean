@@ -59,7 +59,7 @@ def programToSMT (prog : B3AST.Program SourceRange) (solver : Solver) : IO (List
   let coreStmts := convResult.value
   let _ ← (Solver.setLogic "ALL").run solver
   let solverInterface ← mkSolverInterfaceFromSolver solver
-  let config : Core.CoreSMT.CoreSMTConfig := { accumulateErrors := true }
+  let config : Core.CoreSMT.CoreSMTConfig := { accumulateErrors := true, options := { Core.VerifyOptions.default with checkLevel := .full } }
   let state := Core.CoreSMT.CoreSMTState.init solverInterface config
   let (_, _, results) ← Core.CoreSMT.verify state Core.Env.init coreStmts
   return results

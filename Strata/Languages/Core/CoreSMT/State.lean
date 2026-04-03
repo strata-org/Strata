@@ -5,6 +5,7 @@
 -/
 
 import Strata.DL.SMT.State
+import Strata.Languages.Core.Options
 
 namespace Strata.Core.CoreSMT
 
@@ -12,7 +13,9 @@ namespace Strata.Core.CoreSMT
 structure CoreSMTConfig where
   /-- Continue verification after errors (accumulate all errors) -/
   accumulateErrors : Bool := true
-  deriving Repr, Inhabited
+  /-- Verification options (checkMode, checkLevel, etc.) -/
+  options : Core.VerifyOptions
+  deriving Inhabited
 
 /-- CoreSMT verification state -/
 structure CoreSMTState where
@@ -23,7 +26,7 @@ structure CoreSMTState where
   /-- Stack of Core expression assumptions (for diagnosis path conditions) -/
   assumptionStack : List (List Core.Expression.Expr) := [[]]
 
-def CoreSMTState.init (solver : SMT.SolverInterface) (config : CoreSMTConfig := {}) : CoreSMTState :=
+def CoreSMTState.init (solver : SMT.SolverInterface) (config : CoreSMTConfig) : CoreSMTState :=
   { smtState := SMT.VerifierState.init solver, config }
 
 /-- Get current path condition (all assumptions in scope) -/

@@ -514,16 +514,17 @@ private def coreSMTResultToVCResult (r : Strata.Core.CoreSMT.CoreSMTResult) : Co
 /-- Verify a Core program using the incremental CoreSMT engine. -/
 private def verifyIncremental
     (programDecls : List Core.Decl)
-    (pySourceOpt : Option (String × String)) : IO (Array Core.VCResult) := do
+    (pySourceOpt : Option (String × String))
+    (options : Core.VerifyOptions := Core.VerifyOptions.default) : IO (Array Core.VCResult) := do
   let solver ← Strata.B3.Verifier.createInteractiveSolver Core.defaultSolver
   let solverInterface ← Strata.SMT.mkSolverInterfaceFromSolver solver
-  let config : Core.CoreSMT.CoreSMTConfig := { accumulateErrors := true }
+  let config : Core.CoreSMT.CoreSMTConfig := { accumulateErrors := true, options }
   let state := Core.CoreSMT.CoreSMTState.init solverInterface config
   let stmts := programDecls.filterMap fun d => match d with
     | .proc p _ =>
       if p.header.inputs.isEmpty && p.header.outputs.isEmpty then
         let cleaned := Strata.Core.CoreSMT.removeUnusedVarsStmts p.body
-        some (p.header.name.name, Imperative.Stmt.block p.header.name.name cleaned .empty)
+        some (p.header.name.name, Imperative.Stmt.ite .nondet cleaned [] .empty)
       else none
     | _ => none
   let mut allResults : Array Core.VCResult := #[]
@@ -715,7 +716,7 @@ def pyAnalyzeLaurelCommand : Command where
         | none => baseOptions
     let vcResults ←
       if incremental then
-        verifyIncremental coreProgram.decls pySourceOpt
+        verifyIncremental coreProgram.decls pySourceOpt options
       else
         profileStep profile "SMT verification" do
           match ← Core.verifyProgram coreProgram options
@@ -1243,13 +1244,13 @@ def verifyCommand : Command where
           if !errors.isEmpty then throw (IO.userError s!"DDM Transform Error: {repr errors}")
           let solver ← Strata.B3.Verifier.createInteractiveSolver opts.solver
           let solverInterface ← Strata.SMT.mkSolverInterfaceFromSolver solver
-          let config : Core.CoreSMT.CoreSMTConfig := { accumulateErrors := true }
+          let config : Core.CoreSMT.CoreSMTConfig := { accumulateErrors := true, options := opts }
           let state := Core.CoreSMT.CoreSMTState.init solverInterface config
           let stmts := coreProgram.decls.filterMap fun d => match d with
             | .proc p _ =>
               if p.header.inputs.isEmpty && p.header.outputs.isEmpty then
-                some (Imperative.Stmt.block p.header.name.name
-                  (Core.CoreSMT.removeUnusedVarsStmts p.body) .empty)
+                some (Imperative.Stmt.ite .nondet
+                  (Core.CoreSMT.removeUnusedVarsStmts p.body) [] .empty)
               else none
             | _ => none
           let (_, _, smtResults) ← Core.CoreSMT.verify state Core.Env.init stmts

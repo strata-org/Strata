@@ -69,6 +69,8 @@ info: (define-fun abs ((x Int)) Int (ite (>= x 0) x (- x)))
 (check-sat-assuming ((= (abs (- 5)) 5)))
 (check-sat-assuming ((not (= (abs (- 5)) 5))))
 (pop 1)
+(push 1)
+(pop 1)
 -/
 #guard_msgs in
 #eval testSMTGeneration $ #strata program B3CST;
@@ -86,6 +88,8 @@ info: (define-fun isEven ((n Int)) Int (ite (= n 0) 1 (isOdd (- n 1))))
 (push 1)
 (check-sat-assuming ((= (isEven 4) 1)))
 (check-sat-assuming ((not (= (isEven 4) 1))))
+(pop 1)
+(push 1)
 (pop 1)
 -/
 #guard_msgs in
@@ -108,6 +112,8 @@ info: (declare-fun f (Int) Int)
 (check-sat-assuming ((=> (> 5 0) (> (f 5) 0))))
 (check-sat-assuming ((not (=> (> 5 0) (> (f 5) 0)))))
 (pop 1)
+(push 1)
+(pop 1)
 -/
 #guard_msgs in
 #eval testSMTGeneration $ #strata program B3CST;
@@ -124,6 +130,8 @@ info: (define-fun f ((x Int)) Bool (= (+ x 1) 6))
 (push 1)
 (check-sat-assuming ((and (and (and (and (and (and (and (and (and (and (and (and (and (and (and (and (and (and true (not false)) (< 2 3)) (<= 2 2)) (> 4 3)) (>= 4 4)) (= (+ 1 2) 4)) (= (- 5 2) 3)) (= (* 3 4) 12)) (= (div 10 2) 5)) (= (mod 7 3) 1)) (= (- 5) (- 0 5))) (=> true true)) (or false true)) true) (f 5)) (g 1 2)) (forall ((y Int)) (or (f y) (not (f y))))) (forall ((y Int)) (or (> y 0) (<= y 0))))))
 (check-sat-assuming ((not (and (and (and (and (and (and (and (and (and (and (and (and (and (and (and (and (and (and true (not false)) (< 2 3)) (<= 2 2)) (> 4 3)) (>= 4 4)) (= (+ 1 2) 4)) (= (- 5 2) 3)) (= (* 3 4) 12)) (= (div 10 2) 5)) (= (mod 7 3) 1)) (= (- 5) (- 0 5))) (=> true true)) (or false true)) true) (f 5)) (g 1 2)) (forall ((y Int)) (or (f y) (not (f y))))) (forall ((y Int)) (or (> y 0) (<= y 0)))))))
+(pop 1)
+(push 1)
 (pop 1)
 -/
 #guard_msgs in
@@ -163,6 +171,8 @@ info: (declare-fun f (Int) Bool)
 (push 1)
 (check-sat-assuming ((forall ((y Int)) (> y 0))))
 (check-sat-assuming ((not (forall ((y Int)) (> y 0)))))
+(pop 1)
+(push 1)
 (pop 1)
 -/
 #guard_msgs in

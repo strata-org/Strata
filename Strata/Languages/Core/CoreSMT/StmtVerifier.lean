@@ -33,8 +33,7 @@ open Lambda
 open Imperative
 
 /-- Run a verification check with dual outcomes (satisfiability + validity).
-    For assert: satisfiability = check-sat-assuming [P], validity = check-sat-assuming [¬P]
-    For cover: satisfiability = check-sat-assuming [P], validity is not applicable -/
+    Which checks run depends on checkMode and checkLevel from config options. -/
 private def runCheck (state : CoreSMTState) (E : Core.Env)
     (label : String) (expr : Core.Expression.Expr) (property : Imperative.PropertyType)
     (smtCtx : Core.SMT.Context) (md : Imperative.MetaData Core.Expression := .empty)
@@ -46,15 +45,21 @@ private def runCheck (state : CoreSMTState) (E : Core.Env)
     }
     return ({ obligation, error := some s!"Translation error: {msg}" }, smtCtx)
   | .ok (term, smtCtx) =>
-    -- Satisfiability check: is P satisfiable?
-    let satDecision ← state.solver.checkSatAssuming [term]
-    -- Validity check: is ¬P satisfiable? (if unsat, P is always true)
-    let valDecision ← state.solver.checkSatAssuming [Factory.not term]
+    let opts := state.config.options
+    -- Determine which checks to run based on checkMode and checkLevel
+    let runSat := opts.checkLevel == .full ||
+                  opts.checkMode == .bugFinding ||
+                  opts.checkMode == .bugFindingAssumingCompleteSpec
+    let runVal := opts.checkLevel == .full ||
+                  opts.checkMode == .deductive
+    let satDecision ← if runSat then state.solver.checkSatAssuming [term]
+                      else pure .unknown
+    let valDecision ← if runVal then state.solver.checkSatAssuming [Factory.not term]
+                      else pure .unknown
     let obligation : Imperative.ProofObligation Core.Expression := {
       label, property, assumptions := [], obligation := expr, metadata := md
     }
-    -- Run diagnosis if validity check found a counterexample (not for unreachable paths)
-    let isFailure := valDecision == .sat && satDecision != .unsat
+    let isFailure := valDecision == .sat && satDecision == .sat
     let diagnosis ← if isFailure then
       let isCover := property == .cover
       let diagResult ← diagnoseFailure state E expr isCover smtCtx
@@ -199,11 +204,16 @@ partial def processStatement (state : CoreSMTState) (E : Core.Env)
     let (result, smtCtx) ← coverCheck state E label expr smtCtx md
     return (state, smtCtx, [result])
 
-  | .block _label stmts _ =>
+  | .ite .nondet thenB elseB _ =>
+    -- Nondet-guarded ite is the CoreSMT push/pop construct.
+    -- Each branch is independent: push, process, pop.
     let state ← state.push
-    let (state, smtCtx, results) ← processStatements state E stmts smtCtx
+    let (state, smtCtx, thenResults) ← processStatements state E thenB smtCtx
     let state ← state.pop
-    return (state, smtCtx, results)
+    let state ← state.push
+    let (state, smtCtx, elseResults) ← processStatements state E elseB smtCtx
+    let state ← state.pop
+    return (state, smtCtx, thenResults ++ elseResults)
 
   | .funcDecl decl _ =>
     processFuncDecl state E decl smtCtx

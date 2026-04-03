@@ -79,10 +79,11 @@ mutual
 /-- Check a statement is in the CoreSMT subset. -/
 def checkCoreSMTStmt : Core.Statement → Except String Unit
   | .cmd c              => checkCoreSMTCmd c
-  | .block _ stmts _    => checkCoreSMTStmts stmts
+  | .block _ _ _        => .error "block statement is not in the CoreSMT subset; use .ite .nondet for push/pop semantics"
   | .funcDecl _ _       => .ok ()
   | .typeDecl _ _       => .ok ()
-  | .ite _ _ _ _        => .error "if-then-else statement is not in the CoreSMT subset"
+  | .ite .nondet thenB elseB _ => do checkCoreSMTStmts thenB; checkCoreSMTStmts elseB
+  | .ite (.det _) _ _ _ => .error "deterministic if-then-else statement is not in the CoreSMT subset"
   | .loop _ _ _ _ _     => .error "loop statement is not in the CoreSMT subset"
   | .exit _ _           => .error "exit statement is not in the CoreSMT subset"
 
