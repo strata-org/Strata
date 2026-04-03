@@ -1,11 +1,11 @@
 test_return_types.py(20, 4): ✅ pass - assert_assert(304)_calls_Any_to_bool_0
-test_return_types.py(20, 4): ❌ fail - assert(304)
+test_return_types.py(20, 4): ❓ unknown - assert(304)
 test_return_types.py(23, 4): ✅ pass - assert_assert(387)_calls_Any_to_bool_0
 test_return_types.py(23, 4): ❓ unknown - assert(387)
 test_return_types.py(26, 4): ✅ pass - assert_assert(474)_calls_Any_to_bool_0
-test_return_types.py(26, 4): ❌ fail - assert(474)
+test_return_types.py(26, 4): ❓ unknown - assert(474)
 test_return_types.py(29, 4): ✅ pass - assert_assert(558)_calls_Any_to_bool_0
-test_return_types.py(29, 4): ❌ fail - assert(558)
+test_return_types.py(29, 4): ❓ unknown - assert(558)
 test_return_types.py(31, 0): ✅ pass - ite_cond_calls_Any_to_bool_0
-DETAIL: 5 passed, 3 failed, 1 inconclusive
-RESULT: Failures found
+DETAIL: 5 passed, 0 failed, 4 inconclusive
+RESULT: Inconclusive

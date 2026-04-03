@@ -1,6 +1,6 @@
 test_try_except.py(7, 4): ✅ pass - assert_assert(129)_calls_Any_to_bool_0
 test_try_except.py(7, 4): ✅ pass - assert(129)
 test_try_except.py(17, 4): ✅ pass - assert_assert(358)_calls_Any_to_bool_0
-test_try_except.py(17, 4): ❌ fail - assert(358)
-DETAIL: 3 passed, 1 failed, 0 inconclusive
-RESULT: Failures found
+test_try_except.py(17, 4): ❓ unknown - assert(358)
+DETAIL: 3 passed, 0 failed, 1 inconclusive
+RESULT: Inconclusive

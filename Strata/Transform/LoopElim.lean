@@ -6,11 +6,17 @@
 module
 
 public import Strata.DL.Imperative.Stmt
+public import Strata.Languages.Core.PipelinePhase
 
 namespace Core
 open Imperative Lambda
 
 public section
+
+/-- Label prefix for loop-elimination invariant assumptions. -/
+def loopElimInvariantPrefix : String := "assume_invariant_"
+/-- Label prefix for loop-elimination guard assumptions. -/
+def loopElimGuardPrefix : String := "assume_guard_"
 
 /-! ## Loop elimination
 
@@ -111,13 +117,13 @@ def Stmt.removeLoopsM
     let first_iter_facts :=
       .block s!"first_iter_asserts_{loop_num}" (entry_invariants ++ entry_invariant_assumes) {}
     let inv_assumes := invariants.mapIdx fun i inv =>
-      Stmt.cmd (HasPassiveCmds.assume s!"assume_invariant_{loop_num}_{i}" inv md)
+      Stmt.cmd (HasPassiveCmds.assume s!"{loopElimInvariantPrefix}{loop_num}_{i}" inv md)
     let maintain_invariants := invariants.mapIdx fun i inv =>
       Stmt.cmd (HasPassiveCmds.assert s!"arbitrary_iter_maintain_invariant_{loop_num}_{i}" inv md)
     -- Guard-specific parts: assume_guard, termination, not_guard
     let (guard_assumes, pre_termination, post_termination, exit_guard) ← match guard with
       | .det g => do
-        let assume_guard := [Stmt.cmd (HasPassiveCmds.assume s!"assume_guard_{loop_num}" g md)]
+        let assume_guard := [Stmt.cmd (HasPassiveCmds.assume s!"{loopElimGuardPrefix}{loop_num}" g md)]
         let termination_stmts ←
           match measure with
           | none => pure ([], [])
@@ -180,6 +186,20 @@ def Stmt.removeLoops
   [HasIdent P] [HasFvar P] [HasIntOrder P]
   (s : Stmt P C) : Stmt P C :=
   (StateT.run (removeLoopsM s) 0).fst
+
+/-- Loop-elimination pipeline phase: the transform is applied during
+    evaluation (not as a program-to-program pass), so the transform here
+    is the identity. If the obligation's path includes labels from loop
+    elimination, the loop was replaced by an invariant-based encoding,
+    which is an over-approximation. -/
+def loopElimPipelinePhase : PipelinePhase where
+  transform p := pure (false, p)
+  phase.name := "LoopElim"
+  phase.getValidation obligation :=
+    if obligationHasLabelPrefix obligation loopElimInvariantPrefix
+       || obligationHasLabelPrefix obligation loopElimGuardPrefix then
+      .modelToValidate (fun _ => /- TODO -/ false)
+    else .modelPreserving
 
 end -- public section
 
