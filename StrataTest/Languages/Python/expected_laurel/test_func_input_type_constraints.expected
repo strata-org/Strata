@@ -5,12 +5,12 @@ unknown location: ✅ pass - (Sum ensures) Return type constraint
 unknown location: ❓ unknown - set_LaurelResult_calls_Any_get_0
 unknown location: ❓ unknown - set_LaurelResult_calls_Any_get_1
 unknown location: ❓ unknown - (List_Dict_index ensures) Return type constraint
-test_func_input_type_constraints.py(15, 0): ✅ pass - callElimAssert_requires_0_17
-test_func_input_type_constraints.py(15, 0): ✅ pass - callElimAssert_requires_1_18
-test_func_input_type_constraints.py(16, 0): ✅ pass - callElimAssert_requires_0_11
-test_func_input_type_constraints.py(16, 0): ✅ pass - callElimAssert_requires_1_12
-test_func_input_type_constraints.py(17, 0): ✅ pass - callElimAssert_requires_0_4
-test_func_input_type_constraints.py(17, 0): ✅ pass - callElimAssert_requires_1_5
-test_func_input_type_constraints.py(17, 0): ✅ pass - callElimAssert_requires_2_6
+test_func_input_type_constraints.py(15, 0): ✅ pass - (Mul requires) Type constraint of x
+test_func_input_type_constraints.py(15, 0): ✅ pass - (Mul requires) Type constraint of y
+test_func_input_type_constraints.py(16, 0): ✅ pass - (Sum requires) Type constraint of x
+test_func_input_type_constraints.py(16, 0): ✅ pass - (Sum requires) Type constraint of y
+test_func_input_type_constraints.py(17, 0): ✅ pass - (List_Dict_index requires) Type constraint of l
+test_func_input_type_constraints.py(17, 0): ✅ pass - (List_Dict_index requires) Type constraint of i
+test_func_input_type_constraints.py(17, 0): ✅ pass - (List_Dict_index requires) Type constraint of s
 DETAIL: 11 passed, 0 failed, 3 inconclusive
 RESULT: Inconclusive
