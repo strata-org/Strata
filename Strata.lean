@@ -28,6 +28,7 @@ import Strata.Languages.Laurel.LaurelToCoreTranslator
 
 /- Code Transforms -/
 import Strata.Transform.CallElimCorrect
+import Strata.Transform.Deduplication
 import Strata.Transform.DetToKleeneCorrect
 import Strata.Transform.Specification
 

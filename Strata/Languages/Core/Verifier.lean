@@ -19,6 +19,7 @@ import Strata.Transform.FilterProcedures
 import Strata.Transform.PrecondElim
 import Strata.Transform.LoopElim
 public import Strata.Transform.IrrelevantAxioms
+import Strata.Transform.Deduplication
 import Strata.Util.Profile
 
 ---------------------------------------------------------------------
@@ -923,6 +924,8 @@ def verify (program : Program)
     | .error err =>
       .error { err with message := s!"❌ Type checking error.\n{err.message}" }
     | .ok pEs => .ok pEs
+  -- Deduplicate common subexpressions in procedure bodies (Core-to-Core pass).
+  let pEs := pEs.map (fun (p, E) => (Deduplication.deduplicateProgram p, E))
   let counter ← IO.toEIO (fun e => DiagnosticModel.fromFormat f!"{e}") (IO.mkRef 0)
   let VCss ← profileStep profile "  VC discharge" do
     if options.checkOnly then

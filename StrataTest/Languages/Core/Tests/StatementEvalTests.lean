@@ -346,7 +346,7 @@ info: {
   init (x : int) := #0
   x := #1
   havoc x
-  assert [x_eq_1] ($__x0 == #1)
+  assert [x_eq_1] (($__x0 : int) == #1)
   havoc x
   x := #8
 }
