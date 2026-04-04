@@ -67,8 +67,13 @@ structure TestCase where
   e: LExpr (TestParams.mono)
   -- Reduced output
   e_out: LExpr (TestParams.mono)
+  -- Number of evaluation steps
+  n : Nat := 100
 
-def check (t:TestCase) (n:=100) := (Lambda.LExpr.eval n t.σ t.e) == t.e_out
+def TestCase.new (σ : LState TestParams) (e e_out : LExpr TestParams.mono) (n := 100) : TestCase :=
+  { σ, e, e_out, n }
+
+def check (t:TestCase) := (Lambda.LExpr.eval t.n t.σ t.e) == t.e_out
 
 /-- The two kinds of propositions we would like to test! -/
 abbrev steps_well (t:TestCase):Prop :=
@@ -80,9 +85,44 @@ abbrev stuck (t:TestCase):Prop :=
     t.σ.config.factory (Scopes.toEnv t.σ.state) t.e eres
 
 
+-- For Unit metadata, replaceMetadata with (fun _ => ()) is the identity
+private theorem replaceMetadata_unit_id :
+    ∀ (e : LExpr TestParams.mono), e.replaceMetadata (fun _ => ()) = e := by
+  intro e
+  induction e with
+  | const m c => simp [LExpr.replaceMetadata]
+  | op m o ty => simp [LExpr.replaceMetadata]
+  | bvar m i => simp [LExpr.replaceMetadata]
+  | fvar m n ty => simp [LExpr.replaceMetadata]
+  | abs m n ty e ih => simp [LExpr.replaceMetadata, ih]
+  | quant m k n ty tr e ih_tr ih_e => simp [LExpr.replaceMetadata, ih_tr, ih_e]
+  | app m e1 e2 ih1 ih2 => simp [LExpr.replaceMetadata, ih1, ih2]
+  | ite m c t f ih_c ih_t ih_f => simp [LExpr.replaceMetadata, ih_c, ih_t, ih_f]
+  | eq m e1 e2 ih1 ih2 => simp [LExpr.replaceMetadata, ih1, ih2]
+
+-- For Unit metadata, eraseMetadata is the identity function
+private theorem eraseMetadata_id_unit (e : LExpr TestParams.mono) : e.eraseMetadata = e :=
+  replaceMetadata_unit_id e
+
+-- For Unit metadata, eraseMetadata equality implies structural equality
+theorem eraseMetadata_eq_of_unit {e1 e2 : LExpr TestParams.mono}
+    (h : e1.eraseMetadata = e2.eraseMetadata) : e1 = e2 := by
+  rw [eraseMetadata_id_unit e1, eraseMetadata_id_unit e2] at h; exact h
+
+private theorem initState_wf : FactoryWF (LState.init : LState TestParams).config.factory := by
+  constructor; intro lf hmem; simp [LState.init, EvalConfig.init] at hmem
+
+-- Prove `steps_well t` via `eval_StepStar` using `t.n` evaluation steps.
+macro "prove_steps_well" t:ident wf:ident : tactic =>
+  `(tactic| (
+    have h := eval_StepStar ($t).σ ($t).e ($t).e_out ($t).n $wf (by native_decide)
+    obtain ⟨e', h_step, h_eM⟩ := h
+    cases eraseMetadata_eq_of_unit h_eM; exact h_step))
+
+
 -------------------------------- Tests ------------------------------
 
-def test1 := TestCase.mk
+def test1 := TestCase.new
   ({Lambda.LState.init with state := [[("m", (mty[int → int], esM[_minit]))]] })
   (esM[λ (if (%0 == #1) then #10 else (m %0))])
   (esM[λ (if (%0 == #1) then #10 else (_minit %0))])
@@ -91,17 +131,10 @@ def test1 := TestCase.mk
 #guard_msgs in
 #eval (check test1)
 
--- Small step reduces the free variable `m` under the binder via abs_subst_fvars.
-example: steps_well test1 := by
-  unfold steps_well Scopes.toEnv test1
-  apply ReflTrans.step (y := esM[λ (if (%0 == #1) then #10 else (_minit %0))])
-  · exact Step.abs_subst_fvars (Tbase := TestParams) (m' := ())
-      _ ({Lambda.LState.init with state := [[("m", (mty[int → int], esM[_minit]))]]})
-      ⟨"m", ()⟩ (by decide) (by rfl)
-  apply ReflTrans.refl
+example: steps_well test1 := by prove_steps_well test1 initState_wf
 
 
-def test2 := TestCase.mk
+def test2 := TestCase.new
   { LState.init with state := [[("x", (mty[int], esM[#32]))]] }
   esM[((λ (if (%0 == #23) then #17 else #42)) (x : int))]
   esM[#42]
@@ -110,20 +143,10 @@ def test2 := TestCase.mk
 #guard_msgs in
 #eval (check test2)
 
-example: steps_well test2 := by
-  unfold steps_well Scopes.toEnv test2
-  take_step; apply Step.reduce_2 <;> try inhabited_metadata
-  · repeat constructor
-  take_step; reduce_beta
-  take_step; constructor <;> try inhabited_metadata
-  · apply Step.eq_reduce_false <;> try discharge_isCanonicalValue <;> try rfl
-    inhabited_metadata
-    discharge_eq
-  take_step; apply Step.ite_reduce_else
-  apply ReflTrans.refl
+example: steps_well test2 := by prove_steps_well test2 initState_wf
 
 
-def test3 := TestCase.mk
+def test3 := TestCase.new
   ∅
   esM[(f #true)]
   esM[(f #true)]
@@ -137,7 +160,7 @@ example: stuck test3 := by
   contradiction
 
 
-def test4 := TestCase.mk
+def test4 := TestCase.new
   { LState.init with state :=
       [[("m", (none, esM[(λ (minit %0))]))], -- most recent scope
       [("m", (none, (.intConst () 12)))]] }
@@ -148,20 +171,10 @@ def test4 := TestCase.mk
 #guard_msgs in
 #eval check test4
 
-example: steps_well test4 := by
-  unfold steps_well Scopes.toEnv test4
-  take_step; reduce_beta
-  take_step; apply Step.ite_reduce_cond <;> try inhabited_metadata
-  · apply Step.eq_reduce_false <;> try discharge_isCanonicalValue <;> try rfl
-    inhabited_metadata
-    discharge_eq
-  take_step; apply Step.ite_reduce_else
-  take_step; apply Step.reduce_1; inhabited_metadata; apply Step.expand_fvar; rfl
-  take_step; reduce_beta
-  take_refl
+example: steps_well test4 := by prove_steps_well test4 initState_wf
 
 
-def test5 := TestCase.mk
+def test5 := TestCase.new
   { LState.init with state := [[("m", (none, esM[minit]))]] }
   esM[((λ (if (%0 == #23) then #17 else (m %0))) #24)]
   esM[(minit #24)]
@@ -170,19 +183,10 @@ def test5 := TestCase.mk
 #guard_msgs in
 #eval check test5
 
-example: steps_well test5 := by
-  unfold steps_well Scopes.toEnv test5
-  take_step; reduce_beta
-  take_step; apply Step.ite_reduce_cond; inhabited_metadata
-  · apply Step.eq_reduce_false <;> try discharge_isCanonicalValue <;> try rfl
-    inhabited_metadata
-    discharge_eq
-  take_step; apply Step.ite_reduce_else
-  take_step; apply Step.reduce_1; inhabited_metadata; apply Step.expand_fvar; rfl
-  take_refl
+example: steps_well test5 := by prove_steps_well test5 initState_wf
 
 
-def test6 := TestCase.mk
+def test6 := TestCase.new
   ∅
   esM[if #true then x else y]
   esM[x]
@@ -191,15 +195,11 @@ def test6 := TestCase.mk
 #guard_msgs in
 #eval check test6
 
-example: steps_well test6 := by
-  unfold steps_well Scopes.toEnv test6
-  take_step
-  · constructor
-  take_refl
+example: steps_well test6 := by prove_steps_well test6 initState_wf
 
 
 -- Ill-formed `abs` is returned as-is in this Curry style...
-def test7 := TestCase.mk
+def test7 := TestCase.new
   ∅
   esM[(λ %1)]
   esM[(λ %1)]
@@ -281,30 +281,6 @@ private def testState : LState TestParams :=
   { (LState.init : LState TestParams) with
     config := { (LState.init : LState TestParams).config with factory := testBuiltIn } }
 
--- For Unit metadata, replaceMetadata with (fun _ => ()) is the identity
-private theorem replaceMetadata_unit_id :
-    ∀ (e : LExpr TestParams.mono), e.replaceMetadata (fun _ => ()) = e := by
-  intro e
-  induction e with
-  | const m c => simp [LExpr.replaceMetadata]
-  | op m o ty => simp [LExpr.replaceMetadata]
-  | bvar m i => simp [LExpr.replaceMetadata]
-  | fvar m n ty => simp [LExpr.replaceMetadata]
-  | abs m n ty e ih => simp [LExpr.replaceMetadata, ih]
-  | quant m k n ty tr e ih_tr ih_e => simp [LExpr.replaceMetadata, ih_tr, ih_e]
-  | app m e1 e2 ih1 ih2 => simp [LExpr.replaceMetadata, ih1, ih2]
-  | ite m c t f ih_c ih_t ih_f => simp [LExpr.replaceMetadata, ih_c, ih_t, ih_f]
-  | eq m e1 e2 ih1 ih2 => simp [LExpr.replaceMetadata, ih1, ih2]
-
--- For Unit metadata, eraseMetadata is the identity function
-private theorem eraseMetadata_id_unit (e : LExpr TestParams.mono) : e.eraseMetadata = e :=
-  replaceMetadata_unit_id e
-
--- Helper: For Unit metadata, eraseMetadata equality implies structural equality
-theorem eraseMetadata_eq_of_unit {e1 e2 : LExpr TestParams.mono}
-  (h : e1.eraseMetadata = e2.eraseMetadata) : e1 = e2 := by
-  rw [eraseMetadata_id_unit e1, eraseMetadata_id_unit e2] at h; exact h
-
 -- For Unit metadata, List.map eraseMetadata is identity
 private theorem list_eraseMetadata_id_unit :
     ∀ (l : List (LExpr TestParams.mono)), l.map LExpr.eraseMetadata = l := by
@@ -358,16 +334,7 @@ private theorem testBuiltIn_wf : FactoryWF testBuiltIn := by
 private theorem testState_wf : FactoryWF testState.config.factory :=
   testBuiltIn_wf
 
--- Prove `steps_well t` via `eval_StepStar` with `n` steps (default 100).
-theorem prove_steps_well (t : TestCase)
-    (wf : FactoryWF t.σ.config.factory) (n : Nat := 100)
-    (h : t.e_out = Lambda.LExpr.eval n t.σ t.e := by native_decide) :
-    steps_well t := by
-  obtain ⟨e', h_step, h_eM⟩ := eval_StepStar t.σ t.e t.e_out n wf h
-  cases eraseMetadata_eq_of_unit h_eM; exact h_step
-
-
-def test8 := TestCase.mk
+def test8 := TestCase.new
   testState
   esM[((~IntAddAlias #20) #30)]
   esM[(#50)]
@@ -376,9 +343,9 @@ def test8 := TestCase.mk
 #guard_msgs in
 #eval check test8
 
-example: steps_well test8 := prove_steps_well test8 testState_wf
+example: steps_well test8 := by prove_steps_well test8 testState_wf
 
-def test9 := TestCase.mk
+def test9 := TestCase.new
   testState
   esM[((~IntAddAlias #20) x)]
   esM[((~Int.Add #20) x)]
@@ -387,7 +354,7 @@ def test9 := TestCase.mk
 #guard_msgs in
 #eval check test9
 
-example: steps_well test9 := prove_steps_well test9 testState_wf
+example: steps_well test9 := by prove_steps_well test9 testState_wf
 
 -- A sanity check that confirms the parse tree of λλ x y
 /-- info: true -/
@@ -395,7 +362,7 @@ example: steps_well test9 := prove_steps_well test9 testState_wf
 #eval esM[(λλ (~Int.Add %1) %0)] = esM[((λ(λ (~Int.Add %1))) %0)]
 
 
-def test10 := TestCase.mk
+def test10 := TestCase.new
   LState.init
   esM[(( ((λ(λ ((~Int.Add %1) %0)))) ((λ ((~Int.Add %0) #100)) #5)) x)]
   esM[((~Int.Add ((~Int.Add #5) #100)) x)]
@@ -408,13 +375,10 @@ def test10 := TestCase.mk
 -- 'Int.Add %0 100' cannot be evaluated because the definition of Int.Add is
 -- not available in LState.init .
 
-private theorem initState_wf : FactoryWF (LState.init : LState TestParams).config.factory := by
-  constructor; intro lf hmem; simp [LState.init, EvalConfig.init] at hmem
-
-example: steps_well test10 := prove_steps_well test10 initState_wf
+example: steps_well test10 := by prove_steps_well test10 initState_wf
 
 
-def test11 := TestCase.mk
+def test11 := TestCase.new
   testState
   esM[((~Int.Add #20) #30)]
   esM[#50]
@@ -423,10 +387,10 @@ def test11 := TestCase.mk
 #guard_msgs in
 #eval check test11
 
-example: steps_well test11 := prove_steps_well test11 testState_wf
+example: steps_well test11 := by prove_steps_well test11 testState_wf
 
 
-def test12 := TestCase.mk
+def test12 := TestCase.new
   testState
   esM[((((λ(λ (~Int.Add %1) %0))) ((λ ((~Int.Add %0) #100)) #5)) x)]
   esM[((~Int.Add #105) x)]
@@ -435,7 +399,7 @@ def test12 := TestCase.mk
 #guard_msgs in
 #eval check test12
 
-example: steps_well test12 := prove_steps_well test12 testState_wf
+example: steps_well test12 := by prove_steps_well test12 testState_wf
 
 /-- info: false -/
 #guard_msgs in
@@ -446,7 +410,7 @@ example: steps_well test12 := prove_steps_well test12 testState_wf
 #eval LExpr.isCanonicalValue testState.config.factory esM[(~Int.Add #100)]
 
 
-def test13 := TestCase.mk
+def test13 := TestCase.new
   testState
   esM[( ((λ(λ (#f %1) %0) #20)) ((λ (~Int.Neg %0)) #5))]
   esM[((#f #20) #-5)]
@@ -459,10 +423,10 @@ def test13 := TestCase.mk
 -- '(#f 20) e' cannot be evaluated because the definition of #f is
 -- not available.
 
-example: steps_well test13 := prove_steps_well test13 testState_wf
+example: steps_well test13 := by prove_steps_well test13 testState_wf
 
 
-def test14 := TestCase.mk
+def test14 := TestCase.new
   testState
   esM[( ((λ(λ (~Int.Add %1) %0)) #20) ((λ (~Int.Neg %0)) x))]
   esM[((~Int.Add #20) (~Int.Neg x))]
@@ -471,19 +435,20 @@ def test14 := TestCase.mk
 #guard_msgs in
 #eval check test14
 
-example: steps_well test14 := prove_steps_well test14 testState_wf
+example: steps_well test14 := by prove_steps_well test14 testState_wf
 
 -- The result stops at (.. ((λ (~Int.Neg %0)) x)) because definition of
 -- x is not available.
-example: steps_well { test14 with e_out := esM[((~Int.Add #20) ((λ (~Int.Neg %0)) x))] }
-  := by
+-- Partial reduction: stops before (~Int.Neg x) is evaluated (x unavailable).
+-- This can't use prove_steps_well because no finite n produces this exact partial result.
+example: steps_well { test14 with e_out := esM[((~Int.Add #20) ((λ (~Int.Neg %0)) x))] } := by
   unfold steps_well Scopes.toEnv test14
   take_step; apply Step.reduce_1; inhabited_metadata; reduce_beta
   take_step; apply Step.reduce_1; inhabited_metadata; reduce_beta
   take_refl
 
 
-def test15 := TestCase.mk
+def test15 := TestCase.new
   testState
   esM[((~Int.Add #20) (~Int.Neg x))]
   esM[((~Int.Add #20) (~Int.Neg x))]
@@ -494,7 +459,7 @@ def test15 := TestCase.mk
 
 -- TODO: stuck test15 — (~Int.Neg x) can't be evaluated since x is unresolvable
 
-def test16 := TestCase.mk
+def test16 := TestCase.new
   testState
   esM[((~Int.Add x) (~Int.Neg #30))]
   esM[((~Int.Add x) #-30)]
@@ -503,9 +468,9 @@ def test16 := TestCase.mk
 #guard_msgs in
 #eval check test16
 
-example: steps_well test16 := prove_steps_well test16 testState_wf
+example: steps_well test16 := by prove_steps_well test16 testState_wf
 
-def test17 := TestCase.mk
+def test17 := TestCase.new
   testState
   esM[((λ %0) ((~Int.Add #20) #30))]
   esM[(#50)]
@@ -514,9 +479,9 @@ def test17 := TestCase.mk
 #guard_msgs in
 #eval check test17
 
-example: steps_well test17 := prove_steps_well test17 testState_wf
+example: steps_well test17 := by prove_steps_well test17 testState_wf
 
-def test18 := TestCase.mk
+def test18 := TestCase.new
   testState
   esM[((~Int.Div #300) ((~Int.Add #2) #1))]
   esM[(#100)]
@@ -525,9 +490,9 @@ def test18 := TestCase.mk
 #guard_msgs in
 #eval check test18
 
-example: steps_well test18 := prove_steps_well test18 testState_wf
+example: steps_well test18 := by prove_steps_well test18 testState_wf
 
-def test19 := TestCase.mk
+def test19 := TestCase.new
   testState
   esM[((~Int.Add #3) (~Int.Neg #3))]
   esM[(#0)]
@@ -537,9 +502,9 @@ def test19 := TestCase.mk
 #eval check test19
 
 
-example: steps_well test19 := prove_steps_well test19 testState_wf
+example: steps_well test19 := by prove_steps_well test19 testState_wf
 
-def test20 := TestCase.mk
+def test20 := TestCase.new
   testState
   esM[((~Int.Add (~Int.Neg #3)) #3)]
   esM[(#0)]
@@ -548,9 +513,9 @@ def test20 := TestCase.mk
 #guard_msgs in
 #eval check test20
 
-example: steps_well test20 := prove_steps_well test20 testState_wf
+example: steps_well test20 := by prove_steps_well test20 testState_wf
 
-def test21 := TestCase.mk
+def test21 := TestCase.new
   testState
   esM[((~Int.Div #300) ((~Int.Add #3) (~Int.Neg #3)))]
   esM[((~Int.Div #300) #0)]
@@ -559,9 +524,9 @@ def test21 := TestCase.mk
 #guard_msgs in
 #eval check test21
 
-example: steps_well test21 := prove_steps_well test21 testState_wf
+example: steps_well test21 := by prove_steps_well test21 testState_wf
 
-def test22 := TestCase.mk
+def test22 := TestCase.new
   testState
   esM[((~Int.Div x) ((~Int.Add #2) #1))]
   esM[((~Int.Div x) #3)]
@@ -570,9 +535,9 @@ def test22 := TestCase.mk
 #guard_msgs in
 #eval check test22
 
-example: steps_well test22 := prove_steps_well test22 testState_wf
+example: steps_well test22 := by prove_steps_well test22 testState_wf
 
-def test23 := TestCase.mk
+def test23 := TestCase.new
   testState
   esM[((~Int.Le ((~Int.Div #300) ((~Int.Add #2) #1))) x)]
   esM[((~Int.Le #100) x)]
@@ -581,9 +546,9 @@ def test23 := TestCase.mk
 #guard_msgs in
 #eval check test23
 
-example: steps_well test23 := prove_steps_well test23 testState_wf
+example: steps_well test23 := by prove_steps_well test23 testState_wf
 
-def test24 := TestCase.mk
+def test24 := TestCase.new
   testState
   esM[((~Int.Le ((~Int.Div #300) ((~Int.Add #2) y))) x)]
   esM[((~Int.Le ((~Int.Div #300) ((~Int.Add #2) y))) x)]
@@ -594,7 +559,7 @@ def test24 := TestCase.mk
 
 -- TODO: stuck test24 — Int.Le not in factory, y unresolvable
 
-def test25 := TestCase.mk
+def test25 := TestCase.new
   testState
   esM[((~Int.Div x) x)]
   esM[((~Int.Div x) x) ]
@@ -613,7 +578,7 @@ private def testStateFV : LState TestParams :=
 private theorem testStateFV_wf : FactoryWF testStateFV.config.factory :=
   testState_wf
 
-def test_ternary_fv := TestCase.mk
+def test_ternary_fv := TestCase.new
   testStateFV
   esM[((((f : int → int → int → int) #10) #20) #30)]
   esM[#60]
@@ -622,7 +587,7 @@ def test_ternary_fv := TestCase.mk
 #guard_msgs in
 #eval check test_ternary_fv
 
-example: steps_well test_ternary_fv := prove_steps_well test_ternary_fv testStateFV_wf
+example: steps_well test_ternary_fv := by prove_steps_well test_ternary_fv testStateFV_wf
 
 /-! ### Polymorphic function inlining: type substitution
 
@@ -658,7 +623,7 @@ private theorem polyState_wf : FactoryWF polyState.config.factory := by
     concreteEval_argmatch := by prove_ceval_argmatch }
 
 -- polyEq<bool>(#true, #false): type substitution maps %a to bool in the body
-def test_poly_tysubst := TestCase.mk
+def test_poly_tysubst := TestCase.new
   polyState
   esM[(((~polyEq : bool → bool → bool) #true) #false)]
   esM[∀ (bool): (%0 == %0)]
@@ -667,7 +632,7 @@ def test_poly_tysubst := TestCase.mk
 #guard_msgs in
 #eval check test_poly_tysubst
 
-example: steps_well test_poly_tysubst := prove_steps_well test_poly_tysubst polyState_wf
+example: steps_well test_poly_tysubst := by prove_steps_well test_poly_tysubst polyState_wf
 
 -- polyPair<a, b>(x : a, y : b) : bool := ∀ (z : a), ∀ (w : b), z == w
 -- Tests that type substitution with distinct type parameters maps correctly:
@@ -698,7 +663,7 @@ private theorem polyPairState_wf : FactoryWF polyPairState.config.factory := by
     concreteEval_argmatch := by prove_ceval_argmatch }
 
 -- polyPair<int, bool>(#42, #true): %a maps to int, %b maps to bool
-def test_poly_tysubst_distinct := TestCase.mk
+def test_poly_tysubst_distinct := TestCase.new
   polyPairState
   esM[(((~polyPair : int → bool → bool) #42) #true)]
   esM[∀ (int): ∀ (bool): (%1 == %0)]
@@ -707,7 +672,7 @@ def test_poly_tysubst_distinct := TestCase.mk
 #guard_msgs in
 #eval check test_poly_tysubst_distinct
 
-example: steps_well test_poly_tysubst_distinct :=
+example: steps_well test_poly_tysubst_distinct := by
   prove_steps_well test_poly_tysubst_distinct polyPairState_wf
 
 end EvalTest
