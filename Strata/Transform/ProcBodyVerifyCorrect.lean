@@ -347,6 +347,65 @@ private theorem prefixInitEnv_store_defined_of_not_init
 
 
 
+/-- Characterize the sublists produced by the `modifies` mapM in `procToVerifyStmt`:
+    each sublist corresponds to some `g ∈ gs` and has the shape
+    `[init (mkOld g) gTy .nondet, init g gTy (.det (fvar oldG))]`. -/
+private theorem modifiesMapM_sublists
+    (gs : List Expression.Ident) (p : Program)
+    (mInits : List (List Statement))
+    (s0 s1 : CoreTransformState)
+    (heq : (List.mapM (fun (g : Expression.Ident) => do
+      let oldG := CoreIdent.mkOld g.name
+      let gTy ← getIdentTy! p g
+      return [Statement.init oldG gTy .nondet #[],
+              Statement.init g gTy (.det (Lambda.LExpr.fvar () oldG none)) #[]])
+      gs).run s0 = (Except.ok mInits, s1)) :
+    ∀ sub ∈ mInits, ∃ g gTy, g ∈ gs ∧
+      sub = [Statement.init (CoreIdent.mkOld g.name) gTy .nondet #[],
+             Statement.init g gTy (.det (Lambda.LExpr.fvar () (CoreIdent.mkOld g.name) none)) #[]] := by
+  induction gs generalizing s0 s1 mInits with
+  | nil =>
+    simp only [List.mapM_nil, pure, ExceptT.pure] at heq
+    have := (Prod.mk.inj heq).1 |> Except.ok.inj; subst this
+    intro _ h; simp at h
+  | cons g rest ih =>
+    simp only [List.mapM_cons, bind, ExceptT.bind, ExceptT.mk, ExceptT.run,
+      ExceptT.bindCont, pure, ExceptT.pure, StateT.bind] at heq
+    split at heq
+    · rename_i res₁ st₁ heq₁
+      cases res₁ with
+      | ok gTy =>
+        simp only [bind, StateT.bind, ExceptT.bindCont] at heq
+        split at heq
+        · rename_i rest_res st₂ heq₂
+          cases rest_res with
+          | ok restInits =>
+            dsimp at heq
+            have heq_mi := (Prod.mk.inj heq).1 |> Except.ok.inj
+            subst heq_mi
+            intro sub h_sub_mem
+            cases h_sub_mem with
+            | head =>
+              split at heq₁
+              · rename_i ty_res ty_st heq_ty
+                cases ty_res with
+                | ok actualTy =>
+                  simp only [StateT.pure] at heq₁
+                  have := (Prod.mk.inj heq₁).1 |> Except.ok.inj
+                  subst this
+                  exact ⟨g, actualTy, List.mem_cons_self, rfl⟩
+                | error e =>
+                  simp only [StateT.pure] at heq₁
+                  exact absurd (Prod.mk.inj heq₁).1 (by intro h; cases h)
+            | tail _ h_in_rest =>
+              obtain ⟨g', gTy', hg', rfl⟩ := @ih restInits st₁ st₂ heq₂ sub h_in_rest
+              exact ⟨g', gTy', List.mem_cons_of_mem _ hg', rfl⟩
+          | error e =>
+            simp only [pure, StateT.pure] at heq
+            exact absurd (Prod.mk.inj heq).1 (by intro h; cases h)
+      | error e =>
+        dsimp at heq; exact absurd (Prod.mk.inj heq).1 (by intro h; cases h)
+
 /-! ## Verification Statement Structure -/
 
 /-- Structure: the output of `procToVerifyStmt` is a block
@@ -394,53 +453,10 @@ theorem procToVerifyStmt_structure
           rw [List.mem_flatten] at hs
           obtain ⟨sublist, h_sub_mem, h_s_mem⟩ := hs
           have h_form : ∀ sub ∈ modifiesInits, ∀ s' ∈ sub, ∃ c, s' = Stmt.cmd c := by
-            clear h h_sub_mem h_s_mem sublist
-            revert heq
-            generalize proc.spec.modifies = gs
-            induction gs generalizing st st_mid modifiesInits with
-            | nil =>
-              intro heq
-              simp only [List.mapM_nil, pure, ExceptT.pure] at heq
-              have := (Prod.mk.inj heq).1 |> Except.ok.inj; subst this
-              intro _ h; simp at h
-            | cons g rest ih =>
-              intro heq
-              simp only [List.mapM_cons, bind, ExceptT.bind, ExceptT.mk,
-                ExceptT.bindCont, pure, ExceptT.pure, StateT.bind] at heq
-              split at heq
-              · rename_i res₁ st₁ heq₁
-                cases res₁ with
-                | ok gTy =>
-                  simp only [bind, StateT.bind, ExceptT.bindCont] at heq
-                  split at heq
-                  · rename_i rest_res st₂ heq₂
-                    cases rest_res with
-                    | ok restInits =>
-                      dsimp at heq
-                      have heq_mi := (Prod.mk.inj heq).1 |> Except.ok.inj
-                      subst heq_mi
-                      intro sub h_sub_mem s' h_s'_mem
-                      cases h_sub_mem with
-                      | head =>
-                        split at heq₁
-                        · rename_i ty_res ty_st heq_ty
-                          cases ty_res with
-                          | ok actualTy =>
-                            simp only [StateT.pure] at heq₁
-                            have := (Prod.mk.inj heq₁).1 |> Except.ok.inj
-                            subst this
-                            simp only [List.mem_cons, List.mem_nil_iff, or_false] at h_s'_mem
-                            rcases h_s'_mem with rfl | rfl <;> exact ⟨_, rfl⟩
-                          | error e =>
-                            simp only [StateT.pure] at heq₁
-                            exact absurd (Prod.mk.inj heq₁).1 (by intro h; cases h)
-                      | tail _ h_in_rest =>
-                        exact ih (st := st₁) (st_mid := st₂) (modifiesInits := restInits) heq₂ sub h_in_rest s' h_s'_mem
-                    | error e =>
-                      simp only [pure, StateT.pure] at heq
-                      exact absurd (Prod.mk.inj heq).1 (by intro h; cases h)
-                | error e =>
-                  dsimp at heq; exact absurd (Prod.mk.inj heq).1 (by intro h; cases h)
+            intro sub hsub s' hs'
+            obtain ⟨g, gTy, _, rfl⟩ := modifiesMapM_sublists _ _ _ _ _ heq sub hsub
+            simp only [List.mem_cons, List.mem_nil_iff, or_false] at hs'
+            rcases hs' with rfl | rfl <;> exact ⟨_, rfl⟩
           exact h_form sublist h_sub_mem s h_s_mem
         · -- assumes: each is Statement.assume = Stmt.cmd
           simp only [requiresToAssumes, List.mem_map] at hs
@@ -476,60 +492,15 @@ theorem procToVerifyStmt_structure
             ∀ x, stmtInitVar s = some x →
             x ∈ proc.spec.modifies ∨
             x ∈ proc.spec.modifies.map (fun g => CoreIdent.mkOld g.name) := by
-          clear h π φ
-          revert heq
-          generalize proc.spec.modifies = gs
-          induction gs generalizing st st_mid modifiesInits with
-          | nil =>
-            intro heq
-            simp only [List.mapM_nil, pure, ExceptT.pure] at heq
-            have := (Prod.mk.inj heq).1 |> Except.ok.inj; subst this
-            intro s hs; simp at hs
-          | cons g rest ih =>
-            intro heq
-            simp only [List.mapM_cons, bind, ExceptT.bind, ExceptT.mk,
-              ExceptT.bindCont, pure, ExceptT.pure, StateT.bind] at heq
-            split at heq
-            · rename_i res₁ st₁ heq₁
-              cases res₁ with
-              | ok gTy =>
-                simp only [bind, StateT.bind, ExceptT.bindCont] at heq
-                split at heq
-                · rename_i rest_res st₂ heq₂
-                  cases rest_res with
-                  | ok restInits =>
-                    dsimp at heq
-                    have heq_mi := (Prod.mk.inj heq).1 |> Except.ok.inj
-                    subst heq_mi
-                    intro s hs x hx
-                    simp only [List.flatten_cons, List.mem_append] at hs
-                    rcases hs with hs | hs
-                    · -- s is in the first sub-list (for g)
-                      split at heq₁
-                      · rename_i ty_res ty_st heq_ty
-                        cases ty_res with
-                        | ok actualTy =>
-                          simp only [StateT.pure] at heq₁
-                          have := (Prod.mk.inj heq₁).1 |> Except.ok.inj
-                          subst this
-                          simp only [List.mem_cons, List.mem_nil_iff, or_false] at hs
-                          rcases hs with rfl | rfl
-                          · simp [stmtInitVar] at hx; subst hx
-                            right; exact List.mem_map_of_mem (f := fun (g' : Expression.Ident) => CoreIdent.mkOld g'.name) List.mem_cons_self
-                          · simp [stmtInitVar] at hx; subst hx; left; exact List.mem_cons_self
-                        | error e =>
-                          simp only [StateT.pure] at heq₁
-                          exact absurd (Prod.mk.inj heq₁).1 (by intro h; cases h)
-                    · -- s is in restInits.flatten (for rest)
-                      have := ih (modifiesInits := restInits) (st := st₁) (st_mid := st₂) heq₂ s hs x hx
-                      rcases this with h | h
-                      · left; exact List.mem_cons_of_mem _ h
-                      · right; simp only [List.map_cons]; exact List.mem_cons_of_mem _ h
-                  | error e =>
-                    simp only [pure, StateT.pure] at heq
-                    exact absurd (Prod.mk.inj heq).1 (by intro h; cases h)
-              | error e =>
-                dsimp at heq; exact absurd (Prod.mk.inj heq).1 (by intro h; cases h)
+          intro s hs x hx
+          rw [List.mem_flatten] at hs
+          obtain ⟨sub, hsub, hs'⟩ := hs
+          obtain ⟨g, gTy, hg, rfl⟩ := modifiesMapM_sublists _ _ _ _ _ heq sub hsub
+          simp only [List.mem_cons, List.mem_nil_iff, or_false] at hs'
+          rcases hs' with rfl | rfl
+          · simp [stmtInitVar] at hx; subst hx
+            right; exact List.mem_map_of_mem (f := fun (g' : Expression.Ident) => CoreIdent.mkOld g'.name) hg
+          · simp [stmtInitVar] at hx; subst hx; left; exact hg
 
         rw [show List.map (fun x => Statement.init x.1 (Lambda.LTy.forAll [] x.2) .nondet #[])
               proc.header.inputs.toList ++
@@ -640,8 +611,6 @@ theorem procToVerifyStmt_structure
                               h_sub_gs _ (List.mem_cons_of_mem _ hg)
                             have h_g_in_io_mod : g ∈ (ListMap.keys proc.header.inputs ++ ListMap.keys proc.header.outputs) ++ proc.spec.modifies :=
                               List.mem_append_right _ h_g_mod
-                            have h_mkOld_in_map : CoreIdent.mkOld g.name ∈ proc.spec.modifies.map (fun g' => CoreIdent.mkOld g'.name) :=
-                              List.mem_map.mpr ⟨g, h_g_mod, rfl⟩
                             have h_mkOld_in_map_mod : CoreIdent.mkOld g.name ∈ proc.spec.modifies.map (fun g' => CoreIdent.mkOld g'.name) :=
                               List.mem_map.mpr ⟨g, h_g_mod, rfl⟩
                             have h_io_mod_app : CoreIdent.mkOld g.name ∈ (ListMap.keys proc.header.inputs ++ ListMap.keys proc.header.outputs) ++ proc.spec.modifies :=
