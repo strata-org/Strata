@@ -372,7 +372,6 @@ def captureFreevars (env : Env) (paramNames : List CoreIdent) (e : Expression.Ex
 abbrev StmtsStack := List Statements
 
 def StmtsStack.push (stk : StmtsStack) (ss : Statements) : StmtsStack :=
-  let ss := Statements.eraseTypes ss
   ss :: stk
 
 def StmtsStack.pop (stk : StmtsStack) : StmtsStack :=
@@ -384,7 +383,6 @@ def StmtsStack.top (stk : StmtsStack) : Statements :=
 def StmtsStack.appendToTop (stk : StmtsStack) (ss : Statements) : StmtsStack :=
   let top := stk.top
   let stk := stk.pop
-  let ss := Statements.eraseTypes ss
   (top ++ ss) :: stk
 
 /--

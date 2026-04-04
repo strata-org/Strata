@@ -70,7 +70,7 @@ Result: ❌ fail
 function a () : Map int bool;
 procedure P () returns ()
 {
-  var $__dedup_0 : α := a[0];
+  var $__dedup_0 : bool := a[0];
   assume [a_zero_true_assumption]: $__dedup_0 == true;
   assert [a_zero_true]: $__dedup_0;
   assert [a_one_true]: a[1];

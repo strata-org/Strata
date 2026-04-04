@@ -105,7 +105,7 @@ Result: ❓ unknown
 function s () : Sequence int;
 procedure P () returns ()
 {
-  var $__dedup_0 : α := Sequence.length(Sequence.build(Sequence.build(Sequence.build(s, 10), 20), 30));
+  var $__dedup_0 : int := Sequence.length(Sequence.build(Sequence.build(Sequence.build(s, 10), 20), 30));
   var t : (Sequence int);
   t := Sequence.build(Sequence.build(Sequence.build(s, 10), 20), 30);
   assume [s_empty]: Sequence.length(s) == 0;
@@ -286,10 +286,10 @@ Result: ❓ unknown
 function s () : Sequence int;
 procedure SeqOps () returns ()
 {
-  var $__dedup_0 : α := Sequence.append(Sequence.build(Sequence.build(Sequence.build(s, 10), 20), 30), Sequence.build(Sequence.build(s, 40), 50));
-  var $__dedup_1 : α := Sequence.update(Sequence.build(Sequence.build(Sequence.build(s, 10), 20), 30), 1, 99);
-  var $__dedup_2 : α := Sequence.drop(Sequence.build(Sequence.build(Sequence.build(s, 10), 20), 30), 1);
-  var $__dedup_3 : α := Sequence.take(Sequence.build(Sequence.build(Sequence.build(s, 10), 20), 30), 2);
+  var $__dedup_0 : Sequence int := Sequence.append(Sequence.build(Sequence.build(Sequence.build(s, 10), 20), 30), Sequence.build(Sequence.build(s, 40), 50));
+  var $__dedup_1 : Sequence int := Sequence.update(Sequence.build(Sequence.build(Sequence.build(s, 10), 20), 30), 1, 99);
+  var $__dedup_2 : Sequence int := Sequence.drop(Sequence.build(Sequence.build(Sequence.build(s, 10), 20), 30), 1);
+  var $__dedup_3 : Sequence int := Sequence.take(Sequence.build(Sequence.build(Sequence.build(s, 10), 20), 30), 2);
   var t : (Sequence int);
   var u : (Sequence int);
   var v : (Sequence int);
