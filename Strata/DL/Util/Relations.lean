@@ -70,11 +70,5 @@ theorem reflTransT_to_prop {A : Type} {r : A → A → Prop} {a b : A} :
   | .refl _ => 0
   | .step _ _ _ _ rest => 1 + rest.len
 
-theorem ReflTrans.trans {r : Relation A} {x y z : A}
-    (h1 : ReflTrans r x y) (h2 : ReflTrans r y z) : ReflTrans r x z := by
-  induction h1 with
-  | refl => exact h2
-  | step _ b _ hab _ ih => exact ReflTrans.step _ b _ hab (ih h2)
-
 end Relation
 end

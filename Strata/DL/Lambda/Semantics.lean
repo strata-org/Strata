@@ -83,8 +83,8 @@ inductive Step (F:@Factory Tbase) (rf:Env Tbase)
 
 /-- Beta reduction. The argument `e2` need not be a canonical value;
 this relaxation (compared to strict call-by-value) is necessary because `LExpr.eval`
-evaluates both sub-expressions before performing substitution and `LExpr.eval`
-might run out of fuel, making the reduced argument still non-value. -/
+evaluates both sub-expressions before performing substitution and we want the
+semantics to be flexible enough to handle partial evaluation. -/
 | beta:
   ∀ (e1 e2 eres:LExpr Tbase.mono),
     eres = LExpr.subst (fun _ => e2) e1 →
@@ -92,7 +92,7 @@ might run out of fuel, making the reduced argument still non-value. -/
 
 /-- Argument evaluation: reduce the argument of an application.
 Note: this rule does NOT require the function part to be a canonical value.
-This relaxes the strict call-by-value discipline to allow stepping any
+Unlike the call-by-value strategy, this allows stepping any
 argument of an application, which is needed for factory calls where `LExpr.eval`
 evaluates all arguments independently (not left-to-right) with possibly limited
 fuels. -/
@@ -190,6 +190,10 @@ order. -/
     Step F rf e e'
 
 /-- Substitute free variables under an abstraction binder using the full state.
+This is analogous to the closure rule in lambda calculi with explicit
+substitutions: it substitutes all occurrences of a free variable in the body of
+an abstraction, even though the substitution is not represented as an explicit
+syntactic term.
 
 The `x ∈ freeVars body` witness ensures the step only fires when the body
 actually has free variables. This preserves `canonical_value_not_step`:
@@ -237,7 +241,7 @@ theorem ReflTrans_stuck {e e' : LExpr Tbase.mono}
   | refl => rfl
   | step _ b _ hab _ => exact absurd hab (h_stuck b)
 
--- canonical_value_not_step is proved after the helper lemmas below (see ~line 965).
+-- canonical_value_not_step is proved after the helper lemmas below.
 
 /--
 Multi-step execution: reflexive transitive closure of single steps.
@@ -251,9 +255,9 @@ Multi-step execution: reflexive transitive closure of single steps.
 omit [DecidableEq Tbase.Metadata] in
 theorem StepStar_ite_cond (F : @Factory Tbase) (rf : Env Tbase)
     (c c' t f : LExpr Tbase.mono) (m : Tbase.Metadata)
-    (h : ReflTrans (Step F rf) c c') :
-    ∃ m', ReflTrans (Step F rf) (.ite m c t f) (.ite m' c' t f) := by
-  induction h with
+    (h : StepStar F rf c c') :
+    ∃ m', StepStar F rf (.ite m c t f) (.ite m' c' t f) := by
+  unfold StepStar at *; induction h with
   | refl => exact ⟨m, ReflTrans.refl _⟩
   | step x y z hxy _ ih =>
     obtain ⟨m1, h1⟩ := ih
@@ -263,9 +267,9 @@ theorem StepStar_ite_cond (F : @Factory Tbase) (rf : Env Tbase)
 omit [DecidableEq Tbase.Metadata] in
 theorem StepStar_ite_then (F : @Factory Tbase) (rf : Env Tbase)
     (c t t' f : LExpr Tbase.mono) (m : Tbase.Metadata)
-    (h : ReflTrans (Step F rf) t t') :
-    ∃ m', ReflTrans (Step F rf) (.ite m c t f) (.ite m' c t' f) := by
-  induction h with
+    (h : StepStar F rf t t') :
+    ∃ m', StepStar F rf (.ite m c t f) (.ite m' c t' f) := by
+  unfold StepStar at *; induction h with
   | refl => exact ⟨m, ReflTrans.refl _⟩
   | step x y z hxy _ ih =>
     obtain ⟨m1, h1⟩ := ih
@@ -275,46 +279,46 @@ theorem StepStar_ite_then (F : @Factory Tbase) (rf : Env Tbase)
 omit [DecidableEq Tbase.Metadata] in
 theorem StepStar_ite_else (F : @Factory Tbase) (rf : Env Tbase)
     (c t f f' : LExpr Tbase.mono) (m : Tbase.Metadata)
-    (h : ReflTrans (Step F rf) f f') :
-    ∃ m', ReflTrans (Step F rf) (.ite m c t f) (.ite m' c t f') := by
-  induction h with
+    (h : StepStar F rf f f') :
+    ∃ m', StepStar F rf (.ite m c t f) (.ite m' c t f') := by
+  unfold StepStar at *; induction h with
   | refl => exact ⟨m, ReflTrans.refl _⟩
   | step x y z hxy _ ih =>
     obtain ⟨m1, h1⟩ := ih
     exact ⟨m1, ReflTrans.step _ (.ite m c t y) _
       (Step.ite_reduce_else_branch (m' := m) c t x y hxy) h1⟩
 
- omit [DecidableEq Tbase.Metadata] in
+omit [DecidableEq Tbase.Metadata] in
 theorem StepStar_eq_lhs (F : @Factory Tbase) (rf : Env Tbase)
     (e1 e1' e2 : LExpr Tbase.mono) (m : Tbase.Metadata)
-    (h : ReflTrans (Step F rf) e1 e1') :
-    ∃ m', ReflTrans (Step F rf) (.eq m e1 e2) (.eq m' e1' e2) := by
-  induction h with
+    (h : StepStar F rf e1 e1') :
+    ∃ m', StepStar F rf (.eq m e1 e2) (.eq m' e1' e2) := by
+  unfold StepStar at *; induction h with
   | refl => exact ⟨m, ReflTrans.refl _⟩
   | step x y z hxy _ ih =>
     obtain ⟨m1, h1⟩ := ih
     exact ⟨m1, ReflTrans.step _ (.eq m y e2) _
       (Step.eq_reduce_lhs (m' := m) x y e2 hxy) h1⟩
 
- omit [DecidableEq Tbase.Metadata] in
+omit [DecidableEq Tbase.Metadata] in
 theorem StepStar_eq_rhs (F : @Factory Tbase) (rf : Env Tbase)
     (e1 : LExpr Tbase.mono)
     (e2 e2' : LExpr Tbase.mono) (m : Tbase.Metadata)
-    (h : ReflTrans (Step F rf) e2 e2') :
-    ∃ m', ReflTrans (Step F rf) (.eq m e1 e2) (.eq m' e1 e2') := by
-  induction h with
+    (h : StepStar F rf e2 e2') :
+    ∃ m', StepStar F rf (.eq m e1 e2) (.eq m' e1 e2') := by
+  unfold StepStar at *; induction h with
   | refl => exact ⟨m, ReflTrans.refl _⟩
   | step x y z hxy _ ih =>
     obtain ⟨m1, h1⟩ := ih
     exact ⟨m1, ReflTrans.step _ (.eq m e1 y) _
       (Step.eq_reduce_rhs (m' := m) e1 x y hxy) h1⟩
 
- omit [DecidableEq Tbase.Metadata] in
+omit [DecidableEq Tbase.Metadata] in
 theorem StepStar_app_fn (F : @Factory Tbase) (rf : Env Tbase)
     (e1 e1' e2 : LExpr Tbase.mono) (m : Tbase.Metadata)
-    (h : ReflTrans (Step F rf) e1 e1') :
-    ReflTrans (Step F rf) (.app m e1 e2) (.app m e1' e2) := by
-  induction h with
+    (h : StepStar F rf e1 e1') :
+    StepStar F rf (.app m e1 e2) (.app m e1' e2) := by
+  unfold StepStar at *; induction h with
   | refl => exact ReflTrans.refl _
   | step x y z hxy _ ih =>
     exact ReflTrans.step _ (.app m y e2) _
@@ -323,9 +327,9 @@ theorem StepStar_app_fn (F : @Factory Tbase) (rf : Env Tbase)
 omit [DecidableEq Tbase.Metadata] in
 theorem StepStar_app_arg (F : @Factory Tbase) (rf : Env Tbase)
     (e1 e2 e2' : LExpr Tbase.mono) (m : Tbase.Metadata)
-    (h : ReflTrans (Step F rf) e2 e2') :
-    ReflTrans (Step F rf) (.app m e1 e2) (.app m e1 e2') := by
-  induction h with
+    (h : StepStar F rf e2 e2') :
+    StepStar F rf (.app m e1 e2) (.app m e1 e2') := by
+  unfold StepStar at *; induction h with
   | refl => exact ReflTrans.refl _
   | step x y z hxy _ ih =>
     exact ReflTrans.step _ (.app m e1 y) _
@@ -451,9 +455,9 @@ theorem substK_eraseMetadata_congr₂
 omit [DecidableEq Tbase.Metadata] in
 private theorem StepStar_ite_cond_pres (F : @Factory Tbase) (rf : Env Tbase)
     (c c' t f : LExpr Tbase.mono) (m : Tbase.Metadata)
-    (h : ReflTrans (Step F rf) c c') :
-    ReflTrans (Step F rf) (.ite m c t f) (.ite m c' t f) := by
-  induction h with
+    (h : StepStar F rf c c') :
+    StepStar F rf (.ite m c t f) (.ite m c' t f) := by
+  unfold StepStar at *; induction h with
   | refl => exact ReflTrans.refl _
   | step x y z hxy _ ih =>
     exact ReflTrans.step _ (.ite m y t f) _
@@ -462,9 +466,9 @@ private theorem StepStar_ite_cond_pres (F : @Factory Tbase) (rf : Env Tbase)
 omit [DecidableEq Tbase.Metadata] in
 private theorem StepStar_ite_then_pres (F : @Factory Tbase) (rf : Env Tbase)
     (c t t' f : LExpr Tbase.mono) (m : Tbase.Metadata)
-    (h : ReflTrans (Step F rf) t t') :
-    ReflTrans (Step F rf) (.ite m c t f) (.ite m c t' f) := by
-  induction h with
+    (h : StepStar F rf t t') :
+    StepStar F rf (.ite m c t f) (.ite m c t' f) := by
+  unfold StepStar at *; induction h with
   | refl => exact ReflTrans.refl _
   | step x y z hxy _ ih =>
     exact ReflTrans.step _ (.ite m c y f) _
@@ -473,9 +477,9 @@ private theorem StepStar_ite_then_pres (F : @Factory Tbase) (rf : Env Tbase)
 omit [DecidableEq Tbase.Metadata] in
 private theorem StepStar_ite_else_pres (F : @Factory Tbase) (rf : Env Tbase)
     (c t f f' : LExpr Tbase.mono) (m : Tbase.Metadata)
-    (h : ReflTrans (Step F rf) f f') :
-    ReflTrans (Step F rf) (.ite m c t f) (.ite m c t f') := by
-  induction h with
+    (h : StepStar F rf f f') :
+    StepStar F rf (.ite m c t f) (.ite m c t f') := by
+  unfold StepStar at *; induction h with
   | refl => exact ReflTrans.refl _
   | step x y z hxy _ ih =>
     exact ReflTrans.step _ (.ite m c t y) _
@@ -484,27 +488,26 @@ private theorem StepStar_ite_else_pres (F : @Factory Tbase) (rf : Env Tbase)
 omit [DecidableEq Tbase.Metadata] in
 private theorem StepStar_eq_lhs_pres (F : @Factory Tbase) (rf : Env Tbase)
     (e1 e1' e2 : LExpr Tbase.mono) (m : Tbase.Metadata)
-    (h : ReflTrans (Step F rf) e1 e1') :
-    ReflTrans (Step F rf) (.eq m e1 e2) (.eq m e1' e2) := by
-  induction h with
+    (h : StepStar F rf e1 e1') :
+    StepStar F rf (.eq m e1 e2) (.eq m e1' e2) := by
+  unfold StepStar at *; induction h with
   | refl => exact ReflTrans.refl _
   | step x y z hxy _ ih =>
     exact ReflTrans.step _ (.eq m y e2) _
       (Step.eq_reduce_lhs (m' := m) x y e2 hxy) ih
 
-  omit [DecidableEq Tbase.Metadata] in
+omit [DecidableEq Tbase.Metadata] in
 private theorem StepStar_eq_rhs_pres (F : @Factory Tbase) (rf : Env Tbase)
     (e1 e2 e2' : LExpr Tbase.mono) (m : Tbase.Metadata)
-    (h : ReflTrans (Step F rf) e2 e2') :
-    ReflTrans (Step F rf) (.eq m e1 e2) (.eq m e1 e2') := by
-  induction h with
+    (h : StepStar F rf e2 e2') :
+    StepStar F rf (.eq m e1 e2) (.eq m e1 e2') := by
+  unfold StepStar at *; induction h with
   | refl => exact ReflTrans.refl _
   | step x y z hxy _ ih =>
     exact ReflTrans.step _ (.eq m e1 y) _
       (Step.eq_reduce_rhs (m' := m) e1 x y hxy) ih
 
 ---------------------------------------------------------------------
--- Structural lemma: getLFuncCall decomposes e into (op, args), and
 omit [DecidableEq Tbase.Metadata] [DecidableEq Tbase.Identifier] [DecidableEq Tbase.IDMeta] [Inhabited Tbase.IDMeta] in
 
 /-
@@ -565,18 +568,13 @@ private theorem getLFuncCall_go_eraseMetadata
 
 
 ---------------------------------------------------------------------
--- getLFuncCall round-trips with mkApp for .op heads.
--- getLFuncCall.go on .op just returns (op, acc), so for
--- mkApp m (.op ..) args = app .. (app (op) a1) .. an,
--- getLFuncCall gives (.op .., args).
 
 -- getLFuncCall.go commutes with mkApp for "op-headed" expressions.
 -- An expression is op-headed if it's .op or .app _ (op-headed) _.
 -- For such expressions, getLFuncCall.go (mkApp m e rest) acc = getLFuncCall.go e (rest ++ acc).
 private inductive OpHeaded {T : LExprParamsT} : LExpr T → Prop where
   | op : ∀ m name ty, OpHeaded (.op m name ty)
-  | app_op : ∀ m m' name ty a, OpHeaded (.app m (.op m' name ty) a)
-  | app_app : ∀ m e a, OpHeaded e → OpHeaded (.app m e a)
+  | app : ∀ m e a, OpHeaded e → OpHeaded (.app m e a)
 
 -- Helper: for OpHeaded e, getLFuncCall.go (.app m e c) acc = getLFuncCall.go e (c :: acc)
 -- This is the "one-step peeling" property.
@@ -588,11 +586,7 @@ private theorem getLFuncCall_go_app_opHeaded
     getLFuncCall.go (.app m e c) acc = getLFuncCall.go e (c :: acc) := by
   induction he generalizing m c acc with
   | op m' name ty => simp [getLFuncCall.go]
-  | app_op m₁ m₂ name ty a => simp [getLFuncCall.go]
-  | app_app m₁ e' a he_inner ih =>
-    -- e = .app m₁ e' a
-    -- LHS: go (.app m (.app m₁ e' a) c) acc = go e' ([a, c] ++ acc)
-    -- RHS: go (.app m₁ e' a) (c :: acc) = go e' (a :: c :: acc) [by ih]
+  | app m₁ e' a he_inner ih =>
     simp only [getLFuncCall.go]
     exact (ih m₁ a (c :: acc)).symm
 
@@ -606,11 +600,7 @@ private theorem getLFuncCall_go_mkApp_opHeaded
   | nil => simp [LExpr.mkApp]
   | cons c rest' ih =>
     simp only [LExpr.mkApp]
-    have he' : OpHeaded (.app m e c) := by
-      cases he with
-      | op m' name ty => exact .app_op m m' name ty c
-      | app_op m₁ m₂ name ty a => exact .app_app m _ c (.app_op m₁ m₂ name ty a)
-      | app_app m₁ e' a he_inner => exact .app_app m _ c (.app_app m₁ e' a he_inner)
+    have he' : OpHeaded (.app m e c) := .app m e c he
     rw [ih (.app m e c) he' acc, getLFuncCall_go_app_opHeaded m e c he]
     simp [List.cons_append]
 
@@ -787,9 +777,6 @@ private theorem callOfLFunc_getLFuncCall
     · simp at h
 
 ---------------------------------------------------------------------
-
-
----------------------------------------------------------------------
 -- Step args within the actual expression structure from getLFuncCall.go.
 -- This follows the go recursion, stepping each arg and lifting through
 -- the real per-level metadata (not uniform mkApp metadata).
@@ -868,6 +855,36 @@ private theorem getLFuncCall_go_acc_change
 -- canonical condition (isConstr || blt), and callOfLFunc with full arity
 -- also succeeds, then isConstr must be true.
 omit [DecidableEq Tbase.Metadata] [DecidableEq Tbase.Identifier] [DecidableEq Tbase.IDMeta] [Inhabited Tbase.IDMeta] in
+/-- If `callOfLFunc` succeeds with both `allowPartialApp := true` and `false`,
+the results are identical — both variants use the same `getLFuncCall` and the
+same factory lookup; the only difference is the arity check. -/
+private theorem callOfLFunc_partial_implies_full
+    (F : @Factory Tbase) (e : LExpr Tbase.mono)
+    (op : LExpr Tbase.mono) (args : List (LExpr Tbase.mono)) (f : LFunc Tbase)
+    (h_partial : F.callOfLFunc e (allowPartialApp := true) = some (op, args, f))
+    (h_full_some : (F.callOfLFunc e (allowPartialApp := false)).isSome) :
+    F.callOfLFunc e (allowPartialApp := false) = some (op, args, f) := by
+  simp only [Factory.callOfLFunc] at h_partial h_full_some ⊢
+  cases h_lfc : getLFuncCall e with | mk op' args' =>
+  simp only [h_lfc] at h_partial h_full_some ⊢
+  cases op' <;> simp at h_partial h_full_some ⊢
+  rename_i m_op name_op ty_op
+  cases h_gf : F[name_op.name]? with
+  | none => simp [h_gf] at h_partial
+  | some func' =>
+    simp only [h_gf] at h_partial h_full_some ⊢
+    split at h_full_some <;> simp at h_full_some
+    split at h_partial <;> simp at h_partial
+    obtain ⟨_, rfl, rfl⟩ := h_partial
+    simp_all
+
+omit [DecidableEq
+  Tbase.Metadata] [DecidableEq Tbase.Identifier] [DecidableEq Tbase.IDMeta] [Inhabited Tbase.IDMeta] in
+/-- When `callOfLFunc` with partial app returns a function satisfying
+`isConstr || blt args.length f.inputs.length`, and `callOfLFunc` with full
+arity also succeeds, the function must be a constructor.
+This is because full arity implies `args.length = f.inputs.length`,
+making `blt` false, so `isConstr` must hold. -/
 private theorem callOfLFunc_partial_full_isConstr
     (F : @Factory Tbase) (e : LExpr Tbase.mono)
     (op : LExpr Tbase.mono) (args : List (LExpr Tbase.mono)) (f : LFunc Tbase)
@@ -876,29 +893,29 @@ private theorem callOfLFunc_partial_full_isConstr
     (op2 : LExpr Tbase.mono) (args2 : List (LExpr Tbase.mono)) (f2 : LFunc Tbase)
     (h_full : F.callOfLFunc e (allowPartialApp := false) = some (op2, args2, f2)) :
     f2.isConstr = true := by
-  simp only [Factory.callOfLFunc] at h_partial h_full
+  -- Both variants return the same result
+  have h_same := callOfLFunc_partial_implies_full F e op args f h_partial (by simp [h_full])
+  rw [h_same] at h_full; obtain ⟨rfl, rfl, rfl⟩ := Option.some.inj h_full
+  simp only [Factory.callOfLFunc] at h_partial
   cases h_lfc : getLFuncCall e with | mk op' args' =>
-  simp only [h_lfc] at h_partial h_full
-  cases op' <;> simp at h_partial h_full
+  simp only [h_lfc] at h_partial
+  cases op' <;> simp at h_partial
   rename_i m_op name_op ty_op
   cases h_gf : F[name_op.name]? with
   | none => simp [h_gf] at h_partial
   | some func' =>
-    simp only [h_gf] at h_partial h_full
-    -- h_partial is a match on ble, h_full is a match on ==
-    split at h_full <;> simp at h_full
-    · rename_i h_eq
-      split at h_partial <;> simp at h_partial
-      · obtain ⟨_, rfl, rfl⟩ := h_partial
-        obtain ⟨_, rfl, rfl⟩ := h_full
-        -- h_eq: args.length == f.inputs.length, h_cond: isConstr || blt
-        simp only [Bool.or_eq_true] at h_cond
-        cases h_cond with
-        | inl h => exact h
-        | inr h =>
-          simp [Nat.blt] at h
-          simp at h_eq
-          omega
+    simp only [h_gf] at h_partial
+    split at h_partial <;> simp at h_partial
+    obtain ⟨_, _, rfl⟩ := h_partial
+    rename_i h_ble
+    -- From h_same (full arity), args.length = f.inputs.length
+    simp only [Factory.callOfLFunc, h_lfc, h_gf] at h_same
+    split at h_same <;> simp at h_same
+    rename_i h_eq; simp at h_eq
+    simp only [Bool.or_eq_true] at h_cond
+    cases h_cond with
+    | inl h => exact h
+    | inr h => simp [Nat.blt] at h; rw [← h_eq, h_ble] at h; omega
 
 -- Helper: for e = .app m e1 e2, if callOfLFunc (with any allowPartialApp)
 -- succeeds with nonempty args, then e2 is the last arg and thus e2 ∈ args.
@@ -946,8 +963,11 @@ private theorem callOfLFunc_app_arg_mem
       · simp at h
   | _ => simp at h
 
--- Helper: go (.app m e1 e2) acc = go e1 ([e2] ++ acc) when e1 = .app or e1 = .op
--- For other e1, the first component is not .op in either case.
+-- Specialized corollary of getLFuncCall_go_app_opHeaded: if `go e1 ([e2] ++ acc)`
+-- returns an `.op` result, then `go (.app m e1 e2) acc` returns the same result.
+-- The cleaner equation `go (.app m e c) acc = go e (c :: acc)` is
+-- `getLFuncCall_go_app_opHeaded`, which requires `OpHeaded e` explicitly.
+-- This variant avoids the need to construct `OpHeaded e1` at the call site.
 omit [DecidableEq Tbase.Metadata] [DecidableEq Tbase.Identifier] [DecidableEq Tbase.IDMeta] [Inhabited Tbase.IDMeta] in
 private theorem getLFuncCall_go_app_acc
     (e1 e2 : LExpr Tbase.mono) (acc : List (LExpr Tbase.mono))
@@ -1375,7 +1395,7 @@ private theorem StepStar_getLFuncCall_args
     have step4 := StepStar_app_fn F rf _ _ a2 m1 step3
     have step5 := StepStar_app_arg F rf (.app m2 e_inner' a1') a2 a2' m1 h_step_a2
     refine ⟨.app m1 (.app m2 e_inner' a1') a2',
-      ReflTrans.trans (ReflTrans.trans step2 step4) step5, ?_⟩
+      ReflTrans_Transitive _ _ _ _ (ReflTrans_Transitive _ _ _ _ step2 step4) step5, ?_⟩
     show (LExpr.app m1 (.app m2 e_inner' a1') a2').eraseMetadata =
       LExpr.mkApp () op.eraseMetadata (args'.map LExpr.eraseMetadata)
     -- Unfold the LHS to mkApp form
@@ -1677,6 +1697,15 @@ private theorem foldl_zip_eql_congr
 -- eql depends only on eraseMetadata: if two pairs of expressions have the
 -- same eraseMetadata, eql returns the same result.
 
+-- eqModuloMeta depends only on eraseMetadata.
+omit [DecidableEq Tbase.Metadata] [DecidableEq Tbase.Identifier] [Inhabited Tbase.IDMeta] in
+private theorem eqModuloMeta_eraseMetadata_eq
+    {a b a' b' : LExpr Tbase.mono}
+    (ha : a.eraseMetadata = a'.eraseMetadata)
+    (hb : b.eraseMetadata = b'.eraseMetadata) :
+    LExpr.eqModuloMeta a b = LExpr.eqModuloMeta a' b' := by
+  unfold LExpr.eqModuloMeta; rw [ha, hb]
+
 omit [DecidableEq Tbase.Metadata] [DecidableEq Tbase.Identifier] in
 private theorem eql_eraseMetadata_eq
     {Tbase : LExprParams}
@@ -1686,30 +1715,24 @@ private theorem eql_eraseMetadata_eq
     (h₁ : e₁.eraseMetadata = e₁'.eraseMetadata)
     (h₂ : e₂.eraseMetadata = e₂'.eraseMetadata) :
     LExpr.eql F e₁ e₂ = LExpr.eql F e₁' e₂' := by
-  -- Helper: eqModuloMeta is eraseMetadata-invariant
-  have eqmod_pres : ∀ {a b a' b' : LExpr Tbase.mono},
-      a.eraseMetadata = a'.eraseMetadata → b.eraseMetadata = b'.eraseMetadata →
-      LExpr.eqModuloMeta a b = LExpr.eqModuloMeta a' b' := by
-    intro a b a' b' ha hb
-    unfold LExpr.eqModuloMeta; rw [ha, hb]
   -- Revert e₁'/e₂'/h₁/h₂ so fun_induction produces a universally quantified IH
   revert e₁' e₂' h₁ h₂
   fun_induction LExpr.eql F e₁ e₂ <;> intro e₁' e₂' h₁ h₂
   -- Case 1: eqModuloMeta true
   · rename_i h_eqmod
-    rw [eqmod_pres h₁ h₂] at h_eqmod
+    rw [eqModuloMeta_eraseMetadata_eq h₁ h₂] at h_eqmod
     unfold LExpr.eql; simp [h_eqmod]
   -- Cases 2-8: For each, use EMEquiv to decompose e₁'/e₂', then show same eql branch fires.
   -- The key trick: rewrite h_not_eqmod BEFORE cases to keep it in a usable form.
   -- Case 2: const/const, realConst/realConst
   · rename_i h_not_eqmod _ _
-    have h_nm' : ¬LExpr.eqModuloMeta e₁' e₂' = true := by rw [← eqmod_pres h₁ h₂]; assumption
+    have h_nm' : ¬LExpr.eqModuloMeta e₁' e₂' = true := by rw [← eqModuloMeta_eraseMetadata_eq h₁ h₂]; assumption
     have hv₁ := EMEquiv.of_eraseMetadata_eq _ _ h₁
     have hv₂ := EMEquiv.of_eraseMetadata_eq _ _ h₂
     cases hv₁; cases hv₂; simp [LExpr.eql, h_nm']
   -- Case 3: const/const, non-real
   · rename_i h_not_eqmod _ _
-    have h_nm' : ¬LExpr.eqModuloMeta e₁' e₂' = true := by rw [← eqmod_pres h₁ h₂]; assumption
+    have h_nm' : ¬LExpr.eqModuloMeta e₁' e₂' = true := by rw [← eqModuloMeta_eraseMetadata_eq h₁ h₂]; assumption
     have hv₁ := EMEquiv.of_eraseMetadata_eq _ _ h₁
     have hv₂ := EMEquiv.of_eraseMetadata_eq _ _ h₂
     cases hv₁; cases hv₂
@@ -1721,13 +1744,13 @@ private theorem eql_eraseMetadata_eq
     split <;> simp_all
   -- Case 4: abs/abs ty mismatch
   · rename_i h_not_eqmod h_ty_ne _
-    have h_nm' : ¬LExpr.eqModuloMeta e₁' e₂' = true := by rw [← eqmod_pres h₁ h₂]; assumption
+    have h_nm' : ¬LExpr.eqModuloMeta e₁' e₂' = true := by rw [← eqModuloMeta_eraseMetadata_eq h₁ h₂]; assumption
     have hv₁ := EMEquiv.of_eraseMetadata_eq _ _ h₁
     have hv₂ := EMEquiv.of_eraseMetadata_eq _ _ h₂
     cases hv₁; cases hv₂; simp [LExpr.eql, h_nm', h_ty_ne]
   -- Case 5: abs/abs closed → recursive eql on varOpen
   · -- With revert/intro, ih is now universally quantified over e₁'/e₂'.
-    have h_nm' : ¬LExpr.eqModuloMeta e₁' e₂' = true := by rw [← eqmod_pres h₁ h₂]; assumption
+    have h_nm' : ¬LExpr.eqModuloMeta e₁' e₂' = true := by rw [← eqModuloMeta_eraseMetadata_eq h₁ h₂]; assumption
     have hv₁ := EMEquiv.of_eraseMetadata_eq _ _ h₁
     have hv₂ := EMEquiv.of_eraseMetadata_eq _ _ h₂
     cases hv₁ with
@@ -1745,7 +1768,7 @@ private theorem eql_eraseMetadata_eq
         simp only [LExpr.eql, h_nm', LExpr.closed] at *
         simp_all
   -- Case 6: abs/abs not closed
-  · have h_nm' : ¬LExpr.eqModuloMeta e₁' e₂' = true := by rw [← eqmod_pres h₁ h₂]; assumption
+  · have h_nm' : ¬LExpr.eqModuloMeta e₁' e₂' = true := by rw [← eqModuloMeta_eraseMetadata_eq h₁ h₂]; assumption
     have hv₁ := EMEquiv.of_eraseMetadata_eq _ _ h₁
     have hv₂ := EMEquiv.of_eraseMetadata_eq _ _ h₂
     cases hv₁ with
@@ -1758,20 +1781,20 @@ private theorem eql_eraseMetadata_eq
         simp_all
   -- Case 7: const/abs
   · rename_i h_not_eqmod
-    have h_nm' : ¬LExpr.eqModuloMeta e₁' e₂' = true := by rw [← eqmod_pres h₁ h₂]; assumption
+    have h_nm' : ¬LExpr.eqModuloMeta e₁' e₂' = true := by rw [← eqModuloMeta_eraseMetadata_eq h₁ h₂]; assumption
     have hv₁ := EMEquiv.of_eraseMetadata_eq _ _ h₁
     have hv₂ := EMEquiv.of_eraseMetadata_eq _ _ h₂
     cases hv₁; cases hv₂; simp [LExpr.eql, h_nm']
   -- Case 8: abs/const
   · rename_i h_not_eqmod
-    have h_nm' : ¬LExpr.eqModuloMeta e₁' e₂' = true := by rw [← eqmod_pres h₁ h₂]; assumption
+    have h_nm' : ¬LExpr.eqModuloMeta e₁' e₂' = true := by rw [← eqModuloMeta_eraseMetadata_eq h₁ h₂]; assumption
     have hv₁ := EMEquiv.of_eraseMetadata_eq _ _ h₁
     have hv₂ := EMEquiv.of_eraseMetadata_eq _ _ h₂
     cases hv₁; cases hv₂; simp [LExpr.eql, h_nm']
   -- Cases 9-13: callOfLFunc catch-all (nested match)
   · -- case 9: callOfLFunc some/some, not both constructors → none
     rename_i _ _ _ _ h_ne _ _ _ h_call₁ _ _ _ h_call₂ h_nc h_not_cc h_not_aa h_not_ca h_not_ac
-    have h_nm' : ¬LExpr.eqModuloMeta e₁' e₂' = true := by rw [← eqmod_pres h₁ h₂]; exact h_ne
+    have h_nm' : ¬LExpr.eqModuloMeta e₁' e₂' = true := by rw [← eqModuloMeta_eraseMetadata_eq h₁ h₂]; exact h_ne
     rw [h_call₁, h_call₂]; simp only [h_nc, ↓reduceIte]
     obtain ⟨_, _, h_call₁', _, _⟩ := callOfLFunc_some_of_eraseMetadata_eq F _ _ false h₁ _ _ _ h_call₁
     obtain ⟨_, _, h_call₂', _, _⟩ := callOfLFunc_some_of_eraseMetadata_eq F _ _ false h₂ _ _ _ h_call₂
@@ -1792,7 +1815,7 @@ private theorem eql_eraseMetadata_eq
        | exact h_not_ac _ _ _ _ _ _ rfl rfl)
   · -- case 10: callOfLFunc some/some, both constructors, different names → some false
     rename_i _ _ _ _ h_ne _ _ _ h_call₁ _ _ _ h_call₂ h_nc h_nd h_not_cc h_not_aa h_not_ca h_not_ac
-    have h_nm' : ¬LExpr.eqModuloMeta e₁' e₂' = true := by rw [← eqmod_pres h₁ h₂]; exact h_ne
+    have h_nm' : ¬LExpr.eqModuloMeta e₁' e₂' = true := by rw [← eqModuloMeta_eraseMetadata_eq h₁ h₂]; exact h_ne
     rw [h_call₁, h_call₂]; simp only [h_nc, h_nd, ↓reduceIte]
     obtain ⟨_, _, h_call₁', _, _⟩ := callOfLFunc_some_of_eraseMetadata_eq F _ _ false h₁ _ _ _ h_call₁
     obtain ⟨_, _, h_call₂', _, _⟩ := callOfLFunc_some_of_eraseMetadata_eq F _ _ false h₂ _ _ _ h_call₂
@@ -1813,7 +1836,7 @@ private theorem eql_eraseMetadata_eq
        | exact h_not_ac _ _ _ _ _ _ rfl rfl)
   · -- case 11: callOfLFunc some/some, both constructors, same name → foldl eqlCombine
     rename_i _ _ _ _ h_ne _ _ _ h_call₁ _ _ _ h_call₂ h_nc h_nd h_not_cc h_not_aa h_not_ca h_not_ac ih
-    have h_nm' : ¬LExpr.eqModuloMeta e₁' e₂' = true := by rw [← eqmod_pres h₁ h₂]; exact h_ne
+    have h_nm' : ¬LExpr.eqModuloMeta e₁' e₂' = true := by rw [← eqModuloMeta_eraseMetadata_eq h₁ h₂]; exact h_ne
     rw [h_call₁, h_call₂]; simp only [h_nc, h_nd]
     obtain ⟨_, _, h_call₁', h_eM_args₁, _⟩ := callOfLFunc_some_of_eraseMetadata_eq F _ _ false h₁ _ _ _ h_call₁
     obtain ⟨_, _, h_call₂', h_eM_args₂, _⟩ := callOfLFunc_some_of_eraseMetadata_eq F _ _ false h₂ _ _ _ h_call₂
@@ -1848,7 +1871,7 @@ private theorem eql_eraseMetadata_eq
     exact (foldl_zip_eql_congr F _ _ _ _ h_eM_args₁ h_eM_args₂ ih _).symm
   · -- case 12: callOfLFunc e1 some, callOfLFunc e2 none → none
     rename_i _ _ _ e2_orig h_ne _ _ _ h_call₁ h_not_cc h_not_aa h_not_ca h_not_ac h_call₂_none
-    have h_nm' : ¬LExpr.eqModuloMeta e₁' e₂' = true := by rw [← eqmod_pres h₁ h₂]; exact h_ne
+    have h_nm' : ¬LExpr.eqModuloMeta e₁' e₂' = true := by rw [← eqModuloMeta_eraseMetadata_eq h₁ h₂]; exact h_ne
     -- Simplify LHS: call₁ = some, then call₂ = none
     have h_none₂ : F.callOfLFunc e2_orig = none := by
       cases h : F.callOfLFunc e2_orig with
@@ -1875,7 +1898,7 @@ private theorem eql_eraseMetadata_eq
        | exact h_not_ac _ _ _ _ _ _ rfl rfl)
   · -- case 13: callOfLFunc e1✝ = none → catch-all returns none
     rename_i _ _ e1_orig _ h_ne h_not_cc h_not_aa h_not_ca h_not_ac h_call_none
-    have h_nm' : ¬LExpr.eqModuloMeta e₁' e₂' = true := by rw [← eqmod_pres h₁ h₂]; exact h_ne
+    have h_nm' : ¬LExpr.eqModuloMeta e₁' e₂' = true := by rw [← eqModuloMeta_eraseMetadata_eq h₁ h₂]; exact h_ne
     have h_none : F.callOfLFunc e1_orig = none := by
       cases h : F.callOfLFunc e1_orig with
       | none => rfl
@@ -2021,7 +2044,7 @@ private theorem StepStar_to_substFvarsFromState_quant
     | cons p2 ps2 =>
       have h_mem_body : p.fst ∈ (LExpr.freeVars body).map Prod.fst := by rw [h_fv_body]; simp [List.map]
       have h_mem_tr : p2.fst ∈ (LExpr.freeVars tr).map Prod.fst := by rw [h_fv_tr]; simp [List.map]
-      exact ReflTrans.trans
+      exact ReflTrans_Transitive _ _ _ _
         (ReflTrans.step _ _ _
           (Step.quant_subst_fvars_body (m' := m) tr body σ p.fst h_mem_body rfl) (ReflTrans.refl _))
         (ReflTrans.step _ _ _
@@ -2589,7 +2612,16 @@ private theorem computeTypeSubst_eraseMetadata_congr {T : LExprParams}
 
 ---------------------------------------------------------------------
 
--- Helper for the factory-function branch of eval_eraseMetadata_invariant.
+-- Helper for the factory-function branch of `eval_eraseMetadata_invariant`.
+-- When `callOfLFunc` succeeds on `e₁` (returning factory function `f₁`),
+-- this theorem shows that the post-match eval body (inline / concreteEval /
+-- terminal) produces `eraseMetadata`-equal results for `e₁` and any `e₂`
+-- with the same `eraseMetadata`. It handles the three-way split:
+--   1. Inline: `computeTypeSubst` + `applySubst` + `substFvarsLifting` + recursive eval
+--   2. ConcreteEval: `concreteEval` on evaluated args
+--   3. Terminal: `mkApp` with evaluated args
+-- and shows each branch is metadata-invariant, given that args evaluate to
+-- `eraseMetadata`-equal results (by the IH from `eval_eraseMetadata_invariant`).
 omit [DecidableEq Tbase.Metadata] [DecidableEq Tbase.Identifier] in
 private theorem eval_factory_post_eraseMetadata_invariant
     {Tbase : LExprParams}
@@ -2976,7 +3008,7 @@ private theorem eval_StepStar_factory_ceval
     Step.eval_fn e_stepped op_s res_s args_s lfunc ceval h_call_s h_ceval h_ceval_s.symm
 
   obtain ⟨e_final, h_step_final, h_eM_final⟩ := ih res_s
-  refine ⟨e_final, ReflTrans.trans h_step_e (ReflTrans.step _ _ _ h_step_eval h_step_final), ?_⟩
+  refine ⟨e_final, ReflTrans_Transitive _ _ _ _ h_step_e (ReflTrans.step _ _ _ h_step_eval h_step_final), ?_⟩
   rw [h_eM_final]
   exact eval_eraseMetadata_invariant σ res_s e'_ceval n hWF h_res_eM.symm
 
@@ -3076,7 +3108,7 @@ theorem eval_StepStar
             obtain ⟨e'_s, h_step_s, h_ve_s⟩ :=
               ih (LExpr.substFvarsLifting (body.applySubst tySubst)
                 (lfunc.inputs.keys.zip stepped_args'))
-            refine ⟨e'_s, ReflTrans.trans h_step_e
+            refine ⟨e'_s, ReflTrans_Transitive _ _ _ _ h_step_e
               (ReflTrans.step _ _ _ h_expand h_step_s), ?_⟩
             have h_subst_eM :
                 (LExpr.substFvarsLifting (body.applySubst tySubst)
@@ -3155,7 +3187,7 @@ theorem eval_StepStar
           obtain ⟨s2, hs2, hv2⟩ := ih e2
           have h_step_app : ReflTrans (Step σ.config.factory (Scopes.toEnv σ.state))
               (.app m e1 e2) (.app m s1 s2) :=
-            ReflTrans.trans (StepStar_app_fn _ _ e1 s1 e2 m hs1)
+            ReflTrans_Transitive _ _ _ _ (StepStar_app_fn _ _ e1 s1 e2 m hs1)
               (StepStar_app_arg _ _ s1 e2 s2 m hs2)
           simp only [LExpr.evalCore, LExpr.evalApp]
           split
@@ -3181,14 +3213,14 @@ theorem eval_StepStar
                 (.app m (.abs m2 name ty body_s1) s2)
                 (LExpr.subst (fun _ => s2) body_s1) :=
               Step.beta body_s1 s2 _ rfl
-            have h_steps_to_beta := ReflTrans.trans h_step_app
+            have h_steps_to_beta := ReflTrans_Transitive _ _ _ _ h_step_app
               (ReflTrans.step _ _ _ h_beta (ReflTrans.refl _))
             -- The evalApp with .abs: splits on eqModuloMeta
             split
             · exact ⟨.app m e1 e2, ReflTrans.refl _, rfl⟩
             · rename_i h_not_eqmod e'_eval h_not_eqmod_bool
               obtain ⟨e'', hstep'', hve''⟩ := ih (LExpr.subst (fun _ => s2) body_s1)
-              refine ⟨e'', ReflTrans.trans h_steps_to_beta hstep'', ?_⟩
+              refine ⟨e'', ReflTrans_Transitive _ _ _ _ h_steps_to_beta hstep'', ?_⟩
               have h_subst_eM : (LExpr.subst (fun _ => s2) body_s1).eraseMetadata =
                   (LExpr.subst (fun m₂ =>
                     LExpr.replaceMetadata1 (LExpr.mergeMetadataForSubst mAbs (LExpr.eval n σ e2).metadata m₂)
@@ -3214,7 +3246,7 @@ theorem eval_StepStar
             · exact ⟨.app m e1 e2, ReflTrans.refl _, rfl⟩
             · rename_i h_not_eqmod e'_app
               obtain ⟨e'', hstep'', hve''⟩ := ih (.app m s1 s2)
-              refine ⟨e'', ReflTrans.trans h_step_app hstep'', ?_⟩
+              refine ⟨e'', ReflTrans_Transitive _ _ _ _ h_step_app hstep'', ?_⟩
               have h_app_eM : (LExpr.app m s1 s2).eraseMetadata =
                   (LExpr.app (LExpr.app m e1 e2 : LExpr Tbase.mono).metadata (LExpr.eval n σ e1) (LExpr.eval n σ e2)).eraseMetadata := by
                 simp [LExpr.eraseMetadata]
@@ -3236,24 +3268,24 @@ theorem eval_StepStar
                 (LExpr.eval n σ e1) (LExpr.eval n σ e2)
                 hv1 hv2]
               exact h_eql_some
-            have h_step_eq := ReflTrans.trans
+            have h_step_eq := ReflTrans_Transitive _ _ _ _
               (StepStar_eq_lhs_pres _ _ e1 s1 e2 m hs1)
               (StepStar_eq_rhs_pres _ _ s1 e2 s2 m hs2)
             cases b with
             | true =>
               exact ⟨.const m (.boolConst true),
-                ReflTrans.trans h_step_eq
+                ReflTrans_Transitive _ _ _ _ h_step_eq
                   (ReflTrans.step _ _ _ (Step.eq_reduce_true s1 s2 h_eql_s) (ReflTrans.refl _)),
                 rfl⟩
             | false =>
               exact ⟨.const m (.boolConst false),
-                ReflTrans.trans h_step_eq
+                ReflTrans_Transitive _ _ _ _ h_step_eq
                   (ReflTrans.step _ _ _ (Step.eq_reduce_false s1 s2 h_eql_s) (ReflTrans.refl _)),
                 rfl⟩
           · -- eql returns none → .eq m (eval e1) (eval e2)
             rename_i h_eql_none
             exact ⟨.eq m s1 s2,
-              ReflTrans.trans (StepStar_eq_lhs_pres _ _ e1 s1 e2 m hs1)
+              ReflTrans_Transitive _ _ _ _ (StepStar_eq_lhs_pres _ _ e1 s1 e2 m hs1)
                 (StepStar_eq_rhs_pres _ _ s1 e2 s2 m hs2),
               by simp [LExpr.eraseMetadata, LExpr.replaceMetadata]; exact ⟨hv1, hv2⟩⟩
         | .ite m c t f, _, _ =>
@@ -3267,7 +3299,7 @@ theorem eval_StepStar
               step_to_const_via_IH σ c sc mc_true (.boolConst true) hsc hvc
             obtain ⟨st, hst_step, hvt⟩ := ih t
             refine ⟨st, ?_, hvt⟩
-            exact ReflTrans.trans
+            exact ReflTrans_Transitive _ _ _ _
               (StepStar_ite_cond_pres _ _ c (.const mc' (.boolConst true)) t f m h_step_to_true)
               (ReflTrans.step _ t _ (Step.ite_reduce_then (m := m) (mc := mc') t f) hst_step)
           · -- condition resolves to false → eval f
@@ -3277,7 +3309,7 @@ theorem eval_StepStar
               step_to_const_via_IH σ c sc mc_false (.boolConst false) hsc hvc
             obtain ⟨sf, hsf_step, hvf⟩ := ih f
             refine ⟨sf, ?_, hvf⟩
-            exact ReflTrans.trans
+            exact ReflTrans_Transitive _ _ _ _
               (StepStar_ite_cond_pres _ _ c (.const mc' (.boolConst false)) t f m h_step_to_false)
               (ReflTrans.step _ f _ (Step.ite_reduce_else (m := m) (mc := mc') t f) hsf_step)
           · -- condition unresolved → .ite m (eval c) (eval t) (eval f)
@@ -3285,8 +3317,8 @@ theorem eval_StepStar
             obtain ⟨st, hst, hvt⟩ := ih t
             obtain ⟨sf, hsf, hvf⟩ := ih f
             refine ⟨.ite m sc st sf,
-              ReflTrans.trans (StepStar_ite_cond_pres _ _ c sc t f m hsc)
-                (ReflTrans.trans (StepStar_ite_then_pres _ _ sc t st f m hst)
+              ReflTrans_Transitive _ _ _ _ (StepStar_ite_cond_pres _ _ c sc t f m hsc)
+                (ReflTrans_Transitive _ _ _ _ (StepStar_ite_then_pres _ _ sc t st f m hst)
                   (StepStar_ite_else_pres _ _ sc st f sf m hsf)), ?_⟩
             show (LExpr.ite m sc st sf).eraseMetadata = (LExpr.ite m (LExpr.eval n σ c) (LExpr.eval n σ t) (LExpr.eval n σ f)).eraseMetadata
             simp only [LExpr.eraseMetadata, LExpr.replaceMetadata]

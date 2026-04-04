@@ -393,33 +393,6 @@ where
 
 /-! ### Pure `substFvars` properties -/
 
-/-- substFvar is identity when the target identifier is not a free variable. -/
-theorem substFvar_not_freeVar
-    (e : LExpr T.mono) (fr : Identifier T.IDMeta) (to : LExpr T.mono)
-    (h : fr ∉ (LExpr.freeVars e).map Prod.fst) :
-    LExpr.substFvar e fr to = e := by
-  induction e with
-  | const => simp [LExpr.substFvar]
-  | op => simp [LExpr.substFvar]
-  | bvar => simp [LExpr.substFvar]
-  | fvar _ x _ =>
-    simp [LExpr.freeVars] at h
-    simp only [LExpr.substFvar]; split <;> simp_all
-  | abs _ _ _ _ ih =>
-    simp only [LExpr.freeVars] at h; simp [LExpr.substFvar, ih h]
-  | app _ _ _ ih1 ih2 =>
-    simp only [LExpr.freeVars, List.map_append, List.mem_append, not_or] at h
-    simp [LExpr.substFvar, ih1 h.1, ih2 h.2]
-  | quant _ _ _ _ _ _ ih1 ih2 =>
-    simp only [LExpr.freeVars, List.map_append, List.mem_append, not_or] at h
-    simp [LExpr.substFvar, ih1 h.1, ih2 h.2]
-  | ite _ _ _ _ ih1 ih2 ih3 =>
-    simp only [LExpr.freeVars, List.map_append, List.mem_append, not_or] at h
-    simp [LExpr.substFvar, ih1 h.1.1, ih2 h.1.2, ih3 h.2]
-  | eq _ _ _ ih1 ih2 =>
-    simp only [LExpr.freeVars, List.map_append, List.mem_append, not_or] at h
-    simp [LExpr.substFvar, ih1 h.1, ih2 h.2]
-
 /-- freeVars is invariant under eraseMetadata. -/
 theorem freeVars_eraseMetadata {T : LExprParamsT}
     (e : LExpr T) :
@@ -441,68 +414,6 @@ theorem freeVars_of_eraseMetadata_eq {T : LExprParamsT}
   have h1 := freeVars_eraseMetadata e₁
   have h2 := freeVars_eraseMetadata e₂
   rw [h] at h1; rw [← h1, h2]
-
-/-- substFvar with a closed value doesn't grow freeVars: if k was not free
-in e, it's not free after substFvar e fr to (when to is closed). -/
-theorem substFvar_freeVars_not_mem
-    (e : LExpr T.mono) (fr : T.Identifier) (to : LExpr T.mono)
-    (hto : LExpr.freeVars to = [])
-    (k : Identifier T.IDMeta)
-    (hk : k ∉ (LExpr.freeVars e).map Prod.fst) :
-    k ∉ (LExpr.freeVars (LExpr.substFvar e fr to)).map Prod.fst := by
-  induction e with
-  | const => simp [LExpr.substFvar, LExpr.freeVars]
-  | op => simp [LExpr.substFvar, LExpr.freeVars]
-  | bvar => simp [LExpr.substFvar, LExpr.freeVars]
-  | fvar m x ty =>
-    simp only [LExpr.substFvar]
-    split
-    · simp [hto]
-    · exact hk
-  | abs m name ty body ih =>
-    simp only [LExpr.substFvar, LExpr.freeVars] at *; exact ih hk
-  | quant m qk name ty tr body ih1 ih2 =>
-    simp only [LExpr.substFvar, LExpr.freeVars, List.map_append, List.mem_append, not_or] at *
-    exact ⟨ih1 hk.1, ih2 hk.2⟩
-  | app m e1 e2 ih1 ih2 =>
-    simp only [LExpr.substFvar, LExpr.freeVars, List.map_append, List.mem_append, not_or] at *
-    exact ⟨ih1 hk.1, ih2 hk.2⟩
-  | ite m c t f ih1 ih2 ih3 =>
-    simp only [LExpr.substFvar, LExpr.freeVars, List.map_append, List.mem_append, not_or] at *
-    exact ⟨⟨ih1 hk.1.1, ih2 hk.1.2⟩, ih3 hk.2⟩
-  | eq m e1 e2 ih1 ih2 =>
-    simp only [LExpr.substFvar, LExpr.freeVars, List.map_append, List.mem_append, not_or] at *
-    exact ⟨ih1 hk.1, ih2 hk.2⟩
-
-/-- After substFvar e fr v where v is closed, fr is not free in the result. -/
-theorem substFvar_eliminates_key
-    (e : LExpr T.mono) (fr : T.Identifier) (v : LExpr T.mono)
-    (hv : LExpr.freeVars v = []) :
-    fr ∉ (LExpr.freeVars (LExpr.substFvar e fr v)).map Prod.fst := by
-  induction e with
-  | const => simp [LExpr.substFvar, LExpr.freeVars]
-  | op => simp [LExpr.substFvar, LExpr.freeVars]
-  | bvar => simp [LExpr.substFvar, LExpr.freeVars]
-  | fvar m x ty =>
-    simp only [LExpr.substFvar]
-    split
-    · simp [hv]
-    · rename_i h_ne
-      simp only [LExpr.freeVars, List.map, List.mem_cons, List.mem_nil_iff, or_false]
-      intro h_eq; simp [h_eq] at h_ne
-  | abs _ _ _ _ ih => simp only [LExpr.substFvar, LExpr.freeVars] at *; exact ih
-  | quant _ _ _ _ _ _ ih1 ih2 =>
-    simp only [LExpr.substFvar, LExpr.freeVars, List.map_append, List.mem_append, not_or] at *
-    exact ⟨ih1, ih2⟩
-  | app _ _ _ ih1 ih2 =>
-    simp only [LExpr.substFvar, LExpr.freeVars, List.map_append, List.mem_append, not_or] at *
-    exact ⟨ih1, ih2⟩
-  | ite _ _ _ _ ih1 ih2 ih3 =>
-    simp only [LExpr.substFvar, LExpr.freeVars, List.map_append, List.mem_append, not_or] at *
-    exact ⟨⟨ih1, ih2⟩, ih3⟩
-  | eq _ _ _ ih1 ih2 =>
-    simp only [LExpr.substFvar, LExpr.freeVars, List.map_append, List.mem_append, not_or] at *
-    exact ⟨ih1, ih2⟩
 
 /-- substFvars preserves eraseMetadata equality. -/
 theorem substFvars_eraseMetadata_congr
@@ -650,8 +561,7 @@ theorem substFvars_fvar_find
     (m_meta : T.Metadata) (x : Identifier T.IDMeta) (ty : Option LMonoTy)
     (sm : Map (Identifier T.IDMeta) (LExpr T.mono))
     (v : LExpr T.mono)
-    (h_find : Map.find? sm x = some v)
-    (_h_closed : LExpr.freeVars v = []) :
+    (h_find : Map.find? sm x = some v) :
     LExpr.substFvars (.fvar m_meta x ty) sm = v := by
   simp only [LExpr.substFvars]
   split
@@ -673,136 +583,60 @@ theorem substFvars_fvar_none
   · rfl
   · simp [LExpr.substFvars.substFvarsAux, h_find]
 
-/-- substFvars preserves "not free": if k ∉ freeVars e and all values in sm are
-closed, then k ∉ freeVars (substFvars e sm). -/
-theorem substFvars_preserves_not_free
-    (e : LExpr T.mono)
-    (sm : List (T.Identifier × LExpr T.mono))
-    (k : T.Identifier)
-    (hk : k ∉ (LExpr.freeVars e).map Prod.fst)
-    (h_vals : ∀ p, p ∈ sm → LExpr.freeVars p.2 = []) :
-    k ∉ (LExpr.freeVars (LExpr.substFvars e sm)).map Prod.fst := by
-  -- Prove for substFvarsAux, then handle isEmpty guard
-  suffices hsuff : ∀ (e : LExpr T.mono),
-      k ∉ (LExpr.freeVars e).map Prod.fst →
-      k ∉ (LExpr.freeVars (LExpr.substFvars.substFvarsAux e sm)).map Prod.fst by
-    simp only [LExpr.substFvars]
-    split
-    · exact hk
-    · exact hsuff e hk
-  -- Helper: find? returns value from sm → it's closed
-  have find_closed : ∀ (x : T.Identifier) (v : LExpr T.mono),
-      Map.find? sm x = some v → LExpr.freeVars v = [] := by
-    intro x v hfind
-    induction sm with
-    | nil => simp [Map.find?] at hfind
-    | cons q qs ih =>
-      simp only [Map.find?] at hfind
-      by_cases hq : q.1 = x
-      · rw [if_pos hq] at hfind; cases hfind; exact h_vals q (List.Mem.head _)
-      · rw [if_neg hq] at hfind
-        exact ih (fun p hp => h_vals p (List.Mem.tail _ hp)) hfind
-  intro e hk
-  induction e with
-  | const | op | bvar => simp [LExpr.substFvars.substFvarsAux, LExpr.freeVars]
-  | fvar m x ty =>
-    simp only [LExpr.substFvars.substFvarsAux]
-    cases hfind : Map.find? sm x with
-    | none => simp [LExpr.freeVars] at hk ⊢; exact hk
-    | some v => simp [find_closed x v hfind]
-  | abs _ _ _ _ ih =>
-    simp only [LExpr.substFvars.substFvarsAux, LExpr.freeVars] at hk ⊢; exact ih hk
-  | app _ _ _ ih1 ih2 =>
-    simp only [LExpr.substFvars.substFvarsAux, LExpr.freeVars, List.map_append, List.mem_append, not_or] at hk ⊢
-    exact ⟨ih1 hk.1, ih2 hk.2⟩
-  | eq _ _ _ ih1 ih2 =>
-    simp only [LExpr.substFvars.substFvarsAux, LExpr.freeVars, List.map_append, List.mem_append, not_or] at hk ⊢
-    exact ⟨ih1 hk.1, ih2 hk.2⟩
-  | quant _ _ _ _ _ _ ih1 ih2 =>
-    simp only [LExpr.substFvars.substFvarsAux, LExpr.freeVars, List.map_append, List.mem_append, not_or] at hk ⊢
-    exact ⟨ih1 hk.1, ih2 hk.2⟩
-  | ite _ _ _ _ ih1 ih2 ih3 =>
-    simp only [LExpr.substFvars.substFvarsAux, LExpr.freeVars, List.map_append, List.mem_append, not_or] at hk ⊢
-    exact ⟨⟨ih1 hk.1.1, ih2 hk.1.2⟩, ih3 hk.2⟩
+/-- `substFvars` unfolds to a structural recursion, bypassing the `isEmpty` guard.
+    The `isEmpty` check is an optimization; when `sm` is empty, `substFvarsAux`
+    is the identity anyway. This single lemma subsumes the per-constructor
+    unfolding lemmas (`substFvars_const'`, `substFvars_app`, etc.). -/
+theorem substFvars_unfold
+    (e : LExpr T.mono) (sm : Map T.Identifier (LExpr T.mono)) :
+    LExpr.substFvars e sm = match e with
+      | .const _ _ => e | .bvar _ _ => e | .op _ _ _ => e
+      | .fvar _ name _ => match sm.find? name with | some to => to | none => e
+      | .abs m name ty e' => .abs m name ty (LExpr.substFvars e' sm)
+      | .quant m qk name ty tr' e' =>
+          .quant m qk name ty (LExpr.substFvars tr' sm) (LExpr.substFvars e' sm)
+      | .app m fn e' => .app m (LExpr.substFvars fn sm) (LExpr.substFvars e' sm)
+      | .ite m c t e' =>
+          .ite m (LExpr.substFvars c sm) (LExpr.substFvars t sm) (LExpr.substFvars e' sm)
+      | .eq m e1 e2 => .eq m (LExpr.substFvars e1 sm) (LExpr.substFvars e2 sm) := by
+  -- Key helper: when sm.isEmpty, substFvars is the identity
+  have h_id : sm.isEmpty = true → ∀ x : LExpr T.mono, LExpr.substFvars x sm = x :=
+    fun h x => by simp [LExpr.substFvars, h]
+  simp only [LExpr.substFvars]; split
+  · -- sm.isEmpty = true: both sides reduce to e (with recursive substFvars = id)
+    rename_i h_empty
+    have h_find_none : ∀ (n : T.Identifier), sm.find? n = none := by
+      intro n; cases sm with | nil => rfl | cons _ _ => simp [Map.isEmpty] at h_empty
+    cases e <;> simp [h_find_none]
+  · -- sm.isEmpty = false: substFvars = substFvarsAux, structurally matching the RHS
+    rename_i h_ne
+    cases e with
+    | fvar m name ty =>
+      simp only [LExpr.substFvars.substFvarsAux]
+      cases sm.find? name <;> rfl
+    | _ => simp [LExpr.substFvars.substFvarsAux]
 
-/-- substFvars on const is identity. -/
-theorem substFvars_const'
-    (m : T.Metadata) (c : LConst)
-    (sm : Map T.Identifier (LExpr T.mono)) :
-    LExpr.substFvars (LExpr.const m c) sm = LExpr.const m c := by
-  simp only [LExpr.substFvars]
-  split <;> simp [LExpr.substFvars.substFvarsAux]
-
-/-- substFvars on op is identity. -/
-theorem substFvars_op'
-    (m : T.Metadata) (n : Identifier T.IDMeta) (t : Option T.mono.TypeType)
-    (sm : Map T.Identifier (LExpr T.mono)) :
-    LExpr.substFvars (LExpr.op m n t) sm = LExpr.op m n t := by
-  simp only [LExpr.substFvars]
-  split <;> simp [LExpr.substFvars.substFvarsAux]
-
-/-- substFvars on bvar is identity. -/
-theorem substFvars_bvar
-    (m : T.Metadata) (i : Nat)
-    (sm : Map T.Identifier (LExpr T.mono)) :
-    LExpr.substFvars (LExpr.bvar m i) sm = LExpr.bvar m i := by
-  simp only [LExpr.substFvars]
-  split <;> simp [LExpr.substFvars.substFvarsAux]
-
-/-- substFvars distributes over ite. -/
-theorem substFvars_ite
-    (m : T.Metadata) (c t f : LExpr T.mono)
-    (sm : Map T.Identifier (LExpr T.mono)) :
+-- The following are corollaries of `substFvars_unfold`, kept for backward compatibility.
+@[simp] theorem substFvars_const' (m : T.Metadata) (c : LConst) (sm : Map T.Identifier (LExpr T.mono)) :
+    LExpr.substFvars (LExpr.const m c) sm = LExpr.const m c := by rw [substFvars_unfold]
+@[simp] theorem substFvars_op' (m : T.Metadata) (n : Identifier T.IDMeta) (t : Option T.mono.TypeType) (sm : Map T.Identifier (LExpr T.mono)) :
+    LExpr.substFvars (LExpr.op m n t) sm = LExpr.op m n t := by rw [substFvars_unfold]
+@[simp] theorem substFvars_bvar (m : T.Metadata) (i : Nat) (sm : Map T.Identifier (LExpr T.mono)) :
+    LExpr.substFvars (LExpr.bvar m i) sm = LExpr.bvar m i := by rw [substFvars_unfold]
+@[simp] theorem substFvars_ite (m : T.Metadata) (c t f : LExpr T.mono) (sm : Map T.Identifier (LExpr T.mono)) :
     LExpr.substFvars (LExpr.ite m c t f) sm =
-      LExpr.ite m (LExpr.substFvars c sm) (LExpr.substFvars t sm) (LExpr.substFvars f sm) := by
-  simp only [LExpr.substFvars]
-  split
-  · rfl
-  · simp [LExpr.substFvars.substFvarsAux]
-
-/-- substFvars distributes over eq. -/
-theorem substFvars_eq
-    (m : T.Metadata) (e1 e2 : LExpr T.mono)
-    (sm : Map T.Identifier (LExpr T.mono)) :
+      LExpr.ite m (LExpr.substFvars c sm) (LExpr.substFvars t sm) (LExpr.substFvars f sm) := by rw [substFvars_unfold]
+@[simp] theorem substFvars_eq (m : T.Metadata) (e1 e2 : LExpr T.mono) (sm : Map T.Identifier (LExpr T.mono)) :
     LExpr.substFvars (LExpr.eq m e1 e2) sm =
-      LExpr.eq m (LExpr.substFvars e1 sm) (LExpr.substFvars e2 sm) := by
-  simp only [LExpr.substFvars]
-  split
-  · rfl
-  · simp [LExpr.substFvars.substFvarsAux]
-
-/-- substFvars distributes over app. -/
-theorem substFvars_app
-    (m : T.Metadata) (e1 e2 : LExpr T.mono)
-    (sm : Map T.Identifier (LExpr T.mono)) :
+      LExpr.eq m (LExpr.substFvars e1 sm) (LExpr.substFvars e2 sm) := by rw [substFvars_unfold]
+@[simp] theorem substFvars_app (m : T.Metadata) (e1 e2 : LExpr T.mono) (sm : Map T.Identifier (LExpr T.mono)) :
     LExpr.substFvars (LExpr.app m e1 e2) sm =
-      LExpr.app m (LExpr.substFvars e1 sm) (LExpr.substFvars e2 sm) := by
-  simp only [LExpr.substFvars]
-  split
-  · rfl
-  · simp [LExpr.substFvars.substFvarsAux]
-
-/-- substFvars distributes over abs. -/
-theorem substFvars_abs
-    (m : T.Metadata) (name : String) (ty : Option LMonoTy) (body : LExpr T.mono)
-    (sm : Map T.Identifier (LExpr T.mono)) :
-    LExpr.substFvars (.abs m name ty body) sm = .abs m name ty (LExpr.substFvars body sm) := by
-  simp only [LExpr.substFvars]
-  split
-  · rfl
-  · simp [LExpr.substFvars.substFvarsAux]
-
-/-- substFvars distributes over quant. -/
-theorem substFvars_quant
-    (m : T.Metadata) (qk : QuantifierKind) (name : String) (ty : Option LMonoTy)
-    (tr body : LExpr T.mono)
-    (sm : Map T.Identifier (LExpr T.mono)) :
+      LExpr.app m (LExpr.substFvars e1 sm) (LExpr.substFvars e2 sm) := by rw [substFvars_unfold]
+@[simp] theorem substFvars_abs (m : T.Metadata) (name : String) (ty : Option LMonoTy) (body : LExpr T.mono) (sm : Map T.Identifier (LExpr T.mono)) :
+    LExpr.substFvars (.abs m name ty body) sm = .abs m name ty (LExpr.substFvars body sm) := by rw [substFvars_unfold]
+@[simp] theorem substFvars_quant (m : T.Metadata) (qk : QuantifierKind) (name : String) (ty : Option LMonoTy) (tr body : LExpr T.mono) (sm : Map T.Identifier (LExpr T.mono)) :
     LExpr.substFvars (.quant m qk name ty tr body) sm =
-      .quant m qk name ty (LExpr.substFvars tr sm) (LExpr.substFvars body sm) := by
-  simp only [LExpr.substFvars]
-  split
-  · rfl
-  · simp [LExpr.substFvars.substFvarsAux]
+      .quant m qk name ty (LExpr.substFvars tr sm) (LExpr.substFvars body sm) := by rw [substFvars_unfold]
 
 omit [DecidableEq T.IDMeta] in
 /-- `liftBVars` preserves `eraseMetadata` equality. -/
