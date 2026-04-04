@@ -649,7 +649,7 @@ private theorem callOfLFunc_mkApp_op
     F.callOfLFunc (LExpr.mkApp m_app op_expr args') = some (op_expr, args', lfunc) := by
   obtain ⟨m_op, name, ty, rfl⟩ := h_op
   simp only [Factory.callOfLFunc, getLFuncCall_mkApp_op] at h_call ⊢
-  cases h_gf : F.getFactoryLFunc name.name with
+  cases h_gf : F[name.name]? with
   | none => simp [h_gf] at h_call
   | some func =>
     simp only [h_gf] at h_call ⊢
@@ -881,7 +881,7 @@ private theorem callOfLFunc_partial_full_isConstr
   simp only [h_lfc] at h_partial h_full
   cases op' <;> simp at h_partial h_full
   rename_i m_op name_op ty_op
-  cases h_gf : F.getFactoryLFunc name_op.name with
+  cases h_gf : F[name_op.name]? with
   | none => simp [h_gf] at h_partial
   | some func' =>
     simp only [h_gf] at h_partial h_full
@@ -1025,7 +1025,7 @@ private theorem isCanonicalValue_app_left
     cases op' with
     | op m_op name_op ty_op =>
       simp only at h_call
-      cases h_gf : Factory.getFactoryLFunc F name_op.name with
+      cases h_gf : F[name_op.name]? with
       | none => simp [h_gf] at h_call
       | some func =>
         simp only [h_gf] at h_call
@@ -1556,7 +1556,7 @@ private theorem callOfLFunc_eraseMetadata_congr
     | .op =>
       simp only []
       -- Same factory lookup (name₁ = name₂ now)
-      cases Factory.getFactoryLFunc F name₁.name with
+      cases F[name₁.name]? with
       | none => trivial
       | some func =>
         simp only

@@ -217,7 +217,8 @@ example: stuck test7 := by
 
 open LTy.Syntax
 
-private def testBuiltIn : @Factory TestParams := .ofArray
+-- Prove LFuncWF for each individual test function
+private def testFuncs : Array (LFunc TestParams) :=
   #[{ name := "Int.Add",
       inputs := [("x", mty[int]), ("y", mty[int])],
       output := mty[int],
@@ -274,11 +275,96 @@ private def testBuiltIn : @Factory TestParams := .ofArray
                           | _, _, _ => .none
                         | _ => .none) }]
 
+private def testBuiltIn : @Factory TestParams := .ofArray testFuncs
+
 private def testState : LState TestParams :=
-  let ans := LState.addFactory LState.init testBuiltIn
-  match ans with
-  | .error e => panic s!"{e}"
-  | .ok ok => ok
+  { (LState.init : LState TestParams) with
+    config := { (LState.init : LState TestParams).config with factory := testBuiltIn } }
+
+-- For Unit metadata, replaceMetadata with (fun _ => ()) is the identity
+private theorem replaceMetadata_unit_id :
+    ∀ (e : LExpr TestParams.mono), e.replaceMetadata (fun _ => ()) = e := by
+  intro e
+  induction e with
+  | const m c => simp [LExpr.replaceMetadata]
+  | op m o ty => simp [LExpr.replaceMetadata]
+  | bvar m i => simp [LExpr.replaceMetadata]
+  | fvar m n ty => simp [LExpr.replaceMetadata]
+  | abs m n ty e ih => simp [LExpr.replaceMetadata, ih]
+  | quant m k n ty tr e ih_tr ih_e => simp [LExpr.replaceMetadata, ih_tr, ih_e]
+  | app m e1 e2 ih1 ih2 => simp [LExpr.replaceMetadata, ih1, ih2]
+  | ite m c t f ih_c ih_t ih_f => simp [LExpr.replaceMetadata, ih_c, ih_t, ih_f]
+  | eq m e1 e2 ih1 ih2 => simp [LExpr.replaceMetadata, ih1, ih2]
+
+-- For Unit metadata, eraseMetadata is the identity function
+private theorem eraseMetadata_id_unit (e : LExpr TestParams.mono) : e.eraseMetadata = e :=
+  replaceMetadata_unit_id e
+
+-- Helper: For Unit metadata, eraseMetadata equality implies structural equality
+theorem eraseMetadata_eq_of_unit {e1 e2 : LExpr TestParams.mono}
+  (h : e1.eraseMetadata = e2.eraseMetadata) : e1 = e2 := by
+  rw [eraseMetadata_id_unit e1, eraseMetadata_id_unit e2] at h; exact h
+
+-- For Unit metadata, List.map eraseMetadata is identity
+private theorem list_eraseMetadata_id_unit :
+    ∀ (l : List (LExpr TestParams.mono)), l.map LExpr.eraseMetadata = l := by
+  intro l; induction l with
+  | nil => rfl
+  | cons h t ih => simp [List.map, eraseMetadata_id_unit, ih]
+
+-- concreteEval_eraseMetadata is trivial when eraseMetadata is the identity
+private theorem concreteEval_eraseMetadata_of_unit
+    {f : LFunc TestParams} :
+    ∀ ceval, f.concreteEval = some ceval →
+      ∀ md1 md2 (args1 args2 : List (LExpr TestParams.mono)) res1,
+        args1.map LExpr.eraseMetadata = args2.map LExpr.eraseMetadata →
+        ceval md1 args1 = some res1 →
+        ∃ res2, ceval md2 args2 = some res2 ∧
+          LExpr.eraseMetadata res1 = LExpr.eraseMetadata res2 := by
+  intro ceval hceval md1 md2 args1 args2 res1 hargs heval
+  rw [list_eraseMetadata_id_unit, list_eraseMetadata_id_unit] at hargs
+  subst hargs
+  -- md1 = md2 = () since both are Unit
+  have : md1 = md2 := Subsingleton.elim md1 md2
+  subst this
+  exact ⟨res1, heval, rfl⟩
+
+-- Tactic to prove concreteEval_argmatch for concrete functions
+macro "prove_ceval_argmatch" : tactic => `(tactic|
+  (intro fn md args res h1 h2;
+   first
+   | (simp only [Strata.DL.Util.Func.mk.injEq] at h1
+      obtain ⟨_, _, _, _, _, _, _, _, rfl, _⟩ := h1
+      revert h2; match args with
+      | [] => simp | [_] => simp | [_, _] => simp
+      | [_, _, _] => simp | _ :: _ :: _ :: _ :: _ => simp)
+   | simp at h1))
+
+private theorem each_testFunc_wf : ∀ lf, lf ∈ testFuncs → LFuncWF lf := by
+  intro lf hmem; simp [testFuncs] at hmem
+  rcases hmem with rfl | rfl | rfl | rfl | rfl <;> exact {
+    arg_nodup := by decide, body_freevars := by decide, body_or_concreteEval := by decide
+    typeArgs_nodup := by decide, inputs_typevars_in_typeArgs := by decide
+    output_typevars_in_typeArgs := by decide, precond_freevars := by decide
+    concreteEval_eraseMetadata := concreteEval_eraseMetadata_of_unit
+    concreteEval_argmatch := by prove_ceval_argmatch }
+
+-- Well-formedness of testBuiltIn factory
+private theorem testBuiltIn_wf : FactoryWF testBuiltIn := by
+  constructor; intro lf hmem
+  exact each_testFunc_wf lf (Factory.ofArray_mem hmem)
+
+-- Well-formedness of testState's factory.
+private theorem testState_wf : FactoryWF testState.config.factory :=
+  testBuiltIn_wf
+
+-- Prove `steps_well t` via `eval_StepStar` with `n` steps (default 100).
+theorem prove_steps_well (t : TestCase)
+    (wf : FactoryWF t.σ.config.factory) (n : Nat := 100)
+    (h : t.e_out = Lambda.LExpr.eval n t.σ t.e := by native_decide) :
+    steps_well t := by
+  obtain ⟨e', h_step, h_eM⟩ := eval_StepStar t.σ t.e t.e_out n wf h
+  cases eraseMetadata_eq_of_unit h_eM; exact h_step
 
 
 def test8 := TestCase.mk
@@ -290,14 +376,7 @@ def test8 := TestCase.mk
 #guard_msgs in
 #eval check test8
 
-/- FIXME: Disabled when Factory made private
-example: steps_well test8 := by
-  unfold steps_well Scopes.toEnv test8
-  take_step; apply Step.expand_fn <;> discharge_isCanonicalValue
-  take_step; apply Step.eval_fn <;> try discharge_isCanonicalValue
-  · inhabited_metadata
-  take_refl
--/
+example: steps_well test8 := prove_steps_well test8 testState_wf
 
 def test9 := TestCase.mk
   testState
@@ -308,12 +387,7 @@ def test9 := TestCase.mk
 #guard_msgs in
 #eval check test9
 
-/- FIXME: Disabled when Factory made private
-example: steps_well test9 := by
-  unfold steps_well Scopes.toEnv test9
-  take_step; apply Step.expand_fn <;> discharge_isCanonicalValue
-  take_refl
--/
+example: steps_well test9 := prove_steps_well test9 testState_wf
 
 -- A sanity check that confirms the parse tree of λλ x y
 /-- info: true -/
@@ -334,6 +408,11 @@ def test10 := TestCase.mk
 -- 'Int.Add %0 100' cannot be evaluated because the definition of Int.Add is
 -- not available in LState.init .
 
+private theorem initState_wf : FactoryWF (LState.init : LState TestParams).config.factory := by
+  constructor; intro lf hmem; simp [LState.init, EvalConfig.init] at hmem
+
+example: steps_well test10 := prove_steps_well test10 initState_wf
+
 
 def test11 := TestCase.mk
   testState
@@ -344,13 +423,7 @@ def test11 := TestCase.mk
 #guard_msgs in
 #eval check test11
 
-/- FIXME: Disabled when Factory made private
-example: steps_well test11 := by
-  unfold steps_well Scopes.toEnv test11
-  take_step; apply Step.eval_fn <;> try discharge_isCanonicalValue
-  · inhabited_metadata
-  take_refl
--/
+example: steps_well test11 := prove_steps_well test11 testState_wf
 
 
 def test12 := TestCase.mk
@@ -362,20 +435,7 @@ def test12 := TestCase.mk
 #guard_msgs in
 #eval check test12
 
-/- FIXME: Disabled when Factory made private
-example: steps_well test12 := by
-  unfold steps_well Scopes.toEnv test12
-  take_step; apply Step.reduce_1; inhabited_metadata; apply Step.reduce_2
-  · inhabited_metadata;
-  · reduce_beta
-  take_step; apply Step.reduce_1; inhabited_metadata; apply Step.reduce_2;
-  · inhabited_metadata;
-  · apply Step.eval_fn <;> try discharge_isCanonicalValue
-    · inhabited_metadata
-  take_step; apply Step.reduce_1; inhabited_metadata; reduce_beta
-  take_step; apply Step.reduce_1; inhabited_metadata; reduce_beta
-  take_refl
--/
+example: steps_well test12 := prove_steps_well test12 testState_wf
 
 /-- info: false -/
 #guard_msgs in
@@ -399,6 +459,8 @@ def test13 := TestCase.mk
 -- '(#f 20) e' cannot be evaluated because the definition of #f is
 -- not available.
 
+example: steps_well test13 := prove_steps_well test13 testState_wf
+
 
 def test14 := TestCase.mk
   testState
@@ -408,6 +470,8 @@ def test14 := TestCase.mk
 /-- info: true -/
 #guard_msgs in
 #eval check test14
+
+example: steps_well test14 := prove_steps_well test14 testState_wf
 
 -- The result stops at (.. ((λ (~Int.Neg %0)) x)) because definition of
 -- x is not available.
@@ -428,28 +492,7 @@ def test15 := TestCase.mk
 #guard_msgs in
 #eval check test15
 
-/- FIXME: Disabled when Factory made private
-example: stuck test15 := by
-  intros e H
-  cases H <;> try contradiction
-  case reduce_2 =>
-    rename_i a
-    cases a <;> try contradiction
-    case expand_fn =>
-      rename_i hbody _ hcall _
-      cases hcall; cases hbody
-    · rename_i a a2 a3 he2
-      cases a3
-      cases a2; unfold denoteInt at he2; contradiction
-  case expand_fn =>
-    rename_i a a2 a3
-    cases a2
-    contradiction
-  case eval_fn =>
-    rename_i a a2 a3 he
-    cases a3
-    cases a2; unfold denoteInt at he; contradiction
--/
+-- TODO: stuck test15 — (~Int.Neg x) can't be evaluated since x is unresolvable
 
 def test16 := TestCase.mk
   testState
@@ -460,15 +503,7 @@ def test16 := TestCase.mk
 #guard_msgs in
 #eval check test16
 
-/- FIXME: Disabled when Factory made private
-example: steps_well test16 := by
-  unfold steps_well Scopes.toEnv test16
-  take_step; apply Step.reduce_2
-  · inhabited_metadata
-  · apply Step.eval_fn <;> try discharge_isCanonicalValue
-    · inhabited_metadata
-  take_refl
--/
+example: steps_well test16 := prove_steps_well test16 testState_wf
 
 def test17 := TestCase.mk
   testState
@@ -479,16 +514,7 @@ def test17 := TestCase.mk
 #guard_msgs in
 #eval check test17
 
-/- FIXME: Disabled when Factory made private
-example: steps_well test17 := by
-  unfold steps_well Scopes.toEnv test17
-  take_step; apply Step.reduce_2
-  · inhabited_metadata
-  · apply Step.eval_fn <;> try discharge_isCanonicalValue
-    · inhabited_metadata
-  take_step; reduce_beta
-  take_refl
--/
+example: steps_well test17 := prove_steps_well test17 testState_wf
 
 def test18 := TestCase.mk
   testState
@@ -499,18 +525,7 @@ def test18 := TestCase.mk
 #guard_msgs in
 #eval check test18
 
-/- FIXME: Disabled when Factory made private
-example: steps_well test18 := by
-  unfold steps_well Scopes.toEnv test18
-  take_step; apply Step.reduce_2
-  · inhabited_metadata
-  · apply Step.eval_fn <;> try discharge_isCanonicalValue
-    · inhabited_metadata
-  take_step; apply Step.eval_fn <;> try discharge_isCanonicalValue
-  · simp; rfl
-  · inhabited_metadata
-  take_refl
--/
+example: steps_well test18 := prove_steps_well test18 testState_wf
 
 def test19 := TestCase.mk
   testState
@@ -522,19 +537,7 @@ def test19 := TestCase.mk
 #eval check test19
 
 
-/- FIXME: Disabled when Factory made private
-example: steps_well test19 := by
-  unfold steps_well Scopes.toEnv test19
-  take_step
-  · apply Step.reduce_2
-    · inhabited_metadata
-    · apply Step.eval_fn <;> try discharge_isCanonicalValue
-      · inhabited_metadata
-  take_step
-  · apply Step.eval_fn <;> try rfl
-    . inhabited_metadata
-  take_refl
--/
+example: steps_well test19 := prove_steps_well test19 testState_wf
 
 def test20 := TestCase.mk
   testState
@@ -545,19 +548,7 @@ def test20 := TestCase.mk
 #guard_msgs in
 #eval check test20
 
-/- FIXME: Disabled when Factory made private
-example: steps_well test20 := by
-  unfold steps_well Scopes.toEnv test20
-  take_step; apply Step.reduce_1
-  · inhabited_metadata
-  · apply Step.reduce_2
-    · inhabited_metadata
-    · apply Step.eval_fn <;> try discharge_isCanonicalValue
-      · inhabited_metadata
-  take_step; apply Step.eval_fn <;> try discharge_isCanonicalValue
-  · inhabited_metadata
-  take_refl
--/
+example: steps_well test20 := prove_steps_well test20 testState_wf
 
 def test21 := TestCase.mk
   testState
@@ -568,21 +559,7 @@ def test21 := TestCase.mk
 #guard_msgs in
 #eval check test21
 
-/- FIXME: Disabled when Factory made private
-example: steps_well test21 := by
-  unfold steps_well Scopes.toEnv test21
-  take_step; apply Step.reduce_2
-  · inhabited_metadata
-  · apply Step.reduce_2
-    · inhabited_metadata
-    · apply Step.eval_fn <;> try discharge_isCanonicalValue
-      · inhabited_metadata
-  take_step; apply Step.reduce_2
-  · inhabited_metadata
-  · apply Step.eval_fn <;> try discharge_isCanonicalValue
-    · inhabited_metadata
-  take_refl
--/
+example: steps_well test21 := prove_steps_well test21 testState_wf
 
 def test22 := TestCase.mk
   testState
@@ -593,15 +570,7 @@ def test22 := TestCase.mk
 #guard_msgs in
 #eval check test22
 
-/- FIXME: Disabled when Factory made private
-example: steps_well test22 := by
-  unfold steps_well Scopes.toEnv test22
-  take_step; apply Step.reduce_2
-  · inhabited_metadata
-  · apply Step.eval_fn <;> try discharge_isCanonicalValue
-    · inhabited_metadata
-  take_refl
--/
+example: steps_well test22 := prove_steps_well test22 testState_wf
 
 def test23 := TestCase.mk
   testState
@@ -612,26 +581,7 @@ def test23 := TestCase.mk
 #guard_msgs in
 #eval check test23
 
-/- FIXME: Disabled when Factory made private
-example: steps_well test23 := by
-  unfold steps_well Scopes.toEnv test23
-  take_step; apply Step.reduce_1
-  · inhabited_metadata
-  · apply Step.reduce_2
-    · inhabited_metadata
-    · apply Step.reduce_2
-      · inhabited_metadata
-      · apply Step.eval_fn <;> try discharge_isCanonicalValue
-        · inhabited_metadata
-  take_step; apply Step.reduce_1
-  · inhabited_metadata
-  · apply Step.reduce_2
-    · inhabited_metadata
-    · apply Step.eval_fn <;> try discharge_isCanonicalValue
-      · simp; rfl
-      · inhabited_metadata
-  take_refl
--/
+example: steps_well test23 := prove_steps_well test23 testState_wf
 
 def test24 := TestCase.mk
   testState
@@ -642,35 +592,7 @@ def test24 := TestCase.mk
 #guard_msgs in
 #eval check test24
 
-/- FIXME: Disabled when Factory made private
--- Small step stucks because 'Int.Le' is not in the test factory and 'y' is unresolvable.
-example: stuck test24 := by
-  intros e H
-  cases H <;> try contradiction
-  case reduce_1 =>
-    rename_i _ h
-    cases h <;> try contradiction
-    case reduce_2 =>
-      rename_i _ h
-      cases h <;> try contradiction
-      case reduce_2 =>
-        rename_i _ h
-        cases h <;> try contradiction
-        case expand_fn =>
-          rename_i a a2 a3
-          cases a2; contradiction
-        case eval_fn =>
-          rename_i a a2 a3 he
-          cases a3
-          cases a2; unfold denoteInt at he; contradiction
-      case expand_fn =>
-        rename_i a a2 a3
-        cases a2; contradiction
-      case eval_fn =>
-        rename_i a a2 a3 he
-        cases a3
-        cases a2; unfold denoteInt at he; contradiction
--/
+-- TODO: stuck test24 — Int.Le not in factory, y unresolvable
 
 def test25 := TestCase.mk
   testState
@@ -681,25 +603,15 @@ def test25 := TestCase.mk
 #guard_msgs in
 #eval check test25
 
-/- FIXME: Disabled when Factory made private
--- Small step stucks because 'x' is unresolvable.
-example: stuck test25 := by
-  intros e H
-  cases H <;> try contradiction
-  case expand_fn =>
-    rename_i a a2 a3
-    cases a2
-    contradiction
-  case eval_fn =>
-    rename_i a a2 a3 he
-    cases a3
-    cases a2; unfold denoteInt at he; contradiction
--/
+-- TODO: stuck test25 — x is unresolvable
 
 -- Ternary function applied through a state variable.
 
 private def testStateFV : LState TestParams :=
   { testState with state := [[("f", (none, esM[~Int.Add3]))]] }
+
+private theorem testStateFV_wf : FactoryWF testStateFV.config.factory :=
+  testState_wf
 
 def test_ternary_fv := TestCase.mk
   testStateFV
@@ -710,20 +622,7 @@ def test_ternary_fv := TestCase.mk
 #guard_msgs in
 #eval check test_ternary_fv
 
-/- FIXME: Disabled when Factory made private
-example: steps_well test_ternary_fv := by
-  unfold steps_well Scopes.toEnv test_ternary_fv testStateFV
-  take_step; apply Step.reduce_1
-  · inhabited_metadata
-  · apply Step.reduce_1
-    · inhabited_metadata
-    · apply Step.reduce_1
-      · inhabited_metadata
-      · apply Step.expand_fvar; rfl
-  take_step; apply Step.eval_fn <;> try rfl
-  · inhabited_metadata
-  take_refl
--/
+example: steps_well test_ternary_fv := prove_steps_well test_ternary_fv testStateFV_wf
 
 /-! ### Polymorphic function inlining: type substitution
 
@@ -733,20 +632,30 @@ operator's type annotation at the call site.
 -/
 
 -- polyEq<a>(x : a, y : a) : bool := ∀ (z : a), z == z
-private def polyFactory : @Factory TestParams :=
-  let arr : Array (LFunc TestParams) :=
-    #[{ name := "polyEq",
-        typeArgs := ["a"],
-        attr := #[.inline],
-        inputs := [("x", mty[%a]), ("y", mty[%a])],
-        output := mty[bool],
-        body := some esM[∀ (%a): (%0 == %0)] }]
-  Factory.ofArray arr
+private def polyFuncs : Array (LFunc TestParams) :=
+  #[{ name := "polyEq",
+      typeArgs := ["a"],
+      attr := #[.inline],
+      inputs := [("x", mty[%a]), ("y", mty[%a])],
+      output := mty[bool],
+      body := some esM[∀ (%a): (%0 == %0)] }]
+
+private def polyFactory : @Factory TestParams := .ofArray polyFuncs
 
 private def polyState : LState TestParams :=
-  match LState.addFactory LState.init polyFactory with
-  | .error e => panic s!"{e}"
-  | .ok ok => ok
+  { (LState.init : LState TestParams) with
+    config := { (LState.init : LState TestParams).config with factory := polyFactory } }
+
+private theorem polyState_wf : FactoryWF polyState.config.factory := by
+  constructor; intro lf hmem
+  have := Factory.ofArray_mem hmem
+  simp [polyFuncs] at this
+  rcases this with rfl <;> exact {
+    arg_nodup := by decide, body_freevars := by decide, body_or_concreteEval := by decide
+    typeArgs_nodup := by decide, inputs_typevars_in_typeArgs := by decide
+    output_typevars_in_typeArgs := by decide, precond_freevars := by decide
+    concreteEval_eraseMetadata := concreteEval_eraseMetadata_of_unit
+    concreteEval_argmatch := by prove_ceval_argmatch }
 
 -- polyEq<bool>(#true, #false): type substitution maps %a to bool in the body
 def test_poly_tysubst := TestCase.mk
@@ -758,23 +667,35 @@ def test_poly_tysubst := TestCase.mk
 #guard_msgs in
 #eval check test_poly_tysubst
 
+example: steps_well test_poly_tysubst := prove_steps_well test_poly_tysubst polyState_wf
+
 -- polyPair<a, b>(x : a, y : b) : bool := ∀ (z : a), ∀ (w : b), z == w
 -- Tests that type substitution with distinct type parameters maps correctly:
 -- %a → int and %b → bool (not swapped).
-private def polyPairFactory : @Factory TestParams :=
-  let arr : Array (LFunc TestParams) :=
-    #[{ name := "polyPair",
-        typeArgs := ["a", "b"],
-        attr := #[.inline],
-        inputs := [("x", mty[%a]), ("y", mty[%b])],
-        output := mty[bool],
-        body := some esM[∀ (%a): ∀ (%b): (%1 == %0)] }]
-  Factory.ofArray arr
+private def polyPairFuncs : Array (LFunc TestParams) :=
+  #[{ name := "polyPair",
+      typeArgs := ["a", "b"],
+      attr := #[.inline],
+      inputs := [("x", mty[%a]), ("y", mty[%b])],
+      output := mty[bool],
+      body := some esM[∀ (%a): ∀ (%b): (%1 == %0)] }]
+
+private def polyPairFactory : @Factory TestParams := .ofArray polyPairFuncs
 
 private def polyPairState : LState TestParams :=
-  match LState.addFactory LState.init polyPairFactory with
-  | .error e => panic s!"{e}"
-  | .ok ok => ok
+  { (LState.init : LState TestParams) with
+    config := { (LState.init : LState TestParams).config with factory := polyPairFactory } }
+
+private theorem polyPairState_wf : FactoryWF polyPairState.config.factory := by
+  constructor; intro lf hmem
+  have := Factory.ofArray_mem hmem
+  simp [polyPairFuncs] at this
+  rcases this with rfl <;> exact {
+    arg_nodup := by decide, body_freevars := by decide, body_or_concreteEval := by decide
+    typeArgs_nodup := by decide, inputs_typevars_in_typeArgs := by decide
+    output_typevars_in_typeArgs := by decide, precond_freevars := by decide
+    concreteEval_eraseMetadata := concreteEval_eraseMetadata_of_unit
+    concreteEval_argmatch := by prove_ceval_argmatch }
 
 -- polyPair<int, bool>(#42, #true): %a maps to int, %b maps to bool
 def test_poly_tysubst_distinct := TestCase.mk
@@ -785,6 +706,9 @@ def test_poly_tysubst_distinct := TestCase.mk
 /-- info: true -/
 #guard_msgs in
 #eval check test_poly_tysubst_distinct
+
+example: steps_well test_poly_tysubst_distinct :=
+  prove_steps_well test_poly_tysubst_distinct polyPairState_wf
 
 end EvalTest
 ---------------------------------------------------------------------
