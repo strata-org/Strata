@@ -19,17 +19,22 @@ namespace Strata
 -- 2. Running SymExec of Lambda and Imp
 
 
+/-- Convert C_Simp expression metadata (Unit) to Core expression metadata (SourceRange).
+    C_Simp does not track source locations, so we use SourceRange.none. -/
+private def csimpMetaToCore (_ : C_Simp.CSimpLParams.mono.base.Metadata) : Core.CoreLParams.mono.base.Metadata :=
+  Strata.SourceRange.none
+
 def translate_expr (e : C_Simp.Expression.Expr) : Lambda.LExpr Core.CoreLParams.mono :=
   match e with
-  | .const m c => .const m c
-  | .op m o ty => .op m ⟨o.name, ()⟩ ty
-  | .bvar m n => .bvar m n
-  | .fvar m n ty => .fvar m ⟨n.name, ()⟩ ty
-  | .abs m name ty e => .abs m name ty (translate_expr e)
-  | .quant m k name ty tr e => .quant m k name ty (translate_expr tr) (translate_expr e)
-  | .app m fn e => .app m (translate_expr fn) (translate_expr e)
-  | .ite m c t e => .ite m (translate_expr c) (translate_expr t) (translate_expr e)
-  | .eq m e1 e2 => .eq m (translate_expr e1) (translate_expr e2)
+  | .const m c => .const (csimpMetaToCore m) c
+  | .op m o ty => .op (csimpMetaToCore m) ⟨o.name, ()⟩ ty
+  | .bvar m n => .bvar (csimpMetaToCore m) n
+  | .fvar m n ty => .fvar (csimpMetaToCore m) ⟨n.name, ()⟩ ty
+  | .abs m name ty e => .abs (csimpMetaToCore m) name ty (translate_expr e)
+  | .quant m k name ty tr e => .quant (csimpMetaToCore m) k name ty (translate_expr tr) (translate_expr e)
+  | .app m fn e => .app (csimpMetaToCore m) (translate_expr fn) (translate_expr e)
+  | .ite m c t e => .ite (csimpMetaToCore m) (translate_expr c) (translate_expr t) (translate_expr e)
+  | .eq m e1 e2 => .eq (csimpMetaToCore m) (translate_expr e1) (translate_expr e2)
 
 def translate_opt_expr (e : Option C_Simp.Expression.Expr) : Option (Lambda.LExpr Core.CoreLParams.mono) :=
   match e with
@@ -88,7 +93,8 @@ def loop_elimination_statement(s : C_Simp.Statement) : Core.Statement :=
       let assigned_vars := (Imperative.Block.modifiedVars body).map (λ s => ⟨s.name, ()⟩)
       let havocd : Core.Statement := .block "loop havoc" (assigned_vars.map (λ n => Core.Statement.havoc n {})) {}
 
-      let measure_pos := (.app () (.app () (.op () "Int.Ge" none) (translate_expr measure)) (.intConst () 0))
+      -- Synthesized Core expressions have no C_Simp source location; SourceRange.none is used.
+      let measure_pos := (.app Strata.SourceRange.none (.app Strata.SourceRange.none (.op Strata.SourceRange.none "Int.Ge" none) (translate_expr measure)) (.intConst Strata.SourceRange.none 0))
 
       let entry_invariants : List Core.Statement := invList.mapIdx fun i inv =>
         .assert s!"entry_invariant_{i}" (translate_expr inv) {}
@@ -101,8 +107,8 @@ def loop_elimination_statement(s : C_Simp.Statement) : Core.Statement :=
         ([Core.Statement.assume "assume_guard" (translate_expr guard_expr) {}] ++ inv_assumes ++
          [Core.Statement.assume "assume_measure_pos" measure_pos {}]) {}
       let measure_old_value_assign : Core.Statement := .init "special-name-for-old-measure-value" (.forAll [] (.tcons "int" [])) (.det (translate_expr measure)) {}
-      let measure_decreases : Core.Statement := .assert "measure_decreases" (.app () (.app () (.op () "Int.Lt" none) (translate_expr measure)) (.fvar () "special-name-for-old-measure-value" none)) {}
-      let measure_imp_not_guard : Core.Statement := .assert "measure_imp_not_guard" (.ite () (.app () (.app () (.op () "Int.Le" none) (translate_expr measure)) (.intConst () 0)) (.app () (.op () "Bool.Not" none) (translate_expr guard_expr)) (.true ())) {}
+      let measure_decreases : Core.Statement := .assert "measure_decreases" (.app Strata.SourceRange.none (.app Strata.SourceRange.none (.op Strata.SourceRange.none "Int.Lt" none) (translate_expr measure)) (.fvar Strata.SourceRange.none "special-name-for-old-measure-value" none)) {}
+      let measure_imp_not_guard : Core.Statement := .assert "measure_imp_not_guard" (.ite Strata.SourceRange.none (.app Strata.SourceRange.none (.app Strata.SourceRange.none (.op Strata.SourceRange.none "Int.Le" none) (translate_expr measure)) (.intConst Strata.SourceRange.none 0)) (.app Strata.SourceRange.none (.op Strata.SourceRange.none "Bool.Not" none) (translate_expr guard_expr)) (.true Strata.SourceRange.none)) {}
       let maintain_invariants : List Core.Statement := invList.mapIdx fun i inv =>
         .assert s!"arbitrary_iter_maintain_invariant_{i}" (translate_expr inv) {}
       let body_statements : List Core.Statement := body.map translate_stmt
@@ -110,7 +116,7 @@ def loop_elimination_statement(s : C_Simp.Statement) : Core.Statement :=
         ([havocd, arbitrary_iter_assumes, measure_old_value_assign] ++ body_statements ++
          [measure_decreases, measure_imp_not_guard] ++ maintain_invariants) {}
 
-      let not_guard : Core.Statement := .assume "not_guard" (.app () (.op () "Bool.Not" none) (translate_expr guard_expr)) {}
+      let not_guard : Core.Statement := .assume "not_guard" (.app Strata.SourceRange.none (.op Strata.SourceRange.none "Bool.Not" none) (translate_expr guard_expr)) {}
       let invariant_assumes : List Core.Statement := invList.mapIdx fun i inv =>
         .assume s!"invariant_{i}" (translate_expr inv) {}
 
@@ -130,7 +136,7 @@ def loop_elimination_statement(s : C_Simp.Statement) : Core.Statement :=
       let body_statements : List Core.Statement := body.map translate_stmt
       let arbitrary_iter_facts : Core.Statement := .block "arbitrary iter facts"
         ([havocd, arbitrary_iter_assumes] ++ body_statements ++ maintain_invariants) {}
-      let not_guard : Core.Statement := .assume "not_guard" (.app () (.op () "Bool.Not" none) (translate_expr guard_expr)) {}
+      let not_guard : Core.Statement := .assume "not_guard" (.app Strata.SourceRange.none (.op Strata.SourceRange.none "Bool.Not" none) (translate_expr guard_expr)) {}
       let invariant_assumes : List Core.Statement := invList.mapIdx fun i inv =>
         .assume s!"invariant_{i}" (translate_expr inv) {}
       .ite (.det (translate_expr guard_expr)) ([first_iter_facts, arbitrary_iter_facts, havocd, not_guard] ++ invariant_assumes) [] {}

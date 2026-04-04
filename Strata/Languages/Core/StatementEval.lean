@@ -81,7 +81,7 @@ LHS mapping: `[("x", fresh_var)]`
 -/
 private def mkReturnSubst (proc : Procedure) (lhs : List Expression.Ident) (E : Env) :
     VarSubst × VarSubst × Env :=
-  let lhs_tys := lhs.map (fun l => (E.exprEnv.state.findD l (none, .fvar () l none)).fst)
+  let lhs_tys := lhs.map (fun l => (E.exprEnv.state.findD l (none, .fvar Strata.SourceRange.none l none)).fst)
   let lhs_typed := lhs.zip lhs_tys
   let (lhs_fvars, E') := E.genFVars lhs_typed
   let return_tys := proc.header.outputs.keys.map
@@ -98,7 +98,7 @@ private def mkGlobalSubst (proc : Procedure) (current_globals : VarSubst)
     (E : Env) : VarSubst × Env :=
   -- Create fresh variables for modified globals
   let modifies_tys := proc.spec.modifies.map
-      (fun l => (E.exprEnv.state.findD l (none, .fvar () l none)).fst)
+      (fun l => (E.exprEnv.state.findD l (none, .fvar Strata.SourceRange.none l none)).fst)
   let modifies_typed := proc.spec.modifies.zip modifies_tys
   let (globals_fvars, E') := E.genFVars modifies_typed
   let modified_subst := List.zip modifies_typed globals_fvars
@@ -147,7 +147,7 @@ private def computeTypeSubst (input_tys output_tys: List LMonoTy)
   Subst :=
   let actual_tys := args.filterMap getExprType
   let lhs_tys := lhs.filterMap (fun l =>
-    (E.exprEnv.state.findD l (none, .fvar () l none)).fst)
+    (E.exprEnv.state.findD l (none, .fvar Strata.SourceRange.none l none)).fst)
   let input_constraints := actual_tys.zip input_tys
   let output_constraints := lhs_tys.zip output_tys
   let constraints := input_constraints ++ output_constraints
@@ -330,7 +330,7 @@ private def createUnreachableCoverObligations
     Imperative.ProofObligations Expression :=
   covers.toArray.map
     (fun (label, md) =>
-      (Imperative.ProofObligation.mk label .cover pathConditions (LExpr.false ()) md))
+      (Imperative.ProofObligation.mk label .cover pathConditions (LExpr.false Strata.SourceRange.none) md))
 
 /--
 Create assert obligations for asserts in an unreachable (dead) branch, including
@@ -346,7 +346,7 @@ private def createUnreachableAssertObligations
       let propType := match md.getPropertyType with
         | some s => if s == Imperative.MetaData.divisionByZero then .divisionByZero else .assert
         | _ => .assert
-      (Imperative.ProofObligation.mk label propType pathConditions (LExpr.true ()) md))
+      (Imperative.ProofObligation.mk label propType pathConditions (LExpr.true Strata.SourceRange.none) md))
 
 /--
 Substitute free variables in an expression with their current values from the environment,
@@ -420,7 +420,7 @@ private def collectDeadBranchDeferred
     Imperative.ProofObligations Expression :=
   if Statements.containsCovers ss_f || Statements.containsAsserts ss_f then
     let deadLabel := toString (f!"<dead_branch: {cond.eraseTypes}>")
-    let deadPathConds := pathConditions.push [(deadLabel, LExpr.false ())]
+    let deadPathConds := pathConditions.push [(deadLabel, LExpr.false Strata.SourceRange.none)]
     createUnreachableCoverObligations deadPathConds (Statements.collectCovers ss_f) ++
     createUnreachableAssertObligations deadPathConds (Statements.collectAsserts ss_f)
   else
@@ -478,7 +478,7 @@ def evalAuxGo (steps : Nat) (old_var_subst : SubstMap) (Ewn : EnvWithNext) (ss :
             | .nondet =>
               -- Desugar: if (*) { t } else { e } → var c := *; if(c) { t } else { e }
               let freshName : CoreIdent := ⟨s!"$__nondet_cond_{Ewn.env.pathConditions.length}", ()⟩
-              let freshVar : Expression.Expr := .fvar () freshName none
+              let freshVar : Expression.Expr := .fvar Strata.SourceRange.none freshName none
               let initStmt := Statement.init freshName (.forAll [] (.tcons "bool" [])) .nondet md
               let iteStmt := Imperative.Stmt.ite (.det freshVar) then_ss else_ss md
               go' { Ewn with stk := orig_stk } [initStmt, iteStmt] optExit
@@ -547,7 +547,7 @@ def processIteBranches (steps : Nat) (old_var_subst : SubstMap) (Ewn : EnvWithNe
   let label_false := toString (f!"<label_ite_cond_false: !{cond.eraseTypes}>")
   let path_conds_true := Ewn.env.pathConditions.push [(label_true, cond')]
   let path_conds_false := Ewn.env.pathConditions.push
-                            [(label_false, (.ite () cond' (LExpr.false ()) (LExpr.true ())))]
+                            [(label_false, (.ite Strata.SourceRange.none cond' (LExpr.false Strata.SourceRange.none) (LExpr.true Strata.SourceRange.none)))]
   have : 1 <= Imperative.Block.sizeOf then_ss := by
    unfold Imperative.Block.sizeOf; split <;> omega
   have : 1 <= Imperative.Block.sizeOf else_ss := by
@@ -580,12 +580,12 @@ def processIteBranches (steps : Nat) (old_var_subst : SubstMap) (Ewn : EnvWithNe
   | _, _ =>
     let Ewns_t := Ewns_t.map
                       (fun (ewn : EnvWithNext) =>
-                        let s' := Imperative.Stmt.ite (.det (LExpr.true ())) ewn.stk.top [] md
+                        let s' := Imperative.Stmt.ite (.det (LExpr.true Strata.SourceRange.none)) ewn.stk.top [] md
                         { ewn with env := ewn.env.popScope,
                                    stk := orig_stk.appendToTop [s']})
     let Ewns_f := Ewns_f.map
                       (fun (ewn : EnvWithNext) =>
-                        let s' := Imperative.Stmt.ite (.det (LExpr.false ())) [] ewn.stk.top md
+                        let s' := Imperative.Stmt.ite (.det (LExpr.false Strata.SourceRange.none)) [] ewn.stk.top md
                         { ewn with env := ewn.env.popScope,
                                    stk := orig_stk.appendToTop [s']})
   Ewns_t ++ Ewns_f
