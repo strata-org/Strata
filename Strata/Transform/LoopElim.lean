@@ -7,6 +7,7 @@ module
 
 public import Strata.DL.Imperative.Stmt
 public import Strata.Languages.Core.PipelinePhase
+import Strata.Languages.Core.StatementSemantics
 
 namespace Core
 open Imperative Lambda
@@ -187,13 +188,24 @@ def Stmt.removeLoops
   (s : Stmt P C) : Stmt P C :=
   (StateT.run (removeLoopsM s) 0).fst
 
-/-- Loop-elimination pipeline phase: the transform is applied during
-    evaluation (not as a program-to-program pass), so the transform here
-    is the identity. If the obligation's path includes labels from loop
-    elimination, the loop was replaced by an invariant-based encoding,
-    which is an over-approximation. -/
+/-- Eliminate loops in all procedures of a Core program by replacing each loop
+    with assertions and assumptions about its invariants. -/
+def loopElim (p : Program) : Program :=
+  { decls := p.decls.map fun d => match d with
+    | .proc proc md =>
+      .proc { proc with body := (StateT.run (Block.removeLoopsM proc.body) 0).fst } md
+    | other => other }
+
+/-- Loop elimination as a `CoreTransformM` pass suitable for the pipeline. -/
+def loopElim' (p : Program) : Transform.CoreTransformM (Bool × Program) :=
+  pure (true, loopElim p)
+
+/-- Loop-elimination pipeline phase: replaces each loop with an
+    invariant-based acyclic encoding. If the obligation's path includes
+    labels from loop elimination, the loop was replaced by an
+    over-approximation, so SAT models are demoted to unknown. -/
 def loopElimPipelinePhase : PipelinePhase where
-  transform p := pure (false, p)
+  transform := loopElim'
   phase.name := "LoopElim"
   phase.getValidation obligation :=
     if obligationHasLabelPrefix obligation loopElimInvariantPrefix

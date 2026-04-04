@@ -738,6 +738,17 @@ If the function_name is a class, add __init__ into it
 The following function return a tuple (translated function name, first argument, is the first argument of unknown type)
 -/
 
+/-- Coerce an expression to Any if its inferred type is a Composite class.
+    Composite values are replaced with a Hole (unconstrained Any value)
+    since Composite→Any coercion is not yet modeled. This limits
+    bug-finding ability but avoids type unification errors. -/
+partial def coerceToAny (ctx : TranslationContext) (expr : Python.expr SourceRange)
+    (translated : StmtExprMd) : Except TranslationError StmtExprMd := do
+  let ty ← inferExprType ctx expr
+  if isCompositeType ctx ty then
+    pure <| mkStmtExprMd (.Hole)
+  else pure translated
+
 partial def refineFunctionCallExpr (ctx : TranslationContext) (func: Python.expr SourceRange) :
       Except TranslationError (String × Option (Python.expr SourceRange) × Bool) := do
   match func with
@@ -1207,6 +1218,8 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
     let stmts ← match value.val with
       | some expr => do
         let e ← translateExpr ctx expr
+        -- Coerce Composite return values to Any for LaurelResult : Any
+        let e ← coerceToAny ctx expr e
         let assign := mkStmtExprMd (StmtExpr.Assign [mkStmtExprMd (StmtExpr.Identifier PyLauFuncReturnVar)] e)
         .ok [assign, mkStmtExprMd (StmtExpr.Exit "$body")]
       | none => .ok [mkStmtExprMd (StmtExpr.Exit "$body")]
