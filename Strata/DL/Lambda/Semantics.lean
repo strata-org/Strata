@@ -156,9 +156,7 @@ fuels. -/
     Step F rf (.eq m e1 e2) (.eq m' e1' e2)
 
 /-- Evaluation of the right-hand side of an equality.
-Note: this rule does NOT require the LHS to be a canonical value.
-This relaxes the strict call-by-value discipline, analogous to how
-`reduce_2` was relaxed for application arguments. -/
+Note: this rule does NOT require the LHS to be a canonical value. -/
 | eq_reduce_rhs:
   ∀ (e1 e2 e2':LExpr Tbase.mono),
     Step F rf e2 e2' →
