@@ -27,7 +27,7 @@ inductive ModelValidation where
   | modelPreserving
   /-- The phase may introduce spurious models. The function returns true
       when the model is valid. -/
-  | modelToValidate (validate : Imperative.SMT.CounterEx Expression.Ident → Bool)
+  | modelToValidate (validate : Imperative.SMT.Model Expression.Ident → Bool)
 
 /-- A phase in the verification pipeline. Each phase determines per-obligation
     whether its models need validation, based on whether the obligation is
