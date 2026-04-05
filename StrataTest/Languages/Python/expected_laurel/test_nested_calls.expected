@@ -1,5 +1,5 @@
-unknown location: ✅ pass - postcondition
-unknown location: ✅ pass - postcondition
+unknown location: ✅ pass - (double ensures) Return type constraint
+unknown location: ✅ pass - (add_one ensures) Return type constraint
 test_nested_calls.py(8, 4): ✅ pass - [derived] callElimAssert_requires_22
 test_nested_calls.py(9, 4): ✅ pass - [derived] callElimAssert_requires_18
 test_nested_calls.py(10, 4): ✅ pass - [derived] assert_assert(153)_calls_Any_to_bool_0

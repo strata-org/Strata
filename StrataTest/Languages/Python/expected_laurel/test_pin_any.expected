@@ -2,6 +2,6 @@ test_pin_any.py(3, 4): ❓ unknown - [derived] ite_cond_calls_Any_to_bool_0
 test_pin_any.py(4, 8): ❓ unknown - [derived] assert_assert(124)_calls_PIn_0
 test_pin_any.py(4, 8): ✔️ always true if reached - [derived] assert_assert(124)_calls_Any_to_bool_1
 test_pin_any.py(4, 8): ❓ unknown - assert(124)
-unknown location: ✔️ always true if reached - postcondition
+unknown location: ✔️ always true if reached - (test_in_on_any ensures) Return type constraint
 DETAIL: 2 passed, 0 failed, 3 inconclusive
 RESULT: Inconclusive

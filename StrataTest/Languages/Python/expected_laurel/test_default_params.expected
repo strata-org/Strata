@@ -1,7 +1,7 @@
-unknown location: ✅ pass - postcondition
+unknown location: ✅ pass - (greet ensures) Return type constraint
 test_default_params.py(8, 4): ✅ pass - [derived] loop_guard_calls_Any_to_bool_0
 test_default_params.py(8, 4): ✅ pass - [derived] loop_guard_end_calls_Any_to_bool_0
-unknown location: ❓ unknown - postcondition
+unknown location: ❓ unknown - (power ensures) Return type constraint
 test_default_params.py(14, 4): ✅ pass - [derived] callElimAssert_requires_0_21
 test_default_params.py(14, 4): ✅ pass - [derived] callElimAssert_requires_1_22
 test_default_params.py(15, 4): ✅ pass - [derived] assert_assert(325)_calls_Any_to_bool_0

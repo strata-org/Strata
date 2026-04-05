@@ -707,21 +707,25 @@ def pyAnalyzeLaurelCommand : Command where
             if fr.range.isNone then ""
             else s!"{fr.format fileMap (includeEnd? := false)}"
           | none => ""
-        -- Use propertySummary (Python assert message) only on failure VCs:
-        -- in Python, the assert message is an error description shown on failure
-        -- (e.g., assert x > 0, "x must be positive"), so displaying it on pass
-        -- would be misleading.  Derived VCs always use their auto-generated label.
+        -- propertySummary (pipeline-generated, e.g. "Return type constraint")
+        -- is always shown.  MetaData.message (user-provided, e.g. Python assert
+        -- messages) is shown only on failure, since in Python the assert message
+        -- is an error description that reads wrong on pass.
+        -- Derived VCs always use their auto-generated label.
         let isFailure := classifier.isFailure vcResult ||
                          vcResult.isImplementationError || vcResult.hasSMTError
         let messageSuffix :=
           if vcResult.obligation.metadata.isDerivedProperty then
             s!" - [derived] {vcResult.obligation.label}"
-          else if isFailure then
-            match vcResult.obligation.metadata.getPropertySummary with
+          else match vcResult.obligation.metadata.getPropertySummary with
             | some msg => s!" - {msg}"
-            | none => s!" - {vcResult.obligation.label}"
-          else
-            s!" - {vcResult.obligation.label}"
+            | none =>
+              if isFailure then
+                match vcResult.obligation.metadata.findElem Imperative.MetaData.message with
+                | some elem => s!" - {Std.format elem.value}"
+                | none => s!" - {vcResult.obligation.label}"
+              else
+                s!" - {vcResult.obligation.label}"
         let outcomeStr := vcResult.formatOutcome
         let loc := if !location.isEmpty then s!"{location}: " else "unknown location: "
         s := s ++ s!"{loc}{outcomeStr}{messageSuffix}\n"

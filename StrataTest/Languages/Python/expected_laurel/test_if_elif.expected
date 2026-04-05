@@ -1,10 +1,10 @@
 test_if_elif.py(2, 4): ✅ pass - [derived] ite_cond_calls_Any_to_bool_0
-unknown location: ✅ pass - postcondition
+unknown location: ✅ pass - (classify ensures) Return type constraint
 test_if_elif.py(4, 4): ✅ pass - [derived] ite_cond_calls_Any_to_bool_0
-unknown location: ✅ pass - postcondition
+unknown location: ✅ pass - (classify ensures) Return type constraint
 test_if_elif.py(6, 4): ✅ pass - [derived] ite_cond_calls_Any_to_bool_0
-unknown location: ✅ pass - postcondition
-unknown location: ✅ pass - postcondition
+unknown location: ✅ pass - (classify ensures) Return type constraint
+unknown location: ✅ pass - (classify ensures) Return type constraint
 test_if_elif.py(12, 4): ✅ pass - [derived] callElimAssert_requires_14
 test_if_elif.py(13, 4): ✅ pass - [derived] assert_assert(225)_calls_Any_to_bool_0
 test_if_elif.py(13, 4): ❓ unknown - assert(225)
