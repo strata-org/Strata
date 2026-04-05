@@ -106,12 +106,7 @@ def extractRelatedLocations (files : Map Strata.Uri Lean.FileMap) (md : Imperati
 
 /-- Convert a VCResult to a SARIF Result -/
 def vcResultToSarifResult (mode : VerificationMode) (files : Map Strata.Uri Lean.FileMap) (vcr : VCResult) : Strata.Sarif.Result :=
-  let ruleId :=
-    if vcr.obligation.metadata.isDerivedProperty then
-      s!"[derived] {vcr.obligation.label}"
-    else match vcr.obligation.metadata.getPropertySummary with
-      | some msg => msg
-      | none => vcr.obligation.label
+  let ruleId := vcr.obligation.label
   let relatedLocations := extractRelatedLocations files vcr.obligation.metadata
   match vcr.outcome with
   | .error msg =>

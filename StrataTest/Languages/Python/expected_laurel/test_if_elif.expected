@@ -1,22 +1,22 @@
 test_if_elif.py(2, 4): ✅ pass - [derived] ite_cond_calls_Any_to_bool_0
-unknown location: ✅ pass - (classify ensures) Return type constraint
+unknown location: ✅ pass - postcondition
 test_if_elif.py(4, 4): ✅ pass - [derived] ite_cond_calls_Any_to_bool_0
-unknown location: ✅ pass - (classify ensures) Return type constraint
+unknown location: ✅ pass - postcondition
 test_if_elif.py(6, 4): ✅ pass - [derived] ite_cond_calls_Any_to_bool_0
-unknown location: ✅ pass - (classify ensures) Return type constraint
-unknown location: ✅ pass - (classify ensures) Return type constraint
+unknown location: ✅ pass - postcondition
+unknown location: ✅ pass - postcondition
 test_if_elif.py(12, 4): ✅ pass - [derived] callElimAssert_requires_14
 test_if_elif.py(13, 4): ✅ pass - [derived] assert_assert(225)_calls_Any_to_bool_0
-test_if_elif.py(13, 4): ❓ unknown - should be negative
+test_if_elif.py(13, 4): ❓ unknown - assert(225)
 test_if_elif.py(15, 4): ✅ pass - [derived] callElimAssert_requires_10
 test_if_elif.py(16, 4): ✅ pass - [derived] assert_assert(302)_calls_Any_to_bool_0
-test_if_elif.py(16, 4): ❓ unknown - should be zero
+test_if_elif.py(16, 4): ❓ unknown - assert(302)
 test_if_elif.py(18, 4): ✅ pass - [derived] callElimAssert_requires_6
 test_if_elif.py(19, 4): ✅ pass - [derived] assert_assert(371)_calls_Any_to_bool_0
-test_if_elif.py(19, 4): ❓ unknown - should be small
+test_if_elif.py(19, 4): ❓ unknown - assert(371)
 test_if_elif.py(21, 4): ✅ pass - [derived] callElimAssert_requires_2
 test_if_elif.py(22, 4): ✅ pass - [derived] assert_assert(444)_calls_Any_to_bool_0
-test_if_elif.py(22, 4): ❓ unknown - should be large
+test_if_elif.py(22, 4): ❓ unknown - assert(444)
 test_if_elif.py(24, 0): ✅ pass - [derived] ite_cond_calls_Any_to_bool_0
 DETAIL: 16 passed, 0 failed, 4 inconclusive
 RESULT: Inconclusive
