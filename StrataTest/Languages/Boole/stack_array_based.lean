@@ -85,7 +85,7 @@ spec
 
   // Older elements are preserved
   ensures (
-    forall i:int ::
+    ∀ i:int .
       1 <= i && i <= old(top) ==> S[i] == old(S[i])
   );
 }
@@ -112,7 +112,44 @@ spec
 
 #end
 
-#eval Strata.Boole.verify "cvc5" stackArrayPgm
+/-- info:
+Obligation: StackInit_ensures_1_1066
+Property: assert
+Result: ✅ pass
+
+Obligation: StackInit_ensures_2_1086
+Property: assert
+Result: ✅ pass
+
+Obligation: StackEmpty_ensures_3_1205
+Property: assert
+Result: ✅ pass
+
+Obligation: StackEmpty_ensures_4_1233
+Property: assert
+Result: ✅ pass
+
+Obligation: Push_ensures_6_1494
+Property: assert
+Result: ✅ pass
+
+Obligation: Push_ensures_7_1525
+Property: assert
+Result: ✅ pass
+
+Obligation: Push_ensures_8_1583
+Property: assert
+Result: ✅ pass
+
+Obligation: Pop_ensures_10_1840
+Property: assert
+Result: ✅ pass
+
+Obligation: Pop_ensures_11_1871
+Property: assert
+Result: ✅ pass-/
+#guard_msgs in
+#eval Strata.Boole.verify "cvc5" stackArrayPgm (options := .quiet)
 
 example : Strata.smtVCsCorrect stackArrayPgm := by
   gen_smt_vcs
