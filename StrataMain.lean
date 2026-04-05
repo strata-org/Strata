@@ -147,15 +147,61 @@ def parseCheckLevel (pflags : ParsedFlags) : IO CheckLevel :=
     | .some l => pure l
     | .none => exitFailure s!"Invalid check level: '{s}'. Must be {CheckLevel.options}."
 
-def checkModeFlag : Flag :=
+/-- Common CLI flags for VerifyOptions fields.
+    Commands can append these to their own flags list. -/
+def verifyOptionsFlags : List Flag := [
   { name := "check-mode",
     help := s!"Check mode: {VerificationMode.options}. Default: 'deductive'.",
-    takesArg := .arg "mode" }
-
-def checkLevelFlag : Flag :=
+    takesArg := .arg "mode" },
   { name := "check-level",
     help := s!"Check level: {CheckLevel.options}. Default: 'minimal'.",
-    takesArg := .arg "level" }
+    takesArg := .arg "level" },
+  { name := "verbose", help := "Enable verbose output." },
+  { name := "quiet", help := "Suppress warnings on stderr." },
+  { name := "profile", help := "Print elapsed time for each pipeline step." },
+  { name := "sarif", help := "Write results as SARIF to <file>.sarif." },
+  { name := "solver",
+    help := s!"SMT solver executable (default: {Core.defaultSolver}).",
+    takesArg := .arg "name" },
+  { name := "solver-timeout",
+    help := "Solver timeout in seconds (default: 10).",
+    takesArg := .arg "seconds" },
+  { name := "vc-directory",
+    help := "Store VCs in SMT-Lib format in <dir>.",
+    takesArg := .arg "dir" },
+  { name := "no-solve",
+    help := "Generate SMT-Lib files but do not invoke the solver." },
+  { name := "stop-on-first-error",
+    help := "Exit after the first verification error." },
+  { name := "unique-bound-names",
+    help := "Use globally unique names for quantifier-bound variables." }
+]
+
+/-- Build a VerifyOptions from parsed CLI flags, starting from a base config.
+    Fields not present in the flags keep their base values. -/
+def parseVerifyOptions (pflags : ParsedFlags)
+    (base : VerifyOptions := VerifyOptions.default) : IO VerifyOptions := do
+  let checkMode ← parseCheckMode pflags
+  let checkLevel ← parseCheckLevel pflags
+  let solverTimeout ← match pflags.getString "solver-timeout" with
+    | .none => pure base.solverTimeout
+    | .some s => match s.toNat? with
+      | .some n => pure n
+      | .none => exitFailure s!"Invalid solver timeout: '{s}'"
+  let noSolve := pflags.getBool "no-solve"
+  pure { base with
+    verbose := if pflags.getBool "verbose" then .normal else .quiet,
+    solver := pflags.getString "solver" |>.getD base.solver,
+    solverTimeout,
+    checkMode, checkLevel,
+    stopOnFirstError := pflags.getBool "stop-on-first-error" || base.stopOnFirstError,
+    uniqueBoundNames := pflags.getBool "unique-bound-names" || base.uniqueBoundNames,
+    outputSarif := pflags.getBool "sarif" || base.outputSarif,
+    profile := pflags.getBool "profile" || base.profile,
+    skipSolver := noSolve || base.skipSolver,
+    alwaysGenerateSMT := noSolve || base.alwaysGenerateSMT,
+    vcDirectory := (pflags.getString "vc-directory" |>.map (⟨·⟩ : String → System.FilePath)).orElse (fun _ => base.vcDirectory)
+  }
 
 structure Command where
   name : String
@@ -498,11 +544,7 @@ private def deriveBaseName (file : String) : String :=
 def pyAnalyzeLaurelCommand : Command where
   name := "pyAnalyzeLaurel"
   args := [ "file" ]
-  flags := [{ name := "verbose", help := "Enable verbose output." },
-            { name := "no-solve", help := "Generate SMT-Lib files but do not invoke the solver." },
-            { name := "profile", help := "Print elapsed time for each pipeline step." },
-            { name := "quiet", help := "Suppress warnings on stderr." },
-            checkModeFlag, checkLevelFlag,
+  flags := verifyOptionsFlags ++ [
             { name := "spec-dir",
               help := "Directory containing compiled PySpec Ion files.",
               takesArg := .arg "dir" },
@@ -512,11 +554,6 @@ def pyAnalyzeLaurelCommand : Command where
             { name := "pyspec",
               help := "PySpec module name (e.g., servicelib.Storage).",
               takesArg := .repeat "module" },
-            { name := "sarif", help := "Write results as SARIF to <file>.sarif." },
-            { name := "vc-directory",
-              help := "Store VCs in SMT-Lib format in <dir>.",
-              takesArg := .arg "dir" },
-            { name := "unique-bound-names", help := "Use globally unique names for quantifier-bound variables." },
             { name := "keep-all-files",
               help := "Store intermediate Laurel and Core programs in <dir>.",
               takesArg := .arg "dir" }]
@@ -629,29 +666,19 @@ def pyAnalyzeLaurelCommand : Command where
       else pure coreProgram
 
     -- Verify using Core verifier
-    let checkMode ← parseCheckMode pflags
-    let checkLevel ← parseCheckLevel pflags
-    let noSolve := pflags.getBool "no-solve"
-    if noSolve && (pflags.getString "vc-directory").isNone && keepDir.isNone then
+    let pyAnalyzeBase : VerifyOptions :=
+      { VerifyOptions.default with
+        verbose := .quiet, removeIrrelevantAxioms := .Precise }
+    let mut options ← parseVerifyOptions pflags pyAnalyzeBase
+    if options.skipSolver && options.vcDirectory.isNone && keepDir.isNone then
       exitCmdFailure "pyAnalyzeLaurel"
         "--no-solve requires --vc-directory or \
          --keep-all-files to specify where SMT \
          files are stored."
-    let uniqueBoundNames := pflags.getBool "unique-bound-names"
-    let baseOptions : VerifyOptions :=
-      { VerifyOptions.default with
-        stopOnFirstError := false, verbose := .quiet, solver := Core.defaultSolver,
-        removeIrrelevantAxioms := .Precise,
-        checkMode := checkMode, checkLevel := checkLevel,
-        skipSolver := noSolve,
-        alwaysGenerateSMT := noSolve,
-        uniqueBoundNames := uniqueBoundNames,
-        profile := profile }
-    let options : VerifyOptions := match pflags.getString "vc-directory" with
-      | .some dir => { baseOptions with vcDirectory := some (dir : System.FilePath) }
-      | .none => match keepDir with
-        | some dir => { baseOptions with vcDirectory := some (s!"{dir}/{baseName}" : System.FilePath) }
-        | none => baseOptions
+    -- --keep-all-files implies vc-directory if not already set
+    if options.vcDirectory.isNone then
+      if let some dir := keepDir then
+        options := { options with vcDirectory := some (s!"{dir}/{baseName}" : System.FilePath) }
     let vcResults ← profileStep profile "SMT verification" do
       match ← Core.verifyProgram coreProgram options
                 (moreFns := Strata.Python.ReFactory)
@@ -676,9 +703,15 @@ def pyAnalyzeLaurelCommand : Command where
             if fr.range.isNone then ""
             else s!"{fr.format fileMap (includeEnd? := false)}"
           | none => ""
-        let messageSuffix := match vcResult.obligation.metadata.getPropertySummary with
-          | some msg => s!" - {msg}"
-          | none => s!" - {vcResult.obligation.label}"
+        -- Use propertySummary (e.g., Python assert message) for primary VCs,
+        -- but keep the auto-generated label for derived VCs (call preconditions,
+        -- contract checks) since their label describes what is being checked.
+        let messageSuffix :=
+          if vcResult.obligation.metadata.isDerivedProperty then
+            s!" - [derived] {vcResult.obligation.label}"
+          else match vcResult.obligation.metadata.getPropertySummary with
+            | some msg => s!" - {msg}"
+            | none => s!" - {vcResult.obligation.label}"
         let outcomeStr := vcResult.formatOutcome
         let loc := if !location.isEmpty then s!"{location}: " else "unknown location: "
         s := s ++ s!"{loc}{outcomeStr}{messageSuffix}\n"
@@ -688,8 +721,8 @@ def pyAnalyzeLaurelCommand : Command where
       let files := match mfm with
         | some (pyPath, fm) => Map.empty.insert (Strata.Uri.file pyPath) fm
         | none => Map.empty
-      Core.Sarif.writeSarifOutput checkMode files vcResults (filePath ++ ".sarif")
-    printPyAnalyzeSummary vcResults checkMode
+      Core.Sarif.writeSarifOutput options.checkMode files vcResults (filePath ++ ".sarif")
+    printPyAnalyzeSummary vcResults options.checkMode
 
 def pyAnalyzeToGotoCommand : Command where
   name := "pyAnalyzeToGoto"
@@ -1086,45 +1119,23 @@ structure CommandGroup where
 def verifyCommand : Command where
   name := "verify"
   args := [ "file" ]
-  flags := [
-    { name := "verbose", help := "Print extra information during analysis." },
+  flags := verifyOptionsFlags ++ [
     { name := "check", help := "Process up until SMT generation, but don't solve." },
     { name := "type-check", help := "Exit after semantic dialect's type inference/checking." },
     { name := "parse-only", help := "Exit after DDM parsing and type checking." },
-    { name := "stop-on-first-error", help := "Exit after the first verification error." },
-    { name := "unique-bound-names", help := "Use globally unique names for quantifier-bound variables." },
-    { name := "sarif", help := "Output results in SARIF format to <file>.sarif." },
     { name := "output-format", help := "Output format (only 'sarif' supported).", takesArg := .arg "format" },
-    { name := "vc-directory", help := "Store VCs in SMT-Lib format in <dir>.", takesArg := .arg "dir" },
-    { name := "procedures", help := "Verify only the specified procedures (comma-separated).", takesArg := .arg "procs" },
-    { name := "solver", help := s!"SMT solver executable to use (default: {Core.defaultSolver}).", takesArg := .arg "name" },
-    { name := "solver-timeout", help := "Solver timeout in seconds.", takesArg := .arg "seconds" },
-    checkModeFlag, checkLevelFlag ]
+    { name := "procedures", help := "Verify only the specified procedures (comma-separated).", takesArg := .arg "procs" }]
   help := "Verify a Strata program file (.core.st, .csimp.st, or .b3.st)."
   callback := fun v pflags => do
     let file := v[0]
-    let verbose := pflags.getBool "verbose"
-    let checkOnly := pflags.getBool "check"
-    let typeCheckOnly := pflags.getBool "type-check"
-    let parseOnly := pflags.getBool "parse-only"
-    let stopOnFirstError := pflags.getBool "stop-on-first-error"
-    let uniqueBoundNames := pflags.getBool "unique-bound-names"
-    let outputSarif := pflags.getBool "sarif" || pflags.getString "output-format" == some "sarif"
-    let checkMode ← parseCheckMode pflags
-    let checkLevel ← parseCheckLevel pflags
-    let solverTimeout ← match pflags.getString "solver-timeout" with
-      | .none => pure VerifyOptions.default.solverTimeout
-      | .some s => match s.toNat? with
-        | .some n => pure n
-        | .none => exitCmdFailure "verify" s!"Invalid number of seconds: {s}"
     let proceduresToVerify := pflags.getString "procedures" |>.map (·.splitToList (· == ','))
-    let opts : VerifyOptions :=
-      { VerifyOptions.default with
-        verbose := if verbose then .normal else .quiet,
-        checkOnly, typeCheckOnly, parseOnly, stopOnFirstError, uniqueBoundNames,
-        outputSarif, checkMode, checkLevel, solverTimeout,
-        vcDirectory := pflags.getString "vc-directory",
-        solver := pflags.getString "solver" |>.getD Core.defaultSolver }
+    let outputSarif := pflags.getBool "sarif" || pflags.getString "output-format" == some "sarif"
+    let opts ← parseVerifyOptions pflags
+    let opts := { opts with
+      checkOnly := pflags.getBool "check",
+      typeCheckOnly := pflags.getBool "type-check",
+      parseOnly := pflags.getBool "parse-only",
+      outputSarif := outputSarif || opts.outputSarif }
     let text ← Strata.Util.readInputSource file
     let inputCtx := Lean.Parser.mkInputContext text (Strata.Util.displayName file)
     let dctx := Elab.LoadedDialects.builtin

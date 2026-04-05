@@ -71,6 +71,12 @@ open Core
 open Lambda LTy.Syntax LExpr.SyntaxMono
 
 -- Bool-valued factory.  See architecture comment above.
+--
+-- **Known limitation (symbolic strings):** `concreteEval` fires only when
+-- *all* arguments are canonical values, so it requires both the pattern and
+-- the string to be concrete.  When the string is symbolic (e.g., a havoced
+-- function parameter), the function stays uninterpreted and the solver
+-- returns `unknown`.  This is a sound over-approximation.
 private def mkModeBoolFunc (name : String) (mode : MatchMode) :
     LFunc Core.CoreLParams :=
     { name := name,

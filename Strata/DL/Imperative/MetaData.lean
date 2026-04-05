@@ -317,6 +317,24 @@ def MetaData.getPropertySummary {P : PureExpr} [BEq P.Ident] (md : MetaData P) :
 def MetaData.withPropertySummary {P : PureExpr} (md : MetaData P) (msg : String) : MetaData P :=
   md.pushElem MetaData.propertySummary (.msg msg)
 
+/-- Metadata flag for derived properties (e.g., call precondition obligations
+    generated from an expression inside an assert/assume/cover statement).
+    Derived properties inherit the parent statement's metadata but are not
+    the user's original assertion. -/
+def MetaData.derivedProperty : MetaDataElem.Field P := .label "derivedProperty"
+
+/-- Check whether this metadata marks a derived property. -/
+def MetaData.isDerivedProperty {P : PureExpr} [BEq P.Ident] (md : MetaData P) : Bool :=
+  match md.findElem MetaData.derivedProperty with
+  | some elem => match elem.value with
+    | .switch true => true
+    | _ => false
+  | none => false
+
+/-- Mark metadata as belonging to a derived property. -/
+def MetaData.withDerivedProperty {P : PureExpr} (md : MetaData P) : MetaData P :=
+  md.pushElem MetaData.derivedProperty (.switch true)
+
 ---------------------------------------------------------------------
 
 end -- public section

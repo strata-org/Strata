@@ -69,9 +69,10 @@ def collectPrecondAsserts (F : @Lambda.Factory CoreLParams) (e : Expression.Expr
 : List Statement :=
   let wfObs := Lambda.collectWFObligations F e
   wfObs.mapIdx fun idx ob =>
+    let md' := md.withDerivedProperty
     let md' := match classifyPrecondition ob.funcName with
-      | some pt => md.pushElem Imperative.MetaData.propertyType (.msg pt)
-      | none => md
+      | some pt => md'.pushElem Imperative.MetaData.propertyType (.msg pt)
+      | none => md'
     Statement.assert
     s!"{labelPrefix}_calls_{ob.funcName}_{idx}" ob.obligation md'
 

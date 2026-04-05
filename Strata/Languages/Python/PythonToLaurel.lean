@@ -1226,8 +1226,14 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
     return (ctx, stmts)
 
   -- Assert statement
-  | .Assert _ test _msg => do
+  | .Assert _ test msg => do
     let condExpr ← translateExpr ctx test
+    -- Attach the Python assert message as a propertySummary so it appears in
+    -- verification output instead of the auto-generated VC label.
+    let md := match msg.val with
+      | some (.Constant _ (.ConString _ str) _) =>
+        md.withPropertySummary str.val
+      | _ => md
     let assertStmt := mkStmtExprMdWithLoc (StmtExpr.Assert (Any_to_bool condExpr)) md
     return (ctx, [assertStmt])
 
