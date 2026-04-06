@@ -1791,8 +1791,9 @@ private theorem eql_eraseMetadata_eq
     cases hv₁; cases hv₂; simp [LExpr.eql, h_nm']
   -- Cases 9-13: callOfLFunc catch-all (nested match)
   · -- case 9: callOfLFunc some/some, not both constructors → none
-    rename_i _ _ _ _ h_ne _ _ _ h_call₁ _ _ _ h_call₂ h_nc h_not_cc h_not_aa h_not_ca h_not_ac
+    rename_i _ _ _ _ h_ne _ _ _ _ _ _ h_call₁ h_call₂ h_nc h_not_cc h_not_aa h_not_ca h_not_ac
     have h_nm' : ¬LExpr.eqModuloMeta e₁' e₂' = true := by rw [← eqModuloMeta_eraseMetadata_eq h₁ h₂]; exact h_ne
+
     rw [h_call₁, h_call₂]; simp only [h_nc, ↓reduceIte]
     obtain ⟨_, _, h_call₁', _, _⟩ := callOfLFunc_some_of_eraseMetadata_eq F _ _ false h₁ _ _ _ h_call₁
     obtain ⟨_, _, h_call₂', _, _⟩ := callOfLFunc_some_of_eraseMetadata_eq F _ _ false h₂ _ _ _ h_call₂
@@ -1812,7 +1813,7 @@ private theorem eql_eraseMetadata_eq
        | exact h_not_ca _ _ _ _ _ _ rfl rfl
        | exact h_not_ac _ _ _ _ _ _ rfl rfl)
   · -- case 10: callOfLFunc some/some, both constructors, different names → some false
-    rename_i _ _ _ _ h_ne _ _ _ h_call₁ _ _ _ h_call₂ h_nc h_nd h_not_cc h_not_aa h_not_ca h_not_ac
+    rename_i _ _ _ _ h_ne _ _ _ _ _ _ h_call₁ h_call₂ h_nc h_nd h_not_cc h_not_aa h_not_ca h_not_ac
     have h_nm' : ¬LExpr.eqModuloMeta e₁' e₂' = true := by rw [← eqModuloMeta_eraseMetadata_eq h₁ h₂]; exact h_ne
     rw [h_call₁, h_call₂]; simp only [h_nc, h_nd, ↓reduceIte]
     obtain ⟨_, _, h_call₁', _, _⟩ := callOfLFunc_some_of_eraseMetadata_eq F _ _ false h₁ _ _ _ h_call₁
@@ -1833,7 +1834,7 @@ private theorem eql_eraseMetadata_eq
        | exact h_not_ca _ _ _ _ _ _ rfl rfl
        | exact h_not_ac _ _ _ _ _ _ rfl rfl)
   · -- case 11: callOfLFunc some/some, both constructors, same name → foldl eqlCombine
-    rename_i _ _ _ _ h_ne _ _ _ h_call₁ _ _ _ h_call₂ h_nc h_nd h_not_cc h_not_aa h_not_ca h_not_ac ih
+    rename_i _ _ _ h_ne _ _ _ _ _ _ h_call₁ h_call₂ h_nc h_nd h_not_cc h_not_aa h_not_ca h_not_ac ih
     have h_nm' : ¬LExpr.eqModuloMeta e₁' e₂' = true := by rw [← eqModuloMeta_eraseMetadata_eq h₁ h₂]; exact h_ne
     rw [h_call₁, h_call₂]; simp only [h_nc, h_nd]
     obtain ⟨_, _, h_call₁', h_eM_args₁, _⟩ := callOfLFunc_some_of_eraseMetadata_eq F _ _ false h₁ _ _ _ h_call₁
@@ -1867,57 +1868,41 @@ private theorem eql_eraseMetadata_eq
     simp only [foldl_attach_zip_eq_eql F]
     -- Apply the zip congruence helper
     exact (foldl_zip_eql_congr F _ _ _ _ h_eM_args₁ h_eM_args₂ ih _).symm
-  · -- case 12: callOfLFunc e1 some, callOfLFunc e2 none → none
-    rename_i _ _ _ e2_orig h_ne _ _ _ h_call₁ h_not_cc h_not_aa h_not_ca h_not_ac h_call₂_none
+  · -- case 12: callOfLFunc catch-all (simultaneous match not both some) → none
+    rename_i h_ne h_not_cc h_not_aa h_not_ca h_not_ac h_not_both_some
     have h_nm' : ¬LExpr.eqModuloMeta e₁' e₂' = true := by rw [← eqModuloMeta_eraseMetadata_eq h₁ h₂]; exact h_ne
-    -- Simplify LHS: call₁ = some, then call₂ = none
-    have h_none₂ : F.callOfLFunc e2_orig = none := by
-      cases h : F.callOfLFunc e2_orig with
-      | none => rfl
-      | some v => obtain ⟨a, b, c⟩ := v; exact (h_call₂_none a b c h).elim
-    rw [h_call₁, h_none₂]
-    -- Transfer
-    obtain ⟨_, _, h_call₁', _, _⟩ := callOfLFunc_some_of_eraseMetadata_eq F _ _ false h₁ _ _ _ h_call₁
-    have h_none₂' := callOfLFunc_none_of_eraseMetadata_eq F _ _ false h₂ h_none₂
     have h_ef : LExpr.eqModuloMeta e₁' e₂' = false := by
       revert h_nm'; cases LExpr.eqModuloMeta e₁' e₂' <;> simp
-    symm; unfold LExpr.eql; rw [h_ef, if_neg (by decide)]
-    split <;>
-    first
-    | (rw [h_call₁', h_none₂'])
-    | (exfalso
-       have hv₁ := EMEquiv.of_eraseMetadata_eq _ _ h₁
-       have hv₂ := EMEquiv.of_eraseMetadata_eq _ _ h₂
-       cases hv₁; cases hv₂
-       first
-       | exact h_not_cc _ _ _ _ rfl rfl
-       | exact h_not_aa _ _ _ _ _ _ _ _ rfl rfl
-       | exact h_not_ca _ _ _ _ _ _ rfl rfl
-       | exact h_not_ac _ _ _ _ _ _ rfl rfl)
-  · -- case 13: callOfLFunc e1✝ = none → catch-all returns none
-    rename_i _ _ e1_orig _ h_ne h_not_cc h_not_aa h_not_ca h_not_ac h_call_none
-    have h_nm' : ¬LExpr.eqModuloMeta e₁' e₂' = true := by rw [← eqModuloMeta_eraseMetadata_eq h₁ h₂]; exact h_ne
-    have h_none : F.callOfLFunc e1_orig = none := by
-      cases h : F.callOfLFunc e1_orig with
-      | none => rfl
-      | some v => obtain ⟨a, b, c⟩ := v; exact (h_call_none a b c h).elim
-    simp only []
-    have h_none' := callOfLFunc_none_of_eraseMetadata_eq F _ _ false h₁ h_none
-    have h_ef : LExpr.eqModuloMeta e₁' e₂' = false := by
-      revert h_nm'; cases LExpr.eqModuloMeta e₁' e₂' <;> simp
-    symm; unfold LExpr.eql; rw [h_ef, if_neg (by decide)]
-    split <;>
-    first
-    | rw [h_none']
-    | (exfalso
-       have hv₁ := EMEquiv.of_eraseMetadata_eq _ _ h₁
-       have hv₂ := EMEquiv.of_eraseMetadata_eq _ _ h₂
-       cases hv₁; cases hv₂
-       first
-       | exact h_not_cc _ _ _ _ rfl rfl
-       | exact h_not_aa _ _ _ _ _ _ _ _ rfl rfl
-       | exact h_not_ca _ _ _ _ _ _ rfl rfl
-       | exact h_not_ac _ _ _ _ _ _ rfl rfl)
+    -- LHS: the simultaneous match must hit catch-all since some/some is impossible
+    -- Split on the goal's match to resolve it to none
+    split
+    · -- some/some for e1/e2: contradicts h_not_both_some
+      rename_i fst args1 f1 fst_1 args2 f2 h1 h2
+      exact absurd h2 (fun h2 => h_not_both_some fst args1 f1 fst_1 args2 f2 h1 h2)
+    · -- catch-all for e1/e2: LHS = none, now show RHS eql F e₁' e₂' = none
+      symm; unfold LExpr.eql; rw [h_ef, if_neg (by decide)]
+      split <;>
+      first
+      | (-- Reach the simultaneous match for e₁'/e₂'; split again
+         simp only []
+         split
+         · -- some/some for e₁'/e₂': transfer back to e1/e2 → contradiction
+           rename_i op₁' args₁' f₁' op₂' args₂' f₂' h_call₁' h_call₂'
+           obtain ⟨op₁, args₁, h_call₁, _, _⟩ :=
+             callOfLFunc_some_of_eraseMetadata_eq F _ _ false h₁.symm _ _ _ h_call₁'
+           obtain ⟨op₂, args₂, h_call₂, _, _⟩ :=
+             callOfLFunc_some_of_eraseMetadata_eq F _ _ false h₂.symm _ _ _ h_call₂'
+           exact absurd h_call₂ (fun h2 => h_not_both_some op₁ args₁ _ op₂ args₂ _ h_call₁ h2)
+         · rfl)
+      | (exfalso
+         have hv₁ := EMEquiv.of_eraseMetadata_eq _ _ h₁
+         have hv₂ := EMEquiv.of_eraseMetadata_eq _ _ h₂
+         cases hv₁; cases hv₂
+         first
+         | exact h_not_cc _ _ _ _ rfl rfl
+         | exact h_not_aa _ _ _ _ _ _ _ _ rfl rfl
+         | exact h_not_ca _ _ _ _ _ _ rfl rfl
+         | exact h_not_ac _ _ _ _ _ _ rfl rfl)
 
 ---------------------------------------------------------------------
 

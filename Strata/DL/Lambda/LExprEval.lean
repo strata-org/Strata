@@ -89,10 +89,8 @@ def eql (F : @Factory T.base) (e1 e2 : LExpr T) : Option Bool :=
   | .abs _ _ _ _, .const _ _ => some false
   -- Case 3: datatype constructor applications
   | _, _ =>
-    match _h1: Factory.callOfLFunc F e1 false with
-    | some (_, args1, f1) =>
-      match Factory.callOfLFunc F e2 false with
-      | some (_, args2, f2) =>
+    match _h1: Factory.callOfLFunc F e1 false, Factory.callOfLFunc F e2 false  with
+    | some (_, args1, f1), some (_, args2, f2) =>
         -- Only apply disjointness/injectivity to constructors
         if !f1.isConstr || !f2.isConstr then none
         else if f1.name.name != f2.name.name then some false
@@ -103,8 +101,7 @@ def eql (F : @Factory T.base) (e1 e2 : LExpr T) : Option Bool :=
         List.foldl (fun acc (⟨a1, _⟩, a2) =>
           eqlCombine acc (eql F a1 a2)
         ) (some true) (args1.attach.zip args2)
-      | _ => none
-    | _ => none
+    | _, _ => none
   termination_by e1.sizeOf
   decreasing_by
     . rw[varOpen_sizeOf]; simp_all
