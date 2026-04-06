@@ -19,7 +19,7 @@ private def unknownResult : Result := .unknown (some [])
 /-- Obligation with loop-elimination labels in path conditions. -/
 private def loopElimObligation : Imperative.ProofObligation Core.Expression :=
   { label := "test_loopElim", property := .assert,
-    assumptions := [[("assume_invariant_0_0", .true ()), ("assume_guard_0", .true ())]],
+    assumptions := [[("loopElimAssume_loop_0_invariant_0", .true ()), ("loopElimAssume_loop_0_guard", .true ())]],
     obligation := .true (), metadata := {} }
 
 /-- Obligation with no abstraction labels — models are sound. -/

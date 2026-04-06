@@ -171,11 +171,11 @@ Obligation: assert_3_509
 Property: assert
 Result: ✅ pass
 
-Obligation: entry_invariant_0_0
+Obligation: loopElimAssert_loop_0_entry_invariant_0
 Property: assert
 Result: ✅ pass
 
-Obligation: arbitrary_iter_maintain_invariant_0_0
+Obligation: loopElimAssert_loop_0_arbitrary_iter_maintain_invariant_0
 Property: assert
 Result: ✅ pass
 

@@ -37,22 +37,22 @@ info: [Strata.Core] Type checking succeeded.
 
 
 VCs:
-Label: arbitrary_iter_maintain_invariant_0_0
+Label: loopElimAssert_loop_0_arbitrary_iter_maintain_invariant_0
 Property: assert
 Assumptions:
 <dead_branch: (~Int.Gt n #0)>: false
-assume_entry_invariant_0_0: false
+loopElimAssume_loop_0_entry_invariant_0: false
 Obligation:
 true
 
-Label: entry_invariant_0_0
+Label: loopElimAssert_loop_0_entry_invariant_0
 Property: assert
 Obligation:
 false
 
 
 
-Result: Obligation: entry_invariant_0_0
+Result: Obligation: loopElimAssert_loop_0_entry_invariant_0
 Property: assert
 Result: ❌ always false and is reachable from declaration entry
 
@@ -63,10 +63,10 @@ procedure zeroIter () returns (s : int)
   var n : int;
   n := 0;
   s := 0;
-  loop_0: {
-    first_iter_asserts_0: {
-      assert [entry_invariant_0_0]: false;
-      assume [assume_entry_invariant_0_0]: false;
+  loop_loop_0: {
+    loopElim_first_iter_asserts_loop_0: {
+      assert [loopElimAssert_loop_0_entry_invariant_0]: false;
+      assume [loopElimAssume_loop_0_entry_invariant_0]: false;
       }
     if (false) {
       }
@@ -75,11 +75,11 @@ procedure zeroIter () returns (s : int)
 
 ---
 info:
-Obligation: arbitrary_iter_maintain_invariant_0_0
+Obligation: loopElimAssert_loop_0_arbitrary_iter_maintain_invariant_0
 Property: assert
 Result: ✅ pass (❗path unreachable)
 
-Obligation: entry_invariant_0_0
+Obligation: loopElimAssert_loop_0_entry_invariant_0
 Property: assert
 Result: ❌ always false and is reachable from declaration entry
 -/

@@ -325,12 +325,12 @@ Property: assert
 Obligation:
 !(IntList..isNil($__xs0)) ==> IntList..isCons($__xs0)
 
-Label: entry_invariant_0_0
+Label: loopElimAssert_loop_0_entry_invariant_0
 Property: assert
 Obligation:
 0 + listLen($__xs1) == listLen($__xs1)
 
-Label: entry_invariant_0_1
+Label: loopElimAssert_loop_0_entry_invariant_1
 Property: assert
 Obligation:
 true
@@ -339,46 +339,46 @@ Label: set_cur_calls_IntList..tl_0
 Property: assert
 Assumptions:
 <label_ite_cond_true: (~Bool.Not (~IntList..isNil cur))>: !(IntList..isNil($__xs1))
-assume_guard_0: !(IntList..isNil($__cur6))
-assume_invariant_0_0: $__acc5 + listLen($__cur6) == listLen($__xs1)
-assume_invariant_0_1: $__acc5 >= 0
-assume_entry_invariant_0_0: 0 + listLen($__xs1) == listLen($__xs1)
+loopElimAssume_loop_0_guard: !(IntList..isNil($__cur6))
+loopElimAssume_loop_0_invariant_0: $__acc5 + listLen($__cur6) == listLen($__xs1)
+loopElimAssume_loop_0_invariant_1: $__acc5 >= 0
+loopElimAssume_loop_0_entry_invariant_0: 0 + listLen($__xs1) == listLen($__xs1)
 Obligation:
 IntList..isCons($__cur6)
 
-Label: arbitrary_iter_maintain_invariant_0_0
+Label: loopElimAssert_loop_0_arbitrary_iter_maintain_invariant_0
 Property: assert
 Assumptions:
 <label_ite_cond_true: (~Bool.Not (~IntList..isNil cur))>: !(IntList..isNil($__xs1))
-assume_guard_0: !(IntList..isNil($__cur6))
-assume_invariant_0_0: $__acc5 + listLen($__cur6) == listLen($__xs1)
-assume_invariant_0_1: $__acc5 >= 0
-assume_entry_invariant_0_0: 0 + listLen($__xs1) == listLen($__xs1)
+loopElimAssume_loop_0_guard: !(IntList..isNil($__cur6))
+loopElimAssume_loop_0_invariant_0: $__acc5 + listLen($__cur6) == listLen($__xs1)
+loopElimAssume_loop_0_invariant_1: $__acc5 >= 0
+loopElimAssume_loop_0_entry_invariant_0: 0 + listLen($__xs1) == listLen($__xs1)
 Obligation:
 $__acc5 + 1 + listLen(IntList..tl($__cur6)) == listLen($__xs1)
 
-Label: arbitrary_iter_maintain_invariant_0_1
+Label: loopElimAssert_loop_0_arbitrary_iter_maintain_invariant_1
 Property: assert
 Assumptions:
 <label_ite_cond_true: (~Bool.Not (~IntList..isNil cur))>: !(IntList..isNil($__xs1))
-assume_guard_0: !(IntList..isNil($__cur6))
-assume_invariant_0_0: $__acc5 + listLen($__cur6) == listLen($__xs1)
-assume_invariant_0_1: $__acc5 >= 0
-assume_entry_invariant_0_0: 0 + listLen($__xs1) == listLen($__xs1)
+loopElimAssume_loop_0_guard: !(IntList..isNil($__cur6))
+loopElimAssume_loop_0_invariant_0: $__acc5 + listLen($__cur6) == listLen($__xs1)
+loopElimAssume_loop_0_invariant_1: $__acc5 >= 0
+loopElimAssume_loop_0_entry_invariant_0: 0 + listLen($__xs1) == listLen($__xs1)
 Obligation:
 $__acc5 + 1 >= 0
 
 Label: equiv
 Property: assert
 Assumptions:
-assume_entry_invariant_0_0: 0 + listLen($__xs1) == listLen($__xs1)
+loopElimAssume_loop_0_entry_invariant_0: 0 + listLen($__xs1) == listLen($__xs1)
 <label_ite_cond_true: (~Bool.Not (~IntList..isNil cur))>: if !(IntList..isNil($__xs1)) then !(IntList..isNil($__xs1)) else true
-assume_guard_0: if !(IntList..isNil($__xs1)) then !(IntList..isNil($__cur6)) else true
-assume_invariant_0_0: if !(IntList..isNil($__xs1)) then $__acc5 + listLen($__cur6) == listLen($__xs1) else true
-assume_invariant_0_1: if !(IntList..isNil($__xs1)) then $__acc5 >= 0 else true
-not_guard_0: if !(IntList..isNil($__xs1)) then !(!(IntList..isNil($__cur8))) else true
-invariant_0_0: if !(IntList..isNil($__xs1)) then $__acc7 + listLen($__cur8) == listLen($__xs1) else true
-invariant_0_1: if !(IntList..isNil($__xs1)) then $__acc7 >= 0 else true
+loopElimAssume_loop_0_guard: if !(IntList..isNil($__xs1)) then !(IntList..isNil($__cur6)) else true
+loopElimAssume_loop_0_invariant_0: if !(IntList..isNil($__xs1)) then $__acc5 + listLen($__cur6) == listLen($__xs1) else true
+loopElimAssume_loop_0_invariant_1: if !(IntList..isNil($__xs1)) then $__acc5 >= 0 else true
+loopElimAssume_loop_0_not_guard: if !(IntList..isNil($__xs1)) then !(!(IntList..isNil($__cur8))) else true
+loopElimAssume_loop_0_exit_invariant_0: if !(IntList..isNil($__xs1)) then $__acc7 + listLen($__cur8) == listLen($__xs1) else true
+loopElimAssume_loop_0_exit_invariant_1: if !(IntList..isNil($__xs1)) then $__acc7 >= 0 else true
 <label_ite_cond_false: !(~Bool.Not (~IntList..isNil cur))>: if if !(IntList..isNil($__xs1)) then false else true then if !(IntList..isNil($__xs1)) then false else true else true
 Obligation:
 if !(IntList..isNil($__xs1)) then $__acc7 else 0 == listLen($__xs1)
@@ -389,11 +389,11 @@ Obligation: listLen_body_calls_IntList..tl_0
 Property: assert
 Result: ✅ pass
 
-Obligation: entry_invariant_0_0
+Obligation: loopElimAssert_loop_0_entry_invariant_0
 Property: assert
 Result: ✅ pass
 
-Obligation: entry_invariant_0_1
+Obligation: loopElimAssert_loop_0_entry_invariant_1
 Property: assert
 Result: ✅ pass
 
@@ -401,11 +401,11 @@ Obligation: set_cur_calls_IntList..tl_0
 Property: assert
 Result: ✅ pass
 
-Obligation: arbitrary_iter_maintain_invariant_0_0
+Obligation: loopElimAssert_loop_0_arbitrary_iter_maintain_invariant_0
 Property: assert
 Result: ✅ pass
 
-Obligation: arbitrary_iter_maintain_invariant_0_1
+Obligation: loopElimAssert_loop_0_arbitrary_iter_maintain_invariant_1
 Property: assert
 Result: ✅ pass
 

@@ -259,8 +259,10 @@ def Core.inlineProcedures (p : Core.Program) (opts : Core.InlineTransformOptions
 Transform a Core program to replace each loop with assertions and assumptions about
 its invariants.
 -/
-def Core.loopElimUsingContract (p : Core.Program) : Core.Program :=
-  Core.loopElim p
+def Core.loopElimUsingContract (p : Core.Program) : Except String Core.Program :=
+  Core.Transform.run p (fun prog => do
+    let (_, prog) ← Core.LoopElim.loopElim prog
+    return prog)
 
 /--
 Transform a Core program to replace each procedure call with assertions and

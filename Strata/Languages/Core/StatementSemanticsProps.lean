@@ -2326,6 +2326,57 @@ theorem core_wfBool_preserved
   | step _ _ _ hstep _ ih =>
     exact ih (core_step_preserves_wfBool π φ h_wf_ext _ _ hwf₀ hstep)
 
+theorem core_step_preserves_wfVal
+    (h_wf_ext : WFEvalExtension φ)
+    (c₁ c₂ : CoreConfig)
+    (hwf : WellFormedSemanticEvalVal c₁.getEnv.eval)
+    (hstep : CoreStep π φ c₁ c₂) :
+    WellFormedSemanticEvalVal c₂.getEnv.eval := by
+  induction hstep with
+  | step_cmd hcmd =>
+    cases hcmd with
+    | cmd_sem _ => simp [Config.getEnv]; exact hwf
+    | @call_sem _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ =>
+        simp only [Config.getEnv]; exact hwf
+  | step_block => simp [Config.getEnv]; exact hwf
+  | step_ite_true _ _ => exact hwf
+  | step_ite_false _ _ => exact hwf
+  | step_loop_enter _ _ => exact hwf
+  | step_loop_exit _ _ => exact hwf
+  | step_ite_nondet_true => exact hwf
+  | step_ite_nondet_false => exact hwf
+  | step_loop_nondet_enter => exact hwf
+  | step_loop_nondet_exit => exact hwf
+  | step_exit => exact hwf
+  | step_funcDecl => simp [Config.getEnv]; exact h_wf_ext.preserves_wfVal _ _ _ hwf
+  | step_typeDecl => exact hwf
+  | step_stmts_nil => exact hwf
+  | step_stmts_cons => exact hwf
+  | step_seq_inner _ ih => exact ih hwf
+  | step_seq_done => exact hwf
+  | step_seq_exit => exact hwf
+  | step_block_body _ ih => exact ih hwf
+  | step_block_done => exact hwf
+  | step_block_exit_none => exact hwf
+  | step_block_exit_match _ => exact hwf
+  | step_block_exit_mismatch _ => exact hwf
+
+theorem core_wfVal_preserved
+    (h_wf_ext : WFEvalExtension φ)
+    (c₁ c₂ : CoreConfig)
+    (hwf₀ : WellFormedSemanticEvalVal c₁.getEnv.eval)
+    (hstar : CoreStepStar π φ c₁ c₂) :
+    WellFormedSemanticEvalVal c₂.getEnv.eval := by
+  suffices ∀ c₁ c₂, WellFormedSemanticEvalVal c₁.getEnv.eval →
+      Imperative.StepStmtStar Expression (EvalCommand π φ) (EvalPureFunc φ) c₁ c₂ →
+      WellFormedSemanticEvalVal c₂.getEnv.eval from
+    this c₁ c₂ hwf₀ (CoreStepStar_to_StepStmtStar hstar)
+  intro c₁ c₂ hwf₀ h
+  induction h with
+  | refl => exact hwf₀
+  | step _ _ _ hstep _ ih =>
+    exact ih (core_step_preserves_wfVal π φ h_wf_ext _ _ hwf₀ hstep)
+
 /-! ## Assert-only blocks preserve store -/
 
 theorem stmts_allAssert_preserves_store
@@ -2392,7 +2443,7 @@ theorem core_step_preserves_noFailure
       cases heval with
       | eval_assert_fail hff _ =>
         have htt := hv ⟨_, _⟩ _ .refl ⟨rfl, rfl⟩
-        simp only [Config.getEval, Config.getStore] at htt
+        simp only [Config.getEval, Config.getStore, Config.getEnv] at htt
         rw [hff] at htt; exact absurd (Option.some.inj htt) HasBool.tt_is_not_ff.symm
       | _ => simp_all [Config.getEnv]
     | @call_sem _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ =>

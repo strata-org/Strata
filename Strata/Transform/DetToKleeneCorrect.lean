@@ -47,8 +47,7 @@ abbrev Lang.kleene : Lang P where
   terminalCfg := .terminal
   exitingCfg := fun _ ρ => .terminal ρ
   isAtAssert := isAtKleeneAssert
-  getEval := KleeneConfig.getEval
-  getStore := KleeneConfig.getStore
+  getEnv := KleeneConfig.getEnv
 
 /-! ## Kleene small-step helpers -/
 
@@ -638,10 +637,15 @@ theorem detToKleene_overapproximates
     (extendEval : ExtendEval P) :
     Transform.Overapproximates (Lang.det extendEval) (Lang.kleene (P := P))
       (StmtToKleeneStmt (P := P)) := by
-  intro st ns ht ρ₀ ρ' hwfb hwfv
-  refine ⟨fun hstar => ?_, fun lbl hstar => ?_⟩
-  · exact stmtToKleene_terminal extendEval st ns ht ρ₀ ρ' hwfb hwfv hstar
-  · exact absurd hstar (exitsCoveredByBlocks_noEscape P (EvalCmd P) extendEval st
+  intro st ns ht ρ₀ hwfb hwfv
+  refine ⟨fun ρ' => ⟨?_, ?_⟩, ?_⟩
+  · exact stmtToKleene_terminal extendEval st ns ht ρ₀ ρ' hwfb hwfv
+  · intro lbl hstar
+    exact absurd hstar (exitsCoveredByBlocks_noEscape P (EvalCmd P) extendEval st
       (stmtToKleene_some_exitsCovered [] st ns ht) ρ₀ lbl ρ')
+  · -- CanFail: if det reaches a failing cfg, Kleene also reaches one.
+    -- Needs a prefix simulation (simulation for all reachable cfgs,
+    -- not just terminal ones).
+    sorry
 
 end

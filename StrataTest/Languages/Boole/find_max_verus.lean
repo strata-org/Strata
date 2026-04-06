@@ -80,35 +80,36 @@ spec {
 };
 #end
 
-/-- info: Obligation: entry_invariant_0_0
+/-- info:
+Obligation: loopElimAssert_loop_0_entry_invariant_0
 Property: assert
 Result: ✅ pass
 
-Obligation: entry_invariant_0_1
+Obligation: loopElimAssert_loop_0_entry_invariant_1
 Property: assert
 Result: ✅ pass
 
-Obligation: entry_invariant_0_2
+Obligation: loopElimAssert_loop_0_entry_invariant_2
 Property: assert
 Result: ✅ pass
 
-Obligation: entry_invariant_0_3
+Obligation: loopElimAssert_loop_0_entry_invariant_3
 Property: assert
 Result: ❓ unknown
 
-Obligation: arbitrary_iter_maintain_invariant_0_0
+Obligation: loopElimAssert_loop_0_arbitrary_iter_maintain_invariant_0
 Property: assert
 Result: ✅ pass
 
-Obligation: arbitrary_iter_maintain_invariant_0_1
+Obligation: loopElimAssert_loop_0_arbitrary_iter_maintain_invariant_1
 Property: assert
 Result: ✅ pass
 
-Obligation: arbitrary_iter_maintain_invariant_0_2
+Obligation: loopElimAssert_loop_0_arbitrary_iter_maintain_invariant_2
 Property: assert
 Result: ✅ pass
 
-Obligation: arbitrary_iter_maintain_invariant_0_3
+Obligation: loopElimAssert_loop_0_arbitrary_iter_maintain_invariant_3
 Property: assert
 Result: ✅ pass
 

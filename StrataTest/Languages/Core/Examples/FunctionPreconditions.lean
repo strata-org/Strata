@@ -518,7 +518,7 @@ test_requires_0: !($__n0 == 0)
 Obligation:
 !($__n0 == 0)
 
-Label: entry_invariant_0_0
+Label: loopElimAssert_loop_0_entry_invariant_0
 Property: assert
 Assumptions:
 test_requires_0: !($__n0 == 0)
@@ -529,18 +529,18 @@ Label: loop_guard_end_calls_Int.SafeDiv_0
 Property: division by zero check
 Assumptions:
 <label_ite_cond_true: (~Int.Lt (~Int.SafeDiv i n) #10)>: 0 / $__n0 < 10
-assume_guard_0: $__i1 / $__n0 < 10
-assume_invariant_0_0: $__i1 >= 0
+loopElimAssume_loop_0_guard: $__i1 / $__n0 < 10
+loopElimAssume_loop_0_invariant_0: $__i1 >= 0
 test_requires_0: !($__n0 == 0)
 Obligation:
 !($__n0 == 0)
 
-Label: arbitrary_iter_maintain_invariant_0_0
+Label: loopElimAssert_loop_0_arbitrary_iter_maintain_invariant_0
 Property: assert
 Assumptions:
 <label_ite_cond_true: (~Int.Lt (~Int.SafeDiv i n) #10)>: 0 / $__n0 < 10
-assume_guard_0: $__i1 / $__n0 < 10
-assume_invariant_0_0: $__i1 >= 0
+loopElimAssume_loop_0_guard: $__i1 / $__n0 < 10
+loopElimAssume_loop_0_invariant_0: $__i1 >= 0
 test_requires_0: !($__n0 == 0)
 Obligation:
 $__i1 + 1 >= 0
@@ -551,7 +551,7 @@ Obligation: loop_guard_calls_Int.SafeDiv_0
 Property: division by zero check
 Result: ✅ pass
 
-Obligation: entry_invariant_0_0
+Obligation: loopElimAssert_loop_0_entry_invariant_0
 Property: assert
 Result: ✅ pass
 
@@ -559,7 +559,7 @@ Obligation: loop_guard_end_calls_Int.SafeDiv_0
 Property: division by zero check
 Result: ✅ pass
 
-Obligation: arbitrary_iter_maintain_invariant_0_0
+Obligation: loopElimAssert_loop_0_arbitrary_iter_maintain_invariant_0
 Property: assert
 Result: ✅ pass
 -/

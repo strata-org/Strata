@@ -9,15 +9,17 @@ public import Strata.DL.Imperative.Stmt
 public import Strata.Languages.Core.PipelinePhase
 import Strata.Languages.Core.StatementSemantics
 
-namespace Core
-open Imperative Lambda
-
 public section
 
-/-- Label prefix for loop-elimination invariant assumptions. -/
-def loopElimInvariantPrefix : String := "assume_invariant_"
-/-- Label prefix for loop-elimination guard assumptions. -/
-def loopElimGuardPrefix : String := "assume_guard_"
+namespace Imperative.LoopElim
+open Lambda
+
+/-- Label prefix for loop-elimination assumptions. -/
+def loopElimAssumePrefix : String := "loopElimAssume_"
+/-- Label prefix for loop-elimination asserts. -/
+def loopElimAssertPrefix : String := "loopElimAssert_"
+/-- Label prefix of blocks created by LoopElim. -/
+def loopElimBlockPrefix : String := "loopElim_"
 
 /-! ## Loop elimination
 
@@ -103,28 +105,28 @@ mutual
 def Stmt.removeLoopsM
   [HasNot P] [HasVarsImp P C] [HasHavoc P C] [HasInit P C] [HasPassiveCmds P C]
   [HasIdent P] [HasFvar P] [HasIntOrder P]
-  (s : Stmt P C) : StateM Nat (Stmt P C) :=
+  (s : Stmt P C) : StateM StringGenState (Bool × Stmt P C) :=
   match s with
   | .loop guard measure invariants bss md => do
-    let loop_num ← StateT.modifyGet (fun x => (x, x + 1))
+    let loop_num ← modifyGet (StringGenState.gen "loop")
     let assigned_vars := Block.modifiedVars bss
     let havocd : Stmt P C :=
-      .block s!"loop_havoc_{loop_num}" (assigned_vars.map (λ n => Stmt.cmd (HasHavoc.havoc n md))) {}
-    let body_statements ← Block.removeLoopsM bss
+      .block s!"{loopElimBlockPrefix}loop_havoc_{loop_num}" (assigned_vars.map (λ n => Stmt.cmd (HasHavoc.havoc n md))) {}
+    let (_, body_statements) ← Block.removeLoopsM bss
     let entry_invariants := invariants.mapIdx fun i inv =>
-      Stmt.cmd (HasPassiveCmds.assert s!"entry_invariant_{loop_num}_{i}" inv md)
+      Stmt.cmd (HasPassiveCmds.assert s!"{loopElimAssertPrefix}{loop_num}_entry_invariant_{i}" inv md)
     let entry_invariant_assumes := invariants.mapIdx fun i inv =>
-      Stmt.cmd (HasPassiveCmds.assume s!"assume_entry_invariant_{loop_num}_{i}" inv md)
+      Stmt.cmd (HasPassiveCmds.assume s!"{loopElimAssumePrefix}{loop_num}_entry_invariant_{i}" inv md)
     let first_iter_facts :=
-      .block s!"first_iter_asserts_{loop_num}" (entry_invariants ++ entry_invariant_assumes) {}
+      .block s!"{loopElimBlockPrefix}first_iter_asserts_{loop_num}" (entry_invariants ++ entry_invariant_assumes) {}
     let inv_assumes := invariants.mapIdx fun i inv =>
-      Stmt.cmd (HasPassiveCmds.assume s!"{loopElimInvariantPrefix}{loop_num}_{i}" inv md)
+      Stmt.cmd (HasPassiveCmds.assume s!"{loopElimAssumePrefix}{loop_num}_invariant_{i}" inv md)
     let maintain_invariants := invariants.mapIdx fun i inv =>
-      Stmt.cmd (HasPassiveCmds.assert s!"arbitrary_iter_maintain_invariant_{loop_num}_{i}" inv md)
+      Stmt.cmd (HasPassiveCmds.assert s!"{loopElimAssertPrefix}{loop_num}_arbitrary_iter_maintain_invariant_{i}" inv md)
     -- Guard-specific parts: assume_guard, termination, not_guard
     let (guard_assumes, pre_termination, post_termination, exit_guard) ← match guard with
       | .det g => do
-        let assume_guard := [Stmt.cmd (HasPassiveCmds.assume s!"{loopElimGuardPrefix}{loop_num}" g md)]
+        let assume_guard := [Stmt.cmd (HasPassiveCmds.assume s!"{loopElimAssumePrefix}{loop_num}_guard" g md)]
         let termination_stmts ←
           match measure with
           | none => pure ([], [])
@@ -133,86 +135,98 @@ def Stmt.removeLoopsM
             let m_old_expr     := HasFvar.mkFvar m_old_ident
             let init_m_old     := Stmt.cmd (HasInit.init m_old_ident HasIntOrder.intTy .nondet md)
             let assume_m_old   := Stmt.cmd (HasPassiveCmds.assume
-              s!"assume_measure_{loop_num}" (HasIntOrder.eq m_old_expr m) md)
+              s!"{loopElimAssumePrefix}{loop_num}_measure" (HasIntOrder.eq m_old_expr m) md)
             let assert_lb      := Stmt.cmd (HasPassiveCmds.assert
-              s!"measure_lb_{loop_num}"
+              s!"{loopElimAssertPrefix}{loop_num}_measure_lb"
               (HasNot.not (HasIntOrder.lt m_old_expr HasIntOrder.zero)) md)
             let assert_decrease := Stmt.cmd (HasPassiveCmds.assert
-              s!"measure_decrease_{loop_num}" (HasIntOrder.lt m m_old_expr) md)
+              s!"{loopElimAssertPrefix}{loop_num}_measure_decrease" (HasIntOrder.lt m m_old_expr) md)
             pure ([init_m_old, assume_m_old, assert_lb], [assert_decrease])
         let (pre, post) := termination_stmts
-        let not_guard := [Stmt.cmd (HasPassiveCmds.assume s!"not_guard_{loop_num}" (HasNot.not g) md)]
+        let not_guard := [Stmt.cmd (HasPassiveCmds.assume s!"{loopElimAssumePrefix}{loop_num}_not_guard" (HasNot.not g) md)]
         pure (assume_guard, pre, post, not_guard)
       | .nondet =>
         -- Nondet loop: no guard assume, no termination, no not_guard
         pure ([], [], [], [])
-    let arbitrary_iter_assumes := .block s!"arbitrary_iter_assumes_{loop_num}"
+    let arbitrary_iter_assumes := .block s!"{loopElimBlockPrefix}arbitrary_iter_assumes_{loop_num}"
       (guard_assumes ++ inv_assumes) md
-    let arbitrary_iter_facts := .block s!"arbitrary_iter_facts_{loop_num}"
+    let arbitrary_iter_facts := .block s!"{loopElimBlockPrefix}arbitrary_iter_facts_{loop_num}"
       ([havocd, arbitrary_iter_assumes] ++ pre_termination ++
        body_statements ++ maintain_invariants ++ post_termination) {}
     let invariant_assumes := invariants.mapIdx fun i inv =>
-      Stmt.cmd (HasPassiveCmds.assume s!"invariant_{loop_num}_{i}" inv md)
+      Stmt.cmd (HasPassiveCmds.assume s!"{loopElimAssumePrefix}{loop_num}_exit_invariant_{i}" inv md)
     let exit_state_assumes := [havocd] ++ exit_guard ++ invariant_assumes
     let loop_passive :=
       .ite guard (arbitrary_iter_facts :: exit_state_assumes) [] {}
-    pure (.block s!"loop_{loop_num}" [first_iter_facts, loop_passive] {})
+    pure (true, .block s!"loop_{loop_num}" [first_iter_facts, loop_passive] {})
   | .ite c tss ess md => do
-    let tss ← Block.removeLoopsM tss
-    let ess ← Block.removeLoopsM ess
-    pure (.ite c tss ess md)
+    let (c1, tss) ← Block.removeLoopsM tss
+    let (c2, ess) ← Block.removeLoopsM ess
+    pure (c1 || c2, .ite c tss ess md)
   | .block label bss md => do
-    let bss ← Block.removeLoopsM bss
-    pure (.block label bss md)
-  | .cmd _ => pure s
-  | .exit _ _ => pure s
-  | .funcDecl _ _ => pure s  -- Function declarations pass through unchanged
-  | .typeDecl _ _ => pure s  -- Type declarations pass through unchanged
+    let (changed, bss) ← Block.removeLoopsM bss
+    pure (changed, .block label bss md)
+  | .cmd _ => pure (false, s)
+  | .exit _ _ => pure (false, s)
+  | .funcDecl _ _ => pure (false, s)
+  | .typeDecl _ _ => pure (false, s)
 
 def Block.removeLoopsM
   [HasNot P] [HasVarsImp P C] [HasHavoc P C] [HasInit P C] [HasPassiveCmds P C]
   [HasIdent P] [HasFvar P] [HasIntOrder P]
-  (ss : List (Stmt P C)) : StateM Nat (List (Stmt P C)) :=
+  (ss : List (Stmt P C)) : StateM StringGenState (Bool × List (Stmt P C)) :=
   match ss with
-  | [] => pure []
+  | [] => pure (false, [])
   | s :: ss => do
-    let s ← Stmt.removeLoopsM s
-    let ss ← Block.removeLoopsM ss
-    pure (s :: ss)
+    let (c1, s) ← Stmt.removeLoopsM s
+    let (c2, ss) ← Block.removeLoopsM ss
+    pure (c1 || c2, s :: ss)
 
 end
+end Imperative.LoopElim
 
-def Stmt.removeLoops
-  [HasNot P] [HasVarsImp P C] [HasHavoc P C] [HasInit P C] [HasPassiveCmds P C]
-  [HasIdent P] [HasFvar P] [HasIntOrder P]
-  (s : Stmt P C) : Stmt P C :=
-  (StateT.run (removeLoopsM s) 0).fst
+namespace Core.LoopElim
+open Imperative Lambda Imperative.LoopElim
+
+/-!
+# Specialization of removeLoopsM from Imperative.Stmt to Core
+-/
+
+private def removeLoopsDecls : List Core.Decl → StateM StringGenState (Bool × List Core.Decl)
+  | [] => pure (false, [])
+  | .proc proc md :: ds => do
+    let (c1, body) ← Block.removeLoopsM proc.body
+    let (c2, ds) ← removeLoopsDecls ds
+    return (c1 || c2, .proc { proc with body := body } md :: ds)
+  | d :: ds => do
+    let (changed, ds) ← removeLoopsDecls ds
+    return (changed, d :: ds)
 
 /-- Eliminate loops in all procedures of a Core program by replacing each loop
-    with assertions and assumptions about its invariants. -/
-def loopElim (p : Program) : Program :=
-  { decls := p.decls.map fun d => match d with
-    | .proc proc md =>
-      .proc { proc with body := (StateT.run (Block.removeLoopsM proc.body) 0).fst } md
-    | other => other }
+    with assertions and assumptions about its invariants.
+    Loop elimination as a `CoreTransformM` pass suitable for the pipeline.
+    Returns `(changed, program, generated_assert_labels)`. -/
+def loopElim (p : Core.Program) : Core.Transform.CoreTransformM (Bool × Core.Program) := do
+  let σ ← get
+  let ((changed, decls), cs') := StateT.run (removeLoopsDecls p.decls) σ.genState.cs
+  set { σ with genState := { σ.genState with cs := cs' } }
+  return (changed, { decls := decls })
 
-/-- Loop elimination as a `CoreTransformM` pass suitable for the pipeline. -/
-def loopElim' (p : Program) : Transform.CoreTransformM (Bool × Program) :=
-  pure (true, loopElim p)
+end LoopElim
 
 /-- Loop-elimination pipeline phase: replaces each loop with an
     invariant-based acyclic encoding. If the obligation's path includes
     labels from loop elimination, the loop was replaced by an
     over-approximation, so SAT models are demoted to unknown. -/
-def loopElimPipelinePhase : PipelinePhase where
-  transform := loopElim'
+def loopElimPipelinePhase : Core.PipelinePhase where
+  transform := Core.LoopElim.loopElim
   phase.name := "LoopElim"
   phase.getValidation obligation :=
-    if obligationHasLabelPrefix obligation loopElimInvariantPrefix
-       || obligationHasLabelPrefix obligation loopElimGuardPrefix then
+    if Core.obligationHasLabelPrefix obligation Imperative.LoopElim.loopElimAssumePrefix
+       || Core.obligationHasLabelPrefix obligation Imperative.LoopElim.loopElimAssertPrefix then
       .modelToValidate (fun _ => /- TODO -/ false)
     else .modelPreserving
 
-end -- public section
-
 end Core
+
+end -- public section

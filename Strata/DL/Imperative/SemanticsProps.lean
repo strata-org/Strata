@@ -169,6 +169,18 @@ theorem EvalStmtsSmall_hasFailure_monotone
   | refl => exact hf
   | step _ _ _ hstep _ ih => exact ih (step_hasFailure_monotone hstep hf)
 
+theorem StepStmtStar_hasFailure_monotone
+  {P : PureExpr} {CmdT : Type} {EvalCmd : EvalCmdParam P CmdT}
+  {extendEval : ExtendEval P}
+  [HasBool P] [HasNot P]
+  {c c' : Config P CmdT}
+  (hstar : StepStmtStar P EvalCmd extendEval c c')
+  (hf : c.getEnv.hasFailure = true) :
+  c'.getEnv.hasFailure = true := by
+  induction hstar with
+  | refl => exact hf
+  | step _ _ _ hstep _ ih => exact ih (step_hasFailure_monotone hstep hf)
+
 theorem EvalStmtSmall_hasFailure_irrel
   {P : PureExpr} {CmdT : Type} {EvalCmd : EvalCmdParam P CmdT}
   {extendEval : ExtendEval P}

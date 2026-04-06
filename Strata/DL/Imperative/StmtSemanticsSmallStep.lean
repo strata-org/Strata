@@ -79,24 +79,6 @@ inductive Config (P : PureExpr) (CmdT : Type) : Type where
 
 variable {P : PureExpr} {CmdT : Type}
 
-/-- Extract the store from a configuration. -/
-@[expose] def Config.getStore : Config P CmdT → SemanticStore P
-  | .stmt _ ρ => ρ.store
-  | .stmts _ ρ => ρ.store
-  | .terminal ρ => ρ.store
-  | .exiting _ ρ => ρ.store
-  | .block _ inner => inner.getStore
-  | .seq inner _ => inner.getStore
-
-/-- Extract the evaluator from a configuration. -/
-@[expose] def Config.getEval : Config P CmdT → SemanticEval P
-  | .stmt _ ρ => ρ.eval
-  | .stmts _ ρ => ρ.eval
-  | .terminal ρ => ρ.eval
-  | .exiting _ ρ => ρ.eval
-  | .block _ inner => inner.getEval
-  | .seq inner _ => inner.getEval
-
 /-- Extract the execution environment from a configuration. -/
 @[expose] def Config.getEnv : Config P CmdT → Env P
   | .stmt _ ρ => ρ
@@ -105,6 +87,14 @@ variable {P : PureExpr} {CmdT : Type}
   | .exiting _ ρ => ρ
   | .block _ inner => inner.getEnv
   | .seq inner _ => inner.getEnv
+
+/-- Extract the store from a configuration. -/
+@[expose] def Config.getStore (cfg: Config P CmdT): SemanticStore P
+  := cfg.getEnv.store
+
+/-- Extract the evaluator from a configuration. -/
+@[expose] def Config.getEval (cfg: Config P CmdT): SemanticEval P
+  := cfg.getEnv.eval
 
 /-! ## noMatchingAssert
 
@@ -1319,7 +1309,7 @@ private theorem step_preserves_noFailure
     cases hcmd with
     | eval_assert_fail hff _ =>
       have htt := hv ⟨_, _⟩ _ (.refl _) ⟨rfl, rfl⟩
-      simp only [Config.getEval, Config.getStore] at htt
+      simp only [Config.getEval, Config.getStore, Config.getEnv] at htt
       rw [hff] at htt; exact absurd (Option.some.inj htt) HasBool.tt_is_not_ff.symm
     | _ => simp_all [Config.getEnv]
   | step_block => simp [Config.getEnv]; exact hnf
