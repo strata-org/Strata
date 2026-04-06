@@ -685,10 +685,7 @@ def corePipelinePhases (procs : Option (List String) := none)
   let keepSetPhase := match procs with
     | some ps => [keepSetFilterPipelinePhase ps]
     | none => []
-  let callElimPhase := match procs with
-    | some _ => [callElimPipelinePhase]
-    | none => []
-  filterPhases ++ callElimPhase ++ precondPhase ++ keepSetPhase ++ [loopElimPipelinePhase]
+  filterPhases ++ [callElimPipelinePhase] ++ precondPhase ++ keepSetPhase ++ [loopElimPipelinePhase]
 
 /-- The abstracted phases derived from the Core pipeline phases. -/
 def coreAbstractedPhases (procs : Option (List String) := none)

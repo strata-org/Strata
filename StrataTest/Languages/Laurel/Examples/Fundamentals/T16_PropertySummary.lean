@@ -24,7 +24,7 @@ procedure divide(x: int, y: int) returns (result: int)
 
 procedure checkPositive(n: int) returns (ok: bool) {
   var x: int := divide(3, 0)
-//^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
+//^^^^^^^^^^^^^^^^^^^^^^^^^^ error: divisor is non-zero does not hold
 };
 "#
 
