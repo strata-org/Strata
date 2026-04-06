@@ -1788,19 +1788,14 @@ def translateClass (ctx : TranslationContext) (classStmt : Python.stmt SourceRan
     let classFields := fields.foldl (fun m f => m.insert f.name.text f.type.val) (ctx.classFieldHighType[className]?.getD {})
     let ctx := {ctx with classFieldHighType := ctx.classFieldHighType.insert className classFields}
 
-    -- Check if any field has a composite (UserDefined) type
-    let hasCompositeField := fields.any fun f => match f.type.val with
-      | .UserDefined _ => true
-      | _ => false
-
     -- Translate each method
     let mut instanceProcedures : Array Procedure := #[]
     for stmt in body do
       if let .FunctionDef _ methodName .. := stmt then
         let proc ← translateMethod ctx className stmt
-        -- Keep body opaque for __init__ when class has composite-typed fields
-        -- (no Any→Composite coercion yet causes Core type-check failures)
-        if methodName.val == "__init__" && hasCompositeField then
+        -- Keep __init__ body opaque: field assignments on self are not yet
+        -- supported by the Core verifier and produce spurious diagnostics.
+        if methodName.val == "__init__" then
           instanceProcedures := instanceProcedures.push { proc with body := .Opaque [] .none [] }
         else
           instanceProcedures := instanceProcedures.push proc
