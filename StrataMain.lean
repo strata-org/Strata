@@ -148,7 +148,9 @@ def parseCheckLevel (pflags : ParsedFlags) : IO CheckLevel :=
     | .none => exitFailure s!"Invalid check level: '{s}'. Must be {CheckLevel.options}."
 
 /-- Common CLI flags for VerifyOptions fields.
-    Commands can append these to their own flags list. -/
+    Commands can append these to their own flags list.
+    Note: `parseOnly`, `typeCheckOnly`, and `checkOnly` are omitted here
+    because they are specific to the `verify` command. -/
 def verifyOptionsFlags : List Flag := [
   { name := "check-mode",
     help := s!"Check mode: {VerificationMode.options}. Default: 'deductive'.",
@@ -174,7 +176,12 @@ def verifyOptionsFlags : List Flag := [
   { name := "stop-on-first-error",
     help := "Exit after the first verification error." },
   { name := "unique-bound-names",
-    help := "Use globally unique names for quantifier-bound variables." }
+    help := "Use globally unique names for quantifier-bound variables." },
+  { name := "use-array-theory",
+    help := "Use SMT-LIB Array theory instead of axiomatized maps." },
+  { name := "remove-irrelevant-axioms",
+    help := "Prune irrelevant axioms: 'off', 'aggressive', or 'precise'.",
+    takesArg := .arg "mode" }
 ]
 
 /-- Build a VerifyOptions from parsed CLI flags, starting from a base config.
@@ -189,6 +196,12 @@ def parseVerifyOptions (pflags : ParsedFlags)
       | .some n => pure n
       | .none => exitFailure s!"Invalid solver timeout: '{s}'"
   let noSolve := pflags.getBool "no-solve"
+  let removeIrrelevantAxioms ← match pflags.getString "remove-irrelevant-axioms" with
+    | .none => pure base.removeIrrelevantAxioms
+    | .some "off" => pure .Off
+    | .some "aggressive" => pure .Aggressive
+    | .some "precise" => pure .Precise
+    | .some s => exitFailure s!"Invalid remove-irrelevant-axioms mode: '{s}'. Must be 'off', 'aggressive', or 'precise'."
   pure { base with
     verbose := if pflags.getBool "verbose" then .normal else .quiet,
     solver := pflags.getString "solver" |>.getD base.solver,
@@ -196,6 +209,8 @@ def parseVerifyOptions (pflags : ParsedFlags)
     checkMode, checkLevel,
     stopOnFirstError := pflags.getBool "stop-on-first-error" || base.stopOnFirstError,
     uniqueBoundNames := pflags.getBool "unique-bound-names" || base.uniqueBoundNames,
+    useArrayTheory := pflags.getBool "use-array-theory" || base.useArrayTheory,
+    removeIrrelevantAxioms,
     outputSarif := pflags.getBool "sarif" || base.outputSarif,
     profile := pflags.getBool "profile" || base.profile,
     skipSolver := noSolve || base.skipSolver,
