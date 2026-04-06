@@ -41,13 +41,13 @@ def computeExprType (model : SemanticModel) (expr : StmtExprMd) : HighTypeMd :=
   | .FieldSelect _ fieldName => (model.get fieldName).getType
   -- Pure field update returns the same type as the target
   | .PureFieldUpdate target _ _ => computeExprType model target
-  -- Calls — we don't track return types here, so fall back to TVoid
+  -- Calls — return the declared output type when available, fall back to Unknown otherwise
   | .StaticCall callee _ => match model.get callee with
     | .datatypeConstructor t _ => ⟨ .UserDefined t, md, ⟩
     | .parameter p => p.type
     | .staticProcedure proc => match proc.outputs with
       | [singleOutput] => singleOutput.type
-      | _ => { val := .TVoid, md := default }
+      | _ => { val := HighType.Unknown, md := default }
     | .unresolved => { val := HighType.Unknown, md := default }
     | astNode =>
       dbg_trace s!"BUG: static call to {callee} not to a procedure but to a {repr astNode}"
