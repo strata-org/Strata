@@ -958,18 +958,19 @@ partial def translateCall (ctx : TranslationContext)
     -- must match the declared parameter type. This catches {"key": None}
     -- where the parameter type is str/int/bool/float.
     let mut typeAsserts : List StmtExprMd := []
-    for (argName, argType, _) in remainingParams do
+    for arg in remainingParams do
+      let argType := match arg.tys with | [ty] => ty | _ => "Any"
       let tester? := match argType with
         | "int" => some "Any..isfrom_int"
-        | "str" => some "Any..isfrom_string"
+        | "str" => some "Any..isfrom_str"
         | "bool" => some "Any..isfrom_bool"
         | "float" => some "Any..isfrom_float"
         | _ => none
       if let some testerName := tester? then
         let dictExpr := mkStmtExprMd (.StaticCall "Any..as_Dict!" [trans_dict])
         let keyPresent := mkStmtExprMd (.StaticCall "DictStrAny_contains"
-          [dictExpr, mkStmtExprMd (.LiteralString argName)])
-        let val := DictStrAny_get_param trans_dict argName true
+          [dictExpr, mkStmtExprMd (.LiteralString arg.name)])
+        let val := DictStrAny_get_param trans_dict arg.name true
         let isCorrectType := mkStmtExprMd (.StaticCall testerName [val])
         let cond := mkStmtExprMd (.PrimitiveOp .Implies [keyPresent, isCorrectType])
         typeAsserts := typeAsserts ++ [mkStmtExprMd (.Assert cond)]
@@ -1115,7 +1116,7 @@ partial def translateAssign  (ctx : TranslationContext)
             let annStr := pyExprToString ann
             let tester? := match annStr with
               | "int" => some "Any..isfrom_int"
-              | "str" => some "Any..isfrom_string"
+              | "str" => some "Any..isfrom_str"
               | "bool" => some "Any..isfrom_bool"
               | "float" => some "Any..isfrom_float"
               | _ => none
@@ -1249,7 +1250,7 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
           let annStr := pyExprToString annotation
           let tester? := match annStr with
             | "int" => some "Any..isfrom_int"
-            | "str" => some "Any..isfrom_string"
+            | "str" => some "Any..isfrom_str"
             | "bool" => some "Any..isfrom_bool"
             | "float" => some "Any..isfrom_float"
             | _ => none
