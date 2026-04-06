@@ -129,6 +129,7 @@ def sanitizeFilename (s : String) : String :=
   s |>.replace "(" "_" |>.replace ")" "_"
     |>.replace "\"" "" |>.replace "'" ""
     |>.replace " " "_" |>.replace "/" "_"
+    |>.replace "\\" "_"
 
 private def typedVarToSMTFn (ctx : SMT.Context) (id : Core.Expression.Ident)
   (ty : Core.Expression.Ty) := do

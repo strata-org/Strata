@@ -133,16 +133,18 @@ def buildDialectFileMap (pflags : ParsedFlags) : IO Strata.DialectFileMap := do
 
 end ParsedFlags
 
-def parseCheckMode (pflags : ParsedFlags) : IO VerificationMode :=
+def parseCheckMode (pflags : ParsedFlags)
+    (default : VerificationMode := .deductive) : IO VerificationMode :=
   match pflags.getString "check-mode" with
-  | .none => pure .deductive
+  | .none => pure default
   | .some s => match VerificationMode.ofString? s with
     | .some m => pure m
     | .none => exitFailure s!"Invalid check mode: '{s}'. Must be {VerificationMode.options}."
 
-def parseCheckLevel (pflags : ParsedFlags) : IO CheckLevel :=
+def parseCheckLevel (pflags : ParsedFlags)
+    (default : CheckLevel := .minimal) : IO CheckLevel :=
   match pflags.getString "check-level" with
-  | .none => pure .minimal
+  | .none => pure default
   | .some s => match CheckLevel.ofString? s with
     | .some l => pure l
     | .none => exitFailure s!"Invalid check level: '{s}'. Must be {CheckLevel.options}."
@@ -188,8 +190,8 @@ def verifyOptionsFlags : List Flag := [
     Fields not present in the flags keep their base values. -/
 def parseVerifyOptions (pflags : ParsedFlags)
     (base : VerifyOptions := VerifyOptions.default) : IO VerifyOptions := do
-  let checkMode ← parseCheckMode pflags
-  let checkLevel ← parseCheckLevel pflags
+  let checkMode ← parseCheckMode pflags base.checkMode
+  let checkLevel ← parseCheckLevel pflags base.checkLevel
   let solverTimeout ← match pflags.getString "solver-timeout" with
     | .none => pure base.solverTimeout
     | .some s => match s.toNat? with
@@ -203,7 +205,9 @@ def parseVerifyOptions (pflags : ParsedFlags)
     | .some "precise" => pure .Precise
     | .some s => exitFailure s!"Invalid remove-irrelevant-axioms mode: '{s}'. Must be 'off', 'aggressive', or 'precise'."
   pure { base with
-    verbose := if pflags.getBool "verbose" then .normal else .quiet,
+    verbose := if pflags.getBool "verbose" then .normal
+              else if pflags.getBool "quiet" then .quiet
+              else base.verbose,
     solver := pflags.getString "solver" |>.getD base.solver,
     solverTimeout,
     checkMode, checkLevel,
