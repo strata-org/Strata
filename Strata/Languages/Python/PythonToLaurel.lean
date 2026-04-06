@@ -1111,25 +1111,7 @@ partial def translateAssign  (ctx : TranslationContext)
                if isKnownType ctx annStr then annStr else inferType
           let initStmt := mkStmtExprMd (StmtExpr.LocalVariable n.val AnyTy AnyNone)
           newctx := {ctx with variableTypes:=(n.val, type)::ctx.variableTypes}
-          -- Emit type assertion for concrete type annotations (int, str, bool, float).
-          -- This catches bugs like `x: int = None` where None is not a valid int.
-          let typeAssert := match annotation with
-          | some ann =>
-            let annStr := pyExprToString ann
-            let tester? := match annStr with
-              | "int" => some "Any..isfrom_int"
-              | "str" => some "Any..isfrom_str"
-              | "bool" => some "Any..isfrom_bool"
-              | "float" => some "Any..isfrom_float"
-              | _ => none
-            match tester? with
-            | some testerName =>
-              let varExpr := mkStmtExprMd (StmtExpr.Identifier n.val)
-              let cond := mkStmtExprMd (StmtExpr.StaticCall testerName [varExpr])
-              [mkStmtExprMdWithLoc (StmtExpr.Assert cond) md]
-            | none => []
-          | none => []
-          return (newctx, initStmt :: assignStmts ++ typeAssert)
+          return (newctx, initStmt :: assignStmts)
     | .Subscript _ _ _ _ =>
         match getSubscriptList lhs with
         | target :: slices =>
