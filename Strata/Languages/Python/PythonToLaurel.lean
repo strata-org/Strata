@@ -590,16 +590,18 @@ partial def translateExpr (ctx : TranslationContext) (e : Python.expr SourceRang
       | .Slice _ start stop step => translateSlice ctx start.val stop.val step.val
       | _ => translateExpr ctx slice
     -- Emit bounds check for negative integer indices (e.g., xs[-1])
-    let boundsAssert := match slice with
+    -- and convert to positive index: xs[-n] becomes xs[len(xs) - n]
+    let (boundsAssert, index) := match slice with
       | .Constant _ (.ConNeg _ n) _ =>
-        -- xs[-n] requires len(xs) >= n
-        let lenExpr := mkStmtExprMd (.StaticCall "Any_len" [dictOrList])
-        let nExpr := intToAny n.val
-        let cond := mkStmtExprMd (.PrimitiveOp .Geq
-          [mkStmtExprMd (.StaticCall "Any..as_int!" [lenExpr]),
-           mkStmtExprMd (.StaticCall "Any..as_int!" [nExpr])])
-        some (mkStmtExprMd (.Assert cond))
-      | _ => none
+        -- xs[-n] requires len(xs) >= n; access becomes xs[len(xs) - n]
+        let listExpr := mkStmtExprMd (.StaticCall "Any..as_ListAny!" [dictOrList])
+        let lenExpr := mkStmtExprMd (.StaticCall "List_len" [listExpr])
+        let nLit := mkStmtExprMd (.LiteralInt n.val)
+        let cond := mkStmtExprMd (.PrimitiveOp .Geq [lenExpr, nLit])
+        let posIdx := mkStmtExprMd (.StaticCall "from_int"
+          [mkStmtExprMd (.PrimitiveOp .Sub [lenExpr, nLit])])
+        (some (mkStmtExprMd (.Assert cond)), posIdx)
+      | _ => (none, index)
     let access := mkStmtExprMd (.StaticCall "Any_get" [dictOrList, index])
     match boundsAssert with
     | some assert => return mkStmtExprMd (.Block [assert, access] none)
