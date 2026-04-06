@@ -1162,7 +1162,7 @@ def transformCommand : Command where
         | .error e => exitFailure s!"removeIrrelevantAxioms failed: {e}"
       | other =>
         exitFailure s!"Unknown pass '{other}'. Valid passes: inlineProcedures, loopElim, callElim, filterProcedures, removeIrrelevantAxioms."
-    IO.print program
+    IO.print s!"program Core;\n\n{program}"
 
 def verifyCommand : Command where
   name := "verify"
