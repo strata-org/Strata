@@ -183,4 +183,25 @@ def main() -> None:
     unless containsSubstr msg "too many positional arguments" do
       throw <| IO.userError s!"Expected 'too many positional arguments' error, got: {msg}"
 
+-- Returning a Composite-typed value from a function with Any return type
+-- should not crash; the Composite is replaced with a Hole (unconstrained value).
+#guard_msgs in
+#eval withPython (warnOnSkip := false) fun pythonCmd => do
+  let program :=
+"from typing import Any
+
+class MyService:
+    name: str
+
+    def __init__(self, name: str) -> None:
+        self.name = name
+
+def create_service() -> Any:
+    svc: MyService = MyService(\"test\")
+    return svc
+"
+  let diags ← processPythonFile pythonCmd (stringInputContext "test.py" program)
+  if diags.size ≠ 0 then
+    throw <| .userError s!"Expected 0 diagnostics, got {diags.size}"
+
 end Strata.Python.VerifyPythonTest

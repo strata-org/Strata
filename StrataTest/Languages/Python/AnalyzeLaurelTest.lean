@@ -7,6 +7,7 @@ module
 
 meta import Strata.SimpleAPI
 meta import Strata.Languages.Python.PySpecPipeline
+meta import Strata.Languages.Laurel.Resolution
 meta import Strata.Transform.ProcedureInlining
 meta import Strata.Languages.Python.PyFactory
 meta import StrataTest.Util.Python
@@ -62,7 +63,7 @@ private meta def setupFixture (pythonCmd : System.FilePath)
     IO.FS.writeBinFile dialectFile Python.Python.toIon
     -- Compile all servicelib modules (dispatch + individual services)
     match ← pySpecsDir testDir outDir dialectFile
-        (modules := #["servicelib", "servicelib.Storage", "servicelib.Messaging"])
+        (modules := #["servicelib", "servicelib.Storage", "servicelib.Messaging", "servicelib.Database"])
         (warningOutput := .none)
         (pythonCmd := toString pythonCmd) |>.toBaseIO with
     | .ok () => pure ()
@@ -163,7 +164,7 @@ private meta def testCases : List (String × Expected) := [
   .mk "test_user_class_construct.py" .success,
   -- Negative tests
   .mk "test_invalid_service.py" $
-    .fail "User code error: 'connect' called with unknown string \"invalid\"; known services: #[messaging, storage]",
+    .failPrefix "User code error: 'connect' called with unknown string \"invalid\"; known services:",
   .mk "test_invalid_method.py" $
     .fail "User code error: Unknown method 'nonexistent_method'",
   .mk "test_invalid_args.py" $
@@ -308,5 +309,34 @@ assertion. This exercises the full pipeline with type alias resolution.
       if !foundAlwaysFalse then
         throw <| IO.userError
           "Expected ✖️ always false for empty bucket violation"
+
+/-! ## Resolution error test after FilterPrelude
+
+Verifies that the combined Laurel program (after prelude filtering) resolves
+without errors.  This catches cases where FilterPrelude includes a declaration
+that references a type or name not present in the filtered prelude — for
+example, a composite field typed as a nested class that was never translated
+(the `_Exceptions` pattern in real boto3 pyspecs).
+
+The `Database` mock pyspec has a nested `_Exceptions` class.  The pyspec
+compiler emits it as a `subclass` in the Ion file.  `classDefToLaurel`
+recursively translates subclasses, so the type
+`servicelib_Database__Exceptions` is defined and resolves correctly. -/
+
+#eval withPython fun pythonCmd => do
+  IO.FS.withTempDir fun tmpDir => do
+    setupFixture pythonCmd tmpDir
+    let testIon ← compileTestScript pythonCmd
+      (testDir / "test_resolution_after_filter.py") tmpDir
+    let combined ←
+      match ← Strata.pyAnalyzeLaurel testIon.toString
+          (dispatchModules := #["servicelib"])
+          (specDir := tmpDir) |>.toBaseIO with
+      | .ok r => pure r
+      | .error err => throw <| IO.userError s!"pyAnalyzeLaurel failed: {err}"
+    let result := Laurel.resolve combined
+    unless result.errors.isEmpty do
+      let msgs := result.errors.toList.map (·.message)
+      throw <| IO.userError s!"Resolution errors after FilterPrelude:\n{"\n".intercalate msgs}"
 
 end Strata.Python.AnalyzeLaurelTest

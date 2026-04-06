@@ -127,8 +127,8 @@ private theorem loop_transform_some_det
       ns = .loop (.seq (.cmd (.assume "guard" g md)) b) := by
   simp [StmtToKleeneStmt] at ht
   match hb : BlockToKleeneStmt body with
-  | some b => simp [hb, bind, Option.bind] at ht; exact ⟨b, rfl, ht.symm⟩
-  | none => simp [hb, bind, Option.bind] at ht
+  | some b => simp [hb, Option.bind] at ht; exact ⟨b, rfl, ht.symm⟩
+  | none => simp [hb, Option.bind] at ht
 
 omit [HasFvar P] [HasVal P] [HasBoolVal P] in
 private theorem loop_transform_some_nondet
@@ -140,8 +140,8 @@ private theorem loop_transform_some_nondet
       ns = .loop b := by
   simp [StmtToKleeneStmt] at ht
   match hb : BlockToKleeneStmt body with
-  | some b => simp [hb, bind, Option.bind] at ht; exact ⟨b, rfl, ht.symm⟩
-  | none => simp [hb, bind, Option.bind] at ht
+  | some b => simp [hb, Option.bind] at ht; exact ⟨b, rfl, ht.symm⟩
+  | none => simp [hb, Option.bind] at ht
 
 omit [HasFvar P] [HasVal P] [HasBoolVal P] in
 private theorem block_transform_some

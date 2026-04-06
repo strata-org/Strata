@@ -32,3 +32,4 @@ test_module_level.py.ion        SKIP
 test_if_elif.py.ion             SKIP
 test_variable_reassign.py.ion   SKIP
 test_datetime_now_tz.py.ion     SKIP
+test_composite_return.py.ion    PASS
