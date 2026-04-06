@@ -68,7 +68,7 @@ procedure argValid() returns (r: int) {
 // Argument to constrained-typed parameter — invalid (requires violation)
 procedure argInvalid() returns (r: int) {
   var x: int := takesNat(-1);
-//^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
+//^^^^^^^^^^^^^^^^^^^^^^^^^^ error: precondition 'requires' does not hold
   return x
 };
 

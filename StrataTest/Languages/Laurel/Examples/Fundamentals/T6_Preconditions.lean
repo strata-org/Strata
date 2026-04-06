@@ -27,7 +27,7 @@ procedure hasRequires(x: int) returns (r: int)
 
 procedure caller() {
   var x: int := hasRequires(1);
-//^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
+//^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: precondition 'requires' does not hold
   var y: int := hasRequires(3)
 };
 
@@ -53,7 +53,7 @@ procedure multipleRequires(x: int, y: int) returns (r: int)
 procedure multipleRequiresCaller() {
   var a: int := multipleRequires(1, 2);
   var b: int := multipleRequires(-1, 2)
-//^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
+//^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: precondition 'requires_0' does not hold
 };
 
 function funcMultipleRequires(x: int, y: int): int
