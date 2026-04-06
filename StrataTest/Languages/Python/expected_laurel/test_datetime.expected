@@ -1,8 +1,8 @@
-test_datetime.py(13, 0): ✅ pass - callElimAssert_requires_12
-test_datetime.py(14, 0): ✅ pass - callElimAssert_requires_0_4
-test_datetime.py(14, 0): ✅ pass - callElimAssert_requires_1_5
-test_datetime.py(14, 0): ✅ pass - callElimAssert_requires_2_6
-test_datetime.py(14, 0): ✅ pass - callElimAssert_requires_3_7
+test_datetime.py(13, 0): ✅ pass - (Origin_datetime_date_Requires)d_type
+test_datetime.py(14, 0): ✅ pass - (Origin_timedelta_Requires)
+test_datetime.py(14, 0): ✅ pass - (Origin_timedelta_Requires)hours_type
+test_datetime.py(14, 0): ✅ pass - (Origin_timedelta_Requires)days_pos
+test_datetime.py(14, 0): ✅ pass - (Origin_timedelta_Requires)hours_pos
 test_datetime.py(21, 0): ✅ pass - assert_assert(554)_calls_Any_to_bool_0
 test_datetime.py(21, 0): ✅ pass - assert(554)
 test_datetime.py(25, 0): ✅ pass - assert_assert(673)_calls_Any_to_bool_0

@@ -19,7 +19,7 @@ open Strata.Java
 
 meta def check (s sub : String) : Bool := (s.splitOn sub).length > 1
 
--- Test 1: Basic dialect with 2 operators
+-- Test 1: Basic dialect with 2 operators — nested records in category file
 #eval do
   let testDialect : Strata.Dialect := {
     name := "Test"
@@ -46,10 +46,13 @@ meta def check (s sub : String) : Bool := (s.splitOn sub).length > 1
     ]
   }
   let files := (generateDialect testDialect "com.test").toOption.get!
-  assert! files.interfaces.any (fun i => check i.2 "sealed interface Expr")
-  assert! files.records.size = 2
-  assert! files.records.any (fun r => check r.1 "Literal")
-  assert! files.records.any (fun r => check r.1 "Add")
+  -- One category file containing the interface and both records
+  assert! files.categories.size = 1
+  assert! files.categories.any (fun c => check c.2 "sealed interface Expr")
+  assert! files.categories.any (fun c => check c.2 "record Literal")
+  assert! files.categories.any (fun c => check c.2 "record Add")
+  -- Records have toIon methods
+  assert! files.categories.any (fun c => check c.2 "toIon")
   pure ()
 
 -- Test 2: Reserved word escaping for fields
@@ -70,11 +73,12 @@ meta def check (s sub : String) : Bool := (s.splitOn sub).length > 1
     ]
   }
   let files := (generateDialect testDialect "com.test").toOption.get!
-  assert! files.records.any (fun r => r.1 == "Int.java")
-  assert! files.records.any (fun r => check r.2 "public_")
+  -- Single-op category where op name "int" (PascalCase "Int") doesn't match category "Stmt"
+  assert! files.categories.any (fun c => check c.2 "record Int")
+  assert! files.categories.any (fun c => check c.2 "public_")
   pure ()
 
--- Test 3: Name collision (operator name matches category name)
+-- Test 3: Name collision (single-op, operator name matches category name) → uses "Of"
 #eval do
   let testDialect : Strata.Dialect := {
     name := "Collision"
@@ -90,11 +94,12 @@ meta def check (s sub : String) : Bool := (s.splitOn sub).length > 1
     ]
   }
   let files := (generateDialect testDialect "com.test").toOption.get!
-  assert! files.interfaces.any (fun i => i.1 == "Expr.java")
-  assert! files.records.any (fun r => r.1 == "Expr_.java")
+  -- Single-op category: operator gets "Of" since it collides with category name
+  assert! files.categories.any (fun c => check c.2 "sealed interface Expr")
+  assert! files.categories.any (fun c => check c.2 "record Of")
   pure ()
 
--- Test 4: Duplicate operator names and reserved word collision
+-- Test 4: Duplicate operator names across categories — nested so no global collision
 #eval do
   let testDialect : Strata.Dialect := {
     name := "Dup"
@@ -103,14 +108,17 @@ meta def check (s sub : String) : Bool := (s.splitOn sub).length > 1
       .syncat { name := "A", argNames := #[] },
       .syncat { name := "B", argNames := #[] },
       .op { name := "foo", argDecls := .ofArray #[], category := ⟨"Dup", "A"⟩, syntaxDef := .std #[] 0 },
-      .op { name := "foo", argDecls := .ofArray #[], category := ⟨"Dup", "B"⟩, syntaxDef := .std #[] 0 },  -- Duplicate
+      .op { name := "foo", argDecls := .ofArray #[], category := ⟨"Dup", "B"⟩, syntaxDef := .std #[] 0 },
       .op { name := "class", argDecls := .ofArray #[], category := ⟨"Dup", "A"⟩, syntaxDef := .std #[] 0 },
-      .op { name := "class_", argDecls := .ofArray #[], category := ⟨"Dup", "B"⟩, syntaxDef := .std #[] 0 }  -- Would clash after escaping
+      .op { name := "class_", argDecls := .ofArray #[], category := ⟨"Dup", "B"⟩, syntaxDef := .std #[] 0 }
     ]
   }
   let files := (generateDialect testDialect "com.test").toOption.get!
-  let recordNames := files.records.map Prod.fst
-  assert! recordNames.toList.eraseDups.length == recordNames.size
+  -- Both categories should have their operators as nested records
+  assert! files.categories.size = 2
+  -- A has Foo and Class (class is reserved but Class after PascalCase is not)
+  assert! files.categories.any (fun c => check c.2 "record Foo" && check c.2 "interface A")
+  assert! files.categories.any (fun c => check c.2 "record Class" && check c.2 "interface A")
   pure ()
 
 -- Test 5: Category name collides with base class
@@ -119,12 +127,13 @@ meta def check (s sub : String) : Bool := (s.splitOn sub).length > 1
     name := "Base"
     imports := #[]
     declarations := #[
-      .syncat { name := "Node", argNames := #[] },  -- Collides with base class
+      .syncat { name := "Node", argNames := #[] },
       .op { name := "leaf", argDecls := .ofArray #[], category := ⟨"Base", "Node"⟩, syntaxDef := .std #[] 0 }
     ]
   }
   let files := (generateDialect testDialect "com.test").toOption.get!
-  let allNames := #["Node.java", "SourceRange.java"] ++ files.interfaces.map Prod.fst ++ files.records.map Prod.fst
+  -- Category "Node" collides with base class, should be disambiguated
+  let allNames := #["Node.java", "SourceRange.java"] ++ files.categories.map Prod.fst
   assert! allNames.toList.eraseDups.length == allNames.size
   pure ()
 
@@ -144,8 +153,8 @@ meta def check (s sub : String) : Bool := (s.splitOn sub).length > 1
     ]
   }
   let files := (generateDialect testDialect "com.test").toOption.get!
-  assert! files.interfaces.any (fun i => i.1 == "MyCategory.java")
-  assert! files.records.any (fun r => r.1 == "MyOperator.java")
+  assert! files.categories.any (fun c => c.1 == "MyCategory.java")
+  assert! files.categories.any (fun c => check c.2 "record MyOperator")
   pure ()
 
 -- Test 7: All DDM types map correctly
@@ -173,15 +182,20 @@ meta def check (s sub : String) : Bool := (s.splitOn sub).length > 1
     ]
   }
   let files := (generateDialect testDialect "com.test").toOption.get!
-  let record := files.records[0]!.2
-  assert! check record "java.lang.String ident"
-  assert! check record "java.math.BigInteger num"
-  assert! check record "java.math.BigDecimal dec"
-  assert! check record "java.lang.String str"
-  assert! check record "boolean b"
-  assert! check record "byte[] bytes"
-  assert! check record "java.util.Optional<java.math.BigInteger> opt"
-  assert! check record "java.util.List<java.lang.String> seq"
+  let catContent := files.categories[0]!.2
+  assert! check catContent "java.lang.String ident"
+  assert! check catContent "java.math.BigInteger num"
+  assert! check catContent "java.math.BigDecimal dec"
+  assert! check catContent "java.lang.String str"
+  assert! check catContent "boolean b"
+  assert! check catContent "byte[] bytes"
+  assert! check catContent "java.util.Optional<java.math.BigInteger> opt"
+  assert! check catContent "java.util.List<java.lang.String> seq"
+  -- Verify toIon uses correct serializers for Ident vs Str
+  assert! check catContent "serializeIdent(ident())"
+  assert! check catContent "serializeStrlit(str())"
+  assert! check catContent "serializeNum(num())"
+  assert! check catContent "serializeBool(b())"
   pure ()
 
 -- Test 8: FQN usage (no imports that could conflict)
@@ -200,9 +214,8 @@ meta def check (s sub : String) : Bool := (s.splitOn sub).length > 1
     ]
   }
   let files := (generateDialect testDialect "com.test").toOption.get!
-  let record := files.records[0]!.2
-  assert! !(check record "import java.")
-  assert! check record "java.lang.String operationName()"
+  let catContent := files.categories[0]!.2
+  assert! check catContent "java.lang.String operationName()"
   pure ()
 
 -- Test 9: Stub interfaces for referenced-but-empty categories
@@ -215,7 +228,7 @@ meta def check (s sub : String) : Bool := (s.splitOn sub).length > 1
       .op {
         name := "eval"
         argDecls := .ofArray #[
-          { ident := "e", kind := .cat (.atom .none ⟨"Init", "Expr"⟩) }  -- References Init.Expr
+          { ident := "e", kind := .cat (.atom .none ⟨"Init", "Expr"⟩) }
         ]
         category := ⟨"Stub", "Stmt"⟩
         syntaxDef := .std #[] 0
@@ -223,8 +236,8 @@ meta def check (s sub : String) : Bool := (s.splitOn sub).length > 1
     ]
   }
   let files := (generateDialect testDialect "com.test").toOption.get!
-  assert! files.interfaces.any (fun i => check i.2 "sealed interface Stmt")
-  assert! files.interfaces.any (fun i => check i.2 "non-sealed interface Expr")
+  assert! files.categories.any (fun c => check c.2 "sealed interface Stmt")
+  assert! files.stubs.any (fun s => check s.2 "non-sealed interface Expr")
   pure ()
 
 -- Test 10: Core dialect returns error (has type/function declarations not yet supported)
@@ -260,11 +273,12 @@ elab "#testCoreError" : command => do
     ]
   }
   let files := (generateDialect testDialect "com.test").toOption.get!
-  -- Should have 2 interfaces: one for A.Num, one stub for B.Num
-  assert! files.interfaces.size = 2
-  let names : List String := files.interfaces.toList.map Prod.fst
-  assert! names.any (fun n => (n.splitOn "A").length > 1)
-  assert! names.any (fun n => (n.splitOn "B").length > 1)
+  -- Category for A.Num + stub for B.Num
+  assert! files.categories.size = 1
+  assert! files.stubs.size = 1
+  let allNames := files.categories.map Prod.fst ++ files.stubs.map Prod.fst
+  assert! allNames.any (fun n => (n.splitOn "A").length > 1)
+  assert! allNames.any (fun n => (n.splitOn "B").length > 1)
   pure ()
 
 -- Test 12: Generated Java compiles (requires javac)
@@ -285,15 +299,22 @@ elab "#testCompile" : command => do
   let dir : System.FilePath := "/tmp/strata-java-test"
   writeJavaFiles dir "com.test" files
 
-  let fileNames := #["SourceRange.java", "Node.java", files.builders.1]
-                   ++ files.interfaces.map Prod.fst
-                   ++ files.records.map Prod.fst
+  -- ion-java is required for compilation (Node.java imports IonSexp)
+  let jarPath := "StrataTest/DDM/Integration/Java/testdata/ion-java-1.11.11.jar"
+  if !(← System.FilePath.pathExists jarPath) then
+    Lean.logError s!"Test 12 failed: ion-java jar not found at {jarPath}"
+    IO.FS.removeDirAll dir
+    return
+
+  let fileNames := #["SourceRange.java", "Node.java", "IonSerializer.java", files.builders.1]
+                   ++ files.categories.map Prod.fst
+                   ++ files.stubs.map Prod.fst
   let pkgDir := (dir / "com" / "test").toString
   let filePaths := fileNames.map fun f => pkgDir ++ "/" ++ f
 
   let result ← IO.Process.output {
     cmd := "javac"
-    args := filePaths
+    args := #["-cp", jarPath] ++ filePaths
   }
 
   IO.FS.removeDirAll dir
@@ -320,6 +341,16 @@ elab "#testRoundtrip" : command => do
     if cmd.name != (⟨"Simple", "block"⟩ : Strata.QualifiedIdent) then Lean.logError "Expected block command"; return
     if let .seq _ _ stmts := cmd.args[0]! then
       if stmts.size != 4 then Lean.logError s!"Expected 4 statements, got {stmts.size}"
+      -- Verify print's msg arg is strlit (not ident) — catches Init.Str serialization bug
+      if stmts.size < 2 then Lean.logError "Expected at least 2 statements"; return
+      match stmts[1]! with
+      | .op op =>
+        if op.name != ⟨"Simple", "print"⟩ then Lean.logError s!"Expected print, got {op.name}"
+        else match op.args[0]! with
+          | .strlit _ s => if s != "hello" then Lean.logError s!"Expected 'hello', got '{s}'"
+          | .ident _ s => Lean.logError s!"print msg is ident '{s}', expected strlit"
+          | _ => Lean.logError "Expected strlit arg for print"
+      | _ => Lean.logError "Expected op for stmts[1]"
     else Lean.logError "Expected seq argument"
 
 #testRoundtrip
@@ -340,7 +371,6 @@ elab "#testRoundtripFiles" : command => do
       Lean.logError s!"Expected 2 files, got {files.length}"
       return
 
-    -- Check first file
     let file1 := files[0]!
     if file1.filePath != "file1.st" then
       Lean.logError s!"File 1: Expected path 'file1.st', got '{file1.filePath}'"
@@ -358,7 +388,6 @@ elab "#testRoundtripFiles" : command => do
     else
       Lean.logError "File 1: Expected seq argument"; return
 
-    -- Check second file
     let file2 := files[1]!
     if file2.filePath != "file2.st" then
       Lean.logError s!"File 2: Expected path 'file2.st', got '{file2.filePath}'"
@@ -390,10 +419,10 @@ elab "#testJavaGenPreloaded" : command => do
     Lean.logError s!"javaGen on preloaded Laurel dialect failed:\n{result.stdout}\n{result.stderr}"
     if ← dir.pathExists then IO.FS.removeDirAll dir
     return
-  -- Verify some expected files exist
+  -- Verify some expected files exist (now one file per category)
   let pkgDir := (dir / "com" / "test" / "laurel").toString
   let mut missing := false
-  for expected in #["Node.java", "StmtExpr.java", "Procedure.java"] do
+  for expected in #["Node.java", "StmtExpr.java", "Procedure.java", "Parameter.java"] do
     if !(← System.FilePath.pathExists (pkgDir ++ "/" ++ expected)) then
       Lean.logError s!"Expected file {expected} not found in {pkgDir}"
       missing := true

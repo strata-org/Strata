@@ -127,11 +127,21 @@ def fromIonName? : String → Option SepFormat
   | "spacePrefixedList" => some .spacePrefix
   | "newlineSepList" => some .newline
   | "semicolonSepList" => some .semicolon
-  | _ => none
+  | _ => .none
 
 theorem fromIonName_toIonName_roundtrip (sep : SepFormat) :
   fromIonName? (toIonName sep) = some sep := by
   cases sep <;> rfl
+
+/-- Invalid Ion separator names return `none`. -/
+theorem fromIonName_none_of_invalid (s : String) (h : ∀ sep, toIonName sep ≠ s) :
+  fromIonName? s = .none := by
+  simp [fromIonName?]
+  split <;> first
+    | rfl
+    | (exfalso; have := h .none; have := h .comma; have := h .space
+       have := h .spacePrefix; have := h .newline; have := h .semicolon
+       simp_all [toIonName])
 
 end SepFormat
 

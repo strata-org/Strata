@@ -93,6 +93,8 @@ structure TranslationContext where
   classFieldHighType: Std.HashMap String (Std.HashMap String HighType) := {}
   /-- Names of prelude types -/
   preludeTypes : Std.HashSet String := {}
+  /-- Prelude procedure signatures (for multi-output detection) -/
+  preludeProcedures : Std.HashMap String CoreProcedureSignature := {}
   /-- Overload dispatch table from PySpec: function name → overloads -/
   overloadTable : OverloadTable := {}
   /-- Behavior for unmodeled functions -/
@@ -738,6 +740,17 @@ If the function_name is a class, add __init__ into it
 The following function return a tuple (translated function name, first argument, is the first argument of unknown type)
 -/
 
+/-- Coerce an expression to Any if its inferred type is a Composite class.
+    Composite values are replaced with a Hole (unconstrained Any value)
+    since Composite→Any coercion is not yet modeled. This limits
+    bug-finding ability but avoids type unification errors. -/
+partial def coerceToAny (ctx : TranslationContext) (expr : Python.expr SourceRange)
+    (translated : StmtExprMd) : Except TranslationError StmtExprMd := do
+  let ty ← inferExprType ctx expr
+  if isCompositeType ctx ty then
+    pure <| mkStmtExprMd (.Hole)
+  else pure translated
+
 partial def refineFunctionCallExpr (ctx : TranslationContext) (func: Python.expr SourceRange) :
       Except TranslationError (String × Option (Python.expr SourceRange) × Bool) := do
   match func with
@@ -943,12 +956,17 @@ Translate Python statements to Laurel StmtExpr nodes.
 These functions are mutually recursive.
 -/
 
+private def hasErrorOutput (sig : CoreProcedureSignature) : Bool :=
+  sig.outputs.length > 0 && sig.outputs.getLast! == "Error"
+
 def withException (ctx : TranslationContext) (funcname: String) : Bool :=
   match ctx.importedSymbols[funcname]? with
   | some (ImportedSymbol.function _) => false
-  | some (ImportedSymbol.procedure _ sig _) =>
-    sig.outputs.length > 0 && sig.outputs.getLast! == "Error"
-  | _ => false
+  | some (ImportedSymbol.procedure _ sig _) => hasErrorOutput sig
+  | _ =>
+    match ctx.preludeProcedures[funcname]? with
+    | some sig => hasErrorOutput sig
+    | none => false
 
 def freeVar (name: String) := mkStmtExprMd (.Identifier name)
 def maybeExceptVar := freeVar "maybe_except"
@@ -1209,6 +1227,8 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
     let stmts ← match value.val with
       | some expr => do
         let e ← translateExpr ctx expr
+        -- Coerce Composite return values to Any for LaurelResult : Any
+        let e ← coerceToAny ctx expr e
         let assign := mkStmtExprMd (StmtExpr.Assign [mkStmtExprMd (StmtExpr.Identifier PyLauFuncReturnVar)] e)
         .ok [assign, mkStmtExprMd (StmtExpr.Exit "$body")]
       | none => .ok [mkStmtExprMd (StmtExpr.Exit "$body")]
@@ -2012,6 +2032,7 @@ def pythonToLaurel' (info : PreludeInfo)
     currentClassName := none,
     functionSignatures := info.functionSignatures ++ allClassFuncDecls
     preludeTypes := info.types,
+    preludeProcedures := info.procedures,
     userFunctions := userFunctions,
     classFieldHighType := classFieldHighType,
     overloadTable := overloadTable,
