@@ -144,7 +144,7 @@ info: error: Failed occurs check: $__ty1 cannot be unified with (arrow $__ty1 $_
                             esM[λλ(%1 (%0 %0))]
          return (format $ ans.fst)
 
-private def testIntFns : (@Factory TestParams) :=
+private def testIntFns : (Factory TestParams) := .ofArray
   #[{ name := "unit",
       inputs := [],
       output := mty[unit]},

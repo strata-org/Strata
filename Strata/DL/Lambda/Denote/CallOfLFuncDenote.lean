@@ -324,51 +324,6 @@ private theorem denote_app_chain
 
 /-! ## `subst` / `mkArrow'` structural lemmas -/
 
-/-- If `getFactoryLFunc` finds a function, its name matches the query. -/
-theorem getFactoryLFunc_name {F : @Factory T} {s : String} {fn : LFunc T}
-    (h : Factory.getFactoryLFunc F s = some fn) : fn.name.name = s := by
-  simp [Factory.getFactoryLFunc] at h
-  have := Array.find?_some h
-  grind
-
-/-- `callOfLFunc` ensures the number of args equals the number of inputs. -/
-theorem callOfLFunc_arity
-    {F : @Factory T} {e callee : LExpr T.mono} {args : List (LExpr T.mono)} {fn : LFunc T}
-    (hcall : Factory.callOfLFunc F e = some (callee, args, fn))
-    : args.length = fn.inputs.length := by
-  simp [Factory.callOfLFunc] at hcall
-  split at hcall <;> simp_all
-  split at hcall <;> try contradiction
-  split at hcall <;> try contradiction
-  cases hcall
-  grind
-
-/-- `callOfLFunc` ensures `fn ∈ F`. -/
-theorem callOfLFunc_mem
-    {F : @Factory T} {e callee : LExpr T.mono} {args : List (LExpr T.mono)} {fn : LFunc T}
-    (hcall : Factory.callOfLFunc F e = some (callee, args, fn))
-    : fn ∈ F := by
-  simp [Factory.callOfLFunc] at hcall
-  split at hcall <;> simp_all
-  split at hcall <;> try contradiction
-  split at hcall <;> try contradiction
-  cases hcall
-  rename_i hget hlen
-  unfold Factory.getFactoryLFunc at hget
-  grind
-
-/-- The callee of `callOfLFunc` is an `.op` whose name resolves to `fn` via `getFactoryLFunc`. -/
-theorem callOfLFunc_getFactoryLFunc
-    {F : @Factory T} {e callee : LExpr T.mono} {args : List (LExpr T.mono)} {fn : LFunc T}
-    (hcall : Factory.callOfLFunc F e = some (callee, args, fn))
-    : ∃ m name ty, callee = .op m name ty ∧ F.getFactoryLFunc name.name = some fn := by
-  simp [Factory.callOfLFunc] at hcall
-  split at hcall <;> simp_all
-  split at hcall <;> try contradiction
-  split at hcall <;> try contradiction
-  cases hcall
-  grind
-
 /-- Extract the top-level `callOfLFunc` consistency from `OpsConsistent`. -/
 theorem OpsConsistent_callOfLFunc
     {F : @Factory T} {e callee : LExpr T.mono} {args : List (LExpr T.mono)} {fn : LFunc T}
@@ -391,17 +346,6 @@ theorem OpsConsistent_callOfLFunc
 
 /-! ## `callOfLFunc` output type and denotation -/
 
-/-- `callOfLFunc` returns the same `(callee, args)` as `getLFuncCall`. -/
-private theorem callOfLFunc_getLFuncCall
-    {F : @Factory T} {e callee : LExpr T.mono} {args : List (LExpr T.mono)} {fn : LFunc T}
-    (hcall : Factory.callOfLFunc F e = some (callee, args, fn))
-    : getLFuncCall e = (callee, args) := by
-  simp [Factory.callOfLFunc] at hcall
-  split at hcall <;> simp_all
-  split at hcall <;> try contradiction
-  split at hcall <;> try contradiction
-  cases hcall; grind
-
 theorem callOfLFunc_output_type
     {F : @Factory T}
     {e : LExpr T.mono} {τ : LMonoTy}
@@ -413,8 +357,8 @@ theorem callOfLFunc_output_type
         List.Forall₂ (LExpr.HasTypeA []) args argTys ∧
         ty_op = LMonoTy.mkArrow' τ argTys ∧
         args.length = fn.inputs.length := by
-  obtain ⟨m, name, ty, h_callee, h_get⟩ := callOfLFunc_getFactoryLFunc hcall
-  have h_chain := callOfLFunc_getLFuncCall hcall
+  obtain ⟨m, name, ty, h_callee, h_get⟩ := Factory.callOfLFunc_getElem? hcall
+  have h_chain := Factory.callOfLFunc_getLFuncCall hcall
   have h_spec := getLFuncCall_spec h
   rw [h_chain] at h_spec
   obtain ⟨argTys, h_args, h_op⟩ := h_spec
@@ -424,7 +368,7 @@ theorem callOfLFunc_output_type
   | none => exact absurd h_op (by intro h; cases h)
   | some ty_op =>
     have h_inv := HasTypeA.op_inv h_op
-    exact ⟨argTys, ty_op, m, name, rfl, h_args, h_inv.symm, callOfLFunc_arity hcall⟩
+    exact ⟨argTys, ty_op, m, name, rfl, h_args, h_inv.symm, Factory.callOfLFunc_arity hcall⟩
 
 /-- The denotation of a factory function call equals `opInterp` applied to the
 denotations of the arguments. The `name` here is the identifier from the `.op`
@@ -450,7 +394,7 @@ theorem callOfLFunc_denote
   -- Step 1: get typing info
   obtain ⟨argTys, ty_op, m, name, h_callee, h_args, hty_op, _⟩ := callOfLFunc_output_type hcall h
   -- Step 2: get the chain equation
-  have h_chain := callOfLFunc_getLFuncCall hcall
+  have h_chain := Factory.callOfLFunc_getLFuncCall hcall
   -- Step 3: get typing of op from getLFuncCall_spec
   have h_spec := getLFuncCall_spec h
   rw [h_chain] at h_spec

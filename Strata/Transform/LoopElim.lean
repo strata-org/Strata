@@ -6,11 +6,18 @@
 module
 
 public import Strata.DL.Imperative.Stmt
+public import Strata.Languages.Core.PipelinePhase
+import Strata.Languages.Core.StatementSemantics
 
 namespace Core
 open Imperative Lambda
 
 public section
+
+/-- Label prefix for loop-elimination invariant assumptions. -/
+def loopElimInvariantPrefix : String := "assume_invariant_"
+/-- Label prefix for loop-elimination guard assumptions. -/
+def loopElimGuardPrefix : String := "assume_guard_"
 
 /-! ## Loop elimination
 
@@ -111,13 +118,13 @@ def Stmt.removeLoopsM
     let first_iter_facts :=
       .block s!"first_iter_asserts_{loop_num}" (entry_invariants ++ entry_invariant_assumes) {}
     let inv_assumes := invariants.mapIdx fun i inv =>
-      Stmt.cmd (HasPassiveCmds.assume s!"assume_invariant_{loop_num}_{i}" inv md)
+      Stmt.cmd (HasPassiveCmds.assume s!"{loopElimInvariantPrefix}{loop_num}_{i}" inv md)
     let maintain_invariants := invariants.mapIdx fun i inv =>
       Stmt.cmd (HasPassiveCmds.assert s!"arbitrary_iter_maintain_invariant_{loop_num}_{i}" inv md)
     -- Guard-specific parts: assume_guard, termination, not_guard
     let (guard_assumes, pre_termination, post_termination, exit_guard) ← match guard with
       | .det g => do
-        let assume_guard := [Stmt.cmd (HasPassiveCmds.assume s!"assume_guard_{loop_num}" g md)]
+        let assume_guard := [Stmt.cmd (HasPassiveCmds.assume s!"{loopElimGuardPrefix}{loop_num}" g md)]
         let termination_stmts ←
           match measure with
           | none => pure ([], [])
@@ -180,6 +187,31 @@ def Stmt.removeLoops
   [HasIdent P] [HasFvar P] [HasIntOrder P]
   (s : Stmt P C) : Stmt P C :=
   (StateT.run (removeLoopsM s) 0).fst
+
+/-- Eliminate loops in all procedures of a Core program by replacing each loop
+    with assertions and assumptions about its invariants. -/
+def loopElim (p : Program) : Program :=
+  { decls := p.decls.map fun d => match d with
+    | .proc proc md =>
+      .proc { proc with body := (StateT.run (Block.removeLoopsM proc.body) 0).fst } md
+    | other => other }
+
+/-- Loop elimination as a `CoreTransformM` pass suitable for the pipeline. -/
+def loopElim' (p : Program) : Transform.CoreTransformM (Bool × Program) :=
+  pure (true, loopElim p)
+
+/-- Loop-elimination pipeline phase: replaces each loop with an
+    invariant-based acyclic encoding. If the obligation's path includes
+    labels from loop elimination, the loop was replaced by an
+    over-approximation, so SAT models are demoted to unknown. -/
+def loopElimPipelinePhase : PipelinePhase where
+  transform := loopElim'
+  phase.name := "LoopElim"
+  phase.getValidation obligation :=
+    if obligationHasLabelPrefix obligation loopElimInvariantPrefix
+       || obligationHasLabelPrefix obligation loopElimGuardPrefix then
+      .modelToValidate (fun _ => /- TODO -/ false)
+    else .modelPreserving
 
 end -- public section
 

@@ -1160,18 +1160,18 @@ def fvars_annotated_by [DecidableEq T.IDMeta]
 /-- A factory is well-typed when every function body type-checks at the
 function's declared output type. -/
 def Factory.WellTyped [DecidableEq T.IDMeta] (F : @Factory T) : Prop :=
-  ∀ f ∈ F, ∀ body, f.body = some body →
-    LExpr.HasTypeA [] body f.output ∧
-    fvars_annotated_by f.inputs body
+  ∀ (f : String), (hf : f ∈ F) → ∀ body, (F[f]).body = some body →
+    LExpr.HasTypeA [] body (F[f]).output ∧
+    fvars_annotated_by (F[f]).inputs body
 
 /-- A factory is consistent with an `opInterp` when every function with a body
 is `InterpConsistentBody` and every function with a `concreteEval` is
 `InterpConsistentEval`. -/
 def Factory.InterpConsistent [DecidableEq T.IDMeta] (F : @Factory T) : Prop :=
-  (∀ f ∈ F, ∀ body, f.body = some body →
-    LFunc.InterpConsistentBody tcInterp opInterp f body) ∧
-  (∀ f ∈ F, ∀ ceval, f.concreteEval = some ceval →
-    LFunc.InterpConsistentEval tcInterp opInterp f ceval)
+  (∀ (f : String), (hf : f ∈ F) → ∀ body, (F[f]).body = some body →
+    LFunc.InterpConsistentBody tcInterp opInterp (F[f]) body) ∧
+  (∀ (f : String), (hf : f ∈ F) → ∀ ceval, (F[f]).concreteEval = some ceval →
+    LFunc.InterpConsistentEval tcInterp opInterp (F[f]) ceval)
 
 end FactoryConsistent
 

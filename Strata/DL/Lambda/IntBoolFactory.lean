@@ -316,7 +316,8 @@ def intSafeModTFunc : WFLFunc T :=
 
 end
 
-def IntBoolFactory [Inhabited T.mono.base.Metadata] : @Factory T := (#[
+def IntBoolFactory [Inhabited T.mono.base.Metadata] : Factory T :=
+  .ofArray <| (#[
     intAddFunc,
     intSubFunc,
     intMulFunc,

@@ -23,18 +23,12 @@ variable (vt : TyVarVal)
 
 /-! ### Helper lemmas -/
 
-/-- `callOfLFunc` only returns functions that are members of the factory. -/
-theorem Factory.callOfLFunc_mem {F : @Factory T} {e : LExpr T.mono} {callee args fn} :
-    F.callOfLFunc e = some (callee, args, fn) → fn ∈ F := by
-  simp [Factory.callOfLFunc]
-  cases getLFuncCall e with | mk op args' =>
-  simp; cases op <;> simp
-  rename_i m name ty
-  cases h : F.getFactoryLFunc name.name <;> simp
-  rename_i func
-  cases args'.length == func.inputs.length <;> simp
-  intro _ _ h_fn; subst h_fn
-  exact Array.mem_of_find?_eq_some h
+/-- `callOfLFunc` only returns functions that are members of the factory's array. -/
+theorem Factory.callOfLFunc_mem' {F : @Factory T} {e : LExpr T.mono} {callee args fn} :
+    F.callOfLFunc e = some (callee, args, fn) → fn ∈ F.toArray := by
+  intro hcall
+  obtain ⟨_, _, _, _, h_get⟩ := Factory.callOfLFunc_getElem? hcall
+  exact Factory.getElem?_is_some_implies_mem h_get
 
 /-! ### Weakening and context-irrelevance for lcAt 0 expressions -/
 
@@ -263,7 +257,7 @@ theorem Step.denote_preserved
     rw [h_subst_arrow] at h_ty_op_val
     rw [hty_op] at h_ty_op_val
     have h_len : argTys.length = ((fn.inputs.map Prod.snd).map (LMonoTy.subst tySubst')).length := by
-      simp; exact h_args.length_eq.symm.trans (callOfLFunc_arity hcall)
+      simp; exact h_args.length_eq.symm.trans (Factory.callOfLFunc_arity hcall)
     have ⟨h_τ_eq, h_argTys_eq⟩ := LMonoTy.mkArrow'_injective h_len h_ty_op_val
     -- Step 4: Define vt'
     let vt' : TyVarVal := fun x => match tySubst'.find? x with
@@ -275,18 +269,19 @@ theorem Step.denote_preserved
       congr 1; funext; intros a ty a_in
       exact substTyVars_subst vt tySubst' ty
     -- Step 7: Factory consistency
-    have h_fn_mem : fn ∈ F := callOfLFunc_mem hcall
-    have h_body_wt := (hFwt fn h_fn_mem fnbody hbody).1
-    have h_annot := (hFwt fn h_fn_mem fnbody hbody).2
-    have h_icb := hF.1 fn h_fn_mem fnbody hbody
+    obtain ⟨_, _, _, h_callee_op, h_get⟩ := Factory.callOfLFunc_getElem? hcall
+    rw [h_callee_eq] at h_callee_op; cases h_callee_op
+    -- h_get : F[name.name]? = some fn
+    have h_fn_mem_str : name.name ∈ F := Factory.getElem?_some_implies_mem h_get
+    have h_fn_eq : F[name.name] = fn := Factory.getElem?_some_getElem h_get
+    have h_body_wt := h_fn_eq ▸ (hFwt name.name h_fn_mem_str fnbody (h_fn_eq ▸ hbody)).1
+    have h_annot := h_fn_eq ▸ (hFwt name.name h_fn_mem_str fnbody (h_fn_eq ▸ hbody)).2
+    have h_icb := h_fn_eq ▸ hF.1 name.name h_fn_mem_str fnbody (h_fn_eq ▸ hbody)
     let bindings_vt' := fn.inputs.map (fun (id, ty) => (id, LMonoTy.substTyVars vt' ty))
     let da := denoteArgs tcInterp opInterp fvarVal vt .nil args argTys h_args
-    have h_icb_inst := h_icb vt' fvarVal h_body_wt (HList.cast h_sorts_eq da)
+    have h_icb_inst := h_icb vt' fvarVal h_body_wt (HList.cast (h_fn_eq ▸ h_sorts_eq) da)
     -- Step 8: Connect the two applyArgs calls
-    have h_fn_name : fn.name.name = name.name := by
-      obtain ⟨_, _, _, hc, hg⟩ := callOfLFunc_getFactoryLFunc hcall
-      rw [h_callee_eq] at hc; cases hc
-      exact getFactoryLFunc_name hg
+    have h_fn_name : fn.name.name = name.name := Factory.getElem?_name h_get
     let inputSorts_vt' := bindings_vt'.map Prod.snd
     let fullSort_vt' := LSort.mkArrow (LMonoTy.substTyVars vt' fn.output) inputSorts_vt'
     have h_sort_connect : LMonoTy.substTyVars vt ty_op = fullSort_vt' := by
@@ -339,7 +334,7 @@ theorem Step.denote_preserved
     subst h_τ_eq heq
     simp only [cast_eq]
     -- Part C: use substFvarsLifting_denote
-    have h_arity := callOfLFunc_arity hcall
+    have h_arity := Factory.callOfLFunc_arity hcall
     have h_keys_len : fn.inputs.keys.length = args.length := by
       rw [ListMap.keys_eq_map_fst]; simp [h_arity]
     have h_zip_fst : (fn.inputs.keys.zip args).map Prod.fst = fn.inputs.keys :=
