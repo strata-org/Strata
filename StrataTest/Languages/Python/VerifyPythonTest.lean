@@ -17,7 +17,7 @@ Python → Laurel → Core → SMT pipeline and produces diagnostics.
 namespace Strata.Python.VerifyPythonTest
 
 open StrataTest.Util
-open Strata.Python (processPythonFile withPython containsSubstr)
+open Strata.Python (processPythonFile processPythonToLaurel withPython containsSubstr)
 open Strata.Parser (stringInputContext)
 
 -- Passing assertions produce no diagnostics.
@@ -170,8 +170,8 @@ def create_service() -> Any:
     throw <| .userError s!"Expected 0 diagnostics, got {diags.size}"
 
 -- Instance method call resolution and body preservation:
--- The verifier can prove the assertion only when the method body is
--- translated (not opaque) and the call resolves to a StaticCall (not a Hole).
+-- Verifies that the method body is translated (not opaque) and the
+-- instance call resolves to a StaticCall (not a Hole).
 #guard_msgs in
 #eval withPython (warnOnSkip := false) fun pythonCmd => do
   let program :=
@@ -187,40 +187,18 @@ def main() -> None:
     result: int = c.add(3, 4)
 "
   let inputCtx := stringInputContext "test.py" program
-  IO.FS.withTempDir fun tmpDir => do
-    let pyFile := tmpDir / "test.py"
-    IO.FS.writeFile pyFile inputCtx.inputString
-    let dialectFile := tmpDir / "dialect.ion"
-    IO.FS.writeBinFile dialectFile Python.Python.toIon
-    let ionFile := tmpDir / "test.python.st.ion"
-    let child ← IO.Process.spawn {
-      cmd := pythonCmd.toString
-      args := #["-m", "strata.gen", "py_to_strata",
-                "--dialect", dialectFile.toString,
-                pyFile.toString, ionFile.toString]
-      inheritEnv := true
-      stdin := .null, stdout := .null, stderr := .piped
-    }
-    let stderr ← child.stderr.readToEnd
-    let exitCode ← child.wait
-    if exitCode ≠ 0 then
-      throw <| .userError s!"py_to_strata failed (exit code {exitCode}): {stderr}"
-    let laurel ←
-      match ← pyAnalyzeLaurel ionFile.toString
-          (sourcePath := some pyFile.toString) |>.toBaseIO with
-      | .ok r => pure r
-      | .error err => throw <| .userError s!"pyAnalyzeLaurel failed: {err}"
-    let output := toString (Laurel.formatProgram laurel)
-    -- Method body must be transparent (not opaque)
-    let addProc := laurel.staticProcedures.find? (fun p => p.name.text == "Calculator@add")
-    match addProc with
-    | none => throw <| .userError "Calculator@add procedure not found in Laurel output"
-    | some proc =>
-      match proc.body with
-      | .Transparent _ => pure ()
-      | _ => throw <| .userError "Calculator@add body should be Transparent, not Opaque"
-    -- Instance method call must resolve to StaticCall, not a Hole
-    unless containsSubstr output "Calculator@add(" do
-      throw <| IO.userError s!"Expected 'Calculator@add(' in Laurel output but not found"
+  let laurel ← processPythonToLaurel pythonCmd inputCtx
+  let output := toString (Laurel.formatProgram laurel)
+  -- Method body must be transparent (not opaque)
+  let addProc := laurel.staticProcedures.find? (fun p => p.name.text == "Calculator@add")
+  match addProc with
+  | none => throw <| .userError "Calculator@add procedure not found in Laurel output"
+  | some proc =>
+    match proc.body with
+    | .Transparent _ => pure ()
+    | _ => throw <| .userError "Calculator@add body should be Transparent, not Opaque"
+  -- Instance method call must resolve to StaticCall, not a Hole
+  unless containsSubstr output "Calculator@add(" do
+    throw <| IO.userError s!"Expected 'Calculator@add(' in Laurel output but not found"
 
 end Strata.Python.VerifyPythonTest
