@@ -50,12 +50,11 @@ procedure multipleRequires(x: int, y: int) returns (r: int)
   x + y
 };
 
-// This test fails because Core incorrectly report error locations on procedure preconditions
-// procedure multipleRequiresCaller() {
-//  var a: int := multipleRequires(1, 2);
-//  var b: int := multipleRequires(-1, 2);
-// error: assertion does not hold
-// };
+procedure multipleRequiresCaller() {
+  var a: int := multipleRequires(1, 2);
+  var b: int := multipleRequires(-1, 2)
+//^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
+};
 
 function funcMultipleRequires(x: int, y: int): int
   requires x > 0
