@@ -937,7 +937,7 @@ procedure datetime_date(d: Any) returns (ret: Any, error: Error)
   }
 };
 
-procedure datetime_now() returns (ret: Any)
+procedure datetime_now(tz: Any) returns (ret: Any)
   ensures Any..isfrom_datetime(ret) summary "ret_type"
 {
   var d: int;
