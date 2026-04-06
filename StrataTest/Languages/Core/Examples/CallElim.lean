@@ -58,6 +58,8 @@ private def testCallElim
 
 /--
 info: New Program:
+program Core;
+
 procedure Double (n : int) returns (result : int)
 spec {
   ensures [double_correct]: result == n * 2;

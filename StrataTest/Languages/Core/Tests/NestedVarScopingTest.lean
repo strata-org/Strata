@@ -40,7 +40,9 @@ procedure test(cond : bool, x : int, y : int) returns () {
 info: [Strata.Core] Type checking succeeded.
 
 ---
-info: ok: procedure test (cond : bool, x : int, y : int) returns ()
+info: ok: program Core;
+
+procedure test (cond : bool, x : int, y : int) returns ()
 {
   if (cond) {
     function f (a : int) : int { a + x }
@@ -79,14 +81,15 @@ procedure test() returns ()
 info: [Strata.Core] Type checking succeeded.
 
 ---
-info: ok: procedure test () returns ()
+info: ok: program Core;
+
+procedure test () returns ()
 {
   var x : int := 1;
   function safeDiv (y : int) : int { y div x }
   assert [assert_0]: 5 div x > 0;
   var z : int := safeDiv(5);
   };
-
 -/
 #guard_msgs in
 #eval (Std.format (Core.typeCheck .default (translatePgm issue445Pgm).stripMetaData))

@@ -614,7 +614,7 @@ def pyAnalyzeLaurelCommand : Command where
 
     if verbose then
       IO.println "\n==== Core Program ===="
-      IO.print coreProgram
+      IO.print (Core.formatProgram coreProgram)
 
     -- Split prelude / user procedure names.
     -- Only procedures whose file range matches the user source are targets.
@@ -1162,7 +1162,7 @@ def transformCommand : Command where
         | .error e => exitFailure s!"removeIrrelevantAxioms failed: {e}"
       | other =>
         exitFailure s!"Unknown pass '{other}'. Valid passes: inlineProcedures, loopElim, callElim, filterProcedures, removeIrrelevantAxioms."
-    IO.print (Core.formatProgramWithHeader program)
+    IO.print (Core.formatProgram program)
 
 def verifyCommand : Command where
   name := "verify"
