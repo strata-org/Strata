@@ -13,9 +13,11 @@ public import Strata.Languages.Core.SMTEncoder
 public import Strata.DL.Imperative.MetaData
 public import Strata.DL.Imperative.SMTUtils
 public import Strata.DDM.AST
+public import Strata.Languages.Core.PipelinePhase
 import Strata.Transform.CallElim
 import Strata.Transform.FilterProcedures
 import Strata.Transform.PrecondElim
+import Strata.Transform.LoopElim
 public import Strata.Transform.IrrelevantAxioms
 import Strata.Util.Profile
 
@@ -679,7 +681,10 @@ def corePipelinePhases (procs : Option (List String) := none)
   let postFilterPhases := match procs with
     | some ps => [filterProceduresPipelinePhase ps]
     | none => []
-  filterPhases ++ [callElimPipelinePhase] ++ precondPhase ++ postFilterPhases ++ [loopElimPipelinePhase]
+  let callElimPhase := match procs with
+    | some _ => [callElimPipelinePhase]
+    | none => []
+  filterPhases ++ callElimPhase ++ precondPhase ++ postFilterPhases ++ [loopElimPipelinePhase]
 
 /-- The abstracted phases derived from the Core pipeline phases. -/
 def coreAbstractedPhases (procs : Option (List String) := none)
@@ -893,33 +898,18 @@ def verify (program : Program)
     : EIO DiagnosticModel VCResults := do
   let profile := options.profile
   let factory ← EIO.ofExcept (Core.Factory.addFactory moreFns)
-  let phases := coreAbstractedPhases (procs := proceduresToVerify) (factory := some factory)
+  let pipelinePhases := corePipelinePhases (procs := proceduresToVerify) (factory := some factory)
+  let phases := pipelinePhases.map (·.phase)
   let finalProgram ← profileStep profile "  Program transformations" do
-    let runPrecondElim := fun prog => do
-      let (_changed, prog) ← PrecondElim.precondElim prog factory
-      return prog
-    match proceduresToVerify with
-    | none =>
-      match Transform.run program runPrecondElim with
-      | .ok prog => .ok prog
-      | .error e => .error (DiagnosticModel.fromFormat f!"❌ Transform Error. {e}")
-    | some procs =>
-       -- Verify specific procedures. All pipeline phases — including
-       -- filtering, call/loop elimination, precondition elimination, and
-       -- the final keep-set filter — are defined in `corePipelinePhases`.
-       -- Each phase pairs its transform with its model validation,
-       -- ensuring they stay in sync.
-      let pipelinePhases := corePipelinePhases (procs := some procs) (factory := some factory)
-      let passes := fun prog => do
-        let mut current := prog
-        for pp in pipelinePhases do
-          let (_changed, next) ← pp.transform current
-          current := next
-        return current
-      let res := Transform.run program passes
-      match res with
-      | .ok prog => .ok prog
-      | .error e => .error (DiagnosticModel.fromFormat f!"❌ Transform Error. {e}")
+    let passes := fun prog => do
+      let mut current := prog
+      for pp in pipelinePhases do
+        let (_changed, next) ← pp.transform current
+        current := next
+      return current
+    match Transform.run program passes with
+    | .ok prog => .ok prog
+    | .error e => .error (DiagnosticModel.fromFormat f!"❌ Transform Error. {e}")
   -- Build the axiom relevance cache once (post-transform, so declarations are
   -- stable). The cache is reused across all verification environments and goals.
   let axiomCache? ← profileStep profile "  Build axiom relevance cache" do

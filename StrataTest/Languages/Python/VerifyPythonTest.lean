@@ -130,4 +130,43 @@ open Strata.Parser (stringInputContext)
   if diags.size ≠ 0 then
     throw <| .userError s!"Expected 0 diagnostics, got {diags.size}"
 
+-- Multi-output prelude procedures: timedelta_func returns (delta: Any, maybe_except: Error).
+-- This tests that withException detects the multi-output signature and generates
+-- a 2-target assignment, and that computeExprType returns Unknown (→ Any in Core).
+#guard_msgs in
+#eval withPython (warnOnSkip := false) fun pythonCmd => do
+  let program :=
+"from datetime import datetime, timedelta
+
+def main() -> None:
+    now: datetime = datetime.now()
+    delta: timedelta = timedelta(days=7)
+    start: datetime = now - delta
+    assert start <= now
+"
+  let diags ← processPythonFile pythonCmd (stringInputContext "test.py" program)
+  if diags.size ≠ 0 then
+    throw <| .userError s!"Expected 0 diagnostics, got {diags.size}: {diags.map (·.message)}"
+
+-- Returning a Composite-typed value from a function with Any return type
+-- should not crash; the Composite is replaced with a Hole (unconstrained value).
+#guard_msgs in
+#eval withPython (warnOnSkip := false) fun pythonCmd => do
+  let program :=
+"from typing import Any
+
+class MyService:
+    name: str
+
+    def __init__(self, name: str) -> None:
+        self.name = name
+
+def create_service() -> Any:
+    svc: MyService = MyService(\"test\")
+    return svc
+"
+  let diags ← processPythonFile pythonCmd (stringInputContext "test.py" program)
+  if diags.size ≠ 0 then
+    throw <| .userError s!"Expected 0 diagnostics, got {diags.size}"
+
 end Strata.Python.VerifyPythonTest
