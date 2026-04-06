@@ -1155,6 +1155,13 @@ private def translateCondBool (p : Program) (bindings : TransBindings) (a : Arg)
   | q`Core.condDet, #[ca] => pure (.det (← translateExpr p bindings ca))
   | _, _ => TransM.error s!"translateCondBool: unexpected {repr op.name}"
 
+private def getModifiesExtras (f : String) : TransM (List Core.Expression.Expr × List Core.CoreIdent) := do
+  let modifiesTyped : List (Core.CoreIdent × Lambda.LMonoTy) ←
+    (fun s => ((s.modifiesMap.getD f []), s))
+  let extraArgs := modifiesTyped.map fun (id, _) => Lambda.LExpr.fvar () id none
+  let extraLhs := modifiesTyped.map fun (id, _) => id
+  return (extraArgs, extraLhs)
+
 mutual
 partial def translateFnPreconds (p : Program) (name : Core.CoreIdent) (bindings : TransBindings) (arg : Arg) :
   TransM (List (Strata.DL.Util.FuncPrecondition Core.Expression.Expr Core.Expression.ExprMetadata)) := do
@@ -1234,22 +1241,14 @@ partial def translateStmt (p : Program) (bindings : TransBindings) (arg : Arg) :
     let f   ← translateIdent String fa
     let es  ← translateCommaSep (fun a => translateExpr p bindings a) esa
     let md ← getOpMetaData op
-    -- Add modifies variables as extra args and lhs
-    let modifiesTyped : List (Core.CoreIdent × Lambda.LMonoTy) ←
-      (fun s => ((s.modifiesMap.getD f []), s))
-    let extraArgs := modifiesTyped.map fun (id, _) => Lambda.LExpr.fvar () id none
-    let extraLhs := modifiesTyped.map fun (id, _) => id
+    let (extraArgs, extraLhs) ← getModifiesExtras f
     return ([.call (ls.toList ++ extraLhs) f (es.toList ++ extraArgs) md], bindings)
   | q`Core.call_unit_statement, #[fa, esa] =>
     let f   ← translateIdent String fa
     let es  ← translateCommaSep (fun a => translateExpr p bindings a) esa
     let md ← getOpMetaData op
-    -- Add modifies variables as extra args and lhs
-    let modifiesTyped : List (Core.CoreIdent × Lambda.LMonoTy) ←
-      (fun s => ((s.modifiesMap.getD f []), s))
-    let extraArgs := modifiesTyped.map fun (id, _) => Lambda.LExpr.fvar () id none
-    let extraLhs := modifiesTyped.map fun (id, _) => id
-    return ([.call (extraLhs) f (es.toList ++ extraArgs) md], bindings)
+    let (extraArgs, extraLhs) ← getModifiesExtras f
+    return ([.call extraLhs f (es.toList ++ extraArgs) md], bindings)
   | q`Core.block_statement, #[la, ba] =>
     let l ← translateIdent String la
     let (ss, bindings) ← translateBlock p bindings ba

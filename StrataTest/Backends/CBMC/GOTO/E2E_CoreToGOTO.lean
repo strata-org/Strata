@@ -140,8 +140,9 @@ spec {
   let (.ok (symtab, _)) := coreToGotoJson E2E_Modifies | IO.throwServerError "translation failed"
   let testSym := symtab.getObjValD "test"
   -- After modifies-to-params conversion, g is an output parameter.
-  -- Verify the procedure symbol exists and translates successfully.
+  -- Verify the procedure symbol exists and g appears as a parameter.
   assert! testSym != Lean.Json.null
+  assert! (testSym.pretty.splitOn "\"g\"").length > 1
 
 -------------------------------------------------------------------------------
 

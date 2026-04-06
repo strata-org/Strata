@@ -377,6 +377,12 @@ def toCoreBlock (b : BooleDDM.Block SourceRange) : TranslateM (List Core.Stateme
   termination_by SizeOf.sizeOf b
   decreasing_by simp_all; term_by_mem
 
+private def getModifiesExtras (n : String) : TranslateM (List Core.Expression.Expr × List Core.Expression.Ident) := do
+  let modifiesTyped := (← get).modifiesMap.getD n []
+  let extraArgs := modifiesTyped.map fun (id, _) => (Lambda.LExpr.fvar () id none : Core.Expression.Expr)
+  let extraLhs := modifiesTyped.map fun (id, _) => id
+  return (extraArgs, extraLhs)
+
 def toCoreStmt (s : BooleDDM.Statement SourceRange) : TranslateM Core.Statement := do
   match s with
   | .varStatement m ds =>
@@ -428,14 +434,10 @@ def toCoreStmt (s : BooleDDM.Statement SourceRange) : TranslateM Core.Statement 
       | .condNondet _ => pure .nondet
     return .loop guard none (← toCoreInvariants invs) (← withBVars [] (toCoreBlock b)) (← toCoreMetaData m)
   | .call_statement m ⟨_, lhs⟩ ⟨_, n⟩ ⟨_, args⟩ => do
-    let modifiesTyped := (← get).modifiesMap.getD n []
-    let extraArgs := modifiesTyped.map fun (id, _) => (Lambda.LExpr.fvar () id none : Core.Expression.Expr)
-    let extraLhs := modifiesTyped.map fun (id, _) => id
+    let (extraArgs, extraLhs) ← getModifiesExtras n
     return Core.Statement.call (lhs.toList.map (mkIdent ·.val) ++ extraLhs) n ((← args.toList.mapM toCoreExpr) ++ extraArgs) (← toCoreMetaData m)
   | .call_unit_statement m ⟨_, n⟩ ⟨_, args⟩ => do
-    let modifiesTyped := (← get).modifiesMap.getD n []
-    let extraArgs := modifiesTyped.map fun (id, _) => (Lambda.LExpr.fvar () id none : Core.Expression.Expr)
-    let extraLhs := modifiesTyped.map fun (id, _) => id
+    let (extraArgs, extraLhs) ← getModifiesExtras n
     return Core.Statement.call extraLhs n ((← args.toList.mapM toCoreExpr) ++ extraArgs) (← toCoreMetaData m)
   | .block_statement m ⟨_, l⟩ b =>
     return .block l (← withBVars [] (toCoreBlock b)) (← toCoreMetaData m)

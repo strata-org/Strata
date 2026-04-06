@@ -33,10 +33,76 @@ procedure ProcCaller () returns (x : int) {
 #end
 
 /--
-error:  ❌ Type checking error.
-[ProcCaller]: This procedure modifies variables it is not allowed to!
-Variables actually modified: [g]
-Modification allowed for these variables: [x]
+info: [Strata.Core] Type checking succeeded.
+
+
+Obligation (Origin_Proc_Requires)g_eq_15 is free!
+
+
+VCs:
+Label: g_gt_10_internal
+Property: assert
+Assumptions:
+g_eq_15: $__g1 == 15
+Obligation:
+$__g1 > 10
+
+Label: g_lt_10
+Property: assert
+Assumptions:
+g_eq_15: $__g1 == 15
+Obligation:
+true
+
+Label: g_eq_15_internal
+Property: assert
+Assumptions:
+(Origin_Proc_Ensures)g_lt_10: $__g4 < 10
+Obligation:
+$__g4 == 15
+
+
+
+Result: Obligation: g_eq_15_internal
+Property: assert
+Result: ❌ fail
+Model:
+($__g4, 0)
+
+
+[DEBUG] Evaluated program:
+var g : int;
+procedure Proc (g : int) returns (g : int)
+spec {
+  free requires [g_eq_15]: g == 15;
+  free ensures [g_lt_10]: g < 10;
+  } {
+  assume [g_eq_15]: $__g1 == 15;
+  assert [g_gt_10_internal]: $__g1 > 10;
+  g := $__g1 + 1;
+  assert [g_lt_10]: true;
+  };
+procedure ProcCaller () returns (x : int)
+{
+  call g := Proc(g);
+  assert [g_eq_15_internal]: $__g4 == 15;
+  };
+
+---
+info:
+Obligation: g_gt_10_internal
+Property: assert
+Result: ✅ pass
+
+Obligation: g_lt_10
+Property: assert
+Result: ✅ pass
+
+Obligation: g_eq_15_internal
+Property: assert
+Result: ❌ fail
+Model:
+($__g4, 0)
 -/
 #guard_msgs in
 #eval verify freeReqEnsPgm

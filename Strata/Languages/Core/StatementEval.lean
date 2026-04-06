@@ -91,15 +91,6 @@ private def mkReturnSubst (proc : Procedure) (lhs : List Expression.Ident) (E : 
   (return_lhs_subst, lhs_post_subst, E')
 
 /--
-Create mapping for all globals for old expression substitution.
-Since modifies variables are now output parameters, all globals
-are treated uniformly: their current values are used for old expressions.
--/
-private def mkGlobalSubst (_proc : Procedure) (current_globals : VarSubst)
-    (_E : Env) : VarSubst × Env :=
-  (current_globals, _E)
-
-/--
 Get current values of global variables for old expression substitution.
 Looks up each global variable in the full state (newest scope first) so that
 modifications to output parameters (e.g. modifies-converted globals) are
@@ -172,9 +163,10 @@ def Command.evalCall (E : Env)
     let current_globals := getCurrentGlobals E
     -- (Post-call) Create return variable mappings and fresh LHS variables.
     let (return_lhs_subst, lhs_post_subst, E) := mkReturnSubst proc lhs E
-    -- (Post-call) Create global variable mapping: fresh vars for modified,
-    -- current values for unmodified.
-    let (globals_post_subst, E) := mkGlobalSubst proc current_globals E
+    -- (Post-call) Globals that are in the LHS are already handled by
+    -- mkReturnSubst with fresh variables; keep only the remaining globals.
+    let globals_post_subst := current_globals.filter fun ((id, _), _) =>
+      !lhs.any (·.name == id.name)
 
     -- Apply type substitution to preconditions to instantiate type variables.
     let preconditions_typed := proc.spec.preconditions.map
@@ -194,7 +186,11 @@ def Command.evalCall (E : Env)
     let postconditions_typed := proc.spec.postconditions.map
         (fun (l, c) => (l, { c with expr := c.expr.applySubst tySubst }))
     -- Create post-call substitution for postconditions.
-    let postcond_subst_init := formal_arg_subst ++ return_lhs_subst
+    -- return_lhs_subst comes first so that output parameters (including
+    -- modifies-converted globals) map to fresh post-call variables,
+    -- taking priority over formal_arg_subst which maps the same names
+    -- to pre-call values.
+    let postcond_subst_init := return_lhs_subst ++ formal_arg_subst
     -- Build "old g" substitutions: map "old g" → pre-call value of g
     let old_g_subst : VarSubst := current_globals.filterMap fun ((id, ty), e) =>
       let oldId : CoreIdent := CoreIdent.mkOld id.name

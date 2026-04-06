@@ -28,16 +28,17 @@ private def checkNoDuplicates (proc : Procedure) (sourceLoc : FileRange) :
   if !proc.header.outputs.keys.Nodup then
     .error <| DiagnosticModel.withRange sourceLoc f!"[{proc.header.name}] Duplicates found in the return variables!"
 
-private def checkVariableScoping (_proc : Procedure) (_sourceLoc : FileRange) :
-    Except DiagnosticModel Unit := do
-  pure ()
-
-private def checkModificationRights (proc : Procedure) (sourceLoc : FileRange) :
+private def checkModificationRights (proc : Procedure) (p : Program) (sourceLoc : FileRange) :
     Except DiagnosticModel Unit := do
   let modifiedVars := (Imperative.Block.modifiedVars proc.body).eraseDups
   let definedVars := (Imperative.Block.definedVars proc.body).eraseDups
+  -- Allow modification of outputs, locally defined variables, and
+  -- program-level globals (whose modification rights are enforced
+  -- through the modifies-to-params conversion).
   let allowedVars := proc.header.outputs.keys ++ definedVars
-  if modifiedVars.any (fun v => v ∉ allowedVars) then
+  let disallowed := modifiedVars.filter (fun v =>
+    v ∉ allowedVars && (Program.find? p .var v).isNone)
+  if !disallowed.isEmpty then
     .error <| DiagnosticModel.withRange sourceLoc f!"[{proc.header.name}]: This procedure modifies variables it \
               is not allowed to!\n\
               Variables actually modified: {modifiedVars}\n\
@@ -81,8 +82,7 @@ def typeCheck (C : Core.Expression.TyContext) (Env : Core.Expression.TyEnv) (p :
 
   -- Validate well-formedness of formals and returns.
   checkNoDuplicates proc fileRange
-  checkVariableScoping proc fileRange
-  checkModificationRights proc fileRange
+  checkModificationRights proc p fileRange
 
   -- Temporarily add the formals into the context.
   let (inp_mty_sig, envWithInputs) ← setupInputEnv C Env proc fileRange
