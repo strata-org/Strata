@@ -555,8 +555,7 @@ theorem substFvars_eraseMetadata_values_congr
       simp only [LExpr.substFvars.substFvarsAux, LExpr.eraseMetadata, LExpr.replaceMetadata]
       exact congr (congr (congrArg _ ihc) iht) ihf
 
-/-- If `Map.find? sm x = some v` and `v` is closed, then
-    `substFvars (.fvar m x ty) sm = v`. -/
+/-- If `Map.find? sm e = some e`, then `substFvars (.fvar m x ty) sm = e`. -/
 theorem substFvars_fvar_find
     (m_meta : T.Metadata) (x : Identifier T.IDMeta) (ty : Option LMonoTy)
     (sm : Map (Identifier T.IDMeta) (LExpr T.mono))
