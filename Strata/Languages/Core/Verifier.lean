@@ -663,9 +663,9 @@ def preprocessObligation (obligation : ProofObligation Expression) (p : Program)
 
     A second `FilterProcedures` pass runs after `CallElim` and `PrecondElim`
     to prune any procedures that became unreachable after transforms. This
-    works because `CallElim` maintains the call graph via `decrementEdge`
-    and `PrecondElim` registers WF procedures as leaf nodes with
-    `noFilter := true`.
+    pass explicitly lists the target procedures and their WF procedures
+    (via `PrecondElim.wfProcName`) as targets, and disables `noFilter` so
+    that WF procedures for prelude functions are correctly pruned.
 
     `loopElimPipelinePhase` is placed last because loop elimination happens
     during evaluation (not as a program-to-program pass), making it the
@@ -679,7 +679,11 @@ def corePipelinePhases (procs : Option (List String) := none)
     | some f => [precondElimPipelinePhase f]
     | none => []
   let postFilterPhases := match procs with
-    | some ps => [filterProceduresPipelinePhase ps]
+    | some ps =>
+      let targets := ps ++ ps.map PrecondElim.wfProcName
+      [modelPreservingPipelinePhase "FilterProcedures" fun prog => do
+        let filtered ← FilterProcedures.run prog targets (respectNoFilter := false)
+        return (true, filtered)]
     | none => []
   let callElimPhase := match procs with
     | some _ => [callElimPipelinePhase]
