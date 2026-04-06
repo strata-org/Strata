@@ -254,11 +254,13 @@ The specification (contract) of a procedure.
   returns. May reference `old(expr)` for pre-state values. Assumed at call sites
   unless the implementation is being verified.
 
-Note: Modifies clauses exist only in the concrete syntax (DDM/Laurel). During
-translation to the Core AST, modified global variables are converted into
-additional input and output parameters on the procedure header.
+Note: During translation to the Core AST, modified global variables are
+converted into additional input and output parameters on the procedure header.
+The `modifies` field is retained for concrete syntax display only.
 -/
 structure Procedure.Spec where
+  /-- Global variables from the original `modifies` clause (for CST display). -/
+  modifies       : List Expression.Ident := []
   /-- Labeled preconditions (`requires` clauses). -/
   preconditions  : ListMap CoreLabel Procedure.Check
   /-- Labeled postconditions (`ensures` clauses). -/
@@ -267,7 +269,8 @@ structure Procedure.Spec where
 
 instance : ToFormat Procedure.Spec where
   format p :=
-    f!"preconditions: {format p.preconditions}\n\
+    f!"modifies: {format p.modifies}\n\
+       preconditions: {format p.preconditions}\n\
        postconditions: {format p.postconditions}"
 
 def Procedure.Spec.preconditionNames (s : Procedure.Spec) : List CoreLabel :=

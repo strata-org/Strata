@@ -16,6 +16,7 @@ open Procedure Statement Lambda Lambda.LTy.Syntax Lambda.LExpr.SyntaxMono Core.S
 
 /--
 info: ok: (procedure P :  ((x : int)) → ((y : int))
+   modifies: []
    preconditions: (0_lt_x, ((~Int.Lt : (arrow int (arrow int bool))) #0 (x : int)))
    postconditions: (ret_y_lt_0, ((~Int.Lt : (arrow int (arrow int bool))) (y : int) #0))
  {

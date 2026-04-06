@@ -958,6 +958,11 @@ def procToCST {M} [Inhabited M] (proc : Core.Procedure) : ToCSTM M (Command M) :
       ⟨default, some declList⟩
   -- Build spec elements
   let mut specElts : Array (SpecElt M) := #[]
+  -- Add modifies
+  if !proc.spec.modifies.isEmpty then
+    let ids : Ann (Array (Ann String M)) M :=
+      ⟨default, proc.spec.modifies.toArray.map fun id => ⟨default, id.name⟩⟩
+    specElts := specElts.push (SpecElt.modifies_spec default ids)
   -- Add requires
   for (label, check) in proc.spec.preconditions.toList do
     let labelAnn : Ann (Option (Label M)) M :=
