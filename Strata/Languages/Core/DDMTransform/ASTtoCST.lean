@@ -1236,6 +1236,12 @@ def Core.formatProgram (ast : Core.Program)
     formatted ++ "\n\n-- Errors encountered during conversion:\n" ++
     Std.Format.joinSep (finalCtx.errors.toList.map (Std.format ∘ toString)) "\n"
 
+/-- Like `formatProgram`, but prepends the `program Core;` header so the
+    output can be re-parsed by `strata verify`. -/
+def Core.formatProgramWithHeader (ast : Core.Program)
+    (extraFreeVars : Array String := #[]) : Std.Format :=
+  f!"program Core;\n\n" ++ Core.formatProgram ast extraFreeVars
+
 def Core.formatStatement (stmt : Core.Statement)
     (extraFreeVars : Array String := #[]) : Std.Format :=
   let initCtx := ToCSTContext.empty (M := SourceRange)
