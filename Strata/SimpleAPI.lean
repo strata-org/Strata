@@ -11,6 +11,8 @@ public import Strata.Transform.CoreTransform
 import Strata.Transform.CallElim
 import Strata.Transform.LoopElim
 import Strata.Transform.ProcedureInlining
+import Strata.Transform.FilterProcedures
+import Strata.Transform.IrrelevantAxioms
 
 public import Strata.Languages.Core.Options
 public import Strata.Languages.Core.Verifier
@@ -270,6 +272,26 @@ def Core.callElimUsingContract (p : Core.Program) : Except String Core.Program :
   Core.Transform.run p (fun prog => do
     let (_, prog) ← Core.Transform.runProgram coreCallElimCmd prog
     return prog)
+
+/--
+Transform a Core program to keep only the named procedures and their
+transitive callees, removing everything else.
+-/
+def Core.filterProcedures (p : Core.Program) (targetProcs : List String)
+    : Except String Core.Program :=
+  Core.Transform.run p (fun prog => do
+    let filtered ← Core.FilterProcedures.run prog targetProcs
+    return filtered)
+
+/--
+Transform a Core program to remove axiom declarations that are irrelevant
+to the named functions (based on call graph analysis).
+-/
+def Core.removeIrrelevantAxioms (p : Core.Program) (functions : List String)
+    : Except String Core.Program :=
+  Core.Transform.run p (fun prog => do
+    let pruned ← Core.IrrelevantAxioms.run prog functions
+    return pruned)
 
 /-! ### Analysis of Core programs -/
 

@@ -157,6 +157,22 @@ def checkLevelFlag : Flag :=
     help := s!"Check level: {CheckLevel.options}. Default: 'minimal'.",
     takesArg := .arg "level" }
 
+/-- Read and parse a Strata program file, loading the Core, C_Simp, and B3CST
+    dialects. Returns the parsed program and the input context (for source
+    location resolution), or an array of error messages on failure. -/
+private def readStrataProgram (file : String)
+    : IO (Except (Array Lean.Message) (Strata.Program × Lean.Parser.InputContext)) := do
+  let text ← Strata.Util.readInputSource file
+  let inputCtx := Lean.Parser.mkInputContext text (Strata.Util.displayName file)
+  let dctx := Elab.LoadedDialects.builtin
+  let dctx := dctx.addDialect! Core
+  let dctx := dctx.addDialect! C_Simp
+  let dctx := dctx.addDialect! B3CST
+  let leanEnv ← Lean.mkEmptyEnvironment 0
+  match Strata.Elab.elabProgram dctx leanEnv inputCtx with
+  | .ok pgm => pure (.ok (pgm, inputCtx))
+  | .error msgs => pure (.error msgs)
+
 structure Command where
   name : String
   args : List String
@@ -1083,6 +1099,71 @@ structure CommandGroup where
   commands : List Command
   commonFlags : List Flag := []
 
+def transformCommand : Command where
+  name := "transform"
+  args := [ "file" ]
+  flags := [
+    { name := "pass",
+      help := "Transform pass to apply (repeatable, applied left to right). \
+               Valid passes: inlineProcedures, loopElim, callElim, filterProcedures, removeIrrelevantAxioms.",
+      takesArg := .repeat "name" },
+    { name := "procedures",
+      help := "Comma-separated procedure names (used by filterProcedures and inlineProcedures).",
+      takesArg := .arg "procs" },
+    { name := "functions",
+      help := "Comma-separated function names (used by removeIrrelevantAxioms).",
+      takesArg := .arg "funcs" }]
+  help := "Apply one or more transforms to a Core program and print the result."
+  callback := fun v pflags => do
+    let file := v[0]
+    let passes := pflags.getRepeated "pass"
+    if passes.isEmpty then
+      exitFailure "No --pass specified. Valid passes: inlineProcedures, loopElim, callElim, filterProcedures, removeIrrelevantAxioms."
+    let procedures := pflags.getString "procedures" |>.map (·.splitToList (· == ',')) |>.getD []
+    let functions := pflags.getString "functions" |>.map (·.splitToList (· == ',')) |>.getD []
+    -- Read and parse the Core program
+    let (pgm, _) ← match ← readStrataProgram file with
+      | .ok r => pure r
+      | .error msgs =>
+        for e in msgs do println! s!"Error: {← e.toString}"
+        exitFailure s!"{msgs.size} parse error(s)"
+    match Strata.genericToCore pgm with
+    | .error msg =>
+      exitFailure msg
+    | .ok initProgram =>
+    -- Apply passes left to right
+    let mut program := initProgram
+    for pass in passes do
+      match pass with
+      | "inlineProcedures" =>
+        let opts : Strata.Core.InlineTransformOptions :=
+          if procedures.isEmpty then {}
+          else { doInline := some (fun name _ => name ∉ procedures) }
+        match Strata.Core.inlineProcedures program opts with
+        | .ok p => program := p
+        | .error e => exitFailure s!"inlineProcedures failed: {e}"
+      | "loopElim" =>
+        program := Strata.Core.loopElimUsingContract program
+      | "callElim" =>
+        match Strata.Core.callElimUsingContract program with
+        | .ok p => program := p
+        | .error e => exitFailure s!"callElim failed: {e}"
+      | "filterProcedures" =>
+        if procedures.isEmpty then
+          exitFailure "filterProcedures requires --procedures"
+        match Strata.Core.filterProcedures program procedures with
+        | .ok p => program := p
+        | .error e => exitFailure s!"filterProcedures failed: {e}"
+      | "removeIrrelevantAxioms" =>
+        if functions.isEmpty then
+          exitFailure "removeIrrelevantAxioms requires --functions"
+        match Strata.Core.removeIrrelevantAxioms program functions with
+        | .ok p => program := p
+        | .error e => exitFailure s!"removeIrrelevantAxioms failed: {e}"
+      | other =>
+        exitFailure s!"Unknown pass '{other}'. Valid passes: inlineProcedures, loopElim, callElim, filterProcedures, removeIrrelevantAxioms."
+    IO.print program
+
 def verifyCommand : Command where
   name := "verify"
   args := [ "file" ]
@@ -1125,16 +1206,15 @@ def verifyCommand : Command where
         outputSarif, checkMode, checkLevel, solverTimeout,
         vcDirectory := pflags.getString "vc-directory",
         solver := pflags.getString "solver" |>.getD Core.defaultSolver }
-    let text ← Strata.Util.readInputSource file
-    let inputCtx := Lean.Parser.mkInputContext text (Strata.Util.displayName file)
-    let dctx := Elab.LoadedDialects.builtin
-    let dctx := dctx.addDialect! Core
-    let dctx := dctx.addDialect! C_Simp
-    let dctx := dctx.addDialect! B3CST
-    let leanEnv ← Lean.mkEmptyEnvironment 0
-    match Strata.Elab.elabProgram dctx leanEnv inputCtx with
-    | .ok pgm =>
-      println! s!"Successfully parsed."
+    let (pgm, inputCtx) ← match ← readStrataProgram file with
+      | .ok r => pure r
+      | .error errors =>
+        for e in errors do
+          let msg ← e.toString
+          println! s!"Error: {msg}"
+        println! f!"Finished with {errors.size} errors."
+        IO.Process.exit ExitCode.userError
+    println! s!"Successfully parsed."
       if opts.parseOnly then return
       if opts.typeCheckOnly then
         let ans := if file.endsWith ".csimp.st" then
@@ -1197,16 +1277,10 @@ def verifyCommand : Command where
         let failedGoalCount := (vcResults.filter Core.VCResult.isNotSuccess).size
         println! f!"Finished with {provedGoalCount} goals passed, {failedGoalCount} failed."
         IO.Process.exit ExitCode.failuresFound
-    | .error errors =>
-      for e in errors do
-        let msg ← e.toString
-        println! s!"Error: {msg}"
-      println! f!"Finished with {errors.size} errors."
-      IO.Process.exit ExitCode.userError
 
 def commandGroups : List CommandGroup := [
   { name := "Core"
-    commands := [verifyCommand, checkCommand, toIonCommand, printCommand, diffCommand]
+    commands := [verifyCommand, transformCommand, checkCommand, toIonCommand, printCommand, diffCommand]
     commonFlags := [includeFlag] },
   { name := "Code Generation"
     commands := [javaGenCommand] },
