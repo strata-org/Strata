@@ -1,14 +1,24 @@
+test_arithmetic.py(3, 4): ✅ pass - assert(45)
+test_arithmetic.py(4, 4): ✅ pass - assert(60)
+test_arithmetic.py(6, 4): ✅ pass - assert(80)
 test_arithmetic.py(7, 4): ✅ pass - assert_assert(102)_calls_Any_to_bool_0
 test_arithmetic.py(7, 4): ✅ pass - assert(102)
+test_arithmetic.py(9, 4): ✅ pass - assert(171)
+test_arithmetic.py(10, 4): ✅ pass - assert(187)
+test_arithmetic.py(11, 4): ✅ pass - assert(202)
 test_arithmetic.py(12, 4): ✅ pass - assert_assert(226)_calls_Any_to_bool_0
 test_arithmetic.py(12, 4): ✅ pass - assert(226)
+test_arithmetic.py(15, 4): ✅ pass - assert(320)
 test_arithmetic.py(16, 4): ✅ pass - assert_assert(345)_calls_Any_to_bool_0
 test_arithmetic.py(16, 4): ✅ pass - assert(345)
+test_arithmetic.py(19, 4): ✅ pass - assert(436)
 test_arithmetic.py(20, 4): ✅ pass - assert_assert(458)_calls_Any_to_bool_0
 test_arithmetic.py(20, 4): ✅ pass - assert(458)
 test_arithmetic.py(23, 4): ✅ pass - set_quot_calls_PFloorDiv_0
+test_arithmetic.py(23, 4): ✅ pass - assert(544)
 test_arithmetic.py(24, 4): ✅ pass - assert_assert(567)_calls_Any_to_bool_0
 test_arithmetic.py(24, 4): ✅ pass - assert(567)
+unknown location: ✅ pass - assert(0)
 test_arithmetic.py(26, 0): ✅ pass - ite_cond_calls_Any_to_bool_0
-DETAIL: 12 passed, 0 failed, 0 inconclusive
+DETAIL: 22 passed, 0 failed, 0 inconclusive
 RESULT: Analysis success
