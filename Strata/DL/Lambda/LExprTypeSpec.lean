@@ -14,7 +14,7 @@ import all Strata.DL.Lambda.LTy
 import all Strata.DL.Lambda.LTyUnify
 import all Strata.DL.Util.Map
 import all Strata.DL.Util.Maps
-import all Strata.DL.Lambda.Factory
+import Strata.DL.Lambda.Factory
 import all Strata.DL.Lambda.Identifiers
 import all Strata.DL.Util.Func
 import all Strata.DL.Util.ListMap
@@ -213,7 +213,7 @@ inductive HasType {T: LExprParams} [DecidableEq T.IDMeta] (C: LContext T):
   An un-annotated operator has the type recorded for it in `C.functions`, if any.
   -/
   | top: ∀ Γ m f op ty,
-            C.functions.find? (fun fn => fn.name == op) = some f →
+            C.functions[op.name]? = some f →
             f.type = .ok ty →
             HasType C Γ (.op m op none) ty
   /--
@@ -222,7 +222,7 @@ inductive HasType {T: LExprParams} [DecidableEq T.IDMeta] (C: LContext T):
   `ann` is compatible with `ty_s`.
   -/
   | top_annotated: ∀ Γ m f op ty_o ty_s tys ann,
-            C.functions.find? (fun fn => fn.name == op) = some f →
+            C.functions[op.name]? = some f →
             f.type = .ok ty_o →
             tys.length = ty_o.boundVars.length →
             LTy.openFull ty_o tys = ty_s →
@@ -3117,7 +3117,7 @@ private theorem resolveAux_properties_aux :
     rename_i type_val h_type
     split at h; · simp at h
     rename_i v1 h_inst; obtain ⟨ty_inst, Env1⟩ := v1; dsimp at h h_inst
-    have h_func_mem : func ∈ C.functions := Array.mem_of_find?_eq_some h_find
+    have h_func_mem : func ∈ C.functions.toArray := Factory.getElem?_is_some_implies_mem h_find
     have h_func_wf : LFuncWF func := h_fwf.lfuncs_wf func h_func_mem
     have h_ty_closed : LTy.freeVars type_val = [] := LFunc.type_freeVars_eq_nil func type_val h_type h_func_wf
     have h_ty_fresh_vacuous : ∀ v, v ∈ LTy.freeVars type_val →
@@ -5660,7 +5660,7 @@ theorem resolveAux_HasType :
         intro S h_abs_S h_wf_S _
         rw [← h_et]; simp [toLMonoTy]
         -- Step 1: HasType.top gives the full polymorphic type
-        have h_func_mem : func ∈ C.functions := Array.mem_of_find?_eq_some h_find
+        have h_func_mem : func ∈ C.functions.toArray := Factory.getElem?_is_some_implies_mem h_find
         have h_func_wf : LFuncWF func := h_fwf.lfuncs_wf func h_func_mem
         have h_top := HasType.top (TContext.subst Env.context S) m func o type_val h_find h_type
         -- Step 2: HasType_LTy_instantiate gives the mono type
@@ -5735,7 +5735,7 @@ theorem resolveAux_HasType :
         -- Extract unify hypothesis from mapError wrapper
         have h_unify := unify_of_mapError h_mapError
         -- Closed type facts
-        have h_func_mem : func ∈ C.functions := Array.mem_of_find?_eq_some h_find
+        have h_func_mem : func ∈ C.functions.toArray := Factory.getElem?_is_some_implies_mem h_find
         have h_func_wf : LFuncWF func := h_fwf.lfuncs_wf func h_func_mem
         have h_ty_closed := LFunc.type_freeVars_eq_nil func type_val h_type h_func_wf
         have h_bv_eq := LFunc.type_boundVars_eq_typeArgs func type_val h_type
@@ -6973,13 +6973,18 @@ example : LExpr.HasType {} {} esM[λ %0] t[∀a. %a → %a] := by
 def idFactory : LFunc ⟨Unit, Unit⟩ := {name := "id", typeArgs := ["a"],  inputs := [⟨"x", .ftvar "a"⟩], output := .ftvar "a"}
 
 example : LExpr.HasType (LContext.default.addFactoryFunction idFactory) {} (.op () ⟨"id", ()⟩ none) t[∀a. %a → %a] := by
-  apply (LExpr.HasType.top _ _ idFactory) <;> rfl
+  apply (LExpr.HasType.top _ _ idFactory)
+  · simp only [LContext.default, Lambda.LContext.addFactoryFunction]
+    simp [Lambda.Factory.push_mem_match, idFactory]
+  · rfl
 
 example : LExpr.HasType (LContext.default.addFactoryFunction idFactory) {} (.op () ⟨"id", ()⟩ mty[int → int]) t[int → int] := by
   apply (LExpr.HasType.top_annotated _ _ idFactory _ t[∀a. %a → %a] _ [.int]) <;> try rfl
-  · simp only[LTy.openFull, LTy.toMonoTypeUnsafe, List.zip, LTy.boundVars];
-    unfold LMonoTy.subst ;
-    simp[Subst.hasEmptyScopes, Map.isEmpty, LMonoTys.subst, LMonoTys.subst.substAux, LMonoTy.subst, Maps.find?, Map.find?, LMonoTy.int]
+  · simp only [LContext.default, Lambda.LContext.addFactoryFunction]
+    simp [Lambda.Factory.push_mem_match, idFactory]
+  · simp [openFull, boundVars]
+    simp [ LMonoTy.subst.eq_def, Subst.hasEmptyScopes, Map.isEmpty, toMonoTypeUnsafe, LMonoTys.subst,  Lambda.LMonoTys.subst.substAux]
+    rfl
   · exact AnnotCompat.of_eq
 
 end Tests

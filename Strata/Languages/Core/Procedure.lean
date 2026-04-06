@@ -397,6 +397,5 @@ instance : HasVarsTrans Expression (List Statement) Procedure where
   touchedVarsTrans := Statements.touchedVarsTrans
   allVarsTrans := Statements.allVarsTrans
 
-
 end
 end Core

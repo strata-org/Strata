@@ -255,6 +255,9 @@ def EvalPureFunc (φ : CoreEval → PureFunc Expression → CoreEval) : Imperati
     let capturedDecl := closureCapture σ decl
     φ δ capturedDecl
 
+/-- Core-level small-step configuration. -/
+@[expose] abbrev CoreConfig := Imperative.Config Expression Command
+
 /-!
 ### Mutual inductive: `EvalCommand` and `CoreStepStar`
 
@@ -271,10 +274,11 @@ mutual
 
 /-- Reflexive-transitive closure of `StepStmt` for the Core language,
     defined mutually with `EvalCommand` to satisfy strict positivity. -/
-inductive CoreStepStar (π : String → Option Procedure) (φ : CoreEval → PureFunc Expression → CoreEval) :
-    Imperative.Config Expression Command → Imperative.Config Expression Command → Prop where
-  | refl :
-    CoreStepStar π φ c c
+inductive CoreStepStar
+    (π : String → Option Procedure)
+    (φ : CoreEval → PureFunc Expression → CoreEval) :
+    CoreConfig → CoreConfig → Prop where
+  | refl : CoreStepStar π φ c c
   | step :
     Imperative.StepStmt Expression (EvalCommand π φ) (EvalPureFunc φ) c₁ c₂ →
     CoreStepStar π φ c₂ c₃ →
@@ -326,28 +330,11 @@ inductive EvalCommand (π : String → Option Procedure) (φ : CoreEval → Pure
 
 end
 
-/-- `CoreStepStar` implies the generic `StepStmtStar` (i.e. `ReflTrans`). -/
-theorem CoreStepStar_to_StepStmtStar
-    {π : String → Option Procedure}
-    {φ : CoreEval → PureFunc Expression → CoreEval}
-    {c c' : Imperative.Config Expression Command}
-    (h : CoreStepStar π φ c c') :
-    Imperative.StepStmtStar Expression (EvalCommand π φ) (EvalPureFunc φ) c c' :=
-  match h with
-  | .refl => .refl _
-  | .step hstep hrest => .step _ _ _ hstep (CoreStepStar_to_StepStmtStar hrest)
-
-/-- The generic `StepStmtStar` implies `CoreStepStar`. -/
-theorem StepStmtStar_to_CoreStepStar
-    {π : String → Option Procedure}
-    {φ : CoreEval → PureFunc Expression → CoreEval}
-    {c c' : Imperative.Config Expression Command} :
-    Imperative.StepStmtStar Expression (EvalCommand π φ) (EvalPureFunc φ) c c' →
-    CoreStepStar π φ c c' := by
-  intro H
-  induction H with
-  | refl => exact .refl
-  | step _ _ _ hstep _ ih => exact .step hstep ih
+/-- Core-level single-step relation. -/
+@[expose] abbrev CoreStep
+    (π : String → Option Procedure)
+    (φ : CoreEval → PureFunc Expression → CoreEval) :=
+  Imperative.StepStmt Expression (EvalCommand π φ) (EvalPureFunc φ)
 
 @[expose] abbrev EvalStatement (π : String → Option Procedure) (φ : CoreEval → PureFunc Expression → CoreEval) :
     Imperative.Env Expression → Statement → Imperative.Env Expression → Prop :=
@@ -356,6 +343,52 @@ theorem StepStmtStar_to_CoreStepStar
 @[expose] abbrev EvalStatements (π : String → Option Procedure) (φ : CoreEval → PureFunc Expression → CoreEval) :
     Imperative.Env Expression → List Statement → Imperative.Env Expression → Prop :=
   Imperative.EvalStmtsSmall Expression (EvalCommand π φ) (EvalPureFunc φ)
+
+
+/-! ## Old-variable environment augmentation -/
+
+/-- Augment an environment with old-variable bindings for the modifies clause.
+
+    For each `g ∈ modifies`, the store is extended so that
+    `(withOldBindings modifies ρ).store (CoreIdent.mkOld g.name) = ρ.store g`.
+    All other store lookups (including `g` itself) are unchanged.
+    The evaluator and `hasFailure` flag are preserved. -/
+def withOldBindings
+    (modifies : List Expression.Ident) (ρ : Env Expression) : Env Expression :=
+  { ρ with store := fun id =>
+      match modifies.find? (fun g => CoreIdent.mkOld g.name == id) with
+      | some g => ρ.store g
+      | none   => ρ.store id }
+
+/-! ## Assert detection -/
+
+/-- Assert detection for Core configurations.
+
+    Core commands have type `Command = CmdExt Expression`, so an assert
+    command appears as `.cmd (CmdExt.cmd (Cmd.assert l e md))`.
+    Call commands (`.cmd (CmdExt.call ...)`) never trigger assert detection. -/
+def coreIsAtAssert : CoreConfig → Imperative.AssertId Expression → Prop
+  | .stmt (.cmd (.cmd (.assert label expr _))) _, aid =>
+    aid.label = label ∧ aid.expr = expr
+  | .stmts ((.cmd (.cmd (.assert label expr _))) :: _) _, aid =>
+    aid.label = label ∧ aid.expr = expr
+  | .block _ inner, aid => coreIsAtAssert inner aid
+  | .seq inner _, aid => coreIsAtAssert inner aid
+  | _, _ => False
+
+/-! ## Well-formed evaluator extension -/
+
+/-- A well-formed evaluator extension preserves `WellFormedSemanticEvalBool`
+    through `funcDecl` steps.  This is the only step that modifies the
+    evaluator; all other small-step rules leave it unchanged.
+
+    Concrete instantiations of `φ` (e.g., lookup-table extensions) should
+    prove this once at the instantiation site. -/
+structure WFEvalExtension (φ : CoreEval → Imperative.PureFunc Expression → CoreEval) : Prop where
+  preserves_wfBool : ∀ δ σ decl, Imperative.WellFormedSemanticEvalBool δ →
+    Imperative.WellFormedSemanticEvalBool (EvalPureFunc φ δ σ decl)
+
+---------------------------------------------------------------------
 
 inductive EvalCommandContract : (String → Option Procedure)  → CoreEval →
   CoreStore → Command → CoreStore → Bool → Prop where
