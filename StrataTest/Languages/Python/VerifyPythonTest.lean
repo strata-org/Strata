@@ -131,6 +131,8 @@ open Strata.Parser (stringInputContext)
     throw <| .userError s!"Expected 0 diagnostics, got {diags.size}"
 
 -- datetime.now() with optional tz parameter and timedelta arithmetic.
+-- Also exercises multi-output prelude procedure detection (timedelta_func
+-- returns (delta: Any, maybe_except: Error)).
 #guard_msgs in
 #eval withPython (warnOnSkip := false) fun pythonCmd => do
   let program :=
