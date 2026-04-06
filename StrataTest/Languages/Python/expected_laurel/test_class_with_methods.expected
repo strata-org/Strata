@@ -3,9 +3,9 @@ test_class_with_methods.py(23, 4): ✅ pass - assert_assert(459)_calls_Any_to_bo
 test_class_with_methods.py(23, 4): ❓ unknown - assert(459)
 test_class_with_methods.py(26, 4): ✅ pass - assert_assert(544)_calls_Any_to_bool_0
 test_class_with_methods.py(26, 4): ❓ unknown - assert(544)
-test_class_with_methods.py(28, 4): ✅ pass - callElimAssert_requires_0_4
-test_class_with_methods.py(28, 4): ✅ pass - callElimAssert_requires_1_5
-test_class_with_methods.py(28, 4): ✅ pass - callElimAssert_requires_2_6
+test_class_with_methods.py(28, 4): ✅ pass - (Origin_test_helper_procedure_Requires)req_name_is_foo
+test_class_with_methods.py(28, 4): ✅ pass - (Origin_test_helper_procedure_Requires)req_opt_name_none_or_str
+test_class_with_methods.py(28, 4): ✅ pass - (Origin_test_helper_procedure_Requires)req_opt_name_none_or_bar
 test_class_with_methods.py(17, 0): ✅ pass - postcondition
 test_class_with_methods.py(30, 0): ✅ pass - ite_cond_calls_Any_to_bool_0
 DETAIL: 8 passed, 0 failed, 2 inconclusive
