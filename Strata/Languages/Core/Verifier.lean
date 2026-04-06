@@ -667,8 +667,9 @@ def keepSetFilterPipelinePhase (procs : List String) : PipelinePhase :=
     extracts transforms from this list, and the validation extracts phases,
     ensuring they stay in sync.
 
-    When `procs` and `factory` are provided (targeted verification), the
-    pipeline includes filtering and precondition-elimination phases.
+    Call elimination always runs as a standalone program-to-program pass.
+    When `procs` is provided (targeted verification), the pipeline also
+    includes filtering and keep-set phases.
     All filter phases are model-preserving since they only remove
     information without introducing over-approximations.
 
@@ -902,31 +903,17 @@ def verify (program : Program)
   let factory ← EIO.ofExcept (Core.Factory.addFactory moreFns)
   let phases := coreAbstractedPhases (procs := proceduresToVerify) (factory := some factory)
   let finalProgram ← profileStep profile "  Program transformations" do
-    let runPrecondElim := fun prog => do
-      let (_changed, prog) ← PrecondElim.precondElim prog factory
-      return prog
-    match proceduresToVerify with
-    | none =>
-      match Transform.run program runPrecondElim with
-      | .ok prog => .ok prog
-      | .error e => .error (DiagnosticModel.fromFormat f!"❌ Transform Error. {e}")
-    | some procs =>
-       -- Verify specific procedures. All pipeline phases — including
-       -- filtering, call/loop elimination, precondition elimination, and
-       -- the final keep-set filter — are defined in `corePipelinePhases`.
-       -- Each phase pairs its transform with its model validation,
-       -- ensuring they stay in sync.
-      let pipelinePhases := corePipelinePhases (procs := some procs) (factory := some factory)
-      let passes := fun prog => do
-        let mut current := prog
-        for pp in pipelinePhases do
-          let (_changed, next) ← pp.transform current
-          current := next
-        return current
-      let res := Transform.run program passes
-      match res with
-      | .ok prog => .ok prog
-      | .error e => .error (DiagnosticModel.fromFormat f!"❌ Transform Error. {e}")
+    let pipelinePhases := corePipelinePhases (procs := proceduresToVerify) (factory := some factory)
+    let passes := fun prog => do
+      let mut current := prog
+      for pp in pipelinePhases do
+        let (_changed, next) ← pp.transform current
+        current := next
+      return current
+    let res := Transform.run program passes
+    match res with
+    | .ok prog => .ok prog
+    | .error e => .error (DiagnosticModel.fromFormat f!"❌ Transform Error. {e}")
   -- Build the axiom relevance cache once (post-transform, so declarations are
   -- stable). The cache is reused across all verification environments and goals.
   let axiomCache? ← profileStep profile "  Build axiom relevance cache" do

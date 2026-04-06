@@ -15,9 +15,9 @@ namespace Strata.Laurel
 def program := r"
 procedure hasRequires(x: int) returns (r: int)
   requires x > 2
-//         ^^^^^ error: assertion does not hold
-// Core does not seem to report precondition errors correctly.
-// This should occur at the call site and with a different message
+// Call elimination reports precondition errors at the call site,
+// not at the requires clause definition.
+//
 {
   assert x > 0;
   assert x > 3;
@@ -27,6 +27,7 @@ procedure hasRequires(x: int) returns (r: int)
 
 procedure caller() {
   var x: int := hasRequires(1);
+//^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
   var y: int := hasRequires(3)
 };
 
