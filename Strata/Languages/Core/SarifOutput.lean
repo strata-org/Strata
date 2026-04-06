@@ -24,8 +24,9 @@ def outcomeToLevel (mode : VerificationMode) (property : Imperative.PropertyType
   match mode, property, outcome.satisfiabilityProperty, outcome.validityProperty with
   -- Cover satisfied (sat on P∧Q): always pass
   | _, .cover, .sat _, _ => .none
-  -- Unreachable (both unsat): warning for assert/divisionByZero, error for cover
-  | _, p, .unsat, .unsat => if p.passWhenUnreachable then .warning else .error
+  -- Unreachable (both unsat): deductive=warning for assert/divisionByZero, error for cover and bugFinding modes
+  | .deductive, p, .unsat, .unsat => if p.passWhenUnreachable then .warning else .error
+  | _, _, .unsat, .unsat => .error
   -- Pass: validity proven (unsat on P∧¬Q)
   | _, _, _, .unsat => .none
   -- Always false (sat unsat): error in all modes
@@ -54,19 +55,19 @@ def outcomeToMessage (outcome : VCOutcome) : String :=
       else ""
     s!"True or false depending on inputs{models}"
   | .unsat, .unsat => "Unreachable: path condition is contradictory"
-  | .sat _, .unknown => "Can be true, unknown if always true"
-  | .unsat, .unknown => "Always false if reached, reachability unknown"
-  | .unknown, .sat m =>
+  | .sat _, .unknown _ => "Can be true, unknown if always true"
+  | .unsat, .unknown _ => "Always false if reached, reachability unknown"
+  | .unknown _, .sat m =>
     if m.isEmpty then "Can be false and is reachable, unknown if always false"
     else s!"Can be false and is reachable, unknown if always false with counterexample: {Std.format m}"
-  | .unknown, .unsat => "Always true if reached, reachability unknown"
-  | .unknown, .unknown => "Unknown (solver timeout or incomplete)"
+  | .unknown _, .unsat => "Always true if reached, reachability unknown"
+  | .unknown _, .unknown _ => "Unknown (solver timeout or incomplete)"
   | .sat _, .err msg => s!"Validity check error: {msg}"
   | .unsat, .err msg => s!"Validity check error: {msg}"
-  | .unknown, .err msg => s!"Validity check error: {msg}"
+  | .unknown _, .err msg => s!"Validity check error: {msg}"
   | .err msg, .sat _ => s!"Satisfiability check error: {msg}"
   | .err msg, .unsat => s!"Satisfiability check error: {msg}"
-  | .err msg, .unknown => s!"Satisfiability check error: {msg}"
+  | .err msg, .unknown _ => s!"Satisfiability check error: {msg}"
   | .err msg1, .err msg2 => s!"Both checks error: sat={msg1}, val={msg2}"
 
 /-- Extract location information from metadata -/

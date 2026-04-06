@@ -108,7 +108,7 @@ def Cmd.toGotoInstructions {P} [G: ToGoto P] [BEq P.Ident]
         sourceLoc := srcLoc,
         code := Code.decl v_expr }
     match e with
-    | some expr =>
+    | .det expr =>
       let e_expr ← G.toGotoExpr expr
       let assign_inst :=
         { type := .ASSIGN, locationNum := (trans.nextLoc + 1),
@@ -118,12 +118,12 @@ def Cmd.toGotoInstructions {P} [G: ToGoto P] [BEq P.Ident]
                 instructions := trans.instructions.append #[decl_inst, assign_inst],
                 nextLoc := trans.nextLoc + 2,
                 T := T }
-    | none =>
+    | .nondet =>
       return { trans with
                 instructions := trans.instructions.push decl_inst,
                 nextLoc := trans.nextLoc + 1,
                 T := T }
-  | .set v e md =>
+  | .set v (.det e) md =>
     let gty ← G.lookupType T v
     let v_expr := Expr.symbol (G.identToString v) gty
     let e_expr ← G.toGotoExpr e
@@ -159,7 +159,7 @@ def Cmd.toGotoInstructions {P} [G: ToGoto P] [BEq P.Ident]
               instructions := trans.instructions.push assume_inst,
               nextLoc := trans.nextLoc + 1,
               T := T }
-  | .havoc v md =>
+  | .set v .nondet md =>
     let gty ← G.lookupType T v
     let v_expr := Expr.symbol (G.identToString v) gty
     let srcLoc := metadataToSourceLoc md functionName trans.sourceText
@@ -167,8 +167,6 @@ def Cmd.toGotoInstructions {P} [G: ToGoto P] [BEq P.Ident]
       { id := .side_effect .Nondet,
         sourceLoc := srcLoc,
         type := gty,
-        /- (TODO) Do we want havoc'd variables to be null too? -/
-        -- namedFields := [("is_nondet_nullable", Expr.constant "1" Ty.Integer)]
       }
     let assign_inst :=
       { type := .ASSIGN, locationNum := trans.nextLoc,
@@ -301,7 +299,9 @@ def Stmt.toGotoInstructions {P} [G: ToGoto P] [BEq P.Ident]
       LOCATION end_label         ; after conditional
     -/
     let srcLoc := metadataToSourceLoc md functionName trans.sourceText
-    let cond_expr ← G.toGotoExpr cond
+    let cond_expr ← match cond with
+      | .det e => G.toGotoExpr e
+      | .nondet => pure { id := .side_effect .Nondet, type := .Boolean, operands := [] : Expr }
     let (trans, goto_else_idx) := emitCondGoto (Expr.not cond_expr) srcLoc trans
     let trans ← Block.toGotoInstructions trans.T functionName thenb trans
     let (trans, goto_end_idx) := emitUncondGoto srcLoc trans
@@ -326,7 +326,9 @@ def Stmt.toGotoInstructions {P} [G: ToGoto P] [BEq P.Ident]
     let srcLoc := metadataToSourceLoc md functionName trans.sourceText
     let loop_start_loc := trans.nextLoc
     let trans := emitLabel s!"loop_start_{loop_start_loc}" srcLoc trans
-    let guard_expr ← G.toGotoExpr guard
+    let guard_expr ← match guard with
+      | .det e => G.toGotoExpr e
+      | .nondet => pure { id := .side_effect .Nondet, type := .Boolean, operands := [] : Expr }
     let (trans, goto_end_idx) := emitCondGoto (Expr.not guard_expr) srcLoc trans
     let trans ← Block.toGotoInstructions trans.T functionName body trans
     -- Back edge: attach loop invariants and/or decreases clause

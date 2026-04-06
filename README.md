@@ -72,6 +72,10 @@ internal format of the dialects used to implement the language under
 analysis). These VCs are then encoded into SMT, and counterexamples,
 if any, report models for the variables present in the problem.
 
+See [Verification Modes](docs/VerificationModes.md) for details on
+the `--check-mode` flag and the deductive and bug-finding verification
+modes.
+
 ## Troubleshooter
 
 ### When running unit tests: "error: no such file or directory (error code: 2)"

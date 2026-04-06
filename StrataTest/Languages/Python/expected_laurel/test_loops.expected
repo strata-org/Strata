@@ -1,3 +1,5 @@
+unknown location: ✅ pass - assume_assume(0)_calls_PIn_0
+unknown location: ✅ pass - assume_assume(0)_calls_Any_to_bool_1
 test_loops.py(6, 4): ✅ pass - assert_assert(95)_calls_Any_to_bool_0
 test_loops.py(6, 4): ✅ pass - assert(95)
 test_loops.py(10, 4): ❓ unknown - set_a_calls_Any_get_0
@@ -14,5 +16,5 @@ test_loops.py(22, 4): ✅ pass - loop_guard_calls_Any_to_bool_0
 test_loops.py(22, 4): ✅ pass - loop_guard_end_calls_Any_to_bool_0
 test_loops.py(24, 4): ❓ unknown - assert_assert(531)_calls_Any_to_bool_0
 test_loops.py(24, 4): ❓ unknown - assert(531)
-DETAIL: 8 passed, 0 failed, 8 inconclusive
+DETAIL: 10 passed, 0 failed, 8 inconclusive
 RESULT: Inconclusive
