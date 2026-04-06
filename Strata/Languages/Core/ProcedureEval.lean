@@ -83,6 +83,13 @@ def eval (E : Env) (p : Procedure) : Procedure × Env :=
     match d with | .var name _ _ _ => some name.name | _ => none
   let old_g_subst := old_var_subst.filterMap fun (id, e) =>
     if globalNames.contains id.name then some (CoreIdent.mkOld id.name, e) else none
+  -- For modifies variables converted to input parameters, old(g) should use
+  -- the input parameter's value (from the newest scope) instead of the global
+  -- variable's initial value.
+  let inputParamSubst := E.exprEnv.state.newest.filterMap fun (id, _, e) =>
+    if globalNames.contains id.name && p.header.inputs.keys.contains id
+    then some (CoreIdent.mkOld id.name, e) else none
+  let old_g_subst := inputParamSubst ++ old_g_subst
   let postcond_asserts :=
     List.map (fun (label, check) =>
                 match check.attr with

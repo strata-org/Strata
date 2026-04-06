@@ -30,6 +30,9 @@ structure TranslateState where
   bvars : Array Core.Expression.Expr := #[]
   labelCounter : Nat := 0
   globalVarCounter : Nat := 0
+  /-- Maps procedure names to their modifies variables with types,
+      collected in a pre-pass so call sites can add extra args/lhs. -/
+  modifiesMap : Std.HashMap String (List (Core.Expression.Ident × Lambda.LMonoTy)) := {}
 
 abbrev TranslateM := StateT TranslateState (Except DiagnosticModel)
 
@@ -424,10 +427,16 @@ def toCoreStmt (s : BooleDDM.Statement SourceRange) : TranslateM Core.Statement 
       | .condDet _ expr => pure (.det (← toCoreExpr expr))
       | .condNondet _ => pure .nondet
     return .loop guard none (← toCoreInvariants invs) (← withBVars [] (toCoreBlock b)) (← toCoreMetaData m)
-  | .call_statement m ⟨_, lhs⟩ ⟨_, n⟩ ⟨_, args⟩ =>
-    return Core.Statement.call (lhs.toList.map (mkIdent ·.val)) n (← args.toList.mapM toCoreExpr) (← toCoreMetaData m)
-  | .call_unit_statement m ⟨_, n⟩ ⟨_, args⟩ =>
-    return Core.Statement.call [] n (← args.toList.mapM toCoreExpr) (← toCoreMetaData m)
+  | .call_statement m ⟨_, lhs⟩ ⟨_, n⟩ ⟨_, args⟩ => do
+    let modifiesTyped := (← get).modifiesMap.getD n []
+    let extraArgs := modifiesTyped.map fun (id, _) => (Lambda.LExpr.fvar () id none : Core.Expression.Expr)
+    let extraLhs := modifiesTyped.map fun (id, _) => id
+    return Core.Statement.call (lhs.toList.map (mkIdent ·.val) ++ extraLhs) n ((← args.toList.mapM toCoreExpr) ++ extraArgs) (← toCoreMetaData m)
+  | .call_unit_statement m ⟨_, n⟩ ⟨_, args⟩ => do
+    let modifiesTyped := (← get).modifiesMap.getD n []
+    let extraArgs := modifiesTyped.map fun (id, _) => (Lambda.LExpr.fvar () id none : Core.Expression.Expr)
+    let extraLhs := modifiesTyped.map fun (id, _) => id
+    return Core.Statement.call extraLhs n ((← args.toList.mapM toCoreExpr) ++ extraArgs) (← toCoreMetaData m)
   | .block_statement m ⟨_, l⟩ b =>
     return .block l (← withBVars [] (toCoreBlock b)) (← toCoreMetaData m)
   | .exit_statement m ⟨_, l⟩ =>
@@ -653,6 +662,12 @@ def toCoreDecls (cmd : BooleDDM.Command SourceRange) : TranslateM (List Core.Dec
       let outputs ← match outs? with
         | none => pure []
         | some os => (monoDeclListToList os).mapM toCoreMonoBind
+      -- Add modifies variables as extra input and output parameters.
+      let modifiesTyped := (← get).modifiesMap.getD n []
+      let allInputs := inputs ++ modifiesTyped
+      let allOutputs := outputs ++ modifiesTyped
+      -- Only use original input/output names for bvar scoping; modifies
+      -- variables are referenced as fvars in the DDM AST.
       let inputNames := inputs.map (·.fst.name)
       let outputNames := outputs.map (·.fst.name)
       let spec ← withBVars (inputNames ++ outputNames) (toCoreSpec m n spec?)
@@ -660,7 +675,7 @@ def toCoreDecls (cmd : BooleDDM.Command SourceRange) : TranslateM (List Core.Dec
         | none => pure []
         | some b => withBVars (inputNames ++ outputNames) (toCoreBlock b)
       return [.proc {
-        header := { name := mkIdent n, typeArgs := tys, inputs := inputs, outputs := outputs }
+        header := { name := mkIdent n, typeArgs := tys, inputs := allInputs, outputs := allOutputs }
         spec := spec
         body := body
       } .empty]
@@ -719,9 +734,37 @@ def toCoreProgram (p : Boole.Program) (gctx : GlobalContext := {}) : Except Diag
   match p with
   | .prog _ ⟨_, cmds⟩ =>
     let fvarIsOp := initFVarIsOp p
+    -- Pre-pass: collect global variable types and modifies info per procedure.
+    let mut varTypes : Std.HashMap String Lambda.LMonoTy := {}
+    let mut modMap : Std.HashMap String (List (Core.Expression.Ident × Lambda.LMonoTy)) := {}
+    for cmd in cmds do
+      match cmd with
+      | .command_var _ b =>
+        match b with
+        | .bind_mk _ ⟨_, n⟩ _ ty =>
+          match (toCoreMonoType ty).run' { gctx := gctx, fvarIsOp := fvarIsOp } with
+          | .ok mty => varTypes := varTypes.insert n mty
+          | .error _ => pure ()
+      | .command_procedure _ nameAnn _ _ _ specAnn _ =>
+        let pname := nameAnn.val
+        match specAnn.val with
+        | none => pure ()
+        | some (.spec_mk _ ⟨_, elts⟩) =>
+          let mut mods : List (Core.Expression.Ident × Lambda.LMonoTy) := []
+          for e in elts.toList do
+            match e with
+            | .modifies_spec _ ⟨_, names⟩ =>
+              for ⟨_, vname⟩ in names.toList do
+                match varTypes.get? vname with
+                | some ty => mods := (mkIdent vname, ty) :: mods
+                | none => pure ()
+            | _ => pure ()
+          modMap := modMap.insert pname mods.reverse
+      | _ => pure ()
     let init : TranslateState := {
       gctx := gctx
       fvarIsOp := fvarIsOp
+      modifiesMap := modMap
     }
     let act : TranslateM Core.Program := do
       let decls := (← cmds.mapM toCoreDecls).toList.flatten

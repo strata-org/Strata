@@ -101,9 +101,16 @@ private def mkGlobalSubst (_proc : Procedure) (current_globals : VarSubst)
 
 /--
 Get current values of global variables for old expression substitution.
+Looks up each global variable in the full state (newest scope first) so that
+modifications to output parameters (e.g. modifies-converted globals) are
+reflected correctly.
 -/
 private def getCurrentGlobals (E : Env) : VarSubst :=
-  E.exprEnv.state.oldest.map (fun (id, ty, e) => ((id.name, ty), e))
+  E.exprEnv.state.oldest.map fun (id, ty, _) =>
+    let currentVal := match E.exprEnv.state.find? id with
+      | some (_, e) => e
+      | none => Lambda.LExpr.fvar () id none
+    ((id.name, ty), currentVal)
 
 /--
 Extract the type from an expression that has already been typechecked (so e.g.

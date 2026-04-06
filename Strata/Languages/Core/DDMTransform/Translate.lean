@@ -1961,12 +1961,84 @@ partial def translateCoreDecls (p : Program) (bindings : TransBindings) :
 private def collectModifiesInfo (p : Program) : TransM Unit := do
   let mut varTypes : Std.HashMap String Lambda.LMonoTy := {}
   let mut modMap : Std.HashMap String (List (Core.CoreIdent × Lambda.LMonoTy)) := {}
+  -- Build up bindings incrementally so type synonyms can be resolved.
+  let mut bindings : TransBindings := {}
   for cmd in p.commands do
     match cmd.name with
+    | q`Core.command_typedecl =>
+      let name ← translateIdent TyIdentifier cmd.args[0]!
+      let md ← getOpMetaData cmd
+      let decl := Core.Decl.type (.con { name := name, params := [] }) md
+      bindings := { bindings with freeVars := bindings.freeVars.push decl }
+    | q`Core.command_datatypes =>
+      let .seq _ _ declarations := cmd.args[0]!
+        | pure ()
+      for arg in declarations do
+        let .op dtOp := arg
+          | pure ()
+        if dtOp.name == q`Core.datatype_decl then
+          let datatypeName ← translateIdent TyIdentifier dtOp.args[0]!
+          let decl := Core.Decl.type (.con { name := datatypeName, params := [] }) .empty
+          bindings := { bindings with freeVars := bindings.freeVars.push decl }
+    | q`Core.command_typesynonym =>
+      let name ← translateIdent TyIdentifier cmd.args[0]!
+      -- Set up bound type variables for the synonym's type parameters
+      let (_, synBindings) ←
+        translateOption
+          (fun maybearg => do
+            match maybearg with
+            | none => pure ([], bindings)
+            | some arg =>
+              let bargs ← checkOpArg arg q`Core.mkBindings 1
+              match bargs[0]! with
+              | .seq _ .comma args =>
+                let (arr, b) ← translateTypeBindings bindings args
+                return (arr.toList, b)
+              | _ => pure ([], bindings))
+          cmd.args[1]!
+      let typedef ← translateLMonoTy synBindings cmd.args[3]!
+      let md ← getOpMetaData cmd
+      let decl := Core.Decl.type (.syn { name := name, typeArgs := [], type := typedef }) md
+      bindings := { bindings with freeVars := bindings.freeVars.push decl }
+    | q`Core.command_constdecl | q`Core.command_fndecl | q`Core.command_fndef =>
+      -- Register a placeholder for function/constant declarations
+      let fname ← translateIdent Core.CoreIdent cmd.args[0]!
+      let decl := Core.Decl.func { name := fname, typeArgs := [], inputs := [],
+                                    output := .bool, body := none } .empty
+      bindings := { bindings with freeVars := bindings.freeVars.push decl }
+    | q`Core.command_recfndefs =>
+      -- Register placeholders for each recursive function
+      let .seq _ _ declarations := cmd.args[0]!
+        | pure ()
+      for arg in declarations do
+        let .op fnOp := arg
+          | pure ()
+        if fnOp.name == q`Core.recfn_decl then
+          let fname ← translateIdent Core.CoreIdent fnOp.args[0]!
+          let decl := Core.Decl.func { name := fname, typeArgs := [], inputs := [],
+                                        output := .bool, body := none } .empty
+          bindings := { bindings with freeVars := bindings.freeVars.push decl }
     | q`Core.command_var =>
-      -- Extract variable name and type using translateBindMk
-      let (id, _, mty) ← translateBindMk {} cmd.args[0]!
-      varTypes := varTypes.insert id.name mty
+      -- Try to translate the variable type. If the type references fvars
+      -- beyond our bindings (e.g. datatypes with factory functions), skip
+      -- the type but still register a placeholder to keep fvar indices aligned.
+      let varArg := cmd.args[0]!
+      let bargs ← checkOpArg varArg q`Core.bind_mk 3
+      let id ← translateIdent Core.CoreIdent bargs[0]!
+      -- Check if the type references an fvar beyond our bindings
+      let typeArg : Arg := bargs[2]!
+      let fvarOk : Bool := match typeArg with
+        | .type (.fvar _ idx _) => idx < bindings.freeVars.size
+        | _ => true
+      let md ← getOpMetaData cmd
+      if fvarOk then
+        let mty ← translateLMonoTy bindings typeArg
+        varTypes := varTypes.insert id.name mty
+        let decl := Core.Decl.var id (.forAll [] mty) .nondet md
+        bindings := { bindings with freeVars := bindings.freeVars.push decl }
+      else
+        let decl := Core.Decl.var id (.forAll [] .bool) .nondet md
+        bindings := { bindings with freeVars := bindings.freeVars.push decl }
     | q`Core.command_procedure =>
       let pname ← translateIdent String cmd.args[0]!
       let .option _ speca := cmd.args[4]!

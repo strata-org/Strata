@@ -63,12 +63,14 @@ procedure h() returns () spec {
 } {
   var b : bool;
   var tmp_arg_0 : bool := k;
-  var tmp_b_1 : bool := b;
-  assert [callElimAssert_f_requires_0_2]: (i == (!tmp_arg_0));
+  var tmp_arg_1 : bool := j;
+  var tmp_b_2 : bool := b;
+  var tmp_j_3 : bool := j;
+  assert [callElimAssert_f_requires_0_4]: (i == (!tmp_arg_0));
   havoc b;
   havoc j;
-  assume [callElimAssume_f_ensures_1_3]: (b == tmp_arg_0);
-  assume [callElimAssume_f_ensures_2_4]: (b == j);
+  assume [callElimAssume_f_ensures_1_5]: (b == tmp_arg_0);
+  assume [callElimAssume_f_ensures_2_6]: (b == j);
 };
 #end
 
@@ -114,13 +116,15 @@ procedure h() returns () spec {
   var b : bool;
   var tmp_arg_0 : bool := k;
   var tmp_arg_1 : bool := l;
-  var tmp_b_2 : bool := b;
-  var old_j_3 : bool := j;
-  assert [callElimAssert_f_requires_0_4]: i == !tmp_arg_0;
+  var tmp_arg_2 : bool := j;
+  var tmp_b_3 : bool := b;
+  var tmp_j_4 : bool := j;
+  var old_j_5 : bool := j;
+  assert [callElimAssert_f_requires_0_6]: i == !tmp_arg_0;
   havoc b;
   havoc j;
-  assume [callElimAssume_f_ensures_1_5]: b == (k && old_j_3);
-  assume [callElimAssume_f_ensures_2_6]: b == old_j_3;
+  assume [callElimAssume_f_ensures_1_7]: b == (k && old_j_5);
+  assume [callElimAssume_f_ensures_2_8]: b == old_j_5;
 };
 #end
 
@@ -166,13 +170,15 @@ procedure h() returns () spec {
   var b : bool;
   var tmp_arg_0 : bool := k && i || j;
   var tmp_arg_1 : bool := l;
-  var tmp_b_2 : bool := b;
-  var old_j_3 : bool := j;
-  assert [callElimAssert_f_requires_0_4]: i == !tmp_arg_0;
+  var tmp_arg_2 : bool := j;
+  var tmp_b_3 : bool := b;
+  var tmp_j_4 : bool := j;
+  var old_j_5 : bool := j;
+  assert [callElimAssert_f_requires_0_6]: i == !tmp_arg_0;
   havoc b;
   havoc j;
-  assume [callElimAssume_f_ensures_1_5]: b == (k && old_j_3);
-  assume [callElimAssume_f_ensures_2_6]: b == old_j_3;
+  assume [callElimAssume_f_ensures_1_7]: b == (k && old_j_5);
+  assume [callElimAssume_f_ensures_2_8]: b == old_j_5;
 };
 #end
 
@@ -214,11 +220,13 @@ procedure h() returns () spec {
 } {
   var b : bool;
   var tmp_arg_0 : bool := k;
-  var tmp_b_1 : bool := b;
-  assert [callElimAssert_f_requires_1_2]: (tmp_arg_0 == j);
+  var tmp_arg_1 : bool := j;
+  var tmp_b_2 : bool := b;
+  var tmp_j_3 : bool := j;
+  assert [callElimAssert_f_requires_1_4]: (tmp_arg_0 == tmp_arg_1);
   havoc b;
   havoc j;
-  assume [callElimAssume_f_ensures_2_3]: (b == tmp_arg_0);
+  assume [callElimAssume_f_ensures_2_5]: (b == tmp_arg_0);
 };
 #end
 

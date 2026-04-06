@@ -99,9 +99,12 @@ def callElimCmd (cmd: Command)
                         (arg_subst ++ ret_subst)
                         md
                         callElimAssertPrefix
+        -- For postconditions, output substitutions take precedence over input
+        -- substitutions so that shared names (e.g. modifies-converted params)
+        -- resolve to the post-state value.
         let assumes ← createAssumes
                         (Procedure.Spec.updateCheckExprs postconditions proc.spec.postconditions)
-                        (arg_subst ++ ret_subst)
+                        (ret_subst ++ arg_subst)
                         md
                         callElimAssumePrefix
         -- Update cached CallGraph
