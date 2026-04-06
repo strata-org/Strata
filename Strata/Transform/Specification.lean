@@ -19,13 +19,18 @@ sharing the pure-expression parameter `P`.
 
 An `assert label expr` command is *valid* when its expression evaluates to
 true in every reachable configuration where the assert is about to execute.
+The primary predicate is **`AssertValidWhen Pre s a`**, which restricts
+attention to initial environments satisfying `Pre`.  `AssertValid` is the
+special case `AssertValidWhen (fun _ => True)`.
+
 This module provides two equivalent formulations:
 
-1. **`AssertValid` (reachability-based)** — for every initial environment `ρ₀`
-   and every configuration `cfg` reachable from `s`, if `cfg` is at the
-   assert (detected by `isAtAssert`), then `cfg.getEval cfg.getStore a.expr
-   = some HasBool.tt`.  This is a direct, semantic definition: walk the
-   execution graph and check each assert site.
+1. **`AssertValidWhen` / `AssertValid` (reachability-based)** — for every
+   initial environment `ρ₀` (satisfying `Pre`) and every configuration `cfg`
+   reachable from `s`, if `cfg` is at the assert (detected by `isAtAssert`),
+   then `cfg.getEval cfg.getStore a.expr = some HasBool.tt`.  This is a
+   direct, semantic definition: walk the execution graph and check each
+   assert site.
 
 2. **`Hoare.Triple` (Hoare-triple-based)** — a partial-correctness triple
    `{Pre} s {Post}` holds when, for every `ρ₀` satisfying `Pre` with a
@@ -35,7 +40,8 @@ This module provides two equivalent formulations:
    `ρ'.hasFailure = false` captures that all asserts passed.
 
 The two are shown equivalent by `hoareTriple_implies_assertValid` and
-`assertValid_implies_hoareTriple`.
+`allAssertsValid_implies_hoareTriple`. Their precise relation is slightly
+subtle, and `Hoare.Triple`'s doc string has more info.
 
 ## Two ways to specify transformation soundness
 
@@ -110,14 +116,29 @@ variable {P : PureExpr} [HasFvar P] [HasBool P] [HasNot P] [HasVal P]
 variable (L : Lang P)
 
 
-/-! ## Style A — Reachability-based assertion validity -/
+/-! ## Style A — Reachability-based assertion validity
 
-/-- Assert `a` is *valid* in statement `s`. -/
-def AssertValid (s : L.StmtT) (a : AssertId P) : Prop :=
+The primary predicate is `AssertValidWhen`, parameterized by a precondition
+on the initial environment.  `AssertValid` is `AssertValidWhen (fun _ => True)`.
+`AllAssertsValidWhen` / `AllAssertsValid` universally quantify over assert ids. -/
+
+/-- Assert `a` is *valid* in statement `s` when `Pre` holds on the initial
+    environment.  This is the general form; `AssertValid` is the special case
+    with `Pre = fun _ => True`. -/
+def AssertValidWhen (Pre : Env P → Prop) (s : L.StmtT) (a : AssertId P) : Prop :=
   ∀ (ρ₀ : Env P) (cfg : L.CfgT),
+    Pre ρ₀ →
     L.star (L.stmtCfg s ρ₀) cfg →
     L.isAtAssert cfg a →
     L.getEval cfg (L.getStore cfg) a.expr = some HasBool.tt
+
+/-- All asserts are valid in statement `s` when `Pre` holds. -/
+def AllAssertsValidWhen (Pre : Env P → Prop) (s : L.StmtT) : Prop :=
+  ∀ (a : AssertId P), AssertValidWhen L Pre s a
+
+/-- Assert `a` is *valid* in statement `s` (for all initial environments). -/
+def AssertValid (s : L.StmtT) (a : AssertId P) : Prop :=
+  AssertValidWhen L (fun _ => True) s a
 
 /-- All asserts are valid in statement `s`. -/
 def AllAssertsValid (s : L.StmtT) : Prop :=
@@ -137,7 +158,20 @@ configurations that the enclosing block may catch. Structural rules like
 
 namespace Hoare
 
-/-- Partial-correctness Hoare triple. -/
+/-- Partial-correctness Hoare triple.
+
+    `AllAssertsValid` is strictly stronger than `Triple`.
+    For example, `{True} (assert false; loop_forever) {anything}` triple holds
+    vacuously whereas `AllAssertsValid` does not hold due to the first `assert`.
+
+    Note that for this reason `hoareTriple_implies_assertValid` therefore relates
+    `Triple` only to the *postcondition* assertion in a `PredicatedStmt`,
+    not to assertions inside the body, whereas `allAssertsValid_implies_hoareTriple`
+    relates all asserts in the `PredicatedStmt` to `Triple`.
+
+    TODO: We will want to define Triple for total correctness. It will be useful
+    when proving preservation of termination after program transformation.
+-/
 def Triple
     (Pre : Env P → Prop) (s : L.StmtT) (Post : Env P → Prop) : Prop :=
   ∀ (ρ₀ ρ' : Env P),
@@ -167,7 +201,7 @@ theorem consequence
 
 /-! ## Structural Hoare rules (Imperative-specific) -/
 
-section ImperativeRules
+section StmtRules
 
 variable {CmdT : Type} (evalCmd : EvalCmdParam P CmdT) (extendEval : ExtendEval P)
 variable (isAtAssertFn : Config P CmdT → AssertId P → Prop)
@@ -321,7 +355,7 @@ theorem ite {c : P.Expr} {tss ess : List (Stmt P CmdT)} {md : MetaData P}
 
 /- TODO: the WHILE rule -/
 
-end ImperativeRules
+end StmtRules
 
 
 /-! ## Connection between HoareTriple and AssertValid (standard Lang) -/
@@ -355,7 +389,7 @@ theorem hoareTriple_implies_assertValid
     AssertValid (Lang.standard P' extendEval)
       (PredicatedStmt P' pre_label pre_expr pre_md st post_label post_expr post_md block_label block_md)
       ⟨post_label, post_expr⟩ := by
-  intro ρ₀ cfg hreach hat
+  intro ρ₀ cfg _ hreach hat
   have hno_match := noMatchingAssert_implies_no_reachable_assert P' extendEval st post_label post_expr hno
   unfold PredicatedStmt at hreach
   cases hreach with
@@ -425,7 +459,7 @@ theorem hoareTriple_implies_assertValid
 
 
 /-- **Direction 2**: Assert validity for `PredicatedStmt` implies Hoare triple. -/
-theorem assertValid_implies_hoareTriple
+theorem allAssertsValid_implies_hoareTriple
     (pre_label : String) (pre_expr : P'.Expr) (pre_md : MetaData P')
     (st : Stmt P' (Cmd P'))
     (post_label : String) (post_expr : P'.Expr) (post_md : MetaData P')
@@ -462,7 +496,7 @@ theorem assertValid_implies_hoareTriple
         (.stmt (.block block_label body block_md) ρ₀) (.block block_label (.stmts body ρ₀)) :=
       .step _ _ _ StepStmt.step_block (.refl _)
     have h_full := ReflTrans_Transitive _ _ _ _ h_start h_block
-    have h_result := hvalid a ρ₀ _ h_full hat
+    have h_result := hvalid a ρ₀ _ trivial h_full hat
     simp only [Config.getEval, Config.getStore] at h_result ⊢
     exact h_result
   have h_assume : StepStmtStar P' (EvalCmd P') extendEval
@@ -484,7 +518,7 @@ theorem assertValid_implies_hoareTriple
   have h_full := ReflTrans_Transitive _ _ _ _ h_start h_block
   have h_at : isAtAssert P' (.block block_label (.seq (.stmt assert_stmt ρ') [])) ⟨post_label, post_expr⟩ := by
     simp [isAtAssert, assert_stmt]
-  have h_result := hvalid ⟨post_label, post_expr⟩ ρ₀ _ h_full h_at
+  have h_result := hvalid ⟨post_label, post_expr⟩ ρ₀ _ trivial h_full h_at
   simp only [Config.getEval, Config.getStore] at h_result
   exact ⟨h_result, allAssertsValid_preserves_noFailure P' extendEval
     (ρ₀ := ρ₀) (ρ' := ρ') st hvalid_st hf₀ hstar⟩
