@@ -1242,13 +1242,13 @@ partial def translateStmt (p : Program) (bindings : TransBindings) (arg : Arg) :
     let es  ← translateCommaSep (fun a => translateExpr p bindings a) esa
     let md ← getOpMetaData op
     let (extraArgs, extraLhs) ← getModifiesExtras f
-    return ([.call (ls.toList ++ extraLhs) f (es.toList ++ extraArgs) md], bindings)
+    return ([.call (extraLhs ++ ls.toList) f (extraArgs ++ es.toList) md], bindings)
   | q`Core.call_unit_statement, #[fa, esa] =>
     let f   ← translateIdent String fa
     let es  ← translateCommaSep (fun a => translateExpr p bindings a) esa
     let md ← getOpMetaData op
     let (extraArgs, extraLhs) ← getModifiesExtras f
-    return ([.call extraLhs f (es.toList ++ extraArgs) md], bindings)
+    return ([.call extraLhs f (extraArgs ++ es.toList) md], bindings)
   | q`Core.block_statement, #[la, ba] =>
     let l ← translateIdent String la
     let (ss, bindings) ← translateBlock p bindings ba
@@ -1491,8 +1491,8 @@ def translateProcedure (p : Program) (bindings : TransBindings) (op : Operation)
   let extraParams : @Lambda.LMonoTySignature Unit := modifiesTyped
   return (.proc { header := { name := pname,
                               typeArgs := typeArgs.toList,
-                              inputs := sig ++ extraParams,
-                              outputs := ret ++ extraParams },
+                              inputs := extraParams ++ sig,
+                              outputs := extraParams ++ ret },
                   spec := { preconditions := requires,
                             postconditions := ensures },
                   body := body

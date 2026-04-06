@@ -81,19 +81,19 @@ Label: T2_g2_eq_g
 Property: assert
 Assumptions:
 (Origin_T1_Ensures)T1_g_unchanged: true == true
-(Origin_T1_Ensures)T1_g2_eq_old_g: $__g214 == true
-(Origin_T1_Ensures)T1_y_eq_old_g2: $__a12 == false
-(Origin_T1_Ensures)T1_z_eq_y: $__b13 == false
+(Origin_T1_Ensures)T1_g2_eq_old_g: $__g212 == true
+(Origin_T1_Ensures)T1_y_eq_old_g2: $__a13 == false
+(Origin_T1_Ensures)T1_z_eq_y: $__b14 == false
 Obligation:
-$__g214 == true
+$__g212 == true
 
 Label: T2_g_true
 Property: assert
 Assumptions:
 (Origin_T1_Ensures)T1_g_unchanged: true == true
-(Origin_T1_Ensures)T1_g2_eq_old_g: $__g214 == true
-(Origin_T1_Ensures)T1_y_eq_old_g2: $__a12 == false
-(Origin_T1_Ensures)T1_z_eq_y: $__b13 == false
+(Origin_T1_Ensures)T1_g2_eq_old_g: $__g212 == true
+(Origin_T1_Ensures)T1_y_eq_old_g2: $__a13 == false
+(Origin_T1_Ensures)T1_z_eq_y: $__b14 == false
 Obligation:
 true
 
@@ -101,21 +101,21 @@ Label: T2_a_eq_false
 Property: assert
 Assumptions:
 (Origin_T1_Ensures)T1_g_unchanged: true == true
-(Origin_T1_Ensures)T1_g2_eq_old_g: $__g214 == true
-(Origin_T1_Ensures)T1_y_eq_old_g2: $__a12 == false
-(Origin_T1_Ensures)T1_z_eq_y: $__b13 == false
+(Origin_T1_Ensures)T1_g2_eq_old_g: $__g212 == true
+(Origin_T1_Ensures)T1_y_eq_old_g2: $__a13 == false
+(Origin_T1_Ensures)T1_z_eq_y: $__b14 == false
 Obligation:
-$__a12 == false
+$__a13 == false
 
 Label: T2_b_eq_false
 Property: assert
 Assumptions:
 (Origin_T1_Ensures)T1_g_unchanged: true == true
-(Origin_T1_Ensures)T1_g2_eq_old_g: $__g214 == true
-(Origin_T1_Ensures)T1_y_eq_old_g2: $__a12 == false
-(Origin_T1_Ensures)T1_z_eq_y: $__b13 == false
+(Origin_T1_Ensures)T1_g2_eq_old_g: $__g212 == true
+(Origin_T1_Ensures)T1_y_eq_old_g2: $__a13 == false
+(Origin_T1_Ensures)T1_z_eq_y: $__b14 == false
 Obligation:
-$__b13 == false
+$__b14 == false
 
 ---
 info:

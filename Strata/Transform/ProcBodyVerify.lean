@@ -61,7 +61,7 @@ def ensuresToAsserts (postconditions : ListMap CoreLabel Procedure.Check) : List
     | .Default => some (Statement.assert label check.expr check.md)
 
 /-- Main transformation: convert a procedure to a verification statement -/
-def procToVerifyStmt (proc : Procedure) (_p : Program) : CoreTransformM Statement := do
+def procToVerifyStmt (proc : Procedure) : CoreTransformM Statement := do
   let procName := proc.header.name.name
   let bodyLabel := s!"body_{procName}"
   let verifyLabel := s!"verify_{procName}"

@@ -386,7 +386,7 @@ info: [Strata.Core] Type checking succeeded.
 
 ---
 info: var g : int;
-procedure test (y : int, g : int) returns (g : int)
+procedure test (g : int, y : int) returns (g : int)
 {
   assert [loop_guard_calls_Int.SafeDiv_0]: !(g == 0);
   assert [loop_guard_calls_Int.SafeDiv_1]: !(y / g == 0);

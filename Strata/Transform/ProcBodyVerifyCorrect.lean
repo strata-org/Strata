@@ -295,7 +295,7 @@ private theorem PrefixStepsOK_nondet_init_map
 theorem procToVerifyStmt_structure
     (proc : Procedure) (p : Program) (st st' : CoreTransformState)
     (verifyStmt : Statement)
-    (h : (procToVerifyStmt proc p).run st = (Except.ok verifyStmt, st'))
+    (h : (procToVerifyStmt proc).run st = (Except.ok verifyStmt, st'))
     (π : String → Option Procedure)
     (φ : CoreEval → PureFunc Expression → CoreEval)
     (h_wf_proc : WF.WFProcedureProp p proc) :
@@ -423,7 +423,7 @@ theorem procBodyVerify_procedureCorrect
     (proc : Procedure) (p : Program) (st : CoreTransformState)
     (verifyStmt : Statement) (st' : CoreTransformState)
     -- `h_transform`: procToVerifyStmt returned successfully.
-    (h_transform : (procToVerifyStmt proc p).run st = (Except.ok verifyStmt, st'))
+    (h_transform : (procToVerifyStmt proc).run st = (Except.ok verifyStmt, st'))
     -- `h_correct`: all asserts in `verifyStmt` are valid for all initial states
     (h_correct : Specification.AllAssertsValid
       (Core.Specification.Lang.core π φ) verifyStmt)

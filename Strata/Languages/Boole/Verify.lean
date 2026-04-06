@@ -435,10 +435,10 @@ def toCoreStmt (s : BooleDDM.Statement SourceRange) : TranslateM Core.Statement 
     return .loop guard none (← toCoreInvariants invs) (← withBVars [] (toCoreBlock b)) (← toCoreMetaData m)
   | .call_statement m ⟨_, lhs⟩ ⟨_, n⟩ ⟨_, args⟩ => do
     let (extraArgs, extraLhs) ← getModifiesExtras n
-    return Core.Statement.call (lhs.toList.map (mkIdent ·.val) ++ extraLhs) n ((← args.toList.mapM toCoreExpr) ++ extraArgs) (← toCoreMetaData m)
+    return Core.Statement.call (extraLhs ++ lhs.toList.map (mkIdent ·.val)) n (extraArgs ++ (← args.toList.mapM toCoreExpr)) (← toCoreMetaData m)
   | .call_unit_statement m ⟨_, n⟩ ⟨_, args⟩ => do
     let (extraArgs, extraLhs) ← getModifiesExtras n
-    return Core.Statement.call extraLhs n ((← args.toList.mapM toCoreExpr) ++ extraArgs) (← toCoreMetaData m)
+    return Core.Statement.call extraLhs n (extraArgs ++ (← args.toList.mapM toCoreExpr)) (← toCoreMetaData m)
   | .block_statement m ⟨_, l⟩ b =>
     return .block l (← withBVars [] (toCoreBlock b)) (← toCoreMetaData m)
   | .exit_statement m ⟨_, l⟩ =>
@@ -664,10 +664,10 @@ def toCoreDecls (cmd : BooleDDM.Command SourceRange) : TranslateM (List Core.Dec
       let outputs ← match outs? with
         | none => pure []
         | some os => (monoDeclListToList os).mapM toCoreMonoBind
-      -- Add modifies variables as extra input and output parameters.
+      -- Prepend modifies variables as extra input and output parameters.
       let modifiesTyped := (← get).modifiesMap.getD n []
-      let allInputs := inputs ++ modifiesTyped
-      let allOutputs := outputs ++ modifiesTyped
+      let allInputs := modifiesTyped ++ inputs
+      let allOutputs := modifiesTyped ++ outputs
       -- Only use original input/output names for bvar scoping; modifies
       -- variables are referenced as fvars in the DDM AST.
       let inputNames := inputs.map (·.fst.name)

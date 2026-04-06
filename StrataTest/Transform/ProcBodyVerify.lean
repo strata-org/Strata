@@ -29,7 +29,7 @@ def showTransformed (prog : Strata.Program) (procName : String) : Except String 
   let some proc := Program.Procedure.find? p procName
     | throw s!"Procedure {procName} not found"
   let state := { CoreTransformState.emp with currentProgram := .some p }
-  let (.ok stmt, _) := (procToVerifyStmt proc p).run state
+  let (.ok stmt, _) := (procToVerifyStmt proc).run state
     | throw "Transformation failed"
   return Core.formatStatement stmt
 
@@ -38,10 +38,10 @@ def showTransformed (prog : Strata.Program) (procName : String) : Except String 
 -- Show the transformed output
 /--
 info: ok: verify_Test: {
+  var g : int;
   var x : int;
   var g : int;
   var y : int;
-  var g : int;
   assume [Test_requires_1]: x > 0;
   body_Test: {
     y := x;
@@ -136,12 +136,12 @@ info: ok: verify_WithFree: {
 -- Show the transformed output
 /--
 info: ok: verify_MultipleModifies: {
+  var g1 : int;
+  var g2 : bool;
   var x : int;
   var g1 : int;
   var g2 : bool;
   var y : int;
-  var g1 : int;
-  var g2 : bool;
   assume [MultipleModifies_requires_1]: x > 0;
   body_MultipleModifies: {
     y := x;

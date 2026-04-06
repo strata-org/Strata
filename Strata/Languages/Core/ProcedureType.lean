@@ -34,7 +34,7 @@ private def checkModificationRights (proc : Procedure) (p : Program) (sourceLoc 
   let definedVars := (Imperative.Block.definedVars proc.body).eraseDups
   -- Allow modification of outputs, locally defined variables, and
   -- program-level globals (whose modification rights are enforced
-  -- through the modifies-to-params conversion).
+  -- through the modifies-to-params conversion at call sites).
   let allowedVars := proc.header.outputs.keys ++ definedVars
   let disallowed := modifiedVars.filter (fun v =>
     v ∉ allowedVars && (Program.find? p .var v).isNone)
