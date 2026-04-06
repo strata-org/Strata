@@ -39,9 +39,9 @@ def showTransformed (prog : Strata.Program) (procName : String) : Except String 
 /--
 info: ok: verify_Test: {
   var x : int;
+  var g : int;
   var y : int;
-  var |old g| : int;
-  var g : int := old g;
+  var g : int;
   assume [Test_requires_1]: x > 0;
   body_Test: {
     y := x;
@@ -137,11 +137,11 @@ info: ok: verify_WithFree: {
 /--
 info: ok: verify_MultipleModifies: {
   var x : int;
+  var g1 : int;
+  var g2 : bool;
   var y : int;
-  var |old g1| : int;
-  var g1 : int := old g1;
-  var |old g2| : bool;
-  var g2 : bool := old g2;
+  var g1 : int;
+  var g2 : bool;
   assume [MultipleModifies_requires_1]: x > 0;
   body_MultipleModifies: {
     y := x;

@@ -285,127 +285,6 @@ private theorem PrefixStepsOK_nondet_init_map
         intro heq
         exact h_nodup.1 (heq ▸ List.mem_map_of_mem (f := Prod.fst) hmem)
 
-/-- PrefixStepsOK for modifies init pairs: [init oldG nondet, init g := fvar oldG]. -/
-private theorem PrefixStepsOK_modifies_pair
-    (π : String → Option Procedure) (φ : CoreEval → PureFunc Expression → CoreEval)
-    (g : Expression.Ident) (oldG : Expression.Ident) (gTy : Expression.Ty)
-    (ρ : Imperative.Env Expression)
-    (h_wfVar : WellFormedSemanticEvalVar ρ.eval)
-    (h_g_def : (ρ.store g).isSome)
-    (h_old_def : (ρ.store oldG).isSome)
-    (h_old_eq : ρ.store g = ρ.store oldG)
-    (h_ne : g ≠ oldG)
-    : PrefixStepsOK π φ
-        [Statement.init oldG gTy .nondet #[],
-         Statement.init g gTy (.det (Lambda.LExpr.fvar () oldG none)) #[]] ρ := by
-  constructor
-  · constructor
-    · exact trivial  -- PrefixStepsOK for []
-    · refine ⟨_, rfl, ρ.store, ?_, rfl⟩
-      have h_none_g : (prefixInitEnv [Statement.init g gTy (.det (Lambda.LExpr.fvar () oldG none)) #[]] ρ).store g = none :=
-        prefixInitEnv_store_init _ _ _ _ rfl
-      have h_old_val : (prefixInitEnv [Statement.init g gTy (.det (Lambda.LExpr.fvar () oldG none)) #[]] ρ).store oldG = ρ.store oldG := by
-        rw [prefixInitEnv_store_other _ _ _ oldG g rfl h_ne]
-        simp [prefixInitEnv]
-      rw [Option.isSome_iff_exists] at h_g_def
-      obtain ⟨v, hv⟩ := h_g_def
-      have h_getFvar : HasFvar.getFvar (Lambda.LExpr.fvar () oldG none : Expression.Expr) = some oldG := by
-        simp [HasFvar.getFvar]
-      have h_eval : ρ.eval (prefixInitEnv [Statement.init g gTy (.det (Lambda.LExpr.fvar () oldG none)) #[]] ρ).store (Lambda.LExpr.fvar () oldG none) = some v := by
-        rw [h_wfVar _ _ _ h_getFvar, h_old_val, ← h_old_eq, hv]
-      exact EvalCommand.cmd_sem (EvalCmd.eval_init h_eval
-        (InitState.init h_none_g hv (fun y hne => by
-          have := prefixInitEnv_store_other
-            (Statement.init g gTy (.det (Lambda.LExpr.fvar () oldG none)) #[])
-            [] ρ y g rfl hne
-          simp [prefixInitEnv] at this
-          exact this.symm))
-        h_wfVar)
-  · refine ⟨_, rfl, _, ?_, rfl⟩
-    have h_none_old : (prefixInitEnv [Statement.init oldG gTy .nondet #[], Statement.init g gTy (.det (Lambda.LExpr.fvar () oldG none)) #[]] ρ).store oldG = none :=
-      prefixInitEnv_store_init _ _ _ _ rfl
-    have h_target : (prefixInitEnv [Statement.init g gTy (.det (Lambda.LExpr.fvar () oldG none)) #[]] ρ).store oldG = ρ.store oldG := by
-      rw [prefixInitEnv_store_other _ _ _ oldG g rfl h_ne]
-      simp [prefixInitEnv]
-    rw [Option.isSome_iff_exists] at h_old_def
-    obtain ⟨w, hw⟩ := h_old_def
-    exact EvalCommand.cmd_sem (EvalCmd.eval_init_unconstrained
-      (InitState.init h_none_old (by rw [h_target, hw]) (fun y hne => by
-        exact (prefixInitEnv_store_other _ _ _ y oldG rfl hne).symm))
-      h_wfVar)
-
-/-- For any variable `x` that is NOT init'd by any statement in `stmts`,
-    `prefixInitEnv stmts ρ` agrees with `ρ` on `x`. Generalization of
-    `prefixInitEnv_store_not_init` to an arbitrary predicate on init vars. -/
-private theorem prefixInitEnv_store_defined_of_not_init
-    (stmts : List Statement) (ρ : Imperative.Env Expression) (x : Expression.Ident)
-    (h_not_init : ∀ s ∈ stmts, stmtInitVar s ≠ some x)
-    (h_def : (ρ.store x).isSome) :
-    ((prefixInitEnv stmts ρ).store x).isSome := by
-  rw [prefixInitEnv_store_not_init stmts ρ x h_not_init]
-  exact h_def
-
-
-
-/-- Characterize the sublists produced by the `modifies` mapM in `procToVerifyStmt`:
-    each sublist corresponds to some `g ∈ gs` and has the shape
-    `[init (mkOld g) gTy .nondet, init g gTy (.det (fvar oldG))]`. -/
-private theorem modifiesMapM_sublists
-    (gs : List Expression.Ident) (p : Program)
-    (mInits : List (List Statement))
-    (s0 s1 : CoreTransformState)
-    (heq : (List.mapM (fun (g : Expression.Ident) => do
-      let oldG := CoreIdent.mkOld g.name
-      let gTy ← getIdentTy! p g
-      return [Statement.init oldG gTy .nondet #[],
-              Statement.init g gTy (.det (Lambda.LExpr.fvar () oldG none)) #[]])
-      gs).run s0 = (Except.ok mInits, s1)) :
-    ∀ sub ∈ mInits, ∃ g gTy, g ∈ gs ∧
-      sub = [Statement.init (CoreIdent.mkOld g.name) gTy .nondet #[],
-             Statement.init g gTy (.det (Lambda.LExpr.fvar () (CoreIdent.mkOld g.name) none)) #[]] := by
-  induction gs generalizing s0 s1 mInits with
-  | nil =>
-    simp only [List.mapM_nil, pure, ExceptT.pure] at heq
-    have := (Prod.mk.inj heq).1 |> Except.ok.inj; subst this
-    intro _ h; simp at h
-  | cons g rest ih =>
-    simp only [List.mapM_cons, bind, ExceptT.bind, ExceptT.mk, ExceptT.run,
-      ExceptT.bindCont, pure, ExceptT.pure, StateT.bind] at heq
-    split at heq
-    · rename_i res₁ st₁ heq₁
-      cases res₁ with
-      | ok gTy =>
-        simp only [bind, StateT.bind, ExceptT.bindCont] at heq
-        split at heq
-        · rename_i rest_res st₂ heq₂
-          cases rest_res with
-          | ok restInits =>
-            dsimp at heq
-            have heq_mi := (Prod.mk.inj heq).1 |> Except.ok.inj
-            subst heq_mi
-            intro sub h_sub_mem
-            cases h_sub_mem with
-            | head =>
-              split at heq₁
-              · rename_i ty_res ty_st heq_ty
-                cases ty_res with
-                | ok actualTy =>
-                  simp only [StateT.pure] at heq₁
-                  have := (Prod.mk.inj heq₁).1 |> Except.ok.inj
-                  subst this
-                  exact ⟨g, actualTy, List.mem_cons_self, rfl⟩
-                | error e =>
-                  simp only [StateT.pure] at heq₁
-                  exact absurd (Prod.mk.inj heq₁).1 (by intro h; cases h)
-            | tail _ h_in_rest =>
-              obtain ⟨g', gTy', hg', rfl⟩ := @ih restInits st₁ st₂ heq₂ sub h_in_rest
-              exact ⟨g', gTy', List.mem_cons_of_mem _ hg', rfl⟩
-          | error e =>
-            simp only [pure, StateT.pure] at heq
-            exact absurd (Prod.mk.inj heq).1 (by intro h; cases h)
-      | error e =>
-        dsimp at heq; exact absurd (Prod.mk.inj heq).1 (by intro h; cases h)
-
 /-! ## Verification Statement Structure -/
 
 /-- Structure: the output of `procToVerifyStmt` is a block
@@ -430,312 +309,83 @@ theorem procToVerifyStmt_structure
           Imperative.StepStmtStar Expression (EvalCommand π φ) (EvalPureFunc φ)
             (.stmts prefixStmts ρ_init) (.terminal ρ₀)) := by
   unfold procToVerifyStmt at h
-  simp only [bind, ExceptT.bind, ExceptT.mk, ExceptT.run, ExceptT.bindCont,
-    pure, ExceptT.pure, StateT.bind] at h
-  split at h
-  · rename_i a st_mid heq
-    cases a with
-    | ok modifiesInits =>
-      dsimp at h
-      refine ⟨_, ((Prod.mk.inj h).1 |> Except.ok.inj).symm, ?_, ?_⟩
-      · intro s hs
-        simp only [List.mem_append] at hs
-        rcases hs with ((hs | hs) | hs) | hs
-        · -- inputInits: each is Statement.init
+  simp only [pure, ExceptT.pure] at h
+  have h_eq := (Prod.mk.inj h).1 |> Except.ok.inj
+  refine ⟨_, h_eq.symm, ?_, ?_⟩
+  · intro s hs
+    simp only [List.mem_append] at hs
+    rcases hs with (hs | hs) | hs
+    · -- inputInits
+      simp only [List.mem_map] at hs
+      obtain ⟨⟨id, ty⟩, _, rfl⟩ := hs
+      exact ⟨_, rfl⟩
+    · -- outputInits
+      simp only [List.mem_map] at hs
+      obtain ⟨⟨id, ty⟩, _, rfl⟩ := hs
+      exact ⟨_, rfl⟩
+    · -- assumes
+      simp only [requiresToAssumes, List.mem_map] at hs
+      obtain ⟨⟨label, check⟩, _, rfl⟩ := hs
+      exact ⟨_, rfl⟩
+  · intro ρ₀ h_wf
+    refine ⟨prefixInitEnv _ ρ₀, prefixInitEnv_steps _ ρ₀ π φ h_wf.noFailure ?_⟩
+    rw [show List.map (fun x => Statement.init x.1 (Lambda.LTy.forAll [] x.2) .nondet #[])
+            proc.header.inputs.toList ++
+          List.map (fun x => Statement.init x.1 (Lambda.LTy.forAll [] x.2) .nondet #[])
+            proc.header.outputs.toList ++
+          requiresToAssumes proc.spec.preconditions =
+          (List.map (fun x => Statement.init x.1 (Lambda.LTy.forAll [] x.2) .nondet #[])
+            proc.header.inputs.toList ++
+          List.map (fun x => Statement.init x.1 (Lambda.LTy.forAll [] x.2) .nondet #[])
+            proc.header.outputs.toList) ++
+          requiresToAssumes proc.spec.preconditions from by simp [List.append_assoc]]
+    rw [PrefixStepsOK_append]
+    have h_assumes_id : prefixInitEnv (requiresToAssumes proc.spec.preconditions) ρ₀ = ρ₀ := by
+      apply prefixInitEnv_noninit_list
+      intro s hs
+      simp only [requiresToAssumes, List.mem_map] at hs
+      obtain ⟨⟨l, c⟩, _, rfl⟩ := hs
+      simp [stmtInitVar]
+    refine ⟨PrefixStepsOK_assumes π φ proc.spec.preconditions ρ₀
+      h_wf.preconditionsHold h_wf.wfBool, ?_⟩
+    rw [h_assumes_id]
+    rw [PrefixStepsOK_append]
+    constructor
+    · -- outputInits
+      apply PrefixStepsOK_nondet_init_map π φ _ _ h_wf.wfVar
+      · intro id hid
+        have hid_keys : id ∈ ListMap.keys proc.header.outputs := by
+          rw [ListMap.keys_eq_map_fst]; exact hid
+        have hid_vi : id ∈ Specification.procVerifyInitIdents proc := by
+          unfold Specification.procVerifyInitIdents
+          simp only [List.mem_append]; right; exact hid_keys
+        exact h_wf.storeDefined id hid_vi
+      · rw [← ListMap.keys_eq_map_fst]; exact h_wf_proc.outputsNodup
+    · -- inputInits
+      have h_outenv := prefixInitEnv_eval
+        (List.map (fun x => Statement.init x.1 (Lambda.LTy.forAll [] x.2) .nondet #[])
+          proc.header.outputs.toList) ρ₀
+      apply PrefixStepsOK_nondet_init_map π φ _ _
+        (by rw [h_outenv]; exact h_wf.wfVar)
+      · intro id hid
+        rw [prefixInitEnv_store_not_init]
+        · have hid_keys : id ∈ ListMap.keys proc.header.inputs := by
+            rw [ListMap.keys_eq_map_fst]; exact hid
+          have hid_vi : id ∈ Specification.procVerifyInitIdents proc := by
+            unfold Specification.procVerifyInitIdents
+            simp only [List.mem_append]; left; exact hid_keys
+          exact h_wf.storeDefined id hid_vi
+        · -- input id not init'd in outputInits
+          intro s hs heq_s
           simp only [List.mem_map] at hs
-          obtain ⟨⟨id, ty⟩, _, rfl⟩ := hs
-          exact ⟨_, rfl⟩
-        · -- outputInits: each is Statement.init
-          simp only [List.mem_map] at hs
-          obtain ⟨⟨id, ty⟩, _, rfl⟩ := hs
-          exact ⟨_, rfl⟩
-        · -- modifiesInits.flatten: each is Statement.init
-          rw [List.mem_flatten] at hs
-          obtain ⟨sublist, h_sub_mem, h_s_mem⟩ := hs
-          have h_form : ∀ sub ∈ modifiesInits, ∀ s' ∈ sub, ∃ c, s' = Stmt.cmd c := by
-            intro sub hsub s' hs'
-            obtain ⟨g, gTy, _, rfl⟩ := modifiesMapM_sublists _ _ _ _ _ heq sub hsub
-            simp only [List.mem_cons, List.mem_nil_iff, or_false] at hs'
-            rcases hs' with rfl | rfl <;> exact ⟨_, rfl⟩
-          exact h_form sublist h_sub_mem s h_s_mem
-        · -- assumes: each is Statement.assume = Stmt.cmd
-          simp only [requiresToAssumes, List.mem_map] at hs
-          obtain ⟨⟨label, check⟩, _, rfl⟩ := hs
-          exact ⟨_, rfl⟩
-      · intro ρ₀ h_wf
-        refine ⟨prefixInitEnv _ ρ₀, prefixInitEnv_steps _ ρ₀ π φ h_wf.noFailure ?_⟩
-
-        rw [show List.map (fun x => Statement.init x.1 (Lambda.LTy.forAll [] x.2) .nondet #[])
-              proc.header.inputs.toList ++
-            List.map (fun x => Statement.init x.1 (Lambda.LTy.forAll [] x.2) .nondet #[])
-              proc.header.outputs.toList ++
-            modifiesInits.flatten ++
-            requiresToAssumes proc.spec.preconditions =
-            (List.map (fun x => Statement.init x.1 (Lambda.LTy.forAll [] x.2) .nondet #[])
-              proc.header.inputs.toList ++
-            List.map (fun x => Statement.init x.1 (Lambda.LTy.forAll [] x.2) .nondet #[])
-              proc.header.outputs.toList ++
-            modifiesInits.flatten) ++
-            requiresToAssumes proc.spec.preconditions from by simp [List.append_assoc]]
-        rw [PrefixStepsOK_append]
-        have h_assumes_id : prefixInitEnv (requiresToAssumes proc.spec.preconditions) ρ₀ = ρ₀ := by
-          apply prefixInitEnv_noninit_list
-          intro s hs
-          simp only [requiresToAssumes, List.mem_map] at hs
-          obtain ⟨⟨l, c⟩, _, rfl⟩ := hs
-          simp [stmtInitVar]
-        refine ⟨PrefixStepsOK_assumes π φ proc.spec.preconditions ρ₀
-          h_wf.preconditionsHold h_wf.wfBool, ?_⟩
-        rw [h_assumes_id]
-
-        have h_modifies_init_vars : ∀ s ∈ modifiesInits.flatten,
-            ∀ x, stmtInitVar s = some x →
-            x ∈ proc.spec.modifies ∨
-            x ∈ proc.spec.modifies.map (fun g => CoreIdent.mkOld g.name) := by
-          intro s hs x hx
-          rw [List.mem_flatten] at hs
-          obtain ⟨sub, hsub, hs'⟩ := hs
-          obtain ⟨g, gTy, hg, rfl⟩ := modifiesMapM_sublists _ _ _ _ _ heq sub hsub
-          simp only [List.mem_cons, List.mem_nil_iff, or_false] at hs'
-          rcases hs' with rfl | rfl
-          · simp [stmtInitVar] at hx; subst hx
-            right; exact List.mem_map_of_mem (f := fun (g' : Expression.Ident) => CoreIdent.mkOld g'.name) hg
-          · simp [stmtInitVar] at hx; subst hx; left; exact hg
-
-        rw [show List.map (fun x => Statement.init x.1 (Lambda.LTy.forAll [] x.2) .nondet #[])
-              proc.header.inputs.toList ++
-            List.map (fun x => Statement.init x.1 (Lambda.LTy.forAll [] x.2) .nondet #[])
-              proc.header.outputs.toList ++
-            modifiesInits.flatten =
-            (List.map (fun x => Statement.init x.1 (Lambda.LTy.forAll [] x.2) .nondet #[])
-              proc.header.inputs.toList ++
-            List.map (fun x => Statement.init x.1 (Lambda.LTy.forAll [] x.2) .nondet #[])
-              proc.header.outputs.toList) ++
-            modifiesInits.flatten from by simp [List.append_assoc]]
-        rw [PrefixStepsOK_append]
-
-        -- Helper: input/output vars are not init'd in modifiesInits.flatten
-        have h_io_not_in_modifies : ∀ x ∈ ListMap.keys proc.header.inputs ++ ListMap.keys proc.header.outputs,
-            ∀ s ∈ modifiesInits.flatten, stmtInitVar s ≠ some x := by
-          intro x hx s hs hsx
-          have hmod := h_modifies_init_vars s hs x hsx
-          rcases hmod with hmod | hmod
-          · -- x ∈ modifies, x ∈ keys inputs ++ keys outputs: contradicts ioModDisjoint
-            exact absurd hmod (h_wf_proc.ioModDisjoint hx)
-          · -- x ∈ map mkOld modifies, x ∈ keys inputs ++ keys outputs: contradicts modOldDisjoint
-            have hx' : x ∈ (ListMap.keys proc.header.inputs ++ ListMap.keys proc.header.outputs) ++ proc.spec.modifies :=
-              List.mem_append_left _ hx
-            exact absurd hmod (h_wf_proc.modOldDisjoint hx')
-
-        constructor
-        · -- PrefixStepsOK for modifiesInits.flatten ρ₀
-          -- Joint induction proving PrefixStepsOK and init-var info
-          suffices h_joint :
-              ∀ (gs : List Expression.Ident)
-                (mInits : List (List Statement))
-                (s0 s1 : CoreTransformState),
-                (List.mapM (fun (g : Expression.Ident) => do
-                  let oldG := CoreIdent.mkOld g.name
-                  let gTy ← getIdentTy! p g
-                  return [Statement.init oldG gTy .nondet #[],
-                          Statement.init g gTy (.det (LExpr.fvar () oldG none)) #[]])
-                  gs).run s0 = (Except.ok mInits, s1) →
-                (∀ g ∈ gs, g ∈ proc.spec.modifies) →
-                gs.Nodup →
-                PrefixStepsOK π φ mInits.flatten ρ₀ ∧
-                (∀ s ∈ mInits.flatten, ∀ x, stmtInitVar s = some x →
-                  x ∈ gs ∨ x ∈ gs.map (fun (g : Expression.Ident) => CoreIdent.mkOld g.name)) by
-            have h_mod_nd : proc.spec.modifies.Nodup := h_wf_proc.modNodup
-            exact (h_joint _ _ _ _ heq (fun g hg => hg) h_mod_nd).1
-          intro gs
-          induction gs with
-          | nil =>
-            intro mInits s0 s1 heq_gs _ _
-            simp only [List.mapM_nil, pure, ExceptT.pure, ExceptT.run] at heq_gs
-            have := (Prod.mk.inj heq_gs).1 |> Except.ok.inj; subst this
-            exact ⟨trivial, fun _ h => by simp at h⟩
-          | cons g rest ih =>
-            intro mInits s0 s1 heq_gs h_sub_gs h_nd_gs
-            simp only [List.mapM_cons, bind, ExceptT.bind, ExceptT.mk, ExceptT.run,
-              ExceptT.bindCont, pure, ExceptT.pure, StateT.bind] at heq_gs
-            split at heq_gs
-            · rename_i res₁ s₁ heq₁
-              cases res₁ with
-              | ok gTy =>
-                simp only [bind, StateT.bind, ExceptT.bindCont] at heq_gs
-                split at heq_gs
-                · rename_i rest_res s₂ heq₂
-                  cases rest_res with
-                  | ok restInits =>
-                    dsimp at heq_gs
-                    have heq_mi := (Prod.mk.inj heq_gs).1 |> Except.ok.inj
-                    subst heq_mi
-                    -- Get pair shape
-                    split at heq₁
-                    · rename_i ty_res ty_st heq_ty
-                      cases ty_res with
-                      | ok actualTy =>
-                        simp only [StateT.pure] at heq₁
-                        have h_pair := (Prod.mk.inj heq₁).1 |> Except.ok.inj
-                        subst h_pair
-                        -- Apply IH for rest
-                        have h_ih := ih restInits s₁ s₂ heq₂
-                          (fun g' hg' => h_sub_gs g' (List.mem_cons_of_mem g hg'))
-                          (List.nodup_cons.mp h_nd_gs).2
-                        -- Nodup facts
-                        have h_g_not_rest : g ∉ rest := (List.nodup_cons.mp h_nd_gs).1
-                        -- Helper: g ∈ modifies
-                        have h_g_mod : g ∈ proc.spec.modifies := h_sub_gs g List.mem_cons_self
-                        -- Helper: rest.map mkOld ⊆ proc.spec.modifies.map mkOld
-                        have h_rest_map_sub : ∀ x ∈ rest.map (fun (g : Expression.Ident) => CoreIdent.mkOld g.name),
-                            x ∈ proc.spec.modifies.map (fun (g : Expression.Ident) => CoreIdent.mkOld g.name) :=
-                          fun x hx => by
-                            simp only [List.mem_map] at hx ⊢
-                            obtain ⟨g', hg'_mem, rfl⟩ := hx
-                            exact ⟨g', h_sub_gs g' (List.mem_cons_of_mem _ hg'_mem), rfl⟩
-                        -- g not init'd in restInits.flatten
-                        have h_g_not_in_rest_inits : ∀ s ∈ restInits.flatten, stmtInitVar s ≠ some g := by
-                          intro s' hs' heq_s
-                          rcases h_ih.2 s' hs' g heq_s with hg | hg
-                          · exact h_g_not_rest hg
-                          · -- g ∈ rest.map mkOld ⊆ map mkOld modifies, but g ∈ modifies too: contradicts modOldDisjoint
-                            have hg_in_old : g ∈ proc.spec.modifies.map (fun (g : Expression.Ident) => CoreIdent.mkOld g.name) :=
-                              h_rest_map_sub g hg
-                            have hg_io_mod : g ∈ (ListMap.keys proc.header.inputs ++ ListMap.keys proc.header.outputs) ++ proc.spec.modifies :=
-                              List.mem_append_right _ h_g_mod
-                            exact absurd hg_in_old (h_wf_proc.modOldDisjoint hg_io_mod)
-                        have h_oldG_not_in_rest_inits : ∀ s ∈ restInits.flatten, stmtInitVar s ≠ some (CoreIdent.mkOld g.name) := by
-                          intro s' hs' heq_s
-                          rcases h_ih.2 s' hs' (CoreIdent.mkOld g.name) heq_s with hg | hg
-                          · have h_mkOld_in_mod : CoreIdent.mkOld g.name ∈ proc.spec.modifies :=
-                              h_sub_gs _ (List.mem_cons_of_mem _ hg)
-                            have h_g_in_io_mod : g ∈ (ListMap.keys proc.header.inputs ++ ListMap.keys proc.header.outputs) ++ proc.spec.modifies :=
-                              List.mem_append_right _ h_g_mod
-                            have h_mkOld_in_map_mod : CoreIdent.mkOld g.name ∈ proc.spec.modifies.map (fun g' => CoreIdent.mkOld g'.name) :=
-                              List.mem_map.mpr ⟨g, h_g_mod, rfl⟩
-                            have h_io_mod_app : CoreIdent.mkOld g.name ∈ (ListMap.keys proc.header.inputs ++ ListMap.keys proc.header.outputs) ++ proc.spec.modifies :=
-                              List.mem_append_right _ h_mkOld_in_mod
-                            exact absurd h_mkOld_in_map_mod (h_wf_proc.modOldDisjoint h_io_mod_app)
-                          · have h_nd_mkold : (proc.spec.modifies.map (fun (g' : Expression.Ident) => CoreIdent.mkOld g'.name)).Nodup :=
-                              h_wf_proc.modOldNodup
-                            simp only [List.mem_map] at hg
-                            obtain ⟨g', hg'_mem, hg'_eq⟩ := hg
-                            have : g = g' := List.nodup_map_injOn h_nd_mkold
-                              (h_sub_gs g List.mem_cons_self)
-                              (h_sub_gs g' (List.mem_cons_of_mem _ hg'_mem))
-                              hg'_eq.symm
-                            exact h_g_not_rest (this ▸ hg'_mem)
-                        have h_g_store : (prefixInitEnv restInits.flatten ρ₀).store g = ρ₀.store g :=
-                          prefixInitEnv_store_not_init _ _ _ h_g_not_in_rest_inits
-                        have h_oldG_store : (prefixInitEnv restInits.flatten ρ₀).store (CoreIdent.mkOld g.name) = ρ₀.store (CoreIdent.mkOld g.name) :=
-                          prefixInitEnv_store_not_init _ _ _ h_oldG_not_in_rest_inits
-                        have h_g_in_vi : g ∈ Specification.procVerifyInitIdents proc := by
-                          unfold Specification.procVerifyInitIdents
-                          simp only [List.mem_append]; right; exact h_g_mod
-                        have h_wfVar' : WellFormedSemanticEvalVar (prefixInitEnv restInits.flatten ρ₀).eval := by
-                          rw [prefixInitEnv_eval]; exact h_wf.wfVar
-                        have h_pair_ok := PrefixStepsOK_modifies_pair π φ g (CoreIdent.mkOld g.name) actualTy
-                          (prefixInitEnv restInits.flatten ρ₀)
-                          h_wfVar'
-                          (by rw [h_g_store]; exact h_wf.storeDefined g h_g_in_vi)
-                          (by rw [h_oldG_store]
-                              have : (ρ₀.store (CoreIdent.mkOld g.name)).isSome := by
-                                rw [← h_wf.oldModifiesMatchesCurrent g h_g_mod]; exact h_wf.storeDefined g h_g_in_vi
-                              exact this)
-                          (by rw [h_g_store, h_oldG_store]; exact h_wf.oldModifiesMatchesCurrent g h_g_mod)
-                          (@CoreIdent.ne_mkOld g)
-                        simp only [List.flatten_cons]
-                        rw [PrefixStepsOK_append]
-                        refine ⟨⟨h_ih.1, h_pair_ok⟩, ?_⟩
-                        intro s' hs' x hx
-                        simp only [List.mem_append] at hs'
-                        rcases hs' with hs' | hs'
-                        · -- s' in the pair
-                          simp only [List.mem_cons, List.mem_nil_iff, or_false] at hs'
-                          rcases hs' with rfl | rfl
-                          · simp [stmtInitVar] at hx; subst hx
-                            right; exact List.mem_cons_self
-                          · simp [stmtInitVar] at hx; subst hx
-                            left; exact List.mem_cons_self
-                        · -- s' in restInits.flatten
-                          rcases h_ih.2 s' hs' x hx with h | h
-                          · left; exact List.mem_cons_of_mem _ h
-                          · right; simp only [List.map_cons]; exact List.mem_cons_of_mem _ h
-                      | error e =>
-                        simp only [StateT.pure] at heq₁
-                        exact absurd (Prod.mk.inj heq₁).1 (by intro h; cases h)
-                  | error e =>
-                    simp only [pure, StateT.pure] at heq_gs
-                    exact absurd (Prod.mk.inj heq_gs).1 (by intro h; cases h)
-              | error e =>
-                dsimp at heq_gs; exact absurd (Prod.mk.inj heq_gs).1 (by intro h; cases h)
-        · -- PrefixStepsOK for inputInits ++ outputInits at prefixInitEnv modifiesInits.flatten ρ₀
-          have h_modenv := prefixInitEnv_eval modifiesInits.flatten ρ₀
-          have h_wfVar_mod : WellFormedSemanticEvalVar (prefixInitEnv modifiesInits.flatten ρ₀).eval := by
-            rw [h_modenv]; exact h_wf.wfVar
-          -- Split into inputs and outputs
-          rw [PrefixStepsOK_append]
-          constructor
-          · -- outputInits at prefixInitEnv modifiesInits.flatten ρ₀
-            apply PrefixStepsOK_nondet_init_map π φ _ _ h_wfVar_mod
-            · -- all output ids defined
-              intro id hid
-              rw [prefixInitEnv_store_not_init]
-              · have hid_keys : id ∈ ListMap.keys proc.header.outputs := by
-                  rw [ListMap.keys_eq_map_fst]; exact hid
-                have hid_vi : id ∈ Specification.procVerifyInitIdents proc := by
-                  unfold Specification.procVerifyInitIdents
-                  simp only [List.mem_append]
-                  left; right; exact hid_keys
-                exact h_wf.storeDefined id hid_vi
-              · intro s hs heq_s
-                have hid_io : id ∈ ListMap.keys proc.header.inputs ++ ListMap.keys proc.header.outputs :=
-                  List.mem_append_right _ (by rw [ListMap.keys_eq_map_fst]; exact hid)
-                exact h_io_not_in_modifies id hid_io s hs heq_s
-            · -- nodup of output ids
-              rw [← ListMap.keys_eq_map_fst]; exact h_wf_proc.outputsNodup
-          · -- inputInits at prefixInitEnv outputInits (prefixInitEnv modifiesInits.flatten ρ₀)
-            have h_outenv := prefixInitEnv_eval
-              (List.map (fun x => Statement.init x.1 (Lambda.LTy.forAll [] x.2) .nondet #[])
-                proc.header.outputs.toList)
-              (prefixInitEnv modifiesInits.flatten ρ₀)
-            have h_wfVar_out : WellFormedSemanticEvalVar
-                (prefixInitEnv
-                  (List.map (fun x => Statement.init x.1 (Lambda.LTy.forAll [] x.2) .nondet #[])
-                    proc.header.outputs.toList)
-                  (prefixInitEnv modifiesInits.flatten ρ₀)).eval := by
-              rw [h_outenv]; exact h_wfVar_mod
-            apply PrefixStepsOK_nondet_init_map π φ _ _ h_wfVar_out
-            · -- all input ids defined
-              intro id hid
-              rw [prefixInitEnv_store_not_init]
-              · rw [prefixInitEnv_store_not_init]
-                · have hid_keys : id ∈ ListMap.keys proc.header.inputs := by
-                    rw [ListMap.keys_eq_map_fst]; exact hid
-                  have hid_vi : id ∈ Specification.procVerifyInitIdents proc := by
-                    unfold Specification.procVerifyInitIdents
-                    simp only [List.mem_append]
-                    left; left; exact hid_keys
-                  exact h_wf.storeDefined id hid_vi
-                · intro s hs heq_s
-                  have hid_io : id ∈ ListMap.keys proc.header.inputs ++ ListMap.keys proc.header.outputs :=
-                    List.mem_append_left _ (by rw [ListMap.keys_eq_map_fst]; exact hid)
-                  exact h_io_not_in_modifies id hid_io s hs heq_s
-              · -- input id not init'd in outputInits
-                intro s hs heq_s
-                simp only [List.mem_map] at hs
-                obtain ⟨⟨oid, oty⟩, hmem, rfl⟩ := hs
-                simp [stmtInitVar] at heq_s
-                -- heq_s : oid = id
-                have hid_in : id ∈ ListMap.keys proc.header.inputs := by
-                  rw [ListMap.keys_eq_map_fst]; exact hid
-                have oid_in : id ∈ ListMap.keys proc.header.outputs := by
-                  rw [ListMap.keys_eq_map_fst]; exact heq_s ▸ List.mem_map_of_mem (f := Prod.fst) hmem
-                exact absurd oid_in (h_wf_proc.ioDisjoint hid_in)
-            · -- nodup of input ids
-              rw [← ListMap.keys_eq_map_fst]; exact h_wf_proc.inputsNodup
-    | error e => dsimp at h; exact absurd (Prod.mk.inj h).1 (by intro h; cases h)
-
+          obtain ⟨⟨oid, oty⟩, hmem, rfl⟩ := hs
+          simp [stmtInitVar] at heq_s
+          have hid_in : id ∈ ListMap.keys proc.header.inputs := by
+            rw [ListMap.keys_eq_map_fst]; exact hid
+          have oid_in : id ∈ ListMap.keys proc.header.outputs := by
+            rw [ListMap.keys_eq_map_fst]; exact heq_s ▸ List.mem_map_of_mem (f := Prod.fst) hmem
+          exact absurd oid_in (h_wf_proc.ioDisjoint hid_in)
+      · rw [← ListMap.keys_eq_map_fst]; exact h_wf_proc.inputsNodup
 /-! ## Postcondition Assert Helpers -/
 
 private theorem ensuresToAsserts_mem_is_assert

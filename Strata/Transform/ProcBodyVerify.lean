@@ -15,33 +15,31 @@ This transformation converts a procedure into a statement that verifies the
 procedure's body against its contract.
 
 The transformation:
-1. Initializes all input parameters, output parameters, and modified globals
-2. For each modified global `g`, creates `old_g` (pre-state) and `g` (post-state)
-3. Converts preconditions to `assume` statements
-4. Wraps the body in a labeled block
-5. Converts postconditions to `assert` statements
+1. Initializes all input parameters and output parameters
+2. Converts preconditions to `assume` statements
+3. Wraps the body in a labeled block
+4. Converts postconditions to `assert` statements
+
+Modified globals are already converted to extra in/out parameters on the
+procedure header before this transformation runs.
 
 Example:
 ```
-procedure P(x: int) returns (y: int)
+procedure P(x: int, g: int) returns (y: int, g: int)
 spec {
-  modifies g;
   requires x > 0;
   ensures y > 0;
-  ensures g == old_g + 1;
 }
-{ y := x; g := g + 1; }
+{ y := x; }
 ```
 
 Transforms to:
 ```
 block "verify_P" {
-  init x; init y;
-  init old_g; init g := old_g;
+  init x; init g; init y; init g;
   assume "pre_0" (x > 0);
-  block "body_P" { y := x; g := g + 1; }
+  block "body_P" { y := x; }
   assert "post_0" (y > 0);
-  assert "post_1" (g == old_g + 1);
 }
 ```
 -/
@@ -63,7 +61,7 @@ def ensuresToAsserts (postconditions : ListMap CoreLabel Procedure.Check) : List
     | .Default => some (Statement.assert label check.expr check.md)
 
 /-- Main transformation: convert a procedure to a verification statement -/
-def procToVerifyStmt (proc : Procedure) (p : Program) : CoreTransformM Statement := do
+def procToVerifyStmt (proc : Procedure) (_p : Program) : CoreTransformM Statement := do
   let procName := proc.header.name.name
   let bodyLabel := s!"body_{procName}"
   let verifyLabel := s!"verify_{procName}"
@@ -76,14 +74,6 @@ def procToVerifyStmt (proc : Procedure) (p : Program) : CoreTransformM Statement
   let outputInits := proc.header.outputs.toList.map fun (id, ty) =>
     Statement.init id (Lambda.LTy.forAll [] ty) .nondet #[]
 
-  -- Initialize modified globals: old_g (no RHS), then g := old_g
-  let modifiesInits ← proc.spec.modifies.mapM fun g => do
-    let oldG := CoreIdent.mkOld g.name
-    let gTy ← getIdentTy! p g
-    return [ Statement.init oldG gTy .nondet #[],
-             Statement.init g gTy (.det (Lambda.LExpr.fvar () oldG none)) #[] ]
-  let modifiesInits := modifiesInits.flatten
-
   -- Convert preconditions to assumes
   let assumes := requiresToAssumes proc.spec.preconditions
 
@@ -94,7 +84,7 @@ def procToVerifyStmt (proc : Procedure) (p : Program) : CoreTransformM Statement
   let asserts := ensuresToAsserts proc.spec.postconditions
 
   -- Combine all parts
-  let allStmts := inputInits ++ outputInits ++ modifiesInits ++ assumes ++ [bodyBlock] ++ asserts
+  let allStmts := inputInits ++ outputInits ++ assumes ++ [bodyBlock] ++ asserts
   return Stmt.block verifyLabel allStmts #[]
 
 end Core.ProcBodyVerify

@@ -44,8 +44,7 @@ def Lang.core
     This does not include the old variables. -/
 def procVerifyInitIdents (proc : Procedure) : List Expression.Ident :=
   ListMap.keys proc.header.inputs ++
-  ListMap.keys proc.header.outputs ++
-  proc.spec.modifies
+  ListMap.keys proc.header.outputs
 
 /-- A well-formed initial environment for executing the procedure body.
     This captures the state after inputs, outputs, modified globals have been
@@ -55,8 +54,6 @@ structure ProcEnvWF (proc : Procedure) (ρ : Env Expression) : Prop where
   wfVar  : WellFormedSemanticEvalVar ρ.eval
   wfBool : WellFormedSemanticEvalBool ρ.eval
   storeDefined : ∀ id ∈ procVerifyInitIdents proc, (ρ.store id).isSome
-  oldModifiesMatchesCurrent : ∀ g ∈ proc.spec.modifies,
-    ρ.store g = ρ.store (CoreIdent.mkOld g.name)
   oldInputMatchesCurrent : ∀ id ∈ ListMap.keys proc.header.inputs,
     ρ.store id = ρ.store (CoreIdent.mkOld id.name)
   preconditionsHold : ∀ (label : CoreLabel) (check : Procedure.Check),
