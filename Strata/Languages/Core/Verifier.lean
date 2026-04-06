@@ -999,7 +999,9 @@ def toDiagnosticModel (vcr : Core.VCResult) : Option DiagnosticModel :=
         else if outcome.isPass then none
         else some s!"{description} is not satisfiable"
       else
-        let description := vcr.obligation.metadata.getPropertySummary.getD "assertion"
+        let description := vcr.obligation.metadata.getPropertySummary.getD
+          (if vcr.obligation.label.startsWith Core.CallElim.callElimAssertPrefix then "precondition"
+           else "assertion")
         if outcome.unreachable then some s!"{description} holds vacuously (path unreachable)"
         else if outcome.isPass || outcome.isSatisfiable || outcome.passReachabilityUnknown then none
         else if outcome.alwaysFalseAndReachable || outcome.canBeTrueOrFalseAndIsReachable || outcome.canBeFalseAndIsReachable then
