@@ -901,10 +901,12 @@ partial def translateCall (ctx : TranslationContext)
           else funcName
         return mkCall funcName'
     | .Attribute _ val _attr _ =>
-        let _target_trans ← translateExpr ctx val
+        let target_trans ← translateExpr ctx val
         if opt_firstarg.isSome then
           if let some (ImportedSymbol.procedure _ _ true) := ctx.importedSymbols[funcName]? then
             return mkCall funcName
+          else if funcName ∈ ctx.userFunctions then
+            return mkStmtExprMdWithLoc (StmtExpr.StaticCall funcName ([target_trans] ++ callArgs)) callMd
           else
             return mkStmtExprMdWithLoc (.Hole) callMd
         else return mkCall funcName
@@ -1766,13 +1768,22 @@ def translateClass (ctx : TranslationContext) (classStmt : Python.stmt SourceRan
     let classFields := fields.foldl (fun m f => m.insert f.name.text f.type.val) (ctx.classFieldHighType[className]?.getD {})
     let ctx := {ctx with classFieldHighType := ctx.classFieldHighType.insert className classFields}
 
+    -- Check if any field has a composite (UserDefined) type
+    let hasCompositeField := fields.any fun f => match f.type.val with
+      | .UserDefined _ => true
+      | _ => false
+
     -- Translate each method
     let mut instanceProcedures : Array Procedure := #[]
     for stmt in body do
-      if let .FunctionDef .. := stmt then
+      if let .FunctionDef _ methodName .. := stmt then
         let proc ← translateMethod ctx className stmt
-        -- TODO stop replacing the body of instance proceduces with an empty one
-        instanceProcedures := instanceProcedures.push { proc with body := .Opaque [] .none [] }
+        -- Keep body opaque for __init__ when class has composite-typed fields
+        -- (no Any→Composite coercion yet causes Core type-check failures)
+        if methodName.val == "__init__" && hasCompositeField then
+          instanceProcedures := instanceProcedures.push { proc with body := .Opaque [] .none [] }
+        else
+          instanceProcedures := instanceProcedures.push proc
 
     return ({
       name := className
