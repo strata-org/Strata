@@ -31,6 +31,9 @@ structure TransState where
   inputCtx : InputContext
   errors : Array String
   globalContext : GlobalContext := {}
+  /-- Maps procedure names to their modifies variables with types,
+      collected in a pre-pass so call sites can add extra args/lhs. -/
+  modifiesMap : Std.HashMap String (List (Core.CoreIdent × Lambda.LMonoTy)) := {}
 
 @[expose]
 def TransM := StateM TransState
@@ -1231,12 +1234,22 @@ partial def translateStmt (p : Program) (bindings : TransBindings) (arg : Arg) :
     let f   ← translateIdent String fa
     let es  ← translateCommaSep (fun a => translateExpr p bindings a) esa
     let md ← getOpMetaData op
-    return ([.call ls.toList f es.toList md], bindings)
+    -- Add modifies variables as extra args and lhs
+    let modifiesTyped : List (Core.CoreIdent × Lambda.LMonoTy) ←
+      (fun s => ((s.modifiesMap.getD f []), s))
+    let extraArgs := modifiesTyped.map fun (id, _) => Lambda.LExpr.fvar () id none
+    let extraLhs := modifiesTyped.map fun (id, _) => id
+    return ([.call (ls.toList ++ extraLhs) f (es.toList ++ extraArgs) md], bindings)
   | q`Core.call_unit_statement, #[fa, esa] =>
     let f   ← translateIdent String fa
     let es  ← translateCommaSep (fun a => translateExpr p bindings a) esa
     let md ← getOpMetaData op
-    return ([.call [] f es.toList md], bindings)
+    -- Add modifies variables as extra args and lhs
+    let modifiesTyped : List (Core.CoreIdent × Lambda.LMonoTy) ←
+      (fun s => ((s.modifiesMap.getD f []), s))
+    let extraArgs := modifiesTyped.map fun (id, _) => Lambda.LExpr.fvar () id none
+    let extraLhs := modifiesTyped.map fun (id, _) => id
+    return ([.call (extraLhs) f (es.toList ++ extraArgs) md], bindings)
   | q`Core.block_statement, #[la, ba] =>
     let l ← translateIdent String la
     let (ss, bindings) ← translateBlock p bindings ba
@@ -1465,19 +1478,23 @@ def translateProcedure (p : Program) (bindings : TransBindings) (op : Operation)
   let bindings := { bindings with boundVars := bbindings }
   let .option _ speca := op.args[4]!
     | TransM.error s!"translateProcedure spec. expected here: {repr op.args[3]!}"
-  let (modifies, requires, ensures) ←
+  let (_modifies, requires, ensures) ←
     if speca.isSome then translateSpec p pname bindings speca.get! else pure ([], [], [])
   let .option _ bodya := op.args[5]!
     | TransM.error s!"translateProcedure body expected here: {repr op.args[4]!}"
   let (body, bindings) ← if bodya.isSome then translateBlock p bindings bodya.get! else pure ([], bindings)
   let origBindings := { origBindings with gen := bindings.gen }
   let md ← getOpMetaData op
+  -- Convert modifies variables to extra input and output parameters.
+  -- Look up their types from the modifiesMap (populated by the pre-pass).
+  let modifiesTyped : List (Core.CoreIdent × Lambda.LMonoTy) ←
+    (fun s => ((s.modifiesMap.getD pname.name []), s))
+  let extraParams : @Lambda.LMonoTySignature Unit := modifiesTyped
   return (.proc { header := { name := pname,
                               typeArgs := typeArgs.toList,
-                              inputs := sig,
-                              outputs := ret },
-                  spec := { modifies := modifies,
-                            preconditions := requires,
+                              inputs := sig ++ extraParams,
+                              outputs := ret ++ extraParams },
+                  spec := { preconditions := requires,
                             postconditions := ensures },
                   body := body
                 }
@@ -1496,8 +1513,7 @@ def translateBlockCommand (p : Program) (bindings : TransBindings) (op : Operati
                               typeArgs := [],
                               inputs := [],
                               outputs := [] },
-                  spec := { modifies := [],
-                            preconditions := [],
+                  spec := { preconditions := [],
                             postconditions := [] },
                   body := body
                 }
@@ -1940,8 +1956,45 @@ partial def translateCoreDecls (p : Program) (bindings : TransBindings) :
     let (decls, bindings) ← go (count + 1) max bindings ops
     return (newDecls ++ decls, bindings)
 
+/-- Pre-pass: collect modifies info for all procedures so call sites can add
+    extra args/lhs for modified globals. Also collects global variable types. -/
+private def collectModifiesInfo (p : Program) : TransM Unit := do
+  let mut varTypes : Std.HashMap String Lambda.LMonoTy := {}
+  let mut modMap : Std.HashMap String (List (Core.CoreIdent × Lambda.LMonoTy)) := {}
+  for cmd in p.commands do
+    match cmd.name with
+    | q`Core.command_var =>
+      -- Extract variable name and type using translateBindMk
+      let (id, _, mty) ← translateBindMk {} cmd.args[0]!
+      varTypes := varTypes.insert id.name mty
+    | q`Core.command_procedure =>
+      let pname ← translateIdent String cmd.args[0]!
+      let .option _ speca := cmd.args[4]!
+        | pure ()
+      match speca with
+      | none => pure ()
+      | some specArg =>
+        let sargs ← checkOpArg specArg q`Core.spec_mk 1
+        let .seq _ .none args := sargs[0]!
+          | pure ()
+        let mut mods : List (Core.CoreIdent × Lambda.LMonoTy) := []
+        for arg in args do
+          let .op op := arg
+            | pure ()
+          if op.name == q`Core.modifies_spec then
+            let modArgs ← checkOpArg arg q`Core.modifies_spec 1
+            let ids ← translateCommaSep (translateIdent Core.CoreIdent) modArgs[0]!
+            for id in ids do
+              match varTypes.get? id.name with
+              | some ty => mods := (id, ty) :: mods
+              | none => pure ()
+        modMap := modMap.insert pname mods.reverse
+    | _ => pure ()
+  fun s => ((), { s with modifiesMap := modMap })
+
 def translateProgram (p : Program) : TransM Core.Program := do
   fun s => ((), { s with globalContext := p.globalContext })
+  collectModifiesInfo p
   let decls ← translateCoreDecls p {}
   return { decls := decls }
 

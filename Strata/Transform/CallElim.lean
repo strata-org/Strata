@@ -36,10 +36,11 @@ def callElimCmd (cmd: Command)
 
         let some proc := Program.Procedure.find? p procName | throw s!"Procedure {procName} not found in program"
 
-        -- For each global in modifies, generate a fresh variable to hold its pre-call value,
-        -- but only if "old g" is actually referenced in the postconditions.
+        -- Identify output parameters that reference globals for "old g" handling.
+        -- Since modifies variables are now output parameters, we check which outputs
+        -- are global variables referenced via "old g" in postconditions.
         let postExprs := proc.spec.postconditions.values.map Procedure.Check.expr
-        let oldVars := proc.spec.modifies.filter fun g =>
+        let oldVars := lhs.filter fun g =>
           isGlobalVar p g &&
           postExprs.any (fun e => Lambda.LExpr.freeVars e |>.any (fun (id, _) => id == CoreIdent.mkOld g.name))
 
@@ -53,32 +54,27 @@ def callElimCmd (cmd: Command)
             : List ((Expression.Ident × Expression.Ty) × Expression.Ident)
             ← genOutTrips
 
-        -- Generate fresh variables for "old g" (one per modified global).
-        -- Look up types using the original global names, but substitute "old g" in postconditions.
+        -- Generate fresh variables for "old g" (one per modified global in lhs).
         let genOldTrips := genOldExprIdentsTrip p oldVars
         let oldTripsRaw
             : List ((Expression.Ident × Expression.Ty) × Expression.Ident)
             ← genOldTrips
-        -- Map: ((fresh, ty), "old g") for substitution; init from original global g
         let oldGVars := oldVars.map (fun g => CoreIdent.mkOld g.name)
         let oldTrips := oldTripsRaw.zip oldGVars |>.map fun (((fresh, ty), _orig), oldG) =>
           ((fresh, ty), oldG)
 
-        -- initialize/declare the newly generated variables (init from original global value)
+        -- initialize/declare the newly generated variables
         let argInit := createInits argTrips md
         let outInit := createInitVars outTrips md
-        -- Initialize fresh vars from the current (pre-call) values of the original globals
         let oldInit := createInitVars oldTripsRaw md
 
         -- Substitute "old g" in postconditions:
-        -- - For globals IN modifies: use the fresh snapshot variable.
-        -- - For globals NOT in modifies: old g == g at the call site (the callee
-        --   cannot modify them), so substitute old g directly with the current fvar.
+        -- For globals NOT in lhs (not being modified): old g == g at the call site.
         let unmodifiedOldSubst : Map Expression.Ident Expression.Expr :=
           p.decls.filterMap fun d => match d with
             | .var name _ _ _ =>
               let oldVar := CoreIdent.mkOld name.name
-              if !proc.spec.modifies.contains name &&
+              if !lhs.contains name &&
                  postExprs.any (fun e => Lambda.LExpr.freeVars e |>.any
                    (fun (id, _) => id == oldVar))
               then some (oldVar, createFvar name)
@@ -86,14 +82,11 @@ def callElimCmd (cmd: Command)
             | _ => none
         let oldSubst := createOldVarsSubst oldTrips ++ unmodifiedOldSubst
 
-        -- Non-lifting substitution is safe here: values are fresh variables
         let postconditions : List Expression.Expr := proc.spec.postconditions.values.map
           (fun c => Lambda.LExpr.substFvars c.expr oldSubst)
 
-        -- generate havoc for return variables, modified variables
-        let havoc_ret := createHavocs lhs md
-        let havoc_mod := createHavocs proc.spec.modifies md
-        let havocs := havoc_ret ++ havoc_mod
+        -- generate havoc for return variables (which now includes modified globals)
+        let havocs := createHavocs lhs md
 
         -- construct substitutions for argument and return
         let arg_subst : List (Expression.Ident × Expression.Expr)
@@ -102,12 +95,10 @@ def callElimCmd (cmd: Command)
                       := (ListMap.keys proc.header.outputs).zip $ createFvars lhs
 
         -- construct assumes and asserts in place of pre/post conditions
-        -- generate asserts based on pre-conditions, substituting procedure arguments
         let asserts ← createAsserts (proc.spec.preconditions.filter (fun (_, check) => check.attr != .Free))
                         (arg_subst ++ ret_subst)
                         md
                         callElimAssertPrefix
-        -- generate assumes based on post-conditions, substituting procedure arguments and returns
         let assumes ← createAssumes
                         (Procedure.Spec.updateCheckExprs postconditions proc.spec.postconditions)
                         (arg_subst ++ ret_subst)
@@ -122,7 +113,6 @@ def callElimCmd (cmd: Command)
               cachedAnalyses := { σ.cachedAnalyses with
                 callGraph := .some cg'}}
         | .some _, .none =>
-          /- Invalidate CallGraph -/
           set { σ with
               cachedAnalyses := { σ.cachedAnalyses with callGraph := .none }}
         | _, _ => set σ

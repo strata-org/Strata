@@ -91,21 +91,13 @@ private def mkReturnSubst (proc : Procedure) (lhs : List Expression.Ident) (E : 
   (return_lhs_subst, lhs_post_subst, E')
 
 /--
-Create mapping for all globals: fresh variables for modified globals,
-current values for unmodified globals.
+Create mapping for all globals for old expression substitution.
+Since modifies variables are now output parameters, all globals
+are treated uniformly: their current values are used for old expressions.
 -/
-private def mkGlobalSubst (proc : Procedure) (current_globals : VarSubst)
-    (E : Env) : VarSubst × Env :=
-  -- Create fresh variables for modified globals
-  let modifies_tys := proc.spec.modifies.map
-      (fun l => (E.exprEnv.state.findD l (none, .fvar () l none)).fst)
-  let modifies_typed := proc.spec.modifies.zip modifies_tys
-  let (globals_fvars, E') := E.genFVars modifies_typed
-  let modified_subst := List.zip modifies_typed globals_fvars
-  -- Get current values for unmodified globals
-  let unmodified_subst := current_globals.filter (fun ((id, _), _) =>
-    !proc.spec.modifies.contains id)
-  (modified_subst ++ unmodified_subst, E')
+private def mkGlobalSubst (_proc : Procedure) (current_globals : VarSubst)
+    (_E : Env) : VarSubst × Env :=
+  (current_globals, _E)
 
 /--
 Get current values of global variables for old expression substitution.

@@ -248,17 +248,17 @@ def Procedure.Check.eraseTypes (c : Procedure.Check) : Procedure.Check :=
 /--
 The specification (contract) of a procedure.
 
-- `modifies`: Global variables the procedure may modify. Any global not listed
-  is guaranteed unchanged (the *frame condition*).
 - `preconditions`: Labeled boolean expressions that must hold before the procedure
   executes. Checked (asserted) at call sites unless marked `Free`.
 - `postconditions`: Labeled boolean expressions that must hold when the procedure
   returns. May reference `old(expr)` for pre-state values. Assumed at call sites
   unless the implementation is being verified.
+
+Note: Modifies clauses exist only in the concrete syntax (DDM/Laurel). During
+translation to the Core AST, modified global variables are converted into
+additional input and output parameters on the procedure header.
 -/
 structure Procedure.Spec where
-  /-- Global variables the procedure is allowed to modify. -/
-  modifies       : List Expression.Ident
   /-- Labeled preconditions (`requires` clauses). -/
   preconditions  : ListMap CoreLabel Procedure.Check
   /-- Labeled postconditions (`ensures` clauses). -/
@@ -267,8 +267,7 @@ structure Procedure.Spec where
 
 instance : ToFormat Procedure.Spec where
   format p :=
-    f!"modifies: {format p.modifies}\n\
-       preconditions: {format p.preconditions}\n\
+    f!"preconditions: {format p.preconditions}\n\
        postconditions: {format p.postconditions}"
 
 def Procedure.Spec.preconditionNames (s : Procedure.Spec) : List CoreLabel :=
@@ -329,7 +328,7 @@ open Imperative
 
 def Procedure.definedVars (_ : Procedure) : List Expression.Ident := []
 def Procedure.modifiedVars (p : Procedure) : List Expression.Ident :=
-  p.spec.modifies
+  p.header.outputs.keys
 
 def Procedure.getVars (p : Procedure) : List Expression.Ident :=
   (p.spec.postconditions.values.map Procedure.Check.expr).flatMap HasVarsPure.getVars ++

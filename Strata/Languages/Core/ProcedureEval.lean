@@ -61,15 +61,6 @@ private def mergeResults (fallback : Procedure × Env) (results : List (Procedur
       exprEnv  := { E.exprEnv with config := { E.exprEnv.config with gen := maxGen } } })
 
 def eval (E : Env) (p : Procedure) : Procedure × Env :=
-  -- Generate fresh variables for the globals in the modifies clause, and _update_
-  -- the context. These reflect the pre-state values of the globals.
-  let modifies_tys :=
-    p.spec.modifies.map
-    (fun l => (E.exprEnv.state.findD l (none, .fvar () l none)).fst)
-  let modifies_typed := p.spec.modifies.zip modifies_tys
-  let (globals_fvars, E) := E.genFVars modifies_typed
-  let global_init_subst := List.zip modifies_typed globals_fvars
-  let E := E.addToContext global_init_subst
   -- Create a new scope with the formals and return variables. We will pop this
   -- scope at the end of this procedure.
   let vars := p.header.inputs.keys ++ p.header.outputs.keys

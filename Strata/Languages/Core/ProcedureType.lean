@@ -27,39 +27,16 @@ private def checkNoDuplicates (proc : Procedure) (sourceLoc : FileRange) :
     .error <| DiagnosticModel.withRange sourceLoc f!"[{proc.header.name}] Duplicates found in the formals!"
   if !proc.header.outputs.keys.Nodup then
     .error <| DiagnosticModel.withRange sourceLoc f!"[{proc.header.name}] Duplicates found in the return variables!"
-  if !proc.spec.modifies.Nodup then
-    .error <| DiagnosticModel.withRange sourceLoc f!"[{proc.header.name}] Duplicates found in the modifies clause!"
 
-private def checkVariableScoping (proc : Procedure) (sourceLoc : FileRange) :
+private def checkVariableScoping (_proc : Procedure) (_sourceLoc : FileRange) :
     Except DiagnosticModel Unit := do
-  if proc.spec.modifies.any (fun v => v ∈ proc.header.inputs.keys) then
-    .error <| DiagnosticModel.withRange sourceLoc f!"[{proc.header.name}] Variables in the modifies clause must \
-              not appear in the formals.\n\
-              Modifies: {proc.spec.modifies}\n\
-              Formals: {proc.header.inputs.keys}"
-  if proc.spec.modifies.any (fun v => v ∈ proc.header.outputs.keys) then
-    .error <| DiagnosticModel.withRange sourceLoc f!"[{proc.header.name}] Variables in the modifies clause must \
-              not appear in the return values.\n\
-              Modifies: {proc.spec.modifies}\n\
-              Returns: {proc.header.outputs.keys}"
-  if proc.header.inputs.keys.any (fun v => v ∈ proc.header.outputs.keys) then
-    .error <| DiagnosticModel.withRange sourceLoc f!"[{proc.header.name}] Variables in the formals must \
-              not appear in the return values.\n\
-              Formals: {proc.header.inputs.keys}\n\
-              Returns: {proc.header.outputs.keys}"
-
-private def checkModifiesClause (proc : Procedure) (Env : Core.Expression.TyEnv)
-    (sourceLoc : FileRange) : Except DiagnosticModel Unit := do
-  if proc.spec.modifies.any (fun v => (Env.context.types.find? v).isNone) then
-    .error <| DiagnosticModel.withRange sourceLoc f!"[{proc.header.name}]: All the variables in the modifies clause \
-              must exist in the context!\n\
-              Modifies: {proc.spec.modifies}"
+  pure ()
 
 private def checkModificationRights (proc : Procedure) (sourceLoc : FileRange) :
     Except DiagnosticModel Unit := do
   let modifiedVars := (Imperative.Block.modifiedVars proc.body).eraseDups
   let definedVars := (Imperative.Block.definedVars proc.body).eraseDups
-  let allowedVars := proc.header.outputs.keys ++ proc.spec.modifies ++ definedVars
+  let allowedVars := proc.header.outputs.keys ++ definedVars
   if modifiedVars.any (fun v => v ∉ allowedVars) then
     .error <| DiagnosticModel.withRange sourceLoc f!"[{proc.header.name}]: This procedure modifies variables it \
               is not allowed to!\n\
@@ -102,10 +79,9 @@ def typeCheck (C : Core.Expression.TyContext) (Env : Core.Expression.TyEnv) (p :
     (proc : Procedure) (md : MetaData Expression) : Except DiagnosticModel (Procedure × Core.Expression.TyEnv) := do
   let fileRange := Imperative.getFileRange md |>.getD FileRange.unknown
 
-  -- Validate well-formedness of formals, returns, and modifies clause.
+  -- Validate well-formedness of formals and returns.
   checkNoDuplicates proc fileRange
   checkVariableScoping proc fileRange
-  checkModifiesClause proc Env fileRange
   checkModificationRights proc fileRange
 
   -- Temporarily add the formals into the context.

@@ -57,7 +57,7 @@ structure WFcallProp (p : Program) (lhs : List Expression.Ident) (procName : Str
   outlen : (Program.Procedure.find? p procName = some proc) →
           proc.header.outputs.length = lhs.length
   lhsDisj : (Program.Procedure.find? p procName = some proc) →
-          lhs.Disjoint (proc.spec.modifies ++ ListMap.keys proc.header.inputs ++ ListMap.keys proc.header.outputs)
+          lhs.Disjoint (ListMap.keys proc.header.inputs ++ ListMap.keys proc.header.outputs)
   lhsWF : lhs.Nodup
   wfargs : Forall (WFargProp p) args
 
@@ -132,7 +132,6 @@ abbrev WFModsProp (p : Program) (d : Procedure) := Forall (WFModProp p d)
 structure WFSpecProp (p : Program) (spec : Procedure.Spec) (d : Procedure): Prop where
   wfpre : WFPresProp p d spec.preconditions
   wfpost : WFPostsProp p d spec.postconditions
-  wfmod : WFModsProp p d spec.modifies
 
 /- Procedure Wellformedness -/
 
@@ -150,7 +149,6 @@ structure WFProcedureProp (p : Program) (d : Procedure) : Prop where
   ioDisjoint : (ListMap.keys d.header.inputs).Disjoint (ListMap.keys d.header.outputs)
   inputsNodup : (ListMap.keys d.header.inputs).Nodup
   outputsNodup : (ListMap.keys d.header.outputs).Nodup
-  modNodup : d.spec.modifies.Nodup
   wfspec : WFSpecProp p d.spec d
 structure WFFunctionProp (p : Program) (f : Function) : Prop where
 
