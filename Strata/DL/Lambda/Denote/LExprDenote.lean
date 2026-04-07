@@ -44,7 +44,7 @@ theorem List.Forall₂.get? {R : α → β → Prop} {as : List α} {bs : List �
 
 /-- A sort is a ground monomorphic type — an `LMonoTy` with no free type
 variables. -/
-inductive LSort where
+public inductive LSort where
   | tcons (name : String) (args : List LSort)
   | bitvec (size : Nat)
 
@@ -63,6 +63,12 @@ theorem LSort.ind (P : LSort → Prop)
     (htcons : ∀ name args, (∀ x, x ∈ args → P x) → P (.tcons name args))
     (hbitvec : ∀ n, P (.bitvec n)) : ∀ s, P s
   | .tcons name args => htcons name args (fun x _ => ind P htcons hbitvec x)
+  | .bitvec n => hbitvec n
+
+def LSort.rec' (P : LSort → Sort u)
+    (htcons : ∀ name args, (∀ x, x ∈ args → P x) → P (.tcons name args))
+    (hbitvec : ∀ n, P (.bitvec n)) : ∀ s, P s
+  | .tcons name args => htcons name args (fun x _ => rec' P htcons hbitvec x)
   | .bitvec n => hbitvec n
 
 private theorem LSort_eqb_list_eq
@@ -114,7 +120,7 @@ instance : DecidableEq LSort := fun a b =>
   else isFalse (fun heq => h (heq ▸ LSort_eqb_refl a))
 
 /-- Iterated arrow at the sort level: `mkArrow ret [s₁, s₂] = s₁ → s₂ → ret`. -/
-def LSort.mkArrow (ret : LSort) : List LSort → LSort
+@[expose] public def LSort.mkArrow (ret : LSort) : List LSort → LSort
   | [] => ret
   | s :: ss => .tcons "arrow" [s, LSort.mkArrow ret ss]
 
@@ -132,12 +138,21 @@ where
 
 /-- Interpretation of type constructors: maps a constructor name and its
 sort arguments to a Lean `Type`. -/
-def TyConstrInterp := String → List LSort → Type
+@[expose] public def TyConstrInterp := String → List LSort → Type
+
+/-- Every type produced by a `TyConstrInterp` is inhabited. -/
+class TyConstrInterp.AllInhabited (tcInterp : TyConstrInterp) : Type where
+  inhabited : ∀ name args, Inhabited (tcInterp name args)
+
+@[expose] public def isArrow (n: String) (args: List LSort) : Option (LSort × LSort) :=
+  match n, args with
+  | "arrow", [a, b] => some (a, b)
+  | _ , _ => none
 
 /-- Interpret a sort into a Lean `Type`. Built-in sorts (bool, int, real,
 string, bitvec, arrow) are mapped to their Lean counterparts; all others
 are delegated to `tcInterp`. -/
-def SortDenote (tcInterp : TyConstrInterp) : LSort → Type
+@[expose] public def SortDenote (tcInterp : TyConstrInterp) : LSort → Type
   | .tcons "bool" []      => Bool
   | .tcons "int" []       => Int
   | .tcons "real" []      => Rat
@@ -145,6 +160,28 @@ def SortDenote (tcInterp : TyConstrInterp) : LSort → Type
   | .bitvec n             => BitVec n
   | .tcons "arrow" [a, b] => SortDenote tcInterp a → SortDenote tcInterp b
   | .tcons name args      => tcInterp name args
+
+/-- Every sort denotes an inhabited type, given that the type constructor
+interpretation produces inhabited types. -/
+def SortDenote.inhabited (tcInterp : TyConstrInterp)
+    (h : ∀ name args, Inhabited (tcInterp name args))
+    (s : LSort) : Inhabited (SortDenote tcInterp s) := by
+  induction s using LSort.rec' with
+  | htcons name args ih =>
+    unfold SortDenote
+    split
+    · exact ⟨false⟩
+    · exact ⟨(0 : Int)⟩
+    · exact ⟨(0 : Rat)⟩
+    · exact ⟨""⟩
+    . rename_i n _; exact ⟨(0 : BitVec n)⟩
+    · exact ⟨fun _ => (ih _ (by simp_all)).default⟩
+    · exact h _ _
+  | hbitvec n => exact ⟨(0 : BitVec n)⟩
+
+instance SortDenote.instInhabited [TyConstrInterp.AllInhabited tcInterp]
+    (s : LSort) : Inhabited (SortDenote tcInterp s) :=
+  SortDenote.inhabited tcInterp TyConstrInterp.AllInhabited.inhabited s
 
 /-- Type-variable valuation: maps each type variable to a sort. -/
 def TyVarVal := TyIdentifier → LSort
@@ -1121,25 +1158,28 @@ noncomputable def denoteArgs
 
 /-- An `opInterp` is consistent with an `LFunc` whose definition is given by
 a `concreteEval` function: whenever `ceval md argExprs = some resultExpr` and
-all expressions are well-typed, the denotation of the result equals the
+all expressions are well-typed at the instantiated types (via a type
+substitution `tySubst`), the denotation of the result equals the
 interpretation of the op applied to the denotations of the arguments. -/
 def LFunc.InterpConsistentEval [DecidableEq T.IDMeta]
     (f : LFunc T) (ceval : T.Metadata → List (LExpr T.mono) → Option (LExpr T.mono)) : Prop :=
   ∀ (vt : TyVarVal)
     (fvarVal : FreeVarVal T tcInterp)
     (md : T.Metadata)
+    (tySubst : Subst)
     (argExprs : List (LExpr T.mono))
     (resultExpr : LExpr T.mono),
   ceval md argExprs = some resultExpr →
-  let inputTys := List.map Prod.snd f.inputs
-  let inputSorts := inputTys.map (LMonoTy.substTyVars vt)
-  let outputSort := LMonoTy.substTyVars vt f.output
+  let instInputTys := (List.map Prod.snd f.inputs).map (LMonoTy.subst tySubst)
+  let instOutputTy := LMonoTy.subst tySubst f.output
+  let inputSorts := instInputTys.map (LMonoTy.substTyVars vt)
+  let outputSort := LMonoTy.substTyVars vt instOutputTy
   let fullSort := LSort.mkArrow outputSort inputSorts
-  ∀ (h_args : List.Forall₂ (LExpr.HasTypeA []) argExprs inputTys)
-    (h_result : LExpr.HasTypeA [] resultExpr f.output),
-  LExpr.denote tcInterp opInterp fvarVal vt .nil resultExpr f.output h_result =
+  ∀ (h_args : List.Forall₂ (LExpr.HasTypeA []) argExprs instInputTys)
+    (h_result : LExpr.HasTypeA [] resultExpr instOutputTy),
+  LExpr.denote tcInterp opInterp fvarVal vt .nil resultExpr instOutputTy h_result =
     SortDenote.applyArgs tcInterp (opInterp f.name.name fullSort)
-      (denoteArgs tcInterp opInterp fvarVal vt .nil argExprs inputTys h_args)
+      (denoteArgs tcInterp opInterp fvarVal vt .nil argExprs instInputTys h_args)
 
 /-- Every fvar in `e` whose name is in `tyMap` is annotated with the
 corresponding type. -/

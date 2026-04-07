@@ -73,7 +73,7 @@ quantify over the type identifiers in it.
 /--
 Helper constructor for LFunc to maintain backward compatibility.
 -/
-def LFunc.mk {T : LExprParams} (name : T.Identifier) (typeArgs : List TyIdentifier := [])
+@[expose] def LFunc.mk {T : LExprParams} (name : T.Identifier) (typeArgs : List TyIdentifier := [])
     (isConstr : Bool := false) (isRecursive : Bool := false)
     (inputs : ListMap T.Identifier LMonoTy) (output : LMonoTy)
     (body : Option (LExpr T.mono) := .none) (attr : Array Strata.DL.Util.FuncAttr := #[])

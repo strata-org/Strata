@@ -165,7 +165,7 @@ mutual
 /--
 Apply substitution `S` to monotype `mty`.
 -/
-def LMonoTy.subst (S : Subst) (mty : LMonoTy) : LMonoTy :=
+@[expose] def LMonoTy.subst (S : Subst) (mty : LMonoTy) : LMonoTy :=
   if Subst.hasEmptyScopes S then mty else
   match mty with
   | .ftvar x => match S.find? x with
@@ -176,7 +176,7 @@ def LMonoTy.subst (S : Subst) (mty : LMonoTy) : LMonoTy :=
 /--
 Apply substitution `S` to monotypes `mtys`.
 -/
-def LMonoTys.subst (S : Subst) (mtys : LMonoTys) : LMonoTys :=
+@[expose] def LMonoTys.subst (S : Subst) (mtys : LMonoTys) : LMonoTys :=
   if Subst.hasEmptyScopes S then mtys else substAux S mtys []
 where
   substAux S mtys acc : LMonoTys :=

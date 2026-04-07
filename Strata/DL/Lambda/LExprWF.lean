@@ -80,7 +80,7 @@ This function replaces some bound variables in `e` by an arbitrary expression
 `substK k s e` keeps track of the number `k` of abstractions that have passed
 by; it replaces all leaves of the form `(.bvar k)` with `s`.
 -/
-def substK {T:LExprParamsT} (k : Nat) (s : T.base.Metadata → LExpr T)
+@[expose] def substK {T:LExprParamsT} (k : Nat) (s : T.base.Metadata → LExpr T)
     (e : LExpr T) : LExpr T :=
   match e with
   | .const m c => .const m c
@@ -114,7 +114,7 @@ to avoid such issues:
 
 `(λλ 1 0) (λ b) --β--> (λ (λ b) 0)`
 -/
-def subst {T:LExprParamsT} (s : T.base.Metadata → LExpr T) (e : LExpr T) : LExpr T :=
+@[expose] def subst {T:LExprParamsT} (s : T.base.Metadata → LExpr T) (e : LExpr T) : LExpr T :=
   substK 0 s e
 
 /--

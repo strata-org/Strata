@@ -369,7 +369,36 @@ theorem Step.denote_preserved
       (HList.cast h_sorts_eq da)
       h_keys h_len h_tys_len h_sorts_eq.symm h_wt h_denotes h_annot_subst
   | eval_fn e callee e' args fn denotefn hcall heval hresult =>
-    sorry
+    rename_i step_md
+    -- Step 1: Decompose the call
+    obtain ⟨argTys, ty_op, md, name, h_args, hty_op, h_callee_eq, h_denote_e⟩ :=
+      callOfLFunc_denote tcInterp opInterp fvarVal vt hcall h₁
+    -- Step 2: Extract tySubst from OpsConsistent
+    obtain ⟨tySubst, htySubst, h_ty_op_eq⟩ := OpsConsistent_callOfLFunc hOps hcall
+    -- Step 3: Derive τ = subst tySubst fn.output and argTys = instInputTys
+    have h_ty_op_val := h_ty_op_eq md name ty_op h_callee_eq
+    have h_subst_arrow := subst_mkArrow' tySubst fn.output (fn.inputs.map Prod.snd)
+    rw [h_subst_arrow] at h_ty_op_val
+    rw [hty_op] at h_ty_op_val
+    have h_len : argTys.length = ((fn.inputs.map Prod.snd).map (LMonoTy.subst tySubst)).length := by
+      simp; exact h_args.length_eq.symm.trans (Factory.callOfLFunc_arity hcall)
+    have ⟨h_τ_eq, h_argTys_eq⟩ := LMonoTy.mkArrow'_injective h_len h_ty_op_val
+    -- Step 4: Get InterpConsistentEval from Factory.InterpConsistent
+    obtain ⟨_, _, _, h_callee_op, h_get⟩ := Factory.callOfLFunc_getElem? hcall
+    rw [h_callee_eq] at h_callee_op; cases h_callee_op
+    have h_fn_mem_str : name.name ∈ F := Factory.getElem?_some_implies_mem h_get
+    have h_fn_eq : F[name.name] = fn := Factory.getElem?_some_getElem h_get
+    have h_ice := h_fn_eq ▸ hF.2 name.name h_fn_mem_str denotefn (h_fn_eq ▸ heval)
+    -- Step 5: Instantiate InterpConsistentEval
+    have h_ceval : denotefn step_md args = some e' := hresult.symm
+    subst h_τ_eq h_argTys_eq
+    have h_ice_inst := h_ice vt fvarVal step_md tySubst args e' h_ceval h_args h₂
+    -- Step 6-7: Connect and conclude
+    have h_fn_name : fn.name.name = name.name := Factory.getElem?_name h_get
+    rw [h_denote_e, h_ice_inst, h_fn_name]
+    congr 1
+    subst hty_op
+    grind
 
 /-- A single step preserves well-typedness. -/
 theorem Step.type_preserved
