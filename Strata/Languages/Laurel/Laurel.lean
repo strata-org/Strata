@@ -181,8 +181,9 @@ structure Procedure : Type where
   outputs : List Parameter
   /-- The preconditions that callers must satisfy. -/
   preconditions : List (WithMetadata StmtExpr)
-  /-- Whether the procedure is deterministic or nondeterministic. -/
-  determinism : Determinism
+  -- TODO: add back determinism together with an implementation
+  -- /-- Whether the procedure is deterministic or nondeterministic. -/
+  -- determinism : Determinism
   /-- Optional termination measure for recursive procedures. -/
   decreases : Option (WithMetadata StmtExpr) -- optionally prove termination
   /-- If true, the body may only have functional constructs, so no destructive assignments or loops. -/
@@ -205,6 +206,8 @@ structure Parameter where
   /-- The parameter type. -/
   type : WithMetadata HighType
 
+-- TODO: add back Determinism together with an implementation
+/-
 /--
 Specifies whether a procedure is deterministic or nondeterministic.
 
@@ -216,6 +219,7 @@ inductive Determinism where
   | deterministic (reads : Option (WithMetadata StmtExpr))
   /-- A nondeterministic procedure. They can read from the heap but there is no benefit from specifying a reads clause. -/
   | nondeterministic
+-/
 
 /--
 The body of a procedure. A body can be transparent (with a visible

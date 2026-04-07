@@ -188,13 +188,14 @@ def formatBody : Body → Format
       | some msg => " propertySummary \"" ++ msg ++ "\""))
   | .External => "external"
 
-def formatDeterminism : Determinism → Format
-  | .deterministic none => "deterministic"
-  | .deterministic (some reads) => "deterministic reads " ++ formatStmtExpr reads
-  | .nondeterministic => "nondeterministic"
+-- TODO: add back determinism formatting together with an implementation
+-- def formatDeterminism : Determinism → Format
+--   | .deterministic none => "deterministic"
+--   | .deterministic (some reads) => "deterministic reads " ++ formatStmtExpr reads
+--   | .nondeterministic => "nondeterministic"
 
-instance : Std.ToFormat Determinism where
-  format := formatDeterminism
+-- instance : Std.ToFormat Determinism where
+--   format := formatDeterminism
 
 def formatProcedure (proc : Procedure) : Format :=
   (if proc.isFunctional then "function " else "procedure ") ++ format proc.name ++
@@ -205,7 +206,6 @@ def formatProcedure (proc : Procedure) : Format :=
     (match p.md.getPropertySummary with
     | none => Format.nil
     | some msg => " propertySummary \"" ++ msg ++ "\"") ++ Format.line)) ++
-  formatDeterminism proc.determinism ++ Format.line ++
   formatBody proc.body
 
 def formatField (f : Field) : Format :=

@@ -138,7 +138,8 @@ Procedures are the main unit of specification and verification in Laurel.
 
 {docstring Strata.Laurel.Parameter}
 
-{docstring Strata.Laurel.Determinism}
+-- TODO: add back Determinism docstring together with an implementation
+-- {docstring Strata.Laurel.Determinism}
 
 {docstring Strata.Laurel.Body}
 

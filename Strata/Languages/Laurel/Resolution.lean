@@ -421,13 +421,14 @@ def resolveBody (body : Body) : ResolveM Body := do
     return .Abstract posts'
   | .External => return .External
 
-/-- Resolve a determinism clause. -/
-def resolveDeterminism (d : Determinism) : ResolveM Determinism := do
-  match d with
-  | .deterministic reads =>
-    let reads' ← reads.mapM resolveStmtExpr
-    return .deterministic reads'
-  | .nondeterministic => return .nondeterministic
+-- TODO: add back determinism resolution together with an implementation
+-- /-- Resolve a determinism clause. -/
+-- def resolveDeterminism (d : Determinism) : ResolveM Determinism := do
+--   match d with
+--   | .deterministic reads =>
+--     let reads' ← reads.mapM resolveStmtExpr
+--     return .deterministic reads'
+--   | .nondeterministic => return .nondeterministic
 
 /-- Resolve a procedure: define its name, then resolve params, contracts, and body in a new scope. -/
 def resolveProcedure (proc : Procedure) : ResolveM Procedure := do
@@ -436,13 +437,12 @@ def resolveProcedure (proc : Procedure) : ResolveM Procedure := do
     let inputs' ← proc.inputs.mapM resolveParameter
     let outputs' ← proc.outputs.mapM resolveParameter
     let pres' ← proc.preconditions.mapM resolveStmtExpr
-    let det' ← resolveDeterminism proc.determinism
     let dec' ← proc.decreases.mapM resolveStmtExpr
     let body' ← resolveBody proc.body
     let invokeOn' ← proc.invokeOn.mapM resolveStmtExpr
     return { name := procName', inputs := inputs', outputs := outputs',
              isFunctional := proc.isFunctional,
-             preconditions := pres', determinism := det', decreases := dec',
+             preconditions := pres', decreases := dec',
              invokeOn := invokeOn',
              body := body', md := proc.md }
 
@@ -462,14 +462,13 @@ def resolveInstanceProcedure (typeName : Identifier) (proc : Procedure) : Resolv
     let inputs' ← proc.inputs.mapM resolveParameter
     let outputs' ← proc.outputs.mapM resolveParameter
     let pres' ← proc.preconditions.mapM resolveStmtExpr
-    let det' ← resolveDeterminism proc.determinism
     let dec' ← proc.decreases.mapM resolveStmtExpr
     let body' ← resolveBody proc.body
     let invokeOn' ← proc.invokeOn.mapM resolveStmtExpr
     modify fun s => { s with instanceTypeName := savedInstType }
     return { name := procName', inputs := inputs', outputs := outputs',
              isFunctional := proc.isFunctional,
-             preconditions := pres', determinism := det', decreases := dec',
+             preconditions := pres', decreases := dec',
              invokeOn := invokeOn',
              body := body', md := proc.md }
 
@@ -638,11 +637,12 @@ private def collectBody (map : Std.HashMap Nat AstNode) (body : Body)
   | .Abstract posts => posts.foldl collectStmtExpr map
   | .External => map
 
-private def collectDeterminism (map : Std.HashMap Nat AstNode) (d : Determinism)
-    : Std.HashMap Nat AstNode :=
-  match d with
-  | .deterministic (some reads) => collectStmtExpr map reads
-  | _ => map
+-- TODO: add back collectDeterminism together with an implementation
+-- private def collectDeterminism (map : Std.HashMap Nat AstNode) (d : Determinism)
+--     : Std.HashMap Nat AstNode :=
+--   match d with
+--   | .deterministic (some reads) => collectStmtExpr map reads
+--   | _ => map
 
 private def collectParameter (map : Std.HashMap Nat AstNode) (param : Parameter)
     : Std.HashMap Nat AstNode :=
@@ -655,7 +655,6 @@ private def collectProcedure (map : Std.HashMap Nat AstNode) (proc : Procedure)
   let map := proc.inputs.foldl collectParameter map
   let map := proc.outputs.foldl collectParameter map
   let map := proc.preconditions.foldl collectStmtExpr map
-  let map := collectDeterminism map proc.determinism
   let map := match proc.decreases with | some d => collectStmtExpr map d | none => map
   collectBody map proc.body
 
