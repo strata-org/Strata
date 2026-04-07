@@ -80,14 +80,16 @@ for transform_file in expected/*.*.core.st; do
     fi
 
     # 1. Check transform output matches the .core.st file
-    transform_output=$(cd .. && lake exe strata transform "Examples/${source_file}" $pass_flags $extra_flags)
-    if ! echo "$transform_output" | diff -q "$transform_file" - > /dev/null; then
+    tmp_transform=$(mktemp)
+    (cd .. && lake exe strata transform "Examples/${source_file}" $pass_flags $extra_flags) > "$tmp_transform"
+    if ! diff -q "$transform_file" "$tmp_transform" > /dev/null; then
         echo "ERROR: Transform output for $transform_base does not match expected"
-        echo "$transform_output" | diff "$transform_file" -
+        diff "$transform_file" "$tmp_transform"
         failed=1
     else
         echo "Test passed: transform $source_file $pass_flags"
     fi
+    rm -f "$tmp_transform"
 
     # 2. Verify the transformed file and check against .core.expected
     verify_expected="expected/${transform_base}.core.expected"
