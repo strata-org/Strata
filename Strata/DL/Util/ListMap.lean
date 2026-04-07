@@ -156,5 +156,11 @@ theorem ListMap.keys.length :
   induction ls <;> simp [keys]
   case cons h t ih => assumption
 
+theorem ListMap.keys_eq_map_fst {α β : Type} (m : ListMap α β) :
+    m.keys = m.toList.map Prod.fst := by
+  induction m with
+  | nil => rfl
+  | cons h t ih => simp [ListMap.keys, ListMap.toList, ih]
+
 -------------------------------------------------------------------------------
 end

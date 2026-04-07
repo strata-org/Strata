@@ -93,6 +93,8 @@ structure TranslationContext where
   classFieldHighType: Std.HashMap String (Std.HashMap String HighType) := {}
   /-- Names of prelude types -/
   preludeTypes : Std.HashSet String := {}
+  /-- Prelude procedure signatures (for multi-output detection) -/
+  preludeProcedures : Std.HashMap String CoreProcedureSignature := {}
   /-- Overload dispatch table from PySpec: function name → overloads -/
   overloadTable : OverloadTable := {}
   /-- Behavior for unmodeled functions -/
@@ -837,6 +839,10 @@ partial def combinePositionalAndKeywordArgs
       throwUserError callRange
         s!"'{name}' called with unknown keyword arguments: {extraNames}"
     let kwords := pyKwordsToHashMap kwords
+    -- Extra positional args beyond the signature are an arity error.
+    if posArgs.length > funcDecl.args.length then
+      throwUserError callRange
+        s!"'{name}' called with too many positional arguments: expected at most {funcDecl.args.length}, got {posArgs.length}"
     let unprovidedPosArgs := funcDecl.args.drop posArgs.length
     --every unprovided positional args must have a default value in the function signature or be provided in the kwargs
     let missingArgs := unprovidedPosArgs.filter fun arg =>
@@ -924,6 +930,10 @@ partial def translateCall (ctx : TranslationContext)
   -- expand the dictionary into individual arguments using DictStrAny_get
   if isVarKwargs kwords && funcDecl.isSome then
     let funcDecl := funcDecl.get!
+    let name := if methodName.isEmpty then funcDecl.name else methodName
+    if args.length > funcDecl.args.length then
+      throwUserError callRange
+        s!"'{name}' called with too many positional arguments: expected at most {funcDecl.args.length}, got {args.length}"
     let trans_posArgs ← args.mapM (translateExpr ctx)
     let trans_dict ← translateVarKwargs ctx kwords
     let remainingParams := funcDecl.args.drop args.length
@@ -952,12 +962,17 @@ Translate Python statements to Laurel StmtExpr nodes.
 These functions are mutually recursive.
 -/
 
+private def hasErrorOutput (sig : CoreProcedureSignature) : Bool :=
+  sig.outputs.length > 0 && sig.outputs.getLast! == "Error"
+
 def withException (ctx : TranslationContext) (funcname: String) : Bool :=
   match ctx.importedSymbols[funcname]? with
   | some (ImportedSymbol.function _) => false
-  | some (ImportedSymbol.procedure _ sig _) =>
-    sig.outputs.length > 0 && sig.outputs.getLast! == "Error"
-  | _ => false
+  | some (ImportedSymbol.procedure _ sig _) => hasErrorOutput sig
+  | _ =>
+    match ctx.preludeProcedures[funcname]? with
+    | some sig => hasErrorOutput sig
+    | none => false
 
 def freeVar (name: String) := mkStmtExprMd (.Identifier name)
 def maybeExceptVar := freeVar "maybe_except"
@@ -2014,6 +2029,7 @@ def pythonToLaurel' (info : PreludeInfo)
     currentClassName := none,
     functionSignatures := info.functionSignatures ++ allClassFuncDecls
     preludeTypes := info.types,
+    preludeProcedures := info.procedures,
     userFunctions := userFunctions,
     classFieldHighType := classFieldHighType,
     overloadTable := overloadTable,
