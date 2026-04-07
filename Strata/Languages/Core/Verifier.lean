@@ -1009,7 +1009,11 @@ def toDiagnosticModel (vcr : Core.VCResult) : Option DiagnosticModel :=
             let originalLabel := if parts.length > 1 then
               "_".intercalate (parts.dropLast)
             else stripped
-            s!"precondition '{originalLabel}'"
+            -- Only quote the label if it's meaningful (not a generic "requires" / "requires_N")
+            if originalLabel == "requires" || originalLabel.startsWith "requires_" then
+              "precondition"
+            else
+              s!"precondition '{originalLabel}'"
            else "assertion")
         if outcome.unreachable then some s!"{description} holds vacuously (path unreachable)"
         else if outcome.isPass || outcome.isSatisfiable || outcome.passReachabilityUnknown then none
