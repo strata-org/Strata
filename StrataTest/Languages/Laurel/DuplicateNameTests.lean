@@ -39,7 +39,7 @@ private def processResolution (input : Lean.Parser.InputContext) : IO (Array Dia
 def dupProcedures := r"
 procedure foo() { };
 procedure foo() { };
-//        ^^^ error: Duplicate definition: 'foo' is already defined in this scope
+//        ^^^ error: Duplicate definition 'foo' is already defined in this scope
 "
 
 #guard_msgs (error, drop all) in
@@ -50,7 +50,7 @@ procedure foo() { };
 def dupTypes := r"
 composite Foo { }
 composite Foo { }
-//        ^^^ error: Duplicate definition: 'Foo' is already defined in this scope
+//        ^^^ error: Duplicate definition 'Foo' is already defined in this scope
 "
 
 #guard_msgs (error, drop all) in
@@ -62,7 +62,7 @@ def dupFields := r"
 composite Foo {
   var f: int
   var f: bool
-//    ^ error: Duplicate definition: 'Foo.f' is already defined in this scope
+//    ^ error: Duplicate definition 'Foo.f' is already defined in this scope
 }
 "
 
@@ -73,7 +73,7 @@ composite Foo {
 
 def dupParams := r"
 procedure foo(x: int, x: bool) { };
-//                    ^ error: Duplicate definition: 'x' is already defined in this scope
+//                    ^ error: Duplicate definition 'x' is already defined in this scope
 "
 
 #guard_msgs (error, drop all) in
@@ -85,7 +85,7 @@ def dupInstanceProcs := r"
 composite Foo {
   procedure bar() { };
   procedure bar() { };
-//          ^^^ error: Duplicate definition: 'bar' is already defined in this scope
+//          ^^^ error: Duplicate definition 'bar' is already defined in this scope
 }
 "
 
@@ -98,7 +98,7 @@ def dupLocals := r"
 procedure foo() {
   var x: int := 1;
   var x: int := 2
-//    ^ error: Duplicate definition: 'x' is already defined in this scope
+//    ^ error: Duplicate definition 'x' is already defined in this scope
 };
 "
 
@@ -110,7 +110,7 @@ procedure foo() {
 def dupProcType := r"
 composite Foo { }
 procedure Foo() { };
-//        ^^^ error: Duplicate definition: 'Foo' is already defined in this scope
+//        ^^^ error: Duplicate definition 'Foo' is already defined in this scope
 "
 
 #guard_msgs (error, drop all) in
@@ -146,7 +146,7 @@ procedure foo() {
 def dupConstrainedTypes := r"
 constrained nat = x: int where x >= 0 witness 0
 constrained nat = x: int where x > 0 witness 1
-//          ^^^ error: Duplicate definition: 'nat' is already defined in this scope
+//          ^^^ error: Duplicate definition 'nat' is already defined in this scope
 "
 
 #guard_msgs (error, drop all) in
@@ -157,7 +157,7 @@ constrained nat = x: int where x > 0 witness 1
 def dupDatatypes := r"
 datatype Foo { A }
 datatype Foo { B }
-//       ^^^ error: Duplicate definition: 'Foo' is already defined in this scope
+//       ^^^ error: Duplicate definition 'Foo' is already defined in this scope
 "
 
 #guard_msgs (error, drop all) in
@@ -168,7 +168,7 @@ datatype Foo { B }
 def dupCompositeDatatype := r"
 composite Foo { }
 datatype Foo { A }
-//       ^^^ error: Duplicate definition: 'Foo' is already defined in this scope
+//       ^^^ error: Duplicate definition 'Foo' is already defined in this scope
 "
 
 #guard_msgs (error, drop all) in

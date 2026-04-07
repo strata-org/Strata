@@ -191,7 +191,7 @@ def defineName (iden : Identifier) (node : AstNode) (overrideResolutionName: Opt
 def defineNameCheckDup (iden : Identifier) (node : AstNode) (overrideResolutionName: Option String := none) : ResolveM Identifier := do
   let resolutionName := overrideResolutionName.getD iden.text
   if (← get).currentScopeNames.contains resolutionName then
-    let diag := iden.md.toDiagnostic s!"Duplicate definition: '{resolutionName}' is already defined in this scope"
+    let diag := iden.md.toDiagnostic s!"Duplicate definition '{resolutionName}' is already defined in this scope"
     modify fun s => { s with errors := s.errors.push diag }
   defineName iden node overrideResolutionName
 
