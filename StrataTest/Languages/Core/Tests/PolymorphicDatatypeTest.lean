@@ -29,7 +29,9 @@ datatype Option (a : Type) { None(), Some(value: a) };
 #end
 
 /--
-info: ok: datatype Option (a : Type) {(
+info: ok: program Core;
+
+datatype Option (a : Type) {(
   (None())),
   (Some(value : a))
 };
@@ -64,7 +66,9 @@ spec {
 #end
 
 /--
-info: ok: datatype Option (a : Type) {(
+info: ok: program Core;
+
+datatype Option (a : Type) {(
   (None())),
   (Some(value : a))
 };
@@ -109,7 +113,9 @@ spec {
 #end
 
 /--
-info: ok: datatype List (a : Type) {(
+info: ok: program Core;
+
+datatype List (a : Type) {(
   (Nil())),
   (Cons(head : a, tail : (List a)))
 };
@@ -155,7 +161,9 @@ spec {
 #end
 
 /--
-info: ok: datatype Either (a : Type, b : Type) {(
+info: ok: program Core;
+
+datatype Either (a : Type, b : Type) {(
   (Left(l : a))),
   (Right(r : b))
 };
@@ -199,7 +207,9 @@ spec {
 #end
 
 /--
-info: ok: datatype Option (a : Type) {(
+info: ok: program Core;
+
+datatype Option (a : Type) {(
   (None())),
   (Some(value : a))
 };

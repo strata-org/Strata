@@ -112,6 +112,109 @@ spec
 
 #end
 
+/--
+info: [Strata.Core] Type checking succeeded.
+
+
+VCs:
+Label: StackInit_ensures_1_1066
+Property: assert
+Assumptions:
+StackInit_requires_0_1015: $__cap2 >= 0
+Obligation:
+true
+
+Label: StackInit_ensures_2_1086
+Property: assert
+Assumptions:
+StackInit_requires_0_1015: $__cap2 >= 0
+Obligation:
+true
+
+Label: StackEmpty_ensures_3_1205
+Property: assert
+Obligation:
+true
+
+Label: StackEmpty_ensures_4_1233
+Property: assert
+Obligation:
+true
+
+Label: Push_ensures_6_1494
+Property: assert
+Assumptions:
+Push_requires_5_1443: $__top5 < $__cap2
+Obligation:
+true
+
+Label: Push_ensures_7_1525
+Property: assert
+Assumptions:
+Push_requires_5_1443: $__top5 < $__cap2
+Obligation:
+($__S4[$__top5 + 1:=$__x6])[$__top5 + 1] == $__x6
+
+Label: Push_ensures_8_1583
+Property: assert
+Assumptions:
+Push_requires_5_1443: $__top5 < $__cap2
+Obligation:
+forall __q0 : int :: 1 <= __q0 && __q0 <= $__top5 ==> ($__S4[$__top5 + 1:=$__x6])[__q0] == $__S4[__q0]
+
+Label: Pop_ensures_10_1843
+Property: assert
+Assumptions:
+Pop_requires_9_1806: $__top7 > 0
+Obligation:
+true
+
+Label: Pop_ensures_11_1874
+Property: assert
+Assumptions:
+Pop_requires_9_1806: $__top7 > 0
+Obligation:
+true
+
+---
+info:
+Obligation: StackInit_ensures_1_1066
+Property: assert
+Result: ✅ pass
+
+Obligation: StackInit_ensures_2_1086
+Property: assert
+Result: ✅ pass
+
+Obligation: StackEmpty_ensures_3_1205
+Property: assert
+Result: ✅ pass
+
+Obligation: StackEmpty_ensures_4_1233
+Property: assert
+Result: ✅ pass
+
+Obligation: Push_ensures_6_1494
+Property: assert
+Result: ✅ pass
+
+Obligation: Push_ensures_7_1525
+Property: assert
+Result: ✅ pass
+
+Obligation: Push_ensures_8_1583
+Property: assert
+Result: ✅ pass
+
+Obligation: Pop_ensures_10_1843
+Property: assert
+Result: ✅ pass
+
+Obligation: Pop_ensures_11_1874
+Property: assert
+Result: ✅ pass
+-/
+#guard_msgs in
 #eval Strata.Boole.verify "cvc5" stackArrayPgm
 
 example : Strata.smtVCsCorrect stackArrayPgm := by

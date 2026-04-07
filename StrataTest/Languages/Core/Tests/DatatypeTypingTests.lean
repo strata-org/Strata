@@ -134,16 +134,20 @@ datatype List (a : Type) { Nil(), Cons(hd: a, tl: List a) };
 datatype Wrapper () { MkWrapper(xs: List int) };
 #end
 
-/-- info: [Strata.Core] Type checking succeeded.
+/--
+info: [Strata.Core] Type checking succeeded.
 
 ---
-info: ok: datatype List (a : Type) {(
+info: ok: program Core;
+
+datatype List (a : Type) {(
   (Nil())),
   (Cons(hd : a, tl : (List a)))
 };
 datatype Wrapper {
   (MkWrapper(xs : (List int)))
-}; -/
+};
+-/
 #guard_msgs in
 #eval Core.typeCheck .default (TransM.run Inhabited.default (translateProgram previouslyDefinedTypePgm) |>.fst).stripMetaData
 ---------------------------------------------------------------------

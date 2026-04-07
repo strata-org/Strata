@@ -36,7 +36,9 @@ procedure test(h: Heap, ref: Ref, field: Field) returns ()
 #guard TransM.run Inhabited.default (translateProgram QuantTypeAliases) |>.snd |>.isEmpty
 
 /--
-info: type Ref;
+info: program Core;
+
+type Ref;
 type Field;
 type Struct := Map Field int;
 type Heap := Map Ref Struct;
