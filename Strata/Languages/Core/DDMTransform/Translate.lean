@@ -1477,7 +1477,7 @@ def translateProcedure (p : Program) (bindings : TransBindings) (op : Operation)
   let bindings := { bindings with boundVars := bbindings }
   let .option _ speca := op.args[4]!
     | TransM.error s!"translateProcedure spec. expected here: {repr op.args[3]!}"
-  let (modifies, requires, ensures) ←
+  let (_modifies, requires, ensures) ←
     if speca.isSome then translateSpec p pname bindings speca.get! else pure ([], [], [])
   let .option _ bodya := op.args[5]!
     | TransM.error s!"translateProcedure body expected here: {repr op.args[4]!}"
@@ -1493,8 +1493,7 @@ def translateProcedure (p : Program) (bindings : TransBindings) (op : Operation)
                               typeArgs := typeArgs.toList,
                               inputs := extraParams ++ sig,
                               outputs := extraParams ++ ret },
-                  spec := { modifies := modifies,
-                            preconditions := requires,
+                  spec := { preconditions := requires,
                             postconditions := ensures },
                   body := body
                 }

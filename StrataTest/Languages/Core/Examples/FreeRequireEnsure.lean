@@ -74,7 +74,6 @@ Model:
 var g : int;
 procedure Proc (g : int) returns (g : int)
 spec {
-  modifies g;
   free requires [g_eq_15]: g == 15;
   free ensures [g_lt_10]: g < 10;
   } {

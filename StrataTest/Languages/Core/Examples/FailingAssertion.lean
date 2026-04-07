@@ -39,7 +39,6 @@ info: type MapII := Map int int;
 var a : MapII;
 procedure P (a : MapII) returns (a : MapII)
 spec {
-  modifies a;
   requires [P_requires_1]: a[0] == 0;
   } {
   assert [assert_0]: a[0] == 1;

@@ -576,18 +576,16 @@ private def toCoreDatatypeDecl (decl : BooleDDM.DatatypeDecl SourceRange) : Tran
       toCoreDatatype m dtypeName typeParams ctors
 
 private def toCoreSpecElts (_m : SourceRange) (pname : String) (elts : Array (BooleDDM.SpecElt SourceRange)) : TranslateM Core.Procedure.Spec := do
-  let mut modifies : List Core.Expression.Ident := []
   let mut reqs : List (Core.CoreLabel × Core.Procedure.Check) := []
   let mut enss : List (Core.CoreLabel × Core.Procedure.Check) := []
   for e in elts.toList do
     match e with
-    | .modifies_spec _ ⟨_, ns⟩ =>
-      modifies := modifies ++ ns.toList.map (mkIdent ∘ Ann.val)
+    | .modifies_spec _ _ => pure ()
     | .requires_spec em ⟨_, l?⟩ ⟨_, free?⟩ cond =>
       reqs := (← defaultLabel em s!"{pname}_requires" l?, { expr := ← toCoreExpr cond, attr := checkAttrOf free? }) :: reqs
     | .ensures_spec em ⟨_, l?⟩ ⟨_, free?⟩ cond =>
       enss := (← defaultLabel em s!"{pname}_ensures" l?, { expr := ← toCoreExpr cond, attr := checkAttrOf free? }) :: enss
-  return { modifies := modifies, preconditions := reqs.reverse, postconditions := enss.reverse }
+  return { preconditions := reqs.reverse, postconditions := enss.reverse }
 
 private def toCoreSpec (m : SourceRange) (pname : String) (spec? : Option (BooleDDM.Spec SourceRange)) : TranslateM Core.Procedure.Spec := do
   match spec? with

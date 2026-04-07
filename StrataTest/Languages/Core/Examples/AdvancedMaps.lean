@@ -59,7 +59,6 @@ var b : (Map bool int);
 var c : (Map int MapII);
 procedure P (a : MapII, b : (Map bool int), c : (Map int MapII)) returns (((a : MapII), (b : (Map bool int))), (c : (Map int MapII)))
 spec {
-  modifies a, b, c;
   requires [P_requires_1]: a[0] == 0;
   requires [P_requires_2]: c[0] == a;
   } {
