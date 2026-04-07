@@ -742,9 +742,9 @@ private def preRegisterTopLevel (program : Program) : ResolveM Unit := do
     | .Datatype dt =>
       let _ ← defineNameCheckDup dt.name (.datatypeDefinition dt)
       for ctor in dt.constructors do
-        let _ ← defineNameCheckDup ctor.name (.datatypeConstructor dt.name ctor)
+        let _ ← defineName ctor.name (.datatypeConstructor dt.name ctor)
         for p in ctor.args do
-          let _ ← defineNameCheckDup p.name placeholderNode (some (dt.destructorName p))
+          let _ ← defineName p.name placeholderNode (some (dt.destructorName p))
   -- Pre-register constants
   for c in program.constants do
     let _ ← defineNameCheckDup c.name (.constant c)
