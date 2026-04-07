@@ -184,6 +184,14 @@ def defineName (iden : Identifier) (node : AstNode) (overrideResolutionName: Opt
   modify fun s => { s with scope := s.scope.insert resolutionName (uniqueId, node) }
   return name'
 
+/-- Like `defineName`, but reports a diagnostic if the name already exists in the current scope. -/
+def defineNameCheckDup (iden : Identifier) (node : AstNode) (overrideResolutionName: Option String := none) : ResolveM Identifier := do
+  let resolutionName := overrideResolutionName.getD iden.text
+  if (← get).scope.contains resolutionName then
+    let diag := iden.md.toDiagnostic s!"Duplicate definition: '{resolutionName}' is already defined in this scope"
+    modify fun s => { s with errors := s.errors.push diag }
+  defineName iden node overrideResolutionName
+
 /-- Resolve a reference: look up the name in scope and assign the definition's ID.
     Returns the identifier with its ID filled in. -/
 def resolveRef (name : Identifier) (md : Imperative.MetaData Core.Expression := .empty) : ResolveM Identifier := do
@@ -292,7 +300,7 @@ def resolveStmtExpr (exprMd : StmtExprMd) : ResolveM StmtExprMd := do
   | .LocalVariable name ty init =>
     let ty' ← resolveHighType ty
     let init' ← init.attach.mapM (fun a => have := a.property; resolveStmtExpr a.val)
-    let name' ← defineName name (.var name ty')
+    let name' ← defineNameCheckDup name (.var name ty')
     pure (.LocalVariable name' ty' init')
   | .While cond invs dec body =>
     let cond' ← resolveStmtExpr cond
@@ -355,14 +363,14 @@ def resolveStmtExpr (exprMd : StmtExprMd) : ResolveM StmtExprMd := do
   | .Forall param trigger body =>
     withScope do
       let paramTy' ← resolveHighType param.type
-      let paramName' ← defineName param.name (.quantifierVar param.name paramTy')
+      let paramName' ← defineNameCheckDup param.name (.quantifierVar param.name paramTy')
       let trigger' ← trigger.attach.mapM (fun pv => have := pv.property; resolveStmtExpr pv.val)
       let body' ← resolveStmtExpr body
       pure (.Forall ⟨paramName', paramTy'⟩ trigger' body')
   | .Exists param trigger body =>
     withScope do
       let paramTy' ← resolveHighType param.type
-      let paramName' ← defineName param.name (.quantifierVar param.name paramTy')
+      let paramName' ← defineNameCheckDup param.name (.quantifierVar param.name paramTy')
       let trigger' ← trigger.attach.mapM (fun pv => have := pv.property; resolveStmtExpr pv.val)
       let body' ← resolveStmtExpr body
       pure (.Exists ⟨paramName', paramTy'⟩ trigger' body')
@@ -402,7 +410,7 @@ def resolveStmtExpr (exprMd : StmtExprMd) : ResolveM StmtExprMd := do
 /-- Resolve a parameter: assign a fresh ID and add to scope. -/
 def resolveParameter (param : Parameter) : ResolveM Parameter := do
   let ty' ← resolveHighType param.type
-  let name' ← defineName param.name (.parameter ⟨param.name, ty'⟩)
+  let name' ← defineNameCheckDup param.name (.parameter ⟨param.name, ty'⟩)
   return ⟨name', ty'⟩
 
 /-- Resolve a procedure body. -/
@@ -718,26 +726,26 @@ private def preRegisterTopLevel (program : Program) : ResolveM Unit := do
   for td in program.types do
     match td with
     | .Composite ct =>
-      let _ ← defineName ct.name (.compositeType ct)
+      let _ ← defineNameCheckDup ct.name (.compositeType ct)
       for field in ct.fields do
         let qualifiedName := ct.name.text ++ "." ++ field.name.text
-        let _ ← defineName field.name placeholderNode (some qualifiedName)
+        let _ ← defineNameCheckDup field.name placeholderNode (some qualifiedName)
       for proc in ct.instanceProcedures do
-        let _ ← defineName proc.name placeholderNode
+        let _ ← defineNameCheckDup proc.name placeholderNode
     | .Constrained ct =>
-      let _ ← defineName ct.name (.constrainedType ct)
+      let _ ← defineNameCheckDup ct.name (.constrainedType ct)
     | .Datatype dt =>
-      let _ ← defineName dt.name (.datatypeDefinition dt)
+      let _ ← defineNameCheckDup dt.name (.datatypeDefinition dt)
       for ctor in dt.constructors do
-        let _ ← defineName ctor.name (.datatypeConstructor dt.name ctor)
+        let _ ← defineNameCheckDup ctor.name (.datatypeConstructor dt.name ctor)
         for p in ctor.args do
-          let _ ← defineName p.name placeholderNode (some (dt.destructorName p))
+          let _ ← defineNameCheckDup p.name placeholderNode (some (dt.destructorName p))
   -- Pre-register constants
   for c in program.constants do
-    let _ ← defineName c.name (.constant c)
+    let _ ← defineNameCheckDup c.name (.constant c)
   -- Pre-register static procedures
   for proc in program.staticProcedures do
-    let _ ← defineName proc.name (.staticProcedure proc)
+    let _ ← defineNameCheckDup proc.name (.staticProcedure proc)
 
 /-! ## Entry point -/
 
