@@ -510,7 +510,16 @@ partial def translateExpr (ctx : TranslationContext) (e : Python.expr SourceRang
       | .GtE _ => .ok "PGe"
       | .In _ => .ok "PIn"
       | .NotIn _ => .ok "PNotIn"
-      | _ => throw (.unsupportedConstruct s!"Comparison operator not yet supported: {repr ops.val[0]!}" (toString (repr e)))
+      -- `is`/`is not` are only sound when the RHS is None, because Python's
+      -- `is` checks object identity, not equality (e.g., True == 1 but
+      -- True is not 1). In the Any value model, None is a singleton so
+      -- identity and equality coincide for None comparisons.
+      | .Is _ => match comparators.val[0]! with
+          | .Constant _ (.ConNone _) _ => .ok "PEq"
+          | _ => throw (.unsupportedConstruct "`is` is only supported with None" (toString (repr e)))
+      | .IsNot _ => match comparators.val[0]! with
+          | .Constant _ (.ConNone _) _ => .ok "PNEq"
+          | _ => throw (.unsupportedConstruct "`is not` is only supported with None" (toString (repr e)))
     return mkStmtExprMd (StmtExpr.StaticCall preludeOpnames [leftExpr, rightExpr])
 
   -- Boolean operations

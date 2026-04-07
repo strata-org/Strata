@@ -1,0 +1,12 @@
+test_is_none.py(3, 4): ✅ pass - ite_cond_calls_Any_to_bool_0
+test_is_none.py(8, 4): ✅ pass - ite_cond_calls_Any_to_bool_0
+test_is_none.py(13, 4): ✅ pass - z should be None
+test_is_none.py(13, 4): ✅ pass - z should be None
+test_is_none.py(17, 4): ✅ pass - w should not be None
+test_is_none.py(17, 4): ✅ pass - w should not be None
+test_is_none.py(21, 4): ✅ pass - int is not None
+test_is_none.py(21, 4): ✅ pass - int is not None
+test_is_none.py(25, 4): ✅ pass - None is not 'not None'
+test_is_none.py(25, 4): ✅ pass - None is not 'not None'
+DETAIL: 10 passed, 0 failed, 0 inconclusive
+RESULT: Analysis success
