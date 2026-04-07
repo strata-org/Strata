@@ -11,6 +11,8 @@ public import Strata.Transform.CoreTransform
 import Strata.Transform.CallElim
 import Strata.Transform.LoopElim
 import Strata.Transform.ProcedureInlining
+import Strata.Transform.FilterProcedures
+import Strata.Transform.IrrelevantAxioms
 
 public import Strata.Languages.Core.Options
 public import Strata.Languages.Core.Verifier
@@ -245,15 +247,49 @@ When `none`, all calls are inlined.
 structure Core.InlineTransformOptions where
   doInline : Option (String → Core.Transform.CachedAnalyses → Bool) := none
 
+/-- A single named transform pass with its arguments. -/
+inductive Core.TransformPass where
+  | inlineProcedures (opts : Core.InlineTransformOptions := {})
+  | loopElim
+  | callElim
+  | filterProcedures (procs : List String)
+  | removeIrrelevantAxioms (funcs : List String)
+
+/-- Apply a single pass inside a running `CoreTransformM` context. -/
+private def Core.applyPass (program : Core.Program) (pass : Core.TransformPass)
+    : Core.Transform.CoreTransformM Core.Program := do
+  match pass with
+  | .inlineProcedures opts =>
+    let pred := opts.doInline.getD (fun _ _ => true)
+    let (_, prog) ← Core.Transform.runProgram (coreInlineCallCmd (doInline := pred)) program
+    return prog
+  | .loopElim =>
+    pure (Core.loopElim program)
+  | .callElim =>
+    let (_, prog) ← Core.Transform.runProgram coreCallElimCmd program
+    return prog
+  | .filterProcedures procs =>
+    Core.FilterProcedures.run program procs
+  | .removeIrrelevantAxioms funcs =>
+    Core.IrrelevantAxioms.run program funcs
+
+/-- Run a chain of transform passes on a Core program.  All passes share a
+    single `CoreTransformState`, so fresh variable counters accumulate across
+    passes and cached analyses (e.g., call graphs) can be reused. -/
+def Core.runTransforms (p : Core.Program) (passes : List Core.TransformPass)
+    : Except String Core.Program :=
+  Core.Transform.run p (fun prog => do
+    let mut program := prog
+    for pass in passes do
+      program ← Core.applyPass program pass
+    return program)
+
 /--
 Transform a Core program to inline some or all procedure calls.
 -/
 def Core.inlineProcedures (p : Core.Program) (opts : Core.InlineTransformOptions)
     : Except String Core.Program :=
-  let pred := opts.doInline.getD (fun _ _ => true)
-  Core.Transform.run p (fun prog => do
-    let (_, prog) ← Core.Transform.runProgram (coreInlineCallCmd (doInline := pred)) prog
-    return prog)
+  Core.runTransforms p [.inlineProcedures opts]
 
 /--
 Transform a Core program to replace each loop with assertions and assumptions about
@@ -267,9 +303,23 @@ Transform a Core program to replace each procedure call with assertions and
 assumptions about its contract.
 -/
 def Core.callElimUsingContract (p : Core.Program) : Except String Core.Program :=
-  Core.Transform.run p (fun prog => do
-    let (_, prog) ← Core.Transform.runProgram coreCallElimCmd prog
-    return prog)
+  Core.runTransforms p [.callElim]
+
+/--
+Transform a Core program to keep only the named procedures and their
+transitive callees, removing everything else.
+-/
+def Core.filterProcedures (p : Core.Program) (targetProcs : List String)
+    : Except String Core.Program :=
+  Core.runTransforms p [.filterProcedures targetProcs]
+
+/--
+Transform a Core program to remove axiom declarations that are irrelevant
+to the named functions (based on call graph analysis).
+-/
+def Core.removeIrrelevantAxioms (p : Core.Program) (functions : List String)
+    : Except String Core.Program :=
+  Core.runTransforms p [.removeIrrelevantAxioms functions]
 
 /-! ### Analysis of Core programs -/
 

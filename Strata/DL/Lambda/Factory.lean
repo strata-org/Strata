@@ -305,8 +305,19 @@ theorem push_mem_match {T} (f : Factory T) (fn : LFunc T) (h : fn.name.name ∉ 
 
 theorem getElem?_is_some_implies_mem {T} {f : Factory T} {name : String} {fn : LFunc T}
  (eq : f[name]? = some fn) : fn ∈ f.toArray := by
-  simp [instGetElem?, Factory.get?] at eq
-  grind
+  change Factory.get? f name = some fn at eq
+  unfold Factory.get? at eq
+  split at eq
+  · contradiction
+  · rename_i idx h_idx
+    injection eq with h_eq
+    subst h_eq
+    have idx_lt : idx < f.toArray.size := by
+      simp only [Std.HashMap.getElem?_eq_some_iff] at h_idx
+      obtain ⟨h_mem, h_val⟩ := h_idx
+      rw [←h_val]
+      exact f.nameMapValid h_mem
+    exact Array.mem_def.mpr (Array.getElem_mem_toList idx_lt)
 
 def getFunctionNames {T} (F : Factory T) : Array T.Identifier :=
   F.toArray.map (fun f => f.name)
@@ -415,6 +426,25 @@ theorem Factory.callOfLFunc_smaller {T} {F : Factory T.base} {e : LExpr T} {op a
   · cases (Nat.ble args.length (List.length F'.inputs)) <;> simp
     intros op_eq args_eq F_eq
     subst op args F'; exact (getLFuncCall_smaller Hfunc)
+
+/-- If `callOfLFunc` returns a triple, the function is a member of the factory array. -/
+theorem callOfLFunc_func_mem
+    {T : LExprParams} (F : @Factory T) (e : LExpr T.mono)
+    (op : LExpr T.mono) (args : List (LExpr T.mono)) (func : LFunc T)
+    (aPA : Bool)
+    (h : F.callOfLFunc e (allowPartialApp := aPA) = some (op, args, func)) :
+    func ∈ F.toArray := by
+  simp only [Factory.callOfLFunc] at h
+  cases h_lfc : getLFuncCall e with | mk op' args' =>
+  simp only [h_lfc] at h
+  cases op' <;> simp at h
+  rename_i m_op name_op ty_op
+  cases h_gf : F[name_op.name]? with
+  | none => simp [h_gf] at h
+  | some func' =>
+    simp only [h_gf] at h
+    cases aPA <;> simp at h <;> split at h <;> simp at h
+    all_goals (obtain ⟨_, _, rfl⟩ := h; exact Factory.getElem?_is_some_implies_mem h_gf)
 
 /--
 Apply type substitution `S` to all type annotations in an `LExpr`.

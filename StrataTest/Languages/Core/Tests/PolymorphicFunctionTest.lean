@@ -27,7 +27,11 @@ function identity<a>(x : a) : a;
 
 #end
 
-/-- info: ok: function identity<$__ty0> (x : $__ty0) : $__ty0; -/
+/--
+info: ok: program Core;
+
+function identity<$__ty0> (x : $__ty0) : $__ty0;
+-/
 #guard_msgs in
 #eval Core.typeCheck .quiet (TransM.run Inhabited.default (translateProgram singleTypeParamDeclPgm)).fst
 
@@ -54,7 +58,9 @@ spec {
 #end
 
 /--
-info: ok: function identity<$__ty0> (x : $__ty0) : $__ty0;
+info: ok: program Core;
+
+function identity<$__ty0> (x : $__ty0) : $__ty0;
 procedure TestIdentityInt () returns ()
 spec {
   ensures [TestIdentityInt_ensures_0]: true;
@@ -89,7 +95,9 @@ spec {
 #end
 
 /--
-info: ok: function makePair<$__ty0, $__ty1> (x : $__ty0, y : $__ty1) : Map $__ty0 $__ty1;
+info: ok: program Core;
+
+function makePair<$__ty0, $__ty1> (x : $__ty0, y : $__ty1) : Map $__ty0 $__ty1;
 procedure TestMakePair () returns ()
 spec {
   ensures [TestMakePair_ensures_0]: true;
@@ -123,7 +131,9 @@ spec {
 #end
 
 /--
-info: ok: function apply<$__ty0, $__ty1> (f : $__ty0 -> $__ty1, x : $__ty0) : $__ty1;
+info: ok: program Core;
+
+function apply<$__ty0, $__ty1> (f : $__ty0 -> $__ty1, x : $__ty0) : $__ty1;
 function intToBool (x : int) : bool;
 procedure TestApply () returns ()
 spec {
@@ -158,7 +168,9 @@ spec {
 #end
 
 /--
-info: ok: function identity<$__ty0> (x : $__ty0) : $__ty0;
+info: ok: program Core;
+
+function identity<$__ty0> (x : $__ty0) : $__ty0;
 function makePair<$__ty1, $__ty2> (x : $__ty1, y : $__ty2) : Map $__ty1 $__ty2;
 procedure TestDifferentInstantiations () returns ()
 spec {
@@ -192,7 +204,7 @@ spec {
 #end
 
 /--
-info: error: (4651-4674) Impossible to unify (arrow int bool) with (arrow bool $__ty5).
+info: error: (4726-4749) Impossible to unify (arrow int bool) with (arrow bool $__ty5).
 First mismatch: int with bool.
 -/
 #guard_msgs in
