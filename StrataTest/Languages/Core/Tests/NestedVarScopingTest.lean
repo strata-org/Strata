@@ -57,6 +57,52 @@ procedure test (cond : bool, x : int, y : int) returns ()
 #eval (Std.format (Core.typeCheck .default (translatePgm issue436Pgm).stripMetaData))
 
 ---------------------------------------------------------------------
+-- Regression test: variables declared inside a named block must not
+-- leak to the parent scope.  Before the fix in Translate.lean,
+-- `block_statement` propagated all bindings (including `var y`) to
+-- the enclosing scope, causing `x` in `assert [use_x]: x == 2`
+-- to resolve to `y` instead (wrong de Bruijn index).
+---------------------------------------------------------------------
+
+def blockScopePgm :=
+#strata
+program Core;
+
+procedure test() returns () {
+  var x : int;
+  x := 1;
+  blk: {
+    var y : int;
+    y := 2;
+    x := y;
+  }
+  assert [use_x]: x == 2;
+};
+
+#end
+
+/--
+info: [Strata.Core] Type checking succeeded.
+
+---
+info: ok: program Core;
+
+procedure test () returns ()
+{
+  var x : int;
+  x := 1;
+  blk: {
+    var y : int;
+    y := 2;
+    x := y;
+    }
+  assert [use_x]: x == 2;
+  };
+-/
+#guard_msgs in
+#eval (Std.format (Core.typeCheck .default (translatePgm blockScopePgm).stripMetaData))
+
+---------------------------------------------------------------------
 -- Regression test for issue #445: function declaration statement
 -- had wrong arg order and scope, causing the body, subsequent
 -- variable references, and function calls to resolve incorrectly.
