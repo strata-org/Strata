@@ -30,28 +30,38 @@ for test_file in *.st; do
 done
 
 # ── Transform tests ─────────────────────────────────────────────────
-# Each expected file named <base>.<pass1>.<pass2>...expected encodes
-# the source file and the passes to apply.
-for expected_file in expected/*.*.expected; do
-    [ -f "$expected_file" ] || continue
-    base_expected=$(basename "$expected_file")
+# Transform test files live in expected/ as <base>.<pass1>.<pass2>.core.st.
+# The naming convention encodes the source file and passes:
+#   LoopSimple.loopElim.core.st  →  transform LoopSimple.core.st --pass loopElim
+# Each .core.st also has a .core.expected with the expected verify output.
+#
+# For each transform test we:
+#   1. Check that `strata transform` produces the .core.st file exactly.
+#   2. Run `strata verify` on the .core.st file and check against .core.expected.
+for transform_file in expected/*.*.core.st; do
+    [ -f "$transform_file" ] || continue
+    transform_base=$(basename "$transform_file" ".core.st")
 
-    # Skip verify expected files (single component before .expected)
-    # Transform files have at least two dots: base.pass.expected
-    stem="${base_expected%.expected}"
-    # Extract source base (everything up to and including .core or .csimp)
-    source_base=""
-    passes=""
-    if [[ "$stem" =~ ^(.+\.(core|csimp))\.(.+)$ ]]; then
-        source_base="${BASH_REMATCH[1]}"
-        passes="${BASH_REMATCH[3]}"
-    else
-        continue
-    fi
+    # Skip files that don't have passes (e.g., LoopSimple.core.st would have
+    # transform_base="LoopSimple" with no dots → not a transform test).
+    [[ "$transform_base" == *.* ]] || continue
 
-    source_file="${source_base}.st"
-    if [ ! -f "$source_file" ]; then
-        echo "WARNING: Source file $source_file not found for transform test $expected_file"
+    # Extract source base and passes from the name.
+    # E.g. "LoopSimple.loopElim" → source_base="LoopSimple", passes="loopElim"
+    # E.g. "LoopSimple.loopElim.callElim" → source_base="LoopSimple", passes="loopElim.callElim"
+    source_base="${transform_base%%.*}"
+    passes="${transform_base#*.}"
+
+    # Find the source .core.st or .csimp.st file
+    source_file=""
+    for ext in core.st csimp.st; do
+        if [ -f "${source_base}.${ext}" ]; then
+            source_file="${source_base}.${ext}"
+            break
+        fi
+    done
+    if [ -z "$source_file" ]; then
+        echo "WARNING: Source file not found for transform test $transform_file"
         continue
     fi
 
@@ -62,14 +72,27 @@ for expected_file in expected/*.*.expected; do
         pass_flags="$pass_flags --pass $p"
     done
 
-    output=$(cd .. && lake exe strata transform "Examples/${source_file}" $pass_flags)
-
-    if ! echo "$output" | diff -q "$expected_file" - > /dev/null; then
-        echo "ERROR: Transform output for $stem does not match expected result"
-        echo "$output" | diff "$expected_file" -
+    # 1. Check transform output matches the .core.st file
+    transform_output=$(cd .. && lake exe strata transform "Examples/${source_file}" $pass_flags)
+    if ! echo "$transform_output" | diff -q "$transform_file" - > /dev/null; then
+        echo "ERROR: Transform output for $transform_base does not match expected"
+        echo "$transform_output" | diff "$transform_file" -
         failed=1
     else
         echo "Test passed: transform $source_file $pass_flags"
+    fi
+
+    # 2. Verify the transformed file and check against .core.expected
+    verify_expected="expected/${transform_base}.core.expected"
+    if [ -f "$verify_expected" ]; then
+        verify_output=$(cd .. && lake exe strata verify "Examples/${transform_file}")
+        if ! echo "$verify_output" | diff -q "$verify_expected" - > /dev/null; then
+            echo "ERROR: Verify output for $transform_base does not match expected"
+            echo "$verify_output" | diff "$verify_expected" -
+            failed=1
+        else
+            echo "Test passed: verify ${transform_base}.core.st"
+        fi
     fi
 done
 
