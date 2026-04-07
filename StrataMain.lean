@@ -1163,38 +1163,34 @@ def transformCommand : Command where
     | .error msg =>
       exitFailure msg
     | .ok initProgram =>
-      -- Apply passes left to right
-      let mut program := initProgram
+      -- Validate and convert pass configs to TransformPass values
+      let mut passes : List Strata.Core.TransformPass := []
       for pc in passConfigs do
         match pc.name with
         | "inlineProcedures" =>
           let opts : Strata.Core.InlineTransformOptions :=
             if pc.procedures.isEmpty then {}
             else { doInline := some (fun name _ => name ∈ pc.procedures) }
-          match Strata.Core.inlineProcedures program opts with
-          | .ok p => program := p
-          | .error e => exitFailure s!"inlineProcedures failed: {e}"
+          passes := passes ++ [.inlineProcedures opts]
         | "loopElim" =>
-          program := Strata.Core.loopElimUsingContract program
+          passes := passes ++ [.loopElim]
         | "callElim" =>
-          match Strata.Core.callElimUsingContract program with
-          | .ok p => program := p
-          | .error e => exitFailure s!"callElim failed: {e}"
+          passes := passes ++ [.callElim]
         | "filterProcedures" =>
           if pc.procedures.isEmpty then
             exitFailure "filterProcedures requires --procedures"
-          match Strata.Core.filterProcedures program pc.procedures with
-          | .ok p => program := p
-          | .error e => exitFailure s!"filterProcedures failed: {e}"
+          passes := passes ++ [.filterProcedures pc.procedures]
         | "removeIrrelevantAxioms" =>
           if pc.functions.isEmpty then
             exitFailure "removeIrrelevantAxioms requires --functions"
-          match Strata.Core.removeIrrelevantAxioms program pc.functions with
-          | .ok p => program := p
-          | .error e => exitFailure s!"removeIrrelevantAxioms failed: {e}"
+          passes := passes ++ [.removeIrrelevantAxioms pc.functions]
         | other =>
           exitFailure s!"Unknown pass '{other}'. Valid passes: {validPasses}."
-      IO.print (Core.formatProgram program)
+      -- Run all passes in a single CoreTransformM chain so fresh variable
+      -- counters accumulate and cached analyses are reused across passes.
+      match Strata.Core.runTransforms initProgram passes with
+      | .ok program => IO.print (Core.formatProgram program)
+      | .error e => exitFailure s!"Transform failed: {e}"
 
 def verifyCommand : Command where
   name := "verify"
