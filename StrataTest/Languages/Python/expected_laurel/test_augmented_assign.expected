@@ -1,8 +1,8 @@
-test_augmented_assign.py(5, 4): ✅ pass - assert_assert(81)_calls_Any_to_bool_0
-test_augmented_assign.py(5, 4): ✅ pass - assert(81)
-test_augmented_assign.py(7, 4): ✅ pass - assert_assert(124)_calls_Any_to_bool_0
-test_augmented_assign.py(7, 4): ✅ pass - assert(124)
-test_augmented_assign.py(9, 4): ✅ pass - assert_assert(167)_calls_Any_to_bool_0
-test_augmented_assign.py(9, 4): ✅ pass - assert(167)
+test_augmented_assign.py(5, 4): ✅ pass - 5 + 3 == 8
+test_augmented_assign.py(5, 4): ✅ pass - 5 + 3 == 8
+test_augmented_assign.py(7, 4): ✅ pass - 8 - 2 == 6
+test_augmented_assign.py(7, 4): ✅ pass - 8 - 2 == 6
+test_augmented_assign.py(9, 4): ✅ pass - 6 * 2 == 12
+test_augmented_assign.py(9, 4): ✅ pass - 6 * 2 == 12
 DETAIL: 6 passed, 0 failed, 0 inconclusive
 RESULT: Analysis success
