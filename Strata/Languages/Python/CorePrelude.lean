@@ -217,7 +217,7 @@ function Datetime_get_timedelta(d : Datetime) : int;
 // means subtracting an 'old' timestamp from a 'new' timestamp may return
 // a negative difference.
 
-procedure datetime_now() returns (d:Datetime, maybe_except: ExceptOrNone)
+procedure datetime_now(tz: AnyOrNone) returns (d:Datetime, maybe_except: ExceptOrNone)
 spec {
   ensures (Datetime_get_timedelta(d) == Timedelta_mk(0,0,0));
 }
