@@ -532,8 +532,7 @@ partial def PyExprToCore (translation_ctx : TranslationContext) (e : Python.expr
     | .Compare _ lhs op rhs =>
       let lhs := PyExprToCore translation_ctx lhs
       assert! rhs.val.size == 1
-      let rawRhs := rhs.val[0]!
-      let rhs := PyExprToCore translation_ctx rawRhs
+      let rhs := PyExprToCore translation_ctx rhs.val[0]!
       match op.val with
       | #[v] => match v with
         | Strata.Python.cmpop.Eq _ =>
@@ -548,15 +547,6 @@ partial def PyExprToCore (translation_ctx : TranslationContext) (e : Python.expr
           {stmts := lhs.stmts ++ rhs.stmts, expr := handleGt lhs.expr rhs.expr}
         | Strata.Python.cmpop.GtE _ =>
           {stmts := lhs.stmts ++ rhs.stmts, expr := handleGtE lhs.expr rhs.expr}
-        -- `is`/`is not` → eq/neq is only sound when the RHS is None.
-        | Strata.Python.cmpop.Is _ => match rawRhs with
-          | .Constant _ (.ConNone _) _ =>
-            {stmts := lhs.stmts ++ rhs.stmts, expr := (.eq () lhs.expr rhs.expr)}
-          | _ => panic! s!"`is` is only supported with None: {repr e}"
-        | Strata.Python.cmpop.IsNot _ => match rawRhs with
-          | .Constant _ (.ConNone _) _ =>
-            {stmts := lhs.stmts ++ rhs.stmts, expr := .app () (.op () "Bool.Not" none) (.eq () lhs.expr rhs.expr)}
-          | _ => panic! s!"`is not` is only supported with None: {repr e}"
         | _ => panic! s!"Unhandled comparison op: {repr op.val}"
       | _ => panic! s!"Unhandled comparison op: {repr op.val}"
     | .Dict sr keys values =>
