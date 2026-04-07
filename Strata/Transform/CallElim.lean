@@ -172,6 +172,18 @@ def callElimPipelinePhase : PipelinePhase where
     if obligationHasLabelPrefix obligation CallElim.callElimAssumePrefix then
       .modelToValidate (fun _ => /- TODO -/ false)
     else .modelPreserving
+  phase.getAssertDescription label :=
+    if label.startsWith CallElim.callElimAssertPrefix then
+      let stripped := label.drop CallElim.callElimAssertPrefix.length |>.toString
+      let parts := stripped.splitOn "_"
+      let originalLabel := if parts.length > 1 then
+        "_".intercalate (parts.dropLast)
+      else stripped
+      if originalLabel == "requires" || originalLabel.startsWith "requires_" then
+        some "precondition"
+      else
+        some s!"precondition '{originalLabel}'"
+    else none
 
 end Core
 

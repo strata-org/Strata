@@ -986,7 +986,8 @@ def verify
   else
     panic! s!"DDM Transform Error: {repr errors}"
 
-def toDiagnosticModel (vcr : Core.VCResult) : Option DiagnosticModel :=
+def toDiagnosticModel (vcr : Core.VCResult)
+    (phases : List Core.AbstractedPhase := []) : Option DiagnosticModel :=
   let fileRange := (Imperative.getFileRange vcr.obligation.metadata).getD default
   match vcr.outcome with
   | .error msg => some { fileRange, message := s!"analysis error: {msg}", type := DiagnosticType.StrataBug }
@@ -999,22 +1000,9 @@ def toDiagnosticModel (vcr : Core.VCResult) : Option DiagnosticModel :=
         else if outcome.isPass then none
         else some s!"{description} is not satisfiable"
       else
+        let phaseDescription := phases.findSome? (·.getAssertDescription vcr.obligation.label)
         let description := vcr.obligation.metadata.getPropertySummary.getD
-          (if vcr.obligation.label.startsWith Core.CallElim.callElimAssertPrefix then
-            -- Extract the original requires label from the callElimAssert label.
-            -- Label format: callElimAssert_{originalLabel}_{counter}
-            let stripped := vcr.obligation.label.drop Core.CallElim.callElimAssertPrefix.length |>.toString
-            -- Drop the trailing _N counter by finding the last underscore
-            let parts := stripped.splitOn "_"
-            let originalLabel := if parts.length > 1 then
-              "_".intercalate (parts.dropLast)
-            else stripped
-            -- Only quote the label if it's meaningful (not a generic "requires" / "requires_N")
-            if originalLabel == "requires" || originalLabel.startsWith "requires_" then
-              "precondition"
-            else
-              s!"precondition '{originalLabel}'"
-           else "assertion")
+          (phaseDescription.getD "assertion")
         if outcome.unreachable then some s!"{description} holds vacuously (path unreachable)"
         else if outcome.isPass || outcome.isSatisfiable || outcome.passReachabilityUnknown then none
         else if outcome.alwaysFalseAndReachable || outcome.canBeTrueOrFalseAndIsReachable || outcome.canBeFalseAndIsReachable then
@@ -1041,8 +1029,9 @@ def DiagnosticModel.toDiagnostic (files: Map Strata.Uri Lean.FileMap) (dm: Diagn
     type := dm.type
   }
 
-def Core.VCResult.toDiagnostic (files: Map Strata.Uri Lean.FileMap) (vcr : Core.VCResult) : Option Diagnostic := do
-  let modelOption := toDiagnosticModel vcr
+def Core.VCResult.toDiagnostic (files: Map Strata.Uri Lean.FileMap) (vcr : Core.VCResult)
+    (phases : List Core.AbstractedPhase := []) : Option Diagnostic := do
+  let modelOption := toDiagnosticModel vcr phases
   modelOption.map (fun dm => dm.toDiagnostic files)
 
 end -- public section
