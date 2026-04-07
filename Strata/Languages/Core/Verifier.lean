@@ -1000,7 +1000,16 @@ def toDiagnosticModel (vcr : Core.VCResult) : Option DiagnosticModel :=
         else some s!"{description} is not satisfiable"
       else
         let description := vcr.obligation.metadata.getPropertySummary.getD
-          (if vcr.obligation.label.startsWith Core.CallElim.callElimAssertPrefix then "precondition"
+          (if vcr.obligation.label.startsWith Core.CallElim.callElimAssertPrefix then
+            -- Extract the original requires label from the callElimAssert label.
+            -- Label format: callElimAssert_{originalLabel}_{counter}
+            let stripped := vcr.obligation.label.drop Core.CallElim.callElimAssertPrefix.length |>.toString
+            -- Drop the trailing _N counter by finding the last underscore
+            let parts := stripped.splitOn "_"
+            let originalLabel := if parts.length > 1 then
+              "_".intercalate (parts.dropLast)
+            else stripped
+            s!"precondition '{originalLabel}'"
            else "assertion")
         if outcome.unreachable then some s!"{description} holds vacuously (path unreachable)"
         else if outcome.isPass || outcome.isSatisfiable || outcome.passReachabilityUnknown then none
