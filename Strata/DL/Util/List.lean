@@ -548,5 +548,19 @@ theorem removeAll_not_mem [BEq α] [LawfulBEq α] {x : α} {xs : List α}
   simp only [List.elem_cons, List.elem_nil]
   split <;> simp_all
 
+theorem nodup_map_injOn {α β : Type} [DecidableEq β] {f : α → β} {l : List α}
+    (hnd : (l.map f).Nodup) {a b : α} (ha : a ∈ l) (hb : b ∈ l) (hab : f a = f b) : a = b := by
+  induction l with
+  | nil => exact nomatch ha
+  | cons x xs ih =>
+    rw [List.map_cons, List.nodup_cons] at hnd
+    cases ha with
+    | head => cases hb with
+      | head => rfl
+      | tail _ hb => exact absurd (hab ▸ List.mem_map.mpr ⟨_, hb, rfl⟩) hnd.1
+    | tail _ ha => cases hb with
+      | head => exact absurd (hab.symm ▸ List.mem_map.mpr ⟨_, ha, rfl⟩) hnd.1
+      | tail _ hb => exact ih hnd.2 ha hb
+
 end List
 end

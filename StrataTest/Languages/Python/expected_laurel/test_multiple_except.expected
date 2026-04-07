@@ -1,11 +1,8 @@
-
-==== Verification Results ====
-assert_assert(170)_calls_Any_to_bool_0: ✅ pass (at line 8, col 4)
-Assertion failed at line 8, col 4: assert(170): ❌ fail
-assert_assert(471)_calls_Any_to_bool_0: ✅ pass (at line 21, col 4)
-Assertion failed at line 21, col 4: assert(471): ❌ fail
-assert_assert(693)_calls_Any_to_bool_0: ✅ pass (at line 31, col 4)
-assert(693): ✅ pass (at line 31, col 4)
-
-DETAIL: 4 passed, 2 failed, 0 inconclusive
-RESULT: Failures found
+test_multiple_except.py(8, 4): ✅ pass - assert_assert(170)_calls_Any_to_bool_0
+test_multiple_except.py(8, 4): ❓ unknown - assert(170)
+test_multiple_except.py(21, 4): ✅ pass - assert_assert(471)_calls_Any_to_bool_0
+test_multiple_except.py(21, 4): ❓ unknown - assert(471)
+test_multiple_except.py(31, 4): ✅ pass - assert_assert(693)_calls_Any_to_bool_0
+test_multiple_except.py(31, 4): ✅ pass - assert(693)
+DETAIL: 4 passed, 0 failed, 2 inconclusive
+RESULT: Inconclusive

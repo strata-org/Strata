@@ -9,8 +9,6 @@ public import Strata.Languages.Core.Procedure
 public import Strata.Languages.Core.Statement
 public import Strata.Languages.Core.StatementEval
 public import Strata.Languages.Core.StatementSemantics
-public import Strata.Transform.LoopElim
-
 public section
 
 ---------------------------------------------------------------------
@@ -117,8 +115,7 @@ def eval (E : Env) (p : Procedure) : Procedure × Env :=
       /- the assumptions from preconditions are set to have empty metadata  -/
       (.assume label check.expr check.md))
       p.spec.preconditions
-  let body' : List Statement := (StateT.run (Block.removeLoopsM p.body) 0).fst
-  let ssEs := Statement.eval E old_g_subst (precond_assumes ++ body' ++ postcond_asserts)
+  let ssEs := Statement.eval E old_g_subst (precond_assumes ++ p.body ++ postcond_asserts)
   mergeResults (p, E) (ssEs.map (fun (ss, sE) => ({ p with body := ss }, fixupError sE)))
 
 ---------------------------------------------------------------------

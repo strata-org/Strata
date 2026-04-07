@@ -22,10 +22,13 @@ public section
 ---------------------------------------------------------------------
 
 /--
-A counterexample derived from an SMT solver is a map from an identifier
+A model derived from an SMT solver is a map from an identifier
 to an `SMT.Term`.
 -/
-@[expose] abbrev CounterEx (Ident : Type) := Map Ident Strata.SMT.Term
+@[expose] abbrev Model (Ident : Type) := Map Ident Strata.SMT.Term
+
+/-- Backward-compatible alias. -/
+@[deprecated Model (since := "2026-04-03")] abbrev CounterEx := @Model
 
 /-- Render an `SMT.Term` to a string via the SMTDDM translation. -/
 private def termToString (t : Strata.SMT.Term) : String :=
@@ -33,24 +36,24 @@ private def termToString (t : Strata.SMT.Term) : String :=
   | .ok s => s
   | .error _ => repr t |>.pretty
 
-def CounterEx.format {Ident} [ToFormat Ident] (cex : CounterEx Ident) : Format :=
-  match cex with
+def Model.format {Ident} [ToFormat Ident] (m : Model Ident) : Format :=
+  match m with
   | [] => ""
   | [(id, v)] => f!"({id}, {termToString v})"
   | (id, v) :: rest =>
-    (f!"({id}, {termToString v}) ") ++ CounterEx.format rest
+    (f!"({id}, {termToString v}) ") ++ Model.format rest
 
-instance {Ident} [ToFormat Ident] : ToFormat (CounterEx Ident) where
-  format := CounterEx.format
+instance {Ident} [ToFormat Ident] : ToFormat (Model Ident) where
+  format := Model.format
 
 /--
 Result from an SMT solver.
 -/
 inductive Result (Ident : Type) where
   -- Also see Strata.SMT.Decision.
-  | sat (cex : CounterEx Ident)
+  | sat (model : Model Ident)
   | unsat
-  | unknown
+  | unknown (candidateModel : Option (Model Ident) := none)
   | err (msg : String)
   deriving DecidableEq, Repr
 
@@ -65,7 +68,13 @@ def Result.formatWithVerbose {Ident} [ToFormat Ident]
       f!"sat"
     else f!"sat\nModel: {m}"
   | .unsat => f!"unsat"
-  | .unknown => f!"unknown"
+  | .unknown m =>
+    match m with
+    | some model =>
+      if (not verbose) || model.isEmpty then
+        f!"unknown"
+      else f!"unknown\nCandidate model: {model}"
+    | none => f!"unknown"
   | .err msg => f!"err {msg}"
 
 instance {Ident} [ToFormat Ident]: ToFormat (Result Ident) where
@@ -168,7 +177,7 @@ value in the model.
 private def processModel {P : PureExpr} [ToFormat P.Ident]
     (typedVarToSMTFn : P.Ident → P.Ty → Except Format (String × Strata.SMT.TermType))
     (vars : List P.TypedIdent) (pairs : List (String × Strata.SMT.Term))
-    (E : Strata.SMT.EncoderState) : Except Format (CounterEx P.Ident) := do
+    (E : Strata.SMT.EncoderState) : Except Format (Model P.Ident) := do
   match vars with
   | [] => return []
   | (var, ty) :: vrest =>
@@ -311,17 +320,17 @@ structure VCResult (P : Imperative.PureExpr) where
   result : SMT.Result P.Ident := .unknown
   estate : Strata.SMT.EncoderState := Strata.SMT.EncoderState.init
 
-instance [ToFormat (SMT.Result P.Ident)] [ToFormat (SMT.CounterEx P.Ident)]
+instance [ToFormat (SMT.Result P.Ident)] [ToFormat (SMT.Model P.Ident)]
   : ToFormat (VCResult P) where
   format r :=
     let result_fmt := match r.result with
-      | .sat cex  =>
-        if cex.isEmpty then
-          f!"failed\nNo counterexample available."
+      | .sat model  =>
+        if model.isEmpty then
+          f!"failed\nNo model available."
         else
-          f!"failed\nCounterexample: {cex}"
+          f!"failed\nModel: {model}"
       | .unsat => f!"verified"
-      | .unknown => f!"unknown"
+      | .unknown _ => f!"unknown"
       | .err msg => f!"err {msg}"
     f!"Obligation: {r.obligation.label}\n\
                  Result: {result_fmt}"

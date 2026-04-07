@@ -827,7 +827,7 @@ def mkTriggerExpr (ts : List (List Expression.Expr)) : Expression.Expr :=
 Get all the built-in functions supported by Strata Core.
 -/
 def builtinFunctions : Array String :=
-  Factory.map (fun f => CoreIdent.toPretty f.name)
+  Core.Factory.toArray.map (fun f => CoreIdent.toPretty f.name)
 
 end
 end Core

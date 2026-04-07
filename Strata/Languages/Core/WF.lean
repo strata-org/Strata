@@ -67,9 +67,9 @@ structure WFcallProp (p : Program) (lhs : List Expression.Ident) (procName : Str
 
 structure WFblockProp (Cmd : Type) (p : Program) (label : String) (b : Block) : Prop where
 
-structure WFifProp    (Cmd : Type) (p : Program) (cond : Expression.Expr)  (thenb : Block) (elseb : Block) : Prop where
+structure WFifProp    (Cmd : Type) (p : Program) (cond : ExprOrNondet Expression)  (thenb : Block) (elseb : Block) : Prop where
 
-structure WFloopProp    (Cmd : Type) (p : Program) (guard : Expression.Expr) (measure : Option Expression.Expr) (invariant : List Expression.Expr) (b : Block) : Prop where
+structure WFloopProp    (Cmd : Type) (p : Program) (guard : ExprOrNondet Expression) (measure : Option Expression.Expr) (invariant : List Expression.Expr) (b : Block) : Prop where
 
 structure WFexitProp  (p : Program) (label : Option String) : Prop where
 
@@ -91,9 +91,9 @@ structure WFfuncDeclProp (p : Program) (decl : Imperative.PureFunc Expression) :
 def WFStatementProp (p : Program) (stmt : Statement) : Prop := match stmt with
   | .cmd   cmd => WFCmdExtProp p cmd
   | .block (label : String) (b : Block) _ => WFblockProp (CmdExt Expression) p label b
-  | .ite   (cond : Expression.Expr) (thenb : Block) (elseb : Block) _ =>
+  | .ite   (cond : ExprOrNondet Expression) (thenb : Block) (elseb : Block) _ =>
      WFifProp (CmdExt Expression) p cond thenb elseb
-  | .loop  (guard : Expression.Expr) (measure : Option Expression.Expr) (invariant : List Expression.Expr) (body : Block) _ =>
+  | .loop  (guard : ExprOrNondet Expression) (measure : Option Expression.Expr) (invariant : List Expression.Expr) (body : Block) _ =>
      WFloopProp (CmdExt Expression) p guard measure invariant body
   | .exit (label : Option String) _ => WFexitProp p label
   | .funcDecl decl _ => WFfuncDeclProp p decl
@@ -136,7 +136,7 @@ structure WFSpecProp (p : Program) (spec : Procedure.Spec) (d : Procedure): Prop
 
 /- Procedure Wellformedness -/
 
-structure WFVarProp (p : Program) (name : Expression.Ident) (ty : Expression.Ty) (e : Option Expression.Expr) : Prop where
+structure WFVarProp (p : Program) (name : Expression.Ident) (ty : Expression.Ty) (e : Imperative.ExprOrNondet Expression) : Prop where
 
 structure WFTypeDeclarationProp (p : Program) (f : TypeDecl) : Prop where
 
@@ -152,6 +152,17 @@ structure WFProcedureProp (p : Program) (d : Procedure) : Prop where
   outputsNodup : (ListMap.keys d.header.outputs).Nodup
   modNodup : d.spec.modifies.Nodup
   wfspec : WFSpecProp p d.spec d
+  -- There is no exit statement that cannot be caught by any block in the procedure.
+  bodyExitsCovered : Stmt.exitsCoveredByBlocks.Block.exitsCoveredByBlocks [] d.body
+  -- Input/output identifiers are disjoint from modified globals.
+  ioModDisjoint : (ListMap.keys d.header.inputs ++ ListMap.keys d.header.outputs).Disjoint
+    d.spec.modifies
+  -- The `old_g` snapshot identifiers are disjoint from all other init'd identifiers.
+  modOldDisjoint : (ListMap.keys d.header.inputs ++ ListMap.keys d.header.outputs ++
+    d.spec.modifies).Disjoint
+    (d.spec.modifies.map (fun g => CoreIdent.mkOld g.name))
+  -- The `old_g` snapshot identifiers have no duplicates.
+  modOldNodup : (d.spec.modifies.map (fun g => CoreIdent.mkOld g.name)).Nodup
 structure WFFunctionProp (p : Program) (f : Function) : Prop where
 
 structure WFRecFuncBlockProp (p : Program) (fs : List Function) : Prop where
