@@ -206,21 +206,6 @@ structure Parameter where
   /-- The parameter type. -/
   type : WithMetadata HighType
 
--- TODO: add back Determinism together with an implementation
-/-
-/--
-Specifies whether a procedure is deterministic or nondeterministic.
-
-For deterministic procedures with a non-empty reads clause, the result can be
-assumed unchanged if the read references are the same.
--/
-inductive Determinism where
-  /-- A deterministic procedure. The optional reads clause lists the heap locations the procedure may read. -/
-  | deterministic (reads : Option (WithMetadata StmtExpr))
-  /-- A nondeterministic procedure. They can read from the heap but there is no benefit from specifying a reads clause. -/
-  | nondeterministic
--/
-
 /--
 The body of a procedure. A body can be transparent (with a visible
 implementation), opaque (with a postcondition and optional implementation),

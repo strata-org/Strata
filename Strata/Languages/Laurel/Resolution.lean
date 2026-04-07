@@ -421,15 +421,6 @@ def resolveBody (body : Body) : ResolveM Body := do
     return .Abstract posts'
   | .External => return .External
 
--- TODO: add back determinism resolution together with an implementation
--- /-- Resolve a determinism clause. -/
--- def resolveDeterminism (d : Determinism) : ResolveM Determinism := do
---   match d with
---   | .deterministic reads =>
---     let reads' ← reads.mapM resolveStmtExpr
---     return .deterministic reads'
---   | .nondeterministic => return .nondeterministic
-
 /-- Resolve a procedure: define its name, then resolve params, contracts, and body in a new scope. -/
 def resolveProcedure (proc : Procedure) : ResolveM Procedure := do
   let procName' ← defineName proc.name (.staticProcedure proc)
@@ -636,13 +627,6 @@ private def collectBody (map : Std.HashMap Nat AstNode) (body : Body)
     mods.foldl collectStmtExpr map
   | .Abstract posts => posts.foldl collectStmtExpr map
   | .External => map
-
--- TODO: add back collectDeterminism together with an implementation
--- private def collectDeterminism (map : Std.HashMap Nat AstNode) (d : Determinism)
---     : Std.HashMap Nat AstNode :=
---   match d with
---   | .deterministic (some reads) => collectStmtExpr map reads
---   | _ => map
 
 private def collectParameter (map : Std.HashMap Nat AstNode) (param : Parameter)
     : Std.HashMap Nat AstNode :=

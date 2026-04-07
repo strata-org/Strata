@@ -188,15 +188,6 @@ def formatBody : Body → Format
       | some msg => " propertySummary \"" ++ msg ++ "\""))
   | .External => "external"
 
--- TODO: add back determinism formatting together with an implementation
--- def formatDeterminism : Determinism → Format
---   | .deterministic none => "deterministic"
---   | .deterministic (some reads) => "deterministic reads " ++ formatStmtExpr reads
---   | .nondeterministic => "nondeterministic"
-
--- instance : Std.ToFormat Determinism where
---   format := formatDeterminism
-
 def formatProcedure (proc : Procedure) : Format :=
   (if proc.isFunctional then "function " else "procedure ") ++ format proc.name ++
   "(" ++ Format.joinSep (proc.inputs.map formatParameter) ", " ++ ") returns " ++ Format.line ++
