@@ -100,6 +100,22 @@ def eval (E : Env) : List (Program × Env) :=
         go rest declsE
 
 
+/-- Evaluate the program and merge all results into a single `(Program, Env)`.
+    When multiple results arise (e.g. from nondeterministic global
+    initializations), the declarations are combined and the environments
+    are merged (deferred obligations unioned, gen counter maxed). -/
+def evalMerged (E : Env) : Program × Env :=
+  match eval E with
+  | [] => (E.program, E)
+  | [(p, e)] => (p, e)
+  | (p, e) :: rest =>
+    let allDecls := rest.foldl (fun acc (prog, _) => acc ++ prog.decls) p.decls
+    let allDeferred := rest.foldl (fun acc (_, env) => acc ++ env.deferred) e.deferred
+    let maxGen := rest.foldl (fun acc (_, env) => max acc env.exprEnv.config.gen) e.exprEnv.config.gen
+    ({ decls := allDecls }, { e with
+      deferred := allDeferred,
+      exprEnv := { e.exprEnv with config := { e.exprEnv.config with gen := maxGen } } })
+
 --------------------------------------------------------------------
 
 end -- public section

@@ -96,6 +96,13 @@ where
       let innerObs := extractFromStatements pc innerSs
       (acc ++ innerObs, pc)
 
+    | .cmd (.cmd (.init name ty (.det e) _md)) =>
+      -- Variable definitions become equalities in the path conditions,
+      -- so the SMT solver knows the variable's value.
+      let varTy := if h : ty.isMonoType then some (ty.toMonoType h) else none
+      let varExpr : Expression.Expr := .fvar () name varTy
+      (acc, pc.insert name.toPretty (.eq () varExpr e))
+
     | .cmd (.cmd (.init _ _ _ _)) => (acc, pc)
     | .cmd (.cmd (.set _ _ _)) => (acc, pc)
     | .cmd (.call _ _ _ _) => (acc, pc)

@@ -20,6 +20,7 @@ import Strata.Transform.PrecondElim
 import Strata.Transform.LoopElim
 public import Strata.Transform.IrrelevantAxioms
 import Strata.Transform.Deduplication
+import Strata.Transform.ObligationExtraction
 import Strata.Util.Profile
 
 ---------------------------------------------------------------------
@@ -665,6 +666,36 @@ def keepSetFilterPipelinePhase (procs : List String) : PipelinePhase :=
       | _ => true }
     return (true, result)
 
+/-- Type-check and partial-evaluation pipeline phase. Runs type inference
+    followed by partial evaluation, producing a Core program where each
+    procedure body contains the evaluated statements with `assert`/`assume`
+    statements and `.ite` branching representing proof obligations and
+    path conditions. -/
+def typeCheckAndPartialEvalPipelinePhase
+    (options : VerifyOptions)
+    (moreFns : @Lambda.Factory CoreLParams) : PipelinePhase :=
+  modelPreservingPipelinePhase "TypeCheckAndPartialEval" fun prog => do
+    let result : Except DiagnosticModel Program := do
+      let factory ← Core.Factory.addFactory moreFns
+      let program ← typeCheck options prog moreFns
+      let datatypes := program.decls.filterMap fun decl =>
+        match decl with
+        | .type (.data d) _ => some d
+        | _ => none
+      let σ ← (Lambda.LState.init).addFactory factory
+      let E := { Env.init with exprEnv := σ, program := program }
+      let E ← E.addDatatypes datatypes
+      let (p, E) := Program.evalMerged E
+      -- Check for evaluation errors
+      if let some err := E.error then
+        throw (DiagnosticModel.fromFormat
+          s!"🚨 Error during evaluation!\n{format err}\n\n\
+             [DEBUG] Evaluated program: {Core.formatProgram p}\n\n")
+      return p
+    match result with
+    | .ok p => return (true, p)
+    | .error dm => throw dm.message
+
 /-- The Core verification pipeline phases. Each entry pairs a program
     transformation with its per-obligation model validation. The pipeline
     extracts transforms from this list, and the validation extracts phases,
@@ -673,9 +704,15 @@ def keepSetFilterPipelinePhase (procs : List String) : PipelinePhase :=
     When `procs` and `factory` are provided (targeted verification), the
     pipeline includes filtering and precondition-elimination phases.
     All filter phases are model-preserving since they only remove
-    information without introducing over-approximations. -/
+    information without introducing over-approximations.
+
+    The pipeline includes type-check + partial evaluation and deduplication
+    as the final phases. These are Program → Program transformations that
+    run after all structural transforms. -/
 def corePipelinePhases (procs : Option (List String) := none)
-    (factory : Option (@Lambda.Factory CoreLParams) := none) : List PipelinePhase :=
+    (factory : Option (@Lambda.Factory CoreLParams) := none)
+    (options : VerifyOptions := VerifyOptions.default)
+    (moreFns : @Lambda.Factory CoreLParams := Lambda.Factory.default) : List PipelinePhase :=
   let filterPhases := match procs with
     | some ps => [filterProceduresPipelinePhase ps]
     | none => []
@@ -688,12 +725,17 @@ def corePipelinePhases (procs : Option (List String) := none)
   let callElimPhase := match procs with
     | some _ => [callElimPipelinePhase]
     | none => []
-  filterPhases ++ callElimPhase ++ precondPhase ++ keepSetPhase ++ [loopElimPipelinePhase]
+  filterPhases ++ callElimPhase ++ precondPhase ++ keepSetPhase ++
+    [loopElimPipelinePhase,
+     typeCheckAndPartialEvalPipelinePhase options moreFns,
+     deduplicationPipelinePhase]
 
 /-- The abstracted phases derived from the Core pipeline phases. -/
 def coreAbstractedPhases (procs : Option (List String) := none)
-    (factory : Option (@Lambda.Factory CoreLParams) := none) : List AbstractedPhase :=
-  (corePipelinePhases procs factory).map (·.phase)
+    (factory : Option (@Lambda.Factory CoreLParams) := none)
+    (options : VerifyOptions := VerifyOptions.default)
+    (moreFns : @Lambda.Factory CoreLParams := Lambda.Factory.default) : List AbstractedPhase :=
+  (corePipelinePhases procs factory options moreFns).map (·.phase)
 
 /-- Build the solver log from raw results and phase validation logs. -/
 private def buildSolverLog (satResult valResult : SMT.Result)
@@ -902,12 +944,21 @@ def verify (program : Program)
     : EIO DiagnosticModel VCResults := do
   let profile := options.profile
   let factory ← EIO.ofExcept (Core.Factory.addFactory moreFns)
-  let pipelinePhases := corePipelinePhases (procs := proceduresToVerify) (factory := some factory)
-  let phases := pipelinePhases.map (·.phase)
-  let finalProgram ← profileStep profile "  Program transformations" do
+  -- All phases are listed in corePipelinePhases for phase validation
+  -- and model soundness tracking. Pre-PE phases run through the pipeline
+  -- runner; PE and dedup run inline because PE produces an Env needed
+  -- for obligation collection and SMT encoding.
+  let allPhases := corePipelinePhases
+    (procs := proceduresToVerify) (factory := some factory)
+    (options := options) (moreFns := moreFns)
+  let phases := allPhases.map (·.phase)
+  -- Run pre-PE pipeline phases (structural transforms).
+  let prePePhases := allPhases.filter (fun pp =>
+    pp.phase.name != "TypeCheckAndPartialEval" && pp.phase.name != "Deduplication")
+  let transformedProgram ← profileStep profile "  Program transformations" do
     let passes := fun prog => do
       let mut current := prog
-      for pp in pipelinePhases do
+      for pp in prePePhases do
         let (_changed, next) ← pp.transform current
         current := next
       return current
@@ -918,9 +969,10 @@ def verify (program : Program)
   -- stable). The cache is reused across all verification environments and goals.
   let axiomCache? ← profileStep profile "  Build axiom relevance cache" do
     pure (if options.removeIrrelevantAxioms == .Off then .none
-          else .some (IrrelevantAxioms.Cache.build finalProgram))
+          else .some (IrrelevantAxioms.Cache.build transformedProgram))
+  -- Type-check and partial evaluation (Program → List (Program × Env)).
   let pEs ← profileStep profile "  Type check and partial eval" do
-    match Core.typeCheckAndPartialEval options finalProgram moreFns with
+    match Core.typeCheckAndPartialEval options transformedProgram moreFns with
     | .error err =>
       .error { err with message := s!"❌ Type checking error.\n{err.message}" }
     | .ok pEs => .ok pEs

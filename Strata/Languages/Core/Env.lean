@@ -353,6 +353,32 @@ def Env.addMutualDatatype (E: Env) (block: Lambda.MutualDatatype Unit) : Except 
 def Env.addDatatypes (E: Env) (blocks: List (Lambda.MutualDatatype Unit)) : Except DiagnosticModel Env :=
   blocks.foldlM Env.addMutualDatatype E
 
+/-- Build a minimal `Env` from a `Program`, populating the fields
+    needed for SMT encoding (datatypes, distinct constraints, and
+    function factory). -/
+def Env.fromProgram (p : Program)
+    (moreFns : Lambda.Factory CoreLParams := Lambda.Factory.default) :
+    Except DiagnosticModel Env := do
+  let factory ← Core.Factory.addFactory moreFns
+  let datatypes := p.decls.filterMap fun decl =>
+    match decl with
+    | .type (.data d) _ => some d
+    | _ => none
+  let distinct := p.decls.filterMap fun decl =>
+    match decl with
+    | .distinct _ es _ => some es
+    | _ => none
+  let σ ← (Lambda.LState.init).addFactory factory
+  let E := { Env.init with exprEnv := σ, program := p, distinct := distinct }
+  let E ← E.addDatatypes datatypes
+  -- Add user-defined functions to the factory
+  p.decls.foldlM (fun E decl =>
+    match decl with
+    | .func func _ => E.addFactoryFunc func
+    | .recFuncBlock funcs _ =>
+      funcs.foldlM (fun E func => E.addFactoryFunc func) E
+    | _ => pure E) E
+
 end Core
 
 end -- public section

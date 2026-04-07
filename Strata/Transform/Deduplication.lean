@@ -5,7 +5,7 @@
 -/
 module
 
-public import Strata.Languages.Core.Env
+public import Strata.Languages.Core.PipelinePhase
 
 /-! # Expression Deduplication
 
@@ -286,5 +286,12 @@ def deduplicateProgram (p : Program) : Program :=
   { decls := revDecls.reverse }
 
 end Core.Deduplication
+
+/-- Deduplication pipeline phase: extracts common subexpressions into fresh
+    variable declarations. Model-preserving because it only introduces
+    definitional equalities without changing program semantics. -/
+def Core.deduplicationPipelinePhase : Core.PipelinePhase :=
+  Core.modelPreservingPipelinePhase "Deduplication" fun prog => do
+    return (true, Core.Deduplication.deduplicateProgram prog)
 
 end -- public section
