@@ -9,7 +9,6 @@ import Strata.Languages.Core.CoreSMT.State
 import Strata.Languages.Core.CoreSMT.ExprTranslator
 import Strata.Languages.Core.CoreSMT.IsCoreSMT
 import Strata.Languages.Core.CoreSMT.Diagnosis
-import Strata.Languages.Core.CoreSMT.Diagnosis
 
 /-!
 # Statement Processor for CoreSMT Verifier

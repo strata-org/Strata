@@ -1244,19 +1244,7 @@ def verifyCommand : Command where
         else if incremental then
           let (coreProgram, errors) := Core.getProgram pgm inputCtx
           if !errors.isEmpty then throw (IO.userError s!"DDM Transform Error: {repr errors}")
-          let solver ← Strata.B3.Verifier.createInteractiveSolver opts.solver
-          let solverInterface ← Strata.SMT.mkSolverInterfaceFromSolver solver
-          let config : Core.CoreSMT.CoreSMTConfig := { accumulateErrors := true, options := opts }
-          let state := Core.CoreSMT.CoreSMTState.init solverInterface config
-          let stmts := coreProgram.decls.filterMap fun d => match d with
-            | .proc p _ =>
-              if p.header.inputs.isEmpty && p.header.outputs.isEmpty then
-                some (Imperative.Stmt.ite .nondet
-                  (Core.CoreSMT.removeUnusedVarsStmts p.body) [] .empty)
-              else none
-            | _ => none
-          let (_, _, smtResults) ← Core.CoreSMT.verify state Core.Env.init stmts
-          pure (smtResults.map coreSMTResultToVCResult).toArray
+          verifyIncremental coreProgram.decls none opts
         else
           verify pgm inputCtx proceduresToVerify opts
       catch e =>

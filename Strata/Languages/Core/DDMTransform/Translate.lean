@@ -1159,7 +1159,7 @@ partial def translateFnPreconds (p : Program) (name : Core.CoreIdent) (bindings 
       let args ← checkOpArg specElt q`Core.requires_spec 3
       let _l ← translateOptionLabel s!"{name.name}_requires_{count}" args[0]!
       let e ← translateExpr p bindings args[2]!
-      return (acc ++ [⟨e, Strata.SourceRange.none⟩], count + 1)
+      return (acc ++ [⟨e, specElt.ann⟩], count + 1)
     | _ => TransM.error s!"translateFnPreconds: only requires allowed, got {repr op.name}"
   return preconds.1
 
@@ -1255,8 +1255,8 @@ partial def translateStmt (p : Program) (bindings : TransBindings) (arg : Arg) :
     -- The function name is NOT in scope inside the body (declareFn adds it
     -- for subsequent statements only). So body bindings = outer + parameters.
     let funcType := Lambda.LMonoTy.mkArrow outputMono (inputs.values.reverse)
-    let funcBinding : LExpr Core.CoreLParams.mono := .op Strata.SourceRange.none name (some funcType)
-    let in_bindings := (inputs.map (fun (v, ty) => (LExpr.fvar Strata.SourceRange.none v ty))).toArray
+    let funcBinding : LExpr Core.CoreLParams.mono := .op op.args[0]!.ann name (some funcType)
+    let in_bindings := (inputs.map (fun (v, ty) => (LExpr.fvar op.args[2]!.ann v ty))).toArray
 
     let bodyBindings := { bindings with boundVars := bindings.boundVars ++ in_bindings }
     -- Translate preconditions
@@ -1450,8 +1450,8 @@ def translateProcedure (p : Program) (bindings : TransBindings) (op : Operation)
   let typeArgs ← translateTypeArgs op.args[1]!
   let sig ← translateBindings bindings op.args[2]!
   let ret ← translateOptionMonoDeclList bindings op.args[3]!
-  let in_bindings := (sig.map (fun (v, ty) => (LExpr.fvar Strata.SourceRange.none v ty))).toArray
-  let out_bindings := (ret.map (fun (v, ty) => (LExpr.fvar Strata.SourceRange.none v ty))).toArray
+  let in_bindings := (sig.map (fun (v, ty) => (LExpr.fvar op.args[2]!.ann v ty))).toArray
+  let out_bindings := (ret.map (fun (v, ty) => (LExpr.fvar op.args[3]!.ann v ty))).toArray
   -- This bindings order -- original, then inputs, and then outputs, is
   -- critical here. Is this right though?
   let origBindings := bindings
