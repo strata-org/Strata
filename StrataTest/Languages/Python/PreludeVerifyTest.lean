@@ -28,12 +28,13 @@ private def verifyPrelude : IO Core.VCResults := do
     let r ← EIO.toIO (IO.Error.userError ∘ toString)
       (Core.verify preludeProgram tempDir
         (options := .quiet)
-        (moreFns := Strata.Python.ReFactory))
+        (moreFns := Strata.Python.ReFactory)
+        (externalPhases := [Strata.frontEndPhase]))
     return r
 
 /--
 info:
-Obligation: List_get_body_calls_List_get_0
+Obligation: postcondition
 Property: assert
 Result: ✅ pass
 
@@ -41,7 +42,31 @@ Obligation: List_take_body_calls_List_take_0
 Property: assert
 Result: ✅ pass
 
+Obligation: List_take_len_post_postcondition_calls_List_take_0
+Property: assert
+Result: ✅ pass
+
+Obligation: postcondition
+Property: assert
+Result: ✅ pass
+
 Obligation: List_drop_body_calls_List_drop_0
+Property: assert
+Result: ✅ pass
+
+Obligation: List_drop_len_post_postcondition_calls_List_drop_0
+Property: assert
+Result: ✅ pass
+
+Obligation: postcondition
+Property: assert
+Result: ✅ pass
+
+Obligation: postcondition
+Property: assert
+Result: ✅ pass
+
+Obligation: List_get_body_calls_List_get_0
 Property: assert
 Result: ✅ pass
 
@@ -121,31 +146,31 @@ Obligation: POr_body_calls_Any_to_bool_0
 Property: assert
 Result: ✅ pass
 
-Obligation: ret_type
+Obligation: postcondition
 Property: assert
 Result: ✅ pass
 
-Obligation: ret_type
+Obligation: postcondition
 Property: assert
 Result: ✅ pass
 
-Obligation: ret_pos
+Obligation: postcondition
 Property: assert
 Result: ✅ pass
 
-Obligation: assert_name_is_foo
+Obligation: assert(41770)
 Property: assert
 Result: ✅ pass
 
-Obligation: assert_opt_name_none_or_str
+Obligation: assert(41837)
 Property: assert
 Result: ✅ pass
 
-Obligation: assert_opt_name_none_or_bar
+Obligation: assert(41945)
 Property: assert
 Result: ✅ pass
 
-Obligation: ensures_maybe_except_none
+Obligation: postcondition
 Property: assert
 Result: ✅ pass
 -/

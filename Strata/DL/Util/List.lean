@@ -29,6 +29,23 @@ def dedup {α : Type} [DecidableEq α] : List α → List α
     if a ∈ as then as else a :: as
 
 /--
+Tail-recursive worker for `dedup`. Walks the input left-to-right,
+skipping elements that still appear later, and collects kept elements
+in reverse order.
+-/
+def dedupTR.go {α : Type} [DecidableEq α] :
+    List α → List α → List α
+  | [], acc => acc.reverse
+  | a :: as, acc =>
+    if a ∈ as then dedupTR.go as acc else dedupTR.go as (a :: acc)
+
+/--
+Tail-recursive implementation of `dedup`.
+-/
+def dedupTR {α : Type} [DecidableEq α] (l : List α) : List α :=
+  dedupTR.go l []
+
+/--
 A deduplicated list satisfies `Nodup`.
 -/
 theorem nodup_dedup {α : Type} [DecidableEq α] (l : List α) :
@@ -109,6 +126,27 @@ theorem mem_of_dedup {α : Type} [DecidableEq α]
   apply Iff.intro
   exact fun h => mem_of_mem_dedup l a h
   exact fun h => mem_dedup_of_mem l a h
+
+theorem dedupTR.go_eq {α : Type} [DecidableEq α]
+    (l acc : List α) :
+    dedupTR.go l acc = acc.reverse ++ l.dedup := by
+  induction l generalizing acc with
+  | nil => simp [dedupTR.go, dedup]
+  | cons a as ih =>
+    simp only [dedupTR.go, dedup]
+    by_cases h : a ∈ as
+    · have h' : a ∈ as.dedup := mem_of_mem_dedup as a h
+      simp [h, h', ih]
+    · have h' : a ∉ as.dedup := by
+        intro hc; exact h (mem_dedup_of_mem as a hc)
+      simp [h, h', ih]
+
+/--
+`List.dedup` is equivalent to `dedupTR` at compile time.
+-/
+@[csimp] theorem dedup_eq_dedupTR : @List.dedup = @dedupTR := by
+  funext α _ l
+  simp [dedupTR, dedupTR.go_eq]
 
 theorem length_dedup_cons_of_mem {α : Type} [DecidableEq α] (a : α) (l : List α)
   (h : a ∈ l) : (a :: l).dedup.length = l.dedup.length := by
@@ -509,6 +547,20 @@ theorem removeAll_not_mem [BEq α] [LawfulBEq α] {x : α} {xs : List α}
   intro a ha
   simp only [List.elem_cons, List.elem_nil]
   split <;> simp_all
+
+theorem nodup_map_injOn {α β : Type} [DecidableEq β] {f : α → β} {l : List α}
+    (hnd : (l.map f).Nodup) {a b : α} (ha : a ∈ l) (hb : b ∈ l) (hab : f a = f b) : a = b := by
+  induction l with
+  | nil => exact nomatch ha
+  | cons x xs ih =>
+    rw [List.map_cons, List.nodup_cons] at hnd
+    cases ha with
+    | head => cases hb with
+      | head => rfl
+      | tail _ hb => exact absurd (hab ▸ List.mem_map.mpr ⟨_, hb, rfl⟩) hnd.1
+    | tail _ ha => cases hb with
+      | head => exact absurd (hab.symm ▸ List.mem_map.mpr ⟨_, ha, rfl⟩) hnd.1
+      | tail _ hb => exact ih hnd.2 ha hb
 
 end List
 end

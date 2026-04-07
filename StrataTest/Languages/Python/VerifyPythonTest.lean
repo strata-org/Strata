@@ -17,7 +17,7 @@ Python → Laurel → Core → SMT pipeline and produces diagnostics.
 namespace Strata.Python.VerifyPythonTest
 
 open StrataTest.Util
-open Strata.Python (processPythonFile withPython)
+open Strata.Python (processPythonFile withPython containsSubstr)
 open Strata.Parser (stringInputContext)
 
 -- Passing assertions produce no diagnostics.
@@ -43,8 +43,8 @@ open Strata.Parser (stringInputContext)
     assert x == 6
 "
   let diags ← processPythonFile pythonCmd (stringInputContext "test.py" program)
-  unless diags.any (·.message == "assertion does not hold") do
-    throw <| .userError s!"Expected 'assertion does not hold', got: {diags.map (·.message)}"
+  unless diags.any (·.message == "assertion could not be proved") do
+    throw <| .userError s!"Expected 'assertion could not be proved', got: {diags.map (·.message)}"
 
 -- Mix of passing and failing assertions: only failing ones produce diagnostics.
 #guard_msgs in
@@ -71,7 +71,7 @@ open Strata.Parser (stringInputContext)
     assert x == 6
 "
   let diags ← processPythonFile pythonCmd (stringInputContext "test.py" program)
-  match diags.find? (·.message == "assertion does not hold") with
+  match diags.find? (·.message == "assertion could not be proved") with
   | some d =>
     -- "assert x == 6" is on line 4
     if d.start.line ≠ 4 then
@@ -88,7 +88,7 @@ open Strata.Parser (stringInputContext)
     x: int = 5
     assert x == 5
     assert x == 6
-#   ^^^^^^^^^^^^^ error: assertion does not hold
+#   ^^^^^^^^^^^^^ error: assertion could not be proved
 "
   let inputContext := stringInputContext "AnnotatedPython" program
   let expectations := parseDiagnosticExpectations program
@@ -127,6 +127,82 @@ open Strata.Parser (stringInputContext)
     return False
 "
   let diags ← processPythonFile pythonCmd (stringInputContext "test_try_except.py" program)
+  if diags.size ≠ 0 then
+    throw <| .userError s!"Expected 0 diagnostics, got {diags.size}"
+
+-- datetime.now() with optional tz parameter and timedelta arithmetic.
+-- Also exercises multi-output prelude procedure detection (timedelta_func
+-- returns (delta: Any, maybe_except: Error)).
+#guard_msgs in
+#eval withPython (warnOnSkip := false) fun pythonCmd => do
+  let program :=
+"from datetime import datetime, timedelta
+
+def main() -> None:
+    now: datetime = datetime.now(None)
+    delta: timedelta = timedelta(days=7)
+    start: datetime = now - delta
+    assert start <= now
+"
+  let diags ← processPythonFile pythonCmd (stringInputContext "test.py" program)
+  if diags.size ≠ 0 then
+    throw <| .userError s!"Expected 0 diagnostics, got {diags.size}: {diags.map (·.message)}"
+
+-- Calling a user-defined function with too many positional args should error.
+#guard_msgs in
+#eval withPython (warnOnSkip := false) fun pythonCmd => do
+  let program :=
+"def greet(name: str) -> str:
+    return name
+
+def main() -> None:
+    x: str = greet(\"alice\", \"extra\")
+"
+  try
+    let _ ← processPythonFile pythonCmd (stringInputContext "test.py" program)
+    throw <| IO.userError "Expected pipeline error for too many positional arguments"
+  catch e =>
+    let msg := toString e
+    unless containsSubstr msg "too many positional arguments" do
+      throw <| IO.userError s!"Expected 'too many positional arguments' error, got: {msg}"
+
+-- Extra positional args with **kwargs expansion should also error.
+#guard_msgs in
+#eval withPython (warnOnSkip := false) fun pythonCmd => do
+  let program :=
+"def greet(name: str) -> str:
+    return name
+
+def main() -> None:
+    d: dict = {}
+    x: str = greet(\"alice\", \"extra\", **d)
+"
+  try
+    let _ ← processPythonFile pythonCmd (stringInputContext "test.py" program)
+    throw <| IO.userError "Expected pipeline error for too many positional arguments"
+  catch e =>
+    let msg := toString e
+    unless containsSubstr msg "too many positional arguments" do
+      throw <| IO.userError s!"Expected 'too many positional arguments' error, got: {msg}"
+
+-- Returning a Composite-typed value from a function with Any return type
+-- should not crash; the Composite is replaced with a Hole (unconstrained value).
+#guard_msgs in
+#eval withPython (warnOnSkip := false) fun pythonCmd => do
+  let program :=
+"from typing import Any
+
+class MyService:
+    name: str
+
+    def __init__(self, name: str) -> None:
+        self.name = name
+
+def create_service() -> Any:
+    svc: MyService = MyService(\"test\")
+    return svc
+"
+  let diags ← processPythonFile pythonCmd (stringInputContext "test.py" program)
   if diags.size ≠ 0 then
     throw <| .userError s!"Expected 0 diagnostics, got {diags.size}"
 

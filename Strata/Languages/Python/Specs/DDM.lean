@@ -152,7 +152,8 @@ op mkClassDecl(name : Str, bases : Seq Str,
     fields : Seq ClassFieldDecl,
     classVars : Seq ClassVarDecl,
     subclasses : Seq ClassDecl,
-    methods : Seq FunDecl) : ClassDecl =>
+    methods : Seq FunDecl,
+    exhaustive : Bool) : ClassDecl =>
   "class " name " {\n"
   indent(2,
     "bases" ": " "[" bases "]\n"
@@ -165,6 +166,7 @@ op mkClassDecl(name : Str, bases : Seq Str,
     "subclasses" ": " "[\n"
     indent(2, subclasses)
     "]\n"
+    "exhaustive" ": " exhaustive "\n"
     methods)
   "}\n";
 
@@ -239,7 +241,7 @@ private def SpecDefault.toDDM : Specs.SpecDefault → DDM.SpecDefault SourceRang
 private def Arg.toDDM (d : Arg) : DDM.ArgDecl SourceRange :=
   .mkArgDecl .none ⟨.none, d.name⟩ d.type.toDDM ⟨.none, d.default.map (·.toDDM)⟩
 
-private def SpecExpr.toDDM (e : SpecExpr) : DDM.SpecExprDecl SourceRange :=
+protected def SpecExpr.toDDM (e : SpecExpr) : DDM.SpecExprDecl SourceRange :=
   match e with
   | .placeholder => .placeholderExpr .none
   | .var name => .varExpr .none ⟨.none, name⟩
@@ -266,6 +268,15 @@ private def SpecExpr.toDDM (e : SpecExpr) : DDM.SpecExprDecl SourceRange :=
     .forallListExpr .none list.toDDM ⟨.none, varName⟩ body.toDDM
   | .forallDict dict keyVar valVar body =>
     .forallDictExpr .none dict.toDDM ⟨.none, keyVar⟩ ⟨.none, valVar⟩ body.toDDM
+
+def specExprFormatContext : FormatContext :=
+  .ofDialects DDM.PythonSpecs_map
+
+def specExprFormatState : FormatState where
+  openDialects := DDM.PythonSpecs_map.toList.foldl (init := {}) fun s d => s.insert d.name
+
+instance : ToString SpecExpr where
+  toString e := (mformat (SpecExpr.toDDM e).toAst specExprFormatContext specExprFormatState).format.pretty
 
 private def MessagePart.toDDM (p : MessagePart) : DDM.MessagePart SourceRange :=
   match p with
@@ -304,6 +315,7 @@ private partial def ClassDef.toDDMDecl (d : ClassDef) : DDM.ClassDecl SourceRang
     ⟨.none, d.classVars.map (·.toDDM)⟩
     ⟨.none, d.subclasses.map (·.toDDMDecl)⟩
     ⟨.none, d.methods.map (·.toDDM)⟩
+    ⟨.none, d.exhaustive⟩
 
 private def Signature.toDDM (sig : Signature) : DDM.Signature SourceRange :=
   match sig with
@@ -427,7 +439,7 @@ private def DDM.FunDecl.fromDDM (d : DDM.FunDecl SourceRange) : Specs.FunctionDe
 
 private def DDM.ClassDecl.fromDDM (d : DDM.ClassDecl SourceRange) : Specs.ClassDef :=
   let .mkClassDecl ann ⟨_, name⟩ ⟨_, bases⟩ ⟨_, fields⟩
-    ⟨_, classVars⟩ ⟨_, subclasses⟩ ⟨_, methods⟩ := d
+    ⟨_, classVars⟩ ⟨_, subclasses⟩ ⟨_, methods⟩ ⟨_, exhaustive⟩ := d
   {
     loc := ann
     name := name
@@ -441,6 +453,7 @@ private def DDM.ClassDecl.fromDDM (d : DDM.ClassDecl SourceRange) : Specs.ClassD
       { name := n, value := v : ClassVariable }
     subclasses := subclasses.map (·.fromDDM)
     methods := methods.map (·.fromDDM)
+    exhaustive := exhaustive
   }
 
 private def DDM.Command.fromDDM (cmd : DDM.Command SourceRange) : Specs.Signature :=

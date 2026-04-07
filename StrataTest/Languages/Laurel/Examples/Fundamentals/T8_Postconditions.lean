@@ -17,7 +17,7 @@ procedure opaqueBody(x: int) returns (r: int)
 // the presence of the ensures make the body opaque. we can consider more explicit syntax.
   ensures r > 0
 {
-  if (x > 0) { r := x }
+  if x > 0 then { r := x }
   else { r := 1 }
 };
 
