@@ -1,12 +1,12 @@
 set -ex
 
-# Normalize SSH git remote to HTTPS so doc-gen4 can parse it (see #427).
+# Fall back to local file references when the git remote uses an SSH URL
+# that doc-gen4 cannot parse.  See #427 and
+# https://github.com/leanprover/doc-gen4/issues/376
 repo_root=$(git -C "$(dirname "$0")/../.." rev-parse --show-toplevel)
-orig_url=$(git -C "$repo_root" remote get-url origin 2>/dev/null || true)
-if echo "$orig_url" | grep -q '^git@github\.com:'; then
-  https_url=$(echo "$orig_url" | sed 's|^git@github\.com:|https://github.com/|; s|\.git$||')
-  git -C "$repo_root" remote set-url origin "$https_url"
-  trap 'git -C "$repo_root" remote set-url origin "$orig_url"' EXIT
+origin_url=$(git -C "$repo_root" remote get-url origin 2>/dev/null || true)
+if [ -z "${DOCGEN_SRC:-}" ] && echo "$origin_url" | grep -q '^git@github\.com:'; then
+  export DOCGEN_SRC="file"
 fi
 
 curpwd=$(pwd)
