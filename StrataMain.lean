@@ -1142,13 +1142,12 @@ def verifyCommand : Command where
   callback := fun v pflags => do
     let file := v[0]
     let proceduresToVerify := pflags.getString "procedures" |>.map (·.splitToList (· == ','))
-    let outputSarif := pflags.getBool "sarif" || pflags.getString "output-format" == some "sarif"
     let opts ← parseVerifyOptions pflags { VerifyOptions.default with verbose := .quiet }
     let opts := { opts with
       checkOnly := pflags.getBool "check",
       typeCheckOnly := pflags.getBool "type-check",
       parseOnly := pflags.getBool "parse-only",
-      outputSarif := outputSarif || opts.outputSarif }
+      outputSarif := opts.outputSarif || pflags.getString "output-format" == some "sarif" }
     let text ← Strata.Util.readInputSource file
     let inputCtx := Lean.Parser.mkInputContext text (Strata.Util.displayName file)
     let dctx := Elab.LoadedDialects.builtin
