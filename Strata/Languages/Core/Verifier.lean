@@ -103,13 +103,11 @@ def encodeCore (ctx : Core.SMT.Context) (prelude : SolverM Unit)
       let _ ← Solver.checkSat ids
 
   -- Emit the "message" metadata field at the very end (once per obligation).
-  match md.findElem Imperative.MetaData.message with
-  | some elem =>
-    let msg := toString (Std.format elem.value) |>.replace "\\" "\\\\" |>.replace "\"" "\\\""
-    Solver.setInfo "final-message" s!"\"{msg}\""
-  | none =>
-    let escapedLabel := label.replace "\\" "\\\\" |>.replace "\"" "\\\""
-    Solver.setInfo "final-message" s!"\"{escapedLabel}\""
+  let rawMsg := match md.findElem Imperative.MetaData.message with
+    | some elem => toString (Std.format elem.value)
+    | none => label
+  let escaped := rawMsg.replace "\\" "\\\\" |>.replace "\"" "\\\""
+  Solver.setInfo "final-message" s!"\"{escaped}\""
 
   return (ids, estate)
 
