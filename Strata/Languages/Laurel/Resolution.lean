@@ -155,6 +155,8 @@ structure ResolveState where
   nextId : Nat := 1
   /-- Current lexical scope (name → definition ID). -/
   scope : Scope := {}
+  /-- Names defined at the current scope level (for duplicate detection). -/
+  currentScopeNames : Std.HashSet String := {}
   /-- Per-composite-type field scopes (type name → field name → scope entry). -/
   typeScopes : TypeScopes := {}
   /-- Diagnostics collected during resolution. -/
@@ -181,13 +183,14 @@ def defineName (iden : Identifier) (node : AstNode) (overrideResolutionName: Opt
       let id ← freshId
       pure ({ iden with uniqueId := some (id) }, id)
 
-  modify fun s => { s with scope := s.scope.insert resolutionName (uniqueId, node) }
+  modify fun s => { s with scope := s.scope.insert resolutionName (uniqueId, node),
+                           currentScopeNames := s.currentScopeNames.insert resolutionName }
   return name'
 
 /-- Like `defineName`, but reports a diagnostic if the name already exists in the current scope. -/
 def defineNameCheckDup (iden : Identifier) (node : AstNode) (overrideResolutionName: Option String := none) : ResolveM Identifier := do
   let resolutionName := overrideResolutionName.getD iden.text
-  if (← get).scope.contains resolutionName then
+  if (← get).currentScopeNames.contains resolutionName then
     let diag := iden.md.toDiagnostic s!"Duplicate definition: '{resolutionName}' is already defined in this scope"
     modify fun s => { s with errors := s.errors.push diag }
   defineName iden node overrideResolutionName
@@ -247,8 +250,10 @@ def resolveFieldRef (target : StmtExprMd) (fieldName : Identifier)
 /-- Save and restore scope around a block (for lexical scoping). -/
 def withScope (action : ResolveM α) : ResolveM α := do
   let savedScope := (← get).scope
+  let savedNames := (← get).currentScopeNames
+  modify fun s => { s with currentScopeNames := {} }
   let result ← action
-  modify fun s => { s with scope := savedScope }
+  modify fun s => { s with scope := savedScope, currentScopeNames := savedNames }
   return result
 
 /-! ## AST traversal (Phase 1) -/

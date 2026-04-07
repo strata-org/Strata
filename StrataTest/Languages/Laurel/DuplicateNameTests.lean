@@ -117,7 +117,7 @@ procedure Foo() { };
 
 #eval printErrors dupProcType
 
-/-! ## Duplicate quantifier variable names (nested forall) -/
+/-! ## Shadowing quantifier variables in nested scopes is OK (no error expected) -/
 
 def dupQuantifierVars := r"
 procedure test() {
