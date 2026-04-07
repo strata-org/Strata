@@ -48,7 +48,7 @@ def encodeCore (ctx : Core.SMT.Context) (prelude : SolverM Unit)
     (assumptionTerms : List Term) (obligationTerm : Term)
     (md : Imperative.MetaData Core.Expression)
     (satisfiabilityCheck validityCheck : Bool)
-    (label : String := "") :
+    (label : String) :
     SolverM (List String × EncoderState) := do
   Solver.setLogic "ALL"
   prelude
@@ -166,7 +166,7 @@ def dischargeObligation
   (obligationTerm : Term)
   (ctx : SMT.Context)
   (satisfiabilityCheck validityCheck : Bool)
-  (label : String := "")
+  (label : String)
   : IO (Except Format (SMT.Result × SMT.Result × EncoderState)) := do
   -- CVC5 requires --incremental for multiple (check-sat) commands
   let baseFlags := getSolverFlags options
