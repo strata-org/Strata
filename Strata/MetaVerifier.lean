@@ -8,6 +8,7 @@ import Lean.Meta
 import Lean.Elab.Tactic
 
 import Strata.Languages.Core.Verifier
+import Strata.Transform.LoopElim
 import Strata.Languages.C_Simp.Verify
 import Strata.Languages.Boole.Verify
 import Strata.DL.Imperative.SMTUtils
@@ -56,6 +57,7 @@ def genVCsSingleENV (pE : Program × Env) : Option coreVCs := do
   | _ => return E.deferred.toList.map (fun ob => (E, ob))
 
 def genVCs (program : Program) (options : VerifyOptions := .default) : Option coreVCs := do
+  let program := loopElim program
   match Core.typeCheckAndPartialEval options program with
   | .error _ => none
   | .ok pEs =>

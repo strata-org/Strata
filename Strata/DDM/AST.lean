@@ -210,7 +210,9 @@ def fromCategoryName? : QualifiedIdent → Option SepFormat
   | q`Init.SpacePrefixSepBy => some .spacePrefix
   | q`Init.NewlineSepBy => some .newline
   | q`Init.SemicolonSepBy => some .semicolon
-  | _ => none
+  | _ => .none
+
+#guard fromCategoryName? ⟨"Init", "Ident"⟩ == .none
 
 instance : ToString SepFormat where
   toString := SepFormat.toString

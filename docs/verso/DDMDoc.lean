@@ -1070,6 +1070,350 @@ end ArithChecker
 -- but they are separate types.
 ```
 
+# Python
+%%%
+tag := "python"
+%%%
+
+The `strata` Python package provides a library for working with Strata
+DDM concepts from Python.  This section documents the core API in `strata.base`,
+which lets developers create dialects, define operators, build programs, and
+serialize them to Amazon Ion format.
+
+The Python types in `strata.base` correspond to the Lean
+[generic AST](#lean_integration) types: `Operation` maps to `OperationF`,
+`SyntaxCat` to `SyntaxCatF`, `TypeExpr` to `TypeExprF`, `Expr` to `ExprF`,
+and the literal and collection types (`Ident`, `NumLit`, `StrLit`, `Seq`,
+`OptionArg`, `CommaSepBy`) map to variants of `ArgF`.
+
+For documentation specific to the auto-generated Python dialect and the
+`py_to_strata` command-line tool, see
+[PythonDialect.md](https://github.com/strata-org/Strata/blob/main/Tools/Python/PythonDialect.md)
+in the repository.
+
+## Installation
+
+The `strata` package can be installed from the `Tools/Python` directory:
+
+```
+pip install .
+```
+
+The package requires Python 3.11 or later and depends on the `amazon.ion`
+library for serialization.
+
+## Dialects
+
+The `Dialect` class is the primary entry point for defining a new dialect in
+Python.  A dialect collects syntactic category and operator declarations and
+can be serialized to Ion format.
+
+```
+from strata.base import Dialect, ArgDecl
+
+# Create a new dialect and import Init (for builtin categories).
+d = Dialect("MyDialect")
+d.add_import("Init")
+```
+
+### Adding Syntactic Categories
+
+Syntactic categories are added with `add_syncat`.  The returned `SynCatDecl`
+can be called to produce a `SyntaxCat` reference, which is used when declaring
+operators.
+
+```
+expr = d.add_syncat("Expr")
+stmt = d.add_syncat("Stmt")
+
+# Call a SynCatDecl to get a SyntaxCat reference.
+expr()   # => SyntaxCat with name MyDialect.Expr
+```
+
+Parametric categories take argument names:
+
+```
+pair = d.add_syncat("Pair", ("a", "b"))
+pair(expr(), stmt())  # => SyntaxCat(MyDialect.Pair, (MyDialect.Expr, MyDialect.Stmt))
+```
+
+### Adding Operators
+
+Operators are added with `add_op`.  The arguments are the operator name,
+zero or more `ArgDecl` values, and the result `SyntaxCat` (passed as the
+last positional argument).  An optional `syntax` parameter provides a
+syntax definition for pretty-printing.
+
+```
+from strata.base import Init, SyntaxArg
+
+# An operator with no arguments.
+d.add_op("skip", stmt(), syntax="skip;", prec=1024)
+
+# An operator with arguments.
+d.add_op("assign",
+    ArgDecl("var", Init.Ident()),
+    ArgDecl("value", expr()),
+    stmt(),
+    syntax=[SyntaxArg("var"), " := ", SyntaxArg("value"), ";"],
+    prec=1024)
+```
+
+`add_op` returns an `OpDecl` that can be called to construct `Operation`
+values (see [Building Programs](#python_programs)).
+
+### Serialization
+
+Dialects can be serialized to Amazon Ion format and read back:
+
+```
+import amazon.ion.simpleion as ion
+
+# Write
+with open("MyDialect.dialect.st.ion", "wb") as f:
+    ion.dump(d.to_ion(), f, binary=True)
+
+# Read
+with open("MyDialect.dialect.st.ion", "rb") as f:
+    d2 = Dialect.from_ion(f)
+```
+
+## The Init Dialect
+%%%
+tag := "python_init"
+%%%
+
+The `strata.base` module provides a predefined `Init` object representing the
+builtin [`Init` dialect](#init).  `Init` provides the following syntactic
+category declarations, each accessed as an attribute:
+
+* `Init.Command` — the top-level command category.
+* `Init.Expr` — typed expressions.
+* `Init.Type` — types.
+* `Init.Ident` — identifiers.
+* `Init.Num` — numeric literals.
+* `Init.Str` — string literals.
+* `Init.ByteArray` — byte array literals.
+
+`Init` also provides parametric categories that take a `SyntaxCat` argument:
+
+* `Init.Option(c)` — an optional value of category _c_.
+* `Init.Seq(c)` — a whitespace-separated sequence of values of category _c_.
+* `Init.CommaSepBy(c)` — a comma-separated list of values of category _c_.
+
+Note that the Python `Init` object does not currently expose `SpaceSepBy` or
+`SpacePrefixSepBy`; these categories are available in the Lean API but not yet
+in the Python package.
+
+These are `SynCatDecl` objects.  Call them with no arguments (or with arguments
+for parametric categories) to get a `SyntaxCat` reference:
+
+```
+from strata.base import Init
+
+Init.Expr()                # => SyntaxCat for Init.Expr
+Init.Option(Init.Expr())   # => SyntaxCat for Init.Option applied to Init.Expr
+Init.Seq(Init.Ident())     # => SyntaxCat for Init.Seq applied to Init.Ident
+```
+
+## Declarations
+%%%
+tag := "python_declarations"
+%%%
+
+### SynCatDecl
+
+A `SynCatDecl` represents a syntactic category declaration.  It is created by
+`Dialect.add_syncat` and records the dialect name, category name, and optional
+parameter names.  Calling a `SynCatDecl` with zero or more `SyntaxCat`
+arguments produces a `SyntaxCat` reference.
+
+### OpDecl
+
+An `OpDecl` represents an operator declaration.  It is created by
+`Dialect.add_op` and records:
+
+* `ident` — the qualified identifier (`QualifiedIdent`) of the operator.
+* `args` — a tuple of `ArgDecl` values describing the operator's arguments.
+* `result` — the `SyntaxCat` that this operator extends.
+* `syntax` — an optional `SyntaxDef` for pretty-printing.
+* `metadata` — a list of `MetadataAttr` values.
+
+Calling an `OpDecl` with the appropriate arguments constructs an `Operation`:
+
+```
+assign_op = d.assign   # OpDecl added earlier
+val = d.lit(NumLit(42))
+op = assign_op(Ident("x"), val, ann=SourceRange(0, 10))
+```
+
+### ArgDecl
+
+An `ArgDecl` describes a single argument to an operator.  It has three fields:
+
+* `name` — the argument name (a string).
+* `kind` — a `SyntaxCat` or `TypeExpr` indicating the argument's category or type.
+* `metadata` — an optional list of `MetadataAttr` values.
+
+When constructing an `ArgDecl`, the `kind` parameter also accepts a `SynCatDecl`
+with no parameters, which is automatically converted to a `SyntaxCat`:
+
+```
+ArgDecl("x", Init.Expr())     # kind is a SyntaxCat
+ArgDecl("x", Init.Expr)       # SynCatDecl — automatically converted to SyntaxCat
+```
+
+## Building Programs
+%%%
+tag := "python_programs"
+%%%
+
+A `Program` wraps a `Dialect` and collects a sequence of top-level `Operation`
+values (commands).
+
+When `add_syncat` or `add_op` is called on a dialect, the resulting declaration
+is also stored as an attribute on the dialect object.  This means that after
+calling `d.add_op("lit", ...)`, the `OpDecl` is accessible as `d.lit` and can
+be called directly to construct operations.
+
+```
+from strata.base import ArgDecl, Dialect, Init, Program, NumLit
+
+d = Dialect("MyDialect")
+d.add_import("Init")
+expr = d.add_syncat("Expr")
+d.add_op("lit", ArgDecl("v", Init.Num()), expr())
+d.add_op("add", ArgDecl("a", expr()), ArgDecl("b", expr()), expr())
+d.add_op("print_expr", ArgDecl("e", expr()), Init.Command())
+
+# Build an operation: print_expr(add(lit(1), lit(2)))
+# d.lit, d.add, and d.print_expr are the OpDecl objects added above.
+one = d.lit(NumLit(1))
+two = d.lit(NumLit(2))
+sum_expr = d.add(one, two)
+cmd = d.print_expr(sum_expr)
+
+p = Program(d)
+p.add(cmd)
+```
+
+Programs are serialized with `to_ion()`:
+
+```
+import amazon.ion.simpleion as ion
+
+with open("output.st.ion", "wb") as f:
+    ion.dump(p.to_ion(), f, binary=True)
+```
+
+## AST Node Types
+%%%
+tag := "python_ast_types"
+%%%
+
+The `strata.base` module defines the types used to represent Strata AST nodes
+in Python.  These correspond to the [generic AST types](#lean_integration)
+described in the Lean integration section.
+
+### Operation and OperationArgs
+
+An `Operation` represents an application of an operator to arguments.  It has
+three fields:
+
+* `ann` — an optional annotation (typically a `SourceRange`).
+* `decl` — the `OpDecl` that was applied.
+* `args` — an `OperationArgs` container.
+
+`OperationArgs` supports access by name or by position:
+
+```
+op.args["var"]   # Access by argument name
+op.args[0]       # Access by position
+len(op.args)     # Number of arguments
+op.args.items()  # Iterator of (name, value) pairs
+```
+
+### SyntaxCat
+
+A `SyntaxCat` represents a reference to a syntactic category, identified by a
+`QualifiedIdent` (e.g., `Init.Expr`) and optional type arguments.
+
+### TypeExpr Hierarchy
+
+Type expressions form a hierarchy rooted at the abstract `TypeExpr` class:
+
+* `TypeIdent(ident, args)` — a named type with optional type arguments.
+* `TypeBVar(index)` — a bound type variable (de Bruijn index).
+* `TypeFVar(index, args)` — a free type variable with optional arguments.
+* `TypeArrow(arg, res)` — a function type.
+* `TypeFunMacro(bindingsIndex, res)` — a macro with bindings.
+
+### Expr Hierarchy
+
+Expressions form a hierarchy rooted at the abstract `Expr` class:
+
+* `ExprBVar(idx)` — a bound variable (de Bruijn index).
+* `ExprFVar(level)` — a free variable.
+* `ExprFn(ident)` — a named function reference.
+
+### Literal Values
+
+* `Ident(value)` — an identifier (string value).
+* `NumLit(value)` — an unsigned integer literal.
+* `DecimalLit(value)` — a decimal literal.
+* `StrLit(value)` — a string literal.
+* `BytesLit(value)` — a bytes literal.
+
+### Collection Types
+
+* `OptionArg(value)` — an optional value.  `bool(opt)` returns `True` when a
+  value is present.  Access the wrapped value with `.value`.
+* `Seq(values)` — an ordered sequence.  Supports indexing and `len()`.
+  The underlying data is a tuple accessed via `.values`.
+* `CommaSepBy(values)` — a comma-separated list.  The underlying data is
+  a list accessed via `.values`.
+
+### Source Locations
+
+* `SourceRange(offset, end_offset)` — a byte range in a source file.
+* `SourcePos(line, col)` — a line/column position.
+* `FileMapping(bytes)` — maps byte offsets to line/column positions.
+  Call `position(offset)` to get a `SourcePos`.
+
+All AST node constructors accept an optional `ann` keyword argument for
+attaching source location annotations.
+
+## Metadata
+%%%
+tag := "python_metadata"
+%%%
+
+Metadata attributes can be attached to `ArgDecl` and `OpDecl` values.
+A `QualifiedIdent(dialect, name)` identifies a declaration by its dialect and
+name (e.g., `QualifiedIdent("Init", "scope")` for the builtin `scope`
+metadata).  The relevant types are:
+
+* `MetadataAttr(ident, args)` — a metadata attribute with a `QualifiedIdent`
+  and a list of `MetadataArg` values.
+* `MetadataCat(index)` — references a category by argument index.
+* `MetadataSome(value)` — wraps an optional metadata value.
+
+Metadata is passed as a list of `MetadataAttr` when constructing declarations.
+The following example shows how to attach `scope` metadata to an argument,
+continuing from the dialect `d` defined in [Building Programs](#python_programs):
+
+```
+from strata.base import MetadataAttr, MetadataCat, QualifiedIdent
+
+decl_list = d.add_syncat("DeclList")
+scope_meta = MetadataAttr(
+    QualifiedIdent("Init", "scope"), [MetadataCat(0)])
+d.add_op("block",
+    ArgDecl("decls", decl_list(), metadata=[scope_meta]),
+    ArgDecl("body", expr()),
+    Init.Command())
+```
+
 # Command Line Use
 %%%
 tag := "command_line"

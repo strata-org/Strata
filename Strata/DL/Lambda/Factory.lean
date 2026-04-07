@@ -37,15 +37,11 @@ open Std (ToFormat Format format)
 
 public section
 
-variable {T : LExprParams} [Inhabited T.Metadata] [ToFormat T.IDMeta]
-
 ---------------------------------------------------------------------
 
 open LTy.Syntax
 
 section Factory
-
-variable {IDMeta : Type} [DecidableEq IDMeta] [Inhabited IDMeta]
 
 /--
 A signature is a map from variable identifiers to types.
@@ -59,9 +55,9 @@ def Signature.format (ty : Signature IDMeta Ty) [Std.ToFormat Ty] : Std.Format :
   | (k, v) :: rest =>
     f!"({k} : {v}) " ++ Signature.format rest
 
-@[expose] abbrev LMonoTySignature := Signature IDMeta LMonoTy
+@[expose] abbrev LMonoTySignature {IDMeta : Type} := Signature IDMeta LMonoTy
 
-@[expose] abbrev LTySignature := Signature IDMeta LTy
+@[expose] abbrev LTySignature {IDMeta : Type} := Signature IDMeta LTy
 
 -- Re-export Func from Util for backward compatibility
 open Strata.DL.Util (Func FuncPrecondition TyIdentifier)
@@ -93,6 +89,7 @@ instance [Inhabited T.Metadata] [Inhabited T.IDMeta] : Inhabited (LFunc T) where
 instance [ToFormat T.IDMeta] [Inhabited T.Metadata] : ToFormat (LFunc T) where
   format := Func.format
 
+@[expose]
 def LFunc.type [DecidableEq T.IDMeta] (f : (LFunc T)) : Except Format LTy := do
   if !(decide f.inputs.keys.Nodup) then
     .error f!"[{f.name}] Duplicates found in the formals!\
@@ -110,8 +107,7 @@ def LFunc.type [DecidableEq T.IDMeta] (f : (LFunc T)) : Except Format LTy := do
   | ity :: irest =>
     .ok (.forAll f.typeArgs (Lambda.LMonoTy.mkArrow ity (irest ++ output_tys)))
 
-omit [Inhabited T.Metadata] [ToFormat T.IDMeta] in
-theorem LFunc.type_inputs_nodup [DecidableEq T.IDMeta] (f : LFunc T) (ty : LTy) :
+theorem LFunc.type_inputs_nodup {T : LExprParams} [DecidableEq T.IDMeta] (f : LFunc T) (ty : LTy) :
     f.type = .ok ty → f.inputs.keys.Nodup := by
   intro h
   simp only [LFunc.type, bind, Except.bind] at h
@@ -149,43 +145,216 @@ IDMeta)` -- lambdas are our only tool. `Factory` gives us a way to add
 support for concrete/symbolic evaluation and type checking for `FunFactory`
 functions without actually modifying any core logic or the ASTs.
 -/
-@[expose] def Factory (T : LExprParams) := Array (LFunc T)
+structure Factory (T : LExprParams) where
+  /-- The underlying array of factory functions. -/
+  toArray : Array (LFunc T)
+  /-- Maps function names to their index in `toArray` for O(1) lookup. -/
+  private nameMap : Std.HashMap String Nat
+  /-- Every array element's name is mapped to its index in `nameMap`. -/
+  private toArrayDefined : ∀ (i : Fin toArray.size), nameMap[toArray[i].name.name]? = some i
+  /-- Every key in `nameMap` maps to a valid index in `toArray`. -/
+  private nameMapValid : ∀{k : String} (p : k ∈ nameMap), nameMap[k] < toArray.size
 
-def Factory.default : @Factory T := #[]
+namespace Factory
 
-instance : Inhabited (@Factory T) where
-  default := @Factory.default T
+private theorem List_inj_implies_nodup {α} (l : List α)
+  (p : ∀(i j : Nat) (p : i < l.length) (q : j < l.length), l[i] = l[j] → i = j)  :
+     l.Nodup := by
+  induction l with
+  | nil => exact List.nodup_nil
+  | cons h l ind =>
+    rw [List.nodup_cons]
+    constructor
+    · intro hmem
+      rw [List.mem_iff_getElem] at hmem
+      obtain ⟨k, hk, hval⟩ := hmem
+      have := p 0 (k + 1) (by simp) (by simp [hk]) (by simp [hval])
+      omega
+    · exact ind (fun i j hi hj heq => by
+        have := p (i + 1) (j + 1) (by simp [hi]) (by simp[hj]) (by simpa using heq)
+        omega)
 
-instance : Membership (LFunc T) (@Factory T) where
-  mem x f := Array.Mem x f
+/-- The function names in a factory are unique. -/
+theorem name_nodup {T} (f : Factory T) : List.Nodup (f.toArray |>.toList |>.map (·.name.name)) := by
+  match f with
+  | { toArray := ⟨l⟩, nameMap, toArrayDefined, nameMapValid } =>
+    apply List_inj_implies_nodup
+    intro i j hi hj heq
+    simp only [List.length_map] at hi hj
+    -- toArrayDefined gives us injectivity via the nameMap
+    have hdi : nameMap[l[i].name.name]? = some i := toArrayDefined ⟨i, hi⟩
+    have hdj : nameMap[l[j].name.name]? = some j := toArrayDefined ⟨j, hj⟩
+    grind
 
+protected def mem {T} (f : Factory T) (name : String) := name ∈ f.nameMap
 
-def Factory.getFunctionNames (F : @Factory T) : Array T.Identifier :=
-  F.map (fun f => f.name)
+instance instMem {T} : Membership String (Factory T) where
+  mem := Factory.mem
 
-def Factory.getFactoryLFunc (F : @Factory T) (name : String) : Option (LFunc T) :=
-  F.find? (fun fn => fn.name.name == name)
+@[instance]
+def instMemDecidable {T} (f : Factory T) (name : String) : Decidable (name ∈ f) :=
+  inferInstanceAs (Decidable (name ∈ f.nameMap))
+
+def get {T} (f : Factory T) (name : String) (p : name ∈ f): LFunc T :=
+  let idx := f.nameMap[name]
+  have idx_lt : idx < f.toArray.size := f.nameMapValid p
+  f.toArray[idx]
+
+def get? {T} (f : Factory T) (name : String) : Option (LFunc T) :=
+  match h : f.nameMap[name]? with
+  | none =>
+    none
+  | some idx =>
+    have idx_lt : idx < f.toArray.size := by
+      simp only [Std.HashMap.getElem?_eq_some_iff] at h
+      have ⟨e, em⟩ := h
+      simp only [←em]
+      apply f.nameMapValid
+    f.toArray[idx]
+
+instance instGetElem? {T} : GetElem? (Factory T) String (LFunc T) Membership.mem where
+  getElem := Factory.get
+  getElem? := Factory.get?
+
+protected def default {T} : Factory T := {
+  toArray := #[]
+  nameMap := {}
+  toArrayDefined := by intro ⟨i, hi⟩; exact absurd hi (by simp [Array.size])
+  nameMapValid := by
+    intro k km
+    grind
+}
+
+instance {T} : Inhabited (Factory T) where
+  default := Factory.default
+
+def push {T} (F : Factory T) (fn : LFunc T) (is_new : ¬(fn.name.name ∈ F)) : Factory T :=
+  let idx := F.toArray.size
+  { toArray := F.toArray.push fn
+    nameMap := F.nameMap.insert fn.name.name idx
+    toArrayDefined := by
+      intro ⟨i, hi⟩
+      if heq : i < F.toArray.size then
+        simp only [instMem, Factory.mem] at is_new
+        have r := F.toArrayDefined ⟨i, heq⟩
+        grind
+      else
+        grind
+    nameMapValid := by
+      intro nm nm_mem
+      have p := @F.nameMapValid
+      grind
+  }
+
+/-- Insert `fn` into the factory if no function with the same name already exists. -/
+def pushIfNew {T} (f : Factory T) (fn : LFunc T) : Factory T :=
+  if p : fn.name.name ∈ f then
+    f
+  else
+    f.push fn p
+
+private theorem mem_pushIfNew {T} {f : Factory T} {g h : LFunc T}
+    (p : g ∈ (f.pushIfNew h).toArray) : g ∈ f.toArray ∨ g = h := by
+  revert p
+  simp [pushIfNew, push]
+  grind
+
+def append {T} (F : Factory T) (a : Array (LFunc T)) : Factory T :=
+  a.foldl (init := F) pushIfNew
+
+private theorem ofArray_mem_take {T} {f : Factory T} {as : Array (LFunc T)} {fn : LFunc T}
+    (p : fn ∈ (f.append as).toArray) : fn ∈ f.toArray ∨ fn ∈ (as.take as.size) := by
+  simp only [append] at p
+  revert p
+  intro p2
+  apply Array.foldl_induction (init := f) (f := pushIfNew)
+    (motive := fun i m => fn ∈ m.toArray → fn ∈ f.toArray ∨ fn ∈ as.take i)
+  case h0 =>
+    grind
+  case hf =>
+    intro ⟨i, ilt⟩ f2 p p2
+    simp_all only [Array.mem_extract_iff_getElem]
+    match mem_pushIfNew p2 with
+    | Or.inl q =>
+      grind
+    | Or.inr q =>
+      grind
+  case a =>
+    exact p2
+
+def ofArray {T} (a : Array (LFunc T)) : Factory T :=
+  .default |>.append a
+
+theorem ofArray_mem {T} {a : Array (LFunc T)} {fn : LFunc T}
+    (p : fn ∈ (Factory.ofArray a).toArray) : fn ∈ a := by
+  have q := ofArray_mem_take p
+  simp [Factory.default] at q
+  exact q
+
+@[simp] theorem toArray_default {T} : (Factory.default (T := T)).toArray = #[] := by
+  unfold Factory.default; rfl
+
+@[simp]
+theorem default_mem_is_false (T) (name : String) : name ∈ Factory.default (T := T) ↔ False := by
+  simp [Factory.default, Factory.instMem, Factory.mem]
+
+theorem push_mem_match {T} (f : Factory T) (fn : LFunc T) (h : fn.name.name ∉ f) (name : String) :
+  (f.push fn h)[name]? = if name = fn.name.name then some fn else f[name]? := by
+  simp [push, instGetElem?, Factory.get?]
+  grind
+
+theorem getElem?_is_some_implies_mem {T} {f : Factory T} {name : String} {fn : LFunc T}
+ (eq : f[name]? = some fn) : fn ∈ f.toArray := by
+  change Factory.get? f name = some fn at eq
+  unfold Factory.get? at eq
+  split at eq
+  · contradiction
+  · rename_i idx h_idx
+    injection eq with h_eq
+    subst h_eq
+    have idx_lt : idx < f.toArray.size := by
+      simp only [Std.HashMap.getElem?_eq_some_iff] at h_idx
+      obtain ⟨h_mem, h_val⟩ := h_idx
+      rw [←h_val]
+      exact f.nameMapValid h_mem
+    exact Array.mem_def.mpr (Array.getElem_mem_toList idx_lt)
+
+def getFunctionNames {T} (F : Factory T) : Array T.Identifier :=
+  F.toArray.map (fun f => f.name)
+
+section
+variable  {T : LExprParams} [Inhabited T.Metadata] [ToFormat T.IDMeta]
 
 /--
 Add a function `func` to the factory `F`. Redefinitions are not allowed.
 -/
-def Factory.addFactoryFunc (F : @Factory T) (func : LFunc T) : Except DiagnosticModel (@Factory T) :=
-  match F.getFactoryLFunc func.name.name with
-  | none => .ok (F.push func)
-  | some func' =>
+def tryPush {T} [Inhabited T.Metadata] [ToFormat T.IDMeta] (F : Factory T) (func : LFunc T) : Except DiagnosticModel (Factory T) :=
+  if h : func.name.name ∈ F then
+    let func' := F[func.name.name]
     .error <| DiagnosticModel.fromFormat f!"A function of name {func.name} already exists! \
               Redefinitions are not allowed.\n\
               Existing Function: {func'}\n\
               New Function:{func}"
-
+  else
+    .ok (F.push func h)
 
 /--
 Append a factory `newF` to an existing factory `F`, checking for redefinitions
 along the way.
 -/
-def Factory.addFactory (F newF : @Factory T) : Except DiagnosticModel (@Factory T) :=
-  Array.foldlM (fun factory func => factory.addFactoryFunc func) F newF
+def tryAddAll (F : Factory T) (newF : Array (LFunc T)) : Except DiagnosticModel (Factory T) :=
+  newF.foldlM (·.tryPush ·) (init := F)
 
+/--
+Append a factory `newF` to an existing factory `F`, checking for redefinitions
+along the way.
+-/
+def addFactory (F newF : Factory T) : Except DiagnosticModel (Factory T) :=
+  F.tryAddAll newF.toArray
+
+end
+
+end Factory
 
 @[expose] def getLFuncCall {GenericTy} (e : LExpr ⟨T, GenericTy⟩) : LExpr ⟨T, GenericTy⟩ × List (LExpr ⟨T, GenericTy⟩) :=
   go e []
@@ -203,14 +372,13 @@ def getConcreteLFuncCall (e : LExpr ⟨T, GenericTy⟩) : LExpr ⟨T, GenericTy�
 If `e` is a call of a factory function, get the operator (`.op`), a list
 of all the actuals, and the `(LFunc IDMeta)`.
 -/
-def Factory.callOfLFunc {GenericTy} (F : @Factory T) (e : LExpr ⟨T, GenericTy⟩)
+def Factory.callOfLFunc {GenericTy} (F : Factory T) (e : LExpr ⟨T, GenericTy⟩)
     (allowPartialApp := false)
     : Option (LExpr ⟨T, GenericTy⟩ × List (LExpr ⟨T, GenericTy⟩) × LFunc T) :=
   let (op, args) := getLFuncCall e
   match op with
   | .op _ name _ =>
-    let maybe_func := getFactoryLFunc F name.name
-    match maybe_func with
+    match F[name.name]? with
     | none => none
     | some func =>
       -- Note that we don't do any type or well-formedness checking here; this
@@ -244,13 +412,13 @@ theorem getLFuncCall_smaller {T} {e: LExpr T} {op args} : getLFuncCall e = (op, 
   simp_all; have Hop:= LExpr.sizeOf_pos op; intros a a_in;
   have Ha := List.sum_size_le LExpr.sizeOf a_in; omega
 
-theorem Factory.callOfLFunc_smaller {T} {F : @Factory T.base} {e : LExpr T} {op args F'}
+theorem Factory.callOfLFunc_smaller {T} {F : Factory T.base} {e : LExpr T} {op args F'}
     {allowPartialMatch}
     : Factory.callOfLFunc F e (allowPartialApp := allowPartialMatch) = some (op, args, F') →
   (forall a, a ∈ args → a.sizeOf < e.sizeOf) := by
   simp[Factory.callOfLFunc]; cases Hfunc: (getLFuncCall e) with | mk op args;
   simp; cases op <;> simp
-  rename_i o ty; cases (F.getFactoryLFunc o.name) <;> simp
+  rename_i o ty; cases F[o.name]? <;> simp
   rename_i F'
   cases allowPartialMatch
   · cases (args.length == List.length F'.inputs) <;> simp; intros op_eq args_eq F_eq
@@ -258,6 +426,25 @@ theorem Factory.callOfLFunc_smaller {T} {F : @Factory T.base} {e : LExpr T} {op 
   · cases (Nat.ble args.length (List.length F'.inputs)) <;> simp
     intros op_eq args_eq F_eq
     subst op args F'; exact (getLFuncCall_smaller Hfunc)
+
+/-- If `callOfLFunc` returns a triple, the function is a member of the factory array. -/
+theorem callOfLFunc_func_mem
+    {T : LExprParams} (F : @Factory T) (e : LExpr T.mono)
+    (op : LExpr T.mono) (args : List (LExpr T.mono)) (func : LFunc T)
+    (aPA : Bool)
+    (h : F.callOfLFunc e (allowPartialApp := aPA) = some (op, args, func)) :
+    func ∈ F.toArray := by
+  simp only [Factory.callOfLFunc] at h
+  cases h_lfc : getLFuncCall e with | mk op' args' =>
+  simp only [h_lfc] at h
+  cases op' <;> simp at h
+  rename_i m_op name_op ty_op
+  cases h_gf : F[name_op.name]? with
+  | none => simp [h_gf] at h
+  | some func' =>
+    simp only [h_gf] at h
+    cases aPA <;> simp at h <;> split at h <;> simp at h
+    all_goals (obtain ⟨_, _, rfl⟩ := h; exact Factory.getElem?_is_some_implies_mem h_gf)
 
 /--
 Apply type substitution `S` to all type annotations in an `LExpr`.
