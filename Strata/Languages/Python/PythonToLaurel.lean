@@ -865,6 +865,10 @@ partial def combinePositionalAndKeywordArgs
       throwUserError callRange
         s!"'{name}' called with unknown keyword arguments: {extraNames}"
     let kwords := pyKwordsToHashMap kwords
+    -- Extra positional args beyond the signature are an arity error.
+    if posArgs.length > funcDecl.args.length then
+      throwUserError callRange
+        s!"'{name}' called with too many positional arguments: expected at most {funcDecl.args.length}, got {posArgs.length}"
     let unprovidedPosArgs := funcDecl.args.drop posArgs.length
     --every unprovided positional args must have a default value in the function signature or be provided in the kwargs
     let missingArgs := unprovidedPosArgs.filter fun arg =>
@@ -959,6 +963,10 @@ partial def translateCall (ctx : TranslationContext)
   -- expand the dictionary into individual arguments using DictStrAny_get
   if isVarKwargs kwords && funcDecl.isSome then
     let funcDecl := funcDecl.get!
+    let name := if methodName.isEmpty then funcDecl.name else methodName
+    if args.length > funcDecl.args.length then
+      throwUserError callRange
+        s!"'{name}' called with too many positional arguments: expected at most {funcDecl.args.length}, got {args.length}"
     let trans_posArgs ← args.mapM (translateExpr ctx)
     let trans_dict ← translateVarKwargs ctx kwords
     let remainingParams := funcDecl.args.drop args.length
@@ -1296,10 +1304,32 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
     return (ctx, stmts)
 
   -- Assert statement
-  | .Assert _ test _msg => do
+  | .Assert _ test msg => do
     let condExpr ← translateExpr ctx test
-    let assertStmt := mkStmtExprMdWithLoc (StmtExpr.Assert (Any_to_bool condExpr)) md
-    return (ctx, [assertStmt])
+    -- Extract assert message as property summary
+    let md' := match msg.val with
+      | some (.Constant _ (.ConString _ str) _) => md.withPropertySummary str.val
+      | _ => md
+    -- Check if condition contains a Hole - if so, hoist to variable
+    let (condStmts, finalCondExpr, condCtx) :=
+      match condExpr.val with
+      | .Hole =>
+        let freshVar := s!"assert_cond_{test.toAst.ann.start.byteIdx}"
+        let varType := mkHighTypeMd .TBool
+        let varDecl := mkStmtExprMd (StmtExpr.LocalVariable freshVar varType (some condExpr))
+        let varRef := mkStmtExprMd (StmtExpr.Identifier freshVar)
+        ([varDecl], varRef, { ctx with variableTypes := ctx.variableTypes ++ [(freshVar, "bool")] })
+      | _ => ([], condExpr, ctx)
+
+    let assertStmt := mkStmtExprMdWithLoc (StmtExpr.Assert (Any_to_bool finalCondExpr)) md'
+
+    -- Wrap in block if we hoisted condition
+    let result := if condStmts.isEmpty then
+      assertStmt
+    else
+      mkStmtExprMdWithLoc (StmtExpr.Block (condStmts ++ [assertStmt]) none) md
+
+    return (condCtx, [result])
 
   --Ignore comments in source code
   | .Expr _ (.Constant _ (.ConString _ _) _) => return (ctx, [])
