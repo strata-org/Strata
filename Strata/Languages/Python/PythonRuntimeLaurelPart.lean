@@ -980,10 +980,6 @@ procedure test_helper_procedure(req_name : Any, opt_name : Any) returns (ret: An
 
 procedure print(msg : Any) returns ();
 
-function Any_len_to_Any(v: Any) : Any
-  requires Any..isfrom_ListAny(v)
-{ from_int(List_len(Any..as_ListAny!(v))) };
-
 // /////////////////////////////////////////////////////////////////////////////////////
 // OrNone types — optional value wrappers used by PySpec translations
 // for Python's Union[None, T] patterns.
