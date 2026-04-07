@@ -72,8 +72,15 @@ for transform_file in expected/*.*.core.st; do
         pass_flags="$pass_flags --pass $p"
     done
 
+    # Read extra flags (e.g. --procedures) from .args sidecar file if present
+    extra_flags=""
+    args_file="expected/${transform_base}.core.args"
+    if [ -f "$args_file" ]; then
+        extra_flags=$(cat "$args_file")
+    fi
+
     # 1. Check transform output matches the .core.st file
-    transform_output=$(cd .. && lake exe strata transform "Examples/${source_file}" $pass_flags)
+    transform_output=$(cd .. && lake exe strata transform "Examples/${source_file}" $pass_flags $extra_flags)
     if ! echo "$transform_output" | diff -q "$transform_file" - > /dev/null; then
         echo "ERROR: Transform output for $transform_base does not match expected"
         echo "$transform_output" | diff "$transform_file" -
