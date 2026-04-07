@@ -36,7 +36,9 @@ int procedure loopNoMeasure (n: int)
 #end
 
 /--
-info: procedure loopNoMeasure (n : int) returns (return : int)
+info: program Core;
+
+procedure loopNoMeasure (n : int) returns (return : int)
 spec {
   requires [pre]: n >= 0;
   ensures [post]: true;
@@ -107,7 +109,9 @@ private def nondetLoopProgram : C_Simp.Program :=
   }]}
 
 /--
-info: procedure nondetLoop (n : int) returns (return : int)
+info: program Core;
+
+procedure nondetLoop (n : int) returns (return : int)
 spec {
   requires [pre]: n >= 0;
   ensures [post]: true;

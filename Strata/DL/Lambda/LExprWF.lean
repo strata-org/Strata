@@ -391,6 +391,391 @@ where
 
 ---------------------------------------------------------------------
 
+/-! ### Pure `substFvars` properties -/
+
+/-- freeVars is invariant under eraseMetadata. -/
+theorem freeVars_eraseMetadata {T : LExprParamsT}
+    (e : LExpr T) :
+    LExpr.freeVars e.eraseMetadata = LExpr.freeVars e := by
+  induction e with
+  | const | op | bvar | fvar => rfl
+  | abs _ _ _ _ ih => exact ih
+  | app _ _ _ ih1 ih2 => show _ ++ _ = _ ++ _; exact congr (congrArg _ ih1) ih2
+  | quant _ _ _ _ _ _ ih1 ih2 => show _ ++ _ = _ ++ _; exact congr (congrArg _ ih1) ih2
+  | ite _ _ _ _ ih1 ih2 ih3 =>
+    show _ ++ _ ++ _ = _ ++ _ ++ _
+    unfold LExpr.eraseMetadata at ih1 ih2 ih3; rw [ih1, ih2, ih3]
+  | eq _ _ _ ih1 ih2 => show _ ++ _ = _ ++ _; exact congr (congrArg _ ih1) ih2
+
+/-- If two expressions have the same eraseMetadata, they have the same freeVars. -/
+theorem freeVars_of_eraseMetadata_eq {T : LExprParamsT}
+    (e₁ e₂ : LExpr T) (h : e₁.eraseMetadata = e₂.eraseMetadata) :
+    LExpr.freeVars e₁ = LExpr.freeVars e₂ := by
+  have h1 := freeVars_eraseMetadata e₁
+  have h2 := freeVars_eraseMetadata e₂
+  rw [h] at h1; rw [← h1, h2]
+
+/-- substFvars preserves eraseMetadata equality. -/
+theorem substFvars_eraseMetadata_congr
+    (e₁ e₂ : LExpr T.mono)
+    (sm : Map T.Identifier (LExpr T.mono))
+    (h : e₁.eraseMetadata = e₂.eraseMetadata) :
+    (LExpr.substFvars e₁ sm).eraseMetadata = (LExpr.substFvars e₂ sm).eraseMetadata := by
+  cases sm with
+  | nil => simp [LExpr.substFvars, Map.isEmpty]; exact h
+  | cons p rest =>
+  -- sm is nonempty, so substFvars = substFvarsAux
+  suffices hsuff : ∀ (e₁ e₂ : LExpr T.mono) (sm : Map T.Identifier (LExpr T.mono)),
+      e₁.eraseMetadata = e₂.eraseMetadata →
+      (LExpr.substFvars.substFvarsAux e₁ sm).eraseMetadata =
+      (LExpr.substFvars.substFvarsAux e₂ sm).eraseMetadata by
+    change (LExpr.substFvars.substFvarsAux e₁ (p :: rest)).eraseMetadata =
+           (LExpr.substFvars.substFvarsAux e₂ (p :: rest)).eraseMetadata
+    exact hsuff e₁ e₂ (p :: rest) h
+  intro e₁ e₂ sm h
+  induction e₁ generalizing e₂ sm with
+  | const m c =>
+    cases e₂ <;> delta LExpr.eraseMetadata LExpr.replaceMetadata at h <;> try contradiction
+    injection h; subst_vars
+    simp [LExpr.substFvars.substFvarsAux, LExpr.eraseMetadata, LExpr.replaceMetadata]
+  | op m n t =>
+    cases e₂ <;> delta LExpr.eraseMetadata LExpr.replaceMetadata at h <;> try contradiction
+    injection h; subst_vars
+    simp [LExpr.substFvars.substFvarsAux, LExpr.eraseMetadata, LExpr.replaceMetadata]
+  | bvar m i =>
+    cases e₂ <;> delta LExpr.eraseMetadata LExpr.replaceMetadata at h <;> try contradiction
+    injection h; subst_vars
+    simp [LExpr.substFvars.substFvarsAux, LExpr.eraseMetadata, LExpr.replaceMetadata]
+  | fvar m x ty =>
+    cases e₂ <;> delta LExpr.eraseMetadata LExpr.replaceMetadata at h <;> try contradiction
+    rename_i m₂; injection h; subst_vars
+    simp only [LExpr.substFvars.substFvarsAux]
+    split <;> (first | rfl | simp [LExpr.eraseMetadata, LExpr.replaceMetadata])
+  | abs m n t b ih =>
+    cases e₂ <;> delta LExpr.eraseMetadata LExpr.replaceMetadata at h <;> try contradiction
+    rename_i m₂ n₂ t₂ b₂; injection h; subst_vars
+    simp only [LExpr.substFvars.substFvarsAux, LExpr.eraseMetadata, LExpr.replaceMetadata]
+    congr 1; exact ih b₂ sm (by delta LExpr.eraseMetadata LExpr.replaceMetadata; assumption)
+  | app m f a ihf iha =>
+    cases e₂ <;> delta LExpr.eraseMetadata LExpr.replaceMetadata at h <;> try contradiction
+    rename_i m₂ f₂ a₂; injection h
+    simp only [LExpr.substFvars.substFvarsAux, LExpr.eraseMetadata, LExpr.replaceMetadata]
+    exact congr (congrArg _ (ihf f₂ sm (by delta LExpr.eraseMetadata LExpr.replaceMetadata; assumption)))
+                (iha a₂ sm (by delta LExpr.eraseMetadata LExpr.replaceMetadata; assumption))
+  | eq m l r ihl ihr =>
+    cases e₂ <;> delta LExpr.eraseMetadata LExpr.replaceMetadata at h <;> try contradiction
+    rename_i m₂ l₂ r₂; injection h
+    simp only [LExpr.substFvars.substFvarsAux, LExpr.eraseMetadata, LExpr.replaceMetadata]
+    exact congr (congrArg _ (ihl l₂ sm (by delta LExpr.eraseMetadata LExpr.replaceMetadata; assumption)))
+                (ihr r₂ sm (by delta LExpr.eraseMetadata LExpr.replaceMetadata; assumption))
+  | quant m qk n ty tr b iht ihb =>
+    cases e₂ <;> delta LExpr.eraseMetadata LExpr.replaceMetadata at h <;> try contradiction
+    rename_i m₂ qk₂ n₂ ty₂ tr₂ b₂; injection h; subst_vars
+    simp only [LExpr.substFvars.substFvarsAux, LExpr.eraseMetadata, LExpr.replaceMetadata]
+    exact congr (congrArg _ (iht tr₂ sm (by delta LExpr.eraseMetadata LExpr.replaceMetadata; assumption)))
+                (ihb b₂ sm (by delta LExpr.eraseMetadata LExpr.replaceMetadata; assumption))
+  | ite m c t f ihc iht ihf =>
+    cases e₂ <;> delta LExpr.eraseMetadata LExpr.replaceMetadata at h <;> try contradiction
+    rename_i m₂ c₂ t₂ f₂; injection h
+    simp only [LExpr.substFvars.substFvarsAux, LExpr.eraseMetadata, LExpr.replaceMetadata]
+    exact congr (congr (congrArg _ (ihc c₂ sm (by delta LExpr.eraseMetadata LExpr.replaceMetadata; assumption)))
+                       (iht t₂ sm (by delta LExpr.eraseMetadata LExpr.replaceMetadata; assumption)))
+                (ihf f₂ sm (by delta LExpr.eraseMetadata LExpr.replaceMetadata; assumption))
+
+/-- substFvars with eraseMetadata-equivalent values gives eraseMetadata-equivalent results.
+If two substitution maps have the same keys and their values have the same eraseMetadata,
+then substFvars produces the same eraseMetadata. -/
+theorem substFvars_eraseMetadata_values_congr
+    (e : LExpr T.mono)
+    (sm₁ sm₂ : Map T.Identifier (LExpr T.mono))
+    (h_len : sm₁.length = sm₂.length)
+    (h_keys : sm₁.map Prod.fst = sm₂.map Prod.fst)
+    (h_vals : sm₁.map (fun p => p.2.eraseMetadata) = sm₂.map (fun p => p.2.eraseMetadata)) :
+    (LExpr.substFvars e sm₁).eraseMetadata = (LExpr.substFvars e sm₂).eraseMetadata := by
+  -- Helper: Map.find? on maps with same keys and eM-equiv values
+  have find_congr : ∀ (x : T.Identifier),
+      (Map.find? sm₁ x).map LExpr.eraseMetadata = (Map.find? sm₂ x).map LExpr.eraseMetadata := by
+    intro x
+    induction sm₁ generalizing sm₂ with
+    | nil => cases sm₂ <;> simp_all [Map.find?]
+    | cons p₁ rest₁ ih =>
+      cases sm₂ with
+      | nil => simp at h_len
+      | cons p₂ rest₂ =>
+        simp only [List.map_cons, List.cons.injEq] at h_keys h_vals
+        simp only [Map.find?]
+        rw [h_keys.1]
+        split
+        · simp [h_vals.1]
+        · exact ih rest₂ (by simp [List.length_cons] at h_len; exact h_len) h_keys.2 h_vals.2
+  -- Main proof: structural induction on e
+  cases sm₁ with
+  | nil =>
+    cases sm₂ with
+    | nil => rfl
+    | cons _ _ => simp at h_len
+  | cons p₁ rest₁ =>
+    cases sm₂ with
+    | nil => simp at h_len
+    | cons p₂ rest₂ =>
+    suffices hsuff : ∀ (e : LExpr T.mono),
+        (LExpr.substFvars.substFvarsAux e (p₁ :: rest₁)).eraseMetadata =
+        (LExpr.substFvars.substFvarsAux e (p₂ :: rest₂)).eraseMetadata by
+      simp only [LExpr.substFvars, Map.isEmpty]; exact hsuff e
+    intro e
+    induction e with
+    | const m c => simp [LExpr.substFvars.substFvarsAux, LExpr.eraseMetadata, LExpr.replaceMetadata]
+    | op m n t => simp [LExpr.substFvars.substFvarsAux, LExpr.eraseMetadata, LExpr.replaceMetadata]
+    | bvar m i => simp [LExpr.substFvars.substFvarsAux, LExpr.eraseMetadata, LExpr.replaceMetadata]
+    | fvar m x ty =>
+      simp only [LExpr.substFvars.substFvarsAux]
+      have hfc := find_congr x
+      cases h1 : Map.find? (p₁ :: rest₁) x with
+      | none =>
+        cases h2 : Map.find? (p₂ :: rest₂) x with
+        | none => simp [LExpr.eraseMetadata, LExpr.replaceMetadata]
+        | some v₂ => simp [h1, h2] at hfc
+      | some v₁ =>
+        cases h2 : Map.find? (p₂ :: rest₂) x with
+        | none => simp [h1, h2] at hfc
+        | some v₂ => simp [h1, h2] at hfc; exact hfc
+    | abs m n t b ih =>
+      simp only [LExpr.substFvars.substFvarsAux, LExpr.eraseMetadata, LExpr.replaceMetadata]
+      exact congrArg _ ih
+    | app m f a ihf iha =>
+      simp only [LExpr.substFvars.substFvarsAux, LExpr.eraseMetadata, LExpr.replaceMetadata]
+      exact congr (congrArg _ ihf) iha
+    | eq m l r ihl ihr =>
+      simp only [LExpr.substFvars.substFvarsAux, LExpr.eraseMetadata, LExpr.replaceMetadata]
+      exact congr (congrArg _ ihl) ihr
+    | quant m qk n ty tr b iht ihb =>
+      simp only [LExpr.substFvars.substFvarsAux, LExpr.eraseMetadata, LExpr.replaceMetadata]
+      exact congr (congrArg _ iht) ihb
+    | ite m c t f ihc iht ihf =>
+      simp only [LExpr.substFvars.substFvarsAux, LExpr.eraseMetadata, LExpr.replaceMetadata]
+      exact congr (congr (congrArg _ ihc) iht) ihf
+
+/-- If `Map.find? sm e = some e`, then `substFvars (.fvar m x ty) sm = e`. -/
+theorem substFvars_fvar_find
+    (m_meta : T.Metadata) (x : Identifier T.IDMeta) (ty : Option LMonoTy)
+    (sm : Map (Identifier T.IDMeta) (LExpr T.mono))
+    (v : LExpr T.mono)
+    (h_find : Map.find? sm x = some v) :
+    LExpr.substFvars (.fvar m_meta x ty) sm = v := by
+  simp only [LExpr.substFvars]
+  split
+  · -- sm.isEmpty = true, so sm = []
+    cases sm
+    · simp [Map.find?] at h_find
+    · simp [Map.isEmpty] at *
+  · -- sm.isEmpty = false, use substFvarsAux
+    simp [LExpr.substFvars.substFvarsAux, h_find]
+
+/-- If `Map.find?` returns `none`, substFvars on a `.fvar` is the identity. -/
+theorem substFvars_fvar_none
+    (m_meta : T.Metadata) (x : Identifier T.IDMeta) (ty : Option LMonoTy)
+    (sm : Map (Identifier T.IDMeta) (LExpr T.mono))
+    (h_find : Map.find? sm x = none) :
+    LExpr.substFvars (.fvar m_meta x ty) sm = .fvar m_meta x ty := by
+  simp only [LExpr.substFvars]
+  split
+  · rfl
+  · simp [LExpr.substFvars.substFvarsAux, h_find]
+
+/-- `substFvars` unfolds to a structural recursion, bypassing the `isEmpty` guard.
+    The `isEmpty` check is an optimization; when `sm` is empty, `substFvarsAux`
+    is the identity anyway. This single lemma subsumes the per-constructor
+    unfolding lemmas (`substFvars_const'`, `substFvars_app`, etc.). -/
+theorem substFvars_unfold
+    (e : LExpr T.mono) (sm : Map T.Identifier (LExpr T.mono)) :
+    LExpr.substFvars e sm = match e with
+      | .const _ _ => e | .bvar _ _ => e | .op _ _ _ => e
+      | .fvar _ name _ => match sm.find? name with | some to => to | none => e
+      | .abs m name ty e' => .abs m name ty (LExpr.substFvars e' sm)
+      | .quant m qk name ty tr' e' =>
+          .quant m qk name ty (LExpr.substFvars tr' sm) (LExpr.substFvars e' sm)
+      | .app m fn e' => .app m (LExpr.substFvars fn sm) (LExpr.substFvars e' sm)
+      | .ite m c t e' =>
+          .ite m (LExpr.substFvars c sm) (LExpr.substFvars t sm) (LExpr.substFvars e' sm)
+      | .eq m e1 e2 => .eq m (LExpr.substFvars e1 sm) (LExpr.substFvars e2 sm) := by
+  -- Key helper: when sm.isEmpty, substFvars is the identity
+  have h_id : sm.isEmpty = true → ∀ x : LExpr T.mono, LExpr.substFvars x sm = x :=
+    fun h x => by simp [LExpr.substFvars, h]
+  simp only [LExpr.substFvars]; split
+  · -- sm.isEmpty = true: both sides reduce to e (with recursive substFvars = id)
+    rename_i h_empty
+    have h_find_none : ∀ (n : T.Identifier), sm.find? n = none := by
+      intro n; cases sm with | nil => rfl | cons _ _ => simp [Map.isEmpty] at h_empty
+    cases e <;> simp [h_find_none]
+  · -- sm.isEmpty = false: substFvars = substFvarsAux, structurally matching the RHS
+    rename_i h_ne
+    cases e with
+    | fvar m name ty =>
+      simp only [LExpr.substFvars.substFvarsAux]
+      cases sm.find? name <;> rfl
+    | _ => simp [LExpr.substFvars.substFvarsAux]
+
+-- The following are corollaries of `substFvars_unfold`, kept for backward compatibility.
+@[simp] theorem substFvars_const' (m : T.Metadata) (c : LConst) (sm : Map T.Identifier (LExpr T.mono)) :
+    LExpr.substFvars (LExpr.const m c) sm = LExpr.const m c := by rw [substFvars_unfold]
+@[simp] theorem substFvars_op' (m : T.Metadata) (n : Identifier T.IDMeta) (t : Option T.mono.TypeType) (sm : Map T.Identifier (LExpr T.mono)) :
+    LExpr.substFvars (LExpr.op m n t) sm = LExpr.op m n t := by rw [substFvars_unfold]
+@[simp] theorem substFvars_bvar (m : T.Metadata) (i : Nat) (sm : Map T.Identifier (LExpr T.mono)) :
+    LExpr.substFvars (LExpr.bvar m i) sm = LExpr.bvar m i := by rw [substFvars_unfold]
+@[simp] theorem substFvars_ite (m : T.Metadata) (c t f : LExpr T.mono) (sm : Map T.Identifier (LExpr T.mono)) :
+    LExpr.substFvars (LExpr.ite m c t f) sm =
+      LExpr.ite m (LExpr.substFvars c sm) (LExpr.substFvars t sm) (LExpr.substFvars f sm) := by rw [substFvars_unfold]
+@[simp] theorem substFvars_eq (m : T.Metadata) (e1 e2 : LExpr T.mono) (sm : Map T.Identifier (LExpr T.mono)) :
+    LExpr.substFvars (LExpr.eq m e1 e2) sm =
+      LExpr.eq m (LExpr.substFvars e1 sm) (LExpr.substFvars e2 sm) := by rw [substFvars_unfold]
+@[simp] theorem substFvars_app (m : T.Metadata) (e1 e2 : LExpr T.mono) (sm : Map T.Identifier (LExpr T.mono)) :
+    LExpr.substFvars (LExpr.app m e1 e2) sm =
+      LExpr.app m (LExpr.substFvars e1 sm) (LExpr.substFvars e2 sm) := by rw [substFvars_unfold]
+@[simp] theorem substFvars_abs (m : T.Metadata) (name : String) (ty : Option LMonoTy) (body : LExpr T.mono) (sm : Map T.Identifier (LExpr T.mono)) :
+    LExpr.substFvars (.abs m name ty body) sm = .abs m name ty (LExpr.substFvars body sm) := by rw [substFvars_unfold]
+@[simp] theorem substFvars_quant (m : T.Metadata) (qk : QuantifierKind) (name : String) (ty : Option LMonoTy) (tr body : LExpr T.mono) (sm : Map T.Identifier (LExpr T.mono)) :
+    LExpr.substFvars (.quant m qk name ty tr body) sm =
+      .quant m qk name ty (LExpr.substFvars tr sm) (LExpr.substFvars body sm) := by rw [substFvars_unfold]
+
+omit [DecidableEq T.IDMeta] in
+/-- `liftBVars` preserves `eraseMetadata` equality. -/
+theorem liftBVars_eraseMetadata_congr
+    (n : Nat) (e₁ e₂ : LExpr T.mono) (cutoff : Nat)
+    (h : e₁.eraseMetadata = e₂.eraseMetadata) :
+    (LExpr.liftBVars n e₁ cutoff).eraseMetadata = (LExpr.liftBVars n e₂ cutoff).eraseMetadata := by
+  induction e₁ generalizing e₂ cutoff with
+  | const m c =>
+    cases e₂ <;> delta LExpr.eraseMetadata LExpr.replaceMetadata at h <;> try contradiction
+    injection h; subst_vars; simp [LExpr.liftBVars, LExpr.eraseMetadata, LExpr.replaceMetadata]
+  | op m nm t =>
+    cases e₂ <;> delta LExpr.eraseMetadata LExpr.replaceMetadata at h <;> try contradiction
+    injection h; subst_vars; simp [LExpr.liftBVars, LExpr.eraseMetadata, LExpr.replaceMetadata]
+  | bvar m i =>
+    cases e₂ <;> delta LExpr.eraseMetadata LExpr.replaceMetadata at h <;> try contradiction
+    injection h; subst_vars
+    simp only [LExpr.liftBVars]; split <;> simp [LExpr.eraseMetadata, LExpr.replaceMetadata]
+  | fvar m x ty =>
+    cases e₂ <;> delta LExpr.eraseMetadata LExpr.replaceMetadata at h <;> try contradiction
+    injection h; subst_vars; simp [LExpr.liftBVars, LExpr.eraseMetadata, LExpr.replaceMetadata]
+  | abs m nm t b ih =>
+    cases e₂ <;> delta LExpr.eraseMetadata LExpr.replaceMetadata at h <;> try contradiction
+    rename_i m₂ nm₂ t₂ b₂; injection h; subst_vars
+    simp only [LExpr.liftBVars, LExpr.eraseMetadata, LExpr.replaceMetadata]
+    exact congrArg _ (ih b₂ _ (by delta LExpr.eraseMetadata LExpr.replaceMetadata; assumption))
+  | app m f a ihf iha =>
+    cases e₂ <;> delta LExpr.eraseMetadata LExpr.replaceMetadata at h <;> try contradiction
+    rename_i m₂ f₂ a₂; injection h
+    simp only [LExpr.liftBVars, LExpr.eraseMetadata, LExpr.replaceMetadata]
+    exact congr (congrArg _ (ihf f₂ _ (by delta LExpr.eraseMetadata LExpr.replaceMetadata; assumption)))
+      (iha a₂ _ (by delta LExpr.eraseMetadata LExpr.replaceMetadata; assumption))
+  | eq m l r ihl ihr =>
+    cases e₂ <;> delta LExpr.eraseMetadata LExpr.replaceMetadata at h <;> try contradiction
+    rename_i m₂ l₂ r₂; injection h
+    simp only [LExpr.liftBVars, LExpr.eraseMetadata, LExpr.replaceMetadata]
+    exact congr (congrArg _ (ihl l₂ _ (by delta LExpr.eraseMetadata LExpr.replaceMetadata; assumption)))
+      (ihr r₂ _ (by delta LExpr.eraseMetadata LExpr.replaceMetadata; assumption))
+  | quant m qk n ty tr b iht ihb =>
+    cases e₂ <;> delta LExpr.eraseMetadata LExpr.replaceMetadata at h <;> try contradiction
+    rename_i m₂ qk₂ n₂ ty₂ tr₂ b₂; injection h; subst_vars
+    simp only [LExpr.liftBVars, LExpr.eraseMetadata, LExpr.replaceMetadata]
+    exact congr (congrArg _ (iht tr₂ _ (by delta LExpr.eraseMetadata LExpr.replaceMetadata; assumption)))
+      (ihb b₂ _ (by delta LExpr.eraseMetadata LExpr.replaceMetadata; assumption))
+  | ite m c t f ihc iht ihf =>
+    cases e₂ <;> delta LExpr.eraseMetadata LExpr.replaceMetadata at h <;> try contradiction
+    rename_i m₂ c₂ t₂ f₂; injection h
+    simp only [LExpr.liftBVars, LExpr.eraseMetadata, LExpr.replaceMetadata]
+    exact congr (congr (congrArg _ (ihc c₂ _ (by delta LExpr.eraseMetadata LExpr.replaceMetadata; assumption)))
+      (iht t₂ _ (by delta LExpr.eraseMetadata LExpr.replaceMetadata; assumption)))
+      (ihf f₂ _ (by delta LExpr.eraseMetadata LExpr.replaceMetadata; assumption))
+
+---------------------------------------------------------------------
+
+/-! ### substK properties -/
+
+omit [DecidableEq T.IDMeta] in
+/-- substK commutes with eraseMetadata: if two expressions have the same
+eraseMetadata and the substitution function produces the same eraseMetadata
+regardless of its metadata argument, then substK preserves eraseMetadata equality. -/
+theorem substK_eraseMetadata_congr
+    (e₁ : LExpr T.mono) (e₂ : LExpr T.mono) (k : Nat)
+    (s : T.Metadata → LExpr T.mono)
+    (h_eM : e₁.eraseMetadata = e₂.eraseMetadata)
+    (h_s : ∀ m₁ m₂, (s m₁).eraseMetadata = (s m₂).eraseMetadata) :
+    (LExpr.substK k s e₁).eraseMetadata = (LExpr.substK k s e₂).eraseMetadata := by
+  -- The result follows from: substK preserves the structural shape (same eraseMetadata).
+  -- Proof by structural induction on e₁, matching on e₂.
+  induction e₁ generalizing e₂ k with
+  | const m₁ c =>
+    cases e₂ <;> simp [LExpr.eraseMetadata, LExpr.replaceMetadata] at h_eM <;> try contradiction
+    rename_i c'; subst_vars
+    simp [LExpr.substK, LExpr.eraseMetadata, LExpr.replaceMetadata]
+  | op m₁ n t =>
+    cases e₂ <;> simp [LExpr.eraseMetadata, LExpr.replaceMetadata] at h_eM <;> try contradiction
+    have ⟨hn, ht⟩ := h_eM; subst_vars
+    simp [LExpr.substK, LExpr.eraseMetadata, LExpr.replaceMetadata]
+  | bvar m₁ i =>
+    cases e₂ <;> simp [LExpr.eraseMetadata, LExpr.replaceMetadata] at h_eM <;> try contradiction
+    rename_i m₂ i'; subst i'
+    simp only [LExpr.substK]
+    split
+    · simp [LExpr.eraseMetadata]; exact h_s _ _
+    · simp [LExpr.eraseMetadata, LExpr.replaceMetadata]
+  | fvar m₁ x ty =>
+    cases e₂ <;> simp [LExpr.eraseMetadata, LExpr.replaceMetadata] at h_eM <;> try contradiction
+    have ⟨hx, hty⟩ := h_eM; subst_vars
+    simp [LExpr.substK, LExpr.eraseMetadata, LExpr.replaceMetadata]
+  | abs m₁ n t b ih =>
+    cases e₂ <;> simp [LExpr.eraseMetadata, LExpr.replaceMetadata] at h_eM <;> try contradiction
+    rename_i m₂ n₂ t₂ b₂
+    have ⟨hn, ht, hb⟩ := h_eM; subst_vars
+    simp only [LExpr.substK, LExpr.eraseMetadata, LExpr.replaceMetadata]
+    congr 1; apply ih; exact hb
+  | quant m₁ qk n ty tr b ihtr ihb =>
+    cases e₂ <;> simp [LExpr.eraseMetadata, LExpr.replaceMetadata] at h_eM <;> try contradiction
+    rename_i m₂ qk₂ n₂ ty₂ tr₂ b₂
+    have ⟨hqk, hn, hty, htr, hb⟩ := h_eM; subst_vars
+    simp only [LExpr.substK, LExpr.eraseMetadata, LExpr.replaceMetadata]
+    congr 1
+    · apply ihtr; exact htr
+    · apply ihb; exact hb
+  | app m₁ f a ihf iha =>
+    cases e₂ <;> simp [LExpr.eraseMetadata, LExpr.replaceMetadata] at h_eM <;> try contradiction
+    rename_i m₂ f₂ a₂
+    have ⟨hf, ha⟩ := h_eM
+    simp only [LExpr.substK, LExpr.eraseMetadata, LExpr.replaceMetadata]
+    congr 1
+    · apply ihf; exact hf
+    · apply iha; exact ha
+  | ite m₁ c t f ihc iht ihf =>
+    cases e₂ <;> simp [LExpr.eraseMetadata, LExpr.replaceMetadata] at h_eM <;> try contradiction
+    rename_i m₂ c₂ t₂ f₂
+    have ⟨hc, ht, hf⟩ := h_eM
+    simp only [LExpr.substK, LExpr.eraseMetadata, LExpr.replaceMetadata]
+    congr 1
+    · apply ihc; exact hc
+    · apply iht; exact ht
+    · apply ihf; exact hf
+  | eq m₁ l r ihl ihr =>
+    cases e₂ <;> simp [LExpr.eraseMetadata, LExpr.replaceMetadata] at h_eM <;> try contradiction
+    rename_i m₂ l₂ r₂
+    have ⟨hl, hr⟩ := h_eM
+    simp only [LExpr.substK, LExpr.eraseMetadata, LExpr.replaceMetadata]
+    congr 1
+    · apply ihl; exact hl
+    · apply ihr; exact hr
+
+omit [DecidableEq T.IDMeta] in
+/-- varOpen preserves eraseMetadata equality. -/
+theorem varOpen_eraseMetadata_congr
+    {e₁ e₂ : LExpr T.mono} {k : Nat}
+    {x : T.Identifier × Option LMonoTy}
+    (h_eM : e₁.eraseMetadata = e₂.eraseMetadata) :
+    (LExpr.varOpen k x e₁).eraseMetadata = (LExpr.varOpen k x e₂).eraseMetadata := by
+  simp only [LExpr.varOpen]
+  exact substK_eraseMetadata_congr _ _ _ _ h_eM (fun _ _ => by simp [LExpr.eraseMetadata, LExpr.replaceMetadata])
+
+---------------------------------------------------------------------
+
 /--
 Replace all user-provided type annotations in an `LExpr` using `f`.
 -/
