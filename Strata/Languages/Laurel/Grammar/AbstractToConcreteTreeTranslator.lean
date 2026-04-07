@@ -46,6 +46,7 @@ partial def highTypeValToArg : HighType → Arg
   | .TCore s => laurelOp "coreType" #[ident s]
   | .TVoid => laurelOp "compositeType" #[ident "void"]
   | .THeap => laurelOp "compositeType" #[ident "Heap"]
+  -- Type parameters discarded; the grammar cannot represent Field[T] or Set[T]
   | .TTypedField _vt => laurelOp "compositeType" #[ident "Field"]
   | .TSet _et => laurelOp "compositeType" #[ident "Set"]
   | .Applied base _args =>
@@ -99,7 +100,7 @@ where
     | .Assign targets value =>
       -- Multi-target assign: emit as assign of first target (best effort)
       match targets with
-      | [] => stmtExprValToArg value.val
+      | [] => laurelOp "assign" #[laurelOp "identifier" #[ident "_"], stmtExprToArg value]
       | t :: _ => laurelOp "assign" #[stmtExprToArg t, stmtExprToArg value]
     | .FieldSelect target field =>
       laurelOp "fieldAccess" #[stmtExprToArg target, ident field.text]
@@ -162,9 +163,6 @@ where
         laurelOp "fieldAccess" #[stmtExprToArg target, ident field.text],
         stmtExprToArg value
       ]
-
-private def stmtExprToArgWithSummary (s : StmtExprMd) : Arg :=
-  stmtExprToArg s
 
 private def parameterToArg (p : Parameter) : Arg :=
   laurelOp "parameter" #[ident p.name.text, highTypeToArg p.type]
@@ -301,7 +299,9 @@ def programToStrata (prog : Laurel.Program) : Strata.Program :=
 open Std (Format format)
 open Std.Format
 
-/-- Format a HighType as valid Laurel DDM syntax. -/
+/-- Format a HighType as Laurel syntax. `TTypedField` and `TSet` retain their
+    type parameters here (e.g. `Field[T]`, `Set[T]`) for readability, even though
+    the grammar cannot represent them. -/
 partial def fmtHighType (t : HighTypeMd) : Format :=
   match t.val with
   | .TVoid => "void"
