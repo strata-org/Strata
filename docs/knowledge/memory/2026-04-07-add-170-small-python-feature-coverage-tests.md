@@ -11,7 +11,9 @@
 ## Patterns Discovered
 - `run_py_analyze.sh` only runs tests that have a matching `expected_laurel/*.expected` file.
   New tests without expected files are safely ignored by the test runner.
-- Each test is a self-contained function with `assert` + a top-level call. No imports needed.
+- Each test is a self-contained function with `assert` + a top-level call. Most need no imports,
+  but four type-annotation tests use `from typing import ...`: `test_type_dict_annotation.py`,
+  `test_type_list_annotation.py`, `test_type_optional_none.py`, `test_type_optional_value.py`.
 
 ## Pitfalls
 - Blindly copying with `cp` overwrites existing files with the same name. Always check for collisions first.
