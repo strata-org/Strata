@@ -187,7 +187,9 @@ def verifyOptionsFlags : List Flag := [
 ]
 
 /-- Build a VerifyOptions from parsed CLI flags, starting from a base config.
-    Fields not present in the flags keep their base values. -/
+    Fields not present in the flags keep their base values.
+    Note: boolean flags can only enable a setting; a `true` in the base
+    cannot be turned off from the CLI (there is no `--no-X` syntax). -/
 def parseVerifyOptions (pflags : ParsedFlags)
     (base : VerifyOptions := VerifyOptions.default) : IO VerifyOptions := do
   let checkMode ← parseCheckMode pflags base.checkMode
