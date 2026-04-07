@@ -251,67 +251,6 @@ Multi-step execution: reflexive transitive closure of single steps.
 ---------------------------------------------------------------------
 
 omit [DecidableEq Tbase.Metadata] in
-theorem StepStar_ite_cond (F : @Factory Tbase) (rf : Env Tbase)
-    (c c' t f : LExpr Tbase.mono) (m : Tbase.Metadata)
-    (h : StepStar F rf c c') :
-    ∃ m', StepStar F rf (.ite m c t f) (.ite m' c' t f) := by
-  unfold StepStar at *; induction h with
-  | refl => exact ⟨m, ReflTrans.refl _⟩
-  | step x y z hxy _ ih =>
-    obtain ⟨m1, h1⟩ := ih
-    exact ⟨m1, ReflTrans.step _ (.ite m y t f) _
-      (Step.ite_reduce_cond (m' := m) x y t f hxy) h1⟩
-
-omit [DecidableEq Tbase.Metadata] in
-theorem StepStar_ite_then (F : @Factory Tbase) (rf : Env Tbase)
-    (c t t' f : LExpr Tbase.mono) (m : Tbase.Metadata)
-    (h : StepStar F rf t t') :
-    ∃ m', StepStar F rf (.ite m c t f) (.ite m' c t' f) := by
-  unfold StepStar at *; induction h with
-  | refl => exact ⟨m, ReflTrans.refl _⟩
-  | step x y z hxy _ ih =>
-    obtain ⟨m1, h1⟩ := ih
-    exact ⟨m1, ReflTrans.step _ (.ite m c y f) _
-      (Step.ite_reduce_then_branch (m' := m) c x y f hxy) h1⟩
-
-omit [DecidableEq Tbase.Metadata] in
-theorem StepStar_ite_else (F : @Factory Tbase) (rf : Env Tbase)
-    (c t f f' : LExpr Tbase.mono) (m : Tbase.Metadata)
-    (h : StepStar F rf f f') :
-    ∃ m', StepStar F rf (.ite m c t f) (.ite m' c t f') := by
-  unfold StepStar at *; induction h with
-  | refl => exact ⟨m, ReflTrans.refl _⟩
-  | step x y z hxy _ ih =>
-    obtain ⟨m1, h1⟩ := ih
-    exact ⟨m1, ReflTrans.step _ (.ite m c t y) _
-      (Step.ite_reduce_else_branch (m' := m) c t x y hxy) h1⟩
-
-omit [DecidableEq Tbase.Metadata] in
-theorem StepStar_eq_lhs (F : @Factory Tbase) (rf : Env Tbase)
-    (e1 e1' e2 : LExpr Tbase.mono) (m : Tbase.Metadata)
-    (h : StepStar F rf e1 e1') :
-    ∃ m', StepStar F rf (.eq m e1 e2) (.eq m' e1' e2) := by
-  unfold StepStar at *; induction h with
-  | refl => exact ⟨m, ReflTrans.refl _⟩
-  | step x y z hxy _ ih =>
-    obtain ⟨m1, h1⟩ := ih
-    exact ⟨m1, ReflTrans.step _ (.eq m y e2) _
-      (Step.eq_reduce_lhs (m' := m) x y e2 hxy) h1⟩
-
-omit [DecidableEq Tbase.Metadata] in
-theorem StepStar_eq_rhs (F : @Factory Tbase) (rf : Env Tbase)
-    (e1 : LExpr Tbase.mono)
-    (e2 e2' : LExpr Tbase.mono) (m : Tbase.Metadata)
-    (h : StepStar F rf e2 e2') :
-    ∃ m', StepStar F rf (.eq m e1 e2) (.eq m' e1 e2') := by
-  unfold StepStar at *; induction h with
-  | refl => exact ⟨m, ReflTrans.refl _⟩
-  | step x y z hxy _ ih =>
-    obtain ⟨m1, h1⟩ := ih
-    exact ⟨m1, ReflTrans.step _ (.eq m e1 y) _
-      (Step.eq_reduce_rhs (m' := m) e1 x y hxy) h1⟩
-
-omit [DecidableEq Tbase.Metadata] in
 theorem StepStar_app_fn (F : @Factory Tbase) (rf : Env Tbase)
     (e1 e1' e2 : LExpr Tbase.mono) (m : Tbase.Metadata)
     (h : StepStar F rf e1 e1') :
@@ -1440,7 +1379,6 @@ private theorem eval_StepStar_factory_terminal
     [Inhabited Tbase.IDMeta] [ToFormat Tbase.Metadata] [ToFormat Tbase.IDMeta]
     [Traceable LExpr.EvalProvenance Tbase.Metadata]
     (σ : LState Tbase) (e : LExpr Tbase.mono) (n : Nat)
-    (_hWF : FactoryWF σ.config.factory)
     (op_expr : LExpr Tbase.mono)
     (args : List (LExpr Tbase.mono))
     (lfunc : LFunc Tbase)
@@ -3069,7 +3007,7 @@ theorem eval_StepStar
             split
             · -- No ceval: terminal
               rename_i h_no_ceval
-              exact eval_StepStar_factory_terminal σ e n hWF op_expr args lfunc h_call ih
+              exact eval_StepStar_factory_terminal σ e n op_expr args lfunc h_call ih
             · -- ceval exists
               rename_i ceval h_ceval
               split
@@ -3079,10 +3017,10 @@ theorem eval_StepStar
                   op_expr args lfunc h_call ceval h_ceval e'_ceval h_ceval_succ ih
               · -- ceval fails: terminal
                 rename_i h_ceval_fail
-                exact eval_StepStar_factory_terminal σ e n hWF op_expr args lfunc h_call ih
+                exact eval_StepStar_factory_terminal σ e n op_expr args lfunc h_call ih
           · -- Symbolic args: terminal
             rename_i h_symbolic
-            exact eval_StepStar_factory_terminal σ e n hWF op_expr args lfunc h_call ih
+            exact eval_StepStar_factory_terminal σ e n op_expr args lfunc h_call ih
       · -- evalCore case: case analysis on e
         rename_i h_no_call
         match e, h_not_canonical, h_no_call with
