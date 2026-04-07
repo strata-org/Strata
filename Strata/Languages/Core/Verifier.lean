@@ -681,9 +681,7 @@ def corePipelinePhases (procs : Option (List String) := none)
   let postFilterPhases := match procs with
     | some ps =>
       let targets := ps ++ ps.map PrecondElim.wfProcName
-      [modelPreservingPipelinePhase "FilterProcedures" fun prog => do
-        let filtered ← FilterProcedures.run prog targets (respectNoFilter := false)
-        return (true, filtered)]
+      [filterProceduresPipelinePhase targets (respectNoFilter := false)]
     | none => []
   let callElimPhase := match procs with
     | some _ => [callElimPipelinePhase]

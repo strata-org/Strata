@@ -64,9 +64,10 @@ end FilterProcedures
     procedures and their transitive callees. Model-preserving because it
     only removes procedures without changing the semantics of the
     remaining ones. -/
-def filterProceduresPipelinePhase (procs : List String) : PipelinePhase :=
+def filterProceduresPipelinePhase (procs : List String)
+    (respectNoFilter : Bool := true) : PipelinePhase :=
   modelPreservingPipelinePhase "FilterProcedures" fun prog => do
-    let filtered ← FilterProcedures.run prog procs
+    let filtered ← FilterProcedures.run prog procs (respectNoFilter := respectNoFilter)
     return (true, filtered)
 
 end Core
