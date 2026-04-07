@@ -38,12 +38,13 @@ def showTransformed (prog : Strata.Program) (procName : String) : Except String 
 -- Show the transformed output
 /--
 info: ok: verify_Test: {
-  var g : int;
-  var x : int;
+  var |old g| : int;
   var g : int;
   var y : int;
+  var x : int;
   assume [Test_requires_1]: x > 0;
   body_Test: {
+    g := old g;
     y := x;
     g := g + 1;
     }
@@ -75,8 +76,8 @@ info: ok: verify_Test: {
 -- Show the transformed output
 /--
 info: ok: verify_Simple: {
-  var x : bool;
   var y : bool;
+  var x : bool;
   assume [Simple_requires_0]: x;
   body_Simple: {
     y := x;
@@ -104,8 +105,8 @@ info: ok: verify_Simple: {
 -- Show the transformed output
 /--
 info: ok: verify_WithFree: {
-  var x : int;
   var y : int;
+  var x : int;
   assume [WithFree_requires_0]: x >= 0;
   assume [WithFree_requires_1]: x > 0;
   body_WithFree: {
@@ -136,14 +137,16 @@ info: ok: verify_WithFree: {
 -- Show the transformed output
 /--
 info: ok: verify_MultipleModifies: {
-  var g1 : int;
-  var g2 : bool;
-  var x : int;
+  var |old g1| : int;
+  var |old g2| : bool;
   var g1 : int;
   var g2 : bool;
   var y : int;
+  var x : int;
   assume [MultipleModifies_requires_1]: x > 0;
   body_MultipleModifies: {
+    g1 := old g1;
+    g2 := old g2;
     y := x;
     g1 := g1 + 1;
     g2 := true;

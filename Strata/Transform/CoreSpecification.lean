@@ -41,8 +41,12 @@ def Lang.core
     to make execution of the body of this procedure not stuck.
     outputs are included because the body refers to the output variables without
     initialization.
-    This does not include the old variables. -/
+    Old snapshot variables for modifies-converted parameters are included
+    because the body assigns `g := old g` for each such parameter. -/
 def procVerifyInitIdents (proc : Procedure) : List Expression.Ident :=
+  let modifiesOlds := (proc.header.inputs.keys.filter (· ∈ proc.header.outputs.keys)).map
+    fun id => CoreIdent.mkOld id.name
+  modifiesOlds ++
   ListMap.keys proc.header.inputs ++
   ListMap.keys proc.header.outputs
 
