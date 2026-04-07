@@ -980,6 +980,51 @@ procedure test_helper_procedure(req_name : Any, opt_name : Any) returns (ret: An
 
 procedure print(msg : Any) returns ();
 
+// /////////////////////////////////////////////////////////////////////////////////////
+// OrNone types — optional value wrappers used by PySpec translations
+// for Python's Union[None, T] patterns.
+
+datatype StrOrNone {
+  StrOrNone_mk_str (str_val: string),
+  StrOrNone_mk_none ()
+}
+
+datatype IntOrNone {
+  IntOrNone_mk_int (int_val: int),
+  IntOrNone_mk_none ()
+}
+
+datatype BoolOrNone {
+  BoolOrNone_mk_bool (bool_val: bool),
+  BoolOrNone_mk_none ()
+}
+
+datatype ExceptOrNone {
+  ExceptOrNone_mk_code (code_val: string),
+  ExceptOrNone_mk_none ()
+}
+
+datatype AnyOrNone {
+  AnyOrNone_mk_str (str_val: string),
+  AnyOrNone_mk_none ()
+}
+
+datatype BoolOrStrOrNone {
+  BoolOrStrOrNone_mk_bool (bool_val: bool),
+  BoolOrStrOrNone_mk_str (str_val: string),
+  BoolOrStrOrNone_mk_none ()
+}
+
+datatype DictStrStrOrNone {
+  DictStrStrOrNone_mk_str (str_val: string),
+  DictStrStrOrNone_mk_none ()
+}
+
+datatype BytesOrStrOrNone {
+  BytesOrStrOrNone_mk_none (),
+  BytesOrStrOrNone_mk_str (str_val: string)
+}
+
 #end
 
 /--

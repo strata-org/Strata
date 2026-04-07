@@ -515,8 +515,13 @@ partial def translateExpr (ctx : TranslationContext) (e : Python.expr SourceRang
 
   -- Boolean operations
   | .BoolOp _ op values => do
-    if values.val.size < 2 then
-      throw (.internalError "BoolOp must have at least 2 operands")
+    if values.val.size == 0 then
+      -- Identity: And() = True, Or() = False
+      return match op with
+        | .And _ => boolToAny true
+        | .Or _ => boolToAny false
+    if values.val.size == 1 then
+      return ← translateExpr ctx values.val[0]!
     let preludeOpnames ← match op with
       | .And _ => .ok "PAnd"
       | .Or _ => .ok "POr"
@@ -1933,11 +1938,13 @@ def PreludeInfo.ofLaurelProgram (prog : Laurel.Program) : PreludeInfo where
         m.insert p.name.text { inputs := ins, outputs := outs }
   functionSignatures :=
     prog.staticProcedures.filterMap fun p =>
-      if p.body.isExternal then none
+      if p.isFunctional then none
       else
-        let noneexpr : Python.expr SourceRange := .Constant default (.ConNone default) default
+        let noneExpr : Python.expr SourceRange := .Constant default (.ConNone default) default
         let args := p.inputs.map fun param =>
-          {name:= param.name.text, md:= default, tys:= [getHighTypeName param.type.val], default:= some noneexpr}
+          let tyName := getHighTypeName param.type.val
+          let dflt := if tyName.endsWith "OrNone" || tyName == "Any" then noneExpr else default
+          {name:= param.name.text, md:= default, tys:= [tyName], default:= dflt}
         let ret := p.outputs.head?.map fun param => ([getHighTypeName param.type.val], defaultMetadata)
         some { name := p.name.text, args := args, kwargsName := none, ret := ret }
   functions :=
