@@ -250,6 +250,22 @@ theorem subst_denote
         (.cons (LExpr.denote tcInterp opInterp fvarVal vt .nil v aty h_v) .nil) body τ h_body := by
   exact substK_denote (Δ₁ := []) _ _ _ _ _ h_body h_v h_subst h_lc
 
+/-- `varOpen` commutes with denotation: opening a bound variable with a free
+variable `x` and then denoting under `fvarVal` is the same as denoting the
+original body under `bvarVal` extended with `fvarVal x`. -/
+theorem varOpen_denote
+    {body : LExpr T.mono} {x : Identifier T.IDMeta}
+    {aty τ : LMonoTy}
+    {Δ : List LMonoTy}
+    (bvarVal : BVarVal tcInterp vt Δ)
+    (h_body : LExpr.HasTypeA (aty :: Δ) body τ)
+    (h_open : LExpr.HasTypeA Δ (LExpr.varOpen 0 (x, some aty) body) τ)
+    : LExpr.denote tcInterp opInterp fvarVal vt bvarVal
+        (LExpr.varOpen 0 (x, some aty) body) τ h_open =
+      LExpr.denote tcInterp opInterp fvarVal vt
+        (.cons (fvarVal x (LMonoTy.substTyVars vt aty)) bvarVal) body τ h_body := by
+  sorry
+
 /-! ### liftBVars and denotation -/
 
 /-- `liftBVars` preserves `typeCheck`: lifting bvar indices past an inserted

@@ -12,6 +12,7 @@ import Strata.DL.Lambda.Denote.HList
 import all Strata.DL.Lambda.Denote.LExprDenoteProps
 import all Strata.DL.Lambda.Denote.LExprDenoteSubst
 import all Strata.DL.Lambda.Denote.CallOfLFuncDenote
+import all Strata.DL.Lambda.Denote.LExprDenoteEq
 
 namespace Lambda
 
@@ -32,66 +33,8 @@ theorem Factory.callOfLFunc_mem' {F : @Factory T} {e : LExpr T.mono} {callee arg
 
 /-! ### Weakening and context-irrelevance for lcAt 0 expressions -/
 
--- omit [DecidableEq T.Metadata] [DecidableEq T.Identifier] in
--- theorem eql_rewrite
---   {F : @Factory T}
---   {e₁ e₂ : LExpr T.mono}
---   (hv₁ : LExpr.isCanonicalValue F e₁)
---   (hv₂ : LExpr.isCanonicalValue F e₂):
---   LExpr.eql F e₁ e₂ hv₁ hv₂ = LExpr.eqModuloTypes e₁ e₂ := by
---   unfold LExpr.eql; split <;> grind
 section -- [DecidableEq T.IDMeta] [Inhabited T.mono.base.IDMeta]
 variable [DecidableEq T.IDMeta] [Inhabited T.mono.base.IDMeta]
-
-theorem eqModuloMeta_true_implies_denote_eq
-    {e₁ e₂ : LExpr T.mono} {τ : LMonoTy}
-    (h₁ : LExpr.HasTypeA [] e₁ τ)
-    (h₂ : LExpr.HasTypeA [] e₂ τ)
-    (heql : LExpr.eqModuloMeta e₁ e₂ = true)
-    : LExpr.denote tcInterp opInterp fvarVal vt .nil e₁ τ h₁ =
-      LExpr.denote tcInterp opInterp fvarVal vt .nil e₂ τ h₂ := by
-    unfold LExpr.eqModuloMeta at heql
-    -- Lean is confused by BEq and DecidableEq
-    have heq: (e₁.eraseMetadata = e₂.eraseMetadata) := by
-      unfold BEq.beq instBEqLExprOfIdentifier at heql
-      simp at heql
-      rw[LExpr.beq_eq] at heql
-      exact heql
-    rw[denote_replaceMetadata _ _ _ _ .nil (fun _ => ()) h₁]
-    rw[denote_replaceMetadata _ _ _ _ .nil (fun _ => ()) h₂]
-    unfold LExpr.eraseMetadata at heq
-    generalize replaceMetadata_HasTypeA (fun _ => ()) h₁ = ht₁
-    generalize e₁.replaceMetadata (fun _ => ()) = e₁' at *
-    subst heq
-    rfl
-
-
-/-- For canonical values, if syntactic equality (`eql`) returns true, then the
-denotations are equal. -/
-theorem eql_true_implies_denote_eq
-    {F : @Factory T}
-    {e₁ e₂ : LExpr T.mono} {τ : LMonoTy}
-    (h₁ : LExpr.HasTypeA [] e₁ τ)
-    (h₂ : LExpr.HasTypeA [] e₂ τ)
-    (heql : LExpr.eql F e₁ e₂ = some true)
-    : LExpr.denote tcInterp opInterp fvarVal vt .nil e₁ τ h₁ =
-      LExpr.denote tcInterp opInterp fvarVal vt .nil e₂ τ h₂ := by
-    sorry
-
-/-- For binder-free canonical values, if syntactic equality (`eql`) returns
-false, then the denotations are not equal. The `containsBinder = false`
-precondition is essential: for expressions with binders, structural inequality
-does not imply semantic inequality (e.g., `λ (if #true then %0 else %0)` vs
-`λ %0`). -/
-theorem eql_false_implies_denote_ne
-    {F : @Factory T}
-    {e₁ e₂ : LExpr T.mono} {τ : LMonoTy}
-    (h₁ : LExpr.HasTypeA [] e₁ τ)
-    (h₂ : LExpr.HasTypeA [] e₂ τ)
-    (heql : LExpr.eql F e₁ e₂ = some false)
-    : LExpr.denote tcInterp opInterp fvarVal vt .nil e₁ τ h₁ ≠
-      LExpr.denote tcInterp opInterp fvarVal vt .nil e₂ τ h₂ := by
-  sorry
 
 theorem zip_map_fst_eq {α β: Type} (l1: List α) (l2: List β) :
   List.length l1 = List.length l2 →
@@ -203,13 +146,13 @@ theorem Step.denote_preserved
     cases h₁ with
     | eq h_1 h_2 =>
       rw [denote_eq_true .nil h_1 h_2 _
-          (eql_true_implies_denote_eq tcInterp opInterp fvarVal vt h_1 h_2 heql)]
+          (eql_true_implies_denote_eq tcInterp opInterp fvarVal vt .nil h_1 h_2 heql)]
       rfl
   | eq_reduce_false e1 e2 heql =>
     cases h₁ with
     | eq h_1 h_2 =>
       rw [denote_eq_false .nil h_1 h_2 _
-          (eql_false_implies_denote_ne tcInterp opInterp fvarVal vt
+          (eql_false_implies_denote_ne tcInterp opInterp fvarVal vt .nil
             h_1 h_2 heql)]
       rfl
   | eq_reduce_lhs e1 e1' e2 hstep' ih =>

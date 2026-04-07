@@ -8,6 +8,7 @@ module
 import Strata.DL.Lambda.Denote.LExprAnnotated
 public import Strata.DL.Lambda.Denote.HList
 import Strata.DL.Lambda.Factory
+import Strata.DL.Lambda.TypeFactory
 
 namespace Lambda
 
@@ -1204,6 +1205,16 @@ def Factory.WellTyped [DecidableEq T.IDMeta] (F : @Factory T) : Prop :=
     LExpr.HasTypeA [] body (F[f]).output ∧
     fvars_annotated_by (F[f]).inputs body
 
+/-- `isConstr` faithfulness: `f.isConstr = true` implies `f` was generated
+from a constructor in the TypeFactory. -/
+def Factory.ConstrWellFormed (F : @Factory T) (tf : @TypeFactory T.IDMeta) : Prop :=
+  ∀ (f : LFunc T),
+    f ∈ F.toArray →
+    f.isConstr = true →
+    ∃ (d : LDatatype T.IDMeta) (_ : d ∈ tf.allDatatypes)
+      (c : LConstr T.IDMeta) (_ : c ∈ d.constrs),
+      f = constrFunc c d
+
 /-- A factory is consistent with an `opInterp` when every function with a body
 is `InterpConsistentBody` and every function with a `concreteEval` is
 `InterpConsistentEval`. -/
@@ -1214,6 +1225,70 @@ def Factory.InterpConsistent [DecidableEq T.IDMeta] (F : @Factory T) : Prop :=
     LFunc.InterpConsistentEval tcInterp opInterp (F[f]) ceval)
 
 end FactoryConsistent
+
+section ConstrConsistent
+
+variable {T : LExprParams}
+variable (tcInterp : TyConstrInterp)
+variable (opInterp : OpInterp tcInterp)
+
+/-! ### ADT Interpretation Consistency
+
+These properties express that the semantic interpretation (`opInterp`) of
+datatype constructors satisfies the standard algebraic datatype axioms:
+disjointness and injectivity. Note that this is NOT complete: there are two
+other properties ADT interpretations should have:
+1. an inversion principle asserting that we can produce the constructor and
+arguments that give rise to a given ADT interpretation instance
+2. a generalized induction principle (this justifies recursive functions
+over these types)
+
+TODO: add these properties as they are needed
+-/
+
+/-- ADT interpretation consistency: the semantic interpretation of constructors
+satisfies disjointness and injectivity.-/
+structure ConstrInterpConsistent
+    (F : @Factory T) : Prop where
+  /-- Constructor disjointness (global): two constructor functions with
+  different names, when fully applied, produce different values, provided
+  their result sorts are equal. This is required to ensure that we can
+  distinguish the intepretations of different ADT instances when checking
+  equality. This is sound: there are an infinite number of isomorphic
+  inductive types in Lean.-/
+  constr_disjoint :
+    ∀ (f1 f2 : LFunc T),
+      f1 ∈ F.toArray → f2 ∈ F.toArray →
+      f1.isConstr = true → f2.isConstr = true →
+      f1.name.name ≠ f2.name.name →
+      ∀ (vt : TyVarVal),
+        let inputSorts1 := f1.inputs.values.map (LMonoTy.substTyVars vt)
+        let inputSorts2 := f2.inputs.values.map (LMonoTy.substTyVars vt)
+        let outputSort1 := LMonoTy.substTyVars vt f1.output
+        let outputSort2 := LMonoTy.substTyVars vt f2.output
+        let fullSort1 := LSort.mkArrow outputSort1 inputSorts1
+        let fullSort2 := LSort.mkArrow outputSort2 inputSorts2
+        ∀ (heq : outputSort1 = outputSort2)
+          (args1 : HList (SortDenote tcInterp) inputSorts1)
+          (args2 : HList (SortDenote tcInterp) inputSorts2),
+          heq ▸ SortDenote.applyArgs tcInterp (opInterp f1.name.name fullSort1) args1 ≠
+          SortDenote.applyArgs tcInterp (opInterp f2.name.name fullSort2) args2
+  /-- A2. Constructor injectivity: a constructor function is injective in its
+  arguments. -/
+  constr_injective :
+    ∀ (f : LFunc T),
+      f ∈ F.toArray →
+      f.isConstr = true →
+      ∀ (vt : TyVarVal),
+        let inputSorts := f.inputs.values.map (LMonoTy.substTyVars vt)
+        let outputSort := LMonoTy.substTyVars vt f.output
+        let fullSort := LSort.mkArrow outputSort inputSorts
+        ∀ (args1 args2 : HList (SortDenote tcInterp) inputSorts),
+          SortDenote.applyArgs tcInterp (opInterp f.name.name fullSort) args1 =
+          SortDenote.applyArgs tcInterp (opInterp f.name.name fullSort) args2 →
+          args1 = args2
+
+end ConstrConsistent
 
 section EnvConsistent
 
