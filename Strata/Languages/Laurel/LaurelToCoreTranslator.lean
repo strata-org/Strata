@@ -545,9 +545,7 @@ def translateProcedure (proc : Procedure) : TranslateM Core.Procedure := do
   -- Translate postconditions for Opaque and Abstract bodies
   let postconditions : ListMap Core.CoreLabel Core.Procedure.Check ←
     match proc.body with
-    | .Opaque postconds _ _ =>
-        translateChecks postconds "postcondition"
-    | .Abstract postconds =>
+    | .Opaque postconds _ _ | .Abstract postconds =>
         translateChecks postconds "postcondition"
     | _ => pure []
   let modifies : List Core.Expression.Ident := []
@@ -570,8 +568,7 @@ def translateInvokeOnAxiom (proc : Procedure) (trigger : StmtExprMd)
     : TranslateM (Option Core.Decl) := do
   let model := (← get).model
   let postconds := match proc.body with
-    | .Opaque postconds _ _ => postconds
-    | .Abstract postconds => postconds
+    | .Opaque postconds _ _ | .Abstract postconds => postconds
     | _ => []
   if postconds.isEmpty then return none
   -- All input param names become bound variables.
