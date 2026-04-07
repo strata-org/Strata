@@ -1592,7 +1592,7 @@ def translateFunction (ctx : TranslationContext) (sourceRange: SourceRange) (fun
 
     -- Create procedure with transparent body (no contracts for now)
     let proc : Procedure := {
-      name := { funcDecl.name with md := sourceRangeToMetaData ctx.filePath sourceRange }
+      name := { text := funcDecl.name, md := sourceRangeToMetaData ctx.filePath sourceRange }
       inputs := inputs
       outputs := outputs
       preconditions := typeConstraintPreconditions

@@ -45,9 +45,9 @@ instance : ToString Identifier where
   toString id := id.text
 
 instance : Coe String Identifier where
-  coe s := Identifier.mk s none
+  coe s := { text := s }
 
-def mkId (name: String): Identifier := Identifier.mk name none
+def mkId (name: String): Identifier := { text := name }
 
 /--
 Primitive operations available in Laurel expressions.

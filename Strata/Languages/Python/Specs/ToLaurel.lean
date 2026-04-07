@@ -512,7 +512,7 @@ def funcDeclToLaurel (procName : String) (func : FunctionDecl)
       pure (inputs, outputs, Body.Opaque [] none [])
   let md ← mkMdWithFileRange func.loc
   return {
-    name := { procName with md := md }
+    name := { text := procName, md := md }
     inputs := inputs.toList
     outputs := outputs
     preconditions := []
