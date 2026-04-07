@@ -238,4 +238,35 @@ def main() -> None:
   unless containsSubstr output "Calculator@add(" do
     throw <| IO.userError s!"Expected 'Calculator@add(' in Laurel output but not found"
 
+-- self.field.method() resolution: when a class stores another object as a
+-- field and calls a method on that field, the call should resolve to a
+-- StaticCall (not a Hole).
+#guard_msgs in
+#eval withPython (warnOnSkip := false) fun pythonCmd => do
+  let program :=
+"class Inner:
+    def __init__(self, name: str) -> None:
+        self.name: str = name
+
+    def validate(self, value: str) -> None:
+        assert len(value) >= 3, \"value too short\"
+
+class Outer:
+    def __init__(self) -> None:
+        self.inner: Inner = Inner(\"world\")
+
+    def process(self) -> None:
+        self.inner.validate(\"ab\")
+
+def main() -> None:
+    o: Outer = Outer()
+    o.process()
+"
+  let inputCtx := stringInputContext "test.py" program
+  let laurel ← processPythonToLaurel pythonCmd inputCtx
+  let output := toString (Laurel.formatProgram laurel)
+  -- self.inner.validate() must resolve to Inner@validate StaticCall
+  unless containsSubstr output "Inner@validate(" do
+    throw <| IO.userError s!"Expected 'Inner@validate(' in Laurel output but not found"
+
 end Strata.Python.VerifyPythonTest

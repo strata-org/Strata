@@ -918,7 +918,19 @@ partial def translateCall (ctx : TranslationContext)
           else funcName
         return mkCall funcName'
     | .Attribute _ val _attr _ =>
-        let target_trans ← translateExpr ctx val
+        -- Translate the receiver. For field accesses on UserDefined
+        -- composite fields, translateExpr would throw (no Any coercion),
+        -- so build the FieldSelect directly — no coercion is needed
+        -- when the expression is used as a method receiver.
+        let target_trans ← match val with
+          | .Attribute _ obj fieldAttr _ =>
+            let objType ← inferExprType ctx obj
+            match tryLookupFieldHighType ctx objType fieldAttr.val with
+            | some (.UserDefined _) =>
+              let objExpr ← translateExpr ctx obj
+              pure <| mkStmtExprMd (StmtExpr.FieldSelect objExpr fieldAttr.val)
+            | _ => translateExpr ctx val
+          | _ => translateExpr ctx val
         if opt_firstarg.isSome then
           if let some (ImportedSymbol.procedure _ _ true) := ctx.importedSymbols[funcName]? then
             return mkCall funcName
