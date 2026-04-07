@@ -1,12 +1,18 @@
 def test_is_none():
     x: int = 2
+    y : int = 0
     if x is None:
-        return
+        y = 1
+    assert y == 0, "x is not None"
+    return
 
 def test_is_not_none():
     y: int = 3
+    x : int = 1
     if y is not None:
-        return
+        x = 2
+    assert x==2,"y is not None"
+    return
 
 def test_is_none_variable():
     z = None
