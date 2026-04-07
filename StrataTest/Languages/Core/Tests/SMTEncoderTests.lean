@@ -317,7 +317,13 @@ end ArrayTheory
 
 /-! ## Test that final-message falls back to label when metadata has no message -/
 
-/-- info: "(set-logic ALL)\n; Validity\n(assert false)\n(check-sat)\n(set-info :final-message \"my-obligation\")\n" -/
+/--
+info: (set-logic ALL)
+; Validity
+(assert false)
+(check-sat)
+(set-info :final-message "assert_bounds_check")
+-/
 #guard_msgs in
 #eval show IO _ from do
   let ctx : SMT.Context := SMT.Context.default
@@ -328,13 +334,41 @@ end ArrayTheory
   let _ ←
     Strata.SMT.SolverM.run solver
       (Strata.SMT.Encoder.encodeCore ctx (pure ()) [] obligationTerm md
-        (satisfiabilityCheck := false) (validityCheck := true) (label := "my-obligation"))
+        (satisfiabilityCheck := false) (validityCheck := true) (label := "assert_bounds_check"))
   let contents ← b.get
   let smt :=
     if h : contents.data.IsValidUTF8
     then String.fromUTF8 contents.data h
     else ""
-  return smt
+  IO.print smt
+
+/-! ## Test that final-message uses metadata message when present -/
+
+/--
+info: (set-logic ALL)
+; Validity
+(assert false)
+(check-sat)
+(set-info :final-message "Division by zero is impossible")
+-/
+#guard_msgs in
+#eval show IO _ from do
+  let ctx : SMT.Context := SMT.Context.default
+  let obligationTerm := Term.prim (.bool true)
+  let md : Imperative.MetaData Core.Expression :=
+    #[⟨Imperative.MetaData.message, .msg "Division by zero is impossible"⟩]
+  let b ← IO.mkRef { : IO.FS.Stream.Buffer }
+  let solver ← Strata.SMT.Solver.bufferWriter b
+  let _ ←
+    Strata.SMT.SolverM.run solver
+      (Strata.SMT.Encoder.encodeCore ctx (pure ()) [] obligationTerm md
+        (satisfiabilityCheck := false) (validityCheck := true) (label := "assert_bounds_check"))
+  let contents ← b.get
+  let smt :=
+    if h : contents.data.IsValidUTF8
+    then String.fromUTF8 contents.data h
+    else ""
+  IO.print smt
 
 end Core
 
