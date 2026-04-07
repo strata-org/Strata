@@ -2044,15 +2044,6 @@ def pythonToLaurel' (info : PreludeInfo)
       -- Collect field types for Any coercions in field accesses
       let fieldMap := composite.fields.foldl (fun m f => m.insert f.name.text f.type.val) (classFieldHighType[composite.name.text]?.getD {})
       classFieldHighType := classFieldHighType.insert composite.name.text fieldMap
-      -- Collect class method signatures so default args are available at call sites
-      let classCtx : TranslationContext := { initCtx with currentClassName := some composite.name.text }
-      match stmt with
-      | .ClassDef _ _ _ _ ⟨_, classBody⟩ _ _ =>
-        for methodStmt in classBody do
-          if let .FunctionDef .. := methodStmt then
-            let funcDecl ← pyFuncDefToPythonFunctionDecl classCtx methodStmt
-            allClassFuncDecls := allClassFuncDecls ++ [funcDecl]
-      | _ => pure ()
     | _ => pure ()
 
   -- Merge user-defined class names into importedSymbols
