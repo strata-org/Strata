@@ -55,7 +55,9 @@ datatype Tree (a : Type) {
 #end
 
 /--
-info: type T0;
+info: program Core;
+
+type T0;
 type Byte := bv8;
 type IntMap := Map int int;
 type T1 (x : Type);
@@ -112,7 +114,9 @@ function f5<T1, T2>(x : T1, y : T2) : T1 {
 #end
 
 /--
-info: function fooConst () : int;
+info: program Core;
+
+function fooConst () : int;
 axiom [fooConst_value]: fooConst == 5;
 function f1 (x : int) : int;
 axiom [f1_ax1]: forall __q0 : int ::  { f1(__q0) }
@@ -168,7 +172,9 @@ function boolId(x : bool): bool;
 #end
 
 /--
-info: datatype IntList {(
+info: program Core;
+
+datatype IntList {(
   (Nil())),
   (Cons(head : int, tail : IntList))
 };
@@ -212,7 +218,9 @@ spec { requires List..isCons(xs); } {
 
 
 /--
-info: datatype List (a : Type) {(
+info: program Core;
+
+datatype List (a : Type) {(
   (Nil())),
   (Cons(head : a, tail : (List a)))
 };
@@ -242,7 +250,9 @@ procedure TestDifferentInstantiations() returns ()
 #end
 
 /--
-info: function identity<a> (x : a) : a;
+info: program Core;
+
+function identity<a> (x : a) : a;
 function makePair<a, b> (x : a, y : b) : Map a b;
 procedure TestDifferentInstantiations () returns ()
 {
@@ -274,7 +284,9 @@ procedure P(x: bv8, y: bv8, z: bv8) returns () {
 #end
 
 /--
-info: procedure P (x : bv8, y : bv8, z : bv8) returns ()
+info: program Core;
+
+procedure P (x : bv8, y : bv8, z : bv8) returns ()
 {
   assert [add_comm]: x + y == y + x;
   assert [xor_cancel]: x ^ x == bv{8}(0);
@@ -318,7 +330,9 @@ spec {
 #end
 
 /--
-info: datatype Forest (a : Type) {(
+info: program Core;
+
+datatype Forest (a : Type) {(
   (FNil())),
   (FCons(head : (RoseTree a), tail : (Forest a)))
 }
@@ -359,7 +373,9 @@ procedure testFuncDecl(c: int) returns () {
 #end
 
 /--
-info: procedure testFuncDecl (c : int) returns ()
+info: program Core;
+
+procedure testFuncDecl (c : int) returns ()
 {
   function double (x : int) : int { x + x + c }
   var y : int := 5;
@@ -405,7 +421,9 @@ spec {
 #end
 
 /--
-info: procedure find_max (nums : (Map bv64 bv32), nums_len : bv64) returns (ret : bv32)
+info: program Core;
+
+procedure find_max (nums : (Map bv64 bv32), nums_len : bv64) returns (ret : bv32)
 spec {
   requires [find_max_requires_0]: nums_len > bv{64}(0);
   ensures [find_max_ensures_1]: forall __q0 : bv64 :: bv{64}(0) <= __q0 && __q0 < nums_len ==> ret >=s nums[__q0];
@@ -448,7 +466,10 @@ rec function listLen (@[cases] xs : IntList) : int
 
 #end
 
-/-- info: datatype IntList {(
+/--
+info: program Core;
+
+datatype IntList {(
   (Nil())),
   (Cons(hd : int, tl : IntList))
 };
@@ -480,7 +501,10 @@ function listSize (@[cases] xs : RoseList) : int
 
 #end
 
-/-- info: datatype RoseTree {(
+/--
+info: program Core;
+
+datatype RoseTree {(
   (Leaf(val : int))),
   (Node(children : RoseList))
 }
@@ -530,7 +554,9 @@ procedure TestNondetWhile() returns ()
 #end
 
 /--
-info: procedure TestNondetIf () returns ()
+info: program Core;
+
+procedure TestNondetIf () returns ()
 {
   var x : int := 0;
   if * {

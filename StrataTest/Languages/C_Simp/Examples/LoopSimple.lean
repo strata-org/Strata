@@ -82,7 +82,9 @@ info: function loopSimple {
 #eval (Strata.C_Simp.get_program LoopSimplePgm).stripMetaData
 
 /--
-info: procedure loopSimple (n : int) returns (return : int)
+info: program Core;
+
+procedure loopSimple (n : int) returns (return : int)
 spec {
   requires [pre]: n >= 0;
   ensures [post]: true;
