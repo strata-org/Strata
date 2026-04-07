@@ -60,7 +60,8 @@ def checkOp (op : Strata.Operation) (name : QualifiedIdent) (argc : Nat) :
 def translateIdent (arg : Arg) : TransM Identifier := do
   let .ident _ id := arg
     | TransM.error s!"translateIdent expects ident"
-  return { text := id }
+  let md ← getArgMetaData arg
+  return { text := id, md := md }
 
 def translateBool (arg : Arg) : TransM Bool := do
   match arg with
@@ -148,7 +149,6 @@ instance : Inhabited Procedure where
     isFunctional := false
     invokeOn := none
     body := .Transparent ⟨.LiteralBool true, #[]⟩
-    md := .empty
   }
 
 def getBinaryOp? (name : QualifiedIdent) : Option Operation :=
@@ -431,7 +431,6 @@ def parseProcedure (arg : Arg) : TransM Procedure := do
   | q`Laurel.function, #[nameArg, paramArg, returnTypeArg, returnParamsArg,
       requiresArg, invokeOnArg, ensuresArg, modifiesArg, bodyArg] =>
     let name ← translateIdent nameArg
-    let nameMd ← getArgMetaData nameArg
     let parameters ← translateParameters paramArg
     -- Either returnTypeArg or returnParamsArg may have a value, not both
     -- If returnTypeArg is set, create a single "result" parameter
@@ -494,7 +493,6 @@ def parseProcedure (arg : Arg) : TransM Procedure := do
       isFunctional := op.name == q`Laurel.function
       invokeOn := invokeOn
       body := procBody
-      md := nameMd
     }
   | q`Laurel.procedure, args
   | q`Laurel.function, args =>

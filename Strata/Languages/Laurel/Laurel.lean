@@ -19,6 +19,9 @@ namespace Laurel
 
 public section
 
+abbrev MetaData := Imperative.MetaData Core.Expression
+-- Explicit instance needed for deriving Repr in the mutual block
+instance : Repr MetaData := inferInstance
 
 /-- A name-introduction site (variable declaration, procedure, field, type, etc.).
     Carries a mandatory unique ID assigned by the resolution pass. -/
@@ -27,6 +30,8 @@ structure Identifier where
   text : String
   /-- Unique ID assigned by the resolution pass. -/
   uniqueId : Option Nat := none
+  /-- Source-level metadata (locations, annotations). -/
+  md : MetaData := .empty
   deriving Repr
 
 -- Temporary hack because the Python through Laurel pipeline doesn't resolve
@@ -98,10 +103,6 @@ inductive Operation : Type where
   /-- String concatenation. -/
   | StrConcat
   deriving Repr
-
-abbrev MetaData := Imperative.MetaData Core.Expression
--- Explicit instance needed for deriving Repr in the mutual block
-instance : Repr MetaData := inferInstance
 
 /--
 A wrapper that pairs a value with source-level metadata such as source
@@ -193,8 +194,6 @@ structure Procedure : Type where
       whose body is the ensures clause universally quantified over the procedure's inputs,
       with this expression as the SMT trigger. -/
   invokeOn : Option (WithMetadata StmtExpr) := none
-  /-- Source-level metadata (locations, annotations). -/
-  md : MetaData
 
 /--
 A typed parameter for a procedure.

@@ -1592,14 +1592,13 @@ def translateFunction (ctx : TranslationContext) (sourceRange: SourceRange) (fun
 
     -- Create procedure with transparent body (no contracts for now)
     let proc : Procedure := {
-      name := funcDecl.name
+      name := { funcDecl.name with md := sourceRangeToMetaData ctx.filePath sourceRange }
       inputs := inputs
       outputs := outputs
       preconditions := typeConstraintPreconditions
       determinism := .deterministic none -- TODO: need to set reads
       decreases := none
       body := Body.Opaque typeConstraintPostcondition bodyBlock []
-      md := sourceRangeToMetaData ctx.filePath sourceRange
       isFunctional := false
     }
 
@@ -1734,7 +1733,7 @@ def translateMethod (ctx : TranslationContext) (className : String)
 
     let md := sourceRangeToMetaData ctx.filePath methodStmt.ann
     return {
-      name := className ++ "@" ++ methodName
+      name := { text := className ++ "@" ++ methodName, md := md }
       inputs := renamedInputs
       outputs := outputs
       preconditions := [mkStmtExprMd (StmtExpr.LiteralBool true)]
@@ -1742,7 +1741,6 @@ def translateMethod (ctx : TranslationContext) (className : String)
       isFunctional := false
       decreases := none
       body := .Transparent bodyBlock
-      md := md
     }
   | _ => throw (.internalError "Expected FunctionDef for method")
 
@@ -2061,14 +2059,13 @@ def pythonToLaurel' (info : PreludeInfo)
 
   let md := sourceRangeToMetaData ctx.filePath { start := 0, stop := 0 }
   let mainProc : Procedure := {
-    name := "__main__",
+    name := { text := "__main__", md := md },
     inputs := [],
     outputs := [],
     preconditions := [],
     determinism := .deterministic none,
     decreases := none,
     body := .Transparent bodyBlock
-    md := md
     isFunctional := false
   }
 
@@ -2086,7 +2083,6 @@ def pythonToLaurel' (info : PreludeInfo)
         determinism := .deterministic none
         decreases := none
         body := .Opaque [] none []
-        md := default
         isFunctional := false }
     procedures := procedures.push
       { name := { text := compositeToStringAnyName ct.name.text }
@@ -2096,7 +2092,6 @@ def pythonToLaurel' (info : PreludeInfo)
         determinism := .deterministic none
         decreases := none
         body := .Opaque [] none []
-        md := default
         isFunctional := false }
 
   let program : Laurel.Program := {
