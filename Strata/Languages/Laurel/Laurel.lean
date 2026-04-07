@@ -182,8 +182,6 @@ structure Procedure : Type where
   /-- The preconditions that callers must satisfy. -/
   preconditions : List (WithMetadata StmtExpr)
   -- TODO: add back determinism together with an implementation
-  -- /-- Whether the procedure is deterministic or nondeterministic. -/
-  -- determinism : Determinism
   /-- Optional termination measure for recursive procedures. -/
   decreases : Option (WithMetadata StmtExpr) -- optionally prove termination
   /-- If true, the body may only have functional constructs, so no destructive assignments or loops. -/
