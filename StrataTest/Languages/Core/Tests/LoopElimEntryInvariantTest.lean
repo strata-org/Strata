@@ -58,6 +58,8 @@ Result: ❌ always false and is reachable from declaration entry
 
 
 [DEBUG] Evaluated program:
+program Core;
+
 procedure zeroIter () returns (s : int)
 {
   var n : int;

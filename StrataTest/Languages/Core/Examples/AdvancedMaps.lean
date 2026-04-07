@@ -52,7 +52,9 @@ spec {
 #eval TransM.run Inhabited.default (translateProgram mapPgm) |>.snd |>.isEmpty
 
 /--
-info: type MapII := Map int int;
+info: program Core;
+
+type MapII := Map int int;
 type MapIMapII := Map int MapII;
 var a : MapII;
 var b : (Map bool int);

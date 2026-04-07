@@ -136,7 +136,7 @@ def addCoreDecls : SignatureM Unit := do
   decl "json_loads" [msg :< string]
   decl "input" [msg :< string]
   decl "random_choice" [l :< ListStr]
-  decl "datetime_now" []
+  decl "datetime_now" [tz :< AnyOrNone]
   decl "datetime_utcnow" []
   decl "datetime_date" [dt :< Datetime]
   decl "timedelta" [ days :< IntOrNone, hours :< IntOrNone]
