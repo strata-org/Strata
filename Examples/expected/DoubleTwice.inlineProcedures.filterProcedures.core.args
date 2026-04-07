@@ -1,1 +1,1 @@
---procedures TestProc
+--pass inlineProcedures --procedures Double --pass filterProcedures --procedures TestProc

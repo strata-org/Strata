@@ -89,30 +89,31 @@ structure Flag where
   help : String
   takesArg : FlagArg := .none
 
-/-- Parsed flags from the command line. -/
+/-- Parsed flags from the command line.  Stored as an ordered array so that
+    command-line position is preserved (needed by `transform` to bind
+    `--procedures`/`--functions` to the preceding `--pass`).
+    For `.arg` flags that appear more than once, `getString` returns the
+    **last** occurrence (last-writer-wins). -/
 structure ParsedFlags where
-  flags : Std.HashMap String (Option String) := {}
-  repeated : Std.HashMap String (Array String) := {}
+  entries : Array (String × Option String) := #[]
 
 namespace ParsedFlags
 
 def getBool (pf : ParsedFlags) (name : String) : Bool :=
-  pf.flags.contains name
+  pf.entries.any (·.1 == name)
 
 def getString (pf : ParsedFlags) (name : String) : Option String :=
-  match pf.flags[name]? with
-  | some (some v) => some v
+  -- Scan from the end so last occurrence wins.
+  match pf.entries.findRev? (·.1 == name) with
+  | some (_, some v) => some v
   | _ => Option.none
 
 def getRepeated (pf : ParsedFlags) (name : String) : Array String :=
-  pf.repeated[name]?.getD #[]
+  pf.entries.foldl (init := #[]) fun acc (n, v) =>
+    if n == name then match v with | some s => acc.push s | none => acc else acc
 
-def insertFlag (pf : ParsedFlags) (name : String) (value : Option String) : ParsedFlags :=
-  { pf with flags := pf.flags.insert name value }
-
-def insertRepeated (pf : ParsedFlags) (name : String) (value : String) : ParsedFlags :=
-  let arr := pf.repeated[name]?.getD #[]
-  { pf with repeated := pf.repeated.insert name (arr.push value) }
+def insert (pf : ParsedFlags) (name : String) (value : Option String) : ParsedFlags :=
+  { pf with entries := pf.entries.push (name, value) }
 
 def buildDialectFileMap (pflags : ParsedFlags) : IO Strata.DialectFileMap := do
   let preloaded := Strata.Elab.LoadedDialects.builtin
@@ -1099,28 +1100,59 @@ structure CommandGroup where
   commands : List Command
   commonFlags : List Flag := []
 
+private def validPasses :=
+  "inlineProcedures, loopElim, callElim, filterProcedures, removeIrrelevantAxioms"
+
+/-- A single transform pass together with the `--procedures`/`--functions`
+    that were specified immediately after it on the command line. -/
+private structure PassConfig where
+  name : String
+  procedures : List String := []
+  functions : List String := []
+deriving Inhabited
+
+/-- Walk the ordered flag entries and bind each `--procedures`/`--functions`
+    to the most recent `--pass`. -/
+private def buildPassConfigs (entries : Array (String × Option String))
+    : IO (Array PassConfig) := do
+  let mut configs : Array PassConfig := #[]
+  for (flag, value) in entries do
+    match flag with
+    | "pass" => configs := configs.push { name := value.getD "" }
+    | "procedures" =>
+      let some cur := configs.back? | exitFailure "--procedures must appear after a --pass"
+      let procs := (value.getD "").splitToList (· == ',')
+      configs := configs.pop.push { cur with procedures := cur.procedures ++ procs }
+    | "functions" =>
+      let some cur := configs.back? | exitFailure "--functions must appear after a --pass"
+      let fns := (value.getD "").splitToList (· == ',')
+      configs := configs.pop.push { cur with functions := cur.functions ++ fns }
+    | _ => pure ()
+  return configs
+
 def transformCommand : Command where
   name := "transform"
   args := [ "file" ]
   flags := [
     { name := "pass",
-      help := "Transform pass to apply (repeatable, applied left to right). \
-               Valid passes: inlineProcedures, loopElim, callElim, filterProcedures, removeIrrelevantAxioms.",
+      help := s!"Transform pass to apply (repeatable, applied left to right). \
+               Valid passes: {validPasses}. \
+               --procedures and --functions after a --pass apply to that pass.",
       takesArg := .repeat "name" },
     { name := "procedures",
-      help := "Comma-separated procedure names (used by filterProcedures and inlineProcedures).",
-      takesArg := .arg "procs" },
+      help := "Comma-separated procedure names for the preceding --pass. \
+               For filterProcedures: procedures to keep. \
+               For inlineProcedures: procedures to inline.",
+      takesArg := .repeat "procs" },
     { name := "functions",
-      help := "Comma-separated function names (used by removeIrrelevantAxioms).",
-      takesArg := .arg "funcs" }]
+      help := "Comma-separated function names for the preceding --pass (used by removeIrrelevantAxioms).",
+      takesArg := .repeat "funcs" }]
   help := "Apply one or more transforms to a Core program and print the result."
   callback := fun v pflags => do
     let file := v[0]
-    let passes := pflags.getRepeated "pass"
-    if passes.isEmpty then
-      exitFailure "No --pass specified. Valid passes: inlineProcedures, loopElim, callElim, filterProcedures, removeIrrelevantAxioms."
-    let procedures := pflags.getString "procedures" |>.map (·.splitToList (· == ',')) |>.getD []
-    let functions := pflags.getString "functions" |>.map (·.splitToList (· == ',')) |>.getD []
+    let passConfigs ← buildPassConfigs pflags.entries
+    if passConfigs.isEmpty then
+      exitFailure s!"No --pass specified. Valid passes: {validPasses}."
     -- Read and parse the Core program
     let (pgm, _) ← match ← readStrataProgram file with
       | .ok r => pure r
@@ -1133,12 +1165,12 @@ def transformCommand : Command where
     | .ok initProgram =>
     -- Apply passes left to right
     let mut program := initProgram
-    for pass in passes do
-      match pass with
+    for pc in passConfigs do
+      match pc.name with
       | "inlineProcedures" =>
         let opts : Strata.Core.InlineTransformOptions :=
-          if procedures.isEmpty then {}
-          else { doInline := some (fun name _ => name ∉ procedures) }
+          if pc.procedures.isEmpty then {}
+          else { doInline := some (fun name _ => name ∈ pc.procedures) }
         match Strata.Core.inlineProcedures program opts with
         | .ok p => program := p
         | .error e => exitFailure s!"inlineProcedures failed: {e}"
@@ -1149,19 +1181,19 @@ def transformCommand : Command where
         | .ok p => program := p
         | .error e => exitFailure s!"callElim failed: {e}"
       | "filterProcedures" =>
-        if procedures.isEmpty then
+        if pc.procedures.isEmpty then
           exitFailure "filterProcedures requires --procedures"
-        match Strata.Core.filterProcedures program procedures with
+        match Strata.Core.filterProcedures program pc.procedures with
         | .ok p => program := p
         | .error e => exitFailure s!"filterProcedures failed: {e}"
       | "removeIrrelevantAxioms" =>
-        if functions.isEmpty then
+        if pc.functions.isEmpty then
           exitFailure "removeIrrelevantAxioms requires --functions"
-        match Strata.Core.removeIrrelevantAxioms program functions with
+        match Strata.Core.removeIrrelevantAxioms program pc.functions with
         | .ok p => program := p
         | .error e => exitFailure s!"removeIrrelevantAxioms failed: {e}"
       | other =>
-        exitFailure s!"Unknown pass '{other}'. Valid passes: inlineProcedures, loopElim, callElim, filterProcedures, removeIrrelevantAxioms."
+        exitFailure s!"Unknown pass '{other}'. Valid passes: {validPasses}."
     IO.print (Core.formatProgram program)
 
 def verifyCommand : Command where
@@ -1372,23 +1404,23 @@ private def parseArgs (cmdName : String)
       | some flag =>
         match flag.takesArg with
         | .none =>
-          parseArgs cmdName flagMap acc (pflags.insertFlag flagName Option.none) cmdArgs
+          parseArgs cmdName flagMap acc (pflags.insert flagName Option.none) cmdArgs
         | .arg _ =>
           match inlineValue with
           | some value =>
-            parseArgs cmdName flagMap acc (pflags.insertFlag flagName (some value)) cmdArgs
+            parseArgs cmdName flagMap acc (pflags.insert flagName (some value)) cmdArgs
           | none =>
             let value :: cmdArgs := cmdArgs
               | exitCmdFailure cmdName s!"Expected value after {arg}."
-            parseArgs cmdName flagMap acc (pflags.insertFlag flagName (some value)) cmdArgs
+            parseArgs cmdName flagMap acc (pflags.insert flagName (some value)) cmdArgs
         | .repeat _ =>
           match inlineValue with
           | some value =>
-            parseArgs cmdName flagMap acc (pflags.insertRepeated flagName value) cmdArgs
+            parseArgs cmdName flagMap acc (pflags.insert flagName (some value)) cmdArgs
           | none =>
             let value :: cmdArgs := cmdArgs
               | exitCmdFailure cmdName s!"Expected value after {arg}."
-            parseArgs cmdName flagMap acc (pflags.insertRepeated flagName value) cmdArgs
+            parseArgs cmdName flagMap acc (pflags.insert flagName (some value)) cmdArgs
       | none =>
         exitCmdFailure cmdName s!"Unknown option {arg}."
     else

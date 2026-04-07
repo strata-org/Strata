@@ -9,8 +9,8 @@
 #    - Derive the source file and passes from the filename
 #      (e.g. DoubleTwice.inlineProcedures.core.st
 #         → source DoubleTwice.core.st, passes --pass inlineProcedures)
-#    - Read extra flags from a .args sidecar file if present
-#      (e.g. --procedures TestProc)
+#    - If a .args sidecar file is present, use it as the complete
+#      set of transform flags (including --pass)
 #    - Run `strata transform` and diff against the .core.st file
 #    - Run `strata verify` on the .core.st file and diff against
 #      the .core.expected file, confirming the output is re-parseable
@@ -81,29 +81,30 @@ for transform_file in expected/*.*.core.st; do
         continue
     fi
 
-    # Build --pass flags from dot-separated pass names
-    pass_flags=""
-    IFS='.' read -ra pass_array <<< "$passes"
-    for p in "${pass_array[@]}"; do
-        pass_flags="$pass_flags --pass $p"
-    done
-
-    # Read extra flags (e.g. --procedures) from .args sidecar file if present
-    extra_flags=""
+    # Build transform flags.
+    # If an .args sidecar file is present, it provides the complete flags
+    # (including --pass, with per-pass --procedures/--functions).
+    # Otherwise, build --pass flags from the dot-separated pass names.
     args_file="expected/${transform_base}.core.args"
     if [ -f "$args_file" ]; then
-        extra_flags=$(cat "$args_file")
+        transform_flags=$(cat "$args_file")
+    else
+        transform_flags=""
+        IFS='.' read -ra pass_array <<< "$passes"
+        for p in "${pass_array[@]}"; do
+            transform_flags="$transform_flags --pass $p"
+        done
     fi
 
     # 1. Check transform output matches the .core.st file
     tmp_transform=$(mktemp)
-    (cd .. && lake exe strata transform "Examples/${source_file}" $pass_flags $extra_flags) > "$tmp_transform"
+    (cd .. && lake exe strata transform "Examples/${source_file}" $transform_flags) > "$tmp_transform"
     if ! diff -q "$transform_file" "$tmp_transform" > /dev/null; then
         echo "ERROR: Transform output for $transform_base does not match expected"
         diff "$transform_file" "$tmp_transform"
         failed=1
     else
-        echo "Test passed: transform $source_file $pass_flags"
+        echo "Test passed: transform $source_file $transform_flags"
     fi
     rm -f "$tmp_transform"
 
