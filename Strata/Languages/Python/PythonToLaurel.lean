@@ -2056,6 +2056,7 @@ def pythonToLaurel' (info : PreludeInfo)
         preludeTypes := info.types,
         importedSymbols := localSymbols,
         classFieldHighType := classFieldHighType,
+        userFunctions := userFunctions,
         filePath := filePath
       }
       let (composite, instanceProcedures, classFuncDecls) ← translateClass initCtx stmt
