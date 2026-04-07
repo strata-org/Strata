@@ -53,28 +53,19 @@ procedure foo() { };
 /-! ## Duplicate type names -/
 
 def dupTypes := r"
-composite Foo { };
-composite Foo { };
+composite Foo { }
+composite Foo { }
 "
 
 #eval printErrors dupTypes
-
-/-! ## Duplicate constant names -/
-
-def dupConstants := r"
-constant x: int := 1;
-constant x: int := 2;
-"
-
-#eval printErrors dupConstants
 
 /-! ## Duplicate field names in a composite type -/
 
 def dupFields := r"
 composite Foo {
-  var f: int;
-  var f: bool;
-};
+  var f: int
+  var f: bool
+}
 "
 
 #eval printErrors dupFields
@@ -93,7 +84,7 @@ def dupInstanceProcs := r"
 composite Foo {
   procedure bar() { };
   procedure bar() { };
-};
+}
 "
 
 #eval printErrors dupInstanceProcs
@@ -101,7 +92,7 @@ composite Foo {
 /-! ## Duplicate datatype constructor names -/
 
 def dupCtors := r"
-datatype Foo { A | A };
+datatype Foo { A, A }
 "
 
 #eval printErrors dupCtors
@@ -111,7 +102,7 @@ datatype Foo { A | A };
 def dupLocals := r"
 procedure foo() {
   var x: int := 1;
-  var x: int := 2;
+  var x: int := 2
 };
 "
 
@@ -120,26 +111,17 @@ procedure foo() {
 /-! ## Procedure and type with the same name -/
 
 def dupProcType := r"
-composite Foo { };
+composite Foo { }
 procedure Foo() { };
 "
 
 #eval printErrors dupProcType
 
-/-! ## Procedure and constant with the same name -/
-
-def dupProcConst := r"
-constant foo: int := 1;
-procedure foo() { };
-"
-
-#eval printErrors dupProcConst
-
 /-! ## Duplicate quantifier variable names (nested forall) -/
 
 def dupQuantifierVars := r"
 procedure test() {
-  assert forall (x: int) :: forall (x: int) :: x > 0
+  assert forall(x: int) => forall(x: int) => x > 0
 };
 "
 
@@ -151,7 +133,7 @@ def shadowingOk := r"
 procedure foo() {
   var x: int := 1;
   {
-    var x: int := 2;
+    var x: int := 2
   }
 };
 "
@@ -161,8 +143,8 @@ procedure foo() {
 /-! ## Duplicate constrained type names -/
 
 def dupConstrainedTypes := r"
-constrained nat = x: int where x >= 0 witness 0;
-constrained nat = x: int where x > 0 witness 1;
+constrained nat = x: int where x >= 0 witness 0
+constrained nat = x: int where x > 0 witness 1
 "
 
 #eval printErrors dupConstrainedTypes
@@ -170,8 +152,8 @@ constrained nat = x: int where x > 0 witness 1;
 /-! ## Duplicate datatype names -/
 
 def dupDatatypes := r"
-datatype Foo { A };
-datatype Foo { B };
+datatype Foo { A }
+datatype Foo { B }
 "
 
 #eval printErrors dupDatatypes
@@ -179,8 +161,8 @@ datatype Foo { B };
 /-! ## Composite type and datatype with the same name -/
 
 def dupCompositeDatatype := r"
-composite Foo { };
-datatype Foo { A };
+composite Foo { }
+datatype Foo { A }
 "
 
 #eval printErrors dupCompositeDatatype
