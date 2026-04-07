@@ -1163,38 +1163,38 @@ def transformCommand : Command where
     | .error msg =>
       exitFailure msg
     | .ok initProgram =>
-    -- Apply passes left to right
-    let mut program := initProgram
-    for pc in passConfigs do
-      match pc.name with
-      | "inlineProcedures" =>
-        let opts : Strata.Core.InlineTransformOptions :=
-          if pc.procedures.isEmpty then {}
-          else { doInline := some (fun name _ => name ∈ pc.procedures) }
-        match Strata.Core.inlineProcedures program opts with
-        | .ok p => program := p
-        | .error e => exitFailure s!"inlineProcedures failed: {e}"
-      | "loopElim" =>
-        program := Strata.Core.loopElimUsingContract program
-      | "callElim" =>
-        match Strata.Core.callElimUsingContract program with
-        | .ok p => program := p
-        | .error e => exitFailure s!"callElim failed: {e}"
-      | "filterProcedures" =>
-        if pc.procedures.isEmpty then
-          exitFailure "filterProcedures requires --procedures"
-        match Strata.Core.filterProcedures program pc.procedures with
-        | .ok p => program := p
-        | .error e => exitFailure s!"filterProcedures failed: {e}"
-      | "removeIrrelevantAxioms" =>
-        if pc.functions.isEmpty then
-          exitFailure "removeIrrelevantAxioms requires --functions"
-        match Strata.Core.removeIrrelevantAxioms program pc.functions with
-        | .ok p => program := p
-        | .error e => exitFailure s!"removeIrrelevantAxioms failed: {e}"
-      | other =>
-        exitFailure s!"Unknown pass '{other}'. Valid passes: {validPasses}."
-    IO.print (Core.formatProgram program)
+      -- Apply passes left to right
+      let mut program := initProgram
+      for pc in passConfigs do
+        match pc.name with
+        | "inlineProcedures" =>
+          let opts : Strata.Core.InlineTransformOptions :=
+            if pc.procedures.isEmpty then {}
+            else { doInline := some (fun name _ => name ∈ pc.procedures) }
+          match Strata.Core.inlineProcedures program opts with
+          | .ok p => program := p
+          | .error e => exitFailure s!"inlineProcedures failed: {e}"
+        | "loopElim" =>
+          program := Strata.Core.loopElimUsingContract program
+        | "callElim" =>
+          match Strata.Core.callElimUsingContract program with
+          | .ok p => program := p
+          | .error e => exitFailure s!"callElim failed: {e}"
+        | "filterProcedures" =>
+          if pc.procedures.isEmpty then
+            exitFailure "filterProcedures requires --procedures"
+          match Strata.Core.filterProcedures program pc.procedures with
+          | .ok p => program := p
+          | .error e => exitFailure s!"filterProcedures failed: {e}"
+        | "removeIrrelevantAxioms" =>
+          if pc.functions.isEmpty then
+            exitFailure "removeIrrelevantAxioms requires --functions"
+          match Strata.Core.removeIrrelevantAxioms program pc.functions with
+          | .ok p => program := p
+          | .error e => exitFailure s!"removeIrrelevantAxioms failed: {e}"
+        | other =>
+          exitFailure s!"Unknown pass '{other}'. Valid passes: {validPasses}."
+      IO.print (Core.formatProgram program)
 
 def verifyCommand : Command where
   name := "verify"

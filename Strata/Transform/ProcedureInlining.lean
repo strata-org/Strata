@@ -226,8 +226,8 @@ def inlineCallCmd
         -- Insert
         --   init in1 : ty := v1     --- inputInit
         --   init in2 : ty := v2
-        --   init out1 : ty := <placeholder> --- outputInit
-        --   init out2 : ty := <placeholder>
+        --   init out1 : ty := nondet --- outputInit
+        --   init out2 : ty := nondet
         --   ... (f body)
         --   set x1 := out1    --- outputSetStmts
         --   set x2 := out2
