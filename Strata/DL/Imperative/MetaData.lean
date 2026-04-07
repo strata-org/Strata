@@ -250,6 +250,44 @@ def MetaData.formatFileRangeD {P : PureExpr} [BEq P.Ident] (md : MetaData P) (fi
   | some fr => fr.format fileMap includeEnd?
   | none => f!""
 
+/-- Metadata field for a related file range (e.g., the original assertion location
+    when the primary file range points to the call site after inlining).
+    There can be multiple `relatedFileRange` fields in a single metadata due to
+    multiple levels of inlining. -/
+def MetaData.relatedFileRange : MetaDataElem.Field P := .label "relatedFileRange"
+
+/-- Get all related file ranges from metadata, in order.
+    The returned array's order is determined by the call stack: the innermost
+    (most deeply inlined) call comes first. -/
+def getRelatedFileRanges {P : PureExpr} [BEq P.Ident] (md: MetaData P) : Array FileRange :=
+  md.filterMap fun elem =>
+    if elem.fld == Imperative.MetaData.relatedFileRange then
+      match elem.value with
+      | .fileRange fr => some fr
+      | _ => none
+    else none
+
+/-- Remove all metadata elements with the given field. -/
+def MetaData.eraseAllElems {P : PureExpr} [BEq P.Ident]
+    (md : MetaData P) (fld : MetaDataElem.Field P) : MetaData P :=
+  md.filter (fun e => !(e.fld == fld))
+
+/-- Replace the primary file range with a new one, shifting existing related
+    file ranges and prepending the old primary range. -/
+def MetaData.setCallSiteFileRange {P : PureExpr} [BEq P.Ident]
+    (md : MetaData P) (callSiteRange : MetaData P) : MetaData P :=
+  match getFileRange callSiteRange, getFileRange md with
+  | some csRange, some origRange =>
+    let existingRelated := getRelatedFileRanges md
+    let md := md.eraseElem MetaData.fileRange
+    let md := md.eraseAllElems MetaData.relatedFileRange
+    let md := md.pushElem MetaData.fileRange (.fileRange csRange)
+    let md := md.pushElem MetaData.relatedFileRange (.fileRange origRange)
+    existingRelated.foldl (fun md fr => md.pushElem MetaData.relatedFileRange (.fileRange fr)) md
+  | some csRange, none =>
+    md.pushElem MetaData.fileRange (.fileRange csRange)
+  | none, _ => md
+
 /-- Metadata field for property type classification (e.g., "divisionByZero"). -/
 def MetaData.propertyType : MetaDataElem.Field P := .label "propertyType"
 

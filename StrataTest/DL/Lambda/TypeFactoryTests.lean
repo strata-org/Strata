@@ -284,7 +284,7 @@ info: ((~isCons : (arrow (List int) bool)) (~l : (List int)))
 -/
 #guard_msgs in
 #eval format $ do
-  let f ← ((Factory.default : @Factory TestParams).addFactoryFunc ex_list)
+  let f ← ((Factory.default : Factory TestParams).tryPush ex_list)
   (typeCheckAndPartialEval (T:=TestParams) #[[listTy]] f
   ((LExpr.op () ("isCons" : TestParams.Identifier) (some (LMonoTy.arrow (.tcons "List" [.int]) .bool))).mkApp () [.op () "l" .none]))
 

@@ -100,6 +100,10 @@ private def renameAllLocalNames (c:Procedure)
   let label_map := label_map_id.map (fun (id1,id2) => (id1.name, id2.name))
 
   -- Do substitution
+  -- Iterated substitution is safe here: each replacement is a fresh `.fvar` generated
+  -- by genOldToFreshIdMappings (counter-based), so a fresh new_id cannot collide with
+  -- a later old_id. The iteration is intentionally sequential because each step also
+  -- renames LHS variables and labels.
   let new_body := List.map (fun (s0:Statement) =>
     var_map.foldl (fun (s:Statement) (old_id,new_id) =>
         let s := Statement.substFvar s old_id (.fvar () new_id .none)
@@ -151,6 +155,35 @@ def updateCallGraph (cg:CallGraph) (f: String) (g: String):
   -- .. and decrement the 'f -> g' edge by 1.
   let cg_final ← cg_new.decrementEdge f g
   return cg_final
+
+/-! ### Update assertion metadata with call site information -/
+
+-- Update assertions and assumes in inlined body to carry the call site metadata
+-- as the primary file range, moving the original assertion's file range to
+-- relatedFileRange.
+mutual
+def Block.setCallSiteMetadata (b : Block) (callMd : Imperative.MetaData Expression)
+    : Block :=
+  b.map (fun s => Statement.setCallSiteMetadata s callMd)
+
+def Statement.setCallSiteMetadata (s : Statement) (callMd : Imperative.MetaData Expression)
+    : Statement :=
+  match s with
+  | .cmd (.cmd (.assert lbl e md)) =>
+    .assert lbl e (md.setCallSiteFileRange callMd)
+  | .cmd (.cmd (.assume lbl e md)) =>
+    .assume lbl e (md.setCallSiteFileRange callMd)
+  | .cmd (.cmd (.cover lbl e md)) =>
+    .cover lbl e (md.setCallSiteFileRange callMd)
+  | .block lbl b md =>
+    .block lbl (Block.setCallSiteMetadata b callMd) md
+  | .ite cond thenb elseb md =>
+    .ite cond (Block.setCallSiteMetadata thenb callMd)
+              (Block.setCallSiteMetadata elseb callMd) md
+  | .loop g measure inv body md =>
+    .loop g measure inv (Block.setCallSiteMetadata body callMd) md
+  | _ => s
+end
 
 /-
 Procedure Inlining.
@@ -226,8 +259,9 @@ def inlineCallCmd
             outs_lhs_and_sig
 
         let stmts:List (Imperative.Stmt Core.Expression Core.Command)
-          := inputInits ++ outputInits ++ outputHavocs ++ proc.body ++
-             outputSetStmts
+          := inputInits ++ outputInits ++ outputHavocs
+             ++ Block.setCallSiteMetadata proc.body md
+             ++ outputSetStmts
 
         -- Update CallGraph if available
         let σ ← get

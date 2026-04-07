@@ -90,7 +90,7 @@ category ElseBranch;
 op elseBranch(stmts : StmtExpr) : ElseBranch => @[prec(0)] "else" stmts;
 
 op ifThenElse (cond: StmtExpr, thenBranch: StmtExpr, elseBranch: Option ElseBranch): StmtExpr =>
-  @[prec(20)] "if (" cond ") " thenBranch:0 elseBranch:0;
+  @[prec(20)] "if " cond " then " thenBranch:0 elseBranch:0;
 
 op assert (cond : StmtExpr, errorMessage: Option ErrorSummary) : StmtExpr => @[prec(0)] "assert " cond:0 errorMessage:0;
 op assume (cond : StmtExpr) : StmtExpr => @[prec(0)] "assume " cond:0;
@@ -145,6 +145,9 @@ op datatype (name: Ident, constructors: DatatypeConstructorList): Datatype => "d
 category ReturnType;
 op returnType(returnType: LaurelType): ReturnType => ":" returnType;
 
+category InvokeOnClause;
+op invokeOnClause(trigger: StmtExpr): InvokeOnClause => "invokeOn" trigger:0;
+
 category RequiresClause;
 op requiresClause(cond: StmtExpr, errorMessage: Option ErrorSummary): RequiresClause => "requires" cond:0 errorMessage;
 
@@ -166,19 +169,21 @@ op procedure (name : Ident, parameters: CommaSepBy Parameter,
   returnType: Option ReturnType,
   returnParameters: Option ReturnParameters,
   requires: Seq RequiresClause,
+  invokeOn: Option InvokeOnClause,
   ensures: Seq EnsuresClause,
   modifies: Seq ModifiesClause,
   body : Option Body) : Procedure =>
-  "procedure " name "(" parameters ")" returnType returnParameters requires ensures modifies body ";";
+  "procedure " name "(" parameters ")" returnType returnParameters requires invokeOn ensures modifies body ";";
 
 op function (name : Ident, parameters: CommaSepBy Parameter,
   returnType: Option ReturnType,
   returnParameters: Option ReturnParameters,
   requires: Seq RequiresClause,
+  invokeOn: Option InvokeOnClause,
   ensures: Seq EnsuresClause,
   modifies: Seq ModifiesClause,
   body : Option Body) : Procedure =>
-  "function " name "(" parameters ")" returnType returnParameters requires ensures modifies body ";";
+  "function " name "(" parameters ")" returnType returnParameters requires invokeOn ensures modifies body ";";
 
 op composite (name: Ident, extending: Option Extends, fields: Seq Field, procedures: Seq Procedure): Composite => "composite " name extending "{" fields procedures "}";
 

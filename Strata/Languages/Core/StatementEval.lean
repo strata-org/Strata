@@ -49,12 +49,11 @@ private def callConditions (proc : Procedure)
   let names := List.map
                (fun k => s!"(Origin_{proc.header.name.name}_{condType}){k}")
                conditions.keys
+  -- The replacement expressions must be closed (no dangling bvars).
+  let sm := subst.map (fun (x, v) => (x.fst, v))
   let exprs := List.map
                 (fun p =>
-                  List.foldl
-                    (fun c (x, v) =>
-                      { c with expr := (LExpr.substFvar c.expr x.fst v) })
-                    p subst)
+                  { p with expr := LExpr.substFvars p.expr sm })
                 conditions.values
   List.zip names exprs
 
@@ -364,11 +363,12 @@ not be substituted with values from the enclosing scope.
 def captureFreevars (env : Env) (paramNames : List CoreIdent) (e : Expression.Expr) : Expression.Expr :=
   let freeVars := Lambda.LExpr.freeVars e
   let freeVarsToCapture := freeVars.filter (fun fv => fv.fst ∉ paramNames)
-  freeVarsToCapture.foldl (fun body fv =>
+  -- The replacement expressions must be closed (no dangling bvars).
+  let sm := freeVarsToCapture.filterMap (fun fv =>
     match env.exprEnv.state.find? fv.fst with
-    | some (_, val) => Lambda.LExpr.substFvar body fv.fst val
-    | none => body
-  ) e
+    | some (_, val) => some (fv.fst, val)
+    | none => none)
+  Lambda.LExpr.substFvars e sm
 
 @[expose]
 abbrev StmtsStack := List Statements
@@ -476,15 +476,24 @@ def evalAuxGo (steps : Nat) (old_var_subst : SubstMap) (Ewn : EnvWithNext) (ss :
           | .ite cond then_ss else_ss md =>
             let orig_stk := Ewn.stk
             let Ewn := { Ewn with stk := orig_stk.push [] }
-            let cond' := Ewn.env.exprEval cond
+            match cond with
+            | .nondet =>
+              -- Desugar: if (*) { t } else { e } → var c := *; if(c) { t } else { e }
+              let freshName : CoreIdent := ⟨s!"$__nondet_cond_{Ewn.env.pathConditions.length}", ()⟩
+              let freshVar : Expression.Expr := .fvar () freshName none
+              let initStmt := Statement.init freshName (.forAll [] (.tcons "bool" [])) .nondet md
+              let iteStmt := Imperative.Stmt.ite (.det freshVar) then_ss else_ss md
+              go' { Ewn with stk := orig_stk } [initStmt, iteStmt] optExit
+            | .det c =>
+            let cond' := Ewn.env.exprEval c
             match cond' with
             | .true _ | .false _ =>
               let (ss_live, ss_dead) :=
                 if cond'.isTrue then (then_ss, else_ss) else (else_ss, then_ss)
-              let deadDeferred := collectDeadBranchDeferred ss_dead cond Ewn.env.pathConditions
+              let deadDeferred := collectDeadBranchDeferred ss_dead c Ewn.env.pathConditions
               let Ewns :=
                 (go' Ewn ss_live .none).map fun (ewn : EnvWithNext) =>
-                  { ewn with stk := orig_stk.appendToTop [.ite cond' ewn.stk.top [] md] }
+                  { ewn with stk := orig_stk.appendToTop [.ite (.det cond') ewn.stk.top [] md] }
               -- Prepend dead-branch obligations to the first result only.
               -- Pre-ITE obligations flow through the live branch naturally;
               -- processIteBranches keeps them in the first (true-path) result,
@@ -497,7 +506,7 @@ def evalAuxGo (steps : Nat) (old_var_subst : SubstMap) (Ewn : EnvWithNext) (ss :
             | _ =>
               -- Process both branches.
               processIteBranches steps' old_var_subst
-                Ewn cond cond' then_ss else_ss md orig_stk
+                Ewn c cond' then_ss else_ss md orig_stk
 
           | .loop _ _ _ _ _ =>
             panic! "Cannot evaluate `loop` statement. \
@@ -566,23 +575,24 @@ def processIteBranches (steps : Nat) (old_var_subst : SubstMap) (Ewn : EnvWithNe
   -- with no exit label, we can merge both states into one.
   | [{ stk := stk_t, env := E_t, exitLabel := .none}],
     [{ stk := stk_f, env := E_f, exitLabel := .none}] =>
-    let s' := Imperative.Stmt.ite cond' stk_t.top stk_f.top md
+    let s' := Imperative.Stmt.ite (.det cond') stk_t.top stk_f.top md
     [EnvWithNext.mk (Env.merge cond' E_t E_f).popScope
                     .none
                     (orig_stk.appendToTop [s'])]
   | _, _ =>
     let Ewns_t := Ewns_t.map
                       (fun (ewn : EnvWithNext) =>
-                        let s' := Imperative.Stmt.ite (LExpr.true ()) ewn.stk.top [] md
+                        let s' := Imperative.Stmt.ite (.det (LExpr.true ())) ewn.stk.top [] md
                         { ewn with env := ewn.env.popScope,
                                    stk := orig_stk.appendToTop [s']})
     let Ewns_f := Ewns_f.map
                       (fun (ewn : EnvWithNext) =>
-                        let s' := Imperative.Stmt.ite (LExpr.false ()) [] ewn.stk.top md
+                        let s' := Imperative.Stmt.ite (.det (LExpr.false ())) [] ewn.stk.top md
                         { ewn with env := ewn.env.popScope,
                                    stk := orig_stk.appendToTop [s']})
   Ewns_t ++ Ewns_f
   termination_by (steps, Imperative.Block.sizeOf then_ss + Imperative.Block.sizeOf else_ss)
+
 end
 
 def evalAux (E : Env) (old_var_subst : SubstMap) (ss : Statements) (optExit : Option (Option String)) :
