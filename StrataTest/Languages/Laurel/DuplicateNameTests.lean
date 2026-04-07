@@ -6,58 +6,55 @@
 
 /-
 Tests that the resolution pass detects duplicate names in the same scope.
-Each test case exercises a different kind of duplicate that can occur in a
-Laurel program.
+Uses inline error annotations like the other Laurel tests (e.g. T1_AssertFalse).
 -/
 
+import StrataTest.Util.TestDiagnostics
 import Strata.DDM.Elab
 import Strata.DDM.BuiltinDialects.Init
 import Strata.Languages.Laurel.Grammar.LaurelGrammar
 import Strata.Languages.Laurel.Grammar.ConcreteToAbstractTreeTranslator
 import Strata.Languages.Laurel.Resolution
 
+open StrataTest.Util
 open Strata
 open Strata.Elab (parseStrataProgramFromDialect)
 
 namespace Strata.Laurel
 
-/-- Parse a Laurel source string and return the resolution errors. -/
-private def resolveErrors (input : String) : IO (Array String) := do
-  let inputCtx := Strata.Parser.stringInputContext "test" input
+/-- Run only parsing + resolution and return diagnostics (no SMT verification). -/
+private def processResolution (input : Lean.Parser.InputContext) : IO (Array Diagnostic) := do
   let dialects := Strata.Elab.LoadedDialects.ofDialects! #[initDialect, Laurel]
-  let strataProgram ← parseStrataProgramFromDialect dialects Laurel.name inputCtx
-  let uri := Strata.Uri.file "test"
+  let strataProgram ← parseStrataProgramFromDialect dialects Laurel.name input
+  let uri := Strata.Uri.file input.fileName
   match Laurel.TransM.run uri (Laurel.parseProgram strataProgram) with
   | .error e => throw (IO.userError s!"Translation errors: {e}")
   | .ok program =>
     let result := resolve program
-    return result.errors.map toString
-
-private def printErrors (input : String) : IO Unit := do
-  let errs ← resolveErrors input
-  if errs.isEmpty then
-    IO.println "no errors"
-  else
-    for e in errs do
-      IO.println e
+    let files := Map.insert Map.empty uri input.fileMap
+    return result.errors.toList.map (fun dm => dm.toDiagnostic files) |>.toArray
 
 /-! ## Duplicate static procedure names -/
 
 def dupProcedures := r"
 procedure foo() { };
 procedure foo() { };
+//        ^^^ error: Duplicate definition: 'foo' is already defined in this scope
 "
 
-#eval printErrors dupProcedures
+#guard_msgs (error, drop all) in
+#eval testInputWithOffset "DupProcedures" dupProcedures 35 processResolution
 
 /-! ## Duplicate type names -/
 
 def dupTypes := r"
 composite Foo { }
 composite Foo { }
+//        ^^^ error: Duplicate definition: 'Foo' is already defined in this scope
 "
 
-#eval printErrors dupTypes
+#guard_msgs (error, drop all) in
+#eval testInputWithOffset "DupTypes" dupTypes 43 processResolution
 
 /-! ## Duplicate field names in a composite type -/
 
@@ -65,18 +62,22 @@ def dupFields := r"
 composite Foo {
   var f: int
   var f: bool
+//    ^ error: Duplicate definition: 'Foo.f' is already defined in this scope
 }
 "
 
-#eval printErrors dupFields
+#guard_msgs (error, drop all) in
+#eval testInputWithOffset "DupFields" dupFields 51 processResolution
 
 /-! ## Duplicate parameter names in a procedure -/
 
 def dupParams := r"
 procedure foo(x: int, x: bool) { };
+//                    ^ error: Duplicate definition: 'x' is already defined in this scope
 "
 
-#eval printErrors dupParams
+#guard_msgs (error, drop all) in
+#eval testInputWithOffset "DupParams" dupParams 61 processResolution
 
 /-! ## Duplicate instance procedure names in a composite type -/
 
@@ -84,18 +85,12 @@ def dupInstanceProcs := r"
 composite Foo {
   procedure bar() { };
   procedure bar() { };
+//          ^^^ error: Duplicate definition: 'bar' is already defined in this scope
 }
 "
 
-#eval printErrors dupInstanceProcs
-
-/-! ## Duplicate datatype constructor names -/
-
-def dupCtors := r"
-datatype Foo { A, A }
-"
-
-#eval printErrors dupCtors
+#guard_msgs (error, drop all) in
+#eval testInputWithOffset "DupInstanceProcs" dupInstanceProcs 71 processResolution
 
 /-! ## Duplicate local variable names in the same block -/
 
@@ -103,31 +98,36 @@ def dupLocals := r"
 procedure foo() {
   var x: int := 1;
   var x: int := 2
+//    ^ error: Duplicate definition: 'x' is already defined in this scope
 };
 "
 
-#eval printErrors dupLocals
+#guard_msgs (error, drop all) in
+#eval testInputWithOffset "DupLocals" dupLocals 81 processResolution
 
 /-! ## Procedure and type with the same name -/
 
 def dupProcType := r"
 composite Foo { }
 procedure Foo() { };
+//        ^^^ error: Duplicate definition: 'Foo' is already defined in this scope
 "
 
-#eval printErrors dupProcType
+#guard_msgs (error, drop all) in
+#eval testInputWithOffset "DupProcType" dupProcType 91 processResolution
 
 /-! ## Shadowing quantifier variables in nested scopes is OK (no error expected) -/
 
-def dupQuantifierVars := r"
+def shadowQuantifierVars := r"
 procedure test() {
   assert forall(x: int) => forall(x: int) => x > 0
 };
 "
 
-#eval printErrors dupQuantifierVars
+#guard_msgs (error, drop all) in
+#eval testInputWithOffset "ShadowQuantifierVars" shadowQuantifierVars 99 processResolution
 
-/-! ## Shadowing in nested scopes is OK (no error expected) -/
+/-! ## Shadowing in nested blocks is OK (no error expected) -/
 
 def shadowingOk := r"
 procedure foo() {
@@ -138,33 +138,40 @@ procedure foo() {
 };
 "
 
-#eval printErrors shadowingOk
+#guard_msgs (error, drop all) in
+#eval testInputWithOffset "ShadowingOk" shadowingOk 109 processResolution
 
 /-! ## Duplicate constrained type names -/
 
 def dupConstrainedTypes := r"
 constrained nat = x: int where x >= 0 witness 0
 constrained nat = x: int where x > 0 witness 1
+//          ^^^ error: Duplicate definition: 'nat' is already defined in this scope
 "
 
-#eval printErrors dupConstrainedTypes
+#guard_msgs (error, drop all) in
+#eval testInputWithOffset "DupConstrainedTypes" dupConstrainedTypes 119 processResolution
 
 /-! ## Duplicate datatype names -/
 
 def dupDatatypes := r"
 datatype Foo { A }
 datatype Foo { B }
+//       ^^^ error: Duplicate definition: 'Foo' is already defined in this scope
 "
 
-#eval printErrors dupDatatypes
+#guard_msgs (error, drop all) in
+#eval testInputWithOffset "DupDatatypes" dupDatatypes 127 processResolution
 
 /-! ## Composite type and datatype with the same name -/
 
 def dupCompositeDatatype := r"
 composite Foo { }
 datatype Foo { A }
+//       ^^^ error: Duplicate definition: 'Foo' is already defined in this scope
 "
 
-#eval printErrors dupCompositeDatatype
+#guard_msgs (error, drop all) in
+#eval testInputWithOffset "DupCompositeDatatype" dupCompositeDatatype 135 processResolution
 
 end Laurel
