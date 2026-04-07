@@ -40,7 +40,10 @@ private def roundtrip (input : String) : IO String := do
 private def roundtripParse (input : String) : IO Unit := do
   let program ← parseLaurel input
   let text := laurelToText program
-  let _ ← parseLaurel text
+  let program2 ← parseLaurel text
+  let text2 := laurelToText program2
+  if text != text2 then
+    throw (IO.userError s!"Not convergent.\nFirst:\n{text}\nSecond:\n{text2}")
   IO.println "ok"
 
 -- Emit tests: verify the output format
