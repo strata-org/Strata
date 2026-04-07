@@ -1143,7 +1143,7 @@ def verifyCommand : Command where
     let file := v[0]
     let proceduresToVerify := pflags.getString "procedures" |>.map (·.splitToList (· == ','))
     let outputSarif := pflags.getBool "sarif" || pflags.getString "output-format" == some "sarif"
-    let opts ← parseVerifyOptions pflags
+    let opts ← parseVerifyOptions pflags { VerifyOptions.default with verbose := .quiet }
     let opts := { opts with
       checkOnly := pflags.getBool "check",
       typeCheckOnly := pflags.getBool "type-check",
