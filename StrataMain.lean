@@ -22,6 +22,7 @@ import Strata.Backends.CBMC.GOTO.CoreToGOTOPipeline
 
 import Strata.SimpleAPI
 import Strata.Util.Profile
+import Strata.Util.Json
 
 open Strata
 
@@ -690,34 +691,6 @@ def pyAnalyzeLaurelCommand : Command where
         | none => Map.empty
       Core.Sarif.writeSarifOutput checkMode files vcResults (filePath ++ ".sarif")
     printPyAnalyzeSummary vcResults checkMode
-
-/-- Write JSON to a file handle iteratively to avoid stack overflow on large trees. -/
-partial def writeJsonTo (h : IO.FS.Handle) : Lean.Json → IO Unit
-  | .null => h.putStr "null"
-  | .bool b => h.putStr (if b then "true" else "false")
-  | .num n => h.putStr (toString n)
-  | .str s => h.putStr (Lean.Json.renderString s)
-  | .arr elems => do
-    h.putStr "["
-    for i in [:elems.size] do
-      if i > 0 then h.putStr ","
-      writeJsonTo h elems[i]!
-    h.putStr "]"
-  | .obj kvs => do
-    h.putStr "{"
-    let mut first := true
-    for (k, v) in kvs.toList do
-      if !first then h.putStr ","
-      first := false
-      h.putStr (Lean.Json.renderString k)
-      h.putStr ":"
-      writeJsonTo h v
-    h.putStr "}"
-
-def writeJsonFile (path : String) (json : Lean.Json) : IO Unit := do
-  let h ← IO.FS.Handle.mk path .write
-  writeJsonTo h json
-  h.flush
 
 def pyAnalyzeToGotoCommand : Command where
   name := "pyAnalyzeToGoto"
