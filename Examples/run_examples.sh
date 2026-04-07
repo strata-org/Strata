@@ -1,4 +1,20 @@
 #!/bin/bash
+#
+# Test runner for Examples/.  Two kinds of tests:
+#
+# 1. Verify tests: for each <name>.st with a matching expected/<name>.expected,
+#    run `strata verify` and diff the output.
+#
+# 2. Transform tests: for each expected/<base>.<pass1>.<pass2>.core.st:
+#    - Derive the source file and passes from the filename
+#      (e.g. DoubleTwice.inlineProcedures.core.st
+#         → source DoubleTwice.core.st, passes --pass inlineProcedures)
+#    - Read extra flags from a .args sidecar file if present
+#      (e.g. --procedures TestProc)
+#    - Run `strata transform` and diff against the .core.st file
+#    - Run `strata verify` on the .core.st file and diff against
+#      the .core.expected file, confirming the output is re-parseable
+#      and verifiable
 
 failed=0
 
