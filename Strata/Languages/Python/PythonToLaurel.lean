@@ -287,6 +287,16 @@ def boolToAny (b: Bool) := mkStmtExprMd (.StaticCall "from_bool" [mkStmtExprMd (
 def AnyNone := mkStmtExprMd (.StaticCall "from_None" [])
 def Any_to_bool (b: StmtExprMd) := mkStmtExprMd (.StaticCall "Any_to_bool" [b])
 
+/-- Return the Laurel type-tester predicate name for a Python type annotation, if known.
+    E.g., `"int"` → `"Any..isfrom_int"`. Used to emit runtime type assertions. -/
+def typeTester? (typeName : String) : Option String :=
+  match typeName with
+  | "int"   => some "Any..isfrom_int"
+  | "str"   => some "Any..isfrom_str"
+  | "bool"  => some "Any..isfrom_bool"
+  | "float" => some "Any..isfrom_float"
+  | _       => none
+
 /-- Wrap a field access expression in the appropriate Any constructor based on HighType.
     After heap parameterization, field reads return concrete types (int, bool, etc.)
     but Python operators expect Any. This coercion bridges the gap. -/
@@ -962,13 +972,7 @@ partial def translateCall (ctx : TranslationContext)
     let mut typeAsserts : List StmtExprMd := []
     for arg in remainingParams do
       let argType := match arg.tys with | [ty] => ty | _ => "Any"
-      let tester? := match argType with
-        | "int" => some "Any..isfrom_int"
-        | "str" => some "Any..isfrom_str"
-        | "bool" => some "Any..isfrom_bool"
-        | "float" => some "Any..isfrom_float"
-        | _ => none
-      if let some testerName := tester? then
+      if let some testerName := typeTester? argType then
         let dictExpr := mkStmtExprMd (.StaticCall "Any..as_Dict!" [trans_dict])
         let keyPresent := mkStmtExprMd (.StaticCall "DictStrAny_contains"
           [dictExpr, mkStmtExprMd (.LiteralString arg.name)])
@@ -1232,13 +1236,7 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
       let typeAssert := match target with
         | .Name _ n _ =>
           let annStr := pyExprToString annotation
-          let tester? := match annStr with
-            | "int" => some "Any..isfrom_int"
-            | "str" => some "Any..isfrom_str"
-            | "bool" => some "Any..isfrom_bool"
-            | "float" => some "Any..isfrom_float"
-            | _ => none
-          match tester? with
+          match typeTester? annStr with
           | some testerName =>
             let varExpr := mkStmtExprMd (StmtExpr.Identifier n.val)
             let cond := mkStmtExprMd (StmtExpr.StaticCall testerName [varExpr])
