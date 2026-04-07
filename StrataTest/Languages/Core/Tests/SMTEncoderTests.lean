@@ -317,7 +317,7 @@ end ArrayTheory
 
 /-! ## Test that final-message falls back to label when metadata has no message -/
 
-/-- info: true -/
+/-- info: "(set-logic ALL)\n; Validity\n(assert false)\n(check-sat)\n(set-info :final-message \"my-obligation\")\n" -/
 #guard_msgs in
 #eval show IO _ from do
   let ctx : SMT.Context := SMT.Context.default
@@ -334,8 +334,7 @@ end ArrayTheory
     if h : contents.data.IsValidUTF8
     then String.fromUTF8 contents.data h
     else ""
-  let parts : List String := smt.splitOn "(set-info :final-message \"my-obligation\")"
-  return (parts.length > 1 : Bool)
+  return smt
 
 end Core
 
