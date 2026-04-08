@@ -45,16 +45,13 @@ def parseLaurelAndElim (input : String) : IO Program := do
 /--
 info: function nat$constraint(x: int) returns ⏎
 (result: bool)
-deterministic
 { x >= 0 }
 procedure test(n: int) returns ⏎
 (r: int)
 requires nat$constraint(n)
-deterministic
  ensures nat$constraint(r) := { assert r >= 0; var y: int := n; assert nat$constraint(y); return y }
 procedure $witness_nat() returns ⏎
 ()
-deterministic
 { var $witness: int := 0; assert nat$constraint($witness) }
 -/
 #guard_msgs in
@@ -80,15 +77,12 @@ procedure test(b: bool) {
 /--
 info: function pos$constraint(v: int) returns ⏎
 (result: bool)
-deterministic
 { v > 0 }
 procedure test(b: bool) returns ⏎
 ()
-deterministic
 { if b then { var x: int := 1; assert pos$constraint(x) }; { var x: int := -5; x := -10 } }
 procedure $witness_pos() returns ⏎
 ()
-deterministic
 { var $witness: int := 1; assert pos$constraint($witness) }
 -/
 #guard_msgs in
@@ -110,15 +104,12 @@ procedure f() {
 /--
 info: function posint$constraint(x: int) returns ⏎
 (result: bool)
-deterministic
 { x > 0 }
 procedure f() returns ⏎
 ()
-deterministic
 { var x: int; assume posint$constraint(x); assert x == 1 }
 procedure $witness_posint() returns ⏎
 ()
-deterministic
 { var $witness: int := 1; assert posint$constraint($witness) }
 -/
 #guard_msgs in

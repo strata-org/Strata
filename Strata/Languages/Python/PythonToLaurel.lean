@@ -1683,7 +1683,6 @@ def translateFunction (ctx : TranslationContext) (sourceRange: SourceRange) (fun
       inputs := inputs
       outputs := outputs
       preconditions := typeConstraintPreconditions
-      determinism := .deterministic none -- TODO: need to set reads
       decreases := none
       body := Body.Opaque typeConstraintPostcondition bodyBlock []
       md := sourceRangeToMetaData ctx.filePath sourceRange
@@ -1825,7 +1824,6 @@ def translateMethod (ctx : TranslationContext) (className : String)
       inputs := renamedInputs
       outputs := outputs
       preconditions := [mkStmtExprMd (StmtExpr.LiteralBool true)]
-      determinism := .nondeterministic
       isFunctional := false
       decreases := none
       body := .Transparent bodyBlock
@@ -2208,7 +2206,6 @@ def pythonToLaurel' (info : PreludeInfo)
     inputs := [],
     outputs := [],
     preconditions := [],
-    determinism := .deterministic none,
     decreases := none,
     body := .Transparent bodyBlock
     md := md
@@ -2226,7 +2223,6 @@ def pythonToLaurel' (info : PreludeInfo)
         inputs := [selfParam]
         outputs := [{ name := "result", type := mkHighTypeMd .TString }]
         preconditions := []
-        determinism := .deterministic none
         decreases := none
         body := .Opaque [] none []
         md := default
@@ -2236,7 +2232,6 @@ def pythonToLaurel' (info : PreludeInfo)
         inputs := [selfParam]
         outputs := [{ name := "result", type := AnyTy }]
         preconditions := []
-        determinism := .deterministic none
         decreases := none
         body := .Opaque [] none []
         md := default
