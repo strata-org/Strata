@@ -620,22 +620,23 @@ def preprocessObligation (obligation : ProofObligation Expression) (p : Program)
   let peSatResult : Option SMT.Result :=
     if !satisfiabilityCheck then some .unknown
     else if obligation.obligation.isFalse then some .unsat
-    else if obligation.obligation.isTrue && obligation.assumptions.isEmpty then some (.sat [])
+    else if obligation.obligation.isTrue && obligation.assumptions.hasNoConditions then some (.sat [])
     else none
   -- PE can determine validity if the obligation is literally true (valid = unsat)
   -- or literally false with empty assumptions (invalid = sat)
   let peValResult : Option SMT.Result :=
     if !validityCheck then some .unknown
     else if obligation.obligation.isTrue then some .unsat
-    else if obligation.obligation.isFalse && obligation.assumptions.isEmpty then some (.sat [])
+    else if obligation.obligation.isFalse && obligation.assumptions.hasNoConditions then
+      some (.sat [])
     else none
   -- If PE resolved both, log for the assert(false) case
   if let (some _, some (.sat _)) := (peSatResult, peValResult) then
-    if obligation.property == .assert then
+    if obligation.property == .assert && options.verbose >= .debug then
       let prog := f!"\n\n[DEBUG] Evaluated program:\n{Core.formatProgram p}"
       dbg_trace f!"\n\nObligation {obligation.label}: failed!\
                    \n\nResult obtained during partial evaluation.\
-                   {if options.verbose >= .normal then prog else ""}"
+                   {prog}"
   -- Apply axiom pruning if needed.
   -- Axiom removal is unsound for cover obligations (removing axioms weakens
   -- path conditions, potentially making unreachable paths appear satisfiable).
@@ -853,7 +854,7 @@ def verifySingleEnv (pE : Program × Env) (options : VerifyOptions)
           results := results.push result
           peResolvedCount := peResolvedCount + 1
           if result.isFailure || result.isImplementationError then
-            if options.verbose >= .normal then
+            if options.verbose >= .debug then
               let prog := f!"\n\n[DEBUG] Evaluated program:\n{Core.formatProgram p}"
               dbg_trace f!"\n\nResult: {result}\n{prog}"
             if options.stopOnFirstError then break
@@ -977,9 +978,13 @@ def Core.getProgram
   TransM.run ictx (translateProgram p)
 
 /-- Front-end phase: any translation from a source language to Core may
-    introduce over-approximations. Until front-ends can validate models or
-    determine that an assertion is unaffected, all sat results are converted
-    to unknown. -/
+    introduce over-approximations. Solver-produced sat results are converted
+    to unknown because the model may exploit over-approximations and not
+    correspond to a valid execution in the source language.
+
+    Note: PE-resolved results (where the obligation is literally true/false)
+    bypass phase validation entirely — they are determined by constant folding
+    with concrete values and have no models to validate. See `verifySingleEnv`. -/
 def frontEndPhase : Core.AbstractedPhase where
   name := "FrontEnd"
   getValidation _ := .modelToValidate (fun _ => /- TODO -/ false)
