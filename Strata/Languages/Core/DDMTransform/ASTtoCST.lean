@@ -369,15 +369,18 @@ def lconstToExpr {M} [Inhabited M] (c : Lambda.LConst) :
 
 /-- Handle 0-ary operations -/
 def handleZeroaryOps {M} [Inhabited M] (name : String)
-    : ToCSTM M (CoreDDM.Expr M) :=
+    : ToCSTM M (CoreDDM.Expr M) := do
   match name with
   | "Re.All" => pure (.re_all default)
   | "Re.AllChar" => pure (.re_allchar default)
   | "Re.None" => pure (.re_none default)
-  -- TODO: seq_empty is not yet parseable (see Grammar.lean); handle here when added.
-  | _ => do
-    ToCSTM.logError "lopToExpr" "0-ary op not found" name
-    pure (.re_none default)
+  | _ =>
+    -- Built-in 0-ary ops without grammar support (e.g. Sequence.empty,
+    -- Triggers.empty). Register as a free variable so they format as
+    -- their name rather than producing an error.
+    modify (·.addGlobalFreeVars #[name])
+    let ctx ← get
+    pure (.fvar default (ctx.allFreeVars.size - 1))
 
 /-- Handle unary operations -/
 def handleUnaryOps {M} [Inhabited M] (name : String) (arg : CoreDDM.Expr M)

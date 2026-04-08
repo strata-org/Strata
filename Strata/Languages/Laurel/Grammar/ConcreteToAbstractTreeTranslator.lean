@@ -97,6 +97,12 @@ partial def translateHighType (arg : Arg) : TransM HighTypeMd := do
       let keyType ← translateHighType keyArg
       let valType ← translateHighType valArg
       return mkHighTypeMd (.TMap keyType valType) md
+    | q`Laurel.seqType, #[elemArg] =>
+      let elemType ← translateHighType elemArg
+      return mkHighTypeMd (.TSeq elemType) md
+    | q`Laurel.arrayType, #[elemArg] =>
+      let elemType ← translateHighType elemArg
+      return mkHighTypeMd (.TArray elemType) md
     | q`Laurel.compositeType, #[nameArg] =>
       let name ← translateIdent nameArg
       return mkHighTypeMd (.UserDefined name) md
@@ -328,6 +334,21 @@ partial def translateStmtExpr (arg : Arg) : TransM StmtExprMd := do
         | _ => pure none
       let body ← translateStmtExpr bodyArg
       return mkStmtExprMd (.Exists { name := name, type := ty } trigger body) md
+    | q`Laurel.seqLiteral, #[elementsSeq] =>
+      let elements ← match elementsSeq with
+        | .seq _ .comma args => args.toList.mapM translateStmtExpr
+        | _ => pure []
+      let empty := mkStmtExprMd (.StaticCall (mkId "Sequence.empty") []) md
+      return elements.foldl (fun acc e => mkStmtExprMd (.StaticCall (mkId "Sequence.build") [acc, e]) md) empty
+    | q`Laurel.subscript, #[targetArg, indexArg, updateArg] =>
+      let target ← translateStmtExpr targetArg
+      let index ← translateStmtExpr indexArg
+      let update ← match updateArg with
+        | .option _ (some (.op updateOp)) => match updateOp.name, updateOp.args with
+          | q`Laurel.seqUpdateValue, #[valArg] => some <$> translateStmtExpr valArg
+          | _, _ => pure none
+        | _ => pure none
+      return mkStmtExprMd (.Subscript target index update) md
     | _, #[arg0] => match getUnaryOp? op.name with
       | some primOp =>
         let inner ← translateStmtExpr arg0

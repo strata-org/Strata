@@ -146,6 +146,10 @@ inductive HighType : Type where
   | TSet (elementType : WithMetadata HighType)
   /-- Map type. -/
   | TMap (keyType : WithMetadata HighType) (valueType : WithMetadata HighType)
+  /-- Immutable sequence type, e.g. `Seq<int>`. -/
+  | TSeq (elementType : WithMetadata HighType)
+  /-- Mutable heap-backed array type, e.g. `Array<int>`. -/
+  | TArray (elementType : WithMetadata HighType)
   /-- A Identifier to a user-defined composite or constrained type by name. -/
   | UserDefined (name : Identifier)
   /-- A generic type application, e.g. `List<Int>`. -/
@@ -319,6 +323,8 @@ inductive StmtExpr : Type where
         not allowed in functions.
       - `type`: inferred by the hole type inference pass; `none` means not yet inferred. -/
   | Hole (deterministic : Bool := true) (type : Option (WithMetadata HighType) := none)
+  /-- Subscript access or update, e.g. `s[i]` or `s[i := v]`. Eliminated by `SubscriptElim`. -/
+  | Subscript (target : WithMetadata StmtExpr) (index : WithMetadata StmtExpr) (update : Option (WithMetadata StmtExpr))
 
 inductive ContractType where
   | Reads | Modifies | Precondition | PostCondition

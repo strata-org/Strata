@@ -101,6 +101,8 @@ def computeExprType (model : SemanticModel) (expr : StmtExprMd) : HighTypeMd :=
   | .Abstract =>default -- TODO: implement
   | .All => default -- TODO: implement
   | .Hole _ typeOption => typeOption.getD  ⟨ HighType.Unknown, md ⟩
+  -- Subscript (eliminated before downstream passes, but needed for exhaustiveness)
+  | .Subscript _ _ _ => default
 
 /-- Classification of a heap-relevant modifies type. -/
 inductive ModifiesTypeKind where
@@ -112,6 +114,7 @@ non-heap-relevant types. Single source of truth for which types participate
 in modifies clauses and heap parameterization. -/
 def classifyModifiesHighType : HighType → Option ModifiesTypeKind
   | .UserDefined _ => some .composite
+  | .TArray _      => some .composite
   | .TSet _        => some .compositeSet
   | _              => none
 

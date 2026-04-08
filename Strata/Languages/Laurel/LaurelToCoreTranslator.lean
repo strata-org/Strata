@@ -28,6 +28,7 @@ import Strata.DL.Imperative.MetaData
 import Strata.DL.Lambda.LExpr
 import Strata.Languages.Laurel.LaurelFormat
 import Strata.Languages.Laurel.ConstrainedTypeElim
+import Strata.Languages.Laurel.SubscriptElim
 import Strata.Util.Tactics
 
 open Core (VCResult VCResults VerifyOptions)
@@ -58,6 +59,8 @@ def translateType (model : SemanticModel) (ty : HighTypeMd) : LMonoTy :=
   | .TTypedField _ => .tcons "Field" []
   | .TSet elementType => Core.mapTy (translateType model elementType) LMonoTy.bool
   | .TMap keyType valueType => Core.mapTy (translateType model keyType) (translateType model valueType)
+  | .TSeq elementType => Core.seqTy (translateType model elementType)
+  | .TArray _ => .tcons "Composite" []
   | .UserDefined name =>
     match name.uniqueId.bind model.refToDef.get? with
     | some (.compositeType _) => .tcons "Composite" []
@@ -301,6 +304,7 @@ def translateExpr (expr : StmtExprMd)
   | .InstanceCall target callee args => throwExprDiagnostic $ md.toDiagnostic "instance call expression translation" DiagnosticType.NotYetImplemented
   | .PureFieldUpdate _ _ _ => throwExprDiagnostic $ md.toDiagnostic "pure field update expression translation" DiagnosticType.NotYetImplemented
   | .This => throwExprDiagnostic $ md.toDiagnostic "this expression translation" DiagnosticType.NotYetImplemented
+  | .Subscript _ _ _ => throwExprDiagnostic $ md.toDiagnostic "Subscript should have been eliminated by SubscriptElim" DiagnosticType.StrataBug
   termination_by expr
   decreasing_by
     all_goals (have := WithMetadata.sizeOf_val_lt expr; term_by_mem)
@@ -693,6 +697,10 @@ def translateWithLaurel (options: LaurelTranslateOptions) (program : Program): T
   let resolutionErrors: List DiagnosticModel := if options.emitResolutionErrors then result.errors.toList else []
   let (program, model) := (result.program, result.model)
   let diamondErrors := validateDiamondFieldAccesses model program
+
+  let program := subscriptElim model program
+  let result := resolve program (some model)
+  let (program, model) := (result.program, result.model)
 
   let (program, nonCompositeDiags) := filterNonCompositeModifies model program
 
