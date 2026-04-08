@@ -31,6 +31,7 @@ private def semicolonSep (args : Array Arg) : Arg := .seq sr .semicolon args
 
 private def seqArg (args : Array Arg) : Arg := .seq sr .none args
 
+-- Internal-only: these are public because `mutual`/`partial` prevents `private`
 mutual
 
 partial def highTypeToArg (t : HighTypeMd) : Arg := highTypeValToArg t.val
@@ -73,6 +74,7 @@ private def operationName : Operation → String
   | .DivT => "divT" | .ModT => "modT" | .Lt => "lt" | .Leq => "le"
   | .Gt => "gt" | .Geq => "ge" | .StrConcat => "strConcat"
 
+-- Internal-only: public because `partial` prevents `private` in this section
 partial def stmtExprToArg (s : StmtExprMd) : Arg := stmtExprValToArg s.val
 where
   stmtExprValToArg : StmtExpr → Arg
@@ -191,11 +193,17 @@ private def procedureToOp (proc : Procedure) : Strata.Operation :=
   let params := proc.inputs.map parameterToArg |>.toArray
   let returnTypeArg : Arg :=
     match proc.outputs with
-    | [single] => optionArg (some (laurelOp "returnType" #[highTypeToArg single.type]))
+    | [single] =>
+      if single.name == "result"
+      then optionArg (some (laurelOp "returnType" #[highTypeToArg single.type]))
+      else optionArg none
     | _ => optionArg none
   let returnParamsArg : Arg :=
     match proc.outputs with
-    | [_] => optionArg none
+    | [single] =>
+      if single.name == "result"
+      then optionArg none
+      else optionArg (some (laurelOp "returnParameters" #[commaSep #[parameterToArg single]]))
     | _ =>
       if proc.outputs.isEmpty then optionArg none
       else optionArg (some (laurelOp "returnParameters" #[commaSep (proc.outputs.map parameterToArg |>.toArray)]))

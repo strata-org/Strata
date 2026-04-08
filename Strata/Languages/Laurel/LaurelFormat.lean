@@ -177,19 +177,16 @@ def formatBody : Body → Format
   | .Abstract _ => Format.nil
   | .External => "external"
 
+private def formatPostconditions (posts : List StmtExprMd) : Format :=
+  Format.join (posts.map (fun p =>
+    Format.line ++ "  ensures " ++ formatStmtExpr p ++
+    match p.md.getPropertySummary with
+    | none => Format.nil
+    | some msg => " summary \"" ++ msg ++ "\""))
+
 def formatEnsures : Body → Format
-  | .Opaque postconds _ _ =>
-      Format.join (postconds.map (fun p =>
-        Format.line ++ "  ensures " ++ formatStmtExpr p ++
-        match p.md.getPropertySummary with
-        | none => Format.nil
-        | some msg => " summary \"" ++ msg ++ "\""))
-  | .Abstract posts =>
-      Format.join (posts.map (fun p =>
-        Format.line ++ "  ensures " ++ formatStmtExpr p ++
-        match p.md.getPropertySummary with
-        | none => Format.nil
-        | some msg => " summary \"" ++ msg ++ "\""))
+  | .Opaque postconds _ _ => formatPostconditions postconds
+  | .Abstract posts => formatPostconditions posts
   | _ => Format.nil
 
 def formatModifies : Body → Format
