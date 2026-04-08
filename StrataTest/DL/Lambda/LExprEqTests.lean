@@ -26,9 +26,9 @@ private abbrev TP : LExprParams := ⟨Unit, Unit⟩
 private instance : Coe String TP.Identifier where
   coe s := Identifier.mk s ()
 
-private def emptyFactory : @Factory TP := #[]
+private def emptyFactory : Factory TP := .ofArray #[]
 
-private abbrev eqMM (F : @Factory TP) (e1 e2 : LExpr TP.mono) : Option Bool :=
+private abbrev eqMM (F : Factory TP) (e1 e2 : LExpr TP.mono) : Option Bool :=
   LExpr.eql F e1 e2
 
 /-! ### Lambda equality tests -/
@@ -121,8 +121,8 @@ private def tripleTy : LDatatype Unit :=
 
 private def tf : @TypeFactory Unit := #[[intListTy], [tripleTy]]
 
-private def constrFactory : @Factory TP :=
-  let C := LContext.default.addFactoryFunctions (@IntBoolFactory TP _ _)
+private def constrFactory : Factory TP :=
+  let C := LContext.default (functions := @IntBoolFactory TP _ _)
   match C.addTypeFactory tf with
   | .error _ => panic "failed to add type factory"
   | .ok C => C.functions

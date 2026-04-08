@@ -31,13 +31,14 @@ procedure test() returns ()
 info: [Strata.Core] Type checking succeeded.
 
 ---
-info: ok: procedure test () returns ()
+info: ok: program Core;
+
+procedure test () returns ()
 {
   var x : int := 1;
   function addX (y : int) : int { y + x }
   var z : int := addX(5);
   };
-
 -/
 #guard_msgs in
 #eval (Std.format ((Core.typeCheck .default (translate simpleFuncDeclPgm).stripMetaData)))

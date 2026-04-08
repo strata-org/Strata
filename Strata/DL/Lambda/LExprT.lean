@@ -88,45 +88,6 @@ def unresolved {T : LExprParamsT} (e : LExprT T) : LExpr T.base.mono :=
   | .ite m c t f => .ite m.underlying c.unresolved t.unresolved f.unresolved
   | .eq m e1 e2 => .eq m.underlying e1.unresolved e2.unresolved
 
-def replaceUserProvidedType {T : LExprParamsT} (e : LExpr T) (f : T.TypeType → T.TypeType) : LExpr T :=
-  match e with
-  | .const m c =>
-    .const m c
-  | .op m o uty =>
-    .op m o (uty.map f)
-  | .bvar m b =>
-    .bvar m b
-  | .fvar m x uty =>
-    .fvar m x (uty.map f)
-  | .app m e1 e2 =>
-    let e1 := replaceUserProvidedType e1 f
-    let e2 := replaceUserProvidedType e2 f
-    .app m e1 e2
-  | .abs m name uty e =>
-    let e := replaceUserProvidedType e f
-    .abs m name (uty.map f) e
-  | .quant m qk name argTy tr e =>
-    let e := replaceUserProvidedType e f
-    let tr := replaceUserProvidedType tr f
-    .quant m qk name (argTy.map f) tr e
-  | .ite m c t f_expr =>
-    let c := replaceUserProvidedType c f
-    let t := replaceUserProvidedType t f
-    let f_expr := replaceUserProvidedType f_expr f
-    .ite m c t f_expr
-  | .eq m e1 e2 =>
-    let e1 := replaceUserProvidedType e1 f
-    let e2 := replaceUserProvidedType e2 f
-    .eq m e1 e2
-
-/--
-Apply type substitution `S` to `LExpr e`.
-This is only for user-defined types, not metadata-stored resolved types
-If e is an LExprT whose metadata contains type information, use applySubstT
--/
-def applySubst {T : LExprParams} (e : LExpr T.mono) (S : Subst) : LExpr T.mono :=
-  replaceUserProvidedType e (fun t: LMonoTy => LMonoTy.subst S t)
-
 /--
 Apply type substitution `S` to `LExpr e`.
 This is for metadata-stored types.
@@ -230,7 +191,7 @@ def resolveAux (C: LContext T) (Env : TEnv T.IDMeta) (e : LExpr T.mono) :
     /- Infer the type of an operation `.op o oty`, where an operation is defined in
       the factory. -/
     let (ty, Env) ← do
-      match C.functions.find? (fun fn => fn.name == o) with
+      match C.functions[o.name]? with
       | none =>
         .error f!"Function names: {toString $ C.functions.getFunctionNames} Cannot infer the type of this operation: \
                   `{o}`"

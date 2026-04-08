@@ -29,7 +29,9 @@ datatype Option (a : Type) { None(), Some(value: a) };
 #end
 
 /--
-info: ok: datatype Option (a : Type) {(
+info: ok: program Core;
+
+datatype Option (a : Type) {(
   (None())),
   (Some(value : a))
 };
@@ -64,7 +66,9 @@ spec {
 #end
 
 /--
-info: ok: datatype Option (a : Type) {(
+info: ok: program Core;
+
+datatype Option (a : Type) {(
   (None())),
   (Some(value : a))
 };
@@ -109,7 +113,9 @@ spec {
 #end
 
 /--
-info: ok: datatype List (a : Type) {(
+info: ok: program Core;
+
+datatype List (a : Type) {(
   (Nil())),
   (Cons(head : a, tail : (List a)))
 };
@@ -155,7 +161,9 @@ spec {
 #end
 
 /--
-info: ok: datatype Either (a : Type, b : Type) {(
+info: ok: program Core;
+
+datatype Either (a : Type, b : Type) {(
   (Left(l : a))),
   (Right(r : b))
 };
@@ -199,7 +207,9 @@ spec {
 #end
 
 /--
-info: ok: datatype Option (a : Type) {(
+info: ok: program Core;
+
+datatype Option (a : Type) {(
   (None())),
   (Some(value : a))
 };
@@ -532,3 +542,61 @@ Result: ✅ pass
 #eval verify nonDatatypeWithDatatypeArgPgm (options := .quiet)
 
 end Strata.PolymorphicDatatypeTest
+
+---------------------------------------------------------------------
+-- Regression test for issue #650: inferType panic with nested
+-- polymorphic datatypes and Sequence
+---------------------------------------------------------------------
+
+namespace Strata.InferTypePanicTest
+
+-- Verify that the program does not panic during type inference (issue #650).
+-- The program has type errors that should be reported gracefully.
+/--
+error: Could not infer type parameter 2 for Core.seq_select
+---
+error: Encountered .|| expression when MethodSetting expected.
+-/
+#guard_msgs in
+def issue650Pgm : Program :=
+#strata
+program Core;
+
+datatype Option (a : Type) { None(), Some(val: a) };
+
+datatype MethodSetting () {
+  MethodSetting_Cons(LoggingLevel: Option string)
+};
+
+datatype Stage () {
+  Stage_Cons(MethodSettings: Option (Sequence MethodSetting))
+};
+
+function method_ok(ms: MethodSetting): bool {
+  (MethodSetting..LoggingLevel(ms) == Some("ERROR"))
+  || (MethodSetting..LoggingLevel(ms) == Some("INFO"))
+}
+
+function stage_ok(stage: Stage): bool {
+  forall i: int ::
+    (Stage..MethodSettings(stage) != None()
+     && 0 <= i
+     && i < Sequence.length(Option..val(Stage..MethodSettings(stage))))
+    ==>
+    method_ok(Sequence.select(Option..val(Stage..MethodSettings(stage)), i))
+}
+
+const s: Stage;
+const grouped: Sequence Stage;
+axiom Sequence.length(grouped) == 1;
+axiom Sequence.select(grouped, 0) == s;
+
+procedure Check() returns ()
+{
+  assert [check]:
+    forall i: int :: (0 <= i && i < Sequence.length(grouped)) ==>
+      stage_ok(Sequence.select(grouped, i));
+};
+#end
+
+end Strata.InferTypePanicTest

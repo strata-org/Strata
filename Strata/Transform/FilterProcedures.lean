@@ -6,6 +6,7 @@
 module
 
 public import Strata.Transform.CoreTransform
+public import Strata.Languages.Core.PipelinePhase
 
 /-! # Erase procedures satisfying specific criteria -/
 
@@ -53,6 +54,16 @@ def run (prog : Program) (targetProcs : List String) :
   return { prog with decls := prunedDecls }
 
 end FilterProcedures
+
+/-- FilterProcedures pipeline phase: restricts the program to the target
+    procedures and their transitive callees. Model-preserving because it
+    only removes procedures without changing the semantics of the
+    remaining ones. -/
+def filterProceduresPipelinePhase (procs : List String) : PipelinePhase :=
+  modelPreservingPipelinePhase "FilterProcedures" fun prog => do
+    let filtered ← FilterProcedures.run prog procs
+    return (true, filtered)
+
 end Core
 
 end -- public section

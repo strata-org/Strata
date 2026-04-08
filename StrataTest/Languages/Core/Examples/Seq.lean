@@ -38,7 +38,9 @@ procedure P() returns ()
 #eval TransM.run Inhabited.default (translateProgram seqPgm) |>.snd |>.isEmpty
 
 /--
-info: function s () : Sequence int;
+info: program Core;
+
+function s () : Sequence int;
 procedure P () returns ()
 {
   var t : (Sequence int);
@@ -102,6 +104,8 @@ Result: ❓ unknown
 
 
 [DEBUG] Evaluated program:
+program Core;
+
 function s () : Sequence int;
 procedure P () returns ()
 {
@@ -282,6 +286,8 @@ Result: ❓ unknown
 
 
 [DEBUG] Evaluated program:
+program Core;
+
 function s () : Sequence int;
 procedure SeqOps () returns ()
 {
