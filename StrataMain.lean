@@ -89,30 +89,31 @@ structure Flag where
   help : String
   takesArg : FlagArg := .none
 
-/-- Parsed flags from the command line. -/
+/-- Parsed flags from the command line.  Stored as an ordered array so that
+    command-line position is preserved (needed by `transform` to bind
+    `--procedures`/`--functions` to the preceding `--pass`).
+    For `.arg` flags that appear more than once, `getString` returns the
+    **last** occurrence (last-writer-wins). -/
 structure ParsedFlags where
-  flags : Std.HashMap String (Option String) := {}
-  repeated : Std.HashMap String (Array String) := {}
+  entries : Array (String × Option String) := #[]
 
 namespace ParsedFlags
 
 def getBool (pf : ParsedFlags) (name : String) : Bool :=
-  pf.flags.contains name
+  pf.entries.any (·.1 == name)
 
 def getString (pf : ParsedFlags) (name : String) : Option String :=
-  match pf.flags[name]? with
-  | some (some v) => some v
+  -- Scan from the end so last occurrence wins.
+  match pf.entries.findRev? (·.1 == name) with
+  | some (_, some v) => some v
   | _ => Option.none
 
 def getRepeated (pf : ParsedFlags) (name : String) : Array String :=
-  pf.repeated[name]?.getD #[]
+  pf.entries.foldl (init := #[]) fun acc (n, v) =>
+    if n == name then match v with | some s => acc.push s | none => acc else acc
 
-def insertFlag (pf : ParsedFlags) (name : String) (value : Option String) : ParsedFlags :=
-  { pf with flags := pf.flags.insert name value }
-
-def insertRepeated (pf : ParsedFlags) (name : String) (value : String) : ParsedFlags :=
-  let arr := pf.repeated[name]?.getD #[]
-  { pf with repeated := pf.repeated.insert name (arr.push value) }
+def insert (pf : ParsedFlags) (name : String) (value : Option String) : ParsedFlags :=
+  { pf with entries := pf.entries.push (name, value) }
 
 def buildDialectFileMap (pflags : ParsedFlags) : IO Strata.DialectFileMap := do
   let preloaded := Strata.Elab.LoadedDialects.builtin
@@ -156,6 +157,22 @@ def checkLevelFlag : Flag :=
   { name := "check-level",
     help := s!"Check level: {CheckLevel.options}. Default: 'minimal'.",
     takesArg := .arg "level" }
+
+/-- Read and parse a Strata program file, loading the Core, C_Simp, and B3CST
+    dialects. Returns the parsed program and the input context (for source
+    location resolution), or an array of error messages on failure. -/
+private def readStrataProgram (file : String)
+    : IO (Except (Array Lean.Message) (Strata.Program × Lean.Parser.InputContext)) := do
+  let text ← Strata.Util.readInputSource file
+  let inputCtx := Lean.Parser.mkInputContext text (Strata.Util.displayName file)
+  let dctx := Elab.LoadedDialects.builtin
+  let dctx := dctx.addDialect! Core
+  let dctx := dctx.addDialect! C_Simp
+  let dctx := dctx.addDialect! B3CST
+  let leanEnv ← Lean.mkEmptyEnvironment 0
+  match Strata.Elab.elabProgram dctx leanEnv inputCtx with
+  | .ok pgm => pure (.ok (pgm, inputCtx))
+  | .error msgs => pure (.error msgs)
 
 structure Command where
   name : String
@@ -598,7 +615,7 @@ def pyAnalyzeLaurelCommand : Command where
 
     if verbose then
       IO.println "\n==== Core Program ===="
-      IO.print coreProgram
+      IO.print (Core.formatProgram coreProgram)
 
     -- Split prelude / user procedure names.
     -- Only procedures whose file range matches the user source are targets.
@@ -1083,6 +1100,98 @@ structure CommandGroup where
   commands : List Command
   commonFlags : List Flag := []
 
+private def validPasses :=
+  "inlineProcedures, loopElim, callElim, filterProcedures, removeIrrelevantAxioms"
+
+/-- A single transform pass together with the `--procedures`/`--functions`
+    that were specified immediately after it on the command line. -/
+private structure PassConfig where
+  name : String
+  procedures : List String := []
+  functions : List String := []
+deriving Inhabited
+
+/-- Walk the ordered flag entries and bind each `--procedures`/`--functions`
+    to the most recent `--pass`. -/
+private def buildPassConfigs (entries : Array (String × Option String))
+    : IO (Array PassConfig) := do
+  let mut configs : Array PassConfig := #[]
+  for (flag, value) in entries do
+    match flag with
+    | "pass" => configs := configs.push { name := value.getD "" }
+    | "procedures" =>
+      let some cur := configs.back? | exitFailure "--procedures must appear after a --pass"
+      let procs := (value.getD "").splitToList (· == ',')
+      configs := configs.pop.push { cur with procedures := cur.procedures ++ procs }
+    | "functions" =>
+      let some cur := configs.back? | exitFailure "--functions must appear after a --pass"
+      let fns := (value.getD "").splitToList (· == ',')
+      configs := configs.pop.push { cur with functions := cur.functions ++ fns }
+    | _ => pure ()
+  return configs
+
+def transformCommand : Command where
+  name := "transform"
+  args := [ "file" ]
+  flags := [
+    { name := "pass",
+      help := s!"Transform pass to apply (repeatable, applied left to right). \
+               Valid passes: {validPasses}. \
+               --procedures and --functions after a --pass apply to that pass.",
+      takesArg := .repeat "name" },
+    { name := "procedures",
+      help := "Comma-separated procedure names for the preceding --pass. \
+               For filterProcedures: procedures to keep. \
+               For inlineProcedures: procedures to inline.",
+      takesArg := .repeat "procs" },
+    { name := "functions",
+      help := "Comma-separated function names for the preceding --pass (used by removeIrrelevantAxioms).",
+      takesArg := .repeat "funcs" }]
+  help := "Apply one or more transforms to a Core program and print the result."
+  callback := fun v pflags => do
+    let file := v[0]
+    let passConfigs ← buildPassConfigs pflags.entries
+    if passConfigs.isEmpty then
+      exitFailure s!"No --pass specified. Valid passes: {validPasses}."
+    -- Read and parse the Core program
+    let (pgm, _) ← match ← readStrataProgram file with
+      | .ok r => pure r
+      | .error msgs =>
+        for e in msgs do println! s!"Error: {← e.toString}"
+        exitFailure s!"{msgs.size} parse error(s)"
+    match Strata.genericToCore pgm with
+    | .error msg =>
+      exitFailure msg
+    | .ok initProgram =>
+      -- Validate and convert pass configs to TransformPass values
+      let mut passes : List Strata.Core.TransformPass := []
+      for pc in passConfigs do
+        match pc.name with
+        | "inlineProcedures" =>
+          let opts : Strata.Core.InlineTransformOptions :=
+            if pc.procedures.isEmpty then {}
+            else { doInline := some (fun name _ => name ∈ pc.procedures) }
+          passes := passes ++ [.inlineProcedures opts]
+        | "loopElim" =>
+          passes := passes ++ [.loopElim]
+        | "callElim" =>
+          passes := passes ++ [.callElim]
+        | "filterProcedures" =>
+          if pc.procedures.isEmpty then
+            exitFailure "filterProcedures requires --procedures"
+          passes := passes ++ [.filterProcedures pc.procedures]
+        | "removeIrrelevantAxioms" =>
+          if pc.functions.isEmpty then
+            exitFailure "removeIrrelevantAxioms requires --functions"
+          passes := passes ++ [.removeIrrelevantAxioms pc.functions]
+        | other =>
+          exitFailure s!"Unknown pass '{other}'. Valid passes: {validPasses}."
+      -- Run all passes in a single CoreTransformM chain so fresh variable
+      -- counters accumulate and cached analyses are reused across passes.
+      match Strata.Core.runTransforms initProgram passes with
+      | .ok program => IO.print (Core.formatProgram program)
+      | .error e => exitFailure s!"Transform failed: {e}"
+
 def verifyCommand : Command where
   name := "verify"
   args := [ "file" ]
@@ -1125,16 +1234,15 @@ def verifyCommand : Command where
         outputSarif, checkMode, checkLevel, solverTimeout,
         vcDirectory := pflags.getString "vc-directory",
         solver := pflags.getString "solver" |>.getD Core.defaultSolver }
-    let text ← Strata.Util.readInputSource file
-    let inputCtx := Lean.Parser.mkInputContext text (Strata.Util.displayName file)
-    let dctx := Elab.LoadedDialects.builtin
-    let dctx := dctx.addDialect! Core
-    let dctx := dctx.addDialect! C_Simp
-    let dctx := dctx.addDialect! B3CST
-    let leanEnv ← Lean.mkEmptyEnvironment 0
-    match Strata.Elab.elabProgram dctx leanEnv inputCtx with
-    | .ok pgm =>
-      println! s!"Successfully parsed."
+    let (pgm, inputCtx) ← match ← readStrataProgram file with
+      | .ok r => pure r
+      | .error errors =>
+        for e in errors do
+          let msg ← e.toString
+          println! s!"Error: {msg}"
+        println! f!"Finished with {errors.size} errors."
+        IO.Process.exit ExitCode.userError
+    println! s!"Successfully parsed."
       if opts.parseOnly then return
       if opts.typeCheckOnly then
         let ans := if file.endsWith ".csimp.st" then
@@ -1197,16 +1305,10 @@ def verifyCommand : Command where
         let failedGoalCount := (vcResults.filter Core.VCResult.isNotSuccess).size
         println! f!"Finished with {provedGoalCount} goals passed, {failedGoalCount} failed."
         IO.Process.exit ExitCode.failuresFound
-    | .error errors =>
-      for e in errors do
-        let msg ← e.toString
-        println! s!"Error: {msg}"
-      println! f!"Finished with {errors.size} errors."
-      IO.Process.exit ExitCode.userError
 
 def commandGroups : List CommandGroup := [
   { name := "Core"
-    commands := [verifyCommand, checkCommand, toIonCommand, printCommand, diffCommand]
+    commands := [verifyCommand, transformCommand, checkCommand, toIonCommand, printCommand, diffCommand]
     commonFlags := [includeFlag] },
   { name := "Code Generation"
     commands := [javaGenCommand] },
@@ -1298,23 +1400,23 @@ private def parseArgs (cmdName : String)
       | some flag =>
         match flag.takesArg with
         | .none =>
-          parseArgs cmdName flagMap acc (pflags.insertFlag flagName Option.none) cmdArgs
+          parseArgs cmdName flagMap acc (pflags.insert flagName Option.none) cmdArgs
         | .arg _ =>
           match inlineValue with
           | some value =>
-            parseArgs cmdName flagMap acc (pflags.insertFlag flagName (some value)) cmdArgs
+            parseArgs cmdName flagMap acc (pflags.insert flagName (some value)) cmdArgs
           | none =>
             let value :: cmdArgs := cmdArgs
               | exitCmdFailure cmdName s!"Expected value after {arg}."
-            parseArgs cmdName flagMap acc (pflags.insertFlag flagName (some value)) cmdArgs
+            parseArgs cmdName flagMap acc (pflags.insert flagName (some value)) cmdArgs
         | .repeat _ =>
           match inlineValue with
           | some value =>
-            parseArgs cmdName flagMap acc (pflags.insertRepeated flagName value) cmdArgs
+            parseArgs cmdName flagMap acc (pflags.insert flagName (some value)) cmdArgs
           | none =>
             let value :: cmdArgs := cmdArgs
               | exitCmdFailure cmdName s!"Expected value after {arg}."
-            parseArgs cmdName flagMap acc (pflags.insertRepeated flagName value) cmdArgs
+            parseArgs cmdName flagMap acc (pflags.insert flagName (some value)) cmdArgs
       | none =>
         exitCmdFailure cmdName s!"Unknown option {arg}."
     else

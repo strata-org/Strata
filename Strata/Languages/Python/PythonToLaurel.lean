@@ -506,21 +506,33 @@ partial def translateExpr (ctx : TranslationContext) (e : Python.expr SourceRang
   | .Compare _ left ops comparators => do
     -- Python allows chained comparisons: a < b < c
     -- For now, only support single comparison
-    if ops.val.size != 1 || comparators.val.size != 1 then
+    if h: (ops.val.size != 1 || comparators.val.size != 1) then
       throw (.unsupportedConstruct "Chained comparisons not yet supported" (toString (repr e)))
-    let leftExpr ← translateExpr ctx left
-    let rightExpr ← translateExpr ctx comparators.val[0]!
-    let preludeOpnames ← match ops.val[0]! with
-      | .Eq _ => .ok "PEq"
-      | .NotEq _ => .ok "PNEq"
-      | .Lt _ => .ok "PLt"
-      | .LtE _ => .ok "PLe"
-      | .Gt _ => .ok "PGt"
-      | .GtE _ => .ok "PGe"
-      | .In _ => .ok "PIn"
-      | .NotIn _ => .ok "PNotIn"
-      | _ => throw (.unsupportedConstruct s!"Comparison operator not yet supported: {repr ops.val[0]!}" (toString (repr e)))
-    return mkStmtExprMd (StmtExpr.StaticCall preludeOpnames [leftExpr, rightExpr])
+    else
+      have hComp : 0 < comparators.val.size := by grind
+      have hOps: 0 < ops.val.size := by grind
+      let leftExpr ← translateExpr ctx left
+      let rightExpr ← translateExpr ctx (comparators.val[0]'hComp)
+      let preludeOpnames ← match ops.val[0]'hOps with
+        | .Eq _ => .ok "PEq"
+        | .NotEq _ => .ok "PNEq"
+        | .Lt _ => .ok "PLt"
+        | .LtE _ => .ok "PLe"
+        | .Gt _ => .ok "PGt"
+        | .GtE _ => .ok "PGe"
+        | .In _ => .ok "PIn"
+        | .NotIn _ => .ok "PNotIn"
+        -- `is`/`is not` are only sound when the RHS is None, because Python's
+        -- `is` checks object identity, not equality (e.g., True == 1 but
+        -- True is not 1). In the Any value model, None is a singleton so
+        -- identity and equality coincide for None comparisons.
+        | .Is _ => match comparators.val[0]'hComp with
+            | .Constant _ (.ConNone _) _ => .ok "PEq"
+            | _ => throw (.unsupportedConstruct "`is` is only supported with None" (toString (repr e)))
+        | .IsNot _ => match comparators.val[0]'hComp with
+            | .Constant _ (.ConNone _) _ => .ok "PNEq"
+            | _ => throw (.unsupportedConstruct "`is not` is only supported with None" (toString (repr e)))
+      return mkStmtExprMd (StmtExpr.StaticCall preludeOpnames [leftExpr, rightExpr])
 
   -- Boolean operations
   | .BoolOp _ op values => do
@@ -1287,10 +1299,32 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
     return (ctx, stmts)
 
   -- Assert statement
-  | .Assert _ test _msg => do
+  | .Assert _ test msg => do
     let condExpr ← translateExpr ctx test
-    let assertStmt := mkStmtExprMdWithLoc (StmtExpr.Assert (Any_to_bool condExpr)) md
-    return (ctx, [assertStmt])
+    -- Extract assert message as property summary
+    let md' := match msg.val with
+      | some (.Constant _ (.ConString _ str) _) => md.withPropertySummary str.val
+      | _ => md
+    -- Check if condition contains a Hole - if so, hoist to variable
+    let (condStmts, finalCondExpr, condCtx) :=
+      match condExpr.val with
+      | .Hole =>
+        let freshVar := s!"assert_cond_{test.toAst.ann.start.byteIdx}"
+        let varType := mkHighTypeMd .TBool
+        let varDecl := mkStmtExprMd (StmtExpr.LocalVariable freshVar varType (some condExpr))
+        let varRef := mkStmtExprMd (StmtExpr.Identifier freshVar)
+        ([varDecl], varRef, { ctx with variableTypes := ctx.variableTypes ++ [(freshVar, "bool")] })
+      | _ => ([], condExpr, ctx)
+
+    let assertStmt := mkStmtExprMdWithLoc (StmtExpr.Assert (Any_to_bool finalCondExpr)) md'
+
+    -- Wrap in block if we hoisted condition
+    let result := if condStmts.isEmpty then
+      assertStmt
+    else
+      mkStmtExprMdWithLoc (StmtExpr.Block (condStmts ++ [assertStmt]) none) md
+
+    return (condCtx, [result])
 
   --Ignore comments in source code
   | .Expr _ (.Constant _ (.ConString _ _) _) => return (ctx, [])

@@ -84,7 +84,9 @@ open Strata.C_Simp in
 #eval TransM.run Inhabited.default ((translateProgram (LinearSearchEnv.commands)).map (·.stripMetaData))
 
 /--
-info: procedure linearSearch (arr : intArr, e : int) returns (return : bool)
+info: program Core;
+
+procedure linearSearch (arr : intArr, e : int) returns (return : bool)
 spec {
   requires [pre]: true;
   ensures [post]: true;

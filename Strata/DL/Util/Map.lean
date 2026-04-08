@@ -62,7 +62,7 @@ def Map.union (m1 m2 : Map α β) : Map α β :=
 
 abbrev Map.empty : Map α β := []
 
-def Map.find? [DecidableEq α] (m : Map α β) (a' : α) : Option β :=
+@[expose] def Map.find? [DecidableEq α] (m : Map α β) (a' : α) : Option β :=
   match m with
   | [] => none
   | (a, b) :: m => if a = a' then some b else find? m a'
@@ -91,7 +91,7 @@ def Map.erase [DecidableEq α] (m : Map α β) (a' : α) : Map α β :=
   | [] => []
   | (a, b) :: m => if a = a' then erase m a' else (a, b) :: erase m a'
 
-def Map.isEmpty (m : Map α β) : Bool :=
+@[expose] def Map.isEmpty (m : Map α β) : Bool :=
   match m with
   | [] => true
   | _ => false
@@ -487,6 +487,18 @@ theorem Map.find?_insert_ne [DecidableEq α]
       have h_ne2 : ¬(hd.fst = x) := by rw [h_eq]; exact h_ne
       simp [h_ne2]
     · simp only [Map.find?]; split <;> simp_all
+
+/-- `Map.find?` returning `some v` implies `(x, v)` is a member of the map (as a list). -/
+theorem Map.find?_mem [DecidableEq α] (m : Map α β) (x : α) (v : β)
+    (h : Map.find? m x = some v) : List.Mem (x, v) m := by
+  induction m with
+  | nil => simp [Map.find?] at h
+  | cons p rest ih =>
+    obtain ⟨a, b⟩ := p
+    simp only [Map.find?] at h
+    split at h
+    · injection h with h; subst h; rename_i heq; subst heq; exact List.Mem.head _
+    · exact List.Mem.tail _ (ih h)
 
 -------------------------------------------------------------------------------
 end
