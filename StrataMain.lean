@@ -551,7 +551,7 @@ private def printPyAnalyzeSummary (vcResults : Array Core.VCResult)
     match checkMode with
     | .bugFinding | .bugFindingAssumingCompleteSpec =>
       { isFailure := fun r => match r.outcome with
-          | .ok o => o.alwaysFalseAndReachable
+          | .ok o => o.satisfiabilityProperty == .unsat
           | _     => false }
     | _ => {}
   -- 1. Partition out implementation errors (broken results, not classifiable).
@@ -693,18 +693,20 @@ def pyAnalyzeLaurelCommand : Command where
     -- at call sites with concrete arguments.
     let pyspecFiles := pflags.getRepeated "pyspec"
     let coreProgram ← profileStep profile "Inline PySpec procedures" do
-      if pyspecFiles.size > 0 then
-        match Core.inlineProcedures coreProgram
-              ⟨.some (fun name _ => name ≠ "__main__" && !preludeNames.contains name)⟩ with
-        | .error e => exitPyAnalyzeInternalError s!"Inlining failed: {e}"
-        | .ok inlined => do
-          if verbose then
-            IO.println "\n==== Core Program (after inlining) ===="
-            IO.print inlined
-          if let some dir := keepDir then
-            let path := s!"{dir}/{baseName}.inlined.core"
-            IO.FS.writeFile path (toString inlined)
-          pure inlined
+      if pyspecFiles.size > 0 || dispatchModules.size > 0 then
+        let pred := ⟨.some (fun name _ => name ≠ "__main__")⟩
+        let mut prog := coreProgram
+        for _ in [:3] do
+          match Core.inlineProcedures prog pred with
+          | .error e => exitPyAnalyzeInternalError s!"Inlining failed: {e}"
+          | .ok inlined => prog := inlined
+        if verbose then
+          IO.println "\n==== Core Program (after inlining) ===="
+          IO.print prog
+        if let some dir := keepDir then
+          let path := s!"{dir}/{baseName}.inlined.core"
+          IO.FS.writeFile path (toString prog)
+        pure prog
       else pure coreProgram
 
     -- Verify using Core verifier

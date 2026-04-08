@@ -553,7 +553,7 @@ def translateProcedure (proc : Procedure) : TranslateM Core.Procedure := do
     match proc.body with
     | .Transparent bodyExpr => translateStmt proc.outputs bodyExpr
     | .Opaque _postconds (some impl) _ => translateStmt proc.outputs impl
-    | _ => pure [Core.Statement.assume "no_body" (.const () (.boolConst false)) mdWithUnknownLoc]
+    | _ => pure []
   -- Wrap body in a labeled block so early returns (exit) work correctly.
   let body : List Core.Statement := [.block "$body" bodyStmts mdWithUnknownLoc]
   let spec : Core.Procedure.Spec := { modifies, preconditions, postconditions }

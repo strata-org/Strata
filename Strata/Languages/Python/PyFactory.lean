@@ -77,6 +77,7 @@ private def mkModeBoolFunc (name : String) (mode : MatchMode) :
       typeArgs := [],
       inputs := [("pattern", mty[string]), ("s", mty[string])],
       output := mty[bool],
+      attr := #[.evalIfConstr 0],
       concreteEval := some
         (fun _ args => match args with
           | [LExpr.strConst () pattern, sExpr] =>
