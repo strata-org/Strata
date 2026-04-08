@@ -1809,6 +1809,35 @@ def translateClass (ctx : TranslationContext) (classStmt : Python.stmt SourceRan
           let funcDecl ← pyFuncDefToPythonFunctionDecl ctx s
           .ok (some (funcDecl))
       | _ => .ok none)
+    -- Synthesize a default __init__ if the class doesn't define one
+    let hasInit := classFunDecls.any (fun d => d.name == className ++ "@__init__")
+    let (classFunDecls, defaultInitProc) :=
+      if hasInit then (classFunDecls, none)
+      else
+        let initDeclName := className ++ "@__init__"
+        let defaultInitDecl : PythonFunctionDecl := {
+          name := initDeclName
+          args := []
+          kwargsName := none
+          ret := some ([className], defaultMetadata)
+        }
+        let selfParam : Parameter := {
+          name := "self"
+          type := mkHighTypeMd (.UserDefined (mkId className))
+        }
+        let defaultInitProcedure : Procedure := {
+          name := initDeclName
+          inputs := [selfParam]
+          outputs := [{name := "LaurelResult", type := AnyTy}]
+          preconditions := [mkStmtExprMd (StmtExpr.LiteralBool true)]
+          determinism := .nondeterministic
+          isFunctional := false
+          decreases := none
+          body := .Opaque [] .none []
+          md := defaultMetadata
+        }
+        (classFunDecls ++ [defaultInitDecl], some defaultInitProcedure)
+
     let ctx := {ctx with functionSignatures:= ctx.functionSignatures ++ classFunDecls}
     -- Extract fields from class-level annotations and __init__ body, with dedup
     let classLevelFields ← extractClassFields ctx body
@@ -1835,6 +1864,9 @@ def translateClass (ctx : TranslationContext) (classStmt : Python.stmt SourceRan
         let proc ← translateMethod ctx className stmt
         -- TODO stop replacing the body of instance proceduces with an empty one
         instanceProcedures := instanceProcedures.push { proc with body := .Opaque [] .none [] }
+    -- Add synthesized default __init__ if needed
+    if let some initProc := defaultInitProc then
+      instanceProcedures := instanceProcedures.push initProc
 
     return ({
       name := className
