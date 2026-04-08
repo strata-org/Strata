@@ -552,6 +552,8 @@ private def printPyAnalyzeSummary (vcResults : Array Core.VCResult)
     | .bugFinding | .bugFindingAssumingCompleteSpec =>
       { isFailure := fun r => match r.outcome with
           | .ok o => o.alwaysFalseAndReachable
+                   || o.alwaysFalseReachabilityUnknown
+                   || o.unreachable
           | _     => false }
     | _ => {}
   -- 1. Partition out implementation errors (broken results, not classifiable).
