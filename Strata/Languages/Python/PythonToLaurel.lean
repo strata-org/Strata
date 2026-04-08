@@ -497,21 +497,33 @@ partial def translateExpr (ctx : TranslationContext) (e : Python.expr SourceRang
   | .Compare _ left ops comparators => do
     -- Python allows chained comparisons: a < b < c
     -- For now, only support single comparison
-    if ops.val.size != 1 || comparators.val.size != 1 then
+    if h: (ops.val.size != 1 || comparators.val.size != 1) then
       throw (.unsupportedConstruct "Chained comparisons not yet supported" (toString (repr e)))
-    let leftExpr ← translateExpr ctx left
-    let rightExpr ← translateExpr ctx comparators.val[0]!
-    let preludeOpnames ← match ops.val[0]! with
-      | .Eq _ => .ok "PEq"
-      | .NotEq _ => .ok "PNEq"
-      | .Lt _ => .ok "PLt"
-      | .LtE _ => .ok "PLe"
-      | .Gt _ => .ok "PGt"
-      | .GtE _ => .ok "PGe"
-      | .In _ => .ok "PIn"
-      | .NotIn _ => .ok "PNotIn"
-      | _ => throw (.unsupportedConstruct s!"Comparison operator not yet supported: {repr ops.val[0]!}" (toString (repr e)))
-    return mkStmtExprMd (StmtExpr.StaticCall preludeOpnames [leftExpr, rightExpr])
+    else
+      have hComp : 0 < comparators.val.size := by grind
+      have hOps: 0 < ops.val.size := by grind
+      let leftExpr ← translateExpr ctx left
+      let rightExpr ← translateExpr ctx (comparators.val[0]'hComp)
+      let preludeOpnames ← match ops.val[0]'hOps with
+        | .Eq _ => .ok "PEq"
+        | .NotEq _ => .ok "PNEq"
+        | .Lt _ => .ok "PLt"
+        | .LtE _ => .ok "PLe"
+        | .Gt _ => .ok "PGt"
+        | .GtE _ => .ok "PGe"
+        | .In _ => .ok "PIn"
+        | .NotIn _ => .ok "PNotIn"
+        -- `is`/`is not` are only sound when the RHS is None, because Python's
+        -- `is` checks object identity, not equality (e.g., True == 1 but
+        -- True is not 1). In the Any value model, None is a singleton so
+        -- identity and equality coincide for None comparisons.
+        | .Is _ => match comparators.val[0]'hComp with
+            | .Constant _ (.ConNone _) _ => .ok "PEq"
+            | _ => throw (.unsupportedConstruct "`is` is only supported with None" (toString (repr e)))
+        | .IsNot _ => match comparators.val[0]'hComp with
+            | .Constant _ (.ConNone _) _ => .ok "PNEq"
+            | _ => throw (.unsupportedConstruct "`is not` is only supported with None" (toString (repr e)))
+      return mkStmtExprMd (StmtExpr.StaticCall preludeOpnames [leftExpr, rightExpr])
 
   -- Boolean operations
   | .BoolOp _ op values => do

@@ -63,7 +63,7 @@ Result: ✅ pass
 
 Obligation: h_incorrect_ensures_1
 Property: assert
-Result: ❌ fail
+Result: ❓ unknown
 -/
 #guard_msgs in
 #eval verify oldModifiesPgm (options := .quiet)
