@@ -10,9 +10,9 @@ Symlink this directory into your VSCode extensions folder:
 ln -s /path/to/Strata/editors/vscode ~/.vscode/extensions/strata-st
 ```
 
-Then reload VSCode: **Cmd+Shift+P** -> **Developer: Reload Window**.
+Then reload VSCode via the Command Palette: **Developer: Reload Window**.
 
-All `.core.st` files will now have syntax highlighting, bracket matching, auto-closing pairs, and comment toggling (`Cmd+/`).
+All `.core.st` files will now have syntax highlighting, bracket matching, auto-closing pairs, and comment toggling.
 
 ## Adding support for other Strata dialects
 
