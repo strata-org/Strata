@@ -124,6 +124,17 @@ open Lambda Strata.SMT
 
 public section
 
+/-- Replace characters that are problematic on common filesystems
+    (parens, quotes, spaces, path separators, and Windows-invalid characters
+    such as `< > : | ? *`) with underscores or remove them.
+    Single-pass over the string. -/
+def sanitizeFilename (s : String) : String :=
+  String.ofList <| s.toList.filterMap fun c =>
+    if c == '"' || c == '\'' then none
+    else if c == '(' || c == ')' || c == ' ' || c == '/' || c == '\\'
+         || c == '<' || c == '>' || c == ':' || c == '|' || c == '?' || c == '*' then some '_'
+    else some c
+
 private def typedVarToSMTFn (ctx : SMT.Context) (id : Core.Expression.Ident)
   (ty : Core.Expression.Ty) := do
     -- Type of identifier has to be monotye
@@ -731,7 +742,7 @@ def getObligationResult (assumptionTerms : List Term) (obligationTerm : Term)
   let prog := f!"\n\n[DEBUG] Evaluated program:\n{Core.formatProgram p}"
   let counterVal ← counter.get
   counter.set (counterVal + 1)
-  let filename := tempDir / s!"{obligation.label}_{counterVal}.smt2"
+  let filename := tempDir / s!"{Core.SMT.sanitizeFilename obligation.label}_{counterVal}.smt2"
   let varsInObligation := ProofObligation.getVars obligation
   -- All variables in ProofObligation must have been typed.
   let typedVarsInObligation ← varsInObligation.mapM
