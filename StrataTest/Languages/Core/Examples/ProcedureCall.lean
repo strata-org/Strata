@@ -83,35 +83,35 @@ a_positive: $__a2 > 0
 Obligation:
 $__counter1 + $__a2 - $__a2 == $__counter1
 
-Label: (Origin_Inc_Requires)counter_ge_zero
+Label: callElimAssert_counter_ge_zero_14
 Property: assert
 Assumptions:
 counter_ge_zero: $__counter5 >= 0
 Obligation:
 $__counter5 >= 0
 
-Label: (Origin_Inc_Requires)a_positive
+Label: callElimAssert_a_positive_15
 Property: assert
 Assumptions:
 counter_ge_zero: $__counter5 >= 0
 Obligation:
 true
 
-Label: (Origin_Inc_Requires)counter_ge_zero
+Label: callElimAssert_counter_ge_zero_5
 Property: assert
 Assumptions:
 counter_ge_zero: $__counter5 >= 0
-(Origin_Inc_Ensures)new_g_value: $__counter8 == $__counter5 + 8
-(Origin_Inc_Ensures)old_g_property: $__b9 - 8 == $__counter5
+callElimAssume_new_g_value_16: $__counter8 == $__counter5 + 8
+callElimAssume_old_g_property_17: $__b9 - 8 == $__counter5
 Obligation:
 $__counter8 >= 0
 
-Label: (Origin_Inc_Requires)a_positive
+Label: callElimAssert_a_positive_6
 Property: assert
 Assumptions:
 counter_ge_zero: $__counter5 >= 0
-(Origin_Inc_Ensures)new_g_value: $__counter8 == $__counter5 + 8
-(Origin_Inc_Ensures)old_g_property: $__b9 - 8 == $__counter5
+callElimAssume_new_g_value_16: $__counter8 == $__counter5 + 8
+callElimAssume_old_g_property_17: $__b9 - 8 == $__counter5
 Obligation:
 true
 
@@ -119,10 +119,10 @@ Label: return_value_lemma
 Property: assert
 Assumptions:
 counter_ge_zero: $__counter5 >= 0
-(Origin_Inc_Ensures)new_g_value: $__counter8 == $__counter5 + 8
-(Origin_Inc_Ensures)old_g_property: $__b9 - 8 == $__counter5
-(Origin_Inc_Ensures)new_g_value: $__counter10 == $__counter8 + 8
-(Origin_Inc_Ensures)old_g_property: $__b11 - 8 == $__counter8
+callElimAssume_new_g_value_16: $__counter8 == $__counter5 + 8
+callElimAssume_old_g_property_17: $__b9 - 8 == $__counter5
+callElimAssume_new_g_value_7: $__counter10 == $__counter8 + 8
+callElimAssume_old_g_property_8: $__b11 - 8 == $__counter8
 Obligation:
 $__b11 == $__counter5 + 16
 
@@ -141,19 +141,19 @@ Obligation: old_g_property
 Property: assert
 Result: ✅ pass
 
-Obligation: (Origin_Inc_Requires)counter_ge_zero
+Obligation: callElimAssert_counter_ge_zero_14
 Property: assert
 Result: ✅ pass
 
-Obligation: (Origin_Inc_Requires)a_positive
+Obligation: callElimAssert_a_positive_15
 Property: assert
 Result: ✅ pass
 
-Obligation: (Origin_Inc_Requires)counter_ge_zero
+Obligation: callElimAssert_counter_ge_zero_5
 Property: assert
 Result: ✅ pass
 
-Obligation: (Origin_Inc_Requires)a_positive
+Obligation: callElimAssert_a_positive_6
 Property: assert
 Result: ✅ pass
 

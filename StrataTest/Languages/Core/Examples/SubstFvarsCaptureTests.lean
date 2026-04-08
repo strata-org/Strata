@@ -68,7 +68,7 @@ procedure Test() returns ()
 -- P(y,0): iterated [x↦$__y3][$__y3↦0] on `x==$__y3` produces 0==0 (pass). Correct: y==0 (fail).
 /--
 info:
-Obligation: (Origin_P_Requires)P_requires_0
+Obligation: callElimAssert_P_requires_0_2
 Property: assert
 Result: ❌ fail
 -/

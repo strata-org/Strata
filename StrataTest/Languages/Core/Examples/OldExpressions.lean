@@ -80,40 +80,36 @@ true
 Label: T2_g2_eq_g
 Property: assert
 Assumptions:
-(Origin_T1_Ensures)T1_g_unchanged: true == true
-(Origin_T1_Ensures)T1_g2_eq_old_g: $__g212 == true
-(Origin_T1_Ensures)T1_y_eq_old_g2: $__a13 == false
-(Origin_T1_Ensures)T1_z_eq_y: $__b14 == false
+callElimAssume_T1_g2_eq_old_g_6: $__g212 == true
+callElimAssume_T1_y_eq_old_g2_7: $__a13 == false
+callElimAssume_T1_z_eq_y_8: $__b14 == false
 Obligation:
 $__g212 == true
 
 Label: T2_g_true
 Property: assert
 Assumptions:
-(Origin_T1_Ensures)T1_g_unchanged: true == true
-(Origin_T1_Ensures)T1_g2_eq_old_g: $__g212 == true
-(Origin_T1_Ensures)T1_y_eq_old_g2: $__a13 == false
-(Origin_T1_Ensures)T1_z_eq_y: $__b14 == false
+callElimAssume_T1_g2_eq_old_g_6: $__g212 == true
+callElimAssume_T1_y_eq_old_g2_7: $__a13 == false
+callElimAssume_T1_z_eq_y_8: $__b14 == false
 Obligation:
 true
 
 Label: T2_a_eq_false
 Property: assert
 Assumptions:
-(Origin_T1_Ensures)T1_g_unchanged: true == true
-(Origin_T1_Ensures)T1_g2_eq_old_g: $__g212 == true
-(Origin_T1_Ensures)T1_y_eq_old_g2: $__a13 == false
-(Origin_T1_Ensures)T1_z_eq_y: $__b14 == false
+callElimAssume_T1_g2_eq_old_g_6: $__g212 == true
+callElimAssume_T1_y_eq_old_g2_7: $__a13 == false
+callElimAssume_T1_z_eq_y_8: $__b14 == false
 Obligation:
 $__a13 == false
 
 Label: T2_b_eq_false
 Property: assert
 Assumptions:
-(Origin_T1_Ensures)T1_g_unchanged: true == true
-(Origin_T1_Ensures)T1_g2_eq_old_g: $__g212 == true
-(Origin_T1_Ensures)T1_y_eq_old_g2: $__a13 == false
-(Origin_T1_Ensures)T1_z_eq_y: $__b14 == false
+callElimAssume_T1_g2_eq_old_g_6: $__g212 == true
+callElimAssume_T1_y_eq_old_g2_7: $__a13 == false
+callElimAssume_T1_z_eq_y_8: $__b14 == false
 Obligation:
 $__b14 == false
 
