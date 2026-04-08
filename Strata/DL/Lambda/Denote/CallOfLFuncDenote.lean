@@ -51,6 +51,24 @@ def OpsConsistent (F : @Factory T) : LExpr T.mono → Prop := fun e =>
    | .quant _ _ _ _ tr body => OpsConsistent F tr ∧ OpsConsistent F body
    | _ => True)
 
+/-- `OpsConsistent` is preserved by `varOpen`. -/
+theorem OpsConsistent_varOpen
+    {F : @Factory T} {k : Nat}
+    {x : Identifier T.IDMeta × Option T.mono.TypeType}
+    {e : LExpr T.mono}
+    (h : OpsConsistent F e)
+    : OpsConsistent F (LExpr.varOpen k x e) := by
+  sorry
+
+/-- Every argument of a `callOfLFunc` call inherits `OpsConsistent`. -/
+theorem OpsConsistent_callOfLFunc_args
+    {F : @Factory T} {e callee : LExpr T.mono}
+    {args : List (LExpr T.mono)} {fn : LFunc T}
+    (hOps : OpsConsistent F e)
+    (hcall : Factory.callOfLFunc F e = some (callee, args, fn))
+    : ∀ a ∈ args, OpsConsistent F a := by
+  sorry
+
 /-! ## `substTyVars` commutation lemmas -/
 
 theorem substTyVars_mkArrow' (vt : TyVarVal) (ret : LMonoTy) (ins : List LMonoTy) :

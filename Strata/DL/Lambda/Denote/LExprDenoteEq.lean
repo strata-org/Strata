@@ -10,6 +10,7 @@ import all Strata.DL.Lambda.Denote.LExprDenoteProps
 import all Strata.DL.Lambda.Denote.LExprDenoteSubst
 import all Strata.DL.Lambda.Denote.CallOfLFuncDenote
 import all Strata.DL.Lambda.LExprEval
+import all Strata.DL.Lambda.Denote.LExprConstructors
 
 namespace Lambda
 
@@ -171,32 +172,6 @@ theorem eqlCombine_attach_zip_all_true
         simp only [heq] at h
         exact ih_ind h n ha1 ha2
 
-/-! ## `eql` preserves typing -/
-
-/-- If `eql` returns `some true`, then both sides have the same type. -/
-theorem eql_true_implies_same_type
-    {F : @Factory T}
-    {Δ : List LMonoTy}
-    {e₁ e₂ : LExpr T.mono} {τ₁ τ₂ : LMonoTy}
-    (h₁ : LExpr.HasTypeA Δ e₁ τ₁)
-    (h₂ : LExpr.HasTypeA Δ e₂ τ₂)
-    (heql : LExpr.eql F e₁ e₂ = some true)
-    : τ₁ = τ₂ := by
-  sorry
-
-/-- If the eqlCombine foldl over argument pairs returns `some true`,
-and both argument lists are well-typed, then the argument types match. -/
-theorem eql_foldl_implies_argTys_eq
-    {F : @Factory T}
-    {Δ : List LMonoTy}
-    {args1 args2 : List (LExpr T.mono)}
-    {argTys1 argTys2 : List LMonoTy}
-    (h_args1 : List.Forall₂ (LExpr.HasTypeA Δ) args1 argTys1)
-    (h_args2 : List.Forall₂ (LExpr.HasTypeA Δ) args2 argTys2)
-    (heql : List.foldl (fun acc x =>
-      LExpr.eqlCombine acc (LExpr.eql F x.1.val x.snd)) (some true) (args1.attach.zip args2) = some true)
-    : argTys1 = argTys2 := by
-  sorry
 
 /-- If the eql foldl returns `some true` and each element of args1 satisfies
 the IH (eql true → denote eq), then pointwise denotations are equal. -/
@@ -206,9 +181,12 @@ theorem eql_foldl_implies_denote_eq_pointwise
     (argTys : List LMonoTy)
     (ih : ∀ a1 ∈ args1, ∀ a2 fvarVal'
       {τ : LMonoTy} (ht1 : LExpr.HasTypeA [] a1 τ) (ht2 : LExpr.HasTypeA [] a2 τ),
+      OpsConsistent F a1 → OpsConsistent F a2 →
       LExpr.eql F a1 a2 = some true →
         LExpr.denote tcInterp opInterp fvarVal' vt .nil a1 τ ht1 =
         LExpr.denote tcInterp opInterp fvarVal' vt .nil a2 τ ht2)
+    (hoc₁ : ∀ a ∈ args1, OpsConsistent F a)
+    (hoc₂ : ∀ a ∈ args2, OpsConsistent F a)
     (heql_fold : List.foldl (fun acc x =>
       LExpr.eqlCombine acc (LExpr.eql F x.1.val x.snd)) (some true) (args1.attach.zip args2) = some true)
     : ∀ (i : Nat) (a1 a2 : LExpr T.mono) (τ : LMonoTy),
@@ -217,9 +195,10 @@ theorem eql_foldl_implies_denote_eq_pointwise
       LExpr.denote tcInterp opInterp fvarVal vt .nil a1 τ ht1 =
       LExpr.denote tcInterp opInterp fvarVal vt .nil a2 τ ht2 := by
   intro i a1 a2 τ ha1 ha2 hτ ht1 ht2
-  have hmem : a1 ∈ args1 := List.mem_iff_getElem?.mpr ⟨i, ha1⟩
+  have hmem1 : a1 ∈ args1 := List.mem_iff_getElem?.mpr ⟨i, ha1⟩
+  have hmem2 : a2 ∈ args2 := List.mem_iff_getElem?.mpr ⟨i, ha2⟩
   have heql_i := eqlCombine_attach_zip_all_true heql_fold i a1 a2 ha1 ha2
-  exact ih a1 hmem a2 fvarVal ht1 ht2 heql_i
+  exact ih a1 hmem1 a2 fvarVal ht1 ht2 (hoc₁ a1 hmem1) (hoc₂ a2 hmem2) heql_i
 
 /-! ## Main `eql` soundness theorems -/
 
@@ -231,6 +210,9 @@ theorem eql_true_implies_denote_eq
     {e₁ e₂ : LExpr T.mono} {τ : LMonoTy}
     (h₁ : LExpr.HasTypeA [] e₁ τ)
     (h₂ : LExpr.HasTypeA [] e₂ τ)
+    (hoc₁ : OpsConsistent F e₁)
+    (hoc₂ : OpsConsistent F e₂)
+    (hfwf : FactoryWF F)
     (heql : LExpr.eql F e₁ e₂ = some true)
     : LExpr.denote tcInterp opInterp fvarVal vt .nil e₁ τ h₁ =
       LExpr.denote tcInterp opInterp fvarVal vt .nil e₂ τ h₂ := by
@@ -283,16 +265,17 @@ theorem eql_true_implies_denote_eq
         have hfv'x : fvarVal' ⟨"x", default⟩ (LMonoTy.substTyVars vt aty) = x := by
           simp [fvarVal']
         -- Step 4: use varOpen_denote to convert to denote of varOpen'd bodies
-        have hvo1 := varOpen_denote (x := ⟨"x", default⟩) tcInterp opInterp fvarVal' vt .nil hbody1 (varOpen_HasTypeA hbody1)
-        have hvo2 := varOpen_denote (x := ⟨"x", default⟩) tcInterp opInterp fvarVal' vt .nil hbody2 (varOpen_HasTypeA hbody2)
+        have hvo1 := varOpen_denote (x := ⟨"x", default⟩) tcInterp opInterp fvarVal' vt hbody1 (varOpen_HasTypeA hbody1)
+        have hvo2 := varOpen_denote (x := ⟨"x", default⟩) tcInterp opInterp fvarVal' vt hbody2 (varOpen_HasTypeA hbody2)
         -- hvo1 : denote fvarVal' bvarVal (varOpen body1) = denote fvarVal' (cons (fvarVal' "x" ...) bvarVal) body1
         -- rewrite fvarVal' "x" ... = x
         rw [hfv'x] at hvo1 hvo2
         -- Now hvo1 : denote fvarVal' bvarVal (varOpen body1) = denote fvarVal' (cons x bvarVal) body1
         rw [← hvo1, ← hvo2]
         -- Goal: denote fvarVal' bvarVal (varOpen body1) = denote fvarVal' bvarVal (varOpen body2)
-        -- Step 5: apply IH
-        exact ih fvarVal' (varOpen_HasTypeA hbody1) (varOpen_HasTypeA hbody2) heql
+        -- Step 5: apply IH (propagate OpsConsistent through varOpen)
+        exact ih fvarVal' (varOpen_HasTypeA hbody1) (varOpen_HasTypeA hbody2)
+          (OpsConsistent_varOpen hoc₁.2) (OpsConsistent_varOpen hoc₂.2) heql
     | case6 => contradiction -- abs vs abs, not both closed: none ≠ some true
     | case7 => contradiction -- const vs abs: some false ≠ some true
     | case8 => contradiction -- abs vs const: some false ≠ some true
@@ -342,13 +325,19 @@ theorem eql_true_implies_denote_eq
         rw [hcall1] at heq1'; cases heq1'
         rw [hcall2] at heq2'; cases heq2'
         simp at heql
-        obtain ⟨_, heql_fold⟩ := heql
-        have hargTys := eql_foldl_implies_argTys_eq h_args1 h_args2 heql_fold
+        obtain ⟨hconstr, heql_fold⟩ := heql
+        -- Extract OpsConsistent for arguments from the top-level OpsConsistent
+        have hoc_args1 := OpsConsistent_callOfLFunc_args hoc₁ hcall1
+        have hoc_args2 := OpsConsistent_callOfLFunc_args hoc₂ hcall2
+        have hargTys := constr_callOfLFunc_argTys_eq
+          hcall1 hcall2 h₁ h₂ h_args1 h_args2
+          hoc₁ hoc₂ hfwf hconstr
+          ⟨m1, name1, h_callee1⟩ ⟨m2, name2, h_callee2⟩
         subst hargTys
         -- Goal: denoteArgs ... args1 argTys1 h_args1 = denoteArgs ... args2 argTys1 h_args2
-        -- Need: congr on applyArgs, then show denoteArgs equal using IH
         congr 1
-        have hpw := eql_foldl_implies_denote_eq_pointwise tcInterp opInterp fvarVal vt argTys1 ih_args heql_fold
+        have hpw := eql_foldl_implies_denote_eq_pointwise tcInterp opInterp fvarVal vt
+          argTys1 ih_args hoc_args1 hoc_args2 heql_fold
         exact denoteArgs_eq_of_denote_eq tcInterp opInterp fvarVal vt .nil h_args1 h_args2 hpw
       · contradiction
     | case12 e1 e2 hnotmod hnotconst hnotabs hnotconstabs hnotabsconst hnotbothcall =>

@@ -69,18 +69,20 @@ case ite/eq/quant: Similar decomposition with unfolding lemmas + IH.
     `Δ₁ ++ [aty]` with `|Δ₁| = k`. The substituted value `v` must be locally
     closed and well-typed in the empty context. -/
 theorem substK_denote
-    {body : LExpr T.mono} {v : LExpr T.mono}
+    {body : LExpr T.mono} {s : T.mono.base.Metadata → LExpr T.mono}
     {aty τ : LMonoTy}
     {Δ₁ : List LMonoTy}
+    {val : TyDenote tcInterp vt aty}
     (bvarVal₁ : BVarVal tcInterp vt Δ₁)
     (h_body : LExpr.HasTypeA (Δ₁ ++ [aty]) body τ)
-    (h_v : LExpr.HasTypeA [] v aty)
-    (h_subst : LExpr.HasTypeA Δ₁ (LExpr.substK Δ₁.length (fun _ => v) body) τ)
-    (h_lc : LExpr.lcAt 0 v = true)
+    (h_v : ∀ m, LExpr.HasTypeA [] (s m) aty)
+    (h_subst : LExpr.HasTypeA Δ₁ (LExpr.substK Δ₁.length s body) τ)
+    (h_lc : ∀ m, LExpr.lcAt 0 (s m) = true)
+    (h_denote_eq : ∀ m, LExpr.denote tcInterp opInterp fvarVal vt .nil (s m) aty (h_v m) = val)
     : LExpr.denote tcInterp opInterp fvarVal vt bvarVal₁
-        (LExpr.substK Δ₁.length (fun _ => v) body) τ h_subst =
+        (LExpr.substK Δ₁.length s body) τ h_subst =
       LExpr.denote tcInterp opInterp fvarVal vt
-        (HList.append bvarVal₁ (.cons (LExpr.denote tcInterp opInterp fvarVal vt .nil v aty h_v) .nil))
+        (HList.append bvarVal₁ (.cons val .nil))
         body τ h_body := by
   induction body generalizing Δ₁ τ with
   | const m c =>
@@ -112,10 +114,11 @@ theorem substK_denote
       simp [LExpr.substK] at h_subst
       have h_lookup := HasTypeA.bvar_inv h_body
       simp at h_lookup; subst h_lookup
-      rw [denote_irrel_of_lcAt tcInterp opInterp fvarVal vt h_lc h_subst h_v bvarVal₁ .nil]
+      rw [denote_irrel_of_lcAt tcInterp opInterp fvarVal vt (h_lc m) h_subst (h_v m) bvarVal₁ .nil]
+      rw [h_denote_eq m]
       rw [denote_bvar tcInterp opInterp fvarVal vt _ h_body]
       exact (HList.get_append_cons_self bvarVal₁
-        (LExpr.denote tcInterp opInterp fvarVal vt .nil v aty h_v) .nil
+        val .nil
         (HasTypeA.bvar_inv h_body)).symm
     · rename_i h_ne
       simp [LExpr.substK, h_ne] at h_subst
@@ -128,7 +131,7 @@ theorem substK_denote
     let ⟨aty_s, h_fn_s, h_arg_s⟩ := HasTypeA.app_inv h_subst
     have h_aty : aty_s = aty_b := by
       have h1 := LExpr.HasTypeA_to_typeCheck h_fn_s
-      rw [substK_typeCheck (fun _ => h_v)] at h1
+      rw [substK_typeCheck h_v] at h1
       have h2 := LExpr.HasTypeA_to_typeCheck h_fn_b
       rw [h1] at h2; cases h2; rfl
     subst h_aty
@@ -165,14 +168,14 @@ theorem substK_denote
     subst h_τ_b
     have h_ty : ty_s = ty_b := by
       have h1 := LExpr.HasTypeA_to_typeCheck h_1_s
-      rw [substK_typeCheck (fun _ => h_v)] at h1
+      rw [substK_typeCheck h_v] at h1
       have h2 := LExpr.HasTypeA_to_typeCheck h_1_b
       rw [h1] at h2; cases h2; rfl
     subst h_ty
     by_cases heq : LExpr.denote tcInterp opInterp fvarVal vt bvarVal₁
-        (LExpr.substK Δ₁.length (fun _ => v) e1) ty_s h_1_s =
+        (LExpr.substK Δ₁.length s e1) ty_s h_1_s =
       LExpr.denote tcInterp opInterp fvarVal vt bvarVal₁
-        (LExpr.substK Δ₁.length (fun _ => v) e2) ty_s h_2_s
+        (LExpr.substK Δ₁.length s e2) ty_s h_2_s
     · rw [denote_eq_true bvarVal₁ h_1_s h_2_s h_subst heq,
           denote_eq_true _ h_1_b h_2_b h_body
             (by rw [← ih1 bvarVal₁ h_1_b h_1_s, ← ih2 bvarVal₁ h_2_b h_2_s]; exact heq)]
@@ -191,7 +194,7 @@ theorem substK_denote
       | all =>
         by_cases hall : ∀ x : TyDenote tcInterp vt qty',
             (LExpr.denote tcInterp opInterp fvarVal vt (.cons x bvarVal₁)
-              (LExpr.substK (Δ₁.length + 1) (fun _ => v) sub_body) .bool h_body_s : Bool) = true
+              (LExpr.substK (Δ₁.length + 1) s sub_body) .bool h_body_s : Bool) = true
         · rw [denote_quant_all_true bvarVal₁ h_body_s h_subst hall]
           symm
           apply denote_quant_all_true
@@ -202,7 +205,7 @@ theorem substK_denote
           exact ih_body.symm
         · have ⟨w, hw⟩ := Classical.not_forall.mp hall
           have hwf : (LExpr.denote tcInterp opInterp fvarVal vt (.cons w bvarVal₁)
-              (LExpr.substK (Δ₁.length + 1) (fun _ => v) sub_body) .bool h_body_s : Bool) = false :=
+              (LExpr.substK (Δ₁.length + 1) s sub_body) .bool h_body_s : Bool) = false :=
             Bool.eq_false_iff.mpr hw
           rw [denote_quant_all_false bvarVal₁ h_body_s h_subst w hwf]
           symm
@@ -214,7 +217,7 @@ theorem substK_denote
       | exist =>
         by_cases hexist : ∃ x : TyDenote tcInterp vt qty',
             (LExpr.denote tcInterp opInterp fvarVal vt (.cons x bvarVal₁)
-              (LExpr.substK (Δ₁.length + 1) (fun _ => v) sub_body) .bool h_body_s : Bool) = true
+              (LExpr.substK (Δ₁.length + 1) s sub_body) .bool h_body_s : Bool) = true
         · obtain ⟨w, hw⟩ := hexist
           rw [denote_quant_exist_true bvarVal₁ h_body_s h_subst w hw]
           symm
@@ -225,7 +228,7 @@ theorem substK_denote
           exact ih_body.symm
         · have hexist_f : ∀ x : TyDenote tcInterp vt qty',
               (LExpr.denote tcInterp opInterp fvarVal vt (.cons x bvarVal₁)
-                (LExpr.substK (Δ₁.length + 1) (fun _ => v) sub_body) .bool h_body_s : Bool) = false :=
+                (LExpr.substK (Δ₁.length + 1) s sub_body) .bool h_body_s : Bool) = false :=
             fun x => Bool.eq_false_iff.mpr (fun h => hexist ⟨x, h⟩)
           rw [denote_quant_exist_false bvarVal₁ h_body_s h_subst hexist_f]
           symm
@@ -248,7 +251,10 @@ theorem subst_denote
         (LExpr.subst (fun _ => v) body) τ h_subst =
       LExpr.denote tcInterp opInterp fvarVal vt
         (.cons (LExpr.denote tcInterp opInterp fvarVal vt .nil v aty h_v) .nil) body τ h_body := by
-  exact substK_denote (Δ₁ := []) _ _ _ _ _ h_body h_v h_subst h_lc
+  exact substK_denote (Δ₁ := []) (s := fun _ => v)
+    (val := LExpr.denote tcInterp opInterp fvarVal vt .nil v aty h_v)
+    (bvarVal₁ := HList.nil) (h_body := h_body) (h_v := fun _ => h_v)
+    (h_subst := h_subst) (h_lc := fun _ => h_lc) (h_denote_eq := fun _ => rfl)
 
 /-- `varOpen` commutes with denotation: opening a bound variable with a free
 variable `x` and then denoting under `fvarVal` is the same as denoting the
@@ -256,15 +262,20 @@ original body under `bvarVal` extended with `fvarVal x`. -/
 theorem varOpen_denote
     {body : LExpr T.mono} {x : Identifier T.IDMeta}
     {aty τ : LMonoTy}
-    {Δ : List LMonoTy}
-    (bvarVal : BVarVal tcInterp vt Δ)
-    (h_body : LExpr.HasTypeA (aty :: Δ) body τ)
-    (h_open : LExpr.HasTypeA Δ (LExpr.varOpen 0 (x, some aty) body) τ)
-    : LExpr.denote tcInterp opInterp fvarVal vt bvarVal
+    (h_body : LExpr.HasTypeA [aty] body τ)
+    (h_open : LExpr.HasTypeA [] (LExpr.varOpen 0 (x, some aty) body) τ)
+    : LExpr.denote tcInterp opInterp fvarVal vt .nil
         (LExpr.varOpen 0 (x, some aty) body) τ h_open =
       LExpr.denote tcInterp opInterp fvarVal vt
-        (.cons (fvarVal x (LMonoTy.substTyVars vt aty)) bvarVal) body τ h_body := by
-  sorry
+        (.cons (fvarVal x (LMonoTy.substTyVars vt aty)) .nil) body τ h_body := by
+  unfold LExpr.varOpen
+  exact substK_denote (Δ₁ := []) (s := fun m => .fvar m x (some aty))
+    (val := fvarVal x (LMonoTy.substTyVars vt aty))
+    (bvarVal₁ := HList.nil) (h_body := h_body)
+    (h_v := fun m => LExpr.typeCheck_to_HasTypeA (by simp [LExpr.typeCheck]))
+    (h_subst := h_open)
+    (h_lc := fun _ => by simp [LExpr.lcAt])
+    (h_denote_eq := fun m => by simp [LExpr.denote])
 
 /-! ### liftBVars and denotation -/
 

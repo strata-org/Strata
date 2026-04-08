@@ -607,4 +607,19 @@ theorem denoteArgs_eq_of_denote_eq
       LExpr.denote tcInterp opInterp fvarVal vt bvarVal a2 τ ht2)
     : denoteArgs tcInterp opInterp fvarVal vt bvarVal args1 argTys h_args1 =
       denoteArgs tcInterp opInterp fvarVal vt bvarVal args2 argTys h_args2 := by
-  sorry
+  induction h_args1 generalizing args2 with
+  | nil =>
+    cases h_args2
+    rfl
+  | cons h1_head h1_tail ih =>
+    cases h_args2 with
+    | cons h2_head h2_tail =>
+      simp only [denoteArgs]
+      congr 1
+      · exact hpw 0 _ _ _ (by simp) (by simp) (by simp) h1_head h2_head
+      · exact ih h2_tail (fun i a1 a2 τ ha1 ha2 hτ ht1 ht2 =>
+          hpw (i + 1) a1 a2 τ
+            (by simp only [List.getElem?_cons_succ]; exact ha1)
+            (by simp only [List.getElem?_cons_succ]; exact ha2)
+            (by simp only [List.getElem?_cons_succ]; exact hτ)
+            ht1 ht2)

@@ -65,6 +65,7 @@ theorem Step.denote_preserved
     (hFwt : Factory.WellTyped F)
     (hEnv : Env.InterpConsistent tcInterp opInterp env fvarVal)
     (hOps : OpsConsistent F e₁)
+    (hFwf : FactoryWF F)
     : LExpr.denote tcInterp opInterp fvarVal vt .nil e₁ τ h₁ =
       LExpr.denote tcInterp opInterp fvarVal vt .nil e₂ τ h₂ := by
   induction hstep generalizing τ with
@@ -146,7 +147,8 @@ theorem Step.denote_preserved
     cases h₁ with
     | eq h_1 h_2 =>
       rw [denote_eq_true .nil h_1 h_2 _
-          (eql_true_implies_denote_eq tcInterp opInterp fvarVal vt .nil h_1 h_2 heql)]
+          (eql_true_implies_denote_eq tcInterp opInterp fvarVal vt h_1 h_2
+            hOps.2.1 hOps.2.2 hFwf heql)]
       rfl
   | eq_reduce_false e1 e2 heql =>
     cases h₁ with
