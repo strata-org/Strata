@@ -245,11 +245,14 @@ private def compositeToOp (ct : CompositeType) : Strata.Operation :=
     name := { dialect := "Laurel", name := "compositeCommand" }
     args := #[.op compositeOp] }
 
+private def datatypeConstructorArgToArg (p : Parameter) : Arg :=
+  laurelOp "datatypeConstructorArg" #[ident p.name.text, highTypeToArg p.type]
+
 private def datatypeConstructorToArg (c : DatatypeConstructor) : Arg :=
   if c.args.isEmpty then
     laurelOp "datatypeConstructorNoArgs" #[ident c.name.text]
   else
-    let args := c.args.map parameterToArg |>.toArray
+    let args := c.args.map datatypeConstructorArgToArg |>.toArray
     laurelOp "datatypeConstructor" #[ident c.name.text, commaSep args]
 
 private def datatypeToOp (dt : DatatypeDefinition) : Strata.Operation :=
@@ -295,195 +298,6 @@ def programToStrata (prog : Laurel.Program) : Strata.Program :=
   let typeOps := prog.types.map typeDefinitionToOp |>.toArray
   let procOps := prog.staticProcedures.map procedureCommandOp |>.toArray
   Strata.Program.create Laurel_map "Laurel" (typeOps ++ procOps)
-
-open Std (Format format)
-open Std.Format
-
-/-- Format a HighType as Laurel syntax. `TTypedField` and `TSet` retain their
-    type parameters here (e.g. `Field[T]`, `Set[T]`) for readability, even though
-    the grammar cannot represent them. -/
-partial def fmtHighType (t : HighTypeMd) : Format :=
-  match t.val with
-  | .TVoid => "void"
-  | .TBool => "bool"
-  | .TInt => "int"
-  | .TFloat64 => "float64"
-  | .TReal => "real"
-  | .TString => "string"
-  | .THeap => "Heap"
-  | .TTypedField vt => "Field[" ++ fmtHighType vt ++ "]"
-  | .TSet et => "Set[" ++ fmtHighType et ++ "]"
-  | .TMap k v => "Map " ++ fmtHighType k ++ " " ++ fmtHighType v
-  | .UserDefined name => format name.text
-  | .Applied base _args => fmtHighType base
-  | .Pure base => fmtHighType base
-  | .Intersection types =>
-    match types with
-    | [] => "Unknown"
-    | t :: _ => fmtHighType t
-  | .TCore s => "Core " ++ format s
-  | .Unknown => "Unknown"
-
-private def fmtParam (p : Parameter) : Format :=
-  format p.name.text ++ ": " ++ fmtHighType p.type
-
-private def fmtOp : Laurel.Operation → Format
-  | .Eq => " == " | .Neq => " != " | .And => " & " | .Or => " | "
-  | .AndThen => " && " | .OrElse => " || " | .Not => "!"
-  | .Implies => " ==> " | .Neg => "-" | .Add => " + "
-  | .Sub => " - " | .Mul => " * " | .Div => " / " | .Mod => " % "
-  | .DivT => " /t " | .ModT => " %t " | .Lt => " < " | .Leq => " <= "
-  | .Gt => " > " | .Geq => " >= " | .StrConcat => " ++ "
-
-/-- Format a StmtExpr as valid Laurel DDM syntax. -/
-partial def fmtExpr (s : StmtExprMd) : Format := fmtExprVal s.val
-where
-  fmtExprVal : StmtExpr → Format
-    | .LiteralBool b => if b then "true" else "false"
-    | .LiteralInt n => format (toString n)
-    | .LiteralDecimal d => format (toString d)
-    | .LiteralString s => "\"" ++ format s ++ "\""
-    | .Hole true _ => "<?>"
-    | .Hole false _ => "<??>"
-    | .Identifier name => format name.text
-    | .Block stmts label =>
-      let body := joinSep (stmts.map fmtExpr) (";" ++ line)
-      let lbl := match label with | none => "" | some l => format l
-      group ("{" ++ nestD (line ++ body) ++ line ++ "}" ++ lbl)
-    | .LocalVariable name ty init =>
-      "var " ++ format name.text ++ ": " ++ fmtHighType ty ++
-      match init with
-      | none => ""
-      | some e => " := " ++ fmtExpr e
-    | .Assign [target] value =>
-      fmtExpr target ++ " := " ++ fmtExpr value
-    | .Assign targets value =>
-      "(" ++ joinSep (targets.map fmtExpr) ", " ++ ") := " ++ fmtExpr value
-    | .FieldSelect target field =>
-      fmtExpr target ++ "#" ++ format field.text
-    | .StaticCall callee args =>
-      format callee.text ++ "(" ++ joinSep (args.map fmtExpr) ", " ++ ")"
-    | .PrimitiveOp op [a] => fmtOp op ++ fmtExpr a
-    | .PrimitiveOp op [a, b] => fmtExpr a ++ fmtOp op ++ fmtExpr b
-    | .PrimitiveOp op args =>
-      fmtOp op ++ "(" ++ joinSep (args.map fmtExpr) ", " ++ ")"
-    | .IfThenElse cond thenBr elseBr =>
-      "if " ++ fmtExpr cond ++ " then " ++ fmtExpr thenBr ++
-      match elseBr with
-      | none => ""
-      | some e => " else " ++ fmtExpr e
-    | .While cond invs _decreases body =>
-      "while(" ++ fmtExpr cond ++ ")" ++
-      join (invs.map fun i => line ++ "  invariant " ++ fmtExpr i) ++
-      line ++ fmtExpr body
-    | .Return (some value) => "return " ++ fmtExpr value
-    | .Return none => "return"
-    | .Exit label => "exit " ++ format label
-    | .Assert cond => "assert " ++ fmtExpr cond
-    | .Assume cond => "assume " ++ fmtExpr cond
-    | .New name => "new " ++ format name.text
-    | .This => "this"
-    | .IsType target ty =>
-      fmtExpr target ++ " is " ++ fmtHighType ty
-    | .AsType target ty =>
-      fmtExpr target ++ " as " ++ fmtHighType ty
-    | .InstanceCall target callee args =>
-      fmtExpr target ++ "#" ++ format callee.text ++ "(" ++
-      joinSep (args.map fmtExpr) ", " ++ ")"
-    | .Forall param trigger body =>
-      let trigFmt := match trigger with
-        | some t => "{" ++ fmtExpr t ++ "}"
-        | none => ""
-      "forall(" ++ format param.name.text ++ ": " ++ fmtHighType param.type ++ ")" ++ trigFmt ++ " => " ++ fmtExpr body
-    | .Exists param trigger body =>
-      let trigFmt := match trigger with
-        | some t => "{" ++ fmtExpr t ++ "}"
-        | none => ""
-      "exists(" ++ format param.name.text ++ ": " ++ fmtHighType param.type ++ ")" ++ trigFmt ++ " => " ++ fmtExpr body
-    | .ReferenceEquals lhs rhs => fmtExpr lhs ++ " == " ++ fmtExpr rhs
-    | .Assigned name => "assigned(" ++ fmtExpr name ++ ")"
-    | .Old value => "old(" ++ fmtExpr value ++ ")"
-    | .Fresh value => "fresh(" ++ fmtExpr value ++ ")"
-    | .ProveBy value _proof => fmtExprVal value.val
-    | .ContractOf _type fn => fmtExprVal fn.val
-    | .Abstract => "abstract"
-    | .All => "all"
-    | .PureFieldUpdate target field value =>
-      fmtExpr target ++ " with { " ++ format field.text ++ " := " ++ fmtExpr value ++ " }"
-
-private def fmtField (f : Field) : Format :=
-  (if f.isMutable then "var " else "") ++ format f.name.text ++ ": " ++ fmtHighType f.type
-
-private def fmtErrSummary (e : StmtExprMd) : Format :=
-  match e.md.getPropertySummary with
-  | none => ""
-  | some msg => " summary \"" ++ format msg ++ "\""
-
-private def fmtProcedure (proc : Procedure) : Format :=
-  let keyword := if proc.isFunctional then "function " else "procedure "
-  let params := joinSep (proc.inputs.map fmtParam) ", "
-  let retType := match proc.outputs with
-    | [single] => ": " ++ fmtHighType single.type
-    | _ => if proc.outputs.isEmpty then Format.nil
-           else " returns (" ++ joinSep (proc.outputs.map fmtParam) ", " ++ ")"
-  let requires := join (proc.preconditions.map fun p =>
-    line ++ "  requires " ++ fmtExpr p ++ fmtErrSummary p)
-  let invokeOn := match proc.invokeOn with
-    | none => Format.nil
-    | some e => line ++ "  invokeOn " ++ fmtExpr e
-  let (ensures_, modifies_, bodyFmt) := match proc.body with
-    | .Transparent body =>
-      (Format.nil, Format.nil, line ++ fmtExpr body)
-    | .Opaque postconds impl modifies =>
-      let ens := join (postconds.map fun p =>
-        line ++ "  ensures " ++ fmtExpr p ++ fmtErrSummary p)
-      let mods := if modifies.isEmpty then Format.nil
-        else line ++ "  modifies " ++ joinSep (modifies.map fmtExpr) ", "
-      let body := match impl with
-        | none => Format.nil
-        | some e => line ++ fmtExpr e
-      (ens, mods, body)
-    | .Abstract postconds =>
-      let ens := join (postconds.map fun p =>
-        line ++ "  ensures " ++ fmtExpr p ++ fmtErrSummary p)
-      (ens, Format.nil, Format.nil)
-    | .External =>
-      (Format.nil, Format.nil, line ++ "external")
-  keyword ++ format proc.name.text ++ "(" ++ params ++ ")" ++ retType ++
-  requires ++ invokeOn ++ ensures_ ++ modifies_ ++ bodyFmt ++ ";"
-
-private def fmtComposite (ct : CompositeType) : Format :=
-  let ext := if ct.extending.isEmpty then Format.nil
-    else " extends " ++ joinSep (ct.extending.map fun e => format e.text) ", "
-  let fields := join (ct.fields.map fun f => line ++ "  " ++ fmtField f)
-  let procs := join (ct.instanceProcedures.map fun p => line ++ "  " ++ fmtProcedure p)
-  "composite " ++ format ct.name.text ++ ext ++ " {" ++ fields ++ procs ++ line ++ "}"
-
-private def fmtDatatypeCtor (c : DatatypeConstructor) : Format :=
-  format c.name.text ++
-  if c.args.isEmpty then Format.nil
-  else "(" ++ joinSep (c.args.map fmtParam) ", " ++ ")"
-
-private def fmtDatatype (dt : DatatypeDefinition) : Format :=
-  "datatype " ++ format dt.name.text ++ " {" ++
-  joinSep (dt.constructors.map fmtDatatypeCtor) ", " ++ "}"
-
-private def fmtConstrainedType (ct : ConstrainedType) : Format :=
-  "constrained " ++ format ct.name.text ++
-  " = " ++ format ct.valueName.text ++ ": " ++ fmtHighType ct.base ++
-  " where " ++ fmtExpr ct.constraint ++ " witness " ++ fmtExpr ct.witness
-
-private def fmtTypeDefinition : TypeDefinition → Format
-  | .Composite ct => fmtComposite ct
-  | .Constrained ct => fmtConstrainedType ct
-  | .Datatype dt => fmtDatatype dt
-
-/-- Format a Laurel.Program as valid Laurel DDM concrete syntax text.
-    The output can be parsed back by the Laurel parser. -/
-def formatLaurelDDM (prog : Program) : Format :=
-  let types := prog.types.map fmtTypeDefinition
-  let procs := prog.staticProcedures.map fmtProcedure
-  joinSep (types ++ procs) (line ++ line)
 
 end
 

@@ -5,8 +5,8 @@
 -/
 
 /-
-Tests that the Laurel AST to DDM concrete syntax conversion produces
-valid Laurel syntax that can be parsed back.
+Tests that the Laurel AST to DDM concrete syntax tree conversion
+(programToStrata) preserves program structure through roundtripping.
 -/
 
 import Strata.DDM.Elab
@@ -31,49 +31,61 @@ private def parseLaurel (input : String) : IO Program := do
   | .ok program => pure program
 
 private def laurelToText (prog : Program) : String :=
-  (formatLaurelDDM prog).pretty
+  -- Trim trailing whitespace per line to avoid whitespace-sensitive test issues
+  let text := (formatProgram prog).pretty
+  let lines := text.splitOn "\n" |>.map (fun s => (s.trimAsciiEnd).toString)
+  "\n".intercalate lines
+
+/-- Roundtrip through the DDM tree: Laurel AST → Strata.Program → Laurel AST → text -/
+private def roundtripViaDDM (prog : Program) : IO String := do
+  let strataProgram := programToStrata prog
+  match Laurel.TransM.run .none (Laurel.parseProgram strataProgram) with
+  | .error e => throw (IO.userError s!"DDM roundtrip parse errors: {e}")
+  | .ok program2 => pure (laurelToText program2)
 
 private def roundtrip (input : String) : IO String := do
   let program ← parseLaurel input
-  pure (laurelToText program)
+  roundtripViaDDM program
 
-private def roundtripParse (input : String) : IO Unit := do
+private def roundtripConverges (input : String) : IO Unit := do
   let program ← parseLaurel input
-  let text := laurelToText program
-  let program2 ← parseLaurel text
-  let text2 := laurelToText program2
-  if text != text2 then
-    throw (IO.userError s!"Not convergent.\nFirst:\n{text}\nSecond:\n{text2}")
+  let original := laurelToText program
+  let roundtripped ← roundtripViaDDM program
+  if original != roundtripped then
+    throw (IO.userError s!"Not convergent.\nOriginal:\n{original}\nRoundtripped:\n{roundtripped}")
   IO.println "ok"
 
 -- Emit tests: verify the output format
 
 /--
-info: procedure foo()
-{ assert true; assert false };
+info: procedure foo() returns
+()
+deterministic
+{ assert true; assert false }
 -/
 #guard_msgs in
 #eval do IO.println (← roundtrip r"procedure foo() { assert true; assert false };")
 
 /--
-info: procedure add(x: int, y: int): int
-{ x + y };
+info: procedure add(x: int, y: int) returns
+(result: int)
+deterministic
+{ x + y }
 -/
 #guard_msgs in
 #eval do IO.println (← roundtrip r"procedure add(x: int, y: int): int { x + y };")
 
 /--
-info: function aFunction(x: int): int
-{ x };
+info: function aFunction(x: int) returns
+(result: int)
+deterministic
+{ x }
 -/
 #guard_msgs in
 #eval do IO.println (← roundtrip r"function aFunction(x: int): int { x };")
 
 /--
-info: composite Point {
-  var x: int
-  var y: int
-}
+info: composite Point { var x: int; var y: int }
 -/
 #guard_msgs in
 #eval do IO.println (← roundtrip r"
@@ -84,17 +96,20 @@ composite Point {
 ")
 
 /--
-info: procedure test(x: int): int
-{ if x > 0 then x else 0 - x };
+info: procedure test(x: int) returns
+(result: int)
+deterministic
+{ if x > 0 then x else 0 - x }
 -/
 #guard_msgs in
 #eval do IO.println (← roundtrip r"procedure test(x: int): int { if x > 0 then x else 0 - x };")
 
 /--
-info: procedure divide(x: int, y: int): int
-  requires y != 0
-  ensures result >= 0
-{ x / y };
+info: procedure divide(x: int, y: int) returns
+(result: int)
+requires y != 0
+deterministic
+ ensures result >= 0 := { x / y }
 -/
 #guard_msgs in
 #eval do IO.println (← roundtrip r"
@@ -105,8 +120,10 @@ procedure divide(x: int, y: int): int
 ")
 
 /--
-info: procedure test()
-{ assert forall(x: int) => x == x; assert exists(y: int) => y > 0 };
+info: procedure test() returns
+()
+deterministic
+{ assert forall x: int => x == x; assert exists y: int => y > 0 }
 -/
 #guard_msgs in
 #eval do IO.println (← roundtrip r"
@@ -117,13 +134,12 @@ procedure test() {
 ")
 
 /--
-info: composite Point {
-  var x: int
-  var y: int
-}
+info: composite Point { var x: int; var y: int }
 
-procedure test(): int
-{ var p: Point := new Point; p#x := 5; p#x };
+procedure test() returns
+(result: int)
+deterministic
+{ var p: Point := new Point; p#x := 5; p#x }
 -/
 #guard_msgs in
 #eval do IO.println (← roundtrip r"
@@ -139,26 +155,26 @@ procedure test(): int {
 ")
 
 /--
-info: datatype Color {Red, Green, Blue}
+info: datatype Color { Red, Green, Blue }
 -/
 #guard_msgs in
 #eval do IO.println (← roundtrip r"datatype Color { Red, Green, Blue }")
 
 /--
-info: datatype Pair {MkPair(fst: int, snd: bool)}
+info: datatype Pair { MkPair(fst: int, snd: bool) }
 -/
 #guard_msgs in
 #eval do IO.println (← roundtrip r"datatype Pair { MkPair(fst: int, snd: bool) }")
 
 /--
-info: composite Animal {
-}
+info: composite Animal {  }
 
-composite Dog extends Animal {
-}
+composite Dog extends Animal {  }
 
-procedure test(a: Animal): bool
-{ a is Dog };
+procedure test(a: Animal) returns
+(result: bool)
+deterministic
+{ a is Dog }
 -/
 #guard_msgs in
 #eval do IO.println (← roundtrip r"
@@ -167,19 +183,19 @@ composite Dog extends Animal {}
 procedure test(a: Animal): bool { a is Dog };
 ")
 
--- Roundtrip parse tests: parse → emit → parse
+-- Roundtrip convergence tests: parse → programToStrata → genericToLaurel → formatProgram = formatProgram of original
 
 /-- info: ok -/
 #guard_msgs in
-#eval roundtripParse r"procedure foo() { assert true };"
+#eval roundtripConverges r"procedure foo() { assert true };"
 
 /-- info: ok -/
 #guard_msgs in
-#eval roundtripParse r"function add(x: int, y: int): int { x + y };"
+#eval roundtripConverges r"function add(x: int, y: int): int { x + y };"
 
 /-- info: ok -/
 #guard_msgs in
-#eval roundtripParse r"
+#eval roundtripConverges r"
 procedure test() {
     var x: int := 0;
     while(x < 10)
@@ -190,11 +206,11 @@ procedure test() {
 
 /-- info: ok -/
 #guard_msgs in
-#eval roundtripParse r"datatype Color { Red, Green, Blue }"
+#eval roundtripConverges r"datatype Color { Red, Green, Blue }"
 
 /-- info: ok -/
 #guard_msgs in
-#eval roundtripParse r"
+#eval roundtripConverges r"
 composite Point {
   var x: int
   var y: int
@@ -208,7 +224,7 @@ procedure test(): int {
 
 /-- info: ok -/
 #guard_msgs in
-#eval roundtripParse r"
+#eval roundtripConverges r"
 procedure divide(x: int, y: int): int
   requires y != 0
   ensures result >= 0
@@ -217,7 +233,7 @@ procedure divide(x: int, y: int): int
 
 /-- info: ok -/
 #guard_msgs in
-#eval roundtripParse r"
+#eval roundtripConverges r"
 procedure test() {
     assert forall(x: int) => x == x;
     assert exists(y: int) => y > 0

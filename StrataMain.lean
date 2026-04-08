@@ -659,7 +659,7 @@ def pyAnalyzeLaurelCommand : Command where
 
     if let some dir := keepDir then
       let path := s!"{dir}/{baseName}.laurel"
-      IO.FS.writeFile path ((Laurel.formatLaurelDDM combinedLaurel).pretty ++ "\n")
+      IO.FS.writeFile path ((Laurel.formatProgram combinedLaurel).pretty ++ "\n")
 
     let (coreProgramOption, laurelTranslateErrors, loweredLaurel) ←
       profileStep profile "Laurel to Core translation" do
@@ -667,7 +667,7 @@ def pyAnalyzeLaurelCommand : Command where
 
     if let some dir := keepDir then
       let path := s!"{dir}/{baseName}.lowered.laurel"
-      IO.FS.writeFile path ((Laurel.formatLaurelDDM loweredLaurel).pretty ++ "\n")
+      IO.FS.writeFile path ((Laurel.formatProgram loweredLaurel).pretty ++ "\n")
 
     let coreProgram ←
       match coreProgramOption with
