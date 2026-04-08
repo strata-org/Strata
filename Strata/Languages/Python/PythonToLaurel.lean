@@ -1787,13 +1787,12 @@ def extractFieldsFromInit (ctx : TranslationContext) (initBody : Array (Python.s
 
 /-- Synthesize a default `__init__` declaration and procedure for a class that lacks one.
     Returns a `PythonFunctionDecl` (for call-site arity checking) and a `Procedure` (for verification).
-    TODO: The decl and procedure are constructed independently. If the calling convention changes
-    (e.g., additional implicit parameters), both must be updated in lockstep. Consider deriving
-    both from a shared representation, similar to the `pyFuncDefToPythonFunctionDecl` + `translateMethod` path.
+    The procedure is derived from the decl so that both stay in sync when the calling convention changes.
     TODO: The synthesized procedure has an `.Opaque` body, so the verifier cannot reason about
     default field values. Wire default field values through as postconditions to enable full verification. -/
 def mkDefaultInitDecl (className : String) : PythonFunctionDecl × Procedure :=
   let initDeclName := className ++ "@__init__"
+  -- Build the decl as the single source of truth
   let decl : PythonFunctionDecl := {
     name := initDeclName
     -- `args` excludes `self`, matching the convention in `pyFuncDefToPythonFunctionDecl`
@@ -1802,12 +1801,19 @@ def mkDefaultInitDecl (className : String) : PythonFunctionDecl × Procedure :=
     kwargsName := none
     ret := some ([className], defaultMetadata)
   }
+  -- Derive the procedure from the decl, mirroring translateMethod's convention
+  let selfParam : Parameter := {
+    name := "self"
+    type := mkHighTypeMd (.UserDefined (mkId className))
+  }
+  let inputs := [selfParam] ++ decl.args.map fun arg =>
+    if arg.tys.length == 1 && arg.tys[0]! != PyLauType.Any then
+      { name := arg.name, type := mkHighTypeMd (.UserDefined {text := arg.tys[0]!}) }
+    else
+      { name := arg.name, type := AnyTy }
   let proc : Procedure := {
-    name := initDeclName
-    inputs := [{
-      name := "self"
-      type := mkHighTypeMd (.UserDefined (mkId className))
-    }]
+    name := decl.name
+    inputs := inputs
     outputs := [{name := "LaurelResult", type := AnyTy}]
     preconditions := [mkStmtExprMd (StmtExpr.LiteralBool true)]
     determinism := .nondeterministic
