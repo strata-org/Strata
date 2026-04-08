@@ -15,9 +15,9 @@ namespace Strata.Laurel
 def program := r"
 procedure hasRequires(x: int) returns (r: int)
   requires x > 2
-//         ^^^^^ error: assertion does not hold
-// Core does not seem to report precondition errors correctly.
-// This should occur at the call site and with a different message
+// Call elimination reports precondition errors at the call site,
+// not at the requires clause definition.
+//
 {
   assert x > 0;
   assert x > 3;
@@ -27,6 +27,7 @@ procedure hasRequires(x: int) returns (r: int)
 
 procedure caller() {
   var x: int := hasRequires(1);
+//^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: precondition does not hold
   var y: int := hasRequires(3)
 };
 
@@ -49,12 +50,11 @@ procedure multipleRequires(x: int, y: int) returns (r: int)
   x + y
 };
 
-// This test fails because Core incorrectly report error locations on procedure preconditions
-// procedure multipleRequiresCaller() {
-//  var a: int := multipleRequires(1, 2);
-//  var b: int := multipleRequires(-1, 2);
-// error: assertion does not hold
-// };
+procedure multipleRequiresCaller() {
+  var a: int := multipleRequires(1, 2);
+  var b: int := multipleRequires(-1, 2)
+//^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: precondition does not hold
+};
 
 function funcMultipleRequires(x: int, y: int): int
   requires x > 0

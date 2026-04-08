@@ -14,10 +14,12 @@ test_is_none.py(22, 4): ✅ pass - assert(386)
 test_is_none.py(23, 4): ✅ pass - w should not be None
 test_is_none.py(23, 4): ✅ pass - w should not be None
 test_is_none.py(26, 4): ✅ pass - assert(488)
+test_is_none.py(27, 11): ✅ pass - Check PNot exception
 test_is_none.py(27, 4): ✅ pass - int is not None
 test_is_none.py(27, 4): ✅ pass - int is not None
+test_is_none.py(31, 11): ✅ pass - Check PNot exception
 test_is_none.py(31, 4): ✅ pass - None is not 'not None'
 test_is_none.py(31, 4): ✅ pass - None is not 'not None'
 unknown location: ✅ pass - assert(0)
-DETAIL: 21 passed, 0 failed, 0 inconclusive
+DETAIL: 23 passed, 0 failed, 0 inconclusive
 RESULT: Analysis success

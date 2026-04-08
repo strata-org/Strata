@@ -3,6 +3,7 @@ unknown location: ✅ pass - (get_greeting ensures) Return type constraint
 unknown location: ✅ pass - (get_flag ensures) Return type constraint
 test_return_types.py(11, 4): ✅ pass - assert(159)
 unknown location: ✅ pass - (get_nothing ensures) Return type constraint
+test_return_types.py(15, 18): ✅ pass - Check PAdd exception
 test_return_types.py(15, 4): ✅ pass - assert(223)
 unknown location: ✅ pass - (add ensures) Return type constraint
 test_return_types.py(19, 4): ✅ pass - assert(278)
@@ -21,5 +22,5 @@ test_return_types.py(29, 4): ✅ pass - add returned wrong value
 test_return_types.py(29, 4): ❓ unknown - add returned wrong value
 unknown location: ✅ pass - assert(0)
 test_return_types.py(31, 0): ✅ pass - ite_cond_calls_Any_to_bool_0
-DETAIL: 19 passed, 0 failed, 4 inconclusive
+DETAIL: 20 passed, 0 failed, 4 inconclusive
 RESULT: Inconclusive

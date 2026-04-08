@@ -1,10 +1,13 @@
+test_if_elif.py(2, 7): ✅ pass - Check PLt exception
 test_if_elif.py(2, 4): ✅ pass - ite_cond_calls_Any_to_bool_0
 unknown location: ✅ pass - (classify ensures) Return type constraint
 test_if_elif.py(4, 4): ✅ pass - ite_cond_calls_Any_to_bool_0
 unknown location: ✅ pass - (classify ensures) Return type constraint
+test_if_elif.py(6, 9): ✅ pass - Check PLt exception
 test_if_elif.py(6, 4): ✅ pass - ite_cond_calls_Any_to_bool_0
 unknown location: ✅ pass - (classify ensures) Return type constraint
 unknown location: ✅ pass - (classify ensures) Return type constraint
+test_if_elif.py(12, 23): ✅ pass - Check PNeg exception
 test_if_elif.py(12, 4): ✅ pass - (classify requires) Type constraint of x
 test_if_elif.py(12, 4): ✅ pass - assert(198)
 test_if_elif.py(13, 4): ✅ pass - should be negative
@@ -23,5 +26,5 @@ test_if_elif.py(22, 4): ✅ pass - should be large
 test_if_elif.py(22, 4): ❓ unknown - should be large
 unknown location: ✅ pass - assert(0)
 test_if_elif.py(24, 0): ✅ pass - ite_cond_calls_Any_to_bool_0
-DETAIL: 21 passed, 0 failed, 4 inconclusive
+DETAIL: 24 passed, 0 failed, 4 inconclusive
 RESULT: Inconclusive
