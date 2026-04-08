@@ -432,6 +432,25 @@ theorem denote_ext
             h_body₁ h_body₂]
           exact hexist_f x
 
+/-- For a closed expression (no free variables), the denotation is independent
+of the free-variable valuation. -/
+theorem denote_closed_fvarVal_irrel
+    {e : LExpr T.mono} {τ : LMonoTy}
+    {Δ : List LMonoTy}
+    {fvarVal₁ fvarVal₂ : FreeVarVal T tcInterp}
+    {bvarVal : BVarVal tcInterp vt Δ}
+    (hclosed : e.closed = true)
+    (h₁ : LExpr.HasTypeA Δ e τ)
+    (h₂ : LExpr.HasTypeA Δ e τ)
+    : LExpr.denote tcInterp opInterp fvarVal₁ vt bvarVal e τ h₁ =
+      LExpr.denote tcInterp opInterp fvarVal₂ vt bvarVal e τ h₂ := by
+  have hfv : e.freeVars = [] := List.isEmpty_iff.mp hclosed
+  apply denote_ext (opInterp₁ := opInterp) (opInterp₂ := opInterp)
+    (bvarVal₁ := bvarVal) (bvarVal₂ := bvarVal)
+  · intro o ty _; rfl
+  · intro name ty hmem; exact absurd (hfv ▸ hmem : _ ∈ ([] : List _)) (by grind)
+  · intro _ _ _ _ _; rfl
+
 /-! ### Metadata Doesn't Affect Typing or Denotations -/
 
 -- Easier to prove by computation than via HasTypeA directly
@@ -571,3 +590,21 @@ theorem denote_replaceMetadata
               simp only [LExpr.replaceMetadata]
               exact (denote_quant_exist_false bvarVal h_body' (.quant h_tr' h_body')
                 (fun x => by rw [← ih_body (.cons x bvarVal) h_body]; exact hexist_f x)).symm
+
+/-- If two expression lists have pointwise equal denotations at the same types,
+then `denoteArgs` produces equal HLists. -/
+theorem denoteArgs_eq_of_denote_eq
+    {Δ : List LMonoTy}
+    {args1 args2 : List (LExpr T.mono)}
+    {argTys : List LMonoTy}
+    (bvarVal : BVarVal tcInterp vt Δ)
+    (h_args1 : List.Forall₂ (LExpr.HasTypeA Δ) args1 argTys)
+    (h_args2 : List.Forall₂ (LExpr.HasTypeA Δ) args2 argTys)
+    (hpw : ∀ (i : Nat) (a1 a2 : LExpr T.mono) (τ : LMonoTy),
+      args1[i]? = some a1 → args2[i]? = some a2 → argTys[i]? = some τ →
+      ∀ (ht1 : LExpr.HasTypeA Δ a1 τ) (ht2 : LExpr.HasTypeA Δ a2 τ),
+      LExpr.denote tcInterp opInterp fvarVal vt bvarVal a1 τ ht1 =
+      LExpr.denote tcInterp opInterp fvarVal vt bvarVal a2 τ ht2)
+    : denoteArgs tcInterp opInterp fvarVal vt bvarVal args1 argTys h_args1 =
+      denoteArgs tcInterp opInterp fvarVal vt bvarVal args2 argTys h_args2 := by
+  sorry

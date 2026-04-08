@@ -274,12 +274,14 @@ theorem typeCheck_of_lcAt {T : LExprParams}
     : LExpr.typeCheck Δ' e = LExpr.typeCheck [] e :=
   typeCheck_of_lcAt_aux hlc (by omega)
 
-/-- Substitution preserves typeCheck results. -/
+/-- Substitution preserves typeCheck results. Generalized to an arbitrary
+substitution function `s` (not just a constant one) so that `varOpen`
+(which uses metadata-dependent `fun m => fvar m x ty`) is covered. -/
 theorem substK_typeCheck {T : LExprParams}
-    {e : LExpr T.mono} {v : LExpr T.mono}
+    {e : LExpr T.mono} {s : T.mono.base.Metadata → LExpr T.mono}
     {aty : LMonoTy} {Δ₁ : List LMonoTy}
-    (h_v : LExpr.HasTypeA [] v aty)
-    : LExpr.typeCheck Δ₁ (LExpr.substK Δ₁.length (fun _ => v) e) =
+    (h_s : ∀ m, LExpr.HasTypeA [] (s m) aty)
+    : LExpr.typeCheck Δ₁ (LExpr.substK Δ₁.length s e) =
       LExpr.typeCheck (Δ₁ ++ [aty]) e := by
   induction e generalizing Δ₁ with
   | const => rfl
@@ -290,8 +292,8 @@ theorem substK_typeCheck {T : LExprParams}
     by_cases h : i == Δ₁.length
     · have hi : i = Δ₁.length := by grind
       subst hi; simp
-      rw [typeCheck_of_lcAt (HasTypeA_nil_lcAt h_v),
-          LExpr.HasTypeA_to_typeCheck h_v]
+      rw [typeCheck_of_lcAt (HasTypeA_nil_lcAt (h_s m)),
+          LExpr.HasTypeA_to_typeCheck (h_s m)]
     · simp [h]
       have hi : i ≠ Δ₁.length := by grind
       by_cases hlt : i < Δ₁.length
@@ -307,7 +309,7 @@ theorem substK_typeCheck {T : LExprParams}
     | some aty' =>
       simp only [LExpr.substK, LExpr.typeCheck]
       have h_len : (aty' :: Δ₁).length = Δ₁.length + 1 := by grind
-      rw [show LExpr.typeCheck (aty' :: Δ₁) (LExpr.substK (Δ₁.length + 1) (fun x => v) body)
+      rw [show LExpr.typeCheck (aty' :: Δ₁) (LExpr.substK (Δ₁.length + 1) s body)
             = LExpr.typeCheck (aty' :: (Δ₁ ++ [aty])) body from by rw [← h_len, ih]; simp [List.cons_append]]
   | app m fn arg ih_fn ih_arg =>
     simp only [LExpr.substK, LExpr.typeCheck]
@@ -324,10 +326,25 @@ theorem substK_typeCheck {T : LExprParams}
     | some qty' =>
       simp only [LExpr.substK, LExpr.typeCheck]
       have h_len : (qty' :: Δ₁).length = Δ₁.length + 1 := by grind
-      rw [show LExpr.typeCheck (qty' :: Δ₁) (LExpr.substK (Δ₁.length + 1) (fun x => v) tr)
+      rw [show LExpr.typeCheck (qty' :: Δ₁) (LExpr.substK (Δ₁.length + 1) s tr)
             = LExpr.typeCheck (qty' :: (Δ₁ ++ [aty])) tr from by rw [← h_len, ih_tr]; simp [List.cons_append],
-          show LExpr.typeCheck (qty' :: Δ₁) (LExpr.substK (Δ₁.length + 1) (fun x => v) body)
+          show LExpr.typeCheck (qty' :: Δ₁) (LExpr.substK (Δ₁.length + 1) s body)
             = LExpr.typeCheck (qty' :: (Δ₁ ++ [aty])) body from by rw [← h_len, ih_body]; simp [List.cons_append]]
+
+/-- `varOpen 0` preserves typing: if `body` types in `[aty]`, then
+`varOpen 0 (x, some aty) body` types in `[]`. -/
+theorem varOpen_HasTypeA {T : LExprParams}
+    {body : LExpr T.mono} {x : Identifier T.IDMeta}
+    {aty τ : LMonoTy}
+    (h : LExpr.HasTypeA [aty] body τ)
+    : LExpr.HasTypeA [] (LExpr.varOpen 0 (x, some aty) body) τ := by
+  unfold LExpr.varOpen
+  apply LExpr.typeCheck_to_HasTypeA
+  have h_eq := @substK_typeCheck T body (fun m => .fvar m x (some aty)) aty []
+    (fun m => LExpr.typeCheck_to_HasTypeA (by simp [LExpr.typeCheck]))
+  simp only [List.length_nil, List.nil_append] at h_eq
+  rw [h_eq]
+  exact LExpr.HasTypeA_to_typeCheck h
 
 end -- public section
 

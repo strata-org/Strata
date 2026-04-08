@@ -25,20 +25,22 @@ variable [DecidableEq T.IDMeta] [Inhabited T.mono.base.IDMeta]
 /-! ## `eqModuloMeta` soundness -/
 
 theorem eqModuloMeta_true_implies_denote_eq
+    {Δ : List LMonoTy}
     {e₁ e₂ : LExpr T.mono} {τ : LMonoTy}
-    (h₁ : LExpr.HasTypeA [] e₁ τ)
-    (h₂ : LExpr.HasTypeA [] e₂ τ)
+    (bvarVal : BVarVal tcInterp vt Δ)
+    (h₁ : LExpr.HasTypeA Δ e₁ τ)
+    (h₂ : LExpr.HasTypeA Δ e₂ τ)
     (heql : LExpr.eqModuloMeta e₁ e₂ = true)
-    : LExpr.denote tcInterp opInterp fvarVal vt .nil e₁ τ h₁ =
-      LExpr.denote tcInterp opInterp fvarVal vt .nil e₂ τ h₂ := by
+    : LExpr.denote tcInterp opInterp fvarVal vt bvarVal e₁ τ h₁ =
+      LExpr.denote tcInterp opInterp fvarVal vt bvarVal e₂ τ h₂ := by
     unfold LExpr.eqModuloMeta at heql
     have heq: (e₁.eraseMetadata = e₂.eraseMetadata) := by
       unfold BEq.beq instBEqLExprOfIdentifier at heql
       simp at heql
       rw[LExpr.beq_eq] at heql
       exact heql
-    rw[denote_replaceMetadata _ _ _ _ .nil (fun _ => ()) h₁]
-    rw[denote_replaceMetadata _ _ _ _ .nil (fun _ => ()) h₂]
+    rw[denote_replaceMetadata _ _ _ _ bvarVal (fun _ => ()) h₁]
+    rw[denote_replaceMetadata _ _ _ _ bvarVal (fun _ => ()) h₂]
     unfold LExpr.eraseMetadata at heq
     generalize replaceMetadata_HasTypeA (fun _ => ()) h₁ = ht₁
     generalize e₁.replaceMetadata (fun _ => ()) = e₁' at *
@@ -58,6 +60,39 @@ theorem denoteConst_injective
   sorry
 
 /-! ## `eqlCombine` helpers -/
+
+/-- If foldl of eqlCombine returns `some true`, the initial accumulator was `some true`. -/
+theorem foldl_eqlCombine_init_true
+    {l : List α}
+    {f : α → Option Bool}
+    {init : Option Bool}
+    (h : List.foldl (fun acc x => LExpr.eqlCombine acc (f x)) init l = some true)
+    : init = some true := by
+  induction l generalizing init with
+  | nil => simpa using h
+  | cons x xs ih =>
+    simp only [List.foldl_cons] at h
+    have := ih h
+    unfold LExpr.eqlCombine at this
+    split at this <;> simp_all
+
+-- /-- The foldl over `attach.zip` equals the foldl over plain `zip`. -/
+-- theorem foldl_eqlCombine_attach_zip
+--     {F : @Factory T}
+--     {args1 args2 : List (LExpr T.mono)} {init : Option Bool}
+--     : List.foldl (fun acc x => LExpr.eqlCombine acc (LExpr.eql F x.1.val x.snd))
+--         init (args1.attach.zip args2) =
+--       List.foldl (fun acc (p : LExpr T.mono × LExpr T.mono) =>
+--         LExpr.eqlCombine acc (LExpr.eql F p.1 p.2))
+--         init (args1.zip args2) := by
+--   induction args1 generalizing args2 init with
+--   | nil => simp [List.attach, List.zip]
+--   | cons a1 rest1 ih =>
+--     cases args2 with
+--     | nil => simp [List.attach, List.zip]
+--     | cons a2 rest2 =>
+--       simp only [List.attach_cons, List.zip_cons_cons, List.foldl_cons]
+--       sorry
 
 /-- If folding `eqlCombine` over pairs returns `some true`, then every
 individual `eql` call returned `some true`. -/
@@ -79,22 +114,249 @@ theorem eqlCombine_some_false
     : ∃ p ∈ pairs, LExpr.eql F p.1 p.2 = some false := by
   sorry
 
+/-- If `g` preserves `.val`, then foldl over `(l.map g).zip l2` equals
+foldl over `l.zip l2` for any function that only accesses `.val`. -/
+theorem foldl_zip_map_subtype_eq
+    {α β γ : Type _} {P Q : α → Prop}
+    (l : List { x : α // P x }) (l2 : List β)
+    (g : { x : α // P x } → { x : α // Q x })
+    (f : γ → α → β → γ)
+    (init : γ)
+    (hg : ∀ x, (g x).val = x.val)
+    : List.foldl (fun acc x => f acc x.1.val x.2) init ((l.map g).zip l2) =
+      List.foldl (fun acc x => f acc x.1.val x.2) init (l.zip l2) := by
+  induction l generalizing l2 init with
+  | nil => rfl
+  | cons a rest ih =>
+    cases l2 with
+    | nil => rfl
+    | cons b rest2 =>
+      simp only [List.map_cons, List.zip_cons_cons, List.foldl_cons]
+      rw [hg a]
+      exact ih rest2 _
+
+/-- If foldl eqlCombine over `attach.zip` returns `some true`, then each
+individual pair has `eql = some true`. -/
+theorem eqlCombine_attach_zip_all_true
+    {F : @Factory T}
+    {args1 args2 : List (LExpr T.mono)}
+    (h : List.foldl (fun acc x =>
+      LExpr.eqlCombine acc (LExpr.eql F x.1.val x.snd)) (some true) (args1.attach.zip args2) = some true)
+    (i : Nat) (a1 a2 : LExpr T.mono)
+    (ha1 : args1[i]? = some a1) (ha2 : args2[i]? = some a2)
+    : LExpr.eql F a1 a2 = some true := by
+  induction args1 generalizing args2 i with
+  | nil => simp at ha1
+  | cons x1 rest1 ih_ind =>
+    cases args2 with
+    | nil => simp at ha2
+    | cons x2 rest2 =>
+      simp only [List.attach_cons, List.zip_cons_cons, List.foldl_cons] at h
+      cases i with
+      | zero =>
+        simp only [List.getElem?_cons_zero] at ha1 ha2
+        cases ha1; cases ha2
+        have hinit := foldl_eqlCombine_init_true h
+        unfold LExpr.eqlCombine at hinit
+        split at hinit <;> try contradiction
+        assumption
+      | succ n =>
+        simp only [List.getElem?_cons_succ] at ha1 ha2
+        have hinit := foldl_eqlCombine_init_true h
+        rw [hinit] at h
+        have heq := foldl_zip_map_subtype_eq rest1.attach rest2
+            (fun x => ⟨x.val, List.mem_cons_of_mem x1 x.property⟩)
+            (fun acc a b => LExpr.eqlCombine acc (LExpr.eql F a b))
+            (some true) (fun _ => rfl)
+        simp only [heq] at h
+        exact ih_ind h n ha1 ha2
+
+/-! ## `eql` preserves typing -/
+
+/-- If `eql` returns `some true`, then both sides have the same type. -/
+theorem eql_true_implies_same_type
+    {F : @Factory T}
+    {Δ : List LMonoTy}
+    {e₁ e₂ : LExpr T.mono} {τ₁ τ₂ : LMonoTy}
+    (h₁ : LExpr.HasTypeA Δ e₁ τ₁)
+    (h₂ : LExpr.HasTypeA Δ e₂ τ₂)
+    (heql : LExpr.eql F e₁ e₂ = some true)
+    : τ₁ = τ₂ := by
+  sorry
+
+/-- If the eqlCombine foldl over argument pairs returns `some true`,
+and both argument lists are well-typed, then the argument types match. -/
+theorem eql_foldl_implies_argTys_eq
+    {F : @Factory T}
+    {Δ : List LMonoTy}
+    {args1 args2 : List (LExpr T.mono)}
+    {argTys1 argTys2 : List LMonoTy}
+    (h_args1 : List.Forall₂ (LExpr.HasTypeA Δ) args1 argTys1)
+    (h_args2 : List.Forall₂ (LExpr.HasTypeA Δ) args2 argTys2)
+    (heql : List.foldl (fun acc x =>
+      LExpr.eqlCombine acc (LExpr.eql F x.1.val x.snd)) (some true) (args1.attach.zip args2) = some true)
+    : argTys1 = argTys2 := by
+  sorry
+
+/-- If the eql foldl returns `some true` and each element of args1 satisfies
+the IH (eql true → denote eq), then pointwise denotations are equal. -/
+theorem eql_foldl_implies_denote_eq_pointwise
+    {F : @Factory T}
+    {args1 args2 : List (LExpr T.mono)}
+    (argTys : List LMonoTy)
+    (ih : ∀ a1 ∈ args1, ∀ a2 fvarVal'
+      {τ : LMonoTy} (ht1 : LExpr.HasTypeA [] a1 τ) (ht2 : LExpr.HasTypeA [] a2 τ),
+      LExpr.eql F a1 a2 = some true →
+        LExpr.denote tcInterp opInterp fvarVal' vt .nil a1 τ ht1 =
+        LExpr.denote tcInterp opInterp fvarVal' vt .nil a2 τ ht2)
+    (heql_fold : List.foldl (fun acc x =>
+      LExpr.eqlCombine acc (LExpr.eql F x.1.val x.snd)) (some true) (args1.attach.zip args2) = some true)
+    : ∀ (i : Nat) (a1 a2 : LExpr T.mono) (τ : LMonoTy),
+      args1[i]? = some a1 → args2[i]? = some a2 → argTys[i]? = some τ →
+      ∀ (ht1 : LExpr.HasTypeA [] a1 τ) (ht2 : LExpr.HasTypeA [] a2 τ),
+      LExpr.denote tcInterp opInterp fvarVal vt .nil a1 τ ht1 =
+      LExpr.denote tcInterp opInterp fvarVal vt .nil a2 τ ht2 := by
+  intro i a1 a2 τ ha1 ha2 hτ ht1 ht2
+  have hmem : a1 ∈ args1 := List.mem_iff_getElem?.mpr ⟨i, ha1⟩
+  have heql_i := eqlCombine_attach_zip_all_true heql_fold i a1 a2 ha1 ha2
+  exact ih a1 hmem a2 fvarVal ht1 ht2 heql_i
+
 /-! ## Main `eql` soundness theorems -/
 
 /-- If `eql` returns `some true`, then the denotations are equal.
-Generalized to arbitrary context `Δ` and `bvarVal` for the induction to
-go through (the lambda/varOpen case recurses at the same context). -/
+Restricted to the empty bound-variable context since `varOpen` (used in
+the lambda case) does not shift de Bruijn indices. -/
 theorem eql_true_implies_denote_eq
     {F : @Factory T}
-    {Δ : List LMonoTy}
     {e₁ e₂ : LExpr T.mono} {τ : LMonoTy}
-    (bvarVal : BVarVal tcInterp vt Δ)
-    (h₁ : LExpr.HasTypeA Δ e₁ τ)
-    (h₂ : LExpr.HasTypeA Δ e₂ τ)
+    (h₁ : LExpr.HasTypeA [] e₁ τ)
+    (h₂ : LExpr.HasTypeA [] e₂ τ)
     (heql : LExpr.eql F e₁ e₂ = some true)
-    : LExpr.denote tcInterp opInterp fvarVal vt bvarVal e₁ τ h₁ =
-      LExpr.denote tcInterp opInterp fvarVal vt bvarVal e₂ τ h₂ := by
-    sorry
+    : LExpr.denote tcInterp opInterp fvarVal vt .nil e₁ τ h₁ =
+      LExpr.denote tcInterp opInterp fvarVal vt .nil e₂ τ h₂ := by
+    fun_induction LExpr.eql F e₁ e₂ generalizing τ fvarVal with
+    | case1 e1 e2 hmod => -- eqModuloMeta = true
+      exact eqModuloMeta_true_implies_denote_eq tcInterp opInterp fvarVal vt .nil h₁ h₂ hmod
+    | case2 => contradiction -- const vs const, realConst vs realConst: none ≠ some true
+    | case3 m1 c1 m2 c2 _he hnotreal hnotmod => -- const vs const, non-real
+      split at heql
+      · contradiction
+      · have hceq : c1 = c2 := by grind
+        subst hceq
+        rfl
+    | case4 => contradiction -- abs vs abs, ty1 ≠ ty2: some false ≠ some true
+    | case5 m1 pn1 ty1 body1 m2 pn2 ty2 body2 htyeq hclosed hnotmod ih =>
+      -- abs vs abs, same type, both closed, varOpen recurse
+      have hty : ty1 = ty2 := by simp [bne_iff_ne] at htyeq; exact htyeq
+      subst hty
+      -- Invert h₁ to get aty, rty, and body typing
+      -- ty1 must be some aty for HasTypeA to hold
+      cases ty1 with
+      | none => exact absurd (LExpr.HasTypeA_to_typeCheck h₁) (by simp [LExpr.typeCheck])
+      | some aty =>
+        have ⟨rty1, hτ1, hbody1⟩ := HasTypeA.abs_inv h₁
+        have ⟨rty2, hτ2, hbody2⟩ := HasTypeA.abs_inv h₂
+        have hrty : rty1 = rty2 := by
+          have ha: LMonoTy.arrow aty rty1 = LMonoTy.arrow aty rty2 := by
+            rw [← hτ1, ← hτ2]
+          cases ha; rfl
+        subst hrty
+        subst hτ1
+        -- Unfold denote on both abs expressions
+        rw [denote_abs .nil hbody1 h₁]
+        rw [denote_abs .nil hbody2 h₂]
+        -- Goal: (fun x => denote ... body1 ...) = (fun x => denote ... body2 ...)
+        funext x
+        -- Define fvarVal' that maps "x" to x
+        let fvarVal' : FreeVarVal T tcInterp := fun name sort =>
+          if h : name = ⟨"x", default⟩ ∧ sort = LMonoTy.substTyVars vt aty
+          then h.2 ▸ x
+          else fvarVal name sort
+        -- Step 1: bodies are closed
+        have hclosed1 : body1.closed = true := by grind
+        have hclosed2 : body2.closed = true := by grind
+        -- Step 2: change fvarVal to fvarVal' (bodies closed, fvarVal irrelevant)
+        have hext1 := @denote_closed_fvarVal_irrel _ tcInterp opInterp vt _ _ _ fvarVal fvarVal' (.cons x .nil) hclosed1 hbody1 hbody1
+        have hext2 := @denote_closed_fvarVal_irrel _ tcInterp opInterp vt _ _ _ fvarVal fvarVal' (.cons x .nil) hclosed2 hbody2 hbody2
+        rw [hext1, hext2]
+        -- Step 3: fvarVal' maps "x" to x
+        have hfv'x : fvarVal' ⟨"x", default⟩ (LMonoTy.substTyVars vt aty) = x := by
+          simp [fvarVal']
+        -- Step 4: use varOpen_denote to convert to denote of varOpen'd bodies
+        have hvo1 := varOpen_denote (x := ⟨"x", default⟩) tcInterp opInterp fvarVal' vt .nil hbody1 (varOpen_HasTypeA hbody1)
+        have hvo2 := varOpen_denote (x := ⟨"x", default⟩) tcInterp opInterp fvarVal' vt .nil hbody2 (varOpen_HasTypeA hbody2)
+        -- hvo1 : denote fvarVal' bvarVal (varOpen body1) = denote fvarVal' (cons (fvarVal' "x" ...) bvarVal) body1
+        -- rewrite fvarVal' "x" ... = x
+        rw [hfv'x] at hvo1 hvo2
+        -- Now hvo1 : denote fvarVal' bvarVal (varOpen body1) = denote fvarVal' (cons x bvarVal) body1
+        rw [← hvo1, ← hvo2]
+        -- Goal: denote fvarVal' bvarVal (varOpen body1) = denote fvarVal' bvarVal (varOpen body2)
+        -- Step 5: apply IH
+        exact ih fvarVal' (varOpen_HasTypeA hbody1) (varOpen_HasTypeA hbody2) heql
+    | case6 => contradiction -- abs vs abs, not both closed: none ≠ some true
+    | case7 => contradiction -- const vs abs: some false ≠ some true
+    | case8 => contradiction -- abs vs const: some false ≠ some true
+    | case9 e1 e2 hnotmod callee1 args1 f1 callee2 args2 f2 hcall1 hcall2 hnotconstr =>
+      -- constructor apps, not both isConstr: none ≠ some true
+      have heql' : none = some true := by rw [hcall1, hcall2] at heql; simp [hnotconstr] at heql
+      contradiction
+    | case10 e1 e2 hnotmod callee1 args1 f1 callee2 args2 f2 hcall1 hcall2 hisconstr hdiffname =>
+      -- constructor apps, different names: some false ≠ some true
+      have heql' : some false = some true := by
+        rw [hcall1, hcall2] at heql; simp [hisconstr, hdiffname] at heql
+      contradiction
+    | case11 e1 e2 hnotmod callee1 args1 f1 callee2 args2 f2 hcall1 hcall2 hisconstr hsamename _ _ _ _ ih_args =>
+      -- same constructor, fold over args
+      -- Step 1: use callOfLFunc_denote on both sides
+      obtain ⟨argTys1, ty_op1, m1, name1, h_args1, hty_op1, h_callee1, hdenote1⟩ :=
+        callOfLFunc_denote tcInterp opInterp fvarVal vt hcall1 h₁
+      obtain ⟨argTys2, ty_op2, m2, name2, h_args2, hty_op2, h_callee2, hdenote2⟩ :=
+        callOfLFunc_denote tcInterp opInterp fvarVal vt hcall2 h₂
+      -- Step 2: establish name1.name = name2.name
+      obtain ⟨_, name1', _, hcallee1', hget1⟩ := Factory.callOfLFunc_getElem? hcall1
+      obtain ⟨_, name2', _, hcallee2', hget2⟩ := Factory.callOfLFunc_getElem? hcall2
+      -- Connect name1' to name1 via callee equality
+      rw [h_callee1] at hcallee1'; cases hcallee1'
+      rw [h_callee2] at hcallee2'; cases hcallee2'
+      -- Now hget1 : F[name1.name]? = some f1, hget2 : F[name2.name]? = some f2
+      have hname1 := Factory.getElem?_name hget1  -- f1.name.name = name1.name
+      have hname2 := Factory.getElem?_name hget2  -- f2.name.name = name2.name
+      have hsamename' : f1.name.name = f2.name.name := by
+        simp [bne_iff_ne] at hsamename; exact hsamename
+      have hnames_eq : name1.name = name2.name := by rw [← hname1, ← hname2, hsamename']
+      -- Step 3: f1 = f2 (same key in the factory)
+      have hf_eq : f1 = f2 := by
+        have h := hnames_eq ▸ hget2
+        rw [hget1] at h
+        exact Option.some.inj h
+      subst hf_eq
+      rw [hdenote1, hdenote2]
+      rw [hnames_eq]
+      have hlen1 := h_args1.length_eq.symm.trans (Factory.callOfLFunc_arity hcall1)
+      have hlen2 := h_args2.length_eq.symm.trans (Factory.callOfLFunc_arity hcall2)
+      have hlen : argTys1.length = argTys2.length := by omega
+      subst hty_op1; subst hty_op2
+      -- Step 4: simplify heql to get the foldl
+      split at heql
+      · rename_i _ args1' f1' _ args2' f2' heq1' heq2'
+        rw [hcall1] at heq1'; cases heq1'
+        rw [hcall2] at heq2'; cases heq2'
+        simp at heql
+        obtain ⟨_, heql_fold⟩ := heql
+        have hargTys := eql_foldl_implies_argTys_eq h_args1 h_args2 heql_fold
+        subst hargTys
+        -- Goal: denoteArgs ... args1 argTys1 h_args1 = denoteArgs ... args2 argTys1 h_args2
+        -- Need: congr on applyArgs, then show denoteArgs equal using IH
+        congr 1
+        have hpw := eql_foldl_implies_denote_eq_pointwise tcInterp opInterp fvarVal vt argTys1 ih_args heql_fold
+        exact denoteArgs_eq_of_denote_eq tcInterp opInterp fvarVal vt .nil h_args1 h_args2 hpw
+      · contradiction
+    | case12 e1 e2 hnotmod hnotconst hnotabs hnotconstabs hnotabsconst hnotbothcall =>
+      -- callOfLFunc doesn't match both: none ≠ some true
+      split at heql
+      · have := hnotbothcall _ _ _ _ _ _ ‹_› ‹_›
+        contradiction
+      · contradiction
 
 /-- If `eql` returns `some false`, then the denotations are not equal.
 Generalized to arbitrary context `Δ` and `bvarVal` for the induction. -/

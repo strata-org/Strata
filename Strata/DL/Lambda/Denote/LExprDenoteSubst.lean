@@ -128,7 +128,7 @@ theorem substK_denote
     let ⟨aty_s, h_fn_s, h_arg_s⟩ := HasTypeA.app_inv h_subst
     have h_aty : aty_s = aty_b := by
       have h1 := LExpr.HasTypeA_to_typeCheck h_fn_s
-      rw [substK_typeCheck h_v] at h1
+      rw [substK_typeCheck (fun _ => h_v)] at h1
       have h2 := LExpr.HasTypeA_to_typeCheck h_fn_b
       rw [h1] at h2; cases h2; rfl
     subst h_aty
@@ -165,7 +165,7 @@ theorem substK_denote
     subst h_τ_b
     have h_ty : ty_s = ty_b := by
       have h1 := LExpr.HasTypeA_to_typeCheck h_1_s
-      rw [substK_typeCheck h_v] at h1
+      rw [substK_typeCheck (fun _ => h_v)] at h1
       have h2 := LExpr.HasTypeA_to_typeCheck h_1_b
       rw [h1] at h2; cases h2; rfl
     subst h_ty
