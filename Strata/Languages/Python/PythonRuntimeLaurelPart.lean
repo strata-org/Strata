@@ -493,12 +493,12 @@ function Any_set! (dictOrList: Any, index: Any, val: Any): Any
     exception (IndexError("Index out of bound"))
 };
 
-function Any_sets (indices: ListAny, dictOrList: Any, val: Any): Any
+function Any_sets! (indices: ListAny, dictOrList: Any, val: Any): Any
 {
   if ListAny..isListAny_nil(indices) then dictOrList
   else if ListAny..isListAny_nil(ListAny..tail!(indices)) then Any_set!(dictOrList, ListAny..head!(indices), val)
   else Any_set!(dictOrList, ListAny..head!(indices),
-    Any_sets(ListAny..tail!(indices), Any_get!(dictOrList, ListAny..head!(indices)), val))
+    Any_sets!(ListAny..tail!(indices), Any_get!(dictOrList, ListAny..head!(indices)), val))
 };
 
 function PIn (v: Any, dictOrList: Any) : Any
@@ -860,14 +860,16 @@ function PNEq (v: Any, v': Any) : Any {
 // /////////////////////////////////////////////////////////////////////////////////////
 
 function PAnd (v1: Any, v2: Any) : Any
-  requires (Any..isfrom_bool(v1) || Any..isfrom_None(v1) || Any..isfrom_str(v1) || Any..isfrom_int(v1))
+  requires (Any..isexception(v1) || Any..isfrom_bool(v1) || Any..isfrom_None(v1) || Any..isfrom_str(v1) || Any..isfrom_int(v1))
 {
+  if Any..isexception(v1) then v1 else
   if ! Any_to_bool (v1) then v1 else v2
 };
 
 function POr (v1: Any, v2: Any) : Any
-  requires (Any..isfrom_bool(v1) || Any..isfrom_None(v1) || Any..isfrom_str(v1) || Any..isfrom_int(v1))
+  requires (Any..isexception(v1) || Any..isfrom_bool(v1) || Any..isfrom_None(v1) || Any..isfrom_str(v1) || Any..isfrom_int(v1))
 {
+  if Any..isexception(v1) then v1 else
   if Any_to_bool (v1) then v1 else v2
 };
 
@@ -985,9 +987,20 @@ procedure print(msg : Any) returns ();
 /--
 Parse the Laurel DDM prelude into a Laurel Program.
 -/
+
+-- Prelude functions that may return an exception value as Any.
+-- We should make sure that all functions in this list propagate the exceptions from their arguments.
+def AnyMaybeExceptionList := ["Any_get!", "Any_set!", "Any_sets!", "PNeg", "PNot", "PAdd", "PSub", "PMul",
+   "PFloorDiv", "PLt", "PLe", "PGt", "PGe", "PPow", "PMod", "PAnd", "POr"]
+
 public def pythonRuntimeLaurelPart : Laurel.Program :=
   match Laurel.TransM.run (some $ .file "") (Laurel.parseProgram pythonRuntimeLaurelPartDDM) with
-  | .ok p => p
+  | .ok p =>
+    let addExceptionMd := p.staticProcedures.map (λ f =>
+      if f.name.text ∈ AnyMaybeExceptionList then
+        {f with md:= f.md.withPropertySummary "AnyMaybeExcept" }
+      else f)
+    {p with staticProcedures := addExceptionMd}
   | .error e => dbg_trace s!"SOUND BUG: Failed to parse Python runtime Laurel part: {e}"; default
 
 end Python

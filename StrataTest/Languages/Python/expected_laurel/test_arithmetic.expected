@@ -1,14 +1,20 @@
+test_arithmetic.py(6, 16): ✅ pass - Check PMul exception
 test_arithmetic.py(7, 4): ✅ pass - multiplication implemented incorrectly
 test_arithmetic.py(7, 4): ✅ pass - multiplication implemented incorrectly
+test_arithmetic.py(11, 18): ✅ pass - Check PMul exception
 test_arithmetic.py(12, 4): ✅ pass - multiplication implemented incorrectly
 test_arithmetic.py(12, 4): ✅ pass - multiplication implemented incorrectly
+test_arithmetic.py(15, 19): ✅ pass - Check PAdd exception
 test_arithmetic.py(16, 4): ✅ pass - addition implemented incorrectly
 test_arithmetic.py(16, 4): ✅ pass - addition implemented incorrectly
+test_arithmetic.py(19, 16): ✅ pass - Check PSub exception
 test_arithmetic.py(20, 4): ✅ pass - subtraction implemented incorrectly
 test_arithmetic.py(20, 4): ✅ pass - subtraction implemented incorrectly
+test_arithmetic.py(23, 16): ✅ pass - Check PFloorDiv exception
+test_arithmetic.py(23, 16): ✅ pass - Check PFloorDiv exception
 test_arithmetic.py(23, 4): ✅ pass - set_quot_calls_PFloorDiv_0
 test_arithmetic.py(24, 4): ✅ pass - floor division implemented incorrectly
 test_arithmetic.py(24, 4): ✅ pass - floor division implemented incorrectly
 test_arithmetic.py(26, 0): ✅ pass - ite_cond_calls_Any_to_bool_0
-DETAIL: 12 passed, 0 failed, 0 inconclusive
+DETAIL: 18 passed, 0 failed, 0 inconclusive
 RESULT: Analysis success
