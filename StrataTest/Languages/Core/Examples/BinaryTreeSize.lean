@@ -111,7 +111,7 @@ Obligation: toList_body_calls_IntTree..right_2
 Property: assert
 Result: ✅ pass
 
-Obligation: call_LenAppend_arg_calls_IntList..tl_0
+Obligation: init_calls_IntList..tl_0
 Property: assert
 Result: ✅ pass
 
@@ -119,23 +119,23 @@ Obligation: len_append
 Property: assert
 Result: ✅ pass
 
-Obligation: call_SizeIsLen_arg_calls_IntTree..left_0
+Obligation: init_calls_IntTree..left_0
 Property: assert
 Result: ✅ pass
 
-Obligation: call_SizeIsLen_arg_calls_IntTree..right_0
+Obligation: init_calls_IntTree..right_0
 Property: assert
 Result: ✅ pass
 
-Obligation: call_LenAppend_arg_calls_IntTree..left_0
+Obligation: init_calls_IntTree..left_0
 Property: assert
 Result: ✅ pass
 
-Obligation: call_LenAppend_arg_calls_IntTree..val_0
+Obligation: init_calls_IntTree..val_0
 Property: assert
 Result: ✅ pass
 
-Obligation: call_LenAppend_arg_calls_IntTree..right_1
+Obligation: init_calls_IntTree..right_1
 Property: assert
 Result: ✅ pass
 

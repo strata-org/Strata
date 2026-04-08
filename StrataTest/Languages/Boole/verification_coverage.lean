@@ -207,11 +207,11 @@ Obligation: testEnsuresCallee_ensures_20_2024
 Property: assert
 Result: ✅ pass
 
-Obligation: (Origin_testEnsuresCallee_Requires)testEnsuresCallee_requires_18_1940
+Obligation: callElimAssert_testEnsuresCallee_requires_18_1940_7
 Property: assert
 Result: ✅ pass
 
-Obligation: (Origin_testEnsuresCallee_Requires)testEnsuresCallee_requires_18_1940
+Obligation: callElimAssert_testEnsuresCallee_requires_18_1940_2
 Property: assert
 Result: ✅ pass
 
@@ -231,7 +231,7 @@ Obligation: contradictoryEnsuresClause_ensures_28_3048
 Property: assert
 Result: ✅ pass
 
-Obligation: (Origin_contradictoryEnsuresClause_Requires)contradictoryEnsuresClause_requires_27_2978
+Obligation: callElimAssert_contradictoryEnsuresClause_requires_27_2978_12
 Property: assert
 Result: ✅ pass
 
