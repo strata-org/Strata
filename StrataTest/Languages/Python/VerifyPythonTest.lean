@@ -227,9 +227,9 @@ def main() -> None:
   if diags.size ≠ 0 then
     throw <| .userError s!"Expected 0 diagnostics, got {diags.size}"
 
--- Misspelled kwarg on dispatch-resolved method inside method body.
--- self.field.method(wrong_kwarg=x) should be caught when the field type
--- is known from a class-level annotation matching a known composite type.
+-- Regression test: class with self.field = Constructor() translates without crashing.
+-- Verifies that field method calls on user-defined classes don't cause
+-- "Coercion to Any not supported" or other translation errors.
 #guard_msgs (drop info) in
 #eval withPython (warnOnSkip := false) fun pythonCmd => do
   let program :=
@@ -245,14 +245,16 @@ class Wrapper:
     def __init__(self) -> None:
         self.svc = Svc()
     def run(self) -> None:
-        self.svc.do_thing(vl=\"hello\")
+        self.svc.do_thing(val=\"hello\")
 
 def main() -> None:
     w: Wrapper = Wrapper()
     w.run()
 "
-  match ← processPythonFile pythonCmd (stringInputContext "test.py" program) |>.toBaseIO with
-  | .ok _ => pure ()  -- kwargs validation may not fire for user-defined classes (no funcDecl)
-  | .error _ => pure ()  -- or it may throw — both are acceptable
+  let diags ← processPythonFile pythonCmd (stringInputContext "test.py" program)
+  -- Translation should succeed; diagnostics (if any) should not include coercion errors
+  for d in diags do
+    if d.message.contains "Coercion to Any not supported" then
+      throw (IO.userError s!"Unexpected coercion error: {d.message}")
 
 end Strata.Python.VerifyPythonTest
