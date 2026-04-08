@@ -1785,6 +1785,39 @@ def extractFieldsFromInit (ctx : TranslationContext) (initBody : Array (Python.s
     | _ => pure ()
   return fields
 
+/-- Synthesize a default `__init__` declaration and procedure for a class that lacks one.
+    Returns a `PythonFunctionDecl` (for call-site arity checking) and a `Procedure` (for verification).
+    TODO: The decl and procedure are constructed independently. If the calling convention changes
+    (e.g., additional implicit parameters), both must be updated in lockstep. Consider deriving
+    both from a shared representation, similar to the `pyFuncDefToPythonFunctionDecl` + `translateMethod` path.
+    TODO: The synthesized procedure has an `.Opaque` body, so the verifier cannot reason about
+    default field values. Wire default field values through as postconditions to enable full verification. -/
+def mkDefaultInitDecl (className : String) : PythonFunctionDecl × Procedure :=
+  let initDeclName := className ++ "@__init__"
+  let decl : PythonFunctionDecl := {
+    name := initDeclName
+    -- `args` excludes `self`, matching the convention in `pyFuncDefToPythonFunctionDecl`
+    -- where `self` is stripped via `.tail` for methods inside a class.
+    args := []
+    kwargsName := none
+    ret := some ([className], defaultMetadata)
+  }
+  let proc : Procedure := {
+    name := initDeclName
+    inputs := [{
+      name := "self"
+      type := mkHighTypeMd (.UserDefined (mkId className))
+    }]
+    outputs := [{name := "LaurelResult", type := AnyTy}]
+    preconditions := [mkStmtExprMd (StmtExpr.LiteralBool true)]
+    determinism := .nondeterministic
+    isFunctional := false
+    decreases := none
+    body := .Opaque [] .none []
+    md := defaultMetadata
+  }
+  (decl, proc)
+
 /-- Translate a Python class to a Laurel CompositeType -/
 def translateClass (ctx : TranslationContext) (classStmt : Python.stmt SourceRange)
     : Except TranslationError (CompositeType × Array Procedure × List PythonFunctionDecl) := do
@@ -1802,29 +1835,8 @@ def translateClass (ctx : TranslationContext) (classStmt : Python.stmt SourceRan
     let (classFunDecls, defaultInitProc) :=
       if hasInit then (classFunDecls, none)
       else
-        let initDeclName := className ++ "@__init__"
-        let defaultInitDecl : PythonFunctionDecl := {
-          name := initDeclName
-          args := []
-          kwargsName := none
-          ret := some ([className], defaultMetadata)
-        }
-        let selfParam : Parameter := {
-          name := "self"
-          type := mkHighTypeMd (.UserDefined (mkId className))
-        }
-        let defaultInitProcedure : Procedure := {
-          name := initDeclName
-          inputs := [selfParam]
-          outputs := [{name := "LaurelResult", type := AnyTy}]
-          preconditions := [mkStmtExprMd (StmtExpr.LiteralBool true)]
-          determinism := .nondeterministic
-          isFunctional := false
-          decreases := none
-          body := .Opaque [] .none []
-          md := defaultMetadata
-        }
-        (classFunDecls ++ [defaultInitDecl], some defaultInitProcedure)
+        let (decl, proc) := mkDefaultInitDecl className
+        (classFunDecls ++ [decl], some proc)
 
     let ctx := {ctx with functionSignatures:= ctx.functionSignatures ++ classFunDecls}
     -- Extract fields from class-level annotations and __init__ body, with dedup
