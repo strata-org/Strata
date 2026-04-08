@@ -10,7 +10,7 @@ import Strata.Languages.Python.Specs.DDM
 /-! ## Test: specArgToFuncDeclArg preserves original parameter types
 
 Verifies that `buildPySpecLaurel` extracts concrete type names from PySpec
-`SpecType` atoms (builtins.str → "string", builtins.int → "integer", etc.)
+`SpecType` atoms (builtins.str → "str", builtins.int → "int", etc.)
 instead of hardcoding "Any" for all parameter types.
 -/
 
@@ -49,9 +49,9 @@ private def getFuncSigs (sigs : Array Signature) : IO (List PythonFunctionDecl) 
     | .error msg => throw <| .userError msg
 
 /--
-info: typed_func: x=[integer], y=[string], z=[boolean], w=[real]
+info: typed_func: x=[int], y=[str], z=[bool], w=[float]
 untyped_func: a=[Any]
-mixed_func: p=[string], q=[Any]
+mixed_func: p=[str], q=[Any]
 -/
 #guard_msgs in
 #eval do

@@ -50,12 +50,14 @@ private def specDefaultToExpr : Python.Specs.SpecDefault → Python.expr SourceR
 /-- Convert a pyspec Arg to a PythonFunctionDecl arg tuple. -/
 private def specArgToFuncDeclArg (arg : Python.Specs.Arg): Python.PyArgInfo :=
   -- Extract the simple type name from the SpecType for type assertions.
+  -- These tags must match the runtime/prelude names used by downstream
+  -- constraint generation (e.g., `Any..isfrom_str`).
   let typeName := arg.type.atoms.findSome? fun a => match a with
     | .ident nm _ =>
-      if nm == ⟨"builtins", "str"⟩ then some "string"
-      else if nm == ⟨"builtins", "int"⟩ then some "integer"
-      else if nm == ⟨"builtins", "bool"⟩ then some "boolean"
-      else if nm == ⟨"builtins", "float"⟩ then some "real"
+      if nm == Python.PythonIdent.builtinsStr then some "str"
+      else if nm == Python.PythonIdent.builtinsInt then some "int"
+      else if nm == Python.PythonIdent.builtinsBool then some "bool"
+      else if nm == Python.PythonIdent.builtinsFloat then some "float"
       else none
     | _ => none
   {name := arg.name, md := default, tys := [typeName.getD "Any"], default := arg.default.map specDefaultToExpr}
