@@ -121,14 +121,11 @@ private def inferStmt (stmt : StmtExprMd) : InferHoleM StmtExprMd := do
   | .LocalVariable name ty (some initExpr) =>
       return ⟨.LocalVariable name ty (some (← inferExpr initExpr ty)), md⟩
   | .Assign targets value =>
-      -- Infer the value type from the first target's type when possible
+      -- Use the single target's type as the expected type for the value
       let targetType : HighTypeMd := match targets with
         | [tgt] => computeExprType model tgt
         | _ => defaultHoleType
-      let inferredType := match targetType.val with
-        | .Unknown => defaultHoleType
-        | _ => targetType
-      return ⟨.Assign targets (← inferExpr value inferredType), md⟩
+      return ⟨.Assign targets (← inferExpr value targetType), md⟩
   | .Block stmts label => return ⟨.Block (← inferStmtList stmts) label, md⟩
   | .IfThenElse cond th el =>
       let el' ← match el with
