@@ -83,13 +83,13 @@ Obligation: result_correct
 Property: assert
 Result: ✅ pass
 
-Obligation: (Origin_Helper_Requires)n_positive
+Obligation: callElimAssert_n_positive_6
 Property: assert
 Result: ❌ fail
 
-Obligation: (Origin_Helper_Requires)n_positive
+Obligation: callElimAssert_n_positive_2
 Property: assert
-Result: ❌ fail
+Result: ❓ unknown
 
 Obligation: output_property
 Property: assert
