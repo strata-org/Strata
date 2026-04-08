@@ -599,18 +599,23 @@ partial def translateExpr (ctx : TranslationContext) (e : Python.expr SourceRang
     let index ←  match slice with
       | .Slice _ start stop step => translateSlice ctx start.val stop.val step.val
       | _ => translateExpr ctx slice
-    -- Emit bounds check for negative integer indices (e.g., xs[-1])
-    -- and convert to positive index: xs[-n] becomes xs[len(xs) - n]
+    -- Emit bounds check for negative integer indices on lists (e.g., xs[-1])
+    -- and convert to positive index: xs[-n] becomes xs[len(xs) - n].
+    -- Skip for dicts, where negative integer keys are valid dict lookups.
+    let valType := (inferExprType ctx val).toOption.getD PyLauType.Any
+    let isDictType := valType == PyLauType.DictStrAny
     let (boundsAssert, index) := match slice with
       | .Constant _ (.ConNeg _ n) _ =>
-        -- xs[-n] requires len(xs) >= n; access becomes xs[len(xs) - n]
-        let listExpr := mkStmtExprMd (.StaticCall "Any..as_ListAny!" [dictOrList])
-        let lenExpr := mkStmtExprMd (.StaticCall "List_len" [listExpr])
-        let nLit := mkStmtExprMd (.LiteralInt n.val)
-        let cond := mkStmtExprMd (.PrimitiveOp .Geq [lenExpr, nLit])
-        let posIdx := mkStmtExprMd (.StaticCall "from_int"
-          [mkStmtExprMd (.PrimitiveOp .Sub [lenExpr, nLit])])
-        (some (mkStmtExprMd (.Assert cond)), posIdx)
+        if isDictType then (none, index)
+        else
+          -- xs[-n] requires len(xs) >= n; access becomes xs[len(xs) - n]
+          let listExpr := mkStmtExprMd (.StaticCall "Any..as_ListAny!" [dictOrList])
+          let lenExpr := mkStmtExprMd (.StaticCall "List_len" [listExpr])
+          let nLit := mkStmtExprMd (.LiteralInt n.val)
+          let cond := mkStmtExprMd (.PrimitiveOp .Geq [lenExpr, nLit])
+          let posIdx := mkStmtExprMd (.StaticCall "from_int"
+            [mkStmtExprMd (.PrimitiveOp .Sub [lenExpr, nLit])])
+          (some (mkStmtExprMd (.Assert cond)), posIdx)
       | _ => (none, index)
     let access := mkStmtExprMd (.StaticCall "Any_get" [dictOrList, index])
     match boundsAssert with
@@ -978,19 +983,20 @@ partial def translateCall (ctx : TranslationContext)
     -- must match the declared parameter type. This catches {"key": None}
     -- where the parameter type is str/int/bool/float.
     let mut typeAsserts : List StmtExprMd := []
+    let dictExpr := mkStmtExprMd (.StaticCall "Any..as_Dict!" [trans_dict])
     for arg in remainingParams do
       let argType := match arg.tys with | [ty] => ty | _ => "Any"
       if let some testerName := typeTester? argType then
-        let dictExpr := mkStmtExprMd (.StaticCall "Any..as_Dict!" [trans_dict])
         let keyPresent := mkStmtExprMd (.StaticCall "DictStrAny_contains"
           [dictExpr, mkStmtExprMd (.LiteralString arg.name)])
         let val := DictStrAny_get_param trans_dict arg.name true
         let isCorrectType := mkStmtExprMd (.StaticCall testerName [val])
         let cond := mkStmtExprMd (.PrimitiveOp .Implies [keyPresent, isCorrectType])
-        typeAsserts := typeAsserts ++ [mkStmtExprMd (.Assert cond)]
+        typeAsserts := mkStmtExprMd (.Assert cond) :: typeAsserts
+    let typeAssertsOrdered := typeAsserts.reverse
     let call ← emitCall (allArgs ++ kwargsArg)
-    if typeAsserts.isEmpty then return call
-    else return mkStmtExprMd (.Block (typeAsserts ++ [call]) none)
+    if typeAssertsOrdered.isEmpty then return call
+    else return mkStmtExprMd (.Block (typeAssertsOrdered ++ [call]) none)
   else
   let (args, kwords, funcdecl_hasKwargs) ←
     combinePositionalAndKeywordArgs args kwords funcDecl methodName callRange
