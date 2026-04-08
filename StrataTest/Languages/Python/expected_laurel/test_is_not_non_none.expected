@@ -1,15 +1,7 @@
 DETAIL: Unsupported construct: `is not` is only supported with None
 AST: Strata.Python.expr.Compare
   ()
-  (Strata.Python.expr.Name
-    ()
-    { ann := (), val := "x" }
-    (Strata.Python.expr_context.Load ()))
-  { ann := (),
-    val := #[Strata.Python.cmpop.IsNot ()] }
-  { ann := (),
-    val := #[Strata.Python.expr.Name
-               ()
-               { ann := (), val := "y" }
-               (Strata.Python.expr_context.Load ())] }
+  (Strata.Python.expr.Name () { ann := (), val := "x" } (Strata.Python.expr_context.Load ()))
+  { ann := (), val := #[Strata.Python.cmpop.IsNot ()] }
+  { ann := (), val := #[Strata.Python.expr.Name () { ann := (), val := "y" } (Strata.Python.expr_context.Load ())] }
 RESULT: Known limitation
