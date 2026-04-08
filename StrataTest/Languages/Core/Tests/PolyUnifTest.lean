@@ -30,14 +30,18 @@ function OptString_len (o: Option(string)) : int {
 
 #end
 
-/-- info: ok: datatype Option (a : Type) {(
+/--
+info: ok: program Core;
+
+datatype Option (a : Type) {(
   (Some(unwrap : a))),
   (None())
 };
 function somefunc (s : string) : int;
 function OptString_len (o : (Option string)) : int {
   somefunc(Option..unwrap(o))
-}-/
+}
+-/
 #guard_msgs in
 #eval Core.typeCheck .quiet (TransM.run Inhabited.default (translateProgram polyUnifPgm)).fst
 
@@ -60,7 +64,7 @@ function BadFunc (o: Option(int)) : int {
 #end
 
 /--
-info: error: (1277-1350) Impossible to unify (arrow string int) with (arrow int $__ty4).
+info: error: (1293-1366) Impossible to unify (arrow string int) with (arrow int $__ty4).
 First mismatch: string with int.
 -/
 #guard_msgs in
