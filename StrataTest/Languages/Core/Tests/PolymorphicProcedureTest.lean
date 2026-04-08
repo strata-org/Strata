@@ -60,6 +60,8 @@ Model:
 
 
 [DEBUG] Evaluated program:
+program Core;
+
 datatype List (a : Type) {(
   (Nil())),
   (Cons(head : a, tail : (List a)))

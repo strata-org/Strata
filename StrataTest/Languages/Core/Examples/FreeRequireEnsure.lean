@@ -68,6 +68,8 @@ Model:
 
 
 [DEBUG] Evaluated program:
+program Core;
+
 var g : int;
 procedure Proc () returns ()
 spec {
