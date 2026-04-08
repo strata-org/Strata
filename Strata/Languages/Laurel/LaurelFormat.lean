@@ -195,14 +195,6 @@ def formatModifies : Body → Format
       else Format.line ++ "  modifies " ++ Format.joinSep (modif.map formatStmtExpr) ", "
   | _ => Format.nil
 
-def formatDeterminism : Determinism → Format
-  | .deterministic none => "deterministic"
-  | .deterministic (some reads) => "deterministic reads " ++ formatStmtExpr reads
-  | .nondeterministic => "nondeterministic"
-
-instance : Std.ToFormat Determinism where
-  format := formatDeterminism
-
 def formatProcedure (proc : Procedure) : Format :=
   let header := (if proc.isFunctional then "function " else "procedure ") ++ format proc.name ++
     "(" ++ Format.joinSep (proc.inputs.map formatParameter) ", " ++ ")"
