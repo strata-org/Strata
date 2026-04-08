@@ -542,10 +542,10 @@ def translateProcedure (proc : Procedure) : TranslateM Core.Procedure := do
   -- Translate preconditions
   let preconditions ← translateChecks proc.preconditions "requires"
 
-  -- Translate postconditions for Opaque bodies
+  -- Translate postconditions for Opaque and Abstract bodies
   let postconditions : ListMap Core.CoreLabel Core.Procedure.Check ←
     match proc.body with
-    | .Opaque postconds _ _ =>
+    | .Opaque postconds _ _ | .Abstract postconds =>
         translateChecks postconds "postcondition"
     | _ => pure []
   let modifies : List Core.Expression.Ident := []
@@ -553,7 +553,12 @@ def translateProcedure (proc : Procedure) : TranslateM Core.Procedure := do
     match proc.body with
     | .Transparent bodyExpr => translateStmt proc.outputs bodyExpr
     | .Opaque _postconds (some impl) _ => translateStmt proc.outputs impl
-    | _ => pure [Core.Statement.assume "no_body" (.const () (.boolConst false)) mdWithUnknownLoc]
+    | _ =>
+      -- Bodiless procedure: assume postconditions so that verification of the
+      -- procedure itself passes trivially, and inlining only introduces the
+      -- postconditions as assumptions (not the unsound `assume false`).
+      pure (postconditions.map fun (label, check) =>
+        Core.Statement.assume label check.expr mdWithUnknownLoc)
   -- Wrap body in a labeled block so early returns (exit) work correctly.
   let body : List Core.Statement := [.block "$body" bodyStmts mdWithUnknownLoc]
   let spec : Core.Procedure.Spec := { modifies, preconditions, postconditions }
@@ -563,7 +568,7 @@ def translateInvokeOnAxiom (proc : Procedure) (trigger : StmtExprMd)
     : TranslateM (Option Core.Decl) := do
   let model := (← get).model
   let postconds := match proc.body with
-    | .Opaque postconds _ _ => postconds
+    | .Opaque postconds _ _ | .Abstract postconds => postconds
     | _ => []
   if postconds.isEmpty then return none
   -- All input param names become bound variables.
