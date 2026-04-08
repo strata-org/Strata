@@ -1462,19 +1462,30 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
     | none => return (ctx, [mkStmtExprMdWithLoc (StmtExpr.Assert (mkStmtExprMd .Hole)) md])
 
   -- Augmented assignment: x += expr  →  x = x op expr
-  | .AugAssign _ target op value => do
-    let targetExpr ← translateExpr ctx target
-    let valueExpr ← translateExpr ctx value
-    let rhs := match op with
-      | .Add _      => mkStmtExprMd (StmtExpr.StaticCall "PAdd"      [targetExpr, valueExpr])
-      | .Sub _      => mkStmtExprMd (StmtExpr.StaticCall "PSub"      [targetExpr, valueExpr])
-      | .Mult _     => mkStmtExprMd (StmtExpr.StaticCall "PMul"      [targetExpr, valueExpr])
-      | .FloorDiv _ => mkStmtExprMd (StmtExpr.StaticCall "PFloorDiv" [targetExpr, valueExpr])
-      | .Mod _      => mkStmtExprMd (StmtExpr.StaticCall "PMod"      [targetExpr, valueExpr])
-      | _           => mkStmtExprMd .Hole
-    let rhs := {rhs with md:= md}
-    let assignStmt := mkStmtExprMdWithLoc (StmtExpr.Assign [targetExpr] rhs) md
-    return (ctx, (getExceptionAssertions ctx rhs) ++ [assignStmt])
+  | .AugAssign sr target op value => do
+    -- For subscript targets like l[i][j], we extract the index expressions,
+    -- bind them to temp variables (to avoid double-evaluation), and
+    -- reconstruct the target using the temp var names.
+    let (target, tempVars, slices) := match target with
+      | .Subscript _ _ _ _ =>
+        match getSubscriptList target with
+        | base :: slices =>
+            let tempVars := (List.range slices.length).map λ n => s!"$augAssignTempVar_{sr.start}_{n}"
+            let tempVarExprs: List (Python.expr SourceRange) := tempVars.map
+                (fun var => .Name sr {val:= var, ann:= sr} (.Load sr))
+            let target: Python.expr SourceRange := tempVarExprs.foldl (λ s t =>
+              .Subscript sr s t (.Load sr)) base
+            (target, tempVars, slices)
+        | _ =>  (target, [], [])
+      | _ => (target, [], [])
+    let slices ← slices.mapM (translateExpr ctx)
+    let tempVarDecls := (tempVars.zip slices).map λ (var, slice) =>
+              mkStmtExprMd (.LocalVariable {text:= var} AnyTy slice)
+    let rhs : Python.expr SourceRange := .BinOp sr target op value
+    let pyNormalAssign : Python.stmt SourceRange :=
+          .Assign sr {val:= #[target], ann:= target.ann} rhs {val:= none, ann:= sr}
+    let (ctx, assignStmt) ← translateStmt ctx pyNormalAssign
+    return (ctx, tempVarDecls ++ assignStmt)
 
   | _ => throw (.unsupportedConstruct "Statement type not yet supported" (toString (repr s)))
 
