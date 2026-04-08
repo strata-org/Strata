@@ -262,6 +262,8 @@ Result: ❌ fail
 
 
 [DEBUG] Evaluated program:
+program Core;
+
 procedure badDiv$$wf (x : int) returns ()
 {
   assert [badDiv_body_calls_Int.SafeDiv_0]: false;

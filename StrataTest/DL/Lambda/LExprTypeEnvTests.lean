@@ -122,26 +122,26 @@ Subst:
 /-- info: false -/
 #guard_msgs in
 #eval isInstanceOfKnownType mty[myTy (myTy)]
-                            { @LContext.default ⟨Unit, String⟩ with
+                            { LContext.default (T := ⟨Unit, String⟩) with
                                 knownTypes := makeKnownTypes [LTy.toKnownType! t[∀a. myTy %a],
                                                LTy.toKnownType! t[int]] }
 
 abbrev TTyDefault: LExprParams := {Metadata := Unit, IDMeta := TyIdentifier}
 /-- info: false -/
 #guard_msgs in
-#eval isInstanceOfKnownType mty[Foo] (@LContext.default TTyDefault)
+#eval isInstanceOfKnownType mty[Foo] (LContext.default (T := TTyDefault))
 
 /--
 info: error: Type (arrow int Foo) is not an instance of a previously registered type!
 Known Types: [∀[0, 1]. (arrow 0 1), string, int, bool]
 -/
 #guard_msgs in
-#eval do let ans ← t[int → Foo].instantiateWithCheck (@LContext.default TTyDefault) (@TEnv.default TyIdentifier)
+#eval do let ans ← t[int → Foo].instantiateWithCheck (LContext.default (T := TTyDefault)) (@TEnv.default TyIdentifier)
          return format ans
 
 /-- info: ok: (arrow int bool) -/
 #guard_msgs in
-#eval do let ans ← t[int → bool].instantiateWithCheck (@LContext.default TTyDefault) (@TEnv.default TyIdentifier)
+#eval do let ans ← t[int → bool].instantiateWithCheck (LContext.default (T := TTyDefault)) (@TEnv.default TyIdentifier)
          return format ans.fst
 
 /-- info: ok: (arrow $__ty0 b) -/
@@ -153,7 +153,7 @@ Known Types: [∀[0, 1]. (arrow 0 1), string, int, bool]
 info: ok: (x : $__ty0) (y : int) (z : $__ty0)
 -/
 #guard_msgs in
-#eval do let ans ← (LMonoTySignature.instantiate (@LContext.default {Metadata := Unit, IDMeta := Unit})
+#eval do let ans ← (LMonoTySignature.instantiate (LContext.default (T := {Metadata := Unit, IDMeta := Unit}))
                     ((@TEnv.default Unit).updateContext
                                           { aliases := [{ typeArgs := ["a", "b"],
                                                           name := "myInt",

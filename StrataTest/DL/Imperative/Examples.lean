@@ -32,12 +32,12 @@ Obligation x_eq_1: could not be proved!
 
 Result: Obligation: x_eq_1
 Result: failed
-Counterexample: ($__x0, 0)
+Model: ($__x0, 0)
 ---
 info:
 Obligation: x_eq_1
 Result: failed
-Counterexample: ($__x0, 0)
+Model: ($__x0, 0)
 -/
 #guard_msgs in
 #eval Strata.ArithPrograms.verify testProgram1

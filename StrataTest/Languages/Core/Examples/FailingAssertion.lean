@@ -35,7 +35,9 @@ spec {
 #eval TransM.run Inhabited.default (translateProgram failing) |>.snd |>.isEmpty
 
 /--
-info: type MapII := Map int int;
+info: program Core;
+
+type MapII := Map int int;
 var a : MapII;
 procedure P () returns ()
 spec {

@@ -81,7 +81,7 @@ info: "; f\n(declare-fun f (Int Int) Int)\n; x\n(declare-const x Int)\n(define-f
     Env.init.exprEnv with
       config := { Env.init.exprEnv.config with
         factory :=
-          Env.init.exprEnv.config.factory.push $
+          Env.init.exprEnv.config.factory.pushIfNew $
           LFunc.mk "f" [] false false [("m", LMonoTy.int), ("n", LMonoTy.int)] LMonoTy.int .none #[] .none [] []
       }
    }})
@@ -99,7 +99,7 @@ info: "; f\n(declare-fun f (Int Int) Int)\n; x\n(declare-const x Int)\n(define-f
     Env.init.exprEnv with
       config := { Env.init.exprEnv.config with
         factory :=
-          Env.init.exprEnv.config.factory.push $
+          Env.init.exprEnv.config.factory.pushIfNew $
           LFunc.mk "f" [] false false [("m", LMonoTy.int), ("n", LMonoTy.int)] LMonoTy.int .none #[] .none [] []
       }
    }})
@@ -176,7 +176,7 @@ info: "; m\n(declare-const m (Array Int Int))\n(define-fun $__t.0 () (Array Int 
     Env.init.exprEnv with
       config := { Env.init.exprEnv.config with
         factory :=
-          Core.Factory.push $
+          Core.Factory.pushIfNew $
           LFunc.mk (⟨"getFirst", ()⟩) [] false false
             [(⟨"m", ()⟩, mapTy .int .int)] .int .none #[] .none [] []
       }
@@ -310,10 +310,65 @@ end ArrayTheory
   let ((ids, _estate), _) ←
     Strata.SMT.SolverM.run solver
       (Strata.SMT.Encoder.encodeCore ctx (pure ()) [] obligationTerm md
-        (satisfiabilityCheck := false) (validityCheck := true))
+        (satisfiabilityCheck := false) (validityCheck := true) (label := "test"))
   -- ids should contain "c" but not "f"
   let hasF := ids.any (· == "f")
   return (ids, !hasF)
+
+/-! ## Test that final-message falls back to label when metadata has no message -/
+
+/--
+info: (set-logic ALL)
+; Validity
+(assert false)
+(check-sat)
+(set-info :final-message "assert_bounds_check")
+-/
+#guard_msgs in
+#eval show IO _ from do
+  let ctx : SMT.Context := SMT.Context.default
+  let obligationTerm := Term.prim (.bool true)
+  let md : Imperative.MetaData Core.Expression := #[]
+  let b ← IO.mkRef { : IO.FS.Stream.Buffer }
+  let solver ← Strata.SMT.Solver.bufferWriter b
+  let _ ←
+    Strata.SMT.SolverM.run solver
+      (Strata.SMT.Encoder.encodeCore ctx (pure ()) [] obligationTerm md
+        (satisfiabilityCheck := false) (validityCheck := true) (label := "assert_bounds_check"))
+  let contents ← b.get
+  let smt :=
+    if h : contents.data.IsValidUTF8
+    then String.fromUTF8 contents.data h
+    else ""
+  IO.print smt
+
+/-! ## Test that final-message uses metadata message when present -/
+
+/--
+info: (set-logic ALL)
+; Validity
+(assert false)
+(check-sat)
+(set-info :final-message "Division by zero is impossible")
+-/
+#guard_msgs in
+#eval show IO _ from do
+  let ctx : SMT.Context := SMT.Context.default
+  let obligationTerm := Term.prim (.bool true)
+  let md : Imperative.MetaData Core.Expression :=
+    #[⟨Imperative.MetaData.message, .msg "Division by zero is impossible"⟩]
+  let b ← IO.mkRef { : IO.FS.Stream.Buffer }
+  let solver ← Strata.SMT.Solver.bufferWriter b
+  let _ ←
+    Strata.SMT.SolverM.run solver
+      (Strata.SMT.Encoder.encodeCore ctx (pure ()) [] obligationTerm md
+        (satisfiabilityCheck := false) (validityCheck := true) (label := "assert_bounds_check"))
+  let contents ← b.get
+  let smt :=
+    if h : contents.data.IsValidUTF8
+    then String.fromUTF8 contents.data h
+    else ""
+  IO.print smt
 
 end Core
 
