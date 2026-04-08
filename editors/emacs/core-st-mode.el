@@ -1,5 +1,9 @@
 ;;; core-st-mode.el --- Major mode for Strata Core (.core.st) files -*- lexical-binding: t; -*-
 
+;; NOTE: This file was generated from the DDM grammar definition in
+;; Strata/Languages/Core/DDMTransform/Grammar.lean. If the grammar
+;; changes, this file should be updated to match.
+
 ;; Keywords
 (defvar core-st-keywords
   '("if" "else" "while" "exit" "call"

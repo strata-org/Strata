@@ -1,5 +1,6 @@
 {
   "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "_comment": "NOTE: This file was generated from the DDM grammar definition in Strata/Languages/Core/DDMTransform/Grammar.lean. If the grammar changes, this file should be updated to match.",
   "name": "Strata Core",
   "scopeName": "source.core-st",
   "patterns": [
