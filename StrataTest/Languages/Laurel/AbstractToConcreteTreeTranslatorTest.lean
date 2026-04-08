@@ -43,49 +43,42 @@ private def roundtripViaDDM (prog : Program) : IO String := do
   | .error e => throw (IO.userError s!"DDM roundtrip parse errors: {e}")
   | .ok program2 => pure (laurelToText program2)
 
+/-- Parse text, roundtrip through DDM, print, then re-parse the output and verify convergence -/
 private def roundtrip (input : String) : IO String := do
   let program ← parseLaurel input
-  roundtripViaDDM program
-
-private def roundtripConverges (input : String) : IO Unit := do
-  let program ← parseLaurel input
-  let original := laurelToText program
-  let roundtripped ← roundtripViaDDM program
-  if original != roundtripped then
-    throw (IO.userError s!"Not convergent.\nOriginal:\n{original}\nRoundtripped:\n{roundtripped}")
-  IO.println "ok"
+  let firstPass ← roundtripViaDDM program
+  -- Re-parse the output and verify it produces the same text (convergence)
+  let reparsed ← parseLaurel firstPass
+  let secondPass ← roundtripViaDDM reparsed
+  if firstPass != secondPass then
+    throw (IO.userError s!"Roundtrip does not converge.\nFirst pass:\n{firstPass}\nSecond pass:\n{secondPass}")
+  pure firstPass
 
 -- Emit tests: verify the output format
 
 /--
-info: procedure foo() returns
-()
-deterministic
-{ assert true; assert false }
+info: procedure foo()
+{ assert true; assert false };
 -/
 #guard_msgs in
 #eval do IO.println (← roundtrip r"procedure foo() { assert true; assert false };")
 
 /--
-info: procedure add(x: int, y: int) returns
-(result: int)
-deterministic
-{ x + y }
+info: procedure add(x: int, y: int): int
+{ x + y };
 -/
 #guard_msgs in
 #eval do IO.println (← roundtrip r"procedure add(x: int, y: int): int { x + y };")
 
 /--
-info: function aFunction(x: int) returns
-(result: int)
-deterministic
-{ x }
+info: function aFunction(x: int): int
+{ x };
 -/
 #guard_msgs in
 #eval do IO.println (← roundtrip r"function aFunction(x: int): int { x };")
 
 /--
-info: composite Point { var x: int; var y: int }
+info: composite Point { var x:int var y:int }
 -/
 #guard_msgs in
 #eval do IO.println (← roundtrip r"
@@ -96,20 +89,17 @@ composite Point {
 ")
 
 /--
-info: procedure test(x: int) returns
-(result: int)
-deterministic
-{ if x > 0 then x else 0 - x }
+info: procedure test(x: int): int
+{ if x > 0 then x else 0 - x };
 -/
 #guard_msgs in
 #eval do IO.println (← roundtrip r"procedure test(x: int): int { if x > 0 then x else 0 - x };")
 
 /--
-info: procedure divide(x: int, y: int) returns
-(result: int)
-requires y != 0
-deterministic
- ensures result >= 0 := { x / y }
+info: procedure divide(x: int, y: int): int
+  requires y != 0
+  ensures result >= 0
+{ x / y };
 -/
 #guard_msgs in
 #eval do IO.println (← roundtrip r"
@@ -120,10 +110,8 @@ procedure divide(x: int, y: int): int
 ")
 
 /--
-info: procedure test() returns
-()
-deterministic
-{ assert forall x: int => x == x; assert exists y: int => y > 0 }
+info: procedure test()
+{ assert forall(x: int) => x == x; assert exists(y: int) => y > 0 };
 -/
 #guard_msgs in
 #eval do IO.println (← roundtrip r"
@@ -134,12 +122,10 @@ procedure test() {
 ")
 
 /--
-info: composite Point { var x: int; var y: int }
+info: composite Point { var x:int var y:int }
 
-procedure test() returns
-(result: int)
-deterministic
-{ var p: Point := new Point; p#x := 5; p#x }
+procedure test(): int
+{ var p: Point := new Point; p#x := 5; p#x };
 -/
 #guard_msgs in
 #eval do IO.println (← roundtrip r"
@@ -167,14 +153,12 @@ info: datatype Pair { MkPair(fst: int, snd: bool) }
 #eval do IO.println (← roundtrip r"datatype Pair { MkPair(fst: int, snd: bool) }")
 
 /--
-info: composite Animal {  }
+info: composite Animal { }
 
-composite Dog extends Animal {  }
+composite Dog extends Animal { }
 
-procedure test(a: Animal) returns
-(result: bool)
-deterministic
-{ a is Dog }
+procedure test(a: Animal): bool
+{ a is Dog };
 -/
 #guard_msgs in
 #eval do IO.println (← roundtrip r"
@@ -183,84 +167,42 @@ composite Dog extends Animal {}
 procedure test(a: Animal): bool { a is Dog };
 ")
 
--- Roundtrip convergence tests: parse → programToStrata → genericToLaurel → formatProgram = formatProgram of original
+-- Additional coverage: while loops
 
-/-- info: ok -/
+/--
+info: procedure test()
+{
+  var x: int := 0;
+  while(x < 10)
+    invariant x >= 0 { x := x + 1 } };
+-/
 #guard_msgs in
-#eval roundtripConverges r"procedure foo() { assert true };"
-
-/-- info: ok -/
-#guard_msgs in
-#eval roundtripConverges r"function add(x: int, y: int): int { x + y };"
-
-/-- info: ok -/
-#guard_msgs in
-#eval roundtripConverges r"
+#eval do IO.println (← roundtrip r"
 procedure test() {
     var x: int := 0;
     while(x < 10)
       invariant x >= 0
     { x := x + 1 }
 };
-"
-
-/-- info: ok -/
-#guard_msgs in
-#eval roundtripConverges r"datatype Color { Red, Green, Blue }"
-
-/-- info: ok -/
-#guard_msgs in
-#eval roundtripConverges r"
-composite Point {
-  var x: int
-  var y: int
-}
-procedure test(): int {
-    var p: Point := new Point;
-    p#x := 5;
-    p#x
-};
-"
-
-/-- info: ok -/
-#guard_msgs in
-#eval roundtripConverges r"
-procedure divide(x: int, y: int): int
-  requires y != 0
-  ensures result >= 0
-{ x / y };
-"
-
-/-- info: ok -/
-#guard_msgs in
-#eval roundtripConverges r"
-procedure test() {
-    assert forall(x: int) => x == x;
-    assert exists(y: int) => y > 0
-};
-"
+")
 
 -- Additional coverage: constrained types
 
 /--
-info: constrained Positive = v: int | v > 0
+info: constrained Positive = v: int where v > 0 witness 1
 -/
 #guard_msgs in
 #eval do IO.println (← roundtrip r"constrained Positive = v: int where v > 0 witness 1")
 
-/-- info: ok -/
-#guard_msgs in
-#eval roundtripConverges r"constrained Positive = v: int where v > 0 witness 1"
-
 -- Additional coverage: modifies clauses
 
 /--
-info: composite Container { var value: int }
+info: composite Container { var value:int }
 
-procedure modify(c: Container) returns
-()
-deterministic
- modifies c ensures true := { c#value := c#value + 1; true }
+procedure modify(c: Container)
+  ensures true
+  modifies c
+{ c#value := c#value + 1; true };
 -/
 #guard_msgs in
 #eval do IO.println (← roundtrip r"
@@ -271,29 +213,13 @@ procedure modify(c: Container)
 { c#value := c#value + 1; true };
 ")
 
-/-- info: ok -/
-#guard_msgs in
-#eval roundtripConverges r"
-composite Container { var value: int }
-procedure modify(c: Container)
-  ensures true
-  modifies c
-{ c#value := c#value + 1; true };
-"
-
 -- Additional coverage: nondeterministic holes
 
 /--
-info: procedure test() returns
-(result: int)
-deterministic
-{ <??> }
+info: procedure test(): int
+{ <??> };
 -/
 #guard_msgs in
 #eval do IO.println (← roundtrip r"procedure test(): int { <??> };")
-
-/-- info: ok -/
-#guard_msgs in
-#eval roundtripConverges r"procedure test(): int { <??> };"
 
 end Strata.Laurel

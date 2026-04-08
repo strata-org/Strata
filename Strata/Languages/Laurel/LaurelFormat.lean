@@ -91,8 +91,8 @@ def formatStmtExprVal (s : StmtExpr) : Format :=
       | none => ""
       | some e => " := " ++ formatStmtExpr e
   | .While cond invs _ body =>
-      "while " ++ formatStmtExpr cond ++
-      (if invs.isEmpty then Format.nil else " invariant " ++ Format.joinSep (invs.map formatStmtExpr) "; ") ++
+      "while(" ++ formatStmtExpr cond ++ ")" ++
+      Format.join (invs.map (fun inv => "\n  invariant " ++ formatStmtExpr inv)) ++
       " " ++ formatStmtExpr body
   | .Exit target => "exit " ++ Format.text target
   | .Return value =>
@@ -136,12 +136,12 @@ def formatStmtExprVal (s : StmtExpr) : Format :=
       let trigFmt := match trigger with
         | some t => " {" ++ formatStmtExpr t ++ "}"
         | none => ""
-      "forall " ++ format param.name ++ ": " ++ formatHighType param.type ++ trigFmt ++ " => " ++ formatStmtExpr body
+      "forall(" ++ format param.name ++ ": " ++ formatHighType param.type ++ ")" ++ trigFmt ++ " => " ++ formatStmtExpr body
   | .Exists param trigger body =>
       let trigFmt := match trigger with
         | some t => " {" ++ formatStmtExpr t ++ "}"
         | none => ""
-      "exists " ++ format param.name ++ ": " ++ formatHighType param.type ++ trigFmt ++ " => " ++ formatStmtExpr body
+      "exists(" ++ format param.name ++ ": " ++ formatHighType param.type ++ ")" ++ trigFmt ++ " => " ++ formatStmtExpr body
   | .Assigned name => "assigned(" ++ formatStmtExpr name ++ ")"
   | .Old value => "old(" ++ formatStmtExpr value ++ ")"
   | .Fresh value => "fresh(" ++ formatStmtExpr value ++ ")"
@@ -170,23 +170,33 @@ def formatStmtExprWithMsg (s : StmtExprMd) : Format :=
 
 def formatBody : Body → Format
   | .Transparent body => formatStmtExpr body
-  | .Opaque postconds impl modif =>
-      (if modif.isEmpty then Format.nil
-       else " modifies " ++ Format.joinSep (modif.map formatStmtExpr) ", ") ++
-      Format.joinSep (postconds.map (fun p =>
-        " ensures " ++ formatStmtExpr p ++
-        match p.md.getPropertySummary with
-        | none => Format.nil
-        | some msg => " propertySummary \"" ++ msg ++ "\"")) "" ++
+  | .Opaque _ impl _ =>
       match impl with
       | none => Format.nil
-      | some e => " := " ++ formatStmtExpr e
-  | .Abstract posts => "abstract" ++ Format.join (posts.map (fun p =>
-      " ensures " ++ formatStmtExpr p ++
-      match p.md.getPropertySummary with
-      | none => Format.nil
-      | some msg => " propertySummary \"" ++ msg ++ "\""))
+      | some e => formatStmtExpr e
+  | .Abstract _ => Format.nil
   | .External => "external"
+
+def formatEnsures : Body → Format
+  | .Opaque postconds _ _ =>
+      Format.join (postconds.map (fun p =>
+        Format.line ++ "  ensures " ++ formatStmtExpr p ++
+        match p.md.getPropertySummary with
+        | none => Format.nil
+        | some msg => " summary \"" ++ msg ++ "\""))
+  | .Abstract posts =>
+      Format.join (posts.map (fun p =>
+        Format.line ++ "  ensures " ++ formatStmtExpr p ++
+        match p.md.getPropertySummary with
+        | none => Format.nil
+        | some msg => " summary \"" ++ msg ++ "\""))
+  | _ => Format.nil
+
+def formatModifies : Body → Format
+  | .Opaque _ _ modif =>
+      if modif.isEmpty then Format.nil
+      else Format.line ++ "  modifies " ++ Format.joinSep (modif.map formatStmtExpr) ", "
+  | _ => Format.nil
 
 def formatDeterminism : Determinism → Format
   | .deterministic none => "deterministic"
@@ -197,31 +207,43 @@ instance : Std.ToFormat Determinism where
   format := formatDeterminism
 
 def formatProcedure (proc : Procedure) : Format :=
-  (if proc.isFunctional then "function " else "procedure ") ++ format proc.name ++
-  "(" ++ Format.joinSep (proc.inputs.map formatParameter) ", " ++ ") returns " ++ Format.line ++
-  "(" ++ Format.joinSep (proc.outputs.map formatParameter) ", " ++ ")" ++ Format.line ++
-  Format.join (proc.preconditions.map (fun p =>
-    "requires " ++ formatStmtExpr p ++
-    (match p.md.getPropertySummary with
+  let header := (if proc.isFunctional then "function " else "procedure ") ++ format proc.name ++
+    "(" ++ Format.joinSep (proc.inputs.map formatParameter) ", " ++ ")"
+  let retType := match proc.outputs with
+    | [p] => if p.name == "result" then ": " ++ formatHighType p.type else Format.nil
+    | _ => Format.nil
+  let retParams := match proc.outputs with
+    | [p] => if p.name != "result" then Format.line ++ "  returns (" ++ formatParameter p ++ ")" else Format.nil
+    | ps@(_ :: _ :: _) => Format.line ++ "  returns (" ++ Format.joinSep (ps.map formatParameter) ", " ++ ")"
+    | _ => Format.nil
+  let requires := Format.join (proc.preconditions.map (fun p =>
+    Format.line ++ "  requires " ++ formatStmtExpr p ++
+    match p.md.getPropertySummary with
     | none => Format.nil
-    | some msg => " propertySummary \"" ++ msg ++ "\"") ++ Format.line)) ++
-  formatDeterminism proc.determinism ++ Format.line ++
-  formatBody proc.body
+    | some msg => " summary \"" ++ msg ++ "\""))
+  let ensures := formatEnsures proc.body
+  let modifies := formatModifies proc.body
+  let body := formatBody proc.body
+  header ++ retType ++ retParams ++ requires ++ ensures ++ modifies ++ Format.line ++ body ++ ";"
 
 def formatField (f : Field) : Format :=
-  (if f.isMutable then "var " else "val ") ++
-  format f.name ++ ": " ++ formatHighType f.type
+  (if f.isMutable then "var " else "") ++
+  format f.name ++ ":" ++ formatHighType f.type
 
 def formatCompositeType (ct : CompositeType) : Format :=
   "composite " ++ format ct.name ++
   (if ct.extending.isEmpty then Format.nil else " extends " ++
    Format.joinSep (ct.extending.map format) ", ") ++
-  " { " ++ Format.joinSep (ct.fields.map formatField) "; " ++ " }"
+  " {" ++ Format.join (ct.fields.map (fun f => " " ++ formatField f)) ++
+  (if ct.instanceProcedures.isEmpty then Format.nil
+   else Format.join (ct.instanceProcedures.map (fun p => " " ++ formatProcedure p))) ++
+  " }"
 
 def formatConstrainedType (ct : ConstrainedType) : Format :=
   "constrained " ++ format ct.name ++
   " = " ++ format ct.valueName ++ ": " ++ formatHighType ct.base ++
-  " | " ++ formatStmtExpr ct.constraint
+  " where " ++ formatStmtExpr ct.constraint ++
+  " witness " ++ formatStmtExpr ct.witness
 
 def formatDatatypeConstructor (c : DatatypeConstructor) : Format :=
   format c.name ++
