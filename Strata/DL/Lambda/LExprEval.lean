@@ -147,9 +147,12 @@ def isCanonicalValue (F : @Factory T.base) (e : LExpr T) : Bool :=
 Check if `e` is a constructor application.
 -/
 def isConstrApp (F : @Factory T.base) (e : LExpr T) : Bool :=
-  match Factory.callOfLFunc F e true with
-  | some (_, _, f) => f.isConstr
-  | none => false
+  match e with
+  | .const _ _ => true
+  | _ =>
+    match Factory.callOfLFunc F e true with
+    | some (_, _, f) => f.isConstr
+    | none => false
 
 /--
 Check if `e` contains a binder (abstraction or quantifier) anywhere in its

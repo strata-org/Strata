@@ -312,6 +312,7 @@ private def mkMdWithFileRange (loc : SourceRange) (msg : String := "")
   let mut md : Imperative.MetaData Core.Expression := #[⟨Imperative.MetaData.fileRange, .fileRange fr⟩]
   if !msg.isEmpty then
     md := md.push ⟨Imperative.MetaData.message, .msg msg⟩
+    md := md.push ⟨Imperative.MetaData.propertySummary, .msg msg⟩
   return md
 
 /-- Wrap a StmtExpr with metadata containing a file range and optional message. -/
@@ -342,7 +343,10 @@ def specExprToLaurel (e : SpecExpr) (md : Imperative.MetaData Core.Expression)
     | .var "kwargs" => return some (mkStmt (.Identifier (mkId field)) md)
     | _ => do
       let s? ← specExprToLaurel subject md
-      return s?.map fun s => mkStmt (.FieldSelect s (mkId field)) md
+      return s?.map fun s =>
+        mkStmt (.StaticCall (mkId "Any_get")
+          [s, mkStmt (.StaticCall (mkId "from_str")
+            [mkStmt (.LiteralString field) md]) md]) md
   | .isInstanceOf _ typeName => do
     reportError default s!"isinstance check for '{typeName}' not yet supported in preconditions"
     return none

@@ -2098,22 +2098,32 @@ private theorem isConstrApp_eraseMetadata_eq
     (e₁ e₂ : LExpr Tbase.mono)
     (h_eM : e₁.eraseMetadata = e₂.eraseMetadata) :
     LExpr.isConstrApp F e₁ = LExpr.isConstrApp F e₂ := by
-  simp only [LExpr.isConstrApp]
-  have h := callOfLFunc_eraseMetadata_congr F e₁ e₂ true h_eM
-  cases h₁ : F.callOfLFunc e₁ (allowPartialApp := true) with
-  | none =>
-    cases h₂ : F.callOfLFunc e₂ (allowPartialApp := true) with
-    | none => rfl
-    | some v => rw [h₁, h₂] at h; exact absurd h (by simp)
-  | some v =>
-    obtain ⟨op₁, args₁, f₁⟩ := v
-    cases h₂ : F.callOfLFunc e₂ (allowPartialApp := true) with
-    | none => rw [h₁, h₂] at h; exact absurd h (by simp)
-    | some v₂ =>
-      obtain ⟨op₂, args₂, f₂⟩ := v₂
-      rw [h₁, h₂] at h
-      simp at h
-      rw [h.1]
+  unfold LExpr.isConstrApp
+  -- Save the eraseMetadata hypothesis before cases destructs it.
+  have h_call := callOfLFunc_eraseMetadata_congr F e₁ e₂ true h_eM
+  cases e₁ <;> cases e₂
+  -- const/const: trivial
+  all_goals first | rfl | skip
+  -- const/non-const: contradiction
+  all_goals first
+    | (simp (config := { decide := true }) [LExpr.eraseMetadata, LExpr.replaceMetadata] at h_eM)
+    | skip
+  -- non-const/non-const: use saved h_call
+  all_goals (
+    cases h₁ : F.callOfLFunc _ (allowPartialApp := true) with
+    | none =>
+      cases h₂ : F.callOfLFunc _ (allowPartialApp := true) with
+      | none => rfl
+      | some v => rw [h₁, h₂] at h_call; exact absurd h_call (by simp)
+    | some v =>
+      obtain ⟨op₁, args₁, f₁⟩ := v
+      cases h₂ : F.callOfLFunc _ (allowPartialApp := true) with
+      | none => rw [h₁, h₂] at h_call; exact absurd h_call (by simp)
+      | some v₂ =>
+        obtain ⟨op₂, args₂, f₂⟩ := v₂
+        rw [h₁, h₂] at h_call
+        simp at h_call
+        rw [h_call.1])
 
 ---------------------------------------------------------------------
 -- Helper lemmas for eval_eraseMetadata_invariant
