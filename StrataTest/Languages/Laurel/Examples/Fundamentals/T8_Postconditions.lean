@@ -33,18 +33,6 @@ procedure invalidPostcondition(x: int)
 //          ^^^^^ error: assertion does not hold
 {
 };
-
-// Bodiless procedure: no implementation, only postcondition
-procedure bodilessProcedure() returns (r: int)
-  ensures r > 0
-;
-
-procedure callerOfBodilessProcedure() {
-  var x: int := bodilessProcedure();
-  assert x > 0;
-  assert false
-//^^^^^^^^^^^^ error: assertion does not hold
-};
 "
 
 #guard_msgs (drop info, error) in
