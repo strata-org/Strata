@@ -202,9 +202,9 @@ def create_service() -> Any:
     svc: MyService = MyService(\"test\")
     return svc
 "
-  let _diags ← processPythonFile pythonCmd (stringInputContext "test.py" program)
-  -- Pipeline should complete without crashing; diagnostics are expected
-  -- since the verifier now sees transparent __init__ bodies.
+  let diags ← processPythonFile pythonCmd (stringInputContext "test.py" program)
+  if diags.size ≠ 0 then
+    throw <| .userError s!"Expected 0 diagnostics, got {diags.size}"
 
 -- Instance method call resolution and body preservation:
 -- Verifies that the method body is translated (not opaque) and the
