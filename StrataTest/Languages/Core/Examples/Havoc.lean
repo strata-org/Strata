@@ -27,7 +27,9 @@ procedure S() returns ()
 #eval TransM.run Inhabited.default (translateProgram havocPgm) |>.snd |>.isEmpty
 
 /--
-info: (procedure S () returns ()
+info: (program Core;
+
+procedure S () returns ()
 {
   var x : int;
   x := 1;
@@ -59,6 +61,8 @@ Model:
 
 
 [DEBUG] Evaluated program:
+program Core;
+
 procedure S () returns ()
 {
   var x : int;

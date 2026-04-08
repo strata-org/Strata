@@ -1239,9 +1239,11 @@ partial def translateStmt (p : Program) (bindings : TransBindings) (arg : Arg) :
     return ([.call [] f es.toList md], bindings)
   | q`Core.block_statement, #[la, ba] =>
     let l ← translateIdent String la
-    let (ss, bindings) ← translateBlock p bindings ba
+    let (ss, innerBindings) ← translateBlock p bindings ba
     let md ← getOpMetaData op
-    return ([.block l ss md], bindings)
+    -- Blocks introduce lexical scope: variables declared inside are not
+    -- visible after.  Only propagate counter state (gen), not boundVars.
+    return ([.block l ss md], { bindings with gen := innerBindings.gen })
   | q`Core.exit_statement, #[la] =>
     let l ← translateIdent String la
     let md ← getOpMetaData op
