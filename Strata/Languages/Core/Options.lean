@@ -108,6 +108,9 @@ def CheckLevel.ofString? (s : String) : Option CheckLevel :=
 def CheckLevel.options : String :=
   "'minimal' (simple messages), 'minimalVerbose' (detailed messages, one check), or 'full' (both checks, all outcomes)"
 
+/-- Options controlling the verification pipeline.
+    When adding or removing fields, keep `verifyOptionsFlags` and
+    `parseVerifyOptions` in StrataMain.lean in sync. -/
 structure VerifyOptions where
   -- Pipeline stopping points
   /-- How much diagnostic output to emit. -/
