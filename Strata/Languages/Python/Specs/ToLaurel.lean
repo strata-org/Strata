@@ -516,7 +516,6 @@ def funcDeclToLaurel (procName : String) (func : FunctionDecl)
     inputs := inputs.toList
     outputs := outputs
     preconditions := []
-    determinism := .nondeterministic
     decreases := none
     isFunctional := false
     body := body
