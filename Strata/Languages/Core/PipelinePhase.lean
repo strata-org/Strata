@@ -37,6 +37,10 @@ structure AbstractedPhase where
   name : String
   /-- Given an obligation, determine the model validation for this phase. -/
   getValidation : ProofObligation Expression → ModelValidation := fun _ => .modelPreserving
+  /-- Given an obligation label, return a human-readable description for
+      diagnostics (e.g. "precondition 'nat'"). Returns `none` when the
+      label does not belong to this phase. -/
+  getAssertDescription : String → Option String := fun _ => none
 
 /-- True when any label in the obligation's path conditions starts with the
     given string, indicating the obligation went through that transform. -/

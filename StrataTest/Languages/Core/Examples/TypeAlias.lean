@@ -57,7 +57,9 @@ procedure P () returns () {
 #eval TransM.run Inhabited.default (translateProgram goodTypeAlias) |>.snd
 
 /--
-info: type Foo (a : Type, b : Type);
+info: program Core;
+
+type Foo (a : Type, b : Type);
 type FooAlias (a : Type) := Foo int bool;
 type FooAlias2 (a : Type) := FooAlias (FooAlias bool);
 function fooVal () : FooAlias2 (Foo int int);

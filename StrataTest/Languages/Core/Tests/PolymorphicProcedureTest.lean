@@ -40,7 +40,7 @@ info: [Strata.Core] Type checking succeeded.
 
 
 VCs:
-Label: (Origin_Extract_Requires)Extract_requires_0
+Label: callElimAssert_Extract_requires_0_2
 Property: assert
 Obligation:
 List..isCons($__xs3)
@@ -52,7 +52,7 @@ true
 
 
 
-Result: Obligation: (Origin_Extract_Requires)Extract_requires_0
+Result: Obligation: callElimAssert_Extract_requires_0_2
 Property: assert
 Result: ❌ fail
 Model:
@@ -60,6 +60,8 @@ Model:
 
 
 [DEBUG] Evaluated program:
+program Core;
+
 datatype List (a : Type) {(
   (Nil())),
   (Cons(head : a, tail : (List a)))
@@ -78,13 +80,16 @@ spec {
   xs := Cons(1, Nil);
   havoc xs;
   var h : int;
-  call h := Extract(xs);
+  var tmp_arg_0 : List int := $__xs3;
+  var tmp_h_1 : int := $__h4;
+  assert [callElimAssert_Extract_requires_0_2]: List..isCons($__xs3);
+  havoc h;
   assert [Test_ensures_0]: true;
   };
 
 ---
 info:
-Obligation: (Origin_Extract_Requires)Extract_requires_0
+Obligation: callElimAssert_Extract_requires_0_2
 Property: assert
 Result: ❌ fail
 Model:
@@ -132,14 +137,14 @@ true
 Label: assert_0
 Property: assert
 Assumptions:
-(Origin_MkCons_Ensures)MkCons_ensures_0: List..isCons($__r3)
+callElimAssume_MkCons_ensures_0_2: List..isCons($__r3)
 Obligation:
 List..isCons($__r3)
 
 Label: Test_ensures_0
 Property: assert
 Assumptions:
-(Origin_MkCons_Ensures)MkCons_ensures_0: List..isCons($__r3)
+callElimAssume_MkCons_ensures_0_2: List..isCons($__r3)
 Obligation:
 true
 

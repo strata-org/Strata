@@ -25,6 +25,8 @@ BOTH_SKIP = {
     "test_unsupported_config",
     "test_with_void_enter",
     "test_user_error_metadata", # No SARIF output because does not run SMT analysis
+    "test_is_non_none", # No SARIF output because does not run SMT analysis
+    "test_is_not_non_none", # No SARIF output because does not run SMT analysis
 }
 SKIP_TESTS = BOTH_SKIP | {
     "test_augmented_assign",

@@ -1,10 +1,10 @@
 test_class_methods.py(18, 4): ✅ pass - callElimAssert_requires_12
-test_class_methods.py(21, 4): ✅ pass - assert_assert(445)_calls_Any_to_bool_0
-test_class_methods.py(21, 4): ❓ unknown - assert(445)
-test_class_methods.py(24, 4): ✅ pass - assert_assert(539)_calls_Any_to_bool_0
-test_class_methods.py(24, 4): ❓ unknown - assert(539)
-test_class_methods.py(28, 4): ✅ pass - assert_assert(654)_calls_Any_to_bool_0
-test_class_methods.py(28, 4): ❓ unknown - assert(654)
+test_class_methods.py(21, 4): ✅ pass - get_owner should return Alice
+test_class_methods.py(21, 4): ❓ unknown - get_owner should return Alice
+test_class_methods.py(24, 4): ✅ pass - get_balance should return 100
+test_class_methods.py(24, 4): ❓ unknown - get_balance should return 100
+test_class_methods.py(28, 4): ✅ pass - set_balance should update balance
+test_class_methods.py(28, 4): ❓ unknown - set_balance should update balance
 test_class_methods.py(30, 4): ✅ pass - (Origin_test_helper_procedure_Requires)req_name_is_foo
 test_class_methods.py(30, 4): ✅ pass - (Origin_test_helper_procedure_Requires)req_opt_name_none_or_str
 test_class_methods.py(30, 4): ✅ pass - (Origin_test_helper_procedure_Requires)req_opt_name_none_or_bar

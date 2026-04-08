@@ -32,7 +32,9 @@ spec {
 #eval TransM.run Inhabited.default (translateProgram simpleProcPgm) |>.snd |>.isEmpty
 
 /--
-info: var g : bool;
+info: program Core;
+
+var g : bool;
 procedure Test (x : bool) returns (y : bool)
 spec {
   ensures [Test_ensures_0]: y == x;

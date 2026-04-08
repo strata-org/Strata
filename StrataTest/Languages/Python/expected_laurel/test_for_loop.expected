@@ -1,18 +1,18 @@
 unknown location: ✅ pass - assume_assume(0)_calls_PIn_0
 unknown location: ✅ pass - assume_assume(0)_calls_Any_to_bool_1
-test_for_loop.py(6, 4): ✅ pass - assert_assert(129)_calls_Any_to_bool_0
-test_for_loop.py(6, 4): ❓ unknown - assert(129)
+test_for_loop.py(6, 4): ✅ pass - sum of list should be 15
+test_for_loop.py(6, 4): ❓ unknown - sum of list should be 15
 unknown location: ✅ pass - assume_assume(0)_calls_PIn_0
 unknown location: ✅ pass - assume_assume(0)_calls_Any_to_bool_1
 test_for_loop.py(13, 8): ✅ pass - ite_cond_calls_Any_to_bool_0
-test_for_loop.py(15, 4): ✅ pass - assert_assert(361)_calls_Any_to_bool_0
-test_for_loop.py(15, 4): ❓ unknown - assert(361)
+test_for_loop.py(15, 4): ✅ pass - should count 3 items greater than 3
+test_for_loop.py(15, 4): ❓ unknown - should count 3 items greater than 3
 unknown location: ✅ pass - assume_assume(0)_calls_PIn_0
 unknown location: ✅ pass - assume_assume(0)_calls_Any_to_bool_1
 test_for_loop.py(22, 8): ✅ pass - ite_cond_calls_Any_to_bool_0
-test_for_loop.py(25, 4): ✅ pass - assert_assert(611)_calls_Any_to_bool_0
-test_for_loop.py(25, 4): ✅ pass - assert(611)
-test_for_loop.py(25, 4): ✅ pass - assert_assert(611)_calls_Any_to_bool_0
-test_for_loop.py(25, 4): ❓ unknown - assert(611)
+test_for_loop.py(25, 4): ✅ pass - should have found 30
+test_for_loop.py(25, 4): ✅ pass - should have found 30
+test_for_loop.py(25, 4): ✅ pass - should have found 30
+test_for_loop.py(25, 4): ❓ unknown - should have found 30
 DETAIL: 13 passed, 0 failed, 3 inconclusive
 RESULT: Inconclusive
