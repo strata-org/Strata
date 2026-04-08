@@ -95,13 +95,12 @@ where
       let typeOpt := optionArg (some (laurelOp "typeAnnotation" #[highTypeToArg ty]))
       let initOpt := optionArg (init.map fun e => laurelOp "initializer" #[stmtExprToArg e])
       laurelOp "varDecl" #[ident name.text, typeOpt, initOpt]
-    | .Assign [target] value =>
-      laurelOp "assign" #[stmtExprToArg target, stmtExprToArg value]
     | .Assign targets value =>
-      -- Multi-target assign: emit as assign of first target (best effort)
-      match targets with
-      | [] => laurelOp "assign" #[laurelOp "identifier" #[ident "_"], stmtExprToArg value]
-      | t :: _ => laurelOp "assign" #[stmtExprToArg t, stmtExprToArg value]
+      -- Grammar only supports single-target assign; use first target or placeholder
+      let targetArg := match targets with
+        | t :: _ => stmtExprToArg t
+        | [] => laurelOp "identifier" #[ident "_"]
+      laurelOp "assign" #[targetArg, stmtExprToArg value]
     | .FieldSelect target field =>
       laurelOp "fieldAccess" #[stmtExprToArg target, ident field.text]
     | .StaticCall callee args =>
@@ -293,7 +292,9 @@ private def procedureCommandOp (proc : Procedure) : Strata.Operation :=
 
 /-- Convert a Laurel.Program to a Strata.Program (DDM concrete syntax tree).
     The resulting program can be formatted using `Strata.Program.format` to
-    produce Laurel source text. -/
+    produce Laurel source text.
+    Note: `staticFields` and `constants` are not emitted because the Laurel
+    grammar has no top-level commands for them. -/
 def programToStrata (prog : Laurel.Program) : Strata.Program :=
   let typeOps := prog.types.map typeDefinitionToOp |>.toArray
   let procOps := prog.staticProcedures.map procedureCommandOp |>.toArray

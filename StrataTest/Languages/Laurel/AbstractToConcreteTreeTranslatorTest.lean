@@ -240,4 +240,60 @@ procedure test() {
 };
 "
 
+-- Additional coverage: constrained types
+
+/--
+info: constrained Positive = v: int | v > 0
+-/
+#guard_msgs in
+#eval do IO.println (← roundtrip r"constrained Positive = v: int where v > 0 witness 1")
+
+/-- info: ok -/
+#guard_msgs in
+#eval roundtripConverges r"constrained Positive = v: int where v > 0 witness 1"
+
+-- Additional coverage: modifies clauses
+
+/--
+info: composite Container { var value: int }
+
+procedure modify(c: Container) returns
+()
+deterministic
+ modifies c ensures true := { c#value := c#value + 1; true }
+-/
+#guard_msgs in
+#eval do IO.println (← roundtrip r"
+composite Container { var value: int }
+procedure modify(c: Container)
+  ensures true
+  modifies c
+{ c#value := c#value + 1; true };
+")
+
+/-- info: ok -/
+#guard_msgs in
+#eval roundtripConverges r"
+composite Container { var value: int }
+procedure modify(c: Container)
+  ensures true
+  modifies c
+{ c#value := c#value + 1; true };
+"
+
+-- Additional coverage: nondeterministic holes
+
+/--
+info: procedure test() returns
+(result: int)
+deterministic
+{ <??> }
+-/
+#guard_msgs in
+#eval do IO.println (← roundtrip r"procedure test(): int { <??> };")
+
+/-- info: ok -/
+#guard_msgs in
+#eval roundtripConverges r"procedure test(): int { <??> };"
+
 end Strata.Laurel
