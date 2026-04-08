@@ -279,7 +279,6 @@ procedure h() returns () {
   inlined: {
     var tmp_arg_0 : bool := b_in;
     var tmp_arg_1 : bool;
-    havoc tmp_arg_1;
     tmp_arg_1 := !tmp_arg_0;
     b_out := tmp_arg_1;
   }
@@ -329,7 +328,6 @@ procedure h() returns () {
   inlined: {
     var f_x : bool := b_in;
     var f_y : bool;
-    havoc f_y;
     f_body: {
       if (f_x) {
         exit f_body;
@@ -381,7 +379,6 @@ procedure g() returns () {
     inlined1: {
       var f_x : int := 1;
       var f_y : int;
-      havoc f_y;
       f_y := f_x;
       f_out := f_y;
     }
@@ -389,7 +386,6 @@ procedure g() returns () {
     inlined1: {
       var f_x2 : int := 2;
       var f_y2 : int;
-      havoc f_y2;
       f_y2 := f_x2;
       f_out := f_y2;
     }

@@ -79,7 +79,9 @@ Obligation:
 fooAliasVal == fooVal
 
 ---
-info: ok: [(type Foo (a : Type, b : Type);
+info: ok: [(program Core;
+  ⏎
+  type Foo (a : Type, b : Type);
   type FooAlias (a : Type) := Foo int bool;
   function fooAliasVal () : Foo int bool;
   function fooVal () : Foo int bool;
@@ -390,7 +392,9 @@ def polyFuncProg : Program := { decls := [
 info: [Strata.Core] Type checking succeeded.
 
 ---
-info: ok: function identity<$__ty0> (x : $__ty0) : $__ty0;
+info: ok: program Core;
+
+function identity<$__ty0> (x : $__ty0) : $__ty0;
 function makePair<$__ty1, $__ty2> (x : $__ty1, y : $__ty2) : Map $__ty1 $__ty2;
 procedure Test () returns ()
 {

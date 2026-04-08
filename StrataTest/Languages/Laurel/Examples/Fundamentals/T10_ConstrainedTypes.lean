@@ -60,7 +60,6 @@ procedure reassignInvalid() {
 
 // Argument to constrained-typed parameter — valid
 procedure takesNat(n: nat) returns (r: int) { return n };
-//                    ^^^ error: assertion does not hold
 procedure argValid() returns (r: int) {
   var x: int := takesNat(3);
   return x
@@ -69,6 +68,7 @@ procedure argValid() returns (r: int) {
 // Argument to constrained-typed parameter — invalid (requires violation)
 procedure argInvalid() returns (r: int) {
   var x: int := takesNat(-1);
+//^^^^^^^^^^^^^^^^^^^^^^^^^^ error: precondition does not hold
   return x
 };
 

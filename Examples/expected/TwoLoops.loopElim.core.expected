@@ -1,0 +1,6 @@
+Successfully parsed.
+TwoLoops.loopElim.core.st(12, 6) [entry_invariant_0_0]: ✅ pass
+TwoLoops.loopElim.core.st(25, 8) [arbitrary_iter_maintain_invariant_0_0]: ✅ pass
+TwoLoops.loopElim.core.st(37, 6) [entry_invariant_1_0]: ✅ pass
+TwoLoops.loopElim.core.st(50, 8) [arbitrary_iter_maintain_invariant_1_0]: ✅ pass
+All 4 goals passed.
