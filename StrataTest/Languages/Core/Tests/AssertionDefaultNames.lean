@@ -29,7 +29,9 @@ spec {
 #eval TransM.run Inhabited.default (translateProgram assertionNames) |>.snd |>.isEmpty
 
 /--
-info: procedure Test (x : int) returns ()
+info: program Core;
+
+procedure Test (x : int) returns ()
 spec {
   requires [Test_requires_0]: x == 1;
   } {

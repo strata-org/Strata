@@ -93,7 +93,9 @@ open Strata.C_Simp in
 #eval TransM.run Inhabited.default ((translateProgram (CoprimePgm.commands)).map (·.stripMetaData))
 
 /--
-info: procedure coprime (a : int, b : int) returns (return : bool)
+info: program Core;
+
+procedure coprime (a : int, b : int) returns (return : bool)
 spec {
   requires [pre]: a > 0 && b > 0;
   ensures [post]: true;
