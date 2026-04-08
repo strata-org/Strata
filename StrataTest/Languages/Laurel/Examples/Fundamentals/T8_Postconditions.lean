@@ -87,7 +87,40 @@ procedure callerOfOpaqueAbs() {
   var a: int := opaqueAbs(-5);
   assert a >= 0;
   assert a == 5
-//^^^^^^^^^^^^^ error: assertion does not hold
+//^^^^^^^^^^^^^ error: assertion could not be proved
+};
+
+// Function calling opaque function — postcondition available via axiom
+opaque function opaquePositive(x: int): int
+  requires x >= 0
+  ensures result >= 0
+{ x };
+function callsOpaque(x: int): int
+  requires x >= 0
+  ensures result >= 0
+{ opaquePositive(x) };
+procedure verifyCallsOpaque() {
+  var y: int := callsOpaque(5);
+  assert y >= 0
+};
+
+// Postconditioned function call inside quantifier with bound variable
+opaque function opaqueInc(x: int): int
+  ensures result > x
+{ x + 1 };
+procedure quantifierPostcond() {
+  var b: bool := forall(n: int) { opaqueInc(n) } => opaqueInc(n) > n;
+  assert b
+};
+
+// Postcondition with quantifier that shadows 'result'
+opaque function shadowTest(x: int): int
+//              ^^^^^^^^^^ error: assertion does not hold
+  ensures result > 0 && forall(result: int) => result >= 0 ==> result + x >= 0
+{ x + 1 };
+procedure verifyShadowTest() {
+  var y: int := shadowTest(5);
+  assert y > 0
 };
 "
 

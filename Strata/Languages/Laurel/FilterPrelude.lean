@@ -128,7 +128,9 @@ private partial def collectExprNames (expr : StmtExprMd) : CollectM Unit := do
 /-- Collect names from a procedure body. -/
 private def collectBodyNames (body : Body) : CollectM Unit := do
   match body with
-  | .Transparent expr => collectExprNames expr
+  | .Transparent expr posts =>
+    collectExprNames expr
+    posts.forM collectExprNames
   | .Opaque posts impl modifies =>
     posts.forM collectExprNames
     impl.forM collectExprNames

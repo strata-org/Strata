@@ -6,26 +6,23 @@
 
 module
 public import Strata.Languages.Laurel.Laurel
-import Strata.DL.Lambda.LExpr
 import Strata.DDM.Util.Graph.Tarjan
 
 /-!
-## Grouping and Ordering for Core Translation
+## Declaration Grouping and Ordering
 
 Utilities for computing the grouping and topological ordering of Laurel
-declarations before they are emitted as Strata Core declarations.
+declarations.
 
-- `groupDatatypes` — groups mutually recursive datatypes into a single `.data`
-  declaration using Tarjan's SCC algorithm.
+- `groupDatatypes` — groups mutually recursive datatypes using Tarjan's SCC
+  algorithm.
 - `computeSccDecls` — builds the procedure call graph, runs Tarjan's SCC
   algorithm, and returns each SCC as a list of procedures paired with a flag
   indicating whether the SCC is recursive. The result is in reverse topological
-  order (dependencies before dependents), which is the order required by Core.
+  order (dependencies before dependents).
 -/
 
 namespace Strata.Laurel
-
-open Lambda (LMonoTy LExpr)
 
 /-- Collect all `UserDefined` type names referenced in a `HighType`, including nested ones. -/
 def collectTypeRefs : HighTypeMd → List String
@@ -45,30 +42,23 @@ def datatypeRefs (dt : DatatypeDefinition) : List String :=
   dt.constructors.flatMap fun c => c.args.flatMap fun p => collectTypeRefs p.type
 
 /--
-Group `LDatatype Unit` values by strongly connected components of their direct type references.
-Datatypes in the same SCC (mutually recursive) share a single `.data` declaration.
-Non-recursive datatypes each get their own singleton `.data` declaration.
+Group `DatatypeDefinition` values by strongly connected components of their direct type references.
+Mutually recursive datatypes are grouped together.
 The returned groups are in topological order: leaves (no dependencies) first, roots last.
 -/
 public def groupDatatypes (dts : List DatatypeDefinition)
-    (ldts : List (Lambda.LDatatype Unit)) : List (List (Lambda.LDatatype Unit)) :=
+    : List (List DatatypeDefinition) :=
   let n := dts.length
   if n = 0 then [] else
   let nameToIdx : Std.HashMap String Nat :=
     dts.foldlIdx (fun m i dt => m.insert dt.name.text i) {}
-  -- dt[i] references dt[j] means i depends on j (j must be declared first).
-  -- tarjan guarantees: if there's a path A→B, B appears after A in the output.
-  -- So we add edge j→i (j has a path to i), ensuring i (the dependent) appears after j (the dependency).
   let edges : List (Nat × Nat) :=
     dts.foldlIdx (fun acc i dt =>
       (datatypeRefs dt).filterMap nameToIdx.get? |>.foldl (fun acc j => (j, i) :: acc) acc) []
   let g := OutGraph.ofEdges! n edges
-  let ldtMap : Std.HashMap String (Lambda.LDatatype Unit) :=
-    ldts.foldl (fun m ldt => m.insert ldt.name ldt) {}
   let dtsArr := dts.toArray
   OutGraph.tarjan g |>.toList.filterMap fun comp =>
-    let members := comp.toList.filterMap fun idx =>
-      dtsArr[idx]? |>.bind fun dt => ldtMap.get? dt.name.text
+    let members := comp.toList.filterMap fun idx => dtsArr[idx]?
     if members.isEmpty then none else some members
 
 /--
