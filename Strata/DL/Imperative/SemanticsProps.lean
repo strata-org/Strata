@@ -7,8 +7,8 @@ module
 
 public import Strata.DL.Imperative.CmdSemantics
 import all Strata.DL.Imperative.CmdSemantics
-public import Strata.DL.Imperative.StmtSemanticsSmallStep
-import all Strata.DL.Imperative.StmtSemanticsSmallStep
+public import Strata.DL.Imperative.StmtSemantics
+import all Strata.DL.Imperative.StmtSemantics
 import all Strata.DL.Imperative.Cmd
 
 namespace Imperative
@@ -190,7 +190,7 @@ theorem EvalStmtsSmall_hasFailure_irrel
   ∃ ρ₂', EvalStmtsSmall P EvalCmd extendEval ρ₂ ss ρ₂' ∧
     ρ₂'.store = ρ'.store ∧ ρ₂'.eval = ρ'.eval := by
   intro Heval ρ₂ Hstore Heval_eq
-  -- Reuse the simulation-based proof from StmtSemanticsSmallStep
+  -- Reuse the simulation-based proof from StmtSemantics
   -- smallStep_hasFailure_irrel works on .stmt configs; we need .stmts
   -- Use the same simulation technique directly
   suffices ∀ (c₁ c₂ : Config P CmdT),

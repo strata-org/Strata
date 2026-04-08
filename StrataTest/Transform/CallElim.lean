@@ -226,12 +226,6 @@ def translate (t : Strata.Program) : Core.Program := (TransM.run Inhabited.defau
 
 def env : Lambda.LContext CoreLParams := .default (functions := Core.Factory)
 
-def translateWF (t : Strata.Program) : WF.WFProgram :=
-  let p := translate t
-  match H: Program.typeCheck env Lambda.TEnv.default p with
-  | .error e => panic! "Well, " ++ Std.format e |> toString
-  | .ok res => { self := p, prop := by exact WF.Program.typeCheckWF H }
-
 def tests : List (Core.Program × Core.Program) := [
   (CallElimTest1, CallElimTest1Ans),
   (CallElimTest2, CallElimTest2Ans),
