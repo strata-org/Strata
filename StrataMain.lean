@@ -598,13 +598,16 @@ def pyAnalyzeLaurelCommand : Command where
               takesArg := .repeat "module" },
             { name := "keep-all-files",
               help := "Store intermediate Laurel and Core programs in <dir>.",
-              takesArg := .arg "dir" }]
+              takesArg := .arg "dir" },
+            { name := "hide-boilerplate",
+              help := "Hide auto-generated VCs (postconditions, return-type constraints) from per-VC output." }]
   help := "Verify a Python Ion program via the Laurel pipeline. Translates Python to Laurel to Core, then runs SMT verification."
   callback := fun v pflags => do
     let verbose := pflags.getBool "verbose"
     let profile := pflags.getBool "profile"
     let quiet := pflags.getBool "quiet"
     let outputSarif := pflags.getBool "sarif"
+    let hideBoilerplate := pflags.getBool "hide-boilerplate"
     let filePath := v[0]
     let pySourceOpt ← tryReadPythonSource filePath
     let keepDir := pflags.getString "keep-all-files"
@@ -690,12 +693,14 @@ def pyAnalyzeLaurelCommand : Command where
       IO.FS.writeFile path (toString coreProgram)
 
     -- Inline pyspec procedures so their precondition assertions are checked
-    -- at call sites with concrete arguments.
+    -- at call sites with concrete arguments.  We inline into user procedures
+    -- (not __main__) and also inline calls to pyspec-derived procedures
+    -- (which are classified as prelude since their source file differs).
     let pyspecFiles := pflags.getRepeated "pyspec"
     let coreProgram ← profileStep profile "Inline PySpec procedures" do
       if pyspecFiles.size > 0 then
         match Core.inlineProcedures coreProgram
-              ⟨.some (fun name _ => name ≠ "__main__" && !preludeNames.contains name)⟩ with
+              ⟨.some (fun name _ => name ≠ "__main__")⟩ with
         | .error e => exitPyAnalyzeInternalError s!"Inlining failed: {e}"
         | .ok inlined => do
           if verbose then
@@ -733,6 +738,13 @@ def pyAnalyzeLaurelCommand : Command where
     if !outputSarif then
       let mut s := ""
       for vcResult in vcResults do
+        -- When --hide-boilerplate is set, skip auto-generated VCs:
+        -- postcondition checks and return-type constraints.
+        if hideBoilerplate then
+          let summary := vcResult.obligation.metadata.getPropertySummary.getD ""
+          let isReturnTypeConstraint := (summary.splitOn "Return type constraint").length != 1
+          let isPostcondition := vcResult.obligation.label.startsWith "postcondition"
+          if isPostcondition || isReturnTypeConstraint then continue
         let fileMap := mfm.map (·.2)
         let location := match Imperative.getFileRange vcResult.obligation.metadata with
           | some fr =>
