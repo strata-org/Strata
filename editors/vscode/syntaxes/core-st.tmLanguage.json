@@ -102,7 +102,7 @@
         },
         {
           "name": "keyword.operator.logical.core-st",
-          "match": "(<===>|<==>|==>|&&|\\|\\||!(?!=))"
+          "match": "(<==>|==>|&&|\\|\\||!(?!=))"
         },
         {
           "name": "keyword.operator.comparison.core-st",
