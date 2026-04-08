@@ -207,6 +207,10 @@ def parseVerifyOptions (pflags : ParsedFlags)
     | .some "aggressive" => pure .Aggressive
     | .some "precise" => pure .Precise
     | .some s => exitFailure s!"Invalid remove-irrelevant-axioms mode: '{s}'. Must be 'off', 'aggressive', or 'precise'."
+  let vcDirectory := (pflags.getString "vc-directory" |>.map (⟨·⟩ : String → System.FilePath)).orElse (fun _ => base.vcDirectory)
+  let skipSolver := noSolve || base.skipSolver
+  if skipSolver && vcDirectory.isNone then
+    exitFailure "--no-solve requires --vc-directory to specify where SMT files are stored."
   pure { base with
     verbose := if pflags.getBool "verbose" then .normal
               else if pflags.getBool "quiet" then .quiet
@@ -220,9 +224,9 @@ def parseVerifyOptions (pflags : ParsedFlags)
     removeIrrelevantAxioms,
     outputSarif := pflags.getBool "sarif" || base.outputSarif,
     profile := pflags.getBool "profile" || base.profile,
-    skipSolver := noSolve || base.skipSolver,
+    skipSolver,
     alwaysGenerateSMT := noSolve || base.alwaysGenerateSMT,
-    vcDirectory := (pflags.getString "vc-directory" |>.map (⟨·⟩ : String → System.FilePath)).orElse (fun _ => base.vcDirectory)
+    vcDirectory
   }
 
 /-- Read and parse a Strata program file, loading the Core, C_Simp, and B3CST
@@ -704,19 +708,13 @@ def pyAnalyzeLaurelCommand : Command where
       else pure coreProgram
 
     -- Verify using Core verifier
+    -- --keep-all-files implies vc-directory if not explicitly set
+    let baseVcDir := keepDir.map (fun dir => (s!"{dir}/{baseName}" : System.FilePath))
     let pyAnalyzeBase : VerifyOptions :=
       { VerifyOptions.default with
-        verbose := .quiet, removeIrrelevantAxioms := .Precise }
-    let mut options ← parseVerifyOptions pflags pyAnalyzeBase
-    if options.skipSolver && options.vcDirectory.isNone && keepDir.isNone then
-      exitCmdFailure "pyAnalyzeLaurel"
-        "--no-solve requires --vc-directory or \
-         --keep-all-files to specify where SMT \
-         files are stored."
-    -- --keep-all-files implies vc-directory if not already set
-    if options.vcDirectory.isNone then
-      if let some dir := keepDir then
-        options := { options with vcDirectory := some (s!"{dir}/{baseName}" : System.FilePath) }
+        verbose := .quiet, removeIrrelevantAxioms := .Precise,
+        vcDirectory := baseVcDir }
+    let options ← parseVerifyOptions pflags pyAnalyzeBase
     let vcResults ← profileStep profile "SMT verification" do
       match ← Core.verifyProgram coreProgram options
                 (moreFns := Strata.Python.ReFactory)

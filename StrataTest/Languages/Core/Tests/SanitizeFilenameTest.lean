@@ -12,3 +12,5 @@ import Strata.Languages.Core.Verifier
 #guard Core.SMT.sanitizeFilename "a\"b'c" == "abc"
 #guard Core.SMT.sanitizeFilename "simple_label_0" == "simple_label_0"
 #guard Core.SMT.sanitizeFilename "" == ""
+#guard Core.SMT.sanitizeFilename "<dead_branch: foo>" == "_dead_branch__foo_"
+#guard Core.SMT.sanitizeFilename "a:b|c?d*e" == "a_b_c_d_e"
