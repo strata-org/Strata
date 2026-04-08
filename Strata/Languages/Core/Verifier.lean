@@ -49,7 +49,8 @@ when needed for the validity check (line 64 for check-sat-assuming, line 77 for 
 def encodeCore (ctx : Core.SMT.Context) (prelude : SolverM Unit)
     (assumptionTerms : List Term) (obligationTerm : Term)
     (md : Imperative.MetaData Core.Expression)
-    (satisfiabilityCheck validityCheck : Bool) :
+    (satisfiabilityCheck validityCheck : Bool)
+    (label : String) :
     SolverM (List String × EncoderState) := do
   Solver.setLogic "ALL"
   prelude
@@ -104,11 +105,11 @@ def encodeCore (ctx : Core.SMT.Context) (prelude : SolverM Unit)
       let _ ← Solver.checkSat ids
 
   -- Emit the "message" metadata field at the very end (once per obligation).
-  match md.findElem Imperative.MetaData.message with
-  | some elem =>
-    let msg := toString (Std.format elem.value) |>.replace "\\" "\\\\" |>.replace "\"" "\\\""
-    Solver.setInfo "final-message" s!"\"{msg}\""
-  | none => pure ()
+  let rawMsg := match md.findElem Imperative.MetaData.message with
+    | some elem => toString (Std.format elem.value)
+    | none => label
+  let escaped := rawMsg.replace "\\" "\\\\" |>.replace "\"" "\\\""
+  Solver.setInfo "final-message" s!"\"{escaped}\""
 
   return (ids, estate)
 
@@ -165,6 +166,7 @@ def dischargeObligation
   (obligationTerm : Term)
   (ctx : SMT.Context)
   (satisfiabilityCheck validityCheck : Bool)
+  (label : String)
   : IO (Except Format (SMT.Result × SMT.Result × EncoderState)) := do
   -- CVC5 requires --incremental for multiple (check-sat) commands
   let baseFlags := getSolverFlags options
@@ -177,7 +179,8 @@ def dischargeObligation
   Imperative.SMT.dischargeObligation
     (P := Core.Expression)
     (Strata.SMT.Encoder.encodeCore ctx (getSolverPrelude options.solver)
-      assumptionTerms obligationTerm md satisfiabilityCheck validityCheck)
+      assumptionTerms obligationTerm md satisfiabilityCheck validityCheck
+      (label := label))
     (typedVarToSMTFn ctx)
     vars
     options.solver
@@ -743,7 +746,8 @@ def getObligationResult (assumptionTerms : List Term) (obligationTerm : Term)
             typedVarsInObligation
             obligation.metadata
             filename.toString
-          assumptionTerms obligationTerm ctx satisfiabilityCheck validityCheck)
+          assumptionTerms obligationTerm ctx satisfiabilityCheck validityCheck
+          (label := obligation.label))
   match ans with
   | .error e =>
     dbg_trace f!"\n\nObligation {obligation.label}: SMT Solver Invocation Error!\
