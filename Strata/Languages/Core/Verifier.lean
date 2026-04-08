@@ -699,7 +699,7 @@ def typeCheckAndPartialEvalPipelinePhase
       let σ ← (Lambda.LState.init).addFactory factory
       let E := { Env.init with exprEnv := σ, program := program }
       let E ← E.addDatatypes datatypes
-      let (p, E) := Program.evalMerged E
+      let (p, E) := Program.eval E
       -- Check for evaluation errors
       if let some err := E.error then
         throw (DiagnosticModel.fromFormat
@@ -832,117 +832,112 @@ def getObligationResult (assumptionTerms : List Term) (obligationTerm : Term)
                     lexprModel := model }
     return result
 
-def verifySingleEnv (pE : Program × Env) (options : VerifyOptions)
+def verifyObligations (p : Program) (E : Env)
+    (obligations : Imperative.ProofObligations Expression)
+    (options : VerifyOptions)
     (counter : IO.Ref Nat) (tempDir : System.FilePath)
     (axiomCache : Option IrrelevantAxioms.Cache := .none)
     (externalPhases : List AbstractedPhase := [])
     (corePhases : List AbstractedPhase := coreAbstractedPhases) :
     EIO DiagnosticModel VCResults := do
-  let (p, E) := pE
   let profile := options.profile
-  match E.error with
-  | some err =>
-    .error <| DiagnosticModel.fromFormat s!"🚨 Error during evaluation!\n\
-              {format err}\n\n\
-              [DEBUG] Evaluated program: {Core.formatProgram p}\n\n"
-  | _ =>
-    let mut results := (#[] : VCResults)
-    let mut preprocessNs : Nat := 0
-    let mut smtEncodeNs : Nat := 0
-    let mut solverNs : Nat := 0
-    let mut peResolvedCount : Nat := 0
-    for obligation in E.deferred do
-      -- Determine which checks to perform based on metadata or check mode/amount
-      let (satisfiabilityCheck, validityCheck) :=
-        if Imperative.MetaData.hasFullCheck obligation.metadata then
-          (true, true)  -- fullCheck annotation: always run both
-        else
-          -- Derive checks from check mode and level
-          match options.checkMode, options.checkLevel, obligation.property with
-          | _, .full, _ => (true, true)  -- Full: both checks
-          | .bugFindingAssumingCompleteSpec, _, _ => (true, true)  -- This mode requires both checks
-          | .deductive, .minimal, .assert | .deductive, .minimal, .divisionByZero => (false, true)  -- Deductive needs validity
-          | .deductive, .minimalVerbose, .assert | .deductive, .minimalVerbose, .divisionByZero => (false, true)  -- Same checks as minimal
-          | .deductive, .minimal, .cover => (true, false)   -- Cover uses satisfiability
-          | .deductive, .minimalVerbose, .cover => (true, false)   -- Same checks as minimal
-          | .bugFinding, .minimal, .assert | .bugFinding, .minimal, .divisionByZero => (true, false) -- Bug finding needs satisfiability
-          | .bugFinding, .minimalVerbose, .assert | .bugFinding, .minimalVerbose, .divisionByZero => (true, false) -- Same checks as minimal
-          | .bugFinding, .minimal, .cover => (true, false)  -- Cover uses satisfiability
-          | .bugFinding, .minimalVerbose, .cover => (true, false)  -- Same checks as minimal
-      let t0 ← IO.monoNanosNow
-      let (obligation, peSatResult?, peValResult?) ← preprocessObligation obligation p options satisfiabilityCheck validityCheck axiomCache
-      let t1 ← IO.monoNanosNow
-      preprocessNs := preprocessNs + (t1 - t0)
-      -- If PE resolved both checks, we're done, unless we always want to generate SMT queries
-      if not options.alwaysGenerateSMT then
-        if let (some peSat, some peVal) := (peSatResult?, peValResult?) then
-          let phases := externalPhases ++ corePhases
-          let (adjPeSat, satPhaseLog) := peSat.adjustForPhases phases obligation
-          let (adjPeVal, valPhaseLog) := peVal.adjustForPhases phases obligation
-          let peLog := buildSolverLog peSat peVal
-            satisfiabilityCheck validityCheck satPhaseLog valPhaseLog
-          let outcome : VCOutcome := {
-            satisfiabilityProperty := adjPeSat,
-            validityProperty := adjPeVal,
-            solverLog := peLog }
-          let result : VCResult := { obligation, outcome := .ok outcome, verbose := options.verbose,
-                                      checkLevel := options.checkLevel, checkMode := options.checkMode, lexprModel := [] }
-          results := results.push result
-          peResolvedCount := peResolvedCount + 1
-          if result.isFailure || result.isImplementationError then
-            if options.verbose >= .normal then
-              let prog := f!"\n\n[DEBUG] Evaluated program:\n{Core.formatProgram p}"
-              dbg_trace f!"\n\nResult: {result}\n{prog}"
-            if options.stopOnFirstError then break
-          continue
-      -- Need the solver for at least one check
-      let needSatCheck := satisfiabilityCheck && peSatResult?.isNone
-      let needValCheck := validityCheck && peValResult?.isNone
-      let t2 ← IO.monoNanosNow
-      let maybeTerms := ProofObligation.toSMTTerms E obligation { SMT.Context.default with uniqueBoundNames := options.uniqueBoundNames } options.useArrayTheory
-      let t3 ← IO.monoNanosNow
-      smtEncodeNs := smtEncodeNs + (t3 - t2)
-      match maybeTerms with
-      | .error err =>
-        let err := f!"SMT Encoding Error! " ++ err
-        let result := { obligation,
-                        outcome := .error (toString err),
-                        verbose := options.verbose,
-                        checkLevel := options.checkLevel,
-                        checkMode := options.checkMode,
-                        lexprModel := [] }
-        if options.verbose >= .normal then
-          let prog := f!"\n\n[DEBUG] Evaluated program:\n{Core.formatProgram p}"
-          dbg_trace f!"\n\nResult: {result}\n{prog}"
+  let mut results := (#[] : VCResults)
+  let mut preprocessNs : Nat := 0
+  let mut smtEncodeNs : Nat := 0
+  let mut solverNs : Nat := 0
+  let mut peResolvedCount : Nat := 0
+  for obligation in obligations do
+    -- Determine which checks to perform based on metadata or check mode/amount
+    let (satisfiabilityCheck, validityCheck) :=
+      if Imperative.MetaData.hasFullCheck obligation.metadata then
+        (true, true)  -- fullCheck annotation: always run both
+      else
+        -- Derive checks from check mode and level
+        match options.checkMode, options.checkLevel, obligation.property with
+        | _, .full, _ => (true, true)  -- Full: both checks
+        | .bugFindingAssumingCompleteSpec, _, _ => (true, true)  -- This mode requires both checks
+        | .deductive, .minimal, .assert | .deductive, .minimal, .divisionByZero => (false, true)  -- Deductive needs validity
+        | .deductive, .minimalVerbose, .assert | .deductive, .minimalVerbose, .divisionByZero => (false, true)  -- Same checks as minimal
+        | .deductive, .minimal, .cover => (true, false)   -- Cover uses satisfiability
+        | .deductive, .minimalVerbose, .cover => (true, false)   -- Same checks as minimal
+        | .bugFinding, .minimal, .assert | .bugFinding, .minimal, .divisionByZero => (true, false) -- Bug finding needs satisfiability
+        | .bugFinding, .minimalVerbose, .assert | .bugFinding, .minimalVerbose, .divisionByZero => (true, false) -- Same checks as minimal
+        | .bugFinding, .minimal, .cover => (true, false)  -- Cover uses satisfiability
+        | .bugFinding, .minimalVerbose, .cover => (true, false)  -- Same checks as minimal
+    let t0 ← IO.monoNanosNow
+    let (obligation, peSatResult?, peValResult?) ← preprocessObligation obligation p options satisfiabilityCheck validityCheck axiomCache
+    let t1 ← IO.monoNanosNow
+    preprocessNs := preprocessNs + (t1 - t0)
+    -- If PE resolved both checks, we're done, unless we always want to generate SMT queries
+    if not options.alwaysGenerateSMT then
+      if let (some peSat, some peVal) := (peSatResult?, peValResult?) then
+        let phases := externalPhases ++ corePhases
+        let (adjPeSat, satPhaseLog) := peSat.adjustForPhases phases obligation
+        let (adjPeVal, valPhaseLog) := peVal.adjustForPhases phases obligation
+        let peLog := buildSolverLog peSat peVal
+          satisfiabilityCheck validityCheck satPhaseLog valPhaseLog
+        let outcome : VCOutcome := {
+          satisfiabilityProperty := adjPeSat,
+          validityProperty := adjPeVal,
+          solverLog := peLog }
+        let result : VCResult := { obligation, outcome := .ok outcome, verbose := options.verbose,
+                                    checkLevel := options.checkLevel, checkMode := options.checkMode, lexprModel := [] }
         results := results.push result
-        if options.stopOnFirstError then break
-      | .ok (assumptionTerms, obligationTerm, ctx) =>
-        let t4 ← IO.monoNanosNow
-        let result ← getObligationResult assumptionTerms obligationTerm ctx obligation p options
-                      counter tempDir needSatCheck needValCheck (externalPhases ++ corePhases)
-        let t5 ← IO.monoNanosNow
-        solverNs := solverNs + (t5 - t4)
-        -- Merge PE results with solver results
-        let result := match result.outcome with
-          | .ok solverOutcome =>
-            let satResult := peSatResult?.getD solverOutcome.satisfiabilityProperty
-            let valResult := peValResult?.getD solverOutcome.validityProperty
-            { result with outcome := .ok { solverOutcome with
-                satisfiabilityProperty := satResult,
-                validityProperty := valResult } }
-          | .error _ => result
-        results := results.push result
-        if result.isNotSuccess then
+        peResolvedCount := peResolvedCount + 1
+        if result.isFailure || result.isImplementationError then
           if options.verbose >= .normal then
             let prog := f!"\n\n[DEBUG] Evaluated program:\n{Core.formatProgram p}"
             dbg_trace f!"\n\nResult: {result}\n{prog}"
           if options.stopOnFirstError then break
-    if profile then
-      let _ ← (IO.println s!"[profile]     Preprocess obligations: {nsToMs preprocessNs}ms" |>.toBaseIO)
-      let _ ← (IO.println s!"[profile]     SMT encoding: {nsToMs smtEncodeNs}ms" |>.toBaseIO)
-      let _ ← (IO.println s!"[profile]     Solver/file writing: {nsToMs solverNs}ms" |>.toBaseIO)
-      let _ ← (IO.println s!"[profile]     Obligations: {E.deferred.size} total, {peResolvedCount} resolved by PE" |>.toBaseIO)
-    return results
+        continue
+    -- Need the solver for at least one check
+    let needSatCheck := satisfiabilityCheck && peSatResult?.isNone
+    let needValCheck := validityCheck && peValResult?.isNone
+    let t2 ← IO.monoNanosNow
+    let maybeTerms := ProofObligation.toSMTTerms E obligation { SMT.Context.default with uniqueBoundNames := options.uniqueBoundNames } options.useArrayTheory
+    let t3 ← IO.monoNanosNow
+    smtEncodeNs := smtEncodeNs + (t3 - t2)
+    match maybeTerms with
+    | .error err =>
+      let err := f!"SMT Encoding Error! " ++ err
+      let result := { obligation,
+                      outcome := .error (toString err),
+                      verbose := options.verbose,
+                      checkLevel := options.checkLevel,
+                      checkMode := options.checkMode,
+                      lexprModel := [] }
+      if options.verbose >= .normal then
+        let prog := f!"\n\n[DEBUG] Evaluated program:\n{Core.formatProgram p}"
+        dbg_trace f!"\n\nResult: {result}\n{prog}"
+      results := results.push result
+      if options.stopOnFirstError then break
+    | .ok (assumptionTerms, obligationTerm, ctx) =>
+      let t4 ← IO.monoNanosNow
+      let result ← getObligationResult assumptionTerms obligationTerm ctx obligation p options
+                    counter tempDir needSatCheck needValCheck (externalPhases ++ corePhases)
+      let t5 ← IO.monoNanosNow
+      solverNs := solverNs + (t5 - t4)
+      -- Merge PE results with solver results
+      let result := match result.outcome with
+        | .ok solverOutcome =>
+          let satResult := peSatResult?.getD solverOutcome.satisfiabilityProperty
+          let valResult := peValResult?.getD solverOutcome.validityProperty
+          { result with outcome := .ok { solverOutcome with
+              satisfiabilityProperty := satResult,
+              validityProperty := valResult } }
+        | .error _ => result
+      results := results.push result
+      if result.isNotSuccess then
+        if options.verbose >= .normal then
+          let prog := f!"\n\n[DEBUG] Evaluated program:\n{Core.formatProgram p}"
+          dbg_trace f!"\n\nResult: {result}\n{prog}"
+        if options.stopOnFirstError then break
+  if profile then
+    let _ ← (IO.println s!"[profile]     Preprocess obligations: {nsToMs preprocessNs}ms" |>.toBaseIO)
+    let _ ← (IO.println s!"[profile]     SMT encoding: {nsToMs smtEncodeNs}ms" |>.toBaseIO)
+    let _ ← (IO.println s!"[profile]     Solver/file writing: {nsToMs solverNs}ms" |>.toBaseIO)
+    let _ ← (IO.println s!"[profile]     Obligations: {obligations.size} total, {peResolvedCount} resolved by PE" |>.toBaseIO)
+  return results
 
 /-- Run the Strata Core verification pipeline on a program: transform,
 type-check, partially evaluate, and discharge proof obligations via SMT.
@@ -957,15 +952,16 @@ def verify (program : Program)
     : EIO DiagnosticModel VCResults := do
   let profile := options.profile
   let factory ← EIO.ofExcept (Core.Factory.addFactory moreFns)
-  -- All phases are listed in corePipelinePhases for phase validation
-  -- and model soundness tracking. Pre-PE phases run through the pipeline
-  -- runner; PE and dedup run inline because PE produces an Env needed
-  -- for obligation collection and SMT encoding.
+  -- All phases (including PE and dedup) are listed in corePipelinePhases
+  -- for phase validation and model soundness tracking.
   let allPhases := corePipelinePhases
     (procs := proceduresToVerify) (factory := some factory)
     (options := options) (moreFns := moreFns)
   let phases := allPhases.map (·.phase)
-  -- Run pre-PE pipeline phases (structural transforms).
+  -- Run pre-PE pipeline phases (structural transforms) through the runner.
+  -- PE and dedup run inline because PE produces an Env needed for
+  -- obligation collection. Once PE emits path conditions as assume
+  -- statements, all phases can run through the pipeline runner.
   let prePePhases := allPhases.filter (fun pp =>
     pp.phase.name != "TypeCheckAndPartialEval" && pp.phase.name != "Deduplication")
   let transformedProgram ← profileStep profile "  Program transformations" do
@@ -983,21 +979,27 @@ def verify (program : Program)
   let axiomCache? ← profileStep profile "  Build axiom relevance cache" do
     pure (if options.removeIrrelevantAxioms == .Off then .none
           else .some (IrrelevantAxioms.Cache.build transformedProgram))
-  -- Type-check and partial evaluation (Program → List (Program × Env)).
-  let pEs ← profileStep profile "  Type check and partial eval" do
+  -- Type-check and partial evaluation (Program → Program × Env).
+  let (p, E) ← profileStep profile "  Type check and partial eval" do
     match Core.typeCheckAndPartialEval options transformedProgram moreFns with
     | .error err =>
       .error { err with message := s!"❌ Type checking error.\n{err.message}" }
-    | .ok pEs => .ok pEs
+    | .ok pE => .ok pE
+  match E.error with
+  | some err =>
+    .error <| DiagnosticModel.fromFormat s!"🚨 Error during evaluation!\n\
+              {format err}\n\n\
+              [DEBUG] Evaluated program: {Core.formatProgram p}\n\n"
+  | _ =>
   -- Deduplicate common subexpressions in procedure bodies (Core-to-Core pass).
-  let pEs := pEs.map (fun (p, E) => (Deduplication.deduplicateProgram p, E))
+  let p := Deduplication.deduplicateProgram p
   let counter ← IO.toEIO (fun e => DiagnosticModel.fromFormat f!"{e}") (IO.mkRef 0)
-  let VCss ← profileStep profile "  VC discharge" do
+  let VCs ← profileStep profile "  VC discharge" do
     if options.checkOnly then
-      pure []
+      pure #[]
     else
-      (List.mapM (fun pE => verifySingleEnv pE options counter tempDir axiomCache? externalPhases phases) pEs)
-  .ok VCss.toArray.flatten
+      verifyObligations p E E.deferred options counter tempDir axiomCache? externalPhases phases
+  .ok VCs
 
 end -- public section
 end Core

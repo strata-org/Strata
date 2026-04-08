@@ -32,24 +32,29 @@ def initStmtToGlobalVarDecl (s : Statement) : Decl :=
   | .init x ty e md => (.var x ty e md)
   | _ => panic s!"Expected a variable initialization; found {format s} instead."
 
-def eval (E : Env) : List (Program × Env) :=
+def eval (E : Env) : Program × Env :=
   -- Push a path condition scope to store axioms
   let E := { E with pathConditions := E.pathConditions.push [] }
-  let declsEnv := go E.program.decls { env := E }
-  declsEnv.map (fun (decls, E) => ({ decls }, E))
-  where go (decls : Decls) (declsE : DeclsEnv) : List (Decls × Env) :=
+  let (decls, env) := go E.program.decls { env := E }
+  ({ decls }, env)
+  where go (decls : Decls) (declsE : DeclsEnv) : Decls × Env :=
   match decls with
-  | [] => [(declsE.xdecls, declsE.env)]
+  | [] => (declsE.xdecls, declsE.env)
   | decl :: rest =>
     match decl with
 
     | .var name ty init md =>
       let ssEs := Statement.eval declsE.env [] [(.init name ty init md)]
-      ssEs.flatMap (fun (ss, E) =>
-                      let xdecls := ss.map initStmtToGlobalVarDecl
-                      let declsE := { declsE with xdecls := declsE.xdecls ++ xdecls,
-                                                  env := E }
-                      go rest declsE)
+      match ssEs with
+      | [(ss, E)] =>
+        let xdecls := ss.map initStmtToGlobalVarDecl
+        let declsE := { declsE with xdecls := declsE.xdecls ++ xdecls, env := E }
+        go rest declsE
+      | (ss, E) :: _ =>
+        let xdecls := ss.map initStmtToGlobalVarDecl
+        let declsE := { declsE with xdecls := declsE.xdecls ++ xdecls, env := E }
+        go rest declsE
+      | [] => (declsE.xdecls, declsE.env)
 
     | .type _ _ =>
       go rest { declsE with xdecls := declsE.xdecls ++ [decl] }
@@ -81,7 +86,7 @@ def eval (E : Env) : List (Program × Env) :=
 
     | .func func _ =>
       match declsE.env.addFactoryFunc func with
-      | .error e => [(declsE.xdecls, { declsE.env with error := some (Imperative.EvalError.Misc f!"{e}")})]
+      | .error e => (declsE.xdecls, { declsE.env with error := some (Imperative.EvalError.Misc f!"{e}")})
       | .ok new_env =>
         let declsE := { declsE with env := new_env,
                                     xdecls := declsE.xdecls ++ [decl] }
@@ -89,32 +94,16 @@ def eval (E : Env) : List (Program × Env) :=
 
     | .recFuncBlock funcs _ =>
       match validateCasesTypes funcs declsE.env.datatypes with
-      | .error e => [(declsE.xdecls, { declsE.env with error := some (Imperative.EvalError.Misc f!"{e}")})]
+      | .error e => (declsE.xdecls, { declsE.env with error := some (Imperative.EvalError.Misc f!"{e}")})
       | .ok () =>
       let result := funcs.foldlM (fun env func => env.addFactoryFunc func) declsE.env
       match result with
-      | .error e => [(declsE.xdecls, { declsE.env with error := some (Imperative.EvalError.Misc f!"{e}")})]
+      | .error e => (declsE.xdecls, { declsE.env with error := some (Imperative.EvalError.Misc f!"{e}")})
       | .ok new_env =>
         let declsE := { declsE with env := new_env,
                                     xdecls := declsE.xdecls ++ [decl] }
         go rest declsE
 
-
-/-- Evaluate the program and merge all results into a single `(Program, Env)`.
-    When multiple results arise (e.g. from nondeterministic global
-    initializations), the declarations are combined and the environments
-    are merged (deferred obligations unioned, gen counter maxed). -/
-def evalMerged (E : Env) : Program × Env :=
-  match eval E with
-  | [] => (E.program, E)
-  | [(p, e)] => (p, e)
-  | (p, e) :: rest =>
-    let allDecls := rest.foldl (fun acc (prog, _) => acc ++ prog.decls) p.decls
-    let allDeferred := rest.foldl (fun acc (_, env) => acc ++ env.deferred) e.deferred
-    let maxGen := rest.foldl (fun acc (_, env) => max acc env.exprEnv.config.gen) e.exprEnv.config.gen
-    ({ decls := allDecls }, { e with
-      deferred := allDeferred,
-      exprEnv := { e.exprEnv with config := { e.exprEnv.config with gen := maxGen } } })
 
 --------------------------------------------------------------------
 

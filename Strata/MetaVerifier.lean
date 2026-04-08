@@ -60,9 +60,10 @@ def genVCs (program : Program) (options : VerifyOptions := .default) : Option co
   let program := loopElim program
   match Core.typeCheckAndPartialEval options program with
   | .error _ => none
-  | .ok pEs =>
-    let VCss ← List.mapM (fun pE => genVCsSingleENV pE) pEs
-    return VCss.flatten.reverse
+  | .ok (_p, E) =>
+    match E.error with
+    | some _ => none
+    | _ => return E.deferred.toList.map (fun ob => (E, ob))
 
 end Core
 

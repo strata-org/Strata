@@ -490,10 +490,8 @@ def evalAuxGo (steps : Nat) (old_var_subst : SubstMap) (Ewn : EnvWithNext) (ss :
               let Ewns :=
                 (go' Ewn ss_live .none).map fun (ewn : EnvWithNext) =>
                   { ewn with stk := orig_stk.appendToTop [.ite (.det cond') ewn.stk.top [] md] }
-              -- Prepend dead-branch obligations to the first result only.
-              -- Pre-ITE obligations flow through the live branch naturally;
-              -- processIteBranches keeps them in the first (true-path) result,
-              -- so mergeResults won't duplicate them.
+              -- Prepend dead-branch obligations to the first result.
+              -- Pre-ITE obligations flow through the live branch naturally.
               match Ewns with
               | [] => []
               | first :: rest =>
