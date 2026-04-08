@@ -612,10 +612,15 @@ def preprocessObligation (obligation : ProofObligation Expression) (p : Program)
     (options : VerifyOptions) (satisfiabilityCheck validityCheck : Bool)
     (axiomCache : Option IrrelevantAxioms.Cache := .none)
     : EIO DiagnosticModel (ProofObligation Expression × Option SMT.Result × Option SMT.Result) := do
-  -- PE can determine satisfiability if the obligation is literally false (unsat)
+  -- PE can determine satisfiability of (assumptions ∧ obligation):
+  --   obligation is false  → assumptions ∧ false = false → unsat
+  --   obligation is true with no assumptions → true ∧ true = true → sat
+  -- The second case establishes reachability: with no path conditions, the
+  -- assertion site is trivially reachable and the obligation holds concretely.
   let peSatResult : Option SMT.Result :=
     if !satisfiabilityCheck then some .unknown
     else if obligation.obligation.isFalse then some .unsat
+    else if obligation.obligation.isTrue && obligation.assumptions.isEmpty then some (.sat [])
     else none
   -- PE can determine validity if the obligation is literally true (valid = unsat)
   -- or literally false with empty assumptions (invalid = sat)
@@ -830,17 +835,18 @@ def verifySingleEnv (pE : Program × Env) (options : VerifyOptions)
       let (obligation, peSatResult?, peValResult?) ← preprocessObligation obligation p options satisfiabilityCheck validityCheck axiomCache
       let t1 ← IO.monoNanosNow
       preprocessNs := preprocessNs + (t1 - t0)
-      -- If PE resolved both checks, we're done, unless we always want to generate SMT queries
+      -- If PE resolved both checks, we're done, unless we always want to generate SMT queries.
+      -- PE results are determined by literal evaluation (constant folding with concrete
+      -- values), not by solver search. Phase validation is skipped because it validates
+      -- solver *models* against pre-transformation semantics, and PE results have no
+      -- models — over-approximation cannot affect a result computed from concrete values.
       if not options.alwaysGenerateSMT then
         if let (some peSat, some peVal) := (peSatResult?, peValResult?) then
-          let phases := externalPhases ++ corePhases
-          let (adjPeSat, satPhaseLog) := peSat.adjustForPhases phases obligation
-          let (adjPeVal, valPhaseLog) := peVal.adjustForPhases phases obligation
           let peLog := buildSolverLog peSat peVal
-            satisfiabilityCheck validityCheck satPhaseLog valPhaseLog
+            satisfiabilityCheck validityCheck [] []
           let outcome : VCOutcome := {
-            satisfiabilityProperty := adjPeSat,
-            validityProperty := adjPeVal,
+            satisfiabilityProperty := peSat,
+            validityProperty := peVal,
             solverLog := peLog }
           let result : VCResult := { obligation, outcome := .ok outcome, verbose := options.verbose,
                                       checkLevel := options.checkLevel, checkMode := options.checkMode, lexprModel := [] }
