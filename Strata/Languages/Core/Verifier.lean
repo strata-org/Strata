@@ -683,8 +683,9 @@ def keepSetFilterPipelinePhase (procs : List String) : PipelinePhase :=
     extracts transforms from this list, and the validation extracts phases,
     ensuring they stay in sync.
 
-    When `procs` and `factory` are provided (targeted verification), the
-    pipeline includes filtering and precondition-elimination phases.
+    Call elimination always runs as a standalone program-to-program pass.
+    When `procs` is provided (targeted verification), the pipeline also
+    includes filtering and keep-set phases.
     All filter phases are model-preserving since they only remove
     information without introducing over-approximations. -/
 def corePipelinePhases (procs : Option (List String) := none)
@@ -698,10 +699,7 @@ def corePipelinePhases (procs : Option (List String) := none)
   let keepSetPhase := match procs with
     | some ps => [keepSetFilterPipelinePhase ps]
     | none => []
-  let callElimPhase := match procs with
-    | some _ => [callElimPipelinePhase]
-    | none => []
-  filterPhases ++ callElimPhase ++ precondPhase ++ keepSetPhase ++ [loopElimPipelinePhase]
+  filterPhases ++ [callElimPipelinePhase] ++ precondPhase ++ keepSetPhase ++ [loopElimPipelinePhase]
 
 /-- The abstracted phases derived from the Core pipeline phases. -/
 def coreAbstractedPhases (procs : Option (List String) := none)
@@ -1003,7 +1001,8 @@ def verify
   else
     panic! s!"DDM Transform Error: {repr errors}"
 
-def toDiagnosticModel (vcr : Core.VCResult) : Option DiagnosticModel :=
+def toDiagnosticModel (vcr : Core.VCResult)
+    (phases : List Core.AbstractedPhase := []) : Option DiagnosticModel :=
   let fileRange := (Imperative.getFileRange vcr.obligation.metadata).getD default
   match vcr.outcome with
   | .error msg => some { fileRange, message := s!"analysis error: {msg}", type := DiagnosticType.StrataBug }
@@ -1016,7 +1015,9 @@ def toDiagnosticModel (vcr : Core.VCResult) : Option DiagnosticModel :=
         else if outcome.isPass then none
         else some s!"{description} is not satisfiable"
       else
-        let description := vcr.obligation.metadata.getPropertySummary.getD "assertion"
+        let phaseDescription := phases.findSome? (·.getAssertDescription vcr.obligation.label)
+        let description := vcr.obligation.metadata.getPropertySummary.getD
+          (phaseDescription.getD "assertion")
         if outcome.unreachable then some s!"{description} holds vacuously (path unreachable)"
         else if outcome.isPass || outcome.isSatisfiable || outcome.passReachabilityUnknown then none
         else if outcome.alwaysFalseAndReachable || outcome.canBeTrueOrFalseAndIsReachable || outcome.canBeFalseAndIsReachable then
@@ -1043,8 +1044,9 @@ def DiagnosticModel.toDiagnostic (files: Map Strata.Uri Lean.FileMap) (dm: Diagn
     type := dm.type
   }
 
-def Core.VCResult.toDiagnostic (files: Map Strata.Uri Lean.FileMap) (vcr : Core.VCResult) : Option Diagnostic := do
-  let modelOption := toDiagnosticModel vcr
+def Core.VCResult.toDiagnostic (files: Map Strata.Uri Lean.FileMap) (vcr : Core.VCResult)
+    (phases : List Core.AbstractedPhase := []) : Option Diagnostic := do
+  let modelOption := toDiagnosticModel vcr phases
   modelOption.map (fun dm => dm.toDiagnostic files)
 
 end -- public section
