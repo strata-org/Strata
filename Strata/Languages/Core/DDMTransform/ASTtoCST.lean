@@ -1230,10 +1230,11 @@ def Core.formatProgram (ast : Core.Program)
   }
   let formatted := Std.Format.joinSep (cmds.map fun cmd =>
     (mformat (ArgF.op cmd.toAst) ctx state).format) ""
+  let header : Std.Format := "program Core;\n\n"
   if finalCtx.errors.isEmpty then
-    formatted
+    header ++ formatted
   else
-    formatted ++ "\n\n-- Errors encountered during conversion:\n" ++
+    header ++ formatted ++ "\n\n-- Errors encountered during conversion:\n" ++
     Std.Format.joinSep (finalCtx.errors.toList.map (Std.format ∘ toString)) "\n"
 
 def Core.formatStatement (stmt : Core.Statement)
