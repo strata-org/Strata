@@ -15,10 +15,11 @@ test_with_statement.py(28, 4): ✅ pass - callElimAssert_requires_47
 test_with_statement.py(29, 4): ✅ pass - callElimAssert_requires_43
 unknown location: ✅ pass - callElimAssert_requires_39
 unknown location: ✅ pass - callElimAssert_requires_35
+test_with_statement.py(31, 21): ❓ unknown - Check PAdd exception
 test_with_statement.py(32, 8): ✅ pass - assert_assert(666)_calls_Any_to_bool_0
 test_with_statement.py(32, 8): ❓ unknown - assert(666)
 test_with_statement.py(30, 4): ✅ pass - callElimAssert_requires_31
 test_with_statement.py(30, 4): ✅ pass - callElimAssert_requires_28
 test_with_statement.py(27, 0): ✅ pass - postcondition
-DETAIL: 19 passed, 0 failed, 3 inconclusive
+DETAIL: 19 passed, 0 failed, 4 inconclusive
 RESULT: Inconclusive
