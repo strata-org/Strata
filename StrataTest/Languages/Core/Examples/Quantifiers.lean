@@ -76,6 +76,8 @@ Model:
 
 
 [DEBUG] Evaluated program:
+program Core;
+
 procedure Test (x : int) returns (r : int)
 spec {
   ensures [good]: forall __q0 : int :: exists __q1 : int :: r + (__q1 + __q0) == __q0 + (__q1 + r);

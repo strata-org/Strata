@@ -45,6 +45,8 @@ Result: ❌ fail
 
 
 [DEBUG] Evaluated program:
+program Core;
+
 procedure bitVecParseTest () returns ()
 {
   assert [bitvec32_test]: true;

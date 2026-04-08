@@ -78,8 +78,8 @@ can be useful to provide different feedback for an empty list.
 ### Prefer Extrinsic Proofs
 
 Given the `median` function above, we may want to know that it always
-produces an `Int` given a list of even size. We could have included a
-precondition that the list has even size, avoiding the need for error
+produces an `Int` given a list of odd size. We could have included a
+precondition that the list has odd size, avoiding the need for error
 handling, but that would have precluded the possibility of providing
 useful feedback in the case of working with unfiltered input.
 
@@ -179,7 +179,7 @@ encouraged.
 
 Every major function and theorem must be documented (NOTE: use `/--
 ... -/` and NOT `/- ... -/`). Use backticks to format code or math
-expressions in the docstring (e.g., `x + y`).
+expressions in the docstring (e.g., ``/-- ... `x + y` ... -/``).
 
 Describe implementation-level details in single- (`--`) or multi-line
 comments (`/- .. -/`) interspersed with the code.

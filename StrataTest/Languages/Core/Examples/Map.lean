@@ -29,7 +29,9 @@ procedure P() returns ()
 #eval TransM.run Inhabited.default (translateProgram mapPgm) |>.snd |>.isEmpty
 
 /--
-info: function a () : Map int bool;
+info: program Core;
+
+function a () : Map int bool;
 procedure P () returns ()
 {
   assume [a_zero_true_assumption]: a[0] == true;
@@ -67,6 +69,8 @@ Result: ❌ fail
 
 
 [DEBUG] Evaluated program:
+program Core;
+
 function a () : Map int bool;
 procedure P () returns ()
 {
