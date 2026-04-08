@@ -699,6 +699,8 @@ def translateWithLaurel (options: LaurelTranslateOptions) (program : Program): T
   let (program, model) := (result.program, result.model)
   let diamondErrors := validateDiamondFieldAccesses model program
 
+  let (program, nonCompositeDiags) := filterNonCompositeModifies model program
+
   let program := heapParameterization model program
   let result := resolve program (some model)
   let (program, model) := (result.program, result.model)
@@ -725,7 +727,7 @@ def translateWithLaurel (options: LaurelTranslateOptions) (program : Program): T
 
   let initState : TranslateState := {model := model }
   let (coreProgramOption, translateState) := runTranslateM initState (translateLaurelToCore options program)
-  let allDiagnostics := resolutionErrors ++ diamondErrors ++ modifiesDiags ++ constrainedTypeDiags ++ translateState.diagnostics
+  let allDiagnostics := resolutionErrors ++ diamondErrors ++ nonCompositeDiags ++ modifiesDiags ++ constrainedTypeDiags ++ translateState.diagnostics
   let coreProgramOption := if translateState.coreProgramHasSuperfluousErrors then none else coreProgramOption
   (coreProgramOption, allDiagnostics, program)
   where
@@ -837,17 +839,19 @@ def verifyToVcResults (program : Program)
 def verifyToDiagnostics (files: Map Strata.Uri Lean.FileMap) (program : Program)
     (options : VerifyOptions := .default): IO (Array Diagnostic) := do
   let results <- verifyToVcResults program options
+  let phases := Core.coreAbstractedPhases
   let translationDiags := results.snd.map (fun dm => dm.toDiagnostic files)
   let vcDiags := match results.fst with
-  | some vcResults => vcResults.toList.filterMap (fun (vcr: VCResult) => vcr.toDiagnostic files)
+  | some vcResults => vcResults.toList.filterMap (fun (vcr: VCResult) => vcr.toDiagnostic files phases)
   | none => []
   return (translationDiags ++ vcDiags).toArray
 
 def verifyToDiagnosticModels (program : Program) (options : VerifyOptions := .default) : IO (Array DiagnosticModel) := do
   let results <- verifyToVcResults program options
+  let phases := Core.coreAbstractedPhases
   let vcDiags := match results.fst with
   | none => []
-  | some vcResults => vcResults.toList.filterMap (fun (vcr: VCResult) => toDiagnosticModel vcr)
+  | some vcResults => vcResults.toList.filterMap (fun (vcr: VCResult) => toDiagnosticModel vcr phases)
   return (results.snd ++ vcDiags).toArray
 
 end -- public section

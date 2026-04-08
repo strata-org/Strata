@@ -1230,6 +1230,26 @@ def Core.formatProgram (ast : Core.Program)
   }
   let formatted := Std.Format.joinSep (cmds.map fun cmd =>
     (mformat (ArgF.op cmd.toAst) ctx state).format) ""
+  let header : Std.Format := "program Core;\n\n"
+  if finalCtx.errors.isEmpty then
+    header ++ formatted
+  else
+    header ++ formatted ++ "\n\n-- Errors encountered during conversion:\n" ++
+    Std.Format.joinSep (finalCtx.errors.toList.map (Std.format ∘ toString)) "\n"
+
+def Core.formatStatement (stmt : Core.Statement)
+    (extraFreeVars : Array String := #[]) : Std.Format :=
+  let initCtx := ToCSTContext.empty (M := SourceRange)
+  let initCtx := initCtx.addGlobalFreeVars extraFreeVars
+  let (cst, finalCtx) := stmtToCST stmt initCtx
+  let dialects := Core_map
+  let ddmCtx := recreateGlobalContext finalCtx
+  let ctx := FormatContext.ofDialects dialects ddmCtx {}
+  let state : FormatState := {
+    openDialects := dialects.toList.foldl (init := {})
+      fun a (d : Dialect) => a.insert d.name
+  }
+  let formatted := (mformat (ArgF.op cst.toAst) ctx state).format
   if finalCtx.errors.isEmpty then
     formatted
   else

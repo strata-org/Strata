@@ -13,9 +13,11 @@ public import Strata.Languages.Core.SMTEncoder
 public import Strata.DL.Imperative.MetaData
 public import Strata.DL.Imperative.SMTUtils
 public import Strata.DDM.AST
+public import Strata.Languages.Core.PipelinePhase
 import Strata.Transform.CallElim
 import Strata.Transform.FilterProcedures
 import Strata.Transform.PrecondElim
+import Strata.Transform.LoopElim
 public import Strata.Transform.IrrelevantAxioms
 import Strata.Util.Profile
 
@@ -47,7 +49,8 @@ when needed for the validity check (line 64 for check-sat-assuming, line 77 for 
 def encodeCore (ctx : Core.SMT.Context) (prelude : SolverM Unit)
     (assumptionTerms : List Term) (obligationTerm : Term)
     (md : Imperative.MetaData Core.Expression)
-    (satisfiabilityCheck validityCheck : Bool) :
+    (satisfiabilityCheck validityCheck : Bool)
+    (label : String) :
     SolverM (List String × EncoderState) := do
   Solver.setLogic "ALL"
   prelude
@@ -102,11 +105,11 @@ def encodeCore (ctx : Core.SMT.Context) (prelude : SolverM Unit)
       let _ ← Solver.checkSat ids
 
   -- Emit the "message" metadata field at the very end (once per obligation).
-  match md.findElem Imperative.MetaData.message with
-  | some elem =>
-    let msg := toString (Std.format elem.value) |>.replace "\\" "\\\\" |>.replace "\"" "\\\""
-    Solver.setInfo "final-message" s!"\"{msg}\""
-  | none => pure ()
+  let rawMsg := match md.findElem Imperative.MetaData.message with
+    | some elem => toString (Std.format elem.value)
+    | none => label
+  let escaped := rawMsg.replace "\\" "\\\\" |>.replace "\"" "\\\""
+  Solver.setInfo "final-message" s!"\"{escaped}\""
 
   return (ids, estate)
 
@@ -120,6 +123,17 @@ open Std (ToFormat Format format)
 open Lambda Strata.SMT
 
 public section
+
+/-- Replace characters that are problematic on common filesystems
+    (parens, quotes, spaces, path separators, and Windows-invalid characters
+    such as `< > : | ? *`) with underscores or remove them.
+    Single-pass over the string. -/
+def sanitizeFilename (s : String) : String :=
+  String.ofList <| s.toList.filterMap fun c =>
+    if c == '"' || c == '\'' then none
+    else if c == '(' || c == ')' || c == ' ' || c == '/' || c == '\\'
+         || c == '<' || c == '>' || c == ':' || c == '|' || c == '?' || c == '*' then some '_'
+    else some c
 
 private def typedVarToSMTFn (ctx : SMT.Context) (id : Core.Expression.Ident)
   (ty : Core.Expression.Ty) := do
@@ -163,6 +177,7 @@ def dischargeObligation
   (obligationTerm : Term)
   (ctx : SMT.Context)
   (satisfiabilityCheck validityCheck : Bool)
+  (label : String)
   : IO (Except Format (SMT.Result × SMT.Result × EncoderState)) := do
   -- CVC5 requires --incremental for multiple (check-sat) commands
   let baseFlags := getSolverFlags options
@@ -175,7 +190,8 @@ def dischargeObligation
   Imperative.SMT.dischargeObligation
     (P := Core.Expression)
     (Strata.SMT.Encoder.encodeCore ctx (getSolverPrelude options.solver)
-      assumptionTerms obligationTerm md satisfiabilityCheck validityCheck)
+      assumptionTerms obligationTerm md satisfiabilityCheck validityCheck
+      (label := label))
     (typedVarToSMTFn ctx)
     vars
     options.solver
@@ -460,25 +476,25 @@ end VCOutcome
 
 
 /--
-A counterexample model with values lifted to LExpr for display purposes.
-This is used for formatting counterexamples in a human-readable way
+A model with values lifted to LExpr for display purposes.
+This is used for formatting models in a human-readable way
 using Core's expression formatter and for future use as program metadata.
 -/
 @[expose] abbrev LExprModel := List (Expression.Ident × LExpr CoreLParams.mono)
 
-/-- Format a counterexample value using the Core DDM formatter.
+/-- Format a model value using the Core DDM formatter.
     Renders constructors, applications, and primitives with Core syntax
     (e.g. `Cons(0, Nil)`, `Right(true)`). -/
-private def formatCexValue (e : LExpr CoreLParams.mono) : Format :=
+private def formatModelValue (e : LExpr CoreLParams.mono) : Format :=
   Core.formatExprs [e]
 
-def LExprModel.format (cex : LExprModel) : Format :=
-  match cex with
+def LExprModel.format (model : LExprModel) : Format :=
+  match model with
   | [] => ""
-  | [(id, e)] => f!"({id}, {formatCexValue e})"
+  | [(id, e)] => f!"({id}, {formatModelValue e})"
   | (id, e) :: rest =>
-    let first := f!"({id}, {formatCexValue e}) "
-    rest.foldl (fun acc (id', e') => acc ++ f!"({id'}, {formatCexValue e'}) ") first
+    let first := f!"({id}, {formatModelValue e}) "
+    rest.foldl (fun acc (id', e') => acc ++ f!"({id'}, {formatModelValue e'}) ") first
 
 instance : ToFormat LExprModel where
   format := LExprModel.format
@@ -667,14 +683,11 @@ def keepSetFilterPipelinePhase (procs : List String) : PipelinePhase :=
     extracts transforms from this list, and the validation extracts phases,
     ensuring they stay in sync.
 
-    When `procs` and `factory` are provided (targeted verification), the
-    pipeline includes filtering and precondition-elimination phases.
+    Call elimination always runs as a standalone program-to-program pass.
+    When `procs` is provided (targeted verification), the pipeline also
+    includes filtering and keep-set phases.
     All filter phases are model-preserving since they only remove
-    information without introducing over-approximations.
-
-    `loopElimPipelinePhase` is placed last because loop elimination happens
-    during evaluation (not as a program-to-program pass), making it the
-    closest phase to SMT. -/
+    information without introducing over-approximations. -/
 def corePipelinePhases (procs : Option (List String) := none)
     (factory : Option (@Lambda.Factory CoreLParams) := none) : List PipelinePhase :=
   let filterPhases := match procs with
@@ -727,7 +740,7 @@ def getObligationResult (assumptionTerms : List Term) (obligationTerm : Term)
   let prog := f!"\n\n[DEBUG] Evaluated program:\n{Core.formatProgram p}"
   let counterVal ← counter.get
   counter.set (counterVal + 1)
-  let filename := tempDir / s!"{obligation.label}_{counterVal}.smt2"
+  let filename := tempDir / s!"{Core.SMT.sanitizeFilename obligation.label}_{counterVal}.smt2"
   let varsInObligation := ProofObligation.getVars obligation
   -- All variables in ProofObligation must have been typed.
   let typedVarsInObligation ← varsInObligation.mapM
@@ -742,7 +755,8 @@ def getObligationResult (assumptionTerms : List Term) (obligationTerm : Term)
             typedVarsInObligation
             obligation.metadata
             filename.toString
-          assumptionTerms obligationTerm ctx satisfiabilityCheck validityCheck)
+          assumptionTerms obligationTerm ctx satisfiabilityCheck validityCheck
+          (label := obligation.label))
   match ans with
   | .error e =>
     dbg_trace f!"\n\nObligation {obligation.label}: SMT Solver Invocation Error!\
@@ -761,10 +775,10 @@ def getObligationResult (assumptionTerms : List Term) (obligationTerm : Term)
       validityProperty := adjVal,
       solverLog := smtLog }
     let outcome := maskOutcome rawOutcome satisfiabilityCheck validityCheck
-    -- Extract counterexample model from sat results (using raw solver results)
-    let cex := match satResult, validityResult with
-      | .sat m, _ => convertCounterEx m (SMT.Context.getConstructorNames ctx)
-      | _, .sat m => convertCounterEx m (SMT.Context.getConstructorNames ctx)
+    -- Extract model from sat results (using raw solver results)
+    let model := match satResult, validityResult with
+      | .sat m, _ => convertModel m (SMT.Context.getConstructorNames ctx)
+      | _, .sat m => convertModel m (SMT.Context.getConstructorNames ctx)
       | _, _ => []
     let result := { obligation,
                     outcome := .ok outcome,
@@ -772,7 +786,7 @@ def getObligationResult (assumptionTerms : List Term) (obligationTerm : Term)
                     verbose := options.verbose,
                     checkLevel := options.checkLevel,
                     checkMode := options.checkMode,
-                    lexprModel := cex }
+                    lexprModel := model }
     return result
 
 def verifySingleEnv (pE : Program × Env) (options : VerifyOptions)
@@ -900,33 +914,18 @@ def verify (program : Program)
     : EIO DiagnosticModel VCResults := do
   let profile := options.profile
   let factory ← EIO.ofExcept (Core.Factory.addFactory moreFns)
-  let phases := coreAbstractedPhases (procs := proceduresToVerify) (factory := some factory)
+  let pipelinePhases := corePipelinePhases (procs := proceduresToVerify) (factory := some factory)
+  let phases := pipelinePhases.map (·.phase)
   let finalProgram ← profileStep profile "  Program transformations" do
-    let runPrecondElim := fun prog => do
-      let (_changed, prog) ← PrecondElim.precondElim prog factory
-      return prog
-    match proceduresToVerify with
-    | none =>
-      match Transform.run program runPrecondElim with
-      | .ok prog => .ok prog
-      | .error e => .error (DiagnosticModel.fromFormat f!"❌ Transform Error. {e}")
-    | some procs =>
-       -- Verify specific procedures. All pipeline phases — including
-       -- filtering, call/loop elimination, precondition elimination, and
-       -- the final keep-set filter — are defined in `corePipelinePhases`.
-       -- Each phase pairs its transform with its model validation,
-       -- ensuring they stay in sync.
-      let pipelinePhases := corePipelinePhases (procs := some procs) (factory := some factory)
-      let passes := fun prog => do
-        let mut current := prog
-        for pp in pipelinePhases do
-          let (_changed, next) ← pp.transform current
-          current := next
-        return current
-      let res := Transform.run program passes
-      match res with
-      | .ok prog => .ok prog
-      | .error e => .error (DiagnosticModel.fromFormat f!"❌ Transform Error. {e}")
+    let passes := fun prog => do
+      let mut current := prog
+      for pp in pipelinePhases do
+        let (_changed, next) ← pp.transform current
+        current := next
+      return current
+    match Transform.run program passes with
+    | .ok prog => .ok prog
+    | .error e => .error (DiagnosticModel.fromFormat f!"❌ Transform Error. {e}")
   -- Build the axiom relevance cache once (post-transform, so declarations are
   -- stable). The cache is reused across all verification environments and goals.
   let axiomCache? ← profileStep profile "  Build axiom relevance cache" do
@@ -1002,7 +1001,8 @@ def verify
   else
     panic! s!"DDM Transform Error: {repr errors}"
 
-def toDiagnosticModel (vcr : Core.VCResult) : Option DiagnosticModel :=
+def toDiagnosticModel (vcr : Core.VCResult)
+    (phases : List Core.AbstractedPhase := []) : Option DiagnosticModel :=
   let fileRange := (Imperative.getFileRange vcr.obligation.metadata).getD default
   match vcr.outcome with
   | .error msg => some { fileRange, message := s!"analysis error: {msg}", type := DiagnosticType.StrataBug }
@@ -1015,7 +1015,9 @@ def toDiagnosticModel (vcr : Core.VCResult) : Option DiagnosticModel :=
         else if outcome.isPass then none
         else some s!"{description} is not satisfiable"
       else
-        let description := vcr.obligation.metadata.getPropertySummary.getD "assertion"
+        let phaseDescription := phases.findSome? (·.getAssertDescription vcr.obligation.label)
+        let description := vcr.obligation.metadata.getPropertySummary.getD
+          (phaseDescription.getD "assertion")
         if outcome.unreachable then some s!"{description} holds vacuously (path unreachable)"
         else if outcome.isPass || outcome.isSatisfiable || outcome.passReachabilityUnknown then none
         else if outcome.alwaysFalseAndReachable || outcome.canBeTrueOrFalseAndIsReachable || outcome.canBeFalseAndIsReachable then
@@ -1042,8 +1044,9 @@ def DiagnosticModel.toDiagnostic (files: Map Strata.Uri Lean.FileMap) (dm: Diagn
     type := dm.type
   }
 
-def Core.VCResult.toDiagnostic (files: Map Strata.Uri Lean.FileMap) (vcr : Core.VCResult) : Option Diagnostic := do
-  let modelOption := toDiagnosticModel vcr
+def Core.VCResult.toDiagnostic (files: Map Strata.Uri Lean.FileMap) (vcr : Core.VCResult)
+    (phases : List Core.AbstractedPhase := []) : Option Diagnostic := do
+  let modelOption := toDiagnosticModel vcr phases
   modelOption.map (fun dm => dm.toDiagnostic files)
 
 end -- public section

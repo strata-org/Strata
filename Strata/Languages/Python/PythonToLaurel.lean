@@ -54,12 +54,19 @@ inductive UnmodeledFunctionBehavior where
   | havocInputsAndOutputs
 deriving Inhabited
 
+structure PyArgInfo where
+  name : String
+  md : MetaData
+  tys : List String
+  default : Option (Python.expr SourceRange)
+deriving Repr
+
 structure PythonFunctionDecl where
   name : String
   --args include name, type, default value
-  args : List (String × String × Option (Python.expr SourceRange))
+  args : List PyArgInfo
   kwargsName: Option String
-  ret : Option String
+  ret : Option (List String × MetaData)
 deriving Repr, Inhabited
 
 /-- A symbol imported from a PySpec module, carrying its Laurel-internal
@@ -80,12 +87,16 @@ structure TranslationContext where
   functionSignatures : List PythonFunctionDecl := []
   /-- Names of user-defined functions -/
   userFunctions : List String := []
+  /-- Function that may return Any of exception -/
+  maybeExceptionFunctions : List String := []
   /-- Names of user-defined classes -/
   userClasses : List String := []
   /-- Map ClassName -> (FieldName -> HighType) for field access coercions and type inference -/
   classFieldHighType: Std.HashMap String (Std.HashMap String HighType) := {}
   /-- Names of prelude types -/
   preludeTypes : Std.HashSet String := {}
+  /-- Prelude procedure signatures (for multi-output detection) -/
+  preludeProcedures : Std.HashMap String CoreProcedureSignature := {}
   /-- Overload dispatch table from PySpec: function name → overloads -/
   overloadTable : OverloadTable := {}
   /-- Behavior for unmodeled functions -/
@@ -195,14 +206,23 @@ partial def getSubscriptBaseName (e : Python.expr SourceRange) : String :=
   | .Subscript _ val _ _ => getSubscriptBaseName val
   | _ => pyExprToString e
 
+def PyLauType.None := "None"
 def PyLauType.Int := "int"
 def PyLauType.Bool := "bool"
 def PyLauType.Str := "str"
-def PyLauType.Datetime := "Datetime"
+def PyLauType.Float := "float"
+def PyLauType.Bytes := "bytes"
+def PyLauType.Datetime := "datetime"
 def PyLauType.DictStrAny := "DictStrAny"
+def PyLauType.ListAny := "ListAny"
 def PyLauType.ListStr := "ListStr"
 def PyLauType.Package := "Package"
 def PyLauType.Any := "Any"
+
+def isOfAnyType (ty: String): Bool := ty ∈ [PyLauType.None, PyLauType.Bool, PyLauType.Int, PyLauType.Float,
+                           PyLauType.Str, PyLauType.Datetime, PyLauType.Bytes, PyLauType.ListAny, PyLauType.DictStrAny, PyLauType.Any]
+
+def PyLauFuncReturnVar := "LaurelResult"
 
 /-- Convert a Laurel HighType to a PyLauType string for type inference. -/
 def highTypeToPyLauType : HighType → String
@@ -220,6 +240,7 @@ def pythonTypeToCoreType (typeStr : String) : Option String :=
   | "Dict[str, Any]" => some PyLauType.DictStrAny
   | "List[str]" => some PyLauType.ListStr
   | "Any" => some PyLauType.Any
+  | "None" => some PyLauType.Any
   | "datetime" => some PyLauType.Datetime
   | "timedelta" => some PyLauType.Int
   | _ => none
@@ -262,10 +283,10 @@ def compositeToStringAnyName (typeName : String) : String := "$composite_to_stri
 def isCompositeType (ctx : TranslationContext) (typeName : String) : Bool :=
   typeName != PyLauType.Any && (ctx.importedSymbols[typeName]?.any fun s =>
     match s with | .compositeType _ => true | _ => false)
-def strToAny (s: String) := mkStmtExprMd (.StaticCall "from_string" [mkStmtExprMd (StmtExpr.LiteralString s)])
+def strToAny (s: String) := mkStmtExprMd (.StaticCall "from_str" [mkStmtExprMd (StmtExpr.LiteralString s)])
 def intToAny (i: Int) := mkStmtExprMd (.StaticCall "from_int" [mkStmtExprMd (StmtExpr.LiteralInt i)])
 def boolToAny (b: Bool) := mkStmtExprMd (.StaticCall "from_bool" [mkStmtExprMd (StmtExpr.LiteralBool b)])
-def AnyNone := mkStmtExprMd (.StaticCall "from_none" [])
+def AnyNone := mkStmtExprMd (.StaticCall "from_None" [])
 def Any_to_bool (b: StmtExprMd) := mkStmtExprMd (.StaticCall "Any_to_bool" [b])
 
 /-- Wrap a field access expression in the appropriate Any constructor based on HighType.
@@ -277,7 +298,7 @@ def wrapFieldInAny (ty : HighType) (expr : StmtExprMd) : Except TranslationError
   | .TBool => .ok <| mkStmtExprMd (.StaticCall "from_bool" [expr])
   | .TFloat64 => .ok <| mkStmtExprMd (.StaticCall "from_float" [expr])
   | .TReal => .ok <| mkStmtExprMd (.StaticCall "from_float" [expr])
-  | .TString => .ok <| mkStmtExprMd (.StaticCall "from_string" [expr])
+  | .TString => .ok <| mkStmtExprMd (.StaticCall "from_str" [expr])
   | .TCore "Any" => .ok expr
   | .UserDefined name => .error (.unsupportedConstruct
     s!"Coercion from user-defined class '{name.text}' to Any is not yet supported" name.text)
@@ -297,7 +318,7 @@ def lookupFieldHighType (ctx : TranslationContext) (className fieldName : String
     | some ty => .ok ty
 
 def NoError : StmtExprMd := mkStmtExprMd (StmtExpr.StaticCall "NoError" [])
-def optNone := mkStmtExprMd (StmtExpr.StaticCall "None" [])
+def optNone := mkStmtExprMd (StmtExpr.StaticCall "OptNone" [])
 
 def getSubscriptList (expr:  Python.expr SourceRange) : List ( Python.expr SourceRange) :=
   match expr with
@@ -322,8 +343,8 @@ def DictStrAny_empty:= mkStmtExprMd (StmtExpr.StaticCall "DictStrAny_empty" [])
 def DictStrAny_mk (kv: List (String × StmtExprMd)) := DictStrAny_mk_aux kv DictStrAny_empty
 
 /-- Extract a value from a dictionary for a function parameter.
-    For required params, generates `Any_get(dict, from_string(key))` (with precondition).
-    For optional params, generates `Any_get_or_none(dict, from_string(key))` (returns `None` if absent).
+    For required params, generates `Any_get(dict, from_str(key))` (with precondition).
+    For optional params, generates `Any_get_or_none(dict, from_str(key))` (returns `None` if absent).
     Both operate on `Any`-typed dictionaries. -/
 def DictStrAny_get_param (dict : StmtExprMd) (key : String) (isOptional : Bool) : StmtExprMd :=
   let func := if isOptional then "Any_get_or_none" else "Any_get"
@@ -394,7 +415,7 @@ partial def translateDictStrAny (ctx : TranslationContext)
   let kv := keys.zip values
   let val_trans ←  kv.unzip.snd.mapM (translateExpr ctx)
   let keys ← keys.mapM pyOptExprToString
-  return  mkStmtExprMd (.StaticCall "from_Dict" [DictStrAny_mk (keys.zip val_trans)])
+  return  mkStmtExprMd (.StaticCall "from_DictStrAny" [DictStrAny_mk (keys.zip val_trans)])
 
 partial def translateSlice (ctx : TranslationContext) (start stop step: Option (expr SourceRange))
     : Except TranslationError StmtExprMd := do
@@ -405,7 +426,7 @@ partial def translateSlice (ctx : TranslationContext) (start stop step: Option (
             let start ← translateExpr ctx start
             let stop ← translateExpr ctx stop
             let start := mkStmtExprMd (.StaticCall "Any..as_int!" [start])
-            let stop := mkStmtExprMd (.StaticCall "Some" [mkStmtExprMd (.StaticCall "Any..as_int!" [stop])])
+            let stop := mkStmtExprMd (.StaticCall "OptSome" [mkStmtExprMd (.StaticCall "Any..as_int!" [stop])])
             return mkStmtExprMd (.StaticCall "from_Slice" [start, stop])
         | some start, none =>
             let start ← translateExpr ctx start
@@ -414,7 +435,7 @@ partial def translateSlice (ctx : TranslationContext) (start stop step: Option (
         | none, some stop =>
             let start := mkStmtExprMd (.LiteralInt 0)
             let stop ← translateExpr ctx stop
-            let stop := mkStmtExprMd (.StaticCall "Some" [mkStmtExprMd (.StaticCall "Any..as_int!" [stop])])
+            let stop := mkStmtExprMd (.StaticCall "OptSome" [mkStmtExprMd (.StaticCall "Any..as_int!" [stop])])
             return mkStmtExprMd (.StaticCall "from_Slice" [start, stop])
         | _ , _ =>
             let start := mkStmtExprMd (.LiteralInt 0)
@@ -423,6 +444,7 @@ partial def translateSlice (ctx : TranslationContext) (start stop step: Option (
 /-- Translate Python expression to Laurel StmtExpr -/
 partial def translateExpr (ctx : TranslationContext) (e : Python.expr SourceRange)
     : Except TranslationError StmtExprMd := do
+  let md := sourceRangeToMetaData ctx.filePath e.toAst.ann
   match e with
   -- Integer literals
   | .Constant _ (.ConPos _ n) _ => return intToAny n.val
@@ -472,27 +494,39 @@ partial def translateExpr (ctx : TranslationContext) (e : Python.expr SourceRang
       | .BitXor _ => return mkStmtExprMd .Hole
       -- Unsupported for now
       | _ => throw (.unsupportedConstruct s!"Binary operator not yet supported: {repr op}" (toString (repr e)))
-    return mkStmtExprMd (StmtExpr.StaticCall preludeOpnames [leftExpr, rightExpr])
+    return mkStmtExprMdWithLoc (StmtExpr.StaticCall preludeOpnames [leftExpr, rightExpr]) md
 
   -- Comparison operations
   | .Compare _ left ops comparators => do
     -- Python allows chained comparisons: a < b < c
     -- For now, only support single comparison
-    if ops.val.size != 1 || comparators.val.size != 1 then
+    if h: (ops.val.size != 1 || comparators.val.size != 1) then
       throw (.unsupportedConstruct "Chained comparisons not yet supported" (toString (repr e)))
-    let leftExpr ← translateExpr ctx left
-    let rightExpr ← translateExpr ctx comparators.val[0]!
-    let preludeOpnames ← match ops.val[0]! with
-      | .Eq _ => .ok "PEq"
-      | .NotEq _ => .ok "PNEq"
-      | .Lt _ => .ok "PLt"
-      | .LtE _ => .ok "PLe"
-      | .Gt _ => .ok "PGt"
-      | .GtE _ => .ok "PGe"
-      | .In _ => .ok "PIn"
-      | .NotIn _ => .ok "PNotIn"
-      | _ => throw (.unsupportedConstruct s!"Comparison operator not yet supported: {repr ops.val[0]!}" (toString (repr e)))
-    return mkStmtExprMd (StmtExpr.StaticCall preludeOpnames [leftExpr, rightExpr])
+    else
+      have hComp : 0 < comparators.val.size := by grind
+      have hOps: 0 < ops.val.size := by grind
+      let leftExpr ← translateExpr ctx left
+      let rightExpr ← translateExpr ctx (comparators.val[0]'hComp)
+      let preludeOpnames ← match ops.val[0]'hOps with
+        | .Eq _ => .ok "PEq"
+        | .NotEq _ => .ok "PNEq"
+        | .Lt _ => .ok "PLt"
+        | .LtE _ => .ok "PLe"
+        | .Gt _ => .ok "PGt"
+        | .GtE _ => .ok "PGe"
+        | .In _ => .ok "PIn"
+        | .NotIn _ => .ok "PNotIn"
+        -- `is`/`is not` are only sound when the RHS is None, because Python's
+        -- `is` checks object identity, not equality (e.g., True == 1 but
+        -- True is not 1). In the Any value model, None is a singleton so
+        -- identity and equality coincide for None comparisons.
+        | .Is _ => match comparators.val[0]'hComp with
+            | .Constant _ (.ConNone _) _ => .ok "PEq"
+            | _ => throw (.unsupportedConstruct "`is` is only supported with None" (toString (repr e)))
+        | .IsNot _ => match comparators.val[0]'hComp with
+            | .Constant _ (.ConNone _) _ => .ok "PNEq"
+            | _ => throw (.unsupportedConstruct "`is not` is only supported with None" (toString (repr e)))
+      return mkStmtExprMdWithLoc (StmtExpr.StaticCall preludeOpnames [leftExpr, rightExpr]) md
 
   -- Boolean operations
   | .BoolOp _ op values => do
@@ -510,7 +544,7 @@ partial def translateExpr (ctx : TranslationContext) (e : Python.expr SourceRang
     let mut result := exprs[0]!
     for i in [1:exprs.length] do
       result := mkStmtExprMd (StmtExpr.StaticCall preludeOpnames [result, exprs[i]!])
-    return result
+    return {result with md:= md}
 
   -- Unary operations
   | .UnaryOp _ op operand => do
@@ -519,7 +553,7 @@ partial def translateExpr (ctx : TranslationContext) (e : Python.expr SourceRang
       | .Not _ => .ok "PNot"
       | .USub _ => .ok "PNeg"
       | _ => throw (.unsupportedConstruct s!"Unary operator not yet supported: {repr op}" (toString (repr e)))
-    return mkStmtExprMd (StmtExpr.StaticCall preludeOpnames [operandExpr])
+    return mkStmtExprMdWithLoc (StmtExpr.StaticCall preludeOpnames [operandExpr]) md
 
   -- FormattedValue (f-string interpolation {expr}) - convert to string-typed Any
   | .FormattedValue _ value _ _ =>
@@ -547,7 +581,7 @@ partial def translateExpr (ctx : TranslationContext) (e : Python.expr SourceRang
       let concat := parts.foldl (fun acc part =>
         mkStmtExprMd (.PrimitiveOp .StrConcat [acc, unwrap part]))
         (mkStmtExprMd (.LiteralString ""))
-      return mkStmtExprMd (.StaticCall "from_string" [concat])
+      return mkStmtExprMd (.StaticCall "from_str" [concat])
 
   -- Interpolation / TemplateStr (Python 3.14+ t-strings) - not yet supported
   | .Interpolation .. => return mkStmtExprMd .Hole
@@ -557,9 +591,11 @@ partial def translateExpr (ctx : TranslationContext) (e : Python.expr SourceRang
     let condExpr ← translateExpr ctx cond
     let thenExpr ← translateExpr ctx thenb
     let elseExpr ← translateExpr ctx elseb
-    return mkStmtExprMd (StmtExpr.IfThenElse (Any_to_bool condExpr) thenExpr elseExpr)
+    return mkStmtExprMdWithLoc (StmtExpr.IfThenElse (Any_to_bool condExpr) thenExpr elseExpr) md
 
-  | .Call _ f args kwargs => translateCall ctx f args.val.toList kwargs.val.toList
+  | .Call _ f args kwargs =>
+      let result ← translateCall ctx f args.val.toList kwargs.val.toList
+      return {result with md:= md}
 
   -- Subscript access: dict['key'] or list[0]
   -- Abstract: return havoc'd value (sound for any dict/list operation)
@@ -570,7 +606,7 @@ partial def translateExpr (ctx : TranslationContext) (e : Python.expr SourceRang
     let index ←  match slice with
       | .Slice _ start stop step => translateSlice ctx start.val stop.val step.val
       | _ => translateExpr ctx slice
-    return mkStmtExprMd (.StaticCall "Any_get" [dictOrList, index])
+    return mkStmtExprMdWithLoc (.StaticCall "Any_get" [dictOrList, index]) md
 
   -- Attribute access: obj.attr or obj.method
   | .Attribute _ obj attr _ => do
@@ -673,6 +709,7 @@ partial def inferExprType (ctx : TranslationContext) (e: Python.expr SourceRange
   | .Constant _ (.ConFalse _) _
   | .BoolOp _ _ _
   | .Compare _ _ _ _=> return PyLauType.Bool
+  | .Constant _ (.ConNone _) _ => return PyLauType.None
   -- Variable references
   | .Name _ n _ =>
       match ctx.variableTypes.find? (λ v => v.fst == n.val) with
@@ -705,7 +742,9 @@ partial def getFunctionReturnType (ctx : TranslationContext) (func: Python.expr 
   | _=>
     let (fname, _) ← refineFunctionCallExpr ctx func
     match ctx.functionSignatures.find? (λ f => f.name == fname) with
-      | some funcDecl => match funcDecl.ret with | some ty => return ty | _ => return PyLauType.Any
+      | some funcDecl => match funcDecl.ret with
+        | some ([ty], _) => return ty
+        | _ => return PyLauType.Any
       | _ => return PyLauType.Any
 
 
@@ -717,6 +756,17 @@ If a is a package, this should be translated to a_function_name (arg1, arg2)
 If the function_name is a class, add __init__ into it
 The following function return a tuple (translated function name, first argument, is the first argument of unknown type)
 -/
+
+/-- Coerce an expression to Any if its inferred type is a Composite class.
+    Composite values are replaced with a Hole (unconstrained Any value)
+    since Composite→Any coercion is not yet modeled. This limits
+    bug-finding ability but avoids type unification errors. -/
+partial def coerceToAny (ctx : TranslationContext) (expr : Python.expr SourceRange)
+    (translated : StmtExprMd) : Except TranslationError StmtExprMd := do
+  let ty ← inferExprType ctx expr
+  if isCompositeType ctx ty then
+    pure <| mkStmtExprMd (.Hole)
+  else pure translated
 
 partial def refineFunctionCallExpr (ctx : TranslationContext) (func: Python.expr SourceRange) :
       Except TranslationError (String × Option (Python.expr SourceRange) × Bool) := do
@@ -786,7 +836,7 @@ partial def removePosargsFromKwargs (kwords : List (Python.keyword SourceRange))
   kwords.filter (λ kw => match kw with
     | .mk_keyword _ name _ =>
       match name.val with
-        | some n => n.val ∉ funcDecl.args.unzip.fst
+        | some n => n.val ∉ funcDecl.args.map (·.name)
         | none => true)
 
 partial def combinePositionalAndKeywordArgs
@@ -806,20 +856,24 @@ partial def combinePositionalAndKeywordArgs
       throwUserError callRange
         s!"'{name}' called with unknown keyword arguments: {extraNames}"
     let kwords := pyKwordsToHashMap kwords
+    -- Extra positional args beyond the signature are an arity error.
+    if posArgs.length > funcDecl.args.length then
+      throwUserError callRange
+        s!"'{name}' called with too many positional arguments: expected at most {funcDecl.args.length}, got {posArgs.length}"
     let unprovidedPosArgs := funcDecl.args.drop posArgs.length
     --every unprovided positional args must have a default value in the function signature or be provided in the kwargs
-    let missingArgs := unprovidedPosArgs.filter fun (name, _, d) =>
-      !(name ∈ kwords.keys) && d.isNone
+    let missingArgs := unprovidedPosArgs.filter fun arg =>
+      !(arg.name ∈ kwords.keys) && arg.default.isNone
     if missingArgs.length > 0 then
-      let missingNames := missingArgs.map (·.1)
+      let missingNames := missingArgs.map (·.name)
       throwUserError callRange s!"'{name}' called with missing required arguments: {missingNames}"
     let filledPosArgs ←
-      unprovidedPosArgs.mapM (λ (argName, _, d) =>
-        match kwords.get? argName with
+      unprovidedPosArgs.mapM (λ arg =>
+        match kwords.get? arg.name with
           | some expr => return expr
-          | none => match d with
+          | none => match arg.default with
                 | some val => return val
-                | _ => throw (.typeError s!"'{name}' missing required argument '{argName}'"))
+                | _ => throw (.typeError s!"'{name}' missing required argument '{arg.name}'"))
     let posArgs := posArgs ++ filledPosArgs
     return (posArgs, kwordArgs, funcDecl.kwargsName.isSome)
   | _ => return (posArgs, kwords, false)
@@ -893,11 +947,15 @@ partial def translateCall (ctx : TranslationContext)
   -- expand the dictionary into individual arguments using DictStrAny_get
   if isVarKwargs kwords && funcDecl.isSome then
     let funcDecl := funcDecl.get!
+    let name := if methodName.isEmpty then funcDecl.name else methodName
+    if args.length > funcDecl.args.length then
+      throwUserError callRange
+        s!"'{name}' called with too many positional arguments: expected at most {funcDecl.args.length}, got {args.length}"
     let trans_posArgs ← args.mapM (translateExpr ctx)
     let trans_dict ← translateVarKwargs ctx kwords
     let remainingParams := funcDecl.args.drop args.length
-    let trans_dictArgs := remainingParams.map fun (argName, _, dflt) =>
-      DictStrAny_get_param trans_dict argName dflt.isSome
+    let trans_dictArgs := remainingParams.map fun arg =>
+      DictStrAny_get_param trans_dict arg.name arg.default.isSome
     let allArgs := trans_posArgs ++ trans_dictArgs
     let kwargsArg := if funcDecl.kwargsName.isSome then [trans_dict] else []
     emitCall (allArgs ++ kwargsArg)
@@ -921,15 +979,21 @@ Translate Python statements to Laurel StmtExpr nodes.
 These functions are mutually recursive.
 -/
 
+private def hasErrorOutput (sig : CoreProcedureSignature) : Bool :=
+  sig.outputs.length > 0 && sig.outputs.getLast! == "Error"
+
 def withException (ctx : TranslationContext) (funcname: String) : Bool :=
   match ctx.importedSymbols[funcname]? with
   | some (ImportedSymbol.function _) => false
-  | some (ImportedSymbol.procedure _ sig _) =>
-    sig.outputs.length > 0 && sig.outputs.getLast! == "Error"
-  | _ => false
+  | some (ImportedSymbol.procedure _ sig _) => hasErrorOutput sig
+  | _ =>
+    match ctx.preludeProcedures[funcname]? with
+    | some sig => hasErrorOutput sig
+    | none => false
 
-def maybeExceptVar := mkStmtExprMd (.Identifier "maybe_except")
-def nullcall_var := mkStmtExprMd (.Identifier "nullcall_ret")
+def freeVar (name: String) := mkStmtExprMd (.Identifier name)
+def maybeExceptVar := freeVar "maybe_except"
+def nullcall_var := freeVar "nullcall_ret"
 
 partial def translateAssign  (ctx : TranslationContext)
                              (lhs: Python.expr SourceRange)
@@ -1033,7 +1097,8 @@ partial def translateAssign  (ctx : TranslationContext)
         | target :: slices =>
             let target ← translateExpr ctx target
             let slices ← slices.mapM (translateExpr ctx)
-            let anySetsExpr := ⟨ StmtExpr.StaticCall "Any_sets" [ListAny_mk slices, target, rhs_trans] , md ⟩
+            let md := sourceRangeToMetaData ctx.filePath lhs.toAst.ann
+            let anySetsExpr := mkStmtExprMdWithLoc (StmtExpr.StaticCall "Any_sets!" [ListAny_mk slices, target, rhs_trans]) md
             let assignStmts := [mkStmtExprMdWithLoc (StmtExpr.Assign [target] anySetsExpr) md]
             return (ctx,assignStmts)
         | _ =>  throw (.internalError "Invalid Subscript Expr")
@@ -1125,6 +1190,37 @@ def createVarDeclStmtsAndCtx (ctx : TranslationContext) (newDecls : List (String
         if isCompositeType ctx ty then (n, ty) else (n, PyLauType.Any)) }
   return (hoistedDecls, hoistedCtx)
 
+--Check if a prelude function returns a value of Any type, which may be an exception (such as PAdd, PMul, ...)
+def isMaybeExceptAnyFunc (ctx : TranslationContext) (funcName: String) : Bool := funcName ∈ ctx.maybeExceptionFunctions
+
+partial def getMaybeExceptionExprs (ctx : TranslationContext) (e : StmtExprMd) : List StmtExprMd :=
+  match e.val with
+  | .StaticCall funcname args =>
+    /-When the prelude function returns a value of Any type, which may be an exception, it should
+    propagates the exceptions from its arguments (see the body of PAdd, PMul,..),
+    so we don't need to recurse this function here.-/
+    if isMaybeExceptAnyFunc ctx funcname.text then
+      [{e with md:= e.md.withPropertySummary $ "Check " ++ funcname.text ++ " exception"}]
+    else args.flatMap $ getMaybeExceptionExprs ctx
+  | .PrimitiveOp _ args => args.flatMap $ getMaybeExceptionExprs ctx
+  | .IfThenElse cond thenBranch elseBranch =>
+      ([cond, thenBranch] ++ elseBranch.toList).flatMap $ getMaybeExceptionExprs ctx
+  | _ => []
+
+partial def getExceptionAssertions (ctx : TranslationContext) (e : StmtExprMd) : List StmtExprMd :=
+  let maybeExceptExprs := getMaybeExceptionExprs ctx e
+  maybeExceptExprs.map (λ mbe => mkStmtExprMdWithLoc (.Assert $ mkStmtExprMd
+    (.PrimitiveOp .Not [mkStmtExprMd $ .StaticCall "Any..isexception" [mbe]])) mbe.md)
+
+def withExceptionChecks (ctx : TranslationContext)
+    (result : TranslationContext × List StmtExprMd)
+    : TranslationContext × List StmtExprMd :=
+  let (newctx, stmts) := result
+  let rhs_exprs := stmts.flatMap fun s =>
+    match s.val with | .Assign _ value => [value] | _ => []
+  let exceptionCheck := rhs_exprs.flatMap $ getExceptionAssertions ctx
+  (newctx, exceptionCheck ++ stmts)
+
 mutual
 
 partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRange)
@@ -1136,12 +1232,14 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
     -- For now, only support single target
     if targets.val.size != 1 then
       throw (.unsupportedConstruct "Multiple assignment targets not yet supported" (toString (repr s)))
-    translateAssign ctx targets.val[0]! none value md
+    return withExceptionChecks ctx (← translateAssign ctx targets.val[0]! none value md)
+
 
   -- Annotated assignment: x: int = expr or x: ClassName = ClassName(args) or self.field: int = expr
   | .AnnAssign _ target annotation value _ => do
     match value.val with
-    | some value => translateAssign ctx target annotation value md
+    | some value =>
+        return withExceptionChecks ctx (← translateAssign ctx target annotation value md)
     | none =>
       -- Declaration without initializer (not allowed in pure context, but OK in procedures)
       let varType := pyExprToString annotation
@@ -1166,7 +1264,7 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
       .ok (some (mkStmtExprMd (StmtExpr.Block elseStmts none)))
     let ifStmt := mkStmtExprMdWithLoc (StmtExpr.IfThenElse (Any_to_bool condExpr) bodyBlock elseBlock) md
 
-    return (bodyCtx, [ifStmt])
+    return (bodyCtx, (getExceptionAssertions ctx condExpr) ++ [ifStmt])
 
   -- While loop
   | .While _ test body _orelse => do
@@ -1179,23 +1277,48 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
     let bodyBlock := mkStmtExprMdWithLoc (StmtExpr.Block bodyStmts (some continueLabel)) md
     let whileStmt := mkStmtExprMdWithLoc (StmtExpr.While (Any_to_bool condExpr) [] none bodyBlock) md
     let whileWrapped := mkStmtExprMdWithLoc (StmtExpr.Block [whileStmt] (some breakLabel)) md
-    return (loopCtx, [whileWrapped])
+    return (loopCtx, (getExceptionAssertions ctx condExpr) ++ [whileWrapped])
 
   -- Return statement: assign to the LaurelResult output parameter, then exit $body.
   | .Return _ value => do
     let stmts ← match value.val with
       | some expr => do
         let e ← translateExpr ctx expr
-        let assign := mkStmtExprMd (StmtExpr.Assign [mkStmtExprMd (StmtExpr.Identifier "LaurelResult")] e)
-        .ok [assign, mkStmtExprMd (StmtExpr.Exit "$body")]
+        let exceptionCheck := getExceptionAssertions ctx e
+        -- Coerce Composite return values to Any for LaurelResult : Any
+        let e ← coerceToAny ctx expr e
+        let assign := mkStmtExprMd (StmtExpr.Assign [mkStmtExprMd (StmtExpr.Identifier PyLauFuncReturnVar)] e)
+        .ok $ exceptionCheck ++ [assign, mkStmtExprMd (StmtExpr.Exit "$body")]
       | none => .ok [mkStmtExprMd (StmtExpr.Exit "$body")]
     return (ctx, stmts)
 
   -- Assert statement
-  | .Assert _ test _msg => do
+  | .Assert _ test msg => do
     let condExpr ← translateExpr ctx test
-    let assertStmt := mkStmtExprMdWithLoc (StmtExpr.Assert (Any_to_bool condExpr)) md
-    return (ctx, [assertStmt])
+    -- Extract assert message as property summary
+    let md' := match msg.val with
+      | some (.Constant _ (.ConString _ str) _) => md.withPropertySummary str.val
+      | _ => md
+    -- Check if condition contains a Hole - if so, hoist to variable
+    let (condStmts, finalCondExpr, condCtx) :=
+      match condExpr.val with
+      | .Hole =>
+        let freshVar := s!"assert_cond_{test.toAst.ann.start.byteIdx}"
+        let varType := mkHighTypeMd .TBool
+        let varDecl := mkStmtExprMd (StmtExpr.LocalVariable freshVar varType (some condExpr))
+        let varRef := mkStmtExprMd (StmtExpr.Identifier freshVar)
+        ([varDecl], varRef, { ctx with variableTypes := ctx.variableTypes ++ [(freshVar, "bool")] })
+      | _ => ([], condExpr, ctx)
+
+    let assertStmt := mkStmtExprMdWithLoc (StmtExpr.Assert (Any_to_bool finalCondExpr)) md'
+
+    -- Wrap in block if we hoisted condition
+    let result := if condStmts.isEmpty then
+      assertStmt
+    else
+      mkStmtExprMdWithLoc (StmtExpr.Block (condStmts ++ [assertStmt]) none) md
+
+    return (condCtx, (getExceptionAssertions ctx condExpr) ++ [result])
 
   --Ignore comments in source code
   | .Expr _ (.Constant _ (.ConString _ _) _) => return (ctx, [])
@@ -1204,6 +1327,7 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
   | .Expr _ value => do
     let expr ← translateExpr ctx value
     let expr := { expr with md := md }
+    let exceptionCheck := getExceptionAssertions ctx expr
 
     match expr.val with
     | .StaticCall fnname _ =>
@@ -1212,11 +1336,11 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
             let targets := if funsig.ret.isNone then [] else [nullcall_var]
             let targets := if withException ctx fnname.text then targets++[maybeExceptVar] else targets
             if targets.length > 0 then
-              return (ctx, [mkStmtExprMdWithLoc (StmtExpr.Assign targets expr) md])
+              return (ctx, exceptionCheck ++ [mkStmtExprMdWithLoc (StmtExpr.Assign targets expr) md])
             else
-              return (ctx, [expr])
-        | _ => return (ctx, [expr])
-    | _ => return (ctx, [expr])
+              return (ctx, exceptionCheck ++ [expr])
+        | _ => return (ctx, exceptionCheck ++ [expr])
+    | _ => return (ctx, exceptionCheck ++ [expr])
 
   | .Import _ _ | .ImportFrom _ _ _ _ |.Pass _ => return (ctx, [mkStmtExprMd .Hole])
 
@@ -1304,7 +1428,7 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
   -- This is sound: if there are 0 iterations, we havoc; if >0, we execute once and havoc
   | .For _ target iter body _orelse _ => do
     -- The iterator expression (we abstract it away)
-    let _iterExpr ← translateExpr ctx iter
+    let iterExpr ← translateExpr ctx iter
     -- Create context with target(s) and loop labels
     let breakLabel := s!"for_break_{iter.toAst.ann.start.byteIdx}"
     let continueLabel := s!"for_continue_{iter.toAst.ann.start.byteIdx}"
@@ -1316,9 +1440,17 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
       loopBreakLabel := some breakLabel
       loopContinueLabel := some continueLabel }
     let (finalCtx, bodyStmts) ← translateStmtList bodyCtx body.val.toList
+    let assumeInStmts :=match target with
+    | .Name _ n _ =>
+      let targetVar := mkStmtExprMd (StmtExpr.Identifier n.val)
+      let targetInIter := mkStmtExprMd (.StaticCall "PIn" [targetVar, iterExpr])
+      let assumeInStmt := mkStmtExprMd (.Assume (Any_to_bool targetInIter))
+      [assumeInStmt]
+    | _ => []
+    let bodyStmts := assumeInStmts ++ bodyStmts
     let innerBlock := mkStmtExprMd (StmtExpr.Block bodyStmts (some continueLabel))
     let loopBlock := mkStmtExprMdWithLoc (StmtExpr.Block [innerBlock] (some breakLabel)) md
-    return (finalCtx, targetDecls ++ [loopBlock])
+    return (finalCtx, (getExceptionAssertions ctx iterExpr) ++ targetDecls ++ [loopBlock])
 
   | .Break _ =>
     match ctx.loopBreakLabel with
@@ -1340,8 +1472,9 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
       | .FloorDiv _ => mkStmtExprMd (StmtExpr.StaticCall "PFloorDiv" [targetExpr, valueExpr])
       | .Mod _      => mkStmtExprMd (StmtExpr.StaticCall "PMod"      [targetExpr, valueExpr])
       | _           => mkStmtExprMd .Hole
+    let rhs := {rhs with md:= md}
     let assignStmt := mkStmtExprMdWithLoc (StmtExpr.Assign [targetExpr] rhs) md
-    return (ctx, [assignStmt])
+    return (ctx, (getExceptionAssertions ctx rhs) ++ [assignStmt])
 
   | _ => throw (.unsupportedConstruct "Statement type not yet supported" (toString (repr s)))
 
@@ -1365,24 +1498,48 @@ partial def getNestedSubscripts (expr:  Python.expr SourceRange) : List ( Python
   | .Subscript _ val slice _ => [val] ++ (getNestedSubscripts slice)
   | _ => [expr]
 
-partial def argumentTypeToString (arg: Python.expr SourceRange) : Except TranslationError String :=
+def getUnionTypes (arg: Python.expr SourceRange) : List (Python.expr SourceRange) :=
   match arg with
-  | .Name _ n _ => return n.val
-  | .Subscript _ _ _ _ =>
-    let subscript_list:= getNestedSubscripts arg
-    let subscript_head := subscript_list[0]!
-    let slice_head := subscript_list[1]!
-    let v_name := pyExprToString subscript_head
-    match v_name with
-    | "Optional" => return "NoneOr" ++ pyExprToString slice_head
-    | _ => return v_name
-  | .Constant _ _ _ => return "None"
-  | .Attribute _ _ _ _ => return pyExprToString arg
+  | .BinOp _ left _ right => getUnionTypes left ++ getUnionTypes right
+  | _ => [arg]
+
+def checkValidInputTypeList (ctx : TranslationContext) (tys: List String) : Except TranslationError (List String) := do
+  for ty in tys do
+    let _ ← translateType ctx ty
+  if tys.length > 1 && tys.any (λ ty => ¬ isOfAnyType ty) then
+    throw (.unsupportedConstruct "Argument of union of class types is not supported" (toString tys))
+  return tys
+
+partial def getArgumentTypes (arg: Python.expr SourceRange) : Except TranslationError (List String) :=
+  match arg with
+  | .Name _ n _ => return [n.val]
+  | .Subscript _ _ slice _ =>
+    let subscriptList:= getNestedSubscripts arg
+    let subscriptRoot := match subscriptList[0]! with
+    | .Attribute _ _ {val:= "Dict", ..} _ => "Dict"
+    | .Attribute _ _ {val:= "List", ..} _ => "List"
+    | _ => pyExprToString subscriptList[0]!
+    let sliceHead := subscriptList[1]!
+    match subscriptRoot with
+    | "Optional" => return (← getArgumentTypes slice) ++ ["None"]
+    | "Union" =>  match sliceHead with
+        | .Tuple _ tys _ => return (← tys.val.toList.mapM getArgumentTypes).flatten
+        | _ => throw (.internalError s!"Unhandled Expr: {repr arg}")
+    | "List" => return ["ListAny"]
+    | "Dict" => return ["DictStrAny"]
+    | _ =>  throw (.internalError s!"Unhandled Expr: {repr arg}")
+  | .Constant _ _ _ => return ["None"]
+  | .Attribute _ _ _ _ => return [pyExprToString arg]
+  | .BinOp _ _ _ _ => return (← (getUnionTypes arg).mapM getArgumentTypes).flatten
+  --Temporary: just to handle "typing:some_type ... "
+  | .Slice _ lower upper _ => match lower.val, upper.val with
+      | some (.Name  _ _ _ ), some upper => getArgumentTypes upper
+      | _, _ => throw (.internalError s!"Unhandled Expr: {repr arg}")
   | _ => throw (.internalError s!"Unhandled Expr: {repr arg}")
 
 --The return is a List (inputname, type, default value) and a bool indicating if the function has Kwargs input
-def unpackPyArguments (args: Python.arguments SourceRange)
-    : Except TranslationError ((List (String × String × Option (Python.expr SourceRange))) × (Option String)):= do
+def unpackPyArguments (ctx : TranslationContext) (args: Python.arguments SourceRange)
+    : Except TranslationError ((List PyArgInfo) × (Option String)):= do
   match args with
     | .mk_arguments _ _ args _ _ _ kwargs defaults =>
       let argscount := args.val.size
@@ -1390,13 +1547,28 @@ def unpackPyArguments (args: Python.arguments SourceRange)
       let listdefaults := (List.range (argscount - defaultscount)).map (λ _ => none)
                         ++ defaults.val.toList.map (λ x => some x)
       let argsinfo := args.val.toList.zip listdefaults
-      let argtypes ←
-        argsinfo.mapM (λ a: Python.arg SourceRange × Option (Python.expr SourceRange) =>
-        match a.fst with
-          | .mk_arg _ name oty _ =>
-            match oty.val with
-              | .some ty => return (name.val, ← argumentTypeToString ty, a.snd)
-              | _ => return (name.val, PyLauType.Any, a.snd))
+      let mut argtypes : List PyArgInfo := []
+      let mut tys : List String := []
+      for (arg, default) in argsinfo do
+        match arg with
+          | .mk_arg sr name oty _ =>
+            let md := sourceRangeToMetaData ctx.filePath sr
+            let defaultType := match default.mapM (inferExprType ctx) with
+                  | .ok (some ty) => some ty
+                  | _ => none
+            tys ← match oty.val with
+              | .some ty => getArgumentTypes ty
+              | _ => pure [PyLauType.Any]
+            match defaultType with
+              | .some "None" => --Only None is allowed to add to type list
+                  if tys != [PyLauType.Any] then
+                    tys:= (PyLauType.None::tys).dedup
+              | .some defaultType =>
+                  if isOfAnyType defaultType && tys != [PyLauType.Any] && defaultType ∉ tys then
+                    throw (.unsupportedConstruct "Default value type is invalid" (toString (repr arg)))
+              | _ => pure ()
+            tys ← checkValidInputTypeList ctx tys
+            argtypes := argtypes ++ [{name:= name.val, md:=md, tys:= tys, default:= default}]
       let kwargsName := kwargs.val.map (λ kwarg => match kwarg with | .mk_arg _ name _ _ => name.val)
       return (argtypes, kwargsName)
 
@@ -1404,13 +1576,17 @@ def pyFuncDefToPythonFunctionDecl  (ctx : TranslationContext) (f : Python.stmt S
   match f with
   | .FunctionDef _ name args _body _decorator_list returns _type_comment _ =>
     let name := match ctx.currentClassName with | none => name.val | some classname => classname ++ "@" ++ name.val
-    let args_trans ← unpackPyArguments args
+    let args_trans ← unpackPyArguments ctx args
     let args := if ctx.currentClassName.isSome then args_trans.fst.tail else args_trans.fst
-    let ret := if name.endsWith "@__init__" then some (name.dropEnd "@__init__".length).toString
+    let retMd := sourceRangeToMetaData ctx.filePath returns.ann
+    let ret ←  if name.endsWith "@__init__" then pure $ some ([(name.dropEnd "@__init__".length).toString], retMd)
         else
         match returns.val with
-          | some retExpr => some (pyExprToString retExpr)
-          | none => none
+          | some retTy =>
+              match checkValidInputTypeList ctx (← getArgumentTypes retTy) with
+              | .ok tys => pure (tys, retMd)
+              | _ => pure none
+          | none => pure none
     let kwargsName := args_trans.snd
     return {
       name
@@ -1419,6 +1595,28 @@ def pyFuncDefToPythonFunctionDecl  (ctx : TranslationContext) (f : Python.stmt S
       ret
     }
   | _ => throw (.internalError "Expected FunctionDef")
+
+def getSingleTypeConstraint (var: String) (ty: String): Option StmtExprMd :=
+  if isOfAnyType ty && ty ≠ "Any" then mkStmtExprMd (.StaticCall ("Any..isfrom_" ++ ty) [freeVar var]) else none
+
+def createBoolOrExpr (exprs: List StmtExprMd) : StmtExprMd :=
+  match exprs with
+  | [] => mkStmtExprMd (.LiteralBool true)
+  | [expr] => expr
+  | expr::exprs => mkStmtExprMd (.PrimitiveOp .Or [expr, createBoolOrExpr exprs])
+
+def getUnionTypeConstraint (var: String) (md: MetaData) (tys: List String) (funcname: String): Option StmtExprMd :=
+  let type_constraints := tys.filterMap (getSingleTypeConstraint var)
+  if type_constraints.isEmpty then none else
+    let md: MetaData := md.withPropertySummary $ "(" ++ funcname ++ " requires) Type constraint of " ++ var
+    some {createBoolOrExpr type_constraints with md:=md}
+
+def getReturnTypeEnsure (md: MetaData) (tys: List String) (funcname: String): Option StmtExprMd :=
+  getUnionTypeConstraint PyLauFuncReturnVar md tys funcname
+  |>.map fun c => {c with md := md.withPropertySummary $ "(" ++ funcname ++ " ensures) Return type constraint"}
+
+def getInputTypePreconditions (funcDecl : PythonFunctionDecl): List StmtExprMd :=
+  funcDecl.args.filterMap (λ arg => getUnionTypeConstraint arg.name arg.md arg.tys funcDecl.name)
 
 /-- Translate a Python function body: collect all variable declarations, hoist them
     to the top, and translate the remaining statements. --/
@@ -1439,42 +1637,44 @@ def translateFunction (ctx : TranslationContext) (sourceRange: SourceRange) (fun
     -- Translate parameters
     let mut inputs : List Parameter := []
 
-    inputs ← funcDecl.args.mapM (fun (name, ty, _) => do
-        match ctx.importedSymbols[ty]? with
-        | some (ImportedSymbol.compositeType _) =>
-          pure { name := name, type := mkHighTypeMd (.UserDefined ty) }
-        | some _ =>
-          throw (.userPythonError sourceRange s!"'{ty}' is not a type")
-        | _ =>
-          pure { name := name, type := AnyTy})
+    inputs := funcDecl.args.map (fun arg =>
+        if arg.tys.length == 1 && isCompositeType ctx arg.tys[0]! then
+          { name := arg.name, type := mkHighTypeMd (.UserDefined {text:= arg.tys[0]!}) }
+        else
+          { name := arg.name, type := AnyTy})
 
     match funcDecl.kwargsName with
     | some kwargs => inputs:= inputs ++ [{ name := kwargs, type := mkCoreType PyLauType.DictStrAny}]
     | _ => pure ()
 
+    let typeConstraintPreconditions := getInputTypePreconditions funcDecl
+    let typeConstraintPostcondition :=
+      match funcDecl.ret.map fun (tys, md) => getReturnTypeEnsure md tys funcDecl.name with
+        | some (some constraint) => [constraint]
+        | _ => []
+
     -- Translate return type
-
-
-    -- Declare an output parameter when the function has a return type annotation.
-    -- Return statements explicitly assign to LaurelResult and exit $body.
-    let outputs : List Parameter :=
-      match funcDecl.ret with
-      | none => []
-      | some _ => [{ name := "LaurelResult", type := AnyTy }]
+    -- All methods return Any (void methods return Any via from_None)
+    let outputs : List Parameter := [{ name := PyLauFuncReturnVar, type := AnyTy }]
 
     -- Translate function body
-    let inputTypes := funcDecl.args.map (λ (name, type, _) => (name, type))
+    let inputTypes := funcDecl.args.map (λ arg =>
+      match arg.tys with | [ty] => (arg.name, ty) | _ => (arg.name, PyLauType.Any))
     let (bodyBlock, newCtx) ←  translateFunctionBody ctx inputTypes body
+    let noneReturn := mkStmtExprMd (.Assign [mkStmtExprMd (.Identifier PyLauFuncReturnVar)] AnyNone)
+    let bodyBlock : StmtExprMd := match bodyBlock.val with
+    | .Block bodyStmts label => {bodyBlock with val:= .Block (noneReturn::bodyStmts) label}
+    | _ => bodyBlock
 
     -- Create procedure with transparent body (no contracts for now)
     let proc : Procedure := {
       name := funcDecl.name
       inputs := inputs
       outputs := outputs
-      preconditions := []
+      preconditions := typeConstraintPreconditions
       determinism := .deterministic none -- TODO: need to set reads
       decreases := none
-      body := Body.Transparent bodyBlock
+      body := Body.Opaque typeConstraintPostcondition bodyBlock []
       md := sourceRangeToMetaData ctx.filePath sourceRange
       isFunctional := false
     }
@@ -1517,9 +1717,9 @@ def preludeSignatureToPythonFunctionDecl (prelude : Core.Program) : List PythonF
       let noneexpr : Python.expr SourceRange := .Constant default (.ConNone default) default
       some {
         name:= proc.header.name.name
-        args:= (inputnames.zip inputTypes).map (λ(n,t) => (n,t,noneexpr))
+        args:= (inputnames.zip inputTypes).map (λ(n,t) => {name:= n, md:= defaultMetadata, tys:= [t], default:= noneexpr})
         kwargsName := none
-        ret := if outputtypes.length == 0 then none else outputtypes[0]!
+        ret := if outputtypes.length == 0 then none else ([outputtypes[0]!], defaultMetadata)
       }
     | none => none
 /-- Extract field declarations from class body (annotated assignments at class level) -/
@@ -1578,7 +1778,7 @@ def translateMethod (ctx : TranslationContext) (className : String)
           | _ => pure ()
 
     -- Translate return type
-    -- All methods return Any (void methods return Any via from_none)
+    -- All methods return Any (void methods return Any via from_None)
     let outputs : List Parameter := [{name := "LaurelResult", type := AnyTy}]
 
     -- Translate method body with class context
@@ -1728,6 +1928,8 @@ structure PreludeInfo where
   functionSignatures : List PythonFunctionDecl := []
   /-- Function names (Core functions + datatype constructors/destructors/testers) -/
   functions : List String := []
+  /-- Function that may return Any of exception -/
+  maybeExceptionFunctions : List String := []
   /-- Procedure names (non-function callables) -/
   procedureNames : List String := []
   /-- Names of procedures with transparent bodies (can be inlined). -/
@@ -1791,8 +1993,8 @@ def PreludeInfo.ofLaurelProgram (prog : Laurel.Program) : PreludeInfo where
       else
         let noneexpr : Python.expr SourceRange := .Constant default (.ConNone default) default
         let args := p.inputs.map fun param =>
-          (param.name.text, getHighTypeName param.type.val, some noneexpr)
-        let ret := p.outputs.head?.map fun param => getHighTypeName param.type.val
+          {name:= param.name.text, md:= default, tys:= [getHighTypeName param.type.val], default:= some noneexpr}
+        let ret := p.outputs.head?.map fun param => ([getHighTypeName param.type.val], defaultMetadata)
         some { name := p.name.text, args := args, kwargsName := none, ret := ret }
   functions :=
     let funcNames := prog.staticProcedures.filterMap fun p =>
@@ -1809,6 +2011,8 @@ def PreludeInfo.ofLaurelProgram (prog : Laurel.Program) : PreludeInfo where
         ctors ++ destrs ++ testers
       | _ => []
     funcNames ++ dtFuncs
+  maybeExceptionFunctions :=  prog.staticProcedures.filterMap fun p =>
+    if p.md.getPropertySummary.getD "" == "AnyMaybeExcept" then some p.name.text else none
   procedureNames :=
     prog.staticProcedures.filterMap fun p =>
       if p.body.isExternal || p.isFunctional then none else some p.name.text
@@ -1823,6 +2027,7 @@ def PreludeInfo.merge (a b : PreludeInfo) : PreludeInfo where
   procedures := b.procedures.fold (init := a.procedures) fun m k v => m.insert k v
   functionSignatures := a.functionSignatures ++ b.functionSignatures
   functions := a.functions ++ b.functions
+  maybeExceptionFunctions := a.maybeExceptionFunctions ++ b.maybeExceptionFunctions
   procedureNames := a.procedureNames ++ b.procedureNames
   inlinableProcedures := b.inlinableProcedures.fold (init := a.inlinableProcedures) fun s n => s.insert n
   importedSymbols := b.importedSymbols.fold (init := a.importedSymbols) fun m k v => m.insert k v
@@ -1905,7 +2110,9 @@ def pythonToLaurel' (info : PreludeInfo)
     currentClassName := none,
     functionSignatures := info.functionSignatures ++ allClassFuncDecls
     preludeTypes := info.types,
+    preludeProcedures := info.procedures,
     userFunctions := userFunctions,
+    maybeExceptionFunctions := info.maybeExceptionFunctions
     classFieldHighType := classFieldHighType,
     overloadTable := overloadTable,
     importedSymbols := importedSymbols,

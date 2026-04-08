@@ -7,23 +7,23 @@
 import Strata.Languages.Core.Verifier
 
 /-!
-# Counterexample Lifting Tests (SMT → LExpr)
+# Model Lifting Tests (SMT → LExpr)
 
-Tests that counterexamples returned by the SMT solver are correctly
+Tests that models returned by the SMT solver are correctly
 converted from `SMT.Term` to Core `LExpr` via `smtTermToLExpr` /
-`convertCounterEx`.  Each test defines a Strata Core program with a
+`convertModel`.  Each test defines a Strata Core program with a
 deliberately failing assertion, runs `verify`, and checks the
 `VCResult.lexprModel` field via `#guard_msgs` or `#eval` assertions.
 -/
 
-namespace Strata.CounterExampleLiftTest
+namespace Strata.ModelLiftTest
 open Core Lambda
 
 ---------------------------------------------------------------------
--- Integer counterexample
+-- Integer model
 ---------------------------------------------------------------------
 
-def intCexPgm : Program :=
+def intModelPgm : Program :=
 #strata
 program Core;
 procedure P() returns () {
@@ -42,26 +42,26 @@ Model:
 ($__x1, 0)
 -/
 #guard_msgs in
-#eval verify intCexPgm (options := .models)
+#eval verify intModelPgm (options := .models)
 
--- The counterexample value is an intConst
+-- The model value is an intConst
 /-- info: failures=1 all_int=true -/
 #guard_msgs in
 #eval do
-  let results ← verify intCexPgm (options := .models)
+  let results ← verify intModelPgm (options := .models)
   let failures := results.filter fun r => Core.VCResult.isFailure r
-  let cex : Core.LExprModel := match failures[0]? with
+  let model : Core.LExprModel := match failures[0]? with
     | some r => r.lexprModel
     | none => []
-  let allInt := cex.all fun (_, expr) =>
+  let allInt := model.all fun (_, expr) =>
     match expr with | .intConst _ _ => true | _ => false
   IO.println s!"failures={failures.size} all_int={allInt}"
 
 ---------------------------------------------------------------------
--- Boolean counterexample
+-- Boolean model
 ---------------------------------------------------------------------
 
-def boolCexPgm : Program :=
+def boolModelPgm : Program :=
 #strata
 program Core;
 procedure P() returns () {
@@ -80,13 +80,13 @@ Model:
 ($__b1, false)
 -/
 #guard_msgs in
-#eval verify boolCexPgm (options := .models)
+#eval verify boolModelPgm (options := .models)
 
 ---------------------------------------------------------------------
--- Datatype counterexample (Nil constructor)
+-- Datatype model (Nil constructor)
 ---------------------------------------------------------------------
 
-def datatypeCexPgm : Program :=
+def datatypeModelPgm : Program :=
 #strata
 program Core;
 datatype List (a : Type) { Nil(), Cons(head: a, tail: List a) };
@@ -106,13 +106,13 @@ Model:
 ($__xs1, Nil)
 -/
 #guard_msgs in
-#eval verify datatypeCexPgm (options := .models)
+#eval verify datatypeModelPgm (options := .models)
 
 ---------------------------------------------------------------------
--- Datatype counterexample (Cons constructor)
+-- Datatype model (Cons constructor)
 ---------------------------------------------------------------------
 
-def datatypeCexPgm2 : Program :=
+def datatypeModelPgm2 : Program :=
 #strata
 program Core;
 datatype List (a : Type) { Nil(), Cons(head: a, tail: List a) };
@@ -132,13 +132,13 @@ Model:
 ($__xs1, Cons(0, Nil))
 -/
 #guard_msgs in
-#eval verify datatypeCexPgm2 (options := .models)
+#eval verify datatypeModelPgm2 (options := .models)
 
 ---------------------------------------------------------------------
--- Either datatype — counterexample with algebraic type
+-- Either datatype — model with algebraic type
 ---------------------------------------------------------------------
 
-def eitherCexPgm : Program :=
+def eitherModelPgm : Program :=
 #strata
 program Core;
 datatype Either (a : Type, b : Type) { Left(l: a), Right(r: b) };
@@ -158,16 +158,16 @@ Model:
 ($__e1, Right(true))
 -/
 #guard_msgs in
-#eval verify eitherCexPgm (options := .models)
+#eval verify eitherModelPgm (options := .models)
 
 ---------------------------------------------------------------------
--- Quantifier counterexample
+-- Quantifier model
 --
 -- `assert forall q : int :: q < x` always fails.
 -- The model should contain an integer for x.
 ---------------------------------------------------------------------
 
-def quantCexPgm : Program :=
+def quantModelPgm : Program :=
 #strata
 program Core;
 procedure P(x : int) returns ()
@@ -187,6 +187,6 @@ Model:
 ($__x0, 0)
 -/
 #guard_msgs in
-#eval verify quantCexPgm (options := .models)
+#eval verify quantModelPgm (options := .models)
 
-end Strata.CounterExampleLiftTest
+end Strata.ModelLiftTest

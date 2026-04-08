@@ -75,7 +75,7 @@ def checkValid (e:LExpr CoreLParams.mono): IO Bool := do
       let ans ← Core.SMT.dischargeObligation
         { Core.VerifyOptions.default with verbose := .quiet }
         e_fvs_typed Imperative.MetaData.empty filename.toString
-        [] smt_term ctx true false
+        [] smt_term ctx true false (label := "exprEvalTest")
       match ans with
       | .ok (.sat _, _, _) => return true
       | _ =>
@@ -136,7 +136,7 @@ private def mkRandConst (ty:LMonoTy): IO (Option (LExpr CoreLParams.mono))
     return .none
 
 def checkFactoryOps (verbose:Bool): IO Unit := do
-  let arr:Array (LFunc CoreLParams) := Core.Factory
+  let arr:Array (LFunc CoreLParams) := Core.Factory.toArray
   let print (f:Format): IO Unit :=
     if verbose then IO.println f
     else return ()
