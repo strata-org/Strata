@@ -1118,7 +1118,16 @@ partial def translateAssign  (ctx : TranslationContext)
           let fieldAccess := mkStmtExprMd (StmtExpr.FieldSelect
             (mkStmtExprMd (StmtExpr.Identifier "self"))
             attr.val)
-          let assignStmt := mkStmtExprMdWithLoc (StmtExpr.Assign [fieldAccess] rhs_trans) md
+          -- When the annotation is a composite type, the RHS (which is Any)
+          -- cannot be assigned directly; use New to initialize the field.
+          let rhs' ← match annotation with
+            | some ann =>
+              let annStr := pyExprToString ann
+              if let some (.compositeType laurelName) := ctx.importedSymbols[annStr]? then
+                pure (mkStmtExprMd (StmtExpr.New (mkId laurelName)))
+              else pure rhs_trans
+            | none => pure rhs_trans
+          let assignStmt := mkStmtExprMdWithLoc (StmtExpr.Assign [fieldAccess] rhs') md
           return (ctx, [assignStmt])
         else
           let targetExpr ← translateExpr ctx lhs  -- This will handle self.field via translateExpr
