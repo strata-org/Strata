@@ -61,8 +61,10 @@ private def classifyPrecondition (funcName : String) : Option String :=
 /--
 Given a Factory and an expression, collect all partial function call
 precondition obligations and return them as `assert` statements.
-The metadata from the original statement is attached to the generated assertions,
-with property type classification added when applicable.
+The metadata from the original statement is attached to the generated assertions
+(with `propertySummary` stripped, since user-facing messages like Python assert
+messages should not propagate to generated precondition checks), and property
+type classification is added when applicable.
 -/
 def collectPrecondAsserts (F : @Lambda.Factory CoreLParams) (e : Expression.Expr)
 (labelPrefix : String) (md : Imperative.MetaData Expression)
