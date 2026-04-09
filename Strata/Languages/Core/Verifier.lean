@@ -336,13 +336,18 @@ def hasSMTError (o : VCOutcome) : Bool :=
   | .err _, _ | _, .err _ => true
   | _,      _             => false
 
--- Derived predicates (cross-cutting properties)
+-- Derived predicates (cross-cutting, mode-agnostic building blocks)
 
+/-- The assertion's validity is proven (validity = unsat). True for `passAndReachable`,
+    `unreachable`, and `passReachabilityUnknown`. Note: this does NOT distinguish
+    reachable passes from unreachable (dead-code) passes. -/
 def isPass (o : VCOutcome) : Bool :=
   match o.validityProperty with
   | .unsat => true
   | _ => false
 
+/-- The assertion can be true (satisfiability = sat). True for `passAndReachable`,
+    `canBeTrueOrFalseAndIsReachable`, and `satisfiableValidityUnknown`. -/
 def isSatisfiable (o : VCOutcome) : Bool :=
   match o.satisfiabilityProperty with
   | .sat _ => true
@@ -356,6 +361,20 @@ def isAlwaysTrue (o : VCOutcome) : Bool :=
 
 def isReachable (o : VCOutcome) : Bool :=
   o.passAndReachable || o.alwaysFalseAndReachable || o.canBeTrueOrFalseAndIsReachable
+
+-- Mode-specific success/failure predicates
+
+/-- Success in bug-finding mode: the assertion is satisfiable (can be true on some
+    reachable path), or provably always true with unknown reachability. Does NOT
+    include unreachable paths — dead code in agent-generated code is worth flagging
+    as a potential issue. -/
+def bugFindingSuccess (o : VCOutcome) : Bool :=
+  o.isSatisfiable || o.passReachabilityUnknown
+
+/-- Failure in bug-finding mode: the assertion is always false (a definite bug),
+    or the path is unreachable (dead code). -/
+def bugFindingFailure (o : VCOutcome) : Bool :=
+  o.alwaysFalseAndReachable || o.alwaysFalseReachabilityUnknown || o.unreachable
 
 -- Backward compatibility aliases (old names with "is" prefix)
 def isPassAndReachable := passAndReachable
@@ -554,11 +573,16 @@ def VCResult.formatOutcome (r : VCResult) : String :=
        {o.label prop r.checkLevel r.checkMode}"
   | .error e => s!"🚨 {e}"
 
+/-- Deductive-mode success: the assertion's validity is proven (`isPass`).
+    Includes unreachable paths (vacuously true). For bug-finding mode,
+    use `isBugFindingSuccess` instead. -/
 def VCResult.isSuccess (vr : VCResult) : Bool :=
   match vr.outcome with
   | .ok o => o.isPass
   | .error _ => false
 
+/-- Deductive-mode failure: the assertion can be false on some reachable path.
+    For bug-finding mode, use `isBugFindingFailure` instead. -/
 def VCResult.isFailure (vr : VCResult) : Bool :=
   match vr.outcome with
   | .ok o => o.alwaysFalseAndReachable || o.alwaysFalseReachabilityUnknown || o.canBeTrueOrFalseAndIsReachable || o.canBeFalseAndIsReachable
@@ -580,6 +604,16 @@ def VCResult.isNotSuccess (vcResult : Core.VCResult) :=
 def VCResult.isUnreachable (vr : VCResult) : Bool :=
   match vr.outcome with
   | .ok o => o.unreachable
+  | .error _ => false
+
+def VCResult.isBugFindingSuccess (vr : VCResult) : Bool :=
+  match vr.outcome with
+  | .ok o => o.bugFindingSuccess
+  | .error _ => false
+
+def VCResult.isBugFindingFailure (vr : VCResult) : Bool :=
+  match vr.outcome with
+  | .ok o => o.bugFindingFailure
   | .error _ => false
 
 /-- True when either SMT property inside a successful outcome is `.err`.
