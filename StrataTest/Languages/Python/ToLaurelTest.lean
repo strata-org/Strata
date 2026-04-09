@@ -5,6 +5,7 @@
 -/
 
 import Strata.Languages.Python.Specs.ToLaurel
+import Strata.Languages.Laurel.LaurelFormat
 
 namespace Strata.Python.Specs.ToLaurel.Tests
 
@@ -439,5 +440,46 @@ info: errors: 1
 -- externTypeDecl produces no errors (regression test).
 #guard_msgs in
 #eval runFullTest #[.externTypeDecl "Foo" (PythonIdent.mk "pkg" "Foo")]
+
+/-! ## Nested dict access in preconditions (issue #800) -/
+
+private def containsSubstr (haystack needle : String) : Bool :=
+  (haystack.splitOn needle).length > 1
+
+-- Regression test for issue #800: nested dict access `kwargs["Outer"]["Inner"]`
+-- should generate `Any_get` (dict lookup), not `FieldSelect`.
+/--
+info: body contains Any_get: true
+body contains FieldSelect: false
+-/
+#guard_msgs in
+#eval do
+  let strTy := identType .builtinsStr
+  let dictTy := identType .typingDict
+  let result := signaturesToLaurel "<test>" #[
+    .functionDecl {
+      loc := loc, nameLoc := loc, name := "f"
+      args := { args := #[mkArg "x" strTy],
+                kwonly := #[], kwargs := some ("kwargs", dictTy) }
+      returnType := strTy
+      isOverload := false
+      preconditions := #[{
+        message := #[.str "nested dict"]
+        formula := .intGe
+          (.getIndex (.getIndex (.var "kwargs") "Outer") "Inner")
+          (.intLit 0)
+      }]
+      postconditions := #[]
+    }
+  ] ""
+  match result.program.staticProcedures with
+  | proc :: _ =>
+    let bodyStr := match proc.body with
+      | .Transparent body => toString (Strata.Laurel.formatStmtExpr body)
+      | .Opaque _ (some body) _ => toString (Strata.Laurel.formatStmtExpr body)
+      | _ => ""
+    IO.println s!"body contains Any_get: {containsSubstr bodyStr "Any_get"}"
+    IO.println s!"body contains FieldSelect: {containsSubstr bodyStr "#"}"
+  | [] => IO.println "no procedures"
 
 end Strata.Python.Specs.ToLaurel.Tests
