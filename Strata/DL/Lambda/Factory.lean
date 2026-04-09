@@ -413,6 +413,17 @@ theorem callOfLFunc_eq_some {GenericTy} {F : Factory T}
   cases hcall
   grind
 
+theorem callOfLFunc_getLFuncCall {GenericTy} {F : Factory T}
+    {e callee : LExpr ⟨T, GenericTy⟩} {args : List (LExpr ⟨T, GenericTy⟩)} {fn : LFunc T}
+    (hcall : Factory.callOfLFunc F e = some (callee, args, fn))
+    : getLFuncCall e = (callee, args) := by
+  simp [Factory.callOfLFunc] at hcall
+  split at hcall <;> simp_all
+  split at hcall <;> try contradiction
+  split at hcall <;> try contradiction
+  cases hcall
+  exact Prod.ext ‹_› rfl
+
 theorem callOfLFunc_fvar {GenericTy} {F : Factory T}
     {m} {y} {ty : Option GenericTy}
     : Factory.callOfLFunc F (.fvar m y ty) = none := by

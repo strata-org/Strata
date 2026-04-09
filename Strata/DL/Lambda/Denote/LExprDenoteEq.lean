@@ -77,26 +77,6 @@ theorem foldl_eqlCombine_init_true
     unfold LExpr.eqlCombine at this
     split at this <;> simp_all
 
-/-- If folding `eqlCombine` over pairs returns `some true`, then every
-individual `eql` call returned `some true`. -/
-theorem eqlCombine_all_true
-    {F : @Factory T}
-    {pairs : List (LExpr T.mono × LExpr T.mono)}
-    (h : pairs.foldl (fun acc (p : LExpr T.mono × LExpr T.mono) =>
-      LExpr.eqlCombine acc (LExpr.eql F p.1 p.2)) (some true) = some true)
-    : ∀ p ∈ pairs, LExpr.eql F p.1 p.2 = some true := by
-  sorry
-
-/-- If folding `eqlCombine` over pairs returns `some false`, then some
-individual `eql` call returned `some false`. -/
-theorem eqlCombine_some_false
-    {F : @Factory T}
-    {pairs : List (LExpr T.mono × LExpr T.mono)}
-    (h : pairs.foldl (fun acc (p : LExpr T.mono × LExpr T.mono) =>
-      LExpr.eqlCombine acc (LExpr.eql F p.1 p.2)) (some true) = some false)
-    : ∃ p ∈ pairs, LExpr.eql F p.1 p.2 = some false := by
-  sorry
-
 /-- If `g` preserves `.val`, then foldl over `(l.map g).zip l2` equals
 foldl over `l.zip l2` for any function that only accesses `.val`. -/
 theorem foldl_zip_map_subtype_eq

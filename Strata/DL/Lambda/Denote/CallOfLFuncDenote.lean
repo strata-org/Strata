@@ -120,6 +120,35 @@ theorem OpsConsistent_varOpen
   unfold LExpr.varOpen
   exact OpsConsistent_substK_fvar h
 
+/-- Every element of the args list returned by `getLFuncCall.go` inherits `OpsConsistent`
+from the input expression and accumulator. -/
+private theorem getLFuncCall_go_OpsConsistent
+    {F : @Factory T} {e : LExpr T.mono} {acc : List (LExpr T.mono)}
+    (hOps : OpsConsistent F e)
+    (hacc : ∀ a ∈ acc, OpsConsistent F a)
+    : ∀ a ∈ (getLFuncCall.go e acc).2, OpsConsistent F a := by
+  fun_induction getLFuncCall.go e acc with
+  | case1 m m' e' arg1 arg2 acc ih =>
+    -- e = .app m' (.app e' arg1 arg2) acc, accumulator is m
+    have hOps_arg1 := hOps.2.1.2.1
+    have hOps_arg2 := hOps.2.1.2.2
+    have hOps_acc := hOps.2.2
+    have hacc' : ∀ a ∈ [arg2, acc] ++ m, OpsConsistent F a := by
+      simp only [List.cons_append, List.mem_cons, List.mem_append]
+      intro a ha
+      rcases ha with rfl | rfl | hmem
+      · exact hOps_arg2
+      · exact hOps_acc
+      · exact hacc a (by grind)
+    exact ih hOps_arg1 hacc'
+  | case2 m m' fn fnty arg1 acc =>
+    simp only [List.cons_append, List.mem_cons, List.mem_append]
+    intro a ha
+    cases ha with
+    | inl heq => rw [heq]; exact hOps.2.2
+    | inr hmem => exact hacc a (by grind)
+  | case3 e acc => exact hacc
+
 /-- Every argument of a `callOfLFunc` call inherits `OpsConsistent`. -/
 theorem OpsConsistent_callOfLFunc_args
     {F : @Factory T} {e callee : LExpr T.mono}
@@ -127,7 +156,11 @@ theorem OpsConsistent_callOfLFunc_args
     (hOps : OpsConsistent F e)
     (hcall : Factory.callOfLFunc F e = some (callee, args, fn))
     : ∀ a ∈ args, OpsConsistent F a := by
-  sorry
+  have hgl := callOfLFunc_getLFuncCall hcall
+  have hargs : args = (getLFuncCall.go e []).2 := by
+    simp only [getLFuncCall] at hgl; rw [hgl]
+  rw [hargs]
+  exact getLFuncCall_go_OpsConsistent hOps (by simp)
 
 /-! ## `substTyVars` commutation lemmas -/
 
