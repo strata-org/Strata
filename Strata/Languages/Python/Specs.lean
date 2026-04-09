@@ -800,7 +800,7 @@ def transCondition (e : expr SourceRange) : SpecAssertionM (Option SpecExpr) := 
 /-- Run an action that may produce assertions, then wrap each new assertion's
     formula with `implies cond ...` (or `implies (not cond) ...` for else branches).
     If `cond` is `none`, assertions pass through unchanged. -/
-def assumeCondition (cond : Option SpecExpr) (loc : SourceRange) (act : SpecAssertionM Unit)
+def assumeCondition (cond : Option SpecExpr) (loc : SourceLoc) (act : SpecAssertionM Unit)
     : SpecAssertionM Unit := do
   let prevAssertions := (←get).assertions
   modify fun s => { s with assertions := #[] }

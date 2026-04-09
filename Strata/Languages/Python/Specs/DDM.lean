@@ -243,31 +243,30 @@ private def Arg.toDDM (d : Arg) : DDM.ArgDecl SourceRange :=
 
 protected def SpecExpr.toDDM (e : SpecExpr) : DDM.SpecExprDecl SourceRange :=
   match e with
-  | .placeholder loc => .placeholderExpr loc
-  | .var name loc => .varExpr loc ⟨loc, name⟩
-  | .getIndex subj field loc => .getIndexExpr loc subj.toDDM ⟨loc, field⟩
-  | .isInstanceOf subj tn loc => .isInstanceOfExpr loc subj.toDDM ⟨loc, tn⟩
-  | .len subj loc => .lenExpr loc subj.toDDM
-  | .intLit v loc => .intExpr loc (toDDMInt loc v)
-  | .intGe subj bound loc => .intGeExpr loc subj.toDDM bound.toDDM
-  | .intLe subj bound loc => .intLeExpr loc subj.toDDM bound.toDDM
-  | .floatLit v loc => .floatExpr loc ⟨loc, v⟩
-  | .floatGe subj bound loc => .floatGeExpr loc subj.toDDM bound.toDDM
-  | .floatLe subj bound loc => .floatLeExpr loc subj.toDDM bound.toDDM
-  | .enumMember subj values loc =>
-    .enumMemberExpr loc subj.toDDM
-      ⟨loc, values.map (⟨loc, ·⟩)⟩
-  | .regexMatch subj pattern loc =>
-    .regexMatchExpr loc subj.toDDM ⟨loc, pattern⟩
-  | .containsKey container key loc =>
-    .containsKeyExpr loc container.toDDM ⟨loc, key⟩
-  | .implies cond body loc =>
-    .impliesExpr loc cond.toDDM body.toDDM
-  | .not e loc => .notExpr loc e.toDDM
-  | .forallList list varName body loc =>
-    .forallListExpr loc list.toDDM ⟨loc, varName⟩ body.toDDM
-  | .forallDict dict keyVar valVar body loc =>
-    .forallDictExpr loc dict.toDDM ⟨loc, keyVar⟩ ⟨loc, valVar⟩ body.toDDM
+  | .placeholder loc => let r := loc.toSourceRange; .placeholderExpr r
+  | .var name loc => let r := loc.toSourceRange; .varExpr r ⟨r, name⟩
+  | .getIndex subj field loc => let r := loc.toSourceRange; .getIndexExpr r subj.toDDM ⟨r, field⟩
+  | .isInstanceOf subj tn loc => let r := loc.toSourceRange; .isInstanceOfExpr r subj.toDDM ⟨r, tn⟩
+  | .len subj loc => let r := loc.toSourceRange; .lenExpr r subj.toDDM
+  | .intLit v loc => let r := loc.toSourceRange; .intExpr r (toDDMInt r v)
+  | .intGe subj bound loc => let r := loc.toSourceRange; .intGeExpr r subj.toDDM bound.toDDM
+  | .intLe subj bound loc => let r := loc.toSourceRange; .intLeExpr r subj.toDDM bound.toDDM
+  | .floatLit v loc => let r := loc.toSourceRange; .floatExpr r ⟨r, v⟩
+  | .floatGe subj bound loc => let r := loc.toSourceRange; .floatGeExpr r subj.toDDM bound.toDDM
+  | .floatLe subj bound loc => let r := loc.toSourceRange; .floatLeExpr r subj.toDDM bound.toDDM
+  | .enumMember subj values loc => let r := loc.toSourceRange
+    .enumMemberExpr r subj.toDDM ⟨r, values.map (⟨r, ·⟩)⟩
+  | .regexMatch subj pattern loc => let r := loc.toSourceRange
+    .regexMatchExpr r subj.toDDM ⟨r, pattern⟩
+  | .containsKey container key loc => let r := loc.toSourceRange
+    .containsKeyExpr r container.toDDM ⟨r, key⟩
+  | .implies cond body loc => let r := loc.toSourceRange
+    .impliesExpr r cond.toDDM body.toDDM
+  | .not e loc => .notExpr loc.toSourceRange e.toDDM
+  | .forallList list varName body loc => let r := loc.toSourceRange
+    .forallListExpr r list.toDDM ⟨r, varName⟩ body.toDDM
+  | .forallDict dict keyVar valVar body loc => let r := loc.toSourceRange
+    .forallDictExpr r dict.toDDM ⟨r, keyVar⟩ ⟨r, valVar⟩ body.toDDM
 
 def specExprFormatContext : FormatContext :=
   .ofDialects DDM.PythonSpecs_map
