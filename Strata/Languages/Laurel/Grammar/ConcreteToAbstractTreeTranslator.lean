@@ -144,7 +144,6 @@ instance : Inhabited Procedure where
     inputs := []
     outputs := []
     preconditions := []
-    determinism := .deterministic none
     decreases := none
     isFunctional := false
     invokeOn := none
@@ -488,7 +487,6 @@ def parseProcedure (arg : Arg) : TransM Procedure := do
       inputs := parameters
       outputs := returnParameters
       preconditions := preconditions
-      determinism := .deterministic none
       decreases := none
       isFunctional := op.name == q`Laurel.function
       invokeOn := invokeOn

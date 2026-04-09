@@ -47,7 +47,6 @@ private def mkHoleCall (holeType : HighTypeMd) : ElimHoleM StmtExprMd := do
     inputs := inputs
     outputs := [{ name := "$result", type := holeType }]
     preconditions := []
-    determinism := .deterministic none
     decreases := none
     isFunctional := true
     body := .Opaque [] none []
