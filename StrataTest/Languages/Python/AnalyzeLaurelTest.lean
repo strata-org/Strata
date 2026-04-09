@@ -115,13 +115,10 @@ private meta def runAnalyzeAndVerify
     | some core => pure core
   -- Split prelude / user procedure names at FIRST_END_MARKER
   let (preludeNames, userProcNames) := Strata.splitProcNames coreProgram
-  -- Inline all non-main, non-prelude procedures
-  let coreProgram ← match Core.Transform.runProgram (targetProcList := .none)
-        (Core.ProcedureInlining.inlineCallCmd
-          (doInline := λ name _ => name ≠ "__main__" && !preludeNames.contains name))
-        coreProgram .emp with
-    | ⟨.error e, _⟩ => return .error s!"Inlining failed: {e}"
-    | ⟨.ok (_, inlined), _⟩ => pure inlined
+  -- Inline all non-main, non-prelude procedures as a prefix phase
+  let inlinePhases : List Core.PipelinePhase :=
+    [_root_.Core.procedureInliningPipelinePhase
+      { doInline := fun name a => name ≠ "__main__" && _root_.Core.doInlineNonRecursive name a }]
   -- Verify
   let options : Core.VerifyOptions :=
     { Core.VerifyOptions.default with
@@ -130,7 +127,8 @@ private meta def runAnalyzeAndVerify
   match ← Core.verifyProgram coreProgram options
       (moreFns := Strata.Python.ReFactory)
       (proceduresToVerify := some userProcNames)
-      (externalPhases := [Strata.frontEndPhase]) |>.toBaseIO with
+      (externalPhases := [Strata.frontEndPhase])
+      (prefixPhases := inlinePhases) |>.toBaseIO with
   | .ok results => return .ok results
   | .error msg => return .error (toString msg)
 
