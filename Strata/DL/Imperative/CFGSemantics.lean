@@ -6,7 +6,7 @@
 import Strata.DL.Imperative.BasicBlock
 import Strata.DL.Imperative.Cmd
 import Strata.DL.Imperative.CmdSemantics
-import Strata.DL.Imperative.StmtSemanticsSmallStep
+import Strata.DL.Imperative.StmtSemantics
 import Strata.DL.Util.Relations
 
 ---------------------------------------------------------------------
