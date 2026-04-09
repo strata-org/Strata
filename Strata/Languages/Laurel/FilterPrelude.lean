@@ -143,9 +143,6 @@ private def collectProcDeps (proc : Procedure) : CollectM Unit := do
   proc.preconditions.forM collectExprNames
   proc.decreases.forM collectExprNames
   proc.invokeOn.forM collectExprNames
-  match proc.determinism with
-  | .deterministic mreads => mreads.mapM collectExprNames
-  | .nondeterministic => pure ()
   collectBodyNames proc.body
 
 /-- Collect all names referenced by a type definition. -/
