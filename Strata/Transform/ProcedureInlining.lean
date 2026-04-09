@@ -281,13 +281,19 @@ def inlineCallCmd
 
 end ProcedureInlining
 
+/-- A `doInline` predicate that refuses to inline procedures involved in
+    recursion (i.e., part of a cycle in the call graph).  Falls back to
+    `true` when no call graph is available. -/
+def doInlineNonRecursive (name : String) (analyses : Transform.CachedAnalyses) : Bool :=
+  match analyses.callGraph with
+  | none => true
+  | some cg => !cg.isRecursive name
+
 /--
 Options to control the behavior of inlining procedure calls in a Core program.
-The `doInline` predicate decides, for each call site, whether to inline.
-When `none`, all calls are inlined.
 -/
 structure InlineTransformOptions where
-  doInline : Option (String → Transform.CachedAnalyses → Bool) := none
+  doInline : String → Transform.CachedAnalyses → Bool := doInlineNonRecursive
   maxIters : Option Nat := none
 
 /-- Procedure-inlining pipeline phase: the transform inlines procedure bodies
@@ -299,9 +305,8 @@ def procedureInliningPipelinePhase
     (opts : InlineTransformOptions := {})
     : PipelinePhase :=
   open Transform in
-  let doInline := opts.doInline.getD (fun _ _ => true)
   modelPreservingPipelinePhase "ProcedureInlining" fun prog =>
-    runProgramUntil (ProcedureInlining.inlineCallCmd (doInline := doInline)) prog opts.maxIters
+    runProgramUntil (ProcedureInlining.inlineCallCmd (doInline := opts.doInline)) prog opts.maxIters
 
 end Core
 

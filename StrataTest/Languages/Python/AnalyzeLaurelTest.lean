@@ -118,7 +118,7 @@ private meta def runAnalyzeAndVerify
   -- Inline all non-main, non-prelude procedures as a prefix phase
   let inlinePhases : List Core.PipelinePhase :=
     [_root_.Core.procedureInliningPipelinePhase
-      { doInline := some (fun name _ => name ≠ "__main__" && !preludeNames.contains name) }]
+      { doInline := fun name a => name ≠ "__main__" && _root_.Core.doInlineNonRecursive name a }]
   -- Verify
   let options : Core.VerifyOptions :=
     { Core.VerifyOptions.default with

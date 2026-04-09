@@ -606,7 +606,8 @@ def pyAnalyzeLaurelCommand : Command where
     let inlinePhases : List Core.PipelinePhase :=
       if isBugFinding && pyspecFiles.size > 0 then
         [Core.procedureInliningPipelinePhase
-          { doInline := some (fun name _ => name ≠ "__main__"), maxIters := some 10 }]
+          { doInline := fun name a => name ≠ "__main__" && Core.doInlineNonRecursive name a
+            maxIters := some 10 }]
       else []
     let vcResults ← profileStep profile "SMT verification" do
       match ← Core.verifyProgram coreProgram options
@@ -660,7 +661,7 @@ def pyAnalyzeToGotoCommand : Command where
       | none => filePath
     let sourceText := pySourceOpt.map (·.2)
     let newPgm ← Strata.pythonDirectToCore filePath sourcePathForMetadata
-    match Core.inlineProcedures newPgm ⟨.some (fun name _ => name ≠ "main"), none⟩ with
+    match Core.inlineProcedures newPgm { doInline := (fun name _ => name ≠ "main") } with
     | .error e => exitInternalError e
     | .ok newPgm =>
       -- Type-check the full program (registers Python types like ExceptOrNone)
@@ -1110,7 +1111,7 @@ def transformCommand : Command where
         | "inlineProcedures" =>
           let opts : Core.InlineTransformOptions :=
             if pc.procedures.isEmpty then {}
-            else { doInline := some (fun name _ => name ∈ pc.procedures) }
+            else { doInline := (fun name _ => name ∈ pc.procedures) }
           passes := passes ++ [.inlineProcedures opts]
         | "loopElim" =>
           passes := passes ++ [.loopElim]
