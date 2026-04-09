@@ -16,32 +16,40 @@ open Lean.Parser (InputContext)
 
 namespace Strata.Python
 
+/-- Run the Python → Ion → Laurel pipeline inside the given directory
+    and return the Laurel program together with the source file path. -/
+private def runPythonToLaurelPipeline (pythonCmd : System.FilePath)
+    (input : InputContext) (tmpDir : System.FilePath)
+    : IO (Laurel.Program × System.FilePath) := do
+  let pyFile := tmpDir / "test.py"
+  IO.FS.writeFile pyFile input.inputString
+  let dialectFile := tmpDir / "dialect.ion"
+  IO.FS.writeBinFile dialectFile Python.Python.toIon
+  let ionFile := tmpDir / "test.python.st.ion"
+  let child ← IO.Process.spawn {
+    cmd := pythonCmd.toString
+    args := #["-m", "strata.gen", "py_to_strata",
+              "--dialect", dialectFile.toString,
+              pyFile.toString, ionFile.toString]
+    inheritEnv := true
+    stdin := .null, stdout := .null, stderr := .piped
+  }
+  let stderr ← child.stderr.readToEnd
+  let exitCode ← child.wait
+  if exitCode ≠ 0 then
+    throw <| .userError s!"py_to_strata failed (exit code {exitCode}): {stderr}"
+  match ← pyAnalyzeLaurel ionFile.toString
+      (sourcePath := some pyFile.toString) |>.toBaseIO with
+  | .ok r => pure (r, pyFile)
+  | .error err => throw <| .userError s!"pyAnalyzeLaurel failed: {err}"
+
 /-- Run the Python → Ion → Laurel pipeline and return the Laurel program.
     The caller can inspect the Laurel IR directly or continue to Core/SMT. -/
 def processPythonToLaurel (pythonCmd : System.FilePath) (input : InputContext)
     : IO Laurel.Program := do
   IO.FS.withTempDir fun tmpDir => do
-    let pyFile := tmpDir / "test.py"
-    IO.FS.writeFile pyFile input.inputString
-    let dialectFile := tmpDir / "dialect.ion"
-    IO.FS.writeBinFile dialectFile Python.Python.toIon
-    let ionFile := tmpDir / "test.python.st.ion"
-    let child ← IO.Process.spawn {
-      cmd := pythonCmd.toString
-      args := #["-m", "strata.gen", "py_to_strata",
-                "--dialect", dialectFile.toString,
-                pyFile.toString, ionFile.toString]
-      inheritEnv := true
-      stdin := .null, stdout := .null, stderr := .piped
-    }
-    let stderr ← child.stderr.readToEnd
-    let exitCode ← child.wait
-    if exitCode ≠ 0 then
-      throw <| .userError s!"py_to_strata failed (exit code {exitCode}): {stderr}"
-    match ← pyAnalyzeLaurel ionFile.toString
-        (sourcePath := some pyFile.toString) |>.toBaseIO with
-    | .ok r => pure r
-    | .error err => throw <| .userError s!"pyAnalyzeLaurel failed: {err}"
+    let (laurel, _) ← runPythonToLaurelPipeline pythonCmd input tmpDir
+    pure laurel
 
 /-- Process a Python source file through the full verification pipeline
     (Python → Ion → Laurel → Core → verify) and return diagnostics.
@@ -51,33 +59,7 @@ def processPythonToLaurel (pythonCmd : System.FilePath) (input : InputContext)
 def processPythonFile (pythonCmd : System.FilePath) (input : InputContext)
     : IO (Array Diagnostic) := do
   IO.FS.withTempDir fun tmpDir => do
-    -- Write Python source
-    let pyFile := tmpDir / "test.py"
-    IO.FS.writeFile pyFile input.inputString
-    -- Write dialect file
-    let dialectFile := tmpDir / "dialect.ion"
-    IO.FS.writeBinFile dialectFile Python.Python.toIon
-    -- Compile to Ion
-    let ionFile := tmpDir / "test.python.st.ion"
-    let child ← IO.Process.spawn {
-      cmd := pythonCmd.toString
-      args := #["-m", "strata.gen", "py_to_strata",
-                "--dialect", dialectFile.toString,
-                pyFile.toString, ionFile.toString]
-      inheritEnv := true
-      stdin := .null, stdout := .null, stderr := .piped
-    }
-    let stderr ← child.stderr.readToEnd
-    let exitCode ← child.wait
-    if exitCode ≠ 0 then
-      throw <| .userError s!"py_to_strata failed (exit code {exitCode}): {stderr}"
-
-    -- Translate Python Ion → Laurel
-    let laurel ←
-      match ← pyAnalyzeLaurel ionFile.toString
-          (sourcePath := some pyFile.toString) |>.toBaseIO with
-      | .ok r => pure r
-      | .error err => throw <| .userError s!"pyAnalyzeLaurel failed: {err}"
+    let (laurel, pyFile) ← runPythonToLaurelPipeline pythonCmd input tmpDir
 
     -- Translate Laurel → Core (using Python-specific translateCombinedLaurel)
     let (coreOpt, translateDiags) := translateCombinedLaurel laurel

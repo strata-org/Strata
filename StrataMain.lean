@@ -551,7 +551,7 @@ private def printPyAnalyzeSummary (vcResults : Array Core.VCResult)
     match checkMode with
     | .bugFinding | .bugFindingAssumingCompleteSpec =>
       { isFailure := fun r => match r.outcome with
-          | .ok o => o.satisfiabilityProperty == .unsat
+          | .ok o => o.alwaysFalseAndReachable
           | _     => false }
     | _ => {}
   -- 1. Partition out implementation errors (broken results, not classifiable).
@@ -694,8 +694,9 @@ def pyAnalyzeLaurelCommand : Command where
     let pyspecFiles := pflags.getRepeated "pyspec"
     let coreProgram ← profileStep profile "Inline PySpec procedures" do
       if pyspecFiles.size > 0 || dispatchModules.size > 0 then
-        let pred := ⟨.some (fun name _ => name ≠ "__main__")⟩
+        let pred := ⟨.some (fun name _ => name ≠ "__main__" && !preludeNames.contains name)⟩
         let mut prog := coreProgram
+        -- 3 rounds to resolve transitive call chains of depth ≤ 3
         for _ in [:3] do
           match Core.inlineProcedures prog pred with
           | .error e => exitPyAnalyzeInternalError s!"Inlining failed: {e}"

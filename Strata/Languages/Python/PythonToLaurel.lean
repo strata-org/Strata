@@ -952,6 +952,7 @@ partial def translateCall (ctx : TranslationContext)
           if let some (ImportedSymbol.procedure _ _ true) := ctx.importedSymbols[funcName]? then
             return mkCall funcName
           else if funcName ∈ ctx.userFunctions then
+            -- userFunctions entries are always "ClassName@methodName"
             let parts := funcName.splitOn "@"
             let className := parts.head!
             let methName := (parts.drop 1).head!
@@ -1180,20 +1181,14 @@ partial def collectDeclaredNamesAndTypes (ctx : TranslationContext) (stmts : Lis
       let names := (lhs.val.toList.filter (λ e => match e with |.Name _ _ _ => true | _=> false)).map pyExprToString
       names.map (λ n => (n, ty))
     | .AnnAssign _ lhs annoTy value _ =>
+      let ty := match value.val with
+        | some value => (inferClassTypeFromLaurelExpr ctx value).getD $ pyExprToString annoTy
+        | _ => pyExprToString annoTy
       -- Skip self.field annotations (handled as field assignments, not local variables)
       match lhs with
       | .Attribute _ (.Name _ selfName _) _ _ =>
-        if selfName.val == "self" then []
-        else
-          let ty := match value.val with
-            | some value => (inferClassTypeFromLaurelExpr ctx value).getD $ pyExprToString annoTy
-            | _ => pyExprToString annoTy
-          [(pyExprToString lhs, ty)]
-      | _ =>
-        let ty := match value.val with
-          | some value => (inferClassTypeFromLaurelExpr ctx value).getD $ pyExprToString annoTy
-          | _ => pyExprToString annoTy
-        [(pyExprToString lhs, ty)]
+        if selfName.val == "self" then [] else [(pyExprToString lhs, ty)]
+      | _ => [(pyExprToString lhs, ty)]
     | .If _ _ body elsebody => body.val.toList.flatMap go ++ elsebody.val.toList.flatMap go
     | .For _ targetIter _ body _ _
     | .AsyncFor _ targetIter _ body _ _ => getForLoopVars targetIter ++ (body.val.toList.flatMap go)
