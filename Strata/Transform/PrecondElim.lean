@@ -288,6 +288,15 @@ end
 
 /-! ## Main transformation -/
 
+/-- Add a precondition-WF procedure as a leaf node in the cached call graph.
+These procedures contain only assert/assume statements and make no procedure
+calls, so they have no outgoing edges. -/
+private def addWFProcToCallGraph (name : String) : CoreTransformM Unit :=
+  modify fun σ => match σ.cachedAnalyses.callGraph with
+  | .some cg => { σ with cachedAnalyses := { σ.cachedAnalyses with
+      callGraph := .some (cg.addLeafNode name) } }
+  | .none => σ
+
 /--
 Transform an entire program:
 1. For each procedure, transform its body and if needed generate a WF procedure
@@ -316,7 +325,9 @@ where
         let procDecl := Decl.proc proc' md
         let (changed', rest') ← transformDecls rest
         match mkContractWFProc F proc md with
-        | some wfDecl => return (true, wfDecl :: procDecl :: rest')
+        | some wfDecl => do
+          addWFProcToCallGraph (wfProcName (CoreIdent.toPretty proc.header.name))
+          return (true, wfDecl :: procDecl :: rest')
         | none => return (changed || changed', procDecl :: rest')
       | .func func md => do
         let F ← getFactory
@@ -329,7 +340,9 @@ where
         let hasPreconds := !func.preconditions.isEmpty
         let (changed, rest') ← transformDecls rest
         match mkFuncWFProc F' func md with
-        | some wfDecl => return (true, wfDecl :: funcDecl :: rest')
+        | some wfDecl => do
+          addWFProcToCallGraph (wfProcName (CoreIdent.toPretty func.name))
+          return (true, wfDecl :: funcDecl :: rest')
         | none => return (changed || hasPreconds, funcDecl :: rest')
       | .recFuncBlock funcs md => do
         let F ← getFactory
@@ -342,7 +355,12 @@ where
         let funcDecl := Decl.recFuncBlock funcs' md
         let hasPreconds := funcs.any (!·.preconditions.isEmpty)
         let (changed, rest') ← transformDecls rest
-        let wfDecls := funcs.filterMap (mkFuncWFProc F' · md)
+        let wfDecls ← funcs.filterMapM fun func => do
+          match mkFuncWFProc F' func md with
+          | some wfDecl => do
+            addWFProcToCallGraph (wfProcName (CoreIdent.toPretty func.name))
+            return some wfDecl
+          | none => return none
         if !wfDecls.isEmpty then return (true, funcDecl :: wfDecls ++ rest')
         else return (changed || hasPreconds, funcDecl :: rest')
       | .type (.data block) _ => do
