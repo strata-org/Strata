@@ -9,8 +9,8 @@ test_list.py(13, 0): ✅ pass - assert_assert(152)_calls_Any_get_0
 test_list.py(13, 0): ✅ pass - assert_assert(152)_calls_Any_to_bool_1
 test_list.py(13, 0): ✅ pass - assert(152)
 test_list.py(15, 0): ✅ pass - Check Any_sets! exception
-test_list.py(17, 7): ✅ pass - Check PAdd exception
-test_list.py(17, 7): ✅ pass - Check PAdd exception
+test_list.py(17, 7): ✅ pass - assert_assert(207)_calls_Any_get_0
+test_list.py(17, 7): ✅ pass - assert_assert(207)_calls_Any_get_1
 test_list.py(17, 7): ✅ pass - Check PAdd exception
 test_list.py(17, 0): ✅ pass - assert_assert(200)_calls_Any_get_0
 test_list.py(17, 0): ✅ pass - assert_assert(200)_calls_Any_get_1
