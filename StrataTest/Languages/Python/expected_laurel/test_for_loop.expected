@@ -1,10 +1,13 @@
 unknown location: ✅ pass - assume_assume(0)_calls_PIn_0
 unknown location: ✅ pass - assume_assume(0)_calls_Any_to_bool_1
+test_for_loop.py(5, 16): ✅ pass - Check PAdd exception
 test_for_loop.py(6, 4): ✅ pass - sum of list should be 15
 test_for_loop.py(6, 4): ❓ unknown - sum of list should be 15
 unknown location: ✅ pass - assume_assume(0)_calls_PIn_0
 unknown location: ✅ pass - assume_assume(0)_calls_Any_to_bool_1
+test_for_loop.py(13, 11): ✅ pass - Check PGt exception
 test_for_loop.py(13, 8): ✅ pass - ite_cond_calls_Any_to_bool_0
+test_for_loop.py(14, 20): ✅ pass - Check PAdd exception
 test_for_loop.py(15, 4): ✅ pass - should count 3 items greater than 3
 test_for_loop.py(15, 4): ❓ unknown - should count 3 items greater than 3
 unknown location: ✅ pass - assume_assume(0)_calls_PIn_0
@@ -14,5 +17,5 @@ test_for_loop.py(25, 4): ✅ pass - should have found 30
 test_for_loop.py(25, 4): ✅ pass - should have found 30
 test_for_loop.py(25, 4): ✅ pass - should have found 30
 test_for_loop.py(25, 4): ❓ unknown - should have found 30
-DETAIL: 13 passed, 0 failed, 3 inconclusive
+DETAIL: 16 passed, 0 failed, 3 inconclusive
 RESULT: Inconclusive

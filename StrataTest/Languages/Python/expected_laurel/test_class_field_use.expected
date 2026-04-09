@@ -1,7 +1,8 @@
+test_class_field_use.py(18, 11): ❓ unknown - Check PMul exception
 unknown location: ❓ unknown - (process_buffer ensures) Return type constraint
 test_class_field_use.py(12, 4): ✅ pass - callElimAssert_requires_8
 test_class_field_use.py(14, 4): ✅ pass - Doubling of buffer did not work
 test_class_field_use.py(14, 4): ❓ unknown - Doubling of buffer did not work
 test_class_field_use.py(11, 0): ✅ pass - postcondition
-DETAIL: 3 passed, 0 failed, 2 inconclusive
+DETAIL: 3 passed, 0 failed, 3 inconclusive
 RESULT: Inconclusive

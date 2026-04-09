@@ -45,7 +45,6 @@ def parseLaurelAndLift (input : String) : IO Program := do
 /--
 info: procedure assertInBlockExpr() returns ⏎
 ()
-deterministic
 { var x: int := 0; assert x == 0; var $x_0: int := x; x := 1; var y: int := { x }; assert y == 1 }
 -/
 #guard_msgs in

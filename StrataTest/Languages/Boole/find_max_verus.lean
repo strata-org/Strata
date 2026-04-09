@@ -126,11 +126,11 @@ Obligation: assert_7_1950
 Property: assert
 Result: ✅ pass
 
-Obligation: (Origin_witnessOccurs_Requires)witnessOccurs_requires_0_1166
+Obligation: callElimAssert_witnessOccurs_requires_0_1166_4
 Property: assert
 Result: ✅ pass
 
-Obligation: (Origin_witnessOccurs_Requires)witnessOccurs_requires_1_1198
+Obligation: callElimAssert_witnessOccurs_requires_1_1198_5
 Property: assert
 Result: ✅ pass
 

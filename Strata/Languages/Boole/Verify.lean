@@ -9,6 +9,7 @@ import Strata.Languages.Core.Program
 import Strata.Languages.Core.Statement
 import Strata.Languages.Core.Verifier
 import Strata.DL.Lambda.LExpr
+import Strata.DL.Lambda.LExprWF
 import Strata.DL.Imperative.Stmt
 
 namespace Strata.Boole
@@ -236,6 +237,8 @@ private def toCoreExtensionalEq
   | .Map _ _ keyTy =>
       let keyTy' ← toCoreMonoType keyTy
       let idx : Core.Expression.Expr := .bvar () 0
+      let a := Lambda.LExpr.liftBVars 1 a
+      let b := Lambda.LExpr.liftBVars 1 b
       let lhs := mkCoreApp Core.mapSelectOp [a, idx]
       let rhs := mkCoreApp Core.mapSelectOp [b, idx]
       let trigger := lhs
