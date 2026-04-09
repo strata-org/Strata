@@ -11,10 +11,10 @@
 - Ion files for pending tests are generated into `tests/pending/` (same dir as the `.py` files)
 
 ## File counts after change
-- `tests/`: 155 `.py` files (all have `.expected` files)
-- `tests/pending/`: 227 `.py` files
+- `tests/`: 155 `test_*.py` files (all have `.expected` files)
+- `tests/pending/`: 229 `test_*.py` files
 - `expected_laurel/`: 156 `.expected` files (155 main + 1 `.user_errors.expected`)
-- Total: 382 test files (unchanged)
+- Total: 384 test files
 
 ## Pitfalls
 - One expected file (`test_user_error_metadata.user_errors.expected`) is a secondary expected file, not a primary one — don't count it as a "missing test"
