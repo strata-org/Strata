@@ -382,17 +382,25 @@ def lconstToExpr {M} [Inhabited M] (c : Lambda.LConst) :
     pure (.bv64Lit default ⟨default, w⟩)
 
 
-/-- Handle 0-ary operations -/
+/-- Handle 0-ary operations.
+    Ops with dedicated CST nodes (Re.*) are converted directly.
+    Other 0-ary builtins (e.g. Sequence.empty) lack grammar rules
+    (the DDM parser can't infer type params from zero arguments),
+    so they are registered as free variables to format as their name. -/
 def handleZeroaryOps {M} [Inhabited M] (name : String)
-    : ToCSTM M (CoreDDM.Expr M) :=
+    : ToCSTM M (CoreDDM.Expr M) := do
   match name with
   | "Re.All" => pure (.re_all default)
   | "Re.AllChar" => pure (.re_allchar default)
   | "Re.None" => pure (.re_none default)
-  -- TODO: seq_empty is not yet parseable (see Grammar.lean); handle here when added.
-  | _ => do
-    ToCSTM.logError "lopToExpr" "0-ary op not found" name
-    pure (.re_none default)
+  | _ =>
+    if name ∈ zeroAryBuiltinFunctions then
+      modify (·.addGlobalFreeVars #[name])
+      let ctx ← get
+      pure (.fvar default (ctx.allFreeVars.size - 1))
+    else
+      ToCSTM.logError "lopToExpr" "0-ary op not found" name
+      pure (.re_none default)
 
 /-- Handle unary operations -/
 def handleUnaryOps {M} [Inhabited M] (name : String) (arg : CoreDDM.Expr M)

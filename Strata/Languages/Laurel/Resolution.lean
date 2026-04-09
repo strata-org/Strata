@@ -100,6 +100,9 @@ def AstNode.getType (node: AstNode): HighTypeMd := match node with
  | .datatypeConstructor type _ => ⟨ .UserDefined type, default ⟩
  | .constant c => c.type
  | .quantifierVar _ type => type
+ | .staticProcedure proc => match proc.outputs with
+    | [singleOutput] => singleOutput.type
+    | _ => ⟨ HighType.Unknown, default ⟩
  | .unresolved =>
     -- The Python through Laurel pipeline does not resolve yet
     ⟨ .UserDefined "dummyName", default ⟩
@@ -206,6 +209,7 @@ private def targetTypeName (target : StmtExprMd) : ResolveM (Option String) := d
     | some (_, node) =>
       match node.getType.val with
       | .UserDefined typRef => pure (some typRef.text)
+      | .TArray _ => pure (some "Array")
       | _ => pure none
     | none => pure none
   | _ => pure none
@@ -267,6 +271,12 @@ def resolveHighType (ty : HighTypeMd) : ResolveM HighTypeMd := do
     let base' ← resolveHighType base
     let args' ← args.mapM resolveHighType
     pure (.Applied base' args')
+  | .TSeq et =>
+    let et' ← resolveHighType et
+    pure (.TSeq et')
+  | .TArray et =>
+    let et' ← resolveHighType et
+    pure (.TArray et')
   | .Pure base =>
     let base' ← resolveHighType base
     pure (.Pure base')
@@ -395,6 +405,11 @@ def resolveStmtExpr (exprMd : StmtExprMd) : ResolveM StmtExprMd := do
       let ty' ← resolveHighType ty
       pure (.Hole det ty')
     | none => pure (.Hole det none)
+  | .Subscript target index update =>
+    let target' ← resolveStmtExpr target
+    let index' ← resolveStmtExpr index
+    let update' ← update.attach.mapM (fun a => have := a.property; resolveStmtExpr a.val)
+    pure (.Subscript target' index' update')
   return ⟨val', md⟩
   termination_by exprMd
   decreasing_by all_goals term_by_mem
@@ -614,6 +629,10 @@ private def collectStmtExpr (map : Std.HashMap Nat AstNode) (expr : StmtExprMd)
     let map := collectStmtExpr map val
     collectStmtExpr map proof
   | .ContractOf _ fn => collectStmtExpr map fn
+  | .Subscript target index update =>
+    let map := collectStmtExpr map target
+    let map := collectStmtExpr map index
+    match update with | some v => collectStmtExpr map v | none => map
   | .New _ | .This | .Exit _ | .LiteralInt _ | .LiteralBool _ | .LiteralString _ | .LiteralDecimal _
   | .Abstract | .All | .Hole _ _ => map
 

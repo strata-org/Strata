@@ -12,6 +12,8 @@ op stringType : LaurelType => "string";
 // Core type passthrough: parsed as Ident, translated to HighType.TCore
 op coreType (name: Ident): LaurelType => "Core " name;
 op mapType (keyType: LaurelType, valueType: LaurelType): LaurelType => "Map " keyType " " valueType;
+op seqType (elemType: LaurelType): LaurelType => "Seq<" elemType ">";
+op arrayType (elemType: LaurelType): LaurelType => "Array<" elemType ">";
 op compositeType (name: Ident): LaurelType => name;
 
 category StmtExpr;
@@ -196,4 +198,12 @@ op compositeCommand(composite: Composite): Command => composite;
 op procedureCommand(procedure: Procedure): Command => procedure;
 op datatypeCommand(datatype: Datatype): Command => datatype;
 op constrainedTypeCommand(ct: ConstrainedType): Command => ct;
+
+// Sequence operations
+category Update;
+op seqUpdateValue(value: StmtExpr): Update => ":=" value;
+// index:11 excludes assign (prec 10) so `:=` in s[i := v] is parsed by Update, not assign
+op subscript(target: StmtExpr, index: StmtExpr, update: Option Update): StmtExpr
+  => target "[" index:11 update "]";
+op seqLiteral(elements: CommaSepBy StmtExpr): StmtExpr => "[" elements "]";
 

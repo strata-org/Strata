@@ -55,6 +55,8 @@ def formatHighTypeVal : HighType → Format
   | .TTypedField valueType => "Field[" ++ formatHighType valueType ++ "]"
   | .TSet elementType => "Set[" ++ formatHighType elementType ++ "]"
   | .TMap keyType valueType => "Map[" ++ formatHighType keyType ++ ", " ++ formatHighType valueType ++ "]"
+  | .TSeq elementType => "Seq<" ++ formatHighType elementType ++ ">"
+  | .TArray elementType => "Array<" ++ formatHighType elementType ++ ">"
   | .UserDefined ref => format ref
   | .Applied base args =>
       Format.text "(" ++ formatHighType base ++ " " ++
@@ -154,6 +156,11 @@ def formatStmtExprVal (s : StmtExpr) : Format :=
   | .All => "all"
   | .Hole true _ => "<?>"
   | .Hole false _ => "<??>"
+  | .Subscript target index update =>
+      formatStmtExpr target ++ "[" ++ formatStmtExpr index ++
+      (match update with
+      | some v => " := " ++ formatStmtExpr v
+      | none => "") ++ "]"
   termination_by sizeOf s
   decreasing_by all_goals term_by_mem
 end
