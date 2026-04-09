@@ -56,13 +56,18 @@ def extractSyntaxInfo (d : Dialect) : SyntaxInfo :=
   let fnEntries := d.declarations.filterMap fun
     | Decl.function fd => some (fd.name, extractStrLiterals fd.syntaxDef |>.map strip |>.filter (·.length > 0))
     | _ => none
-  -- Classify function tokens
-  -- Names to skip: already keywords from ops, or literal constructors
-  let skipNames := ["btrue", "bfalse", "forall", "forallT", "exists", "existsT",
-    "old", "if", "not",
-    "bv1Lit", "bv8Lit", "bv16Lit", "bv32Lit", "bv64Lit",  -- literal constructors, not builtins
-    "strLit", "realLit", "natToInt",                        -- literal constructors
-    "neg_expr"]                                              -- unary minus, already a symbol op
+  -- Function names with explicit classification (handled by dedicated branches below)
+  let constantFnNames := ["btrue", "bfalse"]
+  let keywordFnNames := ["forall", "forallT", "exists", "existsT", "old"]
+  -- Auto-detect literal constructors by naming convention (*Lit suffix)
+  let isLiteralCtor (name : String) : Bool := name.endsWith "Lit"
+  -- Internal functions: not user-visible operators or keywords
+  let internalFns := ["natToInt",  -- literal conversion function
+                      "if"]        -- control keyword from ops, not a function-level operator
+  -- Combined skip predicate for both classification folds
+  let shouldSkip (name : String) : Bool :=
+    constantFnNames.contains name || keywordFnNames.contains name ||
+    isLiteralCtor name || internalFns.contains name
   let init : List String × List String × List String × List String :=
     ([], [], [], [])
   let classified := fnEntries.foldl (init := init)
@@ -70,11 +75,14 @@ def extractSyntaxInfo (d : Dialect) : SyntaxInfo :=
       let (constants, fnKeywords, wordOps, builtins) := acc
       let name := entry.1
       let strs := entry.2
-      if name == "btrue" || name == "bfalse" then
+      -- Constants: functions that produce boolean literal tokens
+      if constantFnNames.contains name then
         (constants ++ strs.filter (·.all Char.isAlpha), fnKeywords, wordOps, builtins)
-      else if name == "forall" || name == "forallT" || name == "exists" || name == "existsT" || name == "old" then
+      -- Keywords: quantifiers, old, etc.
+      else if keywordFnNames.contains name then
         (constants, fnKeywords ++ strs.filter (·.all Char.isAlpha), wordOps, builtins)
-      else if skipNames.contains name then
+      -- Skip literal constructors and internal functions
+      else if isLiteralCtor name || internalFns.contains name then
         (constants, fnKeywords, wordOps, builtins)
       -- Word operators: single alpha token (div, mod, sdiv, smod)
       else if strs.length == 1 && strs.head!.all Char.isAlpha then
@@ -95,9 +103,7 @@ def extractSyntaxInfo (d : Dialect) : SyntaxInfo :=
   let symbolOps := fnEntries.foldl (init := ([] : List String)) fun acc entry =>
     let strs := entry.2
     let name := entry.1
-    if skipNames.contains name || name == "btrue" || name == "bfalse"
-       || name == "forall" || name == "forallT" || name == "exists" || name == "existsT"
-       || name == "old" then acc
+    if shouldSkip name then acc
     else if strs.length == 1 && strs.head!.all Char.isAlpha then acc  -- word ops
     else if strs.length > 0 then
       let firstStr := strs.head!
