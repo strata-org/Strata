@@ -681,27 +681,27 @@ example: steps_well test_poly_tysubst_distinct := by
 -- when argument 0 is a canonical value, even if other arguments are symbolic.
 
 private def evalIfCanonicalFuncs : Array (LFunc TestParams) :=
-  #[-- concreteEval negates the first int arg, ignoring the second.
+  #[-- concreteEval negates the first int arg and returns (-x) == y.
     -- With evalIfCanonical 0, this fires even when arg 1 is symbolic.
-    { name := "NegFirst",
+    { name := "NegEq",
       inputs := [("x", mty[int]), ("y", mty[int])],
-      output := mty[int],
+      output := mty[bool],
       attr := #[.evalIfCanonical 0],
       concreteEval := some (fun _m args => match args with
-        | [e1, _] =>
+        | [e1, e2] =>
           match LExpr.denoteInt e1 with
-          | some x => .some (.intConst () (- x))
+          | some x => .some (.eq () (.intConst () (- x)) e2)
           | none => .none
         | _ => .none) },
     -- Same function but without evalIfCanonical — concreteEval should NOT fire
     -- when the second argument is symbolic.
-    { name := "NegFirstNoAttr",
+    { name := "NegEqNoAttr",
       inputs := [("x", mty[int]), ("y", mty[int])],
-      output := mty[int],
+      output := mty[bool],
       concreteEval := some (fun _m args => match args with
-        | [e1, _] =>
+        | [e1, e2] =>
           match LExpr.denoteInt e1 with
-          | some x => .some (.intConst () (- x))
+          | some x => .some (.eq () (.intConst () (- x)) e2)
           | none => .none
         | _ => .none) }]
 
@@ -728,11 +728,11 @@ private theorem evalIfCanonicalState_wf :
   exact each_evalIfCanonicalFunc_wf lf (Factory.ofArray_mem hmem)
 
 -- Test: evalIfCanonical fires concreteEval when arg 0 is canonical but arg 1 is symbolic.
--- NegFirst(#5, x) should reduce to #-5
+-- NegEq(#5, x) should reduce to (#-5 == x) — arg 0 is negated, arg 1 passes through.
 def test_evalIfCanonical := TestCase.new
   evalIfCanonicalState
-  esM[((~NegFirst #5) x)]
-  esM[#-5]
+  esM[((~NegEq #5) x)]
+  esM[(#-5 == x)]
 
 /-- info: true -/
 #guard_msgs in
@@ -742,22 +742,22 @@ example : steps_well test_evalIfCanonical := by
   prove_steps_well test_evalIfCanonical evalIfCanonicalState_wf
 
 -- Test: without evalIfCanonical, concreteEval does NOT fire when arg 1 is symbolic.
--- NegFirstNoAttr(#5, x) should stay as NegFirstNoAttr(#5, x)
+-- NegEqNoAttr(#5, x) stays as NegEqNoAttr(#5, x)
 def test_no_evalIfCanonical := TestCase.new
   evalIfCanonicalState
-  esM[((~NegFirstNoAttr #5) x)]
-  esM[((~NegFirstNoAttr #5) x)]
+  esM[((~NegEqNoAttr #5) x)]
+  esM[((~NegEqNoAttr #5) x)]
 
 /-- info: true -/
 #guard_msgs in
 #eval check test_no_evalIfCanonical
 
 -- Test: evalIfCanonical with all args canonical also works.
--- NegFirst(#5, #10) should reduce to #-5
+-- NegEq(#5, #10) reduces to (#-5 == #10), which further simplifies to #false.
 def test_evalIfCanonical_all_canonical := TestCase.new
   evalIfCanonicalState
-  esM[((~NegFirst #5) #10)]
-  esM[#-5]
+  esM[((~NegEq #5) #10)]
+  esM[#false]
 
 /-- info: true -/
 #guard_msgs in
