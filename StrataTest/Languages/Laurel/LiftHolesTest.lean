@@ -15,7 +15,7 @@ import Strata.Languages.Laurel.Grammar.LaurelGrammar
 import Strata.Languages.Laurel.Grammar.ConcreteToAbstractTreeTranslator
 import Strata.Languages.Laurel.InferHoleTypes
 import Strata.Languages.Laurel.EliminateHoles
-import Strata.Languages.Laurel.LaurelFormat
+import Strata.Languages.Laurel.Grammar.AbstractToConcreteTreeTranslator
 
 open Strata
 open Strata.Elab (parseStrataProgramFromDialect)

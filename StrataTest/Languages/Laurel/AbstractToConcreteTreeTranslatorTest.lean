@@ -14,7 +14,7 @@ import Strata.DDM.BuiltinDialects.Init
 import Strata.Languages.Laurel.Grammar.LaurelGrammar
 import Strata.Languages.Laurel.Grammar.ConcreteToAbstractTreeTranslator
 import Strata.Languages.Laurel.Grammar.AbstractToConcreteTreeTranslator
-import Strata.Languages.Laurel.LaurelFormat
+import Strata.Languages.Laurel.Grammar.AbstractToConcreteTreeTranslator
 
 open Strata
 open Strata.Elab (parseStrataProgramFromDialect)
@@ -78,7 +78,7 @@ info: function aFunction(x: int): int
 #eval do IO.println (← roundtrip r"function aFunction(x: int): int { x };")
 
 /--
-info: composite Point { var x:int var y:int }
+info: composite Point { var x: int var y: int }
 -/
 #guard_msgs in
 #eval do IO.println (← roundtrip r"
@@ -122,7 +122,7 @@ procedure test() {
 ")
 
 /--
-info: composite Point { var x:int var y:int }
+info: composite Point { var x: int var y: int }
 
 procedure test(): int
 { var p: Point := new Point; p#x := 5; p#x };
@@ -171,10 +171,8 @@ procedure test(a: Animal): bool { a is Dog };
 
 /--
 info: procedure test()
-{
-  var x: int := 0;
-  while(x < 10)
-    invariant x >= 0 { x := x + 1 } };
+{ var x: int := 0; while(x < 10)
+  invariant x >= 0 { x := x + 1 } };
 -/
 #guard_msgs in
 #eval do IO.println (← roundtrip r"
@@ -197,7 +195,7 @@ info: constrained Positive = v: int where v > 0 witness 1
 -- Additional coverage: modifies clauses
 
 /--
-info: composite Container { var value:int }
+info: composite Container { var value: int }
 
 procedure modify(c: Container)
   ensures true
