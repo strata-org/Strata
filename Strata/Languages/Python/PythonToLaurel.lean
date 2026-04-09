@@ -1480,7 +1480,7 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
       | _ => (target, [], [])
     let slices ← slices.mapM (translateExpr ctx)
     let tempVarDecls := (tempVars.zip slices).map λ (var, slice) =>
-              mkStmtExprMd (.LocalVariable {text:= var} AnyTy slice)
+              mkStmtExprMd (.LocalVariable { text := var, md := default } AnyTy slice)
     let rhs : Python.expr SourceRange := .BinOp sr target op value
     let pyNormalAssign : Python.stmt SourceRange :=
           .Assign sr {val:= #[target], ann:= target.ann} rhs {val:= none, ann:= sr}
@@ -1650,7 +1650,7 @@ def translateFunction (ctx : TranslationContext) (sourceRange: SourceRange) (fun
 
     inputs := funcDecl.args.map (fun arg =>
         if arg.tys.length == 1 && isCompositeType ctx arg.tys[0]! then
-          { name := arg.name, type := mkHighTypeMd (.UserDefined {text:= arg.tys[0]!}) }
+          { name := arg.name, type := mkHighTypeMd (.UserDefined {text:= arg.tys[0]!, md := default}) }
         else
           { name := arg.name, type := AnyTy})
 
@@ -2058,7 +2058,7 @@ def pythonToLaurel' (info : PreludeInfo)
         | _ => none
     | _ => []
   let pyErrorTy : CompositeType := {
-    name := {text := "PythonError"}
+    name := {text := "PythonError", md := default }
     extending := []  -- No inheritance support for now
     fields := [{name:= "response", isMutable:= false, type:= AnyTy}]
     instanceProcedures := []
