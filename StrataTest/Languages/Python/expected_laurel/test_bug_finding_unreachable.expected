@@ -7,5 +7,6 @@ test_bug_finding_unreachable.py(5, 8): ✔️ always true if reached - ite_cond_
 test_bug_finding_unreachable.py(6, 12): ❌ fail (❗path unreachable) - dead code
 test_bug_finding_unreachable.py(6, 12): ❌ fail (❗path unreachable) - dead code
 unknown location: ✔️ always true if reached - (test_bug_finding_unreachable ensures) Return type constraint
-DETAIL: 6 passed, 3 failed, 0 inconclusive, 2 unreachable
+unknown location: ✔️ always true if reached - assert(0)
+DETAIL: 7 passed, 3 failed, 0 inconclusive, 2 unreachable
 RESULT: Failures found
