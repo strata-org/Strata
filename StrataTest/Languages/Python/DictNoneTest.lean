@@ -20,7 +20,10 @@ open Strata.Python (processPythonFile withPython containsSubstr)
 open Strata.Parser (stringInputContext)
 
 -- Test 1: Using a valid int should succeed.
-#guard_msgs (drop info) in
+/--
+info: diagnostics: 0
+-/
+#guard_msgs in
 #eval withPython (warnOnSkip := false) fun pythonCmd => do
   let program :=
 "def main() -> None:
@@ -28,14 +31,16 @@ open Strata.Parser (stringInputContext)
     assert x == 5
 "
   let diags ← processPythonFile pythonCmd (stringInputContext "test.py" program)
-  if diags.size ≠ 0 then
-    throw <| .userError s!"Expected 0 diagnostics, got {diags.size}: {diags.map (·.message)}"
+  IO.println s!"diagnostics: {diags.size}"
 
 private def isAssertionFailure (msg : String) : Bool :=
   containsSubstr msg "does not hold" || containsSubstr msg "could not be proved"
 
 -- Test 2: Assigning None to an int variable with a value-dependent assertion.
-#guard_msgs (drop info) in
+/--
+info: has assertion failure: true
+-/
+#guard_msgs in
 #eval withPython (warnOnSkip := false) fun pythonCmd => do
   let program :=
 "def main() -> None:
@@ -43,11 +48,13 @@ private def isAssertionFailure (msg : String) : Bool :=
     assert x == 5
 "
   let diags ← processPythonFile pythonCmd (stringInputContext "test.py" program)
-  unless diags.any (fun d => isAssertionFailure d.message) do
-    throw <| .userError s!"Expected assertion failure for None-as-int, got: {diags.map (·.message)}"
+  IO.println s!"has assertion failure: {diags.any (fun d => isAssertionFailure d.message)}"
 
 -- Test 3: x: int = None without value assertion — type assertion catches it.
-#guard_msgs (drop info) in
+/--
+info: has assertion failure: true
+-/
+#guard_msgs in
 #eval withPython (warnOnSkip := false) fun pythonCmd => do
   let program :=
 "def main() -> None:
@@ -56,8 +63,7 @@ private def isAssertionFailure (msg : String) : Bool :=
     assert y == 10
 "
   let diags ← processPythonFile pythonCmd (stringInputContext "test.py" program)
-  unless diags.any (fun d => isAssertionFailure d.message) do
-    throw <| .userError s!"Expected assertion failure for None-for-int, got: {diags.map (·.message)}"
+  IO.println s!"has assertion failure: {diags.any (fun d => isAssertionFailure d.message)}"
 
 -- Test 4: Dict unpacking with None for typed parameter.
 -- f(x: int) called via **{"x": None} detected at call site.
@@ -79,7 +85,10 @@ def main() -> None:
 
 -- Test 5: Negative list indexing on potentially empty list.
 -- xs[-1] converts to xs[len(xs) - 1]; Any_get precondition catches out-of-bounds.
-#guard_msgs (drop info) in
+/--
+info: has assertion failure: true
+-/
+#guard_msgs in
 #eval withPython (warnOnSkip := false) fun pythonCmd => do
   let program :=
 "from typing import Any
@@ -89,12 +98,14 @@ def main() -> None:
     x: Any = xs[-1]
 "
   let diags ← processPythonFile pythonCmd (stringInputContext "test.py" program)
-  unless diags.any (fun d => isAssertionFailure d.message) do
-    throw <| .userError s!"Expected assertion failure for negative indexing on empty list, got: {diags.map (·.message)}"
+  IO.println s!"has assertion failure: {diags.any (fun d => isAssertionFailure d.message)}"
 
 -- Test 6: len() on a class instance without __len__.
 -- This should be rejected as a user error.
-#guard_msgs (drop info) in
+/--
+info: has diagnostics: true
+-/
+#guard_msgs in
 #eval withPython (warnOnSkip := false) fun pythonCmd => do
   let program :=
 "class MyObj:
@@ -107,7 +118,6 @@ def main() -> None:
     n: int = len(obj)
 "
   let diags ← processPythonFile pythonCmd (stringInputContext "test.py" program)
-  if diags.size == 0 then
-    throw <| .userError s!"Expected ≥1 diagnostic for len() on Composite, got 0"
+  IO.println s!"has diagnostics: {decide (diags.size > 0)}"
 
 end Strata.Python.DictNoneTest
