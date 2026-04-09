@@ -176,28 +176,42 @@ $__i3 + 1 <= $__n0
 Label: i_eq_n
 Property: assert
 Assumptions:
+<label_ite_cond_true: (~Int.Lt i n)>: 0 < $__n0
+assume_guard: $__i3 < $__n0
+assume_invariant_0: $__i3 <= $__n0
+assume_measure_pos: $__n0 - $__i3 >= 0
+not_guard: !($__i4 < $__n0)
+invariant_0: $__i4 <= $__n0
 pre: $__n0 >= 0
-<label_ite_cond_true: (~Int.Lt i n)>: if 0 < $__n0 then 0 < $__n0 else true
-assume_guard: if 0 < $__n0 then $__i3 < $__n0 else true
-assume_invariant_0: if 0 < $__n0 then $__i3 <= $__n0 else true
-assume_measure_pos: if 0 < $__n0 then $__n0 - $__i3 >= 0 else true
-not_guard: if 0 < $__n0 then !($__i4 < $__n0) else true
-invariant_0: if 0 < $__n0 then $__i4 <= $__n0 else true
-<label_ite_cond_false: !(~Int.Lt i n)>: if if 0 < $__n0 then false else true then if 0 < $__n0 then false else true else true
 Obligation:
-if 0 < $__n0 then $__i4 else 0 == $__n0
+$__i4 == $__n0
 
 Label: post
 Property: assert
 Assumptions:
+<label_ite_cond_true: (~Int.Lt i n)>: 0 < $__n0
+assume_guard: $__i3 < $__n0
+assume_invariant_0: $__i3 <= $__n0
+assume_measure_pos: $__n0 - $__i3 >= 0
+not_guard: !($__i4 < $__n0)
+invariant_0: $__i4 <= $__n0
 pre: $__n0 >= 0
-<label_ite_cond_true: (~Int.Lt i n)>: if 0 < $__n0 then 0 < $__n0 else true
-assume_guard: if 0 < $__n0 then $__i3 < $__n0 else true
-assume_invariant_0: if 0 < $__n0 then $__i3 <= $__n0 else true
-assume_measure_pos: if 0 < $__n0 then $__n0 - $__i3 >= 0 else true
-not_guard: if 0 < $__n0 then !($__i4 < $__n0) else true
-invariant_0: if 0 < $__n0 then $__i4 <= $__n0 else true
-<label_ite_cond_false: !(~Int.Lt i n)>: if if 0 < $__n0 then false else true then if 0 < $__n0 then false else true else true
+Obligation:
+true
+
+Label: i_eq_n
+Property: assert
+Assumptions:
+<label_ite_cond_false: !(~Int.Lt i n)>: if 0 < $__n0 then false else true
+pre: $__n0 >= 0
+Obligation:
+0 == $__n0
+
+Label: post
+Property: assert
+Assumptions:
+<label_ite_cond_false: !(~Int.Lt i n)>: if 0 < $__n0 then false else true
+pre: $__n0 >= 0
 Obligation:
 true
 
@@ -220,6 +234,14 @@ Property: assert
 Result: ✅ pass
 
 Obligation: arbitrary_iter_maintain_invariant_0
+Property: assert
+Result: ✅ pass
+
+Obligation: i_eq_n
+Property: assert
+Result: ✅ pass
+
+Obligation: post
 Property: assert
 Result: ✅ pass
 

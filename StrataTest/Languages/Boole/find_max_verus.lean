@@ -80,7 +80,8 @@ spec {
 };
 #end
 
-/-- info: Obligation: entry_invariant_0_0
+/-- info:
+Obligation: entry_invariant_0_0
 Property: assert
 Result: ✅ pass
 
@@ -95,6 +96,22 @@ Result: ✅ pass
 Obligation: entry_invariant_0_3
 Property: assert
 Result: ❓ unknown
+
+Obligation: arbitrary_iter_maintain_invariant_0_0
+Property: assert
+Result: ✅ pass
+
+Obligation: arbitrary_iter_maintain_invariant_0_1
+Property: assert
+Result: ✅ pass
+
+Obligation: arbitrary_iter_maintain_invariant_0_2
+Property: assert
+Result: ✅ pass
+
+Obligation: arbitrary_iter_maintain_invariant_0_3
+Property: assert
+Result: ✅ pass
 
 Obligation: arbitrary_iter_maintain_invariant_0_0
 Property: assert

@@ -186,28 +186,42 @@ $__i5 + 1 <= $__n0 && ($__i5 + 1) * ($__i5 + 1 - 1) div 2 == $__sum4 + $__i5
 Label: sum_assert
 Property: assert
 Assumptions:
+<label_ite_cond_true: (~Int.Lt i n)>: 0 < $__n0
+assume_guard: $__i5 < $__n0
+assume_invariant_0: $__i5 <= $__n0 && $__i5 * ($__i5 - 1) div 2 == $__sum4
+assume_measure_pos: $__n0 - $__i5 >= 0
+not_guard: !($__i7 < $__n0)
+invariant_0: $__i7 <= $__n0 && $__i7 * ($__i7 - 1) div 2 == $__sum6
 pre: $__n0 >= 0
-<label_ite_cond_true: (~Int.Lt i n)>: if 0 < $__n0 then 0 < $__n0 else true
-assume_guard: if 0 < $__n0 then $__i5 < $__n0 else true
-assume_invariant_0: if 0 < $__n0 then $__i5 <= $__n0 && $__i5 * ($__i5 - 1) div 2 == $__sum4 else true
-assume_measure_pos: if 0 < $__n0 then $__n0 - $__i5 >= 0 else true
-not_guard: if 0 < $__n0 then !($__i7 < $__n0) else true
-invariant_0: if 0 < $__n0 then $__i7 <= $__n0 && $__i7 * ($__i7 - 1) div 2 == $__sum6 else true
-<label_ite_cond_false: !(~Int.Lt i n)>: if if 0 < $__n0 then false else true then if 0 < $__n0 then false else true else true
 Obligation:
-$__n0 * ($__n0 - 1) div 2 == if 0 < $__n0 then $__sum6 else 0
+$__n0 * ($__n0 - 1) div 2 == $__sum6
 
 Label: post
 Property: assert
 Assumptions:
+<label_ite_cond_true: (~Int.Lt i n)>: 0 < $__n0
+assume_guard: $__i5 < $__n0
+assume_invariant_0: $__i5 <= $__n0 && $__i5 * ($__i5 - 1) div 2 == $__sum4
+assume_measure_pos: $__n0 - $__i5 >= 0
+not_guard: !($__i7 < $__n0)
+invariant_0: $__i7 <= $__n0 && $__i7 * ($__i7 - 1) div 2 == $__sum6
 pre: $__n0 >= 0
-<label_ite_cond_true: (~Int.Lt i n)>: if 0 < $__n0 then 0 < $__n0 else true
-assume_guard: if 0 < $__n0 then $__i5 < $__n0 else true
-assume_invariant_0: if 0 < $__n0 then $__i5 <= $__n0 && $__i5 * ($__i5 - 1) div 2 == $__sum4 else true
-assume_measure_pos: if 0 < $__n0 then $__n0 - $__i5 >= 0 else true
-not_guard: if 0 < $__n0 then !($__i7 < $__n0) else true
-invariant_0: if 0 < $__n0 then $__i7 <= $__n0 && $__i7 * ($__i7 - 1) div 2 == $__sum6 else true
-<label_ite_cond_false: !(~Int.Lt i n)>: if if 0 < $__n0 then false else true then if 0 < $__n0 then false else true else true
+Obligation:
+true
+
+Label: sum_assert
+Property: assert
+Assumptions:
+<label_ite_cond_false: !(~Int.Lt i n)>: if 0 < $__n0 then false else true
+pre: $__n0 >= 0
+Obligation:
+$__n0 * ($__n0 - 1) div 2 == 0
+
+Label: post
+Property: assert
+Assumptions:
+<label_ite_cond_false: !(~Int.Lt i n)>: if 0 < $__n0 then false else true
+pre: $__n0 >= 0
 Obligation:
 true
 
@@ -230,6 +244,14 @@ Property: assert
 Result: ✅ pass
 
 Obligation: arbitrary_iter_maintain_invariant_0
+Property: assert
+Result: ✅ pass
+
+Obligation: sum_assert
+Property: assert
+Result: ✅ pass
+
+Obligation: post
 Property: assert
 Result: ✅ pass
 

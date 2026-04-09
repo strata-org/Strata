@@ -49,6 +49,10 @@ Obligation: Foo_ensures_0_251
 Property: assert
 Result: ✅ pass
 
+Obligation: Foo_ensures_0_251
+Property: assert
+Result: ✅ pass
+
 Obligation: assert_1_557
 Property: assert
 Result: ✅ pass-/
