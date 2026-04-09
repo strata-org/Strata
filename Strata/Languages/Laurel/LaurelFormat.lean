@@ -152,8 +152,10 @@ def formatStmtExprVal (s : StmtExpr) : Format :=
   | .ContractOf _ fn => "contractOf(" ++ formatStmtExpr fn ++ ")"
   | .Abstract => "abstract"
   | .All => "all"
-  | .Hole true _ => "<?>"
-  | .Hole false _ => "<??>"
+  | .Hole true none => "<?>"
+  | .Hole false none => "<??>"
+  | .Hole true (some ty) => s!"<?:{formatHighType ty}>"
+  | .Hole false (some ty) => s!"<??:{formatHighType ty}>"
   termination_by sizeOf s
   decreasing_by all_goals term_by_mem
 end

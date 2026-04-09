@@ -1301,7 +1301,7 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
         | _ => return (ctx, [expr])
     | _ => return (ctx, [expr])
 
-  | .Import _ _ | .ImportFrom _ _ _ _ |.Pass _ => return (ctx, [mkStmtExprMd .Hole])
+  | .Import _ _ | .ImportFrom _ _ _ _ |.Pass _ => return (ctx, [])
 
   -- Try/except - wrap body with exception checks and handlers
   | .Try _ body handlers _ _ => do

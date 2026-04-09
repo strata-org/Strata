@@ -380,11 +380,11 @@ procedure test() { assert <??> };
 info: function $hole_0() returns ⏎
 ($result: int)
 deterministic
-⏎
+
 procedure test() returns ⏎
 ()
 deterministic
-{ var x: int := $hole_0(); assert <??> }
+{ var x: int := $hole_0(); assert <??:bool> }
 -/
 #guard_msgs in
 #eval! parseElimAndPrint r"
