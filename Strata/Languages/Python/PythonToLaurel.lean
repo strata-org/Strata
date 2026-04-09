@@ -1869,11 +1869,7 @@ def mkDefaultInitDecl (className : String) : PythonFunctionDecl × Procedure :=
     name := "self"
     type := mkHighTypeMd (.UserDefined (mkId className))
   }
-  let inputs := [selfParam] ++ decl.args.map fun arg =>
-    if arg.tys.length == 1 && arg.tys[0]! != PyLauType.Any then
-      { name := arg.name, type := mkHighTypeMd (.UserDefined {text := arg.tys[0]!}) }
-    else
-      { name := arg.name, type := AnyTy }
+  let inputs := [selfParam]
   let proc : Procedure := {
     name := decl.name
     inputs := inputs
