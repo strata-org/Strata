@@ -2166,7 +2166,7 @@ def pythonToLaurel' (info : PreludeInfo)
   for ct in compositeTypes do
     let selfParam : Parameter := { name := "self", type := mkHighTypeMd (.UserDefined ct.name.text) }
     procedures := procedures.push
-      { name := { text := compositeToStringName ct.name.text }
+      { name := { text := compositeToStringName ct.name.text, md := .empty }
         inputs := [selfParam]
         outputs := [{ name := "result", type := mkHighTypeMd .TString }]
         preconditions := []
@@ -2174,7 +2174,7 @@ def pythonToLaurel' (info : PreludeInfo)
         body := .Opaque [] none []
         isFunctional := false }
     procedures := procedures.push
-      { name := { text := compositeToStringAnyName ct.name.text }
+      { name := { text := compositeToStringAnyName ct.name.text, md := .empty }
         inputs := [selfParam]
         outputs := [{ name := "result", type := AnyTy }]
         preconditions := []

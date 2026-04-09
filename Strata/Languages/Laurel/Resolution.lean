@@ -187,13 +187,16 @@ def defineName (iden : Identifier) (node : AstNode) (overrideResolutionName: Opt
                            currentScopeNames := s.currentScopeNames.insert resolutionName }
   return name'
 
-/-- Like `defineName`, but reports a diagnostic if the name already exists in the current scope. -/
+/-- Like `defineName`, but reports a diagnostic if the name already exists in the current scope.
+    Inserts an `.unresolved` node so subsequent references still resolve without cascading errors. -/
 def defineNameCheckDup (iden : Identifier) (node : AstNode) (overrideResolutionName: Option String := none) : ResolveM Identifier := do
   let resolutionName := overrideResolutionName.getD iden.text
   if (← get).currentScopeNames.contains resolutionName then
     let diag := iden.md.toDiagnostic s!"Duplicate definition '{resolutionName}' is already defined in this scope"
     modify fun s => { s with errors := s.errors.push diag }
-  defineName iden node overrideResolutionName
+    defineName iden .unresolved overrideResolutionName
+  else
+    defineName iden node overrideResolutionName
 
 /-- Resolve a reference: look up the name in scope and assign the definition's ID.
     Returns the identifier with its ID filled in. -/

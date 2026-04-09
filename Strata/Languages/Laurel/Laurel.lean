@@ -31,7 +31,7 @@ structure Identifier where
   /-- Unique ID assigned by the resolution pass. -/
   uniqueId : Option Nat := none
   /-- Source-level metadata (locations, annotations). -/
-  md : MetaData := .empty
+  md : MetaData
   deriving Repr
 
 -- Temporary hack because the Python through Laurel pipeline doesn't resolve
@@ -39,15 +39,15 @@ instance : BEq Identifier where
   beq a b := a.text == b.text
 
 instance : Inhabited Identifier where
- default := { text := "defaultIdentifier" }
+ default := { text := "defaultIdentifier", md := .empty }
 
 instance : ToString Identifier where
   toString id := id.text
 
 instance : Coe String Identifier where
-  coe s := { text := s }
+  coe s := { text := s, md := .empty }
 
-def mkId (name: String): Identifier := { text := name }
+def mkId (name: String): Identifier := { text := name, md := .empty }
 
 /--
 Primitive operations available in Laurel expressions.

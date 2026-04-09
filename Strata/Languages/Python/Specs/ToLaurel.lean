@@ -285,7 +285,7 @@ def specTypeToLaurelType (ty : SpecType) : ToLaurelM HighTypeMd := do
         reportError default
           s!"Generic class '{name}' with type args unsupported"
       let prefixed ← prefixName name
-      return mkTy (.UserDefined { text := prefixed })
+      return mkTy (.UserDefined { text := prefixed, md := .empty })
     | .intLiteral _ => return tyInt
     | .stringLiteral _ => return tyString
     | .typedDict _ _ _ => return tyDictStrAny
