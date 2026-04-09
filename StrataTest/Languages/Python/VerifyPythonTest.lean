@@ -17,7 +17,7 @@ Python → Laurel → Core → SMT pipeline and produces diagnostics.
 namespace Strata.Python.VerifyPythonTest
 
 open StrataTest.Util
-open Strata.Python (processPythonFile withPython containsSubstr)
+open Strata.Python (processPythonFile processPythonToLaurel withPython containsSubstr)
 open Strata.Parser (stringInputContext)
 
 -- Passing assertions produce no diagnostics.
@@ -205,5 +205,68 @@ def create_service() -> Any:
   let diags ← processPythonFile pythonCmd (stringInputContext "test.py" program)
   if diags.size ≠ 0 then
     throw <| .userError s!"Expected 0 diagnostics, got {diags.size}"
+
+-- Instance method call resolution and body preservation:
+-- Verifies that the method body is translated (not opaque) and the
+-- instance call resolves to a StaticCall (not a Hole).
+#guard_msgs in
+#eval withPython (warnOnSkip := false) fun pythonCmd => do
+  let program :=
+"class Calculator:
+    def __init__(self, label: str) -> None:
+        self.label: str = label
+
+    def add(self, x: int, y: int) -> int:
+        return x + y
+
+def main() -> None:
+    c: Calculator = Calculator(\"calc\")
+    result: int = c.add(3, 4)
+"
+  let inputCtx := stringInputContext "test.py" program
+  let laurel ← processPythonToLaurel pythonCmd inputCtx
+  let output := toString (Laurel.formatProgram laurel)
+  -- Method body must be transparent (not opaque)
+  let addProc := laurel.staticProcedures.find? (fun p => p.name.text == "Calculator@add")
+  match addProc with
+  | none => throw <| .userError "Calculator@add procedure not found in Laurel output"
+  | some proc =>
+    match proc.body with
+    | .Transparent _ => pure ()
+    | _ => throw <| .userError "Calculator@add body should be Transparent, not Opaque"
+  -- Instance method call must resolve to StaticCall, not a Hole
+  unless containsSubstr output "Calculator@add(" do
+    throw <| IO.userError s!"Expected 'Calculator@add(' in Laurel output but not found"
+
+-- self.field.method() resolution: when a class stores another object as a
+-- field and calls a method on that field, the call should resolve to a
+-- StaticCall (not a Hole).
+#guard_msgs in
+#eval withPython (warnOnSkip := false) fun pythonCmd => do
+  let program :=
+"class Inner:
+    def __init__(self, name: str) -> None:
+        self.name: str = name
+
+    def validate(self, value: str) -> None:
+        assert len(value) >= 3, \"value too short\"
+
+class Outer:
+    def __init__(self) -> None:
+        self.inner: Inner = Inner(\"world\")
+
+    def process(self) -> None:
+        self.inner.validate(\"ab\")
+
+def main() -> None:
+    o: Outer = Outer()
+    o.process()
+"
+  let inputCtx := stringInputContext "test.py" program
+  let laurel ← processPythonToLaurel pythonCmd inputCtx
+  let output := toString (Laurel.formatProgram laurel)
+  -- self.inner.validate() must resolve to Inner@validate StaticCall
+  unless containsSubstr output "Inner@validate(" do
+    throw <| IO.userError s!"Expected 'Inner@validate(' in Laurel output but not found"
 
 end Strata.Python.VerifyPythonTest

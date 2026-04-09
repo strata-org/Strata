@@ -935,10 +935,24 @@ partial def translateCall (ctx : TranslationContext)
           else funcName
         return mkCall funcName'
     | .Attribute _ val _attr _ =>
-        let _target_trans ← translateExpr ctx val
+        -- Translate the receiver. For field accesses on UserDefined
+        -- composite fields, translateExpr would throw (no Any coercion),
+        -- so build the FieldSelect directly — no coercion is needed
+        -- when the expression is used as a method receiver.
+        let target_trans ← match val with
+          | .Attribute _ obj fieldAttr _ =>
+            let objType ← inferExprType ctx obj
+            match tryLookupFieldHighType ctx objType fieldAttr.val with
+            | some (.UserDefined _) =>
+              let objExpr ← translateExpr ctx obj
+              pure <| mkStmtExprMd (StmtExpr.FieldSelect objExpr fieldAttr.val)
+            | _ => translateExpr ctx val
+          | _ => translateExpr ctx val
         if opt_firstarg.isSome then
           if let some (ImportedSymbol.procedure _ _ true) := ctx.importedSymbols[funcName]? then
             return mkCall funcName
+          else if funcName ∈ ctx.userFunctions then
+            return mkStmtExprMdWithLoc (StmtExpr.StaticCall funcName ([target_trans] ++ callArgs)) callMd
           else
             return mkStmtExprMdWithLoc (.Hole) callMd
         else return mkCall funcName
@@ -1110,7 +1124,16 @@ partial def translateAssign  (ctx : TranslationContext)
           let fieldAccess := mkStmtExprMd (StmtExpr.FieldSelect
             (mkStmtExprMd (StmtExpr.Identifier "self"))
             attr.val)
-          let assignStmt := mkStmtExprMdWithLoc (StmtExpr.Assign [fieldAccess] rhs_trans) md
+          -- When the annotation is a composite type, the RHS (which is Any)
+          -- cannot be assigned directly; use New to initialize the field.
+          let rhs' ← match annotation with
+            | some ann =>
+              let annStr := pyExprToString ann
+              if let some (.compositeType laurelName) := ctx.importedSymbols[annStr]? then
+                pure (mkStmtExprMd (StmtExpr.New (mkId laurelName)))
+              else pure rhs_trans
+            | none => pure rhs_trans
+          let assignStmt := mkStmtExprMdWithLoc (StmtExpr.Assign [fieldAccess] rhs') md
           return (ctx, [assignStmt])
         else
           let targetExpr ← translateExpr ctx lhs  -- This will handle self.field via translateExpr
@@ -1462,30 +1485,19 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
     | none => return (ctx, [mkStmtExprMdWithLoc (StmtExpr.Assert (mkStmtExprMd .Hole)) md])
 
   -- Augmented assignment: x += expr  →  x = x op expr
-  | .AugAssign sr target op value => do
-    -- For subscript targets like l[i][j], we extract the index expressions,
-    -- bind them to temp variables (to avoid double-evaluation), and
-    -- reconstruct the target using the temp var names.
-    let (target, tempVars, slices) := match target with
-      | .Subscript _ _ _ _ =>
-        match getSubscriptList target with
-        | base :: slices =>
-            let tempVars := (List.range slices.length).map λ n => s!"$augAssignTempVar_{sr.start}_{n}"
-            let tempVarExprs: List (Python.expr SourceRange) := tempVars.map
-                (fun var => .Name sr {val:= var, ann:= sr} (.Load sr))
-            let target: Python.expr SourceRange := tempVarExprs.foldl (λ s t =>
-              .Subscript sr s t (.Load sr)) base
-            (target, tempVars, slices)
-        | _ =>  (target, [], [])
-      | _ => (target, [], [])
-    let slices ← slices.mapM (translateExpr ctx)
-    let tempVarDecls := (tempVars.zip slices).map λ (var, slice) =>
-              mkStmtExprMd (.LocalVariable {text:= var} AnyTy slice)
-    let rhs : Python.expr SourceRange := .BinOp sr target op value
-    let pyNormalAssign : Python.stmt SourceRange :=
-          .Assign sr {val:= #[target], ann:= target.ann} rhs {val:= none, ann:= sr}
-    let (ctx, assignStmt) ← translateStmt ctx pyNormalAssign
-    return (ctx, tempVarDecls ++ assignStmt)
+  | .AugAssign _ target op value => do
+    let targetExpr ← translateExpr ctx target
+    let valueExpr ← translateExpr ctx value
+    let rhs := match op with
+      | .Add _      => mkStmtExprMd (StmtExpr.StaticCall "PAdd"      [targetExpr, valueExpr])
+      | .Sub _      => mkStmtExprMd (StmtExpr.StaticCall "PSub"      [targetExpr, valueExpr])
+      | .Mult _     => mkStmtExprMd (StmtExpr.StaticCall "PMul"      [targetExpr, valueExpr])
+      | .FloorDiv _ => mkStmtExprMd (StmtExpr.StaticCall "PFloorDiv" [targetExpr, valueExpr])
+      | .Mod _      => mkStmtExprMd (StmtExpr.StaticCall "PMod"      [targetExpr, valueExpr])
+      | _           => mkStmtExprMd .Hole
+    let rhs := {rhs with md:= md}
+    let assignStmt := mkStmtExprMdWithLoc (StmtExpr.Assign [targetExpr] rhs) md
+    return (ctx, (getExceptionAssertions ctx rhs) ++ [assignStmt])
 
   | _ => throw (.unsupportedConstruct "Statement type not yet supported" (toString (repr s)))
 
@@ -1683,6 +1695,7 @@ def translateFunction (ctx : TranslationContext) (sourceRange: SourceRange) (fun
       inputs := inputs
       outputs := outputs
       preconditions := typeConstraintPreconditions
+
       decreases := none
       body := Body.Opaque typeConstraintPostcondition bodyBlock []
       md := sourceRangeToMetaData ctx.filePath sourceRange
@@ -1794,7 +1807,8 @@ def translateMethod (ctx : TranslationContext) (className : String)
     -- Translate method body with class context
     -- Add method parameters to variableTypes so that hoisting (e.g. in
     -- try/except) does not re-declare them as local variables.
-    let paramTypes : List (String × String) := inputs.map (fun p => (p.name.text, PyLauType.Any))
+    let paramTypes : List (String × String) := inputs.map fun p =>
+      if p.name.text == "self" then (p.name.text, className) else (p.name.text, PyLauType.Any)
     let ctxWithClass := {ctx with currentClassName := some className,
                                   variableTypes := paramTypes}
     let newDecls := collectDeclaredNamesAndTypes ctxWithClass body.val.toList
@@ -1824,6 +1838,7 @@ def translateMethod (ctx : TranslationContext) (className : String)
       inputs := renamedInputs
       outputs := outputs
       preconditions := [mkStmtExprMd (StmtExpr.LiteralBool true)]
+
       isFunctional := false
       decreases := none
       body := .Transparent bodyBlock
@@ -1847,6 +1862,39 @@ def extractFieldsFromInit (ctx : TranslationContext) (initBody : Array (Python.s
         }]
     | _ => pure ()
   return fields
+
+/-- Check whether a Python expression is `self.field` (an attribute access on `self`). -/
+private def isSelfFieldTarget : Python.expr SourceRange → Bool
+  | .Attribute _ (.Name _ ⟨_, "self"⟩ _) _ _ => true
+  | _ => false
+
+/-- Return `true` when any statement in `stmts` (recursively) assigns to `self.field`. -/
+private partial def hasSelfFieldAssignment (stmts : List (Python.stmt SourceRange)) : Bool :=
+  stmts.any fun s => match s with
+    | .Assign _ targets _ _ => targets.val.any isSelfFieldTarget
+    | .AnnAssign _ target _ _ _ => isSelfFieldTarget target
+    | .AugAssign _ target _ _ => isSelfFieldTarget target
+    | .If _ _ body orelse =>
+        hasSelfFieldAssignment body.val.toList || hasSelfFieldAssignment orelse.val.toList
+    | .For _ _ _ body orelse _ =>
+        hasSelfFieldAssignment body.val.toList || hasSelfFieldAssignment orelse.val.toList
+    | .AsyncFor _ _ _ body orelse _ =>
+        hasSelfFieldAssignment body.val.toList || hasSelfFieldAssignment orelse.val.toList
+    | .While _ _ body orelse =>
+        hasSelfFieldAssignment body.val.toList || hasSelfFieldAssignment orelse.val.toList
+    | .Try _ body handlers orelse finalbody
+    | .TryStar _ body handlers orelse finalbody =>
+        hasSelfFieldAssignment body.val.toList ||
+        handlers.val.any (fun h => match h with
+          | .ExceptHandler _ _ _ hbody => hasSelfFieldAssignment hbody.val.toList) ||
+        hasSelfFieldAssignment orelse.val.toList ||
+        hasSelfFieldAssignment finalbody.val.toList
+    | .With _ _ body _ | .AsyncWith _ _ body _ =>
+        hasSelfFieldAssignment body.val.toList
+    | .Match _ _ cases =>
+        cases.val.any (fun c => match c with
+          | .mk_match_case _ _ _ body => hasSelfFieldAssignment body.val.toList)
+    | _ => false
 
 /-- Translate a Python class to a Laurel CompositeType -/
 def translateClass (ctx : TranslationContext) (classStmt : Python.stmt SourceRange)
@@ -1882,10 +1930,15 @@ def translateClass (ctx : TranslationContext) (classStmt : Python.stmt SourceRan
     -- Translate each method
     let mut instanceProcedures : Array Procedure := #[]
     for stmt in body do
-      if let .FunctionDef .. := stmt then
+      if let .FunctionDef _ _methodName _ methodBody .. := stmt then
         let proc ← translateMethod ctx className stmt
-        -- TODO stop replacing the body of instance proceduces with an empty one
-        instanceProcedures := instanceProcedures.push { proc with body := .Opaque [] .none [] }
+        -- Keep body opaque for methods that assign to self fields: field
+        -- assignments are not yet supported by the Core verifier and
+        -- produce spurious diagnostics.
+        if hasSelfFieldAssignment methodBody.val.toList then
+          instanceProcedures := instanceProcedures.push { proc with body := .Opaque [] .none [] }
+        else
+          instanceProcedures := instanceProcedures.push proc
 
     return ({
       name := className
@@ -2093,6 +2146,7 @@ def pythonToLaurel' (info : PreludeInfo)
         preludeTypes := info.types,
         importedSymbols := localSymbols,
         classFieldHighType := classFieldHighType,
+        userFunctions := userFunctions,
         filePath := filePath
       }
       let (composite, instanceProcedures, classFuncDecls) ← translateClass initCtx stmt
