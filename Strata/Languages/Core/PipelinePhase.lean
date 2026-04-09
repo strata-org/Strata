@@ -8,6 +8,7 @@ module
 public import Strata.Transform.CoreTransform
 public import Strata.DL.Imperative.SMTUtils
 public import Strata.DL.Imperative.EvalContext
+public import Strata.Languages.Core.Env
 
 /-! # Pipeline Phase Definitions for Model Validation
 
@@ -50,10 +51,14 @@ def obligationHasLabelPrefix (obligation : ProofObligation Expression)
     pc.any fun (label, _) => label.startsWith pfx
 
 /-- A program bundled with its function factory. Phases operate on this
-    pair so that transforms can add functions based on program content. -/
+    pair so that transforms can add functions based on program content.
+    After partial evaluation, `deferred` holds the collected proof obligations
+    and `env` holds the Env needed for SMT encoding. -/
 structure ProgramWithFactory where
   program : Program
   factory : @Lambda.Factory CoreLParams
+  deferred : Imperative.ProofObligations Expression := #[]
+  env : Option Env := none
 
 /-- A verification pipeline phase that pairs a program transformation with
     its model validation. This coupling ensures that adding a new transform

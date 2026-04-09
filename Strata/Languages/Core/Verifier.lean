@@ -693,9 +693,10 @@ def typeCheckPipelinePhase
 
 /-- Partial-evaluation pipeline phase. Partially evaluates procedure bodies,
     producing a Core program where each procedure body contains evaluated
-    statements with `assert`/`assume` and `.ite .nondet` branching. -/
-def partialEvalPipelinePhase
-    (options : VerifyOptions) : PipelinePhase :=
+    statements with `assert`/`assume` and `.ite .nondet` branching.
+    This is a pure `Program → Program` transformation; proof obligations
+    are extracted separately after all phases complete. -/
+def partialEvalPipelinePhase : PipelinePhase :=
   modelPreservingPipelinePhase "PartialEval" fun pwf => do
     let result : Except DiagnosticModel ProgramWithFactory := do
       let factory ← Core.Factory.addFactory pwf.factory
@@ -711,10 +712,7 @@ def partialEvalPipelinePhase
         throw (DiagnosticModel.fromFormat
           s!"🚨 Error during evaluation!\n{format err}\n\n\
              [DEBUG] Evaluated program: {Core.formatProgram p}\n\n")
-      if options.verbose >= .normal then do
-        dbg_trace f!"{Std.Format.line}VCs:"
-        dbg_trace f!"{formatProofObligations E.deferred}"
-      return { pwf with program := p }
+      return { pwf with program := p, deferred := E.deferred, env := some E }
     match result with
     | .ok pwf' => return (true, pwf')
     | .error dm => throw s!"❌ Partial evaluation error.\n{dm.message}"
@@ -749,7 +747,7 @@ def corePipelinePhases (procs : Option (List String) := none)
   filterPhases ++ [callElimPipelinePhase] ++ precondPhase ++ keepSetPhase ++
     [loopElimPipelinePhase,
      typeCheckPipelinePhase options moreFns,
-     partialEvalPipelinePhase options,
+     partialEvalPipelinePhase,
      deduplicationPipelinePhase]
 
 /-- The abstracted phases derived from the Core pipeline phases. -/
@@ -950,9 +948,10 @@ def verifyObligations (p : Program) (E : Env)
   return results
 
 /-- Run the Strata Core verification pipeline on a program: transform,
-type-check, partially evaluate, and discharge proof obligations via SMT.
-All program-wide transformations that occur before any analyses
-(including type inference) should be placed here. -/
+type-check, partially evaluate, deduplicate, and discharge proof obligations
+via SMT. All phases run uniformly through the pipeline. After all phases,
+the Env from PE is used for SMT encoding and the deferred obligations
+collected during PE are discharged. -/
 def verify (program : Program)
     (tempDir : System.FilePath)
     (proceduresToVerify : Option (List String) := none)
@@ -967,48 +966,37 @@ def verify (program : Program)
     (procs := proceduresToVerify) (factory := some factory)
     (options := options) (moreFns := moreFns)
   let phases := allPhases.map (·.phase)
-  -- Run structural transform phases through the pipeline runner.
-  -- TypeCheck, PartialEval, and Deduplication run inline below because
-  -- PE produces an Env needed for obligation collection.
-  let structuralPhases := allPhases.filter (fun pp =>
-    pp.phase.name != "TypeCheck" && pp.phase.name != "PartialEval" && pp.phase.name != "Deduplication")
+  -- Run all phases uniformly through the pipeline runner.
   let pwf ← profileStep profile "  Program transformations" do
     let initPwf : ProgramWithFactory := { program := program, factory := moreFns }
     let passes := fun (pwf : ProgramWithFactory) => do
       let mut current := pwf
-      for pp in structuralPhases do
+      for pp in allPhases do
         let (_changed, next) ← pp.transform current
         current := next
       return current
     match Transform.run initPwf passes with
     | .ok pwf' => .ok pwf'
     | .error e => .error (DiagnosticModel.fromFormat f!"❌ Transform Error. {e}")
+  let p := pwf.program
+  -- Use the Env from PE for SMT encoding.
+  let E := match pwf.env with
+    | some e => e
+    | none => panic! "verify: PE phase did not produce an Env"
+  if options.verbose >= .normal then do
+    dbg_trace f!"{Std.Format.line}VCs:"
+    dbg_trace f!"{formatProofObligations pwf.deferred}"
   -- Build the axiom relevance cache once (post-transform, so declarations are
   -- stable). The cache is reused across all verification environments and goals.
   let axiomCache? ← profileStep profile "  Build axiom relevance cache" do
     pure (if options.removeIrrelevantAxioms == .Off then .none
-          else .some (IrrelevantAxioms.Cache.build pwf.program))
-  -- Type-check and partial evaluation (Program → Program × Env).
-  -- Still called inline because we need the Env for obligation collection.
-  let (p, E) ← profileStep profile "  Type check and partial eval" do
-    match Core.typeCheckAndPartialEval options pwf.program moreFns with
-    | .error err =>
-      .error { err with message := s!"❌ Type checking error.\n{err.message}" }
-    | .ok pE => .ok pE
-  match E.error with
-  | some err =>
-    .error <| DiagnosticModel.fromFormat s!"🚨 Error during evaluation!\n\
-              {format err}\n\n\
-              [DEBUG] Evaluated program: {Core.formatProgram p}\n\n"
-  | _ =>
-  -- Deduplicate common subexpressions in procedure bodies (Core-to-Core pass).
-  let p := Deduplication.deduplicateProgram p
+          else .some (IrrelevantAxioms.Cache.build p))
   let counter ← IO.toEIO (fun e => DiagnosticModel.fromFormat f!"{e}") (IO.mkRef 0)
   let VCs ← profileStep profile "  VC discharge" do
     if options.checkOnly then
       pure #[]
     else
-      verifyObligations p E E.deferred options counter tempDir axiomCache? externalPhases phases
+      verifyObligations p E pwf.deferred options counter tempDir axiomCache? externalPhases phases
   .ok VCs
 
 end -- public section

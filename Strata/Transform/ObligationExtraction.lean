@@ -35,15 +35,16 @@ open Lambda Imperative
     `pathConditions` accumulates the current path conditions (from `assume`
     statements and ITE branch conditions) as we walk the statement tree.
 
-    Returns obligations in reverse order; caller reverses. -/
+    Returns (obligations, final path conditions). -/
 private partial def extractFromStatements
     (pathConditions : PathConditions Expression)
-    (ss : Statements) : Array (ProofObligation Expression) :=
+    (ss : Statements) : Array (ProofObligation Expression) × PathConditions Expression :=
   go pathConditions ss #[]
 where
   go (pc : PathConditions Expression) : Statements →
-      Array (ProofObligation Expression) → Array (ProofObligation Expression)
-  | [], acc => acc
+      Array (ProofObligation Expression) →
+      Array (ProofObligation Expression) × PathConditions Expression
+  | [], acc => (acc, pc)
   | s :: rest, acc =>
     match s with
     | .ite .nondet thenSs elseSs _md =>
@@ -51,8 +52,9 @@ where
       if !rest.isEmpty then
         panic! "ObligationExtraction: .ite .nondet must be the last statement (rest is non-empty)"
       else
-        let acc := extractFromStatements pc thenSs ++ acc
-        extractFromStatements pc elseSs ++ acc
+        let (thenObs, _) := extractFromStatements pc thenSs
+        let (elseObs, _) := extractFromStatements pc elseSs
+        (thenObs ++ elseObs ++ acc, pc)
     | _ =>
       let (acc', pc') := extractFromStatement pc s acc
       go pc' rest acc'
@@ -77,16 +79,34 @@ where
     | .ite .nondet thenSs elseSs _md =>
       -- Handled in `go` with rest-not-empty check; this case is unreachable
       -- from `go` but needed for exhaustiveness.
-      let acc := extractFromStatements pc thenSs ++ acc
-      (extractFromStatements pc elseSs ++ acc, pc)
+      let (thenObs, _) := extractFromStatements pc thenSs
+      let (elseObs, _) := extractFromStatements pc elseSs
+      (thenObs ++ elseObs ++ acc, pc)
 
-    | .ite (.det _) _ _ _ =>
-      -- PE should have converted all deterministic ITEs to nondet.
-      panic! "ObligationExtraction: unexpected .ite (.det _) after PE"
+    | .ite (.det cond) thenSs elseSs _md =>
+      -- After PE, a deterministic ITE with a literal condition means PE
+      -- already resolved the branch: the then-branch contains the live code.
+      -- Path conditions from the live branch propagate to subsequent statements.
+      -- For non-literal conditions, add the condition as a path condition.
+      if cond.isTrue || cond.isFalse then
+        -- PE resolved: then-branch is live, else-branch has rewritten dead code.
+        -- Propagate path conditions from the live branch.
+        let (thenObs, thenPc) := extractFromStatements pc thenSs
+        let (elseObs, _) := extractFromStatements pc elseSs
+        (thenObs ++ elseObs ++ acc, thenPc)
+      else
+        let negCond := Lambda.LExpr.app () Core.boolNotOp cond
+        let thenPc := pc.insert "ite_cond" cond
+        let elsePc := pc.insert "ite_cond" negCond
+        let (thenObs, _) := extractFromStatements thenPc thenSs
+        let (elseObs, _) := extractFromStatements elsePc elseSs
+        (thenObs ++ elseObs ++ acc, pc)
 
     | .block _label innerSs _md =>
-      let innerObs := extractFromStatements pc innerSs
-      (acc ++ innerObs, pc)
+      -- Process inner statements; propagate path conditions from the block
+      -- so that assumes inside blocks are visible to subsequent statements.
+      let (innerObs, innerPc) := extractFromStatements pc innerSs
+      (acc ++ innerObs, innerPc)
 
     | .cmd (.cmd (.init name ty (.det e) _md)) =>
       -- Variable definitions become equalities in the path conditions,
@@ -141,7 +161,7 @@ def extractObligations (p : Program) : ProofObligations Expression :=
   let revObs := p.decls.foldl (fun acc decl =>
     match decl with
     | .proc proc _md =>
-      let obs := extractFromStatements globalPc proc.body
+      let (obs, _) := extractFromStatements globalPc proc.body
       acc ++ obs
     | _ => acc) #[]
   revObs

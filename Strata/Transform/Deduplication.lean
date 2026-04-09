@@ -25,9 +25,9 @@ assert F(2+z)+F(2+z) == 2*F(2+z)
 This pass normalizes such programs by hoisting common subexpressions into
 `var` declarations:
 ```
-var $__t.0 := F(2+z)
-assume $__t.0 >= 5
-assert $__t.0+$__t.0 == 2*$__t.0
+var $__d.0 := F(2+z)
+assume $__d.0 >= 5
+assert $__d.0+$__d.0 == 2*$__d.0
 ```
 
 This is the second phase described in issue #749: after partial evaluation
@@ -262,7 +262,7 @@ def deduplicateBody (body : Statements) (startIdx : Nat) : Statements × Nat :=
   let targets := findDeduplicationTargets (collectExprsFromStatements body)
   -- Build var declarations in reverse, then reverse at the end
   let (revDecls, body', nextIdx) := targets.foldl (fun (decls, body, idx) dup =>
-    let freshName : CoreIdent := ⟨s!"$__t.{idx}", ()⟩
+    let freshName : CoreIdent := ⟨s!"$__d.{idx}", ()⟩
     let freshTy := getExprType? dup
     let freshVar : Expression.Expr := .fvar () freshName freshTy
     let ty : Expression.Ty := match freshTy with

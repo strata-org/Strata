@@ -74,9 +74,9 @@ program Core;
 function a () : Map int bool;
 procedure P () returns ()
 {
-  var $__t.0 : bool := a[0];
-  assume [a_zero_true_assumption]: $__t.0 == true;
-  assert [a_zero_true]: $__t.0;
+  var $__d.0 : bool := a[0];
+  assume [a_zero_true_assumption]: $__d.0 == true;
+  assert [a_zero_true]: $__d.0;
   assert [a_one_true]: a[1];
   };
 
