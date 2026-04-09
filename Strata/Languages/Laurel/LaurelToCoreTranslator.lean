@@ -26,7 +26,7 @@ import Strata.DDM.Util.DecimalRat
 import Strata.DL.Imperative.Stmt
 import Strata.DL.Imperative.MetaData
 import Strata.DL.Lambda.LExpr
-import Strata.Languages.Laurel.LaurelFormat
+import Strata.Languages.Laurel.Grammar.AbstractToConcreteTreeTranslator
 import Strata.Languages.Laurel.ConstrainedTypeElim
 import Strata.Util.Tactics
 
