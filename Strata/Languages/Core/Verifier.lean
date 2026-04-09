@@ -104,10 +104,8 @@ def encodeCore (ctx : Core.SMT.Context) (prelude : SolverM Unit)
       Solver.assert (← encodeTerm False (Factory.not obligationTerm) |>.run estate).1
       let _ ← Solver.checkSat ids
 
-  -- Emit the "message" metadata field at the very end (once per obligation).
-  let rawMsg := match md.findElem Imperative.MetaData.message with
-    | some elem => toString (Std.format elem.value)
-    | none => label
+  -- Emit the property summary (or label) as the final message in the SMT-LIB output.
+  let rawMsg := md.getPropertySummary.getD label
   let escaped := rawMsg.replace "\\" "\\\\" |>.replace "\"" "\\\""
   Solver.setInfo "final-message" s!"\"{escaped}\""
 
