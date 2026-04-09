@@ -1900,7 +1900,7 @@ def translateClass (ctx : TranslationContext) (classStmt : Python.stmt SourceRan
       if hasInit then (classFunDecls, none)
       else
         let (decl, proc) := mkDefaultInitDecl className
-        (classFunDecls ++ [decl], some proc)
+        (decl :: classFunDecls, some proc)
 
     let ctx := {ctx with functionSignatures:= ctx.functionSignatures ++ classFunDecls}
     -- Extract fields from class-level annotations and __init__ body, with dedup
