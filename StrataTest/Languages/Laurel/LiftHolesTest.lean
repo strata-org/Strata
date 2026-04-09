@@ -327,7 +327,7 @@ function test(x: int): int { <?> };
 /--
 info: procedure test() returns ⏎
 ()
-{ assert <??> }
+{ assert <??:bool> }
 -/
 #guard_msgs in
 #eval! parseElimAndPrint r"
