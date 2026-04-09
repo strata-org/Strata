@@ -595,7 +595,7 @@ def translateInvokeOnAxiom (proc : Procedure) (trigger : StmtExprMd)
   let triggerExpr ← translateExpr trigger boundVars (isPureContext := true)
   -- Wrap in ∀ from outermost (first param) to innermost (last param).
   -- The trigger is placed on the innermost quantifier.
-  let quantified := buildQuants proc.inputs bodyExpr triggerExpr
+  let quantified ← buildQuants proc.inputs bodyExpr triggerExpr
   return some (.ax { name := s!"invokeOn_{proc.name.text}", e := quantified } proc.name.md)
 where
   /-- Build `∀ p1 ... pn :: { trigger } body`. The trigger is on the innermost quantifier. -/

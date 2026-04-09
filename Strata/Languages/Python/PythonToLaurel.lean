@@ -1869,14 +1869,13 @@ def mkDefaultInitDecl (className : String) : PythonFunctionDecl × Procedure :=
   }
   let inputs := [selfParam]
   let proc : Procedure := {
-    name := decl.name
+    name := { text := decl.name, md := defaultMetadata }
     inputs := inputs
     outputs := [{name := "LaurelResult", type := AnyTy}]
     preconditions := [mkStmtExprMd (StmtExpr.LiteralBool true)]
     isFunctional := false
     decreases := none
     body := .Opaque [] .none []
-    md := defaultMetadata
   }
   (decl, proc)
 
