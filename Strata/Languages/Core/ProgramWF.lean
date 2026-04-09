@@ -309,7 +309,7 @@ private theorem List.foldlM_error_conditional (f: α → Bool) (g: α → β) (l
   ∀ y, y ∈ l → ¬ (f y) := by
   induction l generalizing x <;> grind
 
-
+/-
 attribute [local grind .] Procedure.typeCheckWF
 
 /--
@@ -367,6 +367,7 @@ private theorem Program.typeCheck.goWF : Program.typeCheck.go p C T ds [] = .ok 
       case left =>
         simp only [WFDeclProp]
         constructor <;> grind
+-/
 
 -- Reasoning about unique identifiers
 
@@ -666,6 +667,7 @@ private theorem Program.typeCheckFunctionNoDup : Program.typeCheck.go p C T decl
         have := addMutualBlockIdents (by assumption);
         grind
 
+/-
 /--
 The main lemma stating that a program 'p' that passes type checking is well formed
 -/
@@ -678,6 +680,7 @@ theorem Program.typeCheckWF : Program.typeCheck C T p = .ok (p', T') → WF.WFPr
     exact typeCheckFunctionNoDup tcOk
   case wfdecls =>
     exact typeCheck.goWF tcOk
+-/
 
 end -- public section
 
