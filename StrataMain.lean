@@ -430,8 +430,6 @@ def pyAnalyzeCommand : Command where
     let newPgm ← Strata.pythonDirectToCore filePath sourcePathForMetadata
     if verbose then
       IO.print newPgm
-    let inlinePhases : List Core.PipelinePhase :=
-      [Core.procedureInliningPipelinePhase { doInline := some (fun name _ => name ≠ "main") }]
     let solverName : String := "Strata/Languages/Python/z3_parallel.py"
     let verboseMode := VerboseMode.ofBool verbose
     let vcDir : Option System.FilePath := pflags.getString "vc-directory" |>.map (⟨·⟩)
@@ -443,6 +441,10 @@ def pyAnalyzeCommand : Command where
               solver := solverName,
               uniqueBoundNames := uniqueBoundNames,
               vcDirectory := vcDir }
+    let inlinePhases : List Core.PipelinePhase :=
+      if options.checkMode == .bugFinding || options.checkMode == .bugFindingAssumingCompleteSpec then
+        [Core.procedureInliningPipelinePhase { doInline := some (fun name _ => name ≠ "main") }]
+      else []
     let vcResults ←
       match ← Core.verifyProgram newPgm options
                 (moreFns := Strata.Python.ReFactory)
@@ -687,15 +689,6 @@ def pyAnalyzeLaurelCommand : Command where
       let path := s!"{dir}/{baseName}.core"
       IO.FS.writeFile path (toString coreProgram)
 
-    -- Inline pyspec procedures so their precondition assertions are checked
-    -- at call sites with concrete arguments.
-    let pyspecFiles := pflags.getRepeated "pyspec"
-    let inlinePhases : List Core.PipelinePhase :=
-      if pyspecFiles.size > 0 then
-        [_root_.Core.procedureInliningPipelinePhase
-          { doInline := some (fun name _ => name ≠ "__main__" && !preludeNames.contains name) }]
-      else []
-
     -- Verify using Core verifier
     -- --keep-all-files implies vc-directory if not explicitly set
     let baseVcDir := keepDir.map (fun dir => (s!"{dir}/{baseName}" : System.FilePath))
@@ -704,6 +697,16 @@ def pyAnalyzeLaurelCommand : Command where
         verbose := .quiet, removeIrrelevantAxioms := .Precise,
         vcDirectory := baseVcDir }
     let options ← parseVerifyOptions pflags pyAnalyzeBase
+    -- Inline pyspec procedures so their precondition assertions are checked
+    -- at call sites with concrete arguments.
+    let pyspecFiles := pflags.getRepeated "pyspec"
+    let isBugFinding := options.checkMode == .bugFinding
+                      || options.checkMode == .bugFindingAssumingCompleteSpec
+    let inlinePhases : List Core.PipelinePhase :=
+      if isBugFinding && pyspecFiles.size > 0 then
+        [Core.procedureInliningPipelinePhase
+          { doInline := some (fun name _ => name ≠ "__main__"), maxIters := some 10 }]
+      else []
     let vcResults ← profileStep profile "SMT verification" do
       match ← Core.verifyProgram coreProgram options
                 (moreFns := Strata.Python.ReFactory)
