@@ -6,7 +6,7 @@
 module
 
 public import Strata.DL.Imperative.Stmt
-public import Strata.DL.Imperative.StmtSemanticsSmallStep
+public import Strata.DL.Imperative.StmtSemantics
 public import Strata.DL.Imperative.KleeneStmt
 public import Strata.DL.Imperative.KleeneStmtSemantics
 public import Strata.Transform.DetToKleene
@@ -14,7 +14,7 @@ public import Strata.Transform.Specification
 import all Strata.Transform.Specification
 import all Strata.Transform.DetToKleene
 import all Strata.DL.Imperative.Stmt
-import all Strata.DL.Imperative.StmtSemanticsSmallStep
+import all Strata.DL.Imperative.StmtSemantics
 import all Strata.DL.Imperative.CmdSemantics
 import all Strata.DL.Util.Relations
 

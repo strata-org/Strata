@@ -5,7 +5,7 @@
 -/
 module
 
-public import Strata.DL.Imperative.StmtSemanticsSmallStep
+public import Strata.DL.Imperative.StmtSemantics
 import all Strata.DL.Imperative.CmdSemantics
 import Strata.DL.Util.ListUtils
 
