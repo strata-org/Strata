@@ -26,7 +26,7 @@ import Strata.DDM.Util.DecimalRat
 import Strata.DL.Imperative.Stmt
 import Strata.DL.Imperative.MetaData
 import Strata.DL.Lambda.LExpr
-import Strata.Languages.Laurel.LaurelFormat
+import Strata.Languages.Laurel.Grammar.AbstractToConcreteTreeTranslator
 import Strata.Languages.Laurel.ConstrainedTypeElim
 import Strata.Util.Tactics
 
@@ -542,10 +542,10 @@ def translateProcedure (proc : Procedure) : TranslateM Core.Procedure := do
   -- Translate preconditions
   let preconditions ← translateChecks proc.preconditions "requires"
 
-  -- Translate postconditions for Opaque bodies
+  -- Translate postconditions for Opaque and Abstract bodies
   let postconditions : ListMap Core.CoreLabel Core.Procedure.Check ←
     match proc.body with
-    | .Opaque postconds _ _ =>
+    | .Opaque postconds _ _ | .Abstract postconds =>
         translateChecks postconds "postcondition"
     | _ => pure []
   let modifies : List Core.Expression.Ident := []
@@ -553,7 +553,12 @@ def translateProcedure (proc : Procedure) : TranslateM Core.Procedure := do
     match proc.body with
     | .Transparent bodyExpr => translateStmt proc.outputs bodyExpr
     | .Opaque _postconds (some impl) _ => translateStmt proc.outputs impl
-    | _ => pure [Core.Statement.assume "no_body" (.const () (.boolConst false)) mdWithUnknownLoc]
+    | _ =>
+      -- Bodiless procedure: assume postconditions so that verification of the
+      -- procedure itself passes trivially, and inlining only introduces the
+      -- postconditions as assumptions (not the unsound `assume false`).
+      pure (postconditions.map fun (label, check) =>
+        Core.Statement.assume label check.expr mdWithUnknownLoc)
   -- Wrap body in a labeled block so early returns (exit) work correctly.
   let body : List Core.Statement := [.block "$body" bodyStmts mdWithUnknownLoc]
   let spec : Core.Procedure.Spec := { modifies, preconditions, postconditions }
@@ -563,7 +568,7 @@ def translateInvokeOnAxiom (proc : Procedure) (trigger : StmtExprMd)
     : TranslateM (Option Core.Decl) := do
   let model := (← get).model
   let postconds := match proc.body with
-    | .Opaque postconds _ _ => postconds
+    | .Opaque postconds _ _ | .Abstract postconds => postconds
     | _ => []
   if postconds.isEmpty then return none
   -- All input param names become bound variables.
@@ -834,17 +839,19 @@ def verifyToVcResults (program : Program)
 def verifyToDiagnostics (files: Map Strata.Uri Lean.FileMap) (program : Program)
     (options : VerifyOptions := .default): IO (Array Diagnostic) := do
   let results <- verifyToVcResults program options
+  let phases := Core.coreAbstractedPhases
   let translationDiags := results.snd.map (fun dm => dm.toDiagnostic files)
   let vcDiags := match results.fst with
-  | some vcResults => vcResults.toList.filterMap (fun (vcr: VCResult) => vcr.toDiagnostic files)
+  | some vcResults => vcResults.toList.filterMap (fun (vcr: VCResult) => vcr.toDiagnostic files phases)
   | none => []
   return (translationDiags ++ vcDiags).toArray
 
 def verifyToDiagnosticModels (program : Program) (options : VerifyOptions := .default) : IO (Array DiagnosticModel) := do
   let results <- verifyToVcResults program options
+  let phases := Core.coreAbstractedPhases
   let vcDiags := match results.fst with
   | none => []
-  | some vcResults => vcResults.toList.filterMap (fun (vcr: VCResult) => toDiagnosticModel vcr)
+  | some vcResults => vcResults.toList.filterMap (fun (vcr: VCResult) => toDiagnosticModel vcr phases)
   return (results.snd ++ vcDiags).toArray
 
 end -- public section
