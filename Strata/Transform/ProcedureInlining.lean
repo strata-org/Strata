@@ -281,18 +281,27 @@ def inlineCallCmd
 
 end ProcedureInlining
 
+/--
+Options to control the behavior of inlining procedure calls in a Core program.
+The `doInline` predicate decides, for each call site, whether to inline.
+When `none`, all calls are inlined.
+-/
+structure InlineTransformOptions where
+  doInline : Option (String → Transform.CachedAnalyses → Bool) := none
+  maxIters : Option Nat := none
+
 /-- Procedure-inlining pipeline phase: the transform inlines procedure bodies
     at call sites. Inlining is semantics-preserving, so models are always
     sound (model-preserving).
     - `maxIters = none`: repeat until a fixed point (no changes).
-    - `maxIters = some n`: run exactly `n` iterations. -/
+    - `maxIters = some n`: run up to `n` iterations, stopping early if no change. -/
 def procedureInliningPipelinePhase
-    (doInline : String → Transform.CachedAnalyses → Bool := fun _ _ => true)
-    (maxIters : Option Nat := none)
+    (opts : InlineTransformOptions := {})
     : PipelinePhase :=
   open Transform in
+  let doInline := opts.doInline.getD (fun _ _ => true)
   modelPreservingPipelinePhase "ProcedureInlining" fun prog =>
-    runProgramUntil (ProcedureInlining.inlineCallCmd (doInline := doInline)) prog maxIters
+    runProgramUntil (ProcedureInlining.inlineCallCmd (doInline := doInline)) prog opts.maxIters
 
 end Core
 

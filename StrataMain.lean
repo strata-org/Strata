@@ -431,7 +431,7 @@ def pyAnalyzeCommand : Command where
     if verbose then
       IO.print newPgm
     let inlinePhases : List Core.PipelinePhase :=
-      [_root_.Core.procedureInliningPipelinePhase (fun name _ => name ≠ "main")]
+      [Core.procedureInliningPipelinePhase { doInline := some (fun name _ => name ≠ "main") }]
     let solverName : String := "Strata/Languages/Python/z3_parallel.py"
     let verboseMode := VerboseMode.ofBool verbose
     let vcDir : Option System.FilePath := pflags.getString "vc-directory" |>.map (⟨·⟩)
@@ -693,7 +693,7 @@ def pyAnalyzeLaurelCommand : Command where
     let inlinePhases : List Core.PipelinePhase :=
       if pyspecFiles.size > 0 then
         [_root_.Core.procedureInliningPipelinePhase
-          (fun name _ => name ≠ "__main__" && !preludeNames.contains name)]
+          { doInline := some (fun name _ => name ≠ "__main__" && !preludeNames.contains name) }]
       else []
 
     -- Verify using Core verifier
@@ -756,7 +756,7 @@ def pyAnalyzeToGotoCommand : Command where
       | none => filePath
     let sourceText := pySourceOpt.map (·.2)
     let newPgm ← Strata.pythonDirectToCore filePath sourcePathForMetadata
-    match Core.inlineProcedures newPgm ⟨.some (fun name _ => name ≠ "main")⟩ with
+    match Core.inlineProcedures newPgm ⟨.some (fun name _ => name ≠ "main"), none⟩ with
     | .error e => exitInternalError e
     | .ok newPgm =>
       -- Type-check the full program (registers Python types like ExceptOrNone)
@@ -1204,7 +1204,7 @@ def transformCommand : Command where
       for pc in passConfigs do
         match pc.name with
         | "inlineProcedures" =>
-          let opts : Strata.Core.InlineTransformOptions :=
+          let opts : Core.InlineTransformOptions :=
             if pc.procedures.isEmpty then {}
             else { doInline := some (fun name _ => name ∈ pc.procedures) }
           passes := passes ++ [.inlineProcedures opts]

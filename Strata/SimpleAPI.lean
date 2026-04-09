@@ -10,7 +10,7 @@ public import Strata.Util.IO
 public import Strata.Transform.CoreTransform
 import Strata.Transform.CallElim
 import Strata.Transform.LoopElim
-import Strata.Transform.ProcedureInlining
+public import Strata.Transform.ProcedureInlining
 import Strata.Transform.FilterProcedures
 import Strata.Transform.IrrelevantAxioms
 
@@ -58,9 +58,9 @@ declared using `noncomputable opaque` to define the intended API surface and
 should not be invoked yet.
 -/
 
-namespace Strata
-
 public section
+
+namespace Strata
 
 open Strata.Python.Specs (ModuleName)
 
@@ -241,14 +241,6 @@ def laurelToCore (p : Laurel.Program) : Except String Core.Program :=
 
 /-! ### Transformation of Core programs -/
 
-/--
-Options to control the behavior of inlining procedure calls in a Core program.
-The `doInline` predicate decides, for each call site, whether to inline.
-When `none`, all calls are inlined.
--/
-structure Core.InlineTransformOptions where
-  doInline : Option (String → Core.Transform.CachedAnalyses → Bool) := none
-
 /-- A single named transform pass with its arguments. -/
 inductive Core.TransformPass where
   | inlineProcedures (opts : Core.InlineTransformOptions := {})
@@ -262,9 +254,7 @@ private def Core.applyPass (program : Core.Program) (pass : Core.TransformPass)
     : Core.Transform.CoreTransformM Core.Program := do
   match pass with
   | .inlineProcedures opts =>
-    let pred := opts.doInline.getD (fun _ _ => true)
-    let phase := Core.procedureInliningPipelinePhase (doInline := pred) (maxIters := some 1)
-    let (_, prog) ← phase.transform program
+    let (_, prog) ← (Core.procedureInliningPipelinePhase opts).transform program
     return prog
   | .loopElim =>
     pure (Core.loopElim program)
@@ -565,5 +555,7 @@ def pyTranslateLaurel
   match coreOption with
   | none => throw s!"Laurel to Core translation failed: {laurelTranslateErrors}"
   | some core => pure (core, laurelTranslateErrors)
+
+end Strata
 
 end -- public section
