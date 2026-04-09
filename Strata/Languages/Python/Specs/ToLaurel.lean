@@ -311,7 +311,7 @@ private def mkMdWithFileRange (loc : SourceRange) (msg : String := "")
   let fr : FileRange := { file := .file ctx.filepath.toString, range := loc }
   let mut md : Imperative.MetaData Core.Expression := #[⟨Imperative.MetaData.fileRange, .fileRange fr⟩]
   if !msg.isEmpty then
-    md := md.push ⟨Imperative.MetaData.message, .msg msg⟩
+    md := md.withPropertySummary msg
   return md
 
 /-- Wrap a StmtExpr with metadata containing a file range and optional message. -/
@@ -429,6 +429,19 @@ private def formatAssertionMessage (msg : Array MessagePart) : String :=
     | .expr e => toString e
   String.join parts.toList
 
+/-- Structured PySpec assertion messages. Rendered to string before storing
+    in metadata so that rewording is centralized. -/
+inductive SpecAssertMsg where
+  | requiredParam (param : String)
+  | userAssertion (text : String)
+  | unnamed (index : Nat)
+
+/-- Render a structured assertion message to a human-readable string. -/
+def SpecAssertMsg.render : SpecAssertMsg → String
+  | .requiredParam param => s!"'{param}' is required"
+  | .userAssertion text  => text
+  | .unnamed index       => s!"precondition {index}"
+
 /-- Build a procedure body that asserts preconditions.
     Outputs are already initialized non-deterministically. -/
 def buildSpecBody (preconditions : Array Assertion)
@@ -437,15 +450,21 @@ def buildSpecBody (preconditions : Array Assertion)
     : ToLaurelM Body := do
   let fileMd ← mkFileMd
   let mut stmts : List StmtExprMd := []
+  let mut idx := 0
   -- Assert that required parameters are provided (not None)
   for param in requiredParams do
     let cond := mkStmt (.PrimitiveOp .Not
       [mkStmt (.StaticCall (mkId "Any..isfrom_None")
         [mkStmt (.Identifier (mkId param)) md]) md]) md
-    let assertStmt ← mkStmtWithLoc (.Assert cond) default s!"Required parameter '{param}' is missing"
+    let msg := SpecAssertMsg.requiredParam param |>.render
+    let assertStmt ← mkStmtWithLoc (.Assert cond) default msg
     stmts := assertStmt :: stmts
+    idx := idx + 1
   for assertion in preconditions do
-    let msg := formatAssertionMessage assertion.message
+    let formattedMsg := formatAssertionMessage assertion.message
+    let msg := if formattedMsg.isEmpty
+      then SpecAssertMsg.unnamed idx |>.render
+      else SpecAssertMsg.userAssertion formattedMsg |>.render
     match ← specExprToLaurel assertion.formula md with
     | some condExpr =>
       let assertStmt ← mkStmtWithLoc (.Assert condExpr) default msg
@@ -454,6 +473,7 @@ def buildSpecBody (preconditions : Array Assertion)
       reportError default s!"Untranslatable precondition (emitting nondeterministic assert): {msg}"
       let assertStmt ← mkStmtWithLoc (.Assert (mkStmt .Hole md)) default msg
       stmts := assertStmt :: stmts
+    idx := idx + 1
   let body := mkStmt (.Block stmts.reverse none) fileMd
   return .Transparent body
 
