@@ -12,16 +12,17 @@ import Strata.Languages.Core.CoreGen
 import Strata.Languages.Core.ProgramWF
 public import Strata.Languages.Core.Statement
 public import Strata.Transform.CoreTransform
+public import Strata.Languages.Core.PipelinePhase
 import Strata.Util.Tactics
 
 /-! # Procedure Inlining Transformation -/
+
+public section
 
 namespace Core
 namespace ProcedureInlining
 
 open Transform
-
-public section
 
 -- Gathers all labels including those in assert and assume.
 mutual
@@ -278,10 +279,21 @@ def inlineCallCmd
 
       | _ => return .none
 
-end -- public section
-
 end ProcedureInlining
+
+/-- Procedure-inlining pipeline phase: the transform inlines procedure bodies
+    at call sites. Inlining is semantics-preserving, so models are always
+    sound (model-preserving). -/
+def procedureInliningPipelinePhase
+    (doInline : String → Transform.CachedAnalyses → Bool := fun _ _ => true)
+    : PipelinePhase :=
+  open Transform in
+  modelPreservingPipelinePhase "ProcedureInlining" fun prog =>
+    runProgram (ProcedureInlining.inlineCallCmd (doInline := doInline)) prog
+
 end Core
+
+end -- public section
 
 -- NB: workaround for the fact that Core is both a module and a dialect.
 public abbrev coreInlineCallCmd (doInline : String → Core.Transform.CachedAnalyses → Bool := fun _ _ => true) :=
