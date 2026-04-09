@@ -209,22 +209,6 @@ pre: $__n0 >= 0
 Obligation:
 true
 
-Label: sum_assert
-Property: assert
-Assumptions:
-<label_ite_cond_false: !(~Int.Lt i n)>: if 0 < $__n0 then false else true
-pre: $__n0 >= 0
-Obligation:
-$__n0 * ($__n0 - 1) div 2 == 0
-
-Label: post
-Property: assert
-Assumptions:
-<label_ite_cond_false: !(~Int.Lt i n)>: if 0 < $__n0 then false else true
-pre: $__n0 >= 0
-Obligation:
-true
-
 ---
 info:
 Obligation: entry_invariant_0
@@ -244,14 +228,6 @@ Property: assert
 Result: ✅ pass
 
 Obligation: arbitrary_iter_maintain_invariant_0
-Property: assert
-Result: ✅ pass
-
-Obligation: sum_assert
-Property: assert
-Result: ✅ pass
-
-Obligation: post
 Property: assert
 Result: ✅ pass
 

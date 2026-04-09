@@ -45,8 +45,17 @@ where
       Array (ProofObligation Expression) → Array (ProofObligation Expression)
   | [], acc => acc
   | s :: rest, acc =>
-    let (acc', pc') := extractFromStatement pc s acc
-    go pc' rest acc'
+    match s with
+    | .ite .nondet thenSs elseSs _md =>
+      -- PE ensures nondet branching is the last statement in a sequence.
+      if !rest.isEmpty then
+        panic! "ObligationExtraction: .ite .nondet must be the last statement (rest is non-empty)"
+      else
+        let acc := extractFromStatements pc thenSs ++ acc
+        extractFromStatements pc elseSs ++ acc
+    | _ =>
+      let (acc', pc') := extractFromStatement pc s acc
+      go pc' rest acc'
 
   extractFromStatement (pc : PathConditions Expression) (s : Statement)
       (acc : Array (ProofObligation Expression)) :
@@ -65,32 +74,15 @@ where
       -- Add assumption to path conditions
       (acc, pc.insert label e)
 
-    | .ite (.det cond) thenSs elseSs _md =>
-      let thenLabel := toString (f!"<label_ite_cond_true: {cond.eraseTypes}>")
-      let elseLabel := toString (f!"<label_ite_cond_false: !{cond.eraseTypes}>")
-      let pcThen := pc.push [(thenLabel, cond)]
-      let pcElse := pc.push [(elseLabel, (.ite () cond (LExpr.false ()) (LExpr.true ())))]
-      -- Check for dead branches (condition is literal true/false)
-      if cond.isTrue then
-        -- Then branch is live, else branch is dead
-        let acc := acc ++ extractFromStatements pcThen thenSs
-        let acc := collectDeadBranch pcElse elseSs acc
-        (acc, pc)
-      else if cond.isFalse then
-        -- Else branch is live, then branch is dead
-        let acc := collectDeadBranch pcThen thenSs acc
-        let acc := acc ++ extractFromStatements pcElse elseSs
-        (acc, pc)
-      else
-        -- Both branches are live
-        let acc := acc ++ extractFromStatements pcThen thenSs
-        let acc := acc ++ extractFromStatements pcElse elseSs
-        (acc, pc)
-
     | .ite .nondet thenSs elseSs _md =>
+      -- Handled in `go` with rest-not-empty check; this case is unreachable
+      -- from `go` but needed for exhaustiveness.
       let acc := extractFromStatements pc thenSs ++ acc
-      let acc := extractFromStatements pc elseSs ++ acc
-      (acc, pc)
+      (extractFromStatements pc elseSs ++ acc, pc)
+
+    | .ite (.det _) _ _ _ =>
+      -- PE should have converted all deterministic ITEs to nondet.
+      panic! "ObligationExtraction: unexpected .ite (.det _) after PE"
 
     | .block _label innerSs _md =>
       let innerObs := extractFromStatements pc innerSs

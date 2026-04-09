@@ -84,9 +84,9 @@ axiom [real_x_ge_1]: x >= 1.0;
 axiom [real_y_ge_2]: y >= 2.0;
 procedure P () returns ()
 {
-  var $__dedup_0 : real := x + y;
-  assert [real_add_ge_good]: $__dedup_0 >= 3.0;
-  assert [real_add_ge_bad]: $__dedup_0 >= 4.0;
+  var $__t.0 : real := x + y;
+  assert [real_add_ge_good]: $__t.0 >= 3.0;
+  assert [real_add_ge_bad]: $__t.0 >= 4.0;
   };
 
 ---

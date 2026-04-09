@@ -25,9 +25,9 @@ assert F(2+z)+F(2+z) == 2*F(2+z)
 This pass normalizes such programs by hoisting common subexpressions into
 `var` declarations:
 ```
-var $__dedup_0 := F(2+z)
-assume $__dedup_0 >= 5
-assert $__dedup_0+$__dedup_0 == 2*$__dedup_0
+var $__t.0 := F(2+z)
+assume $__t.0 >= 5
+assert $__t.0+$__t.0 == 2*$__t.0
 ```
 
 This is the second phase described in issue #749: after partial evaluation
@@ -262,7 +262,7 @@ def deduplicateBody (body : Statements) (startIdx : Nat) : Statements × Nat :=
   let targets := findDeduplicationTargets (collectExprsFromStatements body)
   -- Build var declarations in reverse, then reverse at the end
   let (revDecls, body', nextIdx) := targets.foldl (fun (decls, body, idx) dup =>
-    let freshName : CoreIdent := ⟨s!"$__dedup_{idx}", ()⟩
+    let freshName : CoreIdent := ⟨s!"$__t.{idx}", ()⟩
     let freshTy := getExprType? dup
     let freshVar : Expression.Expr := .fvar () freshName freshTy
     let ty : Expression.Ty := match freshTy with
@@ -291,7 +291,7 @@ end Core.Deduplication
     variable declarations. Model-preserving because it only introduces
     definitional equalities without changing program semantics. -/
 def Core.deduplicationPipelinePhase : Core.PipelinePhase :=
-  Core.modelPreservingPipelinePhase "Deduplication" fun prog => do
+  Core.modelPreservingProgramPhase "Deduplication" fun prog => do
     return (true, Core.Deduplication.deduplicateProgram prog)
 
 end -- public section

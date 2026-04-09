@@ -60,7 +60,7 @@ end FilterProcedures
     only removes procedures without changing the semantics of the
     remaining ones. -/
 def filterProceduresPipelinePhase (procs : List String) : PipelinePhase :=
-  modelPreservingPipelinePhase "FilterProcedures" fun prog => do
+  modelPreservingProgramPhase "FilterProcedures" fun prog => do
     let filtered ← FilterProcedures.run prog procs
     return (true, filtered)
 

@@ -345,6 +345,19 @@ def Env.merge (cond : Expression.Expr) (E1 E2 : Env) : Env :=
   else
     Env.performMerge cond E1 E2 (by simp_all) (by simp_all)
 
+/-- Merge two environments from nondet ITE branches. Uses a fresh boolean
+    variable as the merge condition so that variable states reflect both
+    possible branches. -/
+def Env.mergeNondet (E1 E2 : Env) : Env :=
+  if h1: E1.error.isSome then E1
+  else if h2: E2.error.isSome then E2
+  else
+    have hh1 : E1.error.isNone := by simp_all
+    have hh2 : E2.error.isNone := by simp_all
+    let freshName : CoreIdent := ⟨s!"$__nondet_merge_{E1.pathConditions.length}", ()⟩
+    let freshVar : Expression.Expr := .fvar () freshName (some (.tcons "bool" []))
+    Env.performMerge freshVar E1 E2 hh1 hh2
+
 def Env.addMutualDatatype (E: Env) (block: Lambda.MutualDatatype Unit) : Except DiagnosticModel Env := do
   let f ← Lambda.genBlockFactory (T:=CoreLParams) block
   let env ← E.addFactory f
