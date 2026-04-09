@@ -3,6 +3,13 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+
+/- NOTE: This grammar is the source of truth for Core.st syntax. If you change
+   keywords, operators, types, or built-in functions here, please keep the
+   editor syntax files in sync:
+     - editors/emacs/core-st-mode.el
+     - editors/vscode/syntaxes/core-st.tmLanguage.json
+-/
 module
 
 public import Strata.DDM.AST

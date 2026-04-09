@@ -1,0 +1,137 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "_comment": "NOTE: This file was generated from the DDM grammar definition in Strata/Languages/Core/DDMTransform/Grammar.lean. If the grammar changes, this file should be updated to match.",
+  "name": "Strata Core",
+  "scopeName": "source.core-st",
+  "patterns": [
+    { "include": "#comment" },
+    { "include": "#string" },
+    { "include": "#attribute" },
+    { "include": "#label" },
+    { "include": "#number" },
+    { "include": "#keyword" },
+    { "include": "#type" },
+    { "include": "#constant" },
+    { "include": "#operator" },
+    { "include": "#function-call" },
+    { "include": "#identifier" }
+  ],
+  "repository": {
+    "comment": {
+      "name": "comment.line.double-slash.core-st",
+      "match": "//.*$"
+    },
+    "string": {
+      "name": "string.quoted.double.core-st",
+      "begin": "\"",
+      "end": "\"",
+      "patterns": [
+        {
+          "name": "constant.character.escape.core-st",
+          "match": "\\\\."
+        }
+      ]
+    },
+    "attribute": {
+      "name": "meta.attribute.core-st",
+      "match": "@\\[[^\\]]*\\]",
+      "captures": {
+        "0": { "name": "entity.other.attribute-name.core-st" }
+      }
+    },
+    "label": {
+      "name": "meta.label.core-st",
+      "match": "\\[([a-zA-Z_][a-zA-Z0-9_]*)\\]\\s*:",
+      "captures": {
+        "0": { "name": "entity.name.label.core-st" },
+        "1": { "name": "entity.name.tag.core-st" }
+      }
+    },
+    "number": {
+      "patterns": [
+        {
+          "name": "constant.numeric.decimal.core-st",
+          "match": "\\b[0-9]+(\\.[0-9]+)?\\b"
+        }
+      ]
+    },
+    "keyword": {
+      "patterns": [
+        {
+          "name": "keyword.control.core-st",
+          "match": "\\b(if|else|while|exit|call)\\b"
+        },
+        {
+          "name": "keyword.declaration.core-st",
+          "match": "\\b(program|procedure|function|returns|spec|var|const|type|axiom|distinct|rec|inline|datatype)\\b"
+        },
+        {
+          "name": "keyword.other.specification.core-st",
+          "match": "\\b(requires|ensures|modifies|free|invariant|decreases)\\b"
+        },
+        {
+          "name": "keyword.other.statement.core-st",
+          "match": "\\b(assert|assume|cover|havoc)\\b"
+        },
+        {
+          "name": "keyword.other.quantifier.core-st",
+          "match": "\\b(forall|exists)\\b"
+        },
+        {
+          "name": "keyword.other.old.core-st",
+          "match": "\\b(old)\\b"
+        }
+      ]
+    },
+    "type": {
+      "patterns": [
+        {
+          "name": "support.type.core-st",
+          "match": "\\b(bool|int|string|regex|real|bv1|bv8|bv16|bv32|bv64|Map|Sequence)\\b"
+        }
+      ]
+    },
+    "constant": {
+      "name": "constant.language.core-st",
+      "match": "\\b(true|false|null)\\b"
+    },
+    "operator": {
+      "patterns": [
+        {
+          "name": "keyword.operator.assignment.core-st",
+          "match": ":="
+        },
+        {
+          "name": "keyword.operator.logical.core-st",
+          "match": "(<==>|==>|&&|\\|\\||!(?!=))"
+        },
+        {
+          "name": "keyword.operator.comparison.core-st",
+          "match": "(==|!=|<=s|>=s|<s|>s|<=|>=|<|>)"
+        },
+        {
+          "name": "keyword.operator.arithmetic.core-st",
+          "match": "\\b(div|mod|sdiv|smod)\\b"
+        },
+        {
+          "name": "keyword.operator.arithmetic.symbol.core-st",
+          "match": "[+\\-*/%]"
+        },
+        {
+          "name": "keyword.operator.bitwise.core-st",
+          "match": "(>>s|<<|>>|[&|^~])"
+        }
+      ]
+    },
+    "function-call": {
+      "match": "\\b(str\\.len|str\\.concat|str\\.substr|str\\.to\\.re|str\\.in\\.re|re\\.allchar|re\\.all|re\\.range|re\\.concat|re\\.\\*|re\\.\\+|re\\.loop|re\\.union|re\\.inter|re\\.comp|re\\.none|Sequence\\.length|Sequence\\.select|Sequence\\.append|Sequence\\.build|Sequence\\.update|Sequence\\.contains|Sequence\\.take|Sequence\\.drop|Int\\.DivT|Int\\.ModT|bvconcat\\{[0-9]+\\}\\{[0-9]+\\}|bvextract\\{[0-9]+\\}\\{[0-9]+\\}\\{[0-9]+\\})\\b",
+      "captures": {
+        "1": { "name": "support.function.builtin.core-st" }
+      }
+    },
+    "identifier": {
+      "name": "variable.other.core-st",
+      "match": "\\b[a-zA-Z_$][a-zA-Z0-9_$]*\\b"
+    }
+  }
+}
