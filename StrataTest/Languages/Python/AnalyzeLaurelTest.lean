@@ -310,6 +310,25 @@ assertion. This exercises the full pipeline with type alias resolution.
         throw <| IO.userError
           "Expected ✖️ always false for empty bucket violation"
 
+/-! ## evalIfCanonical regression test (Issue #812)
+
+Symbolic bucket must pass the regex precondition via `evalIfCanonical`.
+Without the attribute, the regex VC would be ❓ unknown. -/
+
+#eval withPython fun pythonCmd => do
+  IO.FS.withTempDir fun tmpDir => do
+    setupFixture pythonCmd tmpDir
+    let result ← runAnalyzeAndVerify pythonCmd tmpDir
+      "test_regex_eval_if_canonical.py"
+    match result with
+    | .error msg => throw <| IO.userError s!"Pipeline failed: {msg}"
+    | .ok vcResults =>
+      for r in vcResults do
+        if r.obligation.label.startsWith "servicelib_Storage_" then
+          if !r.isSuccess then
+            throw <| IO.userError
+              s!"Expected all Storage preconditions to pass but got: {r.formatOutcome}"
+
 /-! ## Resolution error test after FilterPrelude
 
 Verifies that the combined Laurel program (after prelude filtering) resolves

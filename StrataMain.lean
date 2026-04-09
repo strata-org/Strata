@@ -550,9 +550,8 @@ private def printPyAnalyzeSummary (vcResults : Array Core.VCResult)
   let classifier : ResultClassifier :=
     match checkMode with
     | .bugFinding | .bugFindingAssumingCompleteSpec =>
-      { isFailure := fun r => match r.outcome with
-          | .ok o => o.alwaysFalseAndReachable
-          | _     => false }
+      { isSuccess := (·.isBugFindingSuccess)
+        isFailure := (·.isBugFindingFailure) }
     | _ => {}
   -- 1. Partition out implementation errors (broken results, not classifiable).
   let (implError, classifiable) :=
