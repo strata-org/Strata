@@ -22,5 +22,5 @@ test_deep_inline.py(21, 4): ✔️ always true if reached - triple_apply(3) shou
 test_deep_inline.py(21, 4): ✔️ always true if reached - triple_apply(3) should be 9
 test_deep_inline.py(21, 4): ✔️ always true if reached - triple_apply(3) should not be 10
 test_deep_inline.py(21, 4): ✖️ always false if reached - triple_apply(3) should not be 10
-DETAIL: 22 passed, 0 failed, 2 inconclusive
-RESULT: Inconclusive
+DETAIL: 22 passed, 2 failed, 0 inconclusive
+RESULT: Failures found
