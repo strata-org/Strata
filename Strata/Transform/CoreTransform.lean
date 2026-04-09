@@ -85,7 +85,13 @@ def isGlobalVar (p : Program) (ident : Expression.Ident) : Bool :=
 
 
 /-- Cached results of program analyses that are helpful for program
-    transformation. -/
+    transformation.
+
+    Invariant: When `callGraph` is `some cg`, `cg` must reflect the current
+    program's procedure call structure. Every procedure in the program must
+    have an entry in `cg.callees`, and every call edge must be accounted for.
+    Transforms that add, remove, or modify procedures must update the call
+    graph accordingly (or set it to `.none` to invalidate it). -/
 structure CachedAnalyses where
   callGraph: Option CallGraph := .none
 
