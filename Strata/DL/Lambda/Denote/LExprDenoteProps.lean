@@ -623,3 +623,41 @@ theorem denoteArgs_eq_of_denote_eq
             (by simp only [List.getElem?_cons_succ]; exact ha2)
             (by simp only [List.getElem?_cons_succ]; exact hτ)
             ht1 ht2)
+
+/-- Reverse of `denoteArgs_eq_of_denote_eq`: if `denoteArgs` HLists are equal,
+then pointwise denotations are equal. -/
+theorem denoteArgs_eq_implies_denote_eq
+    {Δ : List LMonoTy}
+    {args₁ args₂ : List (LExpr T.mono)}
+    {argTys : List LMonoTy}
+    (bvarVal : BVarVal tcInterp vt Δ)
+    (h_args₁ : List.Forall₂ (LExpr.HasTypeA Δ) args₁ argTys)
+    (h_args₂ : List.Forall₂ (LExpr.HasTypeA Δ) args₂ argTys)
+    (hdArgs : denoteArgs tcInterp opInterp fvarVal vt bvarVal args₁ argTys h_args₁ =
+              denoteArgs tcInterp opInterp fvarVal vt bvarVal args₂ argTys h_args₂)
+    : ∀ (i : Nat) (a₁ a₂ : LExpr T.mono) (σ : LMonoTy),
+        args₁[i]? = some a₁ → args₂[i]? = some a₂ → argTys[i]? = some σ →
+        (ha₁ : LExpr.HasTypeA Δ a₁ σ) → (ha₂ : LExpr.HasTypeA Δ a₂ σ) →
+        LExpr.denote tcInterp opInterp fvarVal vt bvarVal a₁ σ ha₁ =
+        LExpr.denote tcInterp opInterp fvarVal vt bvarVal a₂ σ ha₂ := by
+  induction h_args₁ generalizing args₂ with
+  | nil =>
+    intro i a₁ a₂ σ ha₁
+    simp at ha₁
+  | cons h1_head h1_tail ih =>
+    cases h_args₂ with
+    | cons h2_head h2_tail =>
+      simp only [denoteArgs] at hdArgs
+      have hhead := HList.cons.inj hdArgs |>.1
+      have htail := HList.cons.inj hdArgs |>.2
+      intro i a₁ a₂ σ ha₁ ha₂ hσ hta₁ hta₂
+      cases i with
+      | zero =>
+        simp at ha₁ ha₂ hσ
+        cases ha₁; cases ha₂; cases hσ
+        have h_eq₁ := HasTypeA_unique h1_head hta₁
+        have h_eq₂ := HasTypeA_unique h2_head hta₂
+        grind
+      | succ n =>
+        simp only [List.getElem?_cons_succ] at ha₁ ha₂ hσ
+        exact ih h2_tail htail n a₁ a₂ σ ha₁ ha₂ hσ hta₁ hta₂

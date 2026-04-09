@@ -354,7 +354,7 @@ theorem callOfLFunc_constr_disjoint_denote
 /-- If two applications of the same constructor are well-typed at the same type
 and denote to equal values, then their arguments denote pairwise equal. -/
 theorem callOfLFunc_constr_injective_denote
-    {F : @Factory T}
+    {F : @Factory T} {tf : @TypeFactory T.IDMeta}
     {e₁ e₂ : LExpr T.mono} {τ : LMonoTy}
     {callee₁ callee₂ : LExpr T.mono}
     {args₁ args₂ : List (LExpr T.mono)}
@@ -364,6 +364,8 @@ theorem callOfLFunc_constr_injective_denote
     (hcall₁ : Factory.callOfLFunc F e₁ = some (callee₁, args₁, f))
     (hcall₂ : Factory.callOfLFunc F e₂ = some (callee₂, args₂, f))
     (hconstr : f.isConstr = true)
+    (hoc₁ : OpsConsistent F e₁) (hoc₂ : OpsConsistent F e₂)
+    (hfwf : FactoryWF F) (hcwf : Factory.ConstrWellFormed F tf)
     (hConstrIC : ConstrInterpConsistent tcInterp opInterp F)
     (heq : LExpr.denote tcInterp opInterp fvarVal vt .nil e₁ τ h₁ =
            LExpr.denote tcInterp opInterp fvarVal vt .nil e₂ τ h₂)
@@ -372,7 +374,103 @@ theorem callOfLFunc_constr_injective_denote
         (ha₁ : LExpr.HasTypeA [] a₁ σ) → (ha₂ : LExpr.HasTypeA [] a₂ σ) →
         LExpr.denote tcInterp opInterp fvarVal vt .nil a₁ σ ha₁ =
         LExpr.denote tcInterp opInterp fvarVal vt .nil a₂ σ ha₂ := by
-  sorry
+  -- Decompose both denotations via callOfLFunc_denote
+  obtain ⟨argTys₁, ty_op₁, m₁, name₁, h_args₁, hty_op₁, hcallee₁, hdenote₁⟩ :=
+    callOfLFunc_denote tcInterp opInterp fvarVal vt hcall₁ h₁
+  obtain ⟨argTys₂, ty_op₂, m₂, name₂, h_args₂, hty_op₂, hcallee₂, hdenote₂⟩ :=
+    callOfLFunc_denote tcInterp opInterp fvarVal vt hcall₂ h₂
+  -- Get argTys₁ = argTys₂
+  have hargTys : argTys₁ = argTys₂ :=
+    constr_callOfLFunc_argTys_eq' hcall₁ hcall₂ h_args₁ h_args₂ hoc₁ hoc₂ hfwf hcwf hconstr
+      ⟨m₁, name₁, hty_op₁ ▸ hcallee₁⟩
+      ⟨m₂, name₂, hty_op₂ ▸ hcallee₂⟩
+  subst hargTys
+  subst hty_op₁; subst hty_op₂
+  -- Connect names: name₁.name = name₂.name = f.name.name
+  obtain ⟨_, fname₁, _, hcallee₁', hget₁⟩ := Factory.callOfLFunc_getElem? hcall₁
+  obtain ⟨_, fname₂, _, hcallee₂', hget₂⟩ := Factory.callOfLFunc_getElem? hcall₂
+  rw [hcallee₁] at hcallee₁'; cases hcallee₁'
+  rw [hcallee₂] at hcallee₂'; cases hcallee₂'
+  have hname₁ := Factory.getElem?_name hget₁  -- f.name.name = name₁.name
+  have hname₂ := Factory.getElem?_name hget₂  -- f.name.name = name₂.name
+  -- Rewrite heq using hdenote₁ and hdenote₂
+  rw [hdenote₁, hdenote₂] at heq
+  rw [← hname₁, ← hname₂] at heq
+  -- Get OpsConsistent type substitution to connect argTys and f.inputs
+  obtain ⟨tySubst₁, _, htySubst₁⟩ := OpsConsistent_callOfLFunc hoc₁ hcall₁
+  have hty_op_subst := htySubst₁ m₁ name₁ (LMonoTy.mkArrow' τ argTys₁) hcallee₁
+  rw [subst_mkArrow'] at hty_op_subst
+  have hlen : argTys₁.length = ((f.inputs.map Prod.snd).map (LMonoTy.subst tySubst₁)).length := by
+    simp only [List.length_map]
+    exact h_args₁.length_eq.symm.trans (Factory.callOfLFunc_arity hcall₁)
+  have ⟨hτ_eq, hargTys_eq⟩ := LMonoTy.mkArrow'_injective hlen hty_op_subst
+  -- Define vt' incorporating tySubst₁, prove sort equalities
+  let vt' : TyVarVal := fun x => match tySubst₁.find? x with
+    | some t => LMonoTy.substTyVars vt t | none => vt x
+  have h_inputSorts_eq : argTys₁.map (LMonoTy.substTyVars vt) =
+      (f.inputs.map Prod.snd).map (LMonoTy.substTyVars vt') := by
+    rw [hargTys_eq]; simp only [List.map_map]
+    congr 1; funext ⟨_, ty⟩
+    exact substTyVars_subst vt tySubst₁ ty
+  have h_outputSort_eq : LMonoTy.substTyVars vt τ = LMonoTy.substTyVars vt' f.output := by
+    rw [hτ_eq]; exact substTyVars_subst vt tySubst₁ f.output
+  -- Apply constr_injective
+  have hmem := Factory.callOfLFunc_mem' hcall₁
+  have hinj := hConstrIC.constr_injective f hmem hconstr vt'
+  have hvals : f.inputs.values = f.inputs.map Prod.snd := ListMap.values_eq_map_snd f.inputs
+  let dArgs₁ := denoteArgs tcInterp opInterp fvarVal vt .nil args₁ argTys₁ h_args₁
+  let dArgs₂ := denoteArgs tcInterp opInterp fvarVal vt .nil args₂ argTys₁ h_args₂
+  -- Convert heq to fullSort form via applyArgs_cast_eq
+  have h₂ : LMonoTy.substTyVars vt (LMonoTy.mkArrow' τ argTys₁) =
+      LSort.mkArrow (LMonoTy.substTyVars vt' f.output)
+        (f.inputs.values.map (LMonoTy.substTyVars vt')) := by
+    rw [substTyVars_mkArrow', h_outputSort_eq, h_inputSorts_eq, hvals]
+  have h_convert₁ := applyArgs_cast_eq
+    (substTyVars_mkArrow' vt τ argTys₁) h₂
+    (hvals ▸ h_inputSorts_eq) h_outputSort_eq
+    (opInterp f.name.name (LMonoTy.substTyVars vt (LMonoTy.mkArrow' τ argTys₁)))
+    dArgs₁
+  have h_convert₂ := applyArgs_cast_eq
+    (substTyVars_mkArrow' vt τ argTys₁) h₂
+    (hvals ▸ h_inputSorts_eq) h_outputSort_eq
+    (opInterp f.name.name (LMonoTy.substTyVars vt (LMonoTy.mkArrow' τ argTys₁)))
+    dArgs₂
+  -- Prove denoteArgs are equal via constr_injective + cast manipulation
+  have hdArgs_cast_eq : HList.cast (hvals ▸ h_inputSorts_eq) dArgs₁ =
+      HList.cast (hvals ▸ h_inputSorts_eq) dArgs₂ := by
+    apply hinj
+    have hlhs : SortDenote.applyArgs tcInterp
+        (cast (congrArg (SortDenote tcInterp) (substTyVars_mkArrow' vt τ argTys₁))
+          (opInterp f.name.name (LMonoTy.substTyVars vt (LMonoTy.mkArrow' τ argTys₁))))
+        dArgs₁ =
+      cast (congrArg (SortDenote tcInterp) h_outputSort_eq.symm)
+        (SortDenote.applyArgs tcInterp
+          (cast (congrArg (SortDenote tcInterp) h₂)
+            (opInterp f.name.name (LMonoTy.substTyVars vt (LMonoTy.mkArrow' τ argTys₁))))
+          (HList.cast (hvals ▸ h_inputSorts_eq) dArgs₁)) := h_convert₁
+    have hrhs : SortDenote.applyArgs tcInterp
+        (cast (congrArg (SortDenote tcInterp) (substTyVars_mkArrow' vt τ argTys₁))
+          (opInterp f.name.name (LMonoTy.substTyVars vt (LMonoTy.mkArrow' τ argTys₁))))
+        dArgs₂ =
+      cast (congrArg (SortDenote tcInterp) h_outputSort_eq.symm)
+        (SortDenote.applyArgs tcInterp
+          (cast (congrArg (SortDenote tcInterp) h₂)
+            (opInterp f.name.name (LMonoTy.substTyVars vt (LMonoTy.mkArrow' τ argTys₁))))
+          (HList.cast (hvals ▸ h_inputSorts_eq) dArgs₂)) := h_convert₂
+    grind
+  -- HList.cast is injective, so dArgs₁ = dArgs₂
+  have hdArgs_eq : dArgs₁ = dArgs₂ := by
+    have h_cast_def₁ : HList.cast (hvals ▸ h_inputSorts_eq) dArgs₁ = (hvals ▸ h_inputSorts_eq) ▸ dArgs₁ := rfl
+    have h_cast_def₂ : HList.cast (hvals ▸ h_inputSorts_eq) dArgs₂ = (hvals ▸ h_inputSorts_eq) ▸ dArgs₂ := rfl
+    rw [h_cast_def₁, h_cast_def₂] at hdArgs_cast_eq
+    exact cast_injective (congrArg (HList (SortDenote tcInterp)) (hvals ▸ h_inputSorts_eq)) (by grind)
+  -- Extract pointwise denote equality from denoteArgs equality
+  intro i a₁ a₂ σ ha₁ ha₂ hta₁ hta₂
+  obtain ⟨σ₁, hσ₁, hta₁'⟩ := List.Forall₂.getElem?_some h_args₁ ha₁
+  have hσ_eq : σ₁ = σ := HasTypeA_unique hta₁' hta₁
+  subst hσ_eq
+  exact denoteArgs_eq_implies_denote_eq tcInterp opInterp fvarVal vt .nil
+    h_args₁ h_args₂ hdArgs_eq i a₁ a₂ σ₁ ha₁ ha₂ hσ₁ hta₁ hta₂
 
 /-- If `eql` returns `some false`, then the denotations are not equal.
 Restricted to the empty bound-variable context (same as `eql_true`). -/
@@ -489,7 +587,7 @@ theorem eql_false_implies_denote_ne
     intro heq_denote
     -- By injectivity, all args have equal denotes
     have hinj := callOfLFunc_constr_injective_denote tcInterp opInterp fvarVal vt
-      h₁ h₂ hcall1 hcall2 hconstr1 hConstrIC heq_denote
+      h₁ h₂ hcall1 hcall2 hconstr1 hoc₁ hoc₂ hfwf hcwf hConstrIC heq_denote
     -- Simplify heql to get the fold
     rw [hcall1, hcall2] at heql
     simp at heql
