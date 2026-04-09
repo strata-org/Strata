@@ -24,6 +24,7 @@ BOTH_SKIP = {
     "test_invalid_client_type",
     "test_unsupported_config",
     "test_with_void_enter",
+    "test_class_no_init_extra_args", # No SARIF output because does not run SMT analysis
     "test_user_error_metadata", # No SARIF output because does not run SMT analysis
     "test_is_non_none", # No SARIF output because does not run SMT analysis
     "test_is_not_non_none", # No SARIF output because does not run SMT analysis
