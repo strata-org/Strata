@@ -21,6 +21,7 @@ import Strata.Backends.CBMC.CollectSymbols
 import Strata.Backends.CBMC.GOTO.CoreToGOTOPipeline
 
 import Strata.SimpleAPI
+import Strata.Languages.Python.PyInterpret
 import Strata.Util.Profile
 
 open Strata
@@ -1329,6 +1330,45 @@ def verifyCommand : Command where
         println! f!"Finished with {provedGoalCount} goals passed, {failedGoalCount} failed."
         IO.Process.exit ExitCode.failuresFound
 
+def pyInterpretCommand : Command where
+  name := "pyInterpret"
+  args := [ "file" ]
+  flags := [{ name := "fuel", help := "Maximum execution steps.", takesArg := .arg "n" },
+            { name := "verbose", help := "Show the generated Core program." },
+            { name := "direct", help := "Use direct Python→Core path (no Laurel)." }]
+  help := "Interpret a Python Ion program concretely (Python → Laurel → Core → execute)."
+  callback := fun v pflags => do
+    let filePath := v[0]
+    let verbose := pflags.getBool "verbose"
+    let direct := pflags.getBool "direct"
+    let fuel := match pflags.getString "fuel" with
+      | some s => s.toNat!
+      | none => Core.defaultFuel
+    let result ←
+      if direct then
+        match ← Strata.pyInterpretDirect filePath fuel |>.toBaseIO with
+        | .ok r => pure r
+        | .error msg => exitInternalError (toString msg)
+      else
+        match ← Strata.pyInterpret filePath (fuel := fuel) |>.toBaseIO with
+        | .ok r => pure r
+        | .error msg => exitInternalError msg
+    match result with
+    | .success E =>
+      if verbose then
+        IO.println s!"{Std.format E}"
+      IO.println "Execution completed successfully."
+    | .assertionFailure label expr _ =>
+      IO.eprintln s!"Assertion failure: {label}"
+      IO.eprintln s!"  Expression: {Std.format expr}"
+      IO.Process.exit ExitCode.failuresFound
+    | .error msg =>
+      IO.eprintln s!"Execution error: {msg}"
+      IO.Process.exit ExitCode.failuresFound
+    | .fuelExhausted =>
+      IO.eprintln s!"Fuel exhausted (limit: {fuel}). Increase with --fuel."
+      IO.Process.exit ExitCode.failuresFound
+
 def commandGroups : List CommandGroup := [
   { name := "Core"
     commands := [verifyCommand, transformCommand, checkCommand, toIonCommand, printCommand, diffCommand]
@@ -1342,7 +1382,8 @@ def commandGroups : List CommandGroup := [
                  pyAnalyzeLaurelToGotoCommand,
                  pyAnalyzeToGotoCommand,
                  pyTranslateCommand,
-                 pyTranslateLaurelCommand] },
+                 pyTranslateLaurelCommand,
+                 pyInterpretCommand] },
   { name := "Laurel"
     commands := [laurelAnalyzeCommand, laurelAnalyzeBinaryCommand,
                  laurelAnalyzeToGotoCommand, laurelParseCommand,
