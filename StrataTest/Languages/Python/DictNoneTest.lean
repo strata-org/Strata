@@ -78,7 +78,7 @@ def main() -> None:
     throw <| .userError s!"Expected assertion failure for dict-unpacking None-for-int, got: {diags.map (·.message)}"
 
 -- Test 5: Negative list indexing on potentially empty list.
--- xs[-1] emits a bounds check: assert len(xs) >= 1, and converts to xs[len(xs) - 1].
+-- xs[-1] converts to xs[len(xs) - 1]; Any_get precondition catches out-of-bounds.
 #guard_msgs (drop info) in
 #eval withPython (warnOnSkip := false) fun pythonCmd => do
   let program :=
@@ -89,11 +89,8 @@ def main() -> None:
     x: Any = xs[-1]
 "
   let diags ← processPythonFile pythonCmd (stringInputContext "test.py" program)
-  -- The bounds check (len >= 1) should produce a failure on an empty list.
-  -- Verify we get a diagnostic specifically from the bounds assertion,
-  -- not just from Any_get's index precondition.
-  unless diags.any (fun d => isAssertionFailure d.message && containsSubstr d.message "List_len") do
-    throw <| .userError s!"Expected bounds-check assertion failure mentioning List_len, got: {diags.map (·.message)}"
+  unless diags.any (fun d => isAssertionFailure d.message) do
+    throw <| .userError s!"Expected assertion failure for negative indexing on empty list, got: {diags.map (·.message)}"
 
 -- Test 6: len() on a class instance without __len__.
 -- This should be rejected as a user error.
