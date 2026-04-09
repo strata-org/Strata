@@ -1946,9 +1946,8 @@ def translateClass (ctx : TranslationContext) (classStmt : Python.stmt SourceRan
         -- Keep body opaque for methods that assign to object fields:
         -- HeapParameterization.resolveQualifiedFieldName returns `none`
         -- for these fields (they are unresolved in the SemanticModel),
-        -- which replaces the assignment with a Hole and causes spurious
-        -- verification failures. Previously ALL method bodies were opaque;
-        -- this narrows the workaround to only methods that need it.
+        -- which replaces the assignment with a Hole and causes
+        -- "assertion could not be proved" verification failures.
         if hasFieldAssignment methodBody.val.toList then
           instanceProcedures := instanceProcedures.push { proc with body := .Opaque [] .none [] }
         else
