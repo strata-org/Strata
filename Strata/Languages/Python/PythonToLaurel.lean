@@ -619,21 +619,27 @@ partial def translateExpr (ctx : TranslationContext) (e : Python.expr SourceRang
     -- Emit bounds check for negative integer indices on lists (e.g., xs[-1])
     -- and convert to positive index: xs[-n] becomes xs[len(xs) - n].
     -- Skip for dicts, where negative integer keys are valid dict lookups.
+    -- Note: Python's AST represents `-1` as UnaryOp(USub, Constant(1)),
+    -- not Constant(-1), so we must match both forms.
     let valType := (inferExprType ctx val).toOption.getD PyLauType.Any
     let isDictType := valType == PyLauType.DictStrAny
-    let (boundsAssert, index) := match slice with
-      | .Constant _ (.ConNeg _ n) _ =>
+    let negLitVal? := match slice with
+      | .Constant _ (.ConNeg _ n) _ => some n.val
+      | .UnaryOp _ (.USub _) (.Constant _ (.ConPos _ n) _) => some n.val
+      | _ => none
+    let (boundsAssert, index) := match negLitVal? with
+      | some n =>
         if isDictType then (none, index)
         else
           -- xs[-n] requires len(xs) >= n; access becomes xs[len(xs) - n]
           let listExpr := mkStmtExprMd (.StaticCall "Any..as_ListAny!" [dictOrList])
           let lenExpr := mkStmtExprMd (.StaticCall "List_len" [listExpr])
-          let nLit := mkStmtExprMd (.LiteralInt n.val)
+          let nLit := mkStmtExprMd (.LiteralInt n)
           let cond := mkStmtExprMd (.PrimitiveOp .Geq [lenExpr, nLit])
           let posIdx := mkStmtExprMd (.StaticCall "from_int"
             [mkStmtExprMd (.PrimitiveOp .Sub [lenExpr, nLit])])
           (some (mkStmtExprMd (.Assert cond)), posIdx)
-      | _ => (none, index)
+      | none => (none, index)
     let access := mkStmtExprMdWithLoc (.StaticCall "Any_get" [dictOrList, index]) md
     match boundsAssert with
     | some assert => return mkStmtExprMd (.Block [assert, access] none)
