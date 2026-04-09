@@ -48,10 +48,14 @@ private def getFuncSigs (sigs : Array Signature) : IO (List PythonFunctionDecl) 
     | .ok r => pure r.functionSignatures
     | .error msg => throw <| .userError msg
 
+private def unionType (atoms : Array SpecAtomType) : SpecType :=
+  { atoms, loc }
+
 /--
 info: typed_func: x=[int], y=[str], z=[bool], w=[float]
 untyped_func: a=[Any]
 mixed_func: p=[str], q=[Any]
+optional_func: s=[None, str], n=[None, int]
 -/
 #guard_msgs in
 #eval do
@@ -68,6 +72,10 @@ mixed_func: p=[str], q=[Any]
     mkFunc "mixed_func"
       #[mkArg "p" (identType .builtinsStr),
         mkArg "q" (identType .typingAny)]
+      (identType .noneType),
+    mkFunc "optional_func"
+      #[mkArg "s" (unionType #[.ident .noneType #[], .ident .builtinsStr #[]]),
+        mkArg "n" (unionType #[.ident .noneType #[], .ident .builtinsInt #[]])]
       (identType .noneType)
   ]
   for f in sigs do
