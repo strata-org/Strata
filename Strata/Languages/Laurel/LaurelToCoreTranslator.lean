@@ -93,10 +93,12 @@ def translateType (ty : HighTypeMd) : TranslateM LMonoTy := do
     match name.uniqueId.bind model.refToDef.get? with
     | some (.compositeType _) => return .tcons "Composite" []
     | some (.datatypeDefinition dt) => return .tcons dt.name.text []
-    | _ => return .tcons "Composite" [] -- fallback for unresolved refs
+    | _ => do -- resolution should have already emitted a diagnostic
+      modify fun s => { s with coreProgramHasSuperfluousErrors := true }
+      return .tcons "Composite" []
   | .TCore s => return .tcons s []
   | .TReal => return LMonoTy.real
-  | .Unknown => return .tcons "Any" [] -- TODO: abort once Python pipeline no longer produces Unknown types
+  | .Unknown => throwTypeDiagnostic ty "cannot translate Unknown type to Core"
   | _ => throwTypeDiagnostic ty "cannot translate type to Core: not supported yet"
 termination_by ty.val
 decreasing_by all_goals (first | (cases elementType; term_by_mem) | (cases keyType; term_by_mem) | (cases valueType; term_by_mem))
