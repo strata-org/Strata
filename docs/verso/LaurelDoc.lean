@@ -138,8 +138,6 @@ Procedures are the main unit of specification and verification in Laurel.
 
 {docstring Strata.Laurel.Parameter}
 
-{docstring Strata.Laurel.Determinism}
-
 {docstring Strata.Laurel.Body}
 
 # Programs
