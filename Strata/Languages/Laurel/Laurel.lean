@@ -357,6 +357,7 @@ def highEq (a : HighTypeMd) (b : HighTypeMd) : Bool := match _a: a.val, _b: b.va
 instance : BEq HighTypeMd where
   beq := highEq
 
+deriving instance BEq for HighType
 
 def HighType.isBool : HighType → Bool
   | TBool => true
