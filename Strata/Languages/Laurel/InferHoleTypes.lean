@@ -91,7 +91,11 @@ private def inferExpr (expr : StmtExprMd) (expectedType : HighTypeMd) : InferHol
         | none => pure none
       return ⟨.IfThenElse (← inferExpr cond (bareType .TBool)) (← inferExpr th expectedType) el', md⟩
   | .Block stmts label => return ⟨.Block (← inferStmtList stmts) label, md⟩
-  | .Assign targets value => return ⟨.Assign targets (← inferExpr value defaultHoleType), md⟩
+  | .Assign targets value =>
+      let targetType := match targets with
+        | target :: _ => computeExprType model target
+        | _ => defaultHoleType
+      return ⟨.Assign targets (← inferExpr value targetType), md⟩
   | .LocalVariable name ty init =>
       match init with
       | some initExpr => return ⟨.LocalVariable name ty (some (← inferExpr initExpr ty)), md⟩
@@ -120,7 +124,11 @@ private def inferStmt (stmt : StmtExprMd) : InferHoleM StmtExprMd := do
   match val with
   | .LocalVariable name ty (some initExpr) =>
       return ⟨.LocalVariable name ty (some (← inferExpr initExpr ty)), md⟩
-  | .Assign targets value => return ⟨.Assign targets (← inferExpr value defaultHoleType), md⟩
+  | .Assign targets value =>
+      let targetType := match targets with
+        | target :: _ => computeExprType model target
+        | _ => defaultHoleType
+      return ⟨.Assign targets (← inferExpr value targetType), md⟩
   | .Block stmts label => return ⟨.Block (← inferStmtList stmts) label, md⟩
   | .IfThenElse cond th el =>
       let el' ← match el with
@@ -151,7 +159,7 @@ end
 private def inferProcedure (proc : Procedure) : InferHoleM Procedure := do
   let outputType := match proc.outputs with
     | [single] => single.type
-    | _ => defaultHoleType
+    | _ => bareType .TVoid
   modify fun s => { s with currentOutputType := outputType }
   match proc.body with
   | .Transparent bodyExpr => return { proc with body := .Transparent (← inferStmt bodyExpr) }

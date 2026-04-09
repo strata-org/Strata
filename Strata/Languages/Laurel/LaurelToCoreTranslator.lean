@@ -93,6 +93,7 @@ def translateType (ty : HighTypeMd) : TranslateM LMonoTy := do
     match name.uniqueId.bind model.refToDef.get? with
     | some (.compositeType _) => return .tcons "Composite" []
     | some (.datatypeDefinition dt) => return .tcons dt.name.text []
+    | some (.datatypeConstructor typeName _) => return .tcons typeName.text []
     | _ => do -- resolution should have already emitted a diagnostic
       modify fun s => { s with coreProgramHasSuperfluousErrors := true }
       return .tcons "Composite" []
