@@ -439,23 +439,6 @@ def emitProcWithLifted (Env : Core.Expression.TyEnv) (procName : String)
 Composable building blocks for translating Core programs to GOTO.
 -/
 
-/-- Inline procedure calls repeatedly until a fixpoint is reached.
-    By default inlines all procedures except `main`. -/
-public def inlineCoreFixpoint (program : Core.Program)
-    (doInline : String → Core.Transform.CachedAnalyses → Bool := fun name _ => name ≠ "main")
-    (maxIterations : Nat := 10)
-    : Except String Core.Program := do
-  let mut pgm := program
-  for _ in List.range maxIterations do
-    match Core.Transform.runProgram (targetProcList := .none)
-          (Core.ProcedureInlining.inlineCallCmd (doInline := doInline))
-          pgm .emp with
-    | ⟨.ok (changed, pgm'), _⟩ =>
-      pgm := pgm'
-      if !changed then break
-    | ⟨.error e, _⟩ => throw e
-  return pgm
-
 /-- Type-check a Core program using the standard context and factory.
     Returns the type-checked program and the resulting type environment. -/
 public def typeCheckCore (program : Core.Program)
@@ -521,7 +504,10 @@ public def inlineCoreToGotoFiles (program : Core.Program)
     (entryPoints : List String := ["main", "__main__"])
     (factory : @Lambda.Factory Core.CoreLParams := Core.Factory)
     : EIO String Unit := do
-  let inlined ← match inlineCoreFixpoint program with
+  let phase := Core.procedureInliningPipelinePhase
+    { doInline := (fun name _ => name ≠ "main"), maxIters := some 10 }
+  let inlined ← match Core.Transform.run program (fun prog => do
+      let (_, prog') ← phase.transform prog; return prog') with
     | .ok r => pure r
     | .error msg => throw msg
   let (tcPgm, Env) ← match typeCheckCore inlined factory with

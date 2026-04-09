@@ -6,7 +6,6 @@
 # With --update, overwrite existing expected files with actual output
 # With --filter <pattern>, only run tests whose name contains <pattern>
 # With --vc-directory <dir>, store VCs in SMT-Lib format in <dir>
-# Note: pyAnalyze (non-Laurel) is deprecated; laurel mode is the default.
 
 failed=0
 update=0
@@ -21,7 +20,8 @@ while [ $# -gt 0 ]; do
         --incremental) incremental=true ;;
         --filter) filter="$2"; shift ;;
         --vc-directory) vc_directory="$2"; shift ;;
-        *) mode="$1" ;;
+        laurel) ;; # accepted for backward compatibility
+        *) echo "Unknown argument: $1"; exit 1 ;;
     esac
     shift
 done
@@ -50,17 +50,6 @@ fi
 for test_file in tests/test_*.py; do
     if [ -f "$test_file" ]; then
         base_name=$(basename "$test_file" .py)
-
-        # Skip tests if specified
-        skip=0
-        for skip_test in $skip_tests; do
-            if [ "$base_name" = "$skip_test" ]; then
-                echo "Skipping: $base_name"
-                skip=1
-                break
-            fi
-        done
-        [ $skip -eq 1 ] && continue
 
         # Apply name filter if specified
         if [ -n "$filter" ] && [[ "$base_name" != *"$filter"* ]]; then
