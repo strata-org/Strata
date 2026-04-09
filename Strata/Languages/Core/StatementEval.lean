@@ -585,7 +585,14 @@ def processIteBranches (steps : Nat) (old_var_subst : SubstMap) (Ewn : EnvWithNe
   | [{ stk := stk_t, env := E_t, exitLabel := .none}],
     [{ stk := stk_f, env := E_f, exitLabel := .none}] =>
     let s' := Imperative.Stmt.ite (.det cond') stk_t.top stk_f.top md
-    [EnvWithNext.mk (Env.merge cond' E_t E_f).popScope
+    -- Remove obligations from E_f whose labels already appear in E_t.
+    -- Since rest is evaluated in both branches, its obligations appear
+    -- in both; we keep only the true-branch copies to avoid duplicates.
+    let tLabels := E_t.deferred.map (·.label)
+    let dedupDeferred :=
+      E_f.deferred.filter fun ob => !tLabels.contains ob.label
+    let E_f' := { E_f with deferred := dedupDeferred }
+    [EnvWithNext.mk (Env.merge cond' E_t E_f').popScope
                     .none
                     (orig_stk.appendToTop [s'])]
   | _, _ =>
