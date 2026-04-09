@@ -1874,37 +1874,37 @@ def extractFieldsFromInit (ctx : TranslationContext) (initBody : Array (Python.s
     | _ => pure ()
   return fields
 
-/-- Check whether a Python expression is `self.field` (an attribute access on `self`). -/
-private def isSelfFieldTarget : Python.expr SourceRange → Bool
-  | .Attribute _ (.Name _ ⟨_, "self"⟩ _) _ _ => true
+/-- Check whether a Python expression is an attribute assignment target (`obj.field`). -/
+private def isFieldAssignTarget : Python.expr SourceRange → Bool
+  | .Attribute _ _ _ _ => true
   | _ => false
 
-/-- Return `true` when any statement in `stmts` (recursively) assigns to `self.field`. -/
-private partial def hasSelfFieldAssignment (stmts : List (Python.stmt SourceRange)) : Bool :=
+/-- Return `true` when any statement in `stmts` (recursively) assigns to an attribute (`obj.field`). -/
+private partial def hasFieldAssignment (stmts : List (Python.stmt SourceRange)) : Bool :=
   stmts.any fun s => match s with
-    | .Assign _ targets _ _ => targets.val.any isSelfFieldTarget
-    | .AnnAssign _ target _ _ _ => isSelfFieldTarget target
-    | .AugAssign _ target _ _ => isSelfFieldTarget target
+    | .Assign _ targets _ _ => targets.val.any isFieldAssignTarget
+    | .AnnAssign _ target _ _ _ => isFieldAssignTarget target
+    | .AugAssign _ target _ _ => isFieldAssignTarget target
     | .If _ _ body orelse =>
-        hasSelfFieldAssignment body.val.toList || hasSelfFieldAssignment orelse.val.toList
+        hasFieldAssignment body.val.toList || hasFieldAssignment orelse.val.toList
     | .For _ _ _ body orelse _ =>
-        hasSelfFieldAssignment body.val.toList || hasSelfFieldAssignment orelse.val.toList
+        hasFieldAssignment body.val.toList || hasFieldAssignment orelse.val.toList
     | .AsyncFor _ _ _ body orelse _ =>
-        hasSelfFieldAssignment body.val.toList || hasSelfFieldAssignment orelse.val.toList
+        hasFieldAssignment body.val.toList || hasFieldAssignment orelse.val.toList
     | .While _ _ body orelse =>
-        hasSelfFieldAssignment body.val.toList || hasSelfFieldAssignment orelse.val.toList
+        hasFieldAssignment body.val.toList || hasFieldAssignment orelse.val.toList
     | .Try _ body handlers orelse finalbody
     | .TryStar _ body handlers orelse finalbody =>
-        hasSelfFieldAssignment body.val.toList ||
+        hasFieldAssignment body.val.toList ||
         handlers.val.any (fun h => match h with
-          | .ExceptHandler _ _ _ hbody => hasSelfFieldAssignment hbody.val.toList) ||
-        hasSelfFieldAssignment orelse.val.toList ||
-        hasSelfFieldAssignment finalbody.val.toList
+          | .ExceptHandler _ _ _ hbody => hasFieldAssignment hbody.val.toList) ||
+        hasFieldAssignment orelse.val.toList ||
+        hasFieldAssignment finalbody.val.toList
     | .With _ _ body _ | .AsyncWith _ _ body _ =>
-        hasSelfFieldAssignment body.val.toList
+        hasFieldAssignment body.val.toList
     | .Match _ _ cases =>
         cases.val.any (fun c => match c with
-          | .mk_match_case _ _ _ body => hasSelfFieldAssignment body.val.toList)
+          | .mk_match_case _ _ _ body => hasFieldAssignment body.val.toList)
     | _ => false
 
 /-- Translate a Python class to a Laurel CompositeType -/
@@ -1943,10 +1943,10 @@ def translateClass (ctx : TranslationContext) (classStmt : Python.stmt SourceRan
     for stmt in body do
       if let .FunctionDef _ _methodName _ methodBody .. := stmt then
         let proc ← translateMethod ctx className stmt
-        -- Keep body opaque for methods that assign to self fields: field
-        -- assignments are not yet supported by the Core verifier and
-        -- produce spurious diagnostics.
-        if hasSelfFieldAssignment methodBody.val.toList then
+        -- Keep body opaque for methods that assign to object fields:
+        -- field assignments are not yet supported by the Core verifier
+        -- and produce spurious diagnostics.
+        if hasFieldAssignment methodBody.val.toList then
           instanceProcedures := instanceProcedures.push { proc with body := .Opaque [] .none [] }
         else
           instanceProcedures := instanceProcedures.push proc
