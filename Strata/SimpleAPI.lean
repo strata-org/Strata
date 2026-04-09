@@ -18,6 +18,7 @@ public import Strata.Languages.Core.Options
 public import Strata.Languages.Core.Verifier
 import Strata.Languages.Laurel.LaurelToCoreTranslator
 import Strata.Languages.Laurel.Grammar.ConcreteToAbstractTreeTranslator
+import Strata.Languages.Laurel.Grammar.AbstractToConcreteTreeTranslator
 public import Strata.Languages.Python.PySpecPipeline
 import Strata.Languages.Python.Specs
 import Strata.Languages.Python.Specs.DDM
@@ -211,7 +212,8 @@ def genericToCore (p : Strata.Program) : Except String Core.Program :=
 Translate a program in the dialect-specific AST for Laurel into the generic Strata
 AST. Usually useful as a step before serialization.
 -/
-noncomputable opaque laurelToGeneric : Laurel.Program → Strata.Program
+def laurelToGeneric (p : Laurel.Program) : Strata.Program :=
+  Laurel.programToStrata p
 
 /--
 Translate a program in the generic AST for Strata into the dialect-specific AST
