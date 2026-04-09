@@ -942,10 +942,11 @@ def verify (program : Program)
     (options : VerifyOptions := VerifyOptions.default)
     (moreFns : @Lambda.Factory CoreLParams := Lambda.Factory.default)
     (externalPhases : List AbstractedPhase := [])
+    (prefixPhases : List PipelinePhase := [])
     : EIO DiagnosticModel VCResults := do
   let profile := options.profile
   let factory ← EIO.ofExcept (Core.Factory.addFactory moreFns)
-  let pipelinePhases := corePipelinePhases (procs := proceduresToVerify) (factory := some factory)
+  let pipelinePhases := prefixPhases ++ corePipelinePhases (procs := proceduresToVerify) (factory := some factory)
   let phases := pipelinePhases.map (·.phase)
   let finalProgram ← profileStep profile "  Program transformations" do
     let passes := fun prog => do
