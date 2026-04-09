@@ -5,7 +5,7 @@
 -/
 
 import Strata.Languages.Python.Specs.ToLaurel
-import Strata.Languages.Laurel.LaurelFormat
+import Strata.Languages.Laurel.Grammar.AbstractToConcreteTreeTranslator
 
 namespace Strata.Python.Specs.ToLaurel.Tests
 
