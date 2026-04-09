@@ -40,16 +40,6 @@ private def isArrayHighType (ty : HighType) : Bool :=
   | _ => false
 
 /-- Redirect Sequence.* args that are Array-typed to use $data field -/
-private def redirectArrayArgs (model : SemanticModel) (callee : Identifier)
-    (origArgs : List StmtExprMd) (args : List StmtExprMd)
-    (md : Imperative.MetaData Core.Expression) : List StmtExprMd :=
-  if callee.text.startsWith SeqOp.namePrefix then
-    args.mapIdx fun i a =>
-      if i == 0 && isArrayType model (origArgs[0]!) then mkFieldSelect a SeqOp.dataField md
-      else if i == 1 && callee.text == SeqOp.append && origArgs.length > 1 && isArrayType model (origArgs[1]!) then mkFieldSelect a SeqOp.dataField md
-      else a
-  else args
-
 def elimExpr (model : SemanticModel) : StmtExprMd → StmtExprMd
   | ⟨.Subscript target index none, md⟩ =>
     let target' := elimExpr model target
@@ -100,8 +90,11 @@ def elimExpr (model : SemanticModel) : StmtExprMd → StmtExprMd
     ⟨.Assign (targets.attach.map fun ⟨t, _⟩ => elimExpr model t) (elimExpr model value), md⟩
   | ⟨.StaticCall callee args, md⟩ =>
     let args' := args.attach.map fun ⟨a, _⟩ => elimExpr model a
-    let args' := redirectArrayArgs model callee args args' md
-    ⟨.StaticCall callee args', md⟩
+    -- Array.length(a) → Sequence.length(a.$data)
+    if callee.text == arrayLengthName then
+      mkCall SeqOp.length [mkFieldSelect (args'.headD ⟨.LiteralInt 0, md⟩) SeqOp.dataField md] md
+    else
+      ⟨.StaticCall callee args', md⟩
   | ⟨.PrimitiveOp op args, md⟩ =>
     ⟨.PrimitiveOp op (args.attach.map fun ⟨a, _⟩ => elimExpr model a), md⟩
   | ⟨.Return (some v), md⟩ => ⟨.Return (some (elimExpr model v)), md⟩

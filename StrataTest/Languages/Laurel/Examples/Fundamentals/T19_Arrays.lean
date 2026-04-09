@@ -23,21 +23,21 @@ procedure basicReadWrite() {
 // Length
 procedure length() {
   var a: Array<int> := [10, 20, 30];
-  assert Sequence.length(a) == 3
+  assert Array.length(a) == 3
 };
 
 // Empty array
 procedure emptyArray() {
   var a: Array<int> := [];
-  assert Sequence.length(a) == 0
+  assert Array.length(a) == 0
 };
 
 // Array in contracts
 procedure arrayContract(a: Array<int>)
-  requires Sequence.length(a) > 0
+  requires Array.length(a) > 0
 {
   var x: int := a[0];
-  assert x == Sequence.select(a, 0)
+  assert x == a[0]
 };
 
 // Multiple writes
@@ -72,7 +72,7 @@ procedure arrayLoop() {
   var i: int := 0;
   while (i < 3)
     invariant 0 <= i && i <= 3
-    invariant Sequence.length(a) == 3
+    invariant Array.length(a) == 3
     invariant forall(j: int) => 0 <= j && j < i ==> a[j] == 0
   {
     a[i] := 0;
@@ -85,7 +85,7 @@ procedure arrayLoop() {
 
 // Inter-procedural: callee modifies array
 procedure setFirst(a: Array<int>, v: int)
-  requires Sequence.length(a) > 0
+  requires Array.length(a) > 0
   ensures a[0] == v
   modifies a
 {
@@ -96,14 +96,6 @@ procedure callSetFirst() {
   var a: Array<int> := [1, 2, 3];
   setFirst(a, 42);
   assert a[0] == 42
-};
-
-// Sequence.append on arrays (tests redirectArrayArgs for arg index 1)
-procedure appendOnArrays() {
-  var a: Array<int> := [1, 2];
-  var b: Array<int> := [3, 4];
-  var c: Seq<int> := Sequence.append(a, b);
-  assert Sequence.length(c) == 4
 };
 "
 

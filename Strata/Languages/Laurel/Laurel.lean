@@ -525,9 +525,12 @@ def SeqOp.build    := "Sequence.build"
 def SeqOp.select   := "Sequence.select"
 def SeqOp.update   := "Sequence.update"
 def SeqOp.append   := "Sequence.append"
+def SeqOp.length   := "Sequence.length"
 def SeqOp.dataField := "$data"
 
 /-- Name of the synthetic Array composite type injected by SubscriptElim. -/
 def arrayCompositeName := "Array"
+/-- Array.length static function, desugared by SubscriptElim. -/
+def arrayLengthName := "Array.length"
 
 end -- Strata.Laurel

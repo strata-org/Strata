@@ -67,6 +67,10 @@ function Sequence.take(s: int, n: int) : int
 function Sequence.drop(s: int, n: int) : int
   external;
 
+// Array operations. Desugared by SubscriptElim into Sequence operations on $data.
+function Array.length(a: int) : int
+  external;
+
 #end
 
 /--

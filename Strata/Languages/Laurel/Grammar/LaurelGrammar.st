@@ -200,10 +200,10 @@ op datatypeCommand(datatype: Datatype): Command => datatype;
 op constrainedTypeCommand(ct: ConstrainedType): Command => ct;
 
 // Sequence operations
-category OptionalUpdate;
-op seqUpdateValue(value: StmtExpr): OptionalUpdate => ":=" value;
-// index:11 excludes assign (prec 10) so `:=` in s[i := v] is parsed by OptionalUpdate, not assign
-op subscript(target: StmtExpr, index: StmtExpr, update: Option OptionalUpdate): StmtExpr
+category Update;
+op seqUpdateValue(value: StmtExpr): Update => ":=" value;
+// index:11 excludes assign (prec 10) so `:=` in s[i := v] is parsed by Update, not assign
+op subscript(target: StmtExpr, index: StmtExpr, update: Option Update): StmtExpr
   => target "[" index:11 update "]";
 op seqLiteral(elements: CommaSepBy StmtExpr): StmtExpr => "[" elements "]";
 
