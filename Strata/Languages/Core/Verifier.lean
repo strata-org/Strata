@@ -982,7 +982,7 @@ def verify (program : Program)
   -- Use the Env from PE for SMT encoding.
   let E := match pwf.env with
     | some e => e
-    | none => panic! "verify: PE phase did not produce an Env"
+    | none => panic! "verify: PE phase did not produce an Env" -- nopanic:ok
   if options.verbose >= .normal then do
     dbg_trace f!"{Std.Format.line}VCs:"
     dbg_trace f!"{formatProofObligations pwf.deferred}"

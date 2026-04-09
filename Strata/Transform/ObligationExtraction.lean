@@ -50,7 +50,7 @@ where
     | .ite .nondet thenSs elseSs _md =>
       -- PE ensures nondet branching is the last statement in a sequence.
       if !rest.isEmpty then
-        panic! "ObligationExtraction: .ite .nondet must be the last statement (rest is non-empty)"
+        panic! "ObligationExtraction: .ite .nondet must be the last statement (rest is non-empty)" -- nopanic:ok
       else
         let (thenObs, _) := extractFromStatements pc thenSs
         let (elseObs, _) := extractFromStatements pc elseSs
