@@ -76,7 +76,6 @@ def mkConstraintFunc (ptMap : ConstrainedTypeMap) (ct : ConstrainedType) : Proce
     outputs := [{ name := mkId "result", type := ⟨.TBool, #[]⟩ }]
     body := .Transparent ⟨.Block [bodyExpr] none, #[]⟩
     isFunctional := true
-    determinism := .deterministic none
     decreases := none
     preconditions := []
     md := #[] }
@@ -233,7 +232,6 @@ private def mkWitnessProc (ptMap : ConstrainedTypeMap) (ct : ConstrainedType) : 
     body := .Transparent ⟨.Block [witnessInit, assert] none, md⟩
     preconditions := []
     isFunctional := false
-    determinism := .deterministic none
     decreases := none
     md := md }
 

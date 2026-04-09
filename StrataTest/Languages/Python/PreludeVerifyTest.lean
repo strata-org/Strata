@@ -46,6 +46,10 @@ Obligation: List_take_len_post_postcondition_calls_List_take_0
 Property: assert
 Result: ✅ pass
 
+Obligation: assume_postcondition_calls_List_take_0
+Property: assert
+Result: ✅ pass
+
 Obligation: postcondition
 Property: assert
 Result: ✅ pass
@@ -55,6 +59,10 @@ Property: assert
 Result: ✅ pass
 
 Obligation: List_drop_len_post_postcondition_calls_List_drop_0
+Property: assert
+Result: ✅ pass
+
+Obligation: assume_postcondition_calls_List_drop_0
 Property: assert
 Result: ✅ pass
 
@@ -158,15 +166,15 @@ Obligation: postcondition
 Property: assert
 Result: ✅ pass
 
-Obligation: assert(41772)
+Obligation: assert(41900)
 Property: assert
 Result: ✅ pass
 
-Obligation: assert(41839)
+Obligation: assert(41967)
 Property: assert
 Result: ✅ pass
 
-Obligation: assert(41947)
+Obligation: assert(42075)
 Property: assert
 Result: ✅ pass
 

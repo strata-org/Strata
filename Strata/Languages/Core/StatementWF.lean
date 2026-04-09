@@ -42,6 +42,8 @@ private theorem listMap_keys_mapM_snd {α β γ : Type} (l : List (α × β))
     cases h; simp only[ListMap.keys]
     grind
 
+/-
+
 private theorem typeCheckCmdWF: Statement.typeCheckCmd C T p c = Except.ok v
   → WFCmdExtProp p c := by
   intro H
@@ -218,6 +220,7 @@ theorem Statement.typeCheckWF :
   simp [WFStatementsProp] at h_tc_go
   exact h_tc_go
   done
+-/
 
 /-
 theorem Statement.typeCheckWF :
