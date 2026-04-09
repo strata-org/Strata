@@ -106,45 +106,55 @@ for test_file in tests/test_*.py; do
                 fi
             fi
             rm -f "$user_errors_file"
-        elif [ $pending -eq 1 ]; then
-            # No expected file — run as pending test
-            # TODO: Add --promote flag to auto-generate .expected files for passing pending tests
-            pending_total=$((pending_total + 1))
-
-            parse_output=$(cd ../../../Tools/Python && python3 -m strata.gen py_to_strata --dialect "dialects/Python.dialect.st.ion" "../../StrataTest/Languages/Python/$test_file" "../../StrataTest/Languages/Python/$ion_file" 2>&1)
-            parse_exit=$?
-
-            if [ $parse_exit -ne 0 ]; then
-                echo "Pending (parse error):    $base_name"
-                pending_error=$((pending_error + 1))
-                rm -f "../../../user_errors.txt"
-                continue
-            fi
-
-            extra_args=$(grep '^# strata-args:' "$test_file" | sed 's/^# strata-args://' | head -1)
-            vc_flag=""
-            [ -n "$vc_directory" ] && vc_flag="--vc-directory $vc_directory"
-            output=$(cd ../../.. && timeout 20 ./.lake/build/bin/strata $command $extra_args $vc_flag "StrataTest/Languages/Python/${ion_file}" 2>&1)
-            exit_code=$?
-
-            if [ $exit_code -ne 0 ] || echo "$output" | grep -q "error\|Error\|ERROR\|panic\|PANIC"; then
-                echo "Pending (analysis error): $base_name"
-                pending_error=$((pending_error + 1))
-            elif echo "$output" | grep -q "inconclusive\|failed"; then
-                echo "Pending (imprecise):      $base_name"
-                pending_imprecise=$((pending_imprecise + 1))
-            else
-                echo "Pending (pass):           $base_name"
-                pending_pass=$((pending_pass + 1))
-            fi
-            rm -f "../../../user_errors.txt"
         fi
     fi
 done
 
-if [ $pending -eq 1 ] && [ $pending_total -gt 0 ]; then
-    echo ""
-    echo "Pending: $pending_total ($pending_error error, $pending_imprecise imprecise, $pending_pass pass)"
+if [ $pending -eq 1 ]; then
+    for test_file in tests/pending/test_*.py; do
+        [ -f "$test_file" ] || continue
+        base_name=$(basename "$test_file" .py)
+
+        if [ -n "$filter" ] && [[ "$base_name" != *"$filter"* ]]; then
+            continue
+        fi
+
+        pending_total=$((pending_total + 1))
+        ion_file="tests/pending/${base_name}.python.st.ion"
+
+        parse_output=$(cd ../../../Tools/Python && python3 -m strata.gen py_to_strata --dialect "dialects/Python.dialect.st.ion" "../../StrataTest/Languages/Python/$test_file" "../../StrataTest/Languages/Python/$ion_file" 2>&1)
+        parse_exit=$?
+
+        if [ $parse_exit -ne 0 ]; then
+            echo "Pending (parse error):    $base_name"
+            pending_error=$((pending_error + 1))
+            rm -f "../../../user_errors.txt"
+            continue
+        fi
+
+        extra_args=$(grep '^# strata-args:' "$test_file" | sed 's/^# strata-args://' | head -1)
+        vc_flag=""
+        [ -n "$vc_directory" ] && vc_flag="--vc-directory $vc_directory"
+        output=$(cd ../../.. && timeout 20 ./.lake/build/bin/strata $command $extra_args $vc_flag "StrataTest/Languages/Python/${ion_file}" 2>&1)
+        exit_code=$?
+
+        if [ $exit_code -ne 0 ] || echo "$output" | grep -q "error\|Error\|ERROR\|panic\|PANIC"; then
+            echo "Pending (analysis error): $base_name"
+            pending_error=$((pending_error + 1))
+        elif echo "$output" | grep -q "inconclusive\|failed"; then
+            echo "Pending (imprecise):      $base_name"
+            pending_imprecise=$((pending_imprecise + 1))
+        else
+            echo "Pending (pass):           $base_name"
+            pending_pass=$((pending_pass + 1))
+        fi
+        rm -f "../../../user_errors.txt"
+    done
+
+    if [ $pending_total -gt 0 ]; then
+        echo ""
+        echo "Pending: $pending_total ($pending_error error, $pending_imprecise imprecise, $pending_pass pass)"
+    fi
 fi
 
 exit $failed
