@@ -502,7 +502,7 @@ def evalAuxGo (steps : Nat) (old_var_subst : SubstMap) (Ewn : EnvWithNext) (ss :
                                               orig_stk.appendToTop [s'] })
             Ewns
 
-          | .ite _ _ _ _ => panic! "unreachable: ITE handled above"
+          | .ite _ _ _ _ => panic! "unreachable: ITE handled above" -- nopanic:ok
 
           | .loop _ _ _ _ _ =>
             panic! "Cannot evaluate `loop` statement. \
