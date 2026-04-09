@@ -600,7 +600,9 @@ def pyAnalyzeLaurelCommand : Command where
               help := "Store intermediate Laurel and Core programs in <dir>.",
               takesArg := .arg "dir" },
             { name := "hide-boilerplate",
-              help := "Hide auto-generated VCs (postconditions, return-type constraints) from per-VC output." }]
+              help := "Hide auto-generated VCs (postconditions, return-type constraints) from per-VC output." },
+            { name := "trust-solver",
+              help := "Skip front-end phase validation of solver models (trust sat results)." }]
   help := "Verify a Python Ion program via the Laurel pipeline. Translates Python to Laurel to Core, then runs SMT verification."
   callback := fun v pflags => do
     let verbose := pflags.getBool "verbose"
@@ -608,6 +610,7 @@ def pyAnalyzeLaurelCommand : Command where
     let quiet := pflags.getBool "quiet"
     let outputSarif := pflags.getBool "sarif"
     let hideBoilerplate := pflags.getBool "hide-boilerplate"
+    let trustSolver := pflags.getBool "trust-solver"
     let filePath := v[0]
     let pySourceOpt ← tryReadPythonSource filePath
     let keepDir := pflags.getString "keep-all-files"
@@ -720,11 +723,12 @@ def pyAnalyzeLaurelCommand : Command where
         verbose := .quiet, removeIrrelevantAxioms := .Precise,
         vcDirectory := baseVcDir }
     let options ← parseVerifyOptions pflags pyAnalyzeBase
+    let phases := if trustSolver then [] else [Strata.frontEndPhase]
     let vcResults ← profileStep profile "SMT verification" do
       match ← Core.verifyProgram coreProgram options
                 (moreFns := Strata.Python.ReFactory)
                 (proceduresToVerify := some userProcNames)
-                (externalPhases := [Strata.frontEndPhase]) |>.toBaseIO with
+                (externalPhases := phases) |>.toBaseIO with
       | .ok r => pure r
       | .error msg => exitPyAnalyzeInternalError msg
 
@@ -739,12 +743,16 @@ def pyAnalyzeLaurelCommand : Command where
       let mut s := ""
       for vcResult in vcResults do
         -- When --hide-boilerplate is set, skip auto-generated VCs:
-        -- postcondition checks and return-type constraints.
+        -- postcondition checks, return-type constraints, and internal labels.
         if hideBoilerplate then
+          let label := vcResult.obligation.label
           let summary := vcResult.obligation.metadata.getPropertySummary.getD ""
           let isReturnTypeConstraint := (summary.splitOn "Return type constraint").length != 1
-          let isPostcondition := vcResult.obligation.label.startsWith "postcondition"
-          if isPostcondition || isReturnTypeConstraint then continue
+          let isPostcondition := label.startsWith "postcondition"
+          let isInternal := label.startsWith "ite_cond_calls" ||
+            label.startsWith "Check " ||
+            summary.startsWith "Check "
+          if isPostcondition || isReturnTypeConstraint || isInternal then continue
         let fileMap := mfm.map (·.2)
         let location := match Imperative.getFileRange vcResult.obligation.metadata with
           | some fr =>
