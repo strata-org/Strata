@@ -33,8 +33,8 @@ and the `.op` annotation is consistent with that substitution applied to the
 function's generic type. -/
 def OpsConsistent (F : @Factory T) : LExpr T.mono → Prop := fun e =>
   (match F.callOfLFunc e with
-   | some (callee, args, fn) =>
-       match LFunc.computeTypeSubst fn callee args with
+   | some (callee, _, fn) =>
+       match LFunc.opTypeSubst fn callee with
        | some tySubst =>
            match callee with
            | .op _ _ (some ty_op) =>
@@ -51,6 +51,65 @@ def OpsConsistent (F : @Factory T) : LExpr T.mono → Prop := fun e =>
    | .quant _ _ _ _ tr body => OpsConsistent F tr ∧ OpsConsistent F body
    | _ => True)
 
+/-- `OpsConsistent` is preserved by `substK` when substituting a free variable.
+This could be generalized to arbitrary `s` with the assumption that `s` does not
+produce `.app` or `.op` nodes (needed so `getLFuncCall` commutation holds). -/
+theorem OpsConsistent_substK_fvar
+    {F : @Factory T} {k : Nat}
+    {x : Identifier T.IDMeta × Option T.mono.TypeType}
+    {e : LExpr T.mono}
+    (h : OpsConsistent F e)
+    : OpsConsistent F (LExpr.substK k (fun m => .fvar m x.fst x.snd) e) := by
+  induction e generalizing k with
+  | const => simp only [LExpr.substK]; exact h
+  | op => simp only [LExpr.substK]; exact h
+  | fvar => simp only [LExpr.substK]; exact h
+  | bvar m i =>
+    simp only [LExpr.substK]
+    split
+    · unfold OpsConsistent; simp [callOfLFunc_fvar]
+    · exact h
+  | app m e1 e2 ih1 ih2 =>
+    simp only [LExpr.substK]
+    have hcall := Factory.callOfLFunc_substK_fvar (F := F) (k := k) (x := x) (e := .app m e1 e2)
+    simp only at hcall
+    simp only [LExpr.substK] at hcall
+    constructor
+    · -- callOfLFunc conjunct
+      cases heq : F.callOfLFunc (.app m e1 e2) with
+      | none =>
+        simp only [heq] at hcall
+        rw [hcall]; trivial
+      | some val =>
+        obtain ⟨callee, args, fn⟩ := val
+        simp only [heq] at hcall
+        rw [hcall]
+        have h1 := h.1
+        simp only [heq] at h1
+        simp only []
+        exact h1
+    · exact ⟨ih1 h.2.1, ih2 h.2.2⟩
+  | abs m name ty body ih =>
+    simp only [LExpr.substK]
+    unfold OpsConsistent
+    simp only [callOfLFunc_abs]
+    exact ⟨trivial, ih h.2⟩
+  | ite m c t f ihc iht ihf =>
+    simp only [LExpr.substK]
+    unfold OpsConsistent
+    simp only [callOfLFunc_ite]
+    exact ⟨trivial, ihc h.2.1, iht h.2.2.1, ihf h.2.2.2⟩
+  | eq m e1 e2 ih1 ih2 =>
+    simp only [LExpr.substK]
+    unfold OpsConsistent
+    simp only [callOfLFunc_eq_]
+    exact ⟨trivial, ih1 h.2.1, ih2 h.2.2⟩
+  | quant m qk name ty tr body ihtr ihbody =>
+    simp only [LExpr.substK]
+    unfold OpsConsistent
+    simp only [callOfLFunc_quant]
+    exact ⟨trivial, ihtr h.2.1, ihbody h.2.2⟩
+
 /-- `OpsConsistent` is preserved by `varOpen`. -/
 theorem OpsConsistent_varOpen
     {F : @Factory T} {k : Nat}
@@ -58,7 +117,8 @@ theorem OpsConsistent_varOpen
     {e : LExpr T.mono}
     (h : OpsConsistent F e)
     : OpsConsistent F (LExpr.varOpen k x e) := by
-  sorry
+  unfold LExpr.varOpen
+  exact OpsConsistent_substK_fvar h
 
 /-- Every argument of a `callOfLFunc` call inherits `OpsConsistent`. -/
 theorem OpsConsistent_callOfLFunc_args
@@ -348,7 +408,7 @@ theorem OpsConsistent_callOfLFunc
     (hOps : OpsConsistent F e)
     (hcall : Factory.callOfLFunc F e = some (callee, args, fn))
     : ∃ tySubst,
-        LFunc.computeTypeSubst fn callee args = some tySubst ∧
+        LFunc.opTypeSubst fn callee = some tySubst ∧
         ∀ m name ty_op, callee = .op m name (some ty_op) →
           ty_op = (LMonoTy.mkArrow' fn.output (fn.inputs.map Prod.snd)).subst tySubst := by
   unfold OpsConsistent at hOps

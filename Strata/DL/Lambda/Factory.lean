@@ -401,6 +401,67 @@ def Factory.callOfLFunc {GenericTy} (F : Factory T) (e : LExpr ⟨T, GenericTy�
       | true => (op, args, func) | false => none
   | _ => none
 
+theorem callOfLFunc_eq_some {GenericTy} {F : Factory T}
+    {e callee : LExpr ⟨T, GenericTy⟩} {args : List (LExpr ⟨T, GenericTy⟩)} {fn : LFunc T}
+    (hcall : Factory.callOfLFunc F e = some (callee, args, fn))
+    : ∃ m name ty, callee = .op m name ty ∧
+      F[name.name]? = some fn ∧ args.length = fn.inputs.length := by
+  simp [Factory.callOfLFunc] at hcall
+  split at hcall <;> simp_all
+  split at hcall <;> try contradiction
+  split at hcall <;> try contradiction
+  cases hcall
+  grind
+
+theorem callOfLFunc_fvar {GenericTy} {F : Factory T}
+    {m} {y} {ty : Option GenericTy}
+    : Factory.callOfLFunc F (.fvar m y ty) = none := by
+  cases h: (Factory.callOfLFunc F (.fvar m y ty)) <;> try rfl
+  have := callOfLFunc_eq_some h
+  contradiction
+
+theorem callOfLFunc_abs {GenericTy} {F : Factory T}
+    {m} {name} {ty : Option GenericTy} {body}
+    : Factory.callOfLFunc F (.abs m name ty body) = none := by
+  cases h: (Factory.callOfLFunc F (.abs m name ty body)) <;> try rfl
+  have := callOfLFunc_eq_some h
+  contradiction
+
+theorem callOfLFunc_ite {GenericTy} {F : Factory T}
+    {m} {c t e : LExpr ⟨T, GenericTy⟩}
+    : Factory.callOfLFunc F (.ite m c t e) = none := by
+  cases h: (Factory.callOfLFunc F (.ite m c t e)) <;> try rfl
+  have := callOfLFunc_eq_some h
+  contradiction
+
+theorem callOfLFunc_eq_ {GenericTy} {F : Factory T}
+    {m} {e1 e2 : LExpr ⟨T, GenericTy⟩}
+    : Factory.callOfLFunc F (.eq m e1 e2) = none := by
+  cases h: (Factory.callOfLFunc F (.eq m e1 e2)) <;> try rfl
+  have := callOfLFunc_eq_some h
+  contradiction
+
+theorem callOfLFunc_quant {GenericTy} {F : Factory T}
+    {m} {qk} {name} {ty : Option GenericTy} {tr body}
+    : Factory.callOfLFunc F (.quant m qk name ty tr body) = none := by
+  cases h: (Factory.callOfLFunc F (.quant m qk name ty tr body)) <;> try rfl
+  have := callOfLFunc_eq_some h
+  contradiction
+
+theorem callOfLFunc_bvar {GenericTy} {F : Factory T}
+    {m} {i : Nat}
+    : Factory.callOfLFunc F (.bvar (T := ⟨T, GenericTy⟩) m i) = none := by
+  cases h: (Factory.callOfLFunc F (.bvar m i)) <;> try rfl
+  have := callOfLFunc_eq_some h
+  contradiction
+
+theorem callOfLFunc_const {GenericTy} {F : Factory T}
+    {m} {c}
+    : Factory.callOfLFunc F (.const (T := ⟨T, GenericTy⟩) m c) = none := by
+  cases h: (Factory.callOfLFunc F (.const m c)) <;> try rfl
+  have := callOfLFunc_eq_some h
+  contradiction
+
 end Factory
 
 theorem getLFuncCall.go_size {T: LExprParamsT} {e: LExpr T} {op args acc} : getLFuncCall.go e acc = (op, args) →
@@ -488,6 +549,74 @@ theorem Factory.callOfLFunc_getLFuncCall
   split at hcall <;> try contradiction
   cases hcall; grind
 
+/-- `getLFuncCall.go` commutes with fvar substitution: the head is unchanged, args are mapped.
+Could be generalized to any `s` that does not produce `.app` or `.op` nodes. -/
+theorem getLFuncCall_go_substK_fvar {T : LExprParamsT}
+    {k : Nat} {x : Identifier T.base.IDMeta × Option T.TypeType}
+    (e : LExpr T) (acc : List (LExpr T))
+    : let s := fun m => LExpr.fvar m x.fst x.snd
+      getLFuncCall.go (LExpr.substK k s e) (acc.map (LExpr.substK k s))
+      = let (op, args) := getLFuncCall.go e acc
+        (LExpr.substK k s op, args.map (LExpr.substK k s)) := by
+  simp only
+  fun_induction getLFuncCall.go e acc
+  case case1 acc e' arg1 arg2 ih =>
+    simp only [LExpr.substK, getLFuncCall.go]
+    exact ih
+  case case2 m acc fn fnty arg1 =>
+    simp [LExpr.substK, getLFuncCall.go]
+  case case3 e' acc h_not_app_app h_not_app_op =>
+    -- e' is not .app(.app ..) or .app(.op ..). After substK, fvar substitution
+    -- preserves this: .op is unchanged, .app structure is preserved, and
+    -- .bvar maps to .fvar (not .app or .op).
+    cases e' with
+    | app m e1' e2' =>
+      -- e' = .app m e1' e2', but e1' is not .app and not .op
+      simp only [LExpr.substK]
+      cases e1' with
+      | app m' e1'' e2'' => exact absurd rfl (h_not_app_app m m' e1'' e2'' e2')
+      | op m' fn fnty => exact absurd rfl (h_not_app_op m m' fn fnty e2')
+      | bvar m' i =>
+        simp only [LExpr.substK]
+        split <;> simp [getLFuncCall.go]
+      | _ => simp [LExpr.substK, getLFuncCall.go]
+    | bvar m' i =>
+      simp only [LExpr.substK]
+      split <;> simp [getLFuncCall.go]
+    | _ => simp [LExpr.substK, getLFuncCall.go]
+
+/-- `callOfLFunc` commutes with fvar substitution: same callee and fn, args are mapped.
+Could be generalized to any `s` that does not produce `.app` or `.op` nodes. -/
+theorem Factory.callOfLFunc_substK_fvar {T : LExprParams}
+    {F : Factory T} {k : Nat} {x : Identifier T.IDMeta × Option T.mono.TypeType}
+    {e : LExpr T.mono}
+    : let s := fun m => LExpr.fvar (T := T.mono) m x.fst x.snd
+      (match Factory.callOfLFunc F e with
+       | some (callee, args, fn) =>
+           Factory.callOfLFunc F (LExpr.substK k s e) = some (callee, args.map (LExpr.substK k s), fn)
+       | none => Factory.callOfLFunc F (LExpr.substK k s e) = none) := by
+  simp only
+  have hgo := getLFuncCall_go_substK_fvar (k := k) (x := x) e []
+  simp only [List.map_nil] at hgo
+  simp only [Factory.callOfLFunc, getLFuncCall]
+  rw [hgo]
+  -- Both sides now decompose (getLFuncCall.go e []) the same way.
+  -- substK on .op is identity, so the head/fn/arity checks are identical.
+  -- Case split on the head being .op or not.
+  cases h_head : (getLFuncCall.go e []).fst with
+  | op m name ty =>
+    simp only [LExpr.substK]
+    -- Now F[name.name]? is the same on both sides
+    cases F[name.name]? with
+    | none => simp
+    | some func =>
+      simp only [List.length_map, Bool.false_eq_true, ↓reduceIte]
+      split <;> grind
+  | bvar m' i =>
+    simp only [LExpr.substK]
+    split <;> simp_all <;> split <;> grind
+  | _ => simp [LExpr.substK]
+
 /--
 Apply type substitution `S` to all type annotations in an `LExpr`.
 This is only for user-defined types, not metadata-stored resolved types.
@@ -524,33 +653,71 @@ def LExpr.typeOf {T : LExprParams} : LExpr T.mono → Option LMonoTy
   | .eq _ _ _               => some .bool
 
 /--
+Derive a type substitution from the `.op` type annotation alone, by unifying it
+against the function's generic type. On annotated terms (i.e., terms that have
+undergone type inference), the `.op` node always carries a type annotation, so
+this suffices.
+
+Returns `some Subst.empty` when `fn.typeArgs` is empty (monomorphic — no-op).
+Returns `none` if the callee is not annotated or unification fails.
+-/
+@[expose] def LFunc.opTypeSubst {T : LExprParams} (fn : LFunc T) (callee : LExpr T.mono)
+    : Option Subst :=
+  if fn.typeArgs.isEmpty then some Subst.empty
+  else match callee with
+    | .op _ _ (some instTy) =>
+      let genericTy := LMonoTy.mkArrow' fn.output fn.inputs.values
+      match Constraints.unify [(instTy, genericTy)] SubstInfo.empty with
+      | .ok substInfo => some substInfo.subst
+      | .error _ => none
+    | _ => none
+
+/--
 Derive a type substitution by unifying the instantiated operator type against the
 function's generic type. Used when inlining a polymorphic function body to
 instantiate type variables.
 
+Prefers the `.op` annotation (via `opTypeSubst`). Falls back to a best-effort
+approach using argument types when the `.op` is not annotated. On annotated terms
+(after type inference), the `.op` always carries a type annotation, so the fallback
+is never needed.
+
 Returns `some Subst.empty` when `fn.typeArgs` is empty (monomorphic — no-op).
 Returns `none` if the type substitution cannot be derived.
 -/
-def LFunc.computeTypeSubst {T : LExprParams} (fn : LFunc T) (callee : LExpr T.mono)
+@[expose] def LFunc.computeTypeSubst {T : LExprParams} (fn : LFunc T) (callee : LExpr T.mono)
     (args : List (LExpr T.mono)) : Option Subst :=
-  if fn.typeArgs.isEmpty then some Subst.empty
-  else
-    -- Try the instantiated type on the .op node first
-    let opConstraints := match callee with
-      | .op _ _ (some instTy) =>
-        let genericTy := LMonoTy.mkArrow' fn.output fn.inputs.values
-        [(instTy, genericTy)]
-      | _ => []
-    -- Also unify argument types against formal parameter types
-    -- Note that the best-effort mechanism is OK: on typechecked terms,
-    -- everything will have been found by the `opConstraints` anyway
-    let argConstraints := (args.zip fn.inputs.values).filterMap
-      (fun (arg, formal) => arg.typeOf.map (·, formal))
-    let allConstraints := opConstraints ++ argConstraints
-    if allConstraints.isEmpty then none
-    else match Constraints.unify allConstraints SubstInfo.empty with
-      | .ok substInfo => some substInfo.subst
-      | .error _ => none
+  match fn.opTypeSubst callee with
+  | some s => some s
+  | none =>
+    -- Fallback: use argument types (best-effort, only when .op is unannotated)
+    if fn.typeArgs.isEmpty then some Subst.empty
+    else
+      let argConstraints := (args.zip fn.inputs.values).filterMap
+        (fun (arg, formal) => arg.typeOf.map (·, formal))
+      if argConstraints.isEmpty then none
+      else match Constraints.unify argConstraints SubstInfo.empty with
+        | .ok substInfo => some substInfo.subst
+        | .error _ => none
+
+/-- When `opTypeSubst` succeeds, `computeTypeSubst` agrees with it. -/
+theorem LFunc.computeTypeSubst_of_opTypeSubst {T : LExprParams}
+    {fn : LFunc T} {callee : LExpr T.mono} {args : List (LExpr T.mono)} {s : Subst}
+    (h : fn.opTypeSubst callee = some s)
+    : fn.computeTypeSubst callee args = some s := by
+  unfold LFunc.computeTypeSubst
+  rw [h]
+
+/-- When `computeTypeSubst` succeeds and `opTypeSubst` also succeeds, they agree. -/
+theorem LFunc.opTypeSubst_of_computeTypeSubst {T : LExprParams}
+    {fn : LFunc T} {callee : LExpr T.mono} {args : List (LExpr T.mono)} {s : Subst}
+    (h : fn.computeTypeSubst callee args = some s)
+    (hop : fn.opTypeSubst callee ≠ none)
+    : fn.opTypeSubst callee = some s := by
+  unfold LFunc.computeTypeSubst at h
+  cases heq : fn.opTypeSubst callee with
+  | none => contradiction
+  | some s' => rw [heq] at h; exact h
 
 end -- public section
 end Lambda

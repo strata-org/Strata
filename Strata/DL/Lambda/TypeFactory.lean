@@ -85,14 +85,14 @@ instance : ToFormat (LDatatype IDMeta) where
 /--
 A datatype applied to arguments
 -/
-def data (d: LDatatype IDMeta) (args: List LMonoTy) : LMonoTy :=
+@[expose] def data (d: LDatatype IDMeta) (args: List LMonoTy) : LMonoTy :=
   .tcons d.name args
 
 /--
 The default type application for a datatype. E.g. for datatype
 `type List α = | Nil | Cons α (List α)`, produces LMonoTy `List α`.
 -/
-def dataDefault (d: LDatatype IDMeta) : LMonoTy :=
+@[expose] def dataDefault (d: LDatatype IDMeta) : LMonoTy :=
   data d (d.typeArgs.map .ftvar)
 
 /-- A group of mutually recursive datatypes. -/
@@ -198,7 +198,7 @@ The `LFunc` corresponding to constructor `c` of datatype `d`. Constructor
 functions do not have bodies or `concreteEval` functions, as they are values
 when applied to value arguments.
 -/
-def constrFunc (c: LConstr T.IDMeta) (d: LDatatype T.IDMeta) : LFunc T :=
+@[expose] def constrFunc (c: LConstr T.IDMeta) (d: LDatatype T.IDMeta) : LFunc T :=
   { name := c.name, typeArgs := d.typeArgs, inputs := c.args, output := dataDefault d, isConstr := true }
 
 /--

@@ -77,24 +77,6 @@ theorem foldl_eqlCombine_init_true
     unfold LExpr.eqlCombine at this
     split at this <;> simp_all
 
--- /-- The foldl over `attach.zip` equals the foldl over plain `zip`. -/
--- theorem foldl_eqlCombine_attach_zip
---     {F : @Factory T}
---     {args1 args2 : List (LExpr T.mono)} {init : Option Bool}
---     : List.foldl (fun acc x => LExpr.eqlCombine acc (LExpr.eql F x.1.val x.snd))
---         init (args1.attach.zip args2) =
---       List.foldl (fun acc (p : LExpr T.mono × LExpr T.mono) =>
---         LExpr.eqlCombine acc (LExpr.eql F p.1 p.2))
---         init (args1.zip args2) := by
---   induction args1 generalizing args2 init with
---   | nil => simp [List.attach, List.zip]
---   | cons a1 rest1 ih =>
---     cases args2 with
---     | nil => simp [List.attach, List.zip]
---     | cons a2 rest2 =>
---       simp only [List.attach_cons, List.zip_cons_cons, List.foldl_cons]
---       sorry
-
 /-- If folding `eqlCombine` over pairs returns `some true`, then every
 individual `eql` call returned `some true`. -/
 theorem eqlCombine_all_true
@@ -206,13 +188,14 @@ theorem eql_foldl_implies_denote_eq_pointwise
 Restricted to the empty bound-variable context since `varOpen` (used in
 the lambda case) does not shift de Bruijn indices. -/
 theorem eql_true_implies_denote_eq
-    {F : @Factory T}
+    {F : @Factory T} {tf : @TypeFactory T.IDMeta}
     {e₁ e₂ : LExpr T.mono} {τ : LMonoTy}
     (h₁ : LExpr.HasTypeA [] e₁ τ)
     (h₂ : LExpr.HasTypeA [] e₂ τ)
     (hoc₁ : OpsConsistent F e₁)
     (hoc₂ : OpsConsistent F e₂)
     (hfwf : FactoryWF F)
+    (hcwf : Factory.ConstrWellFormed F tf)
     (heql : LExpr.eql F e₁ e₂ = some true)
     : LExpr.denote tcInterp opInterp fvarVal vt .nil e₁ τ h₁ =
       LExpr.denote tcInterp opInterp fvarVal vt .nil e₂ τ h₂ := by
@@ -329,9 +312,9 @@ theorem eql_true_implies_denote_eq
         -- Extract OpsConsistent for arguments from the top-level OpsConsistent
         have hoc_args1 := OpsConsistent_callOfLFunc_args hoc₁ hcall1
         have hoc_args2 := OpsConsistent_callOfLFunc_args hoc₂ hcall2
-        have hargTys := constr_callOfLFunc_argTys_eq
-          hcall1 hcall2 h₁ h₂ h_args1 h_args2
-          hoc₁ hoc₂ hfwf hconstr
+        have hargTys := constr_callOfLFunc_argTys_eq'
+          hcall1 hcall2 h_args1 h_args2
+          hoc₁ hoc₂ hfwf hcwf hconstr
           ⟨m1, name1, h_callee1⟩ ⟨m2, name2, h_callee2⟩
         subst hargTys
         -- Goal: denoteArgs ... args1 argTys1 h_args1 = denoteArgs ... args2 argTys1 h_args2

@@ -24,13 +24,6 @@ variable (vt : TyVarVal)
 
 /-! ### Helper lemmas -/
 
-/-- `callOfLFunc` only returns functions that are members of the factory's array. -/
-theorem Factory.callOfLFunc_mem' {F : @Factory T} {e : LExpr T.mono} {callee args fn} :
-    F.callOfLFunc e = some (callee, args, fn) → fn ∈ F.toArray := by
-  intro hcall
-  obtain ⟨_, _, _, _, h_get⟩ := Factory.callOfLFunc_getElem? hcall
-  exact Factory.getElem?_is_some_implies_mem h_get
-
 /-! ### Weakening and context-irrelevance for lcAt 0 expressions -/
 
 section -- [DecidableEq T.IDMeta] [Inhabited T.mono.base.IDMeta]
@@ -56,7 +49,7 @@ theorem zip_map_fst_snd_eq {α β : Type} (l : List (α × β)) :
 are well-typed at the same type `τ`, then (given consistency of the factory and
 environment with the semantic interpretations) they have the same denotation. -/
 theorem Step.denote_preserved
-    {F : @Factory T} {env : Env T}
+    {F : @Factory T} {env : Env T} {tf : @TypeFactory T.IDMeta}
     {e₁ e₂ : LExpr T.mono} {τ : LMonoTy}
     (hstep : Step F env e₁ e₂)
     (h₁ : LExpr.HasTypeA [] e₁ τ)
@@ -66,6 +59,7 @@ theorem Step.denote_preserved
     (hEnv : Env.InterpConsistent tcInterp opInterp env fvarVal)
     (hOps : OpsConsistent F e₁)
     (hFwf : FactoryWF F)
+    (hcwf : Factory.ConstrWellFormed F tf)
     : LExpr.denote tcInterp opInterp fvarVal vt .nil e₁ τ h₁ =
       LExpr.denote tcInterp opInterp fvarVal vt .nil e₂ τ h₂ := by
   induction hstep generalizing τ with
@@ -148,7 +142,7 @@ theorem Step.denote_preserved
     | eq h_1 h_2 =>
       rw [denote_eq_true .nil h_1 h_2 _
           (eql_true_implies_denote_eq tcInterp opInterp fvarVal vt h_1 h_2
-            hOps.2.1 hOps.2.2 hFwf heql)]
+            hOps.2.1 hOps.2.2 hFwf hcwf heql)]
       rfl
   | eq_reduce_false e1 e2 heql =>
     cases h₁ with
@@ -194,7 +188,8 @@ theorem Step.denote_preserved
     -- Step 2: Extract from OpsConsistent
     obtain ⟨tySubst', htySubst', h_ty_op_eq⟩ := OpsConsistent_callOfLFunc hOps hcall
     rw [h_callee_eq] at htySubst htySubst'
-    have : tySubst' = tySubst := Option.some.inj (htySubst'.symm.trans htySubst)
+    have htySubst'_ct := LFunc.computeTypeSubst_of_opTypeSubst (args := args) htySubst'
+    have : tySubst' = tySubst := Option.some.inj (htySubst'_ct.symm.trans htySubst)
     subst this
     have h_ty_op_val := h_ty_op_eq m name ty_op h_callee_eq
     -- Step 3: Decompose into τ and argTys
