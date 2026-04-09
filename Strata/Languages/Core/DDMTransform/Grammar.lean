@@ -5,10 +5,9 @@
 -/
 
 /- NOTE: This grammar is the source of truth for Core.st syntax. If you change
-   keywords, operators, types, or built-in functions here, please keep the
-   editor syntax files in sync:
-     - editors/emacs/core-st-mode.el
-     - editors/vscode/syntaxes/core-st.tmLanguage.json
+   keywords, operators, types, or built-in functions here, regenerate the
+   editor syntax files by running:
+     lake env lean --run editors/GenSyntax.lean all
 -/
 module
 

@@ -1,35 +1,32 @@
 ;;; core-st-mode.el --- Major mode for Strata Core (.core.st) files -*- lexical-binding: t; -*-
 
-;; NOTE: This file was generated from the DDM grammar definition in
-;; Strata/Languages/Core/DDMTransform/Grammar.lean. If the grammar
-;; changes, this file should be updated to match.
+;; AUTO-GENERATED from the Core DDM grammar.
+;; Do not edit by hand; run: lake env lean --run editors/GenSyntax.lean emacs
 
 ;; Keywords
 (defvar core-st-keywords
-  '("if" "else" "while" "exit" "call"
-    "program" "procedure" "function" "returns" "spec"
-    "var" "const" "type" "axiom" "distinct" "rec" "inline" "datatype"
-    "requires" "ensures" "modifies" "free" "invariant" "decreases"
-    "assert" "assume" "cover" "havoc"
-    "forall" "exists" "old"))
+  '(    "var" "assume" "assert" "cover" "if" "else" "havoc" "invariant"
+    "decreases" "while" "call" "exit" "free" "modifies" "ensures"
+    "requires" "spec" "procedure" "returns" "type" "const" "function"
+    "inline" "rec" "axiom" "distinct" "datatype" "old" "forall" "exists"
+    "program"))
 
 (defvar core-st-types
-  '("bool" "int" "string" "regex" "real"
-    "bv1" "bv8" "bv16" "bv32" "bv64"
-    "Map" "Sequence"))
+  '(    "bool" "int" "string" "regex" "real" "bv1" "bv8" "bv16" "bv32"
+    "bv64" "Map" "Sequence"))
 
 (defvar core-st-constants
-  '("true" "false" "null"))
+  '(    "true" "false" "null"))
 
 (defvar core-st-operators
-  '("div" "mod" "sdiv" "smod"))
+  '(    "div" "mod" "sdiv" "smod"))
 
 (defvar core-st-builtins
-  '("str.len" "str.concat" "str.substr" "str.to.re" "str.in.re"
-    "re.allchar" "re.all" "re.range" "re.concat" "re.*" "re.+" "re.loop"
-    "re.union" "re.inter" "re.comp" "re.none"
-    "Sequence.length" "Sequence.select" "Sequence.append" "Sequence.build"
-    "Sequence.update" "Sequence.contains" "Sequence.take" "Sequence.drop"
+  '(    "Sequence.length" "Sequence.select" "Sequence.append"
+    "Sequence.build" "Sequence.update" "Sequence.contains"
+    "Sequence.take" "Sequence.drop" "str.len" "str.concat" "str.substr"
+    "str.to.re" "str.in.re" "re.allchar" "re.all" "re.range" "re.concat"
+    "re.*" "re.+" "re.loop" "re.union" "re.inter" "re.comp" "re.none"
     "Int.DivT" "Int.ModT"))
 
 ;; Font-lock rules
