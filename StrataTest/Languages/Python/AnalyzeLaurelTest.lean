@@ -329,13 +329,14 @@ the solver use the path condition `bucket == "my-bucket"` to verify.
     match result with
     | .error msg => throw <| IO.userError s!"Pipeline failed: {msg}"
     | .ok vcResults =>
-      -- All regex precondition VCs should pass (no "always false")
+      -- The regex precondition VC must actually pass (✔️), not just be
+      -- "not false".  Without evalIfCanonical the regex stays uninterpreted
+      -- and the result would be ❓ unknown.
       for r in vcResults do
         if r.obligation.label.startsWith "servicelib_Storage_" then
-          let line := r.formatOutcome
-          if (line.splitOn "✖️").length != 1 then
+          if !r.isSuccess then
             throw <| IO.userError
-              s!"Expected all preconditions to pass but got failure: {line}"
+              s!"Expected all Storage preconditions to pass but got: {r.formatOutcome}"
 
 /-! ## Resolution error test after FilterPrelude
 
