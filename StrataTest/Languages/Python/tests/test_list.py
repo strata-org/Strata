@@ -6,6 +6,14 @@ n = numbers[2]
 
 assert n == 30
 
+assert numbers[-2] == 40
+
+assert numbers[-5] == 10
+
+numbers[-1] = 99 
+
+assert numbers[-1] == 99 
+
 words = ["apple", "pencil", "wood"]
 
 sumlist = numbers + words 
