@@ -15,7 +15,7 @@ import Strata.Languages.Laurel.LaurelToCoreTranslator
 import Strata.Languages.Python.Python
 import Strata.Languages.Python.Specs.IdentifyOverloads
 import Strata.Languages.Python.Specs.ToLaurel
-import Strata.Languages.Laurel.LaurelFormat
+import Strata.Languages.Laurel.Grammar.AbstractToConcreteTreeTranslator
 import Strata.Languages.Laurel.Laurel
 import Strata.Backends.CBMC.CollectSymbols
 import Strata.Backends.CBMC.GOTO.CoreToGOTOPipeline
@@ -659,7 +659,7 @@ def pyAnalyzeLaurelCommand : Command where
 
     if let some dir := keepDir then
       let path := s!"{dir}/{baseName}.laurel"
-      IO.FS.writeFile path (toString (Std.Format.pretty f!"{combinedLaurel}") ++ "\n")
+      IO.FS.writeFile path ((Laurel.formatProgram combinedLaurel).pretty ++ "\n")
 
     let (coreProgramOption, laurelTranslateErrors, loweredLaurel) ←
       profileStep profile "Laurel to Core translation" do
@@ -667,7 +667,7 @@ def pyAnalyzeLaurelCommand : Command where
 
     if let some dir := keepDir then
       let path := s!"{dir}/{baseName}.lowered.laurel"
-      IO.FS.writeFile path (toString (Std.Format.pretty f!"{loweredLaurel}") ++ "\n")
+      IO.FS.writeFile path ((Laurel.formatProgram loweredLaurel).pretty ++ "\n")
 
     let coreProgram ←
       match coreProgramOption with
