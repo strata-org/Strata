@@ -184,7 +184,10 @@ def verifyOptionsFlags : List Flag := [
     help := "Use SMT-LIB Array theory instead of axiomatized maps." },
   { name := "remove-irrelevant-axioms",
     help := "Prune irrelevant axioms: 'off', 'aggressive', or 'precise'.",
-    takesArg := .arg "mode" }
+    takesArg := .arg "mode" },
+  { name := "overflow-checks",
+    help := "Comma-separated overflow checks to enable (signed,unsigned,float64,all,none).",
+    takesArg := .arg "checks" }
 ]
 
 /-- Build a VerifyOptions from parsed CLI flags, starting from a base config.
@@ -207,6 +210,16 @@ def parseVerifyOptions (pflags : ParsedFlags)
     | .some "aggressive" => pure .Aggressive
     | .some "precise" => pure .Precise
     | .some s => exitFailure s!"Invalid remove-irrelevant-axioms mode: '{s}'. Must be 'off', 'aggressive', or 'precise'."
+  let overflowChecks := match pflags.getString "overflow-checks" with
+    | .none => base.overflowChecks
+    | .some s => s.splitOn "," |>.foldl (fun acc c =>
+        match c.trimAscii.toString with
+        | "signed"   => { acc with signedBV := true }
+        | "unsigned" => { acc with unsignedBV := true }
+        | "float64"  => { acc with float64 := true }
+        | "none"     => { signedBV := false, unsignedBV := false, float64 := false }
+        | "all"      => { signedBV := true, unsignedBV := true, float64 := true }
+        | _          => acc) { signedBV := false, unsignedBV := false, float64 := false }
   let vcDirectory := (pflags.getString "vc-directory" |>.map (⟨·⟩ : String → System.FilePath)).orElse (fun _ => base.vcDirectory)
   let skipSolver := noSolve || base.skipSolver
   if skipSolver && vcDirectory.isNone then
@@ -226,6 +239,7 @@ def parseVerifyOptions (pflags : ParsedFlags)
     profile := pflags.getBool "profile" || base.profile,
     skipSolver,
     alwaysGenerateSMT := noSolve || base.alwaysGenerateSMT,
+    overflowChecks,
     vcDirectory
   }
 
@@ -1246,29 +1260,17 @@ def verifyCommand : Command where
     { name := "type-check", help := "Exit after semantic dialect's type inference/checking." },
     { name := "parse-only", help := "Exit after DDM parsing and type checking." },
     { name := "output-format", help := "Output format (only 'sarif' supported).", takesArg := .arg "format" },
-    { name := "procedures", help := "Verify only the specified procedures (comma-separated).", takesArg := .arg "procs" },
-    { name := "overflow-checks", help := "Comma-separated overflow checks to enable (signed,unsigned,float64,all,none).", takesArg := .arg "checks" } ]
+    { name := "procedures", help := "Verify only the specified procedures (comma-separated).", takesArg := .arg "procs" }]
   help := "Verify a Strata program file (.core.st, .csimp.st, or .b3.st)."
   callback := fun v pflags => do
     let file := v[0]
     let proceduresToVerify := pflags.getString "procedures" |>.map (·.splitToList (· == ','))
-    let overflowChecks := match pflags.getString "overflow-checks" with
-      | .none => Core.OverflowChecks.mk true false false
-      | .some s => s.splitOn "," |>.foldl (fun acc c =>
-          match c.trimAscii.toString with
-          | "signed"   => { acc with signedBV := true }
-          | "unsigned" => { acc with unsignedBV := true }
-          | "float64"  => { acc with float64 := true }
-          | "none"     => { signedBV := false, unsignedBV := false, float64 := false }
-          | "all"      => { signedBV := true, unsignedBV := true, float64 := true }
-          | _          => acc) { signedBV := false, unsignedBV := false, float64 := false }
     let opts ← parseVerifyOptions pflags { VerifyOptions.default with verbose := .quiet }
     let opts := { opts with
       checkOnly := pflags.getBool "check",
       typeCheckOnly := pflags.getBool "type-check",
       parseOnly := pflags.getBool "parse-only",
-      outputSarif := opts.outputSarif || pflags.getString "output-format" == some "sarif",
-      overflowChecks }
+      outputSarif := opts.outputSarif || pflags.getString "output-format" == some "sarif" }
     let (pgm, inputCtx) ← match ← readStrataProgram file with
       | .ok r => pure r
       | .error errors =>
