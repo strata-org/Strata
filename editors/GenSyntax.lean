@@ -10,9 +10,9 @@ import Strata.Languages.Core.DDMTransform.Grammar
 # Auto-generate editor syntax highlighting from the Core DDM grammar
 
 Usage:
-  lake env lean editors/GenSyntax.lean -- vscode   # writes editors/vscode/syntaxes/core-st.tmLanguage.json
-  lake env lean editors/GenSyntax.lean -- emacs    # writes editors/emacs/core-st-mode.el
-  lake env lean editors/GenSyntax.lean -- all      # writes both
+  lake env lean --run editors/GenSyntax.lean vscode   # writes editors/vscode/syntaxes/core-st.tmLanguage.json
+  lake env lean --run editors/GenSyntax.lean emacs    # writes editors/emacs/core-st-mode.el
+  lake env lean --run editors/GenSyntax.lean all      # writes both
 
 The generator reads the `Core` dialect object (produced by `#strata_gen`)
 and extracts types, keywords, operators, constants, and built-in function
@@ -368,5 +368,5 @@ def main (args : List String) : IO Unit := do
     IO.FS.writeFile path (generateEmacs info)
     IO.println s!"Wrote {path}"
   if target != "vscode" && target != "emacs" && target != "all" then
-    IO.eprintln s!"Usage: lake env lean editors/GenSyntax.lean -- [vscode|emacs|all]"
+    IO.eprintln s!"Usage: lake env lean --run editors/GenSyntax.lean [vscode|emacs|all]"
     IO.Process.exit 1
