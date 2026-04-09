@@ -598,13 +598,10 @@ def pyAnalyzeLaurelCommand : Command where
         verbose := .quiet, removeIrrelevantAxioms := .Precise,
         vcDirectory := baseVcDir }
     let options ← parseVerifyOptions pflags pyAnalyzeBase
-    -- Inline pyspec procedures so their precondition assertions are checked
-    -- at call sites with concrete arguments.
-    let pyspecFiles := pflags.getRepeated "pyspec"
     let isBugFinding := options.checkMode == .bugFinding
                       || options.checkMode == .bugFindingAssumingCompleteSpec
     let inlinePhases : List Core.PipelinePhase :=
-      if isBugFinding && pyspecFiles.size > 0 then
+      if isBugFinding then
         [Core.procedureInliningPipelinePhase
           { doInline := fun name a => name ≠ "__main__" && Core.doInlineNonRecursive name a
             maxIters := some 10 }]
