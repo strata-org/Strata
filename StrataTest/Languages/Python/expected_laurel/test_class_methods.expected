@@ -1,18 +1,18 @@
-test_class_methods.py(18, 4): ✅ pass - callElimAssert_requires_28
-test_class_methods.py(20, 4): ✅ pass - callElimAssert_requires_23
+test_class_methods.py(18, 4): ✅ pass - callElimAssert_requires_32
+test_class_methods.py(20, 4): ✅ pass - callElimAssert_requires_25
 test_class_methods.py(21, 4): ✅ pass - get_owner should return Alice
 test_class_methods.py(21, 4): ❓ unknown - get_owner should return Alice
-test_class_methods.py(23, 4): ✅ pass - callElimAssert_requires_19
+test_class_methods.py(23, 4): ✅ pass - callElimAssert_requires_21
 test_class_methods.py(24, 4): ✅ pass - get_balance should return 100
 test_class_methods.py(24, 4): ❓ unknown - get_balance should return 100
-test_class_methods.py(26, 4): ✅ pass - callElimAssert_requires_15
+test_class_methods.py(26, 4): ✅ pass - callElimAssert_requires_17
 test_class_methods.py(27, 4): ✅ pass - callElimAssert_requires_11
 test_class_methods.py(28, 4): ✅ pass - set_balance should update balance
 test_class_methods.py(28, 4): ❓ unknown - set_balance should update balance
 test_class_methods.py(30, 4): ✅ pass - (Origin_test_helper_procedure_Requires)req_name_is_foo
 test_class_methods.py(30, 4): ✅ pass - (Origin_test_helper_procedure_Requires)req_opt_name_none_or_str
 test_class_methods.py(30, 4): ✅ pass - (Origin_test_helper_procedure_Requires)req_opt_name_none_or_bar
-test_class_methods.py(17, 0): ✅ pass - postcondition
+test_class_methods.py(17, 0): ❓ unknown - postcondition
 test_class_methods.py(32, 0): ✅ pass - ite_cond_calls_Any_to_bool_0
-DETAIL: 13 passed, 0 failed, 3 inconclusive
+DETAIL: 12 passed, 0 failed, 4 inconclusive
 RESULT: Inconclusive
