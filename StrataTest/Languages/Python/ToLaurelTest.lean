@@ -465,8 +465,9 @@ body contains FieldSelect: false
       preconditions := #[{
         message := #[.str "nested dict"]
         formula := .intGe
-          (.getIndex (.getIndex (.var "kwargs") "Outer") "Inner")
-          (.intLit 0)
+          (.getIndex (.getIndex (.var "kwargs" loc) "Outer" loc) "Inner" loc)
+          (.intLit 0 loc)
+          loc
       }]
       postconditions := #[]
     }
