@@ -182,15 +182,3 @@ Overloads: 0 function(s)
   type MyClient
   procedure MyClient_put_object(Key:TString, ...) returns(result:TString)
 ```
-
-## Deprecated: Direct-to-Core Path
-
-The `pyAnalyze` and `pyTranslate` commands translate Python directly to Core,
-bypassing Laurel. This path is being phased out in favor of the Laurel
-pipeline described above.
-
-```
-# Deprecated — use pyAnalyzeLaurel instead
-lake exe strata pyAnalyze [--verbose] <file.python.st.ion>
-lake exe strata pyTranslate <file.python.st.ion>
-```

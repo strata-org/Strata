@@ -360,14 +360,6 @@ def pySpecsCommand : Command where
       | .ok () => pure ()
       | .error msg => exitFailure msg
 
-def pyTranslateCommand : Command where
-  name := "pyTranslate"
-  args := [ "file" ]
-  help := "Translate a Python Ion program to Core and print the result to stdout."
-  callback := fun v _ => do
-    let newPgm ← Strata.pythonDirectToCore v[0]
-    IO.print newPgm
-
 /-- Derive Python source file path from Ion file path.
     E.g., "tests/test_foo.python.st.ion" -> "tests/test_foo.py" -/
 def ionPathToPythonPath (ionPath : String) : Option String :=
@@ -406,97 +398,6 @@ def formatRelatedPositions (md : Imperative.MetaData Core.Expression)
         let pos := fm.toPosition fr.range.start
         some s!"\n  Related location: line {pos.line}, col {pos.column}"
     String.join lines.toList
-
-def pyAnalyzeCommand : Command where
-  name := "pyAnalyze"
-  args := [ "file" ]
-  flags := [{ name := "verbose", help := "Enable verbose output." },
-            { name := "sarif", help := "Write results as SARIF to <file>.sarif." },
-            { name := "unique-bound-names", help := "Use globally unique names for quantifier-bound variables." },
-            { name := "vc-directory",
-              help := "Store VCs in SMT-Lib format in <dir>.",
-              takesArg := .arg "dir" }]
-  help := "Verify a Python Ion program. Translates to Core, inlines procedures, and runs SMT verification."
-  callback := fun v pflags => do
-    let verbose := pflags.getBool "verbose"
-    let outputSarif := pflags.getBool "sarif"
-    let uniqueBoundNames := pflags.getBool "unique-bound-names"
-    let filePath := v[0]
-    -- Try to read the Python source for line number conversion
-    let pySourceOpt ← tryReadPythonSource filePath
-    let sourcePathForMetadata := match pySourceOpt with
-      | some (pyPath, _) => pyPath
-      | none => filePath
-    let newPgm ← Strata.pythonDirectToCore filePath sourcePathForMetadata
-    if verbose then
-      IO.print newPgm
-    let solverName : String := "Strata/Languages/Python/z3_parallel.py"
-    let verboseMode := VerboseMode.ofBool verbose
-    let vcDir : Option System.FilePath := pflags.getString "vc-directory" |>.map (⟨·⟩)
-    let options :=
-            { VerifyOptions.default with
-              stopOnFirstError := false,
-              verbose := verboseMode,
-              removeIrrelevantAxioms := .Precise,
-              solver := solverName,
-              uniqueBoundNames := uniqueBoundNames,
-              vcDirectory := vcDir }
-    let inlinePhases : List Core.PipelinePhase :=
-      if options.checkMode == .bugFinding || options.checkMode == .bugFindingAssumingCompleteSpec then
-        [Core.procedureInliningPipelinePhase { doInline := some (fun name _ => name ≠ "main") }]
-      else []
-    let vcResults ←
-      match ← Core.verifyProgram newPgm options
-                (moreFns := Strata.Python.ReFactory)
-                (externalPhases := [Strata.frontEndPhase])
-                (prefixPhases := inlinePhases) |>.toBaseIO with
-      | .ok r => pure r
-      | .error msg => exitInternalError msg
-    let mfm : Option (String × Lean.FileMap) := match pySourceOpt with
-      | some (pyPath, srcText) => some (pyPath, .ofString srcText)
-      | none => none
-    let mut s := ""
-    for vcResult in vcResults do
-      -- Build location string based on available metadata
-      let (locationPrefix, locationSuffix) := match Imperative.getFileRange vcResult.obligation.metadata with
-        | some fr =>
-          if fr.range.isNone then ("", "")
-          else
-            match mfm with
-            | some (pyPath, fm) =>
-              -- Check if this metadata is from the Python source (not CorePrelude)
-              match fr.file with
-              | .file path =>
-                if path == pyPath then
-                  let pos := fm.toPosition fr.range.start
-                  -- For failures, show at beginning; for passes, show at end
-                  if vcResult.isFailure then
-                    (s!"Assertion failed at line {pos.line}, col {pos.column}: ", "")
-                  else
-                    ("", s!" (at line {pos.line}, col {pos.column})")
-                else
-                  -- From CorePrelude or other source, show byte offsets
-                  if vcResult.isFailure then
-                    (s!"Assertion failed for prelude: ", "")
-                  else
-                    ("", s!" (in prelude)")
-            | none =>
-              if vcResult.isFailure then
-                (s!"Assertion failed at byte offset: ", "")
-              else
-                ("", s!" (at byte offset)")
-        | none => ("", "")
-      let outcomeStr := vcResult.formatOutcome
-      let relatedStr := formatRelatedPositions vcResult.obligation.metadata mfm
-      s := s ++ s!"\n{locationPrefix}{vcResult.obligation.label}: \
-                    {outcomeStr}{locationSuffix}{relatedStr}\n"
-    IO.println s
-    -- Output in SARIF format if requested
-    if outputSarif then
-      let files := match mfm with
-        | some (pyPath, fm) => Map.empty.insert (Strata.Uri.file pyPath) fm
-        | none => Map.empty
-      Core.Sarif.writeSarifOutput .deductive files vcResults (filePath ++ ".sarif")
 
 /-! ### pyAnalyzeLaurel result helpers
 
@@ -1329,12 +1230,11 @@ def commandGroups : List CommandGroup := [
   { name := "Code Generation"
     commands := [javaGenCommand] },
   { name := "Python"
-    commands := [pyAnalyzeCommand, pyAnalyzeLaurelCommand,
+    commands := [pyAnalyzeLaurelCommand,
                  pyResolveOverloadsCommand,
                  pySpecsCommand, pySpecToLaurelCommand,
                  pyAnalyzeLaurelToGotoCommand,
                  pyAnalyzeToGotoCommand,
-                 pyTranslateCommand,
                  pyTranslateLaurelCommand] },
   { name := "Laurel"
     commands := [laurelAnalyzeCommand, laurelAnalyzeBinaryCommand,
