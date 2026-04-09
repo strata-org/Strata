@@ -288,8 +288,9 @@ end
 
 /-! ## Main transformation -/
 
-/-- Add a WF procedure as a leaf node in the cached call graph.
-WF procedures contain only assert/assume statements and make no procedure calls. -/
+/-- Add a precondition-WF procedure as a leaf node in the cached call graph.
+These procedures contain only assert/assume statements and make no procedure
+calls, so they have no outgoing edges. -/
 private def addWFProcToCallGraph (name : String) : CoreTransformM Unit :=
   modify fun σ => match σ.cachedAnalyses.callGraph with
   | .some cg => { σ with cachedAnalyses := { σ.cachedAnalyses with

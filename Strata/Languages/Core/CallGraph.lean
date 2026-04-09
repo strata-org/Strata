@@ -66,7 +66,9 @@ def CallGraph.decrementEdge (cg : CallGraph) (caller : String) (callee : String)
 
 /-- Add a node with no callees to the call graph. -/
 def CallGraph.addLeafNode (cg : CallGraph) (name : String) : CallGraph :=
-  { cg with callees := cg.callees.insert name {} }
+  { cg with
+    callees := cg.callees.insert name {}
+    callers := cg.callers.insert name {} }
 
 /-- BFS worker for transitive closure. `getNeighbors` provides the edges.
 `allNodes` is a fixed universe of node names (all keys in the graph);
