@@ -44,11 +44,9 @@ private def parseElimAndPrint (input : String) : IO Unit := do
 /--
 info: function $hole_0() returns ⏎
 ($result: int)
-deterministic
 ⏎
 procedure test() returns ⏎
 ()
-deterministic
 { var x: int := 1 + $hole_0() }
 -/
 #guard_msgs in
@@ -60,11 +58,9 @@ procedure test() { var x: int := 1 + <?> };
 /--
 info: function $hole_0() returns ⏎
 ($result: int)
-deterministic
 ⏎
 procedure test() returns ⏎
 ()
-deterministic
 { var x: int := $hole_0() }
 -/
 #guard_msgs in
@@ -76,11 +72,9 @@ procedure test() { var x: int := <?> };
 /--
 info: function $hole_0() returns ⏎
 ($result: int)
-deterministic
 ⏎
 procedure test() returns ⏎
 ()
-deterministic
 { assert $hole_0() > 0 }
 -/
 #guard_msgs in
@@ -92,11 +86,9 @@ procedure test() { assert <?> > 0 };
 /--
 info: function $hole_0() returns ⏎
 ($result: bool)
-deterministic
 ⏎
 procedure test() returns ⏎
 ()
-deterministic
 { assert $hole_0() }
 -/
 #guard_msgs in
@@ -108,11 +100,9 @@ procedure test() { assert <?> };
 /--
 info: function $hole_0() returns ⏎
 ($result: bool)
-deterministic
 ⏎
 procedure test() returns ⏎
 ()
-deterministic
 { assume $hole_0() }
 -/
 #guard_msgs in
@@ -124,11 +114,9 @@ procedure test() { assume <?> };
 /--
 info: function $hole_0() returns ⏎
 ($result: bool)
-deterministic
 ⏎
 procedure test() returns ⏎
 ()
-deterministic
 { if $hole_0() then { assert true } }
 -/
 #guard_msgs in
@@ -140,11 +128,9 @@ procedure test() { if <?> then { assert true } };
 /--
 info: function $hole_0() returns ⏎
 ($result: int)
-deterministic
 ⏎
 procedure test() returns ⏎
 ()
-deterministic
 { var x: int := if true then $hole_0() else 0 }
 -/
 #guard_msgs in
@@ -156,11 +142,9 @@ procedure test() { var x: int := if true then <?> else 0 };
 /--
 info: function $hole_0() returns ⏎
 ($result: bool)
-deterministic
 ⏎
 procedure test() returns ⏎
 ()
-deterministic
 { while $hole_0() {  } }
 -/
 #guard_msgs in
@@ -172,11 +156,9 @@ procedure test() { while(<?>) {} };
 /--
 info: function $hole_0() returns ⏎
 ($result: bool)
-deterministic
 ⏎
 procedure test() returns ⏎
 ()
-deterministic
 { while true invariant $hole_0() {  } }
 -/
 #guard_msgs in
@@ -190,11 +172,9 @@ procedure test() { while(true) invariant <?> {} };
 /--
 info: function $hole_0() returns ⏎
 ($result: bool)
-deterministic
 ⏎
 procedure test() returns ⏎
 ()
-deterministic
 { assert true && $hole_0() }
 -/
 #guard_msgs in
@@ -206,11 +186,9 @@ procedure test() { assert true && <?> };
 /--
 info: function $hole_0() returns ⏎
 ($result: int)
-deterministic
 ⏎
 procedure test() returns ⏎
 ()
-deterministic
 { var x: int := -$hole_0() }
 -/
 #guard_msgs in
@@ -222,11 +200,9 @@ procedure test() { var x: int := -<?> };
 /--
 info: function $hole_0() returns ⏎
 ($result: string)
-deterministic
 ⏎
 procedure test() returns ⏎
 ()
-deterministic
 { var s: string := "hello" ++ $hole_0() }
 -/
 #guard_msgs in
@@ -239,15 +215,12 @@ deterministic
 /--
 info: function $hole_0() returns ⏎
 ($result: int)
-deterministic
 ⏎
 function $hole_1() returns ⏎
 ($result: int)
-deterministic
 ⏎
 procedure test() returns ⏎
 ()
-deterministic
 { var x: int := $hole_0() + $hole_1() }
 -/
 #guard_msgs in
@@ -259,15 +232,12 @@ procedure test() { var x: int := <?> + <?> };
 /--
 info: function $hole_0() returns ⏎
 ($result: int)
-deterministic
 ⏎
 function $hole_1() returns ⏎
 ($result: bool)
-deterministic
 ⏎
 procedure test() returns ⏎
 ()
-deterministic
 { var x: int := 2 * $hole_0(); assert $hole_1() }
 -/
 #guard_msgs in
@@ -281,11 +251,9 @@ procedure test() { var x: int := 2 * <?>; assert <?> };
 /--
 info: function $hole_0() returns ⏎
 ($result: int)
-deterministic
 ⏎
 procedure test() returns ⏎
 ()
-deterministic
 { if 1 + $hole_0() > 0 then { assert true } }
 -/
 #guard_msgs in
@@ -297,11 +265,9 @@ procedure test() { if 1 + <?> > 0 then { assert true } };
 /--
 info: function $hole_0() returns ⏎
 ($result: bool)
-deterministic
 ⏎
 procedure test() returns ⏎
 ()
-deterministic
 { var p: bool; while true invariant p ==> $hole_0() {  } }
 -/
 #guard_msgs in
@@ -313,11 +279,9 @@ procedure test() { var p: bool; while(true) invariant p ==> <?> {} };
 /--
 info: function $hole_0() returns ⏎
 ($result: real)
-deterministic
 ⏎
 procedure test() returns ⏎
 ()
-deterministic
 { var r: real := 3.14 * $hole_0() }
 -/
 #guard_msgs in
@@ -331,11 +295,9 @@ procedure test() { var r: real := 3.14 * <?> };
 /--
 info: function $hole_0(n: int) returns ⏎
 ($result: int)
-deterministic
 ⏎
 procedure test(n: int) returns ⏎
 ()
-deterministic
 { assert n > $hole_0(n) }
 -/
 #guard_msgs in
@@ -349,11 +311,9 @@ procedure test(n: int) { assert n > <?> };
 /--
 info: function $hole_0(x: int) returns ⏎
 ($result: int)
-deterministic
 ⏎
 function test(x: int) returns ⏎
 (result: int)
-deterministic
 { $hole_0(x) }
 -/
 #guard_msgs in
@@ -367,7 +327,6 @@ function test(x: int): int { <?> };
 /--
 info: procedure test() returns ⏎
 ()
-deterministic
 { assert <??> }
 -/
 #guard_msgs in
@@ -379,11 +338,9 @@ procedure test() { assert <??> };
 /--
 info: function $hole_0() returns ⏎
 ($result: int)
-deterministic
 ⏎
 procedure test() returns ⏎
 ()
-deterministic
 { var x: int := $hole_0(); assert <??> }
 -/
 #guard_msgs in
