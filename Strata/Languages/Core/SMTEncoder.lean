@@ -198,16 +198,16 @@ we leave as `partial` for now.
 -/
 partial def SMT.Context.addType (E: Env) (id: String) (args: List LMonoTy) (ctx: SMT.Context) :
   SMT.Context :=
+  -- Always recurse into concrete args to register any type references
+  -- (e.g. Map Composite Int needs to register Composite even though Map itself
+  -- is built-in).
+  let ctx := args.foldl (fun ctx arg =>
+    match arg with
+    | .tcons id1 args1 => SMT.Context.addType E id1 args1 ctx
+    | _ => ctx) ctx
   -- Built-in types (including Map, which is encoded as the built-in Array sort)
   -- should never be declared via declare-sort.
   if isBuiltinCoreTy id then ctx else
-  -- Always recurse into concrete args to register any type references
-  let ctx := args.foldl (fun ctx arg =>
-    match arg with
-    | .tcons id1 args1 =>
-      if isBuiltinCoreTy id1 then ctx
-      else SMT.Context.addType E id1 args1 ctx
-    | _ => ctx) ctx
   match E.datatypes.getType id with
   | some d =>
     if ctx.hasDatatype id then ctx else
