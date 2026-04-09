@@ -98,22 +98,9 @@ pre: $__y1 > 0
 Obligation:
 true
 
-Label: post
-Property: assert
-Assumptions:
-<label_ite_cond_false: !(~Int.Gt z #10)>: if $__x0 + $__y1 > 10 then false else true
-test_assume: $__x0 + $__y1 + 1 > 0
-pre: $__y1 > 0
-Obligation:
-true
-
 ---
 info:
 Obligation: test_assert
-Property: assert
-Result: ✅ pass
-
-Obligation: post
 Property: assert
 Result: ✅ pass
 

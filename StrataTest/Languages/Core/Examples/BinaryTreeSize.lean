@@ -119,10 +119,6 @@ Obligation: len_append
 Property: assert
 Result: ✅ pass
 
-Obligation: len_append
-Property: assert
-Result: ✅ pass
-
 Obligation: init_calls_IntTree..left_0
 Property: assert
 Result: ✅ pass
@@ -140,10 +136,6 @@ Property: assert
 Result: ✅ pass
 
 Obligation: init_calls_IntTree..right_1
-Property: assert
-Result: ✅ pass
-
-Obligation: size_is_len
 Property: assert
 Result: ✅ pass
 

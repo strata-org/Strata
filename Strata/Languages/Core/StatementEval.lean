@@ -463,9 +463,12 @@ def evalAuxGo (steps : Nat) (old_var_subst : SubstMap) (Ewn : EnvWithNext) (ss :
             Ewn c cond' then_ss else_ss md orig_stk rest optExit
       | .ite .nondet then_ss else_ss md =>
         let orig_stk := Ewn.stk
-        -- PE both branches with rest nested, keeping .ite .nondet in the output.
-        processNondetIteBranches steps' old_var_subst
-          Ewn then_ss else_ss md orig_stk rest optExit
+        -- Desugar: if (*) { t } else { e } → var c := *; if(c) { t } else { e }
+        let freshName : CoreIdent := ⟨s!"$__nondet_cond_{Ewn.env.pathConditions.length}", ()⟩
+        let freshVar : Expression.Expr := .fvar () freshName none
+        let initStmt := Statement.init freshName (.forAll [] (.tcons "bool" [])) .nondet md
+        let iteStmt := Imperative.Stmt.ite (.det freshVar) then_ss else_ss md
+        go' { Ewn with stk := orig_stk } (initStmt :: iteStmt :: rest) optExit
       | _ =>
       let EAndNexts : List EnvWithNext :=
         match s with
@@ -582,12 +585,12 @@ def processIteBranches (steps : Nat) (old_var_subst : SubstMap) (Ewn : EnvWithNe
   | [{ stk := stk_t, env := E_t, exitLabel := .none}],
     [{ stk := stk_f, env := E_f, exitLabel := .none}] =>
     let s' := Imperative.Stmt.ite (.det cond') stk_t.top stk_f.top md
-    -- Remove obligations from E_f whose labels already appear in E_t.
-    -- Since rest is evaluated in both branches, its obligations appear
-    -- in both; we keep only the true-branch copies to avoid duplicates.
-    let tLabels := E_t.deferred.map (·.label)
+    -- Remove obligations from E_f that duplicate ones in E_t (same label
+    -- and proof obligation). Since rest is evaluated in both branches, its
+    -- obligations appear in both; we keep only the true-branch copies.
     let dedupDeferred :=
-      E_f.deferred.filter fun ob => !tLabels.contains ob.label
+      E_f.deferred.filter fun ob =>
+        !E_t.deferred.any fun t => t.label == ob.label && t.obligation == ob.obligation
     let E_f' := { E_f with deferred := dedupDeferred }
     [EnvWithNext.mk (Env.merge cond' E_t E_f').popScope
                     .none
@@ -604,65 +607,6 @@ def processIteBranches (steps : Nat) (old_var_subst : SubstMap) (Ewn : EnvWithNe
                         { ewn with env := ewn.env.popScope,
                                    stk := orig_stk.appendToTop [s']})
   Ewns_t ++ Ewns_f
-  termination_by (steps, Imperative.Block.sizeOf then_ss + Imperative.Block.sizeOf else_ss + Imperative.Block.sizeOf rest)
-
-/-- Process a nondet ITE by PE'ing both branches with `rest` nested inside,
-    producing `.ite .nondet (then_rewritten ++ rest_rewritten) (else_rewritten ++ rest_rewritten)`. -/
-def processNondetIteBranches (steps : Nat) (old_var_subst : SubstMap) (Ewn : EnvWithNext)
-    (then_ss else_ss : Statements)
-    (md : Imperative.MetaData Expression) (orig_stk : StmtsStack)
-    (rest : Statements) (optExit : Option (Option String)) : List EnvWithNext :=
-  let Ewn := { Ewn with env := Ewn.env.pushEmptyScope }
-  have h_then_ge : 1 <= Imperative.Block.sizeOf then_ss := by
-   unfold Imperative.Block.sizeOf; split <;> omega
-  have h_else_ge : 1 <= Imperative.Block.sizeOf else_ss := by
-   unfold Imperative.Block.sizeOf; split <;> omega
-  have h_rest_ge : 1 <= Imperative.Block.sizeOf rest := by
-   unfold Imperative.Block.sizeOf; split <;> omega
-  have h_append_le : ∀ (a b : Statements),
-      Imperative.Block.sizeOf (a ++ b) + 1 <=
-      Imperative.Block.sizeOf a + Imperative.Block.sizeOf b := by
-    intro a b
-    induction a with
-    | nil => simp [Imperative.Block.sizeOf]; omega
-    | cons h t ih =>
-      simp only [List.cons_append, Imperative.Block.sizeOf]
-      omega
-  have h_append_then : Imperative.Block.sizeOf (then_ss ++ rest) <
-      Imperative.Block.sizeOf then_ss + Imperative.Block.sizeOf else_ss + Imperative.Block.sizeOf rest := by
-    have := h_append_le then_ss rest; omega
-  have h_append_else : Imperative.Block.sizeOf (else_ss ++ rest) <
-      Imperative.Block.sizeOf then_ss + Imperative.Block.sizeOf else_ss + Imperative.Block.sizeOf rest := by
-    have := h_append_le else_ss rest; omega
-  -- Evaluate then-branch followed by rest
-  let Ewns_t := evalAuxGo steps old_var_subst Ewn (then_ss ++ rest) optExit
-  -- Empty deferred in else path to avoid duplicate obligations.
-  let Ewns_f := evalAuxGo steps old_var_subst
-                  {Ewn with env := {Ewn.env with deferred := #[]}}
-                  (else_ss ++ rest) optExit
-  match Ewns_t, Ewns_f with
-  | [{ stk := stk_t, env := E_t, exitLabel := .none}],
-    [{ stk := stk_f, env := E_f, exitLabel := .none}] =>
-    let s' := Imperative.Stmt.ite .nondet stk_t.top stk_f.top md
-    let tLabels := E_t.deferred.map (·.label)
-    let dedupDeferred :=
-      E_f.deferred.filter fun ob => !tLabels.contains ob.label
-    let E_f' := { E_f with deferred := dedupDeferred }
-    [EnvWithNext.mk (Env.mergeNondet E_t E_f').popScope
-                    .none
-                    (orig_stk.appendToTop [s'])]
-  | _, _ =>
-    let Ewns_t := Ewns_t.map
-                      (fun (ewn : EnvWithNext) =>
-                        let s' := Imperative.Stmt.ite .nondet ewn.stk.top [] md
-                        { ewn with env := ewn.env.popScope,
-                                   stk := orig_stk.appendToTop [s']})
-    let Ewns_f := Ewns_f.map
-                      (fun (ewn : EnvWithNext) =>
-                        let s' := Imperative.Stmt.ite .nondet [] ewn.stk.top md
-                        { ewn with env := ewn.env.popScope,
-                                   stk := orig_stk.appendToTop [s']})
-    Ewns_t ++ Ewns_f
   termination_by (steps, Imperative.Block.sizeOf then_ss + Imperative.Block.sizeOf else_ss + Imperative.Block.sizeOf rest)
 
 end

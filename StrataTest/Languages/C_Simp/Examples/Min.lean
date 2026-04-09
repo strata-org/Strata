@@ -73,19 +73,8 @@ Assumptions:
 Obligation:
 true
 
-Label: post
-Property: assert
-Assumptions:
-<label_ite_cond_false: !(~Int.Lt a b)>: if $__a0 < $__b1 then false else true
-Obligation:
-true
-
 ---
 info:
-Obligation: post
-Property: assert
-Result: ✅ pass
-
 Obligation: post
 Property: assert
 Result: ✅ pass
