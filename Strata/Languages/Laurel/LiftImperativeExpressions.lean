@@ -490,9 +490,9 @@ def transformProcedureBody (body : StmtExprMd) : LiftM StmtExprMd := do
 def transformProcedure (proc : Procedure) : LiftM Procedure := do
   modify fun s => { s with subst := [], prependedStmts := [], varCounters := [] }
   match proc.body with
-  | .Transparent bodyExpr =>
+  | .Transparent bodyExpr posts =>
       let seqBody ← transformProcedureBody bodyExpr
-      pure { proc with body := .Transparent seqBody }
+      pure { proc with body := .Transparent seqBody posts }
   | .Opaque postconds impl modif =>
       let impl' ← impl.mapM transformProcedureBody
       pure { proc with body := .Opaque postconds impl' modif }

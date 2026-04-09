@@ -1826,7 +1826,7 @@ def translateMethod (ctx : TranslationContext) (className : String)
       preconditions := [mkStmtExprMd (StmtExpr.LiteralBool true)]
       isFunctional := false
       decreases := none
-      body := .Transparent bodyBlock
+      body := .Transparent bodyBlock []
       md := md
     }
   | _ => throw (.internalError "Expected FunctionDef for method")
@@ -2157,7 +2157,7 @@ def pythonToLaurel' (info : PreludeInfo)
     outputs := [],
     preconditions := [],
     decreases := none,
-    body := .Transparent bodyBlock
+    body := .Transparent bodyBlock []
     md := md
     isFunctional := false
   }

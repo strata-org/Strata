@@ -101,8 +101,8 @@ def eliminateReturnsInExpression (proc : Procedure) : Procedure :=
   if !proc.isFunctional then proc
   else
     match proc.body with
-    | .Transparent bodyExpr =>
-      { proc with body := .Transparent (lastStmtToExpr bodyExpr) }
+    | .Transparent bodyExpr posts =>
+      { proc with body := .Transparent (lastStmtToExpr bodyExpr) posts }
     | .Opaque postconds (some impl) modif =>
       { proc with body := .Opaque postconds (some (lastStmtToExpr impl)) modif }
     | _ => proc
