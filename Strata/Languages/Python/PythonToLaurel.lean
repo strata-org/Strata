@@ -1879,7 +1879,6 @@ def mkDefaultInitDecl (className : String) : PythonFunctionDecl × Procedure :=
     inputs := inputs
     outputs := [{name := "LaurelResult", type := AnyTy}]
     preconditions := [mkStmtExprMd (StmtExpr.LiteralBool true)]
-    determinism := .nondeterministic
     isFunctional := false
     decreases := none
     body := .Opaque [] .none []
