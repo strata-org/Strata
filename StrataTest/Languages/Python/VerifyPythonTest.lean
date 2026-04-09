@@ -187,9 +187,6 @@ def main() -> None:
 
 -- Returning a Composite-typed value from a function with Any return type
 -- should not crash; the Composite is replaced with a Hole (unconstrained value).
--- The __init__ method contains a field assignment which produces an expected
--- "assertion could not be proved" diagnostic (field assignments are unresolved
--- in HeapParameterization).
 #guard_msgs in
 #eval withPython (warnOnSkip := false) fun pythonCmd => do
   let program :=

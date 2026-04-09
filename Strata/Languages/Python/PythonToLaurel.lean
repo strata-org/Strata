@@ -1706,7 +1706,6 @@ def translateFunction (ctx : TranslationContext) (sourceRange: SourceRange) (fun
       inputs := inputs
       outputs := outputs
       preconditions := typeConstraintPreconditions
-
       decreases := none
       body := Body.Opaque typeConstraintPostcondition bodyBlock []
       md := sourceRangeToMetaData ctx.filePath sourceRange
@@ -1849,7 +1848,6 @@ def translateMethod (ctx : TranslationContext) (className : String)
       inputs := renamedInputs
       outputs := outputs
       preconditions := [mkStmtExprMd (StmtExpr.LiteralBool true)]
-
       isFunctional := false
       decreases := none
       body := .Transparent bodyBlock
@@ -1908,7 +1906,7 @@ def translateClass (ctx : TranslationContext) (classStmt : Python.stmt SourceRan
     -- Translate each method
     let mut instanceProcedures : Array Procedure := #[]
     for stmt in body do
-      if let .FunctionDef _ _methodName _ _methodBody .. := stmt then
+      if let .FunctionDef .. := stmt then
         let proc ← translateMethod ctx className stmt
         instanceProcedures := instanceProcedures.push proc
 
