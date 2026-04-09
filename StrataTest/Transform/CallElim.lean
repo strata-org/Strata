@@ -51,16 +51,13 @@ program Core;
 var i : bool;
 var j : bool;
 var k : bool;
-procedure f(x : bool) returns (y : bool)
+procedure f(j : bool, x : bool) returns (j : bool, y : bool)
 spec {
   requires (i == !x);
   ensures (y == x);
   ensures (y == j);
-  modifies j;
 };
-procedure h() returns () spec {
-  modifies j;
-} {
+procedure h(j : bool) returns (j : bool) {
   var b : bool;
   var tmp_arg_0 : bool := j;
   var tmp_arg_1 : bool := k;
@@ -103,16 +100,13 @@ var i : bool;
 var j : bool;
 var k : bool;
 var l : bool;
-procedure f(x : bool, y : bool) returns (z : bool)
+procedure f(j : bool, x : bool, y : bool) returns (j : bool, z : bool)
 spec {
   requires (i == !x);
   ensures (z == (k && old j));
   ensures (z == old j);
-  modifies j;
 };
-procedure h() returns () spec {
-  modifies j;
-} {
+procedure h(j : bool) returns (j : bool) {
   var b : bool;
   var tmp_arg_0 : bool := j;
   var tmp_arg_1 : bool := k;
@@ -157,16 +151,13 @@ var i : bool;
 var j : bool;
 var k : bool;
 var l : bool;
-procedure f(x : bool, y : bool) returns (z : bool)
+procedure f(j : bool, x : bool, y : bool) returns (j : bool, z : bool)
 spec {
   requires (i == !x);
   ensures (z == (k && old j));
   ensures (z == old j);
-  modifies j;
 };
-procedure h() returns () spec {
-  modifies j;
-} {
+procedure h(j : bool) returns (j : bool) {
   var b : bool;
   var tmp_arg_0 : bool := j;
   var tmp_arg_1 : bool := k && i || j;
@@ -208,16 +199,13 @@ def CallElimTestFreeRequiresAns :=
 program Core;
 var j : bool;
 var k : bool;
-procedure f(x : bool) returns (y : bool)
+procedure f(j : bool, x : bool) returns (j : bool, y : bool)
 spec {
   free requires (x == k);
   requires (x == j);
   ensures (y == x);
-  modifies j;
 };
-procedure h() returns () spec {
-  modifies j;
-} {
+procedure h(j : bool) returns (j : bool) {
   var b : bool;
   var tmp_arg_0 : bool := j;
   var tmp_arg_1 : bool := k;
