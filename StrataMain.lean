@@ -1237,7 +1237,7 @@ def verifyCommand : Command where
           | "float64"  => { acc with float64 := true }
           | "none"     => { signedBV := false, unsignedBV := false, float64 := false }
           | "all"      => { signedBV := true, unsignedBV := true, float64 := true }
-          | _          => acc) {}
+          | _          => acc) { signedBV := false, unsignedBV := false, float64 := false }
     let opts : VerifyOptions :=
       { VerifyOptions.default with
         verbose := if verbose then .normal else .quiet,

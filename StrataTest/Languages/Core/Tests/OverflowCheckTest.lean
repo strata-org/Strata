@@ -6,6 +6,7 @@
 
 import Strata.Languages.Core.Factory
 import Strata.DL.Lambda.Preconditions
+import Strata.Transform.PrecondElim
 
 /-! # Tests: overflow safe operators
 
@@ -72,3 +73,40 @@ example := Core.bv32SafeUAddOp
 example := Core.bv32SafeUSubOp
 example := Core.bv32SafeUMulOp
 example := Core.bv32SafeUNegOp
+
+-- Verify SafeSDiv precondition classification: precond 0 = divisionByZero, precond 1 = arithmeticOverflow
+open Strata Core Lambda Core.PrecondElim Imperative in
+#eval do
+  let expr := LExpr.mkApp () Core.bv32SafeSDivOp [
+    .fvar () ⟨"x", ()⟩ (some (.bitvec 32)),
+    .fvar () ⟨"y", ()⟩ (some (.bitvec 32))]
+  let stmts := collectPrecondAsserts Core.Factory expr "test" #[]
+  assert! stmts.length == 2
+  -- First should be divisionByZero
+  let md0 : MetaData Core.Expression := match stmts[0]! with | Statement.assert _ _ md => md | _ => #[]
+  assert! md0.getPropertyType == some MetaData.divisionByZero
+  -- Second should be arithmeticOverflow
+  let md1 : MetaData Core.Expression := match stmts[1]! with | Statement.assert _ _ md => md | _ => #[]
+  assert! md1.getPropertyType == some MetaData.arithmeticOverflow
+
+-- Verify nested SafeSDiv: both inner and outer calls get correct classification
+open Strata Core Lambda Core.PrecondElim Imperative in
+#eval do
+  let innerDiv := LExpr.mkApp () Core.bv32SafeSDivOp [
+    .fvar () ⟨"x", ()⟩ (some (.bitvec 32)),
+    .fvar () ⟨"y", ()⟩ (some (.bitvec 32))]
+  let outerDiv := LExpr.mkApp () Core.bv32SafeSDivOp [
+    innerDiv,
+    .fvar () ⟨"z", ()⟩ (some (.bitvec 32))]
+  let stmts := collectPrecondAsserts Core.Factory outerDiv "test" #[]
+  assert! stmts.length == 4
+  -- Inner call: precond 0 = divisionByZero, precond 1 = arithmeticOverflow
+  let md0 : MetaData Core.Expression := match stmts[0]! with | Statement.assert _ _ md => md | _ => #[]
+  assert! md0.getPropertyType == some MetaData.divisionByZero
+  let md1 : MetaData Core.Expression := match stmts[1]! with | Statement.assert _ _ md => md | _ => #[]
+  assert! md1.getPropertyType == some MetaData.arithmeticOverflow
+  -- Outer call: precond 0 = divisionByZero, precond 1 = arithmeticOverflow
+  let md2 : MetaData Core.Expression := match stmts[2]! with | Statement.assert _ _ md => md | _ => #[]
+  assert! md2.getPropertyType == some MetaData.divisionByZero
+  let md3 : MetaData Core.Expression := match stmts[3]! with | Statement.assert _ _ md => md | _ => #[]
+  assert! md3.getPropertyType == some MetaData.arithmeticOverflow

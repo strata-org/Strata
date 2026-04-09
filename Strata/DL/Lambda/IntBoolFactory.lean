@@ -195,6 +195,19 @@ def ternaryFuncUneval (n : T.Identifier) (inTy1 inTy2 outTy : LMonoTy)
 These build well-formed `WFLFunc`s with a `concreteEval` for constant folding.
 Types are resolved via `LambdaLeanType` instances. -/
 
+/-! #### Parameter name constants
+
+These are used by `unaryOp`/`binaryOp` for their input parameter names,
+and must be referenced by any code constructing precondition expressions
+(e.g., `Factory.lean` overflow check preconditions). -/
+
+/-- Parameter name for unary operations. -/
+def unaryParamName : String := "x"
+/-- First parameter name for binary operations. -/
+def binaryParam1Name : String := "x"
+/-- Second parameter name for binary operations. -/
+def binaryParam2Name : String := "y"
+
 /-! #### Unary -/
 
 /-- Unary operation with mixed input/output types and concrete evaluation.
@@ -209,12 +222,12 @@ def unaryOp (n : T.Identifier)
     (hInTy : inTy.freeVars = [] := by decide)
     (hOutTy : outTy.freeVars = [] := by decide)
     (h_precond : ∀ p, p ∈ preconditions →
-      (LExpr.freeVars p.expr).map (·.1.name) ⊆ ["x"]
-      := by simp) : WFLFunc T :=
+      (LExpr.freeVars p.expr).map (·.1.name) ⊆ [unaryParamName]
+      := by simp [unaryParamName]) : WFLFunc T :=
   let mkConst := LambdaLeanType.mkConst (ValTy := OutValTy) T
   let cevalInTy := LambdaLeanType.cevalTy (ValTy := InValTy) T
   ⟨{ name := n,
-     inputs := [("x", inTy)],
+     inputs := [(unaryParamName, inTy)],
      output := outTy,
      preconditions := preconditions,
      concreteEval := some (fun md args => match args with
@@ -280,12 +293,12 @@ def binaryOp (n : T.Identifier)
     (hInTy : inTy.freeVars = [] := by decide)
     (hOutTy : outTy.freeVars = [] := by decide)
     (h_precond : ∀ p, p ∈ preconditions →
-      (LExpr.freeVars p.expr).map (·.1.name) ⊆ ["x", "y"]
-      := by simp) : WFLFunc T :=
+      (LExpr.freeVars p.expr).map (·.1.name) ⊆ [binaryParam1Name, binaryParam2Name]
+      := by simp [binaryParam1Name, binaryParam2Name]) : WFLFunc T :=
   let mkConst := LambdaLeanType.mkConst (ValTy := OutValTy) T
   let cevalInTy := LambdaLeanType.cevalTy (ValTy := InValTy) T
   ⟨{ name := n,
-     inputs := [("x", inTy), ("y", inTy)],
+     inputs := [(binaryParam1Name, inTy), (binaryParam2Name, inTy)],
      output := outTy,
      preconditions := preconditions,
      concreteEval := some (fun md args => match args with
@@ -294,7 +307,7 @@ def binaryOp (n : T.Identifier)
            if guard b then mkConst md (op a b) else .none
          | _, _ => .none
        | _ => none) }, {
-    arg_nodup := by simp
+    arg_nodup := by simp [binaryParam1Name, binaryParam2Name]
     body_freevars := by intro b hb; simp at hb
     concreteEval_argmatch := by
       intro fn md args res hfn heval

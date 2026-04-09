@@ -207,6 +207,8 @@ elab "ExpandBVSafeOpFuncDefs" "[" sizes:num,* "]" : command => do
       let opName := Syntax.mkStrLit s!"Bv{s}.{spec.opName}"
       let overflowFuncName := mkIdent
         (.str .anonymous s!"bv{s}{spec.overflowPredSuffix}Func")
+      let xParam := Syntax.mkStrLit Lambda.unaryParamName
+      let yParam := Syntax.mkStrLit Lambda.binaryParam2Name
       if spec.isUnary then
         elabCommand (← `(
           def $funcName : Lambda.WFLFunc CoreLParams :=
@@ -214,7 +216,7 @@ elab "ExpandBVSafeOpFuncDefs" "[" sizes:num,* "]" : command => do
               (preconditions := [⟨.app default
                 (Lambda.boolNotFunc (T := CoreLParams)).func.opExpr
                 (.app default ($overflowFuncName).opExpr
-                  (.fvar default "x" (some (.bitvec $sizeNum)))),
+                  (.fvar default $xParam (some (.bitvec $sizeNum)))),
                 default⟩])
               (h_precond := by
                 intro p hp; simp at hp; subst hp
@@ -227,8 +229,8 @@ elab "ExpandBVSafeOpFuncDefs" "[" sizes:num,* "]" : command => do
                 (Lambda.boolNotFunc (T := CoreLParams)).func.opExpr
                 (.app default
                   (.app default ($overflowFuncName).opExpr
-                    (.fvar default "x" (some (.bitvec $sizeNum))))
-                  (.fvar default "y" (some (.bitvec $sizeNum)))),
+                    (.fvar default $xParam (some (.bitvec $sizeNum))))
+                  (.fvar default $yParam (some (.bitvec $sizeNum)))),
                 default⟩])
               (h_precond := by
                 intro p hp; simp at hp; subst hp
@@ -246,6 +248,8 @@ elab "ExpandBVSafeDivOpFuncDefs" "[" sizes:num,* "]" : command => do
       let opName := Syntax.mkStrLit s!"Bv{s}.{spec.opName}"
       let overflowFuncName := mkIdent
         (.str .anonymous s!"bv{s}SDivOverflowFunc")
+      let xParam := Syntax.mkStrLit Lambda.binaryParam1Name
+      let yParam := Syntax.mkStrLit Lambda.binaryParam2Name
       elabCommand (← `(
         def $funcName : Lambda.WFLFunc CoreLParams :=
           Lambda.binaryOp (InValTy := BitVec $sizeNum) $opName $(mkIdent spec.opFn) (· != 0)
@@ -254,7 +258,7 @@ elab "ExpandBVSafeDivOpFuncDefs" "[" sizes:num,* "]" : command => do
               ⟨.app default
                 (Lambda.boolNotFunc (T := CoreLParams)).func.opExpr
                 (.eq default
-                  (.fvar default "y" (some (.bitvec $sizeNum)))
+                  (.fvar default $yParam (some (.bitvec $sizeNum)))
                   (LExpr.bitvecConst default $sizeNum (0 : BitVec $sizeNum))),
                 default⟩,
               -- Precondition 2: ¬ SDivOverflow(x, y)
@@ -262,8 +266,8 @@ elab "ExpandBVSafeDivOpFuncDefs" "[" sizes:num,* "]" : command => do
                 (Lambda.boolNotFunc (T := CoreLParams)).func.opExpr
                 (.app default
                   (.app default ($overflowFuncName).opExpr
-                    (.fvar default "x" (some (.bitvec $sizeNum))))
-                  (.fvar default "y" (some (.bitvec $sizeNum)))),
+                    (.fvar default $xParam (some (.bitvec $sizeNum))))
+                  (.fvar default $yParam (some (.bitvec $sizeNum)))),
                 default⟩])
             (h_precond := by
               intro p hp

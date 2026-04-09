@@ -83,19 +83,27 @@ def collectPrecondAsserts (F : @Lambda.Factory CoreLParams) (e : Expression.Expr
 (labelPrefix : String) (md : Imperative.MetaData Expression)
 : List Statement :=
   let wfObs := Lambda.collectWFObligations F e
-  -- Track per-function precondition index for correct classification
-  -- (e.g., SafeSDiv precondition 0 = div-by-zero, precondition 1 = overflow)
+  -- Strip propertySummary: the enclosing statement's user-facing message
+  -- (e.g., a Python assert message) should not propagate to generated
+  -- precondition checks for called functions.
+  let md := md.eraseAllElems Imperative.MetaData.propertySummary
+  -- Use modulo to cycle the precondition index correctly across call sites.
+  -- For nested calls like SafeSDiv(SafeSDiv(x,y),z), obligations arrive as
+  -- [inner-0, inner-1, outer-0, outer-1] with the same funcName throughout.
+  -- Without modulo, the index would be 0,1,2,3 instead of 0,1,0,1.
   let (_, _, result) := wfObs.foldl (init := ("", 0, ([] : List Statement)))
     fun (prevFunc, prevIdx, acc) ob =>
-      let precondIdx := if ob.funcName == prevFunc then prevIdx + 1 else 0
+      let rawIdx := if ob.funcName == prevFunc then prevIdx + 1 else 0
+      let precondCount := F[ob.funcName]?.map (·.preconditions.length) |>.getD 1
+      let precondIdx := if precondCount > 0 then rawIdx % precondCount else rawIdx
       let globalIdx := acc.length
       let md' := match classifyPrecondition ob.funcName precondIdx with
         | some pt => md.pushElem Imperative.MetaData.propertyType (.msg pt)
         | none => md
       let stmt := Statement.assert
         s!"{labelPrefix}_calls_{ob.funcName}_{globalIdx}" ob.obligation md'
-      (ob.funcName, precondIdx, acc ++ [stmt])
-  result
+      (ob.funcName, rawIdx, stmt :: acc)
+  result.reverse
 
 /--
 Collect assertions for all expressions in a command.
