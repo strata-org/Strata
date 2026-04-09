@@ -283,13 +283,16 @@ end ProcedureInlining
 
 /-- Procedure-inlining pipeline phase: the transform inlines procedure bodies
     at call sites. Inlining is semantics-preserving, so models are always
-    sound (model-preserving). -/
+    sound (model-preserving).
+    - `maxIters = none`: repeat until a fixed point (no changes).
+    - `maxIters = some n`: run exactly `n` iterations. -/
 def procedureInliningPipelinePhase
     (doInline : String → Transform.CachedAnalyses → Bool := fun _ _ => true)
+    (maxIters : Option Nat := none)
     : PipelinePhase :=
   open Transform in
   modelPreservingPipelinePhase "ProcedureInlining" fun prog =>
-    runProgram (ProcedureInlining.inlineCallCmd (doInline := doInline)) prog
+    runProgramUntil (ProcedureInlining.inlineCallCmd (doInline := doInline)) prog maxIters
 
 end Core
 

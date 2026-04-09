@@ -445,16 +445,10 @@ public def inlineCoreFixpoint (program : Core.Program)
     (doInline : String → Core.Transform.CachedAnalyses → Bool := fun name _ => name ≠ "main")
     (maxIterations : Nat := 10)
     : Except String Core.Program := do
-  let mut pgm := program
-  for _ in List.range maxIterations do
-    match Core.Transform.runProgram (targetProcList := .none)
-          (Core.ProcedureInlining.inlineCallCmd (doInline := doInline))
-          pgm .emp with
-    | ⟨.ok (changed, pgm'), _⟩ =>
-      pgm := pgm'
-      if !changed then break
-    | ⟨.error e, _⟩ => throw e
-  return pgm
+  let phase := Core.procedureInliningPipelinePhase (doInline := doInline) (maxIters := some maxIterations)
+  Core.Transform.run program fun prog => do
+    let (_, prog') ← phase.transform prog
+    return prog'
 
 /-- Type-check a Core program using the standard context and factory.
     Returns the type-checked program and the resulting type environment. -/

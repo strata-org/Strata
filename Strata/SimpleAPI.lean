@@ -263,7 +263,8 @@ private def Core.applyPass (program : Core.Program) (pass : Core.TransformPass)
   match pass with
   | .inlineProcedures opts =>
     let pred := opts.doInline.getD (fun _ _ => true)
-    let (_, prog) ← Core.Transform.runProgram (coreInlineCallCmd (doInline := pred)) program
+    let phase := Core.procedureInliningPipelinePhase (doInline := pred) (maxIters := some 1)
+    let (_, prog) ← phase.transform program
     return prog
   | .loopElim =>
     pure (Core.loopElim program)
