@@ -829,5 +829,14 @@ Get all the built-in functions supported by Strata Core.
 def builtinFunctions : Array String :=
   Core.Factory.toArray.map (fun f => CoreIdent.toPretty f.name)
 
+/--
+Get the names of 0-ary built-in functions (no value-level arguments).
+These need special handling in ASTtoCST because they lack grammar rules
+(the DDM parser can't infer type parameters from zero arguments).
+-/
+def zeroAryBuiltinFunctions : Array String :=
+  Core.Factory.toArray.filterMap (fun f =>
+    if f.inputs.isEmpty then some (CoreIdent.toPretty f.name) else none)
+
 end
 end Core

@@ -338,8 +338,8 @@ partial def translateStmtExpr (arg : Arg) : TransM StmtExprMd := do
       let elements ← match elementsSeq with
         | .seq _ .comma args => args.toList.mapM translateStmtExpr
         | _ => pure []
-      let empty := mkStmtExprMd (.StaticCall (mkId "Sequence.empty") []) md
-      return elements.foldl (fun acc e => mkStmtExprMd (.StaticCall (mkId "Sequence.build") [acc, e]) md) empty
+      let empty := mkStmtExprMd (.StaticCall (mkId SeqOp.empty) []) md
+      return elements.foldl (fun acc e => mkStmtExprMd (.StaticCall (mkId SeqOp.build) [acc, e]) md) empty
     | q`Laurel.subscript, #[targetArg, indexArg, updateArg] =>
       let target ← translateStmtExpr targetArg
       let index ← translateStmtExpr indexArg

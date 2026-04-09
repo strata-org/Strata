@@ -43,10 +43,10 @@ private def isArrayHighType (ty : HighType) : Bool :=
 private def redirectArrayArgs (model : SemanticModel) (callee : Identifier)
     (origArgs : List StmtExprMd) (args : List StmtExprMd)
     (md : Imperative.MetaData Core.Expression) : List StmtExprMd :=
-  if callee.text.startsWith "Sequence." then
+  if callee.text.startsWith SeqOp.namePrefix then
     args.mapIdx fun i a =>
-      if i == 0 && isArrayType model (origArgs[0]!) then mkFieldSelect a "$data" md
-      else if i == 1 && callee.text == "Sequence.append" && origArgs.length > 1 && isArrayType model (origArgs[1]!) then mkFieldSelect a "$data" md
+      if i == 0 && isArrayType model (origArgs[0]!) then mkFieldSelect a SeqOp.dataField md
+      else if i == 1 && callee.text == SeqOp.append && origArgs.length > 1 && isArrayType model (origArgs[1]!) then mkFieldSelect a SeqOp.dataField md
       else a
   else args
 
@@ -55,26 +55,26 @@ def elimExpr (model : SemanticModel) : StmtExprMd → StmtExprMd
     let target' := elimExpr model target
     let index' := elimExpr model index
     if isArrayType model target then
-      mkCall "Sequence.select" [mkFieldSelect target' "$data" md, index'] md
+      mkCall SeqOp.select [mkFieldSelect target' SeqOp.dataField md, index'] md
     else
-      mkCall "Sequence.select" [target', index'] md
+      mkCall SeqOp.select [target', index'] md
   | ⟨.Subscript target index (some value), md⟩ =>
     let target' := elimExpr model target
     let index' := elimExpr model index
     let value' := elimExpr model value
     if isArrayType model target then
-      let data := mkFieldSelect target' "$data" md
-      ⟨.Assign [mkFieldSelect target' "$data" md] (mkCall "Sequence.update" [data, index', value'] md), md⟩
+      let data := mkFieldSelect target' SeqOp.dataField md
+      ⟨.Assign [mkFieldSelect target' SeqOp.dataField md] (mkCall SeqOp.update [data, index', value'] md), md⟩
     else
-      mkCall "Sequence.update" [target', index', value'] md
+      mkCall SeqOp.update [target', index', value'] md
   | ⟨.Block stmts label, md⟩ =>
     let expandStmt : (s : StmtExprMd) → s ∈ stmts → List StmtExprMd := fun stmt _ =>
       match stmt with
       | ⟨.LocalVariable n ty (some initExpr), smd⟩ =>
         if isArrayHighType ty.val && !isArrayType model initExpr then
           let initExpr' := elimExpr model initExpr
-          [⟨.LocalVariable n ty (some ⟨.New (mkId "Array"), smd⟩), smd⟩,
-           ⟨.Assign [mkFieldSelect ⟨.Identifier n, smd⟩ "$data" smd] initExpr', smd⟩]
+          [⟨.LocalVariable n ty (some ⟨.New (mkId arrayCompositeName), smd⟩), smd⟩,
+           ⟨.Assign [mkFieldSelect ⟨.Identifier n, smd⟩ SeqOp.dataField smd] initExpr', smd⟩]
         else [elimExpr model stmt]
       | _ => [elimExpr model stmt]
     ⟨.Block (stmts.attach.flatMap fun ⟨s, h⟩ => expandStmt s h) label, md⟩
@@ -91,11 +91,11 @@ def elimExpr (model : SemanticModel) : StmtExprMd → StmtExprMd
     let index' := elimExpr model index
     let value' := elimExpr model value
     if isArrayType model target then
-      let data := mkFieldSelect target' "$data" smd
-      ⟨.Assign [mkFieldSelect target' "$data" smd] (mkCall "Sequence.update" [data, index', value'] smd), md⟩
+      let data := mkFieldSelect target' SeqOp.dataField smd
+      ⟨.Assign [mkFieldSelect target' SeqOp.dataField smd] (mkCall SeqOp.update [data, index', value'] smd), md⟩
     else
       -- Seq is immutable — subscript assign is a user error. Downstream will reject.
-      ⟨.Assign [mkCall "Sequence.select" [target', index'] smd] value', md⟩
+      ⟨.Assign [mkCall SeqOp.select [target', index'] smd] value', md⟩
   | ⟨.Assign targets value, md⟩ =>
     ⟨.Assign (targets.attach.map fun ⟨t, _⟩ => elimExpr model t) (elimExpr model value), md⟩
   | ⟨.StaticCall callee args, md⟩ =>
@@ -140,20 +140,28 @@ private def elimProcedure (model : SemanticModel) (proc : Procedure) : Procedure
   { proc with
     preconditions := proc.preconditions.map (elimExpr model)
     body := elimBody model proc.body
-    decreases := proc.decreases.map (elimExpr model) }
+    decreases := proc.decreases.map (elimExpr model)
+    invokeOn := proc.invokeOn.map (elimExpr model) }
 
 public def subscriptElim (model : SemanticModel) (program : Program) : Program :=
   -- Always inject the Array composite type. Harmless if unused — just adds
   -- an Array_TypeTag constructor and an Array.$data field to the heap model.
   let arrayComposite : TypeDefinition := .Composite {
-    name := mkId "Array"
+    name := mkId arrayCompositeName
     extending := []
     -- $data field uses Seq<int> as placeholder. The element type is erased
     -- (Core's polymorphic type inference handles actual types).
-    fields := [{ name := mkId "$data", isMutable := true,
+    fields := [{ name := mkId SeqOp.dataField, isMutable := true,
                  type := ⟨.TSeq ⟨.TInt, #[]⟩, #[]⟩ }]
     instanceProcedures := [] }
   let program := { program with types := arrayComposite :: program.types }
-  { program with staticProcedures := program.staticProcedures.map (elimProcedure model) }
+  let types' := program.types.map fun td =>
+    match td with
+    | .Composite ct =>
+      .Composite { ct with instanceProcedures := ct.instanceProcedures.map (elimProcedure model) }
+    | other => other
+  { program with
+    types := types'
+    staticProcedures := program.staticProcedures.map (elimProcedure model) }
 
 end Strata.Laurel

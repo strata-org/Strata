@@ -65,6 +65,46 @@ procedure failingAssert() {
   assert a[0] == 999
 //^^^^^^^^^^^^^^^^^^ error: assertion could not be proved
 };
+
+// Array in a loop: zero-fill
+procedure arrayLoop() {
+  var a: Array<int> := [1, 2, 3];
+  var i: int := 0;
+  while (i < 3)
+    invariant 0 <= i && i <= 3
+    invariant Sequence.length(a) == 3
+    invariant forall(j: int) => 0 <= j && j < i ==> a[j] == 0
+  {
+    a[i] := 0;
+    i := i + 1
+  };
+  assert a[0] == 0;
+  assert a[1] == 0;
+  assert a[2] == 0
+};
+
+// Inter-procedural: callee modifies array
+procedure setFirst(a: Array<int>, v: int)
+  requires Sequence.length(a) > 0
+  ensures a[0] == v
+  modifies a
+{
+  a[0] := v
+};
+
+procedure callSetFirst() {
+  var a: Array<int> := [1, 2, 3];
+  setFirst(a, 42);
+  assert a[0] == 42
+};
+
+// Sequence.append on arrays (tests redirectArrayArgs for arg index 1)
+procedure appendOnArrays() {
+  var a: Array<int> := [1, 2];
+  var b: Array<int> := [3, 4];
+  var c: Seq<int> := Sequence.append(a, b);
+  assert Sequence.length(c) == 4
+};
 "
 
 #guard_msgs(drop info, error) in

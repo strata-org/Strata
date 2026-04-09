@@ -96,6 +96,68 @@ procedure seqNested() {
   var s: Seq<Seq<int>> := [[1, 2], [3, 4]];
   assert Sequence.select(Sequence.select(s, 0), 1) == 2
 };
+
+// Append length
+procedure appendLength() {
+  var a: Seq<int> := [1, 2];
+  var b: Seq<int> := [3, 4, 5];
+  var c: Seq<int> := Sequence.append(a, b);
+  assert Sequence.length(c) == 5
+};
+
+// Append select from first half
+procedure appendSelectFirst() {
+  var a: Seq<int> := [10, 20];
+  var b: Seq<int> := [30];
+  var c: Seq<int> := Sequence.append(a, b);
+  assert c[0] == 10;
+  assert c[1] == 20
+};
+
+// Append select from second half
+procedure appendSelectSecond() {
+  var a: Seq<int> := [10, 20];
+  var b: Seq<int> := [30];
+  var c: Seq<int> := Sequence.append(a, b);
+  assert c[2] == 30
+};
+
+// Contains negative test
+procedure containsFalse() {
+  var s: Seq<int> := [1, 2, 3];
+  assert Sequence.contains(s, 99)
+//^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion could not be proved
+};
+
+// Take length
+procedure takeLength() {
+  var s: Seq<int> := [10, 20, 30, 40];
+  var t: Seq<int> := Sequence.take(s, 2);
+  assert Sequence.length(t) == 2
+};
+
+// Take preserves elements
+procedure takeSelect() {
+  var s: Seq<int> := [10, 20, 30, 40];
+  var t: Seq<int> := Sequence.take(s, 2);
+  assert t[0] == 10;
+  assert t[1] == 20
+};
+
+// Drop length
+procedure dropLength() {
+  var s: Seq<int> := [10, 20, 30, 40];
+  var d: Seq<int> := Sequence.drop(s, 2);
+  assert Sequence.length(d) == 2
+};
+
+// Drop selects from offset
+procedure dropSelect() {
+  var s: Seq<int> := [10, 20, 30, 40];
+  var d: Seq<int> := Sequence.drop(s, 2);
+  assert d[0] == 30;
+  assert d[1] == 40
+};
 "
 
 #guard_msgs(drop info, error) in

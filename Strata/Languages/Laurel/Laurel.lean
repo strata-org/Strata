@@ -359,6 +359,8 @@ def highEq (a : HighTypeMd) (b : HighTypeMd) : Bool := match _a: a.val, _b: b.va
   | HighType.TTypedField t1, HighType.TTypedField t2 => highEq t1 t2
   | HighType.TSet t1, HighType.TSet t2 => highEq t1 t2
   | HighType.TMap k1 v1, HighType.TMap k2 v2 => highEq k1 k2 && highEq v1 v2
+  | HighType.TSeq t1, HighType.TSeq t2 => highEq t1 t2
+  | HighType.TArray t1, HighType.TArray t2 => highEq t1 t2
   | HighType.UserDefined r1, HighType.UserDefined r2 => r1.text == r2.text
   | HighType.Applied b1 args1, HighType.Applied b2 args2 =>
       highEq b1 b2 && args1.length == args2.length && (args1.attach.zip args2 |>.all (fun (a1, a2) => highEq a1.1 a2))
@@ -516,4 +518,16 @@ structure Program where
   constants : List Constant := []
   deriving Inhabited
 
-end
+/-- Well-known names for Sequence operations used in desugaring and subscript elimination. -/
+def SeqOp.namePrefix := "Sequence."
+def SeqOp.empty    := "Sequence.empty"
+def SeqOp.build    := "Sequence.build"
+def SeqOp.select   := "Sequence.select"
+def SeqOp.update   := "Sequence.update"
+def SeqOp.append   := "Sequence.append"
+def SeqOp.dataField := "$data"
+
+/-- Name of the synthetic Array composite type injected by SubscriptElim. -/
+def arrayCompositeName := "Array"
+
+end -- Strata.Laurel
