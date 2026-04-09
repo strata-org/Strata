@@ -310,19 +310,232 @@ theorem eql_true_implies_denote_eq
         contradiction
       · contradiction
 
-/-- If `eql` returns `some false`, then the denotations are not equal.
-Generalized to arbitrary context `Δ` and `bvarVal` for the induction. -/
-theorem eql_false_implies_denote_ne
-    {F : @Factory T}
-    {Δ : List LMonoTy}
-    {e₁ e₂ : LExpr T.mono} {τ : LMonoTy}
-    (bvarVal : BVarVal tcInterp vt Δ)
-    (h₁ : LExpr.HasTypeA Δ e₁ τ)
-    (h₂ : LExpr.HasTypeA Δ e₂ τ)
-    (heql : LExpr.eql F e₁ e₂ = some false)
-    : LExpr.denote tcInterp opInterp fvarVal vt bvarVal e₁ τ h₁ ≠
-      LExpr.denote tcInterp opInterp fvarVal vt bvarVal e₂ τ h₂ := by
+/-- If `Forall₂ R l1 l2` and `l1[i]? = some a`, then there exists `b` with
+`l2[i]? = some b` and `R a b`. -/
+theorem List.Forall₂.getElem?_some {R : α → β → Prop}
+    {l1 : List α} {l2 : List β}
+    (h : List.Forall₂ R l1 l2) {i : Nat} {a : α}
+    (ha : l1[i]? = some a)
+    : ∃ b, l2[i]? = some b ∧ R a b := by
   sorry
+
+/-- If foldl eqlCombine over `attach.zip` returns `some false`, then some
+individual pair has `eql = some false`. -/
+theorem eqlCombine_attach_zip_some_false
+    {F : @Factory T}
+    {args1 args2 : List (LExpr T.mono)}
+    (h : List.foldl (fun acc x =>
+      LExpr.eqlCombine acc (LExpr.eql F x.1.val x.snd)) (some true) (args1.attach.zip args2) = some false)
+    : ∃ (i : Nat) (a1 a2 : LExpr T.mono),
+        args1[i]? = some a1 ∧ args2[i]? = some a2 ∧
+        a1 ∈ args1 ∧
+        LExpr.eql F a1 a2 = some false := by
+  sorry
+
+/-- If two constructor applications with different constructor names are well-typed
+at the same type, their denotations differ. -/
+theorem callOfLFunc_constr_disjoint_denote
+    {F : @Factory T}
+    {e₁ e₂ : LExpr T.mono} {τ : LMonoTy}
+    {callee₁ callee₂ : LExpr T.mono}
+    {args₁ args₂ : List (LExpr T.mono)}
+    {f₁ f₂ : LFunc T.mono.base}
+    (h₁ : LExpr.HasTypeA [] e₁ τ)
+    (h₂ : LExpr.HasTypeA [] e₂ τ)
+    (hcall₁ : Factory.callOfLFunc F e₁ = some (callee₁, args₁, f₁))
+    (hcall₂ : Factory.callOfLFunc F e₂ = some (callee₂, args₂, f₂))
+    (hconstr₁ : f₁.isConstr = true) (hconstr₂ : f₂.isConstr = true)
+    (hdiffname : f₁.name.name ≠ f₂.name.name)
+    (hConstrIC : ConstrInterpConsistent tcInterp opInterp F)
+    : LExpr.denote tcInterp opInterp fvarVal vt .nil e₁ τ h₁ ≠
+      LExpr.denote tcInterp opInterp fvarVal vt .nil e₂ τ h₂ := by
+  sorry
+
+/-- If two applications of the same constructor are well-typed at the same type
+and denote to equal values, then their arguments denote pairwise equal. -/
+theorem callOfLFunc_constr_injective_denote
+    {F : @Factory T}
+    {e₁ e₂ : LExpr T.mono} {τ : LMonoTy}
+    {callee₁ callee₂ : LExpr T.mono}
+    {args₁ args₂ : List (LExpr T.mono)}
+    {f : LFunc T.mono.base}
+    (h₁ : LExpr.HasTypeA [] e₁ τ)
+    (h₂ : LExpr.HasTypeA [] e₂ τ)
+    (hcall₁ : Factory.callOfLFunc F e₁ = some (callee₁, args₁, f))
+    (hcall₂ : Factory.callOfLFunc F e₂ = some (callee₂, args₂, f))
+    (hconstr : f.isConstr = true)
+    (hConstrIC : ConstrInterpConsistent tcInterp opInterp F)
+    (heq : LExpr.denote tcInterp opInterp fvarVal vt .nil e₁ τ h₁ =
+           LExpr.denote tcInterp opInterp fvarVal vt .nil e₂ τ h₂)
+    : ∀ (i : Nat) (a₁ a₂ : LExpr T.mono) (σ : LMonoTy),
+        args₁[i]? = some a₁ → args₂[i]? = some a₂ →
+        (ha₁ : LExpr.HasTypeA [] a₁ σ) → (ha₂ : LExpr.HasTypeA [] a₂ σ) →
+        LExpr.denote tcInterp opInterp fvarVal vt .nil a₁ σ ha₁ =
+        LExpr.denote tcInterp opInterp fvarVal vt .nil a₂ σ ha₂ := by
+  sorry
+
+/-- If `eql` returns `some false`, then the denotations are not equal.
+Restricted to the empty bound-variable context (same as `eql_true`). -/
+theorem eql_false_implies_denote_ne
+    {F : @Factory T} {tf : @TypeFactory T.IDMeta}
+    {e₁ e₂ : LExpr T.mono} {τ : LMonoTy}
+    (h₁ : LExpr.HasTypeA [] e₁ τ)
+    (h₂ : LExpr.HasTypeA [] e₂ τ)
+    (hoc₁ : OpsConsistent F e₁)
+    (hoc₂ : OpsConsistent F e₂)
+    (hfwf : FactoryWF F)
+    (hcwf : Factory.ConstrWellFormed F tf)
+    (heql : LExpr.eql F e₁ e₂ = some false)
+    (hConstrIC : ConstrInterpConsistent tcInterp opInterp F)
+    : LExpr.denote tcInterp opInterp fvarVal vt .nil e₁ τ h₁ ≠
+      LExpr.denote tcInterp opInterp fvarVal vt .nil e₂ τ h₂ := by
+  fun_induction LExpr.eql F e₁ e₂ generalizing τ fvarVal with
+  | case1 e1 e2 hmod => -- eqModuloMeta = true → returns some true
+    simp at heql
+  | case2 => contradiction -- const/const, realConst → returns none
+  | case3 m1 c1 m2 c2 _he hnotreal hnotmod => -- const/const, non-real
+    split at heql
+    · contradiction
+    · -- heql : some (c1 == c2) = some false, so c1 ≠ c2
+      have hneq : c1 ≠ c2 := by grind
+      -- Extract type equality from HasTypeA
+      have hty1 : τ = c1.ty := by cases h₁; rfl
+      have hty2 : τ = c2.ty := by cases h₂; rfl
+      have htyeq : c1.ty = c2.ty := by rw [← hty1, ← hty2]
+      intro heq
+      have hdenote_eq : (htyeq ▸ denoteConst tcInterp vt c1 : TyDenote tcInterp vt c2.ty) =
+          denoteConst tcInterp vt c2 := by
+        subst hty1
+        rw [denote_const tcInterp opInterp fvarVal vt .nil h₁,
+            denote_const tcInterp opInterp fvarVal vt .nil h₂] at heq
+        grind
+      exact hneq (denoteConst_injective tcInterp vt c1 c2 htyeq hdenote_eq)
+  | case4 m1 pn1 ty1 body1 m2 pn2 ty2 body2 htyneq hnotmod => -- abs/abs, ty1 ≠ ty2
+    -- Vacuous: HasTypeA forces ty1 = ty2
+    have htyneq' : ty1 ≠ ty2 := by simp [bne_iff_ne] at htyneq; exact htyneq
+    exfalso
+    apply htyneq'
+    cases h₁ with | abs hbody1 => cases h₂ with | abs hbody2 => rfl
+  | case5 m1 pn1 ty1 body1 m2 pn2 ty2 body2 htyeq hclosed hnotmod ih =>
+    -- abs/abs, same type, both closed, recurse returns some false
+    have hty : ty1 = ty2 := by simp [bne_iff_ne] at htyeq; exact htyeq
+    subst hty
+    cases ty1 with
+    | none => exact absurd (LExpr.HasTypeA_to_typeCheck h₁) (by simp [LExpr.typeCheck])
+    | some aty =>
+      have ⟨rty1, hτ1, hbody1⟩ := HasTypeA.abs_inv h₁
+      have ⟨rty2, hτ2, hbody2⟩ := HasTypeA.abs_inv h₂
+      have hrty : rty1 = rty2 := by
+        have ha : LMonoTy.arrow aty rty1 = LMonoTy.arrow aty rty2 := by rw [← hτ1, ← hτ2]
+        cases ha; rfl
+      subst hrty; subst hτ1
+      rw [denote_abs .nil hbody1 h₁, denote_abs .nil hbody2 h₂]
+      intro habs_eq
+      -- Apply IH with fvarVal to get ≠ on varOpen'd bodies
+      have hih := ih fvarVal (varOpen_HasTypeA hbody1) (varOpen_HasTypeA hbody2)
+        (OpsConsistent_varOpen hoc₁.2) (OpsConsistent_varOpen hoc₂.2) heql
+      apply hih
+      -- Use varOpen_denote to relate varOpen'd denote to body denote
+      have hvo1 := varOpen_denote (x := ⟨"x", default⟩) tcInterp opInterp fvarVal vt hbody1 (varOpen_HasTypeA hbody1)
+      have hvo2 := varOpen_denote (x := ⟨"x", default⟩) tcInterp opInterp fvarVal vt hbody2 (varOpen_HasTypeA hbody2)
+      rw [hvo1, hvo2]
+      -- From habs_eq, bodies have equal denotes at any v
+      exact congrFun habs_eq _
+  | case6 => contradiction -- abs/abs, not both closed → returns none
+  | case7 m1 c m2 pn ty body => -- const/abs → vacuous (base type ≠ arrow type)
+    exfalso
+    have hty1 : τ = c.ty := by cases h₁; rfl
+    cases ty with
+    | none => exact absurd (LExpr.HasTypeA_to_typeCheck h₂) (by simp [LExpr.typeCheck])
+    | some aty =>
+      have ⟨rty, hty2, _⟩ := HasTypeA.abs_inv h₂
+      rw [hty1] at hty2
+      cases c <;> simp [LConst.ty, LMonoTy.int, LMonoTy.bool, LMonoTy.string, LMonoTy.real, LMonoTy.arrow] at hty2
+  | case8 m1 pn ty body m2 c => -- abs/const → vacuous
+    exfalso
+    have hty2 : τ = c.ty := by cases h₂; rfl
+    cases ty with
+    | none => exact absurd (LExpr.HasTypeA_to_typeCheck h₁) (by simp [LExpr.typeCheck])
+    | some aty =>
+      have ⟨rty, hty1, _⟩ := HasTypeA.abs_inv h₁
+      rw [hty2] at hty1
+      cases c <;> simp [LConst.ty, LMonoTy.int, LMonoTy.bool, LMonoTy.string, LMonoTy.real, LMonoTy.arrow] at hty1
+  | case9 e1 e2 hnotmod callee1 args1 f1 callee2 args2 f2 hcall1 hcall2 hnotconstr =>
+    -- both callOfLFunc, not both isConstr → returns none
+    rw [hcall1, hcall2] at heql; simp [hnotconstr] at heql
+  | case10 e1 e2 hnotmod callee1 args1 f1 callee2 args2 f2 hcall1 hcall2 hisconstr hdiffname =>
+    -- Different constructors → some false
+    have hconstr1 : f1.isConstr = true := by simp at hisconstr; exact hisconstr.1
+    have hconstr2 : f2.isConstr = true := by simp at hisconstr; exact hisconstr.2
+    have hdiff : f1.name.name ≠ f2.name.name := by simp [bne_iff_ne] at hdiffname; exact hdiffname
+    exact callOfLFunc_constr_disjoint_denote tcInterp opInterp fvarVal vt
+      h₁ h₂ hcall1 hcall2 hconstr1 hconstr2 hdiff hConstrIC
+  | case11 e1 e2 hnotmod callee1 args1 f1 callee2 args2 f2 hcall1 hcall2 hisconstr hsamename _ _ _ _ ih_args =>
+    -- Same constructor, fold returns some false
+    -- Extract isConstr and same name
+    have hconstr1 : f1.isConstr = true := by simp at hisconstr; exact hisconstr.1
+    have hconstr2 : f2.isConstr = true := by simp at hisconstr; exact hisconstr.2
+    have hsamename' : f1.name.name = f2.name.name := by simp [bne_iff_ne] at hsamename; exact hsamename
+    -- Establish f1 = f2
+    obtain ⟨_, name1, _, hcallee1, hget1⟩ := Factory.callOfLFunc_getElem? hcall1
+    obtain ⟨_, name2, _, hcallee2, hget2⟩ := Factory.callOfLFunc_getElem? hcall2
+    have hname1 := Factory.getElem?_name hget1
+    have hname2 := Factory.getElem?_name hget2
+    have hnames_eq : name1.name = name2.name := by rw [← hname1, ← hname2, hsamename']
+    have hf_eq : f1 = f2 := by
+      have h := hnames_eq ▸ hget2; rw [hget1] at h; exact Option.some.inj h
+    subst hf_eq
+    -- Proof by contradiction
+    intro heq_denote
+    -- By injectivity, all args have equal denotes
+    have hinj := callOfLFunc_constr_injective_denote tcInterp opInterp fvarVal vt
+      h₁ h₂ hcall1 hcall2 hconstr1 hConstrIC heq_denote
+    -- Simplify heql to get the fold
+    rw [hcall1, hcall2] at heql
+    simp at heql
+    obtain ⟨_, heql_fold⟩ := heql
+    -- Extract an arg pair with eql = some false
+    obtain ⟨i, a1, a2, ha1, ha2, hmem1, heql_i⟩ :=
+      eqlCombine_attach_zip_some_false heql_fold
+    -- IH: denote a1 ≠ denote a2 (need typing first)
+    -- Get arg typing from callOfLFunc_denote
+    obtain ⟨argTys1, ty_op1, m_op1, name_op1, h_args1, hty_op1, hcallee_op1, _⟩ :=
+      callOfLFunc_denote tcInterp opInterp fvarVal vt hcall1 h₁
+    obtain ⟨argTys2, ty_op2, m_op2, name_op2, h_args2, hty_op2, hcallee_op2, _⟩ :=
+      callOfLFunc_denote tcInterp opInterp fvarVal vt hcall2 h₂
+    -- Need typing for a1 and a2 at the same type
+    -- Extract from Forall₂ and ha1/ha2
+    -- Use IH: a1 ∈ args1, eql a1 a2 = some false
+    -- Need HasTypeA for a1 and a2 at some common type
+    -- Use hinj: if denote e1 = denote e2, arg denotes are equal
+    -- These together give contradiction
+    -- Both need HasTypeA [] a1 σ and HasTypeA [] a2 σ for some σ
+    -- Get σ from argTys1[i]
+    obtain ⟨σ, hσ, ha1_ty⟩ := List.Forall₂.getElem?_some h_args1 ha1
+    obtain ⟨σ', hσ', ha2_ty⟩ := List.Forall₂.getElem?_some h_args2 ha2
+    -- Get argTys1 = argTys2 via constr_callOfLFunc_argTys_eq'
+    have hargTys_eq : argTys1 = argTys2 :=
+      constr_callOfLFunc_argTys_eq' hcall1 hcall2 h_args1 h_args2 hoc₁ hoc₂ hfwf hcwf hconstr1
+        ⟨m_op1, name_op1, hty_op1 ▸ hcallee_op1⟩
+        ⟨m_op2, name_op2, hty_op2 ▸ hcallee_op2⟩
+    -- Derive σ = σ'
+    have hσ_eq : σ = σ' := by rw [hargTys_eq] at hσ; rw [hσ] at hσ'; exact Option.some.inj hσ'
+    subst hσ_eq
+    -- Get OpsConsistent for args
+    have hoc_args1 := OpsConsistent_callOfLFunc_args hoc₁ hcall1
+    have hoc_args2 := OpsConsistent_callOfLFunc_args hoc₂ hcall2
+    -- Get a2 ∈ args2 from ha2
+    have hmem2 : a2 ∈ args2 := by rw [List.mem_iff_getElem?]; exact ⟨i, ha2⟩
+    -- Apply IH: denote a1 ≠ denote a2
+    have hne := ih_args a1 hmem1 a2 fvarVal ha1_ty ha2_ty (hoc_args1 a1 hmem1) (hoc_args2 a2 hmem2) heql_i
+    -- Apply injectivity to get equality of arg denotes, contradicting IH
+    have heq_arg := hinj i a1 a2 σ ha1 ha2 ha1_ty ha2_ty
+    exact hne heq_arg
+  | case12 e1 e2 hnotmod hnotconst hnotabs hnotconstabs hnotabsconst hnotbothcall =>
+    -- callOfLFunc doesn't match both → returns none
+    split at heql
+    · have := hnotbothcall _ _ _ _ _ _ ‹_› ‹_›; contradiction
+    · contradiction
 
 end
 

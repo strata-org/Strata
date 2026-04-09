@@ -60,6 +60,7 @@ theorem Step.denote_preserved
     (hOps : OpsConsistent F e₁)
     (hFwf : FactoryWF F)
     (hcwf : Factory.ConstrWellFormed F tf)
+    (hConstrIC : ConstrInterpConsistent tcInterp opInterp F)
     : LExpr.denote tcInterp opInterp fvarVal vt .nil e₁ τ h₁ =
       LExpr.denote tcInterp opInterp fvarVal vt .nil e₂ τ h₂ := by
   induction hstep generalizing τ with
@@ -148,8 +149,8 @@ theorem Step.denote_preserved
     cases h₁ with
     | eq h_1 h_2 =>
       rw [denote_eq_false .nil h_1 h_2 _
-          (eql_false_implies_denote_ne tcInterp opInterp fvarVal vt .nil
-            h_1 h_2 heql)]
+          (eql_false_implies_denote_ne tcInterp opInterp fvarVal vt h_1 h_2
+            hOps.2.1 hOps.2.2 hFwf hcwf heql hConstrIC)]
       rfl
   | eq_reduce_lhs e1 e1' e2 hstep' ih =>
     cases h₁ with
