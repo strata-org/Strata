@@ -71,7 +71,7 @@ def collectPrecondAsserts (F : @Lambda.Factory CoreLParams) (e : Expression.Expr
   -- Strip propertySummary: the enclosing statement's user-facing message
   -- (e.g., a Python assert message) should not propagate to generated
   -- precondition checks for called functions.
-  let md := md.eraseElem Imperative.MetaData.propertySummary
+  let md := md.eraseAllElems Imperative.MetaData.propertySummary
   wfObs.mapIdx fun idx ob =>
     let md' := match classifyPrecondition ob.funcName with
       | some pt => md.pushElem Imperative.MetaData.propertyType (.msg pt)
