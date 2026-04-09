@@ -328,7 +328,9 @@ private def mkStmtWithLoc (e : StmtExpr) (loc : SourceRange) (msg : String := ""
 def specExprToLaurel (e : SpecExpr) (md : Imperative.MetaData Core.Expression)
   : ToLaurelM (Option StmtExprMd) :=
   -- Use per-node source range when available, falling back to the
-  -- function-level md for nodes with default (empty) locations.
+  -- nearest ancestor's md for nodes with default (empty) locations.
+  -- This is intentional: the parent's location is a closer approximation
+  -- than the function-level metadata for nodes without their own location.
   let nodeMd (loc : SourceRange) : ToLaurelM (Imperative.MetaData Core.Expression) := do
     if loc == default then pure md
     else do
@@ -403,10 +405,12 @@ def specExprToLaurel (e : SpecExpr) (md : Imperative.MetaData Core.Expression)
       let sF := mkStmt (.StaticCall (mkId "Any..as_float!") [s]) md
       let bF := mkStmt (.StaticCall (mkId "Any..as_float!") [b]) md
       some (mkStmt (.PrimitiveOp .Leq [sF, bF]) md)
-  | .not inner .. => do
+  | .not inner loc => do
+    let md ← nodeMd loc
     let i? ← specExprToLaurel inner md
     return i?.map fun i => mkStmt (.PrimitiveOp .Not [i]) md
-  | .implies cond body .. => do
+  | .implies cond body loc => do
+    let md ← nodeMd loc
     let c? ← specExprToLaurel cond md; let b? ← specExprToLaurel body md
     return do let c ← c?; let b ← b?; some (mkStmt (.PrimitiveOp .Implies [c, b]) md)
   | .enumMember subject values loc => do

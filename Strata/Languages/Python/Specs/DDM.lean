@@ -256,7 +256,7 @@ protected def SpecExpr.toDDM (e : SpecExpr) : DDM.SpecExprDecl SourceRange :=
   | .floatLe subj bound loc => .floatLeExpr loc subj.toDDM bound.toDDM
   | .enumMember subj values loc =>
     .enumMemberExpr loc subj.toDDM
-      ⟨loc, values.map (⟨.none, ·⟩)⟩
+      ⟨loc, values.map (⟨loc, ·⟩)⟩
   | .regexMatch subj pattern loc =>
     .regexMatchExpr loc subj.toDDM ⟨loc, pattern⟩
   | .containsKey container key loc =>
