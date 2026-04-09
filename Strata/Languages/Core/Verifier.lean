@@ -705,10 +705,13 @@ def typeCheckAndPartialEvalPipelinePhase
         throw (DiagnosticModel.fromFormat
           s!"🚨 Error during evaluation!\n{format err}\n\n\
              [DEBUG] Evaluated program: {Core.formatProgram p}\n\n")
+      if options.verbose >= .normal then do
+        dbg_trace f!"{Std.Format.line}VCs:"
+        dbg_trace f!"{formatProofObligations E.deferred}"
       return p
     match result with
     | .ok p => return (true, p)
-    | .error dm => throw dm.message
+    | .error dm => throw s!" ❌ Type checking error.\n{dm.message}"
 
 /-- The Core verification pipeline phases. Each entry pairs a program
     transformation with its per-obligation model validation. The pipeline
@@ -958,10 +961,7 @@ def verify (program : Program)
     (procs := proceduresToVerify) (factory := some factory)
     (options := options) (moreFns := moreFns)
   let phases := allPhases.map (·.phase)
-  -- Run pre-PE pipeline phases (structural transforms) through the runner.
-  -- PE and dedup run inline because PE produces an Env needed for
-  -- obligation collection. Once PE emits path conditions as assume
-  -- statements, all phases can run through the pipeline runner.
+  -- Run structural transform phases through the pipeline runner.
   let prePePhases := allPhases.filter (fun pp =>
     pp.phase.name != "TypeCheckAndPartialEval" && pp.phase.name != "Deduplication")
   let transformedProgram ← profileStep profile "  Program transformations" do
