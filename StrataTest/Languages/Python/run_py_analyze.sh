@@ -41,6 +41,7 @@ fi
 pending_total=0
 pending_error=0
 pending_imprecise=0
+pending_pass=0
 
 for test_file in tests/test_*.py; do
     if [ -f "$test_file" ]; then
@@ -107,9 +108,18 @@ for test_file in tests/test_*.py; do
             rm -f "$user_errors_file"
         elif [ $pending -eq 1 ]; then
             # No expected file — run as pending test
+            # TODO: Add --promote flag to auto-generate .expected files for passing pending tests
             pending_total=$((pending_total + 1))
 
-            (cd ../../../Tools/Python && python3 -m strata.gen py_to_strata --dialect "dialects/Python.dialect.st.ion" "../../StrataTest/Languages/Python/$test_file" "../../StrataTest/Languages/Python/$ion_file" 2>/dev/null)
+            parse_output=$(cd ../../../Tools/Python && python3 -m strata.gen py_to_strata --dialect "dialects/Python.dialect.st.ion" "../../StrataTest/Languages/Python/$test_file" "../../StrataTest/Languages/Python/$ion_file" 2>&1)
+            parse_exit=$?
+
+            if [ $parse_exit -ne 0 ]; then
+                echo "Pending (parse error):    $base_name"
+                pending_error=$((pending_error + 1))
+                rm -f "../../../user_errors.txt"
+                continue
+            fi
 
             extra_args=$(grep '^# strata-args:' "$test_file" | sed 's/^# strata-args://' | head -1)
             vc_flag=""
@@ -118,14 +128,14 @@ for test_file in tests/test_*.py; do
             exit_code=$?
 
             if [ $exit_code -ne 0 ] || echo "$output" | grep -q "error\|Error\|ERROR\|panic\|PANIC"; then
-                echo "Pending (error):     $base_name"
+                echo "Pending (analysis error): $base_name"
                 pending_error=$((pending_error + 1))
             elif echo "$output" | grep -q "inconclusive\|failed"; then
-                echo "Pending (imprecise): $base_name"
+                echo "Pending (imprecise):      $base_name"
                 pending_imprecise=$((pending_imprecise + 1))
             else
-                echo "Pending (unknown):   $base_name"
-                pending_imprecise=$((pending_imprecise + 1))
+                echo "Pending (pass):           $base_name"
+                pending_pass=$((pending_pass + 1))
             fi
             rm -f "../../../user_errors.txt"
         fi
@@ -134,7 +144,7 @@ done
 
 if [ $pending -eq 1 ] && [ $pending_total -gt 0 ]; then
     echo ""
-    echo "Pending: $pending_total ($pending_error error, $pending_imprecise imprecise)"
+    echo "Pending: $pending_total ($pending_error error, $pending_imprecise imprecise, $pending_pass pass)"
 fi
 
 exit $failed
