@@ -1944,8 +1944,11 @@ def translateClass (ctx : TranslationContext) (classStmt : Python.stmt SourceRan
       if let .FunctionDef _ _methodName _ methodBody .. := stmt then
         let proc ← translateMethod ctx className stmt
         -- Keep body opaque for methods that assign to object fields:
-        -- field assignments are not yet supported by the Core verifier
-        -- and produce spurious diagnostics.
+        -- HeapParameterization.resolveQualifiedFieldName returns `none`
+        -- for these fields (they are unresolved in the SemanticModel),
+        -- which replaces the assignment with a Hole and causes spurious
+        -- verification failures. Previously ALL method bodies were opaque;
+        -- this narrows the workaround to only methods that need it.
         if hasFieldAssignment methodBody.val.toList then
           instanceProcedures := instanceProcedures.push { proc with body := .Opaque [] .none [] }
         else
