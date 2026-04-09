@@ -583,7 +583,7 @@ def pyAnalyzeLaurelCommand : Command where
     -- Split prelude / user procedure names.
     -- Only procedures whose file range matches the user source are targets.
     let userSourcePath := sourcePath.getD filePath
-    let (preludeNames, userProcNames) :=
+    let (_preludeNames, userProcNames) :=
       Strata.splitProcNames coreProgram [userSourcePath]
 
     if let some dir := keepDir then
