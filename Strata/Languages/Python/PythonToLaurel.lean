@@ -879,6 +879,21 @@ partial def combinePositionalAndKeywordArgs
   | _ => return (posArgs, kwords, false)
 
 
+/-- Translate an expression used as a method receiver, building FieldSelect
+    chains for UserDefined composite fields without coercion. Falls back to
+    translateExpr for non-composite or non-attribute expressions. -/
+partial def translateExprAsReceiver (ctx : TranslationContext)
+    (e : Python.expr SourceRange) : Except TranslationError StmtExprMd := do
+  match e with
+  | .Attribute _ obj fieldAttr _ =>
+    let objType ← inferExprType ctx obj
+    match tryLookupFieldHighType ctx objType fieldAttr.val with
+    | some (.UserDefined _) =>
+      let objExpr ← translateExprAsReceiver ctx obj
+      pure <| mkStmtExprMd (StmtExpr.FieldSelect objExpr fieldAttr.val)
+    | _ => translateExpr ctx e
+  | _ => translateExpr ctx e
+
 /-- Translate a Python call expression to Laurel.
     Tries factory dispatch, then method dispatch on typed variables,
     then falls back to a static call by flattened name. -/
@@ -935,19 +950,10 @@ partial def translateCall (ctx : TranslationContext)
           else funcName
         return mkCall funcName'
     | .Attribute _ val _attr _ =>
-        -- Translate the receiver. For field accesses on UserDefined
-        -- composite fields, translateExpr would throw (no Any coercion),
-        -- so build the FieldSelect directly — no coercion is needed
-        -- when the expression is used as a method receiver.
-        let target_trans ← match val with
-          | .Attribute _ obj fieldAttr _ =>
-            let objType ← inferExprType ctx obj
-            match tryLookupFieldHighType ctx objType fieldAttr.val with
-            | some (.UserDefined _) =>
-              let objExpr ← translateExpr ctx obj
-              pure <| mkStmtExprMd (StmtExpr.FieldSelect objExpr fieldAttr.val)
-            | _ => translateExpr ctx val
-          | _ => translateExpr ctx val
+        -- Translate the receiver. For nested field accesses on UserDefined
+        -- composite fields (e.g. self.a.b.method()), translateExpr would
+        -- throw (no Any coercion), so build FieldSelect chains directly.
+        let target_trans ← translateExprAsReceiver ctx val
         if opt_firstarg.isSome then
           if let some (ImportedSymbol.procedure _ _ true) := ctx.importedSymbols[funcName]? then
             return mkCall funcName

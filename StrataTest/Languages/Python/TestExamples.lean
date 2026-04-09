@@ -16,10 +16,10 @@ open Lean.Parser (InputContext)
 
 namespace Strata.Python
 
-/-- Run the Python → Ion → Laurel pipeline and return the Laurel program.
-    The caller can inspect the Laurel IR directly or continue to Core/SMT. -/
-def processPythonToLaurel (pythonCmd : System.FilePath) (input : InputContext)
-    : IO Laurel.Program := do
+/-- Run the Python → Ion → Laurel pipeline inside a temp directory and pass
+    the resulting Laurel program and the temp source path to a continuation. -/
+def withPythonToLaurel (pythonCmd : System.FilePath) (input : InputContext)
+    (k : Laurel.Program → System.FilePath → IO α) : IO α := do
   IO.FS.withTempDir fun tmpDir => do
     let pyFile := tmpDir / "test.py"
     IO.FS.writeFile pyFile input.inputString
@@ -40,8 +40,14 @@ def processPythonToLaurel (pythonCmd : System.FilePath) (input : InputContext)
       throw <| .userError s!"py_to_strata failed (exit code {exitCode}): {stderr}"
     match ← pyAnalyzeLaurel ionFile.toString
         (sourcePath := some pyFile.toString) |>.toBaseIO with
-    | .ok r => pure r
+    | .ok r => k r pyFile
     | .error err => throw <| .userError s!"pyAnalyzeLaurel failed: {err}"
+
+/-- Run the Python → Ion → Laurel pipeline and return the Laurel program.
+    The caller can inspect the Laurel IR directly or continue to Core/SMT. -/
+def processPythonToLaurel (pythonCmd : System.FilePath) (input : InputContext)
+    : IO Laurel.Program :=
+  withPythonToLaurel pythonCmd input fun laurel _ => pure laurel
 
 /-- Process a Python source file through the full verification pipeline
     (Python → Ion → Laurel → Core → verify) and return diagnostics.
@@ -50,46 +56,14 @@ def processPythonToLaurel (pythonCmd : System.FilePath) (input : InputContext)
     must point to a Python 3 interpreter with `strata.gen` installed. -/
 def processPythonFile (pythonCmd : System.FilePath) (input : InputContext)
     : IO (Array Diagnostic) := do
-  IO.FS.withTempDir fun tmpDir => do
-    -- Write Python source
-    let pyFile := tmpDir / "test.py"
-    IO.FS.writeFile pyFile input.inputString
-    -- Write dialect file
-    let dialectFile := tmpDir / "dialect.ion"
-    IO.FS.writeBinFile dialectFile Python.Python.toIon
-    -- Compile to Ion
-    let ionFile := tmpDir / "test.python.st.ion"
-    let child ← IO.Process.spawn {
-      cmd := pythonCmd.toString
-      args := #["-m", "strata.gen", "py_to_strata",
-                "--dialect", dialectFile.toString,
-                pyFile.toString, ionFile.toString]
-      inheritEnv := true
-      stdin := .null, stdout := .null, stderr := .piped
-    }
-    let stderr ← child.stderr.readToEnd
-    let exitCode ← child.wait
-    if exitCode ≠ 0 then
-      throw <| .userError s!"py_to_strata failed (exit code {exitCode}): {stderr}"
-
-    -- Translate Python Ion → Laurel
-    let laurel ←
-      match ← pyAnalyzeLaurel ionFile.toString
-          (sourcePath := some pyFile.toString) |>.toBaseIO with
-      | .ok r => pure r
-      | .error err => throw <| .userError s!"pyAnalyzeLaurel failed: {err}"
-
-    -- Translate Laurel → Core (using Python-specific translateCombinedLaurel)
+  withPythonToLaurel pythonCmd input fun laurel pyFile => do
     let (coreOpt, translateDiags) := translateCombinedLaurel laurel
-
     let uri := Uri.file pyFile.toString
     let files := Map.insert Map.empty uri input.fileMap
-
     match coreOpt with
     | none =>
       pure (translateDiags.map (·.toDiagnostic files)).toArray
     | some core =>
-      -- Verify Core with Python-specific factory functions
       let options : Core.VerifyOptions :=
         { Core.VerifyOptions.quiet with removeIrrelevantAxioms := .Precise }
       let vcResults ← IO.FS.withTempDir fun vcDir =>
