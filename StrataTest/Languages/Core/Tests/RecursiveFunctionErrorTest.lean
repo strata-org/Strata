@@ -39,8 +39,7 @@ rec function len<a>(@[cases] xs : MyList a) : int
 #eval TransM.run Inhabited.default (translateProgram polyRecPgm) |>.snd |>.isEmpty
 
 /--
-error: ❌ Transform Error. ❌ Partial evaluation error.
-🚨 Error during evaluation!
+error: 🚨 Error during evaluation!
 [ERROR] Polymorphic recursive functions are not yet supported for SMT verification: 'len'. SMT solvers require monomorphic axioms.
 
 [DEBUG] Evaluated program: program Core;
@@ -71,8 +70,7 @@ rec function listLen (xs : IntList) : int
 #end
 
 /--
-error: ❌ Transform Error. ❌ Partial evaluation error.
-🚨 Error during evaluation!
+error: 🚨 Error during evaluation!
 [ERROR] Recursive function 'listLen' requires a @[cases] parameter
 
 [DEBUG] Evaluated program: program Core;

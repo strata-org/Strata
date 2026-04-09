@@ -122,6 +122,9 @@ structure CoreTransformState where
   -- declarations (e.g., PrecondElim). The factory grows as function
   -- declarations are encountered during traversal.
   factory: Option (@Lambda.Factory CoreLParams) := .none
+  -- Optional diagnostic error stored by pipeline phases (e.g., type check)
+  -- that need to propagate structured errors with source locations.
+  diagnosticError: Option Strata.DiagnosticModel := .none
 
 @[simp]
 def CoreTransformState.emp : CoreTransformState :=
@@ -143,7 +146,8 @@ def liftCoreGenM {α : Type} (cgm : CoreGenM α) : StateM CoreTransformState α 
       currentProgram := coreTransformState.currentProgram,
       currentProcedureName := coreTransformState.currentProcedureName,
       cachedAnalyses := coreTransformState.cachedAnalyses,
-      factory := coreTransformState.factory })
+      factory := coreTransformState.factory,
+      diagnosticError := coreTransformState.diagnosticError })
 
 instance : MonadLift CoreGenM (StateM CoreTransformState) where
   monadLift := liftCoreGenM

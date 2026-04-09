@@ -710,7 +710,10 @@ def typeCheckPipelinePhase
       return { pwf with program := program }
     match result with
     | .ok pwf' => return (true, pwf')
-    | .error dm => throw s!"❌ Type checking error.\n{dm.message}"
+    | .error dm =>
+      let dm := { dm with message := s!"❌ Type checking error.\n{dm.message}" }
+      modify fun s => { s with diagnosticError := some dm }
+      throw dm.message
 
 /-- Partial-evaluation pipeline phase. Partially evaluates procedure bodies,
     producing a Core program where each procedure body contains evaluated
@@ -736,7 +739,9 @@ def partialEvalPipelinePhase : PipelinePhase :=
       return { pwf with program := p, deferred := E.deferred, env := some E }
     match result with
     | .ok pwf' => return (true, pwf')
-    | .error dm => throw s!"❌ Partial evaluation error.\n{dm.message}"
+    | .error dm =>
+      modify fun s => { s with diagnosticError := some dm }
+      throw dm.message
 
 /-- The Core verification pipeline phases. Each entry pairs a program
     transformation with its per-obligation model validation. The pipeline
@@ -1008,9 +1013,12 @@ def verify (program : Program)
         let (_changed, next) ← pp.transform current
         current := next
       return current
-    match Transform.run initPwf passes with
-    | .ok pwf' => .ok pwf'
-    | .error e => .error (DiagnosticModel.fromFormat f!"❌ Transform Error. {e}")
+    match Transform.runWith initPwf passes .emp with
+    | (.ok pwf', _) => .ok pwf'
+    | (.error e, s) =>
+      match s.diagnosticError with
+      | some dm => .error dm
+      | none => .error (DiagnosticModel.fromFormat f!"❌ Transform Error. {e}")
   let p := pwf.program
   -- Use the Env from PE for SMT encoding.
   let E := match pwf.env with
