@@ -360,6 +360,42 @@ def main() -> None:
   assertOpaque laurel aGetX
   assertOpaque laurel bGetX
 
+-- Inheritance dispatch soundness: a field typed as A could hold a B at
+-- runtime, so calling r.a.f() must not statically dispatch to A@f (which
+-- has assert False). The hierarchy guard makes both methods opaque and
+-- the call site emits a Hole.
+#guard_msgs in
+#eval withPython (warnOnSkip := false) fun pythonCmd => do
+  let program :=
+"class A:
+    def f(self) -> None:
+        assert False
+class B(A):
+    def f(self) -> None:
+        assert True
+
+class Receiver:
+    def __init__(self) -> None:
+        self.a: A = A()
+
+def main() -> None:
+    r: Receiver = Receiver()
+    r.a.f()
+"
+  let (laurel, _) ← toLaurel pythonCmd program
+  let aF := manglePythonMethod "A" "f"
+  let bF := manglePythonMethod "B" "f"
+  assertOpaque laurel aF
+  assertOpaque laurel bF
+  -- r.a.f() must NOT resolve to A@f StaticCall — it must be a Hole
+  let mainProc := laurel.staticProcedures.find? (fun p => p.name.text == "main")
+  match mainProc with
+  | none => throw <| .userError "main procedure not found"
+  | some proc =>
+    let mainOutput := toString (Laurel.formatProcedure proc)
+    if containsSubstr mainOutput s!"{aF}(" then
+      throw <| IO.userError s!"main should NOT call {aF} (inheritance dispatch unsound)"
+
 -- Cross-class method dispatch: a method in one class calls a method on
 -- a field typed as another class. The call should resolve via userFunctions.
 #guard_msgs in
