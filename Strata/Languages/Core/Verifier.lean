@@ -636,6 +636,74 @@ instance : ToString VCResults where
   toString rs := toString (VCResults.format rs)
 
 /--
+Groups all `VCResult`s that originate from the same assertion.
+
+Assertions can be reached through multiple paths in a procedure. Each path
+creates a VC and a corresponding `VCResult`. An `AssertResult` collects
+those per-path results so that consumers (diagnostics, SARIF, summaries)
+can report a single outcome per assertion instead of one per path.
+-/
+structure AssertResult where
+  /-- The assertion label shared by all grouped results. -/
+  label : String
+  /-- The individual per-path verification results for this assertion. -/
+  results : Array VCResult
+
+/-- An assertion passes when every path's result is a success. -/
+def AssertResult.isSuccess (ar : AssertResult) : Bool :=
+  ar.results.all VCResult.isSuccess
+
+/-- An assertion fails when any path's result is a failure. -/
+def AssertResult.isFailure (ar : AssertResult) : Bool :=
+  ar.results.any VCResult.isFailure
+
+/-- An assertion is unknown when it has no failures but at least one unknown. -/
+def AssertResult.isUnknown (ar : AssertResult) : Bool :=
+  !ar.isFailure && ar.results.any VCResult.isUnknown
+
+/-- An assertion has an implementation error when any path does. -/
+def AssertResult.isImplementationError (ar : AssertResult) : Bool :=
+  ar.results.any VCResult.isImplementationError
+
+/-- An assertion has an SMT error when any path does. -/
+def AssertResult.hasSMTError (ar : AssertResult) : Bool :=
+  ar.results.any VCResult.hasSMTError
+
+/-- An assertion is unreachable when every path is unreachable. -/
+def AssertResult.isUnreachable (ar : AssertResult) : Bool :=
+  ar.results.all VCResult.isUnreachable
+
+/-- Bug-finding success: every path succeeds in bug-finding mode. -/
+def AssertResult.isBugFindingSuccess (ar : AssertResult) : Bool :=
+  ar.results.all VCResult.isBugFindingSuccess
+
+/-- Bug-finding failure: any path fails in bug-finding mode. -/
+def AssertResult.isBugFindingFailure (ar : AssertResult) : Bool :=
+  ar.results.any VCResult.isBugFindingFailure
+
+/-- The first VCResult in the group, used to access shared obligation metadata. -/
+def AssertResult.representative (ar : AssertResult) : Option VCResult :=
+  ar.results[0]?
+
+instance : ToFormat AssertResult where
+  format ar :=
+    let header := f!"Assertion: {ar.label} ({ar.results.size} path(s))"
+    let body := ar.results.map (fun r => f!"{Format.line}  {r}")
+    header ++ Format.joinSep body.toList ""
+
+@[expose] abbrev AssertResults := Array AssertResult
+
+/-- Group `VCResults` by assertion label, preserving the order of first occurrence. -/
+def VCResults.groupByAssertion (rs : VCResults) : AssertResults :=
+  let (map, order) := rs.foldl (init := (Std.HashMap.emptyWithCapacity (α := String) (β := Array VCResult), (#[] : Array String)))
+    fun (map, order) r =>
+      let lbl := r.obligation.label
+      let existing := map.getD lbl #[]
+      let order := if existing.isEmpty then order.push lbl else order
+      (map.insert lbl (existing.push r), order)
+  order.map fun lbl => { label := lbl, results := map.getD lbl #[] }
+
+/--
 Preprocess a proof obligation using partial evaluation (PE).
 Returns PE-determined results for satisfiability and validity independently.
 Each result is `some r` if PE can determine it, `none` if the solver is needed.
@@ -1080,6 +1148,27 @@ def Core.VCResult.toDiagnostic (files: Map Strata.Uri Lean.FileMap) (vcr : Core.
     (phases : List Core.AbstractedPhase := []) : Option Diagnostic := do
   let modelOption := toDiagnosticModel vcr phases
   modelOption.map (fun dm => dm.toDiagnostic files)
+
+/-- Convert an `AssertResult` to a single `DiagnosticModel` by picking the
+    worst-case `VCResult` among its paths. This ensures one diagnostic per
+    assertion rather than one per path.
+
+    Priority: implementation error > failure > unknown > unreachable > success. -/
+def assertResultToDiagnosticModel (ar : Core.AssertResult)
+    (phases : List Core.AbstractedPhase := []) : Option DiagnosticModel :=
+  let pick := ar.results.foldl (init := none) fun best r =>
+    let candidate := toDiagnosticModel r phases
+    match best, candidate with
+    | none, _ => candidate
+    | _, none => best
+    | some _, some _ => if r.isImplementationError || r.isFailure then candidate else best
+  pick
+
+/-- Convert an `AssertResult` to a single `Diagnostic`. -/
+def assertResultToDiagnostic (files: Map Strata.Uri Lean.FileMap) (ar : Core.AssertResult)
+    (phases : List Core.AbstractedPhase := []) : Option Diagnostic := do
+  let dm ← assertResultToDiagnosticModel ar phases
+  some (dm.toDiagnostic files)
 
 end -- public section
 end Strata
