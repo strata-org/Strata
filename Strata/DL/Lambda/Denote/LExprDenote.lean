@@ -1111,4 +1111,69 @@ def Env.InterpConsistent (env : T.Identifier → Option (LExpr T.mono)) (fvarVal
 
 end EnvConsistent
 
+/-! ### Interpretations, Satisfiability, and Validity
+
+An `Interp` bundles a type-constructor interpretation and an operator
+interpretation together with proofs that the interpretation is consistent
+with a given factory: function bodies denote correctly and constructor
+axioms (disjointness, injectivity) hold. Satisfiability and validity
+are defined over consistent interpretations. -/
+
+/-- A consistent interpretation of a factory: bundles `tcInterp` and
+`opInterp` with proofs that the interpretation is inhabited, consistent
+with function definitions, and respects ADT axioms. -/
+structure Interp {T : LExprParams} (F : @Factory T) [DecidableEq T.IDMeta] where
+  tcInterp : TyConstrInterp
+  opInterp : OpInterp tcInterp
+  allInhabited : TyConstrInterp.AllInhabited tcInterp
+  interpConsistent : Factory.InterpConsistent tcInterp opInterp F
+  constrConsistent : ConstrInterpConsistent tcInterp opInterp F
+
+section Satisfaction
+
+variable {T : LExprParams} [DecidableEq T.IDMeta]
+variable {F : @Factory T}
+
+/-- An interpretation satisfies a bool-typed formula `e` when `e` denotes
+`true` for *every* type-variable valuation and free-variable valuation.
+Non-closed formulas are treated as universally quantified (universal
+closure over both type and term variables). -/
+def Interp.satisfies (I : Interp F)
+    (e : LExpr T.mono)
+    (h : LExpr.HasTypeA [] e .bool)
+    : Prop :=
+  ∀ (vt : TyVarVal) (fvarVal : FreeVarVal T I.tcInterp),
+    (LExpr.denote I.tcInterp I.opInterp fvarVal vt .nil e .bool h : Bool) = true
+
+/-- A formula is *satisfiable* if there exists a consistent interpretation
+that satisfies it. -/
+def Satisfiable (F : @Factory T)
+    (e : LExpr T.mono)
+    (h : LExpr.HasTypeA [] e .bool)
+    : Prop :=
+  ∃ (I : Interp F),
+    I.satisfies e h
+
+/-- A formula is *valid* if every consistent interpretation satisfies it. -/
+def Valid (F : @Factory T)
+    (e : LExpr T.mono)
+    (h : LExpr.HasTypeA [] e .bool)
+    : Prop :=
+  ∀ (I : Interp F),
+    I.satisfies e h
+
+/-- Logical consequence: `e` is a consequence of `Δ` when every consistent
+interpretation that satisfies all formulas in `Δ` also satisfies `e`. -/
+def LogConseq (F : @Factory T)
+    (Δ : List (LExpr T.mono))
+    (hΔ : ∀ d ∈ Δ, LExpr.HasTypeA [] d .bool)
+    (e : LExpr T.mono)
+    (h : LExpr.HasTypeA [] e .bool)
+    : Prop :=
+  ∀ (I : Interp F),
+    (∀ d (hd : d ∈ Δ), I.satisfies d (hΔ d hd)) →
+    I.satisfies e h
+
+end Satisfaction
+
 end Lambda
