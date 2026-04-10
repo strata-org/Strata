@@ -15,6 +15,16 @@ test_arithmetic.py(23, 16): ✅ pass - Check PFloorDiv exception
 test_arithmetic.py(23, 4): ✅ pass - set_quot_calls_PFloorDiv_0
 test_arithmetic.py(24, 4): ✅ pass - floor division implemented incorrectly
 test_arithmetic.py(24, 4): ✅ pass - floor division implemented incorrectly
-test_arithmetic.py(26, 0): ✅ pass - ite_cond_calls_Any_to_bool_0
-DETAIL: 18 passed, 0 failed, 0 inconclusive
+test_arithmetic.py(27, 15): ✅ pass - Check PMod exception
+test_arithmetic.py(27, 15): ✅ pass - Check PMod exception
+test_arithmetic.py(27, 4): ✅ pass - set_rem_calls_PMod_0
+test_arithmetic.py(28, 4): ✅ pass - mod implemented incorrectly
+test_arithmetic.py(28, 4): ✅ pass - mod implemented incorrectly
+test_arithmetic.py(31, 20): ✅ pass - Check PMod exception
+test_arithmetic.py(31, 20): ✅ pass - Check PMod exception
+test_arithmetic.py(31, 4): ✅ pass - set_neg_rem1_calls_PMod_0
+test_arithmetic.py(32, 4): ✅ pass - negative mod should follow Python floored semantics
+test_arithmetic.py(32, 4): ✅ pass - negative mod should follow Python floored semantics
+test_arithmetic.py(34, 0): ✅ pass - ite_cond_calls_Any_to_bool_0
+DETAIL: 28 passed, 0 failed, 0 inconclusive
 RESULT: Analysis success

@@ -38,17 +38,15 @@ rec function len<a>(@[cases] xs : MyList a) : int
 #guard_msgs in
 #eval TransM.run Inhabited.default (translateProgram polyRecPgm) |>.snd |>.isEmpty
 
-/--
-error: 🚨 Error during evaluation!
+/-- error: 🚨 Error during evaluation!
 [ERROR] Polymorphic recursive functions are not yet supported for SMT verification: 'len'. SMT solvers require monomorphic axioms.
 
 [DEBUG] Evaluated program: program Core;
 
-datatype MyList (a : Type) {(
-  (Nil())),
-  (Cons(hd : a, tl : (MyList a)))
-};
--/
+datatype MyList (a : Type) {
+  Nil(),
+  Cons(hd : a, tl : MyList a)
+};-/
 #guard_msgs in
 #eval verify polyRecPgm (options := .quiet)
 
@@ -69,17 +67,15 @@ rec function listLen (xs : IntList) : int
 
 #end
 
-/--
-error: 🚨 Error during evaluation!
+/-- error: 🚨 Error during evaluation!
 [ERROR] Recursive function 'listLen' requires a @[cases] parameter
 
 [DEBUG] Evaluated program: program Core;
 
-datatype IntList {(
-  (Nil())),
-  (Cons(hd : int, tl : IntList))
-};
--/
+datatype IntList {
+  Nil(),
+  Cons(hd : int, tl : IntList)
+};-/
 #guard_msgs in
 #eval verify noCasesPgm (options := .quiet)
 

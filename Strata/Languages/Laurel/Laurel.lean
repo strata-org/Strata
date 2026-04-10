@@ -19,6 +19,9 @@ namespace Laurel
 
 public section
 
+abbrev MetaData := Imperative.MetaData Core.Expression
+-- Explicit instance needed for deriving Repr in the mutual block
+instance : Repr MetaData := inferInstance
 
 /-- A name-introduction site (variable declaration, procedure, field, type, etc.).
     Carries a mandatory unique ID assigned by the resolution pass. -/
@@ -27,6 +30,8 @@ structure Identifier where
   text : String
   /-- Unique ID assigned by the resolution pass. -/
   uniqueId : Option Nat := none
+  /-- Source-level metadata (locations, annotations). -/
+  md : MetaData
   deriving Repr
 
 -- Temporary hack because the Python through Laurel pipeline doesn't resolve
@@ -34,15 +39,15 @@ instance : BEq Identifier where
   beq a b := a.text == b.text
 
 instance : Inhabited Identifier where
- default := { text := "defaultIdentifier" }
+ default := { text := "defaultIdentifier", md := .empty }
 
 instance : ToString Identifier where
   toString id := id.text
 
 instance : Coe String Identifier where
-  coe s := Identifier.mk s none
+  coe s := { text := s, md := .empty }
 
-def mkId (name: String): Identifier := Identifier.mk name none
+def mkId (name: String): Identifier := { text := name, md := .empty }
 
 /--
 Primitive operations available in Laurel expressions.
@@ -99,10 +104,6 @@ inductive Operation : Type where
   | StrConcat
   deriving Repr
 
-abbrev MetaData := Imperative.MetaData Core.Expression
--- Explicit instance needed for deriving Repr in the mutual block
-instance : Repr MetaData := inferInstance
-
 /--
 A wrapper that pairs a value with source-level metadata such as source
 locations and annotations. All Laurel AST nodes are wrapped in
@@ -154,6 +155,8 @@ inductive HighType : Type where
   | Pure (base : WithMetadata HighType)
   /-- An intersection of types. Used for implicit intersection types, e.g. `Scientist & Scandinavian`. -/
   | Intersection (types : List (WithMetadata HighType))
+  /-- Bitvector type of a given width. -/
+  | TBv (size : Nat)
   /-- Temporary construct meant to aid the migration of Python->Core to Python->Laurel.
   Type "passed through" from Core. Intended to allow translations to Laurel to refer directly to Core. -/
   | TCore (s: String)
@@ -192,8 +195,6 @@ structure Procedure : Type where
       whose body is the ensures clause universally quantified over the procedure's inputs,
       with this expression as the SMT trigger. -/
   invokeOn : Option (WithMetadata StmtExpr) := none
-  /-- Source-level metadata (locations, annotations). -/
-  md : MetaData
 
 /--
 A typed parameter for a procedure.
@@ -337,6 +338,7 @@ def highEq (a : HighTypeMd) (b : HighTypeMd) : Bool := match _a: a.val, _b: b.va
   | HighType.TReal, HighType.TReal => true
   | HighType.TString, HighType.TString => true
   | HighType.THeap, HighType.THeap => true
+  | HighType.TBv n1, HighType.TBv n2 => n1 == n2
   | HighType.TTypedField t1, HighType.TTypedField t2 => highEq t1 t2
   | HighType.TSet t1, HighType.TSet t2 => highEq t1 t2
   | HighType.TMap k1 v1, HighType.TMap k2 v2 => highEq k1 k2 && highEq v1 v2
