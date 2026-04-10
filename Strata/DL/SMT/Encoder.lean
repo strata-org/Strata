@@ -29,11 +29,7 @@ The encoding pipeline has two layers:
    conversions. All string formatting lives in the Solver layer.
 
 2. **Encoder layer** (`EncoderM`): Sits on top of `SolverM` and manages
-   A-normal form decomposition purely in the `Term` domain:
-   - **Term → abbreviated Term cache** (`terms`): Maps each `Term` to its
-     abbreviated `Term.var` reference (e.g., a variable named `$__t.0`, `$__t.1`).
-     Large terms are broken into small `define-fun` definitions with short
-     names, and the Solver handles all `Term → String` conversion.
+   UF encoding purely in the `Term` domain:
    - **UF → abbreviated name cache** (`ufs`): Maps uninterpreted functions to
      their abbreviated identifiers (e.g., `$__f.0`, `$__f.1`).
 
@@ -58,11 +54,7 @@ string conversion and caching when emitting commands.
  Terms are mapped to their SMT encoding that conforms to the SMTLib syntax. We
  keep track of these mappings to ensure that each Term construct is translated
  to its SMT encoding exactly once.  This translation invariant is necessary for
- correctness in the case of UF names and variable
- names; and it is neccessary for compactness in the case of terms. In
- particular, the resulting SMT encoding will be in A-normal form (ANF): the body
- of every s-expression in the encoding consists of atomic subterms (identifiers
- or literals).
+ correctness in the case of UF names and variable names.
 -/
 
 namespace Strata.SMT
@@ -72,14 +64,10 @@ open Solver
 public section
 
 structure EncoderState where
-  /-- Maps a `Term` to its abbreviated `Term` (a `Term.var` with name like `$__t.0`).
-      This is a cache after converting terms to A-Normal Form. -/
-  terms : Std.HashMap Term Term
   /-- Maps a `UF` to its abbreviated SMT identifier (e.g., `$__f.0`, `$__f.1`). -/
   ufs   : Std.HashMap UF String
 
 def EncoderState.init : EncoderState where
-  terms := {}
   ufs := {}
 
 @[expose] abbrev EncoderM (α) := StateT EncoderState SolverM α
@@ -150,12 +138,9 @@ def findUniqueName (baseName : String) (startSuffix : Nat) (isUsed : String → 
 
 /-- The `$__` prefix is reserved for internal use and cannot appear in user
     identifiers (see `Strata.DL.Lambda.LState.EvalConfig.varPrefix`).
-    The `.` after `t`/`f` prevents collision with Lambda-generated names
-    like `$__t0` (variable `t`, index 0). -/
-def termId (n : Nat)                    : String := s!"$__t.{n}"
+    The `.` after `f` prevents collision with Lambda-generated names. -/
 def ufId (n : Nat)                      : String := s!"$__f.{n}"
 
-def termNum : EncoderM Nat := do return (← get).terms.size
 def ufNum   : EncoderM Nat := do return (← get).ufs.size
 
 def declareType (id : String) (mks : List String) : EncoderM String := do
@@ -163,16 +148,11 @@ def declareType (id : String) (mks : List String) : EncoderM String := do
   declareDatatype id [] constrs
   return id
 
-/-- Emit a `define-fun` for a term in ANF. When not in a binder, emits a
-    `define-fun` with the given body `Term` and returns a `Term.var` reference
-    to the abbreviated name. When in a binder, just returns the body term. -/
-def defineTerm (inBinder : Bool) (ty : TermType) (body : Term) : EncoderM Term := do
-  if inBinder
-  then return body
-  else do
-    let id := termId (← termNum)
-    Solver.defineFunTerm id [] ty body
-    return .var ⟨id, ty⟩
+/-- Build the `Term` for a compound expression. The `inBinder` parameter is
+    kept for API compatibility but is unused — deduplication is now handled
+    upstream in the Core-to-Core pipeline. -/
+def defineTerm (_inBinder : Bool) (_ty : TermType) (body : Term) : EncoderM Term :=
+  return body
 
 def defineTermBound := defineTerm True
 def defineTermUnbound := defineTerm False
@@ -266,40 +246,35 @@ def mapM₁ {m : Type u → Type v} [Monad m] {α : Type w} {β : Type u}
   xs.attach.mapM f
 
 def encodeTerm (inBinder : Bool) (t : Term) : EncoderM Term := do
-  if let (.some enc) := (← get).terms.get? t then return enc
   let ty := t.typeOf
-  let enc ←
-    match t with
-    | .var _            => return t
-    | .prim _           => return t
-    | .none _           => defineTerm inBinder ty t
-    | .some t₁          =>
-      let t₁Enc ← encodeTerm inBinder t₁
-      defineTerm inBinder ty (.some t₁Enc)
-    | .app .re_allchar [] .regex => return t
-    | .app .re_all     [] .regex => return t
-    | .app .re_none    [] .regex => return t
-    | .app .bvnego [inner] .bool =>
-      match inner.typeOf with
-      | .bitvec n =>
-        let innerEnc ← encodeTerm inBinder inner
-        let minVal : Term := .prim (.bitvec (BitVec.intMin n))
-        defineApp inBinder ty .eq [innerEnc, minVal]
-      | _ =>
-        return Term.bool false
-    | .app op ts _         => defineApp inBinder ty op (← mapM₁ ts (λ ⟨tᵢ, _⟩ => encodeTerm inBinder tᵢ))
-    | .quant qk qargs tr body =>
-      let trExprs := if Factory.isSimpleTrigger tr then [] else extractTriggers tr
-      let trEncs ← mapM₁ trExprs (fun ⟨ts, _⟩ => mapM₁ ts (fun ⟨ti, _⟩ => encodeTerm True ti))
-      let bodyEnc ← encodeTerm True body
-      match qk, qargs with
-      | .all, [⟨x, xty⟩] => defineAll inBinder x xty trEncs bodyEnc
-      | .all, _ => defineMultiAll inBinder qargs trEncs bodyEnc
-      | .exist, [⟨x, xty⟩] => defineExist inBinder x xty trEncs bodyEnc
-      | .exist, _ => defineMultiExist inBinder qargs trEncs bodyEnc
-  if inBinder
-  then pure enc
-  else modifyGet λ state => (enc, {state with terms := state.terms.insert t enc})
+  match t with
+  | .var _            => return t
+  | .prim _           => return t
+  | .none _           => defineTerm inBinder ty t
+  | .some t₁          =>
+    let t₁Enc ← encodeTerm inBinder t₁
+    defineTerm inBinder ty (.some t₁Enc)
+  | .app .re_allchar [] .regex => return t
+  | .app .re_all     [] .regex => return t
+  | .app .re_none    [] .regex => return t
+  | .app .bvnego [inner] .bool =>
+    match inner.typeOf with
+    | .bitvec n =>
+      let innerEnc ← encodeTerm inBinder inner
+      let minVal : Term := .prim (.bitvec (BitVec.intMin n))
+      defineApp inBinder ty .eq [innerEnc, minVal]
+    | _ =>
+      return Term.bool false
+  | .app op ts _         => defineApp inBinder ty op (← mapM₁ ts (λ ⟨tᵢ, _⟩ => encodeTerm inBinder tᵢ))
+  | .quant qk qargs tr body =>
+    let trExprs := if Factory.isSimpleTrigger tr then [] else extractTriggers tr
+    let trEncs ← mapM₁ trExprs (fun ⟨ts, _⟩ => mapM₁ ts (fun ⟨ti, _⟩ => encodeTerm True ti))
+    let bodyEnc ← encodeTerm True body
+    match qk, qargs with
+    | .all, [⟨x, xty⟩] => defineAll inBinder x xty trEncs bodyEnc
+    | .all, _ => defineMultiAll inBinder qargs trEncs bodyEnc
+    | .exist, [⟨x, xty⟩] => defineExist inBinder x xty trEncs bodyEnc
+    | .exist, _ => defineMultiExist inBinder qargs trEncs bodyEnc
 termination_by sizeOf t
 decreasing_by
   all_goals first
@@ -323,11 +298,17 @@ def encodeFunction (uf : UF) (body : Term) : EncoderM String := do
   Solver.defineFunTerm id argPairs uf.out bodyEnc
   modifyGet λ state => (id, {state with ufs := state.ufs.insert uf id})
 
-/-- A utility for debugging. -/
+/-- A utility for debugging. Encodes a term (declaring any UFs it references)
+    and emits the final encoded term as an SMT-LIB string. -/
 def termToString (e : Term) : IO String := do
   let b ← IO.mkRef { : IO.FS.Stream.Buffer }
   let solver ← Solver.bufferWriter b
-  let _ ← ((Encoder.encodeTerm False e).run EncoderState.init).run solver
+  let _ ← ((do
+    let enc ← Encoder.encodeTerm False e
+    let s ← Solver.termToSMTString enc
+    (← read).smtLibInput.putStr s!"{s}\n"
+    (← read).smtLibInput.flush
+  ).run EncoderState.init).run solver
   let contents ← b.get
   if h: contents.data.IsValidUTF8
   then pure (String.fromUTF8 contents.data h)
