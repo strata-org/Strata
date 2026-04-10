@@ -5,7 +5,6 @@
 -/
 
 import Strata.Languages.Python.Specs.ToLaurel
-import Strata.Languages.Python.Specs.DDM
 import Strata.Languages.Laurel.Grammar.AbstractToConcreteTreeTranslator
 
 /-! # PySpec → Laurel Translation Tests
@@ -113,7 +112,7 @@ private def runDispatchTest (sigs : Array Signature) : IO Unit := do
 /-! ### Signature Builders
 
 Concise helpers for constructing PySpec signatures.
-Type shorthands: `str`, `int`, `bool`, `float`, `bytes`, `any`, `none_`.
+Type shorthands: `str`, `int`, `bool_`, `float_`, `bytes`, `any`, `none_`, `list_`, `dict_`.
 -/
 
 private def str := SpecType.ofAtom loc (.ident .builtinsStr #[])
@@ -287,6 +286,36 @@ procedure uses_class(x:UserDefined(Foo)) returns(result:UserDefined(Foo))
   func "uses_class" (pyClass "Foo") (args := #[arg "x" (pyClass "Foo")])
 ]
 
+/-! ## Error cases -/
+
+/--
+info: Unknown type 'foo.Bar' mapped to TString
+-/
+#guard_msgs in
+#eval runTestErrors
+  #[func "f" (SpecType.ofAtom loc (.ident (PythonIdent.mk "foo" "Bar") #[]))]
+
+/--
+info: Empty type (no atoms) encountered in Laurel conversion
+-/
+#guard_msgs in
+#eval runTestErrors
+  #[func "f" { atoms := #[], loc }]
+
+/--
+info: Union type (builtins.str | builtins.int) not yet supported in Laurel
+-/
+#guard_msgs in
+#eval runTestErrors
+  #[func "f" (union #[.ident .builtinsStr #[], .ident .builtinsInt #[]])]
+
+/--
+info: Union type (None | foo.Bar) not yet supported in Laurel
+-/
+#guard_msgs in
+#eval runTestErrors
+  #[func "f" (union #[.noneType, .ident (PythonIdent.mk "foo" "Bar") #[]])]
+
 /-! ## Empty input -/
 
 #guard_msgs in
@@ -349,6 +378,37 @@ dispatch make:
   overload "make" (pyClass "Alpha") (args := #[arg "kind" (SpecType.ofAtom loc (strLit "a"))]),
   overload "make" (pyClass "Beta") (args := #[arg "kind" (SpecType.ofAtom loc (strLit "b"))])
 ]
+
+-- extractOverloads only processes externTypeDecl and @overload functions,
+-- ignoring class defs, type defs, and regular functions.
+/--
+info: dispatch factory:
+  "x" -> pkg.Foo
+-/
+#guard_msgs in
+#eval runDispatchTest #[
+  externType "Foo" (externIdent "pkg" "Foo"),
+  overload "factory"
+    (SpecType.ofAtom loc (.ident (externIdent "pkg" "Foo") #[]))
+    (args := #[arg "k" (SpecType.ofAtom loc (strLit "x"))]),
+  classDef "Ignored",
+  func "also_ignored" int,
+  typeDef "AlsoIgnored" str
+]
+
+-- Overload with no arguments produces an error.
+/--
+info: errors: 1
+  Overloaded function 'bad' has no arguments
+-/
+#guard_msgs in
+#eval runDispatchTest #[
+  overload "bad" str
+]
+
+-- externTypeDecl produces no errors (regression test).
+#guard_msgs in
+#eval runFullTest #[externType "Foo" (externIdent "pkg" "Foo")]
 
 /-! ## Nested dict access in preconditions (issue #800) -/
 
