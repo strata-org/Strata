@@ -89,7 +89,7 @@ def toSMTStringWithDatatypeBlocks (e : LExpr CoreLParams.mono) (blocks : List (L
         -- Then encode the term and emit it
         let (enc, _) ← (Strata.SMT.Encoder.encodeTerm false smt).run Strata.SMT.EncoderState.init
         let s ← Strata.SMT.Solver.termToSMTString enc
-        (← read).smtLibInput.putStr s!"{s}\n"
+        (← read).smtLibInput.putStr s!"(assert {s})\n"
         (← read).smtLibInput.flush
       ).run solver).toBaseIO) with
       | .error e => return s!"Error: {e}"
@@ -116,7 +116,7 @@ info: (declare-datatype TestOption (par (α) (
   (Some (TestOption..val |α|)))))
 ; x
 (declare-const x (TestOption Int))
-x
+(assert x)
 -/
 #guard_msgs in
 #eval format <$> toSMTStringWithDatatypes
@@ -130,7 +130,7 @@ info: (declare-datatype TestList (par (α) (
   (Cons (TestList..head |α|) (TestList..tail (TestList |α|))))))
 ; xs
 (declare-const xs (TestList Int))
-xs
+(assert xs)
 -/
 #guard_msgs in
 #eval format <$> toSMTStringWithDatatypes
@@ -144,7 +144,7 @@ info: (declare-datatype TestTree (par (α) (
   (Node (TestTree..value |α|) (TestTree..left (TestTree |α|)) (TestTree..right (TestTree |α|))))))
 ; tree
 (declare-const tree (TestTree Bool))
-tree
+(assert tree)
 -/
 #guard_msgs in
 #eval format <$> toSMTStringWithDatatypes
@@ -158,7 +158,7 @@ info: (declare-datatype TestList (par (α) (
   (Cons (TestList..head |α|) (TestList..tail (TestList |α|))))))
 ; intList
 (declare-const intList (TestList Int))
-intList
+(assert intList)
 -/
 #guard_msgs in
 #eval format <$> toSMTStringWithDatatypes
@@ -172,7 +172,7 @@ info: (declare-datatype TestList (par (α) (
   (Cons (TestList..head |α|) (TestList..tail (TestList |α|))))))
 ; boolList
 (declare-const boolList (TestList Bool))
-boolList
+(assert boolList)
 -/
 #guard_msgs in
 #eval format <$> toSMTStringWithDatatypes
@@ -186,7 +186,7 @@ info: (declare-datatype TestTree (par (α) (
   (Node (TestTree..value |α|) (TestTree..left (TestTree |α|)) (TestTree..right (TestTree |α|))))))
 ; intTree
 (declare-const intTree (TestTree Int))
-intTree
+(assert intTree)
 -/
 #guard_msgs in
 #eval format <$> toSMTStringWithDatatypes
@@ -203,7 +203,7 @@ info: (declare-datatype TestOption (par (α) (
   (Cons (TestList..head |α|) (TestList..tail (TestList |α|))))))
 ; listOfOption
 (declare-const listOfOption (TestList (TestOption Int)))
-listOfOption
+(assert listOfOption)
 -/
 #guard_msgs in
 #eval format <$> toSMTStringWithDatatypes
@@ -217,7 +217,7 @@ listOfOption
 info: (declare-datatype TestOption (par (α) (
   (None)
   (Some (TestOption..val |α|)))))
-(as None (TestOption Int))
+(assert (as None (TestOption Int)))
 -/
 #guard_msgs in
 #eval format <$> toSMTStringWithDatatypes
@@ -229,7 +229,7 @@ info: (declare-datatype TestOption (par (α) (
 info: (declare-datatype TestOption (par (α) (
   (None)
   (Some (TestOption..val |α|)))))
-((as Some (TestOption Int)) 42)
+(assert ((as Some (TestOption Int)) 42))
 -/
 #guard_msgs in
 #eval format <$> toSMTStringWithDatatypes
@@ -241,7 +241,7 @@ info: (declare-datatype TestOption (par (α) (
 info: (declare-datatype TestList (par (α) (
   (Nil)
   (Cons (TestList..head |α|) (TestList..tail (TestList |α|))))))
-((as Cons (TestList Int)) 1 (as Nil (TestList Int)))
+(assert ((as Cons (TestList Int)) 1 (as Nil (TestList Int))))
 -/
 #guard_msgs in
 #eval format <$> toSMTStringWithDatatypes
@@ -260,7 +260,7 @@ info: (declare-datatype TestOption (par (α) (
   (Some (TestOption..val |α|)))))
 ; x
 (declare-const x (TestOption Int))
-(|is-None| x)
+(assert (|is-None| x))
 -/
 #guard_msgs in
 #eval format <$> toSMTStringWithDatatypes
@@ -275,7 +275,7 @@ info: (declare-datatype TestList (par (α) (
   (Cons (TestList..head |α|) (TestList..tail (TestList |α|))))))
 ; xs
 (declare-const xs (TestList Int))
-(|is-Cons| xs)
+(assert (|is-Cons| xs))
 -/
 #guard_msgs in
 #eval format <$> toSMTStringWithDatatypes
@@ -292,7 +292,7 @@ info: (declare-datatype TestOption (par (α) (
   (Some (TestOption..val |α|)))))
 ; x
 (declare-const x (TestOption Int))
-(TestOption..val x)
+(assert (TestOption..val x))
 -/
 #guard_msgs in
 #eval format <$> toSMTStringWithDatatypes
@@ -307,7 +307,7 @@ info: (declare-datatype TestList (par (α) (
   (Cons (TestList..head |α|) (TestList..tail (TestList |α|))))))
 ; xs
 (declare-const xs (TestList Int))
-(TestList..head xs)
+(assert (TestList..head xs))
 -/
 #guard_msgs in
 #eval format <$> toSMTStringWithDatatypes
@@ -322,7 +322,7 @@ info: (declare-datatype TestList (par (α) (
   (Cons (TestList..head |α|) (TestList..tail (TestList |α|))))))
 ; xs
 (declare-const xs (TestList Int))
-(TestList..tail xs)
+(assert (TestList..tail xs))
 -/
 #guard_msgs in
 #eval format <$> toSMTStringWithDatatypes
@@ -387,7 +387,7 @@ info: (declare-datatype Root (
   (DiamondValue (Diamond..left Left) (Diamond..right Right))))
 ; diamondVar
 (declare-const diamondVar Diamond)
-diamondVar
+(assert diamondVar)
 -/
 #guard_msgs in
 #eval format <$> toSMTStringWithDatatypes
@@ -428,7 +428,7 @@ info: (declare-datatypes ((RoseTree 1) (Forest 1))
   (par (α) ((FNil) (FCons (Forest..hd (RoseTree |α|)) (Forest..tl (Forest |α|)))))))
 ; tree
 (declare-const tree (RoseTree Int))
-tree
+(assert tree)
 -/
 #guard_msgs in
 #eval format <$> toSMTStringWithDatatypeBlocks
@@ -446,7 +446,7 @@ info: (declare-datatype TestOption (par (α) (
   (par (α) ((FNil) (FCons (Forest..hd (RoseTree |α|)) (Forest..tl (Forest |α|)))))))
 ; optionTree
 (declare-const optionTree (TestOption (RoseTree Int)))
-optionTree
+(assert optionTree)
 -/
 #guard_msgs in
 #eval format <$> toSMTStringWithDatatypeBlocks
@@ -506,7 +506,7 @@ def toSMTStringWithRecFunc (e : LExpr CoreLParams.mono) (blocks : List (List (LD
             Strata.SMT.Solver.assert id
           let (enc, _) ← (Strata.SMT.Encoder.encodeTerm false smt).run estate
           let s ← Strata.SMT.Solver.termToSMTString enc
-          (← read).smtLibInput.putStr s!"{s}\n"
+          (← read).smtLibInput.putStr s!"(assert {s})\n"
           (← read).smtLibInput.flush
         ).run solver).toBaseIO) with
         | .error e => return s!"Error: {e}"
@@ -526,7 +526,7 @@ info: (declare-datatype IntList (
 (declare-fun listLen (IntList) Int)
 (assert (= (listLen (as Nil IntList)) 0))
 (assert (forall (($__bv0 Int) ($__bv1 IntList)) (! (= (listLen ((as Cons IntList) $__bv0 $__bv1)) (+ 1 (listLen $__bv1))) :pattern ((listLen ((as Cons IntList) $__bv0 $__bv1))))))
-(listLen (as Nil IntList))
+(assert (listLen (as Nil IntList)))
 -/
 #guard_msgs in
 #eval format <$> toSMTStringWithRecFunc
