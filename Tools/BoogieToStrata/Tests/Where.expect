@@ -1,14 +1,14 @@
 Successfully parsed.
-Where.core.st(16, 4) [assert_0]: ✅ pass
-Where.core.st(17, 4) [assert_1]: ✅ pass
-Where.core.st(18, 4) [assert_2]: ❌ fail
-Where.core.st(33, 4) [assert_3]: ✅ pass
-Where.core.st(36, 4) [assert_4]: ✅ pass
-Where.core.st(37, 4) [assert_5]: ❌ fail
-Where.core.st(53, 4) [assert_6]: ❌ fail
-Where.core.st(70, 4) [assert_7]: ✅ pass
-Where.core.st(71, 4) [assert_8]: ❌ fail
-Where.core.st(87, 4) [assert_9]: ✅ pass
-Where.core.st(92, 4) [assert_10]: ✅ pass
-Where.core.st(93, 4) [assert_11]: ❌ fail
+Where.core.st(16, 4) [assert_2_236]: ✅ pass
+Where.core.st(17, 4) [assert_3_257]: ✅ pass
+Where.core.st(18, 4) [assert_4_278]: ❌ fail
+Where.core.st(33, 4) [assert_8_460]: ✅ pass
+Where.core.st(36, 4) [assert_10_515]: ✅ pass
+Where.core.st(37, 4) [assert_11_536]: ❌ fail
+Where.core.st(53, 4) [assert_16_741]: ❌ fail
+Where.core.st(70, 4) [assert_21_958]: ✅ pass
+Where.core.st(71, 4) [assert_22_979]: ❌ fail
+Where.core.st(87, 4) [assert_27_1184]: ✅ pass
+Where.core.st(92, 4) [assert_30_1287]: ✅ pass
+Where.core.st(93, 4) [assert_31_1322]: ❌ fail
 Finished with 7 goals passed, 5 failed.

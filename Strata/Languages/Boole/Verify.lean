@@ -219,16 +219,30 @@ private def toCoreMonoBind (b : BooleDDM.MonoBind SourceRange) : TranslateM (Cor
   match b with
   | .mono_bind_mk _ ⟨_, n⟩ ty => return (mkIdent n, ← toCoreMonoType ty)
 
+private def isBvType (ty : Boole.Type) : Bool :=
+  match ty with
+  | .bv1 _ | .bv8 _ | .bv16 _ | .bv32 _ | .bv64 _ => true
+  | _ => false
+
+private def typePrefix (m : SourceRange) (ty : Boole.Type) : TranslateM String := do
+  match ty with
+  | .int _  => return "Int"
+  | .real _ => return "Real"
+  | .bv1 _  => return "Bv1"
+  | .bv8 _  => return "Bv8"
+  | .bv16 _ => return "Bv16"
+  | .bv32 _ => return "Bv32"
+  | .bv64 _ => return "Bv64"
+  | _ => throwAt m s!"Unsupported typed operator type: {repr ty}"
+
 def toCoreTypedUn (m : SourceRange) (ty : Boole.Type) (op : String) (a : Core.Expression.Expr) : TranslateM Core.Expression.Expr := do
-  let .int _ := ty
-    | throwAt m s!"Unsupported typed operator type: {repr ty}"
-  let iop : Core.Expression.Expr := .op () ⟨s!"Int.{op}", ()⟩ none
+  let pfx ← typePrefix m ty
+  let iop : Core.Expression.Expr := .op () ⟨s!"{pfx}.{op}", ()⟩ none
   return .app () iop a
 
 def toCoreTypedBin (m : SourceRange) (ty : Boole.Type) (op : String) (a b : Core.Expression.Expr) : TranslateM Core.Expression.Expr := do
-  let .int _ := ty
-    | throwAt m s!"Unsupported typed operator type: {repr ty}"
-  let iop : Core.Expression.Expr := .op () ⟨s!"Int.{op}", ()⟩ none
+  let pfx ← typePrefix m ty
+  let iop : Core.Expression.Expr := .op () ⟨s!"{pfx}.{op}", ()⟩ none
   return mkCoreApp iop [a, b]
 
 private def oldifyExpr : Core.Expression.Expr → Core.Expression.Expr
@@ -307,18 +321,44 @@ def toCoreExpr (e : Boole.Expr) : TranslateM Core.Expression.Expr := do
   | .implies _ a b => return mkCoreApp Core.boolImpliesOp [← toCoreExpr a, ← toCoreExpr b]
   | .equal _ _ a b => return .eq () (← toCoreExpr a) (← toCoreExpr b)
   | .not_equal _ _ a b => return .app () Core.boolNotOp (.eq () (← toCoreExpr a) (← toCoreExpr b))
-  | .le m ty a b => toCoreTypedBin m ty "Le" (← toCoreExpr a) (← toCoreExpr b)
-  | .lt m ty a b => toCoreTypedBin m ty "Lt" (← toCoreExpr a) (← toCoreExpr b)
-  | .ge m ty a b => toCoreTypedBin m ty "Ge" (← toCoreExpr a) (← toCoreExpr b)
-  | .gt m ty a b => toCoreTypedBin m ty "Gt" (← toCoreExpr a) (← toCoreExpr b)
+  | .le m ty a b => toCoreTypedBin m ty (if isBvType ty then "ULe" else "Le") (← toCoreExpr a) (← toCoreExpr b)
+  | .lt m ty a b => toCoreTypedBin m ty (if isBvType ty then "ULt" else "Lt") (← toCoreExpr a) (← toCoreExpr b)
+  | .ge m ty a b => toCoreTypedBin m ty (if isBvType ty then "UGe" else "Ge") (← toCoreExpr a) (← toCoreExpr b)
+  | .gt m ty a b => toCoreTypedBin m ty (if isBvType ty then "UGt" else "Gt") (← toCoreExpr a) (← toCoreExpr b)
   | .neg_expr m ty a => toCoreTypedUn m ty "Neg" (← toCoreExpr a)
   | .add_expr m ty a b => toCoreTypedBin m ty "Add" (← toCoreExpr a) (← toCoreExpr b)
   | .sub_expr m ty a b => toCoreTypedBin m ty "Sub" (← toCoreExpr a) (← toCoreExpr b)
   | .mul_expr m ty a b => toCoreTypedBin m ty "Mul" (← toCoreExpr a) (← toCoreExpr b)
-  | .div_expr m ty a b => toCoreTypedBin m ty "Div" (← toCoreExpr a) (← toCoreExpr b)
-  | .mod_expr m ty a b => toCoreTypedBin m ty "Mod" (← toCoreExpr a) (← toCoreExpr b)
+  | .div_expr m ty a b => toCoreTypedBin m ty (if isBvType ty then "UDiv" else "Div") (← toCoreExpr a) (← toCoreExpr b)
+  | .mod_expr m ty a b => toCoreTypedBin m ty (if isBvType ty then "UMod" else "Mod") (← toCoreExpr a) (← toCoreExpr b)
   | .old _ _ a =>
       return oldifyExpr (← toCoreExpr a)
+  -- Bitvector-specific operations inherited from Core
+  | .bvnot _ ty a => toCoreTypedUn default ty "Not" (← toCoreExpr a)
+  | .bvand _ ty a b => toCoreTypedBin default ty "And" (← toCoreExpr a) (← toCoreExpr b)
+  | .bvor _ ty a b => toCoreTypedBin default ty "Or" (← toCoreExpr a) (← toCoreExpr b)
+  | .bvxor _ ty a b => toCoreTypedBin default ty "Xor" (← toCoreExpr a) (← toCoreExpr b)
+  | .bvshl _ ty a b => toCoreTypedBin default ty "Shl" (← toCoreExpr a) (← toCoreExpr b)
+  | .bvushr _ ty a b => toCoreTypedBin default ty "UShr" (← toCoreExpr a) (← toCoreExpr b)
+  | .bvsshr _ ty a b => toCoreTypedBin default ty "SShr" (← toCoreExpr a) (← toCoreExpr b)
+  | .bvsdiv _ ty a b => toCoreTypedBin default ty "SDiv" (← toCoreExpr a) (← toCoreExpr b)
+  | .bvsmod _ ty a b => toCoreTypedBin default ty "SMod" (← toCoreExpr a) (← toCoreExpr b)
+  | .bvslt _ ty a b => toCoreTypedBin default ty "SLt" (← toCoreExpr a) (← toCoreExpr b)
+  | .bvsle _ ty a b => toCoreTypedBin default ty "SLe" (← toCoreExpr a) (← toCoreExpr b)
+  | .bvsgt _ ty a b => toCoreTypedBin default ty "SGt" (← toCoreExpr a) (← toCoreExpr b)
+  | .bvsge _ ty a b => toCoreTypedBin default ty "SGe" (← toCoreExpr a) (← toCoreExpr b)
+  | .bvconcat8 _ a b => return mkCoreApp Core.bv8ConcatOp [← toCoreExpr a, ← toCoreExpr b]
+  | .bvconcat16 _ a b => return mkCoreApp Core.bv16ConcatOp [← toCoreExpr a, ← toCoreExpr b]
+  | .bvconcat32 _ a b => return mkCoreApp Core.bv32ConcatOp [← toCoreExpr a, ← toCoreExpr b]
+  | .bvextract_7_7 _ a => return mkCoreApp Core.bv8Extract_7_7_Op [← toCoreExpr a]
+  | .bvextract_15_15 _ a => return mkCoreApp Core.bv16Extract_15_15_Op [← toCoreExpr a]
+  | .bvextract_31_31 _ a => return mkCoreApp Core.bv32Extract_31_31_Op [← toCoreExpr a]
+  | .bvextract_7_0_16 _ a => return mkCoreApp Core.bv16Extract_7_0_Op [← toCoreExpr a]
+  | .bvextract_7_0_32 _ a => return mkCoreApp Core.bv32Extract_7_0_Op [← toCoreExpr a]
+  | .bvextract_15_0_32 _ a => return mkCoreApp Core.bv32Extract_15_0_Op [← toCoreExpr a]
+  | .bvextract_7_0_64 _ a => return mkCoreApp Core.bv64Extract_7_0_Op [← toCoreExpr a]
+  | .bvextract_15_0_64 _ a => return mkCoreApp Core.bv64Extract_15_0_Op [← toCoreExpr a]
+  | .bvextract_31_0_64 _ a => return mkCoreApp Core.bv64Extract_31_0_Op [← toCoreExpr a]
   | _ => throw (.fromMessage s!"Unsupported expression: {repr e}")
 
 end
@@ -582,9 +622,11 @@ private def toCoreSpecElts (_m : SourceRange) (pname : String) (elts : Array (Bo
     match e with
     | .modifies_spec _ _ => pure ()
     | .requires_spec em ⟨_, l?⟩ ⟨_, free?⟩ cond =>
-      reqs := (← defaultLabel em s!"{pname}_requires" l?, { expr := ← toCoreExpr cond, attr := checkAttrOf free? }) :: reqs
+      let md ← toCoreMetaData em
+      reqs := (← defaultLabel em s!"{pname}_requires" l?, { expr := ← toCoreExpr cond, attr := checkAttrOf free?, md := md }) :: reqs
     | .ensures_spec em ⟨_, l?⟩ ⟨_, free?⟩ cond =>
-      enss := (← defaultLabel em s!"{pname}_ensures" l?, { expr := ← toCoreExpr cond, attr := checkAttrOf free? }) :: enss
+      let md ← toCoreMetaData em
+      enss := (← defaultLabel em s!"{pname}_ensures" l?, { expr := ← toCoreExpr cond, attr := checkAttrOf free?, md := md }) :: enss
   return { preconditions := reqs.reverse, postconditions := enss.reverse }
 
 private def toCoreSpec (m : SourceRange) (pname : String) (spec? : Option (BooleDDM.Spec SourceRange)) : TranslateM Core.Procedure.Spec := do
@@ -732,7 +774,7 @@ def toCoreDecls (cmd : BooleDDM.Command SourceRange) : TranslateM (List Core.Dec
   | .command_datatypes _ ⟨_, decls⟩ =>
     return [.type (.data (← decls.toList.mapM toCoreDatatypeDecl)) .empty]
 
-def toCoreProgram (p : Boole.Program) (gctx : GlobalContext := {}) : Except DiagnosticModel Core.Program := do
+def toCoreProgram (p : Boole.Program) (gctx : GlobalContext := {}) (fileName : String := "") : Except DiagnosticModel Core.Program := do
   match p with
   | .prog _ ⟨_, cmds⟩ =>
     let fvarIsOp := initFVarIsOp p
@@ -764,6 +806,7 @@ def toCoreProgram (p : Boole.Program) (gctx : GlobalContext := {}) : Except Diag
           modMap := modMap.insert pname mods.reverse
       | _ => pure ()
     let init : TranslateState := {
+      fileName := fileName
       gctx := gctx
       fvarIsOp := fvarIsOp
       modifiesMap := modMap
@@ -804,7 +847,7 @@ def verify
   | .error e =>
     throw <| IO.Error.userError (toString (e.format (some ictx.fileMap)))
   | .ok prog =>
-    match toCoreProgram prog env.globalContext with
+    match toCoreProgram prog env.globalContext ictx.fileName with
     | .error e =>
       throw <| IO.Error.userError (toString (e.format (some ictx.fileMap)))
     | .ok cp =>

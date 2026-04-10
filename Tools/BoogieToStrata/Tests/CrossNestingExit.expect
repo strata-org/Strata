@@ -1,8 +1,8 @@
 Successfully parsed.
-CrossNestingExit.core.st(45, 6) [assert_0]: ✅ pass
-CrossNestingExit.core.st(45, 6) [assert_0]: ✅ pass
-CrossNestingExit.core.st(85, 6) [assert_1]: ❌ fail
-CrossNestingExit.core.st(85, 6) [assert_1]: ✅ pass
-CrossNestingExit.core.st(125, 6) [assert_2]: ❌ fail
-CrossNestingExit.core.st(125, 6) [assert_2]: ✅ pass
+CrossNestingExit.core.st(45, 6) [assert_0_613]: ✅ pass
+CrossNestingExit.core.st(45, 6) [assert_0_613]: ✅ pass
+CrossNestingExit.core.st(85, 6) [assert_1_1181]: ❌ fail
+CrossNestingExit.core.st(85, 6) [assert_1_1181]: ✅ pass
+CrossNestingExit.core.st(125, 6) [assert_2_1748]: ❌ fail
+CrossNestingExit.core.st(125, 6) [assert_2_1748]: ✅ pass
 Finished with 4 goals passed, 2 failed.

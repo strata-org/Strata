@@ -1,8 +1,8 @@
 Successfully parsed.
-DivMod.core.st(25, 2) [T_from_E_ensures_1]: ✅ pass
-DivMod.core.st(26, 2) [T_from_E_ensures_2]: ✅ pass
-DivMod.core.st(27, 2) [T_from_E_ensures_3]: ✅ pass
-DivMod.core.st(44, 2) [E_from_T_ensures_1]: ✅ pass
-DivMod.core.st(45, 2) [E_from_T_ensures_2]: ✅ pass
-DivMod.core.st(46, 2) [E_from_T_ensures_3]: ✅ pass
+DivMod.core.st(25, 2) [T_from_E_ensures_1_975]: ✅ pass
+DivMod.core.st(26, 2) [T_from_E_ensures_2_1007]: ✅ pass
+DivMod.core.st(27, 2) [T_from_E_ensures_3_1060]: ✅ pass
+DivMod.core.st(44, 2) [E_from_T_ensures_6_1511]: ✅ pass
+DivMod.core.st(45, 2) [E_from_T_ensures_7_1543]: ✅ pass
+DivMod.core.st(46, 2) [E_from_T_ensures_8_1563]: ✅ pass
 All 6 goals passed.
