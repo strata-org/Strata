@@ -1,3 +1,6 @@
+# Contracts in a Python-like DSL
+# Goal: enable deductive verification of access control logic, 
+# e.g. "only admins can delete resources"
 from typing import TypedDict, Required, Unpack
 
 ReadRequest = TypedDict('ReadRequest', {
