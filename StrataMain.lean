@@ -607,7 +607,7 @@ def pyAnalyzeLaurelCommand : Command where
           { doInline := fun name a => name ≠ "__main__" && Core.doInlineNonRecursive name a
             maxIters := some 10 }]
       else []
-    let vcResults ← profileStep profile "SMT verification" do
+    let assertResults ← profileStep profile "SMT verification" do
       match ← Core.verifyProgram coreProgram options
                 (moreFns := Strata.Python.ReFactory)
                 (proceduresToVerify := some userProcNames)
@@ -625,7 +625,7 @@ def pyAnalyzeLaurelCommand : Command where
     -- Print per-VC results by default, unless SARIF mode is used
     if !outputSarif then
       let mut s := ""
-      for ar in vcResults do
+      for ar in assertResults do
         match ar.representative with
         | none => pure ()
         | some vcResult =>
@@ -647,9 +647,9 @@ def pyAnalyzeLaurelCommand : Command where
       let files := match mfm with
         | some (pyPath, fm) => Map.empty.insert (Strata.Uri.file pyPath) fm
         | none => Map.empty
-      let flatResults := vcResults.foldl (fun acc ar => acc ++ ar.results) #[]
+      let flatResults := assertResults.foldl (fun acc ar => acc ++ ar.results) #[]
       Core.Sarif.writeSarifOutput options.checkMode files flatResults (filePath ++ ".sarif")
-    printPyAnalyzeSummary vcResults options.checkMode
+    printPyAnalyzeSummary assertResults options.checkMode
 
 def pyAnalyzeToGotoCommand : Command where
   name := "pyAnalyzeToGoto"
