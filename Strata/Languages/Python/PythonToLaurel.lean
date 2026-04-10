@@ -1996,10 +1996,6 @@ def translateClass (ctx : TranslationContext) (classStmt : Python.stmt SourceRan
     let ctx := {ctx with classFieldHighType := ctx.classFieldHighType.insert className classFields}
 
     -- Translate each method
-    -- Keep the translated body only for classes not involved in inheritance;
-    -- for hierarchy classes, strip to opaque since call sites emit holes anyway
-    -- and the resolution pass may not handle all constructs in method bodies.
-    let inHierarchy := ctx.classesInHierarchy.contains className
     let mut instanceProcedures : Array Procedure := #[]
     for stmt in body do
       if let .FunctionDef .. := stmt then
