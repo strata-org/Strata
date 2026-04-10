@@ -1300,11 +1300,14 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
       let (ctx, stmts) ← translateAssign ctx target annotation value md
       -- Emit type assertion for concrete type annotations (int, str, bool, float).
       -- This catches bugs like `x: int = None` where None is not a valid int.
-      -- We assert on the variable after assignment. This is safe because
-      -- typeTester? only fires for primitive types (int/str/bool/float),
-      -- where translateAssign always produces a simple assignment.
+      -- We assert on the variable after assignment. This is only safe when
+      -- translateAssign produces a simple assignment (1-2 statements); skip
+      -- the assertion for complex translations (e.g., composite __init__ calls)
+      -- where the variable state may not correspond to the annotated type.
       let typeAssert := match target with
         | .Name _ n _ =>
+          if stmts.length > 2 then []  -- complex translation, skip assertion
+          else
           let annStr := pyExprToString annotation
           match typeTester? annStr with
           | some testerName =>
