@@ -20,6 +20,31 @@ open StrataTest.Util
 open Strata.Python (processPythonFile processPythonToLaurel withPython containsSubstr)
 open Strata.Parser (stringInputContext)
 
+/-- Run the Python → Laurel pipeline and return the Laurel program together
+    with its formatted string representation. -/
+def toLaurel (pythonCmd : System.FilePath) (program : String)
+    : IO (Laurel.Program × String) := do
+  let laurel ← processPythonToLaurel pythonCmd (stringInputContext "test.py" program)
+  pure (laurel, toString (Laurel.formatProgram laurel))
+
+/-- Assert that a procedure with the given name exists and has a Transparent body. -/
+def assertTransparent (laurel : Laurel.Program) (procName : String) : IO Unit := do
+  match laurel.staticProcedures.find? (fun p => p.name.text == procName) with
+  | none => throw <| .userError s!"{procName} procedure not found in Laurel output"
+  | some proc =>
+    match proc.body with
+    | .Transparent _ => pure ()
+    | _ => throw <| .userError s!"{procName} body should be Transparent, not Opaque"
+
+/-- Assert that a procedure with the given name exists and has an Opaque body. -/
+def assertOpaque (laurel : Laurel.Program) (procName : String) : IO Unit := do
+  match laurel.staticProcedures.find? (fun p => p.name.text == procName) with
+  | none => throw <| .userError s!"{procName} procedure not found in Laurel output"
+  | some proc =>
+    match proc.body with
+    | .Opaque _ _ _ => pure ()
+    | _ => throw <| .userError s!"{procName} body should be Opaque for classes in hierarchy"
+
 -- Passing assertions produce no diagnostics.
 #guard_msgs in
 #eval withPython (warnOnSkip := false) fun pythonCmd => do
@@ -228,24 +253,15 @@ def main() -> None:
     c: Calculator = Calculator(\"calc\")
     result: int = c.add(3, 4)
 "
-  let inputCtx := stringInputContext "test.py" program
-  let laurel ← processPythonToLaurel pythonCmd inputCtx
-  let output := toString (Laurel.formatProgram laurel)
-  -- Method body must be transparent (not opaque)
-  let addProc := laurel.staticProcedures.find? (fun p => p.name.text == "Calculator@add")
-  match addProc with
-  | none => throw <| .userError "Calculator@add procedure not found in Laurel output"
-  | some proc =>
-    match proc.body with
-    | .Transparent _ => pure ()
-    | _ => throw <| .userError "Calculator@add body should be Transparent, not Opaque"
-  -- Instance method call must resolve to StaticCall, not a Hole
+  let (laurel, output) ← toLaurel pythonCmd program
+  assertTransparent laurel "Calculator@add"
   unless containsSubstr output "Calculator@add(" do
     throw <| IO.userError s!"Expected 'Calculator@add(' in Laurel output but not found"
 
--- self.field.method() resolution: when a class stores another object as a
--- field and calls a method on that field, the call should resolve to a
--- StaticCall (not a Hole).
+-- self.field.method() resolution and composite field initialization:
+-- When a class stores another object as a field and calls a method on
+-- that field, the call should resolve to a StaticCall (not a Hole).
+-- The composite field assignment (self.inner: Inner = ...) should use New.
 #guard_msgs in
 #eval withPython (warnOnSkip := false) fun pythonCmd => do
   let program :=
@@ -267,12 +283,13 @@ def main() -> None:
     o: Outer = Outer()
     o.process()
 "
-  let inputCtx := stringInputContext "test.py" program
-  let laurel ← processPythonToLaurel pythonCmd inputCtx
-  let output := toString (Laurel.formatProgram laurel)
+  let (_, output) ← toLaurel pythonCmd program
   -- self.inner.validate() must resolve to Inner@validate StaticCall
   unless containsSubstr output "Inner@validate(" do
     throw <| IO.userError s!"Expected 'Inner@validate(' in Laurel output but not found"
+  -- Composite field assignment (self.inner: Inner = ...) uses New initialization
+  unless containsSubstr output "new Inner" do
+    throw <| IO.userError s!"Expected 'new Inner' in Laurel output but not found"
 
 -- Inheritance guard: when a class is part of an inheritance hierarchy,
 -- method calls on it should emit Hole (not StaticCall) because the
@@ -298,16 +315,8 @@ def main() -> None:
     obj: Base = Base()
     result: int = obj.value()
 "
-  let inputCtx := stringInputContext "test.py" program
-  let laurel ← processPythonToLaurel pythonCmd inputCtx
-  -- Method bodies for classes in hierarchy should be opaque
-  let valueProc := laurel.staticProcedures.find? (fun p => p.name.text == "Base@value")
-  match valueProc with
-  | none => throw <| .userError "Base@value procedure not found"
-  | some proc =>
-    match proc.body with
-    | .Opaque _ _ _ => pure ()
-    | _ => throw <| .userError "Base@value body should be Opaque for classes in hierarchy"
+  let (laurel, _) ← toLaurel pythonCmd program
+  assertOpaque laurel "Base@value"
   -- The main procedure should contain a Hole for the obj.value() call,
   -- not a StaticCall to Base@value.
   let mainProc := laurel.staticProcedures.find? (fun p => p.name.text == "main")
@@ -341,15 +350,32 @@ def main() -> None:
     c: Car = Car()
     result: int = c.horsepower()
 "
-  let inputCtx := stringInputContext "test.py" program
-  let laurel ← processPythonToLaurel pythonCmd inputCtx
-  let output := toString (Laurel.formatProgram laurel)
+  let (_, output) ← toLaurel pythonCmd program
   -- self.engine.get_hp() should resolve to Engine@get_hp StaticCall
   unless containsSubstr output "Engine@get_hp(" do
     throw <| IO.userError s!"Expected 'Engine@get_hp(' in Laurel output but not found"
   -- Car@horsepower should also be a StaticCall from main
   unless containsSubstr output "Car@horsepower(" do
     throw <| IO.userError s!"Expected 'Car@horsepower(' in Laurel output but not found"
+
+-- Full pipeline: composite field assignment goes through the entire
+-- Python → Laurel → Core → SMT pipeline without crashing.
+#guard_msgs in
+#eval withPython (warnOnSkip := false) fun pythonCmd => do
+  let program :=
+"class Config:
+    def __init__(self, value: int) -> None:
+        self.value: int = value
+
+class App:
+    def __init__(self) -> None:
+        self.config: Config = Config(42)
+
+def main() -> None:
+    a: App = App()
+"
+  let _diags ← processPythonFile pythonCmd (stringInputContext "test.py" program)
+  pure ()
 
 -- Full pipeline: instance method call goes through the entire
 -- Python → Laurel → Core → SMT pipeline without crashing.
