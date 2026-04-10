@@ -82,6 +82,11 @@ instance : Inhabited Parameter where
 def mkHighTypeMd (t : HighType) (md : MetaData) : HighTypeMd := ⟨t, md⟩
 def mkStmtExprMd (e : StmtExpr) (md : MetaData) : StmtExprMd := ⟨e, md⟩
 
+def translateNat (arg : Arg) : TransM Nat := do
+  let .num _ n := arg
+    | TransM.error s!"translateNat expects num literal"
+  return n
+
 partial def translateHighType (arg : Arg) : TransM HighTypeMd := do
   let md ← getArgMetaData arg
   match arg with
@@ -92,10 +97,9 @@ partial def translateHighType (arg : Arg) : TransM HighTypeMd := do
     | q`Laurel.float64Type, _ => return mkHighTypeMd .TFloat64 md
     | q`Laurel.realType, _ => return mkHighTypeMd .TReal md
     | q`Laurel.stringType, _ => return mkHighTypeMd .TString md
-    | q`Laurel.bv8Type, _ => return mkHighTypeMd (.TBv 8) md
-    | q`Laurel.bv16Type, _ => return mkHighTypeMd (.TBv 16) md
-    | q`Laurel.bv32Type, _ => return mkHighTypeMd (.TBv 32) md
-    | q`Laurel.bv64Type, _ => return mkHighTypeMd (.TBv 64) md
+    | q`Laurel.bvType, #[widthArg] =>
+      let width ← translateNat widthArg
+      return mkHighTypeMd (.TBv width) md
     | q`Laurel.coreType, #[.ident _ name] => return mkHighTypeMd (.TCore name) md
     | q`Laurel.mapType, #[keyArg, valArg] =>
       let keyType ← translateHighType keyArg
@@ -106,11 +110,6 @@ partial def translateHighType (arg : Arg) : TransM HighTypeMd := do
       return mkHighTypeMd (.UserDefined name) md
     | _, _ => TransM.error s!"translateHighType: unsupported type operator {repr op.name}"
   | _ => TransM.error s!"translateHighType expects operation"
-
-def translateNat (arg : Arg) : TransM Nat := do
-  let .num _ n := arg
-    | TransM.error s!"translateNat expects num literal"
-  return n
 
 def translateString (arg : Arg) : TransM String := do
   let .strlit _ s := arg

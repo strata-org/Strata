@@ -52,7 +52,7 @@ def formatHighTypeVal : HighType → Format
   | .TReal => "real"
   | .TString => "string"
   | .THeap => "Heap"
-  | .TBv n => s!"bv{n}"
+  | .TBv n => s!"bv {n}"
   | .TTypedField valueType => "Field[" ++ formatHighType valueType ++ "]"
   | .TSet elementType => "Set[" ++ formatHighType elementType ++ "]"
   | .TMap keyType valueType => "Map[" ++ formatHighType keyType ++ ", " ++ formatHighType valueType ++ "]"

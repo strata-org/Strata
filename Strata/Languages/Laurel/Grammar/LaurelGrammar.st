@@ -9,10 +9,7 @@ op boolType : LaurelType => "bool";
 op realType : LaurelType => "real";
 op float64Type : LaurelType => "float64";
 op stringType : LaurelType => "string";
-op bv8Type : LaurelType => "bv8";
-op bv16Type : LaurelType => "bv16";
-op bv32Type : LaurelType => "bv32";
-op bv64Type : LaurelType => "bv64";
+op bvType (width: Num): LaurelType => "bv" width;
 // Core type passthrough: parsed as Ident, translated to HighType.TCore
 op coreType (name: Ident): LaurelType => "Core " name;
 op mapType (keyType: LaurelType, valueType: LaurelType): LaurelType => "Map " keyType " " valueType;
