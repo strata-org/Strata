@@ -178,8 +178,6 @@ instance [Repr P.Expr] [Repr P.Ident] : Repr (MetaDataElem P) where
 /-! ### Common metadata fields -/
 
 @[match_pattern]
-abbrev MetaData.message : MetaDataElem.Field P := .label "message"
-@[match_pattern]
 abbrev MetaData.fileRange : MetaDataElem.Field P := .label "fileRange"
 @[match_pattern]
 abbrev MetaData.reachCheck : MetaDataElem.Field P := .label "reachCheck"

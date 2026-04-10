@@ -115,13 +115,10 @@ private meta def runAnalyzeAndVerify
     | some core => pure core
   -- Split prelude / user procedure names at FIRST_END_MARKER
   let (preludeNames, userProcNames) := Strata.splitProcNames coreProgram
-  -- Inline all non-main, non-prelude procedures
-  let coreProgram ← match Core.Transform.runProgram (targetProcList := .none)
-        (Core.ProcedureInlining.inlineCallCmd
-          (doInline := λ name _ => name ≠ "__main__" && !preludeNames.contains name))
-        coreProgram .emp with
-    | ⟨.error e, _⟩ => return .error s!"Inlining failed: {e}"
-    | ⟨.ok (_, inlined), _⟩ => pure inlined
+  -- Inline all non-main, non-prelude procedures as a prefix phase
+  let inlinePhases : List Core.PipelinePhase :=
+    [_root_.Core.procedureInliningPipelinePhase
+      { doInline := fun name a => name ≠ "__main__" && _root_.Core.doInlineNonRecursive name a }]
   -- Verify
   let options : Core.VerifyOptions :=
     { Core.VerifyOptions.default with
@@ -130,7 +127,8 @@ private meta def runAnalyzeAndVerify
   match ← Core.verifyProgram coreProgram options
       (moreFns := Strata.Python.ReFactory)
       (proceduresToVerify := some userProcNames)
-      (externalPhases := [Strata.frontEndPhase]) |>.toBaseIO with
+      (externalPhases := [Strata.frontEndPhase])
+      (prefixPhases := inlinePhases) |>.toBaseIO with
   | .ok results => return .ok results
   | .error msg => return .error (toString msg)
 
@@ -309,6 +307,25 @@ assertion. This exercises the full pipeline with type alias resolution.
       if !foundAlwaysFalse then
         throw <| IO.userError
           "Expected ✖️ always false for empty bucket violation"
+
+/-! ## evalIfCanonical regression test (Issue #812)
+
+Symbolic bucket must pass the regex precondition via `evalIfCanonical`.
+Without the attribute, the regex VC would be ❓ unknown. -/
+
+#eval withPython fun pythonCmd => do
+  IO.FS.withTempDir fun tmpDir => do
+    setupFixture pythonCmd tmpDir
+    let result ← runAnalyzeAndVerify pythonCmd tmpDir
+      "test_regex_eval_if_canonical.py"
+    match result with
+    | .error msg => throw <| IO.userError s!"Pipeline failed: {msg}"
+    | .ok vcResults =>
+      for r in vcResults do
+        if r.obligation.label.startsWith "servicelib_Storage_" then
+          if !r.isSuccess then
+            throw <| IO.userError
+              s!"Expected all Storage preconditions to pass but got: {r.formatOutcome}"
 
 /-! ## Resolution error test after FilterPrelude
 
