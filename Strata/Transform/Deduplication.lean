@@ -73,33 +73,28 @@ private def hasBVar (e : Expression.Expr) : Bool :=
   | .abs _ _ _ body => hasBVar body
   | .quant _ _ _ _ tr body => hasBVar tr || hasBVar body
 
-/-- Collect the head function and arguments of a curried application spine. -/
-private partial def uncurry (e : Expression.Expr) :
-    Expression.Expr × List Expression.Expr :=
-  go e []
-where
-  go (e : Expression.Expr) (acc : List Expression.Expr) :
-      Expression.Expr × List Expression.Expr :=
-    match e with
-    | .app _ fn arg => go fn (arg :: acc)
-    | other => (other, acc)
-
 /-- Collect non-trivial subexpressions from an expression, suitable for
     deduplication. For function applications, collects the full (curried)
     application and recurses into each argument, but does not collect
     intermediate partial applications from the spine. -/
-private partial def collectSubexprs (e : Expression.Expr) : List Expression.Expr :=
+private def collectSubexprs (e : Expression.Expr) : List Expression.Expr :=
   match e with
   | .const _ _ | .bvar _ _ | .fvar _ _ _ | .op _ _ _ => []
-  | .app _ _ _ =>
-    let (_, args) := uncurry e
-    [e] ++ args.flatMap collectSubexprs
+  | .app _ fn arg =>
+    -- Collect the full application, then recurse into arguments of the spine
+    [e] ++ collectAppArgs fn ++ collectSubexprs arg
   | .ite _ c t f =>
     [e] ++ collectSubexprs c ++ collectSubexprs t ++ collectSubexprs f
   | .eq _ e1 e2 =>
     [e] ++ collectSubexprs e1 ++ collectSubexprs e2
   | .abs _ _ _ _ => []
   | .quant _ _ _ _ _ _ => []
+where
+  /-- Recurse into the arguments along an application spine. -/
+  collectAppArgs (e : Expression.Expr) : List Expression.Expr :=
+    match e with
+    | .app _ fn arg => collectAppArgs fn ++ collectSubexprs arg
+    | _ => []
 
 /-- Find expressions that appear more than once in a list. Uses type-erased
     comparison to ignore type annotations that may differ between occurrences. -/

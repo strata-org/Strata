@@ -236,13 +236,13 @@ def mapM₁ {m : Type u → Type v} [Monad m] {α : Type w} {β : Type u}
   (xs : List α) (f : {x : α // x ∈ xs} → m β) : m (List β) :=
   xs.attach.mapM f
 
-def encodeTerm (inBinder : Bool) (t : Term) : EncoderM Term := do
+def encodeTerm (t : Term) : EncoderM Term := do
   match t with
   | .var _            => return t
   | .prim _           => return t
   | .none _           => return t
   | .some t₁          =>
-    let t₁Enc ← encodeTerm inBinder t₁
+    let t₁Enc ← encodeTerm t₁
     return .some t₁Enc
   | .app .re_allchar [] .regex => return t
   | .app .re_all     [] .regex => return t
@@ -251,18 +251,18 @@ def encodeTerm (inBinder : Bool) (t : Term) : EncoderM Term := do
     let ty := t.typeOf
     match inner.typeOf with
     | .bitvec n =>
-      let innerEnc ← encodeTerm inBinder inner
+      let innerEnc ← encodeTerm inner
       let minVal : Term := .prim (.bitvec (BitVec.intMin n))
       defineApp ty .eq [innerEnc, minVal]
     | _ =>
       return Term.bool false
   | .app op ts _         =>
     let ty := t.typeOf
-    defineApp ty op (← mapM₁ ts (λ ⟨tᵢ, _⟩ => encodeTerm inBinder tᵢ))
+    defineApp ty op (← mapM₁ ts (λ ⟨tᵢ, _⟩ => encodeTerm tᵢ))
   | .quant qk qargs tr body =>
     let trExprs := if Factory.isSimpleTrigger tr then [] else extractTriggers tr
-    let trEncs ← mapM₁ trExprs (fun ⟨ts, _⟩ => mapM₁ ts (fun ⟨ti, _⟩ => encodeTerm True ti))
-    let bodyEnc ← encodeTerm True body
+    let trEncs ← mapM₁ trExprs (fun ⟨ts, _⟩ => mapM₁ ts (fun ⟨ti, _⟩ => encodeTerm ti))
+    let bodyEnc ← encodeTerm body
     match qk, qargs with
     | .all, [⟨x, xty⟩] => defineAll x xty trEncs bodyEnc
     | .all, _ => defineMultiAll qargs trEncs bodyEnc
@@ -287,7 +287,7 @@ def encodeFunction (uf : UF) (body : Term) : EncoderM String := do
   let id := ufId (← ufNum)
   comment uf.id
   let argPairs := uf.args.map (fun vt => (vt.id, vt.ty))
-  let bodyEnc ← encodeTerm true body
+  let bodyEnc ← encodeTerm body
   Solver.defineFunTerm id argPairs uf.out bodyEnc
   modifyGet λ state => (id, {state with ufs := state.ufs.insert uf id})
 
@@ -297,7 +297,7 @@ def termToString (e : Term) : IO String := do
   let b ← IO.mkRef { : IO.FS.Stream.Buffer }
   let solver ← Solver.bufferWriter b
   let _ ← ((do
-    let enc ← Encoder.encodeTerm False e
+    let enc ← Encoder.encodeTerm e
     let s ← Solver.termToSMTString enc
     (← read).smtLibInput.putStr s!"{s}\n"
     (← read).smtLibInput.flush
@@ -323,7 +323,7 @@ def encode (ts : List Term) : SolverM Unit := do
   Solver.setLogic "ALL"
   Solver.declareDatatype "Option" ["X"]
     [⟨"none", []⟩, ⟨"some", [("val", .constr "X" [])]⟩]
-  let (termEncs, _) ← ts.mapM (encodeTerm False) |>.run EncoderState.init
+  let (termEncs, _) ← ts.mapM (encodeTerm) |>.run EncoderState.init
   for t in termEncs do
     Solver.assert t
 

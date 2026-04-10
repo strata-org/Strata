@@ -9,18 +9,19 @@ public import Strata.Languages.Core.Env
 
 /-! # Proof Obligation Extraction
 
-A Core-to-obligations pass that walks a post-PE program and extracts proof
-obligations with their path conditions reconstructed from the program structure.
+A Core-to-obligations pass that walks a post-PE, post-dedup program and extracts
+proof obligations with their path conditions reconstructed from the program
+structure.
 
-After partial evaluation, a procedure body contains only:
+After partial evaluation and deduplication, a procedure body contains only:
 - `assume` statements (path conditions)
 - `assert` statements (proof obligations)
 - `cover` statements (proof obligations)
-- `if-then-else` statements (control flow / non-deterministic branching)
+- non-deterministic terminal branching (`if *`)
 - `var` declarations (from deduplication or global initialization)
 
-This pass reconstructs path conditions by tracking `assume` statements and
-ITE branch conditions encountered on the path to each `assert`/`cover`.
+This pass reconstructs path conditions by tracking `assume` statements
+encountered on the path to each `assert`/`cover`.
 -/
 
 public section
@@ -81,24 +82,8 @@ where
       let (elseObs, _) ← extractFromStatements pc elseSs
       .ok (thenObs ++ elseObs ++ acc, pc)
 
-    | .ite (.det cond) thenSs elseSs _md =>
-      -- After PE, a deterministic ITE with a literal condition means PE
-      -- already resolved the branch: the then-branch contains the live code.
-      -- Path conditions from the live branch propagate to subsequent statements.
-      -- For non-literal conditions, add the condition as a path condition.
-      if cond.isTrue || cond.isFalse then do
-        -- PE resolved: then-branch is live, else-branch has rewritten dead code.
-        -- Propagate path conditions from the live branch.
-        let (thenObs, thenPc) ← extractFromStatements pc thenSs
-        let elseObs := collectDeadBranch pc elseSs #[]
-        .ok (thenObs ++ elseObs ++ acc, thenPc)
-      else do
-        let negCond := Lambda.LExpr.app () Core.boolNotOp cond
-        let thenPc := pc.insert "ite_cond" cond
-        let elsePc := pc.insert "ite_cond" negCond
-        let (thenObs, _) ← extractFromStatements thenPc thenSs
-        let (elseObs, _) ← extractFromStatements elsePc elseSs
-        .ok (thenObs ++ elseObs ++ acc, pc)
+    | .ite (.det _) _ _ _ =>
+      .error "ObligationExtraction: .ite (.det _) is unsupported; PE should have resolved all deterministic branches"
 
     | .block _label innerSs _md => do
       -- Process inner statements; propagate path conditions from the block
@@ -120,31 +105,6 @@ where
     | .typeDecl _ _ => .ok (acc, pc)
     | .exit _ _ => .ok (acc, pc)
     | .loop _ _ _ _ _ => .ok (acc, pc)
-
-  /-- Collect obligations from a dead (unreachable) branch. Covers become
-      false obligations, asserts become true obligations. -/
-  collectDeadBranch (pc : PathConditions Expression) (ss : Statements)
-      (acc : Array (ProofObligation Expression)) :
-      Array (ProofObligation Expression) :=
-    ss.foldl (fun acc s => collectDeadStatement pc s acc) acc
-
-  collectDeadStatement (pc : PathConditions Expression) (s : Statement)
-      (acc : Array (ProofObligation Expression)) :
-      Array (ProofObligation Expression) :=
-    match s with
-    | .cmd (.cmd (.cover label _e md)) =>
-      acc.push (ProofObligation.mk label .cover pc (LExpr.false ()) md)
-    | .cmd (.cmd (.assert label _e md)) =>
-      let propType := match md.getPropertyType with
-        | some s => if s == MetaData.divisionByZero then .divisionByZero else .assert
-        | none => .assert
-      acc.push (ProofObligation.mk label propType pc (LExpr.true ()) md)
-    | .ite _ thenSs elseSs _ =>
-      let acc := collectDeadBranch pc thenSs acc
-      collectDeadBranch pc elseSs acc
-    | .block _ innerSs _ => collectDeadBranch pc innerSs acc
-    | .loop _ _ _ bodySs _ => collectDeadBranch pc bodySs acc
-    | _ => acc
 
 /-- Extract proof obligations from a program. Axioms become global assumptions
     that are prepended to the path conditions of every obligation. -/
