@@ -116,15 +116,57 @@ jobs:
       - name: Build using pip
         run: pip install .
         working-directory: Tools/Python
-      - name: Run pyAnalyze tests
+      - name: Run pyAnalyze SARIF tests
         working-directory: StrataTest/Languages/Python
         shell: bash
-        run: |
-          ./run_py_analyze.sh
-          python run_py_analyze_sarif.py --laurel
+        run: python run_py_analyze_sarif.py --laurel
+      - name: Run pyAnalyze golden-file tests
+        working-directory: StrataTest/Languages/Python
+        shell: bash
+        run: ./run_py_analyze.sh
       - name: Run regex differential tests
         working-directory: StrataTest/Languages/Python/Regex
         run: python diff_test.py
+
+  check_pending_python:
+    needs: build_and_test_lean
+    name: Check pending Python tests
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+    - uses: actions/checkout@v6
+    - uses: actions/setup-python@v6
+      with:
+        python-version: '3.14'
+    - name: Build using pip
+      run: pip install .
+      working-directory: Tools/Python
+    - name: Restore Lean build cache
+      uses: actions/cache/restore@v5
+      with:
+        path: .lake
+        key: lake-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}-${{ hashFiles('lake-manifest.json') }}-${{ hashFiles('**/*.st') }}-${{ github.sha }}
+        fail-on-cache-miss: true
+    - name: Install Lean
+      uses: leanprover/lean-action@v1
+      with:
+        auto-config: false
+        build: false
+    - name: Install cvc5
+      shell: bash
+      run: |
+            ARCH=$(uname -m)
+            if [ "$ARCH" = "x86_64" ]; then ARCH_NAME="x86_64"
+            elif [ "$ARCH" = "aarch64" ] || [ "$ARCH" = "arm64" ]; then ARCH_NAME="arm64"
+            else echo "Unsupported architecture: $ARCH"; exit 1; fi
+            wget -q https://github.com/cvc5/cvc5/releases/download/cvc5-1.2.1/cvc5-Linux-${ARCH_NAME}-static.zip
+            unzip -q cvc5-Linux-${ARCH_NAME}-static.zip
+            sudo cp cvc5-Linux-${ARCH_NAME}-static/bin/cvc5 /usr/local/bin/
+    - name: Check pending tests for newly passing
+      working-directory: StrataTest/Languages/Python
+      shell: bash
+      run: ./run_py_analyze.sh --check-pending
 
   lint_checks:
     name: Run lint checks
