@@ -976,14 +976,7 @@ partial def translateCall (ctx : TranslationContext)
               (StmtExpr.StaticCall funcName (target_trans :: callArgs)) callMd
             return callWithSelf
           else
-            -- Translate the receiver. For nested field accesses on UserDefined
-            -- composite fields (e.g. self.a.b.method()), translateExpr would
-            -- throw (no Any coercion), so build FieldSelect chains directly.
-            let target_trans ← translateExprAsReceiver ctx val
-            if funcName ∈ ctx.userFunctions then
-              return mkStmtExprMdWithLoc (StmtExpr.StaticCall funcName ([target_trans] ++ callArgs)) callMd
-            else
-              return mkStmtExprMdWithLoc (.Hole) callMd
+            return mkStmtExprMdWithLoc (.Hole) callMd
         else return mkCall funcName
     | _ => throw (.unsupportedConstruct "Invalid call construct" (toString (repr f)))
   -- When ** is used at the call site and we have a known function signature,
