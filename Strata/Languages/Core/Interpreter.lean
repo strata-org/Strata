@@ -43,6 +43,7 @@ inductive InterpResult where
   | assertionFailure (label : String) (expr : Expression.Expr) (env : Env)
   | error (msg : String)
   | fuelExhausted
+  | stuck (msg : String)
   deriving Inhabited
 
 instance : ToString InterpResult where
@@ -51,6 +52,7 @@ instance : ToString InterpResult where
   | .assertionFailure label expr _ => s!"assertion failure: {label}: {format expr}"
   | .error msg => s!"error: {msg}"
   | .fuelExhausted => "fuel exhausted"
+  | .stuck msg => s!"stuck: {msg}"
 
 /-! ## Helpers -/
 
@@ -330,9 +332,15 @@ def interpProcedure (prog : Program) (procName : String)
           exprEnv := { E.exprEnv with
             state := E.exprEnv.state.push (formalBindings ++ outputBindings) } }
         match interpBlock fuel E proc.body with
-        | none => .fuelExhausted
-        | some outcome =>
-          let E' := outcome.env
+        | none =>
+          -- Distinguish fuel exhaustion from stuck: if a smaller fuel also
+          -- fails, the interpreter is stuck on an unsupported construct.
+          if fuel > 100 then
+            match interpBlock 100 E proc.body with
+            | none => .stuck "interpreter got stuck (unsupported construct, bodyless procedure call, or irreducible expression)"
+            | some _ => .fuelExhausted
+          else .fuelExhausted
+        | some outcome =>          let E' := outcome.env
           match E'.error with
           | some (.AssertFail label expr) => .assertionFailure label expr E'
           | some _ => .error "evaluation error"

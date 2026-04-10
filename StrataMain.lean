@@ -1368,6 +1368,9 @@ def pyInterpretCommand : Command where
     | .fuelExhausted =>
       IO.eprintln s!"Fuel exhausted (limit: {fuel}). Increase with --fuel."
       IO.Process.exit ExitCode.failuresFound
+    | .stuck msg =>
+      IO.eprintln s!"Stuck: {msg}"
+      IO.Process.exit ExitCode.failuresFound
 
 def commandGroups : List CommandGroup := [
   { name := "Core"
