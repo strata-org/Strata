@@ -304,14 +304,6 @@ Path Conditions:
 Warnings:
 []
 Deferred Proof Obligations:
-Label: x_eq_y_label_0
-Property: assert
-Assumptions:
-(<label_ite_cond_true: (z == #false)>, (zinit == #false))
-(z_false, (zinit == #false))
-Proof Obligation:
-#true
-
 Label: trivial
 Property: assert
 Assumptions:
@@ -319,14 +311,6 @@ Assumptions:
 (z_false, (zinit == #false))
 Proof Obligation:
 #true
-
-Label: x_eq_y_label_0
-Property: assert
-Assumptions:
-(<label_ite_cond_false: !(z == #false)>, (if (zinit == #false) then #false else #true))
-(z_false, (zinit == #false))
-Proof Obligation:
-#false
 
 Label: x_eq_y
 Property: assert
@@ -624,13 +608,6 @@ Assumptions:
 (<label_ite_cond_true: $__nondet_cond_0>, $__$__nondet_cond_00)
 Proof Obligation:
 #true
-
-Label: x_pos
-Property: assert
-Assumptions:
-(<label_ite_cond_false: !$__nondet_cond_0>, (if $__$__nondet_cond_00 then #false else #true))
-Proof Obligation:
-#false
 -/
 #guard_msgs in
 #eval (evalOne ∅ ∅ [.init "x" t[int] (.det eb[#0]) .empty,

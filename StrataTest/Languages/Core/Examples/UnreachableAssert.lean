@@ -56,14 +56,6 @@ z_false: $__z2 == false
 Obligation:
 false
 
-Label: x_eq_y
-Property: assert
-Assumptions:
-<label_ite_cond_false: !(z == #false)>: if $__z2 == false then false else true
-z_false: $__z2 == false
-Obligation:
-$__x0 == $__y1
-
 ---
 info:
 Obligation: x_eq_y_internal
@@ -75,10 +67,6 @@ Property: assert
 Result: ✅ pass
 
 Obligation: unreachable
-Property: assert
-Result: ✅ pass
-
-Obligation: x_eq_y
 Property: assert
 Result: ✅ pass
 -/
