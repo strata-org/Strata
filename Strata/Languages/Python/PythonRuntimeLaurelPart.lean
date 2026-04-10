@@ -382,10 +382,30 @@ procedure List_drop_len(l : ListAny, i: int)
   invokeOn List_len(List_drop(l,i))
   ensures i >= 0 && i <= List_len(l) ==> List_len(List_drop(l,i)) == List_len(l) - i;
 
-function List_slice (l : ListAny, start : int, stop: int) : ListAny
-  requires start >= 0 && start < List_len(l) && stop >= 0 && stop <= List_len(l) && start <= stop
+function int_max (i1: int, i2: int) : int
 {
-  List_take (List_drop (l, start), stop - start)
+  if i1 >= i2 then i1 else i2
+};
+
+function int_min (i1: int, i2: int) : int
+{
+  if i1 <= i2 then i1 else i2
+};
+
+function List_slice_non_neg (l : ListAny, start : int, stop: int) : ListAny
+  requires start >= 0 && stop >= 0
+{
+  if (start >= List_len(l)) || (start >= stop) then ListAny_nil()
+  else List_take (List_drop (l, start), int_min(stop, List_len(l))  - start)
+};
+
+
+function List_slice (l : ListAny, start : int, stop: int) : ListAny
+{
+  List_slice_non_neg (l,
+    if start >= 0 then start else int_max (List_len(l) + start, 0),
+    if stop >= 0 then stop else int_max (List_len(l) + stop, 0)
+  )
 };
 
 function List_set_non_neg (l : ListAny, i : int, v: Any) : ListAny
@@ -449,18 +469,15 @@ function DictStrAny_insert (d : DictStrAny, key: string, val: Any) : DictStrAny
 function Any_get (dictOrList: Any, index: Any): Any
   requires  (Any..isfrom_DictStrAny(dictOrList) && Any..isfrom_str(index) && DictStrAny_contains(Any..as_Dict!(dictOrList), Any..as_string!(index))) ||
             (Any..isfrom_ListAny(dictOrList) && Any..isfrom_int(index) && Any..as_int!(index) >= - List_len(Any..as_ListAny!(dictOrList)) && Any..as_int!(index) < List_len(Any..as_ListAny!(dictOrList)))||
-            (Any..isfrom_ListAny(dictOrList) && Any..isfrom_Slice(index) && Any..start!(index) >= 0 && Any..start!(index) < List_len(Any..as_ListAny!(dictOrList)) &&
-                ((OptionInt..isOptSome(Any..stop!(index))) &&  OptionInt..unwrap!(Any..stop!(index)) >= 0 && OptionInt..unwrap!(Any..stop!(index)) <= List_len(Any..as_ListAny!(dictOrList)) && Any..start!(index) <= OptionInt..unwrap!(Any..stop!(index))
-                  || (OptionInt..isOptNone(Any..stop!(index)))))
+            (Any..isfrom_ListAny(dictOrList) && Any..isfrom_Slice(index))
 {
   if Any..isfrom_DictStrAny(dictOrList) then
     DictStrAny_get(Any..as_Dict!(dictOrList), Any..as_string!(index))
   else if Any..isfrom_ListAny(dictOrList) && Any..isfrom_int(index) then
       List_get(Any..as_ListAny!(dictOrList), Any..as_int!(index))
-  else if Any..isfrom_ListAny(dictOrList) && Any..isfrom_Slice(index) && OptionInt..isOptSome(Any..stop!(index)) then
-    from_ListAny(List_slice(Any..as_ListAny!(dictOrList), Any..start!(index), OptionInt..unwrap!(Any..stop!(index))))
   else
-    from_ListAny(List_drop(Any..as_ListAny!(dictOrList), Any..start!(index)))
+    from_ListAny(List_slice(Any..as_ListAny!(dictOrList), Any..start!(index),
+      if OptionInt..isOptSome(Any..stop!(index)) then OptionInt..unwrap!(Any..stop!(index)) else List_len(Any..as_ListAny!(dictOrList))))
 };
 
 function Any_get! (dictOrList: Any, index: Any): Any
