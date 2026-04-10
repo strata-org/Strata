@@ -1909,7 +1909,6 @@ def mkDefaultInitDecl (className : String) : PythonFunctionDecl × Procedure :=
      with mangled names (`ClassName@method`) so they can be called via `StaticCall`.
    - `List PythonFunctionDecl`: function signatures for the class methods. -/
 def translateClass (ctx : TranslationContext) (classStmt : Python.stmt SourceRange)
-    (classesInHierarchy : Std.HashSet String := {})
     : Except TranslationError (CompositeType × Array Procedure × List PythonFunctionDecl) := do
   match classStmt with
   | .ClassDef _ className _bases _ ⟨_, body⟩ _ _ =>
@@ -1951,7 +1950,7 @@ def translateClass (ctx : TranslationContext) (classStmt : Python.stmt SourceRan
     -- Keep the translated body only for classes not involved in inheritance;
     -- for hierarchy classes, strip to opaque since call sites emit holes anyway
     -- and the resolution pass may not handle all constructs in method bodies.
-    let inHierarchy := classesInHierarchy.contains className
+    let inHierarchy := ctx.classesInHierarchy.contains className
     let mut instanceProcedures : Array Procedure := #[]
     for stmt in body do
       if let .FunctionDef .. := stmt then
@@ -2189,9 +2188,10 @@ def pythonToLaurel' (info : PreludeInfo)
         preludeTypes := info.types,
         importedSymbols := localSymbols,
         classFieldHighType := classFieldHighType,
+        classesInHierarchy := classesInHierarchy,
         filePath := filePath
       }
-      let (composite, instanceProcedures, classFuncDecls) ← translateClass initCtx stmt classesInHierarchy
+      let (composite, instanceProcedures, classFuncDecls) ← translateClass initCtx stmt
       allClassFuncDecls := allClassFuncDecls ++ classFuncDecls
       procedures := procedures ++ instanceProcedures
       compositeTypes := compositeTypes.push <| .Composite composite
