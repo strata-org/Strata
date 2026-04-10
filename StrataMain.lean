@@ -560,7 +560,7 @@ def pyAnalyzeLaurelCommand : Command where
 
     let keepPrefix := keepDir.map (s!"{·}/{baseName}")
 
-    let (coreProgramOption, laurelTranslateErrors, loweredLaurel) ←
+    let (coreProgramOption, laurelTranslateErrors, _loweredLaurel) ←
       profileStep profile "Laurel to Core translation" do
         Strata.translateCombinedLaurelWithLowered combinedLaurel
           (keepAllFilesPrefix := keepPrefix)
