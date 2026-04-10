@@ -16,7 +16,6 @@ DeleteRequest = TypedDict('DeleteRequest', {
     'resource_id': Required[str],
 })
 
-@exhaustive
 class AccessControl:
     def read_resource(self, **kwargs: Unpack[ReadRequest]) -> None:
         assert kwargs["role"] == "admin" or kwargs["role"] == "editor" or kwargs["role"] == "viewer", "role has read permission"
