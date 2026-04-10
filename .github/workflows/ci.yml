@@ -265,6 +265,7 @@ jobs:
       with:
         auto-config: false
         build: false
+        use-github-cache: false
     - name: Install cvc5
       shell: bash
       run: |
