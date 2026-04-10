@@ -1480,7 +1480,7 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
       | _ => (target, [], [])
     let slices ← slices.mapM (translateExpr ctx)
     let tempVarDecls := (tempVars.zip slices).map λ (var, slice) =>
-              mkStmtExprMd (.LocalVariable {text:= var} AnyTy slice)
+              mkStmtExprMd (.LocalVariable { text := var, md := default } AnyTy slice)
     let rhs : Python.expr SourceRange := .BinOp sr target op value
     let pyNormalAssign : Python.stmt SourceRange :=
           .Assign sr {val:= #[target], ann:= target.ann} rhs {val:= none, ann:= sr}
@@ -1650,7 +1650,7 @@ def translateFunction (ctx : TranslationContext) (sourceRange: SourceRange) (fun
 
     inputs := funcDecl.args.map (fun arg =>
         if arg.tys.length == 1 && isCompositeType ctx arg.tys[0]! then
-          { name := arg.name, type := mkHighTypeMd (.UserDefined {text:= arg.tys[0]!}) }
+          { name := arg.name, type := mkHighTypeMd (.UserDefined {text:= arg.tys[0]!, md := default}) }
         else
           { name := arg.name, type := AnyTy})
 
@@ -1679,13 +1679,12 @@ def translateFunction (ctx : TranslationContext) (sourceRange: SourceRange) (fun
 
     -- Create procedure with transparent body (no contracts for now)
     let proc : Procedure := {
-      name := funcDecl.name
+      name := { text := funcDecl.name, md := sourceRangeToMetaData ctx.filePath sourceRange }
       inputs := inputs
       outputs := outputs
       preconditions := typeConstraintPreconditions
       decreases := none
       body := Body.Opaque typeConstraintPostcondition bodyBlock []
-      md := sourceRangeToMetaData ctx.filePath sourceRange
       isFunctional := false
     }
 
@@ -1820,14 +1819,13 @@ def translateMethod (ctx : TranslationContext) (className : String)
 
     let md := sourceRangeToMetaData ctx.filePath methodStmt.ann
     return {
-      name := className ++ "@" ++ methodName
+      name := { text := className ++ "@" ++ methodName, md := md }
       inputs := renamedInputs
       outputs := outputs
       preconditions := [mkStmtExprMd (StmtExpr.LiteralBool true)]
       isFunctional := false
       decreases := none
       body := .Transparent bodyBlock
-      md := md
     }
   | _ => throw (.internalError "Expected FunctionDef for method")
 
@@ -1871,14 +1869,13 @@ def mkDefaultInitDecl (className : String) : PythonFunctionDecl × Procedure :=
   }
   let inputs := [selfParam]
   let proc : Procedure := {
-    name := decl.name
+    name := { text := decl.name, md := defaultMetadata }
     inputs := inputs
     outputs := [{name := "LaurelResult", type := AnyTy}]
     preconditions := [mkStmtExprMd (StmtExpr.LiteralBool true)]
     isFunctional := false
     decreases := none
     body := .Opaque [] .none []
-    md := defaultMetadata
   }
   (decl, proc)
 
@@ -2066,7 +2063,7 @@ def PreludeInfo.ofLaurelProgram (prog : Laurel.Program) : PreludeInfo where
       | _ => []
     funcNames ++ dtFuncs
   maybeExceptionFunctions :=  prog.staticProcedures.filterMap fun p =>
-    if p.md.getPropertySummary.getD "" == "AnyMaybeExcept" then some p.name.text else none
+    if p.name.md.getPropertySummary.getD "" == "AnyMaybeExcept" then some p.name.text else none
   procedureNames :=
     prog.staticProcedures.filterMap fun p =>
       if p.body.isExternal || p.isFunctional then none else some p.name.text
@@ -2105,7 +2102,7 @@ def pythonToLaurel' (info : PreludeInfo)
         | _ => none
     | _ => []
   let pyErrorTy : CompositeType := {
-    name := {text := "PythonError"}
+    name := {text := "PythonError", md := default }
     extending := []  -- No inheritance support for now
     fields := [{name:= "response", isMutable:= false, type:= AnyTy}]
     instanceProcedures := []
@@ -2197,13 +2194,12 @@ def pythonToLaurel' (info : PreludeInfo)
 
   let md := sourceRangeToMetaData ctx.filePath { start := 0, stop := 0 }
   let mainProc : Procedure := {
-    name := "__main__",
+    name := { text := "__main__", md := md },
     inputs := [],
     outputs := [],
     preconditions := [],
     decreases := none,
     body := .Transparent bodyBlock
-    md := md
     isFunctional := false
   }
 
@@ -2214,22 +2210,20 @@ def pythonToLaurel' (info : PreludeInfo)
   for ct in compositeTypes do
     let selfParam : Parameter := { name := "self", type := mkHighTypeMd (.UserDefined ct.name.text) }
     procedures := procedures.push
-      { name := { text := compositeToStringName ct.name.text }
+      { name := { text := compositeToStringName ct.name.text, md := .empty }
         inputs := [selfParam]
         outputs := [{ name := "result", type := mkHighTypeMd .TString }]
         preconditions := []
         decreases := none
         body := .Opaque [] none []
-        md := default
         isFunctional := false }
     procedures := procedures.push
-      { name := { text := compositeToStringAnyName ct.name.text }
+      { name := { text := compositeToStringAnyName ct.name.text, md := .empty }
         inputs := [selfParam]
         outputs := [{ name := "result", type := AnyTy }]
         preconditions := []
         decreases := none
         body := .Opaque [] none []
-        md := default
         isFunctional := false }
 
   let program : Laurel.Program := {

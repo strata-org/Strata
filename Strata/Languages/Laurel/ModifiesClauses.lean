@@ -126,7 +126,7 @@ def buildModifiesEnsures (proc: Procedure) (model: SemanticModel) (modifiesExprs
   let implBody := mkMd <| .PrimitiveOp .Implies [antecedent, heapUnchanged]
   -- Build: forall $obj: Composite, $fld: Field => ...
   let innerForall := mkMd <| .Forall ⟨ fldName, (⟨ .TTypedField ⟨.TInt, .empty⟩, .empty ⟩) ⟩ none implBody
-  let outerForall := ⟨ .Forall ⟨ objName, (⟨ .UserDefined "Composite", .empty ⟩) ⟩ none innerForall, proc.md ⟩
+  let outerForall := ⟨ .Forall ⟨ objName, (⟨ .UserDefined "Composite", .empty ⟩) ⟩ none innerForall, proc.name.md ⟩
   some outerForall
 
 /--

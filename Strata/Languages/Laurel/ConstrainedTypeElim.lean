@@ -77,8 +77,7 @@ def mkConstraintFunc (ptMap : ConstrainedTypeMap) (ct : ConstrainedType) : Proce
     body := .Transparent ⟨.Block [bodyExpr] none, #[]⟩
     isFunctional := true
     decreases := none
-    preconditions := []
-    md := #[] }
+    preconditions := [] }
 
 private def wrap (stmts : List StmtExprMd) (md : Imperative.MetaData Core.Expression)
     : StmtExprMd :=
@@ -232,8 +231,7 @@ private def mkWitnessProc (ptMap : ConstrainedTypeMap) (ct : ConstrainedType) : 
     body := .Transparent ⟨.Block [witnessInit, assert] none, md⟩
     preconditions := []
     isFunctional := false
-    decreases := none
-    md := md }
+    decreases := none }
 
 public def constrainedTypeElim (_model : SemanticModel) (program : Program) : Program × List DiagnosticModel :=
   let ptMap := buildConstrainedTypeMap program.types
@@ -244,7 +242,7 @@ public def constrainedTypeElim (_model : SemanticModel) (program : Program) : Pr
     | .Constrained ct => some (mkWitnessProc ptMap ct) | _ => none
   let funcDiags := program.staticProcedures.foldl (init := []) fun acc proc =>
     if proc.isFunctional && proc.outputs.any (fun p => isConstrainedType ptMap p.type.val) then
-      acc.cons (proc.md.toDiagnostic "constrained return types on functions are not yet supported")
+      acc.cons (proc.name.md.toDiagnostic "constrained return types on functions are not yet supported")
     else acc
   ({ program with
     staticProcedures := constraintFuncs ++ program.staticProcedures.map (elimProc ptMap)
