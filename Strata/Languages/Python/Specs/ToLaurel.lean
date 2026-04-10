@@ -305,19 +305,17 @@ private def mkFileMd : ToLaurelM (Imperative.MetaData Core.Expression) := do
   return #[⟨Imperative.MetaData.fileRange, .fileRange fr⟩]
 
 /-- Create metadata with a file range from the current pyspec file. -/
-private def mkMdWithFileRange (loc : SourceRange) (msg : String := "")
+private def mkMdWithFileRange (loc : SourceRange)
     : ToLaurelM (Imperative.MetaData Core.Expression) := do
   let ctx ← read
   let fr : FileRange := { file := .file ctx.filepath.toString, range := loc }
-  let mut md : Imperative.MetaData Core.Expression := #[⟨Imperative.MetaData.fileRange, .fileRange fr⟩]
-  if !msg.isEmpty then
-    md := md.withPropertySummary msg
+  let md : Imperative.MetaData Core.Expression := #[⟨Imperative.MetaData.fileRange, .fileRange fr⟩]
   return md
 
-/-- Wrap a StmtExpr with metadata containing a file range and optional message. -/
-private def mkStmtWithLoc (e : StmtExpr) (loc : SourceRange) (msg : String := "")
+/-- Wrap a StmtExpr with metadata containing a file range. -/
+private def mkStmtWithLoc (e : StmtExpr) (loc : SourceRange)
     : ToLaurelM StmtExprMd := do
-  let md ← mkMdWithFileRange loc msg
+  let md ← mkMdWithFileRange loc
   return { val := e, md := md }
 
 /-- Translate a SpecExpr to a Laurel StmtExpr.
@@ -482,7 +480,7 @@ def buildSpecBody (preconditions : Array Assertion)
       [mkStmt (.StaticCall (mkId "Any..isfrom_None")
         [mkStmt (.Identifier (mkId param)) md]) md]) md
     let msg := SpecAssertMsg.requiredParam param |>.render
-    let assertStmt ← mkStmtWithLoc (.Assert cond) default msg
+    let assertStmt ← mkStmtWithLoc (.Assert { condition := cond, summary := some msg }) default
     stmts := assertStmt :: stmts
     idx := idx + 1
   for assertion in preconditions do
@@ -492,11 +490,11 @@ def buildSpecBody (preconditions : Array Assertion)
       else SpecAssertMsg.userAssertion formattedMsg |>.render
     match ← specExprToLaurel assertion.formula md with
     | some condExpr =>
-      let assertStmt ← mkStmtWithLoc (.Assert condExpr) default msg
+      let assertStmt ← mkStmtWithLoc (.Assert { condition := condExpr, summary := some msg }) default
       stmts := assertStmt :: stmts
     | none =>
       reportError default s!"Untranslatable precondition (emitting nondeterministic assert): {msg}"
-      let assertStmt ← mkStmtWithLoc (.Assert (mkStmt .Hole md)) default msg
+      let assertStmt ← mkStmtWithLoc (.Assert { condition := mkStmt .Hole md, summary := some msg }) default
       stmts := assertStmt :: stmts
     idx := idx + 1
   let body := mkStmt (.Block stmts.reverse none) fileMd

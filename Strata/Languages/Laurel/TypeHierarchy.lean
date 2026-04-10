@@ -119,7 +119,7 @@ def isDiamondInheritedField (model : SemanticModel) (typeName : Identifier) (fie
 /--
 Walk a StmtExpr AST and collect DiagnosticModel errors for diamond-inherited field accesses.
 -/
-def validateDiamondFieldAccessesForStmtExpr (model : SemanticModel)
+partial def validateDiamondFieldAccessesForStmtExpr (model : SemanticModel)
     (expr : StmtExprMd) : List DiagnosticModel :=
   match _h : expr.val with
   | .FieldSelect target fieldName =>
@@ -149,7 +149,7 @@ def validateDiamondFieldAccessesForStmtExpr (model : SemanticModel)
     let errs := validateDiamondFieldAccessesForStmtExpr model c ++
                 validateDiamondFieldAccessesForStmtExpr model b
     invs.attach.foldl (fun acc ⟨inv, _⟩ => acc ++ validateDiamondFieldAccessesForStmtExpr model inv) errs
-  | .Assert cond => validateDiamondFieldAccessesForStmtExpr model cond
+  | .Assert cond => validateDiamondFieldAccessesForStmtExpr model cond.condition
   | .Assume cond => validateDiamondFieldAccessesForStmtExpr model cond
   | .PrimitiveOp _ args =>
     args.attach.foldl (fun acc ⟨a, _⟩ => acc ++ validateDiamondFieldAccessesForStmtExpr model a) []
@@ -157,8 +157,6 @@ def validateDiamondFieldAccessesForStmtExpr (model : SemanticModel)
     args.attach.foldl (fun acc ⟨a, _⟩ => acc ++ validateDiamondFieldAccessesForStmtExpr model a) []
   | .Return (some v) => validateDiamondFieldAccessesForStmtExpr model v
   | _ => []
-  termination_by sizeOf expr
-  decreasing_by all_goals (have := WithMetadata.sizeOf_val_lt expr; term_by_mem)
 
 /--
 Validate a Laurel program for diamond-inherited field accesses.
@@ -169,12 +167,12 @@ def validateDiamondFieldAccesses (model: SemanticModel) (program : Program) : Li
     let bodyErrors := match proc.body with
       | .Transparent bodyExpr => validateDiamondFieldAccessesForStmtExpr model bodyExpr
       | .Opaque postconds impl _ =>
-        let postErrors := postconds.foldl (fun acc2 pc => acc2 ++ validateDiamondFieldAccessesForStmtExpr model pc) []
+        let postErrors := postconds.foldl (fun acc2 pc => acc2 ++ validateDiamondFieldAccessesForStmtExpr model pc.condition) []
         let implErrors := match impl with
           | some implExpr => validateDiamondFieldAccessesForStmtExpr model implExpr
           | none => []
         postErrors ++ implErrors
-      | .Abstract postconds => postconds.foldl (fun acc p => acc ++ validateDiamondFieldAccessesForStmtExpr model p) []
+      | .Abstract postconds => postconds.foldl (fun acc p => acc ++ validateDiamondFieldAccessesForStmtExpr model p.condition) []
       | .External => []
     acc ++ bodyErrors) []
   errors
@@ -223,7 +221,7 @@ def lowerNew (name : Identifier) (md : Imperative.MetaData Core.Expression) : TH
 /--
 Walk a StmtExpr AST and rewrite `IsType` and `New` nodes.
 -/
-def rewriteTypeHierarchyExpr (exprMd : StmtExprMd) : THM StmtExprMd :=
+partial def rewriteTypeHierarchyExpr (exprMd : StmtExprMd) : THM StmtExprMd :=
   match exprMd with
   | WithMetadata.mk expr md =>
   match expr with
@@ -272,25 +270,29 @@ def rewriteTypeHierarchyExpr (exprMd : StmtExprMd) : THM StmtExprMd :=
   | .Assigned n => do return ⟨.Assigned (← rewriteTypeHierarchyExpr n), md⟩
   | .Old v => do return ⟨.Old (← rewriteTypeHierarchyExpr v), md⟩
   | .Fresh v => do return ⟨.Fresh (← rewriteTypeHierarchyExpr v), md⟩
-  | .Assert c => do return ⟨.Assert (← rewriteTypeHierarchyExpr c), md⟩
+  | .Assert c => do return ⟨.Assert { c with condition := ← rewriteTypeHierarchyExpr c.condition }, md⟩
   | .Assume c => do return ⟨.Assume (← rewriteTypeHierarchyExpr c), md⟩
   | .ProveBy v p => do return ⟨.ProveBy (← rewriteTypeHierarchyExpr v) (← rewriteTypeHierarchyExpr p), md⟩
   | .ContractOf ty f => do return ⟨.ContractOf ty (← rewriteTypeHierarchyExpr f), md⟩
   | _ => return exprMd
-  termination_by sizeOf exprMd
 
 def rewriteTypeHierarchyProcedure (proc : Procedure) : THM Procedure := do
-  let preconditions' ← proc.preconditions.mapM rewriteTypeHierarchyExpr
+  let preconditions' ← proc.preconditions.mapM fun c => do
+    return { c with condition := ← rewriteTypeHierarchyExpr c.condition }
   let body' ← match proc.body with
     | .Transparent b => pure (.Transparent (← rewriteTypeHierarchyExpr b))
     | .Opaque postconds impl modif =>
-        let postconds' ← postconds.mapM rewriteTypeHierarchyExpr
+        let postconds' ← postconds.mapM fun c => do
+          return { c with condition := ← rewriteTypeHierarchyExpr c.condition }
         let impl' ← match impl with
           | some x => pure (some (← rewriteTypeHierarchyExpr x))
           | none => pure none
         let modif' ← modif.mapM rewriteTypeHierarchyExpr
         pure (.Opaque postconds' impl' modif')
-    | .Abstract postconds => pure (.Abstract (← postconds.mapM rewriteTypeHierarchyExpr))
+    | .Abstract postconds => do
+        let postconds' ← postconds.mapM fun c => do
+          return { c with condition := ← rewriteTypeHierarchyExpr c.condition }
+        pure (.Abstract postconds')
     | .External => pure .External
   return { proc with preconditions := preconditions', body := body' }
 

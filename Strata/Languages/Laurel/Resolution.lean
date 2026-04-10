@@ -392,8 +392,8 @@ def resolveStmtExpr (exprMd : StmtExprMd) : ResolveM StmtExprMd := do
     let val' ← resolveStmtExpr val
     pure (.Fresh val')
   | .Assert cond =>
-    let cond' ← resolveStmtExpr cond
-    pure (.Assert cond')
+    let cond' ← resolveStmtExpr cond.condition
+    pure (.Assert { cond with condition := cond' })
   | .Assume cond =>
     let cond' ← resolveStmtExpr cond
     pure (.Assume cond')
@@ -413,7 +413,7 @@ def resolveStmtExpr (exprMd : StmtExprMd) : ResolveM StmtExprMd := do
     | none => pure (.Hole det none)
   return ⟨val', md⟩
   termination_by exprMd
-  decreasing_by all_goals term_by_mem
+  decreasing_by all_goals (first | term_by_mem | (simp_wf; try (cases ‹Condition›; simp_all); omega))
 
 /-- Resolve a parameter: assign a fresh ID and add to scope. -/
 def resolveParameter (param : Parameter) : ResolveM Parameter := do
@@ -428,12 +428,14 @@ def resolveBody (body : Body) : ResolveM Body := do
     let b' ← resolveStmtExpr b
     return .Transparent b'
   | .Opaque posts impl mods =>
-    let posts' ← posts.mapM resolveStmtExpr
+    let posts' ← posts.mapM fun c => do
+      return { c with condition := ← resolveStmtExpr c.condition }
     let impl' ← impl.mapM resolveStmtExpr
     let mods' ← mods.mapM resolveStmtExpr
     return .Opaque posts' impl' mods'
   | .Abstract posts =>
-    let posts' ← posts.mapM resolveStmtExpr
+    let posts' ← posts.mapM fun c => do
+      return { c with condition := ← resolveStmtExpr c.condition }
     return .Abstract posts'
   | .External => return .External
 
@@ -443,7 +445,8 @@ def resolveProcedure (proc : Procedure) : ResolveM Procedure := do
   withScope do
     let inputs' ← proc.inputs.mapM resolveParameter
     let outputs' ← proc.outputs.mapM resolveParameter
-    let pres' ← proc.preconditions.mapM resolveStmtExpr
+    let pres' ← proc.preconditions.mapM fun c => do
+      return { c with condition := ← resolveStmtExpr c.condition }
     let dec' ← proc.decreases.mapM resolveStmtExpr
     let body' ← resolveBody proc.body
     let invokeOn' ← proc.invokeOn.mapM resolveStmtExpr
@@ -468,7 +471,8 @@ def resolveInstanceProcedure (typeName : Identifier) (proc : Procedure) : Resolv
     modify fun s => { s with instanceTypeName := some typeName.text }
     let inputs' ← proc.inputs.mapM resolveParameter
     let outputs' ← proc.outputs.mapM resolveParameter
-    let pres' ← proc.preconditions.mapM resolveStmtExpr
+    let pres' ← proc.preconditions.mapM fun c => do
+      return { c with condition := ← resolveStmtExpr c.condition }
     let dec' ← proc.decreases.mapM resolveStmtExpr
     let body' ← resolveBody proc.body
     let invokeOn' ← proc.invokeOn.mapM resolveStmtExpr
@@ -565,7 +569,7 @@ private def collectHighType (map : Std.HashMap Nat AstNode) (ty : HighTypeMd)
   | .Intersection tys => tys.foldl collectHighType map
   | _ => map
 
-private def collectStmtExpr (map : Std.HashMap Nat AstNode) (expr : StmtExprMd)
+private partial def collectStmtExpr (map : Std.HashMap Nat AstNode) (expr : StmtExprMd)
     : Std.HashMap Nat AstNode :=
   match expr with
   | WithMetadata.mk val _ =>
@@ -624,7 +628,7 @@ private def collectStmtExpr (map : Std.HashMap Nat AstNode) (expr : StmtExprMd)
   | .Assigned name => collectStmtExpr map name
   | .Old val => collectStmtExpr map val
   | .Fresh val => collectStmtExpr map val
-  | .Assert cond => collectStmtExpr map cond
+  | .Assert cond => collectStmtExpr map cond.condition
   | .Assume cond => collectStmtExpr map cond
   | .ProveBy val proof =>
     let map := collectStmtExpr map val
@@ -638,10 +642,10 @@ private def collectBody (map : Std.HashMap Nat AstNode) (body : Body)
   match body with
   | .Transparent b => collectStmtExpr map b
   | .Opaque posts impl mods =>
-    let map := posts.foldl collectStmtExpr map
+    let map := posts.foldl (fun map c => collectStmtExpr map c.condition) map
     let map := match impl with | some i => collectStmtExpr map i | none => map
     mods.foldl collectStmtExpr map
-  | .Abstract posts => posts.foldl collectStmtExpr map
+  | .Abstract posts => posts.foldl (fun map c => collectStmtExpr map c.condition) map
   | .External => map
 
 private def collectParameter (map : Std.HashMap Nat AstNode) (param : Parameter)
@@ -654,7 +658,7 @@ private def collectProcedure (map : Std.HashMap Nat AstNode) (proc : Procedure)
   let map := register map proc.name (mkNode proc)
   let map := proc.inputs.foldl collectParameter map
   let map := proc.outputs.foldl collectParameter map
-  let map := proc.preconditions.foldl collectStmtExpr map
+  let map := proc.preconditions.foldl (fun map c => collectStmtExpr map c.condition) map
   let map := match proc.decreases with | some d => collectStmtExpr map d | none => map
   collectBody map proc.body
 

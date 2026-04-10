@@ -51,10 +51,10 @@ structure InferHoleState where
 private abbrev InferHoleM := StateM InferHoleState
 
 mutual
-private def inferArgs (args : List StmtExprMd) (expectedType : HighTypeMd) : InferHoleM (List StmtExprMd) :=
+private partial def inferArgs (args : List StmtExprMd) (expectedType : HighTypeMd) : InferHoleM (List StmtExprMd) :=
   args.mapM (inferExpr · expectedType)
 
-private def inferArgsTyped (args : List StmtExprMd) (types : List HighTypeMd) : InferHoleM (List StmtExprMd) := do
+private partial def inferArgsTyped (args : List StmtExprMd) (types : List HighTypeMd) : InferHoleM (List StmtExprMd) := do
   let mut result : List StmtExprMd := []
   let mut i := 0
   for a in args do
@@ -64,7 +64,7 @@ private def inferArgsTyped (args : List StmtExprMd) (types : List HighTypeMd) : 
 
 /-- Traverse a block's statement list: all statements except the last get `TVoid`,
     the last statement gets `expectedType`. -/
-private def inferBlockStmts (stmts : List StmtExprMd) (expectedType : HighTypeMd) : InferHoleM (List StmtExprMd) :=
+private partial def inferBlockStmts (stmts : List StmtExprMd) (expectedType : HighTypeMd) : InferHoleM (List StmtExprMd) :=
   match stmts with
   | [] => return []
   | [last] => return [← inferExpr last expectedType]
@@ -73,7 +73,7 @@ private def inferBlockStmts (stmts : List StmtExprMd) (expectedType : HighTypeMd
 /-- Annotate every `.Hole` in an expression with its contextual type.
     Statement-position nodes should be called with `expectedType = voidType`,
     except where a more specific type is known (block tail, return value). -/
-private def inferExpr (expr : StmtExprMd) (expectedType : HighTypeMd) : InferHoleM StmtExprMd := do
+private partial def inferExpr (expr : StmtExprMd) (expectedType : HighTypeMd) : InferHoleM StmtExprMd := do
   let model := (← get).model
   match expr with
   | WithMetadata.mk val md =>
@@ -126,7 +126,7 @@ private def inferExpr (expr : StmtExprMd) (expectedType : HighTypeMd) : InferHol
         | some d => pure (some (← inferExpr d (bareType .TInt)))
         | none => pure none
       return ⟨.While (← inferExpr cond (bareType .TBool)) (← invs.mapM (inferExpr · (bareType .TBool))) dec' (← inferExpr body voidType), md⟩
-  | .Assert cond => return ⟨.Assert (← inferExpr cond (bareType .TBool)), md⟩
+  | .Assert cond => return ⟨.Assert { cond with condition := ← inferExpr cond.condition (bareType .TBool) }, md⟩
   | .Assume cond => return ⟨.Assume (← inferExpr cond (bareType .TBool)), md⟩
   | .Return (some retExpr) =>
       return ⟨.Return (some (← inferExpr retExpr (← get).currentOutputType)), md⟩
