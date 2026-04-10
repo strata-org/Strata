@@ -32,16 +32,19 @@ private def verifyPrelude : IO Core.VCResults := do
         (externalPhases := [Strata.frontEndPhase]))
     return r
 
-/-- Redact position-dependent numeric suffixes in `assert(NNNNN)` labels. -/
+/-- Redact position-dependent numeric suffixes in `assert(12345)` labels. -/
 private def redactLabel (label : String) : String :=
-  if label.startsWith "assert(" && label.endsWith ")" then "assert(...)"
+  if label.startsWith "assert(" && label.endsWith ")" then
+    let inner := (label.drop 7).dropEnd 1
+    if inner.all Char.isDigit then "assert(...)"
+    else label
   else label
 
 private def formatResultsRedacted (rs : Core.VCResults) : String :=
   let parts := rs.toList.map fun r =>
     let label := redactLabel r.obligation.label
-    let prop := r.obligation.property
-    s!"{f!"Obligation: {label}\nProperty: {prop}\nResult: {r.formatOutcome}"}"
+    let prop := f!"{r.obligation.property}"
+    s!"Obligation: {label}\nProperty: {prop}\nResult: {r.formatOutcome}"
   "\n\n".intercalate parts
 
 /--
