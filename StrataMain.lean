@@ -242,6 +242,7 @@ private def readStrataProgram (file : String)
   let inputCtx := Lean.Parser.mkInputContext text (Strata.Util.displayName file)
   let dctx := Elab.LoadedDialects.builtin
   let dctx := dctx.addDialect! Core
+  let dctx := dctx.addDialect! Boole
   let dctx := dctx.addDialect! C_Simp
   let dctx := dctx.addDialect! B3CST
   let leanEnv ← Lean.mkEmptyEnvironment 0
@@ -1164,6 +1165,8 @@ def verifyCommand : Command where
       if opts.typeCheckOnly then
         let ans := if file.endsWith ".csimp.st" then
                      C_Simp.typeCheck pgm opts
+                   else if pgm.dialect == "Boole" then
+                     Boole.typeCheck pgm opts
                    else
                      typeCheck inputCtx pgm opts
         match ans with
@@ -1196,6 +1199,8 @@ def verifyCommand : Command where
                 | .success .reachabilityUnknown => "reachability unknown"
               IO.println s!"  {marker} {desc}"
           pure #[]
+        else if pgm.dialect == "Boole" then
+          Boole.verify opts.solver pgm inputCtx proceduresToVerify opts
         else
           verify pgm inputCtx proceduresToVerify opts
       catch e =>
