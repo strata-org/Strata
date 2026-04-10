@@ -11,6 +11,7 @@ import all Strata.DL.Lambda.Denote.LExprDenoteSubst
 import all Strata.DL.Lambda.Denote.CallOfLFuncDenote
 import all Strata.DL.Lambda.LExprEval
 import all Strata.DL.Lambda.Denote.LExprConstructors
+import all Strata.DL.Lambda.TypeFactoryWF
 
 namespace Lambda
 
@@ -58,7 +59,37 @@ theorem denoteConst_injective
     (heq : (hty ▸ denoteConst tcInterp vt c1 : TyDenote tcInterp vt c2.ty) =
             denoteConst tcInterp vt c2)
     : c1 = c2 := by
-  sorry
+  cases c1 <;> cases c2 <;> simp only [LConst.ty] at hty <;> try contradiction
+  case intConst.intConst =>
+    rename_i i1 i2 hty_orig
+    have hty_rfl : hty_orig = rfl := by rfl
+    rw [hty_rfl] at heq
+    simp only [denoteConst] at heq
+    exact congrArg _ heq
+  case strConst.strConst =>
+    rename_i s1 s2 hty_orig
+    have hty_rfl : hty_orig = rfl := by rfl
+    rw [hty_rfl] at heq
+    simp only [denoteConst] at heq
+    exact congrArg _ heq
+  case realConst.realConst =>
+    rename_i r1 r2 hty_orig
+    have hty_rfl : hty_orig = rfl := by rfl
+    rw [hty_rfl] at heq
+    simp only [denoteConst] at heq
+    exact congrArg _ heq
+  case boolConst.boolConst =>
+    rename_i b1 b2 hty_orig
+    have hty_rfl : hty_orig = rfl := by rfl
+    rw [hty_rfl] at heq
+    simp only [denoteConst] at heq
+    exact congrArg _ heq
+  case bitvecConst.bitvecConst =>
+    rename_i n1 b1 n2 b2
+    simp only [LMonoTy.bitvec.injEq] at hty
+    subst hty
+    simp only [denoteConst] at heq
+    exact congrArg _ heq
 
 /-! ## `eqlCombine` helpers -/
 
@@ -76,6 +107,31 @@ theorem foldl_eqlCombine_init_true
     have := ih h
     unfold LExpr.eqlCombine at this
     split at this <;> simp_all
+
+/-- If foldl of eqlCombine starting from `none` returns `some false`,
+then some element of the list maps to `some false`. -/
+theorem foldl_eqlCombine_none_to_false
+    {l : List α}
+    {f : α → Option Bool}
+    (h : List.foldl (fun acc x => LExpr.eqlCombine acc (f x)) none l = some false)
+    : ∃ (i : Nat) (a : α), l[i]? = some a ∧ f a = some false := by
+  induction l with
+  | nil => simp at h
+  | cons x xs ih =>
+    simp only [List.foldl_cons] at h
+    match hfx : f x with
+    | some false =>
+      exact ⟨0, x, List.getElem?_cons_zero .. , hfx⟩
+    | some true =>
+      have hsimp : LExpr.eqlCombine none (some true) = none := by unfold LExpr.eqlCombine; rfl
+      rw [hfx, hsimp] at h
+      have ⟨i', a, ha, hfa⟩ := ih h
+      exact ⟨i' + 1, a, by simp [ha], hfa⟩
+    | none =>
+      have hsimp : LExpr.eqlCombine none none = none := by unfold LExpr.eqlCombine; rfl
+      rw [hfx, hsimp] at h
+      have ⟨i', a, ha, hfa⟩ := ih h
+      exact ⟨i' + 1, a, by simp [ha], hfa⟩
 
 /-- If `g` preserves `.val`, then foldl over `(l.map g).zip l2` equals
 foldl over `l.zip l2` for any function that only accesses `.val`. -/
@@ -317,7 +373,12 @@ theorem List.Forall₂.getElem?_some {R : α → β → Prop}
     (h : List.Forall₂ R l1 l2) {i : Nat} {a : α}
     (ha : l1[i]? = some a)
     : ∃ b, l2[i]? = some b ∧ R a b := by
-  sorry
+  induction h generalizing i with
+  | nil => simp at ha
+  | cons hr _ ih =>
+    cases i with
+    | zero => simp at ha; subst ha; exact ⟨_, rfl, hr⟩
+    | succ n => simp only [List.getElem?_cons_succ] at ha ⊢; exact ih ha
 
 /-- If foldl eqlCombine over `attach.zip` returns `some false`, then some
 individual pair has `eql = some false`. -/
@@ -330,12 +391,47 @@ theorem eqlCombine_attach_zip_some_false
         args1[i]? = some a1 ∧ args2[i]? = some a2 ∧
         a1 ∈ args1 ∧
         LExpr.eql F a1 a2 = some false := by
-  sorry
+  induction args1 generalizing args2 with
+  | nil => simp at h
+  | cons x1 rest1 ih =>
+    cases args2 with
+    | nil => simp at h
+    | cons x2 rest2 =>
+      simp only [List.attach_cons, List.zip_cons_cons, List.foldl_cons] at h
+      have heqlcomb_true : ∀ v, LExpr.eqlCombine (some true) v = v := by
+        intro v; unfold LExpr.eqlCombine; cases v with | none => rfl | some b => cases b <;> rfl
+      rw [heqlcomb_true] at h
+      match heql : LExpr.eql F x1 x2 with
+      | some false =>
+        exact ⟨0, x1, x2, List.getElem?_cons_zero .., List.getElem?_cons_zero ..,
+               List.mem_cons_self .., heql⟩
+      | some true =>
+        rw [heql] at h
+        have heq := foldl_zip_map_subtype_eq rest1.attach rest2
+            (fun x => ⟨x.val, List.mem_cons_of_mem x1 x.property⟩)
+            (fun acc a b => LExpr.eqlCombine acc (LExpr.eql F a b))
+            (some true) (fun _ => rfl)
+        simp only [heq] at h
+        have ⟨i', a1, a2, ha1, ha2, hmem, hfeql⟩ := ih h
+        exact ⟨i' + 1, a1, a2, by simp [ha1], by simp [ha2],
+               List.mem_cons_of_mem _ hmem, hfeql⟩
+      | none =>
+        rw [heql] at h
+        have heq := foldl_zip_map_subtype_eq rest1.attach rest2
+            (fun x => ⟨x.val, List.mem_cons_of_mem x1 x.property⟩)
+            (fun acc a b => LExpr.eqlCombine acc (LExpr.eql F a b))
+            none (fun _ => rfl)
+        simp only [heq] at h
+        have ⟨j, p, hj, hfeql⟩ := foldl_eqlCombine_none_to_false h
+        refine ⟨j + 1, p.1.val, p.2, ?_, ?_, List.mem_cons_of_mem _ p.1.property, hfeql⟩
+        · simp only [List.getElem?_cons_succ]; grind
+        · simp only [List.getElem?_cons_succ]; grind
 
+omit [DecidableEq T.IDMeta] [Inhabited T.mono.base.IDMeta] in
 /-- If two constructor applications with different constructor names are well-typed
 at the same type, their denotations differ. -/
 theorem callOfLFunc_constr_disjoint_denote
-    {F : @Factory T}
+    {F : @Factory T} {tf : @TypeFactory T.IDMeta}
     {e₁ e₂ : LExpr T.mono} {τ : LMonoTy}
     {callee₁ callee₂ : LExpr T.mono}
     {args₁ args₂ : List (LExpr T.mono)}
@@ -346,10 +442,144 @@ theorem callOfLFunc_constr_disjoint_denote
     (hcall₂ : Factory.callOfLFunc F e₂ = some (callee₂, args₂, f₂))
     (hconstr₁ : f₁.isConstr = true) (hconstr₂ : f₂.isConstr = true)
     (hdiffname : f₁.name.name ≠ f₂.name.name)
+    (hoc₁ : OpsConsistent F e₁) (hoc₂ : OpsConsistent F e₂)
+    (hfwf : FactoryWF F) (hcwf : Factory.ConstrWellFormed F tf)
+    (htfwf : TypeFactoryWF tf)
     (hConstrIC : ConstrInterpConsistent tcInterp opInterp F)
     : LExpr.denote tcInterp opInterp fvarVal vt .nil e₁ τ h₁ ≠
       LExpr.denote tcInterp opInterp fvarVal vt .nil e₂ τ h₂ := by
-  sorry
+  -- Decompose both denotations via callOfLFunc_denote
+  obtain ⟨argTys₁, ty_op₁, m₁, name₁, h_args₁, hty_op₁, hcallee₁, hdenote₁⟩ :=
+    callOfLFunc_denote tcInterp opInterp fvarVal vt hcall₁ h₁
+  obtain ⟨argTys₂, ty_op₂, m₂, name₂, h_args₂, hty_op₂, hcallee₂, hdenote₂⟩ :=
+    callOfLFunc_denote tcInterp opInterp fvarVal vt hcall₂ h₂
+  subst hty_op₁; subst hty_op₂
+  -- Connect names: name₁.name = f₁.name.name, name₂.name = f₂.name.name
+  obtain ⟨_, fname₁, _, hcallee₁', hget₁⟩ := Factory.callOfLFunc_getElem? hcall₁
+  obtain ⟨_, fname₂, _, hcallee₂', hget₂⟩ := Factory.callOfLFunc_getElem? hcall₂
+  rw [hcallee₁] at hcallee₁'; cases hcallee₁'
+  rw [hcallee₂] at hcallee₂'; cases hcallee₂'
+  have hname₁ := Factory.getElem?_name hget₁
+  have hname₂ := Factory.getElem?_name hget₂
+  -- Rewrite denotations
+  rw [hdenote₁, hdenote₂]
+  rw [← hname₁, ← hname₂]
+  -- Sort alignment for f₁
+  obtain ⟨tySubst₁, _, htySubst₁⟩ := OpsConsistent_callOfLFunc hoc₁ hcall₁
+  have hty_op_subst₁ := htySubst₁ m₁ name₁ (LMonoTy.mkArrow' τ argTys₁) hcallee₁
+  rw [subst_mkArrow'] at hty_op_subst₁
+  have hlen₁ : argTys₁.length = ((f₁.inputs.map Prod.snd).map (LMonoTy.subst tySubst₁)).length := by
+    simp only [List.length_map]
+    exact h_args₁.length_eq.symm.trans (Factory.callOfLFunc_arity hcall₁)
+  have ⟨hτ_eq₁, hargTys_eq₁⟩ := LMonoTy.mkArrow'_injective hlen₁ hty_op_subst₁
+  let vt'₁ : TyVarVal := fun x => match tySubst₁.find? x with
+    | some t => LMonoTy.substTyVars vt t | none => vt x
+  have h_outputSort_eq₁ : LMonoTy.substTyVars vt τ = LMonoTy.substTyVars vt'₁ f₁.output := by
+    rw [hτ_eq₁]; exact substTyVars_subst vt tySubst₁ f₁.output
+  have h_inputSorts_eq₁ : argTys₁.map (LMonoTy.substTyVars vt) =
+      (f₁.inputs.map Prod.snd).map (LMonoTy.substTyVars vt'₁) := by
+    rw [hargTys_eq₁]; simp only [List.map_map]
+    congr 1; funext ⟨_, ty⟩
+    exact substTyVars_subst vt tySubst₁ ty
+  -- Sort alignment for f₂
+  obtain ⟨tySubst₂, _, htySubst₂⟩ := OpsConsistent_callOfLFunc hoc₂ hcall₂
+  have hty_op_subst₂ := htySubst₂ m₂ name₂ (LMonoTy.mkArrow' τ argTys₂) hcallee₂
+  rw [subst_mkArrow'] at hty_op_subst₂
+  have hlen₂ : argTys₂.length = ((f₂.inputs.map Prod.snd).map (LMonoTy.subst tySubst₂)).length := by
+    simp only [List.length_map]
+    exact h_args₂.length_eq.symm.trans (Factory.callOfLFunc_arity hcall₂)
+  have ⟨hτ_eq₂, hargTys_eq₂⟩ := LMonoTy.mkArrow'_injective hlen₂ hty_op_subst₂
+  let vt'₂ : TyVarVal := fun x => match tySubst₂.find? x with
+    | some t => LMonoTy.substTyVars vt t | none => vt x
+  have h_outputSort_eq₂ : LMonoTy.substTyVars vt τ = LMonoTy.substTyVars vt'₂ f₂.output := by
+    rw [hτ_eq₂]; exact substTyVars_subst vt tySubst₂ f₂.output
+  have h_inputSorts_eq₂ : argTys₂.map (LMonoTy.substTyVars vt) =
+      (f₂.inputs.map Prod.snd).map (LMonoTy.substTyVars vt'₂) := by
+    rw [hargTys_eq₂]; simp only [List.map_map]
+    congr 1; funext ⟨_, ty⟩
+    exact substTyVars_subst vt tySubst₂ ty
+  -- Apply constr_disjoint
+  have hmem₁ := Factory.callOfLFunc_mem' hcall₁
+  have hmem₂ := Factory.callOfLFunc_mem' hcall₂
+  have hvals₁ : f₁.inputs.values = f₁.inputs.map Prod.snd := ListMap.values_eq_map_snd f₁.inputs
+  have hvals₂ : f₂.inputs.values = f₂.inputs.map Prod.snd := ListMap.values_eq_map_snd f₂.inputs
+  have h_output_eq : LMonoTy.substTyVars vt'₁ f₁.output = LMonoTy.substTyVars vt'₂ f₂.output := by
+    rw [← h_outputSort_eq₁, ← h_outputSort_eq₂]
+  -- From ConstrWellFormed, both are constrFunc c d for some datatype d
+  obtain ⟨d₁, hd₁_mem, c₁, _, hf₁_eq⟩ := hcwf f₁ hmem₁ hconstr₁
+  obtain ⟨d₂, hd₂_mem, c₂, _, hf₂_eq⟩ := hcwf f₂ hmem₂ hconstr₂
+  -- Both outputs are dataDefault d_i = .tcons d_i.name (d_i.typeArgs.map .ftvar)
+  have ho₁ : f₁.output = dataDefault d₁ := by subst hf₁_eq; rfl
+  have ho₂ : f₂.output = dataDefault d₂ := by subst hf₂_eq; rfl
+  -- After substitution, both equal τ, so tcons names must match
+  have hτ_tcons₁ : τ = .tcons d₁.name (LMonoTys.subst tySubst₁ (d₁.typeArgs.map .ftvar)) := by
+    rw [hτ_eq₁, ho₁]; unfold dataDefault data; rw [LMonoTy.subst_tcons]
+  have hτ_tcons₂ : τ = .tcons d₂.name (LMonoTys.subst tySubst₂ (d₂.typeArgs.map .ftvar)) := by
+    rw [hτ_eq₂, ho₂]; unfold dataDefault data; rw [LMonoTy.subst_tcons]
+  have hd_name : d₁.name = d₂.name := by
+    have := hτ_tcons₁.symm.trans hτ_tcons₂
+    exact LMonoTy.tcons.inj this |>.1
+  -- Same datatype: d₁ = d₂ by unique names
+  have hd_eq : d₁ = d₂ := htfwf.eq_of_name_eq hd₁_mem hd₂_mem hd_name
+  subst hd_eq
+  -- Now f₁.output = f₂.output = dataDefault d₁
+  have h_same_output : f₁.output = f₂.output := by rw [ho₁, ho₂]
+  -- subst S₁ and S₂ agree on f₂'s output
+  have h_subst_output_eq : LMonoTy.subst tySubst₁ f₂.output = LMonoTy.subst tySubst₂ f₂.output := by grind
+  have h_subst_inputs_eq := constr_same_output_implies_same_argTys
+    (hfwf.lfuncs_wf f₂ hmem₂) h_subst_output_eq
+    (constrFunc_output_covers_typeArgs hcwf hmem₂ hconstr₂)
+  -- Now vt'₁ and vt'₂ agree on f₂'s types, so we can use hdisj with vt'₁
+  have hdisj := hConstrIC.constr_disjoint f₁ f₂ hmem₁ hmem₂ hconstr₁ hconstr₂ hdiffname vt'₁
+  -- argTys₂ under vt equals f₂'s inputs under vt'₁ (not just vt'₂)
+  -- h_inputSorts_eq₂ uses vt'₂; we need the vt'₁ version
+  -- Key: h_subst_inputs_eq says map (subst S₁) = map (subst S₂) on f₂'s inputs
+  -- So: map (substTyVars vt ∘ subst S₁) = map (substTyVars vt ∘ subst S₂) on f₂'s inputs
+  -- And substTyVars vt (subst Sᵢ ty) = substTyVars vt'ᵢ ty
+  -- argTys₂ = map (subst S₂) f₂.inputs, and map (subst S₁) = map (subst S₂) on f₂.inputs
+  -- So argTys₂ = map (subst S₁) f₂.inputs too
+  have hargTys_eq₂' : argTys₂ = (f₂.inputs.map Prod.snd).map (LMonoTy.subst tySubst₁) := by
+    rw [hargTys_eq₂, h_subst_inputs_eq]
+  -- Now h_inputSorts_eq₂ with S₁ instead of S₂:
+  have h_inputSorts_eq₂_vt1 : argTys₂.map (LMonoTy.substTyVars vt) =
+      (f₂.inputs.map Prod.snd).map (LMonoTy.substTyVars vt'₁) := by
+    rw [hargTys_eq₂']; simp only [List.map_map]
+    congr 1; funext ⟨_, ty⟩
+    exact substTyVars_subst vt tySubst₁ ty
+  -- Output sort: substTyVars vt τ = substTyVars vt'₁ f₂.output
+  have h_outputSort_eq₂_vt1 : LMonoTy.substTyVars vt τ = LMonoTy.substTyVars vt'₁ f₂.output := by
+    rw [h_outputSort_eq₁, h_same_output]
+  -- Now apply hdisj using applyArgs_cast_eq (following injective proof pattern)
+  -- fullSort₁ = mkArrow (substTyVars vt'₁ f₁.output) (map (substTyVars vt'₁) f₁.inputs.values)
+  -- fullSort₂ = mkArrow (substTyVars vt'₁ f₂.output) (map (substTyVars vt'₁) f₂.inputs.values)
+  have hvals₁ : f₁.inputs.values = f₁.inputs.map Prod.snd := ListMap.values_eq_map_snd f₁.inputs
+  have hvals₂ : f₂.inputs.values = f₂.inputs.map Prod.snd := ListMap.values_eq_map_snd f₂.inputs
+  -- Convert goal sorts to fullSort form
+  have h₁_sort : LMonoTy.substTyVars vt (LMonoTy.mkArrow' τ argTys₁) =
+      LSort.mkArrow (LMonoTy.substTyVars vt'₁ f₁.output)
+        (f₁.inputs.values.map (LMonoTy.substTyVars vt'₁)) := by
+    rw [substTyVars_mkArrow', h_outputSort_eq₁, h_inputSorts_eq₁, hvals₁]
+  have h₂_sort : LMonoTy.substTyVars vt (LMonoTy.mkArrow' τ argTys₂) =
+      LSort.mkArrow (LMonoTy.substTyVars vt'₁ f₂.output)
+        (f₂.inputs.values.map (LMonoTy.substTyVars vt'₁)) := by
+    rw [substTyVars_mkArrow', h_outputSort_eq₂_vt1, h_inputSorts_eq₂_vt1, hvals₂]
+  -- heq for hdisj: outputSort₁ = outputSort₂
+  have h_output_sorts_eq : LMonoTy.substTyVars vt'₁ f₁.output = LMonoTy.substTyVars vt'₁ f₂.output := by
+    rw [h_same_output]
+  -- Use applyArgs_cast_eq to convert both sides
+  let dArgs₁ := denoteArgs tcInterp opInterp fvarVal vt .nil args₁ argTys₁ h_args₁
+  let dArgs₂ := denoteArgs tcInterp opInterp fvarVal vt .nil args₂ argTys₂ h_args₂
+  have h_convert₁ := applyArgs_cast_eq
+    (substTyVars_mkArrow' vt τ argTys₁) h₁_sort
+    (hvals₁ ▸ h_inputSorts_eq₁) h_outputSort_eq₁
+    (opInterp f₁.name.name (LMonoTy.substTyVars vt (LMonoTy.mkArrow' τ argTys₁)))
+    dArgs₁
+  have h_convert₂ := applyArgs_cast_eq
+    (substTyVars_mkArrow' vt τ argTys₂) h₂_sort
+    (hvals₂ ▸ h_inputSorts_eq₂_vt1) h_outputSort_eq₂_vt1
+    (opInterp f₂.name.name (LMonoTy.substTyVars vt (LMonoTy.mkArrow' τ argTys₂)))
+    dArgs₂
+  grind
 
 /-- If two applications of the same constructor are well-typed at the same type
 and denote to equal values, then their arguments denote pairwise equal. -/
@@ -483,6 +713,7 @@ theorem eql_false_implies_denote_ne
     (hoc₂ : OpsConsistent F e₂)
     (hfwf : FactoryWF F)
     (hcwf : Factory.ConstrWellFormed F tf)
+    (htfwf : TypeFactoryWF tf)
     (heql : LExpr.eql F e₁ e₂ = some false)
     (hConstrIC : ConstrInterpConsistent tcInterp opInterp F)
     : LExpr.denote tcInterp opInterp fvarVal vt .nil e₁ τ h₁ ≠
@@ -567,7 +798,7 @@ theorem eql_false_implies_denote_ne
     have hconstr2 : f2.isConstr = true := by simp at hisconstr; exact hisconstr.2
     have hdiff : f1.name.name ≠ f2.name.name := by simp [bne_iff_ne] at hdiffname; exact hdiffname
     exact callOfLFunc_constr_disjoint_denote tcInterp opInterp fvarVal vt
-      h₁ h₂ hcall1 hcall2 hconstr1 hconstr2 hdiff hConstrIC
+      h₁ h₂ hcall1 hcall2 hconstr1 hconstr2 hdiff hoc₁ hoc₂ hfwf hcwf htfwf hConstrIC
   | case11 e1 e2 hnotmod callee1 args1 f1 callee2 args2 f2 hcall1 hcall2 hisconstr hsamename _ _ _ _ ih_args =>
     -- Same constructor, fold returns some false
     -- Extract isConstr and same name
