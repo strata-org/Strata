@@ -834,17 +834,12 @@ def verifySingleEnv (pE : Program × Env) (options : VerifyOptions)
               {format err}\n\n\
               [DEBUG] Evaluated program: {Core.formatProgram p}\n\n"
   | _ =>
-    -- Deduplicate obligations by label, keeping the first occurrence.
-    -- When rest is evaluated in both ITE branches, the same obligation
-    -- may appear with different substitutions; we keep only the first.
-    let deferred := E.deferred.foldl (fun (acc : Array (ProofObligation Expression)) ob =>
-      if acc.any (fun o => o.label == ob.label) then acc else acc.push ob) #[]
     let mut results := (#[] : VCResults)
     let mut preprocessNs : Nat := 0
     let mut smtEncodeNs : Nat := 0
     let mut solverNs : Nat := 0
     let mut peResolvedCount : Nat := 0
-    for obligation in deferred do
+    for obligation in E.deferred do
       -- Determine which checks to perform based on metadata or check mode/amount
       let (satisfiabilityCheck, validityCheck) :=
         if Imperative.MetaData.hasFullCheck obligation.metadata then
@@ -934,7 +929,7 @@ def verifySingleEnv (pE : Program × Env) (options : VerifyOptions)
       let _ ← (IO.println s!"[profile]     Preprocess obligations: {nsToMs preprocessNs}ms" |>.toBaseIO)
       let _ ← (IO.println s!"[profile]     SMT encoding: {nsToMs smtEncodeNs}ms" |>.toBaseIO)
       let _ ← (IO.println s!"[profile]     Solver/file writing: {nsToMs solverNs}ms" |>.toBaseIO)
-      let _ ← (IO.println s!"[profile]     Obligations: {deferred.size} total, {peResolvedCount} resolved by PE" |>.toBaseIO)
+      let _ ← (IO.println s!"[profile]     Obligations: {E.deferred.size} total, {peResolvedCount} resolved by PE" |>.toBaseIO)
     return results
 
 /-- Run the Strata Core verification pipeline on a program: transform,

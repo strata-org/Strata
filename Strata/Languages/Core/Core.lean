@@ -85,10 +85,7 @@ def typeCheckAndPartialEval (options : VerifyOptions) (program : Program)
   if options.verbose >= .normal then do
     dbg_trace f!"{Std.Format.line}VCs:"
     for (_p, E) in pEs do
-      -- Deduplicate by label for display (rest-in-both-branches can produce duplicates)
-      let deduped := E.deferred.foldl (fun acc ob =>
-        if acc.any (fun o => o.label == ob.label) then acc else acc.push ob) #[]
-      dbg_trace f!"{formatProofObligations deduped}"
+      dbg_trace f!"{formatProofObligations E.deferred}"
   return pEs
 
 instance instCoreProgramString : ToString (Program) where
