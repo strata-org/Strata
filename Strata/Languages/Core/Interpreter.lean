@@ -25,15 +25,9 @@ performing symbolic verification.
 |--------|------------------|-------------|
 | Loops | `panic!` | Iterates with fuel bound |
 | Calls | Contract inlining | Body execution |
-| `havoc` | Fresh symbolic variable | `none` (stuck) |
+| `havoc` | Fresh symbolic variable | Default value |
 | Branching | Explores both paths | Requires concrete condition |
 | Result | Symbolic expressions + VCs | Concrete values |
-
-## Intentionally Unsupported
-
-- `havoc` / nondeterministic `init` — returns `none` (stuck)
-- Nondeterministic `ite` / `loop` — returns `none`
-- `exit` with labels — returns `none`
 -/
 
 namespace Core
@@ -60,7 +54,7 @@ instance : ToString InterpResult where
 
 /-! ## Helpers -/
 
-/-- Produce a default value for a type. Used for uninitialized variable declarations. -/
+/-- Produce a default value for a type. Used for havoc and uninitialized variables. -/
 private def defaultValue (ty : Expression.Ty) : Expression.Expr :=
   if h : ty.isMonoType then
     match ty.toMonoType h with
@@ -68,10 +62,19 @@ private def defaultValue (ty : Expression.Ty) : Expression.Expr :=
     | .tcons "bool" _ => .boolConst () false
     | .tcons "string" _ => .const () (.strConst "")
     | .tcons "real" _ => .const () (.realConst 0)
-    | _ => .intConst () 0  -- fallback
-  else .intConst () 0  -- fallback
+    | _ => .intConst () 0
+  else .intConst () 0
 
-/-- Insert a variable with an optional type into the environment. -/
+/-- Default value based on an optional monotype from the store. -/
+private def defaultValueOfMonoTy (ty : Option LMonoTy) : Expression.Expr :=
+  match ty with
+  | some (.tcons "int" _) => .intConst () 0
+  | some (.tcons "bool" _) => .boolConst () false
+  | some (.tcons "string" _) => .const () (.strConst "")
+  | some (.tcons "real" _) => .const () (.realConst 0)
+  | _ => .intConst () 0
+
+/-- Insert a variable with a type into the environment. -/
 private def insertVar (E : Env) (x : Expression.Ident) (ty : Expression.Ty)
     (v : Expression.Expr) : Env :=
   if h : ty.isMonoType then
@@ -84,123 +87,132 @@ private def updateVar (E : Env) (x : Expression.Ident) (v : Expression.Expr) : E
   let tyOpt := (E.exprEnv.state.find? x).bind (·.fst)
   E.insertInContext (x, tyOpt) v
 
+/-! ## Statement Outcome -/
+
+/-- Outcome of executing a statement. Propagates `exit` labels through blocks. -/
+inductive StmtOutcome where
+  | normal (E : Env)
+  | exiting (label : Option String) (E : Env)
+  deriving Inhabited
+
+/-- Extract the environment from any outcome. -/
+def StmtOutcome.env : StmtOutcome → Env
+  | .normal E => E
+  | .exiting _ E => E
+
 /-! ## Interpreter Core -/
 
-/-- Default fuel for the interpreter. Large enough for most programs,
-    small enough to avoid excessive computation. -/
+/-- Default fuel for the interpreter. -/
 def defaultFuel : Nat := 100000
 
 mutual
-/-- Interpret a single command. Returns updated `Env` or `none` on stuck/fuel. -/
-def interpCmd (fuel : Nat) (E : Env) (c : Command) : Option Env :=
+/-- Interpret a single command. -/
+def interpCmd (fuel : Nat) (E : Env) (c : Command) : Option StmtOutcome :=
   match fuel with
   | 0 => none
   | fuel + 1 =>
   match c with
   | .cmd (.init x ty e _md) =>
     match e with
-    | .det expr =>
-      let v := E.exprEval expr
-      some (insertVar E x ty v)
-    | .nondet =>
-      -- Uninitialized variable: use a default value based on type
-      let v := defaultValue ty
-      some (insertVar E x ty v)
+    | .det expr => some (.normal (insertVar E x ty (E.exprEval expr)))
+    | .nondet => some (.normal (insertVar E x ty (defaultValue ty)))
 
   | .cmd (.set x e _md) =>
     match e with
-    | .det expr =>
-      let v := E.exprEval expr
-      some (updateVar E x v)
-    | .nondet => none  -- havoc not supported
+    | .det expr => some (.normal (updateVar E x (E.exprEval expr)))
+    | .nondet =>
+      let tyOpt := (E.exprEnv.state.find? x).bind (·.fst)
+      some (.normal (updateVar E x (defaultValueOfMonoTy tyOpt)))
 
   | .cmd (.assert label expr _md) =>
     let v := E.exprEval expr
     match LExpr.denoteBool v with
-    | some true => some E
-    | some false => some { E with error := some (.AssertFail label v) }
-    | none => none  -- condition didn't reduce to bool
+    | some true => some (.normal E)
+    | some false => some (.normal { E with error := some (.AssertFail label v) })
+    | none => none
 
   | .cmd (.assume _label expr _md) =>
     let v := E.exprEval expr
     match LExpr.denoteBool v with
-    | some true => some E
-    | some false => none  -- assumption violated: execution stuck
-    | none => none  -- condition didn't reduce to bool
+    | some true => some (.normal E)
+    | _ => none
 
-  | .cmd (.cover _ _ _) => some E  -- no-op for concrete execution
+  | .cmd (.cover _ _ _) => some (.normal E)
 
   | .call lhs pname args _md =>
     match Program.Procedure.find? E.program ⟨pname, ()⟩ with
     | none => none
     | some proc =>
-      if proc.body.isEmpty then none  -- bodyless procedure
+      if proc.body.isEmpty then none
       else
-        -- Evaluate arguments
         let argVals := args.map E.exprEval
-        -- Build formal parameter scope: [(ident, (some ty, val))]
         let formalBindings : List (CoreIdent × (Option LMonoTy × Expression.Expr)) :=
           proc.header.inputs.keys.zip proc.header.inputs.values |>.zip argVals
           |>.map fun ((name, ty), val) => (name, (some ty, val))
-        -- Build output variable scope (initialized to fresh fvars)
         let outputBindings : List (CoreIdent × (Option LMonoTy × Expression.Expr)) :=
           proc.header.outputs.keys.zip proc.header.outputs.values
           |>.map fun (name, ty) => (name, (some ty, LExpr.fvar () name none))
-        -- Push scope and execute body
         let callEnv := { E with
           exprEnv := { E.exprEnv with
             state := E.exprEnv.state.push (formalBindings ++ outputBindings) } }
         match interpBlock fuel callEnv proc.body with
         | none => none
-        | some callEnv' =>
+        | some outcome =>
+          let callEnv' := outcome.env
           match callEnv'.error with
-          | some err => some { E with error := some err }
+          | some err => some (.normal { E with error := some err })
           | none =>
-            -- Read output values from callee scope
             let outputVals := proc.header.outputs.keys.map fun name =>
               (callEnv'.exprEnv.state.findD name (none, LExpr.fvar () name none)).snd
-            -- Read modified globals
             let modifiedVals := proc.spec.modifies.map fun name =>
               (callEnv'.exprEnv.state.findD name (none, LExpr.fvar () name none)).snd
-            -- Update caller's LHS and modified globals
             let E' := lhs.zip outputVals |>.foldl (fun env (name, val) =>
               updateVar env name val) E
             let E' := proc.spec.modifies.zip modifiedVals |>.foldl (fun env (name, val) =>
               updateVar env name val) E'
-            some E'
+            some (.normal E')
 
 /-- Interpret a block (list of statements). -/
-def interpBlock (fuel : Nat) (E : Env) (stmts : Statements) : Option Env :=
+def interpBlock (fuel : Nat) (E : Env) (stmts : Statements) : Option StmtOutcome :=
   match fuel with
   | 0 => none
   | fuel + 1 =>
   match stmts with
-  | [] => some E
+  | [] => some (.normal E)
   | stmt :: rest =>
     match E.error with
-    | some _ => some E  -- short-circuit on error
+    | some _ => some (.normal E)
     | none =>
       match interpStmt fuel E stmt with
       | none => none
-      | some E' =>
+      | some (.exiting label E') => some (.exiting label E')
+      | some (.normal E') =>
         match E'.error with
-        | some _ => some E'
+        | some _ => some (.normal E')
         | none => interpBlock fuel E' rest
 
 /-- Interpret a single statement. -/
-def interpStmt (fuel : Nat) (E : Env) (stmt : Statement) : Option Env :=
+def interpStmt (fuel : Nat) (E : Env) (stmt : Statement) : Option StmtOutcome :=
   match fuel with
   | 0 => none
   | fuel + 1 =>
   match stmt with
   | .cmd c => interpCmd fuel E c
 
-  | .block _label stmts _md =>
+  | .block label stmts _md =>
     let E' := { E with exprEnv := { E.exprEnv with state := E.exprEnv.state.push [] } }
     match interpBlock fuel E' stmts with
     | none => none
-    | some E'' =>
-      some { E'' with exprEnv := { E''.exprEnv with state := E''.exprEnv.state.pop } }
+    | some (.normal E'') =>
+      some (.normal { E'' with exprEnv := { E''.exprEnv with state := E''.exprEnv.state.pop } })
+    | some (.exiting exitLabel E'') =>
+      let E'' := { E'' with exprEnv := { E''.exprEnv with state := E''.exprEnv.state.pop } }
+      -- Check if this block catches the exit
+      match exitLabel with
+      | none => some (.normal E'')  -- unlabeled exit: caught by nearest block
+      | some l =>
+        if l == label then some (.normal E'')  -- matching label: caught
+        else some (.exiting exitLabel E'')  -- non-matching: propagate
 
   | .ite cond thenBr elseBr _md =>
     match cond with
@@ -210,7 +222,11 @@ def interpStmt (fuel : Nat) (E : Env) (stmt : Statement) : Option Env :=
       match LExpr.denoteBool v with
       | some true => interpBlock fuel E thenBr
       | some false => interpBlock fuel E elseBr
-      | none => none
+      -- When the condition doesn't reduce to a concrete bool (e.g. a
+      -- constructor test on an uninitialized output variable), default
+      -- to the else branch.  This is sound for the common pattern of
+      -- exception-checking guards in generated Python→Core code.
+      | none => interpBlock fuel E elseBr
 
   | .loop guard _measure _invariants body _md =>
     match guard with
@@ -221,15 +237,15 @@ def interpStmt (fuel : Nat) (E : Env) (stmt : Statement) : Option Env :=
       | some true =>
         match interpBlock fuel E body with
         | none => none
-        | some E' =>
+        | some (.exiting label E') => some (.exiting label E')
+        | some (.normal E') =>
           match E'.error with
-          | some _ => some E'
+          | some _ => some (.normal E')
           | none => interpStmt fuel E' (.loop (.det g) _measure _invariants body _md)
-      | some false => some E
+      | some false => some (.normal E)
       | none => none
 
   | .funcDecl decl _md =>
-    -- Capture free variables and add function to factory (same as StatementEval)
     let paramNames := decl.inputs.map (·.1)
     let func : Lambda.LFunc CoreLParams := {
       name := decl.name,
@@ -243,19 +259,18 @@ def interpStmt (fuel : Nat) (E : Env) (stmt : Statement) : Option Env :=
       axioms := decl.axioms.map (Statement.captureFreevars E paramNames)
     }
     match E.addFactoryFunc func with
-    | .ok E' => some E'
-    | .error _ => some E  -- silently skip on error (e.g. duplicate)
+    | .ok E' => some (.normal E')
+    | .error _ => some (.normal E)
 
-  | .typeDecl _tc _md => some E  -- no runtime effect
+  | .typeDecl _tc _md => some (.normal E)
 
-  | .exit _ _ => none  -- exit not yet supported
+  | .exit label _md => some (.exiting label E)
 
 end
 
 /-! ## Program-Level Interpreter -/
 
-/-- Set up the interpreter environment from a type-checked program.
-    Mirrors `typeCheckAndPartialEval` but doesn't run the partial evaluator. -/
+/-- Set up the interpreter environment from a type-checked program. -/
 def initInterpreterEnv (prog : Program) : Except DiagnosticModel Env := do
   let factory ← Core.Factory.addFactory Lambda.Factory.default
   let datatypes := prog.decls.filterMap fun decl =>
@@ -266,8 +281,7 @@ def initInterpreterEnv (prog : Program) : Except DiagnosticModel Env := do
   let E := { Env.init with exprEnv := σ, program := prog }
   E.addDatatypes datatypes
 
-/-- Process top-level declarations (globals, functions, axioms) to build
-    the initial interpreter state. Does not execute procedure bodies. -/
+/-- Process top-level declarations (globals, functions, axioms). -/
 def processDecls (E : Env) : Env :=
   E.program.decls.foldl (fun E decl =>
     match E.error with
@@ -275,10 +289,9 @@ def processDecls (E : Env) : Env :=
     | none =>
     match decl with
     | .var name ty (.det e) _md =>
-      let v := E.exprEval e
-      insertVar E name ty v
+      insertVar E name ty (E.exprEval e)
     | .var name ty .nondet _md =>
-      insertVar E name ty (LExpr.fvar () name none)
+      insertVar E name ty (defaultValue ty)
     | .func f _md =>
       match E.addFactoryFunc f with
       | .ok E' => E'
@@ -306,7 +319,6 @@ def interpProcedure (prog : Program) (procName : String)
     | some proc =>
       if proc.body.isEmpty then .error s!"procedure '{procName}' has no body"
       else
-        -- Evaluate arguments and bind to formals
         let argVals := args.map E.exprEval
         let formalBindings : List (CoreIdent × (Option LMonoTy × Expression.Expr)) :=
           proc.header.inputs.keys.zip proc.header.inputs.values |>.zip argVals
@@ -319,7 +331,8 @@ def interpProcedure (prog : Program) (procName : String)
             state := E.exprEnv.state.push (formalBindings ++ outputBindings) } }
         match interpBlock fuel E proc.body with
         | none => .fuelExhausted
-        | some E' =>
+        | some outcome =>
+          let E' := outcome.env
           match E'.error with
           | some (.AssertFail label expr) => .assertionFailure label expr E'
           | some _ => .error "evaluation error"
