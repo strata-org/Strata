@@ -51,7 +51,7 @@ info: program Core;
 
 type MapII := Map int int;
 type MapIMapII := Map int MapII;
-procedure P (a : MapII, b : (Map bool int), c : (Map int MapII)) returns (((a : MapII), (b : (Map bool int))), (c : (Map int MapII)))
+procedure P (a : MapII, b : Map bool int, c : Map int MapII) returns (((a : MapII), (b : (Map bool int))), (c : (Map int MapII)))
 spec {
   requires [P_requires_0]: a[0] == 0;
   requires [P_requires_1]: c[0] == a;
