@@ -52,10 +52,9 @@ private def mergeResults (fallback : Procedure × Env) (results : List (Procedur
   | [] => fallback
   | [(p, E)] => (p, E)
   | (p, E) :: rest =>
-    let allBody := rest.foldl (fun acc (proc, _) => acc ++ proc.body) p.body
     let allDeferred := rest.foldl (fun acc (_, e) => acc ++ e.deferred) E.deferred
     let maxGen      := rest.foldl (fun acc (_, e) => max acc e.exprEnv.config.gen) E.exprEnv.config.gen
-    ({ p with body := allBody }, { E with
+    (p, { E with
       deferred := allDeferred,
       exprEnv  := { E.exprEnv with config := { E.exprEnv.config with gen := maxGen } } })
 

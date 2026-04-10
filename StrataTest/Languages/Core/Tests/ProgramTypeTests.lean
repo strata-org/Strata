@@ -321,7 +321,7 @@ info: ok: [(program Core;
 -/
 #guard_msgs in
 #eval do let ans ← typeCheckAndPartialEval .default good_prog
-         return (format [ans])
+         return (format ans)
 
 ---------------------------------------------------------------------
 
@@ -434,8 +434,11 @@ info: ok: [func intID :  () → (arrow int int) := ((λ (bvar:int) %0))]
 -/
 #guard_msgs in
 #eval do let ans ← typeCheckAndPartialEval .default intIdentityFnPgm
-          let (pgm, _) := ans
-          return (format pgm)
+          if h : ans.length == 1 then
+            let (pgm, _) := ans[0]'(by grind)
+            return (format pgm)
+          else
+            return (format "Unexpected output")
 end
 
 ---------------------------------------------------------------------

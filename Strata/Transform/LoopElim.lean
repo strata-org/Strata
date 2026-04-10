@@ -205,9 +205,7 @@ def loopElim' (p : Program) : Transform.CoreTransformM (Bool × Program) :=
     labels from loop elimination, the loop was replaced by an
     over-approximation, so SAT models are demoted to unknown. -/
 def loopElimPipelinePhase : PipelinePhase where
-  transform pwf := do
-    let (changed, prog') ← loopElim' pwf.program
-    return (changed, { pwf with program := prog' })
+  transform := loopElim'
   phase.name := "LoopElim"
   phase.getValidation obligation :=
     if obligationHasLabelPrefix obligation loopElimInvariantPrefix

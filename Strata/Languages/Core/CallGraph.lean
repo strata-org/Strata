@@ -100,6 +100,12 @@ def CallGraph.getCalleesClosure (cg : CallGraph) (name : String) : List String :
   let allNodes := cg.callees.toList.map Prod.fst
   (closureGo cg.getCallees allNodes [] [name]).filter (· ≠ name)
 
+/-- True when `name` is part of a (possibly self-referencing) cycle in the
+    call graph — i.e., it can transitively reach itself through callees. -/
+def CallGraph.isRecursive (cg : CallGraph) (name : String) : Bool :=
+  cg.getCallees name |>.any fun callee =>
+    callee == name || (cg.getCalleesClosure callee).contains name
+
 /-- Compute transitive closure of callees for multiple `names`. -/
 def CallGraph.getAllCalleesClosure (cg : CallGraph) (names : List String) : List String :=
   names.flatMap (cg.getCalleesClosure ·)

@@ -5,20 +5,21 @@
 -/
 
 -- Executable with utilities for working with Strata files.
+import Strata.Backends.CBMC.CollectSymbols
+import Strata.Backends.CBMC.GOTO.CoreToGOTOPipeline
 import Strata.DDM.Integration.Java.Gen
 import Strata.Languages.Core.Verifier
 import Strata.Languages.Core.SarifOutput
 import Strata.Languages.C_Simp.Verify
 import Strata.Languages.B3.Verifier.Program
-import Strata.Util.IO
 import Strata.Languages.Laurel.LaurelToCoreTranslator
 import Strata.Languages.Python.Python
 import Strata.Languages.Python.Specs.IdentifyOverloads
 import Strata.Languages.Python.Specs.ToLaurel
 import Strata.Languages.Laurel.Grammar.AbstractToConcreteTreeTranslator
 import Strata.Languages.Laurel.Laurel
-import Strata.Backends.CBMC.CollectSymbols
-import Strata.Backends.CBMC.GOTO.CoreToGOTOPipeline
+import Strata.Transform.ProcedureInlining
+import Strata.Util.IO
 
 import Strata.SimpleAPI
 import Strata.Util.Profile
@@ -359,14 +360,6 @@ def pySpecsCommand : Command where
       | .ok () => pure ()
       | .error msg => exitFailure msg
 
-def pyTranslateCommand : Command where
-  name := "pyTranslate"
-  args := [ "file" ]
-  help := "Translate a Python Ion program to Core and print the result to stdout."
-  callback := fun v _ => do
-    let newPgm ← Strata.pythonDirectToCore v[0]
-    IO.print newPgm
-
 /-- Derive Python source file path from Ion file path.
     E.g., "tests/test_foo.python.st.ion" -> "tests/test_foo.py" -/
 def ionPathToPythonPath (ionPath : String) : Option String :=
@@ -405,98 +398,6 @@ def formatRelatedPositions (md : Imperative.MetaData Core.Expression)
         let pos := fm.toPosition fr.range.start
         some s!"\n  Related location: line {pos.line}, col {pos.column}"
     String.join lines.toList
-
-def pyAnalyzeCommand : Command where
-  name := "pyAnalyze"
-  args := [ "file" ]
-  flags := [{ name := "verbose", help := "Enable verbose output." },
-            { name := "sarif", help := "Write results as SARIF to <file>.sarif." },
-            { name := "unique-bound-names", help := "Use globally unique names for quantifier-bound variables." },
-            { name := "vc-directory",
-              help := "Store VCs in SMT-Lib format in <dir>.",
-              takesArg := .arg "dir" }]
-  help := "Verify a Python Ion program. Translates to Core, inlines procedures, and runs SMT verification."
-  callback := fun v pflags => do
-    let verbose := pflags.getBool "verbose"
-    let outputSarif := pflags.getBool "sarif"
-    let uniqueBoundNames := pflags.getBool "unique-bound-names"
-    let filePath := v[0]
-    -- Try to read the Python source for line number conversion
-    let pySourceOpt ← tryReadPythonSource filePath
-    let sourcePathForMetadata := match pySourceOpt with
-      | some (pyPath, _) => pyPath
-      | none => filePath
-    let newPgm ← Strata.pythonDirectToCore filePath sourcePathForMetadata
-    if verbose then
-      IO.print newPgm
-    match (Core.inlineProcedures newPgm ⟨ .some (λ name _ => name ≠ "main") ⟩) with
-    | .error e => exitInternalError e
-    | .ok newPgm =>
-      if verbose then
-        IO.println "Inlined: "
-        IO.print newPgm
-      let solverName : String := "Strata/Languages/Python/z3_parallel.py"
-      let verboseMode := VerboseMode.ofBool verbose
-      let vcDir : Option System.FilePath := pflags.getString "vc-directory" |>.map (⟨·⟩)
-      let options :=
-              { VerifyOptions.default with
-                stopOnFirstError := false,
-                verbose := verboseMode,
-                removeIrrelevantAxioms := .Precise,
-                solver := solverName,
-                uniqueBoundNames := uniqueBoundNames,
-                vcDirectory := vcDir }
-      let vcResults ←
-        match ← Core.verifyProgram newPgm options
-                  (moreFns := Strata.Python.ReFactory)
-                  (externalPhases := [Strata.frontEndPhase]) |>.toBaseIO with
-        | .ok r => pure r
-        | .error msg => exitInternalError msg
-      let mfm : Option (String × Lean.FileMap) := match pySourceOpt with
-        | some (pyPath, srcText) => some (pyPath, .ofString srcText)
-        | none => none
-      let mut s := ""
-      for vcResult in vcResults do
-        -- Build location string based on available metadata
-        let (locationPrefix, locationSuffix) := match Imperative.getFileRange vcResult.obligation.metadata with
-          | some fr =>
-            if fr.range.isNone then ("", "")
-            else
-              match mfm with
-              | some (pyPath, fm) =>
-                -- Check if this metadata is from the Python source (not CorePrelude)
-                match fr.file with
-                | .file path =>
-                  if path == pyPath then
-                    let pos := fm.toPosition fr.range.start
-                    -- For failures, show at beginning; for passes, show at end
-                    if vcResult.isFailure then
-                      (s!"Assertion failed at line {pos.line}, col {pos.column}: ", "")
-                    else
-                      ("", s!" (at line {pos.line}, col {pos.column})")
-                  else
-                    -- From CorePrelude or other source, show byte offsets
-                    if vcResult.isFailure then
-                      (s!"Assertion failed for prelude: ", "")
-                    else
-                      ("", s!" (in prelude)")
-              | none =>
-                if vcResult.isFailure then
-                  (s!"Assertion failed at byte offset: ", "")
-                else
-                  ("", s!" (at byte offset)")
-          | none => ("", "")
-        let outcomeStr := vcResult.formatOutcome
-        let relatedStr := formatRelatedPositions vcResult.obligation.metadata mfm
-        s := s ++ s!"\n{locationPrefix}{vcResult.obligation.label}: \
-                      {outcomeStr}{locationSuffix}{relatedStr}\n"
-      IO.println s
-      -- Output in SARIF format if requested
-      if outputSarif then
-        let files := match mfm with
-          | some (pyPath, fm) => Map.empty.insert (Strata.Uri.file pyPath) fm
-          | none => Map.empty
-        Core.Sarif.writeSarifOutput .deductive files vcResults (filePath ++ ".sarif")
 
 /-! ### pyAnalyzeLaurel result helpers
 
@@ -681,30 +582,12 @@ def pyAnalyzeLaurelCommand : Command where
     -- Split prelude / user procedure names.
     -- Only procedures whose file range matches the user source are targets.
     let userSourcePath := sourcePath.getD filePath
-    let (preludeNames, userProcNames) :=
+    let (_preludeNames, userProcNames) :=
       Strata.splitProcNames coreProgram [userSourcePath]
 
     if let some dir := keepDir then
       let path := s!"{dir}/{baseName}.core"
       IO.FS.writeFile path (toString coreProgram)
-
-    -- Inline pyspec procedures so their precondition assertions are checked
-    -- at call sites with concrete arguments.
-    let pyspecFiles := pflags.getRepeated "pyspec"
-    let coreProgram ← profileStep profile "Inline PySpec procedures" do
-      if pyspecFiles.size > 0 then
-        match Core.inlineProcedures coreProgram
-              ⟨.some (fun name _ => name ≠ "__main__" && !preludeNames.contains name)⟩ with
-        | .error e => exitPyAnalyzeInternalError s!"Inlining failed: {e}"
-        | .ok inlined => do
-          if verbose then
-            IO.println "\n==== Core Program (after inlining) ===="
-            IO.print inlined
-          if let some dir := keepDir then
-            let path := s!"{dir}/{baseName}.inlined.core"
-            IO.FS.writeFile path (toString inlined)
-          pure inlined
-      else pure coreProgram
 
     -- Verify using Core verifier
     -- --keep-all-files implies vc-directory if not explicitly set
@@ -714,11 +597,20 @@ def pyAnalyzeLaurelCommand : Command where
         verbose := .quiet, removeIrrelevantAxioms := .Precise,
         vcDirectory := baseVcDir }
     let options ← parseVerifyOptions pflags pyAnalyzeBase
+    let isBugFinding := options.checkMode == .bugFinding
+                      || options.checkMode == .bugFindingAssumingCompleteSpec
+    let inlinePhases : List Core.PipelinePhase :=
+      if isBugFinding then
+        [Core.procedureInliningPipelinePhase
+          { doInline := fun name a => name ≠ "__main__" && Core.doInlineNonRecursive name a
+            maxIters := some 10 }]
+      else []
     let vcResults ← profileStep profile "SMT verification" do
       match ← Core.verifyProgram coreProgram options
                 (moreFns := Strata.Python.ReFactory)
                 (proceduresToVerify := some userProcNames)
-                (externalPhases := [Strata.frontEndPhase]) |>.toBaseIO with
+                (externalPhases := [Strata.frontEndPhase])
+                (prefixPhases := inlinePhases) |>.toBaseIO with
       | .ok r => pure r
       | .error msg => exitPyAnalyzeInternalError msg
 
@@ -765,7 +657,7 @@ def pyAnalyzeToGotoCommand : Command where
       | none => filePath
     let sourceText := pySourceOpt.map (·.2)
     let newPgm ← Strata.pythonDirectToCore filePath sourcePathForMetadata
-    match Core.inlineProcedures newPgm ⟨.some (fun name _ => name ≠ "main")⟩ with
+    match Core.inlineProcedures newPgm { doInline := (fun name _ => name ≠ "main") } with
     | .error e => exitInternalError e
     | .ok newPgm =>
       -- Type-check the full program (registers Python types like ExceptOrNone)
@@ -1213,9 +1105,9 @@ def transformCommand : Command where
       for pc in passConfigs do
         match pc.name with
         | "inlineProcedures" =>
-          let opts : Strata.Core.InlineTransformOptions :=
+          let opts : Core.InlineTransformOptions :=
             if pc.procedures.isEmpty then {}
-            else { doInline := some (fun name _ => name ∈ pc.procedures) }
+            else { doInline := (fun name _ => name ∈ pc.procedures) }
           passes := passes ++ [.inlineProcedures opts]
         | "loopElim" =>
           passes := passes ++ [.loopElim]
@@ -1335,12 +1227,11 @@ def commandGroups : List CommandGroup := [
   { name := "Code Generation"
     commands := [javaGenCommand] },
   { name := "Python"
-    commands := [pyAnalyzeCommand, pyAnalyzeLaurelCommand,
+    commands := [pyAnalyzeLaurelCommand,
                  pyResolveOverloadsCommand,
                  pySpecsCommand, pySpecToLaurelCommand,
                  pyAnalyzeLaurelToGotoCommand,
                  pyAnalyzeToGotoCommand,
-                 pyTranslateCommand,
                  pyTranslateLaurelCommand] },
   { name := "Laurel"
     commands := [laurelAnalyzeCommand, laurelAnalyzeBinaryCommand,

@@ -291,7 +291,7 @@ end Core.Deduplication
     variable declarations. Model-preserving because it only introduces
     definitional equalities without changing program semantics. -/
 def Core.deduplicationPipelinePhase : Core.PipelinePhase :=
-  Core.modelPreservingProgramPhase "Deduplication" fun prog => do
+  Core.modelPreservingPipelinePhase "Deduplication" fun prog => do
     return (true, Core.Deduplication.deduplicateProgram prog)
 
 end -- public section

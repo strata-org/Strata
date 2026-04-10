@@ -8,7 +8,6 @@ module
 public import Strata.Transform.CoreTransform
 public import Strata.DL.Imperative.SMTUtils
 public import Strata.DL.Imperative.EvalContext
-public import Strata.Languages.Core.Env
 
 /-! # Pipeline Phase Definitions for Model Validation
 
@@ -50,40 +49,22 @@ def obligationHasLabelPrefix (obligation : ProofObligation Expression)
   obligation.assumptions.any fun pc =>
     pc.any fun (label, _) => label.startsWith pfx
 
-/-- A program bundled with its function factory. Phases operate on this
-    pair so that transforms can add functions based on program content.
-    After partial evaluation, `deferred` holds the collected proof obligations
-    and `env` holds the Env needed for SMT encoding. -/
-structure ProgramWithFactory where
-  program : Program
-  factory : @Lambda.Factory CoreLParams
-  deferred : Imperative.ProofObligations Expression := #[]
-  env : Option Env := none
-
 /-- A verification pipeline phase that pairs a program transformation with
     its model validation. This coupling ensures that adding a new transform
     also requires specifying its soundness annotation, and vice versa. -/
 structure PipelinePhase where
   /-- The program-to-program transformation. -/
-  transform : ProgramWithFactory → Transform.CoreTransformM (Bool × ProgramWithFactory)
+  transform : Program → Transform.CoreTransformM (Bool × Program)
   /-- The model validation for this phase. -/
   phase : AbstractedPhase
 
 /-- A model-preserving pipeline phase: the transform is applied but it
     cannot introduce spurious models (e.g. it only removes information). -/
 def modelPreservingPipelinePhase (name : String)
-    (t : ProgramWithFactory → Transform.CoreTransformM (Bool × ProgramWithFactory)) : PipelinePhase where
+    (t : Program → Transform.CoreTransformM (Bool × Program)) : PipelinePhase where
   transform := t
   phase.name := name
   phase.getValidation _ := .modelPreserving
-
-/-- Convenience: create a model-preserving phase that only transforms the
-    program and passes the factory through unchanged. -/
-def modelPreservingProgramPhase (name : String)
-    (t : Program → Transform.CoreTransformM (Bool × Program)) : PipelinePhase :=
-  modelPreservingPipelinePhase name fun pwf => do
-    let (changed, prog') ← t pwf.program
-    return (changed, { pwf with program := prog' })
 
 end -- public section
 

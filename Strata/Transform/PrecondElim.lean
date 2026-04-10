@@ -381,7 +381,7 @@ end PrecondElim
     new assertions and procedures without abstracting existing ones. -/
 def precondElimPipelinePhase
     (factory : @Lambda.Factory CoreLParams) : PipelinePhase :=
-  modelPreservingProgramPhase "PrecondElim" fun prog => do
+  modelPreservingPipelinePhase "PrecondElim" fun prog => do
     PrecondElim.precondElim prog factory
 
 end Core

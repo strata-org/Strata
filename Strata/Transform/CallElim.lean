@@ -166,9 +166,7 @@ end CallElim
     labels from call elimination, the callee body was replaced by its
     contract, which is an over-approximation. -/
 def callElimPipelinePhase : PipelinePhase where
-  transform pwf := do
-    let (changed, prog') ← CallElim.callElim' pwf.program
-    return (changed, { pwf with program := prog' })
+  transform := CallElim.callElim'
   phase.name := "CallElim"
   phase.getValidation obligation :=
     if obligationHasLabelPrefix obligation CallElim.callElimAssumePrefix then

@@ -71,7 +71,7 @@ def formatProofObligations (obs : Array (Imperative.ProofObligation Expression))
 
 def typeCheckAndPartialEval (options : VerifyOptions) (program : Program)
     (moreFns : Lambda.Factory CoreLParams := Lambda.Factory.default) :
-    Except DiagnosticModel (Program × Env) := do
+    Except DiagnosticModel (List (Program × Env)) := do
   let factory ← Core.Factory.addFactory moreFns
   let program ← typeCheck options program moreFns
   let datatypes := program.decls.filterMap fun decl =>
@@ -81,11 +81,12 @@ def typeCheckAndPartialEval (options : VerifyOptions) (program : Program)
   let σ ← (Lambda.LState.init).addFactory factory
   let E := { Env.init with exprEnv := σ, program := program }
   let E ← E.addDatatypes datatypes
-  let (p, E) := Program.eval E
+  let pEs := Program.eval E
   if options.verbose >= .normal then do
     dbg_trace f!"{Std.Format.line}VCs:"
-    dbg_trace f!"{formatProofObligations E.deferred}"
-  return (p, E)
+    for (_p, E) in pEs do
+      dbg_trace f!"{formatProofObligations E.deferred}"
+  return pEs
 
 instance instCoreProgramString : ToString (Program) where
   toString p := toString (Core.formatProgram p)

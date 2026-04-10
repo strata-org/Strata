@@ -122,9 +122,6 @@ structure CoreTransformState where
   -- declarations (e.g., PrecondElim). The factory grows as function
   -- declarations are encountered during traversal.
   factory: Option (@Lambda.Factory CoreLParams) := .none
-  -- Optional diagnostic error stored by pipeline phases (e.g., type check)
-  -- that need to propagate structured errors with source locations.
-  diagnosticError: Option Strata.DiagnosticModel := .none
 
 @[simp]
 def CoreTransformState.emp : CoreTransformState :=
@@ -146,8 +143,7 @@ def liftCoreGenM {α : Type} (cgm : CoreGenM α) : StateM CoreTransformState α 
       currentProgram := coreTransformState.currentProgram,
       currentProcedureName := coreTransformState.currentProcedureName,
       cachedAnalyses := coreTransformState.cachedAnalyses,
-      factory := coreTransformState.factory,
-      diagnosticError := coreTransformState.diagnosticError })
+      factory := coreTransformState.factory })
 
 instance : MonadLift CoreGenM (StateM CoreTransformState) where
   monadLift := liftCoreGenM
@@ -391,6 +387,35 @@ def runProgram
   })
   return (changed, newProg)
 
+/-- Repeatedly apply a command-level transformation until no more changes occur
+    or the iteration limit is reached.
+    - `maxIters = none`: repeat until a fixed point (no changes).
+    - `maxIters = some n`: run up to `n` iterations, stopping early if no change. -/
+def runProgramUntil
+    (f : Command → CoreTransformM (Option (List Statement)))
+    (p : Program)
+    (maxIters : Option Nat := none)
+    (targetProcList : Option (List String) := .none)
+  : CoreTransformM (Bool × Program) := do
+  match maxIters with
+  | some n =>
+    let mut prog := p
+    let mut anyChanged := false
+    for _ in List.range n do
+      let (changed, prog') ← runProgram f prog targetProcList
+      prog := prog'
+      if changed then anyChanged := true
+      if !changed then break
+    return (anyChanged, prog)
+  | none =>
+    let mut prog := p
+    let mut anyChanged := false
+    repeat
+      let (changed, prog') ← runProgram f prog targetProcList
+      prog := prog'
+      if changed then anyChanged := true
+      if !changed then break
+    return (anyChanged, prog)
 
 @[expose, simp]
 def runWith {α : Type} (p : α) (f : α → CoreTransformM β)
