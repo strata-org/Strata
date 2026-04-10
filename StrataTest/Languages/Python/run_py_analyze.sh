@@ -1,15 +1,13 @@
 #!/bin/bash
 
-# Usage: ./run_py_analyze.sh [laurel] [--update] [--filter <pattern>] [--vc-directory <dir>]
+# Usage: ./run_py_analyze.sh [--update] [--filter <pattern>] [--vc-directory <dir>]
 # Runs pyAnalyzeLaurel on all test_*.py files and compares output to expected.
 # With --update, overwrite existing expected files with actual output
 # With --filter <pattern>, only run tests whose name contains <pattern>
 # With --vc-directory <dir>, store VCs in SMT-Lib format in <dir>
-# Note: pyAnalyze (non-Laurel) is deprecated; laurel mode is the default.
 
 failed=0
 update=0
-mode="laurel"
 filter=""
 vc_directory=""
 
@@ -18,37 +16,20 @@ while [ $# -gt 0 ]; do
         --update) update=1 ;;
         --filter) filter="$2"; shift ;;
         --vc-directory) vc_directory="$2"; shift ;;
-        *) mode="$1" ;;
+        laurel) ;; # accepted for backward compatibility
+        *) echo "Unknown argument: $1"; exit 1 ;;
     esac
     shift
 done
 
-if [ "$mode" = "laurel" ]; then
-    command="pyAnalyzeLaurel"
-    expected_dir="expected_laurel"
-    skip_tests=""
-else
-    command="pyAnalyze"
-    expected_dir="expected_non_laurel"
-    skip_tests=""
-fi
+command="pyAnalyzeLaurel"
+expected_dir="expected_laurel"
 
 (cd ../../.. && lake exe strata --help > /dev/null)
 
 for test_file in tests/test_*.py; do
     if [ -f "$test_file" ]; then
         base_name=$(basename "$test_file" .py)
-
-        # Skip tests if specified
-        skip=0
-        for skip_test in $skip_tests; do
-            if [ "$base_name" = "$skip_test" ]; then
-                echo "Skipping: $base_name"
-                skip=1
-                break
-            fi
-        done
-        [ $skip -eq 1 ] && continue
 
         # Apply name filter if specified
         if [ -n "$filter" ] && [[ "$base_name" != *"$filter"* ]]; then

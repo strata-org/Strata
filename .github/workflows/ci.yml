@@ -94,6 +94,10 @@ jobs:
         run: |
           StrataTest/DDM/Integration/Java/regenerate-testdata.sh
           git diff --exit-code StrataTest/DDM/Integration/Java/testdata/
+      - name: Verify generated editor syntax files are up to date
+        run: |
+          lake env lean --run editors/GenSyntax.lean all
+          git diff --exit-code editors/vscode/syntaxes/ editors/emacs/
       - name: Build and run strata verify
         run: lake exe strata verify Examples/SimpleProc.core.st
       - name: Build BoogieToStrata

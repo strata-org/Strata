@@ -1,0 +1,7 @@
+test_class_mixed_init.py(11, 4): ✅ pass - callElimAssert_requires_6
+test_class_mixed_init.py(12, 4): ✅ pass - callElimAssert_requires_2
+test_class_mixed_init.py(13, 4): ✅ pass - class with init
+test_class_mixed_init.py(13, 4): ❓ unknown - class with init
+test_class_mixed_init.py(10, 0): ✅ pass - postcondition
+DETAIL: 4 passed, 0 failed, 1 inconclusive
+RESULT: Inconclusive
