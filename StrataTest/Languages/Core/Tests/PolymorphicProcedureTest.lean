@@ -62,11 +62,11 @@ Model:
 [DEBUG] Evaluated program:
 program Core;
 
-datatype List (a : Type) {(
-  (Nil())),
-  (Cons(head : a, tail : (List a)))
+datatype List (a : Type) {
+  Nil(),
+  Cons(head : a, tail : List a)
 };
-procedure Extract (xs : (List $__ty0)) returns (h : ($__ty5))
+procedure Extract (xs : List $__ty0) returns (h : ($__ty5))
 spec {
   requires [Extract_requires_0]: List..isCons(xs);
   } {
