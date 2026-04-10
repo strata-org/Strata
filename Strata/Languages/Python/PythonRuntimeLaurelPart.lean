@@ -406,13 +406,8 @@ function List_set (l : ListAny, i : int, v: Any) : ListAny
 //Require recursive function on int
 function List_repeat (l: ListAny, n: int): ListAny;
 
-function ListAny_range(i: Any) : ListAny;
-
-function range (i: Any) : Any
-  requires Any..isfrom_int(i)
-{
-  from_ListAny (ListAny_range(i))
-};
+function range (start: Any, stop: Any, step: Any) : Any
+  requires Any..isfrom_int(start) && Any..isfrom_None(stop) && Any..isfrom_None(step);
 
 // /////////////////////////////////////////////////////////////////////////////////////
 // DictStrAny functions
@@ -1025,7 +1020,7 @@ public def pythonRuntimeLaurelPart : Laurel.Program :=
   | .ok p =>
     let addExceptionMd := p.staticProcedures.map (λ f =>
       if f.name.text ∈ AnyMaybeExceptionList then
-        {f with md:= f.md.withPropertySummary "AnyMaybeExcept" }
+        {f with name := {f.name with md := f.name.md.withPropertySummary "AnyMaybeExcept" }}
       else f)
     {p with staticProcedures := addExceptionMd}
   | .error e => dbg_trace s!"SOUND BUG: Failed to parse Python runtime Laurel part: {e}"; default
