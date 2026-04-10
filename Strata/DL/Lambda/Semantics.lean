@@ -2525,6 +2525,15 @@ private theorem eval_factory_post_eraseMetadata_invariant
         | some i => ((args₂.map (fun a => LExpr.eval n' σ a))[i]? |>.map
             (LExpr.isConstrApp σ.config.factory)).getD false
         | none => false))
+    (h_canonicalArgAt_eq : ∀ idx : Option Nat,
+        (match idx with
+        | some i => ((args₁.map (fun a => LExpr.eval n' σ a))[i]? |>.map
+            (LExpr.isCanonicalValue σ.config.factory)).getD false
+        | none => false) =
+        (match idx with
+        | some i => ((args₂.map (fun a => LExpr.eval n' σ a))[i]? |>.map
+            (LExpr.isCanonicalValue σ.config.factory)).getD false
+        | none => false))
     (h_all_canonical :
         (args₁.map (fun a => LExpr.eval n' σ a)).all (LExpr.isCanonicalValue σ.config.factory) =
         (args₂.map (fun a => LExpr.eval n' σ a)).all (LExpr.isCanonicalValue σ.config.factory))
@@ -2534,6 +2543,9 @@ private theorem eval_factory_post_eraseMetadata_invariant
     (let args' := args₁.map (fun a => LExpr.eval n' σ a)
      let cA := fun (idx : Option Nat) => match idx with
        | some i => (args'[i]? |>.map (LExpr.isConstrApp σ.config.factory)).getD false
+       | none => false
+     let cV := fun (idx : Option Nat) => match idx with
+       | some i => (args'[i]? |>.map (LExpr.isCanonicalValue σ.config.factory)).getD false
        | none => false
      if _h: f₁.body.isSome && (f₁.attr.contains Strata.DL.Util.FuncAttr.inline ||
          cA (Strata.DL.Util.FuncAttr.findInlineIfConstr f₁.attr)) then
@@ -2546,7 +2558,8 @@ private theorem eval_factory_post_eraseMetadata_invariant
      else
        let new_e := @LExpr.mkApp Tbase.mono e₁.metadata op₁ args'
        if args'.all (LExpr.isCanonicalValue σ.config.factory) ||
-           cA (Strata.DL.Util.FuncAttr.findEvalIfConstr f₁.attr) then
+           cA (Strata.DL.Util.FuncAttr.findEvalIfConstr f₁.attr) ||
+           cV (Strata.DL.Util.FuncAttr.findEvalIfCanonical f₁.attr) then
          match f₁.concreteEval with
          | none => new_e
          | some ceval => match ceval new_e.metadata args' with
@@ -2556,6 +2569,9 @@ private theorem eval_factory_post_eraseMetadata_invariant
     (let args' := args₂.map (fun a => LExpr.eval n' σ a)
      let cA := fun (idx : Option Nat) => match idx with
        | some i => (args'[i]? |>.map (LExpr.isConstrApp σ.config.factory)).getD false
+       | none => false
+     let cV := fun (idx : Option Nat) => match idx with
+       | some i => (args'[i]? |>.map (LExpr.isCanonicalValue σ.config.factory)).getD false
        | none => false
      if _h: f₁.body.isSome && (f₁.attr.contains Strata.DL.Util.FuncAttr.inline ||
          cA (Strata.DL.Util.FuncAttr.findInlineIfConstr f₁.attr)) then
@@ -2568,7 +2584,8 @@ private theorem eval_factory_post_eraseMetadata_invariant
      else
        let new_e := @LExpr.mkApp Tbase.mono e₂.metadata op₂ args'
        if args'.all (LExpr.isCanonicalValue σ.config.factory) ||
-           cA (Strata.DL.Util.FuncAttr.findEvalIfConstr f₁.attr) then
+           cA (Strata.DL.Util.FuncAttr.findEvalIfConstr f₁.attr) ||
+           cV (Strata.DL.Util.FuncAttr.findEvalIfCanonical f₁.attr) then
          match f₁.concreteEval with
          | none => new_e
          | some ceval => match ceval new_e.metadata args' with
@@ -2589,19 +2606,27 @@ private theorem eval_factory_post_eraseMetadata_invariant
         | none => false))) := by
     congr 1; congr 1
     exact h_constrArgAt_eq _
-  -- Step 2: show canonical/evalIfConstr condition is the same
+  -- Step 2: show canonical/evalIfConstr/evalIfCanonical condition is the same
   have h_can_cond_eq :
       ((args₁.map (fun a => LExpr.eval n' σ a)).all (LExpr.isCanonicalValue σ.config.factory) ||
         (match Strata.DL.Util.FuncAttr.findEvalIfConstr f₁.attr with
         | some i => ((args₁.map (fun a => LExpr.eval n' σ a))[i]? |>.map
             (LExpr.isConstrApp σ.config.factory)).getD false
+        | none => false) ||
+        (match Strata.DL.Util.FuncAttr.findEvalIfCanonical f₁.attr with
+        | some i => ((args₁.map (fun a => LExpr.eval n' σ a))[i]? |>.map
+            (LExpr.isCanonicalValue σ.config.factory)).getD false
         | none => false)) =
       ((args₂.map (fun a => LExpr.eval n' σ a)).all (LExpr.isCanonicalValue σ.config.factory) ||
         (match Strata.DL.Util.FuncAttr.findEvalIfConstr f₁.attr with
         | some i => ((args₂.map (fun a => LExpr.eval n' σ a))[i]? |>.map
             (LExpr.isConstrApp σ.config.factory)).getD false
+        | none => false) ||
+        (match Strata.DL.Util.FuncAttr.findEvalIfCanonical f₁.attr with
+        | some i => ((args₂.map (fun a => LExpr.eval n' σ a))[i]? |>.map
+            (LExpr.isCanonicalValue σ.config.factory)).getD false
         | none => false)) := by
-    rw [h_all_canonical, h_constrArgAt_eq]
+    rw [h_all_canonical, h_constrArgAt_eq, h_canonicalArgAt_eq]
   -- Step 3: unfold and case split
   simp only []
   split
@@ -2628,7 +2653,7 @@ private theorem eval_factory_post_eraseMetadata_invariant
     rename_i h_nil₁
     have h_nil₂ := h_nil₁; rw [h_inline_cond_eq] at h_nil₂
     simp only [dif_neg h_nil₂]
-    -- Now split on canonical/evalIfConstr (LHS is a regular if, not dite)
+    -- Now split on canonical/evalIfConstr/evalIfCanonical (LHS is a regular if, not dite)
     split
     · -- LHS canonical
       rename_i h_can₁
@@ -2758,6 +2783,31 @@ theorem eval_eraseMetadata_invariant
             · have hi₂ : ¬(i < args₂.length) := by omega
               simp [List.getElem?_eq_none_iff.mpr (by omega : args₁.length ≤ i)]
               simp [List.getElem?_eq_none_iff.mpr (by omega : args₂.length ≤ i)]
+        have h_isCanonicalValue_eq : ∀ i (hi₁ : i < args₁.length) (hi₂ : i < args₂.length),
+            LExpr.isCanonicalValue σ.config.factory (LExpr.eval n' σ (args₁.get ⟨i, hi₁⟩)) =
+            LExpr.isCanonicalValue σ.config.factory (LExpr.eval n' σ (args₂.get ⟨i, hi₂⟩)) :=
+          fun i hi₁ hi₂ => isCanonicalValue_eraseMetadata_eq _ _ _ (h_eval_getElem_eM i hi₁ hi₂)
+        have h_canonicalArgAt_eq : ∀ idx : Option Nat,
+            (match idx with
+            | some i => ((args₁.map (fun a => LExpr.eval n' σ a))[i]? |>.map
+                (LExpr.isCanonicalValue σ.config.factory)).getD false
+            | none => false) =
+            (match idx with
+            | some i => ((args₂.map (fun a => LExpr.eval n' σ a))[i]? |>.map
+                (LExpr.isCanonicalValue σ.config.factory)).getD false
+            | none => false) := by
+          intro idx
+          match idx with
+          | none => rfl
+          | some i =>
+            simp only [List.getElem?_map]
+            by_cases hi₁ : i < args₁.length
+            · have hi₂ : i < args₂.length := by omega
+              simp [List.getElem?_eq_getElem hi₁, List.getElem?_eq_getElem hi₂]
+              exact h_isCanonicalValue_eq i hi₁ hi₂
+            · have hi₂ : ¬(i < args₂.length) := by omega
+              simp [List.getElem?_eq_none_iff.mpr (by omega : args₁.length ≤ i)]
+              simp [List.getElem?_eq_none_iff.mpr (by omega : args₂.length ≤ i)]
         -- Helper: all canonical
         have h_all_canonical :
             (args₁.map (fun a => LExpr.eval n' σ a)).all (LExpr.isCanonicalValue σ.config.factory) =
@@ -2783,7 +2833,7 @@ theorem eval_eraseMetadata_invariant
         have h_args_eq_eM := h_eval_args_eM
         exact eval_factory_post_eraseMetadata_invariant σ n' hWF f₁
           e₁ e₂ op₁ op₂ args₁ args₂ h_call₁ h_eval_args_eM h_eM h_op_eM
-          h_constrArgAt_eq h_all_canonical ih
+          h_constrArgAt_eq h_canonicalArgAt_eq h_all_canonical ih
       · -- callOfLFunc e₁ = none → evalCore path
         rename_i h_none₁
         have h_none₂ := callOfLFunc_none_of_eraseMetadata_eq σ.config.factory _ _ false h_eM h_none₁

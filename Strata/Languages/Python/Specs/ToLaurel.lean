@@ -327,70 +327,94 @@ private def mkStmtWithLoc (e : StmtExpr) (loc : SourceRange) (msg : String := ""
     which are resolved after the Core prelude is prepended. -/
 def specExprToLaurel (e : SpecExpr) (md : Imperative.MetaData Core.Expression)
   : ToLaurelM (Option StmtExprMd) :=
+  -- Use per-node source range when available, falling back to the
+  -- nearest ancestor's md for nodes with default (empty) locations.
+  -- This is intentional: the parent's location is a closer approximation
+  -- than the function-level metadata for nodes without their own location.
+  let nodeMd (loc : SourceRange) : ToLaurelM (Imperative.MetaData Core.Expression) := do
+    if loc == default then pure md
+    else do
+      let ctx ← read
+      let fr : FileRange := { file := .file ctx.filepath.toString, range := loc }
+      pure #[⟨Imperative.MetaData.fileRange, .fileRange fr⟩]
   match e with
-  | .placeholder => do
-    reportError default "Placeholder expression not translatable"
+  | .placeholder loc => do
+    reportError loc "Placeholder expression not translatable"
     return none
-  | .var name => return some (mkStmt (.Identifier (mkId name)) md)
-  | .intLit v => return some (mkStmt (.StaticCall (mkId "from_int")
+  | .var name loc => do
+    let md ← nodeMd loc
+    return some (mkStmt (.Identifier (mkId name)) md)
+  | .intLit v loc => do
+    let md ← nodeMd loc
+    return some (mkStmt (.StaticCall (mkId "from_int")
       [mkStmt (.LiteralInt v) md]) md)
-  | .floatLit _ => do
-    reportError default "Float literals not yet supported in preconditions"
+  | .floatLit _ loc => do
+    reportError loc "Float literals not yet supported in preconditions"
     return none
-  | .getIndex subject field =>
+  | .getIndex subject field loc =>
     match subject with
-    | .var "kwargs" => return some (mkStmt (.Identifier (mkId field)) md)
+    | .var "kwargs" .. => do
+      let md ← nodeMd loc
+      return some (mkStmt (.Identifier (mkId field)) md)
     | _ => do
+      let md ← nodeMd loc
       let s? ← specExprToLaurel subject md
       return s?.map fun s =>
         mkStmt (.StaticCall (mkId "Any_get")
           [s, mkStmt (.StaticCall (mkId "from_str")
             [mkStmt (.LiteralString field) md]) md]) md
-  | .isInstanceOf _ typeName => do
-    reportError default s!"isinstance check for '{typeName}' not yet supported in preconditions"
+  | .isInstanceOf _ typeName loc => do
+    reportError loc s!"isinstance check for '{typeName}' not yet supported in preconditions"
     return none
-  | .len subject => do
-    -- len(x) where x is Any: Str.Length(Any..as_string!(x)) wrapped as from_int
+  | .len subject loc => do
+    let md ← nodeMd loc
     let s? ← specExprToLaurel subject md
     return s?.map fun s =>
       let unwrapped := mkStmt (.StaticCall (mkId "Any..as_string!") [s]) md
       mkStmt (.StaticCall (mkId "from_int")
         [mkStmt (.StaticCall (mkId "Str.Length") [unwrapped]) md]) md
-  | .intGe subject bound => do
+  | .intGe subject bound loc => do
+    let md ← nodeMd loc
     let s? ← specExprToLaurel subject md; let b? ← specExprToLaurel bound md
     return do
       let s ← s?; let b ← b?
       some (mkStmt (.PrimitiveOp .Geq
         [mkStmt (.StaticCall (mkId "Any..as_int!") [s]) md,
          mkStmt (.StaticCall (mkId "Any..as_int!") [b]) md]) md)
-  | .intLe subject bound => do
+  | .intLe subject bound loc => do
+    let md ← nodeMd loc
     let s? ← specExprToLaurel subject md; let b? ← specExprToLaurel bound md
     return do
       let s ← s?; let b ← b?
       some (mkStmt (.PrimitiveOp .Leq
         [mkStmt (.StaticCall (mkId "Any..as_int!") [s]) md,
          mkStmt (.StaticCall (mkId "Any..as_int!") [b]) md]) md)
-  | .floatGe subject bound => do
+  | .floatGe subject bound loc => do
+    let md ← nodeMd loc
     let s? ← specExprToLaurel subject md; let b? ← specExprToLaurel bound md
     return do
       let s ← s?; let b ← b?
       let sF := mkStmt (.StaticCall (mkId "Any..as_float!") [s]) md
       let bF := mkStmt (.StaticCall (mkId "Any..as_float!") [b]) md
       some (mkStmt (.PrimitiveOp .Geq [sF, bF]) md)
-  | .floatLe subject bound => do
+  | .floatLe subject bound loc => do
+    let md ← nodeMd loc
     let s? ← specExprToLaurel subject md; let b? ← specExprToLaurel bound md
     return do
       let s ← s?; let b ← b?
       let sF := mkStmt (.StaticCall (mkId "Any..as_float!") [s]) md
       let bF := mkStmt (.StaticCall (mkId "Any..as_float!") [b]) md
       some (mkStmt (.PrimitiveOp .Leq [sF, bF]) md)
-  | .not inner => do
+  | .not inner loc => do
+    let md ← nodeMd loc
     let i? ← specExprToLaurel inner md
     return i?.map fun i => mkStmt (.PrimitiveOp .Not [i]) md
-  | .implies cond body => do
+  | .implies cond body loc => do
+    let md ← nodeMd loc
     let c? ← specExprToLaurel cond md; let b? ← specExprToLaurel body md
     return do let c ← c?; let b ← b?; some (mkStmt (.PrimitiveOp .Implies [c, b]) md)
-  | .enumMember subject values => do
+  | .enumMember subject values loc => do
+    let md ← nodeMd loc
     let s? ← specExprToLaurel subject md
     return s?.map fun s =>
       let sStr := mkStmt (.StaticCall (mkId "Any..as_string!") [s]) md
@@ -398,10 +422,10 @@ def specExprToLaurel (e : SpecExpr) (md : Imperative.MetaData Core.Expression)
         mkStmt (.PrimitiveOp .Eq [sStr, mkStmt (.LiteralString v) md]) md
       eqs.foldl (init := mkStmt (.LiteralBool false) md) fun acc eq =>
         mkStmt (.PrimitiveOp .Or [acc, eq]) md
-  | .containsKey container key => do
+  | .containsKey container key loc => do
+    let md ← nodeMd loc
     match container with
-    | .var "kwargs" =>
-      -- containsKey(kwargs, "key") → parameter was provided (not None)
+    | .var "kwargs" .. =>
       return some (mkStmt (.PrimitiveOp .Not
         [mkStmt (.StaticCall (mkId "Any..isfrom_None") [mkStmt (.Identifier (mkId key)) md]) md])
         md)
@@ -411,16 +435,17 @@ def specExprToLaurel (e : SpecExpr) (md : Imperative.MetaData Core.Expression)
         let unwrapped := mkStmt (.StaticCall (mkId "Any..as_Dict!") [c]) md
         mkStmt (.StaticCall (mkId "DictStrAny_contains")
           [unwrapped, mkStmt (.LiteralString key) md]) md
-  | .regexMatch subject pattern => do
+  | .regexMatch subject pattern loc => do
+    let md ← nodeMd loc
     let s? ← specExprToLaurel subject md
     return s?.map fun s =>
       let sStr := mkStmt (.StaticCall (mkId "Any..as_string!") [s]) md
       mkStmt (.StaticCall (mkId "re_search_bool") [mkStmt (.LiteralString pattern) md, sStr]) md
-  | .forallList _ _ _ => do
-    reportError default "forallList quantifier not yet supported in preconditions"
+  | .forallList _ _ _ loc => do
+    reportError loc "forallList quantifier not yet supported in preconditions"
     return none
-  | .forallDict _ _ _ _ => do
-    reportError default "forallDict quantifier not yet supported in preconditions"
+  | .forallDict _ _ _ _ loc => do
+    reportError loc "forallDict quantifier not yet supported in preconditions"
     return none
 
 private def formatAssertionMessage (msg : Array MessagePart) : String :=
