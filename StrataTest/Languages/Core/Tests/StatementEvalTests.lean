@@ -304,6 +304,14 @@ Path Conditions:
 Warnings:
 []
 Deferred Proof Obligations:
+Label: x_eq_y_label_0
+Property: assert
+Assumptions:
+(<label_ite_cond_true: (z == #false)>, (zinit == #false))
+(z_false, (zinit == #false))
+Proof Obligation:
+#true
+
 Label: trivial
 Property: assert
 Assumptions:
