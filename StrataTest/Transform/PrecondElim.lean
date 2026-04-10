@@ -389,9 +389,7 @@ procedure test (x : int, y : int) returns ()
 def loopGuardPrecondPgm :=
 #strata
 program Core;
-var g : int;
-procedure test(y : int) returns ()
-spec { modifies g; }
+procedure test(g : int, y : int) returns (g : int)
 {
   while (y / (y / g) > 0) { g := g - 1; }
 };
@@ -403,7 +401,6 @@ info: [Strata.Core] Type checking succeeded.
 ---
 info: program Core;
 
-var g : int;
 procedure test (g : int, y : int) returns (g : int)
 {
   assert [loop_guard_calls_Int.SafeDiv_0]: !(g == 0);

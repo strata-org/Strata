@@ -511,11 +511,10 @@ datatype Outer () {
   )
 };
 
-var v : Outer;
-
 procedure Test() returns ()
 spec { ensures true; }
 {
+  var v : Outer;
   assert [test]: Option..isSome(Outer..flag(v));
 };
 #end

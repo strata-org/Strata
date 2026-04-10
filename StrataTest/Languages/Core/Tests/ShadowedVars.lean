@@ -14,8 +14,7 @@ namespace Strata
 def noShadowPgm1 :=
 #strata
 program Core;
-var g : int;
-procedure Test() returns ()
+procedure Test(g : int) returns ()
 {
   var g : bool;
 };

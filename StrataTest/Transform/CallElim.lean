@@ -27,149 +27,123 @@ section CallElimExamples
 def CallElimTest1 :=
 #strata
 program Core;
-var i : bool;
-var j : bool;
-var k : bool;
-procedure f(x : bool) returns (y : bool)
+procedure f(i : bool, j : bool, x : bool) returns (j : bool, y : bool)
 spec {
   requires (i == !x);
   ensures (y == x);
   ensures (y == j);
-  modifies j;
 };
-procedure h() returns () spec {
-  modifies j;
-} {
+procedure h(i : bool, j : bool, k : bool) returns (j : bool) {
   var b : bool;
-  call b := f(k);
+  call j, b := f(i, j, k);
 };
 #end
 
 def CallElimTest1Ans :=
 #strata
 program Core;
-var i : bool;
-var j : bool;
-var k : bool;
-procedure f(j : bool, x : bool) returns (j : bool, y : bool)
+procedure f(i : bool, j : bool, x : bool) returns (j : bool, y : bool)
 spec {
   requires (i == !x);
   ensures (y == x);
   ensures (y == j);
 };
-procedure h(j : bool) returns (j : bool) {
+procedure h(i : bool, j : bool, k : bool) returns (j : bool) {
   var b : bool;
-  var tmp_arg_0 : bool := j;
-  var tmp_arg_1 : bool := k;
-  var tmp_j_2 : bool := j;
-  var tmp_b_3 : bool := b;
-  assert [callElimAssert_f_requires_0_4]: (i == (!tmp_arg_1));
+  var tmp_arg_0 : bool := i;
+  var tmp_arg_1 : bool := j;
+  var tmp_arg_2 : bool := k;
+  var tmp_j_3 : bool := j;
+  var tmp_b_4 : bool := b;
+  assert [callElimAssert_f_requires_0_5]: (tmp_arg_0 == (!tmp_arg_2));
   havoc j;
   havoc b;
-  assume [callElimAssume_f_ensures_1_5]: (b == tmp_arg_1);
-  assume [callElimAssume_f_ensures_2_6]: (b == j);
+  assume [callElimAssume_f_ensures_1_6]: (b == tmp_arg_2);
+  assume [callElimAssume_f_ensures_2_7]: (b == j);
 };
 #end
 
 def CallElimTest2 :=
 #strata
 program Core;
-var i : bool;
-var j : bool;
-var k : bool;
-var l : bool;
-procedure f(x : bool, y : bool) returns (z : bool)
+procedure f(i : bool, j : bool, k : bool, x : bool, y : bool) returns (j : bool, z : bool)
 spec {
   requires (i == !x);
   ensures (z == (k && old j));
   ensures (z == old j);
-  modifies j;
 };
-procedure h() returns () spec {
-  modifies j;
-} {
+procedure h(i : bool, j : bool, k : bool, l : bool) returns (j : bool) {
   var b : bool;
-  call b := f(k, l);
+  call j, b := f(i, j, k, k, l);
 };
 #end
 
 def CallElimTest2Ans :=
 #strata
 program Core;
-var i : bool;
-var j : bool;
-var k : bool;
-var l : bool;
-procedure f(j : bool, x : bool, y : bool) returns (j : bool, z : bool)
+procedure f(i : bool, j : bool, k : bool, x : bool, y : bool) returns (j : bool, z : bool)
 spec {
   requires (i == !x);
   ensures (z == (k && old j));
   ensures (z == old j);
 };
-procedure h(j : bool) returns (j : bool) {
+procedure h(i : bool, j : bool, k : bool, l : bool) returns (j : bool) {
   var b : bool;
-  var tmp_arg_0 : bool := j;
-  var tmp_arg_1 : bool := k;
-  var tmp_arg_2 : bool := l;
-  var tmp_j_3 : bool := j;
-  var tmp_b_4 : bool := b;
-  var old_j_5 : bool := j;
-  assert [callElimAssert_f_requires_0_6]: i == !tmp_arg_1;
+  var tmp_arg_0 : bool := i;
+  var tmp_arg_1 : bool := j;
+  var tmp_arg_2 : bool := k;
+  var tmp_arg_3 : bool := k;
+  var tmp_arg_4 : bool := l;
+  var tmp_j_5 : bool := j;
+  var tmp_b_6 : bool := b;
+  var old_j_7 : bool := j;
+  assert [callElimAssert_f_requires_0_8]: tmp_arg_0 == !tmp_arg_3;
   havoc j;
   havoc b;
-  assume [callElimAssume_f_ensures_1_7]: b == (k && old_j_5);
-  assume [callElimAssume_f_ensures_2_8]: b == old_j_5;
+  assume [callElimAssume_f_ensures_1_9]: b == (tmp_arg_2 && old_j_7);
+  assume [callElimAssume_f_ensures_2_10]: b == old_j_7;
 };
 #end
 
 def CallElimTest3 :=
 #strata
 program Core;
-var i : bool;
-var j : bool;
-var k : bool;
-var l : bool;
-procedure f(x : bool, y : bool) returns (z : bool)
+procedure f(i : bool, j : bool, k : bool, x : bool, y : bool) returns (j : bool, z : bool)
 spec {
   requires (i == !x);
   ensures (z == (k && old j));
   ensures (z == old j);
-  modifies j;
 };
-procedure h() returns () spec {
-  modifies j;
-} {
+procedure h(i : bool, j : bool, k : bool, l : bool) returns (j : bool) {
   var b : bool;
-  call b := f(k && i || j, l);
+  call j, b := f(i, j, k, k && i || j, l);
 };
 #end
 
 def CallElimTest3Ans :=
 #strata
 program Core;
-var i : bool;
-var j : bool;
-var k : bool;
-var l : bool;
-procedure f(j : bool, x : bool, y : bool) returns (j : bool, z : bool)
+procedure f(i : bool, j : bool, k : bool, x : bool, y : bool) returns (j : bool, z : bool)
 spec {
   requires (i == !x);
   ensures (z == (k && old j));
   ensures (z == old j);
 };
-procedure h(j : bool) returns (j : bool) {
+procedure h(i : bool, j : bool, k : bool, l : bool) returns (j : bool) {
   var b : bool;
-  var tmp_arg_0 : bool := j;
-  var tmp_arg_1 : bool := k && i || j;
-  var tmp_arg_2 : bool := l;
-  var tmp_j_3 : bool := j;
-  var tmp_b_4 : bool := b;
-  var old_j_5 : bool := j;
-  assert [callElimAssert_f_requires_0_6]: i == !tmp_arg_1;
+  var tmp_arg_0 : bool := i;
+  var tmp_arg_1 : bool := j;
+  var tmp_arg_2 : bool := k;
+  var tmp_arg_3 : bool := k && i || j;
+  var tmp_arg_4 : bool := l;
+  var tmp_j_5 : bool := j;
+  var tmp_b_6 : bool := b;
+  var old_j_7 : bool := j;
+  assert [callElimAssert_f_requires_0_8]: tmp_arg_0 == !tmp_arg_3;
   havoc j;
   havoc b;
-  assume [callElimAssume_f_ensures_1_7]: b == (k && old_j_5);
-  assume [callElimAssume_f_ensures_2_8]: b == old_j_5;
+  assume [callElimAssume_f_ensures_1_9]: b == (tmp_arg_2 && old_j_7);
+  assume [callElimAssume_f_ensures_2_10]: b == old_j_7;
 };
 #end
 
@@ -177,44 +151,38 @@ procedure h(j : bool) returns (j : bool) {
 def CallElimTestFreeRequires :=
 #strata
 program Core;
-var j : bool;
-var k : bool;
-procedure f(x : bool) returns (y : bool)
+procedure f(j : bool, k : bool, x : bool) returns (j : bool, y : bool)
 spec {
   free requires (x == k);
   requires (x == j);
   ensures (y == x);
-  modifies j;
 };
-procedure h() returns () spec {
-  modifies j;
-} {
+procedure h(j : bool, k : bool) returns (j : bool) {
   var b : bool;
-  call b := f(k);
+  call j, b := f(j, k, k);
 };
 #end
 
 def CallElimTestFreeRequiresAns :=
 #strata
 program Core;
-var j : bool;
-var k : bool;
-procedure f(j : bool, x : bool) returns (j : bool, y : bool)
+procedure f(j : bool, k : bool, x : bool) returns (j : bool, y : bool)
 spec {
   free requires (x == k);
   requires (x == j);
   ensures (y == x);
 };
-procedure h(j : bool) returns (j : bool) {
+procedure h(j : bool, k : bool) returns (j : bool) {
   var b : bool;
   var tmp_arg_0 : bool := j;
   var tmp_arg_1 : bool := k;
-  var tmp_j_2 : bool := j;
-  var tmp_b_3 : bool := b;
-  assert [callElimAssert_f_requires_1_4]: (tmp_arg_1 == tmp_arg_0);
+  var tmp_arg_2 : bool := k;
+  var tmp_j_3 : bool := j;
+  var tmp_b_4 : bool := b;
+  assert [callElimAssert_f_requires_1_5]: (tmp_arg_2 == tmp_arg_0);
   havoc j;
   havoc b;
-  assume [callElimAssume_f_ensures_2_5]: (b == tmp_arg_1);
+  assume [callElimAssume_f_ensures_2_6]: (b == tmp_arg_2);
 };
 #end
 

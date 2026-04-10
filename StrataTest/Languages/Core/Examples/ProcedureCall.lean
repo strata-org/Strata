@@ -14,13 +14,10 @@ def globalCounterPgm : Program :=
 #strata
 program Core;
 
-var counter : int;
-
 inline function Add(x : int, y : int) : int { x + y }
 
-procedure Inc(a : int) returns (ret : int)
+procedure Inc(counter : int, a : int) returns (counter : int, ret : int)
 spec {
-  modifies counter;
   requires [counter_ge_zero]: (counter >= 0);
   requires [a_positive]:      (a > 0);
   ensures  [new_g_value]:     (counter == old counter + a);
@@ -31,15 +28,14 @@ spec {
   ret := counter;
 };
 
-procedure P() returns (b : int)
+procedure P(counter : int) returns (counter : int, b : int)
 spec {
-  modifies counter;
   requires [counter_ge_zero]: (counter >= 0);
   ensures [return_value_lemma]: (b == old counter + 16);
 }
 {
-  call b := Inc(8);
-  call b := Inc(8);
+  call counter, b := Inc(counter, 8);
+  call counter, b := Inc(counter, 8);
 };
 
 procedure Q1() returns () {
@@ -70,61 +66,61 @@ VCs:
 Label: new_g_value
 Property: assert
 Assumptions:
-counter_ge_zero: $__counter1 >= 0
-a_positive: $__a2 > 0
+counter_ge_zero: $__counter0 >= 0
+a_positive: $__a1 > 0
 Obligation:
 true
 
 Label: old_g_property
 Property: assert
 Assumptions:
-counter_ge_zero: $__counter1 >= 0
-a_positive: $__a2 > 0
+counter_ge_zero: $__counter0 >= 0
+a_positive: $__a1 > 0
 Obligation:
-$__counter1 + $__a2 - $__a2 == $__counter1
+$__counter0 + $__a1 - $__a1 == $__counter0
 
 Label: callElimAssert_counter_ge_zero_14
 Property: assert
 Assumptions:
-counter_ge_zero: $__counter5 >= 0
+counter_ge_zero: $__counter4 >= 0
 Obligation:
-$__counter5 >= 0
+$__counter4 >= 0
 
 Label: callElimAssert_a_positive_15
 Property: assert
 Assumptions:
-counter_ge_zero: $__counter5 >= 0
+counter_ge_zero: $__counter4 >= 0
 Obligation:
 true
 
 Label: callElimAssert_counter_ge_zero_5
 Property: assert
 Assumptions:
-counter_ge_zero: $__counter5 >= 0
-callElimAssume_new_g_value_16: $__counter8 == $__counter5 + 8
-callElimAssume_old_g_property_17: $__b9 - 8 == $__counter5
+counter_ge_zero: $__counter4 >= 0
+callElimAssume_new_g_value_16: $__counter7 == $__counter4 + 8
+callElimAssume_old_g_property_17: $__b8 - 8 == $__counter4
 Obligation:
-$__counter8 >= 0
+$__counter7 >= 0
 
 Label: callElimAssert_a_positive_6
 Property: assert
 Assumptions:
-counter_ge_zero: $__counter5 >= 0
-callElimAssume_new_g_value_16: $__counter8 == $__counter5 + 8
-callElimAssume_old_g_property_17: $__b9 - 8 == $__counter5
+counter_ge_zero: $__counter4 >= 0
+callElimAssume_new_g_value_16: $__counter7 == $__counter4 + 8
+callElimAssume_old_g_property_17: $__b8 - 8 == $__counter4
 Obligation:
 true
 
 Label: return_value_lemma
 Property: assert
 Assumptions:
-counter_ge_zero: $__counter5 >= 0
-callElimAssume_new_g_value_16: $__counter8 == $__counter5 + 8
-callElimAssume_old_g_property_17: $__b9 - 8 == $__counter5
-callElimAssume_new_g_value_7: $__counter10 == $__counter8 + 8
-callElimAssume_old_g_property_8: $__b11 - 8 == $__counter8
+counter_ge_zero: $__counter4 >= 0
+callElimAssume_new_g_value_16: $__counter7 == $__counter4 + 8
+callElimAssume_old_g_property_17: $__b8 - 8 == $__counter4
+callElimAssume_new_g_value_7: $__counter9 == $__counter7 + 8
+callElimAssume_old_g_property_8: $__b10 - 8 == $__counter7
 Obligation:
-$__b11 == $__counter5 + 16
+$__b10 == $__counter4 + 16
 
 Label: assert_0
 Property: assert

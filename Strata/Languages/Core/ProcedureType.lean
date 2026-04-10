@@ -101,14 +101,19 @@ def typeCheck (C : Core.Expression.TyContext) (Env : Core.Expression.TyEnv) (p :
   let out_lty_sig := Lambda.LMonoTySignature.toTrivialLTy out_mty_sig
   let envWithOutputs := envWithOutputs.addInNewestContext out_lty_sig
 
-  -- Add "old g" variables for all globals in the program so that
-  -- postconditions can reference them (old g is always well-defined).
+  -- Add "old" variables so that postconditions and body can reference them.
+  -- 1. For all globals in the program (old g is always well-defined).
   let oldVarBindings : List (CoreIdent × Lambda.LTy) :=
     p.decls.filterMap fun d =>
       match d with
       | .var name ty _ _ => some (CoreIdent.mkOld name.name, ty)
       | _ => none
-  let envWithOldVars := envWithOutputs.addInNewestContext oldVarBindings
+  -- 2. For input parameters that also appear as outputs (modified parameters).
+  let outputNames := proc.header.outputs.keys
+  let oldParamBindings : List (CoreIdent × Lambda.LTy) :=
+    proc.header.inputs.toList.filterMap fun (id, ty) =>
+      if outputNames.contains id then some (CoreIdent.mkOld id.name, .forAll [] ty) else none
+  let envWithOldVars := envWithOutputs.addInNewestContext (oldParamBindings ++ oldVarBindings)
 
   -- Type check postconditions.
   let (postconditions, envAfterPostconds) ← typeCheckConditions C envWithOldVars

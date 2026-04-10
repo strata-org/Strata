@@ -36,12 +36,15 @@ def callElimCmd (cmd: Command)
 
         let some proc := Program.Procedure.find? p procName | throw s!"Procedure {procName} not found in program"
 
-        -- Identify output parameters that reference globals for "old g" handling.
-        -- Since modifies variables are now output parameters, we check which outputs
-        -- are global variables referenced via "old g" in postconditions.
+        -- Identify output parameters that also appear as input parameters
+        -- and are referenced via "old" in postconditions.
         let postExprs := proc.spec.postconditions.values.map Procedure.Check.expr
+        let inputNames := proc.header.inputs.keys
+        let outputNames := proc.header.outputs.keys
+        -- Variables needing old handling: globals with old refs, or input/output params with old refs.
         let oldVars := lhs.filter fun g =>
-          isGlobalVar p g &&
+          (isGlobalVar p g ||
+           (inputNames.contains g && outputNames.contains g)) &&
           postExprs.any (fun e => Lambda.LExpr.freeVars e |>.any (fun (id, _) => id == CoreIdent.mkOld g.name))
 
         let genArgTrips := genArgExprIdentsTrip (Lambda.LMonoTySignature.toTrivialLTy proc.header.inputs) args
@@ -54,11 +57,18 @@ def callElimCmd (cmd: Command)
             : List ((Expression.Ident × Expression.Ty) × Expression.Ident)
             ← genOutTrips
 
-        -- Generate fresh variables for "old g" (one per modified global in lhs).
-        let genOldTrips := genOldExprIdentsTrip p oldVars
-        let oldTripsRaw
-            : List ((Expression.Ident × Expression.Ty) × Expression.Ident)
-            ← genOldTrips
+        -- Generate fresh variables for "old g" (one per modified variable in lhs).
+        -- For input/output parameters, look up types from the callee's inputs.
+        let genOldIdents ← genOldExprIdents oldVars
+        let oldTys ← oldVars.mapM fun id => do
+          match proc.header.inputs.find? id with
+          | some ty => pure (Lambda.LTy.forAll [] ty)
+          | none =>
+            -- Fall back to program-level var lookup for globals
+            match getIdentTy? p id with
+            | some ty => pure ty
+            | none => throw s!"failed to find type for {Std.format id}"
+        let oldTripsRaw := (genOldIdents.zip oldTys).zip oldVars
         let oldGVars := oldVars.map (fun g => CoreIdent.mkOld g.name)
         let oldTrips := oldTripsRaw.zip oldGVars |>.map fun (((fresh, ty), _orig), oldG) =>
           ((fresh, ty), oldG)
@@ -80,7 +90,16 @@ def callElimCmd (cmd: Command)
               then some (oldVar, createFvar name)
               else none
             | _ => none
-        let oldSubst := createOldVarsSubst oldTrips ++ unmodifiedOldSubst
+        -- For input-only parameters (not in outputs): old g == the argument value.
+        let inputOnlyOldSubst : Map Expression.Ident Expression.Expr :=
+          (proc.header.inputs.keys.zip args).filterMap fun (paramId, argExpr) =>
+            let oldVar := CoreIdent.mkOld paramId.name
+            if !outputNames.contains paramId &&
+               postExprs.any (fun e => Lambda.LExpr.freeVars e |>.any
+                 (fun (id, _) => id == oldVar))
+            then some (oldVar, argExpr)
+            else none
+        let oldSubst := createOldVarsSubst oldTrips ++ unmodifiedOldSubst ++ inputOnlyOldSubst
 
         let postconditions : List Expression.Expr := proc.spec.postconditions.values.map
           (fun c => Lambda.LExpr.substFvars c.expr oldSubst)

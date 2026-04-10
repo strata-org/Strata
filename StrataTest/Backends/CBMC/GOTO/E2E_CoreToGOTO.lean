@@ -11,8 +11,7 @@ import Strata.Backends.CBMC.GOTO.CoreToGOTOPipeline
 These tests verify the full pipeline from DDM-parsed Core programs through
 `procedureToGotoCtx` to GOTO JSON output, covering features added in the
 Core-to-GOTO gap-filling work:
-- Global variables in symbol table
-- Procedure contracts (requires/ensures/modifies)
+- Procedure contracts (requires/ensures)
 - Cover command
 - Bitvector operations
 -/
@@ -59,23 +58,21 @@ procedure test(x : int) returns () {
 
 -------------------------------------------------------------------------------
 
--- Test: global variable appears in symbol table
+-- Test: global variable passed as input parameter appears in symbol table
 def E2E_GlobalVar :=
 #strata
 program Core;
-var g : int;
-procedure test() returns () {
+procedure test(g : int) returns () {
   assert (g > 0);
 };
 #end
 
 #eval do
   let (.ok (symtab, _)) := coreToGotoJson E2E_GlobalVar | IO.throwServerError "translation failed"
-  let gSym := symtab.getObjValD "g"
-  assert! gSym != Lean.Json.null
-  -- isStaticLifetime is a Bool field in CBMCSymbol, serialized by deriving ToJson
-  let isStatic := gSym.getObjValD "isStaticLifetime"
-  assert! isStatic == Lean.Json.bool true
+  let testSym := symtab.getObjValD "test"
+  assert! testSym != Lean.Json.null
+  -- g should appear as a parameter in the procedure
+  assert! (testSym.pretty.splitOn "\"g\"").length > 1
 
 -------------------------------------------------------------------------------
 
@@ -123,15 +120,11 @@ spec {
 
 -------------------------------------------------------------------------------
 
--- Test: procedure with modifies converts to extra in/out params
+-- Test: procedure with g as both input and output parameter
 def E2E_Modifies :=
 #strata
 program Core;
-var g : int;
-procedure test(x : int) returns ()
-spec {
-  modifies g;
-} {
+procedure test(x : int, g : int) returns (g : int) {
   assert (x > 0);
 };
 #end
@@ -139,8 +132,6 @@ spec {
 #eval do
   let (.ok (symtab, _)) := coreToGotoJson E2E_Modifies | IO.throwServerError "translation failed"
   let testSym := symtab.getObjValD "test"
-  -- After modifies-to-params conversion, g is an output parameter.
-  -- Verify the procedure symbol exists and g appears as a parameter.
   assert! testSym != Lean.Json.null
   assert! (testSym.pretty.splitOn "\"g\"").length > 1
 
