@@ -85,7 +85,13 @@ def isGlobalVar (p : Program) (ident : Expression.Ident) : Bool :=
 
 
 /-- Cached results of program analyses that are helpful for program
-    transformation. -/
+    transformation.
+
+    Invariant: When `callGraph` is `some cg`, `cg` must reflect the current
+    program's procedure call structure. Every procedure in the program must
+    have an entry in `cg.callees`, and every call edge must be accounted for.
+    Transforms that add, remove, or modify procedures must update the call
+    graph accordingly (or set it to `.none` to invalidate it). -/
 structure CachedAnalyses where
   callGraph: Option CallGraph := .none
 
@@ -223,7 +229,7 @@ def createInit (trip : (Expression.Ident × Expression.Ty) × Expression.Expr)
     (md:Imperative.MetaData Expression)
   : Statement :=
   match trip with
-  | ((v', ty), e) => Statement.init v' ty (some e) md
+  | ((v', ty), e) => Statement.init v' ty (.det e) md
 
 def createInits (trips : List ((Expression.Ident × Expression.Ty) × Expression.Expr))
     (md: (Imperative.MetaData Expression))
@@ -237,33 +243,43 @@ def createInitVar (trip : (Expression.Ident × Expression.Ty) × Expression.Iden
     (md:Imperative.MetaData Expression)
   : Statement :=
   match trip with
-  | ((v', ty), v) => Statement.init v' ty (some (Lambda.LExpr.fvar () v none)) md
+  | ((v', ty), v) => Statement.init v' ty (.det (Lambda.LExpr.fvar () v none)) md
 
 def createInitVars (trips : List ((Expression.Ident × Expression.Ty) × Expression.Ident))
     (md : (Imperative.MetaData Expression))
   : List Statement :=
   trips.map (createInitVar · md)
 
-/-- turns a list of preconditions into assumes with substitution -/
+/-- turns a list of preconditions into asserts with substitution -/
 def createAsserts
     (conds : ListMap CoreLabel Procedure.Check)
     (subst : Map Expression.Ident Expression.Expr)
     (md : (Imperative.MetaData Expression))
+    (labelPrefix : String := "assert_")
     : CoreTransformM (List Statement)
     := conds.mapM (fun (l, check) => do
-          let newLabel ← genIdent l (fun s => s!"callElimAssert_{s}")
-          return Statement.assert newLabel.toPretty (Lambda.LExpr.substFvars check.expr subst) md)
+          let newLabel ← genIdent l (fun s => s!"{labelPrefix}{s}")
+          -- Non-lifting: the replacement expressions must be closed (no dangling bvars).
+          -- Use the call site as the primary file range, preserving the requires
+          -- clause location as a related file range for richer diagnostics.
+          let assertMd := check.md.setCallSiteFileRange md
+          return Statement.assert newLabel.toPretty (Lambda.LExpr.substFvars check.expr subst) assertMd)
 
 /-- turns a list of preconditions into assumes with substitution -/
 def createAssumes
     (conds : ListMap CoreLabel Procedure.Check)
     (subst : Map Expression.Ident Expression.Expr)
     (md : (Imperative.MetaData Expression))
+    (labelPrefix : String := "assume_")
     : CoreTransformM (List Statement)
     :=
     conds.mapM (fun (l, check) => do
-      let newLabel ← genIdent l (fun s => s!"callElimAssume_{s}")
-      return Statement.assume newLabel.toPretty (Lambda.LExpr.substFvars check.expr subst) md)
+      let newLabel ← genIdent l (fun s => s!"{labelPrefix}{s}")
+      -- Non-lifting: the replacement expressions must be closed (no dangling bvars).
+      -- Use the call site as the primary file range, preserving the ensures
+      -- clause location as a related file range for richer diagnostics.
+      let assumeMd := check.md.setCallSiteFileRange md
+      return Statement.assume newLabel.toPretty (Lambda.LExpr.substFvars check.expr subst) assumeMd)
 
 /--
 Generate the substitution pairs needed for the body of the procedure
@@ -371,6 +387,35 @@ def runProgram
   })
   return (changed, newProg)
 
+/-- Repeatedly apply a command-level transformation until no more changes occur
+    or the iteration limit is reached.
+    - `maxIters = none`: repeat until a fixed point (no changes).
+    - `maxIters = some n`: run up to `n` iterations, stopping early if no change. -/
+def runProgramUntil
+    (f : Command → CoreTransformM (Option (List Statement)))
+    (p : Program)
+    (maxIters : Option Nat := none)
+    (targetProcList : Option (List String) := .none)
+  : CoreTransformM (Bool × Program) := do
+  match maxIters with
+  | some n =>
+    let mut prog := p
+    let mut anyChanged := false
+    for _ in List.range n do
+      let (changed, prog') ← runProgram f prog targetProcList
+      prog := prog'
+      if changed then anyChanged := true
+      if !changed then break
+    return (anyChanged, prog)
+  | none =>
+    let mut prog := p
+    let mut anyChanged := false
+    repeat
+      let (changed, prog') ← runProgram f prog targetProcList
+      prog := prog'
+      if changed then anyChanged := true
+      if !changed then break
+    return (anyChanged, prog)
 
 @[expose, simp]
 def runWith {α : Type} (p : α) (f : α → CoreTransformM β)

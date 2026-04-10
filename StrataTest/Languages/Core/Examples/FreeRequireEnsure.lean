@@ -36,9 +36,6 @@ procedure ProcCaller () returns (x : int) {
 info: [Strata.Core] Type checking succeeded.
 
 
-Obligation (Origin_Proc_Requires)g_eq_15 is free!
-
-
 VCs:
 Label: g_gt_10_internal
 Property: assert
@@ -57,20 +54,22 @@ true
 Label: g_eq_15_internal
 Property: assert
 Assumptions:
-(Origin_Proc_Ensures)g_lt_10: $__g3 < 10
+callElimAssume_g_lt_10_0: $__g4 < 10
 Obligation:
-$__g3 == 15
+$__g4 == 15
 
 
 
 Result: Obligation: g_eq_15_internal
 Property: assert
-Result: ❌ fail
+Result: ❓ unknown
 Model:
-($__g3, 0)
+($__g4, 0)
 
 
 [DEBUG] Evaluated program:
+program Core;
+
 var g : int;
 procedure Proc () returns ()
 spec {
@@ -84,9 +83,12 @@ spec {
   assert [g_lt_10]: true;
   };
 procedure ProcCaller () returns (x : int)
-{
-  call  := Proc();
-  assert [g_eq_15_internal]: $__g3 == 15;
+spec {
+  modifies g;
+  } {
+  havoc g;
+  assume [callElimAssume_g_lt_10_0]: $__g4 < 10;
+  assert [g_eq_15_internal]: $__g4 == 15;
   };
 
 ---
@@ -101,9 +103,9 @@ Result: ✅ pass
 
 Obligation: g_eq_15_internal
 Property: assert
-Result: ❌ fail
+Result: ❓ unknown
 Model:
-($__g3, 0)
+($__g4, 0)
 -/
 #guard_msgs in
 #eval verify freeReqEnsPgm

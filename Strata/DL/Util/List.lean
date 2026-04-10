@@ -29,6 +29,23 @@ def dedup {α : Type} [DecidableEq α] : List α → List α
     if a ∈ as then as else a :: as
 
 /--
+Tail-recursive worker for `dedup`. Walks the input left-to-right,
+skipping elements that still appear later, and collects kept elements
+in reverse order.
+-/
+def dedupTR.go {α : Type} [DecidableEq α] :
+    List α → List α → List α
+  | [], acc => acc.reverse
+  | a :: as, acc =>
+    if a ∈ as then dedupTR.go as acc else dedupTR.go as (a :: acc)
+
+/--
+Tail-recursive implementation of `dedup`.
+-/
+def dedupTR {α : Type} [DecidableEq α] (l : List α) : List α :=
+  dedupTR.go l []
+
+/--
 A deduplicated list satisfies `Nodup`.
 -/
 theorem nodup_dedup {α : Type} [DecidableEq α] (l : List α) :
@@ -109,6 +126,27 @@ theorem mem_of_dedup {α : Type} [DecidableEq α]
   apply Iff.intro
   exact fun h => mem_of_mem_dedup l a h
   exact fun h => mem_dedup_of_mem l a h
+
+theorem dedupTR.go_eq {α : Type} [DecidableEq α]
+    (l acc : List α) :
+    dedupTR.go l acc = acc.reverse ++ l.dedup := by
+  induction l generalizing acc with
+  | nil => simp [dedupTR.go, dedup]
+  | cons a as ih =>
+    simp only [dedupTR.go, dedup]
+    by_cases h : a ∈ as
+    · have h' : a ∈ as.dedup := mem_of_mem_dedup as a h
+      simp [h, h', ih]
+    · have h' : a ∉ as.dedup := by
+        intro hc; exact h (mem_dedup_of_mem as a hc)
+      simp [h, h', ih]
+
+/--
+`List.dedup` is equivalent to `dedupTR` at compile time.
+-/
+@[csimp] theorem dedup_eq_dedupTR : @List.dedup = @dedupTR := by
+  funext α _ l
+  simp [dedupTR, dedupTR.go_eq]
 
 theorem length_dedup_cons_of_mem {α : Type} [DecidableEq α] (a : α) (l : List α)
   (h : a ∈ l) : (a :: l).dedup.length = l.dedup.length := by
@@ -509,6 +547,84 @@ theorem removeAll_not_mem [BEq α] [LawfulBEq α] {x : α} {xs : List α}
   intro a ha
   simp only [List.elem_cons, List.elem_nil]
   split <;> simp_all
+
+/-- `foldl` over a zipped subtype list equals `foldl` over the zipped projected list. -/
+theorem foldl_subtype_zip_val
+    {α β γ : Type _} (P : α → Prop)
+    (f : γ → α → β → γ)
+    (init : γ)
+    (l₁ : List { x : α // P x }) (l₂ : List β) :
+    List.foldl (fun acc (p : { x // P x } × β) => f acc p.1.val p.snd) init (l₁.zip l₂) =
+    List.foldl (fun acc (p : α × β) => f acc p.1 p.2) init ((l₁.map Subtype.val).zip l₂) := by
+  induction l₁ generalizing l₂ init with
+  | nil => simp
+  | cons a rest ih =>
+    cases l₂ with
+    | nil => simp
+    | cons b rest₂ =>
+      simp only [List.zip_cons_cons, List.foldl_cons, List.map_cons]
+      exact ih (f init a.val b) rest₂
+
+/-- `foldl` over zipped lists is congruent when the function produces equal
+results on corresponding elements. -/
+theorem foldl_zip_congr
+    {α β γ : Type _}
+    (f : γ → α → β → γ)
+    (l₁ l₁' : List α) (l₂ l₂' : List β)
+    (h_len₁ : l₁.length = l₁'.length)
+    (h_len₂ : l₂.length = l₂'.length)
+    (h_f : ∀ (i : Nat) (hi₁ : i < l₁.length) (hi₂ : i < l₂.length) (acc : γ),
+        f acc (l₁[i]) (l₂[i]) = f acc (l₁'[i]'(h_len₁ ▸ hi₁)) (l₂'[i]'(h_len₂ ▸ hi₂)))
+    (init : γ) :
+    List.foldl (fun acc (p : α × β) => f acc p.1 p.2) init (l₁.zip l₂) =
+    List.foldl (fun acc (p : α × β) => f acc p.1 p.2) init (l₁'.zip l₂') := by
+  induction l₁ generalizing l₁' l₂ l₂' init with
+  | nil =>
+    have : l₁' = [] := by
+      cases l₁' with
+      | nil => rfl
+      | cons _ _ => simp [List.length] at h_len₁
+    subst this; simp
+  | cons a₁ rest₁ ih_list =>
+    cases l₁' with
+    | nil => simp [List.length] at h_len₁
+    | cons a₁' rest₁' =>
+      cases l₂ with
+      | nil =>
+        cases l₂' with
+        | nil => rfl
+        | cons _ _ => simp [List.length] at h_len₂
+      | cons a₂ rest₂ =>
+        cases l₂' with
+        | nil => simp [List.length] at h_len₂
+        | cons a₂' rest₂' =>
+          simp only [List.zip_cons_cons, List.foldl_cons, List.length_cons] at *
+          have h_len₁_rest : rest₁.length = rest₁'.length := Nat.succ.inj h_len₁
+          have h_len₂_rest : rest₂.length = rest₂'.length := Nat.succ.inj h_len₂
+          have h_head : f init a₁ a₂ = f init a₁' a₂' := by
+            have := h_f 0 (Nat.zero_lt_succ _) (Nat.zero_lt_succ _) init
+            simp [List.getElem_cons_zero] at this
+            exact this
+          rw [h_head]
+          refine ih_list rest₁' rest₂ rest₂' h_len₁_rest h_len₂_rest ?_ (f init a₁' a₂')
+          intro i hi₁ hi₂ acc
+          have := h_f (i + 1) (Nat.succ_lt_succ hi₁) (Nat.succ_lt_succ hi₂) acc
+          simp [List.getElem_cons_succ] at this
+          exact this
+
+theorem nodup_map_injOn {α β : Type} [DecidableEq β] {f : α → β} {l : List α}
+    (hnd : (l.map f).Nodup) {a b : α} (ha : a ∈ l) (hb : b ∈ l) (hab : f a = f b) : a = b := by
+  induction l with
+  | nil => exact nomatch ha
+  | cons x xs ih =>
+    rw [List.map_cons, List.nodup_cons] at hnd
+    cases ha with
+    | head => cases hb with
+      | head => rfl
+      | tail _ hb => exact absurd (hab ▸ List.mem_map.mpr ⟨_, hb, rfl⟩) hnd.1
+    | tail _ ha => cases hb with
+      | head => exact absurd (hab.symm ▸ List.mem_map.mpr ⟨_, ha, rfl⟩) hnd.1
+      | tail _ hb => exact ih hnd.2 ha hb
 
 end List
 end

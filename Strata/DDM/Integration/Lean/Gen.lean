@@ -44,26 +44,31 @@ namespace Strata
 namespace Lean
 
 /--
-Prepend the current namespace to the Lean name and convert to an identifier.
-When in a module file and not in a `public section`, uses `mkPrivateName` to
-resolve the `.decl` pre-resolution hint to the private-mangled name.
+Resolve a name within the current scope: prepend the namespace and, when in a
+module file outside a `public section`, apply `mkPrivateName`.
 -/
-def mkScopedIdent (subName : Lean.Name) : CommandElabM Ident := do
+def resolveScopedName (subName : Lean.Name) : CommandElabM Lean.Name := do
   let env ← getEnv
   let scope ← getScope
   let fullName := scope.currNamespace ++ subName
-  let resolvedName :=
-    if !env.header.isModule || scope.isPublic then
-      fullName
-    else
-      Lean.mkPrivateName env fullName
+  if !env.header.isModule || scope.isPublic then
+    return fullName
+  else
+    return Lean.mkPrivateName env fullName
+
+/--
+Prepend the current namespace to the Lean name and convert to an identifier.
+Uses `resolveScopedName` for the `.decl` pre-resolution hint.
+-/
+def mkScopedIdent (subName : Lean.Name) : CommandElabM Ident := do
+  let resolvedName ← resolveScopedName subName
   let rawStr := (toString subName).toRawSubstring
   let preresolution := [.decl resolvedName []]
   return .mk (.ident .none rawStr subName preresolution)
 
 end Lean
 
-open Lean (mkScopedIdent)
+open Lean (mkScopedIdent resolveScopedName)
 
 def arrayLit [Monad m] [Lean.MonadQuotation m] (as : Array Term) : m Term := do
   ``( (#[ $as:term,* ] : Array _) )
@@ -1546,6 +1551,25 @@ partial def generateInhabitedInstances (group : Array (QualifiedIdent × Array D
     pure sm
 
 /--
+Checks that none of the category names that `#strata_gen` is about to
+introduce already exist in the Lean environment.  Reports an error for
+each collision and returns `true` when at least one conflict was found.
+-/
+def checkCategoryNamesAvailable
+    (categories : Array (QualifiedIdent × Array DefaultCtor))
+    : GenM Bool := do
+  let env ← getEnv
+  let mut hasConflict := false
+  for (cat, _) in categories do
+    if cat ∈ declaredCategories then continue
+    let catName ← getCategoryScopedName cat
+    let resolvedName ← resolveScopedName catName
+    if env.contains resolvedName then
+      logError m!"#strata_gen: '{catName}' already exists as '{resolvedName}'."
+      hasConflict := true
+  return hasConflict
+
+/--
 Generates all code for a list of categories: inductive types, Inhabited
 instances, toAst and ofAst functions. Processes categories in topologically
 sorted groups to handle dependencies correctly.
@@ -1553,6 +1577,7 @@ sorted groups to handle dependencies correctly.
 def generateCategoryCode
     (categories : Array (QualifiedIdent × Array DefaultCtor))
     : GenM Unit := do
+  if ← checkCategoryNamesAvailable categories then return
   let mut inhabitedCats : InhabitedSet :=
     Std.HashSet.ofArray
       declaredCategories.keysArray

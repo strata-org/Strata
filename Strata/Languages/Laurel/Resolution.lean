@@ -6,7 +6,7 @@
 module
 
 public import Strata.Languages.Laurel.Laurel
-public import Strata.Languages.Laurel.LaurelFormat
+public import Strata.Languages.Laurel.Grammar.AbstractToConcreteTreeTranslator
 import Strata.Util.Tactics
 import Strata.Languages.Python.PythonLaurelCorePrelude
 
@@ -421,14 +421,6 @@ def resolveBody (body : Body) : ResolveM Body := do
     return .Abstract posts'
   | .External => return .External
 
-/-- Resolve a determinism clause. -/
-def resolveDeterminism (d : Determinism) : ResolveM Determinism := do
-  match d with
-  | .deterministic reads =>
-    let reads' ← reads.mapM resolveStmtExpr
-    return .deterministic reads'
-  | .nondeterministic => return .nondeterministic
-
 /-- Resolve a procedure: define its name, then resolve params, contracts, and body in a new scope. -/
 def resolveProcedure (proc : Procedure) : ResolveM Procedure := do
   let procName' ← defineName proc.name (.staticProcedure proc)
@@ -436,12 +428,13 @@ def resolveProcedure (proc : Procedure) : ResolveM Procedure := do
     let inputs' ← proc.inputs.mapM resolveParameter
     let outputs' ← proc.outputs.mapM resolveParameter
     let pres' ← proc.preconditions.mapM resolveStmtExpr
-    let det' ← resolveDeterminism proc.determinism
     let dec' ← proc.decreases.mapM resolveStmtExpr
     let body' ← resolveBody proc.body
+    let invokeOn' ← proc.invokeOn.mapM resolveStmtExpr
     return { name := procName', inputs := inputs', outputs := outputs',
              isFunctional := proc.isFunctional,
-             preconditions := pres', determinism := det', decreases := dec',
+             preconditions := pres', decreases := dec',
+             invokeOn := invokeOn',
              body := body', md := proc.md }
 
 /-- Resolve a field: define its name under the qualified key (OwnerType.fieldName) and resolve its type. -/
@@ -460,13 +453,14 @@ def resolveInstanceProcedure (typeName : Identifier) (proc : Procedure) : Resolv
     let inputs' ← proc.inputs.mapM resolveParameter
     let outputs' ← proc.outputs.mapM resolveParameter
     let pres' ← proc.preconditions.mapM resolveStmtExpr
-    let det' ← resolveDeterminism proc.determinism
     let dec' ← proc.decreases.mapM resolveStmtExpr
     let body' ← resolveBody proc.body
+    let invokeOn' ← proc.invokeOn.mapM resolveStmtExpr
     modify fun s => { s with instanceTypeName := savedInstType }
     return { name := procName', inputs := inputs', outputs := outputs',
              isFunctional := proc.isFunctional,
-             preconditions := pres', determinism := det', decreases := dec',
+             preconditions := pres', decreases := dec',
+             invokeOn := invokeOn',
              body := body', md := proc.md }
 
 /-- Resolve a type definition. -/
@@ -499,20 +493,25 @@ def resolveTypeDefinition (td : TypeDefinition) : ResolveM TypeDefinition := do
   | .Constrained ct =>
     let ctName' ← defineName ct.name (.constrainedType ct)
     let base' ← resolveHighType ct.base
-    let constraint' ← resolveStmtExpr ct.constraint
-    let witness' ← resolveStmtExpr ct.witness
-    return .Constrained { name := ctName', base := base', valueName := ct.valueName,
+    -- The valueName (e.g. `x` in `constrained nat = x: int where x >= 0`) must be
+    -- in scope when resolving the constraint and witness expressions.
+    let (valueName', constraint', witness') ← withScope do
+      let valueName' ← defineName ct.valueName (.quantifierVar ct.valueName base')
+      let constraint' ← resolveStmtExpr ct.constraint
+      let witness' ← resolveStmtExpr ct.witness
+      return (valueName', constraint', witness')
+    return .Constrained { name := ctName', base := base', valueName := valueName',
                           constraint := constraint', witness := witness' }
   | .Datatype dt =>
     let dtName' ← defineName dt.name (.datatypeDefinition dt)
     let ctors' ← dt.constructors.mapM fun ctor => do
       let ctorName' ← defineName ctor.name (.datatypeConstructor dt.name ctor)
-      _ ← defineName ctor.name (.datatypeConstructor dt.name ctor) (some s!"{dt.name}..is{ctor.name}")
+      _ ← defineName ctor.name (.datatypeConstructor dt.name ctor) (some (dt.testerName ctor))
       let args' ← ctor.args.mapM fun (p: Parameter) => do
         let ty' ← resolveHighType p.type
-        let destructorId ← defineName p.name (.parameter p) (some $ dt.name.text ++ ".." ++ p.name.text)
+        let destructorId ← defineName p.name (.parameter p) (some (dt.destructorName p))
         -- unsafeDestructorId
-        _ ← defineName p.name (.parameter p) (some $ dt.name.text ++ ".." ++ p.name.text ++ "!")
+        _ ← defineName p.name (.parameter p) (some (dt.unsafeDestructorName p))
         return ⟨ destructorId, ty' ⟩
       return { name := ctorName', args := args' : DatatypeConstructor }
     return .Datatype { name := dtName', typeArgs := dt.typeArgs, constructors := ctors' }
@@ -629,12 +628,6 @@ private def collectBody (map : Std.HashMap Nat AstNode) (body : Body)
   | .Abstract posts => posts.foldl collectStmtExpr map
   | .External => map
 
-private def collectDeterminism (map : Std.HashMap Nat AstNode) (d : Determinism)
-    : Std.HashMap Nat AstNode :=
-  match d with
-  | .deterministic (some reads) => collectStmtExpr map reads
-  | _ => map
-
 private def collectParameter (map : Std.HashMap Nat AstNode) (param : Parameter)
     : Std.HashMap Nat AstNode :=
   let map := register map param.name (.parameter param)
@@ -646,7 +639,6 @@ private def collectProcedure (map : Std.HashMap Nat AstNode) (proc : Procedure)
   let map := proc.inputs.foldl collectParameter map
   let map := proc.outputs.foldl collectParameter map
   let map := proc.preconditions.foldl collectStmtExpr map
-  let map := collectDeterminism map proc.determinism
   let map := match proc.decreases with | some d => collectStmtExpr map d | none => map
   collectBody map proc.body
 
@@ -722,7 +714,7 @@ private def preRegisterTopLevel (program : Program) : ResolveM Unit := do
       for ctor in dt.constructors do
         let _ ← defineName ctor.name (.datatypeConstructor dt.name ctor)
         for p in ctor.args do
-          let _ ← defineName p.name placeholderNode (some $ dt.name.text ++ ".." ++ p.name.text)
+          let _ ← defineName p.name placeholderNode (some (dt.destructorName p))
   -- Pre-register constants
   for c in program.constants do
     let _ ← defineName c.name (.constant c)

@@ -79,7 +79,9 @@ Obligation:
 fooAliasVal == fooVal
 
 ---
-info: ok: [(type Foo (a : Type, b : Type);
+info: ok: [(program Core;
+  ⏎
+  type Foo (a : Type, b : Type);
   type FooAlias (a : Type) := Foo int bool;
   function fooAliasVal () : Foo int bool;
   function fooVal () : Foo int bool;
@@ -334,11 +336,11 @@ def outOfScopeVarProg : Program := { decls := [
                   postconditions := [] },
               body := [
                 Statement.set "y" eb[((~Bool.Or x) x)] .empty,
-                .ite eb[(x == #true)]
-                  [Statement.init "q" t[int] (some eb[#0]) .empty,
+                .ite (.det eb[(x == #true)])
+                  [Statement.init "q" t[int] (.det eb[#0]) .empty,
                            Statement.set "q" eb[#1] .empty,
                            Statement.set "y" eb[#true] .empty]
-                  [Statement.init "q" t[int] (some eb[#0]) .empty,
+                  [Statement.init "q" t[int] (.det eb[#0]) .empty,
                            Statement.set "q" eb[#2] .empty,
                            Statement.set "y" eb[#true] .empty]
                   .empty,
@@ -379,7 +381,7 @@ def polyFuncProg : Program := { decls := [
                     postconditions := [] },
           body := [
             -- var m : Map int bool;
-            Statement.init "m" (.forAll [] (.tcons "Map" [.tcons "int" [], .tcons "bool" []])) none .empty,
+            Statement.init "m" (.forAll [] (.tcons "Map" [.tcons "int" [], .tcons "bool" []])) Imperative.ExprOrNondet.nondet .empty,
             -- m := makePair(identity(42), identity(true));
             Statement.set "m" eb[((~makePair (~identity #42)) (~identity #true))] .empty
           ]
@@ -390,7 +392,9 @@ def polyFuncProg : Program := { decls := [
 info: [Strata.Core] Type checking succeeded.
 
 ---
-info: ok: function identity<$__ty0> (x : $__ty0) : $__ty0;
+info: ok: program Core;
+
+function identity<$__ty0> (x : $__ty0) : $__ty0;
 function makePair<$__ty1, $__ty2> (x : $__ty1, y : $__ty2) : Map $__ty1 $__ty2;
 procedure Test () returns ()
 {
@@ -436,6 +440,22 @@ info: ok: [func intID :  () → (arrow int int) := ((λ (bvar:int) %0))]
           else
             return (format "Unexpected output")
 end
+
+---------------------------------------------------------------------
+
+/-- A `Decl.func` with `isRecursive := true` should be rejected.
+    `Decl.func` is for non-recursive functions only; recursive functions
+    must use `Decl.recFuncBlock`. -/
+def recursiveFuncDeclProg : Program := { decls := [
+  .func { name := "bad", isRecursive := true, inputs := [("x", .int)], output := .int } .empty
+]}
+
+/--
+info: error: Decl.func does not allow recursive functions. Use recFuncBlock instead: 'bad'
+-/
+#guard_msgs in
+#eval do let ans ← typeCheckAndPartialEval .default recursiveFuncDeclProg
+         return (format ans)
 
 ---------------------------------------------------------------------
 

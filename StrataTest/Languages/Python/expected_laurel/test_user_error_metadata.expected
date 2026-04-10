@@ -1,0 +1,6 @@
+(set-info :file "StrataTest/Languages/Python/tests/test_user_error_metadata.py")
+(set-info :start 144)
+(set-info :stop 166)
+(set-info :error-message "Unknown method 'nonexistent_method'")
+DETAIL: Unknown method 'nonexistent_method' at line 9, col 4
+RESULT: User error

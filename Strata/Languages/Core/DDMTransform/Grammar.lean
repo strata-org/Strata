@@ -3,6 +3,12 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+
+/- NOTE: This grammar is the source of truth for Core.st syntax. If you change
+   keywords, operators, types, or built-in functions here, regenerate the
+   editor syntax files by running:
+     lake env lean --run editors/GenSyntax.lean all
+-/
 module
 
 public import Strata.DDM.AST
@@ -230,7 +236,11 @@ op assert (reachCheck? : Option ReachCheck, label : Option Label, c : bool) : St
   reachCheck?:0 "assert " label c ";\n";
 op cover (reachCheck? : Option ReachCheck, label : Option Label, c : bool) : Statement =>
   reachCheck?:0 "cover " label c ";\n";
-op if_statement (c : bool, t : Block, f : Else) : Statement => "if " "(" c ") " t:0 f:0 "\n";
+category ExprOrNondet;
+op condDet (c : bool) : ExprOrNondet => "(" c ")";
+op condNondet : ExprOrNondet => "*";
+
+op if_statement (c : ExprOrNondet, t : Block, f : Else) : Statement => "if " c:0 " " t:0 f:0 "\n";
 op else0 () : Else =>;
 op else1 (f : Block) : Else => " else " f:0;
 op havoc_statement (v : Ident) : Statement => "havoc " v ";\n";
@@ -246,8 +256,8 @@ op consInvariants(e : Expr, is : Invariants) : Invariants =>
 category Measure;
 op measure_mk (e : Expr) : Measure => "decreases " e "\n";
 
-op while_statement (c : bool, m : Option Measure, is : Invariants, body : Block) : Statement =>
-  "while " "(" c ")\n" m:0 is body "\n";
+op while_statement (c : ExprOrNondet, m : Option Measure, is : Invariants, body : Block) : Statement =>
+  "while " c:0 "\n" m:0 is body "\n";
 
 op call_statement (vs : CommaSepBy Ident, f : Ident, expr : CommaSepBy Expr) : Statement =>
    "call " vs " := " f "(" expr ")" ";\n";
@@ -274,9 +284,9 @@ op spec_mk (elts : Seq SpecElt) : Spec => "spec " indent(2, "{\n" elts "} ");
 
 category Binding;
 @[declare(name, tp)]
-op mkBinding (name : Ident, tp : TypeP) : Binding => @[prec(40)] name " : " tp;
+op mkBinding (name : Ident, tp : TypeP) : Binding => @[prec(40)] name " : " tp:0;
 @[declare(name, tp)]
-op casesBinding (name : Ident, tp : TypeP) : Binding => @[prec(40)] "@[cases] " name " : " tp;
+op casesBinding (name : Ident, tp : TypeP) : Binding => @[prec(40)] "@[cases] " name " : " tp:0;
 
 category Bindings;
 @[scope(bindings)]
@@ -396,14 +406,14 @@ category ConstructorList;
 
 @[constructor(name, fields)]
 op constructor_mk (name : Ident, fields : Option (CommaSepBy Binding)) :
-    Constructor => @[prec(50)] name "(" fields ")";
+    Constructor => name "(" fields ")";
 
 @[constructorListAtom(c)]
-op constructorListAtom (c : Constructor) : ConstructorList => "\n  " c;
+op constructorListAtom (c : Constructor) : ConstructorList => "\n  " c:0;
 
 @[constructorListPush(cl, c)]
 op constructorListPush (cl : ConstructorList, c : Constructor)
-    : ConstructorList => cl ",\n  " c;
+    : ConstructorList => cl:0 ",\n  " c:0;
 
 // preRegisterTypes on command_datatypes handles bringing datatype names into
 // scope; @[scopeTVar(typeParams)] brings type parameters into scope for constructors.

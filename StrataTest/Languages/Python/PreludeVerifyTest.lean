@@ -28,12 +28,13 @@ private def verifyPrelude : IO Core.VCResults := do
     let r ← EIO.toIO (IO.Error.userError ∘ toString)
       (Core.verify preludeProgram tempDir
         (options := .quiet)
-        (moreFns := Strata.Python.ReFactory))
+        (moreFns := Strata.Python.ReFactory)
+        (externalPhases := [Strata.frontEndPhase]))
     return r
 
 /--
 info:
-Obligation: List_get_body_calls_List_get_0
+Obligation: postcondition
 Property: assert
 Result: ✅ pass
 
@@ -41,7 +42,47 @@ Obligation: List_take_body_calls_List_take_0
 Property: assert
 Result: ✅ pass
 
+Obligation: List_take_len_post_postcondition_calls_List_take_0
+Property: assert
+Result: ✅ pass
+
+Obligation: assume_postcondition_calls_List_take_0
+Property: assert
+Result: ✅ pass
+
+Obligation: postcondition
+Property: assert
+Result: ✅ pass
+
 Obligation: List_drop_body_calls_List_drop_0
+Property: assert
+Result: ✅ pass
+
+Obligation: List_drop_len_post_postcondition_calls_List_drop_0
+Property: assert
+Result: ✅ pass
+
+Obligation: assume_postcondition_calls_List_drop_0
+Property: assert
+Result: ✅ pass
+
+Obligation: postcondition
+Property: assert
+Result: ✅ pass
+
+Obligation: postcondition
+Property: assert
+Result: ✅ pass
+
+Obligation: List_get_non_neg_body_calls_List_get_0
+Property: assert
+Result: ✅ pass
+
+Obligation: List_get_body_calls_List_get_non_neg_0
+Property: assert
+Result: ✅ pass
+
+Obligation: List_get_body_calls_List_get_non_neg_1
 Property: assert
 Result: ✅ pass
 
@@ -53,7 +94,15 @@ Obligation: List_slice_body_calls_List_take_1
 Property: assert
 Result: ✅ pass
 
-Obligation: List_set_body_calls_List_set_0
+Obligation: List_set_non_neg_body_calls_List_set_0
+Property: assert
+Result: ✅ pass
+
+Obligation: List_set_body_calls_List_set_non_neg_0
+Property: assert
+Result: ✅ pass
+
+Obligation: List_set_body_calls_List_set_non_neg_1
 Property: assert
 Result: ✅ pass
 
@@ -121,31 +170,47 @@ Obligation: POr_body_calls_Any_to_bool_0
 Property: assert
 Result: ✅ pass
 
-Obligation: ret_type
+Obligation: PMod_body_calls_Int.SafeMod_0
+Property: division by zero check
+Result: ✅ pass
+
+Obligation: PMod_body_calls_Int.SafeMod_1
+Property: division by zero check
+Result: ✅ pass
+
+Obligation: PMod_body_calls_Int.SafeMod_2
+Property: division by zero check
+Result: ✅ pass
+
+Obligation: PMod_body_calls_Int.SafeMod_3
+Property: division by zero check
+Result: ✅ pass
+
+Obligation: postcondition
 Property: assert
 Result: ✅ pass
 
-Obligation: ret_type
+Obligation: postcondition
 Property: assert
 Result: ✅ pass
 
-Obligation: ret_pos
+Obligation: postcondition
 Property: assert
 Result: ✅ pass
 
-Obligation: assert_name_is_foo
+Obligation: assert(43154)
 Property: assert
 Result: ✅ pass
 
-Obligation: assert_opt_name_none_or_str
+Obligation: assert(43221)
 Property: assert
 Result: ✅ pass
 
-Obligation: assert_opt_name_none_or_bar
+Obligation: assert(43329)
 Property: assert
 Result: ✅ pass
 
-Obligation: ensures_maybe_except_none
+Obligation: postcondition
 Property: assert
 Result: ✅ pass
 -/

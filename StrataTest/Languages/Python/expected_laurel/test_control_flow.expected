@@ -1,48 +1,28 @@
-
-==== Verification Results ====
-List_get_body_calls_List_get_0: ✅ pass (in prelude file)
-List_take_body_calls_List_take_0: ✅ pass (in prelude file)
-List_drop_body_calls_List_drop_0: ✅ pass (in prelude file)
-List_slice_body_calls_List_drop_0: ✅ pass (in prelude file)
-List_slice_body_calls_List_take_1: ✅ pass (in prelude file)
-List_set_body_calls_List_set_0: ✅ pass (in prelude file)
-DictStrAny_get_body_calls_DictStrAny_get_0: ✅ pass (in prelude file)
-DictStrAny_get_or_none_body_calls_DictStrAny_get_0: ✅ pass (in prelude file)
-Any_get_body_calls_DictStrAny_get_0: ✅ pass (in prelude file)
-Any_get_body_calls_List_get_1: ✅ pass (in prelude file)
-Any_get_body_calls_List_slice_2: ✅ pass (in prelude file)
-Any_get_body_calls_List_drop_3: ✅ pass (in prelude file)
-Any_get!_body_calls_DictStrAny_get_0: ✅ pass (in prelude file)
-Any_get!_body_calls_List_get_1: ✅ pass (in prelude file)
-Any_set_body_calls_List_set_0: ✅ pass (in prelude file)
-Any_set!_body_calls_List_set_0: ✅ pass (in prelude file)
-PFloorDiv_body_calls_Int.SafeDiv_0: ✅ pass (in prelude file)
-PFloorDiv_body_calls_Int.SafeDiv_1: ✅ pass (in prelude file)
-PFloorDiv_body_calls_Int.SafeDiv_2: ✅ pass (in prelude file)
-PFloorDiv_body_calls_Int.SafeDiv_3: ✅ pass (in prelude file)
-PAnd_body_calls_Any_to_bool_0: ✅ pass (in prelude file)
-POr_body_calls_Any_to_bool_0: ✅ pass (in prelude file)
-ite_cond_calls_Any_to_bool_0: ✅ pass (at line 6, col 4)
-assert_assert(154)_calls_Any_to_bool_0: ✅ pass (at line 11, col 4)
-assert(154): ✅ pass (at line 11, col 4)
-ite_cond_calls_Any_to_bool_0: ✅ pass (at line 17, col 4)
-ite_cond_calls_Any_to_bool_0: ✅ pass (at line 18, col 8)
-assert_assert(416)_calls_Any_to_bool_0: ✅ pass (at line 25, col 4)
-assert(416): ✅ pass (at line 25, col 4)
-ite_cond_calls_Any_to_bool_0: ✅ pass (at line 31, col 4)
-assert_assert(609)_calls_Any_to_bool_0: ✅ pass (at line 36, col 4)
-assert(609): ✅ pass (at line 36, col 4)
-ite_cond_calls_Any_to_bool_0: ✅ pass (at line 42, col 4)
-ite_cond_calls_Any_to_bool_0: ✅ pass (at line 43, col 8)
-assert_assert(857)_calls_Any_to_bool_0: ✅ pass (at line 50, col 4)
-assert(857): ✅ pass (at line 50, col 4)
-ite_cond_calls_Any_to_bool_0: ✅ pass (at line 56, col 4)
-assert_assert(1048)_calls_Any_to_bool_0: ✅ pass (at line 61, col 4)
-assert(1048): ✅ pass (at line 61, col 4)
-ite_cond_calls_Any_to_bool_0: ✅ pass (at line 67, col 4)
-assert_assert(1224)_calls_Any_to_bool_0: ✅ pass (at line 72, col 4)
-assert(1224): ✅ pass (at line 72, col 4)
-ite_cond_calls_Any_to_bool_0: ✅ pass (at line 74, col 0)
-
-DETAIL: 43 passed, 0 failed, 0 inconclusive
+test_control_flow.py(6, 4): ✅ pass - ite_cond_calls_Any_to_bool_0
+test_control_flow.py(11, 4): ✅ pass - if-else implemented incorrectly
+test_control_flow.py(11, 4): ✅ pass - if-else implemented incorrectly
+test_control_flow.py(17, 4): ✅ pass - ite_cond_calls_Any_to_bool_0
+test_control_flow.py(18, 8): ✅ pass - ite_cond_calls_Any_to_bool_0
+test_control_flow.py(25, 4): ✅ pass - nested if implemented incorrectly
+test_control_flow.py(25, 4): ✅ pass - nested if implemented incorrectly
+test_control_flow.py(31, 7): ✅ pass - Check PGt exception
+test_control_flow.py(31, 4): ✅ pass - ite_cond_calls_Any_to_bool_0
+test_control_flow.py(36, 4): ✅ pass - if with > implemented incorrectly
+test_control_flow.py(36, 4): ✅ pass - if with > implemented incorrectly
+test_control_flow.py(42, 7): ✅ pass - Check PGt exception
+test_control_flow.py(42, 4): ✅ pass - ite_cond_calls_Any_to_bool_0
+test_control_flow.py(43, 11): ✅ pass - Check PLt exception
+test_control_flow.py(43, 8): ✅ pass - ite_cond_calls_Any_to_bool_0
+test_control_flow.py(50, 4): ✅ pass - nested if with comparisons implemented incorrectly
+test_control_flow.py(50, 4): ✅ pass - nested if with comparisons implemented incorrectly
+test_control_flow.py(56, 7): ✅ pass - Check PLe exception
+test_control_flow.py(56, 4): ✅ pass - ite_cond_calls_Any_to_bool_0
+test_control_flow.py(61, 4): ✅ pass - if with <= implemented incorrectly
+test_control_flow.py(61, 4): ✅ pass - if with <= implemented incorrectly
+test_control_flow.py(67, 7): ✅ pass - Check PGe exception
+test_control_flow.py(67, 4): ✅ pass - ite_cond_calls_Any_to_bool_0
+test_control_flow.py(72, 4): ✅ pass - if with >= implemented incorrectly
+test_control_flow.py(72, 4): ✅ pass - if with >= implemented incorrectly
+test_control_flow.py(74, 0): ✅ pass - ite_cond_calls_Any_to_bool_0
+DETAIL: 26 passed, 0 failed, 0 inconclusive
 RESULT: Analysis success

@@ -316,7 +316,7 @@ def cmdToJson (e : Strata.C_Simp.Command) (loc: SourceLoc) : Except String Json 
         ]
       ]
     ])
-  | .havoc _ _ => throw "cmdToJson: Unimplemented"
+  | .set _ .nondet _ => throw "cmdToJson: Unimplemented"
 
 mutual
 partial def blockToJson (b: Imperative.Block Strata.C_Simp.Expression Strata.C_Simp.Command) (loc: SourceLoc) : Except String Json := do

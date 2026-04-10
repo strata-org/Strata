@@ -383,7 +383,7 @@ partial def translateStmt (bindings : TransBindings) (arg : Arg) :
     let newBindings := { bindings with
                          boundVars := bbindings,
                          freeVars := bindings.freeVars.push id }
-    return ([(.cmd (.init id ty none md))], newBindings)
+    return ([(.cmd (.init id ty .nondet md))], newBindings)
   | q`C_Simp.init_def, #[ida, tpa, ea] =>
     let id ← translateIdent ida
     let tp ← translateLMonoTy bindings tpa
@@ -394,21 +394,21 @@ partial def translateStmt (bindings : TransBindings) (arg : Arg) :
     let newBindings := { bindings with
                          boundVars := bbindings,
                          freeVars := bindings.freeVars.push id }
-    return ([(.cmd (.init id ty val md))], newBindings)
+    return ([(.cmd (.init id ty (.det val) md))], newBindings)
   | q`C_Simp.assign, #[_tpa, ida, ea] =>
     let id ← translateIdent ida
     let val ← translateExpr bindings ea
-    return ([(.cmd (.set id val md))], bindings)
+    return ([(.cmd (.set id (.det val) md))], bindings)
   | q`C_Simp.if_command, #[ca, ta, fa] =>
     let c ← translateExpr bindings ca
-    return ([(.ite c (← translateBlock bindings ta) (← translateElse bindings fa) md)], bindings)
+    return ([(.ite (.det c) (← translateBlock bindings ta) (← translateElse bindings fa) md)], bindings)
   | q`C_Simp.while_command, #[ga, measurea, invarianta, ba] =>
-    return ([.loop (← translateExpr bindings ga) (← translateMeasure bindings measurea) (← translateInvariant bindings invarianta) (← translateBlock bindings ba) md], bindings)
+    return ([.loop (.det (← translateExpr bindings ga)) (← translateMeasure bindings measurea) (← translateInvariant bindings invarianta) (← translateBlock bindings ba) md], bindings)
   | q`C_Simp.return, #[_tpa, ea] =>
     -- Return statements are assignments to the global `return` variable
     -- TODO: I don't think this works if we have functions with different return types
     let val ← translateExpr bindings ea
-    return ([(.cmd (.set "return" val md))], bindings)
+    return ([(.cmd (.set "return" (.det val) md))], bindings)
   | q`C_Simp.annotation, #[a] =>
     let .op a_op := a
       | TransM.error s!"Annotation expected op {repr a}"

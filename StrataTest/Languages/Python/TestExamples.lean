@@ -71,8 +71,9 @@ def processPythonFile (pythonCmd : System.FilePath) (input : InputContext)
       let vcResults ← IO.FS.withTempDir fun vcDir =>
         EIO.toIO (fun f => IO.Error.userError (toString f))
           (Core.verify core vcDir .none options
-            (moreFns := Strata.Python.ReFactory))
-      let vcDiags := vcResults.toList.filterMap (fun vcr => vcr.toDiagnostic files)
+            (moreFns := Strata.Python.ReFactory)
+            (externalPhases := [Strata.frontEndPhase]))
+      let vcDiags := vcResults.toList.filterMap (fun vcr => vcr.toDiagnostic files Core.coreAbstractedPhases)
       pure ((translateDiags.map (·.toDiagnostic files)) ++ vcDiags).toArray
 
 end Strata.Python

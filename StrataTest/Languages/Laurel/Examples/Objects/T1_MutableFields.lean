@@ -71,7 +71,7 @@ procedure subsequentHeapMutations(c: Container) {
 procedure implicitEquality(c: Container, d: Container) {
   c#intValue := 1;
   d#intValue := 2;
-  if (c#intValue == d#intValue) {
+  if c#intValue == d#intValue then {
     assert c == d
   } else {
     // Somehow we can't prove this here

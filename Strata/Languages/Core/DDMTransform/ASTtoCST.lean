@@ -182,6 +182,21 @@ end ToCSTContext
 def ToCSTM.logError {M} [Inhabited M] (fn : String) (desc : String) (detail : String) : ToCSTM M Unit := do
   modify (·.logError fn desc detail)
 
+/-- Render an unknown operation as a generic function call `name(args...)`.
+    Registers the name as a free variable if not already registered. -/
+def mkGenericCall {M} [Inhabited M] (caller : String) (name : String)
+    (args : List (CoreDDM.Expr M)) : ToCSTM M (CoreDDM.Expr M) := do
+  ToCSTM.logError caller "unknown operation, rendering as generic call" name
+  let ctx ← get
+  let idx ← match ctx.freeVarIndex? name with
+    | some idx => pure idx
+    | none =>
+      let idx := ctx.allFreeVars.size
+      modify (·.addGlobalFreeVars #[name])
+      pure idx
+  let fnExpr := CoreDDM.Expr.fvar default idx
+  pure <| args.foldl (fun acc arg => .app default acc arg) fnExpr
+
 /-- Convert `LMonoTy` to `CoreType` -/
 def lmonoTyToCoreType {M} [Inhabited M] (ty : Lambda.LMonoTy) :
     ToCSTM M (CoreType M) := do
@@ -417,9 +432,7 @@ def handleUnaryOps {M} [Inhabited M] (name : String) (arg : CoreDDM.Expr M)
   | "Bv64.Extract_7_0" => pure (.bvextract_7_0_64 default arg)
   | "Bv64.Extract_15_0" => pure (.bvextract_15_0_64 default arg)
   | "Bv64.Extract_31_0" => pure (.bvextract_31_0_64 default arg)
-  | _ => do
-    ToCSTM.logError "handleUnaryOps" "unary op" name
-    pure (.not default arg)
+  | _ => mkGenericCall "handleUnaryOps" name [arg]
 
 /-- Map from bitvector binary operation base names to DDM Expr constructors -/
 def bvBinaryOpMap {M} [Inhabited M] :
@@ -489,21 +502,11 @@ def handleBitvecBinaryOps {M} [Inhabited M] (name : String) (arg1 arg2 : CoreDDM
           | _ => -- Handle regular binary operations
             match (bvBinaryOpMap).find? (·.1 == opName) with
             | some (_, op) => pure (op ty arg1 arg2)
-            | none => do
-              ToCSTM.logError "handleBitvecBinaryOps" "unknown bitvec op" opName
-              pure (.bvand default ty arg1 arg2)  -- Default to bitwise AND
-        | none => do
-          ToCSTM.logError "handleBitvecBinaryOps" "unsupported bitvec size" (toString size)
-          pure (.bvand default (.bv64 default) arg1 arg2)  -- Default to 64-bit AND
-      | none => do
-        ToCSTM.logError "handleBitvecBinaryOps" "invalid size format" (toString sizeNumStr)
-        pure (.bvand default (.bv64 default) arg1 arg2) -- Default to bitwise AND
-    else do
-      ToCSTM.logError "handleBitvecBinaryOps" "not a bitvec operation" name
-      pure (.bvand default (.bv64 default) arg1 arg2) -- Default to bitwise AND
-  | _ => do
-    ToCSTM.logError "handleBitvecBinaryOps" "invalid operation format" name
-    pure (.bvand default (.bv64 default) arg1 arg2) -- Default to bitwise AND
+            | none => mkGenericCall "handleBitvecBinaryOps" name [arg1, arg2]
+        | none => mkGenericCall "handleBitvecBinaryOps" name [arg1, arg2]
+      | none => mkGenericCall "handleBitvecBinaryOps" name [arg1, arg2]
+    else mkGenericCall "handleBitvecBinaryOps" name [arg1, arg2]
+  | _ => mkGenericCall "handleBitvecBinaryOps" name [arg1, arg2]
 
 /-- Handle binary operations -/
 def handleBinaryOps {M} [Inhabited M] (name : String)
@@ -561,9 +564,7 @@ def handleTernaryOps {M} [Inhabited M] (name : String)
   -- Strings and regexes
   | "Str.Substr" => pure (.str_substr default arg1 arg2 arg3)
   | "Re.Loop" => pure (.re_loop default arg1 arg2 arg3)
-  | _ => do
-    ToCSTM.logError "handleTernaryOps" "ternary op not found" name
-    pure (.map_set default ty ty arg1 arg2 arg3)  -- Default to map update
+  | _ => mkGenericCall "handleTernaryOps" name [arg1, arg2, arg3]
 
 def lopToExpr {M} [Inhabited M]
     (name : String) (args : List (CoreDDM.Expr M))
@@ -587,9 +588,7 @@ def lopToExpr {M} [Inhabited M]
     | [arg] => handleUnaryOps name arg
     | [arg1, arg2] => handleBinaryOps name arg1 arg2
     | [arg1, arg2, arg3] => handleTernaryOps name arg1 arg2 arg3
-    | _ => do
-      ToCSTM.logError "lopToExpr" "unknown operation" name
-      pure (.btrue default)  -- Default to true literal
+    | args => mkGenericCall "lopToExpr" name args
 
 mutual
 /-- Convert `Lambda.LExpr` to Core `Expr` -/
@@ -797,12 +796,12 @@ partial def stmtToCST {M} [Inhabited M] (s : Core.Statement)
     let nameAnn : Ann String M := ⟨default, name.toPretty⟩
     let tyCST ← lTyToCoreType ty
     let result ← match expr with
-    | none => do
+    | Imperative.ExprOrNondet.nondet => do
       let bind := Bind.bind_mk default nameAnn
                   ⟨default, none⟩ tyCST
       let dl := DeclList.declAtom default bind
       pure (.varStatement default dl)
-    | some e =>
+    | Imperative.ExprOrNondet.det e =>
       let exprCST ← lexprToExpr e 0
       pure (.initStatement default tyCST nameAnn exprCST)
     -- Push the newly declared variable to the *end of the bound variables
@@ -852,16 +851,24 @@ partial def stmtToCST {M} [Inhabited M] (s : Core.Statement)
     let blockCST ← blockToCST stmts
     pure (.block_statement default labelAnn blockCST)
   | .ite cond thenb elseb _md => do
-    let condCST ← lexprToExpr cond 0
     let thenCST ← blockToCST thenb
     let elseCST ← elseToCST elseb
-    pure (.if_statement default condCST thenCST elseCST)
+    match cond with
+    | .det e =>
+      let condCST ← lexprToExpr e 0
+      pure (.if_statement default (.condDet default condCST) thenCST elseCST)
+    | .nondet =>
+      pure (.if_statement default (.condNondet default) thenCST elseCST)
   | .loop guard measure invariant body _md => do
-    let guardCST ← lexprToExpr guard 0
     let measureCST ← measureToCST measure
     let invs ← invariantsToCST invariant
     let bodyCST ← blockToCST body
-    pure (.while_statement default guardCST measureCST invs bodyCST)
+    match guard with
+    | .det e =>
+      let guardCST ← lexprToExpr e 0
+      pure (.while_statement default (.condDet default guardCST) measureCST invs bodyCST)
+    | .nondet =>
+      pure (.while_statement default (.condNondet default) measureCST invs bodyCST)
   | .exit label _md => do
     match label with
     | some l =>
@@ -1081,7 +1088,7 @@ def distinctToCST {M} [Inhabited M] (name : CoreIdent) (es : List (Lambda.LExpr 
 
 /-- Convert a variable declaration to CST -/
 def varToCST {M} [Inhabited M]
-    (name : CoreIdent) (ty : Lambda.LTy) (_e : Option (Lambda.LExpr CoreLParams.mono))
+    (name : CoreIdent) (ty : Lambda.LTy) (_e : Imperative.ExprOrNondet Expression)
     (_md : Imperative.MetaData Expression) : ToCSTM M (Command M) := do
   -- Register name as free variable
   modify (·.addGlobalFreeVars #[name.toPretty])
@@ -1222,6 +1229,26 @@ def Core.formatProgram (ast : Core.Program)
   }
   let formatted := Std.Format.joinSep (cmds.map fun cmd =>
     (mformat (ArgF.op cmd.toAst) ctx state).format) ""
+  let header : Std.Format := "program Core;\n\n"
+  if finalCtx.errors.isEmpty then
+    header ++ formatted
+  else
+    header ++ formatted ++ "\n\n-- Errors encountered during conversion:\n" ++
+    Std.Format.joinSep (finalCtx.errors.toList.map (Std.format ∘ toString)) "\n"
+
+def Core.formatStatement (stmt : Core.Statement)
+    (extraFreeVars : Array String := #[]) : Std.Format :=
+  let initCtx := ToCSTContext.empty (M := SourceRange)
+  let initCtx := initCtx.addGlobalFreeVars extraFreeVars
+  let (cst, finalCtx) := stmtToCST stmt initCtx
+  let dialects := Core_map
+  let ddmCtx := recreateGlobalContext finalCtx
+  let ctx := FormatContext.ofDialects dialects ddmCtx {}
+  let state : FormatState := {
+    openDialects := dialects.toList.foldl (init := {})
+      fun a (d : Dialect) => a.insert d.name
+  }
+  let formatted := (mformat (ArgF.op cst.toAst) ctx state).format
   if finalCtx.errors.isEmpty then
     formatted
   else

@@ -6,6 +6,7 @@
 module
 
 public import Strata.Transform.CoreTransform
+public import Strata.Languages.Core.PipelinePhase
 
 /-! # Call Elimination Transformation -/
 
@@ -15,6 +16,12 @@ namespace Core
 namespace CallElim
 
 open Core.Transform
+
+/-- Label prefix for call-elimination assert statements. -/
+def callElimAssertPrefix : String := "callElimAssert_"
+
+/-- Label prefix for call-elimination assume statements. -/
+def callElimAssumePrefix : String := "callElimAssume_"
 
 /--
 The main call elimination transformation algorithm on a single command.
@@ -79,6 +86,7 @@ def callElimCmd (cmd: Command)
             | _ => none
         let oldSubst := createOldVarsSubst oldTrips ++ unmodifiedOldSubst
 
+        -- Non-lifting substitution is safe here: values are fresh variables
         let postconditions : List Expression.Expr := proc.spec.postconditions.values.map
           (fun c => Lambda.LExpr.substFvars c.expr oldSubst)
 
@@ -98,11 +106,13 @@ def callElimCmd (cmd: Command)
         let asserts ← createAsserts (proc.spec.preconditions.filter (fun (_, check) => check.attr != .Free))
                         (arg_subst ++ ret_subst)
                         md
+                        callElimAssertPrefix
         -- generate assumes based on post-conditions, substituting procedure arguments and returns
         let assumes ← createAssumes
                         (Procedure.Spec.updateCheckExprs postconditions proc.spec.postconditions)
                         (arg_subst ++ ret_subst)
                         md
+                        callElimAssumePrefix
         -- Update cached CallGraph
         let σ ← get
         match σ.cachedAnalyses.callGraph, σ.currentProcedureName with
@@ -120,12 +130,61 @@ def callElimCmd (cmd: Command)
         return argInit ++ outInit ++ oldInit ++ asserts ++ havocs ++ assumes
       | _ => return .none
 
+/-- After call elimination, a procedure body may contain `havoc` statements for
+    globals from the callee's `modifies` clause. Update each procedure's own
+    `modifies` clause so that it includes every global variable that is now
+    modified in the body. This keeps the program well-formed with respect to
+    `checkModificationRights`. -/
+private def updateModifiesClauses (p : Program) : Program :=
+  let globalNames : List Expression.Ident :=
+    p.decls.filterMap fun d => match d with | .var name _ _ _ => some name | _ => none
+  let decls := p.decls.map fun d => match d with
+    | .proc proc md =>
+      let bodyModified := (Imperative.Block.modifiedVars proc.body).eraseDups
+      let newGlobals := bodyModified.filter fun v =>
+        globalNames.contains v && !proc.spec.modifies.contains v
+      if newGlobals.isEmpty then d
+      else .proc { proc with spec := { proc.spec with
+        modifies := proc.spec.modifies ++ newGlobals } } md
+    | other => other
+  { p with decls := decls }
+
 /-- Call Elimination for an entire program by walking through all procedure
-bodies -/
-def callElim' (p : Program) : CoreTransformM (Bool × Program) :=
-  runProgram (targetProcList := .none) callElimCmd p
+bodies. After eliminating calls, updates each procedure's `modifies` clause
+to include globals that are now modified in the body. -/
+def callElim' (p : Program) : CoreTransformM (Bool × Program) := do
+  let (changed, p') ← runProgram (targetProcList := .none) callElimCmd p
+  if changed then
+    return (true, updateModifiesClauses p')
+  else
+    return (false, p')
 
 end CallElim
+
+/-- Call-elimination pipeline phase: the transform replaces procedure calls
+    with assert/havoc/assume sequences. If the obligation's path includes
+    labels from call elimination, the callee body was replaced by its
+    contract, which is an over-approximation. -/
+def callElimPipelinePhase : PipelinePhase where
+  transform := CallElim.callElim'
+  phase.name := "CallElim"
+  phase.getValidation obligation :=
+    if obligationHasLabelPrefix obligation CallElim.callElimAssumePrefix then
+      .modelToValidate (fun _ => /- TODO -/ false)
+    else .modelPreserving
+  phase.getAssertDescription label :=
+    if label.startsWith CallElim.callElimAssertPrefix then
+      let stripped := label.drop CallElim.callElimAssertPrefix.length |>.toString
+      let parts := stripped.splitOn "_"
+      let originalLabel := if parts.length > 1 then
+        "_".intercalate (parts.dropLast)
+      else stripped
+      if originalLabel == "requires" || originalLabel.startsWith "requires_" then
+        some "precondition"
+      else
+        some s!"precondition '{originalLabel}'"
+    else none
+
 end Core
 
 -- NB: workaround for the fact that Core is both a module and a dialect.
