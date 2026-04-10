@@ -85,7 +85,13 @@ def isGlobalVar (p : Program) (ident : Expression.Ident) : Bool :=
 
 
 /-- Cached results of program analyses that are helpful for program
-    transformation. -/
+    transformation.
+
+    Invariant: When `callGraph` is `some cg`, `cg` must reflect the current
+    program's procedure call structure. Every procedure in the program must
+    have an entry in `cg.callees`, and every call edge must be accounted for.
+    Transforms that add, remove, or modify procedures must update the call
+    graph accordingly (or set it to `.none` to invalidate it). -/
 structure CachedAnalyses where
   callGraph: Option CallGraph := .none
 
@@ -381,6 +387,35 @@ def runProgram
   })
   return (changed, newProg)
 
+/-- Repeatedly apply a command-level transformation until no more changes occur
+    or the iteration limit is reached.
+    - `maxIters = none`: repeat until a fixed point (no changes).
+    - `maxIters = some n`: run up to `n` iterations, stopping early if no change. -/
+def runProgramUntil
+    (f : Command → CoreTransformM (Option (List Statement)))
+    (p : Program)
+    (maxIters : Option Nat := none)
+    (targetProcList : Option (List String) := .none)
+  : CoreTransformM (Bool × Program) := do
+  match maxIters with
+  | some n =>
+    let mut prog := p
+    let mut anyChanged := false
+    for _ in List.range n do
+      let (changed, prog') ← runProgram f prog targetProcList
+      prog := prog'
+      if changed then anyChanged := true
+      if !changed then break
+    return (anyChanged, prog)
+  | none =>
+    let mut prog := p
+    let mut anyChanged := false
+    repeat
+      let (changed, prog') ← runProgram f prog targetProcList
+      prog := prog'
+      if changed then anyChanged := true
+      if !changed then break
+    return (anyChanged, prog)
 
 @[expose, simp]
 def runWith {α : Type} (p : α) (f : α → CoreTransformM β)

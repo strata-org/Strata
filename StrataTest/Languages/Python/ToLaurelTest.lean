@@ -5,6 +5,7 @@
 -/
 
 import Strata.Languages.Python.Specs.ToLaurel
+import Strata.Languages.Laurel.Grammar.AbstractToConcreteTreeTranslator
 
 namespace Strata.Python.Specs.ToLaurel.Tests
 
@@ -439,5 +440,47 @@ info: errors: 1
 -- externTypeDecl produces no errors (regression test).
 #guard_msgs in
 #eval runFullTest #[.externTypeDecl "Foo" (PythonIdent.mk "pkg" "Foo")]
+
+/-! ## Nested dict access in preconditions (issue #800) -/
+
+-- Regression test for issue #800: nested dict access `kwargs["Outer"]["Inner"]`
+-- should generate `Any_get` (dict lookup), not `FieldSelect`.
+/--
+info: body contains Any_get: true
+body contains FieldSelect: false
+-/
+#guard_msgs in
+#eval do
+  let strTy := identType .builtinsStr
+  let dictTy := identType .typingDict
+  -- kwargs must be a TypedDict so expandKwargsArgs can expand it
+  let kwargsTy := SpecType.ofAtom loc (.typedDict #["Outer"] #[dictTy] #[true])
+  let result := signaturesToLaurel "<test>" #[
+    .functionDecl {
+      loc := loc, nameLoc := loc, name := "f"
+      args := { args := #[mkArg "x" strTy],
+                kwonly := #[], kwargs := some ("kwargs", kwargsTy) }
+      returnType := strTy
+      isOverload := false
+      preconditions := #[{
+        message := #[.str "nested dict"]
+        formula := .intGe
+          (.getIndex (.getIndex (.var "kwargs" loc) "Outer" loc) "Inner" loc)
+          (.intLit 0 loc)
+          loc
+      }]
+      postconditions := #[]
+    }
+  ] ""
+  assert! result.errors.size = 0
+  match result.program.staticProcedures with
+  | proc :: _ =>
+    let bodyStr := match proc.body with
+      | .Transparent body => toString (Strata.Laurel.formatStmtExpr body)
+      | .Opaque _ (some body) _ => toString (Strata.Laurel.formatStmtExpr body)
+      | _ => ""
+    IO.println s!"body contains Any_get: {bodyStr.contains "Any_get"}"
+    IO.println s!"body contains FieldSelect: {bodyStr.contains "#"}"
+  | [] => IO.println "no procedures"
 
 end Strata.Python.Specs.ToLaurel.Tests

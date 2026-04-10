@@ -170,8 +170,20 @@ Obligation: POr_body_calls_Any_to_bool_0
 Property: assert
 Result: ✅ pass
 
-Obligation: postcondition
-Property: assert
+Obligation: PMod_body_calls_Int.SafeMod_0
+Property: division by zero check
+Result: ✅ pass
+
+Obligation: PMod_body_calls_Int.SafeMod_1
+Property: division by zero check
+Result: ✅ pass
+
+Obligation: PMod_body_calls_Int.SafeMod_2
+Property: division by zero check
+Result: ✅ pass
+
+Obligation: PMod_body_calls_Int.SafeMod_3
+Property: division by zero check
 Result: ✅ pass
 
 Obligation: postcondition
@@ -182,15 +194,19 @@ Obligation: postcondition
 Property: assert
 Result: ✅ pass
 
-Obligation: assert(42486)
+Obligation: postcondition
 Property: assert
 Result: ✅ pass
 
-Obligation: assert(42553)
+Obligation: assert(43154)
 Property: assert
 Result: ✅ pass
 
-Obligation: assert(42661)
+Obligation: assert(43221)
+Property: assert
+Result: ✅ pass
+
+Obligation: assert(43329)
 Property: assert
 Result: ✅ pass
 
