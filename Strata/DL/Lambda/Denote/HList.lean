@@ -5,6 +5,13 @@
 -/
 module
 
+/-!
+## Heterogeneous Lists (HList)
+
+Type-indexed lists used to represent bound-variable valuations in the
+denotational semantics.
+-/
+
 namespace Lambda
 
 public section

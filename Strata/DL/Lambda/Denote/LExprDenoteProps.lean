@@ -10,6 +10,17 @@ import all Strata.DL.Lambda.Denote.LExprDenote
 import all Strata.DL.Lambda.Denote.LExprAnnotated
 import Strata.DL.Lambda.Denote.HList
 
+/-!
+## Denotation Properties
+
+Extensionality, irrelevance, and structural properties of `denote`.
+
+- `denote_ext` — extensionality: denotation depends only on used ops, fvars, and bvars
+- `denote_irrel_of_lcAt` — closed expressions are independent of the bvar valuation
+- `denote_replaceMetadata` — denotation is invariant under metadata replacement
+- `denoteArgs_eq_of_denote_eq` / `denoteArgs_eq_implies_denote_eq` — pointwise ↔ aggregate argument equality
+-/
+
 namespace Lambda
 
 variable {T : LExprParams}
@@ -661,3 +672,12 @@ theorem denoteArgs_eq_implies_denote_eq
       | succ n =>
         simp only [List.getElem?_cons_succ] at ha₁ ha₂ hσ
         exact ih h2_tail htail n a₁ a₂ σ ha₁ ha₂ hσ hta₁ hta₂
+
+/-- `denote` is invariant under changing the type index by an equality proof. -/
+private theorem denote_cast_ty {Δ : List LMonoTy} {e : LExpr T.mono} {τ₁ τ₂ : LMonoTy}
+    (h_eq : τ₁ = τ₂) (h₁ : LExpr.HasTypeA Δ e τ₁) (h₂ : LExpr.HasTypeA Δ e τ₂)
+    (bv : BVarVal tcInterp vt Δ)
+    : LExpr.denote tcInterp opInterp fvarVal vt bv e τ₁ h₁ =
+      cast (congrArg (TyDenote tcInterp vt) h_eq.symm)
+        (LExpr.denote tcInterp opInterp fvarVal vt bv e τ₂ h₂) := by
+  subst h_eq; rfl

@@ -13,6 +13,17 @@ import all Strata.DL.Lambda.Denote.LExprDenoteProps
 public meta import Lean.Elab.Tactic.Basic
 public meta import Lean.Meta.Tactic.Generalize
 
+/-!
+## Substitution and Denotation
+
+Proves that bound-variable operations commute with denotation.
+
+- `substK_denote` — generalized depth-k substitution commutes with `denote`
+- `subst_denote` / `varOpen_denote` — substitution and variable opening commute with `denote`
+- `liftBVars_denote` — lifting bound variable indices preserves denotation
+- `substFvarsLifting_denote` — free variable substitution with lifting commutes with `denote`
+-/
+
 namespace Lambda
 open Lean Elab Tactic Meta in
 /-- Generalize the last argument of the LHS of an equality goal. -/

@@ -14,6 +14,17 @@ import all Strata.DL.Lambda.Denote.LExprDenoteSubst
 import all Strata.DL.Lambda.Denote.CallOfLFuncDenote
 import all Strata.DL.Lambda.Denote.LExprDenoteEq
 
+/-!
+## Operational Semantics Consistency
+
+Proves that the Lambda operational and denotational semantics agree:
+evaluation steps preserve denotation and type.
+
+- `Step.denote_preserved` — one evaluation step preserves denotation
+- `Step.type_preserved` — one evaluation step preserves type (sorry)
+- `StepStar.denote_preserved` — multi-step evaluation preserves denotation (sorry)
+-/
+
 namespace Lambda
 
 variable {T : LExprParams}
@@ -28,20 +39,6 @@ variable (vt : TyVarVal)
 
 section -- [DecidableEq T.IDMeta] [Inhabited T.mono.base.IDMeta]
 variable [DecidableEq T.IDMeta] [Inhabited T.mono.base.IDMeta]
-
-theorem zip_map_fst_eq {α β: Type} (l1: List α) (l2: List β) :
-  List.length l1 = List.length l2 →
-  (l1.zip l2).map Prod.fst = l1 := by
-  induction l1 generalizing l2 <;> cases l2 <;> simp_all
-
-theorem zip_map_snd_eq{α β: Type} (l1: List α) (l2: List β) :
-  List.length l1 = List.length l2 →
-  (l1.zip l2).map Prod.snd = l2 := by
-  induction l1 generalizing l2 <;> cases l2 <;> simp_all
-
-theorem zip_map_fst_snd_eq {α β : Type} (l : List (α × β)) :
-    (l.map Prod.fst).zip (l.map Prod.snd) = l := by
-  induction l <;> simp_all
 
 /-! ### Main theorem -/
 
