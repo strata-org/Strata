@@ -551,49 +551,25 @@ def processIteBranches (steps : Nat) (old_var_subst : SubstMap) (Ewn : EnvWithNe
    unfold Imperative.Block.sizeOf; split <;> omega
   have h_else_ge : 1 <= Imperative.Block.sizeOf else_ss := by
    unfold Imperative.Block.sizeOf; split <;> omega
-  have h_append_le : ∀ (a b : Statements),
-      Imperative.Block.sizeOf (a ++ b) + 1 <=
-      Imperative.Block.sizeOf a + Imperative.Block.sizeOf b := by
-    intro a b
-    induction a with
-    | nil => simp [Imperative.Block.sizeOf]; omega
-    | cons h t ih =>
-      simp only [List.cons_append, Imperative.Block.sizeOf]
-      omega
-  have h_append_then : Imperative.Block.sizeOf (then_ss ++ rest) <
-      Imperative.Block.sizeOf then_ss + Imperative.Block.sizeOf else_ss + Imperative.Block.sizeOf rest := by
-    have := h_append_le then_ss rest; omega
-  have h_append_else : Imperative.Block.sizeOf (else_ss ++ rest) <
-      Imperative.Block.sizeOf then_ss + Imperative.Block.sizeOf else_ss + Imperative.Block.sizeOf rest := by
-    have := h_append_le else_ss rest; omega
-  -- Evaluate then-branch followed by rest
+  -- Evaluate each branch without rest
   let Ewns_t := evalAuxGo steps old_var_subst
                   {Ewn with env := {Ewn.env with pathConditions := path_conds_true}}
-                  (then_ss ++ rest) optExit
-  -- We empty the deferred proof obligations in the `else` path to
-  -- avoid duplicate verification checks -- the deferred obligations
-  -- would be checked in the `then` branch anyway.
+                  then_ss .none
   let Ewns_f := evalAuxGo steps old_var_subst
                   {Ewn with env := {Ewn.env with pathConditions := path_conds_false,
                                                  deferred := #[]}}
-                  (else_ss ++ rest) optExit
+                  else_ss .none
   match Ewns_t, Ewns_f with
   -- Special case: if there's only one result from each path,
   -- with no exit label, we can merge both states into one.
   | [{ stk := stk_t, env := E_t, exitLabel := .none}],
     [{ stk := stk_f, env := E_f, exitLabel := .none}] =>
     let s' := Imperative.Stmt.ite (.det cond') stk_t.top stk_f.top md
-    -- Remove obligations from E_f that duplicate ones in E_t (same label).
-    -- Since rest is evaluated in both branches, its obligations appear in
-    -- both with potentially different substitutions; we keep only the
-    -- true-branch copies.
-    let dedupDeferred :=
-      E_f.deferred.filter fun ob =>
-        !E_t.deferred.any fun t => t.label == ob.label
-    let E_f' := { E_f with deferred := dedupDeferred }
-    [EnvWithNext.mk (Env.merge cond' E_t E_f').popScope
+    let merged := EnvWithNext.mk (Env.merge cond' E_t E_f).popScope
                     .none
-                    (orig_stk.appendToTop [s'])]
+                    (orig_stk.appendToTop [s'])
+    -- Evaluate rest with the merged environment (once, avoiding duplicates)
+    evalAuxGo steps old_var_subst merged rest optExit
   | _, _ =>
     let Ewns_t := Ewns_t.map
                       (fun (ewn : EnvWithNext) =>
@@ -605,7 +581,9 @@ def processIteBranches (steps : Nat) (old_var_subst : SubstMap) (Ewn : EnvWithNe
                         let s' := Imperative.Stmt.ite (.det (LExpr.false ())) [] ewn.stk.top md
                         { ewn with env := ewn.env.popScope,
                                    stk := orig_stk.appendToTop [s']})
-  Ewns_t ++ Ewns_f
+    -- Multi-result case: evaluate rest in each result separately
+    List.flatMap (fun (ewn : EnvWithNext) =>
+      evalAuxGo steps old_var_subst ewn rest optExit) (Ewns_t ++ Ewns_f)
   termination_by (steps, Imperative.Block.sizeOf then_ss + Imperative.Block.sizeOf else_ss + Imperative.Block.sizeOf rest)
 
 end

@@ -39,49 +39,29 @@ VCs:
 Label: n_gt_100_postcond
 Property: assert
 Assumptions:
-<label_ite_cond_true: (~Int.Lt #100 n)>: 100 < $__n0
+<label_ite_cond_true: (~Int.Lt #100 n)>: if 100 < $__n0 then 100 < $__n0 else true
+<label_ite_cond_false: !(~Int.Lt #100 n)>: if if 100 < $__n0 then false else true then if 100 < $__n0 then false else true else true
+callElimAssume_n_gt_100_postcond_6: if if 100 < $__n0 then false else true then 100 < $__n0 + 11 ==> $__r2 == $__n0 + 11 - 10 else true
+callElimAssume_n_le_100_postcond_7: if if 100 < $__n0 then false else true then $__n0 + 11 <= 100 ==> $__r2 == 91 else true
+callElimAssume_n_gt_100_postcond_2: if if 100 < $__n0 then false else true then 100 < $__r2 ==> $__r3 == $__r2 - 10 else true
+callElimAssume_n_le_100_postcond_3: if if 100 < $__n0 then false else true then $__r2 <= 100 ==> $__r3 == 91 else true
 Obligation:
-100 < $__n0 ==> true
+100 < $__n0 ==> if 100 < $__n0 then $__n0 - 10 else $__r3 == $__n0 - 10
 
 Label: n_le_100_postcond
 Property: assert
 Assumptions:
-<label_ite_cond_true: (~Int.Lt #100 n)>: 100 < $__n0
+<label_ite_cond_true: (~Int.Lt #100 n)>: if 100 < $__n0 then 100 < $__n0 else true
+<label_ite_cond_false: !(~Int.Lt #100 n)>: if if 100 < $__n0 then false else true then if 100 < $__n0 then false else true else true
+callElimAssume_n_gt_100_postcond_6: if if 100 < $__n0 then false else true then 100 < $__n0 + 11 ==> $__r2 == $__n0 + 11 - 10 else true
+callElimAssume_n_le_100_postcond_7: if if 100 < $__n0 then false else true then $__n0 + 11 <= 100 ==> $__r2 == 91 else true
+callElimAssume_n_gt_100_postcond_2: if if 100 < $__n0 then false else true then 100 < $__r2 ==> $__r3 == $__r2 - 10 else true
+callElimAssume_n_le_100_postcond_3: if if 100 < $__n0 then false else true then $__r2 <= 100 ==> $__r3 == 91 else true
 Obligation:
-$__n0 <= 100 ==> $__n0 - 10 == 91
-
-Label: n_gt_100_postcond
-Property: assert
-Assumptions:
-<label_ite_cond_false: !(~Int.Lt #100 n)>: if 100 < $__n0 then false else true
-callElimAssume_n_gt_100_postcond_6: 100 < $__n0 + 11 ==> $__r2 == $__n0 + 11 - 10
-callElimAssume_n_le_100_postcond_7: $__n0 + 11 <= 100 ==> $__r2 == 91
-callElimAssume_n_gt_100_postcond_2: 100 < $__r2 ==> $__r3 == $__r2 - 10
-callElimAssume_n_le_100_postcond_3: $__r2 <= 100 ==> $__r3 == 91
-Obligation:
-100 < $__n0 ==> $__r3 == $__n0 - 10
-
-Label: n_le_100_postcond
-Property: assert
-Assumptions:
-<label_ite_cond_false: !(~Int.Lt #100 n)>: if 100 < $__n0 then false else true
-callElimAssume_n_gt_100_postcond_6: 100 < $__n0 + 11 ==> $__r2 == $__n0 + 11 - 10
-callElimAssume_n_le_100_postcond_7: $__n0 + 11 <= 100 ==> $__r2 == 91
-callElimAssume_n_gt_100_postcond_2: 100 < $__r2 ==> $__r3 == $__r2 - 10
-callElimAssume_n_le_100_postcond_3: $__r2 <= 100 ==> $__r3 == 91
-Obligation:
-$__n0 <= 100 ==> $__r3 == 91
+$__n0 <= 100 ==> if 100 < $__n0 then $__n0 - 10 else $__r3 == 91
 
 ---
 info:
-Obligation: n_gt_100_postcond
-Property: assert
-Result: ✅ pass
-
-Obligation: n_le_100_postcond
-Property: assert
-Result: ✅ pass
-
 Obligation: n_gt_100_postcond
 Property: assert
 Result: ✅ pass

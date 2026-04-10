@@ -304,14 +304,6 @@ Path Conditions:
 Warnings:
 []
 Deferred Proof Obligations:
-Label: x_eq_y_label_0
-Property: assert
-Assumptions:
-(<label_ite_cond_true: (z == #false)>, (zinit == #false))
-(z_false, (zinit == #false))
-Proof Obligation:
-#true
-
 Label: trivial
 Property: assert
 Assumptions:
@@ -323,10 +315,10 @@ Proof Obligation:
 Label: x_eq_y_label_0
 Property: assert
 Assumptions:
-(<label_ite_cond_false: !(z == #false)>, (if (zinit == #false) then #false else #true))
 (z_false, (zinit == #false))
+(<label_ite_cond_true: (z == #false)>, (if (zinit == #false) then (zinit == #false) else #true)) (<label_ite_cond_false: !(z == #false)>, (if (if (zinit == #false) then #false else #true) then (if (zinit == #false) then #false else #true) else #true))
 Proof Obligation:
-#false
+((if (zinit == #false) then #6 else #0) == #6)
 
 Label: x_eq_y
 Property: assert
@@ -621,16 +613,10 @@ Deferred Proof Obligations:
 Label: x_pos
 Property: assert
 Assumptions:
-(<label_ite_cond_true: $__nondet_cond_0>, $__$__nondet_cond_00)
+(<label_ite_cond_true: $__nondet_cond_0>, (if $__$__nondet_cond_00 then $__$__nondet_cond_00 else #true))
+(<label_ite_cond_false: !$__nondet_cond_0>, (if (if ($__$__nondet_cond_00 : bool) then #false else #true) then (if ($__$__nondet_cond_00 : bool) then #false else #true) else #true))
 Proof Obligation:
-#true
-
-Label: x_pos
-Property: assert
-Assumptions:
-(<label_ite_cond_false: !$__nondet_cond_0>, (if $__$__nondet_cond_00 then #false else #true))
-Proof Obligation:
-#false
+((if ($__$__nondet_cond_00 : bool) then #1 else #2) == #1)
 -/
 #guard_msgs in
 #eval (evalOne ∅ ∅ [.init "x" t[int] (.det eb[#0]) .empty,
