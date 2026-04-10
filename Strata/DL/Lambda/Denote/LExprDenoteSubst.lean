@@ -29,7 +29,7 @@ open Lean Elab Tactic Meta in
 /-- Generalize the last argument of the LHS of an equality goal. -/
 elab "generalize_lhs_last_arg" : tactic => do
   let goal ← getMainGoal
-  let goalType ← goal.getType
+  let goalType ← instantiateMVars (← goal.getType)
   let some (_, lhs, _) := goalType.eq? | throwError "Goal is not an equality"
   match lhs with
   | Expr.app _fn lastArg =>
@@ -936,3 +936,38 @@ theorem substFvarsLifting_denote [DecidableEq T.IDMeta]
       bvarVal_outer h_args h_keys h_tys_len h_sorts h_wt h_denotes
       (Δ_body := []) .nil h_body h_annot (by simp [h_subst])
     simpa using this
+
+/-! ## `substFvars` denotation (via locally closed replacements) -/
+
+theorem substFvars_denote [DecidableEq T.IDMeta]
+    {body : LExpr T.mono} {τ : LMonoTy}
+    {bindings : List (T.Identifier × LExpr T.mono)}
+    {sortBindings : List (Identifier T.IDMeta × LSort)}
+    {Δ_outer : List LMonoTy}
+    (bvarVal_outer : BVarVal tcInterp vt Δ_outer)
+    (h_body : LExpr.HasTypeA Δ_outer body τ)
+    (h_subst : LExpr.HasTypeA Δ_outer (LExpr.substFvars body bindings) τ)
+    (h_args : HList (SortDenote tcInterp) (sortBindings.map Prod.snd))
+    (h_keys : bindings.map Prod.fst = sortBindings.map Prod.fst)
+    (h_len : bindings.length = sortBindings.length)
+    {tys : List LMonoTy}
+    (h_tys_len : tys.length = bindings.length)
+    (h_sorts : sortBindings.map Prod.snd = tys.map (LMonoTy.substTyVars vt))
+    (h_wt : List.Forall₂ (LExpr.HasTypeA Δ_outer) (bindings.map Prod.snd) tys)
+    (h_denotes : h_args = HList.cast h_sorts.symm
+        (denoteArgs tcInterp opInterp fvarVal vt bvarVal_outer (bindings.map Prod.snd) tys h_wt))
+    (h_annot : fvars_annotated_by (bindings.map Prod.fst |>.zip tys) body)
+    (h_lc : ∀ (k : T.Identifier) (v : LExpr T.mono), Map.find? bindings k = some v → LExpr.lcAt 0 v = true)
+    : LExpr.denote tcInterp opInterp fvarVal vt bvarVal_outer
+        (LExpr.substFvars body bindings) τ h_subst =
+      LExpr.denote tcInterp opInterp
+        (fvarVal.withArgs sortBindings h_args)
+        vt bvarVal_outer body τ h_body := by
+  have h_eq : body.substFvars bindings = body.substFvarsLifting bindings :=
+    LExpr.substFvars_eq_substFvarsLifting_of_lcAt h_lc
+  revert h_eq
+  generalize body.substFvars bindings = e' at h_subst ⊢
+  intros h_eq
+  subst h_eq
+  exact substFvarsLifting_denote _ _ _ _ bvarVal_outer h_body h_subst h_args h_keys h_len
+    h_tys_len h_sorts h_wt h_denotes h_annot

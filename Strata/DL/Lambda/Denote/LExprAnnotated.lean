@@ -274,6 +274,14 @@ theorem typeCheck_of_lcAt {T : LExprParams}
     : LExpr.typeCheck Δ' e = LExpr.typeCheck [] e :=
   typeCheck_of_lcAt_aux hlc (by omega)
 
+/-- Weakening: a locally closed expression well-typed in `[]` is well-typed in any `Δ`. -/
+theorem HasTypeA_weaken {T : LExprParams}
+    {e : LExpr T.mono} {τ : LMonoTy} {Δ : List LMonoTy}
+    (h : LExpr.HasTypeA [] e τ) (hlc : LExpr.lcAt 0 e = true)
+    : LExpr.HasTypeA Δ e τ := by
+  rw [LExpr.HasTypeA_iff_typeCheck] at h ⊢
+  rw [typeCheck_of_lcAt hlc]; exact h
+
 /-- Substitution preserves typeCheck results. Generalized to an arbitrary
 substitution function `s` (not just a constant one) so that `varOpen`
 (which uses metadata-dependent `fun m => fvar m x ty`) is covered. -/

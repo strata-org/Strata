@@ -62,7 +62,7 @@ def Map.union (m1 m2 : Map α β) : Map α β :=
 
 abbrev Map.empty : Map α β := []
 
-def Map.find? [DecidableEq α] (m : Map α β) (a' : α) : Option β :=
+@[expose] def Map.find? [DecidableEq α] (m : Map α β) (a' : α) : Option β :=
   match m with
   | [] => none
   | (a, b) :: m => if a = a' then some b else find? m a'
@@ -108,6 +108,215 @@ theorem Map.keys_eq_map_fst (m : Map α β) : m.keys = m.map Prod.fst := by
   induction m with
   | nil => rfl
   | cons p m ih => cases p; simp [Map.keys, ih]
+
+/-- Deduplicated entries of a map, keeping the first occurrence of each key.
+Defined by running `go` on the reversed list so that `go` (which keeps entries
+whose key does not appear later) effectively keeps first occurrences. -/
+def Map.keySet [DecidableEq α] (m : Map α β) : List (α × β) :=
+  go m.reverse
+where
+  go : List (α × β) → List (α × β)
+    | [] => []
+    | (k, v) :: rest =>
+      if Map.find? rest k = none then (k, v) :: go rest
+      else go rest
+
+private theorem Map.keySet.go_not_mem_of_find_none [DecidableEq α] (m : List (α × β)) (k : α)
+    (h : Map.find? m k = none) : k ∉ (Map.keySet.go m).map Prod.fst := by
+  induction m with
+  | nil => simp [Map.keySet.go]
+  | cons p rest ih =>
+    simp only [Map.find?] at h
+    split at h
+    · simp at h
+    · rename_i h_ne
+      simp only [Map.keySet.go]
+      split
+      · simp only [List.map_cons, List.mem_cons]
+        intro h_mem
+        cases h_mem with
+        | inl h_eq => exact absurd h_eq.symm h_ne
+        | inr h_rest => exact absurd h_rest (ih h)
+      · exact ih h
+
+private theorem Map.keySet.go_nodup [DecidableEq α] (m : List (α × β)) :
+    List.Nodup (Map.keySet.go m |>.map Prod.fst) := by
+  induction m with
+  | nil => exact List.nodup_nil
+  | cons p rest ih =>
+    simp only [Map.keySet.go]
+    split
+    · rename_i h_none
+      simp only [List.map_cons]
+      exact List.nodup_cons.mpr ⟨go_not_mem_of_find_none rest p.fst h_none, ih⟩
+    · exact ih
+
+theorem Map.keySet_nodup [DecidableEq α] (m : Map α β) :
+    List.Nodup (m.keySet.map Prod.fst) :=
+  Map.keySet.go_nodup m.reverse
+
+theorem Map.find?_append [DecidableEq α] (l₁ l₂ : List (α × β)) (x : α) :
+    Map.find? (l₁ ++ l₂) x = match Map.find? l₁ x with
+      | some v => some v
+      | none => Map.find? l₂ x := by
+  induction l₁ with
+  | nil => simp [Map.find?]
+  | cons p rest ih =>
+    simp only [List.cons_append, Map.find?]
+    split
+    · rfl
+    · exact ih
+
+private theorem Map.find?_none_of_reverse_none [DecidableEq α] (m : List (α × β)) (x : α)
+    (h : Map.find? m x = none) : Map.find? m.reverse x = none := by
+  induction m with
+  | nil => simp [Map.find?]
+  | cons p rest ih =>
+    simp only [List.reverse_cons, Map.find?_append]
+    simp only [Map.find?] at h
+    split at h
+    · exact absurd h (by simp)
+    · rename_i h_ne
+      rw [ih h]
+      simp only [Map.find?]
+      split
+      · rename_i h_eq; exact absurd h_eq h_ne
+      · rfl
+
+theorem Map.find?_none_iff_reverse_none [DecidableEq α] (m : List (α × β)) (x : α) :
+    Map.find? m x = none ↔ Map.find? m.reverse x = none := by
+  constructor
+  · exact Map.find?_none_of_reverse_none m x
+  · intro h
+    have h_rr : m = m.reverse.reverse := (List.reverse_reverse m).symm
+    rw [h_rr]
+    exact Map.find?_none_of_reverse_none m.reverse x h
+
+private theorem Map.keySet.go_find_rev_iff [DecidableEq α] (m : List (α × β)) (x : α) (v : β) :
+    Map.find? m.reverse x = some v ↔ (x, v) ∈ Map.keySet.go m := by
+  induction m with
+  | nil => simp [Map.keySet.go, Map.find?]
+  | cons p rest ih =>
+    simp only [List.reverse_cons, Map.keySet.go]
+    split
+    · rename_i h_none
+      rw [Map.find?_append]
+      cases h_find_rev : Map.find? rest.reverse x with
+      | some w =>
+        simp only
+        constructor
+        · intro h_eq
+          injection h_eq with h_wv
+          exact List.mem_cons.mpr (Or.inr (ih.mp (h_wv ▸ h_find_rev)))
+        · intro h_mem
+          cases List.mem_cons.mp h_mem with
+          | inl h_eq =>
+            have h_xeq : x = p.fst := congrArg Prod.fst h_eq
+            rw [h_xeq] at h_find_rev
+            have h_none_rev := Map.find?_none_of_reverse_none rest p.fst h_none
+            rw [h_none_rev] at h_find_rev
+            exact absurd h_find_rev (by simp)
+          | inr h_rest =>
+            have h_rv := ih.mpr h_rest
+            rw [h_rv] at h_find_rev
+            injection h_find_rev with h_wv
+            subst h_wv; rfl
+      | none =>
+        simp only [Map.find?]
+        split
+        · rename_i h_eq
+          constructor
+          · intro h_val; injection h_val with h_vs
+            exact List.mem_cons.mpr (Or.inl (by rw [h_eq, h_vs]))
+          · intro h_mem
+            cases List.mem_cons.mp h_mem with
+            | inl h_peq => exact congrArg some (congrArg Prod.snd h_peq).symm
+            | inr h_rest =>
+              have h_rv := ih.mpr h_rest
+              rw [h_rv] at h_find_rev
+              exact absurd h_find_rev (by simp)
+        · rename_i h_ne
+          constructor
+          · intro h_abs; exact absurd h_abs (by simp)
+          · intro h_mem
+            cases List.mem_cons.mp h_mem with
+            | inl h_peq => exact absurd (congrArg Prod.fst h_peq).symm h_ne
+            | inr h_rest =>
+              have h_rv := ih.mpr h_rest
+              rw [h_rv] at h_find_rev
+              exact absurd h_find_rev (by simp)
+    · rename_i h_some
+      rw [Map.find?_append]
+      cases h_find_rev : Map.find? rest.reverse x with
+      | some w =>
+        simp only []
+        constructor
+        · intro h_eq; injection h_eq with h_wv; exact ih.mp (h_wv ▸ h_find_rev)
+        · intro h_mem
+          have h_rv := ih.mpr h_mem
+          rw [h_rv] at h_find_rev
+          injection h_find_rev with h_wv
+          subst h_wv; rfl
+      | none =>
+        simp only [Map.find?]
+        constructor
+        · intro h_find_p
+          split at h_find_p
+          · rename_i h_eq
+            have h_rest_none := (Map.find?_none_iff_reverse_none rest x).mpr h_find_rev
+            rw [← h_eq] at h_rest_none
+            exact absurd h_rest_none h_some
+          · exact absurd h_find_p (by simp)
+        · intro h_mem
+          exact absurd (ih.mpr h_mem) (by rw [h_find_rev]; simp)
+
+theorem Map.find?_iff_mem_keySet [DecidableEq α] (m : Map α β) (x : α) (v : β) :
+    Map.find? m x = some v ↔ (x, v) ∈ m.keySet := by
+  unfold Map.keySet
+  have h_rr : m.reverse.reverse = m := List.reverse_reverse m
+  conv => lhs; rw [show m = m.reverse.reverse from h_rr.symm]
+  exact Map.keySet.go_find_rev_iff m.reverse x v
+
+/-- `Map.find?` returning `some v` implies `(x, v)` is a member of the map (as a list). -/
+theorem Map.find?_mem [DecidableEq α] (m : Map α β) (x : α) (v : β)
+    (h : Map.find? m x = some v) : List.Mem (x, v) m := by
+  induction m with
+  | nil => simp [Map.find?] at h
+  | cons p rest ih =>
+    obtain ⟨a, b⟩ := p
+    simp only [Map.find?] at h
+    split at h
+    · injection h with h; subst h; rename_i heq; subst heq; exact List.Mem.head _
+    · exact List.Mem.tail _ (ih h)
+
+theorem Map.findNone_eq_notmem_mapfst {m: Map α β} [DecidableEq α]: ¬ a ∈ List.map Prod.fst m ↔ Map.find? m a = none := by
+  induction m <;> simp [Map.find?]
+  constructor <;> intro H
+  split <;> simp_all
+  split at H <;> simp_all
+  rw [Eq.comm]; assumption
+
+theorem Map.find?_keySet [DecidableEq α] (m : Map α β) (k : α) :
+    Map.find? m.keySet k = Map.find? m k := by
+  cases h : Map.find? m k with
+  | none =>
+    cases h_ks : Map.find? m.keySet k with
+    | none => rfl
+    | some w =>
+      have h_mem := Map.find?_mem m.keySet k w h_ks
+      have h_find := (Map.find?_iff_mem_keySet m k w).mpr h_mem
+      rw [h_find] at h
+      exact absurd h (by simp)
+  | some v =>
+    have h_mem := (Map.find?_iff_mem_keySet m k v).mp h
+    cases h_ks : Map.find? m.keySet k with
+    | none =>
+      have h_not_mem := Map.findNone_eq_notmem_mapfst.mpr h_ks
+      exact absurd (List.mem_map_of_mem (f := Prod.fst) h_mem) h_not_mem
+    | some w =>
+      have h_mem_w := Map.find?_mem m.keySet k w h_ks
+      have h_find_w := (Map.find?_iff_mem_keySet m k w).mpr h_mem_w
+      rw [h] at h_find_w; injection h_find_w with h_vw; subst h_vw; rfl
 
 def Map.values (m : Map α β) : List β :=
   match m with
@@ -240,13 +449,6 @@ theorem Map.insert_values [DecidableEq α] (m : Map α β) :
     · simp_all [Map.values]
       grind
   done
-
-theorem Map.findNone_eq_notmem_mapfst {m: Map α β} [DecidableEq α]: ¬ a ∈ List.map Prod.fst m ↔ Map.find? m a = none := by
-  induction m <;> simp [Map.find?]
-  constructor <;> intro H
-  split <;> simp_all
-  split at H <;> simp_all
-  rw [Eq.comm]; assumption
 
 /-- If `Map.find?` returns `some e`, there is an index `i` where the key
 lives and no earlier entry has the same key. -/

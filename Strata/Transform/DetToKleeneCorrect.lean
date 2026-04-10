@@ -6,7 +6,7 @@
 module
 
 public import Strata.DL.Imperative.Stmt
-public import Strata.DL.Imperative.StmtSemanticsSmallStep
+public import Strata.DL.Imperative.StmtSemantics
 public import Strata.DL.Imperative.KleeneStmt
 public import Strata.DL.Imperative.KleeneStmtSemantics
 public import Strata.Transform.DetToKleene
@@ -14,7 +14,7 @@ public import Strata.Transform.Specification
 import all Strata.Transform.Specification
 import all Strata.Transform.DetToKleene
 import all Strata.DL.Imperative.Stmt
-import all Strata.DL.Imperative.StmtSemanticsSmallStep
+import all Strata.DL.Imperative.StmtSemantics
 import all Strata.DL.Imperative.CmdSemantics
 import all Strata.DL.Util.Relations
 
@@ -127,8 +127,8 @@ private theorem loop_transform_some_det
       ns = .loop (.seq (.cmd (.assume "guard" g md)) b) := by
   simp [StmtToKleeneStmt] at ht
   match hb : BlockToKleeneStmt body with
-  | some b => simp [hb, bind, Option.bind] at ht; exact ⟨b, rfl, ht.symm⟩
-  | none => simp [hb, bind, Option.bind] at ht
+  | some b => simp [hb, Option.bind] at ht; exact ⟨b, rfl, ht.symm⟩
+  | none => simp [hb, Option.bind] at ht
 
 omit [HasFvar P] [HasVal P] [HasBoolVal P] in
 private theorem loop_transform_some_nondet
@@ -140,8 +140,8 @@ private theorem loop_transform_some_nondet
       ns = .loop b := by
   simp [StmtToKleeneStmt] at ht
   match hb : BlockToKleeneStmt body with
-  | some b => simp [hb, bind, Option.bind] at ht; exact ⟨b, rfl, ht.symm⟩
-  | none => simp [hb, bind, Option.bind] at ht
+  | some b => simp [hb, Option.bind] at ht; exact ⟨b, rfl, ht.symm⟩
+  | none => simp [hb, Option.bind] at ht
 
 omit [HasFvar P] [HasVal P] [HasBoolVal P] in
 private theorem block_transform_some

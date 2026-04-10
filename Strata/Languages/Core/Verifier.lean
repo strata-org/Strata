@@ -49,7 +49,8 @@ when needed for the validity check (line 64 for check-sat-assuming, line 77 for 
 def encodeCore (ctx : Core.SMT.Context) (prelude : SolverM Unit)
     (assumptionTerms : List Term) (obligationTerm : Term)
     (md : Imperative.MetaData Core.Expression)
-    (satisfiabilityCheck validityCheck : Bool) :
+    (satisfiabilityCheck validityCheck : Bool)
+    (label : String) :
     SolverM (List String × EncoderState) := do
   Solver.setLogic "ALL"
   prelude
@@ -103,12 +104,10 @@ def encodeCore (ctx : Core.SMT.Context) (prelude : SolverM Unit)
       Solver.assert (← encodeTerm False (Factory.not obligationTerm) |>.run estate).1
       let _ ← Solver.checkSat ids
 
-  -- Emit the "message" metadata field at the very end (once per obligation).
-  match md.findElem Imperative.MetaData.message with
-  | some elem =>
-    let msg := toString (Std.format elem.value) |>.replace "\\" "\\\\" |>.replace "\"" "\\\""
-    Solver.setInfo "final-message" s!"\"{msg}\""
-  | none => pure ()
+  -- Emit the property summary (or label) as the final message in the SMT-LIB output.
+  let rawMsg := md.getPropertySummary.getD label
+  let escaped := rawMsg.replace "\\" "\\\\" |>.replace "\"" "\\\""
+  Solver.setInfo "final-message" s!"\"{escaped}\""
 
   return (ids, estate)
 
@@ -122,6 +121,17 @@ open Std (ToFormat Format format)
 open Lambda Strata.SMT
 
 public section
+
+/-- Replace characters that are problematic on common filesystems
+    (parens, quotes, spaces, path separators, and Windows-invalid characters
+    such as `< > : | ? *`) with underscores or remove them.
+    Single-pass over the string. -/
+def sanitizeFilename (s : String) : String :=
+  String.ofList <| s.toList.filterMap fun c =>
+    if c == '"' || c == '\'' then none
+    else if c == '(' || c == ')' || c == ' ' || c == '/' || c == '\\'
+         || c == '<' || c == '>' || c == ':' || c == '|' || c == '?' || c == '*' then some '_'
+    else some c
 
 private def typedVarToSMTFn (ctx : SMT.Context) (id : Core.Expression.Ident)
   (ty : Core.Expression.Ty) := do
@@ -165,6 +175,7 @@ def dischargeObligation
   (obligationTerm : Term)
   (ctx : SMT.Context)
   (satisfiabilityCheck validityCheck : Bool)
+  (label : String)
   : IO (Except Format (SMT.Result × SMT.Result × EncoderState)) := do
   -- CVC5 requires --incremental for multiple (check-sat) commands
   let baseFlags := getSolverFlags options
@@ -177,7 +188,8 @@ def dischargeObligation
   Imperative.SMT.dischargeObligation
     (P := Core.Expression)
     (Strata.SMT.Encoder.encodeCore ctx (getSolverPrelude options.solver)
-      assumptionTerms obligationTerm md satisfiabilityCheck validityCheck)
+      assumptionTerms obligationTerm md satisfiabilityCheck validityCheck
+      (label := label))
     (typedVarToSMTFn ctx)
     vars
     options.solver
@@ -324,13 +336,18 @@ def hasSMTError (o : VCOutcome) : Bool :=
   | .err _, _ | _, .err _ => true
   | _,      _             => false
 
--- Derived predicates (cross-cutting properties)
+-- Derived predicates (cross-cutting, mode-agnostic building blocks)
 
+/-- The assertion's validity is proven (validity = unsat). True for `passAndReachable`,
+    `unreachable`, and `passReachabilityUnknown`. Note: this does NOT distinguish
+    reachable passes from unreachable (dead-code) passes. -/
 def isPass (o : VCOutcome) : Bool :=
   match o.validityProperty with
   | .unsat => true
   | _ => false
 
+/-- The assertion can be true (satisfiability = sat). True for `passAndReachable`,
+    `canBeTrueOrFalseAndIsReachable`, and `satisfiableValidityUnknown`. -/
 def isSatisfiable (o : VCOutcome) : Bool :=
   match o.satisfiabilityProperty with
   | .sat _ => true
@@ -344,6 +361,20 @@ def isAlwaysTrue (o : VCOutcome) : Bool :=
 
 def isReachable (o : VCOutcome) : Bool :=
   o.passAndReachable || o.alwaysFalseAndReachable || o.canBeTrueOrFalseAndIsReachable
+
+-- Mode-specific success/failure predicates
+
+/-- Success in bug-finding mode: the assertion is satisfiable (can be true on some
+    reachable path), or provably always true with unknown reachability. Does NOT
+    include unreachable paths — dead code in agent-generated code is worth flagging
+    as a potential issue. -/
+def bugFindingSuccess (o : VCOutcome) : Bool :=
+  o.isSatisfiable || o.passReachabilityUnknown
+
+/-- Failure in bug-finding mode: the assertion is always false (a definite bug),
+    or the path is unreachable (dead code). -/
+def bugFindingFailure (o : VCOutcome) : Bool :=
+  o.alwaysFalseAndReachable || o.alwaysFalseReachabilityUnknown || o.unreachable
 
 -- Backward compatibility aliases (old names with "is" prefix)
 def isPassAndReachable := passAndReachable
@@ -542,11 +573,16 @@ def VCResult.formatOutcome (r : VCResult) : String :=
        {o.label prop r.checkLevel r.checkMode}"
   | .error e => s!"🚨 {e}"
 
+/-- Deductive-mode success: the assertion's validity is proven (`isPass`).
+    Includes unreachable paths (vacuously true). For bug-finding mode,
+    use `isBugFindingSuccess` instead. -/
 def VCResult.isSuccess (vr : VCResult) : Bool :=
   match vr.outcome with
   | .ok o => o.isPass
   | .error _ => false
 
+/-- Deductive-mode failure: the assertion can be false on some reachable path.
+    For bug-finding mode, use `isBugFindingFailure` instead. -/
 def VCResult.isFailure (vr : VCResult) : Bool :=
   match vr.outcome with
   | .ok o => o.alwaysFalseAndReachable || o.alwaysFalseReachabilityUnknown || o.canBeTrueOrFalseAndIsReachable || o.canBeFalseAndIsReachable
@@ -568,6 +604,16 @@ def VCResult.isNotSuccess (vcResult : Core.VCResult) :=
 def VCResult.isUnreachable (vr : VCResult) : Bool :=
   match vr.outcome with
   | .ok o => o.unreachable
+  | .error _ => false
+
+def VCResult.isBugFindingSuccess (vr : VCResult) : Bool :=
+  match vr.outcome with
+  | .ok o => o.bugFindingSuccess
+  | .error _ => false
+
+def VCResult.isBugFindingFailure (vr : VCResult) : Bool :=
+  match vr.outcome with
+  | .ok o => o.bugFindingFailure
   | .error _ => false
 
 /-- True when either SMT property inside a successful outcome is `.err`.
@@ -651,28 +697,26 @@ def preprocessObligation (obligation : ProofObligation Expression) (p : Program)
         pure { obligation with assumptions := newAssumptions }
   return (obligation, peSatResult, peValResult)
 
-/-- Keep-set filter pipeline phase: after all transforms, retains only the
-    target procedures and their WF-checking procedures (generated by
-    PrecondElim). Model-preserving because it only removes procedures. -/
-def keepSetFilterPipelinePhase (procs : List String) : PipelinePhase :=
-  modelPreservingPipelinePhase "KeepSetFilter" fun prog => do
-    let keepSet := Std.HashSet.ofList
-      (procs ++ procs.map PrecondElim.wfProcName)
-    let result := { prog with decls := prog.decls.filter fun d =>
-      match d with
-      | .proc p _ => keepSet.contains (CoreIdent.toPretty p.header.name)
-      | _ => true }
-    return (true, result)
-
 /-- The Core verification pipeline phases. Each entry pairs a program
     transformation with its per-obligation model validation. The pipeline
     extracts transforms from this list, and the validation extracts phases,
     ensuring they stay in sync.
 
-    When `procs` and `factory` are provided (targeted verification), the
-    pipeline includes filtering and precondition-elimination phases.
+    Call elimination always runs as a standalone program-to-program pass.
+    When `procs` is provided (targeted verification), the pipeline also
+    includes filtering and post-transform filter phases.
     All filter phases are model-preserving since they only remove
-    information without introducing over-approximations. -/
+    information without introducing over-approximations.
+
+    A second `FilterProcedures` pass runs after `CallElim` and `PrecondElim`
+    to prune any procedures that became unreachable after transforms. This
+    pass explicitly lists the target procedures and their WF procedures
+    (via `PrecondElim.wfProcName`) as targets, and disables `noFilter` so
+    that WF procedures for prelude functions are correctly pruned.
+
+    `loopElimPipelinePhase` is placed last because loop elimination happens
+    during evaluation (not as a program-to-program pass), making it the
+    closest phase to SMT. -/
 def corePipelinePhases (procs : Option (List String) := none)
     (factory : Option (@Lambda.Factory CoreLParams) := none) : List PipelinePhase :=
   let filterPhases := match procs with
@@ -681,13 +725,12 @@ def corePipelinePhases (procs : Option (List String) := none)
   let precondPhase := match factory with
     | some f => [precondElimPipelinePhase f]
     | none => []
-  let keepSetPhase := match procs with
-    | some ps => [keepSetFilterPipelinePhase ps]
+  let postFilterPhases := match procs with
+    | some ps =>
+      let targets := ps ++ ps.map PrecondElim.wfProcName
+      [filterProceduresPipelinePhase targets (respectNoFilter := false)]
     | none => []
-  let callElimPhase := match procs with
-    | some _ => [callElimPipelinePhase]
-    | none => []
-  filterPhases ++ callElimPhase ++ precondPhase ++ keepSetPhase ++ [loopElimPipelinePhase]
+  filterPhases ++ [callElimPipelinePhase] ++ precondPhase ++ postFilterPhases ++ [loopElimPipelinePhase]
 
 /-- The abstracted phases derived from the Core pipeline phases. -/
 def coreAbstractedPhases (procs : Option (List String) := none)
@@ -728,7 +771,7 @@ def getObligationResult (assumptionTerms : List Term) (obligationTerm : Term)
   let prog := f!"\n\n[DEBUG] Evaluated program:\n{Core.formatProgram p}"
   let counterVal ← counter.get
   counter.set (counterVal + 1)
-  let filename := tempDir / s!"{obligation.label}_{counterVal}.smt2"
+  let filename := tempDir / s!"{Core.SMT.sanitizeFilename obligation.label}_{counterVal}.smt2"
   let varsInObligation := ProofObligation.getVars obligation
   -- All variables in ProofObligation must have been typed.
   let typedVarsInObligation ← varsInObligation.mapM
@@ -743,7 +786,8 @@ def getObligationResult (assumptionTerms : List Term) (obligationTerm : Term)
             typedVarsInObligation
             obligation.metadata
             filename.toString
-          assumptionTerms obligationTerm ctx satisfiabilityCheck validityCheck)
+          assumptionTerms obligationTerm ctx satisfiabilityCheck validityCheck
+          (label := obligation.label))
   match ans with
   | .error e =>
     dbg_trace f!"\n\nObligation {obligation.label}: SMT Solver Invocation Error!\
@@ -898,10 +942,11 @@ def verify (program : Program)
     (options : VerifyOptions := VerifyOptions.default)
     (moreFns : @Lambda.Factory CoreLParams := Lambda.Factory.default)
     (externalPhases : List AbstractedPhase := [])
+    (prefixPhases : List PipelinePhase := [])
     : EIO DiagnosticModel VCResults := do
   let profile := options.profile
   let factory ← EIO.ofExcept (Core.Factory.addFactory moreFns)
-  let pipelinePhases := corePipelinePhases (procs := proceduresToVerify) (factory := some factory)
+  let pipelinePhases := prefixPhases ++ corePipelinePhases (procs := proceduresToVerify) (factory := some factory)
   let phases := pipelinePhases.map (·.phase)
   let finalProgram ← profileStep profile "  Program transformations" do
     let passes := fun prog => do
@@ -988,7 +1033,8 @@ def verify
   else
     panic! s!"DDM Transform Error: {repr errors}"
 
-def toDiagnosticModel (vcr : Core.VCResult) : Option DiagnosticModel :=
+def toDiagnosticModel (vcr : Core.VCResult)
+    (phases : List Core.AbstractedPhase := []) : Option DiagnosticModel :=
   let fileRange := (Imperative.getFileRange vcr.obligation.metadata).getD default
   match vcr.outcome with
   | .error msg => some { fileRange, message := s!"analysis error: {msg}", type := DiagnosticType.StrataBug }
@@ -1001,7 +1047,9 @@ def toDiagnosticModel (vcr : Core.VCResult) : Option DiagnosticModel :=
         else if outcome.isPass then none
         else some s!"{description} is not satisfiable"
       else
-        let description := vcr.obligation.metadata.getPropertySummary.getD "assertion"
+        let phaseDescription := phases.findSome? (·.getAssertDescription vcr.obligation.label)
+        let description := vcr.obligation.metadata.getPropertySummary.getD
+          (phaseDescription.getD "assertion")
         if outcome.unreachable then some s!"{description} holds vacuously (path unreachable)"
         else if outcome.isPass || outcome.isSatisfiable || outcome.passReachabilityUnknown then none
         else if outcome.alwaysFalseAndReachable || outcome.canBeTrueOrFalseAndIsReachable || outcome.canBeFalseAndIsReachable then
@@ -1028,8 +1076,9 @@ def DiagnosticModel.toDiagnostic (files: Map Strata.Uri Lean.FileMap) (dm: Diagn
     type := dm.type
   }
 
-def Core.VCResult.toDiagnostic (files: Map Strata.Uri Lean.FileMap) (vcr : Core.VCResult) : Option Diagnostic := do
-  let modelOption := toDiagnosticModel vcr
+def Core.VCResult.toDiagnostic (files: Map Strata.Uri Lean.FileMap) (vcr : Core.VCResult)
+    (phases : List Core.AbstractedPhase := []) : Option Diagnostic := do
+  let modelOption := toDiagnosticModel vcr phases
   modelOption.map (fun dm => dm.toDiagnostic files)
 
 end -- public section

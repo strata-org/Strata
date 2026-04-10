@@ -681,3 +681,79 @@ private theorem denote_cast_ty {Δ : List LMonoTy} {e : LExpr T.mono} {τ₁ τ�
       cast (congrArg (TyDenote tcInterp vt) h_eq.symm)
         (LExpr.denote tcInterp opInterp fvarVal vt bv e τ₂ h₂) := by
   subst h_eq; rfl
+
+/-! ### fvars_annotated_by lemmas -/
+
+section FvarsAnnotatedBy
+variable [DecidableEq T.IDMeta]
+
+/-- `fvars_annotated_by` transfers when `find?` on one map implies `find?` on another. -/
+theorem fvars_annotated_by_of_find_sub
+    (m₁ m₂ : Map T.Identifier LMonoTy) (e : LExpr T.mono)
+    (h : ∀ k v, Map.find? m₁ k = some v → Map.find? m₂ k = some v)
+    (h_annot : fvars_annotated_by m₂ e)
+    : fvars_annotated_by m₁ e := by
+  induction e with
+  | fvar _ name ty =>
+    cases ty with
+    | none => exact h_annot
+    | some t =>
+      intro ty' h_find
+      exact h_annot ty' (h name ty' h_find)
+  | const | bvar | op => trivial
+  | app _ _ _ ih_fn ih_arg => exact ⟨ih_fn h_annot.1, ih_arg h_annot.2⟩
+  | abs _ _ _ _ ih => exact ih h_annot
+  | ite _ _ _ _ ih_c ih_t ih_e =>
+    exact ⟨ih_c h_annot.1, ih_t h_annot.2.1, ih_e h_annot.2.2⟩
+  | eq _ _ _ ih1 ih2 => exact ⟨ih1 h_annot.1, ih2 h_annot.2⟩
+  | quant _ _ _ _ _ _ ih_tr ih_body =>
+    exact ⟨ih_tr h_annot.1, ih_body h_annot.2⟩
+
+/-- If `fvars_annotated_by tyMap e` and `(name, some ty) ∈ e.freeVars` and
+`tyMap.find? name = some ty'`, then `ty = ty'`. -/
+theorem fvars_annotated_by_freeVars
+    (tyMap : Map T.Identifier LMonoTy) (e : LExpr T.mono)
+    (h_annot : fvars_annotated_by tyMap e)
+    (name : T.Identifier) (ty ty' : LMonoTy)
+    (h_fv : (name, some ty) ∈ e.freeVars)
+    (h_find : Map.find? tyMap name = some ty')
+    : ty = ty' := by
+  induction e with
+  | fvar _ x annot =>
+    simp only [LExpr.freeVars] at h_fv
+    simp only [List.mem_singleton] at h_fv
+    obtain ⟨h_name_eq, h_annot_eq⟩ := Prod.mk.inj h_fv
+    subst h_name_eq
+    cases annot with
+    | none => exact absurd h_annot (by simp [fvars_annotated_by])
+    | some t =>
+      simp at h_annot_eq; subst h_annot_eq
+      exact h_annot ty' h_find
+  | const => simp [LExpr.freeVars] at h_fv
+  | bvar => simp [LExpr.freeVars] at h_fv
+  | op => simp [LExpr.freeVars] at h_fv
+  | app _ fn arg ih_fn ih_arg =>
+    simp only [LExpr.freeVars, List.mem_append] at h_fv
+    rcases h_fv with h_fn | h_arg
+    · exact ih_fn h_annot.1 h_fn
+    · exact ih_arg h_annot.2 h_arg
+  | abs _ _ _ body ih =>
+    exact ih h_annot h_fv
+  | ite _ c t el ih_c ih_t ih_e =>
+    simp only [LExpr.freeVars, List.mem_append] at h_fv
+    rcases h_fv with (h_c | h_t) | h_el
+    · exact ih_c h_annot.1 h_c
+    · exact ih_t h_annot.2.1 h_t
+    · exact ih_e h_annot.2.2 h_el
+  | eq _ e1 e2 ih1 ih2 =>
+    simp only [LExpr.freeVars, List.mem_append] at h_fv
+    rcases h_fv with h_1 | h_2
+    · exact ih1 h_annot.1 h_1
+    · exact ih2 h_annot.2 h_2
+  | quant _ _ _ _ tr body ih_tr ih_body =>
+    simp only [LExpr.freeVars, List.mem_append] at h_fv
+    rcases h_fv with h_tr | h_body
+    · exact ih_tr h_annot.1 h_tr
+    · exact ih_body h_annot.2 h_body
+
+end FvarsAnnotatedBy

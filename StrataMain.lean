@@ -5,23 +5,25 @@
 -/
 
 -- Executable with utilities for working with Strata files.
+import Strata.Backends.CBMC.CollectSymbols
+import Strata.Backends.CBMC.GOTO.CoreToGOTOPipeline
 import Strata.DDM.Integration.Java.Gen
 import Strata.Languages.Core.Verifier
 import Strata.Languages.Core.SarifOutput
 import Strata.Languages.C_Simp.Verify
 import Strata.Languages.B3.Verifier.Program
-import Strata.Util.IO
 import Strata.Languages.Laurel.LaurelToCoreTranslator
 import Strata.Languages.Python.Python
 import Strata.Languages.Python.Specs.IdentifyOverloads
 import Strata.Languages.Python.Specs.ToLaurel
-import Strata.Languages.Laurel.LaurelFormat
+import Strata.Languages.Laurel.Grammar.AbstractToConcreteTreeTranslator
 import Strata.Languages.Laurel.Laurel
-import Strata.Backends.CBMC.CollectSymbols
-import Strata.Backends.CBMC.GOTO.CoreToGOTOPipeline
+import Strata.Transform.ProcedureInlining
+import Strata.Util.IO
 
 import Strata.SimpleAPI
 import Strata.Util.Profile
+import Strata.Util.Json
 
 open Strata
 
@@ -89,30 +91,31 @@ structure Flag where
   help : String
   takesArg : FlagArg := .none
 
-/-- Parsed flags from the command line. -/
+/-- Parsed flags from the command line.  Stored as an ordered array so that
+    command-line position is preserved (needed by `transform` to bind
+    `--procedures`/`--functions` to the preceding `--pass`).
+    For `.arg` flags that appear more than once, `getString` returns the
+    **last** occurrence (last-writer-wins). -/
 structure ParsedFlags where
-  flags : Std.HashMap String (Option String) := {}
-  repeated : Std.HashMap String (Array String) := {}
+  entries : Array (String × Option String) := #[]
 
 namespace ParsedFlags
 
 def getBool (pf : ParsedFlags) (name : String) : Bool :=
-  pf.flags.contains name
+  pf.entries.any (·.1 == name)
 
 def getString (pf : ParsedFlags) (name : String) : Option String :=
-  match pf.flags[name]? with
-  | some (some v) => some v
+  -- Scan from the end so last occurrence wins.
+  match pf.entries.findRev? (·.1 == name) with
+  | some (_, some v) => some v
   | _ => Option.none
 
 def getRepeated (pf : ParsedFlags) (name : String) : Array String :=
-  pf.repeated[name]?.getD #[]
+  pf.entries.foldl (init := #[]) fun acc (n, v) =>
+    if n == name then match v with | some s => acc.push s | none => acc else acc
 
-def insertFlag (pf : ParsedFlags) (name : String) (value : Option String) : ParsedFlags :=
-  { pf with flags := pf.flags.insert name value }
-
-def insertRepeated (pf : ParsedFlags) (name : String) (value : String) : ParsedFlags :=
-  let arr := pf.repeated[name]?.getD #[]
-  { pf with repeated := pf.repeated.insert name (arr.push value) }
+def insert (pf : ParsedFlags) (name : String) (value : Option String) : ParsedFlags :=
+  { pf with entries := pf.entries.push (name, value) }
 
 def buildDialectFileMap (pflags : ParsedFlags) : IO Strata.DialectFileMap := do
   let preloaded := Strata.Elab.LoadedDialects.builtin
@@ -133,29 +136,116 @@ def buildDialectFileMap (pflags : ParsedFlags) : IO Strata.DialectFileMap := do
 
 end ParsedFlags
 
-def parseCheckMode (pflags : ParsedFlags) : IO VerificationMode :=
+def parseCheckMode (pflags : ParsedFlags)
+    (default : VerificationMode := .deductive) : IO VerificationMode :=
   match pflags.getString "check-mode" with
-  | .none => pure .deductive
+  | .none => pure default
   | .some s => match VerificationMode.ofString? s with
     | .some m => pure m
     | .none => exitFailure s!"Invalid check mode: '{s}'. Must be {VerificationMode.options}."
 
-def parseCheckLevel (pflags : ParsedFlags) : IO CheckLevel :=
+def parseCheckLevel (pflags : ParsedFlags)
+    (default : CheckLevel := .minimal) : IO CheckLevel :=
   match pflags.getString "check-level" with
-  | .none => pure .minimal
+  | .none => pure default
   | .some s => match CheckLevel.ofString? s with
     | .some l => pure l
     | .none => exitFailure s!"Invalid check level: '{s}'. Must be {CheckLevel.options}."
 
-def checkModeFlag : Flag :=
+/-- Common CLI flags for VerifyOptions fields.
+    Commands can append these to their own flags list.
+    Note: `parseOnly`, `typeCheckOnly`, and `checkOnly` are omitted here
+    because they are specific to the `verify` command. -/
+def verifyOptionsFlags : List Flag := [
   { name := "check-mode",
     help := s!"Check mode: {VerificationMode.options}. Default: 'deductive'.",
-    takesArg := .arg "mode" }
-
-def checkLevelFlag : Flag :=
+    takesArg := .arg "mode" },
   { name := "check-level",
     help := s!"Check level: {CheckLevel.options}. Default: 'minimal'.",
-    takesArg := .arg "level" }
+    takesArg := .arg "level" },
+  { name := "verbose", help := "Enable verbose output." },
+  { name := "quiet", help := "Suppress warnings on stderr." },
+  { name := "profile", help := "Print elapsed time for each pipeline step." },
+  { name := "sarif", help := "Write results as SARIF to <file>.sarif." },
+  { name := "solver",
+    help := s!"SMT solver executable (default: {Core.defaultSolver}).",
+    takesArg := .arg "name" },
+  { name := "solver-timeout",
+    help := "Solver timeout in seconds (default: 10).",
+    takesArg := .arg "seconds" },
+  { name := "vc-directory",
+    help := "Store VCs in SMT-Lib format in <dir>.",
+    takesArg := .arg "dir" },
+  { name := "no-solve",
+    help := "Generate SMT-Lib files but do not invoke the solver." },
+  { name := "stop-on-first-error",
+    help := "Exit after the first verification error." },
+  { name := "unique-bound-names",
+    help := "Use globally unique names for quantifier-bound variables." },
+  { name := "use-array-theory",
+    help := "Use SMT-LIB Array theory instead of axiomatized maps." },
+  { name := "remove-irrelevant-axioms",
+    help := "Prune irrelevant axioms: 'off', 'aggressive', or 'precise'.",
+    takesArg := .arg "mode" }
+]
+
+/-- Build a VerifyOptions from parsed CLI flags, starting from a base config.
+    Fields not present in the flags keep their base values.
+    Note: boolean flags can only enable a setting; a `true` in the base
+    cannot be turned off from the CLI (there is no `--no-X` syntax). -/
+def parseVerifyOptions (pflags : ParsedFlags)
+    (base : VerifyOptions := VerifyOptions.default) : IO VerifyOptions := do
+  let checkMode ← parseCheckMode pflags base.checkMode
+  let checkLevel ← parseCheckLevel pflags base.checkLevel
+  let solverTimeout ← match pflags.getString "solver-timeout" with
+    | .none => pure base.solverTimeout
+    | .some s => match s.toNat? with
+      | .some n => pure n
+      | .none => exitFailure s!"Invalid solver timeout: '{s}'"
+  let noSolve := pflags.getBool "no-solve"
+  let removeIrrelevantAxioms ← match pflags.getString "remove-irrelevant-axioms" with
+    | .none => pure base.removeIrrelevantAxioms
+    | .some "off" => pure .Off
+    | .some "aggressive" => pure .Aggressive
+    | .some "precise" => pure .Precise
+    | .some s => exitFailure s!"Invalid remove-irrelevant-axioms mode: '{s}'. Must be 'off', 'aggressive', or 'precise'."
+  let vcDirectory := (pflags.getString "vc-directory" |>.map (⟨·⟩ : String → System.FilePath)).orElse (fun _ => base.vcDirectory)
+  let skipSolver := noSolve || base.skipSolver
+  if skipSolver && vcDirectory.isNone then
+    exitFailure "--no-solve requires --vc-directory to specify where SMT files are stored."
+  pure { base with
+    verbose := if pflags.getBool "verbose" then .normal
+              else if pflags.getBool "quiet" then .quiet
+              else base.verbose,
+    solver := pflags.getString "solver" |>.getD base.solver,
+    solverTimeout,
+    checkMode, checkLevel,
+    stopOnFirstError := pflags.getBool "stop-on-first-error" || base.stopOnFirstError,
+    uniqueBoundNames := pflags.getBool "unique-bound-names" || base.uniqueBoundNames,
+    useArrayTheory := pflags.getBool "use-array-theory" || base.useArrayTheory,
+    removeIrrelevantAxioms,
+    outputSarif := pflags.getBool "sarif" || base.outputSarif,
+    profile := pflags.getBool "profile" || base.profile,
+    skipSolver,
+    alwaysGenerateSMT := noSolve || base.alwaysGenerateSMT,
+    vcDirectory
+  }
+
+/-- Read and parse a Strata program file, loading the Core, C_Simp, and B3CST
+    dialects. Returns the parsed program and the input context (for source
+    location resolution), or an array of error messages on failure. -/
+private def readStrataProgram (file : String)
+    : IO (Except (Array Lean.Message) (Strata.Program × Lean.Parser.InputContext)) := do
+  let text ← Strata.Util.readInputSource file
+  let inputCtx := Lean.Parser.mkInputContext text (Strata.Util.displayName file)
+  let dctx := Elab.LoadedDialects.builtin
+  let dctx := dctx.addDialect! Core
+  let dctx := dctx.addDialect! C_Simp
+  let dctx := dctx.addDialect! B3CST
+  let leanEnv ← Lean.mkEmptyEnvironment 0
+  match Strata.Elab.elabProgram dctx leanEnv inputCtx with
+  | .ok pgm => pure (.ok (pgm, inputCtx))
+  | .error msgs => pure (.error msgs)
 
 structure Command where
   name : String
@@ -271,14 +361,6 @@ def pySpecsCommand : Command where
       | .ok () => pure ()
       | .error msg => exitFailure msg
 
-def pyTranslateCommand : Command where
-  name := "pyTranslate"
-  args := [ "file" ]
-  help := "Translate a Python Ion program to Core and print the result to stdout."
-  callback := fun v _ => do
-    let newPgm ← Strata.pythonDirectToCore v[0]
-    IO.print newPgm
-
 /-- Derive Python source file path from Ion file path.
     E.g., "tests/test_foo.python.st.ion" -> "tests/test_foo.py" -/
 def ionPathToPythonPath (ionPath : String) : Option String :=
@@ -317,98 +399,6 @@ def formatRelatedPositions (md : Imperative.MetaData Core.Expression)
         let pos := fm.toPosition fr.range.start
         some s!"\n  Related location: line {pos.line}, col {pos.column}"
     String.join lines.toList
-
-def pyAnalyzeCommand : Command where
-  name := "pyAnalyze"
-  args := [ "file" ]
-  flags := [{ name := "verbose", help := "Enable verbose output." },
-            { name := "sarif", help := "Write results as SARIF to <file>.sarif." },
-            { name := "unique-bound-names", help := "Use globally unique names for quantifier-bound variables." },
-            { name := "vc-directory",
-              help := "Store VCs in SMT-Lib format in <dir>.",
-              takesArg := .arg "dir" }]
-  help := "Verify a Python Ion program. Translates to Core, inlines procedures, and runs SMT verification."
-  callback := fun v pflags => do
-    let verbose := pflags.getBool "verbose"
-    let outputSarif := pflags.getBool "sarif"
-    let uniqueBoundNames := pflags.getBool "unique-bound-names"
-    let filePath := v[0]
-    -- Try to read the Python source for line number conversion
-    let pySourceOpt ← tryReadPythonSource filePath
-    let sourcePathForMetadata := match pySourceOpt with
-      | some (pyPath, _) => pyPath
-      | none => filePath
-    let newPgm ← Strata.pythonDirectToCore filePath sourcePathForMetadata
-    if verbose then
-      IO.print newPgm
-    match (Core.inlineProcedures newPgm ⟨ .some (λ name _ => name ≠ "main") ⟩) with
-    | .error e => exitInternalError e
-    | .ok newPgm =>
-      if verbose then
-        IO.println "Inlined: "
-        IO.print newPgm
-      let solverName : String := "Strata/Languages/Python/z3_parallel.py"
-      let verboseMode := VerboseMode.ofBool verbose
-      let vcDir : Option System.FilePath := pflags.getString "vc-directory" |>.map (⟨·⟩)
-      let options :=
-              { VerifyOptions.default with
-                stopOnFirstError := false,
-                verbose := verboseMode,
-                removeIrrelevantAxioms := .Precise,
-                solver := solverName,
-                uniqueBoundNames := uniqueBoundNames,
-                vcDirectory := vcDir }
-      let vcResults ←
-        match ← Core.verifyProgram newPgm options
-                  (moreFns := Strata.Python.ReFactory)
-                  (externalPhases := [Strata.frontEndPhase]) |>.toBaseIO with
-        | .ok r => pure r
-        | .error msg => exitInternalError msg
-      let mfm : Option (String × Lean.FileMap) := match pySourceOpt with
-        | some (pyPath, srcText) => some (pyPath, .ofString srcText)
-        | none => none
-      let mut s := ""
-      for vcResult in vcResults do
-        -- Build location string based on available metadata
-        let (locationPrefix, locationSuffix) := match Imperative.getFileRange vcResult.obligation.metadata with
-          | some fr =>
-            if fr.range.isNone then ("", "")
-            else
-              match mfm with
-              | some (pyPath, fm) =>
-                -- Check if this metadata is from the Python source (not CorePrelude)
-                match fr.file with
-                | .file path =>
-                  if path == pyPath then
-                    let pos := fm.toPosition fr.range.start
-                    -- For failures, show at beginning; for passes, show at end
-                    if vcResult.isFailure then
-                      (s!"Assertion failed at line {pos.line}, col {pos.column}: ", "")
-                    else
-                      ("", s!" (at line {pos.line}, col {pos.column})")
-                  else
-                    -- From CorePrelude or other source, show byte offsets
-                    if vcResult.isFailure then
-                      (s!"Assertion failed for prelude: ", "")
-                    else
-                      ("", s!" (in prelude)")
-              | none =>
-                if vcResult.isFailure then
-                  (s!"Assertion failed at byte offset: ", "")
-                else
-                  ("", s!" (at byte offset)")
-          | none => ("", "")
-        let outcomeStr := vcResult.formatOutcome
-        let relatedStr := formatRelatedPositions vcResult.obligation.metadata mfm
-        s := s ++ s!"\n{locationPrefix}{vcResult.obligation.label}: \
-                      {outcomeStr}{locationSuffix}{relatedStr}\n"
-      IO.println s
-      -- Output in SARIF format if requested
-      if outputSarif then
-        let files := match mfm with
-          | some (pyPath, fm) => Map.empty.insert (Strata.Uri.file pyPath) fm
-          | none => Map.empty
-        Core.Sarif.writeSarifOutput .deductive files vcResults (filePath ++ ".sarif")
 
 /-! ### pyAnalyzeLaurel result helpers
 
@@ -462,9 +452,8 @@ private def printPyAnalyzeSummary (vcResults : Array Core.VCResult)
   let classifier : ResultClassifier :=
     match checkMode with
     | .bugFinding | .bugFindingAssumingCompleteSpec =>
-      { isFailure := fun r => match r.outcome with
-          | .ok o => o.alwaysFalseAndReachable
-          | _     => false }
+      { isSuccess := (·.isBugFindingSuccess)
+        isFailure := (·.isBugFindingFailure) }
     | _ => {}
   -- 1. Partition out implementation errors (broken results, not classifiable).
   let (implError, classifiable) :=
@@ -498,11 +487,7 @@ private def deriveBaseName (file : String) : String :=
 def pyAnalyzeLaurelCommand : Command where
   name := "pyAnalyzeLaurel"
   args := [ "file" ]
-  flags := [{ name := "verbose", help := "Enable verbose output." },
-            { name := "no-solve", help := "Generate SMT-Lib files but do not invoke the solver." },
-            { name := "profile", help := "Print elapsed time for each pipeline step." },
-            { name := "quiet", help := "Suppress warnings on stderr." },
-            checkModeFlag, checkLevelFlag,
+  flags := verifyOptionsFlags ++ [
             { name := "spec-dir",
               help := "Directory containing compiled PySpec Ion files.",
               takesArg := .arg "dir" },
@@ -512,11 +497,6 @@ def pyAnalyzeLaurelCommand : Command where
             { name := "pyspec",
               help := "PySpec module name (e.g., servicelib.Storage).",
               takesArg := .repeat "module" },
-            { name := "sarif", help := "Write results as SARIF to <file>.sarif." },
-            { name := "vc-directory",
-              help := "Store VCs in SMT-Lib format in <dir>.",
-              takesArg := .arg "dir" },
-            { name := "unique-bound-names", help := "Use globally unique names for quantifier-bound variables." },
             { name := "keep-all-files",
               help := "Store intermediate Laurel and Core programs in <dir>.",
               takesArg := .arg "dir" }]
@@ -580,7 +560,7 @@ def pyAnalyzeLaurelCommand : Command where
 
     if let some dir := keepDir then
       let path := s!"{dir}/{baseName}.laurel"
-      IO.FS.writeFile path (toString (Std.Format.pretty f!"{combinedLaurel}") ++ "\n")
+      IO.FS.writeFile path ((Laurel.formatProgram combinedLaurel).pretty ++ "\n")
 
     let (coreProgramOption, laurelTranslateErrors, loweredLaurel) ←
       profileStep profile "Laurel to Core translation" do
@@ -588,7 +568,7 @@ def pyAnalyzeLaurelCommand : Command where
 
     if let some dir := keepDir then
       let path := s!"{dir}/{baseName}.lowered.laurel"
-      IO.FS.writeFile path (toString (Std.Format.pretty f!"{loweredLaurel}") ++ "\n")
+      IO.FS.writeFile path ((Laurel.formatProgram loweredLaurel).pretty ++ "\n")
 
     let coreProgram ←
       match coreProgramOption with
@@ -598,65 +578,40 @@ def pyAnalyzeLaurelCommand : Command where
 
     if verbose then
       IO.println "\n==== Core Program ===="
-      IO.print coreProgram
+      IO.print (Core.formatProgram coreProgram)
 
     -- Split prelude / user procedure names.
     -- Only procedures whose file range matches the user source are targets.
     let userSourcePath := sourcePath.getD filePath
-    let (preludeNames, userProcNames) :=
+    let (_preludeNames, userProcNames) :=
       Strata.splitProcNames coreProgram [userSourcePath]
 
     if let some dir := keepDir then
       let path := s!"{dir}/{baseName}.core"
       IO.FS.writeFile path (toString coreProgram)
 
-    -- Inline pyspec procedures so their precondition assertions are checked
-    -- at call sites with concrete arguments.
-    let pyspecFiles := pflags.getRepeated "pyspec"
-    let coreProgram ← profileStep profile "Inline PySpec procedures" do
-      if pyspecFiles.size > 0 then
-        match Core.inlineProcedures coreProgram
-              ⟨.some (fun name _ => name ≠ "__main__" && !preludeNames.contains name)⟩ with
-        | .error e => exitPyAnalyzeInternalError s!"Inlining failed: {e}"
-        | .ok inlined => do
-          if verbose then
-            IO.println "\n==== Core Program (after inlining) ===="
-            IO.print inlined
-          if let some dir := keepDir then
-            let path := s!"{dir}/{baseName}.inlined.core"
-            IO.FS.writeFile path (toString inlined)
-          pure inlined
-      else pure coreProgram
-
     -- Verify using Core verifier
-    let checkMode ← parseCheckMode pflags
-    let checkLevel ← parseCheckLevel pflags
-    let noSolve := pflags.getBool "no-solve"
-    if noSolve && (pflags.getString "vc-directory").isNone && keepDir.isNone then
-      exitCmdFailure "pyAnalyzeLaurel"
-        "--no-solve requires --vc-directory or \
-         --keep-all-files to specify where SMT \
-         files are stored."
-    let uniqueBoundNames := pflags.getBool "unique-bound-names"
-    let baseOptions : VerifyOptions :=
+    -- --keep-all-files implies vc-directory if not explicitly set
+    let baseVcDir := keepDir.map (fun dir => (s!"{dir}/{baseName}" : System.FilePath))
+    let pyAnalyzeBase : VerifyOptions :=
       { VerifyOptions.default with
-        stopOnFirstError := false, verbose := .quiet, solver := Core.defaultSolver,
-        removeIrrelevantAxioms := .Precise,
-        checkMode := checkMode, checkLevel := checkLevel,
-        skipSolver := noSolve,
-        alwaysGenerateSMT := noSolve,
-        uniqueBoundNames := uniqueBoundNames,
-        profile := profile }
-    let options : VerifyOptions := match pflags.getString "vc-directory" with
-      | .some dir => { baseOptions with vcDirectory := some (dir : System.FilePath) }
-      | .none => match keepDir with
-        | some dir => { baseOptions with vcDirectory := some (s!"{dir}/{baseName}" : System.FilePath) }
-        | none => baseOptions
+        verbose := .quiet, removeIrrelevantAxioms := .Precise,
+        vcDirectory := baseVcDir }
+    let options ← parseVerifyOptions pflags pyAnalyzeBase
+    let isBugFinding := options.checkMode == .bugFinding
+                      || options.checkMode == .bugFindingAssumingCompleteSpec
+    let inlinePhases : List Core.PipelinePhase :=
+      if isBugFinding then
+        [Core.procedureInliningPipelinePhase
+          { doInline := fun name a => name ≠ "__main__" && Core.doInlineNonRecursive name a
+            maxIters := some 10 }]
+      else []
     let vcResults ← profileStep profile "SMT verification" do
       match ← Core.verifyProgram coreProgram options
                 (moreFns := Strata.Python.ReFactory)
                 (proceduresToVerify := some userProcNames)
-                (externalPhases := [Strata.frontEndPhase]) |>.toBaseIO with
+                (externalPhases := [Strata.frontEndPhase])
+                (prefixPhases := inlinePhases) |>.toBaseIO with
       | .ok r => pure r
       | .error msg => exitPyAnalyzeInternalError msg
 
@@ -688,8 +643,8 @@ def pyAnalyzeLaurelCommand : Command where
       let files := match mfm with
         | some (pyPath, fm) => Map.empty.insert (Strata.Uri.file pyPath) fm
         | none => Map.empty
-      Core.Sarif.writeSarifOutput checkMode files vcResults (filePath ++ ".sarif")
-    printPyAnalyzeSummary vcResults checkMode
+      Core.Sarif.writeSarifOutput options.checkMode files vcResults (filePath ++ ".sarif")
+    printPyAnalyzeSummary vcResults options.checkMode
 
 def pyAnalyzeToGotoCommand : Command where
   name := "pyAnalyzeToGoto"
@@ -703,7 +658,7 @@ def pyAnalyzeToGotoCommand : Command where
       | none => filePath
     let sourceText := pySourceOpt.map (·.2)
     let newPgm ← Strata.pythonDirectToCore filePath sourcePathForMetadata
-    match Core.inlineProcedures newPgm ⟨.some (fun name _ => name ≠ "main")⟩ with
+    match Core.inlineProcedures newPgm { doInline := (fun name _ => name ≠ "main") } with
     | .error e => exitInternalError e
     | .ok newPgm =>
       -- Type-check the full program (registers Python types like ExceptOrNone)
@@ -737,8 +692,8 @@ def pyAnalyzeToGotoCommand : Command where
               (moduleName := baseName)
         let symTabFile := s!"{baseName}.symtab.json"
         let gotoFile := s!"{baseName}.goto.json"
-        IO.FS.writeFile symTabFile symtab.pretty
-        IO.FS.writeFile gotoFile goto.pretty
+        writeJsonFile symTabFile symtab
+        writeJsonFile gotoFile goto
         IO.println s!"Written {symTabFile} and {gotoFile}"
 
 def pyTranslateLaurelCommand : Command where
@@ -1010,8 +965,8 @@ def laurelAnalyzeToGotoCommand : Command where
         let goto := Lean.Json.mkObj [("functions", Lean.Json.arr gotoFns)]
         let symTabFile := s!"{baseName}.symtab.json"
         let gotoFile := s!"{baseName}.goto.json"
-        IO.FS.writeFile symTabFile symtab.pretty
-        IO.FS.writeFile gotoFile goto.pretty
+        writeJsonFile symTabFile symtab
+        writeJsonFile gotoFile goto
         IO.println s!"Written {symTabFile} and {gotoFile}"
 
 def laurelPrintCommand : Command where
@@ -1083,58 +1038,126 @@ structure CommandGroup where
   commands : List Command
   commonFlags : List Flag := []
 
+private def validPasses :=
+  "inlineProcedures, loopElim, callElim, filterProcedures, removeIrrelevantAxioms"
+
+/-- A single transform pass together with the `--procedures`/`--functions`
+    that were specified immediately after it on the command line. -/
+private structure PassConfig where
+  name : String
+  procedures : List String := []
+  functions : List String := []
+deriving Inhabited
+
+/-- Walk the ordered flag entries and bind each `--procedures`/`--functions`
+    to the most recent `--pass`. -/
+private def buildPassConfigs (entries : Array (String × Option String))
+    : IO (Array PassConfig) := do
+  let mut configs : Array PassConfig := #[]
+  for (flag, value) in entries do
+    match flag with
+    | "pass" => configs := configs.push { name := value.getD "" }
+    | "procedures" =>
+      let some cur := configs.back? | exitFailure "--procedures must appear after a --pass"
+      let procs := (value.getD "").splitToList (· == ',')
+      configs := configs.pop.push { cur with procedures := cur.procedures ++ procs }
+    | "functions" =>
+      let some cur := configs.back? | exitFailure "--functions must appear after a --pass"
+      let fns := (value.getD "").splitToList (· == ',')
+      configs := configs.pop.push { cur with functions := cur.functions ++ fns }
+    | _ => pure ()
+  return configs
+
+def transformCommand : Command where
+  name := "transform"
+  args := [ "file" ]
+  flags := [
+    { name := "pass",
+      help := s!"Transform pass to apply (repeatable, applied left to right). \
+               Valid passes: {validPasses}. \
+               --procedures and --functions after a --pass apply to that pass.",
+      takesArg := .repeat "name" },
+    { name := "procedures",
+      help := "Comma-separated procedure names for the preceding --pass. \
+               For filterProcedures: procedures to keep. \
+               For inlineProcedures: procedures to inline.",
+      takesArg := .repeat "procs" },
+    { name := "functions",
+      help := "Comma-separated function names for the preceding --pass (used by removeIrrelevantAxioms).",
+      takesArg := .repeat "funcs" }]
+  help := "Apply one or more transforms to a Core program and print the result."
+  callback := fun v pflags => do
+    let file := v[0]
+    let passConfigs ← buildPassConfigs pflags.entries
+    if passConfigs.isEmpty then
+      exitFailure s!"No --pass specified. Valid passes: {validPasses}."
+    -- Read and parse the Core program
+    let (pgm, _) ← match ← readStrataProgram file with
+      | .ok r => pure r
+      | .error msgs =>
+        for e in msgs do println! s!"Error: {← e.toString}"
+        exitFailure s!"{msgs.size} parse error(s)"
+    match Strata.genericToCore pgm with
+    | .error msg =>
+      exitFailure msg
+    | .ok initProgram =>
+      -- Validate and convert pass configs to TransformPass values
+      let mut passes : List Strata.Core.TransformPass := []
+      for pc in passConfigs do
+        match pc.name with
+        | "inlineProcedures" =>
+          let opts : Core.InlineTransformOptions :=
+            if pc.procedures.isEmpty then {}
+            else { doInline := (fun name _ => name ∈ pc.procedures) }
+          passes := passes ++ [.inlineProcedures opts]
+        | "loopElim" =>
+          passes := passes ++ [.loopElim]
+        | "callElim" =>
+          passes := passes ++ [.callElim]
+        | "filterProcedures" =>
+          if pc.procedures.isEmpty then
+            exitFailure "filterProcedures requires --procedures"
+          passes := passes ++ [.filterProcedures pc.procedures]
+        | "removeIrrelevantAxioms" =>
+          if pc.functions.isEmpty then
+            exitFailure "removeIrrelevantAxioms requires --functions"
+          passes := passes ++ [.removeIrrelevantAxioms pc.functions]
+        | other =>
+          exitFailure s!"Unknown pass '{other}'. Valid passes: {validPasses}."
+      -- Run all passes in a single CoreTransformM chain so fresh variable
+      -- counters accumulate and cached analyses are reused across passes.
+      match Strata.Core.runTransforms initProgram passes with
+      | .ok program => IO.print (Core.formatProgram program)
+      | .error e => exitFailure s!"Transform failed: {e}"
+
 def verifyCommand : Command where
   name := "verify"
   args := [ "file" ]
-  flags := [
-    { name := "verbose", help := "Print extra information during analysis." },
+  flags := verifyOptionsFlags ++ [
     { name := "check", help := "Process up until SMT generation, but don't solve." },
     { name := "type-check", help := "Exit after semantic dialect's type inference/checking." },
     { name := "parse-only", help := "Exit after DDM parsing and type checking." },
-    { name := "stop-on-first-error", help := "Exit after the first verification error." },
-    { name := "unique-bound-names", help := "Use globally unique names for quantifier-bound variables." },
-    { name := "sarif", help := "Output results in SARIF format to <file>.sarif." },
     { name := "output-format", help := "Output format (only 'sarif' supported).", takesArg := .arg "format" },
-    { name := "vc-directory", help := "Store VCs in SMT-Lib format in <dir>.", takesArg := .arg "dir" },
-    { name := "procedures", help := "Verify only the specified procedures (comma-separated).", takesArg := .arg "procs" },
-    { name := "solver", help := s!"SMT solver executable to use (default: {Core.defaultSolver}).", takesArg := .arg "name" },
-    { name := "solver-timeout", help := "Solver timeout in seconds.", takesArg := .arg "seconds" },
-    checkModeFlag, checkLevelFlag ]
+    { name := "procedures", help := "Verify only the specified procedures (comma-separated).", takesArg := .arg "procs" }]
   help := "Verify a Strata program file (.core.st, .csimp.st, or .b3.st)."
   callback := fun v pflags => do
     let file := v[0]
-    let verbose := pflags.getBool "verbose"
-    let checkOnly := pflags.getBool "check"
-    let typeCheckOnly := pflags.getBool "type-check"
-    let parseOnly := pflags.getBool "parse-only"
-    let stopOnFirstError := pflags.getBool "stop-on-first-error"
-    let uniqueBoundNames := pflags.getBool "unique-bound-names"
-    let outputSarif := pflags.getBool "sarif" || pflags.getString "output-format" == some "sarif"
-    let checkMode ← parseCheckMode pflags
-    let checkLevel ← parseCheckLevel pflags
-    let solverTimeout ← match pflags.getString "solver-timeout" with
-      | .none => pure VerifyOptions.default.solverTimeout
-      | .some s => match s.toNat? with
-        | .some n => pure n
-        | .none => exitCmdFailure "verify" s!"Invalid number of seconds: {s}"
     let proceduresToVerify := pflags.getString "procedures" |>.map (·.splitToList (· == ','))
-    let opts : VerifyOptions :=
-      { VerifyOptions.default with
-        verbose := if verbose then .normal else .quiet,
-        checkOnly, typeCheckOnly, parseOnly, stopOnFirstError, uniqueBoundNames,
-        outputSarif, checkMode, checkLevel, solverTimeout,
-        vcDirectory := pflags.getString "vc-directory",
-        solver := pflags.getString "solver" |>.getD Core.defaultSolver }
-    let text ← Strata.Util.readInputSource file
-    let inputCtx := Lean.Parser.mkInputContext text (Strata.Util.displayName file)
-    let dctx := Elab.LoadedDialects.builtin
-    let dctx := dctx.addDialect! Core
-    let dctx := dctx.addDialect! C_Simp
-    let dctx := dctx.addDialect! B3CST
-    let leanEnv ← Lean.mkEmptyEnvironment 0
-    match Strata.Elab.elabProgram dctx leanEnv inputCtx with
-    | .ok pgm =>
-      println! s!"Successfully parsed."
+    let opts ← parseVerifyOptions pflags { VerifyOptions.default with verbose := .quiet }
+    let opts := { opts with
+      checkOnly := pflags.getBool "check",
+      typeCheckOnly := pflags.getBool "type-check",
+      parseOnly := pflags.getBool "parse-only",
+      outputSarif := opts.outputSarif || pflags.getString "output-format" == some "sarif" }
+    let (pgm, inputCtx) ← match ← readStrataProgram file with
+      | .ok r => pure r
+      | .error errors =>
+        for e in errors do
+          let msg ← e.toString
+          println! s!"Error: {msg}"
+        println! f!"Finished with {errors.size} errors."
+        IO.Process.exit ExitCode.userError
+    println! s!"Successfully parsed."
       if opts.parseOnly then return
       if opts.typeCheckOnly then
         let ans := if file.endsWith ".csimp.st" then
@@ -1197,26 +1220,19 @@ def verifyCommand : Command where
         let failedGoalCount := (vcResults.filter Core.VCResult.isNotSuccess).size
         println! f!"Finished with {provedGoalCount} goals passed, {failedGoalCount} failed."
         IO.Process.exit ExitCode.failuresFound
-    | .error errors =>
-      for e in errors do
-        let msg ← e.toString
-        println! s!"Error: {msg}"
-      println! f!"Finished with {errors.size} errors."
-      IO.Process.exit ExitCode.userError
 
 def commandGroups : List CommandGroup := [
   { name := "Core"
-    commands := [verifyCommand, checkCommand, toIonCommand, printCommand, diffCommand]
+    commands := [verifyCommand, transformCommand, checkCommand, toIonCommand, printCommand, diffCommand]
     commonFlags := [includeFlag] },
   { name := "Code Generation"
     commands := [javaGenCommand] },
   { name := "Python"
-    commands := [pyAnalyzeCommand, pyAnalyzeLaurelCommand,
+    commands := [pyAnalyzeLaurelCommand,
                  pyResolveOverloadsCommand,
                  pySpecsCommand, pySpecToLaurelCommand,
                  pyAnalyzeLaurelToGotoCommand,
                  pyAnalyzeToGotoCommand,
-                 pyTranslateCommand,
                  pyTranslateLaurelCommand] },
   { name := "Laurel"
     commands := [laurelAnalyzeCommand, laurelAnalyzeBinaryCommand,
@@ -1298,23 +1314,23 @@ private def parseArgs (cmdName : String)
       | some flag =>
         match flag.takesArg with
         | .none =>
-          parseArgs cmdName flagMap acc (pflags.insertFlag flagName Option.none) cmdArgs
+          parseArgs cmdName flagMap acc (pflags.insert flagName Option.none) cmdArgs
         | .arg _ =>
           match inlineValue with
           | some value =>
-            parseArgs cmdName flagMap acc (pflags.insertFlag flagName (some value)) cmdArgs
+            parseArgs cmdName flagMap acc (pflags.insert flagName (some value)) cmdArgs
           | none =>
             let value :: cmdArgs := cmdArgs
               | exitCmdFailure cmdName s!"Expected value after {arg}."
-            parseArgs cmdName flagMap acc (pflags.insertFlag flagName (some value)) cmdArgs
+            parseArgs cmdName flagMap acc (pflags.insert flagName (some value)) cmdArgs
         | .repeat _ =>
           match inlineValue with
           | some value =>
-            parseArgs cmdName flagMap acc (pflags.insertRepeated flagName value) cmdArgs
+            parseArgs cmdName flagMap acc (pflags.insert flagName (some value)) cmdArgs
           | none =>
             let value :: cmdArgs := cmdArgs
               | exitCmdFailure cmdName s!"Expected value after {arg}."
-            parseArgs cmdName flagMap acc (pflags.insertRepeated flagName value) cmdArgs
+            parseArgs cmdName flagMap acc (pflags.insert flagName (some value)) cmdArgs
       | none =>
         exitCmdFailure cmdName s!"Unknown option {arg}."
     else

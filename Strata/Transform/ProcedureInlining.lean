@@ -12,16 +12,17 @@ import Strata.Languages.Core.CoreGen
 import Strata.Languages.Core.ProgramWF
 public import Strata.Languages.Core.Statement
 public import Strata.Transform.CoreTransform
+public import Strata.Languages.Core.PipelinePhase
 import Strata.Util.Tactics
 
 /-! # Procedure Inlining Transformation -/
+
+public section
 
 namespace Core
 namespace ProcedureInlining
 
 open Transform
-
-public section
 
 -- Gathers all labels including those in assert and assume.
 mutual
@@ -226,21 +227,20 @@ def inlineCallCmd
         -- Insert
         --   init in1 : ty := v1     --- inputInit
         --   init in2 : ty := v2
-        --   init out1 : ty := <placeholder> --- outputInit
-        --   init out2 : ty := <placeholder>
+        --   init out1 : ty := nondet --- outputInit
+        --   init out2 : ty := nondet
         --   ... (f body)
         --   set x1 := out1    --- outputSetStmts
         --   set x2 := out2
         -- `init outN` is not necessary because calls are only allowed to use
         -- already declared variables (per Core.typeCheck)
 
-        -- Create a fresh var statement for each LHS
+        -- Declare each renamed output parameter with a nondet init.
+        -- No havoc is needed since nondet already gives an
+        -- unconstrained value.
         let outputTrips ← genOutExprIdentsTrip sigOutputs sigOutputs.unzip.fst
-        let outputInits := createInitVars
-          (outputTrips.map (fun ((tmpvar,ty),orgvar) => ((orgvar,ty),tmpvar)))
-          md
-        let outputHavocs := outputTrips.map (fun
-          (_,orgvar) => Statement.havoc orgvar md)
+        let outputInits := outputTrips.map (fun ((_, ty), orgvar) =>
+          Statement.init orgvar ty .nondet md)
         -- Create a var statement for each procedure input arguments.
         -- The input parameter expression is assigned to these new vars.
         --let inputTrips ← genArgExprIdentsTrip sigInputs args
@@ -259,7 +259,7 @@ def inlineCallCmd
             outs_lhs_and_sig
 
         let stmts:List (Imperative.Stmt Core.Expression Core.Command)
-          := inputInits ++ outputInits ++ outputHavocs
+          := inputInits ++ outputInits
              ++ Block.setCallSiteMetadata proc.body md
              ++ outputSetStmts
 
@@ -279,11 +279,35 @@ def inlineCallCmd
 
       | _ => return .none
 
-end -- public section
-
 end ProcedureInlining
+
+/-- A `doInline` predicate that refuses to inline procedures involved in
+    recursion (i.e., part of a cycle in the call graph).  Falls back to
+    `true` when no call graph is available. -/
+def doInlineNonRecursive (name : String) (analyses : Transform.CachedAnalyses) : Bool :=
+  match analyses.callGraph with
+  | none => true
+  | some cg => !cg.isRecursive name
+
+/--
+Options to control the behavior of inlining procedure calls in a Core program.
+-/
+structure InlineTransformOptions where
+  doInline : String → Transform.CachedAnalyses → Bool := doInlineNonRecursive
+  maxIters : Option Nat := none
+
+/-- Procedure-inlining pipeline phase: the transform inlines procedure bodies
+    at call sites. Inlining is semantics-preserving, so models are always
+    sound (model-preserving).
+    - `maxIters = none`: repeat until a fixed point (no changes).
+    - `maxIters = some n`: run up to `n` iterations, stopping early if no change. -/
+def procedureInliningPipelinePhase
+    (opts : InlineTransformOptions := {})
+    : PipelinePhase :=
+  open Transform in
+  modelPreservingPipelinePhase "ProcedureInlining" fun prog =>
+    runProgramUntil (ProcedureInlining.inlineCallCmd (doInline := opts.doInline)) prog opts.maxIters
+
 end Core
 
--- NB: workaround for the fact that Core is both a module and a dialect.
-public abbrev coreInlineCallCmd (doInline : String → Core.Transform.CachedAnalyses → Bool := fun _ _ => true) :=
-  Core.ProcedureInlining.inlineCallCmd (doInline := doInline)
+end -- public section

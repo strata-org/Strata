@@ -174,12 +174,6 @@ theorem constr_same_output_implies_same_argTys
   apply h_agree_typeArgs
   exact freeVars_map_snd_subset_typeArgs h_wf hv
 
-/-- `callOfLFunc` only returns functions that are members of the factory's array. -/
-theorem Factory.callOfLFunc_mem' {F : @Factory T} {e : LExpr T.mono} {callee args fn} :
-    F.callOfLFunc e = some (callee, args, fn) → fn ∈ F.toArray := by
-  intro hcall
-  obtain ⟨_, _, _, _, h_get⟩ := Factory.callOfLFunc_getElem? hcall
-  exact Factory.getElem?_is_some_implies_mem h_get
 
 /-! ## Constructor output type determines argument types (combined lemma)
 
@@ -238,7 +232,7 @@ theorem constr_callOfLFunc_argTys_eq
   have h_output_eq : LMonoTy.subst tySubst₁ fn.output = LMonoTy.subst tySubst₂ fn.output :=
     hτ₁.symm.trans hτ₂
   -- Step 6: Apply constr_same_output_implies_same_argTys
-  have hfn_mem := Factory.callOfLFunc_mem' hcall₁
+  have hfn_mem := callOfLFunc_func_mem _ _ _ _ _ false hcall₁
   have h_wf := hfwf.lfuncs_wf fn hfn_mem
   have h_same := constr_same_output_implies_same_argTys h_wf h_output_eq h_output_covers
   -- Step 7: Conclude
@@ -299,7 +293,7 @@ theorem constr_callOfLFunc_argTys_eq'
     (hcallee₂ : ∃ m n, callee₂ = .op m n (some (LMonoTy.mkArrow' τ argTys₂)))
     : argTys₁ = argTys₂ :=
   constr_callOfLFunc_argTys_eq hcall₁ hcall₂ h_args₁ h_args₂ hoc₁ hoc₂ hfwf
-    (constrFunc_output_covers_typeArgs hcwf (Factory.callOfLFunc_mem' hcall₁) hconstr)
+    (constrFunc_output_covers_typeArgs hcwf (callOfLFunc_func_mem _ _ _ _ _ false hcall₁) hconstr)
     hcallee₁ hcallee₂
 
 /-- If two constructor applications with different constructor names are well-typed
@@ -376,8 +370,8 @@ theorem callOfLFunc_constr_disjoint_denote
     congr 1; funext ⟨_, ty⟩
     exact substTyVars_subst vt tySubst₂ ty
   -- Apply constr_disjoint
-  have hmem₁ := Factory.callOfLFunc_mem' hcall₁
-  have hmem₂ := Factory.callOfLFunc_mem' hcall₂
+  have hmem₁ := callOfLFunc_func_mem _ _ _ _ _ false hcall₁
+  have hmem₂ := callOfLFunc_func_mem _ _ _ _ _ false hcall₂
   have hvals₁ : f₁.inputs.values = f₁.inputs.map Prod.snd := ListMap.values_eq_map_snd f₁.inputs
   have hvals₂ : f₂.inputs.values = f₂.inputs.map Prod.snd := ListMap.values_eq_map_snd f₂.inputs
   have h_output_eq : LMonoTy.substTyVars vt'₁ f₁.output = LMonoTy.substTyVars vt'₂ f₂.output := by
@@ -525,7 +519,7 @@ theorem callOfLFunc_constr_injective_denote
   have h_outputSort_eq : LMonoTy.substTyVars vt τ = LMonoTy.substTyVars vt' f.output := by
     rw [hτ_eq]; exact substTyVars_subst vt tySubst₁ f.output
   -- Apply constr_injective
-  have hmem := Factory.callOfLFunc_mem' hcall₁
+  have hmem := callOfLFunc_func_mem _ _ _ _ _ false hcall₁
   have hinj := hConstrIC.constr_injective f hmem hconstr vt'
   have hvals : f.inputs.values = f.inputs.map Prod.snd := ListMap.values_eq_map_snd f.inputs
   let dArgs₁ := denoteArgs tcInterp opInterp fvarVal vt .nil args₁ argTys₁ h_args₁
