@@ -17,7 +17,7 @@ Python → Laurel → Core → SMT pipeline and produces diagnostics.
 namespace Strata.Python.VerifyPythonTest
 
 open StrataTest.Util
-open Strata.Python (processPythonFile processPythonToLaurel withPython containsSubstr)
+open Strata.Python (processPythonFile processPythonToLaurel withPython containsSubstr manglePythonMethod)
 open Strata.Parser (stringInputContext)
 
 /-- Run the Python → Laurel pipeline and return the Laurel program together
@@ -254,9 +254,10 @@ def main() -> None:
     result: int = c.add(3, 4)
 "
   let (laurel, output) ← toLaurel pythonCmd program
-  assertTransparent laurel "Calculator@add"
-  unless containsSubstr output "Calculator@add(" do
-    throw <| IO.userError s!"Expected 'Calculator@add(' in Laurel output but not found"
+  let calcAdd := manglePythonMethod "Calculator" "add"
+  assertTransparent laurel calcAdd
+  unless containsSubstr output s!"{calcAdd}(" do
+    throw <| IO.userError s!"Expected '{calcAdd}(' in Laurel output but not found"
 
 -- self.field.method() resolution and composite field initialization:
 -- When a class stores another object as a field and calls a method on
@@ -284,9 +285,10 @@ def main() -> None:
     o.process()
 "
   let (_, output) ← toLaurel pythonCmd program
+  let innerValidate := manglePythonMethod "Inner" "validate"
   -- self.inner.validate() must resolve to Inner@validate StaticCall
-  unless containsSubstr output "Inner@validate(" do
-    throw <| IO.userError s!"Expected 'Inner@validate(' in Laurel output but not found"
+  unless containsSubstr output s!"{innerValidate}(" do
+    throw <| IO.userError s!"Expected '{innerValidate}(' in Laurel output but not found"
   -- Composite field assignment (self.inner: Inner = ...) uses New initialization
   unless containsSubstr output "new Inner" do
     throw <| IO.userError s!"Expected 'new Inner' in Laurel output but not found"
@@ -316,7 +318,8 @@ def main() -> None:
     result: int = obj.value()
 "
   let (laurel, _) ← toLaurel pythonCmd program
-  assertOpaque laurel "Base@value"
+  let baseValue := manglePythonMethod "Base" "value"
+  assertOpaque laurel baseValue
   -- The main procedure should contain a Hole for the obj.value() call,
   -- not a StaticCall to Base@value.
   let mainProc := laurel.staticProcedures.find? (fun p => p.name.text == "main")
@@ -324,8 +327,38 @@ def main() -> None:
   | none => throw <| .userError "main procedure not found"
   | some proc =>
     let mainOutput := toString (Laurel.formatProcedure proc)
-    if containsSubstr mainOutput "Base@value(" then
-      throw <| IO.userError s!"main should NOT call Base@value (inheritance guard)"
+    if containsSubstr mainOutput s!"{baseValue}(" then
+      throw <| IO.userError s!"main should NOT call {baseValue} (inheritance guard)"
+
+-- Inheritance with field type conflict: B inherits A and redeclares field x
+-- with a different type. Both classes are in the hierarchy, so method bodies
+-- must be opaque and call sites must emit Holes.
+#guard_msgs in
+#eval withPython (warnOnSkip := false) fun pythonCmd => do
+  let program :=
+"class A:
+    def __init__(self) -> None:
+        self.x: int = 0
+
+    def get_x(self) -> int:
+        return self.x
+
+class B(A):
+    def __init__(self) -> None:
+        self.x: str = \"hello\"
+
+    def get_x(self) -> str:
+        return self.x
+
+def main() -> None:
+    a: A = A()
+    result: int = a.get_x()
+"
+  let (laurel, _) ← toLaurel pythonCmd program
+  let aGetX := manglePythonMethod "A" "get_x"
+  let bGetX := manglePythonMethod "B" "get_x"
+  assertOpaque laurel aGetX
+  assertOpaque laurel bGetX
 
 -- Cross-class method dispatch: a method in one class calls a method on
 -- a field typed as another class. The call should resolve via userFunctions.
@@ -351,12 +384,14 @@ def main() -> None:
     result: int = c.horsepower()
 "
   let (_, output) ← toLaurel pythonCmd program
+  let engineGetHp := manglePythonMethod "Engine" "get_hp"
+  let carHorsepower := manglePythonMethod "Car" "horsepower"
   -- self.engine.get_hp() should resolve to Engine@get_hp StaticCall
-  unless containsSubstr output "Engine@get_hp(" do
-    throw <| IO.userError s!"Expected 'Engine@get_hp(' in Laurel output but not found"
+  unless containsSubstr output s!"{engineGetHp}(" do
+    throw <| IO.userError s!"Expected '{engineGetHp}(' in Laurel output but not found"
   -- Car@horsepower should also be a StaticCall from main
-  unless containsSubstr output "Car@horsepower(" do
-    throw <| IO.userError s!"Expected 'Car@horsepower(' in Laurel output but not found"
+  unless containsSubstr output s!"{carHorsepower}(" do
+    throw <| IO.userError s!"Expected '{carHorsepower}(' in Laurel output but not found"
 
 -- Full pipeline: composite field assignment goes through the entire
 -- Python → Laurel → Core → SMT pipeline without crashing.
