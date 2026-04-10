@@ -218,6 +218,7 @@ def PyLauType.ListAny := "ListAny"
 def PyLauType.ListStr := "ListStr"
 def PyLauType.Package := "Package"
 def PyLauType.Any := "Any"
+def AnyConstructor.None := "from_None"
 
 def isOfAnyType (ty: String): Bool := ty ∈ [PyLauType.None, PyLauType.Bool, PyLauType.Int, PyLauType.Float,
                            PyLauType.Str, PyLauType.Datetime, PyLauType.Bytes, PyLauType.ListAny, PyLauType.DictStrAny, PyLauType.Any]
@@ -1440,14 +1441,33 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
       loopBreakLabel := some breakLabel
       loopContinueLabel := some continueLabel }
     let (finalCtx, bodyStmts) ← translateStmtList bodyCtx body.val.toList
-    let assumeInStmts :=match target with
-    | .Name _ n _ =>
-      let targetVar := mkStmtExprMd (StmtExpr.Identifier n.val)
-      let targetInIter := mkStmtExprMd (.StaticCall "PIn" [targetVar, iterExpr])
-      let assumeInStmt := mkStmtExprMd (.Assume (Any_to_bool targetInIter))
-      [assumeInStmt]
-    | _ => []
-    let bodyStmts := assumeInStmts ++ bodyStmts
+    let assumeStmts : List StmtExprMd ← do match target with
+      | .Name _ n _ =>
+        let targetVar := mkStmtExprMd (StmtExpr.Identifier n.val)
+        let isAnyNone (s: StmtExprMd) := match s.val with
+          | .StaticCall constructor _ => constructor == AnyConstructor.None | _ => false
+        match iterExpr.val with
+          | .StaticCall "range" (startExpr::stopExpr::stepExpr::_) =>
+            if ¬ (isAnyNone stopExpr && isAnyNone stepExpr) then
+              throw (.unsupportedConstruct "Unsupport range function with more than 1 input" (toString (repr iter)))
+            let asIntStart := mkStmtExprMd $ .StaticCall "Any..as_int!" [startExpr]
+            let emptyRangeExit := mkStmtExprMd $ .IfThenElse
+              (mkStmtExprMd $ .PrimitiveOp .Leq [asIntStart, mkStmtExprMd $ .LiteralInt 0])
+              (mkStmtExprMd $ .Exit breakLabel)
+              none
+            let assumeTypeInt := mkStmtExprMd (.Assume $ mkStmtExprMd (.StaticCall "Any..isfrom_int" [targetVar]))
+            let asIntTarget := mkStmtExprMd $ .StaticCall "Any..as_int!" [targetVar]
+            let inRangeExpr := mkStmtExprMd $ .PrimitiveOp .And [
+                  (mkStmtExprMd $ .PrimitiveOp .Geq [asIntTarget, mkStmtExprMd $ .LiteralInt 0]),
+                  (mkStmtExprMd $ .PrimitiveOp .Lt [asIntTarget, asIntStart]) ]
+            let assumeInRange := mkStmtExprMd (.Assume inRangeExpr)
+            pure [emptyRangeExit, assumeTypeInt, assumeInRange]
+          | _ =>
+            let targetInIter := mkStmtExprMd (.StaticCall "PIn" [targetVar, iterExpr])
+            let assumeInStmt := mkStmtExprMd (.Assume (Any_to_bool targetInIter))
+            pure [assumeInStmt]
+      | _ => pure []
+    let bodyStmts := assumeStmts ++ bodyStmts
     let innerBlock := mkStmtExprMd (StmtExpr.Block bodyStmts (some continueLabel))
     let loopBlock := mkStmtExprMdWithLoc (StmtExpr.Block [innerBlock] (some breakLabel)) md
     return (finalCtx, (getExceptionAssertions ctx iterExpr) ++ targetDecls ++ [loopBlock])

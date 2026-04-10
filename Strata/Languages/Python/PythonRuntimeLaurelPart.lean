@@ -406,13 +406,8 @@ function List_set (l : ListAny, i : int, v: Any) : ListAny
 //Require recursive function on int
 function List_repeat (l: ListAny, n: int): ListAny;
 
-function ListAny_range(i: Any) : ListAny;
-
-function range (i: Any) : Any
-  requires Any..isfrom_int(i)
-{
-  from_ListAny (ListAny_range(i))
-};
+function range (start: Any, stop: Any, step: Any) : Any
+  requires Any..isfrom_int(start) && Any..isfrom_None(stop) && Any..isfrom_None(step);
 
 // /////////////////////////////////////////////////////////////////////////////////////
 // DictStrAny functions
