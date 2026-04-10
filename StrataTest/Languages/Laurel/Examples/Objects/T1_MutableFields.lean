@@ -30,7 +30,7 @@ procedure simpleAssign() {
   var c: Container := new Container;
   var iv: int := c#intValue;
   var rv: real := c#realValue;
-  var bv: bool := c#boolValue;
+  var boolVar: bool := c#boolValue;
   var sv: string := c#stringValue;
 
   c#intValue := 2;
