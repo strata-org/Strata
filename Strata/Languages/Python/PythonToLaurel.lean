@@ -218,6 +218,7 @@ def PyLauType.ListAny := "ListAny"
 def PyLauType.ListStr := "ListStr"
 def PyLauType.Package := "Package"
 def PyLauType.Any := "Any"
+def AnyConstructor.None := "from_None"
 
 def isOfAnyType (ty: String): Bool := ty ∈ [PyLauType.None, PyLauType.Bool, PyLauType.Int, PyLauType.Float,
                            PyLauType.Str, PyLauType.Datetime, PyLauType.Bytes, PyLauType.ListAny, PyLauType.DictStrAny, PyLauType.Any]
@@ -1440,14 +1441,33 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
       loopBreakLabel := some breakLabel
       loopContinueLabel := some continueLabel }
     let (finalCtx, bodyStmts) ← translateStmtList bodyCtx body.val.toList
-    let assumeInStmts :=match target with
-    | .Name _ n _ =>
-      let targetVar := mkStmtExprMd (StmtExpr.Identifier n.val)
-      let targetInIter := mkStmtExprMd (.StaticCall "PIn" [targetVar, iterExpr])
-      let assumeInStmt := mkStmtExprMd (.Assume (Any_to_bool targetInIter))
-      [assumeInStmt]
-    | _ => []
-    let bodyStmts := assumeInStmts ++ bodyStmts
+    let assumeStmts : List StmtExprMd ← do match target with
+      | .Name _ n _ =>
+        let targetVar := mkStmtExprMd (StmtExpr.Identifier n.val)
+        let isAnyNone (s: StmtExprMd) := match s.val with
+          | .StaticCall constructor _ => constructor == AnyConstructor.None | _ => false
+        match iterExpr.val with
+          | .StaticCall "range" (startExpr::stopExpr::stepExpr::_) =>
+            if ¬ (isAnyNone stopExpr && isAnyNone stepExpr) then
+              throw (.unsupportedConstruct "Unsupport range function with more than 1 input" (toString (repr iter)))
+            let asIntStart := mkStmtExprMd $ .StaticCall "Any..as_int!" [startExpr]
+            let emptyRangeExit := mkStmtExprMd $ .IfThenElse
+              (mkStmtExprMd $ .PrimitiveOp .Leq [asIntStart, mkStmtExprMd $ .LiteralInt 0])
+              (mkStmtExprMd $ .Exit breakLabel)
+              none
+            let assumeTypeInt := mkStmtExprMd (.Assume $ mkStmtExprMd (.StaticCall "Any..isfrom_int" [targetVar]))
+            let asIntTarget := mkStmtExprMd $ .StaticCall "Any..as_int!" [targetVar]
+            let inRangeExpr := mkStmtExprMd $ .PrimitiveOp .And [
+                  (mkStmtExprMd $ .PrimitiveOp .Geq [asIntTarget, mkStmtExprMd $ .LiteralInt 0]),
+                  (mkStmtExprMd $ .PrimitiveOp .Lt [asIntTarget, asIntStart]) ]
+            let assumeInRange := mkStmtExprMd (.Assume inRangeExpr)
+            pure [emptyRangeExit, assumeTypeInt, assumeInRange]
+          | _ =>
+            let targetInIter := mkStmtExprMd (.StaticCall "PIn" [targetVar, iterExpr])
+            let assumeInStmt := mkStmtExprMd (.Assume (Any_to_bool targetInIter))
+            pure [assumeInStmt]
+      | _ => pure []
+    let bodyStmts := assumeStmts ++ bodyStmts
     let innerBlock := mkStmtExprMd (StmtExpr.Block bodyStmts (some continueLabel))
     let loopBlock := mkStmtExprMdWithLoc (StmtExpr.Block [innerBlock] (some breakLabel)) md
     return (finalCtx, (getExceptionAssertions ctx iterExpr) ++ targetDecls ++ [loopBlock])
@@ -1480,7 +1500,7 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
       | _ => (target, [], [])
     let slices ← slices.mapM (translateExpr ctx)
     let tempVarDecls := (tempVars.zip slices).map λ (var, slice) =>
-              mkStmtExprMd (.LocalVariable {text:= var} AnyTy slice)
+              mkStmtExprMd (.LocalVariable { text := var, md := default } AnyTy slice)
     let rhs : Python.expr SourceRange := .BinOp sr target op value
     let pyNormalAssign : Python.stmt SourceRange :=
           .Assign sr {val:= #[target], ann:= target.ann} rhs {val:= none, ann:= sr}
@@ -1650,7 +1670,7 @@ def translateFunction (ctx : TranslationContext) (sourceRange: SourceRange) (fun
 
     inputs := funcDecl.args.map (fun arg =>
         if arg.tys.length == 1 && isCompositeType ctx arg.tys[0]! then
-          { name := arg.name, type := mkHighTypeMd (.UserDefined {text:= arg.tys[0]!}) }
+          { name := arg.name, type := mkHighTypeMd (.UserDefined {text:= arg.tys[0]!, md := default}) }
         else
           { name := arg.name, type := AnyTy})
 
@@ -1679,13 +1699,12 @@ def translateFunction (ctx : TranslationContext) (sourceRange: SourceRange) (fun
 
     -- Create procedure with transparent body (no contracts for now)
     let proc : Procedure := {
-      name := funcDecl.name
+      name := { text := funcDecl.name, md := sourceRangeToMetaData ctx.filePath sourceRange }
       inputs := inputs
       outputs := outputs
       preconditions := typeConstraintPreconditions
       decreases := none
       body := Body.Opaque typeConstraintPostcondition bodyBlock []
-      md := sourceRangeToMetaData ctx.filePath sourceRange
       isFunctional := false
     }
 
@@ -1820,14 +1839,13 @@ def translateMethod (ctx : TranslationContext) (className : String)
 
     let md := sourceRangeToMetaData ctx.filePath methodStmt.ann
     return {
-      name := className ++ "@" ++ methodName
+      name := { text := className ++ "@" ++ methodName, md := md }
       inputs := renamedInputs
       outputs := outputs
       preconditions := [mkStmtExprMd (StmtExpr.LiteralBool true)]
       isFunctional := false
       decreases := none
       body := .Transparent bodyBlock
-      md := md
     }
   | _ => throw (.internalError "Expected FunctionDef for method")
 
@@ -1871,14 +1889,13 @@ def mkDefaultInitDecl (className : String) : PythonFunctionDecl × Procedure :=
   }
   let inputs := [selfParam]
   let proc : Procedure := {
-    name := decl.name
+    name := { text := decl.name, md := defaultMetadata }
     inputs := inputs
     outputs := [{name := "LaurelResult", type := AnyTy}]
     preconditions := [mkStmtExprMd (StmtExpr.LiteralBool true)]
     isFunctional := false
     decreases := none
     body := .Opaque [] .none []
-    md := defaultMetadata
   }
   (decl, proc)
 
@@ -2066,7 +2083,7 @@ def PreludeInfo.ofLaurelProgram (prog : Laurel.Program) : PreludeInfo where
       | _ => []
     funcNames ++ dtFuncs
   maybeExceptionFunctions :=  prog.staticProcedures.filterMap fun p =>
-    if p.md.getPropertySummary.getD "" == "AnyMaybeExcept" then some p.name.text else none
+    if p.name.md.getPropertySummary.getD "" == "AnyMaybeExcept" then some p.name.text else none
   procedureNames :=
     prog.staticProcedures.filterMap fun p =>
       if p.body.isExternal || p.isFunctional then none else some p.name.text
@@ -2105,7 +2122,7 @@ def pythonToLaurel' (info : PreludeInfo)
         | _ => none
     | _ => []
   let pyErrorTy : CompositeType := {
-    name := {text := "PythonError"}
+    name := {text := "PythonError", md := default }
     extending := []  -- No inheritance support for now
     fields := [{name:= "response", isMutable:= false, type:= AnyTy}]
     instanceProcedures := []
@@ -2197,13 +2214,12 @@ def pythonToLaurel' (info : PreludeInfo)
 
   let md := sourceRangeToMetaData ctx.filePath { start := 0, stop := 0 }
   let mainProc : Procedure := {
-    name := "__main__",
+    name := { text := "__main__", md := md },
     inputs := [],
     outputs := [],
     preconditions := [],
     decreases := none,
     body := .Transparent bodyBlock
-    md := md
     isFunctional := false
   }
 
@@ -2214,22 +2230,20 @@ def pythonToLaurel' (info : PreludeInfo)
   for ct in compositeTypes do
     let selfParam : Parameter := { name := "self", type := mkHighTypeMd (.UserDefined ct.name.text) }
     procedures := procedures.push
-      { name := { text := compositeToStringName ct.name.text }
+      { name := { text := compositeToStringName ct.name.text, md := .empty }
         inputs := [selfParam]
         outputs := [{ name := "result", type := mkHighTypeMd .TString }]
         preconditions := []
         decreases := none
         body := .Opaque [] none []
-        md := default
         isFunctional := false }
     procedures := procedures.push
-      { name := { text := compositeToStringAnyName ct.name.text }
+      { name := { text := compositeToStringAnyName ct.name.text, md := .empty }
         inputs := [selfParam]
         outputs := [{ name := "result", type := AnyTy }]
         preconditions := []
         decreases := none
         body := .Opaque [] none []
-        md := default
         isFunctional := false }
 
   let program : Laurel.Program := {
