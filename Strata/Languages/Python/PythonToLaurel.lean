@@ -1300,19 +1300,20 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
       let (ctx, stmts) ← translateAssign ctx target annotation value md
       -- Emit type assertion for concrete type annotations (int, str, bool, float).
       -- This catches bugs like `x: int = None` where None is not a valid int.
-      -- Assert on the RHS value directly (before assignment) rather than reading
-      -- the variable back, so the check is independent of translateAssign's output.
-      let typeAssert ← match target with
-        | .Name _ _ _ => do
+      -- We assert on the variable after assignment. This is safe because
+      -- typeTester? only fires for primitive types (int/str/bool/float),
+      -- where translateAssign always produces a simple assignment.
+      let typeAssert := match target with
+        | .Name _ n _ =>
           let annStr := pyExprToString annotation
           match typeTester? annStr with
           | some testerName =>
-            let rhs ← translateExpr ctx value
-            let cond := mkStmtExprMd (StmtExpr.StaticCall testerName [rhs])
-            pure [mkStmtExprMdWithLoc (StmtExpr.Assert cond) md]
-          | none => pure []
-        | _ => pure []
-      return withExceptionChecks ctx (ctx, typeAssert ++ stmts)
+            let varExpr := mkStmtExprMd (StmtExpr.Identifier n.val)
+            let cond := mkStmtExprMd (StmtExpr.StaticCall testerName [varExpr])
+            [mkStmtExprMdWithLoc (StmtExpr.Assert cond) md]
+          | none => []
+        | _ => []
+      return withExceptionChecks ctx (ctx, stmts ++ typeAssert)
     | none =>
       -- Declaration without initializer (not allowed in pure context, but OK in procedures)
       let varType := pyExprToString annotation
