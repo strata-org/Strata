@@ -1,0 +1,19 @@
+name: Label merge conflicts
+
+on:
+  push:
+    branches: [main]
+  pull_request_target:
+    types: [opened, synchronize]
+
+permissions:
+  pull-requests: write
+
+jobs:
+  label-conflicts:
+    runs-on: ubuntu-slim
+    steps:
+      - uses: prince-chrismc/label-merge-conflicts-action@v3
+        with:
+          conflict_label_name: "Git conflicts"
+          github_token: ${{ secrets.GITHUB_TOKEN }}
