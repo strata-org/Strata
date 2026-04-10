@@ -63,7 +63,7 @@ private def isTrivial (e : Expression.Expr) : Bool :=
 
 /-- Check if an expression contains bound variables, which would make
     deduplication unsound across different binding contexts. -/
-partial def hasBVar (e : Expression.Expr) : Bool :=
+private def hasBVar (e : Expression.Expr) : Bool :=
   match e with
   | .bvar _ _ => true
   | .const _ _ | .fvar _ _ _ | .op _ _ _ => false
@@ -88,7 +88,7 @@ where
     deduplication. For function applications, collects the full (curried)
     application and recurses into each argument, but does not collect
     intermediate partial applications from the spine. -/
-partial def collectSubexprs (e : Expression.Expr) : List Expression.Expr :=
+private partial def collectSubexprs (e : Expression.Expr) : List Expression.Expr :=
   match e with
   | .const _ _ | .bvar _ _ | .fvar _ _ _ | .op _ _ _ => []
   | .app _ _ _ =>

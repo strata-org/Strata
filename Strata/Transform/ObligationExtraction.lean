@@ -90,7 +90,7 @@ where
         -- PE resolved: then-branch is live, else-branch has rewritten dead code.
         -- Propagate path conditions from the live branch.
         let (thenObs, thenPc) ← extractFromStatements pc thenSs
-        let (elseObs, _) ← extractFromStatements pc elseSs
+        let elseObs := collectDeadBranch pc elseSs #[]
         .ok (thenObs ++ elseObs ++ acc, thenPc)
       else do
         let negCond := Lambda.LExpr.app () Core.boolNotOp cond

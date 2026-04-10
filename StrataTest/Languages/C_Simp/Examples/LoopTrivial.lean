@@ -199,14 +199,6 @@ pre: $__n0 >= 0
 Obligation:
 true
 
-Label: i_eq_n
-Property: assert
-Assumptions:
-<label_ite_cond_false: !(~Int.Lt i n)>: if 0 < $__n0 then false else true
-pre: $__n0 >= 0
-Obligation:
-0 == $__n0
-
 ---
 info:
 Obligation: entry_invariant_0
@@ -234,10 +226,6 @@ Property: assert
 Result: ✅ pass
 
 Obligation: post
-Property: assert
-Result: ✅ pass
-
-Obligation: i_eq_n
 Property: assert
 Result: ✅ pass
 -/

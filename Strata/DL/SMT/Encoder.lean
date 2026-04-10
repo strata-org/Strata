@@ -148,23 +148,14 @@ def declareType (id : String) (mks : List String) : EncoderM String := do
   declareDatatype id [] constrs
   return id
 
-/-- Build the `Term` for a compound expression. The `inBinder` parameter is
-    kept for API compatibility but is unused — deduplication is now handled
-    upstream in the Core-to-Core pipeline. -/
-def defineTerm (_inBinder : Bool) (_ty : TermType) (body : Term) : EncoderM Term :=
-  return body
-
-def defineTermBound := defineTerm True
-def defineTermUnbound := defineTerm False
-
 def defineSet (ty : TermType) (tEncs : List Term) : EncoderM Term := do
   -- Build: (set.insert tN ... (set.insert t2 (set.insert t1 (as set.empty ty))))
   let empty : Term := .app (.datatype_op .constructor "set.empty") [] ty
   let result := tEncs.foldl (fun acc t => Term.app (.uf ⟨"set.insert", [⟨"x", t.typeOf⟩, ⟨"s", ty⟩], ty⟩) [t, acc] ty) empty
-  defineTermUnbound ty result
+  return result
 
 def defineRecord (ty : TermType) (tEncs : List Term) : EncoderM Term := do
-  defineTermUnbound ty (.app (.datatype_op .constructor ty.mkName) tEncs ty)
+  return .app (.datatype_op .constructor ty.mkName) tEncs ty
 
 def encodeUF (uf : UF) : EncoderM String := do
   if let (.some enc) := (← get).ufs.get? uf then return enc
@@ -178,14 +169,14 @@ def encodeUF (uf : UF) : EncoderM String := do
   Solver.declareFun id argTys uf.out
   modifyGet λ state => (id, {state with ufs := state.ufs.insert uf id})
 
-def defineApp (inBinder : Bool) (ty : TermType) (op : Op) (tEncs : List Term) : EncoderM Term := do
+def defineApp (ty : TermType) (op : Op) (tEncs : List Term) : EncoderM Term := do
   match op with
   | .uf f =>
     let ufName ← encodeUF f
     let ufRef : UF := { id := ufName, args := f.args, out := f.out }
-    defineTerm inBinder ty (.app (.uf ufRef) tEncs ty)
+    return .app (.uf ufRef) tEncs ty
   | _ =>
-    defineTerm inBinder ty (.app op tEncs ty)
+    return .app op tEncs ty
 
 def extractTriggerGroup : Term -> List Term
 | .app .triggers ts .trigger => ts
@@ -218,7 +209,7 @@ private theorem extractTriggers_sizeOf (t : Term) (ts : List Term) (ti : Term)
   · simp_all
 
 -- Helper function for quantifier generation
-def defineQuantifierHelper (inBinder : Bool) (qk : QuantifierKind) (args : List TermVar) (trEncs: List (List Term)) (bodyEnc : Term) : EncoderM Term := do
+def defineQuantifierHelper (qk : QuantifierKind) (args : List TermVar) (trEncs: List (List Term)) (bodyEnc : Term) : EncoderM Term := do
   let tr : Term := match trEncs with
     | [] => .app .triggers [] .trigger  -- empty trigger
     | groups =>
@@ -226,55 +217,57 @@ def defineQuantifierHelper (inBinder : Bool) (qk : QuantifierKind) (args : List 
       let triggerTerms := groups.map fun group =>
         .app .triggers group .trigger
       .app .triggers triggerTerms .trigger
-  defineTerm inBinder .bool (.quant qk args tr bodyEnc)
+  return .quant qk args tr bodyEnc
 
-def defineMultiAll (inBinder : Bool) (args : List TermVar) (trEncs: List (List Term)) (bodyEnc : Term) : EncoderM Term :=
-  defineQuantifierHelper inBinder .all args trEncs bodyEnc
+def defineMultiAll (args : List TermVar) (trEncs: List (List Term)) (bodyEnc : Term) : EncoderM Term :=
+  defineQuantifierHelper .all args trEncs bodyEnc
 
-def defineMultiExist (inBinder : Bool) (args : List TermVar) (trEncs: List (List Term)) (bodyEnc : Term) : EncoderM Term :=
-  defineQuantifierHelper inBinder .exist args trEncs bodyEnc
+def defineMultiExist (args : List TermVar) (trEncs: List (List Term)) (bodyEnc : Term) : EncoderM Term :=
+  defineQuantifierHelper .exist args trEncs bodyEnc
 
 -- Convenience wrappers for single-variable quantifiers
-def defineAll (inBinder : Bool) (x : String) (xty : TermType) (trEncs: List (List Term)) (bodyEnc : Term) : EncoderM Term :=
-  defineQuantifierHelper inBinder .all [⟨x, xty⟩] trEncs bodyEnc
+def defineAll (x : String) (xty : TermType) (trEncs: List (List Term)) (bodyEnc : Term) : EncoderM Term :=
+  defineQuantifierHelper .all [⟨x, xty⟩] trEncs bodyEnc
 
-def defineExist (inBinder : Bool) (x : String) (xty : TermType) (trEncs: List (List Term)) (bodyEnc : Term) : EncoderM Term :=
-  defineQuantifierHelper inBinder .exist [⟨x, xty⟩] trEncs bodyEnc
+def defineExist (x : String) (xty : TermType) (trEncs: List (List Term)) (bodyEnc : Term) : EncoderM Term :=
+  defineQuantifierHelper .exist [⟨x, xty⟩] trEncs bodyEnc
 
 def mapM₁ {m : Type u → Type v} [Monad m] {α : Type w} {β : Type u}
   (xs : List α) (f : {x : α // x ∈ xs} → m β) : m (List β) :=
   xs.attach.mapM f
 
 def encodeTerm (inBinder : Bool) (t : Term) : EncoderM Term := do
-  let ty := t.typeOf
   match t with
   | .var _            => return t
   | .prim _           => return t
-  | .none _           => defineTerm inBinder ty t
+  | .none _           => return t
   | .some t₁          =>
     let t₁Enc ← encodeTerm inBinder t₁
-    defineTerm inBinder ty (.some t₁Enc)
+    return .some t₁Enc
   | .app .re_allchar [] .regex => return t
   | .app .re_all     [] .regex => return t
   | .app .re_none    [] .regex => return t
   | .app .bvnego [inner] .bool =>
+    let ty := t.typeOf
     match inner.typeOf with
     | .bitvec n =>
       let innerEnc ← encodeTerm inBinder inner
       let minVal : Term := .prim (.bitvec (BitVec.intMin n))
-      defineApp inBinder ty .eq [innerEnc, minVal]
+      defineApp ty .eq [innerEnc, minVal]
     | _ =>
       return Term.bool false
-  | .app op ts _         => defineApp inBinder ty op (← mapM₁ ts (λ ⟨tᵢ, _⟩ => encodeTerm inBinder tᵢ))
+  | .app op ts _         =>
+    let ty := t.typeOf
+    defineApp ty op (← mapM₁ ts (λ ⟨tᵢ, _⟩ => encodeTerm inBinder tᵢ))
   | .quant qk qargs tr body =>
     let trExprs := if Factory.isSimpleTrigger tr then [] else extractTriggers tr
     let trEncs ← mapM₁ trExprs (fun ⟨ts, _⟩ => mapM₁ ts (fun ⟨ti, _⟩ => encodeTerm True ti))
     let bodyEnc ← encodeTerm True body
     match qk, qargs with
-    | .all, [⟨x, xty⟩] => defineAll inBinder x xty trEncs bodyEnc
-    | .all, _ => defineMultiAll inBinder qargs trEncs bodyEnc
-    | .exist, [⟨x, xty⟩] => defineExist inBinder x xty trEncs bodyEnc
-    | .exist, _ => defineMultiExist inBinder qargs trEncs bodyEnc
+    | .all, [⟨x, xty⟩] => defineAll x xty trEncs bodyEnc
+    | .all, _ => defineMultiAll qargs trEncs bodyEnc
+    | .exist, [⟨x, xty⟩] => defineExist x xty trEncs bodyEnc
+    | .exist, _ => defineMultiExist qargs trEncs bodyEnc
 termination_by sizeOf t
 decreasing_by
   all_goals first
