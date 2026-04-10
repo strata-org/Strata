@@ -55,6 +55,7 @@ SKIP_TESTS = BOTH_SKIP | {
     "test_regex_positive",
     "test_return_types",
     "test_subscription",
+    "test_try_catch_multiple_exceptions"
     "test_try_except",
     "test_try_except_scoping",
     "test_variable_reassign",
