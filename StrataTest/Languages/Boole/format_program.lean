@@ -4,7 +4,7 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import Strata.Languages.Boole.Verify
+import Strata.MetaVerifier
 
 /-!
 Regression test for `Boole.formatProgram`.
@@ -18,8 +18,6 @@ fvar indices to be printed as `fvar!N` instead of their real names.
 `Boole.formatProgram` fixes this by accepting the `GlobalContext` and `DialectMap`
 from the *original* `Strata.Program` and passing them directly into the `FormatContext`.
 -/
-
-namespace Strata.Test
 
 open Strata
 
@@ -42,23 +40,17 @@ procedure main () returns ()
 };
 #end
 
-/--
-`Boole.formatProgram` must not produce any `fvar!N` tokens: every free variable
-reference should resolve to its declared name via the provided `GlobalContext`.
--/
+-- `Boole.formatProgram` must not produce any `fvar!N` tokens: every free variable
+-- reference should resolve to its declared name via the provided `GlobalContext`.
 #guard
   let prog := (Boole.getProgram vec_program).toOption.get!
   let formatted := (Boole.formatProgram prog vec_program.globalContext vec_program.dialects).pretty
   !formatted.contains "fvar!"
 
-/--
-The names that appear in types and function bodies must match the declared names.
--/
+-- The names that appear in types and function bodies must match the declared names.
 #guard
   let prog := (Boole.getProgram vec_program).toOption.get!
   let formatted := (Boole.formatProgram prog vec_program.globalContext vec_program.dialects).pretty
   formatted.contains "Vec" &&
   formatted.contains "Vec..Vec_len" &&
   formatted.contains "Vec..Vec_data"
-
-end Strata.Test
