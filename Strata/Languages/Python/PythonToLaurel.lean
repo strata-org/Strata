@@ -625,10 +625,16 @@ partial def translateExpr (ctx : TranslationContext) (e : Python.expr SourceRang
         let className := ctx.currentClassName.get!
         match tryLookupFieldHighType ctx className attr.val with
         | some (.UserDefined _) =>
-          -- Composite-typed field (e.g. service client): return Hole.
-          -- Method dispatch on self.field.method() is handled by
-          -- refineFunctionCallExpr via dispatchFieldTypes.
-          return mkStmtExprMd .Hole
+          -- Only return Hole if this field has a dispatch type (tracked in
+          -- dispatchFieldTypes). Method dispatch on self.field.method() is
+          -- handled by refineFunctionCallExpr via dispatchFieldTypes.
+          -- For non-dispatch UserDefined fields, return the field expression
+          -- so standalone reads like `x = self.field` are not silently lost.
+          let hasDispatch := ctx.dispatchFieldTypes[className]?.any (·.contains attr.val)
+          if hasDispatch then
+            return mkStmtExprMd .Hole
+          else
+            return fieldExpr
         | _ =>
           return fieldExpr
       else
@@ -924,6 +930,8 @@ partial def translateCall (ctx : TranslationContext)
   if !ctx.suppressDispatch then
     if let some className ← resolveDispatch ctx f args.toArray then
       return mkStmtExprMd (.New className)
+  -- Reset suppressDispatch so nested calls within the RHS are not affected
+  let ctx := {ctx with suppressDispatch := false}
   -- Step 2: method call on typed variable (e.g., iam.get_role())
   --   Resolve to ClassName_method(obj, args)
 
@@ -1853,6 +1861,42 @@ private def matchDispatchField (ctx : TranslationContext) (target value : Python
           return some (attr.val, cn)
   return none
 
+/-- Recursively scan statements for `self.field = dispatch_call(...)` patterns.
+    Descends into if/try/for/while/with blocks to find dispatch calls in
+    nested control flow (e.g., `try: self.client = boto3.client('s3')`). -/
+private partial def scanDispatchFields (ctx : TranslationContext)
+    (stmts : List (Python.stmt SourceRange))
+    : Except TranslationError (List (String × String)) := do
+  let mut result : List (String × String) := []
+  for s in stmts do
+    let fields ← match s with
+      | .Assign _ targets value _ =>
+        if let some target := targets.val[0]? then
+          (matchDispatchField ctx target value).map (·.toList)
+        else pure []
+      | .AnnAssign _ target _ value _ =>
+        if let some value := value.val then
+          (matchDispatchField ctx target value).map (·.toList)
+        else pure []
+      | .If _ _ body orelse =>
+        let a ← scanDispatchFields ctx body.val.toList
+        let b ← scanDispatchFields ctx orelse.val.toList
+        pure (a ++ b)
+      | .Try _ body handlers orelse finalbody =>
+        let a ← scanDispatchFields ctx body.val.toList
+        let b ← handlers.val.toList.flatMapM fun h =>
+          match h with | .ExceptHandler _ _ _ hbody => scanDispatchFields ctx hbody.val.toList
+        let c ← scanDispatchFields ctx orelse.val.toList
+        let d ← scanDispatchFields ctx finalbody.val.toList
+        pure (a ++ b ++ c ++ d)
+      | .For _ _ _ body _ _ | .While _ _ body _ =>
+        scanDispatchFields ctx body.val.toList
+      | .With _ _ body _ =>
+        scanDispatchFields ctx body.val.toList
+      | _ => pure []
+    result := result ++ fields
+  return result
+
 /-- Translate a Python class to a Laurel CompositeType -/
 def translateClass (ctx : TranslationContext) (classStmt : Python.stmt SourceRange)
     : Except TranslationError (CompositeType × Array Procedure × List PythonFunctionDecl) := do
@@ -1885,23 +1929,14 @@ def translateClass (ctx : TranslationContext) (classStmt : Python.stmt SourceRan
     -- Detect dispatch calls in __init__ (e.g. self.client = boto3.client('s3'))
     -- and record the resolved composite type for method dispatch only.
     -- Handles both plain assignments and annotated assignments.
+    -- Scans recursively into nested blocks (if/try/for/while/with).
     let mut dispatchFields : Std.HashMap String String := {}
     for stmt in body do
       if let .FunctionDef _ name _ initBody _ _ _ _ := stmt then
         if name.val == "__init__" then
-          for s in initBody.val do
-            let dispatchField? ← match s with
-              | .Assign _ targets value _ =>
-                if let some target := targets.val[0]? then
-                  matchDispatchField ctx target value
-                else pure none
-              | .AnnAssign _ target _ value _ =>
-                if let some value := value.val then
-                  matchDispatchField ctx target value
-                else pure none
-              | _ => pure none
-            if let some (fieldName, cn) := dispatchField? then
-              dispatchFields := dispatchFields.insert fieldName cn
+          let dispatchResult ← scanDispatchFields ctx initBody.val.toList
+          for (fieldName, cn) in dispatchResult do
+            dispatchFields := dispatchFields.insert fieldName cn
     let ctx := {ctx with
       classFieldHighType := ctx.classFieldHighType.insert className classFields
       dispatchFieldTypes := ctx.dispatchFieldTypes.insert className dispatchFields}

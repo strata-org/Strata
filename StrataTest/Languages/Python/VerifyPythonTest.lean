@@ -252,9 +252,12 @@ def main() -> None:
     w.run()
 "
   let diags ← processPythonFile pythonCmd (stringInputContext "test.py" program)
-  -- Translation should succeed; diagnostics (if any) should not include coercion errors
+  -- Translation should succeed without coercion errors
   for d in diags do
     if d.message.contains "Coercion to Any not supported" then
       throw (IO.userError s!"Unexpected coercion error: {d.message}")
+  -- Log diagnostic count for visibility; fail if unexpectedly many
+  if diags.size > 10 then
+    throw (IO.userError s!"Unexpected number of diagnostics: {diags.size}: {diags.map (·.message)}")
 
 end Strata.Python.VerifyPythonTest
