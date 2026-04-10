@@ -208,9 +208,8 @@ def create_service() -> Any:
     return svc
 "
   let diags ← processPythonFile pythonCmd (stringInputContext "test.py" program)
-  -- Field assignment in __init__ produces "assertion could not be proved" diagnostics
-  unless diags.any (·.message == "assertion could not be proved") do
-    throw <| .userError s!"Expected 'assertion could not be proved' diagnostic, got: {diags.map (·.message)}"
+  if diags.size ≠ 0 then
+    throw <| .userError s!"Expected 0 diagnostics, got {diags.size}"
 
 -- Instance method call resolution and body preservation:
 -- Verifies that the method body is translated (not opaque) and the
