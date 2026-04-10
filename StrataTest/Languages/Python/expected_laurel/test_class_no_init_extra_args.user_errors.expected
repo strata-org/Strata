@@ -1,0 +1,4 @@
+(set-info :file "StrataTest/Languages/Python/tests/test_class_no_init_extra_args.py")
+(set-info :start 50)
+(set-info :stop 56)
+(set-info :error-message "'NoInit' called with too many positional arguments: expected at most 0, got 1")
