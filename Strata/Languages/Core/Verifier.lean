@@ -693,15 +693,23 @@ instance : ToFormat AssertResult where
 
 @[expose] abbrev AssertResults := Array AssertResult
 
-/-- Group `VCResults` by assertion label, preserving the order of first occurrence. -/
+/-- Group `VCResults` by assertion label and source location, preserving the order of first occurrence. -/
 def VCResults.groupByAssertion (rs : VCResults) : AssertResults :=
-  let (map, order) := rs.foldl (init := (Std.HashMap.emptyWithCapacity (α := String) (β := Array VCResult), (#[] : Array String)))
-    fun (map, order) r =>
-      let lbl := r.obligation.label
-      let existing := map.getD lbl #[]
-      let order := if existing.isEmpty then order.push lbl else order
-      (map.insert lbl (existing.push r), order)
-  order.map fun lbl => { label := lbl, results := map.getD lbl #[] }
+  let key (r : VCResult) : String :=
+    let lbl := r.obligation.label
+    let fr := (Imperative.getFileRange r.obligation.metadata).getD default
+    s!"{lbl}@{repr fr}"
+  let (map, order, labels) := rs.foldl
+    (init := (Std.HashMap.emptyWithCapacity (α := String) (β := Array VCResult),
+              (#[] : Array String),
+              Std.HashMap.emptyWithCapacity (α := String) (β := String)))
+    fun (map, order, labels) r =>
+      let k := key r
+      let existing := map.getD k #[]
+      let order := if existing.isEmpty then order.push k else order
+      let labels := if existing.isEmpty then labels.insert k r.obligation.label else labels
+      (map.insert k (existing.push r), order, labels)
+  order.map fun k => { label := labels.getD k "", results := map.getD k #[] }
 
 /--
 Preprocess a proof obligation using partial evaluation (PE).
