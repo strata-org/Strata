@@ -260,4 +260,35 @@ def main() -> None:
   if diags.size > 10 then
     throw (IO.userError s!"Unexpected number of diagnostics: {diags.size}: {diags.map (·.message)}")
 
+-- Dispatch detection inside try/except in __init__.
+-- self.svc = Svc() inside a try block should still be detected.
+#guard_msgs in
+#eval withPython (warnOnSkip := false) fun pythonCmd => do
+  let program :=
+"class Svc:
+    name: str
+    def __init__(self) -> None:
+        self.name = \"x\"
+    def do_thing(self, val: str) -> None:
+        pass
+
+class Wrapper:
+    svc: Svc
+    def __init__(self) -> None:
+        try:
+            self.svc = Svc()
+        except:
+            pass
+    def run(self) -> None:
+        self.svc.do_thing(val=\"hello\")
+
+def main() -> None:
+    w: Wrapper = Wrapper()
+    w.run()
+"
+  let diags ← processPythonFile pythonCmd (stringInputContext "test.py" program)
+  for d in diags do
+    if d.message.contains "Coercion to Any not supported" then
+      throw (IO.userError s!"Unexpected coercion error in try/except dispatch: {d.message}")
+
 end Strata.Python.VerifyPythonTest
