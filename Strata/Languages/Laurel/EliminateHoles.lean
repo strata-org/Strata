@@ -50,7 +50,6 @@ private def mkHoleCall (holeType : HighTypeMd) : ElimHoleM StmtExprMd := do
     decreases := none
     isFunctional := true
     body := .Opaque [] none []
-    md := emptyMd
   }
   modify fun s => { s with generatedFunctions := s.generatedFunctions ++ [holeProc] }
   return bare (.StaticCall holeName (inputs.map (fun p => bare (.Identifier p.name))))

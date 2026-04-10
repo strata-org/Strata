@@ -187,12 +187,17 @@ def main() -> None:
 
 -- Returning a Composite-typed value from a function with Any return type
 -- should not crash; the Composite is replaced with a Hole (unconstrained value).
+-- The class uses inheritance, so method bodies are conservatively stripped
+-- to opaque (no diagnostics produced).
 #guard_msgs in
 #eval withPython (warnOnSkip := false) fun pythonCmd => do
   let program :=
 "from typing import Any
 
-class MyService:
+class BaseService:
+    pass
+
+class MyService(BaseService):
     name: str
 
     def __init__(self, name: str) -> None:

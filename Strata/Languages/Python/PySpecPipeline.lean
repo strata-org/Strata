@@ -421,7 +421,7 @@ public def pyAnalyzeLaurel
 
   let metadataPath := sourcePath.getD pythonIonPath
   let (laurelProgram, _ctx) ← profileStep profile "Translate Python to Laurel" do
-    match Python.pythonToLaurel' preludeInfo stmts none metadataPath result.overloads with
+    match Python.pythonToLaurel' preludeInfo stmts metadataPath result.overloads with
     | .error (.userPythonError range msg) => throw (.userCode range msg)
     | .error (.unsupportedConstruct msg ast) =>
         throw (.knownLimitation s!"Unsupported construct: {msg}\nAST: {ast}")
