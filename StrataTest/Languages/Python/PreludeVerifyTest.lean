@@ -32,6 +32,18 @@ private def verifyPrelude : IO Core.VCResults := do
         (externalPhases := [Strata.frontEndPhase]))
     return r
 
+/-- Redact position-dependent numeric suffixes in `assert(NNNNN)` labels. -/
+private def redactLabel (label : String) : String :=
+  if label.startsWith "assert(" && label.endsWith ")" then "assert(...)"
+  else label
+
+private def formatResultsRedacted (rs : Core.VCResults) : String :=
+  let parts := rs.toList.map fun r =>
+    let label := redactLabel r.obligation.label
+    let prop := r.obligation.property
+    s!"{f!"Obligation: {label}\nProperty: {prop}\nResult: {r.formatOutcome}"}"
+  "\n\n".intercalate parts
+
 /--
 info:
 Obligation: postcondition
@@ -182,15 +194,15 @@ Obligation: postcondition
 Property: assert
 Result: ✅ pass
 
-Obligation: assert(42486)
+Obligation: assert(...)
 Property: assert
 Result: ✅ pass
 
-Obligation: assert(42553)
+Obligation: assert(...)
 Property: assert
 Result: ✅ pass
 
-Obligation: assert(42661)
+Obligation: assert(...)
 Property: assert
 Result: ✅ pass
 
@@ -199,6 +211,8 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verifyPrelude
+#eval do
+  let rs ← verifyPrelude
+  IO.println (formatResultsRedacted rs)
 
 end Strata.Python.PreludeVerifyTest
