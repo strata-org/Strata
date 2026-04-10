@@ -16,7 +16,6 @@ import Strata.Languages.Core.CoreSMT.Verifier
 import Strata.Languages.Core.CoreSMT.State
 import Strata.Languages.Core.CoreSMT.RemoveUnusedVars
 import Strata.DL.SMT.SolverInterface
-import Strata.Util.IO
 import Strata.Languages.Laurel.LaurelToCoreTranslator
 import Strata.Languages.Python.Python
 import Strata.Languages.Python.Specs.IdentifyOverloads
@@ -661,6 +660,14 @@ def pyAnalyzeLaurelCommand : Command where
         vcDirectory := baseVcDir }
     let options ← parseVerifyOptions pflags pyAnalyzeBase
     let incremental := pflags.getBool "incremental"
+    let isBugFinding := options.checkMode == .bugFinding
+                      || options.checkMode == .bugFindingAssumingCompleteSpec
+    let inlinePhases : List Core.PipelinePhase :=
+      if isBugFinding then
+        [Core.procedureInliningPipelinePhase
+          { doInline := fun name a => name ≠ "__main__" && Core.doInlineNonRecursive name a
+            maxIters := some 10 }]
+      else []
     let vcResults ←
       if incremental then
         verifyIncremental coreProgram.decls pySourceOpt options
@@ -669,7 +676,8 @@ def pyAnalyzeLaurelCommand : Command where
           match ← Core.verifyProgram coreProgram options
                     (moreFns := Strata.Python.ReFactory)
                     (proceduresToVerify := some userProcNames)
-                    (externalPhases := [Strata.frontEndPhase]) |>.toBaseIO with
+                    (externalPhases := [Strata.frontEndPhase])
+                    (prefixPhases := inlinePhases) |>.toBaseIO with
           | .ok r => pure r
           | .error msg => exitPyAnalyzeInternalError msg
 
@@ -1196,9 +1204,9 @@ def verifyCommand : Command where
     { name := "check", help := "Process up until SMT generation, but don't solve." },
     { name := "type-check", help := "Exit after semantic dialect's type inference/checking." },
     { name := "parse-only", help := "Exit after DDM parsing and type checking." },
-    { name := "incremental", help := "Use the incremental (in-memory) CoreSMT verification engine." },
     { name := "output-format", help := "Output format (only 'sarif' supported).", takesArg := .arg "format" },
-    { name := "procedures", help := "Verify only the specified procedures (comma-separated).", takesArg := .arg "procs" }]
+    { name := "procedures", help := "Verify only the specified procedures (comma-separated).", takesArg := .arg "procs" },
+    { name := "incremental", help := "Use the incremental (in-memory) CoreSMT verification engine." }]
   help := "Verify a Strata program file (.core.st, .csimp.st, or .b3.st)."
   callback := fun v pflags => do
     let file := v[0]

@@ -626,7 +626,7 @@ def translateProcedureToFunction (options: LaurelTranslateOptions) (isRecursive:
   -- Translate precondition to FuncPrecondition (skip trivial `true`)
   let preconditions ← proc.preconditions.mapM (fun precondition => do
     let checkExpr ← translateExpr precondition [] true
-    return { expr := checkExpr, md := precondition.md })
+    return { expr := checkExpr, md := Strata.SourceRange.none })
 
   -- For recursive functions, infer the @[cases] parameter index: the first input
   -- whose type is a user-defined datatype (has constructors). This is the argument
