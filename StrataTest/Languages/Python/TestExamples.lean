@@ -50,13 +50,13 @@ def processPythonFile (pythonCmd : System.FilePath) (input : InputContext)
 
     -- Translate Python Ion → Laurel
     let laurel ←
-      match ← pyAnalyzeLaurel ionFile.toString
+      match ← pythonAndSpecToLaurel ionFile.toString
           (sourcePath := some pyFile.toString) |>.toBaseIO with
       | .ok r => pure r
-      | .error err => throw <| .userError s!"pyAnalyzeLaurel failed: {err}"
+      | .error err => throw <| .userError s!"pythonAndSpecToLaurel failed: {err}"
 
     -- Translate Laurel → Core (using Python-specific translateCombinedLaurel)
-    let (coreOpt, translateDiags) := translateCombinedLaurel laurel
+    let (coreOpt, translateDiags) ← translateCombinedLaurel laurel
 
     let uri := Uri.file pyFile.toString
     let files := Map.insert Map.empty uri input.fileMap
