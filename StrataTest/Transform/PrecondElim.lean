@@ -129,9 +129,9 @@ info: [Strata.Core] Type checking succeeded.
 ---
 info: program Core;
 
-datatype List {(
-  (Nil())),
-  (Cons(head : int, tail : List))
+datatype List {
+  Nil(),
+  Cons(head : int, tail : List)
 };
 procedure test$$wf (xs : List) returns ()
 {
@@ -174,9 +174,9 @@ info: [Strata.Core] Type checking succeeded.
 ---
 info: program Core;
 
-datatype List {(
-  (Nil())),
-  (Cons(head : int, tail : List))
+datatype List {
+  Nil(),
+  Cons(head : int, tail : List)
 };
 procedure test$$wf (xs : List) returns ()
 {

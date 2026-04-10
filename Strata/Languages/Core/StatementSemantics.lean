@@ -7,7 +7,7 @@ module
 
 public import Strata.DL.Lambda.LExpr
 public import Strata.DL.Lambda.LExprWF
-public import Strata.DL.Imperative.StmtSemanticsSmallStep
+public import Strata.DL.Imperative.StmtSemantics
 public import Strata.Languages.Core.CoreGen
 public import Strata.Languages.Core.Procedure
 

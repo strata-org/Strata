@@ -64,6 +64,12 @@ def CallGraph.decrementEdge (cg : CallGraph) (caller : String) (callee : String)
     callers := new_callers
   }
 
+/-- Add a node with no callees to the call graph. -/
+def CallGraph.addLeafNode (cg : CallGraph) (name : String) : CallGraph :=
+  { cg with
+    callees := cg.callees.insert name {}
+    callers := cg.callers.insert name {} }
+
 /-- BFS worker for transitive closure. `getNeighbors` provides the edges.
 `allNodes` is a fixed universe of node names (all keys in the graph);
 termination is proved via the lexicographic measure
@@ -93,6 +99,12 @@ termination_by (allNodes.length - visited.length, toVisit.length)
 def CallGraph.getCalleesClosure (cg : CallGraph) (name : String) : List String :=
   let allNodes := cg.callees.toList.map Prod.fst
   (closureGo cg.getCallees allNodes [] [name]).filter (· ≠ name)
+
+/-- True when `name` is part of a (possibly self-referencing) cycle in the
+    call graph — i.e., it can transitively reach itself through callees. -/
+def CallGraph.isRecursive (cg : CallGraph) (name : String) : Bool :=
+  cg.getCallees name |>.any fun callee =>
+    callee == name || (cg.getCalleesClosure callee).contains name
 
 /-- Compute transitive closure of callees for multiple `names`. -/
 def CallGraph.getAllCalleesClosure (cg : CallGraph) (names : List String) : List String :=

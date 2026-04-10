@@ -31,9 +31,9 @@ datatype Option (a : Type) { None(), Some(value: a) };
 /--
 info: ok: program Core;
 
-datatype Option (a : Type) {(
-  (None())),
-  (Some(value : a))
+datatype Option (a : Type) {
+  None(),
+  Some(value : a)
 };
 -/
 #guard_msgs in
@@ -68,9 +68,9 @@ spec {
 /--
 info: ok: program Core;
 
-datatype Option (a : Type) {(
-  (None())),
-  (Some(value : a))
+datatype Option (a : Type) {
+  None(),
+  Some(value : a)
 };
 procedure TestOptionInt () returns ()
 spec {
@@ -115,9 +115,9 @@ spec {
 /--
 info: ok: program Core;
 
-datatype List (a : Type) {(
-  (Nil())),
-  (Cons(head : a, tail : (List a)))
+datatype List (a : Type) {
+  Nil(),
+  Cons(head : a, tail : List a)
 };
 procedure TestListInt () returns ()
 spec {
@@ -163,9 +163,9 @@ spec {
 /--
 info: ok: program Core;
 
-datatype Either (a : Type, b : Type) {(
-  (Left(l : a))),
-  (Right(r : b))
+datatype Either (a : Type, b : Type) {
+  Left(l : a),
+  Right(r : b)
 };
 procedure TestEither () returns ()
 spec {
@@ -209,13 +209,13 @@ spec {
 /--
 info: ok: program Core;
 
-datatype Option (a : Type) {(
-  (None())),
-  (Some(value : a))
+datatype Option (a : Type) {
+  None(),
+  Some(value : a)
 };
-datatype List (a : Type) {(
-  (Nil())),
-  (Cons(head : a, tail : (List a)))
+datatype List (a : Type) {
+  Nil(),
+  Cons(head : a, tail : List a)
 };
 procedure TestNestedPoly () returns ()
 spec {

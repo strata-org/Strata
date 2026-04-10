@@ -316,39 +316,39 @@ and `placeholder`; interior nodes represent operations like `len`, `getIndex`,
 inductive SpecExpr where
 /-- Stands in for an assert pattern not yet supported by the translator.
     The original Python expression is preserved in `Assertion.message`. -/
-| placeholder
-| var (name : String)
-| getIndex (subject : SpecExpr) (field : String)
-| isInstanceOf (subject : SpecExpr) (typeName : String)
-| len (subject : SpecExpr)
-| intLit (value : Int)
-| intGe (subject : SpecExpr) (bound : SpecExpr)
-| intLe (subject : SpecExpr) (bound : SpecExpr)
+| placeholder (loc : SourceRange)
+| var (name : String) (loc : SourceRange)
+| getIndex (subject : SpecExpr) (field : String) (loc : SourceRange)
+| isInstanceOf (subject : SpecExpr) (typeName : String) (loc : SourceRange)
+| len (subject : SpecExpr) (loc : SourceRange)
+| intLit (value : Int) (loc : SourceRange)
+| intGe (subject : SpecExpr) (bound : SpecExpr) (loc : SourceRange)
+| intLe (subject : SpecExpr) (bound : SpecExpr) (loc : SourceRange)
 /-- A floating-point literal, stored as a string to preserve precision. -/
-| floatLit (value : String)
-| floatGe (subject : SpecExpr) (bound : SpecExpr)
-| floatLe (subject : SpecExpr) (bound : SpecExpr)
-| enumMember (subject : SpecExpr) (values : Array String)
+| floatLit (value : String) (loc : SourceRange)
+| floatGe (subject : SpecExpr) (bound : SpecExpr) (loc : SourceRange)
+| floatLe (subject : SpecExpr) (bound : SpecExpr) (loc : SourceRange)
+| enumMember (subject : SpecExpr) (values : Array String) (loc : SourceRange)
 /-- `regexMatch subject pattern` asserts that `subject` matches the regular
     expression `pattern`. Corresponds to `compile(pattern).search(subject) is not None`
     in the Python source. -/
-| regexMatch (subject : SpecExpr) (pattern : String)
+| regexMatch (subject : SpecExpr) (pattern : String) (loc : SourceRange)
 /-- `containsKey container key` asserts that `key` is present in `container`.
     Corresponds to `"key" in container` in the Python source. -/
-| containsKey (container : SpecExpr) (key : String)
+| containsKey (container : SpecExpr) (key : String) (loc : SourceRange)
 /-- `implies condition body` asserts that if `condition` holds then `body` holds.
     Used to represent conditional assertions like `if "field" in kwargs: assert ...`. -/
-| implies (condition : SpecExpr) (body : SpecExpr)
+| implies (condition : SpecExpr) (body : SpecExpr) (loc : SourceRange)
 /-- Logical negation. Used for else-branch conditions. -/
-| not (e : SpecExpr)
+| not (e : SpecExpr) (loc : SourceRange)
 /-- `forallList list varName body` asserts that `body` holds for every element
     of `list`, with `varName` bound to each element in turn. Only `body` may
     refer to `varName`. Corresponds to `for varName in list: assert body`. -/
-| forallList (list : SpecExpr) (varName : String) (body : SpecExpr)
+| forallList (list : SpecExpr) (varName : String) (body : SpecExpr) (loc : SourceRange)
 /-- `forallDict dict keyVar valVar body` asserts that `body` holds for every
     key-value pair in `dict`. Both `keyVar` and `valVar` are bound in `body`.
     Corresponds to `for keyVar, valVar in dict.items(): assert body`. -/
-| forallDict (dict : SpecExpr) (keyVar : String) (valVar : String) (body : SpecExpr)
+| forallDict (dict : SpecExpr) (keyVar : String) (valVar : String) (body : SpecExpr) (loc : SourceRange)
 deriving Inhabited
 
 inductive MessagePart where
