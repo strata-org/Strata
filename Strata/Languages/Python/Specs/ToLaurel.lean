@@ -334,10 +334,12 @@ def specExprToLaurel (e : SpecExpr) (md : Imperative.MetaData Core.Expression)
   let nodeMd (loc : SourceLoc) : ToLaurelM (Imperative.MetaData Core.Expression) := do
     match loc with
     | .missing _ => pure md
-    | .range r => do
-      let ctx ← read
-      let fr : FileRange := { file := .file ctx.filepath.toString, range := r }
-      pure #[⟨Imperative.MetaData.fileRange, .fileRange fr⟩]
+    | .range r =>
+      if r == default then pure md  -- empty range, fall back to parent metadata
+      else do
+        let ctx ← read
+        let fr : FileRange := { file := .file ctx.filepath.toString, range := r }
+        pure #[⟨Imperative.MetaData.fileRange, .fileRange fr⟩]
   match e with
   | .placeholder loc => do
     reportError loc.toSourceRange "Placeholder expression not translatable"

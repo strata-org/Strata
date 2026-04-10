@@ -315,7 +315,10 @@ inductive SourceLoc where
   | range (r : SourceRange)
   /-- No source range available; `reason` explains why. -/
   | missing (reason : String)
-deriving Inhabited, DecidableEq, Repr
+deriving DecidableEq, Repr
+
+instance : Inhabited SourceLoc where
+  default := .missing "no location provided"
 
 namespace SourceLoc
 
