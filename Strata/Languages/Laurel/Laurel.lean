@@ -155,6 +155,8 @@ inductive HighType : Type where
   | Pure (base : WithMetadata HighType)
   /-- An intersection of types. Used for implicit intersection types, e.g. `Scientist & Scandinavian`. -/
   | Intersection (types : List (WithMetadata HighType))
+  /-- Bitvector type of a given width. -/
+  | TBv (size : Nat)
   /-- Temporary construct meant to aid the migration of Python->Core to Python->Laurel.
   Type "passed through" from Core. Intended to allow translations to Laurel to refer directly to Core. -/
   | TCore (s: String)
@@ -336,6 +338,7 @@ def highEq (a : HighTypeMd) (b : HighTypeMd) : Bool := match _a: a.val, _b: b.va
   | HighType.TReal, HighType.TReal => true
   | HighType.TString, HighType.TString => true
   | HighType.THeap, HighType.THeap => true
+  | HighType.TBv n1, HighType.TBv n2 => n1 == n2
   | HighType.TTypedField t1, HighType.TTypedField t2 => highEq t1 t2
   | HighType.TSet t1, HighType.TSet t2 => highEq t1 t2
   | HighType.TMap k1 v1, HighType.TMap k2 v2 => highEq k1 k2 && highEq v1 v2

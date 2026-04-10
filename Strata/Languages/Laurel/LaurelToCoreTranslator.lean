@@ -84,6 +84,7 @@ def translateType (ty : HighTypeMd) : TranslateM LMonoTy := do
   | .TInt => return LMonoTy.int
   | .TBool => return LMonoTy.bool
   | .TString => return LMonoTy.string
+  | .TBv n => return LMonoTy.bitvec n
   | .TVoid => return LMonoTy.bool -- Using bool as placeholder for void
   | .THeap => return .tcons "Heap" []
   | .TTypedField _ => return .tcons "Field" []
