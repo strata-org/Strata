@@ -1,16 +1,18 @@
 #!/bin/bash
 
-# Usage: ./run_py_analyze.sh [--update] [--filter <pattern>] [--vc-directory <dir>] [--pending]
+# Usage: ./run_py_analyze.sh [--update] [--filter <pattern>] [--vc-directory <dir>] [--pending] [--check-pending]
 
 # Runs pyAnalyzeLaurel on all test_*.py files and compares output to expected.
 # With --update, overwrite existing expected files with actual output
 # With --filter <pattern>, only run tests whose name contains <pattern>
 # With --vc-directory <dir>, store VCs in SMT-Lib format in <dir>
 # With --pending, also run tests without expected files and report their status
+# With --check-pending, run pending tests and FAIL if any now pass (for CI)
 
 failed=0
 update=0
 pending=0
+check_pending=0
 filter=""
 vc_directory=""
 
@@ -20,6 +22,7 @@ while [ $# -gt 0 ]; do
         --filter) filter="$2"; shift ;;
         --vc-directory) vc_directory="$2"; shift ;;
         --pending) pending=1 ;;
+        --check-pending) pending=1; check_pending=1 ;;
         laurel) ;; # accepted for backward compatibility
         *) echo "Unknown argument: $1"; exit 1 ;;
     esac
@@ -136,6 +139,11 @@ if [ $pending -eq 1 ]; then
     if [ $pending_total -gt 0 ]; then
         echo ""
         echo "Pending: $pending_total ($pending_error error, $pending_imprecise imprecise, $pending_pass pass)"
+    fi
+    if [ $check_pending -eq 1 ] && [ $pending_pass -gt 0 ]; then
+        echo ""
+        echo "ERROR: $pending_pass pending test(s) now pass. Move them from tests/pending/ to tests/ and generate expected files with --update."
+        failed=1
     fi
 fi
 
