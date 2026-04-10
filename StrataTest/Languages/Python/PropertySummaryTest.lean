@@ -47,8 +47,9 @@ private def getPropertySummaries (pythonCmd : System.FilePath) (source : String)
         (moreFns := Strata.Python.ReFactory) |>.toBaseIO with
       | .ok r => pure r
       | .error msg => throw <| .userError s!"verifyCore failed: {msg}"
-    return results.filterMap fun vcr =>
-      vcr.obligation.metadata.getPropertySummary
+    return results.foldl (fun acc ar =>
+      acc ++ ar.results.filterMap fun vcr =>
+        vcr.obligation.metadata.getPropertySummary) #[]
 
 #guard_msgs in
 #eval withPython (warnOnSkip := false) fun pythonCmd => do
