@@ -109,6 +109,10 @@ structure TranslationContext where
   exhaustiveClasses : Std.HashSet String := {}
   /-- Track current class during method translation -/
   currentClassName : Option String := none
+  /-- Classes involved in inheritance (have bases or are subclassed).
+      Method calls on these classes may be dynamically dispatched,
+      so call sites conservatively emit holes. -/
+  classesInHierarchy : Std.HashSet String := {}
   loopBreakLabel : Option String := none
   loopContinueLabel : Option String := none
 deriving Inhabited
@@ -173,13 +177,17 @@ def mkStmtExprMd (expr : StmtExpr) : StmtExprMd :=
 def mkStmtExprMdWithLoc (expr : StmtExpr) (md : Imperative.MetaData Core.Expression) : StmtExprMd :=
   { val := expr, md := md }
 
+/-- Mangle a class name and method name into a flat procedure name: `ClassName@methodName`. -/
+def manglePythonMethod (className : String) (methodName : String) : String :=
+  className ++ "@" ++ methodName
+
 /-- Build a StaticCall for an instance method: ClassName@methodName(self, args...).
     For Any-typed receivers (no model available), returns a Hole instead. -/
 def mkInstanceMethodCall (className : String) (methodName : String)
     (self : StmtExprMd) (args : List StmtExprMd)
     (md : Imperative.MetaData Core.Expression := defaultMetadata) : StmtExprMd :=
   if className == "Any" then mkStmtExprMdWithLoc .Hole md
-  else mkStmtExprMdWithLoc (StmtExpr.StaticCall (className ++ "@" ++ methodName) (self :: args)) md
+  else mkStmtExprMdWithLoc (StmtExpr.StaticCall (manglePythonMethod className methodName) (self :: args)) md
 
 /-- Extract string representation from Python expression (for type annotations) -/
 partial def pyExprToString (e : Python.expr SourceRange) : String :=
@@ -780,13 +788,13 @@ partial def refineFunctionCallExpr (ctx : TranslationContext) (func: Python.expr
           return (pyExprToString func, none, false)
         else
         if callerTy == PyLauType.Any then
-          return ("AnyTyInstance" ++ "@" ++ callname, some v, true)
+          return (manglePythonMethod "AnyTyInstance" callname, some v, true)
         else
           let resolvedTy :=
             match ctx.importedSymbols[callerTy]? with
             | some (ImportedSymbol.compositeType laurelName) => laurelName
             | _ => callerTy
-          return (resolvedTy ++ "@" ++ callname, some v, false)
+          return (manglePythonMethod resolvedTy callname, some v, false)
     | _ => throw (.internalError s!"{repr func} is not a function")
 
 --Kwargs can be a single Dict variable: func_call (**var) or a normal Kwargs (key1 = val1, key2 =val2 ...)
@@ -936,10 +944,22 @@ partial def translateCall (ctx : TranslationContext)
           else funcName
         return mkCall funcName'
     | .Attribute _ val _attr _ =>
-        let _target_trans ← translateExpr ctx val
+        let target_trans ← translateExpr ctx val
         if opt_firstarg.isSome then
           if let some (ImportedSymbol.procedure _ _ true) := ctx.importedSymbols[funcName]? then
             return mkCall funcName
+          else if funcName ∈ ctx.userFunctions then
+            -- funcName is already resolved to "ClassName@method" using the
+            -- receiver's *static* type (from refineFunctionCallExpr). If the
+            -- class is involved in inheritance, the runtime type may differ
+            -- (e.g., variable typed as Base could hold a Child instance),
+            -- so the static resolution may be wrong. Emit a Hole in that case.
+            let classPrefix := funcName.splitOn "@" |>.head!
+            if ctx.classesInHierarchy.contains classPrefix then
+              return mkStmtExprMdWithLoc (.Hole) callMd
+            let callWithSelf := mkStmtExprMdWithLoc
+              (StmtExpr.StaticCall funcName (target_trans :: callArgs)) callMd
+            return callWithSelf
           else
             return mkStmtExprMdWithLoc (.Hole) callMd
         else return mkCall funcName
@@ -1606,7 +1626,7 @@ def unpackPyArguments (ctx : TranslationContext) (args: Python.arguments SourceR
 def pyFuncDefToPythonFunctionDecl  (ctx : TranslationContext) (f : Python.stmt SourceRange) : Except TranslationError PythonFunctionDecl := do
   match f with
   | .FunctionDef _ name args _body _decorator_list returns _type_comment _ =>
-    let name := match ctx.currentClassName with | none => name.val | some classname => classname ++ "@" ++ name.val
+    let name := match ctx.currentClassName with | none => name.val | some classname => manglePythonMethod classname name.val
     let args_trans ← unpackPyArguments ctx args
     let args := if ctx.currentClassName.isSome then args_trans.fst.tail else args_trans.fst
     let retMd := sourceRangeToMetaData ctx.filePath returns.ann
@@ -1839,7 +1859,7 @@ def translateMethod (ctx : TranslationContext) (className : String)
 
     let md := sourceRangeToMetaData ctx.filePath methodStmt.ann
     return {
-      name := { text := className ++ "@" ++ methodName, md := md }
+      name := { text := manglePythonMethod className methodName, md := md }
       inputs := renamedInputs
       outputs := outputs
       preconditions := [mkStmtExprMd (StmtExpr.LiteralBool true)]
@@ -1899,7 +1919,12 @@ def mkDefaultInitDecl (className : String) : PythonFunctionDecl × Procedure :=
   }
   (decl, proc)
 
-/-- Translate a Python class to a Laurel CompositeType -/
+/-- Translate a Python class to a Laurel CompositeType. returns:
+   - `CompositeType`: the type definition (fields, name); its `instanceProcedures` is set to `[]`
+     because the Laurel→Core translator does not yet support instance procedures.
+   - `Array Procedure`: the translated method procedures, added as top-level static procedures
+     with mangled names (`ClassName@method`) so they can be called via `StaticCall`.
+   - `List PythonFunctionDecl`: function signatures for the class methods. -/
 def translateClass (ctx : TranslationContext) (classStmt : Python.stmt SourceRange)
     : Except TranslationError (CompositeType × Array Procedure × List PythonFunctionDecl) := do
   match classStmt with
@@ -1939,12 +1964,18 @@ def translateClass (ctx : TranslationContext) (classStmt : Python.stmt SourceRan
     let ctx := {ctx with classFieldHighType := ctx.classFieldHighType.insert className classFields}
 
     -- Translate each method
+    -- Keep the translated body only for classes not involved in inheritance;
+    -- for hierarchy classes, strip to opaque since call sites emit holes anyway
+    -- and the resolution pass may not handle all constructs in method bodies.
+    let inHierarchy := ctx.classesInHierarchy.contains className
     let mut instanceProcedures : Array Procedure := #[]
     for stmt in body do
       if let .FunctionDef .. := stmt then
         let proc ← translateMethod ctx className stmt
-        -- TODO stop replacing the body of instance proceduces with an empty one
-        instanceProcedures := instanceProcedures.push { proc with body := .Opaque [] .none [] }
+        if inHierarchy then
+          instanceProcedures := instanceProcedures.push { proc with body := .Opaque [] .none [] }
+        else
+          instanceProcedures := instanceProcedures.push proc
     -- Add synthesized default __init__ if needed
     if let some initProc := defaultInitProc then
       instanceProcedures := instanceProcedures.push initProc
@@ -1953,7 +1984,10 @@ def translateClass (ctx : TranslationContext) (classStmt : Python.stmt SourceRan
       name := className
       extending := []  -- No inheritance support for now
       fields := fields
-      instanceProcedures := [] -- Laurel does not yet support instance procedures, so treat them as if they were static
+      instanceProcedures := [] -- Laurel→Core does not yet translate CompositeType.instanceProcedures
+                               -- (see LaurelToCoreTranslator.translateTypes, which emits NotYetImplemented);
+                               -- methods are instead returned as top-level static procedures with
+                               -- mangled names (ClassName@method) and explicit self parameters.
     }, instanceProcedures, classFunDecls)
   | _ => throw (.internalError "Expected ClassDef")
 
@@ -2106,7 +2140,6 @@ def PreludeInfo.merge (a b : PreludeInfo) : PreludeInfo where
 /-- Translate Python module to Laurel Program using pre-extracted prelude info. -/
 def pythonToLaurel' (info : PreludeInfo)
     (body : Array (stmt SourceRange))
-    (prev_ctx: Option TranslationContext := none)
     (filePath : String := "")
     (overloadTable : OverloadTable := {})
     : Except TranslationError (Laurel.Program × TranslationContext) := do
@@ -2118,9 +2151,26 @@ def pythonToLaurel' (info : PreludeInfo)
       clsBody.val.toList.filterMap fun s =>
         match s with
         | .FunctionDef _ methodName _ _ _ _ _ _ =>
-          some (className.val ++ "@" ++ methodName.val)
+          some (manglePythonMethod className.val methodName.val)
         | _ => none
     | _ => []
+  -- Identify classes involved in inheritance hierarchies. Method calls on
+  -- these classes may be dynamically dispatched, so call sites conservatively
+  -- emit holes instead of static calls.
+  let classesInHierarchy : Std.HashSet String := body.toList.foldl (init := {}) fun acc stmt =>
+    match stmt with
+    | .ClassDef _ className bases _ _ _ _ =>
+      let hasNontrivialBases := bases.val.toList.any fun b =>
+        match b with
+        | Python.expr.Name _ ⟨_, "object"⟩ _ => false
+        | _ => true
+      let acc := bases.val.toList.foldl (init := acc) fun acc' b =>
+        match b with
+        | Python.expr.Name _ ⟨_, baseName⟩ _ =>
+          if baseName == "object" then acc' else acc'.insert baseName
+        | _ => acc'
+      if hasNontrivialBases then acc.insert className.val else acc
+    | _ => acc
   let pyErrorTy : CompositeType := {
     name := {text := "PythonError", md := default }
     extending := []  -- No inheritance support for now
@@ -2155,6 +2205,7 @@ def pythonToLaurel' (info : PreludeInfo)
         preludeTypes := info.types,
         importedSymbols := localSymbols,
         classFieldHighType := classFieldHighType,
+        classesInHierarchy := classesInHierarchy,
         filePath := filePath
       }
       let (composite, instanceProcedures, classFuncDecls) ← translateClass initCtx stmt
@@ -2174,9 +2225,7 @@ def pythonToLaurel' (info : PreludeInfo)
     (init := info.importedSymbols) fun m name =>
       m.insert name (ImportedSymbol.compositeType name)
 
-  let mut ctx : TranslationContext := match prev_ctx with
-  | some prev_ctx => {prev_ctx with functionSignatures:= prev_ctx.functionSignatures ++ allClassFuncDecls}
-  | _ =>
+  let mut ctx : TranslationContext :=
   {
     currentClassName := none,
     functionSignatures := info.functionSignatures ++ allClassFuncDecls
@@ -2188,6 +2237,7 @@ def pythonToLaurel' (info : PreludeInfo)
     overloadTable := overloadTable,
     importedSymbols := importedSymbols,
     exhaustiveClasses := exhaustiveClasses,
+    classesInHierarchy := classesInHierarchy,
     filePath := filePath
   }
 
@@ -2261,12 +2311,11 @@ def pythonToLaurel' (info : PreludeInfo)
     see prelude names. -/
 def pythonToLaurel (prelude: Core.Program)
     (pyCommands : Array (stmt SourceRange))
-    (prev_ctx: Option TranslationContext := none)
     (filePath : String := "")
     (overloadTable : OverloadTable := {})
     : Except TranslationError (Laurel.Program × TranslationContext) := do
   let info := PreludeInfo.ofCoreProgram prelude
-  pythonToLaurel' info pyCommands prev_ctx filePath overloadTable
+  pythonToLaurel' info pyCommands filePath overloadTable
 
 end -- public section
 end Strata.Python
