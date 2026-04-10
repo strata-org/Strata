@@ -717,15 +717,13 @@ def translateWithLaurel (options: LaurelTranslateOptions) (program : Program)
   let emit (name : String) (p : Program) : IO Unit :=
     match keepAllFilesPrefix with
     | some pfx => do
-      let n ← stepRef.modifyGet (fun n => (n + 1, n + 1))
+      let n ← stepRef.modifyGet (fun n => (n, n + 1))
       IO.FS.writeFile s!"{pfx}.{n}.{name}.laurel.st"
         ((formatProgram p).pretty ++ "\n")
     | none => pure ()
 
   -- Step 0: the input program before any passes
-  if let some pfx := keepAllFilesPrefix then
-    IO.FS.writeFile s!"{pfx}.0.Initial.laurel.st"
-      ((formatProgram program).pretty ++ "\n")
+  emit "Initial" program
 
   let result := resolve program
   let resolutionErrors: List DiagnosticModel := if options.emitResolutionErrors then result.errors.toList else []

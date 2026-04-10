@@ -972,7 +972,7 @@ def verify (program : Program)
         if let some pfx := keepAllFilesPrefix then
           let path := s!"{pfx}.{step}.{pp.phase.name}.core.st"
           IO.toEIO (fun e => DiagnosticModel.fromFormat f!"{e}")
-            (IO.FS.writeFile path (toString current))
+            (IO.FS.writeFile path (toString current ++ "\n"))
       | .error e =>
         throw (DiagnosticModel.fromFormat f!"❌ Transform Error. {e}")
     .ok current

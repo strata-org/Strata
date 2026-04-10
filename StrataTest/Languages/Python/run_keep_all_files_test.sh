@@ -10,6 +10,8 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 STRATA="$PROJECT_ROOT/.lake/build/bin/strata"
 DIALECT="$PROJECT_ROOT/Tools/Python/dialects/Python.dialect.st.ion"
 
+[[ -x "$STRATA" ]] || { echo "strata binary not found: $STRATA"; exit 1; }
+
 TMPDIR=$(mktemp -d)
 trap 'rm -rf "$TMPDIR"' EXIT
 
