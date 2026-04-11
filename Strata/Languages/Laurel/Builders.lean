@@ -17,10 +17,13 @@ namespace Strata.Laurel
 
 public section
 
+private def defaultMd : MetaData :=
+  #[⟨Imperative.MetaData.fileRange, .fileRange FileRange.unknown⟩]
+
 /-! ## Core constructors -/
 
-/-- Create a `StmtExprMd` with default (empty) metadata. -/
-def stmtExpr (e : StmtExpr) : StmtExprMd := ⟨e, #[]⟩
+/-- Create a `StmtExprMd` with default metadata (unknown file range). -/
+def stmtExpr (e : StmtExpr) : StmtExprMd := ⟨e, defaultMd⟩
 
 /-- Create a `StmtExprMd` with explicit metadata. -/
 def stmtExprMd (e : StmtExpr) (md : MetaData) : StmtExprMd := ⟨e, md⟩
@@ -50,11 +53,11 @@ def callMd (name : String) (args : List StmtExprMd) (md : MetaData) : StmtExprMd
 /-! ## Statements -/
 
 /-- Variable declaration: `var name : type := init` -/
-def localVar (name : String) (ty : HighTypeMd) (init : StmtExprMd) : StmtExprMd :=
+def localVar (name : String) (ty : HighTypeMd) (init : Option StmtExprMd := none) : StmtExprMd :=
   stmtExpr (.LocalVariable name ty init)
 
 /-- Variable declaration with metadata. -/
-def localVarMd (name : String) (ty : HighTypeMd) (init : StmtExprMd)
+def localVarMd (name : String) (ty : HighTypeMd) (init : Option StmtExprMd := none)
     (md : MetaData) : StmtExprMd :=
   stmtExprMd (.LocalVariable name ty init) md
 
@@ -77,6 +80,10 @@ def assertMd (cond : StmtExprMd) (md : MetaData) : StmtExprMd :=
 /-- Assume statement. -/
 def assume_ (cond : StmtExprMd) : StmtExprMd := stmtExpr (.Assume cond)
 
+/-- Assume with metadata. -/
+def assumeMd (cond : StmtExprMd) (md : MetaData) : StmtExprMd :=
+  stmtExprMd (.Assume cond) md
+
 /-- Block of statements. -/
 def block (stmts : List StmtExprMd) (label : Option String := none) : StmtExprMd :=
   stmtExpr (.Block stmts label)
@@ -87,11 +94,13 @@ def blockMd (stmts : List StmtExprMd) (label : Option String)
   stmtExprMd (.Block stmts label) md
 
 /-- If-then-else expression. -/
-def ifThenElse (cond thenBranch elseBranch : StmtExprMd) : StmtExprMd :=
+def ifThenElse (cond thenBranch : StmtExprMd)
+    (elseBranch : Option StmtExprMd := none) : StmtExprMd :=
   stmtExpr (.IfThenElse cond thenBranch elseBranch)
 
 /-- If-then-else with metadata. -/
-def ifThenElseMd (cond thenBranch elseBranch : StmtExprMd)
+def ifThenElseMd (cond thenBranch : StmtExprMd)
+    (elseBranch : Option StmtExprMd := none)
     (md : MetaData) : StmtExprMd :=
   stmtExprMd (.IfThenElse cond thenBranch elseBranch) md
 
