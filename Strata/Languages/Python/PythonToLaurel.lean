@@ -1630,7 +1630,7 @@ def pyFuncDefToPythonFunctionDecl  (ctx : TranslationContext) (f : Python.stmt S
     let args_trans ← unpackPyArguments ctx args
     let args := if ctx.currentClassName.isSome then args_trans.fst.tail else args_trans.fst
     let ret ←  if name.endsWith "@__init__" then
-          let retMd := sourceRangeToMetaData ctx.filePath returns.ann
+          let retMd := sourceRangeToMetaData ctx.filePath f.ann
           pure $ some ([(name.dropEnd "@__init__".length).toString], retMd)
         else
         match returns.val with
