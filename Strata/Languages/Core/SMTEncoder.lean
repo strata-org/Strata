@@ -91,6 +91,23 @@ def SMT.Context.addDatatype (ctx : SMT.Context) (d : LDatatype CoreLParams.IDMet
 def SMT.Context.withTypeFactory (ctx : SMT.Context) (tf : @Lambda.TypeFactory CoreLParams.IDMeta) : SMT.Context :=
   { ctx with typeFactory := tf }
 
+/-- Apply array axiomatization: replace `Array` types with `Map` sorts,
+    `Op.select`/`Op.store` with UFs, and add read-over-write axioms.
+    Called when `useArrayTheory = false`. -/
+def SMT.Context.axiomatizeArrays (ctx : SMT.Context)
+    (assumptions : List Term) (conclusion : Term)
+    : SMT.Context × List Term × Term :=
+  let ifPairs := ctx.ifs.map fun f => (f.uf, f.body)
+  let result : ArrayAxiom.AxiomatizeResult :=
+    ArrayAxiom.axiomatizeArrays ctx.ufs ifPairs ctx.axms assumptions conclusion
+  let ctx' : SMT.Context := { ctx with
+    ufs := result.ufs
+    ifs := result.ifs.map fun (uf, body) => { uf, body }
+    axms := result.axioms
+  }
+  let ctx' := if result.hasArrayTypes then ctx'.addSort { name := "Map", arity := 2 } else ctx'
+  (ctx', result.assumptions, result.conclusion)
+
 /--
 Helper function to convert LMonoTy to TermType for datatype constructor fields.
 Handles monomorphic types and type variables (as `.constr tv []`).
@@ -103,14 +120,22 @@ private def lMonoTyToTermType (ty : LMonoTy) : TermType :=
   | .tcons "real" [] => .real
   | .tcons "string" [] => .string
   | .tcons "regex" [] => .regex
+  -- Map is always encoded as Array (matching LMonoTy.toSMTType).
+  -- axiomatizeArrays rewrites these to Map when array theory is disabled.
+  | .tcons "Map" args => .constr "Array" (args.map lMonoTyToTermType)
   | .tcons name args => .constr name (args.map lMonoTyToTermType)
   | .ftvar tv => .constr tv []
 
-/-- Convert a datatype's constructors to typed SMT constructors. -/
-private def datatypeConstructorsToSMT (d : LDatatype CoreLParams.IDMeta) : List SMTConstructor :=
+/-- Convert a datatype's constructors to typed SMT constructors.
+    When `axiomatized` is true (array theory disabled), applies `replaceArrayType`
+    to convert `Array` field types back to `Map`. -/
+private def datatypeConstructorsToSMT (d : LDatatype CoreLParams.IDMeta)
+    (axiomatized : Bool := false) : List SMTConstructor :=
   d.constrs.map fun c =>
     let fields := c.args.map fun (name, fieldTy) =>
-      (d.name ++ ".." ++ name.name, lMonoTyToTermType fieldTy)
+      let ty := lMonoTyToTermType fieldTy
+      let ty := if axiomatized then ArrayAxiom.replaceArrayType ty else ty
+      (d.name ++ ".." ++ name.name, ty)
     { name := c.name.name, args := fields }
 
 /--
@@ -118,17 +143,20 @@ Emit datatype declarations to the solver.
 Uses the TypeFactory ordering (already topologically sorted).
 Only emits datatypes that have been seen (added via addDatatype).
 Single-element blocks use declare-datatype, multi-element blocks use declare-datatypes.
+When the context contains a `Map` sort (i.e. arrays were axiomatized), field types
+with `Array` are rewritten to `Map` for consistency.
 -/
 def SMT.Context.emitDatatypes (ctx : SMT.Context) : Strata.SMT.SolverM Unit := do
+  let axiomatized := ctx.sorts.any (fun s => s.name == "Map")
   for block in ctx.typeFactory.toList do
     let usedBlock := block.filter (fun d => ctx.seenDatatypes.contains d.name)
     match usedBlock with
     | [] => pure ()
     | [d] =>
-      let constructors := datatypeConstructorsToSMT d
+      let constructors := datatypeConstructorsToSMT d axiomatized
       Strata.SMT.Solver.declareDatatype d.name d.typeArgs constructors
     | _ =>
-      let dts := usedBlock.map fun d => (d.name, d.typeArgs, datatypeConstructorsToSMT d)
+      let dts := usedBlock.map fun d => (d.name, d.typeArgs, datatypeConstructorsToSMT d axiomatized)
       Strata.SMT.Solver.declareDatatypes dts
 
 @[expose] abbrev BoundVars := List (String × TermType)
@@ -157,9 +185,10 @@ def extractTypeInstantiations (typeVars : List String) (patterns : List LMonoTy)
 /--
 Returns true if the given type name is a built-in Core type whose SMT-LIB
 encoding is handled specially and should not be declared via `declare-sort`.
+`Map` is included because it is always encoded as the built-in SMT-LIB `Array` sort.
 -/
 def isBuiltinCoreTy (id : String) : Bool :=
-  id ∈ ["bool", "int", "real", "string", "regex"]
+  id ∈ ["bool", "int", "real", "string", "regex", "Map"]
 
 /-
 Add a type to the context. Sorts are easy, but datatypes are tricky:
@@ -170,12 +199,15 @@ we leave as `partial` for now.
 partial def SMT.Context.addType (E: Env) (id: String) (args: List LMonoTy) (ctx: SMT.Context) :
   SMT.Context :=
   -- Always recurse into concrete args to register any type references
+  -- (e.g. Map Composite Int needs to register Composite even though Map itself
+  -- is built-in).
   let ctx := args.foldl (fun ctx arg =>
     match arg with
-    | .tcons id1 args1 =>
-      if isBuiltinCoreTy id1 then ctx
-      else SMT.Context.addType E id1 args1 ctx
+    | .tcons id1 args1 => SMT.Context.addType E id1 args1 ctx
     | _ => ctx) ctx
+  -- Built-in types (including Map, which is encoded as the built-in Array sort)
+  -- should never be declared via declare-sort.
+  if isBuiltinCoreTy id then ctx else
   match E.datatypes.getType id with
   | some d =>
     if ctx.hasDatatype id then ctx else
@@ -192,7 +224,7 @@ partial def SMT.Context.addType (E: Env) (id: String) (args: List LMonoTy) (ctx:
     ctx.addSort { name := id, arity := args.length }
 
 mutual
-def LMonoTy.toSMTType (E: Env) (ty : LMonoTy) (ctx : SMT.Context) (useArrayTheory : Bool := false) :
+def LMonoTy.toSMTType (E: Env) (ty : LMonoTy) (ctx : SMT.Context) :
   Except Format (TermType × SMT.Context) := do
   match ty with
   | .bitvec n => .ok (.bitvec n, ctx)
@@ -202,28 +234,26 @@ def LMonoTy.toSMTType (E: Env) (ty : LMonoTy) (ctx : SMT.Context) (useArrayTheor
   | .tcons "string"  [] => .ok (.string, ctx)
   | .tcons "regex" [] => .ok (.regex, ctx)
   | .tcons "Map" args =>
-    -- When using Array theory, convert Map to Array
-    let id := if useArrayTheory then "Array" else "Map"
-    let ctx := if useArrayTheory then ctx
-               else SMT.Context.addType E id args ctx
-    let (args', ctx) ← LMonoTys.toSMTType E args ctx useArrayTheory
-    .ok ((.constr id args'), ctx)
+    -- Always encode Map as Array (built-in SMT-LIB sort, no declare-sort needed).
+    -- If array theory is disabled, `axiomatizeArrays` rewrites these to Map UFs.
+    let (args', ctx) ← LMonoTys.toSMTType E args ctx
+    .ok ((.constr "Array" args'), ctx)
   | .tcons id args =>
     let ctx := SMT.Context.addType E id args ctx
-    let (args', ctx) ← LMonoTys.toSMTType E args ctx useArrayTheory
+    let (args', ctx) ← LMonoTys.toSMTType E args ctx
     .ok ((.constr id args'), ctx)
   | .ftvar tyv => match ctx.tySubst.find? tyv with
                     | .some termTy =>
                       .ok (termTy, ctx)
                     | _ => .error f!"Unimplemented encoding for type var {tyv}"
 
-def LMonoTys.toSMTType (E: Env) (args : LMonoTys) (ctx : SMT.Context) (useArrayTheory : Bool := false) :
+def LMonoTys.toSMTType (E: Env) (args : LMonoTys) (ctx : SMT.Context) :
     Except Format ((List TermType) × SMT.Context) := do
   match args with
   | [] => .ok ([], ctx)
   | t :: trest =>
-    let (t', ctx) ← LMonoTy.toSMTType E t ctx useArrayTheory
-    let (trest', ctx) ← LMonoTys.toSMTType E trest ctx useArrayTheory
+    let (t', ctx) ← LMonoTy.toSMTType E t ctx
+    let (trest', ctx) ← LMonoTys.toSMTType E trest ctx
     .ok ((t' :: trest'), ctx)
 end
 
@@ -235,7 +265,6 @@ mutual
 
 @[expose]
 partial def toSMTTerm (E : Env) (bvs : BoundVars) (e : LExpr CoreLParams.mono) (ctx : SMT.Context)
-  (useArrayTheory : Bool := false)
   : Except Format (Term × SMT.Context) := do
   match e with
   | .boolConst _ b => .ok (Term.bool b, ctx)
@@ -251,7 +280,7 @@ partial def toSMTTerm (E : Env) (bvs : BoundVars) (e : LExpr CoreLParams.mono) (
     | none => .error f!"Cannot encode unannotated operation {fn}."
     | some fnty =>
       -- 0-ary Operation.
-      let (op, retty, ctx) ← toSMTOp E fn fnty ctx useArrayTheory
+      let (op, retty, ctx) ← toSMTOp E fn fnty ctx
       .ok (op [] retty, ctx)
 
   | .bvar _ i =>
@@ -265,7 +294,7 @@ partial def toSMTTerm (E : Env) (bvs : BoundVars) (e : LExpr CoreLParams.mono) (
     match ty with
     | none => .error f!"Cannot encode unannotated free variable {e}"
     | some ty =>
-      let (tty, ctx) ← LMonoTy.toSMTType E ty ctx useArrayTheory
+      let (tty, ctx) ← LMonoTy.toSMTType E ty ctx
       let uf := { id := f.name, args := [], out := tty }
       .ok (.app (.uf uf) [] tty, ctx.addUF uf)
 
@@ -290,31 +319,30 @@ partial def toSMTTerm (E : Env) (bvs : BoundVars) (e : LExpr CoreLParams.mono) (
       fvarNames.contains candidate
     let limit := bvs.length + ctx.ufs.size + fvarNames.size
     let x := Encoder.findUniqueName baseName startSuffix isUsed limit
-    let (ety, ctx) ← LMonoTy.toSMTType E ty ctx useArrayTheory
-    let (trt, ctx) ← appToSMTTerm E ((x, ety) :: bvs) tr [] ctx useArrayTheory
-    let (et, ctx) ← toSMTTerm E ((x, ety) :: bvs) e ctx useArrayTheory
+    let (ety, ctx) ← LMonoTy.toSMTType E ty ctx
+    let (trt, ctx) ← appToSMTTerm E ((x, ety) :: bvs) tr [] ctx
+    let (et, ctx) ← toSMTTerm E ((x, ety) :: bvs) e ctx
     .ok (Factory.quant (convertQuantifierKind qk) x ety trt et, ctx)
   | .eq _ e1 e2 =>
-    let (e1t, ctx) ← toSMTTerm E bvs e1 ctx useArrayTheory
-    let (e2t, ctx) ← toSMTTerm E bvs e2 ctx useArrayTheory
+    let (e1t, ctx) ← toSMTTerm E bvs e1 ctx
+    let (e2t, ctx) ← toSMTTerm E bvs e2 ctx
     .ok ((Factory.eq e1t e2t), ctx)
 
   | .ite _ c t f =>
-    let (ct, ctx) ← toSMTTerm E bvs c ctx useArrayTheory
-    let (tt, ctx) ← toSMTTerm E bvs t ctx useArrayTheory
-    let (ft, ctx) ← toSMTTerm E bvs f ctx useArrayTheory
+    let (ct, ctx) ← toSMTTerm E bvs c ctx
+    let (tt, ctx) ← toSMTTerm E bvs t ctx
+    let (ft, ctx) ← toSMTTerm E bvs f ctx
     .ok ((Factory.ite ct tt ft), ctx)
 
   | .app _ _ _ =>
-    appToSMTTerm E bvs e [] ctx useArrayTheory
+    appToSMTTerm E bvs e [] ctx
 
 partial def appToSMTTerm (E : Env) (bvs : BoundVars) (e : LExpr CoreLParams.mono) (acc : List Term) (ctx : SMT.Context)
-  (useArrayTheory : Bool := false) :
-  Except Format (Term × SMT.Context) := do
+  : Except Format (Term × SMT.Context) := do
   match e with
   -- Special case for indexed SMT operations.
   | .app _ (.app _ (.app _ (.op _ "Re.Loop" _) x) n1) n2 =>
-    let (xt, ctx) ← toSMTTerm E bvs x ctx useArrayTheory
+    let (xt, ctx) ← toSMTTerm E bvs x ctx
     match Lambda.LExpr.denoteInt n1, Lambda.LExpr.denoteInt n2 with
     | .some n1i, .some n2i =>
       match Int.toNat? n1i, Int.toNat? n2i with
@@ -328,28 +356,28 @@ partial def appToSMTTerm (E : Env) (bvs : BoundVars) (e : LExpr CoreLParams.mono
   | .app _ (.app m fn e1) e2 => do
     match e1, e2 with
     | _, _ =>
-      let (e2t, ctx) ← toSMTTerm E bvs e2 ctx useArrayTheory
-      appToSMTTerm E bvs (.app m fn e1) (e2t :: acc) ctx useArrayTheory
+      let (e2t, ctx) ← toSMTTerm E bvs e2 ctx
+      appToSMTTerm E bvs (.app m fn e1) (e2t :: acc) ctx
 
   | .app _ (.op _ fn fnty) e1 => do
     match fnty with
     | none => .error f!"Cannot encode unannotated operation {fn}. \n\
                         Appears in expression: {e}"
     | some fnty =>
-      let (op, retty, ctx) ← toSMTOp E fn fnty ctx useArrayTheory
-      let (e1t, ctx) ← toSMTTerm E bvs e1 ctx useArrayTheory
+      let (op, retty, ctx) ← toSMTOp E fn fnty ctx
+      let (e1t, ctx) ← toSMTTerm E bvs e1 ctx
       .ok (op (e1t :: acc) retty, ctx)
   | .app _ (.fvar _ fn (.some fnty)) e1 => do
     let tys := LMonoTy.destructArrow fnty
     let outty := tys.getLast (by exact @LMonoTy.destructArrow_non_empty fnty)
     let intys := tys.take (tys.length - 1)
-    let (smt_outty, ctx) ← LMonoTy.toSMTType E outty ctx useArrayTheory
-    let (e1t, ctx) ← toSMTTerm E bvs e1 ctx useArrayTheory
+    let (smt_outty, ctx) ← LMonoTy.toSMTType E outty ctx
+    let (e1t, ctx) ← toSMTTerm E bvs e1 ctx
     let allArgs := e1t :: acc
     let mut argvars : List TermVar := []
     let mut ctx := ctx
     for inty in intys do
-      let (smt_inty, ctx') ← LMonoTy.toSMTType E inty ctx useArrayTheory
+      let (smt_inty, ctx') ← LMonoTy.toSMTType E inty ctx
       ctx := ctx'
       argvars := argvars ++ [TermVar.mk (toString $ format inty) smt_inty]
     let uf := UF.mk (id := (toString $ format fn)) (args := argvars) (out := smt_outty)
@@ -357,21 +385,20 @@ partial def appToSMTTerm (E : Env) (bvs : BoundVars) (e : LExpr CoreLParams.mono
   | .app _ _ _ =>
     .error f!"Cannot encode expression {e}"
 
-  | _ => toSMTTerm E bvs e ctx useArrayTheory
+  | _ => toSMTTerm E bvs e ctx
 
 partial def toSMTOp (E : Env) (fn : CoreIdent) (fnty : LMonoTy) (ctx : SMT.Context)
-  (useArrayTheory : Bool := false) :
-  Except Format ((List Term → TermType → Term) × TermType × SMT.Context) :=
+  : Except Format ((List Term → TermType → Term) × TermType × SMT.Context) :=
   open LTy.Syntax in do
   -- Encode the type to ensure any datatypes are registered in the context
   let tys := LMonoTy.destructArrow fnty
   let outty := tys.getLast (by exact @LMonoTy.destructArrow_non_empty fnty)
   let intys := tys.take (tys.length - 1)
   -- Need to encode arg types also (e.g. for testers)
-  let ctx := match LMonoTys.toSMTType E intys ctx useArrayTheory with
+  let ctx := match LMonoTys.toSMTType E intys ctx with
     | .ok (_, ctx') => ctx'
     | .error _ => ctx
-  let (smt_outty, ctx) ← LMonoTy.toSMTType E outty ctx useArrayTheory
+  let (smt_outty, ctx) ← LMonoTy.toSMTType E outty ctx
 
   match ctx.datatypeFuns.find? fn.name with
   | some (kind, c) =>
@@ -600,19 +627,20 @@ partial def toSMTOp (E : Env) (fn : CoreIdent) (fnty : LMonoTy) (ctx : SMT.Conte
     | "TriggerGroup.empty"      => .ok (.app Op.triggers, .trigger, ctx)
     | "TriggerGroup.addTrigger" => .ok (Factory.addTriggerList, .trigger, ctx)
     | "Triggers.addGroup"       => .ok (Factory.addTriggerList, .trigger, ctx)
+    -- Always encode select/update as array-theory ops (Op.select/Op.store).
+    -- If array theory is disabled, `axiomatizeArrays` rewrites these to UFs.
+    | "select" => .ok (.app Op.select, smt_outty, ctx)
+    | "update" => .ok (.app Op.store, smt_outty, ctx)
     | fnname => do
-      if (fnname == "select" || fnname == "update") && useArrayTheory then
-        .ok (.app (if fnname == "select" then Op.select else Op.store), smt_outty, ctx)
-      else
         let formals := func.inputs.keys
         let formalStrs := formals.map (toString ∘ format)
         let tys := LMonoTy.destructArrow fnty
         let intys := tys.take (tys.length - 1)
-        let (smt_intys, ctx) ← LMonoTys.toSMTType E intys ctx useArrayTheory
+        let (smt_intys, ctx) ← LMonoTys.toSMTType E intys ctx
         let bvs := formalStrs.zip smt_intys
         let argvars := bvs.map (fun a => TermVar.mk (toString $ format a.fst) a.snd)
         let outty := tys.getLast (by exact @LMonoTy.destructArrow_non_empty fnty)
-        let (smt_outty, ctx) ← LMonoTy.toSMTType E outty ctx useArrayTheory
+        let (smt_outty, ctx) ← LMonoTy.toSMTType E outty ctx
         let uf := ({id := (toString $ format fn), args := argvars, out := smt_outty})
         let (ctx, isNew) ←
           if func.isRecursive then
@@ -641,7 +669,7 @@ partial def toSMTOp (E : Env) (fn : CoreIdent) (fnty : LMonoTy) (ctx : SMT.Conte
           -- Extract type instantiations by matching patterns against concrete types
           let type_instantiations: Map String LMonoTy := extractTypeInstantiations func.typeArgs allPatterns (intys ++ [outty])
           let smt_ty_inst ← type_instantiations.foldlM (fun acc_map (tyVar, monoTy) => do
-            let (smtTy, _) ← LMonoTy.toSMTType E monoTy ctx useArrayTheory
+            let (smtTy, _) ← LMonoTy.toSMTType E monoTy ctx
             .ok (acc_map.insert tyVar smtTy)
           ) Map.empty
           -- Add all axioms for this function to the context, with types binding for the type variables in the expr
@@ -659,15 +687,14 @@ partial def toSMTOp (E : Env) (fn : CoreIdent) (fnty : LMonoTy) (ctx : SMT.Conte
 
 end
 
-def toSMTTerms (E : Env) (es : List (LExpr CoreLParams.mono)) (ctx : SMT.Context)
-  (useArrayTheory : Bool := false) :
+def toSMTTerms (E : Env) (es : List (LExpr CoreLParams.mono)) (ctx : SMT.Context) :
   Except Format ((List Term) × SMT.Context) := do
   let ctx := if ctx.typeFactory.isEmpty then ctx.withTypeFactory E.datatypes else ctx
   match es with
   | [] => .ok ([], ctx)
   | e :: erest =>
-    let (et, ctx) ← toSMTTerm E [] e ctx useArrayTheory
-    let (erestt, ctx) ← toSMTTerms E erest ctx useArrayTheory
+    let (et, ctx) ← toSMTTerm E [] e ctx
+    let (erestt, ctx) ← toSMTTerms E erest ctx
     .ok ((et :: erestt), ctx)
 
 /--
@@ -676,25 +703,23 @@ The obligation Q is returned without negation; see `encodeCore` in Verifier.lean
 for the check-sat encoding that applies negation for validity checks.
 -/
 def ProofObligation.toSMTTerms (E : Env)
-  (d : Imperative.ProofObligation Expression) (ctx : SMT.Context := SMT.Context.default)
-  (useArrayTheory : Bool := false) :
+  (d : Imperative.ProofObligation Expression) (ctx : SMT.Context := SMT.Context.default) :
   Except Format (List Term × Term × SMT.Context) := do
   let assumptions := d.assumptions.flatten.map (fun a => a.snd)
   let (ctx, distinct_terms) ← E.distinct.foldlM (λ (ctx, tss) es =>
-    do let (ts, ctx') ← Core.toSMTTerms E es ctx useArrayTheory; pure (ctx', ts :: tss)) (ctx, [])
+    do let (ts, ctx') ← Core.toSMTTerms E es ctx; pure (ctx', ts :: tss)) (ctx, [])
   let distinct_assumptions := distinct_terms.map
     (λ ts => Term.app (.core .distinct) ts .bool)
-  let (assumptions_terms, ctx) ← Core.toSMTTerms E assumptions ctx useArrayTheory
-  let (obligation_term, ctx) ← Core.toSMTTerm E [] d.obligation ctx useArrayTheory
+  let (assumptions_terms, ctx) ← Core.toSMTTerms E assumptions ctx
+  let (obligation_term, ctx) ← Core.toSMTTerm E [] d.obligation ctx
   .ok (distinct_assumptions ++ assumptions_terms, obligation_term, ctx)
 
 ---------------------------------------------------------------------
 
 /-- Convert an expression of type LExpr to a String representation in SMT-Lib syntax, for testing. -/
 def toSMTTermString (e : LExpr CoreLParams.mono) (E : Env := Env.init) (ctx : SMT.Context := SMT.Context.default)
-  (useArrayTheory : Bool := false)
   : IO String := do
-  let smtctx := toSMTTerm E [] e ctx useArrayTheory
+  let smtctx := toSMTTerm E [] e ctx
   match smtctx with
   | .error e => return e.pretty
   | .ok (smt, _) => Encoder.termToString smt

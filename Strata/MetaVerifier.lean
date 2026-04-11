@@ -119,6 +119,9 @@ def Core.ProofObligation.toSMTObligation (E : Core.Env) (ob : Imperative.ProofOb
     match maybeTerms with
     | .error _ => none
     | .ok (ts, t, ctx) =>
+      -- The encoder always uses Array theory. Axiomatize for the proof path,
+      -- which requires Map sorts and UFs instead of built-in array operations.
+      let (ctx, ts, t) := ctx.axiomatizeArrays ts t
       (ob.label, sanitizeSMTContext ctx, ts, t)
 
 /--
