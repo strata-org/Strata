@@ -1,4 +1,7 @@
+test_type_int.py(2, 4): ✅ pass - assert(25)
+test_type_int.py(3, 4): ✅ pass - assert(41)
 test_type_int.py(4, 4): ✅ pass - int type annotation
 test_type_int.py(4, 4): ✅ pass - int type annotation
-DETAIL: 2 passed, 0 failed, 0 inconclusive
+unknown location: ✅ pass - assert(0)
+DETAIL: 5 passed, 0 failed, 0 inconclusive
 RESULT: Analysis success

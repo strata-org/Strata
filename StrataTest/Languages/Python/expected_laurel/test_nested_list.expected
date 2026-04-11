@@ -6,5 +6,6 @@ test_nested_list.py(4, 4): ✅ pass - nested access 1,1
 test_nested_list.py(4, 4): ✅ pass - nested access 1,1
 test_nested_list.py(4, 4): ✅ pass - nested access 1,1
 test_nested_list.py(4, 4): ✅ pass - nested access 1,1
-DETAIL: 8 passed, 0 failed, 0 inconclusive
+unknown location: ✅ pass - assert(0)
+DETAIL: 9 passed, 0 failed, 0 inconclusive
 RESULT: Analysis success
