@@ -33,7 +33,8 @@ spec
 };
 #end
 
-/-- info: Obligation: entry_invariant_0_0
+/-- info:
+Obligation: entry_invariant_0_0
 Property: assert
 Result: ✅ pass
 

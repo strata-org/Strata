@@ -231,10 +231,9 @@ Result: ✅ pass (❗path unreachable)
 ---------------------------------------------------------------------
 -- No-duplication tests
 --
--- When a concrete ITE's live branch contains a symbolic ITE with an exit
--- (producing multiple paths via processIteBranches), mergeResults unions
--- all paths' deferred obligations. Pre-ITE and dead-branch obligations
--- must appear exactly once — they are attached only to the first result.
+-- When a concrete ITE's live branch contains a symbolic ITE with an exit,
+-- processIteBranches merges both branches into a single .ite result.
+-- Pre-ITE and dead-branch obligations must appear exactly once.
 ---------------------------------------------------------------------
 
 def noDupConcreteTrue :=

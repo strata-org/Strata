@@ -372,7 +372,6 @@ def captureFreevars (env : Env) (paramNames : List CoreIdent) (e : Expression.Ex
 abbrev StmtsStack := List Statements
 
 def StmtsStack.push (stk : StmtsStack) (ss : Statements) : StmtsStack :=
-  let ss := Statements.eraseTypes ss
   ss :: stk
 
 def StmtsStack.pop (stk : StmtsStack) : StmtsStack :=
@@ -384,7 +383,6 @@ def StmtsStack.top (stk : StmtsStack) : Statements :=
 def StmtsStack.appendToTop (stk : StmtsStack) (ss : Statements) : StmtsStack :=
   let top := stk.top
   let stk := stk.pop
-  let ss := Statements.eraseTypes ss
   (top ++ ss) :: stk
 
 /--
@@ -439,6 +437,39 @@ def evalAuxGo (steps : Nat) (old_var_subst : SubstMap) (Ewn : EnvWithNext) (ss :
     | ([], .none) => [{ Ewn with exitLabel := .none }]
     | (_, .some l) => [{ Ewn with exitLabel := .some l }] -- Exit propagating, statement list skipped
     | (s :: rest, .none) =>
+      match s with
+      | .ite (.det c) then_ss else_ss md =>
+        let orig_stk := Ewn.stk
+        let Ewn := { Ewn with stk := orig_stk.push [] }
+        let cond' := Ewn.env.exprEval c
+        match cond' with
+        | .true _ | .false _ =>
+          let (ss_live, ss_dead) :=
+            if cond'.isTrue then (then_ss, else_ss) else (else_ss, then_ss)
+          let deadDeferred := collectDeadBranchDeferred ss_dead c Ewn.env.pathConditions
+          let Ewns :=
+            (go' Ewn ss_live .none).map fun (ewn : EnvWithNext) =>
+              { ewn with stk := orig_stk.appendToTop [.ite (.det cond') ewn.stk.top [] md] }
+          -- Prepend dead-branch obligations to the first result.
+          match Ewns with
+          | [] => []
+          | first :: restEwns =>
+            let first := { first with env.deferred :=
+                deadDeferred ++ first.env.deferred }
+            List.flatMap (fun (ewn : EnvWithNext) => go' ewn rest ewn.exitLabel) (first :: restEwns)
+        | _ =>
+          -- Process both branches with rest nested inside.
+          processIteBranches steps' old_var_subst
+            Ewn c cond' then_ss else_ss md orig_stk rest optExit
+      | .ite .nondet then_ss else_ss md =>
+        let orig_stk := Ewn.stk
+        -- Desugar: if (*) { t } else { e } → var c := *; if(c) { t } else { e }
+        let freshName : CoreIdent := ⟨s!"$__nondet_cond_{Ewn.env.pathConditions.length}", ()⟩
+        let freshVar : Expression.Expr := .fvar () freshName none
+        let initStmt := Statement.init freshName (.forAll [] (.tcons "bool" [])) .nondet md
+        let iteStmt := Imperative.Stmt.ite (.det freshVar) then_ss else_ss md
+        go' { Ewn with stk := orig_stk } (initStmt :: iteStmt :: rest) optExit
+      | _ =>
       let EAndNexts : List EnvWithNext :=
         match s with
 
@@ -471,40 +502,7 @@ def evalAuxGo (steps : Nat) (old_var_subst : SubstMap) (Ewn : EnvWithNext) (ss :
                                               orig_stk.appendToTop [s'] })
             Ewns
 
-          | .ite cond then_ss else_ss md =>
-            let orig_stk := Ewn.stk
-            let Ewn := { Ewn with stk := orig_stk.push [] }
-            match cond with
-            | .nondet =>
-              -- Desugar: if (*) { t } else { e } → var c := *; if(c) { t } else { e }
-              let freshName : CoreIdent := ⟨s!"$__nondet_cond_{Ewn.env.pathConditions.length}", ()⟩
-              let freshVar : Expression.Expr := .fvar () freshName none
-              let initStmt := Statement.init freshName (.forAll [] (.tcons "bool" [])) .nondet md
-              let iteStmt := Imperative.Stmt.ite (.det freshVar) then_ss else_ss md
-              go' { Ewn with stk := orig_stk } [initStmt, iteStmt] optExit
-            | .det c =>
-            let cond' := Ewn.env.exprEval c
-            match cond' with
-            | .true _ | .false _ =>
-              let (ss_live, ss_dead) :=
-                if cond'.isTrue then (then_ss, else_ss) else (else_ss, then_ss)
-              let deadDeferred := collectDeadBranchDeferred ss_dead c Ewn.env.pathConditions
-              let Ewns :=
-                (go' Ewn ss_live .none).map fun (ewn : EnvWithNext) =>
-                  { ewn with stk := orig_stk.appendToTop [.ite (.det cond') ewn.stk.top [] md] }
-              -- Prepend dead-branch obligations to the first result only.
-              -- Pre-ITE obligations flow through the live branch naturally;
-              -- processIteBranches keeps them in the first (true-path) result,
-              -- so mergeResults won't duplicate them.
-              match Ewns with
-              | [] => []
-              | first :: rest =>
-                { first with env.deferred :=
-                    deadDeferred ++ first.env.deferred } :: rest
-            | _ =>
-              -- Process both branches.
-              processIteBranches steps' old_var_subst
-                Ewn c cond' then_ss else_ss md orig_stk
+          | .ite _ _ _ _ => panic! "unreachable: ITE handled above" -- nopanic:ok
 
           | .loop _ _ _ _ _ =>
             panic! "Cannot evaluate `loop` statement. \
@@ -541,40 +539,59 @@ def evalAuxGo (steps : Nat) (old_var_subst : SubstMap) (Ewn : EnvWithNext) (ss :
 
 def processIteBranches (steps : Nat) (old_var_subst : SubstMap) (Ewn : EnvWithNext)
     (cond cond' : Expression.Expr) (then_ss else_ss : Statements)
-    (md : Imperative.MetaData Expression) (orig_stk : StmtsStack) : List EnvWithNext :=
+    (md : Imperative.MetaData Expression) (orig_stk : StmtsStack)
+    (rest : Statements) (optExit : Option (Option String)) : List EnvWithNext :=
   let Ewn := { Ewn with env := Ewn.env.pushEmptyScope }
   let label_true := toString (f!"<label_ite_cond_true: {cond.eraseTypes}>")
   let label_false := toString (f!"<label_ite_cond_false: !{cond.eraseTypes}>")
   let path_conds_true := Ewn.env.pathConditions.push [(label_true, cond')]
   let path_conds_false := Ewn.env.pathConditions.push
                             [(label_false, (.ite () cond' (LExpr.false ()) (LExpr.true ())))]
-  have : 1 <= Imperative.Block.sizeOf then_ss := by
+  have h_then_ge : 1 <= Imperative.Block.sizeOf then_ss := by
    unfold Imperative.Block.sizeOf; split <;> omega
-  have : 1 <= Imperative.Block.sizeOf else_ss := by
+  have h_else_ge : 1 <= Imperative.Block.sizeOf else_ss := by
    unfold Imperative.Block.sizeOf; split <;> omega
-  have : Imperative.Block.sizeOf then_ss < Imperative.Block.sizeOf then_ss +
-                                          Imperative.Block.sizeOf else_ss := by
-    omega
-  have : Imperative.Block.sizeOf else_ss < Imperative.Block.sizeOf then_ss +
-                                          Imperative.Block.sizeOf else_ss := by
-   omega
+  have h_append_le : ∀ (a b : Statements),
+      Imperative.Block.sizeOf (a ++ b) + 1 <=
+      Imperative.Block.sizeOf a + Imperative.Block.sizeOf b := by
+    intro a b
+    induction a with
+    | nil => simp [Imperative.Block.sizeOf]; omega
+    | cons h t ih =>
+      simp only [List.cons_append, Imperative.Block.sizeOf]
+      omega
+  have h_append_then : Imperative.Block.sizeOf (then_ss ++ rest) <
+      Imperative.Block.sizeOf then_ss + Imperative.Block.sizeOf else_ss + Imperative.Block.sizeOf rest := by
+    have := h_append_le then_ss rest; omega
+  have h_append_else : Imperative.Block.sizeOf (else_ss ++ rest) <
+      Imperative.Block.sizeOf then_ss + Imperative.Block.sizeOf else_ss + Imperative.Block.sizeOf rest := by
+    have := h_append_le else_ss rest; omega
+  -- Evaluate then-branch followed by rest
   let Ewns_t := evalAuxGo steps old_var_subst
                   {Ewn with env := {Ewn.env with pathConditions := path_conds_true}}
-                  then_ss .none
+                  (then_ss ++ rest) optExit
   -- We empty the deferred proof obligations in the `else` path to
   -- avoid duplicate verification checks -- the deferred obligations
   -- would be checked in the `then` branch anyway.
   let Ewns_f := evalAuxGo steps old_var_subst
                   {Ewn with env := {Ewn.env with pathConditions := path_conds_false,
                                                  deferred := #[]}}
-                  else_ss .none
+                  (else_ss ++ rest) optExit
   match Ewns_t, Ewns_f with
   -- Special case: if there's only one result from each path,
   -- with no exit label, we can merge both states into one.
   | [{ stk := stk_t, env := E_t, exitLabel := .none}],
     [{ stk := stk_f, env := E_f, exitLabel := .none}] =>
     let s' := Imperative.Stmt.ite (.det cond') stk_t.top stk_f.top md
-    [EnvWithNext.mk (Env.merge cond' E_t E_f).popScope
+    -- Remove obligations from E_f that duplicate ones in E_t (same label).
+    -- Since rest is evaluated in both branches, its obligations appear in
+    -- both with potentially different substitutions; we keep only the
+    -- true-branch copies.
+    let dedupDeferred :=
+      E_f.deferred.filter fun ob =>
+        !E_t.deferred.any fun t => t.label == ob.label
+    let E_f' := { E_f with deferred := dedupDeferred }
+    [EnvWithNext.mk (Env.merge cond' E_t E_f').popScope
                     .none
                     (orig_stk.appendToTop [s'])]
   | _, _ =>
@@ -589,7 +606,7 @@ def processIteBranches (steps : Nat) (old_var_subst : SubstMap) (Ewn : EnvWithNe
                         { ewn with env := ewn.env.popScope,
                                    stk := orig_stk.appendToTop [s']})
   Ewns_t ++ Ewns_f
-  termination_by (steps, Imperative.Block.sizeOf then_ss + Imperative.Block.sizeOf else_ss)
+  termination_by (steps, Imperative.Block.sizeOf then_ss + Imperative.Block.sizeOf else_ss + Imperative.Block.sizeOf rest)
 
 end
 
