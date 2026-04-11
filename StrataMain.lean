@@ -1365,9 +1365,6 @@ def pyInterpretCommand : Command where
     | .error msg =>
       IO.eprintln s!"Execution error: {msg}"
       IO.Process.exit ExitCode.failuresFound
-    | .fuelExhausted =>
-      IO.eprintln s!"Fuel exhausted (limit: {fuel}). Increase with --fuel."
-      IO.Process.exit ExitCode.failuresFound
     | .stuck msg =>
       IO.eprintln s!"Stuck: {msg}"
       IO.Process.exit ExitCode.failuresFound
