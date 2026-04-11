@@ -12,10 +12,8 @@ namespace Strata
 def freeReqEnsPgm : Program :=
 #strata
 program Core;
-var g : int;
-procedure Proc() returns ()
+procedure Proc(g : int) returns (g : int)
 spec {
-  modifies g;
   free requires [g_eq_15]: g == 15;
   // `g_lt_10` is not checked by this procedure.
   free ensures [g_lt_10]: g < 10;
@@ -25,8 +23,8 @@ spec {
   g := g + 1;
 };
 
-procedure ProcCaller () returns (x : int) {
-  call := Proc();
+procedure ProcCaller (g : int) returns (g : int, x : int) {
+  call g := Proc(g);
   // Fails; `g_eq_15` requires of Proc ignored here.
   assert [g_eq_15_internal]: (g == 15);
 };
@@ -40,23 +38,23 @@ VCs:
 Label: g_gt_10_internal
 Property: assert
 Assumptions:
-g_eq_15: $__g1 == 15
+g_eq_15: $__g0 == 15
 Obligation:
-$__g1 > 10
+$__g0 > 10
 
 Label: g_lt_10
 Property: assert
 Assumptions:
-g_eq_15: $__g1 == 15
+g_eq_15: $__g0 == 15
 Obligation:
 true
 
 Label: g_eq_15_internal
 Property: assert
 Assumptions:
-callElimAssume_g_lt_10_0: $__g4 < 10
+callElimAssume_g_lt_10_2: $__g5 < 10
 Obligation:
-$__g4 == 15
+$__g5 == 15
 
 
 
@@ -64,31 +62,29 @@ Result: Obligation: g_eq_15_internal
 Property: assert
 Result: ❓ unknown
 Model:
-($__g4, 0)
+($__g5, 0)
 
 
 [DEBUG] Evaluated program:
 program Core;
 
-var g : int;
-procedure Proc () returns ()
+procedure Proc (g : int) returns (g : int)
 spec {
-  modifies g;
   free requires [g_eq_15]: g == 15;
   free ensures [g_lt_10]: g < 10;
   } {
-  assume [g_eq_15]: $__g1 == 15;
-  assert [g_gt_10_internal]: $__g1 > 10;
-  g := $__g1 + 1;
+  assume [g_eq_15]: $__g0 == 15;
+  assert [g_gt_10_internal]: $__g0 > 10;
+  g := $__g0 + 1;
   assert [g_lt_10]: true;
   };
-procedure ProcCaller () returns (x : int)
-spec {
-  modifies g;
-  } {
+procedure ProcCaller (g : int) returns ((g : int), (x : int))
+{
+  var tmp_arg_0 : int := $__g2;
+  var tmp_g_1 : int := $__g2;
   havoc g;
-  assume [callElimAssume_g_lt_10_0]: $__g4 < 10;
-  assert [g_eq_15_internal]: $__g4 == 15;
+  assume [callElimAssume_g_lt_10_2]: $__g5 < 10;
+  assert [g_eq_15_internal]: $__g5 == 15;
   };
 
 ---
@@ -105,7 +101,7 @@ Obligation: g_eq_15_internal
 Property: assert
 Result: ❓ unknown
 Model:
-($__g4, 0)
+($__g5, 0)
 -/
 #guard_msgs in
 #eval verify freeReqEnsPgm

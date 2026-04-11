@@ -273,7 +273,6 @@ op exit_unlabeled_statement : Statement => "exit;\n";
 category SpecElt;
 category Free;
 op free () : Free => "free ";
-op modifies_spec (nms : CommaSepBy Ident) : SpecElt => "modifies " nms ";\n";
 op ensures_spec (label : Option Label, free? : Option Free, b : bool) : SpecElt =>
   free?:0 "ensures " label b ";\n";
 op requires_spec (label : Option Label, free? : Option Free, b : bool) : SpecElt =>
@@ -381,10 +380,6 @@ op funcDecl_statement (name : Ident,
 @[declareScopedType(name, some args)]
 op typeDecl_statement (name : Ident, args : Option Bindings) : Statement =>
   "type " name args ";\n";
-
-@[scope(b)]
-op command_var (b : Bind) : Command =>
-  @[prec(10)] "var " b ";\n";
 
 op command_axiom (label : Option Label, e : bool) : Command =>
   "axiom " label e ";\n";

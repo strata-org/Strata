@@ -348,16 +348,6 @@ def procedureToGotoCtx
     let postJson ← (postGoto.mapM CProverGOTO.exprToJson).mapError (fun e => f!"{e}")
     contracts := contracts ++ [("#spec_ensures",
       Lean.Json.mkObj [("id", ""), ("sub", Lean.Json.arr postJson.toArray)])]
-  if !p.spec.modifies.isEmpty then
-    let mut modGoto : List CProverGOTO.Expr := []
-    for ident in p.spec.modifies do
-      let ty ← match varTypes ident with
-        | some (.forAll [] mono) => Lambda.LMonoTy.toGotoType mono
-        | _ => pure .Integer
-      modGoto := modGoto ++ [CProverGOTO.Expr.symbol (Core.CoreIdent.toPretty ident) ty]
-    let modJson ← (modGoto.mapM CProverGOTO.exprToJson).mapError (fun e => f!"{e}")
-    contracts := contracts ++ [("#spec_assigns",
-      Lean.Json.mkObj [("id", ""), ("sub", Lean.Json.arr modJson.toArray)])]
   -- Build localTypes map for output parameters (so they get proper types in symbol table)
   let output_tys ← p.header.outputs.values.mapM Lambda.LMonoTy.toGotoType
   let localTypes : Std.HashMap String CProverGOTO.Ty :=

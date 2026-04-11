@@ -41,11 +41,14 @@ def Lang.core
     to make execution of the body of this procedure not stuck.
     outputs are included because the body refers to the output variables without
     initialization.
-    This does not include the old variables. -/
+    Old snapshot variables for modifies-converted parameters are included
+    because the body assigns `g := old g` for each such parameter. -/
 def procVerifyInitIdents (proc : Procedure) : List Expression.Ident :=
+  let modifiesOlds := (proc.header.inputs.keys.filter (· ∈ proc.header.outputs.keys)).map
+    fun id => CoreIdent.mkOld id.name
+  modifiesOlds ++
   ListMap.keys proc.header.inputs ++
-  ListMap.keys proc.header.outputs ++
-  proc.spec.modifies
+  ListMap.keys proc.header.outputs
 
 /-- A well-formed initial environment for executing the procedure body.
     This captures the state after inputs, outputs, modified globals have been
@@ -55,8 +58,6 @@ structure ProcEnvWF (proc : Procedure) (ρ : Env Expression) : Prop where
   wfVar  : WellFormedSemanticEvalVar ρ.eval
   wfBool : WellFormedSemanticEvalBool ρ.eval
   storeDefined : ∀ id ∈ procVerifyInitIdents proc, (ρ.store id).isSome
-  oldModifiesMatchesCurrent : ∀ g ∈ proc.spec.modifies,
-    ρ.store g = ρ.store (CoreIdent.mkOld g.name)
   oldInputMatchesCurrent : ∀ id ∈ ListMap.keys proc.header.inputs,
     ρ.store id = ρ.store (CoreIdent.mkOld id.name)
   preconditionsHold : ∀ (label : CoreLabel) (check : Procedure.Check),

@@ -559,7 +559,6 @@ def translateProcedure (proc : Procedure) : TranslateM Core.Procedure := do
     | .Opaque postconds _ _ | .Abstract postconds =>
         translateChecks postconds "postcondition"
     | _ => pure []
-  let modifies : List Core.Expression.Ident := []
   let bodyStmts : List Core.Statement ←
     match proc.body with
     | .Transparent bodyExpr => translateStmt proc.outputs bodyExpr
@@ -572,7 +571,7 @@ def translateProcedure (proc : Procedure) : TranslateM Core.Procedure := do
         Core.Statement.assume label check.expr mdWithUnknownLoc)
   -- Wrap body in a labeled block so early returns (exit) work correctly.
   let body : List Core.Statement := [.block "$body" bodyStmts mdWithUnknownLoc]
-  let spec : Core.Procedure.Spec := { modifies, preconditions, postconditions }
+  let spec : Core.Procedure.Spec := { preconditions, postconditions }
   return { header, spec, body }
 
 def translateInvokeOnAxiom (proc : Procedure) (trigger : StmtExprMd)

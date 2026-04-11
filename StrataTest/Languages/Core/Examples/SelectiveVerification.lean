@@ -14,8 +14,6 @@ def selectiveVerificationPgm : Program :=
 #strata
 program Core;
 
-var x : int;
-
 procedure Helper(n : int) returns (result : int)
 spec {
   // NOTE: This precondition is not satisfied in MainProc.
@@ -26,11 +24,10 @@ spec {
   result := n + n;
 };
 
-procedure MainProc() returns (output : int)
+procedure MainProc(x : int) returns (output : int)
 spec {
-  modifies x;
   requires [x_nonneg]: (x >= 0);
-  ensures [output_property]: (output == old x * 4);
+  ensures [output_property]: (output == x * 4);
 }
 {
   call output := Helper(x);

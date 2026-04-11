@@ -57,7 +57,6 @@ and an optional implementation body.
 ```
 procedure Name<TypeArgs>(x₁ : T₁, ..., xₙ : Tₙ) returns (y₁ : U₁, ..., yₘ : Uₘ)
 spec {
-  modifies g₁, g₂, ...;
   [free] requires [label] P;
   [free] ensures  [label] Q;
 }
@@ -74,26 +73,23 @@ Each procedure has two groups of parameters:
   caller. They are mutable within the procedure body and their final values are
   returned to the caller.
 
-Input and output parameter names must be disjoint from each other and from the
-`modifies` clause.
+Input and output parameter names must be disjoint unless a parameter appears in
+both lists, which indicates a mutable parameter (the input value is the pre-state,
+the output value is the post-state).
 
 ## Specification
 
-A procedure's specification (`Procedure.Spec`) consists of three parts:
-
-- **`modifies` clause**: A list of global variables that the procedure is allowed to
-  modify. Any global variable not listed is guaranteed to retain its pre-call value.
-  Variables in the `modifies` clause must not overlap with input or output parameters.
+A procedure's specification (`Procedure.Spec`) consists of two parts:
 
 - **Preconditions** (`requires`): Boolean expressions that must hold at the call site
   before the procedure is invoked. Their free variables must be a subset of the
-  input parameters and global variables. At a call site, preconditions are checked
-  (asserted) before the call.
+  input parameters. At a call site, preconditions are checked (asserted) before
+  the call.
 
 - **Postconditions** (`ensures`): Boolean expressions that must hold when the procedure
   returns. Their free variables may reference input parameters, output parameters,
-  global variables, and `old(expr)` expressions. At a call site, postconditions are
-  assumed after the call.
+  and `old(expr)` expressions. At a call site, postconditions are assumed after
+  the call.
 
 ### Free specifications
 
@@ -118,9 +114,8 @@ Postconditions and procedure bodies are *two-state contexts*: they can refer to
 both the pre-state (on entry) and the post-state (on exit) of a procedure
 invocation. The pre-state value of an expression is denoted by `old(expr)`.
 
-- Only global variables are affected by `old`. For example, if `g` is a global
-  variable and `x` is a local variable, then `old(g + x)` is equivalent to
-  `old(g) + x`.
+- `old` applies to parameters that appear in both inputs and outputs (mutable
+  parameters). For such a parameter `g`, `old(g)` refers to the input value.
 - `old` distributes to the leaves of expressions and is idempotent:
   `old(old(e))` is equivalent to `old(e)`.
 - `old` is not allowed in preconditions.
@@ -139,10 +134,10 @@ The semantics of a call (see `CallElim` and `StatementSemantics`) are:
 
 1. Evaluate the argument expressions `e₁, ..., eₙ`.
 2. **Assert** each (non-free) precondition, substituting actuals for formals.
-3. **Havoc** the output variables `y₁, ..., yₘ` and the `modifies` variables.
+3. **Havoc** the output variables `y₁, ..., yₘ`.
 4. **Assume** each postcondition, substituting actuals for formals and binding
    `old(g)` to the value of `g` immediately before the call.
-5. Update the caller's state with the new values of the output and modified variables.
+5. Update the caller's state with the new values of the output variables.
 
 This enables *modular verification*: each procedure is verified against its
 contract independently, and callers reason only about the contract, not the body.
@@ -163,22 +158,17 @@ in the specification and body.
 ## Example
 
 ```
-var g : bool;
-
 procedure Test(x : bool) returns (y : bool)
 spec {
   ensures (y == x);
-  ensures (g == old(g));
 }
 {
   y := x || x;
 };
 ```
 
-This declares a procedure `Test` with one input `x`, one output `y`, and two
-postconditions: that `y` equals `x`, and that the global variable `g` is
-unchanged (since `g` is not in the `modifies` clause, this is also guaranteed
-by the frame condition, but can be stated explicitly).
+This declares a procedure `Test` with one input `x`, one output `y`, and a
+postcondition that `y` equals `x`.
 -/
 
 /-- The header of a procedure: its name, type parameters, and input/output signatures. -/
@@ -248,17 +238,17 @@ def Procedure.Check.eraseTypes (c : Procedure.Check) : Procedure.Check :=
 /--
 The specification (contract) of a procedure.
 
-- `modifies`: Global variables the procedure may modify. Any global not listed
-  is guaranteed unchanged (the *frame condition*).
 - `preconditions`: Labeled boolean expressions that must hold before the procedure
   executes. Checked (asserted) at call sites unless marked `Free`.
 - `postconditions`: Labeled boolean expressions that must hold when the procedure
   returns. May reference `old(expr)` for pre-state values. Assumed at call sites
   unless the implementation is being verified.
+
+Note: Modifies clauses exist only in the concrete syntax (DDM/Laurel). During
+translation to the Core AST, modified global variables are converted into
+additional input and output parameters on the procedure header.
 -/
 structure Procedure.Spec where
-  /-- Global variables the procedure is allowed to modify. -/
-  modifies       : List Expression.Ident
   /-- Labeled preconditions (`requires` clauses). -/
   preconditions  : ListMap CoreLabel Procedure.Check
   /-- Labeled postconditions (`ensures` clauses). -/
@@ -267,8 +257,7 @@ structure Procedure.Spec where
 
 instance : ToFormat Procedure.Spec where
   format p :=
-    f!"modifies: {format p.modifies}\n\
-       preconditions: {format p.preconditions}\n\
+    f!"preconditions: {format p.preconditions}\n\
        postconditions: {format p.postconditions}"
 
 def Procedure.Spec.preconditionNames (s : Procedure.Spec) : List CoreLabel :=
@@ -329,7 +318,7 @@ open Imperative
 
 def Procedure.definedVars (_ : Procedure) : List Expression.Ident := []
 def Procedure.modifiedVars (p : Procedure) : List Expression.Ident :=
-  p.spec.modifies
+  p.header.outputs.keys
 
 def Procedure.getVars (p : Procedure) : List Expression.Ident :=
   (p.spec.postconditions.values.map Procedure.Check.expr).flatMap HasVarsPure.getVars ++

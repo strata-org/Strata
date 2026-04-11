@@ -15,8 +15,6 @@ program Core;
 //  limitations under the License.
 //
 
-var g : int;
-
 procedure foo() returns (y : Map int int) {};
 
 procedure TestLambdaTypeCheck() returns (y : Map int (Map bool bool))

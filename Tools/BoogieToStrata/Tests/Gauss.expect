@@ -3,5 +3,5 @@ Gauss.core.st(19, 0) [entry_invariant_0_0]: ✅ pass
 Gauss.core.st(19, 0) [entry_invariant_0_1]: ✅ pass
 Gauss.core.st(19, 0) [arbitrary_iter_maintain_invariant_0_0]: ✅ pass
 Gauss.core.st(19, 0) [arbitrary_iter_maintain_invariant_0_1]: ✅ pass
-Gauss.core.st(11, 2) [sum_ensures_1]: ✅ pass
+Gauss.core.st(11, 2) [sum_ensures_1_195]: ✅ pass
 All 5 goals passed.

@@ -29,6 +29,15 @@ dialect Boole;
 
 import Core;
 
+// Boole retains global variable declarations and modifies clauses in its
+// concrete syntax. During translation to Core, these are converted into
+// additional input/output parameters on procedure headers.
+@[scope(b)]
+op command_var (b : Bind) : Command =>
+  @[prec(10)] "var " b ";\n";
+
+op modifies_spec (nms : CommaSepBy Ident) : SpecElt => "modifies " nms ";\n";
+
 // Unicode quantifier aliases use the same `::` separator as the ASCII forms.
 // The legacy dotted separator is normalized earlier in `Strata.DDM.Elab`.
 fn forall_unicode (d : DeclList, @[scope(d)] b : bool) : bool =>

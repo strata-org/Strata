@@ -1,14 +1,14 @@
 Successfully parsed.
-Implies.core.st(24, 4) [assert_0]: ✅ pass
-Implies.core.st(25, 4) [assert_1]: ❓ unknown
-Implies.core.st(26, 4) [assert_2]: ✅ pass
-Implies.core.st(27, 4) [assert_3]: ❓ unknown
-Implies.core.st(35, 4) [assert_4]: ❓ unknown
-Implies.core.st(36, 4) [assert_5]: ❓ unknown
-Implies.core.st(44, 4) [assert_6]: ❓ unknown
-Implies.core.st(45, 4) [assert_7]: ❓ unknown
-Implies.core.st(53, 4) [assert_8]: ❓ unknown
-Implies.core.st(54, 4) [assert_9]: ❓ unknown
-Implies.core.st(62, 4) [assert_10]: ❓ unknown
-Implies.core.st(63, 4) [assert_11]: ❓ unknown
+Implies.core.st(24, 4) [assert_0_359]: ✅ pass
+Implies.core.st(25, 4) [assert_1_430]: ❓ unknown
+Implies.core.st(26, 4) [assert_2_485]: ✅ pass
+Implies.core.st(27, 4) [assert_3_503]: ❓ unknown
+Implies.core.st(35, 4) [assert_4_578]: ❓ unknown
+Implies.core.st(36, 4) [assert_5_599]: ❓ unknown
+Implies.core.st(44, 4) [assert_6_675]: ❓ unknown
+Implies.core.st(45, 4) [assert_7_696]: ❓ unknown
+Implies.core.st(53, 4) [assert_8_772]: ❓ unknown
+Implies.core.st(54, 4) [assert_9_793]: ❓ unknown
+Implies.core.st(62, 4) [assert_10_869]: ❓ unknown
+Implies.core.st(63, 4) [assert_11_890]: ❓ unknown
 Finished with 2 goals passed, 10 failed.

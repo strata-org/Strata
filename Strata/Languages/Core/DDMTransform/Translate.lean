@@ -1388,10 +1388,6 @@ def translateBindingsWithCases (bindings : TransBindings) (op : Arg) :
   | _ =>
     TransM.error s!"translateBindingsWithCases expects a comma separated list: {repr op}"
 
-def translateModifies (arg : Arg) : TransM (Array Core.CoreIdent) := do
-  let args ← checkOpArg arg q`Core.modifies_spec 1
-  translateCommaSep (translateIdent Core.CoreIdent) args[0]!
-
 def translateOptionFree (arg : Arg) : TransM Core.Procedure.CheckAttr := do
   let .option _ free := arg
     | TransM.error s!"translateOptionFree unexpected {repr arg}"
@@ -1420,36 +1416,33 @@ def translateEnsures (p : Program) (name : Core.CoreIdent) (count : Nat) (bindin
   return [(l, { expr := e, attr := free?, md := md })]
 
 def translateSpecElem (p : Program) (name : Core.CoreIdent) (count : Nat) (bindings : TransBindings) (arg : Arg) :
-  TransM (List Core.CoreIdent × ListMap Core.CoreLabel Core.Procedure.Check × ListMap Core.CoreLabel Core.Procedure.Check) := do
+  TransM (ListMap Core.CoreLabel Core.Procedure.Check × ListMap Core.CoreLabel Core.Procedure.Check) := do
   let .op op := arg
     | TransM.error s!"translateSpecElem expects an op {repr arg}"
   match op.name with
-  | q`Core.modifies_spec =>
-    let elems ← translateModifies arg
-    return (elems.toList, [], [])
   | q`Core.requires_spec =>
     let elem ← translateRequires p name count bindings arg
-    return ([], elem, [])
+    return (elem, [])
   | q`Core.ensures_spec =>
     let elem ← translateEnsures p name count bindings arg
-    return ([], [], elem)
+    return ([], elem)
   | _ =>
     TransM.error s!"translateSpecElem unimplemented for {repr arg}"
 
 partial def translateSpec (p : Program) (name : Core.CoreIdent) (bindings : TransBindings) (arg : Arg) :
-  TransM (List Core.CoreIdent × ListMap Core.CoreLabel Core.Procedure.Check × ListMap Core.CoreLabel Core.Procedure.Check) := do
+  TransM (ListMap Core.CoreLabel Core.Procedure.Check × ListMap Core.CoreLabel Core.Procedure.Check) := do
   let sargs ← checkOpArg arg q`Core.spec_mk 1
   let .seq _ .none args := sargs[0]!
     | TransM.error s!"Invalid specs {repr sargs[0]!}"
   go 0 args.size args
   where go (count max : Nat) (args : Array Arg) := do
   match (max - count) with
-  | 0 => return ([], [], [])
+  | 0 => return ([], [])
   | _ + 1 =>
     let arg := args[count]!
-    let (mods, reqs, ens) ← translateSpecElem p name count bindings arg
-    let (restmods, restreqs, restens) ← go (count + 1) max args
-    return (mods ++ restmods, reqs ++ restreqs, ens ++ restens)
+    let (reqs, ens) ← translateSpecElem p name count bindings arg
+    let (restreqs, restens) ← go (count + 1) max args
+    return (reqs ++ restreqs, ens ++ restens)
 
 def translateProcedure (p : Program) (bindings : TransBindings) (op : Operation) :
   TransM (Core.Decl × TransBindings) := do
@@ -1467,8 +1460,8 @@ def translateProcedure (p : Program) (bindings : TransBindings) (op : Operation)
   let bindings := { bindings with boundVars := bbindings }
   let .option _ speca := op.args[4]!
     | TransM.error s!"translateProcedure spec. expected here: {repr op.args[3]!}"
-  let (modifies, requires, ensures) ←
-    if speca.isSome then translateSpec p pname bindings speca.get! else pure ([], [], [])
+  let (requires, ensures) ←
+    if speca.isSome then translateSpec p pname bindings speca.get! else pure ([], [])
   let .option _ bodya := op.args[5]!
     | TransM.error s!"translateProcedure body expected here: {repr op.args[4]!}"
   let (body, bindings) ← if bodya.isSome then translateBlock p bindings bodya.get! else pure ([], bindings)
@@ -1478,8 +1471,7 @@ def translateProcedure (p : Program) (bindings : TransBindings) (op : Operation)
                               typeArgs := typeArgs.toList,
                               inputs := sig,
                               outputs := ret },
-                  spec := { modifies := modifies,
-                            preconditions := requires,
+                  spec := { preconditions := requires,
                             postconditions := ensures },
                   body := body
                 }
@@ -1498,8 +1490,7 @@ def translateBlockCommand (p : Program) (bindings : TransBindings) (op : Operati
                               typeArgs := [],
                               inputs := [],
                               outputs := [] },
-                  spec := { modifies := [],
-                            preconditions := [],
+                  spec := { preconditions := [],
                             postconditions := [] },
                   body := body
                 }
@@ -1889,16 +1880,6 @@ def translateDatatypes (p : Program) (bindings : TransBindings) (op : Operation)
 
 ---------------------------------------------------------------------
 
-def translateGlobalVar (bindings : TransBindings) (op : Operation) :
-  TransM (Core.Decl × TransBindings) := do
-  let _ ← @checkOp (Core.Decl × TransBindings) op q`Core.command_var 1
-  let (id, targs, mty) ← translateBindMk bindings op.args[0]!
-  let ty := LTy.forAll targs mty
-  let md ← getOpMetaData op
-  let decl := (.var id ty .nondet md)
-  let bindings := incrNum .var_def bindings
-  return (decl, { bindings with freeVars := bindings.freeVars.push decl})
-
 ---------------------------------------------------------------------
 
 partial def translateCoreDecls (p : Program) (bindings : TransBindings) :
@@ -1915,8 +1896,6 @@ partial def translateCoreDecls (p : Program) (bindings : TransBindings) :
           match op.name with
           | q`Core.command_datatypes =>
             translateDatatypes p bindings op
-          | q`Core.command_var =>
-            translateGlobalVar bindings op
           | q`Core.command_constdecl =>
             translateConstant bindings op
           | q`Core.command_typedecl =>

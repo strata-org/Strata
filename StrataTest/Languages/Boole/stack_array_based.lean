@@ -133,46 +133,52 @@ true
 
 Label: StackEmpty_ensures_3_1205
 Property: assert
+Assumptions:
+<label_ite_cond_true: (top == #0)>: if init_top_2 == 0 then init_top_2 == 0 else true
+<label_ite_cond_false: !(top == #0)>: if if init_top_2 == 0 then false else true then if init_top_2 == 0 then false else true else true
 Obligation:
-true
+if init_top_2 == 0 then true else false ==> init_top_2 == 0
 
 Label: StackEmpty_ensures_4_1233
 Property: assert
+Assumptions:
+<label_ite_cond_true: (top == #0)>: if init_top_2 == 0 then init_top_2 == 0 else true
+<label_ite_cond_false: !(top == #0)>: if if init_top_2 == 0 then false else true then if init_top_2 == 0 then false else true else true
 Obligation:
-true
+init_top_2 == 0 ==> if init_top_2 == 0 then true else false
 
 Label: Push_ensures_6_1494
 Property: assert
 Assumptions:
-Push_requires_5_1443: $__top5 < $__cap2
+Push_requires_5_1443: $__top7 < init_n_1
 Obligation:
 true
 
 Label: Push_ensures_7_1525
 Property: assert
 Assumptions:
-Push_requires_5_1443: $__top5 < $__cap2
+Push_requires_5_1443: $__top7 < init_n_1
 Obligation:
-($__S4[$__top5 + 1:=$__x6])[$__top5 + 1] == $__x6
+($__S6[$__top7 + 1:=$__x8])[$__top7 + 1] == $__x8
 
 Label: Push_ensures_8_1583
 Property: assert
 Assumptions:
-Push_requires_5_1443: $__top5 < $__cap2
+Push_requires_5_1443: $__top7 < init_n_1
 Obligation:
-forall __q0 : int :: 1 <= __q0 && __q0 <= $__top5 ==> ($__S4[$__top5 + 1:=$__x6])[__q0] == $__S4[__q0]
+forall __q0 : int :: 1 <= __q0 && __q0 <= $__top7 ==> ($__S6[$__top7 + 1:=$__x8])[__q0] == $__S6[__q0]
 
 Label: Pop_ensures_10_1843
 Property: assert
 Assumptions:
-Pop_requires_9_1806: $__top7 > 0
+Pop_requires_9_1806: $__top11 > 0
 Obligation:
 true
 
 Label: Pop_ensures_11_1874
 Property: assert
 Assumptions:
-Pop_requires_9_1806: $__top7 > 0
+Pop_requires_9_1806: $__top11 > 0
 Obligation:
 true
 

@@ -16,7 +16,6 @@ open Procedure Statement Lambda Lambda.LTy.Syntax Lambda.LExpr.SyntaxMono Core.S
 
 /--
 info: ok: (procedure P :  ((x : int)) → ((y : int))
-   modifies: []
    preconditions: (0_lt_x, ((~Int.Lt : (arrow int (arrow int bool))) #0 (x : int)))
    postconditions: (ret_y_lt_0, ((~Int.Lt : (arrow int (arrow int bool))) (y : int) #0))
  {
@@ -35,8 +34,7 @@ info: ok: (procedure P :  ((x : int)) → ((y : int))
                                           typeArgs := [],
                                           inputs := [("x", mty[int])],
                                           outputs := [("y", mty[int])] },
-                               spec := { modifies := [],
-                                         preconditions := [("0_lt_x", ⟨eb[((~Int.Lt #0) x)], .Default, #[]⟩)],
+                               spec := { preconditions := [("0_lt_x", ⟨eb[((~Int.Lt #0) x)], .Default, #[]⟩)],
                                          postconditions := [("ret_y_lt_0", ⟨eb[((~Int.Lt y) #0)], .Default, #[]⟩)] },
                                body := [
                                  Statement.set "y" eb[((~Int.Sub #0) x)] .empty

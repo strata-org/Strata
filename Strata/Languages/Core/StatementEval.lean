@@ -91,27 +91,17 @@ private def mkReturnSubst (proc : Procedure) (lhs : List Expression.Ident) (E : 
   (return_lhs_subst, lhs_post_subst, E')
 
 /--
-Create mapping for all globals: fresh variables for modified globals,
-current values for unmodified globals.
--/
-private def mkGlobalSubst (proc : Procedure) (current_globals : VarSubst)
-    (E : Env) : VarSubst × Env :=
-  -- Create fresh variables for modified globals
-  let modifies_tys := proc.spec.modifies.map
-      (fun l => (E.exprEnv.state.findD l (none, .fvar () l none)).fst)
-  let modifies_typed := proc.spec.modifies.zip modifies_tys
-  let (globals_fvars, E') := E.genFVars modifies_typed
-  let modified_subst := List.zip modifies_typed globals_fvars
-  -- Get current values for unmodified globals
-  let unmodified_subst := current_globals.filter (fun ((id, _), _) =>
-    !proc.spec.modifies.contains id)
-  (modified_subst ++ unmodified_subst, E')
-
-/--
 Get current values of global variables for old expression substitution.
+Looks up each global variable in the full state (newest scope first) so that
+modifications to output parameters (e.g. modifies-converted globals) are
+reflected correctly.
 -/
 private def getCurrentGlobals (E : Env) : VarSubst :=
-  E.exprEnv.state.oldest.map (fun (id, ty, e) => ((id.name, ty), e))
+  E.exprEnv.state.oldest.map fun (id, ty, _) =>
+    let currentVal := match E.exprEnv.state.find? id with
+      | some (_, e) => e
+      | none => Lambda.LExpr.fvar () id none
+    ((id.name, ty), currentVal)
 
 /--
 Extract the type from an expression that has already been typechecked (so e.g.
@@ -173,9 +163,10 @@ def Command.evalCall (E : Env)
     let current_globals := getCurrentGlobals E
     -- (Post-call) Create return variable mappings and fresh LHS variables.
     let (return_lhs_subst, lhs_post_subst, E) := mkReturnSubst proc lhs E
-    -- (Post-call) Create global variable mapping: fresh vars for modified,
-    -- current values for unmodified.
-    let (globals_post_subst, E) := mkGlobalSubst proc current_globals E
+    -- (Post-call) Globals that are in the LHS are already handled by
+    -- mkReturnSubst with fresh variables; keep only the remaining globals.
+    let globals_post_subst := current_globals.filter fun ((id, _), _) =>
+      !lhs.any (·.name == id.name)
 
     -- Apply type substitution to preconditions to instantiate type variables.
     let preconditions_typed := proc.spec.preconditions.map
@@ -195,7 +186,11 @@ def Command.evalCall (E : Env)
     let postconditions_typed := proc.spec.postconditions.map
         (fun (l, c) => (l, { c with expr := c.expr.applySubst tySubst }))
     -- Create post-call substitution for postconditions.
-    let postcond_subst_init := formal_arg_subst ++ return_lhs_subst
+    -- return_lhs_subst comes first so that output parameters (including
+    -- modifies-converted globals) map to fresh post-call variables,
+    -- taking priority over formal_arg_subst which maps the same names
+    -- to pre-call values.
+    let postcond_subst_init := return_lhs_subst ++ formal_arg_subst
     -- Build "old g" substitutions: map "old g" → pre-call value of g
     let old_g_subst : VarSubst := current_globals.filterMap fun ((id, ty), e) =>
       let oldId : CoreIdent := CoreIdent.mkOld id.name

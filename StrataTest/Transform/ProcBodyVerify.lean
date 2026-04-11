@@ -29,7 +29,7 @@ def showTransformed (prog : Strata.Program) (procName : String) : Except String 
   let some proc := Program.Procedure.find? p procName
     | throw s!"Procedure {procName} not found"
   let state := { CoreTransformState.emp with currentProgram := .some p }
-  let (.ok stmt, _) := (procToVerifyStmt proc p).run state
+  let (.ok stmt, _) := (procToVerifyStmt proc).run state
     | throw "Transformation failed"
   return Core.formatStatement stmt
 
@@ -38,27 +38,26 @@ def showTransformed (prog : Strata.Program) (procName : String) : Except String 
 -- Show the transformed output
 /--
 info: ok: verify_Test: {
-  var x : int;
-  var y : int;
   var |old g| : int;
-  var g : int := old g;
-  assume [Test_requires_1]: x > 0;
+  var g : int;
+  var y : int;
+  var x : int;
+  assume [Test_requires_0]: x > 0;
   body_Test: {
+    g := old g;
     y := x;
     g := g + 1;
     }
-  assert [Test_ensures_2]: y > 0;
-  assert [Test_ensures_3]: g == old g + 1;
+  assert [Test_ensures_1]: y > 0;
+  assert [Test_ensures_2]: g == old g + 1;
   }
 -/
 #guard_msgs in
 #eval! showTransformed
   (#strata
   program Core;
-  var g : int;
-  procedure Test(x : int) returns (y : int)
+  procedure Test(g : int, x : int) returns (g : int, y : int)
   spec {
-    modifies g;
     requires (x > 0);
     ensures (y > 0);
     ensures (g == old g + 1);
@@ -75,8 +74,8 @@ info: ok: verify_Test: {
 -- Show the transformed output
 /--
 info: ok: verify_Simple: {
-  var x : bool;
   var y : bool;
+  var x : bool;
   assume [Simple_requires_0]: x;
   body_Simple: {
     y := x;
@@ -104,8 +103,8 @@ info: ok: verify_Simple: {
 -- Show the transformed output
 /--
 info: ok: verify_WithFree: {
-  var x : int;
   var y : int;
+  var x : int;
   assume [WithFree_requires_0]: x >= 0;
   assume [WithFree_requires_1]: x > 0;
   body_WithFree: {
@@ -136,32 +135,31 @@ info: ok: verify_WithFree: {
 -- Show the transformed output
 /--
 info: ok: verify_MultipleModifies: {
-  var x : int;
-  var y : int;
   var |old g1| : int;
-  var g1 : int := old g1;
   var |old g2| : bool;
-  var g2 : bool := old g2;
-  assume [MultipleModifies_requires_1]: x > 0;
+  var g1 : int;
+  var g2 : bool;
+  var y : int;
+  var x : int;
+  assume [MultipleModifies_requires_0]: x > 0;
   body_MultipleModifies: {
+    g1 := old g1;
+    g2 := old g2;
     y := x;
     g1 := g1 + 1;
     g2 := true;
     }
-  assert [MultipleModifies_ensures_2]: y == x;
-  assert [MultipleModifies_ensures_3]: g1 == old g1 + 1;
-  assert [MultipleModifies_ensures_4]: g2;
+  assert [MultipleModifies_ensures_1]: y == x;
+  assert [MultipleModifies_ensures_2]: g1 == old g1 + 1;
+  assert [MultipleModifies_ensures_3]: g2;
   }
 -/
 #guard_msgs in
 #eval! showTransformed
   (#strata
   program Core;
-  var g1 : int;
-  var g2 : bool;
-  procedure MultipleModifies(x : int) returns (y : int)
+  procedure MultipleModifies(g1 : int, g2 : bool, x : int) returns (g1 : int, g2 : bool, y : int)
   spec {
-    modifies g1, g2;
     requires (x > 0);
     ensures (y == x);
     ensures (g1 == old g1 + 1);

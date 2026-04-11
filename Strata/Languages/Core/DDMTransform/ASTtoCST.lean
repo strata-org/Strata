@@ -957,11 +957,6 @@ def procToCST {M} [Inhabited M] (proc : Core.Procedure) : ToCSTM M (Command M) :
       ⟨default, some declList⟩
   -- Build spec elements
   let mut specElts : Array (SpecElt M) := #[]
-  -- Add modifies
-  if !proc.spec.modifies.isEmpty then
-    let ids : Ann (Array (Ann String M)) M :=
-      ⟨default, proc.spec.modifies.toArray.map fun id => ⟨default, id.name⟩⟩
-    specElts := specElts.push (SpecElt.modifies_spec default ids)
   -- Add requires
   for (label, check) in proc.spec.preconditions.toList do
     let labelAnn : Ann (Option (Label M)) M :=
@@ -1086,24 +1081,11 @@ def distinctToCST {M} [Inhabited M] (name : CoreIdent) (es : List (Lambda.LExpr 
   let exprsAnn : Ann (Array (CoreDDM.Expr M)) M := ⟨default, exprsCST.toArray⟩
   pure (.command_distinct default labelAnn exprsAnn)
 
-/-- Convert a variable declaration to CST -/
-def varToCST {M} [Inhabited M]
-    (name : CoreIdent) (ty : Lambda.LTy) (_e : Imperative.ExprOrNondet Expression)
-    (_md : Imperative.MetaData Expression) : ToCSTM M (Command M) := do
-  -- Register name as free variable
-  modify (·.addGlobalFreeVars #[name.toPretty])
-  let nameAnn : Ann String M := ⟨default, name.toPretty⟩
-  let tyCST ← lTyToCoreType ty
-  let typeArgs : Ann (Option (TypeArgs M)) M := ⟨default, none⟩
-  let bind := Bind.bind_mk default nameAnn typeArgs tyCST
-  pure (.command_var default bind)
-
 /-- Convert a `Core.Decl` to a Core `Command` -/
 def declToCST {M} [Inhabited M] (decl : Core.Decl) : ToCSTM M (List (Command M)) :=
   match decl with
-  | .var name ty e md => do
-    let cmd ← varToCST name ty e md
-    pure [cmd]
+  | .var _name _ty _e _md => do
+    pure []
   | .type (.con tcons) md => do
     let cmd ← typeConToCST tcons md
     pure [cmd]

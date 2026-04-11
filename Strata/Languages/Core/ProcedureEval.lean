@@ -59,15 +59,6 @@ private def mergeResults (fallback : Procedure × Env) (results : List (Procedur
       exprEnv  := { E.exprEnv with config := { E.exprEnv.config with gen := maxGen } } })
 
 def eval (E : Env) (p : Procedure) : Procedure × Env :=
-  -- Generate fresh variables for the globals in the modifies clause, and _update_
-  -- the context. These reflect the pre-state values of the globals.
-  let modifies_tys :=
-    p.spec.modifies.map
-    (fun l => (E.exprEnv.state.findD l (none, .fvar () l none)).fst)
-  let modifies_typed := p.spec.modifies.zip modifies_tys
-  let (globals_fvars, E) := E.genFVars modifies_typed
-  let global_init_subst := List.zip modifies_typed globals_fvars
-  let E := E.addToContext global_init_subst
   -- Create a new scope with the formals and return variables. We will pop this
   -- scope at the end of this procedure.
   let vars := p.header.inputs.keys ++ p.header.outputs.keys
@@ -90,6 +81,13 @@ def eval (E : Env) (p : Procedure) : Procedure × Env :=
     match d with | .var name _ _ _ => some name.name | _ => none
   let old_g_subst := old_var_subst.filterMap fun (id, e) =>
     if globalNames.contains id.name then some (CoreIdent.mkOld id.name, e) else none
+  -- For input parameters that also appear as outputs, old(param) should use
+  -- the input parameter's initial value.
+  let outputNames := p.header.outputs.keys
+  let inputParamSubst := E.exprEnv.state.newest.filterMap fun (id, _, e) =>
+    if p.header.inputs.keys.contains id && outputNames.contains id
+    then some (CoreIdent.mkOld id.name, e) else none
+  let old_g_subst := inputParamSubst ++ old_g_subst
   let postcond_asserts :=
     List.map (fun (label, check) =>
                 match check.attr with

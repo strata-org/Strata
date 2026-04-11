@@ -28,7 +28,6 @@ def bad_prog : Program := { decls := [
                          inputs := [],
                          outputs := [] },
               spec := {
-                  modifies := [],
                   preconditions := [],
                   postconditions := [] },
               body := [
@@ -59,7 +58,6 @@ def good_prog : Program := { decls := [
                          inputs := [],
                          outputs := [] },
               spec := {
-                  modifies := [],
                   preconditions := [],
                   postconditions := [] },
               body := [
@@ -331,7 +329,6 @@ def outOfScopeVarProg : Program := { decls := [
                          inputs := [("x", mty[bool])],
                          outputs := [("y", mty[bool])] },
               spec := {
-                  modifies := [],
                   preconditions := [],
                   postconditions := [] },
               body := [
@@ -376,8 +373,7 @@ def polyFuncProg : Program := { decls := [
                       typeArgs := [],
                       inputs := [],
                       outputs := [] },
-          spec := { modifies := [],
-                    preconditions := [],
+          spec := { preconditions := [],
                     postconditions := [] },
           body := [
             -- var m : Map int bool;
