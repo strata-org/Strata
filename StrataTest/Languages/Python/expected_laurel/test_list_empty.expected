@@ -1,0 +1,7 @@
+unknown location: ✅ pass - assume_assume(0)_calls_PIn_0
+unknown location: ✅ pass - assume_assume(0)_calls_Any_to_bool_1
+test_list_empty.py(5, 16): ✅ pass - Check PAdd exception
+test_list_empty.py(6, 4): ✅ pass - empty list
+test_list_empty.py(6, 4): ✅ pass - empty list
+DETAIL: 5 passed, 0 failed, 0 inconclusive
+RESULT: Analysis success

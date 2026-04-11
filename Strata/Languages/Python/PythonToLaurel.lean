@@ -888,6 +888,21 @@ partial def combinePositionalAndKeywordArgs
   | _ => return (posArgs, kwords, false)
 
 
+/-- Translate an expression used as a method receiver, building FieldSelect
+    chains for UserDefined composite fields without coercion. Falls back to
+    translateExpr for non-composite or non-attribute expressions. -/
+partial def translateExprAsReceiver (ctx : TranslationContext)
+    (e : Python.expr SourceRange) : Except TranslationError StmtExprMd := do
+  match e with
+  | .Attribute _ obj fieldAttr _ =>
+    let objType ← inferExprType ctx obj
+    match tryLookupFieldHighType ctx objType fieldAttr.val with
+    | some (.UserDefined _) =>
+      let objExpr ← translateExprAsReceiver ctx obj
+      pure <| mkStmtExprMd (StmtExpr.FieldSelect objExpr fieldAttr.val)
+    | _ => translateExpr ctx e
+  | _ => translateExpr ctx e
+
 /-- Translate a Python call expression to Laurel.
     Tries factory dispatch, then method dispatch on typed variables,
     then falls back to a static call by flattened name. -/
@@ -944,7 +959,7 @@ partial def translateCall (ctx : TranslationContext)
           else funcName
         return mkCall funcName'
     | .Attribute _ val _attr _ =>
-        let target_trans ← translateExpr ctx val
+        let target_trans ← translateExprAsReceiver ctx val
         if opt_firstarg.isSome then
           if let some (ImportedSymbol.procedure _ _ true) := ctx.importedSymbols[funcName]? then
             return mkCall funcName
@@ -1131,7 +1146,16 @@ partial def translateAssign  (ctx : TranslationContext)
           let fieldAccess := mkStmtExprMd (StmtExpr.FieldSelect
             (mkStmtExprMd (StmtExpr.Identifier "self"))
             attr.val)
-          let assignStmt := mkStmtExprMdWithLoc (StmtExpr.Assign [fieldAccess] rhs_trans) md
+          -- When the annotation is a composite type, the RHS (which is Any)
+          -- cannot be assigned directly; use New to initialize the field.
+          let rhs' ← match annotation with
+            | some ann =>
+              let annStr := pyExprToString ann
+              if let some (.compositeType laurelName) := ctx.importedSymbols[annStr]? then
+                pure (mkStmtExprMd (StmtExpr.New (mkId laurelName)))
+              else pure rhs_trans
+            | none => pure rhs_trans
+          let assignStmt := mkStmtExprMdWithLoc (StmtExpr.Assign [fieldAccess] rhs') md
           return (ctx, [assignStmt])
         else
           let targetExpr ← translateExpr ctx lhs  -- This will handle self.field via translateExpr
@@ -1833,7 +1857,8 @@ def translateMethod (ctx : TranslationContext) (className : String)
     -- Translate method body with class context
     -- Add method parameters to variableTypes so that hoisting (e.g. in
     -- try/except) does not re-declare them as local variables.
-    let paramTypes : List (String × String) := inputs.map (fun p => (p.name.text, PyLauType.Any))
+    let paramTypes : List (String × String) := inputs.map fun p =>
+      if p.name.text == "self" then (p.name.text, className) else (p.name.text, PyLauType.Any)
     let ctxWithClass := {ctx with currentClassName := some className,
                                   variableTypes := paramTypes}
     let newDecls := collectDeclaredNamesAndTypes ctxWithClass body.val.toList
@@ -2205,6 +2230,7 @@ def pythonToLaurel' (info : PreludeInfo)
         preludeTypes := info.types,
         importedSymbols := localSymbols,
         classFieldHighType := classFieldHighType,
+        userFunctions := userFunctions,
         classesInHierarchy := classesInHierarchy,
         filePath := filePath
       }
