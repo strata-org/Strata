@@ -331,15 +331,18 @@ def specExprToLaurel (e : SpecExpr) (md : Imperative.MetaData Core.Expression)
   -- nearest ancestor's md for nodes with default (empty) locations.
   -- This is intentional: the parent's location is a closer approximation
   -- than the function-level metadata for nodes without their own location.
-  let nodeMd (loc : SourceRange) : ToLaurelM (Imperative.MetaData Core.Expression) := do
-    if loc == default then pure md
-    else do
-      let ctx ← read
-      let fr : FileRange := { file := .file ctx.filepath.toString, range := loc }
-      pure #[⟨Imperative.MetaData.fileRange, .fileRange fr⟩]
+  let nodeMd (loc : Option SourceRange) : ToLaurelM (Imperative.MetaData Core.Expression) := do
+    match loc with
+    | none => pure md
+    | some r =>
+      if r == default then pure md  -- empty range, fall back to parent metadata
+      else do
+        let ctx ← read
+        let fr : FileRange := { file := .file ctx.filepath.toString, range := r }
+        pure #[⟨Imperative.MetaData.fileRange, .fileRange fr⟩]
   match e with
   | .placeholder loc => do
-    reportError loc "Placeholder expression not translatable"
+    reportError (loc.getD default) "Placeholder expression not translatable"
     return none
   | .var name loc => do
     let md ← nodeMd loc
@@ -349,7 +352,7 @@ def specExprToLaurel (e : SpecExpr) (md : Imperative.MetaData Core.Expression)
     return some (mkStmt (.StaticCall (mkId "from_int")
       [mkStmt (.LiteralInt v) md]) md)
   | .floatLit _ loc => do
-    reportError loc "Float literals not yet supported in preconditions"
+    reportError (loc.getD default) "Float literals not yet supported in preconditions"
     return none
   | .getIndex subject field loc =>
     match subject with
@@ -364,7 +367,7 @@ def specExprToLaurel (e : SpecExpr) (md : Imperative.MetaData Core.Expression)
           [s, mkStmt (.StaticCall (mkId "from_str")
             [mkStmt (.LiteralString field) md]) md]) md
   | .isInstanceOf _ typeName loc => do
-    reportError loc s!"isinstance check for '{typeName}' not yet supported in preconditions"
+    reportError (loc.getD default) s!"isinstance check for '{typeName}' not yet supported in preconditions"
     return none
   | .len subject loc => do
     let md ← nodeMd loc
@@ -442,10 +445,10 @@ def specExprToLaurel (e : SpecExpr) (md : Imperative.MetaData Core.Expression)
       let sStr := mkStmt (.StaticCall (mkId "Any..as_string!") [s]) md
       mkStmt (.StaticCall (mkId "re_search_bool") [mkStmt (.LiteralString pattern) md, sStr]) md
   | .forallList _ _ _ loc => do
-    reportError loc "forallList quantifier not yet supported in preconditions"
+    reportError (loc.getD default) "forallList quantifier not yet supported in preconditions"
     return none
   | .forallDict _ _ _ _ loc => do
-    reportError loc "forallDict quantifier not yet supported in preconditions"
+    reportError (loc.getD default) "forallDict quantifier not yet supported in preconditions"
     return none
 
 private def formatAssertionMessage (msg : Array MessagePart) : String :=

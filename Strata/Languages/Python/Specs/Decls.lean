@@ -307,6 +307,7 @@ def count (ad : ArgDecls) := ad.args.size + ad.kwonly.size
 
 end ArgDecls
 
+
 /--
 A composable expression tree for translating Python `assert` statements into
 structured preconditions and postconditions. Leaf nodes are `var`, `intLit`,
@@ -316,39 +317,39 @@ and `placeholder`; interior nodes represent operations like `len`, `getIndex`,
 inductive SpecExpr where
 /-- Stands in for an assert pattern not yet supported by the translator.
     The original Python expression is preserved in `Assertion.message`. -/
-| placeholder (loc : SourceRange)
-| var (name : String) (loc : SourceRange)
-| getIndex (subject : SpecExpr) (field : String) (loc : SourceRange)
-| isInstanceOf (subject : SpecExpr) (typeName : String) (loc : SourceRange)
-| len (subject : SpecExpr) (loc : SourceRange)
-| intLit (value : Int) (loc : SourceRange)
-| intGe (subject : SpecExpr) (bound : SpecExpr) (loc : SourceRange)
-| intLe (subject : SpecExpr) (bound : SpecExpr) (loc : SourceRange)
+| placeholder (loc : Option SourceRange := none)
+| var (name : String) (loc : Option SourceRange := none)
+| getIndex (subject : SpecExpr) (field : String) (loc : Option SourceRange := none)
+| isInstanceOf (subject : SpecExpr) (typeName : String) (loc : Option SourceRange := none)
+| len (subject : SpecExpr) (loc : Option SourceRange := none)
+| intLit (value : Int) (loc : Option SourceRange := none)
+| intGe (subject : SpecExpr) (bound : SpecExpr) (loc : Option SourceRange := none)
+| intLe (subject : SpecExpr) (bound : SpecExpr) (loc : Option SourceRange := none)
 /-- A floating-point literal, stored as a string to preserve precision. -/
-| floatLit (value : String) (loc : SourceRange)
-| floatGe (subject : SpecExpr) (bound : SpecExpr) (loc : SourceRange)
-| floatLe (subject : SpecExpr) (bound : SpecExpr) (loc : SourceRange)
-| enumMember (subject : SpecExpr) (values : Array String) (loc : SourceRange)
+| floatLit (value : String) (loc : Option SourceRange := none)
+| floatGe (subject : SpecExpr) (bound : SpecExpr) (loc : Option SourceRange := none)
+| floatLe (subject : SpecExpr) (bound : SpecExpr) (loc : Option SourceRange := none)
+| enumMember (subject : SpecExpr) (values : Array String) (loc : Option SourceRange := none)
 /-- `regexMatch subject pattern` asserts that `subject` matches the regular
     expression `pattern`. Corresponds to `compile(pattern).search(subject) is not None`
     in the Python source. -/
-| regexMatch (subject : SpecExpr) (pattern : String) (loc : SourceRange)
+| regexMatch (subject : SpecExpr) (pattern : String) (loc : Option SourceRange := none)
 /-- `containsKey container key` asserts that `key` is present in `container`.
     Corresponds to `"key" in container` in the Python source. -/
-| containsKey (container : SpecExpr) (key : String) (loc : SourceRange)
+| containsKey (container : SpecExpr) (key : String) (loc : Option SourceRange := none)
 /-- `implies condition body` asserts that if `condition` holds then `body` holds.
     Used to represent conditional assertions like `if "field" in kwargs: assert ...`. -/
-| implies (condition : SpecExpr) (body : SpecExpr) (loc : SourceRange)
+| implies (condition : SpecExpr) (body : SpecExpr) (loc : Option SourceRange := none)
 /-- Logical negation. Used for else-branch conditions. -/
-| not (e : SpecExpr) (loc : SourceRange)
+| not (e : SpecExpr) (loc : Option SourceRange := none)
 /-- `forallList list varName body` asserts that `body` holds for every element
     of `list`, with `varName` bound to each element in turn. Only `body` may
     refer to `varName`. Corresponds to `for varName in list: assert body`. -/
-| forallList (list : SpecExpr) (varName : String) (body : SpecExpr) (loc : SourceRange)
+| forallList (list : SpecExpr) (varName : String) (body : SpecExpr) (loc : Option SourceRange := none)
 /-- `forallDict dict keyVar valVar body` asserts that `body` holds for every
     key-value pair in `dict`. Both `keyVar` and `valVar` are bound in `body`.
     Corresponds to `for keyVar, valVar in dict.items(): assert body`. -/
-| forallDict (dict : SpecExpr) (keyVar : String) (valVar : String) (body : SpecExpr) (loc : SourceRange)
+| forallDict (dict : SpecExpr) (keyVar : String) (valVar : String) (body : SpecExpr) (loc : Option SourceRange := none)
 deriving Inhabited
 
 inductive MessagePart where

@@ -243,31 +243,30 @@ private def Arg.toDDM (d : Arg) : DDM.ArgDecl SourceRange :=
 
 protected def SpecExpr.toDDM (e : SpecExpr) : DDM.SpecExprDecl SourceRange :=
   match e with
-  | .placeholder loc => .placeholderExpr loc
-  | .var name loc => .varExpr loc ⟨loc, name⟩
-  | .getIndex subj field loc => .getIndexExpr loc subj.toDDM ⟨loc, field⟩
-  | .isInstanceOf subj tn loc => .isInstanceOfExpr loc subj.toDDM ⟨loc, tn⟩
-  | .len subj loc => .lenExpr loc subj.toDDM
-  | .intLit v loc => .intExpr loc (toDDMInt loc v)
-  | .intGe subj bound loc => .intGeExpr loc subj.toDDM bound.toDDM
-  | .intLe subj bound loc => .intLeExpr loc subj.toDDM bound.toDDM
-  | .floatLit v loc => .floatExpr loc ⟨loc, v⟩
-  | .floatGe subj bound loc => .floatGeExpr loc subj.toDDM bound.toDDM
-  | .floatLe subj bound loc => .floatLeExpr loc subj.toDDM bound.toDDM
-  | .enumMember subj values loc =>
-    .enumMemberExpr loc subj.toDDM
-      ⟨loc, values.map (⟨loc, ·⟩)⟩
-  | .regexMatch subj pattern loc =>
-    .regexMatchExpr loc subj.toDDM ⟨loc, pattern⟩
-  | .containsKey container key loc =>
-    .containsKeyExpr loc container.toDDM ⟨loc, key⟩
-  | .implies cond body loc =>
-    .impliesExpr loc cond.toDDM body.toDDM
-  | .not e loc => .notExpr loc e.toDDM
-  | .forallList list varName body loc =>
-    .forallListExpr loc list.toDDM ⟨loc, varName⟩ body.toDDM
-  | .forallDict dict keyVar valVar body loc =>
-    .forallDictExpr loc dict.toDDM ⟨loc, keyVar⟩ ⟨loc, valVar⟩ body.toDDM
+  | .placeholder loc => let r := loc.getD default; .placeholderExpr r
+  | .var name loc => let r := loc.getD default; .varExpr r ⟨r, name⟩
+  | .getIndex subj field loc => let r := loc.getD default; .getIndexExpr r subj.toDDM ⟨r, field⟩
+  | .isInstanceOf subj tn loc => let r := loc.getD default; .isInstanceOfExpr r subj.toDDM ⟨r, tn⟩
+  | .len subj loc => let r := loc.getD default; .lenExpr r subj.toDDM
+  | .intLit v loc => let r := loc.getD default; .intExpr r (toDDMInt r v)
+  | .intGe subj bound loc => let r := loc.getD default; .intGeExpr r subj.toDDM bound.toDDM
+  | .intLe subj bound loc => let r := loc.getD default; .intLeExpr r subj.toDDM bound.toDDM
+  | .floatLit v loc => let r := loc.getD default; .floatExpr r ⟨r, v⟩
+  | .floatGe subj bound loc => let r := loc.getD default; .floatGeExpr r subj.toDDM bound.toDDM
+  | .floatLe subj bound loc => let r := loc.getD default; .floatLeExpr r subj.toDDM bound.toDDM
+  | .enumMember subj values loc => let r := loc.getD default
+    .enumMemberExpr r subj.toDDM ⟨r, values.map (⟨r, ·⟩)⟩
+  | .regexMatch subj pattern loc => let r := loc.getD default
+    .regexMatchExpr r subj.toDDM ⟨r, pattern⟩
+  | .containsKey container key loc => let r := loc.getD default
+    .containsKeyExpr r container.toDDM ⟨r, key⟩
+  | .implies cond body loc => let r := loc.getD default
+    .impliesExpr r cond.toDDM body.toDDM
+  | .not e loc => .notExpr (loc.getD default) e.toDDM
+  | .forallList list varName body loc => let r := loc.getD default
+    .forallListExpr r list.toDDM ⟨r, varName⟩ body.toDDM
+  | .forallDict dict keyVar valVar body loc => let r := loc.getD default
+    .forallDictExpr r dict.toDDM ⟨r, keyVar⟩ ⟨r, valVar⟩ body.toDDM
 
 def specExprFormatContext : FormatContext :=
   .ofDialects DDM.PythonSpecs_map
@@ -383,26 +382,26 @@ private def DDM.ArgDecl.fromDDM (d : DDM.ArgDecl SourceRange) : Specs.Arg :=
 
 private def DDM.SpecExprDecl.fromDDM (d : DDM.SpecExprDecl SourceRange) : Specs.SpecExpr :=
   match d with
-  | .placeholderExpr loc => .placeholder loc
-  | .varExpr loc ⟨_, name⟩ => .var name loc
-  | .getIndexExpr loc subj ⟨_, field⟩ => .getIndex subj.fromDDM field loc
-  | .isInstanceOfExpr loc subj ⟨_, tn⟩ => .isInstanceOf subj.fromDDM tn loc
-  | .lenExpr loc subj => .len subj.fromDDM loc
-  | .intExpr loc i => .intLit i.ofDDM loc
-  | .intGeExpr loc subj bound => .intGe subj.fromDDM bound.fromDDM loc
-  | .intLeExpr loc subj bound => .intLe subj.fromDDM bound.fromDDM loc
-  | .floatExpr loc ⟨_, v⟩ => .floatLit v loc
-  | .floatGeExpr loc subj bound => .floatGe subj.fromDDM bound.fromDDM loc
-  | .floatLeExpr loc subj bound => .floatLe subj.fromDDM bound.fromDDM loc
-  | .enumMemberExpr loc subj ⟨_, values⟩ => .enumMember subj.fromDDM (values.map (·.2)) loc
-  | .regexMatchExpr loc subj ⟨_, pattern⟩ => .regexMatch subj.fromDDM pattern loc
-  | .containsKeyExpr loc container ⟨_, key⟩ => .containsKey container.fromDDM key loc
-  | .impliesExpr loc cond body => .implies cond.fromDDM body.fromDDM loc
-  | .notExpr loc e => .not e.fromDDM loc
+  | .placeholderExpr loc => .placeholder (some loc)
+  | .varExpr loc ⟨_, name⟩ => .var name (some loc)
+  | .getIndexExpr loc subj ⟨_, field⟩ => .getIndex subj.fromDDM field (some loc)
+  | .isInstanceOfExpr loc subj ⟨_, tn⟩ => .isInstanceOf subj.fromDDM tn (some loc)
+  | .lenExpr loc subj => .len subj.fromDDM (some loc)
+  | .intExpr loc i => .intLit i.ofDDM (some loc)
+  | .intGeExpr loc subj bound => .intGe subj.fromDDM bound.fromDDM (some loc)
+  | .intLeExpr loc subj bound => .intLe subj.fromDDM bound.fromDDM (some loc)
+  | .floatExpr loc ⟨_, v⟩ => .floatLit v (some loc)
+  | .floatGeExpr loc subj bound => .floatGe subj.fromDDM bound.fromDDM (some loc)
+  | .floatLeExpr loc subj bound => .floatLe subj.fromDDM bound.fromDDM (some loc)
+  | .enumMemberExpr loc subj ⟨_, values⟩ => .enumMember subj.fromDDM (values.map (·.2)) (some loc)
+  | .regexMatchExpr loc subj ⟨_, pattern⟩ => .regexMatch subj.fromDDM pattern (some loc)
+  | .containsKeyExpr loc container ⟨_, key⟩ => .containsKey container.fromDDM key (some loc)
+  | .impliesExpr loc cond body => .implies cond.fromDDM body.fromDDM (some loc)
+  | .notExpr loc e => .not e.fromDDM (some loc)
   | .forallListExpr loc list ⟨_, varName⟩ body =>
-    .forallList list.fromDDM varName body.fromDDM loc
+    .forallList list.fromDDM varName body.fromDDM (some loc)
   | .forallDictExpr loc dict ⟨_, keyVar⟩ ⟨_, valVar⟩ body =>
-    .forallDict dict.fromDDM keyVar valVar body.fromDDM loc
+    .forallDict dict.fromDDM keyVar valVar body.fromDDM (some loc)
 
 private def DDM.MessagePart.fromDDM (d : DDM.MessagePart SourceRange) : Specs.MessagePart :=
   match d with
