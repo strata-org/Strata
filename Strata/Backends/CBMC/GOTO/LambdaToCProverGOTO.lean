@@ -101,6 +101,21 @@ def fnToGotoID (fn : String) : Except Format CProverGOTO.Expr.Identifier :=
     | "SGt" => return .binary .Gt
     | "SGe" => return .binary .Ge
     | "Lt" => return .binary .Lt
+    -- Safe variants map to the same GOTO operations
+    | "SafeAdd" | "SafeUAdd" => return .multiary .Plus
+    | "SafeSub" | "SafeUSub" => return .binary .Minus
+    | "SafeMul" | "SafeUMul" => return .multiary .Mult
+    | "SafeNeg" | "SafeUNeg" => return .unary .UnaryMinus
+    | "SafeSDiv" => return .binary .Div
+    | "SafeSMod" => return .binary .Mod
+    -- Overflow predicates map to CBMC overflow expressions
+    | "SAddOverflow" | "UAddOverflow" => return .binary .PlusOverflow
+    | "SSubOverflow" | "USubOverflow" => return .binary .MinusOverflow
+    | "SMulOverflow" | "UMulOverflow" => return .binary .MultOverflow
+    | "SNegOverflow" | "UNegOverflow" => return .unary .UnaryMinusOverflow
+    -- SDivOverflow is special: (x == INT_MIN) && (y == -1)
+    -- Handled as a function application (expanded in toGotoExpr)
+    | "SDivOverflow" => return .functionApplication fn
     | _ =>
       -- Handle Extract_{hi}_{lo} patterns
       if op.startsWith "Extract_" then
@@ -165,7 +180,10 @@ private def isSignedBvOp (fn : String) : Bool :=
     else if fn.startsWith "Bv64." then some (fn.drop 5).toString
     else none
   match bvOp with
-  | some op => op ∈ ["SDiv", "SMod", "SLt", "SLe", "SGt", "SGe", "SShr"]
+  | some op => op ∈ ["SDiv", "SMod", "SLt", "SLe", "SGt", "SGe", "SShr",
+                      "SafeSDiv", "SafeSMod",
+                      "SAddOverflow", "SSubOverflow", "SMulOverflow", "SNegOverflow",
+                      "SDivOverflow"]
   | none => false
 
 /-- Build Euclidean division from truncating division:
