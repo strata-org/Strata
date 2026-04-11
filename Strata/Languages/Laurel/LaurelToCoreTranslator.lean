@@ -86,6 +86,7 @@ def translateType (ty : HighTypeMd) : TranslateM LMonoTy := do
   | .TInt => return LMonoTy.int
   | .TBool => return LMonoTy.bool
   | .TString => return LMonoTy.string
+  | .TBv n => return LMonoTy.bitvec n
   | .TVoid => return LMonoTy.bool -- Using bool as placeholder for void
   | .THeap => return .tcons "Heap" []
   | .TTypedField _ => return .tcons "Field" []
@@ -598,7 +599,7 @@ def translateInvokeOnAxiom (proc : Procedure) (trigger : StmtExprMd)
   -- Wrap in ∀ from outermost (first param) to innermost (last param).
   -- The trigger is placed on the innermost quantifier.
   let quantified ← buildQuants proc.inputs bodyExpr triggerExpr
-  return some (.ax { name := s!"invokeOn_{proc.name.text}", e := quantified } proc.md)
+  return some (.ax { name := s!"invokeOn_{proc.name.text}", e := quantified } proc.name.md)
 where
   /-- Build `∀ p1 ... pn :: { trigger } body`. The trigger is on the innermost quantifier. -/
   buildQuants (params : List Parameter)
@@ -654,7 +655,7 @@ def translateProcedureToFunction (options: LaurelTranslateOptions) (isRecursive:
   let body ← match proc.body with
     | .Transparent bodyExpr => some <$> translateExpr bodyExpr [] (isPureContext := true)
     | .Opaque _ (some bodyExpr) _ =>
-      emitDiagnostic (proc.md.toDiagnostic "functions with postconditions are not yet supported")
+      emitDiagnostic (proc.name.md.toDiagnostic "functions with postconditions are not yet supported")
       some <$> translateExpr bodyExpr [] (isPureContext := true)
     | _ => pure none
   let f : Core.Function := {
@@ -667,7 +668,7 @@ def translateProcedureToFunction (options: LaurelTranslateOptions) (isRecursive:
     isRecursive := isRecursive
     attr := attr
   }
-  return .func f proc.md
+  return .func f proc.name.md
 
 /--
 Translate a Laurel DatatypeDefinition to an `LDatatype Unit`.
@@ -759,7 +760,7 @@ def translateWithLaurel (options: LaurelTranslateOptions) (program : Program): T
     for td in program.types do
       if let .Composite ct := td then
         for proc in ct.instanceProcedures do
-          emitDiagnostic $ proc.md.toDiagnostic
+          emitDiagnostic $ proc.name.md.toDiagnostic
             s!"Instance procedure '{proc.name.text}' on composite type '{ct.name.text}' is not yet supported"
             DiagnosticType.NotYetImplemented
     -- Translate datatype definitions to Core declarations.
@@ -797,7 +798,7 @@ def translateWithLaurel (options: LaurelTranslateOptions) (program : Program): T
               let axDecl? ← translateInvokeOnAxiom proc trigger
               pure axDecl?.toList
           let procDecl ← translateProcedure proc
-          return [Core.Decl.proc procDecl proc.md] ++ axiomDecls
+          return [Core.Decl.proc procDecl proc.name.md] ++ axiomDecls
     )
 
     -- Translate Laurel constants to Core function declarations (0-ary functions)
