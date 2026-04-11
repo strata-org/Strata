@@ -216,6 +216,10 @@ def eval (n : Nat) (σ : LState TBase) (e : (LExpr TBase.mono))
           match idx with
           | some i => (args[i]? |>.map (isConstrApp σ.config.factory)).getD false
           | none => false
+        let canonicalArgAt (idx : Option Nat) :=
+          match idx with
+          | some i => (args[i]? |>.map (isCanonicalValue σ.config.factory)).getD false
+          | none => false
         if h: lfunc.body.isSome && (lfunc.attr.contains .inline ||
           constrArgAt (FuncAttr.findInlineIfConstr lfunc.attr)) then
           -- Inline a function only if it has a body.
@@ -236,7 +240,10 @@ def eval (n : Nat) (σ : LState TBase) (e : (LExpr TBase.mono))
           if args.all (isCanonicalValue σ.config.factory) ||
             -- Other functions (e.g. Eliminators) only require the designated
             -- arg to be a constructor
-            constrArgAt (FuncAttr.findEvalIfConstr lfunc.attr) then
+            constrArgAt (FuncAttr.findEvalIfConstr lfunc.attr) ||
+            -- Some functions (e.g. regex) only require the designated
+            -- arg to be a canonical value (e.g. a constant string)
+            canonicalArgAt (FuncAttr.findEvalIfCanonical lfunc.attr) then
             match lfunc.concreteEval with
             | none => new_e
             | some ceval =>

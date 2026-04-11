@@ -7,8 +7,8 @@ module
 
 public import Strata.DL.Imperative.CmdSemantics
 import all Strata.DL.Imperative.CmdSemantics
-public import Strata.DL.Imperative.StmtSemanticsSmallStep
-import all Strata.DL.Imperative.StmtSemanticsSmallStep
+public import Strata.DL.Imperative.StmtSemantics
+import all Strata.DL.Imperative.StmtSemantics
 public import Strata.DL.Imperative.HasVars
 import all Strata.DL.Imperative.HasVars
 public import Strata.DL.Util.Nodup
@@ -2056,6 +2056,8 @@ theorem InvStoresExceptInvStores :
   assumption
 
 /-
+
+/-
 NOTE:
   In order to prove this refinement theorem, we need to reason about the
   assymmetry between the two semantics regarding the temporary variables
@@ -2142,6 +2144,8 @@ theorem EvalStatementRefinesContract :
     EvalStatement π φ ρ s ρ' →
     EvalStatementContract π φ ρ s ρ' :=
   StepStmtStar_refines_contract
+
+-/
 
 /-- If an expression is defined, all its free variables are defined in the store.
     Relies on the definedness propagation properties in `WellFormedCoreEvalCong`

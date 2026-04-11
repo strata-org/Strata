@@ -15,7 +15,7 @@ import Strata.Languages.Laurel.Grammar.LaurelGrammar
 import Strata.Languages.Laurel.Grammar.ConcreteToAbstractTreeTranslator
 import Strata.Languages.Laurel.InferHoleTypes
 import Strata.Languages.Laurel.EliminateHoles
-import Strata.Languages.Laurel.LaurelFormat
+import Strata.Languages.Laurel.Grammar.AbstractToConcreteTreeTranslator
 
 open Strata
 open Strata.Elab (parseStrataProgramFromDialect)
@@ -42,14 +42,10 @@ private def parseElimAndPrint (input : String) : IO Unit := do
 
 -- Hole in Add arg inside typed local variable → int.
 /--
-info: function $hole_0() returns ⏎
-($result: int)
-deterministic
-⏎
-procedure test() returns ⏎
-()
-deterministic
-{ var x: int := 1 + $hole_0() }
+info: function $hole_0()
+  returns ($result: int);
+procedure test()
+{ var x: int := 1 + $hole_0() };
 -/
 #guard_msgs in
 #eval! parseElimAndPrint r"
@@ -58,14 +54,10 @@ procedure test() { var x: int := 1 + <?> };
 
 -- Bare Hole as LocalVariable initializer → replaced with call (no longer preserved as havoc).
 /--
-info: function $hole_0() returns ⏎
-($result: int)
-deterministic
-⏎
-procedure test() returns ⏎
-()
-deterministic
-{ var x: int := $hole_0() }
+info: function $hole_0()
+  returns ($result: int);
+procedure test()
+{ var x: int := $hole_0() };
 -/
 #guard_msgs in
 #eval! parseElimAndPrint r"
@@ -74,14 +66,10 @@ procedure test() { var x: int := <?> };
 
 -- Hole in comparison arg inside assert → int (inferred from sibling literal).
 /--
-info: function $hole_0() returns ⏎
-($result: int)
-deterministic
-⏎
-procedure test() returns ⏎
-()
-deterministic
-{ assert $hole_0() > 0 }
+info: function $hole_0()
+  returns ($result: int);
+procedure test()
+{ assert $hole_0() > 0 };
 -/
 #guard_msgs in
 #eval! parseElimAndPrint r"
@@ -90,14 +78,10 @@ procedure test() { assert <?> > 0 };
 
 -- Hole directly as assert condition → bool.
 /--
-info: function $hole_0() returns ⏎
-($result: bool)
-deterministic
-⏎
-procedure test() returns ⏎
-()
-deterministic
-{ assert $hole_0() }
+info: function $hole_0()
+  returns ($result: bool);
+procedure test()
+{ assert $hole_0() };
 -/
 #guard_msgs in
 #eval! parseElimAndPrint r"
@@ -106,14 +90,10 @@ procedure test() { assert <?> };
 
 -- Hole directly as assume condition → bool.
 /--
-info: function $hole_0() returns ⏎
-($result: bool)
-deterministic
-⏎
-procedure test() returns ⏎
-()
-deterministic
-{ assume $hole_0() }
+info: function $hole_0()
+  returns ($result: bool);
+procedure test()
+{ assume $hole_0() };
 -/
 #guard_msgs in
 #eval! parseElimAndPrint r"
@@ -122,14 +102,10 @@ procedure test() { assume <?> };
 
 -- Hole as if-then-else condition → bool.
 /--
-info: function $hole_0() returns ⏎
-($result: bool)
-deterministic
-⏎
-procedure test() returns ⏎
-()
-deterministic
-{ if $hole_0() then { assert true } }
+info: function $hole_0()
+  returns ($result: bool);
+procedure test()
+{ if $hole_0() then { assert true } };
 -/
 #guard_msgs in
 #eval! parseElimAndPrint r"
@@ -138,14 +114,10 @@ procedure test() { if <?> then { assert true } };
 
 -- Hole in then-branch of if-then-else inside typed local variable → int.
 /--
-info: function $hole_0() returns ⏎
-($result: int)
-deterministic
-⏎
-procedure test() returns ⏎
-()
-deterministic
-{ var x: int := if true then $hole_0() else 0 }
+info: function $hole_0()
+  returns ($result: int);
+procedure test()
+{ var x: int := if true then $hole_0() else 0 };
 -/
 #guard_msgs in
 #eval! parseElimAndPrint r"
@@ -154,14 +126,10 @@ procedure test() { var x: int := if true then <?> else 0 };
 
 -- Hole as while-loop condition → bool.
 /--
-info: function $hole_0() returns ⏎
-($result: bool)
-deterministic
-⏎
-procedure test() returns ⏎
-()
-deterministic
-{ while $hole_0() {  } }
+info: function $hole_0()
+  returns ($result: bool);
+procedure test()
+{ while($hole_0()) {  } };
 -/
 #guard_msgs in
 #eval! parseElimAndPrint r"
@@ -170,14 +138,11 @@ procedure test() { while(<?>) {} };
 
 -- Hole as while-loop invariant → bool.
 /--
-info: function $hole_0() returns ⏎
-($result: bool)
-deterministic
-⏎
-procedure test() returns ⏎
-()
-deterministic
-{ while true invariant $hole_0() {  } }
+info: function $hole_0()
+  returns ($result: bool);
+procedure test()
+{ while(true)
+  invariant $hole_0() {  } };
 -/
 #guard_msgs in
 #eval! parseElimAndPrint r"
@@ -188,14 +153,10 @@ procedure test() { while(true) invariant <?> {} };
 
 -- Hole in And arg inside assert → bool.
 /--
-info: function $hole_0() returns ⏎
-($result: bool)
-deterministic
-⏎
-procedure test() returns ⏎
-()
-deterministic
-{ assert true && $hole_0() }
+info: function $hole_0()
+  returns ($result: bool);
+procedure test()
+{ assert true && $hole_0() };
 -/
 #guard_msgs in
 #eval! parseElimAndPrint r"
@@ -204,14 +165,10 @@ procedure test() { assert true && <?> };
 
 -- Hole in Neg inside typed local variable → int.
 /--
-info: function $hole_0() returns ⏎
-($result: int)
-deterministic
-⏎
-procedure test() returns ⏎
-()
-deterministic
-{ var x: int := -$hole_0() }
+info: function $hole_0()
+  returns ($result: int);
+procedure test()
+{ var x: int := -$hole_0() };
 -/
 #guard_msgs in
 #eval! parseElimAndPrint r"
@@ -220,14 +177,10 @@ procedure test() { var x: int := -<?> };
 
 -- Hole in StrConcat inside typed local variable → string.
 /--
-info: function $hole_0() returns ⏎
-($result: string)
-deterministic
-⏎
-procedure test() returns ⏎
-()
-deterministic
-{ var s: string := "hello" ++ $hole_0() }
+info: function $hole_0()
+  returns ($result: string);
+procedure test()
+{ var s: string := "hello" ++ $hole_0() };
 -/
 #guard_msgs in
 #eval! parseElimAndPrint
@@ -237,18 +190,12 @@ deterministic
 
 -- Two holes in Add → both int, separate functions.
 /--
-info: function $hole_0() returns ⏎
-($result: int)
-deterministic
-⏎
-function $hole_1() returns ⏎
-($result: int)
-deterministic
-⏎
-procedure test() returns ⏎
-()
-deterministic
-{ var x: int := $hole_0() + $hole_1() }
+info: function $hole_0()
+  returns ($result: int);
+function $hole_1()
+  returns ($result: int);
+procedure test()
+{ var x: int := $hole_0() + $hole_1() };
 -/
 #guard_msgs in
 #eval! parseElimAndPrint r"
@@ -257,18 +204,12 @@ procedure test() { var x: int := <?> + <?> };
 
 -- Holes across statements: Mul arg (int) then assert condition (bool).
 /--
-info: function $hole_0() returns ⏎
-($result: int)
-deterministic
-⏎
-function $hole_1() returns ⏎
-($result: bool)
-deterministic
-⏎
-procedure test() returns ⏎
-()
-deterministic
-{ var x: int := 2 * $hole_0(); assert $hole_1() }
+info: function $hole_0()
+  returns ($result: int);
+function $hole_1()
+  returns ($result: bool);
+procedure test()
+{ var x: int := 2 * $hole_0(); assert $hole_1() };
 -/
 #guard_msgs in
 #eval! parseElimAndPrint r"
@@ -279,14 +220,10 @@ procedure test() { var x: int := 2 * <?>; assert <?> };
 
 -- Hole in Add inside Gt inside if condition → int (inferred from sibling literal 0).
 /--
-info: function $hole_0() returns ⏎
-($result: int)
-deterministic
-⏎
-procedure test() returns ⏎
-()
-deterministic
-{ if 1 + $hole_0() > 0 then { assert true } }
+info: function $hole_0()
+  returns ($result: int);
+procedure test()
+{ if 1 + $hole_0() > 0 then { assert true } };
 -/
 #guard_msgs in
 #eval! parseElimAndPrint r"
@@ -295,14 +232,11 @@ procedure test() { if 1 + <?> > 0 then { assert true } };
 
 -- Hole in Implies inside while invariant → bool.
 /--
-info: function $hole_0() returns ⏎
-($result: bool)
-deterministic
-⏎
-procedure test() returns ⏎
-()
-deterministic
-{ var p: bool; while true invariant p ==> $hole_0() {  } }
+info: function $hole_0()
+  returns ($result: bool);
+procedure test()
+{ var p: bool; while(true)
+  invariant p ==> $hole_0() {  } };
 -/
 #guard_msgs in
 #eval! parseElimAndPrint r"
@@ -311,14 +245,10 @@ procedure test() { var p: bool; while(true) invariant p ==> <?> {} };
 
 -- Hole in Mul inside typed local variable with real type → real.
 /--
-info: function $hole_0() returns ⏎
-($result: real)
-deterministic
-⏎
-procedure test() returns ⏎
-()
-deterministic
-{ var r: real := 3.14 * $hole_0() }
+info: function $hole_0()
+  returns ($result: real);
+procedure test()
+{ var r: real := 3.14 * $hole_0() };
 -/
 #guard_msgs in
 #eval! parseElimAndPrint r"
@@ -329,14 +259,10 @@ procedure test() { var r: real := 3.14 * <?> };
 
 -- Hole in comparison with variable sibling → hole function takes the procedure's params.
 /--
-info: function $hole_0(n: int) returns ⏎
-($result: int)
-deterministic
-⏎
-procedure test(n: int) returns ⏎
-()
-deterministic
-{ assert n > $hole_0(n) }
+info: function $hole_0(n: int)
+  returns ($result: int);
+procedure test(n: int)
+{ assert n > $hole_0(n) };
 -/
 #guard_msgs in
 #eval! parseElimAndPrint r"
@@ -347,14 +273,10 @@ procedure test(n: int) { assert n > <?> };
 
 -- Hole in function body → same treatment as procedures.
 /--
-info: function $hole_0(x: int) returns ⏎
-($result: int)
-deterministic
-⏎
-function test(x: int) returns ⏎
-(result: int)
-deterministic
-{ $hole_0(x) }
+info: function $hole_0(x: int)
+  returns ($result: int);
+function test(x: int): int
+{ $hole_0(x) };
 -/
 #guard_msgs in
 #eval! parseElimAndPrint r"
@@ -365,10 +287,8 @@ function test(x: int): int { <?> };
 
 -- Nondet hole in procedure → preserved after eliminateHoles (lifted by liftExpressionAssignments).
 /--
-info: procedure test() returns ⏎
-()
-deterministic
-{ assert <??> }
+info: procedure test()
+{ assert <??> };
 -/
 #guard_msgs in
 #eval! parseElimAndPrint r"
@@ -377,14 +297,10 @@ procedure test() { assert <??> };
 
 -- Mixed: det hole eliminated, nondet hole preserved.
 /--
-info: function $hole_0() returns ⏎
-($result: int)
-deterministic
-⏎
-procedure test() returns ⏎
-()
-deterministic
-{ var x: int := $hole_0(); assert <??> }
+info: function $hole_0()
+  returns ($result: int);
+procedure test()
+{ var x: int := $hole_0(); assert <??> };
 -/
 #guard_msgs in
 #eval! parseElimAndPrint r"

@@ -343,12 +343,19 @@ function List_extend (l1 : ListAny, l2: ListAny) : ListAny
   else ListAny_cons(ListAny..head!(l1), List_extend(ListAny..tail!(l1), l2))
 };
 
-function List_get (l : ListAny, i : int) : Any
+function List_get_non_neg (l : ListAny, i : int) : Any
   requires i >= 0 && i < List_len(l)
 {
   if ListAny..isListAny_nil(l) then from_None()
   else if  i == 0 then ListAny..head!(l)
   else List_get(ListAny..tail!(l), i - 1)
+};
+
+function List_get (l : ListAny, i : int) : Any
+  requires i >= - List_len(l) && i < List_len(l)
+{
+  if i >= 0 then List_get_non_neg(l, i)
+  else List_get_non_neg(l, List_len(l) + i)
 };
 
 function List_take (l : ListAny, i: int) : ListAny
@@ -375,13 +382,33 @@ procedure List_drop_len(l : ListAny, i: int)
   invokeOn List_len(List_drop(l,i))
   ensures i >= 0 && i <= List_len(l) ==> List_len(List_drop(l,i)) == List_len(l) - i;
 
-function List_slice (l : ListAny, start : int, stop: int) : ListAny
-  requires start >= 0 && start < List_len(l) && stop >= 0 && stop <= List_len(l) && start <= stop
+function int_max (i1: int, i2: int) : int
 {
-  List_take (List_drop (l, start), stop - start)
+  if i1 >= i2 then i1 else i2
 };
 
-function List_set (l : ListAny, i : int, v: Any) : ListAny
+function int_min (i1: int, i2: int) : int
+{
+  if i1 <= i2 then i1 else i2
+};
+
+function List_slice_non_neg (l : ListAny, start : int, stop: int) : ListAny
+  requires start >= 0 && stop >= 0
+{
+  if (start >= List_len(l)) || (start >= stop) then ListAny_nil()
+  else List_take (List_drop (l, start), int_min(stop, List_len(l))  - start)
+};
+
+
+function List_slice (l : ListAny, start : int, stop: int) : ListAny
+{
+  List_slice_non_neg (l,
+    if start >= 0 then start else int_max (List_len(l) + start, 0),
+    if stop >= 0 then stop else int_max (List_len(l) + stop, 0)
+  )
+};
+
+function List_set_non_neg (l : ListAny, i : int, v: Any) : ListAny
   requires i >= 0 && i < List_len(l)
 {
   if ListAny..isListAny_nil(l) then ListAny_nil()
@@ -389,16 +416,18 @@ function List_set (l : ListAny, i : int, v: Any) : ListAny
   else ListAny_cons(ListAny..head!(l), List_set(ListAny..tail!(l), i - 1, v))
 };
 
+function List_set (l : ListAny, i : int, v: Any) : ListAny
+  requires i >= - List_len(l) && i < List_len(l)
+{
+  if i >= 0 then List_set_non_neg(l, i, v)
+  else List_set_non_neg(l, List_len(l) + i, v)
+};
+
 //Require recursive function on int
 function List_repeat (l: ListAny, n: int): ListAny;
 
-function ListAny_range(i: Any) : ListAny;
-
-function range (i: Any) : Any
-  requires Any..isfrom_int(i)
-{
-  from_ListAny (ListAny_range(i))
-};
+function range (start: Any, stop: Any, step: Any) : Any
+  requires Any..isfrom_int(start) && Any..isfrom_None(stop) && Any..isfrom_None(step);
 
 // /////////////////////////////////////////////////////////////////////////////////////
 // DictStrAny functions
@@ -439,19 +468,16 @@ function DictStrAny_insert (d : DictStrAny, key: string, val: Any) : DictStrAny
 
 function Any_get (dictOrList: Any, index: Any): Any
   requires  (Any..isfrom_DictStrAny(dictOrList) && Any..isfrom_str(index) && DictStrAny_contains(Any..as_Dict!(dictOrList), Any..as_string!(index))) ||
-            (Any..isfrom_ListAny(dictOrList) && Any..isfrom_int(index) && Any..as_int!(index) >= 0 && Any..as_int!(index) < List_len(Any..as_ListAny!(dictOrList)))||
-            (Any..isfrom_ListAny(dictOrList) && Any..isfrom_Slice(index) && Any..start!(index) >= 0 && Any..start!(index) < List_len(Any..as_ListAny!(dictOrList)) &&
-                ((OptionInt..isOptSome(Any..stop!(index))) &&  OptionInt..unwrap!(Any..stop!(index)) >= 0 && OptionInt..unwrap!(Any..stop!(index)) <= List_len(Any..as_ListAny!(dictOrList)) && Any..start!(index) <= OptionInt..unwrap!(Any..stop!(index))
-                  || (OptionInt..isOptNone(Any..stop!(index)))))
+            (Any..isfrom_ListAny(dictOrList) && Any..isfrom_int(index) && Any..as_int!(index) >= - List_len(Any..as_ListAny!(dictOrList)) && Any..as_int!(index) < List_len(Any..as_ListAny!(dictOrList)))||
+            (Any..isfrom_ListAny(dictOrList) && Any..isfrom_Slice(index))
 {
   if Any..isfrom_DictStrAny(dictOrList) then
     DictStrAny_get(Any..as_Dict!(dictOrList), Any..as_string!(index))
   else if Any..isfrom_ListAny(dictOrList) && Any..isfrom_int(index) then
-    List_get(Any..as_ListAny!(dictOrList), Any..as_int!(index))
-  else if Any..isfrom_ListAny(dictOrList) && Any..isfrom_Slice(index) && OptionInt..isOptSome(Any..stop!(index)) then
-    from_ListAny(List_slice(Any..as_ListAny!(dictOrList), Any..start!(index), OptionInt..unwrap!(Any..stop!(index))))
+      List_get(Any..as_ListAny!(dictOrList), Any..as_int!(index))
   else
-    from_ListAny(List_drop(Any..as_ListAny!(dictOrList), Any..start!(index)))
+    from_ListAny(List_slice(Any..as_ListAny!(dictOrList), Any..start!(index),
+      if OptionInt..isOptSome(Any..stop!(index)) then OptionInt..unwrap!(Any..stop!(index)) else List_len(Any..as_ListAny!(dictOrList))))
 };
 
 function Any_get! (dictOrList: Any, index: Any): Any
@@ -462,15 +488,16 @@ function Any_get! (dictOrList: Any, index: Any): Any
     exception (TypeError("Invalid subscription type"))
   else if Any..isfrom_DictStrAny(dictOrList) && Any..isfrom_str(index) && DictStrAny_contains(Any..as_Dict!(dictOrList), Any..as_string!(index)) then
     DictStrAny_get(Any..as_Dict!(dictOrList), Any..as_string!(index))
-  else if Any..isfrom_ListAny(dictOrList) && Any..isfrom_int(index) && Any..as_int!(index) >= 0 && Any..as_int!(index) < List_len(Any..as_ListAny!(dictOrList)) then
-    List_get(Any..as_ListAny!(dictOrList), Any..as_int!(index))
+  else if Any..isfrom_ListAny(dictOrList) && Any..isfrom_int(index) && Any..as_int!(index) >= - List_len(Any..as_ListAny!(dictOrList)) && Any..as_int!(index) < List_len(Any..as_ListAny!(dictOrList)) then
+      List_get(Any..as_ListAny!(dictOrList), Any..as_int!(index))
   else
     exception (IndexError("Invalid subscription"))
 };
 
 function Any_set (dictOrList: Any, index: Any, val: Any): Any
   requires  (Any..isfrom_DictStrAny(dictOrList) && Any..isfrom_str(index)) ||
-            (Any..isfrom_ListAny(dictOrList) && Any..isfrom_int(index) && Any..as_int!(index) >= 0 && Any..as_int!(index) < List_len(Any..as_ListAny!(dictOrList)))
+            (Any..isfrom_ListAny(dictOrList) && Any..isfrom_int(index) &&
+            Any..as_int!(index) >= - List_len(Any..as_ListAny!(dictOrList)) && Any..as_int!(index) < List_len(Any..as_ListAny!(dictOrList)))
 {
   if Any..isfrom_DictStrAny(dictOrList) then
     from_DictStrAny(DictStrAny_insert(Any..as_Dict!(dictOrList), Any..as_string!(index), val))
@@ -487,18 +514,19 @@ function Any_set! (dictOrList: Any, index: Any, val: Any): Any
     exception (TypeError("Invalid subscription type"))
   else if Any..isfrom_DictStrAny(dictOrList) && Any..isfrom_str(index) then
     from_DictStrAny(DictStrAny_insert(Any..as_Dict!(dictOrList), Any..as_string!(index), val))
-  else if Any..isfrom_ListAny(dictOrList) && Any..isfrom_int(index) && Any..as_int!(index) >= 0 && Any..as_int!(index) < List_len(Any..as_ListAny!(dictOrList)) then
+  else if Any..isfrom_ListAny(dictOrList) && Any..isfrom_int(index) &&
+          Any..as_int!(index) >= - List_len(Any..as_ListAny!(dictOrList)) && Any..as_int!(index) < List_len(Any..as_ListAny!(dictOrList)) then
     from_ListAny(List_set(Any..as_ListAny!(dictOrList), Any..as_int!(index), val))
   else
     exception (IndexError("Index out of bound"))
 };
 
-function Any_sets (indices: ListAny, dictOrList: Any, val: Any): Any
+function Any_sets! (indices: ListAny, dictOrList: Any, val: Any): Any
 {
   if ListAny..isListAny_nil(indices) then dictOrList
   else if ListAny..isListAny_nil(ListAny..tail!(indices)) then Any_set!(dictOrList, ListAny..head!(indices), val)
   else Any_set!(dictOrList, ListAny..head!(indices),
-    Any_sets(ListAny..tail!(indices), Any_get!(dictOrList, ListAny..head!(indices)), val))
+    Any_sets!(ListAny..tail!(indices), Any_get!(dictOrList, ListAny..head!(indices)), val))
 };
 
 function PIn (v: Any, dictOrList: Any) : Any
@@ -860,14 +888,16 @@ function PNEq (v: Any, v': Any) : Any {
 // /////////////////////////////////////////////////////////////////////////////////////
 
 function PAnd (v1: Any, v2: Any) : Any
-  requires (Any..isfrom_bool(v1) || Any..isfrom_None(v1) || Any..isfrom_str(v1) || Any..isfrom_int(v1))
+  requires (Any..isexception(v1) || Any..isfrom_bool(v1) || Any..isfrom_None(v1) || Any..isfrom_str(v1) || Any..isfrom_int(v1))
 {
+  if Any..isexception(v1) then v1 else
   if ! Any_to_bool (v1) then v1 else v2
 };
 
 function POr (v1: Any, v2: Any) : Any
-  requires (Any..isfrom_bool(v1) || Any..isfrom_None(v1) || Any..isfrom_str(v1) || Any..isfrom_int(v1))
+  requires (Any..isexception(v1) || Any..isfrom_bool(v1) || Any..isfrom_None(v1) || Any..isfrom_str(v1) || Any..isfrom_int(v1))
 {
+  if Any..isexception(v1) then v1 else
   if Any_to_bool (v1) then v1 else v2
 };
 
@@ -900,8 +930,19 @@ function PPow (v1: Any, v2: Any) : Any
 };
 
 function PMod (v1: Any, v2: Any) : Any
+  requires (Any..isfrom_bool(v2)==>Any..as_bool!(v2)) && (Any..isfrom_int(v2)==>Any..as_int!(v2)!=0)
 {
-  exception(UnimplementedError ("Mod operator is not supported"))
+  if Any..isexception(v1) then v1 else if Any..isexception(v2) then v2
+  else if Any..isfrom_bool(v1) && Any..isfrom_bool(v2) then
+    from_int( bool_to_int(Any..as_bool!(v1)) % bool_to_int(Any..as_bool!(v2)))
+  else if Any..isfrom_bool(v1) && Any..isfrom_int(v2) then
+    from_int(bool_to_int(Any..as_bool!(v1)) % Any..as_int!(v2))
+  else if Any..isfrom_int(v1) && Any..isfrom_bool(v2) then
+    from_int(Any..as_int!(v1) % bool_to_int(Any..as_bool!(v2)))
+  else if Any..isfrom_int(v1) && Any..isfrom_int(v2) then
+    from_int(Any..as_int!(v1) % Any..as_int!(v2))
+  else
+    exception(UndefinedError ("Operand Type is not defined"))
 };
 
 // /////////////////////////////////////////////////////////////////////////////////////
@@ -985,9 +1026,20 @@ procedure print(msg : Any) returns ();
 /--
 Parse the Laurel DDM prelude into a Laurel Program.
 -/
+
+-- Prelude functions that may return an exception value as Any.
+-- We should make sure that all functions in this list propagate the exceptions from their arguments.
+def AnyMaybeExceptionList := ["Any_get!", "Any_set!", "Any_sets!", "PNeg", "PNot", "PAdd", "PSub", "PMul",
+   "PFloorDiv", "PLt", "PLe", "PGt", "PGe", "PPow", "PMod", "PAnd", "POr"]
+
 public def pythonRuntimeLaurelPart : Laurel.Program :=
   match Laurel.TransM.run (some $ .file "") (Laurel.parseProgram pythonRuntimeLaurelPartDDM) with
-  | .ok p => p
+  | .ok p =>
+    let addExceptionMd := p.staticProcedures.map (λ f =>
+      if f.name.text ∈ AnyMaybeExceptionList then
+        {f with name := {f.name with md := f.name.md.withPropertySummary "AnyMaybeExcept" }}
+      else f)
+    {p with staticProcedures := addExceptionMd}
   | .error e => dbg_trace s!"SOUND BUG: Failed to parse Python runtime Laurel part: {e}"; default
 
 end Python

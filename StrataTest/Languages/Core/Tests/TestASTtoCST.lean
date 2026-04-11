@@ -63,14 +63,14 @@ type IntMap := Map int int;
 type T1 (x : Type);
 type MyMap (a : Type, b : Type);
 type Foo (a : Type, b : Type) := Map b a;
-datatype List (a : Type) {(
-  (Nil())),
-  (Cons(head : a, tail : (List a)))
+datatype List (a : Type) {
+  Nil(),
+  Cons(head : a, tail : List a)
 };
 type IntList := List int;
-datatype Tree (a : Type) {(
-  (Leaf(val : a))),
-  (Node(left : (Tree a), right : (Tree a)))
+datatype Tree (a : Type) {
+  Leaf(val : a),
+  Node(left : Tree a, right : Tree a)
 };
 -/
 #guard_msgs in
@@ -174,9 +174,9 @@ function boolId(x : bool): bool;
 /--
 info: program Core;
 
-datatype IntList {(
-  (Nil())),
-  (Cons(head : int, tail : IntList))
+datatype IntList {
+  Nil(),
+  Cons(head : int, tail : IntList)
 };
 procedure Test1 (x : bool) returns (y : bool)
 {
@@ -220,11 +220,11 @@ spec { requires List..isCons(xs); } {
 /--
 info: program Core;
 
-datatype List (a : Type) {(
-  (Nil())),
-  (Cons(head : a, tail : (List a)))
+datatype List (a : Type) {
+  Nil(),
+  Cons(head : a, tail : List a)
 };
-procedure Extract<a> (xs : (List a)) returns (h : (a))
+procedure Extract<a> (xs : List a) returns (h : (a))
 spec {
   requires [Extract_requires_0]: List..isCons(xs);
   } {
@@ -332,12 +332,12 @@ spec {
 /--
 info: program Core;
 
-datatype Forest (a : Type) {(
-  (FNil())),
-  (FCons(head : (RoseTree a), tail : (Forest a)))
+datatype Forest (a : Type) {
+  FNil(),
+  FCons(head : RoseTree a, tail : Forest a)
 }
 datatype RoseTree (a : Type) {
-  (Node(val : a, children : (Forest a)))
+  Node(val : a, children : Forest a)
 };
 procedure TestPolyRoseTreeHavoc () returns ()
 spec {
@@ -423,7 +423,7 @@ spec {
 /--
 info: program Core;
 
-procedure find_max (nums : (Map bv64 bv32), nums_len : bv64) returns (ret : bv32)
+procedure find_max (nums : Map bv64 bv32, nums_len : bv64) returns (ret : bv32)
 spec {
   requires [find_max_requires_0]: nums_len > bv{64}(0);
   ensures [find_max_ensures_1]: forall __q0 : bv64 :: bv{64}(0) <= __q0 && __q0 < nums_len ==> ret >=s nums[__q0];
@@ -466,12 +466,11 @@ rec function listLen (@[cases] xs : IntList) : int
 
 #end
 
-/--
-info: program Core;
+/-- info: program Core;
 
-datatype IntList {(
-  (Nil())),
-  (Cons(hd : int, tl : IntList))
+datatype IntList {
+  Nil(),
+  Cons(hd : int, tl : IntList)
 };
 rec function listLen (@[cases] xs : IntList) : int
 {
@@ -501,16 +500,15 @@ function listSize (@[cases] xs : RoseList) : int
 
 #end
 
-/--
-info: program Core;
+/-- info: program Core;
 
-datatype RoseTree {(
-  (Leaf(val : int))),
-  (Node(children : RoseList))
+datatype RoseTree {
+  Leaf(val : int),
+  Node(children : RoseList)
 }
-datatype RoseList {(
-  (RNil())),
-  (RCons(hd : RoseTree, tl : RoseList))
+datatype RoseList {
+  RNil(),
+  RCons(hd : RoseTree, tl : RoseList)
 };
 rec function treeSize (@[cases] t : RoseTree) : int
 {
