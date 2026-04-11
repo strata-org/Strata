@@ -149,10 +149,14 @@ def throwUserError [MonadExceptOf TranslationError m] (range : SourceRange := .n
 /-! ## Helper Functions -/
 
 /-- Create metadata from a SourceRange for attaching to Laurel statements. -/
-def sourceRangeToMetaData (filePath : String) (sr : SourceRange) : Imperative.MetaData Core.Expression :=
+def sourceRangeToFileRange (filePath : String) (sr : SourceRange) : FileRange :=
   let uri : Uri := .file filePath
-  let fileRangeElt := ⟨ Imperative.MetaData.fileRange, .fileRange ⟨ uri, sr ⟩ ⟩
-  #[fileRangeElt]
+  ⟨ uri, sr ⟩
+
+/-- Backward-compatible: create metadata from a SourceRange. -/
+def sourceRangeToMetaData (filePath : String) (sr : SourceRange) : Imperative.MetaData Core.Expression :=
+  let fr := sourceRangeToFileRange filePath sr
+  #[⟨Imperative.MetaData.fileRange, .fileRange fr⟩]
 
 /-- Create default metadata for Laurel AST nodes -/
 def defaultMetadata : Imperative.MetaData Core.Expression :=
@@ -160,18 +164,18 @@ def defaultMetadata : Imperative.MetaData Core.Expression :=
 
 /-- Create a HighTypeMd with default metadata -/
 def mkHighTypeMd (ty : HighType) : HighTypeMd :=
-  { val := ty, md := defaultMetadata }
+  { val := ty }
 
 /-- Create a HighTypeMd with source location metadata -/
 def mkHighTypeMdWithLoc (ty : HighType) (md : Imperative.MetaData Core.Expression) : HighTypeMd :=
   { val := ty, md := md }
 
 def mkCoreType (s: String): HighTypeMd :=
-  {val := .TCore s , md := defaultMetadata}
+  {val := .TCore s }
 
 /-- Create a StmtExprMd with default metadata -/
 def mkStmtExprMd (expr : StmtExpr) : StmtExprMd :=
-  { val := expr, md := defaultMetadata }
+  { val := expr }
 
 /-- Create a StmtExprMd with source location metadata -/
 def mkStmtExprMdWithLoc (expr : StmtExpr) (md : Imperative.MetaData Core.Expression) : StmtExprMd :=

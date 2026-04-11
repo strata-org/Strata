@@ -77,7 +77,7 @@ Used to build the call graph for SCC-based procedure ordering.
 -/
 def collectStaticCallNames (expr : StmtExprMd) : List String :=
   match expr with
-  | WithMetadata.mk val _ =>
+  | AstNode.mk val _ _ =>
   match val with
   | .StaticCall callee args =>
       callee.text :: args.flatMap (fun a => collectStaticCallNames a)

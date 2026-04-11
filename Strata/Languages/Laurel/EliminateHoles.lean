@@ -61,58 +61,58 @@ fresh uninterpreted function.
 -/
 private def elimExpr (expr : StmtExprMd) : ElimHoleM StmtExprMd := do
   match expr with
-  | WithMetadata.mk val md =>
+  | AstNode.mk val source md =>
   match val with
   | .Hole true (some ty) => mkHoleCall ty
-  | .Hole true none => mkHoleCall ⟨.Unknown, md⟩
+  | .Hole true none => mkHoleCall ⟨.Unknown, source, md⟩
   | .Hole false _ => return expr
-  | .PrimitiveOp op args => return ⟨.PrimitiveOp op (← args.mapM elimExpr), md⟩
-  | .StaticCall callee args => return ⟨.StaticCall callee (← args.mapM elimExpr), md⟩
+  | .PrimitiveOp op args => return ⟨.PrimitiveOp op (← args.mapM elimExpr), source, md⟩
+  | .StaticCall callee args => return ⟨.StaticCall callee (← args.mapM elimExpr), source, md⟩
   | .InstanceCall target callee args =>
-      return ⟨.InstanceCall (← elimExpr target) callee (← args.mapM elimExpr), md⟩
-  | .ReferenceEquals lhs rhs => return ⟨.ReferenceEquals (← elimExpr lhs) (← elimExpr rhs), md⟩
+      return ⟨.InstanceCall (← elimExpr target) callee (← args.mapM elimExpr), source, md⟩
+  | .ReferenceEquals lhs rhs => return ⟨.ReferenceEquals (← elimExpr lhs) (← elimExpr rhs), source, md⟩
   | .IfThenElse cond th el =>
       let el' ← match el with | some e => pure (some (← elimExpr e)) | none => pure none
-      return ⟨.IfThenElse (← elimExpr cond) (← elimExpr th) el', md⟩
-  | .Block stmts label => return ⟨.Block (← elimStmtList stmts) label, md⟩
-  | .Assign targets value => return ⟨.Assign targets (← elimExpr value), md⟩
+      return ⟨.IfThenElse (← elimExpr cond) (← elimExpr th) el', source, md⟩
+  | .Block stmts label => return ⟨.Block (← elimStmtList stmts) label, source, md⟩
+  | .Assign targets value => return ⟨.Assign targets (← elimExpr value), source, md⟩
   | .LocalVariable name ty init =>
       match init with
-      | some initExpr => return ⟨.LocalVariable name ty (some (← elimExpr initExpr)), md⟩
+      | some initExpr => return ⟨.LocalVariable name ty (some (← elimExpr initExpr)), source, md⟩
       | none => return expr
-  | .Old v => return ⟨.Old (← elimExpr v), md⟩
-  | .Fresh v => return ⟨.Fresh (← elimExpr v), md⟩
-  | .Assigned n => return ⟨.Assigned (← elimExpr n), md⟩
-  | .ProveBy v p => return ⟨.ProveBy (← elimExpr v) (← elimExpr p), md⟩
-  | .ContractOf ty f => return ⟨.ContractOf ty (← elimExpr f), md⟩
+  | .Old v => return ⟨.Old (← elimExpr v), source, md⟩
+  | .Fresh v => return ⟨.Fresh (← elimExpr v), source, md⟩
+  | .Assigned n => return ⟨.Assigned (← elimExpr n), source, md⟩
+  | .ProveBy v p => return ⟨.ProveBy (← elimExpr v) (← elimExpr p), source, md⟩
+  | .ContractOf ty f => return ⟨.ContractOf ty (← elimExpr f), source, md⟩
   | .Forall p trigger b =>
       let trigger' ← match trigger with | some t => pure (some (← elimExpr t)) | none => pure none
-      return ⟨.Forall p trigger' (← elimExpr b), md⟩
+      return ⟨.Forall p trigger' (← elimExpr b), source, md⟩
   | .Exists p trigger b =>
       let trigger' ← match trigger with | some t => pure (some (← elimExpr t)) | none => pure none
-      return ⟨.Exists p trigger' (← elimExpr b), md⟩
+      return ⟨.Exists p trigger' (← elimExpr b), source, md⟩
   | _ => return expr
 
 private def elimStmt (stmt : StmtExprMd) : ElimHoleM StmtExprMd := do
   match stmt with
-  | WithMetadata.mk val md =>
+  | AstNode.mk val source md =>
   match val with
   | .LocalVariable name ty (some initExpr) =>
-      return ⟨.LocalVariable name ty (some (← elimExpr initExpr)), md⟩
-  | .Assign targets value => return ⟨.Assign targets (← elimExpr value), md⟩
-  | .Block stmts label => return ⟨.Block (← elimStmtList stmts) label, md⟩
+      return ⟨.LocalVariable name ty (some (← elimExpr initExpr)), source, md⟩
+  | .Assign targets value => return ⟨.Assign targets (← elimExpr value), source, md⟩
+  | .Block stmts label => return ⟨.Block (← elimStmtList stmts) label, source, md⟩
   | .IfThenElse cond th el =>
       let el' ← match el with | some e => pure (some (← elimStmt e)) | none => pure none
-      return ⟨.IfThenElse (← elimExpr cond) (← elimStmt th) el', md⟩
+      return ⟨.IfThenElse (← elimExpr cond) (← elimStmt th) el', source, md⟩
   | .While cond invs dec body =>
       let dec' ← match dec with | some d => pure (some (← elimExpr d)) | none => pure none
-      return ⟨.While (← elimExpr cond) (← invs.mapM elimExpr) dec' (← elimStmt body), md⟩
-  | .Assert cond => return ⟨.Assert (← elimExpr cond), md⟩
-  | .Assume cond => return ⟨.Assume (← elimExpr cond), md⟩
-  | .StaticCall callee args => return ⟨.StaticCall callee (← args.mapM elimExpr), md⟩
-  | .Return (some retExpr) => return ⟨.Return (some (← elimExpr retExpr)), md⟩
+      return ⟨.While (← elimExpr cond) (← invs.mapM elimExpr) dec' (← elimStmt body), source, md⟩
+  | .Assert cond => return ⟨.Assert (← elimExpr cond), source, md⟩
+  | .Assume cond => return ⟨.Assume (← elimExpr cond), source, md⟩
+  | .StaticCall callee args => return ⟨.StaticCall callee (← args.mapM elimExpr), source, md⟩
+  | .Return (some retExpr) => return ⟨.Return (some (← elimExpr retExpr)), source, md⟩
   | .Hole true (some ty) => mkHoleCall ty
-  | .Hole true none => mkHoleCall ⟨.Unknown, md⟩
+  | .Hole true none => mkHoleCall ⟨.Unknown, source, md⟩
   | .Hole false _ => return stmt -- Non-deterministic holes are kept
   | _ => return stmt
 

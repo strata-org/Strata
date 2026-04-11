@@ -237,7 +237,7 @@ def freshVarName : TransformM Identifier := do
   return s!"$tmp{s.freshCounter}"
 
 /-- Helper to wrap a StmtExpr into StmtExprMd with empty metadata -/
-private def mkMd (e : StmtExpr) : StmtExprMd := ⟨e, #[]⟩
+private def mkMd (e : StmtExpr) : StmtExprMd := ⟨e⟩
 
 /--
 Resolve the owning composite type name for a field access by computing the target expression's type.
@@ -259,14 +259,14 @@ def heapTransformExpr (heapVar : Identifier) (model: SemanticModel) (expr : Stmt
   recurse expr valueUsed
 where
   recurse (exprMd : StmtExprMd) (valueUsed : Bool := true) : TransformM StmtExprMd := do
-    let ⟨expr, md⟩ := exprMd
+    let ⟨expr, source, md⟩ := exprMd
     match _h : expr with
     | .FieldSelect selectTarget fieldName => do
         let some qualifiedName := resolveQualifiedFieldName model fieldName
-          | return ⟨ .Hole, md ⟩
+          | return ⟨ .Hole, source, md ⟩
 
         let valTy := (model.get fieldName).getType
-        let readExpr := ⟨ .StaticCall "readField" [mkMd (.Identifier heapVar), selectTarget, mkMd (.StaticCall qualifiedName [])], md ⟩
+        let readExpr := ⟨ .StaticCall "readField" [mkMd (.Identifier heapVar), selectTarget, mkMd (.StaticCall qualifiedName [])], source, md ⟩
         -- Unwrap Box: apply the appropriate destructor
         recordBoxConstructor model valTy.val
         return mkMd <| .StaticCall (boxDestructorName model valTy.val) [readExpr]
@@ -280,21 +280,21 @@ where
             let varDecl := mkMd (.LocalVariable freshVar (computeExprType model exprMd) none)
             let callWithHeap := ⟨ .Assign
               [mkMd (.Identifier heapVar), mkMd (.Identifier freshVar)]
-              (⟨ .StaticCall callee (mkMd (.Identifier heapVar) :: args'), md ⟩), md ⟩
-            return ⟨ .Block [varDecl, callWithHeap, mkMd (.Identifier freshVar)] none, md ⟩
+              (⟨ .StaticCall callee (mkMd (.Identifier heapVar) :: args'), source, md ⟩), source, md ⟩
+            return ⟨ .Block [varDecl, callWithHeap, mkMd (.Identifier freshVar)] none, source, md ⟩
           else
-            return ⟨ .Assign [mkMd (.Identifier heapVar)] (⟨ .StaticCall callee (mkMd (.Identifier heapVar) :: args'), md ⟩), md ⟩
+            return ⟨ .Assign [mkMd (.Identifier heapVar)] (⟨ .StaticCall callee (mkMd (.Identifier heapVar) :: args'), source, md ⟩), source, md ⟩
         else if calleeReadsHeap then
-          return ⟨ .StaticCall callee (mkMd (.Identifier heapVar) :: args'), md ⟩
+          return ⟨ .StaticCall callee (mkMd (.Identifier heapVar) :: args'), source, md ⟩
         else
-          return ⟨ .StaticCall callee args', md ⟩
+          return ⟨ .StaticCall callee args', source, md ⟩
     | .InstanceCall callTarget callee args =>
         let t ← recurse callTarget
         let args' ← args.mapM (recurse ·)
-        return ⟨ .InstanceCall t callee args', md ⟩
+        return ⟨ .InstanceCall t callee args', source, md ⟩
     | .IfThenElse c t e =>
         let e' ← match e with | some x => some <$> recurse x valueUsed | none => pure none
-        return ⟨ .IfThenElse (← recurse c) (← recurse t valueUsed) e', md ⟩
+        return ⟨ .IfThenElse (← recurse c) (← recurse t valueUsed) e', source, md ⟩
     | .Block stmts label =>
         let n := stmts.length
         let rec processStmts (idx : Nat) (remaining : List StmtExprMd) : TransformM (List StmtExprMd) := do
@@ -307,21 +307,21 @@ where
               pure (s' :: rest')
           termination_by sizeOf remaining
         let stmts' ← processStmts 0 stmts
-        return ⟨ .Block stmts' label, md ⟩
+        return ⟨ .Block stmts' label, source, md ⟩
     | .LocalVariable n ty i =>
         let i' ← match i with | some x => some <$> recurse x | none => pure none
-        return ⟨ .LocalVariable n ty i', md ⟩
+        return ⟨ .LocalVariable n ty i', source, md ⟩
     | .While c invs d b =>
         let invs' ← invs.mapM (recurse ·)
-        return ⟨ .While (← recurse c) invs' d (← recurse b false), md ⟩
+        return ⟨ .While (← recurse c) invs' d (← recurse b false), source, md ⟩
     | .Return v =>
         let v' ← match v with | some x => some <$> recurse x | none => pure none
-        return ⟨ .Return v', md ⟩
+        return ⟨ .Return v', source, md ⟩
     | .Assign targets v =>
         match targets with
         | [⟨.FieldSelect target fieldName, _fieldSelectMd⟩] =>
             let some qualifiedName := resolveQualifiedFieldName model fieldName
-              | return ⟨ .Hole, md ⟩
+              | return ⟨ .Hole, source, md ⟩
             let valTy := (model.get fieldName).getType
             let target' ← recurse target
             let v' ← recurse v
@@ -329,21 +329,21 @@ where
             recordBoxConstructor model valTy.val
             let boxedVal := mkMd <| .StaticCall (boxConstructorName model valTy.val) [v']
             let heapAssign := ⟨ .Assign [mkMd (.Identifier heapVar)]
-              (mkMd (.StaticCall "updateField" [mkMd (.Identifier heapVar), target', mkMd (.StaticCall qualifiedName []), boxedVal])), md ⟩
+              (mkMd (.StaticCall "updateField" [mkMd (.Identifier heapVar), target', mkMd (.StaticCall qualifiedName []), boxedVal])), source, md ⟩
             if valueUsed then
-              return ⟨ .Block [heapAssign, v'] none, md ⟩
+              return ⟨ .Block [heapAssign, v'] none, source, md ⟩
             else
               return heapAssign
         | [fieldSelectMd] =>
           let tgt' ← recurse fieldSelectMd
-          return ⟨ .Assign [tgt'] (← recurse v), md ⟩
+          return ⟨ .Assign [tgt'] (← recurse v), source, md ⟩
         | [] =>
-            return ⟨ .Assign [] (← recurse v), md ⟩
+            return ⟨ .Assign [] (← recurse v), source, md ⟩
         | tgt :: rest =>
             let tgt' ← recurse tgt
             let targets' ← rest.mapM (recurse ·)
-            return ⟨ .Assign (tgt' :: targets') (← recurse v), md ⟩
-    | .PureFieldUpdate t f v => return ⟨ .PureFieldUpdate (← recurse t) f (← recurse v), md ⟩
+            return ⟨ .Assign (tgt' :: targets') (← recurse v), source, md ⟩
+    | .PureFieldUpdate t f v => return ⟨ .PureFieldUpdate (← recurse t) f (← recurse v), source, md ⟩
     | .PrimitiveOp op args =>
       let args' ← args.mapM (recurse ·)
       -- For == and != on Composite types, compare refs instead
@@ -354,38 +354,38 @@ where
         | .UserDefined _ =>
           let ref1 := mkMd (.StaticCall "Composite..ref!" [args'[0]!])
           let ref2 := mkMd (.StaticCall "Composite..ref!" [args'[1]!])
-          return ⟨ .PrimitiveOp .Eq [ref1, ref2], md ⟩
-        | _ => return ⟨ .PrimitiveOp op args', md ⟩
+          return ⟨ .PrimitiveOp .Eq [ref1, ref2], source, md ⟩
+        | _ => return ⟨ .PrimitiveOp op args', source, md ⟩
       | .Neq, [e1, _e2] =>
         let ty := (computeExprType model e1).val
         match ty with
         | .UserDefined _ =>
           let ref1 := mkMd (.StaticCall "Composite..ref!" [args'[0]!])
           let ref2 := mkMd (.StaticCall "Composite..ref!" [args'[1]!])
-          return ⟨ .PrimitiveOp .Neq [ref1, ref2], md ⟩
-        | _ => return ⟨ .PrimitiveOp op args', md ⟩
-      | _, _ => return ⟨ .PrimitiveOp op args', md ⟩
+          return ⟨ .PrimitiveOp .Neq [ref1, ref2], source, md ⟩
+        | _ => return ⟨ .PrimitiveOp op args', source, md ⟩
+      | _, _ => return ⟨ .PrimitiveOp op args', source, md ⟩
     | .New _ => return exprMd
-    | .ReferenceEquals l r => return ⟨ .ReferenceEquals (← recurse l) (← recurse r), md ⟩
+    | .ReferenceEquals l r => return ⟨ .ReferenceEquals (← recurse l) (← recurse r), source, md ⟩
     | .AsType t ty =>
         let t' ← recurse t valueUsed
-        let isCheck := ⟨ .IsType t' ty, md ⟩
-        let assertStmt := ⟨ .Assert isCheck, md ⟩
-        return ⟨ .Block [assertStmt, t'] none, md ⟩
-    | .IsType t ty => return ⟨ .IsType (← recurse t) ty, md ⟩
+        let isCheck := ⟨ .IsType t' ty, source, md ⟩
+        let assertStmt := ⟨ .Assert isCheck, source, md ⟩
+        return ⟨ .Block [assertStmt, t'] none, source, md ⟩
+    | .IsType t ty => return ⟨ .IsType (← recurse t) ty, source, md ⟩
     | .Forall p trigger b =>
       let trigger' ← trigger.attach.mapM fun ⟨t, _⟩ => recurse t
-      return ⟨.Forall p trigger' (← recurse b), md⟩
+      return ⟨.Forall p trigger' (← recurse b), source, md⟩
     | .Exists p trigger b =>
       let trigger' ← trigger.attach.mapM fun ⟨t, _⟩ => recurse t
-      return ⟨.Exists p trigger' (← recurse b), md⟩
-    | .Assigned n => return ⟨ .Assigned (← recurse n), md ⟩
-    | .Old v => return ⟨ .Old (← recurse v), md ⟩
-    | .Fresh v => return ⟨ .Fresh (← recurse v), md ⟩
-    | .Assert c => return ⟨ .Assert (← recurse c), md ⟩
-    | .Assume c => return ⟨ .Assume (← recurse c), md ⟩
-    | .ProveBy v p => return ⟨ .ProveBy (← recurse v) (← recurse p), md ⟩
-    | .ContractOf ty f => return ⟨ .ContractOf ty (← recurse f), md ⟩
+      return ⟨.Exists p trigger' (← recurse b), source, md⟩
+    | .Assigned n => return ⟨ .Assigned (← recurse n), source, md ⟩
+    | .Old v => return ⟨ .Old (← recurse v), source, md ⟩
+    | .Fresh v => return ⟨ .Fresh (← recurse v), source, md ⟩
+    | .Assert c => return ⟨ .Assert (← recurse c), source, md ⟩
+    | .Assume c => return ⟨ .Assume (← recurse c), source, md ⟩
+    | .ProveBy v p => return ⟨ .ProveBy (← recurse v) (← recurse p), source, md ⟩
+    | .ContractOf ty f => return ⟨ .ContractOf ty (← recurse f), source, md ⟩
     | _ => return exprMd
     termination_by sizeOf exprMd
 

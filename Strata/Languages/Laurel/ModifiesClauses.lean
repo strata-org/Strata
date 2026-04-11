@@ -37,7 +37,7 @@ namespace Strata.Laurel
 
 public section
 
-private def mkMd (e : StmtExpr) : StmtExprMd := ⟨e, #[]⟩
+private def mkMd (e : StmtExpr) : StmtExprMd := ⟨e⟩
 
 /--
 A single entry in a modifies clause, either a single Composite expression
@@ -125,8 +125,8 @@ def buildModifiesEnsures (proc: Procedure) (model: SemanticModel) (modifiesExprs
   -- Build: antecedent ==> heapUnchanged
   let implBody := mkMd <| .PrimitiveOp .Implies [antecedent, heapUnchanged]
   -- Build: forall $obj: Composite, $fld: Field => ...
-  let innerForall := mkMd <| .Forall ⟨ fldName, (⟨ .TTypedField ⟨.TInt, .empty⟩, .empty ⟩) ⟩ none implBody
-  let outerForall := ⟨ .Forall ⟨ objName, (⟨ .UserDefined "Composite", .empty ⟩) ⟩ none innerForall, proc.name.md ⟩
+  let innerForall := mkMd <| .Forall ⟨ fldName, (⟨ .TTypedField ⟨.TInt⟩ ⟩) ⟩ none implBody
+  let outerForall : StmtExprMd := { val := .Forall ⟨ objName, (⟨ .UserDefined "Composite" ⟩) ⟩ none innerForall }
   some outerForall
 
 /--
@@ -174,7 +174,9 @@ def filterBodyNonCompositeModifies (model : SemanticModel) (body : Body)
     let (kept, diags) := mods.foldl (fun (acc, ds) e =>
       let ty := (computeExprType model e).val
       if isHeapRelevantType ty then (acc ++ [e], ds)
-      else (acc, ds ++ [e.md.toDiagnostic s!"modifies clause entry has non-composite type '{formatHighTypeVal ty}' and will be ignored"])
+      else
+        let coreMd := match e.source with | some fr => e.md.pushElem Imperative.MetaData.fileRange (.fileRange fr) | none => e.md
+        (acc, ds ++ [coreMd.toDiagnostic s!"modifies clause entry has non-composite type '{formatHighTypeVal ty}' and will be ignored"])
     ) ([], [])
     (.Opaque posts impl kept, diags)
   | other => (other, [])

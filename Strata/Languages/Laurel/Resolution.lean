@@ -264,10 +264,13 @@ def withScope (action : ResolveM α) : ResolveM α := do
 
 def resolveHighType (ty : HighTypeMd) : ResolveM HighTypeMd := do
   match ty with
-  | WithMetadata.mk val _ =>
+  | AstNode.mk val _ _ =>
+  let coreMd := match ty.source with
+    | some fr => ty.md.pushElem Imperative.MetaData.fileRange (.fileRange fr)
+    | none => ty.md
   let val' ← match val with
   | .UserDefined ref =>
-    let ref' ← resolveRef ref ty.md
+    let ref' ← resolveRef ref coreMd
     pure (.UserDefined ref')
   | .TTypedField vt =>
     let vt' ← resolveHighType vt
@@ -290,11 +293,14 @@ def resolveHighType (ty : HighTypeMd) : ResolveM HighTypeMd := do
     let tys' ← tys.mapM resolveHighType
     pure (.Intersection tys')
   | other => pure other
-  return ⟨val', ty.md⟩
+  return ⟨val', ty.source, ty.md⟩
 
 def resolveStmtExpr (exprMd : StmtExprMd) : ResolveM StmtExprMd := do
   match _: exprMd with
-  | WithMetadata.mk expr md =>
+  | AstNode.mk expr source md =>
+  let coreMd := match source with
+    | some fr => md.pushElem Imperative.MetaData.fileRange (.fileRange fr)
+    | none => md
   let val' ← match _: expr with
   | .IfThenElse cond thenBr elseBr =>
     let cond' ← resolveStmtExpr cond
@@ -325,7 +331,7 @@ def resolveStmtExpr (exprMd : StmtExprMd) : ResolveM StmtExprMd := do
   | .LiteralString v => pure (.LiteralString v)
   | .LiteralDecimal v => pure (.LiteralDecimal v)
   | .Identifier ref =>
-    let ref' ← resolveRef ref md
+    let ref' ← resolveRef ref coreMd
     pure (.Identifier ref')
   | .Assign targets value =>
     let targets' ← targets.mapM resolveStmtExpr
@@ -333,22 +339,22 @@ def resolveStmtExpr (exprMd : StmtExprMd) : ResolveM StmtExprMd := do
     pure (.Assign targets' value')
   | .FieldSelect target fieldName =>
     let target' ← resolveStmtExpr target
-    let fieldName' ← resolveFieldRef target' fieldName md
+    let fieldName' ← resolveFieldRef target' fieldName coreMd
     pure (.FieldSelect target' fieldName')
   | .PureFieldUpdate target fieldName newVal =>
     let target' ← resolveStmtExpr target
-    let fieldName' ← resolveFieldRef target' fieldName md
+    let fieldName' ← resolveFieldRef target' fieldName coreMd
     let newVal' ← resolveStmtExpr newVal
     pure (.PureFieldUpdate target' fieldName' newVal')
   | .StaticCall callee args =>
-    let callee' ← resolveRef callee md
+    let callee' ← resolveRef callee coreMd
     let args' ← args.mapM resolveStmtExpr
     pure (.StaticCall callee' args')
   | .PrimitiveOp op args =>
     let args' ← args.mapM resolveStmtExpr
     pure (.PrimitiveOp op args')
   | .New ref =>
-    let ref' ← resolveRef ref md
+    let ref' ← resolveRef ref coreMd
     pure (.New ref')
   | .This => pure .This
   | .ReferenceEquals lhs rhs =>
@@ -365,7 +371,7 @@ def resolveStmtExpr (exprMd : StmtExprMd) : ResolveM StmtExprMd := do
     pure (.IsType target' ty')
   | .InstanceCall target callee args =>
     let target' ← resolveStmtExpr target
-    let callee' ← resolveRef callee md
+    let callee' ← resolveRef callee coreMd
     let args' ← args.mapM resolveStmtExpr
     pure (.InstanceCall target' callee' args')
   | .Forall param trigger body =>
@@ -411,7 +417,7 @@ def resolveStmtExpr (exprMd : StmtExprMd) : ResolveM StmtExprMd := do
       let ty' ← resolveHighType ty
       pure (.Hole det ty')
     | none => pure (.Hole det none)
-  return ⟨val', md⟩
+  return ⟨val', source, md⟩
   termination_by exprMd
   decreasing_by all_goals term_by_mem
 
@@ -551,7 +557,7 @@ private def register (map : Std.HashMap Nat AstNode) (iden : Identifier) (node :
 private def collectHighType (map : Std.HashMap Nat AstNode) (ty : HighTypeMd)
     : Std.HashMap Nat AstNode :=
   match ty with
-  | WithMetadata.mk val _ =>
+  | AstNode.mk val _ _ =>
   match val with
   | .TTypedField vt => collectHighType map vt
   | .TSet et => collectHighType map et
@@ -568,7 +574,7 @@ private def collectHighType (map : Std.HashMap Nat AstNode) (ty : HighTypeMd)
 private def collectStmtExpr (map : Std.HashMap Nat AstNode) (expr : StmtExprMd)
     : Std.HashMap Nat AstNode :=
   match expr with
-  | WithMetadata.mk val _ =>
+  | AstNode.mk val _ _ =>
   match val with
   | .IfThenElse cond thenBr elseBr =>
     let map := collectStmtExpr map cond

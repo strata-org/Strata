@@ -74,7 +74,7 @@ Convert the last statement of a block into an expression.
 def lastStmtToExpr (stmt : StmtExprMd) : StmtExprMd :=
   match stmt with
   | ⟨.Return (some val), _⟩ => val
-  | ⟨.Block stmts _, md⟩ =>
+  | ⟨.Block stmts _, source, md⟩ =>
     match h_last : stmts.getLast? with
     | some last =>
       have := List.mem_of_getLast? h_last
@@ -84,8 +84,8 @@ def lastStmtToExpr (stmt : StmtExprMd) : StmtExprMd :=
         List.sizeOf_dropLast_lt (by intro h; simp [h] at h_last)
       stmtsToExpr dropped lastExpr md
     | none => stmt
-  | ⟨.IfThenElse cond thenBr (some elseBr), md⟩ =>
-    ⟨.IfThenElse cond (lastStmtToExpr thenBr) (some (lastStmtToExpr elseBr)), md⟩
+  | ⟨.IfThenElse cond thenBr (some elseBr), source, md⟩ =>
+    ⟨.IfThenElse cond (lastStmtToExpr thenBr) (some (lastStmtToExpr elseBr)), source, md⟩
   | _ => stmt
   termination_by (sizeOf stmt, 0)
   decreasing_by

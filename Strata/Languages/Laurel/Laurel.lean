@@ -107,15 +107,20 @@ inductive Operation : Type where
 /--
 A wrapper that pairs a value with source-level metadata such as source
 locations and annotations. All Laurel AST nodes are wrapped in
-`WithMetadata` so that error messages and verification conditions can
+`AstNode` so that error messages and verification conditions can
 refer back to the original source.
 -/
-structure WithMetadata (t : Type) : Type where
+structure AstNode (t : Type) : Type where
   /-- The wrapped value. -/
   val : t
+  /-- Source location for this AST node. -/
+  source : Option FileRange := none
   /-- Source-level metadata (locations, annotations). -/
-  md : MetaData
+  md : MetaData := .empty
   deriving Repr
+
+/-- Backward-compatible alias. -/
+abbrev WithMetadata := AstNode
 
 /--
 The type system for Laurel programs.
@@ -312,23 +317,27 @@ inductive ContractType where
   | Reads | Modifies | Precondition | PostCondition
 end
 
-@[expose] abbrev HighTypeMd := WithMetadata HighType
-@[expose] abbrev StmtExprMd := WithMetadata StmtExpr
+@[expose] abbrev HighTypeMd := AstNode HighType
+@[expose] abbrev StmtExprMd := AstNode StmtExpr
 
-theorem WithMetadata.sizeOf_val_lt {t : Type} [SizeOf t] (e : WithMetadata t) : sizeOf e.val < sizeOf e := by
+theorem AstNode.sizeOf_val_lt {t : Type} [SizeOf t] (e : AstNode t) : sizeOf e.val < sizeOf e := by
   cases e; grind
+
+/-- Backward-compatible alias. -/
+theorem WithMetadata.sizeOf_val_lt {t : Type} [SizeOf t] (e : AstNode t) : sizeOf e.val < sizeOf e :=
+  AstNode.sizeOf_val_lt e
 
 instance : Inhabited StmtExpr where
   default := .Hole
 
 instance : Inhabited StmtExprMd where
-  default := ⟨ .Hole, .empty ⟩
+  default := ⟨ .Hole ⟩
 
 instance : Inhabited HighTypeMd where
-  default := { val := HighType.Unknown, md := default }
+  default := { val := HighType.Unknown }
 
 instance : Inhabited StmtExprMd where
-  default := { val := default, md := default }
+  default := { val := default }
 
 def highEq (a : HighTypeMd) (b : HighTypeMd) : Bool := match _a: a.val, _b: b.val with
   | HighType.TVoid, HighType.TVoid => true
