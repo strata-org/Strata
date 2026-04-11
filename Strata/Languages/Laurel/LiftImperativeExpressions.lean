@@ -158,6 +158,22 @@ private def computeType (expr : StmtExprMd) : LiftM HighTypeMd := do
   return computeExprType s.model expr
 
 /-- Check if an expression contains any assignments or imperative calls (recursively). -/
+def containsAssignment (expr : StmtExprMd) : Bool :=
+  match expr with
+  | WithMetadata.mk val _ =>
+  match val with
+  | .Assign .. => true
+  | .StaticCall _ args => args.attach.any (fun x => containsAssignment x.val)
+  | .PrimitiveOp _ args => args.attach.any (fun x => containsAssignment x.val)
+  | .Block stmts _ => stmts.attach.any (fun x => containsAssignment x.val)
+  | .IfThenElse cond th el =>
+      containsAssignment cond || containsAssignment th ||
+      match el with | some e => containsAssignment e | none => false
+  | _ => false
+  termination_by expr
+  decreasing_by
+    all_goals ((try cases x); simp_all; try term_by_mem)
+
 def containsAssignmentOrImperativeCall (model: SemanticModel) (expr : StmtExprMd) : Bool :=
   match expr with
   | WithMetadata.mk val _ =>
@@ -358,8 +374,8 @@ def transformStmt (stmt : StmtExprMd) : LiftM (List StmtExprMd) := do
   match val with
   | .Assert cond =>
       -- Do not transform assert conditions with assignments — they must be rejected.
-      -- But nondeterministic holes need to be lifted.
-      if containsNondetHole cond && !containsAssignmentOrImperativeCall (← get).model cond then
+      -- But nondeterministic holes and imperative calls need to be lifted.
+      if !containsAssignment cond then
         let seqCond ← transformExpr cond
         let prepends ← takePrepends
         modify fun s => { s with subst := [] }
