@@ -1332,9 +1332,9 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
         let exceptionCheck := getExceptionAssertions ctx e
         -- Coerce Composite return values to Any for LaurelResult : Any
         let e ← coerceToAny ctx expr e
-        let assign := mkStmtExprMd (StmtExpr.Assign [mkStmtExprMd (StmtExpr.Identifier PyLauFuncReturnVar)] e)
-        .ok $ exceptionCheck ++ [assign, mkStmtExprMd (StmtExpr.Exit "$body")]
-      | none => .ok [mkStmtExprMd (StmtExpr.Exit "$body")]
+        let assign := mkStmtExprMdWithLoc (StmtExpr.Assign [mkStmtExprMd (StmtExpr.Identifier PyLauFuncReturnVar)] e) md
+        .ok $ exceptionCheck ++ [assign, mkStmtExprMdWithLoc (StmtExpr.Exit "$body") md]
+      | none => .ok [mkStmtExprMdWithLoc (StmtExpr.Exit "$body") md]
     return (ctx, stmts)
 
   -- Assert statement
@@ -1495,20 +1495,20 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
             if ¬ (isAnyNone stopExpr && isAnyNone stepExpr) then
               throw (.unsupportedConstruct "Unsupport range function with more than 1 input" (toString (repr iter)))
             let asIntStart := mkStmtExprMd $ .StaticCall "Any..as_int!" [startExpr]
-            let emptyRangeExit := mkStmtExprMd $ .IfThenElse
+            let emptyRangeExit := mkStmtExprMdWithLoc (.IfThenElse
               (mkStmtExprMd $ .PrimitiveOp .Leq [asIntStart, mkStmtExprMd $ .LiteralInt 0])
               (mkStmtExprMd $ .Exit breakLabel)
-              none
-            let assumeTypeInt := mkStmtExprMd (.Assume $ mkStmtExprMd (.StaticCall "Any..isfrom_int" [targetVar]))
+              none) md
+            let assumeTypeInt := mkStmtExprMdWithLoc (.Assume $ mkStmtExprMd (.StaticCall "Any..isfrom_int" [targetVar])) md
             let asIntTarget := mkStmtExprMd $ .StaticCall "Any..as_int!" [targetVar]
             let inRangeExpr := mkStmtExprMd $ .PrimitiveOp .And [
                   (mkStmtExprMd $ .PrimitiveOp .Geq [asIntTarget, mkStmtExprMd $ .LiteralInt 0]),
                   (mkStmtExprMd $ .PrimitiveOp .Lt [asIntTarget, asIntStart]) ]
-            let assumeInRange := mkStmtExprMd (.Assume inRangeExpr)
+            let assumeInRange := mkStmtExprMdWithLoc (.Assume inRangeExpr) md
             pure [emptyRangeExit, assumeTypeInt, assumeInRange]
           | _ =>
             let targetInIter := mkStmtExprMd (.StaticCall "PIn" [targetVar, iterExpr])
-            let assumeInStmt := mkStmtExprMd (.Assume (Any_to_bool targetInIter))
+            let assumeInStmt := mkStmtExprMdWithLoc (.Assume (Any_to_bool targetInIter)) md
             pure [assumeInStmt]
       | _ => pure []
     let bodyStmts := assumeStmts ++ bodyStmts
@@ -1653,11 +1653,13 @@ def pyFuncDefToPythonFunctionDecl  (ctx : TranslationContext) (f : Python.stmt S
     let name := match ctx.currentClassName with | none => name.val | some classname => manglePythonMethod classname name.val
     let args_trans ← unpackPyArguments ctx args
     let args := if ctx.currentClassName.isSome then args_trans.fst.tail else args_trans.fst
-    let retMd := sourceRangeToMetaData ctx.filePath returns.ann
-    let ret ←  if name.endsWith "@__init__" then pure $ some ([(name.dropEnd "@__init__".length).toString], retMd)
+    let ret ←  if name.endsWith "@__init__" then
+          let retMd := sourceRangeToMetaData ctx.filePath f.ann
+          pure $ some ([(name.dropEnd "@__init__".length).toString], retMd)
         else
         match returns.val with
           | some retTy =>
+              let retMd := sourceRangeToMetaData ctx.filePath retTy.ann
               match checkValidInputTypeList ctx (← getArgumentTypes retTy) with
               | .ok tys => pure (tys, retMd)
               | _ => pure none
