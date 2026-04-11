@@ -298,6 +298,16 @@ def boolToAny (b: Bool) := mkStmtExprMd (.StaticCall "from_bool" [mkStmtExprMd (
 def AnyNone := mkStmtExprMd (.StaticCall "from_None" [])
 def Any_to_bool (b: StmtExprMd) := mkStmtExprMd (.StaticCall "Any_to_bool" [b])
 
+/-- Return the Laurel type-tester predicate name for a Python type annotation, if known.
+    E.g., `"int"` → `"Any..isfrom_int"`. Used to emit runtime type assertions. -/
+def typeTester? (typeName : String) : Option String :=
+  match typeName with
+  | "int"   => some "Any..isfrom_int"
+  | "str"   => some "Any..isfrom_str"
+  | "bool"  => some "Any..isfrom_bool"
+  | "float" => some "Any..isfrom_float"
+  | _       => none
+
 /-- Wrap a field access expression in the appropriate Any constructor based on HighType.
     After heap parameterization, field reads return concrete types (int, bool, etc.)
     but Python operators expect Any. This coercion bridges the gap. -/
@@ -615,6 +625,30 @@ partial def translateExpr (ctx : TranslationContext) (e : Python.expr SourceRang
     let index ←  match slice with
       | .Slice _ start stop step => translateSlice ctx start.val stop.val step.val
       | _ => translateExpr ctx slice
+    -- Emit bounds check for negative integer indices on lists (e.g., xs[-1])
+    -- and convert to positive index: xs[-n] becomes xs[len(xs) - n].
+    -- Skip for dicts, where negative integer keys are valid dict lookups.
+    -- Note: Python's AST represents `-1` as UnaryOp(USub, Constant(1)),
+    -- not Constant(-1), so we must match both forms.
+    let valType := (inferExprType ctx val).toOption.getD PyLauType.Any
+    let isDictType := valType == PyLauType.DictStrAny
+    let negLitVal? := match slice with
+      | .Constant _ (.ConNeg _ n) _ => some n.val
+      | .UnaryOp _ (.USub _) (.Constant _ (.ConPos _ n) _) => some n.val
+      | _ => none
+    let index := match negLitVal? with
+      | some n =>
+        if isDictType then index
+        else
+          -- xs[-n] becomes xs[len(xs) - n]
+          -- The Any_get precondition (0 <= index < len) will catch
+          -- out-of-bounds access; we just need the index conversion.
+          let listExpr := mkStmtExprMd (.StaticCall "Any..as_ListAny!" [dictOrList])
+          let lenExpr := mkStmtExprMd (.StaticCall "List_len" [listExpr])
+          let nLit := mkStmtExprMd (.LiteralInt n)
+          mkStmtExprMd (.StaticCall "from_int"
+            [mkStmtExprMd (.PrimitiveOp .Sub [lenExpr, nLit])])
+      | none => index
     return mkStmtExprMdWithLoc (.StaticCall "Any_get" [dictOrList, index]) md
 
   -- Attribute access: obj.attr or obj.method
@@ -944,6 +978,13 @@ partial def translateCall (ctx : TranslationContext)
   let callMd := sourceRangeToMetaData ctx.filePath callRange
   let emitCall (callArgs : List StmtExprMd) : Except TranslationError StmtExprMd := do
     let mkCall (name : String) := mkStmtExprMdWithLoc (StmtExpr.StaticCall name callArgs) callMd
+    -- Check for len() on Composite types (class instances without __len__)
+    if funcName == "Any_len_to_Any" && args.length == 1 then
+      match inferExprType ctx args[0]! with
+      | .ok argType =>
+        if isCompositeType ctx argType then
+          throwUserError f.ann s!"len() is not supported on '{argType}' (no __len__ method)"
+      | .error _ => pure ()
     match f with
     | .Name  _ _ _ =>
         -- If calling str() on a composite-typed variable, use $composite_to_string_any_<type>
@@ -994,7 +1035,24 @@ partial def translateCall (ctx : TranslationContext)
       DictStrAny_get_param trans_dict arg.name arg.default.isSome
     let allArgs := trans_posArgs ++ trans_dictArgs
     let kwargsArg := if funcDecl.kwargsName.isSome then [trans_dict] else []
-    emitCall (allArgs ++ kwargsArg)
+    -- Emit type assertions: if a key is present in the dict, its value
+    -- must match the declared parameter type. This catches {"key": None}
+    -- where the parameter type is str/int/bool/float.
+    let mut typeAsserts : List StmtExprMd := []
+    let dictExpr := mkStmtExprMd (.StaticCall "Any..as_Dict!" [trans_dict])
+    for arg in remainingParams do
+      let argType := match arg.tys with | [ty] => ty | _ => "Any"
+      if let some testerName := typeTester? argType then
+        let keyPresent := mkStmtExprMd (.StaticCall "DictStrAny_contains"
+          [dictExpr, mkStmtExprMd (.LiteralString arg.name)])
+        let val := DictStrAny_get_param trans_dict arg.name true
+        let isCorrectType := mkStmtExprMd (.StaticCall testerName [val])
+        let cond := mkStmtExprMd (.PrimitiveOp .Implies [keyPresent, isCorrectType])
+        typeAsserts := mkStmtExprMd (.Assert cond) :: typeAsserts
+    let typeAssertsOrdered := typeAsserts.reverse
+    let call ← emitCall (allArgs ++ kwargsArg)
+    if typeAssertsOrdered.isEmpty then return call
+    else return mkStmtExprMd (.Block (typeAssertsOrdered ++ [call]) none)
   else
   let (args, kwords, funcdecl_hasKwargs) ←
     combinePositionalAndKeywordArgs args kwords funcDecl methodName callRange
@@ -1127,7 +1185,7 @@ partial def translateAssign  (ctx : TranslationContext)
                if isKnownType ctx annStr then annStr else inferType
           let initStmt := mkStmtExprMd (StmtExpr.LocalVariable n.val AnyTy AnyNone)
           newctx := {ctx with variableTypes:=(n.val, type)::ctx.variableTypes}
-          return (newctx, initStmt::assignStmts)
+          return (newctx, initStmt :: assignStmts)
     | .Subscript _ _ _ _ =>
         match getSubscriptList lhs with
         | target :: slices =>
@@ -1284,7 +1342,26 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
   | .AnnAssign _ target annotation value _ => do
     match value.val with
     | some value =>
-        return withExceptionChecks ctx (← translateAssign ctx target annotation value md)
+      let (ctx, stmts) ← translateAssign ctx target annotation value md
+      -- Emit type assertion for concrete type annotations (int, str, bool, float).
+      -- This catches bugs like `x: int = None` where None is not a valid int.
+      -- We assert on the variable after assignment. This is only safe when
+      -- translateAssign produces a simple assignment (1-2 statements); skip
+      -- the assertion for complex translations (e.g., composite __init__ calls)
+      -- where the variable state may not correspond to the annotated type.
+      let typeAssert := match target with
+        | .Name _ n _ =>
+          if stmts.length > 2 then []  -- complex translation, skip assertion
+          else
+          let annStr := pyExprToString annotation
+          match typeTester? annStr with
+          | some testerName =>
+            let varExpr := mkStmtExprMd (StmtExpr.Identifier n.val)
+            let cond := mkStmtExprMd (StmtExpr.StaticCall testerName [varExpr])
+            [mkStmtExprMdWithLoc (StmtExpr.Assert cond) md]
+          | none => []
+        | _ => []
+      return withExceptionChecks ctx (ctx, stmts ++ typeAssert)
     | none =>
       -- Declaration without initializer (not allowed in pure context, but OK in procedures)
       let varType := pyExprToString annotation

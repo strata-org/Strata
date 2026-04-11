@@ -7,5 +7,6 @@ test_cmp_le.py(3, 4): ✅ pass - le less
 test_cmp_le.py(4, 11): ✅ pass - Check PNot exception
 test_cmp_le.py(4, 4): ✅ pass - not le
 test_cmp_le.py(4, 4): ✅ pass - not le
-DETAIL: 9 passed, 0 failed, 0 inconclusive
+unknown location: ✅ pass - assert(0)
+DETAIL: 10 passed, 0 failed, 0 inconclusive
 RESULT: Analysis success

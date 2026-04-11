@@ -4,5 +4,6 @@ test_try_except_scoping.py(24, 4): ✅ pass - x should be visible after try/exce
 test_try_except_scoping.py(24, 4): ✅ pass - x should be visible after try/except
 test_try_except_scoping.py(35, 4): ✅ pass - x from try body
 test_try_except_scoping.py(35, 4): ✅ pass - x from try body
-DETAIL: 6 passed, 0 failed, 0 inconclusive
+unknown location: ✅ pass - assert(0)
+DETAIL: 7 passed, 0 failed, 0 inconclusive
 RESULT: Analysis success

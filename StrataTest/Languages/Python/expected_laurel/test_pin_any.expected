@@ -3,5 +3,6 @@ test_pin_any.py(4, 8): ❓ unknown - key could be in results
 test_pin_any.py(4, 8): ✔️ always true if reached - key could be in results
 test_pin_any.py(4, 8): ❓ unknown - key could be in results
 unknown location: ✔️ always true if reached - (test_in_on_any ensures) Return type constraint
-DETAIL: 2 passed, 0 failed, 3 inconclusive
+unknown location: ✔️ always true if reached - assert(0)
+DETAIL: 3 passed, 0 failed, 3 inconclusive
 RESULT: Inconclusive
