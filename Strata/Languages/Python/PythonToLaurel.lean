@@ -10,6 +10,7 @@ public import Strata.Languages.Laurel.Laurel
 public import Strata.Languages.Python.OverloadTable
 public import Strata.Languages.Python.PythonDialect
 import Strata.Util.DecideProp
+import Strata.Languages.Laurel.Builders
 
 /-!
 # Python to Laurel Translation
@@ -33,6 +34,9 @@ This module translates Python AST to Laurel intermediate representation.
 namespace Strata.Python
 
 open Laurel
+open Strata.Laurel (call callMd litInt litStr litBool ident stmtExpr stmtExprMd
+  fieldSelect localVar localVarMd assign assignMd assert_ assertMd assume_
+  block blockMd ifThenElse ifThenElseMd exit_ new_ hole primOp)
 
 public section
 
@@ -292,11 +296,11 @@ def compositeToStringAnyName (typeName : String) : String := "$composite_to_stri
 def isCompositeType (ctx : TranslationContext) (typeName : String) : Bool :=
   typeName != PyLauType.Any && (ctx.importedSymbols[typeName]?.any fun s =>
     match s with | .compositeType _ => true | _ => false)
-def strToAny (s: String) := mkStmtExprMd (.StaticCall "from_str" [mkStmtExprMd (StmtExpr.LiteralString s)])
-def intToAny (i: Int) := mkStmtExprMd (.StaticCall "from_int" [mkStmtExprMd (StmtExpr.LiteralInt i)])
-def boolToAny (b: Bool) := mkStmtExprMd (.StaticCall "from_bool" [mkStmtExprMd (StmtExpr.LiteralBool b)])
-def AnyNone := mkStmtExprMd (.StaticCall "from_None" [])
-def Any_to_bool (b: StmtExprMd) := mkStmtExprMd (.StaticCall "Any_to_bool" [b])
+def strToAny (s: String) := call "from_str" [litStr s]
+def intToAny (i: Int) := call "from_int" [litInt i]
+def boolToAny (b: Bool) := call "from_bool" [litBool b]
+def AnyNone := call "from_None" []
+def Any_to_bool (b: StmtExprMd) := call "Any_to_bool" [b]
 
 /-- Wrap a field access expression in the appropriate Any constructor based on HighType.
     After heap parameterization, field reads return concrete types (int, bool, etc.)
@@ -347,7 +351,7 @@ def DictStrAny_mk_aux
       let dict_insert := StmtExpr.StaticCall "DictStrAny_insert" [acc, mkStmtExprMd (StmtExpr.LiteralString k), v]
       DictStrAny_mk_aux t (mkStmtExprMd dict_insert)
 
-def DictStrAny_empty:= mkStmtExprMd (StmtExpr.StaticCall "DictStrAny_empty" [])
+def DictStrAny_empty := call "DictStrAny_empty" []
 
 def DictStrAny_mk (kv: List (String × StmtExprMd)) := DictStrAny_mk_aux kv DictStrAny_empty
 
@@ -406,8 +410,8 @@ def isExhaustiveType (ctx : TranslationContext) (typeName : String) : Bool :=
   ctx.exhaustiveClasses.contains typeName
 
 def ListAny_mk (es: List StmtExprMd) : StmtExprMd := match es with
-  | [] => mkStmtExprMd (.StaticCall "ListAny_nil" [])
-  | e::t => mkStmtExprMd (.StaticCall "ListAny_cons" [e, ListAny_mk t])
+  | [] => call "ListAny_nil" []
+  | e::t => call "ListAny_cons" [e, ListAny_mk t]
 
 mutual
 
