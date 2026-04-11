@@ -28,7 +28,7 @@ namespace Laurel
 
 public section
 
-private def bareType (v : HighType) : HighTypeMd := ⟨v, (#[] : Imperative.MetaData Core.Expression)⟩
+private def bareType (v : HighType) : HighTypeMd := ⟨v, none, (#[] : Imperative.MetaData Core.Expression)⟩
 private def voidType : HighTypeMd := bareType .TVoid
 private def defaultHoleType : HighTypeMd := bareType .Unknown
 
@@ -46,7 +46,7 @@ private def calleeParamTypes (model : SemanticModel) (callee : Identifier) : Opt
 
 structure InferHoleState where
   model : SemanticModel
-  currentOutputType : HighTypeMd := ⟨.Unknown, #[]⟩
+  currentOutputType : HighTypeMd := ⟨.Unknown, none, #[]⟩
 
 private abbrev InferHoleM := StateM InferHoleState
 

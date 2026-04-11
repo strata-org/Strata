@@ -37,7 +37,7 @@ namespace Strata.Laurel
 
 public section
 
-private def mkMd (e : StmtExpr) : StmtExprMd := ⟨e⟩
+private def mkMd (e : StmtExpr) : StmtExprMd := { val := e }
 
 /--
 A single entry in a modifies clause, either a single Composite expression
@@ -125,8 +125,8 @@ def buildModifiesEnsures (proc: Procedure) (model: SemanticModel) (modifiesExprs
   -- Build: antecedent ==> heapUnchanged
   let implBody := mkMd <| .PrimitiveOp .Implies [antecedent, heapUnchanged]
   -- Build: forall $obj: Composite, $fld: Field => ...
-  let innerForall := mkMd <| .Forall ⟨ fldName, (⟨ .TTypedField ⟨.TInt⟩ ⟩) ⟩ none implBody
-  let outerForall : StmtExprMd := { val := .Forall ⟨ objName, (⟨ .UserDefined "Composite" ⟩) ⟩ none innerForall }
+  let innerForall := mkMd <| .Forall ⟨ fldName, { val := .TTypedField { val := .TInt } } ⟩ none implBody
+  let outerForall : StmtExprMd := { val := .Forall ⟨ objName, { val := .UserDefined "Composite" } ⟩ none innerForall, md := proc.name.md }
   some outerForall
 
 /--

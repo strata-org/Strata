@@ -26,7 +26,7 @@ namespace Laurel
 public section
 
 private def emptyMd : Imperative.MetaData Core.Expression := #[]
-private def bare (v : StmtExpr) : StmtExprMd := ⟨v, emptyMd⟩
+private def bare (v : StmtExpr) : StmtExprMd := ⟨v, none, emptyMd⟩
 
 structure ElimHoleState where
   counter : Nat := 0

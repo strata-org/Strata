@@ -58,10 +58,10 @@ def stmtsToExpr (stmts : List StmtExprMd) (acc : StmtExprMd) (blockMd : MetaData
   | s :: rest =>
     let acc' := stmtsToExpr rest acc blockMd
     match s with
-    | ⟨.IfThenElse cond thenBr none, smd⟩ =>
-      ⟨.IfThenElse cond (lastStmtToExpr thenBr) (some acc'), smd⟩
+    | ⟨.IfThenElse cond thenBr none, ssrc, smd⟩ =>
+      ⟨.IfThenElse cond (lastStmtToExpr thenBr) (some acc'), ssrc, smd⟩
     | _ =>
-      ⟨.Block [s, acc'] none, blockMd⟩
+      ⟨.Block [s, acc'] none, none, blockMd⟩
   termination_by (sizeOf stmts, 1)
 
 /--
@@ -73,7 +73,7 @@ Convert the last statement of a block into an expression.
 -/
 def lastStmtToExpr (stmt : StmtExprMd) : StmtExprMd :=
   match stmt with
-  | ⟨.Return (some val), _⟩ => val
+  | ⟨.Return (some val), _, _⟩ => val
   | ⟨.Block stmts _, source, md⟩ =>
     match h_last : stmts.getLast? with
     | some last =>

@@ -66,14 +66,14 @@ def mkConstraintFunc (ptMap : ConstrainedTypeMap) (ct : ConstrainedType) : Proce
     | .UserDefined parent =>
       if ptMap.contains parent.text then
         let parentCall : StmtExprMd :=
-          ⟨.StaticCall (mkId s!"{parent.text}$constraint") [⟨.Identifier { ct.valueName with uniqueId := none }⟩]⟩
-        ⟨.PrimitiveOp .And [ct.constraint, parentCall]⟩
+          { val := .StaticCall (mkId s!"{parent.text}$constraint") [{ val := .Identifier { ct.valueName with uniqueId := none } }] }
+        { val := .PrimitiveOp .And [ct.constraint, parentCall] }
       else ct.constraint
     | _ => ct.constraint
   { name := mkId s!"{ct.name.text}$constraint"
     inputs := [{ name := ct.valueName, type := { baseType with md := #[] } }]
-    outputs := [{ name := mkId "result", type := ⟨.TBool⟩ }]
-    body := .Transparent ⟨.Block [bodyExpr] none⟩
+    outputs := [{ name := mkId "result", type := { val := .TBool } }]
+    body := .Transparent { val := .Block [bodyExpr] none }
     isFunctional := true
     decreases := none
     preconditions := [] }
@@ -138,6 +138,7 @@ private def inScope (action : ElimM α) : ElimM α := do
 
 def elimStmt (ptMap : ConstrainedTypeMap)
     (stmt : StmtExprMd) : ElimM (List StmtExprMd) := do
+  let source := stmt.source
   let md := stmt.md
   match _h : stmt.val with
   | .LocalVariable name ty init =>

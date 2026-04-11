@@ -24,7 +24,7 @@ namespace Strata.Laurel
 
 public section
 
-private def bare (v : StmtExpr) : StmtExprMd := ⟨v, default⟩
+private def bare (v : StmtExpr) : StmtExprMd := ⟨v, none, default⟩
 
 /-- Desugar short-circuit operators to IfThenElse when the second operand is imperative. -/
 def desugarShortCircuitExpr (model : SemanticModel) (expr : StmtExprMd) : StmtExprMd :=

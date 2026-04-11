@@ -37,7 +37,7 @@ def computeAncestors (model: SemanticModel) (name : Identifier) : List Composite
     if seen.contains ct.name then (acc, seen)
     else (acc ++ [ct], seen ++ [ct.name])) ([], seen) |>.1
 
-private def mkMd (e : StmtExpr) : StmtExprMd := ⟨e, #[]⟩
+private def mkMd (e : StmtExpr) : StmtExprMd := ⟨e, none, #[]⟩
 
 /--
 Generate Laurel constant definitions for the type hierarchy:
@@ -54,10 +54,10 @@ def generateTypeHierarchyDecls (model : SemanticModel) (program: Program) : List
     | .Composite ct => some ct
     | _ => none
   if composites.isEmpty then [] else
-  let typeTagTy : HighTypeMd := ⟨.UserDefined "TypeTag", #[]⟩
-  let boolTy : HighTypeMd := ⟨.TBool, #[]⟩
-  let innerMapTy : HighTypeMd := ⟨.TMap typeTagTy boolTy, #[]⟩
-  let outerMapTy : HighTypeMd := ⟨.TMap typeTagTy innerMapTy, #[]⟩
+  let typeTagTy : HighTypeMd := ⟨.UserDefined "TypeTag", none, #[]⟩
+  let boolTy : HighTypeMd := ⟨.TBool, none, #[]⟩
+  let innerMapTy : HighTypeMd := ⟨.TMap typeTagTy boolTy, none, #[]⟩
+  let outerMapTy : HighTypeMd := ⟨.TMap typeTagTy innerMapTy, none, #[]⟩
   -- Helper: build an inner map (Map TypeTag bool) for a given composite type
   -- Start with const(false), then update each composite type's entry
   let mkInnerMap (ct : CompositeType) : StmtExprMd :=
@@ -190,8 +190,8 @@ def lowerIsType (target : StmtExprMd) (ty : HighTypeMd) (md : Imperative.MetaDat
         let ancestorsPerType := mkMd (.StaticCall "ancestorsPerType" [])
         let innerMap := mkMd (.StaticCall "select" [ancestorsPerType, typeTag])
         let typeConst := mkMd (.StaticCall (mkId $ typeName ++ "_TypeTag") [])
-        ⟨.StaticCall "select" [innerMap, typeConst], source, md⟩
-    | _ => ⟨ .Hole, source, md ⟩
+        ⟨.StaticCall "select" [innerMap, typeConst], none, md⟩
+    | _ => ⟨ .Hole, none, md ⟩
 
 /-- State for the type hierarchy rewrite monad -/
 structure THState where
@@ -214,11 +214,11 @@ def lowerNew (name : Identifier) (md : Imperative.MetaData Core.Expression) : TH
   let heapVar : Identifier := "$heap"
   let freshVar ← freshVarName
   let getCounter := mkMd (.StaticCall "Heap..nextReference!" [mkMd (.Identifier heapVar)])
-  let saveCounter := mkMd (.LocalVariable freshVar ⟨.TInt, #[]⟩ (some getCounter))
+  let saveCounter := mkMd (.LocalVariable freshVar ⟨.TInt, none, #[]⟩ (some getCounter))
   let newHeap := mkMd (.StaticCall "increment" [mkMd (.Identifier heapVar)])
   let updateHeap := mkMd (.Assign [mkMd (.Identifier heapVar)] newHeap)
   let compositeResult := mkMd (.StaticCall "MkComposite" [mkMd (.Identifier freshVar), mkMd (.StaticCall (name.text ++ "_TypeTag") [])])
-  return ⟨ .Block [saveCounter, updateHeap, compositeResult] none, source, md ⟩
+  return ⟨ .Block [saveCounter, updateHeap, compositeResult] none, none, md ⟩
 
 /--
 Walk a StmtExpr AST and rewrite `IsType` and `New` nodes.
@@ -312,7 +312,7 @@ def typeHierarchyTransform (model: SemanticModel) (program : Program) : Program 
   let typeHierarchyConstants := generateTypeHierarchyDecls model program
   let (procs', _) := (program.staticProcedures.mapM rewriteTypeHierarchyProcedure).run {}
   -- Update the Composite datatype to include the typeTag field (introduced in this phase)
-  let typeTagTy : HighTypeMd := ⟨.UserDefined "TypeTag", #[]⟩
+  let typeTagTy : HighTypeMd := ⟨.UserDefined "TypeTag", none, #[]⟩
   let remainingTypes := program.types.map fun td =>
     match td with
     | .Datatype dt =>

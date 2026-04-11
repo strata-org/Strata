@@ -41,10 +41,12 @@ private def SourceRange.toFileRange (uri : Uri) (sr : SourceRange) : FileRange :
 def getArgFileRange (arg : Arg) : TransM (Option FileRange) := do
   return match (← get).uri with
   | some uri => some (SourceRange.toFileRange uri arg.ann)
-  | none => some FileRange.unknown
+  | none => none
 
 def getArgMetaData (arg : Arg) : TransM (Imperative.MetaData Core.Expression) := do
-  return .empty
+  return match (← get).uri with
+  | some uri => #[⟨Imperative.MetaData.fileRange, .fileRange (SourceRange.toFileRange uri arg.ann)⟩]
+  | none => #[⟨Imperative.MetaData.fileRange, .fileRange FileRange.unknown⟩]
 
 def checkOp (op : Strata.Operation) (name : QualifiedIdent) (argc : Nat) :
   TransM Unit := do
@@ -80,7 +82,7 @@ def translateBool (arg : Arg) : TransM Bool := do
   | x => TransM.error s!"translateBool expects expression or operation, got {repr x}"
 
 instance : Inhabited Parameter where
-  default := { name := "" , type := ⟨.Unknown⟩ }
+  default := { name := "" , type := { val := .Unknown } }
 
 def mkHighTypeMd (t : HighType) (source : Option FileRange) : HighTypeMd := { val := t, source := source }
 def mkStmtExprMd (e : StmtExpr) (source : Option FileRange) : StmtExprMd := { val := e, source := source }
@@ -152,7 +154,7 @@ instance : Inhabited Procedure where
     decreases := none
     isFunctional := false
     invokeOn := none
-    body := .Transparent ⟨.LiteralBool true, #[]⟩
+    body := .Transparent ⟨.LiteralBool true, none, #[]⟩
   }
 
 def getBinaryOp? (name : QualifiedIdent) : Option Operation :=

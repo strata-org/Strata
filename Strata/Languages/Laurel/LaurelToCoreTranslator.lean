@@ -421,7 +421,7 @@ def translateStmt (outputParams : List Parameter) (stmt : StmtExprMd)
           return [Core.Statement.init ident coreType .nondet md]
   | .Assign targets value =>
       match targets with
-      | [⟨ .Identifier targetId, _ ⟩] =>
+      | [⟨ .Identifier targetId, _, _ ⟩] =>
           let ident := ⟨targetId.text, ()⟩
           -- Check if RHS is a procedure call (not a function)
           match value.val with
