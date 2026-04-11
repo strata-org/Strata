@@ -51,9 +51,11 @@ structure AnalysisResult where
 
 
 mutual
-partial def collectExprMd (expr : StmtExprMd) : StateM AnalysisResult Unit := collectExpr expr.val
+def collectExprMd (expr : StmtExprMd) : StateM AnalysisResult Unit := collectExpr expr.val
+  termination_by sizeOf expr
+  decreasing_by cases expr; term_by_mem
 
-partial def collectExpr (expr : StmtExpr) : StateM AnalysisResult Unit := do
+def collectExpr (expr : StmtExpr) : StateM AnalysisResult Unit := do
   match _: expr with
   | .FieldSelect target _ =>
       modify fun s => { s with readsHeapDirectly := true }; collectExprMd target
@@ -84,11 +86,13 @@ partial def collectExpr (expr : StmtExpr) : StateM AnalysisResult Unit := do
   | .Assigned n => collectExprMd n
   | .Old v => collectExprMd v
   | .Fresh v => collectExprMd v
-  | .Assert c => collectExprMd c.condition
+  | .Assert ⟨c, _⟩ => collectExprMd c
   | .Assume c => collectExprMd c
   | .ProveBy v p => collectExprMd v; collectExprMd p
   | .ContractOf _ f => collectExprMd f
   | _ => pure ()
+  termination_by sizeOf expr
+  decreasing_by all_goals (simp_wf; try term_by_mem)
 end
 
 def analyzeProc (proc : Procedure) : AnalysisResult :=
@@ -251,7 +255,7 @@ Transform an expression, adding heap parameters where needed.
 - `env`: the type environment for resolving field owners
 - `valueUsed`: whether the result value of this expression is used (affects optimization of heap-writing calls)
 -/
-partial def heapTransformExpr (heapVar : Identifier) (model: SemanticModel) (expr : StmtExprMd) (valueUsed : Bool := true) : TransformM StmtExprMd :=
+def heapTransformExpr (heapVar : Identifier) (model: SemanticModel) (expr : StmtExprMd) (valueUsed : Bool := true) : TransformM StmtExprMd :=
   recurse expr valueUsed
 where
   recurse (exprMd : StmtExprMd) (valueUsed : Bool := true) : TransformM StmtExprMd := do
@@ -301,6 +305,7 @@ where
               let s' ← recurse s (isLast && valueUsed)
               let rest' ← processStmts (idx + 1) rest
               pure (s' :: rest')
+          termination_by sizeOf remaining
         let stmts' ← processStmts 0 stmts
         return ⟨ .Block stmts' label, md ⟩
     | .LocalVariable n ty i =>
@@ -377,11 +382,13 @@ where
     | .Assigned n => return ⟨ .Assigned (← recurse n), md ⟩
     | .Old v => return ⟨ .Old (← recurse v), md ⟩
     | .Fresh v => return ⟨ .Fresh (← recurse v), md ⟩
-    | .Assert c => return ⟨ .Assert { c with condition := ← recurse c.condition }, md ⟩
+    | .Assert ⟨condExpr, summary⟩ =>
+        return ⟨ .Assert { condition := ← recurse condExpr, summary }, md ⟩
     | .Assume c => return ⟨ .Assume (← recurse c), md ⟩
     | .ProveBy v p => return ⟨ .ProveBy (← recurse v) (← recurse p), md ⟩
     | .ContractOf ty f => return ⟨ .ContractOf ty (← recurse f), md ⟩
     | _ => return exprMd
+    termination_by sizeOf exprMd
 
 def heapTransformProcedure (model: SemanticModel) (proc : Procedure) : TransformM Procedure := do
   let heapName : Identifier := "$heap"

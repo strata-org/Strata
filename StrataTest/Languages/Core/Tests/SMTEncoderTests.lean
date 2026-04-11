@@ -356,7 +356,7 @@ info: (set-logic ALL)
   let ctx : SMT.Context := SMT.Context.default
   let obligationTerm := Term.prim (.bool true)
   let md : Imperative.MetaData Core.Expression :=
-    Imperative.MetaData.empty.withPropertySummary "Division by zero is impossible"
+    Imperative.MetaData.empty.pushElem (.label "propertySummary") (.msg "Division by zero is impossible")
   let b ← IO.mkRef { : IO.FS.Stream.Buffer }
   let solver ← Strata.SMT.Solver.bufferWriter b
   let _ ←

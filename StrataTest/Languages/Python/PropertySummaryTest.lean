@@ -48,7 +48,9 @@ private def getPropertySummaries (pythonCmd : System.FilePath) (source : String)
       | .ok r => pure r
       | .error msg => throw <| .userError s!"verifyCore failed: {msg}"
     return results.filterMap fun vcr =>
-      vcr.obligation.metadata.getPropertySummary
+      match vcr.obligation.metadata.findElem (.label "propertySummary") with
+      | some elem => match elem.value with | .msg s => some s | _ => none
+      | none => none
 
 #guard_msgs in
 #eval withPython (warnOnSkip := false) fun pythonCmd => do

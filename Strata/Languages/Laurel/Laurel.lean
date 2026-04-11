@@ -326,6 +326,9 @@ end
 theorem WithMetadata.sizeOf_val_lt {t : Type} [SizeOf t] (e : WithMetadata t) : sizeOf e.val < sizeOf e := by
   cases e; grind
 
+theorem Condition.sizeOf_condition_lt (c : Condition) : sizeOf c.condition < 1 + sizeOf c := by
+  cases c; grind
+
 instance : Inhabited StmtExpr where
   default := .Hole
 

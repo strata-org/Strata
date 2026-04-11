@@ -119,7 +119,7 @@ def isDiamondInheritedField (model : SemanticModel) (typeName : Identifier) (fie
 /--
 Walk a StmtExpr AST and collect DiagnosticModel errors for diamond-inherited field accesses.
 -/
-partial def validateDiamondFieldAccessesForStmtExpr (model : SemanticModel)
+def validateDiamondFieldAccessesForStmtExpr (model : SemanticModel)
     (expr : StmtExprMd) : List DiagnosticModel :=
   match _h : expr.val with
   | .FieldSelect target fieldName =>
@@ -149,7 +149,7 @@ partial def validateDiamondFieldAccessesForStmtExpr (model : SemanticModel)
     let errs := validateDiamondFieldAccessesForStmtExpr model c ++
                 validateDiamondFieldAccessesForStmtExpr model b
     invs.attach.foldl (fun acc ⟨inv, _⟩ => acc ++ validateDiamondFieldAccessesForStmtExpr model inv) errs
-  | .Assert cond => validateDiamondFieldAccessesForStmtExpr model cond.condition
+  | .Assert ⟨cond, _⟩ => validateDiamondFieldAccessesForStmtExpr model cond
   | .Assume cond => validateDiamondFieldAccessesForStmtExpr model cond
   | .PrimitiveOp _ args =>
     args.attach.foldl (fun acc ⟨a, _⟩ => acc ++ validateDiamondFieldAccessesForStmtExpr model a) []
@@ -157,6 +157,8 @@ partial def validateDiamondFieldAccessesForStmtExpr (model : SemanticModel)
     args.attach.foldl (fun acc ⟨a, _⟩ => acc ++ validateDiamondFieldAccessesForStmtExpr model a) []
   | .Return (some v) => validateDiamondFieldAccessesForStmtExpr model v
   | _ => []
+  termination_by sizeOf expr
+  decreasing_by all_goals (have := WithMetadata.sizeOf_val_lt expr; term_by_mem)
 
 /--
 Validate a Laurel program for diamond-inherited field accesses.
@@ -221,7 +223,7 @@ def lowerNew (name : Identifier) (md : Imperative.MetaData Core.Expression) : TH
 /--
 Walk a StmtExpr AST and rewrite `IsType` and `New` nodes.
 -/
-partial def rewriteTypeHierarchyExpr (exprMd : StmtExprMd) : THM StmtExprMd :=
+def rewriteTypeHierarchyExpr (exprMd : StmtExprMd) : THM StmtExprMd :=
   match exprMd with
   | WithMetadata.mk expr md =>
   match expr with
@@ -270,11 +272,13 @@ partial def rewriteTypeHierarchyExpr (exprMd : StmtExprMd) : THM StmtExprMd :=
   | .Assigned n => do return ⟨.Assigned (← rewriteTypeHierarchyExpr n), md⟩
   | .Old v => do return ⟨.Old (← rewriteTypeHierarchyExpr v), md⟩
   | .Fresh v => do return ⟨.Fresh (← rewriteTypeHierarchyExpr v), md⟩
-  | .Assert c => do return ⟨.Assert { c with condition := ← rewriteTypeHierarchyExpr c.condition }, md⟩
+  | .Assert ⟨condExpr, summary⟩ => do
+      return ⟨.Assert { condition := ← rewriteTypeHierarchyExpr condExpr, summary }, md⟩
   | .Assume c => do return ⟨.Assume (← rewriteTypeHierarchyExpr c), md⟩
   | .ProveBy v p => do return ⟨.ProveBy (← rewriteTypeHierarchyExpr v) (← rewriteTypeHierarchyExpr p), md⟩
   | .ContractOf ty f => do return ⟨.ContractOf ty (← rewriteTypeHierarchyExpr f), md⟩
   | _ => return exprMd
+  termination_by sizeOf exprMd
 
 def rewriteTypeHierarchyProcedure (proc : Procedure) : THM Procedure := do
   let preconditions' ← proc.preconditions.mapM fun c => do

@@ -59,7 +59,7 @@ mutual
 Replace every deterministic `.Hole` in an expression with a call to a
 fresh uninterpreted function.
 -/
-private partial def elimExpr (expr : StmtExprMd) : ElimHoleM StmtExprMd := do
+private def elimExpr (expr : StmtExprMd) : ElimHoleM StmtExprMd := do
   match expr with
   | WithMetadata.mk val md =>
   match val with
@@ -93,7 +93,7 @@ private partial def elimExpr (expr : StmtExprMd) : ElimHoleM StmtExprMd := do
       return ⟨.Exists p trigger' (← elimExpr b), md⟩
   | _ => return expr
 
-private partial def elimStmt (stmt : StmtExprMd) : ElimHoleM StmtExprMd := do
+private def elimStmt (stmt : StmtExprMd) : ElimHoleM StmtExprMd := do
   match stmt with
   | WithMetadata.mk val md =>
   match val with
@@ -107,7 +107,8 @@ private partial def elimStmt (stmt : StmtExprMd) : ElimHoleM StmtExprMd := do
   | .While cond invs dec body =>
       let dec' ← match dec with | some d => pure (some (← elimExpr d)) | none => pure none
       return ⟨.While (← elimExpr cond) (← invs.mapM elimExpr) dec' (← elimStmt body), md⟩
-  | .Assert cond => return ⟨.Assert { cond with condition := ← elimExpr cond.condition }, md⟩
+  | .Assert ⟨condExpr, summary⟩ =>
+      return ⟨.Assert { condition := ← elimExpr condExpr, summary }, md⟩
   | .Assume cond => return ⟨.Assume (← elimExpr cond), md⟩
   | .StaticCall callee args => return ⟨.StaticCall callee (← args.mapM elimExpr), md⟩
   | .Return (some retExpr) => return ⟨.Return (some (← elimExpr retExpr)), md⟩
@@ -116,7 +117,7 @@ private partial def elimStmt (stmt : StmtExprMd) : ElimHoleM StmtExprMd := do
   | .Hole false _ => return stmt -- Non-deterministic holes are kept
   | _ => return stmt
 
-private partial def elimStmtList (stmts : List StmtExprMd) : ElimHoleM (List StmtExprMd) :=
+private def elimStmtList (stmts : List StmtExprMd) : ElimHoleM (List StmtExprMd) :=
   stmts.mapM elimStmt
 end
 

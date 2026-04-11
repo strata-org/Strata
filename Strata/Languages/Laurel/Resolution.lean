@@ -391,9 +391,9 @@ def resolveStmtExpr (exprMd : StmtExprMd) : ResolveM StmtExprMd := do
   | .Fresh val =>
     let val' ← resolveStmtExpr val
     pure (.Fresh val')
-  | .Assert cond =>
-    let cond' ← resolveStmtExpr cond.condition
-    pure (.Assert { cond with condition := cond' })
+  | .Assert ⟨condExpr, summary⟩ =>
+    let cond' ← resolveStmtExpr condExpr
+    pure (.Assert { condition := cond', summary })
   | .Assume cond =>
     let cond' ← resolveStmtExpr cond
     pure (.Assume cond')
@@ -413,7 +413,7 @@ def resolveStmtExpr (exprMd : StmtExprMd) : ResolveM StmtExprMd := do
     | none => pure (.Hole det none)
   return ⟨val', md⟩
   termination_by exprMd
-  decreasing_by all_goals (first | term_by_mem | (simp_wf; try (cases ‹Condition›; simp_all); omega))
+  decreasing_by all_goals term_by_mem
 
 /-- Resolve a parameter: assign a fresh ID and add to scope. -/
 def resolveParameter (param : Parameter) : ResolveM Parameter := do
@@ -569,7 +569,7 @@ private def collectHighType (map : Std.HashMap Nat AstNode) (ty : HighTypeMd)
   | .Intersection tys => tys.foldl collectHighType map
   | _ => map
 
-private partial def collectStmtExpr (map : Std.HashMap Nat AstNode) (expr : StmtExprMd)
+private def collectStmtExpr (map : Std.HashMap Nat AstNode) (expr : StmtExprMd)
     : Std.HashMap Nat AstNode :=
   match expr with
   | WithMetadata.mk val _ =>
@@ -628,7 +628,7 @@ private partial def collectStmtExpr (map : Std.HashMap Nat AstNode) (expr : Stmt
   | .Assigned name => collectStmtExpr map name
   | .Old val => collectStmtExpr map val
   | .Fresh val => collectStmtExpr map val
-  | .Assert cond => collectStmtExpr map cond.condition
+  | .Assert ⟨cond, _⟩ => collectStmtExpr map cond
   | .Assume cond => collectStmtExpr map cond
   | .ProveBy val proof =>
     let map := collectStmtExpr map val

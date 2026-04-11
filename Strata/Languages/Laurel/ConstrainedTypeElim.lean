@@ -85,7 +85,7 @@ private def wrap (stmts : List StmtExprMd) (md : Imperative.MetaData Core.Expres
 
 /-- Resolve constrained types in all type positions of an expression,
     and inject constraint function calls into quantifier bodies -/
-partial def resolveExpr (ptMap : ConstrainedTypeMap) : StmtExprMd → StmtExprMd
+def resolveExpr (ptMap : ConstrainedTypeMap) : StmtExprMd → StmtExprMd
   | ⟨.LocalVariable n ty (some init), md⟩ =>
     ⟨.LocalVariable n (resolveType ptMap ty) (some (resolveExpr ptMap init)), md⟩
   | ⟨.LocalVariable n ty none, md⟩ =>
@@ -123,9 +123,11 @@ partial def resolveExpr (ptMap : ConstrainedTypeMap) : StmtExprMd → StmtExprMd
     ⟨.Assign (ts.attach.map fun ⟨t, _⟩ => resolveExpr ptMap t) (resolveExpr ptMap v), md⟩
   | ⟨.Return (some v), md⟩ => ⟨.Return (some (resolveExpr ptMap v)), md⟩
   | ⟨.Return none, md⟩ => ⟨.Return none, md⟩
-  | ⟨.Assert c, md⟩ => ⟨.Assert { c with condition := resolveExpr ptMap c.condition }, md⟩
+  | ⟨.Assert ⟨condExpr, summary⟩, md⟩ => ⟨.Assert { condition := resolveExpr ptMap condExpr, summary }, md⟩
   | ⟨.Assume c, md⟩ => ⟨.Assume (resolveExpr ptMap c), md⟩
   | e => e
+termination_by e => sizeOf e
+decreasing_by all_goals (have := WithMetadata.sizeOf_val_lt ‹_›; term_by_mem)
 
 abbrev ElimM := StateM PredVarMap
 

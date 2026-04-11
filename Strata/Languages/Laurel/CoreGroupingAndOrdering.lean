@@ -75,7 +75,7 @@ public def groupDatatypes (dts : List DatatypeDefinition)
 Collect all `StaticCall` callee names referenced anywhere in a `StmtExpr`.
 Used to build the call graph for SCC-based procedure ordering.
 -/
-partial def collectStaticCallNames (expr : StmtExprMd) : List String :=
+def collectStaticCallNames (expr : StmtExprMd) : List String :=
   match expr with
   | WithMetadata.mk val _ =>
   match val with
@@ -122,13 +122,15 @@ partial def collectStaticCallNames (expr : StmtExprMd) : List String :=
   | .InstanceCall t _ args =>
       collectStaticCallNames t ++ args.flatMap (fun a => collectStaticCallNames a)
   | .Old v | .Fresh v | .Assume v => collectStaticCallNames v
-  | .Assert cond => collectStaticCallNames cond.condition
+  | .Assert ⟨cond, _summary⟩ => collectStaticCallNames cond
   | .ProveBy v p => collectStaticCallNames v ++ collectStaticCallNames p
   | .ReferenceEquals l r => collectStaticCallNames l ++ collectStaticCallNames r
   | .AsType t _ | .IsType t _ => collectStaticCallNames t
   | .ContractOf _ f => collectStaticCallNames f
   | .Assigned v => collectStaticCallNames v
   | _ => []
+termination_by sizeOf expr
+decreasing_by all_goals (have := WithMetadata.sizeOf_val_lt ‹_›; term_by_mem)
 
 /--
 Build the procedure call graph, run Tarjan's SCC algorithm, and return each SCC
