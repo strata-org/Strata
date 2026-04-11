@@ -17,3 +17,6 @@ def main():
 
 def process_buffer(buf: CircularBuffer) -> int :
     return buf.buffer * 2
+
+if __name__ == "__main__":
+    main()

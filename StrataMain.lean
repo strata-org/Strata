@@ -580,12 +580,6 @@ def pyAnalyzeLaurelCommand : Command where
       IO.println "\n==== Core Program ===="
       IO.print (Core.formatProgram coreProgram)
 
-    -- Split prelude / user procedure names.
-    -- Only procedures whose file range matches the user source are targets.
-    let userSourcePath := sourcePath.getD filePath
-    let (_preludeNames, userProcNames) :=
-      Strata.splitProcNames coreProgram [userSourcePath]
-
     if let some dir := keepDir then
       let path := s!"{dir}/{baseName}.core"
       IO.FS.writeFile path (toString coreProgram)
@@ -600,16 +594,31 @@ def pyAnalyzeLaurelCommand : Command where
     let options ← parseVerifyOptions pflags pyAnalyzeBase
     let isBugFinding := options.checkMode == .bugFinding
                       || options.checkMode == .bugFindingAssumingCompleteSpec
+
+    -- In bug-finding mode only verify __main__ — all user functions are
+    -- reachable subfunctions that get inlined into __main__.
+    let proceduresToVerify :=
+      if isBugFinding then ["__main__"]
+      else
+        -- Split prelude / user procedure names.
+        -- Only procedures whose file range matches the user source are targets.
+        let userSourcePath := sourcePath.getD filePath
+        let (_preludeNames, userProcNames) :=
+          Strata.splitProcNames coreProgram [userSourcePath]
+        userProcNames
+    -- For bug-finding mode, inline procedures that are reachable from the
+    -- top-level scope of Python ("__main__" procedure in Core)
     let inlinePhases : List Core.PipelinePhase :=
       if isBugFinding then
         [Core.procedureInliningPipelinePhase
-          { doInline := fun name a => name ≠ "__main__" && Core.doInlineNonRecursive name a
+          { doInline := fun caller callee a => caller == some "__main__"
+              && Core.doInlineNonRecursive callee a
             maxIters := some 10 }]
       else []
     let vcResults ← profileStep profile "SMT verification" do
       match ← Core.verifyProgram coreProgram options
                 (moreFns := Strata.Python.ReFactory)
-                (proceduresToVerify := some userProcNames)
+                (proceduresToVerify := some proceduresToVerify)
                 (externalPhases := [Strata.frontEndPhase])
                 (prefixPhases := inlinePhases) |>.toBaseIO with
       | .ok r => pure r
@@ -658,7 +667,7 @@ def pyAnalyzeToGotoCommand : Command where
       | none => filePath
     let sourceText := pySourceOpt.map (·.2)
     let newPgm ← Strata.pythonDirectToCore filePath sourcePathForMetadata
-    match Core.inlineProcedures newPgm { doInline := (fun name _ => name ≠ "main") } with
+    match Core.inlineProcedures newPgm { doInline := (fun _caller callee _ => callee ≠ "main") } with
     | .error e => exitInternalError e
     | .ok newPgm =>
       -- Type-check the full program (registers Python types like ExceptOrNone)
@@ -1108,7 +1117,7 @@ def transformCommand : Command where
         | "inlineProcedures" =>
           let opts : Core.InlineTransformOptions :=
             if pc.procedures.isEmpty then {}
-            else { doInline := (fun name _ => name ∈ pc.procedures) }
+            else { doInline := (fun _caller callee _ => callee ∈ pc.procedures) }
           passes := passes ++ [.inlineProcedures opts]
         | "loopElim" =>
           passes := passes ++ [.loopElim]

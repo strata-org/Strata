@@ -2,3 +2,6 @@
 def test_in_on_any(results: Any) -> None:
     if results:
         assert 'key' in results, "key could be in results"
+
+if __name__ == "__main__":
+    test_in_on_any({"key": 1})
