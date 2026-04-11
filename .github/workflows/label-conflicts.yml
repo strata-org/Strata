@@ -17,3 +17,4 @@ jobs:
         with:
           conflict_label_name: "Git conflicts"
           github_token: ${{ secrets.GITHUB_TOKEN }}
+          conflict_comment: ""
