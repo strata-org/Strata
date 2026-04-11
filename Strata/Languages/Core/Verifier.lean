@@ -644,25 +644,31 @@ def preprocessObligation (obligation : ProofObligation Expression) (p : Program)
     (options : VerifyOptions) (satisfiabilityCheck validityCheck : Bool)
     (axiomCache : Option IrrelevantAxioms.Cache := .none)
     : EIO DiagnosticModel (ProofObligation Expression × Option SMT.Result × Option SMT.Result) := do
-  -- PE can determine satisfiability if the obligation is literally false (unsat)
+  -- PE can determine satisfiability of (assumptions ∧ obligation):
+  --   obligation is false  → assumptions ∧ false = false → unsat
+  --   obligation is true with no assumptions → true ∧ true = true → sat
+  -- The second case establishes reachability: with no path conditions, the
+  -- assertion site is trivially reachable and the obligation holds concretely.
   let peSatResult : Option SMT.Result :=
     if !satisfiabilityCheck then some .unknown
     else if obligation.obligation.isFalse then some .unsat
+    else if obligation.obligation.isTrue && obligation.assumptions.hasNoConditions then some (.sat [])
     else none
   -- PE can determine validity if the obligation is literally true (valid = unsat)
   -- or literally false with empty assumptions (invalid = sat)
   let peValResult : Option SMT.Result :=
     if !validityCheck then some .unknown
     else if obligation.obligation.isTrue then some .unsat
-    else if obligation.obligation.isFalse && obligation.assumptions.isEmpty then some (.sat [])
+    else if obligation.obligation.isFalse && obligation.assumptions.hasNoConditions then
+      some (.sat [])
     else none
   -- If PE resolved both, log for the assert(false) case
   if let (some _, some (.sat _)) := (peSatResult, peValResult) then
-    if obligation.property == .assert then
+    if obligation.property == .assert && options.verbose >= .debug then
       let prog := f!"\n\n[DEBUG] Evaluated program:\n{Core.formatProgram p}"
       dbg_trace f!"\n\nObligation {obligation.label}: failed!\
                    \n\nResult obtained during partial evaluation.\
-                   {if options.verbose >= .normal then prog else ""}"
+                   {prog}"
   -- Apply axiom pruning if needed.
   -- Axiom removal is unsound for cover obligations (removing axioms weakens
   -- path conditions, potentially making unreachable paths appear satisfiable).
@@ -861,24 +867,25 @@ def verifySingleEnv (pE : Program × Env) (options : VerifyOptions)
       let (obligation, peSatResult?, peValResult?) ← preprocessObligation obligation p options satisfiabilityCheck validityCheck axiomCache
       let t1 ← IO.monoNanosNow
       preprocessNs := preprocessNs + (t1 - t0)
-      -- If PE resolved both checks, we're done, unless we always want to generate SMT queries
+      -- If PE resolved both checks, we're done, unless we always want to generate SMT queries.
+      -- PE results are determined by literal evaluation (constant folding with concrete
+      -- values), not by solver search. Phase validation is skipped because it validates
+      -- solver *models* against pre-transformation semantics, and PE results have no
+      -- models — over-approximation cannot affect a result computed from concrete values.
       if not options.alwaysGenerateSMT then
         if let (some peSat, some peVal) := (peSatResult?, peValResult?) then
-          let phases := externalPhases ++ corePhases
-          let (adjPeSat, satPhaseLog) := peSat.adjustForPhases phases obligation
-          let (adjPeVal, valPhaseLog) := peVal.adjustForPhases phases obligation
           let peLog := buildSolverLog peSat peVal
-            satisfiabilityCheck validityCheck satPhaseLog valPhaseLog
+            satisfiabilityCheck validityCheck [] []
           let outcome : VCOutcome := {
-            satisfiabilityProperty := adjPeSat,
-            validityProperty := adjPeVal,
+            satisfiabilityProperty := peSat,
+            validityProperty := peVal,
             solverLog := peLog }
           let result : VCResult := { obligation, outcome := .ok outcome, verbose := options.verbose,
                                       checkLevel := options.checkLevel, checkMode := options.checkMode, lexprModel := [] }
           results := results.push result
           peResolvedCount := peResolvedCount + 1
           if result.isFailure || result.isImplementationError then
-            if options.verbose >= .normal then
+            if options.verbose >= .debug then
               let prog := f!"\n\n[DEBUG] Evaluated program:\n{Core.formatProgram p}"
               dbg_trace f!"\n\nResult: {result}\n{prog}"
             if options.stopOnFirstError then break
@@ -1003,9 +1010,13 @@ def Core.getProgram
   TransM.run ictx (translateProgram p)
 
 /-- Front-end phase: any translation from a source language to Core may
-    introduce over-approximations. Until front-ends can validate models or
-    determine that an assertion is unaffected, all sat results are converted
-    to unknown. -/
+    introduce over-approximations. Solver-produced sat results are converted
+    to unknown because the model may exploit over-approximations and not
+    correspond to a valid execution in the source language.
+
+    Note: PE-resolved results (where the obligation is literally true/false)
+    bypass phase validation entirely — they are determined by constant folding
+    with concrete values and have no models to validate. See `verifySingleEnv`. -/
 def frontEndPhase : Core.AbstractedPhase where
   name := "FrontEnd"
   getValidation _ := .modelToValidate (fun _ => /- TODO -/ false)
