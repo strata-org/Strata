@@ -118,15 +118,17 @@ private meta def runAnalyzeAndVerify
   -- Inline all non-main, non-prelude procedures as a prefix phase
   let inlinePhases : List Core.PipelinePhase :=
     [_root_.Core.procedureInliningPipelinePhase
-      { doInline := fun name a => name ≠ "__main__" && _root_.Core.doInlineNonRecursive name a }]
+      { doInline := fun caller callee a => caller == some "__main__"
+            && _root_.Core.doInlineNonRecursive callee a }]
   -- Verify
   let options : Core.VerifyOptions :=
     { Core.VerifyOptions.default with
       stopOnFirstError := false, verbose := .quiet, solver := "z3",
       checkMode := .bugFinding, checkLevel := .full }
+  -- In bug-finding mode only verify __main__
   match ← Core.verifyProgram coreProgram options
       (moreFns := Strata.Python.ReFactory)
-      (proceduresToVerify := some userProcNames)
+      (proceduresToVerify := some ["__main__"])
       (externalPhases := [Strata.frontEndPhase])
       (prefixPhases := inlinePhases) |>.toBaseIO with
   | .ok results => return .ok results
