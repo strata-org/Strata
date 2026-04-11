@@ -693,22 +693,23 @@ instance : ToFormat AssertResult where
 
 @[expose] abbrev AssertResults := Array AssertResult
 
-/-- Group `VCResults` by assertion label and source location, preserving the order of first occurrence. -/
+/-- Group `VCResults` by assertion label and source location, preserving the order of first occurrence.
+    When the file range is unknown, each VCResult gets its own AssertResult group. -/
 def VCResults.groupByAssertion (rs : VCResults) : AssertResults :=
-  let key (r : VCResult) : String :=
-    let lbl := r.obligation.label
-    let fr := (Imperative.getFileRange r.obligation.metadata).getD default
-    s!"{lbl}@{repr fr}"
-  let (map, order, labels) := rs.foldl
+  let (map, order, labels, _) := rs.foldl
     (init := (Std.HashMap.emptyWithCapacity (α := String) (β := Array VCResult),
               (#[] : Array String),
-              Std.HashMap.emptyWithCapacity (α := String) (β := String)))
-    fun (map, order, labels) r =>
-      let k := key r
+              Std.HashMap.emptyWithCapacity (α := String) (β := String),
+              (0 : Nat)))
+    fun (map, order, labels, uid) r =>
+      let lbl := r.obligation.label
+      let (k, uid) := match Imperative.getFileRange r.obligation.metadata with
+        | some fr => (s!"{lbl}@{repr fr}", uid)
+        | none    => (s!"{lbl}@__unique_{uid}", uid + 1)
       let existing := map.getD k #[]
       let order := if existing.isEmpty then order.push k else order
-      let labels := if existing.isEmpty then labels.insert k r.obligation.label else labels
-      (map.insert k (existing.push r), order, labels)
+      let labels := if existing.isEmpty then labels.insert k lbl else labels
+      (map.insert k (existing.push r), order, labels, uid)
   order.map fun k => { label := labels.getD k "", results := map.getD k #[] }
 
 /--
