@@ -1398,6 +1398,8 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
             else
               return (ctx, exceptionCheck ++ [expr])
         | _ => return (ctx, exceptionCheck ++ [expr])
+    -- Unmodeled call: skip exception checks (no model to check against),
+    -- but havoc maybe_except since the call could throw.
     | .Hole => return (ctx, [expr] ++ holeExceptHavoc)
     | _ => return (ctx, exceptionCheck ++ [expr])
 
