@@ -487,10 +487,10 @@ public def coreToGotoFiles (tcPgm : Core.Program) (Env : Core.Expression.TyEnv)
       | .error e => throw s!"{e}"
     let symTabFile := s!"{baseName}.symtab.json"
     let gotoFile := s!"{baseName}.goto.json"
-    match ← IO.FS.writeFile symTabFile symtab.pretty |>.toBaseIO with
+    match ← writeJsonFile symTabFile symtab |>.toBaseIO with
     | .ok () => pure ()
     | .error e => throw s!"Error writing {symTabFile}: {e}"
-    match ← IO.FS.writeFile gotoFile goto.pretty |>.toBaseIO with
+    match ← writeJsonFile gotoFile goto |>.toBaseIO with
     | .ok () => pure ()
     | .error e => throw s!"Error writing {gotoFile}: {e}"
     let _ ← IO.println s!"Written {symTabFile} and {gotoFile}" |>.toBaseIO

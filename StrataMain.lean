@@ -23,6 +23,7 @@ import Strata.Util.IO
 
 import Strata.SimpleAPI
 import Strata.Util.Profile
+import Strata.Util.Json
 
 open Strata
 
@@ -691,8 +692,8 @@ def pyAnalyzeToGotoCommand : Command where
               (moduleName := baseName)
         let symTabFile := s!"{baseName}.symtab.json"
         let gotoFile := s!"{baseName}.goto.json"
-        IO.FS.writeFile symTabFile symtab.pretty
-        IO.FS.writeFile gotoFile goto.pretty
+        writeJsonFile symTabFile symtab
+        writeJsonFile gotoFile goto
         IO.println s!"Written {symTabFile} and {gotoFile}"
 
 def pyTranslateLaurelCommand : Command where
@@ -964,8 +965,8 @@ def laurelAnalyzeToGotoCommand : Command where
         let goto := Lean.Json.mkObj [("functions", Lean.Json.arr gotoFns)]
         let symTabFile := s!"{baseName}.symtab.json"
         let gotoFile := s!"{baseName}.goto.json"
-        IO.FS.writeFile symTabFile symtab.pretty
-        IO.FS.writeFile gotoFile goto.pretty
+        writeJsonFile symTabFile symtab
+        writeJsonFile gotoFile goto
         IO.println s!"Written {symTabFile} and {gotoFile}"
 
 def laurelPrintCommand : Command where
