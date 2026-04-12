@@ -406,8 +406,7 @@ def heapTransformProcedure (model: SemanticModel) (proc : Procedure) : Transform
     let outputs' := heapOutParam :: proc.outputs
 
     -- Preconditions use $heap_in (the input state)
-    let preconditions' ← proc.preconditions.mapM fun c => do
-      return { c with condition := ← heapTransformExpr heapInName model c.condition }
+    let preconditions' ← proc.preconditions.mapM (·.mapM (heapTransformExpr heapInName model))
 
     let bodyValueIsUsed := !proc.outputs.isEmpty
     let body' ← match proc.body with
@@ -418,8 +417,7 @@ def heapTransformProcedure (model: SemanticModel) (proc : Procedure) : Transform
           pure (.Transparent (mkMd (.Block [assignHeap, bodyExpr'] none)))
       | .Opaque postconds impl modif =>
           -- Postconditions use $heap (the output state)
-          let postconds' ← postconds.mapM fun c => do
-            return { c with condition := ← heapTransformExpr heapName model c.condition }
+          let postconds' ← postconds.mapM (·.mapM (heapTransformExpr heapName model))
           let impl' ← match impl with
             | some implExpr =>
                 let assignHeap := mkMd (.Assign [mkMd (.Identifier heapName)] (mkMd (.Identifier heapInName)))
@@ -429,8 +427,7 @@ def heapTransformProcedure (model: SemanticModel) (proc : Procedure) : Transform
           let modif' ← modif.mapM (heapTransformExpr heapName model ·)
           pure (.Opaque postconds' impl' modif')
       | .Abstract postconds =>
-          let postconds' ← postconds.mapM fun c => do
-            return { c with condition := ← heapTransformExpr heapName model c.condition }
+          let postconds' ← postconds.mapM (·.mapM (heapTransformExpr heapName model))
           pure (.Abstract postconds')
       | .External => pure .External
 
@@ -445,22 +442,19 @@ def heapTransformProcedure (model: SemanticModel) (proc : Procedure) : Transform
     let heapParam : Parameter := { name := heapName, type := ⟨.THeap, #[]⟩ }
     let inputs' := heapParam :: proc.inputs
 
-    let preconditions' ← proc.preconditions.mapM fun c => do
-      return { c with condition := ← heapTransformExpr heapName model c.condition }
+    let preconditions' ← proc.preconditions.mapM (·.mapM (heapTransformExpr heapName model))
 
     let body' ← match proc.body with
       | .Transparent bodyExpr =>
           let bodyExpr' ← heapTransformExpr heapName model bodyExpr
           pure (.Transparent bodyExpr')
       | .Opaque postconds impl modif =>
-          let postconds' ← postconds.mapM fun c => do
-            return { c with condition := ← heapTransformExpr heapName model c.condition }
+          let postconds' ← postconds.mapM (·.mapM (heapTransformExpr heapName model))
           let impl' ← impl.mapM (heapTransformExpr heapName model ·)
           let modif' ← modif.mapM (heapTransformExpr heapName model ·)
           pure (.Opaque postconds' impl' modif')
       | .Abstract postconds =>
-          let postconds' ← postconds.mapM fun c => do
-            return { c with condition := ← heapTransformExpr heapName model c.condition }
+          let postconds' ← postconds.mapM (·.mapM (heapTransformExpr heapName model))
           pure (.Abstract postconds')
       | .External => pure .External
 

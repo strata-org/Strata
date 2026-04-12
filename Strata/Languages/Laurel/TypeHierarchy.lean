@@ -281,21 +281,18 @@ def rewriteTypeHierarchyExpr (exprMd : StmtExprMd) : THM StmtExprMd :=
   termination_by sizeOf exprMd
 
 def rewriteTypeHierarchyProcedure (proc : Procedure) : THM Procedure := do
-  let preconditions' ← proc.preconditions.mapM fun c => do
-    return { c with condition := ← rewriteTypeHierarchyExpr c.condition }
+  let preconditions' ← proc.preconditions.mapM (·.mapM rewriteTypeHierarchyExpr)
   let body' ← match proc.body with
     | .Transparent b => pure (.Transparent (← rewriteTypeHierarchyExpr b))
     | .Opaque postconds impl modif =>
-        let postconds' ← postconds.mapM fun c => do
-          return { c with condition := ← rewriteTypeHierarchyExpr c.condition }
+        let postconds' ← postconds.mapM (·.mapM rewriteTypeHierarchyExpr)
         let impl' ← match impl with
           | some x => pure (some (← rewriteTypeHierarchyExpr x))
           | none => pure none
         let modif' ← modif.mapM rewriteTypeHierarchyExpr
         pure (.Opaque postconds' impl' modif')
     | .Abstract postconds => do
-        let postconds' ← postconds.mapM fun c => do
-          return { c with condition := ← rewriteTypeHierarchyExpr c.condition }
+        let postconds' ← postconds.mapM (·.mapM rewriteTypeHierarchyExpr)
         pure (.Abstract postconds')
     | .External => pure .External
   return { proc with preconditions := preconditions', body := body' }

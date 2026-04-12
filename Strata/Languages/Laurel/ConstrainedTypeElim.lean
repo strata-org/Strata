@@ -210,14 +210,14 @@ def elimProc (ptMap : ConstrainedTypeMap) (proc : Procedure) : Procedure :=
   let resolve := resolveExpr ptMap
   let resolveBody : Body → Body := fun body => match body with
     | .Transparent b => .Transparent (resolve b)
-    | .Opaque ps impl modif => .Opaque (ps.map fun c => { c with condition := resolve c.condition }) (impl.map resolve) (modif.map resolve)
-    | .Abstract ps => .Abstract (ps.map fun c => { c with condition := resolve c.condition })
+    | .Opaque ps impl modif => .Opaque (ps.map (·.mapCondition resolve)) (impl.map resolve) (modif.map resolve)
+    | .Abstract ps => .Abstract (ps.map (·.mapCondition resolve))
     | .External => .External
   { proc with
     body := resolveBody body'
     inputs := proc.inputs.map fun p => { p with type := resolveType ptMap p.type }
     outputs := proc.outputs.map fun p => { p with type := resolveType ptMap p.type }
-    preconditions := (proc.preconditions ++ inputRequires).map fun c => { c with condition := resolve c.condition } }
+    preconditions := (proc.preconditions ++ inputRequires).map (·.mapCondition resolve) }
 
 private def mkWitnessProc (ptMap : ConstrainedTypeMap) (ct : ConstrainedType) : Procedure :=
   let md := ct.witness.md

@@ -70,7 +70,7 @@ decreasing_by all_goals ((try cases x); simp_all; try term_by_mem)
 private def desugarShortCircuitProcedure (model : SemanticModel) (proc : Procedure) : Procedure :=
   { proc with body := match proc.body with
     | .Transparent b => .Transparent (desugarShortCircuitExpr model b)
-    | .Opaque posts impl mods => .Opaque (posts.map fun c => { c with condition := desugarShortCircuitExpr model c.condition }) (impl.map (desugarShortCircuitExpr model)) mods
+    | .Opaque posts impl mods => .Opaque (posts.map (·.mapCondition (desugarShortCircuitExpr model))) (impl.map (desugarShortCircuitExpr model)) mods
     | other => other }
 
 /-- Desugar short-circuit operators in a program. -/

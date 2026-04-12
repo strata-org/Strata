@@ -329,6 +329,14 @@ theorem WithMetadata.sizeOf_val_lt {t : Type} [SizeOf t] (e : WithMetadata t) : 
 theorem Condition.sizeOf_condition_lt (c : Condition) : sizeOf c.condition < 1 + sizeOf c := by
   cases c; grind
 
+/-- Apply a monadic transformation to the condition expression, preserving the summary. -/
+def Condition.mapM [Monad m] (f : WithMetadata StmtExpr → m (WithMetadata StmtExpr)) (c : Condition) : m Condition :=
+  return { c with condition := ← f c.condition }
+
+/-- Apply a pure transformation to the condition expression, preserving the summary. -/
+def Condition.mapCondition (f : WithMetadata StmtExpr → WithMetadata StmtExpr) (c : Condition) : Condition :=
+  { c with condition := f c.condition }
+
 instance : Inhabited StmtExpr where
   default := .Hole
 
