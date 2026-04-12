@@ -138,9 +138,7 @@ def Cmd.toGotoInstructions {P} [G: ToGoto P] [BEq P.Ident]
              T := T }
   | .assert name b md =>
     let expr ← G.toGotoExpr b
-    let comment := match md.findElem (.label "propertySummary") with
-      | some elem => match elem.value with | .msg s => s | _ => name
-      | none => name
+    let comment := md.getPropertySummary.getD name
     let srcLoc := metadataToSourceLoc md functionName trans.sourceText (comment := comment)
     let assert_inst :=
     { type := .ASSERT, locationNum := trans.nextLoc,
@@ -180,9 +178,7 @@ def Cmd.toGotoInstructions {P} [G: ToGoto P] [BEq P.Ident]
               T := T }
   | .cover name b md =>
     let expr ← G.toGotoExpr b
-    let comment := match md.findElem (.label "propertySummary") with
-      | some elem => match elem.value with | .msg s => s | _ => s!"cover {name}"
-      | none => s!"cover {name}"
+    let comment := md.getPropertySummary.getD s!"cover {name}"
     let srcLoc := metadataToSourceLoc md functionName trans.sourceText (comment := comment)
     let assert_inst :=
     { type := .ASSERT, locationNum := trans.nextLoc,

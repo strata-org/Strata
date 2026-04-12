@@ -630,8 +630,8 @@ def pyAnalyzeLaurelCommand : Command where
             if fr.range.isNone then ""
             else s!"{fr.format fileMap (includeEnd? := false)}"
           | none => ""
-        let messageSuffix := match vcResult.obligation.metadata.findElem (.label "propertySummary") with
-          | some elem => match elem.value with | .msg msg => s!" - {msg}" | _ => s!" - {vcResult.obligation.label}"
+        let messageSuffix := match vcResult.obligation.metadata.getPropertySummary with
+          | some msg => s!" - {msg}"
           | none => s!" - {vcResult.obligation.label}"
         let outcomeStr := vcResult.formatOutcome
         let loc := if !location.isEmpty then s!"{location}: " else "unknown location: "

@@ -105,9 +105,7 @@ def encodeCore (ctx : Core.SMT.Context) (prelude : SolverM Unit)
       let _ ← Solver.checkSat ids
 
   -- Emit the property summary (or label) as the final message in the SMT-LIB output.
-  let rawMsg := match md.findElem (.label "propertySummary") with
-    | some elem => match elem.value with | .msg s => s | _ => label
-    | none => label
+  let rawMsg := md.getPropertySummary.getD label
   let escaped := rawMsg.replace "\\" "\\\\" |>.replace "\"" "\\\""
   Solver.setInfo "final-message" s!"\"{escaped}\""
 
@@ -1041,20 +1039,16 @@ def toDiagnosticModel (vcr : Core.VCResult)
   match vcr.outcome with
   | .error msg => some { fileRange, message := s!"analysis error: {msg}", type := DiagnosticType.StrataBug }
   | .ok outcome =>
-    let getPropertySummary (md : Imperative.MetaData Core.Expression) : Option String :=
-      match md.findElem (.label "propertySummary") with
-      | some elem => match elem.value with | .msg s => some s | _ => none
-      | none => none
     let message? : Option String :=
       if vcr.obligation.property == .cover then
-        let description := getPropertySummary vcr.obligation.metadata |>.getD "cover property"
+        let description := vcr.obligation.metadata.getPropertySummary.getD "cover property"
         if outcome.isSatisfiable || outcome.passReachabilityUnknown then none
         else if outcome.unreachable then some s!"{description} is unreachable"
         else if outcome.isPass then none
         else some s!"{description} is not satisfiable"
       else
         let phaseDescription := phases.findSome? (·.getAssertDescription vcr.obligation.label)
-        let description := getPropertySummary vcr.obligation.metadata |>.getD
+        let description := vcr.obligation.metadata.getPropertySummary.getD
           (phaseDescription.getD "assertion")
         if outcome.unreachable then some s!"{description} holds vacuously (path unreachable)"
         else if outcome.isPass || outcome.isSatisfiable || outcome.passReachabilityUnknown then none

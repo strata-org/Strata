@@ -514,7 +514,7 @@ private def ExampleLoopMeasure : List (Imperative.Stmt LExprTP (Imperative.Cmd L
 -- Test: property summary in metadata flows to GOTO assert comment
 def ExamplePropertySummary : Imperative.Cmds LExprTP :=
   let md : Imperative.MetaData LExprTP :=
-    Imperative.MetaData.empty.pushElem (.label "propertySummary") (.msg "divisor is non-zero")
+    Imperative.MetaData.empty.withPropertySummary "divisor is non-zero"
   [.assert "assert_0" (.const { underlying := (), type := mty[bool] } (.boolConst true)) md]
 
 /-- info: ok: () -/
