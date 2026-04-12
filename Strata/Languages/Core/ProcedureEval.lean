@@ -124,6 +124,9 @@ end Procedure
 
 /-! ## Concrete Interpretation -/
 
+open Std (ToFormat Format format)
+open Lambda
+
 /-- Result of concretely interpreting a procedure. -/
 inductive InterpResult where
   | success (env : Env)
