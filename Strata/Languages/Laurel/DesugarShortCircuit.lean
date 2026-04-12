@@ -24,13 +24,14 @@ namespace Strata.Laurel
 
 public section
 
-private def bare (v : StmtExpr) : StmtExprMd := ⟨v, default⟩
+private def bare (v : StmtExpr) : StmtExprMd := ⟨v, none, default⟩
 
 /-- Desugar short-circuit operators to IfThenElse when the second operand is imperative. -/
 def desugarShortCircuitExpr (model : SemanticModel) (expr : StmtExprMd) : StmtExprMd :=
+  let source := expr.source
   let md := expr.md
   match expr with
-  | WithMetadata.mk val _ =>
+  | AstNode.mk val _ _ =>
   match val with
   | .PrimitiveOp op args =>
     let args' := args.attach.map fun ⟨a, _⟩ => desugarShortCircuitExpr model a
@@ -38,31 +39,31 @@ def desugarShortCircuitExpr (model : SemanticModel) (expr : StmtExprMd) : StmtEx
     | .AndThen, [_, b] | .Implies, [_, b] =>
       if containsAssignmentOrImperativeCall model b then
         let elseVal := match op with | .AndThen => false | _ => true
-        ⟨.IfThenElse args'[0]! args'[1]! (some (bare (.LiteralBool elseVal))), md⟩
-      else ⟨.PrimitiveOp op args', md⟩
+        ⟨.IfThenElse args'[0]! args'[1]! (some (bare (.LiteralBool elseVal))), source, md⟩
+      else ⟨.PrimitiveOp op args', source, md⟩
     | .OrElse, [_, b] =>
       if containsAssignmentOrImperativeCall model b then
-        ⟨.IfThenElse args'[0]! (bare (.LiteralBool true)) (some args'[1]!), md⟩
-      else ⟨.PrimitiveOp op args', md⟩
-    | _, _ => ⟨.PrimitiveOp op args', md⟩
+        ⟨.IfThenElse args'[0]! (bare (.LiteralBool true)) (some args'[1]!), source, md⟩
+      else ⟨.PrimitiveOp op args', source, md⟩
+    | _, _ => ⟨.PrimitiveOp op args', source, md⟩
   | .IfThenElse cond th el =>
     ⟨.IfThenElse (desugarShortCircuitExpr model cond) (desugarShortCircuitExpr model th)
-      (match el with | some e => some (desugarShortCircuitExpr model e) | none => none), md⟩
+      (match el with | some e => some (desugarShortCircuitExpr model e) | none => none), source, md⟩
   | .Block stmts label =>
-    ⟨.Block (stmts.attach.map fun ⟨s, _⟩ => desugarShortCircuitExpr model s) label, md⟩
+    ⟨.Block (stmts.attach.map fun ⟨s, _⟩ => desugarShortCircuitExpr model s) label, source, md⟩
   | .While c invs dec body =>
     ⟨.While (desugarShortCircuitExpr model c)
       (invs.attach.map fun ⟨i, _⟩ => desugarShortCircuitExpr model i)
       (match dec with | some d => some (desugarShortCircuitExpr model d) | none => none)
-      (desugarShortCircuitExpr model body), md⟩
+      (desugarShortCircuitExpr model body), source, md⟩
   | .LocalVariable name ty init =>
-    ⟨.LocalVariable name ty (match init with | some i => some (desugarShortCircuitExpr model i) | none => none), md⟩
+    ⟨.LocalVariable name ty (match init with | some i => some (desugarShortCircuitExpr model i) | none => none), source, md⟩
   | .Assign targets value =>
-    ⟨.Assign (targets.attach.map fun ⟨t, _⟩ => desugarShortCircuitExpr model t) (desugarShortCircuitExpr model value), md⟩
+    ⟨.Assign (targets.attach.map fun ⟨t, _⟩ => desugarShortCircuitExpr model t) (desugarShortCircuitExpr model value), source, md⟩
   | .StaticCall callee args =>
-    ⟨.StaticCall callee (args.attach.map fun ⟨a, _⟩ => desugarShortCircuitExpr model a), md⟩
+    ⟨.StaticCall callee (args.attach.map fun ⟨a, _⟩ => desugarShortCircuitExpr model a), source, md⟩
   | .Return v =>
-    ⟨.Return (match v with | some v' => some (desugarShortCircuitExpr model v') | none => none), md⟩
+    ⟨.Return (match v with | some v' => some (desugarShortCircuitExpr model v') | none => none), source, md⟩
   | _ => expr
 termination_by expr
 decreasing_by all_goals ((try cases x); simp_all; try term_by_mem)
