@@ -770,13 +770,13 @@ def extractKwargsField (e : expr SourceRange)
 partial def extractSubject (e : expr SourceRange)
     : SpecAssertionM (Option SpecExpr) := do
   match ← extractKwargsField e with
-  | some (kn, fn) => return some (.getIndex (.var kn) fn)
+  | some (kn, fn) => return some (.getIndex (.var kn (loc := e.ann)) fn (loc := e.ann))
   | none => pure ()
   match e with
-  | .Name _ ⟨_, name⟩ (.Load _) => return some (.var name)
+  | .Name _ ⟨_, name⟩ (.Load _) => return some (.var name (loc := e.ann))
   | .Subscript _ inner (.Constant _ (.ConString _ fieldName) _) (.Load _) =>
     match ← extractSubject inner with
-    | some subj => return some (.getIndex subj fieldName.val)
+    | some subj => return some (.getIndex subj fieldName.val (loc := e.ann))
     | none => return none
   | _ => return none
 
@@ -790,7 +790,7 @@ def transCondition (e : expr SourceRange) : SpecAssertionM (Option SpecExpr) := 
         match ops.val[0] with
         | .In _ =>
           match ← extractSubject comparators.val[0] with
-          | some subj => return some (.containsKey subj key.val)
+          | some subj => return some (.containsKey subj key.val (loc := e.ann))
           | none => pure ()
         | _ => pure ()
     pure ()
@@ -800,7 +800,7 @@ def transCondition (e : expr SourceRange) : SpecAssertionM (Option SpecExpr) := 
 /-- Run an action that may produce assertions, then wrap each new assertion's
     formula with `implies cond ...` (or `implies (not cond) ...` for else branches).
     If `cond` is `none`, assertions pass through unchanged. -/
-def assumeCondition (cond : Option SpecExpr) (act : SpecAssertionM Unit)
+def assumeCondition (cond : Option SpecExpr) (loc : SourceRange) (act : SpecAssertionM Unit)
     : SpecAssertionM Unit := do
   let prevAssertions := (←get).assertions
   modify fun s => { s with assertions := #[] }
@@ -809,7 +809,7 @@ def assumeCondition (cond : Option SpecExpr) (act : SpecAssertionM Unit)
   match cond with
   | some c =>
     let wrapped := newAssertions.map fun a =>
-      { a with formula := .implies c a.formula }
+      { a with formula := .implies c a.formula loc }
     modify fun s => { s with assertions := prevAssertions ++ wrapped }
   | none =>
     modify fun s => { s with assertions := prevAssertions ++ newAssertions }
@@ -826,10 +826,10 @@ def transMessageExpr (e : expr SourceRange)
   | .Call _ (.Name _ funcName (.Load _)) args _ =>
     if funcName.val == "len" && args.val.size == 1 then
       match ← extractSubject args.val[0]! with
-      | some subj => return .len subj
-      | none => return .placeholder
-    else return .placeholder
-  | _ => return .placeholder
+      | some subj => return .len subj (loc := e.ann)
+      | none => return .placeholder (loc := e.ann)
+    else return .placeholder (loc := e.ann)
+  | _ => return .placeholder (loc := e.ann)
 
 /-- Look up a field in a TypedDict SpecType, returning its type if found. -/
 def lookupTypedDictField (tp : SpecType) (field : String) : Option SpecType := do
@@ -951,24 +951,26 @@ private def makeComparison
     (isFloat isInt : Bool)
     (subj : SpecExpr) (bound : expr SourceRange)
     : SpecAssertionM (Option SpecExpr) := do
+  let loc := bound.ann
   if isFloat then
     match extractFloatBound bound with
-    | some s => return some (floatCtor subj (.floatLit s))
+    | some s => return some (floatCtor subj (.floatLit s (loc := loc)))
     | none =>
       match extractIntBound bound with
-      | some n => return some (floatCtor subj (.floatLit (toString n)))
+      | some n => return some (floatCtor subj (.floatLit (toString n) (loc := loc)))
       | none => return none
   else if isInt then
     match extractIntBound bound with
-    | some n => return some (intCtor subj (.intLit n))
+    | some n => return some (intCtor subj (.intLit n (loc := loc)))
     | none => return none
   else
     match extractIntBound bound with
-    | some n => return some (intCtor subj (.intLit n))
+    | some n => return some (intCtor subj (.intLit n (loc := loc)))
     | none => return none
 
 def transAssertExpr (e : expr SourceRange)
     : SpecAssertionM SpecExpr := do
+  let loc := e.ann
   -- isinstance(subject, T)
   match e with
   | .Call _ (.Name _ funcName (.Load _)) args _ =>
@@ -978,10 +980,10 @@ def transAssertExpr (e : expr SourceRange)
         | some subj =>
           match args.val[1] with
           | .Name _ typeName (.Load _) =>
-            return .isInstanceOf subj typeName.val
+            return .isInstanceOf subj typeName.val (loc := loc)
           | _ =>
             specWarning e.ann s!"isinstance: unsupported type argument"
-            return .placeholder
+            return .placeholder (loc := loc)
         | none => pure () -- fall through
     if funcName.val == "len" && args.val.size == 1 then
       -- This is just len(x), not a comparison; fall through
@@ -998,8 +1000,8 @@ def transAssertExpr (e : expr SourceRange)
             match ← extractSubject callArgs.val[0] with
             | some subj =>
               match ops.val[0], extractIntBound comparators.val[0] with
-              | .GtE _, some n => return .intGe (.len subj) (.intLit n)
-              | .LtE _, some n => return .intLe (.len subj) (.intLit n)
+              | .GtE _, some n => return .intGe (.len subj (loc := loc)) (.intLit n (loc := comparators.val[0].ann)) (loc := loc)
+              | .LtE _, some n => return .intLe (.len subj (loc := loc)) (.intLit n (loc := comparators.val[0].ann)) (loc := loc)
               | _, _ => pure ()
             | none => pure ()
   | _ => pure ()
@@ -1014,8 +1016,8 @@ def transAssertExpr (e : expr SourceRange)
           let isFloat := subjType.any isFloatType
           let isInt := subjType.any isIntType
           let cmp ← match ops.val[0] with
-          | .GtE _ => makeComparison .floatGe .intGe isFloat isInt subj comparators.val[0]
-          | .LtE _ => makeComparison .floatLe .intLe isFloat isInt subj comparators.val[0]
+          | .GtE _ => makeComparison (.floatGe · · (loc := loc)) (.intGe · · (loc := loc)) isFloat isInt subj comparators.val[0]
+          | .LtE _ => makeComparison (.floatLe · · (loc := loc)) (.intLe · · (loc := loc)) isFloat isInt subj comparators.val[0]
           | _ => pure none
           match cmp with
           | some expr => return expr
@@ -1025,7 +1027,7 @@ def transAssertExpr (e : expr SourceRange)
   -- subject == "A" or subject == "B" or ...
   match ← collectEnumValues e with
   | some (subj, vals) =>
-    return .enumMember subj vals
+    return .enumMember subj vals (loc := loc)
   | none => pure ()
   -- compile("pattern").search(subject) is not None
   match e with
@@ -1044,14 +1046,14 @@ def transAssertExpr (e : expr SourceRange)
                 | some subj =>
                   match ops.val[0], comparators.val[0] with
                   | .IsNot _, .Constant _ (.ConNone _) _ =>
-                    return .regexMatch subj pattern.val
+                    return .regexMatch subj pattern.val (loc := loc)
                   | _, _ => pure ()
                 | none => pure ()
               | _ => pure ()
   | _ => pure ()
   -- Fallback: unrecognized pattern
   specWarning e.ann s!"unrecognized assert pattern: {eformat e.toAst}"
-  return .placeholder
+  return .placeholder (loc := loc)
 
 mutual
 
@@ -1113,7 +1115,7 @@ def blockStmt (s : stmt SourceRange) : SpecAssertionM Unit := do
           blockStmts body.val
         let bodyAssertions := (←get).assertions
         let wrapped := bodyAssertions.map fun a =>
-          { a with formula := .forallList listExpr varName a.formula }
+          { a with formula := .forallList listExpr varName a.formula s.ann }
         modify fun s => { s with assertions := prevAssertions ++ wrapped }
       | none =>
         specWarning s.ann s!"For: cannot extract iterable expression"
@@ -1154,7 +1156,7 @@ def blockStmt (s : stmt SourceRange) : SpecAssertionM Unit := do
               blockStmts body.val
             let bodyAssertions := (←get).assertions
             let wrapped := bodyAssertions.map fun a =>
-              { a with formula := .forallDict dictSubj keyVar valVar a.formula }
+              { a with formula := .forallDict dictSubj keyVar valVar a.formula s.ann }
             modify fun st => { st with assertions := prevAssertions ++ wrapped }
           | none =>
             specWarning s.ann s!"For: cannot extract dict expression"
@@ -1166,9 +1168,9 @@ def blockStmt (s : stmt SourceRange) : SpecAssertionM Unit := do
     let cond ← transCondition pred
     if cond.isNone then
       specWarning pred.ann s!"if: unrecognized condition pattern: {eformat pred.toAst}"
-    assumeCondition cond <| blockStmts t.val
+    assumeCondition cond pred.ann <| blockStmts t.val
     if f.val.size > 0 then
-      assumeCondition (cond.map .not) <| blockStmts f.val
+      assumeCondition (cond.map (.not · pred.ann)) pred.ann <| blockStmts f.val
   | .Pass _ =>
     pure ()
   | _ => specError s.ann s!"Unsupported statement: {eformat s.toAst}"
