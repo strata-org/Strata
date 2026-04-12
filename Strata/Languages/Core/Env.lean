@@ -150,6 +150,9 @@ structure Env where
   deferred : Imperative.ProofObligations Expression
   evalMode : EvalMode := .symbolic
 
+/-- Default fuel for concrete interpretation. -/
+def defaultFuel : Nat := 100000
+
 def Env.init (empty_factory:=false): Env :=
   let σ := Lambda.LState.init
   let σ := if empty_factory then σ else σ.setFactory Core.Factory

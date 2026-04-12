@@ -121,6 +121,62 @@ def eval (E : Env) (p : Procedure) : Procedure × Env :=
 ---------------------------------------------------------------------
 
 end Procedure
+
+/-! ## Concrete Interpretation -/
+
+/-- Result of concretely interpreting a procedure. -/
+inductive InterpResult where
+  | success (env : Env)
+  | assertionFailure (label : String) (expr : Expression.Expr) (env : Env)
+  | error (msg : String)
+  | stuck (msg : String)
+  deriving Inhabited
+
+instance : ToString InterpResult where
+  toString
+  | .success _ => "success"
+  | .assertionFailure label expr _ => s!"assertion failure: {label}: {format expr}"
+  | .error msg => s!"error: {msg}"
+  | .stuck msg => s!"stuck: {msg}"
+
+/-- Interpret a specific procedure by name, executing its body concretely.
+    Requires the environment to already have globals and functions set up
+    (see `Program.initConcreteEnv` in `ProgramEval.lean`). -/
+def interpProcedure (E : Env) (procName : String)
+    (args : List Expression.Expr := []) : InterpResult :=
+  match Program.Procedure.find? E.program ⟨procName, ()⟩ with
+  | none => .error s!"procedure '{procName}' not found"
+  | some proc =>
+    if proc.body.isEmpty then .error s!"procedure '{procName}' has no body"
+    else
+      let argVals := args.map E.exprEval
+      let formalBindings : List (CoreIdent × (Option LMonoTy × Expression.Expr)) :=
+        proc.header.inputs.keys.zip proc.header.inputs.values |>.zip argVals
+        |>.map fun ((name, ty), val) => (name, (some ty, val))
+      let outputBindings : List (CoreIdent × (Option LMonoTy × Expression.Expr)) :=
+        proc.header.outputs.keys.zip proc.header.outputs.values
+        |>.map fun (name, ty) => (name, (some ty, LExpr.fvar () name none))
+      let E := { E with
+        exprEnv := { E.exprEnv with
+          state := E.exprEnv.state.push (List.append formalBindings outputBindings) },
+        pathConditions := E.pathConditions.push [] }
+      let ssEs := Statement.eval E [] proc.body
+      match ssEs with
+      | [] => .stuck "procedure body evaluation produced no results"
+      | (_, E') :: _ =>
+        match E'.error with
+        | some (.AssertFail label expr) => .assertionFailure label expr E'
+        | some (.OutOfFuel) => .stuck "out of fuel"
+        | some e => .stuck s!"{format e}"
+        | none => .success E'
+
+/-- Read the value of a variable from an `InterpResult`. -/
+def InterpResult.getValue? (r : InterpResult) (name : String) : Option Expression.Expr :=
+  match r with
+  | .success E => (E.exprEnv.state.find? ⟨name, ()⟩).map (·.snd)
+  | .assertionFailure _ _ E => (E.exprEnv.state.find? ⟨name, ()⟩).map (·.snd)
+  | _ => none
+
 end Core
 
 end -- public section

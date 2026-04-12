@@ -26,7 +26,10 @@ def runProc (pgm : Strata.Program) (procName : String)
   match parseAndTypeCheck pgm with
   | .error e => IO.println s!"type error: {e.message}"
   | .ok prog =>
-    let result := Core.interpProcedure prog procName args fuel
+    match Core.initConcreteEnv prog fuel with
+    | .error e => IO.println s!"init error: {e.message}"
+    | .ok E =>
+    let result := Core.interpProcedure E procName args
     match result with
     | .success E =>
       let proc := Core.Program.Procedure.find? prog ⟨procName, ()⟩
@@ -39,7 +42,7 @@ def runProc (pgm : Strata.Program) (procName : String)
         IO.println (String.intercalate ", " outputs)
     | .assertionFailure label _ _ => IO.println s!"assertion failure: {label}"
     | .error msg => IO.println s!"error: {msg}"
-    | .fuelExhausted => IO.println "fuel exhausted"
+    | .stuck msg => IO.println s!"stuck: {msg}"
 
 /-! ## Test Programs -/
 
