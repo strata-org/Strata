@@ -45,11 +45,15 @@ public section
 private def mdWithUnknownLoc : Imperative.MetaData Core.Expression :=
   #[⟨Imperative.MetaData.fileRange, .fileRange FileRange.unknown⟩]
 
+/-- Build Core metadata from an optional source location and Laurel metadata. -/
+private def fileRangeToCoreMd (source : Option FileRange) (md : MetaData) : Imperative.MetaData Core.Expression :=
+  match source with
+  | some fr => md.pushElem Imperative.MetaData.fileRange (.fileRange fr)
+  | none => md
+
 /-- Build Core metadata from an AstNode's source location and any extra metadata. -/
 private def astNodeToCoreMd (node : AstNode α) : Imperative.MetaData Core.Expression :=
-  match node.source with
-  | some fr => node.md.pushElem Imperative.MetaData.fileRange (.fileRange fr)
-  | none => node.md
+  fileRangeToCoreMd node.source node.md
 
 def isFieldName (fieldNames : List Identifier) (name : Identifier) : Bool :=
   fieldNames.contains name
@@ -275,22 +279,22 @@ def translateExpr (expr : StmtExprMd)
   | .Exit _ => disallowed md "exit is not supported in expression position"
 
   | .Block (⟨ .Assert _, innerSrc, innerMd⟩ :: rest) label => do
-    _ ← disallowed (astNodeToCoreMd ⟨(), innerSrc, innerMd⟩) "asserts are not YET supported in functions or contracts"
+    _ ← disallowed (fileRangeToCoreMd innerSrc innerMd) "asserts are not YET supported in functions or contracts"
     translateExpr { val := StmtExpr.Block rest label, source := innerSrc, md := innerMd } boundVars isPureContext
   | .Block (⟨ .Assume _, innerSrc, innerMd⟩ :: rest) label =>
-    _ ← disallowed (astNodeToCoreMd ⟨(), innerSrc, innerMd⟩) "assumes are not YET supported in functions or contracts"
+    _ ← disallowed (fileRangeToCoreMd innerSrc innerMd) "assumes are not YET supported in functions or contracts"
     translateExpr { val := StmtExpr.Block rest label, source := innerSrc, md := innerMd } boundVars isPureContext
   | .Block (⟨ .LocalVariable name ty (some initializer), innerSrc, innerMd⟩ :: rest) label => do
       let valueExpr ← translateExpr  initializer boundVars isPureContext
       let bodyExpr ← translateExpr { val := StmtExpr.Block rest label, source := innerSrc, md := innerMd } (name :: boundVars) isPureContext
-      disallowed (astNodeToCoreMd ⟨(), innerSrc, innerMd⟩) "local variables in functions are not YET supported"
+      disallowed (fileRangeToCoreMd innerSrc innerMd) "local variables in functions are not YET supported"
       -- This doesn't work because of a limitation in Core.
       -- let coreMonoType := translateType ty
       -- return .app () (.abs () (some coreMonoType) bodyExpr) valueExpr
   | .Block (⟨ .LocalVariable name ty none, innerSrc, innerMd⟩ :: rest) label =>
-    disallowed (astNodeToCoreMd ⟨(), innerSrc, innerMd⟩) "local variables in functions must have initializers"
+    disallowed (fileRangeToCoreMd innerSrc innerMd) "local variables in functions must have initializers"
   | .Block (⟨ .IfThenElse cond thenBranch (some elseBranch), innerSrc, innerMd⟩ :: rest) label =>
-    disallowed (astNodeToCoreMd ⟨(), innerSrc, innerMd⟩) "if-then-else only supported as the last statement in a block"
+    disallowed (fileRangeToCoreMd innerSrc innerMd) "if-then-else only supported as the last statement in a block"
 
   | .IsType _ _ =>
       throwExprDiagnostic $ md.toDiagnostic "IsType should have been lowered" DiagnosticType.StrataBug
