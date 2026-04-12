@@ -275,37 +275,22 @@ def translateExpr (expr : StmtExprMd)
   | .Exit _ => disallowed md "exit is not supported in expression position"
 
   | .Block (⟨ .Assert _, innerSrc, innerMd⟩ :: rest) label => do
-    let innerCoreMd := match innerSrc with
-      | some fr => innerMd.pushElem Imperative.MetaData.fileRange (.fileRange fr)
-      | none => innerMd
-    _ ← disallowed innerCoreMd "asserts are not YET supported in functions or contracts"
+    _ ← disallowed (astNodeToCoreMd ⟨(), innerSrc, innerMd⟩) "asserts are not YET supported in functions or contracts"
     translateExpr { val := StmtExpr.Block rest label, source := innerSrc, md := innerMd } boundVars isPureContext
   | .Block (⟨ .Assume _, innerSrc, innerMd⟩ :: rest) label =>
-    let innerCoreMd := match innerSrc with
-      | some fr => innerMd.pushElem Imperative.MetaData.fileRange (.fileRange fr)
-      | none => innerMd
-    _ ← disallowed innerCoreMd "assumes are not YET supported in functions or contracts"
+    _ ← disallowed (astNodeToCoreMd ⟨(), innerSrc, innerMd⟩) "assumes are not YET supported in functions or contracts"
     translateExpr { val := StmtExpr.Block rest label, source := innerSrc, md := innerMd } boundVars isPureContext
   | .Block (⟨ .LocalVariable name ty (some initializer), innerSrc, innerMd⟩ :: rest) label => do
-      let innerCoreMd := match innerSrc with
-        | some fr => innerMd.pushElem Imperative.MetaData.fileRange (.fileRange fr)
-        | none => innerMd
       let valueExpr ← translateExpr  initializer boundVars isPureContext
       let bodyExpr ← translateExpr { val := StmtExpr.Block rest label, source := innerSrc, md := innerMd } (name :: boundVars) isPureContext
-      disallowed innerCoreMd "local variables in functions are not YET supported"
+      disallowed (astNodeToCoreMd ⟨(), innerSrc, innerMd⟩) "local variables in functions are not YET supported"
       -- This doesn't work because of a limitation in Core.
       -- let coreMonoType := translateType ty
       -- return .app () (.abs () (some coreMonoType) bodyExpr) valueExpr
   | .Block (⟨ .LocalVariable name ty none, innerSrc, innerMd⟩ :: rest) label =>
-    let innerCoreMd := match innerSrc with
-      | some fr => innerMd.pushElem Imperative.MetaData.fileRange (.fileRange fr)
-      | none => innerMd
-    disallowed innerCoreMd "local variables in functions must have initializers"
+    disallowed (astNodeToCoreMd ⟨(), innerSrc, innerMd⟩) "local variables in functions must have initializers"
   | .Block (⟨ .IfThenElse cond thenBranch (some elseBranch), innerSrc, innerMd⟩ :: rest) label =>
-    let innerCoreMd := match innerSrc with
-      | some fr => innerMd.pushElem Imperative.MetaData.fileRange (.fileRange fr)
-      | none => innerMd
-    disallowed innerCoreMd "if-then-else only supported as the last statement in a block"
+    disallowed (astNodeToCoreMd ⟨(), innerSrc, innerMd⟩) "if-then-else only supported as the last statement in a block"
 
   | .IsType _ _ =>
       throwExprDiagnostic $ md.toDiagnostic "IsType should have been lowered" DiagnosticType.StrataBug

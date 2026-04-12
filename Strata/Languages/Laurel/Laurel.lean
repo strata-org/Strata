@@ -323,9 +323,6 @@ theorem AstNode.sizeOf_val_lt {t : Type} [SizeOf t] (e : AstNode t) : sizeOf e.v
 instance : Inhabited StmtExpr where
   default := .Hole
 
-instance : Inhabited StmtExprMd where
-  default := { val := .Hole, source := none }
-
 instance : Inhabited HighTypeMd where
   default := { val := HighType.Unknown, source := none }
 
