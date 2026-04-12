@@ -60,7 +60,8 @@ def checkOp (op : Strata.Operation) (name : QualifiedIdent) (argc : Nat) :
 def translateIdent (arg : Arg) : TransM Identifier := do
   let .ident _ id := arg
     | TransM.error s!"translateIdent expects ident"
-  return { text := id }
+  let md ← getArgMetaData arg
+  return { text := id, md := md }
 
 def translateBool (arg : Arg) : TransM Bool := do
   match arg with
@@ -82,6 +83,11 @@ instance : Inhabited Parameter where
 def mkHighTypeMd (t : HighType) (md : MetaData) : HighTypeMd := ⟨t, md⟩
 def mkStmtExprMd (e : StmtExpr) (md : MetaData) : StmtExprMd := ⟨e, md⟩
 
+def translateNat (arg : Arg) : TransM Nat := do
+  let .num _ n := arg
+    | TransM.error s!"translateNat expects num literal"
+  return n
+
 partial def translateHighType (arg : Arg) : TransM HighTypeMd := do
   let md ← getArgMetaData arg
   match arg with
@@ -92,6 +98,9 @@ partial def translateHighType (arg : Arg) : TransM HighTypeMd := do
     | q`Laurel.float64Type, _ => return mkHighTypeMd .TFloat64 md
     | q`Laurel.realType, _ => return mkHighTypeMd .TReal md
     | q`Laurel.stringType, _ => return mkHighTypeMd .TString md
+    | q`Laurel.bvType, #[widthArg] =>
+      let width ← translateNat widthArg
+      return mkHighTypeMd (.TBv width) md
     | q`Laurel.coreType, #[.ident _ name] => return mkHighTypeMd (.TCore name) md
     | q`Laurel.mapType, #[keyArg, valArg] =>
       let keyType ← translateHighType keyArg
@@ -100,13 +109,8 @@ partial def translateHighType (arg : Arg) : TransM HighTypeMd := do
     | q`Laurel.compositeType, #[nameArg] =>
       let name ← translateIdent nameArg
       return mkHighTypeMd (.UserDefined name) md
-    | _, _ => TransM.error s!"translateHighType expects intType, boolType, arrayType or compositeType, got {repr op.name}"
+    | _, _ => TransM.error s!"translateHighType: unsupported type operator {repr op.name}"
   | _ => TransM.error s!"translateHighType expects operation"
-
-def translateNat (arg : Arg) : TransM Nat := do
-  let .num _ n := arg
-    | TransM.error s!"translateNat expects num literal"
-  return n
 
 def translateString (arg : Arg) : TransM String := do
   let .strlit _ s := arg
@@ -143,12 +147,10 @@ instance : Inhabited Procedure where
     inputs := []
     outputs := []
     preconditions := []
-    determinism := .deterministic none
     decreases := none
     isFunctional := false
     invokeOn := none
     body := .Transparent ⟨.LiteralBool true, #[]⟩
-    md := .empty
   }
 
 def getBinaryOp? (name : QualifiedIdent) : Option Operation :=
@@ -431,7 +433,6 @@ def parseProcedure (arg : Arg) : TransM Procedure := do
   | q`Laurel.function, #[nameArg, paramArg, returnTypeArg, returnParamsArg,
       requiresArg, invokeOnArg, ensuresArg, modifiesArg, bodyArg] =>
     let name ← translateIdent nameArg
-    let nameMd ← getArgMetaData nameArg
     let parameters ← translateParameters paramArg
     -- Either returnTypeArg or returnParamsArg may have a value, not both
     -- If returnTypeArg is set, create a single "result" parameter
@@ -489,12 +490,10 @@ def parseProcedure (arg : Arg) : TransM Procedure := do
       inputs := parameters
       outputs := returnParameters
       preconditions := preconditions
-      determinism := .deterministic none
       decreases := none
       isFunctional := op.name == q`Laurel.function
       invokeOn := invokeOn
       body := procBody
-      md := nameMd
     }
   | q`Laurel.procedure, args
   | q`Laurel.function, args =>
