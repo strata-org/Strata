@@ -158,7 +158,7 @@ def validateDiamondFieldAccessesForStmtExpr (model : SemanticModel)
   | .Return (some v) => validateDiamondFieldAccessesForStmtExpr model v
   | _ => []
   termination_by sizeOf expr
-  decreasing_by all_goals (have := WithMetadata.sizeOf_val_lt expr; term_by_mem)
+  decreasing_by all_goals (have := AstNode.sizeOf_val_lt expr; term_by_mem)
 
 /--
 Validate a Laurel program for diamond-inherited field accesses.

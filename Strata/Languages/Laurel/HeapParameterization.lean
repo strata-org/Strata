@@ -237,7 +237,7 @@ def freshVarName : TransformM Identifier := do
   return s!"$tmp{s.freshCounter}"
 
 /-- Helper to wrap a StmtExpr into StmtExprMd with empty metadata -/
-private def mkMd (e : StmtExpr) : StmtExprMd := { val := e }
+private def mkMd (e : StmtExpr) : StmtExprMd := { val := e, source := none }
 
 /--
 Resolve the owning composite type name for a field access by computing the target expression's type.

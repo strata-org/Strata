@@ -164,22 +164,22 @@ def defaultMetadata : Imperative.MetaData Core.Expression :=
 
 /-- Create a HighTypeMd with default metadata -/
 def mkHighTypeMd (ty : HighType) : HighTypeMd :=
-  { val := ty }
+  { val := ty, source := none }
 
 /-- Create a HighTypeMd with source location metadata -/
 def mkHighTypeMdWithLoc (ty : HighType) (md : Imperative.MetaData Core.Expression) : HighTypeMd :=
-  { val := ty, md := md }
+  { val := ty, source := none, md := md }
 
 def mkCoreType (s: String): HighTypeMd :=
-  {val := .TCore s }
+  {val := .TCore s, source := none }
 
 /-- Create a StmtExprMd with default metadata -/
 def mkStmtExprMd (expr : StmtExpr) : StmtExprMd :=
-  { val := expr }
+  { val := expr, source := none }
 
 /-- Create a StmtExprMd with source location metadata -/
 def mkStmtExprMdWithLoc (expr : StmtExpr) (md : Imperative.MetaData Core.Expression) : StmtExprMd :=
-  { val := expr, md := md }
+  { val := expr, source := none, md := md }
 
 /-- Mangle a class name and method name into a flat procedure name: `ClassName@methodName`. -/
 def manglePythonMethod (className : String) (methodName : String) : String :=

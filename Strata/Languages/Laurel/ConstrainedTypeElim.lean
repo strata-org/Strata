@@ -66,14 +66,14 @@ def mkConstraintFunc (ptMap : ConstrainedTypeMap) (ct : ConstrainedType) : Proce
     | .UserDefined parent =>
       if ptMap.contains parent.text then
         let parentCall : StmtExprMd :=
-          { val := .StaticCall (mkId s!"{parent.text}$constraint") [{ val := .Identifier { ct.valueName with uniqueId := none } }] }
-        { val := .PrimitiveOp .And [ct.constraint, parentCall] }
+          { val := .StaticCall (mkId s!"{parent.text}$constraint") [{ val := .Identifier { ct.valueName with uniqueId := none }, source := none }], source := none }
+        { val := .PrimitiveOp .And [ct.constraint, parentCall], source := none }
       else ct.constraint
     | _ => ct.constraint
   { name := mkId s!"{ct.name.text}$constraint"
     inputs := [{ name := ct.valueName, type := { baseType with md := #[] } }]
-    outputs := [{ name := mkId "result", type := { val := .TBool } }]
-    body := .Transparent { val := .Block [bodyExpr] none }
+    outputs := [{ name := mkId "result", type := { val := .TBool, source := none } }]
+    body := .Transparent { val := .Block [bodyExpr] none, source := none }
     isFunctional := true
     decreases := none
     preconditions := [] }
@@ -126,7 +126,7 @@ def resolveExpr (ptMap : ConstrainedTypeMap) : StmtExprMd → StmtExprMd
   | ⟨.Assume c, source, md⟩ => ⟨.Assume (resolveExpr ptMap c), source, md⟩
   | e => e
 termination_by e => sizeOf e
-decreasing_by all_goals (have := WithMetadata.sizeOf_val_lt ‹_›; term_by_mem)
+decreasing_by all_goals (have := AstNode.sizeOf_val_lt ‹_›; term_by_mem)
 
 abbrev ElimM := StateM PredVarMap
 
@@ -181,7 +181,7 @@ def elimStmt (ptMap : ConstrainedTypeMap)
 termination_by sizeOf stmt
 decreasing_by
   all_goals simp_wf
-  all_goals (try have := WithMetadata.sizeOf_val_lt stmt)
+  all_goals (try have := AstNode.sizeOf_val_lt stmt)
   all_goals (try term_by_mem)
   all_goals omega
 

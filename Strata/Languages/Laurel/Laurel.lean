@@ -114,13 +114,10 @@ structure AstNode (t : Type) : Type where
   /-- The wrapped value. -/
   val : t
   /-- Source location for this AST node. -/
-  source : Option FileRange := none
+  source : Option FileRange
   /-- Source-level metadata (locations, annotations). -/
   md : MetaData := .empty
   deriving Repr
-
-/-- Backward-compatible alias. -/
-abbrev WithMetadata := AstNode
 
 /--
 The type system for Laurel programs.
@@ -323,21 +320,17 @@ end
 theorem AstNode.sizeOf_val_lt {t : Type} [SizeOf t] (e : AstNode t) : sizeOf e.val < sizeOf e := by
   cases e; grind
 
-/-- Backward-compatible alias. -/
-theorem WithMetadata.sizeOf_val_lt {t : Type} [SizeOf t] (e : AstNode t) : sizeOf e.val < sizeOf e :=
-  AstNode.sizeOf_val_lt e
-
 instance : Inhabited StmtExpr where
   default := .Hole
 
 instance : Inhabited StmtExprMd where
-  default := { val := .Hole }
+  default := { val := .Hole, source := none }
 
 instance : Inhabited HighTypeMd where
-  default := { val := HighType.Unknown }
+  default := { val := HighType.Unknown, source := none }
 
 instance : Inhabited StmtExprMd where
-  default := { val := default }
+  default := { val := default, source := none }
 
 def highEq (a : HighTypeMd) (b : HighTypeMd) : Bool := match _a: a.val, _b: b.val with
   | HighType.TVoid, HighType.TVoid => true

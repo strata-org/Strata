@@ -126,7 +126,7 @@ declarations.
 
 ## Metadata
 
-All AST nodes can carry metadata via the `AstNode` wrapper (also available as `WithMetadata`).
+All AST nodes can carry metadata via the `AstNode` wrapper.
 
 {docstring Strata.Laurel.AstNode}
 

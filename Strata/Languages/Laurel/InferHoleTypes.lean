@@ -151,7 +151,7 @@ end
 private def inferProcedure (proc : Procedure) : InferHoleM Procedure := do
   let outputType := match proc.outputs with
     | [single] => single.type
-    | _ => { val := .Unknown }
+    | _ => { val := .Unknown, source := none }
   modify fun s => { s with currentOutputType := outputType }
   match proc.body with
   | .Transparent bodyExpr => return { proc with body := .Transparent (← inferExpr bodyExpr outputType) }

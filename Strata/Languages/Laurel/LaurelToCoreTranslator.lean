@@ -229,7 +229,7 @@ def translateExpr (expr : StmtExprMd)
             throwExprDiagnostic $ md.toDiagnostic s!"if-then without else expression" DiagnosticType.NotYetImplemented
         | some e =>
             have : sizeOf e < sizeOf expr := by
-              have := WithMetadata.sizeOf_val_lt expr
+              have := AstNode.sizeOf_val_lt expr
               cases expr; simp_all; omega
             translateExpr e boundVars isPureContext
       return .ite () bcond bthen belse
@@ -335,7 +335,7 @@ def translateExpr (expr : StmtExprMd)
   | .This => throwExprDiagnostic $ md.toDiagnostic "this expression translation" DiagnosticType.NotYetImplemented
   termination_by expr
   decreasing_by
-    all_goals (have := WithMetadata.sizeOf_val_lt expr; term_by_mem)
+    all_goals (have := AstNode.sizeOf_val_lt expr; term_by_mem)
 
 def getNameFromMd (md : Imperative.MetaData Core.Expression): String :=
   let fileRange := (Imperative.getFileRange md).getD (dbg_trace "BUG: metadata without a filerange"; default)
@@ -533,7 +533,7 @@ def translateStmt (outputParams : List Parameter) (stmt : StmtExprMd)
   termination_by sizeOf stmt
   decreasing_by
     all_goals
-      have hlt := WithMetadata.sizeOf_val_lt stmt
+      have hlt := AstNode.sizeOf_val_lt stmt
       cases stmt; term_by_mem
 
 /--
