@@ -329,7 +329,8 @@ Without the attribute, the regex VC would be ❓ unknown. -/
     | .error msg => throw <| IO.userError s!"Pipeline failed: {msg}"
     | .ok vcResults =>
       for ar in vcResults do
-        if ar.label.startsWith "servicelib_Storage_" then
+        let rawLabel := ar.representative.map (·.obligation.label) |>.getD ""
+        if rawLabel.startsWith "servicelib_Storage_" then
           if !ar.isSuccess then
             for r in ar.results do
               throw <| IO.userError

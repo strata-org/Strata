@@ -702,13 +702,14 @@ def VCResults.groupByAssertion (rs : VCResults) : AssertResults :=
               Std.HashMap.emptyWithCapacity (α := String) (β := String),
               (0 : Nat)))
     fun (map, order, labels, uid) r =>
-      let lbl := r.obligation.label
+      let rawLabel := r.obligation.label
+      let displayLabel := r.obligation.metadata.getPropertySummary.getD rawLabel
       let (k, uid) := match Imperative.getFileRange r.obligation.metadata with
-        | some fr => (s!"{lbl}@{repr fr}", uid)
-        | none    => (s!"{lbl}@__unique_{uid}", uid + 1)
+        | some fr => (s!"{rawLabel}@{repr fr}", uid)
+        | none    => (s!"{rawLabel}@__unique_{uid}", uid + 1)
       let existing := map.getD k #[]
       let order := if existing.isEmpty then order.push k else order
-      let labels := if existing.isEmpty then labels.insert k lbl else labels
+      let labels := if existing.isEmpty then labels.insert k displayLabel else labels
       (map.insert k (existing.push r), order, labels, uid)
   order.map fun k => { label := labels.getD k "", results := map.getD k #[] }
 
