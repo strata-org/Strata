@@ -115,7 +115,8 @@ private partial def collectExprNames (expr : StmtExprMd) : CollectM Unit := do
     collectHighTypeNames param.type
     trigger.forM collectExprNames
     collectExprNames body
-  | .Assert cond | .Assume cond => collectExprNames cond
+  | .Assert cond => collectExprNames cond.condition
+  | .Assume cond => collectExprNames cond
   | .Return val => val.forM collectExprNames
   | .Old val | .Fresh val | .Assigned val => collectExprNames val
   | .ProveBy val proof => collectExprNames val; collectExprNames proof
@@ -130,17 +131,17 @@ private def collectBodyNames (body : Body) : CollectM Unit := do
   match body with
   | .Transparent expr => collectExprNames expr
   | .Opaque posts impl modifies =>
-    posts.forM collectExprNames
+    posts.forM (collectExprNames ·.condition)
     impl.forM collectExprNames
     modifies.forM collectExprNames
-  | .Abstract posts => posts.forM collectExprNames
+  | .Abstract posts => posts.forM (collectExprNames ·.condition)
   | .External => pure ()
 
 /-- Collect all names referenced by a procedure (signature + body). -/
 private def collectProcDeps (proc : Procedure) : CollectM Unit := do
   proc.inputs.forM  fun p => collectHighTypeNames p.type
   proc.outputs.forM fun p => collectHighTypeNames p.type
-  proc.preconditions.forM collectExprNames
+  proc.preconditions.forM (collectExprNames ·.condition)
   proc.decreases.forM collectExprNames
   proc.invokeOn.forM collectExprNames
   collectBodyNames proc.body

@@ -183,7 +183,7 @@ structure Procedure : Type where
   /-- Output parameters with their types. Multiple outputs are supported. -/
   outputs : List Parameter
   /-- The preconditions that callers must satisfy. -/
-  preconditions : List (WithMetadata StmtExpr)
+  preconditions : List Condition
   -- TODO: add back determinism together with an implementation
   /-- Optional termination measure for recursive procedures. -/
   decreases : Option (WithMetadata StmtExpr) -- optionally prove termination
@@ -206,6 +206,16 @@ structure Parameter where
   type : WithMetadata HighType
 
 /--
+A condition with an optional human-readable summary.
+Used for assertions, preconditions, and postconditions.
+-/
+structure Condition where
+  /-- The boolean condition expression. -/
+  condition : WithMetadata StmtExpr
+  /-- Optional human-readable summary describing the property being checked. -/
+  summary : Option String := none
+
+/--
 The body of a procedure. A body can be transparent (with a visible
 implementation), opaque (with a postcondition and optional implementation),
 or abstract (requiring overriding in extending types).
@@ -215,11 +225,11 @@ inductive Body where
   | Transparent (body : WithMetadata StmtExpr)
   /-- An opaque body with a postcondition, optional implementation, and modifies clause. Without an implementation the postcondition is assumed. -/
   | Opaque
-      (postconditions : List (WithMetadata StmtExpr))
+      (postconditions : List Condition)
       (implementation : Option (WithMetadata StmtExpr))
       (modifies : List (WithMetadata StmtExpr))
   /-- An abstract body that must be overridden in extending types. A type containing any members with abstract bodies cannot be instantiated. -/
-  | Abstract (postconditions : List (WithMetadata StmtExpr))
+  | Abstract (postconditions : List Condition)
   /-- An external body for procedures that are not translated to Core (e.g., built-in primitives). -/
   | External
 
@@ -289,7 +299,7 @@ inductive StmtExpr : Type where
   /-- Check whether a reference is freshly allocated. May only target impure composite types. -/
   | Fresh (value : WithMetadata StmtExpr)
   /-- Assert a condition, generating a proof obligation. -/
-  | Assert (condition : WithMetadata StmtExpr)
+  | Assert (condition : Condition)
   /-- Assume a condition, restricting the state space. -/
   | Assume (condition : WithMetadata StmtExpr)
   /-- Attach a proof hint to a value. The semantics are those of `value`, but `proof` helps discharge assertions in `value`. -/
@@ -317,6 +327,17 @@ end
 
 theorem WithMetadata.sizeOf_val_lt {t : Type} [SizeOf t] (e : WithMetadata t) : sizeOf e.val < sizeOf e := by
   cases e; grind
+
+theorem Condition.sizeOf_condition_lt (c : Condition) : sizeOf c.condition < 1 + sizeOf c := by
+  cases c; grind
+
+/-- Apply a monadic transformation to the condition expression, preserving the summary. -/
+def Condition.mapM [Monad m] (f : WithMetadata StmtExpr → m (WithMetadata StmtExpr)) (c : Condition) : m Condition :=
+  return { c with condition := ← f c.condition }
+
+/-- Apply a pure transformation to the condition expression, preserving the summary. -/
+def Condition.mapCondition (f : WithMetadata StmtExpr → WithMetadata StmtExpr) (c : Condition) : Condition :=
+  { c with condition := f c.condition }
 
 instance : Inhabited StmtExpr where
   default := .Hole

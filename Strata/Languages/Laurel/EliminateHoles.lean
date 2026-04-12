@@ -107,7 +107,8 @@ private def elimStmt (stmt : StmtExprMd) : ElimHoleM StmtExprMd := do
   | .While cond invs dec body =>
       let dec' ← match dec with | some d => pure (some (← elimExpr d)) | none => pure none
       return ⟨.While (← elimExpr cond) (← invs.mapM elimExpr) dec' (← elimStmt body), md⟩
-  | .Assert cond => return ⟨.Assert (← elimExpr cond), md⟩
+  | .Assert ⟨condExpr, summary⟩ =>
+      return ⟨.Assert { condition := ← elimExpr condExpr, summary }, md⟩
   | .Assume cond => return ⟨.Assume (← elimExpr cond), md⟩
   | .StaticCall callee args => return ⟨.StaticCall callee (← args.mapM elimExpr), md⟩
   | .Return (some retExpr) => return ⟨.Return (some (← elimExpr retExpr)), md⟩

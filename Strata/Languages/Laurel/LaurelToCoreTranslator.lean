@@ -357,8 +357,11 @@ def translateStmt (outputParams : List Parameter) (stmt : StmtExprMd)
   match _h : stmt.val with
   | .Assert cond =>
       -- Assert/assume bodies must be pure expressions (no assignments, loops, or procedure calls)
-      let coreExpr ← translateExpr cond [] (isPureContext := true)
-      return [Core.Statement.assert ("assert" ++ getNameFromMd md) coreExpr md]
+      let coreExpr ← translateExpr cond.condition [] (isPureContext := true)
+      let md' := match cond.summary with
+        | some msg => md.pushElem (.label "propertySummary") (.msg msg)
+        | none => md
+      return [Core.Statement.assert ("assert" ++ getNameFromMd md) coreExpr md']
   | .Assume cond =>
       let coreExpr ← translateExpr cond [] (isPureContext := true)
       return [Core.Statement.assume ("assume" ++ getNameFromMd md) coreExpr md]
@@ -519,12 +522,15 @@ def translateStmt (outputParams : List Parameter) (stmt : StmtExprMd)
 Translate a list of checks (preconditions or postconditions) to Core checks.
 Each check gets a label like `"requires"` or `"requires_0"`, `"requires_1"`, etc.
 -/
-private def translateChecks (checks : List StmtExprMd) (labelBase : String)
+private def translateChecks (checks : List Condition) (labelBase : String)
     : TranslateM (ListMap Core.CoreLabel Core.Procedure.Check) :=
   checks.mapIdxM (fun i check => do
     let label := if checks.length == 1 then labelBase else s!"{labelBase}_{i}"
-    let checkExpr ← translateExpr check [] (isPureContext := true)
-    let c : Core.Procedure.Check := { expr := checkExpr, md := check.md }
+    let checkExpr ← translateExpr check.condition [] (isPureContext := true)
+    let md := match check.summary with
+      | some msg => check.condition.md.pushElem (.label "propertySummary") (.msg msg)
+      | none => check.condition.md
+    let c : Core.Procedure.Check := { expr := checkExpr, md }
     return (label, c))
 
 /--
@@ -588,7 +594,7 @@ def translateInvokeOnAxiom (proc : Procedure) (trigger : StmtExprMd)
   -- (i.e. reversed) so that pn → 0, ..., p1 → n-1.
   let boundVars := proc.inputs.reverse.map (·.name)
   -- Translate postconditions and trigger with the full bound-var context
-  let postcondExprs ← postconds.mapM (fun pc => translateExpr pc boundVars (isPureContext := true))
+  let postcondExprs ← postconds.mapM (fun pc => translateExpr pc.condition boundVars (isPureContext := true))
   let bodyExpr : Core.Expression.Expr := match postcondExprs with
     | [] => .const () (.boolConst true)
     | [e] => e
@@ -626,7 +632,7 @@ def translateProcedureToFunction (options: LaurelTranslateOptions) (isRecursive:
     | none => pure LMonoTy.int
   -- Translate precondition to FuncPrecondition (skip trivial `true`)
   let preconditions ← proc.preconditions.mapM (fun precondition => do
-    let checkExpr ← translateExpr precondition [] true
+    let checkExpr ← translateExpr precondition.condition [] true
     return { expr := checkExpr, md := () })
 
   -- For recursive functions, infer the @[cases] parameter index: the first input

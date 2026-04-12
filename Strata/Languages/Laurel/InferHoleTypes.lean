@@ -126,7 +126,8 @@ private def inferExpr (expr : StmtExprMd) (expectedType : HighTypeMd) : InferHol
         | some d => pure (some (← inferExpr d (bareType .TInt)))
         | none => pure none
       return ⟨.While (← inferExpr cond (bareType .TBool)) (← invs.mapM (inferExpr · (bareType .TBool))) dec' (← inferExpr body voidType), md⟩
-  | .Assert cond => return ⟨.Assert (← inferExpr cond (bareType .TBool)), md⟩
+  | .Assert ⟨condExpr, summary⟩ =>
+      return ⟨.Assert { condition := ← inferExpr condExpr (bareType .TBool), summary }, md⟩
   | .Assume cond => return ⟨.Assume (← inferExpr cond (bareType .TBool)), md⟩
   | .Return (some retExpr) =>
       return ⟨.Return (some (← inferExpr retExpr (← get).currentOutputType)), md⟩
