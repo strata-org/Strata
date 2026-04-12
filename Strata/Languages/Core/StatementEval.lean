@@ -567,7 +567,9 @@ def evalAuxGo (steps : Nat) (old_var_subst : SubstMap) (Ewn : EnvWithNext) (ss :
                     | .none =>
                       match ewn.env.error with
                       | .some _ => [ewn]
-                      | .none => go' ewn [.loop guard none [] body_ss md] .none
+                      | .none =>
+                        have : wfParam steps' < steps' + 1 := by simp [wfParam]
+                        evalAuxGo steps' old_var_subst ewn [.loop (.det g) none [] body_ss md] .none
                 | .false _ => [Ewn]  -- Guard is false: skip loop
                 | _ =>
                   -- Guard didn't reduce: skip loop (default to false in concrete mode)
