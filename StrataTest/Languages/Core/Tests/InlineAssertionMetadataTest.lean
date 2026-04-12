@@ -37,21 +37,22 @@ procedure caller() returns () {
   let inlined ← match Strata.Core.inlineProcedures coreProg {} with
     | .ok p => pure p
     | .error e => throw (IO.userError s!"Inlining failed: {e}")
-  let vcResults ←
+  let assertResults ←
     EIO.toIO (fun e => IO.Error.userError e)
       (Strata.Core.verifyProgram inlined
         { Core.VerifyOptions.default with verbose := .quiet }
         (proceduresToVerify := some ["caller"]))
   let mut output := ""
-  for vcr in vcResults do
-    output := output ++ s!"{vcr.obligation.label}: {vcr.formatOutcome}"
-    match Imperative.getFileRange vcr.obligation.metadata with
-    | some primary =>
-      let related := Imperative.getRelatedFileRanges vcr.obligation.metadata
-      for r in related do
-        let delta := primary.range.start.byteIdx - r.range.start.byteIdx
-        output := output ++ s!"\n Assertion is {delta} characters after the related location"
-    | none => pure ()
+  for ar in assertResults do
+    for vcr in ar.results do
+      output := output ++ s!"{vcr.obligation.label}: {vcr.formatOutcome}"
+      match Imperative.getFileRange vcr.obligation.metadata with
+      | some primary =>
+        let related := Imperative.getRelatedFileRanges vcr.obligation.metadata
+        for r in related do
+          let delta := primary.range.start.byteIdx - r.range.start.byteIdx
+          output := output ++ s!"\n Assertion is {delta} characters after the related location"
+      | none => pure ()
   return output
 
 end Core.InlineAssertionMetadata.Tests

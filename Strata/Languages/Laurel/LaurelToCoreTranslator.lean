@@ -30,7 +30,7 @@ import Strata.Languages.Laurel.Grammar.AbstractToConcreteTreeTranslator
 import Strata.Languages.Laurel.ConstrainedTypeElim
 import Strata.Util.Tactics
 
-open Core (VCResult VCResults VerifyOptions)
+open Core (VCResult VCResults AssertResult AssertResults VerifyOptions)
 open Core (intAddOp intSubOp intMulOp intSafeDivOp intSafeModOp intSafeDivTOp intSafeModTOp intNegOp intLtOp intLeOp intGtOp intGeOp boolAndOp boolOrOp boolNotOp boolImpliesOp strConcatOp)
 open Core (realAddOp realSubOp realMulOp realDivOp realNegOp realLtOp realLeOp realGtOp realGeOp)
 
@@ -849,22 +849,33 @@ def verifyToVcResults (program : Program)
     return (some ioResult, translateDiags)
   | none => return (none, translateDiags)
 
+/--
+Verify a Laurel program using an SMT solver, returning results grouped by assertion.
+-/
+def verifyToAssertResults (program : Program)
+    (options : VerifyOptions := .default)
+    : IO (Option AssertResults × List DiagnosticModel) := do
+  let (vcOpt, diags) ← verifyToVcResults program options
+  return (vcOpt.map (·.groupByAssertion), diags)
+
 def verifyToDiagnostics (files: Map Strata.Uri Lean.FileMap) (program : Program)
     (options : VerifyOptions := .default): IO (Array Diagnostic) := do
-  let results <- verifyToVcResults program options
+  let results <- verifyToAssertResults program options
   let phases := Core.coreAbstractedPhases
   let translationDiags := results.snd.map (fun dm => dm.toDiagnostic files)
   let vcDiags := match results.fst with
-  | some vcResults => vcResults.toList.filterMap (fun (vcr: VCResult) => vcr.toDiagnostic files phases)
+  | some assertResults =>
+    assertResults.toList.filterMap (fun ar => assertResultToDiagnostic files ar phases)
   | none => []
   return (translationDiags ++ vcDiags).toArray
 
 def verifyToDiagnosticModels (program : Program) (options : VerifyOptions := .default) : IO (Array DiagnosticModel) := do
-  let results <- verifyToVcResults program options
+  let results <- verifyToAssertResults program options
   let phases := Core.coreAbstractedPhases
   let vcDiags := match results.fst with
   | none => []
-  | some vcResults => vcResults.toList.filterMap (fun (vcr: VCResult) => toDiagnosticModel vcr phases)
+  | some assertResults =>
+    assertResults.toList.filterMap (fun ar => assertResultToDiagnosticModel ar phases)
   return (results.snd ++ vcDiags).toArray
 
 end -- public section

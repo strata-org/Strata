@@ -101,7 +101,7 @@ private meta def runAnalyze
 private meta def runAnalyzeAndVerify
     (pythonCmd : System.FilePath)
     (tmpDir : System.FilePath) (scriptName : String)
-    : IO (Except String (Array Core.VCResult)) := do
+    : IO (Except String (Array Core.AssertResult)) := do
   let testIon ← compileTestScript pythonCmd (testDir / scriptName) tmpDir
   let laurel ←
     match ← Strata.pyAnalyzeLaurel testIon.toString
@@ -280,11 +280,12 @@ Expected output (when Python + z3 available):
     | .error msg => throw <| IO.userError s!"Pipeline failed: {msg}"
     | .ok vcResults =>
       let mut foundAlwaysFalse := false
-      for r in vcResults do
-        if r.obligation.label.startsWith "servicelib_Storage_" then
-          let line := r.formatOutcome
-          if (line.splitOn "✖️").length != 1 then
-            foundAlwaysFalse := true
+      for ar in vcResults do
+        for r in ar.results do
+          if r.obligation.label.startsWith "servicelib_Storage_" then
+            let line := r.formatOutcome
+            if (line.splitOn "✖️").length != 1 then
+              foundAlwaysFalse := true
       if !foundAlwaysFalse then
         throw <| IO.userError "Expected ✖️ always false for regex violation"
 
@@ -304,11 +305,12 @@ assertion. This exercises the full pipeline with type alias resolution.
     | .error msg => throw <| IO.userError s!"Pipeline failed: {msg}"
     | .ok vcResults =>
       let mut foundAlwaysFalse := false
-      for r in vcResults do
-        if r.obligation.label.startsWith "servicelib_Storage_" then
-          let line := r.formatOutcome
-          if (line.splitOn "✖️").length != 1 then
-            foundAlwaysFalse := true
+      for ar in vcResults do
+        for r in ar.results do
+          if r.obligation.label.startsWith "servicelib_Storage_" then
+            let line := r.formatOutcome
+            if (line.splitOn "✖️").length != 1 then
+              foundAlwaysFalse := true
       if !foundAlwaysFalse then
         throw <| IO.userError
           "Expected ✖️ always false for empty bucket violation"
@@ -326,11 +328,13 @@ Without the attribute, the regex VC would be ❓ unknown. -/
     match result with
     | .error msg => throw <| IO.userError s!"Pipeline failed: {msg}"
     | .ok vcResults =>
-      for r in vcResults do
-        if r.obligation.label.startsWith "servicelib_Storage_" then
-          if !r.isSuccess then
-            throw <| IO.userError
-              s!"Expected all Storage preconditions to pass but got: {r.formatOutcome}"
+      for ar in vcResults do
+        let rawLabel := ar.representative.map (·.obligation.label) |>.getD ""
+        if rawLabel.startsWith "servicelib_Storage_" then
+          if !ar.isSuccess then
+            for r in ar.results do
+              throw <| IO.userError
+                s!"Expected all Storage preconditions to pass but got: {r.formatOutcome}"
 
 /-! ## Resolution error test after FilterPrelude
 

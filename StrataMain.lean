@@ -447,7 +447,7 @@ private def exitPyAnalyzeKnownLimitation {α} (message : String) : IO α := do
     removed first, then the classifier partitions the rest into
     success / failure / inconclusive (guaranteeing disjointness).
     Unreachable count is reported as supplementary info. -/
-private def printPyAnalyzeSummary (vcResults : Array Core.VCResult)
+private def printPyAnalyzeSummary (assertResults : Array Core.AssertResult)
     (checkMode : VerificationMode := .deductive) : IO Unit := do
   let classifier : ResultClassifier :=
     match checkMode with
@@ -455,6 +455,8 @@ private def printPyAnalyzeSummary (vcResults : Array Core.VCResult)
       { isSuccess := (·.isBugFindingSuccess)
         isFailure := (·.isBugFindingFailure) }
     | _ => {}
+  -- Flatten to per-path VCResults for counting
+  let vcResults := assertResults.foldl (fun acc ar => acc ++ ar.results) #[]
   -- 1. Partition out implementation errors (broken results, not classifiable).
   let (implError, classifiable) :=
     vcResults.partition (fun r => r.isImplementationError || r.hasSMTError)
@@ -606,7 +608,7 @@ def pyAnalyzeLaurelCommand : Command where
           { doInline := fun name a => name ≠ "__main__" && Core.doInlineNonRecursive name a
             maxIters := some 10 }]
       else []
-    let vcResults ← profileStep profile "SMT verification" do
+    let assertResults ← profileStep profile "SMT verification" do
       match ← Core.verifyProgram coreProgram options
                 (moreFns := Strata.Python.ReFactory)
                 (proceduresToVerify := some userProcNames)
@@ -624,27 +626,31 @@ def pyAnalyzeLaurelCommand : Command where
     -- Print per-VC results by default, unless SARIF mode is used
     if !outputSarif then
       let mut s := ""
-      for vcResult in vcResults do
-        let fileMap := mfm.map (·.2)
-        let location := match Imperative.getFileRange vcResult.obligation.metadata with
-          | some fr =>
-            if fr.range.isNone then ""
-            else s!"{fr.format fileMap (includeEnd? := false)}"
-          | none => ""
-        let messageSuffix := match vcResult.obligation.metadata.getPropertySummary with
-          | some msg => s!" - {msg}"
-          | none => s!" - {vcResult.obligation.label}"
-        let outcomeStr := vcResult.formatOutcome
-        let loc := if !location.isEmpty then s!"{location}: " else "unknown location: "
-        s := s ++ s!"{loc}{outcomeStr}{messageSuffix}\n"
+      for ar in assertResults do
+        match ar.representative with
+        | none => pure ()
+        | some vcResult =>
+          let fileMap := mfm.map (·.2)
+          let location := match Imperative.getFileRange vcResult.obligation.metadata with
+            | some fr =>
+              if fr.range.isNone then ""
+              else s!"{fr.format fileMap (includeEnd? := false)}"
+            | none => ""
+          let messageSuffix := match vcResult.obligation.metadata.getPropertySummary with
+            | some msg => s!" - {msg}"
+            | none => s!" - {vcResult.obligation.label}"
+          let outcomeStr := vcResult.formatOutcome
+          let loc := if !location.isEmpty then s!"{location}: " else "unknown location: "
+          s := s ++ s!"{loc}{outcomeStr}{messageSuffix}\n"
       IO.print s
     -- Output in SARIF format if requested
     if outputSarif then
       let files := match mfm with
         | some (pyPath, fm) => Map.empty.insert (Strata.Uri.file pyPath) fm
         | none => Map.empty
-      Core.Sarif.writeSarifOutput options.checkMode files vcResults (filePath ++ ".sarif")
-    printPyAnalyzeSummary vcResults options.checkMode
+      let flatResults := assertResults.foldl (fun acc ar => acc ++ ar.results) #[]
+      Core.Sarif.writeSarifOutput options.checkMode files flatResults (filePath ++ ".sarif")
+    printPyAnalyzeSummary assertResults options.checkMode
 
 def pyAnalyzeToGotoCommand : Command where
   name := "pyAnalyzeToGoto"
@@ -870,10 +876,13 @@ def laurelAnalyzeCommand : Command where
       IO.println s!"{err.message}"
     match vcResultsOption with
     | none => return
-    | some vcResults =>
+    | some assertResults =>
       IO.println s!"==== RESULTS ===="
-      for vc in vcResults do
-        IO.println s!"{vc.obligation.label}: {match vc.outcome with | .ok o => repr o | .error e => e}"
+      for ar in assertResults do
+        match ar.representative with
+        | none => pure ()
+        | some vc =>
+          IO.println s!"{vc.obligation.label}: {match vc.outcome with | .ok o => repr o | .error e => e}"
 
 def laurelAnalyzeToGotoCommand : Command where
   name := "laurelAnalyzeToGoto"

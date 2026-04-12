@@ -327,14 +327,15 @@ def Core.verifyProgram
     (proceduresToVerify : Option (List String) := none)
     (externalPhases : List Core.AbstractedPhase := [])
     (prefixPhases : List Core.PipelinePhase := [])
-    : EIO String Core.VCResults := do
+    : EIO String Core.AssertResults := do
   let runVerification (tempDir : System.FilePath) : IO Core.VCResults :=
     EIO.toIO (IO.Error.userError ∘ toString)
       (Core.verify program tempDir proceduresToVerify options moreFns externalPhases prefixPhases)
   let ioAction := match options.vcDirectory with
     | .some vcDir => IO.FS.createDirAll vcDir *> runVerification vcDir
     | .none => IO.FS.withTempDir runVerification
-  IO.toEIO (fun e => s!"{e}") ioAction
+  let vcResults ← IO.toEIO (fun e => s!"{e}") ioAction
+  return vcResults.groupByAssertion
 
 /-! ### Analysis of Laurel programs -/
 
@@ -346,8 +347,8 @@ and any translation diagnostics.
 def Laurel.verifyProgram
     (program : Laurel.Program)
     (options : Core.VerifyOptions := .default)
-    : IO (Option Core.VCResults × List DiagnosticModel) :=
-  Strata.Laurel.verifyToVcResults program options
+    : IO (Option Core.AssertResults × List DiagnosticModel) :=
+  Strata.Laurel.verifyToAssertResults program options
 
 /--
 Analyze a Laurel program and return structured diagnostic models

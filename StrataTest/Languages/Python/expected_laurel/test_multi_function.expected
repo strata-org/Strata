@@ -1,11 +1,8 @@
 unknown location: ✅ pass - (create_config ensures) Return type constraint
 test_multi_function.py(9, 4): ✅ pass - ite_cond_calls_PNotIn_0
 test_multi_function.py(9, 4): ✅ pass - ite_cond_calls_Any_to_bool_1
-unknown location: ✅ pass - (validate_config ensures) Return type constraint
 test_multi_function.py(11, 4): ✅ pass - ite_cond_calls_PNotIn_0
 test_multi_function.py(11, 4): ✅ pass - ite_cond_calls_Any_to_bool_1
-unknown location: ✅ pass - (validate_config ensures) Return type constraint
-unknown location: ✅ pass - (validate_config ensures) Return type constraint
 test_multi_function.py(16, 4): ✅ pass - (create_config requires) Type constraint of name
 test_multi_function.py(16, 4): ✅ pass - (create_config requires) Type constraint of value
 test_multi_function.py(17, 4): ✅ pass - (validate_config requires) Type constraint of config
