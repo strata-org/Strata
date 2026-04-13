@@ -29,6 +29,11 @@ evaluation steps preserve denotation, type, and structural invariants.
 ### Multi-step preservation
 - `StepStar.type_preserved` — `HasTypeA` is preserved by `StepStar`
 - `StepStar.denote_preserved` — denotation is preserved by `StepStar`
+- `StepStar.denote_preserved'` — corollary that derives the `e₂` typing proof automatically
+
+### Evaluator soundness
+- `eval_denote_sound` — if `e₂ = eval n σ e` and both are well-typed at `τ`,
+  then `denote e = denote e₂` (composes `eval_StepStar` with `StepStar.denote_preserved`)
 
 ### Bundled assumption structures
 - `Env.StepWF` — environment well-formedness for step preservation
@@ -1221,6 +1226,61 @@ theorem StepStar.denote_preserved
     have h_rest_eq := ih h_mid h₂ h_ops_mid h_annot_mid
     exact h_step_eq.trans h_rest_eq
 
+/-- Corollary of `StepStar.denote_preserved` that requires no assumptions
+on`e₂`. It derives the typing proof for `e₂` via `StepStar.type_preserved`. -/
+theorem StepStar.denote_preserved'
+    {F : @Factory T} {env : Env T} {tf : @TypeFactory T.IDMeta}
+    {e₁ e₂ : LExpr T.mono} {τ : LMonoTy}
+    (hsteps : StepStar F env e₁ e₂)
+    (h₁ : LExpr.HasTypeA [] e₁ τ)
+    (hEnvWF : Env.StepWF F env)
+    (hFWF : Factory.StepWF F hEnvWF.typed.tyMap)
+    (hFacWF : Factory.WF F tf)
+    (hIC : InterpConsistent tcInterp opInterp fvarVal F env)
+    (hOps : OpsConsistent F e₁)
+    (hAnnot : fvars_annotated_by hEnvWF.typed.tyMap e₁)
+    : LExpr.denote tcInterp opInterp fvarVal vt .nil e₁ τ h₁ =
+      LExpr.denote tcInterp opInterp fvarVal vt .nil e₂ τ
+        (StepStar.type_preserved hsteps h₁ hEnvWF hFWF hOps hAnnot) :=
+  StepStar.denote_preserved tcInterp opInterp fvarVal vt hsteps h₁
+    (StepStar.type_preserved hsteps h₁ hEnvWF hFWF hOps hAnnot)
+    hEnvWF hFWF hFacWF hIC hOps hAnnot
+
 end -- section [DecidableEq T.IDMeta] [Inhabited T.mono.base.IDMeta]
+
+section
+variable [DecidableEq T.IDMeta]
+
+/-- Soundness of the evaluator w.r.t. denotational semantics: if `e₂ = eval n σ e`
+and both `e` and `e₂` are well-typed at `τ`, then `denote e = denote e₂`.
+This is a simple composition of `eval_StepStar` and `StepStar.denote_preserved`.
+-/
+theorem eval_denote_sound
+    [DecidableEq T.Metadata] [Inhabited T.IDMeta]
+    [Std.ToFormat T.Metadata] [Std.ToFormat T.IDMeta]
+    [Traceable LExpr.EvalProvenance T.Metadata]
+    {σ : LState T} {e e₂ : LExpr T.mono} {τ : LMonoTy} {n : Nat}
+    {tf : @TypeFactory T.IDMeta}
+    (hEval : e₂ = LExpr.eval n σ e)
+    (h₁ : LExpr.HasTypeA [] e τ)
+    (h₂ : LExpr.HasTypeA [] e₂ τ)
+    (hEnvWF : Env.StepWF σ.config.factory (Scopes.toEnv σ.state))
+    (hFWF : Factory.StepWF σ.config.factory hEnvWF.typed.tyMap)
+    (hFacWF : Factory.WF σ.config.factory tf)
+    (hIC : InterpConsistent tcInterp opInterp fvarVal σ.config.factory (Scopes.toEnv σ.state))
+    (hOps : OpsConsistent σ.config.factory e)
+    (hAnnot : fvars_annotated_by hEnvWF.typed.tyMap e)
+    : LExpr.denote tcInterp opInterp fvarVal vt .nil e τ h₁ =
+      LExpr.denote tcInterp opInterp fvarVal vt .nil e₂ τ h₂ := by
+  obtain ⟨e', hsteps, h_erase⟩ := eval_StepStar σ e e₂ n hFacWF.factoryWF hEval
+  have h_ty_e' := StepStar.type_preserved hsteps h₁ hEnvWF hFWF hOps hAnnot
+  have h_step_eq := StepStar.denote_preserved tcInterp opInterp fvarVal vt hsteps h₁ h_ty_e' hEnvWF hFWF hFacWF hIC hOps hAnnot
+  have h_denote_e' := denote_replaceMetadata tcInterp opInterp fvarVal vt .nil (fun _ => ()) h_ty_e'
+  have h_denote_e₂ := denote_replaceMetadata tcInterp opInterp fvarVal vt .nil (fun _ => ()) h₂
+  rw [h_step_eq, h_denote_e']
+  rw [h_denote_e₂]
+  congr 1
+
+end
 
 end Lambda
