@@ -317,8 +317,10 @@ private def mkMdWithFileRange (loc : SourceRange) (msg : String := "")
 /-- Wrap a StmtExpr with metadata containing a file range and optional message. -/
 private def mkStmtWithLoc (e : StmtExpr) (loc : SourceRange) (msg : String := "")
     : ToLaurelM StmtExprMd := do
+  let ctx ← read
+  let fr : FileRange := { file := .file ctx.filepath.toString, range := loc }
   let md ← mkMdWithFileRange loc msg
-  return { val := e, source := none, md := md }
+  return { val := e, source := some fr, md := md }
 
 /-- Translate a SpecExpr to a Laurel StmtExpr.
     All values are assumed to be Any-typed (the Python prelude's universal type).

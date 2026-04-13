@@ -45,16 +45,6 @@ public section
 private def mdWithUnknownLoc : Imperative.MetaData Core.Expression :=
   #[⟨Imperative.MetaData.fileRange, .fileRange FileRange.unknown⟩]
 
-/-- Build Core metadata from an optional source location and Laurel metadata. -/
-private def fileRangeToCoreMd (source : Option FileRange) (md : MetaData) : Imperative.MetaData Core.Expression :=
-  match source with
-  | some fr => md.pushElem Imperative.MetaData.fileRange (.fileRange fr)
-  | none => md
-
-/-- Build Core metadata from an AstNode's source location and any extra metadata. -/
-private def astNodeToCoreMd (node : AstNode α) : Imperative.MetaData Core.Expression :=
-  fileRangeToCoreMd node.source node.md
-
 def isFieldName (fieldNames : List Identifier) (name : Identifier) : Bool :=
   fieldNames.contains name
 

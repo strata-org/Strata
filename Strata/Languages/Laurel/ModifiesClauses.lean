@@ -175,8 +175,7 @@ def filterBodyNonCompositeModifies (model : SemanticModel) (body : Body)
       let ty := (computeExprType model e).val
       if isHeapRelevantType ty then (acc ++ [e], ds)
       else
-        let coreMd := match e.source with | some fr => e.md.pushElem Imperative.MetaData.fileRange (.fileRange fr) | none => e.md
-        (acc, ds ++ [coreMd.toDiagnostic s!"modifies clause entry has non-composite type '{formatHighTypeVal ty}' and will be ignored"])
+        (acc, ds ++ [(fileRangeToCoreMd e.source e.md).toDiagnostic s!"modifies clause entry has non-composite type '{formatHighTypeVal ty}' and will be ignored"])
     ) ([], [])
     (.Opaque posts impl kept, diags)
   | other => (other, [])

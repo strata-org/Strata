@@ -65,8 +65,11 @@ def mkConstraintFunc (ptMap : ConstrainedTypeMap) (ct : ConstrainedType) : Proce
   let bodyExpr := match ct.base.val with
     | .UserDefined parent =>
       if ptMap.contains parent.text then
+        let paramId := { ct.valueName with uniqueId := none }
+        let paramRef : StmtExprMd :=
+          { val := .Identifier paramId, source := none }
         let parentCall : StmtExprMd :=
-          { val := .StaticCall (mkId s!"{parent.text}$constraint") [{ val := .Identifier { ct.valueName with uniqueId := none }, source := none }], source := none }
+          { val := .StaticCall (mkId s!"{parent.text}$constraint") [paramRef], source := none }
         { val := .PrimitiveOp .And [ct.constraint, parentCall], source := none }
       else ct.constraint
     | _ => ct.constraint
@@ -92,14 +95,14 @@ def resolveExpr (ptMap : ConstrainedTypeMap) : StmtExprMd → StmtExprMd
   | ⟨.Forall param trigger body, source, md⟩ =>
     let body' := resolveExpr ptMap body
     let param' := { param with type := resolveType ptMap param.type }
-    let injected := match constraintCallFor ptMap param.type.val param.name md with
+    let injected := match constraintCallFor ptMap param.type.val param.name md (src := source) with
       | some c => ⟨.PrimitiveOp .Implies [c, body'], source, md⟩
       | none => body'
     ⟨.Forall param' trigger injected, source, md⟩
   | ⟨.Exists param trigger body, source, md⟩ =>
     let body' := resolveExpr ptMap body
     let param' := { param with type := resolveType ptMap param.type }
-    let injected := match constraintCallFor ptMap param.type.val param.name md with
+    let injected := match constraintCallFor ptMap param.type.val param.name md (src := source) with
       | some c => ⟨.PrimitiveOp .And [c, body'], source, md⟩
       | none => body'
     ⟨.Exists param' trigger injected, source, md⟩
@@ -142,7 +145,7 @@ def elimStmt (ptMap : ConstrainedTypeMap)
   let md := stmt.md
   match _h : stmt.val with
   | .LocalVariable name ty init =>
-    let callOpt := constraintCallFor ptMap ty.val name md
+    let callOpt := constraintCallFor ptMap ty.val name md (src := source)
     if callOpt.isSome then modify fun pv => pv.insert name.text ty.val
     let (init', check) : Option StmtExprMd × List StmtExprMd := match init with
       | none => match callOpt with
@@ -155,7 +158,7 @@ def elimStmt (ptMap : ConstrainedTypeMap)
     | .Identifier name => do
       match (← get).get? name.text with
       | some ty =>
-        let assert := (constraintCallFor ptMap ty name md).toList.map
+        let assert := (constraintCallFor ptMap ty name md (src := source)).toList.map
           fun c => ⟨.Assert c, source, md⟩
         pure ([stmt] ++ assert)
       | none => pure [stmt]
@@ -187,9 +190,9 @@ decreasing_by
 
 def elimProc (ptMap : ConstrainedTypeMap) (proc : Procedure) : Procedure :=
   let inputRequires := proc.inputs.filterMap fun p =>
-    constraintCallFor ptMap p.type.val p.name p.type.md
+    constraintCallFor ptMap p.type.val p.name p.type.md (src := p.type.source)
   let outputEnsures := if proc.isFunctional then [] else proc.outputs.filterMap fun p =>
-    (constraintCallFor ptMap p.type.val p.name p.type.md).map
+    (constraintCallFor ptMap p.type.val p.name p.type.md (src := p.type.source)).map
       fun c => ⟨c.val, p.type.source, p.type.md⟩
   let initVars : PredVarMap := proc.inputs.foldl (init := {}) fun s p =>
     if isConstrainedType ptMap p.type.val then s.insert p.name.text p.type.val else s

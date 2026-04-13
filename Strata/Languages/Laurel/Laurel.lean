@@ -320,6 +320,16 @@ end
 theorem AstNode.sizeOf_val_lt {t : Type} [SizeOf t] (e : AstNode t) : sizeOf e.val < sizeOf e := by
   cases e; grind
 
+/-- Build Core metadata from an optional source location and Laurel metadata. -/
+def fileRangeToCoreMd (source : Option FileRange) (md : Imperative.MetaData Core.Expression) : Imperative.MetaData Core.Expression :=
+  match source with
+  | some fr => md.pushElem Imperative.MetaData.fileRange (.fileRange fr)
+  | none => md
+
+/-- Build Core metadata from an AstNode's source location and any extra metadata. -/
+def astNodeToCoreMd (node : AstNode α) : Imperative.MetaData Core.Expression :=
+  fileRangeToCoreMd node.source node.md
+
 instance : Inhabited StmtExpr where
   default := .Hole
 

@@ -265,9 +265,7 @@ def withScope (action : ResolveM α) : ResolveM α := do
 def resolveHighType (ty : HighTypeMd) : ResolveM HighTypeMd := do
   match ty with
   | AstNode.mk val _ _ =>
-  let coreMd := match ty.source with
-    | some fr => ty.md.pushElem Imperative.MetaData.fileRange (.fileRange fr)
-    | none => ty.md
+  let coreMd := fileRangeToCoreMd ty.source ty.md
   let val' ← match val with
   | .UserDefined ref =>
     let ref' ← resolveRef ref coreMd
@@ -298,9 +296,7 @@ def resolveHighType (ty : HighTypeMd) : ResolveM HighTypeMd := do
 def resolveStmtExpr (exprMd : StmtExprMd) : ResolveM StmtExprMd := do
   match _: exprMd with
   | AstNode.mk expr source md =>
-  let coreMd := match source with
-    | some fr => md.pushElem Imperative.MetaData.fileRange (.fileRange fr)
-    | none => md
+  let coreMd := fileRangeToCoreMd source md
   let val' ← match _: expr with
   | .IfThenElse cond thenBr elseBr =>
     let cond' ← resolveStmtExpr cond

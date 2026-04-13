@@ -183,15 +183,15 @@ def validateDiamondFieldAccesses (model: SemanticModel) (program : Program) : Li
 Lower `IsType target ty` to Laurel-level map lookups:
   `select(select(ancestorsPerType(), Composite..typeTag!(target)), TypeName_TypeTag())`
 -/
-def lowerIsType (target : StmtExprMd) (ty : HighTypeMd) (md : Imperative.MetaData Core.Expression) : StmtExprMd :=
+def lowerIsType (target : StmtExprMd) (ty : HighTypeMd) (source : Option FileRange) (md : Imperative.MetaData Core.Expression) : StmtExprMd :=
   match ty.val with
     | .UserDefined name => let typeName := name.text
         let typeTag := mkMd (.StaticCall "Composite..typeTag!" [target])
         let ancestorsPerType := mkMd (.StaticCall "ancestorsPerType" [])
         let innerMap := mkMd (.StaticCall "select" [ancestorsPerType, typeTag])
         let typeConst := mkMd (.StaticCall (mkId $ typeName ++ "_TypeTag") [])
-        ⟨.StaticCall "select" [innerMap, typeConst], none, md⟩
-    | _ => ⟨ .Hole, none, md ⟩
+        ⟨.StaticCall "select" [innerMap, typeConst], source, md⟩
+    | _ => ⟨ .Hole, source, md ⟩
 
 /-- State for the type hierarchy rewrite monad -/
 structure THState where
@@ -210,7 +210,7 @@ Lower `New name` to a block that:
 2. Increments the heap via `$heap := increment($heap)`
 3. Constructs a `MkComposite(counter, name_TypeTag())` value
 -/
-def lowerNew (name : Identifier) (md : Imperative.MetaData Core.Expression) : THM StmtExprMd := do
+def lowerNew (name : Identifier) (source : Option FileRange) (md : Imperative.MetaData Core.Expression) : THM StmtExprMd := do
   let heapVar : Identifier := "$heap"
   let freshVar ← freshVarName
   let getCounter := mkMd (.StaticCall "Heap..nextReference!" [mkMd (.Identifier heapVar)])
@@ -218,7 +218,7 @@ def lowerNew (name : Identifier) (md : Imperative.MetaData Core.Expression) : TH
   let newHeap := mkMd (.StaticCall "increment" [mkMd (.Identifier heapVar)])
   let updateHeap := mkMd (.Assign [mkMd (.Identifier heapVar)] newHeap)
   let compositeResult := mkMd (.StaticCall "MkComposite" [mkMd (.Identifier freshVar), mkMd (.StaticCall (name.text ++ "_TypeTag") [])])
-  return ⟨ .Block [saveCounter, updateHeap, compositeResult] none, none, md ⟩
+  return ⟨ .Block [saveCounter, updateHeap, compositeResult] none, source, md ⟩
 
 /--
 Walk a StmtExpr AST and rewrite `IsType` and `New` nodes.
@@ -227,10 +227,10 @@ def rewriteTypeHierarchyExpr (exprMd : StmtExprMd) : THM StmtExprMd :=
   match exprMd with
   | AstNode.mk expr source md =>
   match expr with
-  | .New name => lowerNew name md
+  | .New name => lowerNew name source md
   | .IsType target ty => do
       let target' ← rewriteTypeHierarchyExpr target
-      return lowerIsType target' ty md
+      return lowerIsType target' ty source md
   | .IfThenElse c t e => do
       let e' ← match e with | some x => some <$> rewriteTypeHierarchyExpr x | none => pure none
       return ⟨.IfThenElse (← rewriteTypeHierarchyExpr c) (← rewriteTypeHierarchyExpr t) e', source, md⟩
