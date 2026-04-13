@@ -304,7 +304,8 @@ theorem eql_true_implies_denote_eq
         -- Goal: denote fvarVal' bvarVal (varOpen body1) = denote fvarVal' bvarVal (varOpen body2)
         -- Step 5: apply IH (propagate OpsConsistent through varOpen)
         exact ih fvarVal' (varOpen_HasTypeA hbody1) (varOpen_HasTypeA hbody2)
-          (OpsConsistent_varOpen hoc₁.2) (OpsConsistent_varOpen hoc₂.2) heql
+          (OpsConsistent_varOpen (show OpsConsistent F body1 from hoc₁))
+          (OpsConsistent_varOpen (show OpsConsistent F body2 from hoc₂)) heql
     | case6 => contradiction -- abs vs abs, not both closed: none ≠ some true
     | case7 => contradiction -- const vs abs: some false ≠ some true
     | case8 => contradiction -- abs vs const: some false ≠ some true
@@ -486,7 +487,8 @@ theorem eql_false_implies_denote_ne
       intro habs_eq
       -- Apply IH with fvarVal to get ≠ on varOpen'd bodies
       have hih := ih fvarVal (varOpen_HasTypeA hbody1) (varOpen_HasTypeA hbody2)
-        (OpsConsistent_varOpen hoc₁.2) (OpsConsistent_varOpen hoc₂.2) heql
+        (OpsConsistent_varOpen (show OpsConsistent F body1 from hoc₁))
+        (OpsConsistent_varOpen (show OpsConsistent F body2 from hoc₂)) heql
       apply hih
       -- Use varOpen_denote to relate varOpen'd denote to body denote
       have hvo1 := varOpen_denote (x := ⟨"x", default⟩) tcInterp opInterp fvarVal vt hbody1 (varOpen_HasTypeA hbody1)

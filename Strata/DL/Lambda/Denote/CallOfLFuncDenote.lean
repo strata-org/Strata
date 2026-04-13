@@ -40,38 +40,64 @@ theorem applyArgs_cast_eq
 
 /-! ## `OpsConsistent` — every `.op` annotation is a valid instantiation -/
 
-/-- Every call in `e` has a valid type substitution derivable by `computeTypeSubst`,
-and the `.op` annotation is consistent with that substitution applied to the
-function's generic type. -/
+/-- Every `.op` node in `e` whose name is in the factory has a type annotation
+that is a valid instantiation of the function's generic type (via `opTypeSubst`).
+This is checked at every `.op` node directly, not just at complete calls. -/
 def OpsConsistent (F : @Factory T) : LExpr T.mono → Prop := fun e =>
-  (match F.callOfLFunc e with
-   | some (callee, _, fn) =>
-       match LFunc.opTypeSubst fn callee with
-       | some tySubst =>
-           match callee with
-           | .op _ _ (some ty_op) =>
-               ty_op = (LMonoTy.mkArrow' fn.output (fn.inputs.map Prod.snd)).subst tySubst
-           | _ => False
-       | none => False
-   | none => True)
-  ∧
-  (match e with
-   | .app _ fn arg => OpsConsistent F fn ∧ OpsConsistent F arg
-   | .abs _ _ _ body => OpsConsistent F body
-   | .ite _ c t f => OpsConsistent F c ∧ OpsConsistent F t ∧ OpsConsistent F f
-   | .eq _ e1 e2 => OpsConsistent F e1 ∧ OpsConsistent F e2
-   | .quant _ _ _ _ tr body => OpsConsistent F tr ∧ OpsConsistent F body
-   | _ => True)
+  match e with
+  | .op _ name ty =>
+      match F[name.name]? with
+      | some fn =>
+          match LFunc.opTypeSubst fn e with
+          | some tySubst =>
+              match ty with
+              | some ty_op =>
+                  ty_op = (LMonoTy.mkArrow' fn.output (fn.inputs.map Prod.snd)).subst tySubst
+              | none => False
+          | none => False
+      | none => True
+  | .app _ fn arg => OpsConsistent F fn ∧ OpsConsistent F arg
+  | .abs _ _ _ body => OpsConsistent F body
+  | .ite _ c t f => OpsConsistent F c ∧ OpsConsistent F t ∧ OpsConsistent F f
+  | .eq _ e1 e2 => OpsConsistent F e1 ∧ OpsConsistent F e2
+  | .quant _ _ _ _ tr body => OpsConsistent F tr ∧ OpsConsistent F body
+  | _ => True
 
-/-- `OpsConsistent` is preserved by `substK` when substituting a free variable.
-This could be generalized to arbitrary `s` with the assumption that `s` does not
-produce `.app` or `.op` nodes (needed so `getLFuncCall` commutation holds). -/
-theorem OpsConsistent_substK_fvar
+/-- Every function body in the factory satisfies `OpsConsistent` after type
+instantiation via `applySubst`. -/
+def Factory.BodyOpsConsistent (F : @Factory T) : Prop :=
+  ∀ (f : String), (hf : f ∈ F) → ∀ body S, (F[f]).body = some body →
+    OpsConsistent F (body.applySubst S)
+
+/-- Every concrete evaluator in the factory returns results that satisfy
+`OpsConsistent`. -/
+def Factory.EvalOpsConsistent (F : @Factory T) : Prop :=
+  ∀ (f : String), (hf : f ∈ F) → ∀ ceval md args result, (F[f]).concreteEval = some ceval →
+    .some result = ceval md args → OpsConsistent F result
+
+/-- Every function body in the factory, after type instantiation, has fvar
+annotations consistent with `tyMap`. -/
+def Factory.BodyAnnotated [DecidableEq T.IDMeta] (F : @Factory T)
+    (tyMap : Map T.Identifier LMonoTy) : Prop :=
+  ∀ (f : String), (hf : f ∈ F) → ∀ body S, (F[f]).body = some body →
+    fvars_annotated_by tyMap (body.applySubst S)
+
+/-- Every concrete evaluator in the factory returns results with fvar
+annotations consistent with `tyMap`. -/
+def Factory.EvalAnnotated [DecidableEq T.IDMeta] (F : @Factory T)
+    (tyMap : Map T.Identifier LMonoTy) : Prop :=
+  ∀ (f : String), (hf : f ∈ F) → ∀ ceval md args result, (F[f]).concreteEval = some ceval →
+    .some result = ceval md args → fvars_annotated_by tyMap result
+
+/-- `OpsConsistent` is preserved by `substK` for arbitrary substitution,
+provided the substituted expressions satisfy `OpsConsistent`. -/
+theorem OpsConsistent_substK
     {F : @Factory T} {k : Nat}
-    {x : Identifier T.IDMeta × Option T.mono.TypeType}
+    {s : T.mono.base.Metadata → LExpr T.mono}
     {e : LExpr T.mono}
     (h : OpsConsistent F e)
-    : OpsConsistent F (LExpr.substK k (fun m => .fvar m x.fst x.snd) e) := by
+    (hs : ∀ m, OpsConsistent F (s m))
+    : OpsConsistent F (LExpr.substK k s e) := by
   induction e generalizing k with
   | const => simp only [LExpr.substK]; exact h
   | op => simp only [LExpr.substK]; exact h
@@ -79,48 +105,32 @@ theorem OpsConsistent_substK_fvar
   | bvar m i =>
     simp only [LExpr.substK]
     split
-    · unfold OpsConsistent; simp [callOfLFunc_fvar]
+    · exact hs m
     · exact h
   | app m e1 e2 ih1 ih2 =>
-    simp only [LExpr.substK]
-    have hcall := Factory.callOfLFunc_substK_fvar (F := F) (k := k) (x := x) (e := .app m e1 e2)
-    simp only at hcall
-    simp only [LExpr.substK] at hcall
-    constructor
-    · -- callOfLFunc conjunct
-      cases heq : F.callOfLFunc (.app m e1 e2) with
-      | none =>
-        simp only [heq] at hcall
-        rw [hcall]; trivial
-      | some val =>
-        obtain ⟨callee, args, fn⟩ := val
-        simp only [heq] at hcall
-        rw [hcall]
-        have h1 := h.1
-        simp only [heq] at h1
-        simp only []
-        exact h1
-    · exact ⟨ih1 h.2.1, ih2 h.2.2⟩
+    simp only [LExpr.substK, OpsConsistent]
+    exact ⟨ih1 h.1, ih2 h.2⟩
   | abs m name ty body ih =>
-    simp only [LExpr.substK]
-    unfold OpsConsistent
-    simp only [callOfLFunc_abs]
-    exact ⟨trivial, ih h.2⟩
+    simp only [LExpr.substK, OpsConsistent]
+    exact ih h
   | ite m c t f ihc iht ihf =>
-    simp only [LExpr.substK]
-    unfold OpsConsistent
-    simp only [callOfLFunc_ite]
-    exact ⟨trivial, ihc h.2.1, iht h.2.2.1, ihf h.2.2.2⟩
+    simp only [LExpr.substK, OpsConsistent]
+    exact ⟨ihc h.1, iht h.2.1, ihf h.2.2⟩
   | eq m e1 e2 ih1 ih2 =>
-    simp only [LExpr.substK]
-    unfold OpsConsistent
-    simp only [callOfLFunc_eq_]
-    exact ⟨trivial, ih1 h.2.1, ih2 h.2.2⟩
+    simp only [LExpr.substK, OpsConsistent]
+    exact ⟨ih1 h.1, ih2 h.2⟩
   | quant m qk name ty tr body ihtr ihbody =>
-    simp only [LExpr.substK]
-    unfold OpsConsistent
-    simp only [callOfLFunc_quant]
-    exact ⟨trivial, ihtr h.2.1, ihbody h.2.2⟩
+    simp only [LExpr.substK, OpsConsistent]
+    exact ⟨ihtr h.1, ihbody h.2⟩
+
+/-- `OpsConsistent` is preserved by `substK` when substituting a free variable. -/
+theorem OpsConsistent_substK_fvar
+    {F : @Factory T} {k : Nat}
+    {x : Identifier T.IDMeta × Option T.mono.TypeType}
+    {e : LExpr T.mono}
+    (h : OpsConsistent F e)
+    : OpsConsistent F (LExpr.substK k (fun m => .fvar m x.fst x.snd) e) :=
+  OpsConsistent_substK h (fun _ => trivial)
 
 /-- `OpsConsistent` is preserved by `varOpen`. -/
 theorem OpsConsistent_varOpen
@@ -132,6 +142,114 @@ theorem OpsConsistent_varOpen
   unfold LExpr.varOpen
   exact OpsConsistent_substK_fvar h
 
+/-- `OpsConsistent` is preserved by `substFvars`, provided all substituted
+values satisfy `OpsConsistent`. -/
+theorem OpsConsistent_substFvars
+    {F : @Factory T} [DecidableEq T.IDMeta]
+    {e : LExpr T.mono} {sm : Map T.Identifier (LExpr T.mono)}
+    (h : OpsConsistent F e)
+    (hsm : ∀ k v, Map.find? sm k = some v → OpsConsistent F v)
+    : OpsConsistent F (LExpr.substFvars e sm) := by
+  unfold LExpr.substFvars
+  split
+  · exact h
+  · -- non-empty case: substFvarsAux, induction on e
+    rename_i hne
+    suffices ∀ e, OpsConsistent F e →
+        OpsConsistent F (LExpr.substFvars.substFvarsAux e sm) from this e h
+    intro e' h'
+    induction e' with
+    | const => exact h'
+    | op => exact h'
+    | bvar => exact h'
+    | fvar m name ty =>
+      simp only [LExpr.substFvars.substFvarsAux]
+      split
+      · next v hfind => exact hsm name v hfind
+      · exact h'
+    | app m e1 e2 ih1 ih2 =>
+      simp only [LExpr.substFvars.substFvarsAux, OpsConsistent]
+      exact ⟨ih1 h'.1, ih2 h'.2⟩
+    | abs m name ty body ih =>
+      simp only [LExpr.substFvars.substFvarsAux, OpsConsistent]
+      exact ih h'
+    | ite m c t f ihc iht ihf =>
+      simp only [LExpr.substFvars.substFvarsAux, OpsConsistent]
+      exact ⟨ihc h'.1, iht h'.2.1, ihf h'.2.2⟩
+    | eq m e1 e2 ih1 ih2 =>
+      simp only [LExpr.substFvars.substFvarsAux, OpsConsistent]
+      exact ⟨ih1 h'.1, ih2 h'.2⟩
+    | quant m qk name ty tr body ihtr ihbody =>
+      simp only [LExpr.substFvars.substFvarsAux, OpsConsistent]
+      exact ⟨ihtr h'.1, ihbody h'.2⟩
+
+/-- `OpsConsistent` is preserved by `liftBVars`. -/
+theorem OpsConsistent_liftBVars
+    {F : @Factory T}
+    {e : LExpr T.mono} {n cutoff : Nat}
+    (h : OpsConsistent F e)
+    : OpsConsistent F (LExpr.liftBVars n e cutoff) := by
+  induction e generalizing cutoff with
+  | const => exact h
+  | op => exact h
+  | fvar => exact h
+  | bvar m i => simp only [LExpr.liftBVars]; split <;> trivial
+  | app m e1 e2 ih1 ih2 =>
+    simp only [LExpr.liftBVars, OpsConsistent]
+    exact ⟨ih1 h.1, ih2 h.2⟩
+  | abs m name ty body ih =>
+    simp only [LExpr.liftBVars, OpsConsistent]
+    exact ih h
+  | ite m c t f ihc iht ihf =>
+    simp only [LExpr.liftBVars, OpsConsistent]
+    exact ⟨ihc h.1, iht h.2.1, ihf h.2.2⟩
+  | eq m e1 e2 ih1 ih2 =>
+    simp only [LExpr.liftBVars, OpsConsistent]
+    exact ⟨ih1 h.1, ih2 h.2⟩
+  | quant m qk name ty tr body ihtr ihbody =>
+    simp only [LExpr.liftBVars, OpsConsistent]
+    exact ⟨ihtr h.1, ihbody h.2⟩
+
+/-- `OpsConsistent` is preserved by `substFvarsLifting`, provided all substituted
+values satisfy `OpsConsistent`. -/
+theorem OpsConsistent_substFvarsLifting
+    {F : @Factory T} [DecidableEq T.IDMeta]
+    {e : LExpr T.mono} {sm : Map T.Identifier (LExpr T.mono)}
+    (h : OpsConsistent F e)
+    (hsm : ∀ k v, Map.find? sm k = some v → OpsConsistent F v)
+    : OpsConsistent F (LExpr.substFvarsLifting e sm) := by
+  unfold LExpr.substFvarsLifting
+  split
+  · exact h
+  · rename_i hne
+    suffices ∀ e depth, OpsConsistent F e →
+        OpsConsistent F (LExpr.substFvarsLifting.go sm e depth) from this e 0 h
+    intro e' depth h'
+    induction e' generalizing depth with
+    | const => exact h'
+    | op => exact h'
+    | bvar => exact h'
+    | fvar m name ty =>
+      simp only [LExpr.substFvarsLifting.go]
+      split
+      · next v hfind => exact OpsConsistent_liftBVars (hsm name v hfind)
+      · exact h'
+    | app m e1 e2 ih1 ih2 =>
+      simp only [LExpr.substFvarsLifting.go, OpsConsistent]
+      exact ⟨ih1 depth h'.1, ih2 depth h'.2⟩
+    | abs m name ty body ih =>
+      simp only [LExpr.substFvarsLifting.go, OpsConsistent]
+      exact ih (depth + 1) h'
+    | ite m c t f ihc iht ihf =>
+      simp only [LExpr.substFvarsLifting.go, OpsConsistent]
+      exact ⟨ihc depth h'.1, iht depth h'.2.1, ihf depth h'.2.2⟩
+    | eq m e1 e2 ih1 ih2 =>
+      simp only [LExpr.substFvarsLifting.go, OpsConsistent]
+      exact ⟨ih1 depth h'.1, ih2 depth h'.2⟩
+    | quant m qk name ty tr body ihtr ihbody =>
+      simp only [LExpr.substFvarsLifting.go, OpsConsistent]
+      exact ⟨ihtr (depth + 1) h'.1, ihbody (depth + 1) h'.2⟩
+
 /-- Every element of the args list returned by `getLFuncCall.go` inherits `OpsConsistent`
 from the input expression and accumulator. -/
 private theorem getLFuncCall_go_OpsConsistent
@@ -140,25 +258,26 @@ private theorem getLFuncCall_go_OpsConsistent
     (hacc : ∀ a ∈ acc, OpsConsistent F a)
     : ∀ a ∈ (getLFuncCall.go e acc).2, OpsConsistent F a := by
   fun_induction getLFuncCall.go e acc with
-  | case1 m m' e' arg1 arg2 acc ih =>
-    -- e = .app m' (.app e' arg1 arg2) acc, accumulator is m
-    have hOps_arg1 := hOps.2.1.2.1
-    have hOps_arg2 := hOps.2.1.2.2
-    have hOps_acc := hOps.2.2
-    have hacc' : ∀ a ∈ [arg2, acc] ++ m, OpsConsistent F a := by
-      simp only [List.cons_append, List.mem_cons, List.mem_append]
+  | case1 acc m m' e' arg1 arg2 ih =>
+    -- e = .app m (.app m' e' arg1) arg2
+    have hOps_inner : OpsConsistent F (.app m' e' arg1) := hOps.1
+    have hOps_e' : OpsConsistent F e' := hOps_inner.1
+    have hOps_arg1 : OpsConsistent F arg1 := hOps_inner.2
+    have hOps_arg2 : OpsConsistent F arg2 := hOps.2
+    have hacc' : ∀ a ∈ [arg1, arg2] ++ acc, OpsConsistent F a := by
       intro a ha
-      rcases ha with rfl | rfl | hmem
+      simp only [List.mem_append, List.mem_cons, List.mem_nil_iff, or_false] at ha
+      rcases ha with (rfl | rfl) | hmem
+      · exact hOps_arg1
       · exact hOps_arg2
-      · exact hOps_acc
-      · exact hacc a (by grind)
-    exact ih hOps_arg1 hacc'
-  | case2 m m' fn fnty arg1 acc =>
-    simp only [List.cons_append, List.mem_cons, List.mem_append]
+      · exact hacc a hmem
+    exact ih hOps_e' hacc'
+  | case2 acc m m' fn fnty arg1 =>
     intro a ha
-    cases ha with
-    | inl heq => rw [heq]; exact hOps.2.2
-    | inr hmem => exact hacc a (by grind)
+    simp only [List.mem_cons, List.mem_nil_iff, or_false, List.mem_append] at ha
+    rcases ha with rfl | hmem
+    · exact hOps.2
+    · exact hacc a hmem
   | case3 e acc => exact hacc
 
 /-- Every argument of a `callOfLFunc` call inherits `OpsConsistent`. -/
@@ -173,6 +292,192 @@ theorem OpsConsistent_callOfLFunc_args
     simp only [getLFuncCall] at hgl; rw [hgl]
   rw [hargs]
   exact getLFuncCall_go_OpsConsistent hOps (by simp)
+
+/-! ## `fvars_annotated_by` preservation -/
+
+/-- `fvars_annotated_by` is preserved by `substK` for arbitrary substitution,
+provided the substituted expressions satisfy `fvars_annotated_by`. -/
+theorem fvars_annotated_by_substK {T : LExprParams} [DecidableEq T.IDMeta]
+    {tyMap : Map T.Identifier LMonoTy} {k : Nat}
+    {s : T.mono.base.Metadata → LExpr T.mono}
+    {e : LExpr T.mono}
+    (h : fvars_annotated_by tyMap e)
+    (hs : ∀ m, fvars_annotated_by tyMap (s m))
+    : fvars_annotated_by tyMap (LExpr.substK k s e) := by
+  induction e generalizing k with
+  | const => simp only [LExpr.substK]; exact h
+  | op => simp only [LExpr.substK]; exact h
+  | fvar => simp only [LExpr.substK]; exact h
+  | bvar m i =>
+    simp only [LExpr.substK]
+    split
+    · exact hs m
+    · exact h
+  | app m e1 e2 ih1 ih2 =>
+    simp only [LExpr.substK, fvars_annotated_by]
+    exact ⟨ih1 h.1, ih2 h.2⟩
+  | abs m name ty body ih =>
+    simp only [LExpr.substK, fvars_annotated_by]
+    exact ih h
+  | ite m c t f ihc iht ihf =>
+    simp only [LExpr.substK, fvars_annotated_by]
+    exact ⟨ihc h.1, iht h.2.1, ihf h.2.2⟩
+  | eq m e1 e2 ih1 ih2 =>
+    simp only [LExpr.substK, fvars_annotated_by]
+    exact ⟨ih1 h.1, ih2 h.2⟩
+  | quant m qk name ty tr body ihtr ihbody =>
+    simp only [LExpr.substK, fvars_annotated_by]
+    exact ⟨ihtr h.1, ihbody h.2⟩
+
+/-- `fvars_annotated_by` is preserved by `substFvars`, provided all substituted
+values satisfy `fvars_annotated_by`. -/
+theorem fvars_annotated_by_substFvars {T : LExprParams} [DecidableEq T.IDMeta]
+    {tyMap : Map T.Identifier LMonoTy}
+    {e : LExpr T.mono} {sm : Map T.Identifier (LExpr T.mono)}
+    (h : fvars_annotated_by tyMap e)
+    (hsm : ∀ k v, Map.find? sm k = some v → fvars_annotated_by tyMap v)
+    : fvars_annotated_by tyMap (LExpr.substFvars e sm) := by
+  unfold LExpr.substFvars
+  split
+  · exact h
+  · rename_i hne
+    suffices ∀ e, fvars_annotated_by tyMap e →
+        fvars_annotated_by tyMap (LExpr.substFvars.substFvarsAux e sm) from this e h
+    intro e' h'
+    induction e' with
+    | const => exact h'
+    | op => exact h'
+    | bvar => exact h'
+    | fvar m name ty =>
+      simp only [LExpr.substFvars.substFvarsAux]
+      split
+      · next v hfind => exact hsm name v hfind
+      · exact h'
+    | app m e1 e2 ih1 ih2 =>
+      simp only [LExpr.substFvars.substFvarsAux, fvars_annotated_by]
+      exact ⟨ih1 h'.1, ih2 h'.2⟩
+    | abs m name ty body ih =>
+      simp only [LExpr.substFvars.substFvarsAux, fvars_annotated_by]
+      exact ih h'
+    | ite m c t f ihc iht ihf =>
+      simp only [LExpr.substFvars.substFvarsAux, fvars_annotated_by]
+      exact ⟨ihc h'.1, iht h'.2.1, ihf h'.2.2⟩
+    | eq m e1 e2 ih1 ih2 =>
+      simp only [LExpr.substFvars.substFvarsAux, fvars_annotated_by]
+      exact ⟨ih1 h'.1, ih2 h'.2⟩
+    | quant m qk name ty tr body ihtr ihbody =>
+      simp only [LExpr.substFvars.substFvarsAux, fvars_annotated_by]
+      exact ⟨ihtr h'.1, ihbody h'.2⟩
+
+/-- `fvars_annotated_by` is preserved by `liftBVars`. -/
+theorem fvars_annotated_by_liftBVars {T : LExprParams} [DecidableEq T.IDMeta]
+    {tyMap : Map T.Identifier LMonoTy}
+    {e : LExpr T.mono} {n cutoff : Nat}
+    (h : fvars_annotated_by tyMap e)
+    : fvars_annotated_by tyMap (LExpr.liftBVars n e cutoff) := by
+  induction e generalizing cutoff with
+  | const => exact h
+  | op => exact h
+  | fvar => exact h
+  | bvar m i => simp only [LExpr.liftBVars]; split <;> trivial
+  | app m e1 e2 ih1 ih2 =>
+    simp only [LExpr.liftBVars, fvars_annotated_by]
+    exact ⟨ih1 h.1, ih2 h.2⟩
+  | abs m name ty body ih =>
+    simp only [LExpr.liftBVars, fvars_annotated_by]
+    exact ih h
+  | ite m c t f ihc iht ihf =>
+    simp only [LExpr.liftBVars, fvars_annotated_by]
+    exact ⟨ihc h.1, iht h.2.1, ihf h.2.2⟩
+  | eq m e1 e2 ih1 ih2 =>
+    simp only [LExpr.liftBVars, fvars_annotated_by]
+    exact ⟨ih1 h.1, ih2 h.2⟩
+  | quant m qk name ty tr body ihtr ihbody =>
+    simp only [LExpr.liftBVars, fvars_annotated_by]
+    exact ⟨ihtr h.1, ihbody h.2⟩
+
+/-- `fvars_annotated_by` is preserved by `substFvarsLifting`, provided all substituted
+values satisfy `fvars_annotated_by`. -/
+theorem fvars_annotated_by_substFvarsLifting {T : LExprParams} [DecidableEq T.IDMeta]
+    {tyMap : Map T.Identifier LMonoTy}
+    {e : LExpr T.mono} {sm : Map T.Identifier (LExpr T.mono)}
+    (h : fvars_annotated_by tyMap e)
+    (hsm : ∀ k v, Map.find? sm k = some v → fvars_annotated_by tyMap v)
+    : fvars_annotated_by tyMap (LExpr.substFvarsLifting e sm) := by
+  unfold LExpr.substFvarsLifting
+  split
+  · exact h
+  · rename_i hne
+    suffices ∀ e depth, fvars_annotated_by tyMap e →
+        fvars_annotated_by tyMap (LExpr.substFvarsLifting.go sm e depth) from this e 0 h
+    intro e' depth h'
+    induction e' generalizing depth with
+    | const => exact h'
+    | op => exact h'
+    | bvar => exact h'
+    | fvar m name ty =>
+      simp only [LExpr.substFvarsLifting.go]
+      split
+      · next v hfind => exact fvars_annotated_by_liftBVars (hsm name v hfind)
+      · exact h'
+    | app m e1 e2 ih1 ih2 =>
+      simp only [LExpr.substFvarsLifting.go, fvars_annotated_by]
+      exact ⟨ih1 depth h'.1, ih2 depth h'.2⟩
+    | abs m name ty body ih =>
+      simp only [LExpr.substFvarsLifting.go, fvars_annotated_by]
+      exact ih (depth + 1) h'
+    | ite m c t f ihc iht ihf =>
+      simp only [LExpr.substFvarsLifting.go, fvars_annotated_by]
+      exact ⟨ihc depth h'.1, iht depth h'.2.1, ihf depth h'.2.2⟩
+    | eq m e1 e2 ih1 ih2 =>
+      simp only [LExpr.substFvarsLifting.go, fvars_annotated_by]
+      exact ⟨ih1 depth h'.1, ih2 depth h'.2⟩
+    | quant m qk name ty tr body ihtr ihbody =>
+      simp only [LExpr.substFvarsLifting.go, fvars_annotated_by]
+      exact ⟨ihtr (depth + 1) h'.1, ihbody (depth + 1) h'.2⟩
+
+/-- Every element of the args list returned by `getLFuncCall.go` inherits
+`fvars_annotated_by` from the input expression and accumulator. -/
+private theorem getLFuncCall_go_fvars_annotated {T : LExprParams} [DecidableEq T.IDMeta]
+    {tyMap : Map T.Identifier LMonoTy}
+    {e : LExpr T.mono} {acc : List (LExpr T.mono)}
+    (hAnnot : fvars_annotated_by tyMap e)
+    (hacc : ∀ a ∈ acc, fvars_annotated_by tyMap a)
+    : ∀ a ∈ (getLFuncCall.go e acc).2, fvars_annotated_by tyMap a := by
+  fun_induction getLFuncCall.go e acc with
+  | case1 acc m m' e' arg1 arg2 ih =>
+    have hAnnot_inner : fvars_annotated_by tyMap (.app m' e' arg1) := hAnnot.1
+    have hAnnot_arg1 : fvars_annotated_by tyMap arg1 := hAnnot_inner.2
+    have hAnnot_arg2 : fvars_annotated_by tyMap arg2 := hAnnot.2
+    have hacc' : ∀ a ∈ [arg1, arg2] ++ acc, fvars_annotated_by tyMap a := by
+      intro a ha
+      simp only [List.mem_append, List.mem_cons, List.mem_nil_iff, or_false] at ha
+      rcases ha with (rfl | rfl) | hmem
+      · exact hAnnot_arg1
+      · exact hAnnot_arg2
+      · exact hacc a hmem
+    exact ih hAnnot_inner.1 hacc'
+  | case2 acc m m' fn fnty arg1 =>
+    intro a ha
+    simp only [List.mem_cons, List.mem_nil_iff, or_false, List.mem_append] at ha
+    rcases ha with rfl | hmem
+    · exact hAnnot.2
+    · exact hacc a hmem
+  | case3 e acc => exact hacc
+
+/-- Every argument of a `callOfLFunc` call inherits `fvars_annotated_by`. -/
+theorem fvars_annotated_by_callOfLFunc_args {T : LExprParams} [DecidableEq T.IDMeta]
+    {tyMap : Map T.Identifier LMonoTy}
+    {F : @Factory T} {e callee : LExpr T.mono}
+    {args : List (LExpr T.mono)} {fn : LFunc T}
+    (hAnnot : fvars_annotated_by tyMap e)
+    (hcall : Factory.callOfLFunc F e = some (callee, args, fn))
+    : ∀ a ∈ args, fvars_annotated_by tyMap a := by
+  have hgl := callOfLFunc_getLFuncCall hcall
+  have hargs : args = (getLFuncCall.go e []).2 := by
+    simp only [getLFuncCall] at hgl; rw [hgl]
+  rw [hargs]
+  exact getLFuncCall_go_fvars_annotated hAnnot (by simp)
 
 /-! ## `getLFuncCall` typing and denotation -/
 
@@ -396,6 +701,18 @@ private theorem denote_app_chain
 
 /-! ## `subst` / `mkArrow'` structural lemmas -/
 
+/-- The `.op` node found by `getLFuncCall.go` inherits `OpsConsistent` from the expression. -/
+private theorem getLFuncCall_go_OpsConsistent_callee
+    {F : @Factory T} {e : LExpr T.mono} {acc : List (LExpr T.mono)}
+    (hOps : OpsConsistent F e)
+    : OpsConsistent F (getLFuncCall.go e acc).1 := by
+  fun_induction getLFuncCall.go e acc with
+  | case1 acc m m' e' arg1 arg2 ih =>
+    exact ih hOps.1.1
+  | case2 acc m m' fn fnty arg1 =>
+    exact hOps.1
+  | case3 e acc => exact hOps
+
 /-- Extract the top-level `callOfLFunc` consistency from `OpsConsistent`. -/
 theorem OpsConsistent_callOfLFunc
     {F : @Factory T} {e callee : LExpr T.mono} {args : List (LExpr T.mono)} {fn : LFunc T}
@@ -405,16 +722,28 @@ theorem OpsConsistent_callOfLFunc
         LFunc.opTypeSubst fn callee = some tySubst ∧
         ∀ m name ty_op, callee = .op m name (some ty_op) →
           ty_op = (LMonoTy.mkArrow' fn.output (fn.inputs.map Prod.snd)).subst tySubst := by
-  unfold OpsConsistent at hOps
-  have ⟨h1, _⟩ := hOps
-  simp [hcall] at h1
-  split at h1
-  · next h_tySubst =>
-    split at h1
-    · next m name ty_op =>
-      exact ⟨_, h_tySubst, fun _ _ _ h => by cases h; exact h1⟩
-    · exact absurd h1 id
-  · exact absurd h1 id
+  -- callee is an .op node found by getLFuncCall
+  obtain ⟨m, name, ty, h_callee, h_get, _⟩ := callOfLFunc_eq_some hcall
+  subst h_callee
+  -- OpsConsistent on the .op node
+  have h_chain := callOfLFunc_getLFuncCall hcall
+  have h_callee_ops : OpsConsistent F (.op m name ty) := by
+    have h_eq : (.op m name ty) = (getLFuncCall.go e []).1 := by
+      simp only [getLFuncCall] at h_chain; rw [h_chain]
+    rw [h_eq]; exact getLFuncCall_go_OpsConsistent_callee hOps
+  -- Now extract from OpsConsistent on .op
+  cases ty with
+  | none =>
+    unfold OpsConsistent at h_callee_ops
+    simp only [h_get] at h_callee_ops
+    split at h_callee_ops <;> exact absurd h_callee_ops id
+  | some ty_op =>
+    unfold OpsConsistent at h_callee_ops
+    simp only [h_get] at h_callee_ops
+    split at h_callee_ops
+    · next tySubst h_tySubst =>
+      exact ⟨tySubst, h_tySubst, fun _ _ _ h => by cases h; exact h_callee_ops⟩
+    · exact absurd h_callee_ops id
 
 /-! ## `callOfLFunc` output type and denotation -/
 

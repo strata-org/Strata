@@ -18,13 +18,23 @@ import all Strata.DL.Lambda.Denote.LExprDenoteEq
 ## Operational Semantics Consistency
 
 Proves that the Lambda operational and denotational semantics agree:
-evaluation steps preserve denotation and type.
+evaluation steps preserve denotation, type, and structural invariants.
 
-- `substFvarsFromState_denote_preserved` - substituting free variables
-from the state preserves denotation (under several typing assumptions)
+### Single-step preservation
 - `Step.denote_preserved` — one evaluation step preserves denotation
-- `Step.type_preserved` — one evaluation step preserves type (sorry)
-- `StepStar.denote_preserved` — multi-step evaluation preserves denotation (sorry)
+- `Step.type_preserved` — one evaluation step preserves `HasTypeA`
+- `Step.OpsConsistent_preserved` — one step preserves `OpsConsistent`
+- `Step.fvars_annotated_preserved` — one step preserves `fvars_annotated_by`
+
+### Multi-step preservation
+- `StepStar.type_preserved` — `HasTypeA` is preserved by `StepStar`
+- `StepStar.denote_preserved` — denotation is preserved by `StepStar`
+
+### Bundled assumption structures
+- `Env.StepWF` — environment well-formedness for step preservation
+- `Factory.StepWF` — factory well-formedness for step preservation
+- `Factory.WF` — factory and type-factory well-formedness
+- `InterpConsistent` — interpretation consistency (factory, constructors, environment)
 -/
 
 namespace Lambda
@@ -411,7 +421,7 @@ theorem Step.denote_preserved
         rw [denote_app .nil h_fn h_arg,
             denote_app .nil h_fn' h_arg']
         congr 1
-        rw[ih h_arg h_arg' hOps.2.2 hAnnot.2]
+        rw[ih h_arg h_arg' hOps.2 hAnnot.2]
   | reduce_1 e1 e1' e2 hstep' ih =>
     cases h₁ with
     | app h_fn h_arg =>
@@ -422,7 +432,7 @@ theorem Step.denote_preserved
         rw [denote_app .nil h_fn h_arg,
             denote_app .nil h_fn' h_arg']
         congr 1
-        rw[ih h_fn h_fn' hOps.2.1 hAnnot.1]
+        rw[ih h_fn h_fn' hOps.1 hAnnot.1]
   | ite_reduce_then ethen eelse =>
     cases h₁ with
     | ite h_c h_t h_e =>
@@ -444,7 +454,7 @@ theorem Step.denote_preserved
       | ite h_c' h_t' h_e' =>
         rw [denote_ite .nil h_c h_t h_e,
             denote_ite .nil h_c' h_t' h_e']
-        rw [ih h_c h_c' hOps.2.1 hAnnot.1]
+        rw [ih h_c h_c' hOps.1 hAnnot.1]
   | ite_reduce_then_branch econd ethen ethen' eelse hstep' ih =>
     cases h₁ with
     | ite h_c h_t h_e =>
@@ -452,7 +462,7 @@ theorem Step.denote_preserved
       | ite h_c' h_t' h_e' =>
         rw [denote_ite .nil h_c h_t h_e,
             denote_ite .nil h_c' h_t' h_e']
-        rw [ih h_t h_t' hOps.2.2.1 hAnnot.2.1]
+        rw [ih h_t h_t' hOps.2.1 hAnnot.2.1]
   | ite_reduce_else_branch econd ethen eelse eelse' hstep' ih =>
     cases h₁ with
     | ite h_c h_t h_e =>
@@ -460,20 +470,20 @@ theorem Step.denote_preserved
       | ite h_c' h_t' h_e' =>
         rw [denote_ite .nil h_c h_t h_e,
             denote_ite .nil h_c' h_t' h_e']
-        rw [ih h_e h_e' hOps.2.2.2 hAnnot.2.2]
+        rw [ih h_e h_e' hOps.2.2 hAnnot.2.2]
   | eq_reduce_true e1 e2 heql =>
     cases h₁ with
     | eq h_1 h_2 =>
       rw [denote_eq_true .nil h_1 h_2 _
           (eql_true_implies_denote_eq tcInterp opInterp fvarVal vt h_1 h_2
-            hOps.2.1 hOps.2.2 hFwf hcwf heql)]
+            hOps.1 hOps.2 hFwf hcwf heql)]
       rfl
   | eq_reduce_false e1 e2 heql =>
     cases h₁ with
     | eq h_1 h_2 =>
       rw [denote_eq_false .nil h_1 h_2 _
           (eql_false_implies_denote_ne tcInterp opInterp fvarVal vt h_1 h_2
-            hOps.2.1 hOps.2.2 hFwf hcwf htfwf heql hConstrIC)]
+            hOps.1 hOps.2 hFwf hcwf htfwf heql hConstrIC)]
       rfl
   | eq_reduce_lhs e1 e1' e2 hstep' ih =>
     cases h₁ with
@@ -481,7 +491,7 @@ theorem Step.denote_preserved
       cases h₂ with
       | eq h_1' h_2' =>
         have hty := HasTypeA_unique h_2 h_2'; subst hty
-        have ih_eq := ih h_1 h_1' hOps.2.1 hAnnot.1
+        have ih_eq := ih h_1 h_1' hOps.1 hAnnot.1
         by_cases heq : LExpr.denote tcInterp opInterp fvarVal vt .nil e1 _ h_1 =
             LExpr.denote tcInterp opInterp fvarVal vt .nil e2 _ h_2
         · rw [denote_eq_true .nil h_1 h_2 _ heq,
@@ -496,7 +506,7 @@ theorem Step.denote_preserved
       cases h₂ with
       | eq h_1' h_2' =>
         have hty := HasTypeA_unique h_1 h_1'; subst hty
-        have ih_eq := ih h_2 h_2' hOps.2.2 hAnnot.2
+        have ih_eq := ih h_2 h_2' hOps.2 hAnnot.2
         by_cases heq : LExpr.denote tcInterp opInterp fvarVal vt .nil v1 _ h_1 =
             LExpr.denote tcInterp opInterp fvarVal vt .nil e2 _ h_2
         · rw [denote_eq_true .nil h_1 h_2 _ heq,
@@ -785,12 +795,12 @@ theorem Step.type_preserved
   | reduce_2 e1 e2 e2' hstep ih =>
     have ⟨aty, h_fn, h_arg⟩ := HasTypeA.app_inv h₁
     have h_arg' : LExpr.HasTypeA [] e2' aty :=
-      ih h_arg hOps.2.2 hAnnot.2
+      ih h_arg hOps.2 hAnnot.2
     exact .app h_fn h_arg'
   | reduce_1 e1 e1' e2 hstep ih =>
     have ⟨aty, h_fn, h_arg⟩ := HasTypeA.app_inv h₁
     have h_fn' : LExpr.HasTypeA [] e1' (.arrow aty τ) :=
-      ih h_fn hOps.2.1 hAnnot.1
+      ih h_fn hOps.1 hAnnot.1
     exact .app h_fn' h_arg
   | ite_reduce_then ethen eelse =>
     have ⟨_, h_t, _⟩ := HasTypeA.ite_inv h₁
@@ -801,17 +811,17 @@ theorem Step.type_preserved
   | ite_reduce_cond econd econd' ethen eelse hstep ih =>
     have ⟨h_c, h_t, h_e⟩ := HasTypeA.ite_inv h₁
     have h_c' : LExpr.HasTypeA [] econd' .bool :=
-      ih h_c hOps.2.1 hAnnot.1
+      ih h_c hOps.1 hAnnot.1
     exact .ite h_c' h_t h_e
   | ite_reduce_then_branch econd ethen ethen' eelse hstep ih =>
     have ⟨h_c, h_t, h_e⟩ := HasTypeA.ite_inv h₁
     have h_t' : LExpr.HasTypeA [] ethen' τ :=
-      ih h_t hOps.2.2.1 hAnnot.2.1
+      ih h_t hOps.2.1 hAnnot.2.1
     exact .ite h_c h_t' h_e
   | ite_reduce_else_branch econd ethen eelse eelse' hstep ih =>
     have ⟨h_c, h_t, h_e⟩ := HasTypeA.ite_inv h₁
     have h_e' : LExpr.HasTypeA [] eelse' τ :=
-      ih h_e hOps.2.2.2 hAnnot.2.2
+      ih h_e hOps.2.2 hAnnot.2.2
     exact .ite h_c h_t h_e'
   | eq_reduce_true e1 e2 heql =>
     have ⟨_, h_τ, _, _⟩ := HasTypeA.eq_inv h₁
@@ -823,13 +833,13 @@ theorem Step.type_preserved
     have ⟨eqty, h_τ, h_1, h_2⟩ := HasTypeA.eq_inv h₁
     subst h_τ
     have h_1' : LExpr.HasTypeA [] e1' eqty :=
-      ih h_1 hOps.2.1 hAnnot.1
+      ih h_1 hOps.1 hAnnot.1
     exact .eq h_1' h_2
   | eq_reduce_rhs e1 e2 e2' hstep ih =>
     have ⟨eqty, h_τ, h_1, h_2⟩ := HasTypeA.eq_inv h₁
     subst h_τ
     have h_2' : LExpr.HasTypeA [] e2' eqty :=
-      ih h_2 hOps.2.2 hAnnot.2
+      ih h_2 hOps.2 hAnnot.2
     exact .eq h_1 h_2'
   | expand_fn e callee fnbody new_body args fn tySubst hcall hbody htysubst heq =>
     subst heq
@@ -928,19 +938,288 @@ theorem Step.type_preserved
         (substFvarsFromState_type_preserved h_tr env henv_eq hEnvLC hEnvTy h_annot_tr)
         h_body
 
-/-- Multi-step version: if `e₁` reduces to `e₂` in zero or more steps, and
-both are well-typed at `τ`, they have the same denotation. -/
-theorem StepStar.denote_preserved
+omit [Inhabited T.mono.base.IDMeta] [DecidableEq T.IDMeta] in
+/-- `substFvarsFromState` preserves `fvars_annotated_by`, provided all environment
+values satisfy `fvars_annotated_by`. -/
+private theorem substFvarsFromState_fvars_annotated [DecidableEq T.IDMeta]
+    {σ : LState T} {e : LExpr T.mono}
+    {env : Env T} {tyMap : Map T.Identifier LMonoTy}
+    (h : fvars_annotated_by tyMap e)
+    (hEnvAnnot : ∀ (x : T.Identifier) (v : LExpr T.mono), env x = some v → fvars_annotated_by tyMap v)
+    (henv_eq : env = Scopes.toEnv σ.state)
+    : fvars_annotated_by tyMap (LExpr.substFvarsFromState σ e) := by
+  simp only [LExpr.substFvarsFromState]
+  apply fvars_annotated_by_substFvars h
+  intro k v hfind
+  have h_fmap : (List.map (fun x => (x.fst, x.2.snd)) (Maps.toSingleMap σ.state)) = Map.fmap Prod.snd (Maps.toSingleMap σ.state) := rfl
+  rw [h_fmap, Map.find?_fmap] at hfind
+  cases htsm : (Maps.toSingleMap σ.state).find? k with
+  | none => simp [htsm] at hfind
+  | some p =>
+    simp [htsm] at hfind; subst hfind
+    apply hEnvAnnot k p.snd
+    rw [henv_eq]; simp only [Scopes.toEnv]
+    rw [Maps.find?_toSingleMap] at htsm; rw [htsm]; rfl
+
+omit [Inhabited T.mono.base.IDMeta] in
+/-- `substFvarsFromState` preserves `OpsConsistent`, provided all environment
+values satisfy `OpsConsistent`. -/
+private theorem substFvarsFromState_OpsConsistent
+    {F : @Factory T} {σ : LState T} {e : LExpr T.mono}
+    {env : Env T}
+    (hOps : OpsConsistent F e)
+    (hEnvOps : ∀ (x : T.Identifier) (v : LExpr T.mono), env x = some v → OpsConsistent F v)
+    (henv_eq : env = Scopes.toEnv σ.state)
+    : OpsConsistent F (LExpr.substFvarsFromState σ e) := by
+  simp only [LExpr.substFvarsFromState]
+  apply OpsConsistent_substFvars hOps
+  intro k v hfind
+  have h_fmap : (List.map (fun x => (x.fst, x.2.snd)) (Maps.toSingleMap σ.state)) = Map.fmap Prod.snd (Maps.toSingleMap σ.state) := rfl
+  rw [h_fmap, Map.find?_fmap] at hfind
+  cases htsm : (Maps.toSingleMap σ.state).find? k with
+  | none => simp [htsm] at hfind
+  | some p =>
+    simp [htsm] at hfind; subst hfind
+    apply hEnvOps k p.snd
+    rw [henv_eq]; simp only [Scopes.toEnv]
+    rw [Maps.find?_toSingleMap] at htsm; rw [htsm]; rfl
+
+/-- A single step preserves `OpsConsistent`. -/
+theorem Step.OpsConsistent_preserved
+    {F : @Factory T} {env : Env T}
+    {e₁ e₂ : LExpr T.mono}
+    (hstep : Step F env e₁ e₂)
+    (hOps : OpsConsistent F e₁)
+    (hEnvOps : ∀ (x : T.Identifier) (e : LExpr T.mono), env x = some e → OpsConsistent F e)
+    (hFBodyOps : Factory.BodyOpsConsistent F)
+    (hFEvalOps : Factory.EvalOpsConsistent F)
+    : OpsConsistent F e₂ := by
+  induction hstep with
+  | expand_fvar x e henv => exact hEnvOps x e henv
+  | beta e1 v2 eres heq =>
+    subst heq
+    simp only [LExpr.subst]
+    exact OpsConsistent_substK hOps.1 (fun _ => hOps.2)
+  | reduce_1 e1 e1' e2 hstep ih =>
+    exact ⟨ih hOps.1, hOps.2⟩
+  | reduce_2 e1 e2 e2' hstep ih =>
+    exact ⟨hOps.1, ih hOps.2⟩
+  | ite_reduce_then ethen eelse =>
+    exact hOps.2.1
+  | ite_reduce_else ethen eelse =>
+    exact hOps.2.2
+  | ite_reduce_cond econd econd' ethen eelse hstep ih =>
+    exact ⟨ih hOps.1, hOps.2.1, hOps.2.2⟩
+  | ite_reduce_then_branch econd ethen ethen' eelse hstep ih =>
+    exact ⟨hOps.1, ih hOps.2.1, hOps.2.2⟩
+  | ite_reduce_else_branch econd ethen eelse eelse' hstep ih =>
+    exact ⟨hOps.1, hOps.2.1, ih hOps.2.2⟩
+  | eq_reduce_true e1 e2 heql =>
+    trivial
+  | eq_reduce_false e1 e2 heql =>
+    trivial
+  | eq_reduce_lhs e1 e1' e2 hstep ih =>
+    exact ⟨ih hOps.1, hOps.2⟩
+  | eq_reduce_rhs e1 e2 e2' hstep ih =>
+    exact ⟨hOps.1, ih hOps.2⟩
+  | expand_fn e callee fnbody new_body args fn tySubst hcall hbody htysubst heq =>
+    subst heq
+    -- Get fn membership and name
+    obtain ⟨md, name, ty_callee, h_callee_op, h_get⟩ := Factory.callOfLFunc_getElem? hcall
+    have h_fn_mem : name.name ∈ F := Factory.getElem?_some_implies_mem h_get
+    have h_fn_eq : F[name.name] = fn := Factory.getElem?_some_getElem h_get
+    -- Body satisfies OpsConsistent after applySubst
+    have h_body_eq : (F[name.name]).body = some fnbody := by rw [h_fn_eq]; exact hbody
+    have h_body_ops : OpsConsistent F (fnbody.applySubst tySubst) :=
+      hFBodyOps name.name h_fn_mem fnbody tySubst h_body_eq
+    -- Args satisfy OpsConsistent
+    have h_args_ops : ∀ a ∈ args, OpsConsistent F a :=
+      OpsConsistent_callOfLFunc_args hOps hcall
+    -- substFvarsLifting preserves OpsConsistent
+    have h_sm_ops : ∀ k v, Map.find? (fn.inputs.keys.zip args) k = some v → OpsConsistent F v := by
+      intro k v hfind
+      have h_mem := Map.find?_mem _ _ _ hfind
+      have h_in_args : v ∈ args := (List.of_mem_zip h_mem).2
+      exact h_args_ops v h_in_args
+    exact OpsConsistent_substFvarsLifting h_body_ops h_sm_ops
+  | eval_fn e callee e' args fn denotefn hcall heval hresult =>
+    obtain ⟨_, name, _, _, h_get⟩ := Factory.callOfLFunc_getElem? hcall
+    have h_fn_mem : name.name ∈ F := Factory.getElem?_some_implies_mem h_get
+    have h_fn_eq : F[name.name] = fn := Factory.getElem?_some_getElem h_get
+    have h_eval_eq : (F[name.name]).concreteEval = some denotefn := by rw [h_fn_eq]; exact heval
+    exact hFEvalOps name.name h_fn_mem denotefn _ args e' h_eval_eq hresult
+  | abs_subst_fvars body σ x hfv henv_eq =>
+    exact substFvarsFromState_OpsConsistent hOps hEnvOps henv_eq
+  | quant_subst_fvars_body tr body σ x hfv henv_eq =>
+    exact ⟨hOps.1, substFvarsFromState_OpsConsistent hOps.2 hEnvOps henv_eq⟩
+  | quant_subst_fvars_trigger tr body σ x hfv henv_eq =>
+    exact ⟨substFvarsFromState_OpsConsistent hOps.1 hEnvOps henv_eq, hOps.2⟩
+
+/-- A single step preserves `fvars_annotated_by`. -/
+theorem Step.fvars_annotated_preserved
+    {F : @Factory T} {env : Env T}
+    {e₁ e₂ : LExpr T.mono}
+    (hstep : Step F env e₁ e₂)
+    (hEnvTy : Env.Typed env)
+    (hAnnot : fvars_annotated_by hEnvTy.tyMap e₁)
+    (hEnvAnnot : ∀ (x : T.Identifier) (e : LExpr T.mono), env x = some e →
+        fvars_annotated_by hEnvTy.tyMap e)
+    (hFBodyAnnot : Factory.BodyAnnotated F hEnvTy.tyMap)
+    (hFEvalAnnot : Factory.EvalAnnotated F hEnvTy.tyMap)
+    : fvars_annotated_by hEnvTy.tyMap e₂ := by
+  induction hstep with
+  | expand_fvar x e henv => exact hEnvAnnot x e henv
+  | beta e1 v2 eres heq =>
+    subst heq
+    simp only [LExpr.subst]
+    exact fvars_annotated_by_substK hAnnot.1 (fun _ => hAnnot.2)
+  | reduce_1 e1 e1' e2 hstep ih => exact ⟨ih hAnnot.1, hAnnot.2⟩
+  | reduce_2 e1 e2 e2' hstep ih => exact ⟨hAnnot.1, ih hAnnot.2⟩
+  | ite_reduce_then ethen eelse => exact hAnnot.2.1
+  | ite_reduce_else ethen eelse => exact hAnnot.2.2
+  | ite_reduce_cond econd econd' ethen eelse hstep ih =>
+    exact ⟨ih hAnnot.1, hAnnot.2.1, hAnnot.2.2⟩
+  | ite_reduce_then_branch econd ethen ethen' eelse hstep ih =>
+    exact ⟨hAnnot.1, ih hAnnot.2.1, hAnnot.2.2⟩
+  | ite_reduce_else_branch econd ethen eelse eelse' hstep ih =>
+    exact ⟨hAnnot.1, hAnnot.2.1, ih hAnnot.2.2⟩
+  | eq_reduce_true e1 e2 heql => trivial
+  | eq_reduce_false e1 e2 heql => trivial
+  | eq_reduce_lhs e1 e1' e2 hstep ih => exact ⟨ih hAnnot.1, hAnnot.2⟩
+  | eq_reduce_rhs e1 e2 e2' hstep ih => exact ⟨hAnnot.1, ih hAnnot.2⟩
+  | expand_fn e callee fnbody new_body args fn tySubst hcall hbody htysubst heq =>
+    subst heq
+    obtain ⟨_, name, _, _, h_get⟩ := Factory.callOfLFunc_getElem? hcall
+    have h_fn_mem : name.name ∈ F := Factory.getElem?_some_implies_mem h_get
+    have h_fn_eq : F[name.name] = fn := Factory.getElem?_some_getElem h_get
+    have h_body_eq : (F[name.name]).body = some fnbody := by rw [h_fn_eq]; exact hbody
+    have h_body_annot : fvars_annotated_by hEnvTy.tyMap (fnbody.applySubst tySubst) :=
+      hFBodyAnnot name.name h_fn_mem fnbody tySubst h_body_eq
+    have h_args_annot : ∀ a ∈ args, fvars_annotated_by hEnvTy.tyMap a :=
+      fvars_annotated_by_callOfLFunc_args hAnnot hcall
+    have h_sm_annot : ∀ k v, Map.find? (fn.inputs.keys.zip args) k = some v →
+        fvars_annotated_by hEnvTy.tyMap v := by
+      intro k v hfind
+      have h_mem := Map.find?_mem _ _ _ hfind
+      exact h_args_annot v (List.of_mem_zip h_mem).2
+    exact fvars_annotated_by_substFvarsLifting h_body_annot h_sm_annot
+  | eval_fn e callee e' args fn denotefn hcall heval hresult =>
+    obtain ⟨_, name, _, _, h_get⟩ := Factory.callOfLFunc_getElem? hcall
+    have h_fn_mem : name.name ∈ F := Factory.getElem?_some_implies_mem h_get
+    have h_fn_eq : F[name.name] = fn := Factory.getElem?_some_getElem h_get
+    have h_eval_eq : (F[name.name]).concreteEval = some denotefn := by rw [h_fn_eq]; exact heval
+    exact hFEvalAnnot name.name h_fn_mem denotefn _ args e' h_eval_eq hresult
+  | abs_subst_fvars body σ x hfv henv_eq =>
+    exact substFvarsFromState_fvars_annotated hAnnot hEnvAnnot henv_eq
+  | quant_subst_fvars_body tr body σ x hfv henv_eq =>
+    exact ⟨hAnnot.1, substFvarsFromState_fvars_annotated hAnnot.2 hEnvAnnot henv_eq⟩
+  | quant_subst_fvars_trigger tr body σ x hfv henv_eq =>
+    exact ⟨substFvarsFromState_fvars_annotated hAnnot.1 hEnvAnnot henv_eq, hAnnot.2⟩
+
+/-! ### Bundled assumptions for multi-step preservation -/
+
+/-- Bundled well-formedness assumptions on the environment for step preservation.
+- `typed` : `Env.Typed env` — environment maps identifiers to well-typed expressions
+- `lc` : environment values are locally closed (`lcAt 0`)
+- `ops` : environment values satisfy `OpsConsistent F`
+- `annot` : environment values satisfy `fvars_annotated_by typed.tyMap`
+-/
+structure Env.StepWF (F : @Factory T) (env : Env T) where
+  typed : Env.Typed env
+  lc : ∀ (x : T.Identifier) (e : LExpr T.mono), env x = some e → LExpr.lcAt 0 e = true
+  ops : ∀ (x : T.Identifier) (e : LExpr T.mono), env x = some e → OpsConsistent F e
+  annot : ∀ (x : T.Identifier) (e : LExpr T.mono), env x = some e →
+      fvars_annotated_by typed.tyMap e
+
+/-- Bundled well-formedness assumptions on the factory for step preservation.
+- `wt` : `Factory.WellTyped F` — factory function bodies are well-typed
+- `evalWt` : `Factory.EvalWellTyped F` — concrete evaluators return well-typed results
+- `bodyOps` : `Factory.BodyOpsConsistent F` — factory bodies satisfy `OpsConsistent` after substitution
+- `evalOps` : `Factory.EvalOpsConsistent F` — concrete evaluators return `OpsConsistent` results
+- `bodyAnnot` : `Factory.BodyAnnotated F tyMap` — factory bodies satisfy `fvars_annotated_by` after substitution
+- `evalAnnot` : `Factory.EvalAnnotated F tyMap` — concrete evaluators return annotated results
+-/
+structure Factory.StepWF (F : @Factory T) (tyMap : Map T.Identifier LMonoTy) where
+  wt : Factory.WellTyped F
+  evalWt : Factory.EvalWellTyped F
+  bodyOps : Factory.BodyOpsConsistent F
+  evalOps : Factory.EvalOpsConsistent F
+  bodyAnnot : Factory.BodyAnnotated F tyMap
+  evalAnnot : Factory.EvalAnnotated F tyMap
+
+/-- Bundled well-formedness assumptions on the factory and type factory.
+- `factoryWF` : `FactoryWF F` — factory is well-formed
+- `constrWF` : `Factory.ConstrWellFormed F tf` — constructors are well-formed w.r.t. type factory
+- `tfWF` : `TypeFactoryWF tf` — type factory is well-formed
+-/
+structure Factory.WF (F : @Factory T) (tf : @TypeFactory T.IDMeta) where
+  factoryWF : FactoryWF F
+  constrWF : Factory.ConstrWellFormed F tf
+  tfWF : TypeFactoryWF tf
+
+/-- Bundled interpretation consistency assumptions.
+- `factory` : `Factory.InterpConsistent tcInterp opInterp F` — factory bodies/evals are interp-consistent
+- `constr` : `ConstrInterpConsistent tcInterp opInterp F` — constructor interp consistency
+- `env` : `Env.InterpConsistent tcInterp opInterp env fvarVal` — env values denote as fvarVal
+-/
+structure InterpConsistent (F : @Factory T)
+    (env : Env T) where
+  factory : Factory.InterpConsistent tcInterp opInterp F
+  constr : ConstrInterpConsistent tcInterp opInterp F
+  env : Env.InterpConsistent tcInterp opInterp env fvarVal
+
+/-- Multi-step version: `HasTypeA` is preserved by `StepStar`.
+Assumes `Env.StepWF F env` (env well-formedness) and
+`Factory.StepWF F tyMap` (factory well-formedness for step preservation),
+plus `OpsConsistent` and `fvars_annotated_by` for the initial expression. -/
+theorem StepStar.type_preserved
     {F : @Factory T} {env : Env T}
     {e₁ e₂ : LExpr T.mono} {τ : LMonoTy}
     (hsteps : StepStar F env e₁ e₂)
     (h₁ : LExpr.HasTypeA [] e₁ τ)
+    (hEnvWF : Env.StepWF F env)
+    (hFWF : Factory.StepWF F hEnvWF.typed.tyMap)
+    (hOps : OpsConsistent F e₁)
+    (hAnnot : fvars_annotated_by hEnvWF.typed.tyMap e₁)
+    : LExpr.HasTypeA [] e₂ τ := by
+  induction hsteps with
+  | refl => exact h₁
+  | step x y z hstep hrest ih =>
+    have h_mid := Step.type_preserved hstep h₁ hFWF.wt hFWF.evalWt hOps hEnvWF.lc hEnvWF.typed hAnnot
+    have h_ops_mid := Step.OpsConsistent_preserved hstep hOps hEnvWF.ops hFWF.bodyOps hFWF.evalOps
+    have h_annot_mid := Step.fvars_annotated_preserved hstep hEnvWF.typed hAnnot hEnvWF.annot hFWF.bodyAnnot hFWF.evalAnnot
+    exact ih h_mid h_ops_mid h_annot_mid
+
+/-- Multi-step version: if `e₁` reduces to `e₂` in zero or more steps, and
+both are well-typed at `τ`, they have the same denotation.
+Assumes `Env.StepWF F env` (env well-formedness),
+`Factory.StepWF F tyMap` (factory well-formedness for step preservation),
+`Factory.WF F tf` (factory/type-factory well-formedness),
+`InterpConsistent tcInterp opInterp fvarVal F env` (interpretation consistency),
+plus `OpsConsistent` and `fvars_annotated_by` for the initial expression. -/
+theorem StepStar.denote_preserved
+    {F : @Factory T} {env : Env T} {tf : @TypeFactory T.IDMeta}
+    {e₁ e₂ : LExpr T.mono} {τ : LMonoTy}
+    (hsteps : StepStar F env e₁ e₂)
+    (h₁ : LExpr.HasTypeA [] e₁ τ)
     (h₂ : LExpr.HasTypeA [] e₂ τ)
-    (hF : Factory.InterpConsistent tcInterp opInterp F)
-    (hEnv : Env.InterpConsistent tcInterp opInterp env fvarVal)
+    (hEnvWF : Env.StepWF F env)
+    (hFWF : Factory.StepWF F hEnvWF.typed.tyMap)
+    (hFacWF : Factory.WF F tf)
+    (hIC : InterpConsistent tcInterp opInterp fvarVal F env)
+    (hOps : OpsConsistent F e₁)
+    (hAnnot : fvars_annotated_by hEnvWF.typed.tyMap e₁)
     : LExpr.denote tcInterp opInterp fvarVal vt .nil e₁ τ h₁ =
       LExpr.denote tcInterp opInterp fvarVal vt .nil e₂ τ h₂ := by
-  sorry
+  induction hsteps with
+  | refl => rfl
+  | step x y z hstep hrest ih =>
+    have h_mid := Step.type_preserved hstep h₁ hFWF.wt hFWF.evalWt hOps hEnvWF.lc hEnvWF.typed hAnnot
+    have h_ops_mid := Step.OpsConsistent_preserved hstep hOps hEnvWF.ops hFWF.bodyOps hFWF.evalOps
+    have h_annot_mid := Step.fvars_annotated_preserved hstep hEnvWF.typed hAnnot hEnvWF.annot hFWF.bodyAnnot hFWF.evalAnnot
+    have h_step_eq := Step.denote_preserved (tcInterp := tcInterp) (opInterp := opInterp) (fvarVal := fvarVal) (vt := vt) (tf := tf) hstep h₁ h_mid hIC.factory hFWF.wt hIC.env hOps hFacWF.factoryWF hFacWF.constrWF hIC.constr hFacWF.tfWF hEnvWF.lc hEnvWF.typed hAnnot
+    have h_rest_eq := ih h_mid h₂ h_ops_mid h_annot_mid
+    exact h_step_eq.trans h_rest_eq
 
 end -- section [DecidableEq T.IDMeta] [Inhabited T.mono.base.IDMeta]
 
