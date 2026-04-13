@@ -22,7 +22,7 @@ Messaging) are generic and not tied to any cloud provider.
 
 namespace Strata.Python.AnalyzeLaurelTest
 
-open Strata (pyAnalyzeLaurel pySpecsDir)
+open Strata (pythonAndSpecToLaurel pySpecsDir)
 
 private meta def testDir : System.FilePath :=
   "StrataTest/Languages/Python/Specs/dispatch_test"
@@ -84,12 +84,12 @@ private meta def runAnalyze
     : IO (Except String Core.Program) := do
   let testIon ← compileTestScript pythonCmd (testDir / scriptName) tmpDir
   let laurel ←
-    match ← Strata.pyAnalyzeLaurel testIon.toString
+    match ← Strata.pythonAndSpecToLaurel testIon.toString
         (dispatchModules := #["servicelib"])
         (specDir := tmpDir) |>.toBaseIO with
     | .ok r => pure r
     | .error err => return .error (toString err)
-  match Strata.translateCombinedLaurel laurel with
+  match ← Strata.translateCombinedLaurel laurel with
   | (some core, []) =>
     -- Also run Core type checking to catch semantic errors (e.g. Heap vs Any)
     match Core.typeCheck Core.VerifyOptions.quiet core (moreFns := Strata.Python.ReFactory) with
@@ -104,17 +104,17 @@ private meta def runAnalyzeAndVerify
     : IO (Except String (Array Core.VCResult)) := do
   let testIon ← compileTestScript pythonCmd (testDir / scriptName) tmpDir
   let laurel ←
-    match ← Strata.pyAnalyzeLaurel testIon.toString
+    match ← Strata.pythonAndSpecToLaurel testIon.toString
         (dispatchModules := #["servicelib"])
         (specDir := tmpDir) |>.toBaseIO with
     | .ok r => pure r
     | .error err => return .error (toString err)
-  let (coreProgramOption, _) := Strata.translateCombinedLaurel laurel
+  let (coreProgramOption, _) ← Strata.translateCombinedLaurel laurel
   let coreProgram ← match coreProgramOption with
     | none => return .error "Laurel to Core translation failed"
     | some core => pure core
   -- Split prelude / user procedure names at FIRST_END_MARKER
-  let (preludeNames, userProcNames) := Strata.splitProcNames coreProgram
+  let (_preludeNames, userProcNames) := Strata.splitProcNames coreProgram
   -- Inline all non-main, non-prelude procedures as a prefix phase
   let inlinePhases : List Core.PipelinePhase :=
     [_root_.Core.procedureInliningPipelinePhase
@@ -232,13 +232,13 @@ private meta def runTestCase (pythonCmd : System.FilePath) (tmpDir : System.File
     let task ← IO.asTask do
       let testIon ← compileTestScript pythonCmd (testDir / "test_class_any_as_composite.py") tmpDir
       let laurel ←
-        match ← Strata.pyAnalyzeLaurel testIon.toString
+        match ← Strata.pythonAndSpecToLaurel testIon.toString
             (dispatchModules := #["servicelib"])
             (pyspecModules := #["servicelib.Storage"])
             (specDir := tmpDir) |>.toBaseIO with
         | .ok r => pure r
         | .error err => return some s!"test_class_any_as_composite.py: {err}"
-      match Strata.translateCombinedLaurel laurel with
+      match ← Strata.translateCombinedLaurel laurel with
       | (some core, []) =>
         match Core.typeCheck Core.VerifyOptions.quiet core (moreFns := Strata.Python.ReFactory) with
         | .error diag =>
@@ -351,7 +351,7 @@ recursively translates subclasses, so the type
     let testIon ← compileTestScript pythonCmd
       (testDir / "test_resolution_after_filter.py") tmpDir
     let combined ←
-      match ← Strata.pyAnalyzeLaurel testIon.toString
+      match ← Strata.pythonAndSpecToLaurel testIon.toString
           (dispatchModules := #["servicelib"])
           (specDir := tmpDir) |>.toBaseIO with
       | .ok r => pure r
