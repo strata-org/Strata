@@ -4,7 +4,6 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import Strata.Languages.Core.Interpreter
 import Strata.SimpleAPI
 
 /-! # Concrete Python Interpreter via Strata
