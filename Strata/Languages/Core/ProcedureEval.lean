@@ -171,7 +171,13 @@ def interpProcedure (E : Env) (procName : String)
         | some (.AssertFail label expr) => .assertionFailure label expr E'
         | some (.OutOfFuel) => .stuck "out of fuel"
         | some e => .stuck s!"{format e}"
-        | none => .success E'
+        | none =>
+          -- In concrete mode, check deferred obligations for assertion failures.
+          -- The symbolic evaluator defers obligations rather than setting AssertFail
+          -- when path condition scopes exist (even if empty).
+          match E'.deferred.find? (fun ob => ob.obligation.denoteBool == some false) with
+          | some ob => .assertionFailure ob.label ob.obligation E'
+          | none => .success E'
 
 /-- Read the value of a variable from an `InterpResult`. -/
 def InterpResult.getValue? (r : InterpResult) (name : String) : Option Expression.Expr :=
