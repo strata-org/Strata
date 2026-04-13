@@ -1445,7 +1445,15 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
     let finalCtx := { bodyCtx with variableTypes := mergedVars }
     return (finalCtx, [tryBlock])
 
-  | .Raise _ _ _ => return (ctx, [mkStmtExprMd .Hole])
+  | .Raise _ _ _ =>
+    -- raise sets maybe_except to a non-deterministic error and exits the function.
+    let havocExcept := mkStmtExprMdWithLoc
+      (StmtExpr.Assign [maybeExceptVar] (mkStmtExprMd (.Hole false none))) md
+    let assumeError := mkStmtExprMdWithLoc
+      (.Assume (mkStmtExprMd (StmtExpr.StaticCall "isError"
+        [mkStmtExprMd (StmtExpr.Identifier "maybe_except")]))) md
+    let exit := mkStmtExprMdWithLoc (StmtExpr.Exit "$body") md
+    return (ctx, [havocExcept, assumeError, exit])
 
   -- With statement: with EXPR as VAR: BODY
   -- Desugars to: mgr = EXPR; VAR = mgr.__enter__(); BODY; mgr.__exit__()
