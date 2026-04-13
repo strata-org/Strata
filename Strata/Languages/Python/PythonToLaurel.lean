@@ -115,6 +115,11 @@ structure TranslationContext where
   classesInHierarchy : Std.HashSet String := {}
   loopBreakLabel : Option String := none
   loopContinueLabel : Option String := none
+  /-- Label that a `raise` statement should exit to.
+      Inside a try body this is the catchers label so the exception
+      propagates to the handlers.  Inside a handler (or at the top
+      level) it is `none`, meaning `Exit "$body"` (exit the function). -/
+  raiseExitLabel : Option String := none
 deriving Inhabited
 
 /-! ## Error Handling -/
@@ -1409,16 +1414,22 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
   | .Try _ body handlers _ _ => do
     let tryLabel := s!"try_end_{s.toAst.ann.start.byteIdx}"
     let catchersLabel := s!"exception_handlers_{s.toAst.ann.start.byteIdx}"
-    let (bodyCtx, bodyStmts) ← translateStmtList ctx body.val.toList
+    -- Inside the try body, raise should exit to the catchers (handlers).
+    let bodyCtx := { ctx with raiseExitLabel := some catchersLabel }
+    let (bodyCtx, bodyStmts) ← translateStmtList bodyCtx body.val.toList
 
     -- Translate exception handlers
-    let mut handlerCtx := bodyCtx
+    -- Inside a handler, raise propagates outward: restore the enclosing
+    -- raiseExitLabel so that a re-raise exits the inner try block and
+    -- lets the outer scope's exception checks (if any) catch it.
+    let handlerCtx := { ctx with raiseExitLabel := ctx.raiseExitLabel }
+    let mut handlerCtxFinal := handlerCtx
     let mut handlerStmts : List StmtExprMd := []
     for handler in handlers.val do
       match handler with
       | .ExceptHandler _ _ _ handlerBody =>
-        let (hCtx, hStmts) ← translateStmtList ctx handlerBody.val.toList
-        handlerCtx := hCtx
+        let (hCtx, hStmts) ← translateStmtList handlerCtx handlerBody.val.toList
+        handlerCtxFinal := hCtx
         handlerStmts := handlerStmts ++ hStmts
 
     -- Insert exception checks after each statement in try body
@@ -1440,19 +1451,24 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
     let tryBlock := mkStmtExprMdWithLoc (StmtExpr.Block
       ([catchersBlock] ++ handlerStmts) (some tryLabel)) md
     let mergedVars := bodyCtx.variableTypes ++
-      (handlerCtx.variableTypes.filter fun (n, _) =>
+      (handlerCtxFinal.variableTypes.filter fun (n, _) =>
         !bodyCtx.variableTypes.any fun (bn, _) => bn == n)
     let finalCtx := { bodyCtx with variableTypes := mergedVars }
     return (finalCtx, [tryBlock])
 
   | .Raise _ _ _ =>
-    -- raise sets maybe_except to a non-deterministic error and exits the function.
+    -- The exception expression and cause are intentionally ignored: the pipeline
+    -- uses an abstract error model (error/no-error flag only).
+    -- raise sets maybe_except to a non-deterministic error and exits to the
+    -- nearest enclosing exception scope (catchers label inside a try body,
+    -- or "$body" to exit the function otherwise).
     let havocExcept := mkStmtExprMdWithLoc
       (StmtExpr.Assign [maybeExceptVar] (mkStmtExprMd (.Hole false none))) md
     let assumeError := mkStmtExprMdWithLoc
       (.Assume (mkStmtExprMd (StmtExpr.StaticCall "isError"
         [mkStmtExprMd (StmtExpr.Identifier "maybe_except")]))) md
-    let exit := mkStmtExprMdWithLoc (StmtExpr.Exit "$body") md
+    let exitLabel := ctx.raiseExitLabel.getD "$body"
+    let exit := mkStmtExprMdWithLoc (StmtExpr.Exit exitLabel) md
     return (ctx, [havocExcept, assumeError, exit])
 
   -- With statement: with EXPR as VAR: BODY

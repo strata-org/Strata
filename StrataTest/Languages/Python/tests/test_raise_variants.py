@@ -1,4 +1,8 @@
 # Test: raise statement in various positions
+# Note: Functions that always raise and never return (raise_bare_in_except,
+# raise_new_in_except, raise_at_top_level) produce "unknown" for the return
+# type constraint because there is no feasible return path, making the
+# postcondition unprovable.
 
 def raise_in_try() -> str:
     result: str = ""

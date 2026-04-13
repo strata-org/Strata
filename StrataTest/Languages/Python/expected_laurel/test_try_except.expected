@@ -4,5 +4,7 @@ test_try_except.py(17, 4): ✅ pass - handler should have executed
 test_try_except.py(17, 4): ✅ pass - handler should have executed
 test_try_except.py(17, 4): ✅ pass - handler should have executed
 test_try_except.py(17, 4): ✅ pass - handler should have executed
-DETAIL: 6 passed, 0 failed, 0 inconclusive
+test_try_except.py(17, 4): ✅ pass - handler should have executed
+test_try_except.py(17, 4): ✅ pass - handler should have executed
+DETAIL: 8 passed, 0 failed, 0 inconclusive
 RESULT: Analysis success
