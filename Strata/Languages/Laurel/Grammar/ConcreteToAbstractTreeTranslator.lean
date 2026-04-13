@@ -38,7 +38,7 @@ def TransM.error (msg : String) : TransM α :=
 private def SourceRange.toFileRange (uri : Uri) (sr : SourceRange) : FileRange :=
   ⟨ uri, sr ⟩
 
-def getArgFileRange (arg : Arg) : TransM (Option FileRange) := do
+private def getArgFileRange (arg : Arg) : TransM (Option FileRange) := do
   return match (← get).uri with
   | some uri => some (SourceRange.toFileRange uri arg.ann)
   | none => none
