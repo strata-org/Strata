@@ -228,7 +228,7 @@ private def mkWitnessProc (ptMap : ConstrainedTypeMap) (ct : ConstrainedType) : 
   let witnessInit : StmtExprMd :=
     ⟨.LocalVariable witnessId (resolveType ptMap ct.base) (some ct.witness), src, md⟩
   let assert : StmtExprMd :=
-    ⟨.Assert (constraintCallFor ptMap (.UserDefined ct.name) witnessId md).get!, src, md⟩
+    ⟨.Assert (constraintCallFor ptMap (.UserDefined ct.name) witnessId md (src := src)).get!, src, md⟩
   { name := mkId s!"$witness_{ct.name.text}"
     inputs := []
     outputs := []
