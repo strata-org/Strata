@@ -665,6 +665,24 @@ private theorem go_typeCheck [DecidableEq T.IDMeta]
       rw [ih_tr (Δ_body := qty :: Δ_body) h_annot.1,
           ih_body (Δ_body := qty :: Δ_body) h_annot.2]
 
+/-- `substFvarsLifting` preserves `typeCheck` when fvar annotations match binding types. -/
+theorem substFvarsLifting_typeCheck [DecidableEq T.IDMeta]
+    {bindings : List (T.Identifier × LExpr T.mono)}
+    {Δ : List LMonoTy}
+    {tys : List LMonoTy}
+    (h_wt : List.Forall₂ (LExpr.HasTypeA Δ) (bindings.map Prod.snd) tys)
+    {e : LExpr T.mono} {τ : LMonoTy}
+    (h_annot : fvars_annotated_by (bindings.map Prod.fst |>.zip tys) e)
+    (h : LExpr.HasTypeA Δ e τ)
+    : LExpr.HasTypeA Δ (LExpr.substFvarsLifting e bindings) τ := by
+  simp only [LExpr.substFvarsLifting]
+  split
+  · exact h
+  · rw [LExpr.HasTypeA_iff_typeCheck] at h ⊢
+    have h_tc := go_typeCheck (Δ_body := []) h_wt h_annot
+    simp at h_tc
+    rw [h_tc, h]
+
 /-! ### Free-variable substitution commutes with denotation -/
 set_option pp.proofs true
 
