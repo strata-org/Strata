@@ -81,6 +81,23 @@ def check_ast_imp(args):
         success += 1
     print(f'Analyzed {success} of {total} files.')
 
+def icontract_to_pyspec_imp(args):
+    from strata.icontract import convert_file_ion, convert_directory_ion
+    from pathlib import Path
+    input_path = Path(args.input)
+    output_path = Path(args.output)
+    module_name = args.module
+    only_decorated = args.only_decorated
+    if input_path.is_file():
+        if not output_path.suffix == ".ion":
+            output_path = output_path / (input_path.stem + ".pyspec.st.ion")
+        convert_file_ion(input_path, output_path, module_name, only_decorated=only_decorated)
+    elif input_path.is_dir():
+        convert_directory_ion(input_path, output_path)
+    else:
+        print(f"Error: {input_path} not found", file=sys.stderr)
+        sys.exit(1)
+
 def main():
     parser = argparse.ArgumentParser(
                     prog='strata_python',
@@ -109,6 +126,15 @@ def main():
     checkast_command.add_argument('dir', help='Directory with Python files to analyze.')
     checkast_command.add_argument('-f', '--features', action='store_true', help='Print out features used in SSA.')
     checkast_command.set_defaults(func=check_ast_imp)
+
+    icontract_command = subparsers.add_parser('icontract_to_pyspec',
+        help='Convert icontract-decorated Python to .pyspec.st.ion')
+    icontract_command.add_argument('input', help='Input .py file or directory')
+    icontract_command.add_argument('output', help='Output file or directory')
+    icontract_command.add_argument('--module', help='Override module name', default=None)
+    icontract_command.add_argument('--only-decorated', action='store_true',
+        help='Only emit specs for functions with icontract decorators')
+    icontract_command.set_defaults(func=icontract_to_pyspec_imp)
 
     args = parser.parse_args()
     if not args.quiet and not ion.__IS_C_EXTENSION_SUPPORTED:
