@@ -1,7 +1,7 @@
 test_nested_calls.py(2, 11): ✅ pass - Check PMul exception
-unknown location: ✅ pass - (double ensures) Return type constraint
+test_nested_calls.py(1, 22): ✅ pass - (double ensures) Return type constraint
 test_nested_calls.py(5, 11): ✅ pass - Check PAdd exception
-unknown location: ✅ pass - (add_one ensures) Return type constraint
+test_nested_calls.py(4, 23): ✅ pass - (add_one ensures) Return type constraint
 test_nested_calls.py(8, 4): ✅ pass - (double requires) Type constraint of x
 test_nested_calls.py(9, 4): ✅ pass - (double requires) Type constraint of x
 test_nested_calls.py(10, 4): ✅ pass - double(double(3)) should be 12
