@@ -614,6 +614,7 @@ where
 structure LaurelTranslateOptions where
   emitResolutionErrors : Bool := true
   inlineFunctionsWhenPossible : Bool := false
+  dropDanglingHoles : Bool := false
 
 /--
 Translate a Laurel Procedure to a Core Function (when applicable) using `TranslateM`.
@@ -728,7 +729,7 @@ def translateWithLaurel (options: LaurelTranslateOptions) (program : Program): T
   let result := resolve program (some model)
   let (program, model) := (result.program, result.model)
   let program := inferHoleTypes model program
-  let program := eliminateHoles program
+  let program := eliminateHoles program options.dropDanglingHoles
   let program := desugarShortCircuit model program
   let program := liftExpressionAssignments model program
   let program := eliminateReturnsInExpressionTransform program

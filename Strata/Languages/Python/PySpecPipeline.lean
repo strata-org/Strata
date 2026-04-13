@@ -362,7 +362,7 @@ public def splitProcNames (prog : Core.Program)
     (after all Laurel-to-Laurel passes, before translation to Core). -/
 public def translateCombinedLaurelWithLowered (combined : Laurel.Program)
     : (Option Core.Program × List DiagnosticModel × Laurel.Program) :=
-  let (coreOption, errors, lowered) := Laurel.translateWithLaurel { inlineFunctionsWhenPossible := true } combined
+  let (coreOption, errors, lowered) := Laurel.translateWithLaurel { inlineFunctionsWhenPossible := true, dropDanglingHoles := true } combined
   (coreOption.map appendCorePartOfRuntime, errors, lowered)
 
 /-- Translate a combined Laurel program to Core and prepend the full
