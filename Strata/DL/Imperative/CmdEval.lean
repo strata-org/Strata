@@ -73,7 +73,7 @@ def Cmd.eval [BEq P.Ident] [EC : EvalContext P S] (σ : S) (c : Cmd P) : Cmd P �
       | some true => -- Proved via evaluation.
         (c', EC.deferObligation σ (ProofObligation.mk label propType assumptions e md))
       | some false =>
-        if assumptions.isEmpty then
+        if assumptions.all (·.isEmpty) then
           (c', EC.updateError σ (.AssertFail label e))
         else
           (c', EC.deferObligation σ (ProofObligation.mk label propType assumptions e md))
