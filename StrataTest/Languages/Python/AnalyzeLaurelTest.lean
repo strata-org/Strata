@@ -114,7 +114,7 @@ private meta def runAnalyzeAndVerify
     | none => return .error "Laurel to Core translation failed"
     | some core => pure core
   -- Split prelude / user procedure names at FIRST_END_MARKER
-  let (_preludeNames, userProcNames) := Strata.splitProcNames coreProgram
+  let (_preludeNames, _userProcNames) := Strata.splitProcNames coreProgram
   -- Inline all non-main, non-prelude procedures as a prefix phase
   let inlinePhases : List Core.PipelinePhase :=
     [_root_.Core.procedureInliningPipelinePhase
