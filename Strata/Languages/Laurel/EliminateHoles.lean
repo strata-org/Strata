@@ -117,7 +117,11 @@ private def elimStmt (stmt : StmtExprMd) : ElimHoleM StmtExprMd := do
   | _ => return stmt
 
 private def elimStmtList (stmts : List StmtExprMd) : ElimHoleM (List StmtExprMd) :=
-  stmts.mapM elimStmt
+  match stmts with
+  | [] => pure []
+  | [s] => return [← elimStmt s]
+  | ⟨.Hole .., _⟩ :: rest => elimStmtList rest
+  | s :: rest => return (← elimStmt s) :: (← elimStmtList rest)
 end
 
 private def elimProcedure (proc : Procedure) : ElimHoleM Procedure := do
