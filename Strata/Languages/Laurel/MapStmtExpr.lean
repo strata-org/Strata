@@ -102,6 +102,15 @@ def mapProcedureBodiesM [Monad m] (f : StmtExprMd → m StmtExprMd) (proc : Proc
   | .Abstract posts => return { proc with body := .Abstract (← posts.mapM f) }
   | .External => return proc
 
+/-- Apply a monadic transformation to all `StmtExprMd` nodes in a procedure
+    (preconditions, decreases, body, and invokeOn). -/
+def mapProcedureM [Monad m] (f : StmtExprMd → m StmtExprMd) (proc : Procedure) : m Procedure := do
+  let proc ← mapProcedureBodiesM f proc
+  return { proc with
+    preconditions := ← proc.preconditions.mapM f
+    decreases := ← mapOptionM f proc.decreases
+    invokeOn := ← mapOptionM f proc.invokeOn }
+
 /-- Apply a monadic transformation to all `StmtExprMd` nodes in a program. -/
 def mapProgramM [Monad m] (f : StmtExprMd → m StmtExprMd) (program : Program) : m Program := do
   return { program with staticProcedures := ← program.staticProcedures.mapM (mapProcedureBodiesM f) }
