@@ -89,4 +89,4 @@ ALL_SPECS="$SPEC_FILE"
 for EXTRA in "${EXTRA_SPECS[@]+"${EXTRA_SPECS[@]}"}"; do
     ALL_SPECS="$ALL_SPECS:$EXTRA"
 done
-echo "$RAW_OUTPUT" | python3 "$SCRIPT_DIR/format_results.py" "$ALL_SPECS" "$USER_FILE" "$ORIG_USER_FILE"
+echo "$RAW_OUTPUT" | python3 -m strata.format_results "$ALL_SPECS" "$USER_FILE" "$ORIG_USER_FILE"
