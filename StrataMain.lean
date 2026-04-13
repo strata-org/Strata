@@ -606,7 +606,7 @@ def pyAnalyzeLaurelCommand : Command where
           | .ok prog => pure prog
         -- Then inline remaining procedure bodies
         match Core.inlineProcedures coreProgram
-              ⟨.some (fun name _ => name ≠ "__main__" && !_preludeNames.contains name)⟩ with
+              { doInline := fun name _ => name ≠ "__main__" && !_preludeNames.contains name } with
         | .error e => exitPyAnalyzeInternalError s!"Inlining failed: {e}"
         | .ok inlined => do
           if verbose then
