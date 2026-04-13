@@ -6,4 +6,5 @@ def test_bug_finding_unreachable(x: int) -> None:
             assert False, "dead code"
 
 if __name__ == "__main__":
-    test_bug_finding_unreachable(0)
+    x: int = int(input())
+    test_bug_finding_unreachable(x)
