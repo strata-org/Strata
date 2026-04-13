@@ -155,43 +155,6 @@ private def computeTypeSubst (input_tys output_tys: List LMonoTy)
   | .ok substInfo => substInfo.subst
   | .error _ => Subst.empty
 
-/-- Evaluate a procedure call by inlining the contract (symbolic/verification mode). -/
-private def Command.evalCallContract (E : Env) (proc : Procedure)
-    (lhs : List Expression.Ident) (pname : String) (args : List Expression.Expr)
-    (md : Imperative.MetaData Expression) : Command × Env :=
-  -- Compute type substitution to instantiate polymorphic type variables.
-  let tySubst := computeTypeSubst proc.header.inputs.values
-      proc.header.outputs.values args lhs E
-  let formal_arg_subst := mkFormalArgSubst proc args E
-  let current_globals := getCurrentGlobals E
-  let (return_lhs_subst, lhs_post_subst, E) := mkReturnSubst proc lhs E
-  let (globals_post_subst, E) := mkGlobalSubst proc current_globals E
-  let preconditions_typed := proc.spec.preconditions.map
-      (fun (l, c) => (l, { c with expr := c.expr.applySubst tySubst }))
-  let precond_subst := formal_arg_subst ++ current_globals
-  let preconditions := callConditions proc .Requires preconditions_typed precond_subst
-  let preconditions := preconditions.map
-      (fun (l, e) => (l, Procedure.Check.mk (E.exprEval e.expr) e.attr e.md))
-  let deferred_pre := ProofObligations.createAssertions E.pathConditions preconditions
-  let E := { E with deferred := E.deferred ++ deferred_pre }
-  let postconditions_typed := proc.spec.postconditions.map
-      (fun (l, c) => (l, { c with expr := c.expr.applySubst tySubst }))
-  let postcond_subst_init := formal_arg_subst ++ return_lhs_subst
-  let old_g_subst : VarSubst := current_globals.filterMap fun ((id, ty), e) =>
-    let oldId : CoreIdent := CoreIdent.mkOld id.name
-    some ((oldId, ty), e)
-  let postcond_subst_map := postcond_subst_init ++ globals_post_subst ++ old_g_subst
-  let postconditions := callConditions proc .Ensures postconditions_typed postcond_subst_map
-  let postconditions := postconditions.keys.zip (Procedure.Spec.getCheckExprs postconditions)
-  let E := { E with pathConditions := (E.pathConditions.addInNewest postconditions)}
-  let post_subst := globals_post_subst ++ lhs_post_subst
-  let post_vars_mdata := post_subst.map
-      (fun ((old, _), new) => Imperative.MetaDataElem.mk (.var old) (.expr new))
-  let md' := md ++ post_vars_mdata.toArray
-  let c' := CmdExt.call lhs pname args md'
-  let E := E.addToContext post_subst
-  (c', E)
-
 /--
 Evaluate a procedure call `lhs := pname(args)`.
 In symbolic mode, inlines the contract. In concrete mode, the body is
@@ -202,7 +165,59 @@ def Command.evalCall (E : Env)
     (md : Imperative.MetaData Expression) : Command × Env :=
   match Program.Procedure.find? E.program pname with
   | some proc =>
-    Command.evalCallContract E proc lhs pname args md
+    -- Compute type substitution to instantiate polymorphic type variables.
+    let tySubst := computeTypeSubst proc.header.inputs.values
+      proc.header.outputs.values args lhs E
+
+    -- (Pre-call) Create formal-to-actual argument mapping.
+    let formal_arg_subst := mkFormalArgSubst proc args E
+    -- (Pre-call) Get current global values for old expression handling.
+    let current_globals := getCurrentGlobals E
+    -- (Post-call) Create return variable mappings and fresh LHS variables.
+    let (return_lhs_subst, lhs_post_subst, E) := mkReturnSubst proc lhs E
+    -- (Post-call) Create global variable mapping: fresh vars for modified,
+    -- current values for unmodified.
+    let (globals_post_subst, E) := mkGlobalSubst proc current_globals E
+
+    -- Apply type substitution to preconditions to instantiate type variables.
+    let preconditions_typed := proc.spec.preconditions.map
+        (fun (l, c) => (l, { c with expr := c.expr.applySubst tySubst }))
+    -- Create pre-call substitution for preconditions.
+    let precond_subst := formal_arg_subst ++ current_globals
+    -- Generate precondition proof obligations.
+    let preconditions := callConditions proc .Requires preconditions_typed precond_subst
+    -- It's safe to evaluate the preconditions in the current environment
+    -- (pre-call context).
+    let preconditions := preconditions.map
+        (fun (l, e) => (l, Procedure.Check.mk (E.exprEval e.expr) e.attr e.md))
+    let deferred_pre := ProofObligations.createAssertions E.pathConditions preconditions
+    let E := { E with deferred := E.deferred ++ deferred_pre }
+
+    -- Apply type substitution to postconditions to instantiate type variables.
+    let postconditions_typed := proc.spec.postconditions.map
+        (fun (l, c) => (l, { c with expr := c.expr.applySubst tySubst }))
+    -- Create post-call substitution for postconditions.
+    let postcond_subst_init := formal_arg_subst ++ return_lhs_subst
+    -- Build "old g" substitutions: map "old g" → pre-call value of g
+    let old_g_subst : VarSubst := current_globals.filterMap fun ((id, ty), e) =>
+      let oldId : CoreIdent := CoreIdent.mkOld id.name
+      some ((oldId, ty), e)
+    -- Substitute: args/returns with fresh vars, globals with post-call fresh vars, "old g" with pre-call values
+    let postcond_subst_map := postcond_subst_init ++ globals_post_subst ++ old_g_subst
+    let postconditions := callConditions proc .Ensures postconditions_typed postcond_subst_map
+
+    -- Add postconditions to path conditions.
+    let postconditions := postconditions.keys.zip (Procedure.Spec.getCheckExprs postconditions)
+    let E := { E with pathConditions := (E.pathConditions.addInNewest postconditions)}
+
+    -- Update environment with post-call state.
+    let post_subst := globals_post_subst ++ lhs_post_subst
+    let post_vars_mdata := post_subst.map
+        (fun ((old, _), new) => Imperative.MetaDataElem.mk (.var old) (.expr new))
+    let md' := md ++ post_vars_mdata.toArray
+    let c' := CmdExt.call lhs pname args md'
+    let E := E.addToContext post_subst
+    (c', E)
   | _ =>
     let c' := CmdExt.call lhs pname args md
     let E := { E with error := some (.Misc f!"Procedure {pname} not found!") }
