@@ -233,11 +233,11 @@ dialect into the dialect-specific AST for the Core dialect. This can fail with
 an error message if the input program contains constructs that are not yet
 supported.
 -/
-def laurelToCore (p : Laurel.Program) : Except String Core.Program :=
-  let (coreOpt, diags) := Laurel.translate { emitResolutionErrors := true } p
+def laurelToCore (p : Laurel.Program) : IO (Except String Core.Program) := do
+  let (coreOpt, diags) ← Laurel.translate { emitResolutionErrors := true } p
   match coreOpt with
-  | some core => .ok core
-  | none => .error s!"Laurel to Core translation failed: {diags.map (·.message)}"
+  | some core => return .ok core
+  | none => return .error s!"Laurel to Core translation failed: {diags.map (·.message)}"
 
 /-! ### Transformation of Core programs -/
 
@@ -327,10 +327,12 @@ def Core.verifyProgram
     (proceduresToVerify : Option (List String) := none)
     (externalPhases : List Core.AbstractedPhase := [])
     (prefixPhases : List Core.PipelinePhase := [])
+    (keepAllFilesPrefix : Option String := none)
     : EIO String Core.VCResults := do
   let runVerification (tempDir : System.FilePath) : IO Core.VCResults :=
     EIO.toIO (IO.Error.userError ∘ toString)
-      (Core.verify program tempDir proceduresToVerify options moreFns externalPhases prefixPhases)
+      (Core.verify program tempDir proceduresToVerify options moreFns externalPhases prefixPhases
+        (keepAllFilesPrefix := keepAllFilesPrefix))
   let ioAction := match options.vcDirectory with
     | .some vcDir => IO.FS.createDirAll vcDir *> runVerification vcDir
     | .none => IO.FS.withTempDir runVerification
@@ -539,7 +541,7 @@ def pySpecsDir (sourceDir strataDir dialectFile : System.FilePath)
 /-! ### Python-to-Core via Laurel pipeline -/
 
 /-- Translate a Python Ion file all the way to Core.  Composes
-    `pyAnalyzeLaurel` (Python → combined Laurel) and
+    `pythonAndSpecToLaurel` (Python → combined Laurel) and
     `translateCombinedLaurel` (Laurel → Core with prelude). -/
 def pyTranslateLaurel
     (pythonIonPath : String)
@@ -548,10 +550,10 @@ def pyTranslateLaurel
     (specDir : System.FilePath := ".")
     : EIO String (Core.Program × List DiagnosticModel) := do
   let laurel ←
-    match ← pyAnalyzeLaurel pythonIonPath dispatchModules pyspecModules (specDir := specDir) |>.toBaseIO with
+    match ← pythonAndSpecToLaurel pythonIonPath dispatchModules pyspecModules (specDir := specDir) |>.toBaseIO with
     | .ok r => pure r
     | .error err => throw (toString err)
-  let (coreOption, laurelTranslateErrors) := translateCombinedLaurel laurel
+  let (coreOption, laurelTranslateErrors) ← IO.toEIO (fun e => s!"{e}") (translateCombinedLaurel laurel)
   match coreOption with
   | none => throw s!"Laurel to Core translation failed: {laurelTranslateErrors}"
   | some core => pure (core, laurelTranslateErrors)
