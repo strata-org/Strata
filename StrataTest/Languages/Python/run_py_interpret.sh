@@ -5,9 +5,10 @@
 # Runs pyInterpret on all test_*.py files and reports pass/fail.
 #
 # Expected outcomes are controlled by files in expected_interpret/:
-#   - No .expected file  → run test, assert exit code 0 (PASS)
+#   - No .expected/.skip → run test, assert exit code 0 (PASS)
 #   - .expected file     → run test, assert non-zero exit and output matches
 #                          the regex pattern in the file
+#   - .skip file         → skip test (file contents used as reason)
 #
 # Options:
 #   --filter <pattern>  Only run tests whose name contains <pattern>
@@ -57,7 +58,16 @@ for test_file in "$TESTS_DIR"/test_*.py; do
     fi
 
     expected_file="$EXPECTED_DIR/${base_name}.expected"
+    skip_file="$EXPECTED_DIR/${base_name}.skip"
     ion_file="$TESTS_DIR/${base_name}.python.st.ion"
+
+    # Check for skip file
+    if [ -f "$skip_file" ]; then
+        reason=$(cat "$skip_file")
+        echo "SKIP: $base_name — $reason"
+        skipped=$((skipped + 1))
+        continue
+    fi
 
     # Compile Python to Ion
     if ! (cd "$PROJECT_ROOT/Tools/Python" && python3 -m strata.gen py_to_strata \
