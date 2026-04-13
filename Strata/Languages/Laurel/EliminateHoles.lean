@@ -32,6 +32,7 @@ structure ElimHoleState where
   counter : Nat := 0
   currentInputs : List Parameter := []
   generatedFunctions : List Procedure := []
+  dropDanglingHoles : Bool := false
 
 private abbrev ElimHoleM := StateM ElimHoleState
 
@@ -116,12 +117,16 @@ private def elimStmt (stmt : StmtExprMd) : ElimHoleM StmtExprMd := do
   | .Hole false _ => return stmt -- Non-deterministic holes are kept
   | _ => return stmt
 
-private def elimStmtList (stmts : List StmtExprMd) : ElimHoleM (List StmtExprMd) :=
+private def elimStmtList (stmts : List StmtExprMd) : ElimHoleM (List StmtExprMd) := do
+  let dropDangling := (← get).dropDanglingHoles
   match stmts with
   | [] => pure []
   | [s] => return [← elimStmt s]
-  | ⟨.Hole .., _⟩ :: rest => elimStmtList rest
-  | s :: rest => return (← elimStmt s) :: (← elimStmtList rest)
+  | s :: rest =>
+    if dropDangling && s.val matches .Hole .. then
+      elimStmtList rest
+    else
+      return (← elimStmt s) :: (← elimStmtList rest)
 end
 
 private def elimProcedure (proc : Procedure) : ElimHoleM Procedure := do
@@ -140,8 +145,8 @@ After this pass the program contains only non-deterministic `Hole` nodes.
 
 Assumes `inferHoleTypes` has already annotated holes with types.
 -/
-def eliminateHoles (program : Program) : Program :=
-  let initState : ElimHoleState := {}
+def eliminateHoles (program : Program) (dropDanglingHoles : Bool := false) : Program :=
+  let initState : ElimHoleState := { dropDanglingHoles }
   let (procs, finalState) := (program.staticProcedures.mapM elimProcedure).run initState
   { program with staticProcedures := finalState.generatedFunctions ++ procs }
 
