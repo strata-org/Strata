@@ -119,7 +119,7 @@ jobs:
       - name: Run pyInterpret golden-file tests
         working-directory: StrataTest/Languages/Python
         shell: bash
-        run: ./run_py_analyze.sh
+        run: ./run_py_interpret.sh
       - name: Run pyAnalyze SARIF tests
         working-directory: StrataTest/Languages/Python
         shell: bash

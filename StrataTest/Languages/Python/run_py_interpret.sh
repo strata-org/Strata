@@ -1,30 +1,36 @@
 #!/bin/bash
 
-# Usage: ./run_py_interpret.sh [--filter <pattern>] [--fuel <n>] [--direct] [--verbose]
-# Runs pyInterpret on all test_*.py files and checks against expected outcomes.
-# With --filter <pattern>, only run tests whose name contains <pattern>
-# With --fuel <n>, set the interpreter fuel limit (default: 100000)
-# With --direct, use the direct Python→Core path (no Laurel)
-# With --verbose, show full interpreter output on failure
+# Usage: ./run_py_interpret.sh [--filter <pattern>] [--fuel <n>] [--direct] [--verbose] [--update]
 #
-# Expected outcomes are read from tests/interpret_expected.txt.
-# Tests not listed there default to PASS.
+# Runs pyInterpret on all test_*.py files and reports pass/fail.
+#
+# Expected outcomes are controlled by files in expected_interpret/:
+#   - No .expected file  → run test, assert exit code 0 (PASS)
+#   - .expected file     → run test, assert non-zero exit and output matches
+#                          the regex pattern in the file
+#
+# Options:
+#   --filter <pattern>  Only run tests whose name contains <pattern>
+#   --fuel <n>          Set the interpreter fuel limit (default: 100000)
+#   --direct            Use the direct Python→Core path (no Laurel)
+#   --verbose           Show full interpreter output on failure
+#   --update            Regenerate .expected files from actual output
 
 set -o pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 TESTS_DIR="$SCRIPT_DIR/tests"
-EXPECTED="$TESTS_DIR/interpret_expected.txt"
+EXPECTED_DIR="$SCRIPT_DIR/expected_interpret"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 
-failed=0
 passed=0
-skipped=0
 errors=0
+skipped=0
 filter=""
 fuel=""
 direct=""
 verbose=0
+update=0
 
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -32,6 +38,7 @@ while [ $# -gt 0 ]; do
         --fuel) fuel="--fuel $2"; shift ;;
         --direct) direct="--direct" ;;
         --verbose) verbose=1 ;;
+        --update) update=1 ;;
         *) echo "Unknown option: $1"; exit 1 ;;
     esac
     shift
@@ -43,32 +50,19 @@ done
 for test_file in "$TESTS_DIR"/test_*.py; do
     [ -f "$test_file" ] || continue
     base_name=$(basename "$test_file" .py)
-    bn=$(basename "$test_file")
 
     # Apply name filter if specified
     if [ -n "$filter" ] && [[ "$base_name" != *"$filter"* ]]; then
         continue
     fi
 
-    # Look up expected outcome; default to PASS
-    expected=$(awk -v f="$bn" '$1 == f {print $2}' "$EXPECTED")
-    if [ -z "$expected" ]; then
-        expected="PASS"
-    fi
-
-    if [ "$expected" = "SKIP" ]; then
-        echo "SKIP: $base_name"
-        skipped=$((skipped + 1))
-        continue
-    fi
-
+    expected_file="$EXPECTED_DIR/${base_name}.expected"
     ion_file="$TESTS_DIR/${base_name}.python.st.ion"
 
     # Compile Python to Ion
-    compile_output=$(cd "$PROJECT_ROOT/Tools/Python" && python3 -m strata.gen py_to_strata \
+    if ! (cd "$PROJECT_ROOT/Tools/Python" && python3 -m strata.gen py_to_strata \
         --dialect "dialects/Python.dialect.st.ion" \
-        "$test_file" "$ion_file" 2>&1)
-    if [ $? -ne 0 ]; then
+        "$test_file" "$ion_file") 2>/dev/null; then
         echo "SKIP (parse): $base_name"
         skipped=$((skipped + 1))
         continue
@@ -80,29 +74,54 @@ for test_file in "$TESTS_DIR"/test_*.py; do
         "$rel_ion" 2>&1)
     exit_code=$?
 
-    # Filter out lake build warnings
-    clean_output=$(echo "$output" | grep -v "^⚠\|^warning:")
-
-    if [ $exit_code -eq 0 ]; then
-        result="PASS"
-    else
-        result="FAIL"
-    fi
-
-    if [ "$result" = "$expected" ]; then
-        echo "OK:   $base_name ($result)"
-        passed=$((passed + 1))
-    else
-        reason=$(echo "$clean_output" | grep -v "^$" | grep -v "backtrace:" | grep -v "^  [0-9]" | grep -v "^trace:" | tail -1)
-        echo "ERR:  $base_name (got $result, expected $expected) — $reason"
-        if [ $verbose -eq 1 ]; then
-            echo "$clean_output" | grep -v "backtrace:" | grep -v "^  [0-9]" | grep -v "^$" | sed 's/^/  /'
-        fi
-        errors=$((errors + 1))
-    fi
-
     # Clean up Ion file
     rm -f "$ion_file"
+
+    if [ -f "$expected_file" ]; then
+        # Expected file exists → test should fail, output should match regex
+        pattern=$(cat "$expected_file")
+
+        if [ $update -eq 1 ]; then
+            if [ $exit_code -ne 0 ]; then
+                echo "$output" | grep -oE "$pattern" | head -1 > "$expected_file"
+                echo "Updated: $base_name"
+            else
+                rm -f "$expected_file"
+                echo "Updated: $base_name (now passes, removed expected file)"
+            fi
+            passed=$((passed + 1))
+        elif [ $exit_code -eq 0 ]; then
+            echo "ERR:  $base_name (expected failure matching /$pattern/ but test passed)"
+            errors=$((errors + 1))
+        elif echo "$output" | grep -qE "$pattern"; then
+            echo "OK:   $base_name (expected failure)"
+            passed=$((passed + 1))
+        else
+            echo "ERR:  $base_name (output does not match expected pattern /$pattern/)"
+            if [ $verbose -eq 1 ]; then
+                echo "$output" | sed 's/^/  /'
+            fi
+            errors=$((errors + 1))
+        fi
+    else
+        # No expected file → test should pass
+        if [ $update -eq 1 ] && [ $exit_code -ne 0 ]; then
+            # Test fails unexpectedly; prompt user to create expected file
+            reason=$(echo "$output" | grep -v "^$" | grep -v "backtrace:" | grep -v "^  [0-9]" | grep -v "^trace:" | tail -1)
+            echo "NEW FAIL: $base_name — $reason"
+            errors=$((errors + 1))
+        elif [ $exit_code -eq 0 ]; then
+            echo "OK:   $base_name"
+            passed=$((passed + 1))
+        else
+            reason=$(echo "$output" | grep -v "^$" | grep -v "backtrace:" | grep -v "^  [0-9]" | grep -v "^trace:" | tail -1)
+            echo "ERR:  $base_name (expected pass but failed) — $reason"
+            if [ $verbose -eq 1 ]; then
+                echo "$output" | grep -v "backtrace:" | grep -v "^  [0-9]" | grep -v "^$" | sed 's/^/  /'
+            fi
+            errors=$((errors + 1))
+        fi
+    fi
 done
 
 echo ""
