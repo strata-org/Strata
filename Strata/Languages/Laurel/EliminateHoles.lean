@@ -60,6 +60,7 @@ private def elimHoleNode (expr : StmtExprMd) : ElimHoleM StmtExprMd := do
   match expr.val with
   | .Hole true (some ty) => mkHoleCall ty
   | .Hole true none => mkHoleCall ⟨.Unknown, expr.md⟩
+  | .Hole false _ => return expr -- Non-deterministic holes are preserved
   | _ => return expr
 
 private def elimProcedure (proc : Procedure) : ElimHoleM Procedure := do

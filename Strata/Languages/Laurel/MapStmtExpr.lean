@@ -6,7 +6,6 @@
 module
 
 public import Strata.Languages.Laurel.Laurel
-import Strata.Util.Tactics
 
 /-!
 # Generic Top-Down AST Traversal
@@ -24,10 +23,6 @@ namespace Strata.Laurel
 
 public section
 
-private def mapOptionM [Monad m] (f : α → m α) : Option α → m (Option α)
-  | some x => do return some (← f x)
-  | none => pure none
-
 /--
 Top-down monadic traversal of `StmtExprMd`. Applies `f` to the node first,
 then recurses into all `StmtExprMd` children of the result.
@@ -39,16 +34,16 @@ partial def mapStmtExprM [Monad m] (f : StmtExprMd → m StmtExprMd) (expr : Stm
   | WithMetadata.mk val _ =>
   match val with
   | .IfThenElse cond th el =>
-    return ⟨.IfThenElse (← mapStmtExprM f cond) (← mapStmtExprM f th) (← mapOptionM (mapStmtExprM f) el), md⟩
+    return ⟨.IfThenElse (← mapStmtExprM f cond) (← mapStmtExprM f th) (← el.mapM (mapStmtExprM f)), md⟩
   | .Block stmts label =>
     return ⟨.Block (← stmts.mapM (mapStmtExprM f)) label, md⟩
   | .LocalVariable name ty init =>
-    return ⟨.LocalVariable name ty (← mapOptionM (mapStmtExprM f) init), md⟩
+    return ⟨.LocalVariable name ty (← init.mapM (mapStmtExprM f)), md⟩
   | .While cond invs dec body =>
     return ⟨.While (← mapStmtExprM f cond) (← invs.mapM (mapStmtExprM f))
-      (← mapOptionM (mapStmtExprM f) dec) (← mapStmtExprM f body), md⟩
+      (← dec.mapM (mapStmtExprM f)) (← mapStmtExprM f body), md⟩
   | .Return v =>
-    return ⟨.Return (← mapOptionM (mapStmtExprM f) v), md⟩
+    return ⟨.Return (← v.mapM (mapStmtExprM f)), md⟩
   | .Assign targets value =>
     return ⟨.Assign (← targets.mapM (mapStmtExprM f)) (← mapStmtExprM f value), md⟩
   | .FieldSelect target fieldName =>
@@ -68,9 +63,9 @@ partial def mapStmtExprM [Monad m] (f : StmtExprMd → m StmtExprMd) (expr : Stm
   | .InstanceCall target callee args =>
     return ⟨.InstanceCall (← mapStmtExprM f target) callee (← args.mapM (mapStmtExprM f)), md⟩
   | .Forall param trigger body =>
-    return ⟨.Forall param (← mapOptionM (mapStmtExprM f) trigger) (← mapStmtExprM f body), md⟩
+    return ⟨.Forall param (← trigger.mapM (mapStmtExprM f)) (← mapStmtExprM f body), md⟩
   | .Exists param trigger body =>
-    return ⟨.Exists param (← mapOptionM (mapStmtExprM f) trigger) (← mapStmtExprM f body), md⟩
+    return ⟨.Exists param (← trigger.mapM (mapStmtExprM f)) (← mapStmtExprM f body), md⟩
   | .Assigned name =>
     return ⟨.Assigned (← mapStmtExprM f name), md⟩
   | .Old value =>
@@ -85,7 +80,10 @@ partial def mapStmtExprM [Monad m] (f : StmtExprMd → m StmtExprMd) (expr : Stm
     return ⟨.ProveBy (← mapStmtExprM f value) (← mapStmtExprM f proof), md⟩
   | .ContractOf ty func =>
     return ⟨.ContractOf ty (← mapStmtExprM f func), md⟩
-  -- Leaves: no StmtExprMd children
+  -- Leaves: no StmtExprMd children.
+  -- ⚠ If a new StmtExpr constructor with StmtExprMd children is added,
+  -- it must get its own arm above; otherwise all passes will silently
+  -- skip recursion into those children.
   | .Exit _ | .LiteralInt _ | .LiteralBool _ | .LiteralString _ | .LiteralDecimal _
   | .Identifier _ | .New _ | .This | .Abstract | .All | .Hole .. => return expr
 
@@ -98,7 +96,7 @@ def mapProcedureBodiesM [Monad m] (f : StmtExprMd → m StmtExprMd) (proc : Proc
   match proc.body with
   | .Transparent b => return { proc with body := .Transparent (← f b) }
   | .Opaque posts impl mods =>
-    return { proc with body := .Opaque (← posts.mapM f) (← mapOptionM f impl) (← mods.mapM f) }
+    return { proc with body := .Opaque (← posts.mapM f) (← impl.mapM f) (← mods.mapM f) }
   | .Abstract posts => return { proc with body := .Abstract (← posts.mapM f) }
   | .External => return proc
 
@@ -108,10 +106,12 @@ def mapProcedureM [Monad m] (f : StmtExprMd → m StmtExprMd) (proc : Procedure)
   let proc ← mapProcedureBodiesM f proc
   return { proc with
     preconditions := ← proc.preconditions.mapM f
-    decreases := ← mapOptionM f proc.decreases
-    invokeOn := ← mapOptionM f proc.invokeOn }
+    decreases := ← proc.decreases.mapM f
+    invokeOn := ← proc.invokeOn.mapM f }
 
-/-- Apply a monadic transformation to all `StmtExprMd` nodes in a program. -/
+/-- Apply a monadic transformation to procedure bodies in a program.
+    Does **not** traverse preconditions, decreases, or invokeOn — use
+    `mapProcedureM` directly if those are needed. -/
 def mapProgramM [Monad m] (f : StmtExprMd → m StmtExprMd) (program : Program) : m Program := do
   return { program with staticProcedures := ← program.staticProcedures.mapM (mapProcedureBodiesM f) }
 
