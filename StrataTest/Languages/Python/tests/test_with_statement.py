@@ -31,8 +31,3 @@ def test_with_multiple():
     with r1 as a, r2 as b:
         total: int = a + b
         assert total == 3
-
-if __name__ == "__main__":
-    test_with_as()
-    test_with_no_as()
-    test_with_multiple()

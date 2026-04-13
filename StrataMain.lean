@@ -484,6 +484,26 @@ private def deriveBaseName (file : String) : String :=
   | some sfx => (name.dropEnd sfx.length).toString
   | none     => name
 
+/-- Determine which procedures to verify based on the entry-point mode.
+    - `"main"`: only `__main__`
+    - `"roots"`: user procedures with no callers among user procedures
+    - `"all"`: all user procedures -/
+private def determineProceduresToVerify
+    (coreProgram : Core.Program) (userSourcePath : String)
+    (entryPoint : String) : Except String (List String) := do
+  let (_preludeNames, userProcNames) :=
+    Strata.splitProcNames coreProgram [userSourcePath]
+  match entryPoint with
+  | "main" => return ["__main__"]
+  | "all" => return userProcNames
+  | "roots" =>
+    let cg := coreProgram.toProcedureCG
+    let userSet := Std.HashSet.ofList userProcNames
+    let roots := userProcNames.filter fun name =>
+      (cg.getCallers name).all fun caller => !userSet.contains caller
+    return roots
+  | other => throw s!"Invalid --entry-point value '{other}'. Expected: main, roots, or all."
+
 def pyAnalyzeLaurelCommand : Command where
   name := "pyAnalyzeLaurel"
   args := [ "file" ]
@@ -499,7 +519,10 @@ def pyAnalyzeLaurelCommand : Command where
               takesArg := .repeat "module" },
             { name := "keep-all-files",
               help := "Store intermediate Laurel and Core programs in <dir>.",
-              takesArg := .arg "dir" }]
+              takesArg := .arg "dir" },
+            { name := "entry-point",
+              help := "Which procedures to verify: main (main fn only), roots (user procs with no user callers, default), or all (all user procs). Only valid in bugFinding mode.",
+              takesArg := .arg "mode" }]
   help := "Verify a Python Ion program via the Laurel pipeline. Translates Python to Laurel to Core, then runs SMT verification."
   callback := fun v pflags => do
     let verbose := pflags.getBool "verbose"
@@ -575,12 +598,6 @@ def pyAnalyzeLaurelCommand : Command where
       IO.println "\n==== Core Program ===="
       IO.print (Core.formatProgram coreProgram)
 
-    -- Split prelude / user procedure names.
-    -- Only procedures whose file range matches the user source are targets.
-    let userSourcePath := sourcePath.getD filePath
-    let (_preludeNames, userProcNames) :=
-      Strata.splitProcNames coreProgram [userSourcePath]
-
     -- Verify using Core verifier
     -- --keep-all-files implies vc-directory if not explicitly set
     let baseVcDir := keepDir.map (fun dir => (s!"{dir}/{baseName}" : System.FilePath))
@@ -592,26 +609,28 @@ def pyAnalyzeLaurelCommand : Command where
     let isBugFinding := options.checkMode == .bugFinding
                       || options.checkMode == .bugFindingAssumingCompleteSpec
 
-    -- In bug-finding mode only verify __main__ — all user functions are
-    -- reachable subfunctions that get inlined into __main__.
-    let proceduresToVerify :=
-      if isBugFinding then ["__main__"]
-      else
-        -- Split prelude / user procedure names.
-        -- Only procedures whose file range matches the user source are targets.
-        let userSourcePath := sourcePath.getD filePath
-        let (_preludeNames, userProcNames) :=
-          Strata.splitProcNames coreProgram [userSourcePath]
-        userProcNames
+    -- Pick the procedures to verify.
+    let proceduresToVerify ← do
+      let entryPoint :=
+        if isBugFinding then pflags.getString "entry-point" |>.getD "roots"
+        else "all"
+      let userSourcePath := sourcePath.getD filePath
+      match determineProceduresToVerify coreProgram userSourcePath entryPoint with
+      | .ok procs => pure procs
+      | .error msg => exitPyAnalyzeInternalError msg
+
     -- For bug-finding mode, inline procedures that are reachable from the
-    -- top-level scope of Python ("__main__" procedure in Core)
+    -- entry-point procedures
     let inlinePhases : List Core.PipelinePhase :=
       if isBugFinding then
+        let entrySet := Std.HashSet.ofList proceduresToVerify
         [Core.procedureInliningPipelinePhase
-          { doInline := fun caller callee a => caller == some "__main__"
+          { doInline := fun caller callee a =>
+              (match caller with | some c => entrySet.contains c | none => false)
               && Core.doInlineNonRecursive callee a
             maxIters := some 10 }]
       else []
+
     let vcResults ← profileStep profile "SMT verification" do
       match ← Core.verifyProgram coreProgram options
                 (moreFns := Strata.Python.ReFactory)

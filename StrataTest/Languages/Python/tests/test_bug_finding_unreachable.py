@@ -4,7 +4,3 @@ def test_bug_finding_unreachable(x: int) -> None:
     if x > 0:
         if x < 0:
             assert False, "dead code"
-
-if __name__ == "__main__":
-    x: int = int(input())
-    test_bug_finding_unreachable(x)
