@@ -197,4 +197,56 @@ public def computeSccDecls (program : Program) : List (List Procedure × Bool) :
         | none => false)
     some (procs, isRecursive)
 
+/--
+A single declaration in an ordered Laurel program. Declarations are in
+dependency order (dependencies before dependents).
+-/
+public inductive OrderedDecl where
+  /-- A group of functions (single non-recursive, or mutually recursive). -/
+  | procs (procs : List Procedure) (freePostconditions : List (WithMetadata StmtExpr)) (isRecursive : Bool)
+  /-- A group of (possibly mutually recursive) datatypes. -/
+  | datatypes (dts : List DatatypeDefinition)
+  /-- A named constant. -/
+  | constant (c : Constant)
+
+/--
+A Laurel program whose declarations have been grouped and topologically ordered.
+Produced by `orderProgram` from a `Program`.
+-/
+public structure OrderedLaurel where
+  decls : List OrderedDecl
+
+/--
+Produce an `OrderedLaurel` from a `Program` by grouping and ordering
+procedures via SCC, collecting datatypes, and constants.
+-/
+public def orderProgram (program : Program) : OrderedLaurel :=
+  let sccDecls := computeSccDecls program
+  let procDecls := sccDecls.map fun (procs, isRecursive) =>
+    let freePostconditions := procs.flatMap fun (proc : Procedure) =>
+      match proc.invokeOn with
+      | some _ => match proc.body with
+        | Body.Opaque postconds _ _ | Body.Abstract postconds => postconds
+        | _ => []
+      | none => []
+    OrderedDecl.procs procs freePostconditions isRecursive
+  -- Group mutually recursive datatypes using Tarjan's SCC algorithm.
+  let laurelDatatypes := program.types.filterMap fun td => match td with
+    | .Datatype dt => some dt
+    | _ => none
+  let n := laurelDatatypes.length
+  let nameToIdx : Std.HashMap String Nat :=
+    laurelDatatypes.foldlIdx (fun m i dt => m.insert dt.name.text i) {}
+  let edges : List (Nat × Nat) :=
+    laurelDatatypes.foldlIdx (fun acc i dt =>
+      (datatypeRefs dt).filterMap nameToIdx.get? |>.foldl (fun acc j => (j, i) :: acc) acc) []
+  let g := OutGraph.ofEdges! n edges
+  let dtsArr := laurelDatatypes.toArray
+  let datatypeDecls := if n == 0 then [] else
+    OutGraph.tarjan g |>.toList.filterMap fun comp =>
+      let members := comp.toList.filterMap fun idx => dtsArr[idx]?
+      if members.isEmpty then none else some (OrderedDecl.datatypes members)
+  let constantDecls := program.constants.map OrderedDecl.constant
+  { decls := datatypeDecls ++ constantDecls ++ procDecls }
+
 end Strata.Laurel

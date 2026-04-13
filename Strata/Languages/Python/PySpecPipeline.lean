@@ -6,7 +6,7 @@
 module
 
 import Strata.Languages.Laurel.FilterPrelude
-import Strata.Languages.Laurel.LaurelToCoreTranslator
+import Strata.Languages.Laurel.LaurelCompilationPipeline
 public import Strata.Languages.Python.PythonToLaurel
 import Strata.Languages.Python.ReadPython
 import Strata.Languages.Python.PythonLaurelCorePrelude
