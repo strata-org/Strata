@@ -17,11 +17,12 @@ Defines the `denote` function and the relational `Denotes` predicate mapping
 well-typed lambda expressions to Lean values. `Denotes` is used to prove
 correct unfolding lemmas for `denote` that minimize exposure to dependent types.
 Also defines interpretation structures (`OpInterp`, `IdentInterp`,
-`Factory.InterpConsistent`, etc.).
+`Factory.InterpConsistent`, etc.) and satisfaction/validity.
 
 - `LExpr.denote` — denotation function for well-typed expressions
 - `Denotes` — relational specification of `denote`
 - `denote_Denotes` / `Denotes_denote` — soundness and completeness of `Denotes` w.r.t. `denote`
+- `Interp` / `Satisfiable` / `Valid` / `LogConseq` — semantic notions over consistent interpretations
 -/
 
 namespace Lambda
@@ -29,7 +30,8 @@ namespace Lambda
 /-! ### Sorts and Type Denotation -/
 
 /-- A sort is a ground monomorphic type — an `LMonoTy` with no free type
-variables. -/
+variables. We use a separate type rather than `LMonoTy` to avoid carrying
+around proofs that a type has no type variables. -/
 public inductive LSort where
   | tcons (name : String) (args : List LSort)
   | bitvec (size : Nat)
@@ -238,7 +240,10 @@ def denoteConst (tcInterp : TyConstrInterp) (vt : TyVarVal) : (c : LConst) → T
 `opInterp` and `fvarVal` take sorts (ground types) rather than monomorphic
 types, making them independent of the type variable valuation `ρ`. This
 cleanly separates interpretations (fixed for a theory) from valuations
-(vary per context), enabling change-of-valuation theorems. -/
+(vary per context), enabling change-of-valuation theorems.
+
+Noncomputable due to `Classical.propDecidable` in the `eq` and `quant`
+cases; used only for reasoning, not computation. -/
 noncomputable def LExpr.denote
     {T : LExprParams}
     (tcInterp : TyConstrInterp)
@@ -986,48 +991,13 @@ def LFunc.InterpConsistentEval [DecidableEq T.IDMeta]
     SortDenote.applyArgs tcInterp (opInterp f.name.name fullSort)
       (denoteArgs tcInterp opInterp fvarVal vt .nil argExprs instInputTys h_args)
 
-/-- Every fvar in `e` whose name is in `tyMap` is annotated with the
-corresponding type. -/
-def fvars_annotated_by [DecidableEq T.IDMeta]
-    (tyMap : Map T.Identifier LMonoTy) : LExpr T.mono → Prop
-  | .fvar _ name (some ty) =>
-    ∀ ty', Map.find? tyMap name = some ty' → ty = ty'
-  | .fvar _ _ none => False
-  | .const _ _ => True
-  | .bvar _ _ => True
-  | .op _ _ _ => True
-  | .app _ fn arg => fvars_annotated_by tyMap fn ∧ fvars_annotated_by tyMap arg
-  | .abs _ _ _ body => fvars_annotated_by tyMap body
-  | .ite _ c t e => fvars_annotated_by tyMap c ∧ fvars_annotated_by tyMap t ∧ fvars_annotated_by tyMap e
-  | .eq _ e1 e2 => fvars_annotated_by tyMap e1 ∧ fvars_annotated_by tyMap e2
-  | .quant _ _ _ _ tr body => fvars_annotated_by tyMap tr ∧ fvars_annotated_by tyMap body
+end FactoryConsistent
 
-/-- A factory is well-typed when every function body type-checks at the
-function's declared output type. -/
-def Factory.WellTyped [DecidableEq T.IDMeta] (F : @Factory T) : Prop :=
-  ∀ (f : String), (hf : f ∈ F) → ∀ body, (F[f]).body = some body →
-    LExpr.HasTypeA [] body (F[f]).output ∧
-    fvars_annotated_by (F[f]).inputs body
+section FactoryInterpConsistent
 
-/-- A factory's concrete evaluators preserve well-typedness: if `ceval` returns
-a result and the arguments are well-typed at the instantiated input types,
-then the result is well-typed at the instantiated output type. -/
-def Factory.EvalWellTyped [DecidableEq T.IDMeta] (F : @Factory T) : Prop :=
-  ∀ (f : String), (hf : f ∈ F) → ∀ ceval, (F[f]).concreteEval = some ceval →
-    ∀ (md : T.Metadata) (args : List (LExpr T.mono)) (result : LExpr T.mono) (tySubst : Subst),
-      ceval md args = some result →
-      List.Forall₂ (LExpr.HasTypeA []) args ((F[f]).inputs.map Prod.snd |>.map (LMonoTy.subst tySubst)) →
-      LExpr.HasTypeA [] result (LMonoTy.subst tySubst (F[f]).output)
-
-/-- `isConstr` faithfulness: `f.isConstr = true` implies `f` was generated
-from a constructor in the TypeFactory. -/
-def Factory.ConstrWellFormed (F : @Factory T) (tf : @TypeFactory T.IDMeta) : Prop :=
-  ∀ (f : LFunc T),
-    f ∈ F.toArray →
-    f.isConstr = true →
-    ∃ (d : LDatatype T.IDMeta) (_ : d ∈ tf.allDatatypes)
-      (c : LConstr T.IDMeta) (_ : c ∈ d.constrs),
-      f = constrFunc c d
+variable {T : LExprParams}
+variable (tcInterp : TyConstrInterp)
+variable (opInterp : OpInterp tcInterp)
 
 /-- A factory is consistent with an `opInterp` when every function with a body
 is `InterpConsistentBody` and every function with a `concreteEval` is
@@ -1038,7 +1008,7 @@ def Factory.InterpConsistent [DecidableEq T.IDMeta] (F : @Factory T) : Prop :=
   (∀ (f : String), (hf : f ∈ F) → ∀ ceval, (F[f]).concreteEval = some ceval →
     LFunc.InterpConsistentEval tcInterp opInterp (F[f]) ceval)
 
-end FactoryConsistent
+end FactoryInterpConsistent
 
 section ConstrConsistent
 
@@ -1104,22 +1074,7 @@ structure ConstrInterpConsistent
 
 end ConstrConsistent
 
-section EnvConsistent
 
-variable {T : LExprParams}
-variable (tcInterp : TyConstrInterp)
-variable (opInterp : OpInterp tcInterp)
-
-/-- A free-variable valuation `fvarVal` is consistent with an environment `env`
-when every binding `env x = some e` that is well-typed at `ty` denotes to the
-same value as `fvarVal x (substTyVars vt ty)`. -/
-def Env.InterpConsistent (env : T.Identifier → Option (LExpr T.mono)) (fvarVal : FreeVarVal T tcInterp) : Prop :=
-  ∀ (vt : TyVarVal) (x : T.Identifier) (e : LExpr T.mono) (ty : LMonoTy),
-    env x = some e →
-    ∀ (h : LExpr.HasTypeA [] e ty),
-      LExpr.denote tcInterp opInterp fvarVal vt .nil e ty h = fvarVal x (ty.substTyVars vt)
-
-end EnvConsistent
 
 /-! ### Interpretations, Satisfiability, and Validity
 

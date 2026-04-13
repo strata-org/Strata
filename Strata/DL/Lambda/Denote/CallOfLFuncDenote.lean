@@ -6,17 +6,16 @@
 module
 
 import all Strata.DL.Lambda.Denote.LExprDenote
+import all Strata.DL.Lambda.Denote.Assumptions
 import all Strata.DL.Lambda.Denote.LExprDenoteSubst
 import all Strata.DL.Lambda.Denote.LExprDenoteTySubst
 
 /-!
 ## Factory Function Call Denotation
 
-Properties of `callOfLFunc` (factory function applications). Defines
-`OpsConsistent` (operation type annotations are valid) and proves that
+Properties of `callOfLFunc` (factory function applications). Proves that
 denotation of a factory call equals `opInterp` applied to argument denotations.
 
-- `OpsConsistent` — every call has a valid type substitution and consistent `.op` annotation
 - `callOfLFunc_denote` — denotation of a factory call equals `opInterp` applied to args
 -/
 
@@ -39,55 +38,6 @@ theorem applyArgs_cast_eq
   subst_vars; rfl
 
 /-! ## `OpsConsistent` — every `.op` annotation is a valid instantiation -/
-
-/-- Every `.op` node in `e` whose name is in the factory has a type annotation
-that is a valid instantiation of the function's generic type (via `opTypeSubst`).
-This is checked at every `.op` node directly, not just at complete calls. -/
-def OpsConsistent (F : @Factory T) : LExpr T.mono → Prop := fun e =>
-  match e with
-  | .op _ name ty =>
-      match F[name.name]? with
-      | some fn =>
-          match LFunc.opTypeSubst fn e with
-          | some tySubst =>
-              match ty with
-              | some ty_op =>
-                  ty_op = (LMonoTy.mkArrow' fn.output (fn.inputs.map Prod.snd)).subst tySubst
-              | none => False
-          | none => False
-      | none => True
-  | .app _ fn arg => OpsConsistent F fn ∧ OpsConsistent F arg
-  | .abs _ _ _ body => OpsConsistent F body
-  | .ite _ c t f => OpsConsistent F c ∧ OpsConsistent F t ∧ OpsConsistent F f
-  | .eq _ e1 e2 => OpsConsistent F e1 ∧ OpsConsistent F e2
-  | .quant _ _ _ _ tr body => OpsConsistent F tr ∧ OpsConsistent F body
-  | _ => True
-
-/-- Every function body in the factory satisfies `OpsConsistent` after type
-instantiation via `applySubst`. -/
-def Factory.BodyOpsConsistent (F : @Factory T) : Prop :=
-  ∀ (f : String), (hf : f ∈ F) → ∀ body S, (F[f]).body = some body →
-    OpsConsistent F (body.applySubst S)
-
-/-- Every concrete evaluator in the factory returns results that satisfy
-`OpsConsistent`. -/
-def Factory.EvalOpsConsistent (F : @Factory T) : Prop :=
-  ∀ (f : String), (hf : f ∈ F) → ∀ ceval md args result, (F[f]).concreteEval = some ceval →
-    .some result = ceval md args → OpsConsistent F result
-
-/-- Every function body in the factory, after type instantiation, has fvar
-annotations consistent with `tyMap`. -/
-def Factory.BodyAnnotated [DecidableEq T.IDMeta] (F : @Factory T)
-    (tyMap : Map T.Identifier LMonoTy) : Prop :=
-  ∀ (f : String), (hf : f ∈ F) → ∀ body S, (F[f]).body = some body →
-    fvars_annotated_by tyMap (body.applySubst S)
-
-/-- Every concrete evaluator in the factory returns results with fvar
-annotations consistent with `tyMap`. -/
-def Factory.EvalAnnotated [DecidableEq T.IDMeta] (F : @Factory T)
-    (tyMap : Map T.Identifier LMonoTy) : Prop :=
-  ∀ (f : String), (hf : f ∈ F) → ∀ ceval md args result, (F[f]).concreteEval = some ceval →
-    .some result = ceval md args → fvars_annotated_by tyMap result
 
 /-- `OpsConsistent` is preserved by `substK` for arbitrary substitution,
 provided the substituted expressions satisfy `OpsConsistent`. -/

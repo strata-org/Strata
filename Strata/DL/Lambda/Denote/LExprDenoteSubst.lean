@@ -5,13 +5,8 @@
 -/
 module
 
-import Strata.DL.Lambda.Denote.LExprAnnotated
-import all Strata.DL.Lambda.Denote.LExprDenote
-import all Strata.DL.Lambda.Denote.LExprAnnotated
-import Strata.DL.Lambda.Denote.HList
 import all Strata.DL.Lambda.Denote.LExprDenoteProps
-public meta import Lean.Elab.Tactic.Basic
-public meta import Lean.Meta.Tactic.Generalize
+import Strata.Util.Tactics
 
 /-!
 ## Substitution and Denotation
@@ -25,17 +20,6 @@ Proves that bound-variable operations commute with denotation.
 -/
 
 namespace Lambda
-open Lean Elab Tactic Meta in
-/-- Generalize the last argument of the LHS of an equality goal. -/
-elab "generalize_lhs_last_arg" : tactic => do
-  let goal ← getMainGoal
-  let goalType ← instantiateMVars (← goal.getType)
-  let some (_, lhs, _) := goalType.eq? | throwError "Goal is not an equality"
-  match lhs with
-  | Expr.app _fn lastArg =>
-    let (_, newGoal) ← goal.generalize #[{ expr := lastArg }]
-    replaceMainGoal [newGoal]
-  | _ => throwError "LHS is not a function application"
 
 variable {T : LExprParams}
 variable (tcInterp : TyConstrInterp)
@@ -44,37 +28,6 @@ variable (fvarVal : FreeVarVal T tcInterp)
 variable (vt : TyVarVal)
 
 /-! ### Generalized substK_denote -/
-
-/-
-Informal proof of substK_denote:
-
-By induction on body, generalizing Δ₁, τ, bv₁.
-
-case const/op/fvar:
-  substK doesn't change these. Both sides denote to the same constant/op/fvar
-  value regardless of bvarVal. Use Denotes + Denotes_denote.
-
-case bvar m i:
-  substK |Δ₁| s (bvar i) = if i == |Δ₁| then s m else bvar i.
-
-  - i < |Δ₁|: Both sides look up bv₁[i]. LHS via h_subst, RHS via
-    HList.get_append_left since i < |Δ₁|.
-  - i = |Δ₁|: LHS = denote bv₁ v. RHS = (bv₁ ++ [val])[|Δ₁|] = val = denote .nil v.
-    Equal by denote_irrel_of_lcAt.
-  - i > |Δ₁|: Vacuous — (Δ₁ ++ [aty])[i]? = none since i ≥ |Δ₁| + 1.
-
-case app m fn arg:
-  Decompose with app_inv, apply denote_app on both sides, use IH on fn and arg.
-
-case abs m name (some bty) sub_body:
-  Decompose with abs_inv on both sides.
-  Apply denote_abs on both sides.
-  LHS = fun x => denote (cons x bv₁) (substK (|Δ₁|+1) s sub_body)
-  RHS = fun x => denote (cons x (bv₁ ++ [val])) sub_body
-  Apply IH with Δ₁' = bty :: Δ₁, noting (bty :: Δ₁) ++ [aty] = bty :: (Δ₁ ++ [aty]).
-
-case ite/eq/quant: Similar decomposition with unfolding lemmas + IH.
--/
 
 /-- Generalized substitution lemma: `substK k` at depth `k` in a context
     `Δ₁ ++ [aty]` with `|Δ₁| = k`. The substituted value `v` must be locally
@@ -684,7 +637,6 @@ theorem substFvarsLifting_typeCheck [DecidableEq T.IDMeta]
     rw [h_tc, h]
 
 /-! ### Free-variable substitution commutes with denotation -/
-set_option pp.proofs true
 
 /-- Inner lemma: `go` at depth `|Δ_body|` commutes with denotation. -/
 private theorem substFvarsLifting_go_denote [DecidableEq T.IDMeta]

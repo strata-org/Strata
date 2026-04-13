@@ -5,10 +5,9 @@
 -/
 module
 
-import Strata.DL.Lambda.Denote.LExprAnnotated
 import all Strata.DL.Lambda.Denote.LExprDenote
+import all Strata.DL.Lambda.Denote.Assumptions
 import all Strata.DL.Lambda.Denote.LExprAnnotated
-import Strata.DL.Lambda.Denote.HList
 
 /-!
 ## Denotation Properties

@@ -5,13 +5,7 @@
 -/
 module
 
-import Strata.DL.Lambda.Denote.LExprAnnotated
-import all Strata.DL.Lambda.Denote.LExprDenote
 import all Strata.DL.Lambda.Semantics
-import Strata.DL.Lambda.Denote.HList
-import all Strata.DL.Lambda.Denote.LExprDenoteProps
-import all Strata.DL.Lambda.Denote.LExprDenoteSubst
-import all Strata.DL.Lambda.Denote.CallOfLFuncDenote
 import all Strata.DL.Lambda.Denote.LExprDenoteEq
 
 /-!
@@ -36,9 +30,7 @@ evaluation steps preserve denotation, type, and structural invariants.
   then `denote e = denote e₂` (composes `eval_StepStar` with `StepStar.denote_preserved`)
 
 ### Bundled assumption structures
-- `Env.StepWF` — environment well-formedness for step preservation
-- `Factory.StepWF` — factory well-formedness for step preservation
-- `Factory.WF` — factory and type-factory well-formedness
+- `Env.InterpConsistent` — environment values denote as the free-variable valuation
 - `InterpConsistent` — interpretation consistency (factory, constructors, environment)
 -/
 
@@ -50,18 +42,25 @@ variable (opInterp : OpInterp tcInterp)
 variable (fvarVal : FreeVarVal T tcInterp)
 variable (vt : TyVarVal)
 
-/-- Environment values are well-typed: there is a type map `tyMap` such that
-every env value is well-typed at its corresponding type, and every env key
-has a type in the map. -/
-structure Env.Typed [DecidableEq T.IDMeta] (env : Env T) where
-  /-- The type map assigning types to environment keys. -/
-  tyMap : Map T.Identifier LMonoTy
-  /-- Every env value is well-typed at the type given by `tyMap`. -/
-  wt : ∀ (x : T.Identifier) (e : LExpr T.mono) (ty : LMonoTy),
-    env x = some e → Map.find? tyMap x = some ty → LExpr.HasTypeA [] e ty
-  /-- Every env key has a type in `tyMap`. -/
-  cover : ∀ (x : T.Identifier) (e : LExpr T.mono),
-    env x = some e → ∃ ty, Map.find? tyMap x = some ty
+/-- A free-variable valuation `fvarVal` is consistent with an environment `env`
+when every binding `env x = some e` that is well-typed at `ty` denotes to the
+same value as `fvarVal x (substTyVars vt ty)`. -/
+def Env.InterpConsistent (env : T.Identifier → Option (LExpr T.mono)) (fvarVal : FreeVarVal T tcInterp) : Prop :=
+  ∀ (vt : TyVarVal) (x : T.Identifier) (e : LExpr T.mono) (ty : LMonoTy),
+    env x = some e →
+    ∀ (h : LExpr.HasTypeA [] e ty),
+      LExpr.denote tcInterp opInterp fvarVal vt .nil e ty h = fvarVal x (ty.substTyVars vt)
+
+/-- Bundled interpretation consistency assumptions.
+- `factory` : `Factory.InterpConsistent tcInterp opInterp F` — factory bodies/evals are interp-consistent
+- `constr` : `ConstrInterpConsistent tcInterp opInterp F` — constructor interp consistency
+- `env` : `Env.InterpConsistent tcInterp opInterp env fvarVal` — env values denote as fvarVal
+-/
+structure InterpConsistent [DecidableEq T.IDMeta] (F : @Factory T)
+    (env : Env T) where
+  factory : Factory.InterpConsistent tcInterp opInterp F
+  constr : ConstrInterpConsistent tcInterp opInterp F
+  env : Env.InterpConsistent tcInterp opInterp env fvarVal
 
 /-! ### State substitution and denotation -/
 
@@ -1120,58 +1119,6 @@ theorem Step.fvars_annotated_preserved
     exact ⟨hAnnot.1, substFvarsFromState_fvars_annotated hAnnot.2 hEnvAnnot henv_eq⟩
   | quant_subst_fvars_trigger tr body σ x hfv henv_eq =>
     exact ⟨substFvarsFromState_fvars_annotated hAnnot.1 hEnvAnnot henv_eq, hAnnot.2⟩
-
-/-! ### Bundled assumptions for multi-step preservation -/
-
-/-- Bundled well-formedness assumptions on the environment for step preservation.
-- `typed` : `Env.Typed env` — environment maps identifiers to well-typed expressions
-- `lc` : environment values are locally closed (`lcAt 0`)
-- `ops` : environment values satisfy `OpsConsistent F`
-- `annot` : environment values satisfy `fvars_annotated_by typed.tyMap`
--/
-structure Env.StepWF (F : @Factory T) (env : Env T) where
-  typed : Env.Typed env
-  lc : ∀ (x : T.Identifier) (e : LExpr T.mono), env x = some e → LExpr.lcAt 0 e = true
-  ops : ∀ (x : T.Identifier) (e : LExpr T.mono), env x = some e → OpsConsistent F e
-  annot : ∀ (x : T.Identifier) (e : LExpr T.mono), env x = some e →
-      fvars_annotated_by typed.tyMap e
-
-/-- Bundled well-formedness assumptions on the factory for step preservation.
-- `wt` : `Factory.WellTyped F` — factory function bodies are well-typed
-- `evalWt` : `Factory.EvalWellTyped F` — concrete evaluators return well-typed results
-- `bodyOps` : `Factory.BodyOpsConsistent F` — factory bodies satisfy `OpsConsistent` after substitution
-- `evalOps` : `Factory.EvalOpsConsistent F` — concrete evaluators return `OpsConsistent` results
-- `bodyAnnot` : `Factory.BodyAnnotated F tyMap` — factory bodies satisfy `fvars_annotated_by` after substitution
-- `evalAnnot` : `Factory.EvalAnnotated F tyMap` — concrete evaluators return annotated results
--/
-structure Factory.StepWF (F : @Factory T) (tyMap : Map T.Identifier LMonoTy) where
-  wt : Factory.WellTyped F
-  evalWt : Factory.EvalWellTyped F
-  bodyOps : Factory.BodyOpsConsistent F
-  evalOps : Factory.EvalOpsConsistent F
-  bodyAnnot : Factory.BodyAnnotated F tyMap
-  evalAnnot : Factory.EvalAnnotated F tyMap
-
-/-- Bundled well-formedness assumptions on the factory and type factory.
-- `factoryWF` : `FactoryWF F` — factory is well-formed
-- `constrWF` : `Factory.ConstrWellFormed F tf` — constructors are well-formed w.r.t. type factory
-- `tfWF` : `TypeFactoryWF tf` — type factory is well-formed
--/
-structure Factory.WF (F : @Factory T) (tf : @TypeFactory T.IDMeta) where
-  factoryWF : FactoryWF F
-  constrWF : Factory.ConstrWellFormed F tf
-  tfWF : TypeFactoryWF tf
-
-/-- Bundled interpretation consistency assumptions.
-- `factory` : `Factory.InterpConsistent tcInterp opInterp F` — factory bodies/evals are interp-consistent
-- `constr` : `ConstrInterpConsistent tcInterp opInterp F` — constructor interp consistency
-- `env` : `Env.InterpConsistent tcInterp opInterp env fvarVal` — env values denote as fvarVal
--/
-structure InterpConsistent (F : @Factory T)
-    (env : Env T) where
-  factory : Factory.InterpConsistent tcInterp opInterp F
-  constr : ConstrInterpConsistent tcInterp opInterp F
-  env : Env.InterpConsistent tcInterp opInterp env fvarVal
 
 /-- Multi-step version: `HasTypeA` is preserved by `StepStar`.
 Assumes `Env.StepWF F env` (env well-formedness) and
