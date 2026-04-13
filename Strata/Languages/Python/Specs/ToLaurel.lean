@@ -389,6 +389,41 @@ def specExprToLaurel (e : SpecExpr) (md : Imperative.MetaData Core.Expression)
       some (mkStmt (.PrimitiveOp .Leq
         [mkStmt (.StaticCall (mkId "Any..as_int!") [s]) md,
          mkStmt (.StaticCall (mkId "Any..as_int!") [b]) md]) md)
+  | .intAdd left right loc => do
+    let md ← nodeMd loc
+    let l? ← specExprToLaurel left md; let r? ← specExprToLaurel right md
+    return do
+      let l ← l?; let r ← r?
+      let lInt := mkStmt (.StaticCall (mkId "Any..as_int!") [l]) md
+      let rInt := mkStmt (.StaticCall (mkId "Any..as_int!") [r]) md
+      let sum := mkStmt (.PrimitiveOp .Add [lInt, rInt]) md
+      some (mkStmt (.StaticCall (mkId "from_int") [sum]) md)
+  | .intSub left right loc => do
+    let md ← nodeMd loc
+    let l? ← specExprToLaurel left md; let r? ← specExprToLaurel right md
+    return do
+      let l ← l?; let r ← r?
+      let lInt := mkStmt (.StaticCall (mkId "Any..as_int!") [l]) md
+      let rInt := mkStmt (.StaticCall (mkId "Any..as_int!") [r]) md
+      let diff := mkStmt (.PrimitiveOp .Sub [lInt, rInt]) md
+      some (mkStmt (.StaticCall (mkId "from_int") [diff]) md)
+  | .intMul left right loc => do
+    let md ← nodeMd loc
+    let l? ← specExprToLaurel left md; let r? ← specExprToLaurel right md
+    return do
+      let l ← l?; let r ← r?
+      let lInt := mkStmt (.StaticCall (mkId "Any..as_int!") [l]) md
+      let rInt := mkStmt (.StaticCall (mkId "Any..as_int!") [r]) md
+      let prod := mkStmt (.PrimitiveOp .Mul [lInt, rInt]) md
+      some (mkStmt (.StaticCall (mkId "from_int") [prod]) md)
+  | .intEq left right loc => do
+    let md ← nodeMd loc
+    let l? ← specExprToLaurel left md; let r? ← specExprToLaurel right md
+    return do
+      let l ← l?; let r ← r?
+      let lInt := mkStmt (.StaticCall (mkId "Any..as_int!") [l]) md
+      let rInt := mkStmt (.StaticCall (mkId "Any..as_int!") [r]) md
+      some (mkStmt (.PrimitiveOp .Eq [lInt, rInt]) md)
   | .floatGe subject bound loc => do
     let md ← nodeMd loc
     let s? ← specExprToLaurel subject md; let b? ← specExprToLaurel bound md
