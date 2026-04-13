@@ -187,6 +187,8 @@ abbrev MetaData.fullCheck : MetaDataElem.Field P := .label "fullCheck"
 abbrev MetaData.validityCheck : MetaDataElem.Field P := .label "validityCheck"
 @[match_pattern]
 abbrev MetaData.satisfiabilityCheck : MetaDataElem.Field P := .label "satisfiabilityCheck"
+@[match_pattern]
+abbrev MetaData.message : MetaDataElem.Field P := .label "message"
 
 def MetaData.hasReachCheck {P : PureExpr} [BEq P.Ident] (md : MetaData P) : Bool :=
   match md.findElem MetaData.reachCheck with

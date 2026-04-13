@@ -590,6 +590,34 @@ def pyAnalyzeLaurelCommand : Command where
       let path := s!"{dir}/{baseName}.core"
       IO.FS.writeFile path (toString coreProgram)
 
+    -- Inline pyspec procedures so their precondition assertions are checked
+    -- at call sites with concrete arguments.
+    -- First, run CallElim on pyspec procedures to replace calls with
+    -- assert(preconditions) + havoc + assume(postconditions). This ensures
+    -- that when a decorated function calls another decorated function,
+    -- the caller's preconditions (assumed by CallElim) can satisfy the
+    -- callee's preconditions (asserted by CallElim).
+    let pyspecFiles := pflags.getRepeated "pyspec"
+    let coreProgram ←
+      if pyspecFiles.size > 0 then
+        -- CallElim: replace pyspec procedure calls with assert/havoc/assume
+        let coreProgram ← match Core.callElimUsingContract coreProgram with
+          | .error e => exitPyAnalyzeInternalError s!"CallElim failed: {e}"
+          | .ok prog => pure prog
+        -- Then inline remaining procedure bodies
+        match Core.inlineProcedures coreProgram
+              { doInline := fun name _ => name ≠ "__main__" && !_preludeNames.contains name } with
+        | .error e => exitPyAnalyzeInternalError s!"Inlining failed: {e}"
+        | .ok inlined => do
+          if verbose then
+            IO.println "\n==== Core Program (after inlining) ===="
+            IO.print inlined
+          if let some dir := keepDir then
+            let path := s!"{dir}/{baseName}.inlined.core"
+            IO.FS.writeFile path (toString inlined)
+          pure inlined
+      else pure coreProgram
+
     -- Verify using Core verifier
     -- --keep-all-files implies vc-directory if not explicitly set
     let baseVcDir := keepDir.map (fun dir => (s!"{dir}/{baseName}" : System.FilePath))
@@ -623,20 +651,52 @@ def pyAnalyzeLaurelCommand : Command where
 
     -- Print per-VC results by default, unless SARIF mode is used
     if !outputSarif then
+      let classifier : ResultClassifier := {}
       let mut s := ""
       for vcResult in vcResults do
-        let fileMap := mfm.map (·.2)
-        let location := match Imperative.getFileRange vcResult.obligation.metadata with
+        let propertySummaryOption := vcResult.obligation.metadata.getPropertySummary
+        let propertyDescription := match propertySummaryOption with
+          | some summary =>
+            let label := vcResult.obligation.label
+            -- Postcondition body checks (label contains ":postcondition") get a
+            -- "[procname]" prefix instead of a "(call site N)" suffix.
+            if (label.splitOn ":postcondition" |>.length) > 1 then
+              let procName := label.splitOn ":" |>.head!
+              s!"[{procName}] {summary}"
+            else
+              -- Extract call-site suffix from the label (e.g., "_7" from "func_assert(0)_7")
+              let suffix := match label.splitOn "_" |>.getLast? with
+                | some s => if s.toNat?.isSome then s!" (call site {s})" else ""
+                | none => ""
+              summary ++ suffix
+          | none => vcResult.obligation.label
+        let (locationPrefix, locationSuffix) := match Imperative.getFileRange vcResult.obligation.metadata with
           | some fr =>
-            if fr.range.isNone then ""
-            else s!"{fr.format fileMap (includeEnd? := false)}"
-          | none => ""
-        let messageSuffix := match vcResult.obligation.metadata.getPropertySummary with
-          | some msg => s!" - {msg}"
-          | none => s!" - {vcResult.obligation.label}"
+            if fr.range.isNone then ("", "")
+            else
+              match mfm with
+              | some (_, fm) =>
+                match fr.file with
+                | .file "" =>
+                  if classifier.isFailure vcResult then
+                    (s!"Assertion failed in prelude file: ", "")
+                  else
+                    ("", s!" (in prelude file)")
+                | .file _ =>
+                  let pos := fm.toPosition fr.range.start
+                  if classifier.isFailure vcResult then
+                    (s!"Assertion failed at line {pos.line}, col {pos.column}: ", "")
+                  else
+                    ("", s!" (at line {pos.line}, col {pos.column})")
+              | none =>
+                if classifier.isFailure vcResult then
+                  (s!"Assertion failed: ", "")
+                else
+                  ("", "")
+          | none => ("", "")
         let outcomeStr := vcResult.formatOutcome
-        let loc := if !location.isEmpty then s!"{location}: " else "unknown location: "
-        s := s ++ s!"{loc}{outcomeStr}{messageSuffix}\n"
+        s := s ++ s!"{locationPrefix}{propertyDescription}: \
+                      {outcomeStr}{locationSuffix}\n"
       IO.print s
     -- Output in SARIF format if requested
     if outputSarif then

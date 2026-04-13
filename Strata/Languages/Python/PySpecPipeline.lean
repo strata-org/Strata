@@ -40,6 +40,8 @@ public structure PySpecLaurelResult where
   typeAliases : Std.HashMap String String := {}
   /-- Classes whose spec is considered exhaustive (lists all methods). -/
   exhaustiveClasses : Std.HashSet String := {}
+  /-- Module prefixes used when building pyspec Laurel names. -/
+  modulePrefixes : List String := []
 
 /-! ### Private Helpers -/
 
@@ -174,7 +176,8 @@ public def buildPySpecLaurel (pyspecEntries : Array (String × String))
   }
   return { laurelProgram := combinedLaurel, overloads := allOverloads
            functionSignatures := funcSigs, typeAliases := allTypeAliases
-           exhaustiveClasses := allExhaustiveClasses }
+           exhaustiveClasses := allExhaustiveClasses
+           modulePrefixes := (pyspecEntries.map (·.1)).toList }
 
 /-- Read dispatch Ion files and merge their overload tables. -/
 public def readDispatchOverloads
@@ -287,6 +290,23 @@ public def buildPreludeInfo (result : PySpecLaurelResult) : Python.PreludeInfo :
   -- Register functions under their Laurel names
   let symbols := merged.functions.foldl (init := symbols) fun m name =>
     m.insert name (.function name)
+  -- Register unprefixed procedure aliases for pyspec top-level functions.
+  -- When a pyspec module "heapq" defines "heappop", the Laurel procedure
+  -- is "heapq_heappop". User code that does `from heapq import heappop`
+  -- calls it as plain "heappop", so we register that alias here.
+  let symbols := result.modulePrefixes.foldl (init := symbols) fun syms pfx =>
+    if pfx.isEmpty then syms
+    else
+      let pfxUnderscore := pfx ++ "_"
+      merged.procedures.fold (init := syms) fun m name sig =>
+        if name.startsWith pfxUnderscore then
+          let shortName := name.drop pfxUnderscore.length |>.toString
+          -- Skip class methods (contain @) and don't overwrite existing
+          if !shortName.contains '@' && !m.contains shortName then
+            let inlinable := merged.inlinableProcedures.contains name
+            m.insert shortName (.procedure name sig inlinable)
+          else m
+        else m
   -- Add unprefixed aliases from typeAliases
   let symbols := result.typeAliases.fold (init := symbols)
     fun syms unprefixed prefixed =>
@@ -315,12 +335,87 @@ public def buildPreludeInfo (result : PySpecLaurelResult) : Python.PreludeInfo :
     importedSymbols := symbols
     exhaustiveClasses := exhaustive }
 
+/-- Recursively rename identifiers in a StmtExpr tree. -/
+private partial def renameIdent (oldName newName : String) : Laurel.StmtExprMd → Laurel.StmtExprMd
+  | ⟨.Identifier id, md⟩ =>
+    if id.text == oldName then ⟨.Identifier { id with text := newName }, md⟩
+    else ⟨.Identifier id, md⟩
+  | ⟨.PrimitiveOp op args, md⟩ =>
+    ⟨.PrimitiveOp op (args.map (renameIdent oldName newName)), md⟩
+  | ⟨.StaticCall callee args, md⟩ =>
+    ⟨.StaticCall callee (args.map (renameIdent oldName newName)), md⟩
+  | ⟨.IfThenElse c t e, md⟩ =>
+    ⟨.IfThenElse (renameIdent oldName newName c) (renameIdent oldName newName t)
+      (e.map (renameIdent oldName newName)), md⟩
+  | ⟨.Block stmts lbl, md⟩ =>
+    ⟨.Block (stmts.map (renameIdent oldName newName)) lbl, md⟩
+  | ⟨.Assign tgts val, md⟩ =>
+    ⟨.Assign (tgts.map (renameIdent oldName newName)) (renameIdent oldName newName val), md⟩
+  | ⟨.FieldSelect tgt fld, md⟩ =>
+    ⟨.FieldSelect (renameIdent oldName newName tgt) fld, md⟩
+  | other => other
+
 /-- Combine PySpec and user Laurel programs into a single program,
     prepending External stubs so the Laurel `resolve` pass can see
-    prelude names (e.g. `print`, `from_string`). -/
+    prelude names (e.g. `print`, `from_string`).
+    Also copies preconditions and postconditions from pyspec procedures
+    to matching user-code procedures. -/
 public def combinePySpecLaurel
-    (pySpec user : Laurel.Program) : Laurel.Program :=
-  { staticProcedures := pySpec.staticProcedures ++ user.staticProcedures
+    (pySpec user : Laurel.Program)
+    (modulePrefixes : List String := []) : Laurel.Program :=
+  -- Build a map from unprefixed name → pyspec preconditions
+  let pyspecPreconds : Std.HashMap String (List Laurel.StmtExprMd) :=
+    modulePrefixes.foldl (init := {}) fun m pfx =>
+      if pfx.isEmpty then m
+      else
+        let pfxUnderscore := pfx ++ "_"
+        pySpec.staticProcedures.foldl (init := m) fun m proc =>
+          if proc.name.text.startsWith pfxUnderscore && !proc.preconditions.isEmpty then
+            let shortName := proc.name.text.drop pfxUnderscore.length |>.toString
+            if !shortName.contains '@' then m.insert shortName proc.preconditions
+            else m
+          else m
+  -- Extract postconditions from pyspec procedure bodies (Body.Opaque postconds ...)
+  let pyspecPostconds : Std.HashMap String (List Laurel.StmtExprMd) :=
+    modulePrefixes.foldl (init := {}) fun m pfx =>
+      if pfx.isEmpty then m
+      else
+        let pfxUnderscore := pfx ++ "_"
+        pySpec.staticProcedures.foldl (init := m) fun m proc =>
+          if proc.name.text.startsWith pfxUnderscore then
+            match proc.body with
+            | .Opaque postconds _ _ =>
+              if !postconds.isEmpty then
+                let shortName := proc.name.text.drop pfxUnderscore.length |>.toString
+                if !shortName.contains '@' then m.insert shortName postconds
+                else m
+              else m
+            | _ => m
+          else m
+  -- Copy preconditions and postconditions to matching user-code procedures.
+  -- When postconditions are present, wrap the user body in Body.Opaque so
+  -- the Laurel pipeline can verify the body against the postconditions.
+  -- Postconditions reference "result" but user code uses "LaurelResult",
+  -- so we rename the identifier in the postcondition expressions.
+  let userProcs := user.staticProcedures.map fun proc =>
+    let proc := match pyspecPreconds[proc.name.text]? with
+      | some preconds => { proc with preconditions := preconds }
+      | none => proc
+    match pyspecPostconds[proc.name.text]? with
+    | some postconds =>
+      match proc.body with
+      | .Transparent bodyExpr =>
+        -- Rename "result" → "LaurelResult" in postconditions to match user code output
+        let renamedPostconds := postconds.map (renameIdent "result" "LaurelResult")
+        -- Prepend assume(isfrom_int(param)) for each input parameter.
+        let mkMd (e : Laurel.StmtExpr) : Laurel.StmtExprMd := ⟨e, bodyExpr.md⟩
+        let assumes := proc.inputs.map fun param =>
+          mkMd (.Assume (mkMd (.StaticCall (Laurel.mkId "Any..isfrom_int") [mkMd (.Identifier param.name)])))
+        let wrappedBody := mkMd (.Block (assumes ++ [bodyExpr]) none)
+        { proc with body := .Opaque renamedPostconds (some wrappedBody) [] }
+      | _ => proc
+    | none => proc
+  { staticProcedures := pySpec.staticProcedures ++ userProcs
     staticFields := pySpec.staticFields ++ user.staticFields
     types := pySpec.types ++ user.types
     constants := pySpec.constants ++ user.constants
@@ -434,6 +529,6 @@ public def pyAnalyzeLaurel
     | .error msg => throw (.internal msg)
 
   profileStep profile "Combine PySpec and user Laurel" do
-    return combinePySpecLaurel filteredPrelude laurelProgram
+    return combinePySpecLaurel filteredPrelude laurelProgram result.modulePrefixes
 
 end Strata
