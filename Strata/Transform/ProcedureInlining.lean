@@ -197,7 +197,7 @@ use the specification. This will have to change if Strata also wants to support
 the reachability query.
 -/
 def inlineCallCmd
-    (doInline:Option String -> String -> CachedAnalyses -> Bool := λ _ _ _ => true)
+    (doInline: Option String -> String -> CachedAnalyses -> Bool := λ _caller _callee _analyses => true)
     (cmd: Command)
   : CoreTransformM (Option (List Statement)) :=
     open Lambda in do
