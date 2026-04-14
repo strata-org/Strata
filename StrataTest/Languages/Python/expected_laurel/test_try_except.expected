@@ -3,8 +3,14 @@ test_try_except.py(7, 4): ✅ pass - body should have executed
 test_try_except.py(17, 4): ✅ pass - handler should have executed
 test_try_except.py(17, 4): ✅ pass - handler should have executed
 test_try_except.py(17, 4): ✅ pass - handler should have executed
+test_try_except.py(17, 4): ❓ unknown - handler should have executed
 test_try_except.py(17, 4): ✅ pass - handler should have executed
 test_try_except.py(17, 4): ✅ pass - handler should have executed
 test_try_except.py(17, 4): ✅ pass - handler should have executed
-DETAIL: 8 passed, 0 failed, 0 inconclusive
-RESULT: Analysis success
+test_try_except.py(17, 4): ✅ pass - handler should have executed
+test_try_except.py(17, 4): ✅ pass - handler should have executed
+test_try_except.py(17, 4): ✅ pass - handler should have executed
+test_try_except.py(17, 4): ✅ pass - handler should have executed
+test_try_except.py(17, 4): ✅ pass - handler should have executed
+DETAIL: 13 passed, 0 failed, 1 inconclusive
+RESULT: Inconclusive

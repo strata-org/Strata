@@ -1425,12 +1425,35 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
     let handlerCtx := { ctx with raiseExitLabel := ctx.raiseExitLabel }
     let mut handlerCtxFinal := handlerCtx
     let mut handlerStmts : List StmtExprMd := []
+    let mut handlerIdx : Nat := 0
     for handler in handlers.val do
       match handler with
       | .ExceptHandler _ _ _ handlerBody =>
         let (hCtx, hStmts) ← translateStmtList handlerCtx handlerBody.val.toList
         handlerCtxFinal := hCtx
-        handlerStmts := handlerStmts ++ hStmts
+        -- Each handler is guarded by isError (only run if exception active)
+        -- AND a non-deterministic boolean (models unknown exception type matching).
+        -- The handler clears the error after its body and exits the try block,
+        -- so subsequent handlers are skipped on that path.
+        -- On the fall-through path the next handler gets a chance.
+        let isException := mkStmtExprMd (StmtExpr.StaticCall "isError"
+          [mkStmtExprMd (StmtExpr.Identifier "maybe_except")])
+        let choiceVar := s!"handler_matches_{s.toAst.ann.start.byteIdx}_{handlerIdx}"
+        let declChoice := mkStmtExprMd
+          (StmtExpr.LocalVariable choiceVar (mkCoreType "bool")
+            (some (mkStmtExprMd (.Hole false none))))
+        let choiceCond := mkStmtExprMd
+          (StmtExpr.PrimitiveOp .And [isException,
+            mkStmtExprMd (StmtExpr.Identifier choiceVar)])
+        let clearError := mkStmtExprMd
+          (StmtExpr.Assign [maybeExceptVar] NoError)
+        let exitTry := mkStmtExprMd (StmtExpr.Exit tryLabel)
+        let guardedHandler := mkStmtExprMd (StmtExpr.IfThenElse choiceCond
+          (mkStmtExprMd (StmtExpr.Block
+            (hStmts ++ [clearError, exitTry]) none))
+          none)
+        handlerStmts := handlerStmts ++ [declChoice, guardedHandler]
+        handlerIdx := handlerIdx + 1
 
     -- Insert exception checks after each statement in try body
     let bodyStmtsWithChecks := bodyStmts.flatMap fun stmt =>
