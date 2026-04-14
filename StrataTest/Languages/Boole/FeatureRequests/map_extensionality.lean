@@ -48,5 +48,5 @@ spec {
 example : Strata.smtVCsCorrect mapExtensionalitySeed := by
   gen_smt_vcs
   all_goals
-    intro Map inst a b select hPointwise hExtensional
+    intro a b hPointwise hExtensional
     exact hExtensional a b hPointwise
