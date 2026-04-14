@@ -34,7 +34,7 @@ This module translates Python AST to Laurel intermediate representation.
 namespace Strata.Python
 
 open Laurel
-open Strata.Laurel (call callMd litInt litStr litBool ident stmtExpr stmtExprMd
+open Strata.Laurel (call callMd litInt litStr litBool ident withDefaultMd
   fieldSelect localVar localVarMd assign assignMd assert_ assertMd assume_
   block blockMd ifThenElse ifThenElseMd exit_ new_ hole primOp)
 
