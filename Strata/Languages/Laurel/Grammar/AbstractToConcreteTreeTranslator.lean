@@ -43,6 +43,7 @@ partial def highTypeValToArg : HighType → Arg
   | .TFloat64 => laurelOp "float64Type"
   | .TReal => laurelOp "realType"
   | .TString => laurelOp "stringType"
+  | .TBv n => laurelOp "bvType" #[.num sr n]
   | .TMap k v => laurelOp "mapType" #[highTypeToArg k, highTypeToArg v]
   | .UserDefined name => laurelOp "compositeType" #[ident name.text]
   | .TCore s => laurelOp "coreType" #[ident s]

@@ -1,0 +1,5 @@
+test_type_dict_annotation.py(5, 4): ✅ pass - typed dict
+test_type_dict_annotation.py(5, 4): ✅ pass - typed dict
+test_type_dict_annotation.py(5, 4): ✅ pass - typed dict
+DETAIL: 3 passed, 0 failed, 0 inconclusive
+RESULT: Analysis success
