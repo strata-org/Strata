@@ -119,13 +119,22 @@ mutual
 
 def Stmt.removeLoopsM
   [HasNot P] [HasVarsImp P C] [HasHavoc P C] [HasInit P C] [HasPassiveCmds P C]
+  [DecidableEq P.Ident]
   [HasIdent P] [HasFvar P] [HasIntOrder P]
   (s : Stmt P C) : StateM LoopElimState (Stmt P C) :=
   match s with
   | .loop guard measure invariants bss md => do
     let loop_num ← modifyGet fun s =>
       (s.loopCounter, { s with loopCounter := s.loopCounter + 1 })
-    let assigned_vars := Block.modifiedVars bss
+
+    let loop_num ← StateT.modifyGet (fun x => (x, x + 1))
+    -- Havoc only loop-carried variables. Variables declared inside the loop
+    -- body are block-local and should not be treated as pre-existing state by
+    -- the passive loop encoding.
+    let local_defs := Block.definedVars bss
+    let assigned_vars :=
+      (Block.modifiedVars bss).filter (fun v => v ∉ local_defs)
+    -- All of the replaced statements reuse the metadata md.
     let havocd : Stmt P C :=
       .block s!"loop_havoc_{loop_num}" (assigned_vars.map (λ n => Stmt.cmd (HasHavoc.havoc n md))) {}
     let body_statements ← Block.removeLoopsM bss
@@ -204,6 +213,7 @@ def Stmt.removeLoopsM
 
 def Block.removeLoopsM
   [HasNot P] [HasVarsImp P C] [HasHavoc P C] [HasInit P C] [HasPassiveCmds P C]
+  [DecidableEq P.Ident]
   [HasIdent P] [HasFvar P] [HasIntOrder P]
   (ss : List (Stmt P C)) : StateM LoopElimState (List (Stmt P C)) :=
   match ss with
@@ -217,6 +227,7 @@ end
 
 def Stmt.removeLoops
   [HasNot P] [HasVarsImp P C] [HasHavoc P C] [HasInit P C] [HasPassiveCmds P C]
+  [DecidableEq P.Ident]
   [HasIdent P] [HasFvar P] [HasIntOrder P]
   (s : Stmt P C) : Stmt P C :=
   (StateT.run (removeLoopsM s) {}).fst
