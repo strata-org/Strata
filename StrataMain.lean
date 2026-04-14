@@ -487,9 +487,12 @@ private def deriveBaseName (file : String) : String :=
 /-- Which procedures to verify: all user procedures, only roots (no callers),
     or only the main function. -/
 inductive EntryPoint where
-  | main   -- Only `__main__`
-  | roots  -- User procedures with no callers among user procedures
-  | all    -- All user procedures
+  /-- Only `__main__` -/
+  | main
+  /-- User procedures with no callers among user procedures -/
+  | roots
+  /-- All user procedures -/
+  | all
   deriving Repr, DecidableEq
 
 instance : Inhabited EntryPoint where
