@@ -620,7 +620,7 @@ def pyAnalyzeLaurelCommand : Command where
     if !outputSarif then
       let mut s := ""
       for ar in assertResults do
-        match ar.representative with
+        match ar.worstCase isBugFinding with
         | none => pure ()
         | some vcResult =>
           let fileMap := mfm.map (·.2)

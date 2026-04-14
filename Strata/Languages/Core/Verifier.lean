@@ -685,6 +685,20 @@ def AssertResult.isBugFindingFailure (ar : AssertResult) : Bool :=
 def AssertResult.representative (ar : AssertResult) : Option VCResult :=
   ar.results[0]?
 
+/-- Pick the worst-case VCResult from the group.
+    Priority: implementation error > failure > unknown > unreachable > success.
+    When `isBugFindingMode` is true, bug-finding predicates are used. -/
+def AssertResult.worstCase (ar : AssertResult) (isBugFindingMode : Bool := false) : Option VCResult :=
+  let isFailure := if isBugFindingMode then VCResult.isBugFindingFailure else VCResult.isFailure
+  ar.results.foldl (init := none) fun best r =>
+    match best with
+    | none => some r
+    | some b =>
+      if r.isImplementationError || r.hasSMTError then some r
+      else if isFailure r && !isFailure b then some r
+      else if r.isUnknown && !isFailure b && !b.isUnknown then some r
+      else some b
+
 instance : ToFormat AssertResult where
   format ar :=
     let header := f!"Assertion: {ar.label} ({ar.results.size} path(s))"
@@ -696,23 +710,23 @@ instance : ToFormat AssertResult where
 /-- Group `VCResults` by assertion label and source location, preserving the order of first occurrence.
     When the file range is unknown, each VCResult gets its own AssertResult group. -/
 def VCResults.groupByAssertion (rs : VCResults) : AssertResults :=
-  let (map, order, labels, _) := rs.foldl
+  let (resultsByKey, order, labelsByKey, _) := rs.foldl
     (init := (Std.HashMap.emptyWithCapacity (α := String) (β := Array VCResult),
               (#[] : Array String),
               Std.HashMap.emptyWithCapacity (α := String) (β := String),
               (0 : Nat)))
-    fun (map, order, labels, uid) r =>
+    fun (resultsByKey, order, labelsByKey, uid) r =>
       let rawLabel := r.obligation.label
       let displayLabel := r.obligation.metadata.getPropertySummary.getD rawLabel
       let (k, uid) := match Imperative.getFileRange r.obligation.metadata with
-        | some fr => if fr.range.isNone then (s!"{rawLabel}@__unique_{uid}", uid + 1)
-                     else (s!"{rawLabel}@{repr fr}", uid)
-        | none    => (s!"{rawLabel}@__unique_{uid}", uid + 1)
-      let existing := map.getD k #[]
+        | some fr => if fr.range.isNone then (s!"{displayLabel}@__unique_{uid}", uid + 1)
+                     else (s!"{displayLabel}@{repr fr}", uid)
+        | none    => (s!"{displayLabel}@__unique_{uid}", uid + 1)
+      let existing := resultsByKey.getD k #[]
       let order := if existing.isEmpty then order.push k else order
-      let labels := if existing.isEmpty then labels.insert k displayLabel else labels
-      (map.insert k (existing.push r), order, labels, uid)
-  order.map fun k => { label := labels.getD k "", results := map.getD k #[] }
+      let labelsByKey := if existing.isEmpty then labelsByKey.insert k displayLabel else labelsByKey
+      (resultsByKey.insert k (existing.push r), order, labelsByKey, uid)
+  order.map fun k => { label := labelsByKey.getD k "", results := resultsByKey.getD k #[] }
 
 /--
 Preprocess a proof obligation using partial evaluation (PE).
@@ -1183,21 +1197,28 @@ def Core.VCResult.toDiagnostic (files: Map Strata.Uri Lean.FileMap) (vcr : Core.
     worst-case `VCResult` among its paths. This ensures one diagnostic per
     assertion rather than one per path.
 
-    Priority: implementation error > failure > unknown > unreachable > success. -/
+    Priority: implementation error > failure > unknown > unreachable > success.
+    When `isBugFindingMode` is true, bug-finding failure/success predicates are
+    used instead of the deductive ones. -/
 def assertResultToDiagnosticModel (ar : Core.AssertResult)
+    (isBugFindingMode : Bool := false)
     (phases : List Core.AbstractedPhase := []) : Option DiagnosticModel :=
+  let isWorseResult (r : Core.VCResult) : Bool :=
+    r.isImplementationError ||
+      if isBugFindingMode then r.isBugFindingFailure else r.isFailure
   let pick := ar.results.foldl (init := none) fun best r =>
     let candidate := toDiagnosticModel r phases
     match best, candidate with
     | none, _ => candidate
     | _, none => best
-    | some _, some _ => if r.isImplementationError || r.isFailure then candidate else best
+    | some _, some _ => if isWorseResult r then candidate else best
   pick
 
 /-- Convert an `AssertResult` to a single `Diagnostic`. -/
 def assertResultToDiagnostic (files: Map Strata.Uri Lean.FileMap) (ar : Core.AssertResult)
+    (isBugFindingMode : Bool := false)
     (phases : List Core.AbstractedPhase := []) : Option Diagnostic := do
-  let dm ← assertResultToDiagnosticModel ar phases
+  let dm ← assertResultToDiagnosticModel ar isBugFindingMode phases
   some (dm.toDiagnostic files)
 
 end -- public section

@@ -893,7 +893,7 @@ def verifyToDiagnostics (files: Map Strata.Uri Lean.FileMap) (program : Program)
   let translationDiags := results.snd.map (fun dm => dm.toDiagnostic files)
   let vcDiags := match results.fst with
   | some assertResults =>
-    assertResults.toList.filterMap (fun ar => assertResultToDiagnostic files ar phases)
+    assertResults.toList.filterMap (fun ar => assertResultToDiagnostic files ar (phases := phases))
   | none => []
   return (translationDiags ++ vcDiags).toArray
 
@@ -903,7 +903,7 @@ def verifyToDiagnosticModels (program : Program) (options : VerifyOptions := .de
   let vcDiags := match results.fst with
   | none => []
   | some assertResults =>
-    assertResults.toList.filterMap (fun ar => assertResultToDiagnosticModel ar phases)
+    assertResults.toList.filterMap (fun ar => assertResultToDiagnosticModel ar (phases := phases))
   return (results.snd ++ vcDiags).toArray
 
 end -- public section
