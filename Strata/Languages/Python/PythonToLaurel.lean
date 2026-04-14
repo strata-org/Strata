@@ -1113,13 +1113,20 @@ partial def translateAssign  (ctx : TranslationContext)
       stmts := stmts ++ eltStmts
     return (curCtx, stmts)
   let rhs_trans ←  translateExpr ctx rhs
+  -- When an unmodeled call produces a Hole, also havoc maybe_except since
+  -- the call is a black box that could throw any exception.
+  let rhsIsCall := match rhs with | .Call _ _ _ _ => true | _ => false
   if let .Hole := rhs_trans.val then
   {
+    let exceptHavoc :=
+      if rhsIsCall then
+        [mkStmtExprMdWithLoc (StmtExpr.Assign [maybeExceptVar] (mkStmtExprMd (.Hole false none))) md]
+      else []
     match lhs with
     | .Name _ n _ =>
       if n.val ∈ ctx.variableTypes.unzip.1 then
         let targetExpr := mkStmtExprMd (StmtExpr.Identifier n.val)
-        return (ctx, [mkStmtExprMd (StmtExpr.Assign [targetExpr] rhs_trans)])
+        return (ctx, [mkStmtExprMd (StmtExpr.Assign [targetExpr] rhs_trans)] ++ exceptHavoc)
       else
         -- Use type annotation if it matches a known composite type
         let annType := annotation.map (fun a => pyExprToString a) |>.getD "Any"
@@ -1131,8 +1138,8 @@ partial def translateAssign  (ctx : TranslationContext)
           | _ => pure (AnyTy, "Any")
         let initStmt := mkStmtExprMd (StmtExpr.LocalVariable n.val varTy (mkStmtExprMd .Hole))
         let newctx := {ctx with variableTypes:=(n.val, trackType)::ctx.variableTypes}
-        return (newctx, [initStmt])
-    | _ => return (ctx, [mkStmtExprMd .Hole])
+        return (newctx, [initStmt] ++ exceptHavoc)
+    | _ => return (ctx, [mkStmtExprMd .Hole] ++ exceptHavoc)
   }
   let mut newctx := ctx
   match lhs with
@@ -1409,9 +1416,9 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
         let exceptionCheck := getExceptionAssertions ctx e
         -- Coerce Composite return values to Any for LaurelResult : Any
         let e ← coerceToAny ctx expr e
-        let assign := mkStmtExprMd (StmtExpr.Assign [mkStmtExprMd (StmtExpr.Identifier PyLauFuncReturnVar)] e)
-        .ok $ exceptionCheck ++ [assign, mkStmtExprMd (StmtExpr.Exit "$body")]
-      | none => .ok [mkStmtExprMd (StmtExpr.Exit "$body")]
+        let assign := mkStmtExprMdWithLoc (StmtExpr.Assign [mkStmtExprMd (StmtExpr.Identifier PyLauFuncReturnVar)] e) md
+        .ok $ exceptionCheck ++ [assign, mkStmtExprMdWithLoc (StmtExpr.Exit "$body") md]
+      | none => .ok [mkStmtExprMdWithLoc (StmtExpr.Exit "$body") md]
     return (ctx, stmts)
 
   -- Assert statement
@@ -1451,6 +1458,12 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
     let expr := { expr with md := md }
     let exceptionCheck := getExceptionAssertions ctx expr
 
+    -- When a call has no model (translates to Hole), also havoc maybe_except
+    -- since an unmodeled call is a black box that could throw any exception.
+    let holeExceptHavoc :=
+      if let .Call _ _ _ _ := value then
+        [mkStmtExprMdWithLoc (StmtExpr.Assign [maybeExceptVar] (mkStmtExprMd (.Hole false none))) md]
+      else []
     match expr.val with
     | .StaticCall fnname _ =>
         match ctx.functionSignatures.find? (λ funsig => funsig.name == fnname) with
@@ -1462,6 +1475,9 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
             else
               return (ctx, exceptionCheck ++ [expr])
         | _ => return (ctx, exceptionCheck ++ [expr])
+    -- Unmodeled call: skip exception checks (no model to check against),
+    -- but havoc maybe_except since the call could throw.
+    | .Hole => return (ctx, [expr] ++ holeExceptHavoc)
     | _ => return (ctx, exceptionCheck ++ [expr])
 
   | .Import _ _ | .ImportFrom _ _ _ _ |.Pass _ => return (ctx, [])
@@ -1572,20 +1588,20 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
             if ¬ (isAnyNone stopExpr && isAnyNone stepExpr) then
               throw (.unsupportedConstruct "Unsupport range function with more than 1 input" (toString (repr iter)))
             let asIntStart := mkStmtExprMd $ .StaticCall "Any..as_int!" [startExpr]
-            let emptyRangeExit := mkStmtExprMd $ .IfThenElse
+            let emptyRangeExit := mkStmtExprMdWithLoc (.IfThenElse
               (mkStmtExprMd $ .PrimitiveOp .Leq [asIntStart, mkStmtExprMd $ .LiteralInt 0])
               (mkStmtExprMd $ .Exit breakLabel)
-              none
-            let assumeTypeInt := mkStmtExprMd (.Assume $ mkStmtExprMd (.StaticCall "Any..isfrom_int" [targetVar]))
+              none) md
+            let assumeTypeInt := mkStmtExprMdWithLoc (.Assume $ mkStmtExprMd (.StaticCall "Any..isfrom_int" [targetVar])) md
             let asIntTarget := mkStmtExprMd $ .StaticCall "Any..as_int!" [targetVar]
             let inRangeExpr := mkStmtExprMd $ .PrimitiveOp .And [
                   (mkStmtExprMd $ .PrimitiveOp .Geq [asIntTarget, mkStmtExprMd $ .LiteralInt 0]),
                   (mkStmtExprMd $ .PrimitiveOp .Lt [asIntTarget, asIntStart]) ]
-            let assumeInRange := mkStmtExprMd (.Assume inRangeExpr)
+            let assumeInRange := mkStmtExprMdWithLoc (.Assume inRangeExpr) md
             pure [emptyRangeExit, assumeTypeInt, assumeInRange]
           | _ =>
             let targetInIter := mkStmtExprMd (.StaticCall "PIn" [targetVar, iterExpr])
-            let assumeInStmt := mkStmtExprMd (.Assume (Any_to_bool targetInIter))
+            let assumeInStmt := mkStmtExprMdWithLoc (.Assume (Any_to_bool targetInIter)) md
             pure [assumeInStmt]
       | _ => pure []
     let bodyStmts := assumeStmts ++ bodyStmts
@@ -1730,11 +1746,13 @@ def pyFuncDefToPythonFunctionDecl  (ctx : TranslationContext) (f : Python.stmt S
     let name := match ctx.currentClassName with | none => name.val | some classname => manglePythonMethod classname name.val
     let args_trans ← unpackPyArguments ctx args
     let args := if ctx.currentClassName.isSome then args_trans.fst.tail else args_trans.fst
-    let retMd := sourceRangeToMetaData ctx.filePath returns.ann
-    let ret ←  if name.endsWith "@__init__" then pure $ some ([(name.dropEnd "@__init__".length).toString], retMd)
+    let ret ←  if name.endsWith "@__init__" then
+          let retMd := sourceRangeToMetaData ctx.filePath f.ann
+          pure $ some ([(name.dropEnd "@__init__".length).toString], retMd)
         else
         match returns.val with
           | some retTy =>
+              let retMd := sourceRangeToMetaData ctx.filePath retTy.ann
               match checkValidInputTypeList ctx (← getArgumentTypes retTy) with
               | .ok tys => pure (tys, retMd)
               | _ => pure none

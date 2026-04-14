@@ -38,10 +38,10 @@ def withPythonToLaurel (pythonCmd : System.FilePath) (input : InputContext)
     let exitCode ← child.wait
     if exitCode ≠ 0 then
       throw <| .userError s!"py_to_strata failed (exit code {exitCode}): {stderr}"
-    match ← pyAnalyzeLaurel ionFile.toString
+    match ← pythonAndSpecToLaurel ionFile.toString
         (sourcePath := some pyFile.toString) |>.toBaseIO with
     | .ok r => k r pyFile
-    | .error err => throw <| .userError s!"pyAnalyzeLaurel failed: {err}"
+    | .error err => throw <| .userError s!"pythonAndSpecToLaurel failed: {err}"
 
 /-- Run the Python → Ion → Laurel pipeline and return the Laurel program.
     The caller can inspect the Laurel IR directly or continue to Core/SMT. -/
@@ -57,7 +57,7 @@ def processPythonToLaurel (pythonCmd : System.FilePath) (input : InputContext)
 def processPythonFile (pythonCmd : System.FilePath) (input : InputContext)
     : IO (Array Diagnostic) := do
   withPythonToLaurel pythonCmd input fun laurel pyFile => do
-    let (coreOpt, translateDiags) := translateCombinedLaurel laurel
+    let (coreOpt, translateDiags) ← translateCombinedLaurel laurel
     let uri := Uri.file pyFile.toString
     let files := Map.insert Map.empty uri input.fileMap
     match coreOpt with
