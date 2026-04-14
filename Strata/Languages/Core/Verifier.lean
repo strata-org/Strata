@@ -491,6 +491,30 @@ def emoji (o : VCOutcome) (property : Imperative.PropertyType)
 
 end VCOutcome
 
+/-- Merge two SMT results, where `sat` dominates `unknown` dominates `unsat`.
+    If either result is `sat`, the merged result is `sat` (keeping the first model).
+    If either is `unknown`, the merged result is `unknown`.
+    Only if both are `unsat` is the merged result `unsat`.
+    Errors are preserved if present. -/
+def SMT.Result.merge (a b : SMT.Result) : SMT.Result :=
+  match a, b with
+  | .err e, _ => .err e
+  | _, .err e => .err e
+  | .sat m, _ => .sat m
+  | _, .sat m => .sat m
+  | .unknown m, _ => .unknown m
+  | _, .unknown m => .unknown m
+  | .unsat, .unsat => .unsat
+
+/-- Merge two `VCOutcome`s from different paths to the same assertion.
+    For each SMT check (satisfiability and validity), `sat` dominates:
+    if the assertion is satisfiable on any path, the merged result is sat.
+    The `solverLog` from both outcomes is concatenated. -/
+def VCOutcome.merge (a b : VCOutcome) : VCOutcome :=
+  { satisfiabilityProperty := a.satisfiabilityProperty.merge b.satisfiabilityProperty
+    validityProperty := a.validityProperty.merge b.validityProperty
+    solverLog := a.solverLog ++ b.solverLog }
+
 
 /--
 A model with values lifted to LExpr for display purposes.
@@ -634,6 +658,55 @@ instance : ToFormat VCResults where
 
 instance : ToString VCResults where
   toString rs := toString (VCResults.format rs)
+
+/-- Merge two `VCResult`s from different paths to the same assertion.
+    Outcomes are merged at the `VCOutcome` level (sat dominates).
+    The first result's obligation metadata is preserved.
+    The model from the result with a sat outcome is preferred. -/
+def VCResult.merge (a b : VCResult) : VCResult :=
+  match a.outcome, b.outcome with
+  | .error _, _ => a  -- preserve errors
+  | _, .error _ => b
+  | .ok oa, .ok ob =>
+    let merged := oa.merge ob
+    -- Keep the model from whichever result had a sat satisfiability or validity
+    let model := if oa.satisfiabilityProperty.isSat || oa.validityProperty.isSat
+                 then a.lexprModel else b.lexprModel
+    { a with outcome := .ok merged, lexprModel := model }
+
+/-- Compute a grouping key for a VCResult based on its source location.
+    Uses the display label (property summary) combined with the primary FileRange
+    and related FileRanges (from inlining). When the file range is unknown,
+    returns `none` so the result is not merged with others. -/
+private def vcResultGroupKey (r : VCResult) (uid : Nat) : String × Nat :=
+  let displayLabel := r.obligation.metadata.getPropertySummary.getD r.obligation.label
+  match Imperative.getFileRange r.obligation.metadata with
+  | some fr =>
+    if fr.range.isNone then (s!"{displayLabel}@__unique_{uid}", uid + 1)
+    else
+      let related := Imperative.getRelatedFileRanges r.obligation.metadata
+      let relatedKey := related.foldl (fun acc r => s!"{acc}+{repr r}") ""
+      (s!"{displayLabel}@{repr fr}{relatedKey}", uid)
+  | none => (s!"{displayLabel}@__unique_{uid}", uid + 1)
+
+/-- Merge `VCResults` that originate from the same assertion (identified by
+    source location + related locations from inlining). Outcomes are merged
+    at the `VCOutcome` level: if a proposition is sat on any path, the merged
+    result is sat. Preserves first-occurrence order.
+    When the file range is unknown, each VCResult is kept as-is. -/
+def VCResults.mergeByAssertion (rs : VCResults) : VCResults :=
+  let (resultsByKey, order, _) := rs.foldl
+    (init := (Std.HashMap.emptyWithCapacity (α := String) (β := VCResult),
+              (#[] : Array String),
+              (0 : Nat)))
+    fun (resultsByKey, order, uid) r =>
+      let (k, uid) := vcResultGroupKey r uid
+      match resultsByKey.get? k with
+      | some existing =>
+        (resultsByKey.insert k (existing.merge r), order, uid)
+      | none =>
+        (resultsByKey.insert k r, order.push k, uid)
+  order.filterMap fun k => resultsByKey.get? k
 
 /--
 Groups all `VCResult`s that originate from the same assertion.

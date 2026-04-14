@@ -38,20 +38,19 @@ procedure caller() {
   let inlined ← match Strata.Core.inlineProcedures coreProg {} with
     | .ok p => pure p
     | .error e => throw (IO.userError s!"Inlining failed: {e}")
-  let assertResults ←
+  let vcResults ←
     EIO.toIO (fun e => IO.Error.userError e)
       (Strata.Core.verifyProgram inlined
         { Core.VerifyOptions.default with verbose := .quiet }
         (proceduresToVerify := some ["caller"]))
   -- Collect only failing results
   let mut output := ""
-  for ar in assertResults do
-    for vcr in ar.results do
-      let isFail : Bool := match vcr.outcome with
-        | .ok o => !(o.validityProperty == .unsat)
-        | .error _ => true
-      if isFail then
-        output := output ++ s!"{vcr.obligation.label}: {vcr.formatOutcome}"
+  for vcr in vcResults do
+    let isFail : Bool := match vcr.outcome with
+      | .ok o => !(o.validityProperty == .unsat)
+      | .error _ => true
+    if isFail then
+      output := output ++ s!"{vcr.obligation.label}: {vcr.formatOutcome}"
   return output
 
 end Strata.Laurel.BodilessInliningTest

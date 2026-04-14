@@ -784,24 +784,34 @@ def verifyToAssertResults (program : Program)
   let (vcOpt, diags) ← verifyToVcResults program options
   return (vcOpt.map (·.groupByAssertion), diags)
 
+/--
+Verify a Laurel program using an SMT solver, returning results with
+duplicated assertions merged at the VCOutcome level.
+-/
+def verifyToMergedResults (program : Program)
+    (options : VerifyOptions := .default)
+    : IO (Option VCResults × List DiagnosticModel) := do
+  let (vcOpt, diags) ← verifyToVcResults program options
+  return (vcOpt.map (·.mergeByAssertion), diags)
+
 def verifyToDiagnostics (files: Map Strata.Uri Lean.FileMap) (program : Program)
     (options : VerifyOptions := .default): IO (Array Diagnostic) := do
-  let results <- verifyToAssertResults program options
+  let results <- verifyToMergedResults program options
   let phases := Core.coreAbstractedPhases
   let translationDiags := results.snd.map (fun dm => dm.toDiagnostic files)
   let vcDiags := match results.fst with
-  | some assertResults =>
-    assertResults.toList.filterMap (fun ar => assertResultToDiagnostic files ar (phases := phases))
+  | some vcResults =>
+    vcResults.toList.filterMap (fun vcr => vcr.toDiagnostic files phases)
   | none => []
   return (translationDiags ++ vcDiags).toArray
 
 def verifyToDiagnosticModels (program : Program) (options : VerifyOptions := .default) : IO (Array DiagnosticModel) := do
-  let results <- verifyToAssertResults program options
+  let results <- verifyToMergedResults program options
   let phases := Core.coreAbstractedPhases
   let vcDiags := match results.fst with
   | none => []
-  | some assertResults =>
-    assertResults.toList.filterMap (fun ar => assertResultToDiagnosticModel ar (phases := phases))
+  | some vcResults =>
+    vcResults.toList.filterMap (fun vcr => toDiagnosticModel vcr phases)
   return (results.snd ++ vcDiags).toArray
 
 end -- public section
