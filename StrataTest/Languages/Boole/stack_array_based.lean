@@ -149,7 +149,7 @@ spec {
   modifies top;
   ensures top == old top + 1;
   ensures S[top] == x;
-  ensures forall i : int :: 1 <= i && i <= old top ==> S[i] == old (S[i]);
+  ensures ∀ i : int :: 1 <= i && i <= old top ==> S[i] == old (S[i]);
   } {
   top := top + 1;
   S := S[top:=x];
