@@ -69,7 +69,7 @@ elab "derive_prefixed_toString " ty:ident pfx:str : command => do
   let arms := val.ctors.map fun ctorName =>
     match ctorName with
     | .str _ shortName => s!"    | .{shortName} => \"{pfxStr}.{shortName}\""
-    | _ => panic! s!"unexpected ctor name: {ctorName}"
+    | _ => dbg_trace "unexpected ctor name: {ctorName}"; "<unknown>"
   let armsStr := "\n".intercalate arms
   let code := s!"instance : ToString {ty.getId} where\n  toString\n{armsStr}"
   let env ← getEnv
