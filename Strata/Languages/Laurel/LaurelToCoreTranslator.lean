@@ -359,7 +359,7 @@ def translateStmt (outputParams : List Parameter) (stmt : StmtExprMd)
       -- Assert/assume bodies must be pure expressions (no assignments, loops, or procedure calls)
       let coreExpr ← translateExpr cond.condition [] (isPureContext := true)
       let md' := match cond.summary with
-        | some msg => md.pushElem (.label "propertySummary") (.msg msg)
+        | some msg => md.pushElem Imperative.MetaData.propertySummary (.msg msg)
         | none => md
       return [Core.Statement.assert ("assert" ++ getNameFromMd md) coreExpr md']
   | .Assume cond =>
@@ -528,7 +528,7 @@ private def translateChecks (checks : List Condition) (labelBase : String)
     let label := if checks.length == 1 then labelBase else s!"{labelBase}_{i}"
     let checkExpr ← translateExpr check.condition [] (isPureContext := true)
     let md := match check.summary with
-      | some msg => check.condition.md.pushElem (.label "propertySummary") (.msg msg)
+      | some msg => check.condition.md.pushElem Imperative.MetaData.propertySummary (.msg msg)
       | none => check.condition.md
     let c : Core.Procedure.Check := { expr := checkExpr, md }
     return (label, c))
