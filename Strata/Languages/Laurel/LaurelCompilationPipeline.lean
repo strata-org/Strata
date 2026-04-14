@@ -8,6 +8,7 @@ module
 public import Strata.Languages.Laurel.LaurelToCoreTranslator
 import Strata.Languages.Laurel.DesugarShortCircuit
 import Strata.Languages.Laurel.EliminateReturnsInExpression
+import Strata.Languages.Laurel.EliminateValueReturns
 import Strata.Languages.Laurel.ConstrainedTypeElim
 import Strata.Languages.Core.Verifier
 
@@ -74,6 +75,8 @@ private def runLaurelPasses (options : LaurelTranslateOptions) (program : Progra
   let (program, nonCompositeDiags) := filterNonCompositeModifies model program
   emit "FilterNonCompositeModifies" program
 
+  let (program, valueReturnDiags) := eliminateValueReturnsTransform program
+
   let program := heapParameterization model program
   let result := resolve program (some model)
   let (program, model) := (result.program, result.model)
@@ -108,7 +111,7 @@ private def runLaurelPasses (options : LaurelTranslateOptions) (program : Progra
   emit "ConstrainedTypeElim" program
 
   let allDiags := resolutionErrors ++ diamondErrors ++ nonCompositeDiags ++
-    modifiesDiags ++ constrainedTypeDiags
+    valueReturnDiags.toList ++ modifiesDiags ++ constrainedTypeDiags
   return (program, model, allDiags)
 
 /--

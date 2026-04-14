@@ -16,6 +16,7 @@ import Strata.Languages.Laurel.DesugarShortCircuit
 public import Strata.Languages.Laurel.InferHoleTypes
 public import Strata.Languages.Laurel.EliminateHoles
 import Strata.Languages.Laurel.EliminateReturnsInExpression
+import Strata.Languages.Laurel.EliminateValueReturns
 public import Strata.Languages.Laurel.HeapParameterization
 public import Strata.Languages.Laurel.TypeHierarchy
 public import Strata.Languages.Laurel.LaurelTypes
@@ -349,7 +350,7 @@ private def exprAsUnusedInit (expr : StmtExprMd) (md : Imperative.MetaData Core.
 Translate Laurel StmtExpr to Core Statements using the `TranslateM` monad.
 Diagnostics are emitted into the monad state.
 -/
-def translateStmt (outputParams : List Parameter) (stmt : StmtExprMd)
+def translateStmt (stmt : StmtExprMd)
     : TranslateM (List Core.Statement) := do
   let s ← get
   let model := s.model
@@ -363,7 +364,7 @@ def translateStmt (outputParams : List Parameter) (stmt : StmtExprMd)
       let coreExpr ← translateExpr cond [] (isPureContext := true)
       return [Core.Statement.assume ("assume" ++ getNameFromMd md) coreExpr md]
   | .Block stmts label =>
-      let innerStmts ← stmts.flatMapM (fun s => translateStmt outputParams s)
+      let innerStmts ← stmts.flatMapM (fun s => translateStmt s)
       match label with
       | some l => return [Imperative.Stmt.block l innerStmts md]
       | none   => return innerStmts
@@ -456,9 +457,9 @@ def translateStmt (outputParams : List Parameter) (stmt : StmtExprMd)
               returnNone
   | .IfThenElse cond thenBranch elseBranch =>
       let bcond ← translateExpr cond
-      let bthen ← translateStmt outputParams thenBranch
+      let bthen ← translateStmt thenBranch
       let belse ← match elseBranch with
-                  | some e => translateStmt outputParams e
+                  | some e => translateStmt e
                   | none => pure []
       return [Imperative.Stmt.ite (.det bcond) bthen belse md]
   | .StaticCall callee args =>
@@ -487,22 +488,18 @@ def translateStmt (outputParams : List Parameter) (stmt : StmtExprMd)
       -- Instance method call as statement: no return value, treated as no-op
       return ([])
   | .Return valueOpt =>
-      match valueOpt, outputParams.head? with
-      | some value, some outParam =>
-          let ident := ⟨outParam.name.text, ()⟩
-          let coreExpr ← translateExpr value
-          let assignStmt := Core.Statement.set ident coreExpr md
-          return [assignStmt, .exit (some "$body") md]
-      | none, _ =>
+      match valueOpt with
+      | none =>
           return [.exit (some "$body") md]
-      | some _, none =>
-          emitDiagnostic $ md.toDiagnostic "Return statement with value but procedure has no output parameters"
+      | some _ =>
+          emitDiagnostic $ md.toDiagnostic "Return statement with value should have been eliminated by EliminateValueReturns pass" DiagnosticType.StrataBug
+          modify fun s => { s with coreProgramHasSuperfluousErrors := true }
           return [.exit (some "$body") md]
   | .While cond invariants decreasesExpr body =>
       let condExpr ← translateExpr cond
       let invExprs ← invariants.mapM (translateExpr)
       let decreasingExprCore ← decreasesExpr.mapM (translateExpr)
-      let bodyStmts ← translateStmt outputParams body
+      let bodyStmts ← translateStmt body
       return [Imperative.Stmt.loop (.det condExpr) decreasingExprCore invExprs bodyStmts md]
   | .Exit target =>
       return [Imperative.Stmt.exit (some target) md]
@@ -562,8 +559,8 @@ def translateProcedure (proc : Procedure) : TranslateM Core.Procedure := do
   let modifies : List Core.Expression.Ident := []
   let bodyStmts : List Core.Statement ←
     match proc.body with
-    | .Transparent bodyExpr => translateStmt proc.outputs bodyExpr
-    | .Opaque _postconds (some impl) _ => translateStmt proc.outputs impl
+    | .Transparent bodyExpr => translateStmt bodyExpr
+    | .Opaque _postconds (some impl) _ => translateStmt impl
     | _ =>
       -- Bodiless procedure: assume postconditions so that verification of the
       -- procedure itself passes trivially, and inlining only introduces the
