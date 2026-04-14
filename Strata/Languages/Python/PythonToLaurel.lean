@@ -309,8 +309,7 @@ def wrapFieldInAny (ty : HighType) (expr : StmtExprMd) : Except TranslationError
   | .TReal => .ok <| mkStmtExprMd (.StaticCall "from_float" [expr])
   | .TString => .ok <| mkStmtExprMd (.StaticCall "from_str" [expr])
   | .TCore "Any" => .ok expr
-  | .UserDefined name => .error (.unsupportedConstruct
-    s!"Coercion from user-defined class '{name.text}' to Any is not yet supported" name.text)
+  | .UserDefined _ => .ok expr
   | other => .error (.typeError s!"wrapFieldInAny: no Any constructor for field type '{repr other}'")
 
 /-- Look up a field's HighType, returning `none` if the class or field is not found. -/
@@ -637,14 +636,7 @@ partial def translateExpr (ctx : TranslationContext) (e : Python.expr SourceRang
         let fieldExpr := mkStmtExprMd (StmtExpr.FieldSelect
           (mkStmtExprMd (StmtExpr.Identifier "self"))
           attr.val)
-        let className := ctx.currentClassName.get!
-        match tryLookupFieldHighType ctx className attr.val with
-        | some (.UserDefined name) =>
-          throw (.unsupportedConstruct
-            s!"Coercion from user-defined class '{name.text}' to Any is not yet supported"
-            name.text)
-        | _ =>
-          return fieldExpr
+        return fieldExpr
       else
         -- Regular object.field access
         let objExpr ← translateExpr ctx obj
@@ -1175,13 +1167,21 @@ partial def translateAssign  (ctx : TranslationContext)
             attr.val)
           -- When the annotation is a composite type, the RHS (which is Any)
           -- cannot be assigned directly; use New to initialize the field.
+          -- When the field is Composite-typed and the RHS is also Composite,
+          -- assign directly (no coercion needed).
+          let className := ctx.currentClassName.get!
+          let fieldIsComposite := match tryLookupFieldHighType ctx className attr.val with
+            | some (.UserDefined _) => true
+            | _ => false
           let rhs' ← match annotation with
             | some ann =>
               let annStr := pyExprToString ann
               if let some (.compositeType laurelName) := ctx.importedSymbols[annStr]? then
                 pure (mkStmtExprMd (StmtExpr.New (mkId laurelName)))
               else pure rhs_trans
-            | none => coerceToAny ctx rhs rhs_trans
+            | none =>
+              if fieldIsComposite then pure rhs_trans
+              else coerceToAny ctx rhs rhs_trans
           let assignStmt := mkStmtExprMdWithLoc (StmtExpr.Assign [fieldAccess] rhs') md
           return (ctx, [assignStmt])
         else
@@ -1877,8 +1877,9 @@ def translateMethod (ctx : TranslationContext) (className : String)
       type := mkHighTypeMd (.UserDefined (mkId className))
     }
 
-    -- Translate remaining parameters (all typed as Any to match the
-    -- Python→Laurel pipeline's Any-wrapping convention for call sites).
+    -- Translate remaining parameters: composite-typed parameters keep their
+    -- UserDefined type to match field assignment expectations in the heap model;
+    -- all others are typed as Any.
     let mut inputs : List Parameter := [selfParam]
     match args with
     | .mk_arguments _ _ argsList _ _ _ _ _ =>
@@ -1886,8 +1887,15 @@ def translateMethod (ctx : TranslationContext) (className : String)
       if argsList.val.size > 0 then
         for arg in argsList.val.toList.tail! do
           match arg with
-          | .mk_arg _ paramName _paramAnnotation _ =>
-            inputs := inputs ++ [{name := paramName.val, type := AnyTy}]
+          | .mk_arg _ paramName paramAnnotation _ =>
+            let paramTy := match paramAnnotation.val with
+              | some annExpr =>
+                let annStr := pyExprToString annExpr
+                if isCompositeType ctx annStr then
+                  mkHighTypeMd (.UserDefined (mkId annStr))
+                else AnyTy
+              | none => AnyTy
+            inputs := inputs ++ [{name := paramName.val, type := paramTy}]
     match args with
       | .mk_arguments _ _ _ _ _ _ kwargs _ =>
           match kwargs.val with
@@ -1902,7 +1910,10 @@ def translateMethod (ctx : TranslationContext) (className : String)
     -- Add method parameters to variableTypes so that hoisting (e.g. in
     -- try/except) does not re-declare them as local variables.
     let paramTypes : List (String × String) := inputs.map fun p =>
-      if p.name.text == "self" then (p.name.text, className) else (p.name.text, PyLauType.Any)
+      if p.name.text == "self" then (p.name.text, className)
+      else match p.type.val with
+        | .UserDefined name => (p.name.text, name.text)
+        | _ => (p.name.text, PyLauType.Any)
     let ctxWithClass := {ctx with currentClassName := some className,
                                   variableTypes := paramTypes}
     let newDecls := collectDeclaredNamesAndTypes ctxWithClass body.val.toList

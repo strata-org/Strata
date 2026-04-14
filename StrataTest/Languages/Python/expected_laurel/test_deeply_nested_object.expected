@@ -1,0 +1,8 @@
+test_deeply_nested_object.py(18, 4): ✅ pass - callElimAssert_requires_17
+test_deeply_nested_object.py(19, 4): ✅ pass - callElimAssert_requires_11
+test_deeply_nested_object.py(20, 4): ✅ pass - callElimAssert_requires_5
+test_deeply_nested_object.py(21, 4): ✅ pass - deeply nested field
+test_deeply_nested_object.py(21, 4): ❓ unknown - deeply nested field
+test_deeply_nested_object.py(16, 0): ❓ unknown - postcondition
+DETAIL: 4 passed, 0 failed, 2 inconclusive
+RESULT: Inconclusive
