@@ -1743,7 +1743,8 @@ def translateFunction (ctx : TranslationContext) (sourceRange: SourceRange) (fun
     | some kwargs => inputs:= inputs ++ [{ name := kwargs, type := mkCoreType PyLauType.DictStrAny}]
     | _ => pure ()
 
-    let typeConstraintPreconditions := getInputTypePreconditions funcDecl
+    let typeConstraintPreconditions := funcDecl.args.filterMap
+      (fun arg => getUnionTypeConstraint ("$in_" ++ arg.name) arg.md arg.tys funcDecl.name)
     let typeConstraintPostcondition :=
       match funcDecl.ret.map fun (tys, md) => getReturnTypeEnsure md tys funcDecl.name with
         | some (some constraint) => [constraint]
@@ -1758,14 +1759,26 @@ def translateFunction (ctx : TranslationContext) (sourceRange: SourceRange) (fun
       match arg.tys with | [ty] => (arg.name, ty) | _ => (arg.name, PyLauType.Any))
     let (bodyBlock, newCtx) ←  translateFunctionBody ctx inputTypes body
     let noneReturn := mkStmtExprMd (.Assign [mkStmtExprMd (.Identifier PyLauFuncReturnVar)] AnyNone)
+    -- In Python, parameters are mutable local variables.  In Core, input
+    -- parameters cannot be modified.  To bridge this gap we rename each
+    -- input parameter to "$in_<name>" and prepend a local variable
+    -- declaration  var <name> := $in_<name>  so the body works with a
+    -- freely-modifiable local copy.
+    let renamedInputs := inputs.map fun p =>
+      { p with name := mkId ("$in_" ++ p.name.text) }
+    let paramCopies := inputs.map fun p =>
+      let origName := p.name.text
+      let renamedName := "$in_" ++ origName
+      mkStmtExprMd (StmtExpr.LocalVariable origName p.type
+        (some (mkStmtExprMd (StmtExpr.Identifier renamedName))))
     let bodyBlock : StmtExprMd := match bodyBlock.val with
-    | .Block bodyStmts label => {bodyBlock with val:= .Block (noneReturn::bodyStmts) label}
+    | .Block bodyStmts label => {bodyBlock with val:= .Block (noneReturn :: paramCopies ++ bodyStmts) label}
     | _ => bodyBlock
 
     -- Create procedure with transparent body (no contracts for now)
     let proc : Procedure := {
       name := { text := funcDecl.name, md := sourceRangeToMetaData ctx.filePath sourceRange }
-      inputs := inputs
+      inputs := renamedInputs
       outputs := outputs
       preconditions := typeConstraintPreconditions
       decreases := none
