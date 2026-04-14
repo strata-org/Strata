@@ -142,27 +142,35 @@ public opaque finishTimerPure {α : Type} [Inhabited α] (f : Unit → α) : α
 @[inline] public def getStatKeys (_ : Unit := ()) : Array String :=
   getStatKeysPure id
 
--- Print helpers (pure Lean, built on CPS primitives)
+-- Print helpers (opaque + @[implemented_by], same pattern as the rest)
+
+private unsafe def printStatPureImpl {α : Type} [Inhabited α]
+    (statId : String) (f : Unit → α) : α :=
+  unsafeBaseIO do
+    let v := getStatistics statId
+    let _ ← (IO.eprintln s!"[stat] {statId}: {v}").toBaseIO
+    return f ()
+
+private unsafe def printStatAllPureImpl {α : Type} [Inhabited α]
+    (f : Unit → α) : α :=
+  unsafeBaseIO do
+    let keys := getStatKeys ()
+    if keys.isEmpty then
+      let _ ← (IO.eprintln "[statistics] (no counters recorded)").toBaseIO
+    else
+      let _ ← (IO.eprintln s!"=== Statistics ({keys.size} counters) ===").toBaseIO
+      for k in keys do
+        let v := getStatistics k
+        let _ ← (IO.eprintln s!"  {k}: {v}").toBaseIO
+    return f ()
 
 /-- Print a single counter to stderr. -/
-public def printStatPure {α : Type} [Inhabited α] (statId : String) (f : Unit → α) : α :=
-  getStatisticsPure statId fun v =>
-  dbgTrace s!"[stat] {statId}: {v}" fun () =>
-  f ()
+@[implemented_by printStatPureImpl]
+public opaque printStatPure {α : Type} [Inhabited α] (statId : String) (f : Unit → α) : α
 
 /-- Print all statistics counters to stderr. -/
-public def printStatAllPure {α : Type} [Inhabited α] (f : Unit → α) : α :=
-  getStatKeysPure fun keys =>
-  if keys.isEmpty then
-    dbgTrace "[statistics] (no counters recorded)" fun () => f ()
-  else
-    let go (acc : Unit → α) (k : String) : Unit → α := fun () =>
-      getStatisticsPure k fun v =>
-      dbgTrace s!"  {k}: {v}" fun () =>
-      acc ()
-    let body := keys.foldl go f
-    dbgTrace s!"=== Statistics ({keys.size} counters) ===" fun () =>
-    body ()
+@[implemented_by printStatAllPureImpl]
+public opaque printStatAllPure {α : Type} [Inhabited α] (f : Unit → α) : α
 
 -- Term macros (CPS style: `increment_stat "id"; body`)
 
