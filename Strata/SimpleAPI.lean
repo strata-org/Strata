@@ -349,7 +349,7 @@ def Laurel.verifyProgram
     (program : Laurel.Program)
     (options : Core.VerifyOptions := .default)
     : IO (Option Core.VCResults × List DiagnosticModel) :=
-  Strata.Laurel.verifyToMergedResults program options
+  Strata.Laurel.verifyToVcResults program options
 
 /--
 Analyze a Laurel program and return structured diagnostic models

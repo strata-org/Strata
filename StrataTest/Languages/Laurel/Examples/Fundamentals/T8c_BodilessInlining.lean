@@ -44,13 +44,13 @@ procedure caller() {
         { Core.VerifyOptions.default with verbose := .quiet }
         (proceduresToVerify := some ["caller"]))
   -- Collect only failing results
+  let failures := vcResults.filter fun vcr =>
+    match vcr.outcome with
+    | .ok o => o.validityProperty != .unsat
+    | .error _ => true
   let mut output := ""
-  for vcr in vcResults do
-    let isFail : Bool := match vcr.outcome with
-      | .ok o => !(o.validityProperty == .unsat)
-      | .error _ => true
-    if isFail then
-      output := output ++ s!"{vcr.obligation.label}: {vcr.formatOutcome}"
+  for vcr in failures do
+    output := output ++ s!"{vcr.obligation.label}: {vcr.formatOutcome}"
   return output
 
 end Strata.Laurel.BodilessInliningTest
