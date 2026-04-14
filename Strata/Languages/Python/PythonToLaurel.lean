@@ -784,6 +784,8 @@ partial def coerceToAny (ctx : TranslationContext) (expr : Python.expr SourceRan
     (translated : StmtExprMd) : Except TranslationError StmtExprMd := do
   let ty ← inferExprType ctx expr
   if isCompositeType ctx ty then
+    -- TODO: Replace Hole with from_ClassInstance wrapping (as in FormattedValue translation)
+    -- to preserve field values through coercion and improve verification precision.
     pure <| mkStmtExprMd (.Hole)
   else pure translated
 
@@ -1097,11 +1099,13 @@ partial def translateAssign  (ctx : TranslationContext)
   match lhs with
     | .Name _ n _ =>
         let targetExpr := mkStmtExprMd (StmtExpr.Identifier n.val)
-        -- Pre-compute coerced RHS for cases where Composite→Any coercion is needed
-        let targetIsComposite := match ctx.variableTypes.find? (fun (vn, _) => vn == n.val) with
-          | some (_, ty) => isCompositeType ctx ty
-          | none => false
-        let coercedRhs ← if !targetIsComposite then coerceToAny ctx rhs rhs_trans else pure rhs_trans
+        -- Pre-compute coerced RHS for cases where Composite→Any coercion is needed.
+        -- When the target variable is already known to be Composite-typed, skip coercion
+        -- (the RHS will be assigned directly as a Composite). Otherwise, coerce.
+        let targetNeedsCoercion := match ctx.variableTypes.find? (fun (vn, _) => vn == n.val) with
+          | some (_, ty) => !isCompositeType ctx ty
+          | none => true
+        let coercedRhs ← if targetNeedsCoercion then coerceToAny ctx rhs rhs_trans else pure rhs_trans
         let assignStmts := match rhs_trans.val with
         | .StaticCall fnname args =>
             if let some (ImportedSymbol.compositeType laurelName) := ctx.importedSymbols[fnname.text]? then
@@ -1177,7 +1181,7 @@ partial def translateAssign  (ctx : TranslationContext)
               if let some (.compositeType laurelName) := ctx.importedSymbols[annStr]? then
                 pure (mkStmtExprMd (StmtExpr.New (mkId laurelName)))
               else pure rhs_trans
-            | none => pure rhs_trans
+            | none => coerceToAny ctx rhs rhs_trans
           let assignStmt := mkStmtExprMdWithLoc (StmtExpr.Assign [fieldAccess] rhs') md
           return (ctx, [assignStmt])
         else
@@ -1193,7 +1197,7 @@ partial def translateAssign  (ctx : TranslationContext)
 /-- Extracts variable bindings from `with` statement items.
     Returns an empty list — with-variables are declared by the with-statement
     translation itself, which has access to the manager's type. -/
-partial def getWithItemsVars (_ctx : TranslationContext) (_withItems: List (Python.withitem SourceRange))
+partial def getWithItemsVars (_withItems: List (Python.withitem SourceRange))
     :List (String × String) := []
 
 /-- Extracts loop variables from a `for` loop target expression.
@@ -1237,7 +1241,7 @@ partial def collectDeclaredNamesAndTypes (ctx : TranslationContext) (stmts : Lis
         error_var ++ (body.val.toList.flatMap go) ++ (handlers_bodies.flatten.flatMap go)
           ++ (finalbody.val.toList.flatMap go) ++ (orelse.val.toList.flatMap go)
     | .With _ items body _
-    | .AsyncWith _ items body _=> (getWithItemsVars ctx items.val.toList) ++ (body.val.toList.flatMap go)
+    | .AsyncWith _ items body _=> (getWithItemsVars items.val.toList) ++ (body.val.toList.flatMap go)
     | .Match _ _ cases => cases.val.toList.flatMap (λ c => match c with
           | .mk_match_case _ _ _ body => body.val.toList.flatMap go)
     | _ => []
@@ -1483,16 +1487,19 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
         | some varExpr =>
           let varName := pyExprToString varExpr
           if varName ∈ currentCtx.variableTypes.unzip.fst then
-            -- Variable already declared (from hoisting); assign enterCall
-            -- Coerce Composite→Any if the variable is Any-typed
+            -- Variable already declared (from hoisting); assign enterCall.
+            -- Coerce Composite→Any if the manager is Composite-typed, since the
+            -- hoisted variable is Any-typed and mkInstanceMethodCall may produce
+            -- a Composite-typed expression in some code paths.
             let enterVal := if isCompositeType currentCtx mgrTy
               then mkStmtExprMd .Hole else enterCall
             let assignStmt := mkStmtExprMd (StmtExpr.Assign
               [mkStmtExprMd (StmtExpr.Identifier varName)] enterVal)
             setupStmts := setupStmts ++ [mgrDecl, assignStmt]
           else
-            -- New variable — use Any type since __enter__ returns Any (LaurelResult)
-            -- Composite field accesses on the as-variable will use the Any model
+            -- New variable — use Any type since __enter__ returns Any (LaurelResult).
+            -- No Composite→Any coercion needed: mkInstanceMethodCall already returns
+            -- an Any-typed result regardless of the manager's Composite type.
             let varDecl := mkStmtExprMd (StmtExpr.LocalVariable varName AnyTy (some enterCall))
             currentCtx := {currentCtx with variableTypes := currentCtx.variableTypes ++ [(varName, PyLauType.Any)]}
             setupStmts := setupStmts ++ [mgrDecl, varDecl]

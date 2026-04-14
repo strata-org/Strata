@@ -155,7 +155,7 @@ structure TransformState where
   heapReaders : List Identifier
   heapWriters : List Identifier
   freshCounter : Nat := 0  -- Counter for generating fresh variable names
-  /-- Box constructors used during transformation, collected for datatype generation -/
+  /-- $Box constructors used during transformation, collected for datatype generation -/
   usedBoxConstructors : List DatatypeConstructor := []
 
 @[expose] abbrev TransformM := StateM TransformState
@@ -215,7 +215,7 @@ private def boxConstructorDef (model : SemanticModel) (ty : HighType) : Option D
         some { name := s!"$Box..{name}", args := [{ name := s!"{name}Val", type := ⟨.TCore name, #[]⟩ }] }
   | ty => dbg_trace s!"BUG, boxConstructorDef bad type: {repr ty}"; none
 
-/-- Record a Box constructor use in the transform state -/
+/-- Record a $Box constructor use in the transform state -/
 private def recordBoxConstructor (model : SemanticModel) (ty : HighType) : TransformM Unit := do
   let ctorOption := boxConstructorDef model ty
   match ctorOption with
@@ -487,7 +487,7 @@ def heapParameterization (model: SemanticModel) (program : Program) : Program :=
   let fieldDatatype : TypeDefinition :=
     .Datatype { name := "Field", typeArgs := [], constructors := fieldNames.map fun n => { name := n, args := [] } }
   -- Remove fields from composite types since they are now stored in the heap
-  -- Also transform instance procedures, accumulating used Box constructors
+  -- Also transform instance procedures, accumulating used $Box constructors
   let (types', state2) := program.types.foldl (fun (accTypes, accState) td =>
     match td with
     | .Composite ct =>
