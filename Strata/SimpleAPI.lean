@@ -336,8 +336,7 @@ def Core.verifyProgram
   let ioAction := match options.vcDirectory with
     | .some vcDir => IO.FS.createDirAll vcDir *> runVerification vcDir
     | .none => IO.FS.withTempDir runVerification
-  let vcResults ← IO.toEIO (fun e => s!"{e}") ioAction
-  return vcResults.mergeByAssertion
+  IO.toEIO (fun e => s!"{e}") ioAction
 
 /-! ### Analysis of Laurel programs -/
 

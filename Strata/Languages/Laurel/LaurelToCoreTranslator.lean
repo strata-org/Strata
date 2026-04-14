@@ -30,7 +30,7 @@ import Strata.Languages.Laurel.Grammar.AbstractToConcreteTreeTranslator
 import Strata.Languages.Laurel.ConstrainedTypeElim
 import Strata.Util.Tactics
 
-open Core (VCResult VCResults AssertResult AssertResults VerifyOptions)
+open Core (VCResult VCResults VerifyOptions)
 open Core (intAddOp intSubOp intMulOp intSafeDivOp intSafeModOp intSafeDivTOp intSafeModTOp intNegOp intLtOp intLeOp intGtOp intGeOp boolAndOp boolOrOp boolNotOp boolImpliesOp strConcatOp)
 open Core (realAddOp realSubOp realMulOp realDivOp realNegOp realLtOp realLeOp realGtOp realGeOp)
 
@@ -746,73 +746,6 @@ def translateLaurelToCore (options: LaurelTranslateOptions) (program : Program) 
           s!"Instance procedure '{proc.name.text}' on composite type '{ct.name.text}' is not yet supported"
           DiagnosticType.NotYetImplemented
   pure { decls := coreDecls }
-
-/--
-Translate Laurel Program to Core Program
--/
-def translate (options: LaurelTranslateOptions) (program : Program): IO TranslateResult := do
-  let (core, diags, _) ← translateWithLaurel options program
-  return (core, diags)
-
-/--
-Verify a Laurel program using an SMT solver
--/
-def verifyToVcResults (program : Program)
-    (options : VerifyOptions := .default)
-    : IO (Option VCResults × List DiagnosticModel) := do
-  let (coreProgramOption, translateDiags) ← translate {} program
-
-  match coreProgramOption with
-  | some coreProgram =>
-    -- Enable removeIrrelevantAxioms to avoid polluting simple assertions with heap axioms
-    let options := { options with removeIrrelevantAxioms := .Precise }
-    let runner tempDir :=
-      EIO.toIO (fun f => IO.Error.userError (toString f))
-          (Core.verify coreProgram tempDir .none options)
-    let ioResult ← match options.vcDirectory with
-      | .none => IO.FS.withTempDir runner
-      | .some p => IO.FS.createDirAll ⟨p.toString⟩; runner ⟨p.toString⟩
-    return (some ioResult, translateDiags)
-  | none => return (none, translateDiags)
-
-/--
-Verify a Laurel program using an SMT solver, returning results grouped by assertion.
--/
-def verifyToAssertResults (program : Program)
-    (options : VerifyOptions := .default)
-    : IO (Option AssertResults × List DiagnosticModel) := do
-  let (vcOpt, diags) ← verifyToVcResults program options
-  return (vcOpt.map (·.groupByAssertion), diags)
-
-/--
-Verify a Laurel program using an SMT solver, returning results with
-duplicated assertions merged at the VCOutcome level.
--/
-def verifyToMergedResults (program : Program)
-    (options : VerifyOptions := .default)
-    : IO (Option VCResults × List DiagnosticModel) := do
-  let (vcOpt, diags) ← verifyToVcResults program options
-  return (vcOpt.map (·.mergeByAssertion), diags)
-
-def verifyToDiagnostics (files: Map Strata.Uri Lean.FileMap) (program : Program)
-    (options : VerifyOptions := .default): IO (Array Diagnostic) := do
-  let results <- verifyToMergedResults program options
-  let phases := Core.coreAbstractedPhases
-  let translationDiags := results.snd.map (fun dm => dm.toDiagnostic files)
-  let vcDiags := match results.fst with
-  | some vcResults =>
-    vcResults.toList.filterMap (fun vcr => vcr.toDiagnostic files phases)
-  | none => []
-  return (translationDiags ++ vcDiags).toArray
-
-def verifyToDiagnosticModels (program : Program) (options : VerifyOptions := .default) : IO (Array DiagnosticModel) := do
-  let results <- verifyToMergedResults program options
-  let phases := Core.coreAbstractedPhases
-  let vcDiags := match results.fst with
-  | none => []
-  | some vcResults =>
-    vcResults.toList.filterMap (fun vcr => toDiagnosticModel vcr phases)
-  return (results.snd ++ vcDiags).toArray
 
 end -- public section
 end Laurel
