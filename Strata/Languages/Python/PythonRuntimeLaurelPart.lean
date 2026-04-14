@@ -468,16 +468,23 @@ function DictStrAny_insert (d : DictStrAny, key: string, val: Any) : DictStrAny
 
 function Any_get (dictOrList: Any, index: Any): Any
   requires  (Any..isfrom_DictStrAny(dictOrList) && Any..isfrom_str(index) && DictStrAny_contains(Any..as_Dict!(dictOrList), Any..as_string!(index))) ||
-            (Any..isfrom_ListAny(dictOrList) && Any..isfrom_int(index) && Any..as_int!(index) >= - List_len(Any..as_ListAny!(dictOrList)) && Any..as_int!(index) < List_len(Any..as_ListAny!(dictOrList)))||
-            (Any..isfrom_ListAny(dictOrList) && Any..isfrom_Slice(index))
+            (Any..isfrom_ListAny(dictOrList) && Any..isfrom_int(index) && Any..as_int!(index) >= - List_len(Any..as_ListAny!(dictOrList)) && Any..as_int!(index) < List_len(Any..as_ListAny!(dictOrList)))
 {
   if Any..isfrom_DictStrAny(dictOrList) then
     DictStrAny_get(Any..as_Dict!(dictOrList), Any..as_string!(index))
-  else if Any..isfrom_ListAny(dictOrList) && Any..isfrom_int(index) then
-      List_get(Any..as_ListAny!(dictOrList), Any..as_int!(index))
   else
-    from_ListAny(List_slice(Any..as_ListAny!(dictOrList), Any..start!(index),
-      if OptionInt..isOptSome(Any..stop!(index)) then OptionInt..unwrap!(Any..stop!(index)) else List_len(Any..as_ListAny!(dictOrList))))
+    List_get(Any..as_ListAny!(dictOrList), Any..as_int!(index))
+};
+
+function Any_get_slice (list: Any, index: Any): Any
+  requires (Any..isfrom_ListAny(list) && Any..isfrom_Slice(index))
+{
+  from_ListAny(List_slice(
+    Any..as_ListAny!(list),
+    Any..start!(index),
+    if OptionInt..isOptSome(Any..stop!(index))
+    then OptionInt..unwrap!(Any..stop!(index))
+    else List_len(Any..as_ListAny!(list))))
 };
 
 function Any_get! (dictOrList: Any, index: Any): Any

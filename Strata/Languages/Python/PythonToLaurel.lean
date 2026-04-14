@@ -612,10 +612,13 @@ partial def translateExpr (ctx : TranslationContext) (e : Python.expr SourceRang
   -- TODO: Handle by creating explicit variable declarations
   | .Subscript _ val slice _ =>
     let dictOrList ← translateExpr ctx val
-    let index ←  match slice with
-      | .Slice _ start stop step => translateSlice ctx start.val stop.val step.val
-      | _ => translateExpr ctx slice
-    return mkStmtExprMdWithLoc (.StaticCall "Any_get" [dictOrList, index]) md
+    match slice with
+      | .Slice _ start stop step =>
+          let index ← translateSlice ctx start.val stop.val step.val
+          return mkStmtExprMdWithLoc (.StaticCall "Any_get_slice" [dictOrList, index]) md
+      | _ =>
+          let index ← translateExpr ctx slice
+          return mkStmtExprMdWithLoc (.StaticCall "Any_get" [dictOrList, index]) md
 
   -- Attribute access: obj.attr or obj.method
   | .Attribute _ obj attr _ => do
