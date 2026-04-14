@@ -38,6 +38,36 @@ procedure test (x : int, y : int) returns ()
 #guard_msgs in
 #eval IO.println (toString (deduplicateProgram (translateCore dupProg)))
 
+/-! ## Deduplication across ITE branches and condition -/
+
+private def iteDupProg :=
+#strata
+program Core;
+procedure test(x : int, y : int) returns () {
+  if (x + y > 0) {
+    assert (x + y >= 1);
+  } else {
+    assert (x + y <= 0);
+  }
+};
+#end
+
+/--
+info: program Core;
+
+procedure test (x : int, y : int) returns ()
+{
+  var $__t.0 : int := x + y;
+  if ($__t.0 > 0) {
+    assert [assert_0]: $__t.0 >= 1;
+    } else {
+    assert [assert_1]: $__t.0 <= 0;
+    }
+  };
+-/
+#guard_msgs in
+#eval IO.println (toString (deduplicateProgram (translateCore iteDupProg)))
+
 /-! ## No duplicates leaves body unchanged -/
 
 private def noDupProg :=
