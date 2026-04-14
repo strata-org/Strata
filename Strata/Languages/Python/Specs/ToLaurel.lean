@@ -541,9 +541,13 @@ def buildSpecBody (preconditions : Array Assertion)
     idx := idx + 1
   for assertion in preconditions do
     let formattedMsg := formatAssertionMessage assertion.message
-    let msg := if formattedMsg.isEmpty
+    -- Prefer a human-readable rendering of the formula (e.g. "len(Key) >= 1")
+    -- over the generic "icontract precondition" message.
+    let exprMsg := specExprToMessage assertion.formula
+    let betterMsg := if exprMsg != "<expr>" then exprMsg else formattedMsg
+    let msg := if betterMsg.isEmpty
       then SpecAssertMsg.unnamed idx |>.render
-      else SpecAssertMsg.userAssertion formattedMsg |>.render
+      else SpecAssertMsg.userAssertion betterMsg |>.render
     match ← specExprToLaurel assertion.formula md with
     | some condExpr =>
       let assertStmt ← mkStmtWithLoc (.Assert condExpr) default msg
@@ -619,9 +623,19 @@ def funcDeclToLaurel (procName : String) (func : FunctionDecl)
     -- field. CallElim uses these to assert preconditions at call sites and
     -- assume them in the body, enabling transitivity for internal calls.
     let laurelPreconds ← func.preconditions.toList.filterMapM fun assertion => do
-      let msg := formatAssertionMessage assertion.message
+      let rawMsg := formatAssertionMessage assertion.message
+      -- Prefer a human-readable rendering of the formula (e.g. "len(Key) >= 1")
+      -- over the generic "icontract precondition" message.
+      let exprMsg := specExprToMessage assertion.formula
+      let msg := if exprMsg != "<expr>" then exprMsg else rawMsg
       let precondMd ← mkMdWithFileRange default msg
-      specExprToLaurel assertion.formula precondMd
+      let result? ← specExprToLaurel assertion.formula precondMd
+      -- Ensure propertySummary survives: specExprToLaurel creates fresh metadata
+      -- from node source locations, losing the propertySummary from precondMd.
+      return result?.map fun r =>
+        if !msg.isEmpty && r.md.getPropertySummary.isNone then
+          { r with md := r.md.withPropertySummary msg }
+        else r
     -- Build body with precondition asserts
     let impl ← if func.preconditions.size > 0 then do
       let body ← buildSpecBody func.preconditions .empty
@@ -662,9 +676,19 @@ def funcDeclToLaurel (procName : String) (func : FunctionDecl)
   -- field, even when there are no postconditions. CallElim uses these to assert
   -- preconditions at call sites with proper messages.
   let laurelPreconds ← func.preconditions.toList.filterMapM fun assertion => do
-    let msg := formatAssertionMessage assertion.message
+    let rawMsg := formatAssertionMessage assertion.message
+    -- Prefer a human-readable rendering of the formula (e.g. "len(Key) >= 1")
+    -- over the generic "icontract precondition" message.
+    let exprMsg := specExprToMessage assertion.formula
+    let msg := if exprMsg != "<expr>" then exprMsg else rawMsg
     let precondMd ← mkMdWithFileRange default msg
-    specExprToLaurel assertion.formula precondMd
+    let result? ← specExprToLaurel assertion.formula precondMd
+    -- Ensure propertySummary survives: specExprToLaurel creates fresh metadata
+    -- from node source locations, losing the propertySummary from precondMd.
+    return result?.map fun r =>
+      if !msg.isEmpty && r.md.getPropertySummary.isNone then
+        { r with md := r.md.withPropertySummary msg }
+      else r
   let md ← mkMdWithFileRange func.loc
   return {
     name := { text := procName, md := md }
