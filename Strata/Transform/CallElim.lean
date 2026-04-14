@@ -17,6 +17,13 @@ namespace CallElim
 
 open Core.Transform
 
+/-- Statistics keys tracked by the call elimination transformation. -/
+inductive Stats where
+  | visitedCalls
+  | eliminatedCalls
+
+derive_prefixed_toString Stats "CallElim"
+
 /-- Label prefix for call-elimination assert statements. -/
 def callElimAssertPrefix : String := "callElimAssert_"
 
@@ -31,10 +38,13 @@ def callElimCmd (cmd: Command)
   : CoreTransformM (Option (List Statement)) := do
     match cmd with
       | .call lhs procName args md =>
+        incrementStat s!"{Stats.visitedCalls}"
 
         let some p := (← get).currentProgram | throw "program not available"
 
         let some proc := Program.Procedure.find? p procName | throw s!"Procedure {procName} not found in program"
+
+        incrementStat s!"{Stats.eliminatedCalls}"
 
         -- For each global in modifies, generate a fresh variable to hold its pre-call value,
         -- but only if "old g" is actually referenced in the postconditions.

@@ -257,7 +257,7 @@ private def Core.applyPass (program : Core.Program) (pass : Core.TransformPass)
     let (_, prog) ← (Core.procedureInliningPipelinePhase opts).transform program
     return prog
   | .loopElim =>
-    pure (Core.loopElim program)
+    pure (Core.loopElim program).fst
   | .callElim =>
     let (_, prog) ← Core.Transform.runProgram coreCallElimCmd program
     return prog
@@ -289,7 +289,7 @@ Transform a Core program to replace each loop with assertions and assumptions ab
 its invariants.
 -/
 def Core.loopElimUsingContract (p : Core.Program) : Core.Program :=
-  Core.loopElim p
+  (Core.loopElim p).fst
 
 /--
 Transform a Core program to replace each procedure call with assertions and
