@@ -1,0 +1,5 @@
+test_int_large.py(4, 13): ✅ pass - Check PMul exception
+test_int_large.py(5, 4): ✅ pass - large int
+test_int_large.py(5, 4): ✅ pass - large int
+DETAIL: 3 passed, 0 failed, 0 inconclusive
+RESULT: Analysis success
