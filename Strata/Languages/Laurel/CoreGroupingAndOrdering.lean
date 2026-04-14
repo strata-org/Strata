@@ -15,8 +15,8 @@ import Strata.DDM.Util.Graph.Tarjan
 Utilities for computing the grouping and topological ordering of Laurel
 declarations before they are emitted as Strata Core declarations.
 
-- `groupDatatypes` — groups mutually recursive datatypes into a single `.data`
-  declaration using Tarjan's SCC algorithm.
+- `groupDatatypesByScc` — groups mutually recursive datatypes into SCC groups
+  using Tarjan's SCC algorithm.
 - `computeSccDecls` — builds the procedure call graph, runs Tarjan's SCC
   algorithm, and returns each SCC as a list of procedures paired with a flag
   indicating whether the SCC is recursive. The result is in reverse topological
@@ -43,33 +43,6 @@ def collectTypeRefs : HighTypeMd → List String
 /-- Get all datatype names that a `DatatypeDefinition` references in its constructor args. -/
 def datatypeRefs (dt : DatatypeDefinition) : List String :=
   dt.constructors.flatMap fun c => c.args.flatMap fun p => collectTypeRefs p.type
-
-/--
-Group `LDatatype Unit` values by strongly connected components of their direct type references.
-Datatypes in the same SCC (mutually recursive) share a single `.data` declaration.
-Non-recursive datatypes each get their own singleton `.data` declaration.
-The returned groups are in topological order: leaves (no dependencies) first, roots last.
--/
-public def groupDatatypes (dts : List DatatypeDefinition)
-    (ldts : List (Lambda.LDatatype Unit)) : List (List (Lambda.LDatatype Unit)) :=
-  let n := dts.length
-  if n = 0 then [] else
-  let nameToIdx : Std.HashMap String Nat :=
-    dts.foldlIdx (fun m i dt => m.insert dt.name.text i) {}
-  -- dt[i] references dt[j] means i depends on j (j must be declared first).
-  -- tarjan guarantees: if there's a path A→B, B appears after A in the output.
-  -- So we add edge j→i (j has a path to i), ensuring i (the dependent) appears after j (the dependency).
-  let edges : List (Nat × Nat) :=
-    dts.foldlIdx (fun acc i dt =>
-      (datatypeRefs dt).filterMap nameToIdx.get? |>.foldl (fun acc j => (j, i) :: acc) acc) []
-  let g := OutGraph.ofEdges! n edges
-  let ldtMap : Std.HashMap String (Lambda.LDatatype Unit) :=
-    ldts.foldl (fun m ldt => m.insert ldt.name ldt) {}
-  let dtsArr := dts.toArray
-  OutGraph.tarjan g |>.toList.filterMap fun comp =>
-    let members := comp.toList.filterMap fun idx =>
-      dtsArr[idx]? |>.bind fun dt => ldtMap.get? dt.name.text
-    if members.isEmpty then none else some members
 
 /--
 Collect all `StaticCall` callee names referenced anywhere in a `StmtExpr`.
@@ -203,7 +176,7 @@ dependency order (dependencies before dependents).
 -/
 public inductive OrderedDecl where
   /-- A group of functions (single non-recursive, or mutually recursive). -/
-  | procs (procs : List Procedure) (freePostconditions : List (WithMetadata StmtExpr)) (isRecursive : Bool)
+  | procs (procs : List Procedure) (isRecursive : Bool)
   /-- A group of (possibly mutually recursive) datatypes. -/
   | datatypes (dts : List DatatypeDefinition)
   /-- A named constant. -/
@@ -217,24 +190,15 @@ public structure OrderedLaurel where
   decls : List OrderedDecl
 
 /--
-Produce an `OrderedLaurel` from a `Program` by grouping and ordering
-procedures via SCC, collecting datatypes, and constants.
+Group mutually recursive datatypes into SCC groups using Tarjan's SCC algorithm.
+Returns groups in topological order (dependencies before dependents).
 -/
-public def orderProgram (program : Program) : OrderedLaurel :=
-  let sccDecls := computeSccDecls program
-  let procDecls := sccDecls.map fun (procs, isRecursive) =>
-    let freePostconditions := procs.flatMap fun (proc : Procedure) =>
-      match proc.invokeOn with
-      | some _ => match proc.body with
-        | Body.Opaque postconds _ _ | Body.Abstract postconds => postconds
-        | _ => []
-      | none => []
-    OrderedDecl.procs procs freePostconditions isRecursive
-  -- Group mutually recursive datatypes using Tarjan's SCC algorithm.
+public def groupDatatypesByScc (program : Program) : List (List DatatypeDefinition) :=
   let laurelDatatypes := program.types.filterMap fun td => match td with
     | .Datatype dt => some dt
     | _ => none
   let n := laurelDatatypes.length
+  if n == 0 then [] else
   let nameToIdx : Std.HashMap String Nat :=
     laurelDatatypes.foldlIdx (fun m i dt => m.insert dt.name.text i) {}
   let edges : List (Nat × Nat) :=
@@ -242,11 +206,25 @@ public def orderProgram (program : Program) : OrderedLaurel :=
       (datatypeRefs dt).filterMap nameToIdx.get? |>.foldl (fun acc j => (j, i) :: acc) acc) []
   let g := OutGraph.ofEdges! n edges
   let dtsArr := laurelDatatypes.toArray
-  let datatypeDecls := if n == 0 then [] else
-    OutGraph.tarjan g |>.toList.filterMap fun comp =>
-      let members := comp.toList.filterMap fun idx => dtsArr[idx]?
-      if members.isEmpty then none else some (OrderedDecl.datatypes members)
+  OutGraph.tarjan g |>.toList.filterMap fun comp =>
+    let members := comp.toList.filterMap fun idx => dtsArr[idx]?
+    if members.isEmpty then none else some members
+
+/--
+Group procedures into SCC groups and wrap them as `OrderedDecl.procs`.
+-/
+public def groupProcsByScc (program : Program) : List OrderedDecl :=
+  (computeSccDecls program).map fun (procs, isRecursive) =>
+    OrderedDecl.procs procs isRecursive
+
+/--
+Produce an `OrderedLaurel` from a `Program` by grouping and ordering
+procedures via SCC, collecting datatypes, and constants.
+-/
+public def orderProgram (program : Program) : OrderedLaurel :=
+  let datatypeDecls := (groupDatatypesByScc program).map OrderedDecl.datatypes
   let constantDecls := program.constants.map OrderedDecl.constant
+  let procDecls := groupProcsByScc program
   { decls := datatypeDecls ++ constantDecls ++ procDecls }
 
 end Strata.Laurel

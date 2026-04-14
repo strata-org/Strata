@@ -700,7 +700,7 @@ The `program` parameter is the lowered Laurel program, used for type definitions
 def translateLaurelToCore (options: LaurelTranslateOptions) (program : Program) (ordered : OrderedLaurel): TranslateM Core.Program := do
 
   let coreDecls ← ordered.decls.flatMapM fun
-    | .procs procs _freePostconditions isRecursive => do
+    | .procs procs isRecursive => do
       -- For each SCC, determine if it is purely functional or contains procedures.
       let isFuncSCC := procs.all (·.isFunctional)
       if isFuncSCC then
