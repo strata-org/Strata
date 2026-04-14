@@ -1619,18 +1619,18 @@ def createBoolOrExpr (exprs: List StmtExprMd) : StmtExprMd :=
   | [expr] => expr
   | expr::exprs => mkStmtExprMd (.PrimitiveOp .Or [expr, createBoolOrExpr exprs])
 
-def getUnionTypeConstraint (var: String) (_md: MetaData) (tys: List String) (funcname: String): Option Condition :=
+def getUnionTypeConstraint (var: String) (tys: List String) (funcname: String): Option Condition :=
   let type_constraints := tys.filterMap (getSingleTypeConstraint var)
   if type_constraints.isEmpty then none else
     some { condition := createBoolOrExpr type_constraints,
            summary := some $ "(" ++ funcname ++ " requires) Type constraint of " ++ var }
 
-def getReturnTypeEnsure (md: MetaData) (tys: List String) (funcname: String): Option Condition :=
-  getUnionTypeConstraint PyLauFuncReturnVar md tys funcname
+def getReturnTypeEnsure (tys: List String) (funcname: String): Option Condition :=
+  getUnionTypeConstraint PyLauFuncReturnVar tys funcname
   |>.map fun c => { c with summary := some $ "(" ++ funcname ++ " ensures) Return type constraint" }
 
 def getInputTypePreconditions (funcDecl : PythonFunctionDecl): List Condition :=
-  funcDecl.args.filterMap (λ arg => getUnionTypeConstraint arg.name arg.md arg.tys funcDecl.name)
+  funcDecl.args.filterMap (λ arg => getUnionTypeConstraint arg.name arg.tys funcDecl.name)
 
 /-- Translate a Python function body: collect all variable declarations, hoist them
     to the top, and translate the remaining statements. --/
@@ -1663,7 +1663,7 @@ def translateFunction (ctx : TranslationContext) (sourceRange: SourceRange) (fun
 
     let typeConstraintPreconditions := getInputTypePreconditions funcDecl
     let typeConstraintPostcondition :=
-      match funcDecl.ret.map fun (tys, md) => getReturnTypeEnsure md tys funcDecl.name with
+      match funcDecl.ret.map fun (tys, _md) => getReturnTypeEnsure tys funcDecl.name with
         | some (some constraint) => [constraint]
         | _ => []
 
