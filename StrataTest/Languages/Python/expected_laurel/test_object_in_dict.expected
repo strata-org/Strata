@@ -1,0 +1,6 @@
+test_object_in_dict.py(8, 4): ✅ pass - callElimAssert_requires_5
+test_object_in_dict.py(10, 4): ✅ pass - object in dict
+test_object_in_dict.py(10, 4): ❓ unknown - object in dict
+test_object_in_dict.py(7, 0): ❓ unknown - postcondition
+DETAIL: 2 passed, 0 failed, 2 inconclusive
+RESULT: Inconclusive

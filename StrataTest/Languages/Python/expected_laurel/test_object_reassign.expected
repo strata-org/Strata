@@ -1,0 +1,7 @@
+test_object_reassign.py(8, 4): ✅ pass - callElimAssert_requires_11
+test_object_reassign.py(9, 4): ✅ pass - callElimAssert_requires_5
+test_object_reassign.py(10, 4): ✅ pass - reassigned to new object
+test_object_reassign.py(10, 4): ❓ unknown - reassigned to new object
+test_object_reassign.py(7, 0): ❓ unknown - postcondition
+DETAIL: 3 passed, 0 failed, 2 inconclusive
+RESULT: Inconclusive

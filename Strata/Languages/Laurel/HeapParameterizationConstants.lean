@@ -28,8 +28,10 @@ The heap model uses:
 - `Heap` - datatype with a `data` map and a `nextReference` for allocation
 - `readField` / `updateField` / `increment` - heap access functions
 
-Note: The `Box` datatype is generated dynamically by `heapParameterization`
-based on which field types are actually used in the program.
+Note: The `$Box` datatype is generated dynamically by `heapParameterization`
+based on which field types are actually used in the program. The `$` prefix
+avoids collisions with user-defined Python classes (Python identifiers cannot
+contain `$`).
 -/
 
 private def laurelPreludeDDM :=
@@ -43,16 +45,16 @@ datatype NotSupportedYet {}
 
 // Heap: contains the data map and a nextReference for allocation
 datatype Heap {
-  MkHeap(data: Map Composite Map Field Box, nextReference: int)
+  MkHeap(data: Map Composite Map Field $Box, nextReference: int)
 }
 
 // Read a field from the heap: readField(heap, obj, field) = Heap..data!(heap)[obj][field]
-function readField(heap: Heap, obj: Composite, field: Field): Box {
+function readField(heap: Heap, obj: Composite, field: Field): $Box {
   select(select(Heap..data!(heap), obj), field)
 };
 
 // Update a field in the heap
-function updateField(heap: Heap, obj: Composite, field: Field, val: Box): Heap {
+function updateField(heap: Heap, obj: Composite, field: Field, val: $Box): Heap {
   MkHeap(
     update(Heap..data!(heap), obj,
       update(select(Heap..data!(heap), obj), field, val)),

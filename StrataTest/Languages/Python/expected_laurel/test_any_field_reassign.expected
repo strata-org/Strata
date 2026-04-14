@@ -1,0 +1,8 @@
+test_any_field_reassign.py(10, 4): ✅ pass - callElimAssert_requires_5
+test_any_field_reassign.py(11, 4): ✅ pass - initial int
+test_any_field_reassign.py(11, 4): ❓ unknown - initial int
+test_any_field_reassign.py(13, 4): ✅ pass - reassigned to str
+test_any_field_reassign.py(13, 4): ✅ pass - reassigned to str
+test_any_field_reassign.py(9, 0): ❓ unknown - postcondition
+DETAIL: 4 passed, 0 failed, 2 inconclusive
+RESULT: Inconclusive

@@ -413,7 +413,9 @@ mutual
 
 partial def translateList (ctx : TranslationContext) (elmts: List (Python.expr SourceRange))
     : Except TranslationError StmtExprMd := do
-  let trans_elmts ←  elmts.mapM (translateExpr ctx)
+  let trans_elmts ← elmts.mapM fun e => do
+    let t ← translateExpr ctx e
+    coerceToAny ctx e t
   return  mkStmtExprMd (.StaticCall "from_ListAny" [ListAny_mk trans_elmts])
 
 partial def translateDictStrAny (ctx : TranslationContext)
@@ -422,7 +424,9 @@ partial def translateDictStrAny (ctx : TranslationContext)
   if keys.length != values.length then
     throw (.internalError s!"Invalid Dict: number of keys not match number of values" )
   let kv := keys.zip values
-  let val_trans ←  kv.unzip.snd.mapM (translateExpr ctx)
+  let val_trans ← kv.unzip.snd.mapM fun v => do
+    let t ← translateExpr ctx v
+    coerceToAny ctx v t
   let keys ← keys.mapM pyOptExprToString
   return  mkStmtExprMd (.StaticCall "from_DictStrAny" [DictStrAny_mk (keys.zip val_trans)])
 
@@ -535,6 +539,9 @@ partial def translateExpr (ctx : TranslationContext) (e : Python.expr SourceRang
         | .IsNot _ => match comparators.val[0]'hComp with
             | .Constant _ (.ConNone _) _ => .ok "PNEq"
             | _ => throw (.unsupportedConstruct "`is not` is only supported with None" (toString (repr e)))
+      -- Coerce Composite operands to Any for prelude comparison functions
+      let leftExpr ← coerceToAny ctx left leftExpr
+      let rightExpr ← coerceToAny ctx (comparators.val[0]'hComp) rightExpr
       return mkStmtExprMdWithLoc (StmtExpr.StaticCall preludeOpnames [leftExpr, rightExpr]) md
 
   -- Boolean operations
@@ -1090,6 +1097,11 @@ partial def translateAssign  (ctx : TranslationContext)
   match lhs with
     | .Name _ n _ =>
         let targetExpr := mkStmtExprMd (StmtExpr.Identifier n.val)
+        -- Pre-compute coerced RHS for cases where Composite→Any coercion is needed
+        let targetIsComposite := match ctx.variableTypes.find? (fun (vn, _) => vn == n.val) with
+          | some (_, ty) => isCompositeType ctx ty
+          | none => false
+        let coercedRhs ← if !targetIsComposite then coerceToAny ctx rhs rhs_trans else pure rhs_trans
         let assignStmts := match rhs_trans.val with
         | .StaticCall fnname args =>
             if let some (ImportedSymbol.compositeType laurelName) := ctx.importedSymbols[fnname.text]? then
@@ -1107,7 +1119,7 @@ partial def translateAssign  (ctx : TranslationContext)
             else if withException ctx fnname.text then
               [mkStmtExprMdWithLoc (StmtExpr.Assign [targetExpr, maybeExceptVar] rhs_trans) md]
             else
-                [mkStmtExprMdWithLoc (StmtExpr.Assign [targetExpr] rhs_trans) md]
+                [mkStmtExprMdWithLoc (StmtExpr.Assign [targetExpr] coercedRhs) md]
         | .New className =>
             if n.val ∈ ctx.variableTypes.unzip.1 then
               [mkStmtExprMdWithLoc (StmtExpr.Assign [targetExpr] rhs_trans) md]
@@ -1115,7 +1127,8 @@ partial def translateAssign  (ctx : TranslationContext)
               let varType := mkHighTypeMd (.UserDefined className)
               let newStmt := mkStmtExprMdWithLoc (StmtExpr.LocalVariable n.val varType (some rhs_trans)) md
               [newStmt]
-        | _ => [mkStmtExprMdWithLoc (StmtExpr.Assign [targetExpr] rhs_trans) md]
+        | _ =>
+            [mkStmtExprMdWithLoc (StmtExpr.Assign [targetExpr] coercedRhs) md]
         newctx := match rhs_trans.val with
         | .StaticCall fnname _ =>
             if let some (ImportedSymbol.compositeType laurelName) := ctx.importedSymbols[fnname.text]? then
@@ -1169,21 +1182,19 @@ partial def translateAssign  (ctx : TranslationContext)
           return (ctx, [assignStmt])
         else
           let targetExpr ← translateExpr ctx lhs  -- This will handle self.field via translateExpr
-          let assignStmt := mkStmtExprMdWithLoc (StmtExpr.Assign [targetExpr] rhs_trans) md
+          -- Coerce Composite RHS to Any for field assignments (the heap
+          -- parameterization wraps values in $Box which expects the field's type)
+          let rhs' ← coerceToAny ctx rhs rhs_trans
+          let assignStmt := mkStmtExprMdWithLoc (StmtExpr.Assign [targetExpr] rhs') md
           return (ctx, [assignStmt])
       | _ => throw (.unsupportedConstruct "Assignment targets not yet supported" (toString (repr lhs)))
     | _ => throw (.unsupportedConstruct "Assignment targets not yet supported" (toString (repr lhs)))
 
 /-- Extracts variable bindings from `with` statement items.
-    Returns a list of (variable name, type) pairs, where type defaults to `Any`.
-    Items without an `as` clause (e.g. `with open(...)`) are ignored. -/
-partial def getWithItemsVars (withItems: List (Python.withitem SourceRange))
-    :List (String × String) :=
-  withItems.filterMap fun item => match item with
-    | .mk_withitem _ _ var =>
-      match var.val with
-        | some var => some (pyExprToString var, PyLauType.Any)
-        | _ => none
+    Returns an empty list — with-variables are declared by the with-statement
+    translation itself, which has access to the manager's type. -/
+partial def getWithItemsVars (_ctx : TranslationContext) (_withItems: List (Python.withitem SourceRange))
+    :List (String × String) := []
 
 /-- Extracts loop variables from a `for` loop target expression.
     Handles single var or tuple/list unpacking targets. -/
@@ -1226,7 +1237,7 @@ partial def collectDeclaredNamesAndTypes (ctx : TranslationContext) (stmts : Lis
         error_var ++ (body.val.toList.flatMap go) ++ (handlers_bodies.flatten.flatMap go)
           ++ (finalbody.val.toList.flatMap go) ++ (orelse.val.toList.flatMap go)
     | .With _ items body _
-    | .AsyncWith _ items body _=> (getWithItemsVars items.val.toList) ++ (body.val.toList.flatMap go)
+    | .AsyncWith _ items body _=> (getWithItemsVars ctx items.val.toList) ++ (body.val.toList.flatMap go)
     | .Match _ _ cases => cases.val.toList.flatMap (λ c => match c with
           | .mk_match_case _ _ _ body => body.val.toList.flatMap go)
     | _ => []
@@ -1472,11 +1483,16 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
         | some varExpr =>
           let varName := pyExprToString varExpr
           if varName ∈ currentCtx.variableTypes.unzip.fst then
+            -- Variable already declared (from hoisting); assign enterCall
+            -- Coerce Composite→Any if the variable is Any-typed
+            let enterVal := if isCompositeType currentCtx mgrTy
+              then mkStmtExprMd .Hole else enterCall
             let assignStmt := mkStmtExprMd (StmtExpr.Assign
-              [mkStmtExprMd (StmtExpr.Identifier varName)] enterCall)
+              [mkStmtExprMd (StmtExpr.Identifier varName)] enterVal)
             setupStmts := setupStmts ++ [mgrDecl, assignStmt]
           else
-            -- New variable — declare outside the block so it's visible after
+            -- New variable — use Any type since __enter__ returns Any (LaurelResult)
+            -- Composite field accesses on the as-variable will use the Any model
             let varDecl := mkStmtExprMd (StmtExpr.LocalVariable varName AnyTy (some enterCall))
             currentCtx := {currentCtx with variableTypes := currentCtx.variableTypes ++ [(varName, PyLauType.Any)]}
             setupStmts := setupStmts ++ [mgrDecl, varDecl]

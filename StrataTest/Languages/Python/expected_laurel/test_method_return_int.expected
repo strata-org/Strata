@@ -1,0 +1,7 @@
+test_method_return_int.py(11, 4): ✅ pass - callElimAssert_requires_9
+test_method_return_int.py(12, 4): ✅ pass - callElimAssert_requires_3
+test_method_return_int.py(13, 4): ✅ pass - method returns int
+test_method_return_int.py(13, 4): ❓ unknown - method returns int
+test_method_return_int.py(10, 0): ❓ unknown - postcondition
+DETAIL: 3 passed, 0 failed, 2 inconclusive
+RESULT: Inconclusive
