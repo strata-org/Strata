@@ -6,7 +6,7 @@
 module
 
 public import Strata.Languages.Laurel.Laurel
-public import Strata.Languages.Laurel.LaurelFormat
+public import Strata.Languages.Laurel.Grammar.AbstractToConcreteTreeTranslator
 
 /-!
 # Deterministic Hole Elimination
@@ -47,11 +47,9 @@ private def mkHoleCall (holeType : HighTypeMd) : ElimHoleM StmtExprMd := do
     inputs := inputs
     outputs := [{ name := "$result", type := holeType }]
     preconditions := []
-    determinism := .deterministic none
     decreases := none
     isFunctional := true
     body := .Opaque [] none []
-    md := emptyMd
   }
   modify fun s => { s with generatedFunctions := s.generatedFunctions ++ [holeProc] }
   return bare (.StaticCall holeName (inputs.map (fun p => bare (.Identifier p.name))))

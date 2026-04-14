@@ -49,7 +49,22 @@ private def specDefaultToExpr : Python.Specs.SpecDefault → Python.expr SourceR
 
 /-- Convert a pyspec Arg to a PythonFunctionDecl arg tuple. -/
 private def specArgToFuncDeclArg (arg : Python.Specs.Arg): Python.PyArgInfo :=
-  {name:= arg.name, md:= default, tys:= ["Any"], default:= arg.default.map specDefaultToExpr}
+  -- Map each SpecType atom to its PyLauType tag.
+  -- Multi-atom types (e.g., Optional[str] = [NoneType, str]) produce
+  -- multiple entries so getUnionTypeConstraint generates a disjunction.
+  let tys := arg.type.atoms.toList.filterMap fun a => match a with
+    | .ident nm _ =>
+      if nm == Python.PythonIdent.builtinsStr then some "str"
+      else if nm == Python.PythonIdent.builtinsInt then some "int"
+      else if nm == Python.PythonIdent.builtinsBool then some "bool"
+      else if nm == Python.PythonIdent.builtinsFloat then some "float"
+      else if nm == Python.PythonIdent.noneType then some "None"
+      else none
+    | _ => none
+  -- Fall back to ["Any"] if no atoms were recognized (unknown types
+  -- should not generate constraints).
+  let tys := if tys.isEmpty then ["Any"] else tys
+  {name := arg.name, md := default, tys := tys, default := arg.default.map specDefaultToExpr}
 
 /-- Build a PythonFunctionDecl from a PySpec FunctionDecl or class method,
     expanding `**kwargs` TypedDict fields into individual parameters. -/
@@ -344,18 +359,24 @@ public def splitProcNames (prog : Core.Program)
   (preludeNames, userProcNames)
 
 /-- Like `translateCombinedLaurel` but also returns the lowered Laurel program
-    (after all Laurel-to-Laurel passes, before translation to Core). -/
+    (after all Laurel-to-Laurel passes, before translation to Core).
+
+    When `keepAllFilesPrefix` is provided, the program state after each named
+    Laurel pass is written to `{prefix}.{n}.{passName}.laurel.st`. -/
 public def translateCombinedLaurelWithLowered (combined : Laurel.Program)
-    : (Option Core.Program × List DiagnosticModel × Laurel.Program) :=
-  let (coreOption, errors, lowered) := Laurel.translateWithLaurel { inlineFunctionsWhenPossible := true } combined
-  (coreOption.map appendCorePartOfRuntime, errors, lowered)
+    (keepAllFilesPrefix : Option String := none)
+    : IO (Option Core.Program × List DiagnosticModel × Laurel.Program) := do
+  let (coreOption, errors, lowered) ←
+    Laurel.translateWithLaurel { inlineFunctionsWhenPossible := true } combined
+      (keepAllFilesPrefix := keepAllFilesPrefix)
+  return (coreOption.map appendCorePartOfRuntime, errors, lowered)
 
 /-- Translate a combined Laurel program to Core and prepend the full
     runtime prelude. -/
 public def translateCombinedLaurel (combined : Laurel.Program)
-    : (Option Core.Program × List DiagnosticModel) :=
-  let (coreOption, errors, _) := translateCombinedLaurelWithLowered combined
-  (coreOption, errors)
+    : IO (Option Core.Program × List DiagnosticModel) := do
+  let (coreOption, errors, _) ← translateCombinedLaurelWithLowered combined
+  return (coreOption, errors)
 
 /-- Errors from the pyAnalyzeLaurel pipeline. -/
 public inductive PipelineError where
@@ -384,7 +405,7 @@ public instance : ToString PipelineError where
     The optional `sourcePath` overrides the file path embedded in
     Laurel metadata (useful when the Ion file was generated from a
     `.py` source and you want line numbers to refer to the original). -/
-public def pyAnalyzeLaurel
+public def pythonAndSpecToLaurel
     (pythonIonPath : String)
     (dispatchModules : Array String := #[])
     (pyspecModules : Array String := #[])
