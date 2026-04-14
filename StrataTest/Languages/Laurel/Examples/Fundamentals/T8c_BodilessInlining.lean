@@ -32,7 +32,7 @@ procedure caller() {
 #guard_msgs in
 #eval show IO String from do
   let laurelProg ← Strata.parseLaurelText "test.laurel" laurelSource
-  let coreProg ← match Strata.laurelToCore laurelProg with
+  let coreProg ← match ← Strata.laurelToCore laurelProg with
     | .ok p => pure p
     | .error e => throw (IO.userError s!"Translation failed: {e}")
   let inlined ← match Strata.Core.inlineProcedures coreProg {} with
