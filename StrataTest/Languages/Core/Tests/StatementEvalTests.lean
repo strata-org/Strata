@@ -626,6 +626,32 @@ Proof Obligation:
                       .empty,
                     .assert "x_pos" eb[(x == #1)] .empty]) |>.snd |> format
 
+-- PE emits assume statements inside ITE branches for path condition reconstruction
+/--
+info: {
+  init (x : int) := #0
+  init (y : int) := #6
+  if zinit {
+    assume [<label_ite_cond_true: zinit>] zinit
+    x := #6
+    assert [then_check] #true
+  }
+  else {
+    assume [<label_ite_cond_false: !zinit>] (if zinit then #false else #true)
+    assert [else_check] #true
+  }
+}
+-/
+#guard_msgs in
+#eval (evalOne ∅ ∅ [
+  .init "x" t[int] (.det eb[#0]) .empty,
+  .init "y" t[int] (.det eb[#6]) .empty,
+  .ite (.det eb[zinit])
+    [Statement.set "x" eb[y] .empty,
+     Statement.assert "then_check" eb[x == y] .empty]
+    [Statement.assert "else_check" eb[x == #0] .empty]
+    .empty]) |>.fst |> format
+
 end Tests
 ---------------------------------------------------------------------
 end Core

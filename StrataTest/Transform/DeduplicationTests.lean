@@ -5,57 +5,60 @@
 -/
 
 import Strata.Transform.Deduplication
+import Strata.Languages.Core.DDMTransform.Translate
 
 namespace Core.Deduplication.Tests
 
-open Lambda Imperative Core.Deduplication
+open Strata Lambda Imperative Core.Deduplication
 
-/-! ## Unit tests for expression deduplication -/
+private def translateCore (p : Strata.Program) : Core.Program :=
+  (TransM.run Inhabited.default (translateProgram p)).fst
 
-private def mkFvar (name : String) : Expression.Expr :=
-  .fvar () ⟨name, ()⟩ none
+/-! ## Deduplication extracts common subexpressions -/
 
-private def mkOp (name : String) : Expression.Expr :=
-  .op () ⟨name, ()⟩ none
+private def dupProg :=
+#strata
+program Core;
+procedure test(x : int, y : int) returns () {
+  assume (x + y >= 5);
+  assert (x + y <= 10);
+};
+#end
 
-private def mkApp1 (fn arg : Expression.Expr) : Expression.Expr :=
-  .app () fn arg
-
-private def mkApp2 (fn arg1 arg2 : Expression.Expr) : Expression.Expr :=
-  .app () (.app () fn arg1) arg2
-
-private def mkInt (i : Int) : Expression.Expr :=
-  .intConst () i
-
-/-! ### Program-level deduplication tests -/
-
--- Test: deduplicateBody introduces var declarations for duplicated expressions
 /--
-info: true
+info: program Core;
+
+procedure test (x : int, y : int) returns ()
+{
+  var $__t.0 : int := x + y;
+  assume [assume_0]: $__t.0 >= 5;
+  assert [assert_0]: $__t.0 <= 10;
+  };
 -/
 #guard_msgs in
-#eval do
-  let fx := mkApp1 (mkOp "F") (mkFvar "x")
-  let body : Statements := [
-    Statement.assume "a1" (mkApp2 (mkOp "Int.Ge") fx (mkInt 5)) .empty,
-    Statement.assert "check" (.eq () (mkApp2 (mkOp "Int.Add") fx fx)
-                                     (mkApp2 (mkOp "Int.Mul") (mkInt 2) fx)) .empty
-  ]
-  let (body', _) := deduplicateBody body 0
-  -- The deduplicated body should have more statements (var declarations prepended)
-  return decide (body'.length > body.length)
+#eval IO.println (toString (deduplicateProgram (translateCore dupProg)))
 
--- Test: deduplicateBody does not modify body with no duplicates
+/-! ## No duplicates leaves body unchanged -/
+
+private def noDupProg :=
+#strata
+program Core;
+procedure test(x : int, y : int) returns () {
+  assume (x >= 5);
+  assert (y <= 10);
+};
+#end
+
 /--
-info: true
+info: program Core;
+
+procedure test (x : int, y : int) returns ()
+{
+  assume [assume_0]: x >= 5;
+  assert [assert_0]: y <= 10;
+  };
 -/
 #guard_msgs in
-#eval do
-  let body : Statements := [
-    Statement.assume "a1" (mkApp2 (mkOp "Int.Ge") (mkFvar "x") (mkInt 5)) .empty,
-    Statement.assert "check" (mkApp2 (mkOp "Int.Le") (mkFvar "y") (mkInt 10)) .empty
-  ]
-  let (body', _) := deduplicateBody body 0
-  return decide (body'.length == body.length)
+#eval IO.println (toString (deduplicateProgram (translateCore noDupProg)))
 
 end Core.Deduplication.Tests
