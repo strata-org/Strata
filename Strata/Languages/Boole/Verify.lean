@@ -776,6 +776,8 @@ def verify
   | .error e =>
     throw <| IO.Error.userError (toString (e.format (some ictx.fileMap)))
   | .ok prog =>
+    if options.verbose >= .normal then
+      dbg_trace f!"\n\n[DEBUG] Boole program:\n{Boole.formatProgram prog env.globalContext env.dialects}"
     match toCoreProgram prog env.globalContext with
     | .error e =>
       throw <| IO.Error.userError (toString (e.format (some ictx.fileMap)))
