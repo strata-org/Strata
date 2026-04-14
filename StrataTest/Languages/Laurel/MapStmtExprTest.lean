@@ -51,7 +51,7 @@ private def testMapStmtExprId (input : String) : IO Unit := do
     IO.println s!"MISMATCH\nbefore:\n{before}\nafter:\n{after}"
 
 -- Exercises: IfThenElse, Block, LocalVariable, While, Return, Assign,
--- PrimitiveOp, Assert, Assume, Forall, LiteralInt, LiteralBool, Identifier.
+-- PrimitiveOp, Assert, Assume, Forall, Exists, LiteralInt, LiteralBool, Identifier.
 def testProgram : String := r"
 procedure test(x: int, b: bool) returns (r: int)
   requires x > 0
@@ -71,6 +71,7 @@ procedure test(x: int, b: bool) returns (r: int)
   assert y == 0;
   assume y >= 0;
   var q: bool := forall(i: int) => i >= 0;
+  var p: bool := exists(j: int) => j > 0;
   return y
 };
 "

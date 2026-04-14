@@ -30,6 +30,8 @@ children first, then applies `f` to the rebuilt node.
 -/
 def mapStmtExprM [Monad m] (f : StmtExprMd → m StmtExprMd) (expr : StmtExprMd) : m StmtExprMd := do
   let md := expr.md
+  -- `.attach` wraps each element with a proof of membership, which the
+  -- termination checker uses to show the recursive call is on a smaller value.
   let rebuilt ← match _h : expr.val with
   | .IfThenElse cond th el =>
     pure ⟨.IfThenElse (← mapStmtExprM f cond) (← mapStmtExprM f th)

@@ -93,6 +93,10 @@ def resolveExprNode (ptMap : ConstrainedTypeMap) (expr : StmtExprMd) : StmtExprM
     ⟨.LocalVariable n (resolveType ptMap ty) init, md⟩
   | .Forall param trigger body =>
     let param' := { param with type := resolveType ptMap param.type }
+    -- With bottom-up traversal, `body` is already recursed into. The newly
+    -- created `PrimitiveOp .Implies [c, body]` won't be visited again, which
+    -- is safe because `c` (from `constraintCallFor`) is a StaticCall with
+    -- Identifier leaves that don't need further resolution.
     let injected := match constraintCallFor ptMap param.type.val param.name md with
       | some c => ⟨.PrimitiveOp .Implies [c, body], md⟩
       | none => body

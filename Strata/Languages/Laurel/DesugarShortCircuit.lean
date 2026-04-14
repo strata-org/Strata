@@ -31,6 +31,9 @@ private def desugarShortCircuitNode (model : SemanticModel) (expr : StmtExprMd) 
   match expr.val with
   | .PrimitiveOp op args =>
     match op, args with
+    -- With bottom-up traversal, `a` and `b` are already desugared (nested
+    -- short-circuits converted to IfThenElse). The check still works because
+    -- `containsAssignmentOrImperativeCall` recurses into IfThenElse.
     | .AndThen, [a, b] | .Implies, [a, b] =>
       if containsAssignmentOrImperativeCall model b then
         let elseVal := match op with | .AndThen => false | _ => true
