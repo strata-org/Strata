@@ -22,5 +22,5 @@ test_boolean_logic.py(33, 7): ✅ pass - Check PNot exception
 test_boolean_logic.py(33, 4): ✅ pass - ite_cond_calls_Any_to_bool_0
 test_boolean_logic.py(37, 4): ✅ pass - not condition failed
 test_boolean_logic.py(39, 0): ✅ pass - ite_cond_calls_Any_to_bool_0
-DETAIL: 43 passed, 0 failed, 0 inconclusive
+DETAIL: 24 passed, 0 failed, 0 inconclusive
 RESULT: Analysis success

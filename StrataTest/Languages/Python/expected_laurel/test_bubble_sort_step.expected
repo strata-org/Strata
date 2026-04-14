@@ -25,5 +25,5 @@ test_bubble_sort_step.py(11, 4): ✅ pass - ite_cond_calls_Any_to_bool_2
 test_bubble_sort_step.py(15, 4): ✅ pass - sorted first
 test_bubble_sort_step.py(16, 4): ✅ pass - sorted second
 test_bubble_sort_step.py(17, 4): ✅ pass - sorted third
-DETAIL: 42 passed, 0 failed, 0 inconclusive
+DETAIL: 27 passed, 0 failed, 0 inconclusive
 RESULT: Analysis success

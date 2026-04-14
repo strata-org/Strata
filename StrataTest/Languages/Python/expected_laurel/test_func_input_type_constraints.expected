@@ -13,5 +13,5 @@ test_func_input_type_constraints.py(16, 0): ✅ pass - (Sum requires) Type const
 test_func_input_type_constraints.py(17, 0): ✅ pass - (List_Dict_index requires) Type constraint of l
 test_func_input_type_constraints.py(17, 0): ✅ pass - (List_Dict_index requires) Type constraint of i
 test_func_input_type_constraints.py(17, 0): ✅ pass - (List_Dict_index requires) Type constraint of s
-DETAIL: 13 passed, 0 failed, 3 inconclusive
+DETAIL: 12 passed, 0 failed, 3 inconclusive
 RESULT: Inconclusive

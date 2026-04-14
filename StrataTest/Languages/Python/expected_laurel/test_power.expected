@@ -10,5 +10,5 @@ test_power.py(17, 15): ✅ pass - Check PPow exception
 test_power.py(18, 11): ✅ pass - Check PGt exception
 test_power.py(18, 4): ❓ unknown - 2 ** -1 should be positive
 test_power.py(20, 0): ✅ pass - ite_cond_calls_Any_to_bool_0
-DETAIL: 16 passed, 0 failed, 1 inconclusive
+DETAIL: 11 passed, 0 failed, 1 inconclusive
 RESULT: Inconclusive

@@ -14,5 +14,5 @@ test_if_elif.py(19, 4): ❓ unknown - should be small
 test_if_elif.py(21, 4): ✅ pass - (classify requires) Type constraint of x
 test_if_elif.py(22, 4): ❓ unknown - should be large
 test_if_elif.py(24, 0): ✅ pass - ite_cond_calls_Any_to_bool_0
-DETAIL: 19 passed, 0 failed, 4 inconclusive
+DETAIL: 12 passed, 0 failed, 4 inconclusive
 RESULT: Inconclusive
