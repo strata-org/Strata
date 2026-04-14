@@ -5,7 +5,7 @@
 -/
 module
 
-public import Strata.Languages.Laurel.Laurel
+public import Strata.Languages.Laurel.MapStmtExpr
 public import Strata.Languages.Laurel.Grammar.AbstractToConcreteTreeTranslator
 
 /-!
@@ -54,79 +54,17 @@ private def mkHoleCall (holeType : HighTypeMd) : ElimHoleM StmtExprMd := do
   modify fun s => { s with generatedFunctions := s.generatedFunctions ++ [holeProc] }
   return bare (.StaticCall holeName (inputs.map (fun p => bare (.Identifier p.name))))
 
-mutual
-/--
-Replace every deterministic `.Hole` in an expression with a call to a
-fresh uninterpreted function.
--/
-private def elimExpr (expr : StmtExprMd) : ElimHoleM StmtExprMd := do
-  match expr with
-  | AstNode.mk val source md =>
-  match val with
+/-- Replace a deterministic `.Hole` with a call to a fresh uninterpreted function.
+    Non-hole nodes pass through unchanged; recursion is handled by `mapStmtExprM`. -/
+private def elimHoleNode (expr : StmtExprMd) : ElimHoleM StmtExprMd := do
+  match expr.val with
   | .Hole true (some ty) => mkHoleCall ty
-  | .Hole true none => mkHoleCall ⟨.Unknown, source, md⟩
-  | .Hole false _ => return expr
-  | .PrimitiveOp op args => return ⟨.PrimitiveOp op (← args.mapM elimExpr), source, md⟩
-  | .StaticCall callee args => return ⟨.StaticCall callee (← args.mapM elimExpr), source, md⟩
-  | .InstanceCall target callee args =>
-      return ⟨.InstanceCall (← elimExpr target) callee (← args.mapM elimExpr), source, md⟩
-  | .ReferenceEquals lhs rhs => return ⟨.ReferenceEquals (← elimExpr lhs) (← elimExpr rhs), source, md⟩
-  | .IfThenElse cond th el =>
-      let el' ← match el with | some e => pure (some (← elimExpr e)) | none => pure none
-      return ⟨.IfThenElse (← elimExpr cond) (← elimExpr th) el', source, md⟩
-  | .Block stmts label => return ⟨.Block (← elimStmtList stmts) label, source, md⟩
-  | .Assign targets value => return ⟨.Assign targets (← elimExpr value), source, md⟩
-  | .LocalVariable name ty init =>
-      match init with
-      | some initExpr => return ⟨.LocalVariable name ty (some (← elimExpr initExpr)), source, md⟩
-      | none => return expr
-  | .Old v => return ⟨.Old (← elimExpr v), source, md⟩
-  | .Fresh v => return ⟨.Fresh (← elimExpr v), source, md⟩
-  | .Assigned n => return ⟨.Assigned (← elimExpr n), source, md⟩
-  | .ProveBy v p => return ⟨.ProveBy (← elimExpr v) (← elimExpr p), source, md⟩
-  | .ContractOf ty f => return ⟨.ContractOf ty (← elimExpr f), source, md⟩
-  | .Forall p trigger b =>
-      let trigger' ← match trigger with | some t => pure (some (← elimExpr t)) | none => pure none
-      return ⟨.Forall p trigger' (← elimExpr b), source, md⟩
-  | .Exists p trigger b =>
-      let trigger' ← match trigger with | some t => pure (some (← elimExpr t)) | none => pure none
-      return ⟨.Exists p trigger' (← elimExpr b), source, md⟩
+  | .Hole true none => mkHoleCall ⟨.Unknown, expr.source, expr.md⟩
+  | .Hole false _ => return expr -- Non-deterministic holes are preserved
   | _ => return expr
-
-private def elimStmt (stmt : StmtExprMd) : ElimHoleM StmtExprMd := do
-  match stmt with
-  | AstNode.mk val source md =>
-  match val with
-  | .LocalVariable name ty (some initExpr) =>
-      return ⟨.LocalVariable name ty (some (← elimExpr initExpr)), source, md⟩
-  | .Assign targets value => return ⟨.Assign targets (← elimExpr value), source, md⟩
-  | .Block stmts label => return ⟨.Block (← elimStmtList stmts) label, source, md⟩
-  | .IfThenElse cond th el =>
-      let el' ← match el with | some e => pure (some (← elimStmt e)) | none => pure none
-      return ⟨.IfThenElse (← elimExpr cond) (← elimStmt th) el', source, md⟩
-  | .While cond invs dec body =>
-      let dec' ← match dec with | some d => pure (some (← elimExpr d)) | none => pure none
-      return ⟨.While (← elimExpr cond) (← invs.mapM elimExpr) dec' (← elimStmt body), source, md⟩
-  | .Assert cond => return ⟨.Assert (← elimExpr cond), source, md⟩
-  | .Assume cond => return ⟨.Assume (← elimExpr cond), source, md⟩
-  | .StaticCall callee args => return ⟨.StaticCall callee (← args.mapM elimExpr), source, md⟩
-  | .Return (some retExpr) => return ⟨.Return (some (← elimExpr retExpr)), source, md⟩
-  | .Hole true (some ty) => mkHoleCall ty
-  | .Hole true none => mkHoleCall ⟨.Unknown, source, md⟩
-  | .Hole false _ => return stmt -- Non-deterministic holes are kept
-  | _ => return stmt
-
-private def elimStmtList (stmts : List StmtExprMd) : ElimHoleM (List StmtExprMd) :=
-  stmts.mapM elimStmt
-end
-
 private def elimProcedure (proc : Procedure) : ElimHoleM Procedure := do
   modify fun s => { s with currentInputs := proc.inputs }
-  match proc.body with
-  | .Transparent bodyExpr => return { proc with body := .Transparent (← elimStmt bodyExpr) }
-  | .Opaque postconds (some impl) modif =>
-      return { proc with body := .Opaque postconds (some (← elimStmt impl)) modif }
-  | _ => return proc
+  mapProcedureBodiesM (mapStmtExprM elimHoleNode) proc
 
 /--
 Replace every deterministic `.Hole` in the program with a call to a freshly

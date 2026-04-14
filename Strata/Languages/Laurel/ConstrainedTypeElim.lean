@@ -5,6 +5,7 @@
 -/
 module
 
+public import Strata.Languages.Laurel.MapStmtExpr
 public import Strata.Languages.Laurel.Resolution
 
 /-!
@@ -85,51 +86,33 @@ private def wrap (stmts : List StmtExprMd) (src : Option FileRange) (md : Impera
     : StmtExprMd :=
   match stmts with | [s] => s | ss => ⟨.Block ss none, src, md⟩
 
-/-- Resolve constrained types in all type positions of an expression,
-    and inject constraint function calls into quantifier bodies -/
-def resolveExpr (ptMap : ConstrainedTypeMap) : StmtExprMd → StmtExprMd
-  | ⟨.LocalVariable n ty (some init), source, md⟩ =>
-    ⟨.LocalVariable n (resolveType ptMap ty) (some (resolveExpr ptMap init)), source, md⟩
-  | ⟨.LocalVariable n ty none, source, md⟩ =>
-    ⟨.LocalVariable n (resolveType ptMap ty) none, source, md⟩
-  | ⟨.Forall param trigger body, source, md⟩ =>
-    let body' := resolveExpr ptMap body
+/-- Resolve constrained types in type positions and inject constraint calls into quantifier bodies.
+    Recursion into StmtExprMd children is handled by `mapStmtExpr`. -/
+def resolveExprNode (ptMap : ConstrainedTypeMap) (expr : StmtExprMd) : StmtExprMd :=
+  let source := expr.source
+  let md := expr.md
+  match expr.val with
+  | .LocalVariable n ty init =>
+    ⟨.LocalVariable n (resolveType ptMap ty) init, source, md⟩
+  | .Forall param trigger body =>
     let param' := { param with type := resolveType ptMap param.type }
+    -- With bottom-up traversal, `body` is already recursed into. The newly
+    -- created `PrimitiveOp .Implies [c, body]` won't be visited again, which
+    -- is safe because `c` (from `constraintCallFor`) is a StaticCall with
+    -- Identifier leaves that don't need further resolution.
     let injected := match constraintCallFor ptMap param.type.val param.name md (src := source) with
-      | some c => ⟨.PrimitiveOp .Implies [c, body'], source, md⟩
-      | none => body'
+      | some c => ⟨.PrimitiveOp .Implies [c, body], source, md⟩
+      | none => body
     ⟨.Forall param' trigger injected, source, md⟩
-  | ⟨.Exists param trigger body, source, md⟩ =>
-    let body' := resolveExpr ptMap body
+  | .Exists param trigger body =>
     let param' := { param with type := resolveType ptMap param.type }
     let injected := match constraintCallFor ptMap param.type.val param.name md (src := source) with
-      | some c => ⟨.PrimitiveOp .And [c, body'], source, md⟩
-      | none => body'
+      | some c => ⟨.PrimitiveOp .And [c, body], source, md⟩
+      | none => body
     ⟨.Exists param' trigger injected, source, md⟩
-  | ⟨.AsType t ty, source, md⟩ => ⟨.AsType (resolveExpr ptMap t) (resolveType ptMap ty), source, md⟩
-  | ⟨.IsType t ty, source, md⟩ => ⟨.IsType (resolveExpr ptMap t) (resolveType ptMap ty), source, md⟩
-  | ⟨.PrimitiveOp op args, source, md⟩ =>
-    ⟨.PrimitiveOp op (args.attach.map fun ⟨a, _⟩ => resolveExpr ptMap a), source, md⟩
-  | ⟨.StaticCall c args, source, md⟩ =>
-    ⟨.StaticCall c (args.attach.map fun ⟨a, _⟩ => resolveExpr ptMap a), source, md⟩
-  | ⟨.Block ss sep, source, md⟩ =>
-    ⟨.Block (ss.attach.map fun ⟨s, _⟩ => resolveExpr ptMap s) sep, source, md⟩
-  | ⟨.IfThenElse c t (some el), source, md⟩ =>
-    ⟨.IfThenElse (resolveExpr ptMap c) (resolveExpr ptMap t) (some (resolveExpr ptMap el)), source, md⟩
-  | ⟨.IfThenElse c t none, source, md⟩ =>
-    ⟨.IfThenElse (resolveExpr ptMap c) (resolveExpr ptMap t) none, source, md⟩
-  | ⟨.While c inv dec body, source, md⟩ =>
-    ⟨.While (resolveExpr ptMap c) (inv.attach.map fun ⟨i, _⟩ => resolveExpr ptMap i)
-            dec (resolveExpr ptMap body), source, md⟩
-  | ⟨.Assign ts v, source, md⟩ =>
-    ⟨.Assign (ts.attach.map fun ⟨t, _⟩ => resolveExpr ptMap t) (resolveExpr ptMap v), source, md⟩
-  | ⟨.Return (some v), source, md⟩ => ⟨.Return (some (resolveExpr ptMap v)), source, md⟩
-  | ⟨.Return none, source, md⟩ => ⟨.Return none, source, md⟩
-  | ⟨.Assert c, source, md⟩ => ⟨.Assert (resolveExpr ptMap c), source, md⟩
-  | ⟨.Assume c, source, md⟩ => ⟨.Assume (resolveExpr ptMap c), source, md⟩
-  | e => e
-termination_by e => sizeOf e
-decreasing_by all_goals (have := AstNode.sizeOf_val_lt ‹_›; term_by_mem)
+  | .AsType t ty => ⟨.AsType t (resolveType ptMap ty), source, md⟩
+  | .IsType t ty => ⟨.IsType t (resolveType ptMap ty), source, md⟩
+  | _ => expr
 
 abbrev ElimM := StateM PredVarMap
 
@@ -209,7 +192,7 @@ def elimProc (ptMap : ConstrainedTypeMap) (proc : Procedure) : Procedure :=
     .Opaque (postconds ++ outputEnsures) impl' modif
   | .Abstract postconds => .Abstract (postconds ++ outputEnsures)
   | .External => .External
-  let resolve := resolveExpr ptMap
+  let resolve := mapStmtExpr (resolveExprNode ptMap)
   let resolveBody : Body → Body := fun body => match body with
     | .Transparent b => .Transparent (resolve b)
     | .Opaque ps impl modif => .Opaque (ps.map resolve) (impl.map resolve) (modif.map resolve)
