@@ -484,12 +484,13 @@ private def deriveBaseName (file : String) : String :=
   | some sfx => (name.dropEnd sfx.length).toString
   | none     => name
 
-/-- Which procedures to verify: all user procedures, only roots (no callers),
+/-- Which procedures to verify: all user procedures, only roots,
     or only the main function. -/
 inductive EntryPoint where
   /-- Only `__main__` -/
   | main
-  /-- User procedures with no callers among user procedures -/
+  /-- User procedures not reachable from other user procedures (handles SCCs
+      by choosing the alphabetically smallest member as representative) -/
   | roots
   /-- All user procedures -/
   | all
@@ -506,11 +507,13 @@ def EntryPoint.ofString? (s : String) : Option EntryPoint :=
   | _ => none
 
 def EntryPoint.options : String :=
-  "'main' (main function only), 'roots' (user procs with no user callers), or 'all' (all user procs)"
+  "'main' (main function only), 'roots' (user procs not reachable from others), or 'all' (all user procs)"
 
 /-- Determine which procedures to verify based on the entry-point mode.
     - `.main`: only `__main__`
-    - `.roots`: user procedures with no callers among user procedures
+    - `.roots`: user procedures not reachable from other user procedures,
+      or for those mutually recursive, the representative user procedures
+      chosen by their alphabetically smallest member.
     - `.all`: all user procedures -/
 private def determineProceduresToVerify
     (coreProgram : Core.Program) (userSourcePath : String)
@@ -523,9 +526,7 @@ private def determineProceduresToVerify
   | .roots =>
     let cg := coreProgram.toProcedureCG
     let userSet := Std.HashSet.ofList userProcNames
-    let roots := userProcNames.filter fun name =>
-      (cg.getCallers name).all fun caller => !userSet.contains caller
-    return roots
+    return (cg.computeRoots (preferredRoots := userProcNames)).filter userSet.contains
 
 def pyAnalyzeLaurelCommand : Command where
   name := "pyAnalyzeLaurel"
