@@ -45,12 +45,9 @@ procedure main () returns ()
 #guard
   let prog := (Boole.getProgram vec_program).toOption.get!
   let formatted := (Boole.formatProgram prog vec_program.globalContext vec_program.dialects).pretty
-  !formatted.contains "fvar!"
-
--- The names that appear in types and function bodies must match the declared names.
-#guard
-  let prog := (Boole.getProgram vec_program).toOption.get!
-  let formatted := (Boole.formatProgram prog vec_program.globalContext vec_program.dialects).pretty
+  -- No fvar!N tokens: every free variable reference resolves via the GlobalContext.
+  !formatted.contains "fvar!" &&
+  -- Declared names appear in the formatted output.
   formatted.contains "Vec" &&
   formatted.contains "Vec..Vec_len" &&
   formatted.contains "Vec..Vec_data"
