@@ -683,8 +683,4 @@ theorem zip_map_snd_eq {α β: Type} (l1: List α) (l2: List β) :
   (l1.zip l2).map Prod.snd = l2 := by
   induction l1 generalizing l2 <;> cases l2 <;> simp_all
 
-theorem zip_map_fst_snd_eq {α β : Type} (l : List (α × β)) :
-    (l.map Prod.fst).zip (l.map Prod.snd) = l := by
-  induction l <;> simp_all
-
 end

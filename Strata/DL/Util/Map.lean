@@ -110,8 +110,9 @@ theorem Map.keys_eq_map_fst (m : Map α β) : m.keys = m.map Prod.fst := by
   | cons p m ih => cases p; simp [Map.keys, ih]
 
 /-- Deduplicated entries of a map, keeping the first occurrence of each key.
-Defined by running `go` on the reversed list so that `go` (which keeps entries
-whose key does not appear later) effectively keeps first occurrences. -/
+  Note that if the Map is produced via insertions, the keylist always has
+  no duplicates, but without enforcing that at the type level, this
+  construction is necessary for proofs. -/
 def Map.keySet [DecidableEq α] (m : Map α β) : List (α × β) :=
   go m.reverse
 where

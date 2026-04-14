@@ -105,12 +105,6 @@ def LMonoTy.mkArrow' (mty : LMonoTy) (mtys : LMonoTys) : LMonoTy :=
     LMonoTy.mkArrow' τ (m :: ms) = .arrow m (LMonoTy.mkArrow' τ ms) := by
   simp [LMonoTy.mkArrow']
 
-theorem LMonoTy.mkArrow'_append (τ : LMonoTy) (xs ys : List LMonoTy) :
-    LMonoTy.mkArrow' τ (xs ++ ys) = LMonoTy.mkArrow' (LMonoTy.mkArrow' τ ys) xs := by
-  induction xs with
-  | nil => rfl
-  | cons x xs' ih => simp [LMonoTy.mkArrow', ih]
-
 theorem LMonoTy.mkArrow'_injective {ret₁ ret₂ : LMonoTy} {ins₁ ins₂ : List LMonoTy}
     (h_len : ins₁.length = ins₂.length)
     (h : LMonoTy.mkArrow' ret₁ ins₁ = LMonoTy.mkArrow' ret₂ ins₂)

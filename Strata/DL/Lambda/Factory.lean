@@ -308,6 +308,12 @@ theorem ofArray_mem {T} {a : Array (LFunc T)} {fn : LFunc T}
 theorem default_mem_is_false (T) (name : String) : name ∈ Factory.default (T := T) ↔ False := by
   simp [Factory.default, Factory.instMem, Factory.mem]
 
+theorem push_mem_iff {T} (f : Factory T) (fn : LFunc T) (h : fn.name.name ∉ f) (name : String) :
+    name ∈ f.push fn h ↔ name = fn.name.name ∨ name ∈ f := by
+  simp only [instMem, Factory.mem, push]
+  simp only [Std.HashMap.mem_insert]
+  constructor <;> intro hm <;> grind
+
 theorem push_mem_match {T} (f : Factory T) (fn : LFunc T) (h : fn.name.name ∉ f) (name : String) :
   (f.push fn h)[name]? = if name = fn.name.name then some fn else f[name]? := by
   simp [push, instGetElem?, Factory.get?]
@@ -435,55 +441,6 @@ theorem callOfLFunc_getLFuncCall {GenericTy} {F : Factory T}
   cases aPA <;> simp at hcall <;> split at hcall <;> simp at hcall
   all_goals (obtain ⟨rfl, rfl, rfl⟩ := hcall; exact Prod.ext ‹_› rfl)
 
-theorem callOfLFunc_fvar {GenericTy} {F : Factory T}
-    {m} {y} {ty : Option GenericTy}
-    : Factory.callOfLFunc F (.fvar m y ty) = none := by
-  cases h: (Factory.callOfLFunc F (.fvar m y ty)) <;> try rfl
-  have := callOfLFunc_eq_some h
-  contradiction
-
-theorem callOfLFunc_abs {GenericTy} {F : Factory T}
-    {m} {name} {ty : Option GenericTy} {body}
-    : Factory.callOfLFunc F (.abs m name ty body) = none := by
-  cases h: (Factory.callOfLFunc F (.abs m name ty body)) <;> try rfl
-  have := callOfLFunc_eq_some h
-  contradiction
-
-theorem callOfLFunc_ite {GenericTy} {F : Factory T}
-    {m} {c t e : LExpr ⟨T, GenericTy⟩}
-    : Factory.callOfLFunc F (.ite m c t e) = none := by
-  cases h: (Factory.callOfLFunc F (.ite m c t e)) <;> try rfl
-  have := callOfLFunc_eq_some h
-  contradiction
-
-theorem callOfLFunc_eq_ {GenericTy} {F : Factory T}
-    {m} {e1 e2 : LExpr ⟨T, GenericTy⟩}
-    : Factory.callOfLFunc F (.eq m e1 e2) = none := by
-  cases h: (Factory.callOfLFunc F (.eq m e1 e2)) <;> try rfl
-  have := callOfLFunc_eq_some h
-  contradiction
-
-theorem callOfLFunc_quant {GenericTy} {F : Factory T}
-    {m} {qk} {name} {ty : Option GenericTy} {tr body}
-    : Factory.callOfLFunc F (.quant m qk name ty tr body) = none := by
-  cases h: (Factory.callOfLFunc F (.quant m qk name ty tr body)) <;> try rfl
-  have := callOfLFunc_eq_some h
-  contradiction
-
-theorem callOfLFunc_bvar {GenericTy} {F : Factory T}
-    {m} {i : Nat}
-    : Factory.callOfLFunc F (.bvar (T := ⟨T, GenericTy⟩) m i) = none := by
-  cases h: (Factory.callOfLFunc F (.bvar m i)) <;> try rfl
-  have := callOfLFunc_eq_some h
-  contradiction
-
-theorem callOfLFunc_const {GenericTy} {F : Factory T}
-    {m} {c}
-    : Factory.callOfLFunc F (.const (T := ⟨T, GenericTy⟩) m c) = none := by
-  cases h: (Factory.callOfLFunc F (.const m c)) <;> try rfl
-  have := callOfLFunc_eq_some h
-  contradiction
-
 end Factory
 
 theorem getLFuncCall.go_size {T: LExprParamsT} {e: LExpr T} {op args acc} : getLFuncCall.go e acc = (op, args) →
@@ -559,19 +516,6 @@ theorem Factory.callOfLFunc_getElem?
   cases aPA <;> simp at hcall <;> split at hcall <;> simp at hcall
   all_goals (obtain ⟨rfl, rfl, rfl⟩ := hcall; grind)
 
-/-- `callOfLFunc` returns the same `(callee, args)` as `getLFuncCall`. -/
-theorem Factory.callOfLFunc_getLFuncCall
-    {T} {F : Factory T} {e callee : LExpr T.mono}
-    {args : List (LExpr T.mono)} {fn : LFunc T}
-    {aPA : Bool}
-    (hcall : Factory.callOfLFunc F e (allowPartialApp := aPA) = some (callee, args, fn))
-    : getLFuncCall e = (callee, args) := by
-  simp [Factory.callOfLFunc] at hcall
-  split at hcall <;> simp_all
-  split at hcall <;> try contradiction
-  cases aPA <;> simp at hcall <;> split at hcall <;> simp at hcall
-  all_goals (obtain ⟨rfl, rfl, rfl⟩ := hcall; grind)
-
 /-- If `callOfLFunc` returns a triple, the function is a member of the factory array. -/
 theorem callOfLFunc_func_mem
     {T : LExprParams} (F : @Factory T) (e : LExpr T.mono)
@@ -590,74 +534,6 @@ theorem callOfLFunc_func_mem
     simp only [h_gf] at h
     cases aPA <;> simp at h <;> split at h <;> simp at h
     all_goals (obtain ⟨_, _, rfl⟩ := h; exact Factory.getElem?_is_some_implies_mem h_gf)
-
-/-- `getLFuncCall.go` commutes with fvar substitution: the head is unchanged, args are mapped.
-Could be generalized to any `s` that does not produce `.app` or `.op` nodes. -/
-theorem getLFuncCall_go_substK_fvar {T : LExprParamsT}
-    {k : Nat} {x : Identifier T.base.IDMeta × Option T.TypeType}
-    (e : LExpr T) (acc : List (LExpr T))
-    : let s := fun m => LExpr.fvar m x.fst x.snd
-      getLFuncCall.go (LExpr.substK k s e) (acc.map (LExpr.substK k s))
-      = let (op, args) := getLFuncCall.go e acc
-        (LExpr.substK k s op, args.map (LExpr.substK k s)) := by
-  simp only
-  fun_induction getLFuncCall.go e acc
-  case case1 acc e' arg1 arg2 ih =>
-    simp only [LExpr.substK, getLFuncCall.go]
-    exact ih
-  case case2 m acc fn fnty arg1 =>
-    simp [LExpr.substK, getLFuncCall.go]
-  case case3 e' acc h_not_app_app h_not_app_op =>
-    -- e' is not .app(.app ..) or .app(.op ..). After substK, fvar substitution
-    -- preserves this: .op is unchanged, .app structure is preserved, and
-    -- .bvar maps to .fvar (not .app or .op).
-    cases e' with
-    | app m e1' e2' =>
-      -- e' = .app m e1' e2', but e1' is not .app and not .op
-      simp only [LExpr.substK]
-      cases e1' with
-      | app m' e1'' e2'' => exact absurd rfl (h_not_app_app m m' e1'' e2'' e2')
-      | op m' fn fnty => exact absurd rfl (h_not_app_op m m' fn fnty e2')
-      | bvar m' i =>
-        simp only [LExpr.substK]
-        split <;> simp [getLFuncCall.go]
-      | _ => simp [LExpr.substK, getLFuncCall.go]
-    | bvar m' i =>
-      simp only [LExpr.substK]
-      split <;> simp [getLFuncCall.go]
-    | _ => simp [LExpr.substK, getLFuncCall.go]
-
-/-- `callOfLFunc` commutes with fvar substitution: same callee and fn, args are mapped.
-Could be generalized to any `s` that does not produce `.app` or `.op` nodes. -/
-theorem Factory.callOfLFunc_substK_fvar {T : LExprParams}
-    {F : Factory T} {k : Nat} {x : Identifier T.IDMeta × Option T.mono.TypeType}
-    {e : LExpr T.mono}
-    : let s := fun m => LExpr.fvar (T := T.mono) m x.fst x.snd
-      (match Factory.callOfLFunc F e with
-       | some (callee, args, fn) =>
-           Factory.callOfLFunc F (LExpr.substK k s e) = some (callee, args.map (LExpr.substK k s), fn)
-       | none => Factory.callOfLFunc F (LExpr.substK k s e) = none) := by
-  simp only
-  have hgo := getLFuncCall_go_substK_fvar (k := k) (x := x) e []
-  simp only [List.map_nil] at hgo
-  simp only [Factory.callOfLFunc, getLFuncCall]
-  rw [hgo]
-  -- Both sides now decompose (getLFuncCall.go e []) the same way.
-  -- substK on .op is identity, so the head/fn/arity checks are identical.
-  -- Case split on the head being .op or not.
-  cases h_head : (getLFuncCall.go e []).fst with
-  | op m name ty =>
-    simp only [LExpr.substK]
-    -- Now F[name.name]? is the same on both sides
-    cases F[name.name]? with
-    | none => simp
-    | some func =>
-      simp only [List.length_map, Bool.false_eq_true, ↓reduceIte]
-      split <;> grind
-  | bvar m' i =>
-    simp only [LExpr.substK]
-    split <;> simp_all <;> split <;> grind
-  | _ => simp [LExpr.substK]
 
 /--
 Apply type substitution `S` to all type annotations in an `LExpr`.
@@ -749,17 +625,6 @@ theorem LFunc.computeTypeSubst_of_opTypeSubst {T : LExprParams}
     : fn.computeTypeSubst callee args = some s := by
   unfold LFunc.computeTypeSubst
   rw [h]
-
-/-- When `computeTypeSubst` succeeds and `opTypeSubst` also succeeds, they agree. -/
-theorem LFunc.opTypeSubst_of_computeTypeSubst {T : LExprParams}
-    {fn : LFunc T} {callee : LExpr T.mono} {args : List (LExpr T.mono)} {s : Subst}
-    (h : fn.computeTypeSubst callee args = some s)
-    (hop : fn.opTypeSubst callee ≠ none)
-    : fn.opTypeSubst callee = some s := by
-  unfold LFunc.computeTypeSubst at h
-  cases heq : fn.opTypeSubst callee with
-  | none => contradiction
-  | some s' => rw [heq] at h; exact h
 
 end -- public section
 end Lambda

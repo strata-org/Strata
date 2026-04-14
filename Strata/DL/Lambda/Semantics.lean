@@ -694,8 +694,7 @@ private theorem getLFuncCall_go_substFvars
 
 ---------------------------------------------------------------------
 -- Helper: callOfLFunc decomposes via getLFuncCall with an .op head.
-omit [DecidableEq
-  Tbase.Metadata] [DecidableEq Tbase.Identifier] [DecidableEq Tbase.IDMeta] [Inhabited Tbase.IDMeta] in
+omit [DecidableEq Tbase.Metadata] [DecidableEq Tbase.Identifier] [DecidableEq Tbase.IDMeta] [Inhabited Tbase.IDMeta] in
 private theorem callOfLFunc_getLFuncCall_op
     {F : @Factory Tbase} {e : LExpr Tbase.mono}
     {op_expr : LExpr Tbase.mono} {args : List (LExpr Tbase.mono)} {lfunc : LFunc Tbase}

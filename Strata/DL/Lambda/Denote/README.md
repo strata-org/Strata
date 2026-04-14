@@ -6,8 +6,8 @@ of Why3's logic as presented in Jean-Christophe Filliâtre's 2013 paper
 "One Logic to Use Them All" (https://inria.hal.science/hal-00809651v1/document) 
 and more concretely by the subsequent Rocq formalization by Cohen and Johnson-Freyd 
 (https://dl.acm.org/doi/10.1145/3632902). The main differences
-concern variable binding, the mechanics of `Factory` function evaluation, and
-equality checking reasoning.
+concern variable binding, the mechanics of `Factory` function evaluation,
+equality checking reasoning, and the presence of an operational semantics.
 
 Each file's header lists the key theorems and definitions.
 The organization of the directory is as follows:

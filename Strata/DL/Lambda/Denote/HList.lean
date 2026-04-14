@@ -43,9 +43,6 @@ maps index `i` to `a`. -/
     (h : xs = ys) (hlist : HList f xs) : HList f ys :=
   h ▸ hlist
 
-@[simp] theorem HList.cast_rfl {α : Type} {f : α → Type} {xs : List α}
-    (hlist : HList f xs) : HList.cast rfl hlist = hlist := by rfl
-
 @[simp] theorem HList.cast_cast {α : Type} {f : α → Type} {xs ys zs : List α}
     (h₁ : xs = ys) (h₂ : ys = zs) (hlist : HList f xs)
     : HList.cast h₂ (HList.cast h₁ hlist) = HList.cast (h₁.trans h₂) hlist := by

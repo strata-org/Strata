@@ -30,18 +30,6 @@ variable (vt : TyVarVal)
 
 /-! ### denoteConst properties -/
 
-/-- Casting a dependent function application via `congrArg` is the same as
-applying the function at the new index. -/
-theorem cast_congrArg_dep_fn {α : Type} {F : α → Type} {a b : α}
-    (h : a = b) (f : (x : α) → F x)
-    : f b = cast (congrArg F h) (f a) := by subst h; rfl
-
-/-- Combining `cast` with `▸` on a round trip is the identity. -/
-theorem cast_subst_roundtrip {α : Type} {F : α → Sort _} {a b : α}
-    (h_eq : a = b) (h_td : F a = F b) (x : F b)
-    : cast h_td (h_eq.symm ▸ x) = x := by
-  subst h_eq; rfl
-
 /-- Casting a function and its argument is the same as casting the result. -/
 theorem cast_app {A A' B B' : Sort _}
     (h_fn : (A → B) = (A' → B')) (h_arg : A = A') (h_ret : B = B')
@@ -66,20 +54,6 @@ theorem denoteConst_cast_vt (vt vt' : TyVarVal) (c : LConst)
     (h : TyDenote tcInterp vt' c.ty = TyDenote tcInterp vt c.ty)
     : denoteConst tcInterp vt c = cast h (denoteConst tcInterp vt' c) := by
   cases c <;> simp [denoteConst, LConst.ty, TyDenote, LMonoTy.substTyVars] at h ⊢ <;> exact h ▸ rfl
-
-/-! ### HList cast applied to SortDenote -/
-
-/-- Casting the argument list of `applyArgs` can be absorbed by casting the
-sort in the applied function. In particular, for `opInterp`-style functions
-that take the sort as a parameter, this lets us move between equivalent
-index representations. -/
-theorem SortDenote.applyArgs_cast_eq {xs ys : List LSort} {ret : LSort}
-    (h : xs = ys)
-    (g : (s : LSort) → SortDenote tcInterp s)
-    (args : HList (SortDenote tcInterp) xs)
-    : SortDenote.applyArgs tcInterp (g (LSort.mkArrow ret xs)) args =
-      SortDenote.applyArgs tcInterp (g (LSort.mkArrow ret ys)) (HList.cast h args) := by
-  subst h; rfl
 
 /-! ### Denotation irrelevance for locally closed expressions -/
 

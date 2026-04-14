@@ -709,7 +709,7 @@ theorem callOfLFunc_output_type
         ty_op = LMonoTy.mkArrow' τ argTys ∧
         args.length = fn.inputs.length := by
   obtain ⟨m, name, ty, h_callee, h_get⟩ := Factory.callOfLFunc_getElem? hcall
-  have h_chain := Factory.callOfLFunc_getLFuncCall hcall
+  have h_chain := callOfLFunc_getLFuncCall hcall
   have h_spec := getLFuncCall_spec h
   rw [h_chain] at h_spec
   obtain ⟨argTys, h_args, h_op⟩ := h_spec
@@ -745,7 +745,7 @@ theorem callOfLFunc_denote
   -- Step 1: get typing info
   obtain ⟨argTys, ty_op, m, name, h_callee, h_args, hty_op, _⟩ := callOfLFunc_output_type hcall h
   -- Step 2: get the chain equation
-  have h_chain := Factory.callOfLFunc_getLFuncCall hcall
+  have h_chain := callOfLFunc_getLFuncCall hcall
   -- Step 3: get typing of op from getLFuncCall_spec
   have h_spec := getLFuncCall_spec h
   rw [h_chain] at h_spec
