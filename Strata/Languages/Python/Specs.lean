@@ -1213,7 +1213,7 @@ def pySpecFunctionArgs (fnLoc : SourceRange)
                        (returns : Option (expr SourceRange)) : PySpecM FunctionDecl := do
   let mut overload : Bool := false
   -- Collect icontract preconditions and postconditions from decorators
-  let mut icontractRequires : Array (expr SourceRange) := #[]
+  let mut icontractRequires : Array (expr SourceRange × String) := #[]
   let mut icontractEnsures : Array (expr SourceRange) := #[]
   for pyd in decorators do
     -- Check for @icontract.require(lambda ...: cond) or @icontract.ensure(lambda ...: cond)
@@ -1223,7 +1223,7 @@ def pySpecFunctionArgs (fnLoc : SourceRange)
         match args.val[0]! with
         | .Lambda _ _lamArgs lamBody =>
           if attr == "require" then
-            icontractRequires := icontractRequires.push lamBody
+            icontractRequires := icontractRequires.push (lamBody, s!"icontract precondition")
           else if attr == "ensure" then
             icontractEnsures := icontractEnsures.push lamBody
           else
@@ -1304,9 +1304,9 @@ def pySpecFunctionArgs (fnLoc : SourceRange)
         | some tp => pySpecType tp
   let as ← collectAssertions argDecls returnType <| do
     -- Process icontract @require decorators as preconditions
-    for reqExpr in icontractRequires do
+    for (reqExpr, reqMsg) in icontractRequires do
       let formula ← transAssertExpr reqExpr
-      let message := #[MessagePart.str (toString (repr reqExpr))]
+      let message := #[MessagePart.str reqMsg]
       modify fun s => { s with
         assertions := s.assertions.push { message, formula }
       }
