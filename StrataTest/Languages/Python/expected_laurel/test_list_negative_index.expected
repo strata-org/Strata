@@ -1,0 +1,6 @@
+test_list_negative_index.py(3, 14): ✅ pass - Check PNeg exception
+test_list_negative_index.py(3, 4): ✅ pass - negative index
+test_list_negative_index.py(3, 4): ✅ pass - negative index
+test_list_negative_index.py(3, 4): ✅ pass - negative index
+DETAIL: 4 passed, 0 failed, 0 inconclusive
+RESULT: Analysis success
