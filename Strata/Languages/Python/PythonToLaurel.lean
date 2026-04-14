@@ -604,7 +604,10 @@ partial def translateExpr (ctx : TranslationContext) (e : Python.expr SourceRang
 
   | .Call _ f args kwargs =>
       let result ← translateCall ctx f args.val.toList kwargs.val.toList
-      return {result with md:= md}
+      -- Preserve the callRange metadata from translateCall (which points at the
+      -- method name, e.g. "delete_object") instead of overwriting with the full
+      -- Call expression range (which points at "s3_client").
+      return result
 
   -- Subscript access: dict['key'] or list[0]
   -- Abstract: return havoc'd value (sound for any dict/list operation)
@@ -1391,7 +1394,8 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
   -- Expression statement (e.g., function call)
   | .Expr _ value => do
     let expr ← translateExpr ctx value
-    let expr := { expr with md := md }
+    -- Preserve metadata from translateExpr/translateCall (which may point at
+    -- the method name) instead of overwriting with the Expr statement range.
     let exceptionCheck := getExceptionAssertions ctx expr
 
     match expr.val with
