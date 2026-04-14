@@ -314,6 +314,24 @@ theorem push_mem_iff {T} (f : Factory T) (fn : LFunc T) (h : fn.name.name ∉ f)
   simp only [Std.HashMap.mem_insert]
   constructor <;> intro hm <;> grind
 
+theorem mem_iff_mem_names {T} (f : Factory T) (s : String) :
+    s ∈ f ↔ s ∈ f.toArray.map (·.name.name) := by
+  constructor
+  · intro hs
+    have hvalid := f.nameMapValid hs
+    have hcons := f.nameMapConsistent hs
+    rw [Array.mem_iff_getElem]
+    exact ⟨f.nameMap[s], by simp [Array.size_map]; exact hvalid, by simp [Array.getElem_map]; exact hcons⟩
+  · intro hs
+    rw [Array.mem_iff_getElem] at hs
+    obtain ⟨i, hi, hname⟩ := hs
+    simp [Array.size_map] at hi
+    simp [Array.getElem_map] at hname
+    have := f.toArrayDefined ⟨i, hi⟩
+    simp [instMem, Factory.mem]
+    rw [← hname]
+    grind
+
 theorem push_mem_match {T} (f : Factory T) (fn : LFunc T) (h : fn.name.name ∉ f) (name : String) :
   (f.push fn h)[name]? = if name = fn.name.name then some fn else f[name]? := by
   simp [push, instGetElem?, Factory.get?]
