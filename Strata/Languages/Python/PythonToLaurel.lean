@@ -1492,7 +1492,11 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
         [mkStmtExprMd (StmtExpr.Identifier "maybe_except")]))) md
     let exitLabel := ctx.raiseExitLabel.getD "$body"
     let exit := mkStmtExprMdWithLoc (StmtExpr.Exit exitLabel) md
-    return (ctx, [havocExcept, assumeError, exit])
+    -- Wrap in a block so per-statement exception checks in the try body
+    -- don't interleave between havoc/assume/exit.
+    let raiseBlock := mkStmtExprMdWithLoc
+      (StmtExpr.Block [havocExcept, assumeError, exit] none) md
+    return (ctx, [raiseBlock])
 
   -- With statement: with EXPR as VAR: BODY
   -- Desugars to: mgr = EXPR; VAR = mgr.__enter__(); BODY; mgr.__exit__()

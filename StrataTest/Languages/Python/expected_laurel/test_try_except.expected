@@ -4,13 +4,5 @@ test_try_except.py(17, 4): ✅ pass - handler should have executed
 test_try_except.py(17, 4): ✅ pass - handler should have executed
 test_try_except.py(17, 4): ✅ pass - handler should have executed
 test_try_except.py(17, 4): ❓ unknown - handler should have executed
-test_try_except.py(17, 4): ✅ pass - handler should have executed
-test_try_except.py(17, 4): ✅ pass - handler should have executed
-test_try_except.py(17, 4): ✅ pass - handler should have executed
-test_try_except.py(17, 4): ✅ pass - handler should have executed
-test_try_except.py(17, 4): ✅ pass - handler should have executed
-test_try_except.py(17, 4): ✅ pass - handler should have executed
-test_try_except.py(17, 4): ✅ pass - handler should have executed
-test_try_except.py(17, 4): ✅ pass - handler should have executed
-DETAIL: 13 passed, 0 failed, 1 inconclusive
+DETAIL: 5 passed, 0 failed, 1 inconclusive
 RESULT: Inconclusive

@@ -4,30 +4,10 @@ test_raise_variants.py(7, 22): ✅ pass - (raise_in_try ensures) Return type con
 test_raise_variants.py(14, 4): ✅ pass - handler should catch raise in try
 test_raise_variants.py(14, 4): ❓ unknown - handler should catch raise in try
 test_raise_variants.py(7, 22): ✅ pass - (raise_in_try ensures) Return type constraint
-test_raise_variants.py(14, 4): ✅ pass - handler should catch raise in try
-test_raise_variants.py(14, 4): ✅ pass - handler should catch raise in try
-test_raise_variants.py(7, 22): ✅ pass - (raise_in_try ensures) Return type constraint
-test_raise_variants.py(14, 4): ✅ pass - handler should catch raise in try
-test_raise_variants.py(14, 4): ✅ pass - handler should catch raise in try
-test_raise_variants.py(7, 22): ✅ pass - (raise_in_try ensures) Return type constraint
-test_raise_variants.py(14, 4): ✅ pass - handler should catch raise in try
-test_raise_variants.py(14, 4): ✅ pass - handler should catch raise in try
-test_raise_variants.py(7, 22): ✅ pass - (raise_in_try ensures) Return type constraint
-test_raise_variants.py(14, 4): ✅ pass - handler should catch raise in try
-test_raise_variants.py(14, 4): ✅ pass - handler should catch raise in try
-test_raise_variants.py(7, 22): ✅ pass - (raise_in_try ensures) Return type constraint
 test_raise_variants.py(17, 30): ❓ unknown - (raise_bare_in_except ensures) Return type constraint
 test_raise_variants.py(17, 30): ❓ unknown - (raise_bare_in_except ensures) Return type constraint
-test_raise_variants.py(17, 30): ✅ pass - (raise_bare_in_except ensures) Return type constraint
-test_raise_variants.py(17, 30): ✅ pass - (raise_bare_in_except ensures) Return type constraint
-test_raise_variants.py(17, 30): ✅ pass - (raise_bare_in_except ensures) Return type constraint
-test_raise_variants.py(17, 30): ✅ pass - (raise_bare_in_except ensures) Return type constraint
 test_raise_variants.py(23, 29): ❓ unknown - (raise_new_in_except ensures) Return type constraint
 test_raise_variants.py(23, 29): ❓ unknown - (raise_new_in_except ensures) Return type constraint
-test_raise_variants.py(23, 29): ✅ pass - (raise_new_in_except ensures) Return type constraint
-test_raise_variants.py(23, 29): ✅ pass - (raise_new_in_except ensures) Return type constraint
-test_raise_variants.py(23, 29): ✅ pass - (raise_new_in_except ensures) Return type constraint
-test_raise_variants.py(23, 29): ✅ pass - (raise_new_in_except ensures) Return type constraint
 test_raise_variants.py(29, 28): ❓ unknown - (raise_at_top_level ensures) Return type constraint
-DETAIL: 25 passed, 0 failed, 6 inconclusive
+DETAIL: 5 passed, 0 failed, 6 inconclusive
 RESULT: Inconclusive
