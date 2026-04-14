@@ -678,9 +678,15 @@ def toCoreDecls (cmd : BooleDDM.Command SourceRange) : TranslateM (List Core.Dec
       let inputNames := inputs.map (·.fst.name)
       let outputNames := outputs.map (·.fst.name)
       let spec ← withBVars (inputNames ++ outputNames) (toCoreSpec m n spec?)
-      let body ← match body? with
+      -- Wrap the body in a labeled block named after the procedure so that
+      -- `exit functionName;` inside the body exits the whole procedure,
+      -- implementing early return without a synthetic label.
+      let bodyStmts ← match body? with
         | none => pure []
         | some b => withBVars (inputNames ++ outputNames) (toCoreBlock b)
+      let body : List Core.Statement := match bodyStmts with
+        | [] => []
+        | stmts => [.block n stmts .empty]
       return [.proc {
         header := { name := mkIdent n, typeArgs := tys, inputs := inputs, outputs := outputs }
         spec := spec
