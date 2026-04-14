@@ -68,7 +68,7 @@ category DeclList;
 @[scope(b)]
 op declAtom (b : Bind) : DeclList => b;
 @[scope(b)]
-op declPush (dl : DeclList, @[scope(dl)] b : Bind) : DeclList => dl ", " b;
+op declPush (dl : DeclList, @[scope(dl)] b : Bind) : DeclList => dl:0 ", " b:0;
 
 category MonoBind;
 @[declare(v, tp)]
@@ -80,7 +80,7 @@ category MonoDeclList;
 op monoDeclAtom (b : MonoBind) : MonoDeclList => b;
 @[scope(b)]
 op monoDeclPush (dl : MonoDeclList, @[scope(dl)] b : MonoBind) : MonoDeclList =>
-  dl ", " b;
+  dl:0 ", " b:0;
 
 fn not (b : bool) : bool => "!" b;
 
