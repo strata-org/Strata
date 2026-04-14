@@ -18,6 +18,7 @@ import Strata.Languages.Python.Specs.IdentifyOverloads
 import Strata.Languages.Python.Specs.ToLaurel
 import Strata.Languages.Laurel.Grammar.AbstractToConcreteTreeTranslator
 import Strata.Languages.Laurel.Laurel
+import Strata.Languages.Core.EntryPoint
 import Strata.Transform.ProcedureInlining
 import Strata.Util.IO
 
@@ -27,7 +28,7 @@ import Strata.Util.Json
 
 open Strata
 
-open Core (VerifyOptions VerboseMode VerificationMode CheckLevel)
+open Core (VerifyOptions VerboseMode VerificationMode CheckLevel EntryPoint)
 
 /-! ## Exit codes
 
@@ -484,49 +485,6 @@ private def deriveBaseName (file : String) : String :=
   | some sfx => (name.dropEnd sfx.length).toString
   | none     => name
 
-/-- Which procedures to verify: all user procedures, only roots,
-    or only the main function. -/
-inductive EntryPoint where
-  /-- Only `__main__` -/
-  | main
-  /-- User procedures not reachable from other user procedures (handles SCCs
-      by choosing the alphabetically smallest member as representative) -/
-  | roots
-  /-- All user procedures -/
-  | all
-  deriving Repr, DecidableEq
-
-instance : Inhabited EntryPoint where
-  default := .roots
-
-def EntryPoint.ofString? (s : String) : Option EntryPoint :=
-  match s with
-  | "main" => some .main
-  | "roots" => some .roots
-  | "all" => some .all
-  | _ => none
-
-def EntryPoint.options : String :=
-  "'main' (main function only), 'roots' (user procs not reachable from others), or 'all' (all user procs)"
-
-/-- Determine which procedures to verify based on the entry-point mode.
-    - `.main`: only `__main__`
-    - `.roots`: user procedures not reachable from other user procedures,
-      or for those mutually recursive, the representative user procedures
-      chosen by their alphabetically smallest member.
-    - `.all`: all user procedures -/
-private def determineProceduresToVerify
-    (coreProgram : Core.Program) (userSourcePath : String)
-    (entryPoint : EntryPoint) : Except String (List String) := do
-  let (_preludeNames, userProcNames) :=
-    Strata.splitProcNames coreProgram [userSourcePath]
-  match entryPoint with
-  | .main => return ["__main__"]
-  | .all => return userProcNames
-  | .roots =>
-    let cg := coreProgram.toProcedureCG
-    let userSet := Std.HashSet.ofList userProcNames
-    return (cg.computeRoots (preferredRoots := userProcNames)).filter userSet.contains
 
 def pyAnalyzeLaurelCommand : Command where
   name := "pyAnalyzeLaurel"
@@ -633,12 +591,8 @@ def pyAnalyzeLaurelCommand : Command where
     let isBugFinding := options.checkMode == .bugFinding
                       || options.checkMode == .bugFindingAssumingCompleteSpec
 
-    -- Validate --entry-point is only used in bug-finding modes.
+    -- Parse --entry-point flag (only supported in bug-finding modes).
     let entryPointFlag := pflags.getString "entry-point"
-    if entryPointFlag.isSome && !isBugFinding then
-      exitPyAnalyzeUserError s!"--entry-point is unsupported in {options.checkMode} mode"
-
-    -- Parse --entry-point flag.
     let entryPoint : EntryPoint ←
       if isBugFinding then
         match entryPointFlag with
@@ -648,26 +602,20 @@ def pyAnalyzeLaurelCommand : Command where
           | none =>
             exitPyAnalyzeUserError s!"Invalid --entry-point value '{s}'. Must be {EntryPoint.options}."
         | none => pure .roots
-      else pure .all
+      else
+        if entryPointFlag.isSome then
+          exitPyAnalyzeUserError s!"--entry-point is unsupported in {options.checkMode} mode"
+        else pure .all
 
-    -- Pick the procedures to verify.
-    let proceduresToVerify ← do
-      let userSourcePath := sourcePath.getD filePath
-      match determineProceduresToVerify coreProgram userSourcePath entryPoint with
-      | .ok procs => pure procs
-      | .error msg => exitPyAnalyzeInternalError msg
-
-    -- For bug-finding mode, inline procedures that are reachable from the
-    -- entry-point procedures
-    let inlinePhases : List Core.PipelinePhase :=
+    -- Pick the procedures to verify and set up inlining phases.
+    let userSourcePath := sourcePath.getD filePath
+    let (_, userProcNames) :=
+      Strata.splitProcNames coreProgram [userSourcePath]
+    let (proceduresToVerify, inlinePhases) :=
       if isBugFinding then
-        let entrySet := Std.HashSet.ofList proceduresToVerify
-        [Core.procedureInliningPipelinePhase
-          { doInline := fun caller callee a =>
-              (match caller with | some c => entrySet.contains c | none => false)
-              && Core.doInlineNonRecursive callee a
-            maxIters := some 10 }]
-      else []
+        let ⟨p, i⟩ := Core.chooseEntryProceduresAndBuildInlinePhases coreProgram userProcNames entryPoint
+        (p, [i])
+      else (userProcNames, [])
 
     let vcResults ← profileStep profile "SMT verification" do
       match ← Core.verifyProgram coreProgram options
