@@ -484,25 +484,45 @@ private def deriveBaseName (file : String) : String :=
   | some sfx => (name.dropEnd sfx.length).toString
   | none     => name
 
+/-- Which procedures to verify: all user procedures, only roots (no callers),
+    or only the main function. -/
+inductive EntryPoint where
+  | main   -- Only `__main__`
+  | roots  -- User procedures with no callers among user procedures
+  | all    -- All user procedures
+  deriving Repr, DecidableEq
+
+instance : Inhabited EntryPoint where
+  default := .roots
+
+def EntryPoint.ofString? (s : String) : Option EntryPoint :=
+  match s with
+  | "main" => some .main
+  | "roots" => some .roots
+  | "all" => some .all
+  | _ => none
+
+def EntryPoint.options : String :=
+  "'main' (main function only), 'roots' (user procs with no user callers), or 'all' (all user procs)"
+
 /-- Determine which procedures to verify based on the entry-point mode.
-    - `"main"`: only `__main__`
-    - `"roots"`: user procedures with no callers among user procedures
-    - `"all"`: all user procedures -/
+    - `.main`: only `__main__`
+    - `.roots`: user procedures with no callers among user procedures
+    - `.all`: all user procedures -/
 private def determineProceduresToVerify
     (coreProgram : Core.Program) (userSourcePath : String)
-    (entryPoint : String) : Except String (List String) := do
+    (entryPoint : EntryPoint) : Except String (List String) := do
   let (_preludeNames, userProcNames) :=
     Strata.splitProcNames coreProgram [userSourcePath]
   match entryPoint with
-  | "main" => return ["__main__"]
-  | "all" => return userProcNames
-  | "roots" =>
+  | .main => return ["__main__"]
+  | .all => return userProcNames
+  | .roots =>
     let cg := coreProgram.toProcedureCG
     let userSet := Std.HashSet.ofList userProcNames
     let roots := userProcNames.filter fun name =>
       (cg.getCallers name).all fun caller => !userSet.contains caller
     return roots
-  | other => throw s!"Invalid --entry-point value '{other}'. Expected: main, roots, or all."
 
 def pyAnalyzeLaurelCommand : Command where
   name := "pyAnalyzeLaurel"
@@ -609,11 +629,25 @@ def pyAnalyzeLaurelCommand : Command where
     let isBugFinding := options.checkMode == .bugFinding
                       || options.checkMode == .bugFindingAssumingCompleteSpec
 
+    -- Validate --entry-point is only used in bug-finding modes.
+    let entryPointFlag := pflags.getString "entry-point"
+    if entryPointFlag.isSome && !isBugFinding then
+      exitPyAnalyzeUserError s!"--entry-point is unsupported in {options.checkMode} mode"
+
+    -- Parse --entry-point flag.
+    let entryPoint : EntryPoint ←
+      if isBugFinding then
+        match entryPointFlag with
+        | some s =>
+          match EntryPoint.ofString? s with
+          | some ep => pure ep
+          | none =>
+            exitPyAnalyzeUserError s!"Invalid --entry-point value '{s}'. Must be {EntryPoint.options}."
+        | none => pure .roots
+      else pure .all
+
     -- Pick the procedures to verify.
     let proceduresToVerify ← do
-      let entryPoint :=
-        if isBugFinding then pflags.getString "entry-point" |>.getD "roots"
-        else "all"
       let userSourcePath := sourcePath.getD filePath
       match determineProceduresToVerify coreProgram userSourcePath entryPoint with
       | .ok procs => pure procs
