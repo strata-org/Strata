@@ -1,5 +1,5 @@
-unknown location: ✅ pass - assume_assume(0)_calls_PIn_0
-unknown location: ✅ pass - assume_assume(0)_calls_Any_to_bool_1
+test_list_empty.py(4, 4): ✅ pass - assume_assume(58)_calls_PIn_0
+test_list_empty.py(4, 4): ✅ pass - assume_assume(58)_calls_Any_to_bool_1
 test_list_empty.py(5, 16): ✅ pass - Check PAdd exception
 test_list_empty.py(6, 4): ✅ pass - empty list
 test_list_empty.py(6, 4): ✅ pass - empty list

@@ -1,5 +1,5 @@
-unknown location: ✅ pass - assume_assume(0)_calls_PIn_0
-unknown location: ✅ pass - assume_assume(0)_calls_Any_to_bool_1
+test_loops.py(4, 4): ✅ pass - assume_assume(53)_calls_PIn_0
+test_loops.py(4, 4): ✅ pass - assume_assume(53)_calls_Any_to_bool_1
 test_loops.py(5, 12): ✅ pass - Check PAdd exception
 test_loops.py(6, 11): ✅ pass - Check PGt exception
 test_loops.py(6, 4): ✅ pass - simple loop incremented
