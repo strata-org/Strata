@@ -866,19 +866,19 @@ partial def combinePositionalAndKeywordArgs
       let extraNames := kwordArgs.filterMap fun kw => match kw with
         | .mk_keyword _ name _ => name.val.map (·.val)
       throwUserError callRange
-        s!"'{name}' called with unknown keyword arguments: {extraNames}"
+        s!"unknown keyword arguments: {extraNames}"
     let kwords := pyKwordsToHashMap kwords
     -- Extra positional args beyond the signature are an arity error.
     if posArgs.length > funcDecl.args.length then
       throwUserError callRange
-        s!"'{name}' called with too many positional arguments: expected at most {funcDecl.args.length}, got {posArgs.length}"
+        s!"too many positional arguments: expected at most {funcDecl.args.length}, got {posArgs.length}"
     let unprovidedPosArgs := funcDecl.args.drop posArgs.length
     --every unprovided positional args must have a default value in the function signature or be provided in the kwargs
     let missingArgs := unprovidedPosArgs.filter fun arg =>
       !(arg.name ∈ kwords.keys) && arg.default.isNone
     if missingArgs.length > 0 then
       let missingNames := missingArgs.map (·.name)
-      throwUserError callRange s!"'{name}' called with missing required arguments: {missingNames}"
+      throwUserError callRange s!"missing required arguments: {missingNames}"
     let filledPosArgs ←
       unprovidedPosArgs.mapM (λ arg =>
         match kwords.get? arg.name with
@@ -1009,7 +1009,7 @@ partial def translateCall (ctx : TranslationContext)
     let name := if methodName.isEmpty then funcDecl.name else methodName
     if args.length > funcDecl.args.length then
       throwUserError callRange
-        s!"'{name}' called with too many positional arguments: expected at most {funcDecl.args.length}, got {args.length}"
+        s!"too many positional arguments: expected at most {funcDecl.args.length}, got {args.length}"
     let trans_posArgs ← args.mapM (translateExpr ctx)
     let trans_dict ← translateVarKwargs ctx kwords
     let remainingParams := funcDecl.args.drop args.length
