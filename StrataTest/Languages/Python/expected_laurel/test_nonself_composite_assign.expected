@@ -1,0 +1,8 @@
+test_nonself_composite_assign.py(14, 4): ✅ pass - callElimAssert_requires_17
+test_nonself_composite_assign.py(15, 4): ✅ pass - callElimAssert_requires_11
+test_nonself_composite_assign.py(16, 4): ✅ pass - callElimAssert_requires_5
+test_nonself_composite_assign.py(18, 4): ✅ pass - non-self composite field reassignment
+test_nonself_composite_assign.py(18, 4): ❓ unknown - non-self composite field reassignment
+test_nonself_composite_assign.py(13, 0): ❓ unknown - postcondition
+DETAIL: 4 passed, 0 failed, 2 inconclusive
+RESULT: Inconclusive

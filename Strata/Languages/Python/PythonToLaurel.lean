@@ -636,7 +636,10 @@ partial def translateExpr (ctx : TranslationContext) (e : Python.expr SourceRang
         let fieldExpr := mkStmtExprMd (StmtExpr.FieldSelect
           (mkStmtExprMd (StmtExpr.Identifier "self"))
           attr.val)
-        return fieldExpr
+        let className := ctx.currentClassName.get!
+        match tryLookupFieldHighType ctx className attr.val with
+          | some ty => wrapFieldInAny ty fieldExpr
+          | none => return fieldExpr
       else
         -- Regular object.field access
         let objExpr ← translateExpr ctx obj
@@ -1165,10 +1168,13 @@ partial def translateAssign  (ctx : TranslationContext)
           let fieldAccess := mkStmtExprMd (StmtExpr.FieldSelect
             (mkStmtExprMd (StmtExpr.Identifier "self"))
             attr.val)
-          -- When the annotation is a composite type, the RHS (which is Any)
-          -- cannot be assigned directly; use New to initialize the field.
-          -- When the field is Composite-typed and the RHS is also Composite,
-          -- assign directly (no coercion needed).
+          -- When the annotation is a composite type, the RHS (which may be Any or Composite)
+          -- is handled as follows:
+          -- - Annotated composite: use New to initialize the field.
+          --   TODO: This is incorrect when the RHS is an existing variable (e.g., `self.inner: Inner = param`).
+          --   The annotation path should use rhs_trans when the RHS is not a constructor call.
+          -- - Unannotated composite: assign directly (no coercion needed).
+          -- - Primitive: coerce to Any.
           let className := ctx.currentClassName.get!
           let fieldIsComposite := match tryLookupFieldHighType ctx className attr.val with
             | some (.UserDefined _) => true
@@ -1185,10 +1191,14 @@ partial def translateAssign  (ctx : TranslationContext)
           let assignStmt := mkStmtExprMdWithLoc (StmtExpr.Assign [fieldAccess] rhs') md
           return (ctx, [assignStmt])
         else
-          let targetExpr ← translateExpr ctx lhs  -- This will handle self.field via translateExpr
-          -- Coerce Composite RHS to Any for field assignments (the heap
-          -- parameterization wraps values in $Box which expects the field's type)
-          let rhs' ← coerceToAny ctx rhs rhs_trans
+          let targetExpr ← translateExpr ctx lhs  -- This will handle obj.field via translateExpr
+          -- Skip coercion when the field is Composite-typed (same logic as self path)
+          let objType ← inferExprType ctx obj
+          let fieldIsComposite := match tryLookupFieldHighType ctx objType attr.val with
+            | some (.UserDefined _) => true
+            | _ => false
+          let rhs' ← if fieldIsComposite then pure rhs_trans
+                      else coerceToAny ctx rhs rhs_trans
           let assignStmt := mkStmtExprMdWithLoc (StmtExpr.Assign [targetExpr] rhs') md
           return (ctx, [assignStmt])
       | _ => throw (.unsupportedConstruct "Assignment targets not yet supported" (toString (repr lhs)))
@@ -1754,6 +1764,10 @@ def translateFunction (ctx : TranslationContext) (sourceRange: SourceRange) (fun
     : Except TranslationError (Laurel.Procedure × TranslationContext) := do
 
     -- Translate parameters
+    -- TODO: Forward-reference class ordering is silently mishandled. isCompositeType
+    -- depends on importedSymbols being populated, but classes are processed in source
+    -- order. A forward reference (e.g., Outer defined before Inner) causes the parameter
+    -- to be typed as Any instead of UserDefined, with no error or warning.
     let mut inputs : List Parameter := []
 
     inputs := funcDecl.args.map (fun arg =>

@@ -11,7 +11,7 @@ Four interrelated gaps prevented user-defined class fields from being used as fi
 4. `self.field = value` in `__init__` called `coerceToAny` on Composite RHS values, replacing them with `Hole` instead of assigning directly.
 
 ## Key decisions
-- Composite field expressions are returned as-is from `wrapFieldInAny` — they don't need Any wrapping because they're either used for further field access (chained `.field.field`) or coerced later by `coerceToAny` at assignment sites.
+- Composite field expressions are returned as-is from `wrapFieldInAny` — they don't need Any wrapping because they're used for further field access (chained `.field.field`) or passed directly in Composite→Composite assignments.
 - Method parameters annotated with composite types now get `UserDefined` type (like `translateFunction` already did), matching the heap model's `$BoxComposite` expectations.
 - `self.field = value` skips coercion when the field is Composite-typed, allowing direct Composite→Composite assignment.
 
