@@ -12,7 +12,7 @@ import Strata.Languages.Core.Verifier
 import Strata.Languages.Core.SarifOutput
 import Strata.Languages.C_Simp.Verify
 import Strata.Languages.B3.Verifier.Program
-import Strata.Languages.Laurel.LaurelToCoreTranslator
+import Strata.Languages.Laurel.LaurelCompilationPipeline
 import Strata.Languages.Python.Python
 import Strata.Languages.Python.Specs.IdentifyOverloads
 import Strata.Languages.Python.Specs.ToLaurel
