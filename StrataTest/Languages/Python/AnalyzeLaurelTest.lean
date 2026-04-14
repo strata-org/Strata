@@ -275,6 +275,14 @@ Verifies that calling `put_item(Bucket="INVALID!", ...)` produces a `✖️ alwa
 result for the regex assertion through the full verification pipeline.
 Runs twice: once with the hardcoded `__main__` path and once with the
 `--entry-point roots` (CLI default) path, which should give the same result.
+
+Expected output (when Python + z3 available):
+  servicelib_Storage_Storage_put_item_assert(0)_9: ✔️ always true if reached (Required parameter 'Bucket' is missing)
+  servicelib_Storage_Storage_put_item_assert(0)_9: ✔️ always true if reached (Required parameter 'Key' is missing)
+  servicelib_Storage_Storage_put_item_assert(0)_9: ✔️ always true if reached (Required parameter 'Data' is missing)
+  servicelib_Storage_Storage_put_item_assert(0)_9: ✔️ always true if reached (Bucket must not be empty)
+  servicelib_Storage_Storage_put_item_assert(0)_9: ✖️ always false if reached (Bucket must match ^[a-z0-9-]+$)
+  servicelib_Storage_Storage_put_item_assert(0)_9: ✔️ always true if reached (Key must not be empty)
 -/
 
 #eval withPython fun pythonCmd => do
