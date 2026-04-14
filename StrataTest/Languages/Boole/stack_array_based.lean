@@ -85,7 +85,7 @@ spec
 
   // Older elements are preserved
   ensures (
-    forall i:int ::
+    ∀ i:int .
       1 <= i && i <= old(top) ==> S[i] == old(S[i])
   );
 }
@@ -162,17 +162,17 @@ Push_requires_5_1443: $__top5 < $__cap2
 Obligation:
 forall __q0 : int :: 1 <= __q0 && __q0 <= $__top5 ==> ($__S4[$__top5 + 1:=$__x6])[__q0] == $__S4[__q0]
 
-Label: Pop_ensures_10_1843
+Label: Pop_ensures_10_1840
 Property: assert
 Assumptions:
-Pop_requires_9_1806: $__top7 > 0
+Pop_requires_9_1803: $__top7 > 0
 Obligation:
 true
 
-Label: Pop_ensures_11_1874
+Label: Pop_ensures_11_1871
 Property: assert
 Assumptions:
-Pop_requires_9_1806: $__top7 > 0
+Pop_requires_9_1803: $__top7 > 0
 Obligation:
 true
 
@@ -206,11 +206,11 @@ Obligation: Push_ensures_8_1583
 Property: assert
 Result: ✅ pass
 
-Obligation: Pop_ensures_10_1843
+Obligation: Pop_ensures_10_1840
 Property: assert
 Result: ✅ pass
 
-Obligation: Pop_ensures_11_1874
+Obligation: Pop_ensures_11_1871
 Property: assert
 Result: ✅ pass
 -/

@@ -8,6 +8,15 @@ import Strata.MetaVerifier
 
 namespace Strata
 
+/-
+General Boole example rather than a direct feature-request seed.
+
+Purpose:
+- exercise a broad string-theory surface in one place
+- document the current style of string axiomatization used by the example suite
+- current status: this exploratory benchmark verifies
+-/
+
 private def basicOp :=
 #strata
 program Boole;
@@ -28,53 +37,53 @@ function intToString(x: int): string;
 // axioms for basic string behavior
 
 // length of concatenation = sum of lengths
-axiom (forall x: string, y: string :: len(strConcat(x, y)) == len(x) + len(y));
+axiom (∀ x: string, y: string . len(strConcat(x, y)) == len(x) + len(y));
 
 // each character (returned by at) has length 1
-axiom (forall x: string, i: int ::
+axiom (∀ x: string, i: int .
     0 <= i && i < len(x) ==> len(at(x, i)) == 1);
 
 // every string has non-negative length
-axiom (forall x: string :: len(x) >= 0);
+axiom (∀ x: string . len(x) >= 0);
 
 // prefix and suffix relationships
-axiom (forall x: string, y: string ::
+axiom (∀ x: string, y: string .
     prefixOf(x, strConcat(x, y)));       // x is prefix of x+y
-axiom (forall x: string, y: string ::
+axiom (∀ x: string, y: string .
     suffixOf(y, strConcat(x, y)));       // y is suffix of x+y
 
 // contains relationships
-axiom (forall x: string, y: string ::
+axiom (∀ x: string, y: string .
     contains(strConcat(x, y), x));       // x+y contains x
-axiom (forall x: string, y: string ::
+axiom (∀ x: string, y: string .
     contains(strConcat(x, y), y));       // x+y contains y
 
 // index of a prefix is 0
-axiom (forall x: string, y: string ::
+axiom (∀ x: string, y: string .
     indexOf(strConcat(x, y), x) == 0);
-axiom (forall x: string, y: string ::
+axiom (∀ x: string, y: string .
     indexOfFromOffset(strConcat(x, y), x, 0) == 0);
 
 // substring extraction behaves as expected
-axiom (forall x: string, y: string ::
+axiom (∀ x: string, y: string .
     substr(strConcat(x, y), 0, len(x)) == x);
-axiom (forall x: string, y: string ::
+axiom (∀ x: string, y: string .
     substr(strConcat(x, y), len(x), len(y)) == y);
 
 // replacement axiom: replacing prefix x with y in x+y yields y+y
-axiom (forall x: string, y: string ::
+axiom (∀ x: string, y: string .
     replace(strConcat(x, y), x, y) == strConcat(y, y));
 
 // integer/string conversion inverses
-axiom (forall i: int :: stringToInt(intToString(i)) == i);
-axiom (forall x: string :: intToString(stringToInt(x)) == x);
+axiom (∀ i: int . stringToInt(intToString(i)) == i);
+axiom (∀ x: string . intToString(stringToInt(x)) == x);
 
 // characters come from x when i < len(x)
-axiom (forall x: string, y: string, i: int ::
+axiom (∀ x: string, y: string, i: int .
     0 <= i && i < len(x) ==> at(strConcat(x, y), i) == at(x, i));
 
 // characters come from y when i >= len(x)
-axiom (forall x: string, y: string, i: int ::
+axiom (∀ x: string, y: string, i: int .
     len(x) <= i && i < len(x) + len(y) ==>
         at(strConcat(x, y), i) == at(y, i - len(x)));
 
@@ -109,5 +118,49 @@ procedure main() returns () {
 
 #end
 
-#guard_msgs (drop info) in
+ /-- info:
+Obligation: assert_19_3035
+Property: assert
+Result: ✅ pass
+
+Obligation: assert_20_3077
+Property: assert
+Result: ✅ pass
+
+Obligation: assert_21_3125
+Property: assert
+Result: ✅ pass
+
+Obligation: assert_22_3159
+Property: assert
+Result: ✅ pass
+
+Obligation: assert_23_3206
+Property: assert
+Result: ✅ pass
+
+Obligation: assert_24_3242
+Property: assert
+Result: ✅ pass
+
+Obligation: assert_25_3272
+Property: assert
+Result: ✅ pass
+
+Obligation: assert_26_3302
+Property: assert
+Result: ✅ pass
+
+Obligation: assert_27_3332
+Property: assert
+Result: ✅ pass
+
+Obligation: assert_28_3386
+Property: assert
+Result: ✅ pass-/
+#guard_msgs in
 #eval Strata.Boole.verify "cvc5" basicOp (options := .quiet)
+
+theorem basicOp_smt_vcs_correct : Strata.smtVCsCorrect basicOp := by
+  gen_smt_vcs
+  all_goals (try grind)
