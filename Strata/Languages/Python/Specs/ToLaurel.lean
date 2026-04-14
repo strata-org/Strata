@@ -658,12 +658,19 @@ def funcDeclToLaurel (procName : String) (func : FunctionDecl)
       pure (anyInputs, anyOutputs, body)
     else
       pure (inputs, outputs, Body.Opaque [] none [])
+  -- Build Laurel-level precondition expressions for the Procedure.preconditions
+  -- field, even when there are no postconditions. CallElim uses these to assert
+  -- preconditions at call sites with proper messages.
+  let laurelPreconds ← func.preconditions.toList.filterMapM fun assertion => do
+    let msg := formatAssertionMessage assertion.message
+    let precondMd ← mkMdWithFileRange default msg
+    specExprToLaurel assertion.formula precondMd
   let md ← mkMdWithFileRange func.loc
   return {
     name := { text := procName, md := md }
     inputs := inputs.toList
     outputs := outputs
-    preconditions := []
+    preconditions := laurelPreconds
     decreases := none
     isFunctional := false
     body := body
