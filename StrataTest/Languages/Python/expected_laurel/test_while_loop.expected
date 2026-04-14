@@ -5,17 +5,17 @@ test_while_loop.py(6, 12): ✅ pass - Check PSub exception
 test_while_loop.py(4, 4): ✅ pass - loop_guard_end_calls_Any_to_bool_0
 test_while_loop.py(7, 4): ✅ pass - countdown sum should be 15
 test_while_loop.py(7, 4): ❓ unknown - countdown sum should be 15
-unknown location: ❓ unknown - (test_while_countdown ensures) Return type constraint
+test_while_loop.py(1, 30): ❓ unknown - (test_while_countdown ensures) Return type constraint
 test_while_loop.py(12, 4): ✅ pass - loop_guard_calls_Any_to_bool_0
 test_while_loop.py(13, 16): ❓ unknown - Check PAdd exception
 test_while_loop.py(14, 8): ✅ pass - ite_cond_calls_Any_to_bool_0
 test_while_loop.py(16, 4): ✅ pass - should have counted to 10
 test_while_loop.py(16, 4): ✅ pass - should have counted to 10
-unknown location: ❓ unknown - (test_while_true_break ensures) Return type constraint
+test_while_loop.py(10, 31): ❓ unknown - (test_while_true_break ensures) Return type constraint
 test_while_loop.py(12, 4): ✅ pass - loop_guard_end_calls_Any_to_bool_0
 test_while_loop.py(16, 4): ✅ pass - should have counted to 10
 test_while_loop.py(16, 4): ✅ pass - should have counted to 10
-unknown location: ✅ pass - (test_while_true_break ensures) Return type constraint
+test_while_loop.py(10, 31): ✅ pass - (test_while_true_break ensures) Return type constraint
 test_while_loop.py(22, 10): ✅ pass - Check PLt exception
 test_while_loop.py(22, 4): ✅ pass - loop_guard_calls_Any_to_bool_0
 test_while_loop.py(23, 12): ✅ pass - Check PAdd exception
@@ -23,11 +23,11 @@ test_while_loop.py(24, 8): ✅ pass - ite_cond_calls_Any_to_bool_0
 test_while_loop.py(22, 4): ✅ pass - loop_guard_end_calls_Any_to_bool_0
 test_while_loop.py(27, 4): ✅ pass - sum excluding 5 should be 50
 test_while_loop.py(27, 4): ❓ unknown - sum excluding 5 should be 50
-unknown location: ❓ unknown - (test_while_with_continue ensures) Return type constraint
+test_while_loop.py(19, 34): ❓ unknown - (test_while_with_continue ensures) Return type constraint
 test_while_loop.py(26, 16): ❓ unknown - Check PAdd exception
 test_while_loop.py(22, 4): ✅ pass - loop_guard_end_calls_Any_to_bool_0
 test_while_loop.py(27, 4): ✅ pass - sum excluding 5 should be 50
 test_while_loop.py(27, 4): ❓ unknown - sum excluding 5 should be 50
-unknown location: ❓ unknown - (test_while_with_continue ensures) Return type constraint
+test_while_loop.py(19, 34): ❓ unknown - (test_while_with_continue ensures) Return type constraint
 DETAIL: 21 passed, 0 failed, 10 inconclusive
 RESULT: Inconclusive

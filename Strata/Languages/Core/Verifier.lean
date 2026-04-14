@@ -935,7 +935,10 @@ def verifySingleEnv (pE : Program × Env) (options : VerifyOptions)
 /-- Run the Strata Core verification pipeline on a program: transform,
 type-check, partially evaluate, and discharge proof obligations via SMT.
 All program-wide transformations that occur before any analyses
-(including type inference) should be placed here. -/
+(including type inference) should be placed here.
+
+When `keepAllFilesPrefix` is provided, the program state after each pipeline
+phase is written to `{prefix}.{n}.{phaseName}.core.st` (numbered from 1). -/
 def verify (program : Program)
     (tempDir : System.FilePath)
     (proceduresToVerify : Option (List String) := none)
@@ -943,21 +946,36 @@ def verify (program : Program)
     (moreFns : @Lambda.Factory CoreLParams := Lambda.Factory.default)
     (externalPhases : List AbstractedPhase := [])
     (prefixPhases : List PipelinePhase := [])
+    (keepAllFilesPrefix : Option String := none)
     : EIO DiagnosticModel VCResults := do
   let profile := options.profile
   let factory ← EIO.ofExcept (Core.Factory.addFactory moreFns)
   let pipelinePhases := prefixPhases ++ corePipelinePhases (procs := proceduresToVerify) (factory := some factory)
   let phases := pipelinePhases.map (·.phase)
   let finalProgram ← profileStep profile "  Program transformations" do
-    let passes := fun prog => do
-      let mut current := prog
-      for pp in pipelinePhases do
-        let (_changed, next) ← pp.transform current
+    if let some pfx := keepAllFilesPrefix then
+      if let some parent := (System.FilePath.mk pfx).parent then
+        IO.toEIO (fun e => DiagnosticModel.fromFormat f!"{e}")
+          (IO.FS.createDirAll parent)
+    let mut current := program
+    let mut state : Transform.CoreTransformState := .emp
+    let mut step := 0
+    for pp in pipelinePhases do
+      let (result, newState) := Transform.runWith current (fun prog => do
+        let (_, next) ← pp.transform prog
+        return next) state
+      match result with
+      | .ok next =>
         current := next
-      return current
-    match Transform.run program passes with
-    | .ok prog => .ok prog
-    | .error e => .error (DiagnosticModel.fromFormat f!"❌ Transform Error. {e}")
+        state := newState
+        step := step + 1
+        if let some pfx := keepAllFilesPrefix then
+          let path := s!"{pfx}.{step}.{pp.phase.name}.core.st"
+          IO.toEIO (fun e => DiagnosticModel.fromFormat f!"{e}")
+            (IO.FS.writeFile path (toString current ++ "\n"))
+      | .error e =>
+        throw (DiagnosticModel.fromFormat f!"❌ Transform Error. {e}")
+    .ok current
   -- Build the axiom relevance cache once (post-transform, so declarations are
   -- stable). The cache is reused across all verification environments and goals.
   let axiomCache? ← profileStep profile "  Build axiom relevance cache" do
@@ -992,7 +1010,6 @@ def typeCheck (ictx : InputContext) (env : Program) (options : Core.VerifyOption
   Except DiagnosticModel Core.Program := do
   let (program, errors) := TransM.run ictx (translateProgram env)
   if errors.isEmpty then
-    -- dbg_trace f!"AST: {program}"
     Core.typeCheck options program moreFns
   else
     .error <| DiagnosticModel.fromFormat s!"DDM Transform Error: {repr errors}"
@@ -1017,13 +1034,15 @@ def verify
     (options : Core.VerifyOptions := Core.VerifyOptions.default)
     (moreFns : @Lambda.Factory Core.CoreLParams := Lambda.Factory.default)
     (externalPhases : List Core.AbstractedPhase := [])
+    (keepAllFilesPrefix : Option String := none)
     : IO Core.VCResults := do
   let (program, errors) := Core.getProgram env ictx
   if errors.isEmpty then
     let runner tempDir :=
       EIO.toIO (fun dm => IO.Error.userError (toString (dm.format (some ictx.fileMap))))
                   (Core.verify program tempDir proceduresToVerify options moreFns
-                    (externalPhases := externalPhases))
+                    (externalPhases := externalPhases)
+                    (keepAllFilesPrefix := keepAllFilesPrefix))
     match options.vcDirectory with
     | .none =>
       IO.FS.withTempDir runner
