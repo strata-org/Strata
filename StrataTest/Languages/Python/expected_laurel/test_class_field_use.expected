@@ -1,5 +1,5 @@
 test_class_field_use.py(19, 11): ❓ unknown - Check PMul exception
-unknown location: ❓ unknown - (process_buffer ensures) Return type constraint
+test_class_field_use.py(18, 43): ❓ unknown - (process_buffer ensures) Return type constraint
 test_class_field_use.py(14, 4): ✔️ always true if reached - Check PMul exception
 test_class_field_use.py(15, 4): ✔️ always true if reached - Doubling of buffer did not work
 test_class_field_use.py(15, 4): ✔️ always true if reached - Doubling of buffer did not work
