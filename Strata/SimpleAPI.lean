@@ -16,7 +16,7 @@ import Strata.Transform.IrrelevantAxioms
 
 public import Strata.Languages.Core.Options
 public import Strata.Languages.Core.Verifier
-import Strata.Languages.Laurel.LaurelToCoreTranslator
+import Strata.Languages.Laurel.LaurelCompilationPipeline
 import Strata.Languages.Laurel.Grammar.ConcreteToAbstractTreeTranslator
 import Strata.Languages.Laurel.Grammar.AbstractToConcreteTreeTranslator
 public import Strata.Languages.Python.PySpecPipeline
