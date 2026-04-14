@@ -13,7 +13,11 @@ Near-upstream anchors from `differential_status.md`:
 - `verus-examples:guide/recursion`
 - `vlir-tests:mutual_recursion`
 - `vlir-tests:recursion`
+- Verus link:
+  `guide/recursion`: https://github.com/verus-lang/verus/blob/main/examples/guide/recursion.rs
 - Gap: mutual recursion / forward references
+- Current status: the seed verifies with uninterpreted sibling stubs
+- Remaining gap: real forward references and mutually recursive definitions
 -/
 
 private def mutualRecursionSeed : Strata.Program :=
@@ -35,7 +39,7 @@ program Boole;
 function odd_stub(n: int) : bool;
 function even_stub(n: int) : bool;
 
-axiom (forall n: int :: 0 <= n ==> even_stub(n) || odd_stub(n));
+axiom (∀ n: int . 0 <= n ==> even_stub(n) || odd_stub(n));
 
 //rec function even(n: int) : bool
 //{
