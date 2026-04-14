@@ -30,6 +30,38 @@ namespace Core.ObligationExtraction
 
 open Lambda Imperative
 
+/-- Collect assert and cover obligations from a dead (unreachable) branch.
+    Asserts get obligation `true` (trivially pass), covers get `false` (unreachable).
+    A dead-branch path condition is added so the solver can detect unreachability. -/
+private partial def extractDeadBranchObligations
+    (pc : PathConditions Expression) (cond : Expression.Expr)
+    (ss : Statements) : Except String (Array (ProofObligation Expression)) :=
+  let deadLabel := toString (Std.format f!"<dead_branch: {cond.eraseTypes}>")
+  let deadPc := pc.push [(deadLabel, Lambda.LExpr.false ())]
+  go deadPc ss #[]
+where
+  go (pc : PathConditions Expression) : Statements →
+      Array (ProofObligation Expression) →
+      Except String (Array (ProofObligation Expression))
+  | [], acc => .ok acc
+  | s :: rest, acc =>
+    match s with
+    | .cmd (.cmd (.assert label _e md)) =>
+      let propType := match md.getPropertyType with
+        | some s => if s == MetaData.divisionByZero then .divisionByZero else .assert
+        | none => .assert
+      go pc rest (acc.push (ProofObligation.mk label propType pc (Lambda.LExpr.true ()) md))
+    | .cmd (.cmd (.cover label _e md)) =>
+      go pc rest (acc.push (ProofObligation.mk label .cover pc (Lambda.LExpr.false ()) md))
+    | .block _ innerSs _ => do
+      let innerObs ← extractDeadBranchObligations pc cond innerSs
+      go pc rest (acc ++ innerObs)
+    | .ite _ thenSs elseSs _ => do
+      let thenObs ← extractDeadBranchObligations pc cond thenSs
+      let elseObs ← extractDeadBranchObligations pc cond elseSs
+      go pc rest (acc ++ thenObs ++ elseObs)
+    | _ => go pc rest acc
+
 /-- Extract proof obligations from a procedure body, reconstructing path
     conditions from the program structure.
 
@@ -82,8 +114,23 @@ where
       let (elseObs, _) ← extractFromStatements pc elseSs
       .ok (thenObs ++ elseObs ++ acc, pc)
 
-    | .ite (.det _) _ _ _ =>
-      .error "ObligationExtraction: .ite (.det _) is unsupported; PE should have resolved all deterministic branches"
+    | .ite (.det c) thenSs elseSs _md => do
+      -- Check if the condition is deterministic (true/false).
+      -- For dead branches, emit trivial obligations (true for asserts, false for covers)
+      -- with a dead-branch path condition so the solver can detect unreachability.
+      let condBool := Lambda.LExpr.denoteBool c
+      if condBool.isSome then
+        let isTrue := condBool == some true
+        let (liveSs, deadSs) := if isTrue then (thenSs, elseSs) else (elseSs, thenSs)
+        let (liveObs, _) ← extractFromStatements pc liveSs
+        let deadObs ← extractDeadBranchObligations pc c deadSs
+        .ok (liveObs ++ deadObs ++ acc, pc)
+      else do
+        -- Unresolved nondeterministic condition: process both branches.
+        -- Assume statements inside each branch provide the path conditions.
+        let (thenObs, _) ← extractFromStatements pc thenSs
+        let (elseObs, _) ← extractFromStatements pc elseSs
+        .ok (thenObs ++ elseObs ++ acc, pc)
 
     | .block _label innerSs _md => do
       -- Process inner statements; propagate path conditions from the block
