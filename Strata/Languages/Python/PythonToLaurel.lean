@@ -934,7 +934,17 @@ partial def translateCall (ctx : TranslationContext)
     | .Attribute _ _ attr _ => attr.val
     | _ => funcName
   let callRange := match f with
-    | .Attribute range _ _ _ => range
+    | .Attribute range _ ⟨attrLoc, attrName⟩ _ =>
+      if attrLoc.isNone then
+        -- Point at the method name, not the full receiver.method expression.
+        -- range.stop points past "method_name", so subtract the name's byte
+        -- length to get the start of the method name.
+        let nameBytes := attrName.utf8ByteSize
+        let stopBytes := range.stop.byteIdx
+        if stopBytes ≥ nameBytes then
+          { start := ⟨stopBytes - nameBytes⟩, stop := range.stop : SourceRange }
+        else range
+      else attrLoc
     | .Name range _ _ => range
     | _ => .none
   let funcDecl := ctx.functionSignatures.find? fun x => (x.name == funcName || x.name == funcName ++ "@__init__")
