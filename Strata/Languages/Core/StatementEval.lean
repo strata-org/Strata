@@ -590,7 +590,7 @@ def processIteBranches (steps : Nat) (old_var_subst : SubstMap) (Ewn : EnvWithNe
     ([EnvWithNext.mk (Env.merge cond' E_t E_f).popScope
                     .none
                     (orig_stk.appendToTop [s'])],
-     branchStats.increment s!"{Evaluator.Stats.processIteBranches_onlyOneBranchChosen}")
+     branchStats.increment s!"{Evaluator.Stats.processIteBranches_merged}")
   | _, _ =>
     let Ewns_t := Ewns_t.map
                       (fun (ewn : EnvWithNext) =>

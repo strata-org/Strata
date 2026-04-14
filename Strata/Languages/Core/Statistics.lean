@@ -37,7 +37,7 @@ inductive Stats where
   | verificationEnvironments
   /-- ITE where both branches yielded a single result with no exit label,
       allowing the evaluator to merge them into one path. -/
-  | processIteBranches_onlyOneBranchChosen
+  | processIteBranches_merged
   /-- ITE where branches could not be merged, causing path explosion.
       This is the primary source of exponential evaluation cost. -/
   | processIteBranches_diverged

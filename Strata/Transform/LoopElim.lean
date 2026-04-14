@@ -126,8 +126,6 @@ def Stmt.removeLoopsM
   | .loop guard measure invariants bss md => do
     let loop_num ← modifyGet fun s =>
       (s.loopCounter, { s with loopCounter := s.loopCounter + 1 })
-
-    let loop_num ← StateT.modifyGet (fun x => (x, x + 1))
     -- Havoc only loop-carried variables. Variables declared inside the loop
     -- body are block-local and should not be treated as pre-existing state by
     -- the passive loop encoding.
