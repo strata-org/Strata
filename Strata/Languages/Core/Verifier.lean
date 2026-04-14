@@ -717,25 +717,22 @@ def preprocessObligation (obligation : ProofObligation Expression) (p : Program)
     `loopElimPipelinePhase` is placed last because loop elimination happens
     during evaluation (not as a program-to-program pass), making it the
     closest phase to SMT. -/
-def corePipelinePhases (procs : Option (List String) := none)
-    (factory : Option (@Lambda.Factory CoreLParams) := none) : List PipelinePhase :=
+def corePipelinePhases (procs : Option (List String) := none) : List PipelinePhase :=
   let filterPhases := match procs with
     | some ps => [filterProceduresPipelinePhase ps]
-    | none => []
-  let precondPhase := match factory with
-    | some f => [precondElimPipelinePhase f]
     | none => []
   let postFilterPhases := match procs with
     | some ps =>
       let targets := ps ++ ps.map PrecondElim.wfProcName
       [filterProceduresPipelinePhase targets (respectNoFilter := false)]
     | none => []
-  filterPhases ++ [callElimPipelinePhase] ++ precondPhase ++ postFilterPhases ++ [loopElimPipelinePhase]
+  -- precondElimPipelinePhase will immediately return if there is no Factory
+  -- set up at CoreTransformState.
+  filterPhases ++ [callElimPipelinePhase] ++ [precondElimPipelinePhase] ++ postFilterPhases ++ [loopElimPipelinePhase]
 
 /-- The abstracted phases derived from the Core pipeline phases. -/
-def coreAbstractedPhases (procs : Option (List String) := none)
-    (factory : Option (@Lambda.Factory CoreLParams) := none) : List AbstractedPhase :=
-  (corePipelinePhases procs factory).map (·.phase)
+def coreAbstractedPhases (procs : Option (List String) := none) : List AbstractedPhase :=
+  (corePipelinePhases procs).map (·.phase)
 
 /-- Build the solver log from raw results and phase validation logs. -/
 private def buildSolverLog (satResult valResult : SMT.Result)
@@ -950,7 +947,7 @@ def verify (program : Program)
     : EIO DiagnosticModel VCResults := do
   let profile := options.profile
   let factory ← EIO.ofExcept (Core.Factory.addFactory moreFns)
-  let pipelinePhases := prefixPhases ++ corePipelinePhases (procs := proceduresToVerify) (factory := some factory)
+  let pipelinePhases := prefixPhases ++ corePipelinePhases (procs := proceduresToVerify)
   let phases := pipelinePhases.map (·.phase)
   let finalProgram ← profileStep profile "  Program transformations" do
     if let some pfx := keepAllFilesPrefix then
@@ -958,7 +955,7 @@ def verify (program : Program)
         IO.toEIO (fun e => DiagnosticModel.fromFormat f!"{e}")
           (IO.FS.createDirAll parent)
     let mut current := program
-    let mut state : Transform.CoreTransformState := .emp
+    let mut state : Transform.CoreTransformState := { Transform.CoreTransformState.emp with factory := some factory }
     let mut step := 0
     for pp in pipelinePhases do
       let (result, newState) := Transform.runWith current (fun prog => do
