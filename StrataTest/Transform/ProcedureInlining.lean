@@ -61,7 +61,7 @@ private def IdMap.lblMapsTo (map:IdMap) (fr:String) (to:String): Bool :=
   | .some x => x == to
 
 
-private def substExpr (e1:Expression.Expr) (map:Map String String) (isReverse: Bool) :=
+private def substExpr (e1:Expression.Expr) (map:Map String String) (_isReverse: Bool) :=
   map.foldl
     (fun (e:Expression.Expr) ((i1,i2):String × String) =>
       -- old_id has visibility of temp because the new local variables were
