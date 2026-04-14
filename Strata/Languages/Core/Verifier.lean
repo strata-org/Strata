@@ -269,11 +269,13 @@ Unreachable covers display as ❌ (error) instead of ⛔ (warning).
 structure VCOutcome where
   satisfiabilityProperty : SMT.Result
   validityProperty : SMT.Result
-  /-- Ordered log of solver results: the raw solver results followed by
-      per-phase adjusted results (e.g. sat→unknown when a phase cannot
-      validate the model). Consumed by future diagnostic and traceability
-      tooling. -/
-  solverLog : List SolverPhaseLog := []
+  /-- Ordered log of solver results per path. Each inner list is one path's
+      log: the raw solver results followed by per-phase adjusted results
+      (e.g. sat→unknown when a phase cannot validate the model).
+      When outcomes from multiple paths are merged, each path's log is
+      preserved as a separate entry in the outer list. Consumed by future
+      diagnostic and traceability tooling. -/
+  solverLog : List (List SolverPhaseLog) := []
   deriving Repr
 
 instance : Inhabited VCOutcome where
@@ -509,7 +511,7 @@ def SMT.Result.merge (a b : SMT.Result) : SMT.Result :=
 /-- Merge two `VCOutcome`s from different paths to the same assertion.
     For each SMT check (satisfiability and validity), `sat` dominates:
     if the assertion is satisfiable on any path, the merged result is sat.
-    The `solverLog` from both outcomes is concatenated. -/
+    Each path's `solverLog` is preserved as a separate entry. -/
 def VCOutcome.merge (a b : VCOutcome) : VCOutcome :=
   { satisfiabilityProperty := a.satisfiabilityProperty.merge b.satisfiabilityProperty
     validityProperty := a.validityProperty.merge b.validityProperty
@@ -967,7 +969,7 @@ def getObligationResult (assumptionTerms : List Term) (obligationTerm : Term)
     let rawOutcome : VCOutcome := {
       satisfiabilityProperty := adjSat,
       validityProperty := adjVal,
-      solverLog := smtLog }
+      solverLog := [smtLog] }
     let outcome := maskOutcome rawOutcome satisfiabilityCheck validityCheck
     -- Extract model from sat results (using raw solver results)
     let model := match satResult, validityResult with
@@ -1035,7 +1037,7 @@ def verifySingleEnv (pE : Program × Env) (options : VerifyOptions)
           let outcome : VCOutcome := {
             satisfiabilityProperty := adjPeSat,
             validityProperty := adjPeVal,
-            solverLog := peLog }
+            solverLog := [peLog] }
           let result : VCResult := { obligation, outcome := .ok outcome, verbose := options.verbose,
                                       checkLevel := options.checkLevel, checkMode := options.checkMode, lexprModel := [] }
           results := results.push result
