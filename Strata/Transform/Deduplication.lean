@@ -96,20 +96,45 @@ where
     | .app _ fn arg => collectAppArgs fn ++ collectSubexprs arg
     | _ => []
 
-/-- Find expressions that appear more than once in a list. Uses type-erased
-    comparison to ignore type annotations that may differ between occurrences. -/
+/-- Hash an expression structurally, ignoring type annotations (matching
+    `eraseTypes` semantics) for use in HashMap-based deduplication. -/
+private def hashExpr : Expression.Expr → UInt64
+  | .const _ c => mixHash 1 (hash (toString c))
+  | .bvar _ i => mixHash 2 (hash i)
+  | .fvar _ n _ => mixHash 3 (hash n.name)
+  | .op _ o _ => mixHash 4 (hash o.name)
+  | .app _ fn arg => mixHash 5 (mixHash (hashExpr fn) (hashExpr arg))
+  | .ite _ c t f => mixHash 6 (mixHash (hashExpr c) (mixHash (hashExpr t) (hashExpr f)))
+  | .eq _ e1 e2 => mixHash 7 (mixHash (hashExpr e1) (hashExpr e2))
+  | .abs _ name _ body => mixHash 8 (mixHash (hash name) (hashExpr body))
+  | .quant _ k name _ tr body =>
+    let kh : UInt64 := match k with | .all => 0 | .exist => 1
+    mixHash 9 (mixHash kh (mixHash (hash name) (mixHash (hashExpr tr) (hashExpr body))))
+
+/-- Wrapper for using expressions as HashMap keys with type-erased comparison. -/
+private structure ExprKey where
+  expr : Expression.Expr
+
+private instance : BEq ExprKey where
+  beq a b := a.expr.eraseTypes == b.expr.eraseTypes
+
+private instance : Hashable ExprKey where
+  hash k := hashExpr k.expr
+
+/-- Find expressions that appear more than once in a list. Uses a HashMap
+    for O(1) lookup with type-erased comparison. -/
 private def findDuplicates (exprs : List Expression.Expr) : List Expression.Expr :=
-  go exprs [] []
-where
-  go : List Expression.Expr → List Expression.Expr → List Expression.Expr →
-       List Expression.Expr
-  | [], _, dups => dups.reverse
-  | e :: rest, seen, dups =>
-    let eErased := e.eraseTypes
-    if seen.any (· == eErased) then
-      if dups.any (fun d => d.eraseTypes == eErased) then go rest seen dups
-      else go rest seen (e :: dups)
-    else go rest (eErased :: seen) dups
+  -- Single pass: count occurrences and remember the first expression per key
+  let map := exprs.foldl (fun (m : Std.HashMap ExprKey (Expression.Expr × Nat)) e =>
+    let key := ⟨e⟩
+    match m[key]? with
+    | some (orig, n) => m.insert key (orig, n + 1)
+    | none => m.insert key (e, 1)
+  ) {}
+  let revDups := map.fold (fun acc _ (orig, count) =>
+    if count > 1 then orig :: acc else acc
+  ) ([] : List Expression.Expr)
+  revDups.reverse
 
 /-- Replace all occurrences of `target` (compared with erased types) with
     `replacement` in an expression. Erases `target` once upfront to avoid
