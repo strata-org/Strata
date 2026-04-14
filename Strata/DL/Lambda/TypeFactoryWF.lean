@@ -51,13 +51,13 @@ theorem TypeFactoryWF.eq_of_name_eq {IDMeta : Type} {tf : @TypeFactory IDMeta}
       | inl hb_eq => rw [ha_eq, hb_eq]
       | inr hb_mem =>
         subst ha_eq
-        have : b.name ∈ xs.map LDatatype.name := List.mem_map.mpr ⟨b, hb_mem, rfl⟩
-        exact absurd (hab ▸ this) hnotmem
+        have h_b_mem : b.name ∈ xs.map LDatatype.name := List.mem_map.mpr ⟨b, hb_mem, rfl⟩
+        exact absurd (hab ▸ h_b_mem) hnotmem
     | inr ha_mem => cases hb with
       | inl hb_eq =>
         subst hb_eq
-        have : a.name ∈ xs.map LDatatype.name := List.mem_map.mpr ⟨a, ha_mem, rfl⟩
-        exact absurd (hab.symm ▸ this) hnotmem
+        have h_a_mem : a.name ∈ xs.map LDatatype.name := List.mem_map.mpr ⟨a, ha_mem, rfl⟩
+        exact absurd (hab.symm ▸ h_a_mem) hnotmem
       | inr hb_mem => exact ih hnd_tl a ha_mem b hb_mem hab
 
 end -- public section

@@ -128,8 +128,8 @@ theorem applySubst_fvars_annotated [DecidableEq T.IDMeta] {S : Subst}
       simp only [LExpr.replaceUserProvidedType, Option.map, fvars_annotated_by] at *
       intro ty' h_find
       -- tyMap.map (fun x => (x.fst, subst S x.snd)) = tyMap.fmap (subst S)
-      have : List.map (fun x => (x.fst, LMonoTy.subst S x.snd)) tyMap = Map.fmap (LMonoTy.subst S) tyMap := rfl
-      rw [this] at h_find
+      have h_fmap : List.map (fun x => (x.fst, LMonoTy.subst S x.snd)) tyMap = Map.fmap (LMonoTy.subst S) tyMap := rfl
+      rw [h_fmap] at h_find
       rw [Map.find?_fmap] at h_find
       cases h_orig : Map.find? tyMap name with
       | none => simp [h_orig] at h_find
@@ -279,7 +279,7 @@ private theorem denote_applySubst_gen
     have h_subst_arrow : LMonoTy.subst S (aty.arrow rty) = (LMonoTy.subst S aty).arrow (LMonoTy.subst S rty) :=
       LMonoTy.subst_tcons_pair S "arrow" aty rty
     have h_rty_s : rty_s = LMonoTy.subst S rty := by
-      have := h_subst_arrow ▸ h_eq_s; cases this; rfl
+      have h_eq_arrow := h_subst_arrow ▸ h_eq_s; cases h_eq_arrow; rfl
     subst h_rty_s
     -- Use denote_cast_ty to convert type index, then denote_abs on both sides
     have h_subst' : LExpr.HasTypeA (Δ.map (LMonoTy.subst S))
@@ -324,8 +324,8 @@ private theorem denote_applySubst_gen
     have h_aty_s : aty_s = LMonoTy.subst S aty := by
       have h_fn_s' := applySubst_typeCheck S h_fn
       rw [LExpr.applySubst_eq_replaceUserProvidedType, h_subst_arrow] at h_fn_s'
-      have := HasTypeA_unique h_fn_s h_fn_s'
-      cases this; rfl
+      have h_unique := HasTypeA_unique h_fn_s h_fn_s'
+      cases h_unique; rfl
     subst h_aty_s
     -- TyDenote equalities from substTyVars_subst
     have h_td_fn : TyDenote tcInterp vt ((LMonoTy.subst S aty).arrow (LMonoTy.subst S τ)) =
@@ -383,9 +383,9 @@ private theorem denote_applySubst_gen
     have ⟨ty_s, h_τ_s, h_1_s, h_2_s⟩ := HasTypeA.eq_inv h_subst
     subst h_τ
     have h_ty_s : ty_s = LMonoTy.subst S ty' := by
-      have := applySubst_typeCheck S h_1
-      rw [LExpr.applySubst_eq_replaceUserProvidedType] at this
-      exact HasTypeA_unique h_1_s this
+      have h_applySubst := applySubst_typeCheck S h_1
+      rw [LExpr.applySubst_eq_replaceUserProvidedType] at h_applySubst
+      exact HasTypeA_unique h_1_s h_applySubst
     subst h_ty_s
     have h_td_ty : TyDenote tcInterp vt (LMonoTy.subst S ty') = TyDenote tcInterp vt' ty' :=
       congrArg (SortDenote tcInterp) (hvt' ▸ substTyVars_subst vt S ty')
@@ -500,9 +500,9 @@ theorem denote_applySubst
     (h_td : TyDenote tcInterp vt (LMonoTy.subst S τ) = TyDenote tcInterp vt' τ)
     : LExpr.denote tcInterp opInterp fvarVal vt .nil (e.applySubst S) (LMonoTy.subst S τ) h_subst =
       cast h_td.symm (LExpr.denote tcInterp opInterp fvarVal vt' .nil e τ h_body) := by
-  have := denote_applySubst_gen tcInterp opInterp fvarVal hvt' h_body h_subst h_td
+  have h_gen := denote_applySubst_gen tcInterp opInterp fvarVal hvt' h_body h_subst h_td
     (bvarVal := .nil) (bvarVal' := .nil)
     (fun i _ hb _ => absurd hb (by simp))
-  rw [← this, cast_cast, cast_eq]
+  rw [← h_gen, cast_cast, cast_eq]
 
 end Lambda

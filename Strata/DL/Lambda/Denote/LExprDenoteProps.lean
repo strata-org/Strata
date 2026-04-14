@@ -125,10 +125,14 @@ theorem denote_suffix_irrel
     subst h_ty
     by_cases heq : LExpr.denote tcInterp opInterp fvarVal vt (HList.append bv₁ bv₂) e1 ty' h_1₁ =
         LExpr.denote tcInterp opInterp fvarVal vt (HList.append bv₁ bv₂) e2 ty' h_2₁
-    · rw [denote_eq_true _ h_1₁ h_2₁ h₁ heq, denote_eq_true _ h_1₂ h_2₂ h₂
-            (by rw [← ih1 h_lc.1 h_1₁ h_1₂ bv₁, ← ih2 h_lc.2 h_2₁ h_2₂ bv₁]; exact heq)]
-    · rw [denote_eq_false _ h_1₁ h_2₁ h₁ heq, denote_eq_false _ h_1₂ h_2₂ h₂
-            (by rw [← ih1 h_lc.1 h_1₁ h_1₂ bv₁, ← ih2 h_lc.2 h_2₁ h_2₂ bv₁]; exact heq)]
+    · have h_eq_rhs : LExpr.denote tcInterp opInterp fvarVal vt (HList.append bv₁ bv₂') e1 ty' h_1₂ =
+            LExpr.denote tcInterp opInterp fvarVal vt (HList.append bv₁ bv₂') e2 ty' h_2₂ := by
+        rw [← ih1 h_lc.1 h_1₁ h_1₂ bv₁, ← ih2 h_lc.2 h_2₁ h_2₂ bv₁]; exact heq
+      rw [denote_eq_true _ h_1₁ h_2₁ h₁ heq, denote_eq_true _ h_1₂ h_2₂ h₂ h_eq_rhs]
+    · have h_neq_rhs : LExpr.denote tcInterp opInterp fvarVal vt (HList.append bv₁ bv₂') e1 ty' h_1₂ ≠
+            LExpr.denote tcInterp opInterp fvarVal vt (HList.append bv₁ bv₂') e2 ty' h_2₂ := by
+        rw [← ih1 h_lc.1 h_1₁ h_1₂ bv₁, ← ih2 h_lc.2 h_2₁ h_2₂ bv₁]; exact heq
+      rw [denote_eq_false _ h_1₁ h_2₁ h₁ heq, denote_eq_false _ h_1₂ h_2₂ h₂ h_neq_rhs]
   | abs _ _ ty body ih_body =>
     cases ty with
     | none => exact absurd (LExpr.HasTypeA_to_typeCheck h₁) (by simp [LExpr.typeCheck])
@@ -239,8 +243,8 @@ private theorem bvar_ext_cons
   intro i τ' hi₁ hi₂ hb
   cases i with
   | zero =>
-    have : τ' = a := by simpa using hi₁.symm
-    subst this
+    have h_eq : τ' = a := by simpa using hi₁.symm
+    subst h_eq
     rw [HList.get_cons_zero, HList.get_cons_zero]
   | succ j =>
     rw [HList.get_cons_succ, HList.get_cons_succ]
@@ -328,20 +332,24 @@ theorem denote_ext
     subst h_ty
     by_cases heq : LExpr.denote tcInterp opInterp₁ fvarVal₁ vt bvarVal₁ e1 ty' h_1₁ =
         LExpr.denote tcInterp opInterp₁ fvarVal₁ vt bvarVal₁ e2 ty' h_2₁
-    · rw [denote_eq_true _ h_1₁ h_2₁ h₁ heq, denote_eq_true _ h_1₂ h_2₂ h₂
-            (by rw [← ih1 (fun o ty ho => h_op o ty (List.mem_append_left _ ho))
-                        (fun n ty hf => h_fvar n ty (List.mem_append_left _ hf))
-                        (fun i τ' hi₁ hi₂ hb => h_bvar i τ' hi₁ hi₂ (List.mem_append_left _ hb)) h_1₁ h_1₂,
-                    ← ih2 (fun o ty ho => h_op o ty (List.mem_append_right _ ho))
-                        (fun n ty hf => h_fvar n ty (List.mem_append_right _ hf))
-                        (fun i τ' hi₁ hi₂ hb => h_bvar i τ' hi₁ hi₂ (List.mem_append_right _ hb)) h_2₁ h_2₂]; exact heq)]
-    · rw [denote_eq_false _ h_1₁ h_2₁ h₁ heq, denote_eq_false _ h_1₂ h_2₂ h₂
-            (by rw [← ih1 (fun o ty ho => h_op o ty (List.mem_append_left _ ho))
-                        (fun n ty hf => h_fvar n ty (List.mem_append_left _ hf))
-                        (fun i τ' hi₁ hi₂ hb => h_bvar i τ' hi₁ hi₂ (List.mem_append_left _ hb)) h_1₁ h_1₂,
-                    ← ih2 (fun o ty ho => h_op o ty (List.mem_append_right _ ho))
-                        (fun n ty hf => h_fvar n ty (List.mem_append_right _ hf))
-                        (fun i τ' hi₁ hi₂ hb => h_bvar i τ' hi₁ hi₂ (List.mem_append_right _ hb)) h_2₁ h_2₂]; exact heq)]
+    · have h_eq_rhs : LExpr.denote tcInterp opInterp₂ fvarVal₂ vt bvarVal₂ e1 ty' h_1₂ =
+            LExpr.denote tcInterp opInterp₂ fvarVal₂ vt bvarVal₂ e2 ty' h_2₂ := by
+        rw [← ih1 (fun o ty ho => h_op o ty (List.mem_append_left _ ho))
+                    (fun n ty hf => h_fvar n ty (List.mem_append_left _ hf))
+                    (fun i τ' hi₁ hi₂ hb => h_bvar i τ' hi₁ hi₂ (List.mem_append_left _ hb)) h_1₁ h_1₂,
+                ← ih2 (fun o ty ho => h_op o ty (List.mem_append_right _ ho))
+                    (fun n ty hf => h_fvar n ty (List.mem_append_right _ hf))
+                    (fun i τ' hi₁ hi₂ hb => h_bvar i τ' hi₁ hi₂ (List.mem_append_right _ hb)) h_2₁ h_2₂]; exact heq
+      rw [denote_eq_true _ h_1₁ h_2₁ h₁ heq, denote_eq_true _ h_1₂ h_2₂ h₂ h_eq_rhs]
+    · have h_neq_rhs : LExpr.denote tcInterp opInterp₂ fvarVal₂ vt bvarVal₂ e1 ty' h_1₂ ≠
+            LExpr.denote tcInterp opInterp₂ fvarVal₂ vt bvarVal₂ e2 ty' h_2₂ := by
+        rw [← ih1 (fun o ty ho => h_op o ty (List.mem_append_left _ ho))
+                    (fun n ty hf => h_fvar n ty (List.mem_append_left _ hf))
+                    (fun i τ' hi₁ hi₂ hb => h_bvar i τ' hi₁ hi₂ (List.mem_append_left _ hb)) h_1₁ h_1₂,
+                ← ih2 (fun o ty ho => h_op o ty (List.mem_append_right _ ho))
+                    (fun n ty hf => h_fvar n ty (List.mem_append_right _ hf))
+                    (fun i τ' hi₁ hi₂ hb => h_bvar i τ' hi₁ hi₂ (List.mem_append_right _ hb)) h_2₁ h_2₂]; exact heq
+      rw [denote_eq_false _ h_1₁ h_2₁ h₁ heq, denote_eq_false _ h_1₂ h_2₂ h₂ h_neq_rhs]
   | abs _ _ ty body ih_body =>
     cases ty with
     | none => exact absurd (LExpr.HasTypeA_to_typeCheck h₁) (by simp [LExpr.typeCheck])

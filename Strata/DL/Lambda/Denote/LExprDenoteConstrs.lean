@@ -260,7 +260,7 @@ theorem constrFunc_output_covers_typeArgs
   unfold dataDefault data at *
   simp only [LMonoTy.freeVars]
   -- Goal: v ∈ LMonoTys.freeVars (d.typeArgs.map .ftvar), with hv : v ∈ d.typeArgs
-  have : ∀ (l : List TyIdentifier), v ∈ l → v ∈ LMonoTys.freeVars (l.map .ftvar) := by
+  have h_ftvar_freeVars : ∀ (l : List TyIdentifier), v ∈ l → v ∈ LMonoTys.freeVars (l.map .ftvar) := by
     intro l hl
     induction l with
     | nil => contradiction
@@ -270,7 +270,7 @@ theorem constrFunc_output_covers_typeArgs
       cases hl with
       | inl h => left; exact Or.inl h
       | inr h => right; exact ih h
-  exact this d.typeArgs hv
+  exact h_ftvar_freeVars d.typeArgs hv
 
 /-- Corollary: `constr_callOfLFunc_argTys_eq` with `ConstrWellFormed` instead
 of the explicit `h_output_covers` hypothesis. -/
@@ -388,8 +388,8 @@ theorem callOfLFunc_constr_disjoint_denote
   have hτ_tcons₂ : τ = .tcons d₂.name (LMonoTys.subst tySubst₂ (d₂.typeArgs.map .ftvar)) := by
     rw [hτ_eq₂, ho₂]; unfold dataDefault data; rw [LMonoTy.subst_tcons]
   have hd_name : d₁.name = d₂.name := by
-    have := hτ_tcons₁.symm.trans hτ_tcons₂
-    exact LMonoTy.tcons.inj this |>.1
+    have h_tcons_eq := hτ_tcons₁.symm.trans hτ_tcons₂
+    exact LMonoTy.tcons.inj h_tcons_eq |>.1
   -- Same datatype: d₁ = d₂ by unique names
   have hd_eq : d₁ = d₂ := htfwf.eq_of_name_eq hd₁_mem hd₂_mem hd_name
   subst hd_eq

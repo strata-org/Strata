@@ -278,8 +278,8 @@ private theorem substFvarsFromState_denote_preserved
     simp only [sortBindings]
     exact (zip_map_fst_eq _ _ h_ks_tys_len).symm
   have h_len : ks.length = sortBindings.length := by
-    have := congrArg List.length h_keys
-    simp at this; exact this
+    have h_keys_len := congrArg List.length h_keys
+    simp at h_keys_len; exact h_keys_len
   have h_tys_len : tys.length = ks.length := by simp [tys]
   have h_denotes : h_args = HList.cast h_sorts.symm
       (denoteArgs tcInterp opInterp fvarVal vt bvarVal (ks.map Prod.snd) tys h_wt) := by
@@ -605,8 +605,8 @@ theorem Step.denote_preserved
     obtain ⟨tySubst', htySubst', h_ty_op_eq⟩ := OpsConsistent_callOfLFunc hOps hcall
     rw [h_callee_eq] at htySubst htySubst'
     have htySubst'_ct := LFunc.computeTypeSubst_of_opTypeSubst (args := args) htySubst'
-    have : tySubst' = tySubst := Option.some.inj (htySubst'_ct.symm.trans htySubst)
-    subst this
+    have h_tySubst_eq : tySubst' = tySubst := Option.some.inj (htySubst'_ct.symm.trans htySubst)
+    subst h_tySubst_eq
     have h_ty_op_val := h_ty_op_eq m name ty_op h_callee_eq
     -- Step 3: Decompose into τ and argTys
     have h_subst_arrow := subst_mkArrow' tySubst' fn.output (fn.inputs.map Prod.snd)
@@ -850,8 +850,8 @@ theorem Step.type_preserved
     -- Get tySubst' from OpsConsistent, then unify with tySubst
     obtain ⟨tySubst', htySubst', h_ty_op_eq⟩ := OpsConsistent_callOfLFunc hOps hcall
     have h_ts_eq : tySubst' = tySubst := by
-      have := LFunc.computeTypeSubst_of_opTypeSubst (args := args) htySubst'
-      rw [this] at htysubst; cases htysubst; rfl
+      have h_ct := LFunc.computeTypeSubst_of_opTypeSubst (args := args) htySubst'
+      rw [h_ct] at htysubst; cases htysubst; rfl
     subst h_ts_eq
     -- Get argTys and callee info from typing
     obtain ⟨argTys, ty_op, md, name, h_callee_eq, h_args, hty_op, _⟩ :=

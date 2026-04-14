@@ -365,6 +365,28 @@ theorem getElem?_some_getElem {T} {f : Factory T} {name : String} {fn : LFunc T}
   · contradiction
   · rename_i idx h_idx; simp at eq; grind
 
+/-- If `fn ∈ F.toArray` and `fn.name.name = s`, then `s ∈ F` and `F[s] = fn`. -/
+theorem mem_name_eq_getElem {T} {F : Factory T} {fn : LFunc T} {s : String}
+    (hmem : fn ∈ F.toArray) (hname : fn.name.name = s) :
+    ∃ (hs : s ∈ F), F[s]'hs = fn := by
+  -- subst_vars
+  rw [Array.mem_def] at hmem
+  rw [List.mem_iff_getElem] at hmem
+  obtain ⟨i, hi, hval⟩ := hmem
+  have hi' : i < F.toArray.size := by grind
+  have hval' : F.toArray[i]'hi' = fn := by simpa using hval
+  have hdef : F.nameMap[s]? = some i := by
+    have hdef := F.toArrayDefined ⟨i, hi'⟩
+    simp at hdef
+    grind
+  have hs : s ∈ F := by
+    simp only [instMem, Factory.mem]
+    grind
+  refine ⟨hs, ?_⟩
+  simp only [instGetElem?, Factory.get]
+  have hidx : F.nameMap[s] = i := (Std.HashMap.getElem?_eq_some_iff.mp hdef).2
+  grind
+
 def getFunctionNames {T} (F : Factory T) : Array T.Identifier :=
   F.toArray.map (fun f => f.name)
 

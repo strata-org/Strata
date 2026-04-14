@@ -594,10 +594,10 @@ private theorem go_typeCheck [DecidableEq T.IDMeta]
     | none => rfl
     | some aty =>
       simp [LExpr.typeCheck]
-      have : (aty :: Δ_body).length = Δ_body.length + 1 := by simp
-      rw [← this]
-      have : aty :: (Δ_body ++ Δ_outer) = (aty :: Δ_body) ++ Δ_outer := by simp
-      rw [this]
+      have h_len : (aty :: Δ_body).length = Δ_body.length + 1 := by simp
+      rw [← h_len]
+      have h_cons : aty :: (Δ_body ++ Δ_outer) = (aty :: Δ_body) ++ Δ_outer := by simp
+      rw [h_cons]
       rw [ih (Δ_body := aty :: Δ_body) h_annot]
   | ite m c t e ih_c ih_t ih_e =>
     simp [LExpr.substFvarsLifting.go, LExpr.typeCheck]
@@ -611,10 +611,10 @@ private theorem go_typeCheck [DecidableEq T.IDMeta]
     | none => rfl
     | some qty =>
       simp [LExpr.typeCheck]
-      have : (qty :: Δ_body).length = Δ_body.length + 1 := by simp
-      rw [← this]
-      have : qty :: (Δ_body ++ Δ_outer) = (qty :: Δ_body) ++ Δ_outer := by simp
-      rw [this]
+      have h_len : (qty :: Δ_body).length = Δ_body.length + 1 := by simp
+      rw [← h_len]
+      have h_cons : qty :: (Δ_body ++ Δ_outer) = (qty :: Δ_body) ++ Δ_outer := by simp
+      rw [h_cons]
       rw [ih_tr (Δ_body := qty :: Δ_body) h_annot.1,
           ih_body (Δ_body := qty :: Δ_body) h_annot.2]
 
@@ -901,11 +901,11 @@ theorem substFvarsLifting_denote [DecidableEq T.IDMeta]
   · -- bindings.isEmpty = false → apply go_denote with Δ_body = [], bvarVal_body = .nil
     rename_i h_not_empty
     simp [h_not_empty] at h_subst
-    have := substFvarsLifting_go_denote (tcInterp := tcInterp) (opInterp := opInterp)
+    have h_go := substFvarsLifting_go_denote (tcInterp := tcInterp) (opInterp := opInterp)
       (fvarVal := fvarVal) (vt := vt)
       bvarVal_outer h_args h_keys h_tys_len h_sorts h_wt h_denotes
       (Δ_body := []) .nil h_body h_annot (by simp [h_subst])
-    simpa using this
+    simpa using h_go
 
 /-! ## `substFvars` denotation (via locally closed replacements) -/
 
