@@ -920,10 +920,10 @@ function POr (v1: Any, v2: Any) : Any
 };
 
 // /////////////////////////////////////////////////////////////////////////////////////
-// Modelling of other Python operations, currrently unsupported
+// Modelling of Python arithmetic and bitwise operations
 // /////////////////////////////////////////////////////////////////////////////////////
-// int_pow and float_pow are provided by the factory (PyFactory.lean) with concreteEval.
-// Declared here as external so PPow can reference them; they are filtered
+// int_pow, int_rshift, and float_pow are provided by the factory (PyFactory.lean) with concreteEval.
+// Declared here as external so PPow/PRShift can reference them; they are filtered
 // during Laurel-to-Core translation and the factory provides the Core versions.
 function int_pow (base: int, exp: int) : int
   external;
