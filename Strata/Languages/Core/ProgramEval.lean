@@ -19,84 +19,57 @@ open Lambda.LTy Lambda.LExpr Statement Procedure Program
 
 public section
 
-/--
-A new environment, with declarations obtained after the partial evaluation
-transform.
--/
-structure DeclsEnv where
-  env : Env
-  xdecls : Decls := []
-
-def initStmtToGlobalVarDecl (s : Statement) : Decl :=
-  match s with
-  | .init x ty e md => (.var x ty e md)
-  | _ => panic s!"Expected a variable initialization; found {format s} instead."
-
-def eval (E : Env) : List (Program × Env) :=
+def eval (E : Env) : List Env :=
   -- Push a path condition scope to store axioms
   let E := { E with pathConditions := E.pathConditions.push [] }
-  let declsEnv := go E.program.decls { env := E }
-  declsEnv.map (fun (decls, E) => ({ decls }, E))
-  where go (decls : Decls) (declsE : DeclsEnv) : List (Decls × Env) :=
+  let declsEnv := go E.program.decls E
+  declsEnv
+  where go (decls : Decls) (declsE : Env) : List Env :=
   match decls with
-  | [] => [(declsE.xdecls, declsE.env)]
+  | [] => [declsE]
   | decl :: rest =>
     match decl with
 
     | .var name ty init md =>
-      let ssEs := Statement.eval declsE.env [] [(.init name ty init md)]
-      ssEs.flatMap (fun (ss, E) =>
-                      let xdecls := ss.map initStmtToGlobalVarDecl
-                      let declsE := { declsE with xdecls := declsE.xdecls ++ xdecls,
-                                                  env := E }
-                      go rest declsE)
+      Statement.eval declsE [] [(.init name ty init md)]
 
     | .type _ _ =>
-      go rest { declsE with xdecls := declsE.xdecls ++ [decl] }
+      go rest declsE
 
     | .ax a _ =>
       -- All axioms go into the top-level path condition before anything is executed.
       -- There should be exactly one entry in the path condition stack at this point.
-      if declsE.env.pathConditions.length != 1 then
+      if declsE.pathConditions.length != 1 then
         panic! "Internal error: path condition stack misaligned when adding axiom"
       else
-        let declsE := {
-          declsE with
-            env := { declsE.env with pathConditions :=
-                      declsE.env.pathConditions.insert (toString $ a.name) a.e },
-                    xdecls := declsE.xdecls ++ [decl] }
+        let declsE := { declsE with pathConditions :=
+                      declsE.pathConditions.insert (toString $ a.name) a.e }
         go rest declsE
 
     | .distinct _ es _ =>
-        let declsE := {
-          declsE with
-            env := { declsE.env with distinct := es :: declsE.env.distinct },
-            xdecls := declsE.xdecls ++ [decl] }
+        let declsE := { declsE with distinct := es :: declsE.distinct }
       go rest declsE
 
-    | .proc proc md =>
-      let (p, E) := Procedure.eval declsE.env proc
-      let declsE := { declsE with xdecls := declsE.xdecls ++ [.proc p md], env := E }
-      go rest declsE
+    | .proc proc _md =>
+      let E := Procedure.eval declsE proc
+      go rest E
 
     | .func func _ =>
-      match declsE.env.addFactoryFunc func with
-      | .error e => [(declsE.xdecls, { declsE.env with error := some (Imperative.EvalError.Misc f!"{e}")})]
+      match declsE.addFactoryFunc func with
+      | .error e => [{ declsE with error := some (Imperative.EvalError.Misc f!"{e}")}]
       | .ok new_env =>
-        let declsE := { declsE with env := new_env,
-                                    xdecls := declsE.xdecls ++ [decl] }
+        let declsE := new_env
       go rest declsE
 
     | .recFuncBlock funcs _ =>
-      match validateCasesTypes funcs declsE.env.datatypes with
-      | .error e => [(declsE.xdecls, { declsE.env with error := some (Imperative.EvalError.Misc f!"{e}")})]
+      match validateCasesTypes funcs declsE.datatypes with
+      | .error e => [{ declsE with error := some (Imperative.EvalError.Misc f!"{e}")}]
       | .ok () =>
-      let result := funcs.foldlM (fun env func => env.addFactoryFunc func) declsE.env
+      let result := funcs.foldlM (fun env func => env.addFactoryFunc func) declsE
       match result with
-      | .error e => [(declsE.xdecls, { declsE.env with error := some (Imperative.EvalError.Misc f!"{e}")})]
+      | .error e => [{ declsE with error := some (Imperative.EvalError.Misc f!"{e}")}]
       | .ok new_env =>
-        let declsE := { declsE with env := new_env,
-                                    xdecls := declsE.xdecls ++ [decl] }
+        let declsE := new_env
         go rest declsE
 
 

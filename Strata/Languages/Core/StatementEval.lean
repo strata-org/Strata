@@ -388,14 +388,12 @@ def StmtsStack.appendToTop (stk : StmtsStack) (ss : Statements) : StmtsStack :=
   (top ++ ss) :: stk
 
 /--
-An environment with an optional exit label and transformed
-statements (i.e., statements that have already been evaluated).
+An environment with an optional exit label.
 -/
 structure EnvWithNext where
   env  : Env
   /-- `none` = no exit active; `some none` = exit nearest block; `some (some l)` = exit block `l` -/
   exitLabel : Option (Option String) := .none
-  stk : StmtsStack := []
 
 /--
 Process an exit statement. When `exitLabel` is active, skip remaining
@@ -444,14 +442,11 @@ def evalAuxGo (steps : Nat) (old_var_subst : SubstMap) (Ewn : EnvWithNext) (ss :
 
           | .cmd c =>
             let (c', E) := Command.eval Ewn.env old_var_subst c
-            [{ Ewn with stk := Ewn.stk.appendToTop [(Imperative.Stmt.cmd c')],
-                        env := E,
+            [{ Ewn with env := E,
                         exitLabel := .none }]
 
           | .block label ss md =>
-            let orig_stk := Ewn.stk
-            let Ewn := { Ewn with env := Ewn.env.pushEmptyScope,
-                                  stk := orig_stk.push [] }
+            let Ewn := { Ewn with env := Ewn.env.pushEmptyScope }
             -- Not allowed to jump into a block
             let Ewns := go' Ewn ss .none
             let Ewns := Ewns.map
@@ -464,16 +459,10 @@ def evalAuxGo (steps : Nat) (old_var_subst : SubstMap) (Ewn : EnvWithNext) (ss :
                                    -- no exit or non-matching: pass through
                                    | other => other
                                  { ewn with env := ewn.env.popScope,
-                                            exitLabel := exitLabel,
-                                            stk :=
-                                              let ss' := ewn.stk.top
-                                              let s' := Imperative.Stmt.block label ss' md
-                                              orig_stk.appendToTop [s'] })
+                                            exitLabel := exitLabel })
             Ewns
 
           | .ite cond then_ss else_ss md =>
-            let orig_stk := Ewn.stk
-            let Ewn := { Ewn with stk := orig_stk.push [] }
             match cond with
             | .nondet =>
               -- Desugar: if (*) { t } else { e } → var c := *; if(c) { t } else { e }
@@ -481,7 +470,7 @@ def evalAuxGo (steps : Nat) (old_var_subst : SubstMap) (Ewn : EnvWithNext) (ss :
               let freshVar : Expression.Expr := .fvar () freshName none
               let initStmt := Statement.init freshName (.forAll [] (.tcons "bool" [])) .nondet md
               let iteStmt := Imperative.Stmt.ite (.det freshVar) then_ss else_ss md
-              go' { Ewn with stk := orig_stk } [initStmt, iteStmt] optExit
+              go' Ewn [initStmt, iteStmt] optExit
             | .det c =>
             let cond' := Ewn.env.exprEval c
             match cond' with
@@ -490,8 +479,7 @@ def evalAuxGo (steps : Nat) (old_var_subst : SubstMap) (Ewn : EnvWithNext) (ss :
                 if cond'.isTrue then (then_ss, else_ss) else (else_ss, then_ss)
               let deadDeferred := collectDeadBranchDeferred ss_dead c Ewn.env.pathConditions
               let Ewns :=
-                (go' Ewn ss_live .none).map fun (ewn : EnvWithNext) =>
-                  { ewn with stk := orig_stk.appendToTop [.ite (.det cond') ewn.stk.top [] md] }
+                (go' Ewn ss_live .none).map fun (ewn : EnvWithNext) => ewn
               -- Prepend dead-branch obligations to the first result only.
               -- Pre-ITE obligations flow through the live branch naturally;
               -- processIteBranches keeps them in the first (true-path) result,
@@ -504,7 +492,7 @@ def evalAuxGo (steps : Nat) (old_var_subst : SubstMap) (Ewn : EnvWithNext) (ss :
             | _ =>
               -- Process both branches.
               processIteBranches steps' old_var_subst
-                Ewn c cond' then_ss else_ss md orig_stk
+                Ewn c cond' then_ss else_ss md
 
           | .loop _ _ _ _ _ =>
             panic! "Cannot evaluate `loop` statement. \
@@ -534,14 +522,14 @@ def evalAuxGo (steps : Nat) (old_var_subst : SubstMap) (Ewn : EnvWithNext) (ss :
             -- Type declarations have no runtime effect (only used during type checking)
             [Ewn]
 
-          | .exit l md => [{ Ewn with stk := Ewn.stk.appendToTop [.exit l md], exitLabel := .some l}]
+          | .exit l md => [{ Ewn with exitLabel := .some l}]
 
       List.flatMap (fun (ewn : EnvWithNext) => go' ewn rest ewn.exitLabel) EAndNexts
   termination_by (steps, Imperative.Block.sizeOf ss)
 
 def processIteBranches (steps : Nat) (old_var_subst : SubstMap) (Ewn : EnvWithNext)
     (cond cond' : Expression.Expr) (then_ss else_ss : Statements)
-    (md : Imperative.MetaData Expression) (orig_stk : StmtsStack) : List EnvWithNext :=
+    (md : Imperative.MetaData Expression) : List EnvWithNext :=
   let Ewn := { Ewn with env := Ewn.env.pushEmptyScope }
   let label_true := toString (f!"<label_ite_cond_true: {cond.eraseTypes}>")
   let label_false := toString (f!"<label_ite_cond_false: !{cond.eraseTypes}>")
@@ -571,23 +559,17 @@ def processIteBranches (steps : Nat) (old_var_subst : SubstMap) (Ewn : EnvWithNe
   match Ewns_t, Ewns_f with
   -- Special case: if there's only one result from each path,
   -- with no exit label, we can merge both states into one.
-  | [{ stk := stk_t, env := E_t, exitLabel := .none}],
-    [{ stk := stk_f, env := E_f, exitLabel := .none}] =>
-    let s' := Imperative.Stmt.ite (.det cond') stk_t.top stk_f.top md
+  | [{ env := E_t, exitLabel := .none}],
+    [{ env := E_f, exitLabel := .none}] =>
     [EnvWithNext.mk (Env.merge cond' E_t E_f).popScope
-                    .none
-                    (orig_stk.appendToTop [s'])]
+                    .none]
   | _, _ =>
     let Ewns_t := Ewns_t.map
                       (fun (ewn : EnvWithNext) =>
-                        let s' := Imperative.Stmt.ite (.det (LExpr.true ())) ewn.stk.top [] md
-                        { ewn with env := ewn.env.popScope,
-                                   stk := orig_stk.appendToTop [s']})
+                        { ewn with env := ewn.env.popScope })
     let Ewns_f := Ewns_f.map
                       (fun (ewn : EnvWithNext) =>
-                        let s' := Imperative.Stmt.ite (.det (LExpr.false ())) [] ewn.stk.top md
-                        { ewn with env := ewn.env.popScope,
-                                   stk := orig_stk.appendToTop [s']})
+                        { ewn with env := ewn.env.popScope })
   Ewns_t ++ Ewns_f
   termination_by (steps, Imperative.Block.sizeOf then_ss + Imperative.Block.sizeOf else_ss)
 
@@ -595,12 +577,12 @@ end
 
 def evalAux (E : Env) (old_var_subst : SubstMap) (ss : Statements) (optExit : Option (Option String)) :
   List EnvWithNext :=
-  evalAuxGo (Imperative.Block.sizeOf ss) old_var_subst (EnvWithNext.mk E .none []) ss optExit
+  evalAuxGo (Imperative.Block.sizeOf ss) old_var_subst (EnvWithNext.mk E .none) ss optExit
 
-def exitToError : EnvWithNext → Statements × Env
-  | { stk, env, exitLabel := .none } => (stk.flatten, env)
-  | { stk, env, exitLabel := .some (.some l) } => (stk.flatten, { env with error := some (.LabelNotExists l) })
-  | { stk, env, exitLabel := .some .none } => (stk.flatten, { env with error := some (.Misc "exit outside of any block") })
+def exitToError : EnvWithNext → Env
+  | { env, exitLabel := .none } => (env)
+  | { env, exitLabel := .some (.some l) } => ({ env with error := some (.LabelNotExists l) })
+  | { env, exitLabel := .some .none } => ({ env with error := some (.Misc "exit outside of any block") })
 
 /--
 Partial evaluator for statements yielding a list of environments and transformed
@@ -609,17 +591,17 @@ statements.
 The argument `old_var_subst` below is a substitution map from global variables
 to their pre-state value in the enclosing procedure of `ss`.
 -/
-def eval (E : Env) (old_var_subst : SubstMap) (ss : Statements) : List (Statements × Env) :=
+def eval (E : Env) (old_var_subst : SubstMap) (ss : Statements) : List (Env) :=
   (evalAux E old_var_subst ss .none).map exitToError
 
 /--
 Partial evaluator for statements yielding one environment and transformed
 statements.
 -/
-def evalOne (E : Env) (old_var_subst : SubstMap) (ss : Statements) : Statements × Env :=
+def evalOne (E : Env) (old_var_subst : SubstMap) (ss : Statements) : Env :=
   match eval E old_var_subst ss with
-  | [(ss', E')] => (ss', E')
-  | _ => (ss, { E with error := some (.Misc "More than one result environment") })
+  | [(E')] => (E')
+  | _ => ({ E with error := some (.Misc "More than one result environment") })
 
 end Statement
 end Core
