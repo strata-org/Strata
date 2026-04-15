@@ -21,7 +21,7 @@ public import Strata.Languages.Laurel.TypeHierarchy
 public import Strata.Languages.Laurel.LaurelTypes
 public import Strata.Languages.Laurel.ModifiesClauses
 public import Strata.Languages.Laurel.CoreDefinitionsForLaurel
-import Strata.Languages.Laurel.CoreGroupingAndOrdering
+public import Strata.Languages.Laurel.CoreGroupingAndOrdering
 import Strata.DDM.Util.DecimalRat
 import Strata.DL.Imperative.Stmt
 import Strata.DL.Imperative.MetaData
@@ -693,121 +693,19 @@ def translateDatatypeDefinition (dt : DatatypeDefinition)
 
 abbrev TranslateResult := (Option Core.Program) × (List DiagnosticModel)
 
-/-- Like `translate` but also returns the lowered Laurel program (after all
-    Laurel-to-Laurel passes, before the final translation to Core). -/
-abbrev TranslateResultWithLaurel := (Option Core.Program) × (List DiagnosticModel) × Program
-
 /--
-Translate Laurel Program to Core Program, also returning the lowered Laurel program.
-
-When `keepAllFilesPrefix` is provided, the program state after each named
-Laurel-to-Laurel pass is written to `{prefix}.{n}.{passName}.laurel.st`
-(numbered from 1).
+Translate an `OrderedLaurel` program to a `Core.Program`.
+The `program` parameter is the lowered Laurel program, used for type definitions.
 -/
-def translateWithLaurel (options: LaurelTranslateOptions) (program : Program)
-    (keepAllFilesPrefix : Option String := none)
-    : IO TranslateResultWithLaurel := do
-  let program := { program with
-    staticProcedures := coreDefinitionsForLaurel.staticProcedures ++ program.staticProcedures
-  }
-  if let some pfx := keepAllFilesPrefix then
-    if let some parent := (System.FilePath.mk pfx).parent then
-      IO.FS.createDirAll parent
-  let stepRef ← IO.mkRef (0 : Nat)
-  let emit (name : String) (p : Program) : IO Unit :=
-    match keepAllFilesPrefix with
-    | some pfx => do
-      let n ← stepRef.modifyGet (fun n => (n, n + 1))
-      IO.FS.writeFile s!"{pfx}.{n}.{name}.laurel.st"
-        ((formatProgram p).pretty ++ "\n")
-    | none => pure ()
+def translateLaurelToCore (options: LaurelTranslateOptions) (program : Program) (ordered : OrderedLaurel): TranslateM Core.Program := do
 
-  -- Step 0: the input program before any passes
-  emit "Initial" program
-
-  let result := resolve program
-  let resolutionErrors: List DiagnosticModel := if options.emitResolutionErrors then result.errors.toList else []
-  let (program, model) := (result.program, result.model)
-  emit "Resolve" program
-  let diamondErrors := validateDiamondFieldAccesses model program
-
-  let (program, nonCompositeDiags) := filterNonCompositeModifies model program
-  emit "FilterNonCompositeModifies" program
-
-  let program := heapParameterization model program
-  let result := resolve program (some model)
-  let (program, model) := (result.program, result.model)
-  emit "HeapParameterization" program
-
-  let program := typeHierarchyTransform model program
-  let result := resolve program (some model)
-  let (program, model) := (result.program, result.model)
-  emit "TypeHierarchyTransform" program
-  let (program, modifiesDiags) := modifiesClausesTransform model program
-  let result := resolve program (some model)
-  let (program, model) := (result.program, result.model)
-  let result := resolve program (some model)
-  let (program, model) := (result.program, result.model)
-  emit "ModifiesClausesTransform" program
-  let program := inferHoleTypes model program
-  emit "InferHoleTypes" program
-  let program := eliminateHoles program
-  emit "EliminateHoles" program
-  let program := desugarShortCircuit model program
-  emit "DesugarShortCircuit" program
-  let program := liftExpressionAssignments model program
-  emit "LiftExpressionAssignments" program
-  let program := eliminateReturnsInExpressionTransform program
-  let result := resolve program (some model)
-  let (program, model) := (result.program, result.model)
-  emit "EliminateReturns" program
-
-  let (program, constrainedTypeDiags) := constrainedTypeElim model program
-  let result := resolve program (some model)
-  let (program, model) := (result.program, result.model)
-  emit "ConstrainedTypeElim" program
-
-  let initState : TranslateState := {model := model }
-  let (coreProgramOption, translateState) := runTranslateM initState (translateLaurelToCore options program)
-  let allDiagnostics := resolutionErrors ++ diamondErrors ++ nonCompositeDiags ++ modifiesDiags ++ constrainedTypeDiags ++ translateState.diagnostics
-  let coreProgramOption := if translateState.coreProgramHasSuperfluousErrors then none else coreProgramOption
-  return (coreProgramOption, allDiagnostics, program)
-  where
-
-  /--
-  Translate Laurel datatype definitions to Core declarations.
-  Datatypes are grouped by mutual references (SCC) so mutually recursive
-  datatypes share a single `.data` declaration.
-  -/
-  translateTypes (program : Program) : TranslateM (List Core.Decl) := do
-    -- Emit diagnostics for composite types that have instance procedures.
-    for td in program.types do
-      if let .Composite ct := td then
-        for proc in ct.instanceProcedures do
-          emitDiagnostic $ proc.name.md.toDiagnostic
-            s!"Instance procedure '{proc.name.text}' on composite type '{ct.name.text}' is not yet supported"
-            DiagnosticType.NotYetImplemented
-    -- Translate datatype definitions to Core declarations.
-    let laurelDatatypes := program.types.filterMap fun td => match td with
-      | .Datatype dt => some dt
-      | _ => none
-    let ldatatypes ← laurelDatatypes.mapM translateDatatypeDefinition
-    let groups := groupDatatypes laurelDatatypes ldatatypes
-    return groups.map fun group => Core.Decl.type (.data group) mdWithUnknownLoc
-
-  translateLaurelToCore (options: LaurelTranslateOptions) (program : Program): TranslateM Core.Program := do
-
-    let sccDecls := computeSccDecls program
-
-    let orderedDecls ← sccDecls.flatMapM (fun (procs, isRecursive) => do
+  let coreDecls ← ordered.decls.flatMapM fun
+    | .procs procs isRecursive => do
       -- For each SCC, determine if it is purely functional or contains procedures.
-      -- Procedures can't call functions (only functions can call functions), so an SCC
-      -- either contains only functional procedures or only non-functional procedures.
       let isFuncSCC := procs.all (·.isFunctional)
       if isFuncSCC then
         let funcs ← procs.mapM (translateProcedureToFunction options isRecursive)
         if isRecursive then
-          -- Wrap all recursive functions (single self-recursive or mutual) in recFuncBlock.
           let coreFuncs := funcs.filterMap (fun d => match d with
             | .func f _ => some f
             | _ => none)
@@ -815,85 +713,39 @@ def translateWithLaurel (options: LaurelTranslateOptions) (program : Program)
         else
           return funcs
       else
-        procs.flatMapM fun proc => do
+        let procDecls ← procs.flatMapM fun proc => do
+          let procDecl ← translateProcedure proc
+          -- Turn free postconditions into axioms placed right behind the related procedure
           let axiomDecls : List Core.Decl ← match proc.invokeOn with
             | none => pure []
             | some trigger => do
               let axDecl? ← translateInvokeOnAxiom proc trigger
               pure axDecl?.toList
-          let procDecl ← translateProcedure proc
           return [Core.Decl.proc procDecl proc.name.md] ++ axiomDecls
-    )
-
-    -- Translate Laurel constants to Core function declarations (0-ary functions)
-    let constantDecls ← program.constants.mapM fun c => do
+        return procDecls
+    | .datatypes dts => do
+      let ldatatypes ← dts.mapM translateDatatypeDefinition
+      return [Core.Decl.type (.data ldatatypes) mdWithUnknownLoc]
+    | .constant c => do
       let coreTy ← translateType c.type
       let body ← c.initializer.mapM (translateExpr ·)
-      return Core.Decl.func {
+      return [Core.Decl.func {
         name := ⟨c.name.text, ()⟩
         typeArgs := []
         inputs := []
         output := coreTy
         body := body
-      } mdWithUnknownLoc
-
-    -- Translate Laurel datatype definitions to Core declarations.
-    let groupedDatatypeDecls ← translateTypes program
-    let program := {
-      decls := groupedDatatypeDecls ++ constantDecls ++ orderedDecls
-    }
-
-    -- dbg_trace "=== Generated Strata Core Program ==="
-    -- dbg_trace (toString (Std.Format.pretty (Strata.Core.formatProgram program) 100))
-    -- dbg_trace "================================="
-    pure program
+      } mdWithUnknownLoc]
 
 
-/--
-Translate Laurel Program to Core Program
--/
-def translate (options: LaurelTranslateOptions) (program : Program): IO TranslateResult := do
-  let (core, diags, _) ← translateWithLaurel options program
-  return (core, diags)
-
-/--
-Verify a Laurel program using an SMT solver
--/
-def verifyToVcResults (program : Program)
-    (options : VerifyOptions := .default)
-    : IO (Option VCResults × List DiagnosticModel) := do
-  let (coreProgramOption, translateDiags) ← translate {} program
-
-  match coreProgramOption with
-  | some coreProgram =>
-    -- Enable removeIrrelevantAxioms to avoid polluting simple assertions with heap axioms
-    let options := { options with removeIrrelevantAxioms := .Precise }
-    let runner tempDir :=
-      EIO.toIO (fun f => IO.Error.userError (toString f))
-          (Core.verify coreProgram tempDir .none options)
-    let ioResult ← match options.vcDirectory with
-      | .none => IO.FS.withTempDir runner
-      | .some p => IO.FS.createDirAll ⟨p.toString⟩; runner ⟨p.toString⟩
-    return (some ioResult, translateDiags)
-  | none => return (none, translateDiags)
-
-def verifyToDiagnostics (files: Map Strata.Uri Lean.FileMap) (program : Program)
-    (options : VerifyOptions := .default): IO (Array Diagnostic) := do
-  let results <- verifyToVcResults program options
-  let phases := Core.coreAbstractedPhases
-  let translationDiags := results.snd.map (fun dm => dm.toDiagnostic files)
-  let vcDiags := match results.fst with
-  | some vcResults => vcResults.toList.filterMap (fun (vcr: VCResult) => vcr.toDiagnostic files phases)
-  | none => []
-  return (translationDiags ++ vcDiags).toArray
-
-def verifyToDiagnosticModels (program : Program) (options : VerifyOptions := .default) : IO (Array DiagnosticModel) := do
-  let results <- verifyToVcResults program options
-  let phases := Core.coreAbstractedPhases
-  let vcDiags := match results.fst with
-  | none => []
-  | some vcResults => vcResults.toList.filterMap (fun (vcr: VCResult) => toDiagnosticModel vcr phases)
-  return (results.snd ++ vcDiags).toArray
+  -- Emit diagnostics for composite types with instance procedures.
+  for td in program.types do
+    if let .Composite ct := td then
+      for proc in ct.instanceProcedures do
+        emitDiagnostic $ proc.name.md.toDiagnostic
+          s!"Instance procedure '{proc.name.text}' on composite type '{ct.name.text}' is not yet supported"
+          DiagnosticType.NotYetImplemented
+  pure { decls := coreDecls }
 
 end -- public section
 end Laurel

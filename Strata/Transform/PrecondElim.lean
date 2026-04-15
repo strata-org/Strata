@@ -305,11 +305,15 @@ Transform an entire program:
 
 Returns (changed, transformed program).
 -/
-def precondElim (p : Program) (F : @Lambda.Factory CoreLParams)
+def precondElim (p : Program)
     : CoreTransformM (Bool × Program) := do
-  setFactory F
-  let (changed, newDecls) ← transformDecls p.decls
-  return (changed, { decls := newDecls })
+  -- If Factory is not set, there is no Factory function to process; finish early.
+  match (← get).factory with
+  | .none =>
+    return (false, p)
+  | .some _ =>
+    let (changed, newDecls) ← transformDecls p.decls
+    return (changed, { decls := newDecls })
 where
   transformDecls (decls : List Decl)
       : CoreTransformM (Bool × List Decl) := do
@@ -379,10 +383,9 @@ end PrecondElim
 /-- PrecondElim pipeline phase: generates well-formedness checks for
     partial-function preconditions. Model-preserving because it only adds
     new assertions and procedures without abstracting existing ones. -/
-def precondElimPipelinePhase
-    (factory : @Lambda.Factory CoreLParams) : PipelinePhase :=
+def precondElimPipelinePhase : PipelinePhase :=
   modelPreservingPipelinePhase "PrecondElim" fun prog => do
-    PrecondElim.precondElim prog factory
+    PrecondElim.precondElim prog
 
 end Core
 
