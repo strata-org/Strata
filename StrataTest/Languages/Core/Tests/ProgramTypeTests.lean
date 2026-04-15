@@ -486,17 +486,7 @@ info: ok: [(program Core;
   
   
   Warnings:
-  []
-  Deferred Proof Obligations:
-  Label: test
-  Property: assert
-  Assumptions:
-  
-  
-  Proof Obligation:
-  ((~fooAliasVal : (Foo int bool)) == (~fooVal : (Foo int bool)))
-  
-  )]
+  [])]
 -/
 #guard_msgs in
 #eval do let ans ← typeCheckAndPartialEval .default good_prog

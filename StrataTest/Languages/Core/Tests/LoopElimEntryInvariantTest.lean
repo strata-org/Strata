@@ -37,18 +37,19 @@ info: [Strata.Core] Type checking succeeded.
 
 
 VCs:
-Label: arbitrary_iter_maintain_invariant_0_0
-Property: assert
-Assumptions:
-<dead_branch: (~Int.Gt n #0)>: false
-assume_entry_invariant_0_0: false
-Obligation:
-true
-
 Label: entry_invariant_0_0
 Property: assert
 Obligation:
 false
+
+Label: arbitrary_iter_maintain_invariant_0_0
+Property: assert
+Assumptions:
+<dead_branch: #false>: false
+<dead_branch: #false>: false
+assume_entry_invariant_0_0: false
+Obligation:
+true
 
 
 

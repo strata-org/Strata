@@ -9,6 +9,7 @@ public import Strata.Languages.Core.Options
 public import Strata.Languages.Core.ProgramEval
 public import Strata.Languages.Core.ProgramType
 public import Strata.Languages.Core.DDMTransform.ASTtoCST
+import Strata.Transform.ObligationExtraction
 
 ---------------------------------------------------------------------
 
@@ -84,8 +85,10 @@ def typeCheckAndPartialEval (options : VerifyOptions) (program : Program)
   let pEs := Program.eval E
   if options.verbose >= .normal then do
     dbg_trace f!"{Std.Format.line}VCs:"
-    for (_p, E) in pEs do
-      dbg_trace f!"{formatProofObligations E.deferred}"
+    for (p, _E) in pEs do
+      match Core.ObligationExtraction.extractObligations p with
+      | .ok obs => dbg_trace f!"{formatProofObligations obs}"
+      | .error e => dbg_trace f!"ObligationExtraction error: {e}"
   return pEs
 
 instance instCoreProgramString : ToString (Program) where

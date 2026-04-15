@@ -39,12 +39,6 @@ Path Conditions:
 
 Warnings:
 []
-Deferred Proof Obligations:
-Label: x_eq_18
-Property: assert
-Assumptions:
-Proof Obligation:
-#true
 -/
 #guard_msgs in
 #eval (evalOne ∅ ∅ [.init "x" t[int] (.det eb[#0]) .empty,
@@ -76,12 +70,6 @@ Path Conditions:
 
 Warnings:
 []
-Deferred Proof Obligations:
-Label: x_eq_12
-Property: assert
-Assumptions:
-Proof Obligation:
-(_yinit == #12)
 -/
 #guard_msgs in
 #eval (evalOne
@@ -115,7 +103,6 @@ Path Conditions:
 
 Warnings:
 []
-Deferred Proof Obligations:
 -/
 #guard_msgs in
 -- NOTE: no error during evaluation here; the typechecker should flag this
@@ -154,24 +141,6 @@ Path Conditions:
 
 Warnings:
 []
-Deferred Proof Obligations:
-Label: m_5_eq_50
-Property: assert
-Assumptions:
-Proof Obligation:
-(((_minit : (arrow int int)) #5) == #50)
-
-Label: m_2_eq_20
-Property: assert
-Assumptions:
-Proof Obligation:
-#true
-
-Label: m_1_eq_10
-Property: assert
-Assumptions:
-Proof Obligation:
-#true
 -/
 #guard_msgs in
 #eval (evalOne
@@ -216,24 +185,6 @@ Path Conditions:
 
 Warnings:
 []
-Deferred Proof Obligations:
-Label: m_5_eq_50
-Property: assert
-Assumptions:
-Proof Obligation:
-((_minit #5) == #50)
-
-Label: m_2_eq_20
-Property: assert
-Assumptions:
-Proof Obligation:
-#true
-
-Label: m_1_eq_10
-Property: assert
-Assumptions:
-Proof Obligation:
-#true
 -/
 #guard_msgs in
 #eval (evalOne
@@ -303,30 +254,6 @@ Path Conditions:
 
 Warnings:
 []
-Deferred Proof Obligations:
-Label: trivial
-Property: assert
-Assumptions:
-(<label_ite_cond_false: !(z == #false)>, (if (zinit == #false) then #false else #true))
-(z_false, (zinit == #false))
-Proof Obligation:
-#true
-
-Label: x_eq_y_label_0
-Property: assert
-Assumptions:
-(z_false, (zinit == #false))
-(<label_ite_cond_true: (z == #false)>, (if (zinit == #false) then (zinit == #false) else #true)) (<label_ite_cond_false: !(z == #false)>, (if (if (zinit == #false) then #false else #true) then (if (zinit == #false) then #false else #true) else #true))
-Proof Obligation:
-((if (zinit == #false) then #6 else #0) == #6)
-
-Label: x_eq_y
-Property: assert
-Assumptions:
-(z_false, (zinit == #false))
-(<label_ite_cond_true: (z == #false)>, (if (zinit == #false) then (zinit == #false) else #true)) (<label_ite_cond_false: !(z == #false)>, (if (if (zinit == #false) then #false else #true) then (if (zinit == #false) then #false else #true) else #true))
-Proof Obligation:
-((if (zinit == #false) then #6 else #0) == #6)
 -/
 #guard_msgs in
 #eval (evalOne ∅ ∅ prog1) |>.snd |> format
@@ -378,12 +305,6 @@ Path Conditions:
 
 Warnings:
 []
-Deferred Proof Obligations:
-Label: x_eq_1
-Property: assert
-Assumptions:
-Proof Obligation:
-(($__x0 : int) == #1)
 -/
 #guard_msgs in
 #eval (evalOne ∅ ∅ prog2) |>.snd |> format
@@ -434,12 +355,6 @@ Path Conditions:
 
 Warnings:
 []
-Deferred Proof Obligations:
-Label: y_eq_10
-Property: assert
-Assumptions:
-Proof Obligation:
-((~double #5) == #10)
 -/
 #guard_msgs in
 #eval (evalOne ∅ ∅ testFuncDecl) |>.snd |> format
@@ -494,12 +409,6 @@ Path Conditions:
 
 Warnings:
 []
-Deferred Proof Obligations:
-Label: result_eq_15
-Property: assert
-Assumptions:
-Proof Obligation:
-((~addN #5) == #15)
 -/
 #guard_msgs in
 #eval (evalOne ∅ ∅ testFuncDeclSymbolic) |>.snd |> format
@@ -565,18 +474,6 @@ Path Conditions:
 
 Warnings:
 []
-Deferred Proof Obligations:
-Label: intResult_eq_1
-Property: assert
-Assumptions:
-Proof Obligation:
-#true
-
-Label: boolResult_eq_false
-Property: assert
-Assumptions:
-Proof Obligation:
-#true
 -/
 #guard_msgs in
 #eval (evalOne ∅ ∅ testPolymorphicFuncDecl) |>.snd |> format
@@ -609,14 +506,6 @@ Path Conditions:
 
 Warnings:
 []
-Deferred Proof Obligations:
-Label: x_pos
-Property: assert
-Assumptions:
-(<label_ite_cond_true: $__nondet_cond_0>, (if $__$__nondet_cond_00 then $__$__nondet_cond_00 else #true))
-(<label_ite_cond_false: !$__nondet_cond_0>, (if (if ($__$__nondet_cond_00 : bool) then #false else #true) then (if ($__$__nondet_cond_00 : bool) then #false else #true) else #true))
-Proof Obligation:
-((if ($__$__nondet_cond_00 : bool) then #1 else #2) == #1)
 -/
 #guard_msgs in
 #eval (evalOne ∅ ∅ [.init "x" t[int] (.det eb[#0]) .empty,

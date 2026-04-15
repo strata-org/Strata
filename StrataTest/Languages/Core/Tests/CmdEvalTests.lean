@@ -48,12 +48,6 @@ Path Conditions:
 
 Warnings:
 []
-Deferred Proof Obligations:
-Label: x_value_eq
-Property: assert
-Assumptions:
-Proof Obligation:
-#true
 -/
 #guard_msgs in
 #eval format $ Imperative.Cmds.eval (Env.init (empty_factory := true)) testProgram1
@@ -92,12 +86,6 @@ Path Conditions:
 
 Warnings:
 []
-Deferred Proof Obligations:
-Label: x_eq_12
-Property: assert
-Assumptions:
-Proof Obligation:
-((y : int) == #12)
 -/
 #guard_msgs in
 #eval format $ Imperative.Cmds.eval (Env.init (empty_factory := true)) testProgram2

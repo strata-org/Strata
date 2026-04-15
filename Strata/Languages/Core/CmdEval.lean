@@ -109,8 +109,9 @@ def addPathCondition (E : Env) (p : PathCondition Expression) : Env :=
     let E := { E with pathConditions := new_path_conditions }
     addPathCondition E prest
 
-def deferObligation (E : Env) (ob : ProofObligation Expression) : Env :=
-  { E with deferred := E.deferred.push ob }
+def deferObligation (E : Env) (_ob : ProofObligation Expression) : Env :=
+  -- Obligation extraction is handled by ObligationExtraction after PE.
+  E
 
 /-
 theorem lookupEval (E1 E2 : Env) (h : ∀x, lookup E1 x = lookup E2 x) :

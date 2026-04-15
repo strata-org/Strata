@@ -37,22 +37,19 @@ private def combineBodies (bodies : List Statements) : Statements :=
     let combined := combineBodies rest
     [Imperative.Stmt.ite .nondet b combined .empty]
 
-/-- Merge multiple procedure evaluation results into one. Unions deferred
-    obligations, takes the max fresh-variable counter, and combines all
-    procedure bodies using nondet ITE so obligation extraction can see
-    all paths. -/
+/-- Merge multiple procedure evaluation results into one. Takes the max
+    fresh-variable counter and combines all procedure bodies using nondet ITE
+    so obligation extraction can see all paths. -/
 private def mergeResults (fallback : Procedure × Env) (results : List (Procedure × Env)) :
     Procedure × Env :=
   match results with
   | [] => fallback
   | [(p, E)] => (p, E)
   | (p, E) :: rest =>
-    let allDeferred := rest.foldl (fun acc (_, e) => acc ++ e.deferred) E.deferred
     let maxGen      := rest.foldl (fun acc (_, e) => max acc e.exprEnv.config.gen) E.exprEnv.config.gen
     let allBodies := results.map (fun (proc, _) => proc.body)
     let mergedBody := combineBodies allBodies
     ({ p with body := mergedBody }, { E with
-      deferred := allDeferred,
       exprEnv  := { E.exprEnv with config := { E.exprEnv.config with gen := maxGen } } })
 
 def eval (E : Env) (p : Procedure) : Procedure × Env :=

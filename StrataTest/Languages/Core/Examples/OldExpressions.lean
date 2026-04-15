@@ -80,6 +80,10 @@ true
 Label: T2_g2_eq_g
 Property: assert
 Assumptions:
+tmp_a_0: tmp_a_0 == $__a7
+tmp_b_1: tmp_b_1 == $__b8
+old_g2_2: old_g2_2 == false
+callElimAssume_T1_g_unchanged_3: true
 callElimAssume_T1_g2_eq_old_g_4: $__g211 == true
 callElimAssume_T1_y_eq_old_g2_5: $__a9 == false
 callElimAssume_T1_z_eq_y_6: $__b10 == false
@@ -89,6 +93,10 @@ $__g211 == true
 Label: T2_g_true
 Property: assert
 Assumptions:
+tmp_a_0: tmp_a_0 == $__a7
+tmp_b_1: tmp_b_1 == $__b8
+old_g2_2: old_g2_2 == false
+callElimAssume_T1_g_unchanged_3: true
 callElimAssume_T1_g2_eq_old_g_4: $__g211 == true
 callElimAssume_T1_y_eq_old_g2_5: $__a9 == false
 callElimAssume_T1_z_eq_y_6: $__b10 == false
@@ -98,6 +106,10 @@ true
 Label: T2_a_eq_false
 Property: assert
 Assumptions:
+tmp_a_0: tmp_a_0 == $__a7
+tmp_b_1: tmp_b_1 == $__b8
+old_g2_2: old_g2_2 == false
+callElimAssume_T1_g_unchanged_3: true
 callElimAssume_T1_g2_eq_old_g_4: $__g211 == true
 callElimAssume_T1_y_eq_old_g2_5: $__a9 == false
 callElimAssume_T1_z_eq_y_6: $__b10 == false
@@ -107,6 +119,10 @@ $__a9 == false
 Label: T2_b_eq_false
 Property: assert
 Assumptions:
+tmp_a_0: tmp_a_0 == $__a7
+tmp_b_1: tmp_b_1 == $__b8
+old_g2_2: old_g2_2 == false
+callElimAssume_T1_g_unchanged_3: true
 callElimAssume_T1_g2_eq_old_g_4: $__g211 == true
 callElimAssume_T1_y_eq_old_g2_5: $__a9 == false
 callElimAssume_T1_z_eq_y_6: $__b10 == false
