@@ -238,6 +238,13 @@ def TriggerOpKind.toString : TriggerOpKind → String
 
 instance : ToString TriggerOpKind := ⟨TriggerOpKind.toString⟩
 
+def TriggerOpKind.ofString? : String → Option TriggerOpKind
+  | "Triggers.empty" => some .EmptyTriggers
+  | "Triggers.addGroup" => some .AddGroup
+  | "TriggerGroup.empty" => some .EmptyGroup
+  | "TriggerGroup.addTrigger" => some .AddTrigger
+  | _ => none
+
 /-! ### CoreOp ↔ String Conversion -/
 
 /-- Convert a `CoreOp` to its canonical string name (as used in `Func.name`). -/
@@ -322,12 +329,9 @@ def CoreOp.ofString (name : String) : CoreOp :=
   | some kind => .map kind
   | none =>
   -- Try Trigger ops
-  match name with
-  | "Triggers.empty" => .trigger .EmptyTriggers
-  | "Triggers.addGroup" => .trigger .AddGroup
-  | "TriggerGroup.empty" => .trigger .EmptyGroup
-  | "TriggerGroup.addTrigger" => .trigger .AddTrigger
-  | _ => .other name
+  match TriggerOpKind.ofString? name with
+  | some kind => .trigger kind
+  | none => .other name
 
 /-- Try to parse a string into a `CoreOp`, returning `none` for unrecognized names. -/
 def CoreOp.ofString? (name : String) : Option CoreOp :=
