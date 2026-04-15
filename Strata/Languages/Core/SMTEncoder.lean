@@ -404,9 +404,12 @@ partial def toSMTOp (E : Env) (fn : CoreIdent) (fnty : LMonoTy) (ctx : SMT.Conte
     | .numeric ⟨.int, .Sub⟩      => .ok (.app Op.sub,        .int ,   ctx)
     | .numeric ⟨.int, .Mul⟩      => .ok (.app Op.mul,        .int ,   ctx)
     | .numeric ⟨.int, .Div⟩ | .numeric ⟨.int, .SafeDiv⟩ =>
+      -- Safe to encode as normal SMT div/mod: preconditions have already been
+      -- checked and generated well-formedness conditions in the environment.
       .ok (.app Op.div,        .int ,   ctx)
     | .numeric ⟨.int, .Mod⟩ | .numeric ⟨.int, .SafeMod⟩ =>
       .ok (.app Op.mod,        .int ,   ctx)
+    -- Truncating division: tdiv(a,b) = let q = ediv(abs(a), abs(b)) in ite(a*b >= 0, q, -q)
     | .numeric ⟨.int, .DivT⟩ | .numeric ⟨.int, .SafeDivT⟩ =>
       let divTApp := fun (args : List Term) (retTy : TermType) =>
         match args with
@@ -421,6 +424,8 @@ partial def toSMTOp (E : Env) (fn : CoreIdent) (fnty : LMonoTy) (ctx : SMT.Conte
           Factory.ite abGeZero q negQ
         | _ => Term.app Op.div args retTy
       .ok (divTApp, .int, ctx)
+    -- Truncating modulo: tmod(a,b) = a - b * tdiv(a,b)
+    -- tdiv(a,b) = let q = ediv(abs(a), abs(b)) in ite(a*b >= 0, q, -q)
     | .numeric ⟨.int, .ModT⟩ | .numeric ⟨.int, .SafeModT⟩ =>
       let modTApp := fun (args : List Term) (retTy : TermType) =>
         match args with
