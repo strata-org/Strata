@@ -46,7 +46,15 @@ rec function len<a>(@[cases] xs : MyList a) : int
 datatype MyList (a : Type) {
   Nil(),
   Cons(hd : a, tl : MyList a)
-};-/
+};
+rec function len<$__ty0> (@[cases] xs : MyList $__ty0) : int
+{
+  if MyList..isNil(xs) then 0 else 1 + len(MyList..tl(xs))
+};
+procedure len$$wf (xs : MyList $__ty18) returns ()
+{
+  assert [len_body_calls_MyList..tl_0]: !(MyList..isNil(xs)) ==> MyList..isCons(xs);
+  };-/
 #guard_msgs in
 #eval verify polyRecPgm (options := .quiet)
 
@@ -75,7 +83,15 @@ rec function listLen (xs : IntList) : int
 datatype IntList {
   Nil(),
   Cons(hd : int, tl : IntList)
-};-/
+};
+rec function listLen (xs : IntList) : int
+{
+  if IntList..isNil(xs) then 0 else 1 + listLen(IntList..tl(xs))
+};
+procedure listLen$$wf (xs : IntList) returns ()
+{
+  assert [listLen_body_calls_IntList..tl_0]: !(IntList..isNil(xs)) ==> IntList..isCons(xs);
+  };-/
 #guard_msgs in
 #eval verify noCasesPgm (options := .quiet)
 

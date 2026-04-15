@@ -77,18 +77,16 @@ spec {
   free requires [g_eq_15]: g == 15;
   free ensures [g_lt_10]: g < 10;
   } {
-  assume [g_eq_15]: $__g1 == 15;
-  assert [g_gt_10_internal]: $__g1 > 10;
-  g := $__g1 + 1;
-  assert [g_lt_10]: true;
+  assert [g_gt_10_internal]: g > 10;
+  g := g + 1;
   };
 procedure ProcCaller () returns (x : int)
 spec {
   modifies g;
   } {
   havoc g;
-  assume [callElimAssume_g_lt_10_0]: $__g4 < 10;
-  assert [g_eq_15_internal]: $__g4 == 15;
+  assume [callElimAssume_g_lt_10_0]: g < 10;
+  assert [g_eq_15_internal]: g == 15;
   };
 
 ---

@@ -31,7 +31,7 @@ def eval (E : Env) : List Env :=
     match decl with
 
     | .var name ty init md =>
-      Statement.eval declsE [] [(.init name ty init md)]
+      (Statement.eval declsE [] [(.init name ty init md)]).flatMap (fun E => go rest E)
 
     | .type _ _ =>
       go rest declsE

@@ -266,7 +266,7 @@ program Core;
 
 procedure badDiv$$wf (x : int) returns ()
 {
-  assert [badDiv_body_calls_Int.SafeDiv_0]: false;
+  assert [badDiv_body_calls_Int.SafeDiv_0]: !(0 == 0);
   };
 function badDiv (x : int) : int {
   x / 0

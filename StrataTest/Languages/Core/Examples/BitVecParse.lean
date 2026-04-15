@@ -49,8 +49,8 @@ program Core;
 
 procedure bitVecParseTest () returns ()
 {
-  assert [bitvec32_test]: true;
-  assert [bitvec64_test]: false;
+  assert [bitvec32_test]: bv{32}(4294945741) == bv{32}(4294945741);
+  assert [bitvec64_test]: bv{64}(68719455181) == bv{64}(4294945741);
   };
 
 ---

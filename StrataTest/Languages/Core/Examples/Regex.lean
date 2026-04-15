@@ -198,8 +198,8 @@ procedure main (n : int) returns ()
 {
   var n1 : int;
   n1 := 1;
-  assert [assert_0]: !(str.in.re("0123456789a", bad_re_loop($__n0)));
-  assert [assert_1]: str.in.re("a", bad_re_loop(1));
+  assert [assert_0]: !(str.in.re("0123456789a", bad_re_loop(n)));
+  assert [assert_1]: str.in.re("a", bad_re_loop(n1));
   };
 
 
@@ -222,8 +222,8 @@ procedure main (n : int) returns ()
 {
   var n1 : int;
   n1 := 1;
-  assert [assert_0]: !(str.in.re("0123456789a", bad_re_loop($__n0)));
-  assert [assert_1]: str.in.re("a", bad_re_loop(1));
+  assert [assert_0]: !(str.in.re("0123456789a", bad_re_loop(n)));
+  assert [assert_1]: str.in.re("a", bad_re_loop(n1));
   };
 
 ---

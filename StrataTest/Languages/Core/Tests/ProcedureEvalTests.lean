@@ -240,7 +240,7 @@ Proof Obligation:
 -/
 #guard_msgs in
 #eval do let E := Env.init
-         let (_proc, E) := eval E
+         let E := eval E
               { header := {name := "P",
                            typeArgs := [],
                            inputs := [("x", mty[int])],

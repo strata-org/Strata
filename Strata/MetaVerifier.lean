@@ -50,8 +50,7 @@ namespace Core
 abbrev CoreVC := Env × Imperative.ProofObligation Expression
 abbrev coreVCs := List (Env × Imperative.ProofObligation Expression)
 
-def genVCsSingleENV (pE : Program × Env) : Option coreVCs := do
-  let (_, E) := pE
+def genVCsSingleENV (E : Env) : Option coreVCs := do
   match E.error with
   | some _ => none
   | _ => return E.deferred.toList.map (fun ob => (E, ob))

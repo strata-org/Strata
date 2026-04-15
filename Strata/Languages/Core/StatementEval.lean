@@ -529,7 +529,7 @@ def evalAuxGo (steps : Nat) (old_var_subst : SubstMap) (Ewn : EnvWithNext) (ss :
 
 def processIteBranches (steps : Nat) (old_var_subst : SubstMap) (Ewn : EnvWithNext)
     (cond cond' : Expression.Expr) (then_ss else_ss : Statements)
-    (md : Imperative.MetaData Expression) : List EnvWithNext :=
+    (_md : Imperative.MetaData Expression) : List EnvWithNext :=
   let Ewn := { Ewn with env := Ewn.env.pushEmptyScope }
   let label_true := toString (f!"<label_ite_cond_true: {cond.eraseTypes}>")
   let label_false := toString (f!"<label_ite_cond_false: !{cond.eraseTypes}>")
