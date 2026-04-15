@@ -51,10 +51,25 @@ def wfProcName (name : String) : String := s!"{name}{wfSuffix}"
 
 /-! ## Collecting assertions from expressions -/
 
-/-- Classify a function name into a property type for SARIF reporting. -/
-private def classifyPrecondition (funcName : String) : Option String :=
+/-- Classify a function precondition into a property type for SARIF reporting.
+    For functions with multiple preconditions (e.g., SafeSDiv has both div-by-zero
+    and overflow), the precondition index distinguishes them. -/
+private def classifyPrecondition (funcName : String) (precondIdx : Nat := 0) : Option String :=
   if funcName.startsWith "Int.SafeDiv" || funcName.startsWith "Int.SafeMod" then
     some Imperative.MetaData.divisionByZero
+  else if funcName.startsWith "Bv1.SafeSDiv" || funcName.startsWith "Bv2.SafeSDiv" ||
+          funcName.startsWith "Bv8.SafeSDiv" || funcName.startsWith "Bv16.SafeSDiv" ||
+          funcName.startsWith "Bv32.SafeSDiv" || funcName.startsWith "Bv64.SafeSDiv" ||
+          funcName.startsWith "Bv1.SafeSMod" || funcName.startsWith "Bv2.SafeSMod" ||
+          funcName.startsWith "Bv8.SafeSMod" || funcName.startsWith "Bv16.SafeSMod" ||
+          funcName.startsWith "Bv32.SafeSMod" || funcName.startsWith "Bv64.SafeSMod" then
+    -- SafeSDiv/SafeSMod: precondition 0 is div-by-zero, precondition 1 is overflow
+    if precondIdx == 0 then some Imperative.MetaData.divisionByZero
+    else some Imperative.MetaData.arithmeticOverflow
+  else if funcName.startsWith "Bv1.Safe" || funcName.startsWith "Bv2.Safe" ||
+          funcName.startsWith "Bv8.Safe" || funcName.startsWith "Bv16.Safe" ||
+          funcName.startsWith "Bv32.Safe" || funcName.startsWith "Bv64.Safe" then
+    some Imperative.MetaData.arithmeticOverflow
   else
     none
 
@@ -68,12 +83,27 @@ def collectPrecondAsserts (F : @Lambda.Factory CoreLParams) (e : Expression.Expr
 (labelPrefix : String) (md : Imperative.MetaData Expression)
 : List Statement :=
   let wfObs := Lambda.collectWFObligations F e
-  wfObs.mapIdx fun idx ob =>
-    let md' := match classifyPrecondition ob.funcName with
-      | some pt => md.pushElem Imperative.MetaData.propertyType (.msg pt)
-      | none => md
-    Statement.assert
-    s!"{labelPrefix}_calls_{ob.funcName}_{idx}" ob.obligation md'
+  -- Strip propertySummary: the enclosing statement's user-facing message
+  -- (e.g., a Python assert message) should not propagate to generated
+  -- precondition checks for called functions.
+  let md := md.eraseAllElems Imperative.MetaData.propertySummary
+  -- Use modulo to cycle the precondition index correctly across call sites.
+  -- For nested calls like SafeSDiv(SafeSDiv(x,y),z), obligations arrive as
+  -- [inner-0, inner-1, outer-0, outer-1] with the same funcName throughout.
+  -- Without modulo, the index would be 0,1,2,3 instead of 0,1,0,1.
+  let (_, _, result) := wfObs.foldl (init := ("", 0, ([] : List Statement)))
+    fun (prevFunc, prevIdx, acc) ob =>
+      let rawIdx := if ob.funcName == prevFunc then prevIdx + 1 else 0
+      let precondCount := F[ob.funcName]?.map (·.preconditions.length) |>.getD 1
+      let precondIdx := if precondCount > 0 then rawIdx % precondCount else rawIdx
+      let globalIdx := acc.length
+      let md' := match classifyPrecondition ob.funcName precondIdx with
+        | some pt => md.pushElem Imperative.MetaData.propertyType (.msg pt)
+        | none => md
+      let stmt := Statement.assert
+        s!"{labelPrefix}_calls_{ob.funcName}_{globalIdx}" ob.obligation md'
+      (ob.funcName, rawIdx, stmt :: acc)
+  result.reverse
 
 /--
 Collect assertions for all expressions in a command.

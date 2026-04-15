@@ -519,6 +519,12 @@ def translateFn (ty? : Option LMonoTy) (q : QualifiedIdent) : TransM Core.Expres
   | .some .bv1, q`Core.mod_expr => return Core.bv1UModOp
   | .some .bv1, q`Core.bvsdiv   => return Core.bv1SDivOp
   | .some .bv1, q`Core.bvsmod   => return Core.bv1SModOp
+  | .some .bv1, q`Core.safeadd_expr  => return Core.bv1SafeAddOp
+  | .some .bv1, q`Core.safesub_expr  => return Core.bv1SafeSubOp
+  | .some .bv1, q`Core.safemul_expr  => return Core.bv1SafeMulOp
+  | .some .bv1, q`Core.safeneg_expr  => return Core.bv1SafeNegOp
+  | .some .bv1, q`Core.safesdiv_expr => return Core.bv1SafeSDivOp
+  | .some .bv1, q`Core.safesmod_expr => return Core.bv1SafeSModOp
   | .some .bv1, q`Core.bvnot    => return Core.bv1NotOp
   | .some .bv1, q`Core.bvand    => return Core.bv1AndOp
   | .some .bv1, q`Core.bvor     => return Core.bv1OrOp
@@ -543,6 +549,12 @@ def translateFn (ty? : Option LMonoTy) (q : QualifiedIdent) : TransM Core.Expres
   | .some .bv8, q`Core.mod_expr => return Core.bv8UModOp
   | .some .bv8, q`Core.bvsdiv   => return Core.bv8SDivOp
   | .some .bv8, q`Core.bvsmod   => return Core.bv8SModOp
+  | .some .bv8, q`Core.safeadd_expr  => return Core.bv8SafeAddOp
+  | .some .bv8, q`Core.safesub_expr  => return Core.bv8SafeSubOp
+  | .some .bv8, q`Core.safemul_expr  => return Core.bv8SafeMulOp
+  | .some .bv8, q`Core.safeneg_expr  => return Core.bv8SafeNegOp
+  | .some .bv8, q`Core.safesdiv_expr => return Core.bv8SafeSDivOp
+  | .some .bv8, q`Core.safesmod_expr => return Core.bv8SafeSModOp
   | .some .bv8, q`Core.bvnot    => return Core.bv8NotOp
   | .some .bv8, q`Core.bvand    => return Core.bv8AndOp
   | .some .bv8, q`Core.bvor     => return Core.bv8OrOp
@@ -567,6 +579,12 @@ def translateFn (ty? : Option LMonoTy) (q : QualifiedIdent) : TransM Core.Expres
   | .some .bv16, q`Core.mod_expr => return Core.bv16UModOp
   | .some .bv16, q`Core.bvsdiv   => return Core.bv16SDivOp
   | .some .bv16, q`Core.bvsmod   => return Core.bv16SModOp
+  | .some .bv16, q`Core.safeadd_expr  => return Core.bv16SafeAddOp
+  | .some .bv16, q`Core.safesub_expr  => return Core.bv16SafeSubOp
+  | .some .bv16, q`Core.safemul_expr  => return Core.bv16SafeMulOp
+  | .some .bv16, q`Core.safeneg_expr  => return Core.bv16SafeNegOp
+  | .some .bv16, q`Core.safesdiv_expr => return Core.bv16SafeSDivOp
+  | .some .bv16, q`Core.safesmod_expr => return Core.bv16SafeSModOp
   | .some .bv16, q`Core.bvnot    => return Core.bv16NotOp
   | .some .bv16, q`Core.bvand    => return Core.bv16AndOp
   | .some .bv16, q`Core.bvor     => return Core.bv16OrOp
@@ -591,6 +609,12 @@ def translateFn (ty? : Option LMonoTy) (q : QualifiedIdent) : TransM Core.Expres
   | .some .bv32, q`Core.mod_expr => return Core.bv32UModOp
   | .some .bv32, q`Core.bvsdiv   => return Core.bv32SDivOp
   | .some .bv32, q`Core.bvsmod   => return Core.bv32SModOp
+  | .some .bv32, q`Core.safeadd_expr  => return Core.bv32SafeAddOp
+  | .some .bv32, q`Core.safesub_expr  => return Core.bv32SafeSubOp
+  | .some .bv32, q`Core.safemul_expr  => return Core.bv32SafeMulOp
+  | .some .bv32, q`Core.safeneg_expr  => return Core.bv32SafeNegOp
+  | .some .bv32, q`Core.safesdiv_expr => return Core.bv32SafeSDivOp
+  | .some .bv32, q`Core.safesmod_expr => return Core.bv32SafeSModOp
   | .some .bv32, q`Core.bvnot    => return Core.bv32NotOp
   | .some .bv32, q`Core.bvand    => return Core.bv32AndOp
   | .some .bv32, q`Core.bvor     => return Core.bv32OrOp
@@ -615,6 +639,12 @@ def translateFn (ty? : Option LMonoTy) (q : QualifiedIdent) : TransM Core.Expres
   | .some .bv64, q`Core.mod_expr => return Core.bv64UModOp
   | .some .bv64, q`Core.bvsdiv   => return Core.bv64SDivOp
   | .some .bv64, q`Core.bvsmod   => return Core.bv64SModOp
+  | .some .bv64, q`Core.safeadd_expr  => return Core.bv64SafeAddOp
+  | .some .bv64, q`Core.safesub_expr  => return Core.bv64SafeSubOp
+  | .some .bv64, q`Core.safemul_expr  => return Core.bv64SafeMulOp
+  | .some .bv64, q`Core.safeneg_expr  => return Core.bv64SafeNegOp
+  | .some .bv64, q`Core.safesdiv_expr => return Core.bv64SafeSDivOp
+  | .some .bv64, q`Core.safesmod_expr => return Core.bv64SafeSModOp
   | .some .bv64, q`Core.bvnot    => return Core.bv64NotOp
   | .some .bv64, q`Core.bvand    => return Core.bv64AndOp
   | .some .bv64, q`Core.bvor     => return Core.bv64OrOp
@@ -819,6 +849,11 @@ partial def translateExpr (p : Program) (bindings : TransBindings) (arg : Arg) :
     let fn ← translateFn ty q`Core.neg_expr
     let x ← translateExpr p bindings xa
     return .mkApp () fn [x]
+  | .fn _ q`Core.safeneg_expr, [tpa, xa] =>
+    let ty ← translateLMonoTy bindings (dealiasTypeArg p tpa)
+    let fn ← translateFn ty q`Core.safeneg_expr
+    let x ← translateExpr p bindings xa
+    return .mkApp () fn [x]
   -- Strings
   | .fn _ q`Core.str_concat, [xa, ya] =>
      let x ← translateExpr p bindings xa
@@ -964,6 +999,11 @@ partial def translateExpr (p : Program) (bindings : TransBindings) (arg : Arg) :
     | q`Core.bvsshr
     | q`Core.bvsdiv
     | q`Core.bvsmod
+    | q`Core.safeadd_expr
+    | q`Core.safesub_expr
+    | q`Core.safemul_expr
+    | q`Core.safesdiv_expr
+    | q`Core.safesmod_expr
     | q`Core.le
     | q`Core.lt
     | q`Core.gt
