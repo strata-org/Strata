@@ -4,7 +4,7 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import Strata.Languages.Boole.Verify
+import Strata.MetaVerifier
 
 open Strata
 
@@ -35,3 +35,7 @@ Result: ✅ pass
 #eval Strata.Boole.verify "cvc5" topLevelBlockSelection
         (proceduresToVerify := (some [Strata.Boole.topLevelBlockProcedureName]))
         (options := .quiet)
+
+example : Strata.smtVCsCorrect topLevelBlockSelection := by
+  gen_smt_vcs
+  all_goals (try grind)

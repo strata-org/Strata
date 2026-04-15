@@ -39,6 +39,13 @@ def VerificationMode.ofString? (s : String) : Option VerificationMode :=
   | "bugFindingAssumingCompleteSpec" => some .bugFindingAssumingCompleteSpec
   | _ => none
 
+def VerificationMode.toString : VerificationMode → String
+  | .deductive => "deductive"
+  | .bugFinding => "bugFinding"
+  | .bugFindingAssumingCompleteSpec => "bugFindingAssumingCompleteSpec"
+
+instance : ToString VerificationMode := ⟨VerificationMode.toString⟩
+
 def VerificationMode.options : String :=
   "'deductive' (prove correctness), 'bugFinding' (find bugs), or 'bugFindingAssumingCompleteSpec' (find bugs assuming complete preconditions)"
 

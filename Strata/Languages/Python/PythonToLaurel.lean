@@ -622,34 +622,35 @@ partial def translateExpr (ctx : TranslationContext) (e : Python.expr SourceRang
   -- TODO: Handle by creating explicit variable declarations
   | .Subscript _ val slice _ =>
     let dictOrList ← translateExpr ctx val
-    let index ←  match slice with
-      | .Slice _ start stop step => translateSlice ctx start.val stop.val step.val
-      | _ => translateExpr ctx slice
-    -- Emit bounds check for negative integer indices on lists (e.g., xs[-1])
-    -- and convert to positive index: xs[-n] becomes xs[len(xs) - n].
-    -- Skip for dicts, where negative integer keys are valid dict lookups.
-    -- Note: Python's AST represents `-1` as UnaryOp(USub, Constant(1)),
-    -- not Constant(-1), so we must match both forms.
-    let valType := (inferExprType ctx val).toOption.getD PyLauType.Any
-    let isDictType := valType == PyLauType.DictStrAny
-    let negLitVal? := match slice with
-      | .Constant _ (.ConNeg _ n) _ => some n.val
-      | .UnaryOp _ (.USub _) (.Constant _ (.ConPos _ n) _) => some n.val
-      | _ => none
-    let index := match negLitVal? with
-      | some n =>
-        if isDictType then index
-        else
-          -- xs[-n] becomes xs[len(xs) - n]
-          -- The Any_get precondition (0 <= index < len) will catch
-          -- out-of-bounds access; we just need the index conversion.
-          let listExpr := mkStmtExprMd (.StaticCall "Any..as_ListAny!" [dictOrList])
-          let lenExpr := mkStmtExprMd (.StaticCall "List_len" [listExpr])
-          let nLit := mkStmtExprMd (.LiteralInt n)
-          mkStmtExprMd (.StaticCall "from_int"
-            [mkStmtExprMd (.PrimitiveOp .Sub [lenExpr, nLit])])
-      | none => index
-    return mkStmtExprMdWithLoc (.StaticCall "Any_get" [dictOrList, index]) md
+    match slice with
+      | .Slice _ start stop step =>
+          let index ← translateSlice ctx start.val stop.val step.val
+          return mkStmtExprMdWithLoc (.StaticCall "Any_get_slice" [dictOrList, index]) md
+      | _ =>
+          let index ← translateExpr ctx slice
+          -- Emit bounds check for negative integer indices on lists (e.g., xs[-1])
+          -- and convert to positive index: xs[-n] becomes xs[len(xs) - n].
+          -- Skip for dicts, where negative integer keys are valid dict lookups.
+          -- Note: Python's AST represents `-1` as UnaryOp(USub, Constant(1)),
+          -- not Constant(-1), so we must match both forms.
+          let valType := (inferExprType ctx val).toOption.getD PyLauType.Any
+          let isDictType := valType == PyLauType.DictStrAny
+          let negLitVal? := match slice with
+            | .Constant _ (.ConNeg _ n) _ => some n.val
+            | .UnaryOp _ (.USub _) (.Constant _ (.ConPos _ n) _) => some n.val
+            | _ => none
+          let index := match negLitVal? with
+            | some n =>
+              if isDictType then index
+              else
+                -- xs[-n] becomes xs[len(xs) - n]
+                let listExpr := mkStmtExprMd (.StaticCall "Any..as_ListAny!" [dictOrList])
+                let lenExpr := mkStmtExprMd (.StaticCall "List_len" [listExpr])
+                let nLit := mkStmtExprMd (.LiteralInt n)
+                mkStmtExprMd (.StaticCall "from_int"
+                  [mkStmtExprMd (.PrimitiveOp .Sub [lenExpr, nLit])])
+            | none => index
+          return mkStmtExprMdWithLoc (.StaticCall "Any_get" [dictOrList, index]) md
 
   -- Attribute access: obj.attr or obj.method
   | .Attribute _ obj attr _ => do
