@@ -415,7 +415,9 @@ def handleUnaryOps {M} [Inhabited M] (name : String) (arg : CoreDDM.Expr M)
   | .re .Comp => pure (.re_comp default arg)
   -- Sequences
   | .seq .Length => pure (.seq_length default ty arg)
-  -- Bitvector unary ops (size-generic)
+  -- Bitvector unary ops: enumerated per size because the CST constructors
+  -- (.bvnot, .neg_expr) require a concrete type argument. Adding a new BV
+  -- width requires adding cases here.
   | .bv ⟨1, .Not⟩ => pure (.bvnot default (.bv1 default) arg)
   | .bv ⟨1, .Neg⟩ => pure (.neg_expr default (.bv1 default) arg)
   | .bv ⟨8, .Not⟩ => pure (.bvnot default (.bv8 default) arg)
