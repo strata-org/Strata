@@ -320,6 +320,7 @@ def toCoreExpr (e : Boole.Expr) : TranslateM Core.Expression.Expr := do
   | .or _ a b => return mkCoreApp Core.boolOrOp [← toCoreExpr a, ← toCoreExpr b]
   | .equiv _ a b => return mkCoreApp Core.boolEquivOp [← toCoreExpr a, ← toCoreExpr b]
   | .implies _ a b => return mkCoreApp Core.boolImpliesOp [← toCoreExpr a, ← toCoreExpr b]
+  | .ext_equal m ty a b => return ← toCoreExtensionalEq m ty (← toCoreExpr a) (← toCoreExpr b)
   | .equal _ _ a b => return .eq Strata.SourceRange.none (← toCoreExpr a) (← toCoreExpr b)
   | .not_equal _ _ a b => return .app Strata.SourceRange.none Core.boolNotOp (.eq Strata.SourceRange.none (← toCoreExpr a) (← toCoreExpr b))
   | .le m ty a b => toCoreTypedBin m ty "Le" (← toCoreExpr a) (← toCoreExpr b)
