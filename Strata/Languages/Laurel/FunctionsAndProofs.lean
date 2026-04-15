@@ -17,11 +17,9 @@ This IR sits between Laurel and CoreWithLaurelTypes in the pipeline:
   Laurel → FunctionsAndProofs → CoreWithLaurelTypes → Core
 
 The proof pass generates:
-- A function for each functional procedure.
-- A proof for each non-functional procedure.
-
-In the future, every procedure will generate both a function and a proof,
-with assertions/assumptions stripped from function bodies via deep traversal.
+- A function for every procedure (body included only for transparent procedures,
+  with Assert/Assume stripped).
+- A proof for every procedure.
 -/
 
 namespace Strata.Laurel
@@ -40,24 +38,32 @@ structure FunctionsAndProofsProgram where
   constants : List Constant
 
 /-- Deep traversal that strips all Assert and Assume nodes from a StmtExpr tree.
-    Assert/Assume nodes are replaced with `LiteralBool true`.
-    This will be used by the full proof pass when every procedure generates
-    both a function and a proof. -/
+    Assert/Assume nodes are replaced with `LiteralBool true`. -/
 def stripAssertAssume (expr : StmtExprMd) : StmtExprMd :=
   mapStmtExpr (fun e =>
     match e.val with
     | .Assert _ | .Assume _ => ⟨.LiteralBool true, e.md⟩
     | _ => e) expr
 
+/-- Create the function copy of a procedure. The function body is included only
+    when the procedure has a transparent body; otherwise the body is made opaque
+    with no implementation. Assert/Assume nodes are stripped from function bodies. -/
+private def mkFunctionCopy (proc : Procedure) : Procedure :=
+  let body := match proc.body with
+    | .Transparent b => .Transparent (stripAssertAssume b)
+    | _ => .Opaque [] none []
+  { proc with isFunctional := true, body := body }
+
 /--
 Proof pass: translate a Laurel program to the FunctionsAndProofs IR.
 
-Functional Laurel procedures become functions; non-functional procedures
-become proofs.
+Every procedure generates both a function copy (with Assert/Assume stripped,
+body only for transparent procedures) and a proof copy.
 -/
 def laurelToFunctionsAndProofs (program : Program) : FunctionsAndProofsProgram :=
   let nonExternal := program.staticProcedures.filter (fun p => !p.body.isExternal)
-  let (functions, proofs) := nonExternal.partition (·.isFunctional)
+  let functions := nonExternal.map mkFunctionCopy
+  let proofs := nonExternal.map fun p => { p with isFunctional := false }
   let datatypes := program.types.filterMap fun td => match td with
     | .Datatype dt => some dt
     | _ => none

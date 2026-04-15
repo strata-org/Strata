@@ -109,10 +109,8 @@ private def runLaurelPasses (options : LaurelTranslateOptions) (program : Progra
   let (program, model) := (result.program, result.model)
   emit "ConstrainedTypeElim" program
 
-  -- NOTE: The contract pass (contractPass) is implemented in ContractPass.lean
-  -- but not yet wired into the pipeline. It will be activated once call-site
-  -- rewriting is complete and the full proof pass generates both functions
-  -- and proofs for every procedure.
+  -- Contract pass: externalize pre/postconditions and rewrite call sites
+  let program := contractPass program
 
   let allDiags := resolutionErrors ++ diamondErrors ++ nonCompositeDiags ++
     modifiesDiags ++ constrainedTypeDiags

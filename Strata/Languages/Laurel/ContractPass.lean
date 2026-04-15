@@ -10,22 +10,19 @@ public import Strata.Languages.Laurel.MapStmtExpr
 /-!
 ## Contract Pass (Laurel → Laurel)
 
-Removes pre- and postconditions from non-functional procedures and replaces
-them with explicit precondition/postcondition helper procedures, assumptions,
-and assertions.
+Removes pre- and postconditions from all procedures and replaces them with
+explicit precondition/postcondition helper procedures, assumptions, and
+assertions.
 
-For each non-functional procedure with contracts:
+For each procedure with contracts:
 - Generate a precondition procedure (`foo$pre`) returning the conjunction of preconditions.
 - Generate a postcondition procedure (`foo$post`) returning the conjunction of postconditions.
 - Insert `assume foo$pre(inputs)` at the start of the body.
 - Insert `assert foo$post(inputs, outputs)` at the end of the body.
 
-For each call to a contracted procedure (in non-functional procedure bodies):
+For each call to a contracted procedure:
 - Insert `assert foo$pre(args)` before the call (precondition check).
 - Insert `assume foo$post(args, results)` after the call (postcondition assumption).
-
-Functional procedures are left unchanged — their contracts are handled
-directly by the Core function translation.
 -/
 
 namespace Strata.Laurel
@@ -83,24 +80,22 @@ private structure ContractInfo where
   preName : String
   postName : String
 
-/-- Collect contract info for non-functional procedures. -/
+/-- Collect contract info for all procedures with contracts. -/
 private def collectContractInfo (procs : List Procedure) : Std.HashMap String ContractInfo :=
   procs.foldl (fun m proc =>
-    if proc.isFunctional then m  -- skip functional procedures
-    else
-      let postconds := getPostconditions proc.body
-      let hasPre := !proc.preconditions.isEmpty
-      let hasPost := !postconds.isEmpty
-      if hasPre || hasPost then
-        m.insert proc.name.text {
-          hasPreCondition := hasPre
-          hasPostCondition := hasPost
-          preName := preCondProcName proc.name.text
-          postName := postCondProcName proc.name.text
-        }
-      else m) {}
+    let postconds := getPostconditions proc.body
+    let hasPre := !proc.preconditions.isEmpty
+    let hasPost := !postconds.isEmpty
+    if hasPre || hasPost then
+      m.insert proc.name.text {
+        hasPreCondition := hasPre
+        hasPostCondition := hasPost
+        preName := preCondProcName proc.name.text
+        postName := postCondProcName proc.name.text
+      }
+    else m) {}
 
-/-- Transform a non-functional procedure body to add assume/assert for its own contracts. -/
+/-- Transform a procedure body to add assume/assert for its own contracts. -/
 private def transformProcBody (proc : Procedure) (info : ContractInfo) : Body :=
   let inputArgs := paramsToArgs proc.inputs
   let outputArgs := paramsToArgs proc.outputs
@@ -123,34 +118,80 @@ private def transformProcBody (proc : Procedure) (info : ContractInfo) : Body :=
     .Transparent (mkMd (.Block (preAssume ++ postAssume) none))
   | b => b
 
+/-- Rewrite call sites in a statement/expression tree. For each `StaticCall` to a
+    contracted procedure, insert `assert pre(args)` before and `assume post(args, results)`
+    after the call. -/
+private def rewriteCallSites (contractInfoMap : Std.HashMap String ContractInfo)
+    (expr : StmtExprMd) : StmtExprMd :=
+  mapStmtExpr (fun e =>
+    match e.val with
+    | .Assign targets (.mk (.StaticCall callee args) _) =>
+      match contractInfoMap.get? callee.text with
+      | some info =>
+        let resultArgs := targets.map fun t => ⟨t.val, t.md⟩
+        let preAssert := if info.hasPreCondition
+          then [mkMd (.Assert (mkCall info.preName args))] else []
+        let postAssume := if info.hasPostCondition
+          then [mkMd (.Assume (mkCall info.postName (args ++ resultArgs)))] else []
+        mkMd (.Block (preAssert ++ [e] ++ postAssume) none)
+      | none => e
+    | .LocalVariable name _ty (some (.mk (.StaticCall callee args) _)) =>
+      match contractInfoMap.get? callee.text with
+      | some info =>
+        let resultArgs := [mkMd (.Identifier name)]
+        let preAssert := if info.hasPreCondition
+          then [mkMd (.Assert (mkCall info.preName args))] else []
+        let postAssume := if info.hasPostCondition
+          then [mkMd (.Assume (mkCall info.postName (args ++ resultArgs)))] else []
+        mkMd (.Block (preAssert ++ [e] ++ postAssume) none)
+      | none => e
+    | .StaticCall callee args =>
+      match contractInfoMap.get? callee.text with
+      | some info =>
+        let preAssert := if info.hasPreCondition
+          then [mkMd (.Assert (mkCall info.preName args))] else []
+        mkMd (.Block (preAssert ++ [e]) none)
+      | none => e
+    | _ => e) expr
+
+/-- Rewrite call sites in all bodies of a procedure. -/
+private def rewriteCallSitesInProc (contractInfoMap : Std.HashMap String ContractInfo)
+    (proc : Procedure) : Procedure :=
+  let rw := rewriteCallSites contractInfoMap
+  match proc.body with
+  | .Transparent body =>
+    { proc with body := .Transparent (rw body) }
+  | .Opaque posts impl mods =>
+    let body := Body.Opaque (posts.map rw) (impl.map rw) (mods.map rw)
+    { proc with body := body }
+  | _ => proc
+
 /-- Run the contract pass on a Laurel program.
-    Only non-functional procedures with contracts are transformed. -/
+    All procedures with contracts are transformed. -/
 def contractPass (program : Program) : Program :=
   let contractInfoMap := collectContractInfo program.staticProcedures
 
-  -- Generate helper procedures for non-functional procedures with contracts
+  -- Generate helper procedures for all procedures with contracts
   let helperProcs := program.staticProcedures.flatMap fun proc =>
-    if proc.isFunctional then []
-    else
-      let postconds := getPostconditions proc.body
-      let preProc :=
-        if proc.preconditions.isEmpty then []
-        else [mkConditionProc (preCondProcName proc.name.text) proc.inputs proc.preconditions]
-      let postProc :=
-        if postconds.isEmpty then []
-        else [mkConditionProc (postCondProcName proc.name.text) (proc.inputs ++ proc.outputs) postconds]
-      preProc ++ postProc
+    let postconds := getPostconditions proc.body
+    let preProc :=
+      if proc.preconditions.isEmpty then []
+      else [mkConditionProc (preCondProcName proc.name.text) proc.inputs proc.preconditions]
+    let postProc :=
+      if postconds.isEmpty then []
+      else [mkConditionProc (postCondProcName proc.name.text) (proc.inputs ++ proc.outputs) postconds]
+    preProc ++ postProc
 
-  -- Transform non-functional procedures: strip contracts, add assume/assert
+  -- Transform procedures: strip contracts, add assume/assert, rewrite call sites
   let transformedProcs := program.staticProcedures.map fun proc =>
-    if proc.isFunctional then proc
-    else
-      match contractInfoMap.get? proc.name.text with
+    let proc := match contractInfoMap.get? proc.name.text with
       | some info =>
         { proc with
           preconditions := []
           body := transformProcBody proc info }
       | none => proc
+    -- Rewrite call sites in the procedure body
+    rewriteCallSitesInProc contractInfoMap proc
 
   { program with staticProcedures := helperProcs ++ transformedProcs }
 
