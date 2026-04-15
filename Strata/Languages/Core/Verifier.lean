@@ -486,30 +486,24 @@ def label (o : VCOutcome) (property : Imperative.PropertyType)
       "pass (❗path unreachable)" "fail (❗path unreachable)"
   -- Simplified labels for minimal check level
   else if checkLevel == .minimal then
-    match property, checkMode with
-    | .assert, .deductive | .divisionByZero, .deductive =>
-      -- Validity check only: unsat=pass, sat=fail, unknown=unknown
-      match o.validityProperty with
-      | .unsat => "pass"
-      | .sat _ => "fail"
-      | .unknown _ => "unknown"
-      | .err _ => "unknown"
-    | .assert, .bugFinding | .assert, .bugFindingAssumingCompleteSpec
-    | .divisionByZero, .bugFinding | .divisionByZero, .bugFindingAssumingCompleteSpec =>
-      -- Satisfiability check only: sat=satisfiable, unsat=fail, unknown=unknown
-      match o.satisfiabilityProperty with
-      | .sat _ => "satisfiable"
-      | .unsat => "fail"
-      | .unknown _ => "unknown"
-      | .err _ => "unknown"
-    | .cover, _ =>
-      -- Satisfiability check only: sat=pass, unsat=fail, unknown=unknown
+    if property.passWhenUnreachable then
+      -- Assert-like property (assert, divisionByZero, arithmeticOverflow)
+      if checkMode == .deductive then
+        match o.validityProperty with
+        | .unsat => "pass"
+        | .sat _ => "fail"
+        | .unknown _ | .err _ => "unknown"
+      else
+        match o.satisfiabilityProperty with
+        | .sat _ => "satisfiable"
+        | .unsat => "fail"
+        | .unknown _ | .err _ => "unknown"
+    else
+      -- Cover property
       match o.satisfiabilityProperty with
       | .sat _ => "pass"
       | .unsat => "fail"
-      | .unknown _ => "unknown"
-      | .err _ => "unknown"
-  -- MinimalVerbose and Full: detailed labels with unreachable indicator
+      | .unknown _ | .err _ => "unknown"
   else
     -- For cover: satisfiability sat means the cover is satisfied (pass)
     if property == .cover && o.isSatisfiable then "satisfiable and reachable from declaration entry"
@@ -529,29 +523,22 @@ def emoji (o : VCOutcome) (property : Imperative.PropertyType)
     unreachableMsg checkMode property.passWhenUnreachable "✅" "❌"
   -- Simplified emojis for minimal check level
   else if checkLevel == .minimal then
-    match property, checkMode with
-    | .assert, .deductive | .divisionByZero, .deductive =>
-      -- Validity check only: unsat=✅, sat=❌, unknown=❓
-      match o.validityProperty with
-      | .unsat => "✅"
-      | .sat _ => "❌"
-      | .unknown _ => "❓"
-      | .err _ => "❓"
-    | .assert, .bugFinding | .assert, .bugFindingAssumingCompleteSpec
-    | .divisionByZero, .bugFinding | .divisionByZero, .bugFindingAssumingCompleteSpec =>
-      -- Satisfiability check only: sat=❓ (satisfiable), unsat=❌, unknown=❓
-      match o.satisfiabilityProperty with
-      | .sat _ => "❓"  -- Different meaning: satisfiable but don't know if always true
-      | .unsat => "❌"
-      | .unknown _ => "❓"
-      | .err _ => "❓"
-    | .cover, _ =>
-      -- Satisfiability check only: sat=✅, unsat=❌, unknown=❓
+    if property.passWhenUnreachable then
+      if checkMode == .deductive then
+        match o.validityProperty with
+        | .unsat => "✅"
+        | .sat _ => "❌"
+        | .unknown _ | .err _ => "❓"
+      else
+        match o.satisfiabilityProperty with
+        | .sat _ => "❓"
+        | .unsat => "❌"
+        | .unknown _ | .err _ => "❓"
+    else
       match o.satisfiabilityProperty with
       | .sat _ => "✅"
       | .unsat => "❌"
-      | .unknown _ => "❓"
-      | .err _ => "❓"
+      | .unknown _ | .err _ => "❓"
   -- MinimalVerbose and Full: detailed emojis
   else
     if property == .cover && o.isSatisfiable then "✅"
@@ -792,25 +779,22 @@ def preprocessObligation (obligation : ProofObligation Expression) (p : Program)
     `loopElimPipelinePhase` is placed last because loop elimination happens
     during evaluation (not as a program-to-program pass), making it the
     closest phase to SMT. -/
-def corePipelinePhases (procs : Option (List String) := none)
-    (factory : Option (@Lambda.Factory CoreLParams) := none) : List PipelinePhase :=
+def corePipelinePhases (procs : Option (List String) := none) : List PipelinePhase :=
   let filterPhases := match procs with
     | some ps => [filterProceduresPipelinePhase ps]
-    | none => []
-  let precondPhase := match factory with
-    | some f => [precondElimPipelinePhase f]
     | none => []
   let postFilterPhases := match procs with
     | some ps =>
       let targets := ps ++ ps.map PrecondElim.wfProcName
       [filterProceduresPipelinePhase targets (respectNoFilter := false)]
     | none => []
-  filterPhases ++ [callElimPipelinePhase] ++ precondPhase ++ postFilterPhases ++ [loopElimPipelinePhase]
+  -- precondElimPipelinePhase will immediately return if there is no Factory
+  -- set up at CoreTransformState.
+  filterPhases ++ [callElimPipelinePhase] ++ [precondElimPipelinePhase] ++ postFilterPhases ++ [loopElimPipelinePhase]
 
 /-- The abstracted phases derived from the Core pipeline phases. -/
-def coreAbstractedPhases (procs : Option (List String) := none)
-    (factory : Option (@Lambda.Factory CoreLParams) := none) : List AbstractedPhase :=
-  (corePipelinePhases procs factory).map (·.phase)
+def coreAbstractedPhases (procs : Option (List String) := none) : List AbstractedPhase :=
+  (corePipelinePhases procs).map (·.phase)
 
 /-- Build the solver log from raw results and phase validation logs. -/
 private def buildSolverLog (satResult valResult : SMT.Result)
@@ -927,17 +911,12 @@ def verifySingleEnv (pE : Program × Env) (options : VerifyOptions)
           (true, true)  -- fullCheck annotation: always run both
         else
           -- Derive checks from check mode and level
-          match options.checkMode, options.checkLevel, obligation.property with
-          | _, .full, _ => (true, true)  -- Full: both checks
-          | .bugFindingAssumingCompleteSpec, _, _ => (true, true)  -- This mode requires both checks
-          | .deductive, .minimal, .assert | .deductive, .minimal, .divisionByZero => (false, true)  -- Deductive needs validity
-          | .deductive, .minimalVerbose, .assert | .deductive, .minimalVerbose, .divisionByZero => (false, true)  -- Same checks as minimal
-          | .deductive, .minimal, .cover => (true, false)   -- Cover uses satisfiability
-          | .deductive, .minimalVerbose, .cover => (true, false)   -- Same checks as minimal
-          | .bugFinding, .minimal, .assert | .bugFinding, .minimal, .divisionByZero => (true, false) -- Bug finding needs satisfiability
-          | .bugFinding, .minimalVerbose, .assert | .bugFinding, .minimalVerbose, .divisionByZero => (true, false) -- Same checks as minimal
-          | .bugFinding, .minimal, .cover => (true, false)  -- Cover uses satisfiability
-          | .bugFinding, .minimalVerbose, .cover => (true, false)  -- Same checks as minimal
+          match options.checkMode, options.checkLevel with
+          | _, .full => (true, true)
+          | .bugFindingAssumingCompleteSpec, _ => (true, true)
+          | .deductive, _ =>
+            if obligation.property.passWhenUnreachable then (false, true) else (true, false)
+          | .bugFinding, _ => (true, false)
       let t0 ← IO.monoNanosNow
       let (obligation, peSatResult?, peValResult?) ← preprocessObligation obligation p options satisfiabilityCheck validityCheck axiomCache
       let t1 ← IO.monoNanosNow
@@ -1031,7 +1010,7 @@ def verify (program : Program)
     : EIO DiagnosticModel VCResults := do
   let profile := options.profile
   let factory ← EIO.ofExcept (Core.Factory.addFactory moreFns)
-  let pipelinePhases := prefixPhases ++ corePipelinePhases (procs := proceduresToVerify) (factory := some factory)
+  let pipelinePhases := prefixPhases ++ corePipelinePhases (procs := proceduresToVerify)
   let phases := pipelinePhases.map (·.phase)
   let finalProgram ← profileStep profile "  Program transformations" do
     if let some pfx := keepAllFilesPrefix then
@@ -1039,7 +1018,7 @@ def verify (program : Program)
         IO.toEIO (fun e => DiagnosticModel.fromFormat f!"{e}")
           (IO.FS.createDirAll parent)
     let mut current := program
-    let mut state : Transform.CoreTransformState := .emp
+    let mut state : Transform.CoreTransformState := { Transform.CoreTransformState.emp with factory := some factory }
     let mut step := 0
     for pp in pipelinePhases do
       let (result, newState) := Transform.runWith current (fun prog => do

@@ -13,24 +13,35 @@ Near-upstream anchors from `differential_status.md`:
 - missing Strata categories/model types
 - missing stdlib/pervasive symbols
 - examples such as `guide/quants`, `broadcast_proof`, `guide/higher_order_fns`
+- Verus links:
+  `guide/quants`: https://github.com/verus-lang/verus/blob/main/examples/guide/quants.rs
+  `broadcast_proof`: https://github.com/verus-lang/verus/blob/main/examples/broadcast_proof.rs
+  `guide/higher_order_fns`: https://github.com/verus-lang/verus/blob/main/examples/guide/higher_order_fns.rs
+- Current status: Core has `Sequence` support, but Boole does not yet lower
+  Boole `Sequence` types end to end
+- Remaining gap: model-type coverage such as `Thread`, `Cell`, `Rwlock`, etc.,
+  plus deciding how much stub generation is still needed after translation
+  pruning
 -/
 
 private def abstractTypesAndStubsSeed : Strata.Program :=
 #strata
 program Boole;
 
-// Target shape: more of the Verus library surface, including model types like
-// `Thread`, `Cell`, `Rwlock`, and library symbols such as `Seq_len`, `Seq_get`,
-// `Map_len`, etc., should appear here exactly as referenced by translation.
+// Target shape: model/library coverage that still matters after pruning older
+// sequence/pervasive scaffolding from translation output.
+//
+// The Boole frontend still rejects Boole `Sequence` types, so this seed keeps
+// abstract stubs for now.
 
 type Thread;
 type Cell;
+type Rwlock;
 type SeqInt;
 
 function Seq_len(s: SeqInt) : int;
-function Seq_get(s: SeqInt, i: int) : int;
 
-axiom (forall s: SeqInt :: 0 <= Seq_len(s));
+axiom (∀ s: SeqInt . (0 <= Seq_len(s)));
 
 procedure abstract_type_and_stub_seed(s: SeqInt) returns ()
 spec {
