@@ -492,7 +492,7 @@ def evalAuxGo (steps : Nat) (old_var_subst : SubstMap) (Ewn : EnvWithNext) (ss :
             | _ =>
               -- Process both branches.
               processIteBranches steps' old_var_subst
-                Ewn c cond' then_ss else_ss md
+                Ewn c cond' then_ss else_ss
 
           | .loop _ _ _ _ _ =>
             panic! "Cannot evaluate `loop` statement. \
@@ -528,8 +528,7 @@ def evalAuxGo (steps : Nat) (old_var_subst : SubstMap) (Ewn : EnvWithNext) (ss :
   termination_by (steps, Imperative.Block.sizeOf ss)
 
 def processIteBranches (steps : Nat) (old_var_subst : SubstMap) (Ewn : EnvWithNext)
-    (cond cond' : Expression.Expr) (then_ss else_ss : Statements)
-    (_md : Imperative.MetaData Expression) : List EnvWithNext :=
+    (cond cond' : Expression.Expr) (then_ss else_ss : Statements) : List EnvWithNext :=
   let Ewn := { Ewn with env := Ewn.env.pushEmptyScope }
   let label_true := toString (f!"<label_ite_cond_true: {cond.eraseTypes}>")
   let label_false := toString (f!"<label_ite_cond_false: !{cond.eraseTypes}>")
@@ -580,7 +579,7 @@ def evalAux (E : Env) (old_var_subst : SubstMap) (ss : Statements) (optExit : Op
   evalAuxGo (Imperative.Block.sizeOf ss) old_var_subst (EnvWithNext.mk E .none) ss optExit
 
 def exitToError : EnvWithNext → Env
-  | { env, exitLabel := .none } => (env)
+  | { env, exitLabel := .none } => env
   | { env, exitLabel := .some (.some l) } => ({ env with error := some (.LabelNotExists l) })
   | { env, exitLabel := .some .none } => ({ env with error := some (.Misc "exit outside of any block") })
 
@@ -591,7 +590,7 @@ statements.
 The argument `old_var_subst` below is a substitution map from global variables
 to their pre-state value in the enclosing procedure of `ss`.
 -/
-def eval (E : Env) (old_var_subst : SubstMap) (ss : Statements) : List (Env) :=
+def eval (E : Env) (old_var_subst : SubstMap) (ss : Statements) : List Env :=
   (evalAux E old_var_subst ss .none).map exitToError
 
 /--
@@ -600,7 +599,7 @@ statements.
 -/
 def evalOne (E : Env) (old_var_subst : SubstMap) (ss : Statements) : Env :=
   match eval E old_var_subst ss with
-  | [(E')] => (E')
+  | [E'] => E'
   | _ => ({ E with error := some (.Misc "More than one result environment") })
 
 end Statement

@@ -817,13 +817,12 @@ def getObligationResult (assumptionTerms : List Term) (obligationTerm : Term)
                     lexprModel := model }
     return result
 
-def verifySingleEnv (pE : Env) (options : VerifyOptions)
+def verifySingleEnv (E : Env) (options : VerifyOptions)
     (counter : IO.Ref Nat) (tempDir : System.FilePath)
     (axiomCache : Option IrrelevantAxioms.Cache := .none)
     (externalPhases : List AbstractedPhase := [])
     (corePhases : List AbstractedPhase := coreAbstractedPhases) :
     EIO DiagnosticModel VCResults := do
-  let E := pE
   let p := E.program
   let profile := options.profile
   match E.error with
