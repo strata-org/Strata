@@ -70,4 +70,66 @@ private def emptyGraph : CallGraph := buildCallGraph []
 
 #guard !emptyGraph.isRecursive "anything"
 
+/-!
+# CallGraph.computeRoots Tests
+
+Tests for `CallGraph.computeRoots` which finds entry-point ("root") nodes
+by iteratively removing sources and their reachable descendants, breaking
+SCCs by choosing the alphabetically smallest member.
+-/
+
+-- Linear chain: a → b → c  ⟹  only "a" is a root
+#guard linearGraph.computeRoots == ["a"]
+
+-- Independent nodes (no edges between them)
+private def independentGraph : CallGraph :=
+  buildCallGraph [("a", []), ("b", []), ("c", [])]
+
+#guard independentGraph.computeRoots == ["a", "b", "c"]
+
+-- Mutual recursion: a ↔ b  ⟹  alphabetically smallest "a" is chosen
+#guard mutualGraph.computeRoots == ["a"]
+
+-- 3-node cycle: a → b → c → a  ⟹  "a" is chosen
+#guard triangleGraph.computeRoots == ["a"]
+
+-- Partial cycle: a → b ↔ c  ⟹  "a" is the only root (b,c reachable from a)
+#guard partialCycleGraph.computeRoots == ["a"]
+
+-- Root plus disjoint SCC: a → b, c ↔ d (c and d not reachable from a)
+private def rootPlusSCC : CallGraph :=
+  buildCallGraph [("a", ["b"]), ("b", []), ("c", ["d"]), ("d", ["c"])]
+
+#guard rootPlusSCC.computeRoots == ["a", "c"]
+
+-- Main calls helper, independent SCC not reachable from main
+private def mainPlusSCC : CallGraph :=
+  buildCallGraph [("__main__", ["helper"]), ("helper", []),
+                   ("ping", ["pong"]), ("pong", ["ping"])]
+
+#guard mainPlusSCC.computeRoots == ["__main__", "ping"]
+
+-- computeRoots filtered to user procs (prelude never calls user code)
+private def preludePlusUserGraph : CallGraph :=
+  buildCallGraph [("prelude_init", ["prelude_helper"]), ("prelude_helper", []),
+                   ("user_a", ["user_b"]), ("user_b", [])]
+
+#guard preludePlusUserGraph.computeRoots.filter
+    (["user_a", "user_b"].contains ·) == ["user_a"]
+
+-- Empty graph
+#guard CallGraph.empty.computeRoots == []
+
+-- Single node, self-recursive
+#guard selfRecursiveGraph.computeRoots == ["a"]
+
+-- preferredRoots tie-breaker: SCC {a, b}, prefer ["b"] ⟹  "b" chosen over "a"
+#guard mutualGraph.computeRoots (preferredRoots := ["b"]) == ["b"]
+
+-- preferredRoots with multiple preferred in SCC: pick alphabetically smallest preferred
+#guard triangleGraph.computeRoots (preferredRoots := ["c", "b"]) == ["b"]
+
+-- preferredRoots when no preferred node is in the SCC: fall back to alphabetical
+#guard mutualGraph.computeRoots (preferredRoots := ["z"]) == ["a"]
+
 end Core.CallGraph.Tests

@@ -421,7 +421,7 @@ def test := do
   let p := translate TestRecursiveCall
   let _ ← setCallGraph p
   let (changed, _p) ← runProgram (targetProcList := .some ["f"])
-    (inlineCallCmd (doInline := fun name _ => name = "f")) p
+    (inlineCallCmd (doInline := fun _caller callee _ => callee = "f")) p
   let cg := (← get).cachedAnalyses.callGraph
   return (changed, cg)
 
