@@ -1,0 +1,5 @@
+program Core;
+procedure proc0(x : int) returns (y : int)
+{
+  y := x - 5;
+};

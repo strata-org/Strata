@@ -243,6 +243,17 @@ def Program.toProcedureCG (prog : Program) : ProcedureCG :=
     | _ => none)
   buildCallGraph procedures
 
+/-- Compare two `CallGraph`s for equality by checking that every node has the
+    same callees and callers with the same counts. -/
+def CallGraph.beq (cg1 cg2 : CallGraph) : Bool :=
+  let keys1 := cg1.callees.toList.map Prod.fst |>.mergeSort (· < ·)
+  let keys2 := cg2.callees.toList.map Prod.fst |>.mergeSort (· < ·)
+  if keys1 != keys2 then false
+  else keys1.all fun k =>
+    let c1 := cg1.getCalleesWithCount k |>.toList.mergeSort (·.1 < ·.1)
+    let c2 := cg2.getCalleesWithCount k |>.toList.mergeSort (·.1 < ·.1)
+    c1 == c2
+
 def Program.toFunctionCG (prog : Program) : FunctionCG :=
   let functions := prog.decls.flatMap (fun decl =>
     match decl with
