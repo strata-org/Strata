@@ -67,7 +67,9 @@ def Cmd.eval [BEq P.Ident] [EC : EvalContext P S] (σ : S) (c : Cmd P) : Cmd P �
       let assumptions := EC.getPathConditions σ
       let c' := .assert label e md
       let propType := match md.getPropertyType with
-        | some s => if s == MetaData.divisionByZero then .divisionByZero else .assert
+        | some s => if s == MetaData.divisionByZero then .divisionByZero
+                    else if s == MetaData.arithmeticOverflow then .arithmeticOverflow
+                    else .assert
         | none => .assert
       match EC.denoteBool e with
       | some true => -- Proved via evaluation.

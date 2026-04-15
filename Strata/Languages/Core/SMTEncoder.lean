@@ -388,10 +388,78 @@ partial def toSMTOp (E : Env) (fn : CoreIdent) (fnty : LMonoTy) (ctx : SMT.Conte
     .ok (adtApp, smt_outty, ctx)
   | none =>
     -- Not a constructor, tester, or destructor
+    -- Helper: SDivOverflow(x, y) = (x == INT_MIN) ∧ (y == -1)
+    let sdivOverflowEnc := fun (n : Nat) (ctx : SMT.Context) =>
+      let sdivOverflowApp := fun (args : List Term) (_retTy : TermType) =>
+        match args with
+        | [x, y] =>
+          let intMin := Term.prim (.bitvec (BitVec.intMin n))
+          let negOne := Term.prim (.bitvec (BitVec.allOnes n))
+          let xIsMin := Term.app Op.eq [x, intMin] .bool
+          let yIsNegOne := Term.app Op.eq [y, negOne] .bool
+          Term.app Op.and [xIsMin, yIsNegOne] .bool
+        | _ => Term.app Op.and [] .bool
+      Except.ok (sdivOverflowApp, TermType.prim .bool, ctx)
+    -- USubOverflow(x, y) = bvult(x, y)
+    let usubOverflowEnc := fun (ctx : SMT.Context) =>
+      Except.ok (Term.app Op.bvult, TermType.prim .bool, ctx)
+    -- UAddOverflow(x, y) = bvult(bvadd(x, y), x) — wrapping add < operand means overflow
+    let uaddOverflowEnc := fun (_n : Nat) (ctx : SMT.Context) =>
+      let app := fun (args : List Term) (_retTy : TermType) =>
+        match args with
+        | [x, y] =>
+          let bvTy := x.typeOf
+          let sum := Term.app Op.bvadd [x, y] bvTy
+          Term.app Op.bvult [sum, x] .bool
+        | _ => Term.app Op.and [] .bool
+      Except.ok (app, TermType.prim .bool, ctx)
+    -- UMulOverflow(x, y) = bvugt(zero_extend(N, x) * zero_extend(N, y), zero_extend(N, MAX))
+    let umulOverflowEnc := fun (n : Nat) (ctx : SMT.Context) =>
+      let app := fun (args : List Term) (_retTy : TermType) =>
+        match args with
+        | [x, y] =>
+          let extTy := TermType.prim (.bitvec (n + n))
+          let xe := Term.app (.zero_extend n) [x] extTy
+          let ye := Term.app (.zero_extend n) [y] extTy
+          let prod := Term.app Op.bvmul [xe, ye] extTy
+          let maxVal := Term.prim (.bitvec (BitVec.allOnes n))
+          let maxExt := Term.app (.zero_extend n) [maxVal] extTy
+          Term.app Op.bvugt [prod, maxExt] .bool
+        | _ => Term.app Op.and [] .bool
+      Except.ok (app, TermType.prim .bool, ctx)
+    -- UNegOverflow(x) = x != 0
+    let unegOverflowEnc := fun (n : Nat) (ctx : SMT.Context) =>
+      let app := fun (args : List Term) (_retTy : TermType) =>
+        match args with
+        | [x] =>
+          let zero := Term.prim (.bitvec (BitVec.zero n))
+          Term.app Op.not [Term.app Op.eq [x, zero] .bool] .bool
+        | _ => Term.app Op.and [] .bool
+      Except.ok (app, TermType.prim .bool, ctx)
     match E.factory[fn.name]? with
     | none => .error f!"Cannot find function {fn} in Strata Core's Factory!"
     | some func =>
-      match func.name.name with
+      -- Handle unsigned overflow predicates and safe ops via if-then-else
+      -- (kept separate from the main match to avoid C compiler nesting limits)
+      let name := func.name.name
+      if name.startsWith "Bv" && (name.endsWith "UAddOverflow" || name.endsWith "USubOverflow" ||
+         name.endsWith "UMulOverflow" || name.endsWith "UNegOverflow" ||
+         name.endsWith "SafeUAdd" || name.endsWith "SafeUSub" ||
+         name.endsWith "SafeUMul" || name.endsWith "SafeUNeg") then
+        -- Parse size from "BvN.Op"
+        let sizeStr := (name.splitOn ".").head!.drop 2
+        let n := sizeStr.toNat!
+        let bvTy := TermType.prim (.bitvec n)
+        if name.endsWith "UAddOverflow" then uaddOverflowEnc n ctx
+        else if name.endsWith "USubOverflow" then usubOverflowEnc ctx
+        else if name.endsWith "UMulOverflow" then umulOverflowEnc n ctx
+        else if name.endsWith "UNegOverflow" then unegOverflowEnc n ctx
+        else if name.endsWith "SafeUAdd" then .ok (.app Op.bvadd, bvTy, ctx)
+        else if name.endsWith "SafeUSub" then .ok (.app Op.bvsub, bvTy, ctx)
+        else if name.endsWith "SafeUMul" then .ok (.app Op.bvmul, bvTy, ctx)
+        else .ok (.app Op.bvneg, bvTy, ctx) -- SafeUNeg
+      else
+      match name with
     | "Bool.And"     => .ok (.app Op.and,        .bool,   ctx)
     | "Bool.Or"      => .ok (.app Op.or,         .bool,   ctx)
     | "Bool.Not"     => .ok (.app Op.not,        .bool,   ctx)
@@ -575,6 +643,65 @@ partial def toSMTOp (E : Env) (fn : CoreIdent) (fnty : LMonoTy) (ctx : SMT.Conte
     | "Bv64.SLe"     => .ok (.app Op.bvsle,      .bool,   ctx)
     | "Bv64.SGt"     => .ok (.app Op.bvsgt,      .bool,   ctx)
     | "Bv64.SGe"     => .ok (.app Op.bvsge,      .bool,   ctx)
+
+    -- Safe BV operations: same encoding as unsafe (preconditions already checked)
+    | "Bv1.SafeAdd"  => .ok (.app Op.bvadd,      .bitvec 1, ctx)
+    | "Bv1.SafeSub"  => .ok (.app Op.bvsub,      .bitvec 1, ctx)
+    | "Bv1.SafeMul"  => .ok (.app Op.bvmul,      .bitvec 1, ctx)
+    | "Bv1.SafeNeg"  => .ok (.app Op.bvneg,      .bitvec 1, ctx)
+    | "Bv8.SafeAdd"  => .ok (.app Op.bvadd,      .bitvec 8, ctx)
+    | "Bv8.SafeSub"  => .ok (.app Op.bvsub,      .bitvec 8, ctx)
+    | "Bv8.SafeMul"  => .ok (.app Op.bvmul,      .bitvec 8, ctx)
+    | "Bv8.SafeNeg"  => .ok (.app Op.bvneg,      .bitvec 8, ctx)
+    | "Bv16.SafeAdd" => .ok (.app Op.bvadd,      .bitvec 16, ctx)
+    | "Bv16.SafeSub" => .ok (.app Op.bvsub,      .bitvec 16, ctx)
+    | "Bv16.SafeMul" => .ok (.app Op.bvmul,      .bitvec 16, ctx)
+    | "Bv16.SafeNeg" => .ok (.app Op.bvneg,      .bitvec 16, ctx)
+    | "Bv32.SafeAdd" => .ok (.app Op.bvadd,      .bitvec 32, ctx)
+    | "Bv32.SafeSub" => .ok (.app Op.bvsub,      .bitvec 32, ctx)
+    | "Bv32.SafeMul" => .ok (.app Op.bvmul,      .bitvec 32, ctx)
+    | "Bv32.SafeNeg" => .ok (.app Op.bvneg,      .bitvec 32, ctx)
+    | "Bv64.SafeAdd" => .ok (.app Op.bvadd,      .bitvec 64, ctx)
+    | "Bv64.SafeSub" => .ok (.app Op.bvsub,      .bitvec 64, ctx)
+    | "Bv64.SafeMul" => .ok (.app Op.bvmul,      .bitvec 64, ctx)
+    | "Bv64.SafeNeg" => .ok (.app Op.bvneg,      .bitvec 64, ctx)
+    | "Bv1.SafeSDiv"  => .ok (.app Op.bvsdiv,     .bitvec 1, ctx)
+    | "Bv1.SafeSMod"  => .ok (.app Op.bvsrem,     .bitvec 1, ctx)
+    | "Bv8.SafeSDiv"  => .ok (.app Op.bvsdiv,     .bitvec 8, ctx)
+    | "Bv8.SafeSMod"  => .ok (.app Op.bvsrem,     .bitvec 8, ctx)
+    | "Bv16.SafeSDiv" => .ok (.app Op.bvsdiv,     .bitvec 16, ctx)
+    | "Bv16.SafeSMod" => .ok (.app Op.bvsrem,     .bitvec 16, ctx)
+    | "Bv32.SafeSDiv" => .ok (.app Op.bvsdiv,     .bitvec 32, ctx)
+    | "Bv32.SafeSMod" => .ok (.app Op.bvsrem,     .bitvec 32, ctx)
+    | "Bv64.SafeSDiv" => .ok (.app Op.bvsdiv,     .bitvec 64, ctx)
+    | "Bv64.SafeSMod" => .ok (.app Op.bvsrem,     .bitvec 64, ctx)
+    -- Signed overflow predicates
+    | "Bv1.SAddOverflow"  => .ok (.app Op.bvsaddo,  .bool, ctx)
+    | "Bv1.SSubOverflow"  => .ok (.app Op.bvssubo,  .bool, ctx)
+    | "Bv1.SMulOverflow"  => .ok (.app Op.bvsmulo,  .bool, ctx)
+    | "Bv1.SNegOverflow"  => .ok (.app Op.bvnego,   .bool, ctx)
+    | "Bv1.SDivOverflow"  => sdivOverflowEnc 1 ctx
+    | "Bv8.SAddOverflow"  => .ok (.app Op.bvsaddo,  .bool, ctx)
+    | "Bv8.SSubOverflow"  => .ok (.app Op.bvssubo,  .bool, ctx)
+    | "Bv8.SMulOverflow"  => .ok (.app Op.bvsmulo,  .bool, ctx)
+    | "Bv8.SNegOverflow"  => .ok (.app Op.bvnego,   .bool, ctx)
+    | "Bv8.SDivOverflow"  => sdivOverflowEnc 8 ctx
+    | "Bv16.SAddOverflow" => .ok (.app Op.bvsaddo,  .bool, ctx)
+    | "Bv16.SSubOverflow" => .ok (.app Op.bvssubo,  .bool, ctx)
+    | "Bv16.SMulOverflow" => .ok (.app Op.bvsmulo,  .bool, ctx)
+    | "Bv16.SNegOverflow" => .ok (.app Op.bvnego,   .bool, ctx)
+    | "Bv16.SDivOverflow" => sdivOverflowEnc 16 ctx
+    | "Bv32.SAddOverflow" => .ok (.app Op.bvsaddo,  .bool, ctx)
+    | "Bv32.SSubOverflow" => .ok (.app Op.bvssubo,  .bool, ctx)
+    | "Bv32.SMulOverflow" => .ok (.app Op.bvsmulo,  .bool, ctx)
+    | "Bv32.SNegOverflow" => .ok (.app Op.bvnego,   .bool, ctx)
+    | "Bv32.SDivOverflow" => sdivOverflowEnc 32 ctx
+    | "Bv64.SAddOverflow" => .ok (.app Op.bvsaddo,  .bool, ctx)
+    | "Bv64.SSubOverflow" => .ok (.app Op.bvssubo,  .bool, ctx)
+    | "Bv64.SMulOverflow" => .ok (.app Op.bvsmulo,  .bool, ctx)
+    | "Bv64.SNegOverflow" => .ok (.app Op.bvnego,   .bool, ctx)
+    | "Bv64.SDivOverflow" => sdivOverflowEnc 64 ctx
+    -- Unsigned overflow predicates
 
     | "Bv8.Concat"   => .ok (.app Op.bvconcat,   .bitvec 16, ctx)
     | "Bv16.Concat"  => .ok (.app Op.bvconcat,   .bitvec 32, ctx)
