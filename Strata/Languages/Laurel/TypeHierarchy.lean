@@ -9,6 +9,7 @@ public import Strata.Languages.Laurel.MapStmtExpr
 public import Strata.Languages.Laurel.LaurelTypes
 public import Strata.DL.Imperative.MetaData
 import Strata.Util.Tactics
+public import Strata.Util.Statistics
 
 public section
 
@@ -194,8 +195,19 @@ def lowerIsType (target : StmtExprMd) (ty : HighTypeMd) (md : Imperative.MetaDat
     | _ => ⟨ .Hole, md ⟩
 
 /-- State for the type hierarchy rewrite monad -/
+inductive THStats where
+  /-- Number of `IsType` expressions lowered to type-tag map lookups. -/
+  | isTypeRewritten
+  /-- Number of `New` expressions lowered to heap allocation + MkComposite construction. -/
+  | newRewritten
+  /-- Number of composite types in the program (one TypeTag constructor each). -/
+  | compositeTypes
+
+derive_prefixed_toString THStats "TypeHierarchy"
+
 structure THState where
   freshCounter : Nat := 0
+  statistics : Statistics := {}
 
 @[expose] abbrev THM := StateM THState
 
@@ -223,8 +235,12 @@ def lowerNew (name : Identifier) (md : Imperative.MetaData Core.Expression) : TH
 /-- Local rewrite of `IsType` and `New` nodes. Recursion is handled by `mapStmtExprM`. -/
 private def rewriteTypeHierarchyNode (exprMd : StmtExprMd) : THM StmtExprMd := do
   match exprMd.val with
-  | .New name => lowerNew name exprMd.md
-  | .IsType target ty => return lowerIsType target ty exprMd.md
+  | .New name =>
+    modify fun s => { s with statistics := s.statistics.increment s!"{THStats.newRewritten}" }
+    lowerNew name exprMd.md
+  | .IsType target ty =>
+    modify fun s => { s with statistics := s.statistics.increment s!"{THStats.isTypeRewritten}" }
+    return lowerIsType target ty exprMd.md
   | _ => return exprMd
 
 /--
@@ -235,7 +251,7 @@ Type hierarchy transformation pass (Laurel → Laurel).
 3. Generates the `TypeTag` datatype with one constructor per composite type
 4. Generates type hierarchy constants (`ancestorsFor<Type>`, `ancestorsPerType`)
 -/
-def typeHierarchyTransform (model: SemanticModel) (program : Program) : Program :=
+def typeHierarchyTransform (model: SemanticModel) (program : Program) : Program × Statistics :=
   let compositeNames := program.types.filterMap fun td =>
     match td with
     | .Composite ct => some ct.name.text
@@ -243,7 +259,7 @@ def typeHierarchyTransform (model: SemanticModel) (program : Program) : Program 
   let typeTagDatatype : TypeDefinition :=
     .Datatype { name := "TypeTag", typeArgs := [], constructors := compositeNames.map fun n => { name := (mkId $ n ++ "_TypeTag"), args := [] } }
   let typeHierarchyConstants := generateTypeHierarchyDecls model program
-  let (procs', _) := (program.staticProcedures.mapM (mapProcedureM (mapStmtExprM rewriteTypeHierarchyNode))).run {}
+  let (procs', thState) := (program.staticProcedures.mapM (mapProcedureM (mapStmtExprM rewriteTypeHierarchyNode))).run {}
   -- Update the Composite datatype to include the typeTag field (introduced in this phase)
   let typeTagTy : HighTypeMd := ⟨.UserDefined "TypeTag", #[]⟩
   let remainingTypes := program.types.map fun td =>
@@ -256,10 +272,12 @@ def typeHierarchyTransform (model: SemanticModel) (program : Program) : Program 
           else c }
       else td
     | _ => td
-  { program with
+  let stats := thState.statistics
+    |>.increment s!"{THStats.compositeTypes}" compositeNames.length
+  ({ program with
     staticProcedures := procs',
     types := [typeTagDatatype] ++ remainingTypes,
-    constants := program.constants ++ typeHierarchyConstants }
+    constants := program.constants ++ typeHierarchyConstants }, stats)
 
 end Strata.Laurel
 

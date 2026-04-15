@@ -7,6 +7,7 @@ module
 
 public import Strata.Languages.Laurel.MapStmtExpr
 public import Strata.Languages.Laurel.Grammar.AbstractToConcreteTreeTranslator
+public import Strata.Util.Statistics
 
 /-!
 # Deterministic Hole Elimination
@@ -75,10 +76,21 @@ After this pass the program contains only non-deterministic `Hole` nodes.
 
 Assumes `inferHoleTypes` has already annotated holes with types.
 -/
-def eliminateHoles (program : Program) : Program :=
+inductive ElimHoleStats where
+  /-- Number of deterministic holes replaced with calls to uninterpreted functions. -/
+  | holesEliminated
+  /-- Number of fresh uninterpreted functions generated (one per eliminated hole). -/
+  | functionsGenerated
+
+derive_prefixed_toString ElimHoleStats "EliminateHoles"
+
+def eliminateHoles (program : Program) : Program × Statistics :=
   let initState : ElimHoleState := {}
   let (procs, finalState) := (program.staticProcedures.mapM elimProcedure).run initState
-  { program with staticProcedures := finalState.generatedFunctions ++ procs }
+  let stats := ({} : Statistics)
+    |>.increment s!"{ElimHoleStats.holesEliminated}" finalState.counter
+    |>.increment s!"{ElimHoleStats.functionsGenerated}" finalState.generatedFunctions.length
+  ({ program with staticProcedures := finalState.generatedFunctions ++ procs }, stats)
 
 end -- public section
 end Laurel

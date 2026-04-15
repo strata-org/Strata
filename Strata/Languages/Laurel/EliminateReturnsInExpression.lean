@@ -7,6 +7,7 @@ module
 
 public import Strata.Languages.Laurel.Laurel
 import Strata.Util.Tactics
+public import Strata.Util.Statistics
 
 /-!
 # Eliminate Returns in Expression Position
@@ -109,11 +110,26 @@ def eliminateReturnsInExpression (proc : Procedure) : Procedure :=
 
 public section
 
+inductive ElimRetStats where
+  /-- Number of functional procedures whose return statements were eliminated. -/
+  | functionalProceduresProcessed
+  /-- Number of non-functional procedures left unchanged by this pass. -/
+  | nonFunctionalProceduresSkipped
+
+derive_prefixed_toString ElimRetStats "EliminateReturns"
+
 /--
 Transform a program by eliminating returns in all functional procedure bodies.
 -/
-def eliminateReturnsInExpressionTransform (program : Program) : Program :=
-  { program with staticProcedures := program.staticProcedures.map eliminateReturnsInExpression }
+def eliminateReturnsInExpressionTransform (program : Program) : Program × Statistics :=
+  let (procs, stats) := program.staticProcedures.foldl (fun (acc, stats) proc =>
+    let proc' := eliminateReturnsInExpression proc
+    if proc.isFunctional then
+      (acc ++ [proc'], stats.increment s!"{ElimRetStats.functionalProceduresProcessed}")
+    else
+      (acc ++ [proc'], stats.increment s!"{ElimRetStats.nonFunctionalProceduresSkipped}")
+  ) ([], ({} : Statistics))
+  ({ program with staticProcedures := procs }, stats)
 
 end -- public section
 

@@ -614,6 +614,7 @@ structure LaurelTranslateOptions where
   emitResolutionErrors : Bool := true
   inlineFunctionsWhenPossible : Bool := false
   overflowChecks : Core.OverflowChecks := {}
+  profile : Bool := false
 
 /--
 Translate a Laurel Procedure to a Core Function (when applicable) using `TranslateM`.

@@ -11,6 +11,7 @@ public import Strata.Languages.Laurel.LaurelTypes
 public import Strata.Languages.Core.Verifier
 public import Strata.DL.Util.Map
 import Strata.Util.Tactics
+public import Strata.Util.Statistics
 
 namespace Strata
 namespace Laurel
@@ -501,13 +502,21 @@ def transformProcedure (proc : Procedure) : LiftM Procedure := do
   | .External =>
       pure proc
 
+inductive LiftStats where
+  /-- Number of procedures whose bodies were scanned for expression-position assignments. -/
+  | proceduresProcessed
+
+derive_prefixed_toString LiftStats "LiftExpressionAssignments"
+
 /--
 Transform a program to lift all assignments that occur in an expression context.
 -/
-def liftExpressionAssignments (model: SemanticModel) (program : Program) : Program :=
+def liftExpressionAssignments (model: SemanticModel) (program : Program) : Program × Statistics :=
   let initState : LiftState := { model := model }
   let (seqProcedures, _) := (program.staticProcedures.mapM transformProcedure).run initState
-  { program with staticProcedures := seqProcedures }
+  let stats := ({} : Statistics)
+    |>.increment s!"{LiftStats.proceduresProcessed}" seqProcedures.length
+  ({ program with staticProcedures := seqProcedures }, stats)
 
 end -- public section
 end Laurel
