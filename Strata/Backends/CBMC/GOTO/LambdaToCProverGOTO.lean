@@ -6,7 +6,7 @@
 
 import Strata.DL.Lambda.Lambda
 import Strata.Backends.CBMC.GOTO.Expr
-public import Strata.Languages.Core.CoreOp
+import Strata.Languages.Core.CoreOp
 namespace Lambda
 
 /-! # Lambda-to-GOTO expression and type translation
