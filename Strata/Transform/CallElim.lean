@@ -20,7 +20,6 @@ open Core.Transform
 /-- Statistics keys tracked by the call elimination transformation. -/
 inductive Stats where
   | visitedCalls
-  | eliminatedCalls
 
 derive_prefixed_toString Stats "CallElim"
 
@@ -43,8 +42,6 @@ def callElimCmd (cmd: Command)
         let some p := (← get).currentProgram | throw "program not available"
 
         let some proc := Program.Procedure.find? p procName | throw s!"Procedure {procName} not found in program"
-
-        incrementStat s!"{Stats.eliminatedCalls}"
 
         -- For each global in modifies, generate a fresh variable to hold its pre-call value,
         -- but only if "old g" is actually referenced in the postconditions.

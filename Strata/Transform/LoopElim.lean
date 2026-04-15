@@ -23,7 +23,6 @@ namespace LoopElim
 
 /-- Statistics keys tracked by the loop elimination transformation. -/
 inductive Stats where
-  | visitedLoops
   | erasedLoops
   | insertedAssertAssumes
 
@@ -191,7 +190,6 @@ def Stmt.removeLoopsM
       guard_assumes.length + inv_assumes.length + maintain_invariants.length +
       exit_guard.length + invariant_assumes.length + measureAssertAssumes
     let newStats := (← get).statistics
-      |>.increment s!"{LoopElim.Stats.visitedLoops}"
       |>.increment s!"{LoopElim.Stats.erasedLoops}"
       |>.increment s!"{LoopElim.Stats.insertedAssertAssumes}" numAssertAssumes
     modify fun st => { st with statistics := newStats }
@@ -238,9 +236,9 @@ def loopElim (p : Program) : Program × Statistics :=
     match d with
     | .proc proc md =>
       let (body, st) := StateT.run (Block.removeLoopsM proc.body) {}
-      (acc ++ [.proc { proc with body := body } md], stats.merge st.statistics)
-    | other => (acc ++ [other], stats)) ([], {})
-  ({ decls := decls }, stats)
+      ((.proc { proc with body := body } md) :: acc, stats.merge st.statistics)
+    | other => (other :: acc, stats)) ([], {})
+  ({ decls := decls.reverse }, stats)
 
 /-- Loop elimination as a `CoreTransformM` pass suitable for the pipeline. -/
 def loopElim' (p : Program) : Transform.CoreTransformM (Bool × Program) := do
