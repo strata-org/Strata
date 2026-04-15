@@ -400,44 +400,10 @@ theorem SeqOpKind.ofString_toString (k : SeqOpKind) :
 theorem TriggerOpKind.ofString_toString (k : TriggerOpKind) :
     TriggerOpKind.ofString? k.toString = some k := by cases k <;> decide
 
-/-! ### CoreOp-level round-trip proofs
-
-These prove `CoreOp.ofString (CoreOp.toString op) = op` for all variants
-with finite parameters. For `.bv` and `.bvExtract` (which contain unbounded
-`Nat` fields), we prove the property for all factory-registered sizes. -/
-
-theorem CoreOp.ofString_toString_bool (k : BoolOpKind) :
-    CoreOp.ofString (CoreOp.toString (.bool k)) = .bool k := by
-  cases k <;> native_decide
-
-theorem CoreOp.ofString_toString_numeric (op : NumericOp) :
-    CoreOp.ofString (CoreOp.toString (.numeric op)) = .numeric op := by
-  obtain ⟨ty, kind⟩ := op; cases ty <;> cases kind <;> native_decide
-
-theorem CoreOp.ofString_toString_str (k : StrOpKind) :
-    CoreOp.ofString (CoreOp.toString (.str k)) = .str k := by
-  cases k <;> native_decide
-
-theorem CoreOp.ofString_toString_re (k : ReOpKind) :
-    CoreOp.ofString (CoreOp.toString (.re k)) = .re k := by
-  cases k <;> native_decide
-
-theorem CoreOp.ofString_toString_map (k : MapOpKind) :
-    CoreOp.ofString (CoreOp.toString (.map k)) = .map k := by
-  cases k <;> native_decide
-
-theorem CoreOp.ofString_toString_seq (k : SeqOpKind) :
-    CoreOp.ofString (CoreOp.toString (.seq k)) = .seq k := by
-  cases k <;> native_decide
-
-theorem CoreOp.ofString_toString_trigger (k : TriggerOpKind) :
-    CoreOp.ofString (CoreOp.toString (.trigger k)) = .trigger k := by
-  cases k <;> native_decide
-
-theorem CoreOp.ofString_toString_bv (k : BvOpKind) :
-    (∀ s ∈ [1, 2, 8, 16, 32, 64],
-      CoreOp.ofString (CoreOp.toString (CoreOp.bv ⟨s, k⟩)) = CoreOp.bv ⟨s, k⟩) := by
-  cases k <;> simp <;> native_decide
+-- TODO: prove CoreOp.ofString (CoreOp.toString op) = op at the composite level.
+-- Currently blocked by native_decide being needed for string operations in
+-- CoreOp.ofString (splitOn, startsWith). Revisit when Lean gets better
+-- kernel-level string reduction.
 
 end -- public section
 end Core
