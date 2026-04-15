@@ -49,6 +49,15 @@ def obligationHasLabelPrefix (obligation : ProofObligation Expression)
   obligation.assumptions.any fun pc =>
     pc.any fun (label, _) => label.startsWith pfx
 
+/-- True when any non-trivial assumption in the obligation's path conditions
+    has a label starting with the given prefix. Trivially-true assumptions
+    (where the expression is `true`) are ignored because they do not
+    introduce any over-approximation. -/
+def obligationHasNontrivialLabelPrefix (obligation : ProofObligation Expression)
+    (pfx : String) : Bool :=
+  obligation.assumptions.any fun pc =>
+    pc.any fun (label, e) => label.startsWith pfx && !e.isTrue
+
 /-- A verification pipeline phase that pairs a program transformation with
     its model validation. This coupling ensures that adding a new transform
     also requires specifying its soundness annotation, and vice versa. -/

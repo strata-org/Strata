@@ -217,8 +217,8 @@ def loopElimPipelinePhase : PipelinePhase where
   transform := loopElim'
   phase.name := "LoopElim"
   phase.getValidation obligation :=
-    if obligationHasLabelPrefix obligation loopElimInvariantPrefix
-       || obligationHasLabelPrefix obligation loopElimGuardPrefix then
+    if obligationHasNontrivialLabelPrefix obligation loopElimInvariantPrefix
+       || obligationHasNontrivialLabelPrefix obligation loopElimGuardPrefix then
       .modelToValidate (fun _ => /- TODO -/ false)
     else .modelPreserving
 
