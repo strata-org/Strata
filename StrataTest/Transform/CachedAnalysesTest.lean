@@ -22,7 +22,7 @@ open Core.Transform
 open Strata
 open Lambda
 
-/-! ## CachedAnalyses validation tests
+/-! ## A place to apply Property-Based Testing: CachedAnalyses validation
 
 Core transformations keeps CachedAnalyses behind the scene because some
 analysis results can be too expensive to reconstruct from scratch.
@@ -32,6 +32,8 @@ is expensive because it has to traverse the whole instructions of program.
 
 For this reason, transformations have to carefully modify the CallGraph
 data struture so that only impacted edges are incrementarily updated.
+
+`Strata/Transform/CoreTransform.lean`
 
 However, this wasn't being seriously tested. We can do property-based testing
 because the specification is clear:
@@ -124,16 +126,12 @@ def checkCachedAnalyses (T : PipelinePhase) (P : Core.Program)
     | .none => .ok false
   | (.error msg, _) => .error msg
 
--- NOTE: ProcedureInlining errors on 3+ procedure chains because its call-graph
--- update logic in `decrementEdge` fails when the callers map doesn't have an
--- entry for a transitive callee that was just inlined.  This is a known issue
--- detected by this test suite.
 /--
 info: FilterProcedures: 50 passed, 0 failed, 0 errored (of 50)
 CallElim: 50 passed, 0 failed, 0 errored (of 50)
 PrecondElim: 50 passed, 0 failed, 0 errored (of 50)
 LoopElim: 50 passed, 0 failed, 0 errored (of 50)
-ProcedureInlining: 15 passed, 0 failed, 35 errored (of 50)
+ProcedureInlining: 50 passed, 0 failed, 0 errored (of 50)
 -/
 #guard_msgs in
 #eval do

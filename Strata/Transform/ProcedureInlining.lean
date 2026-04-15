@@ -124,13 +124,15 @@ private def renameAllLocalNames (c:Procedure)
   return ({ c with body := new_body, header := new_header }, var_map)
 
 
-/-- Update the call graph after inlining one f(caller) -> g(callee) invocation. -/
-def updateCallGraph (cg:CallGraph) (f: String) (g: String):
+/-- Update the call graph after inlining one f(caller) -> g(callee) invocation.
+    `calleeEdges` are the call edges extracted from the callee's **original**
+    body (the one being spliced in), which may differ from the call-graph entry
+    for `g` when earlier inlinings in the same pass have already decremented it. -/
+def updateCallGraph (cg:CallGraph) (f: String) (g: String)
+    (calleeEdges : Std.HashMap String Nat):
     Except Err CallGraph := do
-  -- For each edge 'g -> x', add f -> x'
-  let edges_from_g ← match cg.callees.get? g with
-    | .some r => .ok r
-    | .none => throw s!"Invalid CallGraph: can't find {g} from callees domain"
+  -- For each edge 'g -> x' (from the original body), add f -> x.
+  let edges_from_g := calleeEdges
   let edges_from_f ← match cg.callees.get? f with
     | .some r => .ok r
     | .none => throw s!"Invalid CallGraph: can't find {f} from callees domain"
@@ -268,7 +270,13 @@ def inlineCallCmd
         match σ.cachedAnalyses.callGraph with
         | .none => modify id -- do nothing
         | .some callGraph =>
+          -- Use the original callee body's calls (not the potentially stale
+          -- call-graph entry, which may have been decremented by earlier
+          -- inlinings within the same pass).
+          let calleeEdges := Std.HashMap.ofList
+            (extractCallsFromProcedure proc).occurrences
           let callGraph' ← updateCallGraph callGraph currProcName procName
+            calleeEdges
           set ({ σ with
             cachedAnalyses := {
               callGraph := .some callGraph'
