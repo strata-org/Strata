@@ -60,6 +60,8 @@ structure TranslateState where
   nextId : Nat := 1
   /-- Constants known to the program (field constants, etc.) -/
   model : SemanticModel
+  /-- Overflow check configuration -/
+  overflowChecks : Core.OverflowChecks := {}
   /-- Do not process the produces Core program, since it has superfluous errors -/
   coreProgramHasSuperfluousErrors: Bool := false
 
@@ -611,6 +613,7 @@ where
 structure LaurelTranslateOptions where
   emitResolutionErrors : Bool := true
   inlineFunctionsWhenPossible : Bool := false
+  overflowChecks : Core.OverflowChecks := {}
 
 /--
 Translate a Laurel Procedure to a Core Function (when applicable) using `TranslateM`.
