@@ -548,34 +548,33 @@ partial def translateExpr (ctx : TranslationContext) (e : Python.expr SourceRang
       -- intermediate operands that are not simple names/literals.
       -- This preserves Python's evaluate-once semantics for side-effecting
       -- intermediate expressions (e.g., `a < f() < b` calls `f()` only once).
+      let hole := mkStmtExprMd .Hole
       let mut tempDecls : List StmtExprMd := []
       let mut operandRefs : Array StmtExprMd := #[leftExpr]
-      if n > 1 then
-        for i in [:n] do
-          let comp := compExprs[i]!
-          -- Intermediate operands (all except the last) need temp vars if non-simple
-          let isIntermediate := i < n - 1
-          let needsTmp := isIntermediate && !isSimple (comparators.val[i]!)
-          if needsTmp then
-            let freshVar := s!"cmp_tmp_{e.toAst.ann.start.byteIdx}_{i}"
-            let varDecl := mkStmtExprMd (StmtExpr.LocalVariable freshVar AnyTy (some comp))
-            tempDecls := tempDecls ++ [varDecl]
-            operandRefs := operandRefs.push (mkStmtExprMd (StmtExpr.Identifier freshVar))
-          else
-            operandRefs := operandRefs.push comp
-      else
-        operandRefs := operandRefs.push compExprs[0]!
-      -- Build pairwise comparisons and chain with PAnd
+      for h : i in [:n] do
+        have hi : i < n := Membership.mem.upper h
+        have : i < comparators.val.size := by omega
+        let comp := compExprs.getD i hole
+        if n > 1 && i < n - 1 && !isSimple (comparators.val[i]) then
+          let freshVar := s!"cmp_tmp_{e.toAst.ann.start.byteIdx}_{i}"
+          let varDecl := mkStmtExprMd (StmtExpr.LocalVariable freshVar AnyTy (some comp))
+          tempDecls := tempDecls ++ [varDecl]
+          operandRefs := operandRefs.push (mkStmtExprMd (StmtExpr.Identifier freshVar))
+        else
+          operandRefs := operandRefs.push comp
+      -- Build pairwise comparisons and chain with PAnd.
+      -- operandRefs has n+1 elements (leftExpr + n comparators).
       let mut pairs : Array StmtExprMd := #[]
       for h : i in [:n] do
         have hi : i < n := Membership.mem.upper h
         let opName ← cmpopName i hi
-        let lhs := operandRefs[i]!
-        let rhs := operandRefs[i + 1]!
+        let lhs := operandRefs.getD i hole
+        let rhs := operandRefs.getD (i + 1) hole
         pairs := pairs.push (mkStmtExprMd (StmtExpr.StaticCall opName [lhs, rhs]))
-      let mut result := pairs[0]!
+      -- Fold pairs with PAnd (pairs has n ≥ 1 elements)
+      let mut result := pairs.getD 0 hole
       for i in [1:pairs.size] do
-        result := mkStmtExprMd (StmtExpr.StaticCall "PAnd" [result, pairs[i]!])
+        result := mkStmtExprMd (StmtExpr.StaticCall "PAnd" [result, pairs.getD i hole])
       -- Wrap in a block if we emitted temp variable declarations
       if tempDecls.isEmpty then
         return { result with md := md }
