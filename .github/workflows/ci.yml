@@ -70,15 +70,15 @@ jobs:
         uses: actions/setup-dotnet@v5
         with:
           dotnet-version: '8.0.x'
-      - name: Restore lake cache
-        uses: actions/cache/restore@v5
-        with:
-          path: .lake
-          key: lake-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}-${{ hashFiles('lake-manifest.json') }}-${{ hashFiles('**/*.st') }}-${{ github.sha }}
-          restore-keys: |
-            lake-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}-${{ hashFiles('lake-manifest.json') }}-${{ hashFiles('**/*.st') }}
-            lake-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}-${{ hashFiles('lake-manifest.json') }}
-            lake-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}
+      # - name: Restore lake cache
+      #   uses: actions/cache/restore@v5
+      #   with:
+      #     path: .lake
+      #     key: lake-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}-${{ hashFiles('lake-manifest.json') }}-${{ hashFiles('**/*.st') }}-${{ github.sha }}
+      #     restore-keys: |
+      #       lake-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}-${{ hashFiles('lake-manifest.json') }}-${{ hashFiles('**/*.st') }}
+      #       lake-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}-${{ hashFiles('lake-manifest.json') }}
+      #       lake-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}
       - name: Download ion-java jar for Java codegen test
         run: wget -q -O StrataTest/DDM/Integration/Java/testdata/ion-java-1.11.11.jar https://github.com/amazon-ion/ion-java/releases/download/v1.11.11/ion-java-1.11.11.jar
       - name: Build and test Strata
