@@ -19,7 +19,7 @@
   '(    "true" "false" "null"))
 
 (defvar core-st-operators
-  '(    "div" "mod" "sdiv" "smod"))
+  '(    "div" "mod" "sdiv" "smod" "safesdiv" "safesmod"))
 
 (defvar core-st-builtins
   '(    "Sequence.length" "Sequence.select" "Sequence.append"
