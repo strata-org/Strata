@@ -9,6 +9,7 @@ public import Strata.Transform.CoreTransform
 public import Strata.DL.Lambda.Preconditions
 public import Strata.DL.Lambda.TypeFactory
 public import Strata.Languages.Core.PipelinePhase
+public import Strata.Languages.Core.CoreOp
 import all Strata.DL.Imperative.Stmt
 import Strata.Util.DecideProp
 
@@ -53,10 +54,11 @@ def wfProcName (name : String) : String := s!"{name}{wfSuffix}"
 
 /-- Classify a function name into a property type for SARIF reporting. -/
 private def classifyPrecondition (funcName : String) : Option String :=
-  if funcName.startsWith "Int.SafeDiv" || funcName.startsWith "Int.SafeMod" then
+  match CoreOp.ofString funcName with
+  | .numeric ⟨_, .SafeDiv⟩ | .numeric ⟨_, .SafeMod⟩
+  | .numeric ⟨_, .SafeDivT⟩ | .numeric ⟨_, .SafeModT⟩ =>
     some Imperative.MetaData.divisionByZero
-  else
-    none
+  | _ => none
 
 /--
 Given a Factory and an expression, collect all partial function call
