@@ -428,6 +428,14 @@ def handleUnaryOps {M} [Inhabited M] (name : String) (arg : CoreDDM.Expr M)
   | .bv ⟨32, .Neg⟩ => pure (.neg_expr default (.bv32 default) arg)
   | .bv ⟨64, .Not⟩ => pure (.bvnot default (.bv64 default) arg)
   | .bv ⟨64, .Neg⟩ => pure (.neg_expr default (.bv64 default) arg)
+  -- Safe negation variants
+  | .bv ⟨1, .SafeNeg⟩ | .bv ⟨1, .SafeUNeg⟩ => pure (.safeneg_expr default (.bv1 default) arg)
+  | .bv ⟨8, .SafeNeg⟩ | .bv ⟨8, .SafeUNeg⟩ => pure (.safeneg_expr default (.bv8 default) arg)
+  | .bv ⟨16, .SafeNeg⟩ | .bv ⟨16, .SafeUNeg⟩ => pure (.safeneg_expr default (.bv16 default) arg)
+  | .bv ⟨32, .SafeNeg⟩ | .bv ⟨32, .SafeUNeg⟩ => pure (.safeneg_expr default (.bv32 default) arg)
+  | .bv ⟨64, .SafeNeg⟩ | .bv ⟨64, .SafeUNeg⟩ => pure (.safeneg_expr default (.bv64 default) arg)
+  -- Overflow predicates: approximated as Bool.Not for CST printing
+  | .bv ⟨_, .SNegOverflow⟩ | .bv ⟨_, .UNegOverflow⟩ => pure (.not default arg)
   -- Bitvector extract ops
   | .bvExtract 8 7 7 => pure (.bvextract_7_7 default arg)
   | .bvExtract 16 15 15 => pure (.bvextract_15_15 default arg)
@@ -464,7 +472,24 @@ def bvBinaryOpMap {M} [Inhabited M] :
   (.SLe, fun ty arg1 arg2 => .bvsle default ty arg1 arg2),
   (.SLt, fun ty arg1 arg2 => .bvslt default ty arg1 arg2),
   (.SGe, fun ty arg1 arg2 => .bvsge default ty arg1 arg2),
-  (.SGt, fun ty arg1 arg2 => .bvsgt default ty arg1 arg2)
+  (.SGt, fun ty arg1 arg2 => .bvsgt default ty arg1 arg2),
+  -- Safe variants
+  (.SafeAdd, fun ty arg1 arg2 => .safeadd_expr default ty arg1 arg2),
+  (.SafeSub, fun ty arg1 arg2 => .safesub_expr default ty arg1 arg2),
+  (.SafeMul, fun ty arg1 arg2 => .safemul_expr default ty arg1 arg2),
+  (.SafeSDiv, fun ty arg1 arg2 => .safesdiv_expr default ty arg1 arg2),
+  (.SafeSMod, fun ty arg1 arg2 => .safesmod_expr default ty arg1 arg2),
+  (.SafeUAdd, fun ty arg1 arg2 => .safeadd_expr default ty arg1 arg2),
+  (.SafeUSub, fun ty arg1 arg2 => .safesub_expr default ty arg1 arg2),
+  (.SafeUMul, fun ty arg1 arg2 => .safemul_expr default ty arg1 arg2),
+  -- Overflow predicates: approximated as boolean ops for CST printing
+  (.SAddOverflow, fun _ty arg1 arg2 => .le default _ty arg1 arg2),
+  (.SSubOverflow, fun _ty arg1 arg2 => .le default _ty arg1 arg2),
+  (.SMulOverflow, fun _ty arg1 arg2 => .le default _ty arg1 arg2),
+  (.SDivOverflow, fun _ty arg1 arg2 => .le default _ty arg1 arg2),
+  (.UAddOverflow, fun _ty arg1 arg2 => .le default _ty arg1 arg2),
+  (.USubOverflow, fun _ty arg1 arg2 => .le default _ty arg1 arg2),
+  (.UMulOverflow, fun _ty arg1 arg2 => .le default _ty arg1 arg2)
 ]
 
 /-- Map from bitvector sizes to their corresponding type constructors -/

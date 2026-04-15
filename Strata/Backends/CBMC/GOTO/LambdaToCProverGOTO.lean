@@ -72,12 +72,12 @@ def fnToGotoID (fn : String) : Except Format CProverGOTO.Expr.Identifier :=
   open Core in
   match CoreOp.ofString fn with
   -- Bitvector operations
-  | .bv ⟨_, .Add⟩ => .ok (.multiary .Plus)
-  | .bv ⟨_, .Sub⟩ => .ok (.binary .Minus)
-  | .bv ⟨_, .Mul⟩ => .ok (.multiary .Mult)
-  | .bv ⟨_, .Neg⟩ => .ok (.unary .UnaryMinus)
-  | .bv ⟨_, .UDiv⟩ | .bv ⟨_, .SDiv⟩ => .ok (.binary .Div)
-  | .bv ⟨_, .UMod⟩ | .bv ⟨_, .SMod⟩ => .ok (.binary .Mod)
+  | .bv ⟨_, .Add⟩ | .bv ⟨_, .SafeAdd⟩ | .bv ⟨_, .SafeUAdd⟩ => .ok (.multiary .Plus)
+  | .bv ⟨_, .Sub⟩ | .bv ⟨_, .SafeSub⟩ | .bv ⟨_, .SafeUSub⟩ => .ok (.binary .Minus)
+  | .bv ⟨_, .Mul⟩ | .bv ⟨_, .SafeMul⟩ | .bv ⟨_, .SafeUMul⟩ => .ok (.multiary .Mult)
+  | .bv ⟨_, .Neg⟩ | .bv ⟨_, .SafeNeg⟩ | .bv ⟨_, .SafeUNeg⟩ => .ok (.unary .UnaryMinus)
+  | .bv ⟨_, .UDiv⟩ | .bv ⟨_, .SDiv⟩ | .bv ⟨_, .SafeSDiv⟩ => .ok (.binary .Div)
+  | .bv ⟨_, .UMod⟩ | .bv ⟨_, .SMod⟩ | .bv ⟨_, .SafeSMod⟩ => .ok (.binary .Mod)
   | .bv ⟨_, .Not⟩ => .ok (.unary .Bitnot)
   | .bv ⟨_, .And⟩ => .ok (.binary .Bitand)
   | .bv ⟨_, .Or⟩ => .ok (.binary .Bitor)
@@ -91,6 +91,12 @@ def fnToGotoID (fn : String) : Except Format CProverGOTO.Expr.Identifier :=
   | .bv ⟨_, .UGt⟩ | .bv ⟨_, .SGt⟩ => .ok (.binary .Gt)
   | .bv ⟨_, .UGe⟩ | .bv ⟨_, .SGe⟩ => .ok (.binary .Ge)
   | .bvExtract .. => .ok (.binary .Extractbits)
+  -- Overflow predicates
+  | .bv ⟨_, .SAddOverflow⟩ | .bv ⟨_, .UAddOverflow⟩ => .ok (.binary .PlusOverflow)
+  | .bv ⟨_, .SSubOverflow⟩ | .bv ⟨_, .USubOverflow⟩ => .ok (.binary .MinusOverflow)
+  | .bv ⟨_, .SMulOverflow⟩ | .bv ⟨_, .UMulOverflow⟩ => .ok (.binary .MultOverflow)
+  | .bv ⟨_, .SNegOverflow⟩ | .bv ⟨_, .UNegOverflow⟩ => .ok (.unary .UnaryMinusOverflow)
+  | .bv ⟨_, .SDivOverflow⟩ => .ok (.functionApplication "SDivOverflow")
   -- Integer arithmetic
   | .numeric ⟨.int, .Add⟩ => .ok (.multiary .Plus)
   | .numeric ⟨.int, .Sub⟩ => .ok (.binary .Minus)
@@ -143,6 +149,21 @@ private def isSignedBvOp (fn : String) : Bool :=
   match CoreOp.ofString fn with
   | .bv ⟨_, kind⟩ => kind.isSigned
   | _ => false
+
+/-- Build SDivOverflow(x, y) = (x == INT_MIN) && (y == -1) for signed bitvectors. -/
+private def mkSDivOverflow (x y : CProverGOTO.Expr) : CProverGOTO.Expr :=
+  open CProverGOTO in
+  open CProverGOTO.Ty in
+  let bvTy := x.type
+  let width := match bvTy.id with
+    | .bitVector (.signedbv n) | .bitVector (.unsignedbv n) => n | _ => 32
+  let intMinVal := (2 ^ (width - 1)).repr
+  let intMin := Expr.constant intMinVal bvTy
+  let negOneVal := (2 ^ width - 1).repr
+  let negOne := Expr.constant negOneVal bvTy
+  let xIsMin : Expr := { id := .binary .Equal, type := .Boolean, operands := [x, intMin] }
+  let yIsNegOne : Expr := { id := .binary .Equal, type := .Boolean, operands := [y, negOne] }
+  { id := .multiary .And, type := .Boolean, operands := [xIsMin, yIsNegOne] }
 
 /-- Build Euclidean division from truncating division:
     ediv(a, b) = tdiv(a, b) + ite(tmod(a, b) < 0, ite(b > 0, -1, 1), 0) -/
@@ -201,6 +222,7 @@ def LExprT.toGotoExpr {TBase: LExprParamsT} [ToString TBase.base.IDMeta] (e : LE
     -- Euclidean div/mod: expand sentinel into compound expression
     if op == .functionApplication "Int.EuclideanDiv" then return mkEuclideanDiv e1g e2g
     if op == .functionApplication "Int.EuclideanMod" then return mkEuclideanMod e1g e2g
+    if op == .functionApplication "SDivOverflow" then return mkSDivOverflow e1g e2g
     -- Signed BV ops: cast operands to signedbv
     if isSignedBvOp fnStr then
       e1g := e1g.toSigned
@@ -281,6 +303,7 @@ def LExpr.toGotoExprCtx {TBase: LExprParams} [ToString $ LExpr TBase.mono]
     -- Euclidean div/mod: expand sentinel into compound expression
     if op == .functionApplication "Int.EuclideanDiv" then return mkEuclideanDiv e1g e2g
     if op == .functionApplication "Int.EuclideanMod" then return mkEuclideanMod e1g e2g
+    if op == .functionApplication "SDivOverflow" then return mkSDivOverflow e1g e2g
     -- Signed BV ops: cast operands to signedbv
     if isSignedBvOp fnStr then
       e1g := e1g.toSigned

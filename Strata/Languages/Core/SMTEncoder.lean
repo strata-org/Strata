@@ -389,6 +389,54 @@ partial def toSMTOp (E : Env) (fn : CoreIdent) (fnty : LMonoTy) (ctx : SMT.Conte
     .ok (adtApp, smt_outty, ctx)
   | none =>
     -- Not a constructor, tester, or destructor
+    -- Helper: SDivOverflow(x, y) = (x == INT_MIN) ∧ (y == -1)
+    let sdivOverflowEnc := fun (n : Nat) (ctx : SMT.Context) =>
+      let sdivOverflowApp := fun (args : List Term) (_retTy : TermType) =>
+        match args with
+        | [x, y] =>
+          let intMin := Term.prim (.bitvec (BitVec.intMin n))
+          let negOne := Term.prim (.bitvec (BitVec.allOnes n))
+          let xIsMin := Term.app Op.eq [x, intMin] .bool
+          let yIsNegOne := Term.app Op.eq [y, negOne] .bool
+          Term.app Op.and [xIsMin, yIsNegOne] .bool
+        | _ => Term.app Op.and [] .bool
+      Except.ok (sdivOverflowApp, TermType.prim .bool, ctx)
+    -- USubOverflow(x, y) = bvult(x, y)
+    let usubOverflowEnc := fun (ctx : SMT.Context) =>
+      Except.ok (Term.app Op.bvult, TermType.prim .bool, ctx)
+    -- UAddOverflow(x, y) = bvult(bvadd(x, y), x) — wrapping add < operand means overflow
+    let uaddOverflowEnc := fun (_n : Nat) (ctx : SMT.Context) =>
+      let app := fun (args : List Term) (_retTy : TermType) =>
+        match args with
+        | [x, y] =>
+          let bvTy := x.typeOf
+          let sum := Term.app Op.bvadd [x, y] bvTy
+          Term.app Op.bvult [sum, x] .bool
+        | _ => Term.app Op.and [] .bool
+      Except.ok (app, TermType.prim .bool, ctx)
+    -- UMulOverflow(x, y) = bvugt(zero_extend(N, x) * zero_extend(N, y), zero_extend(N, MAX))
+    let umulOverflowEnc := fun (n : Nat) (ctx : SMT.Context) =>
+      let app := fun (args : List Term) (_retTy : TermType) =>
+        match args with
+        | [x, y] =>
+          let extTy := TermType.prim (.bitvec (n + n))
+          let xe := Term.app (.zero_extend n) [x] extTy
+          let ye := Term.app (.zero_extend n) [y] extTy
+          let prod := Term.app Op.bvmul [xe, ye] extTy
+          let maxVal := Term.prim (.bitvec (BitVec.allOnes n))
+          let maxExt := Term.app (.zero_extend n) [maxVal] extTy
+          Term.app Op.bvugt [prod, maxExt] .bool
+        | _ => Term.app Op.and [] .bool
+      Except.ok (app, TermType.prim .bool, ctx)
+    -- UNegOverflow(x) = x != 0
+    let unegOverflowEnc := fun (n : Nat) (ctx : SMT.Context) =>
+      let app := fun (args : List Term) (_retTy : TermType) =>
+        match args with
+        | [x] =>
+          let zero := Term.prim (.bitvec (BitVec.zero n))
+          Term.app Op.not [Term.app Op.eq [x, zero] .bool] .bool
+        | _ => Term.app Op.and [] .bool
+      Except.ok (app, TermType.prim .bool, ctx)
     match E.factory[fn.name]? with
     | none => .error f!"Cannot find function {fn} in Strata Core's Factory!"
     | some func =>
@@ -503,6 +551,30 @@ partial def toSMTOp (E : Env) (fn : CoreIdent) (fnty : LMonoTy) (ctx : SMT.Conte
       .ok (.app Op.triggers, .trigger, ctx)
     | .trigger .AddTrigger | .trigger .AddGroup =>
       .ok (Factory.addTriggerList, .trigger, ctx)
+
+    -- Safe BV operations: same encoding as unsafe (preconditions already checked)
+    | .bv ⟨n, .SafeAdd⟩ => .ok (.app Op.bvadd, .bitvec n, ctx)
+    | .bv ⟨n, .SafeSub⟩ => .ok (.app Op.bvsub, .bitvec n, ctx)
+    | .bv ⟨n, .SafeMul⟩ => .ok (.app Op.bvmul, .bitvec n, ctx)
+    | .bv ⟨n, .SafeNeg⟩ => .ok (.app Op.bvneg, .bitvec n, ctx)
+    | .bv ⟨n, .SafeUAdd⟩ => .ok (.app Op.bvadd, .bitvec n, ctx)
+    | .bv ⟨n, .SafeUSub⟩ => .ok (.app Op.bvsub, .bitvec n, ctx)
+    | .bv ⟨n, .SafeUMul⟩ => .ok (.app Op.bvmul, .bitvec n, ctx)
+    | .bv ⟨n, .SafeUNeg⟩ => .ok (.app Op.bvneg, .bitvec n, ctx)
+    | .bv ⟨n, .SafeSDiv⟩ => .ok (.app Op.bvsdiv, .bitvec n, ctx)
+    | .bv ⟨n, .SafeSMod⟩ => .ok (.app Op.bvsrem, .bitvec n, ctx)
+    -- Signed overflow predicates
+    | .bv ⟨_, .SAddOverflow⟩ => .ok (.app Op.bvsaddo, .bool, ctx)
+    | .bv ⟨_, .SSubOverflow⟩ => .ok (.app Op.bvssubo, .bool, ctx)
+    | .bv ⟨_, .SMulOverflow⟩ => .ok (.app Op.bvsmulo, .bool, ctx)
+    | .bv ⟨_, .SNegOverflow⟩ => .ok (.app Op.bvnego, .bool, ctx)
+    | .bv ⟨n, .SDivOverflow⟩ => sdivOverflowEnc n ctx
+    -- Unsigned overflow predicates
+    | .bv ⟨n, .UAddOverflow⟩ => uaddOverflowEnc n ctx
+    | .bv ⟨_, .USubOverflow⟩ => usubOverflowEnc ctx
+    | .bv ⟨n, .UMulOverflow⟩ => umulOverflowEnc n ctx
+    | .bv ⟨n, .UNegOverflow⟩ => unegOverflowEnc n ctx
+
     | _ => do
       let fnname := func.name.name
       if (fnname == "select" || fnname == "update") && useArrayTheory then

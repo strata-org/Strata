@@ -23,6 +23,13 @@ inductive BvOpKind where
   | Not | And | Or | Xor | Shl | UShr | SShr
   | ULt | ULe | UGt | UGe | SLt | SLe | SGt | SGe
   | Concat
+  -- Safe arithmetic (with overflow preconditions)
+  | SafeAdd | SafeSub | SafeMul | SafeNeg
+  | SafeUAdd | SafeUSub | SafeUMul | SafeUNeg
+  | SafeSDiv | SafeSMod
+  -- Overflow predicates
+  | SAddOverflow | SSubOverflow | SMulOverflow | SNegOverflow | SDivOverflow
+  | UAddOverflow | USubOverflow | UMulOverflow | UNegOverflow
   deriving Repr, DecidableEq, Inhabited, BEq, Hashable
 
 structure BvOp where
@@ -31,7 +38,9 @@ structure BvOp where
   deriving Repr, DecidableEq, Inhabited, BEq, Hashable
 
 def BvOpKind.isSigned : BvOpKind → Bool
-  | .SDiv | .SMod | .SLt | .SLe | .SGt | .SGe | .SShr => true
+  | .SDiv | .SMod | .SLt | .SLe | .SGt | .SGe | .SShr
+  | .SafeSDiv | .SafeSMod
+  | .SAddOverflow | .SSubOverflow | .SMulOverflow | .SNegOverflow | .SDivOverflow => true
   | _ => false
 
 def BvOpKind.isPredicate : BvOpKind → Bool
@@ -134,6 +143,16 @@ def BvOpKind.toString : BvOpKind → String
   | .ULt => "ULt" | .ULe => "ULe" | .UGt => "UGt" | .UGe => "UGe"
   | .SLt => "SLt" | .SLe => "SLe" | .SGt => "SGt" | .SGe => "SGe"
   | .Concat => "Concat"
+  | .SafeAdd => "SafeAdd" | .SafeSub => "SafeSub"
+  | .SafeMul => "SafeMul" | .SafeNeg => "SafeNeg"
+  | .SafeUAdd => "SafeUAdd" | .SafeUSub => "SafeUSub"
+  | .SafeUMul => "SafeUMul" | .SafeUNeg => "SafeUNeg"
+  | .SafeSDiv => "SafeSDiv" | .SafeSMod => "SafeSMod"
+  | .SAddOverflow => "SAddOverflow" | .SSubOverflow => "SSubOverflow"
+  | .SMulOverflow => "SMulOverflow" | .SNegOverflow => "SNegOverflow"
+  | .SDivOverflow => "SDivOverflow"
+  | .UAddOverflow => "UAddOverflow" | .USubOverflow => "USubOverflow"
+  | .UMulOverflow => "UMulOverflow" | .UNegOverflow => "UNegOverflow"
 
 instance : ToString BvOpKind := ⟨BvOpKind.toString⟩
 
@@ -145,6 +164,16 @@ def BvOpKind.ofString? : String → Option BvOpKind
   | "ULt" => some .ULt | "ULe" => some .ULe | "UGt" => some .UGt | "UGe" => some .UGe
   | "SLt" => some .SLt | "SLe" => some .SLe | "SGt" => some .SGt | "SGe" => some .SGe
   | "Concat" => some .Concat
+  | "SafeAdd" => some .SafeAdd | "SafeSub" => some .SafeSub
+  | "SafeMul" => some .SafeMul | "SafeNeg" => some .SafeNeg
+  | "SafeUAdd" => some .SafeUAdd | "SafeUSub" => some .SafeUSub
+  | "SafeUMul" => some .SafeUMul | "SafeUNeg" => some .SafeUNeg
+  | "SafeSDiv" => some .SafeSDiv | "SafeSMod" => some .SafeSMod
+  | "SAddOverflow" => some .SAddOverflow | "SSubOverflow" => some .SSubOverflow
+  | "SMulOverflow" => some .SMulOverflow | "SNegOverflow" => some .SNegOverflow
+  | "SDivOverflow" => some .SDivOverflow
+  | "UAddOverflow" => some .UAddOverflow | "USubOverflow" => some .USubOverflow
+  | "UMulOverflow" => some .UMulOverflow | "UNegOverflow" => some .UNegOverflow
   | _ => none
 
 def NumericType.toString : NumericType → String
