@@ -586,7 +586,7 @@ def pyAnalyzeLaurelCommand : Command where
       | some (pyPath, srcText) => some (pyPath, .ofString srcText)
       | none => none
     let combinedLaurel ←
-      match ← Strata.pyAnalyzeLaurel filePath dispatchModules pyspecModules sourcePath
+      match ← Strata.pythonAndSpecToLaurel filePath dispatchModules pyspecModules sourcePath
                 (specDir := specDir) (profile := profile)
                 (quiet := quiet) |>.toBaseIO with
       | .ok r => pure r
@@ -620,17 +620,12 @@ def pyAnalyzeLaurelCommand : Command where
       IO.println "\n==== Laurel Program ===="
       IO.println f!"{combinedLaurel}"
 
-    if let some dir := keepDir then
-      let path := s!"{dir}/{baseName}.laurel"
-      IO.FS.writeFile path ((Laurel.formatProgram combinedLaurel).pretty ++ "\n")
+    let keepPrefix := keepDir.map (s!"{·}/{baseName}")
 
-    let (coreProgramOption, laurelTranslateErrors, loweredLaurel) ←
+    let (coreProgramOption, laurelTranslateErrors, _loweredLaurel) ←
       profileStep profile "Laurel to Core translation" do
-        pure (Strata.translateCombinedLaurelWithLowered combinedLaurel)
-
-    if let some dir := keepDir then
-      let path := s!"{dir}/{baseName}.lowered.laurel"
-      IO.FS.writeFile path ((Laurel.formatProgram loweredLaurel).pretty ++ "\n")
+        Strata.translateCombinedLaurelWithLowered combinedLaurel
+          (keepAllFilesPrefix := keepPrefix)
 
     let coreProgram ←
       match coreProgramOption with
@@ -647,10 +642,6 @@ def pyAnalyzeLaurelCommand : Command where
     let userSourcePath := sourcePath.getD filePath
     let (_preludeNames, userProcNames) :=
       Strata.splitProcNames coreProgram [userSourcePath]
-
-    if let some dir := keepDir then
-      let path := s!"{dir}/{baseName}.core"
-      IO.FS.writeFile path (toString coreProgram)
 
     -- Verify using Core verifier
     -- --keep-all-files implies vc-directory if not explicitly set
@@ -951,7 +942,7 @@ def laurelAnalyzeToGotoCommand : Command where
     let path : System.FilePath := v[0]
     let content ← IO.FS.readFile path
     let laurelProgram ← Strata.parseLaurelText path content
-    match Strata.Laurel.translate {} laurelProgram with
+    match ← Strata.Laurel.translate {} laurelProgram with
       | (none, diags) => exitFailure s!"Core translation errors: {diags.map (·.message)}"
       | (some coreProgram, errors) =>
         let Ctx := { Lambda.LContext.default with functions := Core.Factory, knownTypes := Core.KnownTypes }
@@ -1076,7 +1067,7 @@ def laurelToCoreCommand : Command where
   help := "Translate a Laurel source file to Core and print to stdout."
   callback := fun v _ => do
     let laurelProgram ← Strata.readLaurelTextFile v[0]
-    let (coreProgramOption, errors) := Strata.Laurel.translate {} laurelProgram
+    let (coreProgramOption, errors) ← Strata.Laurel.translate {} laurelProgram
       if !errors.isEmpty then
         IO.println s!"Core translation errors: {errors.map (·.message)}"
       match coreProgramOption with

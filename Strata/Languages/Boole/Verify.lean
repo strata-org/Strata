@@ -9,6 +9,7 @@ import Strata.Languages.Core.Program
 import Strata.Languages.Core.Statement
 import Strata.Languages.Core.Verifier
 import Strata.DL.Lambda.LExpr
+import Strata.DL.Lambda.LExprWF
 import Strata.DL.Imperative.Stmt
 
 namespace Strata.Boole
@@ -228,6 +229,23 @@ def toCoreTypedBin (m : SourceRange) (ty : Boole.Type) (op : String) (a b : Core
   let iop : Core.Expression.Expr := .op Strata.SourceRange.none ⟨s!"Int.{op}", ()⟩ none
   return mkCoreApp iop [a, b]
 
+private def toCoreExtensionalEq
+    (m : SourceRange)
+    (ty : Boole.Type)
+    (a b : Core.Expression.Expr) : TranslateM Core.Expression.Expr := do
+  match ty with
+  | .Map _ _ keyTy =>
+      let keyTy' ← toCoreMonoType keyTy
+      let idx : Core.Expression.Expr := .bvar () 0
+      let a := Lambda.LExpr.liftBVars 1 a
+      let b := Lambda.LExpr.liftBVars 1 b
+      let lhs := mkCoreApp Core.mapSelectOp [a, idx]
+      let rhs := mkCoreApp Core.mapSelectOp [b, idx]
+      let trigger := lhs
+      return .quant () .all "" (some keyTy') trigger (.eq () lhs rhs)
+  | _ =>
+      throwAt m s!"Extensional equality is currently only supported for Map types, got: {repr ty}"
+
 private def oldifyExpr : Core.Expression.Expr → Core.Expression.Expr
   | .fvar m ident ty =>
       let ident' := if Core.CoreIdent.isOldIdent ident then ident else Core.CoreIdent.mkOld ident.name
@@ -343,10 +361,11 @@ def lowerFor
     (initExpr guardExpr stepExpr : Core.Expression.Expr)
     (invs : List Core.Expression.Expr)
     (body : List Core.Statement) : TranslateM Core.Statement := do
+  let blockLabel ← defaultLabel m "for" none
   let initStmt : Core.Statement := Core.Statement.init id (.forAll [] ty) (.det initExpr) (← toCoreMetaData m)
   let stepStmt : Core.Statement := Core.Statement.set id stepExpr (← toCoreMetaData m)
   let loopBody := body ++ [stepStmt]
-  return .block "for" [initStmt, .loop (.det guardExpr) none invs loopBody (← toCoreMetaData m)] (← toCoreMetaData m)
+  return .block blockLabel [initStmt, .loop (.det guardExpr) none invs loopBody (← toCoreMetaData m)] (← toCoreMetaData m)
 
 private def lowerVarStatement (m : SourceRange) (ds : BooleDDM.DeclList SourceRange) : TranslateM (List Core.Statement) := do
   let mut outRev : List Core.Statement := []

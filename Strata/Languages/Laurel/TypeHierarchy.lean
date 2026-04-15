@@ -5,10 +5,10 @@
 -/
 module
 
-public import Strata.Languages.Laurel.Laurel
+public import Strata.Languages.Laurel.MapStmtExpr
 public import Strata.Languages.Laurel.LaurelTypes
 public import Strata.DL.Imperative.MetaData
-public import Strata.Util.Tactics
+import Strata.Util.Tactics
 
 public section
 
@@ -220,79 +220,12 @@ def lowerNew (name : Identifier) (md : Imperative.MetaData Core.Expression) : TH
   let compositeResult := mkMd (.StaticCall "MkComposite" [mkMd (.Identifier freshVar), mkMd (.StaticCall (name.text ++ "_TypeTag") [])])
   return ⟨ .Block [saveCounter, updateHeap, compositeResult] none, md ⟩
 
-/--
-Walk a StmtExpr AST and rewrite `IsType` and `New` nodes.
--/
-def rewriteTypeHierarchyExpr (exprMd : StmtExprMd) : THM StmtExprMd :=
-  match exprMd with
-  | WithMetadata.mk expr md =>
-  match expr with
-  | .New name => lowerNew name md
-  | .IsType target ty => do
-      let target' ← rewriteTypeHierarchyExpr target
-      return lowerIsType target' ty md
-  | .IfThenElse c t e => do
-      let e' ← match e with | some x => some <$> rewriteTypeHierarchyExpr x | none => pure none
-      return ⟨.IfThenElse (← rewriteTypeHierarchyExpr c) (← rewriteTypeHierarchyExpr t) e', md⟩
-  | .Block stmts label => do
-      let stmts' ← stmts.attach.mapM fun ⟨s, _⟩ => rewriteTypeHierarchyExpr s
-      return ⟨.Block stmts' label, md⟩
-  | .LocalVariable n ty i => do
-      let i' ← match i with | some x => some <$> rewriteTypeHierarchyExpr x | none => pure none
-      return ⟨.LocalVariable n ty i', md⟩
-  | .While c invs d b => do
-      let d' ← match d with | some x => some <$> rewriteTypeHierarchyExpr x | none => pure none
-      let invs' ← invs.attach.mapM fun ⟨inv, _⟩ => rewriteTypeHierarchyExpr inv
-      return ⟨.While (← rewriteTypeHierarchyExpr c) invs' d' (← rewriteTypeHierarchyExpr b), md⟩
-  | .Return v => do
-      let v' ← match v with | some x => some <$> rewriteTypeHierarchyExpr x | none => pure none
-      return ⟨.Return v', md⟩
-  | .Assign targets v => do
-      let targets' ← targets.attach.mapM fun ⟨t, _⟩ => rewriteTypeHierarchyExpr t
-      return ⟨.Assign targets' (← rewriteTypeHierarchyExpr v), md⟩
-  | .FieldSelect t f => do return ⟨.FieldSelect (← rewriteTypeHierarchyExpr t) f, md⟩
-  | .PureFieldUpdate t f v => do return ⟨.PureFieldUpdate (← rewriteTypeHierarchyExpr t) f (← rewriteTypeHierarchyExpr v), md⟩
-  | .StaticCall callee args => do
-      let args' ← args.attach.mapM fun ⟨a, _⟩ => rewriteTypeHierarchyExpr a
-      return ⟨.StaticCall callee args', md⟩
-  | .PrimitiveOp op args => do
-      let args' ← args.attach.mapM fun ⟨a, _⟩ => rewriteTypeHierarchyExpr a
-      return ⟨.PrimitiveOp op args', md⟩
-  | .ReferenceEquals l r => do return ⟨.ReferenceEquals (← rewriteTypeHierarchyExpr l) (← rewriteTypeHierarchyExpr r), md⟩
-  | .AsType t ty => do return ⟨.AsType (← rewriteTypeHierarchyExpr t) ty, md⟩
-  | .InstanceCall t callee args => do
-      let args' ← args.attach.mapM fun ⟨a, _⟩ => rewriteTypeHierarchyExpr a
-      return ⟨.InstanceCall (← rewriteTypeHierarchyExpr t) callee args', md⟩
-  | .Forall p trigger b => do
-      let trigger' ← trigger.attach.mapM fun ⟨t, _⟩ => rewriteTypeHierarchyExpr t
-      return ⟨.Forall p trigger' (← rewriteTypeHierarchyExpr b), md⟩
-  | .Exists p trigger b => do
-      let trigger' ← trigger.attach.mapM fun ⟨t, _⟩ => rewriteTypeHierarchyExpr t
-      return ⟨.Exists p trigger' (← rewriteTypeHierarchyExpr b), md⟩
-  | .Assigned n => do return ⟨.Assigned (← rewriteTypeHierarchyExpr n), md⟩
-  | .Old v => do return ⟨.Old (← rewriteTypeHierarchyExpr v), md⟩
-  | .Fresh v => do return ⟨.Fresh (← rewriteTypeHierarchyExpr v), md⟩
-  | .Assert c => do return ⟨.Assert (← rewriteTypeHierarchyExpr c), md⟩
-  | .Assume c => do return ⟨.Assume (← rewriteTypeHierarchyExpr c), md⟩
-  | .ProveBy v p => do return ⟨.ProveBy (← rewriteTypeHierarchyExpr v) (← rewriteTypeHierarchyExpr p), md⟩
-  | .ContractOf ty f => do return ⟨.ContractOf ty (← rewriteTypeHierarchyExpr f), md⟩
+/-- Local rewrite of `IsType` and `New` nodes. Recursion is handled by `mapStmtExprM`. -/
+private def rewriteTypeHierarchyNode (exprMd : StmtExprMd) : THM StmtExprMd := do
+  match exprMd.val with
+  | .New name => lowerNew name exprMd.md
+  | .IsType target ty => return lowerIsType target ty exprMd.md
   | _ => return exprMd
-  termination_by sizeOf exprMd
-
-def rewriteTypeHierarchyProcedure (proc : Procedure) : THM Procedure := do
-  let preconditions' ← proc.preconditions.mapM rewriteTypeHierarchyExpr
-  let body' ← match proc.body with
-    | .Transparent b => pure (.Transparent (← rewriteTypeHierarchyExpr b))
-    | .Opaque postconds impl modif =>
-        let postconds' ← postconds.mapM rewriteTypeHierarchyExpr
-        let impl' ← match impl with
-          | some x => pure (some (← rewriteTypeHierarchyExpr x))
-          | none => pure none
-        let modif' ← modif.mapM rewriteTypeHierarchyExpr
-        pure (.Opaque postconds' impl' modif')
-    | .Abstract postconds => pure (.Abstract (← postconds.mapM rewriteTypeHierarchyExpr))
-    | .External => pure .External
-  return { proc with preconditions := preconditions', body := body' }
 
 /--
 Type hierarchy transformation pass (Laurel → Laurel).
@@ -310,7 +243,7 @@ def typeHierarchyTransform (model: SemanticModel) (program : Program) : Program 
   let typeTagDatatype : TypeDefinition :=
     .Datatype { name := "TypeTag", typeArgs := [], constructors := compositeNames.map fun n => { name := (mkId $ n ++ "_TypeTag"), args := [] } }
   let typeHierarchyConstants := generateTypeHierarchyDecls model program
-  let (procs', _) := (program.staticProcedures.mapM rewriteTypeHierarchyProcedure).run {}
+  let (procs', _) := (program.staticProcedures.mapM (mapProcedureM (mapStmtExprM rewriteTypeHierarchyNode))).run {}
   -- Update the Composite datatype to include the typeTag field (introduced in this phase)
   let typeTagTy : HighTypeMd := ⟨.UserDefined "TypeTag", #[]⟩
   let remainingTypes := program.types.map fun td =>

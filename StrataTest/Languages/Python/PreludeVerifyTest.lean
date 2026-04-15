@@ -17,16 +17,17 @@ after PrecondElim generates WF-checking procedures. -/
 namespace Strata.Python.PreludeVerifyTest
 
 /-- Build the full Core prelude program (Laurel-translated + Core-only parts). -/
-private def preludeProgram : Core.Program :=
-  let (coreOption, _) := Strata.translateCombinedLaurel pythonRuntimeLaurelPart
+private def preludeProgram : IO Core.Program := do
+  let (coreOption, _) ← Strata.translateCombinedLaurel pythonRuntimeLaurelPart
   match coreOption with
-  | some prog => prog
-  | none => { decls := [] }
+  | some prog => return prog
+  | none => return { decls := [] }
 
 private def verifyPrelude : IO (Array DiagnosticModel) := do
+  let prog ← preludeProgram
   IO.FS.withTempDir fun tempDir => do
     let r ← EIO.toIO (IO.Error.userError ∘ toString)
-      (Core.verify preludeProgram tempDir
+      (Core.verify prog tempDir
         (options := .quiet)
         (moreFns := Strata.Python.ReFactory)
         (externalPhases := [Strata.frontEndPhase]))
