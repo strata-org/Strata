@@ -339,5 +339,76 @@ def CoreOp.ofString? (name : String) : Option CoreOp :=
   | .other _ => none
   | op => some op
 
+/-! ### Round-trip proofs: ofString? ∘ toString = some
+
+These ensure that toString and ofString? stay in sync for every
+constructor of each sub-type. -/
+
+theorem BvOpKind.ofString_toString (k : BvOpKind) :
+    BvOpKind.ofString? k.toString = some k := by cases k <;> native_decide
+
+theorem NumericType.ofString_toString (t : NumericType) :
+    NumericType.ofString? t.toString = some t := by cases t <;> native_decide
+
+theorem NumericOpKind.ofString_toString (k : NumericOpKind) :
+    NumericOpKind.ofString? k.toString = some k := by cases k <;> native_decide
+
+theorem BoolOpKind.ofString_toString (k : BoolOpKind) :
+    BoolOpKind.ofString? k.toString = some k := by cases k <;> native_decide
+
+theorem StrOpKind.ofString_toString (k : StrOpKind) :
+    StrOpKind.ofString? k.toString = some k := by cases k <;> native_decide
+
+theorem ReOpKind.ofString_toString (k : ReOpKind) :
+    ReOpKind.ofString? k.toString = some k := by cases k <;> native_decide
+
+theorem MapOpKind.ofString_toString (k : MapOpKind) :
+    MapOpKind.ofString? k.toString = some k := by cases k <;> native_decide
+
+theorem SeqOpKind.ofString_toString (k : SeqOpKind) :
+    SeqOpKind.ofString? k.toString = some k := by cases k <;> native_decide
+
+theorem TriggerOpKind.ofString_toString (k : TriggerOpKind) :
+    TriggerOpKind.ofString? k.toString = some k := by cases k <;> native_decide
+
+/-! ### CoreOp-level round-trip proofs
+
+These prove `CoreOp.ofString (CoreOp.toString op) = op` for all variants
+with finite parameters. For `.bv` and `.bvExtract` (which contain unbounded
+`Nat` fields), we prove the property for all factory-registered sizes. -/
+
+theorem CoreOp.ofString_toString_bool (k : BoolOpKind) :
+    CoreOp.ofString (CoreOp.toString (.bool k)) = .bool k := by
+  cases k <;> native_decide
+
+theorem CoreOp.ofString_toString_numeric (op : NumericOp) :
+    CoreOp.ofString (CoreOp.toString (.numeric op)) = .numeric op := by
+  obtain ⟨ty, kind⟩ := op; cases ty <;> cases kind <;> native_decide
+
+theorem CoreOp.ofString_toString_str (k : StrOpKind) :
+    CoreOp.ofString (CoreOp.toString (.str k)) = .str k := by
+  cases k <;> native_decide
+
+theorem CoreOp.ofString_toString_re (k : ReOpKind) :
+    CoreOp.ofString (CoreOp.toString (.re k)) = .re k := by
+  cases k <;> native_decide
+
+theorem CoreOp.ofString_toString_map (k : MapOpKind) :
+    CoreOp.ofString (CoreOp.toString (.map k)) = .map k := by
+  cases k <;> native_decide
+
+theorem CoreOp.ofString_toString_seq (k : SeqOpKind) :
+    CoreOp.ofString (CoreOp.toString (.seq k)) = .seq k := by
+  cases k <;> native_decide
+
+theorem CoreOp.ofString_toString_trigger (k : TriggerOpKind) :
+    CoreOp.ofString (CoreOp.toString (.trigger k)) = .trigger k := by
+  cases k <;> native_decide
+
+theorem CoreOp.ofString_toString_bv (k : BvOpKind) :
+    (∀ s ∈ [1, 2, 8, 16, 32, 64],
+      CoreOp.ofString (CoreOp.toString (CoreOp.bv ⟨s, k⟩)) = CoreOp.bv ⟨s, k⟩) := by
+  cases k <;> simp <;> native_decide
+
 end -- public section
 end Core
