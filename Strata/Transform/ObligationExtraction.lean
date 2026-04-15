@@ -68,6 +68,21 @@ where
 private def guardAssumption (cond : Expression.Expr) (e : Expression.Expr) : Expression.Expr :=
   Lambda.LExpr.ite () cond e (Lambda.LExpr.true ())
 
+/-- Extract the first `assume` expression from a statement list (top-level only).
+    Used to identify the branch condition in post-PE nondet ITE branches. -/
+private def firstAssumeCond (ss : Statements) : Option Expression.Expr :=
+  ss.findSome? fun
+    | .cmd (.cmd (.assume _ e _)) => some e
+    | _ => none
+
+/-- Guard a list of new assumptions with a branch condition. If no condition
+    is available, assumptions are kept as-is. -/
+private def guardNewAssumptions (cond? : Option Expression.Expr)
+    (newPcs : List (String × Expression.Expr)) : List (String × Expression.Expr) :=
+  match cond? with
+  | some cond => newPcs.map fun (l, e) => (l, guardAssumption cond e)
+  | none => newPcs
+
 /-- Merge path conditions from two nondet ITE branches for post-ITE statements.
     Each branch's new assumptions (those not in the pre-ITE path conditions) are
     guarded by the branch condition extracted from the first `assume` statement
@@ -81,20 +96,8 @@ private def mergeNondetBranchPcs (preItePc : PathConditions Expression)
   let isNew := fun (label : String) => !preLabels.contains label
   let thenNew := thenPc.flatten.filter (fun (l, _) => isNew l)
   let elseNew := elsePc.flatten.filter (fun (l, _) => isNew l)
-  -- Extract branch conditions from the first assume in each branch
-  let thenCond := thenSs.findSome? fun
-    | .cmd (.cmd (.assume _ e _)) => some e
-    | _ => none
-  let elseCond := elseSs.findSome? fun
-    | .cmd (.cmd (.assume _ e _)) => some e
-    | _ => none
-  -- Guard each branch's assumptions with its condition
-  let thenGuarded := match thenCond with
-    | some cond => thenNew.map fun (l, e) => (l, guardAssumption cond e)
-    | none => thenNew
-  let elseGuarded := match elseCond with
-    | some cond => elseNew.map fun (l, e) => (l, guardAssumption cond e)
-    | none => elseNew
+  let thenGuarded := guardNewAssumptions (firstAssumeCond thenSs) thenNew
+  let elseGuarded := guardNewAssumptions (firstAssumeCond elseSs) elseNew
   preItePc.push (thenGuarded ++ elseGuarded)
 
 /-- Result of extracting obligations from a statement sequence.
@@ -131,6 +134,9 @@ where
         -- branch condition so contradictory assumptions don't make the path
         -- conditions unsatisfiable, while preserving information for post-ITE
         -- statements (e.g., loop invariants).
+        -- Exit labels from branches are intentionally ignored: in a nondet ITE,
+        -- both paths are explored independently, so an exit in one branch does
+        -- not affect reachability of statements after the ITE.
         let mergedPc := mergeNondetBranchPcs pc thenSs elseSs
           thenRes.pathConditions elseRes.pathConditions
         go mergedPc rest (acc ++ thenRes.obligations ++ elseRes.obligations)
@@ -180,22 +186,14 @@ where
 
     | .block label innerSs _md => do
       let innerRes ← extractFromStatements pc innerSs
-      match innerRes.exitLabel with
-      | .some .none =>
-        -- Unlabelled exit: consumed by this block
-        .ok { obligations := acc ++ innerRes.obligations, pathConditions := innerRes.pathConditions }
-      | .some (.some l) =>
-        if l == label then
-          -- Exit matches this block: consumed
-          .ok { obligations := acc ++ innerRes.obligations, pathConditions := innerRes.pathConditions }
-        else
-          -- Exit targets an outer block: propagate
-          .ok { obligations := acc ++ innerRes.obligations,
-                pathConditions := innerRes.pathConditions,
-                exitLabel := innerRes.exitLabel }
-      | .none =>
-        -- No exit: fall through normally
-        .ok { obligations := acc ++ innerRes.obligations, pathConditions := innerRes.pathConditions }
+      -- An exit is consumed if it targets this block (matching label or unlabelled)
+      let consumed := match innerRes.exitLabel with
+        | .some .none => true
+        | .some (.some l) => l == label
+        | .none => true
+      .ok { obligations := acc ++ innerRes.obligations,
+            pathConditions := innerRes.pathConditions,
+            exitLabel := if consumed then .none else innerRes.exitLabel }
 
     | .cmd (.cmd (.init name ty (.det e) _md)) =>
       let varTy := if h : ty.isMonoType then some (ty.toMonoType h) else none
@@ -224,6 +222,9 @@ def extractObligations (p : Program) : Except String (ProofObligations Expressio
       let res ← extractFromStatements globalPc proc.body
       -- Deduplicate within this procedure: when multiple PE paths are combined
       -- via nondet ITE, obligations before the split point are duplicated.
+      -- Uses string representation as key because structural equality on
+      -- expressions is too strict (metadata differences) and we only need
+      -- to detect identical obligations from duplicated code paths.
       let mut seen : Std.HashSet (String × String) := {}
       let mut procObs := allObs
       for ob in res.obligations do

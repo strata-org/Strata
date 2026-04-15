@@ -37,6 +37,10 @@ private def combineBodies (bodies : List Statements) : Statements :=
     let combined := combineBodies rest
     [Imperative.Stmt.ite .nondet b combined .empty]
 
+/-- Merge multiple procedure evaluation results into one. Unions deferred
+    obligations, takes the max fresh-variable counter, and combines all
+    procedure bodies using nondet ITE so obligation extraction can see
+    all paths. -/
 private def mergeResults (fallback : Procedure × Env) (results : List (Procedure × Env)) :
     Procedure × Env :=
   match results with
