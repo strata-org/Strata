@@ -631,7 +631,7 @@ def translateProcedureToFunction (options: LaurelTranslateOptions) (isRecursive:
 
   -- For recursive functions, infer the @[cases] parameter index: the first input
   -- whose type is a user-defined datatype (has constructors). This is the argument
-  -- the partial evaluator will case-split on to unfold the recursion.
+  -- the evaluator will case-split on to unfold the recursion.
   -- TODO: Use the decreases of the function to determine where to put @[cases]
   -- First step should be to only support a decreases clause that is exactly one datatype parameter
   -- Since that's what Core supports

@@ -568,7 +568,7 @@ Proof Obligation:
 #guard_msgs in
 #eval (evalOne ∅ ∅ testPolymorphicFuncDecl) |> format
 
--- Test nondet if: partial evaluator introduces a fresh boolean and splits paths
+-- Test nondet if: evaluator introduces a fresh boolean and splits paths
 /--
 info: Error:
 none

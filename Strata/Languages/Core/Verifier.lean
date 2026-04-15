@@ -532,7 +532,7 @@ structure VCResult where
   lexprModel : LExprModel := []
 
 /-- Mask outcome properties that were not requested.
-    When PE (partial evaluation) resolves a check that wasn't requested by the
+    When the evaluator resolves a check that wasn't requested by the
     check mode/level, we set it to `.unknown` so the label function displays
     the appropriate message for the checks that were actually requested.
     For example, in minimal deductive mode we only request validity, so if PE
@@ -636,8 +636,8 @@ instance : ToString VCResults where
   toString rs := toString (VCResults.format rs)
 
 /--
-Preprocess a proof obligation using partial evaluation (PE).
-Returns PE-determined results for satisfiability and validity independently.
+Preprocess a proof obligation using symbolic simluation.
+Returns the symbolic results for satisfiability and validity independently.
 Each result is `some r` if PE can determine it, `none` if the solver is needed.
 -/
 def preprocessObligation (obligation : ProofObligation Expression) (p : Program)
@@ -661,7 +661,7 @@ def preprocessObligation (obligation : ProofObligation Expression) (p : Program)
     if obligation.property == .assert then
       let prog := f!"\n\n[DEBUG] Evaluated program:\n{Core.formatProgram p}"
       dbg_trace f!"\n\nObligation {obligation.label}: failed!\
-                   \n\nResult obtained during partial evaluation.\
+                   \n\nResult obtained during evaluation.\
                    {if options.verbose >= .normal then prog else ""}"
   -- Apply axiom pruning if needed.
   -- Axiom removal is unsound for cover obligations (removing axioms weakens

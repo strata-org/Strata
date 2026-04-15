@@ -368,25 +368,6 @@ def captureFreevars (env : Env) (paramNames : List CoreIdent) (e : Expression.Ex
     | none => none)
   Lambda.LExpr.substFvars e sm
 
-@[expose]
-abbrev StmtsStack := List Statements
-
-def StmtsStack.push (stk : StmtsStack) (ss : Statements) : StmtsStack :=
-  let ss := Statements.eraseTypes ss
-  ss :: stk
-
-def StmtsStack.pop (stk : StmtsStack) : StmtsStack :=
-  match stk with | [] => [] | _ :: rst => rst
-
-def StmtsStack.top (stk : StmtsStack) : Statements :=
-  match stk with | [] => [] | top :: _ => top
-
-def StmtsStack.appendToTop (stk : StmtsStack) (ss : Statements) : StmtsStack :=
-  let top := stk.top
-  let stk := stk.pop
-  let ss := Statements.eraseTypes ss
-  (top ++ ss) :: stk
-
 /--
 An environment with an optional exit label.
 -/
@@ -478,8 +459,7 @@ def evalAuxGo (steps : Nat) (old_var_subst : SubstMap) (Ewn : EnvWithNext) (ss :
               let (ss_live, ss_dead) :=
                 if cond'.isTrue then (then_ss, else_ss) else (else_ss, then_ss)
               let deadDeferred := collectDeadBranchDeferred ss_dead c Ewn.env.pathConditions
-              let Ewns :=
-                (go' Ewn ss_live .none).map fun (ewn : EnvWithNext) => ewn
+              let Ewns := go' Ewn ss_live .none
               -- Prepend dead-branch obligations to the first result only.
               -- Pre-ITE obligations flow through the live branch naturally;
               -- processIteBranches keeps them in the first (true-path) result,
@@ -584,8 +564,7 @@ def exitToError : EnvWithNext → Env
   | { env, exitLabel := .some .none } => ({ env with error := some (.Misc "exit outside of any block") })
 
 /--
-Partial evaluator for statements yielding a list of environments and transformed
-statements.
+A symbolic simulator for statements yielding a list of resulting environments.
 
 The argument `old_var_subst` below is a substitution map from global variables
 to their pre-state value in the enclosing procedure of `ss`.
@@ -594,8 +573,7 @@ def eval (E : Env) (old_var_subst : SubstMap) (ss : Statements) : List Env :=
   (evalAux E old_var_subst ss .none).map exitToError
 
 /--
-Partial evaluator for statements yielding one environment and transformed
-statements.
+A symbolic simluator for statements yielding one environment.
 -/
 def evalOne (E : Env) (old_var_subst : SubstMap) (ss : Statements) : Env :=
   match eval E old_var_subst ss with

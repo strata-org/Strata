@@ -43,7 +43,7 @@ The differences across paths are:
   `genFVar` calls (e.g. procedure calls only in one branch). We take the max to
   prevent fresh-variable name collisions in subsequent evaluation.
 
-The `fallback` pair is returned when `results` is empty (which should not occur
+The `fallback` Env is returned when `results` is empty (which should not occur
 in practice, since `Statement.eval` always produces at least one result).
 -/
 private def mergeResults (fallback : Env) (results : List Env) : Env :=
