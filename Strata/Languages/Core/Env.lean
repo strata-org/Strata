@@ -129,15 +129,6 @@ A substitution map from variable identifiers to expressions.
 -/
 @[expose] abbrev SubstMap := Map Expression.Ident Expression.Expr
 
-/-- Controls whether the evaluator operates in verification mode (symbolic,
-    contract-based) or concrete mode (executing bodies, iterating loops). -/
-inductive EvalMode where
-  /-- Symbolic verification: calls inline contracts, loops are rejected. -/
-  | symbolic
-  /-- Concrete interpretation: calls execute bodies, loops iterate. -/
-  | concrete
-  deriving Inhabited, BEq, Repr
-
 structure Env where
   error : Option (Imperative.EvalError Expression)
   program : Program
@@ -148,10 +139,6 @@ structure Env where
   pathConditions : Imperative.PathConditions Expression
   warnings : List (Imperative.EvalWarning Expression)
   deferred : Imperative.ProofObligations Expression
-  evalMode : EvalMode := .symbolic
-
-/-- Default fuel for concrete interpretation. -/
-def defaultFuel : Nat := 100000
 
 def Env.init (empty_factory:=false): Env :=
   let σ := Lambda.LState.init
@@ -174,7 +161,7 @@ instance : Inhabited Env where
 
 instance : ToFormat Env where
   format s :=
-    let { error, program := _, substMap, exprEnv, datatypes, distinct := _, pathConditions, warnings, deferred, evalMode := _ }  := s
+    let { error, program := _, substMap, exprEnv, datatypes, distinct := _, pathConditions, warnings, deferred }  := s
     format f!"Error:{Format.line}{error}{Format.line}\
               Subst Map:{Format.line}{substMap}{Format.line}\
               Expression Env:{Format.line}{exprEnv}{Format.line}\

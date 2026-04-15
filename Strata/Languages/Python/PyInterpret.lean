@@ -5,6 +5,7 @@
 -/
 
 import Strata.SimpleAPI
+import Strata.Languages.Core.Interpreter
 
 /-! # Concrete Python Interpreter via Strata
 
@@ -27,10 +28,7 @@ def pyInterpret
       (moreFns := Strata.Python.ReFactory) with
     | .ok prog => pure prog
     | .error e => throw s!"Core type checking failed: {e.message}"
-  let E ← match Core.initConcreteEnv core fuel with
-    | .ok e => pure e
-    | .error e => throw s!"init failed: {e.message}"
-  return Core.interpProcedure E "__main__"
+  return Core.interpProcedure core "__main__" [] fuel
 
 /-- Run the Python → Core (direct) → Interpret pipeline on a Python Ion file. -/
 def pyInterpretDirect
@@ -41,9 +39,6 @@ def pyInterpretDirect
   let core ← match Core.typeCheck Core.VerifyOptions.quiet core with
     | .ok prog => pure prog
     | .error e => throw <| .userError s!"Core type checking failed: {e.message}"
-  let E ← match Core.initConcreteEnv core fuel with
-    | .ok e => pure e
-    | .error e => throw <| .userError s!"init failed: {e.message}"
-  return Core.interpProcedure E "__main__"
+  return Core.interpProcedure core "__main__" [] fuel
 
 end Strata

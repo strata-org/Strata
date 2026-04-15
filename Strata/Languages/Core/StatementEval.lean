@@ -157,8 +157,6 @@ private def computeTypeSubst (input_tys output_tys: List LMonoTy)
 
 /--
 Evaluate a procedure call `lhs := pname(args)`.
-In symbolic mode, inlines the contract. In concrete mode, the body is
-executed by `evalAuxGo` which intercepts call commands directly.
 -/
 def Command.evalCall (E : Env)
     (lhs : List Expression.Ident) (pname : String) (args : List Expression.Expr)
@@ -445,67 +443,10 @@ def evalAuxGo (steps : Nat) (old_var_subst : SubstMap) (Ewn : EnvWithNext) (ss :
         match s with
 
           | .cmd c =>
-            -- In concrete mode, intercept call commands to execute bodies
-            match c, Ewn.env.evalMode with
-            | .call lhs pname args md, .concrete =>
-              match Program.Procedure.find? Ewn.env.program pname with
-              | some proc =>
-                if proc.body.isEmpty then
-                  -- No body: fall back to contract inlining
-                  let (c', E) := Command.eval Ewn.env old_var_subst (.call lhs pname args md)
-                  [{ Ewn with stk := Ewn.stk.appendToTop [(Imperative.Stmt.cmd c')],
-                              env := E, exitLabel := .none }]
-                else
-                  -- Execute the procedure body
-                  let argVals := args.map (fun a => Ewn.env.exprEval a)
-                  let formalBindings : Lambda.Scope CoreLParams :=
-                    proc.header.inputs.keys.zip proc.header.inputs.values |>.zip argVals
-                    |>.map fun ((name, ty), val) => (name, (some ty, val))
-                  let outputBindings : Lambda.Scope CoreLParams :=
-                    proc.header.outputs.keys.zip proc.header.outputs.values
-                    |>.map fun (name, ty) => (name, (some ty, LExpr.fvar () name none))
-                  let callEnv := { Ewn.env with
-                    exprEnv := { Ewn.env.exprEnv with
-                      state := Ewn.env.exprEnv.state.push (List.append formalBindings outputBindings) } }
-                  let callEnv := { callEnv with pathConditions := callEnv.pathConditions.push [] }
-                  let callEwn : EnvWithNext := { env := callEnv, stk := [[]], exitLabel := .none }
-                  let callResults := evalAuxGo steps' [] callEwn proc.body .none
-                  callResults.map fun callEwn' =>
-                    let callEnv' := callEwn'.env
-                    match callEnv'.error with
-                    | some err =>
-                      { Ewn with env := { Ewn.env with error := some err }, exitLabel := .none }
-                    | none =>
-                      let outputVals := proc.header.outputs.keys.map fun name =>
-                        (callEnv'.exprEnv.state.findD name (none, LExpr.fvar () name none)).snd
-                      let modifiedVals := proc.spec.modifies.map fun name =>
-                        (callEnv'.exprEnv.state.findD name (none, LExpr.fvar () name none)).snd
-                      let E' := { Ewn.env with
-                        exprEnv := { Ewn.env.exprEnv with
-                          config := { Ewn.env.exprEnv.config with gen := callEnv'.exprEnv.config.gen } } }
-                      let E' := lhs.zip outputVals |>.foldl (fun env (name, val) =>
-                        let tyOpt := (env.exprEnv.state.find? name).bind (·.fst)
-                        Env.insertInContext (name, tyOpt) val env) E'
-                      let E' := proc.spec.modifies.zip modifiedVals |>.foldl (fun env (name, val) =>
-                        let tyOpt := (env.exprEnv.state.find? name).bind (·.fst)
-                        Env.insertInContext (name, tyOpt) val env) E'
-                      { Ewn with stk := Ewn.stk.appendToTop [(Imperative.Stmt.cmd (.call lhs pname args md))],
-                                 env := E', exitLabel := .none }
-              | none =>
-                [{ Ewn with env := { Ewn.env with error := some (.Misc f!"Procedure {pname} not found!") },
-                            exitLabel := .none }]
-            | _, _ =>
-              -- In concrete mode, convert re-initialization to assignment
-              let c := match c, Ewn.env.evalMode with
-                | .cmd (.init x _ty e md), .concrete =>
-                  match Ewn.env.exprEnv.state.find? x with
-                  | some _ => CmdExt.cmd (.set x e md)  -- variable exists: use set
-                  | none => c
-                | _, _ => c
-              let (c', E) := Command.eval Ewn.env old_var_subst c
-              [{ Ewn with stk := Ewn.stk.appendToTop [(Imperative.Stmt.cmd c')],
-                          env := E,
-                          exitLabel := .none }]
+            let (c', E) := Command.eval Ewn.env old_var_subst c
+            [{ Ewn with stk := Ewn.stk.appendToTop [(Imperative.Stmt.cmd c')],
+                        env := E,
+                        exitLabel := .none }]
 
           | .block label ss md =>
             let orig_stk := Ewn.stk
@@ -565,34 +506,10 @@ def evalAuxGo (steps : Nat) (old_var_subst : SubstMap) (Ewn : EnvWithNext) (ss :
               processIteBranches steps' old_var_subst
                 Ewn c cond' then_ss else_ss md orig_stk
 
-          | .loop guard _ _ body_ss md =>
-            if Ewn.env.evalMode == .concrete then
-              -- Concrete mode: evaluate the guard and iterate
-              match guard with
-              | .nondet => [{Ewn with env := { Ewn.env with error := some (.Misc "nondeterministic loop in concrete mode") }}]
-              | .det g =>
-                let cond' := Ewn.env.exprEval g
-                match cond' with
-                | .true _ =>
-                  -- Guard is true: execute body, then re-enter loop
-                  let Ewns := go' Ewn body_ss .none
-                  Ewns.flatMap fun ewn =>
-                    match ewn.exitLabel with
-                    | .some _ => [ewn]  -- exit propagating
-                    | .none =>
-                      match ewn.env.error with
-                      | .some _ => [ewn]
-                      | .none =>
-                        have : wfParam steps' < steps' + 1 := by simp [wfParam]
-                        evalAuxGo steps' old_var_subst ewn [.loop (.det g) none [] body_ss md] .none
-                | .false _ => [Ewn]  -- Guard is false: skip loop
-                | _ =>
-                  -- Guard didn't reduce: skip loop (default to false in concrete mode)
-                  [Ewn]
-            else
-              panic! "Cannot evaluate `loop` statement. \
-                      Please transform your program to eliminate loops before \
-                      calling Core.Statement.evalAux"
+          | .loop _ _ _ _ _ =>
+            panic! "Cannot evaluate `loop` statement. \
+                    Please transform your program to eliminate loops before \
+                    calling Core.Statement.evalAux"
 
           | .funcDecl decl _ =>
             -- Add function to factory with value capture semantics
@@ -678,9 +595,7 @@ end
 
 def evalAux (E : Env) (old_var_subst : SubstMap) (ss : Statements) (optExit : Option (Option String)) :
   List EnvWithNext :=
-  let steps := if E.evalMode == .concrete then E.exprEnv.config.fuel
-               else Imperative.Block.sizeOf ss
-  evalAuxGo steps old_var_subst (EnvWithNext.mk E .none []) ss optExit
+  evalAuxGo (Imperative.Block.sizeOf ss) old_var_subst (EnvWithNext.mk E .none []) ss optExit
 
 def exitToError : EnvWithNext → Statements × Env
   | { stk, env, exitLabel := .none } => (stk.flatten, env)
