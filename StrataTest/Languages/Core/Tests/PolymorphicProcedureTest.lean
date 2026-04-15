@@ -56,7 +56,7 @@ Result: Obligation: callElimAssert_Extract_requires_0_2
 Property: assert
 Result: ❌ fail
 Model:
-($__xs3, Nil)
+($__xs3, Nil) (tmp_arg_0, Nil) (tmp_h_1, 0) ($__h4, 0) 
 
 
 [DEBUG] Evaluated program:
@@ -93,7 +93,7 @@ Obligation: callElimAssert_Extract_requires_0_2
 Property: assert
 Result: ❌ fail
 Model:
-($__xs3, Nil)
+($__xs3, Nil) (tmp_arg_0, Nil) (tmp_h_1, 0) ($__h4, 0) 
 
 Obligation: Test_ensures_0
 Property: assert

@@ -26,26 +26,17 @@ def fixupError (E : Env) : Env :=
                      pathConditions := E.pathConditions.pop }
   | some _ => E
 
-/--
-Merge multiple procedure evaluation results into one.
+/-- Combine multiple procedure bodies into a single body using nondet ITE.
+    Each path becomes a branch so that obligation extraction can reconstruct
+    all proof obligations from the program structure. -/
+private def combineBodies (bodies : List Statements) : Statements :=
+  match bodies with
+  | [] => []
+  | [b] => b
+  | b :: rest =>
+    let combined := combineBodies rest
+    [Imperative.Stmt.ite .nondet b combined .empty]
 
-After `fixupError`, all paths through a procedure have identical variable state
-and path conditions — the procedure scope and its path-condition scope have been
-popped, leaving only the outer (global) scope which is the same on every path.
-The differences across paths are:
-
-- `deferred`: path-specific proof obligations (each already carries its own
-  assumptions), which we union. No duplicates arise: `processIteBranches`
-  clears `deferred` on the false branch, so pre-split obligations appear only
-  in the first (true) path; post-split obligations appear in each path under
-  distinct path conditions.
-- `exprEnv.config.gen`: may diverge when branches execute different numbers of
-  `genFVar` calls (e.g. procedure calls only in one branch). We take the max to
-  prevent fresh-variable name collisions in subsequent evaluation.
-
-The `fallback` pair is returned when `results` is empty (which should not occur
-in practice, since `Statement.eval` always produces at least one result).
--/
 private def mergeResults (fallback : Procedure × Env) (results : List (Procedure × Env)) :
     Procedure × Env :=
   match results with
@@ -54,7 +45,9 @@ private def mergeResults (fallback : Procedure × Env) (results : List (Procedur
   | (p, E) :: rest =>
     let allDeferred := rest.foldl (fun acc (_, e) => acc ++ e.deferred) E.deferred
     let maxGen      := rest.foldl (fun acc (_, e) => max acc e.exprEnv.config.gen) E.exprEnv.config.gen
-    (p, { E with
+    let allBodies := results.map (fun (proc, _) => proc.body)
+    let mergedBody := combineBodies allBodies
+    ({ p with body := mergedBody }, { E with
       deferred := allDeferred,
       exprEnv  := { E.exprEnv with config := { E.exprEnv.config with gen := maxGen } } })
 

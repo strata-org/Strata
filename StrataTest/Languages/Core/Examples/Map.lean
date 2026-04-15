@@ -66,6 +66,8 @@ a[1]
 Result: Obligation: a_one_true
 Property: assert
 Result: ❌ fail
+Model:
+($__t.0, true)
 
 
 [DEBUG] Evaluated program:
@@ -89,6 +91,8 @@ Result: ✅ pass
 Obligation: a_one_true
 Property: assert
 Result: ❌ fail
+Model:
+($__t.0, true)
 -/
 #guard_msgs in
 #eval verify mapPgm

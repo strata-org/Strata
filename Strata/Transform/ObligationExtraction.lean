@@ -62,18 +62,48 @@ where
       go pc rest (acc ++ thenObs ++ elseObs)
     | _ => go pc rest acc
 
-/-- Merge path conditions from two ITE branches. New assumptions from each
-    branch (those not in the pre-ITE path conditions) are collected into a
-    single new scope appended to the pre-ITE path conditions. -/
-private def mergeBranchPcs (preItePc thenPc elsePc : PathConditions Expression)
-    : PathConditions Expression :=
+/-- Guard an assumption with a branch condition: `if cond then e else true`.
+    This makes the assumption conditional so that contradictory branch
+    assumptions don't make the path conditions unsatisfiable. -/
+private def guardAssumption (cond : Expression.Expr) (e : Expression.Expr) : Expression.Expr :=
+  Lambda.LExpr.ite () cond e (Lambda.LExpr.true ())
+
+/-- Merge path conditions from two nondet ITE branches for post-ITE statements.
+    Each branch's new assumptions (those not in the pre-ITE path conditions) are
+    guarded by the branch condition extracted from the first `assume` statement
+    in each branch. This prevents contradictory branch assumptions from making
+    the path conditions unsatisfiable while preserving information needed by
+    post-ITE statements (e.g., loop invariants). -/
+private def mergeNondetBranchPcs (preItePc : PathConditions Expression)
+    (thenSs elseSs : Statements)
+    (thenPc elsePc : PathConditions Expression) : PathConditions Expression :=
   let preLabels := preItePc.flatten.map (·.1) |>.toArray
   let isNew := fun (label : String) => !preLabels.contains label
   let thenNew := thenPc.flatten.filter (fun (l, _) => isNew l)
   let elseNew := elsePc.flatten.filter (fun (l, _) => isNew l)
-  -- Deduplicate: if both branches added the same label, keep only one copy
-  let elseOnly := elseNew.filter (fun (l, _) => !thenNew.any (fun (l', _) => l == l'))
-  preItePc.push (thenNew ++ elseOnly)
+  -- Extract branch conditions from the first assume in each branch
+  let thenCond := thenSs.findSome? fun
+    | .cmd (.cmd (.assume _ e _)) => some e
+    | _ => none
+  let elseCond := elseSs.findSome? fun
+    | .cmd (.cmd (.assume _ e _)) => some e
+    | _ => none
+  -- Guard each branch's assumptions with its condition
+  let thenGuarded := match thenCond with
+    | some cond => thenNew.map fun (l, e) => (l, guardAssumption cond e)
+    | none => thenNew
+  let elseGuarded := match elseCond with
+    | some cond => elseNew.map fun (l, e) => (l, guardAssumption cond e)
+    | none => elseNew
+  preItePc.push (thenGuarded ++ elseGuarded)
+
+/-- Result of extracting obligations from a statement sequence.
+    `exitLabel` is `some l` when the path ended with `exit l` (or `some none`
+    for an unlabelled exit), meaning subsequent statements are unreachable. -/
+private structure ExtractionResult where
+  obligations : Array (ProofObligation Expression)
+  pathConditions : PathConditions Expression
+  exitLabel : Option (Option String) := .none
 
 /-- Extract proof obligations from a procedure body, reconstructing path
     conditions from the program structure.
@@ -81,109 +111,129 @@ private def mergeBranchPcs (preItePc thenPc elsePc : PathConditions Expression)
     `pathConditions` accumulates the current path conditions (from `assume`
     statements and ITE branch conditions) as we walk the statement tree.
 
-    Returns (obligations, final path conditions). -/
+    Returns obligations, final path conditions, and an optional exit label
+    indicating whether the path terminated via an `exit` statement. -/
 private partial def extractFromStatements
     (pathConditions : PathConditions Expression)
-    (ss : Statements) : Except String (Array (ProofObligation Expression) × PathConditions Expression) :=
+    (ss : Statements) : Except String ExtractionResult :=
   go pathConditions ss #[]
 where
   go (pc : PathConditions Expression) : Statements →
       Array (ProofObligation Expression) →
-      Except String (Array (ProofObligation Expression) × PathConditions Expression)
-  | [], acc => .ok (acc, pc)
+      Except String ExtractionResult
+  | [], acc => .ok { obligations := acc, pathConditions := pc }
   | s :: rest, acc =>
     match s with
     | .ite .nondet thenSs elseSs _md => do
-        let (thenObs, thenPc) ← extractFromStatements pc thenSs
-        let (elseObs, elsePc) ← extractFromStatements pc elseSs
-        -- Merge path conditions from both branches so that post-ITE
-        -- statements see assumptions from both paths.
-        let mergedPc := mergeBranchPcs pc thenPc elsePc
-        go mergedPc rest (acc ++ thenObs ++ elseObs)
+        let thenRes ← extractFromStatements pc thenSs
+        let elseRes ← extractFromStatements pc elseSs
+        -- Merge path conditions: guard each branch's new assumptions with its
+        -- branch condition so contradictory assumptions don't make the path
+        -- conditions unsatisfiable, while preserving information for post-ITE
+        -- statements (e.g., loop invariants).
+        let mergedPc := mergeNondetBranchPcs pc thenSs elseSs
+          thenRes.pathConditions elseRes.pathConditions
+        go mergedPc rest (acc ++ thenRes.obligations ++ elseRes.obligations)
     | _ => do
-      let (acc', pc') ← extractFromStatement pc s acc
-      go pc' rest acc'
+      let res ← extractFromStatement pc s acc
+      -- If the statement caused an exit, stop processing remaining statements
+      if res.exitLabel.isSome then
+        return res
+      go res.pathConditions rest res.obligations
 
   extractFromStatement (pc : PathConditions Expression) (s : Statement)
       (acc : Array (ProofObligation Expression)) :
-      Except String (Array (ProofObligation Expression) × PathConditions Expression) :=
+      Except String ExtractionResult :=
     match s with
     | .cmd (.cmd (.assert label e md)) =>
       let propType := match md.getPropertyType with
         | some s => if s == MetaData.divisionByZero then .divisionByZero else .assert
         | none => .assert
-      .ok (acc.push (ProofObligation.mk label propType pc e md), pc)
+      .ok { obligations := acc.push (ProofObligation.mk label propType pc e md), pathConditions := pc }
 
     | .cmd (.cmd (.cover label e md)) =>
-      .ok (acc.push (ProofObligation.mk label .cover pc e md), pc)
+      .ok { obligations := acc.push (ProofObligation.mk label .cover pc e md), pathConditions := pc }
 
     | .cmd (.cmd (.assume label e _md)) =>
-      -- Add assumption to path conditions; use addInNewest to preserve
-      -- earlier assumptions with the same label (duplicate labels are valid).
-      .ok (acc, pc.addInNewest [(label, e)])
+      .ok { obligations := acc, pathConditions := pc.addInNewest [(label, e)] }
 
     | .ite .nondet thenSs elseSs _md => do
-      let (thenObs, _) ← extractFromStatements pc thenSs
-      let (elseObs, _) ← extractFromStatements pc elseSs
-      .ok (acc ++ thenObs ++ elseObs, pc)
+      let thenRes ← extractFromStatements pc thenSs
+      let elseRes ← extractFromStatements pc elseSs
+      .ok { obligations := acc ++ thenRes.obligations ++ elseRes.obligations, pathConditions := pc }
 
     | .ite (.det c) thenSs elseSs _md => do
-      -- Check if the condition is deterministic (true/false).
-      -- For dead branches, emit trivial obligations (true for asserts, false for covers)
-      -- with a dead-branch path condition so the solver can detect unreachability.
       let condBool := Lambda.LExpr.denoteBool c
       if condBool.isSome then
         let isTrue := condBool == some true
         let (liveSs, deadSs) := if isTrue then (thenSs, elseSs) else (elseSs, thenSs)
-        let (liveObs, _) ← extractFromStatements pc liveSs
+        let liveRes ← extractFromStatements pc liveSs
         let deadObs ← extractDeadBranchObligations pc c deadSs
-        .ok (acc ++ liveObs ++ deadObs, pc)
+        -- Propagate exit from the live branch
+        .ok { obligations := acc ++ liveRes.obligations ++ deadObs,
+              pathConditions := liveRes.pathConditions,
+              exitLabel := liveRes.exitLabel }
       else do
-        -- Unresolved nondeterministic condition: process both branches.
-        -- Assume statements inside each branch provide the path conditions.
-        let (thenObs, _) ← extractFromStatements pc thenSs
-        let (elseObs, _) ← extractFromStatements pc elseSs
-        .ok (acc ++ thenObs ++ elseObs, pc)
+        let thenRes ← extractFromStatements pc thenSs
+        let elseRes ← extractFromStatements pc elseSs
+        .ok { obligations := acc ++ thenRes.obligations ++ elseRes.obligations, pathConditions := pc }
 
-    | .block _label innerSs _md => do
-      -- Process inner statements; propagate path conditions from the block
-      -- so that assumes inside blocks are visible to subsequent statements.
-      let (innerObs, innerPc) ← extractFromStatements pc innerSs
-      .ok (acc ++ innerObs, innerPc)
+    | .block label innerSs _md => do
+      let innerRes ← extractFromStatements pc innerSs
+      match innerRes.exitLabel with
+      | .some .none =>
+        -- Unlabelled exit: consumed by this block
+        .ok { obligations := acc ++ innerRes.obligations, pathConditions := innerRes.pathConditions }
+      | .some (.some l) =>
+        if l == label then
+          -- Exit matches this block: consumed
+          .ok { obligations := acc ++ innerRes.obligations, pathConditions := innerRes.pathConditions }
+        else
+          -- Exit targets an outer block: propagate
+          .ok { obligations := acc ++ innerRes.obligations,
+                pathConditions := innerRes.pathConditions,
+                exitLabel := innerRes.exitLabel }
+      | .none =>
+        -- No exit: fall through normally
+        .ok { obligations := acc ++ innerRes.obligations, pathConditions := innerRes.pathConditions }
 
     | .cmd (.cmd (.init name ty (.det e) _md)) =>
-      -- Variable definitions become equalities in the path conditions,
-      -- so the SMT solver knows the variable's value.
       let varTy := if h : ty.isMonoType then some (ty.toMonoType h) else none
       let varExpr : Expression.Expr := .fvar () name varTy
-      .ok (acc, pc.insert name.toPretty (.eq () varExpr e))
+      .ok { obligations := acc, pathConditions := pc.insert name.toPretty (.eq () varExpr e) }
 
-    | .cmd (.cmd (.init _ _ _ _)) => .ok (acc, pc)
-    | .cmd (.cmd (.set _ _ _)) => .ok (acc, pc)
-    | .cmd (.call _ _ _ _) => .ok (acc, pc)
-    | .funcDecl _ _ => .ok (acc, pc)
-    | .typeDecl _ _ => .ok (acc, pc)
-    | .exit _ _ => .ok (acc, pc)
-    | .loop _ _ _ _ _ => .ok (acc, pc)
+    | .cmd (.cmd (.init _ _ _ _)) => .ok { obligations := acc, pathConditions := pc }
+    | .cmd (.cmd (.set _ _ _)) => .ok { obligations := acc, pathConditions := pc }
+    | .cmd (.call _ _ _ _) => .ok { obligations := acc, pathConditions := pc }
+    | .funcDecl _ _ => .ok { obligations := acc, pathConditions := pc }
+    | .typeDecl _ _ => .ok { obligations := acc, pathConditions := pc }
+    | .exit l _ => .ok { obligations := acc, pathConditions := pc, exitLabel := .some l }
+    | .loop _ _ _ _ _ => .ok { obligations := acc, pathConditions := pc }
 
 /-- Extract proof obligations from a program. Axioms become global assumptions
     that are prepended to the path conditions of every obligation. -/
 def extractObligations (p : Program) : Except String (ProofObligations Expression) := do
-  -- Collect axioms as global path conditions
-  let axiomPc : PathCondition Expression := p.decls.filterMap fun decl =>
+  -- Accumulate axioms and obligations as we walk declarations in order
+  let (_, allObs) ← p.decls.foldlM (init := (([] : PathCondition Expression), (#[] : Array (ProofObligation Expression)))) fun (axiomPc, allObs) decl =>
     match decl with
-    | .ax a _ => some (toString a.name, a.e)
-    | _ => none
-  let globalPc : PathConditions Expression := [axiomPc]
-  -- Extract obligations from each procedure
-  let mut revObs : Array (ProofObligation Expression) := #[]
-  for decl in p.decls do
-    match decl with
-    | .proc proc _md =>
-      let (obs, _) ← extractFromStatements globalPc proc.body
-      revObs := revObs ++ obs
-    | _ => pure ()
-  return revObs
+    | .ax a _ =>
+      -- Add axiom to path conditions for subsequent procedures
+      .ok (axiomPc ++ [(a.name, a.e)], allObs)
+    | .proc proc _md => do
+      let globalPc : PathConditions Expression := [axiomPc]
+      let res ← extractFromStatements globalPc proc.body
+      -- Deduplicate within this procedure: when multiple PE paths are combined
+      -- via nondet ITE, obligations before the split point are duplicated.
+      let mut seen : Std.HashSet (String × String) := {}
+      let mut procObs := allObs
+      for ob in res.obligations do
+        let key := (ob.label, toString (Std.format ob.obligation))
+        if !seen.contains key then
+          seen := seen.insert key
+          procObs := procObs.push ob
+      .ok (axiomPc, procObs)
+    | _ => .ok (axiomPc, allObs)
+  return allObs
 
 end Core.ObligationExtraction
 

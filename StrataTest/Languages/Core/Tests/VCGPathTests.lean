@@ -71,10 +71,6 @@ Result: ❌ fail
 Obligation: wrong_ensures_0
 Property: assert
 Result: ✅ pass
-
-Obligation: wrong_ensures_0
-Property: assert
-Result: ✅ pass
 -/
 #guard_msgs in
 #eval verify sequentialExitPgm (options := .quiet)
@@ -102,11 +98,11 @@ procedure p() returns () {
 
 /--
 info:
-Obligation: dead_else
+Obligation: live_then
 Property: assert
 Result: ✅ pass
 
-Obligation: live_then
+Obligation: dead_else
 Property: assert
 Result: ✅ pass
 -/
@@ -127,11 +123,11 @@ procedure p() returns () {
 
 /--
 info:
-Obligation: dead_then
+Obligation: live_else
 Property: assert
 Result: ✅ pass
 
-Obligation: live_else
+Obligation: dead_then
 Property: assert
 Result: ✅ pass
 -/
@@ -152,13 +148,13 @@ procedure p() returns () {
 
 /--
 info:
-Obligation: dead_cover
-Property: cover
-Result: ❌ fail
-
 Obligation: live_else
 Property: assert
 Result: ✅ pass
+
+Obligation: dead_cover
+Property: cover
+Result: ❌ fail
 -/
 #guard_msgs in
 #eval verify concreteFalseDeadThenCover (options := .quiet)
@@ -179,15 +175,15 @@ procedure p() returns () {
 
 /--
 info:
-Obligation: dead_then
-Property: assert
-Result: ✅ pass
-
 Obligation: pre
 Property: assert
 Result: ✅ pass
 
 Obligation: live_else
+Property: assert
+Result: ✅ pass
+
+Obligation: dead_then
 Property: assert
 Result: ✅ pass
 
@@ -216,13 +212,13 @@ procedure p() returns () {
 
 /--
 info:
-Obligation: dead_cover
-Property: cover
-Result: ❌ fail (❗path unreachable)
-
 Obligation: dead_assert
 Property: assert
 Result: ✅ pass (❗path unreachable)
+
+Obligation: dead_cover
+Property: cover
+Result: ❌ fail (❗path unreachable)
 -/
 #guard_msgs in
 #eval verify deadBranchAnnotations
@@ -259,10 +255,6 @@ procedure p(x : bool) returns () {
 
 /--
 info:
-Obligation: dead_else
-Property: assert
-Result: ✅ pass
-
 Obligation: pre
 Property: assert
 Result: ✅ pass
@@ -271,15 +263,15 @@ Obligation: then_path
 Property: assert
 Result: ✅ pass
 
+Obligation: dead_else
+Property: assert
+Result: ✅ pass
+
 Obligation: post
 Property: assert
 Result: ✅ pass
 
 Obligation: else_path
-Property: assert
-Result: ✅ pass
-
-Obligation: post
 Property: assert
 Result: ✅ pass
 -/
@@ -309,10 +301,6 @@ procedure q(x : bool) returns () {
 
 /--
 info:
-Obligation: dead_then
-Property: assert
-Result: ✅ pass
-
 Obligation: pre
 Property: assert
 Result: ✅ pass
@@ -321,15 +309,15 @@ Obligation: then_path
 Property: assert
 Result: ✅ pass
 
+Obligation: dead_then
+Property: assert
+Result: ✅ pass
+
 Obligation: post
 Property: assert
 Result: ✅ pass
 
 Obligation: else_path
-Property: assert
-Result: ✅ pass
-
-Obligation: post
 Property: assert
 Result: ✅ pass
 -/

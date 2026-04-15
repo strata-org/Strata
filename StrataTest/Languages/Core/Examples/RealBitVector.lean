@@ -73,6 +73,8 @@ x + y >= 4.0
 Result: Obligation: real_add_ge_bad
 Property: assert
 Result: ❌ fail
+Model:
+($__t.0, 3.0)
 
 
 [DEBUG] Evaluated program:
@@ -98,6 +100,8 @@ Result: ✅ pass
 Obligation: real_add_ge_bad
 Property: assert
 Result: ❌ fail
+Model:
+($__t.0, 3.0)
 -/
 #guard_msgs in
 #eval verify realPgm
