@@ -470,6 +470,6 @@ def testThreeChainCG := do
 #guard_msgs in
 #eval ((match testThreeChainCG .emp with
   | ⟨.ok result, _⟩ => f!"{repr result}"
-  | ⟨.error m, _⟩ => panic! s!"{m}"))
+  | ⟨.error m, _⟩ => s!"ERROR: {m}"))
 
 end ProcedureInliningExamples
