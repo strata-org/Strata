@@ -7,6 +7,7 @@ module
 
 public import Strata.Languages.Laurel.Laurel
 import Strata.Languages.Python.OverloadTable
+import Strata.Languages.Python.PythonLaurelTypedExpr
 public import Strata.Languages.Python.Specs.Decls
 public import Strata.Languages.Python.Specs.Error
 import Strata.Languages.Python.Specs.DDM
@@ -50,6 +51,7 @@ end Strata.Python
 namespace Strata.Python.Specs.ToLaurel
 
 open Strata.Laurel
+open Strata.Python.Laurel
 open Strata.Python.Specs (SpecError)
 
 /-! ## ToLaurelM Monad -/
@@ -76,9 +78,15 @@ structure ToLaurelState where
 abbrev ToLaurelM := ReaderT ToLaurelContext (StateM ToLaurelState)
 
 /-- Report an error during translation. -/
-def reportError (loc : SourceRange) (message : String) : ToLaurelM Unit := do
-  let e : SpecError := ⟨(←read).filepath, loc, message⟩
+def reportError (kind : WarningKind) (loc : SourceRange) (message : String) : ToLaurelM Unit := do
+  let e : SpecError := ⟨(←read).filepath, loc, kind, message⟩
   modify fun s => { s with errors := s.errors.push e }
+
+def runChecked (act : ToLaurelM α) : ToLaurelM (α × Bool) := do
+  let old := (←get).errors.size
+  let r ← act
+  let new := (←get).errors.size
+  pure (r, old = new)
 
 /-- Add a Laurel procedure to the output. -/
 def pushProcedure (proc : Procedure) : ToLaurelM Unit :=
@@ -225,14 +233,19 @@ def detectOptionalType (ty : SpecType) : ToLaurelM (Option HighTypeMd) := do
       else if nm == PythonIdent.builtinsBool then return some tyBoolOrNone
       -- TODO: add CorePrelude types for these Optional patterns
       else if nm == PythonIdent.builtinsFloat then
+        reportError .unsupportedOptionalFloat default s!"Optional[float] mapped to TString"
         return some unsupportedType
       else if nm == PythonIdent.typingList then
+        reportError .unsupportedOptionalList default s!"Optional[List] mapped to TString"
         return some unsupportedType
       else if nm == PythonIdent.typingDict then
+        reportError .unsupportedOptionalDict default s!"Optional[Dict] mapped to TString"
         return some unsupportedType
       else if nm == PythonIdent.typingAny then
+        reportError .unsupportedOptionalAny default s!"Optional[Any] mapped to TString"
         return some unsupportedType
       else if nm == PythonIdent.builtinsBytes then
+        reportError .unsupportedOptionalBytes default s!"Optional[bytes] mapped to TString"
         return some unsupportedType
       else return none
     | .typedDict _ _ _ => return some tyDictStrAny
@@ -267,7 +280,7 @@ private def knownIdentTypes : Std.HashMap PythonIdent HighTypeMd :=
 def specTypeToLaurelType (ty : SpecType) : ToLaurelM HighTypeMd := do
   match ty.atoms.size with
   | 0 =>
-    reportError default "Empty type (no atoms) encountered in Laurel conversion"
+    reportError .emptyType default "Empty type (no atoms) encountered in Laurel conversion"
     return tyString
   | _ =>
     -- Check for union types
@@ -286,22 +299,25 @@ def specTypeToLaurelType (ty : SpecType) : ToLaurelM HighTypeMd := do
       | some laurelType => return laurelType
       | none =>
         let unionStr := formatUnionType ty.atoms
-        reportError default s!"Union type ({unionStr}) not yet supported in Laurel"
+        reportError .unsupportedUnion default s!"Union type ({unionStr}) not yet supported in Laurel"
         return tyString
     else
       pure ()
     -- Single atom type
     match ty.atoms[0]! with
-    | .ident nm args =>
-      if let some ty := knownIdentTypes[nm]? then return ty
-      if args.size > 0 then
-        reportError default
-          s!"Generic type '{nm}' with type args unsupported"
-      reportError default s!"Unknown type '{nm}' mapped to TString"
+    | .ident nm _args =>
+      -- Warn for lossy known-type approximations
+      if nm == .builtinsBytes || nm == .builtinsBytearray then
+        reportError .bytesToString default s!"'{nm}' mapped to TString (bytes have different semantics)"
+      if nm == .builtinsComplex then
+        reportError .complexToReal default s!"'{nm}' mapped to TReal (complex loses imaginary component)"
+      if let some ty := knownIdentTypes[nm]? then
+        return ty
+      reportError .unknownType default s!"Unknown type '{nm}' mapped to TString"
       return tyString
     | .pyClass name args =>
       if args.size > 0 then
-        reportError default
+        reportError .unsupportedGenericClass default
           s!"Generic class '{name}' with type args unsupported"
       let prefixed ← prefixName name
       return mkTy (.UserDefined { text := prefixed, md := .empty })
@@ -310,10 +326,6 @@ def specTypeToLaurelType (ty : SpecType) : ToLaurelM HighTypeMd := do
     | .typedDict _ _ _ => return tyDictStrAny
 
 /-! ## SpecExpr to Laurel Translation -/
-
-/-- Wrap a StmtExpr with metadata. -/
-private def mkStmt (e : StmtExpr) (md : Imperative.MetaData Core.Expression) : StmtExprMd :=
-  { val := e, source := none, md := md }
 
 /-- Create file-level metadata from the current pyspec filepath.
     Uses a default (zero) source range; callers with a specific location
@@ -341,133 +353,154 @@ private def mkStmtWithLoc (e : StmtExpr) (loc : SourceRange) (msg : String := ""
   let md ← mkMdWithFileRange loc msg
   return { val := e, source := some fr, md := md }
 
-/-- Translate a SpecExpr to a Laurel StmtExpr.
-    All values are assumed to be Any-typed (the Python prelude's universal type).
-    Returns `none` for unsupported expressions (placeholders).
+/--
+Context for resolving identifiers.
+-/
+structure SpecExprContext where
+  procName : String
+  argTypes : Std.HashMap String HighType
+
+abbrev ToLaurelExprM := ReaderT SpecExprContext ToLaurelM
+
+private def asAny (loc : SourceRange) (act : ToLaurelExprM SomeTypedStmtExpr) : ToLaurelExprM (TypedStmtExpr Laurel.tyAny) := do
+  let ctx ← read
+  let (se, success) ← runChecked <| act ctx
+  if !success then
+    return ⟨se.2.stmt⟩
+  match se with
+  | ⟨.UserDefined "Any", e⟩ => pure e
+  | ⟨tp, e⟩ =>
+    let pn := (← read).procName
+    reportError .typeError loc s!"Expected Any-typed expression but got {repr tp} in '{pn}'"
+    pure ⟨e.stmt⟩
+
+private def asBool (loc : SourceRange) (act : ToLaurelExprM SomeTypedStmtExpr) : ToLaurelExprM (TypedStmtExpr .TBool) := do
+  let ctx ← read
+  let (se, success) ← runChecked <| act ctx
+  if !success then
+    return ⟨se.2.stmt⟩
+  match se with
+  | ⟨.TBool, e⟩ => pure e
+  | ⟨tp, e⟩ =>
+    let pn := (← read).procName
+    reportError .typeError loc s!"Expected Bool-typed expression but got {repr tp} in '{pn}'"
+    pure ⟨e.stmt⟩
+
+/-- Look up an identifier's type from the SpecExprContext and create a typed identifier.
+    Reports a typeError if the name is not found in argTypes. -/
+private def lookupIdentifier (name : String) (loc : SourceRange) (md : Md)
+    : ToLaurelExprM SomeTypedStmtExpr := do
+  match (← read).argTypes[name]? with
+  | some tp => return .mkSome <| .identifier name tp md
+  | none =>
+    let pn := (← read).procName
+    reportError .typeError loc s!"Unknown identifier '{name}' in '{pn}'"
+    return default
+
+/-- Translate a SpecExpr to a typed Laurel expression (`SomeTypedStmtExpr`).
+    Returns `default` (a `Hole`) for unsupported expressions; callers use
+    `runChecked` to detect whether errors were reported during translation.
     Uses Core prelude function names (Any_len, DictStrAny_contains, etc.)
     which are resolved after the Core prelude is prepended. -/
-def specExprToLaurel (e : SpecExpr) (md : Imperative.MetaData Core.Expression)
-  : ToLaurelM (Option StmtExprMd) :=
+def specExprToLaurel (e : SpecExpr) (md : Md)
+  : ToLaurelExprM SomeTypedStmtExpr :=
   -- Use per-node source range when available, falling back to the
   -- nearest ancestor's md for nodes with default (empty) locations.
   -- This is intentional: the parent's location is a closer approximation
   -- than the function-level metadata for nodes without their own location.
-  let nodeMd (loc : SourceRange) : ToLaurelM (Imperative.MetaData Core.Expression) := do
-    if loc == default then pure md
+  let nodeMd (loc : SourceRange) : ToLaurelM Md := do
+    if loc == default then
+      pure md
     else do
-      let ctx ← read
-      let fr : FileRange := { file := .file ctx.filepath.toString, range := loc }
+      let fr : FileRange := { file := .file (← read).filepath.toString, range := loc }
       pure #[⟨Imperative.MetaData.fileRange, .fileRange fr⟩]
   match e with
   | .placeholder loc => do
-    reportError loc "Placeholder expression not translatable"
-    return none
+    reportError .placeholderExpr loc "Placeholder expression not translatable"
+    return default
   | .var name loc => do
     let md ← nodeMd loc
-    return some (mkStmt (.Identifier (mkId name)) md)
+    lookupIdentifier name loc md
   | .intLit v loc => do
     let md ← nodeMd loc
-    return some (mkStmt (.StaticCall (mkId "from_int")
-      [mkStmt (.LiteralInt v) md]) md)
+    return .mkSome <| .fromInt (.literalInt v md)
   | .floatLit _ loc => do
-    reportError loc "Float literals not yet supported in preconditions"
-    return none
+    reportError .floatLiteral loc "Float literals not yet supported in preconditions"
+    return default
   | .getIndex subject field loc =>
     match subject with
     | .var "kwargs" .. => do
       let md ← nodeMd loc
-      return some (mkStmt (.Identifier (mkId field)) md)
+      lookupIdentifier field loc md
     | _ => do
       let md ← nodeMd loc
-      let s? ← specExprToLaurel subject md
-      return s?.map fun s =>
-        mkStmt (.StaticCall (mkId "Any_get")
-          [s, mkStmt (.StaticCall (mkId "from_str")
-            [mkStmt (.LiteralString field) md]) md]) md
+      let s ← asAny loc <| specExprToLaurel subject md
+      let from_str := .fromStr (.literalString field md) md
+      return .mkSome <| .anyGet s from_str md
   | .isInstanceOf _ typeName loc => do
-    reportError loc s!"isinstance check for '{typeName}' not yet supported in preconditions"
-    return none
+    reportError .isinstanceUnsupported loc s!"isinstance check for '{typeName}' not yet supported in preconditions"
+    return default
   | .len subject loc => do
     let md ← nodeMd loc
-    let s? ← specExprToLaurel subject md
-    return s?.map fun s =>
-      let unwrapped := mkStmt (.StaticCall (mkId "Any..as_string!") [s]) md
-      mkStmt (.StaticCall (mkId "from_int")
-        [mkStmt (.StaticCall (mkId "Str.Length") [unwrapped]) md]) md
+    let s ← asAny loc <| specExprToLaurel subject md
+    return .mkSome <| .fromInt (.strLength (.anyAsString s md))
   | .intGe subject bound loc => do
     let md ← nodeMd loc
-    let s? ← specExprToLaurel subject md; let b? ← specExprToLaurel bound md
-    return do
-      let s ← s?; let b ← b?
-      some (mkStmt (.PrimitiveOp .Geq
-        [mkStmt (.StaticCall (mkId "Any..as_int!") [s]) md,
-         mkStmt (.StaticCall (mkId "Any..as_int!") [b]) md]) md)
+    let s ← asAny loc <| specExprToLaurel subject md
+    let b ← asAny loc <| specExprToLaurel bound md
+    return .mkSome <| .intGeq (.anyAsInt s md) (.anyAsInt b md)
   | .intLe subject bound loc => do
     let md ← nodeMd loc
-    let s? ← specExprToLaurel subject md; let b? ← specExprToLaurel bound md
-    return do
-      let s ← s?; let b ← b?
-      some (mkStmt (.PrimitiveOp .Leq
-        [mkStmt (.StaticCall (mkId "Any..as_int!") [s]) md,
-         mkStmt (.StaticCall (mkId "Any..as_int!") [b]) md]) md)
+    let s ← asAny loc <| specExprToLaurel subject md
+    let b ← asAny loc <| specExprToLaurel bound md
+    return .mkSome <| .intLeq (.anyAsInt s md) (.anyAsInt b md)
   | .floatGe subject bound loc => do
     let md ← nodeMd loc
-    let s? ← specExprToLaurel subject md; let b? ← specExprToLaurel bound md
-    return do
-      let s ← s?; let b ← b?
-      let sF := mkStmt (.StaticCall (mkId "Any..as_float!") [s]) md
-      let bF := mkStmt (.StaticCall (mkId "Any..as_float!") [b]) md
-      some (mkStmt (.PrimitiveOp .Geq [sF, bF]) md)
+    let s ← asAny loc <| specExprToLaurel subject md
+    let b ← asAny loc <| specExprToLaurel bound md
+    return .mkSome <| .realGeq (.anyAsFloat s md) (.anyAsFloat b md)
   | .floatLe subject bound loc => do
     let md ← nodeMd loc
-    let s? ← specExprToLaurel subject md; let b? ← specExprToLaurel bound md
-    return do
-      let s ← s?; let b ← b?
-      let sF := mkStmt (.StaticCall (mkId "Any..as_float!") [s]) md
-      let bF := mkStmt (.StaticCall (mkId "Any..as_float!") [b]) md
-      some (mkStmt (.PrimitiveOp .Leq [sF, bF]) md)
+    let s ← asAny loc <| specExprToLaurel subject md
+    let b ← asAny loc <| specExprToLaurel bound md
+    return .mkSome <| .realLeq (.anyAsFloat s md) (.anyAsFloat b md)
   | .not inner loc => do
     let md ← nodeMd loc
-    let i? ← specExprToLaurel inner md
-    return i?.map fun i => mkStmt (.PrimitiveOp .Not [i]) md
+    let i ← asBool loc <| specExprToLaurel inner md
+    return .mkSome <| .not i md
   | .implies cond body loc => do
     let md ← nodeMd loc
-    let c? ← specExprToLaurel cond md; let b? ← specExprToLaurel body md
-    return do let c ← c?; let b ← b?; some (mkStmt (.PrimitiveOp .Implies [c, b]) md)
+    let c ← asBool loc <| specExprToLaurel cond md
+    let b ← asBool loc <| specExprToLaurel body md
+    return .mkSome <| .implies c b md
   | .enumMember subject values loc => do
     let md ← nodeMd loc
-    let s? ← specExprToLaurel subject md
-    return s?.map fun s =>
-      let sStr := mkStmt (.StaticCall (mkId "Any..as_string!") [s]) md
-      let eqs := values.toList.map fun v =>
-        mkStmt (.PrimitiveOp .Eq [sStr, mkStmt (.LiteralString v) md]) md
-      eqs.foldl (init := mkStmt (.LiteralBool false) md) fun acc eq =>
-        mkStmt (.PrimitiveOp .Or [acc, eq]) md
+    let s ← asAny loc <| specExprToLaurel subject md
+    let sStr := s.anyAsString md
+    return .mkSome <|
+      values.foldl (init := .literalBool false md) fun acc v =>
+        .or acc (.stringEq sStr (.literalString v md))
   | .containsKey container key loc => do
     let md ← nodeMd loc
     match container with
     | .var "kwargs" .. =>
-      return some (mkStmt (.PrimitiveOp .Not
-        [mkStmt (.StaticCall (mkId "Any..isfrom_None") [mkStmt (.Identifier (mkId key)) md]) md])
-        md)
+      -- FIXME: Check this.  We may want to move this up
+      let keyAny ← asAny loc <| lookupIdentifier key loc md
+      return .mkSome <| .not (.anyIsfromNone keyAny)
     | _ =>
-      let c? ← specExprToLaurel container md
-      return c?.map fun c =>
-        let unwrapped := mkStmt (.StaticCall (mkId "Any..as_Dict!") [c]) md
-        mkStmt (.StaticCall (mkId "DictStrAny_contains")
-          [unwrapped, mkStmt (.LiteralString key) md]) md
+      let c ← asAny loc <| specExprToLaurel container md
+      return .mkSome <| .dictStrAnyContains (c.anyAsDict md) (.literalString key md) md
   | .regexMatch subject pattern loc => do
     let md ← nodeMd loc
-    let s? ← specExprToLaurel subject md
-    return s?.map fun s =>
-      let sStr := mkStmt (.StaticCall (mkId "Any..as_string!") [s]) md
-      mkStmt (.StaticCall (mkId "re_search_bool") [mkStmt (.LiteralString pattern) md, sStr]) md
+    let s ← asAny loc <| specExprToLaurel subject md
+    let sStr := .anyAsString s md
+    return .mkSome <| .reSearchBool (.literalString pattern md) sStr md
   | .forallList _ _ _ loc => do
-    reportError loc "forallList quantifier not yet supported in preconditions"
-    return none
+    reportError .forallListUnsupported loc "forallList quantifier not yet supported in preconditions"
+    return default
   | .forallDict _ _ _ _ loc => do
-    reportError loc "forallDict quantifier not yet supported in preconditions"
-    return none
+    reportError .forallDictUnsupported loc "forallDict quantifier not yet supported in preconditions"
+    return default
 
 private def formatAssertionMessage (msg : Array MessagePart) : String :=
   let parts := msg.map fun
@@ -492,35 +525,38 @@ def SpecAssertMsg.render : SpecAssertMsg → String
     Outputs are already initialized non-deterministically. -/
 def buildSpecBody (preconditions : Array Assertion)
     (md : Imperative.MetaData Core.Expression)
+    (ctx : SpecExprContext)
     (requiredParams : Array String := #[])
     : ToLaurelM Body := do
   let fileMd ← mkFileMd
-  let mut stmts : List StmtExprMd := []
+  let mut stmts : Array StmtExprMd := #[]
   let mut idx := 0
   -- Assert that required parameters are provided (not None)
   for param in requiredParams do
-    let cond := mkStmt (.PrimitiveOp .Not
-      [mkStmt (.StaticCall (mkId "Any..isfrom_None")
-        [mkStmt (.Identifier (mkId param)) md]) md]) md
+    let cond : TypedStmtExpr _ := .not (.anyIsfromNone (.identifier param Laurel.tyAny md))
     let msg := SpecAssertMsg.requiredParam param |>.render
-    let assertStmt ← mkStmtWithLoc (.Assert cond) default msg
-    stmts := assertStmt :: stmts
+    let assertStmt ← mkStmtWithLoc (.Assert cond.stmt) default msg
+    stmts := stmts.push assertStmt
     idx := idx + 1
   for assertion in preconditions do
     let formattedMsg := formatAssertionMessage assertion.message
     let msg := if formattedMsg.isEmpty
       then SpecAssertMsg.unnamed idx |>.render
       else SpecAssertMsg.userAssertion formattedMsg |>.render
-    match ← specExprToLaurel assertion.formula md with
-    | some condExpr =>
-      let assertStmt ← mkStmtWithLoc (.Assert condExpr) default msg
-      stmts := assertStmt :: stmts
-    | none =>
-      reportError default s!"Untranslatable precondition (emitting nondeterministic assert): {msg}"
-      let assertStmt ← mkStmtWithLoc (.Assert (mkStmt .Hole md)) default msg
-      stmts := assertStmt :: stmts
+    let (⟨condType, condExpr⟩, success) ← runChecked <| specExprToLaurel assertion.formula md ctx
+    if success then
+      if let .TBool := condType then
+        let assertStmt ← mkStmtWithLoc (.Assert condExpr.stmt) default msg
+        stmts := stmts.push assertStmt
+      else
+        reportError .typeError default
+          s!"Precondition expression is not Bool in '{ctx.procName}' (skipping): {msg}"
     idx := idx + 1
-  let body := mkStmt (.Block stmts.reverse none) fileMd
+  let body := {
+      val := .Block stmts.toList none,
+      source := none,
+      md := fileMd
+  }
   return .Transparent body
 
 /-! ## Declaration Translation -/
@@ -550,13 +586,13 @@ public def expandKwargsArgs (kwargs : Option (String × SpecType))
 def funcDeclToLaurel (procName : String) (func : FunctionDecl)
     (isMethod : Bool := false) : ToLaurelM Procedure := do
   if isMethod && func.args.args.size == 0 then
-    reportError default
+    reportError .missingMethodSelf default
       s!"Method '{func.name}' has no arguments (expected 'self' as first parameter)"
   let posArgs := if isMethod then func.args.args.extract 1 func.args.args.size
                  else func.args.args
   let kwargsArgs ← match expandKwargsArgs func.args.kwargs with
     | .ok args => pure args
-    | .error msg => do reportError default msg; pure #[]
+    | .error msg => do reportError .kwargsExpansionError default msg; pure #[]
   let allArgs := posArgs ++ func.args.kwonly ++ kwargsArgs
   let inputs ← allArgs.mapM argToParameter
   let retType ← specTypeToLaurelType func.returnType
@@ -565,7 +601,7 @@ def funcDeclToLaurel (procName : String) (func : FunctionDecl)
       | .TVoid => tyAny
       | _ => retType }]
   if func.postconditions.size > 0 then
-    reportError func.loc "Postconditions not yet supported"
+    reportError .postconditionUnsupported func.loc "Postconditions not yet supported"
   -- When preconditions exist, use TCore "Any" for all parameters and outputs
   -- to match the Python→Laurel pipeline's Any-wrapping convention.
   let (inputs, outputs, body) ←
@@ -573,7 +609,10 @@ def funcDeclToLaurel (procName : String) (func : FunctionDecl)
       let anyTy : HighTypeMd := tyAny
       let anyInputs := inputs.map fun p => { p with type := anyTy }
       let anyOutputs := outputs.map fun p => { p with type := anyTy }
-      let body ← buildSpecBody func.preconditions .empty
+      let argTypes := allArgs.foldl (init := {}) fun m a =>
+        m.insert a.name Laurel.tyAny
+      let specCtx : SpecExprContext := { procName, argTypes }
+      let body ← buildSpecBody func.preconditions .empty specCtx
         (requiredParams := allArgs.filterMap fun a =>
           if a.default.isNone then some a.name else none)
       pure (anyInputs, anyOutputs, body)
@@ -638,12 +677,12 @@ def typeDefToLaurel (td : TypeDef) : ToLaurelM Unit := do
 def extractOverloadEntry (func : FunctionDecl) : ToLaurelM Unit := do
   let args := func.args.args
   let .isTrue _ := decideProp (args.size > 0)
-    | reportError func.loc
+    | reportError .overloadNoArgs func.loc
         s!"Overloaded function '{func.name}' has no arguments"
       return
   let firstArgType := args[0].type
   let .isTrue _ := decideProp (firstArgType.atoms.size = 1)
-    | reportError func.loc
+    | reportError .overloadArgArity func.loc
         s!"Overloaded function '{func.name}': first argument \
           has {firstArgType.atoms.size} type atoms, expected 1"
       return
@@ -651,14 +690,14 @@ def extractOverloadEntry (func : FunctionDecl) : ToLaurelM Unit := do
         match firstArgType.atoms[0] with
         | .stringLiteral v => pure v
         | _ =>
-          reportError func.loc
+          reportError .overloadArgNotStringLiteral func.loc
             s!"Overloaded function '{func.name}': first argument \
               type '{specTypeToString firstArgType}' is not a \
               string literal (only string literal dispatch is \
               currently supported)"
           return
   let .isTrue _ := decideProp (func.returnType.atoms.size = 1)
-    | reportError func.loc
+    | reportError .overloadReturnArity func.loc
         s!"Overloaded function '{func.name}': return type \
         has {func.returnType.atoms.size} type atoms, expected 1"
       return
@@ -670,7 +709,7 @@ def extractOverloadEntry (func : FunctionDecl) : ToLaurelM Unit := do
           pure (PythonIdent.mk ctx.modulePrefix prefixed)
         | .ident nm _ => pure nm
         | _ =>
-          reportError func.loc
+          reportError .overloadReturnNotClass func.loc
             s!"Overloaded function '{func.name}': return type \
               '{specTypeToString func.returnType}' is not a \
               class type"
