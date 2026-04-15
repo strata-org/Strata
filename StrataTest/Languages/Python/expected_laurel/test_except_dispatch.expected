@@ -1,0 +1,11 @@
+test_except_dispatch.py(23, 4): ✅ pass - only ErrorA handler should match
+test_except_dispatch.py(23, 4): ✅ pass - only ErrorA handler should match
+test_except_dispatch.py(10, 36): ✅ pass - (only_first_handler_matches ensures) Return type constraint
+test_except_dispatch.py(23, 4): ✅ pass - only ErrorA handler should match
+test_except_dispatch.py(23, 4): ❓ unknown - only ErrorA handler should match
+test_except_dispatch.py(10, 36): ✅ pass - (only_first_handler_matches ensures) Return type constraint
+test_except_dispatch.py(23, 4): ✅ pass - only ErrorA handler should match
+test_except_dispatch.py(23, 4): ❓ unknown - only ErrorA handler should match
+test_except_dispatch.py(10, 36): ✅ pass - (only_first_handler_matches ensures) Return type constraint
+DETAIL: 7 passed, 0 failed, 2 inconclusive
+RESULT: Inconclusive

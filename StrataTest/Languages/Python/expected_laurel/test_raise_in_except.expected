@@ -1,0 +1,5 @@
+test_raise_in_except.py(9, 8): ✅ pass - callElimAssert_requires_2
+test_raise_in_except.py(7, 25): ✅ pass - (raise_in_except ensures) Return type constraint
+test_raise_in_except.py(7, 0): ✅ pass - postcondition_1
+DETAIL: 3 passed, 0 failed, 0 inconclusive
+RESULT: Analysis success
