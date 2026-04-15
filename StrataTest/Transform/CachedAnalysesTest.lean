@@ -49,7 +49,7 @@ This will do the check.
 section CachedAnalysesTest
 
 -- -----------------------------------------------------------------------
--- File I/O helpers (DDM pipeline plumbing — skip to "The validator" below)
+-- File I/O helpers and test runners (skip)
 -- -----------------------------------------------------------------------
 
 /-- Parse a `.core.st` file into a `Core.Program`. -/
@@ -81,10 +81,6 @@ private def listCoreFiles (dir : System.FilePath) : IO (List System.FilePath) :=
 private def inputDir (pass : String) : System.FilePath :=
   "StrataTest" / "Transform" / "CachedAnalysesTestInputs" / pass
 
--- -----------------------------------------------------------------------
--- Test runner
--- -----------------------------------------------------------------------
-
 /-- Run a checker on all `.core.st` files in a directory.
     `check` is called with each parsed program and should return
     `.ok true` (pass), `.ok false` (mismatch), or `.error` (transform error). -/
@@ -101,15 +97,15 @@ private def runDirBatch (name : String) (dir : System.FilePath)
     | .ok (.error _) | .error _ => errored := errored + 1
   return s!"{name}: {passed} passed, {failed} failed, {errored} errored (of {files.length})"
 
+
 -- -----------------------------------------------------------------------
--- The validator
+-- The executable validator
 -- -----------------------------------------------------------------------
 
-/-- Check whether a `PipelinePhase` preserves `CachedAnalyses` for program `P`.
-    Returns `.ok true` on preservation, `.ok false` on mismatch, or `.error msg`
-    on transformation failure. -/
+/-- Check whether a `PipelinePhase` preserves `CachedAnalyses` for program `P`. -/
 def checkCachedAnalyses (T : PipelinePhase) (P : Core.Program)
     (baseState : CoreTransformState := .emp) : Except String Bool :=
+
   -- Step 1. Set up the initial call graph cache
   let initCG := P.toProcedureCG
   let initState : CoreTransformState :=
@@ -157,5 +153,19 @@ ProcedureInlining: 15 passed, 0 failed, 35 errored (of 50)
   let results ← tests.mapM fun (name, check) =>
     runDirBatch name (inputDir name) check
   IO.println (String.intercalate "\n" results.toList)
+
+
+
+/-- The property-based testing version for CallElim! -/
+theorem callElimPreservesCachedAnalyses (P P' : Core.Program)
+    (changed : Bool) (finalState : CoreTransformState)
+    (baseState : CoreTransformState := .emp)
+    (hRun : (callElimPipelinePhase.transform P).run
+      { baseState with cachedAnalyses := { callGraph := .some (P.toProcedureCG) } }
+      = (.ok (changed, P'), finalState)) :
+    finalState.cachedAnalyses.callGraph = .some (P'.toProcedureCG) := by
+  -- sorry!
+  sorry
+
 
 end CachedAnalysesTest
