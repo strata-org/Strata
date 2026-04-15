@@ -113,9 +113,9 @@ def fnToGotoID (fn : String) : Except Format CProverGOTO.Expr.Identifier :=
     | "SSubOverflow" | "USubOverflow" => return .binary .MinusOverflow
     | "SMulOverflow" | "UMulOverflow" => return .binary .MultOverflow
     | "SNegOverflow" | "UNegOverflow" => return .unary .UnaryMinusOverflow
-    -- SDivOverflow is special: (x == INT_MIN) && (y == -1)
-    -- Handled as a function application (expanded in toGotoExpr)
-    | "SDivOverflow" => return .functionApplication fn
+    -- SDivOverflow(x, y) = (x == INT_MIN) && (y == -1)
+    -- Expanded in toGotoExpr/toGotoExprCtx into the compound expression.
+    | "SDivOverflow" => return .functionApplication "SDivOverflow"
     | _ =>
       -- Handle Extract_{hi}_{lo} patterns
       if op.startsWith "Extract_" then
@@ -186,6 +186,21 @@ private def isSignedBvOp (fn : String) : Bool :=
                       "SDivOverflow"]
   | none => false
 
+/-- Build SDivOverflow(x, y) = (x == INT_MIN) && (y == -1) for signed bitvectors. -/
+private def mkSDivOverflow (x y : CProverGOTO.Expr) : CProverGOTO.Expr :=
+  open CProverGOTO in
+  open CProverGOTO.Ty in
+  let bvTy := x.type
+  let width := match bvTy.id with
+    | .bitVector (.signedbv n) | .bitVector (.unsignedbv n) => n | _ => 32
+  let intMinVal := (2 ^ (width - 1)).repr
+  let intMin := Expr.constant intMinVal bvTy
+  let negOneVal := (2 ^ width - 1).repr
+  let negOne := Expr.constant negOneVal bvTy
+  let xIsMin : Expr := { id := .binary .Equal, type := .Boolean, operands := [x, intMin] }
+  let yIsNegOne : Expr := { id := .binary .Equal, type := .Boolean, operands := [y, negOne] }
+  { id := .multiary .And, type := .Boolean, operands := [xIsMin, yIsNegOne] }
+
 /-- Build Euclidean division from truncating division:
     ediv(a, b) = tdiv(a, b) + ite(tmod(a, b) < 0, ite(b > 0, -1, 1), 0) -/
 private def mkEuclideanDiv (a b : CProverGOTO.Expr) : CProverGOTO.Expr :=
@@ -243,6 +258,7 @@ def LExprT.toGotoExpr {TBase: LExprParamsT} [ToString TBase.base.IDMeta] (e : LE
     -- Euclidean div/mod: expand sentinel into compound expression
     if op == .functionApplication "Int.EuclideanDiv" then return mkEuclideanDiv e1g e2g
     if op == .functionApplication "Int.EuclideanMod" then return mkEuclideanMod e1g e2g
+    if op == .functionApplication "SDivOverflow" then return mkSDivOverflow e1g e2g
     -- Signed BV ops: cast operands to signedbv
     if isSignedBvOp fnStr then
       e1g := e1g.toSigned
@@ -323,6 +339,7 @@ def LExpr.toGotoExprCtx {TBase: LExprParams} [ToString $ LExpr TBase.mono]
     -- Euclidean div/mod: expand sentinel into compound expression
     if op == .functionApplication "Int.EuclideanDiv" then return mkEuclideanDiv e1g e2g
     if op == .functionApplication "Int.EuclideanMod" then return mkEuclideanMod e1g e2g
+    if op == .functionApplication "SDivOverflow" then return mkSDivOverflow e1g e2g
     -- Signed BV ops: cast operands to signedbv
     if isSignedBvOp fnStr then
       e1g := e1g.toSigned
