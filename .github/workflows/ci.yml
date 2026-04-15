@@ -135,6 +135,8 @@ jobs:
     - name: Restore Lean build cache
       uses: actions/cache/restore@v5
       with:
+        # TODO: Exclude any tests with external dependencies.
+        # Possibly by locating all such tests under say StrataIntegrationTests/
         path: .lake
         key: lake-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}-${{ hashFiles('lake-manifest.json') }}-${{ hashFiles('**/*.st') }}-${{ github.sha }}
         fail-on-cache-miss: true
