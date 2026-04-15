@@ -655,10 +655,28 @@ def pyAnalyzeLaurelCommand : Command where
     let entryPointFlag := pflags.getString "entry-point"
     let entryPoint : EntryPoint ←
       if isBugFinding then
-        [Core.procedureInliningPipelinePhase
-          { doInline := fun name a => name ≠ "__main__" && Core.doInlineNonRecursive name a
-            maxIters := some 10 }]
-      else []
+        match entryPointFlag with
+        | some s =>
+          match EntryPoint.ofString? s with
+          | some ep => pure ep
+          | none =>
+            exitPyAnalyzeUserError s!"Invalid --entry-point value '{s}'. Must be {EntryPoint.options}."
+        | none => pure .roots
+      else
+        if entryPointFlag.isSome then
+          exitPyAnalyzeUserError s!"--entry-point is unsupported in {options.checkMode} mode"
+        else pure .all
+
+    -- Pick the procedures to verify and set up inlining phases.
+    let userSourcePath := sourcePath.getD filePath
+    let (_, userProcNames) :=
+      Strata.splitProcNames coreProgram [userSourcePath]
+    let (proceduresToVerify, inlinePhases) :=
+      if isBugFinding then
+        let ⟨p, i⟩ := Core.chooseEntryProceduresAndBuildInlinePhases coreProgram userProcNames entryPoint
+        (p, [i])
+      else (userProcNames, [])
+
     let vcResults ←
       if incremental then
         verifyIncremental coreProgram.decls pySourceOpt options
@@ -666,9 +684,11 @@ def pyAnalyzeLaurelCommand : Command where
         profileStep profile "SMT verification" do
           match ← Core.verifyProgram coreProgram options
                     (moreFns := Strata.Python.ReFactory)
-                    (proceduresToVerify := some userProcNames)
+                    (proceduresToVerify := some proceduresToVerify)
                     (externalPhases := [Strata.frontEndPhase])
-                    (prefixPhases := inlinePhases) |>.toBaseIO with
+                    (prefixPhases := inlinePhases)
+                    (keepAllFilesPrefix := keepPrefix)
+                    |>.toBaseIO with
           | .ok r => pure r
           | .error msg => exitPyAnalyzeInternalError msg
 
