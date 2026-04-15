@@ -236,13 +236,13 @@ private def toCoreExtensionalEq
   match ty with
   | .Map _ _ keyTy =>
       let keyTy' ← toCoreMonoType keyTy
-      let idx : Core.Expression.Expr := .bvar () 0
+      let idx : Core.Expression.Expr := .bvar Strata.SourceRange.none 0
       let a := Lambda.LExpr.liftBVars 1 a
       let b := Lambda.LExpr.liftBVars 1 b
       let lhs := mkCoreApp Core.mapSelectOp [a, idx]
       let rhs := mkCoreApp Core.mapSelectOp [b, idx]
       let trigger := lhs
-      return .quant () .all "" (some keyTy') trigger (.eq () lhs rhs)
+      return .quant Strata.SourceRange.none .all "" (some keyTy') trigger (.eq Strata.SourceRange.none lhs rhs)
   | _ =>
       throwAt m s!"Extensional equality is currently only supported for Map types, got: {repr ty}"
 
