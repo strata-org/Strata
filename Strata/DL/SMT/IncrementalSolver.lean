@@ -105,6 +105,22 @@ private def mkBinCmp (op : Op) (opName : String) (ts : List Term)
     | [t1, t2] => .ok (Term.app op [t1, t2] .bool)
     | _ => .error s!"{opName}: pairwise comparison not yet supported"
 
+/-- Shared helper for variadic arithmetic operations. -/
+private def mkVarArith (op : Op) (opName : String) (ts : List Term)
+    : IncrementalSolverM (Except String Term) :=
+  return match ts with
+    | [] => .error s!"{opName}: empty argument list"
+    | [t] => .ok t
+    | t :: rest => .ok (rest.foldl (fun acc x => Term.app op [acc, x] acc.typeOf) t)
+
+/-- Parse a solver check-sat response into a `Decision`. -/
+private def parseDecision (line : String) : Except String Decision :=
+  match line with
+  | "sat" => .ok .sat
+  | "unsat" => .ok .unsat
+  | "unknown" => .ok .unknown
+  | other => .error s!"unrecognized solver output: {other}"
+
 /-- Build the `AbstractSolver` implementation for incremental SMT-LIB. -/
 def mkAbstractSolver : AbstractSolver Term IncrementalSolverM where
   mkBool b := return Term.bool b
@@ -115,18 +131,9 @@ def mkAbstractSolver : AbstractSolver Term IncrementalSolverM where
   mkNot t := return .ok (Factory.not t)
   mkImplies t1 t2 := return .ok (Factory.implies t1 t2)
 
-  mkAdd ts := return match ts with
-    | [] => .error "mkAdd: empty argument list"
-    | [t] => .ok t
-    | t :: rest => .ok (rest.foldl (fun acc x => Term.app .add [acc, x] acc.typeOf) t)
-  mkSub ts := return match ts with
-    | [] => .error "mkSub: empty argument list"
-    | [t] => .ok t
-    | t :: rest => .ok (rest.foldl (fun acc x => Term.app .sub [acc, x] acc.typeOf) t)
-  mkMul ts := return match ts with
-    | [] => .error "mkMul: empty argument list"
-    | [t] => .ok t
-    | t :: rest => .ok (rest.foldl (fun acc x => Term.app .mul [acc, x] acc.typeOf) t)
+  mkAdd ts := mkVarArith .add "mkAdd" ts
+  mkSub ts := mkVarArith .sub "mkSub" ts
+  mkMul ts := mkVarArith .mul "mkMul" ts
   mkDiv t1 t2 := return .ok (Term.app .div [t1, t2] t1.typeOf)
   mkMod t1 t2 := return .ok (Term.app .mod [t1, t2] t1.typeOf)
   mkNeg t := return .ok (Term.app .neg [t] t.typeOf)
@@ -134,7 +141,8 @@ def mkAbstractSolver : AbstractSolver Term IncrementalSolverM where
   mkEq ts := return match ts with
     | [] | [_] => .error "mkEq: need at least two arguments"
     | [t1, t2] => .ok (Factory.eq t1 t2)
-    | t :: rest => .ok (rest.foldl (fun acc x => Factory.and acc (Factory.eq t x)) (Term.bool true))
+    | t1 :: t2 :: rest =>
+      .ok (rest.foldl (fun acc x => Factory.and acc (Factory.eq t1 x)) (Factory.eq t1 t2))
   mkLt ts := mkBinCmp .lt "mkLt" ts
   mkLe ts := mkBinCmp .le "mkLe" ts
   mkGt ts := mkBinCmp .gt "mkGt" ts
@@ -150,8 +158,9 @@ def mkAbstractSolver : AbstractSolver Term IncrementalSolverM where
     match ← typeToStr ty with
     | .ok tyStr =>
       emitln s!"(declare-const {quoteIdent smtName} {tyStr})"
-    | .error _ => pure ()
-    return Term.var ⟨smtName, ty⟩
+      return Term.var ⟨smtName, ty⟩
+    | .error msg =>
+      throw (IO.userError s!"declareNew: {msg}")
 
   declareFun name argTys retTy := do
     match ← typeToStr retTy with
@@ -226,11 +235,7 @@ def mkAbstractSolver : AbstractSolver Term IncrementalSolverM where
   checkSat := do
     emitln "(check-sat)"
     let result ← readln
-    match result with
-    | "sat" => return .ok .sat
-    | "unsat" => return .ok .unsat
-    | "unknown" => return .ok .unknown
-    | other => return .error s!"unrecognized solver output: {other}"
+    return parseDecision result
 
   checkSatAssuming assumptions := do
     let mut strs := []
@@ -241,11 +246,7 @@ def mkAbstractSolver : AbstractSolver Term IncrementalSolverM where
     let inline := String.intercalate " " strs
     emitln s!"(check-sat-assuming ({inline}))"
     let result ← readln
-    match result with
-    | "sat" => return .ok .sat
-    | "unsat" => return .ok .unsat
-    | "unknown" => return .ok .unknown
-    | other => return .error s!"unrecognized solver output: {other}"
+    return parseDecision result
 
   getModel := return .error "getModel: not yet implemented for incremental backend"
 

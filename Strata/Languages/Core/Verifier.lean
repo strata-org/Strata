@@ -245,19 +245,29 @@ def dischargeObligationIncremental
       emitln line
       if trimmed.startsWith "(check-sat" then
         checkSatCount := checkSatCount + 1
-    -- Parse a solver response line into an SMT result
+    -- Parse a solver response line into an SMT result.
+    -- Detects solver error messages (e.g. `(error "...")`) instead of
+    -- silently mapping them to `.unknown`.
     let parseResult (line : String) : Imperative.SMT.Result Expression.Ident :=
       match line with
       | "sat" => .sat []
       | "unsat" => .unsat
-      | _ => .unknown
-    -- Read check-sat responses. The encoder emits check-sat commands
-    -- that produce one-line responses (sat/unsat/unknown). Any get-value
-    -- commands after check-sat produce multi-line output that we skip
-    -- by reading until we see the next check-sat response or EOF.
+      | "unknown" => .unknown
+      | other =>
+        if other.startsWith "(error" then .err other
+        else .unknown
+    -- Read check-sat responses. The encoder may also emit `(get-value ...)`
+    -- after check-sat when `ids` is non-empty, which produces multi-line
+    -- output from the solver. We consume lines until we find a check-sat
+    -- response (sat/unsat/unknown) or a solver error.
+    let isCheckSatResponse (s : String) : Bool :=
+      s == "sat" || s == "unsat" || s == "unknown" || s.startsWith "(error"
     let mut resultsList : List (Imperative.SMT.Result Expression.Ident) := []
     for _ in List.range checkSatCount do
-      let line ← readln
+      -- Skip any non-check-sat output (e.g. get-value responses)
+      let mut line ← readln
+      while !isCheckSatResponse line do
+        line ← readln
       resultsList := parseResult line :: resultsList
     let results := resultsList.reverse
     -- Map results to sat/validity based on what was requested
