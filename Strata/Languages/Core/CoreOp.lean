@@ -345,31 +345,31 @@ These ensure that toString and ofString? stay in sync for every
 constructor of each sub-type. -/
 
 theorem BvOpKind.ofString_toString (k : BvOpKind) :
-    BvOpKind.ofString? k.toString = some k := by cases k <;> native_decide
+    BvOpKind.ofString? k.toString = some k := by cases k <;> decide
 
 theorem NumericType.ofString_toString (t : NumericType) :
-    NumericType.ofString? t.toString = some t := by cases t <;> native_decide
+    NumericType.ofString? t.toString = some t := by cases t <;> decide
 
 theorem NumericOpKind.ofString_toString (k : NumericOpKind) :
-    NumericOpKind.ofString? k.toString = some k := by cases k <;> native_decide
+    NumericOpKind.ofString? k.toString = some k := by cases k <;> decide
 
 theorem BoolOpKind.ofString_toString (k : BoolOpKind) :
-    BoolOpKind.ofString? k.toString = some k := by cases k <;> native_decide
+    BoolOpKind.ofString? k.toString = some k := by cases k <;> decide
 
 theorem StrOpKind.ofString_toString (k : StrOpKind) :
-    StrOpKind.ofString? k.toString = some k := by cases k <;> native_decide
+    StrOpKind.ofString? k.toString = some k := by cases k <;> decide
 
 theorem ReOpKind.ofString_toString (k : ReOpKind) :
-    ReOpKind.ofString? k.toString = some k := by cases k <;> native_decide
+    ReOpKind.ofString? k.toString = some k := by cases k <;> decide
 
 theorem MapOpKind.ofString_toString (k : MapOpKind) :
-    MapOpKind.ofString? k.toString = some k := by cases k <;> native_decide
+    MapOpKind.ofString? k.toString = some k := by cases k <;> decide
 
 theorem SeqOpKind.ofString_toString (k : SeqOpKind) :
-    SeqOpKind.ofString? k.toString = some k := by cases k <;> native_decide
+    SeqOpKind.ofString? k.toString = some k := by cases k <;> decide
 
 theorem TriggerOpKind.ofString_toString (k : TriggerOpKind) :
-    TriggerOpKind.ofString? k.toString = some k := by cases k <;> native_decide
+    TriggerOpKind.ofString? k.toString = some k := by cases k <;> decide
 
 /-! ### CoreOp-level round-trip proofs
 
