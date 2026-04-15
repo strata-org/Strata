@@ -1,0 +1,7 @@
+test_lshift_negative.py(3, 13): ❓ unknown - Check PLShift exception
+test_lshift_negative.py(3, 13): ✅ pass - Check PLShift exception
+test_lshift_negative.py(3, 4): ❓ unknown - set_y_calls_PLShift_0
+test_lshift_negative.py(4, 4): ✅ pass - negative left shift
+test_lshift_negative.py(4, 4): ❓ unknown - negative left shift
+DETAIL: 2 passed, 0 failed, 3 inconclusive
+RESULT: Inconclusive
