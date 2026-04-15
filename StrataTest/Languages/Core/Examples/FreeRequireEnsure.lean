@@ -58,37 +58,6 @@ callElimAssume_g_lt_10_0: $__g4 < 10
 Obligation:
 $__g4 == 15
 
-
-
-Result: Obligation: g_eq_15_internal
-Property: assert
-Result: ❓ unknown
-Model:
-($__g4, 0)
-
-
-[DEBUG] Evaluated program:
-program Core;
-
-var g : int;
-procedure Proc () returns ()
-spec {
-  modifies g;
-  free requires [g_eq_15]: g == 15;
-  free ensures [g_lt_10]: g < 10;
-  } {
-  assert [g_gt_10_internal]: g > 10;
-  g := g + 1;
-  };
-procedure ProcCaller () returns (x : int)
-spec {
-  modifies g;
-  } {
-  havoc g;
-  assume [callElimAssume_g_lt_10_0]: g < 10;
-  assert [g_eq_15_internal]: g == 15;
-  };
-
 ---
 info:
 Obligation: g_gt_10_internal

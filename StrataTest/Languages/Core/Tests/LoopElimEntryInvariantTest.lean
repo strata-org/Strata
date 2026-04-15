@@ -50,47 +50,6 @@ Property: assert
 Obligation:
 false
 
-
-
-Result: Obligation: entry_invariant_0_0
-Property: assert
-Result: ❌ always false and is reachable from declaration entry
-
-
-[DEBUG] Evaluated program:
-program Core;
-
-procedure zeroIter () returns (s : int)
-{
-  var n : int;
-  n := 0;
-  s := 0;
-  loop_0: {
-    first_iter_asserts_0: {
-      assert [entry_invariant_0_0]: s == 42;
-      assume [assume_entry_invariant_0_0]: s == 42;
-      }
-    if (n > 0) {
-      arbitrary_iter_facts_0: {
-        loop_havoc_0: {
-          havoc s;
-          }
-        arbitrary_iter_assumes_0: {
-          assume [assume_guard_0]: n > 0;
-          assume [assume_invariant_0_0]: s == 42;
-          }
-        s := 42;
-        assert [arbitrary_iter_maintain_invariant_0_0]: s == 42;
-        }
-      loop_havoc_0: {
-        havoc s;
-        }
-      assume [not_guard_0]: !(n > 0);
-      assume [invariant_0_0]: s == 42;
-      }
-    }
-  };
-
 ---
 info:
 Obligation: arbitrary_iter_maintain_invariant_0_0

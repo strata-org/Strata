@@ -66,27 +66,6 @@ Property: assert
 Obligation:
 forall __q0 : int :: __q0 < $__x0
 
-
-
-Result: Obligation: bad
-Property: assert
-Result: ❌ fail
-Model:
-($__x0, 0)
-
-
-[DEBUG] Evaluated program:
-program Core;
-
-procedure Test (x : int) returns (r : int)
-spec {
-  ensures [good]: forall __q0 : int :: exists __q1 : int :: r + (__q1 + __q0) == __q0 + (__q1 + r);
-  ensures [bad]: forall __q0 : int :: __q0 < x;
-  } {
-  assert [good_assert]: forall __q0 : int :: !(__q0 == __q0 + 1);
-  r := x + 1;
-  };
-
 ---
 info:
 Obligation: good_assert

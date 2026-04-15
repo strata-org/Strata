@@ -19,19 +19,19 @@ open Lambda.LTy Lambda.LExpr Statement Procedure Program
 
 public section
 
-def eval (E : Env) : List Env :=
+def eval (E : Env) : Except String (List Env) :=
   -- Push a path condition scope to store axioms
   let E := { E with pathConditions := E.pathConditions.push [] }
   let declsEnv := go E.program.decls E
   declsEnv
-  where go (decls : Decls) (declsE : Env) : List Env :=
+  where go (decls : Decls) (declsE : Env) : Except String (List Env) :=
   match decls with
-  | [] => [declsE]
+  | [] => return [declsE]
   | decl :: rest =>
     match decl with
 
     | .var name ty init md =>
-      (Statement.eval declsE [] [(.init name ty init md)]).flatMap (fun E => go rest E)
+      (Statement.eval declsE [] [(.init name ty init md)]).flatMapM (fun E => go rest E)
 
     | .type _ _ =>
       go rest declsE
@@ -56,18 +56,21 @@ def eval (E : Env) : List Env :=
 
     | .func func _ =>
       match declsE.addFactoryFunc func with
-      | .error e => [{ declsE with error := some (Imperative.EvalError.Misc f!"{e}")}]
+      | .error e =>
+        return [{ declsE with error := some (Imperative.EvalError.Misc f!"{e}")}]
       | .ok new_env =>
         let declsE := new_env
       go rest declsE
 
     | .recFuncBlock funcs _ =>
       match validateCasesTypes funcs declsE.datatypes with
-      | .error e => [{ declsE with error := some (Imperative.EvalError.Misc f!"{e}")}]
+      | .error e =>
+        return [{ declsE with error := some (Imperative.EvalError.Misc f!"{e}")}]
       | .ok () =>
       let result := funcs.foldlM (fun env func => env.addFactoryFunc func) declsE
       match result with
-      | .error e => [{ declsE with error := some (Imperative.EvalError.Misc f!"{e}")}]
+      | .error e =>
+        return [{ declsE with error := some (Imperative.EvalError.Misc f!"{e}")}]
       | .ok new_env =>
         let declsE := new_env
         go rest declsE

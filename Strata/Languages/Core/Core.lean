@@ -81,12 +81,15 @@ def typeCheckAndEval (options : VerifyOptions) (program : Program)
   let σ ← (Lambda.LState.init).addFactory factory
   let E := { Env.init with exprEnv := σ, program := program }
   let E ← E.addDatatypes datatypes
-  let pEs := Program.eval E
-  if options.verbose >= .normal then do
-    dbg_trace f!"{Std.Format.line}VCs:"
-    for E in pEs do
-      dbg_trace f!"{formatProofObligations E.deferred}"
-  return pEs
+  match Program.eval E with
+  | .ok pEs =>
+    if options.verbose >= .normal then do
+      dbg_trace f!"{Std.Format.line}VCs:"
+      for E in pEs do
+        dbg_trace f!"{formatProofObligations E.deferred}"
+    return pEs
+  | .error msg =>
+    .error (DiagnosticModel.fromMessage msg)
 
 instance instCoreProgramString : ToString (Program) where
   toString p := toString (Core.formatProgram p)

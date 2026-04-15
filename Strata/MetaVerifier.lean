@@ -57,7 +57,7 @@ def genVCsSingleENV (E : Env) : Option coreVCs := do
 
 def genVCs (program : Program) (options : VerifyOptions := .default) : Option coreVCs := do
   let program := loopElim program
-  match Core.typeCheckAndPartialEval options program with
+  match Core.typeCheckAndEval options program with
   | .error _ => none
   | .ok pEs =>
     let VCss ← List.mapM (fun pE => genVCsSingleENV pE) pEs

@@ -535,7 +535,7 @@ structure VCResult where
     When the evaluator resolves a check that wasn't requested by the
     check mode/level, we set it to `.unknown` so the label function displays
     the appropriate message for the checks that were actually requested.
-    For example, in minimal deductive mode we only request validity, so if PE
+    For example, in minimal deductive mode we only request validity, so if evaluator
     also determined satisfiability, we mask it to `.unknown`. -/
 def maskOutcome (outcome : VCOutcome) (satisfiabilityCheck validityCheck : Bool) : VCOutcome :=
   if satisfiabilityCheck && validityCheck then
@@ -638,31 +638,31 @@ instance : ToString VCResults where
 /--
 Preprocess a proof obligation using symbolic simluation.
 Returns the symbolic results for satisfiability and validity independently.
-Each result is `some r` if PE can determine it, `none` if the solver is needed.
+Each result is `some r` if evaluator can determine it, `none` if the solver is needed.
 -/
 def preprocessObligation (obligation : ProofObligation Expression) (p : Program)
     (options : VerifyOptions) (satisfiabilityCheck validityCheck : Bool)
     (axiomCache : Option IrrelevantAxioms.Cache := .none)
     : EIO DiagnosticModel (ProofObligation Expression × Option SMT.Result × Option SMT.Result) := do
-  -- PE can determine satisfiability if the obligation is literally false (unsat)
+  -- Evaluator can determine satisfiability if the obligation is literally false (unsat)
   let peSatResult : Option SMT.Result :=
     if !satisfiabilityCheck then some .unknown
     else if obligation.obligation.isFalse then some .unsat
     else none
-  -- PE can determine validity if the obligation is literally true (valid = unsat)
+  -- Evaluator can determine validity if the obligation is literally true (valid = unsat)
   -- or literally false with empty assumptions (invalid = sat)
   let peValResult : Option SMT.Result :=
     if !validityCheck then some .unknown
     else if obligation.obligation.isTrue then some .unsat
     else if obligation.obligation.isFalse && obligation.assumptions.isEmpty then some (.sat [])
     else none
-  -- If PE resolved both, log for the assert(false) case
+  -- If evaluator resolved both, log for the assert(false) case
   if let (some _, some (.sat _)) := (peSatResult, peValResult) then
     if obligation.property == .assert then
       let prog := f!"\n\n[DEBUG] Evaluated program:\n{Core.formatProgram p}"
       dbg_trace f!"\n\nObligation {obligation.label}: failed!\
                    \n\nResult obtained during evaluation.\
-                   {if options.verbose >= .normal then prog else ""}"
+                   {if options.verbose >= .debug then prog else ""}"
   -- Apply axiom pruning if needed.
   -- Axiom removal is unsound for cover obligations (removing axioms weakens
   -- path conditions, potentially making unreachable paths appear satisfiable).
@@ -789,7 +789,7 @@ def getObligationResult (assumptionTerms : List Term) (obligationTerm : Term)
   | .error e =>
     dbg_trace f!"\n\nObligation {obligation.label}: SMT Solver Invocation Error!\
                  \n\nError: {e}\
-                 {if options.verbose >= .normal then prog else ""}"
+                 {if options.verbose >= .debug then prog else ""}"
     .error <| DiagnosticModel.fromFormat e
   | .ok (satResult, validityResult, estate) =>
     -- Convert unvalidated sat results to unknown when phases require validation
@@ -858,7 +858,7 @@ def verifySingleEnv (E : Env) (options : VerifyOptions)
       let (obligation, peSatResult?, peValResult?) ← preprocessObligation obligation p options satisfiabilityCheck validityCheck axiomCache
       let t1 ← IO.monoNanosNow
       preprocessNs := preprocessNs + (t1 - t0)
-      -- If PE resolved both checks, we're done, unless we always want to generate SMT queries
+      -- If evaluator resolved both checks, we're done, unless we always want to generate SMT queries
       if not options.alwaysGenerateSMT then
         if let (some peSat, some peVal) := (peSatResult?, peValResult?) then
           let phases := externalPhases ++ corePhases
@@ -875,7 +875,7 @@ def verifySingleEnv (E : Env) (options : VerifyOptions)
           results := results.push result
           peResolvedCount := peResolvedCount + 1
           if result.isFailure || result.isImplementationError then
-            if options.verbose >= .normal then
+            if options.verbose >= .debug then
               let prog := f!"\n\n[DEBUG] Evaluated program:\n{Core.formatProgram p}"
               dbg_trace f!"\n\nResult: {result}\n{prog}"
             if options.stopOnFirstError then break
@@ -896,7 +896,7 @@ def verifySingleEnv (E : Env) (options : VerifyOptions)
                         checkLevel := options.checkLevel,
                         checkMode := options.checkMode,
                         lexprModel := [] }
-        if options.verbose >= .normal then
+        if options.verbose >= .debug then
           let prog := f!"\n\n[DEBUG] Evaluated program:\n{Core.formatProgram p}"
           dbg_trace f!"\n\nResult: {result}\n{prog}"
         results := results.push result
@@ -907,7 +907,7 @@ def verifySingleEnv (E : Env) (options : VerifyOptions)
                       counter tempDir needSatCheck needValCheck (externalPhases ++ corePhases)
         let t5 ← IO.monoNanosNow
         solverNs := solverNs + (t5 - t4)
-        -- Merge PE results with solver results
+        -- Merge evaluator results with solver results
         let result := match result.outcome with
           | .ok solverOutcome =>
             let satResult := peSatResult?.getD solverOutcome.satisfiabilityProperty
@@ -918,7 +918,7 @@ def verifySingleEnv (E : Env) (options : VerifyOptions)
           | .error _ => result
         results := results.push result
         if result.isNotSuccess then
-          if options.verbose >= .normal then
+          if options.verbose >= .debug then
             let prog := f!"\n\n[DEBUG] Evaluated program:\n{Core.formatProgram p}"
             dbg_trace f!"\n\nResult: {result}\n{prog}"
           if options.stopOnFirstError then break
@@ -926,7 +926,7 @@ def verifySingleEnv (E : Env) (options : VerifyOptions)
       let _ ← (IO.println s!"[profile]     Preprocess obligations: {nsToMs preprocessNs}ms" |>.toBaseIO)
       let _ ← (IO.println s!"[profile]     SMT encoding: {nsToMs smtEncodeNs}ms" |>.toBaseIO)
       let _ ← (IO.println s!"[profile]     Solver/file writing: {nsToMs solverNs}ms" |>.toBaseIO)
-      let _ ← (IO.println s!"[profile]     Obligations: {E.deferred.size} total, {peResolvedCount} resolved by PE" |>.toBaseIO)
+      let _ ← (IO.println s!"[profile]     Obligations: {E.deferred.size} total, {peResolvedCount} resolved by evaluator" |>.toBaseIO)
     return results
 
 /-- Run the Strata Core verification pipeline on a program: transform,
