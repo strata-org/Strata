@@ -29,7 +29,10 @@ deriving Repr, DecidableEq, Inhabited
 structure SMT.Sort where
   name : String
   arity : Nat
-deriving Repr, DecidableEq, Inhabited
+deriving Repr, DecidableEq, Inhabited, Hashable
+
+instance : Hashable SMT.IF where
+  hash a := mixHash (hash a.uf) (hash a.body)
 
 -- (FIXME) Can/should we use Strata.SMT.EncoderState here directly?
 structure SMT.Context where
@@ -37,6 +40,11 @@ structure SMT.Context where
   ufs : Array UF := #[]
   ifs : Array SMT.IF := #[]
   axms : Array Term := #[]
+  /-- HashSet mirrors for O(1) deduplication checks -/
+  sortSet : Std.HashSet SMT.Sort := {}
+  ufSet : Std.HashSet UF := {}
+  ifSet : Std.HashSet SMT.IF := {}
+  axmSet : Std.HashSet Term := {}
   tySubst: Map String TermType := []
   /-- Stores the TypeFactory purely for ordering datatype declarations
   correctly (TypeFactory in topological order) -/
@@ -53,21 +61,21 @@ deriving Repr, Inhabited
 def SMT.Context.default : SMT.Context := {}
 
 def SMT.Context.addSort (ctx : SMT.Context) (sort : SMT.Sort) : SMT.Context :=
-  if sort ∈ ctx.sorts then ctx else
-  { ctx with sorts := ctx.sorts.push sort }
+  if ctx.sortSet.contains sort then ctx else
+  { ctx with sorts := ctx.sorts.push sort, sortSet := ctx.sortSet.insert sort }
 
 def SMT.Context.addUF (ctx : SMT.Context) (fn : UF) : SMT.Context :=
-  if fn ∈ ctx.ufs then ctx else
-  { ctx with ufs := ctx.ufs.push fn }
+  if ctx.ufSet.contains fn then ctx else
+  { ctx with ufs := ctx.ufs.push fn, ufSet := ctx.ufSet.insert fn }
 
 def SMT.Context.addIF (ctx : SMT.Context) (fn : UF) (body : Term) : SMT.Context :=
   let smtif := { uf := fn, body := body }
-  if smtif ∈ ctx.ifs then ctx else
-  { ctx with ifs := ctx.ifs.push smtif }
+  if ctx.ifSet.contains smtif then ctx else
+  { ctx with ifs := ctx.ifs.push smtif, ifSet := ctx.ifSet.insert smtif }
 
 def SMT.Context.addAxiom (ctx : SMT.Context) (axm : Term) : SMT.Context :=
-  if axm ∈ ctx.axms then ctx else
-  { ctx with axms := ctx.axms.push axm }
+  if ctx.axmSet.contains axm then ctx else
+  { ctx with axms := ctx.axms.push axm, axmSet := ctx.axmSet.insert axm }
 
 def SMT.Context.addSubst (ctx : SMT.Context) (newSubst: Map String TermType) : SMT.Context :=
   { ctx with tySubst := ctx.tySubst ++ newSubst }
@@ -743,16 +751,16 @@ partial def toSMTOp (E : Env) (fn : CoreIdent) (fnty : LMonoTy) (ctx : SMT.Conte
         let uf := ({id := (toString $ format fn), args := argvars, out := smt_outty})
         let (ctx, isNew) ←
           if func.isRecursive then
-            .ok (ctx.addUF uf, !ctx.ufs.contains uf)
+            .ok (ctx.addUF uf, !ctx.ufSet.contains uf)
           else match func.body with
-          | none => .ok (ctx.addUF uf, !ctx.ufs.contains uf)
+          | none => .ok (ctx.addUF uf, !ctx.ufSet.contains uf)
           | some body =>
             -- Substitute the formals in the function body with appropriate
             -- `.bvar`s. Use substFvarsLifting to properly lift indices under binders.
             let bvars := (List.range formals.length).map (fun i => LExpr.bvar () i)
             let body := LExpr.substFvarsLifting body (formals.zip bvars)
             let (term, ctx) ← toSMTTerm E bvs body ctx
-            .ok (ctx.addIF uf term,  !ctx.ifs.contains ({ uf := uf, body := term }))
+            .ok (ctx.addIF uf term,  !ctx.ifSet.contains ({ uf := uf, body := term }))
         -- For recursive functions, generate per-constructor axioms
         let recAxioms ← if func.isRecursive && isNew then
             Lambda.genRecursiveAxioms func ctx.typeFactory E.exprEval ()
