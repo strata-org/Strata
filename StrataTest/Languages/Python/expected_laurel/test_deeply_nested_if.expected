@@ -8,7 +8,7 @@ test_deeply_nested_if.py(7, 19): ✅ pass - Check PGt exception
 test_deeply_nested_if.py(7, 16): ✅ pass - ite_cond_calls_Any_to_bool_0
 test_deeply_nested_if.py(8, 23): ✅ pass - Check PGt exception
 test_deeply_nested_if.py(8, 20): ✅ pass - ite_cond_calls_Any_to_bool_0
-test_deeply_nested_if.py(10, 4): ✅ pass - deeply nested if
+test_deeply_nested_if.py(10, 4): ✅ pass - assert_assert(186)_calls_Any_to_bool_0
 test_deeply_nested_if.py(10, 4): ✅ pass - deeply nested if
 DETAIL: 12 passed, 0 failed, 0 inconclusive
 RESULT: Analysis success
