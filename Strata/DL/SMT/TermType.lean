@@ -50,7 +50,7 @@ inductive TermType where
   -- (TODO) It looks like `option` is a special instance of `constr`.
   | option (ty : TermType)
   | constr (id : String) (args : List TermType)
-deriving instance Repr, Inhabited for TermType
+deriving instance Repr, Inhabited, Hashable for TermType
 
 /--
 Induction rule for `TermType`: the default induction tactic doesn't yet support
@@ -89,16 +89,6 @@ instance : LT TermType where
 instance TermType.decLt (x y : TermType) : Decidable (x < y) :=
   if h : TermType.lt x y then isTrue h else isFalse h
 
-def hashTermType : TermType → UInt64
-  | .prim p => mixHash 1 (hash p)
-  | .option t => mixHash 2 (hashTermType t)
-  | .constr id args => mixHash 3 (mixHash (hash id) (hashTermTypeList args))
-where hashTermTypeList : List TermType → UInt64
-  | [] => 7
-  | t :: ts => mixHash (hashTermType t) (hashTermTypeList ts)
-
-instance : Hashable TermType where
-  hash := hashTermType
 
 def TermType.beq : TermType → TermType → Bool
   | .prim pty₁, .prim pty₂ => pty₁ == pty₂
