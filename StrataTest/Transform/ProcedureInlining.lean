@@ -440,4 +440,36 @@ info: true, some { callees := Std.HashMap.ofList [("f", Std.HashMap.ofList [("f"
 
 
 
+/- Check CallGraph cache of CoreTransformState -/
+
+def TestThreeChain :=
+#strata
+program Core;
+procedure leaf(x : int) returns (y : int) {
+  y := x + 1;
+};
+procedure mid(a : int) returns (b : int) {
+  call b := leaf(a);
+};
+procedure top(n : int) returns (r : int) {
+  call r := mid(n);
+};
+#end
+
+/-- After fully inlining the 3-procedure chain, the cached call graph must
+    equal the call graph freshly computed from the output program. -/
+def testThreeChainCG := do
+  let p := translate TestThreeChain
+  let _ ← setCallGraph p
+  let (_, p') ← runProgramUntil (inlineCallCmd) p
+  let cachedCG := (← get).cachedAnalyses.callGraph
+  let freshCG := p'.toProcedureCG
+  return (cachedCG.map (CallGraph.beq · freshCG))
+
+/-- info: some true -/
+#guard_msgs in
+#eval ((match testThreeChainCG .emp with
+  | ⟨.ok result, _⟩ => f!"{repr result}"
+  | ⟨.error m, _⟩ => panic! s!"{m}"))
+
 end ProcedureInliningExamples
