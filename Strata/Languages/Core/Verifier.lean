@@ -14,6 +14,7 @@ public import Strata.DL.Imperative.MetaData
 public import Strata.DL.Imperative.SMTUtils
 public import Strata.DDM.AST
 public import Strata.Languages.Core.PipelinePhase
+import Strata.DL.SMT.IncrementalSolver
 import Strata.Transform.CallElim
 import Strata.Transform.FilterProcedures
 import Strata.Transform.PrecondElim
@@ -197,6 +198,75 @@ def dischargeObligation
     solverFlags (options.verbose > .normal)
     satisfiabilityCheck validityCheck
     (skipSolver := options.skipSolver)
+
+/-- Discharge a proof obligation using the incremental solver backend.
+    Spawns a live solver process, sends commands via stdin/stdout, and
+    reads results interactively. Returns the same result triple as the
+    batch `dischargeObligation`. -/
+def dischargeObligationIncremental
+  (options : VerifyOptions)
+  (md : Imperative.MetaData Expression)
+  (assumptionTerms : List Term)
+  (obligationTerm : Term)
+  (ctx : SMT.Context)
+  (satisfiabilityCheck validityCheck : Bool)
+  (label : String)
+  : IO (Except Format (SMT.Result × SMT.Result × EncoderState)) :=
+  open _root_.Strata.SMT.IncrementalSolver in do
+  let baseFlags := getSolverFlags options
+  let needsIncremental := satisfiabilityCheck && validityCheck
+  let solverFlags :=
+    if needsIncremental && options.solver == "cvc5" && !baseFlags.contains "--incremental" then
+      baseFlags ++ #["--incremental"]
+    else
+      baseFlags
+  let allFlags := #["--quiet", "--lang", "smt"] ++ solverFlags
+  let solverState ← spawn options.solver allFlags
+  let action : _root_.Strata.SMT.IncrementalSolverM (Except Format (SMT.Result × SMT.Result × EncoderState)) := do
+    -- Encode the entire problem using the existing encoder into a buffer,
+    -- then replay the commands to the live solver process.
+    let bEnc ← IO.mkRef { : IO.FS.Stream.Buffer }
+    let batchSolverEnc ← Solver.bufferWriter bEnc
+    let ((_ids, estate), _) ← (Strata.SMT.Encoder.encodeCore ctx (getSolverPrelude options.solver)
+      assumptionTerms obligationTerm md satisfiabilityCheck validityCheck
+      (label := label)).run batchSolverEnc
+    let bufEnc ← bEnc.get
+    if h : bufEnc.data.IsValidUTF8 then
+      let cmds := String.fromUTF8 bufEnc.data h
+      for line in cmds.splitOn "\n" do
+        let trimmed := line.trimAscii.toString
+        if trimmed.isEmpty then continue
+        emitln line
+    -- Read results: the encoder emits check-sat commands inline
+    let mut satResult : Imperative.SMT.Result Expression.Ident := .unknown
+    let mut valResult : Imperative.SMT.Result Expression.Ident := .unknown
+    if satisfiabilityCheck && validityCheck then
+      let satLine ← readln
+      satResult := match satLine with
+        | "sat" => .sat []
+        | "unsat" => .unsat
+        | _ => .unknown
+      let valLine ← readln
+      valResult := match valLine with
+        | "sat" => .sat []
+        | "unsat" => .unsat
+        | _ => .unknown
+    else if satisfiabilityCheck then
+      let line ← readln
+      satResult := match line with
+        | "sat" => .sat []
+        | "unsat" => .unsat
+        | _ => .unknown
+    else if validityCheck then
+      let line ← readln
+      valResult := match line with
+        | "sat" => .sat []
+        | "unsat" => .unsat
+        | _ => .unknown
+    emitln "(exit)"
+    return .ok (satResult, valResult, estate)
+  let (result, _) ← action.run solverState
+  return result
 
 end -- public section
 end Core.SMT
@@ -782,12 +852,18 @@ def getObligationResult (assumptionTerms : List Term) (obligationTerm : Term)
   let ans ←
       IO.toEIO
         (fun e => DiagnosticModel.fromFormat f!"{e}")
-        (SMT.dischargeObligation options
+        (if options.incremental then
+          SMT.dischargeObligationIncremental options
+            obligation.metadata
+            assumptionTerms obligationTerm ctx satisfiabilityCheck validityCheck
+            (label := obligation.label)
+        else
+          SMT.dischargeObligation options
             typedVarsInObligation
             obligation.metadata
             filename.toString
-          assumptionTerms obligationTerm ctx satisfiabilityCheck validityCheck
-          (label := obligation.label))
+            assumptionTerms obligationTerm ctx satisfiabilityCheck validityCheck
+            (label := obligation.label))
   match ans with
   | .error e =>
     dbg_trace f!"\n\nObligation {obligation.label}: SMT Solver Invocation Error!\

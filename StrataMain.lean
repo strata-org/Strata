@@ -186,7 +186,9 @@ def verifyOptionsFlags : List Flag := [
     help := "Use SMT-LIB Array theory instead of axiomatized maps." },
   { name := "remove-irrelevant-axioms",
     help := "Prune irrelevant axioms: 'off', 'aggressive', or 'precise'.",
-    takesArg := .arg "mode" }
+    takesArg := .arg "mode" },
+  { name := "incremental",
+    help := "Use incremental solver backend (stdin/stdout) instead of batch file I/O." }
 ]
 
 /-- Build a VerifyOptions from parsed CLI flags, starting from a base config.
@@ -226,6 +228,7 @@ def parseVerifyOptions (pflags : ParsedFlags)
     removeIrrelevantAxioms,
     outputSarif := pflags.getBool "sarif" || base.outputSarif,
     profile := pflags.getBool "profile" || base.profile,
+    incremental := pflags.getBool "incremental" || base.incremental,
     skipSolver,
     alwaysGenerateSMT := noSolve || base.alwaysGenerateSMT,
     vcDirectory

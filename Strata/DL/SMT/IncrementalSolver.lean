@@ -1,0 +1,269 @@
+/-
+  Copyright Strata Contributors
+
+  SPDX-License-Identifier: Apache-2.0 OR MIT
+-/
+module
+
+public import Strata.DL.SMT.AbstractSolver
+public import Strata.DL.SMT.Factory
+import Std.Data.HashMap
+
+/-!
+# Incremental SMT-LIB Backend
+
+Implements `AbstractSolver Term (StateT IncrementalSolverState IO)` where the
+state wraps a live solver process communicating via stdin/stdout. Unlike the
+batch pipeline (write file, run solver), this backend sends commands
+incrementally and reads responses interactively.
+
+Variable shadowing is handled by appending `@N` suffixes to disambiguate
+repeated declarations of the same name. The shadow depth is tracked per name.
+-/
+
+namespace Strata.SMT
+
+public section
+
+/-- State for the incremental SMT-LIB solver backend. Wraps a live solver
+    process and tracks variable shadowing for `declareNew`. -/
+structure IncrementalSolverState where
+  /-- The underlying SMT-LIB solver process. -/
+  solver : SMTLibSolver
+  /-- Caches `Term → SMT-LIB string` conversions. -/
+  termStrings : Std.HashMap Term String := {}
+  /-- Caches `TermType → SMT-LIB string` conversions. -/
+  typeStrings : Std.HashMap TermType String := {}
+  /-- Tracks how many times each variable name has been declared (for shadowing). -/
+  shadowCounts : Std.HashMap String Nat := {}
+
+/-- The monad for the incremental solver backend. -/
+abbrev IncrementalSolverM := StateT IncrementalSolverState IO
+
+namespace IncrementalSolver
+
+def emitln (str : String) : IncrementalSolverM Unit := do
+  let st ← get
+  st.solver.smtLibInput.putStr s!"{str}\n"
+  st.solver.smtLibInput.flush
+
+def readln : IncrementalSolverM String := do
+  let st ← get
+  match st.solver.smtLibOutput with
+  | .some stdout => return (← stdout.getLine).trimAscii.toString
+  | .none => throw (IO.userError "no output stream available")
+
+private def termToStr (t : Term) : IncrementalSolverM (Except String String) := do
+  let st ← get
+  if let .some s := st.termStrings.get? t then return .ok s
+  match Strata.SMTDDM.termToString t with
+  | .ok s =>
+    modify fun st => { st with termStrings := st.termStrings.insert t s }
+    return .ok s
+  | .error msg => return .error s!"term serialization failed: {msg}"
+
+private def typeToStr (ty : TermType) : IncrementalSolverM (Except String String) := do
+  let st ← get
+  if let .some s := st.typeStrings.get? ty then return .ok s
+  match Strata.SMTDDM.termTypeToString ty with
+  | .ok s =>
+    modify fun st => { st with typeStrings := st.typeStrings.insert ty s }
+    return .ok s
+  | .error msg => return .error s!"type serialization failed: {msg}"
+
+/-- Get the disambiguated SMT-LIB name for a variable, handling shadowing. -/
+private def disambiguatedName (name : String) (depth : Nat) : String :=
+  if depth == 0 then name else s!"{name}@{depth}"
+
+/-- Spawn an incremental solver process. -/
+def spawn (path : String) (args : Array String) : IO IncrementalSolverState := do
+  let solver ← Solver.spawn path args
+  return { solver }
+
+/-- Build the `AbstractSolver` implementation for incremental SMT-LIB. -/
+def mkAbstractSolver : AbstractSolver Term IncrementalSolverM where
+  mkBool b := return Term.bool b
+  mkInt i := return Term.int i
+
+  mkAnd ts := return .ok (ts.foldl Factory.and (Term.bool true))
+  mkOr ts := return .ok (ts.foldl Factory.or (Term.bool false))
+  mkNot t := return .ok (Factory.not t)
+  mkImplies t1 t2 := return .ok (Factory.implies t1 t2)
+
+  mkAdd ts := return match ts with
+    | [] => .error "mkAdd: empty argument list"
+    | [t] => .ok t
+    | t :: rest => .ok (rest.foldl (fun acc x => Term.app .add [acc, x] acc.typeOf) t)
+  mkSub ts := return match ts with
+    | [] => .error "mkSub: empty argument list"
+    | [t] => .ok t
+    | t :: rest => .ok (rest.foldl (fun acc x => Term.app .sub [acc, x] acc.typeOf) t)
+  mkMul ts := return match ts with
+    | [] => .error "mkMul: empty argument list"
+    | [t] => .ok t
+    | t :: rest => .ok (rest.foldl (fun acc x => Term.app .mul [acc, x] acc.typeOf) t)
+  mkDiv t1 t2 := return .ok (Term.app .div [t1, t2] t1.typeOf)
+  mkMod t1 t2 := return .ok (Term.app .mod [t1, t2] t1.typeOf)
+  mkNeg t := return .ok (Term.app .neg [t] t.typeOf)
+
+  mkEq ts := return match ts with
+    | [] | [_] => .error "mkEq: need at least two arguments"
+    | [t1, t2] => .ok (Factory.eq t1 t2)
+    | t :: rest => .ok (rest.foldl (fun acc x => Factory.and acc (Factory.eq t x)) (Term.bool true))
+  mkLt ts := return match ts with
+    | [] | [_] => .error "mkLt: need at least two arguments"
+    | [t1, t2] => .ok (Term.app .lt [t1, t2] .bool)
+    | _ => .error "mkLt: pairwise comparison not yet supported"
+  mkLe ts := return match ts with
+    | [] | [_] => .error "mkLe: need at least two arguments"
+    | [t1, t2] => .ok (Term.app .le [t1, t2] .bool)
+    | _ => .error "mkLe: pairwise comparison not yet supported"
+  mkGt ts := return match ts with
+    | [] | [_] => .error "mkGt: need at least two arguments"
+    | [t1, t2] => .ok (Term.app .gt [t1, t2] .bool)
+    | _ => .error "mkGt: pairwise comparison not yet supported"
+  mkGe ts := return match ts with
+    | [] | [_] => .error "mkGe: need at least two arguments"
+    | [t1, t2] => .ok (Term.app .ge [t1, t2] .bool)
+    | _ => .error "mkGe: pairwise comparison not yet supported"
+
+  mkIte c t f := return .ok (Factory.ite c t f)
+
+  declareNew name ty := do
+    let st ← get
+    let count := st.shadowCounts.getD name 0
+    let smtName := disambiguatedName name count
+    set { st with shadowCounts := st.shadowCounts.insert name (count + 1) }
+    match ← typeToStr ty with
+    | .ok tyStr =>
+      emitln s!"(declare-const {quoteIdent smtName} {tyStr})"
+    | .error _ => pure ()
+    return Term.var ⟨smtName, ty⟩
+
+  declareFun name argTys retTy := do
+    match ← typeToStr retTy with
+    | .error msg => return .error msg
+    | .ok retStr =>
+      if argTys.isEmpty then do
+        emitln s!"(declare-const {quoteIdent name} {retStr})"
+        return .ok (Term.var ⟨name, retTy⟩)
+      else do
+        let mut argStrs := []
+        for ty in argTys.reverse do
+          match ← typeToStr ty with
+          | .ok s => argStrs := s :: argStrs
+          | .error msg => return .error msg
+        let inline := String.intercalate " " argStrs
+        emitln s!"(declare-fun {quoteIdent name} ({inline}) {retStr})"
+        return .ok (Term.var ⟨name, retTy⟩)
+
+  defineFun name args retTy body := do
+    match ← typeToStr retTy with
+    | .error msg => return .error msg
+    | .ok retStr =>
+      let mut typedArgs := []
+      for (n, ty) in args.reverse do
+        match ← typeToStr ty with
+        | .ok tyStr => typedArgs := s!"({quoteIdent n} {tyStr})" :: typedArgs
+        | .error msg => return .error msg
+      let inline := String.intercalate " " typedArgs
+      match ← termToStr body with
+      | .ok bodyStr =>
+        emitln s!"(define-fun {quoteIdent name} ({inline}) {retStr} {bodyStr})"
+        return .ok ()
+      | .error msg => return .error msg
+
+  declareSort name arity := do
+    emitln s!"(declare-sort {name} {arity})"
+    return .ok ()
+
+  declareDatatype name params constrs := do
+    let mut cStrs := []
+    for (cname, fields) in constrs.reverse do
+      if fields.isEmpty then
+        cStrs := s!"({cname})" :: cStrs
+      else do
+        let mut fieldStrs := []
+        for (fname, fty) in fields.reverse do
+          match ← typeToStr fty with
+          | .ok tyStr => fieldStrs := s!"({fname} {tyStr})" :: fieldStrs
+          | .error msg => return .error msg
+        cStrs := s!"({cname} {String.intercalate " " fieldStrs})" :: cStrs
+    let cInline := "\n  " ++ String.intercalate "\n  " cStrs
+    if params.isEmpty then
+      emitln s!"(declare-datatype {name} ({cInline}))"
+    else
+      let pInline := String.intercalate " " params
+      emitln s!"(declare-datatype {name} (par ({pInline}) ({cInline})))"
+    return .ok ()
+
+  mkForall bindings callback := do
+    let vars := bindings.map fun (name, ty) => TermVar.mk name ty
+    let varTerms := vars.map Term.var
+    match callback varTerms with
+    | .error msg => return .error msg
+    | .ok (body, triggers) =>
+      let tr := match triggers with
+        | [] => Term.app .triggers [] .trigger
+        | groups =>
+          let triggerTerms := groups.map fun group => Term.app .triggers group .trigger
+          Term.app .triggers triggerTerms .trigger
+      return .ok (Term.quant .all vars tr body)
+
+  mkExists bindings callback := do
+    let vars := bindings.map fun (name, ty) => TermVar.mk name ty
+    let varTerms := vars.map Term.var
+    match callback varTerms with
+    | .error msg => return .error msg
+    | .ok (body, triggers) =>
+      let tr := match triggers with
+        | [] => Term.app .triggers [] .trigger
+        | groups =>
+          let triggerTerms := groups.map fun group => Term.app .triggers group .trigger
+          Term.app .triggers triggerTerms .trigger
+      return .ok (Term.quant .exist vars tr body)
+
+  assert t := do
+    match ← termToStr t with
+    | .ok s =>
+      emitln s!"(assert {s})"
+      return .ok ()
+    | .error msg => return .error msg
+
+  checkSat := do
+    emitln "(check-sat)"
+    let result ← readln
+    match result with
+    | "sat" => return .ok .sat
+    | "unsat" => return .ok .unsat
+    | "unknown" => return .ok .unknown
+    | other => return .error s!"unrecognized solver output: {other}"
+
+  checkSatAssuming assumptions := do
+    let mut strs := []
+    for t in assumptions.reverse do
+      match ← termToStr t with
+      | .ok s => strs := s :: strs
+      | .error msg => return .error msg
+    let inline := String.intercalate " " strs
+    emitln s!"(check-sat-assuming ({inline}))"
+    let result ← readln
+    match result with
+    | "sat" => return .ok .sat
+    | "unsat" => return .ok .unsat
+    | "unknown" => return .ok .unknown
+    | other => return .error s!"unrecognized solver output: {other}"
+
+  getModel := return .error "getModel: not yet implemented for incremental backend"
+
+  getValue _ts := return .error "getValue: not yet implemented for incremental backend"
+
+  reset := emitln "(reset)"
+
+  close := emitln "(exit)"
+
+end IncrementalSolver
+
+end
+
+end Strata.SMT
