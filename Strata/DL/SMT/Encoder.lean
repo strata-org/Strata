@@ -77,10 +77,13 @@ structure EncoderState where
   terms : Std.HashMap Term Term
   /-- Maps a `UF` to its abbreviated SMT identifier (e.g., `$__f.0`, `$__f.1`). -/
   ufs   : Std.HashMap UF String
+  /-- Tracks all SMT identifiers already assigned to UFs, for O(1) collision detection. -/
+  usedNames : Std.HashSet String := {}
 
 def EncoderState.init : EncoderState where
   terms := {}
   ufs := {}
+  usedNames := {}
 
 @[expose] abbrev EncoderM (α) := StateT EncoderState SolverM α
 
@@ -90,11 +93,11 @@ namespace Encoder
 /-- SMT-LIB reserved keywords that should not be used as variable names.
     Includes command names, logical connectives, sort names, and theory
     function symbols that cvc5 disallows shadowing. -/
-def smtReservedKeywords : List String :=
+def smtReservedKeywords : Std.HashSet String :=
   -- SMT-LIB reserved words from the DDM parser
   let parserKeywords := _root_.Strata.reservedKeywords.map (·.2)
   -- Additional keywords not in the parser list
-  parserKeywords ++
+  let allKeywords := parserKeywords ++
    ["true", "false", "Int", "Bool", "Real", "Array", "BitVec",
    -- Symbols from SMT. Note: this must be synchronized with Strata's internal SMT solver which has a denylist of
    -- names of variables/UFs/sorts.
@@ -113,6 +116,7 @@ def smtReservedKeywords : List String :=
    "re.allchar",
    -- Array theory symbols
    "select", "store"]
+  Std.HashSet.ofList allKeywords
 
 /-- Generate a disambiguated name by appending @suffix -/
 def disambiguateName (baseName : String) (suffix : Nat) : String :=
@@ -190,13 +194,13 @@ def encodeUF (uf : UF) : EncoderM String := do
   if let (.some enc) := (← get).ufs.get? uf then return enc
   -- Check for name clashes with already-encoded UFs and reserved keywords, disambiguate
   let baseName := uf.id
-  let existingNames := (← get).ufs.toList.map (·.2) |>.toArray
-  let isUsed := fun candidate => existingNames.contains candidate || smtReservedKeywords.contains candidate
-  let id := findUniqueName baseName 1 isUsed (existingNames.size + smtReservedKeywords.length)
+  let used := (← get).usedNames
+  let isUsed := fun candidate => used.contains candidate || smtReservedKeywords.contains candidate
+  let id := findUniqueName baseName 1 isUsed (used.size + smtReservedKeywords.size)
   comment uf.id
   let argTys := uf.args.map (fun vt => vt.ty)
   Solver.declareFun id argTys uf.out
-  modifyGet λ state => (id, {state with ufs := state.ufs.insert uf id})
+  modifyGet λ state => (id, {state with ufs := state.ufs.insert uf id, usedNames := state.usedNames.insert id})
 
 def defineApp (inBinder : Bool) (ty : TermType) (op : Op) (tEncs : List Term) : EncoderM Term := do
   match op with

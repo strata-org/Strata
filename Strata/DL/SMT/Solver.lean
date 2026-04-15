@@ -123,7 +123,8 @@ def bufferWriter (b : IO.Ref IO.FS.Stream.Buffer) : IO Solver :=
 
 private def emitln (str : String) : SolverM Unit := do
   let solver ← read
-  solver.smtLibInput.putStr s!"{str}\n"
+  solver.smtLibInput.putStr str
+  solver.smtLibInput.putStr "\n"
   solver.smtLibInput.flush
 
 /-- Convert a `Term` to its SMT-LIB string, using the `SolverState` cache. -/
@@ -230,12 +231,15 @@ def declareFun (id : String) (argTys : List TermType) (retTy : TermType) : Solve
     This is an internal helper; prefer `defineFunTerm` for Term-based bodies. -/
 def defineFun (id : String) (args : List (String × TermType)) (retTy : TermType)
     (body : String) : SolverM Unit := do
-  let typedArgs ← args.mapM fun (name, ty) => do
-    let tyStr ← typeToSMTString ty
-    return s!"({quoteIdent name} {tyStr})"
-  let inline := String.intercalate " " typedArgs
   let retStr ← typeToSMTString retTy
-  emitln s!"(define-fun {quoteIdent id} ({inline}) {retStr} {body})"
+  if args.isEmpty then
+    emitln s!"(define-fun {quoteIdent id} () {retStr} {body})"
+  else
+    let typedArgs ← args.mapM fun (name, ty) => do
+      let tyStr ← typeToSMTString ty
+      return s!"({quoteIdent name} {tyStr})"
+    let inline := String.intercalate " " typedArgs
+    emitln s!"(define-fun {quoteIdent id} ({inline}) {retStr} {body})"
 
 /-- Define a function where the body is given as a `Term` (converted via cache). -/
 def defineFunTerm (id : String) (args : List (String × TermType)) (retTy : TermType)

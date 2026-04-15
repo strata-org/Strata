@@ -178,17 +178,12 @@ private def processModel {P : PureExpr} [ToFormat P.Ident]
     (typedVarToSMTFn : P.Ident → P.Ty → Except Format (String × Strata.SMT.TermType))
     (vars : List P.TypedIdent) (pairs : List (String × Strata.SMT.Term))
     (E : Strata.SMT.EncoderState) : Except Format (Model P.Ident) := do
-  match vars with
-  | [] => return []
-  | (var, ty) :: vrest =>
+  let pairMap : Std.HashMap String Strata.SMT.Term := Std.HashMap.ofList pairs
+  vars.mapM fun (var, ty) => do
     let id ← @getSMTId P.Ident P.Ty _ typedVarToSMTFn var ty E
-    let value ← findValue id pairs
-    let rest ← processModel typedVarToSMTFn vrest pairs E
-    .ok ((var, value) :: rest)
-  where findValue id pairs : Except Format Strata.SMT.Term :=
-    match pairs.find? (fun p => p.fst == id) with
+    match pairMap.get? id with
     | none => .error f!"Cannot find model for id: {id}"
-    | some p => .ok p.snd
+    | some v => .ok (var, v)
 
 /--
 Interprets the output of SMT solver.
