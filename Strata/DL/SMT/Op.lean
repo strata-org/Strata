@@ -61,7 +61,7 @@ instance UF.decLt (x y : UF) : Decidable (x < y) :=
   if h : UF.lt x y then isTrue h else isFalse h
 
 instance : Hashable UF where
-  hash := λ a => hash s!"{repr a}"
+  hash a := mixHash (hash a.id) (mixHash (hash a.args) (hash a.out))
 
 inductive Op.Core : Type where
   ---------- SMTLib core theory of equality with uninterpreted functions (`UF`) ----------

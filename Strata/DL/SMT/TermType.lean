@@ -24,7 +24,7 @@ inductive TermPrimType where
   /-- `regex`: regular expressions in the theory of unicode strings -/
   | regex
   | trigger
-deriving instance Repr, Inhabited, DecidableEq for TermPrimType
+deriving instance Repr, Inhabited, DecidableEq, Hashable for TermPrimType
 
 def TermPrimType.mkName : TermPrimType → String
   | .bool     => "bool"
@@ -89,8 +89,16 @@ instance : LT TermType where
 instance TermType.decLt (x y : TermType) : Decidable (x < y) :=
   if h : TermType.lt x y then isTrue h else isFalse h
 
+def hashTermType : TermType → UInt64
+  | .prim p => mixHash 1 (hash p)
+  | .option t => mixHash 2 (hashTermType t)
+  | .constr id args => mixHash 3 (mixHash (hash id) (hashTermTypeList args))
+where hashTermTypeList : List TermType → UInt64
+  | [] => 7
+  | t :: ts => mixHash (hashTermType t) (hashTermTypeList ts)
+
 instance : Hashable TermType where
-  hash := λ a => hash s!"{repr a}"
+  hash := hashTermType
 
 def TermType.beq : TermType → TermType → Bool
   | .prim pty₁, .prim pty₂ => pty₁ == pty₂
