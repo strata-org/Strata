@@ -222,11 +222,9 @@ so that `invokeOn` axioms are available to functions that need them.
 public def orderFunctionsAndProofs (program : FunctionsAndProofsProgram) : CoreWithLaurelTypes :=
   let datatypeDecls := (groupDatatypesByScc' program).map OrderedDecl.datatypes
   let constantDecls := program.constants.map OrderedDecl.constant
-  let funcNames : Std.HashSet String :=
-    program.functions.foldl (fun s p => s.insert p.name.text) {}
   let orderedDecls := (computeSccDecls program).flatMap fun (procs, isRecursive) =>
-    -- Split the SCC into functions and proofs
-    let (funcs, proofs) := procs.partition (fun p => funcNames.contains p.name.text)
+    -- Split the SCC into functions and proofs by isFunctional flag
+    let (funcs, proofs) := procs.partition (·.isFunctional)
     let funcDecl := if funcs.isEmpty then [] else [OrderedDecl.funcs funcs isRecursive]
     let proofDecls := proofs.map OrderedDecl.procedure
     funcDecl ++ proofDecls

@@ -5,7 +5,7 @@
 -/
 module
 
-public import Strata.Languages.Laurel.Laurel
+public import Strata.Languages.Laurel.MapStmtExpr
 
 /-!
 ## FunctionsAndProofs IR
@@ -15,6 +15,13 @@ functions (pure, used for computation) and proofs (used for verification).
 
 This IR sits between Laurel and CoreWithLaurelTypes in the pipeline:
   Laurel → FunctionsAndProofs → CoreWithLaurelTypes → Core
+
+The proof pass generates:
+- A function for each functional procedure.
+- A proof for each non-functional procedure.
+
+In the future, every procedure will generate both a function and a proof,
+with assertions/assumptions stripped from function bodies via deep traversal.
 -/
 
 namespace Strata.Laurel
@@ -32,10 +39,21 @@ structure FunctionsAndProofsProgram where
   datatypes : List DatatypeDefinition
   constants : List Constant
 
+/-- Deep traversal that strips all Assert and Assume nodes from a StmtExpr tree.
+    Assert/Assume nodes are replaced with `LiteralBool true`.
+    This will be used by the full proof pass when every procedure generates
+    both a function and a proof. -/
+def stripAssertAssume (expr : StmtExprMd) : StmtExprMd :=
+  mapStmtExpr (fun e =>
+    match e.val with
+    | .Assert _ | .Assume _ => ⟨.LiteralBool true, e.md⟩
+    | _ => e) expr
+
 /--
-Temporary translation from Laurel to FunctionsAndProofs.
-Maps functional Laurel procedures to functions and
-non-functional Laurel procedures to proofs.
+Proof pass: translate a Laurel program to the FunctionsAndProofs IR.
+
+Functional Laurel procedures become functions; non-functional procedures
+become proofs.
 -/
 def laurelToFunctionsAndProofs (program : Program) : FunctionsAndProofsProgram :=
   let nonExternal := program.staticProcedures.filter (fun p => !p.body.isExternal)

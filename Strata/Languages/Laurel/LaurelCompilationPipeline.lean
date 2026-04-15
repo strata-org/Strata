@@ -9,6 +9,7 @@ public import Strata.Languages.Laurel.LaurelToCoreTranslator
 import Strata.Languages.Laurel.DesugarShortCircuit
 import Strata.Languages.Laurel.EliminateReturnsInExpression
 import Strata.Languages.Laurel.ConstrainedTypeElim
+import Strata.Languages.Laurel.ContractPass
 import Strata.Languages.Core.Verifier
 
 /-!
@@ -20,9 +21,10 @@ to Strata Core. The pipeline is:
 1. Prepend core definitions for Laurel.
 2. Run a sequence of Laurel-to-Laurel lowering passes (resolution, heap
    parameterization, type hierarchy, modifies clauses, hole inference,
-   desugaring, lifting, constrained type elimination).
-3. Group and order declarations into a `CoreWithLaurelTypes`.
-4. Translate the `CoreWithLaurelTypes` to a `Core.Program`.
+   desugaring, lifting, constrained type elimination, contract pass).
+3. Run the proof pass to produce a `FunctionsAndProofsProgram`.
+4. Group and order declarations into a `CoreWithLaurelTypes`.
+5. Translate the `CoreWithLaurelTypes` to a `Core.Program`.
 -/
 
 open Core (VCResult VCResults VerifyOptions)
@@ -106,6 +108,11 @@ private def runLaurelPasses (options : LaurelTranslateOptions) (program : Progra
   let result := resolve program (some model)
   let (program, model) := (result.program, result.model)
   emit "ConstrainedTypeElim" program
+
+  -- NOTE: The contract pass (contractPass) is implemented in ContractPass.lean
+  -- but not yet wired into the pipeline. It will be activated once call-site
+  -- rewriting is complete and the full proof pass generates both functions
+  -- and proofs for every procedure.
 
   let allDiags := resolutionErrors ++ diamondErrors ++ nonCompositeDiags ++
     modifiesDiags ++ constrainedTypeDiags
