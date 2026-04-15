@@ -118,41 +118,61 @@ private def transformProcBody (proc : Procedure) (info : ContractInfo) : Body :=
     .Transparent (mkMd (.Block (preAssume ++ postAssume) none))
   | b => b
 
-/-- Rewrite call sites in a statement/expression tree. For each `StaticCall` to a
-    contracted procedure, insert `assert pre(args)` before and `assume post(args, results)`
-    after the call. -/
+/-- Rewrite a single statement that may be a call to a contracted procedure.
+    Returns a list of statements (the original plus any inserted assert/assume).
+    Uses the call site's metadata for generated assert/assume nodes. -/
+private def rewriteStmt (contractInfoMap : Std.HashMap String ContractInfo)
+    (e : StmtExprMd) : List StmtExprMd :=
+  let md := e.md
+  let mkWithMd (se : StmtExpr) : StmtExprMd := ⟨se, md⟩
+  match e.val with
+  | .Assign targets (.mk (.StaticCall callee args) _) =>
+    match contractInfoMap.get? callee.text with
+    | some info =>
+      let resultArgs := targets.map fun t => ⟨t.val, t.md⟩
+      let preAssert := if info.hasPreCondition
+        then [mkWithMd (.Assert (mkCall info.preName args))] else []
+      let postAssume := if info.hasPostCondition
+        then [mkWithMd (.Assume (mkCall info.postName (args ++ resultArgs)))] else []
+      preAssert ++ [e] ++ postAssume
+    | none => [e]
+  | .LocalVariable name _ty (some (.mk (.StaticCall callee args) _)) =>
+    match contractInfoMap.get? callee.text with
+    | some info =>
+      let resultArgs := [mkMd (.Identifier name)]
+      let preAssert := if info.hasPreCondition
+        then [mkWithMd (.Assert (mkCall info.preName args))] else []
+      let postAssume := if info.hasPostCondition
+        then [mkWithMd (.Assume (mkCall info.postName (args ++ resultArgs)))] else []
+      preAssert ++ [e] ++ postAssume
+    | none => [e]
+  | .StaticCall callee args =>
+    match contractInfoMap.get? callee.text with
+    | some info =>
+      let preAssert := if info.hasPreCondition
+        then [mkWithMd (.Assert (mkCall info.preName args))] else []
+      preAssert ++ [e]
+    | none => [e]
+  | _ => [e]
+
+/-- Rewrite call sites in a statement/expression tree. Processes Block children
+    at the statement level to avoid interfering with expression-level calls.
+    For each statement-level call to a contracted procedure, inserts
+    `assert pre(args)` before and `assume post(args, results)` after. -/
 private def rewriteCallSites (contractInfoMap : Std.HashMap String ContractInfo)
     (expr : StmtExprMd) : StmtExprMd :=
-  mapStmtExpr (fun e =>
+  let result := mapStmtExpr (fun e =>
     match e.val with
-    | .Assign targets (.mk (.StaticCall callee args) _) =>
-      match contractInfoMap.get? callee.text with
-      | some info =>
-        let resultArgs := targets.map fun t => ⟨t.val, t.md⟩
-        let preAssert := if info.hasPreCondition
-          then [mkMd (.Assert (mkCall info.preName args))] else []
-        let postAssume := if info.hasPostCondition
-          then [mkMd (.Assume (mkCall info.postName (args ++ resultArgs)))] else []
-        mkMd (.Block (preAssert ++ [e] ++ postAssume) none)
-      | none => e
-    | .LocalVariable name _ty (some (.mk (.StaticCall callee args) _)) =>
-      match contractInfoMap.get? callee.text with
-      | some info =>
-        let resultArgs := [mkMd (.Identifier name)]
-        let preAssert := if info.hasPreCondition
-          then [mkMd (.Assert (mkCall info.preName args))] else []
-        let postAssume := if info.hasPostCondition
-          then [mkMd (.Assume (mkCall info.postName (args ++ resultArgs)))] else []
-        mkMd (.Block (preAssert ++ [e] ++ postAssume) none)
-      | none => e
-    | .StaticCall callee args =>
-      match contractInfoMap.get? callee.text with
-      | some info =>
-        let preAssert := if info.hasPreCondition
-          then [mkMd (.Assert (mkCall info.preName args))] else []
-        mkMd (.Block (preAssert ++ [e]) none)
-      | none => e
+    | .Block stmts label =>
+      let stmts' := stmts.flatMap (rewriteStmt contractInfoMap)
+      if stmts'.length == stmts.length then e
+      else ⟨.Block stmts' label, e.md⟩
     | _ => e) expr
+  -- Handle top-level non-Block statements (e.g., bare Assign or StaticCall)
+  let expanded := rewriteStmt contractInfoMap result
+  match expanded with
+  | [single] => single
+  | many => mkMd (.Block many none)
 
 /-- Rewrite call sites in all bodies of a procedure. -/
 private def rewriteCallSitesInProc (contractInfoMap : Std.HashMap String ContractInfo)

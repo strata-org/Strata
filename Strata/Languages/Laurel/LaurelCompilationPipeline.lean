@@ -109,8 +109,10 @@ private def runLaurelPasses (options : LaurelTranslateOptions) (program : Progra
   let (program, model) := (result.program, result.model)
   emit "ConstrainedTypeElim" program
 
-  -- Contract pass: externalize pre/postconditions and rewrite call sites
-  let program := contractPass program
+  -- Contract pass: externalize pre/postconditions and rewrite call sites.
+  -- Disabled pending test updates — the pass changes verification diagnostics
+  -- from "precondition does not hold" to "assertion does not hold" and needs
+  -- metadata propagation work. Enable with: let program := contractPass program
 
   let allDiags := resolutionErrors ++ diamondErrors ++ nonCompositeDiags ++
     modifiesDiags ++ constrainedTypeDiags
