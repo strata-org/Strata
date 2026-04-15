@@ -507,35 +507,80 @@ partial def translateExpr (ctx : TranslationContext) (e : Python.expr SourceRang
 
   -- Comparison operations
   | .Compare _ left ops comparators => do
-    -- Python allows chained comparisons: a < b < c
-    -- For now, only support single comparison
-    if h: (ops.val.size != 1 || comparators.val.size != 1) then
-      throw (.unsupportedConstruct "Chained comparisons not yet supported" (toString (repr e)))
+    let n := ops.val.size
+    if h: (n == 0 || comparators.val.size != n) then
+      throw (.internalError "Compare: ops/comparators size mismatch")
     else
-      have hComp : 0 < comparators.val.size := by grind
-      have hOps: 0 < ops.val.size := by grind
+      have hN : 0 < n := by simp_all [Bool.or_eq_true, beq_iff_eq, bne_iff_ne]; omega
+      have hComp : comparators.val.size = n := by simp_all [Bool.or_eq_true, beq_iff_eq, bne_iff_ne]
+      -- Translate a single comparison operator to its Laurel prelude name.
+      -- `is`/`is not` are only sound when the RHS is None, because Python's
+      -- `is` checks object identity, not equality (e.g., True == 1 but
+      -- True is not 1). In the Any value model, None is a singleton so
+      -- identity and equality coincide for None comparisons.
+      let cmpopName (i : Nat) (hi : i < n) : Except TranslationError String := do
+        match ops.val[i]'hi with
+          | .Eq _ => .ok "PEq"
+          | .NotEq _ => .ok "PNEq"
+          | .Lt _ => .ok "PLt"
+          | .LtE _ => .ok "PLe"
+          | .Gt _ => .ok "PGt"
+          | .GtE _ => .ok "PGe"
+          | .In _ => .ok "PIn"
+          | .NotIn _ => .ok "PNotIn"
+          | .Is _ => match comparators.val[i]'(by omega) with
+              | .Constant _ (.ConNone _) _ => .ok "PEq"
+              | _ => throw (.unsupportedConstruct "`is` is only supported with None" (toString (repr e)))
+          | .IsNot _ => match comparators.val[i]'(by omega) with
+              | .Constant _ (.ConNone _) _ => .ok "PNEq"
+              | _ => throw (.unsupportedConstruct "`is not` is only supported with None" (toString (repr e)))
+      -- Check if a Python expression is simple (no side effects when duplicated)
+      let isSimple (pyExpr : Python.expr SourceRange) : Bool :=
+        match pyExpr with
+        | .Name .. | .Constant .. => true
+        | _ => false
+      -- Translate all operands
       let leftExpr ← translateExpr ctx left
-      let rightExpr ← translateExpr ctx (comparators.val[0]'hComp)
-      let preludeOpnames ← match ops.val[0]'hOps with
-        | .Eq _ => .ok "PEq"
-        | .NotEq _ => .ok "PNEq"
-        | .Lt _ => .ok "PLt"
-        | .LtE _ => .ok "PLe"
-        | .Gt _ => .ok "PGt"
-        | .GtE _ => .ok "PGe"
-        | .In _ => .ok "PIn"
-        | .NotIn _ => .ok "PNotIn"
-        -- `is`/`is not` are only sound when the RHS is None, because Python's
-        -- `is` checks object identity, not equality (e.g., True == 1 but
-        -- True is not 1). In the Any value model, None is a singleton so
-        -- identity and equality coincide for None comparisons.
-        | .Is _ => match comparators.val[0]'hComp with
-            | .Constant _ (.ConNone _) _ => .ok "PEq"
-            | _ => throw (.unsupportedConstruct "`is` is only supported with None" (toString (repr e)))
-        | .IsNot _ => match comparators.val[0]'hComp with
-            | .Constant _ (.ConNone _) _ => .ok "PNEq"
-            | _ => throw (.unsupportedConstruct "`is not` is only supported with None" (toString (repr e)))
-      return mkStmtExprMdWithLoc (StmtExpr.StaticCall preludeOpnames [leftExpr, rightExpr]) md
+      let mut compExprs : Array StmtExprMd := #[]
+      for c in comparators.val do
+        compExprs := compExprs.push (← translateExpr ctx c)
+      -- For chained comparisons (n > 1), introduce temp variables for
+      -- intermediate operands that are not simple names/literals.
+      -- This preserves Python's evaluate-once semantics for side-effecting
+      -- intermediate expressions (e.g., `a < f() < b` calls `f()` only once).
+      let mut tempDecls : List StmtExprMd := []
+      let mut operandRefs : Array StmtExprMd := #[leftExpr]
+      if n > 1 then
+        for i in [:n] do
+          let comp := compExprs[i]!
+          -- Intermediate operands (all except the last) need temp vars if non-simple
+          let isIntermediate := i < n - 1
+          let needsTmp := isIntermediate && !isSimple (comparators.val[i]!)
+          if needsTmp then
+            let freshVar := s!"cmp_tmp_{e.toAst.ann.start.byteIdx}_{i}"
+            let varDecl := mkStmtExprMd (StmtExpr.LocalVariable freshVar AnyTy (some comp))
+            tempDecls := tempDecls ++ [varDecl]
+            operandRefs := operandRefs.push (mkStmtExprMd (StmtExpr.Identifier freshVar))
+          else
+            operandRefs := operandRefs.push comp
+      else
+        operandRefs := operandRefs.push compExprs[0]!
+      -- Build pairwise comparisons and chain with PAnd
+      let mut pairs : Array StmtExprMd := #[]
+      for h : i in [:n] do
+        have hi : i < n := Membership.mem.upper h
+        let opName ← cmpopName i hi
+        let lhs := operandRefs[i]!
+        let rhs := operandRefs[i + 1]!
+        pairs := pairs.push (mkStmtExprMd (StmtExpr.StaticCall opName [lhs, rhs]))
+      let mut result := pairs[0]!
+      for i in [1:pairs.size] do
+        result := mkStmtExprMd (StmtExpr.StaticCall "PAnd" [result, pairs[i]!])
+      -- Wrap in a block if we emitted temp variable declarations
+      if tempDecls.isEmpty then
+        return { result with md := md }
+      else
+        return mkStmtExprMdWithLoc (StmtExpr.Block (tempDecls ++ [result]) none) md
 
   -- Boolean operations
   | .BoolOp _ op values => do
