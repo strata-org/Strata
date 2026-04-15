@@ -423,6 +423,21 @@ def handleUnaryOps {M} [Inhabited M] (name : String) (arg : CoreDDM.Expr M)
   | "Bv32.Neg" => pure (.neg_expr default (.bv32 default) arg)
   | "Bv64.Not" => pure (.bvnot default (.bv64 default) arg)
   | "Bv64.Neg" => pure (.neg_expr default (.bv64 default) arg)
+  -- Safe negation variants (same CST as regular negation)
+  | "Bv1.SafeNeg" | "Bv1.SafeUNeg" => pure (.safeneg_expr default (.bv1 default) arg)
+  | "Bv8.SafeNeg" | "Bv8.SafeUNeg" => pure (.safeneg_expr default (.bv8 default) arg)
+  | "Bv16.SafeNeg" | "Bv16.SafeUNeg" => pure (.safeneg_expr default (.bv16 default) arg)
+  | "Bv32.SafeNeg" | "Bv32.SafeUNeg" => pure (.safeneg_expr default (.bv32 default) arg)
+  | "Bv64.SafeNeg" | "Bv64.SafeUNeg" => pure (.safeneg_expr default (.bv64 default) arg)
+  -- Overflow predicates: these only appear in generated assertions, not user code.
+  -- Use Bool.Not as an approximation for CST printing (the actual semantics are
+  -- handled by the SMT encoder, not the CST).
+  | "Bv1.SNegOverflow" | "Bv1.UNegOverflow"
+  | "Bv8.SNegOverflow" | "Bv8.UNegOverflow"
+  | "Bv16.SNegOverflow" | "Bv16.UNegOverflow"
+  | "Bv32.SNegOverflow" | "Bv32.UNegOverflow"
+  | "Bv64.SNegOverflow" | "Bv64.UNegOverflow" =>
+    pure (.not default arg)
   | "Bv8.Extract_7_7" => pure (.bvextract_7_7 default arg)
   | "Bv16.Extract_15_15" => pure (.bvextract_15_15 default arg)
   | "Bv32.Extract_31_31" => pure (.bvextract_31_31 default arg)
@@ -458,7 +473,24 @@ def bvBinaryOpMap {M} [Inhabited M] :
   ("SLe", fun ty arg1 arg2 => .bvsle default ty arg1 arg2),
   ("SLt", fun ty arg1 arg2 => .bvslt default ty arg1 arg2),
   ("SGe", fun ty arg1 arg2 => .bvsge default ty arg1 arg2),
-  ("SGt", fun ty arg1 arg2 => .bvsgt default ty arg1 arg2)
+  ("SGt", fun ty arg1 arg2 => .bvsgt default ty arg1 arg2),
+  -- Safe variants map to the same CST constructors
+  ("SafeAdd", fun ty arg1 arg2 => .safeadd_expr default ty arg1 arg2),
+  ("SafeSub", fun ty arg1 arg2 => .safesub_expr default ty arg1 arg2),
+  ("SafeMul", fun ty arg1 arg2 => .safemul_expr default ty arg1 arg2),
+  ("SafeSDiv", fun ty arg1 arg2 => .safesdiv_expr default ty arg1 arg2),
+  ("SafeSMod", fun ty arg1 arg2 => .safesmod_expr default ty arg1 arg2),
+  ("SafeUAdd", fun ty arg1 arg2 => .safeadd_expr default ty arg1 arg2),
+  ("SafeUSub", fun ty arg1 arg2 => .safesub_expr default ty arg1 arg2),
+  ("SafeUMul", fun ty arg1 arg2 => .safemul_expr default ty arg1 arg2),
+  -- Overflow predicates: approximated as boolean ops for CST printing (only appear in generated assertions)
+  ("SAddOverflow", fun _ty arg1 arg2 => .le default _ty arg1 arg2),
+  ("SSubOverflow", fun _ty arg1 arg2 => .le default _ty arg1 arg2),
+  ("SMulOverflow", fun _ty arg1 arg2 => .le default _ty arg1 arg2),
+  ("SDivOverflow", fun _ty arg1 arg2 => .le default _ty arg1 arg2),
+  ("UAddOverflow", fun _ty arg1 arg2 => .le default _ty arg1 arg2),
+  ("USubOverflow", fun _ty arg1 arg2 => .le default _ty arg1 arg2),
+  ("UMulOverflow", fun _ty arg1 arg2 => .le default _ty arg1 arg2)
 ]
 
 /-- Map from bitvector sizes to their corresponding type constructors -/
