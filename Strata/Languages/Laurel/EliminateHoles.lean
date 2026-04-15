@@ -62,6 +62,7 @@ private def elimHoleNode (expr : StmtExprMd) : ElimHoleM StmtExprMd := do
   | .Hole true none => mkHoleCall ⟨.Unknown, expr.source, expr.md⟩
   | .Hole false _ => return expr -- Non-deterministic holes are preserved
   | _ => return expr
+
 private def elimProcedure (proc : Procedure) : ElimHoleM Procedure := do
   modify fun s => { s with currentInputs := proc.inputs }
   mapProcedureBodiesM (mapStmtExprM elimHoleNode) proc
