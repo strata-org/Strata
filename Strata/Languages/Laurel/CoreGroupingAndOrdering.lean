@@ -15,8 +15,6 @@ import Strata.DDM.Util.Graph.Tarjan
 Utilities for computing the grouping and topological ordering of Laurel
 declarations before they are emitted as Strata Core declarations.
 
-- `groupDatatypesByScc` — groups mutually recursive datatypes into SCC groups
-  using Tarjan's SCC algorithm.
 - `computeSccDecls` — builds the procedure call graph, runs Tarjan's SCC
   algorithm, and returns each SCC as a list of procedures paired with a flag
   indicating whether the SCC is recursive. The result is in reverse topological
@@ -188,27 +186,6 @@ using Laurel types. Produced by `orderFunctionsAndProofs` from a
 -/
 public structure CoreWithLaurelTypes where
   decls : List OrderedDecl
-
-/--
-Group mutually recursive datatypes into SCC groups using Tarjan's SCC algorithm.
-Returns groups in topological order (dependencies before dependents).
--/
-public def groupDatatypesByScc (program : Program) : List (List DatatypeDefinition) :=
-  let laurelDatatypes := program.types.filterMap fun td => match td with
-    | .Datatype dt => some dt
-    | _ => none
-  let n := laurelDatatypes.length
-  if n == 0 then [] else
-  let nameToIdx : Std.HashMap String Nat :=
-    laurelDatatypes.foldlIdx (fun m i dt => m.insert dt.name.text i) {}
-  let edges : List (Nat × Nat) :=
-    laurelDatatypes.foldlIdx (fun acc i dt =>
-      (datatypeRefs dt).filterMap nameToIdx.get? |>.foldl (fun acc j => (j, i) :: acc) acc) []
-  let g := OutGraph.ofEdges! n edges
-  let dtsArr := laurelDatatypes.toArray
-  OutGraph.tarjan g |>.toList.filterMap fun comp =>
-    let members := comp.toList.filterMap fun idx => dtsArr[idx]?
-    if members.isEmpty then none else some members
 
 /--
 Produce a `CoreWithLaurelTypes` from a `FunctionsAndProofsProgram` by
