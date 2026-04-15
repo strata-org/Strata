@@ -805,6 +805,11 @@ partial def translateExpr (p : Program) (bindings : TransBindings) (arg : Arg) :
     let fn : LExpr Core.CoreLParams.mono ←
       translateFn (.some tp) q`Core.bvnot
     return (.app sr fn x)
+  | .fn _ q`Core.safeneg_expr, [tpa, xa] =>
+    let ty ← translateLMonoTy bindings (dealiasTypeArg p tpa)
+    let fn ← translateFn ty q`Core.safeneg_expr
+    let x ← translateExpr p bindings xa
+    return .mkApp sr fn [x]
   -- If-then-else expression
   | .fn _ q`Core.if, [_tpa, ca, ta, fa] =>
     let c ← translateExpr p bindings ca
