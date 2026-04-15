@@ -80,6 +80,31 @@ def spawn (path : String) (args : Array String) : IO IncrementalSolverState := d
   let solver ← Solver.spawn path args
   return { solver }
 
+/-- Shared helper for constructing quantified terms. -/
+private def mkQuantHelper (qk : QuantifierKind)
+    (bindings : List (String × TermType))
+    (callback : List Term → Except String (Term × List (List Term)))
+    : IncrementalSolverM (Except String Term) := do
+  let vars := bindings.map fun (name, ty) => TermVar.mk name ty
+  let varTerms := vars.map Term.var
+  match callback varTerms with
+  | .error msg => return .error msg
+  | .ok (body, triggers) =>
+    let tr := match triggers with
+      | [] => Term.app .triggers [] .trigger
+      | groups =>
+        let triggerTerms := groups.map fun group => Term.app .triggers group .trigger
+        Term.app .triggers triggerTerms .trigger
+    return .ok (Term.quant qk vars tr body)
+
+/-- Shared helper for binary comparison operations. -/
+private def mkBinCmp (op : Op) (opName : String) (ts : List Term)
+    : IncrementalSolverM (Except String Term) :=
+  return match ts with
+    | [] | [_] => .error s!"{opName}: need at least two arguments"
+    | [t1, t2] => .ok (Term.app op [t1, t2] .bool)
+    | _ => .error s!"{opName}: pairwise comparison not yet supported"
+
 /-- Build the `AbstractSolver` implementation for incremental SMT-LIB. -/
 def mkAbstractSolver : AbstractSolver Term IncrementalSolverM where
   mkBool b := return Term.bool b
@@ -110,22 +135,10 @@ def mkAbstractSolver : AbstractSolver Term IncrementalSolverM where
     | [] | [_] => .error "mkEq: need at least two arguments"
     | [t1, t2] => .ok (Factory.eq t1 t2)
     | t :: rest => .ok (rest.foldl (fun acc x => Factory.and acc (Factory.eq t x)) (Term.bool true))
-  mkLt ts := return match ts with
-    | [] | [_] => .error "mkLt: need at least two arguments"
-    | [t1, t2] => .ok (Term.app .lt [t1, t2] .bool)
-    | _ => .error "mkLt: pairwise comparison not yet supported"
-  mkLe ts := return match ts with
-    | [] | [_] => .error "mkLe: need at least two arguments"
-    | [t1, t2] => .ok (Term.app .le [t1, t2] .bool)
-    | _ => .error "mkLe: pairwise comparison not yet supported"
-  mkGt ts := return match ts with
-    | [] | [_] => .error "mkGt: need at least two arguments"
-    | [t1, t2] => .ok (Term.app .gt [t1, t2] .bool)
-    | _ => .error "mkGt: pairwise comparison not yet supported"
-  mkGe ts := return match ts with
-    | [] | [_] => .error "mkGe: need at least two arguments"
-    | [t1, t2] => .ok (Term.app .ge [t1, t2] .bool)
-    | _ => .error "mkGe: pairwise comparison not yet supported"
+  mkLt ts := mkBinCmp .lt "mkLt" ts
+  mkLe ts := mkBinCmp .le "mkLe" ts
+  mkGt ts := mkBinCmp .gt "mkGt" ts
+  mkGe ts := mkBinCmp .ge "mkGe" ts
 
   mkIte c t f := return .ok (Factory.ite c t f)
 
@@ -198,30 +211,10 @@ def mkAbstractSolver : AbstractSolver Term IncrementalSolverM where
     return .ok ()
 
   mkForall bindings callback := do
-    let vars := bindings.map fun (name, ty) => TermVar.mk name ty
-    let varTerms := vars.map Term.var
-    match callback varTerms with
-    | .error msg => return .error msg
-    | .ok (body, triggers) =>
-      let tr := match triggers with
-        | [] => Term.app .triggers [] .trigger
-        | groups =>
-          let triggerTerms := groups.map fun group => Term.app .triggers group .trigger
-          Term.app .triggers triggerTerms .trigger
-      return .ok (Term.quant .all vars tr body)
+    mkQuantHelper .all bindings callback
 
   mkExists bindings callback := do
-    let vars := bindings.map fun (name, ty) => TermVar.mk name ty
-    let varTerms := vars.map Term.var
-    match callback varTerms with
-    | .error msg => return .error msg
-    | .ok (body, triggers) =>
-      let tr := match triggers with
-        | [] => Term.app .triggers [] .trigger
-        | groups =>
-          let triggerTerms := groups.map fun group => Term.app .triggers group .trigger
-          Term.app .triggers triggerTerms .trigger
-      return .ok (Term.quant .exist vars tr body)
+    mkQuantHelper .exist bindings callback
 
   assert t := do
     match ← termToStr t with

@@ -231,38 +231,43 @@ def dischargeObligationIncremental
       assumptionTerms obligationTerm md satisfiabilityCheck validityCheck
       (label := label)).run batchSolverEnc
     let bufEnc ← bEnc.get
-    if h : bufEnc.data.IsValidUTF8 then
-      let cmds := String.fromUTF8 bufEnc.data h
-      for line in cmds.splitOn "\n" do
-        let trimmed := line.trimAscii.toString
-        if trimmed.isEmpty then continue
-        emitln line
-    -- Read results: the encoder emits check-sat commands inline
-    let mut satResult : Imperative.SMT.Result Expression.Ident := .unknown
-    let mut valResult : Imperative.SMT.Result Expression.Ident := .unknown
-    if satisfiabilityCheck && validityCheck then
-      let satLine ← readln
-      satResult := match satLine with
-        | "sat" => .sat []
-        | "unsat" => .unsat
-        | _ => .unknown
-      let valLine ← readln
-      valResult := match valLine with
-        | "sat" => .sat []
-        | "unsat" => .unsat
-        | _ => .unknown
-    else if satisfiabilityCheck then
+    let cmds ← if h : bufEnc.data.IsValidUTF8 then
+      pure (String.fromUTF8 bufEnc.data h)
+    else
+      throw (IO.userError "incremental solver: encoded SMT-LIB buffer is not valid UTF-8")
+    -- Count expected check-sat responses so we can read the right number.
+    -- The encoder may also emit get-value commands after check-sat; we need
+    -- to consume those responses too.
+    let mut checkSatCount := 0
+    for line in cmds.splitOn "\n" do
+      let trimmed := line.trimAscii.toString
+      if trimmed.isEmpty then continue
+      emitln line
+      if trimmed.startsWith "(check-sat" then
+        checkSatCount := checkSatCount + 1
+    -- Parse a solver response line into an SMT result
+    let parseResult (line : String) : Imperative.SMT.Result Expression.Ident :=
+      match line with
+      | "sat" => .sat []
+      | "unsat" => .unsat
+      | _ => .unknown
+    -- Read check-sat responses. The encoder emits check-sat commands
+    -- that produce one-line responses (sat/unsat/unknown). Any get-value
+    -- commands after check-sat produce multi-line output that we skip
+    -- by reading until we see the next check-sat response or EOF.
+    let mut resultsList : List (Imperative.SMT.Result Expression.Ident) := []
+    for _ in List.range checkSatCount do
       let line ← readln
-      satResult := match line with
-        | "sat" => .sat []
-        | "unsat" => .unsat
-        | _ => .unknown
-    else if validityCheck then
-      let line ← readln
-      valResult := match line with
-        | "sat" => .sat []
-        | "unsat" => .unsat
-        | _ => .unknown
+      resultsList := parseResult line :: resultsList
+    let results := resultsList.reverse
+    -- Map results to sat/validity based on what was requested
+    let satResult := if satisfiabilityCheck then
+      results.head?.getD .unknown
+    else .unknown
+    let valResult := if validityCheck then
+      let idx := if satisfiabilityCheck then 1 else 0
+      results.getD idx .unknown
+    else .unknown
     emitln "(exit)"
     return .ok (satResult, valResult, estate)
   let (result, _) ← action.run solverState
