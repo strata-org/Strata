@@ -22,6 +22,7 @@ import Strata.Languages.Python.Specs.IdentifyOverloads
 import Strata.Languages.Python.Specs.ToLaurel
 import Strata.Languages.Laurel.Grammar.AbstractToConcreteTreeTranslator
 import Strata.Languages.Laurel.Laurel
+import Strata.Languages.Core.EntryPoint
 import Strata.Transform.ProcedureInlining
 import Strata.Util.IO
 
@@ -31,7 +32,7 @@ import Strata.Util.Json
 
 open Strata
 
-open Core (VerifyOptions VerboseMode VerificationMode CheckLevel)
+open Core (VerifyOptions VerboseMode VerificationMode CheckLevel EntryPoint)
 
 /-! ## Exit codes
 
@@ -545,6 +546,7 @@ private def deriveBaseName (file : String) : String :=
   | some sfx => (name.dropEnd sfx.length).toString
   | none     => name
 
+
 def pyAnalyzeLaurelCommand : Command where
   name := "pyAnalyzeLaurel"
   args := [ "file" ]
@@ -637,12 +639,6 @@ def pyAnalyzeLaurelCommand : Command where
       IO.println "\n==== Core Program ===="
       IO.print (Core.formatProgram coreProgram)
 
-    -- Split prelude / user procedure names.
-    -- Only procedures whose file range matches the user source are targets.
-    let userSourcePath := sourcePath.getD filePath
-    let (_preludeNames, userProcNames) :=
-      Strata.splitProcNames coreProgram [userSourcePath]
-
     -- Verify using Core verifier
     -- --keep-all-files implies vc-directory if not explicitly set
     let baseVcDir := keepDir.map (fun dir => (s!"{dir}/{baseName}" : System.FilePath))
@@ -654,7 +650,10 @@ def pyAnalyzeLaurelCommand : Command where
     let incremental := pflags.getBool "incremental"
     let isBugFinding := options.checkMode == .bugFinding
                       || options.checkMode == .bugFindingAssumingCompleteSpec
-    let inlinePhases : List Core.PipelinePhase :=
+
+    -- Parse --entry-point flag (only supported in bug-finding modes).
+    let entryPointFlag := pflags.getString "entry-point"
+    let entryPoint : EntryPoint ←
       if isBugFinding then
         [Core.procedureInliningPipelinePhase
           { doInline := fun name a => name ≠ "__main__" && Core.doInlineNonRecursive name a
@@ -717,7 +716,7 @@ def pyAnalyzeToGotoCommand : Command where
       | none => filePath
     let sourceText := pySourceOpt.map (·.2)
     let newPgm ← Strata.pythonDirectToCore filePath sourcePathForMetadata
-    match Core.inlineProcedures newPgm { doInline := (fun name _ => name ≠ "main") } with
+    match Core.inlineProcedures newPgm { doInline := (fun _caller callee _ => callee ≠ "main") } with
     | .error e => exitInternalError e
     | .ok newPgm =>
       -- Type-check the full program (registers Python types like ExceptOrNone)
@@ -1167,7 +1166,7 @@ def transformCommand : Command where
         | "inlineProcedures" =>
           let opts : Core.InlineTransformOptions :=
             if pc.procedures.isEmpty then {}
-            else { doInline := (fun name _ => name ∈ pc.procedures) }
+            else { doInline := (fun _caller callee _ => callee ∈ pc.procedures) }
           passes := passes ++ [.inlineProcedures opts]
         | "loopElim" =>
           passes := passes ++ [.loopElim]

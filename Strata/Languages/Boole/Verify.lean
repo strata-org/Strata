@@ -677,9 +677,15 @@ def toCoreDecls (cmd : BooleDDM.Command SourceRange) : TranslateM (List Core.Dec
       let inputNames := inputs.map (·.fst.name)
       let outputNames := outputs.map (·.fst.name)
       let spec ← withBVars (inputNames ++ outputNames) (toCoreSpec m n spec?)
-      let body ← match body? with
+      -- Wrap the body in a labeled block named after the procedure so that
+      -- `exit functionName;` inside the body exits the whole procedure,
+      -- implementing early return without a synthetic label.
+      let bodyStmts ← match body? with
         | none => pure []
         | some b => withBVars (inputNames ++ outputNames) (toCoreBlock b)
+      let body : List Core.Statement := match bodyStmts with
+        | [] => []
+        | stmts => [.block n stmts .empty]
       return [.proc {
         header := { name := mkIdent n, typeArgs := tys, inputs := inputs, outputs := outputs }
         spec := spec
@@ -736,6 +742,21 @@ def toCoreDecls (cmd : BooleDDM.Command SourceRange) : TranslateM (List Core.Dec
   | .command_datatypes _ ⟨_, decls⟩ =>
     return [.type (.data (← decls.toList.mapM toCoreDatatypeDecl)) .empty]
 
+/-- Render a `Boole.Program` to a format object using the provided `GlobalContext` and
+`DialectMap`. These should come from the originating `Strata.Program` (i.e. `env.globalContext`
+and `env.dialects`), since fvar indices in `prog` are relative to that context.
+
+This mirrors `Core.formatProgram`: both functions accept an external context rather than
+recomputing one from the program structure, because the container operation (`Boole.prog`)
+carries no binding specs and therefore produces an empty `GlobalContext` when processed alone.
+-/
+def formatProgram (prog : Boole.Program) (gctx : GlobalContext) (dialects : DialectMap) : Std.Format :=
+  let ctx := FormatContext.ofDialects dialects gctx {}
+  let state : FormatState := {
+    openDialects := dialects.toList.foldl (init := {}) fun a d => a.insert d.name
+  }
+  (mformat (ArgF.op prog.toAst) ctx state).format
+
 def toCoreProgram (p : Boole.Program) (gctx : GlobalContext := {}) : Except DiagnosticModel Core.Program := do
   match p with
   | .prog _ ⟨_, cmds⟩ =>
@@ -780,6 +801,8 @@ def verify
   | .error e =>
     throw <| IO.Error.userError (toString (e.format (some ictx.fileMap)))
   | .ok prog =>
+    if options.verbose >= .normal then
+      dbg_trace f!"\n\n[DEBUG] Boole program:\n{Boole.formatProgram prog env.globalContext env.dialects}"
     match toCoreProgram prog env.globalContext with
     | .error e =>
       throw <| IO.Error.userError (toString (e.format (some ictx.fileMap)))
