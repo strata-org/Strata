@@ -125,7 +125,7 @@ def translateWithLaurel (options : LaurelTranslateOptions) (program : Program)
     : IO TranslateResultWithLaurel := do
   let (program, model, passDiags) ← runLaurelPasses options program keepAllFilesPrefix
   let ordered := orderProgram program
-  let initState : TranslateState := { model := model }
+  let initState : TranslateState := { model := model, overflowChecks := options.overflowChecks }
   let (coreProgramOption, translateState) :=
     runTranslateM initState (translateLaurelToCore options program ordered)
   let allDiagnostics := passDiags ++ translateState.diagnostics

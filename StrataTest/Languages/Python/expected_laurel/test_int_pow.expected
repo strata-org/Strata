@@ -1,5 +1,5 @@
 test_int_pow.py(4, 13): ✅ pass - Check PPow exception
-test_int_pow.py(5, 4): ✅ pass - int power
+test_int_pow.py(5, 4): ✅ pass - assert_assert(75)_calls_Any_to_bool_0
 test_int_pow.py(5, 4): ✅ pass - int power
 DETAIL: 3 passed, 0 failed, 0 inconclusive
 RESULT: Analysis success
