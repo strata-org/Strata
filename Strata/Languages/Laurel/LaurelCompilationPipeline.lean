@@ -121,8 +121,8 @@ def translateWithLaurel (options : LaurelTranslateOptions) (program : Program)
     (keepAllFilesPrefix : Option String := none)
     : IO TranslateResultWithLaurel := do
   let (program, model, passDiags) ← runLaurelPasses options program keepAllFilesPrefix
-  let fap := laurelToFunctionsAndProofs program
-  let ordered := orderFunctionsAndProofs fap
+  let functionsAndProofs := laurelToFunctionsAndProofs program
+  let ordered := orderFunctionsAndProofs functionsAndProofs
   let initState : TranslateState := { model := model }
   let (coreProgramOption, translateState) :=
     runTranslateM initState (translateLaurelToCore options program ordered)

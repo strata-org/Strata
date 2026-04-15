@@ -112,16 +112,13 @@ Procedures with an `invokeOn` trigger are placed as early as possible — before
 unrelated procedures without one — by stably partitioning them first before building
 the graph. Tarjan then naturally assigns them lower indices, causing them to appear
 earlier in the output.
-
-External procedures are excluded.
 -/
-public def computeSccDecls (program : Program) : List (List Procedure × Bool) :=
-  -- External procedures are completely ignored (not translated to Core).
+public def computeSccDecls (program : FunctionsAndProofsProgram) : List (List Procedure × Bool) :=
   -- Stable partition: procedures with invokeOn come first, preserving relative
   -- order within each group. Tarjan then places them earlier in the topological output.
+  let allProcs := program.functions ++ program.proofs
   let (withInvokeOn, withoutInvokeOn) :=
-    (program.staticProcedures.filter (fun p => !p.body.isExternal))
-    |>.partition (fun p => p.invokeOn.isSome)
+    allProcs.partition (fun p => p.invokeOn.isSome)
   let nonExternal : List Procedure := withInvokeOn ++ withoutInvokeOn
 
   -- Build a call-graph over all non-external procedures.
@@ -225,17 +222,9 @@ so that `invokeOn` axioms are available to functions that need them.
 public def orderFunctionsAndProofs (program : FunctionsAndProofsProgram) : CoreWithLaurelTypes :=
   let datatypeDecls := (groupDatatypesByScc' program).map OrderedDecl.datatypes
   let constantDecls := program.constants.map OrderedDecl.constant
-  -- Use the existing SCC infrastructure on all procedures (functions + proofs)
-  -- to get the right topological ordering, then classify each SCC.
-  let tempProgram : Program := {
-    staticProcedures := program.functions ++ program.proofs
-    staticFields := []
-    types := program.datatypes.map .Datatype
-    constants := program.constants
-  }
   let funcNames : Std.HashSet String :=
     program.functions.foldl (fun s p => s.insert p.name.text) {}
-  let orderedDecls := (computeSccDecls tempProgram).flatMap fun (procs, isRecursive) =>
+  let orderedDecls := (computeSccDecls program).flatMap fun (procs, isRecursive) =>
     -- Split the SCC into functions and proofs
     let (funcs, proofs) := procs.partition (fun p => funcNames.contains p.name.text)
     let funcDecl := if funcs.isEmpty then [] else [OrderedDecl.funcs funcs isRecursive]
