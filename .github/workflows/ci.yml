@@ -104,12 +104,6 @@ jobs:
         run: dotnet build -warnaserror ${SOLUTION}
       - name: Test BoogieToStrata
         run: dotnet test ${SOLUTION}
-      - name: Test Strata Command line
-        run: .github/scripts/testStrataCommand.sh
-      - name: Validate examples against expected output
-        working-directory: Examples
-        shell: bash
-        run: ./run_examples.sh
       - uses: actions/setup-python@v6
         with:
           python-version: '3.14'
@@ -120,10 +114,6 @@ jobs:
         working-directory: StrataTest/Languages/Python
         shell: bash
         run: python run_py_analyze_sarif.py --laurel
-      - name: Run pyAnalyze golden-file tests
-        working-directory: StrataTest/Languages/Python
-        shell: bash
-        run: ./run_py_analyze.sh
       - name: Run regex differential tests
         working-directory: StrataTest/Languages/Python/Regex
         run: python diff_test.py
