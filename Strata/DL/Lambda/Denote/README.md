@@ -32,3 +32,42 @@ and `callOfLFunc` more generally
 - `LExprSemanticsConsistent.lean` - proof that operational and denotational 
 semantics are consistent (single-step, multi-step, and partial evaluator)
 
+## Trusted Code Base
+
+The TCB of the denotational semantics consists of the following:
+1. The typing relation `HasTypeA` in `LExprAnnotated.lean`
+2. The definitions of type and term denotations in `LExprDenote.lean` (
+`SortDenote`, `TyDenote`, `LExpr.denote`, and its dependencies)
+3. The definitions of consistency in `LExprDenote.lean` (especially 
+`InterpConsistentBody`, `InterpConsistentEval`, `InterpConsistent`, 
+`ConstrInterpConsistent`)
+4. The dependencies of these definitions, especially heterogenous lists in 
+`HList.lean` and the definition of `substTyVars`.
+
+Notably, the TCB denotational semantics does not include several nontrivial
+functions present in the TCB of the operational semantics: `substFvarsLifting`,
+`substFvarsFromState`, `Factory.callOfLFunc`, `eql`, etc.
+
+The semantics consistency theorems additionally depend on the assumptions in
+`Assumptions.lean`. See below.
+
+## Assumptions
+
+The denotational semantics and its theorems rely on two kinds of assumptions:
+1. The definition of validity in the semantics itself requires consistent 
+interpretations - those that agree with concrete `Factory` functions and 
+declared datatypes.
+2. The semantic consistency theorems require various typing and well-formedness
+assumptions on the expression in question, `Factory` functions, and the
+environment. 
+
+The second set of assumptions are given in `Assumptions.lean` and we will
+eventually prove that they are satisfied of well-typed terms.
+The first set is much trickier to handle. Implicitly, each concrete function and
+datatype definition gives rise to a set of axioms concerning its behavior, and
+these assumptions are intended to hold if these axioms are consistent. If the
+assumptions do not hold (for instance, if the typing rules are too permissive),
+then validity becomes trivial. Proving that consistent interpretations exist
+is possible but very difficult with recursive functions.
+TODO: Show that consistent interpretations exist for a simple but nontrivial
+example.
