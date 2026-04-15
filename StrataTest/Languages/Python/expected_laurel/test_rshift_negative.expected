@@ -1,7 +1,5 @@
 test_rshift_negative.py(3, 13): ❓ unknown - Check PRShift exception
-test_rshift_negative.py(3, 13): ✅ pass - Check PRShift exception
-test_rshift_negative.py(3, 4): ❓ unknown - set_y_calls_PRShift_0
 test_rshift_negative.py(4, 4): ✅ pass - negative right shift
 test_rshift_negative.py(4, 4): ❓ unknown - negative right shift
-DETAIL: 2 passed, 0 failed, 3 inconclusive
+DETAIL: 1 passed, 0 failed, 2 inconclusive
 RESULT: Inconclusive

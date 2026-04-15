@@ -927,6 +927,8 @@ function POr (v1: Any, v2: Any) : Any
 // during Laurel-to-Core translation and the factory provides the Core versions.
 function int_pow (base: int, exp: int) : int
   external;
+function int_rshift (x: int, n: int) : int
+  external;
 function float_pow (base: real, exp: real) : real
   external;
 
@@ -968,12 +970,11 @@ function PMod (v1: Any, v2: Any) : Any
 // /////////////////////////////////////////////////////////////////////////////////////
 
 function PLShift (v1: Any, v2: Any) : Any
-  requires (Any..isfrom_int(v2)==>Any..as_int!(v2)>=0) && (Any..isfrom_bool(v2)==>true)
 {
   if Any..isexception(v1) then v1 else if Any..isexception(v2) then v2
-  else if Any..isfrom_int(v1) && Any..isfrom_int(v2) then
+  else if Any..isfrom_int(v1) && Any..isfrom_int(v2) && Any..as_int!(v2) >= 0 then
     from_int(Any..as_int!(v1) * int_pow(2, Any..as_int!(v2)))
-  else if Any..isfrom_bool(v1) && Any..isfrom_int(v2) then
+  else if Any..isfrom_bool(v1) && Any..isfrom_int(v2) && Any..as_int!(v2) >= 0 then
     from_int(bool_to_int(Any..as_bool!(v1)) * int_pow(2, Any..as_int!(v2)))
   else if Any..isfrom_int(v1) && Any..isfrom_bool(v2) then
     from_int(Any..as_int!(v1) * int_pow(2, bool_to_int(Any..as_bool!(v2))))
@@ -984,17 +985,16 @@ function PLShift (v1: Any, v2: Any) : Any
 };
 
 function PRShift (v1: Any, v2: Any) : Any
-  requires (Any..isfrom_int(v2)==>Any..as_int!(v2)>=0) && (Any..isfrom_bool(v2)==>true)
 {
   if Any..isexception(v1) then v1 else if Any..isexception(v2) then v2
-  else if Any..isfrom_int(v1) && Any..isfrom_int(v2) then
-    from_int(Any..as_int!(v1) / int_pow(2, Any..as_int!(v2)))
-  else if Any..isfrom_bool(v1) && Any..isfrom_int(v2) then
-    from_int(bool_to_int(Any..as_bool!(v1)) / int_pow(2, Any..as_int!(v2)))
+  else if Any..isfrom_int(v1) && Any..isfrom_int(v2) && Any..as_int!(v2) >= 0 then
+    from_int(int_rshift(Any..as_int!(v1), Any..as_int!(v2)))
+  else if Any..isfrom_bool(v1) && Any..isfrom_int(v2) && Any..as_int!(v2) >= 0 then
+    from_int(int_rshift(bool_to_int(Any..as_bool!(v1)), Any..as_int!(v2)))
   else if Any..isfrom_int(v1) && Any..isfrom_bool(v2) then
-    from_int(Any..as_int!(v1) / int_pow(2, bool_to_int(Any..as_bool!(v2))))
+    from_int(int_rshift(Any..as_int!(v1), bool_to_int(Any..as_bool!(v2))))
   else if Any..isfrom_bool(v1) && Any..isfrom_bool(v2) then
-    from_int(bool_to_int(Any..as_bool!(v1)) / int_pow(2, bool_to_int(Any..as_bool!(v2))))
+    from_int(int_rshift(bool_to_int(Any..as_bool!(v1)), bool_to_int(Any..as_bool!(v2))))
   else
     exception(UndefinedError ("Operand Type is not defined"))
 };
