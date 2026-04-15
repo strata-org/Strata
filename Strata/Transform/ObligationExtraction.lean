@@ -222,15 +222,15 @@ def extractObligations (p : Program) : Except String (ProofObligations Expressio
     | .proc proc _md => do
       let globalPc : PathConditions Expression := [axiomPc]
       let res ← extractFromStatements globalPc proc.body
-      -- Deduplicate within this procedure: when multiple PE paths are combined
-      -- via nondet ITE, obligations before the split point are duplicated.
-      -- Uses string representation as key because structural equality on
-      -- expressions is too strict (metadata differences) and we only need
-      -- to detect identical obligations from duplicated code paths.
-      let mut seen : Std.HashSet (String × String) := {}
+      -- Deduplicate within this procedure: obligations at the same source
+      -- location with the same label and expression are duplicates from
+      -- different PE paths. Uses source position in the key to preserve
+      -- obligations at different locations that share a label.
+      let mut seen : Std.HashSet (String × String × String) := {}
       let mut procObs := allObs
       for ob in res.obligations do
-        let key := (ob.label, toString (Std.format ob.obligation))
+        let pos := toString (Std.format (Imperative.getFileRange ob.metadata))
+        let key := (ob.label, toString (Std.format ob.obligation), pos)
         if !seen.contains key then
           seen := seen.insert key
           procObs := procObs.push ob
