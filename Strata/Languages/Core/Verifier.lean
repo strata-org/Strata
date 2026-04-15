@@ -276,6 +276,11 @@ structure VCOutcome where
       preserved as a separate entry in the outer list. Consumed by future
       diagnostic and traceability tooling. -/
   solverLog : List (List SolverPhaseLog) := []
+  /-- When this outcome was produced by merging multiple paths, stores the
+      pre-merge per-path outcomes. Empty for unmerged (single-path) results.
+      Used by the rendering phase to compute per-path classification summaries
+      without storing rendering-mode-dependent strings. -/
+  mergedFrom : List VCOutcome := []
   deriving Repr
 
 instance : Inhabited VCOutcome where
@@ -491,6 +496,28 @@ def emoji (o : VCOutcome) (property : Imperative.PropertyType)
     else if o.passReachabilityUnknown then "✔️"
     else "❓"
 
+/-- Compute a per-path classification summary for a merged outcome.
+    Returns a parenthesized string like "(always true if reached on 1 path,
+    always false if reached on 1 path)" when the merged result differs from
+    individual paths. Returns the empty string for unmerged results or when
+    all paths have the same classification as the merged result. -/
+def pathSummary (o : VCOutcome) (property : Imperative.PropertyType)
+    (checkLevel : CheckLevel) (checkMode : VerificationMode) : String :=
+  if o.mergedFrom.isEmpty then ""
+  else
+    let mergedLabel := o.label property checkLevel checkMode
+    -- Count per-path classifications
+    let counts := o.mergedFrom.foldl (init := Std.HashMap.emptyWithCapacity (α := String) (β := Nat))
+      fun acc pathOutcome =>
+        let pathLabel := pathOutcome.label property checkLevel checkMode
+        acc.insert pathLabel ((acc.getD pathLabel 0) + 1)
+    -- If all paths have the same label as the merged result, no extra info needed
+    if counts.size == 1 && counts.contains mergedLabel then ""
+    else
+      let parts := counts.toList.map fun (lbl, n) =>
+        s!"{lbl} on {n} path{if n > 1 then "s" else ""}"
+      s!" ({", ".intercalate parts})"
+
 end VCOutcome
 
 /-- Merge two SMT results, where `sat` dominates `unknown` dominates `unsat`.
@@ -511,11 +538,15 @@ def SMT.Result.merge (a b : SMT.Result) : SMT.Result :=
 /-- Merge two `VCOutcome`s from different paths to the same assertion.
     For each SMT check (satisfiability and validity), `sat` dominates:
     if the assertion is satisfiable on any path, the merged result is sat.
-    Each path's `solverLog` is preserved as a separate entry. -/
+    Each path's `solverLog` is preserved as a separate entry.
+    Pre-merge per-path outcomes are stored in `mergedFrom` for rendering. -/
 def VCOutcome.merge (a b : VCOutcome) : VCOutcome :=
+  let aPaths := if a.mergedFrom.isEmpty then [a] else a.mergedFrom
+  let bPaths := if b.mergedFrom.isEmpty then [b] else b.mergedFrom
   { satisfiabilityProperty := a.satisfiabilityProperty.merge b.satisfiabilityProperty
     validityProperty := a.validityProperty.merge b.validityProperty
-    solverLog := a.solverLog ++ b.solverLog }
+    solverLog := a.solverLog ++ b.solverLog
+    mergedFrom := aPaths ++ bPaths }
 
 
 /--
@@ -595,8 +626,9 @@ def VCResult.formatOutcome (r : VCResult) : String :=
   let prop := r.obligation.property
   match r.outcome with
   | .ok o =>
+    let suffix := o.pathSummary prop r.checkLevel r.checkMode
     s!"{o.emoji prop r.checkLevel r.checkMode} \
-       {o.label prop r.checkLevel r.checkMode}"
+       {o.label prop r.checkLevel r.checkMode}{suffix}"
   | .error e => s!"🚨 {e}"
 
 /-- Deductive-mode success: the assertion's validity is proven (`isPass`).
@@ -709,99 +741,6 @@ def VCResults.mergeByAssertion (rs : VCResults) : VCResults :=
       | none =>
         (resultsByKey.insert k r, order.push k, uid)
   order.filterMap fun k => resultsByKey.get? k
-
-/--
-Groups all `VCResult`s that originate from the same assertion.
-
-Assertions can be reached through multiple paths in a procedure. Each path
-creates a VC and a corresponding `VCResult`. An `AssertResult` collects
-those per-path results so that consumers (diagnostics, SARIF, summaries)
-can report a single outcome per assertion instead of one per path.
--/
-structure AssertResult where
-  /-- The assertion label shared by all grouped results. -/
-  label : String
-  /-- The individual per-path verification results for this assertion. -/
-  results : Array VCResult
-
-/-- An assertion passes when every path's result is a success. -/
-def AssertResult.isSuccess (ar : AssertResult) : Bool :=
-  ar.results.all VCResult.isSuccess
-
-/-- An assertion fails when any path's result is a failure. -/
-def AssertResult.isFailure (ar : AssertResult) : Bool :=
-  ar.results.any VCResult.isFailure
-
-/-- An assertion is unknown when it has no failures but at least one unknown. -/
-def AssertResult.isUnknown (ar : AssertResult) : Bool :=
-  !ar.isFailure && ar.results.any VCResult.isUnknown
-
-/-- An assertion has an implementation error when any path does. -/
-def AssertResult.isImplementationError (ar : AssertResult) : Bool :=
-  ar.results.any VCResult.isImplementationError
-
-/-- An assertion has an SMT error when any path does. -/
-def AssertResult.hasSMTError (ar : AssertResult) : Bool :=
-  ar.results.any VCResult.hasSMTError
-
-/-- An assertion is unreachable when every path is unreachable. -/
-def AssertResult.isUnreachable (ar : AssertResult) : Bool :=
-  ar.results.all VCResult.isUnreachable
-
-/-- Bug-finding success: every path succeeds in bug-finding mode. -/
-def AssertResult.isBugFindingSuccess (ar : AssertResult) : Bool :=
-  ar.results.all VCResult.isBugFindingSuccess
-
-/-- Bug-finding failure: any path fails in bug-finding mode. -/
-def AssertResult.isBugFindingFailure (ar : AssertResult) : Bool :=
-  ar.results.any VCResult.isBugFindingFailure
-
-/-- The first VCResult in the group, used to access shared obligation metadata. -/
-def AssertResult.representative (ar : AssertResult) : Option VCResult :=
-  ar.results[0]?
-
-/-- Pick the worst-case VCResult from the group.
-    Priority: implementation error > failure > unknown > unreachable > success.
-    When `isBugFindingMode` is true, bug-finding predicates are used. -/
-def AssertResult.worstCase (ar : AssertResult) (isBugFindingMode : Bool := false) : Option VCResult :=
-  let isFailure := if isBugFindingMode then VCResult.isBugFindingFailure else VCResult.isFailure
-  ar.results.foldl (init := none) fun best r =>
-    match best with
-    | none => some r
-    | some b =>
-      if r.isImplementationError || r.hasSMTError then some r
-      else if isFailure r && !isFailure b then some r
-      else if r.isUnknown && !isFailure b && !b.isUnknown then some r
-      else some b
-
-instance : ToFormat AssertResult where
-  format ar :=
-    let header := f!"Assertion: {ar.label} ({ar.results.size} path(s))"
-    let body := ar.results.map (fun r => f!"{Format.line}  {r}")
-    header ++ Format.joinSep body.toList ""
-
-@[expose] abbrev AssertResults := Array AssertResult
-
-/-- Group `VCResults` by assertion label and source location, preserving the order of first occurrence.
-    When the file range is unknown, each VCResult gets its own AssertResult group. -/
-def VCResults.groupByAssertion (rs : VCResults) : AssertResults :=
-  let (resultsByKey, order, labelsByKey, _) := rs.foldl
-    (init := (Std.HashMap.emptyWithCapacity (α := String) (β := Array VCResult),
-              (#[] : Array String),
-              Std.HashMap.emptyWithCapacity (α := String) (β := String),
-              (0 : Nat)))
-    fun (resultsByKey, order, labelsByKey, uid) r =>
-      let rawLabel := r.obligation.label
-      let displayLabel := r.obligation.metadata.getPropertySummary.getD rawLabel
-      let (k, uid) := match Imperative.getFileRange r.obligation.metadata with
-        | some fr => if fr.range.isNone then (s!"{displayLabel}@__unique_{uid}", uid + 1)
-                     else (s!"{displayLabel}@{repr fr}", uid)
-        | none    => (s!"{displayLabel}@__unique_{uid}", uid + 1)
-      let existing := resultsByKey.getD k #[]
-      let order := if existing.isEmpty then order.push k else order
-      let labelsByKey := if existing.isEmpty then labelsByKey.insert k displayLabel else labelsByKey
-      (resultsByKey.insert k (existing.push r), order, labelsByKey, uid)
-  order.map fun k => { label := labelsByKey.getD k "", results := resultsByKey.getD k #[] }
 
 /--
 Preprocess a proof obligation using partial evaluation (PE).
@@ -1264,34 +1203,6 @@ def Core.VCResult.toDiagnostic (files: Map Strata.Uri Lean.FileMap) (vcr : Core.
     (phases : List Core.AbstractedPhase := []) : Option Diagnostic := do
   let modelOption := toDiagnosticModel vcr phases
   modelOption.map (fun dm => dm.toDiagnostic files)
-
-/-- Convert an `AssertResult` to a single `DiagnosticModel` by picking the
-    worst-case `VCResult` among its paths. This ensures one diagnostic per
-    assertion rather than one per path.
-
-    Priority: implementation error > failure > unknown > unreachable > success.
-    When `isBugFindingMode` is true, bug-finding failure/success predicates are
-    used instead of the deductive ones. -/
-def assertResultToDiagnosticModel (ar : Core.AssertResult)
-    (isBugFindingMode : Bool := false)
-    (phases : List Core.AbstractedPhase := []) : Option DiagnosticModel :=
-  let isWorseResult (r : Core.VCResult) : Bool :=
-    r.isImplementationError ||
-      if isBugFindingMode then r.isBugFindingFailure else r.isFailure
-  let pick := ar.results.foldl (init := none) fun best r =>
-    let candidate := toDiagnosticModel r phases
-    match best, candidate with
-    | none, _ => candidate
-    | _, none => best
-    | some _, some _ => if isWorseResult r then candidate else best
-  pick
-
-/-- Convert an `AssertResult` to a single `Diagnostic`. -/
-def assertResultToDiagnostic (files: Map Strata.Uri Lean.FileMap) (ar : Core.AssertResult)
-    (isBugFindingMode : Bool := false)
-    (phases : List Core.AbstractedPhase := []) : Option Diagnostic := do
-  let dm ← assertResultToDiagnosticModel ar isBugFindingMode phases
-  some (dm.toDiagnostic files)
 
 end -- public section
 end Strata

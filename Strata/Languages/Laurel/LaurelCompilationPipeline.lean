@@ -25,7 +25,7 @@ to Strata Core. The pipeline is:
 4. Translate the `OrderedLaurel` to a `Core.Program`.
 -/
 
-open Core (VCResult VCResults AssertResult AssertResults VerifyOptions)
+open Core (VCResult VCResults VerifyOptions)
 
 namespace Strata.Laurel
 
@@ -156,15 +156,6 @@ def verifyToVcResults (program : Program)
       | .some p => IO.FS.createDirAll ⟨p.toString⟩; runner ⟨p.toString⟩
     return (some ioResult, translateDiags)
   | none => return (none, translateDiags)
-
-/--
-Verify a Laurel program using an SMT solver, returning results grouped by assertion.
--/
-def verifyToAssertResults (program : Program)
-    (options : VerifyOptions := .default)
-    : IO (Option AssertResults × List DiagnosticModel) := do
-  let (vcOpt, diags) ← verifyToVcResults program options
-  return (vcOpt.map (·.groupByAssertion), diags)
 
 /--
 Verify a Laurel program using an SMT solver, returning results with
