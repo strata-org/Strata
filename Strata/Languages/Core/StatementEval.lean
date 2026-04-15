@@ -449,7 +449,8 @@ def evalAuxGo (steps : Nat) (old_var_subst : SubstMap) (Ewn : EnvWithNext) (ss :
           let deadDeferred := collectDeadBranchDeferred ss_dead c Ewn.env.pathConditions
           let Ewns :=
             (go' Ewn ss_live .none).map fun (ewn : EnvWithNext) =>
-              { ewn with stk := orig_stk.appendToTop [.ite (.det cond') ewn.stk.top [] md] }
+              let (liveSs, deadSs) := if cond'.isTrue then (ewn.stk.top, ss_dead) else (ss_dead, ewn.stk.top)
+              { ewn with stk := orig_stk.appendToTop [.ite (.det cond') liveSs deadSs md] }
           -- Prepend dead-branch obligations to the first result.
           match Ewns with
           | [] => []
@@ -578,7 +579,7 @@ def processIteBranches (steps : Nat) (old_var_subst : SubstMap) (Ewn : EnvWithNe
   -- with no exit label, we can merge both states into one.
   | [{ stk := stk_t, env := E_t, exitLabel := .none}],
     [{ stk := stk_f, env := E_f, exitLabel := .none}] =>
-    let s' := Imperative.Stmt.ite (.det cond') (assumeCondTrue :: stk_t.top) (assumeCondFalse :: stk_f.top) md
+    let s' := Imperative.Stmt.ite .nondet (assumeCondTrue :: stk_t.top) (assumeCondFalse :: stk_f.top) md
     [EnvWithNext.mk (Env.merge cond' E_t E_f).popScope
                     .none
                     (orig_stk.appendToTop [s'])]

@@ -19,10 +19,10 @@ private def translateCore (p : Strata.Program) : Core.Program :=
 private def peAssumeProg :=
 #strata
 program Core;
-procedure test() returns () {
+procedure test(z : bool) returns () {
   var x : int := 0;
   var y : int := 6;
-  if * {
+  if (z) {
     x := y;
     assert [then_check]: (x == y);
   } else {
@@ -35,20 +35,19 @@ procedure test() returns () {
 /--
 info: program Core;
 
-procedure test () returns ()
+procedure test (z : bool) returns ()
 {
   var x : int := 0;
   var y : int := 6;
-  var $__nondet_cond_2 : bool;
-  if ($__$__nondet_cond_20) {
-    assume [|<label_ite_cond_true: $__nondet_cond_2>|]: $__$__nondet_cond_20;
+  if * {
+    assume [|<label_ite_cond_true: z>|]: $__z0;
     x := 6;
     assert [then_check]: true;
     } else {
-    assume [|<label_ite_cond_false: !$__nondet_cond_2>|]: if $__$__nondet_cond_20 then false else true;
+    assume [|<label_ite_cond_false: !z>|]: if $__z0 then false else true;
     assert [else_check]: true;
     }
-  assert [after_ite]: if $__$__nondet_cond_20 then 6 else 0 >= 0;
+  assert [after_ite]: if $__z0 then 6 else 0 >= 0;
   };
 -/
 #guard_msgs in

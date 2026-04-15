@@ -836,12 +836,15 @@ def verifySingleEnv (pE : Program × Env) (options : VerifyOptions)
               {format err}\n\n\
               [DEBUG] Evaluated program: {Core.formatProgram p}\n\n"
   | _ =>
+    let obligations ← match Core.ObligationExtraction.extractObligations p with
+      | .ok obs => pure obs
+      | .error e => .error (DiagnosticModel.fromFormat f!"ObligationExtraction error: {e}")
     let mut results := (#[] : VCResults)
     let mut preprocessNs : Nat := 0
     let mut smtEncodeNs : Nat := 0
     let mut solverNs : Nat := 0
     let mut peResolvedCount : Nat := 0
-    for obligation in E.deferred do
+    for obligation in obligations do
       -- Determine which checks to perform based on metadata or check mode/amount
       let (satisfiabilityCheck, validityCheck) :=
         if Imperative.MetaData.hasFullCheck obligation.metadata then
@@ -931,7 +934,7 @@ def verifySingleEnv (pE : Program × Env) (options : VerifyOptions)
       let _ ← (IO.println s!"[profile]     Preprocess obligations: {nsToMs preprocessNs}ms" |>.toBaseIO)
       let _ ← (IO.println s!"[profile]     SMT encoding: {nsToMs smtEncodeNs}ms" |>.toBaseIO)
       let _ ← (IO.println s!"[profile]     Solver/file writing: {nsToMs solverNs}ms" |>.toBaseIO)
-      let _ ← (IO.println s!"[profile]     Obligations: {E.deferred.size} total, {peResolvedCount} resolved by PE" |>.toBaseIO)
+      let _ ← (IO.println s!"[profile]     Obligations: {obligations.size} total, {peResolvedCount} resolved by PE" |>.toBaseIO)
     return results
 
 /-- Run the Strata Core verification pipeline on a program: transform,

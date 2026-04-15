@@ -62,6 +62,19 @@ where
       go pc rest (acc ++ thenObs ++ elseObs)
     | _ => go pc rest acc
 
+/-- Merge path conditions from two ITE branches. New assumptions from each
+    branch (those not in the pre-ITE path conditions) are collected into a
+    single new scope appended to the pre-ITE path conditions. -/
+private def mergeBranchPcs (preItePc thenPc elsePc : PathConditions Expression)
+    : PathConditions Expression :=
+  let preLabels := preItePc.flatten.map (·.1) |>.toArray
+  let isNew := fun (label : String) => !preLabels.contains label
+  let thenNew := thenPc.flatten.filter (fun (l, _) => isNew l)
+  let elseNew := elsePc.flatten.filter (fun (l, _) => isNew l)
+  -- Deduplicate: if both branches added the same label, keep only one copy
+  let elseOnly := elseNew.filter (fun (l, _) => !thenNew.any (fun (l', _) => l == l'))
+  preItePc.push (thenNew ++ elseOnly)
+
 /-- Extract proof obligations from a procedure body, reconstructing path
     conditions from the program structure.
 
@@ -80,14 +93,13 @@ where
   | [], acc => .ok (acc, pc)
   | s :: rest, acc =>
     match s with
-    | .ite .nondet thenSs elseSs _md =>
-      -- PE ensures nondet branching is the last statement in a sequence.
-      if !rest.isEmpty then
-        .error "ObligationExtraction: .ite .nondet must be the last statement (rest is non-empty)"
-      else do
-        let (thenObs, _) ← extractFromStatements pc thenSs
-        let (elseObs, _) ← extractFromStatements pc elseSs
-        .ok (thenObs ++ elseObs ++ acc, pc)
+    | .ite .nondet thenSs elseSs _md => do
+        let (thenObs, thenPc) ← extractFromStatements pc thenSs
+        let (elseObs, elsePc) ← extractFromStatements pc elseSs
+        -- Merge path conditions from both branches so that post-ITE
+        -- statements see assumptions from both paths.
+        let mergedPc := mergeBranchPcs pc thenPc elsePc
+        go mergedPc rest (acc ++ thenObs ++ elseObs)
     | _ => do
       let (acc', pc') ← extractFromStatement pc s acc
       go pc' rest acc'
@@ -106,13 +118,14 @@ where
       .ok (acc.push (ProofObligation.mk label .cover pc e md), pc)
 
     | .cmd (.cmd (.assume label e _md)) =>
-      -- Add assumption to path conditions
-      .ok (acc, pc.insert label e)
+      -- Add assumption to path conditions; use addInNewest to preserve
+      -- earlier assumptions with the same label (duplicate labels are valid).
+      .ok (acc, pc.addInNewest [(label, e)])
 
     | .ite .nondet thenSs elseSs _md => do
       let (thenObs, _) ← extractFromStatements pc thenSs
       let (elseObs, _) ← extractFromStatements pc elseSs
-      .ok (thenObs ++ elseObs ++ acc, pc)
+      .ok (acc ++ thenObs ++ elseObs, pc)
 
     | .ite (.det c) thenSs elseSs _md => do
       -- Check if the condition is deterministic (true/false).
@@ -124,13 +137,13 @@ where
         let (liveSs, deadSs) := if isTrue then (thenSs, elseSs) else (elseSs, thenSs)
         let (liveObs, _) ← extractFromStatements pc liveSs
         let deadObs ← extractDeadBranchObligations pc c deadSs
-        .ok (liveObs ++ deadObs ++ acc, pc)
+        .ok (acc ++ liveObs ++ deadObs, pc)
       else do
         -- Unresolved nondeterministic condition: process both branches.
         -- Assume statements inside each branch provide the path conditions.
         let (thenObs, _) ← extractFromStatements pc thenSs
         let (elseObs, _) ← extractFromStatements pc elseSs
-        .ok (thenObs ++ elseObs ++ acc, pc)
+        .ok (acc ++ thenObs ++ elseObs, pc)
 
     | .block _label innerSs _md => do
       -- Process inner statements; propagate path conditions from the block
