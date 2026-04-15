@@ -70,8 +70,15 @@ def encodeCore (ctx : Core.SMT.Context) (prelude : SolverM Unit)
   -- Encode the obligation term Q (not negated)
   let (obligationId, estate) ← (encodeTerm obligationTerm) |>.run estate
 
+  -- Exclude variables whose type is a declared sort (e.g. Map). Their model
+  -- values use solver-internal representations that may not parse across
+  -- solver versions. Datatype variables (List, Either, …) are kept.
+  let declaredSortNames := ctx.sorts.map (·.name) |>.toList
   let ids := estate.ufs.toList.filterMap fun (uf, id) =>
-    if uf.args.isEmpty then some id else none
+    if uf.args.isEmpty then match uf.out with
+      | .constr name _ => if name ∈ declaredSortNames then none else some id
+      | _ => some id
+    else none
 
   -- Choose encoding strategy: use check-sat-assuming only when doing both checks
   let bothChecks := satisfiabilityCheck && validityCheck
