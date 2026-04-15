@@ -6,6 +6,7 @@
 module
 
 import all Strata.DL.Lambda.Denote.LExprDenote
+import all Strata.DL.Lambda.Denote.LExprDenoteTySubst
 import all Strata.DL.Lambda.TypeFactory
 import all Strata.DL.Lambda.IntBoolFactory
 
@@ -348,6 +349,30 @@ private theorem elim_inputTys : (eitherFactory["Either$Elim"]'elim_mem).inputs.v
      .arrow (.ftvar "a") (.ftvar "$__ty0"),
      .arrow (.ftvar "b") (.ftvar "$__ty0")] := by native_decide
 
+private theorem elim_proof_irrel (h : "Either$Elim" ∈ eitherFactory) :
+    eitherFactory["Either$Elim"]'h = eitherFactory["Either$Elim"]'elim_mem := by rfl
+
+/-- The concreteEval stored at "Either$Elim" is `elimConcreteEval eitherBlock default`.
+Blocked by `mkIdx` being `@[irreducible]`. -/
+private theorem elim_ceval_eq (ceval : TP.Metadata → List (LExpr TP.mono) → Option (LExpr TP.mono))
+    (h : (eitherFactory["Either$Elim"]'elim_mem).concreteEval = some ceval) :
+    ceval = elimConcreteEval (T := TP) eitherBlock default := by
+  sorry
+
+private theorem intGt_proof_irrel (h : "Int.Gt" ∈ eitherFactory) :
+    eitherFactory["Int.Gt"]'h = eitherFactory["Int.Gt"]'intGt_mem := by rfl
+
+/-- The concreteEval stored at "Int.Gt" in the factory is the binaryOp eval
+for `(· > ·)`. This is blocked by `mkIdx` being `@[irreducible]` — HashMap
+lookups don't reduce in the kernel. -/
+private theorem intGt_ceval_eq (ceval : TP.Metadata → List (LExpr TP.mono) → Option (LExpr TP.mono))
+    (h : (eitherFactory["Int.Gt"]'intGt_mem).concreteEval = some ceval) :
+    ∀ md (e1 e2 : LExpr TP.mono),
+    ceval md [e1, e2] = match LExpr.denoteInt e1, LExpr.denoteInt e2 with
+      | some a, some b => some (.boolConst md (a > b))
+      | _, _ => none := by
+  sorry
+
 private theorem eitherInterpConsistent :
     Factory.InterpConsistent eitherTcInterp eitherOpInterp eitherFactory := by
   constructor
@@ -429,16 +454,205 @@ private theorem eitherInterpConsistent :
     rcases hmem with rfl | rfl | rfl | rfl | rfl
     · -- Either$Elim: has concreteEval
       unfold LFunc.InterpConsistentEval
-      rw [elim_name, elim_output]
-      intro vt fvarVal md tySubst argExprs resultExpr heval h_args h_result
-      -- ceval is elimConcreteEval; unfold it
-      trace_state
-      sorry
+      rw [elim_proof_irrel]
+      intro vt fvarVal md tySubst argExprs resultExpr heval
+      rw [show List.map Prod.snd (eitherFactory["Either$Elim"]'elim_mem).inputs
+            = (eitherFactory["Either$Elim"]'elim_mem).inputs.values from
+            (ListMap.values_eq_map_snd _).symm]
+      rw [elim_inputTys, elim_output, elim_name]
+      simp only [List.map]
+      intro h_args h_result
+      -- Decompose h_args: argExprs = [ex, ef, eg]
+      cases h_args with
+      | cons hx h_rest =>
+        rename_i ex efg_list
+        cases h_rest with
+        | cons hf_case h_rest2 =>
+          rename_i ef eg_list
+          cases h_rest2 with
+          | cons hg_case h_nil =>
+            rename_i eg rest
+            cases h_nil
+            simp only [LSort.mkArrow]
+            -- Unfold denoteArgs (3 steps for 3 args) and applyArgs (4 steps)
+            unfold denoteArgs
+            unfold denoteArgs
+            unfold denoteArgs
+            unfold SortDenote.applyArgs
+            unfold SortDenote.applyArgs
+            unfold SortDenote.applyArgs
+            unfold SortDenote.applyArgs
+            simp only []
+            -- The denoteArgs on [] gives HList.nil, so the match reduces
+            unfold denoteArgs
+            simp only [eitherOpInterp]
+            trace_state
+            -- Normalize to explicit names
+            change LExpr.denote eitherTcInterp eitherOpInterp fvarVal vt HList.nil resultExpr
+              (LMonoTy.subst tySubst (LMonoTy.ftvar "$__ty0")) h_result =
+              eitherOpInterp "Either$Elim"
+                (LSort.tcons "arrow"
+                  [LMonoTy.substTyVars vt
+                      (LMonoTy.subst tySubst (LMonoTy.tcons "Either" [LMonoTy.ftvar "a", LMonoTy.ftvar "b"])),
+                    LSort.tcons "arrow"
+                      [LMonoTy.substTyVars vt
+                          (LMonoTy.subst tySubst ((LMonoTy.ftvar "a").arrow (LMonoTy.ftvar "$__ty0"))),
+                        LSort.tcons "arrow"
+                          [LMonoTy.substTyVars vt
+                              (LMonoTy.subst tySubst ((LMonoTy.ftvar "b").arrow (LMonoTy.ftvar "$__ty0"))),
+                            LMonoTy.substTyVars vt (LMonoTy.subst tySubst (LMonoTy.ftvar "$__ty0"))]]])
+                (LExpr.denote eitherTcInterp eitherOpInterp fvarVal vt HList.nil ex
+                  (LMonoTy.subst tySubst (LMonoTy.tcons "Either" [LMonoTy.ftvar "a", LMonoTy.ftvar "b"])) hx)
+                (LExpr.denote eitherTcInterp eitherOpInterp fvarVal vt HList.nil ef
+                  (LMonoTy.subst tySubst ((LMonoTy.ftvar "a").arrow (LMonoTy.ftvar "$__ty0"))) hf_case)
+                (LExpr.denote eitherTcInterp eitherOpInterp fvarVal vt HList.nil eg
+                  (LMonoTy.subst tySubst ((LMonoTy.ftvar "b").arrow (LMonoTy.ftvar "$__ty0"))) hg_case)
+            -- Bind denote results with explicit SortDenote types to expose substTyVars
+            let d_result : SortDenote eitherTcInterp
+                  (LMonoTy.substTyVars vt (LMonoTy.subst tySubst (LMonoTy.ftvar "$__ty0"))) :=
+              LExpr.denote eitherTcInterp eitherOpInterp fvarVal vt HList.nil resultExpr
+                (LMonoTy.subst tySubst (LMonoTy.ftvar "$__ty0")) h_result
+            let d_ex : SortDenote eitherTcInterp
+                  (LMonoTy.substTyVars vt (LMonoTy.subst tySubst (LMonoTy.tcons "Either" [LMonoTy.ftvar "a", LMonoTy.ftvar "b"]))) :=
+              LExpr.denote eitherTcInterp eitherOpInterp fvarVal vt HList.nil ex
+                (LMonoTy.subst tySubst (LMonoTy.tcons "Either" [LMonoTy.ftvar "a", LMonoTy.ftvar "b"])) hx
+            let d_ef : SortDenote eitherTcInterp
+                  (LMonoTy.substTyVars vt (LMonoTy.subst tySubst ((LMonoTy.ftvar "a").arrow (LMonoTy.ftvar "$__ty0")))) :=
+              LExpr.denote eitherTcInterp eitherOpInterp fvarVal vt HList.nil ef
+                (LMonoTy.subst tySubst ((LMonoTy.ftvar "a").arrow (LMonoTy.ftvar "$__ty0"))) hf_case
+            let d_eg : SortDenote eitherTcInterp
+                  (LMonoTy.substTyVars vt (LMonoTy.subst tySubst ((LMonoTy.ftvar "b").arrow (LMonoTy.ftvar "$__ty0")))) :=
+              LExpr.denote eitherTcInterp eitherOpInterp fvarVal vt HList.nil eg
+                (LMonoTy.subst tySubst ((LMonoTy.ftvar "b").arrow (LMonoTy.ftvar "$__ty0"))) hg_case
+            -- Prove sort equality: current sort = simplified sort where match can fire
+            -- substTyVars and subst distribute over tcons/arrow
+            have h_sort_eq :
+              LSort.tcons "arrow"
+                [LMonoTy.substTyVars vt
+                    (LMonoTy.subst tySubst (LMonoTy.tcons "Either" [LMonoTy.ftvar "a", LMonoTy.ftvar "b"])),
+                  LSort.tcons "arrow"
+                    [LMonoTy.substTyVars vt
+                        (LMonoTy.subst tySubst ((LMonoTy.ftvar "a").arrow (LMonoTy.ftvar "$__ty0"))),
+                      LSort.tcons "arrow"
+                        [LMonoTy.substTyVars vt
+                            (LMonoTy.subst tySubst ((LMonoTy.ftvar "b").arrow (LMonoTy.ftvar "$__ty0"))),
+                          LMonoTy.substTyVars vt (LMonoTy.subst tySubst (LMonoTy.ftvar "$__ty0"))]]]
+              = LSort.tcons "arrow"
+                [LSort.tcons "Either"
+                    [LMonoTy.substTyVars vt (LMonoTy.subst tySubst (LMonoTy.ftvar "a")),
+                     LMonoTy.substTyVars vt (LMonoTy.subst tySubst (LMonoTy.ftvar "b"))],
+                  LSort.tcons "arrow"
+                    [LSort.tcons "arrow"
+                        [LMonoTy.substTyVars vt (LMonoTy.subst tySubst (LMonoTy.ftvar "a")),
+                         LMonoTy.substTyVars vt (LMonoTy.subst tySubst (LMonoTy.ftvar "$__ty0"))],
+                      LSort.tcons "arrow"
+                        [LSort.tcons "arrow"
+                            [LMonoTy.substTyVars vt (LMonoTy.subst tySubst (LMonoTy.ftvar "b")),
+                             LMonoTy.substTyVars vt (LMonoTy.subst tySubst (LMonoTy.ftvar "$__ty0"))],
+                          LMonoTy.substTyVars vt (LMonoTy.subst tySubst (LMonoTy.ftvar "$__ty0"))]]] := by
+              simp only [LMonoTy.subst_tcons_pair, LMonoTy.arrow, LMonoTy.substTyVars, LMonoTy.substTyVars.map]
+            -- Use h_sort_eq to cast: eitherOpInterp sort₁ = (h ▸ eitherOpInterp sort₂)
+            have h_cast : eitherOpInterp "Either$Elim"
+                (LSort.tcons "arrow"
+                  [LMonoTy.substTyVars vt
+                      (LMonoTy.subst tySubst (LMonoTy.tcons "Either" [LMonoTy.ftvar "a", LMonoTy.ftvar "b"])),
+                    LSort.tcons "arrow"
+                      [LMonoTy.substTyVars vt
+                          (LMonoTy.subst tySubst ((LMonoTy.ftvar "a").arrow (LMonoTy.ftvar "$__ty0"))),
+                        LSort.tcons "arrow"
+                          [LMonoTy.substTyVars vt
+                              (LMonoTy.subst tySubst ((LMonoTy.ftvar "b").arrow (LMonoTy.ftvar "$__ty0"))),
+                            LMonoTy.substTyVars vt (LMonoTy.subst tySubst (LMonoTy.ftvar "$__ty0"))]]])
+              = h_sort_eq ▸ eitherOpInterp "Either$Elim"
+                (LSort.tcons "arrow"
+                  [LSort.tcons "Either"
+                      [LMonoTy.substTyVars vt (LMonoTy.subst tySubst (LMonoTy.ftvar "a")),
+                       LMonoTy.substTyVars vt (LMonoTy.subst tySubst (LMonoTy.ftvar "b"))],
+                    LSort.tcons "arrow"
+                      [LSort.tcons "arrow"
+                          [LMonoTy.substTyVars vt (LMonoTy.subst tySubst (LMonoTy.ftvar "a")),
+                           LMonoTy.substTyVars vt (LMonoTy.subst tySubst (LMonoTy.ftvar "$__ty0"))],
+                        LSort.tcons "arrow"
+                          [LSort.tcons "arrow"
+                              [LMonoTy.substTyVars vt (LMonoTy.subst tySubst (LMonoTy.ftvar "b")),
+                               LMonoTy.substTyVars vt (LMonoTy.subst tySubst (LMonoTy.ftvar "$__ty0"))],
+                            LMonoTy.substTyVars vt (LMonoTy.subst tySubst (LMonoTy.ftvar "$__ty0"))]]]) := by grind
+            rw [h_cast]
+            simp only [eitherOpInterp, dite_true]
+            -- Use sorry'd ceval lemma to extract what ceval does
+            rw [elim_proof_irrel] at hceval
+            have hce := elim_ceval_eq ceval hceval
+            rw [hce] at heval
+            sorry
     · -- Left: no concreteEval
       have := left_no_ceval; simp [Option.isNone_iff_eq_none] at this; simp [this] at hceval
     · have := right_no_ceval; simp [Option.isNone_iff_eq_none] at this; simp [this] at hceval
     · -- Int.Gt: has concreteEval
-      sorry
+      unfold LFunc.InterpConsistentEval
+      rw [intGt_proof_irrel]
+      intro vt fvarVal md tySubst argExprs resultExpr heval
+      rw [show List.map Prod.snd (eitherFactory["Int.Gt"]'intGt_mem).inputs
+            = (eitherFactory["Int.Gt"]'intGt_mem).inputs.values from
+            (ListMap.values_eq_map_snd _).symm]
+      rw [intGt_inputTys, intGt_output, intGt_name]
+      have hint : LMonoTy.subst tySubst (.tcons "int" []) = .tcons "int" [] := by
+        rw [LMonoTy.subst_tcons, LMonoTys.subst_nil]
+      have hbool : LMonoTy.subst tySubst (.tcons "bool" []) = .tcons "bool" [] := by
+        rw [LMonoTy.subst_tcons, LMonoTys.subst_nil]
+      simp only [List.map]
+      rw [hint, hbool]
+      simp only [LMonoTy.substTyVars, LMonoTy.substTyVars.map]
+      intro h_args h_result
+      simp only [LSort.mkArrow, eitherOpInterp]
+      -- Decompose h_args: argExprs = [e1, e2]
+      cases h_args with
+      | cons h1 h_rest =>
+        rename_i e1 e2_list
+        cases h_rest with
+        | cons h2 h_nil =>
+          rename_i e2 rest
+          cases h_nil
+          -- Unfold RHS: denoteArgs and applyArgs
+          unfold denoteArgs
+          unfold denoteArgs
+          unfold SortDenote.applyArgs
+          unfold SortDenote.applyArgs
+          unfold SortDenote.applyArgs
+          simp only []
+          unfold denoteArgs
+          simp only []
+          -- Use sorry'd ceval lemma to extract what ceval does
+          rw [intGt_proof_irrel] at hceval
+          have hce := intGt_ceval_eq ceval hceval
+          rw [hce] at heval
+          -- Now heval : match denoteInt e1, denoteInt e2 with ... = some resultExpr
+          -- Case split on denoteInt results
+          match hd1 : LExpr.denoteInt e1, hd2 : LExpr.denoteInt e2 with
+          | some a, some b =>
+            simp only [hd1, hd2] at heval
+            cases heval
+            -- Extract e1 = intConst from hd1
+            cases e1 with
+            | const m1 c1 =>
+              cases c1 with
+              | intConst i1 =>
+                simp [LExpr.denoteInt] at hd1; subst hd1
+                -- Extract e2 = intConst from hd2
+                cases e2 with
+                | const m2 c2 =>
+                  cases c2 with
+                  | intConst i2 =>
+                    simp [LExpr.denoteInt] at hd2; subst hd2
+                    -- Now goal is fully concrete
+                    unfold LExpr.boolConst
+                    rw [denote_boolConst, denote_intConst, denote_intConst]
+                    simp [intGtInterp]
+                  | _ => simp [LExpr.denoteInt] at hd2
+                | _ => simp [LExpr.denoteInt] at hd2
+              | _ => simp [LExpr.denoteInt] at hd1
+            | _ => simp [LExpr.denoteInt] at hd1
+          | some _, none => simp only [hd1, hd2] at heval; cases heval
+          | none, _ => simp only [hd1] at heval; cases heval
     · -- gt': no concreteEval
       have := gt'_no_ceval; simp [Option.isNone_iff_eq_none] at this; simp [this] at hceval
 
@@ -448,6 +662,7 @@ private theorem left_proof_irrel (h : "Left" ∈ eitherFactory) :
 
 private theorem right_proof_irrel (h : "Right" ∈ eitherFactory) :
     eitherFactory["Right"]'h = eitherFactory["Right"]'right_mem := by rfl
+
 
 -- Left/Right inputs and output
 private theorem left_inputTys : (eitherFactory["Left"]'left_mem).inputs.values = [.ftvar "a"] := by native_decide

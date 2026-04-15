@@ -686,6 +686,30 @@ theorem denote_const
     : LExpr.denote tcInterp opInterp fvarVal vt bvarVal (.const m c) τ h =
       HasTypeA.const_inv h ▸ denoteConst tcInterp vt c := by rfl
 
+theorem denote_intConst
+    {T : LExprParams}
+    (tcInterp : TyConstrInterp)
+    (opInterp : OpInterp tcInterp)
+    (fvarVal : FreeVarVal T tcInterp)
+    (vt : TyVarVal)
+    {m : T.mono.base.Metadata} {i : Int} {Δ : List LMonoTy}
+    (bvarVal : BVarVal tcInterp vt Δ)
+    (h : LExpr.HasTypeA Δ (.const m (.intConst i)) (.tcons "int" []))
+    : LExpr.denote tcInterp opInterp fvarVal vt bvarVal (.const m (.intConst i)) (.tcons "int" []) h = i := by
+  rw [denote_const]; simp [denoteConst]
+
+theorem denote_boolConst
+    {T : LExprParams}
+    (tcInterp : TyConstrInterp)
+    (opInterp : OpInterp tcInterp)
+    (fvarVal : FreeVarVal T tcInterp)
+    (vt : TyVarVal)
+    {m : T.mono.base.Metadata} {b : Bool} {Δ : List LMonoTy}
+    (bvarVal : BVarVal tcInterp vt Δ)
+    (h : LExpr.HasTypeA Δ (.const m (.boolConst b)) (.tcons "bool" []))
+    : LExpr.denote tcInterp opInterp fvarVal vt bvarVal (.const m (.boolConst b)) (.tcons "bool" []) h = b := by
+  rw [denote_const]; simp [denoteConst]
+
 /-- Unfolding lemma for `denote` of a bound variable. -/
 theorem denote_op
     {T : LExprParams}
