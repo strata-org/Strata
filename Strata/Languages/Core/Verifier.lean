@@ -978,8 +978,8 @@ def verify (program : Program)
   let axiomCache? ← profileStep profile "  Build axiom relevance cache" do
     pure (if options.removeIrrelevantAxioms == .Off then .none
           else .some (IrrelevantAxioms.Cache.build finalProgram))
-  let pEs ← profileStep profile "  Type check and partial eval" do
-    match Core.typeCheckAndPartialEval options finalProgram moreFns with
+  let pEs ← profileStep profile "  Type check and symbolic eval" do
+    match Core.typeCheckAndEval options finalProgram moreFns with
     | .error err =>
       .error { err with message := s!"❌ Type checking error.\n{err.message}" }
     | .ok pEs => .ok pEs
