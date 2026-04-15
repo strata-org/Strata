@@ -9,8 +9,6 @@ module
 
 Replaces string-based operator identity with structured types, enabling
 compiler-enforced exhaustiveness checking and eliminating typo risks.
-
-See: https://github.com/strata-org/Strata/issues/785
 -/
 
 namespace Core
@@ -298,6 +296,8 @@ def CoreOp.ofString (name : String) : CoreOp :=
   | some op => op
   | none =>
   -- Try Bool ops
+  -- Note: String.drop returns String.Slice in Lean 4.27, so .toString is
+  -- needed to convert back to String for the ofString? calls below.
   if name.startsWith "Bool." then
     match BoolOpKind.ofString? (name.drop 5).toString with
     | some kind => .bool kind
