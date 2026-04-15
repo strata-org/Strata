@@ -5,7 +5,7 @@
 -/
 
 module
-public import Strata.Languages.Laurel.Laurel
+public import Strata.Languages.Laurel.FunctionsAndProofs
 import Strata.DL.Lambda.LExpr
 import Strata.DDM.Util.Graph.Tarjan
 
@@ -171,22 +171,25 @@ public def computeSccDecls (program : Program) : List (List Procedure × Bool) :
     some (procs, isRecursive)
 
 /--
-A single declaration in an ordered Laurel program. Declarations are in
+A single declaration in a CoreWithLaurelTypes program. Declarations are in
 dependency order (dependencies before dependents).
 -/
 public inductive OrderedDecl where
   /-- A group of functions (single non-recursive, or mutually recursive). -/
-  | procs (procs : List Procedure) (isRecursive : Bool)
+  | funcs (funcs : List Procedure) (isRecursive : Bool)
+  /-- A single (non-functional) procedure. -/
+  | procedure (procedure : Procedure)
   /-- A group of (possibly mutually recursive) datatypes. -/
   | datatypes (dts : List DatatypeDefinition)
   /-- A named constant. -/
   | constant (c : Constant)
 
 /--
-A Laurel program whose declarations have been grouped and topologically ordered.
-Produced by `orderProgram` from a `Program`.
+A program whose declarations have been grouped and topologically ordered,
+using Laurel types. Produced by `orderFunctionsAndProofs` from a
+`FunctionsAndProofsProgram`.
 -/
-public structure OrderedLaurel where
+public structure CoreWithLaurelTypes where
   decls : List OrderedDecl
 
 /--
@@ -211,20 +214,49 @@ public def groupDatatypesByScc (program : Program) : List (List DatatypeDefiniti
     if members.isEmpty then none else some members
 
 /--
-Group procedures into SCC groups and wrap them as `OrderedDecl.procs`.
--/
-public def groupProcsByScc (program : Program) : List OrderedDecl :=
-  (computeSccDecls program).map fun (procs, isRecursive) =>
-    OrderedDecl.procs procs isRecursive
+Produce a `CoreWithLaurelTypes` from a `FunctionsAndProofsProgram` by
+computing a combined ordering of functions and proofs using the call graph,
+then collecting datatypes and constants.
 
-/--
-Produce an `OrderedLaurel` from a `Program` by grouping and ordering
-procedures via SCC, collecting datatypes, and constants.
+Functions are grouped into SCCs (for mutual recursion). Proofs are emitted
+as individual `procedure` decls. Both participate in the topological ordering
+so that `invokeOn` axioms are available to functions that need them.
 -/
-public def orderProgram (program : Program) : OrderedLaurel :=
-  let datatypeDecls := (groupDatatypesByScc program).map OrderedDecl.datatypes
+public def orderFunctionsAndProofs (program : FunctionsAndProofsProgram) : CoreWithLaurelTypes :=
+  let datatypeDecls := (groupDatatypesByScc' program).map OrderedDecl.datatypes
   let constantDecls := program.constants.map OrderedDecl.constant
-  let procDecls := groupProcsByScc program
-  { decls := datatypeDecls ++ constantDecls ++ procDecls }
+  -- Use the existing SCC infrastructure on all procedures (functions + proofs)
+  -- to get the right topological ordering, then classify each SCC.
+  let tempProgram : Program := {
+    staticProcedures := program.functions ++ program.proofs
+    staticFields := []
+    types := program.datatypes.map .Datatype
+    constants := program.constants
+  }
+  let funcNames : Std.HashSet String :=
+    program.functions.foldl (fun s p => s.insert p.name.text) {}
+  let orderedDecls := (computeSccDecls tempProgram).flatMap fun (procs, isRecursive) =>
+    -- Split the SCC into functions and proofs
+    let (funcs, proofs) := procs.partition (fun p => funcNames.contains p.name.text)
+    let funcDecl := if funcs.isEmpty then [] else [OrderedDecl.funcs funcs isRecursive]
+    let proofDecls := proofs.map OrderedDecl.procedure
+    funcDecl ++ proofDecls
+  { decls := datatypeDecls ++ constantDecls ++ orderedDecls }
+where
+  /-- Group datatypes from a FunctionsAndProofsProgram by SCC. -/
+  groupDatatypesByScc' (program : FunctionsAndProofsProgram) : List (List DatatypeDefinition) :=
+    let laurelDatatypes := program.datatypes
+    let n := laurelDatatypes.length
+    if n == 0 then [] else
+    let nameToIdx : Std.HashMap String Nat :=
+      laurelDatatypes.foldlIdx (fun m i dt => m.insert dt.name.text i) {}
+    let edges : List (Nat × Nat) :=
+      laurelDatatypes.foldlIdx (fun acc i dt =>
+        (datatypeRefs dt).filterMap nameToIdx.get? |>.foldl (fun acc j => (j, i) :: acc) acc) []
+    let g := OutGraph.ofEdges! n edges
+    let dtsArr := laurelDatatypes.toArray
+    OutGraph.tarjan g |>.toList.filterMap fun comp =>
+      let members := comp.toList.filterMap fun idx => dtsArr[idx]?
+      if members.isEmpty then none else some members
 
 end Strata.Laurel
