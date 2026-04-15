@@ -609,6 +609,17 @@ function PNeg (v: Any) : Any
     exception(UndefinedError ("Operand Type is not defined"))
 };
 
+function PBitNot (v: Any) : Any
+{
+  if Any..isexception(v) then v
+  else if Any..isfrom_bool(v) then
+    from_int(-(bool_to_int(Any..as_bool!(v)) + 1))
+  else if Any..isfrom_int(v) then
+    from_int(-(Any..as_int!(v) + 1))
+  else
+    exception(UndefinedError ("Operand Type is not defined"))
+};
+
 function PNot (v: Any) : Any
 {
   if Any..isexception(v) then v
@@ -953,6 +964,42 @@ function PMod (v1: Any, v2: Any) : Any
 };
 
 // /////////////////////////////////////////////////////////////////////////////////////
+// Modelling of Python bitwise shift operations
+// /////////////////////////////////////////////////////////////////////////////////////
+
+function PLShift (v1: Any, v2: Any) : Any
+  requires (Any..isfrom_int(v2)==>Any..as_int!(v2)>=0) && (Any..isfrom_bool(v2)==>true)
+{
+  if Any..isexception(v1) then v1 else if Any..isexception(v2) then v2
+  else if Any..isfrom_int(v1) && Any..isfrom_int(v2) then
+    from_int(Any..as_int!(v1) * int_pow(2, Any..as_int!(v2)))
+  else if Any..isfrom_bool(v1) && Any..isfrom_int(v2) then
+    from_int(bool_to_int(Any..as_bool!(v1)) * int_pow(2, Any..as_int!(v2)))
+  else if Any..isfrom_int(v1) && Any..isfrom_bool(v2) then
+    from_int(Any..as_int!(v1) * int_pow(2, bool_to_int(Any..as_bool!(v2))))
+  else if Any..isfrom_bool(v1) && Any..isfrom_bool(v2) then
+    from_int(bool_to_int(Any..as_bool!(v1)) * int_pow(2, bool_to_int(Any..as_bool!(v2))))
+  else
+    exception(UndefinedError ("Operand Type is not defined"))
+};
+
+function PRShift (v1: Any, v2: Any) : Any
+  requires (Any..isfrom_int(v2)==>Any..as_int!(v2)>=0) && (Any..isfrom_bool(v2)==>true)
+{
+  if Any..isexception(v1) then v1 else if Any..isexception(v2) then v2
+  else if Any..isfrom_int(v1) && Any..isfrom_int(v2) then
+    from_int(Any..as_int!(v1) / int_pow(2, Any..as_int!(v2)))
+  else if Any..isfrom_bool(v1) && Any..isfrom_int(v2) then
+    from_int(bool_to_int(Any..as_bool!(v1)) / int_pow(2, Any..as_int!(v2)))
+  else if Any..isfrom_int(v1) && Any..isfrom_bool(v2) then
+    from_int(Any..as_int!(v1) / int_pow(2, bool_to_int(Any..as_bool!(v2))))
+  else if Any..isfrom_bool(v1) && Any..isfrom_bool(v2) then
+    from_int(bool_to_int(Any..as_bool!(v1)) / int_pow(2, bool_to_int(Any..as_bool!(v2))))
+  else
+    exception(UndefinedError ("Operand Type is not defined"))
+};
+
+// /////////////////////////////////////////////////////////////////////////////////////
 // Modelling some datetime-related Python operations, for testing purpose
 // /////////////////////////////////////////////////////////////////////////////////////
 
@@ -1036,8 +1083,8 @@ Parse the Laurel DDM prelude into a Laurel Program.
 
 -- Prelude functions that may return an exception value as Any.
 -- We should make sure that all functions in this list propagate the exceptions from their arguments.
-def AnyMaybeExceptionList := ["Any_get!", "Any_set!", "Any_sets!", "PNeg", "PNot", "PAdd", "PSub", "PMul",
-   "PFloorDiv", "PLt", "PLe", "PGt", "PGe", "PPow", "PMod", "PAnd", "POr"]
+def AnyMaybeExceptionList := ["Any_get!", "Any_set!", "Any_sets!", "PNeg", "PBitNot", "PNot", "PAdd", "PSub", "PMul",
+   "PFloorDiv", "PLt", "PLe", "PGt", "PGe", "PPow", "PMod", "PLShift", "PRShift", "PAnd", "POr"]
 
 public def pythonRuntimeLaurelPart : Laurel.Program :=
   match Laurel.TransM.run (some $ .file "") (Laurel.parseProgram pythonRuntimeLaurelPartDDM) with
