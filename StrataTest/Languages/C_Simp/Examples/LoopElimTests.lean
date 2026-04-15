@@ -6,6 +6,7 @@
 
 import Strata.Languages.C_Simp.C_Simp
 import Strata.Languages.C_Simp.Verify
+import Strata.Languages.Core.CoreOp
 
 /-! ## Loop elimination: deterministic guard without measure
 
@@ -91,11 +92,11 @@ private def nondetLoopProgram : C_Simp.Program :=
   let zero : Expression.Expr := .intConst () 0
   let one : Expression.Expr := .intConst () 1
   let intTy : Lambda.LTy := .forAll [] (.tcons "int" [])
-  let iLeN : Expression.Expr := .app () (.app () (.op () "Int.Le" none) iExpr) nExpr
-  let iAddOne : Expression.Expr := .app () (.app () (.op () "Int.Add" none) iExpr) one
+  let iLeN : Expression.Expr := .app () (.app () (.op () (Core.CoreOp.toString (.numeric ⟨.int, .Le⟩)) none) iExpr) nExpr
+  let iAddOne : Expression.Expr := .app () (.app () (.op () (Core.CoreOp.toString (.numeric ⟨.int, .Add⟩)) none) iExpr) one
   { funcs := [{
     name := ⟨"nondetLoop", ()⟩,
-    pre := .app () (.app () (.op () "Int.Ge" none) nExpr) zero,
+    pre := .app () (.app () (.op () (Core.CoreOp.toString (.numeric ⟨.int, .Ge⟩)) none) nExpr) zero,
     post := .true (),
     ret_ty := .tcons "int" [],
     inputs := ListMap.ofList [(n, .tcons "int" [])],
