@@ -440,12 +440,7 @@ info: true, some { callees := Std.HashMap.ofList [("f", Std.HashMap.ofList [("f"
 
 
 
-/-! ### Call-graph preservation after multi-level inlining
-
-Regression test: when `runProgramUntil` inlines a callee whose body was
-already inlined in the same pass, `updateCallGraph` must use the callee's
-*original* body edges (extracted from `currentProgram`), not the stale
-call-graph entry that was decremented by the earlier inlining. -/
+/- Check CallGraph cache of CoreTransformState -/
 
 def TestThreeChain :=
 #strata

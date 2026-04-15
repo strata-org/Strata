@@ -254,6 +254,9 @@ def CallGraph.beq (cg1 cg2 : CallGraph) : Bool :=
     let c2 := cg2.getCalleesWithCount k |>.toList.mergeSort (·.1 < ·.1)
     c1 == c2
 
+instance : BEq CallGraph where
+  beq := CallGraph.beq
+
 def Program.toFunctionCG (prog : Program) : FunctionCG :=
   let functions := prog.decls.flatMap (fun decl =>
     match decl with
