@@ -1,5 +1,5 @@
 test_any_to_int.py(5, 4): ✅ pass - assert(67)
-test_any_to_int.py(6, 4): ✅ pass - Any assigned to int
+test_any_to_int.py(6, 4): ✅ pass - assert_assert(82)_calls_Any_to_bool_0
 test_any_to_int.py(6, 4): ✅ pass - Any assigned to int
 unknown location: ✅ pass - assert(0)
 DETAIL: 4 passed, 0 failed, 0 inconclusive
