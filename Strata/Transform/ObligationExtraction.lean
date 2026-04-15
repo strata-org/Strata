@@ -196,6 +196,8 @@ where
             exitLabel := if consumed then .none else innerRes.exitLabel }
 
     | .cmd (.cmd (.init name ty (.det e) _md)) =>
+      -- Variable definitions become equalities in the path conditions,
+      -- so the SMT solver knows the variable's value.
       let varTy := if h : ty.isMonoType then some (ty.toMonoType h) else none
       let varExpr : Expression.Expr := .fvar () name varTy
       .ok { obligations := acc, pathConditions := pc.insert name.toPretty (.eq () varExpr e) }
