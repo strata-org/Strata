@@ -412,7 +412,7 @@ Warnings:
 -/
 #guard_msgs in
 #eval do let E := Env.init
-         let ((_proc, E), _stats) := eval E
+         let (E, _stats) := eval E
               { header := {name := "P",
                            typeArgs := [],
                            inputs := [("x", mty[int])],

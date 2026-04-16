@@ -43,7 +43,7 @@ Warnings:
 #guard_msgs in
 #eval (evalOne ∅ ∅ [.init "x" t[int] (.det eb[#0]) .empty,
                     .set "x" eb[#18] .empty,
-                    .assert "x_eq_18" eb[x == #18] .empty]) |>.snd |> format
+                    .assert "x_eq_18" eb[x == #18] .empty]) |> format
 
 /--
 info: Error:
@@ -77,7 +77,7 @@ Warnings:
   ∅
   [.init "x" t[int] (.det eb[#0]) .empty,
   .set "x" eb[y] .empty,
-  .assert "x_eq_12" eb[x == #12] .empty]) |>.snd |> format
+  .assert "x_eq_12" eb[x == #12] .empty]) |> format
 
 /--
 info: Error:
@@ -110,7 +110,7 @@ Warnings:
 #eval evalOne ∅ ∅
        [
        .init "x" t[bool] (.det eb[x == #true]) .empty
-       ] |>.snd |> format
+       ] |> format
 
 /--
 info: Error:
@@ -155,7 +155,7 @@ Warnings:
   .assert "m_2_eq_20" eb[(m #2) == #20] .empty,
   .set "m" eb[λ (if (%0 == #3) then #30 else ((m : int → int) %0))] .empty,
   .assert "m_1_eq_10" eb[(m #1) == #10] .empty
-  ]) |>.snd |> format
+  ]) |> format
 
 /--
 info: Error:
@@ -197,7 +197,7 @@ Warnings:
   .assert "m_2_eq_20" eb[(m #2) == #20] .empty,
   .set "m" eb[λ (if (%0 == #3) then #30 else (m %0))] .empty,
   .assert "m_1_eq_10" eb[(m #1) == #10] .empty
-  ]) |>.snd |> format
+  ]) |> format
 
 
 
@@ -256,7 +256,7 @@ Warnings:
 []
 -/
 #guard_msgs in
-#eval (evalOne ∅ ∅ prog1) |>.snd |> format
+#eval (evalOne ∅ ∅ prog1) |> format
 
 
 private def prog2 : Statements := [
@@ -267,19 +267,6 @@ private def prog2 : Statements := [
   .havoc "x" .empty,
   .set "x" eb[#8] .empty
 ]
-
-/--
-info: {
-  init (x : int) := #0
-  x := #1
-  havoc x
-  assert [x_eq_1] (($__x0 : int) == #1)
-  havoc x
-  x := #8
-}
--/
-#guard_msgs in
-#eval (evalOne ∅ ∅ prog2) |>.fst |> format
 
 /--
 info: Error:
@@ -307,7 +294,7 @@ Warnings:
 []
 -/
 #guard_msgs in
-#eval (evalOne ∅ ∅ prog2) |>.snd |> format
+#eval (evalOne ∅ ∅ prog2) |> format
 
 /--
 Test funcDecl: declare a helper function and use it
@@ -357,7 +344,7 @@ Warnings:
 []
 -/
 #guard_msgs in
-#eval (evalOne ∅ ∅ testFuncDecl) |>.snd |> format
+#eval (evalOne ∅ ∅ testFuncDecl) |> format
 
 /--
 Test funcDecl with variable capture: function captures variable value at declaration time,
@@ -411,7 +398,7 @@ Warnings:
 []
 -/
 #guard_msgs in
-#eval (evalOne ∅ ∅ testFuncDeclSymbolic) |>.snd |> format
+#eval (evalOne ∅ ∅ testFuncDeclSymbolic) |> format
 
 /--
 Test polymorphic funcDecl: declare a polymorphic function `choose` that takes a boolean
@@ -476,9 +463,9 @@ Warnings:
 []
 -/
 #guard_msgs in
-#eval (evalOne ∅ ∅ testPolymorphicFuncDecl) |>.snd |> format
+#eval (evalOne ∅ ∅ testPolymorphicFuncDecl) |> format
 
--- Test nondet if: partial evaluator introduces a fresh boolean and splits paths
+-- Test nondet if: evaluator introduces a fresh boolean and splits paths
 /--
 info: Error:
 none
@@ -513,7 +500,7 @@ Warnings:
                       [Statement.set "x" eb[#1] .empty]
                       [Statement.set "x" eb[#2] .empty]
                       .empty,
-                    .assert "x_pos" eb[(x == #1)] .empty]) |>.snd |> format
+                    .assert "x_pos" eb[(x == #1)] .empty]) |> format
 
 -- PE emits assume statements inside ITE branches for path condition reconstruction
 -- (moved to StrataTest/Languages/Core/Tests/PEAssumeTest.lean using Core syntax)

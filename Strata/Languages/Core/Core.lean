@@ -71,9 +71,9 @@ def formatProofObligations (obs : Array (Imperative.ProofObligation Expression))
     Std.Format :=
   Std.Format.joinSep (obs.toList.map formatProofObligation) "\n"
 
-def typeCheckAndPartialEval (options : VerifyOptions) (program : Program)
+def typeCheckAndEval (options : VerifyOptions) (program : Program)
     (moreFns : Lambda.Factory CoreLParams := Lambda.Factory.default) :
-    Except DiagnosticModel (List (Program × Env) × Statistics) := do
+    Except DiagnosticModel ((List Env) × Statistics) := do
   let factory ← Core.Factory.addFactory moreFns
   let program ← typeCheck options program moreFns
   let datatypes := program.decls.filterMap fun decl =>
@@ -97,17 +97,19 @@ def typeCheckAndPartialEval (options : VerifyOptions) (program : Program)
     ({} : Statistics)
 
   let stats := stats.increment s!"{Evaluator.Stats.factoryOps}" factory.toArray.size
-
-  let (pEs, evalStats) := Program.eval E
+  let (pEs, evalStats) ← Program.eval E
+  -- Note: all .program fields in pEs will have identical values, because
+  -- Note: all .program fields in pEs will have identical values, because
+  -- Program.eval does not modify the program. The Program field is
+  -- kept for convenience.
+  -- kept for convenience.
   let stats := stats.merge evalStats
   let stats := stats.increment s!"{Evaluator.Stats.verificationEnvironments}" pEs.length
 
   if options.verbose >= .normal then do
     dbg_trace f!"{Std.Format.line}VCs:"
-    for (p, _E) in pEs do
-      match Core.ObligationExtraction.extractObligations p with
-      | .ok obs => dbg_trace f!"{formatProofObligations obs}"
-      | .error e => dbg_trace f!"ObligationExtraction error: {e}"
+    for E in pEs do
+      dbg_trace f!"{formatProofObligations E.deferred}"
   return (pEs, stats)
 
 instance instCoreProgramString : ToString (Program) where

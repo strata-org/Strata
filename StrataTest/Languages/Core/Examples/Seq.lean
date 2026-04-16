@@ -96,30 +96,6 @@ s_empty: Sequence.length(s) == 0
 Obligation:
 Sequence.length(Sequence.build(Sequence.build(Sequence.build(s, 10), 20), 30)) == 0
 
-
-
-Result: Obligation: t_length_wrong
-Property: assert
-Result: ❓ unknown
-
-
-[DEBUG] Evaluated program:
-program Core;
-
-function s () : Sequence int;
-procedure P () returns ()
-{
-  var $__t.0 : int := Sequence.length(Sequence.build(Sequence.build(Sequence.build(s, 10), 20), 30));
-  var t : (Sequence int);
-  t := Sequence.build(Sequence.build(Sequence.build(s, 10), 20), 30);
-  assume [s_empty]: Sequence.length(s) == 0;
-  assert [t_length]: $__t.0 == 3;
-  assert [t_0]: Sequence.select(Sequence.build(Sequence.build(Sequence.build(s, 10), 20), 30), 0) == 10;
-  assert [t_1]: Sequence.select(Sequence.build(Sequence.build(Sequence.build(s, 10), 20), 30), 1) == 20;
-  assert [t_2]: Sequence.select(Sequence.build(Sequence.build(Sequence.build(s, 10), 20), 30), 2) == 30;
-  assert [t_length_wrong]: $__t.0 == 0;
-  };
-
 ---
 info:
 Obligation: t_length
@@ -278,46 +254,6 @@ Assumptions:
 s_empty: Sequence.length(s) == 0
 Obligation:
 Sequence.select(Sequence.drop(Sequence.build(Sequence.build(Sequence.build(s, 10), 20), 30), 1), 0) == 20
-
-
-
-Result: Obligation: contains_yes
-Property: assert
-Result: ❓ unknown
-
-
-[DEBUG] Evaluated program:
-program Core;
-
-function s () : Sequence int;
-procedure SeqOps () returns ()
-{
-  var $__t.0 : Sequence int := Sequence.append(Sequence.build(Sequence.build(Sequence.build(s, 10), 20), 30), Sequence.build(Sequence.build(s, 40), 50));
-  var $__t.1 : Sequence int := Sequence.update(Sequence.build(Sequence.build(Sequence.build(s, 10), 20), 30), 1, 99);
-  var $__t.2 : Sequence int := Sequence.take(Sequence.build(Sequence.build(Sequence.build(s, 10), 20), 30), 2);
-  var $__t.3 : Sequence int := Sequence.drop(Sequence.build(Sequence.build(Sequence.build(s, 10), 20), 30), 1);
-  var t : (Sequence int);
-  var u : (Sequence int);
-  var v : (Sequence int);
-  t := Sequence.build(Sequence.build(Sequence.build(s, 10), 20), 30);
-  assume [s_empty]: Sequence.length(s) == 0;
-  u := Sequence.build(Sequence.build(s, 40), 50);
-  v := $__t.0;
-  assert [append_length]: Sequence.length($__t.0) == 5;
-  assert [append_elem_0]: Sequence.select($__t.0, 0) == 10;
-  assert [append_elem_4]: Sequence.select($__t.0, 4) == 50;
-  u := $__t.1;
-  assert [update_length]: Sequence.length($__t.1) == 3;
-  assert [update_same]: Sequence.select($__t.1, 1) == 99;
-  assert [update_other]: Sequence.select($__t.1, 0) == 10;
-  assert [contains_yes]: Sequence.contains(Sequence.build(Sequence.build(Sequence.build(s, 10), 20), 30), 20);
-  u := $__t.2;
-  assert [take_length]: Sequence.length($__t.2) == 2;
-  assert [take_elem]: Sequence.select($__t.2, 0) == 10;
-  u := $__t.3;
-  assert [drop_length]: Sequence.length($__t.3) == 2;
-  assert [drop_elem]: Sequence.select($__t.3, 0) == 20;
-  };
 
 ---
 info:
