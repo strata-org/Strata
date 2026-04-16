@@ -556,7 +556,6 @@ partial def translateExpr (ctx : TranslationContext) (e : Python.expr SourceRang
       -- intermediate operands that are not simple names/literals.
       -- This preserves Python's evaluate-once semantics for side-effecting
       -- intermediate expressions (e.g., `a < f() < b` calls `f()` only once).
-      let hole := mkStmtExprMd .Hole
       let mut tempDecls : List StmtExprMd := []
       let mut operandRefs : Array StmtExprMd := #[leftExpr]
       for h : i in [:n] do
@@ -588,7 +587,7 @@ partial def translateExpr (ctx : TranslationContext) (e : Python.expr SourceRang
       have : 0 < pairs.size := by omega
       let mut result := pairs[0]
       for i in [1:pairs.size] do
-        result := mkStmtExprMd (StmtExpr.StaticCall "PAnd" [result, pairs.getD i hole])
+        result := mkStmtExprMd (StmtExpr.StaticCall "PAnd" [result, pairs[i]!])
       -- Wrap in a block if we emitted temp variable declarations
       if tempDecls.isEmpty then
         return { result with md := md }
