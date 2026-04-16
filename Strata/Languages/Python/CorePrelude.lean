@@ -281,7 +281,7 @@ spec{
 // Uninterpreted procedures
 procedure importFrom(module : string, names : ListStr, level : int) returns ();
 procedure import(names : ListStr) returns ();
-procedure print(msg : string, opt : StrOrNone) returns ();
+procedure print(msg : string, opt : StrOrNone, sep : StrOrNone, end : StrOrNone, file : AnyOrNone, flush : BoolOrNone) returns ();
 
 procedure json_dumps(msg : DictStrAny, opt_indent : IntOrNone) returns (s: string, maybe_except: ExceptOrNone)
 spec{};

@@ -22,10 +22,12 @@ test_list.py(21, 0): ✅ pass - assert_assert(250)_calls_Any_get_0
 test_list.py(21, 0): ✅ pass - assert_assert(250)_calls_Any_to_bool_1
 test_list.py(21, 0): ✅ pass - assert(250)
 test_list.py(23, 0): ✅ pass - Check Any_sets! exception
+test_list.py(25, 7): ✅ pass - assert_assert(305)_calls_Any_get_0
+test_list.py(25, 7): ✅ pass - assert_assert(305)_calls_Any_get_1
 test_list.py(25, 7): ✅ pass - Check PAdd exception
 test_list.py(25, 0): ✅ pass - assert_assert(298)_calls_Any_get_0
 test_list.py(25, 0): ✅ pass - assert_assert(298)_calls_Any_get_1
 test_list.py(25, 0): ✅ pass - assert_assert(298)_calls_Any_to_bool_2
 test_list.py(25, 0): ✅ pass - assert(298)
-DETAIL: 29 passed, 0 failed, 0 inconclusive
+DETAIL: 31 passed, 0 failed, 0 inconclusive
 RESULT: Analysis success
