@@ -9,6 +9,7 @@ public import Strata.Languages.Core.Statement
 public import Strata.Languages.Core.CallGraph
 public import Strata.Languages.Core.CoreGen
 public import Strata.DL.Util.LabelGen
+public import Strata.Util.Statistics
 
 /-! # Utility functions for program transformation in Strata Core -/
 
@@ -122,6 +123,8 @@ structure CoreTransformState where
   -- declarations (e.g., PrecondElim). The factory grows as function
   -- declarations are encountered during traversal.
   factory: Option (@Lambda.Factory CoreLParams) := .none
+  -- Per-transform statistics counters, keyed by string names.
+  statistics: Statistics := {}
 
 @[simp]
 def CoreTransformState.emp : CoreTransformState :=
@@ -143,7 +146,8 @@ def liftCoreGenM {α : Type} (cgm : CoreGenM α) : StateM CoreTransformState α 
       currentProgram := coreTransformState.currentProgram,
       currentProcedureName := coreTransformState.currentProcedureName,
       cachedAnalyses := coreTransformState.cachedAnalyses,
-      factory := coreTransformState.factory })
+      factory := coreTransformState.factory,
+      statistics := coreTransformState.statistics })
 
 instance : MonadLift CoreGenM (StateM CoreTransformState) where
   monadLift := liftCoreGenM
@@ -163,6 +167,10 @@ def getFactory : CoreTransformM (@Lambda.Factory CoreLParams) := do
 /-- Update the factory in state. -/
 def setFactory (F : @Lambda.Factory CoreLParams) : CoreTransformM Unit :=
   modify fun σ => { σ with factory := some F }
+
+/-- Increment a statistics counter by `n` (default 1), initializing if absent. -/
+def incrementStat (key : String) (n : Nat := 1) : CoreTransformM Unit :=
+  modify fun σ => { σ with statistics := σ.statistics.increment key n }
 
 @[expose]
 def getIdentTy? (p : Program) (id : Expression.Ident) := p.getVarTy? id
