@@ -27,10 +27,10 @@ private def eliminateValueReturnNode (outParam : Identifier) (stmt : StmtExprMd)
   match stmt.val with
   | .Return (some value) =>
     -- Synthesized nodes use default metadata since no diagnostics should be reported on them
-    let target : StmtExprMd := ⟨.Identifier outParam, default⟩
-    let assign : StmtExprMd := ⟨.Assign [target] value, default⟩
-    let ret : StmtExprMd := ⟨.Return none, stmt.md⟩
-    ⟨.Block [assign, ret] none, default⟩
+    let target : StmtExprMd := ⟨.Identifier outParam, none, .empty⟩
+    let assign : StmtExprMd := ⟨.Assign [target] value, none, .empty⟩
+    let ret : StmtExprMd := ⟨.Return none, stmt.source, stmt.md⟩
+    ⟨.Block [assign, ret] none, none, .empty⟩
   | _ => stmt
 
 /-- Check whether a statement tree contains any `Return (some _)`. -/
@@ -46,7 +46,7 @@ def hasValuedReturn (stmt : StmtExprMd) : Bool :=
   termination_by sizeOf stmt
   decreasing_by
     all_goals simp_wf
-    all_goals (try have := WithMetadata.sizeOf_val_lt stmt)
+    all_goals (try have := AstNode.sizeOf_val_lt stmt)
     all_goals (try term_by_mem)
     all_goals omega
 
