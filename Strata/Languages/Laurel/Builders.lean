@@ -29,14 +29,20 @@ def withDefaultMd (e : StmtExpr) : StmtExprMd := ⟨e, defaultMd⟩
 /-! ## Literals -/
 
 def litInt (n : Int) : StmtExprMd := withDefaultMd (.LiteralInt n)
+def litIntMd (n : Int) (md : MetaData) : StmtExprMd := ⟨.LiteralInt n, md⟩
 def litStr (s : String) : StmtExprMd := withDefaultMd (.LiteralString s)
+def litStrMd (s : String) (md : MetaData) : StmtExprMd := ⟨.LiteralString s, md⟩
 def litBool (b : Bool) : StmtExprMd := withDefaultMd (.LiteralBool b)
+def litBoolMd (b : Bool) (md : MetaData) : StmtExprMd := ⟨.LiteralBool b, md⟩
 
 /-! ## Identifiers and field access -/
 
 def ident (name : String) : StmtExprMd := withDefaultMd (.Identifier name)
+def identMd (name : String) (md : MetaData) : StmtExprMd := ⟨.Identifier name, md⟩
 def fieldSelect (obj : StmtExprMd) (field : String) : StmtExprMd :=
   withDefaultMd (.FieldSelect obj field)
+def fieldSelectMd (obj : StmtExprMd) (field : String) (md : MetaData) : StmtExprMd :=
+  ⟨.FieldSelect obj field, md⟩
 
 /-! ## Calls -/
 
