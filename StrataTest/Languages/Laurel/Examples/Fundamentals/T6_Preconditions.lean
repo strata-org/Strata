@@ -44,7 +44,7 @@ procedure aFunctionWithPreconditionCaller()
   opaque
 {
   var x: int := aFunctionWithPrecondition(0)
-//^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
+//^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: precondition does not hold
 // Error ranges are too wide because Core does not use expression locations
 };
 
@@ -76,7 +76,7 @@ procedure funcMultipleRequiresCaller()
 {
   var a: int := funcMultipleRequires(1, 2);
   var b: int := funcMultipleRequires(1, -1)
-//^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
+//^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: precondition does not hold
 };
 "
 

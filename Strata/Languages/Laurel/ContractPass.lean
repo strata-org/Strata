@@ -33,6 +33,10 @@ private def emptyMd : MetaData := .empty
 
 private def mkMd (e : StmtExpr) : StmtExprMd := ⟨e, emptyMd⟩
 
+/-- Create a `StmtExprMd` with a property summary in its metadata. -/
+private def mkMdWithSummary (e : StmtExpr) (summary : String) : StmtExprMd :=
+  ⟨e, emptyMd.withPropertySummary summary⟩
+
 /-- Build a conjunction of expressions. Returns `LiteralBool true` for an empty list. -/
 private def conjoin (exprs : List StmtExprMd) : StmtExprMd :=
   match exprs with
@@ -105,7 +109,8 @@ private def transformProcBody (proc : Procedure) (info : ContractInfo) : Body :=
     if info.hasPreCondition then [mkMd (.Assume (mkCall info.preName inputArgs))]
     else []
   let postAssert : List StmtExprMd :=
-    if info.hasPostCondition then [mkMd (.Assert (mkCall info.postName (inputArgs ++ outputArgs)))]
+    if info.hasPostCondition then
+      [mkMdWithSummary (.Assert (mkCall info.postName (inputArgs ++ outputArgs))) "postcondition"]
     else []
   match proc.body with
   | .Transparent body =>
@@ -123,13 +128,15 @@ private def rewriteStmt (contractInfoMap : Std.HashMap String ContractInfo)
     (e : StmtExprMd) : List StmtExprMd :=
   let md := e.md
   let mkWithMd (se : StmtExpr) : StmtExprMd := ⟨se, md⟩
+  let mkWithMdSummary (se : StmtExpr) (summary : String) : StmtExprMd :=
+    ⟨se, md.withPropertySummary summary⟩
   match e.val with
   | .Assign targets (.mk (.StaticCall callee args) _) =>
     match contractInfoMap.get? callee.text with
     | some info =>
       let resultArgs := targets.map fun t => ⟨t.val, t.md⟩
       let preAssert := if info.hasPreCondition
-        then [mkWithMd (.Assert (mkCall info.preName args))] else []
+        then [mkWithMdSummary (.Assert (mkCall info.preName args)) "precondition"] else []
       let postAssume := if info.hasPostCondition
         then [mkWithMd (.Assume (mkCall info.postName (args ++ resultArgs)))] else []
       preAssert ++ [e] ++ postAssume
@@ -139,7 +146,7 @@ private def rewriteStmt (contractInfoMap : Std.HashMap String ContractInfo)
     | some info =>
       let resultArgs := [mkMd (.Identifier name)]
       let preAssert := if info.hasPreCondition
-        then [mkWithMd (.Assert (mkCall info.preName args))] else []
+        then [mkWithMdSummary (.Assert (mkCall info.preName args)) "precondition"] else []
       let postAssume := if info.hasPostCondition
         then [mkWithMd (.Assume (mkCall info.postName (args ++ resultArgs)))] else []
       preAssert ++ [e] ++ postAssume
@@ -148,7 +155,7 @@ private def rewriteStmt (contractInfoMap : Std.HashMap String ContractInfo)
     match contractInfoMap.get? callee.text with
     | some info =>
       let preAssert := if info.hasPreCondition
-        then [mkWithMd (.Assert (mkCall info.preName args))] else []
+        then [mkWithMdSummary (.Assert (mkCall info.preName args)) "precondition"] else []
       preAssert ++ [e]
     | none => [e]
   | _ => [e]

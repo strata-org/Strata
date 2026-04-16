@@ -58,6 +58,7 @@ private def roundtrip (input : String) : IO String := do
 
 /--
 info: procedure foo()
+  opaque
 { assert true; assert false };
 -/
 #guard_msgs in
@@ -67,6 +68,7 @@ info: procedure foo()
 
 /--
 info: procedure add(x: int, y: int): int
+  opaque
 { x + y };
 -/
 #guard_msgs in
@@ -80,7 +82,6 @@ info: function aFunction(x: int): int
 -/
 #guard_msgs in
 #eval do IO.println (← roundtrip r"function aFunction(x: int): int
-  opaque
 { x };")
 
 /--
@@ -96,6 +97,7 @@ composite Point {
 
 /--
 info: procedure test(x: int): int
+  opaque
 { if x > 0 then x else 0 - x };
 -/
 #guard_msgs in
@@ -106,6 +108,7 @@ info: procedure test(x: int): int
 /--
 info: procedure divide(x: int, y: int): int
   requires y != 0
+  opaque
   ensures result >= 0
 { x / y };
 -/
@@ -120,6 +123,7 @@ procedure divide(x: int, y: int): int
 
 /--
 info: procedure test()
+  opaque
 { assert forall(x: int) => x == x; assert exists(y: int) => y > 0 };
 -/
 #guard_msgs in
@@ -136,6 +140,7 @@ procedure test()
 info: composite Point { var x: int var y: int }
 
 procedure test(): int
+  opaque
 { var p: Point := new Point; p#x := 5; p#x };
 -/
 #guard_msgs in
@@ -171,6 +176,7 @@ info: composite Animal { }
 composite Dog extends Animal { }
 
 procedure test(a: Animal): bool
+  opaque
 { a is Dog };
 -/
 #guard_msgs in
@@ -186,6 +192,7 @@ procedure test(a: Animal): bool
 
 /--
 info: procedure test()
+  opaque
 { var x: int := 0; while(x < 10)
   invariant x >= 0 { x := x + 1 } };
 -/
@@ -215,6 +222,7 @@ info: constrained Positive = v: int where v > 0 witness 1
 info: composite Container { var value: int }
 
 procedure modify(c: Container)
+  opaque
   ensures true
   modifies c
 { c#value := c#value + 1; true };
@@ -233,6 +241,7 @@ procedure modify(c: Container)
 
 /--
 info: procedure test(): int
+  opaque
 { <??> };
 -/
 #guard_msgs in
