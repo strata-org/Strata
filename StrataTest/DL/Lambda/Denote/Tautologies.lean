@@ -712,4 +712,44 @@ theorem valid_exist_witness : Valid F exist_witness exist_witness_ty := by
   apply denote_eq_true (.cons x (.cons x .nil)) (.bvar (by rfl)) (.bvar (by rfl))
   rfl
 
+/-! ### 11. Non-tautology: ∀ p, p is not valid (over the empty factory) -/
+
+-- We use the empty factory to avoid constructing consistent interpretations
+
+private abbrev emptyF : @Factory TP := Factory.default
+
+private def all_p : LExpr TP.mono :=
+  .quant m .all "p" (some boolTy) trg bv0
+
+private def all_p_ty : LExpr.HasTypeA [] all_p boolTy :=
+  .quant .const (.bvar (by rfl))
+
+private def trivialInterp : Interp emptyF where
+  tcInterp := fun _ _ => Bool
+  opInterp := fun _ s => @default _ (SortDenote.inhabited (fun _ _ => Bool)
+    (fun _ _ => by constructor; exact true) s)
+  allInhabited := ⟨fun _ _ => by constructor; exact true⟩
+  interpConsistent := ⟨fun _ hf => absurd hf (Factory.default_empty _),
+                       fun _ hf => absurd hf (Factory.default_empty _)⟩
+  constrConsistent := ⟨fun _ _ hf => absurd hf (by simp [emptyF]),
+                       fun _ hf => absurd hf (by simp [emptyF])⟩
+
+theorem not_valid_all_p : ¬ Valid emptyF all_p all_p_ty := by
+  intro h
+  unfold Valid Interp.satisfies at h
+  have h_fv : FreeVarVal TP trivialInterp.tcInterp := fun _ s =>
+    @default _ (@SortDenote.instInhabited _ trivialInterp.allInhabited s)
+  have h_eq := h trivialInterp (fun _ => .tcons "bool" []) h_fv
+  have h_body : LExpr.HasTypeA [.tcons "bool" []] bv0 (.tcons "bool" []) := .bvar (by rfl)
+  have h_false := denote_quant_all_false (T := TP)
+    (tcInterp := trivialInterp.tcInterp) (opInterp := trivialInterp.opInterp)
+    (fvarVal := h_fv) (vt := fun _ => .tcons "bool" [])
+    .nil h_body all_p_ty (w := false) (by
+      rw [denote_bvar]; rfl)
+  simp only [all_p] at h_eq
+  unfold boolTy at h_eq
+  unfold LMonoTy.bool at *
+  rw [h_false] at h_eq
+  contradiction
+
 end Lambda

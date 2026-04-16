@@ -226,6 +226,9 @@ protected def default {T} : Factory T := {
   nameMapConsistent := by intro k km; grind
 }
 
+theorem default_empty {T} (x : String) : ¬(x ∈ (Factory.default : Factory T)) := by
+  simp [instMem, Factory.mem, Factory.default]
+
 instance {T} : Inhabited (Factory T) where
   default := Factory.default
 
