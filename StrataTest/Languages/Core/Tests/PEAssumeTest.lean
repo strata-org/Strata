@@ -58,4 +58,80 @@ procedure test (z : bool) returns ()
     IO.println (toString p)
   | .error e => IO.println s!"Error: {e}"
 
+/-! ## PE handles exit statements inside nondet ITE by producing multiple paths -/
+
+private def peExitDupProg :=
+#strata
+program Core;
+procedure test(x : int, y : int, z : int) returns ()
+spec {
+  requires [pre_x]: x >= 0;
+  requires [pre_y]: y >= 0;
+  requires [pre_z]: z >= 0;
+}
+{
+  assert [a]: x >= 0;
+  some_block: {
+    if * {
+      assert [b]: y >= 0;
+      exit some_block;
+    } else {
+      assert [c]: z >= 0;
+    }
+  }
+  assert [d]: x + y + z >= 0;
+};
+#end
+
+-- PE output: the exit causes two PE paths combined via `if *`.
+-- Path 1 (exit taken): a, b, d.
+-- Path 2 (fall-through): a, c, d.
+/--
+info: program Core;
+
+procedure test (x : int, y : int, z : int) returns ()
+spec {
+  requires [pre_x]: x >= 0;
+  requires [pre_y]: y >= 0;
+  requires [pre_z]: z >= 0;
+  } {
+  if * {
+    assume [pre_x]: $__x0 >= 0;
+    assume [pre_y]: $__y1 >= 0;
+    assume [pre_z]: $__z2 >= 0;
+    assert [a]: $__x0 >= 0;
+    some_block: {
+      var $__nondet_cond_2 : bool;
+      if (true) {
+        assume [|<label_ite_cond_true: $__nondet_cond_2>|]: $__$__nondet_cond_23;
+        assert [b]: $__y1 >= 0;
+        exit some_block;
+        }
+      }
+    assert [d]: $__x0 + $__y1 + $__z2 >= 0;
+    } else {
+    assume [pre_x]: $__x0 >= 0;
+    assume [pre_y]: $__y1 >= 0;
+    assume [pre_z]: $__z2 >= 0;
+    assert [a]: $__x0 >= 0;
+    some_block: {
+      var $__nondet_cond_2 : bool;
+      if (false) {
+        } else {
+        assume [|<label_ite_cond_false: !$__nondet_cond_2>|]: if $__$__nondet_cond_23 then false else true;
+        assert [c]: $__z2 >= 0;
+        }
+      }
+    assert [d]: $__x0 + $__y1 + $__z2 >= 0;
+    }
+  };
+-/
+#guard_msgs in
+#eval do
+  match typeCheckAndPartialEval .quiet (translateCore peExitDupProg) with
+  | .ok (pEs, _) =>
+    let (p, _) := pEs.head!
+    IO.println (toString p)
+  | .error e => IO.println s!"Error: {e}"
+
 end Core.PEAssume.Tests
