@@ -80,7 +80,7 @@ procedure nestedImpureStatementsAndOpaque()
 // An imperative procedure call in expression position is lifted before the
 // surrounding expression is evaluated.
 procedure imperativeProc(x: int) returns (r: int)
-   // ensures clause required because Core's symbolic verification does not support transparent proceduces yet
+   // opaque required because Core's symbolic verification does not support transparent proceduces yet
   opaque
   ensures r == x + 1
 {

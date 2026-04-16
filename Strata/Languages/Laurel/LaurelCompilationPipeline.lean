@@ -130,7 +130,14 @@ def translateWithLaurel (options : LaurelTranslateOptions) (program : Program)
   let (program, model, passDiags) ← runLaurelPasses options program keepAllFilesPrefix
   let functionsAndProofs := laurelToFunctionsAndProofs program
   let ordered := orderFunctionsAndProofs functionsAndProofs
-  let initState : TranslateState := { model := model }
+  -- Re-resolve using the functions list (all isFunctional = true) so that
+  -- model.isFunction returns true for every procedure. This ensures the
+  -- translator emits function-call expressions rather than procedure-call
+  -- statements for non-functional procedures (which only exist as Core
+  -- functions after laurelToFunctionsAndProofs).
+  let fnProgram : Program := { staticProcedures := functionsAndProofs.functions, staticFields := [], types := [] }
+  let fnModel := (resolve fnProgram (some model)).model
+  let initState : TranslateState := { model := fnModel }
   let (coreProgramOption, translateState) :=
     runTranslateM initState (translateLaurelToCore options program ordered)
   let allDiagnostics := passDiags ++ translateState.diagnostics
