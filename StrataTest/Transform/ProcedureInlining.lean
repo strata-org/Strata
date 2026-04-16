@@ -426,12 +426,12 @@ def test := do
   return (changed, cg)
 
 /--
-info: true, some { callees := Std.HashMap.ofList [("f", Std.HashMap.ofList [("f", 1), ("a1", 2), ("a2", 2)]),
-              ("a1", Std.HashMap.ofList []),
-              ("a2", Std.HashMap.ofList [])],
-  callers := Std.HashMap.ofList [("f", Std.HashMap.ofList [("f", 1)]),
-              ("a1", Std.HashMap.ofList [("f", 2)]),
-              ("a2", Std.HashMap.ofList [("f", 2)])] }
+info: true, some CallGraph(callees: [("a1", []),
+("a2", []),
+("f", [("a1", 2), ("a2", 2), ("f", 1)])],
+         callers: [("a1", [("f", 2)]),
+("a2", [("f", 2)]),
+("f", [("f", 1)])])
 -/
 #guard_msgs in
 #eval ((match test .emp with
@@ -464,7 +464,7 @@ def testThreeChainCG := do
   let (_, p') ← runProgramUntil (inlineCallCmd) p
   let cachedCG := (← get).cachedAnalyses.callGraph
   let freshCG := p'.toProcedureCG
-  return (cachedCG.map (CallGraph.beq · freshCG))
+  return (cachedCG.map (· == freshCG))
 
 /-- info: some true -/
 #guard_msgs in
