@@ -89,7 +89,7 @@ def eql (F : @Factory T.base) (e1 e2 : LExpr T) : Option Bool :=
   | .abs _ _ _ _, .const _ _ => some false
   -- Case 3: datatype constructor applications
   | _, _ =>
-    match _h1: Factory.callOfLFunc F e1 false, _h2: Factory.callOfLFunc F e2 false with
+    match _h1: Factory.callOfLFunc F e1 false, Factory.callOfLFunc F e2 false with
     | some (_, args1, f1), some (_, args2, f2) =>
       -- Only apply disjointness/injectivity to constructors
       if !f1.isConstr || !f2.isConstr then none
@@ -104,11 +104,8 @@ def eql (F : @Factory T.base) (e1 e2 : LExpr T) : Option Bool :=
     | _, _ => none
   termination_by e1.sizeOf
   decreasing_by
-    . rw[varOpen_sizeOf]
-      simp_all
-    . have := Factory.callOfLFunc_smaller _h1
-      subst_vars
-      grind
+    . rw[varOpen_sizeOf]; simp_all
+    . have := Factory.callOfLFunc_smaller _h1; subst_vars; grind
 
 
 /--
@@ -219,6 +216,10 @@ def eval (n : Nat) (σ : LState TBase) (e : (LExpr TBase.mono))
           match idx with
           | some i => (args[i]? |>.map (isConstrApp σ.config.factory)).getD false
           | none => false
+        let canonicalArgAt (idx : Option Nat) :=
+          match idx with
+          | some i => (args[i]? |>.map (isCanonicalValue σ.config.factory)).getD false
+          | none => false
         if h: lfunc.body.isSome && (lfunc.attr.contains .inline ||
           constrArgAt (FuncAttr.findInlineIfConstr lfunc.attr)) then
           -- Inline a function only if it has a body.
@@ -239,7 +240,10 @@ def eval (n : Nat) (σ : LState TBase) (e : (LExpr TBase.mono))
           if args.all (isCanonicalValue σ.config.factory) ||
             -- Other functions (e.g. Eliminators) only require the designated
             -- arg to be a constructor
-            constrArgAt (FuncAttr.findEvalIfConstr lfunc.attr) then
+            constrArgAt (FuncAttr.findEvalIfConstr lfunc.attr) ||
+            -- Some functions (e.g. regex) only require the designated
+            -- arg to be a canonical value (e.g. a constant string)
+            canonicalArgAt (FuncAttr.findEvalIfCanonical lfunc.attr) then
             match lfunc.concreteEval with
             | none => new_e
             | some ceval =>
@@ -253,7 +257,7 @@ def eval (n : Nat) (σ : LState TBase) (e : (LExpr TBase.mono))
         -- Not a call of a factory function - go through evalCore
         evalCore n' σ e
 
-def evalCore  (n' : Nat) (σ : LState TBase) (e : LExpr TBase.mono) : LExpr TBase.mono :=
+@[expose] def evalCore  (n' : Nat) (σ : LState TBase) (e : LExpr TBase.mono) : LExpr TBase.mono :=
   match e with
   | .const _ _  => e
   | .op _ _ _     => e

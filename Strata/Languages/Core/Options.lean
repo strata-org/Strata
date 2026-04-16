@@ -39,6 +39,13 @@ def VerificationMode.ofString? (s : String) : Option VerificationMode :=
   | "bugFindingAssumingCompleteSpec" => some .bugFindingAssumingCompleteSpec
   | _ => none
 
+def VerificationMode.toString : VerificationMode → String
+  | .deductive => "deductive"
+  | .bugFinding => "bugFinding"
+  | .bugFindingAssumingCompleteSpec => "bugFindingAssumingCompleteSpec"
+
+instance : ToString VerificationMode := ⟨VerificationMode.toString⟩
+
 def VerificationMode.options : String :=
   "'deductive' (prove correctness), 'bugFinding' (find bugs), or 'bugFindingAssumingCompleteSpec' (find bugs assuming complete preconditions)"
 
@@ -98,6 +105,18 @@ inductive CheckLevel where
 instance : Inhabited CheckLevel where
   default := .minimal
 
+/-- Configuration for which arithmetic overflow checks to enable.
+    Defaults match C/IEEE 754 semantics: signed BV overflow is UB (checked),
+    unsigned BV wraps (unchecked), float64 overflows to ±∞ (unchecked). -/
+structure OverflowChecks where
+  /-- Check signed bitvector overflow (undefined behavior in C). -/
+  signedBV   : Bool := true
+  /-- Check unsigned bitvector overflow (defined wrapping in C). -/
+  unsignedBV : Bool := false
+  /-- Check float64 overflow to ±∞ (defined in IEEE 754). -/
+  float64    : Bool := false
+  deriving Repr, Inhabited
+
 def CheckLevel.ofString? (s : String) : Option CheckLevel :=
   match s with
   | "minimal" => some .minimal
@@ -108,6 +127,9 @@ def CheckLevel.ofString? (s : String) : Option CheckLevel :=
 def CheckLevel.options : String :=
   "'minimal' (simple messages), 'minimalVerbose' (detailed messages, one check), or 'full' (both checks, all outcomes)"
 
+/-- Options controlling the verification pipeline.
+    When adding or removing fields, keep `verifyOptionsFlags` and
+    `parseVerifyOptions` in StrataMain.lean in sync. -/
 structure VerifyOptions where
   -- Pipeline stopping points
   /-- How much diagnostic output to emit. -/
@@ -152,6 +174,8 @@ structure VerifyOptions where
   /-- How many checks to run per VC and how detailed the
       messages should be. -/
   checkLevel : CheckLevel
+  /-- Overflow check configuration: which arithmetic overflow checks to enable. -/
+  overflowChecks : OverflowChecks := {}
   -- Output
   /-- Output results in SARIF format. -/
   outputSarif : Bool

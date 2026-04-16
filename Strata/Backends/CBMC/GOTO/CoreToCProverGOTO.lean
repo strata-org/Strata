@@ -260,8 +260,8 @@ def writeToGotoJson (programName symTabFileName gotoFileName : String) (env : Pr
   let json ← getGotoJson programName env
   let symtabObj := match json.symtab with | .obj m => m | _ => .empty
   let symtab := CProverGOTO.wrapSymtab symtabObj (moduleName := programName)
-  IO.FS.writeFile symTabFileName symtab.pretty
-  IO.FS.writeFile gotoFileName json.goto.pretty
+  writeJsonFile symTabFileName symtab
+  writeJsonFile gotoFileName json.goto
 
 end CoreToGOTO
 

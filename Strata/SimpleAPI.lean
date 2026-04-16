@@ -9,12 +9,16 @@ public import Strata.Util.IO
 
 public import Strata.Transform.CoreTransform
 import Strata.Transform.CallElim
-import Strata.Transform.ProcedureInlining
+import Strata.Transform.LoopElim
+public import Strata.Transform.ProcedureInlining
+import Strata.Transform.FilterProcedures
+import Strata.Transform.IrrelevantAxioms
 
 public import Strata.Languages.Core.Options
 public import Strata.Languages.Core.Verifier
-import Strata.Languages.Laurel.LaurelToCoreTranslator
+import Strata.Languages.Laurel.LaurelCompilationPipeline
 import Strata.Languages.Laurel.Grammar.ConcreteToAbstractTreeTranslator
+import Strata.Languages.Laurel.Grammar.AbstractToConcreteTreeTranslator
 public import Strata.Languages.Python.PySpecPipeline
 import Strata.Languages.Python.Specs
 import Strata.Languages.Python.Specs.DDM
@@ -54,9 +58,9 @@ declared using `noncomputable opaque` to define the intended API surface and
 should not be invoked yet.
 -/
 
-namespace Strata
-
 public section
+
+namespace Strata
 
 open Strata.Python.Specs (ModuleName)
 
@@ -208,7 +212,8 @@ def genericToCore (p : Strata.Program) : Except String Core.Program :=
 Translate a program in the dialect-specific AST for Laurel into the generic Strata
 AST. Usually useful as a step before serialization.
 -/
-noncomputable opaque laurelToGeneric : Laurel.Program → Strata.Program
+def laurelToGeneric (p : Laurel.Program) : Strata.Program :=
+  Laurel.programToStrata p
 
 /--
 Translate a program in the generic AST for Strata into the dialect-specific AST
@@ -228,52 +233,86 @@ dialect into the dialect-specific AST for the Core dialect. This can fail with
 an error message if the input program contains constructs that are not yet
 supported.
 -/
-def laurelToCore (p : Laurel.Program) : Except String Core.Program :=
-  let (coreOpt, diags) := Laurel.translate { emitResolutionErrors := true } p
+def laurelToCore (p : Laurel.Program) : IO (Except String Core.Program) := do
+  let (coreOpt, diags) ← Laurel.translate { emitResolutionErrors := true } p
   match coreOpt with
-  | some core => .ok core
-  | none => .error s!"Laurel to Core translation failed: {diags.map (·.message)}"
+  | some core => return .ok core
+  | none => return .error s!"Laurel to Core translation failed: {diags.map (·.message)}"
 
 /-! ### Transformation of Core programs -/
 
-/--
-Options to control the behavior of inlining procedure calls in a Core program.
-The `doInline` predicate decides, for each call site, whether to inline.
-When `none`, all calls are inlined.
--/
-structure Core.InlineTransformOptions where
-  doInline : Option (String → Core.Transform.CachedAnalyses → Bool) := none
+/-- A single named transform pass with its arguments. -/
+inductive Core.TransformPass where
+  | inlineProcedures (opts : Core.InlineTransformOptions := {})
+  | loopElim
+  | callElim
+  | filterProcedures (procs : List String)
+  | removeIrrelevantAxioms (funcs : List String)
+
+/-- Apply a single pass inside a running `CoreTransformM` context. -/
+private def Core.applyPass (program : Core.Program) (pass : Core.TransformPass)
+    : Core.Transform.CoreTransformM Core.Program := do
+  match pass with
+  | .inlineProcedures opts =>
+    let (_, prog) ← (Core.procedureInliningPipelinePhase opts).transform program
+    return prog
+  | .loopElim =>
+    pure (Core.loopElim program).fst
+  | .callElim =>
+    let (_, prog) ← Core.Transform.runProgram coreCallElimCmd program
+    return prog
+  | .filterProcedures procs =>
+    Core.FilterProcedures.run program procs
+  | .removeIrrelevantAxioms funcs =>
+    Core.IrrelevantAxioms.run program funcs
+
+/-- Run a chain of transform passes on a Core program.  All passes share a
+    single `CoreTransformState`, so fresh variable counters accumulate across
+    passes and cached analyses (e.g., call graphs) can be reused. -/
+def Core.runTransforms (p : Core.Program) (passes : List Core.TransformPass)
+    : Except String Core.Program :=
+  Core.Transform.run p (fun prog => do
+    let mut program := prog
+    for pass in passes do
+      program ← Core.applyPass program pass
+    return program)
 
 /--
 Transform a Core program to inline some or all procedure calls.
 -/
 def Core.inlineProcedures (p : Core.Program) (opts : Core.InlineTransformOptions)
     : Except String Core.Program :=
-  let pred := opts.doInline.getD (fun _ _ => true)
-  Core.Transform.run p (fun prog => do
-    let (_, prog) ← Core.Transform.runProgram (coreInlineCallCmd (doInline := pred)) prog
-    return prog)
+  Core.runTransforms p [.inlineProcedures opts]
 
 /--
 Transform a Core program to replace each loop with assertions and assumptions about
 its invariants.
 -/
 def Core.loopElimUsingContract (p : Core.Program) : Core.Program :=
-  let newDecls := p.decls.map fun d => match d with
-    | .proc proc md =>
-      let newBody := (StateT.run (Core.Block.removeLoopsM proc.body) 0).fst
-      .proc { proc with body := newBody } md
-    | other => other
-  { decls := newDecls }
+  (Core.loopElim p).fst
 
 /--
 Transform a Core program to replace each procedure call with assertions and
 assumptions about its contract.
 -/
 def Core.callElimUsingContract (p : Core.Program) : Except String Core.Program :=
-  Core.Transform.run p (fun prog => do
-    let (_, prog) ← Core.Transform.runProgram coreCallElimCmd prog
-    return prog)
+  Core.runTransforms p [.callElim]
+
+/--
+Transform a Core program to keep only the named procedures and their
+transitive callees, removing everything else.
+-/
+def Core.filterProcedures (p : Core.Program) (targetProcs : List String)
+    : Except String Core.Program :=
+  Core.runTransforms p [.filterProcedures targetProcs]
+
+/--
+Transform a Core program to remove axiom declarations that are irrelevant
+to the named functions (based on call graph analysis).
+-/
+def Core.removeIrrelevantAxioms (p : Core.Program) (functions : List String)
+    : Except String Core.Program :=
+  Core.runTransforms p [.removeIrrelevantAxioms functions]
 
 /-! ### Analysis of Core programs -/
 
@@ -287,10 +326,13 @@ def Core.verifyProgram
     (moreFns : @Lambda.Factory Core.CoreLParams := Lambda.Factory.default)
     (proceduresToVerify : Option (List String) := none)
     (externalPhases : List Core.AbstractedPhase := [])
+    (prefixPhases : List Core.PipelinePhase := [])
+    (keepAllFilesPrefix : Option String := none)
     : EIO String Core.VCResults := do
   let runVerification (tempDir : System.FilePath) : IO Core.VCResults :=
     EIO.toIO (IO.Error.userError ∘ toString)
-      (Core.verify program tempDir proceduresToVerify options moreFns externalPhases)
+      (Core.verify program tempDir proceduresToVerify options moreFns externalPhases prefixPhases
+        (keepAllFilesPrefix := keepAllFilesPrefix))
   let ioAction := match options.vcDirectory with
     | .some vcDir => IO.FS.createDirAll vcDir *> runVerification vcDir
     | .none => IO.FS.withTempDir runVerification
@@ -499,7 +541,7 @@ def pySpecsDir (sourceDir strataDir dialectFile : System.FilePath)
 /-! ### Python-to-Core via Laurel pipeline -/
 
 /-- Translate a Python Ion file all the way to Core.  Composes
-    `pyAnalyzeLaurel` (Python → combined Laurel) and
+    `pythonAndSpecToLaurel` (Python → combined Laurel) and
     `translateCombinedLaurel` (Laurel → Core with prelude). -/
 def pyTranslateLaurel
     (pythonIonPath : String)
@@ -508,12 +550,14 @@ def pyTranslateLaurel
     (specDir : System.FilePath := ".")
     : EIO String (Core.Program × List DiagnosticModel) := do
   let laurel ←
-    match ← pyAnalyzeLaurel pythonIonPath dispatchModules pyspecModules (specDir := specDir) |>.toBaseIO with
+    match ← pythonAndSpecToLaurel pythonIonPath dispatchModules pyspecModules (specDir := specDir) |>.toBaseIO with
     | .ok r => pure r
     | .error err => throw (toString err)
-  let (coreOption, laurelTranslateErrors) := translateCombinedLaurel laurel
+  let (coreOption, laurelTranslateErrors) ← IO.toEIO (fun e => s!"{e}") (translateCombinedLaurel laurel)
   match coreOption with
   | none => throw s!"Laurel to Core translation failed: {laurelTranslateErrors}"
   | some core => pure (core, laurelTranslateErrors)
+
+end Strata
 
 end -- public section

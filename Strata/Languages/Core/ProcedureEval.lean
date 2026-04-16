@@ -9,8 +9,6 @@ public import Strata.Languages.Core.Procedure
 public import Strata.Languages.Core.Statement
 public import Strata.Languages.Core.StatementEval
 public import Strata.Languages.Core.StatementSemantics
-public import Strata.Transform.LoopElim
-
 public section
 
 ---------------------------------------------------------------------
@@ -60,7 +58,7 @@ private def mergeResults (fallback : Procedure × Env) (results : List (Procedur
       deferred := allDeferred,
       exprEnv  := { E.exprEnv with config := { E.exprEnv.config with gen := maxGen } } })
 
-def eval (E : Env) (p : Procedure) : Procedure × Env :=
+def eval (E : Env) (p : Procedure) : (Procedure × Env) × Statistics :=
   -- Generate fresh variables for the globals in the modifies clause, and _update_
   -- the context. These reflect the pre-state values of the globals.
   let modifies_tys :=
@@ -117,9 +115,8 @@ def eval (E : Env) (p : Procedure) : Procedure × Env :=
       /- the assumptions from preconditions are set to have empty metadata  -/
       (.assume label check.expr check.md))
       p.spec.preconditions
-  let body' : List Statement := (StateT.run (Block.removeLoopsM p.body) 0).fst
-  let ssEs := Statement.eval E old_g_subst (precond_assumes ++ body' ++ postcond_asserts)
-  mergeResults (p, E) (ssEs.map (fun (ss, sE) => ({ p with body := ss }, fixupError sE)))
+  let (ssEs, evalStats) := Statement.eval E old_g_subst (precond_assumes ++ p.body ++ postcond_asserts)
+  (mergeResults (p, E) (ssEs.map (fun (ss, sE) => ({ p with body := ss }, fixupError sE))), evalStats)
 
 ---------------------------------------------------------------------
 

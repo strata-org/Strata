@@ -1,15 +1,18 @@
 #!/bin/bash
 
-# Usage: ./run_py_analyze.sh [laurel] [--update] [--filter <pattern>] [--vc-directory <dir>]
+# Usage: ./run_py_analyze.sh [--update] [--filter <pattern>] [--vc-directory <dir>] [--pending] [--check-pending]
+
 # Runs pyAnalyzeLaurel on all test_*.py files and compares output to expected.
 # With --update, overwrite existing expected files with actual output
 # With --filter <pattern>, only run tests whose name contains <pattern>
 # With --vc-directory <dir>, store VCs in SMT-Lib format in <dir>
-# Note: pyAnalyze (non-Laurel) is deprecated; laurel mode is the default.
+# With --pending, also run tests without expected files and report their status
+# With --check-pending, run pending tests and FAIL if any now pass (for CI)
 
 failed=0
 update=0
-mode="laurel"
+pending=0
+check_pending=0
 filter=""
 vc_directory=""
 
@@ -18,37 +21,27 @@ while [ $# -gt 0 ]; do
         --update) update=1 ;;
         --filter) filter="$2"; shift ;;
         --vc-directory) vc_directory="$2"; shift ;;
-        *) mode="$1" ;;
+        --pending) pending=1 ;;
+        --check-pending) pending=1; check_pending=1 ;;
+        laurel) ;; # accepted for backward compatibility
+        *) echo "Unknown argument: $1"; exit 1 ;;
     esac
     shift
 done
 
-if [ "$mode" = "laurel" ]; then
-    command="pyAnalyzeLaurel"
-    expected_dir="expected_laurel"
-    skip_tests=""
-else
-    command="pyAnalyze"
-    expected_dir="expected_non_laurel"
-    skip_tests=""
-fi
+command="pyAnalyzeLaurel"
+expected_dir="expected_laurel"
 
 (cd ../../.. && lake exe strata --help > /dev/null)
+
+pending_total=0
+pending_error=0
+pending_imprecise=0
+pending_pass=0
 
 for test_file in tests/test_*.py; do
     if [ -f "$test_file" ]; then
         base_name=$(basename "$test_file" .py)
-
-        # Skip tests if specified
-        skip=0
-        for skip_test in $skip_tests; do
-            if [ "$base_name" = "$skip_test" ]; then
-                echo "Skipping: $base_name"
-                skip=1
-                break
-            fi
-        done
-        [ $skip -eq 1 ] && continue
 
         # Apply name filter if specified
         if [ -n "$filter" ] && [[ "$base_name" != *"$filter"* ]]; then
@@ -101,5 +94,57 @@ for test_file in tests/test_*.py; do
         fi
     fi
 done
+
+if [ $pending -eq 1 ]; then
+    for test_file in tests/pending/test_*.py; do
+        [ -f "$test_file" ] || continue
+        base_name=$(basename "$test_file" .py)
+
+        if [ -n "$filter" ] && [[ "$base_name" != *"$filter"* ]]; then
+            continue
+        fi
+
+        pending_total=$((pending_total + 1))
+        ion_file="tests/pending/${base_name}.python.st.ion"
+
+        parse_output=$(cd ../../../Tools/Python && python3 -m strata.gen py_to_strata --dialect "dialects/Python.dialect.st.ion" "../../StrataTest/Languages/Python/$test_file" "../../StrataTest/Languages/Python/$ion_file" 2>&1)
+        parse_exit=$?
+
+        if [ $parse_exit -ne 0 ]; then
+            echo "Pending (parse error):    $base_name"
+            pending_error=$((pending_error + 1))
+            rm -f "../../../user_errors.txt"
+            continue
+        fi
+
+        extra_args=$(grep '^# strata-args:' "$test_file" | sed 's/^# strata-args://' | head -1)
+        vc_flag=""
+        [ -n "$vc_directory" ] && vc_flag="--vc-directory $vc_directory"
+        output=$(cd ../../.. && timeout 20 ./.lake/build/bin/strata $command $extra_args $vc_flag "StrataTest/Languages/Python/${ion_file}" 2>&1)
+        exit_code=$?
+
+        if [ $exit_code -ne 0 ] || echo "$output" | grep -q "error\|Error\|ERROR\|panic\|PANIC"; then
+            echo "Pending (analysis error): $base_name"
+            pending_error=$((pending_error + 1))
+        elif echo "$output" | grep -qE '[1-9][0-9]* (failed|inconclusive)'; then
+            echo "Pending (imprecise):      $base_name"
+            pending_imprecise=$((pending_imprecise + 1))
+        else
+            echo "Pending (pass):           $base_name"
+            pending_pass=$((pending_pass + 1))
+        fi
+        rm -f "../../../user_errors.txt"
+    done
+
+    if [ $pending_total -gt 0 ]; then
+        echo ""
+        echo "Pending: $pending_total ($pending_error error, $pending_imprecise imprecise, $pending_pass pass)"
+    fi
+    if [ $check_pending -eq 1 ] && [ $pending_pass -gt 0 ]; then
+        echo ""
+        echo "ERROR: $pending_pass pending test(s) now pass. Move them from tests/pending/ to tests/ and generate expected files with --update."
+        failed=1
+    fi
+fi
 
 exit $failed

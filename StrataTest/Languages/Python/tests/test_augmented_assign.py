@@ -7,4 +7,7 @@ def test_augmented_assign() -> Any:
     assert y == 6, "8 - 2 == 6"
     y *= 2
     assert y == 12, "6 * 2 == 12"
+    l = [1, 2, 3]
+    l[1] += 1
+    assert l[1] == 3, "list element modified"
     return y

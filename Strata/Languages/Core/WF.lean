@@ -152,6 +152,17 @@ structure WFProcedureProp (p : Program) (d : Procedure) : Prop where
   outputsNodup : (ListMap.keys d.header.outputs).Nodup
   modNodup : d.spec.modifies.Nodup
   wfspec : WFSpecProp p d.spec d
+  -- There is no exit statement that cannot be caught by any block in the procedure.
+  bodyExitsCovered : Stmt.exitsCoveredByBlocks.Block.exitsCoveredByBlocks [] d.body
+  -- Input/output identifiers are disjoint from modified globals.
+  ioModDisjoint : (ListMap.keys d.header.inputs ++ ListMap.keys d.header.outputs).Disjoint
+    d.spec.modifies
+  -- The `old_g` snapshot identifiers are disjoint from all other init'd identifiers.
+  modOldDisjoint : (ListMap.keys d.header.inputs ++ ListMap.keys d.header.outputs ++
+    d.spec.modifies).Disjoint
+    (d.spec.modifies.map (fun g => CoreIdent.mkOld g.name))
+  -- The `old_g` snapshot identifiers have no duplicates.
+  modOldNodup : (d.spec.modifies.map (fun g => CoreIdent.mkOld g.name)).Nodup
 structure WFFunctionProp (p : Program) (f : Function) : Prop where
 
 structure WFRecFuncBlockProp (p : Program) (fs : List Function) : Prop where

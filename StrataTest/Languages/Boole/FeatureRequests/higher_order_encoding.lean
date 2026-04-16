@@ -12,15 +12,22 @@ open Strata
 Near-upstream anchors from `differential_status.md`:
 - `verus-examples:fun_ext`
 - `verus-examples:trait_for_fn`
-- Gap: higher-order / lambda support
+- Verus links:
+  `fun_ext`: https://github.com/verus-lang/verus/blob/main/examples/fun_ext.rs
+  `trait_for_fn`: https://github.com/verus-lang/verus/blob/main/examples/trait_for_fn.rs
+- Gap: higher-order function values beyond a first-order `apply` encoding
+- Current status: the seed verifies with a first-order uninterpreted `apply`
+  encoding
+- Remaining gap: native higher-order values and calls without the
+  `FnIntInt`/`apply` workaround
 -/
 
 private def higherOrderSeed : Strata.Program :=
 #strata
 program Boole;
 
-// Target shape: inline lambdas / closures / higher-order values, not only a
-// first-order uninterpreted-function encoding.
+// Target shape: higher-order values and calls without an explicit `apply`
+// wrapper.
 
 type FnIntInt;
 
@@ -31,12 +38,12 @@ spec {
   ensures y == apply(f, x);
 }
 {
-  // TODO(feature:lambda): allow inline lambdas/closures, not only first-order encodings.
   y := apply(f, x);
 };
 #end
 
-/-- info: Obligation: higher_order_seed_ensures_0_615
+/-- info:
+Obligation: higher_order_seed_ensures_0_983
 Property: assert
 Result: ✅ pass-/
 #guard_msgs in

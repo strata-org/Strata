@@ -217,7 +217,7 @@ function Datetime_get_timedelta(d : Datetime) : int;
 // means subtracting an 'old' timestamp from a 'new' timestamp may return
 // a negative difference.
 
-procedure datetime_now() returns (d:Datetime, maybe_except: ExceptOrNone)
+procedure datetime_now(tz: AnyOrNone) returns (d:Datetime, maybe_except: ExceptOrNone)
 spec {
   ensures (Datetime_get_timedelta(d) == Timedelta_mk(0,0,0));
 }
@@ -281,7 +281,7 @@ spec{
 // Uninterpreted procedures
 procedure importFrom(module : string, names : ListStr, level : int) returns ();
 procedure import(names : ListStr) returns ();
-procedure print(msg : string, opt : StrOrNone) returns ();
+procedure print(msg : string, opt : StrOrNone, sep : StrOrNone, end : StrOrNone, file : AnyOrNone, flush : BoolOrNone) returns ();
 
 procedure json_dumps(msg : DictStrAny, opt_indent : IntOrNone) returns (s: string, maybe_except: ExceptOrNone)
 spec{};

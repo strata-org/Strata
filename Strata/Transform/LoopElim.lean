@@ -7,6 +7,7 @@ module
 
 public import Strata.DL.Imperative.Stmt
 public import Strata.Languages.Core.PipelinePhase
+import Strata.Languages.Core.StatementSemantics
 
 namespace Core
 open Imperative Lambda
@@ -17,6 +18,22 @@ public section
 def loopElimInvariantPrefix : String := "assume_invariant_"
 /-- Label prefix for loop-elimination guard assumptions. -/
 def loopElimGuardPrefix : String := "assume_guard_"
+
+namespace LoopElim
+
+/-- Statistics keys tracked by the loop elimination transformation. -/
+inductive Stats where
+  | erasedLoops
+  | insertedAssertAssumes
+
+derive_prefixed_toString Stats "LoopElim"
+
+end LoopElim
+
+/-- State threaded through loop elimination. -/
+structure LoopElimState where
+  loopCounter : Nat := 0
+  statistics : Statistics := {}
 
 /-! ## Loop elimination
 
@@ -101,12 +118,20 @@ mutual
 
 def Stmt.removeLoopsM
   [HasNot P] [HasVarsImp P C] [HasHavoc P C] [HasInit P C] [HasPassiveCmds P C]
+  [DecidableEq P.Ident]
   [HasIdent P] [HasFvar P] [HasIntOrder P]
-  (s : Stmt P C) : StateM Nat (Stmt P C) :=
+  (s : Stmt P C) : StateM LoopElimState (Stmt P C) :=
   match s with
   | .loop guard measure invariants bss md => do
-    let loop_num ← StateT.modifyGet (fun x => (x, x + 1))
-    let assigned_vars := Block.modifiedVars bss
+    let loop_num ← modifyGet fun s =>
+      (s.loopCounter, { s with loopCounter := s.loopCounter + 1 })
+    -- Havoc only loop-carried variables. Variables declared inside the loop
+    -- body are block-local and should not be treated as pre-existing state by
+    -- the passive loop encoding.
+    let local_defs := Block.definedVars bss
+    let assigned_vars :=
+      (Block.modifiedVars bss).filter (fun v => v ∉ local_defs)
+    -- All of the replaced statements reuse the metadata md.
     let havocd : Stmt P C :=
       .block s!"loop_havoc_{loop_num}" (assigned_vars.map (λ n => Stmt.cmd (HasHavoc.havoc n md))) {}
     let body_statements ← Block.removeLoopsM bss
@@ -155,6 +180,20 @@ def Stmt.removeLoopsM
     let exit_state_assumes := [havocd] ++ exit_guard ++ invariant_assumes
     let loop_passive :=
       .ite guard (arbitrary_iter_facts :: exit_state_assumes) [] {}
+
+    -- Count assert/assume statements generated for this loop:
+    --   entry_invariants, entry_invariant_assumes, guard_assumes, inv_assumes,
+    --   maintain_invariants, exit_guard, invariant_assumes,
+    --   plus from measure: assume_m_old, assert_lb, assert_decrease
+    let measureAssertAssumes := if measure.isSome then 3 else 0
+    let numAssertAssumes := entry_invariants.length + entry_invariant_assumes.length +
+      guard_assumes.length + inv_assumes.length + maintain_invariants.length +
+      exit_guard.length + invariant_assumes.length + measureAssertAssumes
+    let newStats := (← get).statistics
+      |>.increment s!"{LoopElim.Stats.erasedLoops}"
+      |>.increment s!"{LoopElim.Stats.insertedAssertAssumes}" numAssertAssumes
+    modify fun st => { st with statistics := newStats }
+
     pure (.block s!"loop_{loop_num}" [first_iter_facts, loop_passive] {})
   | .ite c tss ess md => do
     let tss ← Block.removeLoopsM tss
@@ -170,8 +209,9 @@ def Stmt.removeLoopsM
 
 def Block.removeLoopsM
   [HasNot P] [HasVarsImp P C] [HasHavoc P C] [HasInit P C] [HasPassiveCmds P C]
+  [DecidableEq P.Ident]
   [HasIdent P] [HasFvar P] [HasIntOrder P]
-  (ss : List (Stmt P C)) : StateM Nat (List (Stmt P C)) :=
+  (ss : List (Stmt P C)) : StateM LoopElimState (List (Stmt P C)) :=
   match ss with
   | [] => pure []
   | s :: ss => do
@@ -183,17 +223,35 @@ end
 
 def Stmt.removeLoops
   [HasNot P] [HasVarsImp P C] [HasHavoc P C] [HasInit P C] [HasPassiveCmds P C]
+  [DecidableEq P.Ident]
   [HasIdent P] [HasFvar P] [HasIntOrder P]
   (s : Stmt P C) : Stmt P C :=
-  (StateT.run (removeLoopsM s) 0).fst
+  (StateT.run (removeLoopsM s) {}).fst
 
-/-- Loop-elimination pipeline phase: the transform is applied during
-    evaluation (not as a program-to-program pass), so the transform here
-    is the identity. If the obligation's path includes labels from loop
-    elimination, the loop was replaced by an invariant-based encoding,
-    which is an over-approximation. -/
+/-- Eliminate loops in all procedures of a Core program by replacing each loop
+    with assertions and assumptions about its invariants.
+    Returns the transformed program together with accumulated statistics. -/
+def loopElim (p : Program) : Program × Statistics :=
+  let (decls, stats) := p.decls.foldl (fun (acc, stats) d =>
+    match d with
+    | .proc proc md =>
+      let (body, st) := StateT.run (Block.removeLoopsM proc.body) {}
+      ((.proc { proc with body := body } md) :: acc, stats.merge st.statistics)
+    | other => (other :: acc, stats)) ([], {})
+  ({ decls := decls.reverse }, stats)
+
+/-- Loop elimination as a `CoreTransformM` pass suitable for the pipeline. -/
+def loopElim' (p : Program) : Transform.CoreTransformM (Bool × Program) := do
+  let (p', stats) := loopElim p
+  modify fun σ => { σ with statistics := σ.statistics.merge stats }
+  return (true, p')
+
+/-- Loop-elimination pipeline phase: replaces each loop with an
+    invariant-based acyclic encoding. If the obligation's path includes
+    labels from loop elimination, the loop was replaced by an
+    over-approximation, so SAT models are demoted to unknown. -/
 def loopElimPipelinePhase : PipelinePhase where
-  transform p := pure (false, p)
+  transform := loopElim'
   phase.name := "LoopElim"
   phase.getValidation obligation :=
     if obligationHasLabelPrefix obligation loopElimInvariantPrefix

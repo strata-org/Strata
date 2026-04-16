@@ -79,6 +79,8 @@ jobs:
             lake-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}-${{ hashFiles('lake-manifest.json') }}-${{ hashFiles('**/*.st') }}
             lake-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}-${{ hashFiles('lake-manifest.json') }}
             lake-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}
+      - name: Download ion-java jar for Java codegen test
+        run: wget -q -O StrataTest/DDM/Integration/Java/testdata/ion-java-1.11.11.jar https://github.com/amazon-ion/ion-java/releases/download/v1.11.11/ion-java-1.11.11.jar
       - name: Build and test Strata
         uses: leanprover/lean-action@v1
         with:
@@ -88,6 +90,14 @@ jobs:
         with:
           path: .lake
           key: lake-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}-${{ hashFiles('lake-manifest.json') }}-${{ hashFiles('**/*.st') }}-${{ github.sha }}
+      - name: Verify Java testdata is up to date
+        run: |
+          StrataTest/DDM/Integration/Java/regenerate-testdata.sh
+          git diff --exit-code StrataTest/DDM/Integration/Java/testdata/
+      - name: Verify generated editor syntax files are up to date
+        run: |
+          lake env lean --run editors/GenSyntax.lean all
+          git diff --exit-code editors/vscode/syntaxes/ editors/emacs/
       - name: Build and run strata verify
         run: lake exe strata verify Examples/SimpleProc.core.st
       - name: Build BoogieToStrata
@@ -106,15 +116,57 @@ jobs:
       - name: Build using pip
         run: pip install .
         working-directory: Tools/Python
-      - name: Run pyAnalyze tests
+      - name: Run pyAnalyze SARIF tests
         working-directory: StrataTest/Languages/Python
         shell: bash
-        run: |
-          ./run_py_analyze.sh
-          python run_py_analyze_sarif.py --laurel
+        run: python run_py_analyze_sarif.py --laurel
+      - name: Run pyAnalyze golden-file tests
+        working-directory: StrataTest/Languages/Python
+        shell: bash
+        run: ./run_py_analyze.sh
       - name: Run regex differential tests
         working-directory: StrataTest/Languages/Python/Regex
         run: python diff_test.py
+
+  check_pending_python:
+    needs: build_and_test_lean
+    name: Check pending Python tests
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+    - uses: actions/checkout@v6
+    - uses: actions/setup-python@v6
+      with:
+        python-version: '3.14'
+    - name: Build using pip
+      run: pip install .
+      working-directory: Tools/Python
+    - name: Restore Lean build cache
+      uses: actions/cache/restore@v5
+      with:
+        path: .lake
+        key: lake-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}-${{ hashFiles('lake-manifest.json') }}-${{ hashFiles('**/*.st') }}-${{ github.sha }}
+        fail-on-cache-miss: true
+    - name: Install Lean
+      uses: leanprover/lean-action@v1
+      with:
+        auto-config: false
+        build: false
+    - name: Install cvc5
+      shell: bash
+      run: |
+            ARCH=$(uname -m)
+            if [ "$ARCH" = "x86_64" ]; then ARCH_NAME="x86_64"
+            elif [ "$ARCH" = "aarch64" ] || [ "$ARCH" = "arm64" ]; then ARCH_NAME="arm64"
+            else echo "Unsupported architecture: $ARCH"; exit 1; fi
+            wget -q https://github.com/cvc5/cvc5/releases/download/cvc5-1.2.1/cvc5-Linux-${ARCH_NAME}-static.zip
+            unzip -q cvc5-Linux-${ARCH_NAME}-static.zip
+            sudo cp cvc5-Linux-${ARCH_NAME}-static/bin/cvc5 /usr/local/bin/
+    - name: Check pending tests for newly passing
+      working-directory: StrataTest/Languages/Python
+      shell: bash
+      run: ./run_py_analyze.sh --check-pending
 
   lint_checks:
     name: Run lint checks
@@ -186,6 +238,7 @@ jobs:
           fail: true
 
   build_python:
+    needs: build_and_test_lean
     name: Build and test Python
     runs-on: ubuntu-latest
     permissions:
@@ -201,12 +254,18 @@ jobs:
     - name: Build using pip
       run: pip install .
       working-directory: Tools/Python
-    - name: Build Lean strata executable for testing purposes.
+    - name: Restore Lean build cache
+      uses: actions/cache/restore@v5
+      with:
+        path: .lake
+        key: lake-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}-${{ hashFiles('lake-manifest.json') }}-${{ hashFiles('**/*.st') }}-${{ github.sha }}
+        fail-on-cache-miss: true
+    - name: Install Lean (for lake env)
       uses: leanprover/lean-action@v1
       with:
         auto-config: false
-        build: true
-        build-args: "strata:exe"
+        build: false
+        use-github-cache: false
     - name: Install cvc5
       shell: bash
       run: |
@@ -236,7 +295,7 @@ jobs:
               sudo cp z3-4.13.4-x64-glibc-2.35/bin/z3 /usr/local/bin/
             fi
     - name: Run PySpec and dispatch tests
-      run: PYTHON=python PYTHON_TEST=1 lake build StrataTest.Languages.Python.SpecsTest StrataTest.Languages.Python.AnalyzeLaurelTest StrataTest.Languages.Python.Specs.IdentifyOverloadsTest StrataTest.Languages.Python.VerifyPythonTest
+      run: PYTHON=python PYTHON_TEST=1 lake build StrataTest.Languages.Python.SpecsTest StrataTest.Languages.Python.AnalyzeLaurelTest StrataTest.Languages.Python.Specs.IdentifyOverloadsTest StrataTest.Languages.Python.VerifyPythonTest StrataTest.Languages.Python.PropertySummaryTest
     - name: Run test script
       run: FAIL_FAST=1 ./scripts/run_cpython_tests.sh ${{ matrix.python_version }}
       working-directory: Tools/Python

@@ -41,9 +41,11 @@ rec function len<a>(@[cases] xs : MyList a) : int
 /-- error: 🚨 Error during evaluation!
 [ERROR] Polymorphic recursive functions are not yet supported for SMT verification: 'len'. SMT solvers require monomorphic axioms.
 
-[DEBUG] Evaluated program: datatype MyList (a : Type) {(
-  (Nil())),
-  (Cons(hd : a, tl : (MyList a)))
+[DEBUG] Evaluated program: program Core;
+
+datatype MyList (a : Type) {
+  Nil(),
+  Cons(hd : a, tl : MyList a)
 };-/
 #guard_msgs in
 #eval verify polyRecPgm (options := .quiet)
@@ -68,9 +70,11 @@ rec function listLen (xs : IntList) : int
 /-- error: 🚨 Error during evaluation!
 [ERROR] Recursive function 'listLen' requires a @[cases] parameter
 
-[DEBUG] Evaluated program: datatype IntList {(
-  (Nil())),
-  (Cons(hd : int, tl : IntList))
+[DEBUG] Evaluated program: program Core;
+
+datatype IntList {
+  Nil(),
+  Cons(hd : int, tl : IntList)
 };-/
 #guard_msgs in
 #eval verify noCasesPgm (options := .quiet)

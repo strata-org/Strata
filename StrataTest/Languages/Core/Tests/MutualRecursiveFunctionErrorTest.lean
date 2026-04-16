@@ -43,9 +43,11 @@ function lenHelper<a>(@[cases] xs : MyList a) : int
 /-- error: 🚨 Error during evaluation!
 [ERROR] Polymorphic recursive functions are not yet supported for SMT verification: 'len'. SMT solvers require monomorphic axioms.
 
-[DEBUG] Evaluated program: datatype MyList (a : Type) {(
-  (Nil())),
-  (Cons(hd : a, tl : (MyList a)))
+[DEBUG] Evaluated program: program Core;
+
+datatype MyList (a : Type) {
+  Nil(),
+  Cons(hd : a, tl : MyList a)
 };-/
 #guard_msgs in
 #eval verify polyMutualPgm (options := .quiet)
@@ -74,9 +76,11 @@ function isOdd (n : MyNat) : bool
 /-- error: 🚨 Error during evaluation!
 [ERROR] Recursive function 'isEven' requires a @[cases] parameter
 
-[DEBUG] Evaluated program: datatype MyNat {(
-  (Zero())),
-  (Succ(pred : MyNat))
+[DEBUG] Evaluated program: program Core;
+
+datatype MyNat {
+  Zero(),
+  Succ(pred : MyNat)
 };-/
 #guard_msgs in
 #eval verify noCasesMutualPgm (options := .quiet)

@@ -9,6 +9,7 @@ public import Strata.Languages.Core.Statement
 public import Strata.Languages.Core.CallGraph
 public import Strata.Languages.Core.CoreGen
 public import Strata.DL.Util.LabelGen
+public import Strata.Util.Statistics
 
 /-! # Utility functions for program transformation in Strata Core -/
 
@@ -85,7 +86,13 @@ def isGlobalVar (p : Program) (ident : Expression.Ident) : Bool :=
 
 
 /-- Cached results of program analyses that are helpful for program
-    transformation. -/
+    transformation.
+
+    Invariant: When `callGraph` is `some cg`, `cg` must reflect the current
+    program's procedure call structure. Every procedure in the program must
+    have an entry in `cg.callees`, and every call edge must be accounted for.
+    Transforms that add, remove, or modify procedures must update the call
+    graph accordingly (or set it to `.none` to invalidate it). -/
 structure CachedAnalyses where
   callGraph: Option CallGraph := .none
 
@@ -116,6 +123,8 @@ structure CoreTransformState where
   -- declarations (e.g., PrecondElim). The factory grows as function
   -- declarations are encountered during traversal.
   factory: Option (@Lambda.Factory CoreLParams) := .none
+  -- Per-transform statistics counters, keyed by string names.
+  statistics: Statistics := {}
 
 @[simp]
 def CoreTransformState.emp : CoreTransformState :=
@@ -137,7 +146,8 @@ def liftCoreGenM {α : Type} (cgm : CoreGenM α) : StateM CoreTransformState α 
       currentProgram := coreTransformState.currentProgram,
       currentProcedureName := coreTransformState.currentProcedureName,
       cachedAnalyses := coreTransformState.cachedAnalyses,
-      factory := coreTransformState.factory })
+      factory := coreTransformState.factory,
+      statistics := coreTransformState.statistics })
 
 instance : MonadLift CoreGenM (StateM CoreTransformState) where
   monadLift := liftCoreGenM
@@ -157,6 +167,10 @@ def getFactory : CoreTransformM (@Lambda.Factory CoreLParams) := do
 /-- Update the factory in state. -/
 def setFactory (F : @Lambda.Factory CoreLParams) : CoreTransformM Unit :=
   modify fun σ => { σ with factory := some F }
+
+/-- Increment a statistics counter by `n` (default 1), initializing if absent. -/
+def incrementStat (key : String) (n : Nat := 1) : CoreTransformM Unit :=
+  modify fun σ => { σ with statistics := σ.statistics.increment key n }
 
 @[expose]
 def getIdentTy? (p : Program) (id : Expression.Ident) := p.getVarTy? id
@@ -254,7 +268,10 @@ def createAsserts
     := conds.mapM (fun (l, check) => do
           let newLabel ← genIdent l (fun s => s!"{labelPrefix}{s}")
           -- Non-lifting: the replacement expressions must be closed (no dangling bvars).
-          return Statement.assert newLabel.toPretty (Lambda.LExpr.substFvars check.expr subst) md)
+          -- Use the call site as the primary file range, preserving the requires
+          -- clause location as a related file range for richer diagnostics.
+          let assertMd := check.md.setCallSiteFileRange md
+          return Statement.assert newLabel.toPretty (Lambda.LExpr.substFvars check.expr subst) assertMd)
 
 /-- turns a list of preconditions into assumes with substitution -/
 def createAssumes
@@ -267,7 +284,10 @@ def createAssumes
     conds.mapM (fun (l, check) => do
       let newLabel ← genIdent l (fun s => s!"{labelPrefix}{s}")
       -- Non-lifting: the replacement expressions must be closed (no dangling bvars).
-      return Statement.assume newLabel.toPretty (Lambda.LExpr.substFvars check.expr subst) md)
+      -- Use the call site as the primary file range, preserving the ensures
+      -- clause location as a related file range for richer diagnostics.
+      let assumeMd := check.md.setCallSiteFileRange md
+      return Statement.assume newLabel.toPretty (Lambda.LExpr.substFvars check.expr subst) assumeMd)
 
 /--
 Generate the substitution pairs needed for the body of the procedure
@@ -375,6 +395,35 @@ def runProgram
   })
   return (changed, newProg)
 
+/-- Repeatedly apply a command-level transformation until no more changes occur
+    or the iteration limit is reached.
+    - `maxIters = none`: repeat until a fixed point (no changes).
+    - `maxIters = some n`: run up to `n` iterations, stopping early if no change. -/
+def runProgramUntil
+    (f : Command → CoreTransformM (Option (List Statement)))
+    (p : Program)
+    (maxIters : Option Nat := none)
+    (targetProcList : Option (List String) := .none)
+  : CoreTransformM (Bool × Program) := do
+  match maxIters with
+  | some n =>
+    let mut prog := p
+    let mut anyChanged := false
+    for _ in List.range n do
+      let (changed, prog') ← runProgram f prog targetProcList
+      prog := prog'
+      if changed then anyChanged := true
+      if !changed then break
+    return (anyChanged, prog)
+  | none =>
+    let mut prog := p
+    let mut anyChanged := false
+    repeat
+      let (changed, prog') ← runProgram f prog targetProcList
+      prog := prog'
+      if changed then anyChanged := true
+      if !changed then break
+    return (anyChanged, prog)
 
 @[expose, simp]
 def runWith {α : Type} (p : α) (f : α → CoreTransformM β)

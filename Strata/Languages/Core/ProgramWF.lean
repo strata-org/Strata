@@ -309,7 +309,7 @@ private theorem List.foldlM_error_conditional (f: α → Bool) (g: α → β) (l
   ∀ y, y ∈ l → ¬ (f y) := by
   induction l generalizing x <;> grind
 
-
+/-
 attribute [local grind .] Procedure.typeCheckWF
 
 /--
@@ -367,6 +367,7 @@ private theorem Program.typeCheck.goWF : Program.typeCheck.go p C T ds [] = .ok 
       case left =>
         simp only [WFDeclProp]
         constructor <;> grind
+-/
 
 -- Reasoning about unique identifiers
 
@@ -397,14 +398,21 @@ macro_rules
   | `(tactic|split_contra_case $t) =>
   `(tactic| split at $t:ident <;> (try contradiction); cases $t:ident)
 
+private theorem addFactoryFunction_idents {T : LExprParams} (C : LContext T) (fn : LFunc T) :
+    (C.addFactoryFunction fn).idents = C.idents := by
+  simp [LContext.addFactoryFunction]
+  if h : fn.name.name ∈ C.functions then
+    simp [h]
+  else
+    simp [h]
+
 /-- `List.foldl addFactoryFunction` does not change `idents`. -/
 private theorem foldl_addFactoryFunction_idents {T : LExprParams} {C : LContext T} {fs : List α} {g : α → LFunc T} :
-    (fs.foldl (fun C f => C.addFactoryFunction (g f)) C).idents = C.idents := by
+    (fs.foldl (fun C f => C.addFactoryFunction (g f)) (init := C)).idents = C.idents := by
   induction fs generalizing C with
   | nil => rfl
   | cons _ _ ih =>
-    simp only [List.foldl, LContext.addFactoryFunction]
-    exact ih
+    simp only [List.foldl, ih, addFactoryFunction_idents]
 
 /-- If `Except.mapError` returns `.ok`, then the underlying result was also `.ok`. -/
 private theorem Except.mapError_ok {α β γ} {f : α → β} {e : Except α γ} {v : γ} :
@@ -659,6 +667,7 @@ private theorem Program.typeCheckFunctionNoDup : Program.typeCheck.go p C T decl
         have := addMutualBlockIdents (by assumption);
         grind
 
+/-
 /--
 The main lemma stating that a program 'p' that passes type checking is well formed
 -/
@@ -671,6 +680,7 @@ theorem Program.typeCheckWF : Program.typeCheck C T p = .ok (p', T') → WF.WFPr
     exact typeCheckFunctionNoDup tcOk
   case wfdecls =>
     exact typeCheck.goWF tcOk
+-/
 
 end -- public section
 

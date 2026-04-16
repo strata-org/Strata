@@ -32,7 +32,9 @@ procedure P() returns ()
 #eval TransM.run Inhabited.default (translateProgram realPgm) |>.snd |>.isEmpty
 
 /--
-info: function x () : real;
+info: program Core;
+
+function x () : real;
 function y () : real;
 axiom [real_x_ge_1]: x >= 1.0;
 axiom [real_y_ge_2]: y >= 2.0;
@@ -74,6 +76,8 @@ Result: ❌ fail
 
 
 [DEBUG] Evaluated program:
+program Core;
+
 function x () : real;
 function y () : real;
 axiom [real_x_ge_1]: x >= 1.0;
@@ -128,7 +132,9 @@ spec {
 #eval TransM.run Inhabited.default (translateProgram bvPgm) |>.snd |>.isEmpty
 
 /--
-info: function x () : bv8;
+info: program Core;
+
+function x () : bv8;
 function y () : bv8;
 axiom [bv_x_ge_1]: bv{8}(1) <= x;
 axiom [bv_y_ge_2]: bv{8}(2) <= y;

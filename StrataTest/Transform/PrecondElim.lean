@@ -28,7 +28,7 @@ def translate (t : Strata.Program) : Core.Program :=
 
 def transformProgram (t : Strata.Program) : Core.Program :=
   let program := translate t
-  match Core.Transform.run program (PrecondElim.precondElim · Core.Factory) with
+  match Core.Transform.run program PrecondElim.precondElim { Core.Transform.CoreTransformState.emp with factory := some Core.Factory } with
   | .error e => panic! s!"PrecondElim failed: {e}"
   | .ok (_changed, program) =>
     match Core.typeCheck Core.VerifyOptions.default program with
@@ -52,7 +52,9 @@ procedure test(a : int) returns ()
 info: [Strata.Core] Type checking succeeded.
 
 ---
-info: procedure test (a : int) returns ()
+info: program Core;
+
+procedure test (a : int) returns ()
 {
   assert [init_calls_Int.SafeDiv_0]: !(a == 0);
   var z : int := 10 / a;
@@ -81,7 +83,9 @@ function foo(x : int, y : int) : int
 info: [Strata.Core] Type checking succeeded.
 
 ---
-info: procedure safeMod$$wf (x : int, y : int) returns ()
+info: program Core;
+
+procedure safeMod$$wf (x : int, y : int) returns ()
 {
   assume [precond_safeMod_0]: !(y == 0);
   assert [safeMod_body_calls_Int.SafeMod_0]: !(y == 0);
@@ -123,9 +127,11 @@ spec {
 info: [Strata.Core] Type checking succeeded.
 
 ---
-info: datatype List {(
-  (Nil())),
-  (Cons(head : int, tail : List))
+info: program Core;
+
+datatype List {
+  Nil(),
+  Cons(head : int, tail : List)
 };
 procedure test$$wf (xs : List) returns ()
 {
@@ -166,9 +172,11 @@ spec {
 info: [Strata.Core] Type checking succeeded.
 
 ---
-info: datatype List {(
-  (Nil())),
-  (Cons(head : int, tail : List))
+info: program Core;
+
+datatype List {
+  Nil(),
+  Cons(head : int, tail : List)
 };
 procedure test$$wf (xs : List) returns ()
 {
@@ -211,7 +219,9 @@ procedure test() returns ()
 info: [Strata.Core] Type checking succeeded.
 
 ---
-info: procedure test () returns ()
+info: program Core;
+
+procedure test () returns ()
 {
   var x : int := 1;
   safeDiv$$wf: {
@@ -255,7 +265,9 @@ procedure test(cond : bool, x : int, y : int) returns ()
 info: [Strata.Core] Type checking succeeded.
 
 ---
-info: procedure test (cond : bool, x : int, y : int) returns ()
+info: program Core;
+
+procedure test (cond : bool, x : int, y : int) returns ()
 {
   if (cond) {
     f$$wf: {
@@ -309,7 +321,9 @@ procedure proc2(y : int) returns ()
 info: [Strata.Core] Type checking succeeded.
 
 ---
-info: procedure proc1 (x : int) returns ()
+info: program Core;
+
+procedure proc1 (x : int) returns ()
 {
   f$$wf: {
     var a : int;
@@ -355,7 +369,9 @@ procedure test(x : int, y : int) returns ()
 info: [Strata.Core] Type checking succeeded.
 
 ---
-info: procedure test (x : int, y : int) returns ()
+info: program Core;
+
+procedure test (x : int, y : int) returns ()
 {
   assert [ite_cond_calls_Int.SafeDiv_0]: !(y == 0);
   if (x / y > 0) {
@@ -385,7 +401,9 @@ spec { modifies g; }
 info: [Strata.Core] Type checking succeeded.
 
 ---
-info: var g : int;
+info: program Core;
+
+var g : int;
 procedure test (y : int) returns ()
 spec {
   modifies g;
