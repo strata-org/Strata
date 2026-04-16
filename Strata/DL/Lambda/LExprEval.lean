@@ -252,7 +252,21 @@ def eval (n : Nat) (σ : LState TBase) (e : (LExpr TBase.mono))
               | .none => new_e
           else
             -- At least one argument in the function call is symbolic.
-            new_e
+            -- Try short-circuit evaluation for boolean And/Or.
+            if lfunc.name == "Bool.And" then
+              match args with
+              | [x, _] => match x.denoteBool with
+                | some false => .false e.metadata
+                | _ => new_e
+              | _ => new_e
+            else if lfunc.name == "Bool.Or" then
+              match args with
+              | [x, _] => match x.denoteBool with
+                | some true => .true e.metadata
+                | _ => new_e
+              | _ => new_e
+            else
+              new_e
       | none =>
         -- Not a call of a factory function - go through evalCore
         evalCore n' σ e
