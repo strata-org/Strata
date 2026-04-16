@@ -62,7 +62,7 @@ procedure caller()
 //}
 
 procedure modifyContainerWithoutPermission1(c: Container, d: Container)
-//        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
+//        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: postcondition does not hold
 // the above error is because the body does not satisfy the empty modifies clause. error needs to be improved
   opaque
 {
@@ -70,7 +70,7 @@ procedure modifyContainerWithoutPermission1(c: Container, d: Container)
 };
 
 procedure modifyContainerWithoutPermission2(c: Container, d: Container)
-//        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion could not be proved
+//        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: postcondition could not be proved
 // the above error is because the body does not satisfy the modifies clause. error needs to be improved
   opaque
   modifies d
@@ -79,7 +79,7 @@ procedure modifyContainerWithoutPermission2(c: Container, d: Container)
 };
 
 procedure modifyContainerWithoutPermission3(c: Container, d: Container)
-//        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
+//        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: postcondition does not hold
 // the above error is because the body does not satisfy the modifies clause. error needs to be improved
   opaque
   modifies d
