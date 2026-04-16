@@ -13,152 +13,124 @@ import Strata.Languages.Core.Verifier
 
     unsat ≤ unknown ≤ sat ≤ err
 
-These proofs are stated directly on `SMT.Result.merge` using constructor
-predicates (`isErr`, `isSat`, `isUnknown`, `isUnsat`).
+Since `Result` carries data (models, error messages), full commutativity does
+not hold on the concrete `SMT.Result.merge` — `merge a b` may return a
+different model than `merge b a`. We therefore introduce `ResultKind` to
+abstract away the payload and prove properties at that level.
+
+**Note:** `ResultKind.merge_comm` proves commutativity on the *abstracted*
+`ResultKind.merge`, not on `SMT.Result.merge` itself. The concrete merge
+function is intentionally non-commutative: when both operands are `sat` (or
+both `err`, etc.), it keeps the payload from the *first* operand.
+
+The key theorem `merge_kind` at the bottom of this file connects the two:
+
+    (a.merge b).toKind = a.toKind.merge b.toKind
+
+This establishes that `SMT.Result.merge` faithfully implements the lattice join
+at the kind level — i.e., the *constructor tag* of the merged result is exactly
+what `ResultKind.merge` predicts, even though the payloads may differ.
 
 ## Main results
 
-### Dominance / soundness
-- `merge_isErr_left` / `merge_isErr_right` — `err` dominates everything
-- `merge_isSat_left` / `merge_isSat_right` — `sat` dominates when no `err`
-- `merge_isUnknown_of_left` / `merge_isUnknown_of_right` — `unknown` dominates
-  when no `err`/`sat`
-- `merge_isUnsat` — both `unsat` implies merged is `unsat`
-
-### Algebraic properties
-- `merge_idem` — idempotency: `a.merge a = a`
-- `merge_assoc_isErr` / `merge_assoc_isSat` / `merge_assoc_isUnknown` /
-  `merge_assoc_isUnsat` — associativity at the constructor level
-
-### Identity element
-- `merge_unsat_left` / `merge_unsat_right` — `unsat` is the identity
+- `ResultKind.merge_comm` — commutativity (on the abstraction only)
+- `ResultKind.merge_assoc` — associativity
+- `ResultKind.merge_idem` — idempotency
+- `ResultKind.merge_eq_max` — merge computes the lattice join
+- `ResultKind.le_merge_left` / `le_merge_right` — merge is an upper bound
+- `ResultKind.merge_le` — merge is the *least* upper bound
+- `merge_kind` — `(a.merge b).toKind = a.toKind.merge b.toKind`
 -/
 
 open Strata
 
-namespace Core.SMT.Result
+/-- The "tag" of an SMT result, forgetting models and error messages. -/
+inductive ResultKind where
+  | unsat
+  | unknown
+  | sat
+  | err
+  deriving DecidableEq, Repr
 
-/-- `r` is an error result. -/
-def isErr (r : Core.SMT.Result) : Prop :=
-  ∃ e, r = .err e
+/-- Project an `SMT.Result` to its kind. -/
+def Core.SMT.Result.toKind (r : Core.SMT.Result) : ResultKind :=
+  match r with
+  | .unsat      => .unsat
+  | .unknown .. => .unknown
+  | .sat ..     => .sat
+  | .err ..     => .err
 
-/-- `r` is a sat result. -/
-def isSat (r : Core.SMT.Result) : Prop :=
-  ∃ m, r = .sat m
-
-/-- `r` is an unknown result. -/
-def isUnknown (r : Core.SMT.Result) : Prop :=
-  ∃ m, r = .unknown m
-
-/-- `r` is unsat. -/
-def isUnsat (r : Core.SMT.Result) : Prop :=
-  r = .unsat
-
--- -----------------------------------------------------------------------
--- Dominance / soundness properties
--- -----------------------------------------------------------------------
-
-/-- If `a` is an error, `a.merge b` is an error. -/
-theorem merge_isErr_left (a b : Core.SMT.Result) (h : a.isErr) :
-    (a.merge b).isErr := by
-  obtain ⟨e, rfl⟩ := h; exact ⟨e, rfl⟩
-
-/-- If `b` is an error, `a.merge b` is an error. -/
-theorem merge_isErr_right (a b : Core.SMT.Result) (h : b.isErr) :
-    (a.merge b).isErr := by
-  obtain ⟨e, rfl⟩ := h; cases a <;> exact ⟨_, rfl⟩
-
-/-- If `a` is sat and `b` is not an error, `a.merge b` is sat. -/
-theorem merge_isSat_left (a b : Core.SMT.Result) (ha : a.isSat) (hb : ¬b.isErr) :
-    (a.merge b).isSat := by
-  obtain ⟨m, rfl⟩ := ha
-  cases b with
-  | err e => exact absurd ⟨e, rfl⟩ hb
-  | _ => exact ⟨m, rfl⟩
-
-/-- If `b` is sat and `a` is not an error, `a.merge b` is sat. -/
-theorem merge_isSat_right (a b : Core.SMT.Result) (hb : b.isSat) (ha : ¬a.isErr) :
-    (a.merge b).isSat := by
-  obtain ⟨m, rfl⟩ := hb
-  cases a with
-  | err e => exact absurd ⟨e, rfl⟩ ha
-  | sat m' => exact ⟨m', rfl⟩
-  | _ => exact ⟨m, rfl⟩
-
-/-- If `a` is unknown and `b` is neither error nor sat, `a.merge b` is unknown. -/
-theorem merge_isUnknown_of_left (a b : Core.SMT.Result)
-    (ha : a.isUnknown) (hbe : ¬b.isErr) (hbs : ¬b.isSat) :
-    (a.merge b).isUnknown := by
-  obtain ⟨m, rfl⟩ := ha
-  cases b with
-  | err e => exact absurd ⟨e, rfl⟩ hbe
-  | sat m' => exact absurd ⟨m', rfl⟩ hbs
-  | _ => exact ⟨m, rfl⟩
-
-/-- If `b` is unknown and `a` is neither error nor sat, `a.merge b` is unknown. -/
-theorem merge_isUnknown_of_right (a b : Core.SMT.Result)
-    (hb : b.isUnknown) (hae : ¬a.isErr) (has : ¬a.isSat) :
-    (a.merge b).isUnknown := by
-  obtain ⟨m, rfl⟩ := hb
-  cases a with
-  | err e => exact absurd ⟨e, rfl⟩ hae
-  | sat m' => exact absurd ⟨m', rfl⟩ has
-  | unknown m' => exact ⟨m', rfl⟩
-  | unsat => exact ⟨m, rfl⟩
-
-/-- If both are unsat, the merged result is unsat. -/
-theorem merge_isUnsat (a b : Core.SMT.Result) (ha : a.isUnsat) (hb : b.isUnsat) :
-    (a.merge b).isUnsat := by
-  subst ha; subst hb; rfl
+/-- Merge on kinds: `err` dominates `sat` dominates `unknown` dominates `unsat`. -/
+def ResultKind.merge (a b : ResultKind) : ResultKind :=
+  match a, b with
+  | .err, _    => .err
+  | _, .err    => .err
+  | .sat, _    => .sat
+  | _, .sat    => .sat
+  | .unknown, _ => .unknown
+  | _, .unknown => .unknown
+  | .unsat, .unsat => .unsat
 
 -- -----------------------------------------------------------------------
--- Idempotency
+-- Core algebraic properties
 -- -----------------------------------------------------------------------
 
-/-- `merge` is idempotent: `a.merge a = a`. -/
-theorem merge_idem (a : Core.SMT.Result) : a.merge a = a := by
+theorem ResultKind.merge_comm (a b : ResultKind) :
+    a.merge b = b.merge a := by
+  cases a <;> cases b <;> rfl
+
+theorem ResultKind.merge_assoc (a b c : ResultKind) :
+    (a.merge b).merge c = a.merge (b.merge c) := by
+  cases a <;> cases b <;> cases c <;> rfl
+
+theorem ResultKind.merge_idem (a : ResultKind) :
+    a.merge a = a := by
   cases a <;> rfl
 
 -- -----------------------------------------------------------------------
--- Associativity (at the constructor level)
+-- Lattice ordering: unsat ≤ unknown ≤ sat ≤ err
 -- -----------------------------------------------------------------------
 
-/-- Associativity for `isErr`:
-    `(a.merge b).merge c` is err iff `a.merge (b.merge c)` is err. -/
-theorem merge_assoc_isErr (a b c : Core.SMT.Result) :
-    ((a.merge b).merge c).isErr ↔ (a.merge (b.merge c)).isErr := by
-  cases a <;> cases b <;> cases c <;> simp [merge, isErr]
+/-- Natural number encoding for the lattice ordering. -/
+def ResultKind.rank : ResultKind → Nat
+  | .unsat   => 0
+  | .unknown => 1
+  | .sat     => 2
+  | .err     => 3
 
-/-- Associativity for `isSat`:
-    `(a.merge b).merge c` is sat iff `a.merge (b.merge c)` is sat. -/
-theorem merge_assoc_isSat (a b c : Core.SMT.Result) :
-    ((a.merge b).merge c).isSat ↔ (a.merge (b.merge c)).isSat := by
-  cases a <;> cases b <;> cases c <;> simp [merge, isSat]
+instance : LE ResultKind where
+  le a b := a.rank ≤ b.rank
 
-/-- Associativity for `isUnknown`:
-    `(a.merge b).merge c` is unknown iff `a.merge (b.merge c)` is unknown. -/
-theorem merge_assoc_isUnknown (a b c : Core.SMT.Result) :
-    ((a.merge b).merge c).isUnknown ↔ (a.merge (b.merge c)).isUnknown := by
-  cases a <;> cases b <;> cases c <;> simp [merge, isUnknown]
+instance : DecidableRel (α := ResultKind) (· ≤ ·) :=
+  fun a b => Nat.decLe a.rank b.rank
 
-/-- Associativity for `isUnsat`:
-    `(a.merge b).merge c` is unsat iff `a.merge (b.merge c)` is unsat. -/
-theorem merge_assoc_isUnsat (a b c : Core.SMT.Result) :
-    ((a.merge b).merge c).isUnsat ↔ (a.merge (b.merge c)).isUnsat := by
-  cases a <;> cases b <;> cases c <;> simp [merge, isUnsat]
+/-- `merge` computes the maximum (join) in the lattice. -/
+theorem ResultKind.merge_eq_max (a b : ResultKind) :
+    (a.merge b).rank = max a.rank b.rank := by
+  cases a <;> cases b <;> rfl
+
+theorem ResultKind.le_merge_left (a b : ResultKind) : a ≤ a.merge b := by
+  show a.rank ≤ (a.merge b).rank
+  rw [merge_eq_max]; exact Nat.le_max_left ..
+
+theorem ResultKind.le_merge_right (a b : ResultKind) : b ≤ a.merge b := by
+  show b.rank ≤ (a.merge b).rank
+  rw [merge_eq_max]; exact Nat.le_max_right ..
+
+theorem ResultKind.merge_le {a b c : ResultKind} (ha : a ≤ c) (hb : b ≤ c) :
+    a.merge b ≤ c := by
+  show (a.merge b).rank ≤ c.rank
+  rw [merge_eq_max]; exact Nat.max_le.mpr ⟨ha, hb⟩
 
 -- -----------------------------------------------------------------------
--- Unsat is the identity element
+-- Connection to Core.SMT.Result.merge
 -- -----------------------------------------------------------------------
 
-/-- `unsat` is a left identity for `merge`. -/
-theorem merge_unsat_left (b : Core.SMT.Result) :
-    SMT.Result.merge .unsat b = b := by
-  cases b <;> rfl
-
-/-- `unsat` is a right identity for `merge`. -/
-theorem merge_unsat_right (a : Core.SMT.Result) :
-    a.merge .unsat = a := by
-  cases a <;> rfl
-
-end Core.SMT.Result
+/-- `Core.SMT.Result.merge` preserves kinds: the kind of the merged result
+    equals the merge of the kinds. This links the executable `SMT.Result.merge`
+    with the abstracted `ResultKind.merge`, so all lattice properties proved
+    above transfer to the concrete function at the kind level. -/
+theorem merge_kind (a b : Core.SMT.Result) :
+    (a.merge b).toKind = a.toKind.merge b.toKind := by
+  unfold Core.SMT.Result.merge
+  cases a <;> cases b <;> rfl
