@@ -590,7 +590,7 @@ def eval (E : Env) (old_var_subst : SubstMap) (ss : Statements) : List Env × St
   (ewns.map exitToError, stats)
 
 /--
-A symbolic simluator for statements yielding one environment.
+A symbolic simulator for statements yielding one environment.
 -/
 def evalOne (E : Env) (old_var_subst : SubstMap) (ss : Statements) : Env :=
   match (eval E old_var_subst ss).fst with
