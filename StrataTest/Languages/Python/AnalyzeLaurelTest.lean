@@ -97,10 +97,13 @@ private meta def runAnalyze
     | .ok _ => return .ok core
   | (_, errors) => return .error s!"Laurel to Core translation failed: {errors}"
 
-/-- Run pyAnalyzeLaurel with inlining and verification, returning the formatted results. -/
+/-- Run pyAnalyzeLaurel with inlining and verification.
+    When `useRoots` is true, entry points are determined via the call graph
+    (the CLI `--entry-point roots` default); otherwise only `__main__` is used. -/
 private meta def runAnalyzeAndVerify
     (pythonCmd : System.FilePath)
     (tmpDir : System.FilePath) (scriptName : String)
+    (useRoots : Bool := false)
     : IO (Except String (Array Core.VCResult)) := do
   let testIon ← compileTestScript pythonCmd (testDir / scriptName) tmpDir
   let laurel ←
@@ -113,20 +116,28 @@ private meta def runAnalyzeAndVerify
   let coreProgram ← match coreProgramOption with
     | none => return .error "Laurel to Core translation failed"
     | some core => pure core
-  -- Split prelude / user procedure names at FIRST_END_MARKER
-  let (_preludeNames, userProcNames) := Strata.splitProcNames coreProgram
-  -- Inline all non-main, non-prelude procedures as a prefix phase
+  -- Determine entry points
+  let entryPoints ←
+    if useRoots then
+      let (_preludeNames, userProcNames) := Strata.splitProcNames coreProgram
+      let cg := coreProgram.toProcedureCG
+      let userSet := Std.HashSet.ofList userProcNames
+      pure ((cg.computeRoots (preferredRoots := userProcNames)).filter userSet.contains)
+    else
+      pure ["__main__"]
+  let entrySet := Std.HashSet.ofList entryPoints
   let inlinePhases : List Core.PipelinePhase :=
     [_root_.Core.procedureInliningPipelinePhase
-      { doInline := fun name a => name ≠ "__main__" && _root_.Core.doInlineNonRecursive name a }]
-  -- Verify
+      { doInline := fun caller callee a =>
+          (match caller with | some c => entrySet.contains c | none => false)
+          && _root_.Core.doInlineNonRecursive callee a }]
   let options : Core.VerifyOptions :=
     { Core.VerifyOptions.default with
       stopOnFirstError := false, verbose := .quiet, solver := "z3",
       checkMode := .bugFinding, checkLevel := .full }
   match ← Core.verifyProgram coreProgram options
       (moreFns := Strata.Python.ReFactory)
-      (proceduresToVerify := some userProcNames)
+      (proceduresToVerify := some entryPoints)
       (externalPhases := [Strata.frontEndPhase])
       (prefixPhases := inlinePhases) |>.toBaseIO with
   | .ok results => return .ok results
@@ -262,6 +273,9 @@ private meta def runTestCase (pythonCmd : System.FilePath) (tmpDir : System.File
 
 Verifies that calling `put_item(Bucket="INVALID!", ...)` produces a `✖️ always false`
 result for the regex assertion through the full verification pipeline.
+Uses `--entry-point roots` to discover the user-defined function as the entry point,
+since the test script defines a function but does not call it from the top level.
+
 Expected output (when Python + z3 available):
   servicelib_Storage_Storage_put_item_assert(0)_9: ✔️ always true if reached (Required parameter 'Bucket' is missing)
   servicelib_Storage_Storage_put_item_assert(0)_9: ✔️ always true if reached (Required parameter 'Key' is missing)
@@ -274,8 +288,11 @@ Expected output (when Python + z3 available):
 #eval withPython fun pythonCmd => do
   IO.FS.withTempDir fun tmpDir => do
     setupFixture pythonCmd tmpDir
+    -- These test scripts define functions but do not call them from the
+    -- top level, so __main__ has no assertions.  Use `useRoots` to
+    -- discover the user-defined function as the entry point.
     let result ← runAnalyzeAndVerify pythonCmd tmpDir
-      "test_precondition_violation.py"
+      "test_precondition_violation.py" (useRoots := true)
     match result with
     | .error msg => throw <| IO.userError s!"Pipeline failed: {msg}"
     | .ok vcResults =>
@@ -286,7 +303,8 @@ Expected output (when Python + z3 available):
           if (line.splitOn "✖️").length != 1 then
             foundAlwaysFalse := true
       if !foundAlwaysFalse then
-        throw <| IO.userError "Expected ✖️ always false for regex violation"
+        throw <| IO.userError
+          "Expected ✖️ always false for regex violation"
 
 /-! ## Precondition with alias test
 
@@ -299,7 +317,7 @@ assertion. This exercises the full pipeline with type alias resolution.
   IO.FS.withTempDir fun tmpDir => do
     setupFixture pythonCmd tmpDir
     let result ← runAnalyzeAndVerify pythonCmd tmpDir
-      "test_precondition_with_alias.py"
+      "test_precondition_with_alias.py" (useRoots := true)
     match result with
     | .error msg => throw <| IO.userError s!"Pipeline failed: {msg}"
     | .ok vcResults =>
@@ -322,7 +340,7 @@ Without the attribute, the regex VC would be ❓ unknown. -/
   IO.FS.withTempDir fun tmpDir => do
     setupFixture pythonCmd tmpDir
     let result ← runAnalyzeAndVerify pythonCmd tmpDir
-      "test_regex_eval_if_canonical.py"
+      "test_regex_eval_if_canonical.py" (useRoots := true)
     match result with
     | .error msg => throw <| IO.userError s!"Pipeline failed: {msg}"
     | .ok vcResults =>
