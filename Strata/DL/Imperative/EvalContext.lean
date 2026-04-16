@@ -65,6 +65,10 @@ def PathConditions.addInNewest (ps : PathConditions P) (m : PathCondition P) : P
   let ps := ps.pop
   ps.push new
 
+/-- True when there are no actual conditions across all scope frames. -/
+def PathConditions.hasNoConditions (ps : PathConditions P) : Bool :=
+  ps.flatten.isEmpty
+
 /-- Remove path conditions with specified names -/
 def PathConditions.removeByNames (ps : PathConditions P) (names : List String) : PathConditions P :=
   ps.map (fun pc => pc.filter (fun (name, _) => !names.contains name))
