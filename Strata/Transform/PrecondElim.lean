@@ -9,6 +9,7 @@ public import Strata.Transform.CoreTransform
 public import Strata.DL.Lambda.Preconditions
 public import Strata.DL.Lambda.TypeFactory
 public import Strata.Languages.Core.PipelinePhase
+public import Strata.Languages.Core.CoreOp
 import all Strata.DL.Imperative.Stmt
 import Strata.Util.DecideProp
 
@@ -64,23 +65,17 @@ def wfProcName (name : String) : String := s!"{name}{wfSuffix}"
     For functions with multiple preconditions (e.g., SafeSDiv has both div-by-zero
     and overflow), the precondition index distinguishes them. -/
 private def classifyPrecondition (funcName : String) (precondIdx : Nat := 0) : Option String :=
-  if funcName.startsWith "Int.SafeDiv" || funcName.startsWith "Int.SafeMod" then
+  match CoreOp.ofString funcName with
+  | .numeric ⟨_, .SafeDiv⟩ | .numeric ⟨_, .SafeMod⟩
+  | .numeric ⟨_, .SafeDivT⟩ | .numeric ⟨_, .SafeModT⟩ =>
     some Imperative.MetaData.divisionByZero
-  else if funcName.startsWith "Bv1.SafeSDiv" || funcName.startsWith "Bv2.SafeSDiv" ||
-          funcName.startsWith "Bv8.SafeSDiv" || funcName.startsWith "Bv16.SafeSDiv" ||
-          funcName.startsWith "Bv32.SafeSDiv" || funcName.startsWith "Bv64.SafeSDiv" ||
-          funcName.startsWith "Bv1.SafeSMod" || funcName.startsWith "Bv2.SafeSMod" ||
-          funcName.startsWith "Bv8.SafeSMod" || funcName.startsWith "Bv16.SafeSMod" ||
-          funcName.startsWith "Bv32.SafeSMod" || funcName.startsWith "Bv64.SafeSMod" then
-    -- SafeSDiv/SafeSMod: precondition 0 is div-by-zero, precondition 1 is overflow
+  | .bv ⟨_, .SafeSDiv⟩ | .bv ⟨_, .SafeSMod⟩ =>
     if precondIdx == 0 then some Imperative.MetaData.divisionByZero
     else some Imperative.MetaData.arithmeticOverflow
-  else if funcName.startsWith "Bv1.Safe" || funcName.startsWith "Bv2.Safe" ||
-          funcName.startsWith "Bv8.Safe" || funcName.startsWith "Bv16.Safe" ||
-          funcName.startsWith "Bv32.Safe" || funcName.startsWith "Bv64.Safe" then
+  | .bv ⟨_, .SafeAdd⟩ | .bv ⟨_, .SafeSub⟩ | .bv ⟨_, .SafeMul⟩ | .bv ⟨_, .SafeNeg⟩
+  | .bv ⟨_, .SafeUAdd⟩ | .bv ⟨_, .SafeUSub⟩ | .bv ⟨_, .SafeUMul⟩ | .bv ⟨_, .SafeUNeg⟩ =>
     some Imperative.MetaData.arithmeticOverflow
-  else
-    none
+  | _ => none
 
 /--
 Given a Factory and an expression, collect all partial function call

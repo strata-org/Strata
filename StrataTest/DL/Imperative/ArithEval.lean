@@ -11,10 +11,10 @@ import Strata.DL.Imperative.CmdEval
 
 namespace Arith
 
-/-! ## Instantiate `Imperative`'s Partial Evaluator
+/-! ## Instantiate `Imperative`'s Symbolic Evaluator
 
 We instantiate Imperative's `EvalContext` typeclass with `ArithPrograms`'
-specific implementations to obtain a partial evaluator that generates
+specific implementations to obtain an evaluator that generates
 verification conditions on the fly (i.e., a Strongest-Postconditions
 Verification Condition Generator).
 -/
