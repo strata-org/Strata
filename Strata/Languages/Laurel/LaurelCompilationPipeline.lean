@@ -114,8 +114,22 @@ private def runLaurelPasses (options : LaurelTranslateOptions) (program : Progra
   -- from "precondition does not hold" to "assertion does not hold" and needs
   -- metadata propagation work. Enable with: let program := contractPass program
 
+  -- Check if the pipeline introduced new resolution errors that weren't present initially.
+  -- This catches bugs where a pass produces unresolvable names, which would silently
+  -- cause coreProgramHasSuperfluousErrors to be set with no user-visible diagnostic.
+  let finalResolutionErrors := (resolve program (some model)).errors
+  let newResolutionErrors : List DiagnosticModel :=
+    if finalResolutionErrors.size > resolutionErrors.length then
+      let newCount := finalResolutionErrors.size - resolutionErrors.length
+      let firstNew := finalResolutionErrors.toList.drop resolutionErrors.length
+        |>.head?.map (·.message) |>.getD "unknown"
+      [DiagnosticModel.fromMessage
+        s!"Strata bug: {newCount} new resolution error(s) introduced by pipeline passes. First new error: {firstNew}"
+        DiagnosticType.StrataBug]
+    else []
+
   let allDiags := resolutionErrors ++ diamondErrors ++ nonCompositeDiags ++
-    modifiesDiags ++ constrainedTypeDiags
+    modifiesDiags ++ constrainedTypeDiags ++ newResolutionErrors
   return (program, model, allDiags)
 
 /--
@@ -135,12 +149,20 @@ def translateWithLaurel (options : LaurelTranslateOptions) (program : Program)
   -- translator emits function-call expressions rather than procedure-call
   -- statements for non-functional procedures (which only exist as Core
   -- functions after laurelToFunctionsAndProofs).
-  let fnProgram : Program := { staticProcedures := functionsAndProofs.functions, staticFields := [], types := [] }
-  let fnModel := (resolve fnProgram (some model)).model
+  let fnProgram : Program := { staticProcedures := functionsAndProofs.functions, staticFields := program.staticFields, types := program.types }
+  let fnResolveResult := resolve fnProgram (some model)
+  let fnResolutionErrors : List DiagnosticModel :=
+    if fnResolveResult.errors.size > 0 then
+      let firstErr := fnResolveResult.errors.toList.head?.map (·.message) |>.getD "unknown"
+      [DiagnosticModel.fromMessage
+        s!"Strata bug: {fnResolveResult.errors.size} resolution error(s) in fnProgram re-resolve. First error: {firstErr}"
+        DiagnosticType.StrataBug]
+    else []
+  let fnModel := fnResolveResult.model
   let initState : TranslateState := { model := fnModel }
   let (coreProgramOption, translateState) :=
     runTranslateM initState (translateLaurelToCore options program ordered)
-  let allDiagnostics := passDiags ++ translateState.diagnostics
+  let allDiagnostics := passDiags ++ fnResolutionErrors ++ translateState.diagnostics
   let coreProgramOption :=
     if translateState.coreProgramHasSuperfluousErrors then none else coreProgramOption
   return (coreProgramOption, allDiagnostics, program)
