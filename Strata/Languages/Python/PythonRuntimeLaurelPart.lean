@@ -1073,7 +1073,7 @@ procedure test_helper_procedure(req_name : Any, opt_name : Any) returns (ret: An
   assume (Error..isNoError(maybe_except)) // summary "assume_maybe_except_none"
 };
 
-procedure print(msg : Any) returns ();
+procedure print(msg : Any, sep : Any, end : Any, file : Any, flush : Any) returns ();
 
 #end
 
