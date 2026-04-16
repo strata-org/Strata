@@ -6,7 +6,7 @@
 
 /-
 Tests that the Core verification pipeline produces the expected statistics
-counters for a simple program. Uses `Core.typeCheckAndPartialEval` which
+counters for a simple program. Uses `Core.typeCheckAndEval` which
 returns `Statistics` directly.
 -/
 
@@ -46,7 +46,7 @@ info: [statistics] Evaluator.factoryOps: 284
   if !errors.isEmpty then
     IO.println s!"Errors: {repr errors}"
     return
-  match Core.typeCheckAndPartialEval .quiet program with
+  match Core.typeCheckAndEval .quiet program with
   | .error e => IO.println s!"Error: {e.message}"
   | .ok (_, stats) => IO.print stats.format
 
@@ -89,6 +89,6 @@ info: [statistics] Evaluator.factoryOps: 284
   if !errors.isEmpty then
     IO.println s!"Errors: {repr errors}"
     return
-  match Core.typeCheckAndPartialEval .quiet program with
+  match Core.typeCheckAndEval .quiet program with
   | .error e => IO.println s!"Error: {e.message}"
   | .ok (_, stats) => IO.print stats.format
