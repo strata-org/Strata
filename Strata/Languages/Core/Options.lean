@@ -105,6 +105,18 @@ inductive CheckLevel where
 instance : Inhabited CheckLevel where
   default := .minimal
 
+/-- Configuration for which arithmetic overflow checks to enable.
+    Defaults match C/IEEE 754 semantics: signed BV overflow is UB (checked),
+    unsigned BV wraps (unchecked), float64 overflows to ±∞ (unchecked). -/
+structure OverflowChecks where
+  /-- Check signed bitvector overflow (undefined behavior in C). -/
+  signedBV   : Bool := true
+  /-- Check unsigned bitvector overflow (defined wrapping in C). -/
+  unsignedBV : Bool := false
+  /-- Check float64 overflow to ±∞ (defined in IEEE 754). -/
+  float64    : Bool := false
+  deriving Repr, Inhabited
+
 def CheckLevel.ofString? (s : String) : Option CheckLevel :=
   match s with
   | "minimal" => some .minimal
@@ -162,6 +174,8 @@ structure VerifyOptions where
   /-- How many checks to run per VC and how detailed the
       messages should be. -/
   checkLevel : CheckLevel
+  /-- Overflow check configuration: which arithmetic overflow checks to enable. -/
+  overflowChecks : OverflowChecks := {}
   -- Output
   /-- Output results in SARIF format. -/
   outputSarif : Bool

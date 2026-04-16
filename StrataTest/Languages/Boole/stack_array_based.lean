@@ -113,7 +113,59 @@ spec
 #end
 
 /--
-info: [Strata.Core] Type checking succeeded.
+info:
+
+[DEBUG] Boole program:
+ type Array := Map int int;
+ var S : Array;
+ var n : int;
+ var top : int;
+ procedure StackInit (cap : int) returns ()
+spec {
+  requires cap >= 0;
+  modifies n;
+  modifies top;
+  ensures n == cap;
+  ensures top == 0;
+  } {
+  n := cap;
+  top := 0;
+  };
+ procedure StackEmpty () returns (b : bool)
+spec {
+  ensures b ==> top == 0;
+  ensures top == 0 ==> b;
+  } {
+  if (top == 0) {
+    b := true;
+    } else {
+    b := false;
+    }
+  };
+ procedure Push (x : int) returns ()
+spec {
+  requires top < n;
+  modifies S;
+  modifies top;
+  ensures top == old top + 1;
+  ensures S[top] == x;
+  ensures ∀ i : int :: 1 <= i && i <= old top ==> S[i] == old (S[i]);
+  } {
+  top := top + 1;
+  S := S[top:=x];
+  };
+ procedure Pop () returns (x : int)
+spec {
+  requires top > 0;
+  modifies top;
+  ensures top == old top - 1;
+  ensures x == old (S[old top]);
+  } {
+  x := S[top];
+  top := top - 1;
+  };
+
+[Strata.Core] Type checking succeeded.
 
 
 VCs:

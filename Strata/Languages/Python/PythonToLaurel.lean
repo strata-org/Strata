@@ -502,7 +502,9 @@ partial def translateExpr (ctx : TranslationContext) (e : Python.expr SourceRang
       | .FloorDiv _ => .ok "PFloorDiv"  -- Python // maps to Laurel Div
       | .Mod _ => .ok "PMod"
       | .Pow _ => .ok "PPow"
-      | .BitAnd _ => return hole --TODO: Adding BitVector subtype in Any type, then the related operations
+      | .LShift _ => .ok "PLShift"
+      | .RShift _ => .ok "PRShift"
+      | .BitAnd _ => return hole
       | .BitOr _ => return hole
       | .BitXor _ => return hole
       -- Unsupported for now
@@ -565,6 +567,7 @@ partial def translateExpr (ctx : TranslationContext) (e : Python.expr SourceRang
     let preludeOpnames ← match op with
       | .Not _ => .ok "PNot"
       | .USub _ => .ok "PNeg"
+      | .Invert _ => .ok "PBitNot"
       | _ => throw (.unsupportedConstruct s!"Unary operator not yet supported: {repr op}" (toString (repr e)))
     return callMd preludeOpnames [operandExpr] md
 
