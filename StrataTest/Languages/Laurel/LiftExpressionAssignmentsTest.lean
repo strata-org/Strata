@@ -23,6 +23,7 @@ namespace Strata.Laurel
 
 def blockStmtLiftingProgram : String := r"
 procedure assertInBlockExpr()
+  opaque
 {
   var x: int := 0;
   var y: int := { assert x == 0; x := 1; x };

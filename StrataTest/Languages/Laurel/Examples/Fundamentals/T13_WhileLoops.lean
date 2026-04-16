@@ -13,7 +13,9 @@ namespace Strata
 namespace Laurel
 
 def whileLoopsProgram := r"
-procedure countDown() {
+procedure countDown()
+  opaque
+{
     var i: int := 3;
     while(i > 0)
       invariant i >= 0
@@ -23,7 +25,9 @@ procedure countDown() {
     assert i == 0
 };
 
-procedure countUp() {
+procedure countUp()
+  opaque
+{
     var n: int := 5;
     var i: int := 0;
     while(i < n)

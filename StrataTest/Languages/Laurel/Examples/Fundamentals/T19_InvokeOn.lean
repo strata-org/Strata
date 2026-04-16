@@ -14,49 +14,70 @@ namespace Strata.Laurel
 
 def program := r#"
 function P(x: int): bool;
+  opaque
 function Q(x: int): bool;
 
+  opaque
 function assertP(x: int): int requires P(x);
-function needsPAndQsInvoke1(): int {
+  opaque
+function needsPAndQsInvoke1(): int
+  opaque
+{
   assertP(3)
 };
 
 procedure PAndQ(x: int)
   invokeOn P(x)
-  ensures P(x) && Q(x);
 
-function needsPAndQsInvoke2(): int {
+  opaque
+  ensures P(x) && Q(x);
+function needsPAndQsInvoke2(): int
+  opaque
+{
   assertP(3)
 };
 
 // The axiom fires because P(x) appears in the goal.
-procedure fireAxiomUsingPattern(x: int) {
+procedure fireAxiomUsingPattern(x: int)
+  opaque
+{
   assert P(x)
 };
 
-procedure axiomDoesNotFireBecauseOfPattern(x: int) {
+procedure axiomDoesNotFireBecauseOfPattern(x: int)
+  opaque
+{
   assert Q(x)
 //^^^^^^^^^^^ error: assertion could not be proved
 };
 
 function A(x: int, y: real): bool;
+  opaque
 function B(x: real): bool;
+  opaque
 procedure AAndB(x: int, y: real)
   invokeOn A(x, y)
-  ensures A(x, y) && B(y);
 
-procedure invokeA(x: int, y :real) {
+  opaque
+  ensures A(x, y) && B(y);
+procedure invokeA(x: int, y :real)
+  opaque
+{
   assert A(x, y)
 };
 
-procedure invokeB(x: int, y :real) {
+procedure invokeB(x: int, y :real)
+  opaque
+{
   assert B(y)
 //^^^^^^^^^^^ error: assertion could not be proved
 };
 
 function R(x: int): bool;
+  opaque
 procedure badPostcondition(x: int)
   invokeOn R(x)
+  opaque
   ensures R(x)
 //        ^^^^ error: assertion does not hold
 {

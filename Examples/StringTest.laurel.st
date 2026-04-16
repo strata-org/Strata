@@ -1,6 +1,7 @@
 procedure testString()
 returns (result: string)
 requires true
+  opaque
 {
   var message: string := "Hello, World!";
   return message
@@ -9,6 +10,7 @@ requires true
 procedure testStringConcat()
 returns (result: string)
 requires true
+  opaque
 {
   var hello: string := "Hello";
   var world: string := "World";

@@ -18,10 +18,13 @@ namespace Strata.Laurel.BodilessInliningTest
 
 private def laurelSource := "
 procedure bodilessProcedure() returns (r: int)
+  opaque
   ensures r > 0
 ;
 
-procedure caller() {
+procedure caller()
+  opaque
+{
   var x: int := bodilessProcedure();
   assert x > 0;
   assert false

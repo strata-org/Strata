@@ -28,6 +28,7 @@ composite Container {
 }
 
 procedure modifyContainerOpaque(c: Container) returns (b: bool)
+  opaque
   ensures true // makes this procedure opaque. Maybe we should use explicit syntax
   modifies c
 {
@@ -36,12 +37,15 @@ procedure modifyContainerOpaque(c: Container) returns (b: bool)
 };
 
 procedure modifyContainerTransparant(c: Container) returns (i: int)
+  opaque
 {
   c#value := c#value + 1;
   7
 };
 
-procedure caller() {
+procedure caller()
+  opaque
+{
   var c: Container := new Container;
   var d: Container := new Container;
   var x: int := d#value;
@@ -61,6 +65,7 @@ procedure caller() {
 procedure modifyContainerWithoutPermission1(c: Container, d: Container)
 //        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
 // the above error is because the body does not satisfy the empty modifies clause. error needs to be improved
+  opaque
    ensures true
 {
     var i: int := modifyContainerTransparant(c)
@@ -69,6 +74,7 @@ procedure modifyContainerWithoutPermission1(c: Container, d: Container)
 procedure modifyContainerWithoutPermission2(c: Container, d: Container)
 //        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion could not be proved
 // the above error is because the body does not satisfy the modifies clause. error needs to be improved
+  opaque
   ensures true
   modifies d
 {
@@ -78,6 +84,7 @@ procedure modifyContainerWithoutPermission2(c: Container, d: Container)
 procedure modifyContainerWithoutPermission3(c: Container, d: Container)
 //        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
 // the above error is because the body does not satisfy the modifies clause. error needs to be improved
+  opaque
   ensures true
   modifies d
 {
@@ -85,11 +92,14 @@ procedure modifyContainerWithoutPermission3(c: Container, d: Container)
 };
 
 procedure multipleModifiesClauses(c: Container, d: Container, e: Container)
+  opaque
   modifies c
   modifies d
 ;
 
-procedure multipleModifiesClausesCaller() {
+procedure multipleModifiesClausesCaller()
+  opaque
+{
   var c: Container := new Container;
   var d: Container := new Container;
   var e: Container := new Container;
@@ -99,6 +109,7 @@ procedure multipleModifiesClausesCaller() {
 };
 
 procedure newObjectDoNotCountForModifies()
+  opaque
   ensures true
 {
   var c: Container := new Container;

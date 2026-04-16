@@ -25,18 +25,20 @@ composite Container {
 }
 
 procedure incWithPrimitiveModifies(x: int) returns (r: int)
+  opaque
   ensures true
-  modifies x
 //         ^ error: non-composite type
+  modifies x
 {
   r := x + 1
 };
 
 procedure modifyContainerAndPrimitive(c: Container, x: int)
+  opaque
   ensures true
+//         ^ error: non-composite type
   modifies c
   modifies x
-//         ^ error: non-composite type
 {
   c#value := 1
 };

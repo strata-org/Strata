@@ -23,7 +23,9 @@ namespace Strata.Laurel
 
 def testProgram : String := r"
 constrained nat = x: int where x >= 0 witness 0
-procedure test(n: nat) returns (r: nat) {
+procedure test(n: nat) returns (r: nat)
+  opaque
+{
   assert r >= 0;
   var y: nat := n;
   return y
@@ -62,7 +64,9 @@ procedure $witness_nat()
 -- Scope management: constrained variable in if-branch must not leak into sibling block
 def scopeProgram : String := r"
 constrained pos = v: int where v > 0 witness 1
-procedure test(b: bool) {
+procedure test(b: bool)
+  opaque
+{
   if b then {
     var x: pos := 1
   };
@@ -91,7 +95,9 @@ procedure $witness_pos()
 -- The variable has no known value, only the type constraint is assumed.
 def uninitProgram : String := r"
 constrained posint = x: int where x > 0 witness 1
-procedure f() {
+procedure f()
+  opaque
+{
   var x: posint;
   assert x == 1
 };

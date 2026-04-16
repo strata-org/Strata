@@ -16,10 +16,12 @@ composite Container {
 
 procedure opaqueProcedure(c: Container): int
   reads c
+  opaque
   ensures true
 ;
 
 procedure foo(c: Container, d: Container) 
+  opaque
 {
   var x = opaqueProcedure(c);
   d.value = 1;
@@ -33,6 +35,7 @@ procedure foo(c: Container, d: Container)
 
 procedure permissionLessReader(c: Container): int
   reads {}
+  opaque
   { c.value }
 //  ^^^^^^^ error: enclosing procedure 'permissionLessReader' does not have permission to read 'c.value'
 ;
@@ -44,7 +47,9 @@ type Composite;
 type Field;
 val value: Field;
 
-function opaqueProcedure_ensures(heap: Heap, c: Container, r: int): boolean {
+function opaqueProcedure_ensures(heap: Heap, c: Container, r: int): boolean
+  opaque
+{
   true
 }
 
