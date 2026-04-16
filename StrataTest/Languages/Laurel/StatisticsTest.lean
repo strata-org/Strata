@@ -51,8 +51,7 @@ procedure test(x: int) returns (y: int)
 /-! ## Laurel Statistics: two procedures with holes -/
 
 /--
-info: [statistics] EliminateHoles.functionsGenerated: 1
-[statistics] EliminateHoles.holesEliminated: 1
+info: [statistics] EliminateHoles.holesEliminated: 1
 [statistics] InferHoleTypes.holesAnnotated: 1
 -/
 #guard_msgs in

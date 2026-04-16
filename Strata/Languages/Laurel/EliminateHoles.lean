@@ -79,8 +79,6 @@ Assumes `inferHoleTypes` has already annotated holes with types.
 inductive ElimHoleStats where
   /-- Number of deterministic holes replaced with calls to uninterpreted functions. -/
   | holesEliminated
-  /-- Number of fresh uninterpreted functions generated (one per eliminated hole). -/
-  | functionsGenerated
 
 #derive_prefixed_toString ElimHoleStats "EliminateHoles"
 
@@ -89,7 +87,6 @@ def eliminateHoles (program : Program) : Program × Statistics :=
   let (procs, finalState) := (program.staticProcedures.mapM elimProcedure).run initState
   let stats := ({} : Statistics)
     |>.increment s!"{ElimHoleStats.holesEliminated}" finalState.counter
-    |>.increment s!"{ElimHoleStats.functionsGenerated}" finalState.generatedFunctions.length
   ({ program with staticProcedures := finalState.generatedFunctions ++ procs }, stats)
 
 end -- public section
