@@ -145,15 +145,16 @@ jobs:
     - name: Build using pip
       run: pip install .
       working-directory: Tools/Python
-    # - name: Restore Lean build cache
-    #   # Only use the caches on PRs because there is a risk of stale results:
-    #   # https://github.com/strata-org/Strata/issues/952
-    #   if: github.event_name == 'pull_request'
-    #   uses: actions/cache/restore@v5
-    #   with:
-    #     path: .lake
-    #     key: lake-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}-${{ hashFiles('lake-manifest.json') }}-${{ hashFiles('**/*.st') }}-${{ github.sha }}
-    #     fail-on-cache-miss: true
+    - name: Restore Lean build cache
+      # The cache is safe to use here because we just saved it for this exact SHA
+      # in build_and_test_lean job
+      # https://github.com/strata-org/Strata/issues/952
+      if: github.event_name == 'pull_request'
+      uses: actions/cache/restore@v5
+      with:
+        path: .lake
+        key: lake-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}-${{ hashFiles('lake-manifest.json') }}-${{ hashFiles('**/*.st') }}-${{ github.sha }}
+        fail-on-cache-miss: true
     - name: Install Lean
       uses: leanprover/lean-action@v1
       with:
@@ -212,18 +213,15 @@ jobs:
         uses: leanprover/lean-action@v1
         with:
           lake-package-directory: 'docs/api'
-      # - name: Restore lake cache
-      #   # Only use the caches on PRs because there is a risk of stale results:
-      #   # https://github.com/strata-org/Strata/issues/952
-      #   if: github.event_name == 'pull_request'
-      #   uses: actions/cache/restore@v5
-      #   with:
-      #     path: |
-      #       .lake
-      #       docs/verso/.lake
-      #     key: docs-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain', 'docs/verso/lean-toolchain') }}-${{ hashFiles('lake-manifest.json', 'docs/verso/lake-manifest.json') }}-${{ hashFiles('**/*.st') }}-${{ github.sha }}
-      #     restore-keys: |
-      #       docs-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain', 'docs/verso/lean-toolchain') }}-${{ hashFiles('lake-manifest.json', 'docs/verso/lake-manifest.json') }}-${{ hashFiles('**/*.st') }}
+      - name: Restore lake cache
+        uses: actions/cache/restore@v5
+        with:
+          path: |
+            .lake
+            docs/verso/.lake
+          key: docs-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain', 'docs/verso/lean-toolchain') }}-${{ hashFiles('lake-manifest.json', 'docs/verso/lake-manifest.json') }}-${{ hashFiles('**/*.st') }}-${{ github.sha }}
+          restore-keys: |
+            docs-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain', 'docs/verso/lean-toolchain') }}-${{ hashFiles('lake-manifest.json', 'docs/verso/lake-manifest.json') }}-${{ hashFiles('**/*.st') }}
       - name: Build documentation package
         uses: leanprover/lean-action@v1
         with:
@@ -263,15 +261,15 @@ jobs:
     - name: Build using pip
       run: pip install .
       working-directory: Tools/Python
-    # - name: Restore Lean build cache
-    #   # Only use the caches on PRs because there is a risk of stale results:
-    #   # https://github.com/strata-org/Strata/issues/952
-    #   if: github.event_name == 'pull_request'
-    #   uses: actions/cache/restore@v5
-    #   with:
-    #     path: .lake
-    #     key: lake-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}-${{ hashFiles('lake-manifest.json') }}-${{ hashFiles('**/*.st') }}-${{ github.sha }}
-    #     fail-on-cache-miss: true
+    - name: Restore Lean build cache
+      # Only use the caches on PRs because there is a risk of stale results:
+      # https://github.com/strata-org/Strata/issues/952
+      if: github.event_name == 'pull_request'
+      uses: actions/cache/restore@v5
+      with:
+        path: .lake
+        key: lake-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}-${{ hashFiles('lake-manifest.json') }}-${{ hashFiles('**/*.st') }}-${{ github.sha }}
+        fail-on-cache-miss: true
     - name: Install Lean (for lake env)
       uses: leanprover/lean-action@v1
       with:
