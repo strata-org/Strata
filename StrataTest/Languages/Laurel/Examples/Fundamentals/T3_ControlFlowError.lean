@@ -13,15 +13,6 @@ open Strata
 namespace Strata.Laurel
 
 def program := r"
-function assertAndAssumeInFunctions(a: int) returns (r: int)
-{
-  assert 2 == 3;
-//^^^^^^^^^^^^^ error: asserts are not YET supported in functions or contracts
-  assume true;
-//^^^^^^^^^^^ error: assumes are not YET supported in functions or contracts
-  a
-};
-
 // Lettish bindings in functions not yet supported
 // because Core expressions do not support let bindings
 function letsInFunction() returns (r: int)

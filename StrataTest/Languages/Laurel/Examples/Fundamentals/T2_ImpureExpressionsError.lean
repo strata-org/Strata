@@ -35,16 +35,13 @@ function impureFunction2(x: int): int
 function impureFunction3(x: int): int
 {
   impure()
-//^^^^^^^^ error: calls to procedures are not supported in functions or contracts
 };
 
 procedure impureContractIsNotLegal1(x: int)
   requires x == impure()
-//              ^^^^^^^^ error: calls to procedures are not supported in functions or contracts
   opaque
 {
   assert impure() == 1
-//       ^^^^^^^^ error: calls to procedures are not supported in functions or contracts
 };
 
 procedure impureContractIsNotLegal2(x: int)

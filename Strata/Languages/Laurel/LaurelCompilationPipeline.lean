@@ -141,7 +141,12 @@ def translateWithLaurel (options : LaurelTranslateOptions) (program : Program)
   let (program, model, passDiags) ← runLaurelPasses options program keepAllFilesPrefix
   let functionsAndProofs := laurelToFunctionsAndProofs program
 
-  let fnProgram : Program := { staticProcedures := functionsAndProofs.functions ++ functionsAndProofs.proofs, staticFields := program.staticFields, types := program.types }
+  let fnProgram : Program := {
+    staticProcedures := functionsAndProofs.functions ++ functionsAndProofs.proofs,
+    staticFields := program.staticFields,
+    types := program.types,
+    constants := program.constants
+  }
   let fnResolveResult := resolve fnProgram (some model)
   let fnResolutionErrors : List DiagnosticModel :=
     if fnResolveResult.errors.size > 0 then

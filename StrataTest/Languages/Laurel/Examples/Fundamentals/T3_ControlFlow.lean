@@ -13,6 +13,14 @@ open Strata
 namespace Strata.Laurel
 
 def program := r"
+function assertAndAssumeInFunctions(a: int) returns (r: int)
+{
+  assert 2 == 3;
+//^^^^^^^^^^^^^ error: assertion does not hold
+  assume true;
+  a
+};
+
 function returnAtEnd(x: int) returns (r: int)
 {
   if x > 0 then {
