@@ -805,7 +805,7 @@ for the check-sat encoding that applies negation for validity checks.
 def ProofObligation.toSMTTerms (E : Env)
   (d : Imperative.ProofObligation Expression) (ctx : SMT.Context := SMT.Context.default)
   (useArrayTheory : Bool := false) :
-  Except Format (List Term × Term × SMT.Context) := do
+  Except Format (List Term × Term × SMT.Context × Statistics) := do
   let assumptions := d.assumptions.flatten.map (fun a => a.snd)
   let (ctx, distinct_terms) ← E.distinct.foldlM (λ (ctx, tss) es =>
     do let (ts, ctx') ← Core.toSMTTerms E es ctx useArrayTheory; pure (ctx', ts :: tss)) (ctx, [])
@@ -813,7 +813,10 @@ def ProofObligation.toSMTTerms (E : Env)
     (λ ts => Term.app (.core .distinct) ts .bool)
   let (assumptions_terms, ctx) ← Core.toSMTTerms E assumptions ctx useArrayTheory
   let (obligation_term, ctx) ← Core.toSMTTerm E [] d.obligation ctx useArrayTheory
-  .ok (distinct_assumptions ++ assumptions_terms, obligation_term, ctx)
+  let stats : Statistics := ({} : Statistics)
+    |>.increment s!"{Evaluator.Stats.smtProofObligation_numAssumptions}"
+        (distinct_assumptions.length + assumptions_terms.length)
+  .ok (distinct_assumptions ++ assumptions_terms, obligation_term, ctx, stats)
 
 ---------------------------------------------------------------------
 
