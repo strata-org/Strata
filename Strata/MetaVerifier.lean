@@ -57,10 +57,10 @@ def genVCsSingleENV (pE : Program × Env) : Option coreVCs := do
   | _ => return E.deferred.toList.map (fun ob => (E, ob))
 
 def genVCs (program : Program) (options : VerifyOptions := .default) : Option coreVCs := do
-  let program := loopElim program
+  let program := (loopElim program).fst
   match Core.typeCheckAndPartialEval options program with
   | .error _ => none
-  | .ok pEs =>
+  | .ok (pEs, _stats) =>
     let VCss ← List.mapM (fun pE => genVCsSingleENV pE) pEs
     return VCss.flatten.reverse
 
@@ -118,7 +118,7 @@ def Core.ProofObligation.toSMTObligation (E : Core.Env) (ob : Imperative.ProofOb
     let maybeTerms := Core.ProofObligation.toSMTTerms E ob
     match maybeTerms with
     | .error _ => none
-    | .ok (ts, t, ctx) =>
+    | .ok (ts, t, ctx, _stats) =>
       (ob.label, sanitizeSMTContext ctx, ts, t)
 
 /--

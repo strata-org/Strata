@@ -53,7 +53,7 @@ procedure test (z : bool) returns ()
 #guard_msgs in
 #eval do
   match typeCheckAndPartialEval .quiet (translateCore peAssumeProg) with
-  | .ok pEs =>
+  | .ok (pEs, _) =>
     let (p, _) := pEs.head!
     IO.println (toString p)
   | .error e => IO.println s!"Error: {e}"
