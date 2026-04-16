@@ -642,7 +642,7 @@ def pyAnalyzeLaurelCommand : Command where
                 (prefixPhases := inlinePhases)
                 (keepAllFilesPrefix := keepPrefix)
                 |>.toBaseIO with
-      | .ok r => pure r
+      | .ok r => pure r.mergeByAssertion
       | .error msg => exitPyAnalyzeInternalError msg
 
     -- Print translation errors (always on stderr)
