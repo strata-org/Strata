@@ -315,27 +315,27 @@ theorem subst_mkArrow' (S : Subst) (ret : LMonoTy) (ins : List LMonoTy) :
 /-- Like `LMonoTy.subst` but without the `hasEmptyScopes` short-circuit,
 so it reduces definitionally on ground types.
 Uses structural recursion (no well-founded recursion) so it unfolds in the kernel. -/
-@[expose] def LMonoTy.substSimple (S : Subst) : LMonoTy → LMonoTy
+@[expose] def LMonoTy.substReduce (S : Subst) : LMonoTy → LMonoTy
   | .ftvar x => match S.find? x with | some sty => sty | none => .ftvar x
   | .bitvec n => .bitvec n
-  | .tcons name ltys => .tcons name (substSimpleList S ltys)
-where substSimpleList (S : Subst) : List LMonoTy → List LMonoTy
+  | .tcons name ltys => .tcons name (substReduceList S ltys)
+where substReduceList (S : Subst) : List LMonoTy → List LMonoTy
   | [] => []
-  | ty :: tys => substSimple S ty :: substSimpleList S tys
+  | ty :: tys => substReduce S ty :: substReduceList S tys
 
-theorem LMonoTy.substSimpleList_eq_map (S : Subst) (ltys : List LMonoTy) :
-    LMonoTy.substSimple.substSimpleList S ltys = ltys.map (substSimple S) := by
+theorem LMonoTy.substReduceList_eq_map (S : Subst) (ltys : List LMonoTy) :
+    LMonoTy.substReduce.substReduceList S ltys = ltys.map (substReduce S) := by
   induction ltys with
   | nil => rfl
-  | cons hd tl ih => simp [substSimple.substSimpleList, ih]
+  | cons hd tl ih => simp [substReduce.substReduceList, ih]
 
-theorem LMonoTy.subst_eq_substSimple (S : Subst) (ty : LMonoTy) :
-    LMonoTy.subst S ty = LMonoTy.substSimple S ty := by
+theorem LMonoTy.subst_eq_substReduce (S : Subst) (ty : LMonoTy) :
+    LMonoTy.subst S ty = LMonoTy.substReduce S ty := by
   induction ty with
-  | ftvar x => rw [subst_unfold]; simp [substSimple]
-  | bitvec n => rw [subst_unfold]; simp [substSimple]
+  | ftvar x => rw [subst_unfold]; simp [substReduce]
+  | bitvec n => rw [subst_unfold]; simp [substReduce]
   | tcons name ltys ih =>
-    rw [subst_unfold]; simp only [substSimple, substSimpleList_eq_map]
+    rw [subst_unfold]; simp only [substReduce, substReduceList_eq_map]
     congr 1
     exact List.map_congr_left ih
 

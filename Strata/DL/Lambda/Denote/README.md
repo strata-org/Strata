@@ -71,3 +71,14 @@ then validity becomes trivial. Proving that consistent interpretations exist
 is possible but very difficult with recursive functions.
 TODO: Show that consistent interpretations exist for a simple but nontrivial
 example.
+
+## Using the Semantics
+
+The file `StrataTest/DL/Lambda/Denote/Tautologies.lean` shows how to use the
+semantics to prove validity of some simple bool-valued formulas 
+(e.g. modus ponens). In this file, we provide an alternate kernel-reducing 
+version of the consistency conditions that
+sidestep the need for most of the dependent type reasoning.
+The remaining limitation is the use of HashMaps for a `Factory`; since this
+does not reduce in the kernel, lookups are currently handled by a mix of
+`native_decide` and `sorry` (for non-decidable values).
