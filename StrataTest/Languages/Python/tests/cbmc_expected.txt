@@ -36,3 +36,4 @@ test_timedelta_expr.py.ion      SKIP
 test_composite_return.py.ion    PASS
 test_multi_assign.py.ion        FAIL
 test_multiple_assign_targets.py.ion FAIL
+test_multi_assign_side_effect.py.ion SKIP
