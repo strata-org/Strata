@@ -147,7 +147,7 @@ jobs:
       working-directory: Tools/Python
     - name: Restore Lean build cache
       # The cache is safe to use here because we just saved it for this exact SHA
-      # in build_and_test_lean job
+      # in the build_and_test_lean job
       # https://github.com/strata-org/Strata/issues/952
       if: github.event_name == 'pull_request'
       uses: actions/cache/restore@v5

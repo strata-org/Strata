@@ -85,6 +85,8 @@ jobs:
       - name: Build Strata
         uses: leanprover/lean-action@v1
         with:
+          auto-config: false
+          build: true
           use-github-cache: false
       - uses: actions/setup-python@v6
         with:
