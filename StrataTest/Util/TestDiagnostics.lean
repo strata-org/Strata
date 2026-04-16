@@ -137,6 +137,10 @@ def testInputWithOffset (filename: String) (input : String) (lineOffset : Nat)
       IO.println s!"\nUnexpected diagnostics:"
       for diag in unmatchedDiagnostics do
         IO.println s!"  - Line {diag.start.line}, Col {diag.start.column}-{diag.ending.column}: {diag.message}"
+
+    if unmatchedExpectations.length == 0 && unmatchedDiagnostics.length == 0 then
+      IO.println s!"Duplicate diagnostics: {repr diagnostics}"
+
     throw (IO.userError "Test failed")
 
 def testInput (filename: String) (input : String) (process : Lean.Parser.InputContext -> IO (Array Diagnostic)) : IO Unit :=

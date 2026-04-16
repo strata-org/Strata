@@ -43,8 +43,10 @@ private def parseElimAndPrint (input : String) : IO Unit := do
 -- Hole in Add arg inside typed local variable → int.
 /--
 info: function $hole_0()
-  returns ($result: int);
+  returns ($result: int)
+  opaque;
 procedure test()
+  opaque
 { var x: int := 1 + $hole_0() };
 -/
 #guard_msgs in
@@ -71,8 +73,10 @@ procedure test()
 -- Hole in comparison arg inside assert → int (inferred from sibling literal).
 /--
 info: function $hole_0()
-  returns ($result: int);
+  returns ($result: int)
+  opaque;
 procedure test()
+  opaque
 { assert $hole_0() > 0 };
 -/
 #guard_msgs in
@@ -85,8 +89,10 @@ procedure test()
 -- Hole directly as assert condition → bool.
 /--
 info: function $hole_0()
-  returns ($result: bool);
+  returns ($result: bool)
+  opaque;
 procedure test()
+  opaque
 { assert $hole_0() };
 -/
 #guard_msgs in
@@ -99,8 +105,10 @@ procedure test()
 -- Hole directly as assume condition → bool.
 /--
 info: function $hole_0()
-  returns ($result: bool);
+  returns ($result: bool)
+  opaque;
 procedure test()
+  opaque
 { assume $hole_0() };
 -/
 #guard_msgs in
@@ -113,8 +121,10 @@ procedure test()
 -- Hole as if-then-else condition → bool.
 /--
 info: function $hole_0()
-  returns ($result: bool);
+  returns ($result: bool)
+  opaque;
 procedure test()
+  opaque
 { if $hole_0() then { assert true } };
 -/
 #guard_msgs in
@@ -127,8 +137,10 @@ procedure test()
 -- Hole in then-branch of if-then-else inside typed local variable → int.
 /--
 info: function $hole_0()
-  returns ($result: int);
+  returns ($result: int)
+  opaque;
 procedure test()
+  opaque
 { var x: int := if true then $hole_0() else 0 };
 -/
 #guard_msgs in
@@ -141,8 +153,10 @@ procedure test()
 -- Hole as while-loop condition → bool.
 /--
 info: function $hole_0()
-  returns ($result: bool);
+  returns ($result: bool)
+  opaque;
 procedure test()
+  opaque
 { while($hole_0()) {  } };
 -/
 #guard_msgs in
@@ -155,8 +169,10 @@ procedure test()
 -- Hole as while-loop invariant → bool.
 /--
 info: function $hole_0()
-  returns ($result: bool);
+  returns ($result: bool)
+  opaque;
 procedure test()
+  opaque
 { while(true)
   invariant $hole_0() {  } };
 -/
@@ -172,8 +188,10 @@ procedure test()
 -- Hole in And arg inside assert → bool.
 /--
 info: function $hole_0()
-  returns ($result: bool);
+  returns ($result: bool)
+  opaque;
 procedure test()
+  opaque
 { assert true && $hole_0() };
 -/
 #guard_msgs in
@@ -186,8 +204,10 @@ procedure test()
 -- Hole in Neg inside typed local variable → int.
 /--
 info: function $hole_0()
-  returns ($result: int);
+  returns ($result: int)
+  opaque;
 procedure test()
+  opaque
 { var x: int := -$hole_0() };
 -/
 #guard_msgs in
@@ -200,7 +220,8 @@ procedure test()
 -- Hole in StrConcat inside typed local variable → string.
 /--
 info: function $hole_0()
-  returns ($result: string);
+  returns ($result: string)
+  opaque;
 procedure test()
 { var s: string := "hello" ++ $hole_0() };
 -/
@@ -213,10 +234,13 @@ procedure test()
 -- Two holes in Add → both int, separate functions.
 /--
 info: function $hole_0()
-  returns ($result: int);
+  returns ($result: int)
+  opaque;
 function $hole_1()
-  returns ($result: int);
+  returns ($result: int)
+  opaque;
 procedure test()
+  opaque
 { var x: int := $hole_0() + $hole_1() };
 -/
 #guard_msgs in
@@ -229,10 +253,13 @@ procedure test()
 -- Holes across statements: Mul arg (int) then assert condition (bool).
 /--
 info: function $hole_0()
-  returns ($result: int);
+  returns ($result: int)
+  opaque;
 function $hole_1()
-  returns ($result: bool);
+  returns ($result: bool)
+  opaque;
 procedure test()
+  opaque
 { var x: int := 2 * $hole_0(); assert $hole_1() };
 -/
 #guard_msgs in
@@ -247,8 +274,10 @@ procedure test()
 -- Hole in Add inside Gt inside if condition → int (inferred from sibling literal 0).
 /--
 info: function $hole_0()
-  returns ($result: int);
+  returns ($result: int)
+  opaque;
 procedure test()
+  opaque
 { if 1 + $hole_0() > 0 then { assert true } };
 -/
 #guard_msgs in
@@ -261,8 +290,10 @@ procedure test()
 -- Hole in Implies inside while invariant → bool.
 /--
 info: function $hole_0()
-  returns ($result: bool);
+  returns ($result: bool)
+  opaque;
 procedure test()
+  opaque
 { var p: bool; while(true)
   invariant p ==> $hole_0() {  } };
 -/
@@ -276,8 +307,10 @@ procedure test()
 -- Hole in Mul inside typed local variable with real type → real.
 /--
 info: function $hole_0()
-  returns ($result: real);
+  returns ($result: real)
+  opaque;
 procedure test()
+  opaque
 { var r: real := 3.14 * $hole_0() };
 -/
 #guard_msgs in
@@ -292,8 +325,10 @@ procedure test()
 -- Hole in comparison with variable sibling → hole function takes the procedure's params.
 /--
 info: function $hole_0(n: int)
-  returns ($result: int);
+  returns ($result: int)
+  opaque;
 procedure test(n: int)
+  opaque
 { assert n > $hole_0(n) };
 -/
 #guard_msgs in
@@ -308,8 +343,10 @@ procedure test(n: int)
 -- Hole in function body → same treatment as procedures.
 /--
 info: function $hole_0(x: int)
-  returns ($result: int);
+  returns ($result: int)
+  opaque;
 function test(x: int): int
+  opaque
 { $hole_0(x) };
 -/
 #guard_msgs in
@@ -324,6 +361,7 @@ function test(x: int): int
 -- Nondet hole in procedure → preserved after eliminateHoles (lifted by liftExpressionAssignments).
 /--
 info: procedure test()
+  opaque
 { assert <??> };
 -/
 #guard_msgs in

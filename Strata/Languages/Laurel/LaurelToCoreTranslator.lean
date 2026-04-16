@@ -731,6 +731,7 @@ def translateLaurelToCore (options: LaurelTranslateOptions) (program : Program) 
       } mdWithUnknownLoc]
 
 
+  -- TODO move this to another location
   -- Emit diagnostics for composite types with instance procedures.
   for td in program.types do
     if let .Composite ct := td then
