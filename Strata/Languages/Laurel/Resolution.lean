@@ -90,9 +90,6 @@ inductive AstNode where
   | unresolved
   deriving Repr
 
-instance : Inhabited AstNode where
-  default := AstNode.unresolved
-
 def AstNode.getType (node: AstNode): HighTypeMd := match node with
  | .var _ type => type
  | .parameter p => p.type
@@ -101,8 +98,10 @@ def AstNode.getType (node: AstNode): HighTypeMd := match node with
  | .constant c => c.type
  | .quantifierVar _ type => type
  | .unresolved =>
-    -- The Python through Laurel pipeline does not resolve yet
-    ⟨ .UserDefined "dummyName", default ⟩
+   -- Expected when a reference failed to resolve (a diagnostic was already emitted
+   -- by resolveRef or defineNameCheckDup). Returning Unknown propagates the error
+   -- gracefully through type translation.
+   ⟨ .Unknown, default ⟩
  | _ => dbg_trace s!"SOUND BUG: getType called on {repr node}"; ⟨ HighType.Unknown, default ⟩
 
 /-! ## Resolution result -/
@@ -115,8 +114,15 @@ structure SemanticModel where
 
 def SemanticModel.get (model: SemanticModel) (iden: Identifier): AstNode :=
   match iden.uniqueId with
-  | some key => (model.refToDef.get? key).getD default
-  | none => default
+  | some key =>
+    match model.refToDef.get? key with
+    | some node => node
+    | none =>
+      -- An ID was assigned during Phase 1 but the reference was never registered in
+      -- Phase 2 (buildRefToDef). This is a bug in the resolution pass itself.
+      dbg_trace s!"SOUND BUG: identifier '{iden.text}' (id={key}) has a uniqueId but is missing from refToDef"
+      .unresolved
+  | none => .unresolved
 
 def SemanticModel.isFunction (model: SemanticModel) (id: Identifier): Bool :=
   match model.get id with

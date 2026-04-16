@@ -112,9 +112,6 @@ def lookupType (name : Identifier) : TranslateM LMonoTy := do
 def runTranslateM (s : TranslateState) (m : TranslateM α) : (Option α × TranslateState) :=
   m s
 
-def returnNone: TranslateM α :=
-  StateT.pure none
-
 /-- Allocate a fresh unique ID. -/
 private def freshId : TranslateM Nat := do
   let s ← get
@@ -453,7 +450,7 @@ def translateStmt (outputParams : List Parameter) (stmt : StmtExprMd)
               return (havocStmts)
           | _ =>
               emitDiagnostic $ md.toDiagnostic "Assignments with multiple target but without a RHS call should not be constructed"
-              returnNone
+              return []
   | .IfThenElse cond thenBranch elseBranch =>
       let bcond ← translateExpr cond
       let bthen ← translateStmt outputParams thenBranch

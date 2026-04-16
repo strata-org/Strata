@@ -76,7 +76,8 @@ def laurelToFunctionsAndProofs (program : Program) : FunctionsAndProofsProgram :
   let nonExternal := program.staticProcedures.filter (fun p => !p.body.isExternal)
   let functions := program.staticProcedures.map mkFunctionCopy
   let proofs := nonExternal.map fun p =>
-    { p with isFunctional := false, name := { p.name with text := p.name.text ++ "$proof" } }
+    { p with isFunctional := false,
+             name := { p.name with text := p.name.text ++ "$proof", uniqueId := none } }
   let datatypes := program.types.filterMap fun td => match td with
     | .Datatype dt => some dt
     | _ => none

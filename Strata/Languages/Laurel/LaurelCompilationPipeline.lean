@@ -143,13 +143,8 @@ def translateWithLaurel (options : LaurelTranslateOptions) (program : Program)
     : IO TranslateResultWithLaurel := do
   let (program, model, passDiags) ← runLaurelPasses options program keepAllFilesPrefix
   let functionsAndProofs := laurelToFunctionsAndProofs program
-  let ordered := orderFunctionsAndProofs functionsAndProofs
-  -- Re-resolve using the functions list (all isFunctional = true) so that
-  -- model.isFunction returns true for every procedure. This ensures the
-  -- translator emits function-call expressions rather than procedure-call
-  -- statements for non-functional procedures (which only exist as Core
-  -- functions after laurelToFunctionsAndProofs).
-  let fnProgram : Program := { staticProcedures := functionsAndProofs.functions, staticFields := program.staticFields, types := program.types }
+
+  let fnProgram : Program := { staticProcedures := functionsAndProofs.functions ++ functionsAndProofs.proofs, staticFields := program.staticFields, types := program.types }
   let fnResolveResult := resolve fnProgram (some model)
   let fnResolutionErrors : List DiagnosticModel :=
     if fnResolveResult.errors.size > 0 then
@@ -159,10 +154,20 @@ def translateWithLaurel (options : LaurelTranslateOptions) (program : Program)
         DiagnosticType.StrataBug]
     else []
   let fnModel := fnResolveResult.model
+  dbg_trace s!"model: {repr fnModel}"
+
+  let ordered := orderFunctionsAndProofs functionsAndProofs
   let initState : TranslateState := { model := fnModel }
   let (coreProgramOption, translateState) :=
     runTranslateM initState (translateLaurelToCore options program ordered)
   let allDiagnostics := passDiags ++ fnResolutionErrors ++ translateState.diagnostics
+  let allDiagnostics :=
+    if translateState.coreProgramHasSuperfluousErrors && allDiagnostics.isEmpty then
+      -- The program was suppressed but no diagnostics explain why — that's a bug.
+      allDiagnostics ++ [DiagnosticModel.fromMessage
+        "Core program was suppressed due to superfluous errors, but no diagnostics were emitted. This is a bug."
+        DiagnosticType.StrataBug]
+    else allDiagnostics
   let coreProgramOption :=
     if translateState.coreProgramHasSuperfluousErrors then none else coreProgramOption
   return (coreProgramOption, allDiagnostics, program)
