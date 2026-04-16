@@ -74,6 +74,9 @@ jobs:
           ccache -s
           echo "$GITHUB_WORKSPACE/cbmc-src/build/bin/" >> $GITHUB_PATH
       - name: Restore lake cache
+        # Only use the caches on PRs because there is a risk of stale results:
+        # https://github.com/strata-org/Strata/issues/952
+        if: github.event_name == 'pull_request'
         uses: actions/cache/restore@v5
         with:
           path: .lake
