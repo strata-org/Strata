@@ -39,8 +39,9 @@ procedure outputInvalid(): nat
 };
 
 // Return value of constrained type — caller gets ensures via call elimination
-procedure opaqueNat(): nat;
-  opaque
+procedure opaqueNat(): nat
+  opaque;
+
 procedure callerAssumes() returns (r: int)
   opaque
 {

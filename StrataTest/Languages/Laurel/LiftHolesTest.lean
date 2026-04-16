@@ -59,8 +59,10 @@ procedure test()
 -- Bare Hole as LocalVariable initializer → replaced with call (no longer preserved as havoc).
 /--
 info: function $hole_0()
-  returns ($result: int);
+  returns ($result: int)
+  opaque;
 procedure test()
+  opaque
 { var x: int := $hole_0() };
 -/
 #guard_msgs in
