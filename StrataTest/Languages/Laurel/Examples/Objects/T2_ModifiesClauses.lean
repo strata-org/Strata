@@ -35,13 +35,6 @@ procedure modifyContainerOpaque(c: Container) returns (b: bool)
   true
 };
 
-procedure modifyContainerTransparant(c: Container) returns (i: int)
-  opaque
-{
-  c#value := c#value + 1;
-  7
-};
-
 procedure caller()
   opaque
 {
@@ -52,8 +45,13 @@ procedure caller()
   assert x == d#value // pass
 };
 
-// This test-case does not work yet.
-// Because Core procedures never have transparent bodies
+// Commented out because
+// Transparent assignments are not supported yet
+// procedure modifyContainerTransparant(c: Container) returns (i: int)
+//{
+//  c#value := c#value + 1;
+//  7
+//};
 //procedure modifyContainerWithPermission1(c: Container, d: Container)
 //   ensures true
 //   modifies c
@@ -61,17 +59,23 @@ procedure caller()
 //    var i: int := modifyContainerTransparant(c);
 //}
 
+procedure modifyContainerWildcard(c: Container) returns (i: int)
+  opaque
+  modifies *
+{
+  c#value := c#value + 1;
+  7
+};
+
 procedure modifyContainerWithoutPermission1(c: Container, d: Container)
 //        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: postcondition does not hold
-// the above error is because the body does not satisfy the empty modifies clause. error needs to be improved
   opaque
 {
-    var i: int := modifyContainerTransparant(c)
+    var i: int := modifyContainerWildcard(c)
 };
 
 procedure modifyContainerWithoutPermission2(c: Container, d: Container)
 //        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: postcondition could not be proved
-// the above error is because the body does not satisfy the modifies clause. error needs to be improved
   opaque
   modifies d
 {
@@ -80,7 +84,6 @@ procedure modifyContainerWithoutPermission2(c: Container, d: Container)
 
 procedure modifyContainerWithoutPermission3(c: Container, d: Container)
 //        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: postcondition does not hold
-// the above error is because the body does not satisfy the modifies clause. error needs to be improved
   opaque
   modifies d
 {
