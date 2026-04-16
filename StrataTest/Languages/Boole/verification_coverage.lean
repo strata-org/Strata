@@ -33,17 +33,16 @@ spec
   ensures s == (n * (n + 1)) div 2; // {:id "spost"} covered
 }
 {
-  var i: int;
   var foo: int;
 
-  i := 0;
   s := 0;
   foo := 27;
-  while (i < n)
-    invariant (0 <= i && i <= n) && (s == (i * (i + 1)) div 2) && (n >= 0)
+  for i: int := 0 to (n - 1)
+    invariant (0 <= i && i <= n)
+    invariant (s == (i * (i + 1)) div 2)
+    invariant (n >= 0)
   {
-    i := i + 1;
-    s := s + i;
+    s := s + (i + 1);
     foo := foo * 2; // {:id "update_foo"} not covered
   }
 };
@@ -149,7 +148,7 @@ function someInteger(i: int) : int
   3
 }
 
-axiom (forall i: int :: someInteger(i) == 3); // {:id "someInteger_value_axiom"}
+axiom (∀ i: int . someInteger(i) == 3); // {:id "someInteger_value_axiom"}
 
 procedure usesSomeInteger() returns (r: bool)
 spec
@@ -175,7 +174,23 @@ Obligation: entry_invariant_0_0
 Property: assert
 Result: ✅ pass
 
+Obligation: entry_invariant_0_1
+Property: assert
+Result: ✅ pass
+
+Obligation: entry_invariant_0_2
+Property: assert
+Result: ✅ pass
+
 Obligation: arbitrary_iter_maintain_invariant_0_0
+Property: assert
+Result: ✅ pass
+
+Obligation: arbitrary_iter_maintain_invariant_0_1
+Property: assert
+Result: ✅ pass
+
+Obligation: arbitrary_iter_maintain_invariant_0_2
 Property: assert
 Result: ✅ pass
 
@@ -183,59 +198,59 @@ Obligation: sum_ensures_5_652
 Property: assert
 Result: ✅ pass
 
-Obligation: assert_9_1184
+Obligation: assert_10_1185
 Property: assert
 Result: ✅ pass
 
-Obligation: assert_11_1418
+Obligation: assert_12_1419
 Property: assert
 Result: ✅ pass
 
-Obligation: assert_15_1683
+Obligation: assert_16_1684
 Property: assert
 Result: ✅ pass
 
-Obligation: assert_17_1819
+Obligation: assert_18_1820
 Property: assert
 Result: ✅ pass
 
-Obligation: testEnsuresCallee_ensures_19_1982
+Obligation: testEnsuresCallee_ensures_20_1983
 Property: assert
 Result: ✅ pass
 
-Obligation: testEnsuresCallee_ensures_20_2024
+Obligation: testEnsuresCallee_ensures_21_2025
 Property: assert
 Result: ✅ pass
 
-Obligation: callElimAssert_testEnsuresCallee_requires_18_1940_7
+Obligation: callElimAssert_testEnsuresCallee_requires_19_1941_7
 Property: assert
 Result: ✅ pass
 
-Obligation: callElimAssert_testEnsuresCallee_requires_18_1940_2
+Obligation: callElimAssert_testEnsuresCallee_requires_19_1941_2
 Property: assert
 Result: ✅ pass
 
-Obligation: assert_23_2457
+Obligation: assert_24_2458
 Property: assert
 Result: ✅ pass
 
-Obligation: testEnsuresCaller_ensures_22_2218
+Obligation: testEnsuresCaller_ensures_23_2219
 Property: assert
 Result: ✅ pass
 
-Obligation: obviouslyUnconstrainedCode_ensures_26_2722
+Obligation: obviouslyUnconstrainedCode_ensures_27_2723
 Property: assert
 Result: ✅ pass
 
-Obligation: contradictoryEnsuresClause_ensures_28_3048
+Obligation: contradictoryEnsuresClause_ensures_29_3049
 Property: assert
 Result: ✅ pass
 
-Obligation: callElimAssert_contradictoryEnsuresClause_requires_27_2978_12
+Obligation: callElimAssert_contradictoryEnsuresClause_requires_28_2979_12
 Property: assert
 Result: ✅ pass
 
-Obligation: usesSomeInteger_ensures_31_3713
+Obligation: usesSomeInteger_ensures_32_3711
 Property: assert
 Result: ✅ pass-/
 #guard_msgs in
