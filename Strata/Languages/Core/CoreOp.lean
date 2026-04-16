@@ -15,6 +15,27 @@ namespace Core
 
 public section
 
+/-! ### Table-driven name lookup
+
+Each OpKind type defines a `names` list as the single source of truth
+mapping constructors to their string representations. Both `toString`
+and `ofString?` are derived from this list, and round-trip correctness
+is proved by `decide`. -/
+
+/-- Look up the string name for a constructor. The names lists are small
+    (≤43 entries), so linear scan is negligible. Using List.find? rather than
+    a HashMap is intentional: it enables the kernel to reduce these functions,
+    which is required for the round-trip `decide` proofs below. -/
+private def lookupName [BEq α] (names : List (α × String)) (k : α) : String :=
+  match names.find? (·.1 == k) with
+  | some (_, s) => s
+  | none => "" -- unreachable: round-trip proofs guarantee completeness of names
+
+private def lookupKind [BEq β] (names : List (α × β)) (s : β) : Option α :=
+  match names.find? (·.2 == s) with
+  | some (k, _) => some k
+  | none => none
+
 /-! ### Bitvector Operations -/
 
 inductive BvOpKind where
@@ -51,6 +72,29 @@ def BvOpKind.isUnary : BvOpKind → Bool
   | .Neg | .Not => true
   | _ => false
 
+def BvOpKind.names : List (BvOpKind × String) :=
+  [(.Neg, "Neg"), (.Add, "Add"), (.Sub, "Sub"), (.Mul, "Mul"),
+   (.UDiv, "UDiv"), (.UMod, "UMod"), (.SDiv, "SDiv"), (.SMod, "SMod"),
+   (.Not, "Not"), (.And, "And"), (.Or, "Or"), (.Xor, "Xor"),
+   (.Shl, "Shl"), (.UShr, "UShr"), (.SShr, "SShr"),
+   (.ULt, "ULt"), (.ULe, "ULe"), (.UGt, "UGt"), (.UGe, "UGe"),
+   (.SLt, "SLt"), (.SLe, "SLe"), (.SGt, "SGt"), (.SGe, "SGe"),
+   (.Concat, "Concat"),
+   (.SafeAdd, "SafeAdd"), (.SafeSub, "SafeSub"),
+   (.SafeMul, "SafeMul"), (.SafeNeg, "SafeNeg"),
+   (.SafeUAdd, "SafeUAdd"), (.SafeUSub, "SafeUSub"),
+   (.SafeUMul, "SafeUMul"), (.SafeUNeg, "SafeUNeg"),
+   (.SafeSDiv, "SafeSDiv"), (.SafeSMod, "SafeSMod"),
+   (.SAddOverflow, "SAddOverflow"), (.SSubOverflow, "SSubOverflow"),
+   (.SMulOverflow, "SMulOverflow"), (.SNegOverflow, "SNegOverflow"),
+   (.SDivOverflow, "SDivOverflow"),
+   (.UAddOverflow, "UAddOverflow"), (.USubOverflow, "USubOverflow"),
+   (.UMulOverflow, "UMulOverflow"), (.UNegOverflow, "UNegOverflow")]
+
+def BvOpKind.toString (k : BvOpKind) : String := lookupName names k
+instance : ToString BvOpKind := ⟨BvOpKind.toString⟩
+def BvOpKind.ofString? (s : String) : Option BvOpKind := lookupKind names s
+
 /-! ### Numeric (Int/Real) Operations -/
 
 inductive NumericType where
@@ -81,17 +125,51 @@ def NumericOpKind.isUnary : NumericOpKind → Bool
   | .Neg => true
   | _ => false
 
+def NumericType.names : List (NumericType × String) :=
+  [(.int, "Int"), (.real, "Real")]
+
+def NumericType.toString (t : NumericType) : String := lookupName names t
+instance : ToString NumericType := ⟨NumericType.toString⟩
+def NumericType.ofString? (s : String) : Option NumericType := lookupKind names s
+
+def NumericOpKind.names : List (NumericOpKind × String) :=
+  [(.Add, "Add"), (.Sub, "Sub"), (.Mul, "Mul"), (.Neg, "Neg"),
+   (.Div, "Div"), (.Mod, "Mod"), (.DivT, "DivT"), (.ModT, "ModT"),
+   (.SafeDiv, "SafeDiv"), (.SafeMod, "SafeMod"),
+   (.SafeDivT, "SafeDivT"), (.SafeModT, "SafeModT"),
+   (.Lt, "Lt"), (.Le, "Le"), (.Gt, "Gt"), (.Ge, "Ge")]
+
+def NumericOpKind.toString (k : NumericOpKind) : String := lookupName names k
+instance : ToString NumericOpKind := ⟨NumericOpKind.toString⟩
+def NumericOpKind.ofString? (s : String) : Option NumericOpKind := lookupKind names s
+
 /-! ### Boolean Operations -/
 
 inductive BoolOpKind where
   | And | Or | Not | Implies | Equiv
   deriving Repr, DecidableEq, Inhabited, BEq, Hashable
 
+def BoolOpKind.names : List (BoolOpKind × String) :=
+  [(.And, "And"), (.Or, "Or"), (.Not, "Not"),
+   (.Implies, "Implies"), (.Equiv, "Equiv")]
+
+def BoolOpKind.toString (k : BoolOpKind) : String := lookupName names k
+instance : ToString BoolOpKind := ⟨BoolOpKind.toString⟩
+def BoolOpKind.ofString? (s : String) : Option BoolOpKind := lookupKind names s
+
 /-! ### String Operations -/
 
 inductive StrOpKind where
   | Length | Concat | Substr | ToRegEx | InRegEx
   deriving Repr, DecidableEq, Inhabited, BEq, Hashable
+
+def StrOpKind.names : List (StrOpKind × String) :=
+  [(.Length, "Length"), (.Concat, "Concat"), (.Substr, "Substr"),
+   (.ToRegEx, "ToRegEx"), (.InRegEx, "InRegEx")]
+
+def StrOpKind.toString (k : StrOpKind) : String := lookupName names k
+instance : ToString StrOpKind := ⟨StrOpKind.toString⟩
+def StrOpKind.ofString? (s : String) : Option StrOpKind := lookupKind names s
 
 /-! ### Regular Expression Operations -/
 
@@ -100,11 +178,27 @@ inductive ReOpKind where
   | Union | Inter | Comp | None
   deriving Repr, DecidableEq, Inhabited, BEq, Hashable
 
+def ReOpKind.names : List (ReOpKind × String) :=
+  [(.All, "All"), (.AllChar, "AllChar"), (.Range, "Range"),
+   (.Concat, "Concat"), (.Star, "Star"), (.Plus, "Plus"), (.Loop, "Loop"),
+   (.Union, "Union"), (.Inter, "Inter"), (.Comp, "Comp"), (.None, "None")]
+
+def ReOpKind.toString (k : ReOpKind) : String := lookupName names k
+instance : ToString ReOpKind := ⟨ReOpKind.toString⟩
+def ReOpKind.ofString? (s : String) : Option ReOpKind := lookupKind names s
+
 /-! ### Map Operations -/
 
 inductive MapOpKind where
   | Const | Select | Update
   deriving Repr, DecidableEq, Inhabited, BEq, Hashable
+
+def MapOpKind.names : List (MapOpKind × String) :=
+  [(.Const, "const"), (.Select, "select"), (.Update, "update")]
+
+def MapOpKind.toString (k : MapOpKind) : String := lookupName names k
+instance : ToString MapOpKind := ⟨MapOpKind.toString⟩
+def MapOpKind.ofString? (s : String) : Option MapOpKind := lookupKind names s
 
 /-! ### Sequence Operations -/
 
@@ -112,11 +206,28 @@ inductive SeqOpKind where
   | Length | Empty | Append | Select | Build | Update | Contains | Take | Drop
   deriving Repr, DecidableEq, Inhabited, BEq, Hashable
 
+def SeqOpKind.names : List (SeqOpKind × String) :=
+  [(.Length, "length"), (.Empty, "empty"), (.Append, "append"),
+   (.Select, "select"), (.Build, "build"), (.Update, "update"),
+   (.Contains, "contains"), (.Take, "take"), (.Drop, "drop")]
+
+def SeqOpKind.toString (k : SeqOpKind) : String := lookupName names k
+instance : ToString SeqOpKind := ⟨SeqOpKind.toString⟩
+def SeqOpKind.ofString? (s : String) : Option SeqOpKind := lookupKind names s
+
 /-! ### Trigger Operations -/
 
 inductive TriggerOpKind where
   | EmptyTriggers | AddGroup | EmptyGroup | AddTrigger
   deriving Repr, DecidableEq, Inhabited, BEq, Hashable
+
+def TriggerOpKind.names : List (TriggerOpKind × String) :=
+  [(.EmptyTriggers, "Triggers.empty"), (.AddGroup, "Triggers.addGroup"),
+   (.EmptyGroup, "TriggerGroup.empty"), (.AddTrigger, "TriggerGroup.addTrigger")]
+
+def TriggerOpKind.toString (k : TriggerOpKind) : String := lookupName names k
+instance : ToString TriggerOpKind := ⟨TriggerOpKind.toString⟩
+def TriggerOpKind.ofString? (s : String) : Option TriggerOpKind := lookupKind names s
 
 /-! ### Top-level Operator Sum -/
 
@@ -132,147 +243,6 @@ inductive CoreOp where
   | trigger (kind : TriggerOpKind)
   | other (name : String)
   deriving Repr, DecidableEq, Inhabited, BEq, Hashable
-
-/-! ### String Conversion -/
-
-def BvOpKind.toString : BvOpKind → String
-  | .Neg => "Neg" | .Add => "Add" | .Sub => "Sub" | .Mul => "Mul"
-  | .UDiv => "UDiv" | .UMod => "UMod" | .SDiv => "SDiv" | .SMod => "SMod"
-  | .Not => "Not" | .And => "And" | .Or => "Or" | .Xor => "Xor"
-  | .Shl => "Shl" | .UShr => "UShr" | .SShr => "SShr"
-  | .ULt => "ULt" | .ULe => "ULe" | .UGt => "UGt" | .UGe => "UGe"
-  | .SLt => "SLt" | .SLe => "SLe" | .SGt => "SGt" | .SGe => "SGe"
-  | .Concat => "Concat"
-  | .SafeAdd => "SafeAdd" | .SafeSub => "SafeSub"
-  | .SafeMul => "SafeMul" | .SafeNeg => "SafeNeg"
-  | .SafeUAdd => "SafeUAdd" | .SafeUSub => "SafeUSub"
-  | .SafeUMul => "SafeUMul" | .SafeUNeg => "SafeUNeg"
-  | .SafeSDiv => "SafeSDiv" | .SafeSMod => "SafeSMod"
-  | .SAddOverflow => "SAddOverflow" | .SSubOverflow => "SSubOverflow"
-  | .SMulOverflow => "SMulOverflow" | .SNegOverflow => "SNegOverflow"
-  | .SDivOverflow => "SDivOverflow"
-  | .UAddOverflow => "UAddOverflow" | .USubOverflow => "USubOverflow"
-  | .UMulOverflow => "UMulOverflow" | .UNegOverflow => "UNegOverflow"
-
-instance : ToString BvOpKind := ⟨BvOpKind.toString⟩
-
-def BvOpKind.ofString? : String → Option BvOpKind
-  | "Neg" => some .Neg | "Add" => some .Add | "Sub" => some .Sub | "Mul" => some .Mul
-  | "UDiv" => some .UDiv | "UMod" => some .UMod | "SDiv" => some .SDiv | "SMod" => some .SMod
-  | "Not" => some .Not | "And" => some .And | "Or" => some .Or | "Xor" => some .Xor
-  | "Shl" => some .Shl | "UShr" => some .UShr | "SShr" => some .SShr
-  | "ULt" => some .ULt | "ULe" => some .ULe | "UGt" => some .UGt | "UGe" => some .UGe
-  | "SLt" => some .SLt | "SLe" => some .SLe | "SGt" => some .SGt | "SGe" => some .SGe
-  | "Concat" => some .Concat
-  | "SafeAdd" => some .SafeAdd | "SafeSub" => some .SafeSub
-  | "SafeMul" => some .SafeMul | "SafeNeg" => some .SafeNeg
-  | "SafeUAdd" => some .SafeUAdd | "SafeUSub" => some .SafeUSub
-  | "SafeUMul" => some .SafeUMul | "SafeUNeg" => some .SafeUNeg
-  | "SafeSDiv" => some .SafeSDiv | "SafeSMod" => some .SafeSMod
-  | "SAddOverflow" => some .SAddOverflow | "SSubOverflow" => some .SSubOverflow
-  | "SMulOverflow" => some .SMulOverflow | "SNegOverflow" => some .SNegOverflow
-  | "SDivOverflow" => some .SDivOverflow
-  | "UAddOverflow" => some .UAddOverflow | "USubOverflow" => some .USubOverflow
-  | "UMulOverflow" => some .UMulOverflow | "UNegOverflow" => some .UNegOverflow
-  | _ => none
-
-def NumericType.toString : NumericType → String
-  | .int => "Int" | .real => "Real"
-
-instance : ToString NumericType := ⟨NumericType.toString⟩
-
-def NumericType.ofString? : String → Option NumericType
-  | "Int" => some .int | "Real" => some .real | _ => none
-
-def NumericOpKind.toString : NumericOpKind → String
-  | .Add => "Add" | .Sub => "Sub" | .Mul => "Mul" | .Neg => "Neg"
-  | .Div => "Div" | .Mod => "Mod" | .DivT => "DivT" | .ModT => "ModT"
-  | .SafeDiv => "SafeDiv" | .SafeMod => "SafeMod"
-  | .SafeDivT => "SafeDivT" | .SafeModT => "SafeModT"
-  | .Lt => "Lt" | .Le => "Le" | .Gt => "Gt" | .Ge => "Ge"
-
-instance : ToString NumericOpKind := ⟨NumericOpKind.toString⟩
-
-def NumericOpKind.ofString? : String → Option NumericOpKind
-  | "Add" => some .Add | "Sub" => some .Sub | "Mul" => some .Mul | "Neg" => some .Neg
-  | "Div" => some .Div | "Mod" => some .Mod | "DivT" => some .DivT | "ModT" => some .ModT
-  | "SafeDiv" => some .SafeDiv | "SafeMod" => some .SafeMod
-  | "SafeDivT" => some .SafeDivT | "SafeModT" => some .SafeModT
-  | "Lt" => some .Lt | "Le" => some .Le | "Gt" => some .Gt | "Ge" => some .Ge
-  | _ => none
-
-def BoolOpKind.toString : BoolOpKind → String
-  | .And => "And" | .Or => "Or" | .Not => "Not"
-  | .Implies => "Implies" | .Equiv => "Equiv"
-
-instance : ToString BoolOpKind := ⟨BoolOpKind.toString⟩
-
-def BoolOpKind.ofString? : String → Option BoolOpKind
-  | "And" => some .And | "Or" => some .Or | "Not" => some .Not
-  | "Implies" => some .Implies | "Equiv" => some .Equiv
-  | _ => none
-
-def StrOpKind.toString : StrOpKind → String
-  | .Length => "Length" | .Concat => "Concat" | .Substr => "Substr"
-  | .ToRegEx => "ToRegEx" | .InRegEx => "InRegEx"
-
-instance : ToString StrOpKind := ⟨StrOpKind.toString⟩
-
-def StrOpKind.ofString? : String → Option StrOpKind
-  | "Length" => some .Length | "Concat" => some .Concat | "Substr" => some .Substr
-  | "ToRegEx" => some .ToRegEx | "InRegEx" => some .InRegEx
-  | _ => none
-
-def ReOpKind.toString : ReOpKind → String
-  | .All => "All" | .AllChar => "AllChar" | .Range => "Range"
-  | .Concat => "Concat" | .Star => "Star" | .Plus => "Plus" | .Loop => "Loop"
-  | .Union => "Union" | .Inter => "Inter" | .Comp => "Comp" | .None => "None"
-
-instance : ToString ReOpKind := ⟨ReOpKind.toString⟩
-
-def ReOpKind.ofString? : String → Option ReOpKind
-  | "All" => some .All | "AllChar" => some .AllChar | "Range" => some .Range
-  | "Concat" => some .Concat | "Star" => some .Star | "Plus" => some .Plus
-  | "Loop" => some .Loop | "Union" => some .Union | "Inter" => some .Inter
-  | "Comp" => some .Comp | "None" => some .None
-  | _ => none
-
-def MapOpKind.toString : MapOpKind → String
-  | .Const => "const" | .Select => "select" | .Update => "update"
-
-instance : ToString MapOpKind := ⟨MapOpKind.toString⟩
-
-def MapOpKind.ofString? : String → Option MapOpKind
-  | "const" => some .Const | "select" => some .Select | "update" => some .Update
-  | _ => none
-
-def SeqOpKind.toString : SeqOpKind → String
-  | .Length => "length" | .Empty => "empty" | .Append => "append"
-  | .Select => "select" | .Build => "build" | .Update => "update"
-  | .Contains => "contains" | .Take => "take" | .Drop => "drop"
-
-instance : ToString SeqOpKind := ⟨SeqOpKind.toString⟩
-
-def SeqOpKind.ofString? : String → Option SeqOpKind
-  | "length" => some .Length | "empty" => some .Empty | "append" => some .Append
-  | "select" => some .Select | "build" => some .Build | "update" => some .Update
-  | "contains" => some .Contains | "take" => some .Take | "drop" => some .Drop
-  | _ => none
-
-def TriggerOpKind.toString : TriggerOpKind → String
-  | .EmptyTriggers => "Triggers.empty"
-  | .AddGroup => "Triggers.addGroup"
-  | .EmptyGroup => "TriggerGroup.empty"
-  | .AddTrigger => "TriggerGroup.addTrigger"
-
-instance : ToString TriggerOpKind := ⟨TriggerOpKind.toString⟩
-
-def TriggerOpKind.ofString? : String → Option TriggerOpKind
-  | "Triggers.empty" => some .EmptyTriggers
-  | "Triggers.addGroup" => some .AddGroup
-  | "TriggerGroup.empty" => some .EmptyGroup
-  | "TriggerGroup.addTrigger" => some .AddTrigger
-  | _ => none
 
 /-! ### CoreOp ↔ String Conversion -/
 
@@ -331,33 +301,27 @@ def CoreOp.ofString (name : String) : CoreOp :=
   match numResult with
   | some op => op
   | none =>
-  -- Try Bool ops
   -- Note: String.drop returns String.Slice in Lean 4.27, so .toString is
   -- needed to convert back to String for the ofString? calls below.
   if name.startsWith "Bool." then
     match BoolOpKind.ofString? (name.drop 5).toString with
     | some kind => .bool kind
     | none => .other name
-  -- Try Str ops
   else if name.startsWith "Str." then
     match StrOpKind.ofString? (name.drop 4).toString with
     | some kind => .str kind
     | none => .other name
-  -- Try Re ops
   else if name.startsWith "Re." then
     match ReOpKind.ofString? (name.drop 3).toString with
     | some kind => .re kind
     | none => .other name
-  -- Try Sequence ops
   else if name.startsWith "Sequence." then
     match SeqOpKind.ofString? (name.drop 9).toString with
     | some kind => .seq kind
     | none => .other name
-  -- Try Map ops (no prefix — "const", "select", "update")
   else match MapOpKind.ofString? name with
   | some kind => .map kind
   | none =>
-  -- Try Trigger ops
   match TriggerOpKind.ofString? name with
   | some kind => .trigger kind
   | none => .other name
@@ -370,8 +334,10 @@ def CoreOp.ofString? (name : String) : Option CoreOp :=
 
 /-! ### Round-trip proofs: ofString? ∘ toString = some
 
-These ensure that toString and ofString? stay in sync for every
-constructor of each sub-type. -/
+Since both `toString` and `ofString?` are derived from the same `names`
+list for each sub-type, these proofs are guaranteed to hold. Adding a
+new constructor to any OpKind without adding it to `names` will cause
+a build failure. -/
 
 theorem BvOpKind.ofString_toString (k : BvOpKind) :
     BvOpKind.ofString? k.toString = some k := by cases k <;> decide
@@ -401,9 +367,8 @@ theorem TriggerOpKind.ofString_toString (k : TriggerOpKind) :
     TriggerOpKind.ofString? k.toString = some k := by cases k <;> decide
 
 -- TODO: prove CoreOp.ofString (CoreOp.toString op) = op at the composite level.
--- Currently blocked by native_decide being needed for string operations in
--- CoreOp.ofString (splitOn, startsWith). Revisit when Lean gets better
--- kernel-level string reduction.
+-- Currently blocked by string operations in CoreOp.ofString (splitOn, startsWith)
+-- not reducing in the kernel. Revisit when Lean improves string reduction.
 
 end -- public section
 end Core

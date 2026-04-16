@@ -160,9 +160,19 @@ def verifyToVcResults (program : Program)
     return (some ioResult, translateDiags)
   | none => return (none, translateDiags)
 
+/--
+Verify a Laurel program using an SMT solver, returning results with
+duplicated assertions merged at the VCOutcome level.
+-/
+def verifyToMergedResults (program : Program)
+    (options : VerifyOptions := .default)
+    : IO (Option VCResults × List DiagnosticModel) := do
+  let (vcOpt, diags) ← verifyToVcResults program options
+  return (vcOpt.map (·.mergeByAssertion), diags)
+
 def verifyToDiagnostics (files : Map Strata.Uri Lean.FileMap) (program : Program)
     (options : VerifyOptions := .default) : IO (Array Diagnostic) := do
-  let results ← verifyToVcResults program options
+  let results ← verifyToMergedResults program options
   let phases := Core.coreAbstractedPhases
   let translationDiags := results.snd.map (fun dm => dm.toDiagnostic files)
   let vcDiags := match results.fst with
@@ -172,7 +182,7 @@ def verifyToDiagnostics (files : Map Strata.Uri Lean.FileMap) (program : Program
 
 def verifyToDiagnosticModels (program : Program) (options : VerifyOptions := .default)
     : IO (Array DiagnosticModel) := do
-  let results ← verifyToVcResults program options
+  let results ← verifyToMergedResults program options
   let phases := Core.coreAbstractedPhases
   let vcDiags := match results.fst with
   | none => []
