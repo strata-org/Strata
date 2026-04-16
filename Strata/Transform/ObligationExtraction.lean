@@ -90,8 +90,9 @@ private def isLoopElimInternal (label : String) : Bool :=
 
 /-- Remove unguarded loop-elim-internal assumptions for a specific loop
     from path conditions. Guarded versions (from nondet ITE merge, wrapped
-    in if-then-else) are preserved. Only removes assumptions matching the
-    given loop number to avoid stripping outer loop assumptions. -/
+    in if-then-else) are preserved because they carry loop invariant
+    information needed by post-loop obligations and the solver handles
+    them correctly. -/
 private def stripLoopElimForLoop (pc : PathConditions Expression) (loopNum : String) : PathConditions Expression :=
   let guardPrefix := s!"assume_guard_{loopNum}"
   let invPrefix := s!"assume_invariant_{loopNum}_"

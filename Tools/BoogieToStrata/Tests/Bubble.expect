@@ -8,10 +8,10 @@ Bubble.core.st(46, 0) [entry_invariant_1_1]: ✅ pass
 Bubble.core.st(46, 0) [entry_invariant_1_2]: ✅ pass
 Bubble.core.st(46, 0) [entry_invariant_1_3]: ✅ pass
 Bubble.core.st(46, 0) [entry_invariant_1_4]: ✅ pass
-Bubble.core.st(20, 2) [BubbleSort_ensures_1]: ✅ pass
-Bubble.core.st(21, 2) [BubbleSort_ensures_2]: ✅ pass
-Bubble.core.st(22, 2) [BubbleSort_ensures_3]: ✅ pass
-Bubble.core.st(23, 2) [BubbleSort_ensures_4]: ✅ pass
+Bubble.core.st(20, 2) [BubbleSort_ensures_1]: ❓ unknown
+Bubble.core.st(21, 2) [BubbleSort_ensures_2]: ❓ unknown
+Bubble.core.st(22, 2) [BubbleSort_ensures_3]: ❓ unknown
+Bubble.core.st(23, 2) [BubbleSort_ensures_4]: ❓ unknown
 Bubble.core.st(65, 0) [entry_invariant_2_0]: ✅ pass
 Bubble.core.st(65, 0) [entry_invariant_2_1]: ✅ pass
 Bubble.core.st(65, 0) [entry_invariant_2_2]: ✅ pass
@@ -33,4 +33,4 @@ Bubble.core.st(20, 2) [BubbleSort_ensures_1]: ✅ pass
 Bubble.core.st(21, 2) [BubbleSort_ensures_2]: ✅ pass
 Bubble.core.st(22, 2) [BubbleSort_ensures_3]: ✅ pass
 Bubble.core.st(23, 2) [BubbleSort_ensures_4]: ✅ pass
-All 34 goals passed.
+Finished with 30 goals passed, 4 failed.
