@@ -117,13 +117,13 @@ public def computeSccDecls (program : FunctionsAndProofsProgram) : List (List Pr
   let allProcs := program.functions ++ program.proofs
   let (withInvokeOn, withoutInvokeOn) :=
     allProcs.partition (fun p => p.invokeOn.isSome)
-  let nonExternal : List Procedure := withInvokeOn ++ withoutInvokeOn
+  let orderedProcs : List Procedure := withInvokeOn ++ withoutInvokeOn
 
-  -- Build a call-graph over all non-external procedures.
+  -- Build a call-graph over all procedures.
   -- An edge proc → callee means proc's body/contracts contain a StaticCall to callee.
-  let nonExternalArr : Array Procedure := nonExternal.toArray
+  let procsArr : Array Procedure := orderedProcs.toArray
   let nameToIdx : Std.HashMap String Nat :=
-    nonExternalArr.foldl (fun (acc : Std.HashMap String Nat × Nat) proc =>
+    procsArr.foldl (fun (acc : Std.HashMap String Nat × Nat) proc =>
       (acc.1.insert proc.name.text acc.2, acc.2 + 1)) ({}, 0) |>.1
 
   -- Collect all callee names from a procedure's body and contracts.
@@ -139,9 +139,9 @@ public def computeSccDecls (program : FunctionsAndProofsProgram) : List (List Pr
     (bodyExprs ++ contractExprs).flatMap collectStaticCallNames
 
   -- Build the OutGraph for Tarjan.
-  let n := nonExternalArr.size
+  let n := procsArr.size
   let graph : Strata.OutGraph n :=
-    nonExternalArr.foldl (fun (acc : Strata.OutGraph n × Nat) proc =>
+    procsArr.foldl (fun (acc : Strata.OutGraph n × Nat) proc =>
       let callerIdx := acc.2
       let g := acc.1
       let callees := procCallees proc
@@ -157,7 +157,7 @@ public def computeSccDecls (program : FunctionsAndProofsProgram) : List (List Pr
 
   sccs.toList.filterMap fun scc =>
     let procs := scc.toList.filterMap fun idx =>
-      nonExternalArr[idx.val]?
+      procsArr[idx.val]?
     if procs.isEmpty then none else
     let isRecursive := procs.length > 1 ||
       (match scc.toList.head? with
@@ -170,7 +170,8 @@ A single declaration in a CoreWithLaurelTypes program. Declarations are in
 dependency order (dependencies before dependents).
 -/
 public inductive OrderedDecl where
-  /-- A group of functions (single non-recursive, or mutually recursive). -/
+  /-- A group of functions (single non-recursive, or mutually recursive).
+      Invariant: `funcs.length > 1 → isRecursive = true`. -/
   | funcs (funcs : List Procedure) (isRecursive : Bool)
   /-- A single (non-functional) procedure. -/
   | procedure (procedure : Procedure)

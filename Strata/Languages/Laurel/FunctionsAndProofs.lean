@@ -34,12 +34,15 @@ structure FunctionsAndProofsProgram where
 
 /--
 Temporary translation from Laurel to FunctionsAndProofs.
+Will be replaced by the contract and proof passes (#924).
 Maps functional Laurel procedures to functions and
 non-functional Laurel procedures to proofs.
 -/
 def laurelToFunctionsAndProofs (program : Program) : FunctionsAndProofsProgram :=
   let nonExternal := program.staticProcedures.filter (fun p => !p.body.isExternal)
   let (functions, proofs) := nonExternal.partition (·.isFunctional)
+  -- Only keep `.Datatype` entries; `.Composite` types are handled separately
+  -- via the original `Program` in `translateLaurelToCore`.
   let datatypes := program.types.filterMap fun td => match td with
     | .Datatype dt => some dt
     | _ => none
