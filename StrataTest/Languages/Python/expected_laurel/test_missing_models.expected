@@ -1,4 +1,3 @@
-unknown location: ✅ pass - assert(0)
 test_missing_models.py(12, 4): ❓ unknown - (Origin_test_helper_procedure_Requires)req_name_is_foo
 test_missing_models.py(12, 4): ✅ pass - (Origin_test_helper_procedure_Requires)req_opt_name_none_or_str
 test_missing_models.py(12, 4): ✅ pass - (Origin_test_helper_procedure_Requires)req_opt_name_none_or_bar
@@ -28,5 +27,5 @@ test_missing_models.py(12, 4): ✅ pass - (Origin_test_helper_procedure_Requires
 test_missing_models.py(15, 4): ✅ pass - (Origin_test_helper_procedure_Requires)req_name_is_foo
 test_missing_models.py(15, 4): ✅ pass - (Origin_test_helper_procedure_Requires)req_opt_name_none_or_str
 test_missing_models.py(15, 4): ✅ pass - (Origin_test_helper_procedure_Requires)req_opt_name_none_or_bar
-DETAIL: 23 passed, 0 failed, 7 inconclusive
+DETAIL: 22 passed, 0 failed, 7 inconclusive
 RESULT: Inconclusive

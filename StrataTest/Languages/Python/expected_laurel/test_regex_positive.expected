@@ -420,7 +420,6 @@ test_regex_positive.py(482, 4): ✅ pass - malformed: search with bad pattern is
 test_regex_positive.py(484, 4): ✅ pass - set_m_calls_re_match_0
 test_regex_positive.py(485, 4): ✅ pass - assert_assert(15806)_calls_Any_to_bool_0
 test_regex_positive.py(485, 4): ✅ pass - malformed: match with bad pattern is exception, not None
-unknown location: ✅ pass - assert(0)
 test_regex_positive.py(487, 0): ✅ pass - ite_cond_calls_Any_to_bool_0
-DETAIL: 424 passed, 0 failed, 0 inconclusive
+DETAIL: 423 passed, 0 failed, 0 inconclusive
 RESULT: Analysis success

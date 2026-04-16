@@ -12,7 +12,6 @@ test_fstrings.py(13, 4): ✅ pass - empty f-string failed
 test_fstrings.py(14, 4): ✅ pass - assert(478)
 test_fstrings.py(15, 4): ✅ pass - assert_assert(511)_calls_Any_to_bool_0
 test_fstrings.py(15, 4): ✅ pass - f-string no interpolation failed
-unknown location: ✅ pass - assert(0)
 test_fstrings.py(17, 0): ✅ pass - ite_cond_calls_Any_to_bool_0
-DETAIL: 15 passed, 0 failed, 1 inconclusive
+DETAIL: 14 passed, 0 failed, 1 inconclusive
 RESULT: Inconclusive

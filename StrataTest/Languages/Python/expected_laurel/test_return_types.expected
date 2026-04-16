@@ -20,7 +20,6 @@ test_return_types.py(28, 4): ✅ pass - (add requires) Type constraint of b
 test_return_types.py(28, 4): ✅ pass - assert(529)
 test_return_types.py(29, 4): ✅ pass - assert_assert(558)_calls_Any_to_bool_0
 test_return_types.py(29, 4): ❓ unknown - add returned wrong value
-unknown location: ✅ pass - assert(0)
 test_return_types.py(31, 0): ✅ pass - ite_cond_calls_Any_to_bool_0
-DETAIL: 20 passed, 0 failed, 4 inconclusive
+DETAIL: 19 passed, 0 failed, 4 inconclusive
 RESULT: Inconclusive

@@ -4,6 +4,5 @@ test_bitnot.py(3, 4): ✅ pass - assert(31)
 test_bitnot.py(4, 16): ✅ pass - Check PNeg exception
 test_bitnot.py(4, 4): ✅ pass - assert_assert(47)_calls_Any_to_bool_0
 test_bitnot.py(4, 4): ✅ pass - bitwise not
-unknown location: ✅ pass - assert(0)
-DETAIL: 7 passed, 0 failed, 0 inconclusive
+DETAIL: 6 passed, 0 failed, 0 inconclusive
 RESULT: Analysis success

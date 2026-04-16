@@ -35,7 +35,6 @@ test_control_flow.py(67, 7): ✅ pass - Check PGe exception
 test_control_flow.py(67, 4): ✅ pass - ite_cond_calls_Any_to_bool_0
 test_control_flow.py(72, 4): ✅ pass - assert_assert(1224)_calls_Any_to_bool_0
 test_control_flow.py(72, 4): ✅ pass - if with >= implemented incorrectly
-unknown location: ✅ pass - assert(0)
 test_control_flow.py(74, 0): ✅ pass - ite_cond_calls_Any_to_bool_0
-DETAIL: 39 passed, 0 failed, 0 inconclusive
+DETAIL: 38 passed, 0 failed, 0 inconclusive
 RESULT: Analysis success

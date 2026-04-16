@@ -23,7 +23,6 @@ test_variable_reassign.py(25, 4): ✅ pass - should be 100
 test_variable_reassign.py(28, 4): ✅ pass - ite_cond_calls_Any_to_bool_0
 test_variable_reassign.py(32, 4): ✅ pass - assert_assert(612)_calls_Any_to_bool_0
 test_variable_reassign.py(32, 4): ✅ pass - should be 200
-unknown location: ✅ pass - assert(0)
 test_variable_reassign.py(34, 0): ✅ pass - ite_cond_calls_Any_to_bool_0
-DETAIL: 25 passed, 0 failed, 2 inconclusive
+DETAIL: 24 passed, 0 failed, 2 inconclusive
 RESULT: Inconclusive

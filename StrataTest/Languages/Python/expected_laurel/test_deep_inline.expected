@@ -1,4 +1,3 @@
-unknown location: ✔️ always true if reached - assert(0)
 test_deep_inline.py(20, 0): ✔️ always true if reached - ite_cond_calls_Any_to_bool_0
 test_deep_inline.py(6, 4): ✔️ always true if reached - Check PAdd exception
 test_deep_inline.py(10, 4): ✔️ always true if reached - double_inc_assert(135)_32
@@ -11,5 +10,5 @@ test_deep_inline.py(21, 4): ✔️ always true if reached - assert_main_assert(3
 test_deep_inline.py(21, 4): ✔️ always true if reached - triple_apply(3) should be 9
 test_deep_inline.py(21, 4): ✔️ always true if reached - assert_main_assert(444)_7_calls_Any_to_bool_0
 test_deep_inline.py(21, 4): ✖️ always false if reached - triple_apply(3) should not be 10
-DETAIL: 12 passed, 1 failed, 0 inconclusive
+DETAIL: 11 passed, 1 failed, 0 inconclusive
 RESULT: Failures found

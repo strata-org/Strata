@@ -20,6 +20,5 @@ test_is_none.py(27, 4): ✅ pass - int is not None
 test_is_none.py(31, 11): ✅ pass - Check PNot exception
 test_is_none.py(31, 4): ✅ pass - assert_assert(605)_calls_Any_to_bool_0
 test_is_none.py(31, 4): ✅ pass - None is not 'not None'
-unknown location: ✅ pass - assert(0)
-DETAIL: 23 passed, 0 failed, 0 inconclusive
+DETAIL: 22 passed, 0 failed, 0 inconclusive
 RESULT: Analysis success

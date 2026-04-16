@@ -20,7 +20,6 @@ test_comparisons.py(16, 4): ✅ pass - greater than or equal implemented incorre
 test_comparisons.py(17, 11): ✅ pass - Check PLe exception
 test_comparisons.py(17, 4): ✅ pass - assert_assert(506)_calls_Any_to_bool_0
 test_comparisons.py(17, 4): ✅ pass - less than or equal implemented incorrectly
-unknown location: ✅ pass - assert(0)
 test_comparisons.py(19, 0): ✅ pass - ite_cond_calls_Any_to_bool_0
-DETAIL: 24 passed, 0 failed, 0 inconclusive
+DETAIL: 23 passed, 0 failed, 0 inconclusive
 RESULT: Analysis success

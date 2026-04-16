@@ -29,7 +29,6 @@ test_default_params.py(23, 4): ✅ pass - (power requires) Type constraint of ex
 test_default_params.py(23, 4): ✅ pass - assert(545)
 test_default_params.py(24, 4): ✅ pass - assert_assert(571)_calls_Any_to_bool_0
 test_default_params.py(24, 4): ❓ unknown - explicit power failed
-unknown location: ✅ pass - assert(0)
 test_default_params.py(26, 0): ✅ pass - ite_cond_calls_Any_to_bool_0
-DETAIL: 27 passed, 0 failed, 6 inconclusive
+DETAIL: 26 passed, 0 failed, 6 inconclusive
 RESULT: Inconclusive

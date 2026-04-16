@@ -13,6 +13,5 @@ test_break_continue.py(12, 24): ✅ pass - (test_for_break ensures) Return type 
 test_break_continue.py(19, 4): ✅ pass - assume_assume(362)_calls_PIn_0
 test_break_continue.py(19, 4): ✅ pass - assume_assume(362)_calls_Any_to_bool_1
 test_break_continue.py(17, 27): ✅ pass - (test_for_continue ensures) Return type constraint
-unknown location: ✅ pass - assert(0)
-DETAIL: 16 passed, 0 failed, 0 inconclusive
+DETAIL: 15 passed, 0 failed, 0 inconclusive
 RESULT: Analysis success

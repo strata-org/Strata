@@ -36,7 +36,6 @@ test_arithmetic.py(31, 4): ✅ pass - set_neg_rem1_calls_PMod_0
 test_arithmetic.py(31, 4): ✅ pass - assert(733)
 test_arithmetic.py(32, 4): ✅ pass - assert_assert(762)_calls_Any_to_bool_0
 test_arithmetic.py(32, 4): ✅ pass - negative mod should follow Python floored semantics
-unknown location: ✅ pass - assert(0)
 test_arithmetic.py(34, 0): ✅ pass - ite_cond_calls_Any_to_bool_0
-DETAIL: 40 passed, 0 failed, 0 inconclusive
+DETAIL: 39 passed, 0 failed, 0 inconclusive
 RESULT: Analysis success

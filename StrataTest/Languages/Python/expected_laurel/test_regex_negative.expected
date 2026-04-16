@@ -71,7 +71,6 @@ test_regex_negative.py(111, 4): ❓ unknown - unsupported: non-greedy .*? quanti
 test_regex_negative.py(113, 4): ✅ pass - set_m_calls_re_search_0
 test_regex_negative.py(114, 4): ✅ pass - assert_assert(3866)_calls_Any_to_bool_0
 test_regex_negative.py(114, 4): ❓ unknown - unsupported: positive lookahead (?=foo)
-unknown location: ✅ pass - assert(0)
 test_regex_negative.py(116, 0): ✅ pass - ite_cond_calls_Any_to_bool_0
-DETAIL: 51 passed, 0 failed, 24 inconclusive
+DETAIL: 50 passed, 0 failed, 24 inconclusive
 RESULT: Inconclusive
