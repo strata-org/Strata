@@ -96,15 +96,18 @@ def typeCheckAndEval (options : VerifyOptions) (program : Program)
     ({} : Statistics)
 
   let stats := stats.increment s!"{Evaluator.Stats.factoryOps}" factory.toArray.size
-  let (pEs, evalStats) := Program.eval E
-  let stats := stats.merge evalStats
-  let stats := stats.increment s!"{Evaluator.Stats.verificationEnvironments}" pEs.length
+  match Program.eval E with
+  | .ok (pEs, evalStats) =>
+    let stats := stats.merge evalStats
+    let stats := stats.increment s!"{Evaluator.Stats.verificationEnvironments}" pEs.length
 
-  if options.verbose >= .normal then do
-    dbg_trace f!"{Std.Format.line}VCs:"
-    for E in pEs do
-      dbg_trace f!"{formatProofObligations E.deferred}"
-  return (pEs, stats)
+    if options.verbose >= .normal then do
+      dbg_trace f!"{Std.Format.line}VCs:"
+      for E in pEs do
+        dbg_trace f!"{formatProofObligations E.deferred}"
+    return (pEs, stats)
+  | .error msg =>
+    .error (DiagnosticModel.fromMessage msg)
 
 instance instCoreProgramString : ToString (Program) where
   toString p := toString (Core.formatProgram p)

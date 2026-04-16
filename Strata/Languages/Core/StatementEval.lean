@@ -429,8 +429,9 @@ def evalAuxGo (steps : Nat) (old_var_subst : SubstMap) (Ewn : EnvWithNext) (ss :
 
           | .cmd c =>
             let (c', E) := Command.eval Ewn.env old_var_subst c
-            ([{ Ewn with env := E,
-                        exitLabel := .none }], noStats)
+            ([{ Ewn with
+                  env := E
+                  exitLabel := .none }], noStats)
 
           | .block label ss md =>
             let Ewn := { Ewn with env := Ewn.env.pushEmptyScope }
