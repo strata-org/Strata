@@ -1287,10 +1287,13 @@ partial def translateStmt (ctx : TranslationContext) (s : Python.stmt SourceRang
   match s with
   -- Assignment: x = expr or self.field = expr
   | .Assign _ targets value _ => do
-    -- For now, only support single target
-    if targets.val.size != 1 then
-      throw (.unsupportedConstruct "Multiple assignment targets not yet supported" (toString (repr s)))
-    return withExceptionChecks ctx (← translateAssign ctx targets.val[0]! none value md)
+    let mut curCtx := ctx
+    let mut stmts : List StmtExprMd := []
+    for h : i in [:targets.val.size] do
+      let (newCtx, newStmts) ← translateAssign curCtx targets.val[i] none value md
+      curCtx := newCtx
+      stmts := stmts ++ newStmts
+    return withExceptionChecks curCtx (curCtx, stmts)
 
 
   -- Annotated assignment: x: int = expr or x: ClassName = ClassName(args) or self.field: int = expr
