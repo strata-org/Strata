@@ -1,0 +1,9 @@
+test_mixed_field_types.py(17, 4): ✅ pass - callElimAssert_requires_13
+test_mixed_field_types.py(18, 4): ✅ pass - callElimAssert_requires_6
+test_mixed_field_types.py(19, 4): ✅ pass - primitive field
+test_mixed_field_types.py(19, 4): ❓ unknown - primitive field
+test_mixed_field_types.py(20, 4): ✅ pass - nested object field
+test_mixed_field_types.py(20, 4): ❓ unknown - nested object field
+test_mixed_field_types.py(15, 0): ❓ unknown - postcondition
+DETAIL: 4 passed, 0 failed, 3 inconclusive
+RESULT: Inconclusive

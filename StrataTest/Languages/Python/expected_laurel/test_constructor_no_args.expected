@@ -1,0 +1,6 @@
+test_constructor_no_args.py(6, 4): ✅ pass - callElimAssert_requires_2
+test_constructor_no_args.py(7, 4): ✅ pass - constructor returns object
+test_constructor_no_args.py(7, 4): ❓ unknown - constructor returns object
+test_constructor_no_args.py(5, 0): ✅ pass - postcondition
+DETAIL: 3 passed, 0 failed, 1 inconclusive
+RESULT: Inconclusive

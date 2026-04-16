@@ -1,0 +1,7 @@
+test_object_field_is_object.py(14, 4): ✅ pass - callElimAssert_requires_11
+test_object_field_is_object.py(15, 4): ✅ pass - callElimAssert_requires_5
+test_object_field_is_object.py(16, 4): ✅ pass - nested object field
+test_object_field_is_object.py(16, 4): ❓ unknown - nested object field
+test_object_field_is_object.py(13, 0): ❓ unknown - postcondition
+DETAIL: 3 passed, 0 failed, 2 inconclusive
+RESULT: Inconclusive

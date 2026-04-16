@@ -1,0 +1,6 @@
+test_coerce_object_to_any.py(10, 4): ✅ pass - callElimAssert_requires_5
+test_coerce_object_to_any.py(12, 4): ✅ pass - object stored as Any
+test_coerce_object_to_any.py(12, 4): ❓ unknown - object stored as Any
+test_coerce_object_to_any.py(9, 0): ❓ unknown - postcondition
+DETAIL: 2 passed, 0 failed, 2 inconclusive
+RESULT: Inconclusive
