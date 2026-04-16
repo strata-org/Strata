@@ -366,17 +366,19 @@ public def splitProcNames (prog : Core.Program)
     Laurel pass is written to `{prefix}.{n}.{passName}.laurel.st`. -/
 public def translateCombinedLaurelWithLowered (combined : Laurel.Program)
     (keepAllFilesPrefix : Option String := none)
+    (profile : Bool := false)
     : IO (Option Core.Program × List DiagnosticModel × Laurel.Program × Statistics) := do
   let (coreOption, errors, lowered, stats) ←
-    Laurel.translateWithLaurel { inlineFunctionsWhenPossible := true } combined
+    Laurel.translateWithLaurel { inlineFunctionsWhenPossible := true, profile } combined
       (keepAllFilesPrefix := keepAllFilesPrefix)
   return (coreOption.map appendCorePartOfRuntime, errors, lowered, stats)
 
 /-- Translate a combined Laurel program to Core and prepend the full
     runtime prelude. -/
 public def translateCombinedLaurel (combined : Laurel.Program)
+    (profile : Bool := false)
     : IO (Option Core.Program × List DiagnosticModel) := do
-  let (coreOption, errors, _, _) ← translateCombinedLaurelWithLowered combined
+  let (coreOption, errors, _, _) ← translateCombinedLaurelWithLowered combined (profile := profile)
   return (coreOption, errors)
 
 /-- Errors from the pyAnalyzeLaurel pipeline. -/

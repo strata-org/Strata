@@ -122,13 +122,12 @@ inductive ElimRetStats where
 Transform a program by eliminating returns in all functional procedure bodies.
 -/
 def eliminateReturnsInExpressionTransform (program : Program) : Program × Statistics :=
-  let (procs, stats) := program.staticProcedures.foldl (fun (acc, stats) proc =>
-    let proc' := eliminateReturnsInExpression proc
-    if proc.isFunctional then
-      (acc ++ [proc'], stats.increment s!"{ElimRetStats.functionalProceduresProcessed}")
-    else
-      (acc ++ [proc'], stats.increment s!"{ElimRetStats.nonFunctionalProceduresSkipped}")
-  ) ([], ({} : Statistics))
+  let procs := program.staticProcedures.map eliminateReturnsInExpression
+  let nFunctional := program.staticProcedures.countP (·.isFunctional)
+  let nSkipped := program.staticProcedures.length - nFunctional
+  let stats := ({} : Statistics)
+    |>.increment s!"{ElimRetStats.functionalProceduresProcessed}" nFunctional
+    |>.increment s!"{ElimRetStats.nonFunctionalProceduresSkipped}" nSkipped
   ({ program with staticProcedures := procs }, stats)
 
 end -- public section

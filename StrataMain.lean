@@ -582,7 +582,7 @@ def pyAnalyzeLaurelCommand : Command where
     let (coreProgramOption, laurelTranslateErrors, _loweredLaurel, laurelPassStats) ←
       profileStep profile "Laurel to Core translation" do
         Strata.translateCombinedLaurelWithLowered combinedLaurel
-          (keepAllFilesPrefix := keepPrefix)
+          (keepAllFilesPrefix := keepPrefix) (profile := profile)
 
     if profile && !laurelPassStats.data.isEmpty then
       let _ ← (IO.println laurelPassStats.format |>.toBaseIO)
