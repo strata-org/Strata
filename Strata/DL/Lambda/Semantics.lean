@@ -2831,8 +2831,9 @@ theorem eval_eraseMetadata_invariant
             | cons hd tl ihtl => simp [List.all, List.map, ihtl]
           rw [h_all_map_eq, h_all_map_eq, h_pw]
         have h_args_eq_eM := h_eval_args_eM
-        -- TODO: update proof to account for Bool.And/Bool.Or short-circuit
-        sorry
+        exact eval_factory_post_eraseMetadata_invariant σ n' hWF f₁
+          e₁ e₂ op₁ op₂ args₁ args₂ h_call₁ h_eval_args_eM h_eM h_op_eM
+          h_constrArgAt_eq h_canonicalArgAt_eq h_all_canonical ih
       · -- callOfLFunc e₁ = none → evalCore path
         rename_i h_none₁
         have h_none₂ := callOfLFunc_none_of_eraseMetadata_eq σ.config.factory _ _ false h_eM h_none₁
@@ -3069,8 +3070,7 @@ theorem eval_StepStar
                 exact eval_StepStar_factory_terminal σ e n op_expr args lfunc h_call ih
           · -- Symbolic args: terminal
             rename_i h_symbolic
-            -- TODO: update proof to account for Bool.And/Bool.Or short-circuit
-            sorry
+            exact eval_StepStar_factory_terminal σ e n op_expr args lfunc h_call ih
       · -- evalCore case: case analysis on e
         rename_i h_no_call
         match e, h_not_canonical, h_no_call with
