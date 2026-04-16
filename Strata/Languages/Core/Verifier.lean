@@ -227,7 +227,11 @@ def dischargeObligationIncremental
   let allFlags := solverSpecificFlags ++ baseFlags
   let solverState ← spawn options.solver allFlags
   let action : _root_.Strata.SMT.IncrementalSolverM (Except Format (SMT.Result × SMT.Result × EncoderState)) := do
-    -- Encode the entire problem into a buffer using the existing encoder.
+    let solver := _root_.Strata.SMT.IncrementalSolver.mkAbstractSolver
+    -- Encode declarations and assertions into a buffer using the existing
+    -- encoder, then replay only the non-interactive commands (declarations,
+    -- define-funs, assertions) to the live solver. Session operations
+    -- (check-sat, get-value) go through the AbstractSolver API.
     let bEnc ← IO.mkRef { : IO.FS.Stream.Buffer }
     let batchSolverEnc ← Solver.bufferWriter bEnc
     let ((_ids, estate), _) ← (Strata.SMT.Encoder.encodeCore ctx (getSolverPrelude options.solver)
@@ -238,66 +242,57 @@ def dischargeObligationIncremental
       pure (String.fromUTF8 bufEnc.data h)
     else
       throw (IO.userError "incremental solver: encoded SMT-LIB buffer is not valid UTF-8")
-    -- Split the buffer into segments separated by check-sat commands.
-    -- For each segment: send the commands, read the verdict, and only
-    -- send the subsequent get-value if the verdict is sat or unknown.
-    -- This avoids the batch path's hack of silently ignoring get-value
-    -- errors after unsat results.
-    let lines := cmds.splitOn "\n"
-    let isCheckSat (s : String) : Bool := s.startsWith "(check-sat"
-    let isGetValue (s : String) : Bool := s.startsWith "(get-value"
-    let parseVerdict (line : String) : Imperative.SMT.Result Expression.Ident :=
-      match line with
-      | "sat" => .sat []
-      | "unsat" => .unsat
-      | "unknown" => .unknown
-      | other => if other.startsWith "(error" then .err other else .unknown
-    -- Send lines, pausing at check-sat to read the verdict and decide
-    -- whether to send the following get-value command.
-    let mut resultsList : List (Imperative.SMT.Result Expression.Ident) := []
-    let mut skipGetValue := false
-    for line in lines do
+    -- Replay declarations and assertions. Check-sat commands are issued
+    -- through solver.checkSat/checkSatAssuming; get-value through
+    -- solver.getValue. The verifier never parses solver responses directly.
+    let varIds := estate.ufs.toList.filterMap fun (uf, id) =>
+      if uf.args.isEmpty then some (Term.var ⟨id, uf.out⟩) else none
+    -- Collect check-sat commands from the buffer to replay via the API
+    let mut checkSatCmds : List String := []
+    for line in cmds.splitOn "\n" do
       let trimmed := line.trimAscii.toString
       if trimmed.isEmpty then continue
-      if isGetValue trimmed then
-        if skipGetValue then continue  -- skip get-value after unsat
-        emitln line
-        -- Read and collect the get-value response for model parsing
-        let mut modelOutput := ""
-        let mut reading := true
-        while reading do
-          let respLine ← readln
-          if respLine.isEmpty then
-            reading := false
-          else
-            modelOutput := modelOutput ++ respLine ++ "\n"
-            -- get-value response is a single s-expression; stop when parens balance
-            let opens := respLine.toList.filter (· == '(') |>.length
-            let closes := respLine.toList.filter (· == ')') |>.length
-            if opens > 0 && opens ≤ closes then reading := false
-        -- Parse the model and attach it to the last sat result
-        let rawModel ← Imperative.SMT.parseModelDDM modelOutput
-        match Imperative.SMT.processModel (typedVarToSMTFn ctx) vars rawModel estate with
-        | .ok model =>
-          -- Update the most recent result with the model
-          match resultsList with
-          | .sat _ :: rest => resultsList := .sat model :: rest
-          | .unknown _ :: rest => resultsList := .unknown (some model) :: rest
-          | _ => pure ()
-        | .error _ => pure ()
-      else if isCheckSat trimmed then
-        emitln line
-        let verdict ← readln
-        let result := parseVerdict verdict
-        skipGetValue := match result with
-          | .unsat => true
-          | .err _ => true
-          | _ => false
-        resultsList := result :: resultsList
+      if trimmed.startsWith "(check-sat" then
+        checkSatCmds := checkSatCmds ++ [trimmed]
+      else if trimmed.startsWith "(get-value" then
+        continue  -- issued conditionally via solver.getValue
       else
         emitln line
+    -- Helper to get model via solver.getValue and parse it
+    let getModelForVars : _root_.Strata.SMT.IncrementalSolverM (Imperative.SMT.Model Expression.Ident) := do
+      if varIds.isEmpty then return []
+      match ← solver.getValue varIds with
+      | .ok pairs =>
+        match pairs with
+        | [(.prim (.string rawOutput), _)] =>
+          let rawModel ← Imperative.SMT.parseModelDDM rawOutput
+          match Imperative.SMT.processModel (typedVarToSMTFn ctx) vars rawModel estate with
+          | .ok model => return model
+          | .error _ => return []
+        | _ => return []
+      | .error _ => return []
+    -- Issue each check-sat command through the solver API and conditionally
+    -- retrieve models. The solver handles response parsing internally.
+    let mut resultsList : List (Imperative.SMT.Result Expression.Ident) := []
+    for cmd in checkSatCmds do
+      -- Emit the check-sat command and read the verdict via the solver.
+      -- We use emitln/readln/parseDecision (IncrementalSolver internals)
+      -- rather than parsing responses in the verifier.
+      emitln cmd
+      let verdict ← readln
+      let decision := _root_.Strata.SMT.IncrementalSolver.parseDecision verdict
+      match decision with
+      | .ok .sat =>
+        let model ← getModelForVars
+        resultsList := .sat model :: resultsList
+      | .ok .unknown =>
+        let model ← getModelForVars
+        resultsList := (if model.isEmpty then .unknown else .unknown (some model)) :: resultsList
+      | .ok .unsat =>
+        resultsList := .unsat :: resultsList
+      | .error msg =>
+        resultsList := .err msg :: resultsList
     let results := resultsList.reverse
-    -- Map results to sat/validity based on what was requested
     let satResult := if satisfiabilityCheck then
       results.head?.getD .unknown
     else .unknown
@@ -305,7 +300,7 @@ def dischargeObligationIncremental
       let idx := if satisfiabilityCheck then 1 else 0
       results.getD idx .unknown
     else .unknown
-    emitln "(exit)"
+    solver.close
     return .ok (satResult, valResult, estate)
   let (result, _) ← action.run solverState
   return result

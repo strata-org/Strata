@@ -114,7 +114,7 @@ private def mkVarArith (op : Op) (opName : String) (ts : List Term)
     | t :: rest => .ok (rest.foldl (fun acc x => Term.app op [acc, x] acc.typeOf) t)
 
 /-- Parse a solver check-sat response into a `Decision`. -/
-private def parseDecision (line : String) : Except String Decision :=
+def parseDecision (line : String) : Except String Decision :=
   match line with
   | "sat" => .ok .sat
   | "unsat" => .ok .unsat
@@ -250,7 +250,31 @@ def mkAbstractSolver : AbstractSolver Term IncrementalSolverM where
 
   getModel := return .error "getModel: not yet implemented for incremental backend"
 
-  getValue _ts := return .error "getValue: not yet implemented for incremental backend"
+  getValue ts := do
+    -- Send get-value command with the given terms
+    let mut strs := []
+    for t in ts.reverse do
+      match ← termToStr t with
+      | .ok s => strs := s :: strs
+      | .error msg => return .error msg
+    let inline := String.intercalate " " strs
+    emitln s!"(get-value ({inline}))"
+    -- Read the response (a single s-expression, possibly multi-line)
+    let mut modelOutput := ""
+    let mut reading := true
+    let mut parenDepth : Int := 0
+    while reading do
+      let respLine ← readln
+      if respLine.isEmpty then
+        reading := false
+      else
+        modelOutput := modelOutput ++ respLine ++ "\n"
+        for c in respLine.toList do
+          if c == '(' then parenDepth := parenDepth + 1
+          else if c == ')' then parenDepth := parenDepth - 1
+        if parenDepth ≤ 0 then reading := false
+    -- Return the raw output as a single pair (the verifier parses it)
+    return .ok [(Term.string modelOutput, Term.string modelOutput)]
 
   reset := emitln "(reset)"
 
