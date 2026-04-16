@@ -149,10 +149,14 @@ def throwUserError [MonadExceptOf TranslationError m] (range : SourceRange := .n
 /-! ## Helper Functions -/
 
 /-- Create metadata from a SourceRange for attaching to Laurel statements. -/
-def sourceRangeToMetaData (filePath : String) (sr : SourceRange) : Imperative.MetaData Core.Expression :=
+def sourceRangeToFileRange (filePath : String) (sr : SourceRange) : FileRange :=
   let uri : Uri := .file filePath
-  let fileRangeElt := ⟨ Imperative.MetaData.fileRange, .fileRange ⟨ uri, sr ⟩ ⟩
-  #[fileRangeElt]
+  ⟨ uri, sr ⟩
+
+/-- Backward-compatible: create metadata from a SourceRange. -/
+def sourceRangeToMetaData (filePath : String) (sr : SourceRange) : Imperative.MetaData Core.Expression :=
+  let fr := sourceRangeToFileRange filePath sr
+  #[⟨Imperative.MetaData.fileRange, .fileRange fr⟩]
 
 /-- Create default metadata for Laurel AST nodes -/
 def defaultMetadata : Imperative.MetaData Core.Expression :=
@@ -160,22 +164,24 @@ def defaultMetadata : Imperative.MetaData Core.Expression :=
 
 /-- Create a HighTypeMd with default metadata -/
 def mkHighTypeMd (ty : HighType) : HighTypeMd :=
-  { val := ty, md := defaultMetadata }
+  { val := ty, source := none }
 
-/-- Create a HighTypeMd with source location metadata -/
+/-- Create a HighTypeMd with source location metadata.
+    NOTE: stores location in `md` (legacy); a follow-up should migrate to `source`. -/
 def mkHighTypeMdWithLoc (ty : HighType) (md : Imperative.MetaData Core.Expression) : HighTypeMd :=
-  { val := ty, md := md }
+  { val := ty, source := Imperative.getFileRange md, md := md }
 
 def mkCoreType (s: String): HighTypeMd :=
-  {val := .TCore s , md := defaultMetadata}
+  {val := .TCore s, source := none }
 
 /-- Create a StmtExprMd with default metadata -/
 def mkStmtExprMd (expr : StmtExpr) : StmtExprMd :=
-  { val := expr, md := defaultMetadata }
+  { val := expr, source := none }
 
-/-- Create a StmtExprMd with source location metadata -/
+/-- Create a StmtExprMd with source location metadata.
+    NOTE: stores location in `md` (legacy); a follow-up should migrate to `source`. -/
 def mkStmtExprMdWithLoc (expr : StmtExpr) (md : Imperative.MetaData Core.Expression) : StmtExprMd :=
-  { val := expr, md := md }
+  { val := expr, source := Imperative.getFileRange md, md := md }
 
 /-- Mangle a class name and method name into a flat procedure name: `ClassName@methodName`. -/
 def manglePythonMethod (className : String) (methodName : String) : String :=
@@ -498,6 +504,8 @@ partial def translateExpr (ctx : TranslationContext) (e : Python.expr SourceRang
       | .FloorDiv _ => .ok "PFloorDiv"  -- Python // maps to Laurel Div
       | .Mod _ => .ok "PMod"
       | .Pow _ => .ok "PPow"
+      | .LShift _ => .ok "PLShift"
+      | .RShift _ => .ok "PRShift"
       | .BitAnd _ => return mkStmtExprMd .Hole --TODO: Adding BitVector subtype in Any type, then the related operations
       | .BitOr _ => return mkStmtExprMd .Hole
       | .BitXor _ => return mkStmtExprMd .Hole
@@ -561,6 +569,7 @@ partial def translateExpr (ctx : TranslationContext) (e : Python.expr SourceRang
     let preludeOpnames ← match op with
       | .Not _ => .ok "PNot"
       | .USub _ => .ok "PNeg"
+      | .Invert _ => .ok "PBitNot"
       | _ => throw (.unsupportedConstruct s!"Unary operator not yet supported: {repr op}" (toString (repr e)))
     return mkStmtExprMdWithLoc (StmtExpr.StaticCall preludeOpnames [operandExpr]) md
 
