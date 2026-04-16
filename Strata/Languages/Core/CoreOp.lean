@@ -22,10 +22,14 @@ mapping constructors to their string representations. Both `toString`
 and `ofString?` are derived from this list, and round-trip correctness
 is proved by `decide`. -/
 
+/-- Look up the string name for a constructor. The names lists are small
+    (≤43 entries), so linear scan is negligible. Using List.find? rather than
+    a HashMap is intentional: it enables the kernel to reduce these functions,
+    which is required for the round-trip `decide` proofs below. -/
 private def lookupName [BEq α] (names : List (α × String)) (k : α) : String :=
   match names.find? (·.1 == k) with
   | some (_, s) => s
-  | none => "?unknown?"
+  | none => "" -- unreachable: round-trip proofs guarantee completeness of names
 
 private def lookupKind [BEq β] (names : List (α × β)) (s : β) : Option α :=
   match names.find? (·.2 == s) with
