@@ -88,17 +88,17 @@ def prefixName (name : String) : ToLaurelM String := do
 
 /-- Create a HighTypeMd with default metadata. -/
 private def mkTy (ty : HighType) : HighTypeMd :=
-  { val := ty, md := default }
+  { val := ty, source := none, md := default }
 
 /-- Create a UserDefined type referencing a Laurel prelude type by name. -/
 private def mkUserDefined (s : String) : HighTypeMd :=
-  { val := .UserDefined (mkId s), md := default }
+  { val := .UserDefined (mkId s), source := none, md := default }
 
 /-- Placeholder for types not yet supported in CorePrelude.
     Returns TString so translation can proceed. Callers should
     report a warning via `reportError` so the gap is visible. -/
 private def unsupportedType : HighTypeMd :=
-  { val := .TString, md := default }
+  { val := .TString, source := none, md := default }
 
 /-! ### Laurel type constants
 
@@ -294,7 +294,7 @@ def specTypeToLaurelType (ty : SpecType) : ToLaurelM HighTypeMd := do
 
 /-- Wrap a StmtExpr with metadata. -/
 private def mkStmt (e : StmtExpr) (md : Imperative.MetaData Core.Expression) : StmtExprMd :=
-  { val := e, md := md }
+  { val := e, source := none, md := md }
 
 /-- Create file-level metadata from the current pyspec filepath.
     Uses a default (zero) source range; callers with a specific location
@@ -317,8 +317,10 @@ private def mkMdWithFileRange (loc : SourceRange) (msg : String := "")
 /-- Wrap a StmtExpr with metadata containing a file range and optional message. -/
 private def mkStmtWithLoc (e : StmtExpr) (loc : SourceRange) (msg : String := "")
     : ToLaurelM StmtExprMd := do
+  let ctx ← read
+  let fr : FileRange := { file := .file ctx.filepath.toString, range := loc }
   let md ← mkMdWithFileRange loc msg
-  return { val := e, md := md }
+  return { val := e, source := some fr, md := md }
 
 /-- Translate a SpecExpr to a Laurel StmtExpr.
     All values are assumed to be Any-typed (the Python prelude's universal type).
