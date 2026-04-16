@@ -1695,6 +1695,10 @@ def pyFuncDefToPythonFunctionDecl  (ctx : TranslationContext) (f : Python.stmt S
     }
   | _ => throw (.internalError "Expected FunctionDef")
 
+/-- Prefix applied to Core input parameters so the original name can be used
+    for a mutable local copy inside the procedure body. -/
+def paramInputPrefix : String := "$in_"
+
 def getSingleTypeConstraint (var: String) (ty: String): Option StmtExprMd :=
   if isOfAnyType ty && ty ≠ "Any" then mkStmtExprMd (.StaticCall ("Any..isfrom_" ++ ty) [freeVar var]) else none
 
@@ -1727,6 +1731,21 @@ def translateFunctionBody (ctx : TranslationContext) (inputTypes : List (String 
     let bodyStmts := (mkStmtExprMd (.LocalVariable "nullcall_ret" AnyTy (some AnyNone))) :: bodyStmts
     return (mkStmtExprMd (StmtExpr.Block bodyStmts none), newctx)
 
+/-- Rename input parameters with `paramInputPrefix` and produce local-copy
+    statements so the function body can freely modify the original names.
+    Parameters for which `exclude` returns true are left unchanged (e.g. `self`). -/
+def renameInputParams (inputs : List Parameter) (exclude : String → Bool := fun _ => false)
+    : List Parameter × List StmtExprMd :=
+  let renamed := inputs.map fun p =>
+    if exclude p.name.text then p
+    else { p with name := mkId (paramInputPrefix ++ p.name.text) }
+  let copies := inputs.filter (fun p => !exclude p.name.text) |>.map fun p =>
+    let orig : String := p.name.text
+    let prefixed : String := paramInputPrefix ++ orig
+    mkStmtExprMd (StmtExpr.LocalVariable (mkId orig) p.type
+      (some (mkStmtExprMd (StmtExpr.Identifier prefixed))))
+  (renamed, copies)
+
 /-- Translate Python function to Laurel Procedure -/
 def translateFunction (ctx : TranslationContext) (sourceRange: SourceRange) (funcDecl : PythonFunctionDecl) (body: List (Python.stmt SourceRange))
     : Except TranslationError (Laurel.Procedure × TranslationContext) := do
@@ -1745,7 +1764,7 @@ def translateFunction (ctx : TranslationContext) (sourceRange: SourceRange) (fun
     | _ => pure ()
 
     let typeConstraintPreconditions := funcDecl.args.filterMap
-      (fun arg => getUnionTypeConstraint ("$in_" ++ arg.name) arg.md arg.tys funcDecl.name arg.name)
+      (fun arg => getUnionTypeConstraint (paramInputPrefix ++ arg.name) arg.md arg.tys funcDecl.name arg.name)
     let typeConstraintPostcondition :=
       match funcDecl.ret.map fun (tys, md) => getReturnTypeEnsure md tys funcDecl.name with
         | some (some constraint) => [constraint]
@@ -1760,18 +1779,7 @@ def translateFunction (ctx : TranslationContext) (sourceRange: SourceRange) (fun
       match arg.tys with | [ty] => (arg.name, ty) | _ => (arg.name, PyLauType.Any))
     let (bodyBlock, newCtx) ←  translateFunctionBody ctx inputTypes body
     let noneReturn := mkStmtExprMd (.Assign [mkStmtExprMd (.Identifier PyLauFuncReturnVar)] AnyNone)
-    -- In Python, parameters are mutable local variables.  In Core, input
-    -- parameters cannot be modified.  To bridge this gap we rename each
-    -- input parameter to "$in_<name>" and prepend a local variable
-    -- declaration  var <name> := $in_<name>  so the body works with a
-    -- freely-modifiable local copy.
-    let renamedInputs := inputs.map fun p =>
-      { p with name := mkId ("$in_" ++ p.name.text) }
-    let paramCopies := inputs.map fun p =>
-      let origName := p.name.text
-      let renamedName := "$in_" ++ origName
-      mkStmtExprMd (StmtExpr.LocalVariable origName p.type
-        (some (mkStmtExprMd (StmtExpr.Identifier renamedName))))
+    let (renamedInputs, paramCopies) := renameInputParams inputs
     let bodyBlock : StmtExprMd := match bodyBlock.val with
     | .Block bodyStmts label => {bodyBlock with val:= .Block (noneReturn :: paramCopies ++ bodyStmts) label}
     | _ => bodyBlock
@@ -1900,20 +1908,7 @@ def translateMethod (ctx : TranslationContext) (className : String)
     let (varDecls, ctxWithClass) ←  createVarDeclStmtsAndCtx ctxWithClass newDecls
     let (_, bodyStmts) ← translateStmtList ctxWithClass body.val.toList
     let bodyStmts := prependExceptHandlingHelper (varDecls ++ bodyStmts)
-    -- In Python, parameters are mutable local variables.  In Core, input
-    -- parameters cannot be modified.  To bridge this gap we rename each
-    -- non-self input parameter to "$in_<name>" and prepend a local variable
-    -- declaration  var <name> := $in_<name>  so the body works with a
-    -- freely-modifiable local copy.
-    let nonSelfParams := inputs.filter (fun p => p.name.text != "self")
-    let renamedInputs := inputs.map fun p =>
-      if p.name.text == "self" then p
-      else { p with name := mkId ("$in_" ++ p.name.text) }
-    let paramCopies := nonSelfParams.map fun p =>
-      let origName := p.name.text
-      let renamedName := "$in_" ++ origName
-      mkStmtExprMd (StmtExpr.LocalVariable origName p.type
-        (some (mkStmtExprMd (StmtExpr.Identifier renamedName))))
+    let (renamedInputs, paramCopies) := renameInputParams inputs (· == "self")
     let bodyStmts := paramCopies ++ bodyStmts
     let bodyBlock := mkStmtExprMd (StmtExpr.Block bodyStmts none)
 
