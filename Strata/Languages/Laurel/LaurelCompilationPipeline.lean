@@ -11,6 +11,7 @@ import Strata.Languages.Laurel.EliminateReturnsInExpression
 import Strata.Languages.Laurel.EliminateReturnStatements
 import Strata.Languages.Laurel.ConstrainedTypeElim
 import Strata.Languages.Laurel.ContractPass
+import Strata.Languages.Laurel.EliminateMultipleOutputs
 import Strata.Languages.Core.Verifier
 
 /-!
@@ -144,11 +145,12 @@ def translateWithLaurel (options : LaurelTranslateOptions) (program : Program)
     : IO TranslateResultWithLaurel := do
   let (program, model, passDiags) ← runLaurelPasses options program keepAllFilesPrefix
   let functionsAndProofs := laurelToFunctionsAndProofs program
+  let functionsAndProofs := eliminateMultipleOutputs functionsAndProofs
 
   let fnProgram : Program := {
     staticProcedures := functionsAndProofs.functions ++ functionsAndProofs.proofs,
     staticFields := program.staticFields,
-    types := program.types,
+    types := program.types ++ functionsAndProofs.datatypes.map TypeDefinition.Datatype,
     constants := program.constants
   }
   let fnResolveResult := resolve fnProgram (some model)
